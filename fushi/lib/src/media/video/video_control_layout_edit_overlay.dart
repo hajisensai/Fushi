@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_control_item_presentation.dart';
+import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 
@@ -14,12 +15,18 @@ class VideoControlLayoutEditOverlay extends StatefulWidget {
     required this.onLayoutChanged,
     required this.onClose,
     this.isTouchControls = false,
+    this.customActionBindings = VideoCustomActionBindings.empty,
     super.key,
   });
 
   final VideoControlLayout layout;
   final Future<void> Function(VideoControlLayout layout) onLayoutChanged;
   final VoidCallback onClose;
+
+  /// 自定义「快捷键 1..4」按钮当前绑的动作：决定本覆盖层里那几个 chip 显示成哪个动作
+  /// 的图标与名字。本覆盖层**只管摆位置、不改绑**（它已经是个拖拽密集的界面，再叠一层
+  /// tap 语义容易误触）；改绑走设置里的 [VideoControlLayoutEditor]。
+  final VideoCustomActionBindings customActionBindings;
 
   /// Touch surface (no right-click context menu fallback): forbids removing the
   /// sole in-player settings entry so the user cannot soft-lock the controls
@@ -645,14 +652,21 @@ class _VideoControlLayoutEditOverlayState
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             Icon(
-              videoControlItemIcon(item),
+              videoControlItemIcon(
+                item,
+                bindings: widget.customActionBindings,
+              ),
               size: 15,
               color: cs.onSecondaryContainer,
             ),
             const SizedBox(width: 5),
             Flexible(
               child: Text(
-                videoControlItemLabel(item, context),
+                videoControlItemLabel(
+                  item,
+                  context,
+                  bindings: widget.customActionBindings,
+                ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 softWrap: false,

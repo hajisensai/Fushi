@@ -9,20 +9,60 @@ import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi/src/utils/net/app_http.dart';
+import 'package:fushi/src/utils/net/app_user_agent.dart';
 
 const int kMaximumSubtitleDownloadBytes = 64 * 1024 * 1024;
+
+/// Hibiki 的大类语言码 → OpenSubtitles 认得的 BCP-47 码（BUG-1846）。
+///
+/// Hibiki 内部字幕语言只分到大类（`ja`/`zh`/`en`/`ko`，见 `kJimakuLanguageCodes`——
+/// Jimaku 侧靠文件名启发式识别，本来就分不了地区）。而 OpenSubtitles 的语言表
+/// （`GET /infos/languages`，105 个码）里**没有裸 `zh`**，只有 `zh-cn` / `zh-tw` /
+/// `zh-ca`：把大类码原样发过去，中文字幕恒定搜不到。
+///
+/// 只有带地区码的语言家族需要展开——实测该表里带地区的仅 `az` / `pt` / `tm` / `zh`
+/// 四族，`ja` `en` `ko` `es` `fr` `de` `it` `ru` `th` `vi` `id` `ar` `nl` `tr` 均有裸码，
+/// 原样透传即可。这里只登记 Hibiki 值域可能产生的那两族，其余交给服务端裁决，不在
+/// 客户端擅自丢弃。
+const Map<String, List<String>> kOpenSubtitlesLanguageExpansions =
+    <String, List<String>>{
+  'zh': <String>['zh-cn', 'zh-tw'],
+  'pt': <String>['pt-br', 'pt-pt'],
+};
+
+/// 把语言偏好归一成 OpenSubtitles 能接受的值域。纯函数，便于单测。
+///
+/// 大类码展开成该族的具体地区码（`zh` → `zh-cn,zh-tw`），其余小写后原样保留；结果去重
+/// 并**排序**——API 对未规范化的 query 会回 301 重定向到规范 URL，排好序能省掉这次多余
+/// 往返。
+List<String> normalizeOpenSubtitlesLanguages(Iterable<String> languages) {
+  final Set<String> out = <String>{};
+  for (final String raw in languages) {
+    final String code = raw.trim().toLowerCase();
+    if (code.isEmpty) continue;
+    final List<String>? expansion = kOpenSubtitlesLanguageExpansions[code];
+    if (expansion == null) {
+      out.add(code);
+    } else {
+      out.addAll(expansion);
+    }
+  }
+  final List<String> sorted = out.toList()..sort();
+  return List<String>.unmodifiable(sorted);
+}
 
 class OpenSubtitlesConfig {
   OpenSubtitlesConfig({
     required this.apiKey,
     this.username,
     this.password,
-    this.userAgent = 'Hibiki v1',
+    String? userAgent,
     Uri? baseUrl,
     this.enabled = true,
     this.priority = 200,
     this.allowInsecureHttp = false,
-  }) : baseUrl = baseUrl ?? Uri.parse('https://api.opensubtitles.com/api/v1') {
+  })  : userAgent = _resolveUserAgent(userAgent),
+        baseUrl = baseUrl ?? Uri.parse('https://api.opensubtitles.com/api/v1') {
     if (this.baseUrl.host.isEmpty ||
         this.baseUrl.hasQuery ||
         this.baseUrl.userInfo.isNotEmpty ||
@@ -40,9 +80,6 @@ class OpenSubtitlesConfig {
         'explicitly allowed or the host is loopback',
       );
     }
-    if (userAgent.trim().isEmpty) {
-      throw ArgumentError('OpenSubtitles user agent must not be empty');
-    }
   }
 
   factory OpenSubtitlesConfig.fromJson(Map<String, Object?> json) {
@@ -51,7 +88,7 @@ class OpenSubtitlesConfig {
       apiKey: json['apiKey'] as String? ?? '',
       username: json['username'] as String?,
       password: json['password'] as String?,
-      userAgent: json['userAgent'] as String? ?? 'Hibiki v1',
+      userAgent: json['userAgent'] as String?,
       baseUrl: rawBaseUrl == null || rawBaseUrl.trim().isEmpty
           ? null
           : Uri.parse(rawBaseUrl),
@@ -61,6 +98,18 @@ class OpenSubtitlesConfig {
           ? json['allowInsecureHttp']! as bool
           : false,
     );
+  }
+
+  /// 缺省 / 存量旧默认值都归一到当前 app 身份；用户自填的 UA 原样保留。
+  ///
+  /// `video_subtitle_opensubtitles_config` 是把整个配置序列化成 JSON 存的，所以
+  /// 光改构造默认值改不动已落盘的 `Hibiki v1`——那条 UA 会一直发出去。
+  static String _resolveUserAgent(String? raw) {
+    final String trimmed = raw?.trim() ?? '';
+    if (trimmed.isEmpty || trimmed == kLegacyOpenSubtitlesUserAgent) {
+      return fushiUserAgent('opensubtitles');
+    }
+    return raw!;
   }
 
   final String apiKey;
@@ -104,6 +153,9 @@ class OpenSubtitlesSearchRecord {
     this.downloadCount = 0,
     this.hearingImpaired = false,
     this.fps,
+    this.uploadedAtMs,
+    this.aiTranslated = false,
+    this.fromTrusted = false,
   });
 
   final int fileId;
@@ -115,6 +167,15 @@ class OpenSubtitlesSearchRecord {
   final int downloadCount;
   final bool hearingImpaired;
   final double? fps;
+
+  /// `attributes.upload_date`（ISO-8601）→ epoch 毫秒；缺失/不可解析 null。
+  final int? uploadedAtMs;
+
+  /// `attributes.ai_translated`：机翻标记（排序降权，UI 明示）。
+  final bool aiTranslated;
+
+  /// `attributes.from_trusted`：可信上传者。
+  final bool fromTrusted;
 }
 
 List<OpenSubtitlesSearchRecord> parseOpenSubtitlesSearchResponse(String body) {
@@ -154,6 +215,13 @@ List<OpenSubtitlesSearchRecord> parseOpenSubtitlesSearchResponse(String body) {
           downloadCount: _int(attributes['download_count']) ?? 0,
           hearingImpaired: attributes['hearing_impaired'] == true,
           fps: _double(attributes['fps']),
+          uploadedAtMs: attributes['upload_date'] is String
+              ? DateTime.tryParse(attributes['upload_date']! as String)
+                  ?.toUtc()
+                  .millisecondsSinceEpoch
+              : null,
+          aiTranslated: attributes['ai_translated'] == true,
+          fromTrusted: attributes['from_trusted'] == true,
         ),
       );
     }
@@ -290,6 +358,13 @@ class OpenSubtitlesClient implements VideoSubtitleProvider {
       );
     }
   }
+
+  @override
+
+  /// OpenSubtitles 的 `/download` 就是计配额的那一步（响应带 `remaining`），
+  /// 绝不为一个展示标签消耗用户的每日额度。
+  @override
+  bool get allowsFreeProbeDownload => false;
 
   @override
   Future<VideoSubtitleDownload> download(
@@ -497,10 +572,12 @@ class OpenSubtitlesClient implements VideoSubtitleProvider {
       RegExp(r'^tt', caseSensitive: false),
       '',
     );
+    // 归一后再发：Hibiki 内部是大类码，OpenSubtitles 要 BCP-47（BUG-1846）。
+    final List<String> languages =
+        normalizeOpenSubtitlesLanguages(request.languages);
     final Map<String, String> common = <String, String>{
       'page': '${request.page}',
-      if (request.languages.isNotEmpty)
-        'languages': request.languages.join(','),
+      if (languages.isNotEmpty) 'languages': languages.join(','),
     };
     final Map<String, String> episode = <String, String>{
       if (request.effectiveSeason != null)
@@ -633,6 +710,9 @@ class _OpenSubtitlesCandidate extends VideoSubtitleCandidate {
           downloadCount: record.downloadCount,
           hearingImpaired: record.hearingImpaired,
           fps: record.fps,
+          uploadedAtMs: record.uploadedAtMs,
+          aiTranslated: record.aiTranslated,
+          fromTrusted: record.fromTrusted,
         );
 
   final OpenSubtitlesSearchRecord record;

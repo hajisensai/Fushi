@@ -411,6 +411,40 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
   // 除前已恒 no-op（唯一能建 downloadId 行的写入方早已随 shelf_reorder_page 消亡）。
 
   // ── media collections (统一合集：Jellyfin 式容器 + 成员引用) ─────────
+  /// 合集两张表（media_collections / media_collection_items）的「数据变了」信号：
+  /// 任一表写入即 emit（不带数据，消费方自行重载分组映射）。
+  ///
+  /// 库页的合集折叠映射是页级快照（进页拉一次），写入方却有很多：后台合集同步
+  /// （互联 live 端点 / 云 __collections__ 清单）、备份导入、其它页面的合集编辑。
+  /// 靠「每个写入路径各自记得通知页面」必然漏——BUG-1699 实证：互联合集同步落库
+  /// 后视频页 _collectionsById 停在首帧快照，host 合集恒散卡直到重启。数据层单一
+  /// 事件源让任何写入者天然覆盖，无需逐路登记。
+  ///
+  /// 用手动 [StreamController] + [tableUpdates]，**不用** drift keyed `.watch()`
+  /// （取消订阅遗留 `Timer.run` 挂死 widget 测试，BUG-834，同
+  /// [watchDashboardDataChanges] 范式）。
+  Stream<void> watchCollectionTablesChanged() {
+    late final StreamController<void> controller;
+    StreamSubscription<void>? updatesSub;
+    controller = StreamController<void>(
+      onListen: () {
+        updatesSub = tableUpdates(
+          TableUpdateQuery
+              .onAllTables(<ResultSetImplementation<dynamic, dynamic>>[
+            mediaCollections,
+            mediaCollectionItems,
+          ]),
+        ).listen((_) {
+          if (!controller.isClosed) controller.add(null);
+        });
+      },
+      onCancel: () async {
+        await updatesSub?.cancel();
+      },
+    );
+    return controller.stream;
+  }
+
   /// 全部合集，按 sortOrder 升序、id 升序（卡片列表稳定排序，同 [getAllSeries] 范式）。
   Future<List<MediaCollectionRow>> getAllMediaCollections() =>
       (select(mediaCollections)
@@ -454,6 +488,24 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
       (update(mediaCollections)..where((t) => t.id.equals(id))).write(
         MediaCollectionsCompanion(
             secondarySubtitleDelayMs: Value<int?>(delayMs)),
+      );
+
+  /// 更新系列（合集）级默认字幕语言代码（`ja` / `en` …，schema v91）。
+  /// [language] 为 null 时清除（加载回退视频内容语言链 `resolveContentLanguage`，
+  /// 绝不是 ja）。
+  Future<void> updateMediaCollectionSubtitleLanguage(
+          int id, String? language) =>
+      (update(mediaCollections)..where((t) => t.id.equals(id))).write(
+        MediaCollectionsCompanion(subtitleLanguage: Value<String?>(language)),
+      );
+
+  /// 更新系列（合集）级偏好的字幕版本组键（`subtitle_version_groups.dart` 的
+  /// 分组键，schema v89）。[releaseGroup] 为 null 时清除（加载走默认选轨）。
+  Future<void> updateMediaCollectionSubtitleReleaseGroup(
+          int id, String? releaseGroup) =>
+      (update(mediaCollections)..where((t) => t.id.equals(id))).write(
+        MediaCollectionsCompanion(
+            subtitleReleaseGroup: Value<String?>(releaseGroup)),
       );
 
   /// 新建合集，返回自增 id。sortOrder 默认排末尾（现有最大 +1，空表 0）。同事务清
@@ -886,6 +938,26 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
             ..orderBy([(t) => OrderingTerm(expression: t.id)])
             ..limit(1))
           .getSingleOrNull();
+
+  /// 该自然键是否存在**合集级**删除墓碑（空哨兵行）。
+  ///
+  /// BUG-1739：扫描/自动归组等**非用户显式**的合集创建路径用它判「用户删过
+  /// 这个合集」——有墓碑就不自动重建，否则删除会被下一次来源重扫按自然键
+  /// 原样撤销（用户视角＝「合集无法删除」）。用户显式重建仍走
+  /// [createMediaCollection]（清墓碑 = 撤销删除），两种意图各有一个入口。
+  Future<bool> hasCollectionDeletionTombstone(
+    String name,
+    String collectionType,
+  ) async =>
+      await (select(collectionMemberTombstones)
+            ..where((t) =>
+                t.collectionName.equals(name) &
+                t.collectionType.equals(collectionType) &
+                t.mediaType.equals(FushiDatabase.collectionTombstoneSentinel) &
+                t.entryKey.equals(FushiDatabase.collectionTombstoneSentinel))
+            ..limit(1))
+          .getSingleOrNull() !=
+      null;
 
   /// upsert 一条墓碑（重复移出刷新 deletedAt，单行 LWW）。
   Future<void> upsertCollectionMemberTombstone({

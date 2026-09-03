@@ -50,6 +50,20 @@ double videoCardWidthForOrientation({
 double videoCoverHeightForPortraitWidth(double portraitCardWidth) =>
     portraitCardWidth * 3 / 2;
 
+/// “全部视频”16:9 缩略图网格的目标卡宽。
+///
+/// 该分区展示的是可直接播放的单个视频文件，不沿用系列墙的 2:3 海报目标宽：
+/// 横卡若按 210px 书架卡宽排，会在桌面缩得过小；若沿用混排墙的“竖卡高换横卡宽”，
+/// 又会膨胀到 600px 左右并在 [Wrap] 行尾留下大洞。这里按内容宽度给等宽网格一个
+/// 稳定目标，配合 `unifiedShelfCardLayout` 等分整行。
+double allVideoThumbnailTargetWidthForWidth(double width) {
+  if (width >= 1600) return 320;
+  if (width >= 1280) return 300;
+  if (width >= 960) return 280;
+  if (width >= 600) return 240;
+  return 150;
+}
+
 /// 全宽 hero 轮播高度：宽屏压成 21:9 影院比例，夹在 [220, 420] 之间——手机竖屏
 /// 不至于占满半屏，桌面超宽不至于无限长高。
 double videoHeroHeightForWidth(double width) =>
@@ -120,6 +134,13 @@ class VideoYearFilter {
 /// 看完状态筛选档位。
 enum VideoWatchStatusFilter { all, unwatched, watching, completed }
 
+/// 系列归属筛选档位（「全部视频」平铺视图）。
+///
+/// 「全部视频」逐条平铺整库，系列的每一集都在里面；用户要的是「只看还没归进
+/// 系列的散片」。这是条目在**系列视图里的折叠形态**这一维度上的筛选，与刮削
+/// 资格无关（BUG-1839：系列与全部视频的区别只是折叠方式）。
+enum VideoSeriesFilter { all, inSeries, standalone }
+
 /// A series member's playback facts in the collection's stable episode order.
 class VideoSeriesPlaybackState {
   const VideoSeriesPlaybackState({
@@ -133,6 +154,26 @@ class VideoSeriesPlaybackState {
   final bool completed;
 
   bool get hasTrace => lastWatchedAtMs > 0 || positionMs > 0 || completed;
+}
+
+/// 成员的有效「最近观看时刻」（epoch 毫秒，0 = 没看过）。纯函数。
+///
+/// 两个来源取较大者：
+/// * [statsWatchedAtMs] —— 本机播放统计（`VideoWatchStatistics.lastModified`），
+///   只有本机真播放过才有行；
+/// * [lastPlayedAt] —— 行级 `VideoBooks.lastPlayedAt`，本机播放与远端进度回灌
+///   （互联子端上报 / sync sweep，用对端时刻）都写它。
+///
+/// BUG-1731：合集续播锚点此前只认统计行——子端在手机上看完后续集数只回灌行级
+/// `lastPlayedAt`、不产生 host 本机统计行，锚点仍钉在 host 最后本机播放的那集。
+/// 回落行级时刻后与 hero 的 collection_continue（只读 `lastPlayedAt`）口径一致；
+/// 本机播放时两来源同时写、时刻近似相等，max 不改变已有本机行为。
+int effectiveWatchedAtMs({
+  required int statsWatchedAtMs,
+  required int? lastPlayedAt,
+}) {
+  final int rowAt = lastPlayedAt ?? 0;
+  return statsWatchedAtMs >= rowAt ? statsWatchedAtMs : rowAt;
 }
 
 /// Returns the episode the user actually played most recently.
@@ -165,6 +206,24 @@ int? nextEpisodeAfterLatestPlayed(
   return current + 1;
 }
 
+/// 「继续观看」行的合集目标集（Next-Up 语义，与 hero 大卡的
+/// `continueMemberIndex` 同口径）：
+///
+/// * 最近实际播放的那集**没看完**（有进度）→ 停在它；
+/// * 它**已看完** → 紧接的下一集（整部看完、没有下一集 → null，不再占继续行）；
+/// * 没有播放痕迹、或有痕迹但位置被拖回 0 且未标完成 → null（与改动前一致）。
+///
+/// 此前本行只认第一种情况：一集从头看到尾再退出，`completedAt` 一落库合集就从
+/// 「继续观看」消失、只剩「下一集」行有它；中途退出的反而在。用户视角是同一部番
+/// 在首页时有时无。看完一集的用户下一步显然是看下一集——那就是「继续观看」。
+int? continueWatchingSeriesIndex(List<VideoSeriesPlaybackState> members) {
+  final int? current = latestPlayedSeriesIndex(members);
+  if (current == null) return null;
+  final VideoSeriesPlaybackState state = members[current];
+  if (state.completed) return nextEpisodeAfterLatestPlayed(members);
+  return state.positionMs > 0 ? current : null;
+}
+
 /// 条目级看完状态判定（本地即筛）：
 /// * completed —— `completedAt` 非空；
 /// * watching —— 未完成但有播放痕迹（`lastPositionMs > 0`）；
@@ -183,6 +242,25 @@ bool matchesVideoWatchStatus({
       return !completed && lastPositionMs > 0;
     case VideoWatchStatusFilter.unwatched:
       return !completed && lastPositionMs <= 0;
+  }
+}
+
+/// 条目级系列归属判定（本地即筛）。
+///
+/// [inSeries] = 该条目在系列视图里会被折进一张合集卡（有主合集归属、且那个合集
+/// 真的存在）。归属指向已删除合集的孤儿条目在系列页本来就是散卡，这里同样按
+/// 「不在系列里」算——判据与 `_groupVideos` 的折叠判据同源，不许分叉。
+bool matchesVideoSeriesFilter({
+  required VideoSeriesFilter filter,
+  required bool inSeries,
+}) {
+  switch (filter) {
+    case VideoSeriesFilter.all:
+      return true;
+    case VideoSeriesFilter.inSeries:
+      return inSeries;
+    case VideoSeriesFilter.standalone:
+      return !inSeries;
   }
 }
 

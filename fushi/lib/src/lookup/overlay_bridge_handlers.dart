@@ -13,7 +13,9 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart';
@@ -90,6 +92,12 @@ bool maybeHandleOverlayDeferredBridge({
       return true;
     case 'openMinedNote':
       unawaited(_handleOpenMinedNoteBridge(model, message, resolveBridge));
+      return true;
+    // BUG-2051 —— ↗「在 Anki 中打开这个词的卡」。app 内外走同一个仓库方法，
+    // 判据与画 ✓ 的查重同源；app 外此前只能走 popup.js 的页内面板（先 findMinedMatches
+    // 反查再 openMinedNote），那条反查按字段名查，跨笔记类型的卡永远查不到。
+    case 'openInAnki':
+      unawaited(_handleOpenInAnkiBridge(model, message, resolveBridge));
       return true;
     case 'overwriteTargetNoteId':
       unawaited(_handleOverwriteTargetBridge(model, message, resolveBridge));
@@ -344,7 +352,13 @@ Future<void> _handleMineBridge(
     }
   } catch (e, st) {
     glog('mine: EXCEPTION $e\n$st');
-    reply = const <String, Object?>{'ankiConnect': false, 'noteId': null};
+    // BUG-1908：异常此前只写进磁盘日志（glog），浮窗那边什么都不显示。
+    // 诊断细节仍只进日志（不把 e.toString() 塞给用户），但**必须**告诉用户失败了。
+    reply = <String, Object?>{
+      'ankiConnect': false,
+      'noteId': null,
+      'message': t.card_export_failed,
+    };
   }
   if (id != null) {
     glog('mine: mineEntry -> reply=$reply (id=$id)');
@@ -385,9 +399,16 @@ Future<Map<String, Object?>> _mineEntry(
   if (success) {
     unawaited(_recordMinedStats(model, fields, outcome.noteId, sentence));
   }
+  // BUG-1908：失败原因必须回到浮窗。app 外的裸浮窗连 Flutter toast 都没有
+  // （FushiToast 在拿不到 Overlay 时直接 return），此前失败就是纯静默。
+  final String? message = success ? null : describeMineOutcome(outcome).message;
   return <String, Object?>{
     'ankiConnect': success,
     'noteId': success ? outcome.noteId : null,
+    if (message != null && message.isNotEmpty) 'message': message,
+    // BUG-1908：见 MinePopupResult.duplicate —— 让浮窗把「卡已存在」与「真的没制成」
+    // 分开，而不必回查 Anki（TODO-448 禁止失败后回查）。
+    if (outcome.result == MineResult.duplicate) 'duplicate': true,
   };
 }
 
@@ -523,6 +544,39 @@ Future<void> _handleOpenMinedNoteBridge(
   }
 }
 
+/// BUG-2051 — resolves a DEFERRED `openInAnki` call by filtering Anki's browser
+/// to the cards Anki itself considers duplicates of [expression]
+/// ([BaseAnkiRepository.openWordInAnki] — the same criterion that paints the ✓,
+/// and the same repo call the in-app lane makes). Replies with the outcome NAME
+/// ('opened' / 'noMatch' / 'failed') so the popup button can say which of the
+/// two failures happened; app 外没有 Flutter toast，提示只能画在按钮旁边。
+/// Always resolves — never null, that value means「这个宿主没接这根桥」.
+Future<void> _handleOpenInAnkiBridge(
+  AppModel? model,
+  Map<String, Object?> message,
+  OverlayBridgeResolver resolveBridge,
+) async {
+  final int? id = _bridgeIdOf(message);
+  String reply = AnkiOpenWordOutcome.failed.name;
+  try {
+    final Map<Object?, Object?> data = _firstMapArg(message);
+    final String expression = data['expression']?.toString() ?? '';
+    final String reading = data['reading']?.toString() ?? '';
+    if (model != null && expression.isNotEmpty) {
+      final BaseAnkiRepository repo =
+          model.platformServices.createAnkiRepository();
+      reply = (await repo.openWordInAnki(expression, reading)).name;
+    }
+  } catch (e, st) {
+    glog('anki-open-word: EXCEPTION $e\n$st');
+    reply = AnkiOpenWordOutcome.failed.name;
+  }
+  if (id != null) {
+    glog('anki-open-word: openInAnki -> reply=$reply (id=$id)');
+    unawaited(resolveBridge(id, reply));
+  }
+}
+
 /// TODO-1225 — resolves a DEFERRED `overwriteTargetNoteId` probe via
 /// [BaseAnkiRepository.findOverwriteTargetNoteId] (same path as the in-app
 /// [DictionaryPageMixin.findOverwriteTargetNoteId]). Non-null only when
@@ -594,7 +648,12 @@ Future<void> _handleUpdateBridge(
     }
   } catch (e, st) {
     glog('update: EXCEPTION $e\n$st');
-    reply = const <String, Object?>{'ankiConnect': false, 'noteId': null};
+    // BUG-1908：同 mine 那条——覆写失败也必须在浮窗里说出来。
+    reply = <String, Object?>{
+      'ankiConnect': false,
+      'noteId': null,
+      'message': t.card_export_failed,
+    };
   }
   if (id != null) {
     glog('update: updateEntry -> reply=$reply (id=$id)');
@@ -623,8 +682,13 @@ Future<Map<String, Object?>> _updateEntry(
     ),
   );
   final bool success = outcome.result == MineResult.success;
+  // BUG-1908：覆写失败同样带原因回浮窗（口径与 _mineEntry 一致，overwrite: true
+  // 让 describeMineOutcome 给出「已覆写/覆写失败」而不是「已导出」）。
+  final String? message =
+      success ? null : describeMineOutcome(outcome, overwrite: true).message;
   return <String, Object?>{
     'ankiConnect': success,
     'noteId': success ? outcome.noteId : null,
+    if (message != null && message.isNotEmpty) 'message': message,
   };
 }

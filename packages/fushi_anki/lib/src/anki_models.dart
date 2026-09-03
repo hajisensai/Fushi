@@ -107,6 +107,22 @@ AnkiDuplicateScope ankiDuplicateScopeFromName(String? name) {
   }
 }
 
+/// BUG-2051：点 ↗「在 Anki 中打开这个词的卡」的三态结局。
+///
+/// 用 `bool` 表达不了「Anki 可达、但这个词现在一张卡都没有」这个第三态——那正是
+/// 用户唯一需要被解释的情形（徽章说已制卡、卡却刚被删）。三态各自对应一句不同的
+/// 提示，调用方不必再从 `false` 猜是「没卡」还是「Anki 没开」。
+enum AnkiOpenWordOutcome {
+  /// Anki 已经打开到这个词的卡片上（至少命中一张）。
+  opened,
+
+  /// 后端可达并明确应答：这个词在判重范围内没有任何卡。
+  noMatch,
+
+  /// 打不开（后端不可达 / 未配置 / 不支持）。
+  failed,
+}
+
 /// TODO-1007/1008：一张**已存在于 Anki**的、与当前查词同条件匹配的卡片的轻量引用。
 ///
 /// 用户痛点（根因）：旧的「点 ✓ 默默 return / 只覆写本会话最近一张」把「別处或上次会话
@@ -492,10 +508,34 @@ class AnkiMiningPayload {
     this.pitchCategories = '',
     this.phoneticTranscriptions = '',
     this.popupSelectionText = '',
+    this.glossarySelectionHighlighted = false,
     this.audio = '',
     this.selectedDictionary = '',
     this.dictionaryMedia = const [],
   });
+
+  /// 本 payload 走**两条**线，编码不同，`fromJson` 必须对两条都成立：
+  ///
+  /// 1. **保类型的 JSON**——浏览器扩展 / 远端 API（`/api/mine`）直接把 JS 对象
+  ///    序列化过来，布尔就是布尔。
+  /// 2. **全字符串**——应用内 WebView 桥。`dictionary_popup_webview.dart` 与
+  ///    `overlay_bridge_handlers.dart` 都把 JS 对象拍平成 `Map<String, String>`
+  ///    （逐值 `.toString()`），因为下游 `ImmersionMiningRequest.fields`、
+  ///    `miningHandler(fields:)`、互联转发全都是 `Map<String, String>`——Anki 的
+  ///    字段渲染本来就是「字段名 → 字符串」。这条线上布尔到达时是 `"true"`/`"false"`。
+  ///
+  /// 本函数里 `singleGlossaries` 与 `dictionaryMedia` 早就各自按「String 或原生类型」
+  /// 两分支处理（见下），**这个约定一直都在**；BUG-2089 是新加的布尔字段没跟上它，
+  /// 写成裸 `as bool?`，于是第 2 条线上每一次制卡都抛
+  /// `type 'String' is not a subtype of type 'bool?'`。
+  ///
+  /// 只认这两条线真实产生的形态，不做「任意字符串即真」的宽松解析：那会把
+  /// 拼写错误静默变成 true。
+  static bool _boolFromPayloadWire(Object? raw) {
+    if (raw is bool) return raw;
+    if (raw is String) return raw == 'true';
+    return false;
+  }
 
   factory AnkiMiningPayload.fromJson(Map<String, dynamic> json) {
     var singleGlossaries = <String, String>{};
@@ -540,6 +580,8 @@ class AnkiMiningPayload {
       pitchCategories: json['pitchCategories'] as String? ?? '',
       phoneticTranscriptions: json['phoneticTranscriptions'] as String? ?? '',
       popupSelectionText: json['popupSelectionText'] as String? ?? '',
+      glossarySelectionHighlighted:
+          _boolFromPayloadWire(json['glossarySelectionHighlighted']),
       audio: json['audio'] as String? ?? '',
       selectedDictionary: json['selectedDictionary'] as String? ?? '',
       dictionaryMedia: dictionaryMedia,
@@ -562,6 +604,15 @@ class AnkiMiningPayload {
   /// 想把音标单独映射到独立字段的用户（Yomitan 命名 `{phonetic-transcriptions}`）。
   final String phoneticTranscriptions;
   final String popupSelectionText;
+
+  /// 本次制卡里，用户选中的那一段是否**真的**作为 `<mark>` 落进了导出的释义树
+  /// （popup.js 的 applyGlossarySelectionHighlight 确实插入了标记）。
+  ///
+  /// 只是「上报事实」，不是「已经让位」：SelectionText 该不该让位取决于笔记类型
+  /// 和字段映射，而 popup.js 那一层两个都看不见。判据见
+  /// [BaseAnkiRepository.shouldYieldSelectionText]。旧 payload 没有这个键 →
+  /// `false` → 行为逐字节不变。
+  final bool glossarySelectionHighlighted;
   final String audio;
   final String selectedDictionary;
   final List<DictionaryMedia> dictionaryMedia;
@@ -615,6 +666,8 @@ class AnkiMiningContext {
     this.source,
     this.bookTitleTag,
     this.collectionTag,
+    this.clipStartMs,
+    this.clipEndMs,
   });
   final String sentence;
   final String? cueSentence;
@@ -644,6 +697,48 @@ class AnkiMiningContext {
   /// 二者字面量不同则各成一个 tag（Anki 里可按系列聚合、也可按单集/单本区分）；相同时由
   /// [buildNoteTags] 去重合并。见视频 `lookup_mining` / reader `mining` 注入点。
   final String? collectionTag;
+
+  /// 本张卡截取的媒体片段起止（毫秒，媒体时间轴上的**偏移**，非 wall-clock 时刻，
+  /// 故按术语表用 `Ms` 后缀）。渲染 `{clip-timestamp}` 用。
+  ///
+  /// 只有带时间轴的来源才有值：视频页 / 网页视频 / YouTube 由
+  /// `ImmersionMiningRequest.clipStartMs|clipEndMs`（已过
+  /// `miningClipTimeMs` 的字幕轴→播放器轴校正）经引擎原样透传。
+  ///
+  /// 两种「没有时间窗」殊途同归地渲染成空串：galgame 走沉浸引擎但恒填 0/0
+  /// （`external_window_mining.dart`），书籍根本不进引擎、直接组 context 而不写
+  /// 这两个参数（取默认 `null`）。判据见
+  /// [AnkiHandlebarRenderer.formatClipTimestamp]。
+  final int? clipStartMs;
+  final int? clipEndMs;
+
+  /// 渲染前把两个**本地媒体路径**换成 backend 落盘后的媒体引用
+  /// （`<img src=...>` / `[sound:...]`），其余字段原样带过。
+  ///
+  /// **落卡路径必须用它，不许再手抄字段。** 此前两个 backend 各自 `AnkiMiningContext(...)`
+  /// 逐字段重建这份 context，于是每给本类加一个字段就漏抄一次：`{clip-timestamp}`
+  /// 刚加上就整条落卡路径恒空串（渲染器读的是重建出来的那份），而直调渲染器的单测
+  /// 结构上照不到。收敛到这里之后，新增字段自动跟着走。
+  ///
+  /// 两个媒体参数**必传**且允许显式 `null`：媒体没落地时就该把路径清空，
+  /// 绝不能退回本地临时文件路径——那会把一个 Anki 读不到的路径写进卡片。
+  AnkiMiningContext withMediaRefs({
+    required String? coverRef,
+    required String? sentenceAudioRef,
+  }) =>
+      AnkiMiningContext(
+        sentence: sentence,
+        cueSentence: cueSentence,
+        documentTitle: documentTitle,
+        coverPath: coverRef,
+        sentenceAudioPath: sentenceAudioRef,
+        sentenceOffset: sentenceOffset,
+        source: source,
+        bookTitleTag: bookTitleTag,
+        collectionTag: collectionTag,
+        clipStartMs: clipStartMs,
+        clipEndMs: clipEndMs,
+      );
 }
 
 class AnkiHandlebarRenderer {
@@ -653,18 +748,25 @@ class AnkiHandlebarRenderer {
   static String render(
     String template,
     AnkiMiningPayload payload,
-    AnkiMiningContext context,
-  ) =>
+    AnkiMiningContext context, {
+    bool yieldSelectionText = false,
+  }) =>
       template.replaceAllMapped(
         _handlebarRegex,
-        (match) => _handlebarToValue(match.group(0)!, payload, context),
+        (match) => _handlebarToValue(
+          match.group(0)!,
+          payload,
+          context,
+          yieldSelectionText: yieldSelectionText,
+        ),
       );
 
   static String _handlebarToValue(
     String handlebar,
     AnkiMiningPayload payload,
-    AnkiMiningContext context,
-  ) {
+    AnkiMiningContext context, {
+    bool yieldSelectionText = false,
+  }) {
     if (handlebar.startsWith(_singleGlossaryPrefix)) {
       final dictionary = handlebar.substring(
         _singleGlossaryPrefix.length,
@@ -710,7 +812,10 @@ class AnkiHandlebarRenderer {
           payload.selectedDictionary,
         );
       case '{popup-selection-text}':
-        return payload.popupSelectionText;
+        // 选中的那段已经作为 <mark> 进了释义字段时，是否还要在这里再放一份，
+        // 由知道笔记类型和字段映射的那一层决定
+        // （[BaseAnkiRepository.shouldYieldSelectionText]）。
+        return yieldSelectionText ? '' : payload.popupSelectionText;
       case '{sentence}':
         return _sentenceValue(payload, context);
       case '{cue-sentence}':
@@ -727,6 +832,8 @@ class AnkiHandlebarRenderer {
         return payload.phoneticTranscriptions;
       case '{document-title}':
         return context.documentTitle ?? '';
+      case '{clip-timestamp}':
+        return formatClipTimestamp(context.clipStartMs, context.clipEndMs);
       // {card-image} 是通用图片键（书籍封面 / 视频 GIF 共用，语义中性、名副其实）：
       // 阅读器场景 coverPath 是书籍封面，视频场景 coverPath 是 GIF/降级帧（见 video
       // lookup_mining）。这是 Lapis Picture 字段的默认映射（TODO-1298）。
@@ -747,6 +854,35 @@ class AnkiHandlebarRenderer {
       default:
         return '';
     }
+  }
+
+  /// 把媒体片段起止（毫秒偏移）渲染成人类可读的 `HH:MM:SS - HH:MM:SS`。
+  ///
+  /// 「有没有有效时间窗」的判据**只有这一条**：`endMs > startMs`。它与
+  /// `ImmersionMiningRequest.hasClipWindow` 同语义——**不是** `hasRange`：后者在窗几何
+  /// 之外还要求「有可裁的源」，是引擎的抽取开关，与卡面显示无关（BUG-2080 把这两层
+  /// 拆开之前它们是同一个 getter）。包不能依赖主 app，故各自自足而非复制出第二套
+  /// 规则；所以所有上游——引擎、远端转发——一律**原样传原值**，
+  /// 不在各自那头先判一遍再决定传不传 `null`。
+  ///
+  /// 于是两种「本来就没有时间窗」的情形自然落进同一个出口而渲染成空串：无时间轴
+  /// 来源两端为 `null`（书籍）或恒 0/0（galgame）；视频侧取不到 cue 时同样兜底成
+  /// 0/0。挡掉的是**「压根没有窗」**，不是「窗很短」——判据在毫秒空间而显示截断到秒，
+  /// 所以一个真实存在的 0~0.4 秒片段会渲染成 `00:00:00 - 00:00:00`。那是秒级截断的
+  /// 真实结果（片段确实在第 0 秒），不是无中生有的伪信息，故不额外拦。
+  static String formatClipTimestamp(int? startMs, int? endMs) {
+    if (startMs == null || endMs == null) return '';
+    if (endMs <= startMs) return '';
+    return '${_clipClockToken(startMs)} - ${_clipClockToken(endMs)}';
+  }
+
+  /// 毫秒偏移 → `HH:MM:SS`（截断到秒；负值钳到 0）。
+  static String _clipClockToken(int ms) {
+    final int totalSeconds = (ms < 0 ? 0 : ms) ~/ 1000;
+    final String hh = (totalSeconds ~/ 3600).toString().padLeft(2, '0');
+    final String mm = ((totalSeconds % 3600) ~/ 60).toString().padLeft(2, '0');
+    final String ss = (totalSeconds % 60).toString().padLeft(2, '0');
+    return '$hh:$mm:$ss';
   }
 
   static String _singleGlossaryForDictionary(
@@ -815,6 +951,7 @@ class AnkiHandlebarOptions {
     '{pitch-accent-categories}',
     '{phonetic-transcriptions}',
     '{document-title}',
+    '{clip-timestamp}',
     '{card-image}',
     '{book-cover}',
     '{video-clip}',
@@ -925,6 +1062,7 @@ const Map<String, String> kAnkiMimeTypeByExtension = <String, String>{
   'woff2': 'font/woff2',
   'ttf': 'font/ttf',
   'otf': 'font/otf',
+  'ttc': 'font/collection',
   // ── 音频 ──
   'mp3': 'audio/mpeg',
   'm4a': 'audio/mp4',
@@ -987,7 +1125,11 @@ String mimeTypeForPath(String path) {
 String ankiDictionaryMediaCacheDirPath() =>
     '${Directory.systemTemp.path}/anki-media';
 
-/// 词典媒体在缓存目录中的文件名：`hibiki_dict_<sha1(dictionary NUL path)>.<ext>`。
+/// 词典媒体在缓存目录中的文件名：`fushi_dict_<sha1(dictionary NUL path)>.<ext>`。
+///
+/// 与 popup.js 注入的占位符 `fushi_dict_<序号>.<ext>` 同前缀但不会互相误伤：本函数
+/// 的中段恒为 40 位 sha1 hex，永远匹配不上 `fushi_dict_0.svg` 这种序号形态，
+/// [BaseAnkiRepository.buildMinedFields] 的 `replaceAll` 因此不会二次替换自己的产物。
 ///
 /// 哈希输入是 **词典名 + NUL(`\u0000`) 分隔 + 相对路径**（BUG-904）：只对 `path`
 /// 求哈希时，两本词典含同一相对路径的外字（例如都叫 `gaiji/参照.svg`）会算出同一
@@ -1007,7 +1149,7 @@ String ankiDictionaryMediaCacheFilename(String dictionary, String path) {
       ? path.substring(lastDot + 1)
       : 'bin';
   final digest = sha1.convert(utf8.encode('$dictionary\u0000$path')).toString();
-  return 'hibiki_dict_$digest.$ext';
+  return 'fushi_dict_$digest.$ext';
 }
 
 /// Kind of audio reference resolved by [WordAudioResolver] and handed to the
@@ -1184,14 +1326,38 @@ class AnkiErrorCode {
   /// 「连远端进程/代理而非真 AnkiConnect」时把无 charset 的 GBK/UTF-8 错误页经
   /// package:http 的 latin1 默认解码弄成乱码。OS 原文只进诊断日志（[MineOutcome.error]）。
   ///
-  /// `connectionRefused`：连接被拒（AnkiConnect 没在监听 / Anki 没开）。
-  /// `connectionTimeout`：连接/响应超时（[TimeoutException]）。
+  /// `connectionRefused`：**建连**就没成（AnkiConnect 没在监听 / Anki 没开 / 地址不通）。
+  /// `connectionTimeout`：**连上了但不应答**——TCP 握手成功、请求已发出，却等不到
+  ///   AnkiConnect 的回复。连接工厂把一切建连失败标成 `AnkiConnectPreDeliveryException`
+  ///   并归到 `connectionRefused`，所以这个码只剩这一种含义：那个端口上有程序在监听，
+  ///   但它不是 AnkiConnect（端口被别的程序占了），或者 Anki 卡住了。
   /// `httpError`：HTTP 层错误（http.ClientException，非超时非 socket）。
   /// `connectionUnknown`：其余无法分类的连接异常。
   static const String connectionRefused = 'ANKI_CONNECTION_REFUSED';
   static const String connectionTimeout = 'ANKI_CONNECTION_TIMEOUT';
   static const String httpError = 'ANKI_HTTP_ERROR';
   static const String connectionUnknown = 'ANKI_CONNECTION_UNKNOWN';
+
+  /// BUG-1988：互联远端制卡没有任何已配对设备可达。
+  /// 与本机 AnkiConnect 连接错误分开，让主 app 能提示用户启动对端 Fushi，
+  /// 或关闭「制卡到已配对设备」改为本机制卡。
+  static const String pairedDeviceUnreachable =
+      'ANKI_PAIRED_DEVICE_UNREACHABLE';
+
+  /// BUG-1900：配置的字段名**一个都不属于**当前笔记类型。
+  ///
+  /// AnkiConnect 按字段**名**匹配，不认识的名字被静默丢弃；而
+  /// `BaseAnkiRepository.fieldMappingsAfterFetch` 对非 Lapis 笔记类型直接沿用旧映射
+  /// （`return current.fieldMappings`），换了笔记类型字段名就全对不上。此前用户拿到的
+  /// 是 AnkiConnect 透传的 `cannot create note because it is empty` —— 既看不出是自己
+  /// 选错了笔记类型，也不知道该去哪儿改。
+  static const String fieldMappingMismatch = 'ANKI_FIELD_MAPPING_MISMATCH';
+
+  /// BUG-1900：笔记类型的**第一个字段**为空。
+  ///
+  /// Anki 的 `fields_check()` 只看首字段，空就拒收整张卡（服务端原文同样是
+  /// `cannot create note because it is empty`）。本地预检把它变成一句能照着做的话。
+  static const String firstFieldEmpty = 'ANKI_FIRST_FIELD_EMPTY';
 }
 
 sealed class AnkiFetchResult {

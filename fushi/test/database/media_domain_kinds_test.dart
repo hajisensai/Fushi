@@ -75,25 +75,44 @@ void main() {
   });
 
   group('ProfileMediaKind（media_type_profiles.media_type）', () {
-    test('dbValue 集合守卫：恰为 {epub, srtbook, audiobook, lyrics, video}', () {
+    test(
+        'dbValue 集合守卫：恰为 {epub, srtbook, audiobook, lyrics, video, '
+        'manga, game, browser}', () {
       expect(
         ProfileMediaKind.values.map((ProfileMediaKind k) => k.dbValue).toSet(),
-        <String>{'epub', 'srtbook', 'audiobook', 'lyrics', 'video'},
+        <String>{
+          'epub',
+          'srtbook',
+          'audiobook',
+          'lyrics',
+          'video',
+          // TODO-2936：漫画阅读器 / galgame hook 会话 / 浏览器扩展查词三个入口
+          // 的媒体类型绑定。
+          'manga',
+          'game',
+          'browser',
+        },
       );
       expect(ProfileMediaKind.epub.dbValue, 'epub');
       expect(ProfileMediaKind.srtbook.dbValue, 'srtbook');
       expect(ProfileMediaKind.audiobook.dbValue, 'audiobook');
       expect(ProfileMediaKind.lyrics.dbValue, 'lyrics');
       expect(ProfileMediaKind.video.dbValue, 'video');
+      expect(ProfileMediaKind.manga.dbValue, 'manga');
+      expect(ProfileMediaKind.game.dbValue, 'game');
+      expect(ProfileMediaKind.browser.dbValue, 'browser');
     });
 
-    test('tryParse：五个已知值命中，null/未知/它域串返 null 不抛', () {
+    test('tryParse：已知值命中，null/未知/它域串返 null 不抛', () {
       expect(ProfileMediaKind.tryParse('epub'), ProfileMediaKind.epub);
       expect(ProfileMediaKind.tryParse('srtbook'), ProfileMediaKind.srtbook);
       expect(
           ProfileMediaKind.tryParse('audiobook'), ProfileMediaKind.audiobook);
       expect(ProfileMediaKind.tryParse('lyrics'), ProfileMediaKind.lyrics);
       expect(ProfileMediaKind.tryParse('video'), ProfileMediaKind.video);
+      expect(ProfileMediaKind.tryParse('manga'), ProfileMediaKind.manga);
+      expect(ProfileMediaKind.tryParse('game'), ProfileMediaKind.game);
+      expect(ProfileMediaKind.tryParse('browser'), ProfileMediaKind.browser);
       expect(ProfileMediaKind.tryParse(null), isNull);
       // 'srt' 是合集/书架域的串（srtbook ≠ srt）、'book' 是活动/统计域的串。
       expect(ProfileMediaKind.tryParse('srt'), isNull);

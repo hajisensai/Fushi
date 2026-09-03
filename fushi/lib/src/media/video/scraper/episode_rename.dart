@@ -1,7 +1,7 @@
 /// 集显示名提案与批量改名（TODO-2491 数据层）。
 ///
-/// 与集级刮削（`episode_scrape_service.dart`）刻意分离：**自动刮削路径永不改
-/// 名**（对齐 BUG-1310 用户拍板——改名必须经用户确认）。本文件提供：
+/// 与元数据写入刻意分离：**自动路径永不改名**（对齐 BUG-1310 用户拍板——
+/// 改名必须经用户确认）。本文件提供：
 ///  - [proposeEpisodeDisplayName]：纯函数，集号 + 集名 → 展示名；
 ///  - [renameCollectionEpisodes]：批量改名服务，`dryRun: true` 只产出
 ///    旧名/新名对照表（供 UI 确认弹窗渲染），`dryRun: false` 逐条写穿

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'audiobook_health.dart';
 import 'audiobook_model.dart';
+import 'audiobook_local_files.dart';
 import 'audiobook_storage.dart';
 
 class AudiobookRepository {
@@ -60,25 +61,130 @@ class AudiobookRepository {
         bookKey, cues.map(AudioCue.toCompanion).toList());
   }
 
-  Future<void> saveAudiobook(Audiobook audiobook) async {
-    await _db.upsertAudiobook(_audiobookToCompanion(audiobook));
-    // 删除传播：重新导入同 bookKey 的有声书 → 清其 sync 删除墓碑，防「删了又加、墓碑
-    // 还在」误判（范式仿书/视频的插入清墓碑）。落库串走 core 的 SyncTombstoneKind。
+  // ── 窄写入：一次只改一件事 ───────────────────────────────────────
+  //
+  // BUG-1678：这里**故意没有**「写一整行 Audiobook」的入口。`upsertAudiobook`
+  // 是整行覆盖（companion 每列都是 `Value(...)`，没有 absent），凭空造一个模型
+  // 再写就会把本次没碰的列静默清空——「只换字幕」因此清掉了 audioPaths/audioRoot，
+  // 用户的音频消失。修法不是「记得先克隆一份基线」（那只是把地雷挪个位置），
+  // 而是**不给整行入口**：调用方只能说「换音频」「换字幕」「回写 health」，
+  // 每个动作只写自己那几列，想清空别的列都无从下手。
+
+  /// 保证 [bookKey] 有一行；已存在则原样不动。附加音频/字幕前先调它。
+  Future<void> ensureAudiobook(String bookKey) async {
+    await _db.ensureAudiobookRow(bookKey);
+    // 删除传播：重新导入同 bookKey 的有声书 → 清其 sync 删除墓碑，防「删了又加、
+    // 墓碑还在」误判（范式仿书/视频的插入清墓碑）。
     await _db.clearSyncDeletionTombstone(
-        SyncTombstoneKind.audiobook.dbValue, audiobook.bookKey);
-    debugPrint('[hibiki-audiobook] saveAudiobook bookKey=${audiobook.bookKey}');
+        SyncTombstoneKind.audiobook.dbValue, bookKey);
+  }
+
+  /// 换音频（唯一写音频两列的入口）。[audioPaths] 为落地后的绝对路径列表，
+  /// 顺序即 `AudioCue.audioFileIndex` 的含义。写入后 `audioRoot` 恒为 null：
+  /// 新音频一律文件列表模式，legacy 目录模式不得残留（否则读取端在 audioPaths
+  /// 断链时会回退去扫早已作废的旧目录）。
+  ///
+  /// BUG-1679：音频集合真的变了就把播放进度归零。`audiobook_pos_<bookKey>` 记的
+  /// 是**毫秒偏移**，只在它绑定的那一套音频上有意义；换一套后同一个数字指向的是
+  /// 另一段声音：
+  ///   * 超出新音频总时长 → [AudiobookPlayerController.load] 的恢复 seek 把播放器
+  ///     钉在 EOF，按播放立刻结束 —— 用户看到的是「音频不响」；
+  ///   * 落在时长内 → 起播点随机，followAudio 立刻把阅读器拽到那条 cue 所在的页
+  ///     —— 用户看到的是「乱跳页」。
+  /// 判据是数据本身（新旧集合不等），所以重复导入同一组音频不会误伤「听到哪儿了」。
+  /// 旧行不存在时也归零：bookKey 是 sanitize 后的书名，删书重导会拿到同一个 key，
+  /// 而 preferences 不随书删除，上一世的进度会原样复活。
+  Future<void> replaceAudio({
+    required String bookKey,
+    required List<String> audioPaths,
+  }) async {
+    await ensureAudiobook(bookKey);
+    final AudiobookRow? before = await _db.getAudiobookByBookKey(bookKey);
+    final bool audioChanged = before == null ||
+        before.audioRoot != null ||
+        !AudiobookStorage.sameAudioPathList(
+          _audioPathsOf(before),
+          audioPaths,
+        );
+
+    await _db.patchAudiobook(
+      bookKey,
+      AudiobooksCompanion(
+        audioPathsJson: Value(jsonEncode(audioPaths)),
+        audioRoot: const Value<String?>(null),
+      ),
+    );
+    if (audioChanged) {
+      await updatePositionMs(bookKey: bookKey, positionMs: 0);
+    }
+    debugPrint('[hibiki-audiobook] replaceAudio bookKey=$bookKey '
+        'files=${audioPaths.length} audioChanged=$audioChanged');
+  }
+
+  /// 换对齐字幕（唯一写 alignment 两列的入口）。
+  Future<void> replaceAlignment({
+    required String bookKey,
+    required String format,
+    required String path,
+  }) async {
+    await ensureAudiobook(bookKey);
+    await _db.patchAudiobook(
+      bookKey,
+      AudiobooksCompanion(
+        alignmentFormat: Value(format),
+        alignmentPath: Value(path),
+      ),
+    );
+  }
+
+  /// 回写 health 四列（唯一写 health 列的入口）。与 [updateHealthOverlay]
+  /// 的 pref overlay 是两回事：这里落的是 audiobooks 行上的持久值。
+  Future<void> writeHealth({
+    required String bookKey,
+    required AudiobookHealth health,
+  }) async {
+    await ensureAudiobook(bookKey);
+    final Audiobook carrier = Audiobook()..bookKey = bookKey;
+    health.packInto(carrier);
+    await _db.patchAudiobook(
+      bookKey,
+      AudiobooksCompanion(
+        healthKindRaw: Value(carrier.healthKindRaw),
+        matchRatePct: Value(carrier.matchRatePct),
+        healthMeasuredAt: Value(carrier.healthMeasuredAt),
+        healthReason: Value(carrier.healthReason),
+      ),
+    );
+  }
+
+  static List<String> _audioPathsOf(AudiobookRow row) {
+    final String? raw = row.audioPathsJson;
+    if (raw == null) return const <String>[];
+    return (jsonDecode(raw) as List<dynamic>).cast<String>();
   }
 
   /// [propagateDeletion]（默认 false）：true 时记一条 `audiobook` sync 删除墓碑，供同步
   /// 发布到远端标记、其他设备逐条确认后也删（对应删除弹窗「同步删除」）。false（含消费
   /// 远端删除标记路径）只删本机，绝不回写墓碑造成循环。app 层按 DeleteScope 传入。
-  Future<void> deleteAudiobook(
+  ///
+  /// [deleteLocalFiles]（默认 false）：true 时连用户自己登记的原始音频文件一起删
+  /// （[deleteAudiobookLocalFiles]，对应删除弹窗「同时删除本地文件」）。原件位置
+  /// 在行上，必须删行**前**快照。返回逐条删除结果，调用方负责记日志并告诉用户
+  /// 「N 个没删掉」——最常见的失败是这本正在播放、文件句柄被占用。
+  ///
+  /// 磁盘操作**全部**排在墓碑之后：DB 行是唯一真相源，删完行这本书对用户就已经
+  /// 消失了；持久目录回收与原件删除都是删完再打扫的尾活，Windows 上会因句柄占用
+  /// 抛 errno 32/145。把墓碑排在尾活后面，一次尾活失败就静默吞掉用户「从所有设备
+  /// 删除」的意图（与 [SrtBookRepository.delete] 同一纪律）。
+  Future<LocalFileDeleteReport> deleteAudiobook(
     String bookKey, {
     bool propagateDeletion = false,
+    bool deleteLocalFiles = false,
   }) async {
+    final Audiobook? before =
+        deleteLocalFiles ? await findByBookKey(bookKey) : null;
     // deleteAudiobookByBookKey 内部已先删 audioCues 再删 audiobooks。
     await _db.deleteAudiobookByBookKey(bookKey);
-    await AudiobookStorage.deletePersistDir(bookKey);
     if (propagateDeletion) {
       try {
         await _db.writeSyncDeletionTombstone(
@@ -89,6 +195,9 @@ class AudiobookRepository {
         // best-effort：记账失败不影响有声书已删。
       }
     }
+    await AudiobookStorage.deletePersistDir(bookKey);
+    if (before == null) return const LocalFileDeleteReport();
+    return deleteAudiobookLocalFiles(before.audioPaths);
   }
 
   // ── playback position (preferences) ────────────────────────────
@@ -158,8 +267,8 @@ class AudiobookRepository {
     required int ms,
   }) async {
     await _db.setPrefTyped('$_kDelayMsKeyPrefix$bookKey', ms);
-    await _db.setPrefTyped('$_kDelayAtMsKeyPrefix$bookKey',
-        DateTime.now().millisecondsSinceEpoch);
+    await _db.setPrefTyped(
+        '$_kDelayAtMsKeyPrefix$bookKey', DateTime.now().millisecondsSinceEpoch);
   }
 
   Future<double> readSpeed(String bookKey) async {
@@ -267,19 +376,7 @@ class AudiobookRepository {
     return ab;
   }
 
-  static AudiobooksCompanion _audiobookToCompanion(Audiobook ab) {
-    return AudiobooksCompanion(
-      bookKey: Value(ab.bookKey),
-      audioRoot: Value(ab.audioRoot),
-      audioPathsJson:
-          Value(ab.audioPaths != null ? jsonEncode(ab.audioPaths) : null),
-      alignmentFormat: Value(ab.alignmentFormat),
-      alignmentPath: Value(ab.alignmentPath),
-      healthKindRaw: Value(ab.healthKindRaw),
-      matchRatePct: Value(ab.matchRatePct),
-      healthMeasuredAt: Value(ab.healthMeasuredAt),
-      healthReason: Value(ab.healthReason),
-      followAudio: Value(ab.followAudio),
-    );
-  }
+  // 这里曾有一个 `_audiobookToCompanion(Audiobook)`：把整个模型摊成每列都是
+  // `Value(...)` 的 companion 去做整行覆盖。它随 `saveAudiobook` 一起删除——
+  // 只要这个函数还在，就总有人凭空造模型再写全行，把没碰的列清空（BUG-1678）。
 }

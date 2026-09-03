@@ -7,11 +7,12 @@ import 'package:fushi/src/media/external_provider.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart'
     as discovery;
+import 'package:fushi/src/pages/implementations/airing_calendar_page.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart';
 import 'package:fushi/utils.dart';
 
 /// Aggregated discovery port consumed by the page. Implementations may fan a
-/// request out to TMDB, AniList and Bangumi, but the UI receives one redacted
+/// request out to TMDB and AniList, but the UI receives one redacted
 /// partial-success result and does not depend on provider clients directly.
 abstract interface class VideoDiscoveryController {
   Future<ProviderBatchResult<discovery.VideoDiscoveryPage>> load(
@@ -50,6 +51,7 @@ class VideoDiscoveryPage extends StatefulWidget {
     this.actions = const VideoDiscoveryActions(),
     this.onOpenItem,
     this.imageResolver,
+    this.embedded = false,
     super.key,
   });
 
@@ -58,6 +60,10 @@ class VideoDiscoveryPage extends StatefulWidget {
   final VideoDiscoveryActions actions;
   final ValueChanged<discovery.VideoDiscoveryItem>? onOpenItem;
   final VideoDiscoveryImageResolver? imageResolver;
+
+  /// 嵌入下载中心资源页时，外层已经提供下载中心页头；隐藏本页自己的视频库
+  /// 导航页头，但保留搜索、筛选、发现列表与详情动作。
+  final bool embedded;
 
   @override
   State<VideoDiscoveryPage> createState() => _VideoDiscoveryPageState();
@@ -342,7 +348,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
       kind: DesktopContentKind.readerShelf,
       child: Column(
         children: <Widget>[
-          if (!isCupertinoPlatform(context)) _buildHeader(),
+          if (!widget.embedded && !isCupertinoPlatform(context)) _buildHeader(),
           _buildControls(),
           Expanded(child: _buildBody()),
         ],
@@ -350,8 +356,26 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
     );
   }
 
+  /// 放送日历（2026-08-21 迁入发现页）：条目直达发现详情，同一套 actions。
+  void _openCalendar() {
+    Navigator.push<void>(
+      context,
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => AiringCalendarPage(actions: widget.actions),
+      ),
+    );
+  }
+
   Widget _buildHeader() {
     final List<Widget> actions = <Widget>[
+      FushiIconButton(
+        key: const ValueKey<String>('video-discovery-open-calendar'),
+        icon: Icons.calendar_month_outlined,
+        tooltip: t.download_airing_calendar_title,
+        label: t.download_airing_calendar_title,
+        onTap: _openCalendar,
+      ),
       if (widget.actions.onOpenDownloads != null)
         FushiIconButton(
           key: const ValueKey<String>('video-discovery-open-downloads'),

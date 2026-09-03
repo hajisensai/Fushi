@@ -1,6 +1,25 @@
 // GENERATED-NOTE: extracted from video_fushi_page.dart (TODO-590 batch16).
 part of '../video_fushi_page.dart';
 
+/// 字幕的内容语言：用户对本视频手动指定（VideoBooks.language）> 当前字幕轨声明的
+/// language > 全局默认内容语言。三档全空 → null，字幕层退回历史兜底链（逐像素不变）。
+///
+/// 顺便登记为**查词来源语言**：在视频里查词时，词头是字幕里的那个词，语言由字幕
+/// 决定。这是个纯标量登记，不触发重建，所以放在 build 路径上是安全的；写在这里是
+/// 因为字幕轨可以中途切换（换轨即换语言），而这是唯一同时知道「视频 + 当前轨」的
+/// 地方。
+extension _VideoSubtitleLanguage on _VideoFushiPageState {
+  String? _resolveSubtitleLanguage(VideoPlayerController controller) {
+    final String? resolved = resolveContentLanguage(
+      explicit: _bookRow?.language,
+      metadata: controller.currentSubtitleLanguage,
+      globalDefault: appModel.prefsRepo.defaultContentLanguage,
+    );
+    appModel.currentLookupLanguage = resolved;
+    return resolved;
+  }
+}
+
 /// Video-layout / render-tree domain methods extracted via part-of (TODO-590
 /// batch16); shared private scope. Behaviour-preserving: every body is moved
 /// character-for-character with no edits — no `State.setState(...)` call lives in
@@ -31,6 +50,9 @@ part of '../video_fushi_page.dart';
 /// also stay in the main shell: they sit between `build` and [_buildVideoBody] and
 /// are not part of this contiguous render-tree run (cutting them would require
 /// splitting a non-contiguous subset).
+/// 无播放器时 [ValueListenableBuilder] 的常量占位（HDR 宿主窗恒未激活）。
+final ValueNotifier<bool> _kHdrHostInactive = ValueNotifier<bool>(false);
+
 extension _VideoLayout on _VideoFushiPageState {
   /// 视频本体：media_kit [Video] + 可点字幕 overlay。查词浮层栈不在这里渲染——它走
   /// 根 Overlay（[_syncPopupOverlay] / [_buildPopupOverlay]），以便全屏时浮在全屏
@@ -50,10 +72,13 @@ extension _VideoLayout on _VideoFushiPageState {
     // 两层主题嵌套：[AdaptiveVideoControls] 按平台互斥择一渲染（桌面读 Desktop
     // 主题、移动读 Material 主题），故同时提供两套互不干扰，让字幕/音轨/设置入口
     // 在桌面、移动、全屏三种场景都可达。嵌套顺序不影响——各自被对应平台 controls 读取。
-    // 'B' 切换字幕模糊（TODO-134）现已并入可重映射注册表（video scope），随其它视频键
-    // 一起经 media_kit 的 keyboardShortcuts 整表安装，不再需要本页内层的独立
-    // CallbackShortcuts；press-edge-only（includeRepeats:false）由
-    // buildVideoPlayerShortcutsFromRegistry 对该 action 保留。
+    // 'B' 切换字幕模糊（TODO-134）已并入可重映射注册表（video scope），随其它视频键
+    // 一起走**页级 press-time 单通道**（[_handleVideoKeyboardShortcut] →
+    // [resolveVideoKeyboardShortcut]，挂在 [_wrapVideoGamepadControls] 上），不再需要
+    // 本页内层的独立 CallbackShortcuts。media_kit 那层的 `keyboardShortcuts` 现在是
+    // 显式空表（见 controls_theme.part.dart）——它只包 `AdaptiveVideoControls` 子树，
+    // 够不到面板，正是 BUG-1864 的 scope≠mount 根因。「长按不连发」由
+    // [kVideoPressEdgeOnlyActions] 在那条通道上翻译成「重复沿不消费」。
     return VideoControlsThemePair(
       mobile: controlsTheme.mobile,
       desktop: controlsTheme.desktop,
@@ -61,7 +86,11 @@ extension _VideoLayout on _VideoFushiPageState {
       // Row[Expanded(Video), 面板列]，画面真挤窄、不被遮（见 [_videoWithSubtitlePanel]）。
       child: _videoWithSubtitlePanel(
         controller,
-        Video(
+        // HDR 直通：把 Video 的物理像素矩形喂给 runner 宿主窗（非 HDR 时只是记着，
+        // 进入直通那一刻就有正确矩形可用）。
+        HdrHostRectReporter(
+          onRect: controller.reportHdrHostRect,
+          child: Video(
           controller: videoController,
           // 用本页持有的 FocusNode 替换 Video 内置的匿名节点，以便覆盖层（对话框 /
           // bottom sheet / 文件选择器）关闭后能主动把键盘焦点还给它，恢复空格等内置
@@ -109,6 +138,7 @@ extension _VideoLayout on _VideoFushiPageState {
           onEnterFullscreen: _enterVideoNativeFullscreen,
           onExitFullscreen: _exitVideoNativeFullscreen,
         ),
+        ),
       ),
     );
   }
@@ -137,7 +167,63 @@ extension _VideoLayout on _VideoFushiPageState {
     // isFullscreen 判定不会被窗口侧重建覆写。
     return VideoControlsFocusGate(
       fullscreenRouteActive: _videoFullscreenActive,
-      child: _buildVideoControlsInner(state, controller),
+      child: _wrapVideoControlsBackKey(
+        _buildVideoControlsInner(state, controller),
+      ),
+    );
+  }
+
+  /// BUG-1862：把「返回上一级」键的兜底装在 controls builder 的**最外层**，覆盖那些
+  /// 挂在 media_kit controls 旁边、却不在它快捷键表作用域里的自建 overlay。
+  ///
+  /// 历史成因：当时视频快捷键是一张冻结的 activator 表，装在 media_kit 自己的
+  /// [CallbackShortcuts] 上，而那层只包住 media_kit 的 controls 子树；本页的设置 / 速度
+  /// / 章节侧栏、side rail、控制按钮 popover、布局编辑层都是本 builder 里 [Stack] 的
+  /// **兄弟节点**。侧栏打开时 `PanelFocusScope` 会把键盘焦点领进侧栏，于是 Esc 的冒泡
+  /// 路径根本不经过那张表，一路走到全局 back 把整页 pop 掉——用户看到「侧栏开着按 Esc，
+  /// 页面退了、侧栏还在」。本层是这些 overlay 的共同祖先，两种场景一并覆盖。
+  ///
+  /// **BUG-1864 之后那个根因已经在上游修掉**：整表上提到 [_wrapVideoGamepadControls] 的
+  /// press-time 单通道（窗口 `build()` 与全屏路由 `pageBuilder` 的唯一共同外层，也是
+  /// 面板的祖先），media_kit 那层只留一张显式空表。当年「面板持焦 ⇒ 够不着那张表」的
+  /// 缺口——包括这段注释原来记为「全屏模式下是已知缺口」的 push-aside 字幕跳转列表
+  /// （TODO-314）与剧集轨（TODO-638）——都由页级通道覆盖了。
+  ///
+  /// 本层因此**不再是 Esc 的唯一依靠，但也不是死代码**：它是页级通道的后代，冒泡先到
+  /// 这里，且判据比页级那条宽一档——页级通道在文本框持焦时按 [editableFocusClaimsKey]
+  /// 整条让位（裸 Esc 属于让位范围），本层不看文本框、照常吃 Esc 去关一层。于是「本
+  /// builder [Stack] 内某个兄弟层（侧栏等）的输入框里按 Esc 先关掉那一层」只有本层给得
+  /// 出。覆盖面仍以本 builder 的 [Stack] 为界：push-aside 字幕跳转列表与剧集轨由
+  /// [_videoWithSubtitlePanel] 包在 `Video` **外面**，是本 builder 的兄弟而非后代，它们
+  /// 的 Esc 走页级通道。两层的执行体是同一个 [_dismissTopForegroundLayer]，且本层只在
+  /// **真的关掉了一层**时消费，语义不会打架。
+  ///
+  /// 只在 [_dismissTopForegroundLayer] **真的关掉了一层**时消费按键；没有前台层可关时
+  /// 返回 [KeyEventResult.ignored] 原样放行，退全屏 / 退页仍走既有路径——不新增第二条
+  /// 退出语义，也不吞任何其它按键。文本框持焦时关闭物理键回退（与 `_handleGlobalBack`
+  /// 同款判据，避免 IME 打字误触，TODO-847）。
+  Widget _wrapVideoControlsBackKey(Widget child) {
+    return Focus(
+      // 纯观察层：不夺焦、不进 Tab 遍历，只在键盘事件冒泡路上看一眼。
+      canRequestFocus: false,
+      skipTraversal: true,
+      onKeyEvent: (FocusNode _, KeyEvent event) {
+        if (event is! KeyDownEvent) return KeyEventResult.ignored;
+        final PhysicalKeyboardKey? imeFallbackPhysicalKey =
+            focusedEditableText() == null ? event.physicalKey : null;
+        final ShortcutAction? action =
+            appModel.shortcutRegistry.resolveKeyboard(
+          event.logicalKey,
+          modifiers: activeModifierKeys(),
+          scope: ShortcutScope.universal,
+          physicalKey: imeFallbackPhysicalKey,
+        );
+        if (action != ShortcutAction.globalBack) return KeyEventResult.ignored;
+        return _dismissTopForegroundLayer()
+            ? KeyEventResult.handled
+            : KeyEventResult.ignored;
+      },
+      child: child,
     );
   }
 
@@ -214,6 +300,14 @@ extension _VideoLayout on _VideoFushiPageState {
           _controlLayoutNotifier,
           _subtitleListVisible,
           _episodeListVisible,
+          // BUG-1798：查词浮层也进 theme 的 `hideMouseOnControlsRemoval` 判据
+          // （controls_theme.part.dart），同 r5 的教训——不并进来就是「值改了、theme 不重建」，
+          // 弹窗一开控制条 theme 仍是上一轮的 true，光标照样被 fork 那层 cursor:none 吃掉。
+          _lookupOverlayActive,
+          // 自定义「快捷键」按钮绑定：改绑后按钮的图标 / tooltip / 执行体全变，且
+          // 「从未绑定变成已绑定」还决定它显不显示（见 `_shouldRenderControlItem`）。
+          // 不并进来就是「设置里改了、播放器上纹丝不动」。
+          _customActionBindingsNotifier,
         ],
       ),
       builder: (BuildContext context, _) {
@@ -323,6 +417,10 @@ extension _VideoLayout on _VideoFushiPageState {
                       Positioned.fill(
                         child: VideoSubtitleOverlay(
                           controller: controller,
+                          // 字幕字体链的语言：用户对本视频手动指定 > 当前字幕轨
+                          // 声明的 language > 全局默认内容语言。三档全空时字幕层
+                          // 退回历史兜底链，渲染逐像素不变。
+                          contentLanguage: _resolveSubtitleLanguage(controller),
                           onCharTap: _handleSubtitleLookupTap,
                           // TODO-756a 桌面 Shift-鼠标悬停查词：走去重入口 [_handleSubtitleHoverLookup]
                           // →（[_handleSubtitleLookupTap] → [_lookupAt]，内部已 _immersiveAllowsLookup
@@ -448,6 +546,7 @@ extension _VideoLayout on _VideoFushiPageState {
                               onClose: _hideVideoControlEditOverlay,
                               // TODO-554：触屏保留「设置」按钮入口不可移除。
                               isTouchControls: !_isDesktopVideoControls,
+                              customActionBindings: _customActionBindings,
                             ),
                           );
                         },

@@ -1,9 +1,9 @@
-/// 框选识别的 JS 契约：窗口文档必须暴露 `__mangaSetRescanMode` 门控、
+/// 「重新识别框选区域」的 JS 契约：窗口文档必须暴露 `__mangaSetRescanMode` 门控、
 /// `onMangaBoxSelected` 回传、页图像素坐标换算所需的 data 属性，以及模式内对
 /// 查词 tap / swipe 翻页 / 滚轮翻页的旁路。
 ///
-/// 这些是 Dart 侧唯一能验证的 JS 行为面：坐标换算错一位就回写到别的页，手势旁路
-/// 漏一处就框选途中被翻页/查词抢走。
+/// 这些是 Dart 侧唯一能验证的 JS 行为面：坐标换算错一位就把别的页的区域换掉，
+/// 手势旁路漏一处就框选途中被翻页/查词抢走。
 library;
 
 import 'dart:ui';
@@ -143,12 +143,13 @@ void main() {
     expect(document, contains('if (RESCAN) _rescanClear();'));
   });
 
-  test('webtoon 同样可用（模式内禁原生触摸滚动，否则竖滚抢拖框手势）', () {
+  test('webtoon 同样可用（原生触摸滚动全程关闭，竖滚抢不走拖框手势）', () {
     final String document = _document(mode: MangaReadingMode.webtoon);
     expect(document, contains('window.__mangaSetRescanMode'));
-    expect(
-      document,
-      contains(r"document.body.style.touchAction = RESCAN ? 'none' : '';"),
-    );
+    // BUG-1701 起原生手势由 CSS 全程归 JS：浏览器在第一个 touchstart 就按当时的
+    // touch-action 锁定手势，模式内再切换对已开始的手势无效。框选因此不再需要
+    // 自己开关 touch-action，那个特例必须保持消除。
+    expect(document, contains('touch-action:none;'));
+    expect(document, isNot(contains('document.body.style.touchAction')));
   });
 }

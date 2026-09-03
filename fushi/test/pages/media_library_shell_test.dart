@@ -92,14 +92,14 @@ void main() {
     WidgetTester tester,
     MediaLibraryViewKind kind,
   ) async {
-    final FushiSegmentedStrip<MediaLibraryViewKind> strip = tester.widget(
-      find.byType(FushiSegmentedStrip<MediaLibraryViewKind>),
+    final FushiSectionTabBar<MediaLibraryViewKind> strip = tester.widget(
+      find.byType(FushiSectionTabBar<MediaLibraryViewKind>),
     );
-    strip.onChanged(kind);
+    strip.onChanged!(kind);
     await tester.pumpAndSettle();
   }
 
-  testWidgets('分段条包在 FushiAdjustableSegmented 里（裸 SegmentedButton 即转红）',
+  testWidgets('分区导航包在 FushiAdjustableSegmented 里（裸 TabBar 即转红）',
       (WidgetTester tester) async {
     await tester.pumpWidget(harness(<MediaLibraryViewSpec>[
       spec(0, MediaLibraryViewKind.library, '书架'),
@@ -110,14 +110,14 @@ void main() {
     expect(
       find.byType(FushiAdjustableSegmented<MediaLibraryViewKind>),
       findsOneWidget,
-      reason: '方向焦点控制器只遍历已注册 target；裸 SegmentedButton 会被整个跳过，'
+      reason: '方向焦点控制器只遍历已注册 target；裸 TabBar 会被整个跳过，'
           '手柄/键盘用户切不了视图',
     );
-    // 且它必须真的包着本壳的分段条（不是树里别处碰巧有一个）。
+    // 且它必须真的包着本壳的分区导航（不是树里别处碰巧有一个）。
     expect(
       find.descendant(
         of: find.byType(FushiAdjustableSegmented<MediaLibraryViewKind>),
-        matching: find.byType(FushiSegmentedStrip<MediaLibraryViewKind>),
+        matching: find.byType(FushiSectionTabBar<MediaLibraryViewKind>),
       ),
       findsOneWidget,
     );
@@ -217,4 +217,174 @@ void main() {
         findsNothing);
     expect(probe.gotRealNavigation[0], isFalse);
   });
+
+  // -------------------------------------------------------------------------
+  // 导航所有权（BUG-1871 复审）
+  // -------------------------------------------------------------------------
+  //
+  // 空态引导按钮要把用户从「压在壳上面的页面」带回壳里的某个视图。此前这一步的
+  // 正确性被硬编码成「调用页正好是壳上面唯一一层路由」：调用页先 pop 自己再调
+  // select。第二个调用点（发现详情页 → 全源搜索页）就是两层，pop 一层后详情页
+  // 仍盖在壳上面，用户看不到切过去的视图。现在 pop 收进 [MediaLibraryShellScope
+  // .select]，以壳自己的路由为界一次弹到底，调用方压了几层都对。
+
+  MediaLibraryViewSpec pushingSpec(MediaLibraryViewKind kind, String label) {
+    return MediaLibraryViewSpec(
+      kind: kind,
+      label: label,
+      builder: (BuildContext context, Widget navigation) => Column(
+        children: <Widget>[
+          navigation,
+          Builder(
+            builder: (BuildContext inner) => TextButton(
+              onPressed: () => Navigator.of(inner).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => _PushedPage(
+                    label: '第一层',
+                    onOpenSources: MediaLibraryShellScope.maybeOf(inner)
+                        ?.actionFor(MediaLibraryViewKind.sources),
+                  ),
+                ),
+              ),
+              child: const Text('push'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  testWidgets('压一层路由：切视图时壳自己把它弹掉', (WidgetTester tester) async {
+    await tester.pumpWidget(harness(<MediaLibraryViewSpec>[
+      pushingSpec(MediaLibraryViewKind.library, '书架'),
+      spec(1, MediaLibraryViewKind.sources, '导入'),
+    ]));
+    await tester.tap(find.text('push'));
+    await tester.pumpAndSettle();
+    expect(find.text('第一层'), findsOneWidget);
+
+    await tester.tap(find.text('去来源'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('第一层'), findsNothing, reason: '壳上面的路由必须被弹掉');
+    expect(probe.gotRealNavigation[1], isTrue, reason: '壳切到了「导入」视图');
+  });
+
+  testWidgets('压两层路由：同一个调用点照样一次弹干净（第二个入口不需要另写一套）',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(harness(<MediaLibraryViewSpec>[
+      pushingSpec(MediaLibraryViewKind.library, '书架'),
+      spec(1, MediaLibraryViewKind.sources, '导入'),
+    ]));
+    await tester.tap(find.text('push'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('再推一层'));
+    await tester.pumpAndSettle();
+    expect(find.text('第一层+'), findsOneWidget);
+
+    // 最上面那一层的按钮（下面的路由仍在树里）。
+    await tester.tap(find.text('去来源').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('第一层'), findsNothing);
+    expect(find.text('第一层+'), findsNothing);
+    expect(probe.gotRealNavigation[1], isTrue);
+  });
+
+  testWidgets('actionFor：壳没有声明该视图时返回 null（判据是「视图在」不是「壳在」）',
+      (WidgetTester tester) async {
+    late MediaLibraryShellScope scope;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: MediaLibraryShell(
+          focusIdPrefix: 'test-library-view',
+          views: <MediaLibraryViewSpec>[
+            MediaLibraryViewSpec(
+              kind: MediaLibraryViewKind.library,
+              label: '书架',
+              builder: (BuildContext context, Widget navigation) => Builder(
+                builder: (BuildContext inner) {
+                  scope = MediaLibraryShellScope.maybeOf(inner)!;
+                  return const SizedBox.shrink();
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    ));
+    await tester.pump();
+
+    expect(scope.actionFor(MediaLibraryViewKind.sources), isNull,
+        reason: '没有「导入」视图时必须给 null——select 对它是静默忽略，'
+            '照「壳在」渲染出来的按钮点了什么都不会发生');
+    expect(scope.actionFor(MediaLibraryViewKind.library), isNotNull);
+  });
+
+  testWidgets('触屏横滑按声明序切相邻视图，端头不越界', (WidgetTester tester) async {
+    // 叶子文案与页签文案错开：页签条上也有一份 label 文本，撞名会让 finder 歧义。
+    MediaLibraryViewSpec leafSpec(
+      MediaLibraryViewKind kind,
+      String tabLabel,
+      String leafLabel,
+    ) {
+      return MediaLibraryViewSpec(
+        kind: kind,
+        label: tabLabel,
+        builder: (BuildContext context, Widget navigation) => Column(
+          children: <Widget>[navigation, Text(leafLabel)],
+        ),
+      );
+    }
+
+    await tester.pumpWidget(harness(<MediaLibraryViewSpec>[
+      leafSpec(MediaLibraryViewKind.library, '书架', 'leaf-library'),
+      leafSpec(MediaLibraryViewKind.browse, '浏览', 'leaf-browse'),
+    ]));
+    await tester.pump();
+
+    await tester.fling(find.text('leaf-library'), const Offset(-260, 0), 1000);
+    await tester.pumpAndSettle();
+    expect(find.text('leaf-browse'), findsOneWidget);
+    expect(find.text('leaf-library'), findsNothing);
+
+    await tester.fling(find.text('leaf-browse'), const Offset(-260, 0), 1000);
+    await tester.pumpAndSettle();
+    expect(find.text('leaf-browse'), findsOneWidget, reason: '末位继续向左甩不越界');
+
+    await tester.fling(find.text('leaf-browse'), const Offset(260, 0), 1000);
+    await tester.pumpAndSettle();
+    expect(find.text('leaf-library'), findsOneWidget);
+  });
+}
+
+/// 压在壳上面的页面：可以再推一层，也可以按引导按钮切壳视图。
+class _PushedPage extends StatelessWidget {
+  const _PushedPage({required this.label, required this.onOpenSources});
+
+  final String label;
+  final VoidCallback? onOpenSources;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        body: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(label),
+            if (onOpenSources != null)
+              TextButton(onPressed: onOpenSources, child: const Text('去来源')),
+            TextButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => _PushedPage(
+                    label: '$label+',
+                    onOpenSources: onOpenSources,
+                  ),
+                ),
+              ),
+              child: const Text('再推一层'),
+            ),
+          ],
+        ),
+      );
 }

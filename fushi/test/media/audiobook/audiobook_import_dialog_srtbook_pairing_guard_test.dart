@@ -23,9 +23,12 @@ void main() {
     expect(src.existsSync(), isTrue, reason: '源文件必须存在（相对 fushi/ 包根）');
     final String code = src.readAsStringSync();
 
-    final int saveIdx = code.indexOf('saveAudiobook(audiobook)');
+    // BUG-1678 之后写有声书行不再是一次整行 saveAudiobook，而是 ensure + 若干
+    // 窄动作（replaceAlignment / replaceAudio / writeHealth）。锚点跟着换成
+    // 「建行」那一步——它恒在最前，配对仍必须排在它之后。
+    final int saveIdx = code.indexOf('ensureAudiobook(widget.bookKey)');
     expect(saveIdx, greaterThanOrEqualTo(0),
-        reason: '导入路径必须仍调用 saveAudiobook(audiobook)');
+        reason: '导入路径必须先保证 audiobooks 行存在（ensureAudiobook）');
 
     // 匹配调用点（带 '('），避免命中 import 的 show 子句（'writeEpubBackedSrtBook;'）。
     final int pairIdx = code.indexOf('writeEpubBackedSrtBook(');
@@ -33,7 +36,7 @@ void main() {
         reason: 'TODO-1288：EPUB-backed 有声书导入必须补写配对 srt_books 行 '
             '（调用 writeEpubBackedSrtBook），否则互联同步认不出有声书');
     expect(pairIdx, greaterThan(saveIdx),
-        reason: '配对 SrtBook 必须发生在 saveAudiobook 之后');
+        reason: '配对 SrtBook 必须发生在有声书行落地之后');
 
     // 判据必须与 v29/v37 backfill 同源：EPUB-backed（epub_books 存在）且非 audioOnly。
     expect(code.contains('getEpubBook(widget.bookKey)'), isTrue,

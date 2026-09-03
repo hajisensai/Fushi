@@ -146,9 +146,15 @@ internal class MihonExtensionLoader(private val context: Context) {
                     .getDeclaredConstructor()
                     .newInstance()
             } catch (error: Throwable) {
+                // 把不透明的实例化失败变成可诊断的错误：附上链式根因（通常是
+                // NoClassDefFoundError / ClassNotFoundException，指明扩展需要而
+                // host 未提供的类），否则用户只看到「无法安装」而无从判断原因。
+                // reflective 调用会把真异常包在 InvocationTargetException 里，故
+                // 走到最深一层 cause。
                 throw MihonHostException(
                     "LOAD_FAILED",
-                    "Unable to instantiate extension source $className",
+                    "Unable to instantiate extension source $className: " +
+                        describeCauseChain(error),
                     error,
                 )
             }

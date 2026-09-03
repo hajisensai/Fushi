@@ -1,6 +1,11 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:fushi_audio/fushi_audio.dart'
+    show kDefaultReadingIdleTimeout, kStudyIdleTimeoutPrefKey;
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/dictionary/dict_style_rules.dart';
+import 'package:fushi/src/media/discovery/opds_server_config.dart';
+import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/media/torrent/torznab_client.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
@@ -8,65 +13,34 @@ import 'package:fushi/src/media/video/download/video_download_path_mapping.dart'
 import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi/src/media/video/subtitle/open_subtitles_client.dart';
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
+import 'package:fushi/src/media/video/video_hdr_output.dart'
+    show VideoHdrOutputMode, kVideoHdrOutputPref;
 import 'package:fushi/src/media/video/video_control_customization.dart';
+import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
+import 'package:fushi/src/media/video/video_lua_capability.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
+// 迁移判据要用「这个存量代理地址归一得出来吗」，与 applyAppProxy 同一份实现，
+// 不在这里重写一遍（重写就会漂移，而漂移的后果是存量用户升级即断网）。
+import 'package:fushi/src/utils/net/app_proxy.dart'
+    show
+        appUserProxyModeReader,
+        appUserProxyPasswordReader,
+        appUserProxyReader,
+        appUserProxyUsernameReader,
+        kProxyModeAuto,
+        kProxyModeDirect,
+        kProxyModeManual,
+        normalizeUserProxyHostPort;
 import 'package:fushi/src/mining/immersion_mining_request.dart'
-    show MiningAnimatedFormat, VideoMiningImageMode;
+    show MiningAnimatedFormat, MiningStillFormat, VideoMiningImageMode;
 import 'package:fushi/src/models/audio_source_config.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart'
     show MiningMediaCompression;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/update_check_cache.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
-
-enum DesktopClipboardWindowMode {
-  normal('normal'),
-  lookup('lookup'),
-  always('always');
-
-  const DesktopClipboardWindowMode(this.storageValue);
-
-  final String storageValue;
-
-  static DesktopClipboardWindowMode fromStorage(String value) {
-    for (final DesktopClipboardWindowMode mode
-        in DesktopClipboardWindowMode.values) {
-      if (mode.storageValue == value) return mode;
-    }
-    return DesktopClipboardWindowMode.normal;
-  }
-}
-
-/// 剪贴板查词去向（spec 2026-07-10 剪贴板独立弹窗）：
-/// panel = 常驻悬浮面板（覆盖窗第二实例，仅 Windows，**默认**——用户 2026-07-10
-/// 拍板：默认独立窗口而非主窗口）；main = 主窗查词 tab；transient = 光标处
-/// 瞬态弹卡（复用全局查词覆盖窗，仅 Windows）。
-/// 未知/空存值回退 panel（=默认）。非 Windows 平台覆盖窗不可用，去向路由
-/// （resolveDesktopLookupConsumer）自动退回主窗 tab，行为不变。
-enum DesktopClipboardDestination {
-  main('main'),
-  panel('panel'),
-  transient('transient'),
-
-  /// 真透明剪切板文字窗：剪贴板文本落进逐像素透明的悬浮文字窗（复用
-  /// FloatingLyricWindow 第二实例，text-only），背景默认全透只露实心文字，点字
-  /// 弹瞬态查词卡。VN/游戏 + Textractor 自动复制场景。Windows-only。
-  textWindow('textWindow');
-
-  const DesktopClipboardDestination(this.storageValue);
-
-  final String storageValue;
-
-  static DesktopClipboardDestination fromStorage(String value) {
-    for (final DesktopClipboardDestination d
-        in DesktopClipboardDestination.values) {
-      if (d.storageValue == value) return d;
-    }
-    return DesktopClipboardDestination.panel;
-  }
-}
 
 /// 视频画面缩放/比例模式（作用于 Flutter 层 [Video] widget 的 [BoxFit]，TODO-152 子B）。
 ///
@@ -136,6 +110,22 @@ class PreferencesRepository extends ChangeNotifier {
     DandanplayConfig.current = DandanplayConfig.decode(
       getPref('video_danmaku_config', defaultValue: '') as String,
     );
+    _installAppProxyReaders();
+  }
+
+  /// 把进程级代理读取器接到本仓库上。**绑定点必须是「偏好变得可读的那一刻」**，不是
+  /// 某一个调用点：以前只有 `AppModel.initialise()` 绑，而弹窗词典进程
+  /// （`AppModel.initialiseForDictionaryPopup`）同样建了本仓库、同样读了偏好，却没绑，
+  /// 于是那个进程整段生命周期都落在 [kProxyModeUnresolved] 兜底上——选了「直连」的用户
+  /// 在弹窗里照样走系统代理（哨兵表达不了 direct）。绑在这里，任何读得到偏好的入口都
+  /// 自动拿到用户的真实选择，不必各自记得补一行。
+  ///
+  /// 读取器是闭包而非快照：设置页改完立刻生效，`findProxy` 请求时才求值。
+  void _installAppProxyReaders() {
+    appUserProxyReader = () => updateCustomProxy;
+    appUserProxyModeReader = () => networkProxyMode;
+    appUserProxyUsernameReader = () => networkProxyUsername;
+    appUserProxyPasswordReader = () => networkProxyPassword;
   }
 
   Map<String, String> get prefsSnapshot =>
@@ -297,6 +287,26 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ── 内容语言（内容字体链）────────────────────────────────────────────
+
+  /// **全局默认内容语言**（BCP-47，如 `ja` / `zh-Hant`）。空串 = 未设置。
+  ///
+  /// 它是内容字体链优先级里的第三档，兜在资源级之后：
+  /// `资源手动指定 > 内容自带元数据 > 本项 > 硬编码兜底链`（见
+  /// `content_font_chain.dart` 的 [resolveContentLanguage]）。
+  ///
+  /// 存在的理由：前两档覆盖不全——外挂 SRT 不带语言标记、自制 EPUB 常缺
+  /// `dc:language`、hook 出来的 galgame 文本更没有任何声明。逐个资源手动指定能解
+  /// 决，但用户装的内容通常以某一种语言为主，给一个默认值比让他点几十次省事。
+  /// 默认空串而不是 `ja`：本仓不做「内容恒为日语」这种全局假设。
+  String get defaultContentLanguage =>
+      getPref('default_content_language', defaultValue: '') as String;
+
+  Future<void> setDefaultContentLanguage(String language) async {
+    await setPref('default_content_language', language);
+    notifyListeners();
+  }
+
   // ── 库页排序方式（排序交互重设计 2026-07-12）──────────────────────────
 
   /// 书架排序方式 `.name`（recent/title/imported）。默认 recent（=历史序，现状零变化）。
@@ -360,6 +370,24 @@ class PreferencesRepository extends ChangeNotifier {
 
   Future<void> setShowRemoteEntries(bool value) async {
     await setPref('show_remote_entries', value);
+    notifyListeners();
+  }
+
+  // ── Jellyfin / Emby 媒体服务器 ───────────────────────────────────────
+
+  /// BUG-1891：进视频页（含切回视频 tab）时是否**自动**向已登录的 Jellyfin/Emby
+  /// 服务器枚举条目。
+  ///
+  /// **默认 true**——绝大多数用户的服务器是自建小库，几百到几千条，自动列出正是他们
+  /// 要的体验，改默认等于把所有人的远端卡片关掉去迁就少数人（Never break userspace）。
+  /// 关掉之后进页面一个请求都不发，只复用上一次拉到的清单；要更新走视频页下拉刷新
+  /// （手动 = 用户自己按的，风控无从抱怨）。这条开关只管 Jellyfin/Emby：互联对端与
+  /// 云盘清单是自家后端，没有这种滥用检测问题，仍归 [showRemoteEntries] 管。
+  bool get jellyfinAutoListVideos =>
+      getPref('jellyfin_auto_list_videos', defaultValue: true) as bool;
+
+  Future<void> setJellyfinAutoListVideos(bool value) async {
+    await setPref('jellyfin_auto_list_videos', value);
     notifyListeners();
   }
 
@@ -457,30 +485,7 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ── desktop clipboard lookup ─────────────────────────────────────────
-
-  /// 桌面剪贴板查词是否开启。默认 true：galgame UX 统一后，剪贴板 / galgame 台词都走同一条
-  /// 查词去向路由（默认落悬浮查词面板），故桌面开箱即用无需先手动开开关。
-  bool get desktopClipboardEnabled =>
-      getPref('desktop_clipboard_enabled', defaultValue: true) as bool;
-
-  Future<void> setDesktopClipboardEnabled(bool value) async {
-    await setPref('desktop_clipboard_enabled', value);
-    notifyListeners();
-  }
-
-  /// 剪切板复制后是否自动查词（默认 true=保持现状）。false 时剪切板面板只显示
-  /// 复制到的句子文字（逐字可点），不自动 [searchDictionary]、不弹释义、不朗读；
-  /// 用户点句中字才手动查（走面板既有 panelSentenceLookup 桥）。总开关
-  /// [desktopClipboardEnabled] 仍决定「是否监听剪切板」，本开关只决定「监听到之后
-  /// 自不自动查词」，两者正交。
-  bool get desktopClipboardAutoLookup =>
-      getPref('desktop_clipboard_auto_lookup', defaultValue: true) as bool;
-
-  Future<void> setDesktopClipboardAutoLookup(bool value) async {
-    await setPref('desktop_clipboard_auto_lookup', value);
-    notifyListeners();
-  }
+  // ── desktop global lookup ────────────────────────────────────────────
 
   // TODO-1030 M0 — 全局查词（应用外）是否抓取选中文本周围的上下文句。默认 false：
   // 抓取要读前台应用的 UIA 文本，隐私敏感，用户显式开启才启用；关闭时全局查词只用
@@ -493,103 +498,15 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  bool get desktopClipboardAlwaysOnTop =>
-      desktopClipboardWindowMode != DesktopClipboardWindowMode.normal;
-
-  Future<void> setDesktopClipboardAlwaysOnTop(bool value) async {
-    await setDesktopClipboardWindowMode(
-      value
-          ? DesktopClipboardWindowMode.lookup
-          : DesktopClipboardWindowMode.normal,
-    );
-  }
-
-  DesktopClipboardWindowMode get desktopClipboardWindowMode {
-    final String saved = getPref(
-      'desktop_clipboard_window_mode',
-      defaultValue: '',
-    ) as String;
-    if (saved.isNotEmpty) {
-      return DesktopClipboardWindowMode.fromStorage(saved);
-    }
-    final bool legacyAlwaysOnTop =
-        getPref('desktop_clipboard_always_on_top', defaultValue: false) as bool;
-    return legacyAlwaysOnTop
-        ? DesktopClipboardWindowMode.lookup
-        : DesktopClipboardWindowMode.normal;
-  }
-
-  Future<void> setDesktopClipboardWindowMode(
-    DesktopClipboardWindowMode value,
-  ) async {
-    await setPref('desktop_clipboard_window_mode', value.storageValue);
-    notifyListeners();
-  }
-
-  DesktopClipboardDestination get desktopClipboardDestination =>
-      DesktopClipboardDestination.fromStorage(getPref(
-        'desktop_clipboard_destination',
-        defaultValue: '',
-      ) as String);
-
-  Future<void> setDesktopClipboardDestination(
-    DesktopClipboardDestination value,
-  ) async {
-    await setPref('desktop_clipboard_destination', value.storageValue);
-    notifyListeners();
-  }
-
-  // spec §6 真机修正（2026-07-10 第二轮）：透明机制改整窗 LWA_ALPHA（真透视，
-  // 整窗含文字统一变淡）。85% 是「能看清底下游戏 + 面板正文可读」的平衡点；
-  // 滑杆 50%-100% 可调。
-  final double defaultClipboardPanelOpacity = 0.85;
-
-  double get clipboardPanelOpacity => getPref('clipboard_panel_opacity',
-      defaultValue: defaultClipboardPanelOpacity) as double;
-
-  Future<void> setClipboardPanelOpacity(double value) async {
-    await setPref('clipboard_panel_opacity', value);
-    notifyListeners();
-  }
-
-  /// 真透明剪切板文字窗的**背景**不透明度。与 [clipboardPanelOpacity]（整窗
-  /// LWA_ALPHA）不同：这里只影响窗口背景 alpha，文字始终实心。**默认 1.0 = 黑底**
-  /// （用户实测拍板「先一律默认黑底白字」——纯透明+跟随主题的深色字在黑底上看不清）；
-  /// 想要真透明把滑杆拉到 0（或点顶栏一键透明 ◐），文字始终白色实心。
-  double get clipboardTextWindowBgOpacity => getPref(
-        'clipboard_text_window_bg_opacity',
-        defaultValue: 1.0,
-      ) as double;
-
-  Future<void> setClipboardTextWindowBgOpacity(double value) async {
-    await setPref('clipboard_text_window_bg_opacity', value);
-    notifyListeners();
-  }
-
-  /// 面板窗位置/尺寸记忆，格式 `x,y,w,h`（逻辑像素）；空 = 从未摆放（用默认位）。
-  String get clipboardPanelRect =>
-      getPref('clipboard_panel_rect', defaultValue: '') as String;
-
-  Future<void> setClipboardPanelRect(String value) async {
-    await setPref('clipboard_panel_rect', value);
-    notifyListeners();
-  }
-
-  bool get clipboardPanelPinned =>
-      getPref('clipboard_panel_pinned', defaultValue: true) as bool;
-
-  Future<void> setClipboardPanelPinned(bool value) async {
-    await setPref('clipboard_panel_pinned', value);
-    notifyListeners();
-  }
-
-  /// 防截屏（剪贴板面板，Windows）—— 面板窗设 SetWindowDisplayAffinity
+  /// 防截屏（桌面查词浮窗，Windows）—— 覆盖窗设 SetWindowDisplayAffinity
   /// (WDA_EXCLUDEFROMCAPTURE)，对用户可见但从截图 / 录屏 / 屏幕共享排除。
-  /// 默认 false（用户要求默认关闭，2026-07；需要时面板栏 🛡 按钮或设置里打开）。
-  bool get clipboardPanelBlockCapture =>
+  /// 默认 false（用户要求默认关闭，2026-07）。
+  /// 存储键 `clipboard_panel_block_capture` 是历史名（该偏好最初随剪贴板面板引入，
+  /// 面板已删；持久化键冻结不追改，避免用户已存的开关值丢失）。
+  bool get lookupBlockCapture =>
       getPref('clipboard_panel_block_capture', defaultValue: false) as bool;
 
-  Future<void> setClipboardPanelBlockCapture(bool value) async {
+  Future<void> setLookupBlockCapture(bool value) async {
     await setPref('clipboard_panel_block_capture', value);
     notifyListeners();
   }
@@ -662,6 +579,37 @@ class PreferencesRepository extends ChangeNotifier {
 
   void setOverlayLookupMaxHeight(double height) async {
     await setPref('overlay_lookup_max_height', height);
+    notifyListeners();
+  }
+
+  // 游戏内查词卡（galgame hook 直接贴进游戏画面的那张）是**第三个形态**。它与 app 外
+  // 覆盖窗曾共用 overlay 那组键，于是「游戏里合适」和「桌面上合适」只能二选一——真机上
+  // 表现为一个过小、另一个过大。合适尺寸本就不同：覆盖窗浮在整块桌面上，游戏内卡片要
+  // 挤在游戏客户区里且不能遮住正文，所以给它自己的键。默认同样 independent=false，
+  // 跟随 app 内共享值，解锁后才用自己的宽高（解锁瞬间不跳尺寸）。
+  bool get galCardLookupIndependentSize =>
+      getPref('gal_card_lookup_independent_size', defaultValue: false) as bool;
+
+  Future<void> setGalCardLookupIndependentSize(bool value) async {
+    await setPref('gal_card_lookup_independent_size', value);
+    notifyListeners();
+  }
+
+  double get galCardLookupMaxWidth =>
+      getPref('gal_card_lookup_max_width', defaultValue: defaultPopupMaxWidth)
+          as double;
+
+  void setGalCardLookupMaxWidth(double width) async {
+    await setPref('gal_card_lookup_max_width', width);
+    notifyListeners();
+  }
+
+  double get galCardLookupMaxHeight =>
+      getPref('gal_card_lookup_max_height', defaultValue: defaultPopupMaxHeight)
+          as double;
+
+  void setGalCardLookupMaxHeight(double height) async {
+    await setPref('gal_card_lookup_max_height', height);
     notifyListeners();
   }
 
@@ -781,6 +729,78 @@ class PreferencesRepository extends ChangeNotifier {
     await setPref('first_time_setup', false);
   }
 
+  /// 「功能模块」显隐：小说/漫画/视频/游戏/浏览器扩展五个库页 tab 加 下载/查词
+  /// 两个工具 tab 是否出现在底栏/侧栏。默认全开（与旧版行为一致）；新手引导的功能
+  /// 选择与 设置 → 外观 → 功能模块 写同一真值（引导只勾库页，不勾下载/查词）。
+  /// games（Windows）与浏览器扩展（桌面）在读取端还叠加平台门控，这里只存用户意愿。
+  /// 首页/设置恒在，是全部隐藏后的安全回退面，不提供开关。
+  bool get moduleBooksEnabled =>
+      getPref('module_books_enabled', defaultValue: true) as bool;
+
+  Future<void> setModuleBooksEnabled(bool value) async {
+    await setPref('module_books_enabled', value);
+    notifyListeners();
+  }
+
+  bool get moduleBrowserExtensionEnabled =>
+      getPref('module_browser_extension_enabled', defaultValue: true) as bool;
+
+  Future<void> setModuleBrowserExtensionEnabled(bool value) async {
+    await setPref('module_browser_extension_enabled', value);
+    notifyListeners();
+  }
+
+  bool get moduleMangaEnabled =>
+      getPref('module_manga_enabled', defaultValue: true) as bool;
+
+  Future<void> setModuleMangaEnabled(bool value) async {
+    await setPref('module_manga_enabled', value);
+    notifyListeners();
+  }
+
+  bool get moduleVideoEnabled =>
+      getPref('module_video_enabled', defaultValue: true) as bool;
+
+  Future<void> setModuleVideoEnabled(bool value) async {
+    await setPref('module_video_enabled', value);
+    notifyListeners();
+  }
+
+  bool get moduleGamesEnabled =>
+      getPref('module_games_enabled', defaultValue: true) as bool;
+
+  Future<void> setModuleGamesEnabled(bool value) async {
+    await setPref('module_games_enabled', value);
+    notifyListeners();
+  }
+
+  bool get moduleDownloadsEnabled =>
+      getPref('module_downloads_enabled', defaultValue: true) as bool;
+
+  Future<void> setModuleDownloadsEnabled(bool value) async {
+    await setPref('module_downloads_enabled', value);
+    notifyListeners();
+  }
+
+  bool get moduleDictionariesEnabled =>
+      getPref('module_dictionaries_enabled', defaultValue: true) as bool;
+
+  Future<void> setModuleDictionariesEnabled(bool value) async {
+    await setPref('module_dictionaries_enabled', value);
+    notifyListeners();
+  }
+
+  /// 新手引导完成标志。缺省值刻意取 **true**：既有安装升级上来不重弹引导；
+  /// 全新安装在 HomePage 的 `first_time_setup` 首帧分支里显式写 false，向导
+  /// 关闭后写回 true——中途杀进程下次启动值仍是 false，会重新弹出。备份合并的
+  /// insert-if-absent 天然不会覆盖本键（描述本库自身状态，同 `first_time_setup`）。
+  bool get onboardingCompleted =>
+      getPref('onboarding_completed', defaultValue: true) as bool;
+
+  Future<void> setOnboardingCompleted({required bool value}) async {
+    await setPref('onboarding_completed', value);
+  }
+
   final int defaultMaximumDictionaryTermsInResult = 10;
 
   int get maximumTerms => getPref('maximum_terms',
@@ -831,6 +851,31 @@ class PreferencesRepository extends ChangeNotifier {
 
   Future<void> setVideoShadersEnabled(String json) async {
     await setPref('video_shaders_enabled', json);
+    notifyListeners();
+  }
+
+  /// mpv Lua 脚本装载开关（默认关）。开时视频播放器创建后把
+  /// `<documents>/mpv_scripts` 目录里的全部 `.lua` 经 `load-script` 装载
+  /// （见 video_lua_script_manager.dart）；mpv 无 unload-script，关闭只对
+  /// 之后新建的播放器生效。
+  bool get videoMpvLuaScriptsEnabled =>
+      getPref('video_mpv_lua_scripts_enabled', defaultValue: false) as bool;
+
+  Future<void> setVideoMpvLuaScriptsEnabled(bool value) async {
+    await setPref('video_mpv_lua_scripts_enabled', value);
+    notifyListeners();
+  }
+
+  /// BUG-2032：随包 libmpv 是否编入 Lua（视频页建 Player 后读 `mpv-configuration`
+  /// 探到的结果缓存，存 [MpvLuaCapability.name]）。全局设置页没有播放器，靠这份
+  /// 缓存如实说明脚本开关在本平台是否可用。默认 unknown = 从未播过视频。
+  MpvLuaCapability get videoMpvLuaCapability => MpvLuaCapability.fromName(
+        getPref('video_mpv_lua_capability', defaultValue: 'unknown') as String,
+      );
+
+  Future<void> setVideoMpvLuaCapability(MpvLuaCapability value) async {
+    if (videoMpvLuaCapability == value) return;
+    await setPref('video_mpv_lua_capability', value.name);
     notifyListeners();
   }
 
@@ -964,22 +1009,28 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 视频条目自动刮削开关：默认开启。开则进视频页 / 新视频入库后后台静默拉条目
-  /// 资料（封面 + 简介/评分/放送/标签），关则完全不发这些请求（已刮到的资料保留，
-  /// 手动「重新刮削」仍可用）。给不希望库信息自动出网的用户一个明确的总闸——
-  /// 自动化取代手动按钮后，没有开关就等于没得关。
-  ///
-  /// ⚠️ 出网面**不止 Bangumi**：`CoverScraperService._resolveBestDecision` 按代价
-  /// 逐层兜底 离线库 → Bangumi → TMDB（随包内置 key，无需用户配置）→ AniList →
-  /// Jikan/MAL，命中 high 即停。命中早的条目只碰 Bangumi，前几层都没把握的条目会把
-  /// 解析出的标题依次发给全部四家。改这条链路时同步改本注释——「只发 Bangumi」的
-  /// 旧描述会让用户以为总闸管的是一家。
-  /// getPref 仅在该 key 从未写过时返回默认 true。
+  /// 旧本地封面补齐开关。现只控制 sidecar / 本地封面 sweep，不会发起元数据
+  /// 网络请求；保留该偏好用于兼容已有设备设置。在线刮削统一由
+  /// `VideoSourceScrapeCoordinator` 管理。
   bool get videoAutoScrape =>
       getPref('video_auto_scrape', defaultValue: true) as bool;
 
   Future<void> setVideoAutoScrape(bool value) async {
     await setPref('video_auto_scrape', value);
+    notifyListeners();
+  }
+
+  /// 库内自动补刮总闸（默认开）。
+  ///
+  /// 与上面的 [videoAutoScrape] **不是**一件事，也不能复用它：那个键的契约明写
+  /// 「不会发起元数据网络请求」，且早已从设置页撤下、用户无从更改。库内自动补刮
+  /// 会下载 AniDB 每日标题包、并在配了客户端身份时打 AniDB/TMDB，是一项会联网的
+  /// 后台行为，必须有自己的、用户可见可关的开关。
+  bool get videoLibraryAutoBackfillScrape =>
+      getPref('video_library_auto_backfill_scrape', defaultValue: true) as bool;
+
+  Future<void> setVideoLibraryAutoBackfillScrape(bool value) async {
+    await setPref('video_library_auto_backfill_scrape', value);
     notifyListeners();
   }
 
@@ -1086,6 +1137,33 @@ class PreferencesRepository extends ChangeNotifier {
       'video_resource_torznab_config',
       jsonEncode(encodeTorznabIndexerConfigs(configs)),
     );
+    notifyListeners();
+  }
+
+  /// 用户自配的 OPDS 书目服务器清单（设备本地；含 base64 密码）。
+  ///
+  /// 逐条容错在 [decodeOpdsServerConfigs] 里：一条记录坏掉只丢那一条，不让
+  /// 整份服务器列表消失（否则用户会看到「我的书库全没了」）。
+  List<OpdsServerConfig> get discoveryOpdsServers {
+    final String raw =
+        getPref('discovery_opds_servers', defaultValue: '') as String;
+    if (raw.trim().isEmpty) return const <OpdsServerConfig>[];
+    try {
+      return decodeOpdsServerConfigs(raw);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'PreferencesRepository.discoveryOpdsServers.decode',
+        error,
+        stack,
+      );
+      return const <OpdsServerConfig>[];
+    }
+  }
+
+  Future<void> setDiscoveryOpdsServers(
+    Iterable<OpdsServerConfig> servers,
+  ) async {
+    await setPref('discovery_opds_servers', encodeOpdsServerConfigs(servers));
     notifyListeners();
   }
 
@@ -1227,6 +1305,16 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// YouTube 显式画质目标高度（如 720/1080/2160）；0 = 自动（默认策略：编码优先、
+  /// ≤1080p，见 pickPlaybackVideoStream）。消费方把 0 换算成 null 传解析器。
+  int get youtubeQualityTargetHeight =>
+      getPref('video_youtube_quality_height', defaultValue: 0) as int;
+
+  Future<void> setYoutubeQualityTargetHeight(int height) async {
+    await setPref('video_youtube_quality_height', height < 0 ? 0 : height);
+    notifyListeners();
+  }
+
   /// 视频画面缩放/比例模式（窗口模式 + 全屏的 [Video] fit；默认 [VideoFitMode.contain]
   /// = 保持比例完整适应媒体框；已有 cover/fill 持久化值仍按原值恢复）。
   VideoFitMode get videoFitMode => VideoFitMode.fromStorage(
@@ -1236,6 +1324,17 @@ class PreferencesRepository extends ChangeNotifier {
 
   Future<void> setVideoFitMode(VideoFitMode mode) async {
     await setPref('video_fit_mode', mode.storageValue);
+    notifyListeners();
+  }
+
+  /// Windows HDR 直通 / 10-bit 输出模式（默认 auto：显示器 HDR 开着且片源 HDR 时直通）。
+  VideoHdrOutputMode get videoHdrOutputMode => VideoHdrOutputMode.fromStorage(
+        getPref(kVideoHdrOutputPref,
+            defaultValue: VideoHdrOutputMode.auto.storageValue) as String,
+      );
+
+  Future<void> setVideoHdrOutputMode(VideoHdrOutputMode mode) async {
+    await setPref(kVideoHdrOutputPref, mode.storageValue);
     notifyListeners();
   }
 
@@ -1257,6 +1356,25 @@ class PreferencesRepository extends ChangeNotifier {
 
   Future<void> setVideoControlLayout(VideoControlLayout layout) async {
     await setPref('video_control_customization', layout.encode());
+    notifyListeners();
+  }
+
+  /// 视频「快捷键 1..4」自定义动作按钮的绑定（用户请求）：槽位序号 → 视频动作。
+  ///
+  /// 与 [videoControlLayout] **分开存**：布局管「按钮在哪个槽位、显不显示」，本表管
+  /// 「按钮按下去干什么」。两者正交——用户可以只改位置不改动作，反之亦然；混进同一个
+  /// JSON 只会让那个已经在扛 v1→v2→v3 迁移的 payload 再多一层版本。
+  /// 空串 = 一个都没绑（[VideoCustomActionBindings.empty]）。此时按钮仍显示在控制条上，
+  /// 点它就地弹动作选择器——空槽位是配置入口，不是死按钮。
+  VideoCustomActionBindings get videoCustomActionBindings =>
+      VideoCustomActionBindings.decode(
+        getPref('video_custom_action_bindings', defaultValue: '') as String,
+      );
+
+  Future<void> setVideoCustomActionBindings(
+    VideoCustomActionBindings bindings,
+  ) async {
+    await setPref('video_custom_action_bindings', bindings.encode());
     notifyListeners();
   }
 
@@ -1319,6 +1437,21 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Jimaku 是否参与字幕搜索。与 [jimakuApiKey] 组成 `enabled && key` 双门控，
+  /// 形状对齐 OpenSubtitles（那家的 `enabled` 长在它的 config JSON 里）。
+  ///
+  /// **默认 true 是兼容性要求**：这个键出现之前，「填了 key」就等于「启用」。
+  /// 默认 false 会让所有已填 key 的存量用户在升级后 Jimaku 突然失效，且他们
+  /// 无从知道是新加了一个开关。默认 true + key 仍为空则不注册，语义与本键出现
+  /// 之前逐字一致，不需要任何迁移写入。
+  bool get jimakuEnabled =>
+      getPref('jimaku_enabled', defaultValue: true) as bool;
+
+  Future<void> setJimakuEnabled(bool value) async {
+    await setPref('jimaku_enabled', value);
+    notifyListeners();
+  }
+
   /// 每系列（番名）记住的 Jimaku 字幕语言偏好：`{ "<series 小写归一>": "<langCode>" }`。
   ///
   /// 单一 JSON map 落 KV 表（避免每系列一个 key 撑爆表）；解析失败回退空 map
@@ -1358,6 +1491,36 @@ class PreferencesRepository extends ChangeNotifier {
 
   Future<void> setJimakuDefaultLanguage(String langCode) async {
     await setPref('jimaku_default_language', langCode);
+    notifyListeners();
+  }
+
+  /// 刮削完成后，自动为**仍缺字幕**的视频补一条在线字幕。默认开。
+  ///
+  /// 为什么默认开：下载流水线的字幕阶段本来就默认 `bestEffort`（自动配字幕一直
+  /// 是开着的），只是从来没有名字、没有开关、失败只落在任务行一句英文里，用户
+  /// 无从知道这个能力存在。给它一个名字放进设置页（可被设置搜索命中），是这个
+  /// 能力第一次变得可发现。
+  ///
+  /// 只在配好了在线字幕来源（Jimaku key / OpenSubtitles）时才有任何动作；
+  /// 且**绝不覆盖**任何已有字幕。
+  bool get videoSubtitleBackfillAfterScrape =>
+      getPref('video_subtitle_backfill_after_scrape', defaultValue: true)
+          as bool;
+
+  Future<void> setVideoSubtitleBackfillAfterScrape(bool enabled) async {
+    await setPref('video_subtitle_backfill_after_scrape', enabled);
+    notifyListeners();
+  }
+
+  /// AJATT 日语字幕库（`subtitles.ajatt.top`，kitsunekko 镜像）是否参与字幕搜索。
+  ///
+  /// 零配置：无 API key、无配额，所以只有这一个开关（不像 Jimaku / OpenSubtitles
+  /// 的 `enabled && key` 双门控）。默认 true——它是没填任何 key 的用户唯一能用的源。
+  bool get videoSubtitleAjattEnabled =>
+      getPref('video_subtitle_ajatt_enabled', defaultValue: true) as bool;
+
+  Future<void> setVideoSubtitleAjattEnabled(bool enabled) async {
+    await setPref('video_subtitle_ajatt_enabled', enabled);
     notifyListeners();
   }
 
@@ -1529,6 +1692,32 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  // 静图（截图）**编码格式**，与上面两轴正交：模式选「用不用动图 / 静态帧取哪一帧」，
+  // 本项选「那帧用什么编码」。默认由 [MiningStillFormat.fromWireName] 对 null 给出（= jpg，
+  // 现状零破坏），不写在这里：解析未知历史值与「从没设过」走同一条路径。
+  //
+  // galgame 侧不取本项：那条链的静图来自窗口抓图（本就是 PNG），不经本格式轴。
+  MiningStillFormat get videoMiningStillFormat =>
+      MiningStillFormat.fromWireName(
+          getPref('video_mining_still_format', defaultValue: null) as String?);
+
+  void setVideoMiningStillFormat(MiningStillFormat format) async {
+    await setPref('video_mining_still_format', format.wireName);
+    notifyListeners();
+  }
+
+  // galgame 侧单存一份（同 image mode / animated format 的分法）：那边的静图来自
+  // 窗口抓图（本身是 PNG），与视频帧的取舍不同，共用一个开关会逼用户为一边将就另一边。
+  // 默认同样是 jpg：BUG-1473 已把 gal 截图接进降采样（原本 1.5~4 MB 的无压缩 PNG），
+  // “小图原样返回 PNG”只是不值得重编码的捐径，不是意图。
+  MiningStillFormat get galMiningStillFormat => MiningStillFormat.fromWireName(
+      getPref('gal_mining_still_format', defaultValue: null) as String?);
+
+  void setGalMiningStillFormat(MiningStillFormat format) async {
+    await setPref('gal_mining_still_format', format.wireName);
+    notifyListeners();
+  }
+
   MiningAnimatedFormat get galMiningAnimatedFormat =>
       MiningAnimatedFormat.fromWireName(
           getPref('gal_mining_animated_format', defaultValue: null) as String?);
@@ -1604,6 +1793,30 @@ class PreferencesRepository extends ChangeNotifier {
 
   Future<void> setGlobalDictCSS(String css) async {
     await setPref('global_dict_css', css);
+  }
+
+  // ── 可视化样式规则（结构化真相源 + CSS 编译产物缓存）────────────────
+  //
+  // 与上面的手写 CSS **分开存**：可视化面板改规则表，手写框改 CSS 文本，注入时
+  // 拼接。共用一份文本就得反向解析手写 CSS 才能回填面板，往返编辑必坏。
+
+  String get dictStyleRulesRaw =>
+      getPref(dictStyleRulesPrefKey, defaultValue: '') as String;
+
+  Future<void> setDictStyleRulesRaw(String raw) async {
+    await setPref(dictStyleRulesPrefKey, raw);
+  }
+
+  /// 规则表的 CSS 编译产物缓存。
+  ///
+  /// 供跑不了 Dart 编译器的消费方直接读（Android 独立弹窗 Activity 直连 prefs
+  /// 表）。Dart 侧一律走 `AppModel.effective*DictCSS` 现算，不读这个缓存——
+  /// 冗余数据只允许有一个写入点（`AppModel.saveDictStyleRules`）和一类读者。
+  String get dictStyleRulesCss =>
+      getPref(dictStyleRulesCssPrefKey, defaultValue: '') as String;
+
+  Future<void> setDictStyleRulesCss(String css) async {
+    await setPref(dictStyleRulesCssPrefKey, css);
   }
 
   // ── audio sources ────────────────────────────────────────────────────
@@ -1751,6 +1964,41 @@ class PreferencesRepository extends ChangeNotifier {
   static const double galHookTextFontSizeMin = 12.0;
   static const double galHookTextFontSizeMax = 72.0;
   static const double galHookTextFontSizeDefault = 30.0;
+  static const double galHookTextLetterSpacingMin = -2.0;
+  static const double galHookTextLetterSpacingMax = 12.0;
+  static const double galHookTextLetterSpacingDefault = 0.0;
+  static const double galHookTextLineHeightMin = 0.8;
+  static const double galHookTextLineHeightMax = 2.0;
+  static const double galHookTextLineHeightDefault = 1.0;
+  static const double galHookTextOutlineWidthMin = 0.0;
+  static const double galHookTextOutlineWidthMax = 6.0;
+  static const double galHookTextOutlineWidthDefault = 1.6;
+  static const double galHookTextPaddingMin = 0.0;
+  static const double galHookTextPaddingMax = 80.0;
+  static const double galHookTextPaddingDefault = 20.0;
+  static const double galHookTextCornerRadiusMin = 0.0;
+  static const double galHookTextCornerRadiusMax = 40.0;
+  static const double galHookTextCornerRadiusDefault = 14.0;
+  static const int galHookTextColorDefault = 0xFFFFFFFF;
+  static const int galHookTextBackgroundColorDefault = 0xFF000000;
+  static const int galHookTextOutlineColorDefault = 0xE0000000;
+  static const double galHookTextBackgroundOpacityDefault = 0.0;
+
+  double _galHookDouble(
+    String key, {
+    required double fallback,
+    required double min,
+    required double max,
+  }) {
+    final Object? stored = getPref(key, defaultValue: fallback);
+    final double value = stored is num ? stored.toDouble() : fallback;
+    return value.clamp(min, max);
+  }
+
+  int _galHookColor(String key, int fallback) {
+    final Object? stored = getPref(key, defaultValue: fallback);
+    return ((stored is num ? stored.toInt() : fallback) & 0xFFFFFFFF).toInt();
+  }
 
   double get galHookTextFontSize {
     final Object? stored = getPref(
@@ -1770,6 +2018,171 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  double get galHookTextLetterSpacing => _galHookDouble(
+        'gal_hook_text_letter_spacing',
+        fallback: galHookTextLetterSpacingDefault,
+        min: galHookTextLetterSpacingMin,
+        max: galHookTextLetterSpacingMax,
+      );
+
+  Future<void> setGalHookTextLetterSpacing(double value) async {
+    await setPref(
+      'gal_hook_text_letter_spacing',
+      value
+          .clamp(galHookTextLetterSpacingMin, galHookTextLetterSpacingMax)
+          .toDouble(),
+    );
+    notifyListeners();
+  }
+
+  double get galHookTextLineHeight => _galHookDouble(
+        'gal_hook_text_line_height',
+        fallback: galHookTextLineHeightDefault,
+        min: galHookTextLineHeightMin,
+        max: galHookTextLineHeightMax,
+      );
+
+  Future<void> setGalHookTextLineHeight(double value) async {
+    await setPref(
+      'gal_hook_text_line_height',
+      value
+          .clamp(galHookTextLineHeightMin, galHookTextLineHeightMax)
+          .toDouble(),
+    );
+    notifyListeners();
+  }
+
+  bool get galHookTextBold =>
+      getPref('gal_hook_text_bold', defaultValue: true) == true;
+
+  Future<void> setGalHookTextBold(bool value) async {
+    await setPref('gal_hook_text_bold', value);
+    notifyListeners();
+  }
+
+  String get galHookTextAlignment {
+    final Object? value =
+        getPref('gal_hook_text_alignment', defaultValue: 'center');
+    return value == 'left' ? 'left' : 'center';
+  }
+
+  Future<void> setGalHookTextAlignment(String value) async {
+    await setPref(
+        'gal_hook_text_alignment', value == 'left' ? 'left' : 'center');
+    notifyListeners();
+  }
+
+  /// BUG-1890：台词浮窗**垂直**对齐。与水平对齐同形的白名单二值收敛
+  /// （'center' / 'top'），非法值一律回落 'center'（= 修前的唯一行为，
+  /// 老配置读出来还是老样子）。
+  ///
+  /// 'top' 不只是「不居中」：native 侧此前已有 NEAR（顶对齐）分支，但只在文字**溢出**
+  /// 窗口时才走，放得下就强制居中。长短句交替时台词会上下跳，这个偏好让用户把它钉死
+  /// 在顶部。
+  String get galHookTextVerticalAlignment {
+    final Object? value =
+        getPref('gal_hook_text_vertical_alignment', defaultValue: 'center');
+    return value == 'top' ? 'top' : 'center';
+  }
+
+  Future<void> setGalHookTextVerticalAlignment(String value) async {
+    await setPref(
+        'gal_hook_text_vertical_alignment', value == 'top' ? 'top' : 'center');
+    notifyListeners();
+  }
+
+  int get galHookTextColor =>
+      _galHookColor('gal_hook_text_color', galHookTextColorDefault);
+
+  Future<void> setGalHookTextColor(int value) async {
+    await setPref('gal_hook_text_color', value & 0xFFFFFFFF);
+    notifyListeners();
+  }
+
+  int get galHookTextBackgroundColor => _galHookColor(
+        'gal_hook_text_background_color',
+        galHookTextBackgroundColorDefault,
+      );
+
+  Future<void> setGalHookTextBackgroundColor(int value) async {
+    await setPref('gal_hook_text_background_color', value & 0xFFFFFFFF);
+    notifyListeners();
+  }
+
+  double get galHookTextBackgroundOpacity => _galHookDouble(
+        'gal_hook_text_window_bg_opacity',
+        fallback: galHookTextBackgroundOpacityDefault,
+        min: 0.0,
+        max: 1.0,
+      );
+
+  Future<void> setGalHookTextBackgroundOpacity(double value) async {
+    await setPref(
+      'gal_hook_text_window_bg_opacity',
+      value.clamp(0.0, 1.0).toDouble(),
+    );
+    notifyListeners();
+  }
+
+  int get galHookTextOutlineColor => _galHookColor(
+        'gal_hook_text_outline_color',
+        galHookTextOutlineColorDefault,
+      );
+
+  Future<void> setGalHookTextOutlineColor(int value) async {
+    await setPref('gal_hook_text_outline_color', value & 0xFFFFFFFF);
+    notifyListeners();
+  }
+
+  double get galHookTextOutlineWidth => _galHookDouble(
+        'gal_hook_text_outline_width',
+        fallback: galHookTextOutlineWidthDefault,
+        min: galHookTextOutlineWidthMin,
+        max: galHookTextOutlineWidthMax,
+      );
+
+  Future<void> setGalHookTextOutlineWidth(double value) async {
+    await setPref(
+      'gal_hook_text_outline_width',
+      value
+          .clamp(galHookTextOutlineWidthMin, galHookTextOutlineWidthMax)
+          .toDouble(),
+    );
+    notifyListeners();
+  }
+
+  double get galHookTextPadding => _galHookDouble(
+        'gal_hook_text_padding',
+        fallback: galHookTextPaddingDefault,
+        min: galHookTextPaddingMin,
+        max: galHookTextPaddingMax,
+      );
+
+  Future<void> setGalHookTextPadding(double value) async {
+    await setPref(
+      'gal_hook_text_padding',
+      value.clamp(galHookTextPaddingMin, galHookTextPaddingMax).toDouble(),
+    );
+    notifyListeners();
+  }
+
+  double get galHookTextCornerRadius => _galHookDouble(
+        'gal_hook_text_corner_radius',
+        fallback: galHookTextCornerRadiusDefault,
+        min: galHookTextCornerRadiusMin,
+        max: galHookTextCornerRadiusMax,
+      );
+
+  Future<void> setGalHookTextCornerRadius(double value) async {
+    await setPref(
+      'gal_hook_text_corner_radius',
+      value
+          .clamp(galHookTextCornerRadiusMin, galHookTextCornerRadiusMax)
+          .toDouble(),
+    );
+    notifyListeners();
+  }
+
   /// 「游戏内查词」（KiriKiri in-game lookup）默认**开**。
   ///
   /// 代价只在真发生命中时才付：注入侧的传感器要等 `lookup_enabled=1` **且**引擎
@@ -1778,6 +2191,86 @@ class PreferencesRepository extends ChangeNotifier {
   /// 反过来默认关的代价是实打实的：用户不知道有这个功能，知道了也要先退出这一局、
   /// 去设置里翻开关、再重开一局才生效。
   static const bool galIngameLookupEnabledDefault = true;
+
+  /// hook 台词浮窗「单击查词」。native 侧一直支持（`clickLookupEnabled`），Dart
+  /// 侧此前写死 true，于是设置里根本没有这个开关。用户「至少开启穿透的时候我不是
+  /// 很想单击点到单词，还是习惯用侧键查」。
+  static const bool galHookClickLookupDefault = true;
+
+  bool get galHookClickLookup =>
+      getPref('gal_hook_click_lookup',
+          defaultValue: galHookClickLookupDefault) ==
+      true;
+
+  Future<void> setGalHookClickLookup(bool value) async {
+    await setPref('gal_hook_click_lookup', value);
+    notifyListeners();
+  }
+
+  /// 查词触发方式：0 = 左键单击（默认）/ 1 = 鼠标中键 / 2 = 鼠标侧键。
+  ///
+  /// 与 [galHookClickLookup] **正交**：前者决定「查不查」，本项决定「用哪个键查」。
+  /// 两者都关 = 浮窗上完全不查词，只用工具条。
+  static const int galHookLookupTriggerDefault = 0;
+
+  int get galHookLookupTrigger {
+    final Object? stored = getPref('gal_hook_lookup_trigger',
+        defaultValue: galHookLookupTriggerDefault);
+    final int value =
+        stored is num ? stored.toInt() : galHookLookupTriggerDefault;
+    // 值域收在读这一层：越界值直接退回默认，别让一个坏值把 native 的分派打成
+    // 「哪个键都不触发」。
+    return value >= 0 && value <= 2 ? value : galHookLookupTriggerDefault;
+  }
+
+  Future<void> setGalHookLookupTrigger(int value) async {
+    await setPref('gal_hook_lookup_trigger', value.clamp(0, 2));
+    notifyListeners();
+  }
+
+  /// 工具条自动隐藏（LunaHook 式）：平时整条隐藏，鼠标进入台词框才现身。
+  static const bool galHookToolbarAutoHideDefault = true;
+
+  bool get galHookToolbarAutoHide =>
+      getPref('gal_hook_toolbar_auto_hide',
+          defaultValue: galHookToolbarAutoHideDefault) ==
+      true;
+
+  Future<void> setGalHookToolbarAutoHide(bool value) async {
+    await setPref('gal_hook_toolbar_auto_hide', value);
+    notifyListeners();
+  }
+
+  /// 穿透态下浮窗是否仍拦截落在**文字行盒**上的鼠标（默认 true = 拦截，点字查词才
+  /// 成立）。关掉后整窗对游戏彻底透明——用户原话「穿透不彻底等于彻底不穿透」。
+  static const bool galHookPassThroughBlocksMouseDefault = true;
+
+  bool get galHookPassThroughBlocksMouse =>
+      getPref('gal_hook_passthrough_blocks_mouse',
+          defaultValue: galHookPassThroughBlocksMouseDefault) ==
+      true;
+
+  Future<void> setGalHookPassThroughBlocksMouse(bool value) async {
+    await setPref('gal_hook_passthrough_blocks_mouse', value);
+    notifyListeners();
+  }
+
+  /// 折叠「同一句台词的多次快照」（Zato 症状：一句台词分多次点击显示，工作台里
+  /// 第二句出现两次）。默认开——引擎逐段重绘是 galgame 常态；留开关是给「某个引擎的
+  /// 两句不同台词真的构成前缀关系」这种情形一个不改代码就能退回旧行为的逃生口。
+  static const bool galHookFoldProgressiveLinesDefault = true;
+
+  bool get galHookFoldProgressiveLines =>
+      getPref(
+        'gal_hook_fold_progressive_lines',
+        defaultValue: galHookFoldProgressiveLinesDefault,
+      ) ==
+      true;
+
+  Future<void> setGalHookFoldProgressiveLines(bool value) async {
+    await setPref('gal_hook_fold_progressive_lines', value);
+    notifyListeners();
+  }
 
   /// 游戏内查词总开关（仅 Windows 生效）。
   bool get galIngameLookupEnabled =>
@@ -1928,6 +2421,75 @@ class PreferencesRepository extends ChangeNotifier {
 
   // ── update preferences ───────────────────────────────────────────────
 
+  /// P2P（torrent）传输的代理档位：`direct`（**默认**，直连）/ `proxy`
+  /// （peer/tracker/DNS 全代理，可能降速，且不少代理服务商禁止 BT 流量：
+  /// 限速/警告/封号）/ `mixed`（tracker 经代理、DHT 与 peer 直连——节点获取
+  /// 范围最大，但真实 IP 暴露给 DHT/peer/tracker，只是连通性工具）。
+  /// 只对内置引擎生效（外接 qBittorrent 自管）。
+  ///
+  /// 三态键未写过时沿用旧布尔开关 `network_proxy_p2p_enabled`（冻结，
+  /// PR#1051 引入）的语义：true → 全代理。
+  String get p2pProxyMode {
+    final String raw =
+        getPref('network_proxy_p2p_mode', defaultValue: '') as String;
+    if (raw == 'direct' || raw == 'proxy' || raw == 'mixed') return raw;
+    final bool legacyEnabled =
+        getPref('network_proxy_p2p_enabled', defaultValue: false) as bool;
+    return legacyEnabled ? 'proxy' : 'direct';
+  }
+
+  Future<void> setP2pProxyMode(String mode) async {
+    assert(mode == 'direct' || mode == 'proxy' || mode == 'mixed');
+    await setPref('network_proxy_p2p_mode', mode);
+    // 写穿旧布尔键：降级回老版本后语义一致（mixed 按「开」处理）。
+    await setPref('network_proxy_p2p_enabled', mode != 'direct');
+    notifyListeners();
+  }
+
+  /// 全局公网出口模式：auto = 环境/系统代理自动探测；direct = 强制直连；
+  /// manual = 使用 [updateCustomProxy]。旧安装没有本键时，已有手填地址自动沿用
+  /// manual，否则沿用历史 auto 语义。
+  String get networkProxyMode {
+    final String? stored =
+        getPref('network_proxy_mode', defaultValue: null) as String?;
+    if (stored == kProxyModeAuto ||
+        stored == kProxyModeDirect ||
+        stored == kProxyModeManual) {
+      return stored!;
+    }
+    // 迁移判据是「这个存量地址归一得出来吗」，不是「非空吗」。设置页对非法地址只
+    // 弹 SnackBar 但仍存原串，非空判据会把这类值推成 manual，而 manual 归一失败
+    // 时硬走 DIRECT —— 存量用户升级即断网。只有「显式选了 manual」才该 fail-closed。
+    return normalizeUserProxyHostPort(updateCustomProxy) == null
+        ? kProxyModeAuto
+        : kProxyModeManual;
+  }
+
+  Future<void> setNetworkProxyMode(String value) async {
+    final String normalized =
+        value == kProxyModeDirect || value == kProxyModeManual
+            ? value
+            : kProxyModeAuto;
+    await setPref('network_proxy_mode', normalized);
+    notifyListeners();
+  }
+
+  String get networkProxyUsername =>
+      getPref('network_proxy_username', defaultValue: '') as String;
+
+  Future<void> setNetworkProxyUsername(String value) async {
+    await setPref('network_proxy_username', value);
+    notifyListeners();
+  }
+
+  String get networkProxyPassword =>
+      getPref('network_proxy_password', defaultValue: '') as String;
+
+  Future<void> setNetworkProxyPassword(String value) async {
+    await setPref('network_proxy_password', value);
+    notifyListeners();
+  }
+
   bool get updateNeverRemind =>
       getPref('update_never_remind', defaultValue: false) as bool;
 
@@ -1971,6 +2533,16 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 更新资产首选下载源。auto = 既有智能顺序；r2 / github / proxy:<prefix>
+  /// 只改变首选顺序，失败时仍保留完整回退链。
+  String get updateDownloadSource =>
+      getPref('update_download_source', defaultValue: 'auto') as String;
+
+  Future<void> setUpdateDownloadSource(String value) async {
+    await setPref('update_download_source', value);
+    notifyListeners();
+  }
+
   /// 外部 mokuro CLI 可执行路径（漫画 OCR 后备；空串=未设）。内置 ONNX 引擎在本平台不可用
   /// 或用户偏好外部工具时，OCR 导入向导据此调用系统 mokuro（见 [ExternalMokuroRunner]）。
   /// 空串=未指定，运行时退回 `FUSHI_MOKURO` 环境变量 / PATH 探测。
@@ -1990,12 +2562,49 @@ class PreferencesRepository extends ChangeNotifier {
   /// 削弱隐私边界——真正的上传闸门是 [ensureGoogleLensDisclosure] 的逐设备一次性
   /// 同意弹窗，用户拒绝即不发任何字节；想彻底离线的用户把本偏好改回 `auto`，
   /// `auto` 的解析链依旧永不跨到 Lens。
-  String get mangaOcrEnginePreference =>
-      getPref('manga_ocr_engine_preference', defaultValue: 'google_lens')
-          as String;
+  String get mangaOcrEnginePreference => getPref(
+        'manga_ocr_engine_preference',
+        defaultValue: kDefaultMangaOcrEnginePreference.key,
+      ) as String;
 
   Future<void> setMangaOcrEnginePreference(String value) async {
     await setPref('manga_ocr_engine_preference', value);
+    notifyListeners();
+  }
+
+  /// Google Lens 整卷 OCR 的识别语言（本地书/无源语言时的兜底）。在线阅读的
+  /// Lens OCR 优先用源自身声明的语言，本偏好只在源语言未知时回退。存主子标签
+  /// （`ja`/`en`/`zh`…），进请求前统一过 normalizeLensLanguage。
+  String get mangaOcrLensLanguage =>
+      getPref('manga_ocr_lens_language', defaultValue: 'ja') as String;
+
+  Future<void> setMangaOcrLensLanguage(String value) async {
+    await setPref('manga_ocr_lens_language', value);
+    notifyListeners();
+  }
+
+  /// 漫画阅读器「点一下没识别的对话框就地开跑 OCR」。
+  ///
+  /// 默认开：这条路径存在的全部意义就是让用户不必先去点识别模式。关掉它等于
+  /// 回到旧行为（空白点只回收焦点），给不希望被动触发联网/耗电的人留后路。
+  bool get mangaTapToOcr =>
+      getPref('manga_tap_to_ocr', defaultValue: true) as bool;
+
+  Future<void> setMangaTapToOcr(bool value) async {
+    await setPref('manga_tap_to_ocr', value);
+    notifyListeners();
+  }
+
+  /// 「点击即识别」的首次说明是否已经给过。
+  ///
+  /// 单独一个键而不是复用 Lens 的上传告知：那条只在 Lens 引擎下出现，而本次要
+  /// 说的是「你这一点会触发一次识别、用的是你在设置里选的哪个引擎」——两件事，
+  /// 只是恰好在 Lens 下会前后脚出现。
+  bool get mangaTapToOcrNoticeShown =>
+      getPref('manga_tap_to_ocr_notice_shown', defaultValue: false) as bool;
+
+  Future<void> setMangaTapToOcrNoticeShown(bool value) async {
+    await setPref('manga_tap_to_ocr_notice_shown', value);
     notifyListeners();
   }
 
@@ -2105,33 +2714,52 @@ class PreferencesRepository extends ChangeNotifier {
   // 副本，不迁移到任何游戏；旧 Profile apply/JSON import 也会拒绝它复活。全局值
   // 无法映射成「每个游戏各自开不开」，新结构仍一律从关闭起步，用户按游戏自己开。
 
-  /// AniList/Nyaa/Jimaku requests: direct (default, BUG-1538 —— 下载域默认不走
-  /// 代理), auto (env > enabled system proxy > direct), or a user-provided
-  /// host:port proxy. 已显式存过 'auto' 的用户不受默认值变更影响。
-  String get downloadNetworkProxyMode =>
-      getPref('download_network_proxy_mode', defaultValue: 'direct') as String;
-
-  Future<void> setDownloadNetworkProxyMode(String value) async {
-    await setPref('download_network_proxy_mode', value);
-    notifyListeners();
-  }
-
-  String get downloadCustomProxy =>
-      getPref('download_custom_proxy', defaultValue: '') as String;
-
-  Future<void> setDownloadCustomProxy(String value) async {
-    await setPref('download_custom_proxy', value);
-    notifyListeners();
-  }
+  // 下载域曾有独立的代理三态（`download_network_proxy_mode` /
+  // `download_custom_proxy`），2026-08-29 合并进唯一的全局代理项
+  // [updateCustomProxy]；存量行由 schema v90 迁移归并后删除，这里不再有读写器。
 
   /// TODO-1961：内置下载引擎的下载根（新任务落点）。空串 = 未设置 → 用默认根
   /// `<documents>/anime_downloads/content`（与本 key 出现之前逐字节一致）。
   /// 设备本地路径，不进 Profile 快照（见 `ProfileKeys._excludedPrefKeys`）。
+  /// 发现页「全部源」聚合默认排除的源 id（逗号分隔）。默认排除 sukebei
+  /// （18+ 源只在用户于源下拉里**显式单选**时使用，不进默认聚合）。
+  String get discoveryDisabledSources =>
+      getPref('discovery_disabled_sources', defaultValue: 'sukebei') as String;
+
+  Future<void> setDiscoveryDisabledSources(String value) async {
+    await setPref('discovery_disabled_sources', value);
+    notifyListeners();
+  }
+
+  /// 用户停用的**内置**视频资源索引器 id（逗号分隔，默认空 = 全部启用）。
+  ///
+  /// 与 [discoveryDisabledSources] 同形：都是「一组零配置内置源，按 id 记停用」。
+  /// 用户自配的 Torznab 索引器不进这里——它们各自带 `enabled` 字段，那是配置的
+  /// 一部分，不是内置源开关。
+  String get videoResourceDisabledSources =>
+      getPref('video_resource_disabled_sources', defaultValue: '') as String;
+
+  Future<void> setVideoResourceDisabledSources(String value) async {
+    await setPref('video_resource_disabled_sources', value);
+    notifyListeners();
+  }
+
   String get downloadSaveRoot =>
       getPref('download_save_root', defaultValue: '') as String;
 
   Future<void> setDownloadSaveRoot(String value) async {
     await setPref('download_save_root', value);
+    notifyListeners();
+  }
+
+  /// 有声书素材库目录（JSON 字符串数组）。库里放按作品身份命名的字幕/正文，
+  /// 下载完成后据此自动配齐「正文 + 字幕 + 音频」；解码见
+  /// `decodeAudiobookMaterialDirs`。
+  String get audiobookMaterialDirs =>
+      getPref('audiobook_material_dirs', defaultValue: '') as String;
+
+  Future<void> setAudiobookMaterialDirs(String value) async {
+    await setPref('audiobook_material_dirs', value);
     notifyListeners();
   }
 
@@ -2184,6 +2812,24 @@ class PreferencesRepository extends ChangeNotifier {
   // and write clamped so a corrupt/out-of-range stored value can never reach
   // the progress UI as an absurd goal. Per-Profile (not excluded in
   // ProfileKeys), so each profile keeps its own targets.
+
+  /// v90 阅读空闲门（分钟）：这么久没有翻页 / 滚动 / 查词等输入就视为没在读，
+  /// 之后的时长不入账。只对阅读面（小说 / PDF / 漫画）生效，视频以播放态为准
+  /// （用户拍板）。偏好键与 fushi_audio 的 [kStudyIdleTimeoutPrefKey] 同名。
+  static const int readingIdleTimeoutMinutesMin = 1;
+  static const int readingIdleTimeoutMinutesMax = 120;
+
+  int get readingIdleTimeoutMinutes => (getPref(kStudyIdleTimeoutPrefKey,
+          defaultValue: kDefaultReadingIdleTimeout.inMinutes) as int)
+      .clamp(readingIdleTimeoutMinutesMin, readingIdleTimeoutMinutesMax);
+
+  Future<void> setReadingIdleTimeoutMinutes(int value) async {
+    await setPref(
+      kStudyIdleTimeoutPrefKey,
+      value.clamp(readingIdleTimeoutMinutesMin, readingIdleTimeoutMinutesMax),
+    );
+    notifyListeners();
+  }
 
   int get readingGoalDailyChars =>
       (getPref('reading_goal_daily_chars', defaultValue: 0) as int)

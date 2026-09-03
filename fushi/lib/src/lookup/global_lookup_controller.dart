@@ -17,10 +17,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
-import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/lookup/overlay_auto_read.dart';
-import 'package:fushi/src/lookup/clipboard_history_payload.dart';
-import 'package:fushi/src/lookup/desktop_lookup_router.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
 import 'package:fushi/src/lookup/global_lookup_channel.dart';
 import 'package:fushi/src/lookup/global_lookup_layout.dart';
@@ -47,11 +44,21 @@ class GlobalLookupController {
   GlobalLookupController._();
   static final GlobalLookupController instance = GlobalLookupController._();
 
-  static bool get isSupported => Platform.isWindows;
+  /// 测试缝，与 [GalHookTextOverlayChannel.platformOverride] 同形：平台门描述的是
+  /// 「这台机器有没有覆盖窗」，与覆盖窗之上的路由 / 代数生命周期逻辑正交。
+  ///
+  /// 两半门只有一半可覆盖是不够的：游戏内查词的门是
+  /// `GalHookTextOverlayChannel.supportsCurrentPlatform && isSupported`，测试把前
+  /// 者覆盖成 true、后者仍钉死在 Windows，控制器在非 Windows 的 CI 上就整个空转
+  /// （`start` 早退、`_started` 恒 false、`handleHit` 直接 return），断言全落在
+  /// null 上——本机 Windows 恒绿、Linux CI 恒红。
+  @visibleForTesting
+  static bool? platformOverride;
 
-  /// spec 2026-07-10 — 覆盖窗此刻能否接查词（平台支持且 [start] 已跑）。
-  /// 剪贴板查词去向路由（desktop_lookup_router）以此决定 panel/transient 是否
-  /// 可用；不可用一律退回主窗 tab，请求不丢。
+  static bool get isSupported => platformOverride ?? Platform.isWindows;
+
+  /// 覆盖窗此刻能否接查词（平台支持且 [start] 已跑）。悬浮字幕点词以此决定走
+  /// 覆盖窗还是退回主窗 tab，请求不丢。
   bool get isAvailable => isSupported && _started;
 
   /// 当前 root 卡的引擎匹配长度（UTF-16 code unit，`bestLength`）。
@@ -92,22 +99,42 @@ class GlobalLookupController {
   // 卡片会跟着内容长大，而不是停在首帧尺寸。READY-SAFETY 兜底 reveal 也会回调——
   // 那是「真渲染失败」的最后一招，此时投的确实可能是空白卡，但比卡在不可见强。
   void Function(int physicalWidth, int physicalHeight)? onRevealed;
+  // BUG-2082 — [physicalRootHeight] is the ROOT card's own rendered height
+  // (physical px, 0 when the host did not report it), distinct from the union
+  // [physicalHeight] once nested children extend the bbox.
   void Function(
     GlobalLookupRoute route,
     int physicalWidth,
     int physicalHeight,
-  )? onRoutedRevealed;
+    int physicalDx,
+    int physicalDy,
+    int physicalRootHeight,
+  )?
+  onRoutedRevealed;
 
   /// Interactive gal-card pixels changed after the first reveal.  The route
   /// owner coalesces these notifications into bitmap recaptures.
   void Function(GlobalLookupRoute route)? onRoutedDirty;
   GlobalLookupRoute? _activeRoute;
+  // BUG-1833 — static popup settings already installed in each physical host
+  // (desktop and galCard are different WebView2 realms). A configured custom
+  // font can make this payload ~13 MB, so only revisions not yet acknowledged
+  // by the current host ride the render call. The host can demand a resend after
+  // a whole-WebView recovery via `staticSettingsRequired`.
+  final PopupStaticRevisionCache _hostStaticRevisions =
+      PopupStaticRevisionCache();
   int _desktopLookupEpoch = 0;
   // Last physical size pushed to the overlay; used to converge the page's
   // resize -> re-measure loop (see _onJsMessage 'overlaySize'). Reset per
   // lookup so a new card re-sizes from scratch.
   int _lastSentWidth = -1;
   int _lastSentHeight = -1;
+  // Renderer-owned geometry identity. Width/height/offset alone are not a
+  // sufficient acknowledgement key: shell regions can change and later return
+  // to byte-identical bounds (A -> B -> A). Keep the last sent epoch in the
+  // per-lookup de-dup key. The host owns the monotonic sequence for the
+  // lifetime of its current document; a WebView2 recovery may start a new one.
+  int _lastSentGeometryEpoch = -1;
   // TODO-1231 P2 — the last window offset (physical px) pushed via revealStack.
   // The bbox ORIGIN (dx/dy) can change while the SIZE (w/h) stays equal (a
   // left/up cascade that shifts the window without growing it), so the resize
@@ -123,12 +150,15 @@ class GlobalLookupController {
     int generation,
     int width,
     int height,
+    int geometryEpoch,
     int dx,
     int dy,
+    int rootHeight,
     double left,
     double top,
     int attempt,
-  })? _pendingGalCapture;
+  })?
+  _pendingGalCapture;
   Timer? _galCaptureReadySafety;
   int _galCaptureGeneration = 0;
   // TODO-1231 (BUG-583) — the overlay window's min-corner (bbox origin, CSS px)
@@ -159,15 +189,6 @@ class GlobalLookupController {
   // revealed once at its final size (no on-screen jitter). False = still
   // off-screen / awaiting reveal. Reset per lookup.
   bool _revealed = false;
-  // BUG-1099 — 当前这张瞬态卡是否为**用户显式动作**的产物：台词浮窗/面板释义/悬浮
-  // 字幕点词开出的卡（[lookupText] 且非被动流），或用户在卡内点词压出的子卡
-  // （[_lookupNested]）。为 true 且卡还在屏上时，被动剪贴板流不再重建 root——
-  // 否则 [_lookupExternal] 会把 _lastSentWidth/_lastSentHeight 打回 -1、_revealed 清
-  // false 并 `_stack = [新 root]`，auto-size 窗口跟着新 root 的小内容缩下去，正是用户
-  // 报的「查完词后剪贴板一更新，释义被清空缩回去」。
-  // 不会永久粘住：真正的用户关闭（点外/前台钩子/Esc）走 [_onOverlayHidden] 复位，
-  // 任何显式意图（热键/点词）也会重新置位。
-  bool _userOwnedCard = false;
   Timer? _revealSafety;
   // TODO-1079 (B) — ready-driven reveal safety cadence. Each tick re-checks
   // isWebViewReady before revealing; a not-yet-ready surface reschedules up to
@@ -180,24 +201,21 @@ class GlobalLookupController {
   // frame's own DictionarySearchResult is held alongside (the pure stack
   // model only carries identity/linkage). _frameSeq mints stable per-frame
   // ids (the stack model never generates random/clock ids, see its docs).
-  // TODO-1030 M0 — the current sentence for THIS lookup (剪贴板整句 / UIA 前台句).
-  // Two consumers: (1) mining `{sentence}` context (sentenceContext, BUG-730);
-  // (2) the root card's context banner — GATED by [_showSentenceBanner] so the
-  // sentence still feeds mining even when the banner is suppressed. Empty when
-  // no sentence was captured. Reset per lookup in _lookupExternal.
+  // TODO-1030 M0 — the current sentence for THIS lookup (UIA 前台句 / 悬浮字幕行 /
+  // galgame 台词). Sole consumer: mining `{sentence}` context (sentenceContext,
+  // BUG-730). The card itself never renders it. Empty when no sentence was
+  // captured. Reset per lookup in _lookupExternal.
   String _currentSentence = '';
   OverlayMiningHandler? _currentMiningHandler;
-
-  // 用户 2026-07-12 — 整句横幅（框）只给「剪切板自动唤出的瞬态窗」显示；手动
-  // 快捷键查词不显示（其整句仍进制卡 sentence，只是不贴横幅）。与 _currentSentence
-  // 解耦：banner 注入独立门控，mining context 不受影响。默认 true（剪切板/悬浮
-  // 字幕等既有带句路径不变），仅热键路径显式传 false。Reset per lookup。
-  bool _showSentenceBanner = true;
 
   GlobalLookupStack _stack = GlobalLookupStack.empty;
   final Map<String, DictionarySearchResult> _frameResults =
       <String, DictionarySearchResult>{};
   int _frameSeq = 0;
+  // BUG-1834 — nested searches share one route and may complete out of order.
+  // The latest valid source-frame intent wins, matching the app-in popup's
+  // _searchGeneration gate instead of letting an older result append later.
+  int _nestedLookupGeneration = 0;
 
   // TODO-867 P3c C2 — per-frame anchor rect (window-local CSS px). The root
   // anchor is null (placeholder cascade at window-local origin, the window is
@@ -206,6 +224,18 @@ class GlobalLookupController {
   // host.js anchorRectToScreen) and delivered via onLinkClick args[1]. Fed to
   // computeFrameRect so each child card cascades off its word.
   final Map<String, Rect?> _frameAnchors = <String, Rect?>{};
+  // BUG-2054 — in-flight whole-word anchor requests, keyed by the token the host
+  // echoes back in its `nestedWordAnchor` report. The token (not the stack
+  // position) is what routes a report to its waiter, so a late answer from a
+  // superseded lookup completes nothing instead of moving an unrelated card.
+  final Map<int, Completer<Rect?>> _pendingWordAnchors =
+      <int, Completer<Rect?>>{};
+  int _wordAnchorToken = 0;
+  // One highlight eval round-trip inside an already-loaded iframe realm. Kept
+  // short: this sits between the dictionary result and the child card appearing,
+  // and its failure mode (fall back to the first-character anchor) is the exact
+  // behaviour that shipped before this fix.
+  static const Duration _kWordAnchorReportTimeout = Duration(milliseconds: 400);
   // TODO-867 P3c E1/D2 — the cascade layout bounds (window-local CSS px) the
   // off-screen measurement window is sized to. Children cascade WITHIN these
   // bounds; D2's union bbox then reveals/resizes the window to the real extent.
@@ -249,14 +279,12 @@ class GlobalLookupController {
       onRoutedOverlayHidden: _onRoutedOverlayHidden,
     );
 
-    // 防截屏初值 — 瞬态覆盖窗与剪贴板面板同一 pref（clipboardPanelBlockCapture，
-    // 默认开）。native GlobalLookupWindow 记住该值并在每次窗口（重）建时重应用
-    // （ApplyBlockCapture），故启动推一次即可覆盖此后每次弹出；pref 变更时经
-    // [ClipboardPanelController.applyBlockCapture] 扇出到 [applyBlockCapture]
-    // 即时重推。best-effort：失败不打断启动链（热键注册等）。
+    // 防截屏初值（pref lookupBlockCapture，默认关）。native GlobalLookupWindow
+    // 记住该值并在每次窗口（重）建时重应用（ApplyBlockCapture），故启动推一次即可
+    // 覆盖此后每次弹出；pref 变更时设置页经 [applyBlockCapture] 即时重推。
+    // best-effort：失败不打断启动链（热键注册等）。
     try {
-      await GlobalLookupChannel.setBlockCapture(
-          appModel.clipboardPanelBlockCapture);
+      await GlobalLookupChannel.setBlockCapture(appModel.lookupBlockCapture);
     } catch (e) {
       glog('start: setBlockCapture FAILED (non-fatal): $e');
     }
@@ -280,10 +308,8 @@ class GlobalLookupController {
     unawaited(_prewarmOverlay(appModel));
   }
 
-  /// 「防截屏」pref 即时重应用到瞬态覆盖窗（与剪贴板面板同一 pref
-  /// clipboardPanelBlockCapture）。唯一扇出入口是
-  /// [ClipboardPanelController.applyBlockCapture]（设置页开关与面板栏 🛡 按钮
-  /// 都走它），本方法只管把值推到本窗的 native 通道；native 侧记值并在窗口
+  /// 「防截屏」pref（lookupBlockCapture）即时重应用到覆盖窗。设置页开关是唯一
+  /// 调用点；本方法只管把值推到本窗的 native 通道；native 侧记值并在窗口
   /// 重建后自动重加（global_lookup_window.cpp ApplyBlockCapture），故无需在每次
   /// 查词路径上重推。不依赖 [_started]——native 通道随主窗注册即存在，[start]
   /// 时还会按 pref 再推一次初值兜底。
@@ -297,8 +323,11 @@ class GlobalLookupController {
     try {
       final double dpr = _devicePixelRatio();
       // 弹窗尺寸精细化：app 外覆盖窗默认跟随 app 内，解锁后用 overlay 自己的键。
-      final LookupSize overlaySize =
-          _clampToPhysicalCap(model.overlayLookupEffectiveSize, model, dpr);
+      final LookupSize overlaySize = _clampToPhysicalCap(
+        _effectiveLookupSizeForCurrentRoute(model),
+        model,
+        dpr,
+      );
       final int w = (overlaySize.width * model.appUiScale * dpr).round();
       final int h = (overlaySize.height * model.appUiScale * dpr).round();
       await GlobalLookupChannel.prewarmWebView(width: w, height: h);
@@ -330,11 +359,14 @@ class GlobalLookupController {
     if (registry == null) {
       return;
     }
-    final ShortcutBindingSet set =
-        registry.bindingsFor(ShortcutAction.globalExternalLookup);
+    final ShortcutBindingSet set = registry.bindingsFor(
+      ShortcutAction.globalExternalLookup,
+    );
     if (set.keyboardBindings.isEmpty) {
-      glog('hotkey: no keyboard binding for globalExternalLookup — not '
-          'registered (feature off until a key is assigned)');
+      glog(
+        'hotkey: no keyboard binding for globalExternalLookup — not '
+        'registered (feature off until a key is assigned)',
+      );
       return;
     }
     final HotKey? hotKey = _hotKeyFromBinding(set.keyboardBindings.first);
@@ -345,8 +377,10 @@ class GlobalLookupController {
     _hotKey = hotKey;
     try {
       await hotKeyManager.register(hotKey, keyDownHandler: (_) => _onHotKey());
-      glog('hotkey: registered ${set.keyboardBindings.first.displayLabel} '
-          'from registry OK');
+      glog(
+        'hotkey: registered ${set.keyboardBindings.first.displayLabel} '
+        'from registry OK',
+      );
     } catch (e, st) {
       glog('hotkey: register FAILED: $e');
       // TODO-1086 可见化：全局查词热键注册失败过去只写进 glog 临时诊断文件，用户/开发者
@@ -407,12 +441,12 @@ class GlobalLookupController {
   /// Absolute folder that holds popup.html on Windows:
   /// <exeDir>/data/flutter_assets/assets/popup.
   String _popupAssetsDir() => p.join(
-        p.dirname(Platform.resolvedExecutable),
-        'data',
-        'flutter_assets',
-        'assets',
-        'popup',
-      );
+    p.dirname(Platform.resolvedExecutable),
+    'data',
+    'flutter_assets',
+    'assets',
+    'popup',
+  );
 
   Future<void> _onHotKey() async {
     final GlobalLookupRoute route = GlobalLookupRoute.desktop(
@@ -445,7 +479,8 @@ class GlobalLookupController {
       // TODO-1233 — notify:false: this is the between-lookups reset, NOT a user
       // dismissal, so it must not fire overlayHidden (which would resume a paused
       // video mid re-lookup).
-      GlobalLookupChannel.hide(notify: false);
+      await GlobalLookupChannel.hide(notify: false);
+      if (!_isCurrentRoute) return;
       // TODO-1030 M0 — when the user opted into context capture, try UI
       // Automation first: it yields the selected term PLUS the sentence it sits
       // in. On any miss (no UIA text element, non-Windows, channel unavailable)
@@ -464,8 +499,8 @@ class GlobalLookupController {
       }
       if (text.isEmpty) {
         // No context (or feature off): fall back to the clipboard selection.
-        text =
-            (await SelectionCapture.captureForegroundSelection() ?? '').trim();
+        text = (await SelectionCapture.captureForegroundSelection() ?? '')
+            .trim();
         if (!_isCurrentRoute) return;
         sentence = '';
       }
@@ -473,18 +508,13 @@ class GlobalLookupController {
         glog('hotkey: empty selection — abort');
         return;
       }
-      // BUG-1099：全局热键是用户最显式的意图，这张卡归用户所有——之后到达的被动
-      // 剪贴板流不得把它整帧重建掉。热键直接走 _lookupExternal（不经 lookupText），
-      // 故所有权在这里置位。
-      _userOwnedCard = true;
-      // 用户 2026-07-12 — 手动快捷键查词不显示整句横幅（框）：整句仍传下去供
-      // 制卡 `{sentence}` 兜底（sentenceContext），但 showSentenceBanner:false
-      // 让 root 卡不贴横幅。只有剪切板自动唤出的瞬态窗（dispatcher）才带横幅。
-      await _lookupExternal(text,
-          sentence: sentence,
-          showSentenceBanner: false,
-          autoRead: true,
-          miningHandler: null);
+      // 整句只进制卡 `{sentence}` 兜底（sentenceContext），卡上不显示。
+      await _lookupExternal(
+        text,
+        sentence: sentence,
+        autoRead: true,
+        miningHandler: null,
+      );
     } catch (e, st) {
       glog('hotkey: EXCEPTION $e\n$st');
     }
@@ -492,23 +522,15 @@ class GlobalLookupController {
 
   /// TODO-872 — programmatic app-external lookup (desktop floating-lyric word
   /// tap etc.). [text] is the already-segmented term; [sentence] is the line it
-  /// came from, shown as the root card's context banner and fed to mining's
-  /// sentence field ('' = no banner). Opens the SAME overlay card as the global
+  /// came from, fed to mining's `{sentence}` field only (the card never renders
+  /// it; '' = no sentence). Opens the SAME overlay card as the global
   /// hotkey, at the OS cursor (the click that triggered this just happened
   /// there — the native floating-lyric strip reports text+index only, no
   /// coordinates). Returns false when the overlay cannot take the lookup
   /// (unsupported platform / [start] never ran / blank term) so the caller
   /// falls back to its existing in-app route — a tap is never silently lost.
-  /// 真机第 5 轮 — [anchorScreenRect]（屏幕逻辑 px）：给出时卡片锚定在该矩形
-  /// 下方（剪贴板面板释义点击=被点文字处），null 保持 OS 光标语义。
-  /// BUG-1099 — [passiveStream]：本次文本来自环境剪贴板监听（galgame 台词流 /
-  /// 外部 texthooker），不是用户对 Hibiki 的显式动作。用户自己点出来的卡还在屏上时，
-  /// 被动流**整条丢弃**（不重建 root、不清空已测尺寸、不动窗口），卡原地不动直到用户
-  /// 自己关掉它；关掉后（[_onOverlayHidden]）下一条被动流照常开新卡。
-  ///
-  /// 这里比面板更保守（面板会把新句刷进横幅）：瞬态卡是锚在被点词旁的一次性卡片，
-  /// 把横幅换成一句无关的新台词既看不懂，又会把制卡 `{sentence}` 上下文
-  /// （[_currentSentence]）换成用户根本没在看的那句，做出错卡。
+  /// [anchorScreenRect]（屏幕逻辑 px）：给出时卡片锚定在该矩形下方（台词浮窗
+  /// 点词=被点文字处），null 保持 OS 光标语义。
   /// 游戏内查词的**物理像素**尺寸上限（宽, 高）。null = 不限（桌面浮窗）。
   ///
   /// 为什么必须有：游戏内卡片要塞进两个硬约束——游戏视口，以及共享内存的位图预算
@@ -516,17 +538,62 @@ class GlobalLookupController {
   /// 2555x2160（22 MB），既超预算，又让 anchor 的 `clamp(0, viewW - cardW)` 上界
   /// 变负、整个塌成 (0,0)——卡片钉在左上角不跟着字走，正是这个原因。
   ({int w, int h})? _physicalCap;
+  // BUG-1835 — the single-card bitmap cap above and the cascade layout work
+  // area are different constraints. A gal card is capped to ~60% of the game,
+  // while its children may use the WHOLE game viewport. Keeping the root origin
+  // alongside that viewport also puts computeFrameRect in the same coordinate
+  // domain as the glyph/game view instead of pretending the root starts at 0,0.
+  ({int w, int h, int x, int y})? _physicalLayoutWorkArea;
 
   /// 设置/清除物理像素上限。游戏内会话开始时按视口与位图预算设，结束时清。
-  void setPhysicalCap({int? width, int? height}) {
+  void setPhysicalCap({
+    int? width,
+    int? height,
+    int? workWidth,
+    int? workHeight,
+    int workOriginX = 0,
+    int workOriginY = 0,
+  }) {
     _physicalCap =
         (width == null || height == null || width <= 0 || height <= 0)
-            ? null
-            : (w: width, h: height);
+        ? null
+        : (w: width, h: height);
+    _physicalLayoutWorkArea =
+        (workWidth == null ||
+            workHeight == null ||
+            workWidth <= 0 ||
+            workHeight <= 0)
+        ? null
+        : (w: workWidth, h: workHeight, x: workOriginX, y: workOriginY);
   }
 
   /// 把逻辑尺寸夹到 [_physicalCap]。等比缩小而不是各轴独立裁剪：独立裁剪会改变
   /// 卡片的宽高比，排版跟着变形；等比缩小只是变小。
+  /// 当前 route 所属形态的「有效最大宽高」。
+  ///
+  /// 游戏内查词卡与 app 外覆盖窗是**两个形态**：前者贴在游戏客户区里、不能压住正文，
+  /// 后者浮在整块桌面上；合适尺寸本就不同。两者曾共读 overlay 那一组键，于是只能
+  /// 二选一——真机上就是「游戏内过小、浮窗过大」。这里按 route 分流，形态各读各的键。
+  LookupSize _effectiveLookupSizeForCurrentRoute(AppModel model) =>
+      GlobalLookupChannel.currentRoute.source == 'galCard'
+      ? model.galCardLookupEffectiveSize
+      : model.overlayLookupEffectiveSize;
+
+  /// 卡片尺寸上界（物理像素）。真机上它决定「最大宽/高」这个设置到底生不生效。
+  @visibleForTesting
+  ({int w, int h})? get debugPhysicalCap => _physicalCap;
+
+  /// 级联布局工作区 + 根卡原点。四个分量**必须同域**，测试据此咬住。
+  @visibleForTesting
+  ({int w, int h, int x, int y})? get debugLayoutWorkArea =>
+      _physicalLayoutWorkArea;
+
+  /// 按当前 route 分流出来的「有效最大宽高」。galCard 与桌面覆盖窗读的是两组不同的
+  /// 偏好键，这条分流是「游戏内查词卡独立尺寸」整个功能的唯一开关点。
+  @visibleForTesting
+  LookupSize debugEffectiveLookupSizeForCurrentRoute(AppModel model) =>
+      _effectiveLookupSizeForCurrentRoute(model);
+
   LookupSize _clampToPhysicalCap(LookupSize size, AppModel model, double dpr) {
     final ({int w, int h})? cap = _physicalCap;
     if (cap == null) return size;
@@ -543,8 +610,6 @@ class GlobalLookupController {
     String text, {
     String sentence = '',
     Rect? anchorScreenRect,
-    bool showSentenceBanner = true,
-    bool passiveStream = false,
     bool autoRead = true,
     OverlayMiningHandler? miningHandler,
   }) async {
@@ -558,8 +623,6 @@ class GlobalLookupController {
         text,
         sentence: sentence,
         anchorScreenRect: anchorScreenRect,
-        showSentenceBanner: showSentenceBanner,
-        passiveStream: passiveStream,
         autoRead: autoRead,
         miningHandler: miningHandler,
       ),
@@ -570,8 +633,6 @@ class GlobalLookupController {
     String text, {
     required String sentence,
     required Rect? anchorScreenRect,
-    required bool showSentenceBanner,
-    required bool passiveStream,
     required bool autoRead,
     required OverlayMiningHandler? miningHandler,
   }) async {
@@ -579,18 +640,8 @@ class GlobalLookupController {
     if (!isSupported || !_started || _appModel == null || term.isEmpty) {
       return false;
     }
-    if (keepUserOwnedCardForPassiveStream(
-      passiveStream: passiveStream,
-      userOwnedCard: _userOwnedCard,
-      visible: _revealed,
-    )) {
-      glog('lookupText: passive stream dropped (user-owned card kept)');
-      return true;
-    }
     _activateRoute(GlobalLookupChannel.currentRoute);
-    // 显式意图开的卡归用户所有；被动流开的卡不归（下一条流可以正常替换它）。
-    _userOwnedCard = !passiveStream;
-    glog('lookupText: "$term" passive=$passiveStream');
+    glog('lookupText: "$term"');
     // TODO-1268 / BUG — mirror _onHotKey's TODO-1079(D) preamble on the
     // programmatic (desktop floating-lyric tap) path: AWAIT a leading
     // hide(notify:false) so the overlay collapses to a confirmed-hidden state
@@ -605,13 +656,13 @@ class GlobalLookupController {
     // between-lookups reset is not seen as a user dismissal (TODO-1233).
     await GlobalLookupChannel.hide(notify: false);
     if (!_isCurrentRoute) return false;
-    await _lookupExternal(term,
-        sentence: sentence,
-        anchorScreenRect: anchorScreenRect,
-        showSentenceBanner: showSentenceBanner,
-        autoRead: autoRead,
-        miningHandler: miningHandler);
-    return true;
+    return _lookupExternal(
+      term,
+      sentence: sentence,
+      anchorScreenRect: anchorScreenRect,
+      autoRead: autoRead,
+      miningHandler: miningHandler,
+    );
   }
 
   void _activateRoute(GlobalLookupRoute route) {
@@ -630,7 +681,13 @@ class GlobalLookupController {
     return route == _activeRoute && GlobalLookupChannel.isRouteValid(route);
   }
 
-  void _notifyRevealed(int width, int height) {
+  void _notifyRevealed(
+    int width,
+    int height, {
+    int dx = 0,
+    int dy = 0,
+    int rootHeight = 0,
+  }) {
     final GlobalLookupRoute route = GlobalLookupChannel.currentRoute;
     if (!_isCurrentRoute) {
       return;
@@ -641,70 +698,31 @@ class GlobalLookupController {
     if (route.source == 'desktop') {
       onRevealed?.call(width, height);
     }
-    onRoutedRevealed?.call(route, width, height);
-  }
-
-  /// 瞬态 root 卡🕘：从 DB 重载复制历史（主进程采集写入，覆盖窗进程只读）后注入
-  /// 覆盖层。best-effort：任何失败记日志吞掉，绝不打断覆盖窗。
-  Future<void> _showClipboardHistory() async {
-    final AppModel? model = _appModel;
-    if (model == null) return;
-    try {
-      await model.clipboardHistoryRepo.loadFromDb();
-      await _renderClipboardHistory(model);
-    } catch (e, st) {
-      glog('lookup: clipboard-history EXCEPTION $e\n$st');
-    }
-  }
-
-  /// 历史面板「清空」：清库 + 内存，再重渲染成空态覆盖层。
-  Future<void> _clearClipboardHistoryAndRefresh() async {
-    final AppModel? model = _appModel;
-    if (model == null) return;
-    try {
-      await model.clearClipboardHistory();
-      await _renderClipboardHistory(model);
-    } catch (e, st) {
-      glog('lookup: clipboard-history clear EXCEPTION $e\n$st');
-    }
-  }
-
-  /// 把当前 [AppModel.clipboardHistory] + 本地化标签转成 host payload 注入渲染。
-  Future<void> _renderClipboardHistory(AppModel model) async {
-    final String payload = buildClipboardHistoryPayloadJson(
-      entries: model.clipboardHistory,
-      title: t.clipboard_history_title,
-      clearLabel: t.clipboard_history_clear,
-      emptyLabel: t.clipboard_history_empty,
-      now: DateTime.now(),
-    );
-    await GlobalLookupChannel.render('window.__globalLookupHost && '
-        'window.__globalLookupHost.showClipboardHistory($payload);');
+    onRoutedRevealed?.call(route, width, height, dx, dy, rootHeight);
   }
 
   /// TODO-872 — the shared app-external lookup chain for BOTH triggers (the
   /// global hotkey and the programmatic [lookupText] entry): unconditional
   /// hide → searchDictionary → reset reveal state → seed the stack root →
   /// showAt(atCursor) → renderStack → auto-read → ready-driven reveal safety.
-  /// Never throws (logs and swallows, matching the old _onHotKey contract).
+  /// Never throws (logs and returns false, matching the old _onHotKey contract).
   ///
-  /// 真机第 5 轮 — [anchorScreenRect]（屏幕逻辑 px）：剪贴板面板的释义点击给出
-  /// 被点文字的屏幕矩形，卡片锚定在文字正下方（同 in-app 嵌套卡观感），而不是
-  /// 光标点右下。null = 原 atCursor 语义（热键/悬浮字幕路径零变化）。native
+  /// [anchorScreenRect]（屏幕逻辑 px）：台词浮窗点词给出被点文字的屏幕矩形，
+  /// 卡片锚定在文字正下方（同 in-app 嵌套卡观感），而不是光标点右下。
+  /// null = 原 atCursor 语义（热键/悬浮字幕路径零变化）。native
   /// showAt 在 atCursor:false 时直接用传入点并以该点算工作区偏移，级联种子
   /// （cursorWorkX/Y）自动对齐锚点，无需 native 改动。
-  Future<void> _lookupExternal(
+  Future<bool> _lookupExternal(
     String text, {
     required String sentence,
     Rect? anchorScreenRect,
-    bool showSentenceBanner = true,
     required bool autoRead,
     OverlayMiningHandler? miningHandler,
   }) async {
     final AppModel? model = _appModel;
     if (model == null) {
       glog('lookup: appModel null — abort');
-      return;
+      return false;
     }
     try {
       // TODO-1079 (D) — reset native + Dart reveal state from zero every
@@ -717,22 +735,23 @@ class GlobalLookupController {
       // and the prewarmed WebView2 survives it.
       // TODO-1233 — notify:false: same between-lookups reset as _onHotKey; must
       // not look like a user dismissal.
-      GlobalLookupChannel.hide(notify: false);
+      await GlobalLookupChannel.hide(notify: false);
+      if (!_isCurrentRoute) return false;
       _currentSentence = sentence;
       _currentMiningHandler = miningHandler;
-      _showSentenceBanner = showSentenceBanner;
+      // Retire every acknowledgement belonging to the previous lookup before
+      // the asynchronous dictionary search yields. The renderer's epoch itself
+      // is host-global and is intentionally NOT reset here.
+      _resetGeometryHandshakeForLookup();
 
       final DictionarySearchResult result = await model.searchDictionary(
         searchTerm: text,
         searchWithWildcards: false,
       );
-      if (!_isCurrentRoute) return;
+      if (!_isCurrentRoute) return false;
       glog('lookup: searched "$text" -> entries=${result.entries.length}');
       // New card: forget the previous size + reveal state so the overlay
       // re-measures and reveals from scratch.
-      _lastSentWidth = -1;
-      _lastSentHeight = -1;
-      _cancelPendingGalCapture();
       _revealed = false;
       _revealSafety?.cancel();
       // TODO-1231 (BUG-583) — a fresh hotkey lookup starts a new session: drop
@@ -774,8 +793,11 @@ class GlobalLookupController {
       // the window-local origin clamped into the work area (TODO-1231
       // computeRootShellOffset), so a single-frame lookup still reveals exactly
       // at the card size after the bbox trims the bounds — no regression.
-      final LookupSize overlaySize =
-          _clampToPhysicalCap(model.overlayLookupEffectiveSize, model, dpr);
+      final LookupSize overlaySize = _clampToPhysicalCap(
+        _effectiveLookupSizeForCurrentRoute(model),
+        model,
+        dpr,
+      );
       final double cardW = overlaySize.width * model.appUiScale;
       final double cardH = overlaySize.height * model.appUiScale;
       _layoutBoundsW = cardW * kGlobalLookupLayoutBoundsWidthFactor;
@@ -786,8 +808,11 @@ class GlobalLookupController {
       // 该点所在显示器算工作区/偏移；无锚点保持 atCursor（+8,+8 光标偏移）。
       // 布局工作区上限：游戏内查词时可用空间是**游戏视口**，不是显示器工作区。
       // 不传就会按 2560x1440 排版、排完再被裁（runner 超尺寸是裁不是缩）。
-      final int capW = _physicalCap?.w ?? 0;
-      final int capH = _physicalCap?.h ?? 0;
+      final ({int w, int h, int x, int y})? workArea = _physicalLayoutWorkArea;
+      final int capW = workArea?.w ?? 0;
+      final int capH = workArea?.h ?? 0;
+      final int capX = workArea?.x ?? 0;
+      final int capY = workArea?.y ?? 0;
       final GlobalLookupShowResult shown = anchorScreenRect == null
           ? await GlobalLookupChannel.showAt(
               x: 0,
@@ -796,7 +821,10 @@ class GlobalLookupController {
               height: h0,
               atCursor: true,
               capWidth: capW,
-              capHeight: capH)
+              capHeight: capH,
+              capOriginX: capX,
+              capOriginY: capY,
+            )
           : await GlobalLookupChannel.showAt(
               x: (anchorScreenRect.left * dpr).round(),
               y: ((anchorScreenRect.bottom + 4) * dpr).round(),
@@ -804,8 +832,16 @@ class GlobalLookupController {
               height: h0,
               atCursor: false,
               capWidth: capW,
-              capHeight: capH);
-      if (!_isCurrentRoute) return;
+              capHeight: capH,
+              capOriginX: capX,
+              capOriginY: capY,
+            );
+      if (!_isCurrentRoute) return false;
+      if (!shown.ok) {
+        glog('lookup: showAt rejected the current route');
+        await GlobalLookupChannel.hide(notify: false);
+        return false;
+      }
       // TODO-893 / BUG-859 — convert the native physical-px work area to CSS px
       // (the cascade layout domain) with the ANCHOR MONITOR's dpr reported by
       // showAt. The main-window dpr (used for the initial off-screen size
@@ -835,18 +871,27 @@ class GlobalLookupController {
       // clamp-safe because the reserved origin sits exactly on the C++ RevealStack
       // work-area clamp target (see computeCascadeHeadroomSeed). 0 near an edge / no
       // work area -> pre-fix geometry.
-      final ({double left, double top}) floor = computeCascadeHeadroomSeed(
-        cursorWorkX: _cursorWorkX,
-        cursorWorkY: _cursorWorkY,
-        screenWorkW: _screenWorkW,
-        screenWorkH: _screenWorkH,
-      );
+      // Desktop reserves the path to the monitor edge so later HWND moves cannot
+      // lurch a visible parent. The gal route now resizes its already-visible
+      // composition HWND in place; reserving from a non-zero game root to (0,0)
+      // would instead create a mostly-transparent near-viewport-sized union and
+      // recreate the fixed red range reported in BUG-1835.
+      final ({double left, double top}) floor = route.source == 'galCard'
+          ? (left: 0.0, top: 0.0)
+          : computeCascadeHeadroomSeed(
+              cursorWorkX: _cursorWorkX,
+              cursorWorkY: _cursorWorkY,
+              screenWorkW: _screenWorkW,
+              screenWorkH: _screenWorkH,
+            );
       _originFloorLeft = floor.left;
       _originFloorTop = floor.top;
       await _renderStack(beginRoute: route);
-      if (!_isCurrentRoute) return;
-      glog('lookup: showAt(atCursor)=${shown.ok} off-screen w0=$w0 h0=$h0 '
-          'workCss=${_screenWorkW}x$_screenWorkH rendered');
+      if (!_isCurrentRoute) return false;
+      glog(
+        'lookup: showAt(atCursor)=${shown.ok} off-screen w0=$w0 h0=$h0 '
+        'workCss=${_screenWorkW}x$_screenWorkH rendered',
+      );
       if (autoRead) {
         _autoReadFirstEntry(model, result);
       }
@@ -863,8 +908,18 @@ class GlobalLookupController {
       final int safeW = (cardW * dpr).round();
       final int safeH = (cardH * dpr).round();
       _scheduleReadyDrivenSafety(safeW, safeH, attempt: 0);
+      return true;
     } catch (e, st) {
       glog('lookup: EXCEPTION $e\n$st');
+      if (_isCurrentRoute) {
+        try {
+          await GlobalLookupChannel.hide(notify: false);
+        } catch (_) {
+          // The original failure remains authoritative. Cleanup is best effort
+          // and must not turn a rejected lookup into an unhandled exception.
+        }
+      }
+      return false;
     }
   }
 
@@ -875,8 +930,11 @@ class GlobalLookupController {
   /// surface is still loading, reschedule up to [_kReadySafetyMaxAttempts] times
   /// (~kReadySafetyStep each), then reveal as an absolute last resort so the card
   /// is never stuck invisible. [attempt] is the current retry index.
-  void _scheduleReadyDrivenSafety(int width, int height,
-      {required int attempt}) {
+  void _scheduleReadyDrivenSafety(
+    int width,
+    int height, {
+    required int attempt,
+  }) {
     _revealSafety?.cancel();
     _revealSafety = Timer(_kReadySafetyStep, () async {
       if (!_isCurrentRoute || _revealed) {
@@ -891,18 +949,35 @@ class GlobalLookupController {
       if (!_isCurrentRoute || _revealed) {
         return; // Host revealed while we awaited the readiness check.
       }
-      if (ready || attempt >= _kReadySafetyMaxAttempts) {
+      // A ready WebView is sufficient for a desktop safety reveal, but not for
+      // galCard.  The game route must first receive the host's versioned
+      // overlaySize so revealStack can commit that exact geometry and arm the
+      // captureReady handshake.  Falling back as soon as WebView2 reports ready
+      // races a slightly-late first overlaySize: epoch 0 resizes the surface,
+      // the host advances to epoch 1, and neither transaction can acknowledge
+      // the other.  Keep waiting for authoritative geometry on galCard and use
+      // the legacy epoch-0 fallback only after the existing bounded retries.
+      final bool awaitingGalGeometry =
+          GlobalLookupChannel.currentRoute.source == 'galCard';
+      if ((!awaitingGalGeometry && ready) ||
+          attempt >= _kReadySafetyMaxAttempts) {
         _revealed = true;
-        glog('reveal: READY-SAFETY (ready=$ready attempt=$attempt) '
-            'w=$width h=$height');
+        glog(
+          'reveal: READY-SAFETY (ready=$ready attempt=$attempt) '
+          'w=$width h=$height',
+        );
         if (GlobalLookupChannel.currentRoute.source == 'galCard') {
-          unawaited(GlobalLookupChannel.revealStack(
-            dx: 0,
-            dy: 0,
-            width: width,
-            height: height,
-          ));
-          _notifyAfterResizeReady(width, height);
+          final int geometryEpoch = _fallbackGeometryEpochForCurrentRoute();
+          unawaited(
+            GlobalLookupChannel.revealStack(
+              dx: 0,
+              dy: 0,
+              width: width,
+              height: height,
+              geometryEpoch: geometryEpoch,
+            ),
+          );
+          _notifyAfterResizeReady(width, height, geometryEpoch: geometryEpoch);
         } else {
           unawaited(GlobalLookupChannel.reveal(width: width, height: height));
           _notifyRevealed(width, height);
@@ -910,7 +985,11 @@ class GlobalLookupController {
         return;
       }
       // Surface still loading — defer instead of revealing blank.
-      glog('reveal: READY-SAFETY defer (not ready, attempt=$attempt)');
+      glog(
+        'reveal: READY-SAFETY defer '
+        '(${awaitingGalGeometry && ready ? "galCard awaits geometry" : "not ready"}, '
+        'attempt=$attempt)',
+      );
       _scheduleReadyDrivenSafety(width, height, attempt: attempt + 1);
     });
   }
@@ -925,7 +1004,11 @@ class GlobalLookupController {
     }
     return WidgetsBinding.instance.platformDispatcher.views.isNotEmpty
         ? WidgetsBinding
-            .instance.platformDispatcher.views.first.devicePixelRatio
+              .instance
+              .platformDispatcher
+              .views
+              .first
+              .devicePixelRatio
         : 1.0;
   }
 
@@ -944,8 +1027,10 @@ class GlobalLookupController {
       if (request == null) {
         return Uint8List(0);
       }
-      final Uint8List? bytes =
-          FushiDicts.instance.getMediaFile(request.dictionary, request.path);
+      final Uint8List? bytes = FushiDicts.instance.getMediaFile(
+        request.dictionary,
+        request.path,
+      );
       return bytes ?? Uint8List(0);
     } catch (_) {
       return Uint8List(0);
@@ -973,20 +1058,19 @@ class GlobalLookupController {
     if (!_acceptsRoute(event.route) || event.message == null) {
       return;
     }
-    final GlobalLookupRoute route =
-        event.route.lookupEpoch == 0 ? _activeRoute! : event.route;
-    GlobalLookupChannel.runWithRoute(
-      route,
-      () => _onJsMessage(event.message!),
-    );
+    final GlobalLookupRoute route = event.route.lookupEpoch == 0
+        ? _activeRoute!
+        : event.route;
+    GlobalLookupChannel.runWithRoute(route, () => _onJsMessage(event.message!));
   }
 
   void _onRoutedOverlayHidden(OverlayReverseEvent event) {
     if (!_acceptsRoute(event.route)) {
       return;
     }
-    final GlobalLookupRoute route =
-        event.route.lookupEpoch == 0 ? _activeRoute! : event.route;
+    final GlobalLookupRoute route = event.route.lookupEpoch == 0
+        ? _activeRoute!
+        : event.route;
     GlobalLookupChannel.runWithRoute(route, () => _onOverlayHidden(route));
   }
 
@@ -1002,15 +1086,9 @@ class GlobalLookupController {
     final GlobalLookupRoute route =
         routed ?? _activeRoute ?? const GlobalLookupRoute.desktop();
     _revealSafety?.cancel();
+    _nestedLookupGeneration++;
     _revealed = false;
-    // BUG-1099：用户真把卡关了 = 放弃这次查词，所有权随之释放，下一条被动剪贴板
-    // 流照常开新卡（保护不会永久粘住）。
-    _userOwnedCard = false;
-    _lastSentWidth = -1;
-    _lastSentHeight = -1;
-    _lastSentDx = 0;
-    _lastSentDy = 0;
-    _cancelPendingGalCapture();
+    _resetGeometryHandshakeForLookup();
     // TODO-1231 (BUG-583) — clear the origin ratchet on a genuine dismissal so
     // the next session starts unconstrained.
     _ratchetLeft = double.infinity;
@@ -1046,8 +1124,8 @@ class GlobalLookupController {
   /// 下取整 + clamp，见 [resolveOverlayResizeFromWindow]），再按「拖即解锁」好品味写
   /// 真值：一动手定制 overlay 尺寸就脱钩「跟随 app 内」——
   /// [AppModel.setOverlayLookupIndependentSize]`(true)` + 写 overlay 宽/高键。滑杆与
-  /// 拖拽写同一真值，下次查词沿用新尺寸（预期行为）。**绝不写 clipboardPanelRect /
-  /// popupMaxWidth**——那是剪贴板面板与 app 内弹窗各自的真值，串台就破坏它们。
+  /// 拖拽写同一真值，下次查词沿用新尺寸（预期行为）。**绝不写 popupMaxWidth**——
+  /// 那是 app 内弹窗的真值，串台就破坏它。
   void _onOverlayResized(Map<String, Object?> message) {
     final AppModel? model = _appModel;
     if (model == null) {
@@ -1070,7 +1148,7 @@ class GlobalLookupController {
       return;
     }
     final double dpr = _devicePixelRatio();
-    final LookupSize current = model.overlayLookupEffectiveSize;
+    final LookupSize current = _effectiveLookupSizeForCurrentRoute(model);
     final LookupSize size = resolveOverlayResizeFromDelta(
       currentWidth: current.width,
       currentHeight: current.height,
@@ -1082,8 +1160,10 @@ class GlobalLookupController {
     unawaited(model.setOverlayLookupIndependentSize(true));
     model.setOverlayLookupMaxWidth(size.width);
     model.setOverlayLookupMaxHeight(size.height);
-    glog('overlay resized -> unlock independent, ${size.width}x${size.height} '
-        '(phys=${physW}x$physH dpr=$dpr uiScale=${model.appUiScale})');
+    glog(
+      'overlay resized -> unlock independent, ${size.width}x${size.height} '
+      '(phys=${physW}x$physH dpr=$dpr uiScale=${model.appUiScale})',
+    );
     // 松手即时填充（2026-07-13）— setPref 同步更新 prefCache，故此刻
     // [AppModel.overlayLookupEffectiveSize] 已是新尺寸；立即重排当前卡，复用嵌套卡
     // 同款的 overlaySize→_applyOverlayBox→revealStack resize 分支把窗口长到位并填满
@@ -1095,7 +1175,37 @@ class GlobalLookupController {
 
   void _onJsMessage(Map<String, Object?> message) {
     final Object? handler = message['handler'];
-    glog('js: handler=$handler args=${message['args']}');
+    // BUG-1833 — galFrameDirty 可随滚动/异步 hydration 达到每秒几十次；glog 当前是
+    // writeAsStringSync + flush:true，把每个浏览器帧都变成 UI isolate 的同步磁盘刷写。
+    // dirty 只是调度信号，成功本身没有诊断价值；失败/呈现状态仍由 present 日志覆盖。
+    if (handler != 'galFrameDirty' &&
+        handler != 'popupRendered' &&
+        handler != 'favoriteCheck' &&
+        handler != 'duplicateCheck') {
+      glog('js: handler=$handler args=${message['args']}');
+    }
+    if (handler == 'staticSettingsRequired') {
+      final ({int? revision, int? hostGeometryEpoch}) req =
+          parseStaticSettingsRequired(message);
+      final int? revision = req.revision;
+      if (revision != null) {
+        final GlobalLookupRoute route = GlobalLookupChannel.currentRoute;
+        final String hostKey = route.target.isEmpty ? 'desktop' : route.target;
+        _hostStaticRevisions.invalidate(hostKey, revision);
+        if (req.hostGeometryEpoch == 0) {
+          // A whole-WebView recovery restarts the host counter. Its first bbox
+          // can equal the retired document's epoch and bounds, so clear Dart's
+          // de-dup only for this fresh-realm signal. Ordinary child cache misses
+          // in a warm document keep their current capture handshake intact.
+          _resetGeometryHandshakeForLookup();
+        }
+        // The requesting shell remains content-gated in host.js. Rebuild the
+        // current descriptor with the missing static payload; the immutable
+        // route zone keeps a late recovery request out of a newer lookup.
+        unawaited(_renderStack());
+      }
+      return;
+    }
     if (handler == 'captureReady') {
       final GlobalLookupRoute route = GlobalLookupChannel.currentRoute;
       if (route.source == 'galCard') {
@@ -1103,19 +1213,35 @@ class GlobalLookupController {
         final Object? args = message['args'];
         final int? readyWidth =
             args is List && args.isNotEmpty && args[0] is num
-                ? (args[0] as num).toInt()
-                : null;
+            ? (args[0] as num).toInt()
+            : null;
         final int? readyHeight =
             args is List && args.length > 1 && args[1] is num
-                ? (args[1] as num).toInt()
-                : null;
+            ? (args[1] as num).toInt()
+            : null;
+        final int? readyGeometryEpoch = args is List && args.length > 2
+            ? parseGlobalLookupGeometryEpoch(args[2])
+            : null;
         if (pending != null &&
-            readyWidth == pending.width &&
-            readyHeight == pending.height) {
+            pending.route == route &&
+            globalLookupCaptureReadyMatches(
+              pendingWidth: pending.width,
+              pendingHeight: pending.height,
+              pendingGeometryEpoch: pending.geometryEpoch,
+              readyWidth: readyWidth,
+              readyHeight: readyHeight,
+              readyGeometryEpoch: readyGeometryEpoch,
+            )) {
           _galCaptureReadySafety?.cancel();
           _galCaptureReadySafety = null;
           _pendingGalCapture = null;
-          _notifyRevealed(pending.width, pending.height);
+          _notifyRevealed(
+            pending.width,
+            pending.height,
+            dx: pending.dx,
+            dy: pending.dy,
+            rootHeight: pending.rootHeight,
+          );
         }
       }
       return;
@@ -1156,30 +1282,8 @@ class GlobalLookupController {
       return;
     }
     // BUG-1127 / BUG-1210 — 浮窗 iframe realm 回报自动发音 `audio.play()` 真实
-    // 结果（args = [token, ok, reason?]）。处理收口进共享 [OverlayAutoRead]，与
-    // 剪贴板面板同一实现。
+    // 结果（args = [token, ok, reason?]）。处理收口进共享 [OverlayAutoRead]。
     if (_autoRead.maybeHandleWordAudioPlayed(handler, message)) {
-      return;
-    }
-    // 瞬态 root 卡🕘：从 DB 重载复制历史（主进程采集写入）并注入覆盖层。
-    if (handler == 'clipboardHistory') {
-      unawaited(_showClipboardHistory());
-      return;
-    }
-    // 历史某条被点：以该文本重查（复用共享 app-external 查词链 lookupText）。
-    if (handler == 'lookupClipboardHistoryEntry') {
-      final Object? args = message['args'];
-      if (args is List && args.isNotEmpty) {
-        final String text = args.first?.toString() ?? '';
-        if (text.isNotEmpty) {
-          unawaited(lookupText(text));
-        }
-      }
-      return;
-    }
-    // 历史面板「清空」：清库 + 内存，再重渲染成空态覆盖层。
-    if (handler == 'clearClipboardHistory') {
-      unawaited(_clearClipboardHistoryAndRefresh());
       return;
     }
     if (handler == 'tapOutside' || handler == 'dismiss') {
@@ -1191,16 +1295,18 @@ class GlobalLookupController {
       if (handler == 'tapOutside' && frameId != null) {
         final int layerIndex = _layerIndexForFrameId(frameId);
         if (layerIndex >= 0) {
+          _nestedLookupGeneration++;
           _stack = closeChildPopupsAndClearSelection(_stack, layerIndex);
           _pruneFrameResults();
           if (_stack.isEmpty) {
             GlobalLookupChannel.hide();
           } else {
-            unawaited(_renderStack());
+            unawaited(_retainRenderedStack());
           }
           return;
         }
       }
+      _nestedLookupGeneration++;
       GlobalLookupChannel.hide();
       return;
     }
@@ -1213,12 +1319,13 @@ class GlobalLookupController {
     if (handler == 'dismissPopupAt') {
       final int? index = _firstIntArg(message);
       if (index != null) {
+        _nestedLookupGeneration++;
         _stack = dismissPopupAt(_stack, index);
         _pruneFrameResults();
         if (_stack.isEmpty) {
           GlobalLookupChannel.hide();
         } else {
-          unawaited(_renderStack());
+          unawaited(_retainRenderedStack());
         }
       }
       return;
@@ -1226,9 +1333,10 @@ class GlobalLookupController {
     if (handler == 'closeChildPopups') {
       final int? parentIndex = _firstIntArg(message);
       if (parentIndex != null) {
+        _nestedLookupGeneration++;
         _stack = closeChildPopupsAndClearSelection(_stack, parentIndex);
         _pruneFrameResults();
-        unawaited(_renderStack());
+        unawaited(_retainRenderedStack());
       }
       return;
     }
@@ -1277,7 +1385,24 @@ class GlobalLookupController {
           final Object? second = args[1];
           if (second is Map) {
             // D2 union bounding box (window-local CSS px) -> place + size window.
-            _applyOverlayBox(model, dpr, second.cast<Object?, Object?>());
+            final Map<Object?, Object?> box = second.cast<Object?, Object?>();
+            final GlobalLookupRoute route = GlobalLookupChannel.currentRoute;
+            final int? reportedEpoch = parseGlobalLookupGeometryEpoch(
+              box['geometryEpoch'],
+            );
+            if (reportedEpoch == null) {
+              // captureReady cannot safely acknowledge an unversioned galCard
+              // resize: an older frame with the same dimensions would satisfy
+              // the old width/height-only gate. Desktop retains a legacy epoch
+              // zero fallback because it has no bitmap capture handshake.
+              if (route.source == 'galCard') {
+                glog('overlaySize: ignored galCard box without geometryEpoch');
+                return;
+              }
+              _applyOverlayBox(model, dpr, box, geometryEpoch: 0);
+            } else {
+              _applyOverlayBox(model, dpr, box, geometryEpoch: reportedEpoch);
+            }
           } else if (second is num && second > 0) {
             // Legacy single-card form: physical scrollHeight, fixed width.
             _applyOverlayScalar(model, dpr, second.toDouble());
@@ -1305,14 +1430,98 @@ class GlobalLookupController {
     //     case.
     if (handler == 'onLinkClick' || handler == 'textSelected') {
       _dispatchNestedLookup(message);
+      return;
+    }
+    // BUG-2054 — the parent realm's whole-word bbox report; completes the wait
+    // `_lookupNested` is holding before it places the child card.
+    if (_maybeHandleNestedWordAnchor(handler, message)) {
+      return;
+    }
+  }
+
+  /// BUG-2054 — the parent realm's answer to a tokened [buildHighlightFrameScript]
+  /// request: the highlighted word's whole-word bbox (window-local CSS px, host
+  /// already applied the same `anchorRectToScreen` the original anchor took), or
+  /// null when the realm had nothing usable.
+  ///
+  /// args = [parentFrameIndex, rect|null, token]. Routing is by TOKEN, not by
+  /// stack position: the awaiting `_lookupNested` owns the token and re-checks
+  /// its own route/generation after the await, so a late or cross-route report
+  /// completes nothing (a stale token has already been removed) instead of
+  /// overwriting an unrelated card's anchor.
+  bool _maybeHandleNestedWordAnchor(
+    Object? handler,
+    Map<String, Object?> message,
+  ) {
+    if (handler != 'nestedWordAnchor') {
+      return false;
+    }
+    final Object? args = message['args'];
+    if (args is List && args.length >= 3) {
+      final Object? rawToken = args[2];
+      final int? token =
+          rawToken is num ? rawToken.toInt() : int.tryParse('$rawToken');
+      if (token != null) {
+        final Completer<Rect?>? completer = _pendingWordAnchors.remove(token);
+        if (completer != null && !completer.isCompleted) {
+          completer.complete(_anchorRectFromArg(args[1]));
+        }
+      }
+    }
+    return true;
+  }
+
+  /// BUG-2054 — highlight the searched word in the parent realm and WAIT for the
+  /// whole-word bbox it reports back, so the child card can be placed against the
+  /// real word on its FIRST render.
+  ///
+  /// Why the wait instead of a re-anchor afterwards: unlike the in-app cards
+  /// (whose child sits behind `markPendingReveal` until its own WebView renders),
+  /// the overlay child is rendered and handed to the host's reveal gate by
+  /// `_renderStack()` immediately. Re-anchoring after that would move an already
+  /// visible card AND re-drive the whole overlay window geometry (union bbox ->
+  /// overlaySize -> native move/resize) on EVERY nested lookup — the word bbox
+  /// differs from the first-character rect even on a single-line selection.
+  ///
+  /// Returns null on timeout / no usable bbox / a retired route: the caller then
+  /// keeps the first-character anchor, exactly as before this fix.
+  Future<Rect?> _highlightAndAwaitWordAnchor(
+    int sourceIndex,
+    int highlightCount,
+  ) async {
+    final int token = ++_wordAnchorToken;
+    final Completer<Rect?> completer = Completer<Rect?>();
+    _pendingWordAnchors[token] = completer;
+    try {
+      await GlobalLookupChannel.render(
+        buildHighlightFrameScript(sourceIndex, highlightCount, token: token),
+      );
+      return await completer.future.timeout(_kWordAnchorReportTimeout);
+    } on TimeoutException {
+      glog('nested: word-anchor token=$token TIMEOUT');
+      return null;
+    } catch (e) {
+      glog('nested: word-anchor token=$token EXCEPTION $e');
+      return null;
+    } finally {
+      _pendingWordAnchors.remove(token);
     }
   }
 
   /// TODO-893 v2 (symptom 1) — shared nested-lookup dispatch for the two popup.js
   /// triggers (`onLinkClick`, `textSelected`) that carry the SAME arg shape:
   /// args[0] = query, args[1] = the clicked word's window-local CSS px anchor
-  /// rect (re-anchored by the host shim). Searches and pushes a child frame.
+  /// rect (re-anchored by the host shim). `__frameId` is the authoritative
+  /// source layer: truncate that layer's old descendants before searching, just
+  /// like the app-in popup's `prunePopupStack(index + 1)` path.
   void _dispatchNestedLookup(Map<String, Object?> message) {
+    // Do not logically prune descendants unless a search owner exists. The
+    // physical host deliberately retains those descendants until the async
+    // replacement is ready, so pruning first would create visible ghost frames
+    // on this otherwise-harmless unavailable-model path.
+    if (_appModel == null) {
+      return;
+    }
     final Object? args = message['args'];
     if (args is! List || args.isEmpty) {
       return;
@@ -1321,9 +1530,34 @@ class GlobalLookupController {
     if (query.isEmpty) {
       return;
     }
-    final Rect? anchor =
-        (args.length >= 2) ? _anchorRectFromArg(args[1]) : null;
-    unawaited(_lookupNested(query, anchor));
+    final Rect? anchor = (args.length >= 2)
+        ? _anchorRectFromArg(args[1])
+        : null;
+    final String? sourceFrameId = message['__frameId'] as String?;
+    final GlobalLookupNestedParent? source = resolveNestedLookupParent(
+      _stack,
+      sourceFrameId,
+    );
+    if (source == null) {
+      // A non-null but unknown id is a late message from an iframe already
+      // removed from the stack. Fail closed instead of attaching it to top.
+      return;
+    }
+
+    final bool descendantsClosed = !identical(source.stack, _stack);
+    _stack = source.stack;
+    _pruneFrameResults();
+    final int generation = ++_nestedLookupGeneration;
+    unawaited(
+      _lookupNested(
+        query,
+        anchor,
+        sourceFrameId: source.frameId,
+        sourceIndex: source.parentIndex,
+        generation: generation,
+        renderPrunedStack: descendantsClosed,
+      ),
+    );
   }
 
   /// TODO-1204 — records one lookup on every app-external hotkey / nested lookup
@@ -1338,11 +1572,16 @@ class GlobalLookupController {
     // best-effort：连同同步阶段（[AppModel.database] late 字段 getter 在 DB 未初始化时
     // 会抛 LateInitializationError）一起吞掉——查词计数是旁路埋点，绝不打断查词回复。
     try {
-      unawaited(model.database
-          .addLookupCount(sourceType: kStatSourceBook, dateKey: statTodayKey())
-          .catchError((Object e, StackTrace st) {
-        glog('lookup-count: EXCEPTION $e\n$st');
-      }));
+      unawaited(
+        model.database
+            .addLookupCount(
+              sourceType: kStatSourceBook,
+              dateKey: statTodayKey(),
+            )
+            .catchError((Object e, StackTrace st) {
+              glog('lookup-count: EXCEPTION $e\n$st');
+            }),
+      );
     } catch (e, st) {
       glog('lookup-count: EXCEPTION (sync) $e\n$st');
     }
@@ -1360,54 +1599,122 @@ class GlobalLookupController {
   void _autoReadFirstEntry(AppModel model, DictionarySearchResult result) =>
       _autoRead.autoReadFirstEntry(model, result);
 
-  Future<void> _lookupNested(String query, Rect? anchorRect) async {
+  Future<void> _lookupNested(
+    String query,
+    Rect? anchorRect, {
+    required String sourceFrameId,
+    required int sourceIndex,
+    required int generation,
+    required bool renderPrunedStack,
+  }) async {
     final AppModel? model = _appModel;
     if (model == null) {
       return;
     }
     try {
       _recordLookupCount();
-      // TODO-1190 — the PARENT frame (where the clicked word lives) is the
-      // current stack top. Capture its insertion-order index BEFORE pushing the
-      // child so we can highlight the searched word in the parent card after the
-      // child renders (app-external parity with the in-app popup, which marks the
-      // clicked word in the parent via DictionaryPopupWebView.highlightSelection).
-      final int parentIndex = _stack.length - 1;
-      // BUG-1099：卡内点词=用户显式动作，这张卡（及其级联）从此归用户所有，
-      // 被动剪贴板流不得再把它整帧重建掉。置位放在 await 之前，挡住在途竞争。
-      _userOwnedCard = true;
-      final DictionarySearchResult result = await model.searchDictionary(
+      final Future<DictionarySearchResult> search = model.searchDictionary(
         searchTerm: query,
         searchWithWildcards: false,
       );
-      if (!_isCurrentRoute) return;
-      _lastSentWidth = -1;
-      _lastSentHeight = -1;
-      // TODO-867 P3c: push a CHILD frame onto the stack (parent = current
-      // top). pushLookupFrame drops a no-result nested lookup (resultCount<=0),
-      // so an empty nested search leaves the stack unchanged (identical object)
-      // — no empty child card is stacked. Rendering goes through the host stack
-      // (renderStack); there is no top-level direct render anymore.
-      _pushChildFrame(query, result, anchorRect);
-      await _renderStack();
-      glog('nested: "$query" entries=${result.entries.length}');
+      // Keep the old physical descendants mounted while the dictionary Future
+      // is in flight, although the authoritative Dart stack is already pruned.
+      // A successful ancestor replacement can then commit old -> new child in
+      // ONE render/geometry transaction instead of flashing the root/prefix-only
+      // intermediate state. No-result still applies the lightweight prune below.
+      final DictionarySearchResult result = await search;
+      if (!_isCurrentRoute || generation != _nestedLookupGeneration) return;
+
       // TODO-1190 — mark the searched word inside the PARENT card's popup.js
       // realm (host.highlightFrame -> fushiSelection.highlightSelection). Only
       // when the child search matched something; count = the matched char length
       // (same source the in-app lookupHighlightCharCount reads). No-op host-side
       // on a bad index / non-positive count.
+      //
+      // BUG-2054 — the same round-trip brings back the highlighted word's
+      // whole-word bbox, and it runs BEFORE the push/render below so the child
+      // card is placed against the real word on its FIRST render (see
+      // [_highlightAndAwaitWordAnchor] for why re-anchoring afterwards is worse
+      // here than it is for the in-app cards). Anything unusable leaves
+      // anchorRect untouched — the first-character anchor, as before. It stays
+      // ABOVE the source re-resolve below so every async boundary this lookup
+      // crosses is behind that one immutable-id check.
       final int highlightCount = result.entries.isEmpty
           ? 0
           : JapaneseLanguage.instance.getFinalHighlightLength(
               result: result,
               searchTerm: query,
             );
-      if (parentIndex >= 0 && highlightCount > 0) {
-        await GlobalLookupChannel.render(
-            buildHighlightFrameScript(parentIndex, highlightCount));
+      Rect? effectiveAnchor = anchorRect;
+      if (sourceIndex >= 0 && highlightCount > 0) {
+        final Rect? wordAnchor = await _highlightAndAwaitWordAnchor(
+          sourceIndex,
+          highlightCount,
+        );
+        if (!_isCurrentRoute || generation != _nestedLookupGeneration) return;
+        if (wordAnchor != null && !wordAnchor.isEmpty) {
+          effectiveAnchor = wordAnchor;
+        }
       }
+
+      // The query crossed an async boundary. Re-resolve the immutable source id:
+      // an ancestor close/root replacement must make this result inert, while a
+      // valid source is truncated again before push in case another side effect
+      // appended descendants without starting a newer nested generation.
+      final GlobalLookupNestedParent? liveSource = resolveNestedLookupParent(
+        _stack,
+        sourceFrameId,
+      );
+      if (liveSource == null || liveSource.parentIndex != sourceIndex) {
+        return;
+      }
+      _stack = liveSource.stack;
+      _pruneFrameResults();
+      _lastSentWidth = -1;
+      _lastSentHeight = -1;
+      // TODO-867 P3c: push a CHILD frame whose parent is the message's source
+      // layer. pushLookupFrame drops a no-result nested lookup (resultCount<=0),
+      // so an empty nested search leaves the stack unchanged (identical object)
+      // after the old descendants were already removed — no empty child card is
+      // stacked. Rendering goes through the host stack (renderStack); there is no
+      // top-level direct render anymore.
+      final bool childPushed = _pushChildFrame(
+        query,
+        result,
+        effectiveAnchor,
+        parentIndex: sourceIndex,
+      );
+      if (childPushed) {
+        await _renderStack();
+      } else if (renderPrunedStack) {
+        await _retainRenderedStack();
+      }
+      if (!_isCurrentRoute || generation != _nestedLookupGeneration) return;
+      glog(
+        'nested: source=$sourceFrameId[$sourceIndex] "$query" '
+        'entries=${result.entries.length}',
+      );
+      // (The parent-card highlight already ran above, together with the
+      // whole-word anchor round-trip it shares — BUG-2054.)
       _autoReadFirstEntry(model, result);
     } catch (e, st) {
+      // The ancestor-replacement fast path keeps old physical descendants only
+      // while its search is in flight. If that search fails, converge the host
+      // to the already-authoritative pruned Dart prefix instead of leaving
+      // visible iframe realms whose ids/results no longer exist in the model.
+      if (_isCurrentRoute &&
+          generation == _nestedLookupGeneration &&
+          renderPrunedStack &&
+          _stack.topFrameId == sourceFrameId) {
+        try {
+          await _retainRenderedStack();
+        } catch (retainError, retainStack) {
+          glog(
+            'nested: retain-after-error EXCEPTION '
+            '$retainError\n$retainStack',
+          );
+        }
+      }
       glog('nested: EXCEPTION $e\n$st');
     }
   }
@@ -1422,6 +1729,7 @@ class GlobalLookupController {
   /// which would drop a no-result root). resultCount stays accurate for
   /// diagnostics/linkage.
   void _resetStackRoot(String text, DictionarySearchResult result) {
+    _nestedLookupGeneration++;
     _frameResults.clear();
     _frameAnchors.clear();
     // TODO-1095 — the root frame keeps a STABLE id across hotkey lookups so the
@@ -1447,13 +1755,20 @@ class GlobalLookupController {
     _frameAnchors[id] = null;
   }
 
-  /// Pushes a child frame (nested lookup) whose parent is the current top.
+  /// Pushes a child frame after its authoritative source parent has been made
+  /// the current top by [resolveNestedLookupParent].
   /// pushLookupFrame drops a no-result lookup, so the stack is unchanged when
   /// [result] is empty (identical object returned). [query] is the clicked
   /// term; [result] its search result.
-  void _pushChildFrame(
-      String query, DictionarySearchResult result, Rect? anchorRect) {
-    final int parentIndex = _stack.length - 1;
+  bool _pushChildFrame(
+    String query,
+    DictionarySearchResult result,
+    Rect? anchorRect, {
+    required int parentIndex,
+  }) {
+    if (parentIndex < 0 || parentIndex != _stack.length - 1) {
+      return false;
+    }
     final String id = _nextFrameId();
     final GlobalLookupFrame child = GlobalLookupFrame(
       id: id,
@@ -1468,7 +1783,9 @@ class GlobalLookupController {
       // The clicked word window-local CSS px rect (re-anchored by the host
       // shim) so this child cascades off it via computeFrameRect.
       _frameAnchors[id] = anchorRect;
+      return true;
     }
+    return false;
   }
 
   /// Mints a stable, monotonic per-frame id. The pure stack model never
@@ -1479,10 +1796,26 @@ class GlobalLookupController {
   /// Drops cached results for frames no longer in the stack (after a close /
   /// truncate), so the result map does not leak removed layers.
   void _pruneFrameResults() {
-    final Set<String> live =
-        _stack.frames.map((GlobalLookupFrame f) => f.id).toSet();
+    final Set<String> live = _stack.frames
+        .map((GlobalLookupFrame f) => f.id)
+        .toSet();
     _frameResults.removeWhere((String id, _) => !live.contains(id));
     _frameAnchors.removeWhere((String id, _) => !live.contains(id));
+  }
+
+  /// Applies a close/back operation without rebuilding and serialising every
+  /// surviving dictionary result. This is only called from a reverse message
+  /// emitted by the live host, so those stable frame ids are guaranteed to own
+  /// mounted iframe realms; content/settings changes still use [_renderStack].
+  Future<void> _retainRenderedStack() {
+    if (_stack.isEmpty) {
+      return Future<void>.value();
+    }
+    return GlobalLookupChannel.render(
+      buildRetainStackScript(
+        _stack.frames.map((GlobalLookupFrame frame) => frame.id),
+      ),
+    );
   }
 
   /// Extracts the first int argument from a host JS message (args[0]).
@@ -1528,19 +1861,13 @@ class GlobalLookupController {
       if (result == null) {
         continue;
       }
-      // TODO-1030 M0 — only the ROOT frame carries the captured sentence banner;
-      // nested child lookups (clicked words) have no sentence context, so they
-      // render without a banner. 用户 2026-07-12 — 且仅当 [_showSentenceBanner]
-      // 时才贴横幅：手动快捷键窗（showSentenceBanner:false）整句只进制卡不显示，
-      // 只有剪切板自动唤出的瞬态窗才带整句框。mining sentenceContext 仍用完整
-      // _currentSentence（line ~740），与横幅解耦。
-      final bool isRoot = frame.id == kGlobalLookupRootFrameId;
-      payloads.add(GlobalLookupFramePayload(
-        frame: frame,
-        result: result,
-        anchorRect: _frameAnchors[frame.id],
-        sentence: (isRoot && _showSentenceBanner) ? _currentSentence : '',
-      ));
+      payloads.add(
+        GlobalLookupFramePayload(
+          frame: frame,
+          result: result,
+          anchorRect: _frameAnchors[frame.id],
+        ),
+      );
     }
     if (payloads.isEmpty) {
       return;
@@ -1548,8 +1875,11 @@ class GlobalLookupController {
     // maxWidth/maxHeight are the single card size; children cascade and D2 bbox
     // trims the window down to the real extent.
     final double dpr = _devicePixelRatio();
-    final LookupSize overlaySize =
-        _clampToPhysicalCap(model.overlayLookupEffectiveSize, model, dpr);
+    final LookupSize overlaySize = _clampToPhysicalCap(
+      _effectiveLookupSizeForCurrentRoute(model),
+      model,
+      dpr,
+    );
     final double cardW = overlaySize.width * model.appUiScale;
     final double cardH = overlaySize.height * model.appUiScale;
     // TODO-893 — screenWidth/screenHeight MUST be the real monitor work area
@@ -1562,7 +1892,9 @@ class GlobalLookupController {
     // area (e.g. monitor query failed).
     final double screenW = pickScreenDim(_screenWorkW, _layoutBoundsW, cardW);
     final double screenH = pickScreenDim(_screenWorkH, _layoutBoundsH, cardH);
-    final String stackScript = buildStackRenderScript(
+    final GlobalLookupRoute route = GlobalLookupChannel.currentRoute;
+    final String hostKey = route.target.isEmpty ? 'desktop' : route.target;
+    final StackRenderScript stackRender = buildStackRenderScript(
       context: ctx,
       appModel: model,
       payloads: payloads,
@@ -1579,20 +1911,33 @@ class GlobalLookupController {
       // child then never moves the origin -> zero parent displacement).
       originFloorLeft: _originFloorLeft,
       originFloorTop: _originFloorTop,
+      // BUG-1835 — only the game-card surface is constrained to the game
+      // viewport. Match the in-app child popup's above/below fitting there while
+      // preserving the desktop global-lookup cascade.
+      fitNestedHeightToAnchorSide: route.source == 'galCard',
+      staticRevisions: _hostStaticRevisions,
+      hostKey: hostKey,
     );
     // Cold-create and process-recovery paths cache exactly one complete script
     // until NavigationCompleted.  Keep beginLookup + renderStack indivisible so
     // last-wins caching cannot discard the immutable route epoch while retaining
     // the pixels.  Subsequent nested/visual-only renders omit the prelude.
     final String script = beginRoute == null
-        ? stackScript
-        : '${buildBeginLookupScript(
-            kGlobalLookupRootFrameId,
-            source: beginRoute.source,
-            routeEpoch: beginRoute.routeEpoch,
-            lookupEpoch: beginRoute.lookupEpoch,
-          )}$stackScript';
+        ? stackRender.script
+        : '${buildBeginLookupScript(kGlobalLookupRootFrameId, source: beginRoute.source, routeEpoch: beginRoute.routeEpoch, lookupEpoch: beginRoute.lookupEpoch)}${stackRender.script}';
     await GlobalLookupChannel.render(script);
+    // Commit only after the platform call accepted the complete script. A
+    // thrown/invalidated send must leave the revision unknown so the next render
+    // remains self-contained.
+    //
+    // 🔴 光 await 是**不够**的：[OverlayWindowChannel._invoke] 在路由失效时直接
+    // `return Future.value()` 把整条调用丢掉（挡住旧 zone 里排队的 Future 复活
+    // 老窗口），await 它正常完成，看不出脚本压根没送出去。若就此记账，宿主会被
+    // 标成「已装载」而它其实什么都没收到——下一次渲染不再下发静态段，卡片停在
+    // 没主题/没字体/没词典样式的状态，正是这套去重最怕的那个方向。
+    // 所以记账前再确认一次路由：宁可漏记（下次重发，只多一次带宽），不可误记。
+    if (!_isCurrentRoute) return;
+    _hostStaticRevisions.commit(hostKey, stackRender.pendingRevisions);
   }
 
   /// TODO-867 P3c C2 — parses the onLinkClick anchor arg ({x,y,width,height} in
@@ -1633,7 +1978,12 @@ class GlobalLookupController {
   /// CSS px). The window moves by (box.left, box.top) x dpr off the cursor anchor
   /// and grows to box.width/height x dpr; the host shifted its layer by
   /// (-box.left, -box.top) so the root card stays pinned at the cursor.
-  void _applyOverlayBox(AppModel model, double dpr, Map<Object?, Object?> box) {
+  void _applyOverlayBox(
+    AppModel model,
+    double dpr,
+    Map<Object?, Object?> box, {
+    required int geometryEpoch,
+  }) {
     double? num2(Object? v) => (v is num) ? v.toDouble() : null;
     final double left = num2(box['left']) ?? 0;
     final double top = num2(box['top']) ?? 0;
@@ -1642,6 +1992,9 @@ class GlobalLookupController {
     if (width <= 0 || height <= 0) {
       return;
     }
+    // BUG-2082 — root card height rides the same box; 0 = host did not report.
+    final double rootHeightCss = num2(box['rootHeight']) ?? 0;
+    final int rootHeight = rootHeightCss > 0 ? (rootHeightCss * dpr).round() : 0;
     // TODO-1231 (BUG-583) — ratchet the origin outward-only so a nested close
     // never slides the window top-left back inward (which raced the host's
     // compensating layer shift across the DWM/WebView2 boundary and lurched the
@@ -1669,47 +2022,73 @@ class GlobalLookupController {
       _lastSentHeight = h;
       _lastSentDx = dx;
       _lastSentDy = dy;
-      glog('reveal(box): dpr=$dpr box=($left,$top,$width,$height) '
-          'ratchet=(${ratcheted.left},${ratcheted.top}) '
-          '-> dx=$dx dy=$dy w=$w h=$h');
-      unawaited(GlobalLookupChannel.revealStack(
+      _lastSentGeometryEpoch = geometryEpoch;
+      glog(
+        'reveal(box): dpr=$dpr box=($left,$top,$width,$height) '
+        'ratchet=(${ratcheted.left},${ratcheted.top}) '
+        '-> dx=$dx dy=$dy w=$w h=$h root=$rootHeight epoch=$geometryEpoch',
+      );
+      unawaited(
+        GlobalLookupChannel.revealStack(
           dx: dx,
           dy: dy,
           width: w,
           height: h,
+          geometryEpoch: geometryEpoch,
           left: ratcheted.left,
-          top: ratcheted.top));
+          top: ratcheted.top,
+        ),
+      );
       _notifyAfterResizeReady(
         w,
         h,
+        geometryEpoch: geometryEpoch,
         dx: dx,
         dy: dy,
+        rootHeight: rootHeight,
         left: ratcheted.left,
         top: ratcheted.top,
       );
-    } else if (w != _lastSentWidth ||
-        h != _lastSentHeight ||
-        dx != _lastSentDx ||
-        dy != _lastSentDy) {
+    } else if (globalLookupGeometryChanged(
+      lastWidth: _lastSentWidth,
+      lastHeight: _lastSentHeight,
+      lastDx: _lastSentDx,
+      lastDy: _lastSentDy,
+      lastGeometryEpoch: _lastSentGeometryEpoch,
+      width: w,
+      height: h,
+      dx: dx,
+      dy: dy,
+      geometryEpoch: geometryEpoch,
+    )) {
       _lastSentWidth = w;
       _lastSentHeight = h;
       _lastSentDx = dx;
       _lastSentDy = dy;
-      glog('resize(box): dpr=$dpr box=($left,$top,$width,$height) '
-          'ratchet=(${ratcheted.left},${ratcheted.top}) '
-          '-> dx=$dx dy=$dy w=$w h=$h');
-      unawaited(GlobalLookupChannel.revealStack(
+      _lastSentGeometryEpoch = geometryEpoch;
+      glog(
+        'resize(box): dpr=$dpr box=($left,$top,$width,$height) '
+        'ratchet=(${ratcheted.left},${ratcheted.top}) '
+        '-> dx=$dx dy=$dy w=$w h=$h root=$rootHeight epoch=$geometryEpoch',
+      );
+      unawaited(
+        GlobalLookupChannel.revealStack(
           dx: dx,
           dy: dy,
           width: w,
           height: h,
+          geometryEpoch: geometryEpoch,
           left: ratcheted.left,
-          top: ratcheted.top));
+          top: ratcheted.top,
+        ),
+      );
       _notifyAfterResizeReady(
         w,
         h,
+        geometryEpoch: geometryEpoch,
         dx: dx,
         dy: dy,
+        rootHeight: rootHeight,
         left: ratcheted.left,
         top: ratcheted.top,
       );
@@ -1719,8 +2098,10 @@ class GlobalLookupController {
   void _notifyAfterResizeReady(
     int width,
     int height, {
+    required int geometryEpoch,
     int dx = 0,
     int dy = 0,
+    int rootHeight = 0,
     double left = 0,
     double top = 0,
   }) {
@@ -1732,8 +2113,10 @@ class GlobalLookupController {
         generation: generation,
         width: width,
         height: height,
+        geometryEpoch: geometryEpoch,
         dx: dx,
         dy: dy,
+        rootHeight: rootHeight,
         left: left,
         top: top,
         attempt: 0,
@@ -1742,6 +2125,22 @@ class GlobalLookupController {
       return;
     }
     _notifyRevealed(width, height);
+  }
+
+  void _resetGeometryHandshakeForLookup() {
+    _lastSentWidth = -1;
+    _lastSentHeight = -1;
+    _lastSentDx = 0;
+    _lastSentDy = 0;
+    _lastSentGeometryEpoch = -1;
+    _cancelPendingGalCapture();
+  }
+
+  int _fallbackGeometryEpochForCurrentRoute() {
+    // Epoch zero is the legacy/last-resort path. A real bbox always supplies a
+    // positive renderer epoch; a WebView2 recovery may restart that renderer
+    // sequence, so Dart must not retain a cross-document high-water mark.
+    return 0;
   }
 
   void _cancelPendingGalCapture() {
@@ -1762,14 +2161,34 @@ class GlobalLookupController {
         return;
       }
       if (pending.attempt >= _kReadySafetyMaxAttempts) {
-        glog('captureReady: bounded fallback after ${pending.attempt} retries '
-            'route=${pending.route.routeEpoch}/${pending.route.lookupEpoch} '
-            'size=${pending.width}x${pending.height}');
+        final bool versionedGeometry = pending.geometryEpoch > 0;
+        glog(
+          'captureReady: bounded ${versionedGeometry ? 'hold' : 'fallback'} '
+          'after ${pending.attempt} retries '
+          'route=${pending.route.routeEpoch}/${pending.route.lookupEpoch} '
+          'size=${pending.width}x${pending.height} '
+          'epoch=${pending.geometryEpoch}',
+        );
         _pendingGalCapture = null;
         _galCaptureReadySafety = null;
+        if (versionedGeometry) {
+          // A positive epoch means the renderer explicitly gated nested shells
+          // on a successful native HWND + region commit. Publishing a bitmap
+          // without that ack captures the intentionally-hidden child and
+          // recreates the user's "missing while rendering" intermediate frame.
+          // Keep the last complete surface instead; a later interaction/render
+          // will announce a fresh transaction.
+          return;
+        }
         GlobalLookupChannel.runWithRoute(
           pending.route,
-          () => _notifyRevealed(pending.width, pending.height),
+          () => _notifyRevealed(
+            pending.width,
+            pending.height,
+            dx: pending.dx,
+            dy: pending.dy,
+            rootHeight: pending.rootHeight,
+          ),
         );
         return;
       }
@@ -1778,22 +2197,27 @@ class GlobalLookupController {
         generation: pending.generation,
         width: pending.width,
         height: pending.height,
+        geometryEpoch: pending.geometryEpoch,
         dx: pending.dx,
         dy: pending.dy,
+        rootHeight: pending.rootHeight,
         left: pending.left,
         top: pending.top,
         attempt: pending.attempt + 1,
       );
       GlobalLookupChannel.runWithRoute(
         pending.route,
-        () => unawaited(GlobalLookupChannel.revealStack(
-          dx: pending.dx,
-          dy: pending.dy,
-          width: pending.width,
-          height: pending.height,
-          left: pending.left,
-          top: pending.top,
-        )),
+        () => unawaited(
+          GlobalLookupChannel.revealStack(
+            dx: pending.dx,
+            dy: pending.dy,
+            width: pending.width,
+            height: pending.height,
+            geometryEpoch: pending.geometryEpoch,
+            left: pending.left,
+            top: pending.top,
+          ),
+        ),
       );
       _scheduleGalCaptureReadySafety(generation);
     });
@@ -1804,40 +2228,55 @@ class GlobalLookupController {
   /// scrollHeight, exactly as before D2. Kept as a fallback so a frame that
   /// somehow reports the scalar form still sizes correctly.
   void _applyOverlayScalar(AppModel model, double dpr, double physH) {
-    final LookupSize overlaySize = model.overlayLookupEffectiveSize;
+    final LookupSize overlaySize = _effectiveLookupSizeForCurrentRoute(model);
     final int width = (overlaySize.width * model.appUiScale * dpr).round();
     final double maxHeight = overlaySize.height * model.appUiScale * dpr;
     final int height = (physH > maxHeight ? maxHeight : physH).round();
+    final int geometryEpoch = _fallbackGeometryEpochForCurrentRoute();
     if (!_revealed) {
       _revealed = true;
       _revealSafety?.cancel();
       _lastSentWidth = width;
       _lastSentHeight = height;
+      _lastSentDx = 0;
+      _lastSentDy = 0;
+      _lastSentGeometryEpoch = geometryEpoch;
       glog('reveal(scalar): dpr=$dpr physH=$physH -> w=$width h=$height');
       if (GlobalLookupChannel.currentRoute.source == 'galCard') {
-        unawaited(GlobalLookupChannel.revealStack(
-          dx: 0,
-          dy: 0,
-          width: width,
-          height: height,
-        ));
-        _notifyAfterResizeReady(width, height);
+        unawaited(
+          GlobalLookupChannel.revealStack(
+            dx: 0,
+            dy: 0,
+            width: width,
+            height: height,
+            geometryEpoch: geometryEpoch,
+          ),
+        );
+        _notifyAfterResizeReady(width, height, geometryEpoch: geometryEpoch);
       } else {
         unawaited(GlobalLookupChannel.reveal(width: width, height: height));
         _notifyRevealed(width, height);
       }
-    } else if (width != _lastSentWidth || height != _lastSentHeight) {
+    } else if (width != _lastSentWidth ||
+        height != _lastSentHeight ||
+        geometryEpoch != _lastSentGeometryEpoch) {
       _lastSentWidth = width;
       _lastSentHeight = height;
+      _lastSentDx = 0;
+      _lastSentDy = 0;
+      _lastSentGeometryEpoch = geometryEpoch;
       glog('resize(scalar): dpr=$dpr physH=$physH -> w=$width h=$height');
       if (GlobalLookupChannel.currentRoute.source == 'galCard') {
-        unawaited(GlobalLookupChannel.revealStack(
-          dx: 0,
-          dy: 0,
-          width: width,
-          height: height,
-        ));
-        _notifyAfterResizeReady(width, height);
+        unawaited(
+          GlobalLookupChannel.revealStack(
+            dx: 0,
+            dy: 0,
+            width: width,
+            height: height,
+            geometryEpoch: geometryEpoch,
+          ),
+        );
+        _notifyAfterResizeReady(width, height, geometryEpoch: geometryEpoch);
       } else {
         unawaited(GlobalLookupChannel.resize(width: width, height: height));
         _notifyRevealed(width, height);
@@ -1845,6 +2284,89 @@ class GlobalLookupController {
     }
   }
 }
+
+/// host.js `staticSettingsRequired` 的载荷解析（`args = [revision, geometryEpoch]`）。
+///
+/// 抽出来共享是因为它有**两个**消费方（桌面/galCard 的 GlobalLookupController 与剪贴板
+/// 面板），而两边原先各写了一份 num/String 兼容解析。同一条协议消息被解析成两份，等
+/// 协议再加一个参数时必然漂移——这正是本轮修的那个 bug 的形状（同一件事分散在多处各做
+/// 各的，漏掉一处就静默失效）。
+///
+/// [revision] 为 null 表示载荷不合法，调用方应整条忽略。
+/// [hostGeometryEpoch] 仅桌面路径消费（面板模式下 host.js 短路了 measureAndReport）。
+({int? revision, int? hostGeometryEpoch}) parseStaticSettingsRequired(
+  Map<String, Object?> message,
+) {
+  final Object? args = message['args'];
+  if (args is! List || args.isEmpty) {
+    return (revision: null, hostGeometryEpoch: null);
+  }
+  int? asInt(Object? v) {
+    if (v is num) return v.toInt();
+    if (v is String) return int.tryParse(v);
+    return null;
+  }
+
+  return (
+    revision: asInt(args.first),
+    hostGeometryEpoch: args.length > 1
+        ? parseGlobalLookupGeometryEpoch(args[1])
+        : null,
+  );
+}
+
+/// Parses one non-negative renderer geometry epoch from a MethodChannel value.
+/// Integral doubles are accepted because native JSON bridges may materialise a
+/// JavaScript integer as either an int or a double.
+int? parseGlobalLookupGeometryEpoch(Object? value) {
+  if (value is int) {
+    return value >= 0 ? value : null;
+  }
+  if (value is double &&
+      value.isFinite &&
+      value >= 0 &&
+      value == value.truncateToDouble()) {
+    return value.toInt();
+  }
+  return null;
+}
+
+/// Exact acknowledgement predicate for the galCard bitmap capture handshake.
+/// The epoch is intentionally part of the identity even when dimensions are
+/// equal, closing the geometry A -> B -> A ABA hole.
+bool globalLookupCaptureReadyMatches({
+  required int pendingWidth,
+  required int pendingHeight,
+  required int pendingGeometryEpoch,
+  required int? readyWidth,
+  required int? readyHeight,
+  required int? readyGeometryEpoch,
+}) =>
+    readyWidth == pendingWidth &&
+    readyHeight == pendingHeight &&
+    readyGeometryEpoch == pendingGeometryEpoch;
+
+/// Whether a renderer geometry transaction differs from the last one sent to
+/// native. Epoch participates even when the physical bounds return to the same
+/// values, because the shell region/pixels may belong to a newer A -> B -> A
+/// transaction.
+bool globalLookupGeometryChanged({
+  required int lastWidth,
+  required int lastHeight,
+  required int lastDx,
+  required int lastDy,
+  required int lastGeometryEpoch,
+  required int width,
+  required int height,
+  required int dx,
+  required int dy,
+  required int geometryEpoch,
+}) =>
+    width != lastWidth ||
+    height != lastHeight ||
+    dx != lastDx ||
+    dy != lastDy ||
+    geometryEpoch != lastGeometryEpoch;
 
 /// A parsed dictionary-media request from the overlay WebView2.
 ///
@@ -1902,8 +2424,9 @@ GlobalLookupMediaRequest? resolveGlobalLookupMedia(String url) {
 
   if (uri.scheme == 'image') {
     final String dictionary = uri.queryParameters['dictionary'] ?? '';
-    final String path =
-        _normalizeGlobalLookupMediaPath(uri.queryParameters['path'] ?? '');
+    final String path = _normalizeGlobalLookupMediaPath(
+      uri.queryParameters['path'] ?? '',
+    );
     if (dictionary.isEmpty || path.isEmpty) {
       return null;
     }

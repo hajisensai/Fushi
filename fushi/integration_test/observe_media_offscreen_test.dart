@@ -10,7 +10,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/main.dart' as app;
+import 'support/test_app_launcher.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart'
     show HomePage, HomeTab;
@@ -42,7 +42,7 @@ void main() {
     };
 
     try {
-      app.main();
+      await launchFushiTestApp();
       expect(await waitForHome(tester), isTrue, reason: '主页应在 90s 内出现');
       await tester.pump(const Duration(seconds: 2));
 
@@ -148,7 +148,7 @@ void main() {
     };
 
     try {
-      app.main();
+      await launchFushiTestApp();
       expect(await waitForHome(tester), isTrue, reason: '主页应在 90s 内出现');
       await tester.pump(const Duration(seconds: 2));
 

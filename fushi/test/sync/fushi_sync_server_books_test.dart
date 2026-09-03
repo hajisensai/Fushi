@@ -83,7 +83,16 @@ class _FakeLibraryService implements FushiLibraryHostService {
 
   // ── books ────────────────────────────────────────────────────────────────────
   final List<RemoteBookInfo> books = <RemoteBookInfo>[
-    const RemoteBookInfo(title: 'Sample', hasContent: true),
+    // BUG-1699：带合集归属，守卫端点层字段裁剪不得丢 collection。
+    const RemoteBookInfo(
+      title: 'Sample',
+      hasContent: true,
+      collection: RemoteCollectionMembership(
+        collectionName: 'Sample Collection',
+        collectionType: 'collection',
+        sortIndex: 2,
+      ),
+    ),
   ];
   final List<String> deletedBooks = <String>[];
   final List<String> importedBooks = <String>[];
@@ -274,6 +283,13 @@ void main() {
     final Map<dynamic, dynamic> first = json.first as Map<dynamic, dynamic>;
     expect(first['title'], 'Sample');
     expect(first['hasContent'], true);
+    // BUG-1699：合集归属经端点层字段裁剪（_remoteBookJsonForRequest）后仍在。
+    final Map<dynamic, dynamic>? collection =
+        first['collection'] as Map<dynamic, dynamic>?;
+    expect(collection, isNotNull, reason: '端点层裁剪不得丢 collection 字段');
+    expect(collection!['name'], 'Sample Collection');
+    expect(collection['collectionType'], 'collection');
+    expect(collection['sortIndex'], 2);
     c.close();
   });
 

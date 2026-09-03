@@ -3,22 +3,29 @@ import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 
 import 'reader_fushi_page_source_corpus.dart';
 
-/// BUG-568 (TODO-1229) v2：竖排跳章「跳两次」复诉的根因守卫。
+/// BUG-568 (TODO-1229) + BUG-1829：跨章去抖判据的守卫。
 ///
-/// 案A 的 `_paginationInFlight` 守卫只覆盖「换章加载+restore」瞬态窗口；滚轮/触控板一次
-/// 连续惯性手势产生的 tick 流常长于该窗口 + 章内节流窗（两者都锚定手势起点第一 tick）。
-/// 两窗口在手势中途失效后，残余惯性会在刚落地的短章(章首插图页/单页章)边界再次触发跨章
-/// → 跳两章。修法：`chapterTurnCoolingDown` 纯判据把「下一次跨章」冷却锚定到输入真正停止
-/// 那一刻，调用方在丢弃惯性 / 被拒跨章时滑动时间戳，冷却窗随惯性前推。
+/// 要挡的危险窗是「**刚跨完一章**」那一段：残余惯性会在刚落地的短章(章首插图页/单页章)
+/// 边界上再次触发跨章 → 跳两章。所以冷却锚定的是**跨章事件本身**，窗口只由两种真实事件
+/// 推进：① 真正发起一次跨章；② 该次跨章落地的新章 content-ready 重锚（见
+/// `chapter_turn_cooldown_ready_restamp_test.dart`）。
+///
+/// **BUG-1829**：v2 曾让调用方在「冷却期内被拒的跨章」和「在飞时被丢弃的输入」上也把时间
+/// 戳滑到当下，想用「输入静默」当手势结束判据。v3 换成 content-ready 重锚后那条滑窗已经
+/// 多余，却留了下来 —— 于是真实滚轮（每 30~100ms 一个事件）只要用户还在拨，窗口就被自己
+/// 的输入无限续期、**永远等不到过期**：拨得越快越不动，单页章（封面/插图/目录/版权页，
+/// 页内没有可滚的量，每一次滚轮都必须走跨章判定）直接成为滚轮死区。
+/// 判据维度必须是「距上次**跨章**」，不是「距上次**输入**」——后者由被闸门拦住的那一方
+/// 自己控制，等于把闸门的钥匙交给它。
 void main() {
   const Duration cooldown = Duration(milliseconds: 450);
   final DateTime t0 = DateTime(2026, 7, 7, 12, 0, 0);
 
   group('chapterTurnCoolingDown 纯判据', () {
-    test('从未跨章（lastInputAt=null）恒放行', () {
+    test('从未跨章（lastTurnAt=null）恒放行', () {
       expect(
         chapterTurnCoolingDown(
-          lastInputAt: null,
+          lastTurnAt: null,
           now: t0,
           cooldown: cooldown,
         ),
@@ -26,20 +33,17 @@ void main() {
       );
     });
 
-    test('距上次跨章输入不足冷却窗 → 拦截（同一手势残余惯性）', () {
-      // 第一次跨章 stamp 在 t0；restore 约 400ms 落地后，残余惯性 tick 在 t0+470ms 到达。
-      // 旧实现里节流窗(450ms 锚 t0)与在飞守卫都已失效 → 会二次跨章。新判据仍在冷却窗内。
-      final DateTime tick = t0.add(const Duration(milliseconds: 470));
-      // 关键：冷却窗随每个被丢弃的惯性 tick 滑动 → last 不是 t0 而是最后一次丢弃(约 t0+400)。
-      final DateTime lastSlid = t0.add(const Duration(milliseconds: 400));
+    test('距上次跨章不足冷却窗 → 拦截（同一手势残余惯性）', () {
+      // 第一次跨章 stamp 在 t0；restore 约 400ms 落地，残余惯性 tick 在 t0+300ms 到达。
+      final DateTime tick = t0.add(const Duration(milliseconds: 300));
       expect(
         chapterTurnCoolingDown(
-          lastInputAt: lastSlid,
+          lastTurnAt: t0,
           now: tick,
           cooldown: cooldown,
         ),
         isTrue,
-        reason: '470-400=70ms < 450ms，属同一手势残余惯性，必须拦截二次跨章',
+        reason: '300ms < 450ms，属同一手势残余惯性，必须拦截二次跨章',
       );
     });
 
@@ -47,52 +51,110 @@ void main() {
       final DateTime tick = t0.add(cooldown);
       expect(
         chapterTurnCoolingDown(
-          lastInputAt: t0,
+          lastTurnAt: t0,
           now: tick,
           cooldown: cooldown,
         ),
         isFalse,
-        reason: '静默满冷却窗即视为新手势，放行',
+        reason: '距上次跨章满冷却窗即放行',
       );
     });
 
-    test('输入静默超过冷却窗（新手势）→ 放行', () {
+    test('距上次跨章超过冷却窗 → 放行', () {
       final DateTime tick = t0.add(const Duration(milliseconds: 900));
       expect(
         chapterTurnCoolingDown(
-          lastInputAt: t0,
+          lastTurnAt: t0,
           now: tick,
           cooldown: cooldown,
         ),
         isFalse,
       );
     });
+  });
 
-    test('滑动语义：连续惯性把窗口不断前推 → 全程拦截', () {
-      // 模拟一串每 60ms 一个的惯性 tick：每个被拦截时都把 last 滑到当下，
-      // 下一个 tick 相对滑动后的 last 仍在冷却窗内 → 全部拦截，直到间隔 > 冷却窗。
-      DateTime last = t0;
-      for (int i = 1; i <= 12; i++) {
-        final DateTime tick = t0.add(Duration(milliseconds: 60 * i));
+  group('BUG-1829：持续输入不得让冷却窗自我续期', () {
+    /// 把「一串以 [gapMs] 为间隔的惯性输入」喂给闸门，返回实际放行的跨章次数。
+    /// [stampOnBlocked] = true 复刻**旧实现**（拦截时也把窗口滑到当下）。
+    int turnsIn(
+      int gapMs,
+      int ticks, {
+      required bool stampOnBlocked,
+    }) {
+      DateTime? lastTurnAt;
+      int turns = 0;
+      for (int i = 1; i <= ticks; i++) {
+        final DateTime tick = t0.add(Duration(milliseconds: gapMs * i));
         final bool cooling = chapterTurnCoolingDown(
-          lastInputAt: last,
+          lastTurnAt: lastTurnAt,
           now: tick,
           cooldown: cooldown,
         );
-        expect(cooling, isTrue, reason: '第 $i 个惯性 tick（间隔 60ms < 450ms）必须持续拦截');
-        // 调用方在拦截时滑动时间戳（镜像 _chapterTurnCoolingDown / _noteChapterTurnInput）。
-        last = tick;
+        if (cooling) {
+          if (stampOnBlocked) lastTurnAt = tick;
+          continue;
+        }
+        lastTurnAt = tick;
+        turns++;
       }
-      // 手势结束：静默 500ms 后的新 tick 放行。
-      final DateTime resume = last.add(const Duration(milliseconds: 500));
+      return turns;
+    }
+
+    test('复现旧实现的饥饿：拦截时滑窗 → 100ms 连续拨轮 3 秒只跨 1 章', () {
       expect(
-        chapterTurnCoolingDown(
-          lastInputAt: last,
-          now: resume,
-          cooldown: cooldown,
-        ),
-        isFalse,
-        reason: '输入静默超过冷却窗后，新手势的跨章放行',
+        turnsIn(100, 30, stampOnBlocked: true),
+        1,
+        reason: '旧实现里第一次跨章之后，每个被拦的 tick 都把窗口推到当下，'
+            '间隔 100ms < 450ms ⇒ 窗口永远不过期 ⇒ 用户拨到手酸也只跨了一章',
+      );
+    });
+
+    test('修复后：同一串输入每满一个冷却窗就放行一次，不饥饿', () {
+      // 3 秒 / 450ms ≈ 6 次；100ms 网格上落到 500ms 一次 ⇒ 6 次。
+      expect(
+        turnsIn(100, 30, stampOnBlocked: false),
+        greaterThanOrEqualTo(5),
+        reason: '窗口只由真跨章推进 ⇒ 持续拨轮稳定推进，不再被自己的输入锁死',
+      );
+    });
+
+    test('旧实现的特征：只要输入间隔小于冷却窗，恒定只跨 1 章（与密度无关）', () {
+      // 这才是滑窗的真实特征——不是「越快越少」，而是**任何**快于冷却窗的持续输入
+      // 都被锁死在第一次跨章上。用户主观感受就是「拨不动」。
+      for (final int gapMs in <int>[50, 100, 200, 400]) {
+        expect(
+          turnsIn(gapMs, 3000 ~/ gapMs, stampOnBlocked: true),
+          1,
+          reason: '间隔 ${gapMs}ms < 450ms：旧实现下 3 秒持续输入仍只跨 1 章',
+        );
+      }
+      // 间隔满冷却窗后旧实现才恢复正常——这正是「拨慢一点反而能动」的来源。
+      expect(
+        turnsIn(500, 6, stampOnBlocked: true),
+        greaterThan(1),
+        reason: '间隔 500ms > 450ms 时旧实现也能连续跨章，佐证症状与密度直接相关',
+      );
+    });
+
+    test('修复后：同样 3 秒，输入更密不该跨得更少', () {
+      final int fast = turnsIn(50, 60, stampOnBlocked: false); // 3 秒，50ms 一个
+      final int slow = turnsIn(200, 15, stampOnBlocked: false); // 3 秒，200ms 一个
+      expect(
+        fast,
+        greaterThanOrEqualTo(slow),
+        reason: '窗口只由跨章推进后，放行次数由冷却窗决定，与输入密度单调不冲突',
+      );
+      expect(fast, greaterThan(1), reason: '密集输入必须能连续跨章，不得退回饥饿');
+    });
+
+    test('单页章场景：每次输入都走跨章判定时仍能连续前进', () {
+      // 单页章里 paginate() 恒返回 "limit"，所以每一个通过节流的滚轮事件都到闸门。
+      // 滚轮节流 450ms 与冷却窗同长，落在网格上必须仍能推进。
+      expect(
+        turnsIn(450, 10, stampOnBlocked: false),
+        greaterThanOrEqualTo(9),
+        reason: '节流与冷却窗同长时，修复后每个节流放行的 tick 都能跨章；'
+            '旧实现在这里恰好卡在边界上反复续期',
       );
     });
   });
@@ -103,13 +165,26 @@ void main() {
       source = readReaderPageSource();
     });
 
+    String coolingGate() => _slice(
+          source,
+          'bool _chapterTurnCoolingDown()',
+          'Future<void> _paginate(',
+        );
+
+    String paginateBody() => _slice(
+          source,
+          '  Future<void> _paginate(',
+          '  // ── Image Viewer',
+        );
+
+    String boundarySwipeHandler() => _slice(
+          source,
+          "handlerName: 'onBoundarySwipe'",
+          "handlerName: 'onImageDetected'",
+        );
+
     test('_paginate 分页/连续两分支跨章前都过 _chapterTurnCoolingDown 闸门', () {
-      final String paginate = _slice(
-        source,
-        '  Future<void> _paginate(',
-        '  // ── Image Viewer',
-      );
-      // 两处 _handlePageTurnLimit(direction.jsValue) 调用前都必须有冷却闸门。
+      final String paginate = paginateBody();
       expect(
         'if (throttleMs > 0 && _chapterTurnCoolingDown()) return;'
             .allMatches(paginate)
@@ -121,34 +196,71 @@ void main() {
       expect(paginate, contains('throttleMs > 0 && _chapterTurnCoolingDown()'));
     });
 
-    test('_paginate 的在飞丢弃路径滑动跨章冷却窗', () {
-      final String paginate = _slice(
-        source,
-        '  Future<void> _paginate(',
-        '  // ── Image Viewer',
+    test('BUG-1829：_chapterTurnCoolingDown 必须是纯读，不得写时间戳', () {
+      expect(
+        coolingGate(),
+        isNot(contains('_lastChapterTurnAt =')),
+        reason: '闸门在拦截时写时间戳＝被拦的输入自己续期，'
+            '持续拨轮永远等不到窗口过期（BUG-1829 饥饿）',
       );
-      final int guardIdx = paginate.indexOf('if (_paginationInFlight)');
-      final int noteIdx = paginate.indexOf('_noteChapterTurnInput()');
-      expect(guardIdx, isNonNegative);
-      expect(noteIdx, isNonNegative,
-          reason: '在飞丢弃惯性输入时必须滑动冷却窗，避免 restore 后残余惯性二次跨章');
+      expect(
+        coolingGate(),
+        isNot(contains('_noteChapterTurn()')),
+        reason: '同上：闸门不得以任何形式推进冷却窗',
+      );
     });
 
-    test('onBoundarySwipe 跨章前过冷却闸门且在飞丢弃时滑动窗口', () {
-      final String handler = _slice(
-        source,
-        "handlerName: 'onBoundarySwipe'",
-        "handlerName: 'onImageDetected'",
+    test('BUG-1829：_paginate 的在飞丢弃路径不得滑动跨章冷却窗', () {
+      final String paginate = paginateBody();
+      final String inFlightBranch = _slice(
+        paginate,
+        'if (_paginationInFlight) {',
+        '}',
       );
+      expect(
+        inFlightBranch,
+        isNot(contains('_noteChapterTurn()')),
+        reason: '被丢弃的输入不是跨章事件；这段窗口由新章 content-ready 重锚覆盖',
+      );
+    });
+
+    test('BUG-1829：onBoundarySwipe 的在飞丢弃路径不得滑动跨章冷却窗', () {
+      final String handler = boundarySwipeHandler();
+      final String inFlightBranch = _slice(
+        handler,
+        'if (_paginationInFlight) {',
+        '}',
+      );
+      expect(
+        inFlightBranch,
+        isNot(contains('_noteChapterTurn()')),
+        reason: '与 _paginate 入口同一处理，两条路径不得分叉',
+      );
+    });
+
+    test('onBoundarySwipe 跨章前过冷却闸门，且真跨章时 stamp', () {
+      final String handler = boundarySwipeHandler();
       final int coolIdx =
           handler.indexOf('if (_chapterTurnCoolingDown()) return;');
+      final int noteIdx = handler.indexOf('_noteChapterTurn();');
       final int limitIdx = handler.indexOf("_handlePageTurnLimit('");
       expect(coolIdx, isNonNegative, reason: 'onBoundarySwipe 跨章前必须过冷却闸门');
       expect(limitIdx, isNonNegative);
       expect(coolIdx, lessThan(limitIdx),
           reason: '冷却闸门必须先于 _handlePageTurnLimit 跨章');
-      expect(handler, contains('_noteChapterTurnInput()'),
-          reason: '在飞丢弃 / 跨章落地都要滑动/播种冷却窗');
+      expect(noteIdx, isNonNegative,
+          reason: '真正跨章时必须 stamp，否则冷却窗永不开启、跳两章回归');
+      expect(noteIdx, lessThan(limitIdx), reason: 'stamp 必须先于跨章');
+    });
+
+    test('冷却窗只由 _noteChapterTurn 推进，且只在真跨章 / content-ready 上调用', () {
+      // 全语料里写 _lastChapterTurnAt 的地方只能是 _noteChapterTurn 本体。
+      expect(
+        '_lastChapterTurnAt = '.allMatches(source).length,
+        1,
+        reason: '时间戳的唯一写入点必须是 _noteChapterTurn，'
+            '多一个写入点就是多一条能让窗口被非跨章事件推进的路径',
+      );
     });
   });
 }

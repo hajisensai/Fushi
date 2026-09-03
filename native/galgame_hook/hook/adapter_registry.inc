@@ -19,10 +19,11 @@ class GenericWindowsAudioAdapter final
   const char* id() const override { return "xaudio2_directsound"; }
   bool probe() const override { return true; }
   bool install() override {
+    const bool queue_ready = InitializeXAudioCaptureQueue();
     TryHookXAudio2Create();
     TryHookDirectSoundCreate();
-    installed_ = true;
-    return true;
+    installed_ = installed_ || queue_ready;
+    return queue_ready;
   }
   fushi_voice_hook::AdapterCapability capabilities() const override {
     return fushi_voice_hook::AdapterCapability::kPcmAudio;
@@ -35,10 +36,14 @@ class GenericWindowsAudioAdapter final
       install();
     }
   }
-  void shutdown() override { installed_ = false; }
+  void ProcessPendingEvents() { ProcessPendingXAudioCaptureJobs(); }
+  void shutdown() override {
+    ShutdownXAudioCaptureQueue();
+    installed_ = false;
+  }
   fushi_voice_hook::AdapterDiagnostics diagnostics() const override {
     return {id(), probe(), installed_,
-            g_header == nullptr ? 0u : g_header->hook_diagnostics};
+            g_header == nullptr ? 0u : g_header->xaudio_diagnostics};
   }
 
  private:
@@ -63,18 +68,25 @@ class SiglusAdapter final : public fushi_voice_hook::EngineAdapter {
     TryHookSiglusExactText();
     installed_ = installed_ || probe();
   }
-  void ProcessPendingEvents() { ProcessSiglusVoiceTasks(); }
+  void ProcessPendingEvents() {
+    ProcessSiglusVoiceTasks();
+    ProcessSiglusLookupTick();
+  }
   bool audio_ready() const { return audio_ready_; }
   fushi_voice_hook::AdapterCapability capabilities() const override {
     return fushi_voice_hook::AdapterCapability::kText |
            fushi_voice_hook::AdapterCapability::kResourceAudio |
            fushi_voice_hook::AdapterCapability::kPcmAudio;
   }
+  fushi_voice_hook::LookupAdmissionReport lookupAdmission() const override {
+    return SiglusLookupAdmission();
+  }
   void onModuleLoaded(const wchar_t*) override {
     // Siglus hooks target the main executable and kernel32 file APIs; startup install + bounded
     // MinHook retry handles its protected launch window, not delayed engine modules.
   }
   void shutdown() override {
+    ShutdownSiglusLookup();
     installed_ = false;
     audio_ready_ = false;
   }
@@ -184,6 +196,18 @@ class KiriKiriAdapter final : public fushi_voice_hook::EngineAdapter {
   void ProcessPendingEvents() { ProcessKirikiriVoiceTasks(); }
   bool decoder_ready() const { return decoder_ready_; }
   bool voice_ready() const { return voice_ready_; }
+  // KiriKiri 没有 exe hash 门，但有一道等价的运行期门：传感器只在游戏带第三方
+  // textrender.dll（KAGEX 的 global.TextRender）时才装得上，经典 KAG3 上装不上。
+  // 因此"装上了"与"还没装上"之间不存在身份拒绝这一档——未装一律报 IdentityAccepted，
+  // 表示"引擎对得上，传感器还没到位"。把它谎报成 IdentityRejected 会让用户去换游戏
+  // 版本，而真正该做的是看这个游戏有没有 textrender.dll。
+  fushi_voice_hook::LookupAdmissionReport lookupAdmission() const override {
+    fushi_voice_hook::LookupAdmissionReport report;
+    report.state = KirikiriLookupSensorLive()
+                       ? fushi_voice_hook::kLookupAdmissionSensorInstalled
+                       : fushi_voice_hook::kLookupAdmissionIdentityAccepted;
+    return report;
+  }
   fushi_voice_hook::AdapterCapability capabilities() const override {
     return fushi_voice_hook::AdapterCapability::kText |
            fushi_voice_hook::AdapterCapability::kResourceAudio |
@@ -196,6 +220,9 @@ class KiriKiriAdapter final : public fushi_voice_hook::EngineAdapter {
     }
   }
   void shutdown() override {
+    fushi_voice_hook::g_geometry_provider_registry.Retire(
+        g_header, fushi_voice_hook::kLookupGeometryProviderRuntimeLayout,
+        fushi_voice_hook::kLookupGeometryProviderIdKirikiri);
     StopKirikiriVoiceTasks();
     installed_ = false;
     decoder_ready_ = false;
@@ -227,6 +254,21 @@ class RenPyAdapter final : public fushi_voice_hook::EngineAdapter {
     return ready_;
   }
   bool ready() const { return ready_; }
+  // 游戏内查词传感器与音频那半完全解耦：音频要 FFmpeg 模块才装得上，而查词只要
+  // CPython 在，所以它自己按 lookup_enabled 决定装不装，不搭 install() 的车。
+  void ProcessPendingEvents() {
+    PollRenpyLookupInstall();
+    ProcessRenpyLookupTick();
+  }
+  // Ren'Py 也没有 exe hash 门：装不上的原因是找不到 CPython 或解释器没初始化，
+  // 那属于"引擎对得上、传感器还没到位"，不是身份被拒。
+  fushi_voice_hook::LookupAdmissionReport lookupAdmission() const override {
+    fushi_voice_hook::LookupAdmissionReport report;
+    report.state = RenpyLookupSensorLive()
+                       ? fushi_voice_hook::kLookupAdmissionSensorInstalled
+                       : fushi_voice_hook::kLookupAdmissionIdentityAccepted;
+    return report;
+  }
   fushi_voice_hook::AdapterCapability capabilities() const override {
     return fushi_voice_hook::AdapterCapability::kText |
            fushi_voice_hook::AdapterCapability::kResourceAudio |
@@ -241,6 +283,7 @@ class RenPyAdapter final : public fushi_voice_hook::EngineAdapter {
     }
   }
   void shutdown() override {
+    ShutdownRenpyLookup();
     StopRenpyWorker();
     installed_ = false;
     ready_ = false;
@@ -292,23 +335,167 @@ class LoopbackAdapter final : public fushi_voice_hook::EngineAdapter {
   const char* id() const override { return "process_loopback"; }
   bool probe() const override { return true; }
   bool install() override {
-    if (g_lb_thread == nullptr) {
-      g_lb_thread =
-          CreateThread(nullptr, 0, LoopbackWorker, nullptr, 0, nullptr);
-    }
-    installed_ = g_lb_thread != nullptr;
+    PollPolicy();
     return installed_;
   }
   fushi_voice_hook::AdapterCapability capabilities() const override {
     return fushi_voice_hook::AdapterCapability::kPcmAudio;
   }
   void onModuleLoaded(const wchar_t*) override {}
-  void shutdown() override {
-    if (g_lb_thread != nullptr) {
-      WaitForSingleObject(g_lb_thread, 2000);
-      CloseHandle(g_lb_thread);
-      g_lb_thread = nullptr;
+
+  // HookWorker is the single lifecycle controller. The capture worker only
+  // reports process-local phase; it never acknowledges shared policy, so an
+  // older generation cannot overwrite a newer request's state/applied_seq.
+  void PollPolicy() {
+    using fushi_voice_hook::NativeLoopbackPolicyAction;
+    using fushi_voice_hook::NativeLoopbackWorkerPhase;
+
+    const fushi_voice_hook::NativeLoopbackRequestSnapshot request =
+        fushi_voice_hook::ReadNativeLoopbackRequest(g_header);
+    if (!request.valid) return;  // uninitialised/tearing request is deny.
+
+    if (thread_ != nullptr && WaitForSingleObject(thread_, 0) == WAIT_OBJECT_0) {
+      DWORD exit_code = 1;
+      GetExitCodeThread(thread_, &exit_code);
+      const uint32_t completed_request_seq =
+          static_cast<uint32_t>(InterlockedCompareExchange(
+              &control_.request_seq, 0, 0));
+      const bool stop_was_requested =
+          InterlockedCompareExchange(&control_.stop_requested, 0, 0) != 0;
+      CloseHandle(thread_);
+      thread_ = nullptr;
+      installed_ = false;
+      InterlockedExchange(&control_.phase, kLbWorkerIdle);
+      InterlockedExchange(&control_.stop_requested, 0);
+      InterlockedExchange(&control_.request_seq, 0);
+      if (fushi_voice_hook::NativeLoopbackWorkerFailureApplies(
+              request, completed_request_seq, stop_was_requested,
+              exit_code)) {
+        failed_request_seq_ = request.seq;
+      } else {
+        failed_request_seq_ = 0;
+      }
     }
+
+    NativeLoopbackWorkerPhase phase = NativeLoopbackWorkerPhase::kAbsent;
+    if (thread_ != nullptr) {
+      const LONG worker_phase =
+          InterlockedCompareExchange(&control_.phase, 0, 0);
+      const bool generation_changed =
+          static_cast<uint32_t>(InterlockedCompareExchange(
+              &control_.request_seq, 0, 0)) != request.seq;
+      if (generation_changed) {
+        // Even allow->deny->allow entirely between two Poll calls cannot keep
+        // the old capture generation alive.
+        InterlockedExchange(&control_.stop_requested, 1);
+      }
+      const bool stopping = generation_changed ||
+          InterlockedCompareExchange(&control_.stop_requested, 0, 0) != 0 ||
+          worker_phase == kLbWorkerStopping || worker_phase == kLbWorkerExited;
+      if (stopping) {
+        phase = NativeLoopbackWorkerPhase::kStopping;
+      } else if (worker_phase == kLbWorkerRunning) {
+        phase = NativeLoopbackWorkerPhase::kRunning;
+      } else {
+        phase = NativeLoopbackWorkerPhase::kStarting;
+      }
+    }
+
+    const bool failed_for_request =
+        thread_ == nullptr && failed_request_seq_ == request.seq &&
+        request.requested == fushi_voice_hook::kNativeLoopbackAllow;
+    const NativeLoopbackPolicyAction action =
+        fushi_voice_hook::DecideNativeLoopbackPolicyAction(
+            request, phase, failed_for_request);
+    switch (action) {
+      case NativeLoopbackPolicyAction::kStartWorker:
+        // Revalidate immediately before the only loopback CreateThread call.
+        // The worker independently rechecks policy before COM/Initialize/Start.
+        if (!fushi_voice_hook::NativeLoopbackRequestMatches(g_header,
+                                                             request)) {
+          return;
+        }
+        failed_request_seq_ = 0;
+        InterlockedExchange(&control_.stop_requested, 0);
+        InterlockedExchange(&control_.request_seq,
+                            static_cast<LONG>(request.seq));
+        InterlockedExchange(&control_.phase, kLbWorkerStarting);
+        fushi_voice_hook::PublishNativeLoopbackTransientState(
+            g_header, request,
+            fushi_voice_hook::kNativeLoopbackStateStarting);
+        thread_ =
+            CreateThread(nullptr, 0, LoopbackWorker, &control_, 0, nullptr);
+        installed_ = thread_ != nullptr;
+        if (thread_ == nullptr) {
+          InterlockedExchange(&control_.phase, kLbWorkerIdle);
+          InterlockedExchange(&control_.request_seq, 0);
+          failed_request_seq_ = request.seq;
+          fushi_voice_hook::PublishNativeLoopbackApplied(
+              g_header, request,
+              fushi_voice_hook::kNativeLoopbackStateFailed);
+        }
+        return;
+      case NativeLoopbackPolicyAction::kRequestStop:
+        InterlockedExchange(&control_.stop_requested, 1);
+        fushi_voice_hook::PublishNativeLoopbackTransientState(
+            g_header, request,
+            fushi_voice_hook::kNativeLoopbackStateStopping);
+        return;
+      case NativeLoopbackPolicyAction::kPublishStarting:
+        fushi_voice_hook::PublishNativeLoopbackTransientState(
+            g_header, request,
+            fushi_voice_hook::kNativeLoopbackStateStarting);
+        return;
+      case NativeLoopbackPolicyAction::kPublishStopping:
+        fushi_voice_hook::PublishNativeLoopbackTransientState(
+            g_header, request,
+            fushi_voice_hook::kNativeLoopbackStateStopping);
+        return;
+      case NativeLoopbackPolicyAction::kAcknowledgeStopped:
+        // There is no worker HANDLE here: any previous thread has completed
+        // Stop/Release/CoUninitialize and was reaped above.
+        failed_request_seq_ = 0;
+        fushi_voice_hook::PublishNativeLoopbackApplied(
+            g_header, request,
+            fushi_voice_hook::kNativeLoopbackStateStopped);
+        return;
+      case NativeLoopbackPolicyAction::kAcknowledgeRunning:
+        fushi_voice_hook::PublishNativeLoopbackApplied(
+            g_header, request,
+            fushi_voice_hook::kNativeLoopbackStateRunning);
+        return;
+      case NativeLoopbackPolicyAction::kAcknowledgeFailed:
+        fushi_voice_hook::PublishNativeLoopbackApplied(
+            g_header, request,
+            fushi_voice_hook::kNativeLoopbackStateFailed);
+        return;
+      case NativeLoopbackPolicyAction::kNone:
+        return;
+    }
+  }
+
+  bool transition_pending() {
+    if (g_header == nullptr) return false;
+    const bool request_pending = fushi_voice_hook::AtomicLoadShared32(
+               &g_header->native_loopback_request_seq) !=
+               fushi_voice_hook::AtomicLoadShared32(
+                   &g_header->native_loopback_applied_seq);
+    const LONG phase = InterlockedCompareExchange(&control_.phase, 0, 0);
+    return request_pending ||
+           (thread_ != nullptr && phase != kLbWorkerRunning);
+  }
+
+  void shutdown() override {
+    if (thread_ != nullptr) {
+      InterlockedExchange(&control_.stop_requested, 1);
+      // This runs on HookWorker, outside loader lock. The context is a member
+      // of this stack object, so returning before the worker exits would be a
+      // use-after-free; wait for the complete COM reverse-release.
+      WaitForSingleObject(thread_, INFINITE);
+      CloseHandle(thread_);
+      thread_ = nullptr;
+    }
+    InterlockedExchange(&control_.phase, kLbWorkerIdle);
     installed_ = false;
   }
   fushi_voice_hook::AdapterDiagnostics diagnostics() const override {
@@ -317,6 +504,9 @@ class LoopbackAdapter final : public fushi_voice_hook::EngineAdapter {
   }
 
  private:
+  HANDLE thread_ = nullptr;
+  LoopbackWorkerControl control_;
+  uint32_t failed_request_seq_ = 0;
   bool installed_ = false;
 };
 
@@ -334,6 +524,16 @@ class AdapterRegistry {
     artemis_pfs_.install();
     catsystem2_.install();
     malie_libp_.install();
+    // HUNEX reuses the shared KernelBase broker installed by Siglus above.
+    // Install it before startup-ready resumes the suspended game so the first
+    // playback read cannot race ahead of handle tracking.
+    hunex_gge_.install();
+    // SGRE RawImageEx labels can be rasterized once on the very first frame
+    // and then live only as cached textures. Install its optional UI trace
+    // while the injector still owns the startup suspension; the generated
+    // adapter block below intentionally runs after the ready bit and is too
+    // late for this one-shot renderer boundary.
+    sgre_.InstallPreResumeUiTrace();
     if (g_header != nullptr) {
       g_header->hook_diagnostics |= kDiagStartupAudioHooksReady;
     }
@@ -346,10 +546,14 @@ class AdapterRegistry {
 #include "generated/adapter_startup.inc"
   }
 
+  // Policy is already present in the mapping before InjectDll. Exact deny
+  // acknowledges stopped without creating a loopback worker or entering COM.
   void InstallFallbackAdapters() { loopback_.install(); }
 
   void Poll() {
+    loopback_.PollPolicy();
     DispatchNewModules();
+    generic_audio_.ProcessPendingEvents();
     unity_.ProcessPendingEvents();
     siglus_.ProcessPendingEvents();
     tyrano_.ProcessPendingEvents();
@@ -359,6 +563,10 @@ class AdapterRegistry {
     malie_libp_.ProcessPendingEvents();
     elf_ai6_.ProcessPendingEvents();
     kirikiri_.ProcessPendingEvents();
+    renpy_.ProcessPendingEvents();
+    sgre_.ProcessPendingEvents();
+    leaf_aquaplus_.ProcessPendingEvents();
+    hunex_gge_.ProcessPendingEvents();
     // These retry budgets and ordering intentionally match the old HookWorker. onModuleLoaded is
     // the stable seam; P3 can replace this bounded poll with real module events without changing
     // individual adapter contracts.
@@ -390,9 +598,92 @@ class AdapterRegistry {
       tyrano_.install();
       ++tyrano_retry_;
     }
+    PublishLookupAdmissionSummary();
   }
 
-  DWORD PollDelayMs() const {
+  // v19：把「本会话游戏内查词能不能用」汇总成一个值发布给 host。
+  //
+  // 唯一写者。每个 adapter 只回答自己那份（纯查询的 lookupAdmission()），合并规则在这里
+  // 一处定死：**取进展最高的那个**。理由是这些报告互不矛盾，只是各说各的 adapter——
+  // Leaf 说"身份不符"和 Siglus 说"本引擎没做"可以同时为真，而用户要看的是"最有希望的
+  // 那条路走到哪了"。让每个 adapter 自己往 header 里写就会互相覆盖，最后显示哪条取决于
+  // Poll 里的调用顺序，那是把 UI 结论押在一个没人当契约维护的顺序上。
+  void PublishLookupAdmissionSummary() {
+    if (g_header == nullptr) return;
+    if (!fushi_voice_hook::HasLookupRegion(g_header)) return;
+    fushi_voice_hook::LookupAdmissionReport best;
+    bool any_engine_claimed = false;
+    auto consider = [&best,
+                     &any_engine_claimed](
+                        const fushi_voice_hook::EngineAdapter& adapter) {
+      if (!adapter.probe()) return;
+      any_engine_claimed = true;
+      const fushi_voice_hook::LookupAdmissionReport report =
+          adapter.lookupAdmission();
+      if (report.state > best.state) best = report;
+    };
+    // 只有**引擎身份** adapter 参与。generic_audio_ / text_render_ / loopback_ 的
+    // probe() 恒为 true（它们是横切能力，不声称"这游戏是哪个引擎"），放进来会让任何
+    // 游戏在引擎探测成立之前就先被判成 EngineUnsupported——开关先灰后亮，比不显示更糟。
+    consider(siglus_);
+    consider(unity_);
+    consider(kirikiri_);
+    consider(renpy_);
+    consider(tyrano_);
+#include "generated/adapter_admission.inc"
+    // 一个引擎 adapter 都没 probe 成立时 best 保持 Unknown：那是"还没认出这是什么游戏"，
+    // 不是"不支持"。这两者必须分开，否则注入后的头几轮 Poll 会稳定误报。
+    //
+    // 但 Unknown 不能是**终态**：有几家（Leaf/SGRE）的 probe() 本身就是精确 exe hash 门，
+    // 所以「白2 的另一个发行版」这种情形下没有任何 adapter 会认领，best 会永远停在
+    // Unknown，用户界面上就是永远"正在判定"——比直接说不支持还糟，因为它不给任何出路。
+    // 模块表**稳定**之后仍无人认领，才是一个确定的结论：这个游戏我们不认识，查词
+    // 用不了。这里合并了"认出引擎但它没传感器"和"压根没认出引擎"——对用户来说处置
+    // 相同（用不了 + 请把 exe 摘要报上来），host 文案按"不支持或未识别"表述即可。
+    //
+    // 判据必须是 module_settle_.settled()（连续 15 次 200ms 全量扫描无新模块，且距
+    // 首次扫描已过 5 秒），**不能**是 modules_seeded_ —— 后者在注入完成的第 1 拍就
+    // 成立，而 KiriKiri / Ren'Py / Unity 的 probe 全是迟到信号（前者要等第一句有声
+    // 台词把 wuvorbis.dll 拉进来）。用 modules_seeded_ 等于对着一个唯一已发布查词
+    // 的引擎自信地说「本引擎没做查词」，要等第一句语音才自愈。
+    if (!any_engine_claimed && module_settle_.settled(GetTickCount64()) &&
+        best.state == fushi_voice_hook::kLookupAdmissionUnknown) {
+      best.state = fushi_voice_hook::kLookupAdmissionEngineUnsupported;
+      // 上面那句"请把 exe 摘要报上来"得真给得出摘要。这一档的定义就是没有任何
+      // adapter 认领，各家私有缓冲在这里全部够不着，所以读共享槽（Leaf 的 profile
+      // 解析对任何 x86 游戏都会跑，顺手把它填满了）。算不出就留空串——host 要能说
+      // "算不出"，而不是显示 64 个 0 让用户以为那就是他的 hash。
+      // 两边都是 kHookModuleDigestChars，共享槽恒带 NUL（要么空串、要么 64 位十六进制
+      // + NUL），所以整段拷贝是精确的——与 Siglus 那处同一种写法。
+      std::memcpy(best.executable_sha256,
+                  fushi_voice_hook::HostExecutableSha256Hex(),
+                  sizeof(best.executable_sha256));
+    }
+    fushi_voice_hook::PublishLookupAdmission(g_header, best);
+  }
+
+  DWORD PollDelayMs() {
+    if (loopback_.transition_pending()) return 10;
+    if (sgre_.lookup_sensor_available() && g_header != nullptr &&
+        fushi_voice_hook::HasLookupRegion(g_header) &&
+        g_header->lookup_enabled != 0) {
+      return 16;
+    }
+    if (siglus_.probe() && IsSiglusLookupProfileMatched() &&
+        g_header != nullptr && fushi_voice_hook::HasLookupRegion(g_header) &&
+        g_header->lookup_enabled != 0) {
+      return 16;
+    }
+    if (leaf_aquaplus_.probe() && g_header != nullptr &&
+        fushi_voice_hook::HasLookupRegion(g_header) &&
+        g_header->lookup_enabled != 0) {
+      return 16;
+    }
+    if (hunex_gge_.lookup_sensor_available() && g_header != nullptr &&
+        fushi_voice_hook::HasLookupRegion(g_header) &&
+        g_header->lookup_enabled != 0) {
+      return 16;
+    }
     return siglus_.probe() && !siglus_.audio_ready() ? 1 : 200;
   }
 
@@ -421,6 +712,7 @@ class AdapterRegistry {
     entry.dwSize = sizeof(entry);
     if (Module32FirstW(snapshot, &entry)) {
       const bool notify = modules_seeded_;
+      const size_t known_before = known_modules_.size();
       do {
         bool known = false;
         for (const std::wstring& module : known_modules_) {
@@ -444,6 +736,15 @@ class AdapterRegistry {
 #include "generated/adapter_module.inc"
       } while (Module32NextW(snapshot, &entry));
       modules_seeded_ = true;
+      // 首拍必然长出一整张表，那不是「变化」、只是第一次看见——但也不能当成
+      // 「没变化」去起算安静计数，否则满表落地那一刻就开始攒。首拍一律记成有新
+      // 模块，安静计数从第二拍才开始。
+      //
+      // known_modules_ 只增不减，所以 size() 变化就是「本拍发现了新模块」的精确
+      // 判据，不需要另设标志位。快照失败的早返回路径不调 OnScanCompleted ——
+      // 那是「没观测到」，不是「观测到没变」。
+      module_settle_.OnScanCompleted(
+          !notify || known_modules_.size() != known_before, now);
     }
     CloseHandle(snapshot);
   }
@@ -465,6 +766,9 @@ class AdapterRegistry {
   int renpy_retry_ = 0;
   int tyrano_retry_ = 0;
   ULONGLONG next_module_scan_ms_ = 0;
+  // 只表示「首拍已过」（用于抑制首张全表的 onModuleLoaded 风暴），**不表示稳定**。
   bool modules_seeded_ = false;
+  // 表示「模块表稳定了」。两者曾是同一个 bool，那正是准入在第 1 拍就误报的根因。
+  fushi_voice_hook::ModuleTableSettle module_settle_;
   std::vector<std::wstring> known_modules_;
 };

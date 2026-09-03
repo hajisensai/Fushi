@@ -464,4 +464,51 @@ void main() {
       throwsA(anything),
     );
   });
+
+  test('B3：items 状态计数按订阅分组聚合（面板卡片摘要一查拿全量）', () async {
+    final FushiDatabase db = await _openDb();
+    await db.upsertVideoDownloadSubscription(_subscription('s1'));
+    await db.upsertVideoDownloadSubscription(_subscription('s2'));
+    Future<void> item(
+      String sid,
+      String key,
+      String resource,
+      String status,
+    ) =>
+        db.upsertVideoDownloadSubscriptionItem(
+          VideoDownloadSubscriptionItemsCompanion.insert(
+            subscriptionId: sid,
+            logicalItemKey: key,
+            resourceProvider: 'nyaa',
+            selectedResourceId: resource,
+            title: '$sid $key',
+            status: Value<String>(status),
+            discoveredAt: 1,
+            updatedAt: 1,
+          ),
+        );
+
+    await item(
+        's1', 'S01E01', 'r1', VideoDownloadSubscriptionItemStatus.processed);
+    await item(
+        's1', 'S01E02', 'r2', VideoDownloadSubscriptionItemStatus.processed);
+    await item(
+        's1', 'S01E03', 'r3', VideoDownloadSubscriptionItemStatus.queued);
+    await item(
+        's2', 'S01E01', 'r4', VideoDownloadSubscriptionItemStatus.failed);
+
+    final Map<String, Map<String, int>> counts =
+        await db.getVideoDownloadSubscriptionItemStatusCounts();
+    expect(
+      counts['s1'],
+      <String, int>{
+        VideoDownloadSubscriptionItemStatus.processed: 2,
+        VideoDownloadSubscriptionItemStatus.queued: 1,
+      },
+    );
+    expect(
+      counts['s2'],
+      <String, int>{VideoDownloadSubscriptionItemStatus.failed: 1},
+    );
+  });
 }

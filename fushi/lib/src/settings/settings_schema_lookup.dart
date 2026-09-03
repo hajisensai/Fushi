@@ -1,15 +1,11 @@
 import 'dart:async';
-import 'dart:io';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/pages.dart';
-import 'package:fushi/src/lookup/clipboard_panel_controller.dart';
-import 'package:fushi/src/lookup/clipboard_text_overlay_controller.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
-import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/port_kill_confirm.dart';
@@ -22,6 +18,7 @@ import 'package:fushi/src/sync/texthooker_ws_client_manager.dart';
 import 'package:fushi/src/sync/yomitan_api_server.dart'
     show kYomitanApiDefaultPort;
 import 'package:fushi/utils.dart';
+import 'package:path/path.dart' as p;
 
 String _yomitanApiPortInUseMessage(int port) {
   return port == kYomitanApiDefaultPort
@@ -49,9 +46,8 @@ void _showYomitanPortConflictSnackBar(SettingsContext settingsContext) {
       action: PortProcessTerminator.isSupported
           ? SnackBarAction(
               label: t.yomitan_port_kill_action,
-              onPressed: () => unawaited(
-                _terminatePortOwnerAndRetry(settingsContext, port),
-              ),
+              onPressed: () =>
+                  unawaited(_terminatePortOwnerAndRetry(settingsContext, port)),
             )
           : null,
     ),
@@ -66,8 +62,10 @@ Future<void> _terminatePortOwnerAndRetry(
   // 杀前必须确认：弹窗展示实际占用者（进程名 + PID + 路径；hibiki 旧实例
   // 特别标注），关键系统进程直接拒杀。端口是用户可配置偏好，占用者完全可能
   // 是 IDE 辅助进程/dev server，未经确认一键 taskkill 不可接受。
-  final PortKillDecision decision =
-      await decidePortKill(settingsContext.context, port: port);
+  final PortKillDecision decision = await decidePortKill(
+    settingsContext.context,
+    port: port,
+  );
   switch (decision.kind) {
     case PortKillDecisionKind.cancelled:
       return;
@@ -99,7 +97,7 @@ Future<void> _terminatePortOwnerAndRetry(
   // 占用进程已结束（或本就已退出）：重试开启。进程退出后 OS 释放端口可能有极短
   // 延迟，端口仍占时再等一拍重试一次，仍失败按端口冲突报出。
   await appModel.setYomitanApiServerEnabled(true);
-  for (int attempt = 0;; attempt++) {
+  for (int attempt = 0; ; attempt++) {
     try {
       await appModel.startYomitanApiServer();
       break;
@@ -145,8 +143,8 @@ SettingsDestination buildLookupDestination() {
           ),
           SettingsActionItem(
             id: 'lookup.custom_css',
-            title: t.custom_dict_css,
-            icon: Icons.code_outlined,
+            title: t.dict_style_title,
+            icon: Icons.palette_outlined,
             onTap: (SettingsContext settingsContext) {
               return showSettingsDialog(
                 settingsContext,
@@ -177,7 +175,7 @@ SettingsDestination buildLookupDestination() {
         ],
       ),
       // 原「查词行为」19+ 项平铺长列表，按职责拆为四组：查词触发 / 外部集成 /
-      // 剪贴板与全局查词 / 朗读与反馈。纯展示重组：item id、持久化 key、
+      // 朗读与反馈 / 弹窗窗口。纯展示重组：item id、持久化 key、
       // onChanged、ReaderPlacement 全部不变。
       SettingsSection(
         title: t.settings_section_lookup_trigger,
@@ -218,15 +216,13 @@ SettingsDestination buildLookupDestination() {
             icon: Icons.ads_click_outlined,
             visible: (SettingsContext settingsContext) =>
                 DesktopLookupService.isDesktop,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.lookup,
-              order: 5,
-            ),
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 5),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.hoverAutoLookup,
             onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.readerSource
-                  .setHoverAutoLookup(value: value);
+              await settingsContext.readerSource.setHoverAutoLookup(
+                value: value,
+              );
               // galgame Hook 台词浮窗是独立 native 窗口，读不到 Dart 侧偏好：不 live
               // 推一次，用户得关掉浮窗重开才生效（阅读器 / 视频页由
               // notifyReaderSettingsChanged 覆盖，浮窗不在那条链路上）。
@@ -266,6 +262,27 @@ SettingsDestination buildLookupDestination() {
             onChanged: (SettingsContext settingsContext, num value) {
               settingsContext.appModel.setMaximumTerms(value.toInt());
               settingsContext.appModel.clearDictionaryResultsCache();
+              settingsContext.refresh();
+            },
+          ),
+          // TODO-1030 M0：全局查词（应用外）抓取选中文本周围上下文句。开启后按热键
+          // 查词时，除选中词外还经 UI Automation 读取前台应用选区前后各约 600 字，裁出
+          // 当前句在弹窗展示（Yomitan {sentence} 风格）。隐私敏感——读前台应用文本，
+          // 默认关闭；关闭时只用剪贴板拿到的纯选中串（现状）。UIA 是 Windows 平台能力，
+          // 故仅桌面（DesktopLookupService.isDesktop）显示。
+          SettingsSwitchItem(
+            id: 'lookup.global_context_capture',
+            title: t.global_context_capture,
+            subtitle: t.global_context_capture_hint,
+            icon: Icons.short_text_outlined,
+            visible: (SettingsContext settingsContext) =>
+                DesktopLookupService.isDesktop,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.globalContextCaptureEnabled,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setGlobalContextCaptureEnabled(
+                value,
+              );
               settingsContext.refresh();
             },
           ),
@@ -313,8 +330,9 @@ SettingsDestination buildLookupDestination() {
                 settingsContext.appModel.popupAutoExpandDictionaries.toDouble(),
             label: (double value) => value.round().toString(),
             onChanged: (SettingsContext settingsContext, double value) {
-              settingsContext.appModel
-                  .setPopupAutoExpandDictionaries(value.round());
+              settingsContext.appModel.setPopupAutoExpandDictionaries(
+                value.round(),
+              );
               settingsContext.refresh();
             },
           ),
@@ -325,8 +343,7 @@ SettingsDestination buildLookupDestination() {
             // 语义收敛：列数一直是「自动填充、封顶用户值」（effective = min(用户值,
             // 视口可容)），文案随之改为「词典最多列数（自动填充）」，不改底层算法。
             title: t.popup_dictionary_max_columns,
-            subtitle: t.popup_dictionary_max_columns_hint +
-                t.settings_experimental_suffix,
+            subtitle: t.popup_dictionary_max_columns_hint,
             icon: Icons.view_column_outlined,
             min: 1,
             max: 4,
@@ -420,10 +437,7 @@ SettingsDestination buildLookupDestination() {
             id: 'lookup.auto_read_on_lookup',
             title: t.auto_read_on_lookup,
             icon: Icons.record_voice_over_outlined,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.lookup,
-              order: 0,
-            ),
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 0),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.autoReadOnLookup,
             onChanged: (SettingsContext settingsContext, bool value) {
@@ -435,10 +449,7 @@ SettingsDestination buildLookupDestination() {
             id: 'lookup.audio_volume',
             title: t.lookup_audio_volume,
             icon: Icons.volume_up_outlined,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.lookup,
-              order: 1,
-            ),
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 1),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.lookupAudioVolume.toDouble(),
             min: 0,
@@ -459,10 +470,7 @@ SettingsDestination buildLookupDestination() {
             id: 'lookup.pause_on_lookup',
             title: t.pause_on_lookup,
             icon: Icons.pause_circle_outline,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.lookup,
-              order: 2,
-            ),
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 2),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.pauseOnLookup,
             onChanged: (SettingsContext settingsContext, bool value) async {
@@ -524,8 +532,9 @@ SettingsDestination buildLookupDestination() {
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.overlayLookupIndependentSize,
             onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel
-                  .setOverlayLookupIndependentSize(value);
+              await settingsContext.appModel.setOverlayLookupIndependentSize(
+                value,
+              );
               settingsContext.refresh();
             },
           ),
@@ -575,8 +584,9 @@ SettingsDestination buildLookupDestination() {
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.extensionPopupIndependentSize,
             onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel
-                  .setExtensionPopupIndependentSize(value);
+              await settingsContext.appModel.setExtensionPopupIndependentSize(
+                value,
+              );
               settingsContext.refresh();
             },
           ),
@@ -650,10 +660,7 @@ SettingsDestination buildLookupDestination() {
             id: 'reading_controls.enable_swipe_to_close',
             title: t.enable_swipe_to_close,
             icon: Icons.swipe_left_outlined,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.lookup,
-              order: 3,
-            ),
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 3),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.enableSwipeToClose,
             onChanged: (SettingsContext settingsContext, bool value) async {
@@ -671,281 +678,35 @@ SettingsDestination buildLookupDestination() {
             min: 0.1,
             max: 1,
             divisions: 9,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.lookup,
-              order: 4,
-            ),
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 4),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.dismissSwipeSensitivity,
             label: (double value) => value.toStringAsFixed(1),
             onChanged: (SettingsContext settingsContext, double value) async {
-              await settingsContext.readerSource
-                  .setDismissSwipeSensitivity(value);
+              await settingsContext.readerSource.setDismissSwipeSensitivity(
+                value,
+              );
               notifyReaderSettingsChanged(settingsContext);
             },
           ),
-        ],
-      ),
-      // 剪贴板与全局查词：桌面剪贴板监听全家桶（总开关 + 去向/窗口模式/不透明度）
-      // 和 app 外全局查词的上下文抓取，仅桌面平台可见的一整条链路。
-      SettingsSection(
-        title: t.settings_section_lookup_clipboard,
-        collapsedByDefault: true,
-        items: <SettingsItem>[
-          SettingsSwitchItem(
-            id: 'lookup.desktop_clipboard',
-            title: t.desktop_clipboard_enabled,
-            // 文案统一（阶段 F）：平台标记 + 实验性合并为单个括注
-            // （桌面·实验性）已并入 desktop_clipboard_enabled_hint 值本身，
-            // 不再叠加共享的 settings_experimental_suffix（否则出现双重括注）。
-            subtitle: t.desktop_clipboard_enabled_hint,
-            icon: Icons.content_paste_search,
-            visible: (SettingsContext settingsContext) =>
-                DesktopLookupService.isDesktop,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.desktopClipboardEnabled,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              // spec 2026-07-10 §7：setter 内部经 applyDesktopClipboardLifecycle
-              // 幂等 start/stop，此处不再直接操作服务。
-              await settingsContext.appModel.setDesktopClipboardEnabled(value);
-              // 默认去向=panel（用户拍板）：开总开关时若去向是面板则补预热
-              // （启动预热要求「开关开 且 去向 panel」双条件）；关总开关时收起
-              // 面板（服务已停，面板不该留着最后一句挂在屏上）。
-              if (ClipboardPanelController.isSupported) {
-                if (value &&
-                    settingsContext.appModel.desktopClipboardDestination ==
-                        DesktopClipboardDestination.panel) {
-                  unawaited(
-                      ClipboardPanelController.instance.ensurePrewarmed());
-                } else if (!value) {
-                  await ClipboardPanelController.instance.hidePanel();
-                }
-              }
-              settingsContext.refresh();
-            },
-          ),
-          // 复制后是否自动查词。关掉后剪贴板面板/查词只显示复制到的文字，点词才查
-          // （见 ClipboardPanelController 纯文字态）。仅桌面 + 剪贴板总开关开时可见。
-          SettingsSwitchItem(
-            id: 'lookup.desktop_clipboard_auto_lookup',
-            title: t.desktop_clipboard_auto_lookup,
-            subtitle: t.desktop_clipboard_auto_lookup_hint,
-            icon: Icons.search_off_outlined,
-            visible: (SettingsContext settingsContext) =>
-                DesktopLookupService.isDesktop &&
-                settingsContext.appModel.desktopClipboardEnabled,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.desktopClipboardAutoLookup,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel
-                  .setDesktopClipboardAutoLookup(value);
-              settingsContext.refresh();
-            },
-          ),
-          SettingsSegmentedItem<DesktopClipboardWindowMode>(
-            id: 'lookup.desktop_clipboard_window_mode',
-            title: t.desktop_clipboard_window_mode,
-            // 副标题保留：spec 2026-07-10 §7 守卫要求 hint 描述置顶行为、且旧的
-            // 「仅在查词页监听」措辞不得复活（desktop_lookup_to_dictionary_tab_test）。
-            subtitle: t.desktop_clipboard_window_mode_hint,
-            icon: Icons.vertical_align_top_outlined,
-            // spec 2026-07-10：本项管的是主窗置顶策略，仅 destination==main 时
-            // 有意义（面板/瞬态去向不经主窗显示结果）。
-            visible: (SettingsContext settingsContext) =>
-                DesktopLookupService.isDesktop &&
-                settingsContext.appModel.desktopClipboardEnabled &&
-                settingsContext.appModel.desktopClipboardDestination ==
-                    DesktopClipboardDestination.main,
-            options: <SettingsSegmentOption<DesktopClipboardWindowMode>>[
-              SettingsSegmentOption<DesktopClipboardWindowMode>(
-                value: DesktopClipboardWindowMode.normal,
-                label: t.desktop_clipboard_window_mode_normal,
-                tooltip: t.desktop_clipboard_window_mode_normal,
-              ),
-              SettingsSegmentOption<DesktopClipboardWindowMode>(
-                value: DesktopClipboardWindowMode.lookup,
-                label: t.desktop_clipboard_window_mode_lookup,
-                tooltip: t.desktop_clipboard_window_mode_lookup,
-              ),
-              SettingsSegmentOption<DesktopClipboardWindowMode>(
-                value: DesktopClipboardWindowMode.always,
-                label: t.desktop_clipboard_window_mode_always,
-                tooltip: t.desktop_clipboard_window_mode_always,
-              ),
-            ],
-            selected: (SettingsContext settingsContext) =>
-                settingsContext.appModel.desktopClipboardWindowMode,
-            onChanged: (
-              SettingsContext settingsContext,
-              DesktopClipboardWindowMode value,
-            ) async {
-              await settingsContext.appModel.setDesktopClipboardWindowMode(
-                value,
-              );
-              settingsContext.refresh();
-            },
-          ),
-          // spec 2026-07-10 §4/§7 — 剪贴板查词去向三选。main = 主窗查词 tab
-          // （现状默认）；transient = 光标处瞬态弹卡（复用全局查词覆盖窗）；
-          // panel = 常驻悬浮面板（M2 落地后加入选项）。覆盖窗是 Windows-only
-          // （GlobalLookupController.isSupported），其余桌面平台不显示本项、
-          // 隐含恒为 main。
-          SettingsSegmentedItem<DesktopClipboardDestination>(
-            id: 'lookup.desktop_clipboard_destination',
-            title: t.desktop_clipboard_destination,
-            icon: Icons.picture_in_picture_alt_outlined,
-            visible: (SettingsContext settingsContext) =>
-                DesktopLookupService.isDesktop &&
-                settingsContext.appModel.desktopClipboardEnabled &&
-                GlobalLookupController.isSupported,
-            options: <SettingsSegmentOption<DesktopClipboardDestination>>[
-              SettingsSegmentOption<DesktopClipboardDestination>(
-                value: DesktopClipboardDestination.main,
-                label: t.desktop_clipboard_destination_main,
-                tooltip: t.desktop_clipboard_destination_main,
-              ),
-              SettingsSegmentOption<DesktopClipboardDestination>(
-                value: DesktopClipboardDestination.panel,
-                label: t.desktop_clipboard_destination_panel,
-                tooltip: t.desktop_clipboard_destination_panel,
-              ),
-              SettingsSegmentOption<DesktopClipboardDestination>(
-                value: DesktopClipboardDestination.transient,
-                label: t.desktop_clipboard_destination_transient,
-                tooltip: t.desktop_clipboard_destination_transient,
-              ),
-              SettingsSegmentOption<DesktopClipboardDestination>(
-                value: DesktopClipboardDestination.textWindow,
-                label: t.desktop_clipboard_destination_text_window,
-                tooltip: t.desktop_clipboard_destination_text_window,
-              ),
-            ],
-            selected: (SettingsContext settingsContext) =>
-                settingsContext.appModel.desktopClipboardDestination,
-            onChanged: (
-              SettingsContext settingsContext,
-              DesktopClipboardDestination value,
-            ) async {
-              await settingsContext.appModel
-                  .setDesktopClipboardDestination(value);
-              // 去向切走时收起面板（不留孤儿常驻窗）；切到面板时补预热（启动预热仅
-              // destination==panel 时做——默认 main 不常驻第二 WebView2）。BUG-717：
-              // 面板不再有 × 暂停态，切回面板无需「解除暂停」，下一条剪贴板自然重开。
-              if (ClipboardPanelController.isSupported) {
-                if (value == DesktopClipboardDestination.panel) {
-                  unawaited(
-                      ClipboardPanelController.instance.ensurePrewarmed());
-                } else {
-                  await ClipboardPanelController.instance.hidePanel();
-                }
-              }
-              // 切走透明文字窗去向时收起它（不留孤儿透明窗）；透明窗无需预热，
-              // native 窗到首个 textWindow 分区请求才创建。
-              if (ClipboardTextOverlayController.isSupported &&
-                  value != DesktopClipboardDestination.textWindow) {
-                await ClipboardTextOverlayController.instance.hide();
-              }
-              settingsContext.refresh();
-            },
-          ),
-          // spec 2026-07-10 §6 真机修正 — 面板整窗不透明度（LWA_ALPHA 真透视，
-          // Win10/11 通用），destination==panel 即显示（原 acrylic backdropOk
-          // 门控随路线废弃删除）。
-          SettingsSliderItem(
-            id: 'lookup.clipboard_panel_opacity',
-            title: t.clipboard_panel_opacity,
-            subtitle: t.clipboard_panel_opacity_hint,
-            icon: Icons.opacity_outlined,
-            visible: (SettingsContext settingsContext) =>
-                DesktopLookupService.isDesktop &&
-                settingsContext.appModel.desktopClipboardEnabled &&
-                settingsContext.appModel.desktopClipboardDestination ==
-                    DesktopClipboardDestination.panel,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.clipboardPanelOpacity * 100,
-            min: 50,
-            max: 100,
-            divisions: 50,
-            step: 5,
-            titleReadout: true,
-            label: (double value) => '${value.round()}%',
-            onChanged: (SettingsContext settingsContext, double value) async {
-              await settingsContext.appModel
-                  .setClipboardPanelOpacity(value / 100);
-              await ClipboardPanelController.instance.refreshOpacity();
-            },
-          ),
-          // 真透明剪切板文字窗的背景不透明度（destination==textWindow 时显示）。
-          // 默认 0% = 完全透明背景只露实心文字（用户诉求）；亮色游戏上白字看不清
-          // 时上抬垫一层暗底。与面板整窗 LWA_ALPHA 不同，这里只压背景 alpha。
-          SettingsSliderItem(
-            id: 'lookup.clipboard_text_window_bg_opacity',
-            title: t.clipboard_text_window_bg_opacity,
-            subtitle: t.clipboard_text_window_bg_opacity_hint,
-            icon: Icons.gradient_outlined,
-            visible: (SettingsContext settingsContext) =>
-                DesktopLookupService.isDesktop &&
-                settingsContext.appModel.desktopClipboardEnabled &&
-                settingsContext.appModel.desktopClipboardDestination ==
-                    DesktopClipboardDestination.textWindow,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.clipboardTextWindowBgOpacity * 100,
-            min: 0,
-            max: 100,
-            divisions: 20,
-            step: 5,
-            titleReadout: true,
-            label: (double value) => '${value.round()}%',
-            onChanged: (SettingsContext settingsContext, double value) async {
-              await settingsContext.appModel
-                  .setClipboardTextWindowBgOpacity(value / 100);
-              await ClipboardTextOverlayController.instance.refreshStyle();
-            },
-          ),
-          // TODO-1030 M0：全局查词（应用外）抓取选中文本周围上下文句。开启后按热键
-          // 查词时，除选中词外还经 UI Automation 读取前台应用选区前后各约 600 字，裁出
-          // 当前句在弹窗展示（Yomitan {sentence} 风格）。隐私敏感——读前台应用文本，
-          // 默认关闭；关闭时只用剪贴板拿到的纯选中串（现状）。UIA 是 Windows 平台能力，
-          // 故仅桌面（DesktopLookupService.isDesktop）显示。
-          SettingsSwitchItem(
-            id: 'lookup.global_context_capture',
-            title: t.global_context_capture,
-            subtitle: t.global_context_capture_hint,
-            icon: Icons.short_text_outlined,
-            visible: (SettingsContext settingsContext) =>
-                DesktopLookupService.isDesktop,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.globalContextCaptureEnabled,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel
-                  .setGlobalContextCaptureEnabled(value);
-              settingsContext.refresh();
-            },
-          ),
-          // 防截屏（用户诉求）：桌面查词/剪贴板悬浮窗经 native
+          // 防截屏（用户诉求）：桌面查词浮窗经 native
           // SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE) 从截图/录屏/串流中
           // 排除。默认关（用户要求，2026-07）。仅 Windows——display affinity 是 Win32 能力。
-          // 与面板栏 🛡 按钮同一 pref、同一 native 通道（ClipboardPanelController
-          // .applyBlockCapture → OverlayWindowChannel.setBlockCapture），改设置即时
-          // 重应用，不新起并行机制。applyBlockCapture 是唯一扇出入口：面板窗 +
-          // 瞬态全局查词窗（GlobalLookupController.applyBlockCapture）一起保护。
+          // 写穿 pref（存储键沿用历史名 clipboard_panel_block_capture）后经
+          // GlobalLookupController.applyBlockCapture 即时重应用到覆盖窗；native 侧
+          // 记值并在窗口重建后自动重加，不新起并行机制。
           SettingsSwitchItem(
             id: 'lookup.block_capture',
-            title: t.clipboard_panel_block_capture,
-            subtitle: t.clipboard_panel_block_capture_hint,
+            title: t.lookup_block_capture,
+            subtitle: t.lookup_block_capture_hint,
             icon: Icons.shield_outlined,
             visible: (SettingsContext settingsContext) =>
-                ClipboardPanelController.isSupported,
+                GlobalLookupController.isSupported,
             value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.clipboardPanelBlockCapture,
+                settingsContext.appModel.lookupBlockCapture,
             onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel
-                  .setClipboardPanelBlockCapture(value);
-              // 即时重应用到已打开的面板窗（同 🛡 按钮路径）。
-              if (ClipboardPanelController.isSupported) {
-                await ClipboardPanelController.instance
-                    .applyBlockCapture(value);
-              }
+              await settingsContext.appModel.setLookupBlockCapture(value);
+              await GlobalLookupController.instance.applyBlockCapture(value);
               settingsContext.refresh();
             },
           ),
@@ -962,8 +723,7 @@ SettingsDestination buildLookupDestination() {
           SettingsSwitchItem(
             id: 'lookup.yomitan_api_server',
             title: t.yomitan_api_server,
-            subtitle:
-                t.yomitan_api_server_hint + t.settings_experimental_suffix,
+            subtitle: t.yomitan_api_server_hint,
             icon: Icons.api_outlined,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.yomitanApiServerEnabled,
@@ -999,16 +759,16 @@ SettingsDestination buildLookupDestination() {
           SettingsSwitchItem(
             id: 'lookup.texthooker',
             title: t.texthooker_enabled,
-            subtitle:
-                t.texthooker_enabled_hint + t.settings_experimental_suffix,
+            subtitle: t.texthooker_enabled_hint,
             icon: Icons.sensors_outlined,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.texthookerEnabled,
             onChanged: (SettingsContext settingsContext, bool value) async {
               await settingsContext.appModel.setTexthookerEnabled(value);
               if (value) {
-                TexthookerWsClientManager.instance
-                    .start(settingsContext.appModel.texthookerUrls);
+                TexthookerWsClientManager.instance.start(
+                  settingsContext.appModel.texthookerUrls,
+                );
               } else {
                 await TexthookerWsClientManager.instance.stop();
               }
@@ -1020,38 +780,6 @@ SettingsDestination buildLookupDestination() {
           // 效果的开关。现在改成第一次真要超分的那一刻当场问
           // （`magpie_upscaling_prompt.dart`），事后在捕获工作台「更多」菜单里改。
           // 加回设置项前请先想清楚它凭什么值得占一个全局条目。
-        ],
-      ),
-      // BUG-1095: galgame Hook 台词浮窗此前在设置页**一条条目都没有**——字号只能靠
-      // 「把窗口拖高」这个副作用去改，而 native 同时按窗高把字放大，可见行数几乎不涨
-      // （「放不下，上下拖还是放不下」）。字号现在是与窗口几何完全解耦的独立偏好，这里
-      // 是它唯一的入口。挂在查词分类：浮窗对用户就是「显示台词 + 点词查词」的那块面板，
-      // 紧邻上面的 texthooker（台词的来源）。仅 Windows——galgame Hook 只做 Windows。
-      SettingsSection(
-        title: t.settings_section_gal_hook_overlay,
-        visible: (_) => Platform.isWindows,
-        items: <SettingsItem>[
-          SettingsStepperItem(
-            id: 'lookup.gal_hook_text_font_size',
-            title: t.gal_hook_text_font_size,
-            subtitle: t.gal_hook_text_font_size_hint,
-            icon: Icons.format_size,
-            visible: (_) => Platform.isWindows,
-            min: PreferencesRepository.galHookTextFontSizeMin,
-            max: PreferencesRepository.galHookTextFontSizeMax,
-            step: 1,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.galHookTextFontSize,
-            format: (double value) => value.round().toString(),
-            onChanged: (SettingsContext settingsContext, double value) async {
-              await settingsContext.appModel.setGalHookTextFontSize(value);
-              // 与悬浮字幕字号同款纪律（TODO-1069）：写完 pref 立刻把整支 style 推给
-              // native 浮窗，否则字号只落了盘，浮窗要等下次改透明度才顺带刷新。
-              await GalHookTextOverlayController.instance
-                  .applyFontSizeFromPreferences();
-              settingsContext.refresh();
-            },
-          ),
         ],
       ),
     ],
@@ -1068,70 +796,100 @@ SettingsItem buildManageAudioSourcesItem() {
     title: t.manage_audio_sources,
     icon: Icons.volume_up_outlined,
     onTap: (SettingsContext settingsContext) {
-      final AppModel appModel = settingsContext.appModel;
-      return showSettingsDialog(
-        settingsContext,
-        (_) => AudioSourcesDialog(
-          sources: List<AudioSourceConfig>.from(
-            appModel.audioSourceConfigs,
-          ),
-          // 本地音频源是跨设备同步的共享池（__local_audio__）：移除一个源默认传播删除
-          // （syncEverywhere），接收设备仍会逐条确认后才删本地，用户控制在接收端保留。
-          // 列表编辑式 UX 无单条删除确认时机，故不在源端逐条弹选择。
-          onSave: (List<AudioSourceConfig> next) => appModel
-              .setAudioSourceConfigs(next, scope: DeleteScope.syncEverywhere),
-          onPickLocalDb: (bool reference) async {
-            final FilePickerResult? result =
-                await FilePicker.platform.pickFiles();
-            // 用户取消选择：result 为 null，正常无声返回（不是失败）。
-            if (result == null) return null;
-            // BUG-446：旧实现用 `result.files.single`，0/多文件时抛 StateError
-            // 被上层 `catch (_)` 吞成「导入失败」无信息文案。改为显式区分
-            // 「文件数异常」与「path 为空」，各记一条诊断日志（含文件数）。
-            final PlatformFile picked = result.files.first;
-            final String? pickedPath = picked.path;
-            if (result.files.length != 1 || pickedPath == null) {
-              ErrorLogService.instance.log(
-                'AudioSourcesDialog.pickLocalDb',
-                'unexpected file selection: count=${result.files.length}, '
-                    'pathNull=${pickedPath == null}, '
-                    'name=${picked.name}',
-              );
-              // path 为空（部分平台只回 bytes 不回 path）才算失败，交给上层
-              // catch 弹可见反馈；多文件但首个有 path 时仍按首个导入（容错）。
-              if (pickedPath == null) {
-                throw Exception('picked audio db has no file path (platform '
-                    'returned bytes without a path)');
-              }
-            }
-            final LocalAudioDbEntry entry =
-                await appModel.importLocalAudioDbFile(
-              pickedPath,
-              displayName: picked.name,
-              reference: reference,
-            );
-            return AudioSourceConfig.localAudio(
-              label: entry.displayName,
-              path: entry.path,
-              enabled: true,
-            );
-          },
-          onEditLocalSources: (String path) async {
-            await showSettingsDialog(
-              settingsContext,
-              (_) => LocalAudioSourcesDialog(
-                dbPath: path,
-                savedPrefs: appModel.sourcePrefsForLocalDb(path),
-                listSources: () => appModel.listLocalAudioSources(path),
-                onApply: (List<LocalAudioSourcePref> prefs) =>
-                    appModel.setLocalAudioDbSources(path, prefs),
-              ),
-            );
-            settingsContext.refresh();
-          },
-        ),
+      return showAudioSourcesManagerDialog(
+        context: settingsContext.context,
+        appModel: settingsContext.appModel,
+        onLocalSourcesEdited: settingsContext.refresh,
       );
     },
+  );
+}
+
+/// 打开「管理音频来源」对话框的共享编排入口：设置项（查词/互联两分类）与新手引导
+/// 共用同一份实现（单一真相源）。不依赖 [SettingsContext]，任何持有 [BuildContext]
+/// 的调用点都能用；[onLocalSourcesEdited] 在「编辑本地子来源」对话框关闭后回调
+/// （设置页用它触发 schema 刷新，向导不需要可不传）。
+Future<void> showAudioSourcesManagerDialog({
+  required BuildContext context,
+  required AppModel appModel,
+  VoidCallback? onLocalSourcesEdited,
+}) {
+  return showAppDialog(
+    context: context,
+    builder: (_) => AudioSourcesDialog(
+      sources: List<AudioSourceConfig>.from(appModel.audioSourceConfigs),
+      // 本地音频源是跨设备同步的共享池（__local_audio__）：移除一个源默认传播删除
+      // （syncEverywhere），接收设备仍会逐条确认后才删本地，用户控制在接收端保留。
+      // 列表编辑式 UX 无单条删除确认时机，故不在源端逐条弹选择。
+      onSave: (List<AudioSourceConfig> next) => appModel.setAudioSourceConfigs(
+        next,
+        scope: DeleteScope.syncEverywhere,
+      ),
+      onPickLocalDb: (bool reference) async {
+        // BUG-1667：本地音频库曾是全 app 唯一还在用裸 `FilePicker.pickFiles()`
+        // 的大文件导入入口，偏偏承载体积最大的文件（Yomitan 本地音频服务器的
+        // android.db 常见 1~6 GB）。安卓上 file_picker 会先把整份文件同步复制进
+        // app cache 再返回缓存路径，随后 `importFile` 又复制一份进库目录 →
+        // 峰值需要 **2 倍库体积的内部存储**，6 GB 的库要 12 GB，且全程只有一个
+        // 转圈、无进度无取消，多数手机直接失败或看起来永久卡死 = 「安卓上用
+        // android.db 配本地音频怎么都跑不通」。视频/书/有声书/漫画/字幕/制卡音频
+        // 早已统一走 [pickRealFilePathDetailed]（安卓 SAF 解析真实路径、零复制），
+        // 这条是最后的漏网。
+        final PickedFilePath? picked;
+        try {
+          picked = await pickRealFilePathDetailed(
+            context: context,
+            appModel: appModel,
+          );
+        } on PickedFileWithoutPathException catch (e) {
+          // BUG-446：平台交回了条目却没给可用 path（只回 bytes）**不是取消**，
+          // 是失败。记完整诊断（含条目数）后显式抛出，交给上层弹可见反馈——
+          // 静默返回会让用户以为自己没选中，真因全丢。
+          ErrorLogService.instance.log(
+            'AudioSourcesDialog.pickLocalDb',
+            'unexpected file selection: count=${e.count}, pathNull=true',
+          );
+          throw Exception(
+            'picked audio db has no file path (platform '
+            'returned bytes without a path)',
+          );
+        }
+        // 用户取消选择：返回 null，正常无声返回（不是失败）。
+        if (picked == null) return null;
+        // 引用只在**事实上拿到用户真实路径**时才成立（BUG-1667）。安卓未授予
+        // 全文件访问时降级回 file_picker，拿到的是 app cache 临时副本——引用它
+        // 等于引用一个清缓存就消失的文件，必须落回复制，并告诉用户为什么。
+        final bool canReference = picked.isRealPath;
+        if (reference && !canReference && context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(t.local_audio_reference_unavailable)),
+          );
+        }
+        final LocalAudioDbEntry entry = await appModel.importLocalAudioDbFile(
+          picked.path,
+          displayName: p.basename(picked.path),
+          reference: reference && canReference,
+        );
+        return AudioSourceConfig.localAudio(
+          label: entry.displayName,
+          path: entry.path,
+          enabled: true,
+        );
+      },
+      onEditLocalSources: (String path) async {
+        await showAppDialog(
+          context: context,
+          builder: (_) => LocalAudioSourcesDialog(
+            dbPath: path,
+            savedPrefs: appModel.sourcePrefsForLocalDb(path),
+            listSources: () => appModel.listLocalAudioSources(path),
+            onApply: (List<LocalAudioSourcePref> prefs) =>
+                appModel.setLocalAudioDbSources(path, prefs),
+          ),
+        );
+        onLocalSourcesEdited?.call();
+      },
+    ),
   );
 }
 

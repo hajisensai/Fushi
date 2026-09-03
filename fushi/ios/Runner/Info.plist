@@ -107,6 +107,14 @@
 		<key>LSApplicationQueriesSchemes</key>
 		<array>
 			<string>anki</string>
+			<!--
+				更新落地入口（见 lib/src/utils/misc/update_landing.dart）：TestFlight
+				安装的包指向 itms-beta://，上架后 App Store 安装的包指向 itms-apps://。
+				不登记这两个 scheme，url_launcher 的 canLaunchUrl 探测会一律判 false，
+				按钮就成了点了没反应。
+			-->
+			<string>itms-beta</string>
+			<string>itms-apps</string>
 		</array>
 		<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>

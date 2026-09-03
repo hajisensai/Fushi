@@ -30,11 +30,17 @@ void main() {
         isTrue,
         reason: 'the SRT branch still deletes via the repo',
       );
+      // 同理不写死 `removed > 0`：删除结果的类型会随需求扩展（PR #1024 起
+      // `repo.delete` 返回 SrtBookDeleteResult，本地文件删除报告要随它一起回传，
+      // 门控表达式因此是 `removed.deleted > 0`）。BUG-439 的不变量是**门控本身**
+      // ——计数器只能由这次删除的返回值决定，不是它写成哪个字面形状。
       expect(
-        body.contains('if (removed > 0) deleted++'),
+        RegExp(r'if \(removed(\.\w+)? > 0\) deleted\+\+').hasMatch(body),
         isTrue,
         reason: 'only real srt_books deletions may be counted (BUG-439).',
       );
+      // 这一条正向匹配就足以钉住 BUG-439：它的原始形态是**删掉门控**、`repo.delete`
+      // 之后无条件 `deleted++`；门控一没，上面的正则就不匹配 → 红。（变异实测过。）
     });
   });
 }

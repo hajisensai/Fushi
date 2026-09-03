@@ -11,8 +11,8 @@
 // 真值只留本地、不显示 dirty、永不提交。CI 发布构建从 GitHub Actions secret
 // TMDB_API_KEY 注入（见 main.yml / build-multiplatform.yml）。
 //
-// 留空时 TMDB 源自动降级为「未配置」：不构造 client、UI 不出 TMDB 候选，其余数据源
-// （Bangumi / AniList / Jikan / 离线库）照常工作。fork 构建请填自己申请的 key。
+// 留空时 TMDB 源自动降级为「未配置」：不构造 client、UI 不出 TMDB 候选。
+// fork 构建请填自己申请的 key。
 //
 // ⚠️ 使用本 key 附带合约义务（TMDB Terms of Use）：应用内须展示 TMDB logo 与
 // "This product uses the TMDB API but is not endorsed or certified by TMDB."

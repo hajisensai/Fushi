@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:fushi/src/media/manga/manga_browse_page.dart';
+import 'package:fushi/src/media/manga/discovery/manga_discovery_page.dart';
 import 'package:fushi/src/media/manga/manga_library_page.dart';
 import 'package:fushi/src/media/manga/manga_sources_page.dart';
 import 'package:fushi/src/media/media_item.dart';
@@ -24,7 +24,8 @@ import '../helpers/source_guard.dart';
 /// 1. 分流谓词本身（互补、无遗漏、无重复）；
 /// 2. 漫画库页确实带 `mangaOnly: true` 接进同一个书架实现，没有接反。
 ///
-/// PR#594 落地后追加第 3 件：顶层视图列表恒为三视图，不随平台分叉。
+/// PR#594 落地后追加第 3 件：顶层视图列表是无条件常量，不随平台分叉
+/// （BUG-1710 把重复的「浏览」tab 并进「发现」后恒为三视图 + 设置）。
 
 MediaItem _item(String identifier, String sourceKey) => MediaItem(
       mediaIdentifier: identifier,
@@ -83,7 +84,7 @@ void main() {
         (WidgetTester tester) async {
       // 只取 build 的产物，不真正挂载子树：整页依赖 DB / WebView / 一堆 provider，
       // 挂起来就成了「测环境」而不是测这条接线。漫画库页现在是三视图壳
-      // （书架 / 浏览 / 来源），书架仍是其中一个视图——穿过壳取该视图的产物。
+      // （书架 / 发现 / 来源），书架仍是其中一个视图——穿过壳取该视图的产物。
       Widget? built;
       await tester.pumpWidget(
         Builder(builder: (BuildContext context) {
@@ -93,26 +94,33 @@ void main() {
       );
       expect(built, isA<MediaLibraryShell>());
       final MediaLibraryShell shell = built! as MediaLibraryShell;
-      // 恒为三视图，**不随平台变**。Mihon 扩展是「来源」的一部分，不占 tab；
-      // 这条断言就是 PR#594 那版四视图 / 按平台分叉形态的反向锚。
+      // 恒为三视图（外加设置），**不随平台变**。Mihon 扩展是「来源」的一部分，
+      // 不占 tab；「发现」是漫画唯一的发现入口，五平台同构（AniList 与扩展宿主
+      // 无关）。这条断言同时是 BUG-1710 的反向锚：browse 视图被并进 discover 后
+      // 不得再回到漫画库——两个 tab 的 label 都是「发现」，用户点哪个都分不清。
       expect(
         shell.views.map((MediaLibraryViewSpec v) => v.kind).toList(),
         <MediaLibraryViewKind>[
           MediaLibraryViewKind.library,
-          MediaLibraryViewKind.browse,
+          MediaLibraryViewKind.discover,
           MediaLibraryViewKind.sources,
           MediaLibraryViewKind.settings,
         ],
+      );
+      expect(
+        shell.views.map((MediaLibraryViewSpec v) => v.kind),
+        isNot(contains(MediaLibraryViewKind.browse)),
+        reason: 'BUG-1710：漫画的在线来源清单已并进「发现」，不得再有第二个发现 tab',
       );
       final Widget shelf = shell.views.first.builder(
           tester.element(find.byType(SizedBox)), const SizedBox.shrink());
       expect(shelf, isA<ReaderFushiHistoryPage>());
       expect((shelf as ReaderFushiHistoryPage).mangaOnly, isTrue);
-      // 「浏览」是在线来源清单（mokuro.moe 与已启用 Mihon 源并列），不是别的域的页。
+      // 「发现」是漫画唯一的发现页（横滑行 + 来源清单 + 搜索）。
       expect(
         shell.views[1].builder(
             tester.element(find.byType(SizedBox)), const SizedBox.shrink()),
-        isA<MangaBrowsePage>(),
+        isA<MangaDiscoveryPage>(),
       );
       // 「来源」视图必须是漫画来源页——本地扫描根 + 扩展 + 在线来源都收在这里。
       expect(

@@ -432,6 +432,13 @@ class TorznabClient implements VideoResourceProvider {
   @override
   String get id => 'torznab';
 
+  /// 不限域：Torznab 索引器是用户自己配的，搜哪些分类由他填的 `categories`
+  /// 决定，app 无权替他裁掉某个域（这也正是 id 白名单时代 `torznab` 被无条件
+  /// 放行的原义，现在只是把它写成了 provider 自己的声明）。
+  @override
+  Set<VideoDiscoveryCategory> get categories =>
+      const <VideoDiscoveryCategory>{};
+
   Future<TorznabCapabilities> fetchCapabilities(String indexerId) async {
     final TorznabCapabilities? cached = _capsCache[indexerId];
     if (cached != null) return cached;
@@ -885,10 +892,28 @@ class _TorznabResourceCandidate extends VideoResourceCandidate {
           publishedAt: item.publishedAt,
           category: item.category,
           detailsUrl: item.detailsUrl,
+          magnetUri: _persistableMagnet(item),
         );
 
   final TorznabIndexerConfig config;
   final TorznabSearchItem item;
+
+  /// 可随任务落库的磁链：必须 `magnet:` 前缀且（两边都有 hash 时）与搜索结果
+  /// 的 info hash 一致——与 `resolve` 的 integrity 检查同判据，提前到构造期，
+  /// 持久化路径就不会绕过它。
+  static String? _persistableMagnet(TorznabSearchItem item) {
+    final String? magnet = item.magnetUri;
+    if (magnet == null || !magnet.toLowerCase().startsWith('magnet:')) {
+      return null;
+    }
+    final String? parsedHash = parseMagnetInfoHash(magnet);
+    if (parsedHash != null &&
+        item.infoHash != null &&
+        parsedHash != item.infoHash) {
+      return null;
+    }
+    return magnet;
+  }
 }
 
 class _TorznabSearchWindow {

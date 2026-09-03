@@ -1,52 +1,41 @@
 /// 视频来源规范刮削的全局配置与稳定偏好键。
 ///
-/// 来源自己的开关和 provider override 落 v77 的
-/// `video_source_scrape_settings`；密钥仍放 Preferences，避免混进
+/// 来源自己的开关落 v77 的 `video_source_scrape_settings`；其中历史
+/// provider override 只读兼容。网络凭据与 AniDB client identity 仍放
+/// Preferences，避免混进
 /// `media_sources.config_json`（该列只属于网络来源连接参数）。
 library;
 
-import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 
-const String kVideoMetadataPrimaryProviderPref =
-    'video_metadata_primary_provider';
-const String kVideoMetadataFanartApiKeyPref = 'video_metadata_fanart_api_key';
-const String kVideoMetadataBangumiTokenPref = 'video_metadata_bangumi_token';
-const String kVideoMetadataDoubanEndpointPref =
-    'video_metadata_douban_authorized_endpoint';
-const String kVideoMetadataDoubanTokenPref =
-    'video_metadata_douban_authorized_token';
+const String kVideoMetadataAniDbClientNamePref =
+    'video_metadata_anidb_client_name';
+const String kVideoMetadataAniDbClientVersionPref =
+    'video_metadata_anidb_client_version';
 const String kVideoMetadataLocalePref = 'video_metadata_locale';
 
-VideoMetadataProviderKind parsePrimaryVideoMetadataProvider(String? value) {
-  final VideoMetadataProviderKind? parsed =
-      VideoMetadataProviderKind.values.asNameMap()[value?.trim()];
-  if (parsed == null || parsed == VideoMetadataProviderKind.fanart) {
-    return VideoMetadataProviderKind.tmdb;
-  }
-  return parsed;
+/// AniDB HTTP API 要求注册过的正整数 client version。
+///
+/// 无效值保留为 `null`，provider 因而只使用离线 title catalog，不会发 HTTP 请求。
+int? parseAniDbClientVersion(String? value) {
+  final int? parsed = int.tryParse(value?.trim() ?? '');
+  return parsed != null && parsed > 0 ? parsed : null;
 }
 
 /// 一次批次开始时冻结的配置快照。执行中设置变化只影响下一批，避免同一来源半途
 /// 切 provider 或密钥而产生不可复现的混合资料。
 class VideoSourceScrapeGlobalConfig {
   const VideoSourceScrapeGlobalConfig({
-    this.primaryProvider = VideoMetadataProviderKind.tmdb,
     this.tmdbApiKey = '',
-    this.fanartApiKey = '',
-    this.bangumiToken = '',
-    this.doubanEndpoint = '',
-    this.doubanToken = '',
+    this.anidbClientName = '',
+    this.anidbClientVersion,
     this.locale = 'zh-CN',
     this.imageLanguages = const <String>['zh', 'en', ''],
   });
 
-  final VideoMetadataProviderKind primaryProvider;
   final String tmdbApiKey;
-  final String fanartApiKey;
-  final String bangumiToken;
-  final String doubanEndpoint;
-  final String doubanToken;
+  final String anidbClientName;
+  final int? anidbClientVersion;
   final String locale;
   final List<String> imageLanguages;
 
@@ -57,15 +46,13 @@ class VideoSourceScrapeGlobalConfig {
     String read(String key, [String fallback = '']) =>
         (preferences.getPref(key, defaultValue: fallback) as String).trim();
     final String locale = read(kVideoMetadataLocalePref, 'zh-CN');
+    final String anidbClientName = read(kVideoMetadataAniDbClientNamePref);
     return VideoSourceScrapeGlobalConfig(
-      primaryProvider: parsePrimaryVideoMetadataProvider(
-        read(kVideoMetadataPrimaryProviderPref, 'tmdb'),
-      ),
       tmdbApiKey: resolvedTmdbApiKey.trim(),
-      fanartApiKey: read(kVideoMetadataFanartApiKeyPref),
-      bangumiToken: read(kVideoMetadataBangumiTokenPref),
-      doubanEndpoint: read(kVideoMetadataDoubanEndpointPref),
-      doubanToken: read(kVideoMetadataDoubanTokenPref),
+      anidbClientName: anidbClientName,
+      anidbClientVersion: parseAniDbClientVersion(
+        read(kVideoMetadataAniDbClientVersionPref),
+      ),
       locale: locale.isEmpty ? 'zh-CN' : locale,
     );
   }

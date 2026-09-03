@@ -1,5 +1,5 @@
-/// 多来源结果合并规则：选定主源拥有展示资料，TMDB 只补规范身份/季集骨架，
-/// Fanart 只补图片。纯函数，便于用 provider mock 锁定行为。
+/// 多来源结果合并规则：AniDB 拥有动画身份与展示资料，TMDB 只补规范身份、
+/// 图片、演职员和季集骨架。纯函数，便于用 provider mock 锁定行为。
 library;
 
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
@@ -12,7 +12,6 @@ VideoMetadataWork supplementVideoMetadataWithTmdb(
     return primary;
   }
   return primary.copyWith(
-    kind: tmdb.kind,
     originalTitle: primary.originalTitle ?? tmdb.originalTitle,
     tagline: primary.tagline ?? tmdb.tagline,
     aliases: primary.aliases.isEmpty ? tmdb.aliases : primary.aliases,
@@ -59,7 +58,7 @@ List<VideoMetadataExtra> _mergeExtras(
   return result.values.toList(growable: false);
 }
 
-/// Bangumi/AniList 的单季响应以 season=1 表示当前作品。若本地文件已明确是
+/// AniDB 等单作品响应以 season=1 表示当前作品。若本地文件已明确是
 /// 续季，只把这种单季结果重映射到本地季号，再与 TMDB 的全剧骨架合并。
 /// 多季响应或本来就匹配的季号保持不动，避免猜测真实全剧编排。
 VideoMetadataWork remapStandaloneVideoMetadataSeason(
@@ -67,7 +66,7 @@ VideoMetadataWork remapStandaloneVideoMetadataSeason(
   int? localSeasonNumber,
 ) {
   if (localSeasonNumber == null ||
-      localSeasonNumber == 1 ||
+      localSeasonNumber <= 1 ||
       work.seasons.length != 1 ||
       work.seasons.single.seasonNumber != 1) {
     return work;
@@ -309,27 +308,19 @@ String _imageSlotKey(VideoMetadataImage image) => <Object?>[
       image.kind.name,
     ].join(':');
 
-/// 每个层级/图种只选一张。Fanart 候选先占位；主源只补缺。Fanart 内按
-/// `zh → en → 无语言 → 其它`，同语言按 likes；TMDB/主源按评分、票数。
+/// 每个层级/图种只选一张（背景图可多张）。候选先按评分、票数，再按
+/// `zh → en → 无语言 → 其它` 和 likes 排序。
 List<VideoMetadataImage> selectVideoMetadataImages({
   required Iterable<VideoMetadataImage> primary,
-  Iterable<VideoMetadataImage> fanart = const <VideoMetadataImage>[],
   List<String> languageOrder = const <String>['zh', 'en', ''],
   int maxBackdrops = 3,
 }) {
   assert(maxBackdrops > 0);
-  final Map<String, List<VideoMetadataImage>> fanartGroups =
-      _groupImages(fanart);
-  final Map<String, List<VideoMetadataImage>> primaryGroups =
-      _groupImages(primary);
-  final Set<String> keys = <String>{
-    ...fanartGroups.keys,
-    ...primaryGroups.keys,
-  };
+  final Map<String, List<VideoMetadataImage>> primaryGroups = _groupImages(
+    primary,
+  );
   final List<VideoMetadataImage> selected = <VideoMetadataImage>[];
-  for (final String key in keys) {
-    final List<VideoMetadataImage> preferred =
-        fanartGroups[key] ?? primaryGroups[key] ?? const <VideoMetadataImage>[];
+  for (final List<VideoMetadataImage> preferred in primaryGroups.values) {
     if (preferred.isEmpty) continue;
     preferred.sort((VideoMetadataImage a, VideoMetadataImage b) =>
         _compareImages(a, b, languageOrder));
@@ -377,15 +368,6 @@ int _compareImages(
     return languageOrder.length;
   }
 
-  final bool fanart = a.provider == VideoMetadataProviderKind.fanart &&
-      b.provider == VideoMetadataProviderKind.fanart;
-  if (fanart) {
-    final int language =
-        languageRank(a.language).compareTo(languageRank(b.language));
-    if (language != 0) return language;
-    final int likes = (b.likes ?? -1).compareTo(a.likes ?? -1);
-    if (likes != 0) return likes;
-  }
   final int rating = (b.voteAverage ?? -1).compareTo(a.voteAverage ?? -1);
   if (rating != 0) return rating;
   final int votes = (b.voteCount ?? -1).compareTo(a.voteCount ?? -1);

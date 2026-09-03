@@ -31,8 +31,8 @@ void main() {
     });
 
     test('路径穿越被拒（../../ 越出 images 根）', () {
-      final String? resolved = MangaFushiPage.resolveMangaResource(
-          root.path, '../../../etc/passwd');
+      final String? resolved =
+          MangaFushiPage.resolveMangaResource(root.path, '../../../etc/passwd');
       expect(resolved, isNull);
     });
 
@@ -65,6 +65,11 @@ void main() {
       final String? resolved = MangaFushiPage.resolveImageUrlToFile(
           root.path, 'https://manga.local/img/p001.jpg');
       expect(resolved, isNotNull);
+      final String? customSchemeResolved = MangaFushiPage.resolveImageUrlToFile(
+        root.path,
+        'fushi-manga://manga.local/img/p001.jpg',
+      );
+      expect(customSchemeResolved, isNotNull);
     });
 
     test('错误 host / 非 img 路径回 null', () {
@@ -84,5 +89,6 @@ void main() {
   test('漫画虚拟域与阅读器 fushi.local 互异（两拦截器绝不混叠）', () {
     expect(MangaFushiPage.kMangaHost, isNot('fushi.local'));
     expect(MangaFushiPage.kMangaHost, 'manga.local');
+    expect(MangaFushiPage.kMangaResourceScheme, 'fushi-manga');
   });
 }

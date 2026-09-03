@@ -26,6 +26,16 @@ void _log(String message) => debugPrint('[gal-helper] $message');
 /// 开发构建、以及用户误删组件后的修复。归档不存在是**正常情况**，不是异常。
 const String kGalgameHelperBundledDirectoryName = 'galgame_helper';
 
+/// helper 组件在 `fushi.exe` 同级的**落地目录名**（下一层是 `<arch>/`）。
+///
+/// 同一个字面量原本在四处各写一遍：[GalgameHelperInstaller._archDir]（写入落点）、
+/// `GalHookSessionController.defaultInjectorResolver`（注入器读取落点）、
+/// `install_into_bundle.ps1`（构建期解压落点）、以及更新前的占用检测
+/// （`queryWindowsGalHookModuleHolders`）。前三者写的是同一条布局契约，第四个必须跟前
+/// 三者指向同一个目录才有意义——查错目录的占用检测会静默返回「无人占用」，正是它要拦的
+/// 那次静默失败（BUG-1675）。故收成一个常量，让「改布局漏改一处」不再可能。
+const String kGalgameHelperInstallDirectoryName = 'voice_hook';
+
 /// 按目标游戏位数选注入器架构目录名：32 位游戏→x86，否则→x64（注入 DLL 位数必须匹配目标进程）。
 String galgameHelperArch({required bool is32Bit}) => is32Bit ? 'x86' : 'x64';
 
@@ -340,7 +350,7 @@ class GalgameHelperInstaller {
     final Directory Function(String arch)? override = _installDirectoryOverride;
     if (override != null) return override(arch);
     final String exeDir = File(Platform.resolvedExecutable).parent.path;
-    return Directory(p.join(exeDir, 'voice_hook', arch));
+    return Directory(p.join(exeDir, kGalgameHelperInstallDirectoryName, arch));
   }
 
   Directory _bundledDirectory() {

@@ -5,9 +5,8 @@ import 'package:fushi/pages.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
-import 'package:fushi/src/sync/sync_settings_schema.dart'
-    show buildDataStorageLocationSection;
 import 'package:fushi/src/sync/sync_http.dart';
+import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/utils/misc/crash_dump_locator.dart';
 import 'package:fushi/src/utils/misc/platform_updater.dart';
 import 'package:fushi/utils.dart';
@@ -47,8 +46,7 @@ SettingsDestination buildSystemDestination() {
           SettingsSwitchItem(
             id: 'system.focus_navigation',
             title: t.focus_navigation_enabled,
-            subtitle: t.focus_navigation_enabled_hint +
-                t.settings_experimental_suffix,
+            subtitle: t.focus_navigation_enabled_hint,
             icon: Icons.gamepad_outlined,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.experimentalFocusNavigationEnabled,
@@ -74,6 +72,19 @@ SettingsDestination buildSystemDestination() {
               settingsContext.refresh();
             },
           ),
+          // 新手引导重开入口（首启由 HomePage 自动弹一次）；引导本身只跳转
+          // 既有配置页面，不写任何功能开关。
+          SettingsNavigationItem(
+            id: 'system.onboarding_wizard',
+            title: t.onboarding_reopen,
+            icon: Icons.flag_outlined,
+            onTap: (SettingsContext settingsContext) async {
+              await pushSettingsPage(
+                settingsContext,
+                (_) => const OnboardingWizardPage(),
+              );
+            },
+          ),
           SettingsSwitchItem(
             id: 'system.low_memory_mode',
             title: t.low_memory_mode,
@@ -90,6 +101,16 @@ SettingsDestination buildSystemDestination() {
             id: 'system.app_version',
             icon: Icons.info_outline,
             builder: _buildRuntimeAppVersionRow,
+          ),
+          // 官网。与宽屏侧栏左上角的 app 图标是同一个入口（openOfficialWebsite），
+          // URL 只存在 official_links.dart 一处。
+          SettingsActionItem(
+            id: 'system.website',
+            title: t.options_website,
+            icon: Icons.language_outlined,
+            onTap: (_) async {
+              await openOfficialWebsite();
+            },
           ),
           SettingsActionItem(
             id: 'system.github',
@@ -132,10 +153,141 @@ SettingsDestination buildSystemDestination() {
           ),
         ],
       ),
-      // 「数据存储位置」从同步备份大类挪来（用户拍板：数据根是设备级存储配置，
-      // 与备份无关）。构建函数在 sync_settings_schema（行 widget 是该库私有 part），
-      // item id 'sync.data_storage_location' 不变。
-      buildDataStorageLocationSection(),
+      SettingsSection(
+        title: t.section_network,
+        items: <SettingsItem>[
+          // 全应用唯一的代理项：自动 = env > 系统代理 > 直连；直连 = 明确禁用；
+          // 手动 = 下方地址与可选认证。持久化地址键 `update_custom_proxy` 是历史遗留，
+          // 冻结不改；旧安装若已有地址且还没有模式键，会自动投影成手动模式。
+          SettingsSegmentedItem<String>(
+            id: 'system.network_proxy_mode',
+            title: t.network_proxy_mode_label,
+            icon: Icons.dns_outlined,
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: kProxyModeAuto,
+                label: t.network_proxy_mode_auto,
+                icon: Icons.sync_outlined,
+                tooltip: t.network_proxy_mode_auto_hint,
+              ),
+              SettingsSegmentOption<String>(
+                value: kProxyModeDirect,
+                label: t.network_proxy_mode_direct,
+                icon: Icons.link_off_outlined,
+                tooltip: t.network_proxy_mode_direct_hint,
+              ),
+              SettingsSegmentOption<String>(
+                value: kProxyModeManual,
+                label: t.network_proxy_mode_manual,
+                icon: Icons.tune_outlined,
+                tooltip: t.network_proxy_mode_manual_hint,
+              ),
+            ],
+            selected: (SettingsContext c) => c.appModel.networkProxyMode,
+            onChanged: (SettingsContext c, String value) async {
+              await c.appModel.setNetworkProxyMode(value);
+              resetSyncHttpClient();
+              c.refresh();
+            },
+          ),
+          SettingsTextItem(
+            id: 'system.network_proxy',
+            title: t.network_proxy_label,
+            subtitle: t.network_proxy_address_hint,
+            icon: Icons.dns_outlined,
+            placeholder: t.network_proxy_hint,
+            keyboardType: TextInputType.url,
+            visible: (SettingsContext c) =>
+                c.appModel.networkProxyMode == kProxyModeManual,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.updateCustomProxy,
+            onChanged: (SettingsContext settingsContext, String value) async {
+              final String trimmed = value.trim();
+              await settingsContext.appModel.setUpdateCustomProxy(trimmed);
+              // 云同步的共享 client 在首次使用时就把代理解析结果固化进 findProxy 了，
+              // 不丢弃它，用户改完代理仍走旧出口——那等于这条设置对同步不生效
+              // （BUG-1348）。更新检查每次新建 client，不受影响。
+              resetSyncHttpClient();
+              // 非空且无法归一成合法 host:port → 提示（仍保存原串，运行时忽略）。
+              if (trimmed.isNotEmpty &&
+                  normalizeUserProxyHostPort(trimmed) == null) {
+                final BuildContext ctx = settingsContext.context;
+                if (!ctx.mounted) return;
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  SnackBar(content: Text(t.network_proxy_invalid)),
+                );
+              }
+            },
+          ),
+          SettingsTextItem(
+            id: 'system.network_proxy_username',
+            title: t.network_proxy_username,
+            // 认证的作用面必须说清：凭据是 dart:io `HttpClient.authenticateProxy`
+            // 的 407 应答，只覆盖 app 自己发的 HTTP 出站。内置 torrent 引擎的 C ABI
+            // （`ht_apply_proxy`）只接 type/host/port，libtorrent 的
+            // `settings_pack::proxy_username/password` 根本没被导出，凭据到不了
+            // P2P 那一侧；不写出来用户会以为「开了 P2P 走代理」就连上了。
+            subtitle: t.network_proxy_credentials_scope_hint,
+            icon: Icons.person_outline,
+            visible: (SettingsContext c) =>
+                c.appModel.networkProxyMode == kProxyModeManual,
+            value: (SettingsContext c) => c.appModel.networkProxyUsername,
+            onChanged: (SettingsContext c, String value) async {
+              await c.appModel.setNetworkProxyUsername(value.trim());
+              resetSyncHttpClient();
+            },
+          ),
+          SettingsTextItem(
+            id: 'system.network_proxy_password',
+            title: t.network_proxy_password,
+            icon: Icons.password_outlined,
+            secret: true,
+            visible: (SettingsContext c) =>
+                c.appModel.networkProxyMode == kProxyModeManual,
+            value: (SettingsContext c) => c.appModel.networkProxyPassword,
+            onChanged: (SettingsContext c, String value) async {
+              await c.appModel.setNetworkProxyPassword(value);
+              resetSyncHttpClient();
+            },
+          ),
+          // P2P（torrent）传输单独列出：**默认直连**，用户明确改档才跟上面的
+          // 全局出口。三档：direct 直连；proxy 全代理（可能降速，且不少代理
+          // 服务商禁止 BT 流量：限速/警告/封号）；mixed 混合——tracker 经代理、
+          // DHT 与 peer 直连，节点获取范围最大，但真实 IP 暴露给 DHT/peer/
+          // tracker（连通性工具，非隐私工具）。副标题就是警告。只对内置引擎
+          // 生效；外接 qBittorrent 的代理在它自己的 WebUI 里配，这里不越权改
+          // 用户的 qB 设置。
+          SettingsSegmentedItem<String>(
+            id: 'system.network_proxy_p2p',
+            title: t.network_proxy_p2p_label,
+            subtitle: t.network_proxy_p2p_warning,
+            icon: Icons.swap_vert_outlined,
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: 'direct',
+                label: t.network_proxy_p2p_mode_direct,
+                icon: Icons.link_off_outlined,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'proxy',
+                label: t.network_proxy_p2p_mode_proxy,
+                icon: Icons.dns_outlined,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'mixed',
+                label: t.network_proxy_p2p_mode_mixed,
+                icon: Icons.alt_route_outlined,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.p2pProxyMode,
+            onChanged: (SettingsContext settingsContext, String value) async {
+              await settingsContext.appModel.setP2pProxyMode(value);
+              settingsContext.refresh();
+            },
+          ),
+        ],
+      ),
       SettingsSection(
         title: t.section_update,
         // 更新分区在所有平台可见（至少能「检查→打开发布页」）；自动安装开关
@@ -170,6 +322,34 @@ SettingsDestination buildSystemDestination() {
             ],
             selected: _selectedUpdateChannel,
             onChanged: setUpdateChannel,
+          ),
+          SettingsSegmentedItem<String>(
+            id: 'system.update_download_source',
+            title: t.update_download_source_preference,
+            subtitle: t.update_download_source_preference_hint,
+            icon: Icons.cloud_download_outlined,
+            dropdown: true,
+            // 标签走 updateDownloadSourceLabel 这一份真相源：下载遮罩的「本次没用上
+            // 所选来源」通告要说出同一个名字，两处各写一套迟早对不上。
+            options: <SettingsSegmentOption<String>>[
+              for (final String value in <String>[
+                updateDownloadSourceAutomatic,
+                updateDownloadSourceCloudflare,
+                updateDownloadSourceGitHub,
+                for (final String prefix in updateCheckProxyPrefixes)
+                  updateDownloadSourceForProxy(prefix),
+              ])
+                SettingsSegmentOption<String>(
+                  value: value,
+                  label: updateDownloadSourceLabel(value),
+                  tooltip: updateDownloadSourceLabel(value),
+                ),
+            ],
+            selected: (SettingsContext c) => c.appModel.updateDownloadSource,
+            onChanged: (SettingsContext c, String value) async {
+              await c.appModel.setUpdateDownloadSource(value);
+              c.refresh();
+            },
           ),
           // TODO-898：手动「立即检查更新」。分区已被 platformSupportsUpdateCheck()
           // 网关，按钮全平台可见（不能自装的平台仍可「检查→打开发布页」）。
@@ -216,37 +396,6 @@ SettingsDestination buildSystemDestination() {
             onChanged: (SettingsContext settingsContext, bool value) async {
               await settingsContext.appModel.setUpdateAutoInstall(value);
               settingsContext.refresh();
-            },
-          ),
-          // 「自定义更新代理」（TODO-871/862）：fake-ip/TUN 模式下系统代理写注册表、
-          // Dart HttpClient 读不到时的兜底入口。空串=清除（合法）；非空但格式非法时
-          // 弹 SnackBar 提示并仍存原串——运行时纯函数 normalizeUserProxyHostPort
-          // 兜底忽略非法值、不阻断检查。
-          SettingsTextItem(
-            id: 'system.update_custom_proxy',
-            title: t.update_custom_proxy_label,
-            subtitle: t.update_custom_proxy_auto_hint,
-            icon: Icons.dns_outlined,
-            placeholder: t.update_custom_proxy_hint,
-            keyboardType: TextInputType.url,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.updateCustomProxy,
-            onChanged: (SettingsContext settingsContext, String value) async {
-              final String trimmed = value.trim();
-              await settingsContext.appModel.setUpdateCustomProxy(trimmed);
-              // 云同步的共享 client 在首次使用时就把代理解析结果固化进 findProxy 了，
-              // 不丢弃它，用户改完代理仍走旧出口——那等于这条设置对同步不生效
-              // （BUG-1348）。更新检查每次新建 client，不受影响。
-              resetSyncHttpClient();
-              // 非空且无法归一成合法 host:port → 提示（仍保存原串，运行时忽略）。
-              if (trimmed.isNotEmpty &&
-                  normalizeUserProxyHostPort(trimmed) == null) {
-                final BuildContext ctx = settingsContext.context;
-                if (!ctx.mounted) return;
-                ScaffoldMessenger.of(ctx).showSnackBar(
-                  SnackBar(content: Text(t.update_custom_proxy_invalid)),
-                );
-              }
             },
           ),
         ],
@@ -327,7 +476,10 @@ Future<void> _checkUpdateNow(SettingsContext settingsContext) async {
   // 「已是最新已知 vX」/「发现新版 vY」（校验中…）的乐观提示，不等网络；网络刷新随后
   // 在后台校验，结果以既有 onUpToDate / 对话框收口。无缓存（首检/畸形/换通道）才退回
   // 原「正在检查…」提示。
-  final String currentVersion = settingsContext.appModel.packageInfo.version;
+  // BUG-1836：同 home_page，半更新态下 exe 版本资源谎报新版本，
+  // 据它比较会永判「已是最新」，用户困在旧代码里没有出路。
+  final String currentVersion =
+      resolveCurrentAppVersion(settingsContext.appModel.packageInfo.version);
   final String currentBuildNumber =
       settingsContext.appModel.packageInfo.buildNumber;
   final UpdateChannel channel = _channelFromSettings(settingsContext);
@@ -417,22 +569,19 @@ const String kTmdbLogoAsset = 'assets/attribution/tmdb/logo_tmdb.png';
 /// - 同一行左侧的图标徽标是 30dp：`_SettingsIcon` 在 Material 下走
 ///   `FushiBadge(size: 18, padding: EdgeInsets.all(6))`，18+6*2 = 30
 ///   （`utils/components/settings_shared.dart`）。24dp 与之同量级。
-/// - 应用自身图标在 Flutter widget 树里**只有一个真渲染点**：设置 › 外观 ›
-///   应用图标 的预设瓦片（`miscellaneous_settings_page.dart` 的 `_AppIconTile`）。
+/// - 应用自身图标在 Flutter widget 树里有两个真渲染点。设置 › 外观 › 应用图标的
+///   预设瓦片（`miscellaneous_settings_page.dart` 的 `_AppIconTile`）中，
 ///   `SizedBox.square(72)` 扣掉 `FushiCard` 描边的 1dp 内缩与 `gap/2 = 4` 的
-///   双侧 padding，图片实得 62×62dp。TMDB 标识 24dp 高 = 其 38.7%；面积
-///   24×56.0 ≈ 1344dp²，是其 3844dp² 的 35%——两个维度都更小，满足条款的
-///   "less prominent"。
-/// - 除此之外应用图标一处都不画：本文件上方的关于分区只有版本文字，首页
-///   dashboard 与 home 外壳零图片，侧栏 rail 的 `leading` 槽
-///   （`utils/adaptive/adaptive_navigation.dart`）只有形参没有任何实参，
-///   loading/splash 只传颜色不传图，`AppModel.appIcon`（`models/app_model.dart`）
-///   是零读点死字段。且预设瓦片那一页仅 Android/Windows 可见，其余三端应用图标
-///   的渲染点数为 0。
+///   双侧 padding，图片实得 62×62dp；宽屏主导航 rail 的品牌位直接显示经过圆角
+///   裁切的 64×64dp 图片。取较大的 64dp 作比较，TMDB 标识 24dp 高 = 其 37.5%；
+///   面积 24×56.0 ≈ 1344dp²，是其 4096dp² 的 32.8%——
+///   两个维度都更小，满足条款的 "less prominent"。
+/// - 除上述预设瓦片和宽屏 rail 外应用图标不再重复绘制：首页 dashboard、
+///   loading/splash 都不传图；窄屏底栏也没有品牌位。
 ///
 /// 所以旧注释那句「远小于应用自身 logo 的**任何**展示尺寸」结论对、依据错：可比
-/// 的展示尺寸全仓只有 62×62dp 这一个。调整本值前请重跑上述核对——这段是「不得更
-/// 显眼」的唯一书面依据，守卫只能钉住上限（≤32dp），钉不住依据本身。
+/// 的最大展示尺寸现在是 64×64dp。调整本值前请重跑上述核对——这段是「不得更显眼」
+/// 的唯一书面依据，守卫只能钉住上限（≤32dp），钉不住依据本身。
 const double _kTmdbLogoHeight = 24;
 
 /// 原图 viewBox 是 `0 0 190.24 81.52`；宽度按该比例算死，配合 [BoxFit.contain]
@@ -471,7 +620,10 @@ Widget _buildRuntimeAppVersionRow(SettingsContext settingsContext) {
   final packageInfo = settingsContext.appModel.packageInfo;
   return AdaptiveSettingsRow(
     title: t.app_version,
-    subtitle: formatAppVersionDisplay(packageInfo),
+    subtitle: formatAppVersionDisplay(
+      packageInfo,
+      runningCodeVersion: fushiRunningCodeVersion,
+    ),
     icon: Icons.info_outline,
     showIcon: true,
   );
@@ -481,6 +633,61 @@ Widget _buildRuntimeAppVersionRow(SettingsContext settingsContext) {
 /// buildNumber 是 Android versionCode（如 `1000561300`），两者语义不同：
 /// 绝不能用 semver 的 `+` build-metadata 把 versionCode 拼进 versionName，
 /// 否则会渲染出畸形的 `0.11.1-debug.5613+1000561300`。用括号并列展示。
+///
+/// [runningCodeVersion] 是编译进 `app.so` 的构建版本（见 `build_version.dart`），
+/// [PackageInfo.version] 则来自 exe / Info.plist / manifest 的版本资源。两者是
+/// **两个文件**：Inno 的回滚保留被覆盖的文件、只删本次新建的文件，所以「新 exe +
+/// 旧 app.so」这种半更新态完全可能落地（BUG-1786 现场），而版本资源照样报新版本。
+///
+/// 不一致时并排显示 exe 那个值——关于页是用户唯一能自查这件事的地方。
 @visibleForTesting
-String formatAppVersionDisplay(PackageInfo packageInfo) =>
-    '${packageInfo.version} (${packageInfo.buildNumber})';
+String formatAppVersionDisplay(
+  PackageInfo packageInfo, {
+  String? runningCodeVersion,
+}) {
+  final String executableVersion = packageInfo.version;
+  final String shown = runningCodeVersion ?? executableVersion;
+  final String display = '$shown (${packageInfo.buildNumber})';
+  if (runningCodeVersion == null) return display;
+  if (_isSameBuildVersion(runningCodeVersion, executableVersion)) {
+    return display;
+  }
+  return '$display ≠ exe $executableVersion';
+}
+
+/// [codeVersion]（`app.so` 里的构建版本）与 [executableVersion]（exe / Info.plist /
+/// manifest 的版本资源）是否来自同一次构建。
+///
+/// **不对称**：原生版本资源是代码版本的一种**有损渲染**——在版本字段只收数字段的
+/// 平台上（Apple：`CFBundleShortVersionString` 至多三段非负整数），`release-desktop.yml`
+/// 给 `--build-name` 传的是剥掉预发布段的 `apple_build_version_name`，而
+/// `--dart-define=FUSHI_BUILD_VERSION` 注入的仍是完整版本名（守卫
+/// `test/build/build_version_define_guard_test.dart` 同时钉死这两条）。所以两侧
+/// **故意解耦**：iOS 上同一次构建就是 `2.2.1-beta.30` 的代码配 `2.2.1` 的 Info.plist。
+///
+/// 判据因此是「逐字相等 **或** 版本资源等于代码版本剥掉预发布段后的值」：
+///
+/// - Windows 半更新态 exe `2.2.1-debug.12216` / 代码 `2.2.1-debug.12215`：剥段得
+///   `2.2.1` ≠ exe ⇒ 照常告警（BUG-1786 现场，基版本相同、只差序号一位，只比基
+///   版本的实现会对唯一需要它的输入闭眼）。
+/// - Apple 预发布包 exe `2.2.1` / 代码 `2.2.1-beta.30`：剥段后相等 ⇒ 静默。
+///
+/// **已知残留假阴性**：Windows「正式版 exe `2.2.1` + 同 base 预发布 app.so」的跨通道
+/// 半更新态会被这条判据静默。这是有意的取舍——它与 Apple 的正常态在字符串层面完全
+/// 同形，分开只能靠平台特例分支；换来的是 Apple 端不再常驻一个恒为真的「你的安装
+/// 坏了」告警。真出这种跨通道半更新态时，更新检查侧（[resolveCurrentAppVersion] 吃
+/// 代码版本）仍会照常提示新版本，用户不会被困住。
+bool _isSameBuildVersion(String codeVersion, String executableVersion) {
+  final String code = _normalizedVersion(codeVersion);
+  final String executable = _normalizedVersion(executableVersion);
+  if (code == executable) return true;
+  return executable == _withoutPrerelease(code);
+}
+
+String _normalizedVersion(String version) =>
+    version.trim().replaceFirst(RegExp('^[vV]'), '').split('+').first;
+
+/// 剥掉 semver 预发布段（`2.2.1-beta.30` → `2.2.1`）——原生版本字段只收数字段的
+/// 平台上，版本资源里落地的就是这个值。
+String _withoutPrerelease(String normalizedVersion) =>
+    normalizedVersion.split('-').first;

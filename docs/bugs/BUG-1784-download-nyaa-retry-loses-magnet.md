@@ -1,0 +1,6 @@
+## BUG-1784 · 下载重试丢失已选 magnet 致 nyaa notFound
+- **报告**：2026-08-23（用户：任务出错 `ExternalProviderFailure(provider=nyaa:nyaa.si, operation=resolve, kind=notFound): selected resource is no longer available`，点重试仍失败）
+- **真实性**：✅ 真 bug。根因：搜索入队路径不持久化候选磁链——nyaa 候选选中时 magnet 已在内存（`fushi/lib/src/media/torrent/nyaa_resource_provider.dart` 的 `resolve` 直接返回 `torrent.magnet`），但 `enqueue()`（`fushi/lib/src/media/video/download/video_download_pipeline_service.dart`）不写 `magnetUri` 列（全仓唯一写入点是 `video_download_legacy_importer.dart` 与 `enqueueManual`）。任务在 enqueue 阶段重启/重试时 `_resolvePayload` 掉进 `resolveSelection`，拿完整发布名（`[Airota&VCB-Studio] Gekijouban … [MOVIE]`）回 nyaa 分词重搜，搜不中即在 `video_resource_registry.dart` 的 `resolveSelection` 末尾抛 notFound——资源还在，钥匙被自己扔了；重试走同一条重搜路径，必然复现。
+- **[x] ① 已修复** — `VideoResourceCandidate` 增持久 `magnetUri` 字段（nyaa/apibay/knaben 直传构造磁链，torznab 仅在 `magnet:` 前缀且 hash 与搜索结果一致时传）；`enqueue()` 随任务落 `magnetUri` 列；`_resolvePayload` 重搜成功解析出磁链时写回任务行，重搜失败时对公共索引器任务（nyaa/apibay/knaben）用任务行里的 info hash + 各家固定 tracker 集离线重建磁链（存量任务行的兜底），私有 Torznab 保持原失败语义。提交：见本 PR。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/download/video_download_pipeline_service_test.dart`：入队持久化候选磁链断言 + 存量 nyaa 任务行（无 magnet、重搜空结果）经离线重建成功进入 download 阶段。
+- **备注**：新入队任务从此不再依赖索引器可用性物化 payload；存量失败任务点「重试」即走重建路径恢复。

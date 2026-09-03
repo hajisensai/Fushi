@@ -170,6 +170,101 @@ void main() {
     });
   });
 
+  // BUG-1693：lost 事件在多数平台**不带 TXT 属性**，旧实现回落 service.name 当键
+  // 去 remove，与 resolved 时按 TXT `id` 存的键对不上 → remove 静默失败，离线对端
+  // 一直留在设备列表里。现在 resolved 时登记 name → deviceId，lost 时先查它。
+  group('service-lost keying (BUG-1693)', () {
+    BonsoirService lostService({String name = 'Peer PC'}) =>
+        BonsoirService.ignoreNorms(
+          name: name,
+          type: LanDiscoveryService.serviceType,
+          port: 8765,
+          // lost 事件的典型形状：无 hostAddresses、无 TXT 属性，只有 service name。
+          attributes: const <String, String>{},
+        );
+
+    test('lost event without TXT attributes still removes the device', () {
+      final LanDiscoveryService service = LanDiscoveryService(deviceId: 'self');
+      service.debugHandleEvent(BonsoirDiscoveryServiceResolvedEvent(
+        service: _resolved(
+          name: 'Peer PC',
+          attributes: const <String, String>{'id': 'peer-1'},
+        ),
+      ));
+      expect(
+        service.currentDevices.map((FushiDevice d) => d.deviceId),
+        <String>['peer-1'],
+      );
+
+      service.debugHandleEvent(
+        BonsoirDiscoveryServiceLostEvent(service: lostService()),
+      );
+      expect(service.currentDevices, isEmpty,
+          reason: 'lost 不带 TXT 时必须靠 name → deviceId 辅助映射找回存储键');
+    });
+
+    test('lost event with TXT id attribute keeps working', () {
+      final LanDiscoveryService service = LanDiscoveryService(deviceId: 'self');
+      service.debugHandleEvent(BonsoirDiscoveryServiceResolvedEvent(
+        service: _resolved(
+          name: 'Peer PC',
+          attributes: const <String, String>{'id': 'peer-1'},
+        ),
+      ));
+      expect(service.currentDevices, hasLength(1));
+
+      // 平台带上了 TXT（且 name 从未 resolve 登记过 → 走 id 回落）：同样删得掉。
+      service.debugHandleEvent(BonsoirDiscoveryServiceLostEvent(
+        service: BonsoirService.ignoreNorms(
+          name: 'Renamed Peer',
+          type: LanDiscoveryService.serviceType,
+          port: 8765,
+          attributes: const <String, String>{'id': 'peer-1'},
+        ),
+      ));
+      expect(service.currentDevices, isEmpty);
+    });
+
+    test('losing an unknown service is a no-op', () {
+      final LanDiscoveryService service = LanDiscoveryService(deviceId: 'self');
+      service.debugHandleEvent(BonsoirDiscoveryServiceResolvedEvent(
+        service: _resolved(
+          name: 'Peer PC',
+          attributes: const <String, String>{'id': 'peer-1'},
+        ),
+      ));
+      service.debugHandleEvent(
+        BonsoirDiscoveryServiceLostEvent(service: lostService(name: 'Other')),
+      );
+      expect(service.currentDevices, hasLength(1));
+    });
+  });
+
+  // BUG-1693：TXT 广播 tls=1 的 host 服务的是 https，webDavUrl 不能硬编码 http
+  // （v1 回退路径会把这个 URL 原样落库并 POST /api/pair）。
+  group('webDavUrl scheme follows tls (BUG-1693)', () {
+    test('tlsEnabled device builds an https URL', () {
+      final FushiDevice device = FushiDevice(
+        name: 'Test',
+        host: '192.168.1.50',
+        port: 9999,
+        deviceId: 'x',
+        tlsEnabled: true,
+      );
+      expect(device.webDavUrl, 'https://192.168.1.50:9999');
+    });
+
+    test('resolved service with tls=1 yields an https webDavUrl', () {
+      final FushiDevice? device = FushiDevice.fromResolvedService(
+        _resolved(
+          attributes: const <String, String>{'id': 'abc123', 'tls': '1'},
+        ),
+      );
+      expect(device, isNotNull);
+      expect(device!.webDavUrl, 'https://192.168.1.100:8765');
+    });
+  });
+
   group('LanDiscoveryService', () {
     test('can be instantiated', () {
       final service = LanDiscoveryService(deviceId: 'test-id');

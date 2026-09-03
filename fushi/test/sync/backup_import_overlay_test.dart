@@ -251,8 +251,15 @@ void main() {
 
     test('main.dart：备份导入遮罩分支在裸 loading 分支之前，且渲染专用视图', () {
       final String src = readSource('lib/main.dart').readAsStringSync();
-      final int backupIdx = src.indexOf('appModel.backupImportActive');
-      final int loadingIdx = src.indexOf('if (!appModel.isInitialised)');
+      // BUG-1666 起 main.dart 在 build 之外也有 `if (!appModel.isInitialised)`
+      // （深链未初始化时暂存词的分支），裸 indexOf 会锚错窗口；判据只关心根 widget
+      // build 内的分支顺序，所以从 build 起点往后找。
+      final int buildIdx = src.indexOf('Widget build(BuildContext context)');
+      expect(buildIdx, greaterThan(0), reason: 'main.dart 必须有根 widget 的 build');
+      final int backupIdx =
+          src.indexOf('appModel.backupImportActive', buildIdx);
+      final int loadingIdx =
+          src.indexOf('if (!appModel.isInitialised)', buildIdx);
       expect(backupIdx, greaterThan(0), reason: '根 widget 必须有备份导入遮罩分支');
       expect(loadingIdx, greaterThan(0));
       expect(backupIdx, lessThan(loadingIdx),
@@ -389,12 +396,16 @@ void main() {
       final String src =
           readSource('lib/src/sync/sync_settings_schema/backup.part.dart')
               .readAsStringSync();
-      final int importIdx = src.indexOf('Future<void> _import()');
+      // 导入编排主体已提为库级 runBackupImportFlowForFile（设置页与新手引导
+      // 共用）；顺序断言锚到该函数体内，语义不变。
+      final int importIdx =
+          src.indexOf('Future<void> runBackupImportFlowForFile(');
       final int beginValIdx =
           src.indexOf('appModel.beginBackupValidating()', importIdx);
       final int endValIdx =
           src.indexOf('appModel.endBackupValidating()', importIdx);
-      final int confirmIdx = src.indexOf('_showConfirmDialog(', importIdx);
+      final int confirmIdx =
+          src.indexOf('_showBackupImportConfirmDialog(', importIdx);
       final int beginImportIdx =
           src.indexOf('appModel.beginBackupImport()', importIdx);
       expect(beginValIdx, greaterThan(0),

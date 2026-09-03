@@ -7,6 +7,7 @@ import 'package:fushi_core/fushi_core.dart' show kStatSourceBook;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
+import 'package:fushi_anki/fushi_anki.dart' show AnkiOpenWordOutcome;
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/anki_mined_card_action_sheet.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
@@ -15,11 +16,13 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.da
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/pages/implementations/sentence_context_dialog.dart';
+import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/utils/misc/lookup_audio_playback.dart';
 import 'package:fushi/src/utils/misc/lookup_auto_read_coordinator.dart';
+import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
 import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:fushi/utils.dart';
 
@@ -131,28 +134,10 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   /// 退回同语义；TODO-834 后这与「点 barrier 真空白清整栈」不同——滑动是明确的
   /// 关前置弹窗手势，对齐手机顶栏 [SwipeDismissWrapper] 的逐层关），仅当
   /// [ReaderFushiSource.enableSwipeToClose] 开启时生效。
-  /// 单击经 Flutter 手势竞技场仍走 onTap，与拖动互斥。阈值/灵敏度复用
-  /// [swipeDismissThreshold]（与顶栏 [SwipeDismissWrapper] 同一公式，不漂移）。
-  final BarrierSwipeDismissTracker _barrierSwipe = BarrierSwipeDismissTracker();
-
-  void _onBarrierHorizontalDragStart(DragStartDetails details) {
-    _barrierSwipe.begin();
-  }
-
-  void _onBarrierHorizontalDragUpdate(DragUpdateDetails details) {
-    _barrierSwipe.update(details.delta.dx);
-  }
-
-  void _onBarrierHorizontalDragEnd(DragEndDetails details) {
-    // 双向水平（左右皆可），与手机 [SwipeDismissWrapper] 的 _dragX.abs() 一致；
-    // 过阈关一层（[dismissTopPopup]）。阈值/位移累积由共享纯追踪器统一，不漂移。
-    if (_barrierSwipe.end(
-      sensitivity: ReaderFushiSource.instance.dismissSwipeSensitivity,
-    )) {
-      dismissTopPopup();
-    }
-  }
-
+  ///
+  /// BUG-1757：接线（判轴 + 累积 + 阈值）全部收在 [LookupDismissBarrier] 里，页面
+  /// 只提供「过阈了要关哪一层」，不再各自持 tracker + 三个转发方法。横拖走该
+  /// widget 内不入手势竞技场的 raw Listener，判轴规则写在可单测的代码里。
   bool get isDictionaryShown => _hasVisiblePopup(_popup.entries);
 
   @protected
@@ -195,18 +180,55 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   /// 弹窗回传 token 的落地点。默认行为：解析出的动作只要属于
   /// [dictionaryPopupForwardedActions] 就关掉整条弹窗栈——「关闭词典」是这条桥的
   /// 唯一通用语义。漫画页覆写它，把左右键接回自己的翻页链。
+  ///
+  /// 返回**本次是否真的执行了**动作。BUG-2031：鼠标那条路要靠这个回答决定要不要向
+  /// `MouseBindingDispatch` 认领这次按下（见 [onDismissBarrierNonPrimaryButton]）。
+  /// 键盘 token 的调用方忽略返回值即可（`bool Function(String)` 可直接当
+  /// `void Function(String)` 用，既有回调点零改动）。
   @protected
-  void onDictionaryPopupInputToken(String token) {
+  bool onDictionaryPopupInputToken(String token) {
     final ShortcutScope? scope = dictionaryPopupInputScope;
-    if (scope == null) return;
+    if (scope == null) return false;
     final ShortcutAction? action = resolveDictionaryPopupInputToken(
       registry: appModel.shortcutRegistry,
       token: token,
       scope: scope,
     );
-    if (action == null) return;
-    if (!dictionaryPopupForwardedActions.contains(action)) return;
+    if (action == null) return false;
+    if (!dictionaryPopupForwardedActions.contains(action)) return false;
     clearDictionaryResult();
+    return true;
+  }
+
+  /// 指针落在**弹窗矩形之外**、按下鼠标非主键。
+  ///
+  /// 为什么这条必须住在 barrier 上：弹窗可见期间根 Overlay 的
+  /// [LookupDismissBarrier] 是 `Positioned.fill`，叶子 `ColoredBox` 的命中行为是
+  /// **opaque**（颜色透明 ≠ 命中透明），于是页面根那层 [Listener] 一个指针事件都
+  /// 收不到（守卫 `test/shortcuts/video_pointer_channel_reachability_test.dart`）。
+  /// 指针落在弹窗**矩形之内**的那半边由弹窗表面自己的桥承担；**矩形之外**这半边此前
+  /// 只有视频页接了，其余表面的症状是「侧键压在浮窗上能关、移开一点就关不掉」。
+  ///
+  /// 默认实现与弹窗表面那条路**逐字同源**：同一个 [dictionaryPopupInputSpec]、同一个
+  /// [dictionaryPopupPointerToken] 折 token、同一个 [onDictionaryPopupInputToken]
+  /// 落地，故两个表面不可能各判各的。
+  /// BUG-2031：本入口必须参与 [MouseBindingDispatch] 的认领协议。barrier 住在根
+  /// Overlay 里，而 `wrapWithGlobalNavigation` 的鼠标兜底 [Listener] 是**它的祖先**，
+  /// 祖先不会被后代的 opaque 命中排除（实测派发序列 `[barrier, root]`）。不认领的
+  /// 后果是同一次按下被两层各派发一次：绑「返回上一级」的侧键 = 关词典 **+** 退出
+  /// 整本书，而键盘 Esc 只关词典——键鼠语义分叉。认领后 app 根让路，两者一致。
+  @protected
+  void onDismissBarrierNonPrimaryButton(PointerDownEvent event) {
+    // 「解析到但没执行」不认领：那等价于键盘侧「明明 ignored 却返回 handled」，会把
+    // 同一按钮上 universal / global 的合法绑定白白挡掉。
+    dispatchClaimedMouseAction(event, () {
+      final String? token = dictionaryPopupPointerToken(
+        buttons: event.buttons,
+        spec: dictionaryPopupInputSpec,
+      );
+      if (token == null) return false;
+      return onDictionaryPopupInputToken(token);
+    });
   }
 
   /// TODO-1027：点全屏 dismiss barrier（弹窗矩形外的真空白处）的钩子。默认行为
@@ -629,42 +651,28 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
                 children: [
                   if (hasVisiblePopup || searching)
                     Positioned.fill(
-                      child: Listener(
+                      // TODO-834（反转 TODO-720 / BUG-403）：点**所有弹窗矩形外**的
+                      // 真空白 = 一次性清整栈（会话级路径 [clearDictionaryResult]
+                      // → [_dismissPopupAt(0)] 触发会话收尾 [onAllPopupsDismissed]，
+                      // 保留隐藏热槽 BUG-092）。barrier 只在弹窗矩形之外命中（弹窗本
+                      // 体的 onTapOutside 单独处理「点某层本体空白」只关其后代）。光标
+                      // B/Esc 的逐层退回（[dismissTopPopup]）不受本改动影响。
+                      // TODO-1027：tap 带全局坐标转发给 [onDismissBarrierTap]
+                      // （阅读器覆写为「命中词→换新查词」，默认表面仍清整栈）。
+                      child: LookupDismissBarrier(
+                        onTapDismiss: onDismissBarrierTap,
+                        // TODO-716：水平拖过阈关一层（逐层，与光标 B/Esc 同语义）。
+                        onSwipeDismiss: dismissTopPopup,
+                        swipeEnabled:
+                            ReaderFushiSource.instance.enableSwipeToClose,
+                        sensitivity:
+                            ReaderFushiSource.instance.dismissSwipeSensitivity,
                         onPointerHover: onDismissBarrierHover,
                         onPointerSignal: onDismissBarrierPointerSignal,
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.translucent,
-                          // TODO-834（反转 TODO-720 / BUG-403）：点**所有弹窗矩形外**
-                          // 的真空白 = 一次性清整栈（会话级路径 [clearDictionaryResult]
-                          // → [_dismissPopupAt(0)] 触发会话收尾 [onAllPopupsDismissed]，
-                          // 保留隐藏热槽 BUG-092）。barrier 只在弹窗矩形之外命中（弹窗本
-                          // 体的 onTapOutside 单独处理「点某层本体空白」只关其后代）。光标
-                          // B/Esc 的逐层退回（[dismissTopPopup]）不受本改动影响。
-                          // TODO-1027：barrier 上 onTapUp 拿全局坐标转发给
-                          // [onDismissBarrierTap]（阅读器覆写为「命中词→换新查词」，
-                          // 默认表面仍清整栈）。onTapUp 与 onHorizontalDrag* 经
-                          // Flutter 手势竞技场天然分流（单击 vs 横拖），互斥不冲突。
-                          onTapUp: (details) =>
-                              onDismissBarrierTap(details.globalPosition),
-                          // TODO-716：桌面对齐手机——在 barrier 上水平拖过阈同样关一层。
-                          // 仅当滑动关闭开关开启时挂横拖识别（否则只 onTap，与旧行为一致）。
-                          // 竞技场天然分流：单击走 onTap、横拖走 onHorizontalDrag*，互斥。
-                          onHorizontalDragStart:
-                              ReaderFushiSource.instance.enableSwipeToClose
-                                  ? _onBarrierHorizontalDragStart
-                                  : null,
-                          onHorizontalDragUpdate:
-                              ReaderFushiSource.instance.enableSwipeToClose
-                                  ? _onBarrierHorizontalDragUpdate
-                                  : null,
-                          onHorizontalDragEnd:
-                              ReaderFushiSource.instance.enableSwipeToClose
-                                  ? _onBarrierHorizontalDragEnd
-                                  : null,
-                          child: Container(
-                            color: Colors.transparent,
-                          ),
-                        ),
+                        // 弹窗可见时唯一还能接到指针的地方（barrier 命中行为
+                        // opaque，页面根 Listener 收不到）——见该钩子的文档。
+                        onNonPrimaryButtonDown:
+                            onDismissBarrierNonPrimaryButton,
                       ),
                     ),
                   if (showLoadingPlaceholder) _buildLoadingPlaceholder(screen),
@@ -675,6 +683,17 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
                       screen,
                       isTop: i == visibleTopIndex,
                     ),
+                  // BUG-2039 ③：停驻的嵌套 realm 屏外挂着，下一次嵌套直接接管热
+                  // WebView。本页没混入 DictionaryPageMixin，所以直接调共享原语，
+                  // 不再把循环体内联抄一遍。
+                  ...parkedRealmPopupLayers(
+                    parkedRealms: _popup.parkedRealms,
+                    screen: screen,
+                    isDark: (appModel.overrideDictionaryTheme ?? theme)
+                            .brightness ==
+                        Brightness.dark,
+                    overrideFillColor: appModel.overrideDictionaryColor,
+                  ),
                 ],
               );
             },
@@ -803,7 +822,24 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
             selectionRect: childRect,
           );
           if (count > 0) {
-            item.webViewKey.currentState?.highlightSelection(count);
+            final int generation = activeLookupGeneration;
+            final Rect? wordRect =
+                await item.webViewKey.currentState?.highlightSelection(count);
+            // BUG-2054：同一次高亮顺带取回整词 bbox，把刚 push 的子层从「点击的首
+            // 字符」重锚到整词矩形（跨行选区时首字符矩形只覆盖第一行，子弹窗会盖住
+            // 选区的第二行）。eval 往返期间可能已有更新的查词占住同一下标，故叠
+            // BUG-717② 的代次门 + expectedTerm 词形门两道身份校验。阅读器车道监听
+            // controller，reanchorEntry 的 notifyListeners 已触发重定位，无需 setState。
+            if (mounted && generation == activeLookupGeneration) {
+              reanchorNestedPopupToWord(
+                controller: _popup,
+                parentWebViewKey: item.webViewKey,
+                parentIndex: index,
+                expectedTerm: text,
+                wordLocalRect: wordRect,
+                fallback: childRect,
+              );
+            }
           }
         },
         onLinkClick: (query, localRect) async {
@@ -824,7 +860,20 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
             selectionRect: childRect,
           );
           if (count > 0) {
-            item.webViewKey.currentState?.highlightSelection(count);
+            // BUG-2054：与 onTextSelected 对称（含两道身份门）。
+            final int generation = activeLookupGeneration;
+            final Rect? wordRect =
+                await item.webViewKey.currentState?.highlightSelection(count);
+            if (mounted && generation == activeLookupGeneration) {
+              reanchorNestedPopupToWord(
+                controller: _popup,
+                parentWebViewKey: item.webViewKey,
+                parentIndex: index,
+                expectedTerm: query,
+                wordLocalRect: wordRect,
+                fallback: childRect,
+              );
+            }
           }
         },
         // TODO-962：弹窗滚到底时若该层结果可能被截断（!allLoaded）就续查下一批词头
@@ -1215,19 +1264,15 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     return MinePopupResult(ankiConnect: r.ankiConnect, noteId: r.noteId);
   }
 
-  /// TODO-1360：已制卡的词旁「在 Anki 中打开卡片」按钮的 reader/有声书车道入口（与
-  /// [DictionaryPageMixin.onOpenInAnki] 对称）。据当前词条 expression/reading 反查命中
-  /// 卡并直接跳转打开（单卡直开 / 多卡弹选择 / 无卡 toast），不制卡、不覆写。
-  Future<void> onOpenInAnkiFromPopup(String expression, String reading) async {
+  /// TODO-1360 / BUG-2051：已制卡的词旁 ↗「在 Anki 中打开卡片」按钮的 reader/有声书
+  /// 车道入口（与 [DictionaryPageMixin.onOpenInAnki] 对称）。判据与画 ✓ 的查重同源，
+  /// 见 [BaseAnkiRepository.openWordInAnki]；不制卡、不覆写，也不再弹选择框。
+  Future<AnkiOpenWordOutcome> onOpenInAnkiFromPopup(
+    String expression,
+    String reading,
+  ) async {
     final repo = ref.read(ankiRepositoryProvider);
-    await openMinedCardInAnki(
-      context: context,
-      repo: repo,
-      expression: expression,
-      reading: reading,
-      // BUG-1040：多卡选择框同样是 Flutter 层，期间停靠弹窗。
-      runHidden: runWithLookupPopupHidden,
-    );
+    return repo.openWordInAnki(expression, reading);
   }
 
   /// 收藏/制卡计入统计时的来源标识。阅读器（EPUB）/有声书都归书籍统计

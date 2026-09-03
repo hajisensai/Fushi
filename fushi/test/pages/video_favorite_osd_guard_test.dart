@@ -8,8 +8,9 @@ import '../helpers/source_guard.dart';
 /// 1) 收藏快捷键（Ctrl+D → `_toggleFavoriteCurrentCue`）**不得**再调
 ///    `_pokeControlsVisible()`——那会派发合成 hover 唤醒 media_kit 控制条，把底栏
 ///    seekbar 进度条弹出来（用户报「碍眼」）。收藏结果提示走左上角 OSD 即可，不需要
-///    显现控制条。注意 seek / 重播（`_replay*AndPokeControls`）**仍**保留 poke，因为
-///    那些操作本就需要看进度，所以守卫只针对收藏这一处。
+///    显现控制条。BUG-2030 之后 seek / 跳句 / 跳章 / 重播的**键盘/手柄**通道也不再
+///    唤起控制条（改走 `_keepControlsAliveIfVisible`：只在已可见时续命），指针通道
+///    （底栏按钮 / 双击）仍 poke；本守卫仍只针对收藏这一处「连续命都不要」。
 ///
 /// 2) 视频页所有短提示统一走左上角 OSD `_showOsd(...)`，**不得**再用底部全局
 ///    `FushiToast.show(...)`（桌面 `bottom:50` 居中 / 移动端 `ToastGravity.BOTTOM`）。

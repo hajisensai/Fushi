@@ -1,9 +1,10 @@
 name: fushi_anki
+resolution: workspace
 description: Anki integration for Hibiki - abstract service, AnkiDroid and AnkiConnect implementations
 publish_to: none
 
 environment:
-  sdk: ">=3.5.0 <4.0.0"
+  sdk: ">=3.8.0 <4.0.0"
   flutter: ">=3.41.6"
 
 dependencies:
@@ -15,6 +16,9 @@ dependencies:
   ffi: ^2.1.3
   shared_preferences: ^2.2.2
   http: ^1.1.0
+  # AnkiWeb 下发的插件包不带 manifest.json，必须由我们补齐后重新打包才能交给
+  # Anki 安装（见 AnkiConnectInstaller）。
+  archive: ^3.6.1
 
 dev_dependencies:
   flutter_test:

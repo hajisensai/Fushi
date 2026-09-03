@@ -91,7 +91,6 @@ SyncOrchestrator _orchestrator(
       syncContent: false,
       syncAudioBookFiles: false,
       syncDictionary: true,
-      syncLocalAudio: false,
     );
 
 // ── Fake staged backend（同 sync_orchestrator_test.dart 里的 FakeSyncBackend）──
@@ -288,7 +287,7 @@ void main() {
       final SyncOrchestrator orch =
           _orchestrator(localDb, backend, localDictRoot, tmp);
       final SyncRunReport report = SyncRunReport();
-      await orch.syncDictionaries(report);
+      await orch.syncDictionaries(report, direction: SyncAssetDirection.both);
 
       expect(report.errors, isEmpty,
           reason: 'live sync should have no errors: ${report.errors}');
@@ -316,7 +315,7 @@ void main() {
       final SyncOrchestrator orch =
           _orchestrator(localDb, backend, localDictRoot, tmp);
       final SyncRunReport report = SyncRunReport();
-      await orch.syncDictionaries(report);
+      await orch.syncDictionaries(report, direction: SyncAssetDirection.both);
 
       expect(report.errors, isEmpty, reason: 'push errors: ${report.errors}');
       expect(report.dictionariesExported, 1, reason: 'JMdict 应推送到 host');
@@ -340,7 +339,8 @@ void main() {
 
       final SyncOrchestrator orch =
           _orchestrator(localDb, backend, localDictRoot, tmp);
-      await orch.syncDictionaries(SyncRunReport());
+      await orch.syncDictionaries(SyncRunReport(),
+          direction: SyncAssetDirection.both);
 
       // server 的 sync-data 目录下不应有 __dictionaries__ 文件夹
       final String syncDataDir = p.join(work.path, 'server_data', 'sync-data');
@@ -366,7 +366,7 @@ void main() {
       final SyncOrchestrator orch =
           _orchestrator(localDb, backend, localDictRoot, tmp);
       final SyncRunReport report = SyncRunReport();
-      await orch.syncDictionaries(report);
+      await orch.syncDictionaries(report, direction: SyncAssetDirection.both);
 
       expect(report.errors, isEmpty,
           reason: 'round-trip errors: ${report.errors}');
@@ -414,7 +414,7 @@ void main() {
         tmp,
       );
       final SyncRunReport report = SyncRunReport();
-      await orch.syncDictionaries(report);
+      await orch.syncDictionaries(report, direction: SyncAssetDirection.both);
 
       // staged 路径会 push 词典到 __dictionaries__ 暂存命名空间
       expect(report.dictionariesExported, 1, reason: '非互联后端应走 staged 路径 push');

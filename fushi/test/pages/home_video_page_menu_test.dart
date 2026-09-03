@@ -13,6 +13,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
 import 'package:fushi/src/sync/deletion_propagation.dart';
@@ -41,7 +42,6 @@ class PausingBatchDeleteVideoBookRepository extends VideoBookRepository {
   final Completer<void> deletesCommitted = Completer<void>();
   final Completer<void> allowDeleteReturn = Completer<void>();
   int deleteCalls = 0;
-  int reclaimCalls = 0;
   int compactCalls = 0;
 
   @override
@@ -55,24 +55,6 @@ class PausingBatchDeleteVideoBookRepository extends VideoBookRepository {
       deletesCommitted.complete();
       await allowDeleteReturn.future;
     }
-  }
-
-  @override
-  Future<void> reclaimDeletedVideoBookAssets({
-    required String deletedBookUid,
-    required String? deletedCoverPath,
-    required String? deletedSubtitlePath,
-    required String deletedVideoPath,
-    List<String> deletedImagePaths = const <String>[],
-  }) async {
-    reclaimCalls++;
-    await super.reclaimDeletedVideoBookAssets(
-      deletedBookUid: deletedBookUid,
-      deletedCoverPath: deletedCoverPath,
-      deletedSubtitlePath: deletedSubtitlePath,
-      deletedVideoPath: deletedVideoPath,
-      deletedImagePaths: deletedImagePaths,
-    );
   }
 
   @override
@@ -117,6 +99,11 @@ void main() {
   late GlobalKey<NavigatorState> toastNavigatorKey;
 
   setUp(() async {
+    // 视频删除与封面回填共用 VideoCoverMutationGate（进程级锁）。带真实资产的用例
+    // 会真跑一次抽帧，用例结束时那个 action 若还在飞，它的 Zone 不再推进、锁永不
+    // 释放；下一条用例于是排进一条永不被移交的队列——删除静默不执行，断言只会说
+    // 「没删掉」，看不出因果。逐条清锁（与下面 resetAppOwnedVideoAssetDirs 同性质）。
+    VideoCoverMutationGate.debugResetForTesting();
     // TODO-935 E1：桌面测试宿主 isDesktopPlatform=true，AppPaths._resolveDataRoot
     // 会读 SharedPreferences 的 data_root。未 mock 时 getInstance() 在本绑定下挂起，
     // 连累经 VideoStorage→AppPaths 的资产回收（封面/字幕目录解析永不返回 → 回收
@@ -342,6 +329,7 @@ void main() {
     expect(find.text(t.video_rename), findsOneWidget);
     expect(find.text(t.srt_import_pick_cover), findsOneWidget);
     expect(find.text(t.video_import_pick_subtitle), findsOneWidget);
+    expect(find.text(t.video_scrape_info), findsNothing);
     expect(t.video_import_pick_subtitle, isNot(contains('srt')));
     expect(t.video_import_pick_subtitle, isNot(contains('vtt')));
     expect(t.video_import_pick_subtitle, isNot(contains('ass')));
@@ -385,6 +373,7 @@ void main() {
     expect(find.text(t.video_rename), findsOneWidget);
     expect(find.text(t.srt_import_pick_cover), findsOneWidget);
     expect(find.text(t.video_import_pick_subtitle), findsOneWidget);
+    expect(find.text(t.video_scrape_info), findsNothing);
     expect(find.text(t.add_to_collection), findsOneWidget);
     expect(find.text(t.dialog_delete), findsOneWidget);
   });
@@ -764,6 +753,16 @@ void main() {
     });
     expect(await db.getVideoBookByBookUid('video/1'), isNull);
     expect(await db.getVideoBookByBookUid('video/2'), isNull);
+    expect(selectedOne.cover.existsSync(), isTrue);
+    expect(selectedOne.subtitle.existsSync(), isTrue);
+    expect(selectedOne.embeddedCache.existsSync(), isTrue);
+    expect(selectedTwo.cover.existsSync(), isTrue);
+    expect(selectedTwo.subtitle.existsSync(), isTrue);
+    expect(selectedTwo.embeddedCache.existsSync(), isTrue);
+    final VideoScrapeOperationLease? maintenance =
+        VideoScrapeOperationGate.tryEnterMaintenance();
+    maintenance?.release();
+    expect(maintenance, isNull, reason: '删行后、卡片卸载与资产回收前 maintenance 不得入场');
 
     await tester.pumpWidget(const SizedBox.shrink());
     repo.allowDeleteReturn.complete();
@@ -778,7 +777,7 @@ void main() {
           !selectedTwo.embeddedCache.existsSync(),
     );
 
-    expect(repo.reclaimCalls, 2);
+    expect(repo.deleteCalls, 2);
     expect(repo.compactCalls, 1);
     expect(selectedOne.cover.existsSync(), isFalse);
     expect(selectedOne.subtitle.existsSync(), isFalse);

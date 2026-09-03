@@ -153,7 +153,7 @@ void main() {
               body: HomeVideoPage(
                 repo: VideoBookRepository(db),
                 // #792 起远端卡所在的混排墙在 series 分区。
-                section: VideoLibrarySection.series,
+                section: VideoLibrarySection.allVideos,
                 remoteVideoClientLoader: () async => client,
                 remoteVideoDownloadDestination: (RemoteVideoInfo v) async =>
                     File('${pathProviderDir.path}/${v.id.hashCode}.mp4'),

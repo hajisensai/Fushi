@@ -721,6 +721,10 @@ TVPRemoveContinuousEventHookStub_t g_lookup_remove_continuous = nullptr;
 ITVPFunctionExporter* g_lookup_exporter = nullptr;
 TjsVariantString* g_lookup_bootstrap_script = nullptr;
 volatile LONG g_lookup_bootstrap_state = 0;  // 0=off, 1=registered, 2=running, 3=done
+// HookWorker 只登记"该装了"这个意图；真正碰引擎的安装动作只在引擎主线程上跑 (BUG-1724)。
+volatile LONG g_lookup_install_requested = 0;
+// 拥有游戏顶层窗口的线程 id，0 = 还没解析出来（窗口尚未建立）。
+volatile LONG g_lookup_engine_main_tid = 0;
 
 // TextRender 之外的捕获路径（Layer.drawText / MessageLayer.processCh）只在换游戏、
 // TextRender 一条都不命中时才有诊断价值。运行日志已证伪它们在本样本上的作用，故默认
@@ -949,6 +953,14 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			global.fushiLookupBoundX = 0;
 			global.fushiLookupBoundY = 0;
 			global.fushiLookupRefreshActive = false;
+			// KAG 复用同一个消息槽显示下一句；完整 candidate 提交时只排队，真正的
+			// renderer/layer 刷新留到账本事务外执行。游戏换场景时 primaryLayer 可能被
+			// 整体替换，而旧 Layer 仍保持 isvalid；只判 isvalid 会把卡片和高亮永久留在
+			// 已脱离活动树的旧 parent 下。
+			global.fushiLookupPendingSentenceRefresh = false;
+			global.fushiLookupPendingSubmitFence = false;
+			global.fushiLookupSentenceRefreshActive = false;
+			global.fushiLookupBridgePlugin = void;
 
 )TJS" LR"TJS(
 
@@ -1590,6 +1602,24 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				return 0;
 			};
 
+)TJS" LR"TJS(
+
+			// Probe 的存活真值是已提交的句子 slot，不是 kag.current 的瞬时对象身份。
+			// KAGEX 在人物口型/表情帧变化时会让 current 短暂不可得，或把同一
+			// (page,index) 换成另一个 MessageLayer 对象；只要 slot 的文本世代与
+			// activeEntry 没变，屏上的同一句就必须继续可点。严格对象身份仍由上面的
+			// helper 服务于 candidate takeover：它可以促使新 renderer 接管，但不能
+			// 单独宣告句界。没有 slot 的经典 KAG3 记录返回 0，继续走可见层回退。
+			global.fushiLookupActiveSentenceState = function(entry)
+			{
+				if(entry.slotPage == 0 || entry.slotIndex < 0) return 0;
+				var slot = global.fushiLookupFindSlot(entry.slotPage, entry.slotIndex);
+				if(slot === void || slot.generation != entry.slotGeneration ||
+					slot.line == "" || entry.line == "" || slot.line != entry.line ||
+					slot.line != entry.logicalLine || slot.activeEntry !== entry) return -1;
+				return 1;
+			};
+
 			global.fushiLookupVisible = function(layer)
 			{
 				var current = layer;
@@ -1615,6 +1645,192 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				catch(e) { return false; }
 			};
 
+			global.fushiLookupLayerOwnedByPrimary = function(layer, primary)
+			{
+				try
+				{
+					return layer !== void && layer !== null && isvalid layer &&
+						primary !== void && primary !== null && isvalid primary &&
+						layer.parent === primary;
+				}
+				catch(e) { return false; }
+			};
+
+			// 只在账本事务外调用。先从全局发布中摘掉旧对象，再 best-effort 隐藏/
+			// invalidate；这样 Layer setter 若重入，也只会看见“尚未创建”的新世代，
+			// 不会重新使用已经脱离当前 primary 的对象。
+			global.fushiLookupRetireDetachedLayer = function(layer)
+			{
+				try
+				{
+					if(layer !== void && layer !== null && isvalid layer)
+					{
+						layer.visible = false;
+						layer.update();
+					}
+				}
+				catch(e) { global.fushiLookupFault(); }
+				// 某些游戏已经把旧 primary 从窗口树摘掉，旧 Layer 的 update 会先抛错；
+				// invalidate 必须单独 best-effort，不能因此把脱离树的对象一直留活。
+				try
+				{
+					if(layer !== void && layer !== null && isvalid layer)
+						invalidate layer;
+				}
+				catch(e) { global.fushiLookupFault(); }
+			};
+
+			// KAG 的 primaryLayer 是 fore.base；fore/back 交换可能在同一句中改变对象身份。
+			// Layer.parent 是可写属性，同一 Window/primary tree 内可安全迁移。先用共同根坐标
+			// 算出 layer 在新 primary 下的位置，再改 parent；这只搬运位图 carrier，不改变
+			// WebView DOM、submit fence、route 或 CardSeq。
+			global.fushiLookupRehomeLayerToPrimary = function(layer, primary)
+			{
+				try
+				{
+					if(global.fushiLookupLayerOwnedByPrimary(layer, primary)) return true;
+					if(layer === void || layer === null || !isvalid layer ||
+						primary === void || primary === null || !isvalid primary) return false;
+					if(!global.fushiLookupComputeOffset(layer)) return false;
+					var newLeft = global.fushiLookupOffX;
+					var newTop = global.fushiLookupOffY;
+					if(primary !== global.kag.primaryLayer) return false;
+					layer.parent = primary;
+					layer.setPos(newLeft, newTop);
+					if(layer.parent !== primary) return false;
+					if(layer.visible) layer.update();
+					return true;
+				}
+				catch(e)
+				{
+					global.fushiLookupNoteError("layer.rehome", e);
+					global.fushiLookupFault();
+					return false;
+				}
+			};
+
+			// primary 在「读取」与「parent 赋值」之间被换掉，是 rehome 唯一一种下一次
+			// 输入必然看到不同状态、因而值得等的失败。判据只有这一条；读 primaryLayer
+			// 本身可能抛，抛了就当没换（不值得等），交给上层走确定动作。
+			global.fushiLookupPrimaryRacedSince = function(primary)
+			{
+				try { return primary !== global.kag.primaryLayer; }
+				catch(e) { return false; }
+			};
+
+)TJS" LR"TJS(
+
+			// stable/run 和输入预检只允许尝试迁移。过渡中的 primary 可能还没有
+			// 完成 fore/back 交换；此时 rehome 失败必须保留 Card/CardSeq/CardEntry，
+			// 等 stable=true 或下一次输入重试。只有确认的换句路径才能退休 carrier。
+			//
+			// 🔴 两条硬约束，缺任何一条都会让 leftClickHook 把玩家的左键永久吞掉、
+			// 剧情再也推不动：
+			//
+			// ① 不变式 `CardSeq != 0 ⇒ fushiLookupCard 是有效 Layer`。Prepare / Apply /
+			//    Reconcile 一旦判定 carrier 不可用，都会把 Card / CardSeq / CardEntry
+			//    三个一起清掉。本函数是**第四个**能观察到该不变式被引擎侧打破的地方
+			//    （kag.clear()、场景重载、全屏切换重建 primary 树会直接 invalidate 掉
+			//    Layer），所以也必须在这里把它修回来。把矛盾状态原样报成 "not ready"
+			//    的后果是：fushiLookupCardVisible() 只看 CardSeq 就返回 true，本函数
+			//    返回 false，两个函数对同一状态给出相反答案，leftClick 的
+			//    popupTransaction && !carrierSettled 恒成立——而 TJS 侧唯一无条件清
+			//    CardSeq 的入口在 C++ 下发的 dismiss 上，玩家点不到、也就永远解不开。
+			//
+			// ② 返回 false（= 请上层再等一次）只保留给 primary 竞态这一种失败。其余
+			//    失败（引擎拒绝 parent 赋值、层脱离窗口树、图层树成环、恢复 visible
+			//    抛错、这一刻拿不到 primary）等多久都不会好，一律返回 true，让
+			//    leftClickHook 走确定动作（转发进卡或收卡），绝不出现「吞掉这一击但
+			//    什么都不做」这种既不推进游戏也不推进查词的状态。
+			global.fushiLookupTryRehomeVisualParents = function()
+			{
+				var primary = void;
+				try { primary = global.kag.primaryLayer; }
+				catch(e) { return true; }
+				if(primary === void || primary === null || !isvalid primary) return true;
+
+				var highlight = global.fushiLookupHighlightLayer;
+				if(highlight !== void && highlight !== null &&
+					!global.fushiLookupLayerOwnedByPrimary(highlight, primary))
+					global.fushiLookupRehomeLayerToPrimary(highlight, primary);
+
+				var card = global.fushiLookupCard;
+				if(card === void || card === null || !isvalid card)
+				{
+					// carrier 已被引擎侧销毁，等不回来。就地恢复不变式，让
+					// fushiLookupCardVisible() 与本函数对同一状态给出同一答案；
+					// 这一击随后走正常收卡路径，而不是被静默吃掉。
+					global.fushiLookupCard = void;
+					global.fushiLookupCardSeq = 0;
+					global.fushiLookupCardEntry = void;
+					return true;
+				}
+				if(!global.fushiLookupLayerOwnedByPrimary(card, primary) &&
+					!global.fushiLookupRehomeLayerToPrimary(card, primary))
+				{
+					if(global.fushiLookupPrimaryRacedSince(primary)) return false;
+					// 迁移永久失败：与 Reconcile 同一处置，只换视觉 carrier，
+					// route/submit 账本仍由真实句界管理。
+					global.fushiLookupCard = void;
+					global.fushiLookupCardSeq = 0;
+					global.fushiLookupCardEntry = void;
+					global.fushiLookupRetireDetachedLayer(card);
+					return true;
+				}
+				try
+				{
+					// KAG transition 可暂时隐藏子层。已应用且未进入截图 suppress
+					// 的同一张卡应在 stable=true 后恢复，不重建 WebView/route。
+					if(global.fushiLookupCardSeq != 0 &&
+						!global.fushiLookupCaptureSuppressed && !card.visible)
+					{
+						card.visible = true;
+						card.update();
+					}
+				}
+				catch(e)
+				{
+					// carrier 已经挂在 current primary 下了；恢复 visible 失败是局部
+					// 视觉故障，不是「再等一次就会好」。报 false 会让每一次左键都被吞。
+					global.fushiLookupFault();
+				}
+				return true;
+			};
+
+			// 只由完整 candidate 确认的换句 leaf 调用。此时才可在迁移失败后
+			// 退休坏 Layer；这个 helper 不得出现在 stable/animation 或输入预检路径。
+			global.fushiLookupReconcileVisualParents = function()
+			{
+				var primary = void;
+				try { primary = global.kag.primaryLayer; }
+				catch(e) { return; }
+				if(primary === void || primary === null || !isvalid primary) return;
+
+				var highlight = global.fushiLookupHighlightLayer;
+				if(highlight !== void && highlight !== null &&
+					!global.fushiLookupLayerOwnedByPrimary(highlight, primary) &&
+					!global.fushiLookupRehomeLayerToPrimary(highlight, primary))
+				{
+					global.fushiLookupHighlightLayer = void;
+					global.fushiLookupHighlightRect = void;
+					global.fushiLookupPendingHighlightEraseRect = void;
+					global.fushiLookupRetireDetachedLayer(highlight);
+				}
+
+				var card = global.fushiLookupCard;
+				if(card !== void && card !== null &&
+					!global.fushiLookupLayerOwnedByPrimary(card, primary) &&
+					!global.fushiLookupRehomeLayerToPrimary(card, primary))
+				{
+					// 当前 carrier 已坏才摘引用；route/submit 账本仍由真实句界管理。
+					// 下一笔同 route full frame 可在 current primary 下重建 carrier。
+					global.fushiLookupCard = void;
+					global.fushiLookupCardSeq = 0;
+					global.fushiLookupCardEntry = void;
+					global.fushiLookupRetireDetachedLayer(card);
+				}
+			};
+
 			// 高亮层同样延迟到第一次真要高亮时才建。它是全视口的，但 hitThreshold=256 是
 			// 引擎里"永不命中"这个明确取值——与卡片依赖的 alpha 穿透不是一回事，不会把
 			// 输入吃掉。
@@ -1622,6 +1838,16 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			{
 				var primary = global.kag.primaryLayer;
 				var layer = global.fushiLookupHighlightLayer;
+				if(layer !== void && layer !== null &&
+					!global.fushiLookupLayerOwnedByPrimary(layer, primary) &&
+					!global.fushiLookupRehomeLayerToPrimary(layer, primary))
+				{
+					global.fushiLookupHighlightLayer = void;
+					global.fushiLookupHighlightRect = void;
+					global.fushiLookupPendingHighlightEraseRect = void;
+					global.fushiLookupRetireDetachedLayer(layer);
+					layer = void;
+				}
 				if(layer === void || !isvalid layer)
 				{
 					// 🔴 必须挂在 **primary 之下**，不是它的兄弟。
@@ -1734,6 +1960,20 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				global.fushiLookupHighlightRect = void;
 			};
 
+			// 只推进 submit fence/notify，不碰任何 Layer。资源切换时调用方必须先摘掉
+			// detached 对象的全局引用，再走这里；这样 notify 或 setter 重入都看不到旧层。
+			global.fushiLookupAdvanceDismissFence = function()
+			{
+				var submitSeq = global.fushiLookupSubmitSeq;
+				if(submitSeq > global.fushiLookupDismissedSubmitSeq)
+				{
+					global.fushiLookupDismissedSubmitSeq = submitSeq;
+					global.fushiLookupNotify++;
+					return true;
+				}
+				return false;
+			};
+
 			// 收起 = 层不可见。不可见层在引擎里既不绘制也不参与命中，这是引擎最基本的语义，
 			// 不像 alpha 穿透那样需要额外验证。层留着复用（下一次查词多半尺寸相近），只是
 			// 绝不会停在"可见且可命中"的状态上。
@@ -1758,6 +1998,41 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				global.fushiLookupClearHover();
 			};
 
+			// 资源/动画脚本恢复运行时只补采集桥，绝不能碰 lookup Layer、submit fence 或
+			// 当前 route。KAG stable->run 还覆盖 wait/movie/动画恢复，并不是句子边界；把这三
+			// 类状态绑在一起会在人物动画变化时重建 WebView 选区。
+			global.fushiLookupRefreshCaptureBridges = function()
+			{
+				global.fushiLookupInstallGetRenderBridge();
+				global.fushiLookupSweepMsgwinRenders();
+				global.fushiLookupAuditWrappers(true);
+			};
+
+			// 只有完整文本 candidate 证明已有逻辑槽的非空句子发生变化后才允许走这里：先退休脱离
+			// current primary 的视觉层，再补当前私有 msgwin plugin 的未来 getRender 入口并
+			// 扫最多 16 个既有 renderer。动画/资源帧只走上面的 bridge-only helper。
+			global.fushiLookupRefreshSentenceSurface = function()
+			{
+				// 重入早退必须**保留请求**——pending 位已经在 FlushVisualWork 里被清掉，
+				// 这里直接 return 会把这次换句的 surface 刷新永久丢掉，而
+				// FlushVisualWork 末尾重读 pending 位后还会报「已排空」。兄弟路径
+				// VisualFlushActive 的重入语义正是「保留 pending + 返回未排空」，这里
+				// 必须守同一条不变式：把请求放回去，让外层 flush 结束后重新排。
+				if(global.fushiLookupSentenceRefreshActive)
+				{
+					global.fushiLookupPendingSentenceRefresh = true;
+					return;
+				}
+				global.fushiLookupSentenceRefreshActive = true;
+				try
+				{
+					global.fushiLookupReconcileVisualParents();
+					global.fushiLookupRefreshCaptureBridges();
+				}
+				catch(e) { global.fushiLookupFault(); }
+				global.fushiLookupSentenceRefreshActive = false;
+			};
+
 			// Visual work is committed only after the registry/slot transaction has
 			// returned. Clear the flag before touching a Layer so reentrant rendering
 			// can queue another leaf without recursion or losing that later request.
@@ -1766,15 +2041,23 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				if(global.fushiLookupVisualFlushActive) return false;
 				global.fushiLookupVisualFlushActive = true;
 				var dismiss = global.fushiLookupPendingVisualDismiss;
+				var sentenceRefresh = global.fushiLookupPendingSentenceRefresh;
+				var submitFence = global.fushiLookupPendingSubmitFence;
 				global.fushiLookupPendingVisualDismiss = false;
+				global.fushiLookupPendingSentenceRefresh = false;
+				global.fushiLookupPendingSubmitFence = false;
 				try
 				{
+					if(submitFence) global.fushiLookupAdvanceDismissFence();
 					if(dismiss) global.fushiLookupDismissNow();
+					if(sentenceRefresh) global.fushiLookupRefreshSentenceSurface();
 					global.fushiLookupFlushPendingHighlightErase();
 				}
 				catch(e) { global.fushiLookupFault(); }
 				global.fushiLookupVisualFlushActive = false;
 				return !global.fushiLookupPendingVisualDismiss &&
+					!global.fushiLookupPendingSentenceRefresh &&
+					!global.fushiLookupPendingSubmitFence &&
 					global.fushiLookupPendingHighlightEraseRect === void;
 			};
 
@@ -1818,9 +2101,10 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				}
 			};
 
-			// 只给人工 Esc 使用；generic dismiss 还承担 host 收卡/禁用/失败回滚，不能让
-			// 那些路径推进人工取消 fence 或制造 notify 回环。没有可见卡时仍取消在途 submit，
-			// 但返回 false，让游戏自己的 Esc 行为继续执行。
+			// 给人工 Esc 与明确的卡外点击使用；generic dismiss 还承担 host 收卡/禁用/
+			// 失败回滚，不能让那些路径推进用户取消 fence 或制造 notify 回环。逐句/换层退休
+			// 则直接走 AdvanceDismissFence。没有可见卡时仍取消在途 submit，但返回 false，
+			// 让游戏自己的 Esc 行为继续执行。
 			global.fushiLookupCancelCurrent = function()
 			{
 				var hadVisibleCard = false;
@@ -1831,13 +2115,7 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 						(card !== void && isvalid card && card.visible);
 				}
 				catch(e) {}
-				var submitSeq = global.fushiLookupSubmitSeq;
-				if(submitSeq > global.fushiLookupDismissedSubmitSeq)
-				{
-					// fence 先提交、notify 最后唤醒 DLL；这与 SubmitSeq 的 seqlock 发布顺序一致。
-					global.fushiLookupDismissedSubmitSeq = submitSeq;
-					global.fushiLookupNotify++;
-				}
+				global.fushiLookupAdvanceDismissFence();
 				global.fushiLookupDismiss();
 				return hadVisibleCard;
 			};
@@ -1849,7 +2127,20 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				try
 				{
 					if(cardW <= 0 || cardH <= 0) return;
+					var primary = global.kag.primaryLayer;
 					var card = global.fushiLookupCard;
+					if(card !== void && card !== null &&
+						!global.fushiLookupLayerOwnedByPrimary(card, primary) &&
+						!global.fushiLookupRehomeLayerToPrimary(card, primary))
+					{
+						// primary/fore-back 变化不是句界。迁移失败只换掉视觉 carrier；当前
+						// full frame 继续在新 primary 下重建，route 与 submit fence 原样保留。
+						global.fushiLookupCard = void;
+						global.fushiLookupCardSeq = 0;
+						global.fushiLookupCardEntry = void;
+						global.fushiLookupRetireDetachedLayer(card);
+						card = void;
+					}
 					if(card === void || !isvalid card)
 					{
 						// 先试带鼠标事件的子类；建不出来就退回普通 Layer。
@@ -1869,12 +2160,11 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 						// 个坐标系里。高亮层此前踩的是同一个坑（缩放后偏移）。
 						if(global.fushiLookupCardClassOk)
 						{
-							card = new FushiLookupCardLayer(global.kag,
-								global.kag.primaryLayer);
+							card = new FushiLookupCardLayer(global.kag, primary);
 						}
 						else
 						{
-							card = new Layer(global.kag, global.kag.primaryLayer);
+							card = new Layer(global.kag, primary);
 							global.fushiLookupMark(32);
 						}
 						global.kag.add(card);
@@ -1937,6 +2227,19 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					}
 					var card = global.fushiLookupCard;
 					if(card === void || !isvalid card) return;
+					var primary = global.kag.primaryLayer;
+					if(!global.fushiLookupLayerOwnedByPrimary(card, primary) &&
+						!global.fushiLookupRehomeLayerToPrimary(card, primary))
+					{
+						// Prepare 与 Apply 之间又换了 primary：这是完整帧提交边界，
+						// 只退休写到旧树的 carrier，不改 route/fence。下一张 full frame
+						// 会在 current primary 下重建，不得留下仍带旧 CardSeq 的半写层。
+						global.fushiLookupCard = void;
+						global.fushiLookupCardSeq = 0;
+						global.fushiLookupCardEntry = void;
+						global.fushiLookupRetireDetachedLayer(card);
+						return;
+					}
 					if(card.imageWidth != cardW || card.imageHeight != cardH ||
 						card.left != anchorX || card.top != anchorY) return;
 					// 完整结构帧就是截图后的恢复提交；先解除抑制，再显示卡片并重画高亮。
@@ -2022,8 +2325,19 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				if(y > 32767) y = 32767;
 				if(wheel < -2048) wheel = -2048;
 				if(wheel > 2047) wheel = 2047;
+				// LookupInputSlot.keys 直接传给 WebView2 的 virtualKeys：1 是左键，
+				// Shift 是 4。旧实现把 Shift 写成 1，导致 hover/leave 被误报成拖拽；
+				// 而 fushiLookupShiftDown 没有 key-up hook，还会在松键后永久粘住。
 				var keys = 0;
-				if(global.fushiLookupShiftDown) keys = keys | 1;
+				try
+				{
+					if(System.getKeyState(0x10)) keys = keys | 4;
+				}
+				catch(e) {}
+				if(kind == 1) keys = keys | 1;
+				// WebView2 明确要求 LEAVE 使用 NONE；kind=5 是 host 控制事件，也不携带
+				// 当前键态，避免延迟消费时污染另一个 route。
+				if(kind == 4 || kind == 5) keys = 0;
 				queue.add((1 << 52) | ((y + 32768) << 36) | ((x + 32768) << 20) |
 					((wheel + 2048) << 8) | (keys << 4) | kind);
 				if(queue.count > 64) queue.erase(0);
@@ -2483,6 +2797,10 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 						}
 						// Hide the previous card only after the new slot/entry snapshot is fully
 						// committed. A stale outer Capture must not hide a newer reentrant card.
+						if(slotAdoption !== void && slotAdoption.advanced)
+							global.fushiLookupPendingSubmitFence = true;
+						if(slotAdoption !== void && slotAdoption.advanced)
+							global.fushiLookupPendingSentenceRefresh = true;
 						if(slotAdoption !== void && slotAdoption.advanced)
 							global.fushiLookupPendingVisualDismiss = true;
 					}
@@ -3038,12 +3356,13 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 						global.fushiLookupMark(1);
 						continue;
 					}
-					// 有声角色的口型/表情会把 drawCh 的短命 visibleHost 设 hidden，但 KAG
-					// current 消息对象仍是同一句的稳定身份。严格身份相等时继续使用消息层坐标；
-					// 身份不可得才回退 visibleHost，明确不一致则无条件拒绝旧 entry。
-					var currentIdentityState = global.fushiLookupCurrentIdentityState(entry);
-					if(currentIdentityState < 0 ||
-						(currentIdentityState == 0 &&
+					// 人物口型/表情帧既会隐藏短命 visibleHost，也会让 kag.current 短暂
+					// void/换壳；二者都不是句界。已识别 slot 只按完整 candidate 提交的
+					// line/generation/activeEntry 判存活；无 slot 的经典 KAG3 才回退可见层。
+					var activeSentenceState =
+						global.fushiLookupActiveSentenceState(entry);
+					if(activeSentenceState < 0 ||
+						(activeSentenceState == 0 &&
 							!global.fushiLookupEntryVisible(entry)))
 					{
 						if(traceOn && traced < 8)
@@ -3088,6 +3407,19 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				return false;
 			};
 
+			global.fushiLookupCardVisible = function()
+			{
+				try
+				{
+					var card = global.fushiLookupCard;
+					return global.fushiLookupCardSeq != 0 ||
+						(card !== void && card !== null && isvalid card && card.visible);
+				}
+				catch(e) { return global.fushiLookupCardSeq != 0; }
+			};
+
+)TJS" LR"TJS(
+
 			// 卡片子层命中时由 Layer 的 down/up 处理；这里判定 primary 路径是否仍落在
 			// 卡片矩形内，防止同一次点击意外继续推进剧情。坐标使用已由滚轮真机证明的
 			// primary 光标坐标减卡片位置。
@@ -3115,30 +3447,60 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				// ——我们注进去的传感器把别人的游戏搞挂了。C++ 那侧的泵早就守着这条边界
 				// （KiriKiriLookupPumpCallback 的 catch(...)），TJS 这侧必须同样守。
 				// 兜底一律返回 false = **不消费**这次事件：查词坏掉是小事，把玩家的点击
-				// 吞掉、剧情推不动是大事。
+				// 吞掉、剧情推不动是大事。异常路径的状态按定义是未知的，在未知状态上
+				// fail-closed 只会把「这一击不确定」放大成「每一击都被吃掉」。
+				var popupTransaction = false;
 				try
 				{
-					// 低频兜底：getRender 是未来实例的主入口；人工点击时再有界复核
-					// renders[]，覆盖游戏直接替换 textRender 而未经过 getRender 的路径。
-					global.fushiLookupInstallGetRenderBridge();
-					global.fushiLookupSweepMsgwinRenders();
-					global.fushiLookupAuditWrappers(true);
-					if(global.fushiLookupOverCard())
+					// 在刷新可能退休一张脱离 current primary 的旧卡之前冻结 popup 归属。
+					// 该点击既然始于可见查词事务，就不能因为刷新把 CardSeq 清零而落回剧情。
+					popupTransaction = global.fushiLookupCardVisible();
+					// primary 的 fore/back 身份变化只迁移 carrier，随后补 getRender/既有
+					// MsgwinRender；两步都不改变 route/fence，动画期间点击不会重建选区。
+					// 该 helper 只在 primary 竞态时报 false，其余不可用一律先把 card 身份
+					// 收干净——因此下面这个吞事件分支不可能连续成立。
+					var carrierSettled = global.fushiLookupTryRehomeVisualParents();
+					global.fushiLookupRefreshCaptureBridges();
+					// primary 在这一瞬被换掉时，这一击仍属于已显示 popup：只吞事件并
+					// 等下一次输入重试，不发 kind5、不 Cancel，否则用户点选区反而会把
+					// 同一 WebView route 关掉。
+					if(popupTransaction && !carrierSettled) return true;
+					if(global.fushiLookupCardVisible() && global.fushiLookupOverCard())
 					{
-						var card = global.fushiLookupCard;
-						var primary = global.kag.primaryLayer;
-						var localX = primary.cursorX - card.left;
-						var localY = primary.cursorY - card.top;
-						// WebView2 需要完整的一次指针序列。显式 move 还可在鼠标未先移动时
-						// 同步 hover target；QueueInput 会合并紧邻的重复 move。
-						global.fushiLookupQueueInput(0, localX, localY, 0);
-						global.fushiLookupQueueInput(1, localX, localY, 0);
-						global.fushiLookupQueueInput(2, localX, localY, 0);
+						try
+						{
+							var card = global.fushiLookupCard;
+							var primary = global.kag.primaryLayer;
+							var localX = primary.cursorX - card.left;
+							var localY = primary.cursorY - card.top;
+							// WebView2 需要完整的一次指针序列。显式 move 还可在鼠标未先移动时
+							// 同步 hover target；QueueInput 会合并紧邻的重复 move。
+							global.fushiLookupQueueInput(0, localX, localY, 0);
+							global.fushiLookupQueueInput(1, localX, localY, 0);
+							global.fushiLookupQueueInput(2, localX, localY, 0);
+						}
+						catch(e) { global.fushiLookupFault(); }
+						return true;
+					}
+					if(popupTransaction || global.fushiLookupCardVisible())
+					{
+						// KAG 的 leftClickHook 是 onPrimaryClick 的消费闸：true 会阻止
+						// conductor.trigger('click')。先把 direct WebView route 的控制事件
+						// 排进同一输入环，再本地立即隐藏并推进 submit fence；因此卡片外
+						// 空白处关闭不会把这一击继续交给下一句。
+						try { global.fushiLookupQueueInput(5, 0, 0, 0); }
+						catch(e) { global.fushiLookupFault(); }
+						try { global.fushiLookupCancelCurrent(); }
+						catch(e) { global.fushiLookupFault(); }
 						return true;
 					}
 					return global.fushiLookupProbe(true);
 				}
-				catch(e) { global.fushiLookupFault(); return false; }
+				catch(e)
+				{
+					global.fushiLookupFault();
+					return false;
+				}
 			};
 			global.fushiLookupMouseMoveHook = function(x, y)
 			{
@@ -4095,6 +4457,29 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				global.fushiLookupSweepMsgwinRenders();
 				installStage = 37;
 			}
+			// KAG stable=false(run) 在后续脚本之前，只适合补采集桥；
+			// stable=true 才是 transition/动画完成后修复新 primary 归属的时机。
+			// 两个边沿都只允许 attempt-only rehome，严禁推进 fence、关卡或
+			// 退休 carrier。真正的 lookup surface 生命周期只由完整
+			// candidate 的 slotAdoption.advanced 推进。
+			installStage = 38;
+			if(typeof global.kag.addPlugin == "Object")
+			{
+				global.fushiLookupBridgePlugin = %[
+					onStableStateChanged: function(stable)
+					{
+						try
+						{
+							global.fushiLookupTryRehomeVisualParents();
+							if(!stable) global.fushiLookupRefreshCaptureBridges();
+						}
+						catch(e) { global.fushiLookupFault(); }
+					}
+				];
+				try { global.kag.addPlugin(global.fushiLookupBridgePlugin); }
+				catch(e) { global.fushiLookupFault(); }
+			}
+			installStage = 39;
 
 )TJS" LR"TJS(
 
@@ -4239,13 +4624,17 @@ uint64_t g_lookup_dropped_seq = 0;
 uint64_t g_lookup_retry_seq = 0;
 uint32_t g_lookup_retry_count = 0;
 // hover 只在游戏线程即时绘制高亮，不跨 IPC；hook→host 单槽只发布 submit。
-// g_lookup_hit_seq 仍跟踪最新任意命中，用来避免迟到卡片覆盖新的本地高亮；
-// submit fence 保存最近一次真正的查词意图。
+// frame 的 hit_seq 是 registry 全局 wire sequence；TJS 的 HitSeq/SubmitSeq 则会被 hover
+// 推进，属于 provider-local source sequence。两套序列绝不能直接比较：provider 切换或
+// registry 拒绝一次发布后它们就不再相等。
 uint64_t g_lookup_hit_seq = 0;
 uint64_t g_lookup_submit_hit_seq = 0;
+uint64_t g_lookup_visual_source_seq = 0;
+uint64_t g_lookup_submit_source_seq = 0;
 // 游戏侧 Esc 取消 submit 的单调 fence。它不复用 generic hide：收卡/禁用/失败回滚
-// 都不应取消未来或在途的用户查询；只有 fushiLookupCancelCurrent 会推进它。
+// 都不应取消未来或在途的用户查询；只有显式用户取消，或句子/表面世代退休路径会推进它。
 uint64_t g_lookup_dismissed_submit_seq = 0;
+uint64_t g_lookup_dismissed_source_seq = 0;
 uint64_t g_lookup_processed_submit_seq = 0;
 uint64_t g_lookup_submit_retry_seq = 0;
 uint32_t g_lookup_submit_retry_count = 0;
@@ -4259,6 +4648,9 @@ int64_t g_lookup_last_notify = -1;
 bool g_lookup_card_shown = false;
 bool g_lookup_enabled_last = false;
 bool g_lookup_sensor_live = false;
+// v19 准入上报用的只读访问器。传感器状态本身不外露给别的编译单元，registry 只需要
+// 这一个布尔——保持窄接口，别让准入汇总去读一堆 KiriKiri 内部状态。
+bool KirikiriLookupSensorLive() { return g_lookup_sensor_live; }
 // 经典 KAG3 采集面已自证（读到"真捕到字形"后不再求值）。
 bool g_lookup_classic_source_known = false;
 int g_lookup_classic_poll_ticks = 0;
@@ -4618,8 +5010,12 @@ bool RefreshKirikiriLookupDismissFence() {
   }
   if (dismissed > 0) {
     const uint64_t seq = static_cast<uint64_t>(dismissed);
-    if (seq > g_lookup_dismissed_submit_seq) {
-      g_lookup_dismissed_submit_seq = seq;
+    if (seq > g_lookup_dismissed_source_seq) {
+      g_lookup_dismissed_source_seq = seq;
+      if (seq >= g_lookup_submit_source_seq &&
+          g_lookup_submit_hit_seq > g_lookup_dismissed_submit_seq) {
+        g_lookup_dismissed_submit_seq = g_lookup_submit_hit_seq;
+      }
       if (seq > g_lookup_processed_submit_seq) {
         g_lookup_processed_submit_seq = seq;
       }
@@ -4871,15 +5267,19 @@ bool RetryOrDropKirikiriLookupHit(uint64_t seq) {
   // 永远重试。旧卡的异步结果已被 submit fence 作废，失败时也要收掉旧卡。
   g_lookup_processed_submit_seq = seq;
   ResetKirikiriLookupHitRetry(seq);
-  if (seq == g_lookup_submit_hit_seq) HideKirikiriLookupCard();
+  if (seq == g_lookup_submit_source_seq) HideKirikiriLookupCard();
   SetLookupDiag(fushi_voice_hook::kLookupDiagSensorFault);
   return true;
 }
 
 bool ObserveKirikiriLookupSubmitSeq(uint64_t seq) {
-  if (seq == 0 || seq <= g_lookup_submit_hit_seq) return false;
-  g_lookup_submit_hit_seq = seq;
-  if (seq > g_lookup_hit_seq) g_lookup_hit_seq = seq;
+  if (seq == 0 || seq <= g_lookup_submit_source_seq) return false;
+  g_lookup_submit_source_seq = seq;
+  // A newer source transaction immediately invalidates frames for the old
+  // wire hit. The accepted registry publication below installs its new wire
+  // identity; transient/failed snapshots remain fail closed at zero.
+  g_lookup_submit_hit_seq = 0;
+  g_lookup_hit_seq = 0;
   // 只有一个真正更新的耐久 submit 才能换代 retry epoch。hover、诊断和 input 的 notify
   // 不改 SubmitSeq，因而不能借 notify 清掉同一坏快照的有界失败计数或退避。
   g_lookup_submit_retry_seq = seq;
@@ -4930,8 +5330,7 @@ void ObserveKirikiriLookupDismissFence() {
 }
 
 bool PublishKirikiriLookupHit(bool new_notification) {
-  fushi_voice_hook::LookupHitSlot* slot = fushi_voice_hook::LookupHitOf(g_header);
-  if (slot == nullptr) return false;
+  if (!fushi_voice_hook::HasLookupRegion(g_header)) return false;
   int64_t submit_seq_value = 0;
   bool have_submit_seq = false;
   if (g_lookup_submit_retry_backoff > 0) {
@@ -4955,7 +5354,10 @@ bool PublishKirikiriLookupHit(bool new_notification) {
   if (EvaluateTjsInteger(L"global.fushiLookupVisualSeq", &visual_seq) &&
       visual_seq > 0) {
     const uint64_t visual = static_cast<uint64_t>(visual_seq);
-    if (visual > g_lookup_hit_seq) g_lookup_hit_seq = visual;
+    if (visual > g_lookup_visual_source_seq) {
+      g_lookup_visual_source_seq = visual;
+      if (visual != g_lookup_submit_source_seq) g_lookup_hit_seq = 0;
+    }
   }
 
   if (!have_submit_seq &&
@@ -5018,30 +5420,41 @@ bool PublishKirikiriLookupHit(bool new_notification) {
     return RetryKirikiriLookupSubmitTransient(hit_seq);
   }
 
-  // 单槽 seqlock：本地 staging 完成后，先把旧发布序清成 0，再触碰共享 payload。
-  // 否则快速连续 submit 时 host 可能看见“旧 seq + 新 payload”，两次复读仍相等，
-  // 最终把错行当成旧命中。lookup_hit_count 只在最终发布后递增，故 0 只表示写入中。
-  WriteKirikiriSharedU64(&slot->seq, 0);
-
-  slot->char_index = static_cast<uint32_t>(char_index);
-  slot->char_count = static_cast<uint32_t>(char_count);
-  slot->glyph_x = static_cast<int32_t>(glyph_x);
-  slot->glyph_y = static_cast<int32_t>(glyph_y);
-  slot->glyph_w = static_cast<int32_t>(glyph_w);
-  slot->glyph_h = static_cast<int32_t>(glyph_h);
-  slot->view_w = static_cast<int32_t>(view_w);
-  slot->view_h = static_cast<int32_t>(view_h);
-  slot->flags = fushi_voice_hook::kLookupHitFlagSubmit;
-  memcpy(slot->line_utf8, encoded_line, line_bytes);
-  slot->line_bytes = line_bytes;
-  // seq **最后**写：Interlocked 是全栅栏，保证上面的 payload 对 host 先可见。
-  WriteKirikiriSharedU64(&slot->seq, hit_seq);
+  fushi_voice_hook::LookupGeometryHitPublication publication;
+  publication.provider_kind =
+      fushi_voice_hook::kLookupGeometryProviderRuntimeLayout;
+  publication.provider_id =
+      fushi_voice_hook::kLookupGeometryProviderIdKirikiri;
+  publication.char_index = static_cast<uint32_t>(char_index);
+  publication.source_length = fushi_voice_hook::LookupUtf16SourceLength(
+      line, static_cast<uint32_t>(char_count),
+      static_cast<uint32_t>(char_index));
+  publication.char_count = static_cast<uint32_t>(char_count);
+  publication.coordinate_space =
+      fushi_voice_hook::kLookupCoordinateSpacePrimaryLayer;
+  publication.writing_mode = fushi_voice_hook::kLookupWritingModeHorizontal;
+  publication.text_generation = hit_seq;
+  publication.geometry_generation = hit_seq;
+  publication.glyph_x = static_cast<int32_t>(glyph_x);
+  publication.glyph_y = static_cast<int32_t>(glyph_y);
+  publication.glyph_w = static_cast<int32_t>(glyph_w);
+  publication.glyph_h = static_cast<int32_t>(glyph_h);
+  publication.view_w = static_cast<int32_t>(view_w);
+  publication.view_h = static_cast<int32_t>(view_h);
+  publication.flags = fushi_voice_hook::kLookupHitFlagSubmit;
+  publication.line_utf8 = encoded_line;
+  publication.line_bytes = line_bytes;
+  uint64_t published_seq = 0;
+  if (!fushi_voice_hook::g_geometry_provider_registry.PublishHit(g_header, publication,
+                                               &published_seq)) {
+    return false;
+  }
+  // Card frames answer the registry's global wire sequence, not the TJS-local
+  // SubmitSeq. Keep the TJS sequence only in processed/retry bookkeeping.
+  g_lookup_submit_hit_seq = published_seq;
+  g_lookup_hit_seq = g_lookup_visual_source_seq == hit_seq ? published_seq : 0;
   g_lookup_processed_submit_seq = hit_seq;
   ResetKirikiriLookupHitRetry(hit_seq);
-  InterlockedIncrement64(
-      reinterpret_cast<volatile LONGLONG*>(&g_header->lookup_hit_count));
-  SetLookupDiag(fushi_voice_hook::kLookupDiagGeometryObserved |
-                fushi_voice_hook::kLookupDiagHitSubmitted);
   return true;
 }
 
@@ -5087,6 +5500,9 @@ void PumpKirikiriLookup() {
   if (!enabled_now) {
     // 禁用边沿强制对齐一次 TJS/C++ 可见状态；禁用稳态不再每帧执行一段 TJS。
     if (g_lookup_enabled_last || g_lookup_card_shown) HideKirikiriLookupCard();
+    fushi_voice_hook::g_geometry_provider_registry.Retire(
+        g_header, fushi_voice_hook::kLookupGeometryProviderRuntimeLayout,
+        fushi_voice_hook::kLookupGeometryProviderIdKirikiri);
     g_lookup_enabled_last = false;
     return;
   }
@@ -5126,6 +5542,12 @@ void PumpKirikiriLookup() {
     g_lookup_sensor_live = true;
     SetLookupDiag(fushi_voice_hook::kLookupDiagSensorInstalled);
   }
+  // A successful main-thread sensor read proves the current runtime layout is
+  // usable before any click can publish. Re-offering is idempotent and lets a
+  // transaction-deferred switch settle on the first neutral frame.
+  fushi_voice_hook::g_geometry_provider_registry.OfferReady(
+      g_header, fushi_voice_hook::kLookupGeometryProviderRuntimeLayout,
+      fushi_voice_hook::kLookupGeometryProviderIdKirikiri);
   // 采集面自证。**不能**挂在 notify 变化上：notify 只有用户真悬停到字上才动，而这两位
   // 恰恰是用来诊断「一个字都没采到」的——那种情况下 notify 永远不动，挂上去就等于永远读
   // 不到。改为低频轮询（约每 60 帧一次），读到 2（真捕到字形）就彻底停。
@@ -5307,13 +5729,68 @@ bool QueryKirikiriNativeLookupFunctions(ITVPFunctionExporter* exporter,
   }
 }
 
-// 幂等安装。`lookup_enabled==0` 时**一个 hook 都不装**，因此这里既是首装点也是重试点：
-// 用户在游戏起来之后才打开查词是常态，而 exporter 只在 V2Link / exe 直取那一瞬间到手。
+// 引擎主线程 = 拥有**游戏主窗口**的线程。只解析一次并缓存。
+//
+// 为什么需要它：安装路径要调 TJSAllocVariantString（从 TJS 全局变体字符串池分配）和
+// TVPAddContinuousEventHook（写引擎每帧遍历的回调容器）。这两样在 KiriKiri 里都只归
+// 主线程，没有任何内部同步。窗口还没建出来时返回 0，安装据此**失败关闭**——宁可晚装，
+// 也不在引擎自身还没把窗口/绘制设备立起来时去动它 (BUG-1724)。
+//
+// 「哪个才是游戏主窗口」只能有一套答案，所以这里直接复用 lookup_overlay_window.inc 的
+// FindGameMainWindow()（同 include 单元、就在本文件之前展开），它的判据是「同进程 +
+// 可见 + 无 owner 的顶层窗口里**客户区面积最大**的那个」。
+//
+// 原来这里自带一份 EnumWindows：取**第一个**可见无 owner 顶层窗口就 return FALSE 收工。
+// 那与 FindOverlayOwner 是同概念的两套答案，而且是错的那套——进程里只要还有另一个可见
+// 无 owner 的顶层窗口且属于别的线程（TVP 控制台窗、splash、同进程启动器窗，或本模块
+// 自己那个 1x1 的 WS_EX_TOPMOST FushiLookupOverlay，EnumWindows 会**先**枚举到它），
+// 就会把那个线程 id 当引擎主线程缓存下来。此后 GetCurrentThreadId() != main_tid 恒真，
+// RunKirikiriLookupInstallOnMainThread 每次都在身份核对那行 return，传感器静默永不安装
+// ——症状与「这个引擎不支持」完全同形。缓存是 InterlockedCompareExchange(..., 0) 写入的
+// 一次性值，写错一次**永不自愈**。
+DWORD ResolveKirikiriEngineMainThreadId() {
+  const LONG cached = InterlockedCompareExchange(&g_lookup_engine_main_tid, 0, 0);
+  if (cached != 0) return static_cast<DWORD>(cached);
+
+  const HWND main_window = FindGameMainWindow();
+  if (main_window == nullptr) return 0;
+  DWORD pid = 0;
+  const DWORD tid = GetWindowThreadProcessId(main_window, &pid);
+  if (tid == 0 || pid != GetCurrentProcessId()) return 0;
+  InterlockedCompareExchange(&g_lookup_engine_main_tid,
+                             static_cast<LONG>(tid), 0);
+  return static_cast<DWORD>(
+      InterlockedCompareExchange(&g_lookup_engine_main_tid, 0, 0));
+}
+
+// HookWorker 侧的**意图登记**。这里一个引擎 API 都不能调。
+//
+// 原来这个函数直接在 HookWorker 上跑完整个安装（查导出表 → TJSAllocVariantString →
+// TVPAddContinuousEventHook）。KiriKiri 的 TJS 堆和连续事件回调容器都是主线程独占、
+// 无同步的，主线程每帧都在遍历/分配，于是 worker 的写入与之并发——真机表现为随机
+// 时刻在引擎内部（实测落点 tTVPBasicDrawDevice）虚调用一个读成 NULL 的成员指针，
+// 游戏弹 KiriKiri 的 "Fatal Error / Access Violation" (BUG-1724)。
+// 真正的安装改由 RunKirikiriLookupInstallOnMainThread 在主线程接缝上执行。
 void PollKirikiriLookupInstall() {
   if (g_stop || g_lookup_exporter == nullptr) return;
   if (!fushi_voice_hook::HasLookupRegion(g_header)) return;
   if (LookupEnabledNow() == 0) return;
   if (InterlockedCompareExchange(&g_lookup_bootstrap_state, 0, 0) != 0) return;
+  InterlockedExchange(&g_lookup_install_requested, 1);
+}
+
+// 主线程接缝上的真正安装。调用点必须是引擎自己在主线程上调进来的 detour
+// （TVPCreateIStream / TVPCreateStream / V2Link），并在这里再次核对线程身份：
+// KiriKiri 也会在后台线程上开流（声音流式读取），只靠"在 detour 里"并不足以断定主线程。
+void RunKirikiriLookupInstallOnMainThread() {
+  if (g_stop || g_lookup_exporter == nullptr) return;
+  if (InterlockedCompareExchange(&g_lookup_install_requested, 0, 0) == 0) return;
+  if (!fushi_voice_hook::HasLookupRegion(g_header)) return;
+  if (LookupEnabledNow() == 0) return;
+  if (InterlockedCompareExchange(&g_lookup_bootstrap_state, 0, 0) != 0) return;
+
+  const DWORD main_tid = ResolveKirikiriEngineMainThreadId();
+  if (main_tid == 0 || GetCurrentThreadId() != main_tid) return;
 
   const char* names[] = {
       "tTJSVariantString * ::TJSAllocVariantString(const tjs_char *)",
@@ -5373,7 +5850,14 @@ void PollKirikiriLookupInstall() {
 // 拿到 exporter 的两条路径（exe 直取 / 插件 V2Link）共用的入口：先记住 exporter，再按
 // 当前开关状态决定装不装。
 void InstallKirikiriLookupSensor(ITVPFunctionExporter* exporter) {
-  if (exporter != nullptr) g_lookup_exporter = exporter;
+  if (exporter != nullptr) {
+    g_lookup_exporter = exporter;
+    // 拿到 TJS exporter 就等于这局有脚本宿主，卡片走引擎自己的 Layer——它能跟着游戏
+    // 渲染树一起做全屏/窗口变换，通用分层窗口做不到。**认领必须在这里、不是等 bootstrap
+    // 成功之后**：bootstrap 要等引擎主线程回调才跑，而通用呈现器只看 lookup_enabled，
+    // 晚认领就会在这段空窗期抢跑，出双份卡片。
+    ClaimLookupPresenter();
+  }
   PollKirikiriLookupInstall();
 }
 
@@ -5689,6 +6173,9 @@ IStream* __stdcall Detour_TVPCreateIStreamStub(const void* name, uint32_t mode) 
   if (g_header != nullptr) {
     g_header->reserved_luna |= 0x40000;  // diag: detour 触发过
   }
+  // 引擎在主线程上开流 = 一个现成的主线程接缝。安装本身还会自查线程身份，
+  // 因为 KiriKiri 也会在后台线程开流 (BUG-1724)。
+  RunKirikiriLookupInstallOnMainThread();
   if (g_capture_enabled && stream != nullptr && name != nullptr && g_header != nullptr) {
     wchar_t storage[520];
     if (ExtractStorageNameGuarded(name, storage, 520) && IsVoiceStorageName(storage)) {
@@ -5712,6 +6199,7 @@ TjsBinaryStream* __fastcall Detour_TVPCreateBinaryStream(const void* name, uint3
   if (g_header != nullptr) {
     g_header->reserved_luna |= 0x40000;  // diag: detour 触发过
   }
+  RunKirikiriLookupInstallOnMainThread();  // 同上：主线程接缝 (BUG-1724)
   if (g_capture_enabled && stream != nullptr && name != nullptr && g_header != nullptr) {
     wchar_t storage[520];
     if (ExtractStorageNameGuarded(name, storage, 520) && IsVoiceStorageName(storage)) {
@@ -5851,7 +6339,9 @@ HRESULT HandleV2Link(ITVPFunctionExporter* exporter, V2Link_t orig) {
   }
   const HRESULT result = orig != nullptr ? orig(exporter) : S_OK;
   // 原插件的 V2Link 已完成后才登记连续帧回调；真正执行 TJS 还会再等到下一次引擎事件循环。
+  // V2Link 由引擎在主线程的 Plugins.link 栈上调进来，所以这里也是合法的安装接缝。
   InstallKirikiriLookupSensor(exporter);
+  RunKirikiriLookupInstallOnMainThread();
   return result;
 }
 
@@ -5980,5 +6470,6 @@ bool TryHookKirikiriVoiceStream() {
 // KiriKiriZ 是 32 位引擎；x64 构建此路径为空实现（仅保证两架构都能编译）。
 bool TryHookKirikiriVoiceStream() { return true; }
 void PollKirikiriLookupInstall() {}
+bool KirikiriLookupSensorLive() { return false; }
 
 #endif  // _M_IX86

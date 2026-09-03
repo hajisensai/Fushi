@@ -12,7 +12,13 @@ name: Build and Test Android / macOS / Linux / Windows
 on:
   workflow_dispatch:
   push:
-    branches: ['main', 'develop']
+    # develop push 上只保留 release.yml（Build Release APK，本仓唯一带 app 全量单测门的
+    # workflow）。此前每次合并会同时点燃三条长 workflow，runner 排队到互相 cancel，
+    # 「Build and Test」实测常年被后续 push 的 concurrency 取消、等于没跑。
+    # **日常覆盖没有减少**：下面的 pull_request 仍是 ['main','develop']，develop 的每条
+    # PR 照跑四平台编译门；手动 workflow_dispatch 也在。去掉的只是「合进 develop 之后
+    # 再重跑一遍」这份纯冗余。
+    branches: ['main']
     paths: &multiplatform_paths
       - 'fushi/**'
       - 'packages/**'
@@ -22,6 +28,7 @@ on:
       - 'ci/**'
       - 'third_party/**'
       - 'tools/build_magpie_slim.ps1'
+      - 'tools/bundle_7za.ps1'
       - '.github/workflows/build-multiplatform.yml'
       - 'pubspec.yaml'
       - 'pubspec.lock'
@@ -335,7 +342,7 @@ jobs:
             ~/.cocoapods
             fushi/ios/Pods
             fushi/macos/Pods
-          key: ${{ runner.os }}-pods-${{ hashFiles('fushi/ios/Podfile.lock', 'fushi/macos/Podfile.lock', 'fushi/pubspec.lock') }}
+          key: ${{ runner.os }}-pods-${{ hashFiles('fushi/ios/Podfile.lock', 'fushi/macos/Podfile.lock', 'pubspec.lock') }}
           restore-keys: |
             ${{ runner.os }}-pods-
       - name: Flutter pub get
@@ -364,6 +371,30 @@ jobs:
           done < <(find "$runtime_dir" -type f)
           chmod +x tool/mihon/verify_desktop_runtime.sh
           tool/mihon/verify_desktop_runtime.sh "$runtime_dir"
+          codesign --force --deep --sign - --timestamp=none "$app_dir"
+          codesign --verify --deep --strict --verbose=2 "$app_dir"
+      # BUG-1922：与 release-desktop.yml 的 macos job 成对存在。这条 debug job 是
+      # PR 上唯一的 macOS 打包门，如果它不打 Aidoku runtime，就再没有任何一处能在
+      # 合入前发现 bundle 里少了这个 helper。
+      #
+      # 这里显式用 host 而不是默认的 universal：debug 构建的 fushi.app 本体只有
+      # runner 的架构（实测 `app archs: arm64`），多出来的 x86_64 切片不被下面的
+      # 架构覆盖门、也不被任何别的断言使用——纯空转，实测多花约 9 分钟。x86_64
+      # 交叉编译本身能不能过，由 release-desktop.yml 的 macos job 兜底：它在每次
+      # push 到 develop / main 时都跑，那里的 app 本体是 universal，架构门是强门。
+      # 若将来 debug 构建也变成 universal，下面的架构门会立刻红——那是正确的红。
+      - name: Bundle and verify pinned Aidoku runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+          chmod +x tool/aidoku/build_macos_runtime.sh
+          app_dir="fushi/build/macos/Build/Products/Debug/fushi.app"
+          runtime_dir="$app_dir/Contents/Resources/aidoku_runtime"
+          FUSHI_AIDOKU_ARCHS=host tool/aidoku/build_macos_runtime.sh "$runtime_dir"
+          codesign --force --sign - --timestamp=none "$runtime_dir/fushi-aidoku-runtime"
+          chmod +x tool/aidoku/verify_macos_runtime.sh
+          tool/aidoku/verify_macos_runtime.sh "$runtime_dir" "$app_dir/Contents/MacOS/fushi"
           codesign --force --deep --sign - --timestamp=none "$app_dir"
           codesign --verify --deep --strict --verbose=2 "$app_dir"
       - name: Verify macOS fushidicts dylib bundle
@@ -404,6 +435,10 @@ jobs:
         with:
           flutter-version: '3.44.0'
           cache: true
+      - name: Install Rust toolchain for physical iOS devices
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
 
       # 烘进包里的密钥统一由 composite action 注入 —— 这批注入曾被逐字抄进 11 个
       # job，抄到最后 TMDB 有 3 个变体、两条发布 workflow 一处都没有，导致发出去
@@ -428,7 +463,7 @@ jobs:
             ~/.cocoapods
             fushi/ios/Pods
             fushi/macos/Pods
-          key: ${{ runner.os }}-pods-${{ hashFiles('fushi/ios/Podfile.lock', 'fushi/macos/Podfile.lock', 'fushi/pubspec.lock') }}
+          key: ${{ runner.os }}-pods-${{ hashFiles('fushi/ios/Podfile.lock', 'fushi/macos/Podfile.lock', 'pubspec.lock') }}
           restore-keys: |
             ${{ runner.os }}-pods-
       - name: Flutter pub get
@@ -485,7 +520,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: fushi/build/windows/x64/*.7z
-          key: ${{ runner.os }}-mediakit7z-${{ hashFiles('fushi/pubspec.lock') }}
+          key: ${{ runner.os }}-mediakit7z-${{ hashFiles('pubspec.lock') }}
           restore-keys: |
             ${{ runner.os }}-mediakit7z-
       - name: Flutter pub get
@@ -540,15 +575,22 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~\AppData\Local\vcpkg\archives
-          key: ${{ runner.os }}-vcpkg-libtorrent-x64-windows-v2-${{ steps.vcpkg_cache_id.outputs.image }}
+          # v2 -> v3：manifest 钉版换掉了 libtorrent/boost/openssl 的 ABI hash，旧条目
+          # 一个都用不上；不 bump 的话 actions/cache 命中即不回存，会每次冷编
+          # （TODO-2668 记的同一处病灶）。
+          key: ${{ runner.os }}-vcpkg-libtorrent-x64-windows-v3-${{ steps.vcpkg_cache_id.outputs.image }}
       - name: Build embedded libtorrent DLL (vcpkg)
         shell: pwsh
         env:
           VCPKG_DOWNLOADS: ${{ runner.temp }}\vcpkg-downloads
         run: |
-          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install libtorrent:x64-windows
-          if ($LASTEXITCODE -ne 0) { throw "vcpkg install libtorrent failed" }
+          # 不再 classic `vcpkg install`：版本钉在 native/fushi_torrent/vcpkg.json
+          # （manifest + overrides = libtorrent 2.0.11），cmake configure 时工具链
+          # 自动按它装。BUG-1772：classic 模式装的是 runner 镜像内固化的 vcpkg 修订
+          # 当下的版本，镜像升到 20260818.277.1 后漂到 2.1，4 个 DLL 直接编不出来。
+          # baseline 可用性由 build_windows_dll.ps1 的 Assert-VcpkgBaseline 前置检查。
           powershell -ExecutionPolicy Bypass -File native/fushi_torrent/build_windows_dll.ps1 -VcpkgRoot "$env:VCPKG_INSTALLATION_ROOT"
+          if ($LASTEXITCODE -ne 0) { throw "build_windows_dll.ps1 failed" }
       # `packages/fushi_torrent` 的测试是**唯一**会真正 dlopen 这个 bridge、
       # 把 Dart FFI 绑定按真实 ABI 调一遍的地方；它们要 FUSHI_TORRENT_LIB 指向
       # 已构建的 DLL，所以在 Linux 上永远整组 skip，main.yml / release.yml 的
@@ -637,5 +679,14 @@ jobs:
             }
             Copy-Item -LiteralPath $source -Destination (Join-Path $targetDir $file) -Force
           }
+      - name: Bundle full 7-Zip for discovery and manga extraction
+        shell: pwsh
+        run: |
+          # 发现页与漫画导入的 7z/rar 离线解压依赖随包 7z.exe + 7z.dll
+          # （LGPL，官方 GitHub 镜像 + SHA-256 钉死，fail-closed）。
+          pwsh -NoProfile -ExecutionPolicy Bypass -File tools/bundle_7za.ps1 `
+            -BundleDirectory "$PWD\fushi\build\windows\x64\runner\Debug" `
+            -DownloadCache "$env:RUNNER_TEMP\hibiki-7za-cache"
+          if ($LASTEXITCODE -ne 0) { throw "bundle_7za.ps1 failed ($LASTEXITCODE)" }
       - name: Run Windows comprehensive automation contract
         run: .\ci\comprehensive-test.ps1 -Platform windows -Only appSmoke

@@ -380,6 +380,23 @@ class _DictionaryDialogPageState extends BasePageState {
     );
   }
 
+  /// 词典内容语言选择框。选择器 UI 与书籍共用（[showContentLanguagePicker]），
+  /// 只有持久化不同：词典写 [Dictionary.languageOverride]，书写 EpubBooks.language。
+  Future<void> _showDictionaryLanguageDialog(Dictionary dictionary) {
+    return showContentLanguagePicker(
+      context: context,
+      title: t.dict_language_title,
+      description: t.dict_language_description,
+      current: dictionary.languageOverride,
+      // 自动值 = 词典 index.json 声明的词头语言。旧包/本地包为空串。
+      autoDetected: dictionary.sourceLanguage,
+      onSelected: (String? tag) {
+        appModel.setDictionaryLanguageOverride(dictionary, tag);
+        setState(() {});
+      },
+    );
+  }
+
   Future<void> showDictionaryDeleteDialog(Dictionary dictionary) {
     return _showDictionaryActionConfirmDialog(
       title: t.dialog_title_dictionary_delete(name: dictionary.name),
@@ -1571,6 +1588,17 @@ class _DictionaryDialogPageState extends BasePageState {
           onTap: () => dictionary.isUpdatable
               ? _updateSingleDictionary(dictionary)
               : _updateDictionaryFromFile(dictionary),
+        ),
+        SizedBox(width: tokens.spacing.gap / 2),
+        // 内容语言：决定这本词典的文字用哪条字体链渲染。多数词典会在 index.json
+        // 里声明（自动读取），但旧包 / 本地导入包不带该字段，这时只有用户知道
+        // 「这本是什么语言的」——不给入口就只能靠字符检测猜，而那个检测把汉字
+        // 一律判成日文。
+        FushiIconButton(
+          icon: Icons.translate,
+          size: 20,
+          tooltip: t.dict_language_tooltip,
+          onTap: () => _showDictionaryLanguageDialog(dictionary),
         ),
         SizedBox(width: tokens.spacing.gap / 2),
         // 行尾独立删除按钮（取代旧三点菜单），仍走原删除确认对话框流程。

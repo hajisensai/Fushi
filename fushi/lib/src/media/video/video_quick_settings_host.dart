@@ -1,8 +1,11 @@
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/widgets.dart';
 
 import 'package:fushi/src/media/video/video_asbplayer_config.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
+import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
+import 'package:fushi/src/media/video/video_hdr_output.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
@@ -32,6 +35,7 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
     this.onSetSecondaryDelay,
     this.hasSecondarySubtitle,
     this.onAutoAlign,
+    this.onSnapDelayToCue,
     this.subtitleWaveformCues = const <AudioCue>[],
     this.videoDurationMs = 0,
     this.loadSubtitleWaveform,
@@ -54,14 +58,19 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
     this.onRespectAssStyleChanged,
     required this.onAsbConfigChanged,
     required this.onMpvConfigChanged,
+    this.onLuaScriptsEnabledChanged,
+    this.luaScriptStates,
     required this.onApplyShaders,
     required this.onSelectShaderTier,
     this.onMpvShaderDirChanged,
     required this.onLockWindowAspectRatioChanged,
     required this.onVideoFitModeChanged,
+    this.onHdrOutputModeChanged,
     required this.onImmersiveModeChanged,
     required this.controlLayout,
     this.onControlLayoutChanged,
+    this.customActionBindings,
+    this.onCustomActionBindingsChanged,
     this.qualityOptionCount = 0,
     this.qualityCurrentLabel,
     this.onOpenQuality,
@@ -103,6 +112,19 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
   final bool Function()? hasSecondarySubtitle;
 
   final Future<int?> Function()? onAutoAlign;
+
+  /// asbplayer 式「把上一句 / 下一句字幕对齐到当前播放时间」（按目标 cue 求**绝对**
+  /// 偏移，一键把整轨粗对齐到当前台词时刻）。与键盘 Ctrl+Shift+←/→ 同一执行体
+  /// （页面 `_snapSubtitleDelayToCue`），此处只是把它暴露成**可点的按钮**——触摸端
+  /// 没有键盘，此前这个动作在手机上完全无法触发。
+  ///
+  /// 返回本次写穿的新延迟（毫秒）：调轴面板据此把本地权威镜像 / 滑条 / 数值输入框 /
+  /// 波形预览同步到新值（与 [onAutoAlign] 同款契约）。已是首末句无相邻 cue、播放位置
+  /// 未就绪等不改延迟的分支返回 null，面板保持原值不动。
+  ///
+  /// null 回调 = 当前无字幕 cue（无可对齐对象），面板不显示这两个按钮。
+  final int? Function({required bool next})? onSnapDelayToCue;
+
   final List<AudioCue> subtitleWaveformCues;
   final int videoDurationMs;
   final Future<List<double>> Function()? loadSubtitleWaveform;
@@ -142,6 +164,16 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
   // ── mpv 配置（页面持久化 + applyMpvConfig 实时应用）──────────────────────
   final Future<void> Function(VideoMpvConfig config) onMpvConfigChanged;
 
+  /// mpv Lua 脚本开关（页面持久化 + 开启时把脚本目录即时装载进活播放器；关闭
+  /// 无法卸载、下次进入视频页生效——见 video_lua_script_manager.dart）。
+  /// null = 无播放器上下文，schema 行退化为直接写 pref。
+  final Future<void> Function(bool enabled)? onLuaScriptsEnabledChanged;
+
+  /// BUG-2032：活播放器的每脚本运行态（路径 → null=已装载无报错 / 报错原文；不在
+  /// 表里=本次播放未装载），设置页脚本列表据此显示状态。null = 无播放器上下文，
+  /// 列表只列文件名。
+  final ValueListenable<Map<String, String?>>? luaScriptStates;
+
   // ── 着色器（下载/勾选/一键选档，仅播放中实时应用）────────────────────────
   final Future<void> Function(List<String> enabledNames) onApplyShaders;
   final Future<void> Function(
@@ -156,10 +188,21 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
   final Future<void> Function(VideoFitMode mode) onVideoFitModeChanged;
   final Future<void> Function(VideoImmersiveMode mode) onImmersiveModeChanged;
 
+  /// Windows HDR 直通 / 10-bit 输出模式（`video_hdr_output.dart`）：页面落盘 +
+  /// 让播放器控制器当场重判是否切宿主窗。null = 无播放器场景走 AppModel 落盘。
+  final Future<void> Function(VideoHdrOutputMode mode)? onHdrOutputModeChanged;
+
   // ── 控制条 9 槽位布局 ─────────────────────────────────────────────────────
   final VideoControlLayout Function() controlLayout;
   final Future<void> Function(VideoControlLayout layout)?
       onControlLayoutChanged;
+
+  /// 自定义「快捷键 1..4」按钮当前绑定的动作（活值 getter，与 [controlLayout] 同款）。
+  final VideoCustomActionBindings Function()? customActionBindings;
+
+  /// 改绑「快捷键 N」后落盘 + 实时生效。null = 编辑器不提供改绑入口。
+  final Future<void> Function(VideoCustomActionBindings bindings)?
+      onCustomActionBindingsChanged;
 
   // ── HLS 画质入口 / Skia 降级入口（仅特定流/机型出现）─────────────────────
   final int qualityOptionCount;

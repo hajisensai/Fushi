@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #if defined(__clang__) && defined(__APPLE__)
@@ -25,6 +26,8 @@ struct MediaFileView {
   size_t size;
 };
 
+struct ZSTD_DDict_s;
+
 struct GlossaryEntry {
   std::string dict_name;
   std::string glossary;
@@ -32,6 +35,9 @@ struct GlossaryEntry {
   std::string term_tags;
   const uint8_t* compressed_data = nullptr;
   uint32_t compressed_size = 0;
+  // v2 词典的 term glossary 用训练字典压缩（上游 8993838）；v1 恒为 nullptr，
+  // usingDDict(nullptr) 等价普通解压。
+  const ZSTD_DDict_s* zstd_dict = nullptr;
 };
 
 struct FrequencyEntry {
@@ -39,9 +45,19 @@ struct FrequencyEntry {
   std::vector<Frequency> frequencies;
 };
 
+// 上游 79c55c2：完整 pitch accent 规格。数字位 pattern 为空；pattern 位（"heiban"
+// 等）position 保持 0。nasal/devoice 是鼻浊音/清化 mora 下标——数据模型收全，
+// 当前文本形态 UI 只渲染 position/pattern（图形渲染是未来工作）。
+struct Pitch {
+  int position = 0;
+  std::string pattern;
+  std::vector<int> nasal;
+  std::vector<int> devoice;
+};
+
 struct PitchEntry {
   std::string dict_name;
-  std::vector<int> pitch_positions;
+  std::vector<Pitch> pitches;
   std::vector<std::string> transcriptions;
 };
 
@@ -49,6 +65,9 @@ struct TermResult {
   std::string expression;
   std::string reading;
   std::string rules;
+  // 上游 909c854：Yomitan term score（v2 词典落盘，v1 恒 0）。仅参与 native 排序，
+  // 不出 FFI 面。多词典同 (expr,reading) 合并时取 max。
+  int score = 0;
   std::vector<GlossaryEntry> glossaries;
   std::vector<FrequencyEntry> frequencies;
   std::vector<PitchEntry> pitches;
@@ -61,6 +80,9 @@ struct KanjiResult {
   std::string radical;
   int strokes = 0;
   std::vector<std::string> meanings;
+  // v2 词典的完整 stats 键值对（JLPT/grade/freq 等，bank 原始顺序，radical/strokes
+  // 以外的条目；借鉴上游 64afa2f 的 stats 保留能力）。v1 存量记录恒为空。
+  std::vector<std::pair<std::string, std::string>> stats;
   std::string dict_name;
 };
 
@@ -142,7 +164,7 @@ class DictionaryQuery {
 
   void add_dict(const std::string& path, DictionaryType);
 
-  static std::string decompress_glossary(const void* data, size_t size);
+  static std::string decompress_glossary(const void* data, size_t size, const ZSTD_DDict_s* dict);
   std::vector<Dictionary> term_dicts_;
   std::vector<Dictionary> freq_dicts_;
   std::vector<Dictionary> pitch_dicts_;

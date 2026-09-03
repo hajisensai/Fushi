@@ -7,6 +7,7 @@ const release = (tag, sizes) => ({
   tag,
   assets: sizes.map((size, index) => ({ name: `${tag}-${index}.bin`, size })),
 });
+
 test('先删最旧版本，再把新版本纳入 8GB 预算', () => {
   const plan = planMirror({
     ledger: { schemaVersion: 2, releases: [release('v1', [2_000]), release('v2', [3_000])] },

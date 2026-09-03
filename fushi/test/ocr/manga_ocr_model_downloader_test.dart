@@ -61,10 +61,14 @@ class _ModelServer {
   }
 }
 
-MangaOcrModelDownloader _downloader({int interval = 4}) =>
+MangaOcrModelDownloader _downloader({
+  int interval = 4,
+  List<String> Function(MangaOcrModelFile file)? urlCandidates,
+}) =>
     MangaOcrModelDownloader(
       // 测试直连 loopback，绕开环境代理变量（生产默认 findProxyFromEnvironment）。
       createClient: HttpClient.new,
+      urlCandidates: urlCandidates,
       progressByteInterval: interval,
     );
 
@@ -223,5 +227,88 @@ void main() {
     expect(events.last.done, isTrue);
     expect(File(p.join(tempDir.path, 'a.onnx')).lengthSync(), 8);
     expect(File(p.join(tempDir.path, 'b.txt')).lengthSync(), 6);
+  });
+
+  test('主源失败换镜像：第二候选下完并转正，第一候选的失败不外泄', () async {
+    // 主源路径故意不提供内容（404），镜像路径提供完整字节。
+    server.payloads['/mirror-a.onnx'] = _bytes(12);
+
+    final MangaOcrModelFile target = file('a.onnx', 12);
+    final List<MangaOcrDownloadEvent> events = await _downloader(
+      urlCandidates: (MangaOcrModelFile f) => <String>[
+        server.urlFor('/a.onnx'),
+        server.urlFor('/mirror-a.onnx'),
+      ],
+    ).downloadAll(
+      files: <MangaOcrModelFile>[target],
+      targetDir: tempDir,
+    ).toList();
+
+    expect(File(p.join(tempDir.path, 'a.onnx')).lengthSync(), 12);
+    expect(events.last.done, isTrue);
+    expect(server.requestedPaths, contains('/a.onnx'));
+    expect(server.requestedPaths, contains('/mirror-a.onnx'),
+        reason: '主源 404 后必须真的去打镜像，而不是直接失败');
+  });
+
+  test('全部候选都失败：抛错，不留半个转正文件', () async {
+    final MangaOcrModelFile target = file('a.onnx', 12);
+    await expectLater(
+      _downloader(
+        urlCandidates: (MangaOcrModelFile f) => <String>[
+          server.urlFor('/missing-1.onnx'),
+          server.urlFor('/missing-2.onnx'),
+        ],
+      )
+          .downloadAll(
+            files: <MangaOcrModelFile>[target],
+            targetDir: tempDir,
+          )
+          .toList(),
+      throwsA(isA<HttpException>()),
+    );
+    expect(File(p.join(tempDir.path, 'a.onnx')).existsSync(), isFalse);
+    expect(server.requestedPaths,
+        containsAll(<String>['/missing-1.onnx', '/missing-2.onnx']),
+        reason: '候选序列要走完才算失败');
+  });
+
+  group('候选 URL 派生', () {
+    test('huggingface 主源派生出镜像，顺序是主源在前', () {
+      const MangaOcrModelFile model = MangaOcrModelFile(
+        fileName: 'x.onnx',
+        url: 'https://huggingface.co/owner/repo/resolve/main/x.onnx',
+        expectedBytes: 1,
+        role: MangaOcrModelRole.detector,
+      );
+      final List<String> candidates = mangaOcrModelUrlCandidates(model);
+      expect(candidates.first, model.url);
+      expect(candidates.length, kMangaOcrModelMirrorHosts.length + 1);
+      for (int i = 0; i < kMangaOcrModelMirrorHosts.length; i++) {
+        expect(
+          candidates[i + 1],
+          'https://${kMangaOcrModelMirrorHosts[i]}/owner/repo/resolve/main/x.onnx',
+          reason: '镜像与主源路径同构，只换 host',
+        );
+      }
+    });
+
+    test('非 huggingface 的 URL 不派生镜像', () {
+      const MangaOcrModelFile model = MangaOcrModelFile(
+        fileName: 'x.onnx',
+        url: 'http://127.0.0.1:8080/x.onnx',
+        expectedBytes: 1,
+        role: MangaOcrModelRole.detector,
+      );
+      expect(mangaOcrModelUrlCandidates(model), <String>[model.url]);
+    });
+
+    test('真实清单每条都能派生出镜像候选', () {
+      for (final MangaOcrModelFile model in kMangaOcrModelManifest) {
+        expect(mangaOcrModelUrlCandidates(model).length,
+            kMangaOcrModelMirrorHosts.length + 1,
+            reason: '${model.fileName} 少了镜像候选');
+      }
+    });
   });
 }

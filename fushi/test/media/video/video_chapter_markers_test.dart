@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../helpers/source_guard.dart';
 import '../../pages/video_fushi_page_source_corpus.dart';
 import 'package:fushi/src/media/video/video_chapter_markers.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
@@ -229,6 +230,73 @@ void main() {
     });
   });
 
+  // BUG-1783：刻度层与 seek bar 轨道的**水平基准**必须同源。这一组直接编码 bug 的数学
+  // 形式——旧守卫只断言 builder 体里出现字符串 `left: 16` / `right: 16`，而当年的 SafeArea
+  // 就叠在那个 Padding 外面，字符串照样命中、守卫恒绿。字面量存在 ≠ 基准一致。
+  group('videoControlsChromeInsets (BUG-1783)', () {
+    // 横屏刘海机：`shortEdges` 让 cutout 落在左 / 右短边（实测反算 padding.left ≈ 45）。
+    const EdgeInsets cutout = EdgeInsets.only(left: 45, right: 30);
+
+    test('非全屏路由：系统安全区再大，控制条外层 padding 也恒为零', () {
+      expect(
+        videoControlsChromeInsets(
+          isFullscreenRoute: false,
+          systemPadding: cutout,
+        ),
+        EdgeInsets.zero,
+        reason: 'fork 窗口态走 EdgeInsets.zero 分支；移动端因 BUG-221 永远落在这一支，'
+            '刻度层多缩一段就会与轨道分叉',
+      );
+    });
+
+    test('全屏路由：与 media_kit 一样吃系统安全区', () {
+      expect(
+        videoControlsChromeInsets(
+          isFullscreenRoute: true,
+          systemPadding: cutout,
+        ),
+        cutout,
+      );
+    });
+
+    test('controls theme 显式设了 padding 时以它为准（两条路径都是）', () {
+      const EdgeInsets themed = EdgeInsets.all(4);
+      for (final bool fullscreen in <bool>[false, true]) {
+        expect(
+          videoControlsChromeInsets(
+            isFullscreenRoute: fullscreen,
+            systemPadding: cutout,
+            themePadding: themed,
+          ),
+          themed,
+        );
+      }
+    });
+
+    test('刘海横屏下刻度层与轨道左右边界逐像素相等', () {
+      // 用户那台机：2532×1170 @ DPR 3 → 844 逻辑宽。
+      const double w = 844;
+      final EdgeInsets insets = videoControlsChromeInsets(
+        isFullscreenRoute: false,
+        systemPadding: cutout,
+      );
+      // 轨道（fork material.dart 窗口态 + seekBarMargin 16）：不含任何安全区。
+      double trackX(double f) => 16 + f * (w - 32);
+      // 刻度层：控制条外层 padding + 同样的 16，内部按剩余宽线性。
+      double markerX(double f) =>
+          insets.left + 16 + f * (w - 32 - insets.horizontal);
+      for (final double f in <double>[0, 0.25, 0.5, 0.75, 1]) {
+        expect(
+          markerX(f),
+          closeTo(trackX(f), 0.001),
+          reason: 'f=$f 处刻度与轨道错位——修前的 SafeArea 让误差 '
+              'Δ(f)=padding.left−f·padding.horizontal 随比例斜切：'
+              '首章右偏、末章左偏、中间某点恰好蒙对',
+        );
+      }
+    });
+  });
+
   // media_kit 的 seek bar 无法在无头 libmpv 下驱动真实渲染，故页面层「刻度叠在 seek bar
   // 同一几何上」的接线用源码守卫锁定不变量（几何纯函数由上面的 widget/单元测试覆盖）。
   group('video_fushi_page wires chapter markers onto seek bar (TODO-432)', () {
@@ -265,6 +333,33 @@ void main() {
       // 纯视觉层不拦指针，不破坏 seek bar 拖动。
       expect(body.contains('IgnorePointer'), isTrue,
           reason: '刻度层必须 IgnorePointer，否则会拦掉 seek bar 拖动');
+    });
+
+    // BUG-1783：两个叠在 controls Stack 上的兄弟层都不许自己吃系统安全区。
+    //
+    // 用 methodBody 而不是「下一个方法签名」做切片：两个 builder 在文件里的先后顺序
+    // 一变，手写的结束锚点就会把整段剩余语料吞进 body，负向断言随即失去意义（实测正是
+    // 这样先红的）。methodBody 自己做花括号配对并掩掉注释——后者同样必要：修复本身在
+    // 注释里解释了「原本是 SafeArea、为什么不能用」，裸 contains 会把说明当违规命中。
+    test('刻度层与缩略图预览层都走 _videoControlsChromeInsets，不再套 SafeArea', () {
+      for (final (String name, String signature) in <(String, String)>[
+        ('章节刻度层', 'Widget _buildChapterMarkersOverlay('),
+        ('缩略图预览层', 'Widget _buildThumbnailPreviewOverlay('),
+      ]) {
+        final String body = maskComments(methodBody(src, signature));
+        expect(
+          body.contains('SafeArea'),
+          isFalse,
+          reason: '$name 不得套 SafeArea：它恒吃 MediaQuery.padding，而 media_kit 轨道在'
+              '非全屏路由下恒零内缩（移动端因 BUG-221 永远是非全屏），两者基准会分叉',
+        );
+        expect(
+          body.contains('_videoControlsChromeInsets()'),
+          isTrue,
+          reason: '$name 的外层 padding 必须走 _videoControlsChromeInsets()，'
+              '与 media_kit 控制条同一条真相',
+        );
+      }
     });
   });
 }

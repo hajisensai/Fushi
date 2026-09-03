@@ -28,16 +28,24 @@ Future<void> toggleBold(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
-Future<LapisVisualEditorResult?> openEditorAndSave(
+/// [pumpEditor] 的句柄：[popped] 在页面被 pop 后完成。
+class EditorSession {
+  const EditorSession(this.popped);
+
+  final Future<void> popped;
+}
+
+/// 只装载页面、不保存：给几何/布局类用例用（它们不需要弹回结果，也不该被
+/// 「保存按钮此刻是否可点」绑架）。
+Future<EditorSession> pumpEditor(
   WidgetTester tester, {
   required String initialCustomCss,
   List<String> noteTypeFields = const <String>[],
   Map<String, String> initialFieldMappings = const <String, String>{},
   List<LapisCustomBlock> initialBlocks = const <LapisCustomBlock>[],
   LapisHandlebarPicker? pickHandlebar,
-  Future<void> Function(WidgetTester tester)? interact,
+  void Function(LapisVisualEditorResult? result)? onResult,
 }) async {
-  LapisVisualEditorResult? result;
   late BuildContext hostContext;
   await tester.pumpWidget(
     MaterialApp(
@@ -65,14 +73,36 @@ Future<LapisVisualEditorResult?> openEditorAndSave(
     ),
   )
       .then((LapisVisualEditorResult? value) {
-    result = value;
+    onResult?.call(value);
   });
   await tester.pumpAndSettle();
+  return EditorSession(pushed);
+}
+
+Future<LapisVisualEditorResult?> openEditorAndSave(
+  WidgetTester tester, {
+  required String initialCustomCss,
+  List<String> noteTypeFields = const <String>[],
+  Map<String, String> initialFieldMappings = const <String, String>{},
+  List<LapisCustomBlock> initialBlocks = const <LapisCustomBlock>[],
+  LapisHandlebarPicker? pickHandlebar,
+  Future<void> Function(WidgetTester tester)? interact,
+}) async {
+  LapisVisualEditorResult? result;
+  final EditorSession session = await pumpEditor(
+    tester,
+    initialCustomCss: initialCustomCss,
+    noteTypeFields: noteTypeFields,
+    initialFieldMappings: initialFieldMappings,
+    initialBlocks: initialBlocks,
+    pickHandlebar: pickHandlebar,
+    onResult: (LapisVisualEditorResult? value) => result = value,
+  );
 
   await (interact ?? toggleBold)(tester);
 
   await tester.tap(find.byIcon(Icons.save_outlined));
   await tester.pumpAndSettle();
-  await pushed;
+  await session.popped;
   return result;
 }

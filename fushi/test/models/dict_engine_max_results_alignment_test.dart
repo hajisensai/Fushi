@@ -96,7 +96,7 @@ void main() {
           expect(fromCapped.entries[i].reading, fromFull.entries[i].reading);
           expect(fromCapped.entries[i].meaning, fromFull.entries[i].meaning);
         }
-        // bestLength 是用户可见的整词高亮长度（clipboard_panel_controller）。
+        // bestLength 是用户可见的整词高亮长度（global_lookup_controller）。
         expect(fromCapped.bestLength, fromFull.bestLength,
             reason: 'bestLength 变了会让横幅高亮跨度变化');
       });
@@ -105,8 +105,13 @@ void main() {
         final List<FushiLookupResult> full = engineResults(count: 200);
         expect(
           buildPopupJsonFromLookup(
-              results: full.take(maxTerms).toList(), maximumTerms: maxTerms),
-          buildPopupJsonFromLookup(results: full, maximumTerms: maxTerms),
+              results: full.take(maxTerms).toList(),
+              maximumTerms: maxTerms,
+              hiddenDictionaries: const <String>{}),
+          buildPopupJsonFromLookup(
+              results: full,
+              maximumTerms: maxTerms,
+              hiddenDictionaries: const <String>{}),
         );
       });
     }

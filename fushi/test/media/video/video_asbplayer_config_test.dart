@@ -15,6 +15,39 @@ void main() {
       VideoAsbplayerConfig.defaults.dragSeekSensitivity,
       VideoSeekSensitivity.medium,
     );
+    // 「点击画面播放/暂停」默认开 = 保持既有行为（桌面单击 / 移动端双击中带）。
+    expect(VideoAsbplayerConfig.defaults.tapTogglesPlayback, isTrue);
+  });
+
+  test('旧档（无 tapTogglesPlayback 键）与脏值都回落 true（既有行为不变）', () {
+    // 升级前写下的配置里没有这个键——不得抛、不得把点击暂停悄悄关掉。
+    expect(
+      VideoAsbplayerConfig.decode(
+        '{"seekSeconds":5,"speedStep":0.2,"pauseAtSubtitleEnd":false}',
+      ).tapTogglesPlayback,
+      isTrue,
+    );
+    // 脏值（类型不对）同样回落，不进手势分流逻辑。
+    expect(
+      VideoAsbplayerConfig.decode('{"tapTogglesPlayback":"no"}')
+          .tapTogglesPlayback,
+      isTrue,
+    );
+    // 关态必须真的写进 JSON（否则重开播放页又变回开）。
+    expect(
+      VideoAsbplayerConfig.encode(
+        VideoAsbplayerConfig.defaults.copyWith(tapTogglesPlayback: false),
+      ),
+      contains('"tapTogglesPlayback":false'),
+    );
+    expect(
+      VideoAsbplayerConfig.decode(
+        VideoAsbplayerConfig.encode(
+          VideoAsbplayerConfig.defaults.copyWith(tapTogglesPlayback: false),
+        ),
+      ).tapTogglesPlayback,
+      isFalse,
+    );
   });
 
   test('encode/decode round trips user playback preferences', () {
@@ -25,6 +58,7 @@ void main() {
       doubleTapSeekSeconds: 10,
       longPressSpeed: 2.5,
       dragSeekSensitivity: VideoSeekSensitivity.low,
+      tapTogglesPlayback: false,
     );
 
     final VideoAsbplayerConfig decoded =
@@ -36,6 +70,7 @@ void main() {
     expect(decoded.doubleTapSeekSeconds, 10);
     expect(decoded.longPressSpeed, 2.5);
     expect(decoded.dragSeekSensitivity, VideoSeekSensitivity.low);
+    expect(decoded.tapTogglesPlayback, isFalse);
   });
 
   test('BUG-1485: 旧档（无 dragSeekSensitivity 键）与脏值都回落默认档', () {

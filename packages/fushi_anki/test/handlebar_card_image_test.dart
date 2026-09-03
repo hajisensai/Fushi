@@ -26,7 +26,7 @@ void main() {
     });
 
     test('{card-image} == {book-cover} == {video-clip} 逐字节相同（向后兼容）', () {
-      final AnkiMiningContext ctx = contextWithCover('hibiki_cover_x.gif');
+      final AnkiMiningContext ctx = contextWithCover('fushi_cover_x.gif');
       final String cardImage =
           AnkiHandlebarRenderer.render('{card-image}', payload, ctx);
       final String bookCover =
@@ -46,7 +46,7 @@ void main() {
 
     test('三者都渲染媒体引用串（模拟 backend 落盘后回填）逐字节相同', () {
       // backend 把 coverPath 落盘后用 `<img src="ref">` 覆盖 coverPath 再渲染。
-      const String mediaRef = '<img src="hibiki_cover_abc.gif">';
+      const String mediaRef = '<img src="fushi_cover_abc.gif">';
       final AnkiMiningContext ctx = contextWithCover(mediaRef);
       expect(
           AnkiHandlebarRenderer.render('{card-image}', payload, ctx), mediaRef);

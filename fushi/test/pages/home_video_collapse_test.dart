@@ -19,6 +19,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/fake_anki_repository.dart';
+import '../helpers/series_scrape_seed.dart';
 import '../helpers/test_platform_services.dart';
 
 /// 视频页折叠语义退役守卫（用户拍板 2026-07-22 合集改封面卡）：
@@ -82,7 +83,8 @@ void main() {
       videoPath: const Value('/abs/ep2.mp4'),
       importedAt: Value(DateTime(2026, 1, 2).millisecondsSinceEpoch),
     ));
-    collectionId = await db.createMediaCollection(
+    collectionId = await createSeriesCollection(
+      db,
       '某番剧',
       collectionType: 'playlist',
     );

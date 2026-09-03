@@ -85,4 +85,71 @@ void main() {
       ),
     );
   });
+
+  test('浮窗外观偏好有兼容旧观感的默认值', () {
+    expect(repo.galHookTextLetterSpacing, 0);
+    expect(repo.galHookTextLineHeight, 1);
+    expect(repo.galHookTextBold, isTrue);
+    expect(repo.galHookTextAlignment, 'center');
+    expect(repo.galHookTextColor, 0xFFFFFFFF);
+    expect(repo.galHookTextBackgroundColor, 0xFF000000);
+    expect(repo.galHookTextBackgroundOpacity, 0);
+    expect(repo.galHookTextOutlineColor, 0xE0000000);
+    expect(repo.galHookTextOutlineWidth, 1.6);
+    expect(repo.galHookTextPadding, 20);
+    expect(repo.galHookTextCornerRadius, 14);
+  });
+
+  test('浮窗外观偏好写入后可读回', () async {
+    await repo.setGalHookTextLetterSpacing(2.5);
+    await repo.setGalHookTextLineHeight(1.4);
+    await repo.setGalHookTextBold(false);
+    await repo.setGalHookTextAlignment('left');
+    await repo.setGalHookTextColor(0xFF123456);
+    await repo.setGalHookTextBackgroundColor(0xFF654321);
+    await repo.setGalHookTextBackgroundOpacity(0.65);
+    await repo.setGalHookTextOutlineColor(0xAA010203);
+    await repo.setGalHookTextOutlineWidth(2.75);
+    await repo.setGalHookTextPadding(34);
+    await repo.setGalHookTextCornerRadius(22);
+
+    expect(repo.galHookTextLetterSpacing, 2.5);
+    expect(repo.galHookTextLineHeight, 1.4);
+    expect(repo.galHookTextBold, isFalse);
+    expect(repo.galHookTextAlignment, 'left');
+    expect(repo.galHookTextColor, 0xFF123456);
+    expect(repo.galHookTextBackgroundColor, 0xFF654321);
+    expect(repo.galHookTextBackgroundOpacity, 0.65);
+    expect(repo.galHookTextOutlineColor, 0xAA010203);
+    expect(repo.galHookTextOutlineWidth, 2.75);
+    expect(repo.galHookTextPadding, 34);
+    expect(repo.galHookTextCornerRadius, 22);
+  });
+
+  test('浮窗外观偏好的数值边界在读写两端都会收敛', () async {
+    await repo.setGalHookTextLetterSpacing(999);
+    await repo.setGalHookTextLineHeight(-10);
+    await repo.setGalHookTextBackgroundOpacity(5);
+    await repo.setGalHookTextOutlineWidth(-2);
+    await repo.setGalHookTextPadding(999);
+    await repo.setGalHookTextCornerRadius(999);
+
+    expect(repo.galHookTextLetterSpacing,
+        PreferencesRepository.galHookTextLetterSpacingMax);
+    expect(repo.galHookTextLineHeight,
+        PreferencesRepository.galHookTextLineHeightMin);
+    expect(repo.galHookTextBackgroundOpacity, 1);
+    expect(repo.galHookTextOutlineWidth,
+        PreferencesRepository.galHookTextOutlineWidthMin);
+    expect(
+        repo.galHookTextPadding, PreferencesRepository.galHookTextPaddingMax);
+    expect(repo.galHookTextCornerRadius,
+        PreferencesRepository.galHookTextCornerRadiusMax);
+
+    await repo.setPref('gal_hook_text_outline_width', 999.0);
+    await repo.setPref('gal_hook_text_alignment', 'right');
+    expect(repo.galHookTextOutlineWidth,
+        PreferencesRepository.galHookTextOutlineWidthMax);
+    expect(repo.galHookTextAlignment, 'center');
+  });
 }

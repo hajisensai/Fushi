@@ -61,6 +61,7 @@ void main() {
       managedDirectory: managed,
       initialPayload: initial,
       startPage: 1,
+      language: 'ja',
       lens: GoogleLensMangaOcrService(transport: transport),
     ).run().toList();
 
@@ -84,6 +85,7 @@ void main() {
       managedDirectory: managed,
       initialPayload: initial,
       startPage: 2,
+      language: 'ja',
       lens: GoogleLensMangaOcrService(transport: transport),
     ).run().toList();
 

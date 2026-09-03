@@ -23,7 +23,7 @@ function deferred() {
 }
 
 function makeSandbox(fontReady, configured) {
-  const calls = { rendered: 0, relayout: 0, layoutReads: 0 };
+  const calls = { rendered: 0, relayout: 0, layoutReads: 0, renderedArgs: null };
   const body = {};
   Object.defineProperty(body, 'offsetWidth', {
     get() { calls.layoutReads += 1; return 640; },
@@ -33,11 +33,15 @@ function makeSandbox(fontReady, configured) {
     _renderInProgress: true,
     __fushiDictionaryFontsConfigured: configured,
     flutter_inappwebview: {
-      callHandler(name) {
-        if (name === 'popupRendered') calls.rendered += 1;
+      callHandler(name, ...args) {
+        if (name === 'popupRendered') {
+          calls.rendered += 1;
+          calls.renderedArgs = args;
+        }
         return Promise.resolve();
       },
     },
+    innerHeight: 280,
     fushiRelayoutDictionaries() { calls.relayout += 1; },
   };
   const sandbox = {
@@ -72,6 +76,8 @@ async function flushPromises() {
       'the host reveal signal must fire after fonts.ready');
     assert.strictEqual(calls.relayout, 1,
       'masonry layout must run after the font metrics are final');
+    assert.deepStrictEqual(calls.renderedArgs, [100, 0, 280],
+      'popupRendered must report content height, render token, and viewport height');
   }
 
   {

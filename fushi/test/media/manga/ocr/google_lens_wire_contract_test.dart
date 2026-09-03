@@ -157,6 +157,7 @@ void main() {
         imageData: Uint8List.fromList(<int>[1, 2, 3, 4]),
         width: 640,
         height: 480,
+        language: 'ja',
         requestId: 7,
       );
 

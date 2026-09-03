@@ -1,0 +1,6 @@
+## BUG-2003 · 发现页完整身份在入队时被降维，刮削/字幕只剩显示名与单 id
+- **报告**：2026-09-01（刮削重设计调查：用户报「刮削/下载/发现名字/搜索名字/字幕逻辑不对」，沿链实测）
+- **真实性**：✅ 真 bug。发现层 `VideoMediaReference` 携带完整身份（日文原名、罗马字别名、tmdb/imdb/tvdb/anidb/anilist/bangumi 全套 id），但入队只落 `title` + 单一 `metadataProvider/externalId`（`video_download_pipeline_service.dart:850-854` 修前），jobs 表无别名/原名列；`_mediaReference(job)`（修前 :3763-3787）只能从残渣重建——字幕阶段拿不到原名与 anilist id、订阅轮询的多名字 nyaa 兜底退化为单词。实证：用户库 work 29「Re:Zero S4」只有 `bangumi:547888` 一条身份。
+- **[x] ① 已修复** — `f390182364`：schema v94 给 `video_download_jobs` / `video_download_subscriptions` 加 `identity_json`（`VideoMediaReference` 全量 JSON 快照，codec `video_media_reference_codec.dart`）；入队/建订阅写入，`_mediaReference(job/subscription)` 优先从快照恢复（任务列 title/year/season 仍为流程真值）；`copyWithEpisode` 与订阅派生任务顺手修掉丢 `aliases` 的问题。并新增发现确认时的 AniDB 身份就地解析（`discovery_anidb_identity.dart`）：唯一命中静默补 id、歧义当场弹候选、查无明示后照常下载。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/download/video_media_reference_codec_test.dart`（全字段/最小/损坏输入）；`fushi/test/media/video/discovery/discovery_anidb_identity_test.dart`（已确认/不适用/唯一命中/歧义/查无 + 候选顺序=原名优先）；`fushi/test/database/migration_v94_download_identity_json_test.dart`（v93→v94 无损迁移）。
+- **备注**：旧行 `identity_json = NULL` 走修前重建路径，零破坏。

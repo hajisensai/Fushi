@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/tracking/media_tracking_service.dart';
+import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi/src/sync/interconnect_service_config.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -20,6 +22,14 @@ void main() {
   test('host snapshot includes only the explicit cross-device allowlist',
       () async {
     await db.setPref('jimaku_api_key', PrefCodec.encode('jimaku-secret'));
+    await db.setPref(
+      kVideoMetadataAniDbClientNamePref,
+      PrefCodec.encode('fushi-client'),
+    );
+    await db.setPref(
+      kVideoMetadataAniDbClientVersionPref,
+      PrefCodec.encode('7'),
+    );
     await db.setPref('video_scraper_tmdb_api_key', PrefCodec.encode('tmdb'));
     await db.setPref(
       'video_metadata_fanart_api_key',
@@ -50,6 +60,11 @@ void main() {
       PrefCodec.encode('folder-password'),
     );
     await db.setPref('download_save_root', PrefCodec.encode(r'D:\downloads'));
+    await db.setPref(
+      kBangumiAccessTokenPref,
+      PrefCodec.encode('bangumi-tracking-token'),
+    );
+    await db.setPref(kBangumiAccountNamePref, PrefCodec.encode('nick'));
 
     final InterconnectServiceConfigSnapshot snapshot =
         InterconnectServiceConfigSnapshot.fromPreferences(
@@ -60,15 +75,22 @@ void main() {
         InterconnectServiceConfigSnapshot.sharedPreferenceKeys);
     expect(snapshot.preferences['jimaku_api_key'],
         PrefCodec.encode('jimaku-secret'));
-    expect(snapshot.preferences, isNot(contains('video_scraper_tmdb_api_key')));
+    // 现行外部服务身份跟着用户的设备走；退役的视频刮削凭据与本机入站
+    // API、配对凭据、设备身份和本地路径都不出境。
+    expect(snapshot.preferences['video_scraper_tmdb_api_key'],
+        PrefCodec.encode('tmdb'));
     expect(
-      snapshot.preferences,
-      isNot(contains('video_metadata_fanart_api_key')),
+      snapshot.preferences[kVideoMetadataAniDbClientNamePref],
+      PrefCodec.encode('fushi-client'),
     );
     expect(
-      snapshot.preferences,
-      isNot(contains('video_metadata_bangumi_token')),
+      snapshot.preferences[kVideoMetadataAniDbClientVersionPref],
+      PrefCodec.encode('7'),
     );
+    expect(
+        snapshot.preferences, isNot(contains('video_metadata_fanart_api_key')));
+    expect(
+        snapshot.preferences, isNot(contains('video_metadata_bangumi_token')));
     expect(
       snapshot.preferences,
       isNot(contains('video_metadata_douban_authorized_endpoint')),
@@ -76,6 +98,14 @@ void main() {
     expect(
       snapshot.preferences,
       isNot(contains('video_metadata_douban_authorized_token')),
+    );
+    expect(
+      snapshot.preferences[kBangumiAccessTokenPref],
+      PrefCodec.encode('bangumi-tracking-token'),
+    );
+    expect(
+      snapshot.preferences[kBangumiAccountNamePref],
+      PrefCodec.encode('nick'),
     );
     expect(snapshot.preferences, isNot(contains('yomitan_api_key')));
     expect(snapshot.preferences, isNot(contains('sync_hibiki_client_token')));
@@ -91,6 +121,14 @@ void main() {
     );
 
     expect(snapshot.preferences['jimaku_api_key'], PrefCodec.encode(''));
+    expect(
+      snapshot.preferences[kVideoMetadataAniDbClientNamePref],
+      PrefCodec.encode(''),
+    );
+    expect(
+      snapshot.preferences[kVideoMetadataAniDbClientVersionPref],
+      PrefCodec.encode(''),
+    );
     expect(
       snapshot.preferences['manga_online_catalog_base_url'],
       PrefCodec.encode('https://mokuro.moe'),
@@ -110,13 +148,15 @@ void main() {
       'schemaVersion': 1,
       'preferences': <String, Object?>{
         'jimaku_api_key': PrefCodec.encode('new'),
+        kVideoMetadataAniDbClientNamePref: PrefCodec.encode('synced-client'),
+        kVideoMetadataAniDbClientVersionPref: PrefCodec.encode('9'),
         'manga_online_catalog_enabled': PrefCodec.encode(false),
         'sync_device_id': PrefCodec.encode('attacker-device'),
         'future_secret': PrefCodec.encode('attacker-secret'),
       },
     });
 
-    expect(await snapshot.applyTo(db), 2);
+    expect(await snapshot.applyTo(db), 4);
     expect(
       await db.getPref('jimaku_api_key'),
       PrefCodec.encode('new'),
@@ -126,11 +166,61 @@ void main() {
       PrefCodec.encode(false),
     );
     expect(
+      await db.getPref(kVideoMetadataAniDbClientNamePref),
+      PrefCodec.encode('synced-client'),
+    );
+    expect(
+      await db.getPref(kVideoMetadataAniDbClientVersionPref),
+      PrefCodec.encode('9'),
+    );
+    expect(
       await db.getPref('sync_device_id'),
       PrefCodec.encode('keep-device'),
     );
     expect(await db.getPref('future_secret'), isNull);
     expect(await snapshot.applyTo(db), 0, reason: 'replay must be idempotent');
+  });
+
+  test('换 Bangumi 令牌必须归零本设备对账水位（与设置页写令牌同一条不变式）', () async {
+    for (final String key in kBangumiTokenScopedWatermarkPrefs) {
+      await db.setPref(key, PrefCodec.encode(99));
+    }
+    await db.setPref(kBangumiAccessTokenPref, PrefCodec.encode('old-token'));
+
+    final InterconnectServiceConfigSnapshot snapshot =
+        InterconnectServiceConfigSnapshot.fromJson(<String, Object?>{
+      'schemaVersion': 1,
+      'preferences': <String, Object?>{
+        kBangumiAccessTokenPref: PrefCodec.encode('new-token'),
+        kBangumiAccountNamePref: PrefCodec.encode('someone-else'),
+      },
+    });
+
+    expect(await snapshot.applyTo(db), 2, reason: '水位归零是令牌那一行的副作用，不额外计数');
+    for (final String key in kBangumiTokenScopedWatermarkPrefs) {
+      expect(await db.getPref(key), PrefCodec.encode(0), reason: key);
+    }
+  });
+
+  test('令牌没变时不碰对账水位（重放同一份 host 快照不得倒退进度）', () async {
+    await db.setPref(kBangumiAccessTokenPref, PrefCodec.encode('same-token'));
+    for (final String key in kBangumiTokenScopedWatermarkPrefs) {
+      await db.setPref(key, PrefCodec.encode(99));
+    }
+
+    final InterconnectServiceConfigSnapshot snapshot =
+        InterconnectServiceConfigSnapshot.fromJson(<String, Object?>{
+      'schemaVersion': 1,
+      'preferences': <String, Object?>{
+        kBangumiAccessTokenPref: PrefCodec.encode('same-token'),
+        'jimaku_api_key': PrefCodec.encode('changed'),
+      },
+    });
+
+    expect(await snapshot.applyTo(db), 1);
+    for (final String key in kBangumiTokenScopedWatermarkPrefs) {
+      expect(await db.getPref(key), PrefCodec.encode(99), reason: key);
+    }
   });
 
   test('rejects unsupported schema versions', () {
@@ -182,5 +272,44 @@ void main() {
       isEmpty,
       reason: '明文会话上 service-config 必然 403，这一次请求就不该发出去',
     );
+  });
+
+  // ── apikey 同步设定重设计（2026-08-17）：service-config 接收开关 ──────────
+
+  test('service-config 同步开关默认开（既有行为不变）且落库可关', () async {
+    final SyncRepository repo = SyncRepository(db);
+    expect(await repo.isInterconnectServiceConfigSyncEnabled(), isTrue,
+        reason: '默认 true：TLS 开着的存量互联用户行为零变化');
+    await repo.setInterconnectServiceConfigSyncEnabled(false);
+    expect(await repo.isInterconnectServiceConfigSyncEnabled(), isFalse);
+    await repo.setInterconnectServiceConfigSyncEnabled(true);
+    expect(await repo.isInterconnectServiceConfigSyncEnabled(), isTrue);
+  });
+
+  test('开关键是设备本地（信任决策不跨设备携带）', () {
+    expect(
+      SyncRepository.deviceLocalPrefKeys
+          .contains('interconnect_sync_service_config'),
+      isTrue,
+      reason: '「要不要接收 host 凭据」是每台设备自己的信任决策，'
+          '随备份漂移会把 A 机的选择强加给 B 机',
+    );
+  });
+
+  test('编排器在请求 service-config 之前先问开关（关 = 连请求都不发）', () {
+    // 源码守卫（orchestrator 的 _syncServiceConfigLive 是私有方法，行为面在
+    // run() 全流水线深处）：门控必须出现在 getRemoteServiceConfig 之前——
+    // 「拉回来再丢弃」或「拉了不应用」都不满足「关掉就不发请求」的语义。
+    final String src = File('lib/src/sync/sync_orchestrator.dart')
+        .readAsStringSync()
+        .replaceAll('\r\n', '\n');
+    final int methodStart = src.indexOf('_syncServiceConfigLive(');
+    expect(methodStart, greaterThan(0));
+    final int gate =
+        src.indexOf('isInterconnectServiceConfigSyncEnabled', methodStart);
+    final int request = src.indexOf('getRemoteServiceConfig', methodStart);
+    expect(gate, greaterThan(0), reason: '门控缺失 = 开关形同虚设');
+    expect(request, greaterThan(0));
+    expect(gate < request, isTrue, reason: '门控必须先于请求：关掉开关后连 GET 都不该发');
   });
 }

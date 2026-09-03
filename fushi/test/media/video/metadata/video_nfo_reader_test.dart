@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/metadata/video_nfo_reader.dart';
 import 'package:path/path.dart' as p;
 
@@ -41,5 +42,89 @@ void main() {
     expect(work.credits.single.character?.name, '角色乙');
     expect(work.seasons.single.seasonNumber, 2);
     expect(work.seasons.single.episodes.single.title, '第三集');
+  });
+
+  test('partial episode NFO overrides fields without deleting online episodes',
+      () {
+    final VideoMetadataWork online = VideoMetadataWork(
+      provider: VideoMetadataProviderKind.anidb,
+      kind: VideoMetadataMediaKind.tv,
+      title: 'Online title',
+      seasons: <VideoMetadataSeason>[
+        VideoMetadataSeason(
+          seasonNumber: 1,
+          title: 'Online season 1',
+          episodeCount: 2,
+          episodes: <VideoMetadataEpisode>[
+            VideoMetadataEpisode(
+              seasonNumber: 1,
+              episodeNumber: 1,
+              title: 'Online episode 1',
+              plot: 'Online plot',
+              runtimeMinutes: 24,
+              ids: <VideoMetadataId>[
+                VideoMetadataId(type: 'anidb', value: '101'),
+              ],
+            ),
+            VideoMetadataEpisode(
+              seasonNumber: 1,
+              episodeNumber: 2,
+              title: 'Online episode 2',
+            ),
+          ],
+        ),
+        VideoMetadataSeason(
+          seasonNumber: 2,
+          title: 'Online season 2',
+          episodes: <VideoMetadataEpisode>[
+            VideoMetadataEpisode(
+              seasonNumber: 2,
+              episodeNumber: 1,
+              title: 'Online season 2 episode 1',
+            ),
+          ],
+        ),
+      ],
+    );
+    final VideoMetadataWork nfo = VideoMetadataWork(
+      provider: VideoMetadataProviderKind.local,
+      kind: VideoMetadataMediaKind.tv,
+      title: 'NFO title',
+      seasons: <VideoMetadataSeason>[
+        VideoMetadataSeason(
+          seasonNumber: 1,
+          title: 'Season 1',
+          episodeCount: 1,
+          episodes: <VideoMetadataEpisode>[
+            VideoMetadataEpisode(
+              seasonNumber: 1,
+              episodeNumber: 1,
+              title: 'NFO episode 1',
+              plot: 'NFO plot',
+              ids: <VideoMetadataId>[
+                VideoMetadataId(type: 'tmdb', value: '201'),
+              ],
+            ),
+          ],
+        ),
+      ],
+    );
+
+    final VideoMetadataWork merged = mergeNfoAuthority(nfo, online);
+
+    expect(merged.seasons, hasLength(2));
+    expect(merged.seasons.first.title, 'Online season 1');
+    expect(merged.seasons.first.episodeCount, 2);
+    expect(merged.seasons.first.episodes, hasLength(2));
+    expect(merged.seasons.first.episodes.first.title, 'NFO episode 1');
+    expect(merged.seasons.first.episodes.first.plot, 'NFO plot');
+    expect(merged.seasons.first.episodes.first.runtimeMinutes, 24);
+    expect(
+      merged.seasons.first.episodes.first.ids
+          .map((VideoMetadataId id) => id.type),
+      containsAll(<String>['anidb', 'tmdb']),
+    );
+    expect(merged.seasons.first.episodes[1].title, 'Online episode 2');
+    expect(merged.seasons[1].title, 'Online season 2');
   });
 }

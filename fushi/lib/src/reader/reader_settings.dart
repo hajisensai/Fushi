@@ -12,7 +12,7 @@ import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 
 /// The independent font targets a user can configure (TODO-049 / TODO-864):
 /// 软件系统字体 ([appUi]) / 小说正文字体 ([body]) / 词典字体 ([dictionary]) /
-/// 视频字幕字体 ([videoSubtitle]). Each maps to its own persisted
+/// 视频字幕字体 ([videoSubtitle]) / 游戏查词窗口字体 ([gameLookup]). Each maps to its own persisted
 /// `[{name,path,enabled}]` list; see [ReaderSettings.fontKeyForTarget].
 enum FontTarget {
   /// App-wide UI (ThemeData) font — menus, buttons, settings, etc.
@@ -28,7 +28,36 @@ enum FontTarget {
   /// not libmpv — Hibiki renders text subtitles in the Flutter layer). New in
   /// TODO-864.
   videoSubtitle,
+
+  /// Windows galgame **hook 台词浮窗**（native 分层窗 `FloatingLyricWindow`，
+  /// DirectWrite 自绘）的字体。
+  ///
+  /// ⚠️ 覆盖面只有 hook 台词浮窗这一个表面。**游戏内查词卡不归它管**——那是
+  /// `GlobalLookupRoute.galCard`，和 app 内词典弹窗共用 [dictionary]
+  /// （`popup_settings_injection.dart` 读 `settings.dictionaryFonts`）。
+  /// 旧注释写的 "click-to-lookup overlay" 是错的，别照着它接线；
+  /// 守卫 `test/reader/font_targets_wiring_guard_test.dart` 钉死了这条分界。
+  ///
+  /// native 只吃**第一条可用**的 family/file，且只认 `.ttf/.otf/.ttc`
+  /// （DirectWrite 不吃 WOFF/WOFF2，见 [FontTarget] 消费端 `AppFontLoader
+  /// .resolveForNativeOverlay`）；缺字回退靠 native 追加的系统字体集，
+  /// **不是**用户列表里的第二条。语义与 [appUi] 的整链回退不同。
+  gameLookup,
 }
+
+/// 这个用途在当前平台**是否真有消费端**。
+///
+/// [FontTarget.gameLookup] 只有 Windows 有 native 消费端（分层窗 DirectWrite），
+/// 其余平台勾上等于写一个永远没人读的偏好键——UI 必须据此隐藏，否则用户会以为
+/// 自己已经设好了。其余用途五平台通用。
+bool isFontTargetAvailableOnPlatform(FontTarget target) => switch (target) {
+      FontTarget.gameLookup => Platform.isWindows,
+      FontTarget.appUi ||
+      FontTarget.body ||
+      FontTarget.dictionary ||
+      FontTarget.videoSubtitle =>
+        true,
+    };
 
 /// All reader display/behavior settings, decoupled from the media source.
 ///
@@ -61,12 +90,26 @@ class ReaderSettings {
 
   // ── Core persistence ──────────────────────────────────────────────
 
-  Future<void> loadFromPrefsSnapshot(Map<String, String> snapshot) async {
+  /// 把 [snapshot]（全量 prefs 表快照）里属于本源的行**同步**灌进内存缓存。
+  ///
+  /// 与 [loadFromPrefsSnapshot] 的差别只有一个：不跑迁移、不写盘，因此可以在同步
+  /// 上下文里用。存在的理由是 [ReaderSettings] 的读取器全是同步 getter，但构造
+  /// 出来的实例缓存是**空的**——没有这一步，`ReaderSettings(db).dictionaryFonts`
+  /// 恒为空列表，和「用户什么都没配」不可区分（见
+  /// [ReaderFushiSource.resolveEffectiveReaderSettings] 的说明）。
+  ///
+  /// 迁移（边距/字体目录）由主进程的初始化路径负责且幂等，旁路只读消费方不需要、
+  /// 也不应该在只读路径上写盘。
+  void applyPrefsSnapshot(Map<String, String> snapshot) {
     for (final MapEntry<String, String> entry in snapshot.entries) {
       if (!entry.key.startsWith(_prefix)) continue;
       final String shortKey = entry.key.substring(_prefix.length);
       _cache[shortKey] = _parseValue(entry.value);
     }
+  }
+
+  Future<void> loadFromPrefsSnapshot(Map<String, String> snapshot) async {
+    applyPrefsSnapshot(snapshot);
     await _migrateMargins();
     await _ensureResponsiveMarginDefaults();
     await _ensureFontCatalogState();
@@ -336,8 +379,12 @@ class ReaderSettings {
   /// TODO-1128: when true, the reader folds each run of trailing standalone
   /// single-image (0-char) chapters into the preceding text chapter's
   /// continuous flow instead of paging to each illustration separately.
-  /// Default false (conservative first ship); a structural layout key.
-  bool get mergeImagePages => _get<bool>('merge_image_pages', false);
+  /// A structural layout key. Now defaults to true: the conservative
+  /// first-ship default (false) made every illustration steal a page turn,
+  /// which is the wrong reading rhythm for the light novels this targets.
+  /// Users who explicitly turned it off keep their stored `false` — `_get`
+  /// never persists a default, so only an explicit `_set` wins over this.
+  bool get mergeImagePages => _get<bool>('merge_image_pages', true);
   Future<void> setMergeImagePages(bool v) => _set<bool>('merge_image_pages', v);
 
   bool get enableVerticalFontKerning => _get<bool>('vert_kerning', false);
@@ -356,7 +403,12 @@ class ReaderSettings {
   Future<void> setEnableTextJustification(bool v) =>
       _set<bool>('text_justify', v);
 
-  bool get prioritizeReaderStyles => _get<bool>('reader_styles', false);
+  /// When true the reader stops stamping `!important` on the image-sizing and
+  /// link-colour declarations it generates, so the book's own stylesheet wins.
+  /// Defaults to true: publisher CSS is authored for the illustrations it ships
+  /// with, and overriding it by default distorted spreads and full-bleed art.
+  /// Same persistence rule as [mergeImagePages] — an explicit user `false` wins.
+  bool get prioritizeReaderStyles => _get<bool>('reader_styles', true);
   Future<void> setPrioritizeReaderStyles(bool v) =>
       _set<bool>('reader_styles', v);
 
@@ -554,6 +606,9 @@ class ReaderSettings {
   /// Sibling of the other `*_fonts` keys; backs [FontTarget.videoSubtitle].
   static const String fontKeyVideoSubtitle = 'video_sub_fonts';
 
+  /// Persistence key for the Windows galgame Hook text / lookup overlay font.
+  static const String fontKeyGameLookup = 'game_lookup_fonts';
+
   /// Persistence key for the shared font catalog.
   static const String fontCatalogKey = 'font_catalog';
 
@@ -565,6 +620,7 @@ class ReaderSettings {
     fontKeyAppUi,
     fontKeyDictionary,
     fontKeyVideoSubtitle,
+    fontKeyGameLookup,
   ];
 
   bool get _hasAnyFontPrefs =>
@@ -598,6 +654,8 @@ class ReaderSettings {
         fontKeyDictionary: _legacyFontListForKey(fontKeyDictionary),
       if (_cache.containsKey(fontKeyVideoSubtitle))
         fontKeyVideoSubtitle: _legacyFontListForKey(fontKeyVideoSubtitle),
+      if (_cache.containsKey(fontKeyGameLookup))
+        fontKeyGameLookup: _legacyFontListForKey(fontKeyGameLookup),
     };
   }
 
@@ -725,15 +783,12 @@ class ReaderSettings {
 
   List<Map<String, dynamic>> _fontListForTargetKey(String key) {
     final FontCatalogState state = _fontCatalogState();
-    // Historical body-seed compat (TODO-049): appUi/dictionary with no stored
-    // row inherited the body list so the split didn't change visuals for users
-    // who'd only set the legacy `custom_fonts` list. The video-subtitle target
-    // is new (TODO-864) and must NOT inherit body -- "unset" means platform
-    // default (null fontFamily), matching the old overlay behavior. Exclude it
-    // precisely (not a blanket non-three-target rule) so appUi/dictionary keep
-    // their compat seed.
-    if (key != fontKeyBody &&
-        key != fontKeyVideoSubtitle &&
+    // Historical body-seed compat (TODO-049): ONLY appUi/dictionary with no
+    // stored row inherited the body list so the split didn't change visuals for
+    // users who'd only set the legacy `custom_fonts` list. New targets (video
+    // subtitle and game lookup) must stay empty when unset, preserving their
+    // pre-target platform defaults.
+    if ((key == fontKeyAppUi || key == fontKeyDictionary) &&
         !state.hasTarget(key) &&
         state.hasTarget(fontKeyBody)) {
       final FontCatalogState seeded = state.withTargetFonts(
@@ -763,6 +818,11 @@ class ReaderSettings {
   List<Map<String, dynamic>> get videoSubtitleFonts =>
       _fontListForTargetKey(fontKeyVideoSubtitle);
 
+  /// Windows galgame Hook text / click-to-lookup overlay font list. Empty when
+  /// unset so the native renderer keeps its historical Yu Gothic UI default.
+  List<Map<String, dynamic>> get gameLookupFonts =>
+      _fontListForTargetKey(fontKeyGameLookup);
+
   /// Resolves the persisted font list for a [FontTarget].
   List<Map<String, dynamic>> fontsForTarget(FontTarget target) =>
       switch (target) {
@@ -770,6 +830,7 @@ class ReaderSettings {
         FontTarget.appUi => appUiFonts,
         FontTarget.dictionary => dictionaryFonts,
         FontTarget.videoSubtitle => videoSubtitleFonts,
+        FontTarget.gameLookup => gameLookupFonts,
       };
 
   /// CSS font-family string and @font-face declarations for the BODY fonts.
@@ -808,6 +869,7 @@ class ReaderSettings {
         FontTarget.appUi => fontKeyAppUi,
         FontTarget.dictionary => fontKeyDictionary,
         FontTarget.videoSubtitle => fontKeyVideoSubtitle,
+        FontTarget.gameLookup => fontKeyGameLookup,
       };
 
   /// Persists the whole list for [target]. The body convenience overload

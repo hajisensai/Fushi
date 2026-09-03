@@ -66,8 +66,10 @@ assert.strictEqual(glGroup.length, 0,
 const glShell = find('html.global-lookup body');
 assert.strictEqual(glShell.length, 1, 'card chrome must be on html.global-lookup body');
 assert.ok(/border-radius:\s*10px/.test(glShell[0].body), 'hoshi 10px radius');
-assert.ok(/border:\s*1px solid rgba\(120, 120, 128, 0\.36\)/.test(glShell[0].body),
-  'hoshi shell border spec');
+// Niratan 对齐（2026-08-23）：描边=系统分隔线灰 #D1D1D6（暗色 #3A3A3C 由
+// html.global-lookup[data-theme="dark"] body 覆盖）。
+assert.ok(/border:\s*1px solid #D1D1D6/.test(glShell[0].body),
+  'Niratan outline border spec (#D1D1D6)');
 // The bare global `body { ... }` rule must NOT carry the card chrome (in-app
 // uses the bare body and must stay transparent/flush).
 const bareBody = find('body');

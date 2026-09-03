@@ -55,10 +55,19 @@
       if (track && (track.isNoneTrack || track.isForcedNarrative)) return; // 跳过 [None]/强制窄轨
       var picked = pickTrackUrl(track);
       if (!picked || seenTimedTextUrls[picked.url]) return;
+      // BUG-1728：去重标记先占坑防并发清单重复抓取，但失败必须在 .catch 里撤销——旧代码把
+      // 标记写死在 fetch 前且失败纯静默，一次网络/CORS 失败 = 该 URL 本页永不重试，用户只剩
+      // DOM 实时采集轨，还完全不知道整轨链路挂了。
       seenTimedTextUrls[picked.url] = 1;
       var lang = langOf(track);
-      fetch(picked.url, { credentials: 'include' })
-        .then(function (r) { return r.text(); })
+      // BUG-1728：裸 fetch、**不带 credentials**。字幕在跨源 CDN（*.oca.nflxvideo.net），
+      // credentials:'include' 要求响应 ACAO 是精确 origin；CDN 回 `*` 时整个请求被 CORS 拒掉
+      // → 整轨抓取静默失败。字幕 URL 自带鉴权参数、不需要 cookie（asbplayer 同款裸 fetch）。
+      fetch(picked.url)
+        .then(function (r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.text();
+        })
         .then(function (text) {
           if (!text) return;
           var payload = { __fushiNf: 'cues', videoId: videoId, lang: lang, format: picked.format, text: text };
@@ -66,7 +75,12 @@
           if (cueArchive.length > CUE_ARCHIVE_MAX) cueArchive.shift();
           postCuesMessage(payload);
         })
-        .catch(function () {});
+        .catch(function (e) {
+          // 撤去重标记：切轨/切集清单重放时同一 URL 可重试。保持 best-effort 不外抛，
+          // 只留一条诊断（旧代码零日志，用户端无从判断整轨为何消失）。
+          delete seenTimedTextUrls[picked.url];
+          try { console.warn('[Fushi][TODO-1219] timedtext fetch failed:', picked.url, e); } catch (_) {}
+        });
     } catch (_) {}
   }
 
@@ -97,6 +111,94 @@
     } catch (_) {}
     return r;
   };
+
+  // ── BUG-1949：播放器自下的字幕文件嗅探（现在的主数据源） ──
+  // 当前 Netflix 的播放清单经 MSL 解密后**不再经过主世界 JSON.parse**（实测 75 s 零命中，疑似用干净
+  // iframe 的原生 JSON 防篡改），上面的清单钩子失效，扩展和 app 都只剩 DOM 实时采集轨。但播放器随后
+  // 用 XHR 把**选中轨的字幕文件**（明文 TTML / WebVTT，oca.nflxvideo.net/?o=…）整份下下来。这里直接
+  // 嗅探 XHR / fetch 响应正文：像字幕就当整集轨投出去，语言取播放器 API 的当前轨 bcp47。不依赖清单
+  // 形状、不依赖 URL 形状——MSL 再怎么变都不影响；用户切轨会触发新下载，每种语言各抓一次。
+  // 清单钩子保留作次要通道（老版本页面仍走它，且能一次拿到全部语言）。
+  var seenSubtitleBodies = Object.create(null);
+  function bodyKey(url, text) { return String(url || '') + '#' + String(text || '').length; }
+  function subtitleFormatOf(head) {
+    var h = String(head || '').slice(0, 4000);
+    if (/^﻿?\s*WEBVTT/.test(h)) return 'webvtt';
+    if (/<tt[\s>]/.test(h)) return 'ttml';
+    return null;
+  }
+  function currentTrackLang() {
+    try {
+      var vp = window.netflix.appContext.state.playerApp.getAPI().videoPlayer;
+      var ids = vp.getAllPlayerSessionIds();
+      var t = vp.getVideoPlayerBySessionId(ids[ids.length - 1]).getTimedTextTrack();
+      return (t && (t.bcp47 || t.language)) || 'und';
+    } catch (_) { return 'und'; }
+  }
+  function currentVideoId() {
+    try {
+      var m = String(window.location.pathname || '').match(/\/watch\/(\d+)/);
+      return m ? m[1] : '';
+    } catch (_) { return ''; }
+  }
+  function sniffSubtitleBody(url, text) {
+    try {
+      if (!text || text.length < 32) return;
+      // 清单路径自己抓的轨（URL 在 fetch 前已登记）由 fetchCues 投递，这里不再重复。
+      if (url && seenTimedTextUrls[url]) return;
+      var format = subtitleFormatOf(text);
+      if (!format) return;
+      var key = bodyKey(url, text);
+      if (seenSubtitleBodies[key]) return;
+      seenSubtitleBodies[key] = 1;
+      var payload = { __fushiNf: 'cues', videoId: currentVideoId(), lang: currentTrackLang(), format: format, text: String(text) };
+      cueArchive.push(payload);
+      if (cueArchive.length > CUE_ARCHIVE_MAX) cueArchive.shift();
+      postCuesMessage(payload);
+    } catch (_) {}
+  }
+  function decodeBytes(buf, limit) {
+    try {
+      var n = Math.min(buf.byteLength, limit);
+      return new TextDecoder('utf-8').decode(new Uint8Array(buf, 0, n));
+    } catch (_) { return ''; }
+  }
+  if (typeof XMLHttpRequest !== 'undefined' && XMLHttpRequest.prototype) {
+    var xhrOpen = XMLHttpRequest.prototype.open;
+    var xhrSend = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.open = function (method, url) {
+      try { this.__fushiUrl = String(url); } catch (_) {}
+      return xhrOpen.apply(this, arguments);
+    };
+    XMLHttpRequest.prototype.send = function () {
+      var xhr = this;
+      try {
+        xhr.addEventListener('load', function () {
+          try {
+            var rt = xhr.responseType;
+            if (rt === '' || rt === 'text') {
+              sniffSubtitleBody(xhr.__fushiUrl, xhr.responseText);
+            } else if (rt === 'arraybuffer' && xhr.response && xhr.response.byteLength < 4000000) {
+              // 媒体分片同样走 arraybuffer（每片 MB 级）：先只解码开头判格式，命中才解码整份。
+              if (subtitleFormatOf(decodeBytes(xhr.response, 4000))) {
+                sniffSubtitleBody(xhr.__fushiUrl, decodeBytes(xhr.response, xhr.response.byteLength));
+              }
+            }
+          } catch (_) {}
+        });
+      } catch (_) {}
+      return xhrSend.apply(this, arguments);
+    };
+  }
+  if (typeof Response !== 'undefined' && Response.prototype && Response.prototype.text) {
+    var respText = Response.prototype.text;
+    Response.prototype.text = function () {
+      var url = this.url;
+      var p = respText.apply(this, arguments);
+      try { p.then(function (t) { sniffSubtitleBody(url, t); }, function () {}); } catch (_) {}
+      return p;
+    };
+  }
 
   // TODO-1217：player.seek(ms) **返回 ≠ 视频真正重定位完成**。若调完就立刻回 seekDone，content 侧
   // seekTo 会在 Netflix 实际跳转**前**就 resolve → 先 play/录、Netflix 随后才跳 → 用户看到「跳过去又

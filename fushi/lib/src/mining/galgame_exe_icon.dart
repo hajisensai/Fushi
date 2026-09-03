@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:fushi/src/mining/pe_resources.dart';
 import 'package:image/image.dart' as img;
 
 /// 从 Windows PE 可执行文件（`.exe` / `.dll`）里**纯 Dart** 解析内嵌图标资源
@@ -118,109 +119,12 @@ Uint8List? _dibIconToPng(PeIconEntry icon) {
 }
 
 List<PeIconEntry> _parsePeIconsUnsafe(Uint8List bytes) {
-  final ByteData data = ByteData.sublistView(bytes);
-  if (bytes.length < 0x40) return const <PeIconEntry>[];
-  if (bytes[0] != 0x4D || bytes[1] != 0x5A) {
-    return const <PeIconEntry>[]; // 不是 'MZ'
-  }
-  final int peOffset = data.getUint32(0x3C, Endian.little);
-  if (peOffset <= 0 || peOffset + 24 > bytes.length) {
-    return const <PeIconEntry>[];
-  }
-  if (bytes[peOffset] != 0x50 ||
-      bytes[peOffset + 1] != 0x45 ||
-      bytes[peOffset + 2] != 0 ||
-      bytes[peOffset + 3] != 0) {
-    return const <PeIconEntry>[]; // 不是 'PE\0\0'
-  }
-  final int coff = peOffset + 4;
-  final int sectionCount = data.getUint16(coff + 2, Endian.little);
-  final int optionalHeaderSize = data.getUint16(coff + 16, Endian.little);
-  final int sectionTable = coff + 20 + optionalHeaderSize;
-  if (sectionCount <= 0 || sectionTable + sectionCount * 40 > bytes.length) {
-    return const <PeIconEntry>[];
-  }
-
-  // 找 .rsrc 段：资源树里的所有偏移都相对该段，叶子里的 RVA 也在该段内。
-  int rsrcRva = -1;
-  int rsrcFileOffset = -1;
-  int rsrcSize = 0;
-  for (int i = 0; i < sectionCount; i++) {
-    final int base = sectionTable + i * 40;
-    final String name = String.fromCharCodes(
-      bytes.sublist(base, base + 8).takeWhile((int b) => b != 0),
-    );
-    if (name == '.rsrc') {
-      rsrcRva = data.getUint32(base + 12, Endian.little);
-      rsrcSize = data.getUint32(base + 16, Endian.little);
-      rsrcFileOffset = data.getUint32(base + 20, Endian.little);
-      break;
-    }
-  }
-  if (rsrcRva < 0 || rsrcFileOffset < 0 || rsrcFileOffset >= bytes.length) {
-    return const <PeIconEntry>[];
-  }
-  final int rsrcEnd = rsrcFileOffset + rsrcSize > bytes.length
-      ? bytes.length
-      : rsrcFileOffset + rsrcSize;
-
-  /// 资源段内 RVA → 文件偏移；越界返回 -1。
-  int rvaToFile(int rva) {
-    final int offset = rva - rsrcRva + rsrcFileOffset;
-    if (offset < rsrcFileOffset || offset >= rsrcEnd) return -1;
-    return offset;
-  }
-
-  /// 读一层资源目录的所有条目：`(id 或 -1, 相对 .rsrc 的偏移, 是否子目录)`。
-  List<(int, int, bool)> readDirectory(int relativeOffset) {
-    final int dir = rsrcFileOffset + relativeOffset;
-    if (dir < rsrcFileOffset || dir + 16 > rsrcEnd) {
-      return const <(int, int, bool)>[];
-    }
-    final int namedCount = data.getUint16(dir + 12, Endian.little);
-    final int idCount = data.getUint16(dir + 14, Endian.little);
-    final int total = namedCount + idCount;
-    final List<(int, int, bool)> out = <(int, int, bool)>[];
-    for (int i = 0; i < total; i++) {
-      final int entry = dir + 16 + i * 8;
-      if (entry + 8 > rsrcEnd) break;
-      final int nameField = data.getUint32(entry, Endian.little);
-      final int offsetField = data.getUint32(entry + 4, Endian.little);
-      final bool isNamed = nameField & 0x80000000 != 0;
-      final bool isDirectory = offsetField & 0x80000000 != 0;
-      out.add((
-        isNamed ? -1 : nameField,
-        offsetField & 0x7FFFFFFF,
-        isDirectory,
-      ));
-    }
-    return out;
-  }
-
+  // 资源树遍历与 RT_VERSION / RT_MANIFEST（转区判定）共用 `pe_resources.dart`；
+  // 这里只剩「叶子字节 → 图标条目」这一步。
   final List<PeIconEntry> icons = <PeIconEntry>[];
-  for (final (int typeId, int typeOffset, bool typeIsDir) in readDirectory(0)) {
-    if (typeId != _rtIcon || !typeIsDir) continue;
-    // Level 2：每个图标资源 id；Level 3：语言。叶子才是数据条目。
-    for (final (int _, int nameOffset, bool nameIsDir)
-        in readDirectory(typeOffset)) {
-      final List<(int, int, bool)> languages = nameIsDir
-          ? readDirectory(nameOffset)
-          : <(int, int, bool)>[(0, nameOffset, false)];
-      for (final (int _, int leafOffset, bool leafIsDir) in languages) {
-        if (leafIsDir) continue;
-        final int leaf = rsrcFileOffset + leafOffset;
-        if (leaf < rsrcFileOffset || leaf + 8 > rsrcEnd) continue;
-        final int dataRva = data.getUint32(leaf, Endian.little);
-        final int dataSize = data.getUint32(leaf + 4, Endian.little);
-        final int dataOffset = rvaToFile(dataRva);
-        if (dataOffset < 0 || dataSize <= 0) continue;
-        final int end = dataOffset + dataSize;
-        if (end > bytes.length) continue;
-        final PeIconEntry? icon =
-            _describeIcon(Uint8List.sublistView(bytes, dataOffset, end));
-        if (icon != null) icons.add(icon);
-      }
-    }
+  for (final PeResourceLeaf leaf in readPeResourceLeaves(bytes, _rtIcon)) {
+    final PeIconEntry? icon = _describeIcon(leaf.bytes);
+    if (icon != null) icons.add(icon);
   }
   return icons;
 }

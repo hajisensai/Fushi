@@ -139,6 +139,22 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
     }
   }
 
+  /// 「上一句 / 下一句字幕对齐到当前播放时间」按钮（asbplayer 式绝对偏移，与键盘
+  /// Ctrl+Shift+←/→ 同一执行体）。决策与写穿都在页面侧回调里，本行只负责把回传的
+  /// 新延迟同步进本地权威镜像 / 滑条 / 数值输入框——与 [_runAutoAlign] 同款契约，
+  /// 否则点完按钮延迟已经变了、面板控件却停在旧值。
+  ///
+  /// 回调返回 null（已是首末句无相邻 cue / 播放位置未就绪）时不动当前值。不做防重入
+  /// spinner：这条路径是纯同步计算 + 一次写穿，没有 [_runAutoAlign] 的 ffmpeg 探测开销。
+  Future<void> _snapDelayToCue({required bool next}) async {
+    final int? Function({required bool next})? cb =
+        widget.host.onSnapDelayToCue;
+    if (cb == null) return;
+    final int? newDelayMs = cb(next: next);
+    if (newDelayMs == null || !mounted) return;
+    await _commitDelay(newDelayMs);
+  }
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
@@ -225,6 +241,23 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
                   padding: EdgeInsets.all(tokens.spacing.gap / 2),
                   onTap: _runAutoAlign,
                 ),
+        // 「上/下一句对齐到当前时间」：此前只有键盘 Ctrl+Shift+←/→ 能触发，触摸端
+        // 完全够不着。与自动对轴并列——都是「一键求绝对偏移」，区别是这里由用户用
+        // 播放头指定对齐目标（不依赖音频探测，无 ffmpeg 也能用）。
+        if (host.onSnapDelayToCue != null) ...<Widget>[
+          FushiIconButton(
+            icon: Icons.align_horizontal_left,
+            tooltip: t.video_subtitle_prev_cue_align,
+            padding: EdgeInsets.all(tokens.spacing.gap / 2),
+            onTap: () => _snapDelayToCue(next: false),
+          ),
+          FushiIconButton(
+            icon: Icons.align_horizontal_right,
+            tooltip: t.video_subtitle_next_cue_align,
+            padding: EdgeInsets.all(tokens.spacing.gap / 2),
+            onTap: () => _snapDelayToCue(next: true),
+          ),
+        ],
       ],
     );
 
@@ -284,6 +317,7 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
               // TODO-1316：放大波形对轴视图内的「自动对轴」按钮复用与顶部同一 onAutoAlign
               // 逻辑，成功后经上面的 onCommitDelay 同步权威延迟。
               onAutoAlign: host.onAutoAlign,
+              onSnapDelayToCue: host.onSnapDelayToCue,
               onPlayCue: host.onPlaySubtitleCue,
               isPlaying: host.subtitleIsPlaying,
               onTogglePlayPause: host.onToggleSubtitlePlayPause,

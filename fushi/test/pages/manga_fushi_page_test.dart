@@ -18,6 +18,7 @@ import 'package:fushi/src/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/ocr/manga_ocr_service.dart';
 import 'package:fushi/src/pages/implementations/manga_fushi_page.dart';
+import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
@@ -87,7 +88,7 @@ class _FakeMangaOcrService implements MangaOcrService {
   Future<MangaOcrModelStatus> modelStatus() async => MangaOcrModelStatus(
         detectorReady: false,
         recognizerReady: ready,
-        downloadedBytes: 0,
+        diskBytes: 0,
         totalBytes: 1,
       );
 
@@ -96,7 +97,7 @@ class _FakeMangaOcrService implements MangaOcrService {
       const Stream<MangaOcrDownloadEvent>.empty();
 
   @override
-  Future<void> deleteModels() async {}
+  Future<int> deleteModels() async => 0;
 
   @override
   Stream<MangaOcrVolumeEvent> ocrFolder({
@@ -110,6 +111,9 @@ Widget _harness(AppModel appModel, MediaItem item, String bookKey,
     {List<Override> extraOverrides = const <Override>[]}) {
   return ProviderScope(
     overrides: <Override>[
+      // TODO-2936 起页面 initState 会读 profileViewModelProvider（媒体类型绑定），
+      // 其链路要平台层；真实 app 在根 ProviderScope 提供，测试须同样给出。
+      platformServicesProvider.overrideWithValue(testPlatformServices()),
       appProvider.overrideWith((ref) => appModel),
       ...extraOverrides,
     ],
@@ -312,6 +316,9 @@ void main() {
     expect(find.byKey(const ValueKey<String>('manga_full_ocr_button')),
         findsOneWidget,
         reason: '整卷 OCR 入口必须出现在 chrome');
+    expect(find.byKey(const ValueKey<String>('manga_reader_back_button')),
+        findsOneWidget,
+        reason: '漫画阅读器必须常显左上返回按钮');
   });
 
   testWidgets('整卷 OCR 入口：加载失败（无书行）时 chrome 不构建 → 无按钮',
@@ -453,7 +460,7 @@ void main() {
       expect(
         MangaFushiPage.inputActionForShortcut(
           action: ShortcutAction.mangaPageForward,
-          horizontalArrow: true,
+          crossPageStep: true,
           dictionaryShown: true,
           mode: MangaReadingMode.spread,
         ),
@@ -466,7 +473,7 @@ void main() {
       expect(
         MangaFushiPage.inputActionForShortcut(
           action: ShortcutAction.mangaDismissDict,
-          horizontalArrow: false,
+          crossPageStep: false,
           dictionaryShown: true,
           mode: MangaReadingMode.spread,
         ),
@@ -475,7 +482,7 @@ void main() {
       expect(
         MangaFushiPage.inputActionForShortcut(
           action: ShortcutAction.mangaDismissDict,
-          horizontalArrow: false,
+          crossPageStep: false,
           dictionaryShown: false,
           mode: MangaReadingMode.spread,
         ),
@@ -488,7 +495,7 @@ void main() {
       expect(
         MangaFushiPage.inputActionForShortcut(
           action: ShortcutAction.mangaPageForward,
-          horizontalArrow: false,
+          crossPageStep: false,
           dictionaryShown: true,
           mode: MangaReadingMode.spread,
         ),
@@ -501,7 +508,7 @@ void main() {
       expect(
         MangaFushiPage.inputActionForShortcut(
           action: ShortcutAction.mangaPageForward,
-          horizontalArrow: false,
+          crossPageStep: false,
           dictionaryShown: false,
           mode: MangaReadingMode.webtoon,
         ),
@@ -511,7 +518,7 @@ void main() {
       expect(
         MangaFushiPage.inputActionForShortcut(
           action: ShortcutAction.mangaPageForward,
-          horizontalArrow: true,
+          crossPageStep: true,
           dictionaryShown: false,
           mode: MangaReadingMode.webtoon,
         ),
@@ -524,7 +531,7 @@ void main() {
       expect(
         MangaFushiPage.inputActionForShortcut(
           action: null,
-          horizontalArrow: true,
+          crossPageStep: true,
           dictionaryShown: false,
           mode: MangaReadingMode.spread,
         ),
@@ -533,7 +540,7 @@ void main() {
       expect(
         MangaFushiPage.inputActionForShortcut(
           action: ShortcutAction.readerPageForward,
-          horizontalArrow: false,
+          crossPageStep: false,
           dictionaryShown: false,
           mode: MangaReadingMode.spread,
         ),

@@ -38,6 +38,7 @@ void main() {
               'coverImage': <String, dynamic>{'large': 'https://x/c.png'},
               'episodes': 28,
               'seasonYear': 2026,
+              'format': 'TV',
             },
           },
         ],
@@ -49,6 +50,7 @@ void main() {
       expect(episode.airingAtSeconds, 1770000000);
       expect(episode.media.displayTitle, 'Sousou no Frieren');
       expect(episode.media.coverUrl, 'https://x/c.png');
+      expect(episode.media.format, 'TV');
     });
 
     test('returns empty page on malformed body', () {

@@ -30,6 +30,7 @@ void main() {
         radical: '日',
         strokes: 4,
         meanings: <String>['day', 'sun', 'Japan'],
+        stats: <String, String>{'jlpt': '4', 'grade': '8'},
         dictName: 'KANJIDIC',
       );
       final FushiKanjiResult restored =
@@ -40,6 +41,7 @@ void main() {
       expect(restored.radical, original.radical);
       expect(restored.strokes, original.strokes);
       expect(restored.meanings, original.meanings);
+      expect(restored.stats, original.stats);
       expect(restored.dictName, original.dictName);
     });
 
@@ -52,6 +54,7 @@ void main() {
       expect(r.radical, '');
       expect(r.strokes, 0);
       expect(r.meanings, isEmpty);
+      expect(r.stats, isEmpty);
       expect(r.dictName, '');
     });
   });

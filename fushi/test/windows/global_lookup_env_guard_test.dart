@@ -59,10 +59,10 @@ void main() {
           cpp.indexOf('CreateCoreWebView2EnvironmentWithOptions(');
       expect(create, isNonNegative);
       // The overlay folder string must be computed before and fed into the
-      // call. spec 2026-07-10 — the helper is now parameterised per instance
-      // (user_data_leaf_): lookup overlay = GlobalLookupWebView2, clipboard
-      // panel = ClipboardPanelWebView2, so the two instances' environment
-      // options stay independent (same-folder different-options = 0x8007139F).
+      // call. The helper takes the profile leaf (user_data_leaf_ =
+      // GlobalLookupWebView2) so the overlay's environment options stay
+      // independent of the in-app fork's (same-folder different-options =
+      // 0x8007139F).
       expect(
           cpp.contains(
               'overlay_folder = OverlayUserDataFolder(user_data_leaf_)'),

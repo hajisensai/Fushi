@@ -1,0 +1,13 @@
+## BUG-1693 · 互联对端关闭时误报为网络错误
+- **报告**：2026-08-17（用户：对端连接不上会显示网络错误，但实际是对端关闭 Fushi 了）
+- **真实性**：✅ 真 bug。对端全部候选地址探不到时 `fushi/lib/src/sync/interconnect_sync_backend.dart` 抛裸 `SyncBackendError('No reachable Fushi server address')`——`sync_error_messages.dart` 的 `_friendlyClause` 任何分支都命不中它（timeout/socket 关键词都对不上，异常在候选循环里已被吞成布尔），于是英文原文经 `t.sync_error(message:…)` 直接上屏（手动同步 SnackBar、对比对话框、账户面板）。下载失败角标 tooltip 更是直接拼 `e.toString()`（`SocketException: … errno = 1225`）。用户被引向「检查网络」，而真相是对端没运行 Fushi。
+- **[x] ① 已修复** —
+  - 新类型 `SyncPeerUnreachableError extends SyncBackendError`（`sync_backend.dart`），互联候选全探不到时抛它；`sync_error_messages.dart` 按**类型**分派新文案 `sync_err_peer_unreachable`（「无法连接配对设备——对方可能不在线，或对端未运行 Fushi」），与 SyncAuthFailureKind 同款「判据是类型不是字符串」纪律。
+  - 下载失败原因存 `friendlySyncErrorDetail(e)`（`interconnect_download_manager.dart`）——tooltip 上屏本地化文案，未知错误回落原文不吞信息。
+  - 视频播放失败分型 `_describeLoadFailure`（`video_fushi_page.dart`）：`SyncPeerUnreachableError` 优先按类型分派；网络判据前移，裸 `'age'` 子串加词界（修「message/package/storage 误判成视频受限」）。
+  - 同批审计修复：WebDavOps 新增 `onConnectivityError` 回调（buildRequest + closeRequest 统一漏斗捕获连接类异常），互联 backend 用它复位 `_sessionResolved`——已解析地址掉线后下一次操作自动重探全部候选（此前页面级失败永远钉死死地址，备用地址到重启前不会被尝试）；`testConnection` 补 connect 超时 + `close(force:true)`（不可达地址每测一次泄漏最长 60s socket）；`RemoteLibraryCache.invalidateSource`（远端删除后全域失效，activity 槽不再喂已删条目）。
+- **[x] ② 已加自动化测试** —
+  - `fushi/test/sync/sync_error_messages_test.dart`：`SyncPeerUnreachableError` → `sync_err_peer_unreachable`，非裸英文、非 `sync_err_network`；兜底行为不变。
+  - `fushi/test/sync/webdav_ops_test.dart`：拒连触发 `onConnectivityError` 并原样 rethrow。
+  - `fushi/test/sync/interconnect_download_failure_surface_test.dart`：连接类失败 → 本地化文案（无 `SocketException` 字样）；未知错误保留原文。
+- **备注**：查词路径的对端不可达（`RemoteLookupUnreachableError` 被吞成「查无结果」）与远端清单失败时失败角标随占位卡消失（spec §2.4 离线语义）属独立议题，见审计跟进。

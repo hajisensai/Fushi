@@ -19,11 +19,20 @@ enum SettingsDestinationId {
   // 「下载」一级分类：torrent / qBittorrent 后端配置从下载页齿轮抬进设置主页
   // （可达 + 可搜）。位置紧随视频/听，在同步备份之前。
   downloads,
+  // 「在线服务」一级分类：第三方 API / 索引器 / 媒体服务器的凭据与端点
+  // （Jimaku、OpenSubtitles、Torznab、内置索引器、发现来源、Jellyfin/Emby、AniDB、
+  // TMDB、Dandanplay 服务器）唯一的家。此前按「服务于哪个媒介」散在视频/下载两
+  // 页，同一组件甚至双挂载；用户配完一处不知道另一处还有（BUG-1712 的真根因）。
+  // 本机后端（qBittorrent）、云盘备份后端、Anki/Yomitan 是各自域的核心，不归此。
+  services,
   // 「游戏」一级分类（审计 K/Phase 3.12）：游戏库 / 捕获工作台 / 兼容性诊断此前
   // 完全没有 settings destination，页面与其中配置项不可搜。与 games 顶层 tab
   // 同门控（仅 Windows，galgame hook 平台边界）。
   game,
   syncBackup,
+  // 「存储」一级分类：磁盘占用总览（书/词典单条删除）+ 可选模块（OCR 模型 /
+  // Anime4K 着色器删除恢复）+ 随包组件展示（构建函数在 settings_schema_storage.dart）。
+  storage,
   system,
   // Hibiki P2P 互联（设备直连 + 本机作为服务器）；从 syncBackup 拆出的
   // 独立一级分类（构建函数在 sync_settings_schema.dart 同库，共享私有状态）。
@@ -87,6 +96,13 @@ class VideoPlacement {
 }
 
 typedef SettingsVisibility = bool Function(SettingsContext context);
+
+/// 渲染时求值的副标题。返回 null = 用静态 [SettingsItem.subtitle]。
+///
+/// 与 [SettingsItem.titleBuilder] 同一条纪律：schema 树按 locale 缓存、构造期求值，
+/// 任何运行期状态都不许插进 `subtitle` 字面量（守卫见 settings_schema_cache_test 的
+/// 「静态文案逐字不变」）。副标题要随运行期状态变，只能走这个闭包。
+typedef SettingsSubtitleBuilder = String? Function(SettingsContext context);
 typedef SettingsItemAction = FutureOr<void> Function(SettingsContext context);
 typedef SettingsItemBuilder = Widget Function(SettingsContext context);
 typedef SettingsValueGetter<T extends Object> = T Function(
@@ -215,6 +231,7 @@ sealed class SettingsItem {
     required this.title,
     this.titleBuilder,
     this.subtitle,
+    this.subtitleBuilder,
     this.icon,
     this.visible,
     this.reader,
@@ -242,6 +259,14 @@ sealed class SettingsItem {
   final SettingsValueGetter<String>? titleBuilder;
 
   final String? subtitle;
+
+  /// 渲染时求值的副标题；返回非 null 时覆盖 [subtitle]。见 [SettingsSubtitleBuilder]。
+  ///
+  /// 目前只有 [SettingsSwitchItem] / [SettingsActionItem] 透传（游戏内查词要按 hook
+  /// 报上来的准入状态说明为什么开关被灰了，并把游戏 exe 摘要摆出来）；其它 item
+  /// 类型需要时照此加 `super.subtitleBuilder`。
+  final SettingsSubtitleBuilder? subtitleBuilder;
+
   final IconData? icon;
   final SettingsVisibility? visible;
 
@@ -256,6 +281,11 @@ sealed class SettingsItem {
   /// 渲染 / 搜索展示用的标题：有 [titleBuilder] 就用它，否则用静态 [title]。
   String resolveTitle(SettingsContext context) =>
       titleBuilder?.call(context) ?? title;
+
+  /// 渲染 / 搜索展示用的副标题：有 [subtitleBuilder] 且它给了值就用它，否则用静态
+  /// [subtitle]。
+  String? resolveSubtitle(SettingsContext context) =>
+      subtitleBuilder?.call(context) ?? subtitle;
 }
 
 class SettingsNavigationItem extends SettingsItem {
@@ -284,6 +314,7 @@ class SettingsActionItem extends SettingsItem {
     required super.title,
     required this.onTap,
     super.subtitle,
+    super.subtitleBuilder,
     super.icon,
     super.visible,
     super.reader,
@@ -300,6 +331,7 @@ class SettingsSwitchItem extends SettingsItem {
     required this.value,
     required this.onChanged,
     super.subtitle,
+    super.subtitleBuilder,
     super.icon,
     super.visible,
     super.reader,
@@ -308,6 +340,7 @@ class SettingsSwitchItem extends SettingsItem {
 
   final SettingsSwitchGetter value;
   final SettingsSwitchChanged onChanged;
+
 }
 
 class SettingsSegmentOption<T extends Object> {

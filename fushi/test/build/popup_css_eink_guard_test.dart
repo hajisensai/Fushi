@@ -9,9 +9,9 @@ import '../helpers/source_guard.dart';
 ///     通配压平规则），且生成的 content.css 里被正确重挂为
 ///     `:where(#entries-container).eink`（扩展侧同样生效）。
 ///  2. 花括号配平守卫——回归自真实 bug：`.ctx-adjust-button` 规则曾缺闭合 `}`，
-///     CSS 错误恢复把下一条 `.global-lookup-ext-hit` 整条高亮规则当无效声明
-///     吞掉（高亮从未生效）。配平检查让这一类「少个括号、静默吞掉后续规则」
-///     在测试层直接翻红。
+///     CSS 错误恢复把紧随其后的整条高亮规则（当时的 `.global-lookup-ext-hit`，
+///     已随剪贴板面板删除）当无效声明吞掉（高亮从未生效）。配平检查让这一类
+///     「少个括号、静默吞掉后续规则」在测试层直接翻红。
 ///
 /// flutter test cwd 是 hibiki 包根。
 void main() {

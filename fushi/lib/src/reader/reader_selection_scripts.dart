@@ -392,10 +392,66 @@ window.fushiSelection = {
   isCodePointJapanese: function(codePoint) {
     return JAPANESE_RANGES.some(function(range) { return codePoint >= range[0] && codePoint <= range[1]; });
   },
-  isScanBoundary: function(char) {
-    return /^[\s　]$/.test(char) ||
-      this.scanDelimiters.includes(char) ||
+  // BUG-1773：空白不是「词边界」的同义词，这里必须拆成两个谓词。
+  //
+  // isScanBoundary 回答的是「这个字符能不能是一个词的一部分」——点击命中判定
+  // （点空格不查词）和词首回退用它，空白当然算边界。
+  //
+  // 但**前向扫描**问的是另一个问题：「查询串该在哪停」。空格分词语言里空格是
+  // 词**间连接符**而非终点，把它当终点就等于把 `listen to` / `look forward to`
+  // 这类短语词条整类排除在匹配之外。引擎本来就按空格分词生成三级候选
+  // （`listen to music` / `listen to` / `listen`，禁止在单词中间切，见
+  // native/fushidicts/fushidicts_src/scan/word_scan.cpp），单词自己不会被挤掉。
+  //
+  // 故：isScanStop = 真正的扫描终点（标点 + 只扫日文时的门控），**不含空白**；
+  // 空白能否跨过去由 selectFromPosition 的桥接规则单独决定。
+  isScanWhitespace: function(char) {
+    return /^[\s　]$/.test(char);
+  },
+  isScanStop: function(char) {
+    return this.scanDelimiters.includes(char) ||
       (window.scanNonJapaneseText === false && !this.isCodePointJapanese(char.codePointAt(0)));
+  },
+  isScanBoundary: function(char) {
+    return this.isScanWhitespace(char) || this.isScanStop(char);
+  },
+
+  // BUG-2056：撇号在**词内**时不是词边界。英语的缩合形与所有格（don’t / it’s /
+  // John’s / we’ve）在真实 EPUB 里几乎都用排版撇号 U+2019，而它和 ASCII ' 一样躺在
+  // scanDelimiters 里，于是前向扫描一撞上就 break：点 "don" 喂给引擎的查询串是
+  // "don"，点 "t" 是 "t"，en.json 词形还原表里 don't 这类词条整类匹配不到。
+  //
+  // 判据只看上下文、不看语言：撇号两侧都是**空格分词类字母**才算词内。字母集与
+  // native/fushidicts/fushidicts_src/scan/word_scan.cpp 的 is_space_delimited_letter
+  // 逐区间对齐（拉丁/希腊/西里尔/亚美尼亚/希伯来/阿拉伯/格鲁吉亚），全仓一个模型。
+  //   don’t / John’s / l’homme → 撇号被跨过，当一个 token 继续扫
+  //   ‘hello’ world            → 右侧是空白，仍是终点（引号语义不受影响）
+  //   日文/中文正文里的 ’      → 两侧非空格分词脚本，仍是终点
+  //
+  // **只作用于前向扫描，不动词首回退**：回退跨撇号会把法语/意大利语省音写法
+  // （l’homme、dell’arte）的锚点从 homme 拖回 l’，反而查不到 homme。前向跨过是纯
+  // 增益——scan_candidates 会生成 don’t / don’ / don 三级前缀，短词不会被挤掉。
+  //
+  // 撇号集里四个码点的**角色不同**，别当成一视同仁的白名单：
+  //   ' U+0027 / ‘ U+2018 / ’ U+2019 —— 都在 scanDelimiters 里，是真正被本判据
+  //     救回来的三个（U+2018 是 OCR 把 ’ 认错的常见产物：`don‘t` 原本也被截成 don）；
+  //   ʼ U+02BC —— **不在** scanDelimiters 里，本来就不截断，列在这里是为了让
+  //     「撇号类字符」在四份实现里是同一个集合；哪天有人把它加进 scanDelimiters，
+  //     桥接已经就位。测试用不变式钉住这层耦合，而不是假装它改变了行为。
+  //
+  // 扫出整词只是**半条链**：查询串 don’t 还要经 native/fushidicts 的
+  // text_processor 撇号归一（U+2019/U+2018/U+02BC → ASCII '）才对得上 en.json 的
+  // ASCII 还原规则与 ASCII 条目键——U+2019 没有 NFKC 兼容分解，折不掉。
+  //     闭环 e2e：native/fushidicts/tests/en_apostrophe_lookup_test.cpp
+  intraWordApostrophePattern: /['‘’ʼ]/,
+  spaceDelimitedLetterPattern: /[A-Za-z\u00AA\u00B5\u00BA\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02AF\u0370-\u03FF\u0400-\u052F\u0531-\u0556\u0561-\u0587\u05D0-\u05EA\u05EF-\u05F2\u0620-\u063F\u0641-\u064A\u066E\u066F\u0671-\u06D3\u06D5\u06EE\u06EF\u06FA-\u06FC\u06FF\u0750-\u077F\u08A0-\u08BD\u10A0-\u10C5\u10D0-\u10FA\u1E00-\u1EFF\u1F00-\u1FFF]/,
+  isSpaceDelimitedLetter: function(char) {
+    return char !== undefined && this.spaceDelimitedLetterPattern.test(char);
+  },
+  isIntraWordApostrophe: function(text, index) {
+    return this.intraWordApostrophePattern.test(text[index] || '') &&
+      this.isSpaceDelimitedLetter(text[index - 1]) &&
+      this.isSpaceDelimitedLetter(text[index + 1]);
   },
   isFurigana: function(node) {
     var el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
@@ -443,6 +499,66 @@ window.fushiSelection = {
       }
     });
   },
+  // BUG-1797：可见正文盒 = body 的 content box ∩ 视口。
+  //
+  // 分页模式把整章内容当**一根** multicol，靠移动 scrollLeft/scrollTop 看每一页，所以
+  // 相邻页的列在几何上就真实地落在 body 的 padding（页边距）带里。body{overflow:hidden}
+  // 只在 border-box 裁，裁不掉 padding 带**内**的东西；真正遮住它的是 body 的 clip-path
+  // 和 html::before 覆盖条（reader_content_styles.dart 的 contentClipCss / TODO-1285），
+  // 两者都是**绘制期**机制。而命中测试是**布局期**的：caretPositionFromPoint 把落点 clamp
+  // 到最近字符，getClientRects 完全无视 clip-path 与覆盖条 —— 于是「看不见」和「点得到」
+  // 用了两套互不相干的真相，点页边距就查到了相邻页的词（横排在左右间距、竖排在上下间距）。
+  //
+  // 修法不是给页边距加特例分支，而是让两者同源：判据从「找得到字符」变成「这个字符可见吗」。
+  // 盒子取 body 的 content box（border-box 内缩 computed padding，与 contentClipCss 逐项
+  // 一致），computed 值已由引擎把 vh/vw/calc/var 解析成 px，不在 JS 里重算一遍 CSS、也就
+  // 不会跟 CSS 那侧漂移。三种布局零特例：分页下 body 是钉在视口帧上的 scroller，content
+  // box 恰等于 clip 出的可见区；连续模式 body 随内容滚动，与视口取交后滚出去的那截不会被
+  // 误判成不可见；VN 模式 body padding 为 0，盒 == 整视口、判据近似恒真。
+  visibleContentBox: function() {
+    try {
+      var body = document.body;
+      if (!body) return null;
+      var rect = body.getBoundingClientRect();
+      var cs = window.getComputedStyle(body);
+      var px = function(v) { var n = parseFloat(v); return isFinite(n) ? n : 0; };
+      var left = rect.left + px(cs.borderLeftWidth) + px(cs.paddingLeft);
+      var top = rect.top + px(cs.borderTopWidth) + px(cs.paddingTop);
+      var right = rect.right - px(cs.borderRightWidth) - px(cs.paddingRight);
+      var bottom = rect.bottom - px(cs.borderBottomWidth) - px(cs.paddingBottom);
+      var vw = window.innerWidth || (document.documentElement && document.documentElement.clientWidth) || 0;
+      var vh = window.innerHeight || (document.documentElement && document.documentElement.clientHeight) || 0;
+      if (left < 0) left = 0;
+      if (top < 0) top = 0;
+      if (vw > 0 && right > vw) right = vw;
+      if (vh > 0 && bottom > vh) bottom = vh;
+      if (!(right > left) || !(bottom > top)) return null;
+      return { left: left, top: top, right: right, bottom: bottom };
+    } catch (err) {
+      return null;
+    }
+  },
+  // BUG-1797：这个字符真的可见吗（字形矩形与可见正文盒有正面积交集）。命中链上每个候选
+  // 字符都要过这一关，页边距带里被 clip 掉的相邻页字符因此永远成不了查词/选词目标；跨在
+  // 边界上、还露出半个的字符仍算可见（clip 后用户确实看得到，点它就该查得到）。
+  // [box] 由调用方一次算好往下传：逐字符兜底扫描会跑上千次，每次现算 getComputedStyle
+  // 就是上千次强制 reflow。拿不到盒（无 body / 退化几何）一律返回 true —— 这道守卫只负责
+  // 拦下**确证不可见**的字符，绝不在几何未知时把正常查词一起拦掉。
+  charRangeVisible: function(charRange, box) {
+    if (box === undefined) box = this.visibleContentBox();
+    if (!box) return true;
+    var rects = charRange.getClientRects();
+    var list = (rects && rects.length) ? rects : [charRange.getBoundingClientRect()];
+    for (var i = 0; i < list.length; i++) {
+      var r = list[i];
+      if (!r) continue;
+      if (Math.min(r.right, box.right) > Math.max(r.left, box.left) &&
+          Math.min(r.bottom, box.bottom) > Math.max(r.top, box.top)) {
+        return true;
+      }
+    }
+    return false;
+  },
   inCharRange: function(charRange, x, y, pad) {
     // TODO-916 症状④：字符矩形按 [pad]（默认 0 = 旧的精确包含）外扩一圈再判包含，
     // 消除落在字缝/行距/描边外缘的 miss。pad 仅在 getCaretRange 的逐字符兜底里传入小值，
@@ -469,7 +585,10 @@ window.fushiSelection = {
     var dy = cy - y;
     return dx * dx + dy * dy;
   },
-  getCaretRange: function(x, y) {
+  // BUG-1797：[box] 是调用方算好的可见正文盒（见 visibleContentBox），沿命中链往下传，
+  // 逐字符兜底扫描才不会每个字符都现算一次 getComputedStyle。不传时自己算一份。
+  getCaretRange: function(x, y, box) {
+    if (box === undefined) box = this.visibleContentBox();
     // BUG-765 续修：`caretPositionFromPoint` 命中「非文本 / 振假名」节点时**不再早退**，
     // 落到下面的 `elementFromPoint`+最近字符几何兜底。根因：拖选区手柄时手指压在手柄
     // div 上，即便 `moveSelectionHandle` 已把手柄 `pointer-events:none`，部分 Android
@@ -501,7 +620,8 @@ window.fushiSelection = {
       for (var i = 0; i < node.textContent.length; i++) {
         range.setStart(node, i);
         range.setEnd(node, i + 1);
-        if (this.inCharRange(range, x, y)) {
+        // BUG-1797：命中还不够，字符得真的可见 —— 页边距带里的相邻页字符会被这里剔掉。
+        if (this.inCharRange(range, x, y) && this.charRangeVisible(range, box)) {
           range.collapse(true);
           return range;
         }
@@ -522,6 +642,9 @@ window.fushiSelection = {
         if (distSq >= bestDistSq) continue;
         var rect = range.getClientRects()[0] || range.getBoundingClientRect();
         if (!rect) continue;
+        // BUG-1797：不可见字符不得参与「最近字符」竞争 —— 否则页边距带里的相邻页字符
+        // 会以更近的距离抢走本页边缘字符的名额，落点从「查错词」变成「查不到词」。
+        if (!this.charRangeVisible(range, box)) continue;
         var tol = Math.max(6, Math.max(rect.width, rect.height) / 2);
         if (distSq <= tol * tol) {
           bestDistSq = distSq;
@@ -538,7 +661,9 @@ window.fushiSelection = {
     return document.caretRangeFromPoint ? document.caretRangeFromPoint(x, y) : null;
   },
   getCharacterAtPoint: function(x, y) {
-    var range = this.getCaretRange(x, y);
+    // BUG-1797：整条命中链共用同一个可见正文盒，一次 hit-test 只量一次几何。
+    var box = this.visibleContentBox();
+    var range = this.getCaretRange(x, y, box);
     if (!range) return null;
     var node = range.startContainer;
     if (node.nodeType !== Node.TEXT_NODE || this.isFurigana(node)) return null;
@@ -555,7 +680,12 @@ window.fushiSelection = {
         var charRange = document.createRange();
         charRange.setStart(node, offset);
         charRange.setEnd(node, offset + 1);
-        if (this.inCharRange(charRange, x, y, pads[p])) {
+        // BUG-1797：caretPositionFromPoint 的快路把落点 clamp 到最近字符，页边距上的点
+        // 因此照样解析出一个字符；这里的可见性确认是「不可见就不可点」这条不变式在查词/
+        // 选词全部入口（selectText / beginRangeSelection / updateRangeSelection /
+        // moveSelectionHandle / tapHasCharacter）上的唯一收口。
+        if (this.inCharRange(charRange, x, y, pads[p]) &&
+            this.charRangeVisible(charRange, box)) {
           if (this.isScanBoundary(text[offset])) return null;
           return { node: node, offset: offset };
         }
@@ -1054,7 +1184,25 @@ window.fushiSelection = {
       var start = scanOffset;
       while (scanOffset < content.length && text.length < maxLength) {
         var char = content[scanOffset];
-        if (this.isScanBoundary(char)) break;
+        // BUG-2056：词内撇号先于终点判定跨过去（don’t 不被截成 don）。
+        if (this.isIntraWordApostrophe(content, scanOffset)) {
+          text += char;
+          scanOffset++;
+          continue;
+        }
+        if (this.isScanStop(char)) break;
+        // BUG-1773：空白只当**同一文本节点内**的词间连接符跨过去，且只跨一个：
+        // 左边必须已有本节点扫入的内容（`scanOffset === start` 即本节点开头，不桥接），
+        // 右边必须紧跟一个可扫字符。于是本节点开头/末尾的空白、连续空白、空白后接
+        // 标点一律终止——跨节点续扫走下面的 walker 分支，新节点开头的空白照样不吃，
+        // 「跨块级空白把两段正文粘成一个词」不会发生。
+        // 已知取舍：`<b>listen</b> to` 这种被行内标签劈开的短语仍查不到短语（空白落在
+        // 新节点开头）。真实 EPUB 里罕见，换来的是零跨块粘连风险。
+        if (this.isScanWhitespace(char)) {
+          var nextChar = content[scanOffset + 1];
+          if (scanOffset === start || nextChar === undefined ||
+              this.isScanWhitespace(nextChar) || this.isScanStop(nextChar)) break;
+        }
         text += char;
         scanOffset++;
       }
@@ -1610,7 +1758,7 @@ window.fushiSelection = {
       var text = targetNode.textContent;
       for (var i = 0; i < offset;) {
         var char = String.fromCodePoint(text.codePointAt(i));
-        if (window.fushiReader.isMatchableChar(char)) count++;
+        if (window.fushiStudyUnits.isUnitEnd(text, i)) count++;
         i += char.length;
       }
       return count;
@@ -1623,14 +1771,14 @@ window.fushiSelection = {
       if (node === targetNode) {
         for (var i = 0; i < offset;) {
           var char = String.fromCodePoint(nodeText.codePointAt(i));
-          if (window.fushiReader.isMatchableChar(char)) count++;
+          if (window.fushiStudyUnits.isUnitEnd(nodeText, i)) count++;
           i += char.length;
         }
         return count;
       }
       for (var i = 0; i < nodeText.length;) {
         var char = String.fromCodePoint(nodeText.codePointAt(i));
-        if (window.fushiReader.isMatchableChar(char)) count++;
+        if (window.fushiStudyUnits.isUnitEnd(nodeText, i)) count++;
         i += char.length;
       }
     }

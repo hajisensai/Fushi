@@ -11,6 +11,9 @@ import 'package:fushi/src/sync/remote_cover_image.dart';
 class _FakeRemoteCoverFetcher implements RemoteCoverFetcher {
   @override
   Future<Uint8List> fetchRemoteCover(String coverUrl) async => Uint8List(0);
+
+  @override
+  String get coverCacheNamespace => 'fake';
 }
 
 void main() {

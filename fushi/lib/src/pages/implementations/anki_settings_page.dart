@@ -9,10 +9,12 @@ import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/anki/anki_media_dedup_dialogs.dart';
 import 'package:fushi/src/anki/lapis_backup_retention.dart';
 import 'package:fushi/src/anki/lapis_style_editor_page.dart';
+import 'package:fushi/src/anki/anki_config_controls.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/anki/ankiconnect_port_repair.dart';
 import 'package:fushi/src/anki/lapis_template_service.dart';
 import 'package:fushi/src/mining/immersion_mining_request.dart'
-    show MiningAnimatedFormat, VideoMiningImageMode;
+    show MiningAnimatedFormat, MiningStillFormat, VideoMiningImageMode;
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/profile/profile_selector.dart';
@@ -48,6 +50,14 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   /// type，互斥防重入。
   bool _lapisBusy = false;
 
+  /// 「代装 AnkiConnect」进行中。与 [_lapisBusy] 分开：两者操作对象不同
+  /// （一个是 Anki 的插件目录，一个是 note type），互不阻塞。
+  bool _addonInstallBusy = false;
+
+  /// 「换一个空闲端口」进行中。端口扫描是一串 bind 尝试，最坏情况会连试 200 次，
+  /// 必须防重入，否则两次点击会各挑一个端口、后完成的那次覆盖前一次。
+  bool _portRepairBusy = false;
+
   /// 媒体去重在途标记（扫描/执行互斥防重入）。
   bool _dedupBusy = false;
 
@@ -56,11 +66,42 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   bool _ankiBackendBusy = false;
 
   /// 本平台的原生 Anki 后端是否受限、因而提供「改用 AnkiConnect」这个开关。
-  /// 与 [PlatformServices.offersMobileAnkiConnectChoice] 同义：Android 的
-  /// AnkiDroid 与 iOS 的 AnkiMobile 都改不了已存在的 note type；桌面本来就走
-  /// AnkiConnect，没有这条支路。
+  /// 与 [PlatformServices.offersMobileAnkiConnectChoice] 同义：iOS 的 AnkiMobile
+  /// 只有加卡的 URL scheme，Android 的 AnkiDroid 走 Content Provider（能改模板，
+  /// 但读不到 collection.media，做不了媒体去重）；桌面本来就走 AnkiConnect，
+  /// 没有这条支路。
   static final bool _isMobileAnkiPlatform =
       Platform.isAndroid || Platform.isIOS;
+
+  /// 是否提供「代装 AnkiConnect」入口。
+  ///
+  /// 只有 Windows：代装依赖从**正在运行的 Anki 进程**读出它自己的 exe 路径，
+  /// 而这套进程枚举目前只有 Win32 实现（见 `AnkiDesktopForeground`）。
+  ///
+  /// 这里刻意**不**把「Anki 此刻在不在跑」也作为显示条件：藏起来用户根本发现
+  /// 不了这个功能，更不会知道前提是先开 Anki。入口常显、点下去再探测并如实
+  /// 告知「请先启动 Anki」，比静默消失有用。顺带也避免了每帧去枚举顶层窗口。
+  static final bool _supportsAddonInstall = Platform.isWindows;
+
+  /// 是否提供「换一个空闲端口」入口。
+  ///
+  /// 桌面三端都行：改端口要同时写本机 Anki 的 `addons21/<id>/meta.json`，而
+  /// [locateAnkiDataDir] 在 Windows/macOS/Linux 都有实现（不像代装那样依赖 Win32
+  /// 进程枚举）。手机连的是局域网另一台机上的 Anki，插件配置不在本机，改不了。
+  static final bool _supportsPortRepair =
+      Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+
+  @override
+  void initState() {
+    super.initState();
+    // 媒体去重区的门控要的是「此刻真能不能用」，不是后端类型（手机连局域网
+    // 桌面 Anki 时后端类型说支持、媒体目录本机却不存在）。探测要一次网络往返，
+    // 只在真正需要这个结论的设置页发起，不塞进 vm 构造。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(ankiViewModelProvider.notifier).probeMediaMaintenance();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -115,6 +156,9 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
               label: t.anki_connect_host,
               value: settings.ankiConnectHost,
               hint: 'localhost',
+              // 移动端连局域网 Anki 桌面版要手输 192.168.x.x，中文输入法会把
+              // 点转成句号（BUG-1807）；旁边的 port 框一直有声明，这里漏了。
+              keyboardType: TextInputType.url,
               onChanged: vm.updateAnkiConnectHost,
             ),
             _AnkiConnectionField(
@@ -124,6 +168,28 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
               keyboardType: TextInputType.number,
               onChanged: vm.updateAnkiConnectPort,
             ),
+            // 8765 被别的程序占着是这条链路最常见的失败，而它的症状只是一句超时：
+            // 占用者接受了 TCP 连接却不按 AnkiConnect 应答。手工解法要同时改两处
+            // （这里 + Anki 插件配置的 webBindPort），少改一处就仍然连不上——这一行
+            // 把「挑一个空闲端口 + 两处一起写」收成一次点击。
+            if (_supportsPortRepair)
+              AdaptiveSettingsRow(
+                icon: Icons.swap_horiz_outlined,
+                showIcon: true,
+                title: t.anki_connect_port_auto_fix,
+                subtitle: t.anki_connect_port_auto_fix_hint,
+                trailing: _portRepairBusy
+                    ? SizedBox(
+                        width: 20,
+                        height: 20,
+                        child:
+                            adaptiveIndicator(context: context, strokeWidth: 2),
+                      )
+                    : null,
+                onTap: _portRepairBusy
+                    ? null
+                    : () => _switchToFreeAnkiConnectPort(vm, settings),
+              ),
             _AnkiConnectionField(
               label: t.anki_connect_api_key,
               value: settings.ankiConnectApiKey,
@@ -133,6 +199,25 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
               // 必须当场处置（见 [_updateAnkiConnectApiKey]）。
               onChanged: _updateAnkiConnectApiKey,
             ),
+            // 没有 AnkiConnect，上面这三个字段填得再对也连不上——而装它原本要
+            // 手动走 工具 → 插件 → 获取插件 → 输编号 → 重启。这一行把那套流程
+            // 收成一次点击：下载 + 交给 Anki，剩下的确认与重启由 Anki 自己主持。
+            if (_supportsAddonInstall)
+              AdaptiveSettingsRow(
+                icon: Icons.extension_outlined,
+                showIcon: true,
+                title: t.anki_connect_addon_install,
+                subtitle: t.anki_connect_addon_install_hint,
+                trailing: _addonInstallBusy
+                    ? SizedBox(
+                        width: 20,
+                        height: 20,
+                        child:
+                            adaptiveIndicator(context: context, strokeWidth: 2),
+                      )
+                    : null,
+                onTap: _addonInstallBusy ? null : _installAnkiConnectAddon,
+              ),
           ],
         ),
         // Lapis 样式客制化：备份 / 恢复 / 字号缩放 / 自定义 CSS / 应用。
@@ -204,11 +289,16 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
             ],
           ),
         // 媒体存储优化：字节级去重（只删字节相同的多余副本，绝不重编码）。
-        // 需要与 Anki 同机（本机可直读 collection.media），后端不支持时整区隐藏。
+        // 需要与 Anki 同机（本机可直读 collection.media）。门控读探测结论
+        // （[AnkiViewModel.probeMediaMaintenance]）而不是后端静态能力：手机连
+        // 局域网里的桌面 Anki 时后端类型也是 AnkiConnect，但媒体目录在那台
+        // 机器上，显示出来只会是个点了说「不可用」的死区块。探测还没有结论
+        // （没探完 / Anki 没开）时回落静态能力，不让「Anki 暂时没开」把桌面
+        // 用户的整区弄消失。
         // 用户拍板方案 A：默认不跑；自动处理是一个**默认关**的开关，打开之后
         // 也只是自动干跑并提示，真删仍要用户确认——除非再显式打开「自动直接
         // 删除」。手动触发同样先看干跑清单再确认。
-        if (vm.supportsMediaMaintenance)
+        if (uiState.mediaMaintenanceAvailable ?? vm.supportsMediaMaintenance)
           AdaptiveSettingsSection(
             title: t.anki_dedup_section,
             children: [
@@ -374,8 +464,10 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
             _buildMiningAudioQualityRow(),
             _buildVideoMiningImageModePicker(),
             _buildVideoMiningAnimatedFormatPicker(),
+            _buildVideoMiningStillFormatPicker(),
             _buildGalMiningImageModePicker(),
             _buildGalMiningAnimatedFormatPicker(),
+            _buildGalMiningStillFormatPicker(),
           ],
         ),
       ],
@@ -560,6 +652,58 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
         onChanged: appModel.setGalMiningAnimatedFormat,
       );
 
+  /// 静图（截图）**编码格式**，与上面两轴正交：封面模式选「用不用动图 / 静帧取
+  /// 哪一帧」，动图格式选「动图怎么编码」，本项只管「那一帧怎么编码」。
+  ///
+  /// 常显（不按 imageMode 隐藏）：动图抽取失败会降级成静帧，所以即使选着动图，
+  /// 本项也仍然决定那张降级图的格式；时隐时现反而让用户以为它不生效。
+  ///
+  /// 视频 / gal 各存一份（同 image mode、animated format 的分法）：gal 的静图来自
+  /// 窗口抓图（本身就是 PNG），与视频帧的取舍不同，共用一个开关会逼用户将就。
+  /// 三档共用一套 option 文案 —— 格式含义与场景无关。
+  Widget _buildStillFormatPicker({
+    required String title,
+    required String subtitle,
+    required MiningStillFormat selected,
+    required void Function(MiningStillFormat) onChanged,
+  }) {
+    return AdaptiveSettingsPickerRow<MiningStillFormat>(
+      title: title,
+      subtitle: subtitle,
+      icon: Icons.image_outlined,
+      controlBelow: true,
+      selected: selected,
+      options: [
+        AdaptiveSettingsPickerOption<MiningStillFormat>(
+          value: MiningStillFormat.jpg,
+          label: t.mining_still_format_jpg,
+        ),
+        AdaptiveSettingsPickerOption<MiningStillFormat>(
+          value: MiningStillFormat.png,
+          label: t.mining_still_format_png,
+        ),
+      ],
+      onChanged: (MiningStillFormat format) {
+        onChanged(format);
+        setState(() {});
+      },
+    );
+  }
+
+  Widget _buildVideoMiningStillFormatPicker() => _buildStillFormatPicker(
+        title: t.video_mining_still_format,
+        subtitle: t.video_mining_still_format_hint,
+        selected: appModel.videoMiningStillFormat,
+        onChanged: appModel.setVideoMiningStillFormat,
+      );
+
+  Widget _buildGalMiningStillFormatPicker() => _buildStillFormatPicker(
+        title: t.gal_mining_still_format,
+        subtitle: t.gal_mining_still_format_hint,
+        selected: appModel.galMiningStillFormat,
+        onChanged: appModel.setGalMiningStillFormat,
+      );
+
   Widget _buildFetchTile(AnkiUiState uiState, AnkiViewModel vm) {
     // Lapis 创建在途时 vm 的 isFetching 也为 true（vm 内部复用同一 flag）；
     // 本行的「正在刷新」文案与 spinner 只对真正的刷新动作显示。
@@ -676,48 +820,17 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     }
   }
 
-  Widget _buildCreateLapisTile(AnkiUiState uiState, AnkiViewModel vm) {
-    return AdaptiveSettingsRow(
-      icon: Icons.note_add_outlined,
-      showIcon: true,
-      title: t.anki_create_lapis,
-      subtitle: t.anki_create_lapis_hint,
-      // spinner 只跟本行自己的在途动作（_creatingLapis），不再借 vm 的
-      // isFetching——否则点「刷新」时本行也凭空转圈。
-      trailing: _creatingLapis
-          ? SizedBox(
-              width: 20,
-              height: 20,
-              child: adaptiveIndicator(context: context, strokeWidth: 2),
-            )
-          : null,
-      onTap: uiState.isFetching || _creatingLapis
-          ? null
-          : () => _runCreateLapis(vm),
-    );
-  }
-
-  Future<void> _runCreateLapis(AnkiViewModel vm) async {
-    final messenger = ScaffoldMessenger.of(context);
-    setState(() => _creatingLapis = true);
-    final LapisSetupResult result;
-    try {
-      result = await vm.createLapisSetup();
-    } finally {
-      if (mounted) setState(() => _creatingLapis = false);
-    }
-    if (!mounted) return;
-    final String message;
-    switch (result.outcome) {
-      case LapisSetupOutcome.created:
-        message = t.anki_create_lapis_success;
-      case LapisSetupOutcome.alreadyExisted:
-        message = t.anki_create_lapis_exists;
-      case LapisSetupOutcome.failed:
-        message = t.anki_create_lapis_failed(error: result.message ?? '');
-    }
-    messenger.showSnackBar(SnackBar(content: Text(message)));
-  }
+  // BUG-1902：「一键创建 Lapis 卡组」同样搬进共享组件（含它自带的在途 spinner 约定：
+  // 只跟本行自己的动作，不借 vm 的 isFetching，否则点「刷新」时本行也凭空转圈）。
+  Widget _buildCreateLapisTile(AnkiUiState uiState, AnkiViewModel vm) =>
+      AnkiCreateLapisRow(
+        viewModel: vm,
+        isFetching: uiState.isFetching,
+        // 本页的「刷新牌组」行要靠这个标志把「获取中…」压住（见 _buildFetchTile）。
+        onBusyChanged: (bool busy) {
+          if (mounted) setState(() => _creatingLapis = busy);
+        },
+      );
 
   // ── Lapis 样式客制化 ─────────────────────────────────────────────────
 
@@ -867,6 +980,83 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       ));
     } finally {
       if (mounted) setState(() => _lapisBusy = false);
+    }
+  }
+
+  /// 下载 AnkiConnect 并交给正在运行的 Anki 安装。
+  ///
+  /// 措辞上刻意不说「已安装」：装不装由用户在 Anki 自己弹的确认框里决定，之后
+  /// 还要重启 Anki 才生效，Fushi 两件事都无从得知。能证明插件真的到位的只有
+  /// 之后 AnkiConnect 能应答，那属于连接探活，不是这里该声称的。
+  /// 挑一个本机空闲端口，同时写进 Anki 的 AnkiConnect 插件配置和本 app 设置。
+  ///
+  /// 两处都写才算改完：AnkiConnect 的监听端口只由插件配置 `webBindPort` 决定
+  /// （上游没给它留环境变量口子），app 这边只是去连它。改完必须重启 Anki——插件
+  /// 只在加载时读一次配置，这一点由 SnackBar 如实告诉用户，不假装立刻生效。
+  ///
+  /// 找不到插件配置（Anki 没装 / 一次都没跑过 / 用了自定义基目录）时**仍然**改本
+  /// app 的端口，并把「请去 Anki 里把 webBindPort 也改成这个」写进提示：把用户留在
+  /// 一个「两边都是旧端口」的状态，等于这次点击什么也没发生。
+  Future<void> _switchToFreeAnkiConnectPort(
+    AnkiViewModel vm,
+    AnkiSettings settings,
+  ) async {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    setState(() => _portRepairBusy = true);
+    try {
+      // 排掉当前端口：调用这个功能的前提就是它不好使，把它选回来等于没动。
+      final int? port =
+          await findFreeAnkiConnectPort(exclude: settings.ankiConnectPort);
+      if (port == null) {
+        messenger.showSnackBar(
+          SnackBar(content: Text(t.anki_connect_port_auto_fix_none)),
+        );
+        return;
+      }
+      final AnkiConnectPortWriteResult result =
+          await writeAnkiConnectAddonPort(port);
+      await vm.updateAnkiConnectPort(port.toString());
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(switch (result.status) {
+            AnkiConnectPortWriteStatus.updated =>
+              t.anki_connect_port_auto_fix_done(port: port),
+            AnkiConnectPortWriteStatus.addonNotFound =>
+              t.anki_connect_port_auto_fix_manual(port: port),
+          }),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _portRepairBusy = false);
+    }
+  }
+
+  Future<void> _installAnkiConnectAddon() async {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    setState(() => _addonInstallBusy = true);
+    try {
+      final AnkiAddonInstallResult result =
+          await AnkiConnectInstaller.install();
+      messenger.showSnackBar(
+        SnackBar(content: Text(_addonInstallMessage(result))),
+      );
+    } finally {
+      if (mounted) setState(() => _addonInstallBusy = false);
+    }
+  }
+
+  String _addonInstallMessage(AnkiAddonInstallResult result) {
+    switch (result.status) {
+      case AnkiAddonInstallStatus.handedToAnki:
+        return t.anki_connect_addon_handed;
+      case AnkiAddonInstallStatus.ankiNotRunning:
+        return t.anki_connect_addon_anki_not_running;
+      case AnkiAddonInstallStatus.downloadFailed:
+        return t.anki_connect_addon_download_failed(error: result.detail ?? '');
+      case AnkiAddonInstallStatus.invalidPackage:
+        return t.anki_connect_addon_invalid;
+      case AnkiAddonInstallStatus.launchFailed:
+        return t.anki_connect_addon_launch_failed(error: result.detail ?? '');
     }
   }
 
@@ -1044,53 +1234,14 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     return name.replaceFirst('lapis-', '').replaceFirst('.json', '');
   }
 
-  Widget _buildDeckDropdown(AnkiSettings settings, AnkiViewModel vm) {
-    final decks = settings.availableDecks;
-    final selectedId = settings.selectedDeckId;
-    final int? validSelectedId =
-        decks.any((d) => d.id == selectedId) ? selectedId : null;
+  // BUG-1902：牌组 / 笔记类型选择行搬到 `anki/anki_config_controls.dart`，与新手引导
+  // 共用同一份实现——此前它们是本 State 的私有方法，跨文件不可见，引导页只能显示
+  // 三行只读文本。这里保留同名薄封装，本页其余调用点不动。
+  Widget _buildDeckDropdown(AnkiSettings settings, AnkiViewModel vm) =>
+      AnkiDeckPickerRow(settings: settings, viewModel: vm);
 
-    return AdaptiveSettingsPickerRow<int?>(
-      title: t.anki_deck,
-      controlBelow: true,
-      selected: validSelectedId,
-      options: decks
-          .map((d) => AdaptiveSettingsPickerOption<int?>(
-                value: d.id,
-                label: d.name,
-              ))
-          .toList(),
-      onChanged: (id) {
-        if (id == null) return;
-        final deck = decks.firstWhere((d) => d.id == id);
-        vm.selectDeck(deck);
-      },
-    );
-  }
-
-  Widget _buildNoteTypeDropdown(AnkiSettings settings, AnkiViewModel vm) {
-    final noteTypes = settings.availableNoteTypes;
-    final selectedId = settings.selectedNoteTypeId;
-    final int? validSelectedId =
-        noteTypes.any((n) => n.id == selectedId) ? selectedId : null;
-
-    return AdaptiveSettingsPickerRow<int?>(
-      title: t.anki_note_type,
-      controlBelow: true,
-      selected: validSelectedId,
-      options: noteTypes
-          .map((n) => AdaptiveSettingsPickerOption<int?>(
-                value: n.id,
-                label: n.name,
-              ))
-          .toList(),
-      onChanged: (id) {
-        if (id == null) return;
-        final noteType = noteTypes.firstWhere((n) => n.id == id);
-        vm.selectNoteType(noteType);
-      },
-    );
-  }
+  Widget _buildNoteTypeDropdown(AnkiSettings settings, AnkiViewModel vm) =>
+      AnkiNoteTypePickerRow(settings: settings, viewModel: vm);
 
   List<Widget> _buildFieldMappings(AnkiSettings settings, AnkiViewModel vm) {
     final noteType = settings.selectedNoteType;
@@ -1327,6 +1478,8 @@ String _ankiHandlebarBaseLabel(String option) {
       return t.handlebar_phonetic_transcriptions;
     case '{document-title}':
       return t.handlebar_document_title;
+    case '{clip-timestamp}':
+      return t.handlebar_clip_timestamp;
     case '{card-image}':
       return t.handlebar_card_image;
     case '{book-cover}':

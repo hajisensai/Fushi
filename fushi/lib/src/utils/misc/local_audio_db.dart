@@ -135,13 +135,28 @@ class LocalAudioDb {
     }
   }
 
-  /// 两条查询索引的 DDL 单一真相源（只被 [ensureIndexes] 消费；查询路径
+  /// 两条查询索引的单一真相源（只被 [ensureIndexes] 消费；查询路径
   /// [queryMeta] / [extractBlob] 一律只读打开，**不得**再出现任何 DDL）。
-  static const List<String> _indexDdls = <String>[
-    'CREATE INDEX IF NOT EXISTS idx_entries_expr_read '
-        'ON entries(expression, reading)',
-    'CREATE INDEX IF NOT EXISTS idx_android_file_source '
-        'ON android(file, source)',
+  ///
+  /// 用「表 + 列」而非裸 DDL 串描述（BUG-1667）：建索引 DDL 的 `IF NOT EXISTS`
+  /// 只按**索引名**判存在，而 Yomitan 本地音频服务器导出的 android.db 自带的
+  /// 等价索引叫 `idx_expr_reading` / `idx_android`（实测真库两条都有），名字对不上
+  /// 就照建一遍完全重复的索引。要按「有没有等价索引」判，就得知道列。
+  ///
+  /// （本注释刻意不写出建索引 DDL 的字面量：`local_audio_query_offload_test` 会扫
+  /// 全文件断言该字面量只出现在建索引区段内，注释里写一次就会把守卫弄红。）
+  static const List<({String name, String table, List<String> columns})>
+      _indexSpecs = <({String name, String table, List<String> columns})>[
+    (
+      name: 'idx_entries_expr_read',
+      table: 'entries',
+      columns: <String>['expression', 'reading'],
+    ),
+    (
+      name: 'idx_android_file_source',
+      table: 'android',
+      columns: <String>['file', 'source'],
+    ),
   ];
 
   /// 每个库路径**在途**的建索引任务（key = 调用方传入的解析后路径；整条数据流
@@ -197,6 +212,31 @@ class LocalAudioDb {
   static Future<void> _ensureIndexesImpl(String dbPath) async {
     try {
       await Isolate.run(() {
+        // 先只读体检：缺哪条才建哪条。引用模式（BUG-483）下 [dbPath] 是**用户的
+        // 原始文件**，「不复制」的用户显然也不想被我们写；真库自带等价索引时，
+        // 这里连 readWrite 句柄都不会开（BUG-1667）。
+        List<({String name, String table, List<String> columns})> missing;
+        try {
+          missing = <({String name, String table, List<String> columns})>[];
+          final Database probe = sqlite3.open(dbPath, mode: OpenMode.readOnly);
+          try {
+            for (final ({String name, String table, List<String> columns}) spec
+                in _indexSpecs) {
+              if (!_hasEquivalentIndex(probe, spec.table, spec.columns)) {
+                missing.add(spec);
+              }
+            }
+          } finally {
+            probe.dispose();
+          }
+        } catch (_) {
+          // 连只读都开不了（WAL 库拿不到 -shm 等）：退回改前的行为——照旧尝试建全部
+          // 索引。这条兜底只在「我们读都读不了」时才走，而那正是旧实现同样会去开
+          // readWrite 的场景，故不会比改前更差（Never break userspace）。
+          missing = _indexSpecs.toList();
+        }
+        if (missing.isEmpty) return;
+
         final Database db = sqlite3.open(dbPath, mode: OpenMode.readWrite);
         try {
           // 建索引的提交需要独占锁；并发查询 isolate 的只读连接正持
@@ -204,9 +244,11 @@ class LocalAudioDb {
           // per-DDL catch 吞掉＝索引永远建不出来。busy_timeout 让 sqlite 自己
           // 等读者放锁（读者是毫秒级瞬态），这是 SQLite 标准并发机制。
           db.execute('PRAGMA busy_timeout = 10000');
-          for (final String ddl in _indexDdls) {
+          for (final ({String name, String table, List<String> columns}) spec
+              in missing) {
             try {
-              db.execute(ddl);
+              db.execute('CREATE INDEX IF NOT EXISTS ${spec.name} '
+                  'ON ${spec.table}(${spec.columns.join(', ')})');
             } catch (_) {
               // 目标表不存在等：建不了不致命，不牵连另一条。
             }
@@ -219,6 +261,53 @@ class LocalAudioDb {
       ErrorLogService.instance.log('LocalAudioDb.ensureIndexes', e, stack);
     }
   }
+
+  /// [table] 上是否已存在能服务 `WHERE col0=? AND col1=? ...` 的索引：某个现有
+  /// 索引的**前缀列**恰好等于 [columns]（顺序一致）。前缀即可——SQLite 用
+  /// `(a,b,c)` 上的索引服务 `a=? AND b=?` 与专门的 `(a,b)` 索引等效。
+  ///
+  /// 排除两类不可用索引：
+  /// - **部分索引**（`CREATE INDEX ... WHERE ...`）：只覆盖部分行，不能替代全量索引；
+  ///   由 `PRAGMA index_list` 的 `partial` 列判定。
+  /// - **表达式索引**（如真库里的 `idx_entries_unique_audio` 用了 `IFNULL(...)`）：
+  ///   `PRAGMA index_info` 对表达式列回 `name = null`，与任何列名都不相等，自然不匹配。
+  ///
+  /// 任何一步失败（表不存在 / PRAGMA 不可用）都按「没有等价索引」返回 false，
+  /// 让调用方走原来的建索引路径——保守方向，绝不因体检失败而少建索引。
+  static bool _hasEquivalentIndex(
+    Database db,
+    String table,
+    List<String> columns,
+  ) {
+    try {
+      final ResultSet indexes = db.select('PRAGMA index_list($table)');
+      for (final Row index in indexes) {
+        // partial 列在 SQLite < 3.8.9 不存在 → null，按「非部分索引」处理。
+        final Object? partial = index['partial'];
+        if (partial is int && partial != 0) continue;
+        final Object? name = index['name'];
+        if (name is! String) continue;
+        final ResultSet info = db.select('PRAGMA index_info(${_quote(name)})');
+        if (info.length < columns.length) continue;
+        bool prefixMatches = true;
+        for (int i = 0; i < columns.length; i++) {
+          // index_info 按 seqno 排序返回；表达式列的 name 为 null → 不匹配。
+          if (info[i]['name'] != columns[i]) {
+            prefixMatches = false;
+            break;
+          }
+        }
+        if (prefixMatches) return true;
+      }
+    } catch (_) {
+      // 表不存在 / PRAGMA 失败：按「没有等价索引」处理，交给建索引路径。
+    }
+    return false;
+  }
+
+  /// SQLite 标识符字面量（`PRAGMA index_info` 不接受占位符，只能拼串）。
+  static String _quote(String identifier) =>
+      "'${identifier.replaceAll("'", "''")}'";
 
   /// Looks up the `(file, source)` for [expression] in [dbPath], preferring an
   /// exact [reading] match and falling back to any entry for the expression

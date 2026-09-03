@@ -3,13 +3,14 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi_core/fushi_core.dart' show VideoBookRow;
 
 import 'package:fushi/src/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/media/torrent/anime_download_matching.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi/src/media/torrent/anime_download_service.dart';
 import 'package:fushi/src/media/torrent/anime_download_subscription.dart';
-import 'package:fushi/src/media/torrent/download_network_proxy.dart'
+import 'package:fushi/src/media/torrent/download_timeouts.dart'
     show kDownloadDiscoveryTimeout;
 import 'package:fushi/src/media/torrent/download_relocate_service.dart';
 import 'package:fushi/src/media/torrent/nyaa_client.dart';
@@ -17,12 +18,16 @@ import 'package:fushi/src/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/media/torrent/torrent_task_display.dart';
 import 'package:fushi/src/media/video/anilist_client.dart';
 import 'package:fushi/src/media/video/jimaku_client.dart';
+import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/jimaku_api_key_field.dart';
 import 'package:fushi/src/pages/implementations/jimaku_entry_picker.dart';
 import 'package:fushi/src/pages/implementations/download_actions.dart';
+import 'package:fushi/src/pages/implementations/download_backend_setup_dialog.dart';
 import 'package:fushi/src/pages/implementations/downloads_page.dart';
 import 'package:fushi/src/pages/implementations/torrent_detail_dialog.dart';
+import 'package:fushi/src/pages/implementations/video_download_jobs_panel.dart'
+    show showDownloadTaskDeleteConfirm;
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
@@ -364,11 +369,20 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       anilist = AniListClient(
         client: await ref.read(appProvider).createDownloadHttpClient(),
       );
-      final List<AniListMedia> media =
+      final AniListSearchOutcome outcome =
           await anilist.searchAnime(query).timeout(kDownloadDiscoveryTimeout);
       if (!mounted) return;
+      // BUG-1782：非 200（含 429 限流）此前被 searchAnime 内部吞成空列表，走不到下面的
+      // catch，于是限流被显示成「无结果」。现在如实并入既有失败态，用户拿到重试 + 原因。
+      if (outcome.degraded) {
+        setState(() {
+          _animeSearchError = true;
+          _animeSearchErrorDetail = outcome.failure;
+        });
+        return;
+      }
       setState(() {
-        _animeMatches = media;
+        _animeMatches = outcome.media;
         _searchedAnime = true;
       });
     } catch (error) {
@@ -1022,15 +1036,59 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     unawaited(ref.read(appProvider).animeDownloadService?.tick());
   }
 
+  /// 删除旧番剧计划：与 v78 任务面板同一确认框（正文 + 「同时删除已下载文件」）。
+  /// 以前这里没有确认框、也从不删文件；勾选后经后端 `removeTorrent(deleteFiles)` 删
+  /// 数据，并把已入库、指向这些文件的视频行一并清掉（否则库里留下一排打不开的壳）。
   Future<void> _deletePlan(AnimeDownloadPlan plan) async {
     final AppModel appModel = ref.read(appProvider);
     final AnimeDownloadPlanStore? store = appModel.animeDownloadPlanStore;
     if (store == null) return;
     final AnimeDownloadService? service = appModel.animeDownloadService;
+    // 「同时删除已下载文件」只在真兑现得了时才摆出来：删数据只能由下载后端执行，
+    // 没有 service 或后端没配好时勾了也只会静默丢弃（与两个删除确认框里
+    // 「兑现不了就不显示」同一纪律）。
+    final bool canDeleteFiles = service != null &&
+        effectiveTorrentConfig(appModel.qbConnectionConfig).isConfigured;
+    final bool? deleteFiles = await showDownloadTaskDeleteConfirm(
+      context,
+      title: plan.seriesTitle.isNotEmpty ? plan.seriesTitle : plan.torrentTitle,
+      keySuffix: plan.id,
+      offerDeleteFiles: canDeleteFiles,
+    );
+    if (deleteFiles == null || !mounted) return;
     if (service == null) {
       await store.delete(plan.id);
     } else {
-      await service.deletePlan(plan.id);
+      final AnimeDownloadPlanDeleteResult result = await service.deletePlan(
+        plan.id,
+        deleteFiles: deleteFiles,
+        onFilesDeleted: (List<String> videoAbsolutePaths) async {
+          final VideoBookRepository repo =
+              VideoBookRepository(appModel.database);
+          bool any = false;
+          for (final String path in videoAbsolutePaths) {
+            final VideoBookRow? row = await repo.findByVideoPath(path);
+            if (row == null) continue;
+            await repo.deleteVideoBookAndReclaimAssets(
+              row.bookUid,
+              compactDatabase: false,
+            );
+            any = true;
+          }
+          if (any) {
+            await repo.compactAfterVideoDeleteBestEffort();
+            appModel.database.notifyVideoLibraryChanged();
+          }
+        },
+      );
+      // 勾了删文件却没删成（后端离线 / 摘种子失败）必须说出来：计划行已经消失，
+      // 用户不会再有第二次机会发现盘上的数据还在。
+      if (deleteFiles && !result.filesDeleted && mounted) {
+        FushiToast.show(
+          msg: t.download_task_delete_files_failed,
+          severity: ToastSeverity.warning,
+        );
+      }
     }
     await _reloadPlans();
   }
@@ -1122,6 +1180,25 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
 
   // ---------------------------------------------------------------- 渲染
 
+  /// 「开始配置」：直接弹后端配置引导（只问「谁来下载」+ 所选后端的必填项），
+  /// 配完当场重算就绪状态。用户不再被丢进整页下载设置自己找字段。
+  Future<void> _openBackendSetup() async {
+    final bool done = await promptDownloadBackendSetup(
+      context: context,
+      appModel: ref.read(appProvider),
+    );
+    if (done && mounted) setState(() {});
+  }
+
+  /// 后端没就绪时的统一出口：**先弹引导**再决定要不要继续，而不是甩一句
+  /// 「请先配置下载后端」把动作丢掉。返回 true = 现在可以继续原动作。
+  Future<bool> _ensureBackendReady() async {
+    if (torrentBackendReady(ref.read(appProvider))) return true;
+    await _openBackendSetup();
+    if (!mounted) return false;
+    return torrentBackendReady(ref.read(appProvider));
+  }
+
   /// 「去设置」：embedded 由下载页回调切页内设置面板；独立对话框（视频页入口）
   /// push 下载页并直落设置面板——两个入口都能一键走到配置，不再让新用户死路。
   void _openBackendSettings() {
@@ -1167,6 +1244,11 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
             ),
           ),
           const SizedBox(width: 8),
+          // 主动作是引导（配完就能下）；「去设置」留给要调限速/上传/做种的用户。
+          TextButton(
+            onPressed: _openBackendSetup,
+            child: Text(t.download_backend_setup_start),
+          ),
           TextButton(
             onPressed: _openBackendSettings,
             child: Text(t.download_open_settings),
@@ -1278,6 +1360,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
             controller: _magnetCtrl,
             minLines: 1,
             maxLines: 2,
+            keyboardType: TextInputType.url,
             decoration: InputDecoration(
               labelText: t.anime_download_generic_hint,
               isDense: true,
@@ -2226,11 +2309,8 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
   /// torrent-missing 超时从头算）。addTorrent 报失败但种子已在后端列表
   /// （入库失败类重试的常态——重复添加被后端拒绝）也算在下，交回轮询重走完成流程。
   Future<void> _retryPlan(AnimeDownloadPlan plan) async {
+    if (!await _ensureBackendReady()) return;
     final AppModel appModel = ref.read(appProvider);
-    if (!torrentBackendReady(appModel)) {
-      _snack(t.download_backend_not_configured);
-      return;
-    }
     final AnimeDownloadPlanStore? store = appModel.animeDownloadPlanStore;
     if (store == null) {
       _snack(t.anime_download_store_unavailable);
@@ -2304,11 +2384,8 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     AnimeDownloadPlan plan, {
     required bool pause,
   }) async {
+    if (!await _ensureBackendReady()) return;
     final AppModel appModel = ref.read(appProvider);
-    if (!torrentBackendReady(appModel)) {
-      _snack(t.download_backend_not_configured);
-      return;
-    }
     final TorrentBackend backend = appModel.createTorrentBackend(
       effectiveTorrentConfig(appModel.qbConnectionConfig),
     );
@@ -2455,8 +2532,13 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
           t.anime_download_subs_pending,
           scheme.onSurfaceVariant,
         ),
+      // BUG-1696 起 unavailable 不再是终态：还排得上 backoff 重试的说「稍后自动
+      // 重试」，重试次数用完了才说「未匹配到（可手动补）」。两种对用户是完全不同
+      // 的处境——前者什么都不用做，后者要么手动补要么改条目。
       AnimeDownloadPlan.subtitleUnavailable => (
-          t.anime_download_subs_unmatched,
+          plan.subtitleRetryPossible
+              ? t.anime_download_subs_retrying
+              : t.anime_download_subs_unmatched,
           scheme.tertiary,
         ),
       _ => null,

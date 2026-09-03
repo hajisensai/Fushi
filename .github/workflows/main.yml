@@ -18,7 +18,6 @@ on:
       - 'native/**'
       - 'ci/**'
       - '.github/workflows/**'
-      - 'melos.yaml'
       - 'pubspec.yaml'
       - 'pubspec.lock'
   workflow_dispatch:

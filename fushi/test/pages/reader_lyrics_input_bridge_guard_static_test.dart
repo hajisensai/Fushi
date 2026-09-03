@@ -76,7 +76,7 @@ void main() {
     // 想让 ESC 从进入即可用，但桌面 loadData 后强夺 Flutter 焦点会顶焦原生 WebView2、
     // 重置滚动（→ 高亮看似回第一句）并抖动，叠加重载路径成持续闪烁。故歌词就绪分支
     // **必须不再**在 loadData 后强夺焦（ESC 改由任一交互后的 reclaim 覆盖）。
-    final int m = src.indexOf('_onChapterLoadComplete(InAppWebViewController');
+    final int m = src.indexOf('Future<void> _onChapterLoadComplete(');
     expect(m, greaterThanOrEqualTo(0));
     final int end = src.indexOf('final int gen = _navigateGeneration;', m);
     expect(end, greaterThan(m));

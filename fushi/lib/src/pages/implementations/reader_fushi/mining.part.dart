@@ -88,7 +88,7 @@ extension _ReaderMining on _ReaderFushiPageState {
           clip.audioFileIndex < audioFiles.length) {
         final File inputFile = audioFiles[clip.audioFileIndex];
         sentenceAudioTempDir =
-            Directory.systemTemp.createTempSync('hibiki_mine_sentence_audio_');
+            Directory.systemTemp.createTempSync('fushi_mine_sentence_audio_');
         // 句子音频容器与视频制卡保持同一平台规则：iOS 用 `.m4a`，让 AnkiMobile
         // 把 localhost URL 当作可下载音频；桌面/Android 继续用 `.aac`（adts），避免
         // 桌面 ffmpeg-min 缺 mp4/ipod/m4a muxer 时 exit -22（BUG-460 / BUG-644）。
@@ -271,7 +271,9 @@ extension _ReaderMining on _ReaderFushiPageState {
       // 第三态）。ankiConnect 沿用旧的「成功即可同步刷新 ✓」语义。
       return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
     }
-    return const MinePopupResult();
+    // BUG-1908/1915：同 DictionaryPageMixin.onMineEntry —— 重复要能与「真的没制成」
+    // 区分；判据只住在 .failed(outcome) 一处。
+    return MinePopupResult.failed(outcome);
   }
 
   Future<MinePopupResult> _onUpdateFromPopupInner(
@@ -305,7 +307,7 @@ extension _ReaderMining on _ReaderFushiPageState {
     if (described.success) {
       return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
     }
-    return const MinePopupResult();
+    return MinePopupResult.failed(outcome);
   }
 
   /// TODO-948/952：制卡『句子为空 / 字段未映射』诊断（加性、零行为改动）。

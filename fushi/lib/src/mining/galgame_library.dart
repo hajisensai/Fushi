@@ -71,6 +71,7 @@ class GalgameEntry {
     this.launchArgs = '',
     this.upscalingMode = '',
     this.japaneseLocaleMode = '',
+    this.language,
     this.coverPath,
     this.playStatus = GalgamePlayStatus.unset,
     this.primarySource,
@@ -116,6 +117,10 @@ class GalgameEntry {
   /// 该游戏的日语区域（转区）档位持久化 key（''/auto/on/off，见
   /// `galgame_japanese_locale.dart`）。空串 = 未设置，解析层回落 auto。
   final String japaneseLocaleMode;
+
+  /// 游戏文本的内容语言（BCP-47）。hook 出来的文本没有语言声明，只能由用户指定；
+  /// null = 未指定 → 跟全局默认内容语言。决定文本浮窗/查词卡用哪条字体链。
+  final String? language;
 
   /// 可选封面图绝对路径（null = 用默认游戏图标）。
   final String? coverPath;
@@ -207,6 +212,7 @@ class GalgameEntry {
     String? launchArgs,
     String? upscalingMode,
     String? japaneseLocaleMode,
+    String? language,
     String? coverPath,
     GalgamePlayStatus? playStatus,
     String? primarySource,
@@ -226,6 +232,7 @@ class GalgameEntry {
       launchArgs: launchArgs ?? this.launchArgs,
       upscalingMode: upscalingMode ?? this.upscalingMode,
       japaneseLocaleMode: japaneseLocaleMode ?? this.japaneseLocaleMode,
+      language: language ?? this.language,
       coverPath: coverPath ?? this.coverPath,
       addedAt: addedAt,
       playStatus: playStatus ?? this.playStatus,

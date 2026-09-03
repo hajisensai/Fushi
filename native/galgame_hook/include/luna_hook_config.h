@@ -24,6 +24,7 @@ struct LunaTargetIdentity {
 struct LunaHookProfileMatch {
   int codepage = 0;
   bool enable_pc_hooks = false;
+  bool normalize_mages_controls = false;
   uint32_t defer_until_running_ms = 0;
   std::vector<std::wstring> hook_codes;
   std::vector<std::wstring> blocked_hook_codes;
@@ -94,7 +95,9 @@ inline bool LunaHostLogConfirmsHookRemoval(const wchar_t* log,
 
 // TSV schema: exe_sha256, module_name, module_sha256, codepage, hook_code,
 // label, options. Options are semicolon-separated: `pc-hooks` enables generic
-// candidates; `block=<hook-code-without-module>` removes a known-crashing
+// candidates; `normalize-mages-controls` converts MAGES line-break controls
+// (`\\n`/`¥n`/`%r`) into line feeds and strips inline `#RRGGBB;` font-color
+// prefixes before publication; `block=<hook-code-without-module>` removes a known-crashing
 // auto-detected hook; `block-name=<Luna-hook-name>` confirms that asynchronous
 // removal completed; `prefer=<hook-code-without-module>` limits automatic text
 // output to a known-good hook; `defer-ms=<milliseconds>` waits for fragile
@@ -143,6 +146,8 @@ inline LunaHookProfileMatch MatchLunaHookProfiles(
       for (const std::string& option : SplitSemicolons(fields[6])) {
         if (option == "pc-hooks") {
           result.enable_pc_hooks = true;
+        } else if (option == "normalize-mages-controls") {
+          result.normalize_mages_controls = true;
         } else if (option.rfind("block=", 0) == 0 && option.size() > 6) {
           const std::string code = option.substr(6);
           result.blocked_hook_codes.emplace_back(code.begin(), code.end());

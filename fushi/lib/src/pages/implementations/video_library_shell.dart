@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/media/drag_drop/drop_surface_scope.dart';
 import 'package:fushi/src/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_task.dart';
@@ -25,6 +25,7 @@ class VideoLibraryShell extends StatefulWidget {
     required this.libraryRefreshSignal,
     required this.scrapeTaskController,
     required this.onScrapeAll,
+    required this.onClearAllScrapeRecords,
     required this.onScrapeSource,
     required this.onVideoScanCompleted,
     required this.onOpenScrapeTasks,
@@ -40,6 +41,7 @@ class VideoLibraryShell extends StatefulWidget {
   final Listenable libraryRefreshSignal;
   final VideoSourceScrapeTaskController scrapeTaskController;
   final Future<void> Function() onScrapeAll;
+  final Future<void> Function() onClearAllScrapeRecords;
   final Future<void> Function(SourceLibraryRow source) onScrapeSource;
   final Future<void> Function(
     SourceLibraryRow source,
@@ -105,45 +107,73 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
   Widget _navigationFor(bool active, Widget navigation) =>
       active ? navigation : const SizedBox.shrink();
 
+  /// 给一个保活子视图套上拖放作用域。
+  ///
+  /// [Offstage] 只关掉 Flutter 自己的 hitTest；desktop_drop 是进程级全局广播，
+  /// 只按各 drop target 的 `RenderBox.paintBounds` 过滤，而隐藏的子视图仍以完整
+  /// 约束布局（全屏大小），于是**每个访问过的子视图都会收到同一次 OS drop**。
+  /// 外层 home-shell 的作用域只回答「视频 tab 可见吗」，答案在用户停在发现/来源/
+  /// 设置分区时同样是 true —— 于是拖一个文件夹进窗口会被隐藏的 [HomeVideoPage]
+  /// 接走、直接往 media_sources 插一条常驻扫描根并跑全量扫描。
+  ///
+  /// [visible] 是回调而不是 bool：拖放判定只发生在事件到达的瞬间，判据与上面
+  /// `offstage:` 用的是同一个表达式，保证「看得见的那个」与「接拖放的那个」
+  /// 永远是同一个。
+  Widget _dropScoped(bool Function() visible, Widget child) =>
+      DropSurfaceScope(isActive: visible, child: child);
+
   @override
   Widget build(BuildContext context) {
-    final Widget navigation = FushiAdjustableSegmented<VideoLibrarySection>(
-      values: VideoLibrarySection.values,
+    // 页签与横滑切区（[SectionSwipeNavigator]）共用同一份序：加减分区只改这里。
+    final List<LibrarySectionTab<VideoLibrarySection>> tabs =
+        <LibrarySectionTab<VideoLibrarySection>>[
+        LibrarySectionTab<VideoLibrarySection>(
+          value: VideoLibrarySection.home,
+          label: t.nav_home,
+        ),
+        LibrarySectionTab<VideoLibrarySection>(
+          value: VideoLibrarySection.series,
+          label: t.series,
+        ),
+        LibrarySectionTab<VideoLibrarySection>(
+          value: VideoLibrarySection.allVideos,
+          label: t.video_library_all_videos,
+        ),
+        // 与书 / 漫画 / 游戏的发现视图同 key（同概念一词,原 video_discovery_tab 已删），
+        // **也同位**：本地库的各视图排完才是在线发现，最后才是管理类分区。此前发现夹在
+        // 首页与系列 / 全部视频之间，一排里「自己的库 → 推荐 → 自己的库」来回跳，是四个
+        // 模块里唯一的例外（2026-08-24 用户反馈）。
+        LibrarySectionTab<VideoLibrarySection>(
+          value: VideoLibrarySection.discover,
+          label: t.library_view_browse,
+        ),
+        LibrarySectionTab<VideoLibrarySection>(
+          value: VideoLibrarySection.sources,
+          label: t.library_view_import,
+        ),
+        LibrarySectionTab<VideoLibrarySection>(
+          value: VideoLibrarySection.settings,
+          label: t.settings,
+        ),
+      ];
+    final Widget navigation = LibrarySectionTabs<VideoLibrarySection>(
+      tabs: tabs,
       selected: _section,
       onChanged: _select,
       focusIdPrefix: 'video-library-view',
-      focusId: const FushiFocusId('video-library-view-sections'),
-      child: FushiSegmentedStrip<VideoLibrarySection>(
-        segments: <ButtonSegment<VideoLibrarySection>>[
-          ButtonSegment<VideoLibrarySection>(
-            value: VideoLibrarySection.home,
-            label: Text(t.nav_home),
-          ),
-          ButtonSegment<VideoLibrarySection>(
-            value: VideoLibrarySection.discover,
-            label: Text(t.video_discovery_tab),
-          ),
-          ButtonSegment<VideoLibrarySection>(
-            value: VideoLibrarySection.series,
-            label: Text(t.series),
-          ),
-          ButtonSegment<VideoLibrarySection>(
-            value: VideoLibrarySection.allVideos,
-            label: Text(t.video_library_all_videos),
-          ),
-          ButtonSegment<VideoLibrarySection>(
-            value: VideoLibrarySection.sources,
-            label: Text(t.library_view_import),
-          ),
-          ButtonSegment<VideoLibrarySection>(
-            value: VideoLibrarySection.settings,
-            label: Text(t.settings),
-          ),
-        ],
-        selected: _section,
-        onChanged: _select,
-      ),
     );
+    return SectionSwipeNavigator<VideoLibrarySection>(
+      sections: <VideoLibrarySection>[
+        for (final LibrarySectionTab<VideoLibrarySection> tab in tabs)
+          tab.value,
+      ],
+      selected: _section,
+      onSelect: _select,
+      child: _buildSections(navigation),
+    );
+  }
+
+  Widget _buildSections(Widget navigation) {
     return Stack(
       children: <Widget>[
         Offstage(
@@ -152,20 +182,24 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
             excluding: !_showsLocalLibrary,
             child: TickerMode(
               enabled: _showsLocalLibrary,
-              child: widget.localLibraryPageBuilder?.call(
-                    context,
-                    _navigationFor(_showsLocalLibrary, navigation),
-                    _localSection,
-                  ) ??
-                  HomeVideoPage(
-                    repo: widget.repository,
-                    navigation: _navigationFor(_showsLocalLibrary, navigation),
-                    section: _localSection,
-                    libraryRefreshSignal: widget.libraryRefreshSignal,
-                    onOpenScrapeTasks: widget.onOpenScrapeTasks,
-                    scrapeTaskController: widget.scrapeTaskController,
-                    onOpenSources: () => _select(VideoLibrarySection.sources),
-                  ),
+              child: _dropScoped(
+                () => _showsLocalLibrary,
+                widget.localLibraryPageBuilder?.call(
+                      context,
+                      _navigationFor(_showsLocalLibrary, navigation),
+                      _localSection,
+                    ) ??
+                    HomeVideoPage(
+                      repo: widget.repository,
+                      navigation:
+                          _navigationFor(_showsLocalLibrary, navigation),
+                      section: _localSection,
+                      libraryRefreshSignal: widget.libraryRefreshSignal,
+                      onOpenScrapeTasks: widget.onOpenScrapeTasks,
+                      scrapeTaskController: widget.scrapeTaskController,
+                      onOpenSources: () => _select(VideoLibrarySection.sources),
+                    ),
+              ),
             ),
           ),
         ),
@@ -176,21 +210,24 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
               excluding: _section != VideoLibrarySection.discover,
               child: TickerMode(
                 enabled: _section == VideoLibrarySection.discover,
-                child: widget.discoveryPageBuilder?.call(
-                      context,
-                      _navigationFor(
-                        _section == VideoLibrarySection.discover,
-                        navigation,
+                child: _dropScoped(
+                  () => _section == VideoLibrarySection.discover,
+                  widget.discoveryPageBuilder?.call(
+                        context,
+                        _navigationFor(
+                          _section == VideoLibrarySection.discover,
+                          navigation,
+                        ),
+                      ) ??
+                      VideoDiscoveryPage(
+                        navigation: _navigationFor(
+                          _section == VideoLibrarySection.discover,
+                          navigation,
+                        ),
+                        controller: widget.discoveryController,
+                        actions: widget.discoveryActions,
                       ),
-                    ) ??
-                    VideoDiscoveryPage(
-                      navigation: _navigationFor(
-                        _section == VideoLibrarySection.discover,
-                        navigation,
-                      ),
-                      controller: widget.discoveryController,
-                      actions: widget.discoveryActions,
-                    ),
+                ),
               ),
             ),
           ),
@@ -201,18 +238,23 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
               excluding: _section != VideoLibrarySection.sources,
               child: TickerMode(
                 enabled: _section == VideoLibrarySection.sources,
-                child: MediaSourcesPage(
-                  mediaKind: 'video',
-                  navigation: _navigationFor(
-                    _section == VideoLibrarySection.sources,
-                    navigation,
+                child: _dropScoped(
+                  () => _section == VideoLibrarySection.sources,
+                  MediaSourcesPage(
+                    mediaKind: 'video',
+                    navigation: _navigationFor(
+                      _section == VideoLibrarySection.sources,
+                      navigation,
+                    ),
+                    onScrapeAll: widget.onScrapeAll,
+                    onClearAllScrapeRecords:
+                        widget.onClearAllScrapeRecords,
+                    onScrapeSource: widget.onScrapeSource,
+                    onVideoScanCompleted: widget.onVideoScanCompleted,
+                    scrapeTaskController: widget.scrapeTaskController,
+                    onOpenScrapeTasks: widget.onOpenScrapeTasks,
+                    onLibraryChanged: widget.onLibraryChanged,
                   ),
-                  onScrapeAll: widget.onScrapeAll,
-                  onScrapeSource: widget.onScrapeSource,
-                  onVideoScanCompleted: widget.onVideoScanCompleted,
-                  scrapeTaskController: widget.scrapeTaskController,
-                  onOpenScrapeTasks: widget.onOpenScrapeTasks,
-                  onLibraryChanged: widget.onLibraryChanged,
                 ),
               ),
             ),
@@ -224,11 +266,14 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
               excluding: _section != VideoLibrarySection.settings,
               child: TickerMode(
                 enabled: _section == VideoLibrarySection.settings,
-                child: ModuleSettingsView(
-                  destinationId: SettingsDestinationId.video,
-                  navigation: _navigationFor(
-                    _section == VideoLibrarySection.settings,
-                    navigation,
+                child: _dropScoped(
+                  () => _section == VideoLibrarySection.settings,
+                  ModuleSettingsView(
+                    destinationId: SettingsDestinationId.video,
+                    navigation: _navigationFor(
+                      _section == VideoLibrarySection.settings,
+                      navigation,
+                    ),
                   ),
                 ),
               ),

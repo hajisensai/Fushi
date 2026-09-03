@@ -1,4 +1,5 @@
 name: gamepads_android
+resolution: workspace
 description: >-
   Local no-op Android implementation of the `gamepads` federated plugin. Hibiki
   handles Android controllers through the engine's native key-event path (it
@@ -12,7 +13,7 @@ version: 0.1.7
 publish_to: none
 
 environment:
-  sdk: ">=3.4.0 <4.0.0"
+  sdk: ">=3.8.0 <4.0.0"
   flutter: ">=3.0.0"
 
 flutter:

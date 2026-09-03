@@ -193,4 +193,61 @@ void main() {
           reason: '字幕选项必须用具名哨兵常量');
     });
   });
+
+  group('点击画面播放/暂停开关（tapTogglesPlayback）', () {
+    // 手势跑不了 headless（同本文件其余守卫），故钉三条源码不变量：
+    // ① 桌面 theme 写 `playAndPauseOnTap: _asbConfig.tapTogglesPlayback`（不得回到
+    //    硬编码 `playAndPauseOnTap: true`）；
+    // ② 移动端双击中带 fallback 在 `playOrPause()` 之前有
+    //    `if (!_asbConfig.tapTogglesPlayback) return;` 门控；
+    // ③ schema 有 `id: 'video.playback.tap_toggles_playback'` 行并经
+    //    `commitVideoAsbConfig` + `copyWith(tapTogglesPlayback:` 落盘。
+    test('桌面 theme 的 playAndPauseOnTap 读用户配置，不硬编码 true', () {
+      final String body = methodBody(pageCorpus,
+          'MaterialDesktopVideoControlsThemeData _desktopControlsTheme(');
+      expect(body.contains('playAndPauseOnTap: _asbConfig.tapTogglesPlayback'),
+          isTrue,
+          reason: '桌面单击暂停必须由 _asbConfig.tapTogglesPlayback 驱动');
+      expect(body.contains('playAndPauseOnTap: true'), isFalse,
+          reason: '不得把桌面单击暂停写死为 true（用户关不掉）');
+    });
+
+    test('移动端双击中带 fallback 受同一开关门控（门控排在 playOrPause 之前）', () {
+      final String body = methodBody(
+          pageSrc, 'void _handleVideoPointerUp(PointerUpEvent event) {');
+      final int gateIdx =
+          body.indexOf('if (!_asbConfig.tapTogglesPlayback) return;');
+      expect(gateIdx, greaterThanOrEqualTo(0),
+          reason: '移动端中带暂停必须受 tapTogglesPlayback 门控');
+      final int playIdx = body.indexOf(
+          'unawaited(_controller?.playOrPause() ?? Future<void>.value());',
+          gateIdx);
+      expect(playIdx, greaterThan(gateIdx),
+          reason: '门控必须排在 playOrPause 之前（否则关了还会切播放态）');
+      // 门控只属移动端分支：桌面分支的全屏切换必须排在门控之前，不被它拦掉。
+      final int desktopIdx = body.indexOf('if (_isDesktopVideoControls) {');
+      final int toggleIdx =
+          body.indexOf('_toggleVideoFullscreen(controlsContext)', desktopIdx);
+      expect(toggleIdx, greaterThanOrEqualTo(0));
+      expect(toggleIdx, lessThan(gateIdx), reason: '桌面双击全屏与播放态无关，不得落进本开关门控之后');
+    });
+
+    test('schema 有「点击画面播放/暂停」行并经双路写穿落盘', () {
+      final int start =
+          schemaSrc.indexOf("id: 'video.playback.tap_toggles_playback'");
+      expect(start, greaterThanOrEqualTo(0),
+          reason: '缺点击画面播放/暂停开关行 video.playback.tap_toggles_playback');
+      final int end = schemaSrc.indexOf("id: '", start + 1);
+      expect(end, greaterThan(start));
+      final String body = schemaSrc.substring(start, end);
+      expect(body.contains('VideoPlacement(group: VideoGroup.playback'), isTrue,
+          reason: '该行必须投影进播放页面板 playback 分类');
+      expect(body.contains('tapTogglesPlayback:'), isTrue,
+          reason: 'onChanged 必须 copyWith(tapTogglesPlayback:) 落盘');
+      expect(body.contains('commitVideoAsbConfig('), isTrue,
+          reason: '必须经 commitVideoAsbConfig 双路写穿（host 即时回调 / 无 host 落 pref）');
+      // 全平台可见（桌面单击 / 移动端双击中带都受它管），不得加 visible 门把某端变假开关。
+      expect(body.contains('visible:'), isFalse, reason: '两端都真实生效，不应按平台隐藏');
+    });
+  });
 }

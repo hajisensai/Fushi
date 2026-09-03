@@ -28,6 +28,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 void main() {
   late String src;
 
@@ -51,7 +53,11 @@ void main() {
       if (c == '{') depth++;
       if (c == '}') {
         depth--;
-        if (depth == 0) return src.substring(open, i + 1);
+        // 掩掉注释再断言：断言的是**控制流**，注释里出现同名 token 不算数
+        // （BUG-1756 的教训：给 deleteDictionary 写的说明性注释里提到
+        // `_rebuildDictPathsCache`，让「必须调用它」的断言在代码早已不调用时依旧
+        // 绿）。maskComments 是等长掩码，下标仍可直接与原串对齐。
+        if (depth == 0) return maskComments(src.substring(open, i + 1));
       }
     }
     fail('unbalanced braces scanning $name');
@@ -98,8 +104,46 @@ void main() {
 
   test('C: deleteDictionary (single) still reloads the FFI engine', () {
     final String body = bodyOf('Future<void> deleteDictionary(');
-    expect(body.contains('_rebuildDictPathsCache'), isTrue,
-        reason: 'deleting a single dictionary must rebuild the engine.');
+    // 引擎重载现在收口在 DictionaryRepository.deleteDictionaryMeta 里
+    // （移除 cache + _onCacheRebuild 重载引擎 + 清查词缓存 + 删 DB 行，BUG-1492）。
+    expect(body.contains('dictRepo.deleteDictionaryMeta('), isTrue,
+        reason: 'deleting a single dictionary must go through the repo so the '
+            'engine reloads (and its mmap views are released).');
+    // BUG-1756：绕开 repo 直打 DB 的老写法会把 DB 行删掉却不卸载引擎 —— 目录删
+    // 不掉、toast 报「删除失败」，但重启后词典已经没了。这条入口必须不存在。
+    expect(body.contains('_database.deleteDictionaryMeta('), isFalse,
+        reason: 'must NOT bypass the repo: a raw DB delete leaves the engine '
+            'holding the dictionary mmap, so the directory delete then fails '
+            'while the metadata is already gone (BUG-1756).');
+  });
+
+  // ── BUG-1756：撤 meta（= 引擎释放 mmap）必须早于删磁盘目录 ──────────────
+  //
+  // Windows 上词典的 hash.table / blobs.bin / … 被 native 引擎 MapViewOfFile
+  // 常驻映射，view 还活着时 DeleteFileW 一律 ERROR_USER_MAPPED_FILE(1224)。
+  // 四个删除入口原先全是「先删目录、后卸载引擎」。
+  test('D: deleteDictionary 先撤 meta（引擎重载）再删目录', () {
+    final String body = bodyOf('Future<void> deleteDictionary(');
+    final int meta = body.indexOf('dictRepo.deleteDictionaryMeta(');
+    final int dir = body.indexOf('deleteDictionaryDirectory(');
+    expect(meta, greaterThanOrEqualTo(0));
+    expect(dir, greaterThanOrEqualTo(0),
+        reason: '删目录必须走 deleteDictionaryDirectory 原语（它负责先释放映射）');
+    expect(meta, lessThan(dir),
+        reason: '顺序不可交换：引擎还攥着 mmap view 时目录删不掉（BUG-1756）');
+    expect(body.contains('deleteSync('), isFalse,
+        reason: '裸 deleteSync 绕过了释放映射那一步（BUG-1756）');
+  });
+
+  test('E: deleteDictionaries（清空全部）先重载引擎再删目录', () {
+    final String body = bodyOf('Future<void> deleteDictionaries(');
+    final int rebuild = body.indexOf('_rebuildDictPathsCache()');
+    final int dir = body.indexOf('deleteDictionaryDirectory(');
+    expect(rebuild, greaterThanOrEqualTo(0));
+    expect(dir, greaterThanOrEqualTo(0),
+        reason: '删目录必须走 deleteDictionaryDirectory 原语');
+    expect(rebuild, lessThan(dir),
+        reason: '空集重载先释放全部 mmap view，之后资源根才删得掉（BUG-1756）');
   });
 
   // BUG-355 / TODO-641 (merged from dictionary_reorder_search_again_guard_test.dart):

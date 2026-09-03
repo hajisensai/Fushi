@@ -195,13 +195,22 @@ class PopupDbReader {
         }
 
         val targetLang = prefs["target_language"] ?: "ja"
+        // 可视化样式规则的 CSS 编译产物。本进程跑不了 Dart 编译器，只能读
+        // AppModel.saveDictStyleRules 落下的缓存，见 dict_style_rules.dart。
+        val compiledStyleCss = parseCompiledStyleCss(prefs["dict_style_rules_css"])
         return PopupPrefs(
             deduplicatePitch = prefs["deduplicate_pitch_accents"] == "true",
             harmonicFrequency = prefs["harmonic_frequency"] == "true",
             collapseDictionaries = prefs["collapse_dictionaries"] == "true",
             showExpressionTags = prefs["show_expression_tags"] == "true",
-            globalDictCSS = prefs["global_dict_css"] ?: "",
-            customDictCSS = prefs["custom_dict_css"] ?: "{}",
+            globalDictCSS = mergeCss(
+                compiledStyleCss.first,
+                prefs["global_dict_css"] ?: "",
+            ),
+            customDictCSS = mergeCustomDictCss(
+                compiledStyleCss.second,
+                prefs["custom_dict_css"] ?: "{}",
+            ),
             targetLanguage = targetLang,
             isDarkMode = when (prefs["brightness_mode"]) {
                 "dark" -> true
@@ -214,5 +223,75 @@ class PopupDbReader {
             maximumTerms = (prefs["maximum_terms"]?.toIntOrNull() ?: 100),
             maximumSearchResults = (prefs["maximum_dictionary_search_results"]?.toIntOrNull() ?: 16),
         )
+    }
+
+    /**
+     * Parse the compiled visual-style-rule CSS cache written by
+     * `AppModel.saveDictStyleRules` (see `dict_style_rules.dart`).
+     *
+     * Shape: `{"global": "...", "byDictionary": {"<dict>": "..."}}`.
+     * Returns (globalCss, dictName -> css). Empty/absent/malformed all
+     * degrade to empty — a broken cache must never take the popup down,
+     * and the next save regenerates it.
+     */
+    private fun parseCompiledStyleCss(raw: String?): Pair<String, Map<String, String>> {
+        if (raw.isNullOrEmpty()) return Pair("", emptyMap())
+        return try {
+            val root = org.json.JSONObject(raw)
+            val global = root.optString("global", "")
+            val byDict = HashMap<String, String>()
+            root.optJSONObject("byDictionary")?.let { obj ->
+                val keys = obj.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    byDict[key] = obj.optString(key, "")
+                }
+            }
+            Pair(global, byDict)
+        } catch (e: Exception) {
+            Log.e(TAG, "parseCompiledStyleCss failed", e)
+            Pair("", emptyMap())
+        }
+    }
+
+    /**
+     * Generated CSS first, hand-authored CSS second — same precedence as
+     * `mergeGeneratedAndAuthoredCss` in `dictionary_style_css.dart`. Equal
+     * specificity means document order decides, so the user's hand-written
+     * rules must come last to win.
+     */
+    private fun mergeCss(generated: String, authored: String): String {
+        val g = generated.trim()
+        val a = authored.trim()
+        if (g.isEmpty()) return authored
+        if (a.isEmpty()) return generated
+        return "$g\n$a"
+    }
+
+    /**
+     * Merge per-dictionary generated CSS into the hand-authored
+     * `custom_dict_css` JSON map. The key set is the union: a dictionary that
+     * only has visual rules (never hand-edited) must still appear, otherwise
+     * those rules silently do nothing in this process.
+     */
+    private fun mergeCustomDictCss(generated: Map<String, String>, authoredJson: String): String {
+        if (generated.isEmpty()) return authoredJson
+        return try {
+            val authored = org.json.JSONObject(authoredJson)
+            val out = org.json.JSONObject()
+            val names = HashSet<String>()
+            val keys = authored.keys()
+            while (keys.hasNext()) names.add(keys.next())
+            names.addAll(generated.keys)
+            for (name in names) {
+                val merged = mergeCss(generated[name] ?: "", authored.optString(name, ""))
+                if (merged.isBlank()) continue
+                out.put(name, merged)
+            }
+            out.toString()
+        } catch (e: Exception) {
+            Log.e(TAG, "mergeCustomDictCss failed", e)
+            authoredJson
+        }
     }
 }

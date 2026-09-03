@@ -117,6 +117,28 @@ void main() {
     expect(sameModel.recoveredPageIndices, <int>[0]);
     expect(sameModel.payload.images[0].blocks.single.lines, <String>['旧模型']);
   });
+
+  test('recovers pages cached by a non-Japanese Lens run', () async {
+    final GoogleLensPageCache lens = _lensCache(temporary, language: 'en');
+    await lens.write(0, pages[0], _page(pages[0].relativeUrl, 'Hello world'));
+
+    final MokuroPayload formal = MokuroPayload(images: <MokuroImage>[
+      _page(pages[0].relativeUrl, ''),
+      _page(pages[1].relativeUrl, ''),
+      _page(pages[2].relativeUrl, '正式'),
+    ]);
+    final MangaOcrCacheRecovery recovery = await recoverCachedMangaOcr(
+      managedDirectory: temporary.path,
+      basePayload: formal,
+      localEngineSignature: kLocalMangaOcrEngineSignature,
+    );
+
+    expect(recovery.recoveredPageIndices, <int>[0]);
+    expect(
+      recovery.payload.images.first.blocks.single.lines.single,
+      'Hello world',
+    );
+  });
 }
 
 MangaOcrFilePageCache _localCache(
@@ -135,12 +157,13 @@ MangaOcrFilePageCache _localCache(
       pageFiles: <File>[for (final page in pages) page.file],
     );
 
-GoogleLensPageCache _lensCache(Directory root) => GoogleLensPageCache(
+GoogleLensPageCache _lensCache(Directory root, {String language = 'ja'}) =>
+    GoogleLensPageCache(
       Directory(p.join(
         root.path,
         kMangaOcrOutDirName,
         kMangaOcrPagesCacheDirName,
-        kGoogleLensEngineSignature,
+        googleLensEngineSignature(language),
       )),
     );
 

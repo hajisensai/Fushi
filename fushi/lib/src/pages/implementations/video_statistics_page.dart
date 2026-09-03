@@ -1,10 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
+import 'package:fushi/src/pages/implementations/stat_period_detail_sheet.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi/src/pages/implementations/video_stat_aggregates.dart';
+import 'package:fushi/src/stats/stat_facts.dart';
+import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -13,7 +18,10 @@ import 'package:fushi_core/fushi_core.dart';
 /// 完全隔离（视频专用表）。展示观看时长 + 完成视频数 + 制卡/收藏计数（不再展示
 /// 字幕字数：字数仍在 DB 里采集，只是统计页不再呈现）。
 class VideoStatisticsPage extends BasePage {
-  const VideoStatisticsPage({super.key});
+  const VideoStatisticsPage({super.key, this.embedded = false});
+
+  /// true = 作为统计中心的一个 tab 嵌入（不套 FushiPageScaffold，动作行内联）。
+  final bool embedded;
 
   @override
   BasePageState<VideoStatisticsPage> createState() =>
@@ -26,6 +34,10 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
 
   VideoStatsAggregate _agg = VideoStatsAggregate();
   bool _hasData = false;
+
+  /// 观看域日面事实行（loadStatFacts 的 dailyVideos 切片）：时段明细 sheet 的
+  /// 数据源（阶段 1——此前这份数据聚合完即丢，时段明细要 per-video × per-day）。
+  List<StatFact> _videoFacts = <StatFact>[];
 
   /// 合集归属映射（书架同源）：按视频 tile 显示所属合集名用。
   /// - [_collectionNamesById]：collectionId → 合集名。
@@ -53,7 +65,12 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncAndLoad());
   }
 
+  /// 统计中心把三页塞进 TabBarView（无 keepAlive，离屏即 unmount），
+  /// 「点开 tab → DB 还在查 → 切走」是一秒可复现的常规操作：首帧 postFrameCallback
+  /// 与多次 await 之后的两处 setState 都必须过 mounted 门，否则 debug 断言
+  /// `setState() called after dispose()`、release 打在已置空的 _element 上。
   Future<void> _syncAndLoad() async {
+    if (!mounted) return;
     setState(() {
       _loading = true;
       _error = null;
@@ -67,8 +84,12 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
       // 的重置），上一轮失败的 _error 不清会让本轮成功的数据被错误画面挡住。
       _error = null;
       final db = appModelNoUpdate.database;
-      final List<VideoWatchStatisticRow> stats =
-          await db.getAllVideoWatchStatistics();
+      // v92：观看事实只走统一事实面（legacy `video_watch_statistics` 日行 +
+      // `study_segments` 段，由 loadStatFacts 归一），本页不再直接读表。
+      // activityLimit 0：统计页不需要活动流行。
+      final StatFacts facts = await loadStatFacts(db, activityLimit: 0);
+      final List<StatFact> stats = facts.dailyVideos.toList();
+      _videoFacts = stats;
       final List<VideoBookRow> books = await VideoBookRepository(db).listAll();
       final List<DateTime> completed = books
           .map((VideoBookRow b) => b.completedAt)
@@ -146,54 +167,59 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
           mined.isNotEmpty ||
           counters.isNotEmpty ||
           videoFavSentences.isNotEmpty;
-      await _loadHourlyData();
+      _loadHourlyData(facts);
     } catch (e, stack) {
       ErrorLogService.instance.log('VideoStatisticsPage.load', e, stack);
       _error = e.toString();
     }
-    setState(() => _loading = false);
+    if (mounted) setState(() => _loading = false);
   }
 
-  Future<void> _loadHourlyData() async {
-    final db = appModelNoUpdate.database;
-    final todayKey = statTodayKey();
-    final rows = await db.getVideoHourlyLogsForDate(todayKey);
+  /// 今日按小时观看时长：从事实面的小时面取 video 行**累加**。v92 起同一小时
+  /// 会同时有 legacy 小时行与多条段，旧实现按行赋值（`=`）会让后来的行覆盖前面
+  /// 的，只能用 `+=`。
+  void _loadHourlyData(StatFacts facts) {
+    final String todayKey = statTodayKey();
     _hourlyMs = List.filled(24, 0);
-    for (final row in rows) {
-      if (row.hour >= 0 && row.hour < 24) {
-        _hourlyMs[row.hour] = row.watchTimeMs;
+    for (final StatFact f in facts.hourly) {
+      if (!f.isVideo || f.dateKey != todayKey) continue;
+      if (f.hour >= 0 && f.hour < 24) {
+        _hourlyMs[f.hour] += f.ms;
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final List<Widget> actions = <Widget>[
+      FushiIconButton(
+        icon: Icons.refresh,
+        tooltip: t.stat_refresh,
+        enabled: !_loading,
+        onTap: _syncAndLoad,
+      ),
+      FushiIconButton(
+        icon: Icons.delete_sweep_outlined,
+        tooltip: t.stat_clear_all,
+        enabled: !_loading,
+        onTap: _confirmAndClearAll,
+      ),
+    ];
+    final Widget body = buildStatPageBody(
+      loading: _loading,
+      error: _error,
+      isEmpty: !_hasData,
+      loadingBuilder: () =>
+          buildLoading(size: 25, color: theme.colorScheme.primary),
+      errorBuilder: (String error) => buildError(error: error),
+      emptyMessage: t.video_stat_no_data,
+      contentBuilder: _buildContent,
+    );
+    if (widget.embedded) return buildEmbeddedStatTab(context, actions, body);
     return FushiPageScaffold(
       title: t.video_statistics,
-      actions: <Widget>[
-        FushiIconButton(
-          icon: Icons.refresh,
-          tooltip: t.stat_refresh,
-          enabled: !_loading,
-          onTap: _syncAndLoad,
-        ),
-        FushiIconButton(
-          icon: Icons.delete_sweep_outlined,
-          tooltip: t.stat_clear_all,
-          enabled: !_loading,
-          onTap: _confirmAndClearAll,
-        ),
-      ],
-      body: buildStatPageBody(
-        loading: _loading,
-        error: _error,
-        isEmpty: !_hasData,
-        loadingBuilder: () =>
-            buildLoading(size: 25, color: theme.colorScheme.primary),
-        errorBuilder: (String error) => buildError(error: error),
-        emptyMessage: t.video_stat_no_data,
-        contentBuilder: _buildContent,
-      ),
+      actions: actions,
+      body: body,
     );
   }
 
@@ -233,6 +259,8 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
   }
 
   Widget _buildSummaryCards() {
+    // 时段谓词在点击时现算（跨日后点卡按点击时刻的窗口取数）。
+    final StatWindow w = StatWindow(DateTime.now());
     return buildStatPeriodSummaryGrid(
       context,
       <StatPeriodSummary>[
@@ -243,7 +271,8 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
             _lookup.today,
             _mined.today,
             _favorited.today,
-            _favoritedSentences.today),
+            _favoritedSentences.today,
+            contains: w.isToday),
         _periodSummary(
             t.stat_this_week,
             _agg.weekMs,
@@ -251,7 +280,8 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
             _lookup.week,
             _mined.week,
             _favorited.week,
-            _favoritedSentences.week),
+            _favoritedSentences.week,
+            contains: w.inWeek),
         _periodSummary(
             t.stat_this_month,
             _agg.monthMs,
@@ -259,9 +289,11 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
             _lookup.month,
             _mined.month,
             _favorited.month,
-            _favoritedSentences.month),
+            _favoritedSentences.month,
+            contains: w.inMonth),
         _periodSummary(t.stat_all_time, _agg.allMs, _agg.allCompleted,
-            _lookup.all, _mined.all, _favorited.all, _favoritedSentences.all),
+            _lookup.all, _mined.all, _favorited.all, _favoritedSentences.all,
+            contains: (String _) => true),
       ],
     );
   }
@@ -273,11 +305,13 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
     int lookup,
     int mined,
     int favorited,
-    int favoritedSentences,
-  ) {
+    int favoritedSentences, {
+    required bool Function(String dateKey) contains,
+  }) {
     return StatPeriodSummary(
       label: label,
       primaryValue: formatStatTime(ms),
+      onTap: () => _showPeriodDetail(label, contains),
       lines: <StatSummaryLine>[
         StatSummaryLine(
           label: t.video_stat_completed,
@@ -292,6 +326,45 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
         ),
       ],
     );
+  }
+
+  /// 时段卡 → 时段明细 sheet（阶段 1 统一组件；本页是视频统计，明细只吃观看域
+  /// 切片 [_videoFacts]）。条目点击直达播放（合集成员带 playlistCollectionId，
+  /// 与首页续播同口径）。
+  void _showPeriodDetail(
+    String label,
+    bool Function(String dateKey) contains,
+  ) {
+    // 身份在库集合：明细行可能是已删视频的历史统计，点它不该假装能播。
+    final Set<String> libraryUids = <String>{
+      for (final Set<String> uids in _libraryUidsByTitle.values) ...uids,
+    };
+    unawaited(showStatPeriodDetailSheet(
+      context,
+      periodLabel: label,
+      contains: contains,
+      facts: _videoFacts,
+      resolvers: StatPeriodDetailResolvers(
+        titleOf: (StatFact f) => f.title,
+        collectionOf: (StatFact f) => f.mediaKey.isEmpty
+            ? null
+            : statCollectionName(
+                MediaKind.video.compositeKey(f.mediaKey),
+                _primaryCollectionByEntry,
+                _collectionNamesById,
+              ),
+        onEntryTap: (String mediaKind, String mediaKey) async {
+          if (mediaKey.isEmpty || !libraryUids.contains(mediaKey)) return;
+          await openLocalVideoBook(
+            context: context,
+            repo: VideoBookRepository(appModelNoUpdate.database),
+            bookUid: mediaKey,
+            playlistCollectionId: _primaryCollectionByEntry[
+                MediaKind.video.compositeKey(mediaKey)],
+          );
+        },
+      ),
+    ));
   }
 
   /// 长按 / 右键某个视频那一行 → 确认 → 删除该视频的纯统计并写 video 墓碑防复活，

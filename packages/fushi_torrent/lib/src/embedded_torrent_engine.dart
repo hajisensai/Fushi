@@ -703,6 +703,43 @@ class EmbeddedTorrentSession {
         1;
   }
 
+  /// 已加载的库是否支持 [applyProxy]（老预编译 DLL 没有 `ht_apply_proxy`）。
+  bool get supportsProxy => _b.hasApplyProxy;
+
+  /// 已加载的库是否支持混合档（`ht_apply_proxy_mode`）。没有时 [applyProxy]
+  /// 的 `mixed: true` 会降级为全代理——宁可少直连面，也不把流量漏到真实出口。
+  bool get supportsProxyMode => _b.hasApplyProxyMode;
+
+  /// P2P 代理：[hostPort] 为 null/空 = 直连；否则 `host:port`，[proxyType]
+  /// 1=http（默认，系统/手填代理都是 HTTP）2=socks5。默认（全代理）peer /
+  /// tracker / 主机名解析三条链路一并切换；[mixed] true = 混合档：tracker /
+  /// 主机名解析经代理，peer 连接与 DHT 直连（见 native 注释；老库无新符号时
+  /// 降级全代理）。返回 false：session 已关 / 库无此符号 / host:port 拆不开 /
+  /// native 失败——调用方据此提示，不假装成功。
+  bool applyProxy({String? hostPort, int proxyType = 1, bool mixed = false}) {
+    if (isClosed || !_b.hasApplyProxy) return false;
+    final String value = hostPort?.trim() ?? '';
+    if (value.isEmpty) {
+      return _b.hasApplyProxyMode
+          ? _b.ht_apply_proxy_mode(_session, 0, nullptr, 0, 0) == 1
+          : _b.ht_apply_proxy(_session, 0, nullptr, 0) == 1;
+    }
+    final int colon = value.lastIndexOf(':');
+    final int? port =
+        colon > 0 ? int.tryParse(value.substring(colon + 1)) : null;
+    if (port == null || port <= 0 || port > 65535) return false;
+    final String host = value.substring(0, colon);
+    return using((Arena arena) {
+      final Pointer<Char> cHost = host.toNativeUtf8(allocator: arena).cast();
+      if (_b.hasApplyProxyMode) {
+        return _b.ht_apply_proxy_mode(
+                _session, proxyType, cHost, port, mixed ? 2 : 1) ==
+            1;
+      }
+      return _b.ht_apply_proxy(_session, proxyType, cHost, port) == 1;
+    });
+  }
+
   /// 应用会话级设置（端口/DHT/LSD/UPnP/NAT-PMP/加密/匿名/活跃数/上传槽）。
   /// [encPolicy] 0=首选 1=强制 2=禁用；[listenPort]/[activeDownloads]/
   /// [activeSeeds]/[maxUploadSlots] <=0 保持默认。1 成功 0 失败。
@@ -1047,6 +1084,25 @@ class EmbeddedTorrentSession {
           .map(FtTrackerInfo._fromJson)
           .toList(growable: false);
     } finally {
+      malloc.free(id);
+    }
+  }
+
+  /// 给已有种子追加 tracker。旧 DLL 缺能力或参数为空时返回 false。
+  bool addTrackers(String infoHash, Iterable<String> trackerUrls) {
+    if (isClosed || !_b.hasTrackerMutation) return false;
+    final String joined = trackerUrls
+        .map((String value) => value.trim())
+        .where((String value) => value.isNotEmpty)
+        .toSet()
+        .join('\n');
+    if (joined.isEmpty) return false;
+    final Pointer<Char> id = infoHash.toNativeUtf8().cast<Char>();
+    final Pointer<Char> urls = joined.toNativeUtf8().cast<Char>();
+    try {
+      return _b.ht_add_trackers(_session, id, urls) >= 0;
+    } finally {
+      malloc.free(urls);
       malloc.free(id);
     }
   }

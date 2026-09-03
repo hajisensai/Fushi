@@ -17,6 +17,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:share_plus/share_plus.dart';
+import 'package:fushi/src/utils/misc/collection_exporter.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -25,8 +26,11 @@ import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/media/tracking/media_tracking_service.dart'
+    show kMediaTrackingEnabled;
 import 'package:fushi/src/pages/implementations/video_loading_overlay.dart';
-import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
+import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
+import 'package:fushi/src/utils/components/fushi_windows_title_bar.dart';
 // 只取语义枚举与调色板：视频页的通知一律走左上角 _showOsd，不得用 FushiToast
 // （BUG-931 有守卫），故刻意不 import 整套 toast API。
 import 'package:fushi/src/utils/misc/toast_severity.dart';
@@ -36,6 +40,7 @@ import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
 import 'package:fushi/src/media/video/danmaku_manual_match_panel.dart';
+import 'package:fushi/src/media/source_library/source_stream_headers.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
 import 'package:fushi/src/media/video/subtitle_embedded_fonts.dart';
 import 'package:fushi/src/media/video/video_episode_start_policy.dart';
@@ -43,6 +48,10 @@ import 'package:fushi/src/media/video/video_import_dialog.dart';
 import 'package:fushi/src/media/video/video_top_bar_slots.dart';
 import 'package:fushi/src/media/video/m3u8_playlist.dart';
 import 'package:fushi/src/media/video/url_stream_video.dart';
+import 'package:fushi/src/media/video/web_video_bridge.dart'
+    show shouldOpenInWebVideoPlayer;
+import 'package:fushi/src/pages/implementations/web_video_fushi_page.dart'
+    show WebVideoFushiPage;
 import 'package:fushi/src/media/video/youtube_source_resolver.dart'
     show
         YoutubeCaptionTrack,
@@ -64,6 +73,9 @@ import 'package:fushi/src/media/video/video_asbplayer_config.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_chrome_colors.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
+import 'package:fushi/src/media/video/video_control_item_presentation.dart';
+import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
+import 'package:fushi/src/media/video/video_custom_action_picker.dart';
 import 'package:fushi/src/media/video/video_control_layout_edit_overlay.dart';
 import 'package:fushi/src/media/video/video_control_popover_placement.dart';
 import 'package:fushi/src/media/video/video_controls_focus_gate.dart';
@@ -73,24 +85,38 @@ import 'package:fushi/src/media/video/video_danmaku_overlay.dart';
 import 'package:fushi/src/media/video/video_danmaku_source.dart';
 import 'package:fushi/src/media/video/video_filename_parser.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
+import 'package:fushi/src/media/video/video_lua_script_manager.dart';
+import 'package:fushi/src/media/video/video_hdr_output.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_screenshot_filename.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
+import 'package:fushi/src/utils/window_caption_channel.dart';
 import 'package:fushi/src/focus/page_focus_ownership.dart';
+import 'package:fushi/src/focus/panel_focus_scope.dart';
 import 'package:fushi/src/media/video/video_player_shortcuts.dart';
 // TODO-1342：视频播放器手柄映射。GamepadButtonIntent（桌面轮询派发）+ GamepadButton
 // （原生按键归一）+ ShortcutAction/ShortcutScope（video 作用域绑定解析）。
 import 'package:fushi/src/shortcuts/dictionary_caret_controller.dart'
     show CaretSurface, DictionaryCaretController, DictionaryCaretHost;
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
-    show GamepadButtonIntent, GamepadLongPressIntent, focusedEditableText;
+    show
+        GamepadButtonIntent,
+        GamepadLongPressIntent,
+        focusedEditableText,
+        tryDictionaryPopupGamepadButton;
 import 'package:fushi/src/shortcuts/input_binding.dart'
-    show GamepadButton, InputBinding;
+    show GamepadButton, InputBinding, activeModifierKeys;
+import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart'
+    show dispatchClaimedMouseAction, resolveMouseBindingAction;
 import 'package:fushi/src/shortcuts/reader_caret_router.dart'
     show CaretAction, ReaderCaretRouter;
+import 'package:fushi/src/shortcuts/window_fullscreen_hosts.dart'
+    show WindowFullscreenHost;
 import 'package:fushi/src/shortcuts/shortcut_action.dart'
     show ShortcutAction, ShortcutScope;
+import 'package:fushi/src/media/video/video_foreground_layers.dart'
+    show VideoForegroundLayer, topVideoForegroundLayer;
 import 'package:fushi/src/media/video/video_shader_manager.dart';
 import 'package:fushi/src/media/video/video_shader_tier.dart';
 import 'package:fushi/src/media/video/video_chapter_panel.dart';
@@ -107,19 +133,19 @@ import 'package:fushi/src/media/video/video_subtitle_style.dart';
 import 'package:fushi/src/media/video/video_thumbnail_preview_controller.dart';
 import 'package:fushi/src/media/video/video_thumbnail_preview_overlay.dart';
 import 'package:fushi/src/media/video/video_watch_tracker.dart';
-import 'package:fushi/src/pages/implementations/jimaku_subtitle_dialog.dart';
+import 'package:fushi/src/media/video/subtitle/subtitle_search_seed.dart';
+import 'package:fushi/src/pages/implementations/subtitle_workbench_page.dart';
 import 'package:fushi/src/media/video/video_quick_settings_host.dart';
 import 'package:fushi/src/media/video/video_quick_settings_sheet.dart';
 import 'package:fushi/src/media/video/video_sidecar.dart';
 import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
-import 'package:fushi/src/media/video/video_subtitle_selection.dart';
 import 'package:fushi/src/media/video/video_subtitle_source.dart';
 import 'package:fushi/src/media/video/video_volume_overlays.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
-import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
@@ -129,6 +155,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult, DictionaryPopupWebViewState;
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
+import 'package:fushi/src/sync/sync_backend.dart' show SyncPeerUnreachableError;
 import 'package:fushi/src/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
@@ -148,9 +175,12 @@ import 'package:fushi/src/platform/windows_ime_space_channel.dart';
 import 'package:fushi/src/platform/windows_ime_space_dispatch.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/utils/overlay_entry_lifecycle.dart';
 import 'package:fushi/src/utils/components/fading_chrome_gate.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_destructive_confirm_dialog.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 part 'video_fushi/danmaku.part.dart';
 part 'video_fushi/clip_export.part.dart';
@@ -317,33 +347,37 @@ bool _isLatinWordGrapheme(String grapheme) {
 final RegExp _kLatinWordCharRegExp =
     RegExp(r'^[\p{Script=Latin}0-9]', unicode: true);
 
-/// 点字幕第 [graphemeIndex] 个字位起的查词词面（TODO-916 症状③）。
+/// 点字幕第 [graphemeIndex] 个字位起的查询串。
 ///
-/// 默认（CJK / 日文）行为：从被点字位一直取到**句尾**，逐字查词（与历史一致，
-/// 不能套「延伸到词尾」——中日文按字 / 词查）。
+/// 查询串只由**起点**决定，终点恒为句尾——引擎按查询串做最长匹配并回报
+/// `bestLength`（弹窗 / 字幕据此高亮整词跨度），多喂的后文超出 `scanLength`
+/// （`FushiDicts.defaultScanLength` = 16 码点）自然丢弃。
 ///
-/// 仅当**被点字位本身是拉丁单词字符**时，回退到该拉丁单词的**词首**并延伸到
-/// **词尾**，返回整个单词。这样点 "hello" 的任意字母（含 'e' / 'o'）都返回
-/// "hello"，而不是旧 `skip(index)` 的 "ello" 查不到（拉丁词非逐字、点中间字母
-/// 取不到整词 → 查不到）。空格 / 标点 / 连字号 / CJK 都是词边界。
-@visibleForTesting
+/// 起点按脚本分：
+/// - CJK / 标点 / 空白：就是被点字位本身（逐字查词，点「永」命中「永遠」、
+///   点「遠」能单独查「遠」）。
+/// - 拉丁单词字符：回退到该单词的**词首**，这样点 "hello" 的任意字母（含
+///   'e' / 'o'）都从 "hello" 起查，而不是旧 `skip(index)` 的 "ello" 查不到
+///   （TODO-916 症状③）。空格 / 标点 / 连字号 / CJK 都是词首边界。
+///
+/// BUG-1773：拉丁分支此前**同时**把终点钉死在词尾，于是查询串被截成单个单词，
+/// `listen to` / `look forward to` 这类空格分词短语的词条永远匹配不到——点空格
+/// 反而能查出短语（走了 CJK 的「到句尾」分支）就是这个特例的照妖镜。终点从来
+/// 不该由脚本决定：C++ `scan_candidates` 明确禁止在空格分词语言的单词中间切
+/// （native/fushidicts/fushidicts_src/scan/word_scan.cpp），候选恒是
+/// `listen to music` / `listen to` / `listen`，单词自己仍在候选里，不会被短语挤掉。
+/// 网页播放器页（web_video_fushi_page.dart）与本页共用同一取词规则，故为公开顶层函数。
 String subtitleLookupTerm(String sentence, int graphemeIndex) {
   final List<String> graphemes = sentence.characters.toList();
   if (graphemeIndex < 0 || graphemeIndex >= graphemes.length) return '';
-  // 非拉丁（CJK / 标点 / 空白）：维持历史「取到句尾逐字查」语义。
-  if (!_isLatinWordGrapheme(graphemes[graphemeIndex])) {
-    return graphemes.skip(graphemeIndex).join();
-  }
   int start = graphemeIndex;
-  while (start > 0 && _isLatinWordGrapheme(graphemes[start - 1])) {
-    start--;
+  // 拉丁单词字符：只把起点回退到词首。其余脚本起点即命中字位。
+  if (_isLatinWordGrapheme(graphemes[graphemeIndex])) {
+    while (start > 0 && _isLatinWordGrapheme(graphemes[start - 1])) {
+      start--;
+    }
   }
-  int end = graphemeIndex; // inclusive index of last word grapheme
-  while (
-      end + 1 < graphemes.length && _isLatinWordGrapheme(graphemes[end + 1])) {
-    end++;
-  }
-  return graphemes.sublist(start, end + 1).join();
+  return graphemes.skip(start).join();
 }
 
 @visibleForTesting
@@ -633,6 +667,10 @@ abstract class VideoFushiTestHooks {
 
   /// 当前 controller 读到的内封章节数量。
   int get debugChapterCount;
+
+  /// media_kit 控制条（OSC）当前真实可见性（BUG-2030 的被测真相源）。
+  /// 直取 fork 推来的 `_mediaKitControlsVisible`，不是任何镜像。
+  bool get debugControlsVisible;
 
   /// 当前 controller 读到的媒体时长（毫秒）；未就绪为 null/0。
   int? get debugDurationMs;
@@ -937,6 +975,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   int get debugChapterCount => _controller?.chapters.length ?? 0;
 
   @override
+  bool get debugControlsVisible => _mediaKitControlsVisible.value;
+
+  @override
   int? get debugDurationMs => _controller?.durationMs;
 
   @override
@@ -1083,6 +1124,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 让窗口与全屏两种场景都随 L 键 / 入口按钮翻转可见。
   final ValueNotifier<bool> _subtitleListVisible = ValueNotifier<bool>(false);
 
+  /// BUG-1907：请求字幕列表面板展开搜索框的计数器（每 +1 一次请求）。
+  /// 见 `_requestSubtitleListSearch`——整表快捷键够不到面板，只能这样递话。
+  final ValueNotifier<int> _subtitleSearchRequests = ValueNotifier<int>(0);
+
   /// BUG-877：字幕列表面板左边缘拖拽中的临时宽度（逻辑像素）。仅拖动期间非 null，
   /// [_subtitleJumpSidePanel] 优先用它实时反映拖动；拖动结束落 Drift preferences 后复位 null，
   /// 回到读持久化值。避免每次 `onHorizontalDragUpdate` 都写 DB。
@@ -1136,8 +1181,24 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   final ValueNotifier<VideoControlLayout> _controlLayoutNotifier =
       ValueNotifier<VideoControlLayout>(VideoControlLayout.currentChrome);
 
+  /// 自定义「快捷键 1..4」按钮的绑定（槽位 → 视频动作）。与 [_controlLayoutNotifier]
+  /// 同样走 notifier 而不是裸字段：控制层（含全屏路由那棵独立子树）只在监听到通知时
+  /// 才重建，绑定改了却不通知 = 按钮图标/行为停在旧动作上（BUG-391 那条「漏监听 =
+  /// 改了白改」的同款陷阱，见 layout.part.dart 的 merge 列表）。
+  final ValueNotifier<VideoCustomActionBindings> _customActionBindingsNotifier =
+      ValueNotifier<VideoCustomActionBindings>(VideoCustomActionBindings.empty);
+
+  /// 当前生效的自定义按钮绑定表。
+  VideoCustomActionBindings get _customActionBindings =>
+      _customActionBindingsNotifier.value;
+
   List<SubtitleSource> _subtitleMenuSources = const <SubtitleSource>[];
   bool _subtitleMenuLoading = false;
+
+  /// BUG-1863：本页在前台期间是否真的进过后台（`paused` / `hidden`，**不含**
+  /// `inactive`）。回前台时据它决定要不要重建视频解码链，见
+  /// [_refreshDecodeAfterResumeIfNeeded]。
+  bool _enteredRealBackground = false;
 
   /// BUG-939：`_subtitleMenuSources` 已成功枚举时对应的本地视频路径。字幕轨枚举
   /// （ffprobe 探测内嵌轨 + 同目录外挂）按此 key 记忆：同一视频重开「字幕」分类直接
@@ -1145,8 +1206,20 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// （用户报「字幕轨每次都要加载、明明没可加载的地方；之前有的字幕还会消失要等」）。
   /// null=尚未为当前视频枚举 / 已失效（换视频）→ 下次打开重新枚举。BUG-1329：导入或
   /// 下载新字幕档**不**作废这个 key（那会换来一整趟无谓的容器重探 + 长时间加载条），
-  /// 新档由 `_registerImportedSubtitleSource` 就地并入 `_subtitleMenuSources`。
+  /// 新档由 `_registerImportedSubtitleSource` 记进 `_importedSubtitleSources`，渲染时
+  /// 与本枚举结果合并（BUG-1861，不再写进本缓存）。
   String? _subtitleMenuSourcesPath;
+
+  /// BUG-1861：本次播放会话里**落盘并应用过**的外挂字幕档（Jimaku 下载 / 手动导入）。
+  ///
+  /// 与 `_subtitleMenuSources`（纯枚举结果：内封轨 + 视频同目录 sidecar）是两份独立
+  /// 真相，渲染时由 `mergeImportedSubtitleSourcesForMenu` 合并。独立存放的理由见该函数
+  /// 注释：枚举可能失败 / 在途 / 因换集失配，而「这个档案就在盘上、刚被应用」是不依赖
+  /// 枚举的既成事实，不能被枚举缓存的有效性 gate 掉（那正是用户报的「字幕应用上了但
+  /// 列表里没有」）。远端模式同样维护它——远端主 / 副字幕轨行都只覆盖 host sidecar /
+  /// YouTube 轨 / host 内封轨，本机下载或导入的档案此前在远端根本没有对应行（两栏都
+  /// 没有）。换视频源时清空。
+  List<SubtitleSource> _importedSubtitleSources = const <SubtitleSource>[];
 
   /// 当前视频是否有内封章节（TODO-424）：控制条章节入口按钮的显隐门控。章节列表是
   /// [VideoPlayerController.refreshChapters] open 后**异步**填充的，故缓存这个布尔并由
@@ -1369,6 +1442,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// context 可用再进全屏；失败/缺失态或超过上限则放弃，避免死循环（见
   /// [_scheduleInitialFullscreenIfNeeded]）。
   bool _didInitialFullscreen = false;
+
+  /// BUG-2043：本页是否持有从上一集页**接管**来的原生全屏（窗口已是原生全屏、栈上
+  /// 尚无本页的全屏路由）。initState 经 [_claimHandedOverNativeFullscreen] 置真；就绪
+  /// 后压上全屏路由（退出改由路由 pop 收口）、再换下一集（所有权继续传递）或
+  /// [_releaseHandedOverNativeFullscreen] 亲自退出，三者都把它翻假。
+  bool _ownsHandedOverNativeFullscreen = false;
   int _initialFullscreenRetries = 0;
 
   /// 观看统计采集器（观看时长 + 字幕字数 + 完成标记）；首次 load 建，dispose 释放。
@@ -1449,7 +1528,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 这里，连续查多句累积；制卡（[onMineEntry] / [onUpdateEntry]）时把草稿全部句 +
   /// 当前句用 [MiningSentenceDraft.composeText] 合成 sentence 字段、用
   /// [MiningSentenceDraft.composeAudioRange] 合并成「首句起→末句止」的单一区间（GIF +
-  /// 音频共用，与字幕列表多选 [_selectedMiningCueStarts] 同观感，但属不同入口）。制卡
+  /// 音频共用）。制卡
   /// 成功或关闭整条查词浮层栈后清空。视频所有 cue 同属一个视频文件，故区间合并恒成功
   /// （[MiningSentenceDraft] 把 [AudioPlaybackRange.audioFileIndex] 当文件键，视频统一
   /// 用 0）。reader/有声书车道（[ReaderFushiPage] 的 `_miningDraft`）共用同一草稿模型。
@@ -1557,7 +1636,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 行内收藏 toggle 后增量更新。新条目按 `bookUid + cue.startMs` 匹配；旧条目没有
   /// startMs 时保留 text-only 兼容键。
   final Set<String> _favoritedVideoSentences = <String>{};
-  final Set<int> _selectedMiningCueStarts = <int>{};
 
   // ── DictionaryPageMixin 必需的抽象成员 ──────────────────────────────
   @override
@@ -1571,7 +1649,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   String get dictionarySourceType => kStatSourceVideo;
 
   /// TODO-1204：查词 / 制卡计数归属本视频——[title] 用 [_title]（剧集标题，与
-  /// 视频统计 tile 的 [addVideoWatchStatistic] title 聚合键对齐），[bookKey] 存
+  /// 视频统计 tile 的身份分组键对齐），[bookKey] 存
   /// [VideoFushiPage.bookUid]。远端视频无观看统计 tile，其计数仍进「查词」汇总。
   @override
   ({String? bookKey, String? title})? get lookupBookIdentity =>
@@ -1755,6 +1833,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 设置面板改动经 [_setVideoFitMode] 落盘 + setState 重建 Video。
   VideoFitMode _videoFitMode = VideoFitMode.contain;
 
+  /// Windows HDR 直通 / 10-bit 输出模式（`video_hdr_output.dart`），init 时从
+  /// AppModel 读入，随控制器创建下发；改设置经 [_setVideoHdrOutputMode]。
+  VideoHdrOutputMode _videoHdrOutputMode = VideoHdrOutputMode.auto;
+
   bool get _isPlaylist => _episodes.length > 1;
 
   /// 收藏/制卡是否按集区分：本地每集是独立 VideoBooks 行（bookKey 已唯一定位集，单视频
@@ -1833,6 +1915,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // TODO-1204：接线查词计数（视频来源，带 bookUid + 剧集标题）。
     attachLookupCounter(_popup);
     _subtitleListVisible.value = widget.initialSubtitleListVisible;
+    // BUG-2043：从全屏页换集而来 → 认领旧页留下的原生全屏（见 fullscreen.part.dart）。
+    _claimHandedOverNativeFullscreen();
     // TODO-364 单一真相源：字幕避让可见性恒由 media_kit 真实可见性
     // （[_mediaKitControlsVisible]）+ 三个门控派生。订阅这四个输入，任一变化即重派生
     // [_videoControlsVisible]，杜绝旧镜像与真实控制条相位反。
@@ -1843,6 +1927,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _subtitleListVisible.addListener(_applyControlsVisibilityFromMediaKit);
     _episodeListVisible.addListener(_applyControlsVisibilityFromMediaKit);
     _videoControlEditMode.addListener(_applyControlsVisibilityFromMediaKit);
+    // BUG-1798：查词浮层也是 [_hasVideoOverlay] 的输入，与上面六个门控同等订阅——否则弹窗
+    // 打开 / 关闭时光标策略不重跑，鼠标悬在弹窗上仍被上一轮的 `cursor: none` 吃掉。
+    _lookupOverlayActive.addListener(_applyControlsVisibilityFromMediaKit);
     // TODO-611：侧栏面板锁定不持久化。面板一关闭就把锁复位为 false，下次重开默认未锁
     // ——锁生命周期绑定可见性，关闭路径无需逐个复位。
     WidgetsBinding.instance.addObserver(this);
@@ -1891,9 +1978,17 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         unawaited(_flushPersistedVideoSpeed());
         unawaited(_flushPersistedVideoVolume());
         _watchTracker?.stop();
+        // BUG-1863：记下「真的进过后台」。移动端在 app 不可见期间可能被系统回收硬件
+        // 解码器，回来后解码从非关键帧继续、参考帧缺失 → 静止区域被 libavcodec 的
+        // error concealment 填成中性灰。`inactive` 不置这个标记（那期间 app 仍持有
+        // 解码器，白白刷新只是给用户一次无谓卡顿）。
+        _enteredRealBackground = true;
       case AppLifecycleState.resumed:
         // 回前台：重启观看计时器（start() 重置 _tickStart=now，下一窗从此刻起算）。
         _watchTracker?.start();
+        // BUG-1863：从真后台回来先把视频解码链重建一次（详见
+        // [VideoPlayerController.shouldRefreshDecodeOnResume] 的判据与机制说明）。
+        _refreshDecodeAfterResumeIfNeeded();
         // TODO-158/BUG-219: 回前台重申沉浸隐藏系统栏（移动端）。后台 / 通知栏下拉 /
         // 多任务切回后 Android 会把系统栏恢复显示，immersiveSticky 只在进入时设一次
         // 不会自动复申 → 这里主动重设，保证「一直隐藏」。桌面 no-op。
@@ -1905,6 +2000,31 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       case AppLifecycleState.detached:
         break;
     }
+  }
+
+  /// BUG-1863：从真后台回前台后重建一次视频解码链（消除「静止的地方变成灰色」）。
+  ///
+  /// **每一次真后台返回都刷，不是「检测到灰了才刷」**——解码器被系统回收没有可读信号，
+  /// 判据 [VideoPlayerController.shouldRefreshDecodeOnResume] 只排除「刷了没用 / 刷了
+  /// 有害」的场合，不判断「这次是否真的需要」。取舍与代价见该判据的文档。
+  ///
+  /// 标记**无条件**清掉，判据不成立只是这一轮不刷新，不能让它攒到下一次 resume 才放
+  /// （那会变成「某次切窗后莫名 seek 一下」）。刷新本身 fire-and-forget：它只是把播放
+  /// 头 seek 回原地，失败（player 已释放 / 流不可 seek）也没有需要回滚的状态。
+  void _refreshDecodeAfterResumeIfNeeded() {
+    final bool wasBackgrounded = _enteredRealBackground;
+    _enteredRealBackground = false;
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    final int? durationMs = controller.durationMs;
+    if (!VideoPlayerController.shouldRefreshDecodeOnResume(
+      enteredRealBackground: wasBackgrounded,
+      hasVideo: controller.hasFirstFrame,
+      seekable: durationMs != null && durationMs > 0,
+    )) {
+      return;
+    }
+    unawaited(controller.refreshDecodeAfterResume());
   }
 
   /// 进程退出统一 flush（TODO-086/BUG-191）。把当前播放位置写穿（[flushPosition]
@@ -1922,23 +2042,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 优先 per-book（[widget.bookUid]）绑定，其次媒体类型级 'video' 绑定，
   /// 都无则维持当前活跃 profile。镜像 [_ReaderAudiobook._resolveAndApplyProfile]
   /// 的非致命范式：失败只记日志、不打断视频加载。
-  Future<void> _resolveAndApplyVideoProfile() async {
-    try {
-      final ProfileRepository profileRepo = ref.read(profileRepositoryProvider);
-      final ProfileViewModel profileVm =
-          ref.read(profileViewModelProvider.notifier);
-      final int resolvedId = await profileRepo.resolveProfileId(
-        bookUid: widget.bookUid,
-        mediaType: ProfileMediaKind.video,
-      );
-      final int currentActiveId = await profileRepo.getActiveProfileId();
-      if (resolvedId != currentActiveId) {
-        await profileVm.switchProfile(resolvedId);
-      }
-    } catch (e, st) {
-      debugPrint('[VideoFushi] profile resolution failed (non-fatal): $e\n$st');
-    }
-  }
+  Future<void> _resolveAndApplyVideoProfile() =>
+      ref.read(profileViewModelProvider.notifier).autoApplyBinding(
+            bookUid: widget.bookUid,
+            mediaType: ProfileMediaKind.video,
+          );
 
   /// TODO-1213：切换加载阶段并刷新加载态 UI（mounted 守卫）。离开「下载字幕」阶段时
   /// 一并清字幕进度（其它阶段无确定性进度，转 indeterminate）。
@@ -2036,12 +2144,43 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 的远端播放路径（_initRemote）。YouTube 会在 buildStreamVideoLaunch 里重解析（临时流
     // URL 会过期）；重建失败按打开失败处理。放在读 row 后、本地字幕/进度恢复前短路。
     if (isStreamVideoBook(row)) {
+      // 网页视频站（Netflix / YouTube 页 / TVer……）在 Windows 上交给内置网页播放器：
+      // 站点自己的播放器播，Fushi 复用字幕面板 / 查词 / 进度登记。在这里分流而非各
+      // push 点：书架 / 首页 / 合集 / 作品页 / app 外打开 8 处入口全部自动覆盖。
+      // media_kit controller 尚未 load，pushReplacement 代价只是本页一次空 build。
+      if (shouldOpenInWebVideoPlayer(row.videoPath)) {
+        final BuildContext pageContext = context;
+        if (!pageContext.mounted) return;
+        unawaited(Navigator.of(pageContext).pushReplacement(
+          adaptivePageRoute<void>(
+            context: pageContext,
+            builder: (_) => WebVideoFushiPage.neutralized(
+              bookUid: widget.bookUid,
+              repo: widget.repo,
+            ),
+          ),
+        ));
+        return;
+      }
       // TODO-1307：把「正在连接视频流…」阶段反馈提前到 buildStreamVideoLaunch（YouTube 快
       // 解析 getManifest 有网络往返、慢网仍可数秒）之前，避免解析期页面裸转圈「点了没动静」。
       _setLoadingPhase(_VideoLoadPhase.connecting);
       try {
+        // 来源库网络视频（WebDAV）：认证头按 sourceId 现解析（凭据不落行级
+        // spec——改来源密码一处生效）；非来源书解析为空 map，零分支。
+        // targetUrl 传本行真实流地址：来源根下的 m3u8 清单可以指向第三方主机，
+        // 那些行同样带本来源的 sourceId，不按目标地址收口就会把 NAS 账号密码
+        // 发给第三方（见 source_library/stream_auth_scope.dart）。
+        final Map<String, String> sourceHeaders =
+            await resolveSourceStreamHeaders(
+          db: appModel.database,
+          sourceId: row.sourceId,
+          targetUrl: row.videoPath,
+        );
         final ({UrlStreamVideoClient client, RemoteVideoInfo info}) launch =
-            await buildStreamVideoLaunch(row);
+            await buildStreamVideoLaunch(row,
+                youtubeTargetHeight: appModel.youtubeQualityTargetHeightOrNull,
+                sourceHttpHeaders: sourceHeaders);
         if (!mounted) return;
         _resolvedStreamInfo = launch.info;
         _resolvedStreamClient = launch.client;
@@ -2072,8 +2211,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _subtitleStyle = VideoSubtitleStyle.decode(appModel.videoSubtitleStyle);
     _asbConfig = VideoAsbplayerConfig.decode(appModel.videoAsbplayerConfig);
     _controlLayoutNotifier.value = appModel.videoControlLayout;
+    _customActionBindingsNotifier.value = appModel.videoCustomActionBindings;
     _lockWindowAspectRatio = appModel.videoLockWindowAspectRatio;
     _videoFitMode = appModel.videoFitMode;
+    _videoHdrOutputMode = appModel.videoHdrOutputMode;
 
     // 统一合集 Phase 3：本集若作为某 playlist 合集的一集打开（widget.playlistCollectionId
     // 非空），从合集成员建兄弟集列表（剧集面板 / 上下集 / 连播上下文）。每集是独立
@@ -2166,6 +2307,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _subtitleStyle = VideoSubtitleStyle.decode(appModel.videoSubtitleStyle);
     _asbConfig = VideoAsbplayerConfig.decode(appModel.videoAsbplayerConfig);
     _controlLayoutNotifier.value = appModel.videoControlLayout;
+    _customActionBindingsNotifier.value = appModel.videoCustomActionBindings;
 
     // 客户端合集连播（Phase 3 合集 = N 个独立 VideoBooks 行）：host 不把兄弟集填进
     // RemoteVideoInfo.episodes（那是旧单行 playlistJson 模型），故由 client 用合集成员列表
@@ -2259,6 +2401,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // TODO-1307：新一集起播重置「用户已关字幕」标记（字幕后置自动应用的门控，见
     // [_resolveDeferredYoutubeCaptions]）。
     _remoteSubtitleUserDismissed = false;
+    // BUG-1861：本会话导入 / 下载的字幕档按视频源作用域，远端换集一并清空（上一集下的
+    // 档案不该继续挂在新集的字幕轨列表里）。本地换源在 [_applyLoad] 的
+    // `clipExportSourceChanged` 分支清（远端 `_currentVideoPath` 恒 null，走不到那里）。
+    _importedSubtitleSources = const <SubtitleSource>[];
     // YouTube 画质档是 per-video 懒解析：新一集起播先复位（下次点开画质菜单再懒解析）。
     _youtubeVariants = const <YoutubeVideoVariant>[];
     _selectedYoutubeVariantIndex = -1;
@@ -2679,6 +2825,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         videoRemotePositionEpisodePrefKey(keyUid, episodeIndex), clamped);
     await appModel.prefsRepo.setPref(
         videoRemotePositionEpisodeAtPrefKey(keyUid, episodeIndex), nowMs);
+    // 书架流媒体书（YouTube/直链，TODO-1157）**有** VideoBooks 行（[_bookRow] 非空），
+    // 只写 prefs 会让书架的「继续观看 / 在看筛选 / 合集续播选集」对它全部失明——那些
+    // 读的是 `lastPositionMs` / `lastPlayedAt`。与本地 [_persistPosition] 对齐补写 DB 行
+    // （resume 仍走上面的 prefs LWW，两者读写路径互不干扰）。互联远端无行，保持原样。
+    if (_bookRow != null) {
+      await widget.repo
+          .updatePosition(widget.bookUid, clamped, playedAt: nowMs);
+    }
     final RemoteVideoClient? client = _effectiveRemoteClient;
     if (client == null) return;
     try {
@@ -2745,6 +2899,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         cues = reparsed;
       }
       // reparsed 为空（档案被删/损坏）：保留上面的 DB 缓存 cues，仅缺样式不缺内容。
+      // **但缓存本身可能就是空的**——合集里的每一集只落字幕源指针、不落 cue
+      // （见 _selectSubtitleSource 的 `_episodes.isEmpty` 分支），所以这条支路解析
+      // 失败时 cues 恒为空。下面那组兜底因此**不能**继续挂在同一条 else-if 链上，
+      // 否则「解析一次没成功」就等于零字幕、零兜底、零提示（用户报：下载的字幕退出
+      // 再进就没了，只能重下一次）。见 BUG-1848。
     } else if (rehydrateEmbedded) {
       // 内嵌文本轨：重解析已抽取的缓存档案恢复 cue 级 / 行内样式 markup（TODO-1246）。
       final ({
@@ -2761,7 +2920,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         externalSub = restored.persisted;
       }
       // restored 为空（缓存被清 / 容器不可读）：保留 DB 缓存 cues，仅缺样式不缺内容。
-    } else if (cues.isEmpty) {
+    }
+
+    // 兜底链：只要**还没拿到 cue** 就逐级往下试。这里刻意独立于上面那条 else-if 链
+    // ——上面任何一支「试过但没成功」都必须能落到这里。合集里的每一集没有 DB cue 缓存
+    // 兜底（只落字幕源指针），一旦挂在同一条链上，「解析一次没成功」就直接空手收场
+    // （BUG-1848）。
+    if (!subtitleExplicitlyOff && cues.isEmpty) {
       // ① 优先恢复持久化的字幕源（精确匹配本视频的同一源）。
       if (paths.subtitleSource != null && paths.subtitleSource!.isNotEmpty) {
         final ({
@@ -2779,14 +2944,21 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           graphicStreamIndex = restored.graphicStreamIndex;
         }
       }
-      // ② 无持久化 / 无匹配：退默认 sidecar 探测。
-      if (cues.isEmpty && externalSub == null) {
+      // ② 仍为空：退默认 sidecar 探测。判据只看「还没有 cue」——旧判据额外要求
+      // `externalSub == null`，于是「有持久化源、但它恢复不出内容」时连 sidecar 都不试。
+      if (cues.isEmpty) {
         final ({String path, List<AudioCue> cues})? sidecar =
             await _detectSidecar(paths.videoPath, widget.bookUid);
         if (sidecar != null) {
           cues = sidecar.cues;
           externalSub = sidecar.path;
         }
+      }
+      // ③ 还是空：别拿一个恢复不出任何内容的外挂源去挡住播放器的内封轨自动加载
+      // （`VideoPlayerController.load` 只在「无外挂路径 + 无 cue」时才后台抽内封文本轨）。
+      // 只影响本次加载，**不回写 DB**——用户选过的源仍在库里，下次仍会先试它。
+      if (cues.isEmpty && !SubtitleSource.isEmbeddedPersisted(externalSub)) {
+        externalSub = null;
       }
     }
     await _applyLoad(
@@ -3058,6 +3230,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final bool isInitialVideoOpen = _controller == null;
     final VideoPlayerController controller =
         _controller ?? VideoPlayerController();
+    // HDR 直通模式 + 画面 fit 交给控制器（宿主窗模式下 fit 由 mpv 自己算）。
+    controller.configureHdrOutput(
+      mode: _videoHdrOutputMode,
+      fitMode: _videoFitMode,
+    );
     // BUG-772：首开新建的在途 controller 登记进字段，让页面 dispose 能主动取消它。
     // 换集复用同一 _controller 时不设，避免误 dispose 正在用的实例。
     if (isInitialVideoOpen) _pendingController = controller;
@@ -3070,6 +3247,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         ? await resolveEnabledShaderPaths(
             decodeEnabledShaders(appModel.videoShadersEnabled),
           )
+        : const <String>[];
+    // 开关开启时装载 mpv_scripts 目录全部 Lua 脚本（每 Player 实例幂等，
+    // 见 video_lua_script_manager.dart）。
+    final List<String> luaScriptPaths = appModel.videoMpvLuaScriptsEnabled
+        ? await listLuaScriptPaths()
         : const <String>[];
     controller.setOnCompleted(_handlePlaybackCompleted);
     // TODO-1119 / BUG-545：Windows 高显卡占用黑屏闪烁运行时提示。仅 Windows 挂回调
@@ -3095,6 +3277,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         subtitleExplicitlyOff: SubtitleSource.isOff(externalSubtitlePath),
         renderGraphicStreamIndex: renderGraphicStreamIndex,
         shaderPaths: shaderPaths,
+        luaScriptPaths: luaScriptPaths,
         mpvConfig: mpvConfig,
         httpHeaderFields: _streamHttpHeaderFields,
         autoPlay: true,
@@ -3115,6 +3298,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       return;
     }
     _syncVolumeDisplay(controller.volume);
+    // BUG-2032：随包 libmpv 有没有编 Lua 是按平台固定的二进制事实，探到就落 pref，
+    // 让全局设置页（无播放器）也能如实说明脚本开关在本平台是否可用。
+    if (controller.luaCapability != MpvLuaCapability.unknown) {
+      unawaited(appModel.setVideoMpvLuaCapability(controller.luaCapability));
+    }
     // TODO-1000：远端/流视频（videoPath==null）把制卡抽取源设为可 seek 的流 URL，使
     // ImmersionMiningEngine 能从流 URL 按时间戳裁 GIF/音频（本地视频仍用 videoPath）。
     // 覆盖是幂等的：本地/空时清除，避免换片残留上一条流 URL。
@@ -3162,6 +3350,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         _subtitleMenuSources = const <SubtitleSource>[];
         _subtitleMenuLoading = false;
         _subtitleMenuSourcesPath = null;
+        // BUG-1861：导入档登记同样按视频源作用域，换源一并清空（换集后上一集下载的
+        // 档案不该继续挂在新集的字幕轨列表里）。
+        _importedSubtitleSources = const <SubtitleSource>[];
       }
       // externalSubtitlePath 即持久化值：外挂路径 / `embedded:<n>` / `off:`（显式关闭
       // 哨兵，TODO-818）都按原样写进 _currentSubtitleSource 供菜单高亮。内嵌自动加载
@@ -3227,52 +3418,37 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _prewarmNextEpisodeSubtitleCache();
 
     // 首次 load 建观看统计采集器；换片复用同一 controller 实例，已 attach 不重建。
-    if (!_isRemote && _watchTracker == null) {
+    // 判据 [_bookRow] 非空 = 书架书（本地视频 + TODO-1157 流媒体书都有 VideoBooks 行）：
+    // 流媒体书（YouTube 等）在本机播放同样计观看时长/字幕字数/看完标记（用户在 app 内
+    // 看油管也是沉浸时间）。互联远端（无行，媒体归 host）保持不采集。
+    if (_bookRow != null && _watchTracker == null) {
       final FushiDatabase db = appModel.database;
       _watchTracker = VideoWatchTracker(
-        title: title,
         bookUid: widget.bookUid,
-        // P4 写侧收敛：两条统计路都走 DB 复合入口 recordWatchFlush。dateKey 由
-        // 采集器决定（字幕字数=cue 时刻；观看时长=各桶各自日期），直接透传，不在此
-        // 另算「今日」——否则跨午夜的 flush 会与小时日志的日归属不一致。
-        // v39：按视频稳定身份键控（同名不同视频统计不再互串）。本地视频每集独立
+        // v92：观看时长 + 字幕字数走唯一时钟 StudyClock（活跃态 = 正在播放，由
+        // tracker 挂上；视频面刻意不设空闲门 / 前台门——切走仍在播就照常计时）。
+        // 按视频稳定身份键控（v39：同名不同视频统计不再互串）。本地视频每集独立
         // 页面（pushReplacement 换集）→ widget.bookUid 恒为当前集。
-        recordFlush: (List<(String, int, int)> buckets) => db.recordWatchFlush(
+        clock: StudyClock(
+          database: db,
+          mediaKind: kActivityMediaVideo,
+          mediaKey: widget.bookUid,
           title: title,
-          bookUid: widget.bookUid,
-          buckets: buckets,
-        ),
-        addSubtitleChars: (String dateKey, int chars) => unawaited(
-          db.recordWatchFlush(
-            title: title,
-            bookUid: widget.bookUid,
-            subtitleChars: chars,
-            subtitleCharsDateKey: dateKey,
-          ),
+          onWriteError: (Object e, StackTrace st) =>
+              ErrorLogService.instance.log('StudyClock.write(video)', e, st),
         ),
         markCompleted: (String uid) =>
             db.markVideoCompleted(uid, DateTime.now()),
-        onEpisodeCompleted: () =>
-            appModel.mediaTrackingService.recordVideoCompleted(
-          bookUid: widget.bookUid,
-          collectionId: widget.playlistCollectionId,
-          episodeIndex: _currentEpisode,
-          seriesCompleted:
-              _episodes.isNotEmpty && _currentEpisode == _episodes.length - 1,
-        ),
-        // v49：一次观看 session 结束落一条活动事件，喂首页 Activity 时间轴。
-        recordActivity: (String t, String uid, String dateKey, int timestampMs,
-                int durationMs, int chars) =>
-            db.addActivityEvent(
-          eventType: kActivityWatch,
-          mediaType: kActivityMediaVideo,
-          title: t,
-          mediaKey: uid,
-          dateKey: dateKey,
-          timestampMs: timestampMs,
-          durationMs: durationMs,
-          charsDelta: chars,
-        ),
+        onEpisodeCompleted: () async {
+          if (!kMediaTrackingEnabled) return;
+          await appModel.mediaTrackingService.recordVideoCompleted(
+            bookUid: widget.bookUid,
+            collectionId: widget.playlistCollectionId,
+            episodeIndex: _currentEpisode,
+            seriesCompleted:
+                _episodes.isNotEmpty && _currentEpisode == _episodes.length - 1,
+          );
+        },
       )
         ..attach(controller)
         ..start();
@@ -3404,9 +3580,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     await _loadSingle(updated);
   }
 
-  /// 缺失态删除：二次确认后复用 home_video_page._confirmDelete 的删除序列
-  /// （deleteVideoBook + reclaimDeletedVideoBookAssets + compactAfterVideoDeleteBestEffort），
-  /// 删完退回视频库。与库内删除粒度 / 资产回收完全一致，不重写删除逻辑。
+  /// 缺失态删除：二次确认后复用 repository 的完整删除 operation，DB 行、app-owned
+  /// 资产回收与压缩处在同一维护门边界内；删完退回视频库。
   Future<void> _confirmMissingResourceDelete(VideoBookRow row) async {
     final NavigatorState nav = Navigator.of(context);
     final bool? confirmed = await showAppDialog<bool>(
@@ -3430,17 +3605,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       ),
     );
     if (confirmed != true || !mounted) return;
-    final String? deletedCoverPath = row.coverPath;
-    final String? deletedSubtitlePath = row.subtitleSource;
-    final String deletedVideoPath = row.videoPath;
-    await widget.repo.deleteVideoBook(row.bookUid);
-    await widget.repo.reclaimDeletedVideoBookAssets(
-      deletedBookUid: row.bookUid,
-      deletedCoverPath: deletedCoverPath,
-      deletedSubtitlePath: deletedSubtitlePath,
-      deletedVideoPath: deletedVideoPath,
-    );
-    await widget.repo.compactAfterVideoDeleteBestEffort();
+    await widget.repo.deleteVideoBookAndReclaimAssets(row.bookUid);
     if (mounted) nav.pop();
   }
 
@@ -3574,8 +3739,17 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   @override
   void dispose() {
+    // BUG-2043：加载中就被退出（ESC / 系统返回）而还没压上全屏路由 → 接管来的原生
+    // 全屏由本页亲自退，不能把窗口留在「原生全屏、栈上无全屏路由」的悬空态。
+    _releaseHandedOverNativeFullscreen();
     if (Platform.isWindows) {
       WindowsImeSpaceChannel.clearHandler(this);
+      // Abnormal route teardown must never leave the app frame hidden. The
+      // normal fullscreen exit releases this owner only after HWND restoration.
+      FushiWindowsTitleBar.setContentFullscreen(
+        owner: this,
+        enabled: false,
+      );
     }
     WidgetsBinding.instance.removeObserver(this);
     // TODO-658/BUG-383: 摘除系统栏可见性回调（全局单例，避免退页后仍回调已释放 State）。
@@ -3595,9 +3769,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 根 Overlay 重建 _buildPopupOverlay，杜绝销毁期用失效 State 重建浮层（退视频红屏）。
     final OverlayEntry? entry = _popupOverlayEntry;
     if (entry != null) {
-      // remove() asserts if already detached（路由先 pop 时根 Overlay 可能已摘除）。
-      if (entry.mounted) entry.remove();
-      entry.dispose();
+      removeAndDisposeOwnedOverlayEntry(entry);
       _popupOverlayEntry = null;
     }
     _popup.clear();
@@ -3645,13 +3817,18 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _subtitleListVisible.removeListener(_applyControlsVisibilityFromMediaKit);
     _episodeListVisible.removeListener(_applyControlsVisibilityFromMediaKit);
     _videoControlEditMode.removeListener(_applyControlsVisibilityFromMediaKit);
+    // BUG-1798：与上面六个门控同批摘监听（顺序同理——回调读多个 notifier，先摘再 dispose）。
+    _lookupOverlayActive.removeListener(_applyControlsVisibilityFromMediaKit);
+    _lookupOverlayActive.dispose();
     _subtitleListVisible.dispose();
+    _subtitleSearchRequests.dispose();
     _episodeListVisible.dispose();
     _videoSidePanel.dispose();
     _controlPopoverHideTimer?.cancel();
     _videoControlPopover.dispose();
     _videoControlEditMode.dispose();
     _controlLayoutNotifier.dispose();
+    _customActionBindingsNotifier.dispose();
     _immersiveLocked.dispose();
     _lockButtonHideTimer?.cancel();
     _lockButtonVisible.dispose();
@@ -3720,6 +3897,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (cause != FocusReclaimCause.popupDismissed && _hasVisiblePopup) {
       return false;
     }
+    // 手柄重设计 P3：可导航浮层面板（剧集轨 / 侧栏）打开期间焦点归 PanelFocusScope
+    // 所有，页面不抢。少了这一条就是纯回归：面板开着时画面仍可点，用户点一下画面
+    // （reclaim(gesture)）或查完词关浮层（reclaim(popupDismissed)）焦点就被拽回页面
+    // 节点，而 PanelFocusScope 只在 visible 边沿认领一次、不复领 ⇒ 面板仍开着，
+    // _handleVideoGamepadButton 继续让 dpad/A 给焦点兜底，于是 dpad 既进不了面板、
+    // 也不再调音量/seek —— 比 P3 之前更差（之前至少还能调音量）。面板关闭时通知先
+    // 翻假，归还路径不受影响。字幕列表不在集内（BUG-2040）：它不领焦点，列表开着时
+    // 页面照常收回焦点。
+    if (_videoNavigablePanelOpen) return false;
     // 生命周期回前台是全局回调，本页上方可能压着设置对话框 / 菜单 / 导入遮罩
     // （键盘所有者路由：窗口模式=本页路由，全屏期间=全屏路由）。此时抢焦点会
     // 夺走对话框的键盘（Never break userspace）——那些覆盖层各自的 guardOverlay
@@ -3753,12 +3939,48 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 字幕跳转列表 [_subtitleListVisible]，TODO-329）。有 overlay 时光标不该被沉浸 /
   /// 自动隐藏定时吃掉（用户要在 overlay 上操作）；纯沉浸锁（无 overlay）静止超时仍隐藏
   /// 画面光标（BUG-258）。
+  ///
+  /// BUG-1798：**查词浮层栈**（根 Overlay 的 [_popupOverlayEntry]）此前漏在集外。它是本页
+  /// 最需要光标的覆盖层——用户要在弹窗里点词、点发音、拖 resize 把手、滚正文——但查词期间
+  /// 控制条照常 2s 自动淡出，`visible=false && !_hasVideoOverlay` 于是把 [_cursorHidden]
+  /// 置真，[_buildCursorOverlay] 铺一层 `cursor: none` 盖满视频区。查词浮层子树除右下角
+  /// resize 把手外不声明任何 cursor（`dictionary_popup_layer.dart` 唯一一处 MouseRegion），
+  /// cursor 解析下穿到该层 → **鼠标悬在弹窗上时 OS 光标直接消失**。media_kit fork 侧的
+  /// `hideMouseOnControlsRemoval`（`controls_theme.part.dart`）同样只排除了字幕列表 / 选集
+  /// 列表，对查词弹窗也是漏项，两层 `none` 叠加。搜索中（[DictionaryPopupController.isSearchingUi]）
+  /// 与已出结果同等对待：dismiss barrier 在搜索期就已挂上（见 [shouldShowLookupDismissBarrier]），
+  /// 那一刻起指针语义就归浮层，光标不能消失。
   bool get _hasVideoOverlay =>
       _videoSidePanel.value != null ||
       _videoControlPopover.value != null ||
       _subtitleListVisible.value ||
       _episodeListVisible.value ||
-      _videoControlEditMode.value;
+      _videoControlEditMode.value ||
+      _lookupOverlayActive.value;
+
+  /// 「查词浮层此刻占着指针」的门控真值（BUG-1798）。
+  ///
+  /// 与 [_hasVideoOverlay] 其余五项一样是 [ValueNotifier]——[_applyControlsVisibilityFromMediaKit]
+  /// 的输入必须全是可订阅的 notifier，否则值变了没有任何东西触发重跑派生（光标策略会停在
+  /// 上一次的结论上）。真值由 [_syncPopupOverlay] 单向推入（那里是浮层栈变化的唯一收口），
+  /// getter 一律读这里，不再各处直接读 [_popup]，避免两个真相源漂移。
+  ///
+  /// 判据与 [shouldShowLookupDismissBarrier] 同源：**有可见浮层或正在搜索**即为真。barrier
+  /// 在搜索期就已挂上并接管全屏命中，那一刻起光标就该归浮层管。
+  final ValueNotifier<bool> _lookupOverlayActive = ValueNotifier<bool>(false);
+
+  /// 手柄重设计 P3：可用 D-pad 逐行浏览的两类面板任一打开（剧集轨 / 侧栏）。与
+  /// [_hasVideoOverlay] 刻意不同集：控件 popover 与控制条编辑模式不是「行浏览」
+  /// 表面，D-pad 在那里仍按 video scope 解析。
+  ///
+  /// 字幕列表（[_subtitleListVisible]）**刻意不在集内**（BUG-2040）：它不领焦点
+  /// （subtitle.part.dart 里没包 PanelFocusScope），列表开着时焦点仍在画面上，裸方向键
+  /// / D-pad 照常是 seek / 音量而不是在列表里选行。本 getter 是键盘 resolver 让位
+  /// （[resolveVideoKeyboardShortcut]）、手柄让位（[_handleVideoGamepadButton]）与
+  /// 页面拒抢焦（[_canOwnVideoFocus]）三条门的共同真相源，这里少一项三条门一起放开；
+  /// 若把字幕列表加回来而不同时包 PanelFocusScope，就是「dpad 既进不了列表也不调音量」。
+  bool get _videoNavigablePanelOpen =>
+      _episodeListVisible.value || _videoSidePanel.value != null;
 
   // BUG-371：字幕跳转列表是 **push-aside** 侧栏（[_videoWithSubtitlePanel] 的
   // `Row[Expanded(video), 面板列]`，TODO-314），把画面挤窄到左侧、**不遮挡**叠在画面上
@@ -3805,13 +4027,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _disposeThumbnailPreview();
       return;
     }
-    // 路径未变且已建好 → 复用（避免每次 load 重建离屏 Player）。
+    // 路径未变且已建好 → 复用（避免每次 load 丢掉已经攒起来的帧缓存）。
     final bool pathChanged = _thumbnailGrabber?.videoPath != videoPath;
     if (_thumbnailPreview != null && !pathChanged) return;
 
     _disposeThumbnailPreview();
 
-    // 远端流（http/s）或无本地路径 → 不建离屏取帧器（调度器仍建，走 timestampOnly）。
+    // 远端流（http/s）或无本地路径 → 不建取帧器（调度器仍建，走 timestampOnly）。
     final bool isLocalFile = videoPath != null &&
         !_isRemote &&
         Uri.tryParse(videoPath)?.scheme != 'http' &&
@@ -3825,6 +4047,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           // 无取帧器（远端流）：取帧函数恒返回 null，调度器据此 timestampOnly。
           : (int _) async => null,
       durationMsProvider: () => _controller?.durationMs ?? 0,
+      // 已取过的位置同步命中，零延迟出图、不闪 spinner（回扫 / 抖动的常态路径）。
+      cachedFrameLookup: grabber?.cachedFrame,
+      // 首次 hover 就探明取帧可不可用并暖一格缓存，别让这段算进第一张图的等待。
+      onWarmUp: grabber == null ? null : () => unawaited(grabber.warmUp()),
     );
   }
 
@@ -3929,28 +4155,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// slot remains.
   int get _topVisiblePopupIndex => _popup.lastVisibleIndex;
 
-  /// TODO-1052：查词浮层 barrier 上「桌面水平拖过阈关一层」的纯状态追踪器（与
-  /// reader/audiobook 经 base_source_page、home_dictionary、texthooker 共用同一
-  /// [BarrierSwipeDismissTracker]，阈值/位移逻辑单一真相源、不漂移）。仅当
-  /// [ReaderFushiSource.enableSwipeToClose] 开启时挂到 barrier（否则只 onTapUp，
-  /// 与旧行为一致）。过阈关一层 = [_popNestedPopupAt]（_topVisiblePopupIndex），与
-  /// 光标 B/Esc / 返回键逐层退回同语义，不清整栈（清整栈仍是点真空白的 onTapUp）。
-  final BarrierSwipeDismissTracker _barrierSwipe = BarrierSwipeDismissTracker();
-
-  void _onDismissBarrierHorizontalDragStart(DragStartDetails details) {
-    _barrierSwipe.begin();
-  }
-
-  void _onDismissBarrierHorizontalDragUpdate(DragUpdateDetails details) {
-    _barrierSwipe.update(details.delta.dx);
-  }
-
-  void _onDismissBarrierHorizontalDragEnd(DragEndDetails details) {
-    if (_barrierSwipe.end(
-      sensitivity: ReaderFushiSource.instance.dismissSwipeSensitivity,
-    )) {
-      _popNestedPopupAt(_topVisiblePopupIndex);
-    }
+  /// TODO-1052：查词浮层 barrier 上「水平拖过阈关一层」。判轴/累积/阈值全部收在
+  /// [LookupDismissBarrier] 内（BUG-1757：横拖不再进手势竞技场，判轴改为可单测的
+  /// 显式规则）。过阈关一层 =
+  /// [_popNestedPopupAt]（[_topVisiblePopupIndex]），与光标 B/Esc / 返回键逐层退回
+  /// 同语义，不清整栈（清整栈仍是点真空白的 tap）。
+  void _dismissTopNestedPopup() {
+    _popNestedPopupAt(_topVisiblePopupIndex);
   }
 
   /// Shift-悬停在 barrier 上「连续切换查词」的节流锚 + 去重键（TODO-756a，与阅读器
@@ -3974,6 +4185,21 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 命中同一字符（同句同 grapheme）短路去重，避免同词反复 `replaceStack` 闪烁 / 刷 FFI。
   /// 换词经 [_handleSubtitleLookupTap] → [_lookupAt]（`replaceStack: true` 复用热槽无缝替换）。
   void _onDismissBarrierHover(PointerHoverEvent event) {
+    // BUG-1798：先滤掉[_pokeControlsVisible]派发的**合成** hover。它不是用户的鼠标：位置恒为
+    // [_videoControlsContext]（整个视频区）的几何中心，设备是固定的 [_syntheticHoverDevice]。
+    // 浮层一开，全屏 opaque 的 dismiss barrier 就接管了命中测试，合成 hover 再也到不了
+    // media_kit 自己的 MouseRegion（poke 本该续命控制条，此时已必然哑火），却**全量落进本
+    // 回调**被当成真实鼠标消费，三处污染：
+    // ① `_lastGlobalPointerPos` 被写成画面正中 → BUG-880 的「静止光标 + 按 Shift 立即换词」
+    //    改在画面中心反查，用户光标下的词查不到；
+    // ② 未按 Shift 时下面那条分支把 `_barrierHoverLastPos/Sentence/Grapheme` 三个去重键清零
+    //    → 用户鼠标在**同一个字**上再抖一下就被判成新词，`_lookupAt(replaceStack: true)` 整栈
+    //    替换，正在看的弹窗内容被换掉、滚动位置丢失；
+    // ③ 按住 Shift / 开了「悬停即查词」时更直接：合成位置若命中字幕字符就立即换词。
+    // 且 [_handleSubtitleHover] 自己就调 [_pokeControlsVisible]，构成 hover→poke→hover 自激。
+    // 同页 [_handleVideoControlsHover] 早就用同一判据滤过合成事件（controls_visibility.part.dart），
+    // 本路径与它不对称纯属遗漏——这里补齐，语义即「合成事件不代表用户指针，不参与任何指针记账」。
+    if (_isSyntheticControlsHover(event)) return;
     // BUG-880：浮层打开时 barrier 盖住一切、页面根 Listener 收不到 hover，故在此持续更新
     // 最后指针位置，让「静止光标 + 按 Shift」在浮层已开时也能立即换词（在 Shift 门控之前，
     // 未按 Shift 也照常记录）。
@@ -4223,11 +4449,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 路由，本页 `Stack` 会被全屏路由盖住；根 Overlay 浮在所有路由之上，窗口/全屏统一。
   void _syncPopupOverlay() {
     if (!mounted) return;
+    // BUG-1798：把浮层栈的「占着指针」真值推给门控 notifier。这里是栈 push/pop/搜索态变化的
+    // 唯一收口（[DictionaryPageMixin] 各路径都 setState → 重 build → post-frame 调本方法），
+    // 故也是唯一写入点。[ValueNotifier] 自带同值去重，每帧调用不会产生多余通知；值真变时其
+    // 监听（[_applyControlsVisibilityFromMediaKit]）重跑光标策略，弹窗一开光标即恢复可见。
+    _lookupOverlayActive.value = _hasVisiblePopup || _popup.isSearchingUi;
     if (_popup.entries.isEmpty) {
       final OverlayEntry? entry = _popupOverlayEntry;
       if (entry != null) {
-        if (entry.mounted) entry.remove();
-        entry.dispose();
+        removeAndDisposeOwnedOverlayEntry(entry);
         _popupOverlayEntry = null;
       }
       return;
@@ -4289,35 +4519,26 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                   hiddenByDialog: lookupPopupHiddenByDialog,
                 ))
                   Positioned.fill(
-                    // BUG-861：barrier 外层挂 Listener 转发 hover——首弹后 barrier 盖住字幕，
-                    // 字幕盒 MouseRegion 收不到 hover，此处是「按住 Shift 连续切换查词」唯一
+                    // BUG-861：barrier 转发 hover——首弹后 barrier 盖住字幕，字幕盒
+                    // MouseRegion 收不到 hover，此处是「按住 Shift 连续切换查词」唯一
                     // 还能接 hover 的入口（与 reader onDismissBarrierHover 同语义）。
-                    child: Listener(
+                    //
+                    // BUG-1757：barrier 收口成唯一原语 [LookupDismissBarrier]，
+                    // 横拖走它内部不入竞技场的 Listener 旁路 + 可单测的判轴。
+                    child: LookupDismissBarrier(
+                      // onTapDismiss 带坐标：点到同句另一个字幕字符时切换查词并保持
+                      // 暂停，点其它区域才 dismiss + 恢复（见 _onDismissBarrierTap）。
+                      onTapDismiss: _onDismissBarrierTap,
+                      // TODO-1052：水平拖过阈关一层（_popNestedPopupAt，逐层关）。
+                      onSwipeDismiss: _dismissTopNestedPopup,
+                      swipeEnabled:
+                          ReaderFushiSource.instance.enableSwipeToClose,
+                      sensitivity:
+                          ReaderFushiSource.instance.dismissSwipeSensitivity,
                       onPointerHover: _onDismissBarrierHover,
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.translucent,
-                        // onTapUp（带坐标）而非 onTap：点到同句另一个字幕字符时切换查词
-                        // 并保持暂停，点其它区域才 dismiss + 恢复（见 _onDismissBarrierTap）。
-                        onTapUp: (TapUpDetails d) =>
-                            _onDismissBarrierTap(d.globalPosition),
-                        // TODO-1052：桌面对齐手机——在 barrier 上水平拖过阈关一层
-                        // （_popNestedPopupAt，逐层关）。仅当滑动关闭开关开启时挂横拖识别
-                        // （否则只 onTapUp，与旧行为一致）。竞技场天然分流：单击走 onTapUp、
-                        // 横拖走 onHorizontalDrag*，互斥不冲突（与 base_source_page 同范式）。
-                        onHorizontalDragStart:
-                            ReaderFushiSource.instance.enableSwipeToClose
-                                ? _onDismissBarrierHorizontalDragStart
-                                : null,
-                        onHorizontalDragUpdate:
-                            ReaderFushiSource.instance.enableSwipeToClose
-                                ? _onDismissBarrierHorizontalDragUpdate
-                                : null,
-                        onHorizontalDragEnd:
-                            ReaderFushiSource.instance.enableSwipeToClose
-                                ? _onDismissBarrierHorizontalDragEnd
-                                : null,
-                        child: const ColoredBox(color: Colors.transparent),
-                      ),
+                      // BUG-1995：指针在**浮窗之外**按侧键时唯一还能接到事件的地方
+                      // （barrier 命中行为 opaque，页面根 Listener 收不到）。
+                      onNonPrimaryButtonDown: onDismissBarrierNonPrimaryButton,
                     ),
                   ),
                 // 搜索期加载占位卡（与书内同观感：就绪才显示真正浮层）。
@@ -4328,6 +4549,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                   ),
                 for (int i = 0; i < _popup.entries.length; i++)
                   _buildNestedPopupLayer(i, screen),
+                ...buildParkedRealmLayers(screen: screen, controller: _popup),
               ],
             );
           },
@@ -4357,63 +4579,71 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   ) =>
       _onUpdateEntryImpl(noteId, fields);
 
-  /// 退出/返回汇聚点：浮层栈有可见层先关栈（一层层退），否则 await 落库后真正
-  /// pop 路由。[PopScope] 与 Escape 快捷键共用，保证两条退出路径行为一致。
+  /// 退出/返回汇聚点：前台浮层还开着就先关一层（逐级退出），一层都没开才 await
+  /// 落库后真正 pop 路由。[PopScope]、Escape 快捷键、手柄 B、以及**屏幕上的返回箭头
+  /// 按钮**（[_activateVideoControlItem] 的 [VideoControlItem.back]）共用同一份层级表
+  /// [_dismissTopForegroundLayer]，四条通道行为一致。
   ///
-  /// 只有 VISIBLE 浮层拦截 back；常驻隐藏的热槽（BUG-094）让栈非空但不得吞掉退出。
+  /// 「返回箭头也逐级退一层」是 BUG-1862 的**有意**取舍，不是顺带的副作用：收敛的意义
+  /// 就是「返回上一级」只有一份语义，不为屏幕按钮再开第二套。用户可见变化：push-aside
+  /// 字幕跳转列表打开时控制条与 rail 仍可见可用（BUG-371），此时点返回箭头**改前退出
+  /// 视频页、改后先关字幕列表**。
+  ///
+  /// BUG-1862：此前本方法只关词典浮层，逐级退出的其余五层（控制布局编辑态 / 字幕跳转
+  /// 列表 / 剧集列表 / 设置侧栏 / 沉浸锁）只写在 Escape 快捷键回调里，于是两条路径根本
+  /// 不一致。而那份快捷键表装在 media_kit controls 子树内的 [CallbackShortcuts] 上
+  /// （media_kit `material_desktop.dart`），本页自建的 overlay（[_buildVideoSidePanelOverlay]
+  /// 等）在 controls builder 的 Stack 里是它的**兄弟**、不是后代——侧栏一打开就把键盘
+  /// 焦点领进自己（`PanelFocusScope`），Esc 便绕过整张表冒泡到全局 back →
+  /// `Navigator.maybePop` → 本页 [PopScope] → 本方法 → 直接 pop 整页。用户看到的就是
+  /// 「设置侧栏开着按 Esc，视频页退了、侧栏没关」。Android 系统返回键与手柄 B 走同一条
+  /// [PopScope] 路径，症状相同。层级判定收敛到 [_dismissTopForegroundLayer] 单点后，
+  /// 键盘 / 系统返回 / 手柄三条输入通道共用同一份语义，不再各写一份。
   Future<void> _handleBackOrExit() async {
-    if (_hasVisiblePopup) {
-      _popNestedPopupAt(_topVisiblePopupIndex);
-      return;
-    }
+    if (_dismissTopForegroundLayer()) return;
     final NavigatorState nav = Navigator.of(context);
     await _controller?.flushPosition();
     if (mounted) nav.pop();
   }
 
-  /// 桌面键盘快捷键，整表覆盖 media_kit 默认（[MaterialDesktopVideoControlsThemeData.
-  /// keyboardShortcuts] 是整表替换、无合并）。覆盖动机：
-  /// ① 默认 Escape 只 `exitFullscreen`，非全屏时是空操作 → 用户按 Esc 退不出视频页
-  ///    （本页 [PopScope] 自管退出，但收不到事件：media_kit 的 CallbackShortcuts 在
-  ///    本页外层 CallbackShortcuts 的内层，先吞掉 Escape）。改为非全屏退页、全屏退
-  ///    全屏。
-  /// ② 普通左右方向键 = 时间 seek（±seekSeconds 秒，TODO-090）；Ctrl+←/→ = 上/下一句
-  ///    字幕。上一句太远（gap > seekSeconds 秒）时 Ctrl+← 退化成回退 seekSeconds 秒（TODO-085）。
-  /// 其余键（空格/媒体键/J·I/F）按 media_kit 默认语义用底层 [Player] 重建，避免
-  /// 覆盖后丢默认行为。全屏相关 helper 需 controls 子树内 context，用 [_videoControlsContext]。
-  Map<ShortcutActivator, VoidCallback> _videoKeyboardShortcuts(
-    VideoPlayerController controller,
-  ) {
-    // BUG-924：词典浮层可见时，任一视频快捷键先关顶层浮层（对齐阅读器），否则穿透去控制
-    // 后台视频（用户报「视频里关不掉词典」「按 d 竟然快进」）。守卫是纯函数，逻辑集中在
-    // [guardVideoShortcutsWithPopupDismiss]，此处只提供页面态谓词与关浮层动作。
-    // videoEnterCaret：选词光标激活期，注册表已绑的无修饰光标键（方向键/Enter/Esc）
-    // 先走光标动作、不跑原动作（裸方向键不再 seek/调音量）。包在浮层守卫**之外**
-    // ——光标在弹窗面上时方向键要在弹窗里移动光标，而不是被「任一键先关浮层」吞掉。
-    final Map<ShortcutActivator, VoidCallback> guarded =
-        guardVideoShortcutsWithSubtitleCaret(
-      guardVideoShortcutsWithPopupDismiss(
-        buildVideoPlayerShortcutsFromRegistry(
-          appModel.shortcutRegistry,
-          _buildVideoShortcutActions(controller),
-        ),
-        isPopupVisible: () => _hasVisiblePopup,
-        dismissPopup: _dismissTopVisiblePopup,
-      ),
-      isCaretActive: () => _videoCaretActive,
-      runCaretKey: _runCaretKeyboardKey,
+  /// 逐级退出的**唯一**层级表（BUG-1862）：从最前台到最后台关掉一层并返回 true；一层
+  /// 都没开返回 false，调用方这才可以真正退全屏 / 退页。
+  ///
+  /// 顺序判据本身在纯函数 [topVideoForegroundLayer]（`video_foreground_layers.dart`）里，
+  /// 可直接单测；本方法只负责「读页面状态 → 查表 → 执行对应关闭动作」，不再自带顺序。
+  /// push-aside 字幕列表（TODO-314）、剧集列表（TODO-638）与侧栏是三条独立可见性，
+  /// 分别关闭。控制按钮 popover（音量 / 倍速轻浮层）点击打开那次会被 pin 住常驻，
+  /// 必须一并进表——漏掉它就是「pinned popover 开着按 Esc，页面退了、浮层还在」，
+  /// 与 BUG-1862 的原始症状同形。
+  bool _dismissTopForegroundLayer() {
+    final VideoForegroundLayer? layer = topVideoForegroundLayer(
+      hasVisibleDictionaryPopup: _hasVisiblePopup,
+      controlEditActive: _videoControlEditMode.value,
+      controlPopoverOpen: _videoControlPopover.value != null,
+      subtitleListVisible: _subtitleListVisible.value,
+      episodeListVisible: _episodeListVisible.value,
+      sidePanelOpen: _videoSidePanel.value != null,
+      immersiveLocked: _immersiveLocked.value,
     );
-    // 制卡键（ShortcutAction.popupMineEntry，默认 Ctrl+Enter）**合并在守卫之后**，这是
-    // 关键：上面那层守卫的前提是「视频 scope 没有任何作用于浮层本身的快捷键」，所以浮层
-    // 可见时它把每个键都改判成「先关浮层」。而制卡恰恰只在浮层可见时才有意义——若把它
-    // 放进被守卫的表里，按下去只会把浮层关掉，永远制不了卡。它属于 dictionaryPopup
-    // scope（独立 co-active 组），本就不是视频动作，走独立通道也保持了 scope 语义一致。
-    for (final InputBinding b in appModel.shortcutRegistry
-        .bindingsFor(ShortcutAction.popupMineEntry)
-        .keyboardBindings) {
-      guarded[b.toActivator(includeRepeats: false)] = _mineFromTopPopup;
+    switch (layer) {
+      case null:
+        return false;
+      case VideoForegroundLayer.dictionaryPopup:
+        _popNestedPopupAt(_topVisiblePopupIndex);
+      case VideoForegroundLayer.controlEdit:
+        _hideVideoControlEditOverlay(revealControls: false);
+      case VideoForegroundLayer.controlPopover:
+        _hideControlPopover();
+      case VideoForegroundLayer.subtitleList:
+        _toggleSubtitleJumpList();
+      case VideoForegroundLayer.episodeList:
+        _closeEpisodeList();
+      case VideoForegroundLayer.sidePanel:
+        _hideVideoSidePanel();
+      case VideoForegroundLayer.immersiveLock:
+        _toggleImmersiveLock();
     }
-    return guarded;
+    return true;
   }
 
   /// 「点弹窗里的加号」的键盘入口（视频页）。阅读器有等价的
@@ -4453,21 +4683,42 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         ShortcutAction.globalBack,
       };
 
+  /// BUG-1995 的另一半：指针落在**浮窗矩形之外**按下鼠标非主键。
+  ///
+  /// 浮层可见时，那片区域被根 Overlay 的 [LookupDismissBarrier] 完全占住
+  /// （`Positioned.fill` + 叶子 `ColoredBox`，命中行为 opaque），页面根的
+  /// [Listener]（[_handleVideoPointerDown]）因此收不到任何指针事件——所以
+  /// 「侧键压在浮窗上能关、把鼠标移开一点就关不掉」。这里把 barrier 上的那一半
+  /// 接回**同一个**落地入口。
+  ///
+  /// 判据与弹窗表面那条路逐字相同：同一个 [dictionaryPopupInputSpec]（已减去
+  /// dictionaryPopup scope 自己占用的按钮）、同一个 [dictionaryPopupPointerToken]
+  /// 折 token、同一个 [onDictionaryPopupInputToken] 落地（含选词光标分流）。
+  /// 两个表面共用一份判据，就不可能再出现「一半能用一半不能用」。
+  ///
+  /// 与弹窗表面天然互斥：barrier 只在弹窗矩形之外可命中（弹窗层在同一个 Stack 里
+  /// 排在 barrier 之后＝更靠上），同一次按下不会两条路各触发一次。
+  // 落地实现已上提到 [DictionaryPageMixin.onDismissBarrierNonPrimaryButton]：其余
+  // 四个 barrier 宿主（阅读器基类 / 首页词典 / texthooker / 网页视频）此前都没接，
+  // 症状同为「侧键压在浮窗上能关、移开一点就关不掉」。三行完全相同的实现留在各页 =
+  // 下一个宿主照旧漏接，故收成一份，本页不再覆写。
+
   /// 视频的语义是「关**顶层**浮层」（逐层关，保留隐藏热槽 BUG-092），不是清整栈，
   /// 故不走基类默认的 `clearDictionaryResult()`，改用与守卫完全同一个执行体。
   @override
-  void onDictionaryPopupInputToken(String token) {
+  bool onDictionaryPopupInputToken(String token) {
     // scope 未命中时函数内部回落 universal（「返回上一级」），与页面派发同口径。
     final ShortcutAction? action = resolveDictionaryPopupInputToken(
       registry: appModel.shortcutRegistry,
       token: token,
       scope: ShortcutScope.video,
     );
-    if (action == null) return;
+    if (action == null) return false;
     // videoEnterCaret：选词光标激活期不再「任一键先关浮层」（那会把正在手柄导航
     // 的弹窗关掉）；Enter=对光标查词/激活、Esc=光标语义退层，其余吞掉。
-    if (_handleCaretPopupInputToken(action)) return;
+    if (_handleCaretPopupInputToken(action)) return true;
     _dismissTopVisiblePopup();
+    return true;
   }
 
   /// TODO-1342：视频播放器动作回调集合的单一构造点。键盘
@@ -4493,11 +4744,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // 时也直接当回退键。下一句保持纯句子跳（无 cue 时前进 seekSeconds 秒）。
       // 底栏 / 手柄 / 双击的「上一句」按钮走 skipToPrevCueOrSeekBack 的默认（不退化，
       // 恒跳句，BUG-942）——按钮心智是「跳句」，不是方向键 seek。
-      // 每次跳句都唤醒控制条并重置自动隐藏计时（BUG-175 ②）：键盘交互不触发
-      // media_kit 的 hover 重置，不主动 poke 的话控制条只活 2 秒就消失。
+      // 键盘 / 手柄跳句只**续命**控制条、不唤起（BUG-2030）：控制条本就在显示时连按跳句
+      // 不该让它 2 秒消失（BUG-176 ②/BUG-215 的诉求），但它隐藏时按快捷键也不该把底栏弹
+      // 出来 + 顶一次字幕（用户报「快捷键上下句字幕会弹出 OSC」）。两者的分界就是
+      // [_keepControlsAliveIfVisible]。底栏按钮 / 双击那条路径仍走 _pokeControlsVisible
+      // （见 [_skipCueAndPokeControls]）——那时用户的手就在控制条上。
       previousSubtitle: () {
         _runWhenImmersiveAllowsShortcuts(() {
-          _pokeControlsVisible();
+          _keepControlsAliveIfVisible();
           unawaited(
             controller.skipToPrevCueOrSeekBack(
               seekSeconds: _asbConfig.seekSeconds,
@@ -4508,7 +4762,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       },
       nextSubtitle: () {
         _runWhenImmersiveAllowsShortcuts(() {
-          _pokeControlsVisible();
+          _keepControlsAliveIfVisible();
           // 无字幕时前进 seekSeconds 秒、有字幕时跳下一句，决策集中在
           // [skipToNextCueOrSeekForward]（与 previousSubtitle 的
           // skipToPrevCueOrSeekBack 对称，TODO-073）。
@@ -4521,11 +4775,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       },
       // 普通 ←/→ = 时间 seek（±seekSeconds 秒，TODO-090），与 J/A·I/D 同语义。
       seekBackward: () => _runWhenImmersiveAllowsShortcuts(() {
-        _pokeControlsVisible();
+        _keepControlsAliveIfVisible();
         unawaited(controller.seekRelative(-_asbSeekMs));
       }),
       seekForward: () => _runWhenImmersiveAllowsShortcuts(() {
-        _pokeControlsVisible();
+        _keepControlsAliveIfVisible();
         unawaited(controller.seekRelative(_asbSeekMs));
       }),
       toggleShaderCompare: () => _runWhenImmersiveAllowsShortcuts(
@@ -4571,6 +4825,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       toggleSubtitleList: () => _runWhenImmersiveAllowsShortcuts(
         _toggleSubtitleJumpList,
       ),
+      // BUG-1907：Ctrl+F = 开字幕列表并聚焦搜索框。
+      searchSubtitleList: () => _runWhenImmersiveAllowsShortcuts(
+        _requestSubtitleListSearch,
+      ),
       // Shift+L = 切换锁定 / 沉浸模式（TODO-101）。
       toggleImmersiveLock: _toggleImmersiveLock,
       // 'B' = 翻转字幕模糊（TODO-134：从内层独立 CallbackShortcuts 并入注册表）。
@@ -4595,22 +4853,23 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         () => unawaited(_toggleFavoriteCurrentCue()),
       ),
       replayCurrentSubtitle: () => _runWhenImmersiveAllowsShortcuts(
-        () => unawaited(_replayCurrentCueAndPokeControls()),
+        () => unawaited(_replayCurrentCueAndKeepControls()),
       ),
       // 重播上一句（TODO-378，BUG-287，默认 Shift+R）：纯句子后退到上一条 cue 起点
       // 并播放（skipToPrevCue，不退化回退）。与「上一句字幕」(Ctrl+←) 区分——后者
       // gap 太远时按 BUG-185/TODO-085 退化时间 seek，是用户另一项有意设计，不动它。
       replayPreviousSubtitle: () => _runWhenImmersiveAllowsShortcuts(
-        () => unawaited(_replayPreviousCueAndPokeControls()),
+        () => unawaited(_replayPreviousCueAndKeepControls()),
       ),
       // 内封章节上/下一章（TODO-424，默认 PageUp/PageDown）：seek 到相邻章起点，
-      // 无章节时 controller no-op。跳章后唤醒控制条（与跳句同范式，BUG-175）。
+      // 无章节时 controller no-op。与跳句同范式（BUG-2030）：只续命、不唤起；章节**面板**
+      // 里点条目仍 poke（那是指针交互，见 [_buildChapterSidePanel]）。
       previousChapter: () => _runWhenImmersiveAllowsShortcuts(() {
-        _pokeControlsVisible();
+        _keepControlsAliveIfVisible();
         unawaited(controller.previousChapter());
       }),
       nextChapter: () => _runWhenImmersiveAllowsShortcuts(() {
-        _pokeControlsVisible();
+        _keepControlsAliveIfVisible();
         unawaited(controller.nextChapter());
       }),
       // 字幕对轴/匹配（用户请求）：Shift+A 一键弹波形对轴放大视图；z/x 整体平移字幕延迟
@@ -4639,39 +4898,36 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // videoEnterCaret：进入字级选词光标 / 已激活时对光标字符查词（双语义，
       // 沉浸查词门控在 _enterSubtitleCaret 内按 _immersiveAllowsLookup 判）。
       enterCaret: () => _handleEnterCaretAction(controller),
-      escape: () {
-        if (_videoControlEditMode.value) {
-          _hideVideoControlEditOverlay(revealControls: false);
-          return;
-        }
-        // 字幕跳转列表开着时，Esc 先关它（不退页 / 不退全屏）——逐级退出，符合直觉。
-        // 锁定 / 沉浸模式开着时，Esc 先解锁（最外层沉浸态，逐级退出，TODO-101）。
-        // push-aside 字幕列表（TODO-314）与浮层是两条独立可见性，分别关闭。
-        if (_subtitleListVisible.value) {
-          _toggleSubtitleJumpList();
-          return;
-        }
-        // TODO-638：剧集列表 push-aside 侧栏开着时，Esc 先关它（逐级退出）。
-        if (_episodeListVisible.value) {
-          _closeEpisodeList();
-          return;
-        }
-        if (_videoSidePanel.value != null) {
-          _hideVideoSidePanel();
-          return;
-        }
-        if (_immersiveLocked.value) {
-          _toggleImmersiveLock();
-          return;
-        }
-        final BuildContext? ctx = _videoControlsContext;
-        if (ctx != null && ctx.mounted && isFullscreen(ctx)) {
-          unawaited(_exitVideoFullscreen(ctx));
-        } else {
-          unawaited(_handleBackOrExit());
-        }
-      },
+      escape: _handleVideoEscapeAction,
     );
+  }
+
+  /// 「返回上一级」（[ShortcutAction.globalBack]，默认 Esc / Alt+← / 手柄 B）在视频页的
+  /// 执行体：逐级退出阶梯。
+  ///
+  /// 抽成具名方法、不留在 [_buildVideoShortcutActions] 的闭包里，是因为它是整张表里
+  /// **唯一一个不碰 [VideoPlayerController] 的动作**，而那张表只能用一个非空 controller
+  /// 构造。加载态 / 资源缺失态（`_controller == null`）下两条输入通道要能单独调到它——
+  /// 否则转圈时按 Esc / 手柄 B 根本不经本页解析，一路落到全局 universal 兜底，而
+  /// [_buildLoadingBody] 专门留了「转圈时随时可退出」的返回入口，那条可达性在键盘和
+  /// 手柄上就断了。
+  ///
+  /// 逐级退出：字幕跳转列表 / 剧集列表 / 侧栏 / 沉浸锁等前台层开着时先关一层，
+  /// 不退页也不退全屏。层级表是 [_dismissTopForegroundLayer] 单点（BUG-1862 起与
+  /// [PopScope]、系统返回键、手柄 B、屏幕返回按钮共用同一份），这里只保留「没有前台
+  /// 层可关」之后的两级：全屏 → 退全屏；窗口 → 退页。
+  ///
+  /// 「退全屏」这一级**只**能留在这里、进不了 [_handleBackOrExit]：全屏是推到根
+  /// navigator 的独立路由，全屏期间栈顶是它、本页 [PopScope] 根本轮不到（框架先 pop
+  /// 全屏路由），把它并进汇聚点等于写一条永远不执行的分支。
+  void _handleVideoEscapeAction() {
+    if (_dismissTopForegroundLayer()) return;
+    final BuildContext? ctx = _videoControlsContext;
+    if (ctx != null && ctx.mounted && isFullscreen(ctx)) {
+      unawaited(_exitVideoFullscreen(ctx));
+    } else {
+      unawaited(_handleBackOrExit());
+    }
   }
 
   /// TODO-1342：把一次手柄按键解析成视频动作并执行。桌面（GameInput/GameController
@@ -4689,11 +4945,17 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _videoInputClock.elapsed,
     );
     final VideoPlayerController? controller = _controller;
-    if (controller == null) return false;
     // videoEnterCaret：选词光标激活期，方向/确认/退出等在注册表解析**之前**截获
     // （阅读器 caret.part 同款 contextual 路由）；未激活返回 false 走正常解析
     // （进入光标本身是注册表动作 videoEnterCaret，经下方 callback 执行）。
     if (_handleCaretGamepadButton(button)) return true;
+    // 手柄重设计 P3：浮层面板打开时，D-pad/A 让位给通用焦点导航（面板内选行）——
+    // 返回 false 交给 GamepadService 的 dpad=移焦 / A=激活兜底，而不是解析成
+    // 音量 / seek / 播放暂停。焦点由 PanelFocusScope 在面板打开时领进面板；其余
+    // 按钮照常解析（LB/RB seek 仍可用），B 经下方 universal 兜底走逐级退出关面板。
+    if (_videoNavigablePanelOpen && isVideoPanelFocusNavButton(button)) {
+      return false;
+    }
     final ShortcutAction? action = appModel.shortcutRegistry.resolveGamepad(
           button,
           scope: ShortcutScope.video,
@@ -4709,9 +4971,25 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 而非穿透控制后台视频。放在解析出 action 之后——未绑定的键仍交回 GamepadService 兜底
     // （焦点移动等），不误吞导航。
     if (_hasVisiblePopup) {
+      // 手柄重设计 P2：先给浮层自己的 dictionaryPopup 绑定一次消费机会，再落到上面
+      // 那条「已绑键 = 关浮层」。少了这一步，dpad 上下 / X / Y 在 video scope 全都
+      // 有绑定（音量 / 上下条字幕），于是 P2 的词条导航 / 制卡 / 发音四个默认绑定在
+      // 视频页**结构性不可达**——GamepadService 的弹窗兜底排在页面 Actions 之后，
+      // 这里已经 return true 了，永远轮不到。设置里能配、按了没反应正是要禁的形态。
+      // B 不在 dictionaryPopup 绑定里，逐级退出关浮层的行为不变。
+      if (tryDictionaryPopupGamepadButton(appModel.shortcutRegistry, button)) {
+        return true;
+      }
       _dismissTopVisiblePopup();
       return true;
     }
+    // 与键盘通道同款：「返回上一级」（手柄 B）的执行体不碰播放器，必须分流在
+    // controller 门之前，否则加载态下手柄 B 退不出转圈中的视频页。
+    if (action == ShortcutAction.globalBack) {
+      _handleVideoEscapeAction();
+      return true;
+    }
+    if (controller == null) return false;
     final VoidCallback? callback =
         videoActionCallbacks(_buildVideoShortcutActions(controller))[action];
     if (callback == null) return false;
@@ -4734,11 +5012,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// BUG-853 / TODO-847 对齐：Windows 微软 IME 激活时裸 Space 的 `logicalKey` 被引擎
   /// 改写成 [LogicalKeyboardKey.process]，视频页两条空格「播放/暂停」路径
-  /// （media_kit controls 的 `keyboardShortcuts` 与页级 [_withPageSpaceOverride]）都用
+  /// （旧 media_kit controls 表与页级空格兜底）都用
   /// `SingleActivator(LogicalKeyboardKey.space)` 匹配 `logicalKey`，故 IME 下按空格既不
   /// 被内层消费、也不被页级兜底消费，最终上浮到本最外层 [Focus]（[_wrapVideoGamepadControls]
   /// 是 [_videoFocusNode] 及所有子焦点节点的祖先，冒泡最后到这里）。这里按**物理键**
-  /// 还原 Space 语义，触发与 [_withPageSpaceOverride] 完全一致的 togglePlayPause（同样
+  /// 还原 Space 语义，触发与页级 press-time 通道完全一致的 togglePlayPause（同样
   /// 经 [_runWhenImmersiveAllowsShortcuts] 尊重沉浸锁门控）。
   ///
   /// 纯识别逻辑抽到可单测的 [isVideoImeSpacePlayPause]。文本框正在 composing 时
@@ -4843,48 +5121,134 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     }
   }
 
-  /// [ShortcutAction.videoEnterCaret] 的实时键盘 activator（注册表可重映射，桌面
-  /// 默认 Enter）。`includeRepeats: false` = press-edge-only：长按不连发查词。
-  Iterable<ShortcutActivator> _videoEnterCaretActivators() =>
-      appModel.shortcutRegistry
-          .bindingsFor(ShortcutAction.videoEnterCaret)
-          .keyboardBindings
-          .map((InputBinding b) => b.toActivator(includeRepeats: false));
+  /// 视频页鼠标通道的解析阶梯：**只有本页自己的 scope**。
+  ///
+  /// 与键盘的分层逐字一致：键盘在页内只解析 video（+ universal 兜底），没接就返回
+  /// ignored 冒泡到 [wrapWithGlobalNavigation]，由那一层解析 universal / global 并
+  /// 执行。鼠标没有冒泡，所以那一层改由 app 根的 `onPointerDown` 兜底
+  /// （[MouseBindingDispatch] 负责两层互斥），**执行体仍然只有最外层那一份**——
+  /// 每页各自复刻一遍 global 的执行体才是真正的重复。
+  /// BUG-2031：阶梯必须与本页**键盘阶梯逐字相同**。第一版只放了本页 scope，于是
+  /// `globalBack`（universal）在页内解析不到，只能落到 app 根那份平铺的
+  /// `Navigator.maybePop()`——而键盘 / 手柄的 `globalBack` 走的是本页的**逐级退出**
+  /// （先关面板 / 退全屏，最后才退页）。同一个动作两条通道两种行为，正是要禁的形态。
+  static const List<ShortcutScope> kVideoMouseLadder = <ShortcutScope>[
+    ShortcutScope.video,
+    ShortcutScope.universal,
+  ];
 
-  /// videoEnterCaret 的键盘**进入**通道，挂在页面最外层 [Focus]（窗口与全屏共用
-  /// 同一个 [_wrapVideoGamepadControls]，两种模式行为一致）。
+  /// 视频页的**鼠标绑定通道**（BUG-1995）：页面根 [Listener] 的 `onPointerDown` 入口。
   ///
-  /// 为什么不放进 media_kit 的 `keyboardShortcuts`：那是一个包住整个 controls 子树
-  /// 的 [CallbackShortcuts]，activator 一匹配就返回 handled，Enter 从此再也到不了
-  /// WidgetsApp 的 Enter→ActivateIntent —— 底栏 / 顶栏每个按钮的「焦点确认」被整片
-  /// 吃掉（本 app 裸空格已被中和，Enter 是唯一确认键，见 CLAUDE.md）。
+  /// 与键盘 / 手柄两条通道同构：按下当场问注册表要动作（press-time 解析，不冻结表），
+  /// 命中后走与它们完全相同的执行体。解析与按钮号折叠收在共享的
+  /// [resolveMouseBindingAction] 里（全表面同一份判据，也与设置页的按键录制同一个
+  /// 折叠函数）；左键在那里恒折不出按钮号，故永不可绑，正常点击 / 划词零影响。
   ///
-  /// 判据交给纯函数 [decideVideoEnterCaretKey]：焦点归属直接读
-  /// [_videoFocusNode]`.hasPrimaryFocus`（画面持焦），不额外维护一份状态——这与
-  /// [_focusOwnership] 的 [PageFocusOwnership] 模型是同一个真相源（它 reclaim 的
-  /// 就是这个节点），焦点落到控制条按钮上时 `hasPrimaryFocus` 自然为 false。
-  /// 与阅读器 `caret.part.dart` 的 `_isCaretEntryTrigger` 是同一条 contextual 范式。
-  bool _handleVideoEnterCaretKey(KeyEvent event) {
-    final VideoEnterCaretKeyDecision decision = decideVideoEnterCaretKey(
-      event: event,
-      enterActivators: _videoEnterCaretActivators(),
-      keyboardState: HardwareKeyboard.instance,
-      caretActive: _videoCaretActive,
+  /// ⚠️ **本入口只在词典浮层不可见时可达**，所以这里**不写**任何「关浮层」逻辑。
+  ///
+  /// 浮层可见（或查词搜索中）时，[_buildPopupOverlay] 会在**根 Overlay**里挂一层
+  /// `Positioned.fill` 的 [LookupDismissBarrier]。它虽然自称 translucent，内层却是
+  /// `ColoredBox`——`_RenderColoredBox` 的命中行为是 **opaque**（颜色透明 ≠ 命中透明），
+  /// 于是整个 barrier 子树 hitTest 返回 true，Overlay 的 Stack 就此停止向下测试，
+  /// 事件根本到不了本页面。实测：barrier 显示时页面根 Listener 收到 0 个 pointerDown。
+  /// 守卫见 `test/shortcuts/video_pointer_channel_reachability_test.dart`。
+  ///
+  /// 「浮层可见时按侧键关词典」由**另一条**路承担：浮层是原生 WebView，指针落在它上面
+  /// 时由 [DictionaryPopupLayer] 自己的 Listener 折出 token 回传
+  /// （[dictionaryPopupForwardedActions] → [onDictionaryPopupInputToken]）。那条路读的是
+  /// `bindingsFor` / `resolveMouse`，与本入口共用同一份绑定，但不经过这里。
+  void _handleVideoPointerDown(PointerDownEvent event) {
+    final ShortcutAction? action = resolveMouseBindingAction(
+      registry: appModel.shortcutRegistry,
+      buttons: event.buttons,
+      ladder: kVideoMouseLadder,
+    );
+    if (action == null) return;
+    dispatchClaimedMouseAction(event, () {
+      // 「只关词典」在浮层不可见时按下 = 无事发生，这正是它存在的意义（给侧键一个
+      // 没有副作用的落点）。返回 false = **不认领**，让 app 根兜底照常有机会解析同一
+      // 个按钮上的 global 绑定（等价于键盘返回 ignored 让它冒泡）。
+      if (action == ShortcutAction.videoDismissDict) return false;
+      // BUG-2031：与键盘 / 手柄同款分流——「返回上一级」的执行体不碰播放器，必须排在
+      // controller 门**之前**，否则加载态下侧键退不出转圈中的视频页。走的是本页的逐级
+      // 退出 [_handleVideoEscapeAction]（先关面板 / 退全屏，最后才退页），与键盘 Esc、
+      // 手柄 B 完全同一个执行体；此前阶梯里没有 universal，它只能落到 app 根那份平铺
+      // 的 `maybePop()`，一按直接退整页，比键盘少了一级。
+      if (action == ShortcutAction.globalBack) {
+        _handleVideoEscapeAction();
+        return true;
+      }
+      final VideoPlayerController? controller = _controller;
+      if (controller == null) return false;
+      // 动作不在回调表里（例如 popupMineEntry 这类页面另行分流的）就不算本层派发过。
+      final VoidCallback? run =
+          videoActionCallbacks(_buildVideoShortcutActions(controller))[action];
+      if (run == null) return false;
+      run();
+      return true;
+    });
+  }
+
+  /// 视频页键盘通道的**唯一**派发点（方案 D）：每次按键当场问注册表，与手柄
+  /// [_handleVideoGamepadButton] 逐段同构。
+  ///
+  /// 挂在 [_wrapVideoGamepadControls] 的 `Focus.onKeyEvent` 上——窗口 `build()` 与
+  /// 全屏路由 `pageBuilder` 的唯一共同外层，也是**所有**子焦点节点（视频画面、
+  /// media_kit 控制条、字幕列表、[PanelFocusScope] 圈起来的剧集轨 / 侧栏）的共同
+  /// 祖先。BUG-1864 的根因就是「注册表声明的作用域是整页（[ShortcutScope.video]），
+  /// 挂载点却只在 media_kit controls 子树」——面板是 `Video` 的**兄弟**，焦点一进
+  /// 面板，整张表就够不着了。scope 与挂载点在这里第一次对齐。
+  ///
+  /// 判据全在纯函数 [resolveVideoKeyboardShortcut] 里（可单测）；本方法只负责取页面
+  /// 态、按判决执行。执行体与手柄通道共用 [videoActionCallbacks]，所以两条通道命中
+  /// 同一动作时行为逐字一致（含 [_runWhenImmersiveAllowsShortcuts] 沉浸锁门控）。
+  bool _handleVideoKeyboardShortcut(KeyEvent event) {
+    final VideoPlayerController? controller = _controller;
+    final VideoKeyboardResolution resolution = resolveVideoKeyboardShortcut(
+      appModel.shortcutRegistry,
+      event,
+      modifiers: currentKeyboardModifiers(HardwareKeyboard.instance),
       hasEditableFocus: focusedEditableText() != null,
       hasVisiblePopup: _hasVisiblePopup,
+      // 「视频画面精确持焦」与 [_focusOwnership] 是同一个真相源（它 reclaim 的就是
+      // 这个节点）：焦点落到控制条按钮或面板行上时 hasPrimaryFocus 自然为 false。
       videoSurfaceHoldsFocus: _videoFocusNode.hasPrimaryFocus,
+      videoNavigablePanelOpen: _videoNavigablePanelOpen,
     );
-    switch (decision) {
-      case VideoEnterCaretKeyDecision.notTrigger:
-      case VideoEnterCaretKeyDecision.passThrough:
+    switch (resolution.dispatch) {
+      case VideoKeyboardDispatch.ignore:
         return false;
-      case VideoEnterCaretKeyDecision.dismissPopup:
+      case VideoKeyboardDispatch.swallowRepeat:
+        // 吃掉，什么都不做——见 VideoKeyboardDispatch.swallowRepeat 的文档。
+        return true;
+      case VideoKeyboardDispatch.dismissPopup:
         _dismissTopVisiblePopup();
         return true;
-      case VideoEnterCaretKeyDecision.enterCaret:
-        final VideoPlayerController? controller = _controller;
+      case VideoKeyboardDispatch.run:
+        final ShortcutAction action = resolution.action!;
+        // 制卡属于 dictionaryPopup scope，执行体不在 videoActionCallbacks 里。
+        if (action == ShortcutAction.popupMineEntry) {
+          _mineFromTopPopup();
+          return true;
+        }
+        // 「返回上一级」的执行体是本页的逐级退出阶梯，整条不碰播放器
+        // （[_handleVideoEscapeAction]），所以它必须分流在下面那道 controller 门**之前**：
+        // 加载态 / 资源缺失态下 `_controller` 恒为 null，跟着整表一起被挡在门外就等于
+        // 转圈时 Esc 不再走本页阶梯（[_buildLoadingBody] 的「随时可退出」在键盘上够不着）。
+        if (action == ShortcutAction.globalBack) {
+          _handleVideoEscapeAction();
+          return true;
+        }
+        // 其余动作的执行体全部从 [_buildVideoShortcutActions] 取，而它要求一个非空
+        // controller——播放器还没建好时那些动作本来也无事可做。不消费，交回既有路径。
         if (controller == null) return false;
-        _handleEnterCaretAction(controller);
+        final Map<ShortcutAction, VoidCallback> callbacks =
+            videoActionCallbacks(_buildVideoShortcutActions(controller));
+        final VoidCallback? callback = callbacks[action];
+        // 解析到了但本页没接线（universal scope 里 globalBack 之外的动作）：不消费，
+        // 交回既有路径——与 [_handleVideoGamepadButton] 的 `callback == null` 同款。
+        if (callback == null) return false;
+        callback();
         return true;
     }
   }
@@ -4910,16 +5274,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         canRequestFocus: false,
         skipTraversal: true,
         onKeyEvent: (FocusNode node, KeyEvent event) {
-          // videoEnterCaret：选词光标激活期，接住未进注册表 activator 表的光标键
-          // （Tab / [ ] / , . / 未绑定的方向键与 Esc 等；已绑键在内层
-          // guardVideoShortcutsWithSubtitleCaret 就被接管，不会冒泡到这里）。
+          // videoEnterCaret：选词光标激活期，光标键（方向 / Enter / Esc / Tab /
+          // [ ] / , .）先于注册表解析被截获——选词是模态操作，裸方向键在这时是移动
+          // 光标而不是 seek / 调音量。带硬修饰的组合键（Ctrl+← 上一句等）不算光标键，
+          // 由 [_handleCaretUnboundKey] 自己放行、落到下面的注册表解析。
           if (_handleCaretUnboundKey(event)) {
-            return KeyEventResult.handled;
-          }
-          // videoEnterCaret 的**进入**通道（光标未激活时）。刻意不走内层
-          // media_kit `keyboardShortcuts`：那层一旦匹配就无条件消费，会把控制条
-          // 按钮的 Enter 确认整片吃掉（见 [_handleVideoEnterCaretKey]）。
-          if (_handleVideoEnterCaretKey(event)) {
             return KeyEventResult.handled;
           }
           // BUG-880：Shift 按下瞬间在最后指针位置反查字幕字符立即查词，根治「光标停在词上
@@ -4930,13 +5289,19 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                   event.logicalKey == LogicalKeyboardKey.shiftRight)) {
             _triggerShiftLookupAtLastPointer();
           }
-          // 按住临时倍速（按下加速/松开恢复）需要 keyup 边沿，绑定不进内层
-          // activator 表，在此按注册表绑定判定按下/松开（见 _handleHoldSpeedKey）。
+          // 按住临时倍速（按下加速/松开恢复）需要 keyup 边沿，activator 表达不了，
+          // 故按下 / 松开都在这里按注册表绑定判定（见 _handleHoldSpeedKey）。必须排在
+          // 主通道之前：主通道只看按下 / 重复沿，松开沿只有这里认。
           if (_handleHoldSpeedKey(event) == KeyEventResult.handled) {
             return KeyEventResult.handled;
           }
-          // BUG-853：IME 改写成 process 的裸空格上浮到此，先按物理键还原播放/暂停；
-          // 其余键交回手柄原生入口，行为不变。
+          // 视频快捷键主通道（方案 D）：press-time 问注册表，整页唯一挂载点。
+          if (_handleVideoKeyboardShortcut(event)) {
+            return KeyEventResult.handled;
+          }
+          // BUG-853 / BUG-936：IME 把裸空格的 logicalKey 改写成非 space 值，主通道
+          // 按逻辑键匹配不到，在此按**物理键**还原播放/暂停。放在主通道之后，两条路径
+          // 互斥不会双触发。
           if (_handleVideoImeSpacePlayPause(event)) {
             return KeyEventResult.handled;
           }
@@ -4945,10 +5310,24 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         // BUG-880：页面根持续记录全局指针位置（不消费、不影响下层控制条 / 查词手势），供
         // Shift 按下时反查。浮层打开后 barrier 盖住这里收不到 hover，由 [_onDismissBarrierHover]
         // 接力更新同一字段。
+        // BUG-1798：与那个接力点用同一条判据滤掉合成 hover——[_pokeControlsVisible] 的合成事件
+        // 位置恒为视频区几何中心，写进来就是把「用户光标在哪」记成画面正中，Shift 反查随即查错
+        // 位置。合成事件不代表用户指针，两个记账点必须同时滤，只滤一个仍会从另一个漏进来。
         child: Listener(
           behavior: HitTestBehavior.translucent,
-          onPointerHover: (PointerHoverEvent event) =>
-              _lastGlobalPointerPos = event.position,
+          onPointerHover: (PointerHoverEvent event) {
+            if (_isSyntheticControlsHover(event)) return;
+            _lastGlobalPointerPos = event.position;
+          },
+          // BUG-1995：视频页此前**没有**「PointerDownEvent → MouseBinding → 派发」
+          // 这条链路（video scope 的 mouse 通道因此是关的，设置页连绑定入口都不给）。
+          // reader 能用鼠标侧键关词典，靠的是它正文是 WebView、侧键走 DOM mousedown
+          // 回传 Dart —— 视频页没有 WebView 正文，那条路复制不过来，只能把这条链路
+          // 真的建出来。挂在已有的页面根 Listener 上，不新增层级。
+          //
+          // `Listener` 不进手势 arena、不消费点击，media_kit 控件 / 进度条 / 字幕
+          // 查词的既有手势行为零变化。
+          onPointerDown: _handleVideoPointerDown,
           child: child,
         ),
       ),
@@ -4997,10 +5376,37 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     ];
   }
 
+  /// 标题项落在顶部哪个槽（用户可把它拖到 topLeft / topCenter / topRight）；没放置
+  /// 或被移除时返回 null。标题是单实例项（[VideoControlItem.isSingleInstance]），
+  /// `VideoControlLayout` 保证它最多出现在一个槽里。
+  VideoControlSlot? _topBarTitleSlot() {
+    for (final VideoControlSlot slot in const <VideoControlSlot>[
+      VideoControlSlot.topLeft,
+      VideoControlSlot.topCenter,
+      VideoControlSlot.topRight,
+    ]) {
+      if (_controlLayout.itemsIn(slot).contains(VideoControlItem.title)) {
+        return slot;
+      }
+    }
+    return null;
+  }
+
+  /// 标题在顶栏里夹在哪两段按钮之间（喂给 [VideoTopBarSlots]）。
+  VideoTopBarTitlePlacement _topBarTitlePlacement() {
+    switch (_topBarTitleSlot()) {
+      case VideoControlSlot.topLeft:
+        return VideoTopBarTitlePlacement.left;
+      case VideoControlSlot.topRight:
+        return VideoTopBarTitlePlacement.right;
+      default:
+        return VideoTopBarTitlePlacement.center;
+    }
+  }
+
   Widget _topBarTitle() {
-    if (!_controlLayout.itemsIn(VideoControlSlot.topCenter).contains(
-          VideoControlItem.title,
-        )) {
+    final VideoControlSlot? slot = _topBarTitleSlot();
+    if (slot == null) {
       // 标题项没配置：交回零宽占位，整条顶栏宽都归两侧按钮组。绝不能返回 Spacer
       // （= Expanded/FlexFit.tight）——那会让「空的中段」硬占一份顶栏宽，用户把标题
       // 关掉后中间明明是空白、右上角按钮却照旧被挤进滚动区裁掉（本轮修复的现象）。
@@ -5009,29 +5415,19 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // TODO-642 → 本轮：标题不再参与 Row 的 flex 分配（旧实现是 Flexible(loose)，与
     // 左右按钮组各占 flex:1 → Flex 把整宽**平分**成三份，loose 用不完的空间又不回流，
     // 所以右侧按钮组无论如何最多只拿 1/3 顶栏宽、多出来的按钮被裁进横滚区）。改由
-    // [_TopBarSlots] 按「按钮按需优先、标题吃剩余」的固定优先级分宽：按钮永远完整可见，
-    // 标题只在剩余宽里显示、靠 maxLines:1 + ellipsis 优雅截断。
+    // [VideoTopBarSlots] 按「按钮按需优先、标题吃剩余」的固定优先级分宽：按钮永远完整
+    // 可见，标题只在剩余宽里显示、靠 maxLines:1 + ellipsis 优雅截断。
+    //
+    // 标题被拖进按钮槽时也走这里（不再有 220 宽的内联块跟同组按钮抢位）：位置由
+    // [_topBarTitlePlacement] 交给顶栏布局还原，对齐跟随所在槽——落在 topRight 就靠
+    // 右贴住它后面那段按钮，其余靠左。
     //
     // 标题走 ValueListenableBuilder（BUG-120）：全屏路由不随页面 setState 重建，
-    // 监听 _titleNotifier 才能在全屏换集后刷新标题。Align 固定标题起点：
-    // topRight 清空时不靠右侧空白占位撑布局，已有按钮未清空时仍保持原有顺序。
+    // 监听 _titleNotifier 才能在全屏换集后刷新标题。
     return _topBarTitleText(
-      alignment: AlignmentDirectional.centerStart,
-    );
-  }
-
-  Widget _topBarInlineTitle(VideoControlSlot slot) {
-    final bool alignEnd = slot == VideoControlSlot.topRight;
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 8 * _videoUiScale),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: 220 * _videoUiScale),
-        child: _topBarTitleText(
-          alignment: alignEnd
-              ? AlignmentDirectional.centerEnd
-              : AlignmentDirectional.centerStart,
-        ),
-      ),
+      alignment: slot == VideoControlSlot.topRight
+          ? AlignmentDirectional.centerEnd
+          : AlignmentDirectional.centerStart,
     );
   }
 
@@ -5153,6 +5549,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       case VideoControlItem.previousChapter:
       case VideoControlItem.nextChapter:
       case VideoControlItem.chapterList:
+      // 自定义「快捷键」按钮就是一个普通图标按钮：图标 / tooltip 由绑定动作决定
+      // （见 `_videoControlItemIcon` / `_videoControlItemTooltip`），点击走
+      // `_activateVideoControlItem` 查动作表。没有任何专属渲染需求。
+      case VideoControlItem.customAction1:
+      case VideoControlItem.customAction2:
+      case VideoControlItem.customAction3:
+      case VideoControlItem.customAction4:
         return _plainSlotButton(item, controller, desktop: desktop, slot: slot);
       case VideoControlItem.volume:
       case VideoControlItem.title:
@@ -5198,6 +5601,29 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   }
 
   bool _shouldRenderControlItem(VideoControlItem item) {
+    // 自定义「快捷键」按钮：**已绑的照常显示，未绑的只露一个加号**（用户拍板改口，
+    // 此前是 4 个空槽全摆——一排一模一样的图标既占地方又看不出差别）。
+    //
+    // 空槽仍不是死按钮：露出来的那个加号点一下就地弹动作选择器（见
+    // `_activateVideoControlItem`），这是手机上最短的配置路径——看得见 → 点得到 →
+    // 当场配好，不用先翻进设置面板找编辑器；配完下一个空槽自动接上加号的位置。
+    //
+    // 想让快捷键按钮**彻底**消失（连加号都不要），走控件编辑器把槽位拖进隐藏托盘
+    // （和其它按钮同一套操作）。编辑器不经本门控（它读 `layout.itemsIn`），所以 4 个
+    // 槽位在那里永远都在、随时可配，不会因为播放器上只画一个而变得不可达。
+    //
+    // 已知边界：单独把「加号所在的那个槽位」拖进隐藏托盘（比如只藏快捷键1、留着
+    // 2/3/4 都不绑），播放器上就一个加号也不剩——加号取的是绑定表里序号最小的空位，
+    // 不去问它在哪个 slot。这是有意的：判据一旦掺进布局，就得回答「藏了 1 该由 2 顶上
+    // 吗、2 也藏了呢」这类没有正确答案的问题。隐藏是用户自己的操作，托盘里随时拖回来。
+    //
+    // 本分支的形状被 video_custom_action_bindings_test 的源码守卫钉死（退回无条件
+    // 显示全部槽位会变红），改这里请连它一起改。
+    final int? customSlot = item.customActionSlotIndex;
+    if (customSlot != null) {
+      return _customActionBindings.actionAt(customSlot) != null ||
+          customSlot == _customActionBindings.firstUnboundSlotIndex;
+    }
     switch (item) {
       case VideoControlItem.previousEpisode:
       case VideoControlItem.nextEpisode:
@@ -5233,6 +5659,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       case VideoControlItem.subtitleTrack:
       case VideoControlItem.audioTrack:
         return true;
+      case VideoControlItem.customAction1:
+      case VideoControlItem.customAction2:
+      case VideoControlItem.customAction3:
+      case VideoControlItem.customAction4:
+        // 不可达：函数开头对 isCustomAction 无条件返回 true。保留分支维持穷举检查。
+        return false;
     }
   }
 
@@ -5264,13 +5696,27 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     VideoPlayerController controller, {
     required VideoControlLayout layout,
     required bool desktop,
+    required VideoTopBarSegment segment,
   }) {
     final List<VideoControlItem> rawItems = layout.itemsIn(slot);
+    // 标题项被拖进按钮槽时，它在槽内的索引位置有语义（`VideoControlLayout` 保序），
+    // 所以按标题把该槽切成 lead / tail 两段按钮，标题本身由顶栏的 title 槽渲染、
+    // **最后**才分宽（[VideoTopBarSlots]）。此前标题是组内一个 220 宽的内联块，会跟
+    // 同组按钮抢横向空间、把按钮挤进横滚区——那正是「名称挡住按钮」的另一半根因。
+    final int titleIndex = rawItems.indexOf(VideoControlItem.title);
+    final List<VideoControlItem> scoped;
+    if (titleIndex < 0) {
+      scoped = segment == VideoTopBarSegment.lead
+          ? rawItems
+          : const <VideoControlItem>[];
+    } else {
+      scoped = segment == VideoTopBarSegment.lead
+          ? rawItems.sublist(0, titleIndex)
+          : rawItems.sublist(titleIndex + 1);
+    }
     final List<VideoControlItem> items = <VideoControlItem>[
-      for (final VideoControlItem item in rawItems)
-        if (item == VideoControlItem.title ||
-            (item.isChipRenderable && _shouldRenderControlItem(item)))
-          item,
+      for (final VideoControlItem item in scoped)
+        if (item.isChipRenderable && _shouldRenderControlItem(item)) item,
     ];
     if (items.isEmpty) return const SizedBox.shrink();
 
@@ -5339,11 +5785,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                   ? MainAxisAlignment.end
                   : MainAxisAlignment.start,
               children: <Widget>[
-                for (final VideoControlItem item in items)
-                  if (item == VideoControlItem.title)
-                    _topBarInlineTitle(slot)
-                  else
-                    buttonFor(item),
+                for (final VideoControlItem item in items) buttonFor(item),
               ],
             ),
           ],
@@ -5366,6 +5808,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// Icon for any chip-renderable [VideoControlItem] (learning + transport/nav).
   IconData _videoControlItemIcon(VideoControlItem item) {
+    // 自定义「快捷键」按钮没有固定图标：长相 = 当前绑定动作的图标（未绑定时是通用
+    // 闪电图标）。这条与编辑器 chip 共用 [videoControlItemIcon]，两处永远同款。
+    if (item.isCustomAction) {
+      return videoControlItemIcon(item, bindings: _customActionBindings);
+    }
     final VideoControlButton? legacy = item.legacyButton;
     if (legacy != null) return _videoControlButtonIcon(legacy);
     switch (item) {
@@ -5420,11 +5867,25 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       case VideoControlItem.favoriteSentence:
       case VideoControlItem.settings:
         return Icons.tune;
+      case VideoControlItem.customAction1:
+      case VideoControlItem.customAction2:
+      case VideoControlItem.customAction3:
+      case VideoControlItem.customAction4:
+        // 不可达：函数开头已委托 [videoControlItemIcon] 按绑定解析。
+        return Icons.add;
     }
   }
 
   /// Tooltip for any chip-renderable [VideoControlItem].
   String _videoControlItemTooltip(VideoControlItem item) {
+    // 自定义「快捷键」按钮：tooltip = 绑定动作的名字（未绑定时是「快捷键 N」槽位名）。
+    if (item.isCustomAction) {
+      return videoControlItemLabel(
+        item,
+        context,
+        bindings: _customActionBindings,
+      );
+    }
     final VideoControlButton? legacy = item.legacyButton;
     if (legacy != null) return _videoControlButtonTooltip(legacy);
     switch (item) {
@@ -5478,6 +5939,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       case VideoControlItem.favoriteSentence:
       case VideoControlItem.settings:
         return '';
+      case VideoControlItem.customAction1:
+      case VideoControlItem.customAction2:
+      case VideoControlItem.customAction3:
+      case VideoControlItem.customAction4:
+        // 不可达：函数开头已委托 [videoControlItemLabel] 按绑定解析。
+        return '';
     }
   }
 
@@ -5491,6 +5958,29 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     LayerLink? popoverLink,
     VideoControlSlot? sourceSlot,
   }) {
+    // 自定义「快捷键」按钮，两种语义按是否绑过动作分流：
+    //   · 已绑定 → 查**键盘 / 手柄用的同一张动作表**并执行。这里刻意不写第二套
+    //     switch——[videoActionCallbacks] 已是「动作 → 本页具体操作」的唯一接线，屏幕
+    //     按钮再抄一份就等于承诺两份实现永远一致（沉浸门控、防重入都在回调里）。
+    //   · 未绑定 → 就地弹动作选择器配置它。播放器上只有第一个空槽会渲染成加号（见
+    //     `_shouldRenderControlItem`），靠这条分流它才不至于变成按了没反应的死按钮。
+    final int? slotIndex = item.customActionSlotIndex;
+    if (slotIndex != null) {
+      final ShortcutAction? action = _customActionBindings.actionAt(slotIndex);
+      // 与其它控制条按钮一致：按一下续命控制条，否则 3s 到点隐藏、手指还在按钮上。
+      // 弹选择器那条路尤其需要——弹窗期间控制条不该在背后自己消失。
+      _pokeControlsVisible();
+      if (action == null) {
+        unawaited(_pickVideoCustomAction(slotIndex));
+        return;
+      }
+      final VoidCallback? callback =
+          videoActionCallbacks(_buildVideoShortcutActions(controller))[action];
+      // 表里没有该动作（动作在新版被删）时静默 no-op，不崩。
+      if (callback == null) return;
+      callback();
+      return;
+    }
     final VideoControlButton? legacy = item.legacyButton;
     if (legacy != null) {
       _activateVideoControlButton(
@@ -5597,6 +6087,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       case VideoControlItem.subtitleList:
       case VideoControlItem.favoriteSentence:
       case VideoControlItem.settings:
+      // 不可达：函数开头已按绑定查 [videoActionCallbacks] 执行并 return。
+      case VideoControlItem.customAction1:
+      case VideoControlItem.customAction2:
+      case VideoControlItem.customAction3:
+      case VideoControlItem.customAction4:
         break;
     }
   }
@@ -6131,8 +6626,17 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   Future<void> _setVideoFitMode(VideoFitMode mode) async {
     if (_videoFitMode == mode) return;
     _videoFitMode = mode;
+    _controller?.configureHdrOutput(fitMode: mode);
     await appModel.setVideoFitMode(mode);
     if (mounted) setState(() {});
+  }
+
+  /// 切 HDR 直通 / 10-bit 输出模式：落盘 + 控制器当场重判（切宿主窗不重建播放器）。
+  Future<void> _setVideoHdrOutputMode(VideoHdrOutputMode mode) async {
+    if (_videoHdrOutputMode == mode) return;
+    _videoHdrOutputMode = mode;
+    _controller?.configureHdrOutput(mode: mode);
+    await appModel.setVideoHdrOutputMode(mode);
   }
 
   /// Persist + apply a new 9-slot control button layout (TODO-274/312 phase 2).
@@ -6144,6 +6648,40 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _controlLayoutNotifier.value = layout;
     await appModel.setVideoControlLayout(layout);
     if (mounted) setState(() {});
+  }
+
+  /// 落盘 + 即时生效「快捷键 1..4」按钮的新绑定。与 [_setVideoControlLayout] 同款：
+  /// 先推 notifier（控制层与全屏子树立刻重建，图标/行为当场变），再持久化。
+  Future<void> _setVideoCustomActionBindings(
+    VideoCustomActionBindings bindings,
+  ) async {
+    _customActionBindingsNotifier.value = bindings;
+    await appModel.setVideoCustomActionBindings(bindings);
+    if (mounted) setState(() {});
+  }
+
+  /// 在播放器上直接点空的「快捷键 N」按钮 → 就地选动作。手机上最短的配置路径：
+  /// 看得见、点得到、当场配好，不用先翻进设置面板找控件编辑器。选择器与编辑器共用
+  /// [showVideoCustomActionPicker]，列表与选中态两处必然一致。
+  ///
+  /// guardOverlay：弹窗走 root navigator 会夺走视频键盘焦点，任何退出路径（选完 /
+  /// Esc / 点外部 / 抛异常）都必须归还，否则关掉弹窗后空格等快捷键要等到下次点画面
+  /// 才恢复——这是本页所有覆盖层的既有范式（见 [_openSubtitleWaveformAlign]）。
+  Future<void> _pickVideoCustomAction(int slotIndex) async {
+    final ShortcutAction? current = _customActionBindings.actionAt(slotIndex);
+    final VideoCustomActionPick? pick = await _focusOwnership.guardOverlay(
+      () => showVideoCustomActionPicker(
+        context: context,
+        slotNumber: slotIndex + 1,
+        current: current,
+      ),
+    );
+    // null = 取消（点外部 / 返回键）；显式选「不绑定」是 VideoCustomActionPick(null)。
+    if (pick == null || !mounted) return;
+    final VideoCustomActionBindings next =
+        _customActionBindings.withAction(slotIndex, pick.action);
+    if (next == _customActionBindings) return;
+    await _setVideoCustomActionBindings(next);
   }
 
   // 原 `_showVideoControlEditOverlay`（TODO-440 画面内拖拽编辑入口）已删：旧面板只
@@ -6354,22 +6892,24 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       return;
     }
     // BUG-931：收藏不再唤起 media_kit 控制条——原先那句 poke 会派发合成 hover 把底栏
-    // 进度条弹出来（用户报「碍眼」）。收藏结果走左上角 OSD 即可，无需显现控制条；
-    // seek / 重播仍保留 poke，因为那些操作本就需要看进度。
+    // 进度条弹出来（用户报「碍眼」）。收藏结果走左上角 OSD 即可，无需显现控制条。
+    // BUG-2030 之后这已不是收藏一处的特例：所有键盘 / 手柄入口（跳句 / seek / 跳章 /
+    // 重播）都改走 [_keepControlsAliveIfVisible]，隐藏态一律不唤起；收藏这处更进一步，
+    // 连续命都不需要（它压根不动播放位置）。
     await _toggleFavoriteCueForVideo(cue);
   }
 
-  Future<void> _replayCurrentCueAndPokeControls() async {
+  Future<void> _replayCurrentCueAndKeepControls() async {
     final AudioCue? cue = _currentCueForAction();
     if (cue == null) return;
-    _pokeControlsVisible();
+    _keepControlsAliveIfVisible();
     await _controller?.skipToCue(cue);
   }
 
   /// 重播上一句（TODO-378，BUG-287）：跳到上一条 cue 起点并播放，**不**退化成回退几秒
   /// （走纯 [VideoPlayerController.skipToPrevCue]，与底栏「上一句」按钮同语义）。
-  Future<void> _replayPreviousCueAndPokeControls() async {
-    _pokeControlsVisible();
+  Future<void> _replayPreviousCueAndKeepControls() async {
+    _keepControlsAliveIfVisible();
     await _controller?.skipToPrevCue();
   }
 
@@ -6442,6 +6982,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       subtitleStyle: () => _subtitleStyle,
       danmakuStyle: () => _danmakuStyle,
       controlLayout: () => _controlLayout,
+      customActionBindings: () => _customActionBindings,
+      onCustomActionBindingsChanged: _setVideoCustomActionBindings,
       onSetDelay: _setDelayMs,
       // TODO-2837：副字幕独立调轴（null = 跟随主字幕）。行只在副字幕轨激活
       // （secondaryCues 非空）时显示——hasSecondarySubtitle 是活值 getter，
@@ -6455,6 +6997,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       onAutoAlign: (_controller?.cues.isNotEmpty ?? false) &&
               (_controller?.videoPath?.isNotEmpty ?? false)
           ? _autoAlignSubtitle
+          : null,
+      // 「上/下一句对齐到当前时间」按钮：与键盘 Ctrl+Shift+←/→ 同一执行体。只要有
+      // 字幕 cue 就能对齐（纯按 cue 时间轴求偏移，**不需要**视频本地路径 / 音频探测，
+      // 故门条件比自动对轴松一档）；无 cue 时置 null 让面板不显示按钮。
+      onSnapDelayToCue: (_controller?.cues.isNotEmpty ?? false)
+          ? _snapSubtitleDelayToCue
           : null,
       // TODO-1051 阶段B：字幕对轴波形面板输入。有 cue + 本地视频路径时给波形抽取回调
       // （否则 null，面板不显示）；面板拖动预览、松手才经 onSetDelay(_setDelayMs) 落盘。
@@ -6536,8 +7084,17 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             : const <String>[];
         await _controller?.applyShaders(paths);
       },
+      // mpv Lua 脚本开关：落 pref；开启时把脚本目录即时装载进活播放器（幂等，
+      // 已装载路径跳过）。关闭不可卸载（mpv 无 unload-script），下次进入生效。
+      onLuaScriptsEnabledChanged: (bool enabled) async {
+        await appModel.setVideoMpvLuaScriptsEnabled(enabled);
+        if (!enabled) return;
+        await _controller?.applyLuaScripts(await listLuaScriptPaths());
+      },
+      luaScriptStates: _controller?.luaScriptStates,
       onLockWindowAspectRatioChanged: _setLockWindowAspectRatio,
       onVideoFitModeChanged: _setVideoFitMode,
+      onHdrOutputModeChanged: _setVideoHdrOutputMode,
       onImmersiveModeChanged: appModel.setVideoImmersiveMode,
       onDanmakuEnabledChanged: _setVideoDanmakuEnabled,
       onDanmakuOnlineEnabledChanged: _setVideoDanmakuOnlineEnabled,
@@ -6704,24 +7261,30 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final VideoPlayerController? controller = _controller;
     final VideoController? videoController = controller?.videoController;
     final ColorScheme cs = Theme.of(context).colorScheme;
+    // 视频页是**窗口全屏的合法宿主**之一：全屏键（默认 F11）只在小说 / 漫画 / 视频
+    // 里能进入全屏，靠的就是这层声明（见 [WindowFullscreenHosts]）。它零布局、零行为，
+    // 只在挂载期间登记自己所在的路由。
+    //
     // TODO-1342：最外层包一层手柄输入层，让桌面轮询的 [GamepadButtonIntent] 与
     // Android 原生手柄按键都能落到本页的视频动作（play/pause、seek、音量、字幕、全屏、
     // 返回）。放在 [PopScope] 之上 ⇒ 是 [_videoFocusNode] 及所有子焦点节点的祖先，
     // 冒泡/派发都能命中；wrapper 自身不夺焦（见 [_wrapVideoGamepadControls]）。
-    return _wrapVideoGamepadControls(
-      PopScope(
-        // 始终 `canPop: false` 自管退出：① 浮层栈非空时 back 先关栈（一层一层退），
-        // 浮层在根 Overlay 退出视频路由不会自动清它，必须在 pop 前拦截；② 栈空真退出
-        // 时，**先 await `flushPosition()` 把退出瞬间位置可靠落库再手动 pop**——否则只剩
-        // controller.dispose() 里 fire-and-forget 的 `_forceSavePositionSync()`，drift
-        // 写库 Future 与 Navigator 同步销毁 State 竞争、常写不完，导致「退出再进没回到
-        // 上次位置」（对齐阅读器 `onWillPop` 先 await 落库再 pop 的做法）。
-        canPop: false,
-        onPopInvokedWithResult: (bool didPop, Object? _) async {
-          if (didPop) return;
-          await _handleBackOrExit();
-        },
-        child: _buildScaffold(controller, videoController, cs),
+    return WindowFullscreenHost(
+      child: _wrapVideoGamepadControls(
+        PopScope(
+          // 始终 `canPop: false` 自管退出：① 浮层栈非空时 back 先关栈（一层一层退），
+          // 浮层在根 Overlay 退出视频路由不会自动清它，必须在 pop 前拦截；② 栈空真退出
+          // 时，**先 await `flushPosition()` 把退出瞬间位置可靠落库再手动 pop**——否则只剩
+          // controller.dispose() 里 fire-and-forget 的 `_forceSavePositionSync()`，drift
+          // 写库 Future 与 Navigator 同步销毁 State 竞争、常写不完，导致「退出再进没回到
+          // 上次位置」（对齐阅读器 `onWillPop` 先 await 落库再 pop 的做法）。
+          canPop: false,
+          onPopInvokedWithResult: (bool didPop, Object? _) async {
+            if (didPop) return;
+            await _handleBackOrExit();
+          },
+          child: _buildScaffold(controller, videoController, cs),
+        ),
       ),
     );
   }
@@ -6735,9 +7298,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // topButtonBar），外层再叠一条 AppBar 等于两条顶栏、互相重复（BUG-102）。改为
     // 把返回/标题/剧集导航全部并入视频内顶栏（见 [_desktopControlsTheme] /
     // [_mobileControlsTheme]），与播放控制一起随鼠标/触摸显隐，单一顶栏。
-    return Scaffold(
-      backgroundColor: cs.surface,
-      body: _failed
+    // HDR 直通（video_hdr_output.dart）：libmpv 宿主窗钉在主窗正后方，视频洞必须
+    // 一路透到底，页面底色随之透明；失败 / 加载 / 缺资源态与非 HDR 播放不受影响。
+    return ValueListenableBuilder<bool>(
+      valueListenable: controller?.hdrHostActive ?? _kHdrHostInactive,
+      builder: (BuildContext _, bool hdrHost, Widget? body) => Scaffold(
+        backgroundColor: hdrHost ? Colors.transparent : cs.surface,
+        body: body,
+      ),
+      child: _failed
           ? _buildFailedBody(cs)
           // TODO-897：本地资源缺失态——必须在转圈判据之前短路（缺失时不调 load，
           // _controller 维持 null 也会落进下面的 spinner 分支无限转圈）。
@@ -6750,12 +7319,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                       videoController == null ||
                       !_videoReadyToShow)
                   ? _buildLoadingBody()
-                  : _withPageSpaceOverride(
+                  // BUG-1864：裸空格覆盖不再挂这里——它已上提到窗口与全屏共用的
+                  // [_wrapVideoGamepadControls]（全屏是独立路由，不经过本 Scaffold）。
+                  : _pageDropTarget(
                       controller,
-                      _pageDropTarget(
-                        controller,
-                        _buildVideoBody(controller, videoController),
-                      ),
+                      _buildVideoBody(controller, videoController),
                     ),
     );
   }
@@ -6845,16 +7413,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 通用文案。纯字符串判据（异常类型 + 消息关键词），best-effort、绝不抛。
   String _describeLoadFailure(Object? error) {
     if (error is TimeoutException) return t.video_load_failed_timeout;
+    // BUG-1693：互联对端一台都探不到（对端未运行 Fushi / 离线）有类型可依，
+    // 优先分派——它既不是「视频不可用」也不是「本机网络故障」。
+    if (error is SyncPeerUnreachableError) return t.sync_err_peer_unreachable;
     final String s = error?.toString().toLowerCase() ?? '';
-    if (s.contains('403') ||
-        s.contains('forbidden') ||
-        s.contains('manifest failed') ||
-        s.contains('unavailable') ||
-        s.contains('unplayable') ||
-        s.contains('age') ||
-        s.contains('private')) {
-      return t.video_load_failed_unavailable;
-    }
+    // 网络判据先行（BUG-1693 顺带修）：旧序里 'age'/'unavailable' 排在前面且
+    // 'age' 是裸子串——'message'/'package'/'storage' 这类传输错误文本都含 'age'，
+    // 真网络故障会被误标成「视频不可用/受限」。'age' 加词界（age-restricted /
+    // age_verification / " age "），并把可归因的网络关键词放到它之前。
     if (s.contains('socket') ||
         s.contains('network') ||
         s.contains('connection') ||
@@ -6862,6 +7428,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         s.contains('failed host lookup') ||
         s.contains('timed out')) {
       return t.video_load_failed_network;
+    }
+    if (s.contains('403') ||
+        s.contains('forbidden') ||
+        s.contains('manifest failed') ||
+        s.contains('unavailable') ||
+        s.contains('unplayable') ||
+        RegExp(r'\bage[ _-]').hasMatch(s) ||
+        s.contains('private')) {
+      return t.video_load_failed_unavailable;
     }
     return t.video_load_failed_generic;
   }
@@ -6940,47 +7515,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           ],
         ),
       ),
-    );
-  }
-
-  /// 页内局部「裸空格 = 播放/暂停」覆盖（TODO-755，回归 c152fcd91）。
-  ///
-  /// 全局导航层（[wrapWithGlobalNavigation]）无条件把裸空格中和成
-  /// [DoNothingIntent]（`global_navigation.dart`，[DoNothingAction.consumesKey]
-  /// 为 true → 真消费按键），使焦点确认永不走空格。视频空格的正常路径是
-  /// media_kit 桌面 controls 的 `keyboardShortcuts`（[_videoKeyboardShortcuts]），
-  /// 但那只在 [_videoFocusNode]（或 controls 内置 Focus）**精确持焦**时才生效；
-  /// 一旦焦点落在视频页子树里其它节点（关对话框/菜单后短暂失焦、点了非视频区控件
-  /// 等），裸空格就会上浮到全局 [DoNothingIntent] 被吞掉 → 「按了没反应」。
-  ///
-  /// 本层是页内局部 [CallbackShortcuts]，位于全局 [DoNothingIntent] 之下、离视频
-  /// 更近：只要焦点落在视频页子树内**任意**节点，裸空格都先被这层消费、永不下沉到
-  /// 全局中和层。与阅读器 [resolveReaderSpaceOverride] / 有声书 audiobookPlayPause
-  /// 同范式——只在本页子树内覆盖裸空格，不碰全局中和（非视频界面空格仍被中和，
-  /// 不破坏 TODO-112「空格不确认焦点」）。media_kit 的 `keyboardShortcuts` 在精确
-  /// 持焦时是更近作用域、先消费，故两者不冲突；本层只是「焦点在视频页子树但不精确
-  /// 在 [_videoFocusNode]」时的兜底。语义与注册表 [_videoKeyboardShortcuts] 的
-  /// `togglePlayPause` 完全一致（经 [_runWhenImmersiveAllowsShortcuts] 尊重
-  /// 沉浸锁门控），不引入特例分支。
-  Widget _withPageSpaceOverride(
-    VideoPlayerController controller,
-    Widget child,
-  ) {
-    return CallbackShortcuts(
-      bindings: <ShortcutActivator, VoidCallback>{
-        const SingleActivator(LogicalKeyboardKey.space): () {
-          // BUG-924：词典浮层可见时，裸空格也先关浮层（与 [_videoKeyboardShortcuts] 守卫
-          // 同语义），而非在浮层后面 play/pause。浮层不可见时保持原「裸空格=播放/暂停」覆写。
-          if (_hasVisiblePopup) {
-            _dismissTopVisiblePopup();
-            return;
-          }
-          _runWhenImmersiveAllowsShortcuts(
-            () => unawaited(controller.playOrPause()),
-          );
-        },
-      },
-      child: child,
     );
   }
 
@@ -7077,6 +7611,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (_isDesktopVideoControls) {
       unawaited(_toggleVideoFullscreen(controlsContext));
     } else {
+      // 用户设置关掉「点击画面播放/暂停」后，移动端双击中带不再切播放态（与桌面单击
+      // 的 playAndPauseOnTap 读同一个开关，两端语义一致）。桌面双击 = 全屏，与播放态
+      // 无关，故不受本开关影响。
+      if (!_asbConfig.tapTogglesPlayback) return;
       unawaited(_controller?.playOrPause() ?? Future<void>.value());
     }
   }

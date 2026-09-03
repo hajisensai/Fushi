@@ -34,6 +34,10 @@ void main() {
         '-i',
         '/a/in.m4b',
         '-vn',
+        // BUG-2011：源整本/整集的章节表不能跟进句子音频，否则 mp4 系容器（iOS 的
+        // `.m4a`）的 mvhd.duration 会被章节轨拉满成整集时长。
+        '-map_chapters',
+        '-1',
         '-c:a',
         'aac',
         // TODO-646 近无损压缩：单声道 64k AAC。
@@ -136,6 +140,8 @@ void main() {
         '-i',
         '/a/in.mkv',
         '-vn',
+        '-map_chapters',
+        '-1',
         '-map',
         // 尾随 '?'：越界时降级回退默认轨而非硬失败（BUG-345）。
         '0:a:1?',
@@ -148,6 +154,24 @@ void main() {
         '64k',
         '/a/out.aac',
       ]);
+    });
+
+    test('always drops the source chapters (BUG-2011)', () {
+      // 桌面/Android 的句子音频落 `.aac`（裸 ADTS，无容器，本就不受影响），但
+      // **iOS 走 `.m4a`**（immersionMiningAudioExtensionFor）——那条链路上不丢章节，
+      // mp4 muxer 会建一条与源最后一个章节等长的 chapter text track，把
+      // mvhd.duration 拉满：一段 3 秒的句子音频，容器头写着整集的 21 分钟。
+      // 实测 `.aac` 加与不加这两个参数产出的字节数完全一致，所以无条件给，
+      // 不按扩展名分支。
+      for (final String out in <String>['/a/out.aac', '/a/out.m4a']) {
+        final List<String> args = buildFfmpegClipArgs(
+          inputPath: '/a/in.m4b',
+          startMs: 0,
+          endMs: 3000,
+          outputPath: out,
+        );
+        expect(args, containsAllInOrder(<String>['-map_chapters', '-1']));
+      }
     });
 
     test('audio map always carries the optional "?" suffix', () {

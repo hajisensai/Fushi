@@ -5,6 +5,8 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/video/video_shader_manager.dart';
 import 'package:fushi/src/utils/net/app_http.dart';
+import 'package:fushi/src/utils/net/github_mirrors.dart';
+import 'package:fushi/src/utils/net/app_user_agent.dart';
 
 /// Anime4K（bloc97/Anime4K）GLSL 着色器一键下载：定义官方推荐预设、生成多镜像
 /// 下载 URL、把一组 `.glsl` 拉到 [mpvShaderDirectory] 供视频页勾选启用。
@@ -236,18 +238,10 @@ const List<String> _kJsDelivrHosts = <String>[
   'testingcf.jsdelivr.net',
 ];
 
-/// 套在 `raw.githubusercontent.com` 直链前的 GitHub 加速代理前缀（BUG-319 同款名单）。
-const List<String> _kGhProxyPrefixes = <String>[
-  'https://ghfast.top/',
-  'https://gh-proxy.com/',
-  'https://ghproxy.net/',
-  'https://ghproxy.cc/',
-];
-
 /// 为仓库相对路径 [repoPath] 生成按优先级排序的下载 URL 列表（多镜像回退）。纯函数。
 ///
 /// 顺序：① jsDelivr 多 CDN 节点（[_kJsDelivrHosts]，独立边缘网络互为后备，中国可达）→
-/// ② gh 加速代理前缀套 raw 直链（[_kGhProxyPrefixes]，BUG-319 名单）→ ③ raw.githubusercontent.com
+/// ② gh 加速代理前缀套 raw 直链（[kGitHubMirrorPrefixes]，BUG-319 名单）→ ③ raw.githubusercontent.com
 /// 官方直连兜底。app 运行时下载**不走**本机命令行代理，故必须靠这些镜像在中国网络兜底。
 /// 逐个尝试，前一个失败回退下一个；整组跑完仍失败由 [downloadAnime4kFiles] 做有界重试
 /// （瞬态 CDN 抖动换轮再试）。
@@ -262,7 +256,7 @@ List<String> anime4kMirrorUrls(
   return <String>[
     for (final String host in _kJsDelivrHosts)
       'https://$host/gh/$repo@$ref/$repoPath',
-    for (final String prefix in _kGhProxyPrefixes) '$prefix$rawUrl',
+    for (final String prefix in kGitHubMirrorPrefixes) '$prefix$rawUrl',
     rawUrl,
   ];
 }
@@ -272,7 +266,7 @@ List<String> anime4kMirrorUrls(
 /// **直链优先、镜像兜底**：用户粘的就是 GitHub 链接，先试它本身（`blob` 链接转成可
 /// 直接下载的 `raw` 形式）——能直连 / 有系统代理 VPN 就直接用；**跑不通才回退**与
 /// [anime4kMirrorUrls] 同款的 jsDelivr 多 CDN 节点（[_kJsDelivrHosts]）+ gh 加速代理
-/// 前缀（[_kGhProxyPrefixes]，BUG-319 名单）兜底（中国网络）。其它任意直链原样单条返回。
+/// 前缀（[kGitHubMirrorPrefixes]，BUG-319 名单）兜底（中国网络）。其它任意直链原样单条返回。
 /// 让用户从 GitHub/教程里复制任意 `.glsl` 链接粘进来即可下，不必本机装 mpv。
 List<String> shaderDownloadUrlsFor(String userUrl) {
   final String url = userUrl.trim();
@@ -294,7 +288,7 @@ List<String> shaderDownloadUrlsFor(String userUrl) {
     // 跑不通才走镜像（与 anime4kMirrorUrls 同款多节点 + 代理前缀，中国网络兜底）。
     for (final String host in _kJsDelivrHosts)
       'https://$host/gh/$owner/$repo@$refAndPath',
-    for (final String prefix in _kGhProxyPrefixes) '$prefix$direct',
+    for (final String prefix in kGitHubMirrorPrefixes) '$prefix$direct',
   ];
 }
 
@@ -340,8 +334,8 @@ Future<String?> downloadShaderFromUrl(
         followRedirects: true,
         maxRedirects: 10,
         responseType: ResponseType.bytes,
-        headers: const <String, String>{
-          'User-Agent': 'Mozilla/5.0 (Hibiki) Shader-Downloader/1.0',
+        headers: <String, String>{
+          'User-Agent': fushiUserAgent('shader-downloader'),
           'Accept': '*/*',
         },
       ));
@@ -487,8 +481,8 @@ Future<Anime4kDownloadResult> downloadAnime4kFiles(
         followRedirects: true,
         maxRedirects: 10,
         responseType: ResponseType.bytes,
-        headers: const <String, String>{
-          'User-Agent': 'Mozilla/5.0 (Hibiki) Anime4K-Downloader/1.0',
+        headers: <String, String>{
+          'User-Agent': fushiUserAgent('anime4k-downloader'),
           'Accept': '*/*',
         },
       ));
@@ -533,3 +527,63 @@ Future<Anime4kDownloadResult> downloadAnime4kFiles(
 
   return Anime4kDownloadResult(downloaded: done, failed: failed);
 }
+
+// ── 存储页助手：Anime4K 已下载文件的占用与删除 ───────────────────────────────
+
+/// 全部预设涉及的落盘文件名并集（去重，保序）。这是「本 app 曾经/可能下载过」
+/// 的清单——存储页删除**只删这些名字**，用户自导入的着色器与它们同目录混放，
+/// 整目录端掉会误删用户文件。
+List<String> anime4kManifestFileNames() {
+  final List<String> out = <String>[];
+  for (final Anime4kPreset preset in <Anime4kPreset>[
+    ...kAnime4kPresets,
+    kAnime4kUltraDeblurPreset,
+  ]) {
+    for (final String name in preset.fileNames) {
+      if (!out.contains(name)) out.add(name);
+    }
+  }
+  return out;
+}
+
+/// [dir] 里清单内文件的现存字节数（纯函数，便于临时目录单测）。
+int anime4kInstalledBytesIn(Directory dir) {
+  if (!dir.existsSync()) return 0;
+  int total = 0;
+  for (final String name in anime4kManifestFileNames()) {
+    final File f = File(p.join(dir.path, name));
+    try {
+      if (f.existsSync()) total += f.lengthSync();
+    } on FileSystemException {
+      // 竞态删除：跳过。
+    }
+  }
+  return total;
+}
+
+/// 删除 [dir] 里清单内的已下载文件，返回删掉的文件名（纯函数，便于单测）。
+/// 用户自导入的非清单文件一律不碰。
+List<String> deleteAnime4kFilesIn(Directory dir) {
+  if (!dir.existsSync()) return const <String>[];
+  final List<String> deleted = <String>[];
+  for (final String name in anime4kManifestFileNames()) {
+    final File f = File(p.join(dir.path, name));
+    try {
+      if (f.existsSync()) {
+        f.deleteSync();
+        deleted.add(name);
+      }
+    } on FileSystemException {
+      // 被占用/无权限：跳过，不翻转整个删除。
+    }
+  }
+  return deleted;
+}
+
+/// 默认着色器目录里的 Anime4K 占用字节数。
+Future<int> anime4kInstalledBytes() async =>
+    anime4kInstalledBytesIn(await mpvShaderDirectory());
+
+/// 删除默认着色器目录里的 Anime4K 已下载文件，返回删掉的文件名。
+Future<List<String>> deleteAnime4kShaderFiles() async =>
+    deleteAnime4kFilesIn(await mpvShaderDirectory());

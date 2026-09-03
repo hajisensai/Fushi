@@ -3,15 +3,39 @@ import 'package:fushi/src/media/video/metadata/video_metadata_merge.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 
 void main() {
+  test('TMDB supplement cannot replace the AniDB media kind', () {
+    final VideoMetadataWork merged = supplementVideoMetadataWithTmdb(
+      VideoMetadataWork(
+        provider: VideoMetadataProviderKind.anidb,
+        kind: VideoMetadataMediaKind.tv,
+        title: 'AniDB TV identity',
+        ids: const <VideoMetadataId>[
+          VideoMetadataId(type: 'anidb', value: '1'),
+        ],
+      ),
+      VideoMetadataWork(
+        provider: VideoMetadataProviderKind.tmdb,
+        kind: VideoMetadataMediaKind.movie,
+        title: 'TMDB movie match',
+        ids: const <VideoMetadataId>[
+          VideoMetadataId(type: 'tmdb', value: '2'),
+        ],
+      ),
+    );
+
+    expect(merged.kind, VideoMetadataMediaKind.tv);
+    expect(merged.provider, VideoMetadataProviderKind.anidb);
+    expect(merged.ids.map((VideoMetadataId id) => id.type),
+        containsAll(<String>['anidb', 'tmdb']));
+  });
+
   test('非 TMDB 主源保留展示字段并接入 TMDB 身份和季集骨架', () {
     final VideoMetadataWork primary = VideoMetadataWork(
-      provider: VideoMetadataProviderKind.anilist,
+      provider: VideoMetadataProviderKind.anidb,
       kind: VideoMetadataMediaKind.tv,
       title: '主源标题',
       plot: '主源简介',
-      ids: const <VideoMetadataId>[
-        VideoMetadataId(type: 'anilist', value: '1'),
-      ],
+      ids: const <VideoMetadataId>[VideoMetadataId(type: 'anidb', value: '1')],
     );
     final VideoMetadataWork tmdb = VideoMetadataWork(
       provider: VideoMetadataProviderKind.tmdb,
@@ -27,56 +51,19 @@ void main() {
       ],
     );
 
-    final VideoMetadataWork merged =
-        supplementVideoMetadataWithTmdb(primary, tmdb);
-    expect(merged.provider, VideoMetadataProviderKind.anilist);
+    final VideoMetadataWork merged = supplementVideoMetadataWithTmdb(
+      primary,
+      tmdb,
+    );
+    expect(merged.provider, VideoMetadataProviderKind.anidb);
     expect(merged.title, '主源标题');
     expect(merged.plot, '主源简介');
-    expect(merged.ids.map((VideoMetadataId id) => id.type),
-        <String>['anilist', 'tmdb', 'tvdb']);
+    expect(merged.ids.map((VideoMetadataId id) => id.type), <String>[
+      'anidb',
+      'tmdb',
+      'tvdb',
+    ]);
     expect(merged.seasons, hasLength(1));
-  });
-
-  test('Fanart 先占图种并按语言和 likes 选择', () {
-    final List<VideoMetadataImage> selected = selectVideoMetadataImages(
-      primary: const <VideoMetadataImage>[
-        VideoMetadataImage(
-          kind: VideoMetadataImageKind.cover,
-          url: 'tmdb',
-          provider: VideoMetadataProviderKind.tmdb,
-          voteAverage: 10,
-        ),
-        VideoMetadataImage(
-          kind: VideoMetadataImageKind.logo,
-          url: 'logo',
-          provider: VideoMetadataProviderKind.tmdb,
-        ),
-      ],
-      fanart: const <VideoMetadataImage>[
-        VideoMetadataImage(
-          kind: VideoMetadataImageKind.cover,
-          url: 'fanart-en',
-          provider: VideoMetadataProviderKind.fanart,
-          language: 'en',
-          likes: 50,
-        ),
-        VideoMetadataImage(
-          kind: VideoMetadataImageKind.cover,
-          url: 'fanart-zh',
-          provider: VideoMetadataProviderKind.fanart,
-          language: 'zh',
-          likes: 1,
-        ),
-      ],
-    );
-    expect(
-      selected
-          .singleWhere(
-              (VideoMetadataImage i) => i.kind == VideoMetadataImageKind.cover)
-          .url,
-      'fanart-zh',
-    );
-    expect(selected.any((VideoMetadataImage i) => i.url == 'logo'), isTrue);
   });
 
   test('TMDB 图片先按评分票数排序且语言只作同分兜底', () {
@@ -105,7 +92,7 @@ void main() {
 
   test('续季单主源先重映射到本地季号再与 TMDB 全剧骨架合并', () {
     final VideoMetadataWork primary = VideoMetadataWork(
-      provider: VideoMetadataProviderKind.bangumi,
+      provider: VideoMetadataProviderKind.anidb,
       kind: VideoMetadataMediaKind.tv,
       title: '作品 第二季',
       seasons: <VideoMetadataSeason>[
@@ -163,6 +150,36 @@ void main() {
     expect(merged.seasons.last.episodes.single.title, '主源续季第一集');
   });
 
+  test('specials season zero never remaps AniDB regular episodes', () {
+    final VideoMetadataWork primary = VideoMetadataWork(
+      provider: VideoMetadataProviderKind.anidb,
+      kind: VideoMetadataMediaKind.tv,
+      title: 'Anime',
+      seasons: <VideoMetadataSeason>[
+        VideoMetadataSeason(
+          seasonNumber: 1,
+          title: 'Regular episodes',
+          episodes: <VideoMetadataEpisode>[
+            VideoMetadataEpisode(
+              seasonNumber: 1,
+              episodeNumber: 1,
+              title: 'Regular episode 1',
+            ),
+          ],
+        ),
+      ],
+    );
+
+    final VideoMetadataWork result = remapStandaloneVideoMetadataSeason(
+      primary,
+      0,
+    );
+
+    expect(result, same(primary));
+    expect(result.seasons.single.seasonNumber, 1);
+    expect(result.seasons.single.episodes.single.seasonNumber, 1);
+  });
+
   test('TMDB 按季集号深合并且主源标题、简介、声优和图片优先', () {
     final VideoMetadataCredit primaryVoice = VideoMetadataCredit(
       kind: VideoMetadataCreditKind.voiceActor,
@@ -170,32 +187,32 @@ void main() {
         name: '声优',
         profileUrl: 'primary-profile',
         ids: const <VideoMetadataId>[
-          VideoMetadataId(type: 'bangumi', value: 'person-1'),
+          VideoMetadataId(type: 'anidb', value: 'person-1'),
         ],
       ),
       character: VideoMetadataCharacter(
         name: '角色',
         imageUrl: 'primary-character',
         ids: const <VideoMetadataId>[
-          VideoMetadataId(type: 'bangumi', value: 'character-1'),
+          VideoMetadataId(type: 'anidb', value: 'character-1'),
         ],
       ),
       language: 'ja',
     );
     final VideoMetadataWork primary = VideoMetadataWork(
-      provider: VideoMetadataProviderKind.bangumi,
+      provider: VideoMetadataProviderKind.anidb,
       kind: VideoMetadataMediaKind.tv,
       title: '主源作品名',
       plot: '主源作品简介',
       ids: const <VideoMetadataId>[
-        VideoMetadataId(type: 'bangumi', value: 'work-1'),
+        VideoMetadataId(type: 'anidb', value: 'work-1'),
       ],
       credits: <VideoMetadataCredit>[primaryVoice],
       images: const <VideoMetadataImage>[
         VideoMetadataImage(
           kind: VideoMetadataImageKind.cover,
           url: 'primary-cover',
-          provider: VideoMetadataProviderKind.bangumi,
+          provider: VideoMetadataProviderKind.anidb,
         ),
       ],
       seasons: <VideoMetadataSeason>[
@@ -204,13 +221,13 @@ void main() {
           title: '主源第一季',
           plot: '主源季简介',
           ids: const <VideoMetadataId>[
-            VideoMetadataId(type: 'bangumi', value: 'season-1'),
+            VideoMetadataId(type: 'anidb', value: 'season-1'),
           ],
           images: const <VideoMetadataImage>[
             VideoMetadataImage(
               kind: VideoMetadataImageKind.cover,
               url: 'primary-season-cover',
-              provider: VideoMetadataProviderKind.bangumi,
+              provider: VideoMetadataProviderKind.anidb,
               seasonNumber: 1,
             ),
           ],
@@ -221,14 +238,14 @@ void main() {
               title: '主源第一集',
               plot: '主源分集简介',
               ids: const <VideoMetadataId>[
-                VideoMetadataId(type: 'bangumi', value: 'episode-1'),
+                VideoMetadataId(type: 'anidb', value: 'episode-1'),
               ],
               credits: <VideoMetadataCredit>[primaryVoice],
               images: const <VideoMetadataImage>[
                 VideoMetadataImage(
                   kind: VideoMetadataImageKind.thumb,
                   url: 'primary-still',
-                  provider: VideoMetadataProviderKind.bangumi,
+                  provider: VideoMetadataProviderKind.anidb,
                   seasonNumber: 1,
                   episodeNumber: 1,
                 ),
@@ -243,9 +260,7 @@ void main() {
       kind: VideoMetadataMediaKind.tv,
       title: 'TMDB title',
       plot: 'TMDB work plot',
-      ids: const <VideoMetadataId>[
-        VideoMetadataId(type: 'tmdb', value: '100'),
-      ],
+      ids: const <VideoMetadataId>[VideoMetadataId(type: 'tmdb', value: '100')],
       credits: <VideoMetadataCredit>[
         VideoMetadataCredit(
           kind: VideoMetadataCreditKind.voiceActor,
@@ -353,26 +368,25 @@ void main() {
             ),
           ],
         ),
-        VideoMetadataSeason(
-          seasonNumber: 2,
-          title: 'TMDB Season 2',
-        ),
+        VideoMetadataSeason(seasonNumber: 2, title: 'TMDB Season 2'),
       ],
     );
 
-    final VideoMetadataWork merged =
-        supplementVideoMetadataWithTmdb(primary, tmdb);
+    final VideoMetadataWork merged = supplementVideoMetadataWithTmdb(
+      primary,
+      tmdb,
+    );
     expect(merged.title, '主源作品名');
     expect(merged.plot, '主源作品简介');
-    expect(
-      merged.images.map((VideoMetadataImage image) => image.url),
-      <String>['primary-cover', 'tmdb-logo'],
-    );
+    expect(merged.images.map((VideoMetadataImage image) => image.url), <String>[
+      'primary-cover',
+      'tmdb-logo',
+    ]);
     expect(merged.credits, hasLength(1));
     expect(merged.credits.single.person.profileUrl, 'primary-profile');
     expect(
       merged.credits.single.person.ids.map((VideoMetadataId id) => id.type),
-      <String>['bangumi', 'tmdb'],
+      <String>['anidb', 'tmdb'],
     );
 
     expect(
@@ -387,20 +401,23 @@ void main() {
       <String>['primary-season-cover', 'tmdb-season-logo'],
     );
     expect(
-      firstSeason.episodes
-          .map((VideoMetadataEpisode episode) => episode.episodeNumber),
+      firstSeason.episodes.map(
+        (VideoMetadataEpisode episode) => episode.episodeNumber,
+      ),
       <int>[1, 2],
     );
     final VideoMetadataEpisode firstEpisode = firstSeason.episodes.first;
     expect(firstEpisode.title, '主源第一集');
     expect(firstEpisode.plot, '主源分集简介');
-    expect(
-      firstEpisode.ids.map((VideoMetadataId id) => id.type),
-      <String>['bangumi', 'tmdb'],
-    );
+    expect(firstEpisode.ids.map((VideoMetadataId id) => id.type), <String>[
+      'anidb',
+      'tmdb',
+    ]);
     expect(firstEpisode.credits, hasLength(1));
     expect(
-        firstEpisode.credits.single.character?.imageUrl, 'primary-character');
+      firstEpisode.credits.single.character?.imageUrl,
+      'primary-character',
+    );
     expect(
       firstEpisode.images.map((VideoMetadataImage image) => image.url),
       <String>['primary-still', 'tmdb-landscape'],
@@ -411,7 +428,7 @@ void main() {
 
   test('主源字段缺失时由 TMDB 补齐但不替换 provider 和标题', () {
     final VideoMetadataWork primary = VideoMetadataWork(
-      provider: VideoMetadataProviderKind.anilist,
+      provider: VideoMetadataProviderKind.anidb,
       kind: VideoMetadataMediaKind.tv,
       title: 'Primary title',
       seasons: <VideoMetadataSeason>[
@@ -455,9 +472,11 @@ void main() {
       ],
     );
 
-    final VideoMetadataWork merged =
-        supplementVideoMetadataWithTmdb(primary, tmdb);
-    expect(merged.provider, VideoMetadataProviderKind.anilist);
+    final VideoMetadataWork merged = supplementVideoMetadataWithTmdb(
+      primary,
+      tmdb,
+    );
+    expect(merged.provider, VideoMetadataProviderKind.anidb);
     expect(merged.title, 'Primary title');
     expect(merged.originalTitle, 'Original');
     expect(merged.year, 2025);
@@ -467,9 +486,6 @@ void main() {
     expect(merged.seasons.single.title, 'Primary season');
     expect(merged.seasons.single.plot, 'TMDB season plot');
     expect(merged.seasons.single.episodes.single.title, 'Primary episode');
-    expect(
-      merged.seasons.single.episodes.single.plot,
-      'TMDB episode plot',
-    );
+    expect(merged.seasons.single.episodes.single.plot, 'TMDB episode plot');
   });
 }

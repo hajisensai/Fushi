@@ -212,8 +212,9 @@ void main() {
       expect(src.contains('AppPaths.dataRootPrefKey'), isTrue);
       // Auto-restarts after a successful migration.
       expect(src.contains('restartApp()'), isTrue);
-      // This entry is still experimental and must be labeled in-app.
-      expect(src.contains('t.settings_experimental_suffix'), isTrue);
+      // 「必须标注实验性」这条断言已删除：应用户要求，实验性标注整体从界面移除
+      // （settings_experimental_suffix key 连同它的四个叠加点一并删掉）。
+      // 反向守卫见 test/i18n/no_experimental_labels_guard_test.dart。
     });
 
     test(

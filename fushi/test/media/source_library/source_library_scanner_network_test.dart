@@ -1,9 +1,14 @@
-// TODO-1274 网络来源扫描测试（无需真实 SFTP/FTP 服务器）：
+// TODO-1274 网络来源扫描测试（无需真实 SFTP/FTP/WebDAV 服务器）：
 //  (1) buildNetworkFileSystem 路由：local → LocalSourceFileSystem；
 //      sftp/ftp → NetworkSourceFileSystem，连接参数/凭据注入正确。
-//  (2) 网络「视频」来源被拒：scan 记 lastScanError、不插入任何视频（远端路径不可播）。
+//  (2) 网络「视频」来源仅 WebDAV：SFTP/FTP 记 lastScanError、不插入任何视频
+//      （远端路径无 HTTP 直链不可播）；WebDAV 按流媒体书**原地**入库——
+//      videoPath=URL、sidecar 字幕 URL 进 streamSpecJson、标题百分号解码、
+//      不抽封面、不建合集。
 //  (3) 网络「书」来源：注入 fake fs，扫描时先 copyToLocal 下载远端 EPUB 再导入，
 //      epub_books.sourceId 回填、mediaCount=1、无错误。
+//  (4) 网络「漫画」来源：整卷镜像下载后经 MangaImporter 导入（sourceId 回填）；
+//      重扫命中标题预检，零页图重下载。
 
 import 'dart:convert';
 import 'dart:io';
@@ -17,6 +22,8 @@ import 'package:fushi/src/epub/epub_storage.dart';
 import 'package:fushi/src/media/source_library/source_file_system.dart';
 import 'package:fushi/src/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
+import 'package:fushi/src/media/video/url_stream_video.dart'
+    show StreamVideoSpec;
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
@@ -107,6 +114,68 @@ class _FakeNetworkBookFs implements SourceFileSystem {
   }
 }
 
+/// 虚拟网络 fs：把「远端命名空间路径」（`/remote/...` 或百分号编码的
+/// `https://...` href）映射到本地真文件。列目录 / 读文本 / 下载全部离线可测。
+class _FakeVirtualNetworkFs implements SourceFileSystem {
+  _FakeVirtualNetworkFs(this.files);
+
+  /// virtualPath → 本地真文件路径。
+  final Map<String, String> files;
+
+  int copyToLocalCalls = 0;
+
+  @override
+  bool get isLocal => false;
+
+  /// 末段文件名，**不解码** —— 对齐真实实现：`NetworkSourceFileSystem` 的
+  /// `name` 取自 WebDAV 的 `displayName`，那已经是 `Uri.decodeFull` 之后的值。
+  /// 这个替身原先照着「路径是百分号编码的」这个错误前提又解了一次，于是把生产
+  /// 侧的同款缺陷一起复刻进了测试，让相关断言全是假绿。
+  static String _decodedName(String vpath) {
+    return vpath.substring(vpath.lastIndexOf('/') + 1);
+  }
+
+  @override
+  Future<List<SourceFileEntry>> listFiles(
+    String dirPath, {
+    bool recursive = false,
+  }) async {
+    final String prefix = dirPath.endsWith('/') ? dirPath : '$dirPath/';
+    final List<SourceFileEntry> out = <SourceFileEntry>[];
+    for (final String vpath in files.keys) {
+      if (!vpath.startsWith(prefix)) continue;
+      final String rest = vpath.substring(prefix.length);
+      // 递归模式只回文件（对齐真实实现）；非递归只列一层。
+      if (!recursive && rest.contains('/')) continue;
+      out.add(SourceFileEntry(
+        name: _decodedName(vpath),
+        path: vpath,
+        isDirectory: false,
+      ));
+    }
+    return out;
+  }
+
+  @override
+  Future<List<String>> listSiblingNames(String filePath) async {
+    final String dir = filePath.substring(0, filePath.lastIndexOf('/'));
+    final List<SourceFileEntry> entries = await listFiles(dir);
+    return entries.map((SourceFileEntry e) => e.name).toList();
+  }
+
+  @override
+  Future<String> readText(String filePath) async =>
+      File(files[filePath]!).readAsString();
+
+  @override
+  Future<String> copyToLocal(String filePath, String destDir) async {
+    copyToLocalCalls++;
+    final String local = p.join(destDir, _decodedName(filePath));
+    File(local).writeAsBytesSync(File(files[filePath]!).readAsBytesSync());
+    return local;
+  }
+}
+
 void main() {
   final TestWidgetsFlutterBinding binding =
       TestWidgetsFlutterBinding.ensureInitialized();
@@ -188,8 +257,8 @@ void main() {
   });
 
   test(
-      'network VIDEO source is rejected: scan records error, no video inserted',
-      () async {
+      'network VIDEO source over SFTP is rejected (WebDAV only): '
+      'scan records error, no video inserted', () async {
     final FushiDatabase db = _memDb();
     addTearDown(db.close);
 
@@ -282,6 +351,327 @@ void main() {
       final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
       expect(after.mediaCount, 1);
       expect(after.lastScanError, isNull);
+    });
+  });
+
+  group('network VIDEO source over WebDAV imports stream-in-place (fake fs)',
+      () {
+    testWidgets(
+        'entry URLs become stream books with decoded titles; same-series '
+        'episodes group into a collection; m3u8 manifest imports as a '
+        'playlist of remote-URL episodes', (WidgetTester tester) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+
+      final Directory tmp =
+          Directory.systemTemp.createTempSync('net_webdav_video_');
+      addTearDown(() => tmp.deleteSync(recursive: true));
+      // 占位本地字节：流播导入只该下载清单文本，不碰视频/字幕字节。
+      final String dummy = p.join(tmp.path, 'dummy.bin');
+      File(dummy).writeAsBytesSync(<int>[0]);
+      final String manifest = p.join(tmp.path, 'best.m3u8');
+      File(manifest).writeAsStringSync('#EXTM3U\nclip 1.mkv\nclip 2.mkv\n');
+
+      const String root = 'https://dav.example.com/media';
+      // fixture 必须是**真实实现会产出的形状**：WebDAV 的 PROPFIND href 在
+      // webdav_ops.dart 里已 `Uri.decodeFull`，所以 SourceFileEntry.path 带的是
+      // 字面空格/中文，不是 `%20`。此前这里喂的是编码路径 —— 那种输入真实代码
+      // 一次都不会产生，于是「解码」相关的断言全是假绿。
+      final _FakeVirtualNetworkFs fs = _FakeVirtualNetworkFs(<String, String>{
+        '$root/Show A/Show A S01E01.mkv': dummy,
+        '$root/Show A/Show A S01E01.srt': dummy,
+        '$root/Show A/Show A S01E02.mkv': dummy,
+        '$root/Lists/Best Of.m3u8': manifest,
+      });
+
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Remote WebDAV Vids',
+        mediaKind: 'video',
+        rootPath: root,
+        transport: const Value('webdav'),
+        createdAt: 1000,
+      ));
+      final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
+
+      await tester.runAsync(() async {
+        await SourceLibraryScanner(db).scan(source, fs: fs);
+      });
+
+      final List<VideoBookRow> videos = await VideoBookRepository(db).listAll();
+      // 2 部直扫单集 + 清单拆出的 2 集。
+      expect(videos, hasLength(4));
+      final VideoBookRow e01 = videos.singleWhere(
+          (VideoBookRow v) => v.videoPath == '$root/Show A/Show A S01E01.mkv');
+      expect(e01.title, 'Show A S01E01',
+          reason: 'title 取条目路径末段即可——路径本就是解码态，不能再解一次');
+      expect(e01.coverPath, isNull,
+          reason: 'no cover extraction for remote streams');
+      expect(e01.sourceId, sid);
+      final StreamVideoSpec spec =
+          StreamVideoSpec.fromStorageJson(e01.streamSpecJson);
+      expect(spec.subtitleUrl, '$root/Show A/Show A S01E01.srt',
+          reason: 'sidecar subtitle rides in streamSpecJson (played via the '
+              'stream channel, not local cue parsing)');
+      expect(spec.subtitleFileName, 'Show A S01E01.srt');
+      expect(fs.copyToLocalCalls, 1,
+          reason: 'only the m3u8 manifest text is downloaded; video and '
+              'subtitle bytes stream in place');
+
+      // 清单集：相对明文条目解析成编码后的远端 URL（可直接喂播放器）。
+      final VideoBookRow clip1 = videos.singleWhere(
+          (VideoBookRow v) => v.videoPath == '$root/Lists/clip%201.mkv');
+      expect(clip1.sourceId, sid);
+
+      // 归组：同系列两集折叠成 'Show A' 合集（解码名）；清单成 'Best Of' 合集。
+      final List<MediaCollectionRow> collections =
+          await db.getAllMediaCollections();
+      expect(
+        collections.map((MediaCollectionRow c) => c.name).toSet(),
+        <String>{'Show A', 'Best Of'},
+        reason: '合集名取条目路径末段（路径已是解码态）',
+      );
+
+      final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
+      expect(after.mediaCount, 3, reason: '2 部直扫视频 + 1 个清单合集');
+      expect(after.lastScanError, isNull);
+    });
+  });
+
+  group('network MANGA source mirrors the volume then imports (fake fs)', () {
+    late Directory tmp;
+    late Directory pp;
+
+    setUp(() {
+      tmp = Directory.systemTemp.createTempSync('net_manga_fixture_');
+      pp = Directory.systemTemp.createTempSync('net_manga_pp_');
+      binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        (MethodCall call) async => pp.path,
+      );
+      EpubStorage.debugBaseDirectoryOverride = pp.path;
+    });
+    tearDown(() {
+      EpubStorage.debugBaseDirectoryOverride = null;
+      binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        null,
+      );
+      for (final Directory d in <Directory>[tmp, pp]) {
+        try {
+          if (d.existsSync()) d.deleteSync(recursive: true);
+        } catch (_) {}
+      }
+    });
+
+    testWidgets(
+        'volume downloads page-by-page and imports with sourceId; '
+        're-scan hits the title pre-check with zero page downloads',
+        (WidgetTester tester) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+
+      // 本地 fixture 站位远端卷：Vol1.mokuro + Vol1/ 两张页图。
+      final String pageA = p.join(tmp.path, 'p001.jpg');
+      final String pageB = p.join(tmp.path, 'p002.jpg');
+      File(pageA).writeAsBytesSync(<int>[1, 2, 3]);
+      File(pageB).writeAsBytesSync(<int>[4, 5, 6]);
+      final String mokuroLocal = p.join(tmp.path, 'Vol1.mokuro');
+      File(mokuroLocal).writeAsStringSync(jsonEncode(<String, Object?>{
+        'version': '0.2.0',
+        'title': 'RemoteManga',
+        'pages': <Object?>[
+          <String, Object?>{
+            'img_width': 800,
+            'img_height': 1200,
+            'img_path': 'Vol1/p001.jpg',
+            'blocks': <Object?>[],
+          },
+          <String, Object?>{
+            'img_width': 800,
+            'img_height': 1200,
+            'img_path': 'Vol1/p002.jpg',
+            'blocks': <Object?>[],
+          },
+        ],
+      }));
+
+      final _FakeVirtualNetworkFs fs = _FakeVirtualNetworkFs(<String, String>{
+        '/remote/manga/Vol1.mokuro': mokuroLocal,
+        '/remote/manga/Vol1/p001.jpg': pageA,
+        '/remote/manga/Vol1/p002.jpg': pageB,
+      });
+
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Remote Manga',
+        mediaKind: 'manga',
+        rootPath: '/remote/manga',
+        transport: const Value('sftp'),
+        createdAt: 1000,
+      ));
+      final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
+
+      await tester.runAsync(() async {
+        await SourceLibraryScanner(db).scan(source, fs: fs);
+      });
+
+      final List<EpubBookRow> books = await db.getAllEpubBooks();
+      expect(books, hasLength(1));
+      expect(books.single.title, 'RemoteManga');
+      expect(books.single.format, 'manga');
+      expect(books.single.sourceId, sid);
+      expect(fs.copyToLocalCalls, 2,
+          reason: 'both pages are mirrored before import');
+
+      SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
+      expect(after.mediaCount, 1);
+      expect(after.lastScanError, isNull);
+
+      // 重扫：标题预检命中已入库卷，零页图重下载、不重复导入、不算错误。
+      await tester.runAsync(() async {
+        await SourceLibraryScanner(db).scan(after, fs: fs);
+      });
+      expect(await db.getAllEpubBooks(), hasLength(1));
+      expect(fs.copyToLocalCalls, 2,
+          reason: 're-scan must not re-download any page (title pre-check)');
+      after = (await db.getMediaSourceById(sid))!;
+      expect(after.lastScanError, isNull);
+    });
+
+    testWidgets('远端漫画：页图真名含 % / 空格 / 中文也能镜像成功（不再二次解码）',
+        (WidgetTester tester) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+
+      // 回归 #908 审查发现的二次解码：SourceFileEntry.path 进扫描器时**已是解码
+      // 态**（webdav_ops.dart 的 Uri.decodeFull）。此前扫描器又 Uri.decodeComponent
+      // 一次，于是：
+      //   ① 真名含 `%`（`50% off.jpg`）→ ArgumentError: Invalid URL encoding，
+      //      而这里没有逐卷兜底，整个来源的扫描当场中止；
+      //   ② 真名是 `p%20a.jpg` → 被解成 `p a.jpg`，与 img_path 查表键对不上，
+      //      抛 `Missing manga page image`。
+      // 断言的关键字面量：'50% off.jpg' / 'p%20a.jpg' / '第1話 表紙.jpg'。
+      // 本地站位文件名与远端虚拟路径无关（假 fs 只做 虚拟路径→本地文件 映射）。
+      final String pageA = p.join(tmp.path, 'odd_a.jpg');
+      final String pageB = p.join(tmp.path, 'odd_b.jpg');
+      final String pageC = p.join(tmp.path, 'odd_c.jpg');
+      File(pageA).writeAsBytesSync(<int>[1]);
+      File(pageB).writeAsBytesSync(<int>[2]);
+      File(pageC).writeAsBytesSync(<int>[3]);
+      final String mokuroLocal = p.join(tmp.path, 'Odd.mokuro');
+      File(mokuroLocal).writeAsStringSync(jsonEncode(<String, Object?>{
+        'version': '0.2.0',
+        'title': 'OddNames',
+        'pages': <Object?>[
+          for (final String rel in <String>[
+            'Odd/50% off.jpg',
+            'Odd/p%20a.jpg',
+            'Odd/第1話 表紙.jpg',
+          ])
+            <String, Object?>{
+              'img_width': 800,
+              'img_height': 1200,
+              'img_path': rel,
+              'blocks': <Object?>[],
+            },
+        ],
+      }));
+
+      final _FakeVirtualNetworkFs fs = _FakeVirtualNetworkFs(<String, String>{
+        'https://dav.example.com/m/Odd.mokuro': mokuroLocal,
+        'https://dav.example.com/m/Odd/50% off.jpg': pageA,
+        'https://dav.example.com/m/Odd/p%20a.jpg': pageB,
+        'https://dav.example.com/m/Odd/第1話 表紙.jpg': pageC,
+      });
+
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Odd Names',
+        mediaKind: 'manga',
+        rootPath: 'https://dav.example.com/m',
+        transport: const Value('webdav'),
+        createdAt: 1000,
+      ));
+      final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
+
+      await tester.runAsync(() async {
+        await SourceLibraryScanner(db).scan(source, fs: fs);
+      });
+
+      final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
+      expect(after.lastScanError, isNull,
+          reason: '二次解码会在这里留下 ArgumentError / Missing manga page image；'
+              '实际值=${after.lastScanError}');
+      final List<EpubBookRow> books = await db.getAllEpubBooks();
+      expect(books, hasLength(1));
+      expect(books.single.title, 'OddNames');
+      expect(fs.copyToLocalCalls, 3, reason: '三张页图都要镜像成功');
+    });
+
+    testWidgets('远端漫画：卷子目录布局（img_path 是裸文件名）也能镜像并导入',
+        (WidgetTester tester) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+
+      // BUG-1830 的远端同源分身：mokuro 的另一种惯例是 img_path 只写裸文件名，
+      // 页图躺在与 `.mokuro` 同名的子目录里。镜像阶段此前硬按「相对 .mokuro 同级」
+      // 查表（键 `DLRAW.TO_00001.jpeg`），而远端真实相对路径是
+      // `Vol1/DLRAW.TO_00001.jpeg`，于是整卷在查表阶段就 Missing manga page image。
+      final String pageA = p.join(tmp.path, 'bare_a.jpg');
+      final String pageB = p.join(tmp.path, 'bare_b.jpg');
+      File(pageA).writeAsBytesSync(<int>[7, 7]);
+      File(pageB).writeAsBytesSync(<int>[8, 8]);
+      final String mokuroLocal = p.join(tmp.path, 'Vol1.mokuro');
+      File(mokuroLocal).writeAsStringSync(jsonEncode(<String, Object?>{
+        'version': '0.2.0',
+        'title': 'BareVolume',
+        'pages': <Object?>[
+          for (final String rel in <String>[
+            'DLRAW.TO_00001.jpeg',
+            'DLRAW.TO_00002.jpeg',
+          ])
+            <String, Object?>{
+              'img_width': 800,
+              'img_height': 1200,
+              'img_path': rel,
+              'blocks': <Object?>[],
+            },
+        ],
+      }));
+
+      final _FakeVirtualNetworkFs fs = _FakeVirtualNetworkFs(<String, String>{
+        '/remote/manga/Vol1.mokuro': mokuroLocal,
+        '/remote/manga/Vol1/DLRAW.TO_00001.jpeg': pageA,
+        '/remote/manga/Vol1/DLRAW.TO_00002.jpeg': pageB,
+      });
+
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Bare Manga',
+        mediaKind: 'manga',
+        rootPath: '/remote/manga',
+        transport: const Value('sftp'),
+        createdAt: 1000,
+      ));
+      final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
+
+      await tester.runAsync(() async {
+        await SourceLibraryScanner(db).scan(source, fs: fs);
+      });
+
+      final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
+      expect(after.lastScanError, isNull,
+          reason: '硬编码同级会在这里留下 Missing manga page image；'
+              '实际值=${after.lastScanError}');
+      final List<EpubBookRow> books = await db.getAllEpubBooks();
+      expect(books, hasLength(1));
+      expect(books.single.title, 'BareVolume');
+      expect(books.single.format, 'manga');
+      expect(fs.copyToLocalCalls, 2, reason: '两张页图都要镜像成功');
+      // 落库产物与本地导入同构：裸 img_path → destRel 只加 images/ 前缀。
+      expect(books.single.coverPath, 'images/DLRAW.TO_00001.jpeg');
+      expect(
+        File(p.join(books.single.extractDir, 'images', 'DLRAW.TO_00001.jpeg'))
+            .readAsBytesSync(),
+        <int>[7, 7],
+      );
     });
   });
 }

@@ -1,0 +1,9 @@
+Fushi Aidoku runtime uses components from Aidoku/aidoku-rs at commit
+1a6bb691dd67c7151fc76fc852fb5a364d325f72.
+
+aidoku-rs is Copyright (c) 2022-present Skittyblock and contributors and is
+licensed under the MIT License. Its license text is available at:
+https://github.com/Aidoku/aidoku-rs/blob/1a6bb691dd67c7151fc76fc852fb5a364d325f72/LICENSE
+
+The Swift AidokuRunner repository is source-available but not redistributable.
+No AidokuRunner code is included in this runtime.

@@ -36,14 +36,14 @@ void main() {
 
     test('fushiAnkiMediaEncodeForUploadAsync：小媒体走同步分支也一致', () async {
       final encoded = await fushiAnkiMediaEncodeForUploadAsync(
-        prefix: 'hibiki_cover_',
+        prefix: 'fushi_cover_',
         bytes: small,
         sourceName: 'x.jpg',
       );
       expect(
         encoded.filename,
         fushiAnkiMediaFilenameForBytes(
-          prefix: 'hibiki_cover_',
+          prefix: 'fushi_cover_',
           bytes: small,
           sourceName: 'x.jpg',
         ),

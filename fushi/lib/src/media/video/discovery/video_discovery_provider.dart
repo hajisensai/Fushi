@@ -28,6 +28,7 @@ class VideoMediaReference {
     this.tmdbId,
     this.imdbId,
     this.tvdbId,
+    this.anidbId,
     this.anilistId,
     this.bangumiId,
     Map<String, String> externalIds = const <String, String>{},
@@ -52,6 +53,7 @@ class VideoMediaReference {
   final int? tmdbId;
   final String? imdbId;
   final int? tvdbId;
+  final int? anidbId;
   final int? anilistId;
   final int? bangumiId;
   final Map<String, String> externalIds;
@@ -67,6 +69,7 @@ class VideoMediaReference {
     add('imdb', imdbId);
     add('tmdb-${mediaKind.name}', tmdbId);
     add('tvdb', tvdbId);
+    add('anidb', anidbId);
     add('anilist', anilistId);
     add('bangumi', bangumiId);
     for (final MapEntry<String, String> entry in externalIds.entries) {
@@ -150,6 +153,7 @@ class VideoDiscoveryItem {
         tmdbId: int.tryParse(_metadataId(work, 'tmdb') ?? ''),
         imdbId: _metadataId(work, 'imdb'),
         tvdbId: int.tryParse(_metadataId(work, 'tvdb') ?? ''),
+        anidbId: int.tryParse(_metadataId(work, 'anidb') ?? ''),
         anilistId: int.tryParse(_metadataId(work, 'anilist') ?? ''),
         bangumiId: int.tryParse(_metadataId(work, 'bangumi') ?? ''),
         externalIds: <String, String>{

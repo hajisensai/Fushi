@@ -56,7 +56,11 @@ class RemoteCoverImage extends ImageProvider<RemoteCoverImage> {
     RemoteCoverImage key,
     ImageDecoderCallback decode,
   ) async {
-    final String? ck = key.cacheKey;
+    // 磁盘键带上来源命名空间（BUG-1693 批审计：跨对端串味）：两台对端的同名
+    // 条目不再共用同一个缓存文件；重新配对（token 换）后旧对端的封面不再顶包。
+    final String? ck = key.cacheKey == null
+        ? null
+        : '${key.fetcher.coverCacheNamespace}|${key.cacheKey}';
     // 1) 读盘缓存命中：直接解码，不发网络。
     if (ck != null) {
       final Uint8List? cached = await RemoteCoverCache.read(ck);
@@ -83,10 +87,13 @@ class RemoteCoverImage extends ImageProvider<RemoteCoverImage> {
   bool operator ==(Object other) =>
       other is RemoteCoverImage &&
       other.scale == scale &&
+      // 内存去重键同样按来源命名空间隔离（换对端后同名 id 不复用旧位图）。
+      other.fetcher.coverCacheNamespace == fetcher.coverCacheNamespace &&
       (cacheKey != null
           ? other.cacheKey == cacheKey
           : other.cacheKey == null && other.coverUrl == coverUrl);
 
   @override
-  int get hashCode => Object.hash(cacheKey ?? coverUrl, scale);
+  int get hashCode =>
+      Object.hash(fetcher.coverCacheNamespace, cacheKey ?? coverUrl, scale);
 }

@@ -282,20 +282,50 @@ void main() {
       }
     });
 
-    test('helper 随包归档必须由 CMake install 拷进 bundle（开发构建也要有）', () async {
-      // BUG-1196：helper 的网络下载与后台自更新已删除，随包 zip 是**唯一**来源。
-      // 在此之前 galgame_helper/ 只由 CI 的独立 YAML 步骤拷贝，于是 `flutter run`
-      // 出来的 exe 旁边永远没有它，galgame hook 在开发模式下完全用不了。
+    test('helper 随包归档必须由 CMake install 装进 bundle（开发构建也要有）', () async {
+      // BUG-1196：helper 的网络下载与后台自更新已删除，随包产物是**唯一**来源。
+      // 在此之前它只由 CI 的独立 YAML 步骤拷贝，于是 `flutter run` 出来的 exe 旁边
+      // 永远没有它，galgame hook 在开发模式下完全用不了。所以落点必须挂在
+      // `install(...)` 上（每次 flutter build windows 都跑），不是 CI 的某个步骤。
+      //
+      // BUG-1449 之后机制变了：不再 install(DIRECTORY ...) 拷一份 zip 到
+      // `galgame_helper/`，而是 install(CODE ...) 调 install_into_bundle.ps1，由它
+      // 校验后解包进 `voice_hook/<arch>/`。目录名 `galgame_helper` 今天在任何地方
+      // 都不再存在——这条守卫曾因为还钉着那个字面量而在合并后才红（定向测试挑不到
+      // 超分域的这个文件，只有全量能抓）。
       final String cmake = await File('windows/CMakeLists.txt').readAsString();
       expect(
         cmake.contains(r'native/galgame_hook/dist'),
         isTrue,
-        reason: 'CMake 必须从 build_distribution.ps1 的产出目录取 helper zip',
+        reason: 'CMake 必须从 build_distribution.ps1 的产出目录取 helper 产物',
       );
       expect(
-        cmake.contains(r'/galgame_helper'),
+        cmake.contains('install_into_bundle.ps1'),
         isTrue,
-        reason: '目标目录必须与运行期 _bundledDirectory() 的约定一致',
+        reason: '落点必须由构建期的 install 步骤装好；只在 CI 的 YAML 里拷贝等于'
+            '开发构建拿不到 helper（BUG-1196 的原始形态）',
+      );
+      // 目录名不再在测试里硬编码：从运行期真相源常量读出来，再要求安装脚本用的是
+      // 同一个名字。这样「改布局漏改一处」会红，而「改布局两处都改了」不会假红。
+      final String installerSource =
+          await File('lib/src/mining/galgame_helper_installer.dart')
+              .readAsString();
+      final RegExp nameLiteral = RegExp(
+        r"kGalgameHelperInstallDirectoryName\s*=\s*'([^']+)'",
+      );
+      final RegExpMatch? match = nameLiteral.firstMatch(installerSource);
+      expect(match, isNotNull,
+          reason: '运行期落点目录名必须仍是单一常量'
+              '（kGalgameHelperInstallDirectoryName）');
+      final String bundledDirName = match!.group(1)!;
+      final String installScript = await File(
+        '../native/galgame_hook/tools/install_into_bundle.ps1',
+      ).readAsString();
+      expect(
+        installScript.contains(bundledDirName),
+        isTrue,
+        reason: '安装脚本的落点目录必须与运行期 _bundledDirectory() 同名'
+            '（当前是 $bundledDirName）；不一致时 helper 装了也找不到',
       );
     });
   });

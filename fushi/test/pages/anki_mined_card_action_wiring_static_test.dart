@@ -57,29 +57,57 @@ void main() {
           reason: '瞬态窗高度按内容收缩，面板打开期间必须撑最小高度否则被裁');
     });
 
-    test('↗「在 Anki 中打开」同一分流，app 外走页内三分支', () {
+    test('BUG-2051 ↗「在 Anki 中打开」只有一条车道，且判据与 ✓ 同源', () {
       final src = read('assets/popup/popup.js');
-      // ↗ 的宿主桥 openInAnki 在 app 外同样只会回 null，所以它必须和 ✓ 用同一个
-      // 能力标志分流，不得无条件 callHandler。
-      expect(src.contains('async function runInPageOpenInAnki('), isTrue);
+      // 不再按宿主能力分流：app 内外都走同一根 openInAnki 桥。旧实现的页内车道
+      // （先 findMinedMatches 按字段名反查、再 openMinedNote 按 id 打开）与画 ✓ 的
+      // 判据不同源，跨笔记类型的重复卡永远查不到 → ✓ 说已制卡、↗ 说没有卡。
+      expect(src.contains('async function openWordInAnki('), isTrue);
       expect(
           src.contains(
-              'await runInPageOpenInAnki(openAnkiButton, expression, reading)'),
+              'await openWordInAnki(openAnkiButton, expression, reading)'),
           isTrue,
-          reason: 'app 外的 ↗ 必须走页内车道，否则又是点了没反应');
-      // 三分支：无命中提示 / 单卡直开 / 多卡 openOnly 面板。
+          reason: '↗ 点击必须无条件走宿主桥');
+      expect(src.contains('runInPageOpenInAnki'), isFalse,
+          reason: '页内反查车道必须整条删除，否则第二条判据又活了');
+      expect(src.contains('openOnly'), isFalse,
+          reason: '面板的「只列卡片+打开」形态随页内车道一起删除');
+      // 三态：宿主回 'opened' 静默，'noMatch'/其它各说各的（app 外没有 toast）。
+      expect(src.contains("if (outcome === 'opened') return;"), isTrue);
+      expect(src.contains("outcome === 'noMatch'"), isTrue);
       expect(src.contains('function showInlineHint('), isTrue,
-          reason: 'app 外没有 toast，无命中必须就地提示而不是静默');
-      expect(src.contains('{ openOnly: true }'), isTrue,
-          reason: '多卡只列卡片+打开，不混入覆写/新增（那是 ✓ 的职责）');
+          reason: 'app 外没有 toast，结果必须就地提示而不是静默');
       final css = read('assets/popup/popup.css');
       expect(css.contains('.inline-hint'), isTrue);
     });
 
+    test('BUG-2051 Dart 两条车道都调同一个仓库方法', () {
+      final overlay = read('lib/src/lookup/overlay_bridge_handlers.dart');
+      expect(overlay.contains("case 'openInAnki':"), isTrue);
+      expect(
+          overlay.contains('repo.openWordInAnki(expression, reading)'), isTrue);
+      // app 内车道（webview handler → 两个页面 mixin）走同一个方法。
+      final webview =
+          read('lib/src/pages/implementations/dictionary_popup_webview.dart');
+      expect(webview.contains("handlerName: 'openInAnki'"), isTrue);
+      expect(webview.contains('return outcome.name;'), isTrue,
+          reason: '结局必须回传给 popup.js，否则弹窗无从提示');
+      for (final String path in <String>[
+        'lib/src/pages/implementations/dictionary_page_mixin.dart',
+        'lib/src/pages/base_source_page.dart',
+      ]) {
+        expect(read(path).contains('repo.openWordInAnki(expression, reading)'),
+            isTrue,
+            reason: '$path 必须走同一个仓库方法');
+      }
+    });
     test('C++ 把两根新桥列入 DEFERRED（minedCardAction 仍保持即时 null）', () {
       final cpp = read('windows/runner/global_lookup_window.cpp');
       expect(cpp.contains('body.find("\\"findMinedMatches\\"")'), isTrue);
       expect(cpp.contains('body.find("\\"openMinedNote\\"")'), isTrue);
+      // BUG-2051：↗ 现在也要真答复。漏了它，app 外的 ↗ 会被原生立刻解析成 null，
+      // popup.js 读成「宿主没接这根桥」→ 只剩一句「无法在 Anki 中打开」。
+      expect(cpp.contains('body.find("\\"openInAnki\\"")'), isTrue);
       expect(cpp.contains('body.find("\\"minedCardAction\\"")'), isFalse,
           reason: 'minedCardAction 是 Flutter 对话框，app 外无法呈现，'
               '仍然不得纳入 deferred——替代方案是 popup.js 的页内面板');

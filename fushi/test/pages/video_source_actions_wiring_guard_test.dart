@@ -3,16 +3,25 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('视频来源页按添加来源 → 全部刮削排列，且动作仅视频可见', () {
+  test('视频来源页页头显式提供全部刮削、清理记录与后台任务', () {
     final String source = File(
       'lib/src/pages/implementations/media_sources_page.dart',
     ).readAsStringSync();
     final int add = source.indexOf('tooltip: t.media_source_add');
     final int scrape = source.indexOf('tooltip: t.scrape_all');
+    final int clear = source.indexOf(
+      'tooltip: t.video_source_scrape_clear_all',
+    );
+    final int tasks = source.indexOf(
+      'tooltip: t.video_source_scrape_tasks_open',
+    );
     expect(add, greaterThanOrEqualTo(0));
     expect(scrape, greaterThan(add));
+    expect(clear, greaterThan(scrape));
+    expect(tasks, greaterThan(clear));
     expect(source, contains("widget.mediaKind == 'video' &&"));
     expect(source, contains('widget.onScrapeAll != null'));
+    expect(source, contains('widget.onClearAllScrapeRecords != null'));
   });
 
   test('视频来源页与 HomePage 提供可重复进入的后台任务面板', () {
@@ -30,15 +39,46 @@ void main() {
     expect(home, isNot(contains('showVideoSourceScrapeDialog')));
   });
 
-  test('视频添加来源直选文件夹，扫描收尾通知媒体库变化', () {
+  test('导入页与设置页复用同一清理动作，成功后重读保活来源页', () {
+    final String page = File(
+      'lib/src/pages/implementations/media_sources_page.dart',
+    ).readAsStringSync();
+    final String view = File(
+      'lib/src/pages/implementations/media_sources_view.dart',
+    ).readAsStringSync();
+    final String settings = File(
+      'lib/src/settings/settings_schema_video.dart',
+    ).readAsStringSync();
+    final String action = File(
+      'lib/src/media/video/metadata/video_scrape_cleanup_action.dart',
+    ).readAsStringSync();
+
+    expect(page, contains('onTap: _clearAllScrapeRecords'));
+    expect(settings, contains('showClearAllVideoScrapeRecordsAction'));
+    expect(action, contains('VideoScrapeCleanupService('));
+    expect(action, contains('videoScrapeCleanupRevision.value += 1'));
+    expect(
+      view,
+      contains(
+        'videoScrapeCleanupRevision.addListener(_onVideoScrapeCleanupChanged)',
+      ),
+    );
+    expect(view, contains('if (mounted) unawaited(_load());'));
+  });
+
+  test('视频添加来源走本地/网络选择器（网络仅 WebDAV），扫描收尾通知媒体库变化', () {
+    // 网络来源三域开放后，视频不再短路直选文件夹：与书/漫画共用同一个
+    // 本地/网络选择对话框，只是 transport 集收窄到仅 WebDAV（原地流播）。
     final String source = File(
       'lib/src/pages/implementations/media_sources_view.dart',
     ).readAsStringSync();
-    final int direct = source.indexOf("if (widget.mediaKind == 'video')");
-    final int chooser = source.indexOf('showAppDialog<_AddSourceChoice>');
-    expect(direct, greaterThanOrEqualTo(0));
-    expect(direct, lessThan(chooser));
+    expect(source, contains('showAppDialog<_AddSourceChoice>'));
     expect(source, contains('await addLocalFolder();'));
+    expect(
+        source,
+        contains(
+            "widget.mediaKind == 'video'\n      ? const <String>['webdav']"),
+        reason: '视频网络 transport 必须收窄到仅 WebDAV');
     expect(source, contains('onLibraryChanged?.call();'));
   });
 
@@ -78,6 +118,11 @@ void main() {
     expect(home, contains('libraryRefreshSignal: _videoLibraryRefreshSignal'));
     expect(home, contains('onLibraryChanged: _notifyVideoLibraryChanged'));
     expect(home, contains('onScrapeAll: _scrapeAllVideosFromSources'));
+    expect(
+      home,
+      contains('onClearAllScrapeRecords: _clearAllVideoScrapeRecords'),
+    );
+    expect(home, contains('showClearAllVideoScrapeRecordsAction'));
     expect(home, contains('_videoLibraryRefreshSignal.value++'));
     expect(home, contains('_videoLibraryRefreshSignal.dispose()'));
   });

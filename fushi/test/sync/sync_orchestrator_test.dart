@@ -172,7 +172,6 @@ SyncOrchestrator _orchestrator(
       syncContent: false,
       syncAudioBookFiles: false,
       syncDictionary: true,
-      syncLocalAudio: false,
     );
 
 void main() {
@@ -211,7 +210,7 @@ void main() {
 
     final SyncRunReport pushReport = SyncRunReport();
     await _orchestrator(srcDb, backend, srcDictRoot, tmp, tmp)
-        .syncDictionaries(pushReport);
+        .syncDictionaries(pushReport, direction: SyncAssetDirection.both);
     expect(pushReport.dictionariesExported, 1);
     expect(pushReport.errors, isEmpty);
 
@@ -223,7 +222,7 @@ void main() {
 
     final SyncRunReport pullReport = SyncRunReport();
     await _orchestrator(tgtDb, backend, tgtDictRoot, tmp, tmp)
-        .syncDictionaries(pullReport);
+        .syncDictionaries(pullReport, direction: SyncAssetDirection.both);
 
     expect(pullReport.dictionariesImported, 1);
     expect(pullReport.errors, isEmpty);
@@ -269,10 +268,10 @@ void main() {
       syncContent: false,
       syncAudioBookFiles: false,
       syncDictionary: true,
-      syncLocalAudio: false,
       onProgress: events.add,
     );
-    await orchestrator.syncDictionaries(SyncRunReport());
+    await orchestrator.syncDictionaries(SyncRunReport(),
+        direction: SyncAssetDirection.both);
 
     // One push: a start tick (no fraction) then the putAsset fraction tick.
     final dictEvents =
@@ -310,12 +309,12 @@ void main() {
     // on both sides → neither exported again nor imported).
     final SyncRunReport first = SyncRunReport();
     await _orchestrator(db, backend, dictRoot, tmp, tmp)
-        .syncDictionaries(first);
+        .syncDictionaries(first, direction: SyncAssetDirection.both);
     expect(first.dictionariesExported, 1);
 
     final SyncRunReport second = SyncRunReport();
     await _orchestrator(db, backend, dictRoot, tmp, tmp)
-        .syncDictionaries(second);
+        .syncDictionaries(second, direction: SyncAssetDirection.both);
     expect(second.dictionariesExported, 0);
     expect(second.dictionariesImported, 0);
     expect(second.errors, isEmpty);
@@ -343,7 +342,6 @@ void main() {
           syncContent: false,
           syncAudioBookFiles: true,
           syncDictionary: false,
-          syncLocalAudio: false,
         );
 
     // ── Source device: book keyed by title + its audiobook/srt/cues/files ──
@@ -431,12 +429,167 @@ void main() {
     expect(targetUpload.audiobooksExported, 0, reason: '远端已有包时不重复上传');
   });
 
+  // ── 方向裁剪 ─────────────────────────────────────────────────────────────
+  //
+  // 开关时代这两半是绑死的：要么双向 union，要么完全不动，用户没法表达「现在只把
+  // 本机词典推上去」。方向变成调用点携带的数据之后，这里钉住两件事：选中的那一半
+  // 真的做了，**没选中的那一半一件都没做** —— 后者才是回归高发处，因为「在循环里
+  // 加个 if」既容易漏裁一边，也容易把进度分母算错。
+  group('dictionary transfer direction', () {
+    /// 造出「远端只有 remoteonly、本机只有 localonly」的局面，返回本机的 orchestrator。
+    Future<SyncOrchestrator> seedBothSides(
+      FakeSyncBackend backend,
+      Directory tmp,
+      FushiDatabase localDb,
+      Directory localDictRoot,
+      String tag,
+    ) async {
+      final FushiDatabase srcDb = _memDb();
+      addTearDown(srcDb.close);
+      await srcDb.upsertDictionaryMeta(DictionaryMetadataCompanion.insert(
+        name: 'remoteonly',
+        formatKey: 'yomitan',
+        order: 0,
+        type: const Value('term'),
+        metadataJson: const Value('{}'),
+        hiddenLanguagesJson: const Value('[]'),
+        collapsedLanguagesJson: const Value('[]'),
+      ));
+      final Directory srcRoot = Directory('${work.path}/src_$tag')
+        ..createSync();
+      Directory('${srcRoot.path}/remoteonly').createSync(recursive: true);
+      File('${srcRoot.path}/remoteonly/index.json')
+          .writeAsStringSync('{"title":"remoteonly"}');
+      await _orchestrator(srcDb, backend, srcRoot, tmp, tmp).syncDictionaries(
+        SyncRunReport(),
+        direction: SyncAssetDirection.upload,
+      );
+
+      await localDb.upsertDictionaryMeta(DictionaryMetadataCompanion.insert(
+        name: 'localonly',
+        formatKey: 'yomitan',
+        order: 0,
+        type: const Value('term'),
+        metadataJson: const Value('{}'),
+        hiddenLanguagesJson: const Value('[]'),
+        collapsedLanguagesJson: const Value('[]'),
+      ));
+      Directory('${localDictRoot.path}/localonly').createSync(recursive: true);
+      File('${localDictRoot.path}/localonly/index.json')
+          .writeAsStringSync('{"title":"localonly"}');
+      return _orchestrator(localDb, backend, localDictRoot, tmp, tmp);
+    }
+
+    test('upload 只推本端独有，一份远端独有的都不拉', () async {
+      final FakeSyncBackend backend = FakeSyncBackend(FakeAssetStore());
+      final Directory tmp = Directory('${work.path}/tmp_up')..createSync();
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final Directory dictRoot = Directory('${work.path}/dir_up')..createSync();
+
+      final SyncOrchestrator orch =
+          await seedBothSides(backend, tmp, db, dictRoot, 'up');
+      final SyncRunReport report = SyncRunReport();
+      await orch.syncDictionaries(report, direction: SyncAssetDirection.upload);
+
+      expect(report.dictionariesExported, 1, reason: 'localonly 应被推上去');
+      expect(report.dictionariesImported, 0,
+          reason: 'upload 绝不能顺手把 remoteonly 拉下来');
+      expect(report.errors, isEmpty);
+      final List<DictionaryMetaRow> local = await db.getAllDictionaryMetadata();
+      expect(local.map((DictionaryMetaRow d) => d.name).toList(),
+          <String>['localonly'],
+          reason: '本地词典表不该多出 remoteonly');
+    });
+
+    test('download 只拉远端独有，一份本端独有的都不推', () async {
+      final FakeSyncBackend backend = FakeSyncBackend(FakeAssetStore());
+      final Directory tmp = Directory('${work.path}/tmp_down')..createSync();
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final Directory dictRoot = Directory('${work.path}/dir_down')
+        ..createSync();
+
+      final SyncOrchestrator orch =
+          await seedBothSides(backend, tmp, db, dictRoot, 'down');
+      final SyncRunReport report = SyncRunReport();
+      await orch.syncDictionaries(report,
+          direction: SyncAssetDirection.download);
+
+      expect(report.dictionariesImported, 1, reason: 'remoteonly 应被拉下来');
+      expect(report.dictionariesExported, 0,
+          reason: 'download 绝不能顺手把 localonly 推上去');
+      expect(report.errors, isEmpty);
+      final List<AssetEntry> remote =
+          await backend.listChildren(kSyncDictionaryNamespace);
+      final Iterable<String> names = remote
+          .where((AssetEntry e) => !e.isFolder)
+          .map((AssetEntry e) => e.name);
+      expect(names.any((String n) => n.startsWith('localonly')), isFalse,
+          reason: '远端不该多出 localonly');
+    });
+
+    test('进度分母只算被选中的那一半', () async {
+      final FakeSyncBackend backend = FakeSyncBackend(FakeAssetStore());
+      final Directory tmp = Directory('${work.path}/tmp_prog')..createSync();
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final Directory dictRoot = Directory('${work.path}/dir_prog')
+        ..createSync();
+      await seedBothSides(backend, tmp, db, dictRoot, 'prog');
+
+      // 两侧各一份 → union 是 2；upload 只做 1 件，分母必须是 1。分母撒谎的进度条
+      // 比没有进度条更糟：它会停在 50% 然后消失。
+      final List<SyncProgress> events = <SyncProgress>[];
+      await SyncOrchestrator(
+        db: db,
+        backend: backend,
+        dictionaryResourceRoot: dictRoot,
+        audioDatabaseRoot: tmp,
+        tempDir: tmp,
+        syncStats: false,
+        syncAudioBookPosition: false,
+        syncContent: false,
+        syncAudioBookFiles: false,
+        syncDictionary: true,
+        onProgress: events.add,
+      ).syncDictionaries(SyncRunReport(), direction: SyncAssetDirection.upload);
+
+      final List<SyncProgress> dictEvents = events
+          .where((SyncProgress e) => e.phase == SyncPhase.dictionaries)
+          .toList();
+      expect(dictEvents, isNotEmpty);
+      expect(dictEvents.every((SyncProgress e) => e.itemTotal == 1), isTrue,
+          reason: 'upload 的分母是本端独有的数量，不是 union 的大小');
+    });
+
+    test('runAssetTransferOnly 按 kind 分派到对应维度，不碰另一类', () async {
+      final FakeSyncBackend backend = FakeSyncBackend(FakeAssetStore());
+      final Directory tmp = Directory('${work.path}/tmp_kind')..createSync();
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final Directory dictRoot = Directory('${work.path}/dir_kind')
+        ..createSync();
+
+      final SyncOrchestrator orch =
+          await seedBothSides(backend, tmp, db, dictRoot, 'kind');
+      // 选 localAudio：词典两侧都有独有项，但这一轮一件都不该动。
+      final SyncRunReport report = await orch.runAssetTransferOnly(
+        kind: SyncAssetKind.localAudio,
+        direction: SyncAssetDirection.both,
+      );
+
+      expect(report.dictionariesExported, 0);
+      expect(report.dictionariesImported, 0);
+      expect(report.errors, isEmpty);
+    });
+  });
+
   group('local audio phase', () {
     SyncOrchestrator orch(
       FushiDatabase db,
       SyncBackend backend,
       Directory tmp, {
-      required bool syncLocalAudio,
       List<LocalAudioDbEntry> entries = const <LocalAudioDbEntry>[],
       Future<void> Function(LocalAudioPackageContents)? onImported,
     }) =>
@@ -451,7 +604,6 @@ void main() {
           syncContent: false,
           syncAudioBookFiles: false,
           syncDictionary: false,
-          syncLocalAudio: syncLocalAudio,
           localAudioEntries: entries,
           onLocalAudioImported: onImported,
         );
@@ -479,9 +631,8 @@ void main() {
 
       final LocalAudioDbEntry entry = seedDb(tmp, 'NHK Audio');
       final SyncRunReport report = SyncRunReport();
-      await orch(db, backend, tmp,
-          syncLocalAudio: true,
-          entries: <LocalAudioDbEntry>[entry]).syncLocalAudioPackages(report);
+      await orch(db, backend, tmp, entries: <LocalAudioDbEntry>[entry])
+          .syncLocalAudioPackages(report, direction: SyncAssetDirection.both);
 
       expect(report.localAudioExported, 1);
       expect(report.localAudioImported, 0);
@@ -502,9 +653,8 @@ void main() {
       addTearDown(srcDb.close);
       final LocalAudioDbEntry srcEntry = seedDb(tmp, 'Forvo');
       final SyncRunReport push = SyncRunReport();
-      await orch(srcDb, backend, tmp,
-          syncLocalAudio: true,
-          entries: <LocalAudioDbEntry>[srcEntry]).syncLocalAudioPackages(push);
+      await orch(srcDb, backend, tmp, entries: <LocalAudioDbEntry>[srcEntry])
+          .syncLocalAudioPackages(push, direction: SyncAssetDirection.both);
       expect(push.localAudioExported, 1);
 
       // Target has no local entries → pulls + invokes the import callback.
@@ -523,13 +673,12 @@ void main() {
         tgtDb,
         backend,
         tmp,
-        syncLocalAudio: true,
         onImported: (LocalAudioPackageContents c) async {
           imported.add(c);
           stagingDbPath = c.dbFile.path;
           dbFileExistedDuringImport = c.dbFile.existsSync();
         },
-      ).syncLocalAudioPackages(pull);
+      ).syncLocalAudioPackages(pull, direction: SyncAssetDirection.both);
 
       expect(pull.localAudioImported, 1);
       expect(pull.errors, isEmpty, reason: pull.errors.join(' | '));
@@ -554,9 +703,8 @@ void main() {
       final LocalAudioDbEntry entry = seedDb(tmp, 'Shared');
       // First run pushes.
       final SyncRunReport first = SyncRunReport();
-      await orch(db, backend, tmp,
-          syncLocalAudio: true,
-          entries: <LocalAudioDbEntry>[entry]).syncLocalAudioPackages(first);
+      await orch(db, backend, tmp, entries: <LocalAudioDbEntry>[entry])
+          .syncLocalAudioPackages(first, direction: SyncAssetDirection.both);
       expect(first.localAudioExported, 1);
 
       // Second run with the SAME displayName present on both sides: no push,
@@ -566,18 +714,18 @@ void main() {
         db,
         backend,
         tmp,
-        syncLocalAudio: true,
         entries: <LocalAudioDbEntry>[entry],
         onImported: (LocalAudioPackageContents c) async =>
             fail('must not import a same-named entry'),
-      ).syncLocalAudioPackages(second);
+      ).syncLocalAudioPackages(second, direction: SyncAssetDirection.both);
       expect(second.localAudioExported, 0);
       expect(second.localAudioImported, 0);
       expect(second.errors, isEmpty);
     });
 
-    test('syncLocalAudio:false leaves the namespace untouched in run()',
-        () async {
+    // 本地音频源数据库已从 run() 里整段拿掉（它没有开关，只由设置页的显式上传 /
+    // 下载动作驱动），所以这条断言从「开关关着时不跑」变成「run() 恒不跑」。
+    test('run() never touches the local-audio namespace', () async {
       final FakeAssetStore store = FakeAssetStore();
       final FakeSyncBackend backend = FakeSyncBackend(store);
       final Directory tmp = Directory('${work.path}/tmp')..createSync();
@@ -589,7 +737,6 @@ void main() {
         db,
         backend,
         tmp,
-        syncLocalAudio: false,
         entries: <LocalAudioDbEntry>[entry],
       ).run();
 

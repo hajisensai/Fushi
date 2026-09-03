@@ -123,6 +123,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
         _pendingLyricsHintOnReady = true;
         await _loadLyricsPage();
       } else {
+        _lyricsDocumentLoadGeneration = null;
         await _resolveAndApplyProfile(appModelNoUpdate.database);
         await _exitLyricsMode();
         try {
@@ -140,6 +141,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
   }
 
   Future<void> _loadLyricsPage() async {
+    final int loadGeneration = ++_lyricsLoadGeneration;
     _lyricsPageReady = false;
     final AudiobookPlayerController ctrl = _audiobookController!;
     final LyricsCueWindow cueWindow = LyricsCueWindow.select(
@@ -167,9 +169,16 @@ extension _ReaderLyrics on _ReaderFushiPageState {
 
     String colorToCss(Color c) => readerColorToCssRgba(c);
 
+    // 歌词视图跟正文用同一份自定义字体（FontTarget.body）：它显示的就是这本书的
+    // 文本，切个视图不该换字体。readerSettings 为 null（极早期调用）时退回空串，
+    // 歌词页保持历史 Noto 链。
+    final ({String fontFamily, String fontFaces})? bodyFont =
+        ReaderFushiSource.readerSettings?.buildCustomFontCss();
+
     final String html = LyricsModeHtml.generate(
       cues: _lyricsCueList,
       currentIndex: cueWindow.currentIndex,
+      loadGeneration: loadGeneration,
       backgroundColor: colorToCss(bg),
       textColor: colorToCss(fg),
       accentColor: colorToCss(accent),
@@ -180,6 +189,8 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       marginRight: ReaderFushiSource.instance.lyricsMarginRight,
       vertical: ReaderFushiSource.instance.lyricsVerticalWriting,
       blur: ReaderFushiSource.instance.lyricsBlur,
+      fontFamilyCss: bodyFont?.fontFamily ?? '',
+      fontFaceCss: bodyFont?.fontFaces ?? '',
     );
 
     // BUG-1280：歌词是第三个把文档交给 WebView 的地方（另两个是
@@ -187,13 +198,33 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     // 歌词模式时 `_spreadDocumentLoaded` 会残留为真，`_onChapterLoadComplete` 的
     // spread 守卫把歌词分支一起挡掉 → 歌词永远不就绪。标记的含义是「WebView 里
     // 现在是不是 spread 文档」，所以每个装载点都必须写它。
+    if (!mounted ||
+        !_lyricsMode ||
+        loadGeneration != _lyricsLoadGeneration ||
+        _controller == null) {
+      return;
+    }
     _spreadDocumentLoaded = false;
-    await _controller!.loadData(
-      data: html,
-      mimeType: 'text/html',
-      encoding: 'utf-8',
-      baseUrl: WebUri('https://fushi.local/lyrics'),
-    );
+    _lyricsDocumentLoadGeneration = loadGeneration;
+    try {
+      await _controller!.loadData(
+        data: html,
+        mimeType: 'text/html',
+        encoding: 'utf-8',
+        baseUrl: WebUri(
+          Uri.parse('https://fushi.local/lyrics').replace(
+            queryParameters: <String, String>{
+              'generation': '$loadGeneration',
+            },
+          ).toString(),
+        ),
+      );
+    } catch (_) {
+      if (_lyricsDocumentLoadGeneration == loadGeneration) {
+        _lyricsDocumentLoadGeneration = null;
+      }
+      rethrow;
+    }
   }
 
   /// TODO-368: 歌词字幕文字色——用户设过自定义色（[ReaderFushiSource.lyricsTextColor]
@@ -276,6 +307,9 @@ extension _ReaderLyrics on _ReaderFushiPageState {
   }
 
   Future<void> _exitLyricsMode() async {
+    ++_lyricsLoadGeneration;
+    _lyricsReadyFinalizingGeneration = null;
+    _lyricsDocumentLoadGeneration = null;
     // 离开歌词模式会重载 reader 章节，lyrics caret JS 随之消失；复位 surface，
     // 否则方向键/A 会被误路由到已不存在的 fushiLyricsCaret。
     if (_caretSurface == CaretSurface.lyrics) {
@@ -411,13 +445,15 @@ extension _ReaderLyrics on _ReaderFushiPageState {
   /// 排队 → 唤前台 → 请求首页切到查词 tab。切 tab 让 [HomeDictionaryPage] 挂载，
   /// 它在 initState 无条件消费已存在的 [DesktopLookupService.pendingText] 并展示——
   /// pending 必须在请求切 tab **之前**就位（这里顺序即如此），否则页面挂载时读不到。
-  Future<void> _lookupFromFloatingLyric(String text, int index) async {
+  Future<void> _lookupFromFloatingLyric(
+      String text, int index, Rect? wordRect) async {
     if (!mounted) return;
     // TODO-872 — 覆盖窗接手即返回；false 时继续原「切主窗词典 tab」回落路由。
     if (await tryFloatingLyricGlobalLookup(
       appModel: appModel,
       text: text,
       index: index,
+      wordRect: wordRect,
     )) {
       return;
     }

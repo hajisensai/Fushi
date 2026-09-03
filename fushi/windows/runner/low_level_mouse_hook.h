@@ -27,11 +27,14 @@
 
 #include <windows.h>
 
+#include <cstddef>
+#include <cstdint>
+
 namespace fushi {
 
 // 钩子命中时 PostMessage 给目标窗口的消息（WM_APP 段，进程内私有）：
 //   wparam = 打包的屏幕物理坐标 ((uint32)x << 32) | (uint32)y
-//   lparam = 1 表示点击落在目标窗口 rect 内，0 表示在外
+//   lparam = 1 表示点击真实命中目标 window region/子窗，0 表示在透明区或窗外
 // 窗口线程自己决定「转发给 host / 关闭浮窗」——钩子线程不碰任何 C++ 对象。
 constexpr UINT kLowLevelMouseClickMessage = WM_APP + 0x51;
 
@@ -46,6 +49,27 @@ constexpr UINT kLowLevelMouseClickMessage = WM_APP + 0x51;
 // galgame 上，滚轮就照样喂给游戏（滚出履历/推进文本）；Win10 的「悬停滚动非活动
 // 窗口」只是个可关的用户选项，靠不住。只要不吞，卡片滚不滚都改不了游戏在动。
 constexpr UINT kLowLevelMouseWheelMessage = WM_APP + 0x52;
+
+// BUG-1882 — injected SGRE DirectInput shield 的按键事务已完整释放。钩子线程只
+// PostMessage；真正的跨进程 property 撤销仍回到 popup/window 线程串行执行，避免
+// 旧 mouse-up 与下一次 Reveal 交错时撤掉新一代发布。
+constexpr UINT kLowLevelMouseShieldReleaseMessage = WM_APP + 0x53;
+
+// Attached calibrated surface runs click-through.  The low-level hook owns
+// only a bare left-button transaction whose down falls in one immutable glyph
+// rectangle; all other buttons, wheel events, gaps and body-box whitespace go
+// to the game unchanged.  Messages are posted after the v19 shield request is
+// published, so the window thread merely adopts the transaction.
+//   wparam = uint64 transaction id (high 32 bits are the hit-snapshot token)
+//   lparam = packed physical screen point (same bit layout as PackMouseHookPoint)
+constexpr UINT kLowLevelMouseAttachedGlyphDownMessage = WM_APP + 0x54;
+constexpr UINT kLowLevelMouseAttachedGlyphUpMessage = WM_APP + 0x55;
+constexpr UINT kLowLevelMouseAttachedGlyphCancelMessage = WM_APP + 0x56;
+// The IPC/shield transaction became unrecoverable only after physical up. The
+// worker has revoked the immutable snapshot; the surface thread must hide the
+// matching generation so another down cannot overwrite a best-effort neutral
+// tail before the injected side observes it.
+constexpr UINT kLowLevelMouseAttachedGlyphAbortMessage = WM_APP + 0x57;
 
 // 打包/解包屏幕坐标（x64 下 WPARAM 为 64 位；坐标可为负，故按 uint32 位模式搬运）。
 WPARAM PackMouseHookPoint(int x, int y);
@@ -74,11 +98,61 @@ struct MouseHookWheel {
 LPARAM PackMouseHookWheel(const MouseHookWheel& wheel);
 MouseHookWheel UnpackMouseHookWheel(LPARAM lparam);
 
-// 装钩子并把命中事件投递给 |target|。重复调用只是替换目标窗口（幂等）。
+// 桌面/global 查词：装钩子并把命中事件投递给 |target|。点外只通知关闭，
+// 点击仍交给原应用。重复调用只是替换目标窗口（幂等）。
 void ArmLowLevelMouseHook(HWND target);
+
+// direct galCard 专用：先在钩子线程确认 HHOOK 已安装，再把 |target| 与绑定的
+// |consume_outside_owner| 游戏 HWND 一起发布。只有落在该游戏窗口/渲染子窗客户区、
+// 且没落在查词窗口真实 region 上的 down/up 会被吞。返回 false 时调用方不得把
+// direct popup 上屏，应走既有 fallback，避免冷启动首帧点击穿透。
+bool ArmLowLevelMouseHookAndWait(HWND target, HWND consume_outside_owner);
+
+// attached calibrated glyph surface 专用同步 Arm。与 direct galCard 共用同一条
+// WH_MOUSE_LL/HHOOK 存活确认和 exact sampled-input publication，但消费范围严格限制为
+// UpdateLowLevelAttachedGlyphHitRegions 发布的 immutable cluster snapshot：
+// 字间、正文框空白以及游戏客户区其它位置都不吞。运行态 surface 本身 click-through，
+// 这样透明命中层只拥有用户实际点中的裸左击，其余输入保持游戏原行为。
+bool ArmLowLevelMouseHookForAttachedGlyph(HWND target, HWND game_owner);
+
+// True only while |target| owns the singleton attached binding through the
+// explicit HHOOK+v19 risk fallback.  A successful Arm is not by itself proof of
+// exact sampled-input coverage; surface state uses this bit to report risky
+// rather than verified/ready.
+bool LowLevelAttachedGlyphUsesRiskFallback(HWND target);
+
+// Replace the attached runtime hit geometry with one immutable screen-space
+// snapshot.  Rectangles must be the exact DirectWrite cluster boxes (no body
+// rect and no padding).  The returned non-zero token is embedded into every
+// subsequently started transaction; the surface rejects a message if the
+// token no longer matches its current text/surface generation.  Allocation
+// and copying happen here on the window thread, never in WH_MOUSE_LL.
+uint32_t UpdateLowLevelAttachedGlyphHitRegions(
+    HWND surface, HWND game_owner, const RECT* screen_rects,
+    size_t screen_rect_count, bool allow_risk);
+
+// Revoke one surface's immutable snapshot and fail-open any owned transaction.
+// Safe to call repeatedly during sentence replacement, hide, detach or target
+// destruction. A live physical down is marked cancelled but retained; the
+// non-blocking callback records its paired up and the acknowledgement worker
+// publishes/drains the v19 release asynchronously.
+void ClearLowLevelAttachedGlyphHitRegions(HWND surface);
+
+inline uint32_t LowLevelAttachedGlyphSnapshotToken(
+    uint64_t transaction_id) {
+  return static_cast<uint32_t>(transaction_id >> 32u);
+}
+// 处理 kLowLevelMouseShieldReleaseMessage。只有 |target| 仍是本次发布的 popup、
+// popup 已 Disarm 且没有按键等待 up 时才撤销；新 Reveal 已经开始时是 no-op。
+void FinalizeLowLevelMouseDirectInputShield(HWND target);
 // 卸钩子：目标窗口立即清空（回调纯放行）；真正的 UnhookWindowsHookEx 延迟一段
-// 宽限期（见 .cpp 的 kDisarmGraceMs），期间再次 Arm 则取消卸载。未装时是 no-op。
-void DisarmLowLevelMouseHook();
+// 宽限期（见 .cpp 的 kDisarmGraceMs），期间再次 Arm 则取消卸载；若仍有已吞 down
+// 等待配对 up，钩子会继续保留到释放完成。未装时是 no-op。
+// Disarm when |target| still owns the singleton binding, or clean an
+// uncommitted synchronous arm when no target was published. Passing the
+// concrete HWND prevents one lookup-window instance from tearing down another
+// instance's newer binding.
+void DisarmLowLevelMouseHook(HWND target);
 
 }  // namespace fushi
 

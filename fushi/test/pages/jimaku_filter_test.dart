@@ -5,7 +5,7 @@ import 'package:fushi/src/pages/implementations/jimaku_subtitle_dialog.dart';
 
 JimakuCandidate _cand(String fileName) => JimakuCandidate(
       entryName: 'Series',
-      file: JimakuFile(name: fileName, url: 'https://x/$fileName'),
+      name: fileName,
     );
 
 void main() {
@@ -51,7 +51,7 @@ void main() {
     test('选 ja 只留 ja 候选', () {
       final List<JimakuCandidate> out =
           filterCandidatesByLanguage(candidates, 'ja');
-      expect(out.map((JimakuCandidate c) => c.file.name),
+      expect(out.map((JimakuCandidate c) => c.name),
           <String>['ep01.ja.srt', 'ep02.ja.ass']);
     });
 
@@ -59,8 +59,7 @@ void main() {
       // 选 zh：只剩 zh。认不出语言的 ep03.srt 被排除。
       final List<JimakuCandidate> zh =
           filterCandidatesByLanguage(candidates, 'zh');
-      expect(
-          zh.map((JimakuCandidate c) => c.file.name), <String>['ep01.zh.srt']);
+      expect(zh.map((JimakuCandidate c) => c.name), <String>['ep01.zh.srt']);
       // 但「全部」永远列出全部，认不出语言的候选绝不彻底消失（保底）。
       expect(filterCandidatesByLanguage(candidates, null), hasLength(4));
     });
@@ -96,15 +95,14 @@ void main() {
     test('选 ass 只留 ass 候选（含大写扩展名）', () {
       final List<JimakuCandidate> out =
           filterCandidatesByFormat(candidates, 'ass');
-      expect(out.map((JimakuCandidate c) => c.file.name),
+      expect(out.map((JimakuCandidate c) => c.name),
           <String>['ep01.ja.ass', 'ep02.zh.ASS']);
     });
 
     test('选 srt 不会漏进 ass', () {
       final List<JimakuCandidate> out =
           filterCandidatesByFormat(candidates, 'srt');
-      expect(
-          out.map((JimakuCandidate c) => c.file.name), <String>['ep01.ja.srt']);
+      expect(out.map((JimakuCandidate c) => c.name), <String>['ep01.ja.srt']);
     });
 
     test('availableFormats 去重 + ass/srt/ssa/vtt 稳定顺序', () {
@@ -135,10 +133,10 @@ void main() {
         filterCandidatesByFormat(candidates, 'ass'),
         'ja',
       );
-      expect(langThenFormat.map((JimakuCandidate c) => c.file.name),
+      expect(langThenFormat.map((JimakuCandidate c) => c.name),
           <String>['ep01.ja.ass']);
-      expect(formatThenLang.map((JimakuCandidate c) => c.file.name),
-          langThenFormat.map((JimakuCandidate c) => c.file.name));
+      expect(formatThenLang.map((JimakuCandidate c) => c.name),
+          langThenFormat.map((JimakuCandidate c) => c.name));
     });
   });
 
@@ -152,7 +150,7 @@ void main() {
         _cand('Show - 09.ja.srt'),
       ]);
       expect(
-        sorted.map((JimakuCandidate c) => c.file.name),
+        sorted.map((JimakuCandidate c) => c.name),
         <String>[
           'Show - 02.ja.srt',
           'Show - 09.ja.srt',

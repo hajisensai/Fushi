@@ -4,8 +4,7 @@ import 'package:fushi/src/media/video/scraper/episode_rename.dart';
 import 'package:fushi/utils.dart';
 
 /// 「按刮削重命名各集」确认弹窗（TODO-2491 UI）：逐行旧名 → 新名对照 + 勾选，
-/// 支持全选/取消。与合集改名确认（collection_rename_confirm_dialog.dart，
-/// PR#635）同风格：裸 [AlertDialog]、默认动作 = 不改（关掉/返回键零写入）。
+/// 支持全选/取消。裸 [AlertDialog]、默认动作 = 不改（关掉/返回键零写入）。
 ///
 /// 返回勾选的提案子集；null = 取消（一条都不改）。落库由调用方逐条
 /// `updateVideoBookTitle`（与库页手动重命名同一落库口）。
@@ -19,7 +18,7 @@ Future<List<EpisodeRenameProposal>?> showEpisodeRenameConfirmDialog({
   );
 }
 
-/// 导出 widget 便于测试直接构造（与 CollectionRenameConfirmDialog 同范式）。
+/// 导出 widget 便于测试直接构造。
 class EpisodeRenameConfirmDialog extends StatefulWidget {
   const EpisodeRenameConfirmDialog({required this.proposals, super.key});
 

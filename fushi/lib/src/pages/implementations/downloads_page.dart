@@ -1,36 +1,44 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi_audio/fushi_audio.dart'
+    show AudiobookRepository, AudiobookStorage, SrtBookRepository;
+import 'package:path/path.dart' as p;
 
-import 'package:fushi/src/focus/fushi_focus_controller.dart';
-
-import 'package:fushi/src/media/manga/manga_module.dart';
+import 'package:fushi/src/media/audiobook/audiobook_material_library.dart';
+import 'package:fushi/src/media/audiobook/audiobook_material_service.dart';
+import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
+import 'package:fushi/src/media/discovery/discovery_download_tasks_section.dart';
+import 'package:fushi/src/media/discovery/discovery_models.dart';
+import 'package:fushi/src/media/manga/discovery/manga_discovery_page.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_tasks_section.dart';
-import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
-import 'package:fushi/src/media/video/download/video_resource_registry.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/pages/implementations/airing_calendar_page.dart';
 import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
+import 'package:fushi/src/pages/implementations/manual_download_task_dialog.dart';
+import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
 import 'package:fushi/src/pages/implementations/torrent_detail_dialog.dart';
 import 'package:fushi/src/pages/implementations/torrent_settings_section.dart';
-import 'package:fushi/src/pages/implementations/video_discovery_acquisition_dialogs.dart';
+import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart';
+import 'package:fushi/src/pages/implementations/video_discovery_page.dart';
 import 'package:fushi/src/pages/implementations/video_download_jobs_panel.dart';
 import 'package:fushi/src/pages/implementations/video_download_subscriptions_panel.dart';
+import 'package:fushi/src/pages/implementations/video_external_provider_settings_section.dart';
+import 'package:fushi/src/settings/settings_detail_page.dart';
+import 'package:fushi/src/settings/settings_schema_services.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart'
-    show MediaSourceRow, VideoDownloadJobRow;
+    show VideoDownloadJobFileRow, VideoDownloadJobRow;
 
-/// 独立「下载」页（顶层底栏 tab）＝统一下载中心：番剧下载流程 **直接内联**
-/// 铺在页面上（搜番 → 选种 → 配字幕 → 推送 + 通用磁力 + 下载任务），任务 tab
-/// 同时列出漫画「在线目录」（mokuro.moe）的卷下载队列；页头另有在线目录入口。
-/// 右上角齿轮切到「下载设置」（后端/限速/上传/做种/内存）。完成后按内容类型
-/// 自动入库（视频→视频库、epub→阅读库，见 AnimeDownloadService；漫画卷→
-/// 书架，见 MokuroMoeDownloadQueue）。
+/// 独立「下载」页：资源、任务、订阅、设置共用一个下载中心。
+///
+/// 资源页先选择内容类型，再直接复用书架、漫画、游戏、视频各自的发现页。
 class DownloadsPage extends ConsumerStatefulWidget {
   const DownloadsPage({
     super.key,
     this.initialShowSettings = false,
     this.initialTabIndex = 0,
+    this.videoDiscoveryController,
+    this.videoDiscoveryActions = const VideoDiscoveryActions(),
   });
 
   /// 初始即显示设置面板（「后端未配置」横幅的「去设置」从对话框入口 push
@@ -40,13 +48,20 @@ class DownloadsPage extends ConsumerStatefulWidget {
   /// 发现详情“管理订阅”等入口可直接落到对应子页。
   final int initialTabIndex;
 
+  /// 与视频模块共用同一套生产发现服务，避免下载页另起网络生命周期。
+  final VideoDiscoveryController? videoDiscoveryController;
+
+  /// 视频发现详情、资源搜索与订阅动作由首页组合根统一注入。
+  final VideoDiscoveryActions videoDiscoveryActions;
+
   @override
   ConsumerState<DownloadsPage> createState() => _DownloadsPageState();
 }
 
 class _DownloadsPageState extends ConsumerState<DownloadsPage> {
-  late Future<_DownloadsResourceDependencies?> _resourceDependencies;
-  VideoDownloadPipelineService? _resourcePipelineSnapshot;
+  _DownloadsResourceDomain _resourceDomain = _DownloadsResourceDomain.books;
+  final Set<_DownloadsResourceDomain> _visitedResourceDomains =
+      <_DownloadsResourceDomain>{_DownloadsResourceDomain.books};
   bool _hasLegacyAnimeTasks = false;
 
   void _setLegacyAnimeTaskPresence(bool present) {
@@ -54,192 +69,221 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
     setState(() => _hasLegacyAnimeTasks = present);
   }
 
-  @override
-  void initState() {
-    super.initState();
-    final AppModel appModel = ref.read(appProvider);
-    _resourcePipelineSnapshot = appModel.videoDownloadPipelineService;
-    _resourceDependencies = _loadResourceDependencies(appModel);
-  }
-
-  Future<_DownloadsResourceDependencies?> _loadResourceDependencies([
-    AppModel? current,
-  ]) async {
-    final AppModel appModel = current ?? ref.read(appProvider);
-    final VideoResourceRegistry? registry = appModel.videoResourceRegistry;
-    final VideoDownloadPipelineService? pipeline =
-        appModel.videoDownloadPipelineService;
-    if (registry == null || pipeline == null) return null;
-    final List<MediaSourceRow> sources =
-        await appModel.getManagedVideoDownloadSources();
-    if (sources.isEmpty) return null;
-    try {
-      return _DownloadsResourceDependencies(
-        registry: registry,
-        pipeline: pipeline,
-        identity: await appModel.currentVideoDownloadBackendIdentity(),
-        sources: sources,
-        defaultSourceId: appModel.prefsRepo.videoDownloadTargetSourceId,
-      );
-    } on Object {
-      return null;
-    }
-  }
-
-  Widget _buildResourceTab(BuildContext tabContext) {
-    return FutureBuilder<_DownloadsResourceDependencies?>(
-      future: _resourceDependencies,
-      builder: (
-        BuildContext context,
-        AsyncSnapshot<_DownloadsResourceDependencies?> snapshot,
-      ) {
-        if (snapshot.connectionState != ConnectionState.done) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        final _DownloadsResourceDependencies? dependencies = snapshot.data;
-        if (dependencies == null) {
-          return Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Text(t.download_backend_not_configured),
-                const SizedBox(height: 12),
-                FilledButton.tonalIcon(
-                  onPressed: () =>
-                      DefaultTabController.of(tabContext).animateTo(3),
-                  icon: const Icon(Icons.settings_outlined),
-                  label: Text(t.download_open_settings),
-                ),
-              ],
-            ),
-          );
-        }
-        return VideoResourceSearchSurface(
-          key: const ValueKey<String>('downloads-resource-search'),
-          registry: dependencies.registry,
-          sources: dependencies.sources,
-          defaultSourceId: dependencies.defaultSourceId,
-          onSubmit: (VideoDiscoveryDownloadSelection selection) =>
-              dependencies.pipeline.enqueue(
-            VideoDownloadEnqueueRequest(
-              media: selection.media,
-              resource: selection.resource,
-              backendIdentity: dependencies.identity,
-              targetSourceId: selection.source.id,
-              subtitlePolicy: selection.subtitlePolicy,
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  /// 漫画「在线目录」入口（统一下载中心：书/漫画获取入口与 torrent 并列）。
+  /// 「补对齐文件」：把已下完的孤立音频直接喂进统一导入对话框。
   ///
-  /// 书架页与书籍导入框的旧入口已收敛到这里，故本页是
-  /// [MangaModule.openOnlineCatalog] 的唯一消费方——目录弹窗的构造统一收在
-  /// 漫画模块里，不在页面层直接 new 它。
-  Future<void> _openMangaCatalog() async {
-    await MangaModule.openOnlineCatalog(
-      context: context,
-      db: ref.read(appProvider).database,
+  /// 本仓有声书是字幕对齐驱动的，`download-only-audiobook` 任务落地的只有音频
+  /// （CoreAudio/TMW 单卷 m4b），自动导入链路进不去。这里把该任务真实落盘的音频
+  /// 预填进 [BookImportDialog]，用户只需再给一个字幕就能成书。
+  ///
+  /// 取不到音频路径（文件被手动删掉/移走）时照常开框、只是不预填——把死路留成
+  /// 用户仍可自选文件的活路，好过弹一句错误后什么也做不了。
+  ///
+  /// 素材库里配得到字幕/正文时一并预填：身份键取任务记的 [externalId]（发现页
+  /// 下载时写的作品主键），没有就退到音频文件名里的键。
+  Future<void> _pairDownloadedAudiobook(VideoDownloadJobRow job) async {
+    final AppModel appModel = ref.read(appProvider);
+    final List<VideoDownloadJobFileRow> rows =
+        await appModel.database.getVideoDownloadJobFiles(job.jobId);
+    final List<String> audioPaths = <String>[
+      for (final VideoDownloadJobFileRow row in rows)
+        if (row.selected &&
+            (row.finalAbsolutePath?.trim().isNotEmpty ?? false) &&
+            AudiobookStorage.audioExtensions.contains(
+              p.extension(row.finalAbsolutePath!).toLowerCase(),
+            ))
+          row.finalAbsolutePath!,
+    ]..sort();
+    final AudiobookMaterialMatch match = await _matchAudiobookMaterials(
+      appModel,
+      job: job,
+      audioPaths: audioPaths,
     );
-  }
-
-  /// 放送日历整页入口（TODO-2487）。[tabContext] 必须来自 DefaultTabController
-  /// 之下（AppBar actions 里的 Builder），日历页点「订阅中」条目 pop 回来后
-  /// 用它把本页 tab 切到订阅。
-  void _openAiringCalendar(BuildContext tabContext) {
-    final TabController tabController = DefaultTabController.of(tabContext);
-    Navigator.push<void>(
-      context,
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (_) => AiringCalendarPage(
-          onOpenSubscriptions: () {
-            if (!mounted) return;
-            tabController.animateTo(2);
-          },
-        ),
+    if (!mounted) return;
+    await showAppDialog<bool>(
+      context: context,
+      builder: (_) => BookImportDialog(
+        repo: SrtBookRepository(appModel.database),
+        audiobookRepo: AudiobookRepository(appModel.database),
+        db: appModel.database,
+        initialAudioPaths: audioPaths.isEmpty ? null : audioPaths,
+        initialSubtitlePath: match.subtitlePath,
+        initialEpubPath: match.contentPath,
       ),
     );
   }
 
-  /// 统一门头：分段条（资源 / 任务 / 订阅 / 设置）作页头主位 + 页头动作，与其余
-  /// 顶层库页同构。分段条选中态跟随 [TabController]（横滑切页后高亮同步），点段
-  /// 走 animateTo；独立 push 进来（无 home 壳）时在 leading 位保留返回按钮——
-  /// 旧 AppBar 的自动返回键由这里承接。
-  Widget _buildHeader(BuildContext tabContext) {
-    final TabController tabController = DefaultTabController.of(tabContext);
-    final bool canPop = Navigator.of(context).canPop();
-    return AnimatedBuilder(
-      animation: tabController,
-      builder: (BuildContext context, _) {
-        final int index = tabController.index;
-        void select(int value) {
-          if (value != tabController.index) tabController.animateTo(value);
-        }
+  /// 从素材库给这条任务配字幕/正文；没配素材库或配不到时返回空匹配。
+  Future<AudiobookMaterialMatch> _matchAudiobookMaterials(
+    AppModel appModel, {
+    required VideoDownloadJobRow job,
+    required List<String> audioPaths,
+  }) async {
+    final AudiobookMaterialScan scan =
+        await appModel.audiobookMaterialService.scan();
+    if (scan.index.isEmpty) return const AudiobookMaterialMatch();
+    final String? externalId = job.externalId?.trim();
+    final String? key = (externalId != null && externalId.isNotEmpty)
+        ? externalId
+        : audioPaths
+            .map(audiobookKeyFromAudioPath)
+            .firstWhere((String? k) => k != null, orElse: () => null);
+    return matchAudiobookMaterial(scan.index, key: key, title: job.title);
+  }
 
-        return FushiPageHeader.customTitle(
-          leading: canPop
-              ? FushiIconButton(
-                  icon: Icons.arrow_back,
-                  tooltip: t.back,
-                  onTap: () => Navigator.of(context).maybePop(),
-                )
-              : null,
-          title: FushiAdjustableSegmented<int>(
-            values: const <int>[0, 1, 2, 3],
-            selected: index,
-            onChanged: select,
-            focusIdPrefix: 'downloads-tab',
-            focusId: const FushiFocusId('downloads-tab-sections'),
-            child: FushiSegmentedStrip<int>(
-              segments: <ButtonSegment<int>>[
-                ButtonSegment<int>(
-                  value: 0,
-                  label: Text(t.download_resources_tab),
-                ),
-                ButtonSegment<int>(value: 1, label: Text(t.download_tasks_tab)),
-                ButtonSegment<int>(
-                  value: 2,
-                  label: Text(t.download_subscriptions_tab),
-                ),
-                ButtonSegment<int>(value: 3, label: Text(t.settings)),
-              ],
-              selected: index,
-              onChanged: select,
-            ),
+  Widget _buildVideoResourceTab() => VideoDiscoveryPage(
+        key: const ValueKey<String>('downloads-resource-video-discovery'),
+        navigation: const SizedBox.shrink(),
+        embedded: true,
+        controller: widget.videoDiscoveryController,
+        actions: widget.videoDiscoveryActions,
+      );
+
+  String _resourceDomainLabel(_DownloadsResourceDomain domain) =>
+      switch (domain) {
+        _DownloadsResourceDomain.books => t.books,
+        _DownloadsResourceDomain.manga => t.manga_library,
+        _DownloadsResourceDomain.games => t.nav_game,
+        _DownloadsResourceDomain.video => t.nav_video,
+      };
+
+  void _selectResourceDomain(_DownloadsResourceDomain domain) {
+    if (domain == _resourceDomain) return;
+    setState(() {
+      _resourceDomain = domain;
+      _visitedResourceDomains.add(domain);
+    });
+  }
+
+  Widget _buildResourceDomain(_DownloadsResourceDomain domain) =>
+      switch (domain) {
+        _DownloadsResourceDomain.books => const MediaDiscoveryPage(
+            kinds: <DiscoveryMediaKind>[
+              DiscoveryMediaKind.novel,
+              DiscoveryMediaKind.audiobook,
+            ],
           ),
-          actions: <Widget>[
-            FushiIconButton(
-              icon: Icons.calendar_month_outlined,
-              tooltip: t.download_airing_calendar_title,
-              label: t.download_airing_calendar_title,
-              onTap: () => _openAiringCalendar(tabContext),
-            ),
-            FushiIconButton(
-              icon: Icons.menu_book_outlined,
-              tooltip: t.manga_online_catalog_title,
-              label: t.manga_online_catalog_title,
-              onTap: _openMangaCatalog,
-            ),
-          ],
-        );
-      },
+        _DownloadsResourceDomain.manga => const MangaDiscoveryPage(
+            embedded: true,
+          ),
+        _DownloadsResourceDomain.games => const MediaDiscoveryPage(
+            kinds: <DiscoveryMediaKind>[DiscoveryMediaKind.game],
+          ),
+        _DownloadsResourceDomain.video => _buildVideoResourceTab(),
+      };
+
+  /// 分段条只负责选择内容域；域内筛选、搜索与结果展示全部沿用各模块
+  /// 自己的生产发现页。四个固定目的地直接可见，避免无标签的表单型下拉框
+  /// 单独悬在搜索区上方。首次访问后保持挂载，来回切换不丢搜索词、结果和滚动位置。
+  Widget _buildResourceHub() {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return Column(
+      children: <Widget>[
+        Padding(
+          padding: EdgeInsets.fromLTRB(
+            tokens.spacing.page,
+            0,
+            tokens.spacing.page,
+            tokens.spacing.gap,
+          ),
+          child: FushiSegmentedStrip<_DownloadsResourceDomain>(
+            key: const ValueKey<String>('downloads-resource-type-picker'),
+            segments: <ButtonSegment<_DownloadsResourceDomain>>[
+              for (final _DownloadsResourceDomain domain
+                  in _DownloadsResourceDomain.values)
+                ButtonSegment<_DownloadsResourceDomain>(
+                  value: domain,
+                  label: Text(_resourceDomainLabel(domain)),
+                ),
+            ],
+            selected: _resourceDomain,
+            onChanged: _selectResourceDomain,
+            minSegmentWidth: 72,
+            alignment: Alignment.centerLeft,
+          ),
+        ),
+        Expanded(
+          child: Stack(
+            children: <Widget>[
+              for (final _DownloadsResourceDomain domain
+                  in _DownloadsResourceDomain.values)
+                if (_visitedResourceDomains.contains(domain))
+                  Positioned.fill(
+                    child: Offstage(
+                      offstage: domain != _resourceDomain,
+                      child: TickerMode(
+                        enabled: domain == _resourceDomain,
+                        child: KeyedSubtree(
+                          key: ValueKey<String>(
+                            'downloads-resource-${domain.name}',
+                          ),
+                          child: _buildResourceDomain(domain),
+                        ),
+                      ),
+                    ),
+                  ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 手动添加任务（磁力链接 / .torrent 文件）：与搜索出的资源同走 v78 持久
+  /// 管线，任务出现在任务 tab、同一套排序/搜索/优先级/删除操作。
+  Future<void> _openManualTaskDialog() async {
+    await showManualDownloadTaskDialog(
+      context: context,
+      appModel: ref.read(appProvider),
+    );
+  }
+
+  /// 统一门头：分区导航（资源 / 任务 / 订阅 / 设置）作页头主位 + 页头动作，与其余
+  /// 顶层库页同构；独立 push 进来（无 home 壳）时在 leading 位保留返回按钮——旧
+  /// AppBar 的自动返回键由这里承接。
+  ///
+  /// 走 [LibrarySectionTabs.controlled]：本页的 [TabController] 同时驱动 [TabBarView]，
+  /// 交给导航组件共用那一个即可。此前这里是「分段条镜像 controller」——外面套
+  /// [AnimatedBuilder] 读 index、点段回调 animateTo，两处都只是把 controller 的状态
+  /// 抄一遍；抄出来的指示器在横滑 TabBarView 时只能在越过一半时跳一下，共用同一个
+  /// controller 才跟手连续滑动。
+  Widget _buildHeader(BuildContext tabContext) {
+    // 下拉框会临时 push PopupRoute；只看本页自己的 PageRoute，避免展开菜单时
+    // 左上角凭空出现返回键。
+    final bool showBackButton = ModalRoute.of(context)?.isFirst == false;
+    return FushiPageHeader.customTitle(
+      leading: showBackButton
+          ? FushiIconButton(
+              icon: Icons.arrow_back,
+              tooltip: t.back,
+              onTap: () => Navigator.of(context).maybePop(),
+            )
+          : null,
+      title: LibrarySectionTabs<int>.controlled(
+        tabs: <LibrarySectionTab<int>>[
+          LibrarySectionTab<int>(value: 0, label: t.download_resources_tab),
+          LibrarySectionTab<int>(value: 1, label: t.download_tasks_tab),
+          LibrarySectionTab<int>(value: 2, label: t.download_subscriptions_tab),
+          LibrarySectionTab<int>(value: 3, label: t.settings),
+        ],
+        controller: DefaultTabController.of(tabContext),
+        focusIdPrefix: 'downloads-tab',
+      ),
+      // 页头动作只留「添加任务」（2026-08-21 用户点名）：旧「放送日历」
+      // 「在线目录」入口都不是下载动作，前者迁往发现页（独立改造），后者
+      // 在漫画库页「浏览」视图仍然可达。
+      actions: <Widget>[
+        FushiIconButton(
+          icon: Icons.add,
+          tooltip: t.download_task_add,
+          label: t.download_task_add,
+          onTap: _openManualTaskDialog,
+        ),
+      ],
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final AppModel appModel = ref.watch(appProvider);
-    if (!identical(
-      _resourcePipelineSnapshot,
-      appModel.videoDownloadPipelineService,
-    )) {
-      _resourcePipelineSnapshot = appModel.videoDownloadPipelineService;
-      _resourceDependencies = _loadResourceDependencies(appModel);
-    }
     return DefaultTabController(
         initialIndex:
             widget.initialShowSettings ? 3 : widget.initialTabIndex.clamp(0, 2),
@@ -268,7 +312,7 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                   Expanded(
                     child: TabBarView(
                       children: <Widget>[
-                        _buildResourceTab(tabContext),
+                        _buildResourceHub(),
                         // 任务 tab：漫画目录卷下载队列（有任务才占位）+ torrent 任务，
                         // 统一下载中心的同屏任务视图。
                         //
@@ -283,6 +327,7 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                             return Column(
                               children: <Widget>[
                                 const MokuroMoeTasksSection(),
+                                const DiscoveryDownloadTasksSection(),
                                 Expanded(
                                   child: VideoDownloadJobsPanel.database(
                                     database: ref.read(appProvider).database,
@@ -307,6 +352,10 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                                           .read(appProvider)
                                           .videoDownloadPipelineService
                                           ?.cancelJob(job.jobId);
+                                    },
+                                    onPairAudiobook:
+                                        (VideoDownloadJobRow job) async {
+                                      await _pairDownloadedAudiobook(job);
                                     },
                                     onOpenDetails:
                                         (VideoDownloadJobRow job) async {
@@ -412,8 +461,31 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                         ),
                         const VideoDownloadSubscriptionsPanel(),
                         ListView(
-                          children: const <Widget>[
-                            TorrentSettingsSection(constrainWidth: false),
+                          children: <Widget>[
+                            const TorrentSettingsSection(),
+                            // 索引器 / 字幕来源 / 发现来源已迁到设置 → 在线服务
+                            // （第三方凭据一个家）；下载页设置 tab 留一条跳转，
+                            // 番剧下载对话框「去设置」落到这里仍能一步到达。
+                            Builder(
+                              builder: (BuildContext rowContext) =>
+                                  AdaptiveSettingsNavigationRow(
+                                title: t.settings_destination_services,
+                                subtitle: t.settings_services_link_subtitle,
+                                icon: Icons.cloud_outlined,
+                                showIcon: true,
+                                onTap: () => Navigator.of(rowContext).push(
+                                  adaptivePageRoute(
+                                    context: rowContext,
+                                    builder: (_) => SettingsDetailPage(
+                                      destination: buildServicesDestination(),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const VideoExternalProviderSettingsSection(
+                              scope: VideoExternalProviderScope.downloadRouting,
+                            ),
                           ],
                         ),
                       ],
@@ -427,18 +499,4 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
   }
 }
 
-class _DownloadsResourceDependencies {
-  const _DownloadsResourceDependencies({
-    required this.registry,
-    required this.pipeline,
-    required this.identity,
-    required this.sources,
-    required this.defaultSourceId,
-  });
-
-  final VideoResourceRegistry registry;
-  final VideoDownloadPipelineService pipeline;
-  final VideoDownloadBackendIdentity identity;
-  final List<MediaSourceRow> sources;
-  final int? defaultSourceId;
-}
+enum _DownloadsResourceDomain { books, manga, games, video }

@@ -298,4 +298,110 @@ void main() {
       await store.delete('never-existed');
     });
   });
+
+  group('BUG-1696 shouldRetrySubtitles（字幕反查的 backoff 判据）', () {
+    const int t0 = 1700000000000;
+
+    AnimeDownloadPlan planWith({
+      required String subtitleStatus,
+      int attempts = 0,
+      int? lastAttemptAtMs,
+      int? jimakuEntryId = 77,
+    }) =>
+        AnimeDownloadPlan(
+          id: 'abc',
+          createdAtMs: t0,
+          seriesTitle: 'S',
+          torrentTitle: 'T',
+          magnet: 'magnet:?xt=urn:btih:abc',
+          qbCategory: 'hibiki',
+          status: AnimeDownloadPlan.statusImported,
+          jimakuEntryId: jimakuEntryId,
+          subtitleStatus: subtitleStatus,
+          subtitleAttempts: attempts,
+          subtitleLastAttemptAtMs: lastAttemptAtMs,
+        );
+
+    test('只有 unavailable 才重试；resolved/none/pending 都不碰', () {
+      for (final String status in <String>[
+        AnimeDownloadPlan.subtitleResolved,
+        AnimeDownloadPlan.subtitleNone,
+        AnimeDownloadPlan.subtitlePending,
+      ]) {
+        expect(
+          planWith(subtitleStatus: status).shouldRetrySubtitles(t0),
+          isFalse,
+          reason: '$status 不该被字幕重试通道碰到',
+        );
+      }
+    });
+
+    test('没有 Jimaku 条目 → 不重试（没来源，重试只是每轮白打一次网络）', () {
+      expect(
+        planWith(
+          subtitleStatus: AnimeDownloadPlan.subtitleUnavailable,
+          jimakuEntryId: null,
+        ).shouldRetrySubtitles(t0),
+        isFalse,
+      );
+    });
+
+    test('老计划（attempts=0，本 bug 之前卡死的那批）立刻获得一次重试机会', () {
+      expect(
+        planWith(subtitleStatus: AnimeDownloadPlan.subtitleUnavailable)
+            .shouldRetrySubtitles(t0),
+        isTrue,
+      );
+    });
+
+    test('未到下一档间隔不重试，到了才重试', () {
+      final AnimeDownloadPlan afterFirst = planWith(
+        subtitleStatus: AnimeDownloadPlan.subtitleUnavailable,
+        attempts: 1,
+        lastAttemptAtMs: t0,
+      );
+      final int gap =
+          AnimeDownloadPlan.subtitleRetryBackoff.first.inMilliseconds;
+      expect(afterFirst.shouldRetrySubtitles(t0 + gap - 1), isFalse);
+      expect(afterFirst.shouldRetrySubtitles(t0 + gap), isTrue);
+    });
+
+    test('backoff 用完就停，不无限轮询', () {
+      final int exhausted = AnimeDownloadPlan.subtitleRetryBackoff.length + 1;
+      expect(
+        planWith(
+          subtitleStatus: AnimeDownloadPlan.subtitleUnavailable,
+          attempts: exhausted,
+          lastAttemptAtMs: t0,
+        ).shouldRetrySubtitles(t0 + const Duration(days: 30).inMilliseconds),
+        isFalse,
+        reason: '一个永远不会有字幕的条目不该每轮 tick 都打一次 Jimaku',
+      );
+    });
+
+    test('新增的两个字段进出 JSON；缺字段的老计划回落 0/null', () {
+      final AnimeDownloadPlan plan = planWith(
+        subtitleStatus: AnimeDownloadPlan.subtitleUnavailable,
+        attempts: 3,
+        lastAttemptAtMs: t0,
+      );
+      final AnimeDownloadPlan? round =
+          decodeAnimeDownloadPlan(encodeAnimeDownloadPlan(plan));
+      expect(round?.subtitleAttempts, 3);
+      expect(round?.subtitleLastAttemptAtMs, t0);
+
+      final Map<String, dynamic> legacy =
+          Map<String, dynamic>.from(encodeAnimeDownloadPlan(plan))
+            ..remove('subtitleAttempts')
+            ..remove('subtitleLastAttemptAtMs');
+      final AnimeDownloadPlan? old = decodeAnimeDownloadPlan(legacy);
+      expect(old?.subtitleAttempts, 0);
+      expect(old?.subtitleLastAttemptAtMs, isNull);
+      expect(
+        old?.shouldRetrySubtitles(t0),
+        isTrue,
+        reason: '被旧「取不到就算了」卡住的存量计划要能被救回来',
+      );
+    });
+  });
 }

@@ -309,6 +309,34 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
     regex: RegExp(r'hibiki-backup|hibiki_(?:debug|error)_log'),
   ),
   _ForbiddenPattern(
+    // 制卡产物落进 Anki collection.media 的**文件名前缀**已是 fushi_*：
+    // `fushi_cover_`（封面 / {card-image} / {video-clip}）、`fushi_audio_`（词与
+    // 句音频）、`fushi_dict_`（词典外字缓存名，三端原样当 media 名）、
+    // `fushi_media_`（prefix 被 sanitize 成空串时的兜底）。
+    //
+    // 读侧从不按前缀识别媒体——去重走「全量列举 + 同大小才算 sha256 + 删前逐字节
+    // 复核」，删除按记录的确切文件名，AnkiDroid staging 只看是否在 systemTemp 下。
+    // 所以没有任何兼容读入口需要白名单，旧名再冒出来纯属残留，而且是用户在 Anki
+    // 媒体库里直接看得见的那种（iOS/AnkiMobile 连词典外字名都原样进 /media/ URL）。
+    //
+    // **与上一条不同**：这条按词根圈，不是按用途圈，因此比「进得了 Anki 的媒体名」
+    // 过火——`hibiki_dict_` 会连带命中任何同前缀的 systemTemp 目录名，哪怕它跟
+    // Anki 毫无关系。这不是疏漏而是取舍：四个词根都太特征化，收窄成
+    // `hibiki_dict_[0-9a-f]{40}` 这种形态匹配只会让守卫变脆且读不懂，多报好过漏报。
+    //
+    // 代价已经付过一次：同步侧的 `hibiki_dict_export`（app_model_library_host_service）
+    // 与 `hibiki_dict_in`（fushi_sync_server）本与制卡无关，因撞这个词根被一并改成
+    // fushi_，所以这里不需要为它们开白名单。将来再撞上同词根的无关临时名，**优先
+    // 跟着改名**（它们都是纯 createTemp 前缀，无消费方，零风险），不要加白名单——
+    // 白名单在本文件的语义是「迁移必须读旧名」，临时名套不上那个理由。
+    //
+    // 反过来，`hibiki_` 后不是这四个词之一的临时名（制卡链路上还有若干）**不**被本
+    // 条覆盖，它们的对外名在上传时被 fushiAnkiMediaFilenameForBytes 按字节重算成
+    // `<prefix><sha256>.<ext>`，用户看不到，不构成本条要防的回退。
+    name: 'hibiki_* Anki 媒体文件名前缀',
+    regex: RegExp(r'hibiki_(?:cover|dict|media|audio)_'),
+  ),
+  _ForbiddenPattern(
     // 类名族清算：Hibiki* → Fushi*（HibikiDatabase/HibikiToast/_HibikiCardState
     // 等词首形态，含 _$Hibiki* 生成类）。
     name: 'Hibiki*-类名族',

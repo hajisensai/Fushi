@@ -290,8 +290,7 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
       'coverPath',
       PathRebaseKind.documentsRooted,
       'BUG-1211 合集自有封面：<documents>/video_covers/collections/<id>.jpg'
-          '（VideoStorage.collectionCoversDir，落盘唯一入口 '
-          'cover_scraper_service.dart downloadCollectionCover）。与 '
+          '（VideoStorage.collectionCoversDir；现有下载导入与历史刮削记录均可能写入）。与 '
           'video_books.cover_path / galgames.cover_path 完全同型 → 不改写 = '
           '换过封面的合集在换数据根后全部退回成员借用链，用户看到封面「自己变了」。'),
 
@@ -301,7 +300,7 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
 
   // ── video_scrape_meta（刮削快照）───────────────────────────────────
   PathRebaseColumn('VideoScrapeMeta', 'source', PathRebaseKind.notAPath,
-      'ScrapeSource 枚举名（bangumi/tmdb/...），不是路径。'),
+      'ScrapeSource 枚举名（当前 anidb/tmdb；亦可为历史来源名），不是路径。'),
   PathRebaseColumn('VideoScrapeMeta', 'tagsJson', PathRebaseKind.notAPath,
       '标签 JSON 数组，无路径。'),
   PathRebaseColumn('VideoScrapeMeta', 'infoboxJson', PathRebaseKind.notAPath,
@@ -311,7 +310,7 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
 
   // ── collection_scrape_meta（合集级刮削资料，schema v64 / BUG-1310）────
   PathRebaseColumn('CollectionScrapeMeta', 'source', PathRebaseKind.notAPath,
-      'ScrapeSource 枚举名（bangumi/tmdb/...），不是路径。'),
+      'ScrapeSource 枚举名（当前 anidb/tmdb；亦可为历史来源名），不是路径。'),
   PathRebaseColumn('CollectionScrapeMeta', 'tagsJson', PathRebaseKind.notAPath,
       '标签 JSON 数组，无路径。'),
   PathRebaseColumn('CollectionScrapeMeta', 'infoboxJson',
@@ -324,7 +323,7 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
       PathRebaseKind.documentsRooted,
       'BUG-1310 合集横版背景：<documents>/video_covers/collections/'
           '<id>_backdrop.jpg（与同表兄弟 media_collections.cover_path 同目录、'
-          '同落盘入口 cover_scraper_service.dart applyCandidateToCollection）。'
+          '现仅作为历史本地刮削资产继续读取）。'
           '与 media_collections.cover_path 完全同型 → 不改写 = 换数据根后详情页'
           'hero 背景变死链，静默退回海报模糊垫底，用户看到背景「自己没了」。'),
 
@@ -346,7 +345,7 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
 
   // ── collection_relations（合集相关作品边表，schema v66 / TODO-2484）──
   PathRebaseColumn('CollectionRelations', 'source', PathRebaseKind.notAPath,
-      'ScrapeSource 枚举名（bangumi/tmdb/...），不是路径。'),
+      'ScrapeSource 枚举名（当前 anidb/tmdb；亦可为历史来源名），不是路径。'),
   PathRebaseColumn('CollectionRelations', 'coverUrl', PathRebaseKind.notAPath,
       '关联条目封面的远端 URL，不是本机路径。'),
   PathRebaseColumn(
@@ -405,6 +404,10 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
       '本地 NCOP/NCED 等附加视频复用 VideoBook.coverPath，位于 '
           '<documents>/video_covers；必须与原视频封面一起重挂。'),
 
+  // ── web_mine_queue（schema v90，网页播放器自动制卡队列，device-local）──
+  PathRebaseColumn('WebMineQueue', 'fieldsJson', PathRebaseKind.notAPath,
+      '弹窗点击时冻结的 Anki 字段映射 JSON（词头/释义/句子文本），不含本机路径。'),
+
   // ── video_download_*（schema v78，device-local 持久流水线）────────
   PathRebaseColumn('VideoDownloadJobs', 'resourceProvider',
       PathRebaseKind.notAPath, '资源 provider/实例身份，不是路径。'),
@@ -414,6 +417,9 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
       PathRebaseKind.notAPath, '发布标题文本，不是路径。'),
   PathRebaseColumn('VideoDownloadJobs', 'coverUrl', PathRebaseKind.notAPath,
       '发现来源的远端封面 URL，不是本机路径。'),
+  PathRebaseColumn('VideoDownloadJobs', 'identityJson',
+      PathRebaseKind.notAPath,
+      'v94 发现页身份快照 JSON（VideoMediaReference：providerId/mediaId/标题/原名/别名/年份/季集号 + tmdb/imdb/tvdb/anidb/anilist/bangumi 等外部 id），全是标识与文本，不承载任何路径。'),
   PathRebaseColumn('VideoDownloadJobs', 'backendProfileId',
       PathRebaseKind.notAPath, '下载后端配置身份，不是文件路径。'),
   PathRebaseColumn(
@@ -452,6 +458,9 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
       PathRebaseKind.notAPath, '发现来源的远端封面 URL，不是本机路径。'),
   PathRebaseColumn('VideoDownloadSubscriptions', 'filterJson',
       PathRebaseKind.notAPath, '严格版本规则 JSON（组、分辨率、编码、语言），不承载路径或凭据。'),
+  PathRebaseColumn('VideoDownloadSubscriptions', 'identityJson',
+      PathRebaseKind.notAPath,
+      'v94 发现页身份快照 JSON（VideoMediaReference：providerId/mediaId/标题/原名/别名/年份/季集号 + tmdb/imdb/tvdb/anidb/anilist/bangumi 等外部 id），全是标识与文本，不承载任何路径。'),
   PathRebaseColumn('VideoDownloadSubscriptions', 'backendProfileId',
       PathRebaseKind.notAPath, '下载后端配置身份，不是文件路径。'),
   PathRebaseColumn('VideoDownloadSubscriptionItems', 'resourceProvider',
@@ -550,6 +559,11 @@ final List<PathRebasePref> kPathRebasePrefs = <PathRebasePref>[
       PathValueShape.fontListJson,
       '同上（视频字幕字体）。'),
   PathRebasePref(
+      dbSourcePrefKey(kReaderSourcePersistedKey, 'game_lookup_fonts'),
+      PathRebaseKind.documentsRooted,
+      PathValueShape.fontListJson,
+      '同上（游戏查词窗口字体）。'),
+  PathRebasePref(
       'local_audio_dbs',
       PathRebaseKind.supportRooted,
       PathValueShape.localAudioDbsJson,
@@ -605,6 +619,14 @@ final List<PathRebasePref> kPathRebasePrefs = <PathRebasePref>[
           '与 MediaSources.rootPath 同语义，不能随 Hibiki 应用数据根改写。'),
   PathRebasePref('video_mpv_shader_dir', PathRebaseKind.externalUserPath,
       PathValueShape.none, '用户本机 mpv 着色器目录，外部路径，不随数据根走。'),
+  PathRebasePref(
+      'audiobook_material_dirs',
+      PathRebaseKind.externalUserPath,
+      PathValueShape.none,
+      '有声书素材库目录（JSON 字符串数组）。用户自己挑的字幕/正文库位置——通常是外接盘'
+          '或下载目录，不在 Hibiki 数据根下，跟着数据根改写只会把有效路径改坏。'
+          '目录没了不影响已入库的书（素材在导入时已复制进书的存储），设置页按'
+          'missingDirs 如实提示。'),
   PathRebasePref('manga_external_mokuro_path', PathRebaseKind.externalUserPath,
       PathValueShape.none, '系统安装的 mokuro 可执行文件路径，外部路径。'),
   PathRebasePref(

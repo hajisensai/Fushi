@@ -365,11 +365,15 @@ class UpdateChecker {
       final UpdateAsset? asset = selection.asset;
       final String? downloadUrl = asset?.url;
 
-      // 无适配本平台的 asset（iOS / 未实现桌面 / 该 release 没传本平台包）→ 打开发布页。
+      // 无适配本平台的 asset（iOS / 未实现桌面 / 该 release 没传本平台包）→ 前往
+      // 本平台的分发入口（iOS = TestFlight / App Store / 发布页，其余 = 发布页）。
       if (downloadUrl == null) {
         final String? htmlUrl = json['html_url'] as String?;
-        if (htmlUrl != null && context.mounted) {
-          _showFallbackDialog(context, version, releaseBody, htmlUrl);
+        if (htmlUrl != null) {
+          final UpdateLanding landing =
+              await updater.resolveDownloadLanding(htmlUrl);
+          if (!context.mounted) return;
+          _showFallbackDialog(context, version, releaseBody, landing, htmlUrl);
         }
         return;
       }
@@ -397,10 +401,13 @@ class UpdateChecker {
         _showUpdateDialog(context, version, releaseBody, asset!, updater,
             customProxy: customProxy);
       } else {
-        // 能检查但不能自装（本期 iOS/mac/Linux）：弹「前往下载」打开发布页。
+        // 能检查但不能自装（本期 iOS/Linux）：弹「前往下载」→ 本平台分发入口。
         final String? htmlUrl = json['html_url'] as String?;
         if (htmlUrl != null) {
-          _showFallbackDialog(context, version, releaseBody, htmlUrl);
+          final UpdateLanding landing =
+              await updater.resolveDownloadLanding(htmlUrl);
+          if (!context.mounted) return;
+          _showFallbackDialog(context, version, releaseBody, landing, htmlUrl);
         }
       }
     } catch (e, stack) {
@@ -728,26 +735,44 @@ class UpdateChecker {
     );
   }
 
-  /// Fallback dialog for when no APK asset exists — opens browser.
+  /// 本平台没有可应用内安装的包时的对话框：主按钮打开 [landing]（iOS 上可能是
+  /// TestFlight / App Store），[releaseHtmlUrl] 是 GitHub 发布页。
+  ///
+  /// 主按钮不落在发布页时额外给一个「发布页」次要入口：GitHub Release 里的未签名
+  /// ipa 是侧载用户唯一的取包处，主按钮改指商店后不能把这条路一起掐掉。
   static void _showFallbackDialog(
     BuildContext context,
     String version,
     String releaseNotes,
-    String htmlUrl,
+    UpdateLanding landing,
+    String releaseHtmlUrl,
   ) {
+    final bool showReleasePageAction =
+        landing.kind != UpdateLandingKind.releasePage;
     showAppDialog<void>(
       context: context,
       builder: (ctx) => UpdateAvailableDialog(
         version: version,
         releaseNotes: releaseNotes,
-        primaryLabel: t.update_download,
+        primaryLabel: updateLandingActionLabel(landing.kind),
         onPrimary: () {
           Navigator.of(ctx).pop();
           launchUrl(
-            Uri.parse(htmlUrl),
+            Uri.parse(landing.url),
             mode: LaunchMode.externalApplication,
           );
         },
+        secondaryLabel:
+            showReleasePageAction ? t.update_release_page_open : null,
+        onSecondary: showReleasePageAction
+            ? () {
+                Navigator.of(ctx).pop();
+                launchUrl(
+                  Uri.parse(releaseHtmlUrl),
+                  mode: LaunchMode.externalApplication,
+                );
+              }
+            : null,
       ),
     );
   }
@@ -913,6 +938,10 @@ class UpdateChecker {
     final status = ValueNotifier<String>(t.update_connecting);
     final statusController = UpdateDownloadStatusController(status);
     final diagnostics = ValueNotifier<UpdateDownloadDiagnostics?>(null);
+    // 「本次没用上你选的下载来源」通告：所选来源对某些资产解析不出候选（旧仓库直链 /
+    // 第三方 host / 镜像前缀已下线）时行为上照常回退，但降级必须看得见，否则用户会以为
+    // 自己锁定了 Cloudflare（见 [UpdateDownloadPlan.preferenceUnavailable]）。
+    final sourceNotice = ValueNotifier<String?>(null);
     final overlayVisible = ValueNotifier<bool>(true);
     // 取消令牌（TODO-738）：遮罩「取消」按钮按下后置位，下载引擎在候选边界看到即中断。
     final cancellation = UpdateDownloadCancellation();
@@ -925,6 +954,7 @@ class UpdateChecker {
           return _DownloadOverlay(
             progress: progress,
             status: status,
+            notice: sourceNotice,
             diagnostics: diagnostics,
             onHide: () => overlayVisible.value = false,
             onCancel: () {
@@ -962,11 +992,21 @@ class UpdateChecker {
       // 进度/诊断/取消接线，而不复制下载参数。
       final HttpClient downloadClient = client;
       Future<File> downloadAsset(UpdateAsset target) {
+        // 候选计划一次算清：候选序 + 用户所选来源钉在哪个候选上（钉住就不竞速，
+        // 见 orderedCandidatesAfterRace）+ 所选来源是否根本不适用于本资产。
+        final UpdateDownloadPlan plan = resolveUpdateDownloadPlan(target.url);
+        sourceNotice.value = _downloadSourceUnavailableNotice(plan);
+        final String? notice = sourceNotice.value;
+        if (notice != null) {
+          ErrorLogService.instance
+              .logDiagnostic('UpdateChecker.download', notice);
+        }
         return downloadUpdateAsset(
           asset: target,
           version: version,
           updatesDir: updatesDir,
-          candidateUrls: updateCheckUrls(target.url),
+          candidateUrls: plan.candidates,
+          pinnedCandidateUrl: plan.pinnedUrl,
           openUrl: (Uri uri, Map<String, String> headers) =>
               _openHttpDownload(downloadClient, uri, headers, version),
           onProgress: (double value) {

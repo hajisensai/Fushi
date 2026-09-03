@@ -113,10 +113,16 @@ enum ShortcutScope {
   /// 每个 scope 只列**真的存在解析入口**的通道，没有「多数 scope 三通道全通」这种
   /// 省事写法——那正是 7 条死通道的来源（见各 case 注释）。
   ///
-  /// 尤其注意 **mouse 通道在本 app 的唯一运行时输入源是 WebView 的 DOM `mousedown`**
-  /// （阅读器 `onPointerSeek` / 歌词 `onLyricsPointerSeek` → `resolveMouse`）。Flutter
-  /// 侧至今没有任何「PointerDownEvent → MouseBinding → 派发」的管线，故非 WebView
-  /// 宿主的 scope 一律不开 mouse。
+  /// mouse 通道现在有**两条**运行时输入源，开通道前先认准自己属于哪一条：
+  ///   · **Flutter 侧**（BUG-1995 建起、本轮推广）：`Listener.onPointerDown` →
+  ///     `resolveMouseBindingAction` → 与键盘同一个执行体。页面各挂一层只解析自己的
+  ///     scope，`universal` / `global` 由 app 根的 `wrapWithGlobalNavigation` 统一兜底
+  ///     （指针没有冒泡，两层互斥靠 `MouseBindingDispatch` 的认领，见该文件）。
+  ///   · **WebView 的 DOM `mousedown`**：阅读器 `onPointerSeek` / 歌词
+  ///     `onLyricsPointerSeek` → `resolveMouse`。原生 WebView 会吃掉指针，Flutter 的
+  ///     [Listener] 在那片区域收不到事件，故 WebView 宿主必须走这条。
+  ///
+  /// 两条都不通的 scope 才不开 mouse（dpad 四向、OS 级全局热键，见各自 case）。
   Set<ShortcutChannel> get channels {
     switch (this) {
       // 阅读器与有声书是 WebView 宿主：键盘/手柄走页面派发，鼠标侧键经 WebView 的
@@ -128,30 +134,57 @@ enum ShortcutScope {
           ShortcutChannel.gamepad,
           ShortcutChannel.mouse,
         };
-      // 首页 / 全局 / 视频页：键盘与手柄都有解析入口（home_page 的 resolveKeyboard、
-      // global_navigation、video_player_shortcuts 的 keyboardBindings、各页
-      // GamepadButtonIntent），但**鼠标没有**——这三个页面都是纯 Flutter 表面，没有
-      // WebView 接管 mousedown，也没有任何 Flutter 侧鼠标绑定派发管线。曾经开着
-      // mouse 通道纯属与 reader/audiobook 共用一个 case 分支的连带产物：设置页给出
-      // 「添加鼠标按键」入口，绑上去永不触发。要重开必须先真的建一条
-      // PointerDownEvent → MouseBinding → 派发的链路并验证。
+      // 首页 / 全局：三通道齐全。
+      //   · 键盘/手柄：home_page 的 resolveKeyboard/resolveGamepad + global_navigation
+      //     + 各页 GamepadButtonIntent；
+      //   · 鼠标：home 由 home_page 的 `_handleHomePointerDown` 解析（只解析 home
+      //     自己的 scope），global 由 app 根 `_handleGlobalPointerDown` 兜底解析并执行
+      //     （全屏切换 / 整页滚动，与手柄 LB/RB 同一条 PageScrollRegistry 路径）。
+      //
+      // 这两个通道此前是关着的，注释写「纯 Flutter 表面没有 PointerDownEvent →
+      // MouseBinding 的管线」——那条管线现在真的建起来了（先 BUG-1995 在视频页，本轮
+      // 推广到首页与 app 根），故销账重开。开着而没有派发点正是本文件反复警告的
+      // 「设置里能配、按了没反应」，守卫 `shortcut_channel_wiring_guard_test` 盯着。
       case home:
       case global:
+        return const <ShortcutChannel>{
+          ShortcutChannel.keyboard,
+          ShortcutChannel.gamepad,
+          ShortcutChannel.mouse,
+        };
+      // 视频页：BUG-1995。用户报「关闭词典快捷键小说鼠标侧键可以，视频不行」——根因是
+      // 这里没开 mouse 通道，导致**设置页不给「添加鼠标按键」入口，用户压根绑不上**。
+      //
+      // ⚠️ 注意通道开关的真实作用域：它只管**设置页的录入入口**。已经存在的鼠标绑定
+      // 一直是可派发的——词典弹窗表面那条路（`dictionaryPopupInputSpecFor` →
+      // `resolveDictionaryPopupInputToken`）读 `bindingsFor` / `resolveMouse`，
+      // **不查本 getter**。所以「通道关着」≠「该 scope 的鼠标绑定不生效」，别再据此
+      // 推出「这些绑定是死的、可以清掉」（那条 v10→v11 迁移正是这么错的，已撤销）。
+      //
+      // 配套建出的 Flutter 侧派发管线（`video_fushi_page.dart` 的
+      // `_handleVideoPointerDown`）只覆盖**浮层不可见**的表面：浮层可见时根 Overlay 的
+      // barrier 会吃掉指针事件，那半边由弹窗表面自己回传，见该方法的文档。
       case video:
         return const <ShortcutChannel>{
           ShortcutChannel.keyboard,
           ShortcutChannel.gamepad,
+          ShortcutChannel.mouse,
         };
-      // universal（「返回上一级」）：键盘与手柄都有解析入口——每个表面在自身 scope
-      // 未命中后按 `resolveKeyboard/resolveGamepad(scope: universal)` 兜底
-      // （reader caret.part / manga page / video page / global_navigation 四处）。
-      // 鼠标不开：Flutter 侧至今没有 PointerDownEvent → MouseBinding 的派发管线，
-      // 而弹窗桥那条鼠标路只在**词典弹窗表面**成立、不是全表面能力（开了就是
-      // 「设置里能配、在正文上按了没反应」）。
+      // universal（「返回上一级」）：三通道齐全。
+      //   · 键盘/手柄：每个表面在自身 scope 未命中后按
+      //     `resolveKeyboard/resolveGamepad(scope: universal)` 兜底（reader caret.part /
+      //     manga page / video page / global_navigation 四处）；
+      //   · 鼠标：app 根 `_handleGlobalPointerDown` 的兜底阶梯首段就是 universal，落地
+      //     到与键盘同一个 `Navigator.maybePop()`。页面层刻意**不**各自解析它——鼠标
+      //     没有冒泡，各页再解析一遍就会与根兜底对同一次按下各派发一次（一键退两级）。
+      //
+      // 「返回上一级」绑鼠标侧键是本通道最常见的用法（用户复诉的正是它），此前只有
+      // 词典弹窗表面那条路能用，正文上按无反应。现在全表面统一。
       case universal:
         return const <ShortcutChannel>{
           ShortcutChannel.keyboard,
           ShortcutChannel.gamepad,
+          ShortcutChannel.mouse,
         };
       // dpad 四向：唯一消费者是 GamepadService._dispatchButton，按 `GamepadButton`
       // 做 `resolveGamepad(scope: gamepad)`，且结果只被映射成 TraversalDirection。
@@ -167,21 +200,34 @@ enum ShortcutScope {
       // 提供的，故只开键盘。
       case globalExternal:
         return const <ShortcutChannel>{ShortcutChannel.keyboard};
-      // 漫画页只有键盘解析入口：`_resolveMangaKeyAction` 走 `resolveKeyboard`，
-      // 滚轮翻页是硬编码的 `wheelInputAction`（不查注册表），手柄则完全没接
-      // （既无 `resolveGamepad`，也无 `GamepadButtonIntent` 的 Action）。开着手柄/
-      // 鼠标通道 = 设置页给出能配却按了没反应的入口，比没有这个选项更糟。
-      // 接上对应解析入口（照 reader `_handleGamepadButton`）并真机验证后再开。
+      // 漫画页：键盘走 `_resolveMangaKeyAction`（resolveKeyboard），手柄走
+      // `_handleGamepadButton`（resolveGamepad manga → universal，桌面轮询的
+      // GamepadButtonIntent 与 Android gameButton* 键事件汇合到同一入口，与
+      // reader 同构）。滚轮翻页是硬编码的 `wheelInputAction`（不查注册表）。
+      //
+      // 鼠标本轮接上，**两条腿**——因为本页正文是原生 WebView，指针归谁按平台不同
+      // （见 `hostOwnsWebViewPointerInput`）：指针归宿主时走页面根 [Listener] 的
+      // `_handleMangaPointerDown`；归 WebView 时走页内 JS 鼠标桥
+      // （`onMangaMouseButton`）回传 `_handleNativeNavigationKey`。两条互斥安装，
+      // 且都汇进与键盘/手柄同一个 `_executeReaderInputAction`。
       case manga:
-        return const <ShortcutChannel>{ShortcutChannel.keyboard};
-      // 查词弹窗：滚轮（上/下一个词条）+ 键盘（制卡）。两者都不经 resolveKeyboard —— 绑定
-      // 由 popup_settings_injection 序列化后注入给 popup.js，命中判定在 JS 侧（弹窗内容是
-      // WebView，输入事件先到它的 JS）。键盘通道的取用点同样是
-      // `bindingsFor(popupMineEntry).keyboardBindings`。
+        return const <ShortcutChannel>{
+          ShortcutChannel.keyboard,
+          ShortcutChannel.gamepad,
+          ShortcutChannel.mouse,
+        };
+      // 查词弹窗：滚轮（上/下一个词条）+ 键盘（制卡）+ 手柄。滚轮/键盘不经
+      // resolveKeyboard —— 绑定由 popup_settings_injection 序列化后注入给 popup.js，
+      // 命中判定在 JS 侧（弹窗内容是 WebView，输入事件先到它的 JS）；键盘通道的
+      // 取用点同样是 `bindingsFor(popupMineEntry).keyboardBindings`。
+      // 手柄（P2）走 Dart 侧：GamepadService 在页面 Actions 未消费后按
+      // `resolveGamepad(scope: dictionaryPopup)` 解析，经
+      // DictionaryPopupGamepadRegistry 的钩子调进弹窗 JS（词条导航/制卡/发音）。
       case dictionaryPopup:
         return const <ShortcutChannel>{
           ShortcutChannel.wheel,
           ShortcutChannel.keyboard,
+          ShortcutChannel.gamepad,
         };
     }
   }
@@ -267,9 +313,10 @@ enum ShortcutAction {
   globalScrollPageUp(ShortcutScope.global, 'global_scroll_page_up'),
   // TODO-1093：窗口级/app 级「全屏切换」（区别于视频播放器内的
   // videoToggleFullscreen——那个只切视频表面）。执行体在 wrapWithGlobalNavigation
-  // 里读本 action 的键盘绑定，命中时调 windowManager.setFullScreen(!当前)，当前态
-  // 用 DesktopWindowPlacement.isFullScreen() 读取。global scope、桌面（Win/macOS/
-  // Linux）生效、移动端 no-op（window_manager 无桌面窗）。默认键盘 F11。
+  // 里读本 action 的键盘绑定，命中时调 toggleDesktopWindowFullscreen()（macOS 走
+  // WindowManipulator、Windows 走 runner 自有全屏（BUG-1933）、Linux 走
+  // window_manager）。global scope、桌面（Win/macOS/Linux）生效、移动端 no-op
+  // （无桌面窗）。默认键盘 F11。
   globalToggleFullscreen(ShortcutScope.global, 'global_toggle_fullscreen'),
 
   // Audiobook（上一句在前，与视频组「上/下一句字幕」顺序一致）
@@ -291,6 +338,13 @@ enum ShortcutAction {
   // 播放控制 → 字幕/章节跳转 → 字幕显示 → 字幕对轴 → 音量 → 画面/杂项
   // 分簇排列，重要动作靠前；重排只影响展示，持久化走字符串 key、与声明序无关。
   // 「逐级退出」不在本组——它是全 app 共用的 [globalBack]（universal scope）。
+
+  // 「只关词典、绝不做别的」的可选专用动作（**默认无绑定**，与 [readerDismissDict] /
+  // [mangaDismissDict] 同形）。BUG-1995：没有它的话，想用鼠标侧键关词典就只能把侧键
+  // 绑到某个**真实**的视频动作（「下一句」之类），浮层不可见时那个动作会照常执行——
+  // reader 之所以干净，正是因为它有这个专用空绑定动作。
+  // 退出视频仍走 universal 的 [globalBack] 阶梯（浮层可见先关浮层，否则退出）。
+  videoDismissDict(ShortcutScope.video, 'video_dismiss_dict'),
 
   // 播放控制
   videoTogglePlayPause(ShortcutScope.video, 'video_toggle_play_pause'),
@@ -328,6 +382,8 @@ enum ShortcutAction {
 
   // 字幕显示
   videoToggleSubtitleList(ShortcutScope.video, 'video_toggle_subtitle_list'),
+  // BUG-1907：在字幕列表里搜索台词（默认 Ctrl+F）。列表没开时先开列表再聚焦搜索框。
+  videoSearchSubtitleList(ShortcutScope.video, 'video_search_subtitle_list'),
   videoToggleSubtitleBlur(ShortcutScope.video, 'video_toggle_subtitle_blur'),
   // TODO-840 Part B：字幕遮蔽模式（不遮蔽/模糊/隐藏，见 VideoSubtitleObscureMode）。
   // videoCycleSubtitleObscure 在三态间循环；videoToggleSubtitleHide 直接开/关「隐藏
@@ -391,6 +447,17 @@ enum ShortcutAction {
   // 「关弹窗并翻页」，那条语义在 [MangaReaderInputAction] 侧，与本动作无关。
   // 退出漫画走 universal 的 [globalBack] 阶梯（弹窗可见先关弹窗，否则退出）。
   mangaDismissDict(ShortcutScope.manga, 'manga_dismiss_dict'),
+  // BUG-1888：切换漫画界面（顶部页码/工具按钮 + 返回键）。与 [readerToggleChrome]
+  // 同形同键（键盘 M / 手柄 Y）——漫画此前**没有任何**隐藏界面的方式，顶栏恒挂在
+  // 画面上。隐藏态下右上角仍留一个半透明「显示界面」按钮，触屏也唤得回来。
+  mangaToggleChrome(ShortcutScope.manga, 'manga_toggle_chrome'),
+  // 放大后在页面上平移视野（默认 Ctrl+方向键）。裸方向键已被翻页占死，所以默认
+  // 走修饰键组合；用户可在快捷键设置里改成任意键。语义是「视野往哪个方向走」，
+  // 与滚动条直觉一致，不随阅读方向镜像（镜像只对**翻页**有意义）。
+  mangaPanUp(ShortcutScope.manga, 'manga_pan_up'),
+  mangaPanDown(ShortcutScope.manga, 'manga_pan_down'),
+  mangaPanLeft(ShortcutScope.manga, 'manga_pan_left'),
+  mangaPanRight(ShortcutScope.manga, 'manga_pan_right'),
 
   // Gamepad（TODO-700 T6）：dpad 四向作为可绑触发键。默认各绑对应 dpad 键，执行体
   // = 通用方向焦点移动（与摇杆同效果，但摇杆固定走 onStickMove 通道、不经注册表，
@@ -436,14 +503,17 @@ enum ShortcutAction {
   // in-app 宿主会被显式注入 `null` 关掉 JS 侧判定——那里由 Dart 负责，两边都开就有在
   // 「WebView 键盘桥把同一次按键同时喂给 Flutter 和 JS」时制出两张卡的风险。
   //
-  // ⚠️ app 外这一端**只有剪贴板面板真能用，且要用户先点过面板**：面板实例走
-  // `SetActivatable(true)`（flutter_window.cpp）故能拿键盘焦点；而**瞬态查词覆盖窗**默认
-  // `activatable_ = false`，带 `WS_EX_NOACTIVATE`（global_lookup_window.cpp:988）——它
-  // 永不接收键盘焦点，runner 侧也没有任何键盘转发/钩子，所以本动作在那个表面上**物理上
-  // 不可能触发**。galgame 场景焦点通常在游戏上，不先点面板就按不到。要覆盖瞬态窗只有两条
-  // 路（去掉 NOACTIVATE = 抢游戏焦点、违背它的设计初衷；或上全局 RegisterHotKey），都是
-  // 产品取舍，未做——别把这里的实现说成「app 内 / app 外 / 浏览器都能用」。
-  popupMineEntry(ShortcutScope.dictionaryPopup, 'popup_mine_entry');
+  // ⚠️ app 外这一端**实际不可触发**：app 外的查词覆盖窗一律 `WS_EX_NOACTIVATE`
+  // （global_lookup_window.cpp OverlayCreateExStyle）——它永不接收键盘焦点，runner 侧
+  // 也没有任何键盘转发/钩子，所以本动作在那个表面上**物理上不可能触发**。要覆盖它只有
+  // 两条路（去掉 NOACTIVATE = 抢游戏焦点、违背它的设计初衷；或上全局 RegisterHotKey），
+  // 都是产品取舍，未做——别把这里的实现说成「app 内 / app 外 / 浏览器都能用」。
+  popupMineEntry(ShortcutScope.dictionaryPopup, 'popup_mine_entry'),
+
+  // 手柄重设计 P2：播放第一个可见词条的发音（点既有 `.audio-button`，与制卡同一
+  // 「点按钮不另起桥」纪律，JS 入口 `fushiPopupPlayFirstAudio`）。默认只有手柄 Y
+  // ——键盘上鼠标点按钮已经够近，而手柄用户没有任何非光标模式的发音入口。
+  popupPlayAudio(ShortcutScope.dictionaryPopup, 'popup_play_audio');
 
   const ShortcutAction(this.scope, this.key);
 

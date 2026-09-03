@@ -46,9 +46,16 @@ void main() {
       'lib/src/pages/implementations/video_download_subscriptions_panel.dart',
     ).readAsStringSync();
 
+    // BUG-1858：`constrainWidth` 参数已删——全宽不再是调用点的一个选项，而是
+    // 组件唯一的形态。锚点随之从「调用点传了 false」搬到「组件里没有限宽」。
+    expect(downloads, contains('TorrentSettingsSection()'));
+    final String torrentSettings = File(
+      'lib/src/pages/implementations/torrent_settings_section.dart',
+    ).readAsStringSync();
     expect(
-      downloads,
-      contains('TorrentSettingsSection(constrainWidth: false)'),
+      torrentSettings,
+      isNot(contains('BoxConstraints(maxWidth:')),
+      reason: 'BUG-1858: 下载设置表单与输入框都不再自设右边界',
     );
     expect(jobs, isNot(contains('BoxConstraints(maxWidth: 840)')));
     expect(subscriptions, isNot(contains('BoxConstraints(maxWidth: 840)')));

@@ -40,6 +40,9 @@
 
 // BUG-1166 — 滚轮载荷类型（fushi::MouseHookWheel）来自钩子线程的消息契约。
 #include "low_level_mouse_hook.h"
+// 2026-08-23 弹窗观感 — layered 伴随投影窗（region 窗口拿不到 DWM 系统投影，
+// 见 global_lookup_shadow.h 头注释）。
+#include "global_lookup_shadow.h"
 
 class GlobalLookupWindow {
  public:
@@ -112,32 +115,56 @@ class GlobalLookupWindow {
   // Resizes an off-screen render surface without applying the on-screen work-
   // area clamp. The galgame card capture window must stay parked outside the
   // virtual desktop while WebView2 remains shown for layout and capture.
-  void ResizeOffscreen(int width, int height);
-  // Resizes the off-screen nested-card union and commits the same host-layer
-  // shift used by RevealStack, without ever moving the HWND on-screen.
-  void ResizeStackOffscreen(int width, int height, double bbox_left,
-                            double bbox_top);
+  // Returns true only when Win32 accepted the requested HWND geometry.  The
+  // geometry-epoch caller must not acknowledge a failed resize to the host.
+  bool ResizeOffscreen(int width, int height);
+  // Updates the gal-card nested union. Before direct presentation this keeps the
+  // renderer off-screen; once the composition HWND is attached to the game it
+  // resizes/repositions that SAME visible HWND in place, preserving every live
+  // iframe instead of flashing the whole stack away.
+  void ResizeStackForGal(int dx, int dy, int width, int height,
+                         double bbox_left, double bbox_top,
+                         int64_t geometry_epoch);
   // Moves the off-screen-rendered card to the pending cursor anchor at its final
   // size and makes it visible (arming the click-outside hooks). Called once per
   // lookup after the page has self-measured, so the user never sees the
   // measure->resize jitter. Pass <=0 to keep the current size.
-  void Reveal(int width, int height);
+  void Reveal(int width, int height, bool clamp_to_work_area = true,
+              HWND consume_outside_owner = nullptr);
   // TODO-867 P3c E1 — reveals/resizes to the nested-stack union bounding box.
   // |dx|/|dy| offset the window from the pending cursor anchor (physical px; the
   // host bbox origin × dpr) so a left/up cascade shifts the window while the root
   // card stays pinned at the cursor; |width|/|height| are the bbox size (physical
-  // px). Clamps to the monitor work area like Reveal/ResizeTo.
+  // px). Clamps to the monitor work area like Reveal/ResizeTo. The epoch is
+  // forwarded only after SetWindowPos succeeds, allowing the host to reveal
+  // shells that were gated against exactly this geometry transaction.
   void RevealStack(int dx, int dy, int width, int height,
-                   double bbox_left, double bbox_top);
+                   double bbox_left, double bbox_top,
+                   int64_t geometry_epoch);
   // TODO-1233 -- [notify]=true (default) fires the HiddenCallback on a genuine
   // dismissal; the programmatic reset before a fresh lookup passes false so the
   // between-lookups reset does not look like a user dismissal.
   void Hide(bool notify = true);
   bool IsShowing() const;
 
+  // Temporarily removes the lookup card from the DWM composition tree while a
+  // galgame mining capture is taken.  Unlike Hide(), this preserves the live
+  // WebView route, dismissal hooks and card geometry so the exact same lookup
+  // can be restored afterwards.  The caller-provided generation and the bound
+  // route form a one-shot transaction: a stale release can never resurrect a
+  // card belonging to an older lookup.
+  bool SuspendForCapture(int64_t capture_generation);
+  bool RestoreAfterCapture(int64_t capture_generation);
+
   // Injects |popup_json| and calls window.renderPopup(). Cached until the
   // WebView2 finishes initial navigation if called too early.
   void RenderJson(const std::string& popup_json);
+
+  // 手柄重设计 P5：把一枚 Dart 侧解析好的手柄动作转发进 host
+  // (window.__globalLookupHost.gamepadAction)。动作名走实现里的白名单，
+  // 绝不把任意字符串拼进 ExecuteScript；WebView 未就绪时静默丢弃
+  // （手柄动作是瞬时输入，不做 pending 缓存）。
+  void DispatchGamepadAction(const std::string& action, double dy);
 
   // Resolves a deferred JS bridge promise. |json_value| is a JSON literal
   // (e.g. "\"file:///a.mp3\"", "true", "null") passed straight to
@@ -160,72 +187,20 @@ class GlobalLookupWindow {
     hidden_cb_ = std::move(cb);
   }
 
-  // spec 2026-07-10 clipboard panel — the persistent clipboard-panel window is
-  // a SECOND GlobalLookupWindow instance. Panel differences are data, not
-  // modes: it never arms the dismiss hooks (persistent semantics: click-outside
-  // / foreground-switch must NOT close it), and it gets its own WebView2
-  // user-data leaf so its environment options never have to match the lookup
-  // overlay's (same-folder different-options fails with 0x8007139F).
-  void SetArmDismissHooks(bool arm) { arm_dismiss_hooks_ = arm; }
-  void SetUserDataLeaf(std::wstring leaf) { user_data_leaf_ = std::move(leaf); }
-  // 真机第 4 轮 — 面板窗可被激活：不带 WS_EX_NOACTIVATE 创建，点击面板时焦点
-  // 落在面板上（游戏失焦，滚轮不再穿到底下的游戏）。程序化 show/update 仍全
-  // 走 SW_SHOWNOACTIVATE / SWP_NOACTIVATE，文本流更新绝不抢游戏焦点。瞬态
-  // 覆盖窗保持默认 false（查词卡出现时前台键盘焦点原地不动，design §5 保证 3）。
-  // 必须在首次 ShowAt/PrewarmWebView（窗口创建）前设置。
-  void SetActivatable(bool activatable) { activatable_ = activatable; }
-  // 面板任务栏图标 — 常驻剪贴板面板要有独立任务栏按钮（WS_EX_APPWINDOW 而非
-  // WS_EX_TOOLWINDOW）：面板未置顶（图钉关）被游戏/浏览器压到底下时，点任务栏
-  // 图标即可激活+拉回前台（任务栏激活自带 raise），面板永远找得回来。瞬态查词
-  // 覆盖窗保持默认 false（工具窗，无任务栏项/Alt-Tab 项）。必须在窗口创建前设置。
-  void SetTaskbarPresence(bool present) { taskbar_presence_ = present; }
-  // 任务栏按钮 / Alt-Tab 项显示的窗口标题（Dart 侧传本地化文案）。创建前设置
-  // 则用于 CreateWindowExW；窗口已存在时经 SetWindowTextW 即时生效。
-  void SetWindowTitle(const std::wstring& title);
 
-  // 剪切板面板背景逐像素透明 — 仅面板实例开启：窗口用 WS_EX_NOREDIRECTIONBITMAP
+  // 背景逐像素透明 — 仅 gal 卡片离屏实例开启：窗口用 WS_EX_NOREDIRECTIONBITMAP
   // 建、WebView2 走 composition controller + DirectComposition 视觉树，透明像素
   // 真透到桌面（背景全透 + 文字实心），取代整窗 LWA_ALPHA 的「文字一起变淡」。
   // 瞬态查词覆盖窗保持默认 false（windowed，行为一字不改）。必须在首次
   // ShowAt/PrewarmWebView（窗口 + WebView 创建）前设置。
   void SetCompositionMode(bool composition) { composition_mode_ = composition; }
 
-  // spec §6 semi-transparency gate — asks DWM for a Win11 acrylic backdrop
-  // behind the window's transparent WebView2 pixels. Returns whether the OS
-  // accepted it (Win10 / pre-22H2 -> false; the panel then stays opaque and
-  // Dart hides the opacity slider). Requires the window to exist (call after
-  // ShowAt/PrewarmWebView). Never touches WS_EX_LAYERED (incompatible with the
-  // WebView2 composition surface, see the CreateWindowExW comment).
-  bool ApplySystemBackdrop();
-
-  // spec 2026-07-10 panel pin — toggles HWND_TOPMOST without moving/resizing
-  // or activating. No-op before the window exists.
-  void SetTopmost(bool topmost);
-
-  // 防截屏（剪贴板面板） — SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)：
+  // 防截屏 — SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)：
   // 窗口对用户可见，但被排除在截图 / 录屏 / 屏幕共享捕获之外（内容不外泄）。
   // 记住 [block] 到 block_capture_，窗口重建（ForgetDeadWindow → 新 hwnd）后由
-  // CreateWindowExW 之后的 ApplyBlockCapture() 自动重加。默认 false（瞬态查词
-  // 覆盖窗不受影响）；面板实例的 Dart 控制器在显示时按 pref 置 true。
+  // CreateWindowExW 之后的 ApplyBlockCapture() 自动重加。默认 false；Dart 控制器
+  // 按 pref 置 true。
   void SetBlockCapture(bool block);
-
-  // 面板抬前台 — 每次查词把已显示的面板重排到 z 序最上，绝不激活（不抢当前
-  // 前台窗口的键盘焦点）。[topmost]=true（已 pin）直接 HWND_TOPMOST；false
-  // 时用 TOPMOST→NOTOPMOST 弹一下，绕过前台锁把面板顶到非置顶带最上（裸
-  // HWND_TOP 在别的 app 处于前台时可能被系统拒绝）。No-op before the window
-  // exists.
-  void RaiseToFront(bool topmost);
-
-  // spec §6 真机修正 — WHOLE-WINDOW opacity via WS_EX_LAYERED +
-  // SetLayeredWindowAttributes(LWA_ALPHA). Real-device finding: the acrylic
-  // backdrop chain renders user-visibly OPAQUE through the windowed WebView2
-  // child — and frosted glass was never the ask anyway; the user wants to SEE
-  // the game/page beneath. LWA_ALPHA is the verified working path for WebView2
-  // hosts (whole window fades, incl. text; LWA_COLORKEY is NOT supported by
-  // WebView2) and works on Win10 too. [percent] clamped to 30..100; the
-  // layered bit sticks once set (a layered window does not render until
-  // SetLayeredWindowAttributes is called, so the call always follows).
-  void SetWindowAlpha(int percent);
 
   // ── v14 游戏内查词（KiriKiri/KAGEX）：本窗当卡片的**像素来源** ──────────────────
   //
@@ -251,17 +226,31 @@ class GlobalLookupWindow {
   // （真相源是 voice_hook_ipc.h 的 v14 查词区注释）。写成预乘不会报错，只会让卡片
   // 半透明边缘发暗——所以格式不由这里"看着办"，由契约钉死。
   //
-  // MVP 路径：`CapturePreview`（PNG 流）+ WIC 解码成 32bppBGRA。够 P1 静态卡片
-  // （一次查词一帧，编解码 ~10-20ms 落在 host 线程，不占游戏主线程）。
-  // 升级路径（P2 交互式高帧率才需要）：自持
-  // `IDXGIFactory2::CreateSwapChainForComposition` 作 WebView2 的
-  // root visual target，然后 `ID3D11DeviceContext::CopyResource` 到 D3D11_USAGE_STAGING
-  // 纹理、`Map(D3D11_MAP_READ)` 直接读回 BGRA——省掉整条 PNG 编解码，代价是要自己管
-  // swap chain 生命周期与 DPI/尺寸变化。**不要**在没有实测帧率不足前先做它。
+  // 回退路径：`CapturePreview`（JPEG/PNG 流）+ WIC 解码成 32bppBGRA。WebView2 的
+  // composition controller 不暴露它私有 visual tree 的 texture/surface；RootVisualTarget
+  // 也只接受宿主 visual，不能用自建 swap chain 读回 WebView 内容。交互主路因此直接把
+  // composition HWND 贴到游戏客户区，只有该路径不可用时才走这里的压缩整帧回退。
   //
   // 必须在平台线程（本窗的消息循环线程）调用；continuation 也在该线程回调。
   void CaptureBgraAsync(uint32_t max_width, uint32_t max_height,
                         BgraFrameCallback done);
+
+  // BUG-1833 — 把已渲染的 composition WebView 直接贴到目标进程的游戏客户区。
+  // [anchor_*]/[view_*] 属于游戏 primaryLayer 像素域。目前仅在它与实际
+  // 画布(view)按引擎的等比缩放+居中映射到客户区后直接呈现，放大运行的游戏也走这条路。
+  // 卡片**不随画布缩放**：它保持自身物理像素，既不经画布重采样（这是它清晰的原因），
+  // 也与台词浮窗同尺度；缩放 WebView viewport 才会触发重排，这里不做。
+  //
+  // 正因为卡片不再是画布单位，[anchor_x]/[anchor_y]（Dart 按画布尺寸排出来的卡片左上角）
+  // 不能直接乘 scale 当屏幕位置用——那会让卡片离字形 (scale-1)×卡片高。所以贴附以
+  // **字形矩形**为基准在屏幕空间重排，anchor 仅用于回退。
+  bool RevealOverProcessClient(uint32_t pid, int32_t anchor_x,
+                               int32_t anchor_y, uint32_t card_width,
+                               uint32_t card_height, uint32_t view_width,
+                               uint32_t view_height, int32_t glyph_x,
+                               int32_t glyph_y, uint32_t glyph_w,
+                               uint32_t glyph_h, uint32_t* out_client_width,
+                               uint32_t* out_client_height);
 
   // 把游戏侧转发来的一条 LookupInputSlot 喂给已有的 composition controller。
   // [kind] 取 voice_hook_ipc.h 的 kLookupInput*（0=move 1=leftDown 2=leftUp
@@ -306,7 +295,7 @@ class GlobalLookupWindow {
   // mode), the region is the UNION of those card rects instead of the full
   // window — the TODO-1345 reserved-floor window spans ~the whole work area,
   // and an opaque full-window region both paints a giant sheet and swallows
-  // every click meant for the app below (clipboard panel next-word tap).
+  // every click meant for the app below (next-word tap in the app beneath).
   void ApplyRoundedRegion();
   // BUG-749 — parses the host's {handler:'shellRects', args:['l,t,w,h;…']}
   // message (window-relative CSS px) and re-applies the window region.
@@ -326,6 +315,13 @@ class GlobalLookupWindow {
   // WebView2 proxies so the next ShowAt/PrewarmWebView rebuilds from scratch.
   bool OwnsLiveWindow() const;
   void ForgetDeadWindow();
+  // Geometry epochs are monotonic within one routed host-document lifetime.
+  // Equal values are retries; a lower (or legacy zero after epochs started)
+  // request is stale and must not move the live HWND or acknowledge the host.
+  bool BeginGeometryRequest(int64_t geometry_epoch);
+  bool CommitPendingShellGeometry(int64_t geometry_epoch);
+  void FinalizePendingShellGeometry(int64_t geometry_epoch);
+  void ClearPendingShellGeometry();
 
   // Tear down the dismissal hooks (foreground WinEvent + low-level mouse) and
   // give up hook ownership if it is ours.
@@ -346,8 +342,7 @@ class GlobalLookupWindow {
   /// 选项且会周期性重申，而我们**只在 Reveal/Resize 设一次、此后永不重申**。
   ///
   /// 工具条窗早就有这层兜底（hook_toolbar_window.cpp 的 Sync：「Still re-assert Z」），
-  /// 查词卡漏了。这里补上同一条，并且**只在本实例本来就要置顶时**才重申——
-  /// 未 pin 的常驻面板有意落在非置顶带，不能被这个定时器拖回去。
+  /// 查词卡漏了。这里补上同一条：本类所有实例都是置顶窗，无条件重申即可。
   void ReassertTopmost();
   void StartTopmostGuard();
   void StopTopmostGuard();
@@ -383,6 +378,13 @@ class GlobalLookupWindow {
   std::wstring LoadAdapterScript() const;
   // TODO-867 P3c — reads global_lookup_host.js for top-level injection.
   std::wstring LoadHostScript() const;
+  // 2026-08-23 弹窗观感 — 投影同步单漏斗：锚窗每次 WM_WINDOWPOSCHANGED
+  // （移动/缩放/显隐/置顶重申都会经过）+ shellRects 更新 + Hide 显式调用。
+  // 投影可见性 = revealed_ && visible_（离屏渲染/预热/gal 采集面绝不带影）；
+  // 模态 resize 循环中（resizing_）几何脏时不重画只隐藏，防拖拽掉帧。
+  void SyncShadow();
+  void CancelCaptureSuppression();
+  bool CaptureRouteIsCurrent() const;
 
   HWND hwnd_ = nullptr;
   HWINEVENTHOOK foreground_hook_ = nullptr;
@@ -393,12 +395,36 @@ class GlobalLookupWindow {
   static GlobalLookupWindow* s_hook_owner_;
   bool visible_ = false;
   bool revealed_ = false;
+  bool capture_suppressed_ = false;
+  bool capture_was_window_visible_ = false;
+  int64_t capture_generation_ = 0;
+  RouteContext capture_route_;
   // The galgame capture surface is intentionally never "visible" in desktop
   // semantics, but a rendered off-screen card still owns a live popup session
   // whose JS dismiss must notify Dart and hide the in-game bitmap.
   bool offscreen_active_ = false;
   int pending_x_ = 0;
   int pending_y_ = 0;
+  // BUG-1835 — direct gal composition geometry. bbox dx/dy are in the same
+  // primaryLayer/WebView physical-pixel domain as the root anchor. The current
+  // visible union starts at root+bbox; caching the root lets nested growth move
+  // the HWND in place without recomputing an anchor from the larger union.
+  bool direct_process_client_active_ = false;
+  HWND direct_game_hwnd_ = nullptr;
+  int32_t direct_root_anchor_x_ = 0;
+  int32_t direct_root_anchor_y_ = 0;
+  int32_t direct_bbox_dx_ = 0;
+  int32_t direct_bbox_dy_ = 0;
+  uint32_t direct_view_width_ = 0;
+  uint32_t direct_view_height_ = 0;
+  // 上一次 present 时字形在**游戏客户区局部**坐标系下的屏幕矩形。嵌套 resize 要维持
+  // 同一贴附基准，否则卡片会在同一次查词里跳位。有效性由 direct_glyph_valid_ 表达，
+  // 不用 0 兼作「没有」——字形完全可能落在客户区原点。
+  bool direct_glyph_valid_ = false;
+  double direct_glyph_left_ = 0.0;
+  double direct_glyph_top_ = 0.0;
+  double direct_glyph_width_ = 0.0;
+  double direct_glyph_height_ = 0.0;
   bool webview_ready_ = false;
   // TODO-1268 (BUG-693): a dead-surface rebuild is in flight; renders
   // cache into pending_json_ until NavigationCompleted re-arms
@@ -416,39 +442,39 @@ class GlobalLookupWindow {
   // 进去导致尺寸暴涨/卡片甩边（乱跳）。0 = 未在拖拽。
   int resize_start_w_ = 0;
   int resize_start_h_ = 0;
-  // spec 2026-07-10 — panel-instance data knobs (defaults == the historical
-  // lookup-overlay behaviour, so the first instance is byte-for-byte unchanged).
-  bool arm_dismiss_hooks_ = true;
-  bool activatable_ = false;
-
-  /// 本实例显示时是否应处于置顶带。瞬态查词卡恒真；常驻面板跟随图钉。
-  bool wants_topmost_ = true;
-
   /// 置顶重申定时器 id（0 = 未起）。见 [ReassertTopmost]。
   UINT_PTR topmost_guard_timer_ = 0;
-  bool taskbar_presence_ = false;
   // 防截屏当前请求值（真相源是 Dart pref；窗口重建后 ApplyBlockCapture 用它重加）。
-  // 默认 false：只有面板实例的控制器会按 pref 置 true，瞬态覆盖窗恒不受影响。
+  // 默认 false：Dart 控制器按 pref 置 true。
   bool block_capture_ = false;
-  // 背景逐像素透明模式（仅面板实例）：composition controller + DirectComposition。
+  // 背景逐像素透明模式（仅 gal 卡片离屏实例）：composition controller + DirectComposition。
   // 默认 false=windowed（瞬态窗与历史行为一字不改）。见 SetCompositionMode。
   bool composition_mode_ = false;
   // composition_mode_ 请求下 DComp 设备真的建起来了才为 true：任何 D3D11/DComp/
   // composition controller 创建失败都回退 composition_active_=false（windowed），
-  // 面板永不因透明改造而黑屏/崩溃（graceful degrade，只是不透明）。窗口样式、
+  // 窗口永不因透明改造而黑屏/崩溃（graceful degrade，只是不透明）。窗口样式、
   // controller 分支、WM_SIZE 都以 composition_active_（而非 _mode_）为准。
   bool composition_active_ = false;
   std::wstring window_title_ = L"Fushi Lookup";
-  std::wstring user_data_leaf_ = L"GlobalLookupWebView2";
+  // WebView2 profile folder leaf under %LOCALAPPDATA%（见 OverlayUserDataFolder）。
+  const std::wstring user_data_leaf_ = L"GlobalLookupWebView2";
   std::wstring popup_assets_dir_;
   std::string pending_json_;
   RouteContext route_context_;
   bool route_context_bound_ = false;
+  int64_t latest_geometry_epoch_ = 0;
   // BUG-749 — host-reported shell rects (window-relative CSS px, one
   // {l,t,w,h} per card). Non-empty only on the transient cascade instance
   // (the panel host short-circuits measureAndReport and never posts them).
   // Cleared on Hide()/ForgetDeadWindow() so a fresh lookup re-posts.
   std::vector<std::array<double, 4>> shell_rects_css_;
+  // shellRects arrives before its matching HWND resize. Keep the announced
+  // region separate from the last committed shadow geometry so SetWindowRgn's
+  // synchronous WM_WINDOWPOSCHANGED cannot raster the new cards against the old
+  // (often much larger) window bounds.
+  bool shell_geometry_pending_ = false;
+  int64_t pending_shell_geometry_epoch_ = 0;
+  std::vector<std::array<double, 4>> pending_shell_rects_css_;
 
   wil::com_ptr<ICoreWebView2Environment> env_;
   wil::com_ptr<ICoreWebView2Controller> controller_;
@@ -463,6 +489,10 @@ class GlobalLookupWindow {
   // composition 模式下 WebView2 请求的光标（add_CursorChanged 回调更新）；
   // WM_SETCURSOR 据此 SetCursor，让 hover 链接/文本时光标形状正确。
   HCURSOR composition_cursor_ = nullptr;
+
+  // 2026-08-23 弹窗观感 — 伴随投影窗（每实例一个：瞬态查词窗按 shellRects
+  // 逐卡画影，面板整窗一影）。生命周期随本实例；显隐由 SyncShadow 驱动。
+  LookupShadowWindow shadow_;
 
   MediaResolver media_resolver_;
   MessageCallback message_cb_;

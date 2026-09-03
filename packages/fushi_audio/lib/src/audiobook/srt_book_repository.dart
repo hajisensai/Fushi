@@ -7,9 +7,27 @@ import 'package:fushi_core/fushi_core.dart';
 import 'audiobook_model.dart';
 import 'audiobook_path_relocator.dart';
 import 'audiobook_repository.dart';
+import 'audiobook_local_files.dart';
 import 'srt_book_model.dart';
 import 'audiobook_storage.dart';
 import '../parsers/srt_parser.dart';
+
+/// [SrtBookRepository.delete] 的结果：删掉几行 + 用户原件的逐条删除结果。
+///
+/// 行数与原件结果分开：前者是「这条记录还在不在」（BUG-439 的计数判据），后者是
+/// 「磁盘上少了什么、哪些没删掉」。把后者揉进 int 就等于把删除失败丢掉。
+class SrtBookDeleteResult {
+  const SrtBookDeleteResult({
+    required this.deleted,
+    this.localFiles = const LocalFileDeleteReport(),
+  });
+
+  /// 真的从 `srt_books` 删掉的行数（0 = uid 没匹配到）。
+  final int deleted;
+
+  /// 「同时删除本地文件」的逐条结果；没勾选时恒为空。
+  final LocalFileDeleteReport localFiles;
+}
 
 class SrtBookRepository {
   const SrtBookRepository(this._db);
@@ -165,9 +183,9 @@ class SrtBookRepository {
   ///
   /// 行为与阅读器内 `_openSrtBookAudioPicker` 逐字节等价：
   /// - persist 目录 key 统一为 [uid]（`AudiobookStorage.ensurePersistDir(uid)`）；
-  /// - 写入前 `cleanAudioFiles` 清掉旧音频文件（整组替换语义）；
-  /// - 逐个 `persistFileWithProgress` 复制进持久目录；
-  /// - 落库时 `audioPaths = 复制后的路径`、`audioRoot = null`。
+  /// - 走 `AudiobookStorage.syncAudioFiles` 把持久目录同步成恰好这一组（整组替换
+  ///   语义；已在目录里的源文件零拷贝保留，不会被自己的清理删掉，BUG-1678）；
+  /// - 落库时 `audioPaths = 落地后的路径`、`audioRoot = null`。
   ///
   /// [uid] 必须命中既有 SRT 书，否则抛 [StateError]（调用方应已加载过该书）。
   /// [pickedPaths] 为空时直接返回（无副作用），调用方负责空选过滤/提示。
@@ -186,22 +204,30 @@ class SrtBookRepository {
     }
 
     final Directory persistDir = await AudiobookStorage.ensurePersistDir(uid);
-    await AudiobookStorage.cleanAudioFiles(persistDir);
-
-    final List<String> persisted = <String>[];
-    for (final String src in pickedPaths) {
-      persisted.add(
-        await AudiobookStorage.persistFileWithProgress(
-          File(src),
-          persistDir,
-          onProgress: onProgress,
-        ),
-      );
-    }
+    final List<String> previousAudio =
+        List<String>.from(book.audioPaths ?? const <String>[]);
+    final String? previousRoot = book.audioRoot;
+    // 持久目录音频的唯一写入原语（同步成恰好这一组，幂等、不会先删掉自己的源）。
+    final List<String> persisted = await AudiobookStorage.syncAudioFiles(
+      persistDir,
+      pickedPaths,
+      onProgress: onProgress,
+    );
 
     book.audioPaths = persisted;
     book.audioRoot = null;
     await save(book);
+
+    // BUG-1679：换了音频就作废与旧时间轴绑定的播放进度。SRT 书的进度 pref key 是
+    // `audiobook_pos_<uid>`（与 AudiobookSessionLauncher._readPrefs 的 SRT 分支
+    // 同源）。不归零则恢复 seek 落在新音频的随机处甚至 EOF——「音频不响」/
+    // 「乱跳页」。音频集合没变（重复导入同一组）时不动进度。
+    final bool audioChanged = previousRoot != null ||
+        !AudiobookStorage.sameAudioPathList(previousAudio, persisted);
+    if (audioChanged) {
+      await AudiobookRepository(_db)
+          .updatePositionMs(bookKey: uid, positionMs: 0);
+    }
 
     // TODO-1032 PR2：愈合旧数据。PR1 把 SRT 书音频归一到 SrtBooks.audioPaths，但
     // 旧版书架「导入音频」曾对同一本 EPUB 配对 SRT 书落过一条 **Audiobooks** 脏行
@@ -281,9 +307,58 @@ class SrtBookRepository {
         SyncTombstoneKind.srtbook.dbValue, book.uid);
   }
 
-  /// Deletes the SRT book + its on-disk persist dir. Returns the number of
-  /// srt_books rows actually removed (0 when [uid] matched nothing) so callers
-  /// can count only real deletions (BUG-439).
+  /// 局部更新一条 SRT 书：**只写显式传入的字段**，其余列原样不动，行不存在时
+  /// 返回 false（调用方据此走整行创建）。
+  ///
+  /// BUG-1678：[save] 是整行覆盖（companion 除 id 外每列都是 `Value(...)`）。
+  /// 「只改其中几列」的调用方凭空造一个 [SrtBook] 再 save，本次没设的列会被静默
+  /// 清空。手抄一遍「把旧值搬过来」只是纪律——新增列照样漏抄；这里让「没传 =
+  /// 不改」由类型表达，漏抄这件事从结构上不成立。
+  ///
+  /// 参数一律「null = 不改」。真要把某列清空是另一种意图，需要专门的入口，
+  /// 不能与「没提供」混成一个值。
+  Future<bool> patchByUid(
+    String uid, {
+    String? title,
+    String? srtPath,
+    String? bookKey,
+    int? importedAt,
+    String? author,
+    String? coverPath,
+    List<String>? audioPaths,
+    String? audioRoot,
+  }) async {
+    final int affected = await _db.patchSrtBook(
+      uid,
+      SrtBooksCompanion(
+        title: title == null ? const Value.absent() : Value(title),
+        srtPath: srtPath == null ? const Value.absent() : Value(srtPath),
+        bookKey: bookKey == null ? const Value.absent() : Value(bookKey),
+        importedAt:
+            importedAt == null ? const Value.absent() : Value(importedAt),
+        author: author == null ? const Value.absent() : Value(author),
+        coverPath: coverPath == null ? const Value.absent() : Value(coverPath),
+        audioPathsJson: audioPaths == null
+            ? const Value.absent()
+            : Value(jsonEncode(audioPaths)),
+        // 换新音频一律文件列表模式：legacy 目录模式的 audioRoot 必须同时清掉，
+        // 否则读取端在 audioPaths 断链时会回退去扫早已作废的旧目录。
+        audioRoot: audioPaths != null
+            ? const Value<String?>(null)
+            : (audioRoot == null
+                ? const Value.absent()
+                : Value<String?>(audioRoot)),
+      ),
+    );
+    if (affected == 0) return false;
+    await _db.clearSyncDeletionTombstone(
+        SyncTombstoneKind.srtbook.dbValue, uid);
+    return true;
+  }
+
+  /// Deletes the SRT book + its on-disk persist dir. [SrtBookDeleteResult
+  /// .deleted] is the number of srt_books rows actually removed (0 when [uid]
+  /// matched nothing) so callers can count only real deletions (BUG-439).
   ///
   /// [propagateDeletion]（默认 false）：true 时记一条 `srtbook` sync 删除墓碑，供同步
   /// 发布到远端标记、其他设备逐条确认后也删（对应删除弹窗「从所有设备删除」）。false
@@ -295,15 +370,24 @@ class SrtBookRepository {
   /// 跨设备身份就是 uid。srt-backed 行（`bookKey` 非空）的身份是 bookKey，它的墓碑由
   /// `ReaderFushiSource.deleteBook` 写成 `book` 种类——两者互斥，同一资产绝不会产生
   /// 两条墓碑、也就不会在对端弹出两条重复的删除确认。
-  Future<int> delete(String uid, {bool propagateDeletion = false}) async {
-    // 身份判据要在删行前读（删完就查不到 bookKey 了）。
-    final bool standalone = propagateDeletion &&
-        ((await _db.getSrtBookByUid(uid))?.bookKey.isEmpty ?? false);
+  /// [deleteLocalFiles]（默认 false）：true 时连显式登记的原始音频文件一起删
+  /// （[deleteAudiobookLocalFiles]，对应删除弹窗「同时删除本地文件」）。删除结果在
+  /// [SrtBookDeleteResult.localFiles] 里逐条回传，调用方负责记日志并告诉用户。
+  Future<SrtBookDeleteResult> delete(
+    String uid, {
+    bool propagateDeletion = false,
+    bool deleteLocalFiles = false,
+  }) async {
+    // 身份判据与原件位置都要在删行前读（删完就查不到了）。
+    final SrtBookRow? before = await _db.getSrtBookByUid(uid);
+    final bool standalone =
+        propagateDeletion && (before?.bookKey.isEmpty ?? false);
     final int deleted = await _db.deleteSrtBookByUid(uid);
-    // 墓碑写在磁盘清理**之前**：DB 行是唯一真相源，此刻这本书对用户已经消失；持久化
-    // 目录删除是删完再打扫的尾活，Windows 上可能因句柄占用抛 errno 32/145。若把墓碑
-    // 排在它后面，一次尾活失败就会静默吞掉用户「从所有设备删除」的意图（同 TODO-1359
-    // 那类「尾活失败翻转结果」的坑）。
+    // 墓碑写在**任何**磁盘操作之前：DB 行是唯一真相源，此刻这本书对用户已经消失；
+    // 持久化目录删除与原件删除都是删完再打扫的尾活，Windows 上可能因句柄占用抛
+    // errno 32/145，且原件删除的解析阶段本身也会抛（权限拒绝 / 网络盘掉线）。若把
+    // 墓碑排在它们后面，一次尾活失败就会静默吞掉用户「从所有设备删除」的意图
+    // （同 TODO-1359 那类「尾活失败翻转结果」的坑）。
     if (deleted > 0 && standalone) {
       try {
         await _db.writeSyncDeletionTombstone(SyncTombstoneKind.srtbook.dbValue,
@@ -313,7 +397,28 @@ class SrtBookRepository {
       }
     }
     await AudiobookStorage.deletePersistDir(uid);
-    return deleted;
+    if (!deleteLocalFiles || before == null) {
+      return SrtBookDeleteResult(deleted: deleted);
+    }
+    return SrtBookDeleteResult(
+      deleted: deleted,
+      localFiles:
+          await deleteAudiobookLocalFiles(_decodeAudioPaths(before.audioPathsJson)),
+    );
+  }
+
+  /// 删行前快照原件列表用；坏 JSON 当作**没登记**。
+  ///
+  /// 这个返回值绝不能触发任何「换个办法猜文件在哪」的回落：一次 JSON 解码失败若
+  /// 能把删除范围从「这几个登记过的文件」升级成别的什么，爆炸半径就由一个解析
+  /// 意外决定。没登记 = 没有可删清单，见 `audiobook_local_files.dart`。
+  static List<String>? _decodeAudioPaths(String? raw) {
+    if (raw == null) return null;
+    try {
+      return (jsonDecode(raw) as List<dynamic>).cast<String>();
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<List<AudioCue>> cuesFor(String uid) async {
@@ -347,6 +452,7 @@ class SrtBookRepository {
     book.coverPath = r.coverPath;
     book.importedAt = r.importedAt;
     book.bookKey = r.bookKey;
+    book.language = r.language;
     return book;
   }
 }

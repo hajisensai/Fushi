@@ -487,13 +487,23 @@ void main() {
       expect(wroteDataRoot, equals(newDataRoot));
     });
 
-    test('rename 被沙箱/权限层拒绝时退回 copy/delete（macOS 用户选择目录）', () {
+    test('rename 被沙箱/权限/File Provider 拒绝时退回 copy/delete', () {
       // POSIX EPERM / EACCES：macOS sandbox 下把容器目录 rename 到用户选择目录时
       // 可能被拒绝，但逐文件 copy/delete 仍可用，不能直接宣告迁移失败。
       expect(
           DataRootMigrator.shouldCopyAfterRenameFailureForTesting(1), isTrue);
       expect(
           DataRootMigrator.shouldCopyAfterRenameFailureForTesting(13), isTrue);
+      // macOS iCloud File Provider：从 Documents 域 rename 到本地目录可返回
+      // ETIMEDOUT=60；逐文件复制仍是安全回退。其它平台的 errno 60 含义不同。
+      expect(
+          DataRootMigrator.shouldCopyAfterRenameFailureForTesting(
+            60,
+            isMacOS: true,
+          ),
+          isTrue);
+      expect(
+          DataRootMigrator.shouldCopyAfterRenameFailureForTesting(60), isFalse);
       // 既有跨盘 fallback 仍保留。
       expect(
           DataRootMigrator.shouldCopyAfterRenameFailureForTesting(18), isTrue);
@@ -502,6 +512,46 @@ void main() {
       // 普通不存在/路径错误不应伪装成可复制 fallback。
       expect(
           DataRootMigrator.shouldCopyAfterRenameFailureForTesting(2), isFalse);
+    });
+
+    test('生产入口 _shouldCopyAfterRenameFailure 把真实 Platform.isMacOS 喂给 errno 判据',
+        () {
+      // 上面那条只打纯函数 _shouldCopyAfterRenameErrorCode；把它接进生产入口
+      // _shouldCopyAfterRenameFailure 的那根线（`isMacOS: Platform.isMacOS`）在行为层
+      // 无法在非 macOS 宿主上被观测：Windows/Linux 上 Platform.isMacOS 本就是
+      // false，把实参写死成字面量 false 不会改变任何可观测行为（变异实测：
+      // 本文件 33 例全绿），而 CI 单测门跑在 Linux 上，宏层平台分支也救不了。
+      // 因此这根线只能用源码守卫钉住。
+      final String src = File(
+        p.join(
+          Directory.current.path,
+          'lib',
+          'src',
+          'storage',
+          'data_root_migrator.dart',
+        ),
+      ).readAsStringSync();
+      final String body = methodBody(
+        src,
+        'static bool _shouldCopyAfterRenameFailure(FileSystemException e)',
+      );
+      // namedArgumentValues 先掩掉注释与字符串：注释里写着同样的实参不算实现。
+      // 用 equals(单元素列表) 而不是 contains：既杀「改成 false / 其它常量」，
+      // 也杀「把 isMacOS 降成可选参数再把实参整个删掉」（后者返回空列表）。
+      expect(
+        namedArgumentValues(body, 'isMacOS'),
+        equals(<String>['Platform.isMacOS']),
+        reason: '_shouldCopyAfterRenameFailure 必须把实际平台传给 '
+            '_shouldCopyAfterRenameErrorCode；写死成 false 会让 macOS 上的 '
+            'ETIMEDOUT=60 重新变成“直接回滚”，而上面那条纯函数用例一条都不会红',
+      );
+      // 判据自校验：先确认 namedArgumentValues 真能区分「实现」和「注释」。
+      expect(namedArgumentValues('f(a, isMacOS: Platform.isMacOS);', 'isMacOS'),
+          equals(<String>['Platform.isMacOS']));
+      expect(namedArgumentValues('f(a, isMacOS: false);', 'isMacOS'),
+          equals(<String>['false']));
+      expect(namedArgumentValues('// isMacOS: Platform.isMacOS', 'isMacOS'),
+          isEmpty);
     });
 
     test('目标 dataRoot 已存在数据 → 抛错，旧根不动', () async {
@@ -1005,6 +1055,53 @@ void main() {
       } finally {
         await db.close();
       }
+    });
+
+    test('BUG-1869：跨盘 copy 进度分子永不越过分母，收尾时 copied == total', () async {
+      // 用户截图「正在复制文件：623 / 620」：support 根走**选择性**搬移（`_MovePlan.isSelective`：
+      // 顶层有 prefs 要留原地 / 目标 support 非空需合并 / documents 白名单），其顶层单文件
+      // （fushi.db / -wal / -shm、local_audio_*.db）跨盘复制时只 fileCopied() 加分子、从没进过
+      // 分母。seedDb 在 support 顶层放了 fushi.db（+ WAL 侧车）和 local_audio_1.db；再往旧
+      // support 顶层放一个 shared_preferences.json（默认根迁移的真实形态）逼出选择性路径——
+      // 没有它排除集为空，plan 走整树 copy，根本到不了出 bug 的分支。
+      await seedDb();
+      final String newDataRoot = p.join(tmp.path, 'progress_bound');
+      // 分母应等于搬移前旧根里**会被搬**的真实文件数：prefs 留原地，不计。
+      int countFiles(Directory d) => d
+          .listSync(recursive: true, followLinks: false)
+          .whereType<File>()
+          .length;
+      final int sourceFiles = countFiles(oldDocs) + countFiles(oldSupport);
+      File(p.join(oldSupport.path, 'shared_preferences.json'))
+          .writeAsStringSync('{}');
+      final List<({int copied, int total})> reports =
+          <({int copied, int total})>[];
+      DataRootMigrator.debugForceCopyFallback = true;
+      try {
+        await const DataRootMigrator().migrate(DataRootMigrationRequest(
+          oldDocumentsRoot: oldDocs,
+          oldSupportRoot: oldSupport,
+          target: DataRootMigrationTarget.customRoot(newDataRoot),
+          documentsTopLevelIncludeNames: null,
+          closeResources: () async {},
+          commitLocation: (DataRootMigrationTarget t) async {},
+          onProgress: (int copied, int total) =>
+              reports.add((copied: copied, total: total)),
+        ));
+      } finally {
+        DataRootMigrator.debugForceCopyFallback = false;
+      }
+      expect(reports, isNotEmpty);
+      for (final ({int copied, int total}) r in reports) {
+        expect(r.copied, lessThanOrEqualTo(r.total),
+            reason: '进度 ${r.copied} / ${r.total} 分子越过分母');
+      }
+      final ({int copied, int total}) last = reports.last;
+      expect(last.total, greaterThan(0));
+      expect(last.copied, equals(last.total));
+      // 分母就是旧根真实文件数：support 顶层的 fushi.db（含侧车）与 local_audio_1.db
+      // 与 documents 子树一样被计入，不多不少。
+      expect(last.total, equals(sourceFiles));
     });
 
     test('跨盘 copy 成功路径：提交成功后才删源，新根齐全 + DB rebase + 旧根清空', () async {

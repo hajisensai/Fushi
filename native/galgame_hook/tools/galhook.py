@@ -294,7 +294,12 @@ class {class_name}Adapter final : public fushi_voice_hook::EngineAdapter {{
         encoding="utf-8",
     )
     native_test.write_text(
-        f'''#include "../hook/adapters/{engine_id}_profile.h"
+        f'''// CI builds with --config Release, where MSVC defines NDEBUG and compiles
+// bare assert() out entirely. Undefine it before any include or this test is
+// green no matter what it checks. Guard: tests/assert_liveness_guard_test.py
+#undef NDEBUG
+
+#include "../hook/adapters/{engine_id}_profile.h"
 int main() {{ return fushi_voice_hook::Matches{class_name}Profile(nullptr) ? 1 : 0; }}
 ''',
         encoding="utf-8",
@@ -314,6 +319,9 @@ int main() {{ return fushi_voice_hook::Matches{class_name}Profile(nullptr) ? 1 :
     _append_unique(generated / "adapter_module.inc", f"        {engine_id}_.onModuleLoaded(entry.szModule);")
     _append_unique(generated / "adapter_shutdown.inc", f"    {engine_id}_.shutdown();")
     _append_unique(generated / "adapter_fields.inc", f"  {class_name}Adapter {engine_id}_;")
+    # 新 adapter 自动进入查词准入汇总面。漏登记的后果不是编译错误而是**静默错答**：
+    # 该引擎会一直上报 kLookupAdmissionUnknown，host 于是永远说"还在判定中"。
+    _append_unique(generated / "adapter_admission.inc", f"    consider({engine_id}_);")
     _append_unique(
         root / "CMakeLists.txt",
         f'''add_executable(fushi_{engine_id}_adapter_test "tests/{engine_id}_adapter_test.cpp")
@@ -473,6 +481,8 @@ def command_explain_diag(args: argparse.Namespace) -> int:
         {
             "hookdiag": args.hookdiag,
             "hookio": args.hookio,
+            "xaudiodiag": args.xaudiodiag,
+            "xaudiodiag2": args.xaudiodiag2,
             "lunadiag": args.lunadiag,
         },
     )
@@ -582,6 +592,8 @@ def build_parser() -> argparse.ArgumentParser:
     explain = sub.add_parser("explain-diag")
     explain.add_argument("--hookdiag", type=_uint32, default=0)
     explain.add_argument("--hookio", type=_uint32, default=0)
+    explain.add_argument("--xaudiodiag", type=_uint32, default=0)
+    explain.add_argument("--xaudiodiag2", type=_uint32, default=0)
     explain.add_argument("--lunadiag", type=_uint32, default=0)
     explain.add_argument(
         "--header", default=str(ROOT / "include" / "voice_hook_ipc.h")

@@ -10,10 +10,12 @@
 
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
@@ -23,6 +25,7 @@ import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/popup_theme_css.dart';
 import 'package:fushi/src/reader/dictionary_font_css.dart';
+import 'package:fushi/src/reader/dictionary_language_css.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:path/path.dart' as p;
@@ -81,7 +84,11 @@ String _themeVariablesJs({
   final ColorScheme scheme = theme.colorScheme;
   final Map<String, String> vars = buildPopupThemeCssVars(
     scheme: scheme,
-    backgroundColor: appModel.overrideDictionaryColor ?? scheme.surface,
+    // 卡面底色跟随主题 scheme.surface，override 优先级不变。
+    backgroundColor: popupCardSurface(
+      scheme: scheme,
+      override: appModel.overrideDictionaryColor,
+    ),
     surfaceContainerHigh: scheme.surfaceContainerHigh,
     dictionaryColumns: appModel.popupDictionaryColumns,
   );
@@ -91,8 +98,8 @@ String _themeVariablesJs({
   final String classLine = globalLookup
       ? "document.documentElement.classList.add('global-lookup');\n"
       : (mobileExternal
-          ? "document.documentElement.classList.add('mobile-external');\n"
-          : '');
+            ? "document.documentElement.classList.add('mobile-external');\n"
+            : '');
   // 墨水屏模式：给 <html> 挂 eink class（popup.css 末尾的 html.eink 覆盖块吃它，
   // 纯黑白/方角/实线边框/关过渡）。用 toggle 而非 add——in-app 热槽 WebView 跨渲染
   // 持久，开关关掉后重注入必须能把 class 摘掉。标志从传入的 ThemeData 扩展读
@@ -124,8 +131,16 @@ String _themeVariablesJs({
 /// `data:` URL `@font-face` for imported files). Returns an empty string when no
 /// dictionary font is configured. Shared so the app-outside window applies the
 /// SAME font the in-app popup does.
-String dictionaryFontStyleJs(AppModel appModel) =>
-    _dictionaryFontStyleJsMemo(appModel).js;
+/// [fontUrlBuilder] 语义同 [buildPopupStaticSettingsJs]：非空则字体以 URL 引用产出，
+/// 为空则内联 `data:` URL。
+///
+/// **必须转发**而不是写死内联：这是个公开函数，写死的话任何将来的调用方都会静默拿到
+/// 几十 MB 的内联版本，而它自己完全看不出为什么慢。
+String dictionaryFontStyleJs(
+  AppModel appModel, {
+  String Function(String safePath)? fontUrlBuilder,
+}) =>
+    _dictionaryFontStyleJsMemo(appModel, fontUrlBuilder: fontUrlBuilder).js;
 
 /// BUG-717 ③：[dictionaryFontStyleJs] 最终产物的进程内 memo。
 ///
@@ -137,50 +152,138 @@ String dictionaryFontStyleJs(AppModel appModel) =>
 /// 停启用 / 文件原地覆盖 / 导入换路径 / 目录变化都会换键重建；命中时返回同一
 /// 实例，零拷贝。瞬时读盘失败（[DictionaryFontCss.inlineFailureCount] 变化）的
 /// 降级产物不进 memo，下次查词自然重试。
-String? _fontStyleJsMemoKey;
-String _fontStyleJsMemoValue = '';
+/// 一个字体投递模式的 memo 槽。
+///
+/// **必须按模式分槽**，不能共用一个：两种模式的产物完全不同（一个内嵌 base64
+/// 字节、一个只有 URL），而两个消费者（in-app 弹窗走 URL、app 外裸 WebView2 仍走
+/// 内联）在同一个进程里交替调用。共用单槽会让每次交替都 miss 并重建，而内联模式
+/// 的一次重建正是几十 MB 的 base64 编码——那比不缓存还糟。
+class _FontStyleMemoSlot {
+  String? key;
+  String value = '';
+  Object token = Object();
+}
 
-({String cacheKey, String js}) _dictionaryFontStyleJsMemo(AppModel appModel) {
+final _FontStyleMemoSlot _fontStyleMemoInline = _FontStyleMemoSlot();
+final _FontStyleMemoSlot _fontStyleMemoUrl = _FontStyleMemoSlot();
+final Object _noSettingsFontStyleToken = Object();
+
+/// 测试用：清空两个字体 memo 槽，避免用例之间互相污染。
+@visibleForTesting
+void debugResetDictionaryFontStyleMemo() {
+  _fontStyleMemoInline
+    ..key = null
+    ..value = ''
+    ..token = Object();
+  _fontStyleMemoUrl
+    ..key = null
+    ..value = ''
+    ..token = Object();
+}
+
+({String cacheKey, Object cacheToken, String js}) _dictionaryFontStyleJsMemo(
+  AppModel appModel, {
+  String Function(String safePath)? fontUrlBuilder,
+}) {
+  final _FontStyleMemoSlot slot =
+      fontUrlBuilder == null ? _fontStyleMemoInline : _fontStyleMemoUrl;
   // BUG: `ReaderFushiSource.readerSettings` is only populated while a book /
   // reader is open. In the app-external clipboard-lookup flow (VN / game, no
   // book), it is null, so the user's configured dictionary font was never
   // injected and popup.css's hard-coded "Hiragino Sans" fell back to the system
-  // font. The dictionary font list is persisted in the DB (`dict_fonts`), so
-  // read it through a DB-backed ReaderSettings when no reader is live — the
+  // font. The dictionary font list is persisted in the DB (`dict_fonts`), so it
+  // is read through a DB-backed ReaderSettings when no reader is live — the
   // overlay then applies the SAME font whether or not a book is open.
-  // Prefer the live reader's settings; otherwise a DB-backed ReaderSettings so
-  // the persisted dictionary font list still applies with no book open. Only
-  // touch `appModel.database` when it is actually open — early / test seams leave
-  // it uninitialised and reading it would throw LateInitializationError. When
-  // unavailable, fall back to no injected font (pre-fix behaviour); in the real
-  // app-external lookup flow the DB is always open by then, so the font applies.
-  final ReaderSettings? settings = ReaderFushiSource.readerSettings ??
-      (appModel.isDatabaseReady ? ReaderSettings(appModel.database) : null);
-  if (settings == null) return const (cacheKey: 'no-settings', js: '');
+  //
+  // BUG-1868：这份「当前生效的 ReaderSettings」判据**只能有一份**。字体 URL 拦截器
+  // 的白名单（configuredDictionaryFontPaths）必须解析出与这里同一份设置，两边分叉
+  // 就是「CSS 里引了某个字体、拦截器却回 403」的哑失败。所以取值统一走
+  // [ReaderFushiSource.resolveEffectiveReaderSettings]，不要在这里重新拼一次。
+  // 拿不到（DB / prefs 仓库未就绪）时退回不注入字体，与修复前一致。
+  final ReaderSettings? settings =
+      ReaderFushiSource.resolveEffectiveReaderSettings(appModel);
+  if (settings == null) {
+    return (
+      cacheKey: 'no-settings',
+      cacheToken: _noSettingsFontStyleToken,
+      js: '',
+    );
+  }
   final List<Map<String, dynamic>> fonts = settings.dictionaryFonts;
   final List<String> allowedDirectories = <String>[
     p.join(appModel.appDirectory.path, 'custom_fonts'),
   ];
-  final String cacheKey = DictionaryFontCss.fontListFingerprint(
-    fonts,
-    allowedDirectories: allowedDirectories,
-  );
-  if (cacheKey == _fontStyleJsMemoKey) {
-    return (cacheKey: cacheKey, js: _fontStyleJsMemoValue);
+  // 全局默认内容语言（设置 · 外观 · 排版）。前两档真值都缺时的兜底语言。
+  // 与词典语言一样必须进 memo 键。
+  final String defaultContentLanguage = appModel.isDatabaseReady
+      ? appModel.prefsRepo.defaultContentLanguage
+      : '';
+  // 词头语言 = 查词来源的语言（正在读的书/视频/游戏）> 全局默认。它与释义区的
+  // 词典语言是两条独立的轴，不能混用同一个值。
+  final String lookupLanguage =
+      resolveContentLanguage(
+        explicit: appModel.currentLookupLanguage,
+        globalDefault: defaultContentLanguage,
+      ) ??
+      '';
+
+  // 内容语言字体链：词典名 -> 释义语言。memo 键必须带上它，否则用户在词典设置里
+  // 改了语言、字体列表没变 -> 命中旧 memo -> 改了不生效。
+  // `dictRepo` 是 late 字段，且 `_databaseOpened` 先于它置位，所以这里不能只看
+  // 上面那个 settings 判空——初始化早期 / 测试 seam 会命中「DB 就绪但词典仓库还
+  // 没建」的窗口，直接读会抛 LateInitializationError（与上面注释说的同一个坑）。
+  // 未就绪时退化成空列表：只出兜底链，不做 per-dictionary 分流，不崩。
+  final List<DictionaryLanguageEntry> dictionaryLanguages =
+      appModel.isDictionaryRepoReady
+      ? <DictionaryLanguageEntry>[
+          for (final Dictionary d in appModel.dictionaries)
+            DictionaryLanguageEntry(
+              name: d.name,
+              glossaryLanguage: d.effectiveTargetLanguage,
+            ),
+        ]
+      : const <DictionaryLanguageEntry>[];
+  final String languageFingerprint = dictionaryLanguages
+      .map((DictionaryLanguageEntry e) => '${e.name}=${e.glossaryLanguage}')
+      .join('|');
+  final String cacheKey =
+      '${DictionaryFontCss.fontListFingerprint(fonts, allowedDirectories: allowedDirectories)}|$languageFingerprint|$defaultContentLanguage|$lookupLanguage|${defaultTargetPlatform.name}';
+  if (cacheKey == slot.key) {
+    return (cacheKey: cacheKey, cacheToken: slot.token, js: slot.value);
   }
   final int inlineFailuresBefore = DictionaryFontCss.inlineFailureCount;
-  final ({String fontFamily, String fontFaces}) css = DictionaryFontCss.build(
-    fonts,
-    allowedDirectories: allowedDirectories,
-  );
+  final ({String fontFamily, String fontFaces, List<String> families}) css =
+      DictionaryFontCss.build(
+        fonts,
+        allowedDirectories: allowedDirectories,
+        fontUrlBuilder: fontUrlBuilder,
+      );
   String js = '';
-  if (css.fontFamily.isNotEmpty) {
-    final String styleCss = '${css.fontFaces}\n'
-        'html, body { font-family: ${css.fontFamily}, '
-        '"Hiragino Sans", "Hiragino Kaku Gothic ProN", sans-serif !important; }';
+  // 语言分流 CSS 现在**总是**产出（哪怕用户没配任何词典字体）——popup.css 的
+  // 内建链只写了 macOS 的 Hiragino，Windows/Android/Linux 上一个存在的 CJK 家族
+  // 都没有，直接掉进 sans-serif，于是由系统 locale 决定 CJK 字形（中文系统上日文
+  // 词条渲染成中文字形）。这与「用户是否配了自定义字体」无关。
+  final String languageCss = dictionaryLanguageFontCss(
+    customFamilies: css.families,
+    dictionaries: dictionaryLanguages,
+    platform: defaultTargetPlatform,
+    defaultLanguage: defaultContentLanguage,
+  );
+  if (languageCss.isNotEmpty || css.fontFaces.isNotEmpty) {
+    final String styleCss = '${css.fontFaces}\n$languageCss';
     final String styleJson = jsonEncode(styleCss);
-    js = '''
+    // popup.js 的 dictionaryLanguageOf 读这张表，给 structured content 的逐节点
+    // lang 标注一个权威来源——没有它，纯汉字的中文释义会被字符检测判成 'ja'
+    // （isStringPartiallyJapanese 把汉字算日文），再被 :lang(ja) 的日文链接管。
+    final String languageMapJson = jsonEncode(<String, String>{
+      for (final DictionaryLanguageEntry e in dictionaryLanguages)
+        if ((e.glossaryLanguage ?? '').isNotEmpty) e.name: e.glossaryLanguage!,
+    });
+    js =
+        '''
       (function(){
+        window.__fushiDictionaryLanguages = $languageMapJson;
+        window.__fushiLookupLanguage = ${jsonEncode(lookupLanguage)};
         var el = document.getElementById('fushi-dict-font');
         if (!el) {
           el = document.createElement('style');
@@ -191,10 +294,16 @@ String _fontStyleJsMemoValue = '';
       })();''';
   }
   if (DictionaryFontCss.inlineFailureCount == inlineFailuresBefore) {
-    _fontStyleJsMemoKey = cacheKey;
-    _fontStyleJsMemoValue = js;
+    slot
+      ..key = cacheKey
+      ..value = js
+      ..token = Object();
+    return (cacheKey: cacheKey, cacheToken: slot.token, js: js);
   }
-  return (cacheKey: cacheKey, js: js);
+  // Do not let the outer static-settings memo pin a transient degraded result.
+  // A unique token forces the next lookup to retry even though the stable font
+  // fingerprint is unchanged.
+  return (cacheKey: cacheKey, cacheToken: Object(), js: js);
 }
 
 /// TODO-867 P3c F1 / TODO-895 D6: the app-outside icon-font override. Forces the
@@ -309,10 +418,17 @@ class PopupStaticSettingsJs {
     required this.head,
     required this.tail,
     required this.revision,
+    required this.themeVarsJs,
   });
 
   final String head;
   final String tail;
+
+  /// [head] 里的主题变量段（`data-theme` / eink class / 全部 CSS 变量含 `--dict-columns`），
+  /// 单独暴露给 in-app 弹窗做**主题热切换**时只重注这一段（不重发字体/设置）。此前
+  /// dictionary_popup_webview 自己维护了一份删减版拷贝（缺 eink toggle 与
+  /// `--fushi-card-bg-rgb`），主题切换时漏应用；现在只有这一份。
+  final String themeVarsJs;
 
   /// 单调递增的产物版本：同 revision ⇒ 同实例 ⇒ 同内容。只由
   /// [buildPopupStaticSettingsJs] 分配。
@@ -352,7 +468,8 @@ String buildPopupSettingsJs({
 /// 每次查词都会变化的动态负载：词条与汉字卡结果。与静态段分开注入后，热路径
 /// 每次只发这一段 + renderPopup 调用。
 String buildPopupEntriesJs(DictionarySearchResult result) {
-  final String entriesJson = result.popupJson ??
+  final String entriesJson =
+      result.popupJson ??
       DictionaryPopupWebViewState.buildLookupEntriesJson(result);
   final String kanjiResultsJson = jsonEncode(
     result.kanjiResults.map((FushiKanjiResult k) => k.toMap()).toList(),
@@ -382,8 +499,9 @@ String popupEntryWheelBindingsJson(
   // 注册表还没装载时（弹窗进程的精简初始化早于 loadShortcutRegistry，或测试里的
   // 裸 registry）每个动作都读到空绑定 —— 而空表在 popup.js 那边的语义是「用户关掉
   // 了这个方向」，直接下发会让 Alt+滚轮静默失效。这种情况下回落到平台默认表。
-  final Map<ShortcutAction, ShortcutBindingSet>? fallback =
-      registry.isLoaded ? null : ShortcutDefaults.forPlatform(platform);
+  final Map<ShortcutAction, ShortcutBindingSet>? fallback = registry.isLoaded
+      ? null
+      : ShortcutDefaults.forPlatform(platform);
   List<WheelBinding> bindingsOf(ShortcutAction action) => fallback == null
       ? registry.bindingsFor(action).wheelBindings
       : (fallback[action]?.wheelBindings ?? const <WheelBinding>[]);
@@ -392,10 +510,11 @@ String popupEntryWheelBindingsJson(
         for (final WheelBinding b in bindingsOf(action))
           <String, Object>{
             'dir': b.direction == WheelDirection.up ? 'up' : 'down',
-            'mods': b.modifiers
-                .map((ModifierKey m) => m.label.toLowerCase())
-                .toList(growable: false)
-              ..sort(),
+            'mods':
+                b.modifiers
+                    .map((ModifierKey m) => m.label.toLowerCase())
+                    .toList(growable: false)
+                  ..sort(),
           },
       ];
   return jsonEncode(<String, Object>{
@@ -423,7 +542,7 @@ String _webKeyName(LogicalKeyboardKey key) {
 /// {"mine":[{"key":"enter","mods":["ctrl"]}],"next":[],"prev":[]}
 /// ```
 ///
-/// 覆盖本 scope **全部三个动作**（制卡 + 上/下一个词条），而不只是制卡——因为
+/// 覆盖本 scope **全部动作**（制卡 + 上/下一个词条 + 播放发音），而不只是制卡——因为
 /// [ShortcutScope.channels] 是按 scope 而非按 action 开通道的：只要这个 scope 开了键盘，
 /// 设置页就会给它名下每个动作都渲染出「添加键盘快捷键」入口。若只有制卡真能用，词条导航
 /// 那两个入口就成了「能配、按了没反应」的死绑定（`shortcut_channel_wiring_guard_test`
@@ -437,8 +556,9 @@ String popupKeyBindingsJson(
   FushiShortcutRegistry registry,
   TargetPlatform platform,
 ) {
-  final Map<ShortcutAction, ShortcutBindingSet>? fallback =
-      registry.isLoaded ? null : ShortcutDefaults.forPlatform(platform);
+  final Map<ShortcutAction, ShortcutBindingSet>? fallback = registry.isLoaded
+      ? null
+      : ShortcutDefaults.forPlatform(platform);
   List<InputBinding> bindingsOf(ShortcutAction action) => fallback == null
       ? registry.bindingsFor(action).keyboardBindings
       : (fallback[action]?.keyboardBindings ?? const <InputBinding>[]);
@@ -447,16 +567,21 @@ String popupKeyBindingsJson(
         for (final InputBinding b in bindingsOf(action))
           <String, Object>{
             'key': _webKeyName(b.key),
-            'mods': b.modifiers
-                .map((ModifierKey m) => m.label.toLowerCase())
-                .toList(growable: false)
-              ..sort(),
+            'mods':
+                b.modifiers
+                    .map((ModifierKey m) => m.label.toLowerCase())
+                    .toList(growable: false)
+                  ..sort(),
           },
       ];
   return jsonEncode(<String, Object>{
     'mine': encode(ShortcutAction.popupMineEntry),
     'next': encode(ShortcutAction.popupNextEntry),
     'prev': encode(ShortcutAction.popupPrevEntry),
+    // P2 新增「播放发音」：键盘默认为空（默认只有手柄 Y），但 scope 开着键盘通道，
+    // 用户绑上后 app 外裸 WebView2 表面照样要生效——注入表必须与 scope 动作全集
+    // 同步（popup_mine_key_binding_test 钉着）。
+    'audio': encode(ShortcutAction.popupPlayAudio),
   });
 }
 
@@ -476,10 +601,12 @@ class _PopupStaticSettingsMemo {
   const _PopupStaticSettingsMemo({
     required this.themeVarsJs,
     required this.fontCacheKey,
+    required this.fontArtifactToken,
     required this.appUiScale,
     required this.dictionaryFontSize,
     required this.popupWheelSpeed,
     required this.wheelBindingsJson,
+    required this.popupKeyBindings,
     required this.audioSourcesJson,
     required this.lookupAudioVolume,
     required this.localeTag,
@@ -498,10 +625,12 @@ class _PopupStaticSettingsMemo {
 
   final String themeVarsJs;
   final String fontCacheKey;
+  final Object fontArtifactToken;
   final double appUiScale;
   final double dictionaryFontSize;
   final double popupWheelSpeed;
   final String wheelBindingsJson;
+  final String popupKeyBindings;
   final String audioSourcesJson;
   final String lookupAudioVolume;
   final String localeTag;
@@ -526,8 +655,7 @@ int _staticSettingsRevision = 0;
 /// 互相污染。revision 计数不重置（单调性是契约）。
 @visibleForTesting
 void debugResetPopupSettingsInjectionCaches() {
-  _fontStyleJsMemoKey = null;
-  _fontStyleJsMemoValue = '';
+  debugResetDictionaryFontStyleMemo();
   _staticSettingsMemo.clear();
 }
 
@@ -535,10 +663,25 @@ void debugResetPopupSettingsInjectionCaches() {
 /// CSS）：只随主题、设置、词典集变化，不随查词变化。in-app 路径按产物
 /// [PopupStaticSettingsJs.revision] 去重，变了才随下一次推送重发（BUG-717 ③：
 /// 原先命中后仍有 4~5 遍 MB 级串拷贝/转义/比较，现在命中路径零 MB 级操作）。
+/// [fontUrlBuilder] 非空时，导入字体以 URL 引用写进 `@font-face`，由宿主 WebView
+/// 的资源拦截器按需供字节；为空则内联成 `data:` URL（历史行为）。
+///
+/// 谁传谁不传，取决于**宿主有没有能带 CORS 头的资源拦截器**：
+///   - in-app 弹窗（Android / Windows）：有 `shouldInterceptRequest`，传。字体是强制
+///     CORS 模式的子资源，拦截器回 `Access-Control-Allow-Origin` 才拿得到。
+///   - in-app 弹窗（iOS / macOS）：只有 WKURLSchemeHandler，它构造的 URLResponse
+///     带不了任何 header，字体会被 CORS 拒；只能继续内联。
+///   - app 外裸 WebView2（全局查词窗 / 剪贴板面板）：字节走 native 侧另一条通道，
+///     暂仍内联（见 global_lookup_render 的调用点）。
+///
+/// 之所以是「调用方传」而不是在这里判平台：这个函数不知道自己产出的脚本要注入进
+/// 哪个宿主，而同一个平台上两类宿主的答案不同（Windows 的 in-app 能拦、裸 WebView2
+/// 这条路还没接）。让宿主自己声明能力，比在这里猜宿主身份可靠。
 PopupStaticSettingsJs buildPopupStaticSettingsJs({
   required AppModel appModel,
   required ThemeData theme,
   required PopupSettingsOptions options,
+  String Function(String safePath)? fontUrlBuilder,
 }) {
   final String themeVarsJs = _themeVariablesJs(
     appModel: appModel,
@@ -546,49 +689,55 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     globalLookup: options.globalLookup,
     mobileExternal: options.mobileExternal,
   );
-  final ({String cacheKey, String js}) fontStyle =
-      _dictionaryFontStyleJsMemo(appModel);
+  final ({String cacheKey, Object cacheToken, String js}) fontStyle =
+      _dictionaryFontStyleJsMemo(appModel, fontUrlBuilder: fontUrlBuilder);
   final String wheelBindingsJson = popupEntryWheelBindingsJson(
     appModel.shortcutRegistry,
     theme.platform,
   );
   // 弹窗键盘绑定只对 **app 外**的裸 WebView2 表面（全局查词窗 / 剪贴板面板）下发真值。
-  // in-app 宿主（app 内弹窗 / Android 悬浮词典 / 独立查词页）显式收 `null` 关掉 JS 侧
-  // 判定——那里键盘由 Flutter 派发（阅读器 readerCreateCardFromPopup、视频页读
-  // popupMineEntry 绑定）。两边同时开的话，一旦 WebView 把同一次按键既交给 JS 又冒泡回
-  // Flutter，就会制出两张卡；按宿主切开是结构上杜绝，而不是靠去重兜底。
+  // in-app 宿主显式收 `null` 关掉 JS 侧判定，键盘由 Flutter 的单一消费者派发。
+  // 两边同时启用会让同一次按键跨 WebView/Flutter 边界重复制卡。
   final String popupKeyBindings = options.globalLookup
       ? popupKeyBindingsJson(appModel.shortcutRegistry, theme.platform)
       : 'null';
   final String audioSourcesJson = jsonEncode(appModel.enabledAudioSources);
   final String lookupAudioVolume = ReaderFushiSource
-      .instance.lookupAudioVolumeGain
+      .instance
+      .lookupAudioVolumeGain
       .clamp(0.0, 1.0)
       .toStringAsFixed(4);
   final String localeTag = LocaleSettings.currentLocale.languageTag;
 
   final String stylesJson = DictionaryPopupWebViewState.dictionaryStylesJson();
-  final String collapsedNames = jsonEncode(appModel.dictionaries
-      .where((d) => d.isCollapsed(JapaneseLanguage.instance))
-      .map((d) => d.name)
-      .toList());
-  final String hiddenNames = jsonEncode(appModel.dictionaries
-      .where((d) => d.isHidden(JapaneseLanguage.instance))
-      .map((d) => d.name)
-      .toList());
-  final String globalDictCSS = appModel.globalDictCSS;
-  final String customDictCSSJson = jsonEncode(appModel.customDictCSS);
+  final String collapsedNames = jsonEncode(
+    appModel.dictionaries
+        .where((d) => d.isCollapsed(JapaneseLanguage.instance))
+        .map((d) => d.name)
+        .toList(),
+  );
+  // 与 popupJson 生成期共用同一个真相源，别再抄第二份表达式。
+  final String hiddenNames = jsonEncode(
+    appModel.hiddenDictionaryNames.toList(),
+  );
+  // effective* = 可视化规则的编译产物 + 用户手写（产物在前、手写在后）。这里
+  // 绝不能用裸 globalDictCSS / customDictCSS——那是编辑器回填用的原文。
+  final String globalDictCSS = appModel.effectiveGlobalDictCSS;
+  final String customDictCSSJson = jsonEncode(appModel.effectiveCustomDictCSS);
 
-  final String slotKey = '${options.globalLookup}|${options.mobileExternal}'
+  final String slotKey =
+      '${options.globalLookup}|${options.mobileExternal}'
       '|${options.sentenceDraftEnabled}';
   final _PopupStaticSettingsMemo? cached = _staticSettingsMemo[slotKey];
   if (cached != null &&
       cached.themeVarsJs == themeVarsJs &&
       cached.fontCacheKey == fontStyle.cacheKey &&
+      identical(cached.fontArtifactToken, fontStyle.cacheToken) &&
       cached.appUiScale == appModel.appUiScale &&
       cached.dictionaryFontSize == appModel.dictionaryFontSize &&
       cached.popupWheelSpeed == appModel.popupWheelSpeed &&
       cached.wheelBindingsJson == wheelBindingsJson &&
+      cached.popupKeyBindings == popupKeyBindings &&
       cached.audioSourcesJson == audioSourcesJson &&
       cached.lookupAudioVolume == lookupAudioVolume &&
       cached.localeTag == localeTag &&
@@ -615,10 +764,12 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
   // BUG-1139：Ctrl+滚轮内容缩放只装给 app 外裸 WebView2 表面。in-app 三个表面由
   // dictionary_popup_webview 的 _zoomWheelJs 在 onLoadStop 装同名 guard 的另一套
   // （就地 zoom + 即时反馈），两边永不同装。
-  final String zoomWheelJs =
-      options.globalLookup ? _globalLookupZoomWheelJs : '';
+  final String zoomWheelJs = options.globalLookup
+      ? _globalLookupZoomWheelJs
+      : '';
 
-  final String head = '''
+  final String head =
+      '''
     $themeVarsJs
     $fontStyleJs
     // popupRendered is the host reveal gate. Let popup.js wait for the injected
@@ -628,6 +779,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     $iconFontJs
     $zoomWheelJs
     document.documentElement.style.zoom = '${zoom.toStringAsFixed(4)}';
+    window.__fushiApplyPopupViewport?.();
     // TODO-1353: Ctrl+滚轮缩放查词内容需要在 JS 侧就地重算 zoom（即时反馈），故把
     // 当前「界面大小」系数与「词典字号」暴露给弹窗（与上面 zoom 同源，每次注入刷新为
     // 最新真值）。滚轮监听器（dictionary_popup_webview 的 _zoomWheelJs，onLoadStop 装一次）
@@ -651,6 +803,10 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     window.needsAudio = true;
     window.lookupAudioVolume = $lookupAudioVolume;
     window.i18nNoAudioAvailable = ${jsonEncode(t.popup_no_audio_available)};
+    // BUG-1908：制卡失败在浮窗里的兜底文案（宿主没给出具体原因时用）。
+    // galgame 浮窗是独立 native WebView2 窗口，宿主的 Flutter toast 画在主 app 窗口上，
+    // 游戏全屏时用户看不见——失败必须就地说出来。
+    window.i18nMineFailed = ${jsonEncode(t.card_export_failed)};
     // BUG-1064：点已制卡 ✓ 的「卡片已在 Anki 中」操作面板归属。
     // true  = 宿主自己接了 `minedCardAction` JS handler，会弹 Flutter 居中对话框
     //         （dictionary_popup_webview 的三个 in-app 表面：app 内弹窗 / Android
@@ -686,7 +842,8 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     window.collapsedDictionaryNames = $collapsedNames;
     window.hiddenDictionaryNames = $hiddenNames;
 ''';
-  final String tail = '''    window.dictionaryStyles = $stylesJson;
+  final String tail =
+      '''    window.dictionaryStyles = $stylesJson;
     window.globalDictCSS = ${jsonEncode(globalDictCSS)};
     window.customDictCSS = $customDictCSSJson;
 ''';
@@ -694,14 +851,17 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     head: head,
     tail: tail,
     revision: ++_staticSettingsRevision,
+    themeVarsJs: themeVarsJs,
   );
   _staticSettingsMemo[slotKey] = _PopupStaticSettingsMemo(
     themeVarsJs: themeVarsJs,
     fontCacheKey: fontStyle.cacheKey,
+    fontArtifactToken: fontStyle.cacheToken,
     appUiScale: appModel.appUiScale,
     dictionaryFontSize: appModel.dictionaryFontSize,
     popupWheelSpeed: appModel.popupWheelSpeed,
     wheelBindingsJson: wheelBindingsJson,
+    popupKeyBindings: popupKeyBindings,
     audioSourcesJson: audioSourcesJson,
     lookupAudioVolume: lookupAudioVolume,
     localeTag: localeTag,

@@ -63,34 +63,30 @@ void main() {
   });
 
   group('dashboard 上屏面（home_dashboard_page.dart）', () {
-    test('热力图日明细「阅读」节经 displayTitleForStatRow', () {
-      final String fn = slice(
-        dashboard,
-        'String _readingStatDisplayTitle(',
-        'String _gameDisplayTitle(',
-        where: '_readingStatDisplayTitle',
-      );
+    test('时段明细 sheet 事实行「书」分支经 displayTitleForStatRow', () {
+      // 原锚点是 `String _readingStatDisplayTitle(` 起点 + 邻居 `_gameDisplayTitle(`
+      // 终点。统计中心大改造把按域拆的三个行构造器合并成一个按 StatFact 种类分派的
+      // 解析器 _statEntryTitle（注入 showStatPeriodDetailSheet 的 titleOf），起点与
+      // 终点双双失效——正是下面 115 行那条已写死的教训：别把邻居长什么样当成本函数
+      // 的不变量。改用 methodBody 的花括号配对定边界，只依赖本函数自己的签名。
+      final String fn = methodBody(dashboard, 'String _statEntryTitle(');
       expect(fn, contains('displayTitleForStatRow('));
     });
 
     test('日明细「游戏」节与活动时间轴游戏行经 _gameDisplayTitle → displayTitleForGame', () {
-      // 日明细游戏节。
+      // 日明细游戏节（v92：事实面自带 mediaKey，按身份精确命中再回落标题快照）。
       expect(
         dashboard,
-        contains('(title: _gameDisplayTitle(title), chars: chars,'),
+        contains('_gameDisplayTitle(f.title, mediaKey: f.mediaKey)'),
       );
       // 活动时间轴游戏行。
       expect(
         dashboard,
         contains('_gameDisplayTitle(entry.title, mediaKey: entry.mediaKey)'),
       );
-      // helper 委托门面。
-      final String fn = slice(
-        dashboard,
-        'String _gameDisplayTitle(',
-        'List<({String title, int chars, int timeMs})> _watchDayRows',
-        where: '_gameDisplayTitle',
-      );
+      // helper 委托门面。终点锚原是邻居 `_watchDayRows`，统计中心大改造把它合并进
+      // showStatPeriodDetailSheet 后消失；helper 本体一字未改，同上改用 methodBody。
+      final String fn = methodBody(dashboard, 'String _gameDisplayTitle(');
       expect(fn, contains('displayTitleForGame(entry: entry'));
     });
   });
@@ -123,26 +119,41 @@ void main() {
       expect(fn, contains('displayTitleForBook('));
     });
 
-    test('列表副标题与详情弹窗副标题走 _itemDisplayBookTitle，不裸读快照列', () {
+    test('列表书名与详情弹窗副标题走 _itemDisplayBookTitle，不裸读快照列', () {
       // 详情弹窗。
       expect(
         collections,
         contains(
             'final String? bookDisplayTitle = _itemDisplayBookTitle(item);'),
       );
-      // 列表副标题（快照列 item.bookTitle 不得再直接进 subtitle join）。
+      // 「收藏夹按合集分节」把书名的上屏位置从行副标题 join 上移到媒体小节头。
+      // 不变量没变——那个书名必须过门面；只是位置换了，正向锚跟着迁到分组构建处。
+      final String grouped =
+          methodBody(collections, 'Widget _buildGroupedListView()');
       expect(
-        collections,
-        contains(
-            RegExp(r'_itemDisplayBookTitle\(item\),\s*item\.chapterLabel')),
+        grouped,
+        contains('mediaLabelOf: _itemDisplayBookTitle,'),
+        reason: '媒体小节头的书名必须过 display-title 门面',
+      );
+      // 负向锚钉死旧位置：行副标题不得回潮裸读快照列 item.bookTitle。
+      final String row = methodBody(collections, 'Widget _buildItem(');
+      expect(
+        row,
+        isNot(contains('item.bookTitle')),
+        reason: '行副标题不得裸读快照列 item.bookTitle',
       );
     });
 
     test('导出分组名（给人看的导出）经门面；DB 全量两侧同口径', () {
+      // BUG-1906：导出**范围**改成按身份（bookKey / 合集）过滤后，原先那个
+      // 「把内存列表映射成导出载体」的 helper（_favoriteSentencesForExport）变成死
+      // 代码已删除——它唯一的用途是按显示名建可选书目，而按显示名筛正是这条 bug。
+      // 分组名经门面这个**不变量本身没变**：两条 DB 全量加载各自过
+      // _displayBookTitleFor，可选来源的标签过 _itemDisplayBookTitle。
       expect(
         collections,
-        contains(
-            'bookTitle: _itemDisplayBookTitle(item) ?? t.collection_sentence'),
+        contains('_itemDisplayBookTitle(item) ?? t.collection_sentence'),
+        reason: '可选来源的标签必须过 display-title 门面',
       );
       // _loadMinedForExport / _loadFavoritesForExport 各自过 _displayBookTitleFor。
       expect(
@@ -230,18 +241,21 @@ void main() {
   });
 
   group('身份面反向断言（统计聚合键 / 落库快照恒 raw）', () {
-    test('reader 阅读统计 flush（navigation.part.dart）聚合键恒 raw', () {
+    test('reader 阅读统计时钟（navigation.part.dart）title 快照恒 raw', () {
+      // v92：统计落库走 StudyClock，title 快照在建时钟时取一次（study_segments
+      // 按 mediaKey 分组，title 只是回退显示）——仍必须是 raw 书名，禁过门面。
       final String fn = slice(
         navigationPart,
+        'StudyClock _ensureStudyClock()',
         'Future<void> _flushReadingStats()',
-        '}\n}',
-        where: '_flushReadingStats',
+        where: '_ensureStudyClock',
       );
-      expect(fn, contains('final String title = _book!.title;'));
+      expect(fn, contains('title: _book?.title ?? widget.bookKey,'));
+      expect(fn, contains('mediaKey: widget.bookKey,'));
       expect(
         fn,
         isNot(contains('displayTitleFor')),
-        reason: 'reading_statistics/activity_events 的 title 是聚合键，禁过门面',
+        reason: 'study_segments 的 title 是落库快照，禁过门面',
       );
     });
 

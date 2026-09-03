@@ -47,8 +47,27 @@ void main() {
     expect(b.contains('Platform.isAndroid || Platform.isIOS'), isTrue,
         reason: '移动端必须分流到自编后端');
     expect(b.contains('KitFfmpegBackend()'), isTrue);
-    expect(b.contains('FUSHI_FFMPEG'), isTrue);
+    // BUG-1664：显式 ffmpeg 覆盖必须仍能把移动端拽回 CLI 后端。断言改钉**单一入口**
+    // `ffmpegEnvOverride()`（原先钉的是 `FUSHI_FFMPEG` 字面量，那个字面量现在只存在于
+    // 该入口内部）——语义不变，且下面额外钉住这个入口本身认新旧两个名字，比原来更严。
+    expect(b.contains('ffmpegEnvOverride()'), isTrue,
+        reason: '显式覆盖仍须优先走 CLI 后端');
     expect(b.contains('CliFfmpegBackend()'), isTrue);
+  });
+
+  // BUG-1664：改名批次把 5 个调用点都写成 `env['FUSHI_FFMPEG'] ?? env['FUSHI_FFMPEG']`
+  // （两边同名），注释承诺的旧名回退从未生效。收敛成单一入口后，这里钉住「入口确实问了
+  // 新旧两个名字」，并禁止任何调用点再绕开入口手写裸 `Platform.environment['*_FFMPEG']`
+  // ——自反回退只能在手写处复发。
+  test('ffmpeg/ffprobe 环境覆盖：单一入口 + 新名优先旧名回退', () {
+    expect(src, contains("'FUSHI_FFMPEG', 'HIBIKI_FFMPEG'"));
+    expect(src, contains("'FUSHI_FFPROBE', 'HIBIKI_FFPROBE'"));
+    // 除两个入口内的常量列表外，全文件不得再出现裸 env 读取。
+    expect(
+      RegExp(r"Platform\.environment\['(FUSHI|HIBIKI)_FF").allMatches(src),
+      isEmpty,
+      reason: '环境覆盖只能经 ffmpegEnvOverride()/ffprobeEnvOverride()',
+    );
   });
 
   test('vendored 包用本地自编 AAR（不拉 maven 预编译）', () {

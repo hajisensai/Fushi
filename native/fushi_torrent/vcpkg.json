@@ -1,0 +1,35 @@
+{
+  "name": "fushi-torrent-ffi",
+  "version-string": "0.1.0",
+  "description": "Hibiki 内置 torrent 引擎的 libtorrent C ABI bridge（fushi_torrent_ffi.cpp）",
+  "$why-pinned": [
+    "钉死 libtorrent 2.0.x。fushi_torrent_ffi.cpp 用的是 2.0 API：",
+    "torrent_info::files() / lt::add_files / create_torrent(file_storage) /",
+    "lt::from_span / peer_info::ip —— 这五处在 2.1 全部移除或改名",
+    "（namespace 也变成 libtorrent::v2_1）。",
+    "",
+    "vcpkg 在 e90cc0982b（2026-08-12）把 ports/libtorrent 从 2.0.11 升到 2.1.1；",
+    "GitHub runner 镜像 20260818.277.1 起跟进，于是 Windows 4 个 DLL 和 Android",
+    ".so 同时编不出来 —— 而 build_windows_dll.ps1 对 Release 校验那 4 个 DLL",
+    "缺一即 throw，等于 Windows 发布包直接断供（BUG-1772）。",
+    "",
+    "在此之前这里是 classic 模式的裸 `vcpkg install libtorrent`，版本完全由",
+    "runner 镜像内固化的 vcpkg 修订决定 —— 构建不可重现，本文件就是来消掉",
+    "这个不确定性的。",
+    "",
+    "baseline aae277acf4 是 2.1.1 落地前最后一批 master：它给出的",
+    "libtorrent 2.0.11 + boost 1.91.0 + openssl 3.6.3 正是上游一起验过的组合。",
+    "2.0.11 是 2.0 线终点，上游不会再出新版，安全修复也不会有；长期出路是把",
+    "bridge 迁到 2.1 API，届时删掉本文件的 overrides 即可。"
+  ],
+  "builtin-baseline": "aae277acf4e7de287ddb5e208b5316614de6aad7",
+  "dependencies": [
+    "libtorrent"
+  ],
+  "overrides": [
+    {
+      "name": "libtorrent",
+      "version": "2.0.11"
+    }
+  ]
+}

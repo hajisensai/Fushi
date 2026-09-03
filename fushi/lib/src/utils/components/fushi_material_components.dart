@@ -288,9 +288,14 @@ class _FushiListItemState extends State<FushiListItem> {
     final bool pill = widget.selectedShape == FushiListItemSelectedShape.pill;
     final BorderRadius? highlightRadius =
         pill ? tokens.radii.groupRadius : null;
-    final BoxBorder? pillBorder = widget.selected
+    // pill 形态**两态都画边框**，未选中时透明：BoxDecoration 的 border 会把子节点向
+    // 内挤 1px，只在选中时给边框会让同一行选中后比未选中高 2px（功能选择卡片在
+    // 列表里逐行错位）。几何恒定，颜色才是唯一的选中信号。
+    final BoxBorder? pillBorder = pill
         ? Border.all(
-            color: tokens.surfaces.primary.withValues(alpha: 0.20),
+            color: widget.selected
+                ? tokens.surfaces.primary.withValues(alpha: 0.20)
+                : Colors.transparent,
           )
         : null;
     final Widget material = AnimatedContainer(
@@ -1843,7 +1848,6 @@ class FushiPageHeader extends StatelessWidget {
             // 「左边摆不下就把动作收进 ⋯ 菜单」；纯文字标题自身可省略号收缩，
             // 维持既有行为。
             collapseWhenCramped: titleWidget != null,
-            centerVertically: titleWidget != null,
           ),
           if (bottom != null)
             Padding(
@@ -1907,7 +1911,6 @@ class _FushiPageHeaderRow extends StatefulWidget {
     required this.leading,
     required this.actionItems,
     required this.collapseWhenCramped,
-    required this.centerVertically,
   });
 
   final FushiDesignTokens tokens;
@@ -1918,7 +1921,6 @@ class _FushiPageHeaderRow extends StatefulWidget {
   /// true（customTitle 模式）时，若标题位上报的自然宽 + 动作自然宽超过行宽，
   /// 把可收纳的动作（[FushiIconButton]）折进一个 ⋯ 菜单，把宽度还给标题位。
   final bool collapseWhenCramped;
-  final bool centerVertically;
 
   @override
   State<_FushiPageHeaderRow> createState() => _FushiPageHeaderRowState();
@@ -1962,7 +1964,9 @@ class _FushiPageHeaderRowState extends State<_FushiPageHeaderRow> {
   Widget _buildActionRow(List<Widget> items) {
     return Row(
       mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
+      // 动作之间也居中：同一行里可能混着纯图标键（40~48 高）和带标签的药丸
+      // （更高），顶对齐会让图标浮在药丸文字上方。
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: <Widget>[
         for (int index = 0; index < items.length; index++) ...<Widget>[
           if (index > 0) SizedBox(width: tokens.spacing.gap / 2),
@@ -2043,10 +2047,13 @@ class _FushiPageHeaderRowState extends State<_FushiPageHeaderRow> {
         if (leading != null) {
           children.add(
             Padding(
-              padding: EdgeInsets.only(
-                top: tokens.spacing.gap / 2,
-                right: leadingGap,
-              ),
+              // 方向性内边距：RTL（ar / he）下 [Row] 会把 leading 排到行尾（视觉右
+              // 侧），此时「leading 与标题之间的空隙」在它的**左**边。写死物理 right
+              // 会让空隙跑到屏幕边缘那侧，返回键直接贴上标题。以前只有两个页面显式
+              // 传 leading，现在脚手架默认给每个可返回页插一个，这条必须是 directional。
+              // 只留水平间距；垂直位置由整行的 [CrossAxisAlignment.center] 决定
+              // （见下方 Row 处注释），不再用常数凑。
+              padding: EdgeInsetsDirectional.only(end: leadingGap),
               child: leading,
             ),
           );
@@ -2129,10 +2136,20 @@ class _FushiPageHeaderRowState extends State<_FushiPageHeaderRow> {
             );
         }
 
+        // BUG-2033: 前导键 / 动作键与标题**垂直居中**对齐，不再按 start 顶对齐。
+        //
+        // 旧实现顶对齐 + 给 leading 写死 `top: gap / 2`，是拿一个常数去凑
+        // 「48 高的 BackButton 图标中心（距顶 24）」和「pageTitle 行盒中心
+        // （22 × 1.27 / 2 ≈ 14）」的差，凑出来仍差 ~14px：箭头恒比标题低一截
+        // （用户报「左上角文字和返回箭头没对齐」）。动作区同理（图标中心 20~24
+        // vs 标题中心 14）。这个差随字号档位、文字缩放、按钮尺寸变化，任何常数
+        // 都只在一种组合下正确。
+        //
+        // 居中是唯一不含常数的判据：Row 把两侧按各自实际高度居中，字号、
+        // textScaler、按钮尺寸怎么变都成立。标题带副标题 / 折行时，前导键落在
+        // 整个标题块的中心（ListTile / AppBar 两行标题的既有做法）。
         return Row(
-          crossAxisAlignment: widget.centerVertically
-              ? CrossAxisAlignment.center
-              : CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: children,
         );
       },
@@ -2148,7 +2165,7 @@ class FushiPageScaffold extends StatefulWidget {
     this.subtitle,
     this.actions = const <Widget>[],
     this.leading,
-    this.showAppBar = true,
+    this.automaticallyImplyLeading = true,
     this.floatingActionButton,
     this.floatingActionButtonLocation,
     this.headerBottom,
@@ -2161,7 +2178,13 @@ class FushiPageScaffold extends StatefulWidget {
   final Widget body;
   final List<Widget> actions;
   final Widget? leading;
-  final bool showAppBar;
+
+  /// Whether a route back button is inserted when [leading] is null.
+  ///
+  /// The button is rendered inside [FushiPageHeader], beside the title. Older
+  /// versions put it in a separate, otherwise-empty [AppBar], which wasted a
+  /// full row and left the title visually detached from its navigation action.
+  final bool automaticallyImplyLeading;
   final Widget? floatingActionButton;
   final FloatingActionButtonLocation? floatingActionButtonLocation;
   final Widget? headerBottom;
@@ -2178,7 +2201,7 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
   // gamepad LB/RB page-scroll fallback reaches it via
   // PrimaryScrollController.maybeOf even on pure-display pages with no focus
   // geometry (e.g. reading statistics), where D-pad edge takeover can't help.
-  final ScrollController _scrollController = ScrollController();
+  final ScrollController _scrollController = FushiScrollController();
 
   @override
   void initState() {
@@ -2201,6 +2224,8 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final Widget? effectiveLeading = widget.leading ??
+        (widget.automaticallyImplyLeading ? _defaultLeading(context) : null);
     return PrimaryScrollController(
       controller: _scrollController,
       // Inherit on EVERY platform. The default is mobile-only, which would
@@ -2212,21 +2237,10 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
       automaticallyInheritForPlatforms: TargetPlatform.values.toSet(),
       child: Scaffold(
         backgroundColor: tokens.surfaces.page,
-        appBar: widget.showAppBar
-            ? AppBar(
-                leading: widget.leading,
-                title: const SizedBox.shrink(),
-                backgroundColor: tokens.surfaces.page,
-                surfaceTintColor: Colors.transparent,
-                elevation: 0,
-                scrolledUnderElevation: 0,
-              )
-            : null,
         floatingActionButton: widget.floatingActionButton,
         floatingActionButtonLocation: widget.floatingActionButtonLocation,
         bottomNavigationBar: widget.bottomNavigationBar,
         body: SafeArea(
-          top: !widget.showAppBar,
           // stretch (not start) so every page body receives a tight full-width
           // constraint. Under start the cross axis stays loose, and any body
           // that shrink-wraps its width (e.g. a vertical SingleChildScrollView
@@ -2239,16 +2253,45 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
               FushiPageHeader(
                 title: widget.title,
                 subtitle: widget.subtitle,
-                leading: widget.showAppBar ? null : widget.leading,
+                leading: effectiveLeading,
                 actions: widget.actions,
                 bottom: widget.headerBottom,
-                compact: widget.headerCompact ?? widget.showAppBar,
+                compact: widget.headerCompact ?? effectiveLeading != null,
               ),
               Expanded(child: widget.body),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  /// 页头默认返回键（[leading] 为 null 且当前路由可 pop 时插入）。
+  ///
+  /// 命中盒必须撑到 [kMinInteractiveDimension]（48）：被它取代的
+  /// `Scaffold.appBar` 自动 [BackButton] 本就是 48×48 的 [IconButton]，而
+  /// [FushiIconButton] 在 `padding: EdgeInsets.zero` + 无 constraints 下只有图标
+  /// 本体那么大（24×24）——手机触屏上就成了「点不中的返回箭头」，也与
+  /// 本脚手架**显式**传入的 [BackButton]（aidoku 源浏览 / 新手引导）不是
+  /// 同一命中口径。图标视觉尺寸不变，只把 InkWell 命中盒撑开。
+  ///
+  /// 与 [FushiToolScaffold] 同名方法看着一样但**不能合并**：那边整条工具条
+  /// 只有 44 高，它在外层用 `SizedBox.square(40)` 自己撑命中盒，塞不下 48。
+  ///
+  /// [Navigator.maybeOf]：脚手架被用在没有 Navigator 的场景（裸组件测试 /
+  /// 嵌入式外壳）时只是没有返回键，不该整页抛异常。
+  Widget? _defaultLeading(BuildContext context) {
+    final NavigatorState? navigator = Navigator.maybeOf(context);
+    if (navigator == null || !navigator.canPop()) return null;
+    return FushiIconButton(
+      tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+      icon: Icons.arrow_back,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(
+        minWidth: kMinInteractiveDimension,
+        minHeight: kMinInteractiveDimension,
+      ),
+      onTap: () => Navigator.of(context).maybePop(),
     );
   }
 }
@@ -3142,6 +3185,7 @@ class FushiPopupSurface extends StatelessWidget {
     this.elevation = 0,
     this.showBorder = true,
     this.clipBehavior = Clip.antiAlias,
+    this.borderOnForeground = true,
   });
 
   final Widget child;
@@ -3150,6 +3194,20 @@ class FushiPopupSurface extends StatelessWidget {
   final double elevation;
   final bool showBorder;
   final Clip clipBehavior;
+
+  /// BUG-1692：描边画在子节点**之前**还是**之后**。
+  ///
+  /// 默认 true（Flutter [Material] 的默认值）时，描边走 `CustomPaint.foregroundPainter`，
+  /// 在子节点之后绘制，且其 paint bounds 是**整个 surface**。当 surface 里装的是原生
+  /// 平台视图（查词浮层的 WebView）时这是致命的：macOS engine 会把「平台视图之上
+  /// 的 Flutter 绘制区域」逐 rect 写进 `FlutterMutatorView` 的 `_hitTestIgnoreRegion`，
+  /// 落在其中的点 `hitTest:` 直接 return nil，于是**整块 WebView 收不到任何鼠标事件**
+  /// ——用户看到的就是「查词框点哪都没反应」。
+  ///
+  /// 装平台视图的 surface 传 false，把描边挪到子节点之前绘制即可解除。透明背景的
+  /// WebView 仍能透出下面的描边，观感不变。纯 Flutter 子树无须改动（描边盖在不透明
+  /// 子节点上才需要 foreground）。
+  final bool borderOnForeground;
 
   @override
   Widget build(BuildContext context) {
@@ -3164,6 +3222,7 @@ class FushiPopupSurface extends StatelessWidget {
             : BorderSide.none,
       ),
       clipBehavior: clipBehavior,
+      borderOnForeground: borderOnForeground,
       child: Padding(
         padding: padding,
         child: child,

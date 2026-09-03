@@ -1,0 +1,23 @@
+## BUG-2054 · 嵌套查词弹窗锚在选区首行下方遮住跨行选区的第二行
+- **报告**：2026-09-02（用户：截图，视频页字幕查词 → 弹窗内选中跨两行的「とりとめ／もなく」→ 第二层弹窗压在第一行下方，把选区所在的第二行整个盖住）
+- **真实性**：✅ 真 bug。根因不在布局函数，而在**锚点 rect 的语义**：
+  - `fushi/assets/popup/selection.js:444` `getSelectionRect(x,y)` 只取选区**首字符**（`first.start` → `first.start+1`）的矩形当 `textSelected` 的 args[1] 锚点。发这条消息时词典还没查、匹配长度未知，所以锚点天然只覆盖点击那一行。
+  - 查词命中后 `selection.js:458` `highlightSelection(count)` 已经把跨行的多段 `getClientRects()` 聚合成**整词 bbox** 并 `return`（跨行时 bottom 落在最后一行），但 `fushi/lib/src/pages/implementations/dictionary_popup_webview.dart:762` 的 `highlightSelection` 是 `void` + 裸 `evaluateJavascript`，**返回值被丢弃**，没有拿它重锚；app 外 overlay 车道 `fushi/assets/popup/global_lookup_host.js:3569` `highlightFrame` 同样丢弃。
+  - 同一个不变式在**阅读器正文车道早已实现**（BUG-717②/BUG-767）：`reader_fushi/lookup.part.dart:111-122` 先用选区 rect 显示弹窗，`highlightInvocation`（`reader_selection_scripts.dart:47` 带 `JSON.stringify`）回来后 `highlightRectFromResult` → `reanchorTopPopup` → `DictionaryPopupController.reanchorEntry`，注释写明「保证弹窗不覆盖被查词」。**浏览器扩展车道**也早就按 highlightSelection 返回的词 bbox 锚定（`test/lookup/browser_extension_lookup_highlight_guard_test.dart:70`）。缺的只有「弹窗内嵌套查词」的三条链。
+- **[x] ① 已修复**（`0210206495`）— 三条嵌套车道接上同一条既有范式（不新造机制、不复制解析器）：
+  - `dictionary_popup_webview.dart` `highlightSelection` 改成 `Future<Rect?>`，复用 `ReaderSelectionScripts.highlightInvocation` / `highlightRectFromResult`（原样保留 WebView 半销毁的 try/catch 兜底，返回 null 即保持原锚点）。
+  - 新增共享 `reanchorNestedPopupToWord()`（`dictionary_popup_layer.dart`，紧邻同源的 BUG-129 `popupWordScreenRect`）：把子层（父层 index+1）重锚到整词 bbox 的屏幕矩形；rect 无效 / 子层已被截断 / 父卡 RenderBox 不可用 / 锚点没变一律 no-op。
+  - mixin 家族（视频·首页·texthooker）与 base 家族（阅读器）的 `onTextSelected` + `onLinkClick` 四处各自取回 bbox 并重锚。
+  - `DictionaryPopupController.reanchorEntry` 的门从「不可见就不动」收紧成「**隐身热槽**不动」——子层挂上结果后要等自己的 WebView 渲染完才翻可见，而高亮 eval 的往返早于那次 reveal，旧的 `!e.visible` 会把重锚恒吞掉（reveal 前改反而一次到位、零跳变）。
+  - app 外 overlay：`global_lookup_host.js` `highlightFrame` 取 `highlightSelection` 返回值，经**与原锚点同一条** `anchorRectToScreen` 转换后 `postToHost('nestedWordAnchor', [parentIndex, rect])`；`global_lookup_controller._applyNestedWordAnchor` 更新 `_frameAnchors[childId]` 并重渲染一次。
+- **[x] ② 已加自动化测试**（`0210206495`）—
+  - `fushi/test/pages/nested_lookup_word_anchor_test.dart`（新增 13 例）：真 RenderBox 下跨行 bbox 重锚、锚点底边必须越过第一行、可见/等待 reveal 两种子层、null/零面积/子层已出栈/父卡 RenderBox 缺失四条 no-op、`calcPopupPosition` 对照（首字符锚点会压住第二行 vs 整词锚点完整落在选区之下）、`reanchorEntry` 的热槽门、四条车道的源码守卫。
+  - `fushi/test/lookup/global_lookup_host_test.mjs` §33b（node 真跑 host.js）：整词 bbox 按 shell 原点转换后经 `nestedWordAnchor` 回报；realm 返回 null/undefined/零面积时不回报。
+  - `fushi/test/lookup/lookup_word_highlight_surfaces_guard_test.dart` 新增 app 外接线守卫（controller 不能 headless 实例化，沿用该文件既有做法）。
+  - 变异实测：还原 `reanchorEntry` 的 `!e.visible` 门 → 2 条红；mixin 一处退回丢弃返回值 → 守卫红；host 侧去掉回报 → mjs 红。
+- **代码审查后的第二轮**（`086cf2156a`）：
+  - **连点竞态**：`pushNestedPopup` 的 `beginTop` 在 `await searchDictionary` **之前**同步压栈，高亮 eval 往返期间的第二次点词会在**同一下标**建好另一个词的子层；只按位置取条目会把上一个词的 bbox 锚到它身上。`reanchorNestedPopupToWord` 加 `expectedTerm` 词形门，base 车道再叠 BUG-717② 的 `activeLookupGeneration` 代次门。
+  - **app 外 overlay 每次查词都闪跳**：`_lookupNested` 是先 `_renderStack()` 交给 host 的 reveal 门、之后才发 highlight，所以「重锚早于 reveal」在这条路上不成立；且整词 bbox 在**单行**选区上同样不等于首字符矩形 ⇒ 每次嵌套查词都多一次整栈重渲 + union bbox → `overlaySize` → 原生挪窗。改成**渲染前**完成 highlight+bbox 往返（token + Completer + 400ms 超时，照搬 BUG-1127 `wordAudioPlayed`），一次渲染到位；顺带让回报按 **token** 路由而非栈位置，迟到/跨路由的回报不再认领错卡片。
+  - **`highlightFrame` 的「绝不抛」契约**：`anchorRectToScreen` / `postToHost` 收进 try，且每个带 token 的请求必有应答（失败回报 null），否则 Dart 那边会白吃满超时。
+  - 既有 TODO-1190 的 onLinkClick 守卫从固定 1000 字符窗口改为「下一个回调起点」语义定界（身份门把字面量推出了旧窗口；调大数字是削弱）。
+- **备注**：真机未验（本轮按现行约定不做真机验证）——三条车道的行为分别由 widget 测试（app 内）与 node 真跑 host.js（app 外）覆盖，未覆盖的只有「WebView2 里真实文字排版下的换行位置」这一层。`selection.js` 未改动：它早就返回并集 bbox，问题只在消费端。

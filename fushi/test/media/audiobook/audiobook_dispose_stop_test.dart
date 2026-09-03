@@ -94,7 +94,16 @@ void main() {
       await Future<void>.delayed(Duration.zero);
     });
 
-    test('BUG-1240 immediate play then stop waits for platform activation',
+    // 这条测试原本断言「play 在途时 stop 必须等平台激活 settle 后才停」，即
+    // `_stopPlaybackOnce()` 开头的 `await _playActivationTail`。那条契约在
+    // just_audio 的 **Darwin(AVQueuePlayer) / Android(ExoPlayer)** 后端上是死锁：
+    // 那两个后端把 play 的平台回调挂起到 pause/complete/stop 才触发，而唯一能解开
+    // 它的正是 stop 自己 → 播放中退出后音频永不停止、且 UI 引用已被清空，用户无从
+    // 手动关闭。详见 `audiobook_stop_darwin_play_semantics_test.dart`。
+    //
+    // 契约因此反转：**play 在途恰恰是最必须立刻止声的情形**，stop 不再等待它。
+    // BUG-1240 的位置不变式（落库值取自 stop 之前）改由同步采样保证，与等待无关。
+    test('play in flight must not stop stopPlayback from deactivating',
         () async {
       final _FakeJustAudioPlatform plat = _installFakeAudioPlatform();
       final AudiobookPlayerController controller = AudiobookPlayerController();
@@ -114,15 +123,24 @@ void main() {
       final Future<void> play = controller.play();
       await plat.playStarted.future;
       final int disposeBefore = plat.disposePlayerCalls;
-      final Future<void> stop = controller.stopPlayback();
-      await Future<void>.delayed(Duration.zero);
-      expect(plat.disposePlayerCalls, disposeBefore,
-          reason: 'stop must not deactivate a platform with play in flight');
 
+      // play 仍被 gate 卡住（模拟 Darwin/ExoPlayer 的「play 回调挂起」），stop 必须
+      // 照样跑完——不得等它。gate 全程不打开，await 能返回本身就是不变式。
+      await controller.stopPlayback().timeout(
+            const Duration(seconds: 10),
+            onTimeout: () => fail(
+              'stopPlayback 卡在等待在途 play——这正是 Darwin/ExoPlayer 上'
+              '「退出后音频永不停止且无法手动关闭」的死锁。',
+            ),
+          );
+      expect(plat.disposePlayerCalls, greaterThan(disposeBefore),
+          reason: 'play 在途恰恰最需要立刻止声，stop 必须真的把平台停掉');
+
+      // 收尾：放开 gate，确认在途 play 不会把已停的播放器又拉活。
       plat.playGate!.complete();
       await play;
-      await stop;
-      expect(plat.disposePlayerCalls, greaterThan(disposeBefore));
+      expect(controller.debugMainPlayerPlaying, isFalse,
+          reason: 'stop 之后 settle 的 play 不得复活播放');
     });
 
     test('BUG-1240 repeated stop shares one terminal operation', () async {

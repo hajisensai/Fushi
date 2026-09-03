@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
+import 'dart:math' show Random;
 
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:drift/drift.dart';
@@ -11,6 +12,7 @@ import 'package:sqlite3/sqlite3.dart' as sqlite3;
 
 import '../utils/ttu_sanitize.dart';
 import '../utils/video_book_uid.dart';
+import 'activity_event_types.dart';
 import 'book_format.dart';
 import 'collection_order.dart';
 import 'media_kind.dart';
@@ -63,6 +65,18 @@ class FushiDatabaseDowngradeException implements Exception {
 /// generic init-error Retry button forever (TODO-905 root cause: a stale
 /// sidecar made `PRAGMA journal_mode=WAL` raise SqliteException(1546), and Retry
 /// re-ran open against the same untouched bad sidecar = infinite "can't open").
+/// BUG-1899：终态失败的两种**根本不同**的成因。此前它们共用一句「likely corrupt,
+/// must be restored from a backup or cleared」，把「路径压根打不开」说成了「数据坏了」，
+/// 并把用户引向清空数据——而那种情况下磁盘上一个字节都没损坏。
+enum FushiDatabaseFailureKind {
+  /// 文件在，但内容不是合法的 SQLite（或恢复阶梯已穷尽）。真的坏了：只能恢复备份或清空。
+  corrupt,
+
+  /// 根本打不开：父目录不存在、无权限、只读介质、盘断链。
+  /// **磁盘上什么都没坏**，让用户去清空数据是有害的误导。
+  cannotOpen,
+}
+
 class FushiDatabaseUnrecoverableException implements Exception {
   /// Absolute path of the database file that could not be recovered.
   final String dbPath;
@@ -70,16 +84,28 @@ class FushiDatabaseUnrecoverableException implements Exception {
   /// The underlying error from the final open attempt (kept for diagnostics).
   final Object cause;
 
+  /// 区分「文件坏了」与「路径打不开」，见 [FushiDatabaseFailureKind]。
+  final FushiDatabaseFailureKind kind;
+
   const FushiDatabaseUnrecoverableException({
     required this.dbPath,
     required this.cause,
+    this.kind = FushiDatabaseFailureKind.corrupt,
   });
 
   @override
-  String toString() =>
-      'FushiDatabaseUnrecoverableException: the database file at "$dbPath" '
-      'could not be opened even after WAL/sidecar recovery. It is likely '
-      'corrupt and must be restored from a backup or cleared. Cause: $cause';
+  String toString() => switch (kind) {
+        FushiDatabaseFailureKind.corrupt =>
+          'FushiDatabaseUnrecoverableException: the database file at "$dbPath" '
+              'could not be opened even after WAL/sidecar recovery. It is '
+              'likely corrupt and must be restored from a backup or cleared. '
+              'Cause: $cause',
+        FushiDatabaseFailureKind.cannotOpen =>
+          'FushiDatabaseUnrecoverableException: the database file at "$dbPath" '
+              'could not be opened and does not exist on disk — the folder is '
+              'missing, unwritable, or on a disconnected/read-only volume. '
+              'Nothing is corrupt; check the data location. Cause: $cause',
+      };
 }
 
 /// SQLite primary result codes that a stale/locked/corrupt `-wal`/`-shm`
@@ -185,7 +211,19 @@ Future<QueryExecutor> _openWithRecovery(
     // file. Otherwise it is a corrupt/missing main db → terminal, do NOT delete
     // any sidecar.
     if (!_mainDbHeaderIsValid(path)) {
-      throw FushiDatabaseUnrecoverableException(dbPath: path, cause: e);
+      // BUG-1899：这里必须分清两件事。sqlite 的 open 在父目录存在时会**自己创建**
+      // 缺失的 db 文件，所以走到这一步还「文件不存在」，只可能是连创建都失败了 ——
+      // 目录不存在 / 无权限 / 只读介质 / 盘断链。那不是「损坏」，把它说成损坏会把
+      // 用户引去清空数据（用户报告：自定义数据安装位置后启动即「Database damaged」，
+      // 实际只是 `<dataRoot>/support` 这个空目录没被创建）。
+      // 文件确实在但头不是 SQLite magic → 才是真的坏了。
+      throw FushiDatabaseUnrecoverableException(
+        dbPath: path,
+        cause: e,
+        kind: File(path).existsSync()
+            ? FushiDatabaseFailureKind.corrupt
+            : FushiDatabaseFailureKind.cannotOpen,
+      );
     }
     debugPrint('[fushi-db] sidecar open error on "$path" '
         '(main db healthy → recovering): $e\n$stack');
@@ -246,6 +284,12 @@ Future<QueryExecutor> _openWithRecovery(
 /// `.corrupt-bak` snapshot of the main DB + each sidecar is taken first (mirrors
 /// backup_service's `.pre-restore.bak`) so a user can hand-recover the last
 /// un-checkpointed writes if needed.
+///
+/// Exact names produced (the whitelist in [databaseSnapshotMainFileName] must
+/// match these verbatim): `fushi.db.corrupt-bak-<stamp>.db`,
+/// `fushi.db.corrupt-bak-<stamp>.db-wal`, `fushi.db.corrupt-bak-<stamp>.db-shm`
+/// — the copied file's own extension is appended AFTER the stamp, so a snapshot
+/// never ends in a bare `-wal` / `-shm`.
 Future<void> _rebuildSidecar(File dbFile) async {
   final String path = dbFile.path;
   final File wal = File('$path-wal');
@@ -296,6 +340,167 @@ const String fushiDatabaseFileName = 'fushi.db';
 /// 打开任何连接前把它整套（.db / -wal / -shm）改名成 [fushiDatabaseFileName]，
 /// app 层「本机是否已有安装」的判据也要兼看它（旧安装升级后第一次开库前旧名还在）。
 const String legacyHibikiDatabaseFileName = 'hibiki.db';
+
+/// 主库**快照残留**的识别口径（BUG-1870；存储页「数据库备份快照」条目与
+/// [deleteDatabaseSnapshotFiles] 共用，展示什么就删什么）。
+///
+/// 判据是**两层**，缺一层就会误删活数据：
+///
+/// **层 (a) 形态白名单（本函数）** —— 只认代码**真的产过**的「整文件副本」命名，
+/// 逐条列举，不做「不在排除表里就算残留」的黑名单推断：
+///
+/// - [_rebuildSidecar] 的崩溃恢复快照：`<主库名>.corrupt-bak-<毫秒戳>.db`
+///   / `.db-wal` / `.db-shm`（副本名以 `.db*` 结尾，不是 `-wal`/`-shm`）；
+/// - 旧版降级救援副本（`from > to` 的销毁式分支早已删除，只在老用户盘上留着）：
+///   `<主库名>[-wal|-shm].bak.v<旧schema>.<毫秒戳>`；
+/// - `backup_service` 的导入前快照：`<主库名>.pre-restore.bak`
+///   / `<主库名>.pre-merge.bak`。
+///
+/// 黑名单在这里是**危险**的：`backup_service` 把一整族**活控制文件**放在同一个
+/// support 根、且同样以主库名开头 —— `fushi.db.sync-preserve.json`（待恢复标记）、
+/// `fushi.db.merge-preserve.json`、`fushi.db.merge-src[-wal|-shm]`、
+/// `fushi.db.merge-preview-src`。它们不是副本，删掉会让 `recoverPendingRestore`
+/// 在下次启动时静默 `return`，用户的 LAN 配对 / 同步基线 / 被排除的 settings、
+/// profiles 层永久丢失。白名单让「新加一个控制文件」默认安全（不认识 ⇒ 不碰），
+/// 黑名单则默认危险（忘了补一行 ⇒ 可删）。
+///
+/// **层 (b) 所有权门控（[isDeletableDatabaseSnapshot]）** —— 形态命中也未必是
+/// 残留：`pre-restore.bak` 由 `sync-preserve.json` 持有、`pre-merge.bak` 由
+/// `merge-preserve.json` 持有。恢复流程半途失败时**两个文件都会被刻意保留**，
+/// 下次启动靠它们补完（见 `backup_service.recoverPendingRestore`）。只要 sidecar
+/// 还在，被它拥有的副本就是活的恢复输入，不得列出、不得删除；sidecar 不在时它
+/// 才是孤儿。「能不能删」因此由「有没有活的恢复流程指向它」这个真实关系决定，
+/// 而不是由文件名碰巧不在某个排除表里决定。
+///
+/// 活库本体与 `-wal` / `-shm` / `-journal` 侧车形态上就不在白名单里，结构上永远
+/// 不可能命中（旧名 `hibiki.db` 尚未被 [_migrateLegacyDatabaseFileName] 改名时同样）。
+bool isDatabaseSnapshotFileName(final String name) =>
+    databaseSnapshotMainFileName(name) != null;
+
+/// 崩溃恢复快照后缀（[_rebuildSidecar]：`.corrupt-bak-<stamp>` + 被复制文件的
+/// `.db` / `.db-wal` / `.db-shm`）。
+final RegExp _kCorruptBakSuffix =
+    RegExp(r'^\.corrupt-bak-\d+\.db(-wal|-shm)?$');
+
+/// 旧降级救援副本后缀（`.bak.v<旧schema>.<毫秒戳>`）。
+final RegExp _kLegacyDowngradeBakSuffix = RegExp(r'^\.bak\.v\d+\.\d+$');
+
+/// `backup_service` 导入前快照的后缀（只挂主库名，不挂侧车名）。
+const List<String> _kImportBakSuffixes = <String>[
+  '.pre-restore.bak',
+  '.pre-merge.bak',
+];
+
+/// 层 (b) 的所有权表：**快照文件名 → 持有它的恢复流程标记文件名**。真相源是
+/// `backup_service`（`_preserveSidecar` / `_mergeSidecar` 与 `recoverPendingRestore`
+/// / `recoverMergeRestore` 的成对删除）。
+const Map<String, String> _kSnapshotOwnerSidecar = <String, String>{
+  '$fushiDatabaseFileName.pre-restore.bak':
+      '$fushiDatabaseFileName.sync-preserve.json',
+  '$fushiDatabaseFileName.pre-merge.bak':
+      '$fushiDatabaseFileName.merge-preserve.json',
+  '$legacyHibikiDatabaseFileName.pre-restore.bak':
+      '$legacyHibikiDatabaseFileName.sync-preserve.json',
+  '$legacyHibikiDatabaseFileName.pre-merge.bak':
+      '$legacyHibikiDatabaseFileName.merge-preserve.json',
+};
+
+/// 层 (a)：[name] 命中快照白名单时返回它所属的主库名（[fushiDatabaseFileName] 或
+/// [legacyHibikiDatabaseFileName]），否则返回 null。存储页用它给聚合条目起
+/// 「实际命中的是哪个库名」的标题，形态判定因此只有这一份实现。
+String? databaseSnapshotMainFileName(final String name) {
+  for (final String db in const <String>[
+    fushiDatabaseFileName,
+    legacyHibikiDatabaseFileName,
+  ]) {
+    if (!name.startsWith(db)) continue;
+    // 旧降级救援把活库的 `-wal` / `-shm` 也整份复制过，所以词干允许带侧车后缀；
+    // 长的先试，否则 `hibiki.db-wal.bak.v20.1` 会先被裸库名截走。
+    for (final String stem in <String>['$db-wal', '$db-shm', db]) {
+      if (!name.startsWith(stem)) continue;
+      final String rest = name.substring(stem.length);
+      if (_kLegacyDowngradeBakSuffix.hasMatch(rest)) return db;
+      if (stem == db &&
+          (_kCorruptBakSuffix.hasMatch(rest) ||
+              _kImportBakSuffixes.contains(rest))) {
+        return db;
+      }
+      break;
+    }
+    return null;
+  }
+  return null;
+}
+
+/// 层 (b)：返回**可能**持有 [name] 的恢复流程标记文件名；null = 没有任何流程会
+/// 持有它（形态上就是纯残留副本）。
+String? databaseSnapshotOwnerFileName(final String name) =>
+    _kSnapshotOwnerSidecar[name];
+
+/// 「这个文件现在可以列出/删除吗」的**唯一**对外判据：形态命中白名单，且没有活
+/// 的恢复流程持有它。[siblingFileNames] 是该文件所在目录的直接子项名集合
+/// （存储页在扫描 isolate 里已经有这份清单，无需二次 IO）。
+bool isDeletableDatabaseSnapshot(
+  final String name,
+  final Set<String> siblingFileNames,
+) {
+  if (!isDatabaseSnapshotFileName(name)) return false;
+  final String? owner = databaseSnapshotOwnerFileName(name);
+  return owner == null || !siblingFileNames.contains(owner);
+}
+
+/// [supportRoot] **直接**子层里可删的主库快照残留（同步、不递归、不追 symlink；
+/// 存储页在扫描 isolate 里调用）。所有权门控的兄弟名集合取自同一次 listSync，
+/// 所以「列出」与「删除」看到的是同一个目录快照。
+List<File> listDatabaseSnapshotFiles(final Directory supportRoot) {
+  if (!supportRoot.existsSync()) return const <File>[];
+  final List<FileSystemEntity> children =
+      supportRoot.listSync(followLinks: false);
+  final Set<String> names = <String>{
+    for (final FileSystemEntity e in children) p.basename(e.path),
+  };
+  return <File>[
+    for (final FileSystemEntity e in children)
+      if (e is File && isDeletableDatabaseSnapshot(p.basename(e.path), names))
+        e,
+  ];
+}
+
+/// [deleteDatabaseSnapshotFiles] 的结果。删除是**逐文件容错**的：Windows 上
+/// Defender / 索引器临时占住某个副本是常态，一个失败就整批中止会让用户点了删除
+/// 却几十个文件一个没少。
+class DatabaseSnapshotDeletionResult {
+  const DatabaseSnapshotDeletionResult({
+    required this.deleted,
+    required this.failures,
+  });
+
+  /// 已删除的绝对路径。
+  final List<String> deleted;
+
+  /// 删不掉的：路径 → 失败原因（原样带给 UI 提示，不吞）。
+  final Map<String, String> failures;
+
+  bool get hasFailures => failures.isNotEmpty;
+}
+
+/// 删除 [supportRoot] 下全部可删的主库快照残留。识别口径与
+/// [listDatabaseSnapshotFiles] 同源（含所有权门控），故活库/侧车/待恢复副本结构
+/// 上不可能被删到。单个文件删不掉不中止整批：收集失败原因后继续删剩下的。
+Future<DatabaseSnapshotDeletionResult> deleteDatabaseSnapshotFiles(
+    final Directory supportRoot) async {
+  final List<String> deleted = <String>[];
+  final Map<String, String> failures = <String, String>{};
+  for (final File f in listDatabaseSnapshotFiles(supportRoot)) {
+    try {
+      await f.delete();
+      deleted.add(f.path);
+    } on FileSystemException catch (e) {
+      failures[f.path] = e.osError?.message ?? e.message;
+    }
+  }
+  return DatabaseSnapshotDeletionResult(deleted: deleted, failures: failures);
+}
 
 /// Fushi 终局清算 W1：`hibiki.db` → `fushi.db` 一次性文件改名，必须发生在任何
 /// SQLite 连接打开之前（WAL 库的 `-wal`/`-shm` 与主文件名绑定，开着连接改名等于
@@ -484,6 +689,10 @@ void _requireOneVideoMetadataOwner({
   VideoDownloadJobSubtitles,
   VideoDownloadSubscriptions,
   VideoDownloadSubscriptionItems,
+  MangaChapterStates,
+  StudySegmentTombstones,
+  StudySegments,
+  WebMineQueue,
 ])
 class FushiDatabase extends _$FushiDatabase
     with
@@ -514,7 +723,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 86;
+  int get schemaVersion => 94;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -2495,6 +2704,187 @@ class FushiDatabase extends _$FushiDatabase
                   mediaCollections, mediaCollections.secondarySubtitleDelayMs);
             }
           }
+          if (from < 87) {
+            // v87（内容语言字体链）：dictionary_metadata 加 language_override、
+            // epub_books 加 language，给「这份内容是什么语言」一个可持久化的真值，
+            // 供 content_font_chain 选字体链。
+            //
+            // 无损：两列 nullable 无 default → 旧库既有行全 NULL = 语言未知 =
+            // 不写 font-family = 逐字节保留 v87 前的渲染（Never break userspace）。
+            // 书的 language 由导入时的 dc:language 回填，存量书在下次打开时不会
+            // 自动回填（不扫全库），用户可手动指定；词典的自动值走 metadataJson
+            // 的 sourceLanguage，重导即有。守卫幂等（fresh DB 由 onCreate 建好，
+            // 重复升级 _columnExists 短路 no-op）。
+            if (await _tableExists('dictionary_metadata') &&
+                !await _columnExists(
+                    'dictionary_metadata', 'language_override')) {
+              await m.addColumn(
+                  dictionaryMetadata, dictionaryMetadata.languageOverride);
+            }
+            if (await _tableExists('epub_books') &&
+                !await _columnExists('epub_books', 'language')) {
+              await m.addColumn(epubBooks, epubBooks.language);
+            }
+          }
+          if (from < 88) {
+            // v88（内容语言字体链·其余三类资源）：视频（字幕字体链）、字幕书/
+            // 有声书、galgame 各加同款 language 覆盖列。
+            //
+            // **必须是 v88 而不是并进上面的 v87**：v87 已经随内容语言字体链那批
+            // 改动落在 develop 上跑了一整天，预发布/debug 通道与本机开发库都已经
+            // 把 user_version 写成 87。塞进 `from < 87` 的列对这些库永远不会执行。
+            // 实测（变异测试）下的表现是两种都很坏：读路径不抛，`language` 一律
+            // 读成 NULL——功能像「设了没反应」一样静默死掉；而写路径
+            // （updateVideoBookLanguage 等生成 `SET language = ?`）直接撞
+            // no such column。已发布的版本号是只读的，加列只能往上开新台阶。
+            //
+            // 无损：三列 nullable 无 default → 旧库既有行全 NULL = 语言未知 =
+            // 各消费方保持原有渲染，零破坏。守卫幂等（fresh DB 由 onCreate 建好，
+            // 重复升级 _columnExists 短路 no-op）。
+            if (await _tableExists('video_books') &&
+                !await _columnExists('video_books', 'language')) {
+              await m.addColumn(videoBooks, videoBooks.language);
+            }
+            if (await _tableExists('srt_books') &&
+                !await _columnExists('srt_books', 'language')) {
+              await m.addColumn(srtBooks, srtBooks.language);
+            }
+            if (await _tableExists('galgames') &&
+                !await _columnExists('galgames', 'language')) {
+              await m.addColumn(galgames, galgames.language);
+            }
+          }
+          if (from < 89) {
+            // v89（漫画作品页·每章状态）：新表 manga_chapter_states，把「章」从
+            // `MihonLibraryEntry.currentChapterIndex` 这个单 int 升成一等实体。
+            //
+            // 无损：纯新增表，不动任何既有表和列。旧库升级后表为空 = 所有章都
+            // 「无状态」= 作品页章节列表全显示未读、继续阅读回退到
+            // `currentChapterIndex`（沿 v88 前的行为），零破坏。
+            //
+            // 幂等：fresh DB 由 onCreate 的 createAll 建好；重复升级被
+            // `_tableExists` 短路 no-op。
+            if (!await _tableExists('manga_chapter_states')) {
+              await m.createTable(mangaChapterStates);
+            }
+          }
+          if (from < 90) {
+            // v90（统一代理）：下载域独立的代理三态（`download_network_proxy_mode`
+            // auto/direct/custom + `download_custom_proxy`）已删除，全应用只剩系统
+            // 设置里的一个代理项（`update_custom_proxy`，键名历史遗留、冻结不改），
+            // 留空 = 自动（env > 系统代理 > 直连）。
+            //
+            // 归并规则（never break userspace）：用户在下载页显式选了 custom 且填了
+            // 地址、而全局项仍为空 → 把地址搬进全局项，升级后搜番剧/字幕继续走
+            // 同一个代理。全局已有值以全局为准；mode 是 auto/direct 的没有可搬的
+            // 东西（direct 用户升级后跟随「自动」——这是产品决定，不是数据丢失）。
+            // 搬完删两行死键及其 pref Profile 副本，迁移一次性、幂等。
+            //
+            // 与 v63 同范式：读 + 写 + 删同一个事务，任一步失败整体回滚、
+            // user_version 停在旧版供重试。值编码沿用 PreferencesRepository 的
+            // `s:` 字符串前缀。
+            await transaction(() async {
+              if (await _tableExists('preferences')) {
+                final List<QueryRow> rows = await customSelect(
+                  'SELECT key, value FROM preferences WHERE key IN '
+                  "('download_network_proxy_mode', 'download_custom_proxy', "
+                  "'update_custom_proxy')",
+                ).get();
+                final Map<String, String> legacy = <String, String>{
+                  for (final QueryRow row in rows)
+                    row.read<String>('key'): row.read<String>('value'),
+                };
+                final String downloadProxy =
+                    (legacy['download_custom_proxy'] ?? 's:').substring(2).trim();
+                final bool globalEmpty =
+                    (legacy['update_custom_proxy'] ?? 's:').substring(2).trim().isEmpty;
+                if (legacy['download_network_proxy_mode'] == 's:custom' &&
+                    downloadProxy.isNotEmpty &&
+                    globalEmpty) {
+                  await customStatement(
+                    'INSERT OR REPLACE INTO preferences (key, value) '
+                    "VALUES ('update_custom_proxy', ?)",
+                    <Object?>['s:$downloadProxy'],
+                  );
+                }
+                await customStatement(
+                  'DELETE FROM preferences WHERE key IN '
+                  "('download_network_proxy_mode', 'download_custom_proxy')",
+                );
+              }
+              if (await _tableExists('profile_settings')) {
+                await customStatement(
+                  'DELETE FROM profile_settings '
+                  "WHERE category = 'pref' AND key IN "
+                  "('download_network_proxy_mode', 'download_custom_proxy')",
+                );
+              }
+            });
+          }
+          if (from < 91) {
+            // v91（合集级字幕偏好）：media_collections 加 subtitle_language、
+            // subtitle_release_group，给「这个系列默认用哪种语言 / 哪个字幕组的
+            // 字幕」一个系列级真值（镜像 v52 subtitle_delay_ms 的「系列共享、
+            // nullable」结构）。无损迁移：两列 nullable 无 default → 旧库既有行
+            // 全 NULL = 没人配过 = 消费方回退视频内容语言链 / 默认选轨，逐字节
+            // 保留 v91 前行为（Never break userspace）；绝不回填 ja。守卫幂等
+            // （fresh DB 已由 onCreate 建好，重复升级 _columnExists 短路 no-op）。
+            if (await _tableExists('media_collections') &&
+                !await _columnExists('media_collections', 'subtitle_language')) {
+              await m.addColumn(
+                  mediaCollections, mediaCollections.subtitleLanguage);
+            }
+            if (await _tableExists('media_collections') &&
+                !await _columnExists(
+                    'media_collections', 'subtitle_release_group')) {
+              await m.addColumn(
+                  mediaCollections, mediaCollections.subtitleReleaseGroup);
+            }
+          }
+          if (from < 92) {
+            // v92（统计域根本性重构）：学习统计唯一事实表 study_segments +
+            // 按媒体身份的删除墓碑 study_segment_tombstones（表注释见 tables.dart）。
+            //
+            // 无损：纯新增两表，旧四张投影表（reading_statistics / video_watch_statistics
+            // / reading_hourly_logs / video_hourly_logs）与 activity_events **原样保留、
+            // 冻结为 legacy**——不迁移、不改写、不删。读取侧并集 legacy + 新表；写入面
+            // 自本版起只写新表。不迁移的理由：日汇总行没 hour、小时行没 title，任何
+            // 合成都得丢一维或双计（Never break userspace = 老数字一个字节不动）。
+            //
+            // 幂等：fresh DB 由 onCreate 的 createAll 建好；重复升级被 _tableExists
+            // 短路 no-op；索引走 _ensureIndexes（IF NOT EXISTS）。
+            if (!await _tableExists('study_segments')) {
+              await m.createTable(studySegments);
+            }
+            if (!await _tableExists('study_segment_tombstones')) {
+              await m.createTable(studySegmentTombstones);
+            }
+            await _ensureIndexes();
+          }
+          if (from < 93) {
+            // v93（网页播放器自动制卡队列）：新表 web_mine_queue，设备本地、无 FK、
+            // 无索引（队列量级为几十行）。守卫幂等（fresh DB 由 onCreate 建好）。
+            if (!await _tableExists('web_mine_queue')) {
+              await m.createTable(webMineQueue);
+            }
+          }
+          if (from < 94) {
+            // v94（刮削重设计 P1，BUG-2003）：video_download_jobs /
+            // video_download_subscriptions 各加 identity_json——发现页完整身份
+            // （原名/别名/全部外部 id）的 JSON 快照，让刮削与字幕不再从
+            // 「显示名 + 单 id」的残渣里重新猜身份。无损：nullable 无 default，
+            // 旧行全 NULL = 走旧行为。守卫幂等（fresh DB 由 onCreate 建好）。
+            if (await _tableExists('video_download_jobs') &&
+                !await _columnExists('video_download_jobs', 'identity_json')) {
+              await m.addColumn(videoDownloadJobs, videoDownloadJobs.identityJson);
+            }
+            if (await _tableExists('video_download_subscriptions') &&
+                !await _columnExists(
+                    'video_download_subscriptions', 'identity_json')) {
+              await m.addColumn(videoDownloadSubscriptions,
+                  videoDownloadSubscriptions.identityJson);
+            }
+          }
         },
         onCreate: (m) async {
           await m.createAll();
@@ -3247,6 +3637,14 @@ class FushiDatabase extends _$FushiDatabase
   /// 同一实现）。
   static String statDateKeyOf(DateTime d) =>
       _FushiDbStatistics.statDateKeyOf(d);
+
+  /// v92 学习事实段的幂等键生成（转发 [_FushiDbStatistics.newStudySegmentUid]；
+  /// mixin 的 static 不经类继承，这里给调用方一个稳定入口）。
+  static String newStudySegmentUid() => _FushiDbStatistics.newStudySegmentUid();
+
+  /// 段 provenance 用的设备身份偏好键（与 fushi 层 SyncRepository 同一把 key）。
+  static const String studyDeviceIdPrefKey =
+      _FushiDbStatistics.studyDeviceIdPrefKey;
 }
 
 int _epubBookUidCounter = 0;

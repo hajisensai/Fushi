@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 
@@ -83,10 +85,17 @@ void main() {
         isTrue,
         reason: 'barrier 必须转发 onPointerHover，否则首弹后连续切换查词失效',
       );
-      // Listener 必须在 barrier 的 GestureDetector 之外（先出现）。
+      // BUG-1757 起手势接线收口进 LookupDismissBarrier 原语，宿主只把 hover 钩子
+      // 传进去。「Listener 必须在 GestureDetector 之外」这条几何契约没变，只是
+      // 现在要在原语里验（盯宿主里两个字面量的先后会被这次正当收口撞成假红）。
+      expect(overlay.contains('LookupDismissBarrier('), isTrue,
+          reason: 'barrier 必须走收口原语，不在页面各写一份手势接线');
+      final String barrier = File(
+        'lib/src/utils/misc/lookup_dismiss_barrier.dart',
+      ).readAsStringSync();
       expect(
-        overlay.indexOf('onPointerHover: _onDismissBarrierHover'),
-        lessThan(overlay.indexOf('onTapUp: (TapUpDetails d) =>')),
+        barrier.indexOf('onPointerHover: widget.onPointerHover'),
+        lessThan(barrier.indexOf('onTapUp:')),
         reason: 'Listener 应包在 barrier GestureDetector 外层',
       );
     });

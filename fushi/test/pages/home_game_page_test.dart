@@ -146,9 +146,9 @@ void main() {
     expect(gameSections, findsOneWidget);
     expect(find.text(t.game_dashboard), findsOneWidget);
     expect(find.text(t.game_library), findsOneWidget);
-    expect(find.text(t.game_capture_workbench), findsOneWidget);
+    expect(find.text(t.game_capture_workbench_tab), findsOneWidget);
     expect(find.text(t.settings), findsOneWidget,
-        reason: '800px 页头必须完整呈现首页、游戏库、捕获工作台、设置四个分段');
+        reason: '800px 页头必须完整呈现首页、游戏库、工作台、设置四个分段');
     expect(
       controller.requestById(
         const FushiFocusId('game-library-tab-sections'),
@@ -163,6 +163,17 @@ void main() {
     );
 
     final FocusDriver driver = FocusDriver(tester);
+    // 库后一位是「发现」（与书/漫画库页「浏览紧跟书架」同构）。
+    await driver.adjust(steps: 1);
+    expect(find.byKey(HomeGamePage.discoverKey), findsOneWidget);
+    expect(
+      controller.requestById(
+        const FushiFocusId('game-discover-tab-sections'),
+      ),
+      isTrue,
+      reason: '切到发现页后，新的稳定分段 ID 必须可聚焦',
+    );
+    await tester.pump();
     await driver.adjust(steps: 1);
     expect(find.byKey(HomeGamePage.monitorKey), findsOneWidget);
 
@@ -225,6 +236,17 @@ void main() {
     expect(
       controller.requestById(
         const FushiFocusId('game-library-tab-sections'),
+      ),
+      isTrue,
+    );
+    await tester.pump();
+    // 库 → 发现 → 捕获（「发现」插在库后，见 GameSectionTabs 的顺序注释）。
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+    expect(find.byKey(HomeGamePage.discoverKey), findsOneWidget);
+    expect(
+      controller.requestById(
+        const FushiFocusId('game-discover-tab-sections'),
       ),
       isTrue,
     );

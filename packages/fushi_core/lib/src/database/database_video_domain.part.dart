@@ -3,6 +3,14 @@
 // （extension 方案在此翻车过）；私有 mixin 不进公共 API 面。
 part of 'database.dart';
 
+/// 全量清理与仍在写入的来源刮削不能并行。
+class VideoScrapeRecordsBusyException implements Exception {
+  const VideoScrapeRecordsBusyException();
+
+  @override
+  String toString() => 'VideoScrapeRecordsBusyException';
+}
+
 mixin _FushiDbVideoDomain
     on _$FushiDatabase, _FushiDbLibrary, _FushiDbTagsSync {
   // ── video_scrape_meta（条目刮削资料，v54）─────────────────────────
@@ -608,6 +616,52 @@ mixin _FushiDbVideoDomain
     return query.get();
   }
 
+  /// 已经以 AniDB 作为规范主身份完成刮削的合集 id。
+  ///
+  /// [VideoMetadataWorks] 也承载来源扫描生成的 `local` provisional 作品，单凭
+  /// work 行存在不能证明「已经刮削」。系列页只认 work 级、primary 的 AniDB
+  /// identity；TMDB 是补充映射，不能单独把一个文件夹候选晋升成系列。
+  Future<Set<int>> aniDbScrapedVideoCollectionIds() async {
+    final query = selectOnly(videoMetadataWorks, distinct: true)
+      ..addColumns(<Expression<Object>>[videoMetadataWorks.collectionId])
+      ..join(<Join>[innerJoin(
+        videoMetadataProviderIdentities,
+        videoMetadataProviderIdentities.workId.equalsExp(
+          videoMetadataWorks.id,
+        ),
+      )])
+      ..where(
+        videoMetadataWorks.collectionId.isNotNull() &
+            videoMetadataProviderIdentities.provider.equals('anidb') &
+            videoMetadataProviderIdentities.isPrimary.equals(true),
+      );
+    return <int>{
+      for (final TypedResult row in await query.get())
+        if (row.read(videoMetadataWorks.collectionId) case final int id) id,
+    };
+  }
+
+  /// 已经以 AniDB 作为规范主身份完成刮削、且不依赖合集承载的独立视频 uid。
+  Future<Set<String>> aniDbScrapedVideoBookUids() async {
+    final query = selectOnly(videoMetadataWorks, distinct: true)
+      ..addColumns(<Expression<Object>>[videoMetadataWorks.bookUid])
+      ..join(<Join>[innerJoin(
+        videoMetadataProviderIdentities,
+        videoMetadataProviderIdentities.workId.equalsExp(
+          videoMetadataWorks.id,
+        ),
+      )])
+      ..where(
+        videoMetadataWorks.bookUid.isNotNull() &
+            videoMetadataProviderIdentities.provider.equals('anidb') &
+            videoMetadataProviderIdentities.isPrimary.equals(true),
+      );
+    return <String>{
+      for (final TypedResult row in await query.get())
+        if (row.read(videoMetadataWorks.bookUid) case final String uid) uid,
+    };
+  }
+
   Future<void> replaceVideoMetadataRawSnapshots(
     String identityKey,
     List<VideoMetadataRawSnapshotsCompanion> snapshots,
@@ -942,6 +996,16 @@ mixin _FushiDbVideoDomain
     return query.get();
   }
 
+  /// 是否仍有联网视频刮削正在写入。全局清理用它 fail closed，避免清完后活动任务
+  /// 又把 work / sidecar ledger 写回来。
+  Future<bool> hasRunningVideoSourceScrapeRun() async =>
+      await (select(videoSourceScrapeRuns)
+                ..where(($VideoSourceScrapeRunsTable t) =>
+                    t.status.equals('running'))
+                ..limit(1))
+              .getSingleOrNull() !=
+          null;
+
   /// 进程异常退出不会经过 Flutter dispose；下次启动把遗留 running 任务诚实标成
   /// interrupted，避免任务面板永久显示正在运行。
   Future<int> interruptStaleVideoSourceScrapeRuns({int? finishedAt}) {
@@ -1002,6 +1066,142 @@ mixin _FushiDbVideoDomain
       ($VideoSidecarArtifactsTable t) => OrderingTerm(expression: t.path),
     ]);
     return query.get();
+  }
+
+  /// 原子清空全部视频刮削记录与可重建投影。
+  ///
+  /// 明确保留真实媒体结构与用户配置：不删 [VideoBooks]、[MediaCollections]、
+  /// [MediaCollectionItems]、观看/字幕/标签数据，也不删
+  /// [VideoSourceScrapeSettings]。合集可能是用户手动创建后再刮削，当前 schema
+  /// 没有可靠 provenance，因此绝不能把「有 scrape meta」误当成刮削器拥有合集。
+  /// 系列页是否展示由 primary AniDB identity 决定；本事务清掉 identity 后系列结果
+  /// 自然消失，底层分组仍可供以后重新刮削。
+  ///
+  /// 封面文件的磁盘所有权只能由 app 层在事务前校验。调用方把已经证明是 Fushi
+  /// 生成物的「当前路径」传进来，本方法只在路径仍与快照一致时原子清引用；其间
+  /// 用户若换过封面，条件更新不会覆盖新选择。
+  Future<void> clearAllVideoScrapeRecords({
+    Map<String, String> clearBookCoverPaths = const <String, String>{},
+    Map<int, String> clearCollectionCoverPaths = const <int, String>{},
+    Map<int, String> clearLegacyScrapedMediaImagePaths =
+        const <int, String>{},
+    bool preserveAllSidecarArtifacts = false,
+    Set<int>? clearSidecarArtifactIds,
+  }) =>
+      transaction(() async {
+        if (await hasRunningVideoSourceScrapeRun()) {
+          throw const VideoScrapeRecordsBusyException();
+        }
+        for (final MapEntry<String, String> entry
+            in clearBookCoverPaths.entries) {
+          await (update(videoBooks)
+                ..where(($VideoBooksTable t) =>
+                    t.bookUid.equals(entry.key) &
+                    t.coverPath.equals(entry.value)))
+              .write(const VideoBooksCompanion(
+            coverPath: Value<String?>(null),
+          ));
+        }
+        for (final MapEntry<int, String> entry
+            in clearCollectionCoverPaths.entries) {
+          await (update(mediaCollections)
+                ..where(($MediaCollectionsTable t) =>
+                    t.id.equals(entry.key) &
+                    t.coverPath.equals(entry.value)))
+              .write(const MediaCollectionsCompanion(
+            coverPath: Value<String?>(null),
+          ));
+        }
+
+        // sidecar ledger 对 canonical owner/run 使用 SET NULL，不会随父行级联，必须
+        // 显式清；先删它也避免后续父表删除制造一批短暂的无主记录。
+        if (preserveAllSidecarArtifacts) {
+          // 文件校验前的事务预检：保留全部 ledger 作为所有权证据。
+        } else if (clearSidecarArtifactIds case final Set<int> ids) {
+          // 不用 `NOT IN(全部保护 ID)`：大型动画库会超过 Android/旧 SQLite
+          // 常见的 999 绑定变量上限。这里只按固定小批次删除已确认可清的 ID。
+          final List<int> orderedIds = ids.toList(growable: false)..sort();
+          const int batchSize = 400;
+          for (int offset = 0; offset < orderedIds.length; offset += batchSize) {
+            final int end = (offset + batchSize < orderedIds.length)
+                ? offset + batchSize
+                : orderedIds.length;
+            await (delete(videoSidecarArtifacts)
+                  ..where(($VideoSidecarArtifactsTable t) =>
+                      t.id.isIn(orderedIds.sublist(offset, end))))
+                .go();
+          }
+        } else {
+          await delete(videoSidecarArtifacts).go();
+        }
+        await delete(videoSourceScrapeRuns).go();
+
+        // `source='local'` 是用户在合集详情中“按季拆分”后建立的前传/续作结构，
+        // 不属于刮削缓存；全量清理只能删外部 provider 关系。
+        await (delete(collectionRelations)
+              ..where(($CollectionRelationsTable t) =>
+                  t.source.equals('local').not()))
+            .go();
+        await delete(collectionScrapeMeta).go();
+        await delete(videoScrapeMeta).go();
+        // v68 会把旧 collection_scrape_meta.backdrop_path 搬入 media_images，
+        // 但迁移行没有 sourceUrl。调用方携带清理前 meta 快照作精确 CAS，避免把
+        // 这类遗留刮削投影误认成手工附加图；其余 sourceUrl=null 仍全部保留。
+        for (final MapEntry<int, String> entry
+            in clearLegacyScrapedMediaImagePaths.entries) {
+          await (delete(mediaImages)
+                ..where(($MediaImagesTable t) =>
+                    t.collectionId.equals(entry.key) &
+                    t.path.equals(entry.value) &
+                    t.kind.equals('backdrop') &
+                    t.sourceUrl.isNull()))
+              .go();
+        }
+        // 有远端来源的行是可重建刮削投影；无来源且未被上方精确命中的行是手工图。
+        await (delete(mediaImages)
+              ..where(($MediaImagesTable t) => t.sourceUrl.isNotNull()))
+            .go();
+
+        // work 删除会级联 seasons / episodes / owner identities / snapshots /
+        // work_terms / credits / images / extras；people / characters / terms 是独立
+        // 字典根，必须随后显式清掉，否则全量清理仍会留下孤儿资料。
+        await delete(videoMetadataWorks).go();
+        await delete(videoMetadataPeople).go();
+        await delete(videoMetadataCharacters).go();
+        await delete(videoMetadataTerms).go();
+      });
+
+  /// 视频库刮削展示层依赖的任一表变化信号。与 uid watcher 正交：清资料/封面时
+  /// VideoBooks 的 uid 集合不变，单靠 uid 流会被消费方去重，系列页便停在旧快照。
+  Stream<void> watchVideoScrapePresentationChanged() {
+    late final StreamController<void> controller;
+    StreamSubscription<void>? updatesSub;
+    controller = StreamController<void>(
+      onListen: () {
+        updatesSub = tableUpdates(
+          TableUpdateQuery.onAllTables(
+            <ResultSetImplementation<dynamic, dynamic>>[
+              videoScrapeMeta,
+              collectionScrapeMeta,
+              videoSourceScrapeRuns,
+              mediaImages,
+              videoMetadataWorks,
+              videoMetadataProviderIdentities,
+              videoMetadataSeasons,
+              videoMetadataEpisodes,
+              videoMetadataImages,
+              videoMetadataExtras,
+            ],
+          ),
+        ).listen((_) {
+          if (!controller.isClosed) controller.add(null);
+        });
+      },
+      onCancel: () async {
+        await updatesSub?.cancel();
+      },
+    );
+    return controller.stream;
   }
 
   // ── durable video download pipeline（schema v78）──────────────────
@@ -1322,6 +1522,68 @@ mixin _FushiDbVideoDomain
       updatedAt: Value<int>(nowAt),
     ));
     return changed == 1;
+  }
+
+  /// 订阅自动重派：把既有的 `failed` / `needsAttention` 任务放回 `active`，
+  /// 而**不是**再克隆一份新任务。
+  ///
+  /// 为什么不复用 [retryVideoDownloadJobByUser]：它把 `attemptCount` 清零，语义是
+  /// 「人按了重试按钮」——人每按一次，人自己就是那道闸门。自动重派没有这道闸门，
+  /// 清零等于无上限重试。
+  ///
+  /// 上限的账本就是 [VideoDownloadJobs] 的 `attemptCount` 本身，不新增列：它的
+  /// 定义就是「这个任务累计消耗了多少次重试预算」，而一次自动重派确实是一次重试。
+  /// `maxAttempts` 是流水线进程内退避的预算，`attemptCount - maxAttempts` 即自动
+  /// 重派已经额外借走的格数；借满 [autoRetryBudget] 之后本方法返回 false，任务
+  /// 原样停在 `failed` / `needsAttention` 等用户处理。面板的重试按钮走
+  /// [retryVideoDownloadJobByUser] 把 `attemptCount` 清零，于是人工干预天然地把
+  /// 自动预算也一起恢复了——不需要第二处状态，也就没有第二处会写歪的地方。
+  ///
+  /// 入口状态被归一化：`failed` 的任务 `attemptCount` 已经等于 `maxAttempts`，而
+  /// `needsAttention` 的任务可能还是 0（[markVideoDownloadJobNeedsAttention] 不
+  /// 消耗预算）。统一写成 `maxAttempts + 已借用 + 1`，两条路径每次自动重派各消耗
+  /// 一格，不用为 needsAttention 单开一个分支。
+  ///
+  /// `stage` / `backendTaskId` / `torrentHash` 一律保留，不倒回 enqueue：
+  /// `needsAttention` 的后端 torrent 可能还在跑，重新推一遍等于让同一个 infohash
+  /// 挂上第二条工作流。`lastError` 也保留——故障还没排除时它是唯一的诊断线索。
+  Future<bool> reviveVideoDownloadJobForSubscription({
+    required String jobId,
+    required int autoRetryBudget,
+    required int nowAt,
+  }) {
+    if (autoRetryBudget <= 0) {
+      throw ArgumentError.value(autoRetryBudget, 'autoRetryBudget');
+    }
+    return transaction(() async {
+      final VideoDownloadJobRow? row = await getVideoDownloadJob(jobId);
+      if (row == null) return false;
+      if (row.lifecycle != VideoDownloadJobLifecycle.failed &&
+          row.lifecycle != VideoDownloadJobLifecycle.needsAttention) {
+        return false;
+      }
+      final int borrowed = row.attemptCount > row.maxAttempts
+          ? row.attemptCount - row.maxAttempts
+          : 0;
+      if (borrowed >= autoRetryBudget) return false;
+      final int changed = await (update(videoDownloadJobs)
+            ..where(($VideoDownloadJobsTable t) =>
+                t.jobId.equals(jobId) &
+                t.lifecycle.isIn(<String>[
+                  VideoDownloadJobLifecycle.failed,
+                  VideoDownloadJobLifecycle.needsAttention,
+                ])))
+          .write(VideoDownloadJobsCompanion(
+        lifecycle: const Value<String>(VideoDownloadJobLifecycle.active),
+        attemptCount: Value<int>(row.maxAttempts + borrowed + 1),
+        nextAttemptAt: Value<int?>(nowAt),
+        claimedBy: const Value<String?>(null),
+        claimExpiresAt: const Value<int?>(null),
+        completedAt: const Value<int?>(null),
+        updatedAt: Value<int>(nowAt),
+      ));
+      return changed == 1;
+    });
   }
 
   /// 用户显式调整单个任务的排队优先级。
@@ -1739,6 +2001,44 @@ mixin _FushiDbVideoDomain
     });
   }
 
+  /// 全部启用订阅中最早的一个可领取时刻；没有可调度的订阅时返回 null。
+  ///
+  /// 调度器据此把「固定周期唤醒」换成「睡到下一条真正到期」。被别的 worker
+  /// 占着的行要等 lease 过期才轮得到，所以它的可领取时刻取 nextCheckAt 与
+  /// claimExpiresAt 的较晚者；nextCheckAt 为 NULL 表示立即到期（新建订阅）。
+  Future<int?> nextVideoDownloadSubscriptionDueAt() async {
+    final List<QueryRow> rows = await customSelect(
+      'SELECT MIN(CASE WHEN claimed_by IS NULL '
+      'THEN COALESCE(next_check_at, 0) '
+      'ELSE MAX(COALESCE(next_check_at, 0), COALESCE(claim_expires_at, 0)) '
+      'END) AS due FROM video_download_subscriptions WHERE enabled = 1',
+      readsFrom: <TableInfo<Table, Object?>>{videoDownloadSubscriptions},
+    ).get();
+    if (rows.isEmpty) return null;
+    return rows.first.read<int?>('due');
+  }
+
+  /// 一条订阅最近若干条目的发布时刻（降序，已滤掉缺失值）。
+  ///
+  /// 订阅检查节奏据此推断每周更新点，见 `subscription_check_schedule.dart`。
+  Future<List<int>> getVideoDownloadSubscriptionPublishedAt(
+    String subscriptionId, {
+    int limit = 5,
+  }) async {
+    if (limit <= 0) throw ArgumentError.value(limit, 'limit');
+    final List<QueryRow> rows = await customSelect(
+      'SELECT published_at AS at FROM video_download_subscription_items '
+      'WHERE subscription_id = ?1 AND published_at IS NOT NULL '
+      'ORDER BY published_at DESC LIMIT ?2',
+      variables: <Variable<Object>>[
+        Variable<String>(subscriptionId),
+        Variable<int>(limit),
+      ],
+      readsFrom: <TableInfo<Table, Object?>>{videoDownloadSubscriptionItems},
+    ).get();
+    return <int>[for (final QueryRow row in rows) row.read<int>('at')];
+  }
+
   Future<bool> renewVideoDownloadSubscriptionClaim({
     required String subscriptionId,
     required String workerId,
@@ -1876,6 +2176,27 @@ mixin _FushiDbVideoDomain
                       OrderingTerm(expression: t.discoveredAt),
                 ]))
               .watch();
+
+  /// 每个订阅的 items 状态计数（外层 map 键 = subscriptionId，内层键 =
+  /// [VideoDownloadSubscriptionItemStatus] 值）。订阅面板卡片的
+  /// 「N 已入库 · M 排队中 · K 失败」摘要用；一条 GROUP BY 拿全量，
+  /// 避免面板对每张卡各发一查。
+  Future<Map<String, Map<String, int>>>
+      getVideoDownloadSubscriptionItemStatusCounts() async {
+    final List<QueryRow> rows = await customSelect(
+      'SELECT subscription_id AS sid, status AS st, COUNT(*) AS cnt '
+      'FROM video_download_subscription_items '
+      'GROUP BY subscription_id, status',
+      readsFrom: <TableInfo<Table, Object?>>{videoDownloadSubscriptionItems},
+    ).get();
+    final Map<String, Map<String, int>> out = <String, Map<String, int>>{};
+    for (final QueryRow row in rows) {
+      final String sid = row.read<String>('sid');
+      out.putIfAbsent(sid, () => <String, int>{})[row.read<String>('st')] =
+          row.read<int>('cnt');
+    }
+    return out;
+  }
 
   Future<int> updateVideoDownloadSubscriptionItem(
     int id,

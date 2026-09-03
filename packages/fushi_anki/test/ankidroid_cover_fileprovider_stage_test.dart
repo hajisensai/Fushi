@@ -89,7 +89,7 @@ void main() {
 
   Map<String, String> _coverCall() => mediaCalls.firstWhere(
         (Map<String, String> c) =>
-            c['preferredName']!.startsWith('hibiki_cover_'),
+            c['preferredName']!.startsWith('fushi_cover_'),
         orElse: () => fail('制卡没有向 AnkiDroid 提交封面媒体（addFileToMedia 未收到 cover）'),
       );
 

@@ -67,6 +67,8 @@ abstract final class PrefRedactionPolicy {
   static const Set<String> sensitiveKeys = <String>{
     // qBittorrent WebUI 连接配置：{host, port, username, password} JSON，密码明文。
     'qb_connection_config',
+    // 手动 HTTP 代理登录名；密码由 `password` 形状兜底命中，两者都不得随备份出境。
+    'network_proxy_username',
     // 第三方服务 API key（都被 `api_key` 子串覆盖，显式列出以便审计时一眼看全）。
     'yomitan_api_key',
     'jimaku_api_key',
@@ -75,6 +77,10 @@ abstract final class PrefRedactionPolicy {
     'video_metadata_fanart_api_key',
     'video_metadata_bangumi_token',
     'video_metadata_douban_authorized_token',
+    // Bangumi 追番同步 access token（media_tracking_service.dart）。此前只靠
+    // `token` 子串兜底才被拦——形状兜底是防漏网的最后一道，真凭据必须点名
+    //（apikey 同步设定重设计 2026-08-17：名单对称性审计）。
+    'media_tracking_bangumi_access_token',
     // 授权端点可能是私有服务 URL，也可能携带 query credential；它的名字没有
     // token/api_key 形状，必须显式点名，避免备份/Profile 分享时旁路出境。
     'video_metadata_douban_authorized_endpoint',
@@ -82,6 +88,9 @@ abstract final class PrefRedactionPolicy {
     // 必须显式点名。两者也在 deviceLocalPrefKeys 中，双重声明便于安全审计。
     'video_resource_torznab_config',
     'video_subtitle_opensubtitles_config',
+    // 同形：JSON 内含 base64 的 OPDS 服务器密码，键名本身没有 credential 形状。
+    // 也在 deviceLocalPrefKeys 中，双重声明便于安全审计。
+    'discovery_opds_servers',
   };
 
   /// key 是否属于「设备本地 / 凭据」，即备份、Profile 快照与 Profile 分享 JSON

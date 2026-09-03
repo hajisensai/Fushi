@@ -1,4 +1,5 @@
 #pragma once
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -7,7 +8,7 @@ namespace hash {
 class bloom {
  public:
   static void build_to_file(const std::vector<uint64_t>& hashes, const std::string& path);
-  void load(const uint8_t* ptr);
+  void load(const uint8_t* ptr, size_t size);
 
   bool contains(uint64_t h) const {
     if (!bits_ || num_hashes_ == 0) return true;  // pass-through if bloom invalid

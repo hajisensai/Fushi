@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:fushi/src/utils/misc/build_version.dart';
+
 enum WindowsUpdateHandoffStatus {
   installed,
   incomplete,
@@ -121,6 +123,7 @@ class WindowsInstallerDiagnostics {
     this.detectedInstallLocations = const <WindowsDetectedInstallLocation>[],
     this.runningFushiProcesses = const <WindowsProcessInfo>[],
     this.libmpvModuleHolders = const <WindowsProcessInfo>[],
+    this.galHookModuleHolders = const <WindowsProcessInfo>[],
     this.innoLogDeleteFileFailures = const <WindowsInnoDeleteFileFailure>[],
     this.pathMismatchWarning,
   });
@@ -131,15 +134,30 @@ class WindowsInstallerDiagnostics {
   final List<WindowsDetectedInstallLocation> detectedInstallLocations;
   final List<WindowsProcessInfo> runningFushiProcesses;
   final List<WindowsProcessInfo> libmpvModuleHolders;
+
+  /// 正占用 `voice_hook/<arch>/` 下 galgame helper 组件的进程（被 hook 的游戏本身，
+  /// 以及以 `--hold` 维持共享内存的 injector host）。
+  ///
+  /// 与 [libmpvModuleHolders] 并列而不是合并：两者查的是不同文件、对应不同的用户处置
+  /// （「关掉播放器 / 别的用 libmpv 的程序」 vs 「关掉正在玩的游戏」），诊断面板要分开
+  /// 说才有用。旧版本写的交接标记里没有这个键，`fromJson` 取到空列表，与今天行为一致。
+  final List<WindowsProcessInfo> galHookModuleHolders;
   final List<WindowsInnoDeleteFileFailure> innoLogDeleteFileFailures;
   final String? pathMismatchWarning;
 
   bool get hasLockEvidence {
     if (libmpvModuleHolders.isNotEmpty) return true;
+    if (galHookModuleHolders.isNotEmpty) return true;
     return innoLogDeleteFileFailures.any(
       (WindowsInnoDeleteFileFailure failure) =>
           failure.code == 5 &&
-          failure.path.toLowerCase().contains('libmpv-2.dll'),
+          (failure.path.toLowerCase().contains('libmpv-2.dll') ||
+              // BUG-1675：helper 组件换不掉时 Inno 报的是 voice_hook\ 下的路径。
+              // 只认 libmpv 会让这半边的锁证据整个看不见。
+              failure.path
+                  .toLowerCase()
+                  .replaceAll('/', r'\')
+                  .contains('\\voice_hook\\')),
     );
   }
 
@@ -150,6 +168,7 @@ class WindowsInstallerDiagnostics {
     List<WindowsDetectedInstallLocation>? detectedInstallLocations,
     List<WindowsProcessInfo>? runningFushiProcesses,
     List<WindowsProcessInfo>? libmpvModuleHolders,
+    List<WindowsProcessInfo>? galHookModuleHolders,
     List<WindowsInnoDeleteFileFailure>? innoLogDeleteFileFailures,
     String? pathMismatchWarning,
   }) {
@@ -163,6 +182,7 @@ class WindowsInstallerDiagnostics {
       runningFushiProcesses:
           runningFushiProcesses ?? this.runningFushiProcesses,
       libmpvModuleHolders: libmpvModuleHolders ?? this.libmpvModuleHolders,
+      galHookModuleHolders: galHookModuleHolders ?? this.galHookModuleHolders,
       innoLogDeleteFileFailures:
           innoLogDeleteFileFailures ?? this.innoLogDeleteFileFailures,
       pathMismatchWarning: pathMismatchWarning ?? this.pathMismatchWarning,
@@ -182,6 +202,7 @@ class WindowsUpdateHandoffRecord {
     this.detectedInstallLocations = const <WindowsDetectedInstallLocation>[],
     this.runningFushiProcesses = const <WindowsProcessInfo>[],
     this.libmpvModuleHolders = const <WindowsProcessInfo>[],
+    this.galHookModuleHolders = const <WindowsProcessInfo>[],
     this.innoLogDeleteFileFailures = const <WindowsInnoDeleteFileFailure>[],
     this.pathMismatchWarning,
     this.launcherStartedAt,
@@ -231,6 +252,10 @@ class WindowsUpdateHandoffRecord {
           .map(WindowsProcessInfo.fromJson)
           .where((WindowsProcessInfo process) => process.pid > 0)
           .toList(growable: false),
+      galHookModuleHolders: _listOfMaps(json['galHookModuleHolders'])
+          .map(WindowsProcessInfo.fromJson)
+          .where((WindowsProcessInfo process) => process.pid > 0)
+          .toList(growable: false),
       innoLogDeleteFileFailures: _listOfMaps(json['innoLogDeleteFileFailures'])
           .map(WindowsInnoDeleteFileFailure.fromJson)
           .where(
@@ -272,6 +297,7 @@ class WindowsUpdateHandoffRecord {
   final List<WindowsDetectedInstallLocation> detectedInstallLocations;
   final List<WindowsProcessInfo> runningFushiProcesses;
   final List<WindowsProcessInfo> libmpvModuleHolders;
+  final List<WindowsProcessInfo> galHookModuleHolders;
   final List<WindowsInnoDeleteFileFailure> innoLogDeleteFileFailures;
   final String? pathMismatchWarning;
   final DateTime? launcherStartedAt;
@@ -301,6 +327,7 @@ class WindowsUpdateHandoffRecord {
         detectedInstallLocations: detectedInstallLocations,
         runningFushiProcesses: runningFushiProcesses,
         libmpvModuleHolders: libmpvModuleHolders,
+        galHookModuleHolders: galHookModuleHolders,
         innoLogDeleteFileFailures: innoLogDeleteFileFailures,
         pathMismatchWarning: pathMismatchWarning,
       );
@@ -325,6 +352,10 @@ class WindowsUpdateHandoffRecord {
               .toList(growable: false),
         if (libmpvModuleHolders.isNotEmpty)
           'libmpvModuleHolders': libmpvModuleHolders
+              .map((WindowsProcessInfo process) => process.toJson())
+              .toList(growable: false),
+        if (galHookModuleHolders.isNotEmpty)
+          'galHookModuleHolders': galHookModuleHolders
               .map((WindowsProcessInfo process) => process.toJson())
               .toList(growable: false),
         if (innoLogDeleteFileFailures.isNotEmpty)
@@ -380,6 +411,7 @@ class WindowsUpdateHandoffRecord {
     List<WindowsDetectedInstallLocation>? detectedInstallLocations,
     List<WindowsProcessInfo>? runningFushiProcesses,
     List<WindowsProcessInfo>? libmpvModuleHolders,
+    List<WindowsProcessInfo>? galHookModuleHolders,
     List<WindowsInnoDeleteFileFailure>? innoLogDeleteFileFailures,
     String? pathMismatchWarning,
     DateTime? launcherStartedAt,
@@ -417,6 +449,7 @@ class WindowsUpdateHandoffRecord {
       runningFushiProcesses:
           runningFushiProcesses ?? this.runningFushiProcesses,
       libmpvModuleHolders: libmpvModuleHolders ?? this.libmpvModuleHolders,
+      galHookModuleHolders: galHookModuleHolders ?? this.galHookModuleHolders,
       innoLogDeleteFileFailures:
           innoLogDeleteFileFailures ?? this.innoLogDeleteFileFailures,
       pathMismatchWarning: pathMismatchWarning ?? this.pathMismatchWarning,
@@ -487,6 +520,7 @@ abstract final class WindowsUpdateHandoff {
         detectedInstallLocations: diagnostics.detectedInstallLocations,
         runningFushiProcesses: diagnostics.runningFushiProcesses,
         libmpvModuleHolders: diagnostics.libmpvModuleHolders,
+        galHookModuleHolders: diagnostics.galHookModuleHolders,
         innoLogDeleteFileFailures: diagnostics.innoLogDeleteFileFailures,
         pathMismatchWarning: diagnostics.pathMismatchWarning,
         lastPromptedAppVersion:
@@ -613,21 +647,60 @@ abstract final class WindowsUpdateHandoff {
     );
   }
 
+  /// [runningCodeVersionDefine] 默认就是编译进本份 `app.so` 的常量，生产路径无需
+  /// 传参；测试用它注入任意「运行中代码版本」。空串 = 未注入 = 该证据不可用。
   static Future<WindowsUpdateHandoffResult?> reconcile({
     required File markerFile,
     required String currentVersion,
+    String runningCodeVersionDefine = kFushiBuildVersionDefine,
     DateTime? now,
   }) async {
     final WindowsUpdateHandoffRecord? record = await read(markerFile);
     if (record == null) return null;
-    if (_isVersionAtLeast(currentVersion, record.targetVersion)) {
+    // BUG-1786：判「装成功」必须拿到**正面证据**，而不是「没看到失败」。
+    //
+    // 旧判据只有 `currentVersion >= targetVersion` 一条，而 `currentVersion` 来自 exe
+    // 版本资源——它和 `app.so` 是**两个文件**，所以这条判据根本不看运行中的代码换没换：
+    // 安装中途 Abort 回滚（保留被覆盖的旧 app.so）要报成功，半更新态同样报成功。
+    //
+    // 更糟的是它在 beta 通道曾**恒为真**。注意机制不是「Windows 版本资源丢后缀」——
+    // VERSIONINFO 的字符串字段保留完整 build-name（丢后缀的只是 `FILEVERSION` 那四段
+    // 数字，而 package_info 读的是字符串字段），debug 包实测就是 `2.2.1-debug.12215`。
+    // 真正丢后缀的是 **beta 的 `--build-name` 本身**：`release-desktop.yml` 原先只给
+    // debug tag 覆盖 `BUILD_VERSION_NAME`，beta 包在版本资源里一律自称裸 `2.2.1`，而
+    // targetVersion 是 `2.2.1-beta.30`；SemVer 规定「正式版 > 同号预发布版」⇒
+    // `2.2.1 > 2.2.1-beta.30` ⇒ 永远成立（版本名派生已在 BUG-1836 一并修掉）。
+    // 用户现场因此连着几天收到「更新成功」，跑的却始终是旧 Dart 代码。
+    //
+    // BUG-1836 根因修复：判据升级为三源证据表（见 [isWindowsUpdateInstalled]）。
+    // 旧判据只有「Inno 日志 + exe 版本资源」两源，两源都不是**被替换的产物本身**：
+    // 日志只在 app 自己拉起安装器时才存在（手动救援装成功也判失败，这就是
+    // BUG-1836），版本资源和 Dart 代码是两个文件（半更新态里它报新版本、跑的是旧
+    // 代码）。现在加入编译进 `app.so` 的 [kFushiBuildVersionDefine]，它与被替换的
+    // 产物同体，是唯一伪造不了的证据。没有它的历史版本/本地构建行为与旧判据完全
+    // 一致。
+    final String? runningCodeVersion =
+        normalizeFushiBuildVersion(runningCodeVersionDefine);
+    // 「这条提示是不是已经弹过」的幂等键。优先用代码版本：它来自 `app.so`，
+    // `currentVersion` 来自 exe 版本资源，半更新态下两者会指向不同的构建，而这个
+    // 键要回答的正是「跑着的这份代码有没有被提示过」。
+    final String promptedVersionKey = runningCodeVersion ?? currentVersion;
+    final WindowsInnoInstallVerdict verdict = windowsInnoLogVerdict(
+      await _readInnoLogContents(record.innoLogPath),
+    );
+    if (isWindowsUpdateInstalled(
+      verdict: verdict,
+      targetVersion: record.targetVersion,
+      executableVersion: currentVersion,
+      runningCodeVersion: runningCodeVersion,
+    )) {
       // Idempotency guard mirroring the failure branch below: if we already
       // surfaced the success dialog for this app version, stay silent. Relying
       // solely on deleting the marker is fragile — the delete can fail on real
       // machines (antivirus/indexer locks, permission errors in the updates
       // dir) and is swallowed by the catch, leaving the marker in place so the
       // success dialog pops on every startup (TODO-1035 / BUG-483).
-      if (record.lastPromptedAppVersion == currentVersion) {
+      if (record.lastPromptedAppVersion == promptedVersionKey) {
         // Best-effort cleanup is still worth retrying in case the lock cleared.
         try {
           if (await markerFile.exists()) await markerFile.delete();
@@ -639,7 +712,7 @@ abstract final class WindowsUpdateHandoff {
       // Persist the prompted version *before* attempting deletion so that even
       // if the delete fails, the next startup is silenced by the guard above.
       final WindowsUpdateHandoffRecord prompted = record.copyWith(
-        lastPromptedAppVersion: currentVersion,
+        lastPromptedAppVersion: promptedVersionKey,
         lastPromptedAt: now ?? DateTime.now(),
       );
       try {
@@ -660,13 +733,13 @@ abstract final class WindowsUpdateHandoff {
 
     final WindowsUpdateHandoffRecord enriched =
         await _enrichFailureDiagnostics(record);
-    if (enriched.lastPromptedAppVersion == currentVersion &&
+    if (enriched.lastPromptedAppVersion == promptedVersionKey &&
         enriched.lastPromptedFailureFingerprint ==
             enriched.failureFingerprint) {
       return null;
     }
     final WindowsUpdateHandoffRecord prompted = enriched.copyWith(
-      lastPromptedAppVersion: currentVersion,
+      lastPromptedAppVersion: promptedVersionKey,
       lastPromptedFailureFingerprint: enriched.failureFingerprint,
       lastPromptedAt: now ?? DateTime.now(),
     );
@@ -717,6 +790,9 @@ abstract final class WindowsUpdateHandoff {
       failureFingerprint: fingerprint,
     );
   }
+
+  static Future<String?> _readInnoLogContents(String path) async =>
+      (await _readInnoLog(path)).contents;
 
   static Future<_WindowsInnoLogSnapshot> _readInnoLog(String path) async {
     try {
@@ -899,6 +975,67 @@ List<WindowsInnoDeleteFileFailure> parseWindowsInnoDeleteFileFailures(
       .toList(growable: false);
 }
 
+/// Inno 日志对「这次安装到底成没成」的收尾结论。
+///
+/// [unknown] 指日志缺失 / 读不到 / 没写出任何收尾行——**不是**「大概成了」。正常路径下
+/// 日志一定存在（`/LOG=` 是我们自己传给安装器的），拿不到通常意味着 launcher 没起来、
+/// Inno 没运行或中途崩了，那些都该按失败处置。
+enum WindowsInnoInstallVerdict { succeeded, aborted, unknown }
+
+/// Inno 日志是否表明**这次安装以中止/回滚收场**（而不是装完了）。
+///
+/// 存在的理由（BUG-1786）：握手原本只用「当前版本号 >= 目标版本号」判断安装是否成功，
+/// 而 Windows 上版本号读自 `fushi.exe` 的版本资源。Inno 逐个文件安装，`fushi.exe` 的
+/// 字母序排在 `data\app.so`（全部 Dart 代码）之前——安装在中间被 Abort 时，exe 已经换成
+/// 新的、Dart 代码还是旧的，版本号判据于是宣告「安装成功」，用户拿着一个跑旧代码的 app
+/// 却收到成功提示。日志里的收尾结论才是这次安装的真相源。
+///
+/// 判据取**最后一条**结论行，而不是「是否出现过某个词」：Inno 在 `Rolling back changes.`
+/// 之后还会写回滚自身的进度，只按包含关系匹配会把回滚的成功当成安装的成功。同理，成功
+/// 安装的日志里也可能因为某个文件重试而出现过 `DeleteFile failed`，那不构成整包失败。
+///
+/// 无日志（null / 空 / 读不到）返回 false —— 宁可沿用旧的版本号判据，也不要因为读不到
+/// 日志就把一次真正成功的更新报成失败。
+bool windowsInnoLogReportsAbortedInstall(String? contents) =>
+    windowsInnoLogVerdict(contents) == WindowsInnoInstallVerdict.aborted;
+
+/// 取日志里**最后一条**收尾结论。见 [WindowsInnoInstallVerdict] 关于 unknown 的语义。
+WindowsInnoInstallVerdict windowsInnoLogVerdict(String? contents) {
+  if (contents == null || contents.trim().isEmpty) {
+    return WindowsInnoInstallVerdict.unknown;
+  }
+  const List<String> abortedMarkers = <String>[
+    'user canceled the installation process',
+    'rolling back changes',
+  ];
+  // `\b` 是关键，不能退化成 contains：回滚收尾写的是「**Un**installation process
+  // succeeded.」，而 'uninstallation process succeeded' 里就含有子串 'installation
+  // process succeeded'——按包含关系匹配会把**回滚自身的成功**读成安装成功，正好在最需要
+  // 报失败的那条日志上给出相反结论。词边界让 'uninstallation' 不再命中（'n' 与 'i' 之间
+  // 没有词边界），只有真正的 'Installation process succeeded.' 才算。
+  final RegExp succeeded = RegExp(r'\binstallation process succeeded');
+  final RegExp aborting = RegExp(r'\binstallation process aborted');
+  WindowsInnoInstallVerdict? verdict;
+  for (final String line in const LineSplitter().convert(contents)) {
+    final String lower = line.toLowerCase();
+    if (succeeded.hasMatch(lower)) {
+      verdict = WindowsInnoInstallVerdict.succeeded;
+      continue;
+    }
+    if (aborting.hasMatch(lower)) {
+      verdict = WindowsInnoInstallVerdict.aborted;
+      continue;
+    }
+    for (final String marker in abortedMarkers) {
+      if (lower.contains(marker)) {
+        verdict = WindowsInnoInstallVerdict.aborted;
+        break;
+      }
+    }
+  }
+  return verdict ?? WindowsInnoInstallVerdict.unknown;
+}
+
 String _fingerprintPart(String value) =>
     base64Url.encode(utf8.encode(value)).replaceAll('=', '');
 
@@ -933,6 +1070,126 @@ List<Map<String, dynamic>> _listOfMaps(Object? raw) {
         ),
       )
       .toList(growable: false);
+}
+
+/// 「这次 Windows 更新到底装上了没有」的唯一判据，纯函数。
+///
+/// 三个证据源，按可信度排（BUG-1786 / BUG-1831 / BUG-1836 三条现场换来的顺序）：
+///
+/// - [runningCodeVersion]：编译进 `app.so` 的构建版本。**唯一与被替换的产物同体**
+///   的证据——`app.so` 没被换掉它就报旧值。见 `build_version.dart`。
+/// - [verdict]：Inno 日志的收尾结论。只有 app 自己经 `/LOG=` 拉起安装器时才有；
+///   缺失（`unknown`）**不等于**失败，只等于「这条证据不可用」。
+/// - [executableVersion]：exe 版本资源（`PackageInfo`）。与 `app.so` 是两个文件，
+///   只能识别「exe 根本没被换掉」这一种失败。
+///
+/// 判定表（`runningCodeVersion == null` 时逐行退化成 BUG-1786 的旧行为）：
+///
+/// | verdict   | 代码版本证据 | 结果 |
+/// |-----------|--------------|------|
+/// | aborted   | 任意         | 失败 |
+/// | 任意      | 达标         | 成功 |
+/// | 任意      | 未达标       | 失败 |
+/// | succeeded | 不可比       | 看 exe 版本（旧判据） |
+/// | unknown   | 不可比       | 失败（旧判据） |
+bool isWindowsUpdateInstalled({
+  required WindowsInnoInstallVerdict verdict,
+  required String targetVersion,
+  required String executableVersion,
+  required String? runningCodeVersion,
+}) {
+  // 回滚是「整包不一致」的正面证据，优先级高于任何版本比较：Inno 的回滚**保留**
+  // 被覆盖的文件、只删本次新建的文件，所以回滚之后 `app.so` 完全可能已经是新版
+  // （BUG-1786 现场就是「新 exe + 新 app.so + 旧插件 dll」这类半更新态）。此时
+  // 代码版本达标也不能判成功——装到一半的包必须让用户看见诊断。
+  if (verdict == WindowsInnoInstallVerdict.aborted) return false;
+
+  switch (classifyRunningCodeVersion(
+    runningCodeVersion: runningCodeVersion,
+    targetVersion: targetVersion,
+  )) {
+    case RunningCodeVersionEvidence.atLeastTarget:
+      return true;
+    case RunningCodeVersionEvidence.belowTarget:
+      return false;
+    case RunningCodeVersionEvidence.inconclusive:
+      // 拿不到（历史版本 / 本地构建）或不可比（跨通道）：退回旧判据，行为逐字
+      // 不变——日志明确成功 AND exe 版本达标。
+      return verdict == WindowsInnoInstallVerdict.succeeded &&
+          _isVersionAtLeast(executableVersion, targetVersion);
+  }
+}
+
+/// 「运行中代码版本」这条证据的三种结论。
+///
+/// 刻意**不是** bool：版本号之间并不总是可比。`2.2.1-debug.12215` 和
+/// `2.2.1-beta.30` 谁新谁旧，SemVer 只会按字符串把 `debug` 排在 `beta` 后面，那是
+/// 巧合不是事实；同理 SemVer 规定「正式版 > 同号预发布版」，于是 `2.2.1` 恒 >
+/// `2.2.1-debug.12215`——BUG-1786 抱怨的「判据恒为真」正是这条。把这类情况诚实地
+/// 标成 [inconclusive] 退回日志判据，比硬编出一个大小关系安全得多。
+enum RunningCodeVersionEvidence {
+  /// 运行中的代码确实是目标版本或更新的构建。
+  atLeastTarget,
+
+  /// 运行中的代码明确比目标旧——更新没落地。
+  belowTarget,
+
+  /// 拿不到（未注入）或两者不可比（跨通道）。这条证据不可用，不代表失败。
+  inconclusive,
+}
+
+/// 判定 [runningCodeVersion] 相对 [targetVersion] 的证据结论。
+///
+/// 基版本不同的一律可比（`2.3.0` 比 `2.2.1-debug.x` 新是事实，与通道无关）；
+/// 基版本相同时才看预发布段，且**只有通道标签相同**（都是 `debug.` / 都是
+/// `beta.` / 都是正式版）才比序号，否则不可比。
+RunningCodeVersionEvidence classifyRunningCodeVersion({
+  required String? runningCodeVersion,
+  required String targetVersion,
+}) {
+  if (runningCodeVersion == null) {
+    return RunningCodeVersionEvidence.inconclusive;
+  }
+  final String running =
+      _stripBuildMetadata(_stripLeadingV(runningCodeVersion.trim()));
+  final String target =
+      _stripBuildMetadata(_stripLeadingV(targetVersion.trim()));
+
+  final int base = _compareBase(_basePart(running), _basePart(target));
+  if (base != 0) {
+    return base > 0
+        ? RunningCodeVersionEvidence.atLeastTarget
+        : RunningCodeVersionEvidence.belowTarget;
+  }
+
+  final String? runningPre = _prereleasePart(running);
+  final String? targetPre = _prereleasePart(target);
+  if (runningPre == null && targetPre == null) {
+    return RunningCodeVersionEvidence.atLeastTarget;
+  }
+  final String? runningLabel = _channelLabelOf(runningPre);
+  final String? targetLabel = _channelLabelOf(targetPre);
+  // 一侧是正式版、通道标签不同、或标签取不到（`2.2.1-.1` 这类畸形串——marker
+  // 是磁盘上的 JSON，手改或损坏都可能喂进来）⇒ 不可比。这里**不用 `!`**：
+  // `_channelLabelOf` 对空标签也返回 null，光比标签会让 `'.1'` 与「无预发布段」
+  // 判成同通道，随后 `targetPre!` 抛 TypeError。
+  if (runningPre == null ||
+      targetPre == null ||
+      runningLabel == null ||
+      targetLabel == null ||
+      runningLabel != targetLabel) {
+    return RunningCodeVersionEvidence.inconclusive;
+  }
+  return _comparePrerelease(runningPre, targetPre) >= 0
+      ? RunningCodeVersionEvidence.atLeastTarget
+      : RunningCodeVersionEvidence.belowTarget;
+}
+
+/// 预发布段的通道标签（`debug.12215` → `debug`）；正式版为 `null`。
+String? _channelLabelOf(String? prerelease) {
+  if (prerelease == null) return null;
+  final String label = prerelease.split('.').first;
+  return label.isEmpty ? null : label;
 }
 
 bool _isVersionAtLeast(String current, String target) {

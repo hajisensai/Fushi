@@ -24,6 +24,8 @@
 //      the host safety timer (no card stuck invisible);
 //  10. D2 convergence: a content-ready burst across layers coalesces into a
 //      single union-bbox overlaySize per frame (no thrash), de-duped on the box.
+//  11. BUG-1833: one static revision materialises imported font bytes once as a
+//      same-origin Blob URL; nested/reloaded frames never eval the base64 source.
 
 import assert from 'node:assert';
 import { readFileSync } from 'node:fs';
@@ -43,6 +45,16 @@ const hostSrc = readFileSync(
 // we can assert per-frame settings injection without a real browser.
 let evalLog = [];
 let framePostLog = [];
+let fontBlobCreateLog = [];
+let fontBlobRevokeLog = [];
+
+function markMovedIframeRealm(node) {
+  if (!node) return;
+  if (node.tagName === 'IFRAME') {
+    node._ancestorMoveCount = (node._ancestorMoveCount || 0) + 1;
+  }
+  for (const child of node.children || []) markMovedIframeRealm(child);
+}
 
 function makeElement(tag) {
   const el = {
@@ -55,6 +67,15 @@ function makeElement(tag) {
     className: '',
     id: '',
     appendChild(child) {
+      // Match DOM appendChild semantics: appending an existing child moves it;
+      // it does not duplicate the same node in the child list. Chromium also
+      // reloads an iframe when a mounted ancestor is moved; record that hazard
+      // so the warm-pool test fails if host code re-appends a parked shell.
+      if (child.parentNode) {
+        markMovedIframeRealm(child);
+        const oldIndex = child.parentNode.children.indexOf(child);
+        if (oldIndex >= 0) child.parentNode.children.splice(oldIndex, 1);
+      }
       child.parentNode = el;
       el.children.push(child);
       return child;
@@ -111,6 +132,20 @@ function makeElement(tag) {
       __fushiBridgeResolve(id, value) {
         (el.contentWindow._bridgeResolved =
           el.contentWindow._bridgeResolved || []).push({ id, value });
+      },
+      __fushiBridgeCancelPending() {
+        el.contentWindow._bridgeCancelCount =
+          (el.contentWindow._bridgeCancelCount || 0) + 1;
+      },
+      __fushiPrepareRealmForReuse() {
+        el.contentWindow._prepareReuseCount =
+          (el.contentWindow._prepareReuseCount || 0) + 1;
+      },
+      fushiSelection: {
+        clearSelection() {
+          el.contentWindow._clearSelectionCount =
+            (el.contentWindow._clearSelectionCount || 0) + 1;
+        },
       },
     };
     // contentDocument for D1/D2: a mutable body height + a .glossary-content
@@ -185,12 +220,16 @@ function makeDocument() {
 // Build a fresh sandbox + load host.js into it.
 let hostPostLog = [];
 let pendingTimers = [];
+let pendingAnimationFrames = [];
 function freshHost(opts) {
   opts = opts || {};
   evalLog = [];
   framePostLog = [];
   hostPostLog = [];
+  fontBlobCreateLog = [];
+  fontBlobRevokeLog = [];
   pendingTimers = [];
+  pendingAnimationFrames = [];
   const document = makeDocument();
   // MutationObserver stub: records observed body so a test can fire it via
   // el._renderContent (which walks body._observers). Disconnect detaches.
@@ -242,6 +281,12 @@ function freshHost(opts) {
       if (i >= 0) pendingTimers.splice(i, 1);
     };
   }
+  if (opts.withSuspendedRaf) {
+    sandbox.window.requestAnimationFrame = function (fn) {
+      pendingAnimationFrames.push(fn);
+      return pendingAnimationFrames.length;
+    };
+  }
   sandbox.window.document = document;
   // The TOP-LEVEL bridge: host.js posts overlaySize / dismissPopupAt here, and
   // wrapFrameBridge routes the re-anchored child messages through it too.
@@ -253,6 +298,31 @@ function freshHost(opts) {
     },
   };
   sandbox.window.devicePixelRatio = 1;
+  // WebView2 exposes the standard same-origin Blob URL APIs. Model them here so
+  // the host's imported-font resource reuse path can be verified without jsdom
+  // or a real browser. The fake records resource count/type/bytes; iframe evals
+  // still only record JS and do not need to fetch the object URL.
+  let nextFontBlobId = 1;
+  sandbox.window.atob = function (base64) {
+    return Buffer.from(base64, 'base64').toString('binary');
+  };
+  sandbox.window.Blob = class FakeBlob {
+    constructor(parts, options) {
+      this.parts = parts;
+      this.type = options && options.type;
+      this.size = parts.reduce((sum, part) => sum + (part.byteLength || 0), 0);
+    }
+  };
+  sandbox.window.URL = {
+    createObjectURL(blob) {
+      const url = `blob:https://hibiki.popup/font-${nextFontBlobId++}`;
+      fontBlobCreateLog.push({ url, type: blob.type, size: blob.size });
+      return url;
+    },
+    revokeObjectURL(url) {
+      fontBlobRevokeLog.push(url);
+    },
+  };
   sandbox.window.top = sandbox.window;
   sandbox.window.self = sandbox.window;
   runInNewContext(hostSrc, sandbox);
@@ -263,8 +333,16 @@ function freshHost(opts) {
 function shellsOf(document) {
   const layer = document.getElementById('global-lookup-host-layer');
   if (!layer) return [];
+  return layer.children
+    .filter((c) => c.className === 'global-lookup-frame-shell')
+    .sort((a, b) => Number(a.style.zIndex || 0) - Number(b.style.zIndex || 0));
+}
+
+function standbyShellsOf(document) {
+  const layer = document.getElementById('global-lookup-host-layer');
+  if (!layer) return [];
   return layer.children.filter(
-    (c) => c.className === 'global-lookup-frame-shell',
+    (c) => c.className === 'global-lookup-frame-standby',
   );
 }
 
@@ -275,6 +353,49 @@ function descriptor(id, parentIndex, settingsJs) {
     frame: { left: 0, top: 0, width: 360, height: 480 },
     settingsJs: settingsJs || ('/* settings ' + id + ' */'),
   };
+}
+
+function revisionDescriptor(
+  id,
+  parentIndex,
+  revision,
+  entriesJs,
+  renderJs,
+  staticHeadJs,
+  staticTailJs,
+) {
+  const value = {
+    id,
+    parentIndex,
+    frame: { left: 0, top: 0, width: 360, height: 480 },
+    staticRevision: revision,
+    entriesJs,
+    renderJs,
+  };
+  if (staticHeadJs !== undefined && staticTailJs !== undefined) {
+    value.staticHeadJs = staticHeadJs;
+    value.staticTailJs = staticTailJs;
+  }
+  return value;
+}
+
+function latestGeometryBox() {
+  const message = hostPostLog.filter((m) => m.handler === 'overlaySize').pop();
+  assert.ok(message, 'expected a pending overlaySize geometry transaction');
+  const box = message.args[1];
+  assert.ok(Number.isInteger(box.geometryEpoch) && box.geometryEpoch > 0,
+    'overlaySize carries a positive geometryEpoch');
+  return box;
+}
+
+function commitLatestGeometry(host) {
+  const box = latestGeometryBox();
+  assert.strictEqual(
+    host.commitLayerShift(box.left, box.top, box.geometryEpoch),
+    true,
+    'latest geometry transaction commits',
+  );
+  return box;
 }
 
 // ---- tests ---------------------------------------------------------------
@@ -306,6 +427,11 @@ function descriptor(id, parentIndex, settingsJs) {
     assert.ok(
       !iframe.hasAttribute('sandbox'),
       'iframe must NOT carry a sandbox attribute (bridge contract)',
+    );
+    assert.strictEqual(
+      iframe.contentDocument.documentElement.style.background,
+      'linear-gradient(rgba(0, 0, 0, 0), rgba(0, 0, 0, 0))',
+      'fresh host enforces the transparent canvas guard even with cached popup.css',
     );
   }
   assert.strictEqual(host.topPopupId(), 'frame-1', 'top = deepest frame');
@@ -348,6 +474,136 @@ function descriptor(id, parentIndex, settingsJs) {
   );
 }
 
+// 4b. Opening a child must not restore an unchanged parent's planned max
+// height and then measure it short again. That two-step iframe viewport resize
+// was the visible root-card shake on every first nested lookup.
+{
+  const { host, document } = freshHost();
+  const root = revisionDescriptor(
+    'stable-height-root', -1, 401,
+    '/* STABLE-ROOT-ENTRIES */', '/* STABLE-ROOT-RENDER */',
+    '/* STABLE-HEAD */', '/* STABLE-TAIL */',
+  );
+  root.frame = { left: 0, top: 0, width: 360, height: 480 };
+  host.renderStack({ popups: [root] });
+  const rootShell = shellsOf(document)[0];
+  const rootIframe = rootShell.children.find((c) => c.tagName === 'IFRAME');
+  rootIframe._listeners.load[0]();
+  rootIframe.contentDocument.body.scrollHeight = 132;
+  rootIframe.contentDocument.body.offsetHeight = 132;
+  rootIframe.contentDocument.documentElement.scrollHeight = 132;
+  host.measureAndReport();
+  assert.strictEqual(rootShell.style.height, '132px',
+    'precondition: root was refined from planned max to measured content');
+
+  let rootHeightReads = 0;
+  for (const [target, field] of [
+    [rootIframe.contentDocument.body, 'scrollHeight'],
+    [rootIframe.contentDocument.body, 'offsetHeight'],
+    [rootIframe.contentDocument.documentElement, 'scrollHeight'],
+  ]) {
+    Object.defineProperty(target, field, {
+      configurable: true,
+      get() {
+        rootHeightReads++;
+        return 132;
+      },
+    });
+  }
+
+  root.hasChildPopup = true;
+  const child = revisionDescriptor(
+    'stable-height-child', 0, 401,
+    '/* STABLE-CHILD-ENTRIES */', '/* STABLE-CHILD-RENDER */',
+  );
+  child.frame = { left: 380, top: 0, width: 360, height: 480 };
+  host.renderStack({ popups: [root, child] });
+
+  assert.strictEqual(rootShell.style.height, '132px',
+    'unchanged root height stays stable while the child is added');
+  assert.strictEqual(rootHeightReads, 0,
+    'child open reuses the clean root measurement instead of forcing layout');
+}
+
+// BUG-1833 close hot path — retainStack sends only the stable id prefix. A
+// deep 5 -> 1 collapse must not re-inject the root dictionary body, must retire
+// bridge/realm state exactly once for the single parked candidate, and must
+// still publish one causally ordered region+bbox geometry transaction.
+{
+  const { host, document } = freshHost();
+  const popups = [
+    revisionDescriptor(
+      'global-lookup-root', -1, 80,
+      '/* ROOT-ENTRIES-80 */', '/* ROOT-RENDER-80 */',
+      '/* STATIC-HEAD-80 */', '/* STATIC-TAIL-80 */',
+    ),
+  ];
+  for (let i = 1; i <= 4; i++) {
+    popups.push(revisionDescriptor(
+      `frame-${i}`, i - 1, 80,
+      `/* CHILD-ENTRIES-${i} */`, `/* CHILD-RENDER-${i} */`,
+    ));
+  }
+  for (let i = 0; i < popups.length; i++) {
+    popups[i].hasChildPopup = i < popups.length - 1;
+  }
+  host.renderStack({ popups });
+  const activeBefore = shellsOf(document);
+  const rootBefore = activeBefore[0];
+  const rootIframe = rootBefore.children.find((c) => c.tagName === 'IFRAME');
+  const deepestIframe = activeBefore[4].children.find(
+    (c) => c.tagName === 'IFRAME',
+  );
+  const allIframes = activeBefore.map((shell) =>
+    shell.children.find((c) => c.tagName === 'IFRAME'))
+    .concat(standbyShellsOf(document).map((shell) =>
+      shell.children.find((c) => c.tagName === 'IFRAME')));
+  const prepareBefore = allIframes.reduce(
+    (sum, frame) => sum + (frame.contentWindow._prepareReuseCount || 0), 0);
+  const cancelBefore = allIframes.reduce(
+    (sum, frame) => sum + (frame.contentWindow._bridgeCancelCount || 0), 0);
+  evalLog = [];
+  hostPostLog = [];
+
+  assert.strictEqual(host.retainStack(['global-lookup-root']), true,
+    'BUG-1833: a validated live prefix is retained');
+  assert.strictEqual(shellsOf(document).length, 1,
+    'BUG-1833: all descendants are removed in one truncate');
+  assert.strictEqual(shellsOf(document)[0], rootBefore,
+    'BUG-1833: root shell/iframe identity is unchanged');
+  assert.ok(!evalLog.some((entry) =>
+    /ROOT-ENTRIES-80|ROOT-RENDER-80/.test(entry.code)),
+  'BUG-1833: retainStack never re-injects the surviving root dictionary body');
+  assert.strictEqual(rootIframe.contentWindow.__hasChildPopup, false,
+    'BUG-1833: the new top receives the direct cheap hasChild=false update');
+  assert.strictEqual(rootIframe.contentWindow._clearSelectionCount, 1,
+    'BUG-1833: the new leaf clears the selection that opened the removed child');
+
+  const prepareAfter = allIframes.reduce(
+    (sum, frame) => sum + (frame.contentWindow._prepareReuseCount || 0), 0);
+  const cancelAfter = allIframes.reduce(
+    (sum, frame) => sum + (frame.contentWindow._bridgeCancelCount || 0), 0);
+  assert.strictEqual(prepareAfter - prepareBefore, 1,
+    'BUG-1833: a deep collapse prepares exactly one realm for reuse');
+  assert.strictEqual(cancelAfter - cancelBefore, 1,
+    'BUG-1833: only the parked realm runs the explicit bridge cancel');
+  const parkedIframe = standbyShellsOf(document)[0].children.find(
+    (c) => c.tagName === 'IFRAME',
+  );
+  assert.strictEqual(parkedIframe, deepestIframe,
+    'BUG-1833: the deepest/hottest removed realm is the sole standby');
+
+  const geometryMessages = hostPostLog.filter((message) =>
+    message.handler === 'shellRects' || message.handler === 'overlaySize');
+  assert.deepStrictEqual(
+    geometryMessages.map((message) => message.handler),
+    ['shellRects', 'overlaySize'],
+    'BUG-1833: truncate still commits exactly one ordered geometry transaction',
+  );
+  assert.ok(geometryMessages[1].args[1].geometryEpoch > 0,
+    'BUG-1833: retained stack geometry stays epoch-versioned');
+}
+
 // 5. empty payload clears the whole stack.
 {
   const { host, document } = freshHost();
@@ -357,6 +613,167 @@ function descriptor(id, parentIndex, settingsJs) {
   host.renderStack({ popups: [] });
   assert.strictEqual(shellsOf(document).length, 0, 'cleared');
   assert.strictEqual(host.topPopupId(), null, 'topPopupId null when empty');
+}
+
+// BUG-1833 — the first nested card must consume an already-loaded standby
+// popup realm, and closing/reopening that depth must park/rebind the SAME realm
+// instead of navigating a fresh iframe. Frame ids still rotate so a late message
+// from the retired logical layer cannot attach to its replacement.
+{
+  const { host, document } = freshHost();
+  assert.strictEqual(standbyShellsOf(document).length, 1,
+    'BUG-1833: host preloads exactly one bounded child iframe');
+  const initiallyWarmIframe = standbyShellsOf(document)[0].children.find(
+    (c) => c.tagName === 'IFRAME',
+  );
+  assert.ok(initiallyWarmIframe && initiallyWarmIframe._loaded,
+    'BUG-1833: standby popup.html realm is loaded before the first child lookup');
+  hostPostLog = [];
+  initiallyWarmIframe.contentWindow.chrome.webview.postMessage({
+    handler: 'popupRendered', args: [0], __bridgeId: 17,
+  });
+  assert.deepStrictEqual(
+    initiallyWarmIframe.contentWindow._bridgeResolved,
+    [{ id: 17, value: null }],
+    'BUG-1833: inactive standby calls settle locally instead of leaking Promises',
+  );
+  assert.strictEqual(hostPostLog.length, 0,
+    'BUG-1833: inactive standby never publishes a native host message');
+  assert.strictEqual(host._bridgeRoutes.size, 0,
+    'BUG-1833: inactive standby never owns a host bridge route');
+
+  host.renderStack({
+    popups: [revisionDescriptor(
+      'global-lookup-root', -1, 70,
+      '/* ROOT-ENTRIES-70 */', '/* ROOT-RENDER-70 */',
+      '/* STATIC-HEAD-70 */', '/* STATIC-TAIL-70 */',
+    )],
+  });
+  const warmStatic = evalLog.find((e) =>
+    e.frameId.startsWith('__global-lookup-standby-') &&
+      /STATIC-HEAD-70/.test(e.code));
+  assert.ok(warmStatic && !/ROOT-RENDER-70/.test(warmStatic.code),
+    'BUG-1833: standby installs static/font settings without rendering stale root content');
+
+  evalLog = [];
+  host.renderStack({
+    popups: [
+      revisionDescriptor(
+        'global-lookup-root', -1, 70,
+        '/* ROOT-ENTRIES-70 */', '/* ROOT-RENDER-70 */',
+      ),
+      revisionDescriptor(
+        'frame-100', 0, 70,
+        '/* CHILD-ENTRIES-100 */', '/* CHILD-RENDER-100 */',
+      ),
+    ],
+  });
+  const firstChildShell = shellsOf(document).find(
+    (s) => s.getAttribute('data-frame-id') === 'frame-100',
+  );
+  const firstChildIframe = firstChildShell.children.find(
+    (c) => c.tagName === 'IFRAME',
+  );
+  assert.strictEqual(firstChildIframe, initiallyWarmIframe,
+    'BUG-1833: first child reuses the preloaded iframe object');
+  assert.strictEqual(firstChildIframe._ancestorMoveCount || 0, 0,
+    'BUG-1833: acquisition never reparents the mounted shell/reloads its iframe realm');
+  const firstChildEval = evalLog.find((e) =>
+    e.frameId === 'frame-100' && /CHILD-ENTRIES-100/.test(e.code));
+  assert.ok(firstChildEval && !/STATIC-HEAD-70|STATIC-TAIL-70/.test(firstChildEval.code),
+    'BUG-1833: a primed child injects only dynamic entries/render JS');
+
+  firstChildIframe.contentWindow.chrome.webview.postMessage({
+    handler: 'favoriteEntry', args: [], __bridgeId: 41,
+  });
+  assert.strictEqual(host._bridgeRoutes.size, 1,
+    'BUG-1833: setup creates one pending route owned by the first logical child');
+  const cancelCountBeforePark = firstChildIframe.contentWindow._bridgeCancelCount || 0;
+  const prepareCountBeforePark = firstChildIframe.contentWindow._prepareReuseCount || 0;
+
+  host.renderStack({
+    popups: [revisionDescriptor(
+      'global-lookup-root', -1, 70,
+      '/* ROOT-ENTRIES-70 */', '/* ROOT-RENDER-70 */',
+    )],
+  });
+  assert.strictEqual(host._bridgeRoutes.size, 0,
+    'BUG-1833: parking a child retires every pending bridge route for its old id');
+  assert.strictEqual(firstChildIframe.contentWindow._bridgeCancelCount,
+    cancelCountBeforePark + 1,
+    'BUG-1833: parking settles frame-local pending Promises before realm reuse');
+  assert.strictEqual(firstChildIframe.contentWindow._prepareReuseCount,
+    prepareCountBeforePark + 1,
+    'BUG-1833: parking invalidates popup.js callbacks before realm reuse');
+  assert.strictEqual(standbyShellsOf(document).length, 1,
+    'BUG-1833: the child pool stays bounded at one parked realm');
+  const parkedIframe = standbyShellsOf(document)[0].children.find(
+    (c) => c.tagName === 'IFRAME',
+  );
+  assert.strictEqual(parkedIframe, firstChildIframe,
+    'BUG-1833: closing the child parks its live iframe instead of destroying it');
+
+  host.renderStack({
+    popups: [
+      revisionDescriptor(
+        'global-lookup-root', -1, 70,
+        '/* ROOT-ENTRIES-70 */', '/* ROOT-RENDER-70 */',
+      ),
+      revisionDescriptor(
+        'frame-101', 0, 70,
+        '/* CHILD-ENTRIES-101 */', '/* CHILD-RENDER-101 */',
+      ),
+    ],
+  });
+  const reboundShell = shellsOf(document).find(
+    (s) => s.getAttribute('data-frame-id') === 'frame-101',
+  );
+  const reboundIframe = reboundShell.children.find((c) => c.tagName === 'IFRAME');
+  assert.strictEqual(reboundIframe, firstChildIframe,
+    'BUG-1833: replacement frame id rebinds the same warm iframe realm');
+  assert.strictEqual(reboundShell.getAttribute('data-content-ready'), 'false',
+    'BUG-1833: rebound content gate cannot inherit readiness from the retired card');
+  assert.strictEqual(reboundShell.getAttribute('data-reveal-ready'), 'false',
+    'BUG-1833: rebound child waits for its native geometry transaction');
+  commitLatestGeometry(host);
+  assert.strictEqual(reboundShell.getAttribute('data-reveal-ready'), 'true',
+    'BUG-1833: matching native geometry ack releases the rebound child');
+
+  host.renderStack({ popups: [] });
+  assert.strictEqual(standbyShellsOf(document).length, 0,
+    'BUG-1833: an empty stack releases the warm realm and its retained settings');
+}
+
+// BUG-1833 — replenishing the one look-ahead realm must not start a second
+// popup.html navigation in the same turn as the acquired child presentation.
+{
+  const { host, document } = freshHost({
+    withTimers: true,
+    withSuspendedRaf: true,
+  });
+  host.renderStack({
+    popups: [
+      revisionDescriptor(
+        'global-lookup-root', -1, 71,
+        '/* ROOT-ENTRIES-71 */', '/* ROOT-RENDER-71 */',
+        '/* STATIC-HEAD-71 */', '/* STATIC-TAIL-71 */',
+      ),
+      revisionDescriptor(
+        'frame-200', 0, 71,
+        '/* CHILD-ENTRIES-200 */', '/* CHILD-RENDER-200 */',
+      ),
+    ],
+  });
+  assert.strictEqual(standbyShellsOf(document).length, 0,
+    'BUG-1833: child presentation turn does not synchronously create its replacement');
+  assert.ok(pendingAnimationFrames.length >= 1,
+    'BUG-1833: normal replacement waits for the compositor path');
+  const refill = pendingTimers.find((timer) => timer.ms === 50);
+  assert.ok(refill,
+    'BUG-1833: a watchdog covers rAF suspension in the off-screen game WebView');
+  refill.fn();
+  assert.strictEqual(standbyShellsOf(document).length, 1,
+    'BUG-1833: deferred turn restores the bounded look-ahead realm');
 }
 
 // 6. per-frame settingsJs is eval'd inside that frame's contentWindow realm.
@@ -497,9 +914,43 @@ function descriptor(id, parentIndex, settingsJs) {
   assert.strictEqual(layer.style.top, '0', 'layer NOT shifted by measureAndReport');
   // commitLayerShift (called by C++ RevealStack after the window moved) applies
   // the compensating translation so the bbox origin maps to the window origin.
-  host.commitLayerShift(box.left, box.top);
+  host.commitLayerShift(box.left, box.top, box.geometryEpoch);
   assert.strictEqual(layer.style.left, '40px', 'commitLayerShift shifts by -minLeft');
   assert.strictEqual(layer.style.top, '0px', 'commitLayerShift shifts by -minTop');
+}
+
+// 11b. BUG-2082 — the overlaySize box also carries the ROOT card's own measured
+//      height. The union bbox alone cannot express it (a nested child extends
+//      the union past the root's bottom), and the in-game presenter anchors the
+//      root by the edge that touches the clicked glyph, so it needs the ROOT
+//      height, not the union's. rootHeight is also part of the de-dup key: a
+//      root that shrinks under a taller child leaves the union unchanged.
+{
+  const { host } = freshHost();
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, frame: { left: 0, top: 0, width: 100, height: 80 }, settingsJs: '' },
+      { id: 'frame-1', parentIndex: 0, frame: { left: -40, top: 60, width: 100, height: 80 }, settingsJs: '' },
+    ],
+  });
+  const box = hostPostLog.filter((m) => m.handler === 'overlaySize').pop().args[1];
+  assert.strictEqual(box.height, 140, 'precondition: the child extends the union bbox');
+  assert.strictEqual(box.rootHeight, 80,
+    'overlaySize reports the ROOT shell height, not the union height');
+
+  // Shrink the root only. The union bottom is still owned by the child, so the
+  // bbox is byte-identical -- yet the report must NOT be de-duped away.
+  hostPostLog = [];
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, frame: { left: 0, top: 0, width: 100, height: 50 }, settingsJs: '' },
+      { id: 'frame-1', parentIndex: 0, frame: { left: -40, top: 60, width: 100, height: 80 }, settingsJs: '' },
+    ],
+  });
+  const shrunk = hostPostLog.filter((m) => m.handler === 'overlaySize').pop();
+  assert.ok(shrunk, 'a root-only height change still reports overlaySize');
+  assert.strictEqual(shrunk.args[1].height, 140, 'union bbox unchanged');
+  assert.strictEqual(shrunk.args[1].rootHeight, 50, 'the new root height is reported');
 }
 
 // Flush all captured safety timers (simulate the timeout firing).
@@ -660,13 +1111,12 @@ function flushTimers() {
     'the shell and reported bbox share the planned-height ceiling');
 }
 
-// 16. F2 shell chrome: the injected gate <style> carries ONLY the hoshi radius +
-//     transparent background (the iframe paints the card fill + the single
-//     visible border). It draws NO border (TODO-893 double-border) and NO
-//     box-shadow: the overlay HWND is non-layered/opaque, so a CSS shadow paints
-//     as an ~11px DARK HALO outside the card that SetWindowRgn cannot clip (the
-//     reported "black border outside the rounded corners") instead of a real
-//     translucent shadow. The rounded silhouette comes from SetWindowRgn.
+// 16. F2 shell chrome: the base shell is transparent until the iframe theme is
+//     available. Runtime transfers the card fill to the fixed shell and its one
+//     border to a non-layout ::after layer; the iframe body keeps a transparent
+//     border allocation so width/height/zoom measurement does not move. It draws
+//     NO hard-coded second border and NO box-shadow: on this non-layered HWND a
+//     CSS shadow becomes a dark halo rather than a desktop-composited shadow.
 {
   const { host, document } = freshHost();
   host.renderStack({ popups: [descriptor('frame-0', -1)] });
@@ -675,14 +1125,17 @@ function flushTimers() {
   const css = style.textContent;
   assert.ok(/\.global-lookup-frame-shell\{/.test(css), 'shell rule present');
   assert.ok(!/border:1px solid rgba\(120,120,128,0\.36\)/.test(css),
-    'TODO-893: shell must NOT draw a border (single border lives on the iframe '
-    + 'body) — this was the double-border main cause');
+    'host must not hard-code a second theme border');
+  assert.ok(/\.global-lookup-frame-shell::after\{[^}]*position:absolute;[^}]*inset:0;[^}]*--global-lookup-shell-border-width/.test(css),
+    'the one visible border is a viewport-stable, non-layout shell layer');
+  assert.ok(/pointer-events:none;z-index:4/.test(css),
+    'shell border cannot intercept lookup or resize input');
   assert.ok(/border-radius:10px/.test(css), 'hoshi 10px card radius');
   assert.ok(!/box-shadow/.test(css),
     'shell must cast NO box-shadow: on the non-layered opaque WebView2 window a '
     + 'CSS shadow renders as a dark halo outside the card, not a real shadow');
   assert.ok(/background:transparent/.test(css),
-    'shell background transparent (iframe paints the fill, no double layer)');
+    'pre-load shell does not flash a hard-coded fill');
   const shell = shellsOf(document)[0];
   const iframe = shell.children.find((c) => c.tagName === 'IFRAME');
   assert.strictEqual(iframe.parentNode, shell,
@@ -1155,6 +1608,159 @@ function flushTimers() {
   );
 }
 
+// BUG-1833 ancestor replacement — logical depth comes from the incoming
+// payload, not from the physical Map. The old suffix deliberately remains in
+// that Map while its replacement is rendered; deriving C's z-index from it
+// would transiently assign depth 3 to the logical depth-1 child.
+{
+  const { host, document } = freshHost();
+  const zOf = (id) => shellsOf(document)
+    .find((shell) => shell.getAttribute('data-frame-id') === id)
+    ?.style.zIndex;
+
+  host.renderStack({
+    popups: [descriptor('root', -1), descriptor('a', 0), descriptor('b', 1)],
+  });
+  host.renderStack({
+    popups: [descriptor('root', -1), descriptor('c', 0)],
+  });
+  assert.strictEqual(zOf('root'), '0',
+    'ancestor replacement keeps root at logical depth 0');
+  assert.strictEqual(zOf('c'), '1',
+    'replacement child ignores the retiring physical suffix and uses depth 1');
+
+  host.renderStack({
+    popups: [
+      descriptor('root', -1),
+      descriptor('c', 0),
+      descriptor('d', 1),
+    ],
+  });
+  assert.strictEqual(zOf('root'), '0');
+  assert.strictEqual(zOf('c'), '1');
+  assert.strictEqual(zOf('d'), '2');
+  assert.ok(Number(zOf('d')) > Number(zOf('c')),
+    'grandchild remains stacked above its replacement parent');
+}
+
+// BUG-1833 ancestor replacement atomicity — R,A,B -> R,C must keep the visible
+// outgoing suffix until C has both rendered and joined the matching native
+// geometry transaction. Removing A/B at renderStack return leaves one or more
+// compositor opportunities where only R paints because C is still reveal-gated.
+// The transition geometry deliberately covers old + new; a following pass
+// shrinks to R,C only after the same-task reveal/teardown swap.
+{
+  const { host, document } = freshHost({
+    withObserver: true,
+    withTimers: true,
+    withSuspendedRaf: true,
+  });
+  const popup = (id, parentIndex, frame, body) => ({
+    id,
+    parentIndex,
+    frame,
+    settingsJs: `/* ${body} */`,
+  });
+  const root = popup(
+    'atomic-root', -1,
+    { left: 0, top: 0, width: 200, height: 160 }, 'ROOT',
+  );
+  const a = popup(
+    'atomic-a', 0,
+    { left: 120, top: 20, width: 200, height: 160 }, 'A',
+  );
+  const b = popup(
+    'atomic-b', 1,
+    { left: 240, top: 40, width: 200, height: 160 }, 'B',
+  );
+  host.renderStack({ popups: [root, a, b] });
+  for (const id of ['atomic-root', 'atomic-a', 'atomic-b']) {
+    const iframe = shellsOf(document)
+      .find((shell) => shell.getAttribute('data-frame-id') === id)
+      .children.find((child) => child.tagName === 'IFRAME');
+    iframe._renderContent(120);
+  }
+  let initialFlushGuard = 0;
+  while (pendingAnimationFrames.length) {
+    assert.ok(initialFlushGuard++ < 20, 'initial rAF queue converges');
+    pendingAnimationFrames.shift()();
+  }
+  commitLatestGeometry(host);
+  assert.strictEqual(host.frameGateState('atomic-b').visible, true,
+    'outgoing suffix starts fully visible');
+
+  const c = popup(
+    'atomic-c', 0,
+    { left: -40, top: 80, width: 200, height: 160 }, 'C',
+  );
+  hostPostLog = [];
+  host.renderStack({ popups: [root, c] });
+  const attachedIds = () => shellsOf(document)
+    .map((shell) => shell.getAttribute('data-frame-id'));
+  assert.deepStrictEqual(
+    new Set(attachedIds()),
+    new Set(['atomic-root', 'atomic-a', 'atomic-b', 'atomic-c']),
+    'replacement render keeps A/B attached while gated C is prepared',
+  );
+  assert.strictEqual(host.frameGateState('atomic-c').visible, false,
+    'C is not exposed before content + matching geometry');
+  assert.strictEqual(standbyShellsOf(document).length, 0,
+    'pending replacement does not refill the standby pool');
+
+  const cIframe = shellsOf(document)
+    .find((shell) => shell.getAttribute('data-frame-id') === 'atomic-c')
+    .children.find((child) => child.tagName === 'IFRAME');
+  cIframe._renderContent(130);
+  assert.ok(attachedIds().includes('atomic-a') && attachedIds().includes('atomic-b'),
+    'contentReady alone does not retire the visible old suffix');
+
+  assert.ok(pendingAnimationFrames.length >= 1,
+    'replacement schedules its union geometry measurement');
+  pendingAnimationFrames.shift()();
+  assert.strictEqual(pendingAnimationFrames.length, 0,
+    'pending swap schedules no competing standby refill');
+  const transitionBox = latestGeometryBox();
+  assert.ok(transitionBox.left <= -40 &&
+      transitionBox.left + transitionBox.width >= 440,
+  'transition geometry covers both outgoing B and incoming C');
+  assert.ok(attachedIds().includes('atomic-a') && attachedIds().includes('atomic-b'),
+    'old suffix remains through geometry announcement');
+
+  assert.strictEqual(
+    host.commitLayerShift(
+      transitionBox.left, transitionBox.top, transitionBox.geometryEpoch,
+    ),
+    true,
+    'matching transition geometry commits',
+  );
+  assert.deepStrictEqual(
+    new Set(attachedIds()),
+    new Set(['atomic-root', 'atomic-c']),
+    'matching commit atomically reveals C and retires A/B',
+  );
+  assert.strictEqual(host.frameGateState('atomic-c').visible, true,
+    'C is visible at the same synchronous boundary that removes A/B');
+
+  hostPostLog = [];
+  assert.ok(pendingAnimationFrames.length >= 1,
+    'atomic swap schedules a post-reveal shrink measurement');
+  pendingAnimationFrames.shift()();
+  const settledBox = latestGeometryBox();
+  assert.ok(settledBox.left + settledBox.width <= 200,
+    'post-swap geometry drops the retiring suffix extent');
+
+  const d = popup(
+    'atomic-d', 1,
+    { left: 80, top: 100, width: 200, height: 160 }, 'D',
+  );
+  host.renderStack({ popups: [root, c, d] });
+  assert.ok(attachedIds().includes('atomic-d'),
+    'pure append still attaches the new child immediately');
+  host.renderStack({ popups: [root, c] });
+  assert.ok(!attachedIds().includes('atomic-d'),
+    'pure truncate still removes the child immediately');
+}
+
 // 33. TODO-1190 (app-external nested highlight): host.highlightFrame(index,count)
 //     evals popup.js's fushiSelection.highlightSelection(count) INSIDE the target
 //     (parent) frame's realm, marking the searched word in the parent card. A bad
@@ -1193,6 +1799,90 @@ function flushTimers() {
   );
 }
 
+// 33b. BUG-2054 (wrapped-selection anchor): highlightSelection ALSO returns the
+//      matched word's bbox in the parent realm's own viewport (it unions every
+//      getClientRects() fragment, so on a WRAPPED selection its bottom is the
+//      LAST line). The child card was anchored on getSelectionRect() instead —
+//      the FIRST CHARACTER's rect (textSelected fires before the dictionary
+//      runs) — which on a wrapped selection covers only the tapped line, so the
+//      child sat under the first line and hid the second. highlightFrame must
+//      report that bbox back through the SAME iframe-local -> window-local
+//      transform the original anchor took, so Dart can re-anchor the child.
+{
+  const { host, document } = freshHost();
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1,
+        frame: { left: 40, top: 12, width: 360, height: 480 },
+        settingsJs: '/* s0 */' },
+      { id: 'frame-1', parentIndex: 0,
+        frame: { left: 60, top: 300, width: 360, height: 480 },
+        settingsJs: '/* s1 */' },
+    ],
+  });
+  const parentShell = shellsOf(document)[0];
+  const parentIframe = parentShell.children.find((c) => c.tagName === 'IFRAME');
+  // The parent realm reports a word wrapping across two lines: y 20..56 in the
+  // iframe viewport (line 1 = 20..36, line 2 = 36..56).
+  parentIframe.contentWindow.eval = (code) => {
+    evalLog.push({ frameId: 'frame-0', code });
+    return { x: 10, y: 20, width: 120, height: 36 };
+  };
+  hostPostLog.length = 0;
+  assert.strictEqual(host.highlightFrame(0, 7, 42), true);
+  const anchorMsg = hostPostLog.find((m) => m.handler === 'nestedWordAnchor');
+  assert.ok(anchorMsg, 'host reports the highlighted word bbox for re-anchoring');
+  assert.strictEqual(anchorMsg.args[0], 0, 'reports the PARENT frame index');
+  assert.strictEqual(anchorMsg.args[2], 42,
+    'the report echoes the request token (Dart routes the waiter by it)');
+  const reported = anchorMsg.args[1];
+  assert.deepStrictEqual(
+    { x: reported.x, y: reported.y, width: reported.width, height: reported.height },
+    // shell origin (40,12) + FRAME_CONTENT_TOP(0) — the identical transform
+    // anchorRectToScreen applies to a textSelected/onLinkClick anchor.
+    { x: 50, y: 32, width: 120, height: 36 },
+    'iframe-local word bbox is mapped with the shell origin',
+  );
+  // The whole point: the reported bottom is the LAST line's bottom (68), well
+  // below where a first-character anchor (16px tall -> bottom 48) would put it.
+  assert.ok(
+    reported.y + reported.height > 32 + 16,
+    'reported bbox reaches past the FIRST line — otherwise the child card '
+      + 'would still cover the second line of the selection',
+  );
+  // A realm with nothing usable still ANSWERS (rect null): Dart is awaiting this
+  // report before it places the child card, so a silent drop would cost it the
+  // full timeout. Null means "keep the first-character anchor".
+  for (const bad of [null, undefined, { x: 1, y: 2, width: 0, height: 0 }]) {
+    parentIframe.contentWindow.eval = () => bad;
+    hostPostLog.length = 0;
+    assert.strictEqual(host.highlightFrame(0, 7, 43), true,
+      'highlight itself still succeeds without a usable bbox');
+    const nullMsg = hostPostLog.find((m) => m.handler === 'nestedWordAnchor');
+    assert.ok(nullMsg, 'a tokened request is always answered');
+    assert.strictEqual(nullMsg.args[1], null, 'unusable bbox reports null');
+    assert.strictEqual(nullMsg.args[2], 43, 'answer carries the token');
+  }
+  // A THROWING realm must not escape highlightFrame (its stated contract) and
+  // must still answer, otherwise the Dart wait rides out its timeout.
+  parentIframe.contentWindow.eval = () => { throw new Error('realm gone'); };
+  hostPostLog.length = 0;
+  assert.strictEqual(host.highlightFrame(0, 7, 44), false,
+    'a throwing realm reports failure instead of propagating');
+  const thrownMsg = hostPostLog.find((m) => m.handler === 'nestedWordAnchor');
+  assert.ok(thrownMsg, 'a throwing realm still answers the tokened request');
+  assert.strictEqual(thrownMsg.args[1], null);
+  assert.strictEqual(thrownMsg.args[2], 44);
+  // Un-tokened calls (the plain highlight-only path) post nothing.
+  parentIframe.contentWindow.eval = () => ({ x: 10, y: 20, width: 120, height: 36 });
+  hostPostLog.length = 0;
+  assert.strictEqual(host.highlightFrame(0, 7), true);
+  assert.ok(
+    !hostPostLog.some((m) => m.handler === 'nestedWordAnchor'),
+    'no token -> nobody is waiting -> no report',
+  );
+}
+
 // 34. TODO-1189 (layer-shift hit-test): when a nested sub-popup is pushed
 //     UP/LEFT off the cursor (screen-edge second lookup -> minLeft/minTop < 0),
 //     measureAndReport shifts the layer by (-minLeft,-minTop) so the union bbox
@@ -1218,7 +1908,7 @@ function flushTimers() {
   // C++ RevealStack after SetWindowPos), NOT synchronously in measureAndReport.
   // Drive it here with the reported bbox origin (minLeft=minTop=-50).
   const box34 = hostPostLog.filter((m) => m.handler === 'overlaySize').pop().args[1];
-  host.commitLayerShift(box34.left, box34.top);
+  host.commitLayerShift(box34.left, box34.top, box34.geometryEpoch);
   // The layer got shifted (proves minLeft/minTop < 0 translation happened).
   const layer = document.getElementById('global-lookup-host-layer');
   assert.strictEqual(layer.style.left, '50px', 'layer shifted by -minLeft (=50)');
@@ -1269,7 +1959,7 @@ function flushTimers() {
   // TODO-1231 P2: C++ RevealStack -> commitLayerShift runs even for the offset-0
   // case (box origin 0,0), a no-op shift that leaves the layer at the origin.
   const box35 = hostPostLog.filter((m) => m.handler === 'overlaySize').pop().args[1];
-  host.commitLayerShift(box35.left, box35.top);
+  host.commitLayerShift(box35.left, box35.top, box35.geometryEpoch);
   const layer = document.getElementById('global-lookup-host-layer');
   assert.strictEqual(layer.style.left, '0px', 'no layer shift (minLeft=0)');
   assert.strictEqual(layer.style.top, '0px', 'no layer shift (minTop=0)');
@@ -1319,11 +2009,11 @@ function flushTimers() {
 }
 
 // 37. TODO-1231 P1 (__hasChildPopup on its OWN channel): the flag is applied by a
-//     lone `window.__hasChildPopup = <bool>` eval inside the frame realm, NOT
+//     direct `window.__hasChildPopup = <bool>` on the same-origin frame, NOT
 //     baked into the body, and flips as children open/close WITHOUT re-rendering
 //     the parent body (BUG-434 behaviour preserved, flicker removed).
 {
-  const { host } = freshHost();
+  const { host, document } = freshHost();
   host.renderStack({
     popups: [
       { id: 'frame-0', parentIndex: -1, hasChildPopup: true,
@@ -1336,9 +2026,11 @@ function flushTimers() {
   assert.ok(rootBody, 'root body rendered');
   assert.ok(!/__hasChildPopup/.test(rootBody.code),
     'the body does NOT bake __hasChildPopup (rides its own channel)');
-  assert.ok(
-    evalLog.some((e) => e.frameId === 'frame-0' && /window\.__hasChildPopup = true/.test(e.code)),
-    'root __hasChildPopup=true applied on the dedicated channel');
+  const rootIframe = shellsOf(document)[0].children.find(
+    (c) => c.tagName === 'IFRAME',
+  );
+  assert.strictEqual(rootIframe.contentWindow.__hasChildPopup, true,
+    'root __hasChildPopup=true applied on the direct dedicated channel');
   const logLen = evalLog.length;
   // Close the child: parent alone, hasChildPopup now false.
   host.renderStack({
@@ -1350,9 +2042,8 @@ function flushTimers() {
   const afterClose = evalLog.slice(logLen);
   assert.ok(!afterClose.some((e) => /ROOT-BODY/.test(e.code)),
     'unchanged parent body NOT re-rendered on child close (no flicker)');
-  assert.ok(
-    afterClose.some((e) => e.frameId === 'frame-0' && /window\.__hasChildPopup = false/.test(e.code)),
-    'child close flips __hasChildPopup=false via the dedicated channel');
+  assert.strictEqual(rootIframe.contentWindow.__hasChildPopup, false,
+    'child close flips __hasChildPopup=false via the direct dedicated channel');
 }
 
 // 38. TODO-1231 (BUG-583): beginLookup must NOT trigger a premature overlaySize
@@ -1489,10 +2180,9 @@ function flushTimers() {
     'down-right visible: origin top unchanged (parent perfectly still)');
 }
 
-// 42. TODO-1231 v3 (BUG-583): a DOWN-RIGHT child is origin-covered from placement
-//     (its top-left >= the window origin 0), so reveal-ready flips IMMEDIATELY —
-//     byte-identical to the old unconditional flip (no reveal delay for the common
-//     cascade, the case with ZERO parent lurch).
+// 42. A DOWN-RIGHT child also waits for its far edge + native HRGN transaction.
+//     Origin-only gating was the SGRE bug: top-left was covered while right/bottom
+//     were still clipped by the old visible HWND.
 {
   const { host, document } = freshHost({ withObserver: true, withTimers: true });
   host.renderStack({
@@ -1501,11 +2191,14 @@ function flushTimers() {
       { id: 'frame-1', parentIndex: 0, frame: { left: 120, top: 80, width: 200, height: 160 }, settingsJs: '' },
     ],
   });
-  assert.strictEqual(host.frameGateState('frame-1').revealReady, true,
-    'down-right child (top-left >= origin) is covered -> reveal-ready immediately');
+  assert.strictEqual(host.frameGateState('frame-1').revealReady, false,
+    'down-right child remains gated before native expands its far edges');
   const rootShell = shellsOf(document).find((s) => s.getAttribute('data-frame-id') === 'global-lookup-root');
   assert.strictEqual(rootShell.getAttribute('data-reveal-ready'), 'true',
     'root at the origin is covered -> reveal-ready immediately (unchanged)');
+  commitLatestGeometry(host);
+  assert.strictEqual(host.frameGateState('frame-1').revealReady, true,
+    'matching full-geometry ack releases the down-right child');
 }
 
 // 43. TODO-1231 v3 (BUG-583) — CORE: an UP/LEFT child is HELD reveal-ready=false
@@ -1543,16 +2236,16 @@ function flushTimers() {
   assert.strictEqual(host.frameGateState('frame-1').visible, false,
     'up/left child NOT visible until the window origin covers it (no clipped flash)');
   // C++ RevealStack moved the window to the child origin, then commitLayerShift.
-  host.commitLayerShift(-40, -30);
+  commitLatestGeometry(host);
   assert.strictEqual(host.frameGateState('frame-1').revealReady, true,
     'commitLayerShift covering the child flips reveal-ready');
   assert.strictEqual(host.frameGateState('frame-1').visible, true,
     'up/left child reveals in-position once the window/layer settle (no clip, no jump)');
 }
 
-// 44. TODO-1231 v3 (BUG-583): if the covering commitLayerShift never arrives, the
-//     reveal-ready safety timer still flips a held up/left child so it is never
-//     stuck invisible (mildly-clipped fallback beats a lost card).
+// 44. A recovery timer must NEVER bypass an uncommitted native geometry. It may
+//     re-measure, but the child remains hidden instead of exposing a clipped
+//     intermediate frame.
 {
   const { host, document } = freshHost({ withObserver: true, withTimers: true });
   host.renderStack({
@@ -1566,11 +2259,11 @@ function flushTimers() {
   childIframe._renderContent(140);
   assert.strictEqual(host.frameGateState('frame-1').revealReady, false,
     'up/left child held before the safety fires');
-  flushTimers(); // reveal-ready safety (+ any content safety) fire
-  assert.strictEqual(host.frameGateState('frame-1').revealReady, true,
-    'reveal-ready safety flips a held child so it is never stuck hidden');
-  assert.strictEqual(host.frameGateState('frame-1').visible, true,
-    'held child eventually reveals via the safety path (no lost card)');
+  flushTimers(); // recovery measurement (+ any content safety) fires
+  assert.strictEqual(host.frameGateState('frame-1').revealReady, false,
+    'recovery timer cannot bypass the missing geometry ack');
+  assert.strictEqual(host.frameGateState('frame-1').visible, false,
+    'uncommitted child never paints clipped');
 }
 
 // 45. TODO-1231 v3 (BUG-583): beginLookup resets the committed origin so a stale
@@ -1586,7 +2279,7 @@ function flushTimers() {
       { id: 'frame-1', parentIndex: 0, frame: { left: -60, top: -50, width: 200, height: 160 }, settingsJs: '' },
     ],
   });
-  host.commitLayerShift(-60, -50);
+  commitLatestGeometry(host);
   assert.strictEqual(host.frameGateState('frame-1').revealReady, true,
     'lookup 1: committing the (-60,-50) origin covers frame-1');
   // Lookup 2 begins: reset the origin to 0. A MILDER up/left child (-40,-30) must be
@@ -1602,9 +2295,133 @@ function flushTimers() {
   assert.strictEqual(host.frameGateState('frame-2').revealReady, false,
     'after beginLookup the origin is reset to 0, so a new up/left child is correctly held');
   // And committing the fresh (-40,-30) origin reveals it in place.
-  host.commitLayerShift(-40, -30);
+  commitLatestGeometry(host);
   assert.strictEqual(host.frameGateState('frame-2').revealReady, true,
     'committing the new lookup origin covers frame-2 (reveals in place)');
+}
+
+// BUG-1833 geometry transaction: replacing child A with B before A's native
+// resize returns must reject A's stale epoch. Only B's matching epoch may move
+// the layer, reveal B, and publish captureReady; epoch stays monotonic across a
+// normal beginLookup even though per-lookup transaction state is retired.
+{
+  const route = { source: 'galCard', routeEpoch: 9, lookupEpoch: 4 };
+  const { host, document } = freshHost({ withObserver: true, withTimers: true });
+  host.beginLookup('global-lookup-root', route);
+  const root = { id: 'global-lookup-root', parentIndex: -1,
+    frame: { left: 0, top: 0, width: 200, height: 160 }, settingsJs: '' };
+  host.renderStack({ popups: [root] });
+  const rootIframe = shellsOf(document)[0].children
+    .find((c) => c.tagName === 'IFRAME');
+  rootIframe._renderContent(120);
+  commitLatestGeometry(host);
+
+  const childA = { id: 'frame-a', parentIndex: 0,
+    frame: { left: -20, top: -10, width: 200, height: 160 }, settingsJs: 'A' };
+  host.renderStack({ popups: [root, childA] });
+  const iframeA = shellsOf(document)
+    .find((s) => s.getAttribute('data-frame-id') === 'frame-a')
+    .children.find((c) => c.tagName === 'IFRAME');
+  iframeA._renderContent(140);
+  const boxA = latestGeometryBox();
+
+  const childB = { id: 'frame-b', parentIndex: 0,
+    frame: { left: -60, top: -40, width: 200, height: 160 }, settingsJs: 'B' };
+  host.renderStack({ popups: [root, childB] });
+  const iframeB = shellsOf(document)
+    .find((s) => s.getAttribute('data-frame-id') === 'frame-b')
+    .children.find((c) => c.tagName === 'IFRAME');
+  iframeB._renderContent(140);
+  const boxB = latestGeometryBox();
+  assert.ok(boxB.geometryEpoch > boxA.geometryEpoch,
+    'replacement child receives a newer process-wide geometry epoch');
+
+  const layer = document.getElementById('global-lookup-host-layer');
+  hostPostLog = [];
+  assert.strictEqual(
+    host.commitLayerShiftAndArmCapture(
+      boxA.left, boxA.top, route, 500, 400, boxA.geometryEpoch,
+    ),
+    false,
+    'stale A epoch is rejected',
+  );
+  assert.strictEqual(layer.style.left, '0px',
+    'stale A epoch does not move the current layer');
+  assert.strictEqual(host.frameGateState('frame-b').revealReady, false,
+    'stale A epoch cannot reveal replacement B');
+  assert.ok(!hostPostLog.some((m) => m.handler === 'captureReady'),
+    'stale A epoch cannot arm captureReady');
+
+  assert.strictEqual(
+    host.commitLayerShiftAndArmCapture(
+      boxB.left, boxB.top, route, 500, 400, boxB.geometryEpoch,
+    ),
+    true,
+    'matching B epoch commits',
+  );
+  assert.strictEqual(host.frameGateState('frame-b').revealReady, true,
+    'matching B epoch reveals B for the first time');
+  const ready = hostPostLog.find((m) => m.handler === 'captureReady');
+  assert.ok(ready, 'matching B epoch publishes captureReady');
+  assert.deepStrictEqual(
+    Array.from(ready.args), [500, 400, boxB.geometryEpoch],
+    'captureReady carries the exact committed epoch',
+  );
+
+  host.beginLookup('global-lookup-root', {
+    source: 'galCard', routeEpoch: 9, lookupEpoch: 5,
+  });
+  host.renderStack({ popups: [root] });
+  const nextLookupBox = latestGeometryBox();
+  assert.ok(nextLookupBox.geometryEpoch > boxB.geometryEpoch,
+    'beginLookup retires state without reusing the geometry epoch counter');
+}
+
+// BUG-2019: WebView2 can expose requestAnimationFrame while suspending every
+// callback for a permanently off-screen galCard HWND. The bounded timer must
+// publish the matching route/epoch exactly once, and late rAF callbacks must not
+// duplicate or steal a newer schedule.
+{
+  const route = { source: 'galCard', routeEpoch: 12, lookupEpoch: 7 };
+  const { host, window } = freshHost({ withTimers: true });
+  host.beginLookup('global-lookup-root', route);
+  host.renderStack({
+    popups: [
+      { id: 'global-lookup-root', parentIndex: -1,
+        frame: { left: 0, top: 0, width: 200, height: 160 }, settingsJs: '' },
+    ],
+  });
+  const box = latestGeometryBox();
+  window.requestAnimationFrame = function (fn) {
+    pendingAnimationFrames.push(fn);
+    return pendingAnimationFrames.length;
+  };
+  hostPostLog = [];
+  assert.strictEqual(
+    host.commitLayerShiftAndArmCapture(
+      box.left, box.top, route, 500, 400, box.geometryEpoch,
+    ),
+    true,
+    'matching geometry arms captureReady while rAF is suspended',
+  );
+  assert.ok(!hostPostLog.some((m) => m.handler === 'captureReady'),
+    'captureReady waits for a paint opportunity or bounded fallback');
+  flushTimers();
+  const readyAfterTimer = hostPostLog.filter((m) => m.handler === 'captureReady');
+  assert.strictEqual(readyAfterTimer.length, 1,
+    'bounded fallback publishes captureReady exactly once');
+  assert.deepStrictEqual(
+    Array.from(readyAfterTimer[0].args), [500, 400, box.geometryEpoch],
+    'timer path preserves physical bounds and committed epoch',
+  );
+  while (pendingAnimationFrames.length) {
+    pendingAnimationFrames.shift()();
+  }
+  assert.strictEqual(
+    hostPostLog.filter((m) => m.handler === 'captureReady').length,
+    1,
+    'late compositor callbacks are no-ops after the timer wins',
+  );
 }
 
 // 46. TODO-1345 (BUG-583 deeper root cause): a per-lookup origin FLOOR (reserved
@@ -1667,7 +2484,9 @@ function flushTimers() {
   assert.strictEqual(baseline.top, -120, 'root origin sits at the reserved floor top');
   // Simulate C++ RevealStack committing that floored origin (window moved + layer
   // shifted) so the reveal gate's coverage check sees it.
-  host.commitLayerShift(baseline.left, baseline.top);
+  host.commitLayerShift(
+    baseline.left, baseline.top, baseline.geometryEpoch,
+  );
   // Open an up/left child that lands WITHIN the floor (-40,-30 is inside -140,-120).
   const child = { id: 'frame-1', parentIndex: 0,
     frame: { left: -40, top: -30, width: 200, height: 160 }, settingsJs: '/* C */' };
@@ -1680,10 +2499,13 @@ function flushTimers() {
     assert.strictEqual(openSize.args[1].top, -120,
       'up/left child open does NOT move the origin top');
   }
-  // The child is covered by the committed floor origin FROM PLACEMENT, so it is
-  // reveal-ready without waiting for a window move (no clipped-then-jump either).
+  // The bbox origin is unchanged, but shellRects/HRGN gained a child. That is a
+  // new geometry transaction and must be acknowledged before the child paints.
+  assert.strictEqual(host.frameGateState('frame-1').revealReady, false,
+    'same bbox with new shellRects still gates the child');
+  commitLatestGeometry(host);
   assert.strictEqual(host.frameGateState('frame-1').revealReady, true,
-    'child covered by the reserved floor origin -> reveal-ready at placement');
+    'matching shellRects transaction releases the child without moving origin');
   // Child becomes content-ready: STILL no origin move (rounds 1-4 pulled it to -40
   // here — the residual parent lurch; the floor freezes it at -140).
   const childIframe = shellsOf(document)
@@ -1699,282 +2521,6 @@ function flushTimers() {
     assert.strictEqual(readySize.args[1].top, -120,
       'child content-ready does NOT pull the origin top');
   }
-}
-
-// ---- spec 2026-07-10 panel mode -------------------------------------------
-
-// P1. panel payload: root shell fills the fixed viewport below the panel bar;
-//     the panel bar DOM exists; measureAndReport is short-circuited (no
-//     overlaySize reveal-resize loop) and the reveal gate flips directly.
-{
-  const { host, document } = freshHost();
-  hostPostLog = [];
-  host.renderStack({
-    popups: [descriptor('panel-root', -1)],
-    layoutMode: 'panel',
-  });
-  const bar = document.getElementById('global-lookup-panel-bar');
-  assert.ok(bar, 'panel bar created in panel mode');
-  const shells = shellsOf(document);
-  assert.strictEqual(shells.length, 1, 'one root shell');
-  const shell = shells[0];
-  assert.strictEqual(shell.style.left, '0px', 'panel root pinned left');
-  assert.strictEqual(shell.style.top, '28px', 'panel root below the bar');
-  assert.strictEqual(shell.style.width, '100%', 'panel root fills width');
-  assert.strictEqual(
-    shell.style.height,
-    'calc(100% - 28px)',
-    'panel root fills height below the bar',
-  );
-  assert.strictEqual(
-    shell.getAttribute('data-panel-root'),
-    'true',
-    'panel root marked so CSS hides its per-shell close-X (panel bar × is the '
-      + 'single close affordance; real-device feedback)',
-  );
-  assert.ok(
-    !hostPostLog.some((m) => m.handler === 'overlaySize'),
-    'panel mode never posts overlaySize (fixed window, no reveal-resize loop)',
-  );
-  assert.strictEqual(
-    host.frameGateState('panel-root').revealReady,
-    true,
-    'panel shell reveal gate flips directly (no overlaySize round-trip)',
-  );
-}
-
-// P2. cascade payload (no layoutMode key): NO panel bar — the transient
-//     overlay's DOM is byte-identical to the pre-panel host.
-{
-  const { host, document } = freshHost();
-  host.renderStack({ popups: [descriptor('frame-0', -1)] });
-  assert.strictEqual(
-    document.getElementById('global-lookup-panel-bar'),
-    null,
-    'cascade mode never creates the panel bar',
-  );
-}
-
-// P3. panel bar chrome: grip mousedown posts beginWindowDrag; pin toggles the
-//     visual + posts panelPin; close posts panelClose; setPanelPinnedVisual
-//     syncs the visual from the Dart pref.
-{
-  const { host, document } = freshHost();
-  host.renderStack({
-    popups: [descriptor('panel-root', -1)],
-    layoutMode: 'panel',
-  });
-  const bar = document.getElementById('global-lookup-panel-bar');
-  // 面板栏顺序：grip · 🕘history · 📌pin · 🛡block · ×close（history 插在 grip 后）。
-  const [grip, historyBtn, pinBtn, blockBtn, closeBtn] = bar.children;
-  assert.strictEqual(
-    historyBtn.className.indexOf('panel-history') >= 0,
-    true,
-    'panel bar has the clipboard-history button between grip and pin',
-  );
-  const fakeEvent = { preventDefault() {}, stopPropagation() {} };
-
-  hostPostLog = [];
-  grip._listeners['mousedown'][0](fakeEvent);
-  assert.ok(
-    hostPostLog.some((m) => m.handler === 'beginWindowDrag'),
-    'grip mousedown posts beginWindowDrag (native HTCAPTION loop)',
-  );
-
-  hostPostLog = [];
-  pinBtn._listeners['pointerdown'][0](fakeEvent);
-  const pinMsg = hostPostLog.find((m) => m.handler === 'panelPin');
-  assert.ok(pinMsg, 'pin posts panelPin');
-  assert.strictEqual(pinMsg.args[0], false, 'default pinned -> first tap unpins');
-  assert.ok(
-    pinBtn.className.indexOf('panel-pin-off') >= 0,
-    'unpinned visual applied',
-  );
-
-  host.setPanelPinnedVisual(true);
-  assert.ok(
-    pinBtn.className.indexOf('panel-pin-off') < 0,
-    'setPanelPinnedVisual(true) restores the pinned visual (Dart pref sync)',
-  );
-
-  // 防截屏按钮：默认开（盾牌亮）；首点关 -> posts panelBlockCapture(false) + 变暗；
-  // setPanelBlockCaptureVisual(true) 从 Dart pref 恢复亮态。
-  assert.ok(
-    blockBtn.className.indexOf('panel-block') >= 0 &&
-      blockBtn.className.indexOf('panel-block-off') < 0,
-    'block-capture default on (shield bright)',
-  );
-  hostPostLog = [];
-  blockBtn._listeners['pointerdown'][0](fakeEvent);
-  const blockMsg = hostPostLog.find((m) => m.handler === 'panelBlockCapture');
-  assert.ok(blockMsg, 'block button posts panelBlockCapture');
-  assert.strictEqual(
-    blockMsg.args[0], false, 'default on -> first tap turns capture-block off');
-  assert.ok(
-    blockBtn.className.indexOf('panel-block-off') >= 0,
-    'capture-block-off visual applied',
-  );
-  host.setPanelBlockCaptureVisual(true);
-  assert.ok(
-    blockBtn.className.indexOf('panel-block-off') < 0,
-    'setPanelBlockCaptureVisual(true) restores blocked visual (Dart pref sync)',
-  );
-
-  hostPostLog = [];
-  closeBtn._listeners['pointerdown'][0](fakeEvent);
-  assert.ok(
-    hostPostLog.some((m) => m.handler === 'panelClose'),
-    'close posts panelClose (Dart hides + pauses)',
-  );
-}
-
-// ---- 剪贴板复制历史覆盖层（面板栏🕘 / 瞬态 root 卡🕘） --------------------
-
-// 找一个 shell 里的历史覆盖层（null 表示没渲染）。
-function historyOverlayIn(shell) {
-  return (
-    (shell.children || []).find(
-      (c) => c.className === 'clipboard-history-overlay',
-    ) || null
-  );
-}
-
-// CH1. 面板栏🕘 pointerdown -> postToHost('clipboardHistory')（Dart 从 DB 重载并回注）。
-{
-  const { host, document } = freshHost();
-  host.renderStack({
-    popups: [descriptor('panel-root', -1)],
-    layoutMode: 'panel',
-  });
-  const bar = document.getElementById('global-lookup-panel-bar');
-  const historyBtn = bar.children.find(
-    (c) => c.className.indexOf('panel-history') >= 0,
-  );
-  assert.ok(historyBtn, 'panel bar has the 🕘 history button');
-  hostPostLog = [];
-  historyBtn._listeners['pointerdown'][0]({
-    preventDefault() {},
-    stopPropagation() {},
-  });
-  assert.ok(
-    hostPostLog.some((m) => m.handler === 'clipboardHistory'),
-    'panel 🕘 posts clipboardHistory',
-  );
-}
-
-// CH2. showClipboardHistory 把覆盖层渲染进 ROOT 卡 shell（躲 native 裁剪）：
-//      带条目铺行 + 点行 -> lookupClipboardHistoryEntry(text) 并关层；清空按钮 ->
-//      clearClipboardHistory；空条目 -> 空态元素、无行。
-{
-  const { host, document } = freshHost();
-  host.renderStack({
-    popups: [descriptor('panel-root', -1)],
-    layoutMode: 'panel',
-  });
-  const rootShell = shellsOf(document)[0];
-
-  const ok = host.showClipboardHistory({
-    entries: [
-      { text: 'ねこ', time: '12:00' },
-      { text: 'いぬ', time: '11:30' },
-    ],
-    title: '复制历史',
-    clearLabel: '清空',
-    emptyLabel: '暂无复制记录',
-  });
-  assert.strictEqual(ok, true, 'showClipboardHistory returns true (rendered)');
-
-  let overlay = historyOverlayIn(rootShell);
-  assert.ok(overlay, 'history overlay rendered inside the ROOT shell');
-  const [head, list] = overlay.children;
-  assert.ok(
-    head.children.some((c) => c.textContent === '复制历史'),
-    'header shows localized title',
-  );
-  assert.strictEqual(list.className, 'clipboard-history-list', 'list present');
-  assert.strictEqual(list.children.length, 2, 'two history rows (newest-first)');
-  const firstRowText = list.children[0].children[0].textContent;
-  assert.strictEqual(firstRowText, 'ねこ', 'first row = first payload entry');
-
-  // 点第一行 -> postToHost('lookupClipboardHistoryEntry', ['ねこ']) 且关层。
-  hostPostLog = [];
-  list.children[0]._listeners['pointerdown'][0]({
-    preventDefault() {},
-    stopPropagation() {},
-  });
-  const pick = hostPostLog.find(
-    (m) => m.handler === 'lookupClipboardHistoryEntry',
-  );
-  assert.ok(pick, 'row click posts lookupClipboardHistoryEntry');
-  assert.strictEqual(pick.args[0], 'ねこ', 'entry text forwarded to Dart');
-  assert.strictEqual(
-    historyOverlayIn(rootShell),
-    null,
-    'picking an entry closes the history overlay',
-  );
-
-  // 清空按钮 -> postToHost('clearClipboardHistory')。
-  host.showClipboardHistory({
-    entries: [{ text: 'x', time: '10:00' }],
-    title: 'T',
-    clearLabel: 'C',
-    emptyLabel: 'E',
-  });
-  overlay = historyOverlayIn(rootShell);
-  const clearBtn = overlay.children[0].children.find(
-    (c) => c.textContent === 'C',
-  );
-  assert.ok(clearBtn, 'clear button present');
-  hostPostLog = [];
-  clearBtn._listeners['pointerdown'][0]({
-    preventDefault() {},
-    stopPropagation() {},
-  });
-  assert.ok(
-    hostPostLog.some((m) => m.handler === 'clearClipboardHistory'),
-    'clear posts clearClipboardHistory',
-  );
-
-  // 空条目 -> 空态元素、无 list。
-  host.showClipboardHistory({
-    entries: [],
-    title: 'T',
-    clearLabel: 'C',
-    emptyLabel: '暂无复制记录',
-  });
-  overlay = historyOverlayIn(rootShell);
-  assert.ok(
-    overlay.children.some(
-      (c) => c.className === 'clipboard-history-empty' &&
-        c.textContent === '暂无复制记录',
-    ),
-    'empty entries render the localized empty state',
-  );
-  assert.ok(
-    !overlay.children.some((c) => c.className === 'clipboard-history-list'),
-    'no list element when history is empty',
-  );
-}
-
-// CH3. 瞬态覆盖窗（cascade）root 卡带 global-lookup-history 按钮，点它 posts
-//      clipboardHistory（无面板栏，按钮挂 shell 内躲 native 裁剪）。
-{
-  const { host, document } = freshHost();
-  host.renderStack({ popups: [descriptor('frame-0', -1)] });
-  const rootShell = shellsOf(document)[0];
-  const histBtn = (rootShell.children || []).find(
-    (c) => c.className === 'global-lookup-history',
-  );
-  assert.ok(histBtn, 'cascade root card carries the 🕘 history button');
-  hostPostLog = [];
-  histBtn._listeners['pointerdown'][0]({
-    preventDefault() {},
-    stopPropagation() {},
-  });
-  assert.ok(
-    hostPostLog.some((m) => m.handler === 'clipboardHistory'),
-    'transient 🕘 posts clipboardHistory',
-  );
 }
 
 // ---- BUG-749 shell-union region + immediate gap dismiss --------------------
@@ -2069,7 +2615,7 @@ function historyOverlayIn(shell) {
     ],
   });
   // C++ RevealStack applies the compensating shift for the up/left cascade.
-  host.commitLayerShift(-40, -60);
+  commitLatestGeometry(host);
   const layer = document.getElementById('global-lookup-host-layer');
   assert.strictEqual(layer.style.left, '40px', 'precondition: layer shifted');
   assert.strictEqual(layer.style.top, '60px', 'precondition: layer shifted');
@@ -2080,61 +2626,6 @@ function historyOverlayIn(shell) {
     'BUG-859: beginLookup resets the layer DOM transform (left)');
   assert.strictEqual(layer.style.top, '0px',
     'BUG-859: beginLookup resets the layer DOM transform (top)');
-}
-
-// B2. BUG-859: panel mode never dismisses on a hook-forwarded gap click (the
-//     persistent panel has no click-outside-dismiss semantics; additionally the
-//     panel root's percentage/calc() shell size parses to a 100×0 box in
-//     frameIdAtPoint, so EVERY panel click would mis-read as a gap and close
-//     the panel).
-{
-  const { host } = freshHost();
-  host.renderStack({
-    popups: [descriptor('panel-root', -1)],
-    layoutMode: 'panel',
-  });
-  hostPostLog = [];
-  const hit = host.handleGlobalClick(5000, 5000);
-  assert.strictEqual(hit, true,
-    'BUG-859: panel mode swallows the global click (no gap semantics)');
-  assert.ok(!hostPostLog.some((m) => m.handler === 'dismissPopupAt'),
-    'BUG-859: panel mode never posts dismissPopupAt from the global hook');
-}
-
-// B3. 剪贴板面板：scrollRootToTop 把 ROOT 帧滚动位置复位到顶部（新剪贴板内容从
-//     头看，不残留上一句被滚动过的偏移）。root iframe 复用，其 document 滚动位置
-//     跨渲染保留，故 Dart 在 update / _showTextOnly 渲染后调此函数复位。
-{
-  const { host, document } = freshHost();
-  host.renderStack({
-    popups: [descriptor('panel-root', -1), descriptor('frame-1', 0)],
-    layoutMode: 'panel',
-  });
-  const shells = shellsOf(document);
-  const rootIframe = shells[0].children.find((c) => c.tagName === 'IFRAME');
-  const childIframe = shells[1].children.find((c) => c.tagName === 'IFRAME');
-  // 模拟用户把 root 卡与子卡都滚到中途。
-  rootIframe.contentDocument.documentElement.scrollTop = 300;
-  rootIframe.contentDocument.body.scrollTop = 300;
-  childIframe.contentDocument.documentElement.scrollTop = 150;
-  childIframe.contentDocument.body.scrollTop = 150;
-  assert.strictEqual(typeof host.scrollRootToTop, 'function',
-    'scrollRootToTop fn exposed');
-  host.scrollRootToTop();
-  assert.strictEqual(rootIframe.contentDocument.documentElement.scrollTop, 0,
-    '剪贴板更新：ROOT 帧 documentElement 滚回顶部');
-  assert.strictEqual(rootIframe.contentDocument.body.scrollTop, 0,
-    '剪贴板更新：ROOT 帧 body 滚回顶部');
-  // 只复位 root（第一个插入的帧）；子卡保留自身滚动（不是剪贴板内容）。
-  assert.strictEqual(childIframe.contentDocument.documentElement.scrollTop, 150,
-    '子帧滚动不被 scrollRootToTop 复位');
-}
-
-// B4. scrollRootToTop 无 root 帧 / 空栈时安全 no-op（不抛）。
-{
-  const { host } = freshHost();
-  assert.doesNotThrow(() => host.scrollRootToTop(),
-    'scrollRootToTop 空栈安全');
 }
 
 // R4. BUG-745: the TODO-890 slide-out class must be stripped from the REUSED
@@ -2269,6 +2760,411 @@ function historyOverlayIn(shell) {
   assert.strictEqual(miss, false, 'BUG-1166: 卡片外不派发');
   assert.strictEqual(iframeOf(0).contentDocument._dispatched.length, 1,
     'BUG-1166: 缝隙滚轮不该误投给任何一帧');
+}
+
+// P1 (BUG-1833) — a stable host revision carries the multi-megabyte custom-font
+// static payload once. Later lookups only eval entries + the render body, while
+// a prewarmed iframe hydrates from the host-level revision cache before it is
+// rebound, so acquisition only evaluates the child-specific dynamic body.
+{
+  const { host, document } = freshHost();
+  host.renderStack({
+    popups: [revisionDescriptor(
+      'frame-0', -1, 7, '/* ENTRIES-1 */', '/* RENDER-1 */',
+      '/* STATIC-HEAD-7 */', '/* STATIC-TAIL-7 */',
+    )],
+  });
+  const first = evalLog.find((e) => /ENTRIES-1/.test(e.code));
+  assert.ok(first, 'BUG-1833: first revision renders the root');
+  assert.ok(
+    first.code.indexOf('STATIC-HEAD-7') < first.code.indexOf('ENTRIES-1') &&
+      first.code.indexOf('ENTRIES-1') < first.code.indexOf('STATIC-TAIL-7') &&
+      first.code.indexOf('STATIC-TAIL-7') < first.code.indexOf('RENDER-1'),
+    'BUG-1833: cold injection preserves head -> entries -> tail -> render order',
+  );
+
+  evalLog = [];
+  host.renderStack({
+    popups: [revisionDescriptor(
+      'frame-0', -1, 7, '/* ENTRIES-2 */', '/* RENDER-2 */',
+    )],
+  });
+  const hot = evalLog.find((e) => /ENTRIES-2/.test(e.code));
+  assert.ok(hot, 'BUG-1833: changed entries still render on the stable root');
+  assert.ok(!/STATIC-HEAD-7|STATIC-TAIL-7/.test(hot.code),
+    'BUG-1833: hot lookup does not re-eval the font/static payload');
+
+  evalLog = [];
+  host.renderStack({
+    popups: [
+      revisionDescriptor('frame-0', -1, 7, '/* ENTRIES-2 */', '/* RENDER-2 */'),
+      revisionDescriptor('frame-1', 0, 7, '/* CHILD-ENTRIES */', '/* CHILD-RENDER */'),
+    ],
+  });
+  const child = evalLog.find((e) => e.frameId === 'frame-1' && /CHILD-ENTRIES/.test(e.code));
+  assert.ok(child && !/STATIC-HEAD-7|STATIC-TAIL-7/.test(child.code),
+    'BUG-1833: the prewarmed iframe keeps static state and acquires dynamic-only content');
+
+  // A navigation replaces the iframe realm but not the host record/cache.
+  evalLog = [];
+  const rootIframe = shellsOf(document)[0].children.find((c) => c.tagName === 'IFRAME');
+  const navigatedNativePost = function () {};
+  rootIframe.contentWindow.chrome.webview.postMessage = navigatedNativePost;
+  rootIframe._listeners.load[0]();
+  assert.notStrictEqual(
+    rootIframe.contentWindow.chrome.webview.postMessage,
+    navigatedNativePost,
+    'BUG-1833: navigation replaces and then re-wraps the frame bridge',
+  );
+  hostPostLog = [];
+  rootIframe.contentWindow.chrome.webview.postMessage({
+    handler: 'popupRendered', args: [120],
+  });
+  const routedAfterReload = hostPostLog.find(
+    (message) => message.handler === 'popupRendered',
+  );
+  assert.ok(routedAfterReload && routedAfterReload.__frameId === 'frame-0',
+    'BUG-1833: reloaded realm messages are stamped with the live logical id');
+  const reloaded = evalLog.find((e) => e.frameId === 'frame-0' && /ENTRIES-2/.test(e.code));
+  assert.ok(reloaded && /STATIC-HEAD-7/.test(reloaded.code),
+    'BUG-1833: iframe reload re-applies cached static before pending dynamic');
+
+  evalLog = [];
+  host.renderStack({
+    popups: [revisionDescriptor(
+      'frame-0', -1, 8, '/* ENTRIES-3 */', '/* RENDER-3 */',
+      '/* STATIC-HEAD-8 */', '/* STATIC-TAIL-8 */',
+    )],
+  });
+  const changed = evalLog.find((e) => /ENTRIES-3/.test(e.code));
+  assert.ok(changed && /STATIC-HEAD-8/.test(changed.code) && /STATIC-TAIL-8/.test(changed.code),
+    'BUG-1833: a changed revision installs its new static payload');
+}
+
+// P1b (BUG-1833) — imported font bytes are materialised once as a same-origin
+// Blob resource. Root, nested, and reloaded iframe realms eval only the compact
+// blob: URL while every @font-face semantic besides src stays unchanged.
+{
+  const { host, document } = freshHost();
+  const rawDataUrl = 'data:font/ttf;base64,AAECAw==';
+  const fontHead =
+    '/* FONT-HEAD */\n' +
+    '(function(){var css=\'@font-face { font-family: "Noto Sans JP"; ' +
+    'src: url("' + rawDataUrl + '") format("truetype"); ' +
+    'font-style: italic; font-weight: 500; font-display: swap; }\';})();';
+  const rootDescriptor = revisionDescriptor(
+    'font-root', -1, 30, '/* FONT-ROOT-ENTRIES */', '/* FONT-ROOT-RENDER */',
+    fontHead, '/* FONT-TAIL */',
+  );
+  host.renderStack({ popups: [rootDescriptor] });
+
+  assert.strictEqual(fontBlobCreateLog.length, 1,
+    'BUG-1833: one revision creates one Blob for one imported font');
+  assert.deepStrictEqual(
+    { type: fontBlobCreateLog[0].type, size: fontBlobCreateLog[0].size },
+    { type: 'font/ttf', size: 4 },
+    'BUG-1833: Blob preserves MIME and decoded font bytes',
+  );
+  assert.ok(!Object.prototype.hasOwnProperty.call(rootDescriptor, 'staticHeadJs') &&
+      !Object.prototype.hasOwnProperty.call(rootDescriptor, 'staticTailJs'),
+    'BUG-1833: the live frame descriptor releases the base64 source');
+  const root = evalLog.find((e) =>
+    e.frameId === 'font-root' && /FONT-ROOT-ENTRIES/.test(e.code));
+  assert.ok(root, 'BUG-1833: root rendered with the shared font resource');
+  assert.ok(!root.code.includes(rawDataUrl),
+    'BUG-1833: root iframe does not eval the base64 source');
+  assert.ok(root.code.includes(fontBlobCreateLog[0].url),
+    'BUG-1833: root iframe receives the host Blob URL');
+  assert.ok(root.code.includes('font-family: "Noto Sans JP"') &&
+      root.code.includes('format("truetype")') &&
+      root.code.includes('font-style: italic') &&
+      root.code.includes('font-weight: 500') &&
+      root.code.includes('font-display: swap'),
+    'BUG-1833: family/format/style/weight/display CSS remains unchanged');
+  const warmChildRealm = evalLog.find((e) =>
+    e.frameId.startsWith('__global-lookup-standby-') &&
+      e.code.includes(fontBlobCreateLog[0].url));
+  assert.ok(warmChildRealm && !warmChildRealm.code.includes(rawDataUrl),
+    'BUG-1833: standby child realm installs the shared Blob URL before acquire');
+
+  evalLog = [];
+  host.renderStack({
+    popups: [
+      revisionDescriptor(
+        'font-root', -1, 30,
+        '/* FONT-ROOT-ENTRIES */', '/* FONT-ROOT-RENDER */',
+      ),
+      revisionDescriptor(
+        'font-child', 0, 30,
+        '/* FONT-CHILD-ENTRIES */', '/* FONT-CHILD-RENDER */',
+      ),
+    ],
+  });
+  const child = evalLog.find((e) =>
+    e.frameId === 'font-child' && /FONT-CHILD-ENTRIES/.test(e.code));
+  assert.ok(child && !child.code.includes(fontBlobCreateLog[0].url),
+    'BUG-1833: acquired child skips already-installed static font settings');
+  assert.ok(!child.code.includes(rawDataUrl),
+    'BUG-1833: nested iframe never evals base64 font data');
+  assert.strictEqual(fontBlobCreateLog.length, 1,
+    'BUG-1833: nested hydration does not duplicate the font resource');
+
+  evalLog = [];
+  const rootIframe = shellsOf(document)
+    .find((s) => s.getAttribute('data-frame-id') === 'font-root')
+    .children.find((c) => c.tagName === 'IFRAME');
+  rootIframe._listeners.load[0]();
+  const reloaded = evalLog.find((e) =>
+    e.frameId === 'font-root' && /FONT-ROOT-ENTRIES/.test(e.code));
+  assert.ok(reloaded && reloaded.code.includes(fontBlobCreateLog[0].url) &&
+      !reloaded.code.includes(rawDataUrl),
+    'BUG-1833: iframe reload still reuses the one host resource');
+  assert.strictEqual(fontBlobCreateLog.length, 1);
+
+  const oldObjectUrl = fontBlobCreateLog[0].url;
+  host.renderStack({
+    popups: [revisionDescriptor(
+      'font-root', -1, 31, '/* FONT-NEW-ENTRIES */', '/* FONT-NEW-RENDER */',
+      fontHead, '/* FONT-NEW-TAIL */',
+    )],
+  });
+  assert.strictEqual(fontBlobCreateLog.length, 2,
+    'BUG-1833: a new static revision owns its own resource');
+  assert.ok(fontBlobRevokeLog.includes(oldObjectUrl),
+    'BUG-1833: pruning the old revision revokes its Blob URL');
+}
+
+// P1b — gal direct geometry starts compact, but after a real up/left child grows
+// the visible HWND, closing that child must retain the same outward origin in
+// BOTH bbox and shellRects. Dart already ratchets the HWND origin; resetting only
+// the host rect origin to zero clips the retained root against a translated HRGN
+// / capture mask.
+{
+  const route = { source: 'galCard', routeEpoch: 41, lookupEpoch: 7 };
+  const { host, document } = freshHost({ withObserver: true, withTimers: true });
+  const root = {
+    id: 'global-lookup-root', parentIndex: -1,
+    frame: { left: 0, top: 0, width: 200, height: 160 }, settingsJs: '/* ROOT */',
+  };
+  const child = {
+    id: 'frame-up', parentIndex: 0,
+    frame: { left: 20, top: -80, width: 200, height: 160 }, settingsJs: '/* CHILD */',
+  };
+
+  host.beginLookup(root.id, route);
+  host.renderStack({ popups: [root] });
+  shellsOf(document)[0].children.find((c) => c.tagName === 'IFRAME')
+    ._renderContent(120);
+  commitLatestGeometry(host);
+
+  hostPostLog = [];
+  host.renderStack({ popups: [root, child] });
+  shellsOf(document)
+    .find((s) => s.getAttribute('data-frame-id') === child.id)
+    .children.find((c) => c.tagName === 'IFRAME')._renderContent(120);
+  const openBox = latestGeometryBox();
+  assert.strictEqual(openBox.top, -80,
+    'gal child grows the compact root surface only when it really lands above');
+  commitLatestGeometry(host);
+
+  hostPostLog = [];
+  assert.strictEqual(host.retainStack([root.id]), true);
+  const closeGeometry = hostPostLog.filter(
+    (m) => m.handler === 'shellRects' || m.handler === 'overlaySize',
+  );
+  assert.deepStrictEqual(closeGeometry.map((m) => m.handler),
+    ['shellRects', 'overlaySize']);
+  const closeBox = closeGeometry[1].args[1];
+  assert.strictEqual(closeBox.top, -80,
+    'N→1 keeps the host bbox on the same outward gal origin as the HWND ratchet');
+  const rootRect = closeGeometry[0].args[0].split(';')[0].split(',').map(Number);
+  assert.strictEqual(rootRect[1], 80,
+    'retained root shell rect is translated into the held -80 window origin');
+}
+
+// P2 (BUG-1833) — a whole-WebView recovery loses the host cache. A dynamic-only
+// descriptor must stay content-gated and request exactly one routed static
+// resend; once supplied, the pending dynamic body renders normally.
+{
+  const { host, document } = freshHost();
+  const missing = revisionDescriptor(
+    'frame-0', -1, 11, '/* RECOVERY-ENTRIES */', '/* RECOVERY-RENDER */',
+  );
+  host.renderStack({ popups: [missing] });
+  const requests = () => hostPostLog.filter(
+    (m) => m.handler === 'staticSettingsRequired' && m.args[0] === 11,
+  );
+  assert.strictEqual(requests().length, 1,
+    'BUG-1833: cache miss requests one static resend');
+  assert.ok(!evalLog.some((e) => /RECOVERY-ENTRIES/.test(e.code)),
+    'BUG-1833: dynamic content is not rendered without its static revision');
+  assert.strictEqual(
+    shellsOf(document)[0].getAttribute('data-content-ready'),
+    'false',
+    'BUG-1833: missing static keeps the shell content-gated',
+  );
+  assert.strictEqual(
+    hostPostLog.filter((m) => m.handler === 'overlaySize').length,
+    0,
+    'BUG-1833: missing static cannot publish bootstrap geometry for a blank iframe',
+  );
+  host.renderStack({ popups: [missing] });
+  assert.strictEqual(requests().length, 1,
+    'BUG-1833: repeated missing descriptors coalesce the resend request');
+
+  host.renderStack({
+    popups: [revisionDescriptor(
+      'frame-0', -1, 11, '/* RECOVERY-ENTRIES */', '/* RECOVERY-RENDER */',
+      '/* RECOVERY-HEAD */', '/* RECOVERY-TAIL */',
+    )],
+  });
+  const recovered = evalLog.find((e) => /RECOVERY-ENTRIES/.test(e.code));
+  assert.ok(recovered && /RECOVERY-HEAD/.test(recovered.code),
+    'BUG-1833: routed static resend replays pending dynamic content');
+  assert.ok(hostPostLog.some((m) => m.handler === 'overlaySize'),
+    'BUG-1833: successful recovery resumes geometry reporting');
+}
+
+// P3 (BUG-1833) — resend coalescing is route-scoped. If route A's request is
+// rejected after a newer lookup takes ownership, route B must issue its own
+// request for the same revision instead of remaining gated forever.
+{
+  const { host } = freshHost();
+  const missing = revisionDescriptor(
+    'global-lookup-root', -1, 12, '/* ROUTED-ENTRIES */', '/* ROUTED-RENDER */',
+  );
+  host.beginLookup('global-lookup-root', {
+    source: 'galCard', routeEpoch: 3, lookupEpoch: 1,
+  });
+  host.renderStack({ popups: [missing] });
+  host.beginLookup('global-lookup-root', {
+    source: 'galCard', routeEpoch: 3, lookupEpoch: 2,
+  });
+  host.renderStack({ popups: [missing] });
+  const routedRequests = hostPostLog.filter(
+    (m) => m.handler === 'staticSettingsRequired' && m.args[0] === 12,
+  );
+  assert.strictEqual(routedRequests.length, 2,
+    'BUG-1833: route B retries the revision even when route A already requested it');
+  assert.strictEqual(routedRequests[0].__lookupEpoch, 1);
+  assert.strictEqual(routedRequests[1].__lookupEpoch, 2);
+}
+
+// P4 (BUG-1833) — static payloads can contain a 9.6 MB font. Revisions no
+// longer used by any live descriptor are evicted instead of accumulating for
+// the process lifetime.
+{
+  const { host } = freshHost();
+  host.renderStack({
+    popups: [revisionDescriptor(
+      'global-lookup-root', -1, 20, '/* E20 */', '/* R20 */',
+      '/* H20 */', '/* T20 */',
+    )],
+  });
+  host.renderStack({
+    popups: [revisionDescriptor(
+      'global-lookup-root', -1, 21, '/* E21 */', '/* R21 */',
+      '/* H21 */', '/* T21 */',
+    )],
+  });
+  hostPostLog = [];
+  host.renderStack({
+    popups: [
+      revisionDescriptor('global-lookup-root', -1, 21, '/* E21 */', '/* R21 */'),
+      revisionDescriptor('old-revision-child', 0, 20, '/* E20B */', '/* R20B */'),
+    ],
+  });
+  assert.ok(hostPostLog.some(
+    (m) => m.handler === 'staticSettingsRequired' && m.args[0] === 20,
+  ), 'BUG-1833: a no-longer-live revision was evicted from the host cache');
+}
+
+// BUG-1857 — grip 拖拽期间 root 卡跟随 viewport（live-fit）。
+//   a. grip mousedown 武装：root 尺寸 = 按下时尺寸 + viewport 增量；
+//   b. 未武装 / endLiveResize 之后的 resize 是 no-op（嵌套卡改窗口尺寸不得拉大 root）；
+//   c. 子卡不动；live 期间置 contentMeasureDirty，松手后重排不会拿旧宽度的内容高度封顶；
+//   d. renderStack 接管：Dart 权威 frame 覆盖 live 尺寸并解除武装；
+//   e. 面板模式不武装（root 本就 100%）；取不到 viewport（老 harness）不武装。
+{
+  const { host, document, window } = freshHost();
+  window.innerWidth = 400;
+  window.innerHeight = 500;
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, frame: { left: 20, top: 30, width: 360, height: 450 }, settingsJs: '' },
+      { id: 'frame-1', parentIndex: 0, frame: { left: 60, top: 80, width: 300, height: 200 }, settingsJs: '' },
+    ],
+  });
+  const rootShell = shellsOf(document).find((s) => s.getAttribute('data-frame-id') === 'frame-0');
+  const childShell = shellsOf(document).find((s) => s.getAttribute('data-frame-id') === 'frame-1');
+  // b. 未武装：viewport 变了 root 不动。
+  window.innerWidth = 480;
+  window.innerHeight = 560;
+  assert.strictEqual(host.handleWindowResize(), false, 'unarmed resize is a no-op');
+  assert.strictEqual(rootShell.style.width, '360px');
+  assert.strictEqual(rootShell.style.height, '450px');
+  window.innerWidth = 400;
+  window.innerHeight = 500;
+  // a. grip mousedown 武装并进模态循环。
+  const grip = rootShell.children.find((c) => c.className === 'global-lookup-resize-grip');
+  assert.ok(grip, 'root shell carries the resize grip');
+  hostPostLog = [];
+  grip._listeners['mousedown'][0]({ stopPropagation: () => {}, preventDefault: () => {} });
+  assert.ok(hostPostLog.some((m) => m.handler === 'beginWindowResize'),
+    'grip mousedown still enters the native modal size loop');
+  rootShell.__lookupRecord.contentMeasureDirty = false;
+  window.innerWidth = 460;   // +60
+  window.innerHeight = 420;  // -80
+  assert.strictEqual(host.handleWindowResize(), true, 'armed resize applies');
+  assert.strictEqual(rootShell.style.width, '420px', 'root width = start + viewport delta');
+  assert.strictEqual(rootShell.style.height, '370px', 'root height = start + viewport delta');
+  assert.strictEqual(rootShell.__lookupRecord.contentMeasureDirty, true,
+    'live-fit marks the root for a real re-measure at the new width');
+  // c. 子卡不动。
+  assert.strictEqual(childShell.style.width, '300px');
+  assert.strictEqual(childShell.style.height, '200px');
+  // 增量是相对按下时的 viewport（不是上一帧），且有下限。
+  window.innerWidth = 10;
+  window.innerHeight = 10;
+  host.handleWindowResize();
+  assert.strictEqual(rootShell.style.width, '80px', 'live width floors at the minimum');
+  assert.strictEqual(rootShell.style.height, '80px', 'live height floors at the minimum');
+  window.innerWidth = 500;
+  window.innerHeight = 600;
+  host.handleWindowResize();
+  assert.strictEqual(rootShell.style.width, '460px', 'delta is measured from the arm-time viewport');
+  assert.strictEqual(rootShell.style.height, '550px');
+  // b. WM_EXITSIZEMOVE → endLiveResize 之后的 resize 不再动 root。
+  host.endLiveResize();
+  window.innerWidth = 700;
+  window.innerHeight = 700;
+  assert.strictEqual(host.handleWindowResize(), false);
+  assert.strictEqual(rootShell.style.width, '460px', 'after release the root stops following');
+  // d. 武装后 renderStack 接管：Dart 的 frame 覆盖 live 尺寸并解除武装。
+  assert.strictEqual(host.beginLiveResize(), true);
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, frame: { left: 20, top: 30, width: 520, height: 400 }, settingsJs: '' },
+    ],
+  });
+  assert.strictEqual(rootShell.style.width, '520px', 'Dart authoritative frame wins');
+  assert.strictEqual(rootShell.style.height, '400px');
+  window.innerWidth = 900;
+  assert.strictEqual(host.handleWindowResize(), false, 'renderStack disarms live-fit');
+  assert.strictEqual(rootShell.style.width, '520px');
+}
+{
+  // e. 取不到 viewport（window.innerWidth 缺失）→ 不武装，不写 NaN。
+  const { host, document } = freshHost();
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, frame: { left: 0, top: 0, width: 360, height: 480 }, settingsJs: '' },
+    ],
+  });
+  const rootShell = shellsOf(document)[0];
+  assert.strictEqual(host.beginLiveResize(), false);
+  assert.strictEqual(host.handleWindowResize(), false);
+  assert.strictEqual(rootShell.style.width, '360px');
 }
 
 console.log('global_lookup_host_test: PASS');

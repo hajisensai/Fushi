@@ -7,6 +7,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/utils/misc/log_upload_config.dart';
 import 'package:fushi/src/utils/net/app_http.dart';
 
@@ -110,10 +111,15 @@ Future<LogUploadOutcome> performLogUpload({
 /// 收集设备/版本元信息（平台 + OS 版本字符串，无需额外插件）。
 Future<({String appVersion, String platform, String device})>
     _collectMeta() async {
-  String appVersion = 'unknown';
+  // 编译期常量拿不到才是真 unknown：`PackageInfo` 抛异常时它照样可用。
+  String appVersion = fushiRunningCodeVersion ?? 'unknown';
   try {
     final PackageInfo info = await PackageInfo.fromPlatform();
-    appVersion = '${info.version}+${info.buildNumber}';
+    // 优先报运行中这份 Dart 代码的版本：exe 版本资源和 `app.so` 是两个文件，
+    // 半更新态下前者报新版本、跑的却是旧代码，服务端拿到的版本会指向一份根本没
+    // 在跑的构建（BUG-1786 就是这么排查了好几天）。
+    final String version = fushiRunningCodeVersion ?? info.version;
+    appVersion = '$version+${info.buildNumber}';
   } catch (_) {}
   return (
     appVersion: appVersion,

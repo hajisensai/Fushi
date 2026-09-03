@@ -80,16 +80,26 @@ duration，`ht_torrent_peers` 补 flags/source 稳定位掩码（与 libtorrent 
 
 ## Windows 构建（standalone，不经 flutter windows runner）
 
-libtorrent 经 **vcpkg** 提供（本机 `D:\APP\vcpkg`，已装 `libtorrent:x64-windows`）：
+libtorrent 经 **vcpkg** 提供，版本由本目录 `vcpkg.json` 钉死
+（manifest + `overrides` = **libtorrent 2.0.11**）。
+
+> **不要再手动 `vcpkg install libtorrent`。** classic 模式装的是你那份 vcpkg
+> 修订当下的 ports 版本 —— 2026-08 上游把 libtorrent 升到 2.1（API 大改），
+> Windows 4 个 DLL 和 Android `.so` 当场一起编不出来，Windows 正式包直接断供
+> （BUG-1772）。现在依赖由 cmake configure 时的 vcpkg 工具链按 `vcpkg.json` 装。
+>
+> 前提：**vcpkg checkout 不能旧于 `vcpkg.json` 的 `builtin-baseline`**。baseline
+> 里的版本条目来自工作区 `versions/` 目录（跟着 HEAD 走），落后的 checkout 里
+> 没有它们，vcpkg 会报 `path 'versions/baseline.json' exists on disk, but not in ...`。
+> 构建脚本的 `Assert-VcpkgBaseline` 会先检查并直接告诉你跑 `git -C <vcpkg> pull`。
 
 ```bash
-# 1) 装 libtorrent（一次性，约 20~40min，拉 boost + openssl 从源码编）
+# 1) 准备 vcpkg（不用装 libtorrent，下一步会按 vcpkg.json 自动装）
 export HTTPS_PROXY=http://127.0.0.1:34151 HTTP_PROXY=http://127.0.0.1:34151
 git clone https://github.com/microsoft/vcpkg <vcpkg>
 <vcpkg>/bootstrap-vcpkg.bat -disableMetrics
-<vcpkg>/vcpkg install libtorrent:x64-windows
 
-# 2) 配置 + 构建 bridge DLL
+# 2) 配置 + 构建 bridge DLL（首次会源码编 boost+openssl+libtorrent，约 20~40min）
 cd native/fushi_torrent
 cmake -B build -S . -A x64 \
   -DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake \
@@ -231,11 +241,47 @@ libtorrent 2.x **无 WebSocket/WebRTC/WebTorrent tracker 能力**（头文件里
 种子（Nyaa）用标准 `udp://`/`http://` tracker + DHT，不依赖 wss——所以这
 不是"用户用不了"的短板。真实下载走标准 tracker + DHT 即可。
 
+## 阶段5 — Android .so 随包（jniLibs copy-if-present）
+
+与 Windows 阶段4 同一套「vendored 预编译」决策，产物形态更简单：vcpkg 的
+android triplet 默认**静态链接**，libtorrent/boost/openssl 全部链进单个
+`libfushi_torrent_ffi.so`，没有 Windows 那 4 个运行时 DLL 的收拢/预载问题。
+
+1. **产出**：`build_android_so.ps1`（本机 Windows）/ `build_android_so.sh`
+   （CI Linux）——libtorrent 版本同样由 `vcpkg.json` 钉死（见上方 Windows 一节），
+   cmake configure 时自动装；triplet 走 arm64-v8a→arm64-android 等，
+   **必须把 `-DVCPKG_OVERLAY_TRIPLETS=vcpkg-triplets/` 传给 cmake**（manifest
+   模式下装依赖的是工具链而非命令行，只传给 `vcpkg install` 的话 overlay 根本
+   不参与）：vcpkg 自带 android triplet
+   钉 API 28，boost.asio 会引用 API 28 才进 libc 的 `aligned_alloc`，bridge 按
+   android-24 链接直接 undefined symbol——依赖与 bridge 必须同一 API level，
+   overlay 统一钉 24），cmake 用 vcpkg 工具链 chainload NDK 工具链
+   （`ANDROID_PLATFORM=android-24` 对齐 minSdk，`ANDROID_STL=c++_shared` 对齐
+   app 内 fushidicts，16KB page 对齐见 CMakeLists），产物 strip 后落
+   `prebuilt/android/<abi>/`。已在 Android 模拟器（API 34 x86_64）实测：
+   `fushi/integration_test/embedded_torrent_engine_smoke_test.dart` 两用例全过
+   （加载 + 版本串 + session + make_torrent）。
+2. **随包**：`fushi/android/app/build.gradle` 把 `prebuilt/android` 加进
+   `jniLibs.srcDirs`——目录存在则随包，不存在则 Gradle 静默跳过。因此
+   `flutter build apk` **不依赖 vcpkg/NDK 交叉编译**：没跑过产出脚本的机器
+   照常构建，只是运行期 `EmbeddedTorrentHost.open` 因 `.so` 缺失返回 null
+   → 自动回退外接 qb（与 Windows 缺 DLL 完全同一条路径）。
+3. **加载**：`EmbeddedTorrentEngine._openByPlatformDefault` 按
+   `libfushi_torrent_ffi.so` 名 `DynamicLibrary.open`，命中 app 的
+   nativeLibraryDir，无需路径解析。
+4. **CI**：`release.yml` 出 APK 前跑 `build_android_so.sh`，**只编 arm64-v8a**
+   （真机主力）；armeabi-v7a / x86_64 包按上述回退路径落外接 qb，不是静默破坏。
+   vcpkg 二进制/distfile 双层缓存姿势照抄 build-multiplatform.yml（TODO-2668）。
+
+平台门控随之放开：`AppModel._supportsEmbeddedTorrent()` = 桌面 + Android；
+`resolveBackend(embeddedSupported:)`（原 `isDesktop`，参数已正名）只在 iOS
+规约回 qb。
+
 ## 尚未做（多平台 + 真机）
 
-- **多平台**（Android/macOS/Linux）：同样走 vendored 预编译 + 各 runner
-  CMake 的 copy-if-present，但需对应工具链编 libtorrent（Android NDK /
-  Xcode / gcc），未在本机验证，另起 job。
+- **macOS/Linux**：同样走 vendored 预编译 + 各 runner CMake 的
+  copy-if-present，但需对应工具链编 libtorrent（Xcode / gcc），未在本机
+  验证，另起 job。
 - http(s) .torrent URL 下载（内置引擎侧 magnet-only；Nyaa 链路产 magnet）。
 - 反吸血的真实吸血 peer 触发（PCB 进度作弊需伪造进度的 peer；本地 rig 的
   做种者诚实，自动化只验 ip_filter 执行力 + peer_info 导出 + sweep 不误封，

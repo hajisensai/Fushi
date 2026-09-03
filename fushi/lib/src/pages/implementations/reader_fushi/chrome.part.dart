@@ -39,11 +39,14 @@ extension _ReaderChrome on _ReaderFushiPageState {
   bool get _paginationInFlight =>
       _restoreInFlight || !_readerContentReady || _isNavigatingToChapter;
 
-  /// TODO-1229 v2：记一次「跨章相关的惯性输入」发生时刻，把跨章冷却窗滑到当下。
-  /// 在两处调用：① 惯性 tick 被 [_paginationInFlight] 丢弃时（换章加载期的残余惯性）；
-  /// ② 冷却期内被拒的跨章尝试。持续惯性会不断把冷却窗前推，直到输入静默才让窗关闭。
-  void _noteChapterTurnInput() {
-    _lastChapterTurnInputAt = DateTime.now();
+  /// TODO-1229 / BUG-1829：记一次**真正的跨章**发生时刻，开启跨章冷却窗。
+  ///
+  /// 只在跨章事件上调用：① 各入口确实要调 [_handlePageTurnLimit] 之前；② 该次跨章落地的
+  /// 新章 content-ready 时的重锚（[_noteChapterTurnSettledIfPending]）。
+  /// **绝不在被拦截/被丢弃的输入上调用**——那会把闸门的钥匙交给被闸门拦住的那一方，用户
+  /// 持续拨轮就永远等不到窗口过期（BUG-1829，见 [_lastChapterTurnAt] 的说明）。
+  void _noteChapterTurn() {
+    _lastChapterTurnAt = DateTime.now();
   }
 
   /// TODO-1229 第三次复诉：标记「一次惯性跨章已真正发起导航」。只在惯性输入
@@ -61,22 +64,21 @@ extension _ReaderChrome on _ReaderFushiPageState {
   void _noteChapterTurnSettledIfPending() {
     if (!_inertiaChapterTurnPending) return;
     _inertiaChapterTurnPending = false;
-    _noteChapterTurnInput();
+    _noteChapterTurn();
   }
 
-  /// TODO-1229 v2：跨章冷却闸门。距上次「跨章输入/跨章」不足 [_kChapterTurnCooldown] 则
-  /// 判为同一手势的残余惯性、拒绝本次跨章并把冷却窗滑到当下（返回 true=正在冷却=拦截）；
-  /// 已静默超过冷却窗则放行（返回 false），不刷新——让真正落地的那次跨章自行 stamp。
+  /// TODO-1229 / BUG-1829：跨章冷却闸门。距上次**真正跨章**不足 [_kChapterTurnCooldown]
+  /// 则判为同一手势的残余惯性、拒绝本次跨章（返回 true=正在冷却=拦截），否则放行。
   /// 只在惯性型输入(滚轮/触摸)的跨章决策处调用；键盘/手柄(throttleMs==0)不经此闸门。
-  bool _chapterTurnCoolingDown() {
-    final bool cooling = chapterTurnCoolingDown(
-      lastInputAt: _lastChapterTurnInputAt,
-      now: DateTime.now(),
-      cooldown: _ReaderFushiPageState._kChapterTurnCooldown,
-    );
-    if (cooling) _lastChapterTurnInputAt = DateTime.now();
-    return cooling;
-  }
+  ///
+  /// **纯读，无副作用（BUG-1829）**：旧实现在拦截时把 [_lastChapterTurnAt] 写成当下，把
+  /// 窗口滑走，于是被拦的输入自己给自己续期——真实滚轮每 30~100ms 一个事件，用户只要还在
+  /// 拨，窗口就永远不过期。窗口只能由跨章事件推进（[_noteChapterTurn]）。
+  bool _chapterTurnCoolingDown() => chapterTurnCoolingDown(
+        lastTurnAt: _lastChapterTurnAt,
+        now: DateTime.now(),
+        cooldown: _ReaderFushiPageState._kChapterTurnCooldown,
+      );
 
   Future<void> _paginate(
     ReaderNavigationDirection direction, {
@@ -89,9 +91,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
     // 不推进 _lastPaginateTime，恢复后首个真实输入不被误吞）。守卫只在瞬态窗口生效，
     // 不误杀正常连续翻页（见 _paginationInFlight 文档）。
     if (_paginationInFlight) {
-      // TODO-1229 v2：换章加载期到达的惯性 tick 属同一手势，滑动跨章冷却窗，避免
-      // restore 落定后残余惯性立刻在短章边界再次跨章（跳两章真因）。
-      if (throttleMs > 0) _noteChapterTurnInput();
+      // BUG-1829：换章加载期到达的输入只丢弃，**不**滑动跨章冷却窗。v2 曾在这里
+      // stamp，用来盖住「加载期无续窗 tick → 窗口早过期 → 残余惯性二次跨章」；v3 改用
+      // 新章 content-ready 重锚（[_noteChapterTurnSettledIfPending]）后，这条已由更晚、
+      // 更准的锚点覆盖，留着只会让持续输入自我续期，把单页章变成滚轮死区。
       return;
     }
     // TODO-737: 翻页输入节流闸门归一到此唯一入口。各源传不同 throttleMs：滚轮
@@ -125,9 +128,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
       if (!mounted || _controller == null) return;
       if (!_didScroll(result)) {
         // TODO-1229 v2：惯性型输入(throttleMs>0)跨章前过冷却闸门——同一手势残余惯性
-        // 在短章边界的二次跨章被拦（并滑动冷却窗）；键盘/手柄(throttleMs==0)不受限。
+        // 在短章边界的二次跨章被拦；键盘/手柄(throttleMs==0)不受限。窗口不再被被拦的
+        // 输入自我续期——只有真跨章与 content-ready 会推进它（BUG-1829）。
         if (throttleMs > 0 && _chapterTurnCoolingDown()) return;
-        _noteChapterTurnInput();
+        _noteChapterTurn();
         _handlePageTurnLimit(direction.jsValue, inertia: throttleMs > 0);
       } else {
         await _refreshProgress();
@@ -147,7 +151,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     } else {
       // TODO-1229 v2：同上——分页模式惯性跨章过冷却闸门，拦同一手势的二次跨章。
       if (throttleMs > 0 && _chapterTurnCoolingDown()) return;
-      _noteChapterTurnInput();
+      _noteChapterTurn();
       _handlePageTurnLimit(direction.jsValue, inertia: throttleMs > 0);
     }
   }
@@ -680,8 +684,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
       // eval 抛 MissingPluginException / TypeError，且本方法被菜单 fire-and-forget 调用，
       // 异常会逃当前 zone。失败退回 null —— 菜单「查词」调用方据此用 selectedText 兜底
       // 补满 currentSentence 非空契约，导出路径走空选区文案。
-      ErrorLogService.instance.log(
-          'ReaderFushi.fillLookupStateFromNativeSelection.eval', e, stack);
+      ErrorLogService.instance
+          .log('ReaderFushi.fillLookupStateFromNativeSelection.eval', e, stack);
       return null;
     }
     if (!mounted) return null;
@@ -1403,25 +1407,31 @@ extension _ReaderChrome on _ReaderFushiPageState {
       left: 0,
       right: 0,
       bottom: 0,
-      child: ExcludeFocus(
-        child: FocusScope(
-          node: _chromeFocusScope,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              ReaderChromeScaler(
-                scale: _readerChromeScale,
-                baseHeight: _ReaderFushiPageState._readerChromeBaseHeight,
-                child: bar,
-              ),
-              ColoredBox(
-                color: _themeBackgroundColor(),
-                child: SizedBox(
-                  height: _stableBottomInset,
-                  width: double.infinity,
+      // BUG-1692：底栏排在 WebView **之后**绘制。不自带 RepaintBoundary 就会并进
+      // 页面级 RepaintBoundary 那张 cull rect = 整窗的 PictureLayer，macOS engine
+      // 把整窗写进 FlutterMutatorView 的 _hitTestIgnoreRegion，整块 WebView 收不到
+      // 任何鼠标事件。包一层让底栏自成一张只覆盖自身高度的图层。
+      child: RepaintBoundary(
+        child: ExcludeFocus(
+          child: FocusScope(
+            node: _chromeFocusScope,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                ReaderChromeScaler(
+                  scale: _readerChromeScale,
+                  baseHeight: _ReaderFushiPageState._readerChromeBaseHeight,
+                  child: bar,
                 ),
-              ),
-            ],
+                ColoredBox(
+                  color: _themeBackgroundColor(),
+                  child: SizedBox(
+                    height: _stableBottomInset,
+                    width: double.infinity,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1461,14 +1471,79 @@ extension _ReaderChrome on _ReaderFushiPageState {
             reversed: appModel.reverseReaderBottomBar,
             // TODO-830: per-reader 功能反转（getter 内部走 readerSettings?
             // 分层，否则退化全局）；与 reversed 的位置镜像维度正交。
-            invertSkip:
-                ReaderFushiSource.instance.invertAudiobookSkipDirection,
+            invertSkip: ReaderFushiSource.instance.invertAudiobookSkipDirection,
             // TODO-728: per-reader toggle for the current-sentence cue.
             showCue: ReaderFushiSource.instance.showBottomBarCue,
           ),
         );
       },
     );
+  }
+
+  /// 小说页的窗口全屏切换（底栏按钮的执行体）。
+  ///
+  /// 与漫画页 `_changeMangaFullscreen` 同一范式：**先读 native 真值再取反**，而不是翻
+  /// 自己那份镜像——用户可能刚用快捷键（默认 F11）切过，镜像会落后，按镜像取反就会
+  /// 出现「点一下没反应、要点两下」。镜像只用来选图标。
+  ///
+  /// 串行闸 [_ReaderFushiPageState._windowFullscreenTransitioning] 挡住 native 往返
+  /// 期间的重入；按钮本身不置灰（状态更新常早于 finally 清闸，置灰会让按钮闪一下）。
+  Future<void> _changeReaderWindowFullscreen() async {
+    if (!desktopWindowFullscreenSupported || _windowFullscreenTransitioning) {
+      return;
+    }
+    _windowFullscreenTransitioning = true;
+    try {
+      final bool next =
+          !((await readDesktopWindowFullscreen()) ?? _isWindowFullscreen);
+      if (!mounted) return;
+      final bool? applied = await setDesktopWindowFullscreen(next);
+      if (!mounted || applied == null) return;
+      if (_isWindowFullscreen != applied) {
+        _rebuild(() => _isWindowFullscreen = applied);
+      }
+    } finally {
+      _windowFullscreenTransitioning = false;
+    }
+  }
+
+  /// 「返回上一级」在小说页的最后一级：**先退窗口全屏，没有全屏才退书**。
+  ///
+  /// 用户裁定 Esc 也要能退全屏。放在退书之前是唯一合理的次序——全屏是盖在书上面的一层
+  /// 呈现态，而「返回」在本页一贯是「退掉最上面那层」（词典弹窗先于退书是同一条阶梯）。
+  /// 漫画页的 PopScope 里有等价的一级，视频页则由它自己的全屏路由阶梯负责。
+  ///
+  /// [Navigator.of] 必须在第一个 await **之前**取：await 之后 context 可能已失效，
+  /// 跨 async gap 用 BuildContext 是 lint 明令禁止的（也确实会炸）。
+  Future<void> _exitWindowFullscreenOrPopReader() async {
+    final NavigatorState navigator = Navigator.of(context);
+    if (await exitWindowFullscreenIfActive()) {
+      // 镜像必须在**这条**路径上也复位。只在按钮那条成功路径上复位是不够的：Esc 退掉
+      // 的是同一个全屏，不同步的话底栏图标会稳定停在「退出全屏」上，而窗口早已不是全屏
+      // 了 —— 图标撒谎，而且不会自愈（下一次按按钮读的是 native 真值，图标只是在那之后
+      // 才碰巧变对）。
+      if (mounted && _isWindowFullscreen) {
+        _rebuild(() => _isWindowFullscreen = false);
+      }
+      return;
+    }
+    if (!mounted) return;
+    await navigator.maybePop();
+  }
+
+  /// 进页时把底栏全屏按钮的图标镜像对到 native 真值一次。
+  ///
+  /// 没有这一次读取，「在别处（漫画页 / 视频页 / 上一本书）进的全屏里打开本书」会让图标
+  /// 从第一帧起就是错的 —— 镜像默认 false，而窗口是全屏的。漫画页的
+  /// `_readInitialFullscreenState` 是同一件事的同一份做法。
+  ///
+  /// 只读不写：读到什么就照着画什么图标，绝不在进页时替用户改窗口状态。
+  Future<void> _readInitialWindowFullscreenState() async {
+    final bool? fullscreen = await readDesktopWindowFullscreen();
+    if (!mounted || fullscreen == null || fullscreen == _isWindowFullscreen) {
+      return;
+    }
+    _rebuild(() => _isWindowFullscreen = fullscreen);
   }
 
   Widget _buildSettingsBar() {
@@ -1491,6 +1566,26 @@ extension _ReaderChrome on _ReaderFushiPageState {
         onPressed: _openGallery,
       ),
       const Spacer(),
+      // 小说页此前**没有任何全屏入口**，只能靠全局快捷键（默认 F11）。全屏收窄到内容
+      // 模块之后，一个看得见的入口是必需的，否则「小说能全屏」这件事对不用快捷键的
+      // 用户等于不存在。与漫画页同图标、同 tooltip（复用同一条快捷键文案）。
+      // 桌面才有窗口可全屏，移动端不渲染这颗按钮。
+      if (desktopWindowFullscreenSupported)
+        Semantics(
+          identifier: 'hibiki.reader.bottom.fullscreen',
+          child: IconButton(
+            key: const ValueKey<String>('fushi_reader_fullscreen_button'),
+            icon: Icon(
+              _isWindowFullscreen
+                  ? Icons.fullscreen_exit_rounded
+                  : Icons.fullscreen_rounded,
+              color: _themeTextColor(),
+            ),
+            iconSize: 22,
+            tooltip: t.shortcut_action_global_toggle_fullscreen,
+            onPressed: () => unawaited(_changeReaderWindowFullscreen()),
+          ),
+        ),
       Semantics(
         identifier: 'hibiki.reader.bottom.settings',
         child: IconButton(
@@ -1617,6 +1712,23 @@ extension _ReaderChrome on _ReaderFushiPageState {
         chapterLabel: _currentChapterLabel(),
         onSearchJump: (BookSearchResult result, String query) async {
           if (!mounted || _book == null || _controller == null) return;
+          // BUG-1762：搜索跳转是跳转不是阅读——先按命中位置抬统计水位（不计数）。
+          // 三个分支落点后的首个 _refreshProgress 都不再把「旧位置 → 命中处」的
+          // 前缀计成新读字数；跨章导航旧行为只把水位播到章首，章首到命中处的整段
+          // 前缀一样会被误计。往回搜低于水位天然 no-op（只升不降）。
+          _sessionMaxAbsoluteChars = sessionWatermarkAfterRestore(
+            _sessionMaxAbsoluteChars,
+            computeCharWatermark(
+              chapterCumulativeChars: _chapterCumulativeChars,
+              chapterCharCounts: _chapterCharCounts,
+              chapter: result.sectionIndex,
+              progress: 0,
+              charOffset: result.charOffset,
+            ),
+          );
+          _lastWatermarkAdvanceAt = DateTime.now();
+          // 起新 session / 跳转播种：额度一并清零，否则带着满桶开局会让掠过被计入。
+          _readChargeCreditMilliChars = 0;
           final String preciseLocateJs =
               ReaderPaginationScripts.scrollToSearchMatchInvocation(
             query,
@@ -1931,7 +2043,12 @@ extension _ReaderChrome on _ReaderFushiPageState {
           onTap: _anyChromeFloating
               ? () => _handleFloatingChromeReveal()
               : _toggleChrome,
-          child: pill,
+          // BUG-1692：进度 pill 排在 WebView **之后**绘制。不自带 RepaintBoundary
+          // 就会并进页面级 RepaintBoundary 那张 cull rect = 整窗的 PictureLayer，
+          // macOS engine 把整窗写进 FlutterMutatorView 的 _hitTestIgnoreRegion，
+          // 于是整块 WebView 收不到任何鼠标事件（点击/划词/翻页全死）。包一层让
+          // 它自成一张紧致 bounds 的图层，忽略区只剩 pill 自己那一小块。
+          child: RepaintBoundary(child: pill),
         ),
       ),
     );
@@ -2162,8 +2279,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       if (sentenceRange != null || _lyricsMode) {
         await _refreshSectionHighlights(section);
       }
-      FushiToast.show(
-          msg: t.favorite_removed, severity: ToastSeverity.success);
+      FushiToast.show(msg: t.favorite_removed, severity: ToastSeverity.success);
       return;
     }
 

@@ -26,7 +26,20 @@ const vm = require('node:vm');
 
 const POPUP = path.join(__dirname, 'vendor', 'popup.js');
 const CONTENT = path.join(__dirname, 'content.js');
+const ADAPTERS = path.join(__dirname, 'subtitle-adapters.js');
 const SHIM = path.join(__dirname, 'bridge-shim.js');
+
+// BUG-1718：真实运行时（manifest content_scripts / side-panel.html）里 vendor/dict-media.js
+// 恒在 content.js / side-panel.js 之前加载，后者依赖它导出的 applyFushiPopupCss 与
+// installDictMediaPlaceholderResolver。测试沙箱必须照同样顺序装，否则跑的是一个真实
+// 世界里不存在的、缺半个脚本集的环境。
+const FUSHI_DICT_MEDIA = require('node:path').join(__dirname, 'vendor', 'dict-media.js');
+function loadFushiDictMedia(ctx) {
+  require('node:vm').runInContext(
+    require('node:fs').readFileSync(FUSHI_DICT_MEDIA, 'utf8'), ctx,
+    { filename: 'vendor/dict-media.js' });
+}
+
 
 // ---------------------------------------------------------------------------
 // 最小 DOM shim：只实现本测试判据需要的语义，但这几项必须是**真语义**，否则守卫会假绿——
@@ -264,6 +277,15 @@ function loadWorld(opts) {
   vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync(POPUP, 'utf8'), sandbox, { filename: 'popup.js' });
   vm.runInContext(fs.readFileSync(SHIM, 'utf8'), sandbox, { filename: 'bridge-shim.js' });
+  loadFushiDictMedia(sandbox);
+  // manifest 里 popup-size.js 排在 content.js 之前（同隔离世界的顶层函数），
+  // content.js 的 fushiApplyTheme 直接调它的 fushiResolvePopupBox。
+  vm.runInContext(fs.readFileSync(path.join(__dirname, 'popup-size.js'), 'utf8'), sandbox,
+    { filename: 'popup-size.js' });
+  // manifest 顺序：subtitle-adapters.js 先于 content.js / subtitle-panel.js 加载，两者都靠它
+  // 提供的顶层纯函数（parseWebVtt / findCueIndexAt / pickPrimaryCueTrack…）。沙箱漏装它就与
+  // 真实运行环境不符，真代码没问题也会假红。
+  vm.runInContext(fs.readFileSync(ADAPTERS, 'utf8'), sandbox, { filename: 'subtitle-adapters.js' });
   vm.runInContext(fs.readFileSync(CONTENT, 'utf8'), sandbox, { filename: 'content.js' });
 
   const flushRaf = () => { while (rafQueue.length) rafQueue.shift()(); };

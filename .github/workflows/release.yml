@@ -19,7 +19,6 @@ on:
       - 'tool/**'
       - 'third_party/**'
       - '.github/workflows/**'
-      - 'melos.yaml'
       - 'pubspec.yaml'
       - 'pubspec.lock'
   release:
@@ -89,6 +88,7 @@ jobs:
         INPUT_RELEASE_NAME: ${{ github.event.inputs.release_name }}
         RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
         RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease }}
+        RELEASE_BODY: ${{ github.event.release.body }}
       run: |
         set -euo pipefail
         PUBSPEC_VERSION=$(grep '^version:' fushi/pubspec.yaml | sed 's/version: *//')
@@ -120,6 +120,14 @@ jobs:
         CHANNEL="${INPUT_CHANNEL:-}"
         TAG="${INPUT_TAG_NAME:-}"
         NAME="${INPUT_RELEASE_NAME:-}"
+        # BUG-2088：正式版/测试版**真实更新公告**的来源。此前 BODY 只有一行模板，
+        # 而 NOTES 就是它——实测 v2.1.1 的 latest-stable.json 里 notes 是
+        # 「Manual formal release from bridge/auto-migrate-download @ 4d1c8f4.」，
+        # 而 GitHub 上那份正文有 3613 字：**应用内更新弹窗给用户看的一直是占位符**。
+        # 约定：公告写在 docs/release-notes/<语义版本>.md，正式/测试通道自动取用；
+        # 手动发 GitHub Release 时优先用 Release 正文（那才是当场写的那份）。
+        # debug 通道不取——滚动开发构建挂完整 changelog 会误导。
+        NOTES_FILE="docs/release-notes/${VERSION}.md"
         BODY=""
         PRERELEASE=true
         MAKE_LATEST=false
@@ -163,6 +171,7 @@ jobs:
                 TAG="${TAG:-v${VERSION}-beta.${RELEASE_SEQUENCE}}"
                 NAME="${NAME:-Fushi ${VERSION} beta ${RELEASE_SEQUENCE}}"
                 BODY="Manual beta/test build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Beta/test releases are prerelease and never Latest."
+                if [ -f "$NOTES_FILE" ]; then BODY="$(cat "$NOTES_FILE")"; fi
                 FILES="fushi/build/release-artifacts/fushi-*.apk"
                 BUILD_DEBUG_APK=false
                 BUILD_SPLIT_RELEASE_APK=true
@@ -172,6 +181,7 @@ jobs:
                 TAG="${TAG:-v${VERSION}}"
                 NAME="${NAME:-Fushi ${VERSION}}"
                 BODY="Manual formal release from ${GITHUB_REF_NAME} @ ${SHORT_SHA}."
+                if [ -f "$NOTES_FILE" ]; then BODY="$(cat "$NOTES_FILE")"; fi
                 PRERELEASE=false
                 MAKE_LATEST=true
                 FILES="fushi/build/release-artifacts/fushi-*.apk"
@@ -188,6 +198,10 @@ jobs:
             ;;
           release)
             CHANNEL=github-release
+            # 手动发 GitHub Release：正文就是当场写的公告，优先用它；留空（先建空
+            # Release 再补正文）时回落到仓库里的公告文件。
+            BODY="${RELEASE_BODY:-}"
+            if [ -z "$BODY" ] && [ -f "$NOTES_FILE" ]; then BODY="$(cat "$NOTES_FILE")"; fi
             TAG="${RELEASE_TAG_NAME:-${GITHUB_REF_NAME}}"
             FILES="fushi/build/release-artifacts/fushi-*.apk"
             BUILD_SPLIT_RELEASE_APK=true
@@ -357,6 +371,57 @@ jobs:
         chmod +x ci/apply-patches.sh
         bash ci/apply-patches.sh
 
+    # 内置 libtorrent 引擎的 Android .so：vcpkg 交叉编 libtorrent + bridge，产物落
+    # native/fushi_torrent/prebuilt/android/arm64-v8a/，由 fushi/android/app/
+    # build.gradle 的 jniLibs copy-if-present 随包。
+    #
+    # 范围决策：**只编 arm64-v8a**（2026 年真机几乎全是 arm64）。armeabi-v7a /
+    # x86_64 的 split APK 与 fat debug APK 在这些 ABI 上没有 .so，运行期
+    # EmbeddedTorrentHost.open 返回 null → 自动回退外接 qb（与 Windows 缺 DLL
+    # 同一条路径），不是静默破坏。要补其它 ABI 时给脚本追加 ABI 参数即可。
+    #
+    # 缓存姿势照抄 build-multiplatform.yml 的 Windows vcpkg 步骤（TODO-2668）：
+    # key 带 runner ImageVersion（镜像决定 vcpkg 修订与工具链 = 决定 ABI hash，
+    # 常量 key 会让另一镜像永远冷编且命中即不回存）；distfile 目录第二层兜
+    # 「新镜像上线那一次必然冷编」的高危外网取件。
+    - name: Resolve vcpkg cache identity
+      id: vcpkg_cache_id
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      shell: bash
+      run: |
+        image="${ImageVersion:-unknown-image}"
+        image="$(echo "$image" | tr -c '0-9A-Za-z._-' '-')"
+        echo "vcpkg cache identity (runner ImageVersion): $image"
+        echo "image=$image" >> "$GITHUB_OUTPUT"
+    - name: Cache vcpkg source distfiles (libtorrent android)
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      uses: actions/cache@v4
+      with:
+        path: |
+          ${{ runner.temp }}/vcpkg-downloads
+          !${{ runner.temp }}/vcpkg-downloads/tools
+        key: ${{ runner.os }}-vcpkg-downloads-libtorrent-android-v1-${{ steps.vcpkg_cache_id.outputs.image }}
+        restore-keys: |
+          ${{ runner.os }}-vcpkg-downloads-libtorrent-android-v1-
+    - name: Cache vcpkg binary archives (libtorrent android)
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/vcpkg/archives
+        # v1 -> v2：同 Windows，manifest 钉版换了 ABI hash（BUG-1772）。
+        key: ${{ runner.os }}-vcpkg-libtorrent-arm64-android-v2-${{ steps.vcpkg_cache_id.outputs.image }}
+    - name: Build embedded libtorrent Android .so (vcpkg)
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      timeout-minutes: 90
+      shell: bash
+      env:
+        VCPKG_DOWNLOADS: ${{ runner.temp }}/vcpkg-downloads
+      run: |
+        set -euo pipefail
+        chmod +x native/fushi_torrent/build_android_so.sh
+        bash native/fushi_torrent/build_android_so.sh \
+          "$VCPKG_INSTALLATION_ROOT" "$ANDROID_NDK_LATEST_HOME" arm64-v8a
+
     # TODO-fast-release: analyze/unit/package tests no longer gate this build job.
     # They ran here as sequential steps BEFORE `flutter build apk`, so a slow or
     # red suite delayed (and could block) the debug-channel APK the user is
@@ -399,7 +464,8 @@ jobs:
         set -euo pipefail
         flutter --verbose build apk --debug \
           --build-name "${{ steps.channel.outputs.build_version_name }}" \
-          --build-number "${{ steps.channel.outputs.android_build_number }}"
+          --build-number "${{ steps.channel.outputs.android_build_number }}" \
+          --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
 
     - name: Prepare debug APK release asset
       if: steps.channel.outputs.build_debug_apk == 'true'
@@ -429,7 +495,8 @@ jobs:
         set -euo pipefail
         flutter --verbose build apk --release --target-platform android-arm64 \
           --build-name "${{ steps.channel.outputs.build_version_name }}" \
-          --build-number "${{ steps.channel.outputs.android_build_number }}"
+          --build-number "${{ steps.channel.outputs.android_build_number }}" \
+          --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
 
     - name: Prepare release-signed debug-channel APK asset
       if: steps.channel.outputs.build_debug_channel_apk == 'true'
@@ -459,7 +526,8 @@ jobs:
         set -euo pipefail
         flutter --verbose build apk --split-per-abi --release \
           --build-name "${{ steps.channel.outputs.build_version_name }}" \
-          --build-number "${{ steps.channel.outputs.android_build_number }}"
+          --build-number "${{ steps.channel.outputs.android_build_number }}" \
+          --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
 
     - name: Collect Android post-build diagnostics
       if: ${{ always() && (steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true') }}

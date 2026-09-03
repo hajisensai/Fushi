@@ -672,6 +672,8 @@ extension _ReaderWebView on _ReaderFushiPageState {
       debugLogging: DebugLogService.instance.enabled,
       swipeDistThreshold: swipeThresholds.dist,
       swipeFastDistThreshold: swipeThresholds.fastDist,
+      wheelGestureQuietMs:
+          ReaderFushiSource.instance.wheelPageTurnInterval.clamp(150, 800),
       furiganaMode: s.furiganaMode,
       caretColor: _caretRingColorCss(),
       caretInsetTop: _readerTopOffset,
@@ -688,6 +690,10 @@ extension _ReaderWebView on _ReaderFushiPageState {
       chromeBottomInset: _readerBottomReserve,
       dartPageWidth: screenSize.width,
       dartPageHeight: screenSize.height,
+      marginTop: s.marginTop,
+      marginBottom: s.marginBottom,
+      marginLeft: s.marginLeft,
+      marginRight: s.marginRight,
       blurImages: s.blurImages,
       // TODO-1289：把本次会话已揭开的防剧透图 key 下发，重载时不再重新遮罩。
       revealedKeys: _revealedImageKeys.toList(),
@@ -761,6 +767,24 @@ install: function(C) {
     try { var c = document.getElementById('fushi-cloak'); if (c) c.remove(); } catch (_ignored) {}
   });
   window.scanNonJapaneseText = C.scanNonJapaneseText;
+  // BUG-1812: WKWebView may report innerWidth/innerHeight as 0 even though
+  // Dart has the real logical viewport. Raw vh/vw margins then collapse to
+  // zero. Materialize all four percentages into px from the same Dart-sized
+  // viewport used by pagination, and expose one resize hook to every shell.
+  window.__fushiApplyReaderMargins = function(width, height) {
+    var w = Math.max(0, Number(width) || 0);
+    var h = Math.max(0, Number(height) || 0);
+    var root = document.documentElement;
+    function pct(value) {
+      var n = Number(value);
+      return Number.isFinite(n) ? Math.max(0, Math.min(50, n)) : 0;
+    }
+    root.style.setProperty('--reader-margin-top', (h * pct(C.marginTop) / 100) + 'px');
+    root.style.setProperty('--reader-margin-bottom', (h * pct(C.marginBottom) / 100) + 'px');
+    root.style.setProperty('--reader-margin-left', (w * pct(C.marginLeft) / 100) + 'px');
+    root.style.setProperty('--reader-margin-right', (w * pct(C.marginRight) / 100) + 'px');
+  };
+  window.__fushiApplyReaderMargins(C.dartPageWidth, C.dartPageHeight);
   $selectionJs
   $paginationJs
   window.__fushiInstallShell(C);
@@ -1365,25 +1389,12 @@ install: function(C) {
     var sel = window.getSelection && window.getSelection();
     if (sel && !sel.isCollapsed) sel.removeAllRanges();
   }, true);
-  // BUG-369: 滚动模式滚轮跨章的「arm-then-fire 二次确认」状态——记上一次已武装
-  // 的边界方向（null=未武装）。惯性/竖排缓动擦边的单次瞬态只武装、不跨章；同方向
-  // 再来一次才真正跨章，消除「还没到章首就切上一章」。与纯函数
-  // ReaderPaginationScripts.continuousWheelBoundaryEmit 同款语义。
-  var _wheelBoundaryArmed = null;
-  // BEGIN PAGED_WHEEL_GESTURE_HELPER
-  // BUG-1342：只把每个 tick 的语义方向和主轴交给 Dart。手势 session 不能存在 JS
-  // document 中，因为翻章会重建 document、在同一段惯性中重置闸门。横向主轴由跨章节
-  // 持久的 ReaderWheelGestureGate 聚合；纵向鼠标滚轮维持既有固定窗口节流。
-  function _handlePagedWheelTick(e) {
-    var horizontal = Math.abs(e.deltaX) > Math.abs(e.deltaY);
-    var delta = horizontal ? e.deltaX : e.deltaY;
-    if (delta === 0) return;
-    e.preventDefault();
-    var direction = delta > 0 ? 'forward' : 'backward';
-    window.flutter_inappwebview.callHandler('onWheelPaginate', direction,
-      horizontal ? 'horizontal' : 'vertical');
-  }
-  // END PAGED_WHEEL_GESTURE_HELPER
+$kPagedWheelGestureHelperJs
+  // BUG-2015：连续模式的章节边界必须按「手势」而不是 wheel tick 判定。记录正文
+  // document 内上一拍时间：从章中滚到末尾的同一段触摸板惯性只能把尾部留白滚完，
+  // 只有静默后、起点已经在边界的新手势才表达跨章意图。真正跨 document 的残余惯性
+  // 仍由 Dart 的 chapter-turn cooldown 承接。
+  var _continuousWheelLastTickAt = 0;
   // TODO-656: 横排连续模式放行原生滚动时，记上一拍 scrollTop，下一拍无变化（原生卡
   // 在边界滚不动）才算到边界——替代瞬时 scrollTop<=2 几何。-1 = 尚无基线（首拍不卡）。
   var _wheelLastScrollPos = -1;
@@ -1424,6 +1435,11 @@ install: function(C) {
       // 正常滚动，不打断滚动手感。统一手势纯谓词 continuousWheelBoundaryDirection。
       var root = document.scrollingElement || document.documentElement;
       var vertical = r && r.isVertical && r.isVertical();
+      var wheelTickAt = Date.now();
+      var wheelQuietMs = Math.max(150, C.wheelGestureQuietMs || 450);
+      var startsNewWheelGesture = _continuousWheelLastTickAt === 0
+        || wheelTickAt - _continuousWheelLastTickAt >= wheelQuietMs;
+      _continuousWheelLastTickAt = wheelTickAt;
       // delta>0 一律归一化为「沿书写轴前进」：横排向下(deltaY>0)、竖排投影向前都为
       // forward（见纯函数注释）。
       var wheelDelta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
@@ -1435,6 +1451,7 @@ install: function(C) {
       if (wheelDelta === 0) return;
       e.preventDefault();
       var wheelDir = wheelDelta > 0 ? 'forward' : 'backward';
+      var pointerKind = _isTrackpadWheel(e) ? 'trackpad' : 'wheel';
       var sign = vertical
         ? ((window.getComputedStyle(document.body).writingMode === 'vertical-rl') ? -1 : 1)
         : 1;
@@ -1446,32 +1463,28 @@ install: function(C) {
       else { window.scrollBy({left: 0, top: wheelDelta, behavior: 'auto'}); }
       var after = vertical ? window.scrollX : root.scrollTop;
       var moved = Math.abs(after - before) > 1;
-      // 诊断：仅在「滚不动」或「已武装」时打印，供真机定位为何不动（同时打 window.scrollX 与
+      // 诊断：仅在「滚不动」时打印，供真机定位为何不动（同时打 window.scrollX 与
       // root.scrollLeft，看哪个真的跟随滚动）。
-      if (!moved || _wheelBoundaryArmed) {
+      if (!moved) {
         console.log('[xchapter] wheel vertical=' + (vertical ? 1 : 0)
           + ' wheelDelta=' + Math.round(wheelDelta) + ' wheelDir=' + wheelDir
           + ' before=' + Math.round(before) + ' after=' + Math.round(after)
-          + ' moved=' + (moved ? 1 : 0) + ' armed=' + _wheelBoundaryArmed
+          + ' moved=' + (moved ? 1 : 0) + ' kind=' + pointerKind
+          + ' newGesture=' + (startsNewWheelGesture ? 1 : 0)
           + ' winX=' + Math.round(window.scrollX) + ' winY=' + Math.round(window.scrollY)
           + ' rootL=' + Math.round(root.scrollLeft) + ' rootT=' + Math.round(root.scrollTop)
           + ' scrollW=' + root.scrollWidth + ' innerW=' + window.innerWidth);
       }
       if (moved) {
-        // 真的滚动了 = 没到边界，不跨章；解武装。
-        _wheelBoundaryArmed = null;
+        // 真的滚动了 = 没到边界，不跨章。
         return;
       }
-      // 真的滚不动了 = 到边界 → arm-then-fire 二次确认（吸收单次擦边）才跨章。
-      // TODO-737: 节流闸门已统一到 Dart 侧（onBoundarySwipe handler 的 _lastPaginateTime
-      // 时间戳），JS 不再自持 _wheelTimer。arm-then-fire 二次确认（_wheelBoundaryArmed）
-      // 才是防 BUG-369 擦边误跨章的防线，与节流无关、完整保留。
-      if (_wheelBoundaryArmed === wheelDir) {
-        _wheelBoundaryArmed = null;
-        window.flutter_inappwebview.callHandler('onBoundarySwipe', wheelDir);
-      } else {
-        _wheelBoundaryArmed = wheelDir;
-      }
+      // 触摸板：本手势若从章内一路滚到边界，余下的惯性 tick 全部停在这里；用户
+      // 必须松手、静默后再滑一次才跨章。离散滚轮/数位板旋钮：一格通常只有一个
+      // WheelEvent，不能再要求 arm-then-fire 的第二拍，否则设备会表现为完全无响应。
+      if (pointerKind === 'trackpad' && !startsNewWheelGesture) return;
+      window.flutter_inappwebview.callHandler(
+        'onBoundarySwipe', wheelDir, pointerKind);
       return;
     }
     if (!r || !('paginationMetrics' in r)) return;
@@ -1865,6 +1878,20 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           if (hostChapter != _currentChapter) {
             _currentChapter = hostChapter;
             _lastProgressSection = _currentChapter;
+            // 重定向换了章，旧章的恢复锚必须一起归零——否则 _loadChapterDirectly
+            // 会拿这三个字段给**宿主章**建恢复脚本（见下方 initialProgress /
+            // initialCharOffset / initialCharOffsetEnd 三个参数）。真实存档里这不是
+            // 假想值：合并关闭时往回翻到独立插图章会走 _handlePageTurnLimit 的
+            // progress:0.99，而纯图片章 totalChars==0 让真实滚动值永远覆盖不掉它，
+            // 退出落库 normCharOffset=9900；开启合并后冷开该书就会被甩到宿主正文章
+            // 的 ~99% 处，整章正文被跳过。归零口径与另两个重定向点一致
+            // （navigation.part.dart 的 _navigateToChapter、chrome.part.dart 的
+            // reloadWithCurrentSettings）：宿主顶部就是那张被吸收的图。
+            _initialProgress = 0.0;
+            _initialCharOffset = -1;
+            _initialCharOffsetEnd = -1;
+            _lastProgressValue = 0.0;
+            _lastProgressCharOffset = -1;
           }
           _loadChapterDirectly(_currentChapter);
         }
@@ -2168,6 +2195,11 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
             if (args.length < 2 || _lyricsMode) return;
             final String dir = args[0] as String;
             final String axis = args[1] as String;
+            // BUG-1745：老 shell（或未来别的注入点）可能只传两个参数；缺省按
+            // 「横向即触摸板」推断，与本次改动前的行为完全一致。
+            final String pointerKind = args.length > 2
+                ? args[2] as String
+                : (axis == 'horizontal' ? 'trackpad' : 'mouse');
             final int throttleMs =
                 ReaderFushiSource.instance.wheelPageTurnInterval;
             // BUG-1380：闸门的 token 消费必须晚于「这一 tick 能不能翻页」的确认。
@@ -2175,7 +2207,15 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
             // token，整段惯性的后续 tick 全在闸门早退 → 用户这一次滑动零反馈。
             // canTurnPage=false 时闸门只查询不认领，且仍放行到 _paginate——那里的
             // in-flight 分支要靠这些 tick 续跨章冷却窗（TODO-1229 v2）。
-            if (axis == 'horizontal' &&
+            // BUG-1745：闸门的判据从「轴」改成「输入设备」。
+            //
+            // 旧判据 `axis == 'horizontal'` 隐含假设「纵向 = 鼠标滚轮」，可
+            // macOS 触摸板上下双指滑同样是纵向：一次滑动的惯性流持续 1~1.5 秒，
+            // 全部漏过闸门、只受 _paginate 的固定 450ms 窗管，于是一次上下滑
+            // 稳定翻 3 页；用户若把「滚轮翻页间隔」调到下限 150ms 就是 10 页。
+            // 真正要区分的从来不是轴，而是「离散 tick（鼠标，一格一页）」与
+            // 「连续惯性流（触摸板，一次滑动一页）」。
+            if (pointerKind == 'trackpad' &&
                 !_pagedWheelGestureGate.shouldStartNewGesture(
                   now: DateTime.now(),
                   settleInterval: Duration(milliseconds: throttleMs),
@@ -2213,20 +2253,22 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
 
         controller.addJavaScriptHandler(
           handlerName: 'onBoundarySwipe',
-          callback: (List<dynamic> args) {
+          callback: (List<dynamic> args) async {
             if (args.isEmpty || _lyricsMode) return;
             // TODO-1229 案A：跨章手势绕过 _paginate 入口直接调 _handlePageTurnLimit，
             // 故守卫在此单独收口——导航/恢复在飞时丢弃，否则连续滚轮跨章会在前一次章
             // 加载未落定时再次跨章 → 跳两章。与 _paginate 入口同一 _paginationInFlight。
-            // TODO-1229 v2：换章加载期到达的惯性 tick 属同一手势，滑动跨章冷却窗。
+            // BUG-1829：换章加载期到达的 tick 只丢弃，**不**滑动跨章冷却窗——与 _paginate
+            // 入口同一处理。新章 content-ready 的重锚（_noteChapterTurnSettledIfPending）
+            // 已经覆盖这段窗口；在这里 stamp 只会让持续输入自我续期、永远等不到放行。
             if (_paginationInFlight) {
-              _noteChapterTurnInput();
               return;
             }
             // Boundary swipe → chapter turn also stole focus to the WebView
             // (BUG-136); reclaim it so ESC keeps exiting after a chapter flip.
             _focusOwnership.reclaim(FocusReclaimCause.gesture);
             final String dir = args[0] as String;
+            if (!_hasChapterTurnTarget(dir)) return;
             // TODO-737 节流分流（4 必补点 #1）：连续滚轮跨章直接调
             // _handlePageTurnLimit、**绕过 _paginate 入口闸门**，否则归一节流后连续
             // 滚轮跨章不受任何节流。这里就地用与 _paginate 同款 _lastPaginateTime
@@ -2241,18 +2283,28 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
               if (elapsedMs < throttleMs) return;
             }
             // TODO-1229 v2：跨章冷却闸门——同一惯性手势落地短章(插图/单页)后残余惯性
-            // 在新章边界的二次跨章被拦（并滑动冷却窗）。onBoundarySwipe 仅惯性/触摸路径，
+            // 在新章边界的二次跨章被拦。窗口不再被被拦的输入自我续期（BUG-1829）。
+            // onBoundarySwipe 仅惯性/触摸路径，
             // 无键盘调用，故无条件过闸门。
             if (_chapterTurnCoolingDown()) return;
+            if (!await _prepareContinuousChapterTransition()) return;
+            if (!mounted || _paginationInFlight || !_hasChapterTurnTarget(dir)) {
+              _discardIdleChapterTransitionSnapshot();
+              return;
+            }
             // BUG-369/TODO-656 诊断：跨章手势汇合点（滚轮/触摸/指针都经此）。
             debugPrint('[xchapter] onBoundarySwipe dir=$dir '
                 'chapter=$_currentChapter');
-            _noteChapterTurnInput();
+            _noteChapterTurn();
             if (dir == 'forward') {
               _handlePageTurnLimit('forward', inertia: true);
             } else if (dir == 'backward') {
               _handlePageTurnLimit('backward', inertia: true);
             }
+            // 导航真的开始时 _beginNavigation 已把 _readerContentReady 置 false（同步，
+            // 早于本行）；仍为 true 就说明这次跨章被 _handlePageTurnLimit 内部守卫吃掉，
+            // 快照没有消费者，必须就地丢弃。
+            _discardIdleChapterTransitionSnapshot();
             if (throttleMs > 0) {
               _lastPaginateTime = DateTime.now();
             }
@@ -2385,28 +2437,35 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
             final int button = (args[0] as num?)?.toInt() ?? -1;
             if (button < 0) return;
             final registry = appModel.shortcutRegistry;
-            // BUG-1071 ①：绑到「关闭词典」(readerDismissDict) 的鼠标键此前只有
-            // resolveMouse 解析、运行时无消费者（onPointerSeek 硬编码只判 seek-to-
-            // sentence），故鼠标键关不掉词典。鼠标键是位置型动作，不走位置无关的
-            // _executeShortcutAction，在此收口：正文 WebView（弹窗矩形之外/behind
-            // barrier 的正文区）按下该键且弹窗可见时 → 关整栈。与键盘 Esc 的
-            // readerDismissDict 语义一致（clearDictionaryResult），且**独立于**
-            // _audiobookController（纯 EPUB 无有声书 controller，此前整个 handler 因
-            // controller==null 早退、连 seek 都只在有声书下生效——关词典不能被它拦）。
-            if (isDictionaryShown &&
-                registry.resolveMouse(button, scope: ShortcutScope.reader) ==
-                    ShortcutAction.readerDismissDict) {
-              clearDictionaryResult();
+            // ① **位置型动作**先行：「seek 到点击句」需要知道点在哪一句上，只有页内
+            // JS 拿得到坐标，故它恒由本条路承担（Flutter 侧那个入口会跳过它，判据
+            // [isSeekToClickedSentenceButton] 两侧共用）。仅有声书表面有意义，故仍需
+            // controller。
+            if (isSeekToClickedSentenceButton(registry, button)) {
+              if (_audiobookController == null) return;
+              final double x = _ReaderFushiPageState._toDouble(args[1]) ?? 0;
+              final double y = _ReaderFushiPageState._toDouble(args[2]) ?? 0;
+              await _seekToClickedSentence(x, y);
               return;
             }
-            // seek-to-clicked-sentence 仅有声书表面有意义，故仍需 controller。
-            if (_audiobookController == null) return;
-            if (!isSeekToClickedSentenceButton(registry, button)) {
-              return;
-            }
-            final double x = _ReaderFushiPageState._toDouble(args[1]) ?? 0;
-            final double y = _ReaderFushiPageState._toDouble(args[2]) ?? 0;
-            await _seekToClickedSentence(x, y);
+            // ② 指针归宿主的平台（Windows 的 composition WebView）上，其余绑定由页面
+            // 根 [Listener]（[_handleReaderPointerDown]）派发；这里再派一次就是同一次
+            // 按下触发两回。判据与漫画、查词弹窗三处共用同一个
+            // [hostOwnsWebViewPointerInput]。
+            if (hostOwnsWebViewPointerInput) return;
+            // ③ 其余一律走与键盘/手柄**完全相同**的执行体。
+            //
+            // 此前这里硬编码只判两件事（关词典 + seek 到点击句），于是 reader /
+            // audiobook scope 明明开着 mouse 通道、设置页也给「添加鼠标按键」入口，
+            // 但除这两个动作外**绑什么都没反应**——翻页、振假名、加入暂存……全是死项。
+            // 那正是用户复诉的「有的支持鼠标有的没有」在页面内部的那一半。
+            final ShortcutAction? action = resolveMouseBindingActionForButton(
+              registry: registry,
+              button: button,
+              ladder: kReaderMouseLadder,
+            );
+            if (action == null) return;
+            _executeShortcutAction(action);
           },
         );
 
@@ -2425,6 +2484,24 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
             if (cue != null) _audiobookController!.playCueAndContinue(cue);
           },
         );
+
+        // BUG-1809：iOS WKWebView 的 loadData() 可返回却不发 onLoadStop。
+        // LyricsModeHtml 在 DOM API 全部就绪后主动回传；与 onLoadStop 共用幂等
+        // finalize，谁先到谁完成，另一条只读到 ready 后早返回。
+        controller.addJavaScriptHandler(
+          handlerName: 'onLyricsReady',
+          callback: (args) {
+            final dynamic raw = args.isEmpty ? null : args.first;
+            final int? generation = raw is num
+                ? raw.toInt()
+                : int.tryParse(raw?.toString() ?? '');
+            if (generation == null) return false;
+            return _finalizeLyricsDocumentIfReady(
+              controller,
+              generation: generation,
+            );
+          },
+        );
       },
       shouldInterceptRequest: (controller, request) async {
         return await _interceptRequest(request.url);
@@ -2434,7 +2511,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
       },
       shouldOverrideUrlLoading: (controller, action) async {
         final String url = action.request.url?.toString() ?? '';
-        if (_isNavigatingToChapter) {
+        if (_isNavigatingToChapter || _isCurrentLyricsDocumentUrl(url)) {
           return NavigationActionPolicy.ALLOW;
         }
         // BUG-117: shouldOverrideUrlLoading is NOT invoked for <a> clicks on the
@@ -2455,12 +2532,13 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
         debugPrint('[ReaderFushi] onLoadStop: url=$url '
             'chapter=$chapterSnapshot progress=$_initialProgress');
         if (_lyricsMode) {
-          if (!await _isLoadedLyricsDocument(controller)) {
+          if (!await _finalizeLyricsDocumentIfReady(
+            controller,
+            generation: _lyricsLoadGeneration,
+          )) {
             debugPrint('[ReaderFushi] onLoadStop: stale non-lyrics page '
                 'while lyrics mode is active, ignoring');
-            return;
           }
-          await _onChapterLoadComplete(controller);
           return;
         }
         final String expectedUrl = _chapterUrl(chapterSnapshot);
@@ -2490,6 +2568,13 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           return;
         }
         if (request.isForMainFrame ?? false) {
+          final int? failedLyricsGeneration =
+              _lyricsDocumentGenerationFromUrl(request.url.toString());
+          if (failedLyricsGeneration != null &&
+              failedLyricsGeneration == _lyricsDocumentLoadGeneration &&
+              failedLyricsGeneration == _lyricsLoadGeneration) {
+            _lyricsDocumentLoadGeneration = null;
+          }
           debugPrint('[ReaderFushi] onReceivedError: ${error.description} '
               'url=${request.url}');
           // Windows 拦截域 (fushi.local) 的 NavigationCompleted 假失败已在 fork
@@ -2537,11 +2622,12 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
   }
 
   Future<bool> _isLoadedLyricsDocument(
-      InAppWebViewController controller) async {
+    InAppWebViewController controller, {
+    required int generation,
+  }) async {
     try {
       final dynamic result = await controller.evaluateJavascript(
-        source:
-            "Boolean(window.__lyricsSetCue && document.getElementById('lc'))",
+        source: '''Boolean(window.__lyricsSetCue && document.getElementById('lc') && window.__fushiLyricsLoadGeneration === $generation)''',
       );
       return result == true || result == 'true' || result == 1 || result == '1';
     } catch (e, stack) {
@@ -2551,7 +2637,75 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
     }
   }
 
-  Future<void> _onChapterLoadComplete(InAppWebViewController controller) async {
+  Future<bool> _finalizeLyricsDocumentIfReady(
+    InAppWebViewController controller, {
+    required int generation,
+  }) async {
+    if (!mounted ||
+        !_lyricsMode ||
+        generation != _lyricsLoadGeneration) {
+      return false;
+    }
+    if (_lyricsPageReady) return true;
+    if (_lyricsReadyFinalizingGeneration == generation) return false;
+    _lyricsReadyFinalizingGeneration = generation;
+    try {
+      if (!await _isLoadedLyricsDocument(
+        controller,
+        generation: generation,
+      )) {
+        return false;
+      }
+      if (!mounted ||
+          !_lyricsMode ||
+          generation != _lyricsLoadGeneration) {
+        return false;
+      }
+      if (!_lyricsPageReady) {
+        await _onChapterLoadComplete(
+          controller,
+          lyricsGeneration: generation,
+        );
+      }
+      if (!mounted ||
+          !_lyricsMode ||
+          generation != _lyricsLoadGeneration) {
+        return false;
+      }
+      if (_lyricsDocumentLoadGeneration == generation) {
+        _lyricsDocumentLoadGeneration = null;
+      }
+      return _lyricsPageReady;
+    } finally {
+      if (_lyricsReadyFinalizingGeneration == generation) {
+        _lyricsReadyFinalizingGeneration = null;
+      }
+    }
+  }
+
+  int? _lyricsDocumentGenerationFromUrl(String? raw) {
+    final Uri? uri = raw == null ? null : Uri.tryParse(raw);
+    if (uri == null ||
+        !uri.isScheme('https') ||
+        uri.host != 'fushi.local' ||
+        uri.path != '/lyrics') {
+      return null;
+    }
+    return int.tryParse(uri.queryParameters['generation'] ?? '');
+  }
+
+  bool _isCurrentLyricsDocumentUrl(String raw) {
+    final int? generation = _lyricsDocumentGenerationFromUrl(raw);
+    return _lyricsMode &&
+        generation != null &&
+        generation == _lyricsDocumentLoadGeneration &&
+        generation == _lyricsLoadGeneration;
+  }
+
+  Future<void> _onChapterLoadComplete(
+    InAppWebViewController controller, {
+    int? lyricsGeneration,
+  }) async {
     // BUG-1280（平台分叉守卫）：spread 独立文档绝不注入正文引擎。
     //
     // `_loadSpreadPage` 传给 `loadData` 的 baseUrl 与 `_chapterUrl(_currentChapter)`
@@ -2577,6 +2731,11 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
       return;
     }
     if (_lyricsMode) {
+      bool currentLyricsLoad() => mounted &&
+          _lyricsMode &&
+          lyricsGeneration != null &&
+          lyricsGeneration == _lyricsLoadGeneration;
+      if (!currentLyricsLoad()) return;
       if (!_readerContentReady) {
         // BUG-438 / TODO-889：歌词模式内容就绪，清兜底 deadline，下次导航拿新窗口。
         _clearContentReadyTimeout();
@@ -2585,6 +2744,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           _hasEverLoaded = true;
         });
       }
+      if (!currentLyricsLoad()) return;
       _lyricsPageReady = true;
       // 首次进入歌词模式的提示对话框：挂在歌词文档真正就绪的这一刻消费一次性旗
       // （_toggleLyricsMode 进入分支置位），替代旧的裸 delay 100ms（事件驱动，见旗注释）。
@@ -2596,6 +2756,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
       // 文档刚加载，caret inactive；surface 在 _enterCaret 成功时才置 lyrics。
       await controller.evaluateJavascript(
           source: ReaderLyricsCaretScripts.source());
+      if (!currentLyricsLoad()) return;
       if (mounted) {
         await controller.evaluateJavascript(
           source: ReaderLyricsCaretScripts.initInvocation(
@@ -2605,13 +2766,16 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           ),
         );
       }
+      if (!currentLyricsLoad()) return;
       _onCueChanged();
       await _applyLyricsFavorites();
+      if (!currentLyricsLoad()) return;
       // BUG-844: 歌词是独立文档，正文 setup 脚本（下发 window.__hoverAutoLookup 初值）
       // 不在此分支注入。歌词页的 mousemove 悬停查词监听据此全局跳过 Shift 门控（纯悬停即
       // 查词），必须在页面就绪时把当前开关值同步进新文档，否则纯悬停查词要等一次设置热更
       // 才生效。Shift-悬停不依赖此全局（监听器直接读 e.shiftKey），本行只补齐纯悬停路径。
       if (mounted) await _applyHoverAutoLookupLive();
+      if (!currentLyricsLoad()) return;
       // BUG-767: 此前（BUG-755）在歌词页就绪即强夺阅读焦点，想让 ESC 从进入那刻就能退。
       // 但桌面 loadData 后强夺 Flutter 焦点会把原生 WebView2 顶焦、重置其滚动到顶
       // （→ 高亮看似回第一句），并与页面自身抢焦点抖动；一旦叠加重载路径每次 loadData
@@ -2728,3 +2892,62 @@ String readerFushiEngineSourceUncompacted({
       vnMode: vnMode,
       continuousMode: continuousMode,
     );
+
+/// BUG-1745：分页滚轮手势桥的 JS 片段，**两个注入点的唯一真值源**。
+///
+/// 正文引擎（[_ReaderWebView._buildReaderEngineSource] 的 setup 段）与 spread 双页
+/// 独立文档（[buildSpreadPageHtml]）是两份互不共享运行时的 document，却必须对
+/// 「一次滚轮输入 = 翻几页」给出**逐字相同**的判定：落到 Dart 侧的是同一个
+/// `onWheelPaginate` handler 和同一个 [ReaderWheelGestureGate]。
+///
+/// 改动前 spread 那份是**手抄的第二遍**，于是 BUG-1745 只在正文侧被修掉——spread
+/// 仍是旧的「轴」判据、只传 2 个参数，落到 Dart 侧的兼容回落
+/// `axis == 'horizontal' ? 'trackpad' : 'mouse'` 把纵向恒判成 mouse、绕过闸门，
+/// 双页模式下触摸板上下滑一次照样翻 3 页。手抄正是漏改的直接原因，所以现在两个
+/// 注入点都拼这一份常量，第二份拷贝在源码里不再存在
+/// （守卫 `test/reader/pr912_paged_wheel_single_source_test.dart`）。
+const String kPagedWheelGestureHelperJs = r'''
+  // BEGIN PAGED_WHEEL_GESTURE_HELPER
+  // BUG-1342：只把每个 tick 的语义方向和主轴交给 Dart。手势 session 不能存在 JS
+  // document 中，因为翻章会重建 document、在同一段惯性中重置闸门。横向主轴由跨章节
+  // 持久的 ReaderWheelGestureGate 聚合；纵向鼠标滚轮维持既有固定窗口节流。
+  // BUG-1745：主轴判据要带抖动余量。一次横向触摸板滑动里总有几拍
+  // |deltaY| >= |deltaX|（手指纵向漂移 / 惯性尾段轴向噪声）；用严格 > 分类会把
+  // 这些拍标成 vertical，于是它们绕过闸门直接进 _paginate，一次横滑变成
+  // 「闸门放行 1 页 + 若干漂移拍再各翻 1 页」。弹窗滚动路径（BUG-701）已经用
+  // 同一配方修过，分页路径当时漏了。
+  var PAGED_WHEEL_AXIS_MARGIN = 6;
+  // BUG-1745：触摸板 vs 鼠标滚轮。二者对「一次输入 = 翻几页」的期望完全相反：
+  // 鼠标一格就该翻一页（离散 tick），触摸板一次滑动连同惯性会喷 1~1.5 秒的 tick
+  // 流、必须聚合成一次翻页。判据只用单事件可得的量（JS 侧不能存手势状态——翻章
+  // 会重建 document，见下方注释），时间维度的聚合交给 Dart 侧跨 document 持久的
+  // ReaderWheelGestureGate。
+  function _isTrackpadWheel(e) {
+    // line / page 模式只有真实滚轮会产生。
+    if (e.deltaMode !== 0) return false;
+    var dx = Math.abs(e.deltaX);
+    var dy = Math.abs(e.deltaY);
+    // 分数像素增量是触摸板独有的。
+    if (dx % 1 !== 0 || dy % 1 !== 0) return true;
+    // 两轴同时非零 = 二维手势，滚轮给不出。
+    if (dx > 0 && dy > 0) return true;
+    // Chromium 给鼠标滚轮的 wheelDelta 恒为 120 的整数倍；触摸板不是。
+    var wd = e.wheelDeltaY;
+    if (typeof wd === 'number' && wd !== 0 && Math.abs(wd) % 120 !== 0) return true;
+    var wdx = e.wheelDeltaX;
+    if (typeof wdx === 'number' && wdx !== 0 && Math.abs(wdx) % 120 !== 0) return true;
+    return false;
+  }
+  function _handlePagedWheelTick(e) {
+    var absX = Math.abs(e.deltaX);
+    var absY = Math.abs(e.deltaY);
+    var horizontal = absX > absY + PAGED_WHEEL_AXIS_MARGIN;
+    var delta = horizontal ? e.deltaX : e.deltaY;
+    if (delta === 0) return;
+    e.preventDefault();
+    var direction = delta > 0 ? 'forward' : 'backward';
+    window.flutter_inappwebview.callHandler('onWheelPaginate', direction,
+      horizontal ? 'horizontal' : 'vertical',
+      _isTrackpadWheel(e) ? 'trackpad' : 'mouse');
+  }
+  // END PAGED_WHEEL_GESTURE_HELPER''';

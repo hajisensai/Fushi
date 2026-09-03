@@ -75,12 +75,18 @@ void main() {
     required String alignmentPath,
     required List<String> audioPaths,
   }) async {
-    final Audiobook ab = Audiobook()
-      ..bookKey = bookKey
-      ..alignmentFormat = alignmentFormat
-      ..alignmentPath = alignmentPath
-      ..audioPaths = audioPaths;
-    await AudiobookRepository(db).saveAudiobook(ab);
+    final AudiobookRepository repo = AudiobookRepository(db);
+    await repo.ensureAudiobook(bookKey);
+    if (alignmentFormat.isNotEmpty || alignmentPath.isNotEmpty) {
+      await repo.replaceAlignment(
+        bookKey: bookKey,
+        format: alignmentFormat,
+        path: alignmentPath,
+      );
+    }
+    if (audioPaths.isNotEmpty) {
+      await repo.replaceAudio(bookKey: bookKey, audioPaths: audioPaths);
+    }
   }
 
   AudioCue makeCue({

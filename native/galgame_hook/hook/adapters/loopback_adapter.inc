@@ -14,6 +14,45 @@
 // 格式（24-bit 等）判 unknown，按静音填 0 保持时间轴（诊断置位）。
 enum LbSrcFmt : int { kLbUnknown = 0, kLbFloat32 = 1, kLbInt16 = 2, kLbInt32 = 3 };
 
+enum : LONG {
+  kLbWorkerIdle = 0,
+  kLbWorkerStarting = 1,
+  kLbWorkerRunning = 2,
+  kLbWorkerStopping = 3,
+  kLbWorkerExited = 4,
+};
+
+// Process-local control is deliberately independent from g_stop: a runtime
+// full->cleanOnly/resourceOnly transition must stop only loopback while every
+// engine/text adapter keeps running. The owning LoopbackAdapter never starts a
+// replacement until the prior HANDLE is signalled and reaped.
+struct LoopbackWorkerControl {
+  volatile LONG stop_requested = 0;
+  volatile LONG phase = kLbWorkerIdle;
+  volatile LONG request_seq = 0;
+};
+
+bool LbShouldStop(const LoopbackWorkerControl* control) {
+  if (g_stop || control == nullptr || g_header == nullptr ||
+      InterlockedCompareExchange(
+          const_cast<volatile LONG*>(&control->stop_requested), 0, 0) != 0) {
+    return true;
+  }
+  const fushi_voice_hook::NativeLoopbackRequestSnapshot request =
+      fushi_voice_hook::ReadNativeLoopbackRequest(g_header);
+  const uint32_t worker_request_seq =
+      static_cast<uint32_t>(InterlockedCompareExchange(
+          const_cast<volatile LONG*>(&control->request_seq), 0, 0));
+  return !fushi_voice_hook::NativeLoopbackWorkerMayCapture(
+      request, worker_request_seq);
+}
+
+void LbDiag(uint32_t bits) {
+  if (g_header != nullptr) {
+    fushi_voice_hook::AtomicOrShared32(&g_header->loopback_diag, bits);
+  }
+}
+
 // 解析混音 WAVEFORMATEX：填存储用 sample_rate/channels，返回源采样格式（同 MaybeRecordFormat 口径
 // 用 SubFormat.Data1 判 float/PCM，避免依赖 ksmedia.h 的 GUID 常量）。
 LbSrcFmt LbParseFormat(const WAVEFORMATEX* wf, uint32_t* rate, uint32_t* channels) {
@@ -57,7 +96,7 @@ void LbConvertStore(const BYTE* src, uint32_t frames, uint32_t ch, LbSrcFmt src_
   if (zero_fill) {
     memset(out, 0, static_cast<size_t>(samples) * sizeof(int16_t));
     if (src_fmt == kLbUnknown) {
-      g_header->loopback_diag |= 0x40;  // 未知混音格式，按静音填（保持时间轴，不误抓）
+      LbDiag(fushi_voice_hook::kLoopbackDiagUnknownFormat);
     }
   } else if (src_fmt == kLbFloat32) {
     const float* f = reinterpret_cast<const float*>(src);
@@ -99,7 +138,7 @@ void LbConvertStore(const BYTE* src, uint32_t frames, uint32_t ch, LbSrcFmt src_
   g_header->loopback_total_written = start + len;
   g_header->loopback_write_pos = static_cast<uint32_t>((start + len) % cap);
   if (!zero_fill) {
-    g_header->loopback_diag |= 0x08;  // 捕获到非静音音频包
+    LbDiag(fushi_voice_hook::kLoopbackDiagNonSilentPacket);
   }
 }
 
@@ -118,17 +157,29 @@ void LbWriteMarker() {
   g_header->loopback_marker_count = idx + 1;  // 单调自增（reader 用它判有效范围）
 }
 
-// loopback 捕获线程：CoInitialize → 默认渲染端点 → IAudioClient loopback 初始化 → 轮询 GetBuffer
-// 转 16-bit 入环 + 每 ~200ms 记标记，直到 g_stop。退出反序释放 COM。全程判空 + HRESULT 门控，
-// 任一步失败即置诊断位、跳过后续、干净收尾（绝不崩游戏）。
-DWORD WINAPI LoopbackWorker(LPVOID) {
-  if (g_header == nullptr || g_lb_ring_base == nullptr) {
+// loopback capture thread. This function is reachable only after the policy
+// controller has observed an exact allow request. It checks the independent
+// stop word before every privacy-sensitive startup boundary, and publishes no
+// shared policy acknowledgement itself: the single HookWorker controller does
+// that only after observing running or after this HANDLE is fully signalled.
+DWORD WINAPI LoopbackWorker(LPVOID context) {
+  auto* control = static_cast<LoopbackWorkerControl*>(context);
+  if (control == nullptr || g_header == nullptr || g_lb_ring_base == nullptr ||
+      LbShouldStop(control)) {
+    if (control != nullptr) {
+      InterlockedExchange(&control->phase, kLbWorkerExited);
+    }
     return 0;
   }
-  const HRESULT hrco = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-  const bool com_owned = SUCCEEDED(hrco);  // 成功（含 S_FALSE）都须配对 CoUninitialize
-  g_header->loopback_diag |= 0x01;         // 线程启动 + COM init 尝试
 
+  LbDiag(fushi_voice_hook::kLoopbackDiagWorkerEntered);
+  if (LbShouldStop(control)) {
+    InterlockedExchange(&control->phase, kLbWorkerExited);
+    return 0;
+  }
+
+  const HRESULT hrco = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+  const bool com_owned = SUCCEEDED(hrco);  // S_OK/S_FALSE both need uninit.
   IMMDeviceEnumerator* enumr = nullptr;
   IMMDevice* device = nullptr;
   IAudioClient* client = nullptr;
@@ -138,103 +189,97 @@ DWORD WINAPI LoopbackWorker(LPVOID) {
   uint32_t ch = 0;
   uint32_t rate = 0;
   bool started = false;
+  HRESULT hr = hrco;
 
-  HRESULT hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
-                                __uuidof(IMMDeviceEnumerator),
-                                reinterpret_cast<void**>(&enumr));
-  if (SUCCEEDED(hr) && enumr != nullptr) {
+  if (SUCCEEDED(hr) && !LbShouldStop(control)) {
+    hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
+                          __uuidof(IMMDeviceEnumerator),
+                          reinterpret_cast<void**>(&enumr));
+  }
+  if (SUCCEEDED(hr) && enumr != nullptr && !LbShouldStop(control)) {
     hr = enumr->GetDefaultAudioEndpoint(eRender, eConsole, &device);
   }
-  if (SUCCEEDED(hr) && device != nullptr) {
+  if (SUCCEEDED(hr) && device != nullptr && !LbShouldStop(control)) {
     hr = device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr,
                           reinterpret_cast<void**>(&client));
   }
-  if (SUCCEEDED(hr) && client != nullptr) {
+  if (SUCCEEDED(hr) && client != nullptr && !LbShouldStop(control)) {
     hr = client->GetMixFormat(&mix);
   }
-  if (SUCCEEDED(hr) && mix != nullptr) {
+  if (SUCCEEDED(hr) && mix != nullptr && !LbShouldStop(control)) {
     src_fmt = LbParseFormat(mix, &rate, &ch);
-    g_header->loopback_diag |= 0x02;  // 设备/客户端就绪 + 拿到混音格式
-    // 存储格式：16-bit（混音已转换），采样率/声道取自混音格式；block_align 最后填作格式就绪信号。
+    LbDiag(fushi_voice_hook::kLoopbackDiagDeviceReady);
     g_header->loopback_sample_rate = rate;
     g_header->loopback_channels = ch;
     g_header->loopback_bits_per_sample = 16;
     g_header->loopback_block_align = ch * 2u;
-    // loopback 缓冲时长 1s（容量足够，非实时精度）。共享模式 loopback 用混音格式原样初始化。
-    const REFERENCE_TIME kBufDur = 10000000;  // 1s（100ns 单位）
-    hr = client->Initialize(AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_LOOPBACK,
-                            kBufDur, 0, mix, nullptr);
+    const REFERENCE_TIME kBufDur = 10000000;  // 1s (100ns units)
+    // This diagnostic is the exact boundary the deny policy must never cross.
+    LbDiag(fushi_voice_hook::kLoopbackDiagInitializeAttempted);
+    hr = client->Initialize(AUDCLNT_SHAREMODE_SHARED,
+                            AUDCLNT_STREAMFLAGS_LOOPBACK, kBufDur, 0, mix,
+                            nullptr);
   }
-  if (SUCCEEDED(hr) && client != nullptr) {
+  if (SUCCEEDED(hr) && client != nullptr && !LbShouldStop(control)) {
     hr = client->GetService(__uuidof(IAudioCaptureClient),
                             reinterpret_cast<void**>(&capture));
   }
-  if (SUCCEEDED(hr) && capture != nullptr) {
+  if (SUCCEEDED(hr) && capture != nullptr && !LbShouldStop(control)) {
     hr = client->Start();
     started = SUCCEEDED(hr);
     if (started) {
-      g_header->loopback_diag |= 0x04;  // 捕获已启动
+      LbDiag(fushi_voice_hook::kLoopbackDiagCaptureStarted);
+      InterlockedExchange(&control->phase, kLbWorkerRunning);
     }
   }
 
   std::vector<int16_t> scratch;
   ULONGLONG last_marker = GetTickCount64();
-  LbWriteMarker();  // 起点标记（total=0）
+  if (started) LbWriteMarker();
 
-  if (started) {
-    while (!g_stop) {
-      UINT32 packet = 0;
-      HRESULT gp = capture->GetNextPacketSize(&packet);
-      while (SUCCEEDED(gp) && packet != 0 && !g_stop) {
-        BYTE* data = nullptr;
-        UINT32 frames = 0;
-        DWORD flags = 0;
-        const HRESULT gb =
-            capture->GetBuffer(&data, &frames, &flags, nullptr, nullptr);
-        if (FAILED(gb)) {
-          break;
-        }
-        const bool silent = (flags & AUDCLNT_BUFFERFLAGS_SILENT) != 0;
-        if (silent) {
-          g_header->loopback_diag |= 0x10;  // 见过静音包
-        }
-        LbConvertStore(data, frames, ch, src_fmt, silent, &scratch);
-        capture->ReleaseBuffer(frames);
-        gp = capture->GetNextPacketSize(&packet);
+  while (started && !LbShouldStop(control)) {
+    UINT32 packet = 0;
+    HRESULT gp = capture->GetNextPacketSize(&packet);
+    while (SUCCEEDED(gp) && packet != 0 && !LbShouldStop(control)) {
+      BYTE* data = nullptr;
+      UINT32 frames = 0;
+      DWORD flags = 0;
+      const HRESULT gb =
+          capture->GetBuffer(&data, &frames, &flags, nullptr, nullptr);
+      if (FAILED(gb)) break;
+      const bool silent = (flags & AUDCLNT_BUFFERFLAGS_SILENT) != 0;
+      if (silent) {
+        LbDiag(fushi_voice_hook::kLoopbackDiagSilentPacket);
       }
-      // 每 ~200ms 记一条标记（含静音期：total 不变、tick 前进，插值仍单调正确，覆盖静音间隙）。
-      const ULONGLONG now = GetTickCount64();
-      if (now - last_marker >= 200) {
-        LbWriteMarker();
-        last_marker = now;
-      }
-      Sleep(10);
+      LbConvertStore(data, frames, ch, src_fmt, silent, &scratch);
+      capture->ReleaseBuffer(frames);
+      gp = capture->GetNextPacketSize(&packet);
     }
-  } else {
-    g_header->loopback_diag |= 0x80;  // 初始化/启动失败（无默认渲染端点、格式不支持等）
+    const ULONGLONG now = GetTickCount64();
+    if (now - last_marker >= 200) {
+      LbWriteMarker();
+      last_marker = now;
+    }
+    Sleep(10);
   }
 
-  // 收尾：停捕获 + 反序释放全部 COM，CoUninitialize（仅自己 init 成功时配对）。
-  if (client != nullptr && started) {
-    client->Stop();
+  const bool policy_stopped = LbShouldStop(control);
+  if (policy_stopped) {
+    InterlockedExchange(&control->phase, kLbWorkerStopping);
+    LbDiag(fushi_voice_hook::kLoopbackDiagPolicyStopObserved);
+  } else if (!started) {
+    LbDiag(fushi_voice_hook::kLoopbackDiagFailed);
   }
-  if (capture != nullptr) {
-    capture->Release();
-  }
-  if (client != nullptr) {
-    client->Release();
-  }
-  if (device != nullptr) {
-    device->Release();
-  }
-  if (enumr != nullptr) {
-    enumr->Release();
-  }
-  if (mix != nullptr) {
-    CoTaskMemFree(mix);
-  }
-  if (com_owned) {
-    CoUninitialize();
-  }
-  return 0;
+
+  // The controller may acknowledge stopped only after this complete reverse
+  // release and the thread HANDLE becomes signalled.
+  if (client != nullptr && started) client->Stop();
+  if (capture != nullptr) capture->Release();
+  if (client != nullptr) client->Release();
+  if (device != nullptr) device->Release();
+  if (enumr != nullptr) enumr->Release();
+  if (mix != nullptr) CoTaskMemFree(mix);
+  if (com_owned) CoUninitialize();
+  InterlockedExchange(&control->phase, kLbWorkerExited);
+  return !started && !policy_stopped ? 1u : 0u;
 }

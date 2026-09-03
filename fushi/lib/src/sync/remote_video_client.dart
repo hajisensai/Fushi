@@ -72,6 +72,24 @@ abstract class RemoteVideoClient extends RemoteVideoSource {
   });
 }
 
+/// 「清单里省掉的重字段按需补齐」的**可选**能力（BUG-1891）。
+///
+/// 起因是 Jellyfin/Emby：清单请求带 `Fields=MediaSources` 会让服务器为**每一条**
+/// 条目展开媒体源（Emby 侧还含外挂字幕的磁盘探测），几十万条目的服务器上一进视频
+/// 页就是几十上百个重查询连发。把重字段从「列表阶段人人有份」改成「单条目用到时
+/// 才取」之后，清单卡的 `sizeBytes` / `subtitleFileName` 会是空的，需要一个统一的
+/// 补齐入口。
+///
+/// 与 [RemoteVideoPlaybackSync] 同款理由不并进 [RemoteVideoClient]：互联 host 与
+/// 云盘的清单本来就是全量下发的，没有「重字段」这回事，硬扩面只会逼十几个测试 fake
+/// 补一个恒等实现。消费点用 `client is RemoteVideoDetailFetch` 做类型系统认可的
+/// 能力判据。
+abstract interface class RemoteVideoDetailFetch {
+  /// 用单条目详情补齐 [listInfo]（同 id）。失败时由调用方 best-effort 退回
+  /// [listInfo] —— 补字段是锦上添花，不该把下载/信息弹窗整条路径拖死。
+  Future<RemoteVideoInfo> remoteVideoDetail(RemoteVideoInfo listInfo);
+}
+
 /// 「播放偏好跨设备同步」的**可选**能力（BUG-1620 调轴起步，播放偏好同步泛化批
 /// 扩展为统一带戳字段模型）——只有互联 host 有 `/playback` 端点；URL 直链 /
 /// YouTube（[RemoteVideoClient] 的另一个实现 `UrlStreamVideoClient`）没有 host

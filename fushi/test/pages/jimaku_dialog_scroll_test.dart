@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:fushi/src/media/video/jimaku_client.dart';
 import 'package:fushi/src/pages/implementations/jimaku_subtitle_dialog.dart';
 import 'package:fushi/utils.dart';
 
@@ -21,7 +20,7 @@ void main() {
       n,
       (int i) => JimakuCandidate(
         entryName: 'Some Anime Series Title $i',
-        file: JimakuFile(name: 'episode.$i.WEBRip.ja.srt', url: 'https://x/$i'),
+        name: 'episode.$i.WEBRip.ja.srt',
       ),
       growable: false,
     );
@@ -196,13 +195,11 @@ void main() {
     return <JimakuCandidate>[
       JimakuCandidate(
         entryName: 'Dead Dead Demons Dededede Destruction',
-        file: JimakuFile(
-            name: '$longSeries 第01話 [WEBRip 1080p].ja.srt', url: 'https://x/1'),
+        name: '$longSeries 第01話 [WEBRip 1080p].ja.srt',
       ),
       JimakuCandidate(
         entryName: 'Dead Dead Demons Dededede Destruction',
-        file: JimakuFile(
-            name: '$longSeries 第02話 [WEBRip 1080p].ja.srt', url: 'https://x/2'),
+        name: '$longSeries 第02話 [WEBRip 1080p].ja.srt',
       ),
     ];
   }
@@ -300,18 +297,10 @@ void main() {
 
   /// 混合语言候选（ja/zh + 一个认不出语言）。
   List<JimakuCandidate> mixedLangCandidates() => <JimakuCandidate>[
-        JimakuCandidate(
-            entryName: 'S',
-            file: JimakuFile(name: 'ep01.ja.srt', url: 'https://x/1')),
-        JimakuCandidate(
-            entryName: 'S',
-            file: JimakuFile(name: 'ep02.ja.srt', url: 'https://x/2')),
-        JimakuCandidate(
-            entryName: 'S',
-            file: JimakuFile(name: 'ep01.zh.srt', url: 'https://x/3')),
-        JimakuCandidate(
-            entryName: 'S',
-            file: JimakuFile(name: 'ep01.srt', url: 'https://x/4')),
+        JimakuCandidate(entryName: 'S', name: 'ep01.ja.srt'),
+        JimakuCandidate(entryName: 'S', name: 'ep02.ja.srt'),
+        JimakuCandidate(entryName: 'S', name: 'ep01.zh.srt'),
+        JimakuCandidate(entryName: 'S', name: 'ep01.srt'),
       ];
 
   /// pump 真实对话框（混合语言候选），可注入语言记忆 + 选语言回调。
