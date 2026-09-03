@@ -29,20 +29,26 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1931 条。点号进各自文件。
+> 共 1938 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2078](bugs/BUG-2078-texthooker-fastforward-fold-merges-sentences.md) | 🚧 | 🚧 | Ctrl 快进时渐进折叠把多句连同选项文本折成一条超长台词 |
+| [BUG-2076](bugs/BUG-2076-leaf-structure-gate-reads-hooked-memory.md) | ✅ | ✅ | 白2 身份结构门扫的是被 LunaHook 改写过的进程内存，导致点击穿透+语音降级 |
+| [BUG-2074](bugs/BUG-2074-leaf-identity-latched-unmeasured-exe.md) | ✅ | ✅ | 白2 一次瞬时的 exe 摘要测量失败被钉成永久身份拒绝，整场语音降级 Loopback |
 | [BUG-2070](bugs/BUG-2070-kirikiri-wuopus-voice-degrades-to-loopback.md) | 🚧 | 🚧 | KiriKiri Z + wuopus 语音（ATRI）整句音频恒降级为系统混音 |
 | [BUG-2069](bugs/BUG-2069-gal-mining-animation-shorter-than-sentence.md) | ✅ | ✅ | galgame 制卡动图固定 1.25 秒不覆盖整句语音 |
 | [BUG-2068](bugs/BUG-2068-gal-engine-exact-thread-manual-select.md) | ✅ | ✅ | 引擎精确文本线程首次启动需手动选择 |
 | [BUG-2067](bugs/BUG-2067-gal-workbench-folded-line-stale-words.md) | ✅ | ✅ | 工作台实时台词折叠后仍显示中间态前缀 |
 | [BUG-2066](bugs/BUG-2066-gal-card-size-not-independent.md) | ✅ | ✅ | 游戏内查词卡尺寸不可独立配置，且上界用画布像素夹屏幕像素被系统性压小 |
 | [BUG-2065](bugs/BUG-2065-gal-ingame-card-canvas-upscale.md) | ✅ | ✅ | 游戏内查词卡在放大运行的游戏里模糊且过大：直连覆盖窗被 1:1 闸门挡掉，回退成画布内位图合成 |
+| [BUG-2062](bugs/BUG-2062-subtitle-workbench-scope-extra-row.md) | ✅ | ✅ | 字幕工作台作用域开关独占一行：挂在 AppBar.bottom 上，标题行右半边全空 |
+| [BUG-2061](bugs/BUG-2061-subtitle-collection-download-all-not-pinned.md) | ✅ | ✅ | 合集字幕面板「下载全部」不贴底：两个 Flexible 分份额，用不满的部分落成死白 |
+| [BUG-2060](bugs/BUG-2060-subtitle-collection-no-source-picker.md) | ✅ | ✅ | 「整个合集」字幕面板无法选取字幕：未绑 AniList 的合集不发首搜，来源选择区整块隐藏 |
 | [BUG-2057](bugs/BUG-2057-subtitle-list-row-min-extent.md) | ✅ | ✅ | 字幕列表行高被历史固定行高 56×字号档钉死，单行（尤其英文译文）上下留白特别大 |
 | [BUG-2056](bugs/BUG-2056-en-apostrophe-word-scan.md) | ✅ | ✅ | 英文缩合形/所有格查不到词：撇号被当扫描终点 + 撇号写法不归一 |
 | [BUG-2055](bugs/BUG-2055-update-blocked-by-own-voice-hook.md) | ✅ | ✅ | 应用内更新被 Fushi 自己注入游戏的 voice hook 挡住，报错却称占用者为「非 Fushi 程序」 |
+| [BUG-2054](bugs/BUG-2054-nested-lookup-anchor-multiline.md) | ✅ | ✅ | 嵌套查词弹窗锚在选区首行下方遮住跨行选区的第二行 |
 | [BUG-2050](bugs/BUG-2050-ocr-directml-availability-never-probed.md) | ✅ | ✅ | Windows OCR 从不探测 DirectML 可用性，每次任务白付一次注定失败的建会话 |
 | [BUG-2049](bugs/BUG-2049-popup-disclosure-toggle-shifts-header.md) | ✅ | ✅ | 查词弹窗词典分组展开/收起时卡头位移且卡片凭空增高 |
 | [BUG-2048](bugs/BUG-2048-galgame-hunex-native-structural-complexity.md) | 🚧 | 🚧 | HUNEX 原生适配层 9 处结构性复杂度待清（认知复杂度 55/44/43/40/35、24 字段类、13/12/8 参函数） |
@@ -59,6 +65,7 @@
 | [BUG-2035](bugs/BUG-2035-video-download-lease-tests-wallclock-flaky.md) | 🚧 | 🚧 | 下载租约续期测试对宿主调度抖动零容差，本机并发下必红 |
 | [BUG-2034](bugs/BUG-2034-ocr-directml-fallback-utf8.md) | ✅ | ✅ | 本地漫画 OCR 因 DirectML 初始化失败 + native 错误串非 UTF-8 而整卷失败 |
 | [BUG-2033](bugs/BUG-2033-header-leading-align.md) | ✅ | ✅ | 页头返回箭头与标题垂直未对齐 |
+| [BUG-2032](bugs/BUG-2032-lua-scripts-unusable.md) | ✅ | ✅ | mpv Lua 脚本导入后不生效：Android libmpv 未编 Lua、导入不启用、脚本报错零诊断、osd-level=0 吞掉 osd_message |
 | [BUG-2031](bugs/BUG-2031-mouse-binding-all-scopes.md) | ✅ | ✅ | 鼠标绑定只有部分动作/页面支持 |
 | [BUG-2030](bugs/BUG-2030-video-keyboard-cue-skip-wakes-osc.md) | ✅ | ✅ | 键盘上/下一句字幕会把隐藏的控制条(OSC)整个弹出来 |
 | [BUG-2029](bugs/BUG-2029-audiobook-download-only-audio.md) | ✅ | ✅ | 下载有声书只落孤立音频:成不了书且原因谎报 |

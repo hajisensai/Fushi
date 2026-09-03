@@ -701,10 +701,23 @@ void TryInstallGenericKeyAndRawInputShield() {
   // before HookFn has tracked them; taking the target here would make the later
   // exact install receive no trampoline and silently destroy its build-pinned
   // shield/gesture logic.
-  static const bool reserve_get_key_state = IsSiglusLookupProfileMatched();
-  static const bool hunex_exact_owner = IsHunexGgeProfileMatched();
-  static const bool reserve_get_async_key_state =
-      IsLeafAquaplusProfileMatched() || hunex_exact_owner;
+  //
+  // 这三个判断**不能是函数内 static**。static 局部只求值一次，而本函数的第一次调用
+  // 就在 dll_main 里 MH_Initialize() 成功的那一刻——注入窗口最深处，正是 exact 身份
+  // 最可能还没量出来的时候。那一次若返回 false，预留就永久为 false：通用护盾把
+  // GetAsyncKeyState 抢走，之后身份重试成功、exact 侧再来装也拿不到 trampoline
+  // （HookFn 已被占），BUG-2074 场景下「点击穿透」这一半根本没修好。
+  // 身份判定自带 O(1) 缓存，逐拍重问不贵。
+  //
+  // 而且「未定」必须按**预留**处置，不能按「不是这个引擎」处置：抢占共享 USER32 导出
+  // 是不可逆的，而不预留最多只是晚一拍装上通用护盾（本函数每个 Poll 拍都会重来）。
+  // 代价不对称时，站在可逆的那一边。
+  const bool reserve_get_key_state =
+      IsSiglusLookupProfileMatched() || IsSiglusLookupIdentityUndecided();
+  const bool hunex_exact_owner = IsHunexGgeProfileMatched();
+  const bool reserve_get_async_key_state =
+      IsLeafAquaplusProfileMatched() || IsLeafAquaplusIdentityUndecided() ||
+      hunex_exact_owner;
   uint32_t coverage = g_generic_key_coverage.load(std::memory_order_relaxed);
 
   void *get_key_state =
