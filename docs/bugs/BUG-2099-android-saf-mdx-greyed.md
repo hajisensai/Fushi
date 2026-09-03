@@ -22,7 +22,7 @@
   **不做「哪些扩展名有 MIME」的白名单**：`MimeTypeMap` 是系统词表，各 ROM / 各
   Android 版本内容不同，app 侧既改不了也查不到，硬编码清单只会把下一个扩展名的
   同款事故推迟发生。
-  提交：见下方「备注」。
+  提交：`626722211d`。
 - **[x] ② 已加自动化测试** —
   - 行为测试 `fushi/test/media/import/picker_extension_filter_test.dart`（9 条）：
     把 `FilePicker.platform` 换成记录入参的假实现，真的走一遍两个公开原语，断言
@@ -34,6 +34,14 @@
     （豁免只剩 `saveFile` 保存对话框与 Windows 专属 galgame 入口，只减不增）。
     原 `kFilePickerAllowlist` 同步缩到 6 条（都是 `FileType.image` / `FileType.any`
     的调用，没有可被丢弃的扩展名清单）。
+  - 变异实测：撤掉「安卓也降级」那一支 → 5 条安卓用例必红（iOS/桌面仍绿）；让一个
+    已收编文件重新出现 `FileType.custom` → 守卫必红。两次还原后文件 sha256 与变异
+    前逐字节一致（未用 `git checkout` 还原）。
+  - 连带修正两条**住在别的域、按字面量读 picker 白名单**的既有守卫
+    （`test/pages/manga_sources_view_composition_test.dart`、
+    `test/pages/video_tags_menu_source_guard_test.dart`）：白名单没被放宽，只是容器
+    从 `List` 变成 `Set`，判据跟到新形状。这两条定向测试和目录枚举清单都挑不到，
+    是合入前全量套件抓出来的。
 - **备注**：真机复测缺口——本轮未在安卓真机/模拟器上跑「导词典选 .mdx」「导字幕选
   .ass」的原始失败路径，结论建立在「上游 Java 源码 + 用户截图 + Dart 侧行为测试」
   三方证据链上。桌面行为不变（仍是原生过滤），移动端的变化是选择器不再灰掉无关

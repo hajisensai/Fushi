@@ -121,8 +121,11 @@ void main() {
 
       expect(menuBody.contains('label: t.video_import_pick_subtitle'), isTrue);
       expect(
+        // BUG-2099：picker 收编到 pickSystemFilePath，扩展名集改成 Set 字面量
+        // （旧写法在安卓会被 MimeTypeMap 丢掉 ass/ssa，用户只能选到 srt）。
+        // 这里守的仍是「白名单没被放宽」，不是写法本身。
         pickerBody.contains(
-            "allowedExtensions: const <String>['srt', 'vtt', 'ass', 'ssa']"),
+            "allowedExtensions: const <String>{'srt', 'vtt', 'ass', 'ssa'}"),
         isTrue,
         reason: 'label polish must not relax the actual subtitle file picker',
       );
