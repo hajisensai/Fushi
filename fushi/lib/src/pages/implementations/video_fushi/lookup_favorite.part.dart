@@ -220,17 +220,23 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
   ///
   /// 优先复制锚定 cue 的文本（与收藏 / 制卡取的是同一句）；没有 cue 时（无字幕轨、
   /// 或字幕 gap 中查词）回落到 [_lastLookupSentence]，不至于让按钮变成哑的。
-  void _copyLookupSentence() {
+  /// 返回是否真的写了剪贴板，供按钮决定要不要切成 ✓（[CopyFeedback]）。
+  bool _copyLookupSentence() {
     final AudioCue? cue = _lastLookupCue;
     final String text = (cue?.text.trim().isNotEmpty ?? false)
         ? cue!.text.trim()
         : _lastLookupSentence.trim();
     if (text.isEmpty) {
       _showOsd(t.no_sentence_selected);
-      return;
+      return false;
     }
     Clipboard.setData(ClipboardData(text: text));
-    _showOsd(t.copied_to_clipboard, icon: Icons.copy);
+    _showOsd(
+      t.copied_to_clipboard,
+      icon: Icons.copy,
+      severity: ToastSeverity.success,
+    );
+    return true;
   }
 
   /// 从字幕跳转列表面板行内复制某句文本到剪贴板（TODO-152 子A）。不暂停 / 不查词。

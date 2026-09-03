@@ -560,6 +560,51 @@ void main() {
     });
 
     testWidgets(
+        'inline copy button flips to a check mark ("Copied") after copying '
+        'and reverts after the feedback window', (WidgetTester tester) async {
+      // 用户反馈：点了「复制」没有任何互动——OSD 画在视频区左上角，视线在列表这边看
+      // 不到。反馈必须落在按钮本身：图标 ✓ + tooltip「已复制」，到时自动还原。
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[
+        _cue(0, 0, 1000, 'copy me'),
+        _cue(1, 2000, 3000, ''),
+      ]);
+
+      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        controller: controller,
+        onTapCue: (_) {},
+        onCopyCue: (_) {},
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (_) => false,
+        onClose: () {},
+        colorScheme: const ColorScheme.dark(),
+        title: 'Subtitle list',
+        emptyHint: 'empty',
+      )));
+      controller.debugUpdateCueForPosition(500);
+      await tester.pump();
+      expect(find.byIcon(Icons.check), findsNothing);
+
+      await tester.tap(find.byIcon(Icons.content_copy_outlined).first);
+      await tester.pump();
+      expect(find.byIcon(Icons.check), findsOneWidget);
+      expect(find.byIcon(Icons.content_copy_outlined), findsOneWidget,
+          reason: '只有被点的那一行切 ✓，其它行不动');
+      expect(find.byTooltip(t.copied), findsOneWidget);
+
+      await tester.pump(kCopyFeedbackDuration);
+      await tester.pump();
+      expect(find.byIcon(Icons.check), findsNothing);
+      expect(find.byIcon(Icons.content_copy_outlined), findsNWidgets(2));
+
+      // 空文本行：onCopyCue 照常回调（面板不替调用方决策），但不装成功。
+      await tester.tap(find.byIcon(Icons.content_copy_outlined).last);
+      await tester.pump();
+      expect(find.byIcon(Icons.check), findsNothing);
+    });
+
+    testWidgets(
         'inline favorite button fires onFavoriteCue + filled star when '
         'favorited', (WidgetTester tester) async {
       final VideoPlayerController controller = VideoPlayerController();

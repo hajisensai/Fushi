@@ -2000,12 +2000,20 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
           size: iconSize,
           onPressed: () => widget.onTapCue(cue),
         ),
-        _RowActionButton(
-          icon: Icons.content_copy_outlined,
-          tooltip: t.copy,
-          color: iconColor,
-          size: iconSize,
-          onPressed: () => widget.onCopyCue(cue),
+        // 复制后按钮就地切成 ✓ / 「已复制」（OSD 在视频区，视线之外）；空文本不装成功。
+        CopyFeedback(
+          builder: (BuildContext _, bool copied, VoidCallback markCopied) {
+            return _RowActionButton(
+              icon: copied ? Icons.check : Icons.content_copy_outlined,
+              tooltip: copied ? t.copied : t.copy,
+              color: copied ? cs.primary : iconColor,
+              size: iconSize,
+              onPressed: () {
+                widget.onCopyCue(cue);
+                if (cue.text.trim().isNotEmpty) markCopied();
+              },
+            );
+          },
         ),
         _RowActionButton(
           icon: favorited ? Icons.star : Icons.star_border,

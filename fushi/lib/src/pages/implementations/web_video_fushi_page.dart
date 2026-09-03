@@ -1079,10 +1079,13 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     await _toggleFavoriteCue(cue);
   }
 
+  /// 字幕列表行内复制。走 [AppModel.copyToClipboard]：写剪贴板 + 按平台决定要不要
+  /// 弹「已复制」toast（Android 13+ 系统自带提示，不重复）。网页视频页没有视频页那套
+  /// OSD，此前这里复制完毫无反馈。
   void _copyCue(AudioCue cue) {
     final String text = cue.text.trim();
     if (text.isEmpty) return;
-    Clipboard.setData(ClipboardData(text: text));
+    _appModel.copyToClipboard(text);
   }
 
   // ── 查词（与视频页 `_lookupAt` 同步骤）──────────────────────────────────
