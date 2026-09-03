@@ -1,53 +1,47 @@
 {
   "schemaVersion": 1,
-  "version": "2.1.1",
-  "tag": "v2.1.1",
+  "version": "2.2.4",
+  "tag": "v2.2.4",
   "channel": "formal",
   "prerelease": false,
-  "releaseSequence": 11666,
-  "notes": "Manual desktop formal release from develop @ d967a9f.",
+  "releaseSequence": 13362,
+  "notes": "## Fushi 2.2.4\n\n### Onboarding\n- New first-launch setup wizard — enable novels, manga, video, games, downloads, and dictionary lookup as you like\n- Recommended resource packs now download over multiple mirrors in parallel\n- One-click AnkiConnect install on Windows\n\n### Manga & OCR\n- Online manga can now be added to the manga shelf, with unified series, chapter, and progress tracking\n- Redesigned manga discovery and series detail pages; improved Aidoku / Mihon extension sources\n- OCR support completed for PDFs, local full-volume manga, and online manga; tap an unrecognized area to OCR and look it up\n- Android can use the built-in system OCR — no model download required\n\n### Video & Subtitles\n- New Jellyfin, Emby, and WebDAV streaming support\n- New web video player on Windows (subtitles, lookup, progress, card creation)\n- New HDR, 10-bit output, and tone mapping on Windows; mpv Lua script support\n- Redesigned subtitle search and download UI, configurable per episode or per series; new AJATT Japanese subtitle source\n- Subtitle list now supports search, exporting favorite lines, and deleting external subtitles\n\n### Discovery & Downloads\n- Unified discovery entry point for novels, manga, video, and games\n- Redesigned airing calendar, release selection, and subscription management; new tracker subscriptions\n- Search, sorting, and priority management on the downloads page; the built-in engine is now preferred\n- Deleting media can now also remove local files and related download tasks\n\n### Lookup & Card Creation\n- New dictionary lookup tutorial\n- New visual dictionary style editor\n- Improved Japanese deinflection, grammar notes, dictionary ordering, and English lemmatization\n- Better popup layout, furigana, nested lookup, and consecutive lookups\n- Fonts can be chosen automatically by content language, or set individually\n- Improved browser extension sidebar lookup, auto text-to-speech, and subtitle search\n\n### Windows Galgame (hooking and voice capture are Windows-only)\n- Improved in-game lookup, dialogue overlay, and voice card creation\n- Better support for SGRE, Ren'Py, KiriKiri, Siglus, and other engines\n- New single-click lookup and configurable lookup triggers; paste a hook code directly\n\n### Interface & Stability\n- Choose a data storage location on a fresh Windows install\n- Reorganized settings, storage management, and online service configuration\n- Unified library navigation, desktop title bar, and card styles; greatly expanded translations\n- Fixed startup, fullscreen, window resizing, touchpad, gamepad, and focus issues\n\n---\n\n## Fushi 2.2.4 更新公告\n\n### 新手引导\n- 新增首次启动向导，可自选启用小说、漫画、视频、游戏、下载、查词模块\n- 推荐资源包支持多线路并发下载\n- Windows 支持一键安装 AnkiConnect\n\n### 漫画与 OCR\n- 在线漫画可加入漫画架，统一管理作品、章节和进度\n- 重做漫画发现页和作品详情页，改进 Aidoku / Mihon 扩展来源\n- 补齐 PDF、本地整卷、在线漫画的 OCR；支持点击未识别区域直接识别查词\n- Android 可用系统自带 OCR，无需下载模型\n\n### 视频与字幕\n- 新增 Jellyfin、Emby 媒体库和 WebDAV 在线播放\n- Windows 新增网页视频播放器（字幕、查词、进度、制卡）\n- Windows 新增 HDR、10-bit 输出与色调映射；支持 mpv Lua 脚本\n- 重做字幕搜索下载界面，可按单集或整部作品配置；新增 AJATT 日语字幕源\n- 字幕列表支持搜索、导出收藏台词、删除外挂字幕\n\n### 发现与下载\n- 统一小说、漫画、视频、游戏的发现入口\n- 重做放送日历、资源选版和订阅管理；新增 Tracker 订阅\n- 下载页新增搜索、排序和优先级管理；内置下载引擎改为首选\n- 删除媒体时可同时删除本地文件和下载任务\n\n### 查词与制卡\n- 新增查词操作教程\n- 新增词典样式可视化编辑器\n- 改进日语变形、语法说明、词典排序和英语原形还原\n- 优化弹窗排版、振假名、嵌套查词和连续查词\n- 字体可按内容语言自动选择，也可分别指定\n- 改进浏览器扩展侧栏查词、自动朗读、字幕搜索\n\n### Windows Galgame（Hook 与语音捕获仅支持 Windows）\n- 完善游戏内查词、台词浮窗和语音制卡\n- 改进 SGRE、Ren'Py、KiriKiri、Siglus 等引擎适配\n- 新增单击查词和可配置触发方式；支持直接粘贴 Hook Code\n\n### 界面与稳定性\n- Windows 全新安装可选择数据存储位置\n- 重新整理设置页、存储管理和在线服务配置\n- 统一库页导航、桌面标题栏和卡片样式；大幅补齐多语言翻译\n- 修复启动、全屏、窗口缩放、触摸板、手柄和焦点问题\n",
   "assets": [
     {
-      "name": "fushi-2.1.1-arm64-v8a.apk",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.1.1/fushi-2.1.1-arm64-v8a.apk",
-      "releaseSequence": 11666,
-      "tag": "v2.1.1",
-      "version": "2.1.1"
+      "name": "fushi-2.2.4-07662d7-debug.apk",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.2.4/fushi-2.2.4-07662d7-debug.apk",
+      "releaseSequence": 13362,
+      "tag": "v2.2.4",
+      "version": "2.2.4",
+      "size": 442263221,
+      "sha256": "08c9ad853c86441f8eae38a42466ec2d8d5fb69e8bd551ee8095f8c8fc291a02"
     },
     {
-      "name": "fushi-2.1.1-armeabi-v7a.apk",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.1.1/fushi-2.1.1-armeabi-v7a.apk",
-      "releaseSequence": 11666,
-      "tag": "v2.1.1",
-      "version": "2.1.1"
+      "name": "fushi-2.2.4-arm64-v8a.apk",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.2.4/fushi-2.2.4-arm64-v8a.apk",
+      "releaseSequence": 13362,
+      "tag": "v2.2.4",
+      "version": "2.2.4",
+      "size": 148536495,
+      "sha256": "db5d85b63750481773ee483dd29dd38916f2734fdd5f45223f400a299a0b70f2"
     },
     {
-      "name": "fushi-2.1.1-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.1.1/fushi-2.1.1-ios.ipa",
-      "releaseSequence": 11666,
-      "tag": "v2.1.1",
-      "version": "2.1.1"
+      "name": "fushi-2.2.4-armeabi-v7a.apk",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.2.4/fushi-2.2.4-armeabi-v7a.apk",
+      "releaseSequence": 13362,
+      "tag": "v2.2.4",
+      "version": "2.2.4",
+      "size": 145373964,
+      "sha256": "7e27faaeefaa8e88a091f89dcee7c84a5f1f93ae5aa3212a40e73e16e6e4684c"
     },
     {
-      "name": "fushi-2.1.1-macos.zip",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.1.1/fushi-2.1.1-macos.zip",
-      "releaseSequence": 11666,
-      "tag": "v2.1.1",
-      "version": "2.1.1"
-    },
-    {
-      "name": "fushi-2.1.1-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.1.1/fushi-2.1.1-windows-setup.exe",
-      "releaseSequence": 11666,
-      "tag": "v2.1.1",
-      "version": "2.1.1"
-    },
-    {
-      "name": "fushi-2.1.1-x86_64.apk",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.1.1/fushi-2.1.1-x86_64.apk",
-      "releaseSequence": 11666,
-      "tag": "v2.1.1",
-      "version": "2.1.1"
+      "name": "fushi-2.2.4-x86_64.apk",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.2.4/fushi-2.2.4-x86_64.apk",
+      "releaseSequence": 13362,
+      "tag": "v2.2.4",
+      "version": "2.2.4",
+      "size": 128648294,
+      "sha256": "b97a5a5d804987f3dd6f9751d58607c017626e49eca24abd1a550128c2b1b773"
     }
   ]
 }
