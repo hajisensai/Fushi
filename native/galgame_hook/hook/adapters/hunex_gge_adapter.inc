@@ -464,6 +464,33 @@ void PublishHunexGgeTrace(fushi_voice_hook::HunexGgeTraceEvent event) {
 // 前置声明：定义在下方投影段，本记录器需要它做新鲜度闸门。
 bool IsFreshHunexGgeProjectionTick(ULONGLONG then, ULONGLONG now);
 
+// BUG-2090：记录待定正文行期间上传纹理的互异尺寸（最多 6 组）。只观测。
+void RecordHunexGgePendingUploadDim(uint32_t width, uint32_t height) {
+  if (width == 0u || height == 0u) return;
+  auto* trace = &FushiHunexGgeTraceV3;
+  for (uint32_t index = 0u; index < 6u; ++index) {
+    auto* w = reinterpret_cast<volatile LONG*>(
+        &trace->pending_upload_dims[index * 2u]);
+    auto* h = reinterpret_cast<volatile LONG*>(
+        &trace->pending_upload_dims[index * 2u + 1u]);
+    const LONG existing_w = InterlockedCompareExchange(w, 0, 0);
+    if (existing_w == static_cast<LONG>(width) &&
+        InterlockedCompareExchange(h, 0, 0) == static_cast<LONG>(height)) {
+      return;
+    }
+    if (existing_w == 0) {
+      if (InterlockedCompareExchange(w, static_cast<LONG>(width), 0) == 0) {
+        InterlockedExchange(h, static_cast<LONG>(height));
+        InterlockedIncrement(reinterpret_cast<volatile LONG*>(
+            &trace->pending_upload_dim_count));
+        return;
+      }
+    }
+  }
+  InterlockedIncrement(reinterpret_cast<volatile LONG*>(
+      &trace->pending_upload_dim_overflow));
+}
+
 void RecordHunexGgeCompositorCallerRva(uintptr_t return_address) {
   // 只在**本线程刚封存过一条正文行且仍新鲜**时记录。compositor 是通用 blit，全量记录
   // 时 1776 次调用里有 1691 次来自与正文无关的调用点（首轮实测），4 个槽位毫无意义。
@@ -1812,6 +1839,10 @@ void* Detour_HunexGgeRenderItem(void* arg1, void* arg2, void* arg3,
             pending.raw_text_hash != 0u &&
             IsSaneHunexGgeCpuSurface(pending.final_glyph_surface)) {
           g_hunex_gge_pending_story_compose = pending;
+          InterlockedExchange(
+              reinterpret_cast<volatile LONG*>(
+                  &FushiHunexGgeTraceV3.pending_upload_story_tid),
+              static_cast<LONG>(pending.render_thread_id));
         } else {
           g_hunex_gge_pending_story_compose = {};
         }
@@ -2178,10 +2209,30 @@ uint32_t Detour_HunexGgeTextureUpload(void* wrapper, uint32_t flags) {
   }
   descriptor_read =
       ReadHunexGgeCpuSurfaceIdentity(descriptor, &upload_surface);
+  // BUG-2090：无条件记录上传线程，与字形封存线程对照。pending story 是 thread_local，
+  // 若两者不同，则上传侧永远看不到它——整条链的单线程连续性假设不成立。
+  InterlockedExchange(reinterpret_cast<volatile LONG*>(
+                          &FushiHunexGgeTraceV3.pending_upload_caller_tid),
+                      static_cast<LONG>(GetCurrentThreadId()));
   // BUG-2090：逐字形贴图假设的检验点。只观测、不改变任何行为。
   if (descriptor_read) {
     const HunexGgePendingStoryCompose& story =
         g_hunex_gge_pending_story_compose;
+    // 先按「不问线程」记一次：这条与下面带线程判据的那条相减，就能证明上传是否发生
+    // 在另一条线程上（BUG-2090）。
+    if (story.active &&
+        IsFreshHunexGgeProjectionTick(story.sealed_tick, GetTickCount64())) {
+      InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+          &FushiHunexGgeTraceV3.pending_upload_any_thread));
+      InterlockedExchange(reinterpret_cast<volatile LONG*>(
+                              &FushiHunexGgeTraceV3.pending_upload_story_tid),
+                          static_cast<LONG>(story.render_thread_id));
+      InterlockedExchange(reinterpret_cast<volatile LONG*>(
+                              &FushiHunexGgeTraceV3.pending_upload_caller_tid),
+                          static_cast<LONG>(GetCurrentThreadId()));
+      RecordHunexGgePendingUploadDim(upload_surface.words[1],
+                                     upload_surface.words[2]);
+    }
     if (story.active && story.render_thread_id == GetCurrentThreadId() &&
         IsFreshHunexGgeProjectionTick(story.sealed_tick, GetTickCount64())) {
       InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(

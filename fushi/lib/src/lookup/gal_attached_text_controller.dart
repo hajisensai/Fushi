@@ -1110,17 +1110,26 @@ class GalAttachedTextController extends ChangeNotifier {
       case 'targetBackground':
       case 'hitSnapshotUnavailable':
         _surfaceVisible = false;
-        _setStatus(GalAttachedTextStatus.suspended, reason: event.reason);
+        _setStatus(
+          GalAttachedTextStatus.suspended,
+          reason: _stateEventReason(event),
+        );
         break;
       case 'detached':
-        _setStatus(GalAttachedTextStatus.suspended, reason: event.reason);
+        _setStatus(
+          GalAttachedTextStatus.suspended,
+          reason: _stateEventReason(event),
+        );
         break;
       default:
         if (event.state == 'error' || event.state == 'unavailable') {
-          _activationFailure(event.reason ?? event.status);
+          _activationFailure(_stateEventReason(event));
         } else if (event.state == 'suspended') {
           _surfaceVisible = false;
-          _setStatus(GalAttachedTextStatus.suspended, reason: event.reason);
+          _setStatus(
+            GalAttachedTextStatus.suspended,
+            reason: _stateEventReason(event),
+          );
         } else {
           notifyListeners();
         }
@@ -1130,6 +1139,19 @@ class GalAttachedTextController extends ChangeNotifier {
     // or style changes. Notify even when [_setStatus] sees no enum change so
     // the workbench adopts the newest native draft before commit.
     notifyListeners();
+  }
+
+  /// 状态事件必须留下**可读的**原因（BUG-2092）。
+  ///
+  /// 运行器对 `targetBackground` / `hitSnapshotUnavailable` 这一族状态并不总是填
+  /// `reason`，而这些分支过去把它原样转发，于是宿主侧出现「status=suspended、
+  /// reason=null」——真机上这正是 attached 兜底停住却查不出是哪条分支的原因：
+  /// 状态名本身（`status`）明明带着答案，却被丢掉了。空原因一律回落到状态名。
+  static String? _stateEventReason(GalAttachedSurfaceStateEvent event) {
+    final String? reason = event.reason;
+    if (reason != null && reason.trim().isNotEmpty) return reason;
+    final String status = event.status.trim();
+    return status.isEmpty ? null : status;
   }
 
   Future<void> handleLookupText(GalAttachedLookupHitV19 hit) async {

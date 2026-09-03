@@ -12,6 +12,11 @@
   - trace v4→v10：新增 `kWorker` 段与 9 个 worker 失败码；四个投影 detour 的无条件调用计数；compositor 调用者 RVA 记录（带待定正文行闸门）；`body_compositor_return/alt` 锚点推导结果；直连路径的 attempts/source_matches/published 计数；逐字形贴图假设的 attempts/matches 计数；`kBodyCompose*` 四个失败码。probe 全部可读。
   - `hook/adapters/hunex_gge_adapter.inc`：在 draw 跨度内结构化推导 draw→compositor 调用点（**不写死 RVA**，上界两处，第三处即判多解并整体留空）；compositor detour 增加一条直连相关性路径，判据与既有同级严格（调用点 + 同线程 + 新鲜 + 源表面逐字节相同 + 落点等于末字形矩形 + 目标表面 sane），任一不成立即什么都不做。
   - 驱动 `profile`/`state` 现在打印 `statusReason`。
+- **[x] ⑤ 又两轮测量：字形坐标是「行条带」局部坐标；「上传在别的线程」假设已证伪** —
+  - 取到真正的正文行后读字形事件：同一行的字形**全部 `y:4`**，`x` 每字精确 +27（153/180/207/234/261/288），`glyph_metrics 26×26`。即 `render x/y` 是**行条带内部**的局部坐标，不是屏幕坐标；条带本身落在哪，正是原设计要靠 compose 段给出、而 WoH 没有的那一环。
+  - 顺带确认 trace 里一直带着的 `viewport={left:0,top:0,right:1788,bottom:1006,scale_x:0.93125,scale_y:0.931481}` **与实测客户区逐值相同**——游戏自己的 viewport/缩放全局是可信的，一旦拿到条带在逻辑面上的位置，最后一段映射不缺条件。
+  - 于是检验「条带作为纹理上传」：在待定正文行新鲜期内记录上传纹理尺寸，读到 `count:0`。放宽为**不问线程**后仍是 `any:0`。再无条件记录线程 id，得到 `story_tid:10836`、`caller_tid:10836`，而字形事件也是 `tid=10836`——**三者同线程，「上传发生在别的线程」假设证伪**（`g_hunex_gge_pending_story_compose` 是 `thread_local`，此前我一度以为是跨线程不可见，不成立）。
+  - **因此真正的变量是待定正文行的「存活窗口」**：它在 `FinalizeExactLineTraversal` 成功时设、在同一处的 else 分支清（`hunex_gge_adapter.inc` 的 `pending.story_thread_address != 0 && ... ? 设 : 清`），而该处每次遍历都会跑。compositor 恰好在同一趟绘制内被调用，所以能看到 4 次；纹理上传发生得更晚（或落在下一帧），那时待定行已被下一次 Finalize 清掉。
 - **[ ] ② 未完成：正文几何仍未发布** — 逐字形贴图假设的检验计数本轮读到 `glyph_texture={attempts:0,matches:0}`，因为那次会话 lookup 未开启、待定正文行不存在，**该假设既未证实也未证伪**。下一轮的最小动作：确保 lookup 已开启（`lookup_gate` 四位全开）后重读这两个计数；若 `matches>0` 则改为按「字形自己的纹理→quad→sprite」建立几何，整条 compose 段对 HUNEX 不再适用；若仍为 0，则需从 `sprite_draw` 的调用者反查正文绘制路径。
 - **[ ] ④ 未完成：attached 兜底路径卡在「宿主认领后 40ms 又撤回」的活锁（本轮定位到的最靠前边界）** — 强制一次重新求值后拿到确切原因 `attached=suspended/statusReason=geometryProviderPending`，且运行期日志复现出这个序列：
   ```

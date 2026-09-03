@@ -857,6 +857,12 @@ struct alignas(8) HunexGgeTraceHeaderSnapshot {
   int64_t body_compose_published = 0;
   int64_t glyph_texture_upload_attempts = 0;
   int64_t glyph_texture_upload_matches = 0;
+  uint32_t pending_upload_dims[12] = {};
+  uint32_t pending_upload_dim_count = 0;
+  uint32_t pending_upload_dim_overflow = 0;
+  int64_t pending_upload_any_thread = 0;
+  uint32_t pending_upload_story_tid = 0;
+  uint32_t pending_upload_caller_tid = 0;
   int64_t texture_upload_calls = 0;
   int64_t quad_vertex_calls = 0;
   int64_t sprite_draw_calls = 0;
@@ -2112,6 +2118,16 @@ bool DumpHunexGgeTrace(DWORD pid) {
   printf(" glyph_texture={attempts:%lld,matches:%lld}",
          static_cast<long long>(header.glyph_texture_upload_attempts),
          static_cast<long long>(header.glyph_texture_upload_matches));
+  printf(" pending_uploads={count:%u,overflow:%u,dims:[",
+         header.pending_upload_dim_count, header.pending_upload_dim_overflow);
+  for (uint32_t i = 0; i < 6; ++i) {
+    printf("%s%ux%u", i ? "," : "", header.pending_upload_dims[i * 2],
+           header.pending_upload_dims[i * 2 + 1]);
+  }
+  printf("]}");
+  printf(" pending_upload_threads={any:%lld,story_tid:%u,caller_tid:%u}",
+         static_cast<long long>(header.pending_upload_any_thread),
+         header.pending_upload_story_tid, header.pending_upload_caller_tid);
   PrintHunexGgeScannerStatus(header.scanner_status);
   PrintHunexGgeLookupGate(header.lookup_gate_mask);
   PrintHunexGgeCaptureQuarantine(

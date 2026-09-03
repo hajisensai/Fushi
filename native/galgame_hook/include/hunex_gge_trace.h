@@ -14,7 +14,7 @@ inline constexpr char kHunexGgeTraceExportName[] = "FushiHunexGgeTraceV3";
 inline constexpr uint32_t kHunexGgeTraceMagic = 0x33544748u;  // "HGT3"
 // v4（BUG-2089）：头部增加四个投影 detour 的调用计数。probe 与 helper 同源构建，
 // 版本号不匹配时 probe 直接拒读，不存在跨版本误解释。
-inline constexpr uint32_t kHunexGgeTraceVersion = 10u;
+inline constexpr uint32_t kHunexGgeTraceVersion = 12u;
 inline constexpr uint32_t kHunexGgeTraceCapacity = 512u;
 
 enum class HunexGgeTraceKind : uint32_t {
@@ -311,6 +311,18 @@ struct alignas(8) HunexGgeTraceBuffer {
   // 那么待定正文行新鲜期内，应能观察到 upload 的表面**就是**该行末字形的位图。
   int64_t glyph_texture_upload_attempts = 0;
   int64_t glyph_texture_upload_matches = 0;
+  // v11：待定正文行期间**上传纹理的尺寸**。字形 render x/y 已证明是「行条带」内部的
+  // 局部坐标（全部 y=4、x 每字 +27），条带本身落在哪原本要靠 compose 段给出，而 WoH
+  // 没有那一层。若这里出现「整行文字」那种长条尺寸，就说明条带是作为纹理上传再画成
+  // quad 的，模型确认且拿到可匹配的身份。记最多 6 组互异 (w,h)。
+  uint32_t pending_upload_dims[12] = {};
+  uint32_t pending_upload_dim_count = 0;
+  uint32_t pending_upload_dim_overflow = 0;
+  // v12：区分「上传发生在别的线程」。上一轮 attempts 恒为 0 而 compositor 侧有 4 次，
+  // 唯一差别就是线程判据——WoH 很可能在另一条线程上传纹理/呈现。
+  int64_t pending_upload_any_thread = 0;
+  uint32_t pending_upload_story_tid = 0;
+  uint32_t pending_upload_caller_tid = 0;
   int64_t texture_upload_calls = 0;
   int64_t quad_vertex_calls = 0;
   int64_t sprite_draw_calls = 0;
@@ -351,7 +363,7 @@ static_assert(offsetof(HunexGgeTraceEvent, lookup_gate_mask) == 440,
               "HUNEX/GGE lookup diagnostic trace ABI drifted");
 static_assert(sizeof(HunexGgeTraceSlot) == 464,
               "HUNEX/GGE trace slot ABI drifted");
-static_assert(offsetof(HunexGgeTraceBuffer, slots) == 312,
+static_assert(offsetof(HunexGgeTraceBuffer, slots) == 384,
               "HUNEX/GGE trace header ABI drifted");
 
 }  // namespace fushi_voice_hook
