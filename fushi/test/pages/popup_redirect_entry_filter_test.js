@@ -10,7 +10,16 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
+// popup.html loads dict-media.js BEFORE popup.js, and popup.js calls straight
+// into it with no guard (constructDictCss / rewriteDictLinks /
+// rewriteDictionaryMediaPath / normalizeDictMediaPath / runDictScripts).
+// Running popup.js on its own only ever worked by accident -- by whichever of
+// those call sites this fixture's branches happened not to reach. Load the real
+// sibling into the same context, in the same order, so a new cross-file call in
+// popup.js cannot break fixtures that have nothing to do with it.
 const popupPath = path.resolve(__dirname, '../../assets/popup/popup.js');
+const dictMediaPath = path.resolve(__dirname, '../../assets/popup/dict-media.js');
+const dictMediaSource = fs.readFileSync(dictMediaPath, 'utf8');
 const source = fs.readFileSync(popupPath, 'utf8');
 
 function makeElement(tag) {
@@ -82,6 +91,7 @@ function loadPopup() {
   };
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
+  vm.runInContext(dictMediaSource, sandbox, { filename: 'dict-media.js' });
   vm.runInContext(source + `
     ;window.__test = {
       isRedirect: function(glossary) { return isRedirectGlossary(glossary); },

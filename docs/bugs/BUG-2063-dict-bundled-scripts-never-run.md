@@ -28,3 +28,33 @@
   - 扩展镜像（`tools/browser-extension/vendor/`）里没有 `window.flutter_inappwebview`，`fetchDictAsset` 返回 null，于是 src 脚本不执行、内联脚本照常执行——优雅退化，不是回归。扩展有自己的 http 媒体端点，将来若要支持可以接到那条通道上。
   - **踩坑记录**：`dict-media.js` 的 vendor 版是 assets 版的**超集**（275 行 vs 175 行，多出扩展专用的 http 媒体端点分支），两者不是镜像关系——`sync-mirrors.mjs` 只在两个 vendor 之间同步，assets→vendor 必须手动移植。一次性 `cp` 覆盖会删掉 `installDictMediaPlaceholderResolver` 等扩展函数并让 `side-panel-lookup-on-page.test.js` 红。
   - 真机未验证：条形图/配置界面在真实 app 里的最终观感未跑过，逻辑层由上述 10 条行为测试覆盖。
+
+- **合入前复核补修（本修复自身引入的两个缺口，由另一会话在同分支上发现）**：
+  1. **`getDictAsset` 没登记进 `kDictStylePreviewNoopHandlers`**。词典样式可视化预览
+     （`dict_style_preview.dart`）跑的是**真的** popup.js + dict-media.js，于是每渲染
+     一个词典块就会调一次这个新 handler；而预览只注册名单里的名字，未注册的名字让插件
+     回一个 null 答复——正是 [[BUG-1918]] 的闪退触发条件（原生侧已有空守卫兜底，但预览
+     不该依赖平台兜底，每个桥调用都得有确定的 Dart 侧语义）。已补进名单：预览里返回
+     null → `fetchDictAsset` 拿不到源码 → 词典脚本不跑，这对「只调样式」的预览正是对的
+     语义。变异实测：删掉该行 → `dict_style_preview_handler_coverage_test` 报
+     `Actual: ['getDictAsset']` 变红。
+  2. **五个用 `vm` 单独跑 popup.js 的 node 测试宿主没有加载 dict-media.js**。
+     `popup_auto_expand_dictionaries` / `popup_empty_entry_card` 直接 `ReferenceError:
+     runDictScripts is not defined`；后者的表现尤其值得记：错误被 popup.js 的
+     `renderPopup rest-entries` try/catch 吃掉，**整批词条卡片一张都不渲染**（0 !== 1）——
+     和 [[BUG-1918]] 白屏那一支同形。
+     根因不在新加的这行调用：popup.js 本来就无保护地调 `constructDictCss` /
+     `rewriteDictLinks` / `rewriteDictionaryMediaPath` / `normalizeDictMediaPath`，
+     dict-media.js 一直是它的硬依赖；这些宿主只加载 popup.js 却能绿，靠的是各自 fixture
+     恰好没走到那几个调用点（`constructDictCss` 在 `if (dictStyle)` 下，fixture 的
+     `dictionaryStyles` 是空的）。所以不是给新调用点加 `typeof` 守卫——那是替一个不存在的
+     降级模式演戏，真缺了 dict-media.js 的话同一函数早两行就死在 `constructDictCss` 上。
+     修法是让宿主按**真实顺序**把真的 dict-media.js 先跑进同一个 context（单独一次
+     `vm.runInContext`，不拼进 `source` 字符串——拼串会把 popup.js 的行号整体推移，
+     以后栈里的 `popup.js:NNNN` 就是假的）。五个宿主一起改，其余三个今天虽绿，装的是同一颗雷。
+  - 补修后验证：`fushi/test/pages` 全目录 **3262 tests PASSED**（走
+    `dart run tool/flutter_test_failures.dart`，唯一会把「零测试执行」判失败的入口）；
+    `tools/browser-extension` `node --test` **347/347**；`flutter analyze` No issues found。
+  - **教训**：上一轮定向验证跑的是 `tools/browser-extension` 的 node 套件 + 若干 popup
+    单测，结构上挑不到 `fushi/test/pages/*.js` 这批「用 vm 执行真 popup.js」的宿主。
+    改 `assets/popup/*.js` 的爆炸半径必须包含整个 `fushi/test/pages`。
