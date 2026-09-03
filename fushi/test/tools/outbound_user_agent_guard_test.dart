@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/net/app_user_agent.dart';
 
+import '../helpers/scan_scale.dart';
 import '../helpers/source_guard.dart';
 
 /// 对外 User-Agent 守卫：app **以自己的身份**发出去的 UA 不得再报旧名。
@@ -41,8 +42,10 @@ void main() {
     expect(lib.existsSync(), isTrue, reason: '必须在 fushi/ 下跑');
 
     final List<String> offenders = <String>[];
+    int scanned = 0;
     for (final FileSystemEntity entity in lib.listSync(recursive: true)) {
       if (entity is! File || !entity.path.endsWith('.dart')) continue;
+      scanned++;
       final String relative = entity.path.replaceAll(r'\', '/');
       final String key = relative.substring(relative.indexOf('lib/'));
       if (browserImpersonationFiles.contains(key)) continue;
@@ -59,6 +62,15 @@ void main() {
         offenders.add('$key:${i + 1}: ${raw[i].trim()}');
       }
     }
+
+    // 禁止型判据在健康仓库里恒零命中：扫描面塌了和真的干净都是绿。哨兵与判据共用
+    // 上面那一次枚举（同一个 listSync、同一个后缀过滤），所以过滤写坏时它必红。
+    expectScanScale(
+      scanned,
+      what: 'lib/ 下的 .dart',
+      atLeast: 950,
+      measured: 1221,
+    );
 
     expect(
       offenders,
