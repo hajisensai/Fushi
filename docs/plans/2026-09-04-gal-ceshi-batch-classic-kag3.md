@@ -141,3 +141,47 @@ Fate RN 引擎版本（来自用户 7-24 遗留 `krkr.console.log`，UTF-16）�
 **过程中量到的其它事实**：`decdiag=0x02a30101`（LoadLibrary hook 已装 0x2000000 + BCB 桩 0x20000 + 版本确认 Krkr2 0x200000 + 解码 hook；exe 直取位 0x10000 与 V2Link 位 0x4000000 都不亮 → exporter 是**经 exe 直取在主窗出现后**拿到的，与第二段修复一致）；`hookdiag=0x00101c01` = 启动音频 hook + Luna host ready/connected/output observed + KiriKiri vorbis 开流 hook；文本走 LunaHook 干净线程，8 次 Enter 推进拿到 18 条 `text_events`、`voice_clips` 稳定增长（语音资源链正常）。`lookup_diag` 仍只有 `expression_ready(0x40)`——传感器未装，与第四段判据一致。
 
 **第四段复验判据（下一轮照做）**：起游戏 → `fushi_voice_lookup_probe <pid> 8 1000` → 看 `lookup_diag` 是否出现 `sensor_installed(0x1)`；同时 `Documents\FateRealtaNua_savedata\krkr.console.log` 应出现 `[HibikiLookup] sensor installed`（成功）或 `install failed: …` + `bootstrap.stage` 号（失败，号即卡点）。通过后才谈验收 2→7。
+
+
+## 真机第五轮（2026-09-05）：第四段复验通过 + 第二样本暴露第五个边界并修掉
+
+helper x86 `4f66bce2…`（合并 develop 后重建，双架构 CTest 61/61）→ 修完 BUG-2145 后
+`a180314c…`（62/62）。两局都走 injector 直驱 `--launch --hold` + `lookup_probe` 自置开关，
+不经 Fushi（配方见台账上一节）。
+
+| 样本 | 修前 | 修后 | 判定 |
+|---|---|---|---|
+| Fate/stay night[Realta Nua] -Fate-（`TTVPWindowForm` + 可见 0x0 `TApplication`） | 传感器不装 | `lookup_diag=0xB0000541` = `sensor_installed`\|`expression_ready`\|`classic_patch_installed`\|`classic_processch_fired`；`xaudiodiag2=0x0194000c` = SeamArmed\|SeamFired\|BootstrapStarted\|BootstrapFired，无 Faulted / ExportQueryFailed / MainWindowMissing | ✅ [[BUG-2121]] 四段全部真机通过；无 `#32770` 框（[[BUG-2144]] 随之复验） |
+| フタマタ恋愛 Ver1.00（`TVPMainWindow`，**无** TApplication owner） | `xaudiodiag2=0x0000000c`：12 个 `KirikiriLookup*` 位**一个都不亮** | `xaudiodiag2=0xa194000c` 多出 `ExporterScanRan`\|`ExporterScanAdopted`；`lookup_diag=0xB0000141` = `sensor_installed`\|`expression_ready`\|`classic_patch_installed` | ✅ 第五个边界 BUG-2145 修掉后通过 |
+
+### 第五个边界（BUG-2145）：两条 exporter 路径同时不可能成立
+
+一个 `KirikiriLookup*` 位都不亮 ⇒ 卡在 `PollKirikiriLookupInstall` 第一行
+`g_lookup_exporter == nullptr`。用 `ReadProcessMemory` 读**运行期** PE 头量出决定性事实：
+主模块的**导出目录 RVA = 0**（磁盘那份也是 0）——不是 [[BUG-2118]] 那种"查早了"，
+是这个 build 根本没有导出表，exe 直取永远不可能成立。同时
+`EnumProcessModulesEx(LIST_MODULES_ALL)` 数出 **19 个插件已加载完毕**，全在 boot 首帧 link 完，
+早于我们装 LoadLibrary hook（`reserved_luna` 的 `0x2000000` 亮、`0x4000000` 不亮），V2Link 路径也永远等不到。
+
+修法是第三条路径：**exporter 是引擎单例**，引擎把同一个指针传进每个插件的 `V2Link`，
+各插件 tp_stub 存进自己的静态变量 ⇒ "在所有已 link 插件的可写节里都出现过的同一个值"就是它。
+在真进程上先量过判据才写代码：19 个插件 → 交集 28 个值 → 过形状门（首字是可读虚表 +
+前 8 个槽全落在 exe 映像内）后**唯一剩 1 个**。形状门只收敛，**判定靠真调用**
+（`QueryFunctionsByNarrowString` 查一个必然存在的导出名，跨编译器边界按 BUG-2144 用 SEH 包住）。
+
+### 顺带订正的两条既有结论
+
+1. engine-support.yaml 里 2026-08-19 那条负向实测把"经典 KAG3 装不上传感器"归因为
+   **缺 textrender.dll** —— 错的。真因是 BUG-2121 的四段 + BUG-2145，与 textrender 无关。
+   已在同一份 `known_limitations` 里追加 2026-09-05 实测条目推翻该归因（不升状态、不升能力：
+   本轮只到 install 阶段，没跑字形命中/卡片渲染/制卡 E2E）。
+2. 队列里的「昨日魔女今日的梦」此前记作 Unity，实为 **Unreal Engine**
+   （`Binaries\Win64\*-Win64-Shipping.exe` + `Engine\Extras\Redist` 标准布局）。
+   仓库 17 个引擎里没有 Unreal 家族，属真正的新引擎缺口。
+
+### Next gate
+
+经典 KAG3 两个样本的传感器都装上了，但**都停在 install 阶段**。下一个未通过边界是
+「字形命中 → 卡片渲染 → 制卡」：需要 Fushi 参与，仍被"隔离实例每 1.25 s 抢前台"堵着
+（`desktop_foreground_guard.dart` 的 `isMainWindowForeground()` 在 `FUSHI_TEST_HIDDEN` 恒 true）。
+不得据本轮 install 证据宣称游戏内查词"已支持"。

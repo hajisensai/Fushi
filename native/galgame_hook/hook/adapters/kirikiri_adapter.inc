@@ -6612,6 +6612,98 @@ ITVPFunctionExporter* ObtainExporter() {
   }
 }
 
+// 候选的最后一道门：真调用。QueryFunctionsByNarrowString 是 ITVPFunctionExporter 的
+// 一号虚函数；拿一个必然存在的导出名查一次，成功才认。形状对但不是 exporter 的候选在
+// 这里被否掉——判据因此不是"猜一个像的"，而是"问它一句只有 exporter 答得上的话"。
+// 跨编译器边界（KiriKiri2 是 BCB 编译的）必须 SEH，MSVC 的 catch(...) 拦不住 BCB 的
+// 0x0EEDFADE（BUG-2144）。
+bool ExporterAnswersQuery(ITVPFunctionExporter* candidate) {
+  static const char* const kProbeName =
+      "IStream * ::TVPCreateIStream(const ttstr &,tjs_uint32)";
+  const char* name = kProbeName;
+  void* stub = nullptr;
+  bool ok = false;
+  __try {
+    ok = candidate->QueryFunctionsByNarrowString(&name, &stub, 1);
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    return false;
+  }
+  return ok && stub != nullptr;
+}
+
+// 第三条 exporter 路径（BUG-2145）：从**已经 link 完**的插件数据段反查 exporter 单例。
+// 判据、代价上限与真机实测数字见 adapters/kirikiri_exporter_scan.h。
+// 只在 ①（exe 直取）落空后才跑，且次数有上限——插件可能还在陆续 link，但不能无界重扫。
+ITVPFunctionExporter* ScanLinkedPluginsForExporter() {
+  SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2KirikiriExporterScanRan);
+  uint8_t* image_base = nullptr;
+  uint32_t image_size = 0;
+  GetMainModuleRange(&image_base, &image_size);
+  if (image_base == nullptr || image_size == 0) {
+    SetXAudioDiagnostic2(
+        fushi_voice_hook::kXAudioDiag2KirikiriExporterScanNoCandidate);
+    return nullptr;
+  }
+
+  std::vector<std::vector<uintptr_t>> per_module;
+  HANDLE snapshot = CreateToolhelp32Snapshot(
+      TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, GetCurrentProcessId());
+  if (snapshot != INVALID_HANDLE_VALUE) {
+    const HMODULE exe = GetModuleHandleW(nullptr);
+    MODULEENTRY32W entry = {};
+    entry.dwSize = sizeof(entry);
+    if (Module32FirstW(snapshot, &entry)) {
+      do {
+        HMODULE mod = entry.hModule;
+        if (mod == nullptr || mod == exe) continue;
+        // 「导出 V2Link」就是 KiriKiri 插件的定义，比按路径匹配 plugin\ 稳：插件可以被
+        // 引擎解到 %TEMP%\krkr_* 再加载（Fate/stay night[Realta Nua] 真机就是这样）。
+        if (GetProcAddress(mod, "V2Link") == nullptr) continue;
+        fushi_voice_hook::exact_lookup::LoadedPeImage image;
+        if (!fushi_voice_hook::exact_lookup::OpenLoadedPeImage(mod, &image)) continue;
+        std::vector<uintptr_t> words;
+        std::vector<uintptr_t> module_words;
+        for (size_t i = 0; i < image.section_count; ++i) {
+          const auto& section = image.sections[i];
+          if ((section.characteristics & IMAGE_SCN_MEM_WRITE) == 0u) continue;
+          if (!fushi_voice_hook::exact_lookup::IsReadableSpan(section.bytes,
+                                                              section.size)) {
+            continue;
+          }
+          fushi_voice_hook::kirikiri_exporter::CollectWritableWords(
+              section.bytes, section.size, &words);
+          module_words.insert(module_words.end(), words.begin(), words.end());
+        }
+        if (!module_words.empty()) per_module.push_back(std::move(module_words));
+      } while (Module32NextW(snapshot, &entry));
+    }
+    CloseHandle(snapshot);
+  }
+
+  std::vector<uintptr_t> candidates;
+  if (!fushi_voice_hook::kirikiri_exporter::IntersectWritableWords(per_module,
+                                                                  &candidates)) {
+    SetXAudioDiagnostic2(
+        fushi_voice_hook::kXAudioDiag2KirikiriExporterScanNoCandidate);
+    return nullptr;
+  }
+  for (size_t i = 0; i < candidates.size(); ++i) {
+    if (!fushi_voice_hook::kirikiri_exporter::LooksLikeExporter(
+            candidates[i], reinterpret_cast<uintptr_t>(image_base), image_size,
+            &fushi_voice_hook::kirikiri_exporter::DefaultReadableSpan)) {
+      continue;
+    }
+    auto* exporter = reinterpret_cast<ITVPFunctionExporter*>(candidates[i]);
+    if (!ExporterAnswersQuery(exporter)) continue;
+    SetXAudioDiagnostic2(
+        fushi_voice_hook::kXAudioDiag2KirikiriExporterScanAdopted);
+    return exporter;
+  }
+  SetXAudioDiagnostic2(
+      fushi_voice_hook::kXAudioDiag2KirikiriExporterScanNoCandidate);
+  return nullptr;
+}
+
 // 幂等一次性安装：拿到 exporter（任一路径）后跑「导入 TVPCreateIStream + 反汇编定位内部
 // TVPCreateStream + 装 detour」。InterlockedCompareExchange 保证 exe 直取 / V2Link 两条路径只跑一次。
 void InstallVoiceStreamHookWithExporter(ITVPFunctionExporter* exporter) {
@@ -6819,6 +6911,14 @@ bool TryHookKirikiriVoiceStream() {
   // TVPGetFunctionExporter，表必然已就绪。两条路径仍由 g_voice_installed 幂等互斥。
   if (!g_voice_installed && FindGameMainWindow() != nullptr) {
     ITVPFunctionExporter* exp = ObtainExporter();  // exe 直取（加壳置 0x1000000 返回 null）
+    // ③ 两条都空时从已 link 插件反查（BUG-2145）。次数有上限：插件可能还在陆续 link，
+    // 但每次轮询都全量重扫 19 个模块的数据段是不可接受的常驻代价。
+    static int scan_attempts = 0;
+    constexpr int kMaxScanAttempts = 12;
+    if (exp == nullptr && scan_attempts < kMaxScanAttempts) {
+      ++scan_attempts;
+      exp = ScanLinkedPluginsForExporter();
+    }
     if (exp != nullptr) {
       if (g_header != nullptr) g_header->reserved_luna |= 0x10000;  // 经 exe 导出拿到 exporter
       InstallVoiceStreamHookWithExporter(exp);                      // 幂等

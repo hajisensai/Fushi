@@ -49,6 +49,9 @@
 #include "host_executable_digest.h"
 #include "lookup_overlay_geometry.h"
 #include "game_main_window.h"
+// KiriKiri 第三条 exporter 路径的判据（BUG-2145）。必须在**顶层**引入：adapters/*.inc 是被
+// 包进本文件匿名命名空间里的，从那里 include 会把 std:: 解析成匿名命名空间下的名字。
+#include "adapters/kirikiri_exporter_scan.h"
 #include "hunex_gge_trace.h"
 #include "leaf_d3d_trace.h"
 #include "artemis_pfs.h"

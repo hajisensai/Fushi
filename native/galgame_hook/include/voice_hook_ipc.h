@@ -504,6 +504,15 @@ constexpr uint32_t kXAudioDiag2KirikiriLookupTjsBootstrapFnAlive = 0x04000000u; 
 constexpr uint32_t kXAudioDiag2KirikiriLookupKagObjectReady = 0x08000000u;       // global.kag 是对象
 constexpr uint32_t kXAudioDiag2KirikiriLookupKagAddHookReady = 0x10000000u;      // global.kag.addHook 存在
 
+// 第三条 exporter 路径（BUG-2145）：exe 无导出表 + 插件早于我们 link 时，从已 link 插件
+// 的可写节反查 exporter 单例。三态互斥可判：扫描是否跑过 / 有没有过形状门的候选 /
+// 真调用校验后是否采用。
+// ⚠️ 本字至此 32 位用尽；下一族诊断位必须另立新字（照 reserved_luna→xaudio_diagnostics2
+// 的先例），不要拓宽本字或挤占已有位。
+constexpr uint32_t kXAudioDiag2KirikiriExporterScanRan = 0x20000000u;          // 前两条路径都空，扫描已跑
+constexpr uint32_t kXAudioDiag2KirikiriExporterScanNoCandidate = 0x40000000u;  // 交集/形状门后无候选
+constexpr uint32_t kXAudioDiag2KirikiriExporterScanAdopted = 0x80000000u;      // 候选过真调用校验并被采用
+
 // reserved_luna 的资源音频诊断位。KiriKiriZ 的 TVPCreateStream hook 直接导出当前播放的
 // 已解密 Ogg；Siglus 从 OVK 索引导出逐句 Ogg。它们只代表“资源捕获链已安装”，不要求 PCM
 // 环已有格式，因此 host 应优先按时间戳配对资源文件，并把系统回环保留为逐句 fallback。

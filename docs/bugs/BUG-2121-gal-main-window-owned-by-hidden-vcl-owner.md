@@ -13,4 +13,8 @@
 
   **第四段：`kag.addHook` 被写进 bootstrap 前置条件**。三个新诊断位在真机上给出唯一解（`xaudiodiag2=0x0d94000c`）：`TjsBootstrapFnAlive` ✓（脚本跑完、bootstrap 函数还挂着说明从没成功进过安装体）、`KagObjectReady` ✓、**`KagAddHookReady` ✗**。`addHook` 是 KAGEX 系框架的扩展点，TYPE-MOON 的 KAG 3.25 没有；那条 `typeof global.kag.addHook != "Object") return;` 排在 KAGEX 缺席门**之前**，于是 [[BUG-2116]] 的整条经典逐实例分支从来就是死代码——与注释里对 TextRender 担心过的是同一个错误。修复：前置条件只认 `global.kag`；输入接缝在 installStage 40 由新函数 `fushiLookupInstallKagSeams` 分叉——有 `addHook` 就用它，没有则用同一套 TJS2 逐实例包装（对象从 MessageLayer 换成 `kag` 窗口实例：`onPrimaryClick`/`onMouseMove`/`onMouseWheel`/`onKeyDown`，每个 fail-open 转发原方法），一条都挂不上时主动抛异常走 install-failed 分支留证据，不留假成功。守卫新增 `find_addhook_in_bootstrap_precondition`，前置条件/阶段序列/接缝安装三条既有断言与 clean 语料、2 条变异锚点同步更新，145/145 绿。
 
-  **第四段真机复验未跑**（用户回到键盘，按纪律停止驱动桌面）。判据：`lookup_diag` 出现 `sensor_installed(0x1)`，或控制台 `krkr.console.log` 出现 `[HibikiLookup] sensor installed` / `install failed: …`（后者会带 `bootstrap.stage` 号）。helper zip x86 `b60e2ac9…`（含四段，双架构 CTest 58/58）。engine-support.yaml 状态不改。
+  **第四段真机复验已过（09-05 02:45，第五轮）**。合并 develop 后重建的 helper x86 `4f66bce2…`（双架构 CTest 61/61）+ injector 直驱 `--launch --hold` + `fushi_voice_lookup_probe <pid> 10 1000`：
+  `lookup_diag=0xB0000541` = `sensor_installed` | `expression_ready` | `classic_patch_installed` | `classic_processch_fired`（后两位证明 [[BUG-2116]] 的经典逐实例补丁真的装上并触发了，不再是死代码）；
+  `xaudiodiag2=0x0194000c` 经 `galhook.py explain-diag --xaudiodiag2` 符号化 = `SeamArmed` | `SeamFired` | `BootstrapStarted` | `BootstrapFired`（外加与本 bug 无关的既有低位 `SgreAnchorsUnresolved` | `LeafProfileUnmatched`），**无** `BootstrapFaulted` / `ExportQueryFailed` / `ExpressionQueryFailed` / `MainWindowMissing`；
+  `text_hooked=1 luna_active=1 text_events=8 voice_clips=47`；进程内可见窗口只有 `TTVPWindowForm` + `TApplication`，**没有 `#32770` 致命错误框**（[[BUG-2144]] 的 SEH 边界随之复验）。
+  四段至此全部真机复验通过，游戏内查词传感器在经典 KAG3 / KiriKiri2-BCB 上装得上了。

@@ -2892,6 +2892,11 @@ def find_ungated_exe_exporter_probe(source: MaskedSource) -> list[str]:
 
 
 VOICE_STREAM_POLL_RESULT = "return g_voice_installed != 0;"
+EXPORTER_SCAN_ENTRY = "ITVPFunctionExporter* ScanLinkedPluginsForExporter() "
+EXPORTER_SCAN_CALL = "ScanLinkedPluginsForExporter()"
+EXPORTER_SCAN_SHAPE_GATE = "LooksLikeExporter("
+EXPORTER_SCAN_REAL_CALL_GATE = "ExporterAnswersQuery("
+EXPORTER_SCAN_ADOPTED_BIT = "kXAudioDiag2KirikiriExporterScanAdopted"
 
 # BUG-2121 第四段：`kag.addHook` 是 KAGEX 系框架的扩展点，经典 KAG3 没有。它只能作为
 # **安装手段**出现在 fushiLookupInstallKagSeams 的分叉里，绝不能回到 bootstrap 的前置条件
@@ -2951,6 +2956,71 @@ def find_voice_stream_poll_stopping_before_exporter(source: MaskedSource) -> lis
     if VOICE_STREAM_POLL_RESULT not in body:
         offenders.append(
             f"{VOICE_STREAM_TRY_ENTRY.strip()} 的返回值不是 g_voice_installed（exporter 是否到手）"
+        )
+    return offenders
+
+
+def find_exporter_scan_not_wired(source: MaskedSource) -> list[str]:
+    """第三条 exporter 路径必须真的接在 ① 落空之后（BUG-2145）。
+
+    KiriKiri2 有一族 build ① 和 ② 同时不可能成立：exe **连导出表都没有**
+    （フタマタ恋愛 Ver1.00 真机：磁盘与运行期导出目录 RVA 都是 0），而插件全在 boot 首帧
+    link 完、早于我们装 LoadLibrary hook。两条路径都是静默 return，症状与「这个引擎不支持
+    游戏内查词」完全同形——所以第三条路径被删掉或被改成"① 成功也扫"都必须红。
+    """
+    body = _cpp_function_body(source, VOICE_STREAM_TRY_ENTRY)
+    if body is None:
+        return [f"找不到 {VOICE_STREAM_TRY_ENTRY.strip()}"]
+    offenders: list[str] = []
+    if EXPORTER_SCAN_CALL not in body:
+        offenders.append(
+            f"{VOICE_STREAM_TRY_ENTRY.strip()} 没有调用 {EXPORTER_SCAN_CALL}："
+            "exe 无导出表且插件早于 hook link 的 KiriKiri2 build 上，两条 exporter 路径"
+            "同时静默落空，整条查词安装路径永远不会被进入（BUG-2145）"
+        )
+        return offenders
+    call_at = body.index(EXPORTER_SCAN_CALL)
+    guard = body[:call_at]
+    if "== nullptr" not in guard:
+        offenders.append(
+            f"{EXPORTER_SCAN_CALL} 的调用没有以「① 落空」为前提："
+            "① 成功时再全量重扫所有插件数据段是不该付的常驻代价（BUG-2145）"
+        )
+    return offenders
+
+
+def find_exporter_adopted_without_real_call(source: MaskedSource) -> list[str]:
+    """候选必须过**真调用**才能采用，形状门只负责收敛（BUG-2145）。
+
+    形状门（首字是可读虚表 + 虚表槽落在 exe 映像内）在真机上把 19 个插件的 28 个公共值
+    收敛到唯一 1 个，但它终究只是形状。把一个形状对而并非 exporter 的对象当成 exporter
+    装上去 = 拿野指针调虚函数，游戏当场崩。唯一站得住的判定是问它一句只有 exporter 答得上
+    的话：`QueryFunctionsByNarrowString` 查一个必然存在的导出名。
+    """
+    body = _cpp_function_body(source, EXPORTER_SCAN_ENTRY)
+    if body is None:
+        return [f"找不到 {EXPORTER_SCAN_ENTRY.strip()}"]
+    offenders: list[str] = []
+    if EXPORTER_SCAN_SHAPE_GATE not in body:
+        offenders.append(
+            f"{EXPORTER_SCAN_ENTRY.strip()} 缺形状门 {EXPORTER_SCAN_SHAPE_GATE}"
+        )
+    if EXPORTER_SCAN_REAL_CALL_GATE not in body:
+        offenders.append(
+            f"{EXPORTER_SCAN_ENTRY.strip()} 缺真调用门 {EXPORTER_SCAN_REAL_CALL_GATE}："
+            "只按形状采用候选 = 拿野指针调虚函数（BUG-2145）"
+        )
+        return offenders
+    if EXPORTER_SCAN_ADOPTED_BIT not in body:
+        offenders.append(
+            f"{EXPORTER_SCAN_ENTRY.strip()} 没有置 {EXPORTER_SCAN_ADOPTED_BIT}："
+            "采用与否必须留证据，否则第三条路径与「没跑过」同形"
+        )
+        return offenders
+    if body.index(EXPORTER_SCAN_REAL_CALL_GATE) > body.index(EXPORTER_SCAN_ADOPTED_BIT):
+        offenders.append(
+            f"{EXPORTER_SCAN_REAL_CALL_GATE} 排在 {EXPORTER_SCAN_ADOPTED_BIT} 之后："
+            "先宣布采用再校验等于没校验（BUG-2145）"
         )
     return offenders
 
@@ -3169,6 +3239,24 @@ class RealAdapterTest(unittest.TestCase):
             "KiriKiri2/BCB 上 exe 直取门永远只在主窗出现前评估一次。",
         )
 
+    def test_exporter_scan_is_wired_after_the_exe_direct_path(self) -> None:
+        self.assertEqual(
+            [],
+            find_exporter_scan_not_wired(self.source),
+            "BUG-2145：exe 无导出表（フタマタ恋愛 Ver1.00 真机：导出目录 RVA=0）且插件早于"
+            "LoadLibrary hook link 时，① 与 ② 同时静默落空；第三条路径缺席就等于经典 KAG3"
+            "整族游戏内查词不存在，且症状与「引擎不支持」同形。",
+        )
+
+    def test_exporter_candidate_is_adopted_only_after_a_real_call(self) -> None:
+        self.assertEqual(
+            [],
+            find_exporter_adopted_without_real_call(self.source),
+            "BUG-2145：形状门只负责把候选收敛到个位数，判定必须是真调用"
+            "（QueryFunctionsByNarrowString 查一个必然存在的导出名）。只按形状采用"
+            "= 拿野指针调虚函数，游戏当场崩。",
+        )
+
     def test_classic_kag3_capture_is_a_per_instance_sweep_inside_the_gate(
         self,
     ) -> None:
@@ -3326,9 +3414,23 @@ global.fushiLookupCapture = function(renderer)
 bool TryHookKirikiriVoiceStream() {
   if (!g_voice_installed && FindGameMainWindow() != nullptr) {
     ITVPFunctionExporter* exp = ObtainExporter();
+    if (exp == nullptr) exp = ScanLinkedPluginsForExporter();
     if (exp != nullptr) InstallVoiceStreamHookWithExporter(exp);
   }
   return g_voice_installed != 0;
+}
+
+ITVPFunctionExporter* ScanLinkedPluginsForExporter() {
+  SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2KirikiriExporterScanRan);
+  for (size_t i = 0; i < candidates.size(); ++i) {
+    if (!LooksLikeExporter(candidates[i], base, size, &DefaultReadableSpan)) continue;
+    auto* exporter = reinterpret_cast<ITVPFunctionExporter*>(candidates[i]);
+    if (!ExporterAnswersQuery(exporter)) continue;
+    SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2KirikiriExporterScanAdopted);
+    return exporter;
+  }
+  SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2KirikiriExporterScanNoCandidate);
+  return nullptr;
 }
 """
 
@@ -5695,6 +5797,41 @@ class MutationSelfTest(unittest.TestCase):
             "  return ll_installed;\n}",
         )
         self.assertNotEqual([], find_voice_stream_poll_stopping_before_exporter(dirty))
+
+    def test_exporter_scan_stays_green_on_the_clean_sample(self) -> None:
+        self.assertEqual([], find_exporter_scan_not_wired(self.clean))
+        self.assertEqual([], find_exporter_adopted_without_real_call(self.clean))
+
+    def test_dropping_the_third_exporter_path_is_red(self) -> None:
+        # 把第三条路径删掉 = 回到 BUG-2145 的原始形状（两条路径静默落空）。
+        dirty = self._mutate(
+            "    if (exp == nullptr) exp = ScanLinkedPluginsForExporter();\n",
+            "",
+        )
+        self.assertNotEqual([], find_exporter_scan_not_wired(dirty))
+
+    def test_scanning_even_when_the_exe_direct_path_succeeded_is_red(self) -> None:
+        # 去掉「① 落空」前提：每轮轮询都全量重扫所有插件数据段。
+        dirty = self._mutate(
+            "    if (exp == nullptr) exp = ScanLinkedPluginsForExporter();\n",
+            "    exp = ScanLinkedPluginsForExporter();\n",
+        )
+        self.assertNotEqual([], find_exporter_scan_not_wired(dirty))
+
+    def test_adopting_a_candidate_without_the_real_call_is_red(self) -> None:
+        # 删掉真调用门：只按形状采用候选 = 拿野指针调虚函数。
+        dirty = self._mutate(
+            "    if (!ExporterAnswersQuery(exporter)) continue;\n",
+            "",
+        )
+        self.assertNotEqual([], find_exporter_adopted_without_real_call(dirty))
+
+    def test_dropping_the_shape_gate_is_red(self) -> None:
+        dirty = self._mutate(
+            "    if (!LooksLikeExporter(candidates[i], base, size, &DefaultReadableSpan)) continue;\n",
+            "",
+        )
+        self.assertNotEqual([], find_exporter_adopted_without_real_call(dirty))
 
     def test_voice_stream_returning_constant_true_is_red(self) -> None:
         dirty = self._mutate(
