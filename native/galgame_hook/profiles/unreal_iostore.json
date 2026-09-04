@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "id": "unreal_iostore",
+  "status": "implemented_unverified",
+  "detection": {
+    "executable_sha256": [
+      "F7018AE75F820A204BF48AC444D4688F3B7CCADA51AE6B161AB701ECB0A492A2",
+      "877FF376A5E7233F903F778F6163E5E39924DF1DA9E5EEEF055BB14B125026FD"
+    ],
+    "module_sha256": []
+  },
+  "capabilities": {
+    "text": true,
+    "resource_audio": false,
+    "pcm_audio": true
+  },
+  "evidence": [
+    {
+      "kind": "real_sample",
+      "reference": "昨日魔女今日的梦 1.0 汉化版 (Unreal Engine 5, IoStore): launcher kinomajo.exe x64 spawns kinomajo\\Binaries\\Win64\\kinomajo-Win64-Shipping.exe x64; Content\\Paks holds global.utoc / kinomajo-Windows.utoc / kinomajo-Windows_zh-CN_P.utoc, all opening with the 16-byte IoStore TOC magic and version byte 6. Static probe 2026-09-05."
+    },
+    {
+      "kind": "real_sample",
+      "reference": "Same title, runtime measurement 2026-09-05 via injector --launch --hold: hook_diagnostics = StartupAudioHooksReady|UnityResourceExtractorReady|LunaHostReady|LunaConnected|LunaOutputObserved, xaudio_diagnostics = QueueReady|JobQueued|PcmPublished with voice_clips rising continuously. Which backend produced that PCM was not distinguished: the shipping exe statically imports DSOUND.dll while the UE tree also ships xaudio2_9redist.dll, so only 'the generic Windows audio path published PCM' is claimed. Text output compared both ways on the same title screen: without LunaHook PC hooks text_events settled at 11, with them at 29. No dialogue line was traversed, so no thread selection, pairing, or card E2E is claimed."
+    },
+    {
+      "kind": "real_sample",
+      "reference": "Static probe inventory notes a third-party UE4SS.dll plus ue4ss/Mods/KinomajoTrainer Lua scripts shipped next to the shipping exe by this Chinese release; recorded as ledger only, it is not part of the identity criterion and Fushi does not load or depend on it."
+    }
+  ]
+}

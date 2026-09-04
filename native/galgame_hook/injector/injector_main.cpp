@@ -29,6 +29,7 @@
 #include "kirikiri_launch_profile.h"
 #include "launcher_layout.h"
 #include "siglus_launch.h"
+#include "unreal_launch.h"
 #include "steam_launch.h"
 #include "luna_bridge.h"
 #include "luna_hook_config.h"
@@ -2483,6 +2484,17 @@ bool LooksLikeUnityRuntime(const std::wstring& exe) {
   return il2cpp || mono;
 }
 
+// Unreal（IoStore 打包形态）：判据本体在 include/unreal_launch.h，与 hook 侧的引擎身份
+// 共用同一份。UE 是 C++ 引擎，台词在进程内、没有 Mono/TJS 那样的脚本宿主可挂，只能靠
+// LunaHook 的通用 PC hooks 取文本——与 Unity 同理，所以这里也自动开。
+// 真机对照（昨日魔女今日的梦 1.0 汉化版，同一份 helper、同一段标题画面）：不开 PC hooks
+// 的一局 text_events 停在 11，开了的一局 29。
+bool LooksLikeUnrealRuntime(const std::wstring& exe) {
+  const std::wstring dir = ExecutableDirectory(exe);
+  if (dir.empty()) return false;
+  return fushi_voice_hook::MatchesUnrealIostoreLayout(dir);
+}
+
 // Siglus 游戏（含改名 exe）：exe 名严格匹配，或 exe 同目录具备 Siglus 文件夹签名。用于把 launch
 // 的早注入改为延迟附着，绕过 Enigma 保护壳拒绝挂起态注入导致的 launch_or_inject_failed。
 bool LooksLikeSiglusRuntime(const std::wstring& exe) {
@@ -2503,7 +2515,8 @@ bool ShouldAutoUseLunaPcHooks(const std::wstring& exe) {
       _wcsicmp(base.c_str(), L"SiglusEngine.exe") == 0) {
     return true;
   }
-  return LooksLikeUnityRuntime(exe) || LooksLikeSiglusRuntime(exe);
+  return LooksLikeUnityRuntime(exe) || LooksLikeSiglusRuntime(exe) ||
+         LooksLikeUnrealRuntime(exe);
 }
 
 struct ReadyWindowSearch {
@@ -2750,7 +2763,8 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
   if (!effective_luna.pc_hooks && ShouldAutoUseLunaPcHooks(exe)) {
     effective_luna.pc_hooks = true;
     fprintf(stderr,
-            "[luna] auto-enabled PC hooks for Unity/Mono-style target: %ls\n",
+            "[luna] auto-enabled PC hooks for scripted-host-less target "
+            "(Unity/Mono/Unreal): %ls\n",
             ExecutableBaseName(exe).c_str());
   }
 

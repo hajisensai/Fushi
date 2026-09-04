@@ -640,3 +640,6 @@ add_test(NAME fushi_layer_origin_pixels_test
 add_executable(fushi_cmvs_adapter_test "tests/cmvs_adapter_test.cpp")
 target_include_directories(fushi_cmvs_adapter_test PRIVATE "hook")
 add_test(NAME fushi_cmvs_adapter_test COMMAND fushi_cmvs_adapter_test)
+add_executable(fushi_unreal_iostore_adapter_test "tests/unreal_iostore_adapter_test.cpp")
+target_include_directories(fushi_unreal_iostore_adapter_test PRIVATE "hook" "include")
+add_test(NAME fushi_unreal_iostore_adapter_test COMMAND fushi_unreal_iostore_adapter_test)

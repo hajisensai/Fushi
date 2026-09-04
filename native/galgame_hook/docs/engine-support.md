@@ -25,6 +25,7 @@
 | `leaf_aquaplus` | Leaf / AQUAPLUS (WHITE ALBUM2 exact profile) | `implemented_unverified` | luna_exact_cp932_thread (implemented_unverified)；ingame_lookup_geometry (implemented_unverified)；ingame_lookup_sampled_input_shield (implemented_unverified) | leaf_lac_voice_resource (implemented_unverified)；directsound_pcm (implemented_unverified) | 0 |
 | `hunex_gge` | HUNEX GGE / HFA-HW | `implemented_unverified` | luna_typemoon_dialogue_thread (implemented_unverified) | hunex_hfa_hw_ogg_resource (implemented_unverified) | 0 |
 | `sgre` | M2 wind3d11 runtime (STEINS;GATE RE:BOOT) | `implemented_unverified` | ingame_lookup_geometry (implemented_unverified)；ingame_lookup_directinput_shield (implemented_unverified) | engine_archive_resource (implemented_unverified) | 0 |
+| `unreal_iostore` | Unreal Engine (IoStore) | `implemented_unverified` | luna_pc_hooks (implemented_unverified) | xaudio2_or_directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 
 ## 无 OCR 内嵌查词矩阵
 
@@ -820,6 +821,50 @@ Tests：`tests/hunex_gge_adapter_test.cpp`、`tests/hunex_gge_capture_bridge_tes
 Fixtures：尚无（P5 补齐）
 
 Tests：`tests/sgre_adapter_test.cpp`、`tests/exact_lookup_signature_test.cpp`、`tests/adapter_structure_test.py`
+
+### Unreal Engine (IoStore) (`unreal_iostore`)
+
+- 状态：`implemented_unverified`
+- 别名：Unreal Engine、UE4、UE5、アンリアルエンジン
+- 家族：`unreal`（Epic Games Unreal Engine; this entry covers the IoStore (.utoc/.ucas) packaging only）
+- 当前 adapter：`hook/adapters/unreal_iostore_adapter.inc`
+- 进程策略：launch=`generic_launch_available`，attach=`generic_attach_available`，follow-child=`true`
+
+识别签名（所有非空项均带真实样本或运行时观察证据）：
+
+- `executable_names`：*-Win64-Shipping.exe；证据：real_sample — 昨日魔女今日的梦 1.0 汉化版 ships kinomajo\Binaries\Win64\kinomajo-Win64-Shipping.exe behind an outer kinomajo.exe launcher; static probe 2026-09-05. The name is a UE build convention and is catalogue only -- the adapter matches on the Binaries\Win64 directory shape plus IoStore archive magic, so -Win64-Test and -Win64-Debug builds are covered too
+- `pe_architectures`：x64；证据：real_sample — kinomajo-Win64-Shipping.exe machine 0x8664; the launcher kinomajo.exe is x64 as well
+- `directory_files_all`：Content/Paks/global.utoc、Content/Paks/global.ucas；证据：real_sample — Every IoStore build carries the global.utoc/global.ucas pair; this sample also has kinomajo-Windows.* and kinomajo-Windows_zh-CN_P.*. All three .utoc files open with the 16-byte IoStore TOC magic '-==--==--==--==-' followed by version byte 6, which is what the adapter actually matches on (any *.utoc under Content\Paks carrying that magic); measured 2026-09-05
+- `pe_imports`：DSOUND.dll、WINMM.dll、OPENGL32.dll、WINHTTP.dll、MSVCP140.dll；证据：real_sample — PE import table of kinomajo-Win64-Shipping.exe (38 imports, static probe 2026-09-05). DirectSound is the only audio API imported statically; the UE tree also ships Engine\Binaries\ThirdParty\Windows\XAudio2_9\x64\xaudio2_9redist.dll for runtime loading, so the audio backend actually used at runtime was not determined
+- `runtime_modules`：D3D12Core.dll、xaudio2_9redist.dll；证据：real_sample — Shipped next to the binary / under Engine\Binaries\ThirdParty; presence measured statically, runtime load not individually confirmed
+- `resource_extensions`：.utoc、.ucas、.pak；证据：real_sample — Content\Paks holds paired .pak/.ucas/.utoc sets; the 2.7 GB kinomajo-Windows.ucas carries the asset payload including SoundWave assets
+- `hashes`：f7018ae75f820a204bf48ac444d4688f3b7ccada51ae6b161ab701ecb0a492a2、877ff376a5e7233f903f778f6163e5e39924df1da9e5eeef055bb14b125026fd；证据：real_sample — kinomajo-Win64-Shipping.exe / kinomajo.exe launcher, catalogue only; the adapter does not hash-pin because the structural directory + IoStore magic check is the identity
+
+文本能力：
+
+- `luna_pc_hooks`：`implemented_unverified` — Unreal is a C++ engine with no scripting host to hook, so text goes through LunaHook's generic PC hooks. Measured both ways on the same title screen of the same build: without PC hooks text_events settled at 11, with them at 29. No dialogue line was traversed, so no thread was selected and no dialogue text is claimed.
+- codepage：932
+- 线程提示：Unmeasured. Only title-screen strings have been observed; the dialogue thread must be identified on a real session before any selection hint is recorded.
+
+音频优先级：
+
+1. `xaudio2_or_directsound_pcm` — `implemented_unverified`；格式：source PCM via the generic Windows audio adapter；clean voice：engine_dependent
+2. `process_loopback` — `implemented_unverified`；格式：host PCM fallback；clean voice：否
+
+真实样本证据：
+
+
+已知限制：
+
+- Identity is anchored on IoStore only: the criterion requires Content\Paks\*.utoc with the 16-byte TOC magic. UE4 builds packaged as .pak alone do NOT match. This is deliberate -- the .pak magic (0x5A6F12E1) sits in a trailing footer whose offset varies by pak version, and no .pak-only sample was available to measure. Closing that gap needs a real .pak-only title.
+- Per-line voice resources are SoundWave assets inside *.ucas, chunked and compressed by IoStore. No resource layer is implemented and none is claimed until a runtime post-unpack read seam is measured on a real session.
+- Only title-screen strings have been observed. Dialogue text, thread selection, text/audio pairing and card E2E are all not_run.
+- The runtime PCM measurement did not distinguish DirectSound from XAudio2; only 'the generic Windows audio path published PCM' is proved.
+- In-game lookup sensor is not implemented; lookupAdmission stays EngineUnsupported.
+
+Fixtures：`tests/fixtures/unreal_iostore_replay.json`
+
+Tests：`tests/unreal_iostore_adapter_test.cpp`、`../../fushi/test/mining/unreal_iostore_pairing_test.dart`
 
 ## 状态定义
 
