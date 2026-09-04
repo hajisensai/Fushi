@@ -2536,6 +2536,148 @@
         "tests/exact_lookup_signature_test.cpp",
         "tests/adapter_structure_test.py"
       ]
+    },
+    {
+      "id": "unreal_iostore",
+      "display_name": "Unreal Engine (IoStore)",
+      "aliases": [
+        "Unreal Engine",
+        "UE4",
+        "UE5",
+        "アンリアルエンジン"
+      ],
+      "family": {
+        "id": "unreal",
+        "relation": "Epic Games Unreal Engine; this entry covers the IoStore (.utoc/.ucas) packaging only"
+      },
+      "detection": {
+        "executable_names": {
+          "values": [
+            "*-Win64-Shipping.exe"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "昨日魔女今日的梦 1.0 汉化版 ships kinomajo\\Binaries\\Win64\\kinomajo-Win64-Shipping.exe behind an outer kinomajo.exe launcher; static probe 2026-09-05. The name is a UE build convention and is catalogue only -- the adapter matches on the Binaries\\Win64 directory shape plus IoStore archive magic, so -Win64-Test and -Win64-Debug builds are covered too"
+          }
+        },
+        "pe_architectures": {
+          "values": [
+            "x64"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "kinomajo-Win64-Shipping.exe machine 0x8664; the launcher kinomajo.exe is x64 as well"
+          }
+        },
+        "directory_files_all": {
+          "values": [
+            "Content/Paks/global.utoc",
+          "Content/Paks/global.ucas"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Every IoStore build carries the global.utoc/global.ucas pair; this sample also has kinomajo-Windows.* and kinomajo-Windows_zh-CN_P.*. All three .utoc files open with the 16-byte IoStore TOC magic '-==--==--==--==-' followed by version byte 6, which is what the adapter actually matches on (any *.utoc under Content\\Paks carrying that magic); measured 2026-09-05"
+          }
+        },
+        "pe_imports": {
+          "values": [
+            "DSOUND.dll",
+            "WINMM.dll",
+            "OPENGL32.dll",
+            "WINHTTP.dll",
+            "MSVCP140.dll"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "PE import table of kinomajo-Win64-Shipping.exe (38 imports, static probe 2026-09-05). DirectSound is the only audio API imported statically; the UE tree also ships Engine\\Binaries\\ThirdParty\\Windows\\XAudio2_9\\x64\\xaudio2_9redist.dll for runtime loading, so the audio backend actually used at runtime was not determined"
+          }
+        },
+        "runtime_modules": {
+          "values": [
+            "D3D12Core.dll",
+            "xaudio2_9redist.dll"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Shipped next to the binary / under Engine\\Binaries\\ThirdParty; presence measured statically, runtime load not individually confirmed"
+          }
+        },
+        "resource_extensions": {
+          "values": [
+            ".utoc",
+            ".ucas",
+            ".pak"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Content\\Paks holds paired .pak/.ucas/.utoc sets; the 2.7 GB kinomajo-Windows.ucas carries the asset payload including SoundWave assets"
+          }
+        },
+        "hashes": {
+          "values": [
+            "f7018ae75f820a204bf48ac444d4688f3b7ccada51ae6b161ab701ecb0a492a2",
+            "877ff376a5e7233f903f778f6163e5e39924df1da9e5eeef055bb14b125026fd"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "kinomajo-Win64-Shipping.exe / kinomajo.exe launcher, catalogue only; the adapter does not hash-pin because the structural directory + IoStore magic check is the identity"
+          }
+        }
+      },
+      "process_strategy": {
+        "launch": "generic_launch_available",
+        "attach": "generic_attach_available",
+        "follow_child_processes": true,
+        "notes": [
+          "The original path is the outer launcher kinomajo.exe, which starts the real game at <Game>\\Binaries\\Win64\\<Game>-Win64-Shipping.exe; the shipping binary is what carries the window, text and audio.",
+          "Launching the shipping binary directly also works and is what the 2026-09-05 measurement used.",
+          "This Chinese release additionally ships a third-party UE4SS.dll trainer next to the shipping binary. Fushi neither loads nor depends on it; it is recorded because it means another injector may already be present in the same process."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "luna_pc_hooks",
+            "status": "implemented_unverified",
+            "verification": "Unreal is a C++ engine with no scripting host to hook, so text goes through LunaHook's generic PC hooks. Measured both ways on the same title screen of the same build: without PC hooks text_events settled at 11, with them at 29. No dialogue line was traversed, so no thread was selected and no dialogue text is claimed."
+          }
+        ],
+        "codepage": "932",
+        "thread_selection_hint": "Unmeasured. Only title-screen strings have been observed; the dialogue thread must be identified on a real session before any selection hint is recorded."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "xaudio2_or_directsound_pcm",
+            "format": "source PCM via the generic Windows audio adapter",
+            "status": "implemented_unverified",
+            "clean_voice": "engine_dependent"
+          },
+          {
+            "kind": "process_loopback",
+            "format": "host PCM fallback",
+            "status": "implemented_unverified",
+            "clean_voice": false
+          }
+        ]
+      },
+      "verified_games": [],
+      "current_status": "implemented_unverified",
+      "known_limitations": [
+        "Identity is anchored on IoStore only: the criterion requires Content\\Paks\\*.utoc with the 16-byte TOC magic. UE4 builds packaged as .pak alone do NOT match. This is deliberate -- the .pak magic (0x5A6F12E1) sits in a trailing footer whose offset varies by pak version, and no .pak-only sample was available to measure. Closing that gap needs a real .pak-only title.",
+        "Per-line voice resources are SoundWave assets inside *.ucas, chunked and compressed by IoStore. No resource layer is implemented and none is claimed until a runtime post-unpack read seam is measured on a real session.",
+        "Only title-screen strings have been observed. Dialogue text, thread selection, text/audio pairing and card E2E are all not_run.",
+        "The runtime PCM measurement did not distinguish DirectSound from XAudio2; only 'the generic Windows audio path published PCM' is proved.",
+        "In-game lookup sensor is not implemented; lookupAdmission stays EngineUnsupported."
+      ],
+      "adapter_path": "hook/adapters/unreal_iostore_adapter.inc",
+      "fixture_paths": [
+        "tests/fixtures/unreal_iostore_replay.json"
+      ],
+      "test_paths": [
+        "tests/unreal_iostore_adapter_test.cpp",
+        "../../fushi/test/mining/unreal_iostore_pairing_test.dart"
+      ]
     }
   ]
 }

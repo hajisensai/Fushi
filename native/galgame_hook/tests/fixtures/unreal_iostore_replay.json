@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "engine_id": "unreal_iostore",
+  "status": "implemented_unverified",
+  "config": {
+    "selected_thread": 4,
+    "duplicate_window_ms": 1000,
+    "audio_priority": ["resource_audio", "pcm", "loopback"],
+    "resource_late_wait_ms": 500
+  },
+  "events": [
+    {"kind": "text", "id": "unreal-line", "timestamp_ms": 5000, "thread": 4, "text": "synthetic unreal pc-hook line"},
+    {"kind": "text", "id": "unreal-ui-thread", "timestamp_ms": 5001, "thread": 9, "text": "synthetic unreal ui thread"},
+    {"kind": "pcm", "id": "unreal-source-pcm", "timestamp_ms": 5014, "format": "s16le"},
+    {"kind": "loopback", "id": "unreal-loopback", "timestamp_ms": 5018, "format": "s16le"},
+    {"kind": "session_end", "timestamp_ms": 5600}
+  ],
+  "expected": {
+    "cards": [
+      {"text_id": "unreal-line", "audio_backend": "pcm", "audio_id": "unreal-source-pcm"}
+    ],
+    "duplicate_text_events": 0,
+    "thread_filtered_events": 1,
+    "session_clean": true
+  }
+}
