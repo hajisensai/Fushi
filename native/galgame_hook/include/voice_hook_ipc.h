@@ -117,7 +117,7 @@ constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
 //     fail-closed 门控。同布局、异语义仍必须升版（与 v18 的
 //     LookupInputSlot::keys 完全同理），否则旧 helper 会被版本门误判兼容，
 //     host 以为已撤销输入而驻留 DLL 仍继续消费。
-//  v22 — BUG-2093 引擎层原点双向面。SharedHeader 尾部在 v19 摘要之后**纯追加**了
+//  v22 — BUG-2136 引擎层原点双向面。SharedHeader 尾部在 v19 摘要之后**纯追加**了
 //     12 个 32 位字（hook→host 的行包围盒 + 设计分辨率 + 字形数，host→hook 的
 //     解出原点 + seq）。**布局变了就必须升版**：`hook/dll_main.cpp` 与
 //     `injector/injector_main.cpp` 都用 `sizeof(SharedHeader)` 现算 ring / region
@@ -248,7 +248,7 @@ constexpr uint32_t kLoopbackDiagFailed = 0x00000080u;
 constexpr uint32_t kLoopbackDiagPolicyStopObserved = 0x00000100u;
 // allow 请求的策略确认没在注入预算内到达：injector 已按「能力未就绪」降级继续
 // （文本 hook 照常安装），worker 仍可能稍后自行 ack 成 running。置位只说明
-// 「这次注入没等到确认」，不代表 loopback 永远起不来（BUG-2086）。
+// 「这次注入没等到确认」，不代表 loopback 永远起不来（BUG-2131）。
 constexpr uint32_t kLoopbackDiagPolicyAckTimeout = 0x00000200u;
 
 // 环形缓冲保留时长（秒）。C 阶段语音轨常见 48k 立体声 float32；60s 上界 ≈ 23MB。
@@ -1190,7 +1190,7 @@ struct SharedHeader {
   // 时保证有值：那是唯一需要用户把自己的版本身份报回来的情形（hash-pinned 白名单不中）。
   // 有界读——上界就是 kHookModuleDigestChars，绝不假设写侧给了 NUL。
   char lookup_executable_sha256[kHookModuleDigestChars];
-  // ── BUG-2093 引擎层原点（双向；纯追加）────────────────────────────────────
+  // ── BUG-2136 引擎层原点（双向；纯追加）────────────────────────────────────
   // 背景：HUNEX/GGE 的正文字形位置是**文本层局部坐标**（1920x1080 逻辑单位），
   // client = (render + origin) * client/(design_w, design_h) 已在两种窗口尺寸 × 三条行
   // 上实测成立。origin 是每作一个常量，但**游戏内存里读不到现成的**——item 前 0x70 字节、
@@ -1216,7 +1216,7 @@ struct SharedHeader {
 };
 #pragma pack(pop)
 
-// ── BUG-2093 层原点：两侧读写器 ─────────────────────────────────────────────
+// ── BUG-2136 层原点：两侧读写器 ─────────────────────────────────────────────
 struct LookupLayerLineSnapshot {
   uint32_t seq = 0;
   uint32_t design_w = 0;
@@ -1787,7 +1787,7 @@ inline NativeLoopbackRequestSnapshot ReadNativeLoopbackRequest(
 //
 // 供 hook 侧在重量级引擎探测**之前**有界追平 ack 用（见 dll_main 的追平循环）：
 // allow 的 applied/running 只能在 worker 起流后的下一轮 PollPolicy 发布，若把那一轮
-// 留到引擎探测之后，早注入 5s 的确认预算基本必然超时（BUG-2086）。
+// 留到引擎探测之后，早注入 5s 的确认预算基本必然超时（BUG-2131）。
 // injector 侧另有带 requested 值校验的版本，那里要区分 deny/allow 的语义边界。
 inline bool NativeLoopbackRequestAcknowledged(const SharedHeader* header) {
   if (header == nullptr) return false;

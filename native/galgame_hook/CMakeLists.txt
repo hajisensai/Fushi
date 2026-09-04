@@ -264,7 +264,7 @@ target_include_directories(fushi_kirikiri_voice_storage_name_test PRIVATE "hook"
 add_test(NAME fushi_kirikiri_voice_storage_name_test
   COMMAND fushi_kirikiri_voice_storage_name_test)
 
-# 查词整句 ↔ 文本道行的同句判据（点击载荷 text_generation 反查，BUG-2085 家族）。
+# 查词整句 ↔ 文本道行的同句判据（点击载荷 text_generation 反查，BUG-2130 家族）。
 add_executable(fushi_lookup_line_text_match_test
   "tests/lookup_line_text_match_test.cpp"
 )
@@ -629,7 +629,7 @@ target_compile_definitions(fushi_sgre_adapter_test PRIVATE
   UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_link_libraries(fushi_sgre_adapter_test PRIVATE bcrypt)
 add_test(NAME fushi_sgre_adapter_test COMMAND fushi_sgre_adapter_test)
-# BUG-2093 层原点：纯像素求解（host 侧算法，与 host_executable_digest 同一范式——
+# BUG-2136 层原点：纯像素求解（host 侧算法，与 host_executable_digest 同一范式——
 # 需要被测的 host 逻辑放 include/，runner 用相对路径 include 真相源）。
 add_executable(fushi_layer_origin_pixels_test
   "tests/layer_origin_pixels_test.cpp")

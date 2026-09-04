@@ -714,7 +714,7 @@ bool AttachedTextSurfaceWindow::TargetIsForeground() const {
        IsChild(presentation_hwnd_, foreground))) {
     return true;
   }
-  // BUG-2098：查词卡是**本进程**为这个游戏打开的卡，它拿到焦点恰恰是「用户刚点了一个
+  // BUG-2140：查词卡是**本进程**为这个游戏打开的卡，它拿到焦点恰恰是「用户刚点了一个
   // 词」的结果。旧判据只认游戏 HWND 前台，于是第一次查词必然把表面挂起
   // （suspended/targetBackground）、命中区域随之清空，用户紧接着点的那一下就不再被吞
   // ——真机上表现为「第一次能查到词，之后每次点击都穿透并推进剧情」。
@@ -1615,7 +1615,7 @@ void AttachedTextSurfaceWindow::SyncToTarget() {
     return;
   }
   native_provider_retire_pending_ = false;
-  // BUG-2093：引擎层原点一次性自动求解。放在这里是因为此刻的前置条件正好齐了——
+  // BUG-2136：引擎层原点一次性自动求解。放在这里是因为此刻的前置条件正好齐了——
   // 目标已解析、shield 已握手、游戏还没被判成后台/最小化，画面就是可抓的。
   // 解出来一次就够（origin 是常量），失败什么都不发布，注入侧照旧退回贴合层。
   // 用户完全不需要手动框范围。
@@ -1713,7 +1713,7 @@ void AttachedTextSurfaceWindow::SyncToTarget() {
   if (clusters_.empty()) {
     HideSurface();
     // `layout_dirty_` 为假时这一轮根本没重建，簇为空是上一轮失败留下的。报那一轮的
-    // 真实原因，否则真因会被这条泛化状态覆盖掉（BUG-2095 真机上正是如此）。
+    // 真实原因，否则真因会被这条泛化状态覆盖掉（BUG-2138 真机上正是如此）。
     SetState("ready", "noGlyphClusters",
              last_cluster_failure_.empty() ? "clusters_empty_after_build"
                                            : last_cluster_failure_.c_str());
@@ -1739,7 +1739,7 @@ void AttachedTextSurfaceWindow::SyncToTarget() {
   }
   RenderLayerBitmap(false);
   if (!SetVisible(true)) {
-    // BUG-2098：这一路有五个互不相干的闸门，报出到底是哪条。
+    // BUG-2140：这一路有五个互不相干的闸门，报出到底是哪条。
     const char *arm_failure = fushi::LastAttachedGlyphArmFailure();
     SetState("suspended", "mouseHookBusy",
              arm_failure == nullptr
@@ -1836,7 +1836,7 @@ void AttachedTextSurfaceWindow::PositionSurface(const RECT &screen_rect,
   }
 }
 
-// BUG-2095：17 个失败点原本全是裸 `return false`，对外只发一条笼统的
+// BUG-2138：17 个失败点原本全是裸 `return false`，对外只发一条笼统的
 // `noGlyphClusters`——真机上等于「二十选一」，完全无法判断是正文没到、矩形没面积、
 // 版式溢出，还是 DirectWrite 把行裁了。逐点记原因，只加量具不改任何判据。
 bool AttachedTextSurfaceWindow::ClusterFailure(const char *reason) {
@@ -1914,7 +1914,7 @@ bool AttachedTextSurfaceWindow::RebuildClusters() {
   format->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
   const float line_spacing =
       std::max(font_size, font_size * static_cast<float>(layout_.line_height));
-  // BUG-2095：基线距离原本硬编码成 `font_size * 0.8`。那是拉丁字体的经验值；日文字体
+  // BUG-2138：基线距离原本硬编码成 `font_size * 0.8`。那是拉丁字体的经验值；日文字体
   // 的 ascent 普遍在 0.88 em 上下，于是**第一行的墨迹必然伸到版面框上方**，紧接着的
   // `GetOverhangMetrics` 恒判 `overhang.top > 0` 而整轮建簇失败——attached 通路对日文
   // 正文因此永远建不出一个字形簇（真机 WoH：`fallback/overhang_outside_body_rect`）。

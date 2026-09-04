@@ -313,7 +313,7 @@ private:
   void PositionSurface(const RECT &screen_rect, bool calibration);
 
   bool RebuildClusters();
-  // BUG-2095：记下 RebuildClusters 具体败在哪一点，随 noGlyphClusters 一起上报。
+  // BUG-2138：记下 RebuildClusters 具体败在哪一点，随 noGlyphClusters 一起上报。
   bool ClusterFailure(const char *reason);
   std::string last_cluster_failure_;
   void ClearInteractiveRegion();

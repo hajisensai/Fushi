@@ -1,7 +1,7 @@
-## BUG-2098 · 第一次查词后 attached 表面再也武装不起来，之后每次点击都穿透并推进剧情
+## BUG-2140 · 第一次查词后 attached 表面再也武装不起来，之后每次点击都穿透并推进剧情
 - **报告**：2026-09-03（**用户在真机上直接观察到**：「刚刚好像看到能查到词但是还是会点击穿透」；随后按其描述定向复现）
 - **真实性**：✅ 真 bug，真机逐次点击复现，两道闸门已定位，第一道已修，第二道给出确切证据。
-- **症状**：BUG-2095 修好后，第一次点字**确实**弹出查词卡且不推进剧情；但从此 attached 表面挂起，用户接着点的每一下都不再被吞——直接落到游戏上推进下一句。
+- **症状**：BUG-2138 修好后，第一次点字**确实**弹出查词卡且不推进剧情；但从此 attached 表面挂起，用户接着点的每一下都不再被吞——直接落到游戏上推进下一句。
 - **真机复现台账**（WoH v1.0，pid=14372，同一句 `二時間ほど眠っていた事になる。` 上连点四次）：
   ```
   校准后        attached=activeAttached/null
@@ -58,4 +58,4 @@
   - `low_level_mouse_hook.cpp`：attached 抢单例的 5 个闸门逐条报因（`hit_snapshot_missing` / `hit_snapshot_owner_mismatch` / `injected_shield_target_not_prepared` / `hook_thread_unavailable` / `singleton_owned_by_other_hwnd` / `conflicting_transaction_pending`），经 `LastAttachedGlyphArmFailure()` 带进 `SetState` 的 reason；此前 5 条全挤在一句 `low_level_mouse_singleton_busy_or_unavailable` 里。
   - `fushi/integration_test/gal_realgame_driver_itest.dart`：新增 `shield` 指令，打印 available / conclusion / request / applied / required / ready / observed / fault / statusFlags。**`request=4 applied=3` 就是它读出来的。**
 - **备注**：`engine-support.yaml` 的 `hunex_gge` 不因本条提升。当前真机链路：`process_found → helper_ready → ipc_ready → text_ready ✅ → 线程选定 ✅ → 风险接受 ✅ → 校准 ✅ → activeAttached ✅ → 首次点字查词 + 不推进 ✅ → 后续点击持续被吞 ❌（本条第 2 道闸门）`。
-- **关联**：[[BUG-2095]]（修好它才走到本条）、[[BUG-2092]]（同一条「状态不带原因就无法定位」的纪律）、[[BUG-2053]]（attached 四项行为的原始声明，本条说明其中「持续吞点击」在日文真机上此前未真正成立）。
+- **关联**：[[BUG-2138]]（修好它才走到本条）、[[BUG-2143]]（同一条「状态不带原因就无法定位」的纪律）、[[BUG-2125]]（attached 四项行为的原始声明，本条说明其中「持续吞点击」在日文真机上此前未真正成立）。

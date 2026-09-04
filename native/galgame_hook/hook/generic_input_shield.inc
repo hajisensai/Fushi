@@ -929,7 +929,7 @@ uint32_t GenericShieldPendingMask() {
   return pending;
 }
 
-// BUG-2098：宿主发布中性请求后，放弃所有**从未被真实采样坐实**的推测 latch。
+// BUG-2140：宿主发布中性请求后，放弃所有**从未被真实采样坐实**的推测 latch。
 // 它们等的那条「释放 + 中性尾」可能永远不会到（该输入面这一局不再被游戏采样），
 // 而 release_waiting 会因此把 applied_seq 永久扣在 request_seq-1，宿主的
 // IsNeutralForRehandshake 恒假、attached 表面首次查词后再也武装不起来。
@@ -1143,7 +1143,7 @@ void ProcessGenericLookupInputShield() {
             status.required_mask, status.ready_mask, status.observed_mask));
   }
 
-  // BUG-2098：先把「推测上锁、从未被真实采样坐实」的 latch 放掉，再算 pending。
+  // BUG-2140：先把「推测上锁、从未被真实采样坐实」的 latch 放掉，再算 pending。
   // 否则一次预武装就能把 applied_seq 永久扣住。
   AbandonSpeculativeGenericShieldLatches(request.active_buttons != 0);
   const uint32_t pending = GenericShieldPendingMask();

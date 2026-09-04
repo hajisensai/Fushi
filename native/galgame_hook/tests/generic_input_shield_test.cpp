@@ -208,7 +208,7 @@ void TestFastClickPreArmHidesQueuedSignalsAfterReleasePublication() {
   assert(!raw_result.pending && raw_flags == 0);
 }
 
-// BUG-2098 的死锁判据：**与左键无关的数据包不得把 latch 从「推测」翻成「坐实」**。
+// BUG-2140 的死锁判据：**与左键无关的数据包不得把 latch 从「推测」翻成「坐实」**。
 //
 // 两条释放路径的前置条件互补——Abandon 要 `speculative && !release_seen`，
 // ObserveNeutralTail 要 `release_seen`。所以只要有一次调用「清了 speculative 却没置

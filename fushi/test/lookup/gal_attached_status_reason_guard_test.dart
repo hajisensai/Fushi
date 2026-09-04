@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-2092 守卫：attached 状态机里凡是「非终态、需要排障」的状态，`_setStatus`
+/// BUG-2143 守卫：attached 状态机里凡是「非终态、需要排障」的状态，`_setStatus`
 /// 都必须带 reason。
 ///
 /// 背景：真机上驱动台账只能读到 `attached=<status>/<reason>`。同一个
@@ -49,7 +49,7 @@ void main() {
       isEmpty,
       reason:
           '以下状态仍有不带 reason 的 _setStatus 调用点，真机上无法定位是哪条分支'
-          '（BUG-2092）：$offenders',
+          '（BUG-2143）：$offenders',
     );
   });
 
@@ -63,7 +63,7 @@ void main() {
     expect(
       tokens.length,
       greaterThanOrEqualTo(12),
-      reason: 'BUG-2092 补的 reason token 少了，可能被回退',
+      reason: 'BUG-2143 补的 reason token 少了，可能被回退',
     );
     final Set<String> seen = <String>{};
     final Set<String> duplicated = <String>{};

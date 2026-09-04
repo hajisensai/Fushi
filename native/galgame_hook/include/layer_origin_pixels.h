@@ -1,4 +1,4 @@
-// BUG-2093 引擎层原点：**纯像素求解**。不碰 Win32，可被 native ctest 直接喂合成位图。
+// BUG-2136 引擎层原点：**纯像素求解**。不碰 Win32，可被 native ctest 直接喂合成位图。
 //
 // 为什么单独一个头：抓帧（BitBlt/GDI）与像素分析原本焊死在
 // `fushi/windows/runner/layer_origin_solver.cpp` 的同一个函数里，签名是

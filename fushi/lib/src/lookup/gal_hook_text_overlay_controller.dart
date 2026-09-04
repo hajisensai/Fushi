@@ -1111,7 +1111,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
 
     final bool attachedReady =
         lookupSurfaceActive && _attachedText.attachedProviderClaimed;
-    // BUG-2091 复验用：`attachedReady` 是两个输入的合取，只记结论就分不清是「宿主没
+    // BUG-2142 复验用：`attachedReady` 是两个输入的合取，只记结论就分不清是「宿主没
     // 认领」还是「查词面整体没武装」——真机上这两种情况的排障方向完全相反。
     glog(
       'gal-overlay: attachedReady=$attachedReady '

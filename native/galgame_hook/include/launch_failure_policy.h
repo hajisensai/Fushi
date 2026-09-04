@@ -123,7 +123,7 @@ inline unsigned long SuspendedStartupWaitBudgetMs(unsigned long total_wait_ms) {
 // **所有**调用点之前。于是「音频能力慢了一拍」被放大成「这一局永远没有台词」：
 // 游戏内 DLL 自装的音频 hook 全部存活（26 条音轨、game_resource 就绪都正常），而由
 // injector 进程负责安装的 LunaHook 文本 hook 一次都没装，宿主侧表现为 lines=0、
-// phase 永远停在 waitingSignals（BUG-2086 / 真机 WoH）。
+// phase 永远停在 waitingSignals（BUG-2131 / 真机 WoH）。
 //
 // 因此 allow 的确认超时降级为能力位（见 kLoopbackDiagPolicyAckTimeout），注入继续，
 // 文本 hook 照常安装；loopback worker 稍后自己 ack 时宿主仍会读到 running。

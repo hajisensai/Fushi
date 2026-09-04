@@ -99,7 +99,7 @@ class GlobalLookupController {
   // 卡片会跟着内容长大，而不是停在首帧尺寸。READY-SAFETY 兜底 reveal 也会回调——
   // 那是「真渲染失败」的最后一招，此时投的确实可能是空白卡，但比卡在不可见强。
   void Function(int physicalWidth, int physicalHeight)? onRevealed;
-  // BUG-2082 — [physicalRootHeight] is the ROOT card's own rendered height
+  // BUG-2128 — [physicalRootHeight] is the ROOT card's own rendered height
   // (physical px, 0 when the host did not report it), distinct from the union
   // [physicalHeight] once nested children extend the bbox.
   void Function(
@@ -2011,7 +2011,7 @@ class GlobalLookupController {
     if (width <= 0 || height <= 0) {
       return;
     }
-    // BUG-2082 — root card height rides the same box; 0 = host did not report.
+    // BUG-2128 — root card height rides the same box; 0 = host did not report.
     final double rootHeightCss = num2(box['rootHeight']) ?? 0;
     final int rootHeight = rootHeightCss > 0 ? (rootHeightCss * dpr).round() : 0;
     // TODO-1231 (BUG-583) — ratchet the origin outward-only so a nested close

@@ -2704,7 +2704,7 @@ void _bug950Guard() {
           '${controller.events.map((GalHookEvent e) => e.code).toList()}');
     }
 
-    test('BUG-2086 文本 hook 缺席时不得宣称 engine.hook_ready', () async {
+    test('BUG-2131 文本 hook 缺席时不得宣称 engine.hook_ready', () async {
       // 真机 WoH 的精确形态：注入编排在装 LunaHook 之前就中止，于是游戏内 DLL 自装的
       // 音频 hook 全部存活（PCM 格式拿得到），而文本 hook 一次都没装。
       final TexthookerService service = TexthookerService.test();
@@ -2762,7 +2762,7 @@ void _bug950Guard() {
       endpoints.dispose();
     });
 
-    test('BUG-2086 文本 hook 就绪时照常发 engine.hook_ready（不得过度收紧）', () async {
+    test('BUG-2131 文本 hook 就绪时照常发 engine.hook_ready（不得过度收紧）', () async {
       final TexthookerService service = TexthookerService.test();
       final ChangeNotifier endpoints = ChangeNotifier();
       final _FakeEngineSource full = _FakeEngineSource(

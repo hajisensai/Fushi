@@ -1,4 +1,4 @@
-// BUG-2091：被抢占的旧轮次不得撤回 attached provider 认领。
+// BUG-2142：被抢占的旧轮次不得撤回 attached provider 认领。
 //
 // `_attachedProviderClaimed` 是**跨轮次共享的单一状态**，而注入侧 registry 是在自己的
 // 轮询里 `Reconcile` 才把 kind=4/id=11 判成 ready 的。旧实现里 `_claimAttachedProvider`
@@ -20,7 +20,7 @@ import 'package:flutter_test/flutter_test.dart';
 import '../helpers/source_guard.dart';
 
 void main() {
-  test('BUG-2091 被抢占的认领轮次不得撤回 attached provider 认领', () {
+  test('BUG-2142 被抢占的认领轮次不得撤回 attached provider 认领', () {
     final File source = File(
       'lib/src/lookup/gal_attached_text_controller.dart',
     );

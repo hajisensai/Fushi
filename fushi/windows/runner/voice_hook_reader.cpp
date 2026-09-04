@@ -68,7 +68,7 @@ struct ReaderState {
     // Validated outside WH_MOUSE_LL. The callback compares this exact handle and
     // never calls IsWindow/GetWindowThreadProcessId while the system waits.
     HWND lookup_shield_prevalidated_target = nullptr;
-    // BUG-2093：已经解出过原点的客户区尺寸（0 = 本段还没解过）。origin 是常量，
+    // BUG-2136：已经解出过原点的客户区尺寸（0 = 本段还没解过）。origin 是常量，
     // 但缩放随客户区变，所以按尺寸记一次。
     int32_t layer_origin_solved_client_w = 0;
     int32_t layer_origin_solved_client_h = 0;

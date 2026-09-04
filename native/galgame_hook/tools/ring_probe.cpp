@@ -888,7 +888,7 @@ struct alignas(8) HunexGgeTraceHeaderSnapshot {
   uint32_t capture_quarantine_reason = 0;
   uint32_t capture_quarantine_bound_thread_id = 0;
   uint32_t capture_quarantine_conflicting_thread_id = 0;
-  // BUG-2089：与 HunexGgeTraceBuffer 逐字段同序（下方 static_assert 钉住整体大小）。
+  // BUG-2134：与 HunexGgeTraceBuffer 逐字段同序（下方 static_assert 钉住整体大小）。
   int64_t surface_compose_wrapper_calls = 0;
   int64_t surface_compose_calls = 0;
   int64_t surface_compositor_calls = 0;
@@ -924,7 +924,7 @@ struct alignas(8) HunexGgeTraceHeaderSnapshot {
   int64_t texture_upload_calls = 0;
   int64_t quad_vertex_calls = 0;
   int64_t sprite_draw_calls = 0;
-  // v17（BUG-2093）：render_item 另外三个参数各前 32 dword 的一次性快照。
+  // v17（BUG-2136）：render_item 另外三个参数各前 32 dword 的一次性快照。
   uint32_t body_arg_words[3][32] = {};
   uint32_t body_arg_captured = 0;
   uint32_t body_arg_reserved = 0;
@@ -1347,12 +1347,12 @@ const char* HunexGgeProjectionFailureName(int32_t failure) {
     case Failure::kSpriteProjectionSizesRejected:
       return "sprite_projection_sizes_rejected";
     case Failure::kSpriteDrawFailed: return "sprite_draw_failed";
-    // BUG-2087 段 3/段 4 的补盲诊断。
+    // BUG-2132 段 3/段 4 的补盲诊断。
     case Failure::kTextureSurfaceMismatch: return "texture_surface_mismatch";
     case Failure::kQuadShapeRejected: return "quad_shape_rejected";
     case Failure::kQuadVertexBufferMissing: return "quad_vertex_buffer_missing";
     case Failure::kQuadProjectionNotFinite: return "quad_projection_not_finite";
-    // BUG-2089 worker 段。
+    // BUG-2134 worker 段。
     case Failure::kWorkerInputShapeRejected: return "worker_input_shape_rejected";
     case Failure::kWorkerRubyProjectionRejected: return "worker_ruby_projection_rejected";
     case Failure::kWorkerEvidenceUnavailable: return "worker_evidence_unavailable";
@@ -1579,7 +1579,7 @@ void PrintHunexGgeTraceEvent(
   using Kind = fushi_voice_hook::HunexGgeTraceKind;
   const Kind kind = static_cast<Kind>(event.kind);
   if (kind == Kind::kRenderItemBodyUncorrelated) {
-    // BUG-2088：候选计数打在失败码旁边。stable=0&invalid=0 且 selected_failure=6
+    // BUG-2133：候选计数打在失败码旁边。stable=0&invalid=0 且 selected_failure=6
     // ⇒「选定车道在窗口内一条候选都没有」；stable>0 ⇒「有候选但字节不等」。
     printf(" lookup_worker={state:%d,selected_failure:%u,stable_events:%u,"
            "invalid_events:%u}",
@@ -2396,7 +2396,7 @@ int main(int argc, char** argv) {
     return 0;
   }
   if (argc >= 3 && strcmp(argv[2], "--dump-layer") == 0) {
-    // BUG-2093：注入侧发布的层空间行包围盒 + 宿主回传的原点，用来和实拍对账。
+    // BUG-2136：注入侧发布的层空间行包围盒 + 宿主回传的原点，用来和实拍对账。
     const auto line = fushi_voice_hook::ReadLookupLayerLine(header);
     printf("layer line seq=%u valid=%d design=%ux%u glyphs=%u\n",
            line.seq, line.valid ? 1 : 0, line.design_w, line.design_h,
@@ -2412,7 +2412,7 @@ int main(int argc, char** argv) {
     return 0;
   }
   if (argc >= 3 && strcmp(argv[2], "--dump-shield") == 0) {
-    // BUG-2098：宿主与注入侧对 shield 的看法可能相反（宿主 request!=applied 卡死，
+    // BUG-2140：宿主与注入侧对 shield 的看法可能相反（宿主 request!=applied 卡死，
     // 注入侧却报 shield_ready）。直接读注入侧共享头里的原始字段，两边对账。
     const auto req = fushi_voice_hook::ReadLookupShieldRequest(header);
     printf("shield request_seq=%u applied_seq=%u valid=%d owner_kind=%u\n",

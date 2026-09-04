@@ -531,12 +531,12 @@ void main() {
     expect(repo.minedContext, isNull);
   });
 
-  // ── BUG-2080：Netflix 现在带真实卡面时间窗，抽取路径必须一个字节都不变 ──────
+  // ── BUG-2127：Netflix 现在带真实卡面时间窗，抽取路径必须一个字节都不变 ──────
   //
   // 修复前 `buildImmersionRequest` 把窗硬编码成 0，唯一目的就是让当时「窗非空 = 要裁」
   // 的 `hasRange` 保持 false。窗改成透传真值后，抽取意图改由 [hasRange]（窗非空 **且**
   // 有可裁的源）承载 —— 下面两条把「Netflix 形状 + 非零窗」这个此前不存在的组合钉住。
-  test('BUG-2080：Netflix 形状（无源 + provided 字节 + 非零窗）音频丢失仍中止', () async {
+  test('BUG-2127：Netflix 形状（无源 + provided 字节 + 非零窗）音频丢失仍中止', () async {
     final repo = _FakeRepo();
     final res = await build(gif: nullGif, audio: nullAudio, frame: nullFrame)
         .mine(

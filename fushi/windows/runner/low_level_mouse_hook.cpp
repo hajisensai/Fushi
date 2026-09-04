@@ -1742,7 +1742,7 @@ bool AttachedArmHasConflictingTransaction() {
          (status.request_seq != 0 && status.request_seq != status.applied_seq);
 }
 
-// BUG-2098：attached 表面抢不到低层鼠标单例时，对外只有一条
+// BUG-2140：attached 表面抢不到低层鼠标单例时，对外只有一条
 // `low_level_mouse_singleton_busy_or_unavailable`，而这一路上有五个互不相干的
 // 闸门（命中快照缺失 / owner 不符 / 注入侧 shield 目标没准备好 / 单例被别的
 // HWND 占着 / 有未结清的事务）。真机上「第一次查词成功、之后每次点击都穿透」
@@ -1862,7 +1862,7 @@ bool ArmLowLevelMouseHookAndWait(HWND target, HWND consume_outside_owner) {
       target, consume_outside_owner, false, false, false);
 }
 
-// BUG-2098：判断 |candidate| 是否就是**本进程**为 |game_owner| 打开的那张查词卡。
+// BUG-2140：判断 |candidate| 是否就是**本进程**为 |game_owner| 打开的那张查词卡。
 // 依据是 SetOutsideClickConsumeOwner 落在卡片 HWND 上的 owner 属性——已有的身份
 // 链，不是「同 PID」这种弱判据。
 bool IsLookupCardConsumingForOwner(HWND candidate, HWND game_owner) {

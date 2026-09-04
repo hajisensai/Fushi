@@ -442,12 +442,12 @@ class GalAttachedTextController extends ChangeNotifier {
       );
       return;
     }
-    // BUG-2095：`waitingForBodyThread` 的恢复原本只挂在「正文从无到有」这一个边沿上。
+    // BUG-2138：`waitingForBodyThread` 的恢复原本只挂在「正文从无到有」这一个边沿上。
     // 但该状态还有第二个来源——子面在正文真正落地前回 `noGlyphClusters`，那时
     // `_latestSourceText` 早已非空，`bodyArrived` 这个边沿**再也不会出现**，于是状态
     // 永久停在「等正文」，尽管正文每一行都在到。判据改成「还在等正文 && 手上确实有
     // 正文」：`bodyArrived` 是它的真子集，只放宽恢复时机，不放宽任何准入。
-    // BUG-2099：`needsRiskAcceptance` 在「profile 里风险已经接受」时是一个**死局**：
+    // BUG-2141：`needsRiskAcceptance` 在「profile 里风险已经接受」时是一个**死局**：
     //   · 状态由注入侧 SyncToTarget 的 `riskAcceptanceRequired` 钉住（它在 Configure
     //     把 risk_accepted_ 置真之前就会跑，且不带 reason）；
     //   · 而 `needsUnsafeRiskAcceptance` 要求 `!unsafeLeftClickAccepted`，profile 里
@@ -800,7 +800,7 @@ class GalAttachedTextController extends ChangeNotifier {
   /// [withdrawClaim] = false 用于「本轮渲染不出内容，但 attached 通路本身没坏」的
   /// 情形。`_attachedProviderClaimed` 是**跨轮次共享**、发布给注入侧 registry 的单一
   /// 状态，撤回它等于告诉 registry「attached 永远不 ready」，而宿主又在等 registry 把
-  /// kind=4/id=11 判成 ready —— 两边互等成活锁（BUG-2091 / BUG-2094）。
+  /// kind=4/id=11 判成 ready —— 两边互等成活锁（BUG-2142 / BUG-2137）。
   void _activationFailure(String? reason, {bool withdrawClaim = true}) {
     final GalLookupSurfaceMode mode =
         _profile?.mode ?? GalLookupSurfaceMode.auto;
@@ -1177,11 +1177,11 @@ class GalAttachedTextController extends ChangeNotifier {
         unawaited(_pushLatestTextIfActive());
         break;
       case 'noGlyphClusters':
-        // BUG-2094：建不出字形簇要 fail-closed 地藏面（下面照旧不可见、状态照旧
+        // BUG-2137：建不出字形簇要 fail-closed 地藏面（下面照旧不可见、状态照旧
         // fallback/suspended），但**不得**撤回 `_attachedProviderClaimed`。那是跨轮次
         // 共享、发布给注入侧 registry 的单一状态；撤掉之后 registry 永远不把
         // kind=4/id=11 判成 ready，而宿主又在等这个 ready 才肯进 activeAttached ——
-        // 两边互等成活锁，此后**每一行**都救不回来。与 BUG-2091 是同一个活锁，只是
+        // 两边互等成活锁，此后**每一行**都救不回来。与 BUG-2142 是同一个活锁，只是
         // 换了这道门进来：真机 WoH 上稳定复现为「认领 8ms 后被 noGlyphClusters 撤回，
         // 随后永久停在 suspended/geometryProviderPending」。
         // 认领的释放仍由当前轮次的 detach / 真失败分支负责。
@@ -1262,7 +1262,7 @@ class GalAttachedTextController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 状态事件必须留下**可读的**原因（BUG-2092）。
+  /// 状态事件必须留下**可读的**原因（BUG-2143）。
   ///
   /// 运行器对 `targetBackground` / `hitSnapshotUnavailable` 这一族状态并不总是填
   /// `reason`，而这些分支过去把它原样转发，于是宿主侧出现「status=suspended、
@@ -1931,7 +1931,7 @@ class GalAttachedTextController extends ChangeNotifier {
       try {
         await callback(profileMode, forceAttached: forceAttached);
       } catch (_) {
-        // BUG-2091：只有仍然当前的这一轮才有权撤回认领。被抢占的旧轮次去撤，撤掉的是
+        // BUG-2142：只有仍然当前的这一轮才有权撤回认领。被抢占的旧轮次去撤，撤掉的是
         // **新轮次刚发出的**那份认领。
         if (_isCurrent(operation, target)) {
           _setAttachedProviderClaim(false);
@@ -1941,7 +1941,7 @@ class GalAttachedTextController extends ChangeNotifier {
       }
     }
     if (stillCurrent != null && !stillCurrent()) {
-      // BUG-2091：被抢占时**不得**撤回认领。`_attachedProviderClaimed` 是跨轮次共享的
+      // BUG-2142：被抢占时**不得**撤回认领。`_attachedProviderClaimed` 是跨轮次共享的
       // 单一状态，新一轮已经（或即将）自己认领；旧轮次在这里撤一次，注入侧 registry
       // 下一拍看到的就是 attachedReady=false，于是永远不会把 kind=4/id=11 判成 ready，
       // 而宿主又在等这个 ready 才进 activeAttached —— 两边互等成活锁，状态永久停在
@@ -2078,7 +2078,7 @@ class GalAttachedTextController extends ChangeNotifier {
     _activeVariant = null;
     _surfaceVisible = false;
     if (!_nativeRiskGateSatisfied) {
-      // BUG-2092：这里的 reason 是可选入参，之前调用方不传就报 null。
+      // BUG-2143：这里的 reason 是可选入参，之前调用方不传就报 null。
       _setStatus(
         GalAttachedTextStatus.needsRiskAcceptance,
         reason: reason ?? 'native_activation_risk_gate_unsatisfied',

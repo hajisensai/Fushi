@@ -301,7 +301,7 @@ void main() {
   );
 
   test(
-    'BUG-2094 一字未推时的 noGlyphClusters 回到等正文而不是终态 fallback',
+    'BUG-2137 一字未推时的 noGlyphClusters 回到等正文而不是终态 fallback',
     () async {
       preferences[key()] = jsonEncode(
         _profile(mode: GalLookupSurfaceMode.auto).toJson(),
@@ -336,7 +336,7 @@ void main() {
   );
 
   test(
-    'BUG-2095 已在等正文且正文一直都在时，同一句也要能把状态救回来',
+    'BUG-2138 已在等正文且正文一直都在时，同一句也要能把状态救回来',
     () async {
       preferences[key()] = jsonEncode(_profile().toJson());
       await sync();
@@ -359,13 +359,13 @@ void main() {
       expect(
         controller.status,
         GalAttachedTextStatus.activeAttached,
-        reason: 'BUG-2095：恢复不能只挂在 bodyArrived 这个一次性边沿上',
+        reason: 'BUG-2138：恢复不能只挂在 bodyArrived 这个一次性边沿上',
       );
     },
   );
 
   test(
-    'BUG-2094 registry 交接期间的 noGlyphClusters 不降级成 fallback',
+    'BUG-2137 registry 交接期间的 noGlyphClusters 不降级成 fallback',
     () async {
       preferences[key()] = jsonEncode(_profile().toJson());
       port.configureResult = const GalAttachedCallResult(
@@ -415,7 +415,7 @@ void main() {
   );
 
   test(
-    'BUG-2094 正文推送前的 noGlyphClusters 不得撤回共享认领',
+    'BUG-2137 正文推送前的 noGlyphClusters 不得撤回共享认领',
     () async {
       preferences[key()] = jsonEncode(_profile().toJson());
       port.configureResult = const GalAttachedCallResult(
@@ -442,8 +442,8 @@ void main() {
       expect(
         controller.attachedProviderClaimed,
         isTrue,
-        reason: 'BUG-2094：撤回共享认领会让注入侧 registry 永远不给 kind=4/id=11，'
-            '与 BUG-2091 是同一个活锁',
+        reason: 'BUG-2137：撤回共享认领会让注入侧 registry 永远不给 kind=4/id=11，'
+            '与 BUG-2142 是同一个活锁',
       );
       // fail-closed 的部分保持不变：面藏起来、状态降级。
       expect(controller.surfaceVisible, isFalse);

@@ -123,7 +123,7 @@ int main() {
              /*already_resumed=*/false, LaunchFailureReason::kReadyTimeout) ==
          LaunchedProcessDisposition::kResumeDegraded);
 
-  // ---- native loopback 策略确认超时：deny 与 allow 的处置必须相反（BUG-2086）----
+  // ---- native loopback 策略确认超时：deny 与 allow 的处置必须相反（BUG-2131）----
   //
   // deny 是隐私边界：拿不到 stopped 的确认就不能证明没有 worker 在录，必须判失败。
   assert(NativeLoopbackAckTimeoutAbortsInjection(/*requested_allow=*/false));

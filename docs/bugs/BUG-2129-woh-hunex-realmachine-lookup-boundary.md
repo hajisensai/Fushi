@@ -1,7 +1,7 @@
-## BUG-2084 · 真机 WoH(HUNEX)合并构建:拉起/hook/音频/文本/风险确认均通过,原生几何 fail-closed 退到 attached 需标定
+## BUG-2129 · 真机 WoH(HUNEX)合并构建:拉起/hook/音频/文本/风险确认均通过,原生几何 fail-closed 退到 attached 需标定
 - **报告**：2026-09-03(代理按用户「测试 WoH」逐引擎真机验证;分支 codex/gal-generic-lookup-cards,已合并上游 develop 的 Windows Debug 构建)
 - **真实性**：✅ 真机证据(单会话)。原始路径 `launch D:\smb\魔法使之夜\WITCH ON THE HOLY NIGHT\WoH.exe`(x64,SHA-256 `4475cc2f…5463ada`,库内转区档为空 → auto → x64 不转区)。逐阶段观测:
-  - **process/helper/ipc/hook**:首拍 `launch_injection_failed` 后 `engine.attach_recovered (attempt:1)` + `engine.hook_ready`——**游戏未自退**(明显好于本会话早前 WoH 那次「native loopback ack 超时后游戏自退」,见 BUG-2067 备注前的 04:28 记录)。
+  - **process/helper/ipc/hook**:首拍 `launch_injection_failed` 后 `engine.attach_recovered (attempt:1)` + `engine.hook_ready`——**游戏未自退**(明显好于本会话早前 WoH 那次「native loopback ack 超时后游戏自退」,见 BUG-2126 备注前的 04:28 记录)。
   - **audio**:`audio.tracks_refreshed count:26`、`game_resource_late_ready`,`xaudioDiagnostics 0x78080001 / diag2 0x0000000c`。
   - **text**:文本 hook 抓到 8 行 typemoon 旁白(「……有珠、まだ帰ってきてないんだ」「重苦しい鉄の門は静かに…」「―――丘の上にはお化け屋敷が建っている。」「たとえば、もう何年も前に朽ち果てた廃屋なのに、夜になると明かりが灯ったりする。」),`audio=pending/game_resource`,WGC 抓窗口真实像素与屏上文字逐字一致。
   - **window**:`window.auto_bound`,WGC `shot game` 成功(窗口先挪到在线显示器)。
@@ -26,4 +26,4 @@
   - 对照：本条第一轮（同一天、同一 helper）`launch` 后文本是通的。故该失败**不稳定复现**，倾向于早注入 `LoadLibraryW` 失败 + 恢复路径只补音频的时序条件，而非确定性回归。
 - **顺带确认的结构性限制（截图 `shot_3.png`）**：WoH 旁白是 **NVL 堆叠**——历史行淡出留在屏上，当前行在其**下方**逐行下移。attached 校准表面的模型是「单个 `bodyRect` + 等距行推进 + 每句从框原点重排」，**无法跟随逐句下移的当前行**；即便本轮 `calibrate` 命令可用，一份固定 profile 也只在当前行恰好落进标定带时有效。要在 WoH 上做到稳定点字查词，正路仍是本条 ① 的**注入侧原生几何 provider**（BUG-2024），attached 表面只能作单块固定文本框引擎的兜底。
 - **状态**：`engine-support.yaml` 的 `hunex_gge` **仍为 `implemented_unverified`，本轮不提升**（`text_ready` 未过，`paired` / `e2e_verified` 更无从谈起）。①② 保持未勾。
-- **下一步候选**：(a) 收口「`engine.hook_ready` 在文本 hook 缺席时不得宣称 ready」——把文本/音频两侧 readiness 拆开上报，避免会话显示成功却零台词；(b) 查早注入 `remote LoadLibraryW exit=0xCC150000` 的失败原因（与 BUG-2067 的 x86 KiriKiri `0xC0000005` 是不同码，需单独定性）；(c) HUNEX 原生几何 provider（BUG-2024）。三条都需要读/改 hook 侧，本轮按用户边界未动。
+- **下一步候选**：(a) 收口「`engine.hook_ready` 在文本 hook 缺席时不得宣称 ready」——把文本/音频两侧 readiness 拆开上报，避免会话显示成功却零台词；(b) 查早注入 `remote LoadLibraryW exit=0xCC150000` 的失败原因（与 BUG-2126 的 x86 KiriKiri `0xC0000005` 是不同码，需单独定性）；(c) HUNEX 原生几何 provider（BUG-2024）。三条都需要读/改 hook 侧，本轮按用户边界未动。

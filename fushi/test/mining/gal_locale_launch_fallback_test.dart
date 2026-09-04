@@ -1,4 +1,4 @@
-// BUG-2067 — Locale Emulator 拉起的进程在 LoaderDll 装载阶段 APPCRASH（本机对每款
+// BUG-2126 — Locale Emulator 拉起的进程在 LoaderDll 装载阶段 APPCRASH（本机对每款
 // x86 游戏复现，与 hook 注入无关）。`auto` 档是替用户做的转区决定，它失效时会话必须
 // 退回不转区再拉一次，而不是对着一个已经死掉的 PID 降级 loopback + 排重试。
 

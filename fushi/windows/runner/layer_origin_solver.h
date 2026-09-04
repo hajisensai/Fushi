@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <string>
 
-// BUG-2093：引擎层原点求解器（仅 Windows）。
+// BUG-2136：引擎层原点求解器（仅 Windows）。
 //
 // HUNEX/GGE 的正文字形位置是**文本层局部坐标**（引擎自己的设计分辨率单位，真机 WoH
 // 为 1920x1080）。客户区映射

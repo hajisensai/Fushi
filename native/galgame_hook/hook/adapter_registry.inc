@@ -556,7 +556,7 @@ class AdapterRegistry {
   // `applied/running` 确认要等 worker `IAudioClient::Start()` 成功后的**下一轮**
   // PollPolicy 才发布。而在 HookWorker 里，下一轮 Poll 被 MH_Initialize() +
   // InstallStartupAdapters() 的重量级引擎探测挡在后面——早注入路径给这个确认的预算
-  // 只有 5s，于是 allow 的 ack 经常赶不上，注入编排随之中止（BUG-2086）。
+  // 只有 5s，于是 allow 的 ack 经常赶不上，注入编排随之中止（BUG-2131）。
   // 暴露一个只跑策略的入口，让 dll_main 能在引擎探测**之前**把确认追平，兑现
   // 「Apply/ack native loopback policy before potentially expensive engine
   // probing」那句既有注释对 allow 的承诺（此前它只对 deny 成立）。

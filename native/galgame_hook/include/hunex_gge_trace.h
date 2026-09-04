@@ -12,7 +12,7 @@ namespace fushi_voice_hook {
 // exporting the user's game text.
 inline constexpr char kHunexGgeTraceExportName[] = "FushiHunexGgeTraceV3";
 inline constexpr uint32_t kHunexGgeTraceMagic = 0x33544748u;  // "HGT3"
-// v4（BUG-2089）：头部增加四个投影 detour 的调用计数。probe 与 helper 同源构建，
+// v4（BUG-2134）：头部增加四个投影 detour 的调用计数。probe 与 helper 同源构建，
 // 版本号不匹配时 probe 直接拒读，不存在跨版本误解释。
 inline constexpr uint32_t kHunexGgeTraceVersion = 17u;
 inline constexpr uint32_t kHunexGgeTraceCapacity = 512u;
@@ -48,7 +48,7 @@ enum class HunexGgeProjectionTraceStage : uint32_t {
   kCompositor = 2u,
   kTexture = 3u,
   kSprite = 4u,
-  // BUG-2089：worker 侧的投影求解。前四段都在 render 线程的 detour 里，唯独这一段在
+  // BUG-2134：worker 侧的投影求解。前四段都在 render 线程的 detour 里，唯独这一段在
   // lookup worker 线程上跑，且此前**整段没有任何诊断**——真机上只表现为
   // kHunexGgeLookupWorkerProjectionRejected 这一个笼统状态，读不出九选一的真实原因。
   kWorker = 5u,
@@ -81,12 +81,12 @@ enum class HunexGgeProjectionTraceFailure : int32_t {
   // 21..23 补的是段 3/段 4 的**诊断盲区**：这两段原本在拒绝时直接 return，不发任何
   // 事件，于是真机 trace 里表现为「compositor 成功后就没有下文」，无法分辨是纹理上传
   // 没对上、还是 quad 形状被拒。投影链共 20 个显式失败点却留了 4 个哑口，等于让下一次
-  // 真机会话大概率读不出结论（BUG-2087）。复用既有 V3 事件布局，不改导出 ABI。
+  // 真机会话大概率读不出结论（BUG-2132）。复用既有 V3 事件布局，不改导出 ABI。
   kTextureSurfaceMismatch = 21,
   kQuadShapeRejected = 22,
   kQuadVertexBufferMissing = 23,
   kQuadProjectionNotFinite = 24,
-  // 25..33 = kWorker 段（BUG-2089）。此前 BuildHunexGgeClientProjection 的每个拒绝点
+  // 25..33 = kWorker 段（BUG-2134）。此前 BuildHunexGgeClientProjection 的每个拒绝点
   // 都是裸 return false，其中「证据身份」更是九个子条件的合取，一旦不成立完全无法分辨
   // 是没有证据、故事身份不符、渲染线程不符、客户区尺寸不符，还是证据过期。
   kWorkerInputShapeRejected = 25,
@@ -99,7 +99,7 @@ enum class HunexGgeProjectionTraceFailure : int32_t {
   kWorkerEvidenceStale = 31,
   kWorkerAffineRejected = 32,
   kWorkerClientTransformRejected = 33,
-  // 34..37 = BUG-2090 直连正文合成路径（draw → compositor）。四个子条件必须分开报，
+  // 34..37 = BUG-2135 直连正文合成路径（draw → compositor）。四个子条件必须分开报，
   // 否则又回到「一个码盖住四种原因」的老问题。
   kBodyComposeDescriptorUnreadable = 34,
   kBodyComposeSourceMismatch = 35,
@@ -281,7 +281,7 @@ struct alignas(8) HunexGgeTraceBuffer {
   uint32_t capture_quarantine_reason = 0;
   uint32_t capture_quarantine_bound_thread_id = 0;
   uint32_t capture_quarantine_conflicting_thread_id = 0;
-  // BUG-2089：投影四段 detour 的**调用计数**。诊断事件只在「能归属到某条语义行」时才
+  // BUG-2134：投影四段 detour 的**调用计数**。诊断事件只在「能归属到某条语义行」时才
   // 发，因此「零事件」既可能是从没被调用、也可能是调用了但当时没有待定故事行——两者
   // 的排障方向完全相反（前者说明 WoH 的正文走的不是扫描锚点假设的那条渲染路径）。
   // 只有无条件的调用计数能把它们分开。
@@ -290,13 +290,13 @@ struct alignas(8) HunexGgeTraceBuffer {
   // 「是整条合成路径都不走，还是只有 wrapper 这一个锚点选错了」——后者的修法要小得多。
   int64_t surface_compose_calls = 0;
   int64_t surface_compositor_calls = 0;
-  // v6（BUG-2089 ③）：compositor 实际被调用了，但两个 compose 锚点都零调用，说明
+  // v6（BUG-2134 ③）：compositor 实际被调用了，但两个 compose 锚点都零调用，说明
   // compositor 的真实调用者是另一个函数——那个函数才是 WoH 正文的合成入口。这里记下
   // 最多 4 个**互异**的调用返回地址 RVA，直接把「该去哪找锚点」变成可读数字。
   uint32_t compositor_caller_rvas[4] = {};
   uint32_t compositor_caller_rva_count = 0;
   uint32_t compositor_caller_rva_overflow = 0;
-  // v7（BUG-2090）：draw→compositor 直连锚点的推导结果。0 表示没推导出来（rel32 扫描
+  // v7（BUG-2135）：draw→compositor 直连锚点的推导结果。0 表示没推导出来（rel32 扫描
   // 零解或多解），据此可分辨「锚点没建立」与「建立了但运行期判据不成立」。
   uint32_t body_compositor_return_rva = 0;
   uint32_t body_compositor_call_count = 0;
@@ -348,7 +348,7 @@ struct alignas(8) HunexGgeTraceBuffer {
   int64_t texture_upload_calls = 0;
   int64_t quad_vertex_calls = 0;
   int64_t sprite_draw_calls = 0;
-  // v17（BUG-2093）：正文字形的 render x/y 已被真机证明是「1920x1080 逻辑空间里的
+  // v17（BUG-2136）：正文字形的 render x/y 已被真机证明是「1920x1080 逻辑空间里的
   // 文本层局部坐标」——两种窗口尺寸下 client = (render + origin) * client/(1920,1080)
   // 都成立，唯一未知量是文本层原点 origin。origin 不在字形 item 自身（前 0x70 字节已
   // 全量 dump，无候选），只能在 render_item 的另外三个参数所指对象里。这里把它们各前

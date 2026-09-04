@@ -1,5 +1,5 @@
-## BUG-2093 · WoH 正文字形 render x/y 是「1920×1080 逻辑空间的文本层局部坐标」，客户区映射已实测成立，只差层原点
-- **报告**：2026-09-03（BUG-2090 判定 compose→texture→quad→sprite 五段全灭之后，改走「直接标定字形坐标系」这条路）
+## BUG-2136 · WoH 正文字形 render x/y 是「1920×1080 逻辑空间的文本层局部坐标」，客户区映射已实测成立，只差层原点
+- **报告**：2026-09-03（BUG-2135 判定 compose→texture→quad→sprite 五段全灭之后，改走「直接标定字形坐标系」这条路）
 - **真实性**：✅ 真结论，**两种窗口尺寸 × 三条文本行 × 两张截图**交叉验证，不是推断。
 - **推翻了本任务此前的一个错误结论**：我先前只抽到一条行（全部字形 `y` 相同），据此说「render x/y 是条带内局部坐标」。多抽几条后立刻证伪——同一帧内三条行的 `render_y` 分别是 23 / 104 / 266（行距 81，中间空一行故差 162），**是整个文本层内的坐标**，不是条带局部坐标。
 - **实测数据**（WoH v1.0，pid=69132，helper x64 sha256 `83db73a6…39741997`）：
@@ -44,5 +44,5 @@
   3. 引擎自己的 viewport/scale 全局（`rva.viewport=0x00596660`、`scale_x=0x0059c140`、`scale_y=0x0059c144`）：读出恒为 `{0,0,1788,1006}` + `0.93125/0.931481`，即 `1920×0.93125=1788`、`1080×0.931481=1006`，**与实际客户区无关也不随窗口尺寸变化**，不含原点。
   下一步候选（按代价排序）：① 沿 `outer={caller:0013340b,function:00130020}` 取该外层函数的 `this`，正文层对象大概率在那里；② `body_submit`（rva `0x00138640`）的入参；③ 承认 origin 是本作版式常量、收进 profile 并加运行期自校验（SOP 允许「引擎特例收进 profile/adapter」，但必须能被证伪）。
 - **[x] ② 已加自动化测试** — 本轮改动是纯诊断探针（trace v16→v17，头部新增 `body_arg_words[3][32]` + `body_arg_captured`，`slots` 偏移 584→976），无行为不变式变化，由既有守卫整批兜底：`hunex_gge_trace.h` 的 static_assert 与 `tests/hunex_gge_lookup_test.cpp` 的镜像断言在编译期钉住 v17 ABI，probe 侧镜像结构逐字段同序补齐（probe 与 helper 同源构建、版本不匹配即拒读）。
-- **备注**：`engine-support.yaml` 的 `hunex_gge` 不因本条提升，仍 `implemented_unverified`。本条的价值是把 BUG-2090 留下的死胡同换成一个**只差一个二维常量**的问题：一旦拿到 origin，正文几何可以直接由字形矩形发布，**整条 compose → texture upload → quad → sprite 证据链都不需要**（那四段已被真机计数证明在 WoH 上分别是 0 次调用 / 描述符 0 成功 14 万失败 / 18.8 万次全部在形状校验早退 / 无源可配）。
-- **关联**：[[BUG-2090]]（WoH 正文没有 compose 层）、[[BUG-2089]]（compose wrapper 锚点假阳性）、[[BUG-2084]]（WoH 真机边界台账）。
+- **备注**：`engine-support.yaml` 的 `hunex_gge` 不因本条提升，仍 `implemented_unverified`。本条的价值是把 BUG-2135 留下的死胡同换成一个**只差一个二维常量**的问题：一旦拿到 origin，正文几何可以直接由字形矩形发布，**整条 compose → texture upload → quad → sprite 证据链都不需要**（那四段已被真机计数证明在 WoH 上分别是 0 次调用 / 描述符 0 成功 14 万失败 / 18.8 万次全部在形状校验早退 / 无源可配）。
+- **关联**：[[BUG-2135]]（WoH 正文没有 compose 层）、[[BUG-2134]]（compose wrapper 锚点假阳性）、[[BUG-2129]]（WoH 真机边界台账）。

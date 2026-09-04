@@ -57,7 +57,7 @@ bool CaptureClientBgra(HWND game, int* out_width, int* out_height,
   if (bitmap != nullptr && bits != nullptr) {
     HGDIOBJ previous = SelectObject(memory, bitmap);
     // **不能带 CAPTUREBLT**：它的作用就是「把叠在上面的分层窗口一并拍进来」，而
-    // 我们自己那张 HWND_TOPMOST 的查词卡正好就贴在词的上方。BUG-2098 ① 又把求解门
+    // 我们自己那张 HWND_TOPMOST 的查词卡正好就贴在词的上方。BUG-2140 ① 又把求解门
     // 从「游戏在前台」放宽成「本进程为本游戏开的查词卡在前台也算」——两处改动叠在
     // 一起，就是拿自家 UI 的墨迹去解游戏的层原点。这里要的是游戏自己的像素。
     if (BitBlt(memory, 0, 0, width, height, screen, origin.x, origin.y,

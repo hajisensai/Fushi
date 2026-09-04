@@ -261,7 +261,7 @@ enum GalHookInjectorFailure {
   /// 与 [readyTimeout] 分开是因为两者的事实完全不同：那条是「hook DLL 根本没跑到通知点」
   /// （架构/契约/权限），本条是「DLL 活着、就绪事件已收到，只是 loopback 这一项能力的
   /// 确认慢了一拍」。injector 只在 **deny**（隐私边界，必须证明没有 worker 在录）时才
-  /// 因此判失败；**allow** 只是能力未就绪，已改为降级继续、不再中止注入（BUG-2086）。
+  /// 因此判失败；**allow** 只是能力未就绪，已改为降级继续、不再中止注入（BUG-2131）。
   nativeLoopbackAckTimeout,
 
   /// 远程线程注入本身失败（`VirtualAllocEx` / `WriteProcessMemory` / `CreateRemoteThread`）。

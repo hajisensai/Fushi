@@ -147,7 +147,7 @@ struct HunexGgeRuntimeAnchors {
   uintptr_t surface_compose_second_return = 0;
   uintptr_t surface_compose_final_first_return = 0;
   uintptr_t surface_compose_final_second_return = 0;
-  // BUG-2090：WoH 正文没有 compose 层，draw 直接调 compositor。这是 draw 函数体内
+  // BUG-2135：WoH 正文没有 compose 层，draw 直接调 compositor。这是 draw 函数体内
   // 那唯一一处对 compositor 的调用的返回地址，结构化推导、不写死 RVA。
   uintptr_t body_compositor_return = 0;
   uintptr_t body_compositor_return_alt = 0;
@@ -256,7 +256,7 @@ thread_local HunexGgeBodyTraversalFence g_hunex_gge_body_traversal_fence;
 thread_local HunexGgeSurfaceComposeContext g_hunex_gge_surface_compose_context;
 thread_local HunexGgePendingStoryCompose g_hunex_gge_pending_story_compose;
 
-// BUG-2090：待定正文行的**进程内**发布副本。
+// BUG-2135：待定正文行的**进程内**发布副本。
 //
 // 上面那份是 `thread_local`，而 WoH 的渲染各段（compositor / 纹理上传 / quad / sprite）
 // 并不都跑在封存字形的那条线程上——实测 quad 段 `seen:0`、上传段某些会话 caller_tid 与
@@ -349,7 +349,7 @@ thread_local HunexGgePendingQuad g_hunex_gge_pending_quad;
 struct HunexGgeProjectionDiagnosticDedup {
   uint64_t story_thread_address = 0u;
   uint64_t raw_text_hash = 0u;
-  // 5 段：wrapper / compositor / texture / sprite / worker（BUG-2089）。
+  // 5 段：wrapper / compositor / texture / sprite / worker（BUG-2134）。
   std::array<uint64_t, 5u> emitted_failures = {};
 };
 
@@ -426,7 +426,7 @@ void SetHunexGgeLookupWorkerTraceState(
     uint32_t stable_events = 0u, uint32_t invalid_events = 0u) {
   InterlockedExchange(&g_hunex_gge_lookup_worker_selected_failure,
                       static_cast<LONG>(selected_failure));
-  // BUG-2088：候选计数与失败码同源发布。没有它们，同一个 kNoExactRawLine 无法区分
+  // BUG-2133：候选计数与失败码同源发布。没有它们，同一个 kNoExactRawLine 无法区分
   // 「窗口内一条候选都没有」与「有候选但字节不等」——前者要查车道/fence，后者要查
   // 文本同源性（ruby 标记、行首全角空格、换行分段），处置完全不同。
   InterlockedExchange(&g_hunex_gge_lookup_worker_stable_events,
@@ -544,7 +544,7 @@ void PublishHunexGgeTrace(fushi_voice_hook::HunexGgeTraceEvent event) {
   InterlockedExchange(&g_hunex_gge_trace_writer, 0);
 }
 
-// BUG-2089 ③：记录 compositor 的真实调用者 RVA（最多 4 个互异值）。
+// BUG-2134 ③：记录 compositor 的真实调用者 RVA（最多 4 个互异值）。
 //
 // 真机计数证明 compose / compose_wrapper 两个锚点零调用而 compositor 被调用上千次，
 // 即 compositor 的调用者不是扫描器认定的那两个函数。把这些返回地址导出来，就能直接
@@ -552,13 +552,13 @@ void PublishHunexGgeTrace(fushi_voice_hook::HunexGgeTraceEvent event) {
 // 前置声明：定义在下方投影段，本记录器需要它做新鲜度闸门。
 bool IsFreshHunexGgeProjectionTick(ULONGLONG then, ULONGLONG now);
 
-// BUG-2090：记录待定正文行期间上传纹理的互异尺寸（最多 6 组）。只观测。
+// BUG-2135：记录待定正文行期间上传纹理的互异尺寸（最多 6 组）。只观测。
 // 前置声明：两者定义在下方投影段，本扫描需要它们。
 bool IsSaneHunexGgeCpuSurface(const HunexGgeCpuSurfaceIdentity& surface);
 bool ReadHunexGgeCpuSurfaceIdentity(const void* descriptor,
                                     HunexGgeCpuSurfaceIdentity* out);
 
-// BUG-2090：在上传 wrapper 对象前 0x200 字节里找出「指向 sane CPU 表面」的指针槽。
+// BUG-2135：在上传 wrapper 对象前 0x200 字节里找出「指向 sane CPU 表面」的指针槽。
 // 纯观测，SEH 兜底，命中即记录偏移与尺寸；最多记 4 个。
 void ScanHunexGgeUploadDescriptorOffsets(void* wrapper) {
   auto* trace = &FushiHunexGgeTraceV3;
@@ -601,7 +601,7 @@ void ScanHunexGgeUploadDescriptorOffsets(void* wrapper) {
 // 前置声明：定义在下方。
 struct HunexGgePendingQuad;
 
-// BUG-2090：待定正文行活着时记录 quad 的纹理尺寸与顶点包围盒（最多 4 条）。只观测。
+// BUG-2135：待定正文行活着时记录 quad 的纹理尺寸与顶点包围盒（最多 4 条）。只观测。
 void RecordHunexGgeStoryQuad(const HunexGgePendingQuad& quad) {
   InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
       &FushiHunexGgeTraceV3.quad_reached_record));
@@ -1255,7 +1255,7 @@ bool SolveHunexGgeAffineProjection(const HunexGgeProjectionEvidence& evidence,
   return true;
 }
 
-// BUG-2093：设计分辨率由引擎自己的 viewport/scale 全局反解，不写死。
+// BUG-2136：设计分辨率由引擎自己的 viewport/scale 全局反解，不写死。
 // 真机 WoH：viewport={0,0,1788,1006}，scale=0.93125/0.931481 → 1788/0.93125=1920,
 // 1006/0.931481=1080。
 bool ReadHunexGgeDesignSize(uint32_t* design_w, uint32_t* design_h) {
@@ -1285,7 +1285,7 @@ bool ReadHunexGgeDesignSize(uint32_t* design_w, uint32_t* design_h) {
   return true;
 }
 
-// BUG-2093：宿主解出层原点后的确定性投影。
+// BUG-2136：宿主解出层原点后的确定性投影。
 // client = (layer + origin) * client / design —— 该式已在两种窗口尺寸 × 三条行上实测成立。
 // 不依赖 sprite draw 那条证据链（真机已证明它在 WoH 正文上五段全灭）。
 bool TransformHunexGgeProjectionByLayerOrigin(
@@ -1438,7 +1438,7 @@ bool BuildHunexGgeClientProjection(
     fushi_voice_hook::hunex_lookup_core::RubyTextProjection* projection) {
   namespace bridge = fushi_voice_hook::hunex_capture_bridge;
   namespace core = fushi_voice_hook::hunex_lookup_core;
-  // BUG-2089：本函数每个拒绝点原本都是裸 return false，worker 侧整段无诊断。这里补一个
+  // BUG-2134：本函数每个拒绝点原本都是裸 return false，worker 侧整段无诊断。这里补一个
   // 只负责报点的闭包：身份取自 snapshot（发布器要求 story_line_base/hash 非 0），
   // 判据与控制流一字未动。
   const auto reject =
@@ -1488,7 +1488,7 @@ bool BuildHunexGgeClientProjection(
   // 九个子条件拆开报点：它们指向的排障方向完全不同——没有证据说明 sprite draw 那一段
   // 从未成功发布过；身份不符说明证据属于另一条语义行/另一个渲染线程；尺寸不符说明窗口
   // 在两次采样之间变了；过期说明 2s 新鲜窗没赶上。
-  // BUG-2093：层原点直连路径。把本行在**层空间**的包围盒发布给宿主（它抓一帧画面、
+  // BUG-2136：层原点直连路径。把本行在**层空间**的包围盒发布给宿主（它抓一帧画面、
   // 量出墨迹框、二维平移求解 origin 再回传）；拿到 origin 就用确定性公式投影，整条
   // sprite draw 证据链不参与——真机已证明它在 WoH 正文上 compose/texture/quad/sprite
   // 五段全灭。没拿到 origin 就照旧走下面的证据链（fail-closed，不假装几何可用）。
@@ -2001,7 +2001,7 @@ void* Detour_HunexGgeRenderItem(void* arg1, void* arg2, void* arg3,
           event.story_line_base = static_cast<uint64_t>(frame.line_base);
           event.evidence_flags |= fushi_voice_hook::
               kHunexGgeTraceEvidenceStoryFrameSlotsRead;
-          // BUG-2093：正文文本层原点探针。字形 render x/y 是文本层局部坐标
+          // BUG-2136：正文文本层原点探针。字形 render x/y 是文本层局部坐标
           // （1920x1080 逻辑单位），客户区映射 client = (render + origin) * client/(1920,1080)
           // 已在两种窗口尺寸 × 三条行上实测成立，唯一缺的就是 origin。字形 item 前 0x70
           // 字节与 render_item 另三个参数都已 dump 过、无候选；本轮改抄 body_submit 的
@@ -2227,7 +2227,7 @@ void* Detour_HunexGgeRenderItem(void* arg1, void* arg2, void* arg3,
           &g_hunex_gge_lookup_worker_trace_state, 0, 0);
       event.draw_arg13 = static_cast<uint32_t>(InterlockedCompareExchange(
           &g_hunex_gge_lookup_worker_selected_failure, 0, 0));
-      // BUG-2088：body-submit 事件的 draw_arg12_bits 恒为 0（真机 trace 可证），
+      // BUG-2133：body-submit 事件的 draw_arg12_bits 恒为 0（真机 trace 可证），
       // 借这个空槽把选定车道的候选计数带出来，不改导出 ABI：低 32 位 = 稳定事件数、
       // 高 32 位 = 非法事件数。两者同为 0 且失败码是 kNoExactRawLine ⇒「窗口内一条
       // 候选都没有」（查车道/fence）；稳定数非 0 ⇒「有候选但字节不等」（查文本同源性）。
@@ -2250,7 +2250,7 @@ uint32_t Detour_HunexGgeSurfaceComposeWrapper(
     void* line_this, void* destination, int32_t y_base, uint32_t blend,
     const int32_t* x_offsets, uint32_t layout_selector,
     uint32_t node_filter) {
-  // BUG-2089：无条件调用计数。诊断事件只在能归属到语义行时才发，靠「零事件」
+  // BUG-2134：无条件调用计数。诊断事件只在能归属到语义行时才发，靠「零事件」
   // 无法分辨「从没被调用」与「调用了但当时没有待定故事行」。
   InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
       &FushiHunexGgeTraceV3.surface_compose_wrapper_calls));
@@ -2286,7 +2286,7 @@ uint32_t Detour_HunexGgeSurfaceCompose(
     void* line_this, void* destination_b, void* destination_a,
     int32_t y_base, uint32_t blend, const int32_t* x_offsets,
     uint32_t layout_selector, uint32_t node_filter) {
-  // BUG-2089：无条件调用计数（同 wrapper）。
+  // BUG-2134：无条件调用计数（同 wrapper）。
   InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
       &FushiHunexGgeTraceV3.surface_compose_calls));
   const HunexGgeSurfaceComposeContext previous =
@@ -2334,13 +2334,13 @@ uint32_t Detour_HunexGgeSurfaceCompose(
 uint32_t Detour_HunexGgeSurfaceCompositor(
     void* destination, int32_t destination_x, int32_t destination_y,
     const void* source, uint32_t mode, uint32_t alpha) {
-  // BUG-2089：无条件调用计数（同 wrapper）。
+  // BUG-2134：无条件调用计数（同 wrapper）。
   InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
       &FushiHunexGgeTraceV3.surface_compositor_calls));
   const uintptr_t return_address =
       reinterpret_cast<uintptr_t>(_ReturnAddress());
   RecordHunexGgeCompositorCallerRva(return_address);
-  // BUG-2090：WoH 正文的直连合成路径。真机证明该引擎的正文是
+  // BUG-2135：WoH 正文的直连合成路径。真机证明该引擎的正文是
   // draw → render_item(逐字形) → compositor，**没有** compose / compose-wrapper 层，
   // 因此 wrapper_scope 恒假、下面那套 ordinal/candidate/final-link 相关性一次都不成立。
   // 这里按同样严格的身份判据另开一条直连相关：调用点必须是结构化推导出的
@@ -2550,7 +2550,7 @@ uint32_t Detour_HunexGgeSurfaceCompositor(
 }
 
 uint32_t Detour_HunexGgeTextureUpload(void* wrapper, uint32_t flags) {
-  // BUG-2089：无条件调用计数。诊断事件只在能归属到语义行时才发，靠「零事件」
+  // BUG-2134：无条件调用计数。诊断事件只在能归属到语义行时才发，靠「零事件」
   // 无法分辨「从没被调用」与「调用了但当时没有待定故事行」。
   InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
       &FushiHunexGgeTraceV3.texture_upload_calls));
@@ -2568,13 +2568,13 @@ uint32_t Detour_HunexGgeTextureUpload(void* wrapper, uint32_t flags) {
   }
   descriptor_read =
       ReadHunexGgeCpuSurfaceIdentity(descriptor, &upload_surface);
-  // BUG-2090：无条件记录上传线程，与字形封存线程对照。pending story 是 thread_local，
+  // BUG-2135：无条件记录上传线程，与字形封存线程对照。pending story 是 thread_local，
   // 若两者不同，则上传侧永远看不到它——整条链的单线程连续性假设不成立。
   InterlockedExchange(reinterpret_cast<volatile LONG*>(
                           &FushiHunexGgeTraceV3.pending_upload_caller_tid),
                       static_cast<LONG>(GetCurrentThreadId()));
   // 描述符可读性与「待定正文行是否活着」都必须在描述符门**之外**计数，否则读不出
-  // 描述符时会被误读成「没有上传发生在待定期」（BUG-2090）。
+  // 描述符时会被误读成「没有上传发生在待定期」（BUG-2135）。
   InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
       descriptor_read ? &FushiHunexGgeTraceV3.upload_descriptor_ok
                       : &FushiHunexGgeTraceV3.upload_descriptor_fail));
@@ -2596,12 +2596,12 @@ uint32_t Detour_HunexGgeTextureUpload(void* wrapper, uint32_t flags) {
       }
     }
   }
-  // BUG-2090：逐字形贴图假设的检验点。只观测、不改变任何行为。
+  // BUG-2135：逐字形贴图假设的检验点。只观测、不改变任何行为。
   if (descriptor_read) {
     const HunexGgePendingStoryCompose& story =
         g_hunex_gge_pending_story_compose;
     // 先按「不问线程」记一次：这条与下面带线程判据的那条相减，就能证明上传是否发生
-    // 在另一条线程上（BUG-2090）。
+    // 在另一条线程上（BUG-2135）。
     if (story.active &&
         IsFreshHunexGgeProjectionTick(story.sealed_tick, GetTickCount64())) {
       InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
@@ -2636,7 +2636,7 @@ uint32_t Detour_HunexGgeTextureUpload(void* wrapper, uint32_t flags) {
       IsFreshHunexGgeProjectionTick(pending.updated_tick, now) &&
       SameHunexGgeCpuSurface(upload_surface, pending.surface);
   if (!exact_surface) {
-    // BUG-2087：这里原本是哑口——段 2 成功后若纹理上传对不上，trace 里只表现为
+    // BUG-2132：这里原本是哑口——段 2 成功后若纹理上传对不上，trace 里只表现为
     // 「compositor 之后没有下文」，无法分辨是没走到这一段还是走到了被拒。只在**能归属
     // 到某条语义行**（chain 仍 active 且同线程新鲜）时补一条诊断，避免与「本次上传根本
     // 不属于正文链」混为一谈；判据与控制流一字未动。
@@ -2735,7 +2735,7 @@ uint32_t Detour_HunexGgeTextureUpload(void* wrapper, uint32_t flags) {
 uint32_t Detour_HunexGgeQuadVertex(void* manager, const float* xy,
                                   const float* uv_pixels,
                                   const int32_t* texture_dimensions) {
-  // BUG-2089：无条件调用计数（同上）。
+  // BUG-2134：无条件调用计数（同上）。
   InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
       &FushiHunexGgeTraceV3.quad_vertex_calls));
   float input_xy[8] = {};
@@ -2763,7 +2763,7 @@ uint32_t Detour_HunexGgeQuadVertex(void* manager, const float* xy,
   }
   const uint32_t result = g_orig_hunex_gge_quad_vertex(
       manager, xy, uv_pixels, texture_dimensions);
-  // BUG-2087：段 4 的三条拒绝路径原本全是哑口，真机 trace 上无法与「本次调用根本不属于
+  // BUG-2132：段 4 的三条拒绝路径原本全是哑口，真机 trace 上无法与「本次调用根本不属于
   // 正文链」区分。只在 surface chain 仍 active 且同线程新鲜（= 能归属到某条语义行）时补
   // 诊断；不改任何判据与控制流。
   const auto publish_quad_failure =
@@ -2949,7 +2949,7 @@ bool CaptureHunexGgeD3DProjectionSizes(
 
 uint32_t Detour_HunexGgeSpriteDraw(void* renderer, void* texture,
                                    void* vertex_buffer, uint32_t mode) {
-  // BUG-2089：无条件调用计数（同上）。
+  // BUG-2134：无条件调用计数（同上）。
   InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
       &FushiHunexGgeTraceV3.sprite_draw_calls));
   const uint64_t draw_sequence =
@@ -3738,7 +3738,7 @@ bool ScanHunexGgeRuntimeAnchors() {
   const bool body_submit_graph_valid =
       body_submit_graph_matches == 1u && body_submit != nullptr;
   trace->render_item_call_match_count = render_item_call.count;
-  // BUG-2090：draw → compositor 的直连调用点。真机计数证明 WoH 正文不经过 compose/
+  // BUG-2135：draw → compositor 的直连调用点。真机计数证明 WoH 正文不经过 compose/
   // compose-wrapper（两者零调用），compositor 却被调用；把记录闸门在待定正文行上后，
   // 唯一调用者落在 draw 函数体内。这里按同一条既有范式结构化推导它，要求**恰好一处**，
   // 多解或零解一律留 0（下游按 0 判定为不可用，保持 fail-closed）。
@@ -4162,7 +4162,7 @@ bool ScanHunexGgeRuntimeAnchors() {
     g_hunex_gge_anchors.surface_compose =
         reinterpret_cast<uintptr_t>(surface_compose);
     g_hunex_gge_anchors.surface_compositor = surface_compositor_target;
-    // draw 跨度内对 compositor 的唯一调用（BUG-2090）。surface_compose_graph_valid
+    // draw 跨度内对 compositor 的唯一调用（BUG-2135）。surface_compose_graph_valid
     // 已保证 surface_compositor_target 可信；这里只多问一句「draw 是否也直接调它」。
     if (draw_span != nullptr && draw_bytes != 0u) {
       uintptr_t direct_return = 0u;
@@ -4949,7 +4949,7 @@ struct HunexGgeSnapshotSelection {
   uint64_t latest_strict_selected_line_seq = 0u;
   fushi_voice_hook::HunexGgeSelectedTextFailure failure =
       fushi_voice_hook::HunexGgeSelectedTextFailure::kNone;
-  // BUG-2088：把候选计数带出来。只有它们能把同一个 kNoExactRawLine 分成两种完全不同
+  // BUG-2133：把候选计数带出来。只有它们能把同一个 kNoExactRawLine 分成两种完全不同
   // 的根因——「选定车道在窗口内根本没有事件」与「有事件但字节不等」。此前两个计数
   // 在这里被整个丢掉，真机上只剩两 bit 信息，分型无从谈起。
   uint32_t selected_stable_events = 0u;
@@ -4978,7 +4978,7 @@ HunexGgeSnapshotSelection MatchHunexGgeSnapshotToSelectedText(
 
   fushi_voice_hook::HunexGgeSelectedTextResult selected = {};
   bool selected_read_attempted = false;
-  // BUG-2088：留住第一次读的结果。下面那次延迟读的窗口是 (seal_seq, now]，而 now 由
+  // BUG-2133：留住第一次读的结果。下面那次延迟读的窗口是 (seal_seq, now]，而 now 由
   // **任意车道**的任意文本事件推进（含 thread-discovered）；选定车道在那一小段里通常
   // 一条新行都没有，于是延迟读必然产出「窗口内空无一物」的 kNoExactRawLine，把第一次
   // 读真正有意义的失败码整体盖掉——真机 WoH 上读到的永远是 6、从不是 8，正是这条噪声。
@@ -5022,7 +5022,7 @@ HunexGgeSnapshotSelection MatchHunexGgeSnapshotToSelectedText(
 
   if (selected_read_attempted) {
     // 只有当延迟读**真的看到了候选**（稳定或非法事件非零）时，它的失败码才比第一次读
-    // 更有信息量；否则保留第一次读的失败码，别让一个空窗口把真相盖掉（BUG-2088）。
+    // 更有信息量；否则保留第一次读的失败码，别让一个空窗口把真相盖掉（BUG-2133）。
     const bool deferred_saw_candidates =
         selected.stable_selected_events != 0u ||
         selected.invalid_selected_events != 0u;
@@ -5196,7 +5196,7 @@ void ProcessHunexGgeLookupTick() {
   uint32_t newest_rejected_epoch = 0u;
   fushi_voice_hook::HunexGgeSelectedTextFailure newest_failure =
       fushi_voice_hook::HunexGgeSelectedTextFailure::kNone;
-  // 与 newest_failure 同源保留：失败码离开候选计数就无法分型（BUG-2088）。
+  // 与 newest_failure 同源保留：失败码离开候选计数就无法分型（BUG-2133）。
   uint32_t newest_stable_events = 0u;
   uint32_t newest_invalid_events = 0u;
   uint64_t newest_selected_line_seq = 0u;

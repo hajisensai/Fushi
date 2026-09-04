@@ -502,7 +502,7 @@ class VoiceHookReader {
   // one shared-memory CAS only. A busy writer/reader returns 0 immediately.
   bool PrepareLookupShieldTarget(HWND target);
 
-  // BUG-2093：引擎层原点一次性自动求解。
+  // BUG-2136：引擎层原点一次性自动求解。
   //
   // 注入侧发布本行在**层空间**的包围盒，这里抓一帧 |game| 客户区、量出同一行的墨迹框，
   // 二维平移求出 origin 并回传给注入侧。origin 是每作常量，因此只在「注入侧已经发过行、

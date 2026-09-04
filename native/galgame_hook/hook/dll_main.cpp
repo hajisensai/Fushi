@@ -673,7 +673,7 @@ DWORD WINAPI HookWorker(LPVOID module_context) {
   registry.InstallFallbackAdapters();
   // install() 只起 worker 并发布 starting；allow 的 applied/running 确认要等 worker
   // 真正 Start() 成功后的下一轮 PollPolicy。若把那一轮留到 MH_Initialize() +
-  // InstallStartupAdapters() 之后，早注入 5s 的确认预算基本必然超时（BUG-2086）。
+  // InstallStartupAdapters() 之后，早注入 5s 的确认预算基本必然超时（BUG-2131）。
   // 这里用一个短的有界追平循环，只推进策略状态机、不碰引擎适配器：worker 起流通常
   // 在几百毫秒内完成，追平后立即继续引擎探测；追不平也照常往下走，绝不无界等待。
   {

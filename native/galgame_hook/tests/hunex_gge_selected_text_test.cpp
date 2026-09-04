@@ -155,7 +155,7 @@ void TestNoContentMatchFailsClosed() {
         "a selected Luna lane is not enough without exact raw content");
 }
 
-// BUG-2088：同一个 kNoExactRawLine 必须能被候选计数分成两种根因。
+// BUG-2133：同一个 kNoExactRawLine 必须能被候选计数分成两种根因。
 // 真机 WoH 上失败码恒为 6，但「车道里一条候选都没有」与「有候选但字节不等」的处置
 // 完全相反：前者查车道选择/fence 窗口，后者查文本同源性（ruby 标记、行首全角空格、
 // 换行分段）。计数器是唯一能分开它们的东西，因此必须被断言钉住。

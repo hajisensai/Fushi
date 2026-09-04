@@ -1,5 +1,5 @@
-## BUG-2095 · attached 子面 DirectWrite 基线硬编码 0.8em，日文正文必然上溢版面框，字形簇永远建不出来
-- **报告**：2026-09-03（BUG-2094 把活锁解开后，attached 前进到「有认领、有正文、就是建不出簇」，继续逐点收敛得出）
+## BUG-2138 · attached 子面 DirectWrite 基线硬编码 0.8em，日文正文必然上溢版面框，字形簇永远建不出来
+- **报告**：2026-09-03（BUG-2137 把活锁解开后，attached 前进到「有认领、有正文、就是建不出簇」，继续逐点收敛得出）
 - **真实性**：✅ 真 bug，真机上一改即通：修前 `fallback/overhang_outside_body_rect`，修后当场 `activeAttached`。
 - **定位过程**：`RebuildClusters()` 有 **20 个失败点，全部是裸 `return false`**，对外只发一条笼统的 `noGlyphClusters`——真机上等于「二十选一」。本轮先逐点补上原因（纯量具），真机立刻读出 `overhang_outside_body_rect`；在此之前我按「大概是版面太窄」猜过两轮宽高，全部是盲改。
 - **根因**：`fushi/windows/runner/attached_text_surface_window.cpp` 的
@@ -19,4 +19,4 @@
   修后：attached=activeAttached/null   → 点字弹出查词卡、剧情不推进（同一轮实测）
   ```
 - **[ ] ③ 待补自动化测试** — 计划在 `fushi/windows/runner` 的可测层加一条纯函数守卫：给定字体 ascent > 0.8em 时，基线必须 ≥ ascent（即 `overhang.top ≤ 0`）。当前该逻辑与 DirectWrite 实例耦合，抽出前先记在此。
-- **关联**：[[BUG-2094]]（先解开活锁才走到这一步）、[[BUG-2092]]（同一条「状态不带原因就无法定位」的纪律，这次发生在 native 侧）、[[BUG-2096]]（本条修好后暴露的下一道边界）。
+- **关联**：[[BUG-2137]]（先解开活锁才走到这一步）、[[BUG-2143]]（同一条「状态不带原因就无法定位」的纪律，这次发生在 native 侧）、[[BUG-2139]]（本条修好后暴露的下一道边界）。

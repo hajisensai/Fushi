@@ -380,7 +380,7 @@ class ImmersionMiningRequest {
 
   /// **抽取意图**：引擎是否应当按区间去裁 GIF / 句子音频。
   ///
-  /// BUG-2080：这条判据此前被压缩成 [hasClipWindow] 一半，于是同一对数字兼了两层语义
+  /// BUG-2127：这条判据此前被压缩成 [hasClipWindow] 一半，于是同一对数字兼了两层语义
   /// （卡面时间窗 + 抽取开关）。Netflix 只能靠把窗硬编码成 0 来关掉抽取，代价是卡面
   /// `{clip-timestamp}` 对该来源**结构性恒空**。现在补上另一半：**没有可裁的源就不是
   /// 抽取意图**——与两处抽取点各自已有的前置守卫同源（[ImmersionMiningEngine] 里

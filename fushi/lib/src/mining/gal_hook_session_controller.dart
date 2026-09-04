@@ -649,7 +649,7 @@ typedef GalWindowListLoader = Future<List<ExternalWindowInfo>> Function();
 /// （[GalgameHookRuntimeStage]，BUG-1708），这一步是文件复制。
 typedef GalInjectorResolver = Future<String?> Function({required bool is32Bit});
 
-/// 制卡等待「这句语音收口」的耐心上限（BUG-2080）：与引擎 PCM 的收敛上限
+/// 制卡等待「这句语音收口」的耐心上限（BUG-2127）：与引擎 PCM 的收敛上限
 /// `utteranceSettleMax`（6s）对齐；loopback 冻结窗口剩余超过它就不等、按旧路径提前收束。
 const Duration kGalMiningAudioSettleMaxWait = Duration(seconds: 6);
 
@@ -1606,7 +1606,7 @@ class GalHookSessionController extends ChangeNotifier {
           runningPid != null &&
           _targetImagePathProbe(runningPid) == null;
       await _stopEngine(engine);
-      // BUG-2067：Locale Emulator 拉起的进程在 LoaderDll 装载阶段就 APPCRASH（与注入
+      // BUG-2126：Locale Emulator 拉起的进程在 LoaderDll 装载阶段就 APPCRASH（与注入
       // 无关，本机对每一款 x86 游戏都复现）。injector 已回报 `LAUNCH pid=`，但那个进程
       // 已经不在了——按「游戏在跑、降级 loopback、稍后重试附着」处理只会得到一串
       // `OpenProcess 87`。转区是 `auto` 档替用户做的决定，决定失效就退回不转区再拉一次；
@@ -3086,7 +3086,7 @@ class GalHookSessionController extends ChangeNotifier {
   /// 多余的事件循环间隙（旧契约下采集作业总是先于后续 attach 作业入队）。
   Future<void>? _lineAudioSettleWait(String lineId) {
     if (_isUserAdjudicated(lineId)) return null;
-    // BUG-2080 §2.4：game_resource 行到达时资源常比文本晚落盘 → 先标 pending 并排了一个
+    // BUG-2127 §2.4：game_resource 行到达时资源常比文本晚落盘 → 先标 pending 并排了一个
     // loopback 冻结定时器兜底；随后 _refreshPendingResourceMatches 把行提成 matched、把
     // 源资源 id 固化到本行。制卡时 _captureAudioBytesNow 的资源原件分支
     // （_waitForPairedResourceAudio）会在首轮直接返回整段源 Ogg，那份 loopback 冻结片段
@@ -3955,7 +3955,7 @@ class GalHookSessionController extends ChangeNotifier {
         clearLastError: true,
       ),
     );
-    // BUG-2086：这条事件此前**只由音频侧决定**（调用方判据是 `format != null`），
+    // BUG-2131：这条事件此前**只由音频侧决定**（调用方判据是 `format != null`），
     // 于是「音频 hook 全好、LunaHook 文本 hook 一次都没装」的会话照样打出 success 级
     // 「Engine hook and IPC are ready」。真机 WoH 正是如此：26 条音轨、game_resource
     // 就绪，而 lines=0、phase 永远停在 waitingSignals。同一个函数体一边把 phase 写成
@@ -4535,7 +4535,7 @@ class GalHookSessionController extends ChangeNotifier {
     _engineRetryAttempt = 0;
     // 上游门是 `format != null || engine.textHookReady`（**或**），所以「recovered」
     // 可能只恢复了音频一侧。必须说清恢复的是什么，否则又是一条让人误判整链已通的
-    // success（BUG-2086）。
+    // success（BUG-2131）。
     final bool recoveredText = engine.textHookReady;
     _record(
       GalHookEventSeverity.success,
@@ -5402,7 +5402,7 @@ class GalHookSessionController extends ChangeNotifier {
       );
       // 资源原件配上后，为这一行排的 loopback 冻结兜底已经无意义：制卡走整段源 Ogg，
       // 那段整机混音永远不会被读取，留着定时器只会到点抓一段纯 BGM 并让制卡按
-      // _lineAudioSettleWait 白等（BUG-2080 §2.4）。撤掉它。
+      // _lineAudioSettleWait 白等（BUG-2127 §2.4）。撤掉它。
       _loopbackFreezeTimers.remove(pending.key)?.cancel();
       _loopbackFreezeStartedAt.remove(pending.key);
       matched.add(pending.key);

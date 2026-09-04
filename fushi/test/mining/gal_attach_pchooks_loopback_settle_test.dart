@@ -10,7 +10,7 @@ import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/sync/texthooker_ws_client.dart';
 
-/// BUG-1267 attach 路径不装 LunaHook PC hooks / BUG-2080 制卡必须等 loopback 冻结窗口到点。
+/// BUG-1267 attach 路径不装 LunaHook PC hooks / BUG-2127 制卡必须等 loopback 冻结窗口到点。
 ///
 /// 两条都是「用户中途接管一局已经在跑的游戏」时才暴露的缺陷：
 ///  ① attach（捕获窗口 / 引擎重试）此前把 `lunaPcHooks` 硬编码成 false，因为它没有
@@ -19,7 +19,7 @@ import 'package:fushi/src/sync/texthooker_ws_client.dart';
 ///  ② 用户在台词还在播时就查词/制卡：[GalHookSessionController.captureAudioBytes]
 ///     此前按「已等时长」提前收束 loopback 冻结，卡片只拿到这句语音的前半段（BUG-1287
 ///     的到点补全只修正列表里的缓存，卡已经写进 Anki）。现在制卡在队列之外先等冻结
-///     窗口到点，首次回取就是完整窗口（BUG-2080）。
+///     窗口到点，首次回取就是完整窗口（BUG-2127）。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -191,7 +191,7 @@ void main() {
     );
   }
 
-  test('BUG-2080 语音还在播时制卡：先等冻结窗口到点，首次回取就是完整窗口', () async {
+  test('BUG-2127 语音还在播时制卡：先等冻结窗口到点，首次回取就是完整窗口', () async {
     // 台词到达 → 排一次 400ms 后到点的冻结（完整窗口 backMs = 400 + preRoll 1000）。
     const Duration freezeDelay = Duration(milliseconds: 400);
     final _ProportionalLoopback loopback = _ProportionalLoopback();
@@ -240,7 +240,7 @@ void main() {
   });
 
   test(
-      'BUG-2080 §2.4 game_resource 行先 pending 排了冻结、后被资源匹配提升：'
+      'BUG-2127 §2.4 game_resource 行先 pending 排了冻结、后被资源匹配提升：'
       '制卡零等待取整段原件，不触发那段被丢弃的 loopback 冻结', () async {
     // 冻结窗故意设大：若制卡仍为「已被撤销/终将丢弃」的冻结窗干等，用例会耗到 4s+，
     // 断言 elapsed < 1500ms 会把回归钉红。
@@ -338,7 +338,7 @@ void main() {
     endpoints.dispose();
   });
 
-  test('BUG-2080 冻结已到点的历史行：制卡不再多等', () async {
+  test('BUG-2127 冻结已到点的历史行：制卡不再多等', () async {
     const Duration freezeDelay = Duration(milliseconds: 100);
     final _ProportionalLoopback loopback = _ProportionalLoopback();
     final session = await startVoicedLoopbackSession(
@@ -462,7 +462,7 @@ class _AttachEngine extends EngineHookGalAudioSource {
 }
 
 /// game_resource（HUNEX/SGRE 式）引擎替身：rawVoiceReady 一直为真，但配对资源 id 先返回
-/// null（资源比文本晚落盘），[revealResource] 之后才返回。用来复现 BUG-2080 §2.4：行到达
+/// null（资源比文本晚落盘），[revealResource] 之后才返回。用来复现 BUG-2127 §2.4：行到达
 /// 时先 pending + 排冻结，随后被资源匹配提升。
 class _LateResourceEngine extends EngineHookGalAudioSource {
   _LateResourceEngine({List<GalHookedLine> lines = const <GalHookedLine>[]})
