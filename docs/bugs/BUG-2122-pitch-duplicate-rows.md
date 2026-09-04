@@ -7,9 +7,9 @@
   - 判据故意取「payload 全等」而不是逐条位置求交：宁可少合一次，也不把读法不同的两本词典混进同一行。
   - 合并跑在 `deduplicatePitchAccents` 分支**之后**：去重打开（app 默认）时各存活组的位置互斥、payload 不可能全等，合并对位置组恒为 no-op，**默认外观一字不变**；去重关闭时才塌行。唯一会在去重档位生效的是「两本纯 IPA 词典给出完全相同的 transcriptions」，那本就该合。
   - 三份镜像副本同步：`fushi/assets/popup/popup.{js,css}`、`fushi/assets/browser_extension/vendor/popup.{js,css}`、`tools/browser-extension/vendor/popup.{js,css}`。
-  - 提交：见本分支 `worktree-pitch-merge-identical-dicts`。
+  - 提交：`9dd4d9d769`（分支 `worktree-pitch-merge-identical-dicts`，PR hajisensai/Fushi#1212）。
 - **[x] ② 已加自动化测试** — `fushi/test/pages/popup_pitch_merge_identical_test.dart` + `.js`
   - 行为级（node vm 真跑 popup.js 的 `createPitchSection`）：五本同为 `[1]` 且去重关闭 → 只剩 1 个 `.pitch-group`、5 枚药丸按首次出现顺序、`[1]` 只画一次；音调型不同（`[1]` vs `[0]`）不合并；位置部分重叠（`[1,0]` vs `[1]`）不合并；去重打开时 1 行 1 枚药丸（钉死默认外观零变化）；两本纯 IPA 同 transcriptions 合并。
   - 变异实测：撤掉 `mergeIdenticalPitchGroups(groups)` 调用点 → case 1 报 `5 !== 1` 红，恢复即绿（不是空壳断言）。
   - 源码级：三份镜像副本各自断言合并 helper、调用点在去重分支之后、去重分支不再直接 append、多药丸渲染循环，以及 `.pitch-group` 的 `flex-wrap: wrap`。
-- **备注**：官网 `fushi.moe` 首页 demo 把 popup.js 内联在 `public/index.html`，是独立快照副本，需同步同一处改动才能让用户截图里的页面变好（本仓改动不会自动传过去）。
+- **备注**：官网 `fushi.moe` 首页 demo 把 popup.js 内联在 `public/index.html`，是独立快照副本，需同步同一处改动才能让用户截图里的页面变好（本仓改动不会自动传过去）。已同步：hajisensai/fushi.moe#34（`e63efbe`），并在 `tool/verify-home.mjs` 加了页面级断言（拨到「ギター」那句 cue → 点开弹窗 → `.pitch-group` 恰好 1 个、五枚来源药丸齐全、词头是 ギター；变异实测撤掉合并调用 → `groups:5 readings:5` 红）。
