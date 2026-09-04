@@ -110,3 +110,18 @@ Fate RN 引擎版本（来自用户 7-24 遗留 `krkr.console.log`，UTF-16）�
 | `manosaba_Ver1.0.3.part1~4.rar` | 未解压 | — | 先解压再判 |
 | `bgimage/`（BootStrap.exe + plugin/…） | KiriKiri Z（库内 id 1785146004529760 也指向它的 tenshi_sz.exe） | `kirikiri_z` | 是天使☆騒々的另一份/引导器目录，非新游戏 |
 | ISO 类（姫様LOVEライフ / 恋愛フェイズ / 屋上の百合霊さん / カスタムメイド3D2） | 未挂载 | — | 上一批已判堵塞 |
+
+## 第四轮准备（2026-09-04 16:50–17:30，桌面占用，纯静态）：查词 sensor 不装的根因 → BUG-2121
+
+第三轮把 Fate RN 查词 sensor 收敛到「native 安装静默失败，无 diag 位」。本轮不碰桌面，沿安装路径逐个 bail 点静态审：
+
+1. **签名不匹配假说排除**。主 exe 带 `adata`（ASProtect）段，导出名明文扫不到；但 `%TEMP%\krkr_*\dirlist.dll`（游戏脚本自己 `Plugins.link` 的 krkr2 插件）tp_stub 明文 `void ::TVPExecuteExpression(const ttstr &,tTJSVariant *)`、`void tTJSVariantString::Release()` 与 `RunKirikiriLookupInstallOnMainThread` 查的串逐字相同。
+2. **根因 = `FindGameMainWindow()` 的 owner 判据**（`lookup_overlay_window.inc` 旧 `if (GetWindow(window, GW_OWNER) != nullptr) return TRUE;`）。Borland VCL 把每个 TForm 建成隐藏 `TApplication` 窗（`Application.Handle`，0x0、永不显示）的 owned window——`TTVPWindowForm` 因此永远不入选 → `ResolveKirikiriEngineMainThreadId()==0` → `EnsureLookupMainThreadSeam` 不挂接缝、`RunKirikiriLookupInstallOnMainThread` 第一行 return。同一处还解释：BUG-2118 修复后 exe 直取门 `FindGameMainWindow()!=nullptr` 整局不亮（decdiag 0x10000 灭）、overlay owner 为空。
+3. **修复**（BUG-2121）：判据搬进 `hook/game_main_window.h` 成唯一真相源——可见 + 客户区面积最大 + 只排除「被**可见**窗口 own」的（对话框/工具提示/1x1 overlay 仍排除；隐藏 owner 不算）。`.inc` 只转发。
+4. **安装路径可见化**：`xaudio_diagnostics2`（第二引擎诊断字）新增 `kXAudioDiag2KirikiriLookup{MainWindowMissing 0x20000, SeamArmed 0x40000, SeamHookFailed 0x80000, SeamFired 0x100000, ExportQueryFailed 0x200000, ExpressionQueryFailed 0x400000, BootstrapStarted 0x800000}`；`python tools/galhook.py explain-diag --xaudiodiag2 <hex>` 直接符号化。以后「sensor 没装」不再与「引擎不支持」同形。
+5. **验证**：`tests/game_main_window_test.cpp`（真 Win32 窗口，屏幕外 NOACTIVATE）双架构 CTest 58/58；变异实测改回旧 owner 判据 → 仅 VCL 用例红；`kirikiri_lookup_source_guard_test.py` 规则 7 改指向头文件 + 2 条新不变式 + 5 变异 139/139；`adapter_structure` 38、`lookup_presenter_wiring` 33、`overlay_gdi_ownership` 2、`engine_support_manifest` 22、`galhook_workflow` 6、`evidence_contract` 16 全绿；两个生成器 `--check` OK。helper zip x86 `a9272ba6…` / x64 `0cb7bf50…`（17:18）。
+6. **未验**：真机门未跑（用户全程在用桌面：前台 Chrome/YouTube，idle 0）。yaml 不动。
+
+**Proved**：根因定位到一行 + 修复在合成 VCL 窗口形状上通过 + 安装路径 7 个位可观测。**Not proved**：Fate RN 真机上 sensor 真装上、单击弹卡、制卡 E2E。**Next gate**：桌面空闲时 `launch_fushi_iso2.ps1` 起隔离实例（本分支新 helper 已 install 进 `fushi/build/.../voice_hook/x86/`？——**没有**，需先 `tools/install_into_bundle.ps1` 或手动解 zip）→ 库内启动 Fate RN → 工作台打开查词 → `fushi_voice_ring_probe` 看 `xaudiodiag2`：期望 0x40000|0x100000 亮、随后 `lookup_diag` 0x1；停在 0x200000/0x400000 = BCB 导出表查不到名（下一边界：改用 exe 直取内部函数指针）；0x20000 仍亮 = 主窗判据还有别的形状。
+
+**旁注（未做，建议单独立项）**：隔离实例每 ~1.25 s 抢前台的根因是 `desktop_foreground_guard.dart` `isMainWindowForeground()` 在 `FUSHI_TEST_HIDDEN` 下恒 true（itest 焦点遍历需要），被动焦点修复照常 `SetFocus(FlutterView)`。它同时堵着 KiriKiri Z ① 音频时长复验与本任务真机门；`EnableWindow(FALSE)` 只是绕过。真修要在 galgame 会话活跃期间让该判据走真实探测，属 Fushi 侧焦点域，不在本 worktree 范围。

@@ -5909,6 +5909,7 @@ void RunKirikiriLookupInstallOnMainThread();
 
 LRESULT CALLBACK LookupMainThreadSeamProc(int code, WPARAM wparam, LPARAM lparam) {
   if (code >= 0) {
+    SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2KirikiriLookupSeamFired);
     RunKirikiriLookupInstallOnMainThread();
     const bool done = InterlockedCompareExchange(&g_lookup_bootstrap_state, 0, 0) != 0 ||
                       InterlockedCompareExchange(&g_lookup_install_requested, 0, 0) == 0;
@@ -5924,17 +5925,24 @@ LRESULT CALLBACK LookupMainThreadSeamProc(int code, WPARAM wparam, LPARAM lparam
 void EnsureLookupMainThreadSeam() {
   if (g_lookup_main_thread_seam != nullptr) return;
   const DWORD main_tid = ResolveKirikiriEngineMainThreadId();
-  if (main_tid == 0) return;
+  if (main_tid == 0) {
+    // 主窗解析不到 = 整条安装路径的第一道门没开（BUG-2121：BCB VCL 主窗被隐藏 owner
+    // own 时就死在这里，且下面每一步都不会再有任何位）。
+    SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2KirikiriLookupMainWindowMissing);
+    return;
+  }
   if (InterlockedCompareExchange(&g_lookup_main_thread_seam_tid,
                                  static_cast<LONG>(main_tid), 0) != 0) {
     return;  // 另一次轮询已在装
   }
   HHOOK seam = SetWindowsHookExW(WH_GETMESSAGE, &LookupMainThreadSeamProc, nullptr, main_tid);
   if (seam == nullptr) {
+    SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2KirikiriLookupSeamHookFailed);
     InterlockedExchange(&g_lookup_main_thread_seam_tid, 0);
     return;
   }
   g_lookup_main_thread_seam = seam;
+  SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2KirikiriLookupSeamArmed);
 }
 
 void PollKirikiriLookupInstall() {
@@ -5968,6 +5976,7 @@ void RunKirikiriLookupInstallOnMainThread() {
   };
   void* functions[5] = {};
   if (!QueryKirikiriNativeLookupFunctions(g_lookup_exporter, names, functions, 5)) {
+    SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2KirikiriLookupExportQueryFailed);
     return;
   }
   // 单独查：缺 TVPExecuteExpression 就读不回任何传感器读数（hit 与 input 都靠它），此时
@@ -5978,6 +5987,8 @@ void RunKirikiriLookupInstallOnMainThread() {
   if (!QueryKirikiriNativeLookupFunctions(g_lookup_exporter, &expression_name,
                                           &expression, 1) ||
       expression == nullptr) {
+    SetXAudioDiagnostic2(
+        fushi_voice_hook::kXAudioDiag2KirikiriLookupExpressionQueryFailed);
     return;
   }
 
@@ -6006,6 +6017,7 @@ void RunKirikiriLookupInstallOnMainThread() {
     InterlockedExchange(&g_lookup_bootstrap_state, 1);
     g_lookup_add_continuous(&g_lookup_pump_callback);
     g_lookup_add_continuous(&g_lookup_bootstrap_callback);
+    SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2KirikiriLookupBootstrapStarted);
   } catch (...) {
     TjsVariantString* script = g_lookup_bootstrap_script;
     g_lookup_bootstrap_script = nullptr;

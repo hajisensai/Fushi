@@ -467,6 +467,20 @@ constexpr uint32_t kXAudioDiag2LeafReturnSitesRejected = 0x00008000u;
 // 失败就让本会话的 Leaf adapter 永久出局，表现为整场音频降级到系统 Loopback。
 constexpr uint32_t kXAudioDiag2LeafExecutableUnmeasurable = 0x00010000u;
 
+// KiriKiri 查词传感器**安装路径**的分型位（BUG-2121，Fate/stay night[Realta Nua] KiriKiri2
+// 2.31/BCB 真机）。lookup_diag 只在传感器装上之后才开始有位，装不上时整局零位——而安装路径
+// 上有 9 个静默 return（主窗解析不到 / 接缝挂不上 / 线程身份 / 导出表查不到 / 表达式查不到 /
+// bootstrap 分配失败…），没有这组位就分不出「这个引擎没做」和「装到第 N 步死了」。粘滞位
+// 语义（曾经到过哪一步）正合适：安装是单向推进的，读侧按位序就能看出卡在哪。
+// 放这个字而不是 reserved_luna / lookup_diag：那两个 32 位都已满（见各自注释）。
+constexpr uint32_t kXAudioDiag2KirikiriLookupMainWindowMissing = 0x00020000u;  // 安装已请求但 FindGameMainWindow()==null
+constexpr uint32_t kXAudioDiag2KirikiriLookupSeamArmed = 0x00040000u;          // WH_GETMESSAGE 主线程接缝已挂
+constexpr uint32_t kXAudioDiag2KirikiriLookupSeamHookFailed = 0x00080000u;     // SetWindowsHookEx 失败
+constexpr uint32_t kXAudioDiag2KirikiriLookupSeamFired = 0x00100000u;          // 接缝在主线程上跑过安装
+constexpr uint32_t kXAudioDiag2KirikiriLookupExportQueryFailed = 0x00200000u;  // 5 个核心导出名查不到
+constexpr uint32_t kXAudioDiag2KirikiriLookupExpressionQueryFailed = 0x00400000u;  // TVPExecuteExpression 查不到
+constexpr uint32_t kXAudioDiag2KirikiriLookupBootstrapStarted = 0x00800000u;   // bootstrap 脚本已登记进连续事件
+
 // reserved_luna 的资源音频诊断位。KiriKiriZ 的 TVPCreateStream hook 直接导出当前播放的
 // 已解密 Ogg；Siglus 从 OVK 索引导出逐句 Ogg。它们只代表“资源捕获链已安装”，不要求 PCM
 // 环已有格式，因此 host 应优先按时间戳配对资源文件，并把系统回环保留为逐句 fallback。

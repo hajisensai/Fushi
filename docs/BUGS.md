@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1986 条。点号进各自文件。
+> 共 1987 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2121](bugs/BUG-2121-gal-main-window-owned-by-hidden-vcl-owner.md) | ✅ | ✅ | FindGameMainWindow 排除所有有 owner 的窗口：BCB VCL 窗体被隐藏 TApplication own，KiriKiri2 查词安装 / exe 直取门 / overlay owner 整局静默失败 |
 | [BUG-2118](bugs/BUG-2118-gal-kirikiri2-exporter-called-before-static-init.md) | ✅ | ✅ | 启动期过早调用 TVPGetFunctionExporter 抢在引擎静态构造之前，导出表随后被构造函数重置致插件链接全失败 |
 | [BUG-2116](bugs/BUG-2116-gal-classic-kag3-class-patch-invisible-to-instances.md) | ✅ | ✅ | 经典 KAG3 游戏内查词传感器给 TJS 类对象打补丁对实例永远不可见 |
 | [BUG-2115](bugs/BUG-2115-kirikiri-voice-stream-filter-captures-se-bgm.md) | ✅ | ✅ | KiriKiri 资源流语音过滤按裸 .ogg/.opus 后缀把 SE/BGM/脚本当语音并配给旁白 |

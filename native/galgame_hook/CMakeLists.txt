@@ -375,6 +375,14 @@ add_executable(fushi_launcher_layout_test
 target_include_directories(fushi_launcher_layout_test PRIVATE "include")
 add_test(NAME fushi_launcher_layout_test COMMAND fushi_launcher_layout_test)
 
+# 游戏主窗口判据（真 Win32 窗口：VCL 隐藏 owner 形状必选中，BUG-2121）。
+add_executable(fushi_game_main_window_test
+  "tests/game_main_window_test.cpp"
+)
+target_include_directories(fushi_game_main_window_test PRIVATE "hook")
+add_test(NAME fushi_game_main_window_test
+  COMMAND fushi_game_main_window_test)
+
 # 通用位图呈现器的几何换算（卡片飘出游戏窗口 == 用户看不见卡片，与"没投帧"同形）。
 add_executable(fushi_lookup_overlay_geometry_test
   "tests/lookup_overlay_geometry_test.cpp"

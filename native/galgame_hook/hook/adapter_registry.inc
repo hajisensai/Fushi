@@ -196,11 +196,12 @@ class KiriKiriAdapter final : public fushi_voice_hook::EngineAdapter {
   void ProcessPendingEvents() { ProcessKirikiriVoiceTasks(); }
   bool decoder_ready() const { return decoder_ready_; }
   bool voice_ready() const { return voice_ready_; }
-  // KiriKiri 没有 exe hash 门，但有一道等价的运行期门：传感器只在游戏带第三方
-  // textrender.dll（KAGEX 的 global.TextRender）时才装得上，经典 KAG3 上装不上。
-  // 因此"装上了"与"还没装上"之间不存在身份拒绝这一档——未装一律报 IdentityAccepted，
-  // 表示"引擎对得上，传感器还没到位"。把它谎报成 IdentityRejected 会让用户去换游戏
-  // 版本，而真正该做的是看这个游戏有没有 textrender.dll。
+  // KiriKiri 没有 exe hash 门，但有一道等价的运行期门：传感器要等 TJS exporter、引擎
+  // 主线程接缝和 bootstrap 脚本三样在引擎里依次跑通（KAGEX 走 global.TextRender，经典
+  // KAG3 走逐实例 drawText 补丁，BUG-2116）。因此"装上了"与"还没装上"之间不存在身份
+  // 拒绝这一档——未装一律报 IdentityAccepted，表示"引擎对得上，传感器还没到位"。把它
+  // 谎报成 IdentityRejected 会让用户去换游戏版本，而真正该做的是看 xaudio_diagnostics2
+  // 的 kXAudioDiag2KirikiriLookup* 位卡在安装路径哪一步（BUG-2121）。
   fushi_voice_hook::LookupAdmissionReport lookupAdmission() const override {
     fushi_voice_hook::LookupAdmissionReport report;
     report.state = KirikiriLookupSensorLive()

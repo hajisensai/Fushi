@@ -53,8 +53,11 @@
    mouseMove 只做一次 identity 基线，leftClick 低频复核后续覆写，且 bitmask 仅在状态变化时发布。
 
 7. **「哪个才是游戏主窗口」只能有一套答案。** `ResolveKirikiriEngineMainThreadId` 必须
-   复用 `lookup_overlay_window.inc` 的 `FindGameMainWindow()`（可见 + 无 owner + 客户区
-   面积最大），不得自带一份「EnumWindows 第一个匹配」。第一个匹配那套是错的：TVP 控制台窗、
+   复用 `FindGameMainWindow()`；判据只活在 `hook/game_main_window.h`（可见 + 客户区面积
+   最大 + 只排除被**可见**窗口 own 的），`lookup_overlay_window.inc` 只许转发不许再抄。
+   「有 owner 就排除」是 BUG-2121 的形状：Borland VCL（KiriKiri2 2.x/BCB）把每个 TForm
+   都建成隐藏 TApplication 窗的 owned window，一刀切排除就一个主窗都选不出，查词安装、
+   exe 直取门、overlay owner 三处静默死掉。不得自带一份「EnumWindows 第一个匹配」。第一个匹配那套是错的：TVP 控制台窗、
    splash、同进程启动器窗，或本模块自己那个 1x1 的 `WS_EX_TOPMOST` `FushiLookupOverlay`
    （EnumWindows 会先枚举到它）都会抢走判定，把别的线程 id 当引擎主线程
    `InterlockedCompareExchange(..., 0)` **一次性**缓存下来，写错永不自愈；此后
@@ -2906,6 +2909,12 @@ def find_missing_main_thread_identity_check(source: MaskedSource) -> list[str]:
 MAIN_THREAD_RESOLVER_ENTRY = "DWORD ResolveKirikiriEngineMainThreadId() "
 SHARED_MAIN_WINDOW_FN = "FindGameMainWindow("
 OVERLAY_WINDOW_INC = ROOT / "hook" / "lookup_overlay_window.inc"
+MAIN_WINDOW_HEADER = ROOT / "hook" / "game_main_window.h"
+# 旧判据的形状：有 owner 就排除。BUG-2121（Fate/stay night[Realta Nua] KiriKiri2 2.31/BCB）：
+# VCL 主窗 TTVPWindowForm 被隐藏 TApplication 窗 own，这一行让它永远不入选。
+BARE_OWNER_EXCLUSION = re.compile(
+    r"GetWindow\s*\(\s*\w+\s*,\s*GW_OWNER\s*\)\s*!=\s*nullptr\s*\)\s*return"
+)
 
 
 def find_divergent_main_window_criteria(source: MaskedSource) -> list[str]:
@@ -2926,21 +2935,44 @@ def find_divergent_main_window_criteria(source: MaskedSource) -> list[str]:
     return offenders
 
 
-def find_unshared_main_window_area_criterion(overlay_source: str) -> list[str]:
-    """共享的那套判据本身必须是「面积最大」，否则统一了也是统一到错的那套。"""
-    text = _strip_line_comments(overlay_source)
+def find_unshared_main_window_area_criterion(header_source: str) -> list[str]:
+    """共享的那套判据本身必须是「可见 + 面积最大 + 只排除被可见窗口 own 的」。
+
+    统一到一套之后它就是唯一真相源：改成第一个匹配、或把 owner 排除改回「有 owner 就排除」
+    （BUG-2121），错的就是全部三处调用方。
+    """
+    text = _strip_line_comments(header_source)
     if "HWND FindGameMainWindow(" not in text:
-        return ["lookup_overlay_window.inc 里没有 FindGameMainWindow()"]
+        return ["game_main_window.h 里没有 FindGameMainWindow()"]
     offenders: list[str] = []
     if not re.search(r"\bbest_area\b", text):
         offenders.append(
-            "FindOverlayOwner 不再按客户区面积挑选：启动器/工具窗口/1x1 overlay "
-            "会被当成游戏主窗口"
+            "主窗判据不再按客户区面积挑选：启动器/工具窗口/1x1 overlay 会被当成游戏主窗口"
         )
-    if not re.search(r"IsWindowVisible\s*\(", text):
-        offenders.append("FindOverlayOwner 少了可见性判据")
+    if not re.search(r"IsWindowVisible\s*\(\s*window\s*\)", text):
+        offenders.append("主窗判据少了可见性判据")
     if not re.search(r"GW_OWNER", text):
-        offenders.append("FindOverlayOwner 少了顶层（无 owner）判据")
+        offenders.append("主窗判据少了 owner 判据：对话框/工具提示/overlay 会抢主窗")
+    if BARE_OWNER_EXCLUSION.search(text):
+        offenders.append(
+            "主窗判据按「有 owner 就排除」：VCL 主窗被隐藏 TApplication 窗 own，"
+            "KiriKiri2/BCB 上一个主窗都选不出（BUG-2121）"
+        )
+    if not re.search(r"IsWindowVisible\s*\(\s*owner\s*\)", text):
+        offenders.append("owner 排除没有以「owner 可见」为条件（BUG-2121）")
+    return offenders
+
+
+def find_main_window_criteria_copied_into_overlay(overlay_source: str) -> list[str]:
+    """lookup_overlay_window.inc 只许转发到共享头，不许再抄一份判据。"""
+    text = _strip_line_comments(overlay_source)
+    if "fushi_voice_hook::FindGameMainWindow()" not in text:
+        return ["lookup_overlay_window.inc 没有转发到 fushi_voice_hook::FindGameMainWindow()"]
+    offenders: list[str] = []
+    if re.search(r"EnumWindows\s*\(", text) or "GW_OWNER" in text:
+        offenders.append(
+            "lookup_overlay_window.inc 里又抄了一份主窗判据：同概念两套答案"
+        )
     return offenders
 
 
@@ -2987,10 +3019,21 @@ class RealAdapterTest(unittest.TestCase):
         self.assertEqual(
             [],
             find_unshared_main_window_area_criterion(
+                MAIN_WINDOW_HEADER.read_text(encoding="utf-8")
+            ),
+            "统一到 FindGameMainWindow 之后，game_main_window.h 里的「可见 + 面积最大 + "
+            "只排除被可见窗口 own」判据就是唯一真相源，不能被悄悄改成第一个匹配或"
+            "「有 owner 就排除」（BUG-2121）",
+        )
+
+    def test_overlay_inc_forwards_main_window_lookup(self) -> None:
+        self.assertEqual(
+            [],
+            find_main_window_criteria_copied_into_overlay(
                 OVERLAY_WINDOW_INC.read_text(encoding="utf-8")
             ),
-            "统一到 FindGameMainWindow 之后，它本身的「可见 + 无 owner + 面积最大」"
-            "判据就是唯一真相源，不能被悄悄改成第一个匹配",
+            "lookup_overlay_window.inc 只许转发到 fushi_voice_hook::FindGameMainWindow()，"
+            "再抄一份判据就又是同概念两套答案",
         )
 
     def test_never_builds_tjs_source_from_dynamic_strings(self) -> None:
@@ -4352,33 +4395,19 @@ DWORD ResolveKirikiriEngineMainThreadId() {
 }
 """
 
-DIRTY_FIRST_MATCH_OWNER = """
-BOOL CALLBACK FindOverlayOwner(HWND window, LPARAM param) {
-  OwnerSearch* search = reinterpret_cast<OwnerSearch*>(param);
-  DWORD pid = 0;
-  GetWindowThreadProcessId(window, &pid);
-  if (pid != search->pid) return TRUE;
-  if (!IsWindowVisible(window)) return TRUE;
-  if (GetWindow(window, GW_OWNER) != nullptr) return TRUE;
-  search->best = window;
-  return FALSE;
-}
-
-HWND FindGameMainWindow() {
-  OwnerSearch search;
-  EnumWindows(&FindOverlayOwner, reinterpret_cast<LPARAM>(&search));
-  return search.best;
-}
-"""
-
 CLEAN_AREA_OWNER = """
-BOOL CALLBACK FindOverlayOwner(HWND window, LPARAM param) {
-  OwnerSearch* search = reinterpret_cast<OwnerSearch*>(param);
+inline bool IsOwnedByVisibleWindow(HWND window) {
+  const HWND owner = GetWindow(window, GW_OWNER);
+  return owner != nullptr && IsWindowVisible(owner);
+}
+
+inline BOOL CALLBACK GameMainWindowEnumProc(HWND window, LPARAM param) {
+  auto* search = reinterpret_cast<GameMainWindowSearch*>(param);
   DWORD pid = 0;
   GetWindowThreadProcessId(window, &pid);
   if (pid != search->pid) return TRUE;
   if (!IsWindowVisible(window)) return TRUE;
-  if (GetWindow(window, GW_OWNER) != nullptr) return TRUE;
+  if (IsOwnedByVisibleWindow(window)) return TRUE;
   RECT rect = {};
   if (!GetClientRect(window, &rect)) return TRUE;
   const long area = (rect.right - rect.left) * (rect.bottom - rect.top);
@@ -4389,6 +4418,49 @@ BOOL CALLBACK FindOverlayOwner(HWND window, LPARAM param) {
   return TRUE;
 }
 
+inline HWND FindGameMainWindow() {
+  GameMainWindowSearch search;
+  EnumWindows(&GameMainWindowEnumProc, reinterpret_cast<LPARAM>(&search));
+  return search.best;
+}
+"""
+
+# 第一个匹配就收工：面积判据没了。
+DIRTY_FIRST_MATCH_OWNER = CLEAN_AREA_OWNER.replace(
+    """  RECT rect = {};
+  if (!GetClientRect(window, &rect)) return TRUE;
+  const long area = (rect.right - rect.left) * (rect.bottom - rect.top);
+  if (area > search->best_area) {
+    search->best_area = area;
+    search->best = window;
+  }
+  return TRUE;""",
+    """  search->best = window;
+  return FALSE;""",
+)
+
+# BUG-2121 的形状：有 owner 就排除，owner 可不可见不问。
+DIRTY_BARE_OWNER_EXCLUSION = CLEAN_AREA_OWNER.replace(
+    """inline bool IsOwnedByVisibleWindow(HWND window) {
+  const HWND owner = GetWindow(window, GW_OWNER);
+  return owner != nullptr && IsWindowVisible(owner);
+}
+""",
+    "",
+).replace(
+    "  if (IsOwnedByVisibleWindow(window)) return TRUE;",
+    "  if (GetWindow(window, GW_OWNER) != nullptr) return TRUE;",
+)
+
+CLEAN_OVERLAY_FORWARDER = """
+HWND FindGameMainWindow() { return fushi_voice_hook::FindGameMainWindow(); }
+"""
+
+DIRTY_OVERLAY_COPY = """
+BOOL CALLBACK FindOverlayOwner(HWND window, LPARAM param) {
+  if (GetWindow(window, GW_OWNER) != nullptr) return TRUE;
+  return TRUE;
+}
 HWND FindGameMainWindow() {
   OwnerSearch search;
   EnumWindows(&FindOverlayOwner, reinterpret_cast<LPARAM>(&search));
@@ -4469,13 +4541,31 @@ class MutationSelfTest(unittest.TestCase):
         )
 
     def test_first_match_owner_search_is_red(self) -> None:
+        self.assertNotEqual(DIRTY_FIRST_MATCH_OWNER, CLEAN_AREA_OWNER)
         self.assertNotEqual(
             [], find_unshared_main_window_area_criterion(DIRTY_FIRST_MATCH_OWNER)
+        )
+
+    def test_bare_owner_exclusion_is_red(self) -> None:
+        self.assertNotEqual(DIRTY_BARE_OWNER_EXCLUSION, CLEAN_AREA_OWNER)
+        offenders = find_unshared_main_window_area_criterion(DIRTY_BARE_OWNER_EXCLUSION)
+        self.assertTrue(
+            any("BUG-2121" in offender for offender in offenders), offenders
         )
 
     def test_area_owner_search_stays_green(self) -> None:
         self.assertEqual(
             [], find_unshared_main_window_area_criterion(CLEAN_AREA_OWNER)
+        )
+
+    def test_overlay_forwarder_stays_green(self) -> None:
+        self.assertEqual(
+            [], find_main_window_criteria_copied_into_overlay(CLEAN_OVERLAY_FORWARDER)
+        )
+
+    def test_overlay_copy_of_criteria_is_red(self) -> None:
+        self.assertNotEqual(
+            [], find_main_window_criteria_copied_into_overlay(DIRTY_OVERLAY_COPY)
         )
 
     def test_clean_sample_passes_every_rule(self) -> None:

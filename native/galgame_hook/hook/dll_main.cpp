@@ -48,6 +48,7 @@
 #include "module_settle.h"
 #include "host_executable_digest.h"
 #include "lookup_overlay_geometry.h"
+#include "game_main_window.h"
 #include "hunex_gge_trace.h"
 #include "leaf_d3d_trace.h"
 #include "artemis_pfs.h"
