@@ -437,6 +437,9 @@ extension _VideoLayout on _VideoFushiPageState {
                           hitTester: _subtitleHitTester,
                           // 字级选词光标环（videoEnterCaret，手柄/键盘查词）。
                           caretEntryIndex: _subtitleCaretEntry,
+                          // BUG-2091：被查词在字幕上垫底色高亮（与阅读器正文查词
+                          // 高亮同语义），弹窗栈全关即 null（派生值，不靠关栈路径复位）。
+                          lookupHighlight: _activeSubtitleLookupHighlight,
                           // 当前句已收藏时在字幕盒角标实心星（TODO-301）。读同一收藏缓存
                           // [_favoritedVideoSentences]（[_isCueFavorited]）；收藏 / 取消收藏
                           // 后 setState 触发本 builder 重建，标记即时更新。

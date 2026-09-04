@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1980 条。点号进各自文件。
+> 共 1982 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -49,6 +49,8 @@
 | [BUG-2096](bugs/BUG-2096-storage-category-detail-gap.md) | ✅ | ✅ | 存储页词典/书籍类目明细不覆盖总量 10.7GB 不可见 |
 | [BUG-2095](bugs/BUG-2095-video-subtitle-hidden-no-hover-reveal.md) | ✅ | ✅ | 字幕隐藏后鼠标悬停/点击无法临时显形 |
 | [BUG-2094](bugs/BUG-2094-secondary-subtitle-import-not-listed.md) | ✅ | ✅ | 导入的副字幕在字幕列表里消失，但画面仍在渲染它 |
+| [BUG-2092](bugs/BUG-2092-video-lookup-popup-title-bar-offset.md) | ✅ | ✅ | 视频页查词弹窗在 Windows 窗口模式整栈下移一个标题栏高压住被查词 |
+| [BUG-2091](bugs/BUG-2091-video-subtitle-lookup-highlight.md) | ✅ | ✅ | 视频字幕查词后被查词在字幕上无高亮 |
 | [BUG-2090](bugs/BUG-2090-overlay-hover-highlight-brush-leak.md) | ✅ | ✅ | overlay 悬浮高亮窗口类每次重建都漏一个 GDI brush |
 | [BUG-2089](bugs/BUG-2089-inapp-mining-payload-bool-cast-crash.md) | ✅ | ✅ | 应用内制卡全部失败：「导出卡片失败: Invalid card data (payload parse failed): type 'String' is not a subtype of type 'bool?' in type cast」 |
 | [BUG-2088](bugs/BUG-2088-release-notes-never-reach-update-dialog.md) | ✅ | ✅ | 正式版更新公告进不了应用内更新弹窗，用户看到的是一行占位符 |

@@ -50,7 +50,11 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart'
     show statTodayKey;
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart'
-    show resolveVideoLookupAnchorCue, subtitleLookupTerm;
+    show
+        lookupHighlightGraphemeCount,
+        resolveVideoLookupAnchorCue,
+        subtitleLookupSpan,
+        subtitleLookupTerm;
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/window_fullscreen_hosts.dart'
@@ -335,6 +339,13 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
 
   bool _pausedForLookup = false;
   AudioCue? _lastLookupCue;
+
+  /// 最近一次字幕查词命中的词在字幕上的范围（BUG-2091）；overlay 拿的是派生值
+  /// [_activeSubtitleLookupHighlight]（弹窗栈全关即 null），不在关栈路径复位。
+  SubtitleLookupHighlight? _subtitleLookupHighlight;
+
+  SubtitleLookupHighlight? get _activeSubtitleLookupHighlight =>
+      _popup.hasVisiblePopup ? _subtitleLookupHighlight : null;
 
   OverlayEntry? _popupOverlayEntry;
   bool _overlayInert = false;
@@ -778,8 +789,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
           mediaKind: kActivityMediaVideo,
           mediaKey: widget.bookUid,
           title: row.title,
-          onWriteError: (Object e, StackTrace st) =>
-              ErrorLogService.instance.log('StudyClock.write(web-video)', e, st),
+          onWriteError: (Object e, StackTrace st) => ErrorLogService.instance
+              .log('StudyClock.write(web-video)', e, st),
         ),
         markCompleted: (String uid) =>
             db.markVideoCompleted(uid, DateTime.now()),
@@ -1110,7 +1121,11 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     Rect charRect, {
     AudioCue? overrideCue,
   }) async {
-    final String term = subtitleLookupTerm(sentence, graphemeIndex);
+    final ({int start, String term}) span = subtitleLookupSpan(
+      sentence,
+      graphemeIndex,
+    );
+    final String term = span.term;
     if (term.isEmpty) return;
     if (_controller.isPlaying) {
       _pausedForLookup = true;
@@ -1134,7 +1149,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       );
       return;
     }
-    await pushNestedPopup(
+    final int matchedRunes = await pushNestedPopup(
       query: term,
       selectionRect: charRect,
       controller: _popup,
@@ -1142,6 +1157,22 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       reuseWarmSlot: true,
       autoRead: true,
     );
+    if (!mounted) return;
+    // BUG-2091：与 video_fushi_page 同语义——按引擎匹配长度在字幕上高亮被查词。
+    final AudioCue? highlightCue = overrideCue ?? _lastLookupCue;
+    final int graphemeCount = lookupHighlightGraphemeCount(term, matchedRunes);
+    final SubtitleLookupHighlight? nextHighlight =
+        graphemeCount > 0 && highlightCue != null && span.start >= 0
+        ? SubtitleLookupHighlight(
+            sentence: sentence,
+            cueStartMs: highlightCue.startMs,
+            graphemeStart: span.start,
+            graphemeCount: graphemeCount,
+          )
+        : null;
+    if (nextHighlight != _subtitleLookupHighlight) {
+      setState(() => _subtitleLookupHighlight = nextHighlight);
+    }
   }
 
   // ── 窗口宿主档：DOM 字幕层点词 → 顶层查词窗口 ────────────────────────────
@@ -1601,6 +1632,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
                                 ReaderFushiSource.instance.hoverAutoLookup,
                             hitTester: _subtitleHitTester,
                             isCueFavorited: _isCueFavorited,
+                            // BUG-2091：被查词垫底色高亮（派生值，栈空即 null）。
+                            lookupHighlight: _activeSubtitleLookupHighlight,
                             fontFamily: _appModel.subtitleFontFamily,
                           ),
                         ),
