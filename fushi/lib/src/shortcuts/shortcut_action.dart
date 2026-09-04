@@ -198,13 +198,32 @@ enum ShortcutScope {
       // 与摇杆负责，见 shortcut_defaults 的 dpad* 注释。
       case gamepad:
         return const <ShortcutChannel>{ShortcutChannel.gamepad};
-      // app 外全局查词热键：GlobalLookupController 只读 `.keyboardBindings` 注册到
-      // OS 级 hotkey_manager，而 `HotKey.key` 的类型就是 Flutter 的 `KeyboardKey`，
-      // 底层是 win32 `RegisterHotKey`（修饰键位掩码 + 虚拟键码）。手柄按钮无法表达，
-      // 鼠标键则要装 WH_MOUSE_LL 全局钩子并全系统吞掉该键——两者都不是这条机制能
-      // 提供的，故只开键盘。
+      // app 外全局查词：三通道，但**三条通道各走各的 OS 机制**，不共用一套注册。
+      // 这是全 app 唯一一处「同一个动作、三种底层触发机制」的 scope，故在此写明
+      // 各自的边界（TODO-1066）：
+      //   · 键盘：`.keyboardBindings` → hotkey_manager → win32 `RegisterHotKey`。
+      //     `HotKey.key` 的类型就是 Flutter 的 `KeyboardKey`（修饰键位掩码 + 虚拟
+      //     键码），所以手柄按钮和鼠标键**按构造无法**表达成它——这正是另外两条
+      //     必须另起机制的原因，不是偷懒。
+      //   · 手柄：`.gamepadBindings` → `GamepadService._dispatchButton` 里一条
+      //     **不经 Flutter 焦点树**的分支（`GlobalExternalLookupRoute`）。底层
+      //     GameInput 是每手柄一条 native 线程的进程级轮询，与前台焦点无关，所以
+      //     app 失焦时按钮照样读得到；断掉的只是 Actions/Focus 那条派发链，那条
+      //     分支补的就是它。默认绑定必须留空——它优先于页面，给默认值等于抢键。
+      //   · 鼠标：`.mouseBindings` → native RawInput + `RIDEV_INPUTSINK`
+      //     （windows/runner/global_mouse_trigger.cpp），且**只在用户真绑了侧键
+      //     时才注册**，没绑就一个系统级监听都不留。
+      //     刻意**不用** WH_MOUSE_LL：低级鼠标钩子是同步钩子，全系统每一次鼠标
+      //     移动都要排队等我们的回调返回（BUG-1048 的原始症状），而 BUG-1077 已
+      //     立下「不查词不留全局钩子」的契约。RawInput 是异步投递，不插进系统输入
+      //     分发的关键路径。代价是它只能监听、不能拦截——而侧键在浏览器里是"后退"，
+      //     本来就**必须放行**，所以这个"限制"恰好就是我们要的语义。
       case globalExternal:
-        return const <ShortcutChannel>{ShortcutChannel.keyboard};
+        return const <ShortcutChannel>{
+          ShortcutChannel.keyboard,
+          ShortcutChannel.gamepad,
+          ShortcutChannel.mouse,
+        };
       // 漫画页：键盘走 `_resolveMangaKeyAction`（resolveKeyboard），手柄走
       // `_handleGamepadButton`（resolveGamepad manga → universal，桌面轮询的
       // GamepadButtonIntent 与 Android gameButton* 键事件汇合到同一入口，与
