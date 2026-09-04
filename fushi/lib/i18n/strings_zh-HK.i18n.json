@@ -4199,5 +4199,14 @@
   "onboarding_pack_status_ready": "Recommended pack downloaded",
   "onboarding_pack_import_now": "Import now",
   "onboarding_pack_download_finished": "Recommended pack finished downloading. Import it from Settings → System.",
-  "onboarding_pack_download_background_hint": "The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System."
+  "onboarding_pack_download_background_hint": "The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.",
+  "onboarding_anki_fsrs_title": "在 Anki 裡開啟 FSRS",
+  "onboarding_anki_fsrs_body": "Anki 內建了 FSRS —— 目前最好的間隔重複演算法之一，但你不打開它，排程就一直走三十多年前的 SM-2。FSRS 拿你的真實複習記錄預測遺忘時點，同樣的記憶效果複習量更少。這個開關只在 Anki 裡開一次，Fushi 這邊不用改任何設定。",
+  "onboarding_anki_fsrs_step_options_title": "打開牌組選項",
+  "onboarding_anki_fsrs_step_options_desktop_desc": "在 Anki 主介面點牌組右側的齒輪，選「選項」。",
+  "onboarding_anki_fsrs_step_options_mobile_desc": "在 AnkiDroid（2.17 及以上）或 AnkiMobile 裡長按牌組，選「選項」。",
+  "onboarding_anki_fsrs_step_toggle_title": "打開 FSRS 開關",
+  "onboarding_anki_fsrs_step_toggle_desc": "捲到選項頁最底部的「FSRS」區塊（舊版藏在「進階」裡），把開關打開。它對整個收藏生效，開一次就夠。",
+  "onboarding_anki_fsrs_step_optimize_title": "點「最佳化」再儲存",
+  "onboarding_anki_fsrs_step_optimize_desc": "在開關下方點「最佳化」，讓參數貼合你自己的複習記錄，然後儲存。複習記錄不足約 1000 條時預設參數已經比 SM-2 準，攢夠以後再最佳化一次即可。"
 }

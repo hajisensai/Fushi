@@ -44,6 +44,35 @@ const String kAnkiDesktopDownloadUrl = 'https://apps.ankiweb.net/';
 const String kAnkiDroidDownloadUrl =
     'https://play.google.com/store/apps/details?id=com.ichi2.anki';
 
+/// 「在 Anki 里开启 FSRS」教程的三步。
+///
+/// Anki 自 23.10 起内置 FSRS，但排程默认仍是三十多年前的 SM-2：开关必须用户自己
+/// 在 Anki 的牌组选项里打开一次，应用侧代劳不了——AnkiConnect 没有 FSRS 开关
+/// API，绕过它直接改 collection config 会在 Anki 版本之间碎掉。所以引导把步骤整段
+/// 写在这里，而不是甩一条外链让用户自己找。
+///
+/// 第一步的入口桌面与移动端不同（牌组齿轮菜单 vs 长按牌组），其余两步各端一致。
+List<OnboardingTutorialItem> ankiFsrsTutorialSteps({required bool mobile}) =>
+    <OnboardingTutorialItem>[
+      OnboardingTutorialItem(
+        icon: Icons.settings_outlined,
+        title: t.onboarding_anki_fsrs_step_options_title,
+        description: mobile
+            ? t.onboarding_anki_fsrs_step_options_mobile_desc
+            : t.onboarding_anki_fsrs_step_options_desktop_desc,
+      ),
+      OnboardingTutorialItem(
+        icon: Icons.toggle_on_outlined,
+        title: t.onboarding_anki_fsrs_step_toggle_title,
+        description: t.onboarding_anki_fsrs_step_toggle_desc,
+      ),
+      OnboardingTutorialItem(
+        icon: Icons.auto_graph_outlined,
+        title: t.onboarding_anki_fsrs_step_optimize_title,
+        description: t.onboarding_anki_fsrs_step_optimize_desc,
+      ),
+    ];
+
 /// 步骤内容区最大宽度：桌面宽窗口下正文行长过长会难读，卡片也会被拉成长条。
 const double _kOnboardingContentMaxWidth = 720;
 
@@ -580,6 +609,9 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final AnkiUiState anki = ref.watch(ankiViewModelProvider);
     final bool mobile = Platform.isAndroid || Platform.isIOS;
+    final List<OnboardingTutorialItem> fsrsSteps = ankiFsrsTutorialSteps(
+      mobile: mobile,
+    );
     final bool connected = _ankiTestAttempted &&
         !anki.isFetching &&
         anki.errorMessage == null &&
@@ -654,6 +686,20 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
             mobile: mobile,
           ),
         ),
+        // 「去 Anki 里把 FSRS 打开」的整段教程（见 [ankiFsrsTutorialSteps]）。
+        // 常显、不折叠：Anki 默认排程还是 SM-2，收起来等于没说。
+        SizedBox(height: tokens.spacing.card),
+        OnboardingSectionLabel(
+          title: t.onboarding_anki_fsrs_title,
+          hint: t.onboarding_anki_fsrs_body,
+        ),
+        SizedBox(height: tokens.spacing.gap),
+        for (int index = 0; index < fsrsSteps.length; index++)
+          OnboardingTutorialStep(
+            number: index + 1,
+            item: fsrsSteps[index],
+            isLast: index == fsrsSteps.length - 1,
+          ),
         // 移动端次级入口：本机改用 AnkiConnect 连电脑（默认收起，配置真值仍在
         // 制卡设置，不在向导里复制表单）。
         if (mobile) ...<Widget>[
