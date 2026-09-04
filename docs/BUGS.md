@@ -29,20 +29,44 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1988 条。点号进各自文件。
+> 共 2013 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2144](bugs/BUG-2144-gal-kirikiri2-bcb-exception-escapes-msvc-catch.md) | ✅ | ✅ | KiriKiri2/BCB 上 TJS 抛的 Borland 异常穿透 MSVC catch(...)，注入的每帧求值把游戏打成致命错误框并强制写快速存档 |
+| [BUG-2143](bugs/BUG-2143-attached-status-without-reason-undiagnosable.md) | ✅ | 🚧 | attached 状态机十二处 `needsRiskAcceptance` / `needsCalibration` / `waitingForBodyThread` 不带 reason，真机上无法定位是哪条分支 |
+| [BUG-2142](bugs/BUG-2142-attached-provider-claim-livelock.md) | ✅ | ✅ | 被抢占的旧轮次撤回 attached provider 认领，与注入侧 registry 形成活锁 |
+| [BUG-2141](bugs/BUG-2141-attached-risk-accepted-but-status-traps.md) | ✅ | 🚧 | profile 里风险已接受时 `needsRiskAcceptance` 变成死局：不生成 request、按钮不渲染、也没有恢复触发点 |
+| [BUG-2140](bugs/BUG-2140-attached-first-lookup-disarms-shield-click-passes-through.md) | — | ✅ | 第一次查词后 attached 表面再也武装不起来，之后每次点击都穿透并推进剧情 |
+| [BUG-2139](bugs/BUG-2139-attached-body-thread-recovery-edge-only.md) | ✅ | ✅ | attached 从 `waitingForBodyThread` 的恢复只挂在「正文从无到有」这一次性边沿上 |
+| [BUG-2138](bugs/BUG-2138-attached-dwrite-baseline-breaks-japanese-clusters.md) | ✅ | 🚧 | attached 子面 DirectWrite 基线硬编码 0.8em，日文正文必然上溢版面框，字形簇永远建不出来 |
+| [BUG-2137](bugs/BUG-2137-attached-noglyphclusters-withdraws-claim.md) | ✅ | ✅ | attached 子面回 `noGlyphClusters` 时撤回了跨轮次共享的 provider 认领，与 BUG-2142 是同一个活锁的另一道门 |
+| [BUG-2136](bugs/BUG-2136-hunex-body-glyph-coords-are-logical-layer-local.md) | ✅ | ✅ | WoH 正文字形 render x/y 是「1920×1080 逻辑空间的文本层局部坐标」，客户区映射已实测成立，只差层原点 |
+| [BUG-2135](bugs/BUG-2135-hunex-body-render-has-no-compose-layer.md) | ✅ | 🚧 | WoH 正文渲染没有合成层，HUNEX 几何模型的三级 compose 假设不成立 |
+| [BUG-2134](bugs/BUG-2134-hunex-compose-wrapper-anchor-never-called.md) | ✅ | ✅ | HUNEX 投影链的 compose wrapper 锚点在 WoH 上从未被调用，整条几何证据无从产生 |
+| [BUG-2133](bugs/BUG-2133-hunex-deferred-selected-read-masks-failure.md) | ✅ | ✅ | HUNEX 延迟选中文本读的空窗口覆盖掉第一次读的真实失败码，且候选计数被丢弃无法分型 |
+| [BUG-2132](bugs/BUG-2132-hunex-projection-chain-diagnostic-blind-spots.md) | ✅ | ✅ | HUNEX 投影链段 3/段 4 的拒绝路径无诊断，真机读不出断在哪一环 |
+| [BUG-2131](bugs/BUG-2131-hunex-loopback-ack-timeout-kills-text-hook.md) | ✅ | ✅ | native loopback allow 的确认超时中止注入，导致 LunaHook 文本 hook 永不安装 |
+| [BUG-2130](bugs/BUG-2130-gal-resource-late-pending-loopback-freeze-wait.md) | ✅ | ✅ | game_resource 行先 pending 后被资源匹配，制卡仍白等一个被丢弃的 loopback 冻结窗 |
+| [BUG-2129](bugs/BUG-2129-woh-hunex-realmachine-lookup-boundary.md) | 🚧 | 🚧 | 真机 WoH(HUNEX)合并构建:拉起/hook/音频/文本/风险确认均通过,原生几何 fail-closed 退到 attached 需标定 |
+| [BUG-2128](bugs/BUG-2128-kirikiri-ingame-click-advances-no-card.md) | 🚧 | 🚧 | 真机:KiriKiri(Limelight)游戏内单击文字推进对白而非弹查词卡,悬停高亮正常 |
+| [BUG-2127](bugs/BUG-2127-gal-mining-audio-before-utterance-settles.md) | ✅ | ✅ | 台词一出就制卡只拿到句子音频的开头（引擎 PCM 收敛 / loopback 冻结未收口） |
+| [BUG-2126](bugs/BUG-2126-galgame-locale-launch-early-injection-kills-kirikiri.md) | ✅ | ✅ | 转区（Locale Emulator）拉起 + 早注入让 x86 KiriKiri 游戏进程随即死亡，退回附着才可用 |
+| [BUG-2125](bugs/BUG-2125-gal-attached-popup-outside-click-passthrough.md) | ✅ | ✅ | attached 校准表面弹出的桌面查词卡点外关闭时点击透传给游戏推进台词 |
 | [BUG-2121](bugs/BUG-2121-gal-main-window-owned-by-hidden-vcl-owner.md) | ✅ | ✅ | FindGameMainWindow 排除所有有 owner 的窗口：BCB VCL 窗体被隐藏 TApplication own，KiriKiri2 查词安装 / exe 直取门 / overlay owner 整局静默失败 |
+| [BUG-2120](bugs/BUG-2120-desktop-oauth-no-manual-link.md) | ✅ | ✅ | 桌面云盘 OAuth 登录无「复制链接/重开/取消」兜底，浏览器页失败只能等 5 分钟超时 |
+| [BUG-2119](bugs/BUG-2119-sqlite-busy-statement-poisons-connection-exit-trap.md) | ✅ | ✅ | 视频页 Esc/返回退不出去：写语句 SQLITE_BUSY 后未 reset 毒化整条连接，退出被落库绑架 |
 | [BUG-2118](bugs/BUG-2118-gal-kirikiri2-exporter-called-before-static-init.md) | ✅ | ✅ | 启动期过早调用 TVPGetFunctionExporter 抢在引擎静态构造之前，导出表随后被构造函数重置致插件链接全失败 |
+| [BUG-2117](bugs/BUG-2117-shortcut-scope-order.md) | ✅ | ✅ | 快捷键设置页 scope 卡片顺序是枚举累加顺序而非通用→页面→设备 |
 | [BUG-2116](bugs/BUG-2116-gal-classic-kag3-class-patch-invisible-to-instances.md) | ✅ | ✅ | 经典 KAG3 游戏内查词传感器给 TJS 类对象打补丁对实例永远不可见 |
 | [BUG-2115](bugs/BUG-2115-kirikiri-voice-stream-filter-captures-se-bgm.md) | ✅ | ✅ | KiriKiri 资源流语音过滤按裸 .ogg/.opus 后缀把 SE/BGM/脚本当语音并配给旁白 |
 | [BUG-2114](bugs/BUG-2114-kirikiri-direct-route-term-highlight-missing.md) | ✅ | ✅ | KiriKiri 直连路由下被查整词不高亮，只亮点击的单字 |
 | [BUG-2113](bugs/BUG-2113-kirikiri-ingame-card-mining-text-generation-mismatch.md) | ✅ | ✅ | KiriKiri 点击载荷 text_generation 填成 TJS 提交序号，游戏内「+」制卡恒失败 |
 | [BUG-2112](bugs/BUG-2112-gal-thread-picker-artifact-thread-looks-clean.md) | ✅ | ✅ | 游戏文本线程选择器把全伪影线程当干净线程展示，选中后永远 0 行且无提示 |
+| [BUG-2111](bugs/BUG-2111-context-menu-hardwired-secondary-button.md) | ✅ | ✅ | 右键菜单硬绑鼠标次按钮，把动作绑到右键会双触发 |
 | [BUG-2110](bugs/BUG-2110-dict-mass-import-startup-crash.md) | ✅ | ✅ | 一次性导入大量词典后启动转圈中途闪退 |
 | [BUG-2109](bugs/BUG-2109-recommended-pack-never-deleted.md) | ✅ | ✅ | 推荐包 9.5GB zip 导入后永不删除（清理钩子挂在不再执行的引导页 initState） |
+| [BUG-2108](bugs/BUG-2108-video-rewatch-counted.md) | ✅ | ✅ | 视频回放/重看被重复计入观看时长 |
 | [BUG-2107](bugs/BUG-2107-onboarding-pack-pick-bare-filepicker.md) | ✅ | ✅ | 引导选本地包走裸 pickFiles：安卓整份复制进 cache，失败静默无提示 |
 | [BUG-2106](bugs/BUG-2106-backup-validating-overlay-destroys-caller-route.md) | ✅ | ✅ | 备份 validating 遮罩换根摧毁调用方路由：引导选包后引导蒸发且无提示 |
 | [BUG-2105](bugs/BUG-2105-fullscreen-episode-switch-mobile-orientation.md) | ✅ | ✅ | 移动端换集后掉出全屏：旧页 dispose 无条件放开横屏锁并清空系统栏回调 |
@@ -57,6 +81,7 @@
 | [BUG-2096](bugs/BUG-2096-storage-category-detail-gap.md) | ✅ | ✅ | 存储页词典/书籍类目明细不覆盖总量 10.7GB 不可见 |
 | [BUG-2095](bugs/BUG-2095-video-subtitle-hidden-no-hover-reveal.md) | ✅ | ✅ | 字幕隐藏后鼠标悬停/点击无法临时显形 |
 | [BUG-2094](bugs/BUG-2094-secondary-subtitle-import-not-listed.md) | ✅ | ✅ | 导入的副字幕在字幕列表里消失，但画面仍在渲染它 |
+| [BUG-2093](bugs/BUG-2093-subtitle-row-copy-check-vanishes.md) | ✅ | ✅ | 字幕列表行复制的 ✓ 反馈在播放头离开该行时提前消失 |
 | [BUG-2090](bugs/BUG-2090-overlay-hover-highlight-brush-leak.md) | ✅ | ✅ | overlay 悬浮高亮窗口类每次重建都漏一个 GDI brush |
 | [BUG-2089](bugs/BUG-2089-inapp-mining-payload-bool-cast-crash.md) | ✅ | ✅ | 应用内制卡全部失败：「导出卡片失败: Invalid card data (payload parse failed): type 'String' is not a subtype of type 'bool?' in type cast」 |
 | [BUG-2088](bugs/BUG-2088-release-notes-never-reach-update-dialog.md) | ✅ | ✅ | 正式版更新公告进不了应用内更新弹窗，用户看到的是一行占位符 |

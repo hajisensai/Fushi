@@ -68,10 +68,11 @@ void main() {
     });
 
     test('每个按钮接到各自的 handler', () {
+      // 复制按钮的 handler 包在闭包里（要拿返回值决定 ✓），由下方「复制按钮就地反馈」
+      // 那条单独钉住。
       for (final String handler in <String>[
         '_replayLookupCue',
         '_jumpToLookupCue',
-        '_copyLookupSentence',
         '_toggleFavoriteSentenceForVideo',
       ]) {
         expect(
@@ -150,7 +151,7 @@ void main() {
     test('_copyLookupSentence 优先复制锚定 cue 文本，无 cue 时回落整句', () {
       final String body = region(
         partSrc,
-        'void _copyLookupSentence() {',
+        'bool _copyLookupSentence() {',
         '\n  }',
       );
       expect(body.contains('Clipboard.setData('), isTrue);
@@ -159,6 +160,42 @@ void main() {
         isTrue,
         reason: '无 cue（无字幕轨 / gap 查词）时必须回落，按钮不能变哑',
       );
+    });
+
+    test('复制按钮就地反馈：成功才切 ✓，空文本分支不装成功', () {
+      // handler 用返回值区分「真写了剪贴板」与「无句可复制」。
+      final String body = region(
+        partSrc,
+        'bool _copyLookupSentence() {',
+        '\n  }',
+      );
+      expect(body.contains('return false;'), isTrue);
+      expect(body.contains('return true;'), isTrue);
+      // 顶栏按钮包在 CopyFeedback 里，且只在 handler 返回 true 时 markCopied。
+      final String header = region(
+        pageSrc,
+        'Widget? buildPopupHeaderFor(int index) {',
+        '/// 关闭查词浮层栈中第',
+      );
+      final String button = region(
+        header,
+        "key: const Key('video_popup_copy_sentence_button')",
+        'video_favorite_sentence_button',
+      );
+      expect(
+        header.contains('CopyFeedback('),
+        isTrue,
+        reason: '复制按钮必须有就地 ✓ 反馈——OSD 在视频区，弹窗里看不见',
+      );
+      expect(
+        button.contains('if (_copyLookupSentence()) markCopied();'),
+        isTrue,
+      );
+      expect(
+        button.contains('copied ? Icons.check : Icons.content_copy_outlined'),
+        isTrue,
+      );
+      expect(button.contains('copied ? t.copied : t.copy'), isTrue);
     });
 
     test('重播不改写 _pausedForLookup（关浮层恢复播放的依据，BUG-072）', () {

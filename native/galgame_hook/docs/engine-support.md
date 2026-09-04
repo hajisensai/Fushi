@@ -11,6 +11,7 @@
 | `siglus` | SiglusEngine | `verified` | engine_exact_utf16_hook (implemented_unverified)；luna_hook (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | resource_audio (verified)；directsound_pcm (verified)；process_loopback (verified) | 1 |
 | `elf_ai6` | elf AI6 | `implemented_unverified` | luna_textouta_hook (implemented_unverified) | ai6_voice_arc_resource (implemented_unverified)；directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `reallive` | RealLive / old VisualArt's | `implemented_unverified` | luna_hook (implemented_unverified) | visual_arts_ovk_resource (implemented_unverified)；xaudio2_or_directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
+| `cmvs` | CMVS (Purple Software) | `implemented_unverified` | luna_hook (implemented_unverified) | xaudio2_or_directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `kirikiri_z` | KiriKiri2 / KiriKiriZ | `partial` | luna_auto_or_pc_hooks (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | kirikiri_resource_stream (implemented_unverified)；kirikiri_decoder_pcm (implemented_unverified)；directsound_pcm (verified)；process_loopback (verified) | 2 |
 | `xaudio2_directsound` | XAudio2 / DirectSound generic capture | `verified` | — | xaudio2_source_voice_pcm (verified)；directsound_buffer_pcm (verified)；xwma_compressed_resource (implemented_unverified) | 1 |
 | `renpy_ffmpeg` | Ren'Py / FFmpeg | `implemented_unverified` | luna_auto_or_pc_hooks (implemented_unverified) | ffmpeg_resource_event (implemented_unverified)；ffmpeg54_decoder_pcm (implemented_unverified)；process_loopback (verified) | 1 |
@@ -216,6 +217,48 @@ Tests：`tests/elf_ai6_adapter_test.cpp`、`tests/resource_audio_ready_test.cpp`
 Fixtures：`tests/fixtures/reallive_replay.json`
 
 Tests：`tests/reallive_adapter_test.cpp`
+
+### CMVS (Purple Software) (`cmvs`)
+
+- 状态：`implemented_unverified`
+- 别名：CMVS、Purple Software、パープルソフトウェア
+- 家族：`cmvs`（Purple Software in-house engine; no verified sibling）
+- 当前 adapter：`hook/adapters/cmvs_adapter.inc`
+- 进程策略：launch=`generic_launch_available`，attach=`generic_attach_available`，follow-child=`false`
+
+识别签名（所有非空项均带真实样本或运行时观察证据）：
+
+- `executable_names`：cmvs32.exe、cmvs64.exe；证据：real_sample — Purple Software クロノクロック 体験版v2 (2015-03-20) ships both cmvs32.exe (x86) and cmvs64.exe (x64); static probe 2026-09-04. Retail builds may rename the exe, so names are catalogue only and the adapter matches on cmvs.cfg + CPZ archives instead
+- `pe_architectures`：x86、x64；证据：real_sample — cmvs32.exe machine 0x14c, cmvs64.exe machine 0x8664 (same trial package)
+- `directory_files_all`：cmvs.cfg、data/pack/start.ps3；证据：real_sample — cmvs.cfg opens with [CMVS_SYSTEM_MAIN] and SCRIPT_INIT_PATH=data\pack\; data/pack/start.ps3 (PS2A) is the script entry; trial package 2015-03-20
+- `pe_imports`：DSOUND.dll、WINMM.dll、d3d9.dll、mog2x32.dll、mog2x64.dll；证据：real_sample — PE import tables of cmvs32.exe / cmvs64.exe (static probe 2026-09-04); DirectSound is the only audio API imported
+- `runtime_modules`：mog2x32.dll、mog2x64.dll；证据：real_sample — Purple MOG2 image library shipped next to the exe (sha256 6b8dc960… / c51ba0c3…); static import only, runtime load not yet observed
+- `resource_extensions`：.cpz、.ps3、.cmv；证据：real_sample — data/pack/*.cpz (CPZ6 magic; voice.cpz + voice2.cpz hold voice), data/pack/start.ps3, data/video/*.cmv, data/music/*.ogg in the trial package
+- `hashes`：c5e715d98b56468df0a3d6bd8ec263b72bab736e0ad004de4e443a54c470ddad、aa89205a61c7078a167f9e6668eea2e4328bdd5c9cbcdd6f45b238cf475acea2；证据：real_sample — cmvs32.exe / cmvs64.exe of クロノクロック 体験版v2, catalogue only; the adapter does not hash-pin because the structural cfg + CPZ check is the identity
+
+文本能力：
+
+- `luna_hook`：`implemented_unverified` — Vendored LunaHook32/64 both carry the EmbedCMVS engine hook; no real-session dialogue thread has been observed yet.
+- codepage：932
+- 线程提示：Prefer the LunaHook EmbedCMVS thread once observed; the adapter installs no text hook of its own.
+
+音频优先级：
+
+1. `xaudio2_or_directsound_pcm` — `implemented_unverified`；格式：DirectSound source PCM via the generic Windows audio adapter；clean voice：engine_dependent
+2. `process_loopback` — `implemented_unverified`；格式：host PCM fallback；clean voice：否
+
+真实样本证据：
+
+
+已知限制：
+
+- Per-line voice resources live inside CPZ6-encrypted voice.cpz / voice2.cpz; no resource layer is implemented and none is claimed until a runtime decrypt-read seam is measured on a real session.
+- Identity is structural (cmvs.cfg section + CPZ archive magic); executable hashes are catalogued but not pinned.
+- In-game lookup sensor is not implemented; lookupAdmission stays EngineUnsupported.
+
+Fixtures：`tests/fixtures/cmvs_replay.json`
+
+Tests：`tests/cmvs_adapter_test.cpp`、`../../fushi/test/mining/cmvs_pairing_test.dart`
 
 ### KiriKiri2 / KiriKiriZ (`kirikiri_z`)
 

@@ -208,9 +208,15 @@ fushi_voice_hook::HookOriginalRegistry<16> g_flush_source_buffers_originals;
 std::wstring VoiceBaseName(const wchar_t* storagename, const uint8_t* data,
                            uint32_t len) {
   std::wstring s(storagename);
-  const size_t pos = s.find_last_of(L"/\\>");  // `>` = KiriKiri 归档放置路径分隔符
-  std::wstring base =
-      (pos == std::wstring::npos) ? s : s.substr(pos + 1);
+  // 分隔符判据的唯一真相源是 `kirikiri_voice_storage_name.h`——这里从尾往前扫并
+  // **调用**它，而不是把字符集再抄一遍。抄一遍的代价已经付过：BUG-2115 的根因就是
+  // 这个集合里少了 `>`；而 `fushi_kirikiri_voice_storage_name_test` 里那 4 条分隔符
+  // 断言压的是那个函数，只要生产代码自己硬写字符集，把它改窄测试照样全绿。
+  size_t cut = s.size();
+  while (cut > 0 && !fushi_voice_hook::IsKirikiriPathSeparator(s[cut - 1])) {
+    --cut;
+  }
+  std::wstring base = s.substr(cut);
   for (wchar_t& c : base) {
     if (c == L':' || c == L'*' || c == L'?' || c == L'"' || c == L'<' ||
         c == L'>' || c == L'|') {
@@ -666,6 +672,19 @@ DWORD WINAPI HookWorker(LPVOID module_context) {
   // still never creates the loopback worker; explicit allow remains
   // independent of MinHook just as the historical fallback was.
   registry.InstallFallbackAdapters();
+  // install() 只起 worker 并发布 starting；allow 的 applied/running 确认要等 worker
+  // 真正 Start() 成功后的下一轮 PollPolicy。若把那一轮留到 MH_Initialize() +
+  // InstallStartupAdapters() 之后，早注入 5s 的确认预算基本必然超时（BUG-2131）。
+  // 这里用一个短的有界追平循环，只推进策略状态机、不碰引擎适配器：worker 起流通常
+  // 在几百毫秒内完成，追平后立即继续引擎探测；追不平也照常往下走，绝不无界等待。
+  {
+    const ULONGLONG ack_deadline = GetTickCount64() + 1500ull;
+    while (!g_stop && GetTickCount64() < ack_deadline) {
+      registry.PollLoopbackPolicyOnly();
+      if (fushi_voice_hook::NativeLoopbackRequestAcknowledged(g_header)) break;
+      Sleep(20);
+    }
+  }
   InitializeCriticalSection(&g_cs);
   g_cs_ready = true;
   InitializeCriticalSection(&g_text_cs);

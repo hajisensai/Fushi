@@ -99,6 +99,7 @@ import 'package:fushi/src/media/torrent/anime_download_subscription.dart';
 import 'package:fushi/src/media/torrent/torrent_memory.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
 import 'package:fushi/src/media/video/video_lua_capability.dart';
+import 'package:fushi/src/media/video/video_specs_service.dart';
 import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi/src/media/video/download/video_download_path_mapping.dart';
 import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
@@ -2733,7 +2734,8 @@ class AppModel with ChangeNotifier {
         defaultTargetPlatform,
       );
 
-      debugPrint('[Fushi] init: search preload (deferred to after first frame)');
+      debugPrint(
+          '[Fushi] init: search preload (deferred to after first frame)');
       unawaited(_warmUpSearchAfterFirstFrame());
 
       debugPrint('[Fushi] init: DONE');
@@ -3778,6 +3780,36 @@ class AppModel with ChangeNotifier {
         clientFactory: () =>
             MokuroMoeClient(baseUrl: mangaOnlineCatalogBaseUrl),
       );
+
+  /// 视频文件技术规格缓存（v95，懒建）：库页卡片的清晰度/HDR 角标与作品详情页的
+  /// 规格表共用一份，跨页面存活以免来回切页反复 ffprobe。
+  ///
+  /// **刻意不接 `addListener(notifyListeners)`**：它每探完一个文件就通知一次（滚一屏
+  /// 几十次），转发成 AppModel 的全局通知会让每个 `ref.watch(appProvider)` 的页面
+  /// 跟着重建。消费方走 [videoSpecsProvider] 单独订阅，重建面收敛到卡片子树。
+  ///
+  /// 实例与**当时那个 [FushiDatabase] 连接**绑定：getter 每次比对身份，`_database`
+  /// 被换掉（数据根迁移、切 Profile、恢复备份、`retryInitialise` 都会 close/reopen）
+  /// 就地重建一个。
+  ///
+  /// **不能靠「每条关库路径都记得清掉它」**：那是一条要靠人肉枚举维护的不变式，已经
+  /// 漏过一次（`retryInitialise` 里只清了 `_galgameRepo`）。漏掉的后果不是崩溃而是
+  /// 静默退化——服务仍绑着已关闭的连接，读写全被 prime/_probeAndStore 的 try 吞成
+  /// debugPrint，表现为「每次滚动都重探、永远不落库」。身份比对把它变成结构保证。
+  VideoSpecsService? _videoSpecsService;
+
+  /// [_videoSpecsService] 建立时用的那个连接，仅用于身份比对。
+  FushiDatabase? _videoSpecsServiceDb;
+
+  VideoSpecsService get videoSpecsService {
+    final FushiDatabase db = database;
+    if (_videoSpecsService == null || !identical(_videoSpecsServiceDb, db)) {
+      _videoSpecsService?.dispose();
+      _videoSpecsService = VideoSpecsService(db);
+      _videoSpecsServiceDb = db;
+    }
+    return _videoSpecsService!;
+  }
 
   /// Mihon 扩展生态宿主（Android 原生 / Windows、macOS 内置 Java sidecar）。
   ///
@@ -6404,6 +6436,11 @@ class AppModel with ChangeNotifier {
     _animeDownloadSubscriptionService?.stop();
     _mokuroMoeDownloadQueue?.dispose();
     _mokuroMoeDownloadQueue = null;
+    // 服务持有 FushiDatabase 引用，db 关闭/重开时必须一并销毁，否则新库开出来后
+    // 旧实例还拿着已关闭的连接，探测队列一落库就抛。
+    _videoSpecsService?.dispose();
+    _videoSpecsService = null;
+    _videoSpecsServiceDb = null;
     _discoveryDownloadQueue?.dispose();
     _discoveryDownloadQueue = null;
     _mediaDiscoveryService?.close();
@@ -6473,6 +6510,11 @@ class AppModel with ChangeNotifier {
     unawaited(_disposeVideoDownloadPipelineRuntime());
     _mokuroMoeDownloadQueue?.dispose();
     _mokuroMoeDownloadQueue = null;
+    // 服务持有 FushiDatabase 引用，db 关闭/重开时必须一并销毁，否则新库开出来后
+    // 旧实例还拿着已关闭的连接，探测队列一落库就抛。
+    _videoSpecsService?.dispose();
+    _videoSpecsService = null;
+    _videoSpecsServiceDb = null;
     _discoveryDownloadQueue?.dispose();
     _discoveryDownloadQueue = null;
     _mediaDiscoveryService?.close();

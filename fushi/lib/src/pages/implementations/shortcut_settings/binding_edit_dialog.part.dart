@@ -6,6 +6,20 @@
 // moved here with their sole call sites.
 part of '../shortcut_settings_page.dart';
 
+/// 撞键时用户的三种处置，替代原来的「换/不换」二选一。
+///
+/// 为什么必须有 [keepBoth]：撞键**不等于**其中一个必须让出。同一个按钮完全可以同时
+/// 留在两个动作上——按下时由解析阶梯（页面 scope 先、global/universal 兜底）决定谁
+/// 生效，这正是「右键既是某页面动作、又是上下文菜单默认键」这类配置的正常形态。旧流程
+/// 只给「替换」一条路，等于强迫用户先去解绑另一个动作才能配自己想要的键。
+enum _ConflictResolution {
+  /// 把这个绑定从冲突动作上剥走，只留给当前动作（旧流程的唯一选项）。
+  replace,
+
+  /// 两个动作都保留该绑定，按下时按作用域先后仲裁。
+  keepBoth,
+}
+
 /// TODO-1088: whether the running platform has a mouse whose non-primary buttons
 /// can be bound. Desktop (Windows/Linux/macOS) yes; mobile (Android/iOS) has no
 /// mouse, so the capture entry is hidden there and the mouse section stays a
@@ -246,12 +260,15 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
         _wheelCapturing = false;
         _conflictWarning = t.shortcut_conflict(s: conflict.label);
       });
-      final bool confirmed = await _showConflictReassignmentDialog(conflict);
-      if (!confirmed || !mounted) return;
+      final _ConflictResolution? choice =
+          await _showConflictReassignmentDialog(conflict);
+      if (choice == null || !mounted) return;
       if (_wheel.contains(binding)) return;
       setState(() {
         _wheel.add(binding);
-        if (!_wheelReassignments.contains(binding)) {
+        // keepBoth 时不登记 reassignment（写回阶段才会真的剥走别的动作的绑定）。
+        if (choice == _ConflictResolution.replace &&
+            !_wheelReassignments.contains(binding)) {
           _wheelReassignments.add(binding);
         }
         _conflictWarning = null;
@@ -310,12 +327,15 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
         _mouseCapturing = false;
         _conflictWarning = t.shortcut_conflict(s: conflict.label);
       });
-      final bool confirmed = await _showConflictReassignmentDialog(conflict);
-      if (!confirmed || !mounted) return;
+      final _ConflictResolution? choice =
+          await _showConflictReassignmentDialog(conflict);
+      if (choice == null || !mounted) return;
       if (_mouse.contains(binding)) return;
       setState(() {
         _mouse.add(binding);
-        if (!_mouseReassignments.contains(binding)) {
+        // keepBoth 时不登记 reassignment（写回阶段才会真的剥走别的动作的绑定）。
+        if (choice == _ConflictResolution.replace &&
+            !_mouseReassignments.contains(binding)) {
           _mouseReassignments.add(binding);
         }
         _conflictWarning = null;
@@ -428,22 +448,37 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
       _capturing = false;
       _conflictWarning = t.shortcut_conflict(s: conflict.label);
     });
-    final bool confirmed = await _showConflictReassignmentDialog(conflict);
-    if (!confirmed || !mounted) return;
+    final _ConflictResolution? choice =
+        await _showConflictReassignmentDialog(conflict);
+    if (choice == null || !mounted) return;
     if (_keyboard.contains(binding)) return;
     setState(() {
       _keyboard.add(binding);
-      if (!_keyboardReassignments.contains(binding)) {
+      // keepBoth 时**不**登记 reassignment：写回阶段的 removeKeyboardConflicts 才是
+      // 「把这个键从别的动作上剥走」的执行体，不登记就等于两个动作都留着。
+      if (choice == _ConflictResolution.replace &&
+          !_keyboardReassignments.contains(binding)) {
         _keyboardReassignments.add(binding);
       }
       _conflictWarning = null;
     });
   }
 
-  Future<bool> _showConflictReassignmentDialog(
+  Future<_ConflictResolution?> _showConflictReassignmentDialog(
     ShortcutAction conflict,
   ) async {
-    final bool? confirmed = await showAppDialog<bool>(
+    // 「两者都保留」只在**跨 scope** 撞键时是真选项。
+    //
+    // 同一个 scope 里撞键，解析（`ShortcutRegistry.resolveMouse`）按枚举声明序返回第一个
+    // 命中，枚举序靠后的那个**永远解析不到**——而设置页两处都亮着同一个键，用户无从
+    // 判断哪个是死的。仓库自己的守卫 `shortcut_defaults_test` 对这种状态的失败信息
+    // 原文就是 `the later one is shadowed`。
+    //
+    // 注意 `video` / `manga` / `gamepad` / `universal` / `globalExternal` /
+    // `dictionaryPopup` 六个 scope 的 coactiveScopes **就是它自己**，所以这些 scope 里
+    // 任何撞键都是同 scope 撞键，全都落进这个分支。
+    final bool keepBothResolvable = conflict.scope != widget.action.scope;
+    return showAppDialog<_ConflictResolution>(
       context: context,
       builder: (BuildContext ctx) {
         final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
@@ -467,10 +502,25 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
               tokens.spacing.card,
               tokens.spacing.card,
             ),
-            body: Text(
-              t.shortcut_conflict_replace_confirm(
-                s: conflict.label,
-              ),
+            body: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  t.shortcut_conflict_replace_confirm(
+                    s: conflict.label,
+                  ),
+                ),
+                // 提示文案说的是「由作用域先后仲裁」——同 scope 时没有这回事，
+                // 连提示带按钮一起收起来，别给用户一个造不出正确结果的选项。
+                if (keepBothResolvable) ...<Widget>[
+                  SizedBox(height: tokens.spacing.gap),
+                  Text(
+                    t.shortcut_conflict_keep_both_hint,
+                    style: Theme.of(ctx).textTheme.bodySmall,
+                  ),
+                ],
+              ],
             ),
             footer: Wrap(
               alignment: WrapAlignment.end,
@@ -479,13 +529,21 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
               children: <Widget>[
                 adaptiveDialogAction(
                   context: ctx,
-                  onPressed: () => Navigator.pop(ctx, false),
+                  onPressed: () => Navigator.pop(ctx, null),
                   child: Text(t.dialog_cancel),
                 ),
+                if (keepBothResolvable)
+                  adaptiveDialogAction(
+                    context: ctx,
+                    onPressed: () =>
+                        Navigator.pop(ctx, _ConflictResolution.keepBoth),
+                    child: Text(t.shortcut_conflict_keep_both),
+                  ),
                 adaptiveDialogAction(
                   context: ctx,
                   isDefaultAction: true,
-                  onPressed: () => Navigator.pop(ctx, true),
+                  onPressed: () =>
+                      Navigator.pop(ctx, _ConflictResolution.replace),
                   child: Text(MaterialLocalizations.of(ctx).okButtonLabel),
                 ),
               ],
@@ -494,7 +552,6 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
         );
       },
     );
-    return confirmed == true;
   }
 
   void _startGamepadCapture() {
@@ -552,12 +609,15 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
       setState(() {
         _conflictWarning = t.shortcut_conflict(s: conflict.label);
       });
-      final bool confirmed = await _showConflictReassignmentDialog(conflict);
-      if (!confirmed || !mounted) return;
+      final _ConflictResolution? choice =
+          await _showConflictReassignmentDialog(conflict);
+      if (choice == null || !mounted) return;
       if (_gamepad.contains(binding)) return;
       setState(() {
         _gamepad.add(binding);
-        if (!_gamepadReassignments.contains(binding)) {
+        // keepBoth 时不登记 reassignment（写回阶段才会真的剥走别的动作的绑定）。
+        if (choice == _ConflictResolution.replace &&
+            !_gamepadReassignments.contains(binding)) {
           _gamepadReassignments.add(binding);
         }
         _conflictWarning = null;
@@ -578,7 +638,10 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
     // 只渲染这个 scope 真正会被消费的通道（见 [ShortcutScope.channels]）：查词弹窗
     // 的词条导航只由弹窗 WebView 的滚轮触发，给它键盘/手柄入口等于制造死绑定。
     // 已有绑定即使通道被关也照常显示（历史快照不隐身，可删）。
-    final Set<ShortcutChannel> channels = widget.action.scope.channels;
+    // **按 action 而不是 scope 取通道**：通道能力是 scope 级声明，个别动作会继承到
+    // 没有派发点的通道（globalContextMenu 的 keyboard/gamepad）。下面 show* 的
+    // isNotEmpty 兜底保留——历史快照里已存在的绑定仍要可见可删。
+    final Set<ShortcutChannel> channels = widget.action.channels;
     final bool showKeyboard =
         channels.contains(ShortcutChannel.keyboard) || _keyboard.isNotEmpty;
     final bool showGamepad =

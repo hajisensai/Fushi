@@ -888,6 +888,46 @@ struct alignas(8) HunexGgeTraceHeaderSnapshot {
   uint32_t capture_quarantine_reason = 0;
   uint32_t capture_quarantine_bound_thread_id = 0;
   uint32_t capture_quarantine_conflicting_thread_id = 0;
+  // BUG-2134：与 HunexGgeTraceBuffer 逐字段同序（下方 static_assert 钉住整体大小）。
+  int64_t surface_compose_wrapper_calls = 0;
+  int64_t surface_compose_calls = 0;
+  int64_t surface_compositor_calls = 0;
+  uint32_t compositor_caller_rvas[4] = {};
+  uint32_t compositor_caller_rva_count = 0;
+  uint32_t compositor_caller_rva_overflow = 0;
+  uint32_t body_compositor_return_rva = 0;
+  uint32_t body_compositor_call_count = 0;
+  uint32_t body_compositor_return_alt_rva = 0;
+  uint32_t body_compositor_reserved = 0;
+  int64_t body_compose_attempts = 0;
+  int64_t body_compose_source_matches = 0;
+  int64_t body_compose_published = 0;
+  int64_t glyph_texture_upload_attempts = 0;
+  int64_t glyph_texture_upload_matches = 0;
+  uint32_t pending_upload_dims[12] = {};
+  uint32_t pending_upload_dim_count = 0;
+  uint32_t pending_upload_dim_overflow = 0;
+  int64_t pending_upload_any_thread = 0;
+  uint32_t pending_upload_story_tid = 0;
+  uint32_t pending_upload_caller_tid = 0;
+  int64_t upload_descriptor_ok = 0;
+  int64_t upload_descriptor_fail = 0;
+  int64_t upload_with_active_story = 0;
+  uint32_t upload_desc_offsets[4] = {};
+  uint32_t upload_desc_dims[8] = {};
+  uint32_t upload_desc_offset_count = 0;
+  uint32_t story_quads[24] = {};
+  uint32_t story_quad_count = 0;
+  int64_t story_quad_seen = 0;
+  int64_t story_sealed_published = 0;
+  int64_t quad_reached_record = 0;
+  int64_t texture_upload_calls = 0;
+  int64_t quad_vertex_calls = 0;
+  int64_t sprite_draw_calls = 0;
+  // v17（BUG-2136）：render_item 另外三个参数各前 32 dword 的一次性快照。
+  uint32_t body_arg_words[3][32] = {};
+  uint32_t body_arg_captured = 0;
+  uint32_t body_arg_reserved = 0;
 };
 
 static_assert(sizeof(XAudioTraceHeaderSnapshot) ==
@@ -1267,6 +1307,7 @@ const char* HunexGgeProjectionStageName(uint32_t stage) {
     case Stage::kCompositor: return "compositor";
     case Stage::kTexture: return "texture";
     case Stage::kSprite: return "sprite";
+    case Stage::kWorker: return "worker";
   }
   return "unknown";
 }
@@ -1306,6 +1347,25 @@ const char* HunexGgeProjectionFailureName(int32_t failure) {
     case Failure::kSpriteProjectionSizesRejected:
       return "sprite_projection_sizes_rejected";
     case Failure::kSpriteDrawFailed: return "sprite_draw_failed";
+    // BUG-2132 段 3/段 4 的补盲诊断。
+    case Failure::kTextureSurfaceMismatch: return "texture_surface_mismatch";
+    case Failure::kQuadShapeRejected: return "quad_shape_rejected";
+    case Failure::kQuadVertexBufferMissing: return "quad_vertex_buffer_missing";
+    case Failure::kQuadProjectionNotFinite: return "quad_projection_not_finite";
+    // BUG-2134 worker 段。
+    case Failure::kWorkerInputShapeRejected: return "worker_input_shape_rejected";
+    case Failure::kWorkerRubyProjectionRejected: return "worker_ruby_projection_rejected";
+    case Failure::kWorkerEvidenceUnavailable: return "worker_evidence_unavailable";
+    case Failure::kWorkerEvidenceStoryMismatch: return "worker_evidence_story_mismatch";
+    case Failure::kWorkerEvidenceThreadMismatch: return "worker_evidence_thread_mismatch";
+    case Failure::kWorkerEvidenceClientMismatch: return "worker_evidence_client_mismatch";
+    case Failure::kWorkerEvidenceStale: return "worker_evidence_stale";
+    case Failure::kWorkerAffineRejected: return "worker_affine_rejected";
+    case Failure::kWorkerClientTransformRejected: return "worker_client_transform_rejected";
+    case Failure::kBodyComposeDescriptorUnreadable: return "body_compose_descriptor_unreadable";
+    case Failure::kBodyComposeSourceMismatch: return "body_compose_source_mismatch";
+    case Failure::kBodyComposeDestinationMismatch: return "body_compose_destination_mismatch";
+    case Failure::kBodyComposeSurfaceInsane: return "body_compose_surface_insane";
   }
   return "unknown";
 }
@@ -1519,8 +1579,13 @@ void PrintHunexGgeTraceEvent(
   using Kind = fushi_voice_hook::HunexGgeTraceKind;
   const Kind kind = static_cast<Kind>(event.kind);
   if (kind == Kind::kRenderItemBodyUncorrelated) {
-    printf(" lookup_worker={state:%d,selected_failure:%u}", event.result,
-           event.draw_arg13);
+    // BUG-2133：候选计数打在失败码旁边。stable=0&invalid=0 且 selected_failure=6
+    // ⇒「选定车道在窗口内一条候选都没有」；stable>0 ⇒「有候选但字节不等」。
+    printf(" lookup_worker={state:%d,selected_failure:%u,stable_events:%u,"
+           "invalid_events:%u}",
+           event.result, event.draw_arg13,
+           static_cast<uint32_t>(event.draw_arg12_bits & 0xFFFFFFFFull),
+           static_cast<uint32_t>(event.draw_arg12_bits >> 32));
     PrintHunexGgeLookupGate(event.lookup_gate_mask);
     PrintHunexGgeCaptureQuarantine(
         event.capture_quarantine_reason,
@@ -2082,14 +2147,83 @@ bool DumpHunexGgeTrace(DWORD pid) {
   printf(
       "hunex_gge_trace pid=%lu module=%ls base=0x%llx "
       "export_rva=0x%08x next=%llu dropped_busy=%llu capacity=%u "
-      "calls={draw:%llu,glyph:%llu,render_item:%llu,input:%llu}",
+      "calls={draw:%llu,glyph:%llu,render_item:%llu,input:%llu,"
+      "compose_wrapper:%llu,compose:%llu,compositor:%llu,"
+      "texture_upload:%llu,quad_vertex:%llu,"
+      "sprite_draw:%llu}",
       pid, module.path.c_str(), static_cast<unsigned long long>(module.base),
       export_rva, static_cast<unsigned long long>(header.next_sequence),
       static_cast<unsigned long long>(header.dropped_busy), header.capacity,
       static_cast<unsigned long long>(header.draw_calls),
       static_cast<unsigned long long>(header.glyph_calls),
       static_cast<unsigned long long>(header.render_item_calls),
-      static_cast<unsigned long long>(header.input_calls));
+      static_cast<unsigned long long>(header.input_calls),
+      static_cast<unsigned long long>(header.surface_compose_wrapper_calls),
+      static_cast<unsigned long long>(header.surface_compose_calls),
+      static_cast<unsigned long long>(header.surface_compositor_calls),
+      static_cast<unsigned long long>(header.texture_upload_calls),
+      static_cast<unsigned long long>(header.quad_vertex_calls),
+      static_cast<unsigned long long>(header.sprite_draw_calls));
+  if (header.body_arg_captured != 0u) {
+    for (int arg_index = 0; arg_index < 3; ++arg_index) {
+      printf(" body_arg%d={", arg_index + 1);
+      for (int word_index = 0; word_index < 32; ++word_index) {
+        printf("%s%d:%08x", word_index == 0 ? "" : ",", word_index,
+               header.body_arg_words[arg_index][word_index]);
+      }
+      printf("}");
+    }
+  }
+  printf(" compositor_callers={count:%u,overflow:%u,rvas:[%08x,%08x,%08x,%08x]}",
+         header.compositor_caller_rva_count,
+         header.compositor_caller_rva_overflow,
+         header.compositor_caller_rvas[0], header.compositor_caller_rvas[1],
+         header.compositor_caller_rvas[2], header.compositor_caller_rvas[3]);
+  printf(" body_compositor={return_rva:%08x,alt_rva:%08x,call_count:%u}",
+         header.body_compositor_return_rva,
+         header.body_compositor_return_alt_rva,
+         header.body_compositor_call_count);
+  printf(" body_compose={attempts:%lld,source_matches:%lld,published:%lld}",
+         static_cast<long long>(header.body_compose_attempts),
+         static_cast<long long>(header.body_compose_source_matches),
+         static_cast<long long>(header.body_compose_published));
+  printf(" glyph_texture={attempts:%lld,matches:%lld}",
+         static_cast<long long>(header.glyph_texture_upload_attempts),
+         static_cast<long long>(header.glyph_texture_upload_matches));
+  printf(" pending_uploads={count:%u,overflow:%u,dims:[",
+         header.pending_upload_dim_count, header.pending_upload_dim_overflow);
+  for (uint32_t i = 0; i < 6; ++i) {
+    printf("%s%ux%u", i ? "," : "", header.pending_upload_dims[i * 2],
+           header.pending_upload_dims[i * 2 + 1]);
+  }
+  printf("]}");
+  printf(" story_quads={seen:%lld,count:%u,rows:[",
+         static_cast<long long>(header.story_quad_seen),
+         header.story_quad_count);
+  for (uint32_t i = 0; i < 4; ++i) {
+    const uint32_t* r = &header.story_quads[i * 6];
+    printf("%stex%ux%u@(%d,%d)-(%d,%d)", i ? "," : "", r[0], r[1],
+           static_cast<int32_t>(r[2]), static_cast<int32_t>(r[3]),
+           static_cast<int32_t>(r[4]), static_cast<int32_t>(r[5]));
+  }
+  printf(" story_seal={published:%lld,quad_reached:%lld}",
+         static_cast<long long>(header.story_sealed_published),
+         static_cast<long long>(header.quad_reached_record));
+  printf("]}");
+  printf(" pending_upload_threads={any:%lld,story_tid:%u,caller_tid:%u}",
+         static_cast<long long>(header.pending_upload_any_thread),
+         header.pending_upload_story_tid, header.pending_upload_caller_tid);
+  printf(" upload_desc={ok:%lld,fail:%lld,with_active_story:%lld}",
+         static_cast<long long>(header.upload_descriptor_ok),
+         static_cast<long long>(header.upload_descriptor_fail),
+         static_cast<long long>(header.upload_with_active_story));
+  printf(" upload_desc_scan={count:%u,slots:[",
+         header.upload_desc_offset_count);
+  for (uint32_t i = 0; i < 4; ++i) {
+    printf("%s+%x:%ux%u", i ? "," : "", header.upload_desc_offsets[i],
+           header.upload_desc_dims[i * 2], header.upload_desc_dims[i * 2 + 1]);
+  }
+  printf("]}");
   PrintHunexGgeScannerStatus(header.scanner_status);
   PrintHunexGgeLookupGate(header.lookup_gate_mask);
   PrintHunexGgeCaptureQuarantine(
@@ -2257,6 +2391,51 @@ int main(int argc, char** argv) {
   // 导出模式：--dump-text 打印所有台词行；--dump-wav <ts_ms> <out.wav> 导出最近该时间戳的语音。
   if (argc >= 3 && strcmp(argv[2], "--dump-text") == 0) {
     DumpText(header);
+    UnmapViewOfFile(header);
+    CloseHandle(mapping);
+    return 0;
+  }
+  if (argc >= 3 && strcmp(argv[2], "--dump-layer") == 0) {
+    // BUG-2136：注入侧发布的层空间行包围盒 + 宿主回传的原点，用来和实拍对账。
+    const auto line = fushi_voice_hook::ReadLookupLayerLine(header);
+    printf("layer line seq=%u valid=%d design=%ux%u glyphs=%u\n",
+           line.seq, line.valid ? 1 : 0, line.design_w, line.design_h,
+           line.glyph_count);
+    printf("  bbox=(%d,%d)-(%d,%d)  w=%d h=%d\n", line.left, line.top,
+           line.right, line.bottom, line.right - line.left,
+           line.bottom - line.top);
+    int32_t ox = 0, oy = 0;
+    const bool has = fushi_voice_hook::ReadLookupLayerOrigin(header, &ox, &oy);
+    printf("  origin published=%d x=%d y=%d\n", has ? 1 : 0, ox, oy);
+    UnmapViewOfFile(header);
+    CloseHandle(mapping);
+    return 0;
+  }
+  if (argc >= 3 && strcmp(argv[2], "--dump-shield") == 0) {
+    // BUG-2140：宿主与注入侧对 shield 的看法可能相反（宿主 request!=applied 卡死，
+    // 注入侧却报 shield_ready）。直接读注入侧共享头里的原始字段，两边对账。
+    const auto req = fushi_voice_hook::ReadLookupShieldRequest(header);
+    printf("shield request_seq=%u applied_seq=%u valid=%d owner_kind=%u\n",
+           fushi_voice_hook::AtomicLoadShared32(
+               const_cast<volatile uint32_t*>(&header->lookup_shield_request_seq)),
+           fushi_voice_hook::AtomicLoadShared32(
+               const_cast<volatile uint32_t*>(&header->lookup_shield_applied_seq)),
+           req.valid ? 1 : 0, req.owner_kind);
+    printf("  target_hwnd=0x%llx transaction_id=0x%llx active_buttons=0x%x allow_risk=%u\n",
+           static_cast<unsigned long long>(req.target_hwnd),
+           static_cast<unsigned long long>(req.transaction_id),
+           req.active_buttons, req.allow_risk ? 1u : 0u);
+    printf("  required=0x%x ready=0x%x observed=0x%x fault=0x%x status_flags=0x%x\n",
+           fushi_voice_hook::AtomicLoadShared32(
+               const_cast<volatile uint32_t*>(&header->lookup_shield_required_mask)),
+           fushi_voice_hook::AtomicLoadShared32(
+               const_cast<volatile uint32_t*>(&header->lookup_shield_ready_mask)),
+           fushi_voice_hook::AtomicLoadShared32(
+               const_cast<volatile uint32_t*>(&header->lookup_shield_observed_mask)),
+           fushi_voice_hook::AtomicLoadShared32(
+               const_cast<volatile uint32_t*>(&header->lookup_shield_fault_mask)),
+           fushi_voice_hook::AtomicLoadShared32(
+               const_cast<volatile uint32_t*>(&header->lookup_shield_status_flags)));
     UnmapViewOfFile(header);
     CloseHandle(mapping);
     return 0;

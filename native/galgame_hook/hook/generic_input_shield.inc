@@ -929,6 +929,33 @@ uint32_t GenericShieldPendingMask() {
   return pending;
 }
 
+// BUG-2140：宿主发布中性请求后，放弃所有**从未被真实采样坐实**的推测 latch。
+// 它们等的那条「释放 + 中性尾」可能永远不会到（该输入面这一局不再被游戏采样），
+// 而 release_waiting 会因此把 applied_seq 永久扣在 request_seq-1，宿主的
+// IsNeutralForRehandshake 恒假、attached 表面首次查词后再也武装不起来。
+// 只放弃推测的；被真实按下坐实过的 latch 一律保留，不变式不放宽。
+void AbandonSpeculativeGenericShieldLatches(bool request_active) {
+  if (request_active) return;
+  AcquireSRWLockExclusive(&g_generic_shield_state_lock);
+  fushi_voice_hook::AbandonSpeculativeLeftButtonLatch(
+      request_active, &g_generic_get_key_state_latch);
+  fushi_voice_hook::AbandonSpeculativeLeftButtonLatch(
+      request_active, &g_generic_get_async_key_state_latch);
+  fushi_voice_hook::AbandonSpeculativeLeftButtonLatch(
+      request_active, &g_generic_get_keyboard_state_latch);
+  fushi_voice_hook::AbandonSpeculativeLeftButtonLatch(
+      request_active, &g_generic_raw_input_data_latch);
+  fushi_voice_hook::AbandonSpeculativeLeftButtonLatch(
+      request_active, &g_generic_raw_input_buffer_latch);
+  for (auto &record : g_generic_direct_input_devices) {
+    fushi_voice_hook::AbandonSpeculativeLeftButtonLatch(
+        request_active, &record.immediate_latch);
+    fushi_voice_hook::AbandonSpeculativeLeftButtonLatch(
+        request_active, &record.buffered_latch);
+  }
+  ReleaseSRWLockExclusive(&g_generic_shield_state_lock);
+}
+
 void AbandonGenericShieldLatchesForInvalidTarget() {
   AcquireSRWLockExclusive(&g_generic_shield_state_lock);
   g_generic_get_key_state_latch = {};
@@ -1116,6 +1143,9 @@ void ProcessGenericLookupInputShield() {
             status.required_mask, status.ready_mask, status.observed_mask));
   }
 
+  // BUG-2140：先把「推测上锁、从未被真实采样坐实」的 latch 放掉，再算 pending。
+  // 否则一次预武装就能把 applied_seq 永久扣住。
+  AbandonSpeculativeGenericShieldLatches(request.active_buttons != 0);
   const uint32_t pending = GenericShieldPendingMask();
   const bool release_waiting = request.active_buttons == 0 &&
                                (pending != 0 || exact.pending_publication);

@@ -8,6 +8,7 @@ import 'package:flutter/rendering.dart' show SelectedContent;
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:macos_ui/macos_ui.dart'
     show MacosTextField, MacosIcon, OverlayVisibilityMode;
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
@@ -85,32 +86,36 @@ class _FushiCardState extends State<FushiCard> {
       padding: widget.padding ?? EdgeInsets.all(tokens.spacing.card),
       child: widget.child,
     );
-    final Widget card = Padding(
-      padding: widget.margin ?? EdgeInsets.zero,
-      child: AnimatedContainer(
-        duration: einkSafeDuration(context, fushiMd3StateDuration),
-        curve: fushiMd3StateCurve,
-        decoration: ShapeDecoration(
-          color: effectiveColor,
-          shape: RoundedRectangleBorder(
-            borderRadius: radius,
-            side: side,
+    final Widget card = ContextMenuTrigger(
+      // 右键菜单不再硬绑鼠标次按钮：改由绑定表决定哪个鼠标键唤出（默认仍是右键），
+      // 用户把右键绑给页面动作时菜单自动让位。InkWell 只留 tap / longPress。
+      onInvoke: contextMenuInvoker(widget.onSecondaryTap),
+      child: Padding(
+        padding: widget.margin ?? EdgeInsets.zero,
+        child: AnimatedContainer(
+          duration: einkSafeDuration(context, fushiMd3StateDuration),
+          curve: fushiMd3StateCurve,
+          decoration: ShapeDecoration(
+            color: effectiveColor,
+            shape: RoundedRectangleBorder(
+              borderRadius: radius,
+              side: side,
+            ),
           ),
-        ),
-        child: Material(
-          type: MaterialType.transparency,
-          shape: RoundedRectangleBorder(borderRadius: radius),
-          clipBehavior: Clip.antiAlias,
-          child: widget.onTap == null &&
-                  widget.onLongPress == null &&
-                  widget.onSecondaryTap == null
-              ? content
-              : InkWell(
-                  onTap: widget.onTap,
-                  onLongPress: widget.onLongPress,
-                  onSecondaryTap: widget.onSecondaryTap,
-                  child: content,
-                ),
+          child: Material(
+            type: MaterialType.transparency,
+            shape: RoundedRectangleBorder(borderRadius: radius),
+            clipBehavior: Clip.antiAlias,
+            child: widget.onTap == null &&
+                    widget.onLongPress == null &&
+                    widget.onSecondaryTap == null
+                ? content
+                : InkWell(
+                    onTap: widget.onTap,
+                    onLongPress: widget.onLongPress,
+                    child: content,
+                  ),
+          ),
         ),
       ),
     );

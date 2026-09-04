@@ -633,6 +633,146 @@
       ]
     },
     {
+      "id": "cmvs",
+      "display_name": "CMVS (Purple Software)",
+      "aliases": [
+        "CMVS",
+        "Purple Software",
+        "パープルソフトウェア"
+      ],
+      "family": {
+        "id": "cmvs",
+        "relation": "Purple Software in-house engine; no verified sibling"
+      },
+      "detection": {
+        "executable_names": {
+          "values": [
+            "cmvs32.exe",
+            "cmvs64.exe"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Purple Software クロノクロック 体験版v2 (2015-03-20) ships both cmvs32.exe (x86) and cmvs64.exe (x64); static probe 2026-09-04. Retail builds may rename the exe, so names are catalogue only and the adapter matches on cmvs.cfg + CPZ archives instead"
+          }
+        },
+        "pe_architectures": {
+          "values": [
+            "x86",
+            "x64"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "cmvs32.exe machine 0x14c, cmvs64.exe machine 0x8664 (same trial package)"
+          }
+        },
+        "directory_files_all": {
+          "values": [
+            "cmvs.cfg",
+            "data/pack/start.ps3"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "cmvs.cfg opens with [CMVS_SYSTEM_MAIN] and SCRIPT_INIT_PATH=data\\pack\\; data/pack/start.ps3 (PS2A) is the script entry; trial package 2015-03-20"
+          }
+        },
+        "pe_imports": {
+          "values": [
+            "DSOUND.dll",
+            "WINMM.dll",
+            "d3d9.dll",
+            "mog2x32.dll",
+            "mog2x64.dll"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "PE import tables of cmvs32.exe / cmvs64.exe (static probe 2026-09-04); DirectSound is the only audio API imported"
+          }
+        },
+        "runtime_modules": {
+          "values": [
+            "mog2x32.dll",
+            "mog2x64.dll"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Purple MOG2 image library shipped next to the exe (sha256 6b8dc960… / c51ba0c3…); static import only, runtime load not yet observed"
+          }
+        },
+        "resource_extensions": {
+          "values": [
+            ".cpz",
+            ".ps3",
+            ".cmv"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "data/pack/*.cpz (CPZ6 magic; voice.cpz + voice2.cpz hold voice), data/pack/start.ps3, data/video/*.cmv, data/music/*.ogg in the trial package"
+          }
+        },
+        "hashes": {
+          "values": [
+            "c5e715d98b56468df0a3d6bd8ec263b72bab736e0ad004de4e443a54c470ddad",
+            "aa89205a61c7078a167f9e6668eea2e4328bdd5c9cbcdd6f45b238cf475acea2"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "cmvs32.exe / cmvs64.exe of クロノクロック 体験版v2, catalogue only; the adapter does not hash-pin because the structural cfg + CPZ check is the identity"
+          }
+        }
+      },
+      "process_strategy": {
+        "launch": "generic_launch_available",
+        "attach": "generic_attach_available",
+        "follow_child_processes": false,
+        "notes": [
+          "The trial ships a plain x86 and a plain x64 executable without a launcher; the original path is the user double-clicking either one.",
+          "No runtime session has been recorded yet, so early-inject versus attach ordering is unmeasured."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "luna_hook",
+            "status": "implemented_unverified",
+            "verification": "Vendored LunaHook32/64 both carry the EmbedCMVS engine hook; no real-session dialogue thread has been observed yet."
+          }
+        ],
+        "codepage": "932",
+        "thread_selection_hint": "Prefer the LunaHook EmbedCMVS thread once observed; the adapter installs no text hook of its own."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "xaudio2_or_directsound_pcm",
+            "format": "DirectSound source PCM via the generic Windows audio adapter",
+            "status": "implemented_unverified",
+            "clean_voice": "engine_dependent"
+          },
+          {
+            "kind": "process_loopback",
+            "format": "host PCM fallback",
+            "status": "implemented_unverified",
+            "clean_voice": false
+          }
+        ]
+      },
+      "verified_games": [],
+      "current_status": "implemented_unverified",
+      "known_limitations": [
+        "Per-line voice resources live inside CPZ6-encrypted voice.cpz / voice2.cpz; no resource layer is implemented and none is claimed until a runtime decrypt-read seam is measured on a real session.",
+        "Identity is structural (cmvs.cfg section + CPZ archive magic); executable hashes are catalogued but not pinned.",
+        "In-game lookup sensor is not implemented; lookupAdmission stays EngineUnsupported."
+      ],
+      "adapter_path": "hook/adapters/cmvs_adapter.inc",
+      "fixture_paths": [
+        "tests/fixtures/cmvs_replay.json"
+      ],
+      "test_paths": [
+        "tests/cmvs_adapter_test.cpp",
+        "../../fushi/test/mining/cmvs_pairing_test.dart"
+      ]
+    },
+    {
       "id": "kirikiri_z",
       "display_name": "KiriKiri2 / KiriKiriZ",
       "aliases": [

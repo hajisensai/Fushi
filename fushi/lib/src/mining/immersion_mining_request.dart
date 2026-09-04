@@ -65,6 +65,10 @@ class VideoMiningHistorySnapshot {
 ///   用户主动选的静态图，非降级 → 不弹降级 OSD。
 /// - [subtitleStart]：当前字幕 cue 起始时间点的帧（`extractVideoFrameViaFfmpeg`，
 ///   `atSeconds = clipStartMs/1000`）。同为主动选择的静态图。
+/// - [videoClip]：**仅 galgame 场景卡**——从台词出现到制卡这段时间的游戏窗口录制帧
+///   编成 mp4（H.264 + 句子音频 AAC 混流，`galgame_window_video.dart`）。视频页的设置
+///   项不渲染它；引擎侧遇到它按 [gif] 阶梯走（视频 cue 本身就是「一段画面」，无需再
+///   录），`resolveClipStillTarget` 视为非静图。录制未启动 / 帧不足时协调器降级动图。
 ///
 /// 持久化用 [wireName]（存进偏好的字符串），解析用 [fromWireName]（未知值回退 [gif]，
 /// 向后兼容）。远端来源（Netflix providedCoverBytes / YouTube）请求不设本字段，保持 [gif]
@@ -72,7 +76,8 @@ class VideoMiningHistorySnapshot {
 enum VideoMiningImageMode {
   gif('gif'),
   currentFrame('current_frame'),
-  subtitleStart('subtitle_start');
+  subtitleStart('subtitle_start'),
+  videoClip('video_clip');
 
   const VideoMiningImageMode(this.wireName);
 
@@ -87,8 +92,13 @@ enum VideoMiningImageMode {
     return VideoMiningImageMode.gif;
   }
 
-  /// 是否为静态截图模式（用户主动选静态图，非 GIF 降级）。
-  bool get isStill => this != VideoMiningImageMode.gif;
+  /// 是否为静态截图模式（用户主动选静态图，非 GIF 降级）。动图与视频片段都不是。
+  bool get isStill =>
+      this == VideoMiningImageMode.currentFrame ||
+      this == VideoMiningImageMode.subtitleStart;
+
+  /// 是否为 galgame 视频片段模式（录制帧 + 句子音频编成 mp4）。
+  bool get isVideoClip => this == VideoMiningImageMode.videoClip;
 }
 
 /// 制卡封面**动图的编码格式**，与 [VideoMiningImageMode] 正交：后者选「用不用动图 +
@@ -370,7 +380,7 @@ class ImmersionMiningRequest {
 
   /// **抽取意图**：引擎是否应当按区间去裁 GIF / 句子音频。
   ///
-  /// BUG-2080：这条判据此前被压缩成 [hasClipWindow] 一半，于是同一对数字兼了两层语义
+  /// BUG-2127：这条判据此前被压缩成 [hasClipWindow] 一半，于是同一对数字兼了两层语义
   /// （卡面时间窗 + 抽取开关）。Netflix 只能靠把窗硬编码成 0 来关掉抽取，代价是卡面
   /// `{clip-timestamp}` 对该来源**结构性恒空**。现在补上另一半：**没有可裁的源就不是
   /// 抽取意图**——与两处抽取点各自已有的前置守卫同源（[ImmersionMiningEngine] 里

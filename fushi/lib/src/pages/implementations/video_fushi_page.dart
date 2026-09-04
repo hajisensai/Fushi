@@ -17,6 +17,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:share_plus/share_plus.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/utils/misc/collection_exporter.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:window_manager/window_manager.dart';
@@ -45,6 +46,7 @@ import 'package:fushi/src/media/video/stream_video_launch.dart';
 import 'package:fushi/src/media/video/subtitle_embedded_fonts.dart';
 import 'package:fushi/src/media/video/video_display_claim.dart';
 import 'package:fushi/src/media/video/video_episode_start_policy.dart';
+import 'package:fushi/src/media/video/video_exit_flush.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
 import 'package:fushi/src/media/video/video_top_bar_slots.dart';
 import 'package:fushi/src/media/video/m3u8_playlist.dart';
@@ -177,6 +179,7 @@ import 'package:fushi/src/platform/windows_ime_space_dispatch.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/utils/overlay_entry_lifecycle.dart';
+import 'package:fushi/src/utils/components/copy_feedback.dart';
 import 'package:fushi/src/utils/components/fading_chrome_gate.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_destructive_confirm_dialog.dart';
@@ -693,6 +696,10 @@ abstract class VideoFushiTestHooks {
 
   /// 开始真实播放（驱动 libmpv），让位置自然前进。
   Future<void> debugPlay();
+
+  /// 暂停 / 绝对 seek（BUG-2108 首次覆盖计时 E2E：拖回重听不计时）。
+  Future<void> debugPause();
+  Future<void> debugSeekMs(int positionMs);
 }
 
 // TODO-314：字幕跳转列表不再走 overlay 面板系统，改 push-aside（[_subtitleListVisible]
@@ -1006,6 +1013,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   @override
   Future<void> debugPlay() async => _controller?.play();
+
+  @override
+  Future<void> debugPause() async => _controller?.pause();
+
+  @override
+  Future<void> debugSeekMs(int positionMs) async =>
+      _controller?.seekMs(positionMs);
 
   VideoPlayerController? _controller;
 
@@ -3439,8 +3453,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       final FushiDatabase db = appModel.database;
       _watchTracker = VideoWatchTracker(
         bookUid: widget.bookUid,
-        // v92：观看时长 + 字幕字数走唯一时钟 StudyClock（活跃态 = 正在播放，由
-        // tracker 挂上；视频面刻意不设空闲门 / 前台门——切走仍在播就照常计时）。
+        // v92：观看时长 + 字幕字数走唯一时钟 StudyClock。BUG-2108：视频面时钟是
+        // 显式记账——时长由 tracker 按「位置推进到首次覆盖的片内区间」推入，回放 /
+        // 拖回 / 重看不计；切走仍在播就照常计时（不设前台门）。
         // 按视频稳定身份键控（v39：同名不同视频统计不再互串）。本地视频每集独立
         // 页面（pushReplacement 换集）→ widget.bookUid 恒为当前集。
         clock: StudyClock(
@@ -3448,9 +3463,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           mediaKind: kActivityMediaVideo,
           mediaKey: widget.bookUid,
           title: title,
+          accrual: StudyAccrual.explicit,
           onWriteError: (Object e, StackTrace st) =>
               ErrorLogService.instance.log('StudyClock.write(video)', e, st),
         ),
+        // 已看过的片内区间并集按视频身份持久化：次日重看同样不计（BUG-2108）。
+        loadCoverage: () => db.getPref(videoWatchCoveragePrefKey(widget.bookUid)),
+        saveCoverage: (String json) =>
+            db.setPref(videoWatchCoveragePrefKey(widget.bookUid), json),
         markCompleted: (String uid) =>
             db.markVideoCompleted(uid, DateTime.now()),
         onEpisodeCompleted: () async {
@@ -4126,12 +4146,23 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                 enabled: hasCue,
                 onTap: _jumpToLookupCue,
               ),
-              FushiIconButton(
-                key: const Key('video_popup_copy_sentence_button'),
-                tooltip: t.copy,
-                icon: Icons.content_copy_outlined,
-                size: 20,
-                onTap: _copyLookupSentence,
+              // 复制后按钮就地切成 ✓ / 「已复制」——OSD 画在视频区，弹窗里看不见。
+              CopyFeedback(
+                builder: (
+                  BuildContext _,
+                  bool copied,
+                  VoidCallback markCopied,
+                ) {
+                  return FushiIconButton(
+                    key: const Key('video_popup_copy_sentence_button'),
+                    tooltip: copied ? t.copied : t.copy,
+                    icon: copied ? Icons.check : Icons.content_copy_outlined,
+                    size: 20,
+                    onTap: () {
+                      if (_copyLookupSentence()) markCopied();
+                    },
+                  );
+                },
               ),
               FushiIconButton(
                 key: const Key('video_favorite_sentence_button'),
@@ -4590,10 +4621,17 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   ) =>
       _onUpdateEntryImpl(noteId, fields);
 
-  /// 退出/返回汇聚点：前台浮层还开着就先关一层（逐级退出），一层都没开才 await
-  /// 落库后真正 pop 路由。[PopScope]、Escape 快捷键、手柄 B、以及**屏幕上的返回箭头
+  /// 退出/返回汇聚点：前台浮层还开着就先关一层（逐级退出），一层都没开才发起落库
+  /// 并 pop 路由。[PopScope]、Escape 快捷键、手柄 B、以及**屏幕上的返回箭头
   /// 按钮**（[_activateVideoControlItem] 的 [VideoControlItem.back]）共用同一份层级表
   /// [_dismissTopForegroundLayer]，四条通道行为一致。
+  ///
+  /// BUG-2119：落库与 pop 之间**不再有 await**。此前是 `await flushPosition()` 再
+  /// `nav.pop()`，等于把「能不能离开视频页」押在一次数据库写入成功上——写入抛错
+  /// 或永不完成（连接被一条 `SQLITE_BUSY` 后未 reset 的写语句毒化，之后每次 COMMIT
+  /// 都抛「SQL statements in progress」）时，四条退出通道一起失灵，用户被锁在页里。
+  /// 现在走 [exitAfterPersist]：同步发起落库（drift 请求已排进队列，后续页面读同一
+  /// 行排在它之后），随即无条件 pop，落库失败只记 [ErrorLogService]。
   ///
   /// 「返回箭头也逐级退一层」是 BUG-1862 的**有意**取舍，不是顺带的副作用：收敛的意义
   /// 就是「返回上一级」只有一份语义，不为屏幕按钮再开第二套。用户可见变化：push-aside
@@ -4613,8 +4651,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   Future<void> _handleBackOrExit() async {
     if (_dismissTopForegroundLayer()) return;
     final NavigatorState nav = Navigator.of(context);
-    await _controller?.flushPosition();
-    if (mounted) nav.pop();
+    final VideoPlayerController? controller = _controller;
+    exitAfterPersist(
+      persist: () => controller?.flushPosition() ?? Future<void>.value(),
+      exit: nav.pop,
+      onPersistError: (Object error, StackTrace stack) => ErrorLogService
+          .instance
+          .log('VideoFushiPage.exitFlushPosition', error, stack),
+    );
   }
 
   /// 逐级退出的**唯一**层级表（BUG-1862）：从最前台到最后台关掉一层并返回 true；一层
@@ -5146,6 +5190,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   static const List<ShortcutScope> kVideoMouseLadder = <ShortcutScope>[
     ShortcutScope.video,
     ShortcutScope.universal,
+    // global 是 reader / manga / home 三条阶梯早就有的尾段，video 此前是唯一缺口。
+    // 补上它才能让 [ShortcutAction.globalContextMenu]（住在 global）在视频页解析得到
+    // ——否则视频画面上的右键菜单会整个消失。对既有动作零影响：视频页的执行体表
+    // （videoActionCallbacks）里没有任何 global 动作，解析到也返回 false 不认领，
+    // app 根的兜底照常有机会派发同一次按下。
+    ShortcutScope.global,
   ];
 
   /// 视频页的**鼠标绑定通道**（BUG-1995）：页面根 [Listener] 的 `onPointerDown` 入口。
@@ -7324,10 +7374,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         PopScope(
           // 始终 `canPop: false` 自管退出：① 浮层栈非空时 back 先关栈（一层一层退），
           // 浮层在根 Overlay 退出视频路由不会自动清它，必须在 pop 前拦截；② 栈空真退出
-          // 时，**先 await `flushPosition()` 把退出瞬间位置可靠落库再手动 pop**——否则只剩
-          // controller.dispose() 里 fire-and-forget 的 `_forceSavePositionSync()`，drift
-          // 写库 Future 与 Navigator 同步销毁 State 竞争、常写不完，导致「退出再进没回到
-          // 上次位置」（对齐阅读器 `onWillPop` 先 await 落库再 pop 的做法）。
+          // 时，先**同步发起** `flushPosition()` 把退出瞬间位置排进 drift 队列，再手动
+          // pop（BUG-2119：不 await——退出不能被落库成败绑架；写请求一旦发出就在后台
+          // 完成，不随 State 销毁消失，后续页面对同一行的读排在它之后）。
           canPop: false,
           onPopInvokedWithResult: (bool didPop, Object? _) async {
             if (didPop) return;

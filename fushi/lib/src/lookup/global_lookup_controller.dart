@@ -99,7 +99,7 @@ class GlobalLookupController {
   // 卡片会跟着内容长大，而不是停在首帧尺寸。READY-SAFETY 兜底 reveal 也会回调——
   // 那是「真渲染失败」的最后一招，此时投的确实可能是空白卡，但比卡在不可见强。
   void Function(int physicalWidth, int physicalHeight)? onRevealed;
-  // BUG-2082 — [physicalRootHeight] is the ROOT card's own rendered height
+  // BUG-2128 — [physicalRootHeight] is the ROOT card's own rendered height
   // (physical px, 0 when the host did not report it), distinct from the union
   // [physicalHeight] once nested children extend the bbox.
   void Function(
@@ -606,12 +606,17 @@ class GlobalLookupController {
     return LookupSize(size.width * scale, size.height * scale);
   }
 
+  /// [consumeOutsideClicksOwnerHwnd]：attached 校准字形表面（galgame 通用回退）
+  /// 打开的桌面弹窗必须带上游戏 HWND——「点卡外关闭」那一记 down/up 要成对
+  /// 吞掉，不得穿透到游戏推进台词（与 direct galCard 同一条消费策略）。null =
+  /// 普通桌面查词（热键 / 浮窗点词），不发这条 channel，点击照旧交给原应用。
   Future<bool> lookupText(
     String text, {
     String sentence = '',
     Rect? anchorScreenRect,
     bool autoRead = true,
     OverlayMiningHandler? miningHandler,
+    int? consumeOutsideClicksOwnerHwnd,
   }) async {
     final GlobalLookupRoute inherited = GlobalLookupChannel.currentRoute;
     final GlobalLookupRoute route = inherited.source == 'galCard'
@@ -625,6 +630,7 @@ class GlobalLookupController {
         anchorScreenRect: anchorScreenRect,
         autoRead: autoRead,
         miningHandler: miningHandler,
+        consumeOutsideClicksOwnerHwnd: consumeOutsideClicksOwnerHwnd,
       ),
     );
   }
@@ -635,6 +641,7 @@ class GlobalLookupController {
     required Rect? anchorScreenRect,
     required bool autoRead,
     required OverlayMiningHandler? miningHandler,
+    int? consumeOutsideClicksOwnerHwnd,
   }) async {
     final String term = text.trim();
     if (!isSupported || !_started || _appModel == null || term.isEmpty) {
@@ -662,6 +669,7 @@ class GlobalLookupController {
       anchorScreenRect: anchorScreenRect,
       autoRead: autoRead,
       miningHandler: miningHandler,
+      consumeOutsideClicksOwnerHwnd: consumeOutsideClicksOwnerHwnd,
     );
   }
 
@@ -718,6 +726,7 @@ class GlobalLookupController {
     Rect? anchorScreenRect,
     required bool autoRead,
     OverlayMiningHandler? miningHandler,
+    int? consumeOutsideClicksOwnerHwnd,
   }) async {
     final AppModel? model = _appModel;
     if (model == null) {
@@ -737,6 +746,16 @@ class GlobalLookupController {
       // not look like a user dismissal.
       await GlobalLookupChannel.hide(notify: false);
       if (!_isCurrentRoute) return false;
+      // attached 表面打开的弹窗：hide 刚把 native 的 consume owner 清空，这里在
+      // showAt/reveal 之前重新记下游戏 HWND，reveal/revealStack 才会走同步吞点击
+      // Arm。普通桌面查词（null）不发这条 channel——非 Windows 也走本控制器。
+      if (consumeOutsideClicksOwnerHwnd != null &&
+          consumeOutsideClicksOwnerHwnd != 0) {
+        await GlobalLookupChannel.setOutsideClickOwner(
+          consumeOutsideClicksOwnerHwnd,
+        );
+        if (!_isCurrentRoute) return false;
+      }
       _currentSentence = sentence;
       _currentMiningHandler = miningHandler;
       // Retire every acknowledgement belonging to the previous lookup before
@@ -1992,7 +2011,7 @@ class GlobalLookupController {
     if (width <= 0 || height <= 0) {
       return;
     }
-    // BUG-2082 — root card height rides the same box; 0 = host did not report.
+    // BUG-2128 — root card height rides the same box; 0 = host did not report.
     final double rootHeightCss = num2(box['rootHeight']) ?? 0;
     final int rootHeight = rootHeightCss > 0 ? (rootHeightCss * dpr).round() : 0;
     // TODO-1231 (BUG-583) — ratchet the origin outward-only so a nested close

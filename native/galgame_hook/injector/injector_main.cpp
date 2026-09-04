@@ -1879,11 +1879,25 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
                 &header->native_loopback_state),
             fushi_voice_hook::AtomicLoadShared32(
                 &header->native_loopback_applied_seq));
-    revoke_loopback_before_failure();
-    CloseHandle(ready);
-    UnmapViewOfFile(header);
-    CloseHandle(mapping);
-    return FailWith(reason_out, LaunchFailureReason::kReadyTimeout, 2);
+    // deny 是隐私边界，拿不到 stopped 的确认必须判失败；allow 只是一项能力，
+    // 超时不得连带把「注入器负责安装的 LunaHook 文本 hook」一起毙掉——那个安装点
+    // 就在下面几十行，旧实现在这里 return 等于让这一局永远没有台词（BUG-2131）。
+    if (fushi_voice_hook::NativeLoopbackAckTimeoutAbortsInjection(
+            native_loopback_requested == kNativeLoopbackAllow)) {
+      revoke_loopback_before_failure();
+      CloseHandle(ready);
+      UnmapViewOfFile(header);
+      CloseHandle(mapping);
+      return FailWith(reason_out,
+                      LaunchFailureReason::kNativeLoopbackAckTimeout, 2);
+    }
+    fushi_voice_hook::AtomicOrShared32(
+        &header->loopback_diag,
+        fushi_voice_hook::kLoopbackDiagPolicyAckTimeout);
+    fprintf(stderr,
+            "[loopback] allow 的策略确认未在 %lums 内到达；按「能力未就绪」降级"
+            "继续，文本 hook 照常安装（worker 可稍后自行 ack 成 running）\n",
+            loopback_wait_ms);
   }
 
   // CREATE_SUSPENDED launch 必须等游戏内 DLL 完成首次 XAudio2/DirectSound 导出 hook，
@@ -2987,9 +3001,15 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
         disposition =
             fushi_voice_hook::LaunchedProcessDisposition::kTerminate;
       } else {
+        // 别再说「without hooks」：注入编排失败时 hook DLL 往往**已经在进程里**且
+        // 游戏内自装的音频 hook 已经就绪（真机 WoH 上 26 条音轨、game_resource 全好），
+        // 真正缺的通常只是注入器负责安装的 LunaHook 文本 hook。旧文案把「编排中止」
+        // 说成「一个 hook 都没装」，直接误导了整轮排障（BUG-2131）。
         fprintf(stderr,
-                "[launch] hook failed; game resumed without hooks so it still "
-                "starts\n");
+                "[launch] injection orchestration aborted (reason=%s); game "
+                "resumed. Hooks already installed in-process stay active; "
+                "anything the injector had not installed yet is missing\n",
+                fushi_voice_hook::LaunchFailureToken(reason));
       }
     }
     if (disposition ==

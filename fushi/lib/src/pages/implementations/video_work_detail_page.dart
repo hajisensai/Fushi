@@ -8,6 +8,8 @@ import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_credit_repository.dart';
+import 'package:fushi/src/media/video/cover_ui/video_specs_panel.dart';
+import 'package:fushi/src/media/video/video_specs_service.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/implementations/media_collection_detail_page.dart';
@@ -30,6 +32,7 @@ class VideoWorkRef {
 class VideoWorkDetailPage extends StatelessWidget {
   const VideoWorkDetailPage({
     required this.database,
+    this.videoSpecs,
     required this.repository,
     required this.workRef,
     required this.onChanged,
@@ -39,6 +42,10 @@ class VideoWorkDetailPage extends StatelessWidget {
   });
 
   final FushiDatabase database;
+
+  /// 视频规格服务（v95）；构造注入，理由同 [MediaCollectionDetailPage.videoSpecs]。
+  /// null = 不显示规格。
+  final VideoSpecsService? videoSpecs;
   final VideoBookRepository repository;
   final VideoWorkRef workRef;
   final VoidCallback onChanged;
@@ -73,6 +80,7 @@ class VideoWorkDetailPage extends StatelessWidget {
           }
           return MediaCollectionDetailPage(
             database: database,
+            videoSpecs: videoSpecs,
             collection: collection,
             // 成员解析走共享的 [loadCollectionEpisodeSlots]：合集清单是跨端 union，
             // 「本机没有这一行」不等于「这一集不存在」（BUG-1704）。
@@ -103,6 +111,7 @@ class VideoWorkDetailPage extends StatelessWidget {
     }
     return _StandaloneVideoWorkDetail(
       database: database,
+      videoSpecs: videoSpecs,
       repository: repository,
       bookUid: workRef.bookUid!,
       onChanged: onChanged,
@@ -113,12 +122,14 @@ class VideoWorkDetailPage extends StatelessWidget {
 class _StandaloneVideoWorkDetail extends StatefulWidget {
   const _StandaloneVideoWorkDetail({
     required this.database,
+    required this.videoSpecs,
     required this.repository,
     required this.bookUid,
     required this.onChanged,
   });
 
   final FushiDatabase database;
+  final VideoSpecsService? videoSpecs;
   final VideoBookRepository repository;
   final String bookUid;
   final VoidCallback onChanged;
@@ -320,6 +331,15 @@ class _StandaloneVideoWorkDetailState
                     ),
               ),
             ),
+          // v95：技术规格。这一页是「一个文件 = 一部作品」，规格无歧义，摊开显示。
+          // 探不到时整块不占位（VideoSpecsPanel 内部返回 shrink）。
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+            child: VideoSpecsPanel(
+              service: widget.videoSpecs,
+              filePath: book.videoPath,
+            ),
+          ),
           _buildTerms(tokens),
           _buildCredits(tokens),
           _buildExtras(tokens),

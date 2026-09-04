@@ -5491,7 +5491,16 @@ uint64_t ResolveKirikiriLookupTextGeneration(const wchar_t* line) {
       const uint64_t seq = ReadKirikiriSharedU64(&slot->seq);
       const auto* text = reinterpret_cast<const wchar_t*>(
           reinterpret_cast<const uint8_t*>(slot) + sizeof(TextSlot));
-      const size_t chars = slot->byte_len / sizeof(wchar_t);
+      // `byte_len` 是共享内存里的值，必须按槽容量夹紧再拿去寻址。撕裂读（写方正在
+      // 覆盖这个槽）会给出任意大的长度，而 LookupLineTextMatches 会一路读到 b_len
+      // 才停 → 越界读 → 玩家游戏当场崩。这是 hook DLL 里第一处用 byte_len 寻址的
+      // 地方（ProcessKirikiriVoiceTasks 只把它当数值拷走、从不解引用）。
+      const uint32_t max_text_bytes =
+          fushi_voice_hook::kTextSlotBytes -
+          static_cast<uint32_t>(sizeof(TextSlot));
+      const uint32_t safe_byte_len =
+          slot->byte_len > max_text_bytes ? max_text_bytes : slot->byte_len;
+      const size_t chars = safe_byte_len / sizeof(wchar_t);
       if (!fushi_voice_hook::LookupLineTextMatches(line, line_len, text, chars)) {
         continue;
       }

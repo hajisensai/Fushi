@@ -11,6 +11,7 @@
 - 只有一个时钟 `StudyClock`（`packages/fushi_audio/lib/src/audiobook/study_clock.dart`）：断档（120s）/ 活跃态（视频 = isPlaying）/ 空闲门（阅读面，默认 10 分钟，设置项 `reading.stats_idle_timeout_minutes`）三道守卫，段不跨小时边界，`stop()` 结构性幂等（清引用在首个 await 之前）。
 - 页面**不许**持有 `_sessionReadingMs` / `_sessionCharsRead` 之类会话累计器；字数 / 页数经 `clock.addChars` / `addPages` 记到当前段；用户输入经 `clock.touch()` 喂空闲门（EPUB `_refreshProgressFromScroll` / PDF `_onPageChanged` / 漫画 `_armPageDwellCount`）。
 - 阅读面切屏（`paused` / `inactive`）必须 `stop()`、`resumed` 必须 `start()`；视频面 `inactive` **不**停（用户拍板：切走仍在播照常计时）。
+- **视频面口径 = 只计首次覆盖（BUG-2108，用户拍板「重听不要记录在内」）**：视频面时钟走 `StudyAccrual.explicit`（tick 不按墙钟计，只裁决段生命周期），时长由 `VideoWatchTracker` 推入——每秒 + 每次播放源通知采样位置，连续播放推进（`isContinuousPlaybackAdvance`）才把片内区间并入该视频的 `WatchCoverage`（`fushi/lib/src/media/video/watch_coverage.dart`，已看过的区间并集），只有**新增**部分按比例折成墙钟时间经 `clock.addActiveMs` 记账；回放上一句 / 拖回 / 向前 seek 跳过 / 次日重看一律不计，单部视频累计 ≤ 片长。并集按 `video_watch_coverage_<bookUid>` 偏好持久化（`videoWatchCoveragePrefKey`），删该视频统计 / 清空全部视频统计时连带清（= 当没看过）。本次会话前已整段看过的 cue 字幕字数同律不计。不要再给视频面传 `isActive`（构造期断言）。
 - `upsertStudySegment` 只有两个写入方：`StudyClock` 与 galgame hook 的 chars-only 段（`gal_hook_session_controller.dart`）。游玩时长只写 `galgame_sessions`。
 - legacy 表的 `set*` OVERWRITE 写入口只许 `lib/src/sync/**` 调（旧端 wire 家族落地）。`add*` 累加 DAO 已删，不得复活。
 

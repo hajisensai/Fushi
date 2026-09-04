@@ -75,7 +75,7 @@ Widget _panel({
       controller: controller,
       onTapCue: (_) {},
       onClose: () {},
-      onCopyCue: (_) {},
+      onCopyCue: (_) => true,
       onFavoriteCue: (_) async {},
       isCueFavorited: isCueFavorited ?? (_) => false,
       colorScheme: const ColorScheme.dark(),

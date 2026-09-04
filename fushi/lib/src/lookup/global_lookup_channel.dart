@@ -137,6 +137,11 @@ abstract final class GlobalLookupChannel {
   static Future<void> setBlockCapture(bool block) =>
       _impl.setBlockCapture(block);
 
+  /// attached 表面打开的桌面弹窗：点卡外关闭的点击成对吞掉、不推进游戏
+  /// （见 [OverlayWindowChannel.setOutsideClickOwner]）。
+  static Future<void> setOutsideClickOwner(int hwnd) =>
+      _impl.setOutsideClickOwner(hwnd);
+
   static Future<void> hide({bool notify = true}) => _impl.hide(notify: notify);
 
   static Future<bool> isShowing() => _impl.isShowing();

@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_anki/fushi_anki.dart'
     show AnkiOpenWordOutcome, MineOutcome, MineResult;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart';
@@ -2505,10 +2506,10 @@ JSON.stringify((function(){
           canRequestFocus: false,
           skipTraversal: true,
           onKeyEvent: _handleDesktopCopyKey,
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onSecondaryTapDown: (TapDownDetails details) =>
-                _showWindowsContextMenu(context, details.globalPosition),
+          child: ContextMenuTrigger(
+            // 右键菜单改由绑定表决定唤出键（默认仍是右键）；右键被别的动作占用时自动让位。
+            onInvoke: (Offset position) =>
+                _showWindowsContextMenu(context, position),
             child: webView,
           ),
         ),
