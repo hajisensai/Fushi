@@ -31,4 +31,18 @@ void main() {
       reason: '旧形态：先 await 落库再看 mounted 决定 pop',
     );
   });
+
+  test('换集（episode.part）同样不 await 落库，走 persistInBackground', () {
+    final String source = maskComments(
+      File(
+        'lib/src/pages/implementations/video_fushi/episode.part.dart',
+      ).readAsStringSync(),
+    );
+    expect(source, contains('persistInBackground('));
+    expect(
+      source,
+      isNot(contains('await _persistPosition(')),
+      reason: '换集前 await 落库：连接被毒化时换集按钮 / 剧集列表 / 连播全部卡死',
+    );
+  });
 }

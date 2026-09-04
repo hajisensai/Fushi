@@ -44,6 +44,31 @@ void main() {
     expect(errors, hasLength(1));
   });
 
+  test('persistInBackground：同步启动 persist、异步错误只上报不抛出', () async {
+    final List<String> order = <String>[];
+    final List<Object> errors = <Object>[];
+    persistInBackground(
+      persist: () async {
+        order.add('persist-start');
+        throw StateError('async boom');
+      },
+      onPersistError: (Object e, StackTrace s) => errors.add(e),
+    );
+    order.add('caller-continues');
+    expect(order, <String>['persist-start', 'caller-continues']);
+    await Future<void>.delayed(Duration.zero);
+    expect(errors, hasLength(1));
+  });
+
+  test('persistInBackground：persist 同步抛错也只上报，不向调用方冒泡', () {
+    final List<Object> errors = <Object>[];
+    persistInBackground(
+      persist: () => throw StateError('sync boom'),
+      onPersistError: (Object e, StackTrace s) => errors.add(e),
+    );
+    expect(errors, hasLength(1));
+  });
+
   test('落库成功：exit 恰好一次、无错误上报，且 persist 先于 exit 启动', () async {
     final List<String> order = <String>[];
     final List<Object> errors = <Object>[];
