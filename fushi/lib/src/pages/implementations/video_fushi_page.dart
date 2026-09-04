@@ -393,6 +393,22 @@ String subtitleLookupTerm(String sentence, int graphemeIndex) =>
       start--;
     }
   }
+  // **起点必须跳过前导空白**：查询串在 `pushNestedPopup` 里先 `trim()` 再送引擎，
+  // 而引擎回报的匹配长度（matchedRunes）是相对 **trim 后**那个串数的。起点若停在
+  // 空白上，[lookupHighlightGraphemeCount] 就把这个长度套回带前导空白的串——高亮
+  // 整体左移一格、尾部少一个字符。
+  //
+  // 点中空格是常态而非边角：英文字幕逐字命中、`hoverAutoLookup` 扫过词间空隙都会
+  // 落在空格上（`_isLatinWordGrapheme(' ')` 为假，起点不回退）。日文同理，
+  // `String.trim()` 连 U+3000 全角空格一起吃。
+  //
+  // 弹窗查的词一字不变（引擎拿到的本来就是 trim 后的串），变的只有高亮锚点。
+  while (start < graphemes.length && graphemes[start].trim().isEmpty) {
+    start++;
+  }
+  // 整段都是空白：没有可查的词。此前会带着一串空格去查（引擎 trim 成空、返回 0），
+  // 副作用是白暂停一次视频、弹一个空浮层。
+  if (start >= graphemes.length) return (start: -1, term: '');
   return (start: start, term: graphemes.skip(start).join());
 }
 
@@ -3499,7 +3515,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
               ErrorLogService.instance.log('StudyClock.write(video)', e, st),
         ),
         // 已看过的片内区间并集按视频身份持久化：次日重看同样不计（BUG-2108）。
-        loadCoverage: () => db.getPref(videoWatchCoveragePrefKey(widget.bookUid)),
+        loadCoverage: () =>
+            db.getPref(videoWatchCoveragePrefKey(widget.bookUid)),
         saveCoverage: (String json) =>
             db.setPref(videoWatchCoveragePrefKey(widget.bookUid), json),
         markCompleted: (String uid) =>

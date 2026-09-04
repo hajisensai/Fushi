@@ -129,14 +129,40 @@ void main() {
       expect(r.term, 'world');
     });
 
-    test('CJK / 空格：起点即被点字位', () {
+    test('CJK：起点即被点字位', () {
       expect(subtitleLookupSpan('永遠に', 1).start, 1);
-      expect(subtitleLookupSpan('a b', 1).start, 1);
     });
 
-    test('越界 start=-1、term 空', () {
+    // 起点必须与「送进引擎的那个串」同源。`pushNestedPopup` 先 trim 再查，引擎回报的
+    // matchedRunes 是相对 trim 后的串数的；起点若停在空白上，高亮就整体左移一格、
+    // 尾部少一个字符。点中空格不是边角：英文逐字命中与 hoverAutoLookup 扫过词间空隙
+    // 都会落在那里。
+    test('点中空格：起点跳到下一个词的词首，串与查询同源', () {
+      final ({int start, String term}) r =
+          subtitleLookupSpan('She is not going', 6);
+      expect(r.start, 7, reason: '不是 6（那个空格）');
+      expect(r.term, 'not going');
+      expect(r.term, r.term.trimLeft(), reason: '串不得带前导空白，否则与引擎口径错位');
+    });
+
+    test('U+3000 全角空格同样跳过（String.trim 也吃它）', () {
+      final ({int start, String term}) r = subtitleLookupSpan('あ　い', 1);
+      expect(r.start, 2);
+      expect(r.term, 'い');
+    });
+
+    test('连续多个空格一次跳到底', () {
+      final ({int start, String term}) r = subtitleLookupSpan('a   b', 1);
+      expect(r.start, 4);
+      expect(r.term, 'b');
+    });
+
+    test('越界 / 整段空白：start=-1、term 空', () {
       expect(subtitleLookupSpan('hi', 2), (start: -1, term: ''));
       expect(subtitleLookupSpan('', 0), (start: -1, term: ''));
+      // 此前会带着一串空格去查：引擎 trim 成空返回 0，副作用是白暂停一次视频、
+      // 弹一个空浮层。
+      expect(subtitleLookupSpan('ab   ', 2), (start: -1, term: ''));
     });
   });
 
