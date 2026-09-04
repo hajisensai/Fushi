@@ -29,10 +29,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1966 条。点号进各自文件。
+> 共 1970 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2115](bugs/BUG-2115-kirikiri-voice-stream-filter-captures-se-bgm.md) | ✅ | ✅ | KiriKiri 资源流语音过滤按裸 .ogg/.opus 后缀把 SE/BGM/脚本当语音并配给旁白 |
+| [BUG-2114](bugs/BUG-2114-kirikiri-direct-route-term-highlight-missing.md) | ✅ | ✅ | KiriKiri 直连路由下被查整词不高亮，只亮点击的单字 |
+| [BUG-2113](bugs/BUG-2113-kirikiri-ingame-card-mining-text-generation-mismatch.md) | ✅ | ✅ | KiriKiri 点击载荷 text_generation 填成 TJS 提交序号，游戏内「+」制卡恒失败 |
+| [BUG-2112](bugs/BUG-2112-gal-thread-picker-artifact-thread-looks-clean.md) | ✅ | ✅ | 游戏文本线程选择器把全伪影线程当干净线程展示，选中后永远 0 行且无提示 |
 | [BUG-2104](bugs/BUG-2104-release-event-ships-debug-apk-on-formal.md) | ✅ | ✅ | 手动发 GitHub Release 会把 debug APK 捎带上正式版 |
 | [BUG-2099](bugs/BUG-2099-android-saf-mdx-greyed.md) | ✅ | ✅ | 安卓文件选择器把 .mdx/.dsl/.ifo/.ass 置灰选不中 |
 | [BUG-2090](bugs/BUG-2090-overlay-hover-highlight-brush-leak.md) | ✅ | ✅ | overlay 悬浮高亮窗口类每次重建都漏一个 GDI brush |
