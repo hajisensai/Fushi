@@ -98,9 +98,9 @@ x64 `1a4eba2de8793ecb886824bc7188fd30d3c27d60d4e78235bb8773227a1758a4`（双架�
 `_x_yurirei` / `_x_yurirei2` / `_x_renaiphase` 是上表前几项的重复副本，不是独立标题；
 `[150925][戯画] 恋愛フェイズ` 目录里只有一个更新补丁 exe，正片在 `_x_renaiphase` 的 ISO 里。
 
-**两个新引擎（AOS / PAC）本轮不建 adapter**：它们只有静态身份、**零运行期证据**，
-按 `native/galgame_hook/CLAUDE.md` 的证据门只到 `observed`。要往下走必须先安装——
-那是用户的决定。
+这两个新引擎（AOS / PAC）在**只有静态身份**的那一刻都还不够建 adapter：按
+`native/galgame_hook/CLAUDE.md` 的证据门那只到 `observed`。后来只读挂载原盘拿到运行期证据后，
+**AOS 建了**（见文末）；**PAC 仍然没有**——它连不弹错误框都做不到（见「恋愛フェイズ：受阻」）。
 
 ### STEINS;GATE REBOOT（SGRE）
 
