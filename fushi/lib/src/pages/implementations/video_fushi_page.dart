@@ -695,6 +695,10 @@ abstract class VideoFushiTestHooks {
 
   /// 开始真实播放（驱动 libmpv），让位置自然前进。
   Future<void> debugPlay();
+
+  /// 暂停 / 绝对 seek（BUG-2108 首次覆盖计时 E2E：拖回重听不计时）。
+  Future<void> debugPause();
+  Future<void> debugSeekMs(int positionMs);
 }
 
 // TODO-314：字幕跳转列表不再走 overlay 面板系统，改 push-aside（[_subtitleListVisible]
@@ -1008,6 +1012,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   @override
   Future<void> debugPlay() async => _controller?.play();
+
+  @override
+  Future<void> debugPause() async => _controller?.pause();
+
+  @override
+  Future<void> debugSeekMs(int positionMs) async =>
+      _controller?.seekMs(positionMs);
 
   VideoPlayerController? _controller;
 
@@ -3441,8 +3452,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       final FushiDatabase db = appModel.database;
       _watchTracker = VideoWatchTracker(
         bookUid: widget.bookUid,
-        // v92：观看时长 + 字幕字数走唯一时钟 StudyClock（活跃态 = 正在播放，由
-        // tracker 挂上；视频面刻意不设空闲门 / 前台门——切走仍在播就照常计时）。
+        // v92：观看时长 + 字幕字数走唯一时钟 StudyClock。BUG-2108：视频面时钟是
+        // 显式记账——时长由 tracker 按「位置推进到首次覆盖的片内区间」推入，回放 /
+        // 拖回 / 重看不计；切走仍在播就照常计时（不设前台门）。
         // 按视频稳定身份键控（v39：同名不同视频统计不再互串）。本地视频每集独立
         // 页面（pushReplacement 换集）→ widget.bookUid 恒为当前集。
         clock: StudyClock(
@@ -3450,9 +3462,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           mediaKind: kActivityMediaVideo,
           mediaKey: widget.bookUid,
           title: title,
+          accrual: StudyAccrual.explicit,
           onWriteError: (Object e, StackTrace st) =>
               ErrorLogService.instance.log('StudyClock.write(video)', e, st),
         ),
+        // 已看过的片内区间并集按视频身份持久化：次日重看同样不计（BUG-2108）。
+        loadCoverage: () => db.getPref(videoWatchCoveragePrefKey(widget.bookUid)),
+        saveCoverage: (String json) =>
+            db.setPref(videoWatchCoveragePrefKey(widget.bookUid), json),
         markCompleted: (String uid) =>
             db.markVideoCompleted(uid, DateTime.now()),
         onEpisodeCompleted: () async {

@@ -311,7 +311,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
     return StatPeriodSummary(
       label: label,
       primaryValue: formatStatTime(ms),
-      onTap: () => _showPeriodDetail(label, contains),
+      onTap: () => unawaited(_showPeriodDetail(label, contains)),
       lines: <StatSummaryLine>[
         StatSummaryLine(
           label: t.video_stat_completed,
@@ -331,15 +331,16 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
   /// 时段卡 → 时段明细 sheet（阶段 1 统一组件；本页是视频统计，明细只吃观看域
   /// 切片 [_videoFacts]）。条目点击直达播放（合集成员带 playlistCollectionId，
   /// 与首页续播同口径）。
-  void _showPeriodDetail(
+  Future<void> _showPeriodDetail(
     String label,
     bool Function(String dateKey) contains,
-  ) {
+  ) async {
     // 身份在库集合：明细行可能是已删视频的历史统计，点它不该假装能播。
     final Set<String> libraryUids = <String>{
       for (final Set<String> uids in _libraryUidsByTitle.values) ...uids,
     };
-    unawaited(showStatPeriodDetailSheet(
+    final FushiDatabase db = appModelNoUpdate.database;
+    final bool deleted = await showStatPeriodDetailSheet(
       context,
       periodLabel: label,
       contains: contains,
@@ -357,14 +358,17 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
           if (mediaKey.isEmpty || !libraryUids.contains(mediaKey)) return;
           await openLocalVideoBook(
             context: context,
-            repo: VideoBookRepository(appModelNoUpdate.database),
+            repo: VideoBookRepository(db),
             bookUid: mediaKey,
             playlistCollectionId: _primaryCollectionByEntry[
                 MediaKind.video.compositeKey(mediaKey)],
           );
         },
+        onEntryDelete: (StatPeriodEntryTarget t) => deleteStatPeriodEntry(db, t),
       ),
-    ));
+    );
+    // 删过就从 DB 重新聚合：页面上的时段卡 / 排行都得跟着变。
+    if (deleted && mounted) await _loadFromDatabase();
   }
 
   /// 长按 / 右键某个视频那一行 → 确认 → 删除该视频的纯统计并写 video 墓碑防复活，
