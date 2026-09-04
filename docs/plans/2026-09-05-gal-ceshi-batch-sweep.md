@@ -77,3 +77,81 @@ x64 `1a4eba2de8793ecb886824bc7188fd30d3c27d60d4e78235bb8773227a1758a4`（双架�
   没有 Unreal 家族，属真正的新引擎缺口，需要独立任务与独立 worktree。
 - 8 个未解压的 ISO/MDS/RAR 目录（屋上の百合霊さん、カスタムメイド3D2、姫様LOVEライフ、
   恋愛フェイズ 等）：树里 0 个 exe，需要先挂载/解压才能进队列。
+
+## 补记（同日稍晚）：未解压目录已分类 + SGRE 实测
+
+上文「未跑到的」里那 8 个未解压目录，以及 SGRE，本轮都补上了。
+
+### 光盘不必安装就能定引擎
+
+`7z l <iso>` 列目录即可——游戏 exe 与归档通常就在盘上（只有整包 installer 的除外）。
+再抽最小集（exe + 小归档，约 25 MB）做静态 probe，**不安装、不写注册表、不改系统**。
+安装是用户的决定（改注册表/安装目录/可能要序列号），不无人值守地做。
+
+| 盘 | 引擎 | 判据（实测） |
+|---|---|---|
+| カスタムメイド3D2 CHU-B LIP（KISS） | **Unity (Mono)** | `data\CM3D2OHx64_Data\Managed\*.dll`；x86/x64 双 exe；`data\GameData\*.arc` |
+| 姫様ＬＯＶＥライフ！（Princess Sugar） | **AOS 系 —— 新引擎** | `bgm/cv/grp/scr/se.aos`；`.aos` 头 = 4 字节零 + 两个小端长度 + **归档自身文件名的 ASCII**；游戏 exe x86 862 KB，导入 DDRAW/DINPUT/DSOUND/d3d9/d3dx9_43。`cv.aos` 675 MB 是语音库 |
+| 恋愛フェイズ（戯画） | **PAC 系 —— 新引擎** | 魔数 **`PACv`**（`Se.pac` 是 `PACu`，头后紧跟 `OggS`）；`RenaiPhase.exe` 节名随机化 + `.detour` 节 = **加壳**。`Voice.pac` 739 MB。**与仓库的 `qlie_filepack` 不是一回事**——QLIE 的魔数是 `FilePackVer` |
+| 屋上の百合霊さん フルコーラス（ライアーソフト） | 未知 | 盘上只有 `INSTALL.EXE` + `INSTALL.DAT`，游戏在安装包里，不装就量不到 |
+
+`_x_yurirei` / `_x_yurirei2` / `_x_renaiphase` 是上表前几项的重复副本，不是独立标题；
+`[150925][戯画] 恋愛フェイズ` 目录里只有一个更新补丁 exe，正片在 `_x_renaiphase` 的 ISO 里。
+
+**两个新引擎（AOS / PAC）本轮不建 adapter**：它们只有静态身份、**零运行期证据**，
+按 `native/galgame_hook/CLAUDE.md` 的证据门只到 `observed`。要往下走必须先安装——
+那是用户的决定。
+
+### STEINS;GATE REBOOT（SGRE）
+
+`sgre_steam.exe` x64，injector 直驱：
+
+```
+lookup_diag = 0x00200001 = sensor_installed | luna_known_hook_ready
+xaudiodiag2 = SgreFamilyMatched | SgreAnchorsResolved   （不是 Unresolved）
+hookdiag    = StartupAudioHooksReady | UnityResourceExtractorReady
+              | LunaHostReady | LunaConnected | LunaOutputObserved
+text_events = 11   voice_clips = 0（标题画面，未走台词）
+```
+
+injector 日志里 `known hook HQFN-24@328E0:sgre_steam.exe result=1`——钉定的 Luna hook 命中。
+**这一局是默认显示模式**；BUG-2083 要求的 1080p 窗口模式补测**没做**，故不改 SGRE 的状态。
+
+### Siglus 那两条「exact profile 未命中」已核实到哈希
+
+上文只写了「哈希 allowlist 里没有这两份」，本轮把它核到底了（allowlist 在
+`hook/adapters/siglus_lookup.h`，是**字节数组常量**不是十六进制串——按十六进制串去 grep
+会抽出 0 条、得到一个什么也没证明的空集断言）：
+
+| | SHA-256 |
+|---|---|
+| 钉定 anemoi | `d94c94eb132fb1fcd6c20f35dd16552ed130170b7a83de07b275ad26c97d059d` |
+| 钉定 Summer Pockets RB | `190df9a72929bd6b6327e773952b5c507c69052bc6d3ff16a4868bd1ff1791fd` |
+| 实测 FORTUNE×WORLD 体験版 | `03bf6429290ed2f2dabaf9bc4c0e42f1ca18dfe2d0bbf4e9cfbaaacd4f6e117e`（9604608 B） |
+| 实测 AngelBeats 体験版 | `c09a0a415f2333fff53fe648245a268c6b15e9e40074d9c18ba0bed5c21dd0ee`（7666176 B） |
+
+两份都不在 allowlist 里 → 落到 attached_calibrated 兜底，查词传感器随之缺席。
+这是 profile 覆盖面问题，不是 bug。
+
+### 顺带确证的一个跨引擎诊断缺口
+
+`AdapterDiagnostics`（`id/applicable/installed/flags`）每个 adapter 都实现了，
+但全仓**只有 `tests/adapter_contract_test.cpp` 在读**——运行期没有任何消费方。
+于是**任何引擎**都读不出「adapter 是否命中并安装」；CMVS 台账里那条
+「探针 `cmvs probe=1 installed=1`」的 Next gate 读不出来，不是探针失败，
+而是这个只写接口的表现。补它要改 IPC 契约（升 `kSharedVersion` + 两侧同 PR），
+本轮不动，单独立项。
+
+### 恋愛フェイズ（PACv）：受阻，未推进
+
+同样只读挂载原盘后直接起 `RenaiPhase.exe`：进程活着，但立刻弹
+`ErrorMessageBoxClass`，按钮写着「誤動作回避ファイルダウンロード」——
+要官方补丁/认证下载才跑得起来。`text_events=0`、`voice_clips=0`。
+这不是能无人值守推进的边界，记为受阻，**没有**为它建 adapter。
+
+### 已落地的两个新引擎
+
+- **Unreal（IoStore）** → PR #1217，分支 `worktree-gal-unreal-kinomajo`
+- **AOS / SFA（Princess Sugar 系）** → PR #1218，分支 `worktree-gal-aos-sfa`
+
+两者都 `implemented_unverified`、`verified_games` 为空，逐门证据各自写在自己的台账里。
