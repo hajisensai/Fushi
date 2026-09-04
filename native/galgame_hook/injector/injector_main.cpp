@@ -2234,13 +2234,16 @@ bool LooksLikeRenpyRuntime(const std::wstring& exe) {
          FileExists(JoinPath(dir, L"pythonw.exe"));
 }
 
-// 目录是否带引擎数据签名。目前只有 Siglus 一家有可靠的纯目录签名（Gameexe.dat +
-// Scene.pck）；再加引擎时在这里多写一个 || 即可，判据本身不用动。
+// 目录是否带引擎数据签名。Siglus（Gameexe.dat + Scene.pck）与 UE IoStore
+// （Content\Paks\*.utoc 的 16 字节 TOC 魔数）各出一条；再加引擎时在这里多写一个 ||
+// 即可，判据本身不用动。两条都要求数据文件真实存在/魔数成立，不认裸目录名。
 bool DirectoryHasEngineSignature(const std::wstring& dir) {
   return fushi_voice_hook::DirectoryLooksLikeSiglus(
-      dir, [](const std::wstring& d, const wchar_t* name) {
-        return FileExists(JoinPath(d, name));
-      });
+             dir,
+             [](const std::wstring& d, const wchar_t* name) {
+               return FileExists(JoinPath(d, name));
+             }) ||
+         fushi_voice_hook::DirectoryLooksLikeUnrealIostore(dir);
 }
 
 // 直接子目录全路径。不跟 reparse point：符号链接/联接点能把搜索绕成环。
@@ -2960,6 +2963,17 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
               "[process] no stable game child found; attaching launcher pid=%lu\n",
               pi.dwProcessId);
     }
+  }
+
+  // 跟随子进程后目标换人了：自动 PC hooks 的判据必须按**真实游戏镜像**重算。启动器那层
+  // 没有引擎布局，只在 exe 上判一次等于对启动器型游戏永不开启——UE 样本的原始启动入口
+  // 正是外层 stub，判据锚在 `<Game>\Binaries\Win64` 上，在 stub 那层恒为假。
+  if (!effective_luna.pc_hooks && !target_exe.empty() && target_exe != exe &&
+      ShouldAutoUseLunaPcHooks(target_exe)) {
+    effective_luna.pc_hooks = true;
+    fprintf(stderr,
+            "[luna] auto-enabled PC hooks after following game child: %ls\n",
+            ExecutableBaseName(target_exe).c_str());
   }
 
   ApplyLunaProfiles(target_exe, target_pid, effective_luna.profile_path,

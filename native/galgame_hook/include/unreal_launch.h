@@ -19,6 +19,10 @@
 //
 // exe 名的 `-Win64-Shipping` 后缀只作台账记录、不进判据：`-Win64-Test` / `-Win64-Debug`
 // 同样是合法的 shipping 目录布局，而目录形状 + IoStore 魔数已经足够收敛。
+//
+// 平台段写死 `Win64`，同样是已知且刻意的缺口：32 位 UE 包落在
+// `<Game>\Binaries\Win32`，本判据不匹配，整条 Unreal 路径对它们是死的。
+// 手上只有 x64 样本，没量到的形状不写进判据；补它需要一个真的 Win32 UE 样本。
 #pragma once
 
 #include <windows.h>
@@ -110,6 +114,19 @@ inline bool MatchesUnrealIostoreLayout(const std::wstring& binary_directory) {
       UnrealParentDirectory(UnrealParentDirectory(binary_directory));
   if (game_root.empty()) return false;
   return UnrealIoStoreArchivePresent(game_root);
+}
+
+// 目录级引擎签名：给定任意一个目录，判断它是不是这套 UE IoStore 游戏树的一部分。
+// injector 的启动器识别（扫子目录找引擎签名）和子进程身份判定（拿子进程镜像所在目录反推）
+// 共用这一条，因此两种形态都要认，且两种形态都以 `.utoc` 魔数收口（fail closed）：
+//   * `<Game>` 根本身——`Content\Paks\*.utoc` 就在脚下。启动器扫子目录时看到的是这个形状：
+//     真实样本的原始启动入口是外层 `kinomajo\kinomajo.exe`，游戏树在其子目录 `kinomajo\`。
+//   * shipping 二进制目录 `<Game>\Binaries\Win64`——从子进程镜像路径反推时看到的是这个。
+// 只有目录名而没有魔数一律不算，所以随便一个叫 Paks 或 Win64 的目录不会被误判。
+inline bool DirectoryLooksLikeUnrealIostore(const std::wstring& directory) {
+  if (directory.empty()) return false;
+  return UnrealIoStoreArchivePresent(directory) ||
+         MatchesUnrealIostoreLayout(directory);
 }
 
 }  // namespace fushi_voice_hook

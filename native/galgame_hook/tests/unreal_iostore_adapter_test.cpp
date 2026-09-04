@@ -48,6 +48,7 @@ std::wstring MakeGameTree(const std::wstring& root) {
 void RemoveTree(const std::wstring& root) {
   DeleteFileW((root + L"\\Game\\Content\\Paks\\global.utoc").c_str());
   DeleteFileW((root + L"\\Game\\Content\\Paks\\other.utoc").c_str());
+  DeleteFileW((root + L"\\Game\\Content\\Paks\\aaa_broken.utoc").c_str());
   RemoveDirectoryW((root + L"\\Game\\Content\\Paks").c_str());
   RemoveDirectoryW((root + L"\\Game\\Content").c_str());
   RemoveDirectoryW((root + L"\\Game\\Binaries\\Win64").c_str());
@@ -64,11 +65,14 @@ const char kNotToc[] = "OggS\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00
 }  // namespace
 
 int main() {
-  // 1. 完整布局 → 匹配。第一个 .utoc 魔数不对也不影响：判据是「至少一个」。
+  // 1. 完整布局 → 匹配。判据是「至少一个」，所以先枚举到的 .utoc 魔数不对时必须继续扫。
+  //    坏的那个叫 aaa_broken 而不是 other：NTFS 按名字序枚举，other.utoc 会排在
+  //    global.utoc 之后，第一轮就命中好的并 break，续扫循环根本走不到
+  //    （把续扫退化成「只看第一个文件」，旧用例全部照样变绿）。
   {
     const std::wstring root = MakeTempRoot(L"full");
     const std::wstring bin = MakeGameTree(root);
-    WriteBytes(root + L"\\Game\\Content\\Paks\\other.utoc", kNotToc, sizeof(kNotToc) - 1);
+    WriteBytes(root + L"\\Game\\Content\\Paks\\aaa_broken.utoc", kNotToc, sizeof(kNotToc) - 1);
     WriteBytes(root + L"\\Game\\Content\\Paks\\global.utoc", kToc, sizeof(kToc) - 1);
     assert(fushi_voice_hook::UnrealShippingBinaryLayout(bin));
     assert(fushi_voice_hook::UnrealIoStoreArchivePresent(root + L"\\Game"));
@@ -122,6 +126,27 @@ int main() {
   }
   // 6. 测试进程自己的目录不是 Unreal 游戏 → 进程级探测为假。
   assert(!fushi_voice_hook::MatchesUnrealIostoreProfile(nullptr));
+  // 7. 目录级引擎签名（DirectoryLooksLikeUnrealIostore）。injector 的启动器识别与子进程
+  //    身份判定共用它，两种形态都得认，而且启动器自己那层必须为假：
+  //    LooksLikeLauncherLayout 的定义就是「自己这层没签名、子目录有」，外层 stub
+  //    目录一旦也判真，跟随子进程就不会被自动打开，真游戏进程永远拿不到 hook。
+  {
+    const std::wstring root = MakeTempRoot(L"dirsig");
+    const std::wstring bin = MakeGameTree(root);
+    // 先不放归档：两种形态都不能成立（fail closed）。
+    assert(!fushi_voice_hook::DirectoryLooksLikeUnrealIostore(root + L"\\Game"));
+    assert(!fushi_voice_hook::DirectoryLooksLikeUnrealIostore(bin));
+    WriteBytes(root + L"\\Game\\Content\\Paks\\global.utoc", kToc, sizeof(kToc) - 1);
+    // 形态一：<Game> 根本身（启动器扫子目录时看到的）。
+    assert(fushi_voice_hook::DirectoryLooksLikeUnrealIostore(root + L"\\Game"));
+    // 形态二：shipping 二进制目录（从子进程镜像路径反推时看到的）。
+    assert(fushi_voice_hook::DirectoryLooksLikeUnrealIostore(bin));
+    // 启动器自己那层（归档在子目录里）必须为假。
+    assert(!fushi_voice_hook::DirectoryLooksLikeUnrealIostore(root));
+    // 空串不崩也不误判。
+    assert(!fushi_voice_hook::DirectoryLooksLikeUnrealIostore(L""));
+    RemoveTree(root);
+  }
   std::printf("unreal_iostore_adapter_test: ok\n");
   return 0;
 }

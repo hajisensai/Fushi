@@ -862,6 +862,8 @@ Tests：`tests/sgre_adapter_test.cpp`、`tests/exact_lookup_signature_test.cpp`�
 - Only title-screen strings have been observed. Dialogue text, thread selection, text/audio pairing and card E2E are all not_run.
 - The runtime PCM measurement did not distinguish DirectSound from XAudio2; only 'the generic Windows audio path published PCM' is proved.
 - In-game lookup sensor is not implemented; lookupAdmission stays EngineUnsupported.
+- The shipping-binary criterion hard-codes the Win64 platform segment, so 32-bit UE packages under <Game>\Binaries\Win32 do NOT match and the whole Unreal path is inert for them. The measured sample is x64-only; no Win32 UE sample was available, and a platform segment is not guessed from a shape that was never measured.
+- Auto-enabling LunaHook PC hooks was measured only through the explicit --luna-pchooks switch (11 vs 29 text_events). The automatic route reaches that switch by way of launcher detection plus child-process following, and is covered by offline tests only; it has not been re-measured end to end from the original launch entry.
 
 Fixtures：`tests/fixtures/unreal_iostore_replay.json`
 

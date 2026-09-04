@@ -11,15 +11,16 @@
   "events": [
     {"kind": "text", "id": "unreal-line", "timestamp_ms": 5000, "thread": 4, "text": "synthetic unreal pc-hook line"},
     {"kind": "text", "id": "unreal-ui-thread", "timestamp_ms": 5001, "thread": 9, "text": "synthetic unreal ui thread"},
+    {"kind": "loopback", "id": "unreal-loopback", "timestamp_ms": 5002, "format": "s16le"},
     {"kind": "pcm", "id": "unreal-source-pcm", "timestamp_ms": 5014, "format": "s16le"},
-    {"kind": "loopback", "id": "unreal-loopback", "timestamp_ms": 5018, "format": "s16le"},
+    {"kind": "text", "id": "unreal-line-repeat", "timestamp_ms": 5300, "thread": 4, "text": "synthetic unreal pc-hook line"},
     {"kind": "session_end", "timestamp_ms": 5600}
   ],
   "expected": {
     "cards": [
       {"text_id": "unreal-line", "audio_backend": "pcm", "audio_id": "unreal-source-pcm"}
     ],
-    "duplicate_text_events": 0,
+    "duplicate_text_events": 1,
     "thread_filtered_events": 1,
     "session_clean": true
   }
