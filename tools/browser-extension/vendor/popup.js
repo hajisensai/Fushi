@@ -2738,9 +2738,46 @@ function createTranscriptionsHtml(transcriptions) {
     return list;
 }
 
+// BUG-2122：同一个音调型被多本词典各渲染成一行。五本音调词典都把「ギター」
+// 标成 [1] 时，用户看到的是五行一模一样的 ￣ギター [1]，读起来像坏了。Yomitan 在
+// getGroupedPronunciations 里把相同发音合并成一条、后面挂上全部来源；这里做同样的事：
+// 整份 payload 全等（pitchPositions / patterns / transcriptions 三者）的词典合并成一行，
+// dictionaries 带上全部来源名。判据故意取「全等」而不是逐条位置求交：宁可少合
+// 一次，也不把读法不同的两本词典混进同一行。
+//
+// 本函数是渲染前的最后一道纯变换，跑在 deduplicatePitchAccents 分支之后：去重打开
+// 时（app 默认）各存活组的位置互斥，payload 不可能全等，合并对位置组恒为 no-op，
+// 默认外观一字不变；去重关闭时才塌行。（两本纯 IPA 词典给出完全相同的
+// transcriptions 是唯一例外，那也本就该合。）
+function mergeIdenticalPitchGroups(groups) {
+    const merged = [];
+    const byPayload = new Map();
+    groups.forEach((group) => {
+        const key = JSON.stringify([
+            group.pitchPositions || [],
+            group.patterns || [],
+            group.transcriptions || [],
+        ]);
+        const existing = byPayload.get(key);
+        if (existing) {
+            if (!existing.dictionaries.includes(group.dictionary)) {
+                existing.dictionaries.push(group.dictionary);
+            }
+            return;
+        }
+        const entry = Object.assign({}, group, { dictionaries: [group.dictionary] });
+        byPayload.set(key, entry);
+        merged.push(entry);
+    });
+    return merged;
+}
+
 function createPitchGroup(pitchData, reading) {
-    const container = el('div', { className: 'pitch-group', 'data-details': pitchData.dictionary });
-    container.appendChild(el('span', { className: 'pitch-dict-label', textContent: pitchData.dictionary }));
+    const dictionaries = pitchData.dictionaries || [pitchData.dictionary];
+    const container = el('div', { className: 'pitch-group', 'data-details': dictionaries.join(', ') });
+    dictionaries.forEach((dictionary) => {
+        container.appendChild(el('span', { className: 'pitch-dict-label', textContent: dictionary }));
+    });
 
     const list = el('ul', { className: 'pitch-entries' });
     (pitchData.pitchPositions || []).forEach((pitch) => {
@@ -2820,6 +2857,7 @@ function createPitchSection(pitches, reading) {
     const section = el('div', { className: 'category-section pitch-section' });
     const body = el('div', { className: 'category-body' });
     const pitchContainer = el('div', { className: 'pitch-list' });
+    const groups = [];
     if (window.deduplicatePitchAccents) {
         const seen = new Set();
         pitches.forEach(pitch => {
@@ -2832,14 +2870,14 @@ function createPitchSection(pitches, reading) {
             const hasPatterns = pitch.patterns?.length;
             if (unique.length > 0 || hasTranscriptions || hasPatterns) {
                 unique.forEach(pos => seen.add(pos));
-                pitchContainer.appendChild(createPitchGroup(
-                    { dictionary: pitch.dictionary, pitchPositions: unique, patterns: pitch.patterns, transcriptions: pitch.transcriptions },
-                    reading));
+                groups.push({ dictionary: pitch.dictionary, pitchPositions: unique, patterns: pitch.patterns, transcriptions: pitch.transcriptions });
             }
         });
     } else {
-        pitches.forEach(pitch => pitchContainer.appendChild(createPitchGroup(pitch, reading)));
+        pitches.forEach(pitch => groups.push(pitch));
     }
+    mergeIdenticalPitchGroups(groups).forEach(
+        group => pitchContainer.appendChild(createPitchGroup(group, reading)));
     body.appendChild(pitchContainer);
     section.appendChild(body);
     return section;

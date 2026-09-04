@@ -1499,6 +1499,10 @@ html[data-theme="dark"] :where(.glossary-group, .glossary-content) [class^="glos
     align-items: baseline;
     gap: 6px;
     margin-top: 2px;
+    /* BUG-2122：合并同型音调后一行可能挂好几枚来源药丸（用户装了五本音调词典就
+       是五枚）。不许换行的话它们会把读音顶出弹窗右边界；允许换行后，药丸满一行就
+       把读音掘到下一行，而不是溢出。单本词典（绝大多数行）装得下，不会换行。 */
+    flex-wrap: wrap;
     /* TODO-1305 / BUG-pitch-reading-mined: 音高发音区（片假名 reading 逐 mora +
        [n] 音高数字 + IPA）是纯展示，不参与查词/复制。加 user-select:none 杜绝拖选
        把片假名 reading（如 カンロク）留在原生选区、制卡时被烤进 Anki 卡的

@@ -1,0 +1,15 @@
+## BUG-2122 · 音调区同一音调型被多本词典重复渲染成多行
+- **报告**：2026-09-04（用户：官网首页 demo 弹窗查「ギター」的截图）
+- **真实性**：✅ 真 bug — `fushi/assets/popup/popup.js` `createPitchSection`（改前 2818-2844）一本音调词典渲染一个 `.pitch-group` 行。五本音调词典都把「ギター」标成 `[1]` 时，音高区连出五行一模一样的 `￣ギター [1]`，只有前面的来源药丸不同，读起来像坏了。
+  - Yomitan 的对照实现 `getGroupedPronunciations` 是把**相同发音合并成一条、后面挂全部来源标签**，从不出重复行。
+  - 触发档位：`deduplicate_pitch_accents`（`fushi/lib/src/models/preferences_repository.dart:1731`）默认 `true`，此时旧代码靠「丢掉已出现过的音调位」把重复行压掉——**代价是另外四本词典的来源名被整条丢弃**，用户看不到「五本都认同」。官网 demo 注入的是 `false`，于是重复行原样暴露（用户截图即此档）。所以这不是官网独有，是共用 popup.js 的行为缺陷：一档丢信息，另一档出重复。
+- **[x] ① 已修复** — `mergeIdenticalPitchGroups()`：渲染前的最后一道纯变换，整份 payload 全等（`pitchPositions` / `patterns` / `transcriptions` 三者）的词典合并成一行，`dictionaries` 带上全部来源名；`createPitchGroup` 改吃来源数组，每本渲一枚 `.pitch-dict-label` 药丸；`.pitch-group` 加 `flex-wrap: wrap` 防多药丸把读音顶出弹窗右边界。
+  - 判据故意取「payload 全等」而不是逐条位置求交：宁可少合一次，也不把读法不同的两本词典混进同一行。
+  - 合并跑在 `deduplicatePitchAccents` 分支**之后**：去重打开（app 默认）时各存活组的位置互斥、payload 不可能全等，合并对位置组恒为 no-op，**默认外观一字不变**；去重关闭时才塌行。唯一会在去重档位生效的是「两本纯 IPA 词典给出完全相同的 transcriptions」，那本就该合。
+  - 三份镜像副本同步：`fushi/assets/popup/popup.{js,css}`、`fushi/assets/browser_extension/vendor/popup.{js,css}`、`tools/browser-extension/vendor/popup.{js,css}`。
+  - 提交：见本分支 `worktree-pitch-merge-identical-dicts`。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/popup_pitch_merge_identical_test.dart` + `.js`
+  - 行为级（node vm 真跑 popup.js 的 `createPitchSection`）：五本同为 `[1]` 且去重关闭 → 只剩 1 个 `.pitch-group`、5 枚药丸按首次出现顺序、`[1]` 只画一次；音调型不同（`[1]` vs `[0]`）不合并；位置部分重叠（`[1,0]` vs `[1]`）不合并；去重打开时 1 行 1 枚药丸（钉死默认外观零变化）；两本纯 IPA 同 transcriptions 合并。
+  - 变异实测：撤掉 `mergeIdenticalPitchGroups(groups)` 调用点 → case 1 报 `5 !== 1` 红，恢复即绿（不是空壳断言）。
+  - 源码级：三份镜像副本各自断言合并 helper、调用点在去重分支之后、去重分支不再直接 append、多药丸渲染循环，以及 `.pitch-group` 的 `flex-wrap: wrap`。
+- **备注**：官网 `fushi.moe` 首页 demo 把 popup.js 内联在 `public/index.html`，是独立快照副本，需同步同一处改动才能让用户截图里的页面变好（本仓改动不会自动传过去）。
