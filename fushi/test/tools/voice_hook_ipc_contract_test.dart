@@ -41,7 +41,11 @@ void main() {
     // v17：在 v16 之上纯尾部追加「本次注入所用 hook DLL 的 SHA-256」。
     // 这个数字必须钉死：它是 wire identity，写错一位就是「旧 helper 静默绕过默认
     // deny」。改它必须同时改契约头顶部的版本沿革说明。
-    expect(source, contains('constexpr uint32_t kSharedVersion = 21;'));
+    // v22：SharedHeader 尾部在 v19 摘要之后纯追加了层原点双向面（12 个 32 位字，
+    // 共 48 字节）。**尺寸变了就必须升版**：hook 与 injector 都用 sizeof(SharedHeader)
+    // 现算 ring / region 基址，新旧混装会整体差 48 字节，而版本门本会放行——症状是
+    // 跨进程读到完全错位的数据，不报错。
+    expect(source, contains('constexpr uint32_t kSharedVersion = 22;'));
     // v17 字段本身也钉死：驻留 hook 身份门的驻留侧摘要只能从这里取，字段没了
     // 就只剩「两边都读磁盘」那条恒真的假校验。
     expect(
