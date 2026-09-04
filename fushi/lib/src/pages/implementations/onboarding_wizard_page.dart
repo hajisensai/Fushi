@@ -44,24 +44,34 @@ const String kAnkiDesktopDownloadUrl = 'https://apps.ankiweb.net/';
 const String kAnkiDroidDownloadUrl =
     'https://play.google.com/store/apps/details?id=com.ichi2.anki';
 
-/// FSRS 指引外链。
+/// 「在 Anki 里开启 FSRS」教程的三步。
 ///
-/// Anki 自 23.10 起内置 FSRS，但排程默认仍是三十多年前的 SM-2：FSRS 开关要用户
-/// 自己在牌组选项里打开一次，应用侧代劳不了——AnkiConnect 没有 FSRS 开关 API，
-/// 绕过它直接改 collection config 会在 Anki 版本之间碎掉。所以这里只给指引出口，
-/// 由用户去 Anki 里点那一下。
+/// Anki 自 23.10 起内置 FSRS，但排程默认仍是三十多年前的 SM-2：开关必须用户自己
+/// 在 Anki 的牌组选项里打开一次，应用侧代劳不了——AnkiConnect 没有 FSRS 开关
+/// API，绕过它直接改 collection config 会在 Anki 版本之间碎掉。所以引导把步骤整段
+/// 写在这里，而不是甩一条外链让用户自己找。
 ///
-/// 中文界面给中文图文长文，其余语言落到 Anki 官方手册的 FSRS 章节——别把中文页
-/// 推给读不懂的人。
-const String kAnkiFsrsGuideUrlZh =
-    'https://l-m-sherlock.github.io/ZhiHuArchive/664758200.html';
-const String kAnkiFsrsGuideUrlEn =
-    'https://docs.ankiweb.net/deck-options.html#fsrs';
-
-/// 当前界面语言对应的 FSRS 指引链接（纯函数，便于测试直接喂 locale）。
-String ankiFsrsGuideUrl(AppLocale locale) => locale.languageCode == 'zh'
-    ? kAnkiFsrsGuideUrlZh
-    : kAnkiFsrsGuideUrlEn;
+/// 第一步的入口桌面与移动端不同（牌组齿轮菜单 vs 长按牌组），其余两步各端一致。
+List<OnboardingTutorialItem> ankiFsrsTutorialSteps({required bool mobile}) =>
+    <OnboardingTutorialItem>[
+      OnboardingTutorialItem(
+        icon: Icons.settings_outlined,
+        title: t.onboarding_anki_fsrs_step_options_title,
+        description: mobile
+            ? t.onboarding_anki_fsrs_step_options_mobile_desc
+            : t.onboarding_anki_fsrs_step_options_desktop_desc,
+      ),
+      OnboardingTutorialItem(
+        icon: Icons.toggle_on_outlined,
+        title: t.onboarding_anki_fsrs_step_toggle_title,
+        description: t.onboarding_anki_fsrs_step_toggle_desc,
+      ),
+      OnboardingTutorialItem(
+        icon: Icons.auto_graph_outlined,
+        title: t.onboarding_anki_fsrs_step_optimize_title,
+        description: t.onboarding_anki_fsrs_step_optimize_desc,
+      ),
+    ];
 
 /// 步骤内容区最大宽度：桌面宽窗口下正文行长过长会难读，卡片也会被拉成长条。
 const double _kOnboardingContentMaxWidth = 720;
@@ -540,20 +550,6 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
           onPressed: () => unawaited(_installAnkiConnectAddonFromAsset()),
         ),
       ],
-      // FSRS：Anki 里内置但默认关着，排程仍走 SM-2。应用侧开不了（见
-      // [kAnkiFsrsGuideUrlZh] 的说明），只能把「去 Anki 里开一次」摆进引导，
-      // 别让新用户默认吃三十多年前的算法。连不连得上 Anki 都该看见这条，所以
-      // 不挂 connected 条件。
-      OnboardingAction(
-        icon: Icons.insights_outlined,
-        label: t.onboarding_anki_fsrs_action,
-        description: t.onboarding_anki_action_fsrs_desc,
-        necessity: OnboardingActionNecessity.recommended,
-        onPressed: () => launchUrl(
-          Uri.parse(ankiFsrsGuideUrl(LocaleSettings.currentLocale)),
-          mode: LaunchMode.externalApplication,
-        ),
-      ),
       OnboardingAction(
         icon: Icons.tune_outlined,
         label: t.onboarding_step_anki_action,
@@ -613,6 +609,9 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final AnkiUiState anki = ref.watch(ankiViewModelProvider);
     final bool mobile = Platform.isAndroid || Platform.isIOS;
+    final List<OnboardingTutorialItem> fsrsSteps = ankiFsrsTutorialSteps(
+      mobile: mobile,
+    );
     final bool connected = _ankiTestAttempted &&
         !anki.isFetching &&
         anki.errorMessage == null &&
@@ -687,6 +686,20 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
             mobile: mobile,
           ),
         ),
+        // 「去 Anki 里把 FSRS 打开」的整段教程（见 [ankiFsrsTutorialSteps]）。
+        // 常显、不折叠：Anki 默认排程还是 SM-2，收起来等于没说。
+        SizedBox(height: tokens.spacing.card),
+        OnboardingSectionLabel(
+          title: t.onboarding_anki_fsrs_title,
+          hint: t.onboarding_anki_fsrs_body,
+        ),
+        SizedBox(height: tokens.spacing.gap),
+        for (int index = 0; index < fsrsSteps.length; index++)
+          OnboardingTutorialStep(
+            number: index + 1,
+            item: fsrsSteps[index],
+            isLast: index == fsrsSteps.length - 1,
+          ),
         // 移动端次级入口：本机改用 AnkiConnect 连电脑（默认收起，配置真值仍在
         // 制卡设置，不在向导里复制表单）。
         if (mobile) ...<Widget>[

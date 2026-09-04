@@ -4200,6 +4200,13 @@
   "onboarding_pack_import_now": "现在导入",
   "onboarding_pack_download_finished": "推荐包下载完成。可在「设置 → 系统」里导入。",
   "onboarding_pack_download_background_hint": "下载会在后台继续：可以直接走下一步，也可以关掉向导。进度、取消和导入都在「设置 → 系统」里。",
-  "onboarding_anki_fsrs_action": "在 Anki 里开启 FSRS",
-  "onboarding_anki_action_fsrs_desc": "Anki 默认仍用三十多年前的 SM-2 算法排程。FSRS 已内置但默认关闭：进入牌组选项，打开 FSRS 开关，再点「优化」。点这里看图文指引。"
+  "onboarding_anki_fsrs_title": "在 Anki 里开启 FSRS",
+  "onboarding_anki_fsrs_body": "Anki 内置了 FSRS —— 目前最好的间隔重复算法之一，但你不打开它，排程就一直走三十多年前的 SM-2。FSRS 拿你的真实复习记录预测遗忘时点，同样的记忆效果复习量更少。这个开关只在 Anki 里开一次，Fushi 这边不用改任何设置。",
+  "onboarding_anki_fsrs_step_options_title": "打开牌组选项",
+  "onboarding_anki_fsrs_step_options_desktop_desc": "在 Anki 主界面点牌组右侧的齿轮，选「选项」。",
+  "onboarding_anki_fsrs_step_options_mobile_desc": "在 AnkiDroid（2.17 及以上）或 AnkiMobile 里长按牌组，选「选项」。",
+  "onboarding_anki_fsrs_step_toggle_title": "打开 FSRS 开关",
+  "onboarding_anki_fsrs_step_toggle_desc": "滚到选项页最底部的「FSRS」区块（旧版藏在「高级」里），把开关打开。它对整个收藏生效，开一次就够。",
+  "onboarding_anki_fsrs_step_optimize_title": "点「优化」再保存",
+  "onboarding_anki_fsrs_step_optimize_desc": "在开关下方点「优化」，让参数贴合你自己的复习记录，然后保存。复习记录不足约 1000 条时默认参数已经比 SM-2 准，攒够以后再优化一次即可。"
 }
