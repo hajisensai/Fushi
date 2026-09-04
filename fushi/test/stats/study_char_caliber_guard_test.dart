@@ -84,6 +84,9 @@ void main() {
         'lib/src/media/video/video_subtitle_jump_panel.dart': 1,
         // BUG-442：词典查询输入长度上限保护，是校验不是记账。
         'lib/src/models/app_model.dart': 1,
+        // BUG-2091 字幕查词高亮：把引擎回报的匹配长度（**码点**数）折算成 grapheme
+        // 数，供高亮区间用。是长度换算不是记账——查词字数走的是制卡那条路。
+        'lib/src/pages/implementations/video_fushi_page.dart': 1,
         // 词典查词高亮索引带（indexTape）构建时的码点遍历。
         'packages/fushi_dictionary/lib/src/language/language.dart': 1,
         // 字幕富文本 span 的 grapheme 偏移区间计算。
