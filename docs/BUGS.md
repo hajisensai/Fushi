@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1980 条。点号进各自文件。
+> 共 1981 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2123](bugs/BUG-2123-global-lookup-first-frame-topleft-flash.md) | ✅ | ✅ | app 外全局查词弹窗首帧先闪在屏幕左上角再飞到光标 |
 | [BUG-2110](bugs/BUG-2110-dict-mass-import-startup-crash.md) | ✅ | ✅ | 一次性导入大量词典后启动转圈中途闪退 |
 | [BUG-2109](bugs/BUG-2109-recommended-pack-never-deleted.md) | ✅ | ✅ | 推荐包 9.5GB zip 导入后永不删除（清理钩子挂在不再执行的引导页 initState） |
 | [BUG-2107](bugs/BUG-2107-onboarding-pack-pick-bare-filepicker.md) | ✅ | ✅ | 引导选本地包走裸 pickFiles：安卓整份复制进 cache，失败静默无提示 |
