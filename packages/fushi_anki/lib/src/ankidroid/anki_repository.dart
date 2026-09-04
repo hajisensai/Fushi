@@ -17,6 +17,61 @@ class AnkiRepository extends BaseAnkiRepository {
   static const _channel = MethodChannel('app.fushi.reader/anki');
   static const _legacyDeckKey = 'last_selected_deck';
 
+  /// BUG-2098：碰 AnkiDroid provider 之前**确保权限已到手**。
+  ///
+  /// 此前每个入口都是裸的 `invokeMethod('requestAnkidroidPermissions')`：native 发起
+  /// 系统权限请求后立刻回 true，这里 await 完马上就去查 provider——权限对话框还开着，
+  /// 错误已经报完了，而且报的是 provider 的英文原文。现在 native 会等到用户答复再
+  /// 回终态，非 `granted` 一律在此短路成带**稳定码**的 [PlatformException]，由
+  /// [classifyPlatformError] 归类、主 app 映射本地化文案。
+  ///
+  /// 旧 native / 测试桩返回 `true` 或 `null`（没有这个方法的桩），一律视为已授权，
+  /// 保持向后兼容——只有明确的失败终态才短路。
+  Future<void> _ensurePermission() async {
+    final Object? status =
+        await _channel.invokeMethod('requestAnkidroidPermissions');
+    switch (status) {
+      case null:
+      case true:
+      case 'granted':
+        return;
+      case 'unavailable':
+        throw PlatformException(
+          code: 'ANKI_NOT_INSTALLED',
+          message: 'AnkiDroid is not installed or its API is disabled.',
+        );
+      case 'permanently_denied':
+        throw PlatformException(
+          code: 'PERMISSION_PERMANENTLY_DENIED',
+          message: 'AnkiDroid permission was permanently denied. '
+              'Grant it in the system app settings.',
+        );
+      default:
+        // 'denied'（用户刚拒绝）/ 'no_activity'（副 engine 弹不了框，须回主 app 授予）
+        // / false / 任何未知终态：都当作「这次没拿到权限」。
+        throw PlatformException(
+          code: 'PERMISSION_DENIED',
+          message: 'AnkiDroid permission not granted. Please grant and retry.',
+        );
+    }
+  }
+
+  /// BUG-2098：打开本应用的系统设置详情页，让用户手动授予被永久拒绝的
+  /// AnkiDroid 权限——那种状态下系统不再弹框，这是唯一出路。成功返回 true。
+  static Future<bool> openPermissionSettings() async {
+    try {
+      final Object? ok =
+          await _channel.invokeMethod('openAnkiPermissionSettings');
+      return ok == true;
+    } on PlatformException catch (e, stack) {
+      debugPrint('AnkiRepository.openPermissionSettings: $e\n$stack');
+      return false;
+    } on MissingPluginException {
+      // 非 Android（或旧 native）：没有这个能力，调用方据此不显示「去设置」。
+      return false;
+    }
+  }
+
   @override
   Future<AnkiSettings> loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
@@ -48,7 +103,7 @@ class AnkiRepository extends BaseAnkiRepository {
   @override
   Future<AnkiFetchResult> fetchConfiguration() async {
     try {
-      await _channel.invokeMethod('requestAnkidroidPermissions');
+      await _ensurePermission();
       final decksRaw = await _channel.invokeMethod('getDecks') as Map?;
       final modelsRaw = await _channel.invokeMethod('getModelList') as Map?;
       if (decksRaw == null || modelsRaw == null) {
@@ -107,9 +162,14 @@ class AnkiRepository extends BaseAnkiRepository {
       // failure to a localized, actionable hint instead of AnkiDroid's raw
       // English exception text. The verbatim message is still kept as the
       // fallback for unclassified errors (code == null).
+      //
+      // BUG-2098：码必须过 [classifyPlatformError]。此前直传 `e.code`，native 的裸
+      // `PERMISSION_DENIED` 与本地化表的 `ANKI_PERMISSION_DENIED` 对不上，于是
+      // 「AnkiDroid 尚未授予卡片访问权限」这句已译好的话永远显示不出来，用户看到的
+      // 是 PlatformException 的英文原文。未分类的码仍原样上传（如 ADD_NOTE_FAILED）。
       return AnkiFetchResult.error(
         e.message ?? 'Could not access AnkiDroid. Grant permission and retry.',
-        code: e.code,
+        code: classifyPlatformError(e) ?? e.code,
       );
     } catch (e, stack) {
       // HBK-AUDIT-063: a malformed/typed channel response (TypeError,
@@ -149,8 +209,11 @@ class AnkiRepository extends BaseAnkiRepository {
         context: context,
       );
     } catch (e, stack) {
+      // 带上错误码：_ensurePermission 抛的 PlatformException 正是从这里冒出去的，
+      // 不分类就等于把刚收口的英文原文原样糊回 UI。
       return MineOutcome.failure(
         'AnkiDroid: unexpected error: $e',
+        errorCode: e is PlatformException ? classifyPlatformError(e) : null,
         error: e,
         stackTrace: stack,
       );
@@ -161,6 +224,11 @@ class AnkiRepository extends BaseAnkiRepository {
     required String rawPayloadJson,
     required AnkiMiningContext context,
   }) async {
+    // BUG-2098：native 的 requirePermission 只做「没权限就干净失败」的兜底，
+    // **不再自己弹框**（那次请求无人等待，会被静默丢弃）。发起与等待的单一职责
+    // 在 requestAnkidroidPermissions 上，所以每个碰 provider 的用户主动入口都得
+    // 先过这道门 —— 漏掉就等于该入口再也弹不出权限框，只剩 PERMISSION_DENIED。
+    await _ensurePermission();
     final settings = await loadSettings();
 
     final AnkiDeck? deck = resolveSelectedDeck(settings);
@@ -278,7 +346,7 @@ class AnkiRepository extends BaseAnkiRepository {
     } on PlatformException catch (e, stack) {
       return MineOutcome.failure(
         'AnkiDroid: ${e.message ?? e.code}',
-        errorCode: _classifyMineError(e),
+        errorCode: classifyPlatformError(e),
         error: e,
         stackTrace: stack,
       );
@@ -290,8 +358,24 @@ class AnkiRepository extends BaseAnkiRepository {
   /// `PERMISSION_DENIED` 码，或极少数漏守卫时 provider 直接抛出的英文
   /// «permission not granted» 原文——统一归到 [AnkiErrorCode.permissionDenied]；
   /// 其余保持未分类（`null`，调用方退回旧的 errorDetail 文案）。
-  static String? _classifyMineError(PlatformException e) {
-    if (e.code == 'PERMISSION_DENIED') return AnkiErrorCode.permissionDenied;
+  ///
+  /// BUG-2098：这里此前叫 `_classifyMineError`，**只有制卡路径**调它。于是 native
+  /// 发的裸码（`PERMISSION_DENIED`）与本地化表查的带前缀码
+  /// （`ANKI_PERMISSION_DENIED`）成了两个不相通的码域：fetch / 建 Lapis 路径把裸码
+  /// 原样往上传，`localizeAnkiFetchError` 恒查不中，于是回退显示 provider 的英文
+  /// 原文——「权限未授予」的中文文案明明早就写好了却永远用不上。现在这是**唯一**
+  /// 的分类入口，凡是从这个 repository 往上冒的 [PlatformException] 都过它。
+  static String? classifyPlatformError(PlatformException e) {
+    switch (e.code) {
+      case 'PERMISSION_DENIED':
+        return AnkiErrorCode.permissionDenied;
+      case 'PERMISSION_PERMANENTLY_DENIED':
+        return AnkiErrorCode.permissionPermanentlyDenied;
+      case 'ANKI_NOT_INSTALLED':
+        return AnkiErrorCode.ankiDroidUnavailable;
+      case AnkiErrorCode.collectionUnavailable:
+        return AnkiErrorCode.collectionUnavailable;
+    }
     final String msg = (e.message ?? '').toLowerCase();
     if (msg.contains('permission not granted')) {
       return AnkiErrorCode.permissionDenied;
@@ -376,6 +460,11 @@ class AnkiRepository extends BaseAnkiRepository {
     required AnkiMiningContext context,
   }) async {
     try {
+      // BUG-2098：native 的 requirePermission 只做「没权限就干净失败」的兜底，
+      // **不再自己弹框**（那次请求无人等待，会被静默丢弃）。发起与等待的单一职责
+      // 在 requestAnkidroidPermissions 上，所以每个碰 provider 的用户主动入口都得
+      // 先过这道门 —— 漏掉就等于该入口再也弹不出权限框，只剩 PERMISSION_DENIED。
+      await _ensurePermission();
       final settings = await loadSettings();
 
       final AnkiMiningPayload payload;
@@ -424,14 +513,17 @@ class AnkiRepository extends BaseAnkiRepository {
       } on PlatformException catch (e, stack) {
         return MineOutcome.failure(
           'AnkiDroid: ${e.message ?? e.code}',
-          errorCode: _classifyMineError(e),
+          errorCode: classifyPlatformError(e),
           error: e,
           stackTrace: stack,
         );
       }
     } catch (e, stack) {
+      // 带上错误码：_ensurePermission 抛的 PlatformException 正是从这里冒出去的，
+      // 不分类就等于把刚收口的英文原文原样糊回 UI。
       return MineOutcome.failure(
         'AnkiDroid: unexpected error: $e',
+        errorCode: e is PlatformException ? classifyPlatformError(e) : null,
         error: e,
         stackTrace: stack,
       );
@@ -530,6 +622,7 @@ class AnkiRepository extends BaseAnkiRepository {
   @override
   Future<bool> openNoteInAnki(int noteId) async {
     try {
+      await _ensurePermission();
       final dynamic ok = await _channel.invokeMethod(
         'openNote',
         <String, dynamic>{'noteId': noteId},
@@ -568,7 +661,7 @@ class AnkiRepository extends BaseAnkiRepository {
 
   @override
   Future<bool> createNoteType(AnkiNoteTypeTemplate template) async {
-    await _channel.invokeMethod('requestAnkidroidPermissions');
+    await _ensurePermission();
     final models = await _channel.invokeMethod('getModelList') as Map?;
     final exists =
         models?.values.any((v) => v?.toString() == template.name) ?? false;
@@ -601,7 +694,7 @@ class AnkiRepository extends BaseAnkiRepository {
   Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(
     String modelName,
   ) async {
-    await _channel.invokeMethod('requestAnkidroidPermissions');
+    await _ensurePermission();
     final Map? raw = await _channel.invokeMethod(
       'readNoteType',
       <String, dynamic>{'noteTypeName': modelName},
@@ -631,7 +724,7 @@ class AnkiRepository extends BaseAnkiRepository {
 
   @override
   Future<bool> updateNoteTypeStyling(String modelName, String css) async {
-    await _channel.invokeMethod('requestAnkidroidPermissions');
+    await _ensurePermission();
     final bool? ok = await _channel.invokeMethod(
       'updateNoteTypeStyling',
       <String, dynamic>{'noteTypeName': modelName, 'css': css},
@@ -645,7 +738,7 @@ class AnkiRepository extends BaseAnkiRepository {
     List<AnkiCardTemplate> templates,
   ) async {
     if (templates.isEmpty) return false;
-    await _channel.invokeMethod('requestAnkidroidPermissions');
+    await _ensurePermission();
     final bool? ok = await _channel.invokeMethod(
       'updateNoteTypeTemplates',
       <String, dynamic>{
@@ -664,7 +757,7 @@ class AnkiRepository extends BaseAnkiRepository {
 
   @override
   Future<bool> createDeck(String name) async {
-    await _channel.invokeMethod('requestAnkidroidPermissions');
+    await _ensurePermission();
     final decks = await _channel.invokeMethod('getDecks') as Map?;
     final exists = decks?.values.any((v) => v?.toString() == name) ?? false;
     if (exists) return false;

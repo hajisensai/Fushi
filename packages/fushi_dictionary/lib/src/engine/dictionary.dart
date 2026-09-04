@@ -4,6 +4,25 @@ import '../language/language.dart';
 
 enum DictionaryType { term, frequency, pitch, kanji }
 
+/// [Dictionary.metadata] 里记录「启动期类型自愈探测已经做过了」的键。
+///
+/// 为什么需要一个显式的键，而不是从 `hasKanji` 之类的结果反推：反推会把「没探测过」
+/// 和「探测过、结果是什么都不用改」压成同一个状态（都表现为「没有标记」）。启动期
+/// 的自愈逻辑于是只能对每一本**每次启动都重探一遍**——而 kanji 词典的探测是把整张
+/// hash 表扫完、逐槽随机跳读 blobs.bin，纯 kanji 词典还永远触发不了「term+kanji 都
+/// 找到」的提前退出条件，所以扫的是全表。手机冷缓存下这就是每本几万次随机页访问，
+/// 词典一多，启动直接卡死在这里（用户报告：一次性导入很多词典后 app 打不开）。
+///
+/// 把「探测过」变成一等状态后，每本词典一生只探一次；导入路径更是连一次都不用探
+/// （native 导入时已经数过 term/kanji 记录，结果直接写进来）。
+///
+/// 值是**探测器版本号**而不是 `'true'`：将来探测逻辑改了，只要 bump
+/// [kDictTypeProbeVersion]，存量词典就会自动重探一轮，而不必再发明一个新键。
+const String kDictTypeProbeKey = 'typeProbe';
+
+/// 当前类型探测器的版本。改探测语义时 +1（见 [kDictTypeProbeKey]）。
+const String kDictTypeProbeVersion = '1';
+
 class Dictionary {
   factory Dictionary.fromJson(String json) {
     final map = Map<String, dynamic>.from(jsonDecode(json));
@@ -78,6 +97,12 @@ class Dictionary {
     }
     return null;
   }
+
+  /// 启动期类型自愈探测是否已经对这本词典做过（且是当前版本的探测器）。
+  ///
+  /// false = 需要探一次（老词典、或探测器版本 bump 后的存量）。见
+  /// [kDictTypeProbeKey] 里关于「为什么不能从探测结果反推」的说明。
+  bool get isTypeProbed => metadata[kDictTypeProbeKey] == kDictTypeProbeVersion;
 
   bool isHidden(Language language) {
     return hiddenLanguages.contains(language.languageCode);

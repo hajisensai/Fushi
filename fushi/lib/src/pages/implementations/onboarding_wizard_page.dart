@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show ByteData, rootBundle;
 import 'package:fushi/pages.dart';
@@ -9,9 +8,11 @@ import 'package:fushi/src/anki/anki_config_controls.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/ankiconnect_addon_installer.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
+import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/onboarding/onboarding_sample_text.dart';
 import 'package:fushi/src/onboarding/onboarding_steps.dart';
 import 'package:fushi/src/onboarding/recommended_pack.dart';
+import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
 import 'package:fushi/src/settings/settings_actions.dart'
     show buildLanguageSelector, buildBrightnessSelector;
 import 'package:fushi/src/settings/settings_context.dart';
@@ -30,13 +31,11 @@ import 'package:fushi/src/sync/sync_settings_schema.dart'
         buildInterconnectDestination,
         runBackupImportFlowForFile;
 import 'package:fushi/utils.dart';
-import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi_anki/fushi_anki.dart'
     show AnkiDeck, AnkiNoteType, AnkiSettings;
 import 'package:fushi_audio/fushi_audio.dart'
     show AudiobookRepository, SrtBookRepository;
 import 'package:fushi_dictionary/fushi_dictionary.dart' show Dictionary;
-import 'package:path/path.dart' as p;
 import 'package:url_launcher/url_launcher.dart';
 
 /// Anki 生态外链（Anki 步骤「先把 Anki 装起来」的出口；AnkiConnect 插件不走
@@ -88,32 +87,28 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
 
   int _stepIndex = 0;
 
-  // ── 推荐包下载状态 ────────────────────────────────────────────────
-  late final Directory _packDir = Directory(
-    p.join(appModelNoUpdate.appDirectory.path, 'recommended_pack'),
-  );
+  // ── 推荐包下载 ────────────────────────────────────────────────────
+  /// 下载任务的所有权在 [AppModel] 上的 controller 里，本页只是它的一个视图：
+  /// 走下一步、关掉向导都不再取消下载（BUG-2097）。来源同样不给用户选——清单里
+  /// 挂着 GitHub Release 分片、官网 CF 同名分片和 Drive 整包镜像，下载器按实测
+  /// 吞吐自己派活（见 `SourceSpeedLedger`）。
+  RecommendedPackDownloadController get _packController =>
+      appModelNoUpdate.recommendedPackDownloadController;
 
-  /// 稳定清单解析出的下载器。**来源不给用户选**：清单里同时挂着 GitHub Release 的
-  /// 分片、官网 CF 的同名分片，以及 Drive 整包镜像（每片按 Range 取），分片下载器
-  /// 按实测吞吐在这几家之间派活——哪家快，哪家多下（见 `SourceSpeedLedger`）。
-  RecommendedPackDownloader? _manifestDownloader;
+  /// BUG-2107：本地包「选择文件」的重入守卫。设置页那条导入本来就有
+  /// （`_BackupImportWidget._isImporting`），引导这条漏了 —— 连点两次会撞
+  /// file_picker 的 `already_active`，而异常在 `unawaited(...)` 里静默漂走。
+  ///
+  /// 选文件**不归 controller 管**：controller 持有的是那条跨页存活的下载任务
+  /// （BUG-2097），而选文件是本页当场发起、当场结束的一次交互。
+  bool _packPicking = false;
 
-  /// 清单彻底拉不到（官网和 GitHub 两个候选都不可达）时的兜底：内置的 Drive 整包
-  /// 直链，单流下载。没有清单就没有分片表，混源无从谈起，只能退到这一条。
-  late final RecommendedPackDownloader _fallbackDownloader =
-      RecommendedPackDownloader(
-        packDir: _packDir,
-        url: kRecommendedPackGoogleDriveDirectUrl,
-      );
-
-  RecommendedPackDownloader get _activeDownloader =>
-      _manifestDownloader ?? _fallbackDownloader;
-
-  final ValueNotifier<double> _packProgress = ValueNotifier<double>(0);
-  final ValueNotifier<int> _packBytes = ValueNotifier<int>(0);
-  CancelToken? _packCancelToken;
-  bool _packDownloading = false;
-  String? _packError;
+  /// 选文件路径的可见失败原因（**已组好的整句用户文案**）。
+  ///
+  /// 与下载失败分开存：controller 的 `error` 存的是裸消息、显示时才套
+  /// `onboarding_pack_download_failed` 模板；选文件失败是另一条路径、另一套文案
+  /// （BUG-2107），套那个模板会把「没拿到路径」说成「下载失败」。
+  String? _packPickError;
 
   bool get _browserExtensionAvailable => DesktopLookupService.isDesktop;
 
@@ -138,11 +133,11 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   }
 
   List<OnboardingStepId> get _steps => onboardingStepSequence(
-    selected: _selected,
-    browserExtensionAvailable: _browserExtensionAvailable,
-    globalLookupAvailable: _globalLookupAvailable,
-    ankiReady: _ankiReadyForFirstCard,
-  );
+        selected: _selected,
+        browserExtensionAvailable: _browserExtensionAvailable,
+        globalLookupAvailable: _globalLookupAvailable,
+        ankiReady: _ankiReadyForFirstCard,
+      );
 
   @override
   void initState() {
@@ -163,21 +158,14 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
         appModelNoUpdate.moduleBrowserExtensionEnabled) {
       _selected.add(OnboardingFeature.browserExtension);
     }
-    // 上一轮推荐包导入成功后进程已重启：把落盘的 9.5 GB zip 删掉（flag 判定，
-    // 未导入过 / 半截下载不受影响）。
-    unawaited(RecommendedPackDownloader.cleanupIfImported(_packDir));
-    // 落盘名从「URL 尾段推导」改成恒定名之前下的半截包叫 `download*`，搬过来，
-    // 别让升级把已下的 9.5 GB 作废。
-    RecommendedPackDownloader.migrateLegacyArtifacts(_packDir);
+    // 包目录进场收尾（删已导入的残包、搬旧命名的半截文件、按磁盘对齐阶段）。
+    // 下载正在跑时 controller 整体跳过——那些都是在动同一批文件。
+    unawaited(_packController.prepareDiskState());
   }
 
-  @override
-  void dispose() {
-    _packCancelToken?.cancel();
-    _packProgress.dispose();
-    _packBytes.dispose();
-    super.dispose();
-  }
+  // dispose 里**没有**取消下载：BUG-2097 的根因就是这里曾经有一句
+  // `_packCancelToken?.cancel()`，于是走完向导 = 9.5 GB 的下载被静默掐断。
+  // 进度/取消/导入现在都由 [RecommendedPackDownloadController] 持有。
 
   Future<void> _complete() async {
     await appModel.setOnboardingCompleted(value: true);
@@ -275,13 +263,13 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   /// 查词教程用的练习句子：按已安装词典的词头语言挑，没有就按推荐包（日语）/
   /// 英语兜底。见 [onboardingSampleSentence]。
   String get _sampleSentence => onboardingSampleSentence(
-    dictionarySourceLanguages: appModel.dictionaries.map(
-      (Dictionary dictionary) => dictionary.effectiveSourceLanguage,
-    ),
-    recommendedPackSelected: _selected.contains(
-      OnboardingFeature.recommendedPack,
-    ),
-  );
+        dictionarySourceLanguages: appModel.dictionaries.map(
+          (Dictionary dictionary) => dictionary.effectiveSourceLanguage,
+        ),
+        recommendedPackSelected: _selected.contains(
+          OnboardingFeature.recommendedPack,
+        ),
+      );
 
   /// 练习句子卡 + 点它就进查词页，两处查词教程共用。
   Widget _sampleSentencePreface() {
@@ -294,58 +282,61 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
 
   // ── 推荐包 ────────────────────────────────────────────────────────
 
+  /// 下载 → 下完就地导入。下载本身在 controller 里跑完（取消/失败提示也在那边），
+  /// 本页只负责「我还在的话，顺手把导入接上」：向导已经关了就停在「已下载待导入」，
+  /// 由设置 → 系统里那一行接手（BUG-2097）。
   Future<void> _downloadPackAndImport() async {
-    if (_packDownloading) return;
-    setState(() {
-      _packDownloading = true;
-      _packError = null;
-    });
-    _packCancelToken = CancelToken();
-    try {
-      // 先拉稳定清单拿分片表与来源表（换包零发版）。只解析一次并缓存——同一会话
-      // 内 URL 抖动会打断续传。拉不到就走 _fallbackDownloader 的整包直链。
-      if (_manifestDownloader == null) {
-        final RecommendedPackManifest? manifest =
-            await fetchRecommendedPackManifest();
-        if (manifest != null) {
-          _manifestDownloader = RecommendedPackDownloader.fromManifest(
-            packDir: _packDir,
-            manifest: manifest,
-          );
-        }
-      }
-      if (!mounted) return;
-      // 钉住本次下载用的下载器：导入确认回调也要落在同一实例上。
-      final RecommendedPackDownloader downloader = _activeDownloader;
-      final File file = await downloader.download(
-        progress: _packProgress,
-        receivedBytes: _packBytes,
-        cancelToken: _packCancelToken,
-      );
-      if (!mounted) return;
-      await _importPackFile(file.path, deleteAfterImport: true);
-    } on DioError catch (e) {
-      // 用户取消：半截文件保留，下次续传；非取消才示错。
-      // （仓库钉 dio 5.1，类型名还是 `DioError`，与其余下载路径一致。）
-      if (e.type != DioErrorType.cancel) {
-        _packError = e.message ?? e.toString();
-      }
-    } catch (e) {
-      _packError = e.toString();
-    } finally {
-      _packCancelToken = null;
-      if (mounted) setState(() => _packDownloading = false);
-    }
+    // 上一次「选文件」的失败文案不该压住这次下载的状态。
+    if (_packPickError != null) setState(() => _packPickError = null);
+    final File? file = await _packController.start();
+    if (file == null || !mounted) return;
+    await _importPackFile(file.path, deleteAfterImport: true);
   }
 
+  /// 选一个已经下载好的包文件（备份 zip）并导入。
+  ///
+  /// BUG-2107：原先是全 app 仅剩的几处裸 `FilePicker.platform.pickFiles()` 之一，而它
+  /// 承载的恰是**体积最大**的文件（推荐包 [kRecommendedPackSizeLabel] = 9.5 GB）。安卓上
+  /// file_picker 会先把整份文件同步复制进 app cache 再返回缓存路径 → 需要约 2 倍包体积的
+  /// 内部存储、几分钟没有任何 UI 反馈；失败时 `path == null` 与「用户取消」同形被静默
+  /// 丢弃，`PlatformException` 又被调用点的 `unawaited(...)` 吞掉 —— 用户看到的就是
+  /// 「点了『导入文件』没有任何提醒」。改走 [pickRealFilePathDetailed]（安卓解析真实路径、
+  /// 零复制；BUG-1667 后其余大文件入口都已统一到它），并把三种结果分开：
+  ///   * 返回 null = 用户取消 → 静默（取消不是失败）；
+  ///   * [PickedFileWithoutPathException] = 平台交回条目却没给路径 → **可见失败**（BUG-446）；
+  ///   * 其它异常 → 可见失败 + 诊断日志。
   Future<void> _pickPackFileAndImport() async {
-    final String? path = await pickSystemFilePath(
-      context: context,
-      allowedExtensions: <String>{'zip'},
-    );
-    if (path == null || !mounted) return;
-    // 用户自备的文件不归下载器管，导入后不删。
-    await _importPackFile(path, deleteAfterImport: false);
+    if (_packPicking || _packController.isDownloading) return;
+    setState(() {
+      _packPicking = true;
+      _packPickError = null;
+    });
+    try {
+      final PickedFilePath? picked = await pickRealFilePathDetailed(
+        context: context,
+        appModel: appModel,
+        allowedExtensions: <String>{'zip'},
+      );
+      // 用户取消：静默返回（不是失败，不写 _packPickError）。
+      if (picked == null) return;
+      if (!mounted) return;
+      // 用户自备的文件不归下载器管，导入后不删。
+      await _importPackFile(picked.path, deleteAfterImport: false);
+    } on PickedFileWithoutPathException catch (e) {
+      ErrorLogService.instance.log(
+        'OnboardingWizard.pickPackFile',
+        'unexpected file selection: count=${e.count}, pathNull=true',
+      );
+      _packPickError = t.onboarding_pack_pick_no_path;
+    } catch (e) {
+      ErrorLogService.instance.log(
+        'OnboardingWizard.pickPackFile',
+        'pack file pick failed: $e',
+      );
+      _packPickError = t.onboarding_pack_pick_failed(message: e.toString());
+    } finally {
+      if (mounted) setState(() => _packPicking = false);
+    }
   }
 
   /// 走备份导入共享编排。导入真正开始（用户已确认）后进程会重启；
@@ -358,9 +349,8 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
       appModel: appModel,
       filePath: path,
       // 打标是包目录级操作（写 `<包目录>/imported.flag`），与走哪条线路无关。
-      onImportConfirmed: deleteAfterImport
-          ? () => RecommendedPackDownloader.markImportStarted(_packDir)
-          : null,
+      onImportConfirmed:
+          deleteAfterImport ? _packController.markImportStarted : null,
     );
   }
 
@@ -386,11 +376,11 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
       final ByteData data = await rootBundle.load(kAnkiConnectAddonAsset);
       final AnkiConnectAddonInstallResult result =
           await installAnkiConnectAddon(
-            addonZipBytes: data.buffer.asUint8List(
-              data.offsetInBytes,
-              data.lengthInBytes,
-            ),
-          );
+        addonZipBytes: data.buffer.asUint8List(
+          data.offsetInBytes,
+          data.lengthInBytes,
+        ),
+      );
       if (!mounted) return;
       setState(() {
         _ankiAddonNotice = switch (result.status) {
@@ -419,8 +409,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     if (!mounted) return;
     final AnkiUiState anki = ref.read(ankiViewModelProvider);
     setState(() {
-      _ankiConnectionVerified =
-          !anki.isFetching &&
+      _ankiConnectionVerified = !anki.isFetching &&
           anki.errorMessage == null &&
           anki.availableDecks.isNotEmpty &&
           anki.availableNoteTypes.isNotEmpty;
@@ -495,9 +484,8 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
                 child: CircularProgressIndicator(strokeWidth: 2),
               )
             : null,
-        onPressed: anki.isFetching
-            ? null
-            : () => unawaited(_testAnkiConnection()),
+        onPressed:
+            anki.isFetching ? null : () => unawaited(_testAnkiConnection()),
       ),
       // 还没连上：给「先把 Anki 装起来」的出口（连上即收起；iOS 的 AnkiMobile 是
       // 付费 App，说明文字带过，不放商店外链）。
@@ -592,16 +580,15 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final AnkiUiState anki = ref.watch(ankiViewModelProvider);
     final bool mobile = Platform.isAndroid || Platform.isIOS;
-    final bool connected =
-        _ankiTestAttempted &&
+    final bool connected = _ankiTestAttempted &&
         !anki.isFetching &&
         anki.errorMessage == null &&
         anki.availableDecks.isNotEmpty;
     final String platformHint = Platform.isAndroid
         ? t.onboarding_anki_setup_android_hint
         : Platform.isIOS
-        ? t.onboarding_anki_setup_ios_hint
-        : t.onboarding_anki_setup_desktop_hint;
+            ? t.onboarding_anki_setup_ios_hint
+            : t.onboarding_anki_setup_desktop_hint;
     return ListView(
       padding: EdgeInsets.all(tokens.spacing.card),
       children: <Widget>[
@@ -1083,18 +1070,18 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
 
   /// 功能选择页里当前平台真的提供勾选的模块。
   List<OnboardingFeature> get _visibleModuleFeatures => <OnboardingFeature>[
-    for (final OnboardingFeature feature in OnboardingFeature.values)
-      if (kOnboardingModuleFeatures.contains(feature) &&
-          (feature != OnboardingFeature.games || Platform.isWindows) &&
-          (feature != OnboardingFeature.browserExtension ||
-              _browserExtensionAvailable))
-        feature,
-  ];
+        for (final OnboardingFeature feature in OnboardingFeature.values)
+          if (kOnboardingModuleFeatures.contains(feature) &&
+              (feature != OnboardingFeature.games || Platform.isWindows) &&
+              (feature != OnboardingFeature.browserExtension ||
+                  _browserExtensionAvailable))
+            feature,
+      ];
 
   List<OnboardingFeature> get _capabilityFeatures => <OnboardingFeature>[
-    for (final OnboardingFeature feature in OnboardingFeature.values)
-      if (!kOnboardingModuleFeatures.contains(feature)) feature,
-  ];
+        for (final OnboardingFeature feature in OnboardingFeature.values)
+          if (!kOnboardingModuleFeatures.contains(feature)) feature,
+      ];
 
   OnboardingFeatureTile _featureTile(OnboardingFeature feature) =>
       OnboardingFeatureTile(
@@ -1149,7 +1136,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
         label: hasDownloaded
             ? t.onboarding_step_pack_import_existing_action
             : '${t.onboarding_step_pack_download_action}'
-                  ' ($kRecommendedPackSizeLabel)',
+                ' ($kRecommendedPackSizeLabel)',
         description: hasDownloaded
             ? t.onboarding_pack_action_import_existing_desc
             : t.onboarding_pack_action_download_desc,
@@ -1194,61 +1181,83 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
 
   Widget _buildPackStep() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    // 「下好了没」是包目录的属性，不是某条线路的属性：两条线路落同一个文件名。
-    final bool hasDownloaded = RecommendedPackDownloader.hasCompletedFileIn(
-      _packDir,
-    );
-    return ListView(
-      padding: EdgeInsets.all(tokens.spacing.card),
-      children: <Widget>[
-        OnboardingStepHero(
-          icon: Icons.auto_stories_outlined,
-          title: t.onboarding_step_pack_title,
-          body: t.onboarding_pack_intro,
-        ),
-        SizedBox(height: tokens.spacing.card),
-        if (_packError != null) ...<Widget>[
-          Text(
-            t.onboarding_pack_download_failed(message: _packError!),
-            style: textTheme.bodySmall!.copyWith(
-              color: theme.colorScheme.error,
+    // 整步都跟着 controller 走：下载不再属于本页，走开一步再回来（甚至关掉向导
+    // 再从设置重开）看到的都是同一个任务的真实状态（BUG-2097）。
+    return ListenableBuilder(
+      listenable: Listenable.merge(<Listenable>[
+        _packController.stage,
+        _packController.progress,
+        _packController.receivedBytes,
+        _packController.error,
+      ]),
+      builder: (BuildContext context, _) {
+        final String? downloadError = _packController.error.value;
+        // 两条失败路径、两套文案：下载失败由 controller 存裸消息，此处才套模板；
+        // 选文件失败（BUG-2107）在写入处就已组好整句，直接显示。
+        final String? shownError = _packPickError ??
+            (downloadError == null
+                ? null
+                : t.onboarding_pack_download_failed(message: downloadError));
+        return ListView(
+          padding: EdgeInsets.all(tokens.spacing.card),
+          children: <Widget>[
+            OnboardingStepHero(
+              icon: Icons.auto_stories_outlined,
+              title: t.onboarding_step_pack_title,
+              body: t.onboarding_pack_intro,
             ),
-          ),
-          SizedBox(height: tokens.spacing.gap),
-        ],
-        if (_packDownloading)
-          FushiCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                ValueListenableBuilder<double>(
-                  valueListenable: _packProgress,
-                  builder: (_, double value, __) =>
-                      LinearProgressIndicator(value: value > 0 ? value : null),
+            SizedBox(height: tokens.spacing.card),
+            if (shownError != null) ...<Widget>[
+              Text(
+                shownError,
+                style: textTheme.bodySmall!.copyWith(
+                  color: theme.colorScheme.error,
                 ),
-                SizedBox(height: tokens.spacing.gap),
-                ValueListenableBuilder<int>(
-                  valueListenable: _packBytes,
-                  builder: (_, int bytes, __) => Text(
-                    '${t.onboarding_pack_downloading} · '
-                    '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB',
-                    style: textTheme.bodySmall,
-                  ),
+              ),
+              SizedBox(height: tokens.spacing.gap),
+            ],
+            if (_packController.isDownloading)
+              FushiCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    LinearProgressIndicator(
+                      value: _packController.progress.value > 0
+                          ? _packController.progress.value
+                          : null,
+                    ),
+                    SizedBox(height: tokens.spacing.gap),
+                    Text(
+                      '${t.onboarding_pack_downloading} · '
+                      '${recommendedPackProgressLabel(progress: _packController.progress.value, receivedBytes: _packController.receivedBytes.value)}',
+                      style: textTheme.bodySmall,
+                    ),
+                    SizedBox(height: tokens.spacing.gap),
+                    // 用户最想知道的一件事：现在能不能走开。能。
+                    Text(
+                      t.onboarding_pack_download_background_hint,
+                      style: textTheme.bodySmall!.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    SizedBox(height: tokens.spacing.gap),
+                    Align(
+                      alignment: AlignmentDirectional.centerEnd,
+                      child: OutlinedButton(
+                        onPressed: _packController.requestCancel,
+                        child: Text(t.dialog_cancel),
+                      ),
+                    ),
+                  ],
                 ),
-                SizedBox(height: tokens.spacing.gap),
-                Align(
-                  alignment: AlignmentDirectional.centerEnd,
-                  child: OutlinedButton(
-                    onPressed: () => _packCancelToken?.cancel(),
-                    child: Text(t.dialog_cancel),
-                  ),
-                ),
-              ],
-            ),
-          )
-        else
-          OnboardingActionList(actions: _packActions(hasDownloaded)),
-      ],
+              )
+            else
+              OnboardingActionList(
+                actions: _packActions(_packController.hasPendingImport),
+              ),
+          ],
+        );
+      },
     );
   }
 
@@ -1414,9 +1423,8 @@ class OnboardingProgressBar extends StatelessWidget {
                     curve: fushiMd3StateCurve,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: i <= current
-                          ? colors.primary
-                          : colors.outlineVariant,
+                      color:
+                          i <= current ? colors.primary : colors.outlineVariant,
                       borderRadius: tokens.radii.chipRadius,
                     ),
                   ),
@@ -1726,8 +1734,7 @@ class OnboardingActionTile extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final ColorScheme colors = theme.colorScheme;
     final bool enabled = action.onPressed != null;
-    final Widget? trailing =
-        action.trailing ??
+    final Widget? trailing = action.trailing ??
         (enabled
             ? Icon(Icons.chevron_right, color: colors.onSurfaceVariant)
             : null);

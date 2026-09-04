@@ -1800,6 +1800,134 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
 //
 // 退路：[_selectableBackends] 恒把当前值插回选项列表，所以设成互联之后，「同步与
 // 备份」的后端选择器里仍能选回 Google Drive / WebDAV 等，不是单向门。
+/// 互联「配置文件」（Profile）搬运的方向。
+enum _ProfileTransferDirection { upload, download }
+
+/// 互联页的「上传配置 / 下载配置」动作行。
+///
+/// 与云通道那四行（[_AssetTransferWidget]）刻意**不共用**实现：那套跑的是
+/// `runManualAssetTransfer`，而它明确跳过互联通道（只服务云备份后端）。这条是互联
+/// 专属的一次性动作，直接打 host 的 `/api/interconnect/profile`。
+///
+/// 语义：
+///   * 上传 = 把本机**当前激活** Profile 的分享 JSON 推给 host，在对端落成一份**新**
+///     Profile（绝不覆盖对端任何既有配置）；
+///   * 下载 = 取 host 当前激活 Profile，在本机同样落成一份**新** Profile，用户自己
+///     去「配置管理」里切过去才生效。
+///
+/// 两个方向都要求 host 开着「允许已配对设备读写本机配置」，且会话是 pinned HTTPS ——
+/// 不满足时 client 侧拿到的分别是 403（如实报原因）与 null（报「对端不提供」）。
+class _InterconnectProfileTransferWidget extends StatefulWidget {
+  const _InterconnectProfileTransferWidget({
+    required this.settingsContext,
+    required this.direction,
+  });
+
+  final SettingsContext settingsContext;
+  final _ProfileTransferDirection direction;
+
+  @override
+  State<_InterconnectProfileTransferWidget> createState() =>
+      _InterconnectProfileTransferWidgetState();
+}
+
+class _InterconnectProfileTransferWidgetState
+    extends State<_InterconnectProfileTransferWidget> {
+  bool _busy = false;
+
+  bool get _isUpload =>
+      widget.direction == _ProfileTransferDirection.upload;
+
+  Future<void> _run() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    final AppModel appModel = widget.settingsContext.appModel;
+    try {
+      final String? name = _isUpload
+          ? await _upload(appModel)
+          : await _download(appModel);
+      if (!mounted) return;
+      if (name == null) {
+        // null = 对端不提供此能力（老 host / 未接线 / 明文会话本地短路），与
+        // 「对端明确拒绝」（403，走 catch）是两回事，文案也不同。
+        _showSnackBar(context, t.interconnect_profile_unsupported);
+        return;
+      }
+      _showSnackBar(
+        context,
+        _isUpload
+            ? t.interconnect_profile_uploaded(name: name)
+            : t.interconnect_profile_downloaded(name: name),
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('Interconnect.profileTransfer', e, stack);
+      if (!mounted) return;
+      // 走统一的友好错误翻译（对端探不到 / 认证失败 / host 关着开关都在这条线上），
+      // 不把裸异常 toString 上屏。
+      _showSnackBar(
+        context,
+        t.interconnect_profile_failed(message: friendlySyncErrorDetail(e)),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<String?> _upload(AppModel appModel) async {
+    final ProfileRepository repo = appModel.interconnectProfileRepository();
+    final int activeId = await repo.getActiveProfileId();
+    if (activeId < 0) throw StateError('no active profile to upload');
+    final String json = await repo.exportProfileToJson(
+      activeId,
+      // 与「配置管理」页导出同参：剥掉指向本机 custom_fonts/ 的绝对路径。
+      fontsRootDirectory: p.join(appModel.appDirectory.path, 'custom_fonts'),
+    );
+    return InterconnectSyncBackend.instance.putRemoteProfileJson(json);
+  }
+
+  Future<String?> _download(AppModel appModel) async {
+    final String? json =
+        await InterconnectSyncBackend.instance.getRemoteProfileJson();
+    if (json == null) return null;
+    final ProfileRepository repo = appModel.interconnectProfileRepository();
+    // createNew（默认）：本机现有配置一份都不动。
+    final int id = await repo.importProfileFromJson(json);
+    final ProfileRow? row = await repo.getProfileById(id);
+    return row?.name ?? '';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AdaptiveSettingsRow(
+      title: _isUpload
+          ? t.interconnect_profile_upload
+          : t.interconnect_profile_download,
+      subtitle: _isUpload
+          ? t.interconnect_profile_upload_desc
+          : t.interconnect_profile_download_desc,
+      icon: Icons.settings_backup_restore_outlined,
+      controlBelow: true,
+      // 行级 onTap 让本行注册成焦点目标（方向导航 / 手柄 A 能触发），与
+      // [_AssetTransferWidget] 同因（BUG-016）。
+      onTap: _busy ? null : _run,
+      trailing: _busy
+          ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : FilledButton.tonal(
+              onPressed: _run,
+              child: Text(
+                _isUpload
+                    ? t.sync_asset_upload_action
+                    : t.sync_asset_download_action,
+              ),
+            ),
+    );
+  }
+}
+
 class _InterconnectBackupBackendWidget extends StatefulWidget {
   const _InterconnectBackupBackendWidget({required this.settingsContext});
   final SettingsContext settingsContext;

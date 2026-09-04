@@ -15,7 +15,10 @@ import 'package:fushi_audio/fushi_audio.dart';
 /// 切换遮罩之类的」。
 ///
 /// 分三层验证：
-///  ① overlay 真行为——`secondaryHidden` 门控清空副字幕层，主字幕不受影响（widget 测试）。
+///  ① overlay 真行为——`secondaryHidden` 门控遮蔽副字幕层，主字幕不受影响（widget 测试）。
+///     注意隐藏的实现已从「清空活动集」改为「布局照常 + Opacity(0)」：清空后屏幕上没有
+///     任何 widget，鼠标无处可悬停，隐藏态就永远显形不了（用户报「隐藏了鼠标放上去也不
+///     显示」）。悬停 / 点击显形本身由 video_subtitle_hide_hover_reveal_test.dart 覆盖。
 ///  ② 快捷键默认键位——两新 action 桌面默认绑 Shift+H / Shift+G（功能测试）。
 ///  ③ 接线对称守卫——prefs 三态投影键 + 快捷键 action→callback 映射 + layout 传参
 ///     （源码扫描，覆盖无法直接 widget 测的私有接线）。
@@ -28,6 +31,13 @@ AudioCue _cue(String text, int startMs, int endMs) => AudioCue()
   ..startMs = startMs
   ..endMs = endMs
   ..audioFileIndex = 0;
+
+/// 该 widget 是否被某个 `opacity == 0` 的 [Opacity] 祖先包住（= 布局在、不绘制）。
+/// 隐藏态遮蔽的判据：不能只断言「找不到文本」——那正是被修掉的旧实现。
+bool _opaqueZero(WidgetTester tester, Finder of) => tester
+    .widgetList<Opacity>(
+        find.ancestor(of: of.first, matching: find.byType(Opacity)))
+    .any((Opacity o) => o.opacity == 0);
 
 Future<void> _pumpOverlay(
   WidgetTester tester,
@@ -47,7 +57,8 @@ Future<void> _pumpOverlay(
 
 void main() {
   group('TODO-1382 ① 副字幕隐藏门控（overlay 真行为）', () {
-    testWidgets('secondaryHidden=true：副字幕层不渲染，主字幕照常显示', (tester) async {
+    testWidgets('secondaryHidden=true：副字幕不绘制（Opacity 0）、主字幕照常显示',
+        (tester) async {
       final VideoPlayerController c = VideoPlayerController();
       addTearDown(c.dispose);
       c.setCues(<AudioCue>[_cue('主', 0, 6000)]);
@@ -57,7 +68,14 @@ void main() {
       await _pumpOverlay(tester, c, secondaryHidden: true);
 
       expect(find.text('主'), findsWidgets, reason: '主字幕不受副字幕隐藏影响');
-      expect(find.text('副'), findsNothing, reason: '副字幕隐藏时整条不渲染');
+      expect(_opaqueZero(tester, find.text('主')), isFalse,
+          reason: '主字幕没被误遮蔽');
+      // 隐藏 = 布局照常、不绘制：cue 仍在树上（否则没有几何可供悬停显形），
+      // 但被 opacity 为 0 的 Opacity 包住 → 用户看不见。
+      expect(find.text('副'), findsWidgets,
+          reason: '隐藏态保留几何（不再整条摘掉），否则鼠标无处可悬停');
+      expect(_opaqueZero(tester, find.text('副')), isTrue,
+          reason: '副字幕隐藏时不绘制（Opacity 0）');
     });
 
     testWidgets('secondaryHidden=false：副字幕正常显示（回归守卫）', (tester) async {
@@ -71,6 +89,8 @@ void main() {
 
       expect(find.text('主'), findsWidgets);
       expect(find.text('副'), findsWidgets, reason: '默认不隐藏，副字幕照常渲染');
+      expect(_opaqueZero(tester, find.text('副')), isFalse,
+          reason: '不隐藏时不得有 Opacity(0) 遮蔽层');
     });
   });
 

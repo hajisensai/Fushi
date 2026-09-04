@@ -5,6 +5,7 @@ import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/utils/misc/download_plan.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/resumable_downloader.dart';
 import 'package:fushi/src/utils/misc/segmented_downloader.dart';
 import 'package:fushi/src/utils/net/app_http.dart';
@@ -306,8 +307,13 @@ Future<RecommendedPackManifest?> fetchRecommendedPackManifest() async {
 ///
 /// 导入推荐包会走备份导入流程并**重启进程**，没有机会在导入成功后删包——所以
 /// [markImportStarted] 在启动导入前落一个 flag 文件，重启回来后由
-/// [cleanupIfImported]（新手引导页 initState 调）把整个包目录删掉，不让 9.5 GB
-/// 的 zip 静默常驻磁盘。
+/// [cleanupIfImported]（**AppModel 初始化调**，即启动必经路径）把整个包目录删掉，
+/// 不让 9.5 GB 的 zip 静默常驻磁盘。
+///
+/// BUG-2109：这个收尾一度挂在新手引导页的 initState 上，而导入恰恰会把
+/// `preferences` 表整层换成备份里的那份、`onboarding_completed` 变 true，重启后
+/// 首页不再自动弹引导页——清理入口结构上永远等不到执行。判据（flag）没错，错的
+/// 是把它挂在了一个「导入成功就不会再出现」的页面上。
 class RecommendedPackDownloader {
   RecommendedPackDownloader({
     required Directory packDir,
@@ -455,12 +461,18 @@ class RecommendedPackDownloader {
   }
 
   /// 若曾进入导入（flag 在），删除整个包目录（best-effort）。
+  /// 一律走**异步** FS 调用：`packDir` 派生自数据根，而数据根可能是掉线的外置
+  /// 盘 / 网络盘。同步 `existsSync()` 会把 isolate 整个阻住，调用方叠的超时护栏
+  /// （TODO-1260）连触发的机会都没有 —— 那正是这条护栏要防的 hang。
   static Future<void> cleanupIfImported(Directory packDir) async {
-    if (!_importedFlagFileIn(packDir).existsSync()) return;
     try {
-      if (packDir.existsSync()) await packDir.delete(recursive: true);
-    } on FileSystemException {
-      // 占用/权限问题不阻断引导；下次进入再试。
+      if (!await _importedFlagFileIn(packDir).exists()) return;
+      if (await packDir.exists()) await packDir.delete(recursive: true);
+    } on FileSystemException catch (e, s) {
+      // 占用/权限问题不阻断启动；下次启动再试。但**要留痕**：删不掉的
+      // 9.5 GB 是用户直接感知的（存储页数字不降），静默吞掉等于没修。
+      ErrorLogService.instance
+          .log('RecommendedPackDownloader.cleanupIfImported', e, s);
     }
   }
 

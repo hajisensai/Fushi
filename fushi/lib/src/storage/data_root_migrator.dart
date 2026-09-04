@@ -948,36 +948,56 @@ class DataRootMigrator {
     required String newSupportRoot,
     required Set<String>? documentsScopeEntries,
   }) async {
-    final DocumentsPathRebaser docs = DocumentsPathRebaser(
-      oldRoot: oldDocumentsRoot,
-      newRoot: newDocumentsRoot,
-      scopeTopLevelNames: documentsScopeEntries,
-    );
     final FushiDatabase db = FushiDatabase(dbDirectory);
     try {
-      await db.transaction(() async {
-        await _rebaseEpubBooks(db, docs);
-        await _rebaseAudiobooks(db, docs);
-        await _rebaseSrtBooks(db, docs);
-        await _rebaseVideoBooks(db, docs);
-        if (debugFailMidRebase) {
-          throw StateError('debugFailMidRebase');
-        }
-        await _rebaseGalgames(db, docs);
-        await _rebaseMediaCollections(db, docs);
-        await _rebaseCollectionScrapeMeta(db, docs);
-        await _rebaseCollectionRelations(db, docs);
-        await _rebaseMediaImages(db, docs);
-        await _rebaseVideoMetadataExtras(db, docs);
-        await _rebaseMediaOpenHistory(db, docs);
-        await _rebasePreferences(db, docs, newSupportRoot);
-        await _rebaseProfileSettings(db, docs, newSupportRoot);
-      });
-      // checkpoint 必须在事务**外**：SQLite 不允许在活动事务里 wal_checkpoint。
-      await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+      await rebaseOpenDatabasePaths(
+        db: db,
+        docs: DocumentsPathRebaser(
+          oldRoot: oldDocumentsRoot,
+          newRoot: newDocumentsRoot,
+          scopeTopLevelNames: documentsScopeEntries,
+        ),
+        newSupportRoot: newSupportRoot,
+      );
     } finally {
       await db.close();
     }
+  }
+
+  /// 同一段改写，作用在**已经打开**的 [db] 上。
+  ///
+  /// 抽出来是因为它有第二个调用者：启动期的沙箱重定位自愈
+  /// （`sandbox_relocation.dart`）。那条路径里 app 正握着这个库，不能像
+  /// [_rebaseDatabasePaths] 那样按目录另开一个 [FushiDatabase] 连接。
+  ///
+  /// **两条路径必须共用这一份调用清单**——覆盖面的真相源是
+  /// `path_rebase_coverage.dart`，各自抄一份表就等于给「新增路径列」留了两个
+  /// 会漂开的登记处。
+  static Future<void> rebaseOpenDatabasePaths({
+    required FushiDatabase db,
+    required DocumentsPathRebaser docs,
+    required String newSupportRoot,
+  }) async {
+    await db.transaction(() async {
+      await _rebaseEpubBooks(db, docs);
+      await _rebaseAudiobooks(db, docs);
+      await _rebaseSrtBooks(db, docs);
+      await _rebaseVideoBooks(db, docs);
+      if (debugFailMidRebase) {
+        throw StateError('debugFailMidRebase');
+      }
+      await _rebaseGalgames(db, docs);
+      await _rebaseMediaCollections(db, docs);
+      await _rebaseCollectionScrapeMeta(db, docs);
+      await _rebaseCollectionRelations(db, docs);
+      await _rebaseMediaImages(db, docs);
+      await _rebaseVideoMetadataExtras(db, docs);
+      await _rebaseMediaOpenHistory(db, docs);
+      await _rebasePreferences(db, docs, newSupportRoot);
+      await _rebaseProfileSettings(db, docs, newSupportRoot);
+    });
+    // checkpoint 必须在事务**外**：SQLite 不允许在活动事务里 wal_checkpoint。
+    await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
   }
 
   /// epub_books：epubPath / extractDir / coverPath。前者与 coverPath 按声明其实不是

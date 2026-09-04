@@ -135,15 +135,28 @@ void main() {
 
       final StorageCategoryUsage books = all.singleWhere(
           (StorageCategoryUsage u) => u.id == StorageCategoryId.books);
-      // 100 + 300 + 11（孤儿也计入总量）+ 500 + 40（audiobooks 整树）。
+      // 100 + 300 + 11（孤儿）+ 500 + 40（audiobooks 整树）。
       expect(books.bytes, 951);
-      expect(books.entries.length, 2);
-      // 降序：A = 100 + 500 + 40 = 640 在前，B = 300 在后（B 的 persist 目录
-      // 不存在，计 0）。
+      // BUG-2096：孤儿目录也是一条明细。旧实现只铺 DB 已知的书，孤儿只体现在
+      // 「类目总量 − 明细之和」的差里，而页面从不显示那个差。
+      expect(books.entries.length, 3);
+      // 降序：A = 100 + 500 + 40 = 640 在前，B = 300 次之（B 的 persist 目录
+      // 不存在，计 0），孤儿 11 最后。
       expect(books.entries[0].id, 'keyA');
       expect(books.entries[0].bytes, 640);
       expect(books.entries[1].id, 'keyB');
       expect(books.entries[1].bytes, 300);
+      // label 由 `_childEntriesSync` 用字面 '/' 拼接，跨平台恒定——这里若写
+      // p.join，Windows 绿而 CI Linux 红。
+      expect(books.entries[2].label, 'fushi_books/orphan');
+      expect(books.entries[2].bytes, 11);
+      // 只读：裸删会绕过墓碑/引用护栏。
+      expect(books.entries[2].kind, StorageEntryKind.readOnly);
+      // 账对得上：明细之和 == 类目总量，页面上再没有解释不了的差额。
+      expect(
+          books.entries
+              .fold<int>(0, (int sum, StorageEntryUsage e) => sum + e.bytes),
+          books.bytes);
     });
 
     test('BUG-1893：同步导入的明文音频目录（非哈希）计进明细，且不重复计数', () async {
@@ -299,10 +312,76 @@ void main() {
       final StorageCategoryUsage dicts = all.singleWhere(
           (StorageCategoryUsage u) => u.id == StorageCategoryId.dictionaries);
       expect(dicts.bytes, 1005);
-      expect(dicts.entries.map((StorageEntryUsage e) => e.id).toList(),
-          <String>['JMdict', 'Pixiv']);
+      expect(dicts.entries.length, 3);
+      expect(dicts.entries[0].id, 'JMdict');
       expect(dicts.entries[0].bytes, 800);
+      expect(dicts.entries[1].id, 'Pixiv');
       expect(dicts.entries[1].bytes, 200);
+      // BUG-2096：DB 只认识 `dictionaryResources/<名>`，导入工作目录的残留同样
+      // 占盘，必须自己冒出来。
+      expect(dicts.entries[2].label,
+          'dictionaryImportWorkingDirectory/tmp.bin');
+      expect(dicts.entries[2].bytes, 5);
+      expect(
+          dicts.entries
+              .fold<int>(0, (int sum, StorageEntryUsage e) => sum + e.bytes),
+          dicts.bytes);
+    });
+
+    test('BUG-2096：推荐包暂存的整包 zip 出现在词典明细里，而不是只体现为差额',
+        () async {
+      // 用户实测：词典类目 11.3 GB，展开只有 583 MB 的词典条目——差的 10.7 GB
+      // 是新手引导下载的推荐包（`recommended_pack/` 与 `dictionaryResources/`
+      // 同属词典类目），旧实现下既看不见也删不掉。
+      writeFile(
+          p.join(docs.path, 'dictionaryResources', 'JMdict', 'blobs.bin'), 600);
+      writeFile(
+          p.join(docs.path, 'recommended_pack', 'fushi_recommended_pack.zip'),
+          9500);
+
+      final List<StorageCategoryUsage> all = await service().scanCategories(
+        books: const <StorageBookRef>[],
+        dictionaryNames: const <String>['JMdict'],
+      ).toList();
+
+      final StorageCategoryUsage dicts = all.singleWhere(
+          (StorageCategoryUsage u) => u.id == StorageCategoryId.dictionaries);
+      expect(dicts.bytes, 10100);
+      final StorageEntryUsage pack = dicts.entries.singleWhere(
+          (StorageEntryUsage e) => e.label.contains('recommended_pack'));
+      expect(pack.bytes, 9500);
+      expect(
+          dicts.entries
+              .fold<int>(0, (int sum, StorageEntryUsage e) => sum + e.bytes),
+          dicts.bytes);
+    });
+
+    test('BUG-2096：认领判据按「类目根的直接子项」收敛，不与已知条目重复计数',
+        () async {
+      // 书的 extractDir 深于直接子项时（音频落在 `fushi_books/<key>/audio/`），
+      // 直接子项 `fushi_books/<key>` 整个已被那本书认领——若按路径全等去重，它会
+      // 被当成没人认领而再计一遍，类目总量凭空翻倍。
+      final String bookA = p.join(docs.path, 'fushi_books', 'keyA');
+      writeFile(p.join(bookA, 'ch1.html'), 100);
+      writeFile(p.join(bookA, 'audio', 'a.mp3'), 400);
+
+      final List<StorageCategoryUsage> all = await service().scanCategories(
+        books: <StorageBookRef>[
+          StorageBookRef(
+            id: 'keyA',
+            title: 'A',
+            extractDir: bookA,
+            persistKeys: const <String>['keyA'],
+          ),
+        ],
+        dictionaryNames: const <String>[],
+      ).toList();
+
+      final StorageCategoryUsage books = all.singleWhere(
+          (StorageCategoryUsage u) => u.id == StorageCategoryId.books);
+      expect(books.entries.length, 1);
+      expect(books.entries.single.id, 'keyA');
+      expect(books.bytes, 500);
     });
 
     test('database 类目 = support 根整体减去 OCR 模型；ocrModels 单列', () async {

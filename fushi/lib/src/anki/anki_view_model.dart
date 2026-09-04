@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi_anki/fushi_anki.dart';
@@ -232,8 +233,17 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
 
       final fetch = await _repository.fetchConfiguration();
       if (fetch is AnkiFetchError) {
-        state = state.copyWith(isFetching: false, errorMessage: fetch.message);
-        return LapisSetupResult(LapisSetupOutcome.failed, fetch.message);
+        // BUG-2098：这里此前直接用 `fetch.message`（后端英文原文），漏了
+        // [localizeAnkiFetchError]——同一个 fetch 失败，走 fetchConfiguration() 是
+        // 中文提示，走建 Lapis 就变英文。两条路径统一过同一个本地化入口。
+        final String message =
+            localizeAnkiFetchError(fetch.message, fetch.code);
+        state = state.copyWith(isFetching: false, errorMessage: message);
+        return LapisSetupResult(
+          LapisSetupOutcome.failed,
+          message,
+          fetch.code,
+        );
       }
 
       final settings = await _repository.loadSettings();
@@ -257,13 +267,18 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
           : LapisSetupOutcome.alreadyExisted);
     } catch (e, stack) {
       debugPrint('AnkiViewModel.createLapisSetup: $e\n$stack');
-      final String message = _lapisSetupFailureMessage(e);
-      state = state.copyWith(isFetching: false, errorMessage: message);
-      return LapisSetupResult(LapisSetupOutcome.failed, message);
+      final failure = _lapisSetupFailure(e);
+      state = state.copyWith(isFetching: false, errorMessage: failure.message);
+      return LapisSetupResult(
+        LapisSetupOutcome.failed,
+        failure.message,
+        failure.code,
+      );
     }
   }
 
-  /// 一键配置 Lapis 失败时给用户看的那句话。
+  /// 一键配置 Lapis 失败时给用户看的那句话（连同稳定错误码，供 UI 决定是否给
+  /// 「去设置」这类可操作按钮）。
   ///
   /// 这里此前是裸的 `e.toString()`，于是 AnkiConnect 端口被别的程序占着（连得上、
   /// 不应答）时，用户在新手引导里拿到的是一句
@@ -271,10 +286,26 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
   /// 更看不出下一步该干什么。传输层异常改走与 fetchConfiguration 同一套稳定码分类 +
   /// 本地化（TODO-752a）；其余（payload / 空列表 firstWhere 之类的本地编程错误）不是
   /// 连接问题，不套连接文案，保留原文供排障——它们不经 socket，不是乱码源。
-  static String _lapisSetupFailureMessage(Object e) {
-    if (!isAnkiConnectTransportError(e)) return e.toString();
+  ///
+  /// BUG-2098：AnkiDroid 抛的 [PlatformException] 不是传输错误，此前径直落进
+  /// `e.toString()`，于是整条 `PlatformException(PERMISSION_DENIED, AnkiDroid
+  /// permission not granted...)` 原样糊进 snackbar。现在先过 AnkiDroid 的稳定码
+  /// 分类；仍未分类的才退回原文，且只取 message 而非整个 `toString()`。
+  static ({String message, String? code}) _lapisSetupFailure(Object e) {
+    if (e is PlatformException) {
+      final String? code = AnkiRepository.classifyPlatformError(e);
+      final String? localized = localizeAnkiMineError(code);
+      if (localized != null) return (message: localized, code: code);
+      return (message: e.message ?? e.code, code: code);
+    }
+    if (!isAnkiConnectTransportError(e)) {
+      return (message: e.toString(), code: null);
+    }
     final String code = classifyAnkiConnectError(e);
-    return localizeAnkiFetchError(ankiConnectErrorHint(code), code);
+    return (
+      message: localizeAnkiFetchError(ankiConnectErrorHint(code), code),
+      code: code,
+    );
   }
 
   // ── Lapis 样式客制化（备份/恢复/应用见 LapisTemplateService）──────────
@@ -418,9 +449,13 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
 enum LapisSetupOutcome { created, alreadyExisted, failed }
 
 class LapisSetupResult {
-  const LapisSetupResult(this.outcome, [this.message]);
+  const LapisSetupResult(this.outcome, [this.message, this.code]);
   final LapisSetupOutcome outcome;
   final String? message;
+
+  /// BUG-2098：失败时的稳定错误码（[AnkiErrorCode]），供 UI 决定要不要给可操作
+  /// 按钮——例如权限被永久拒绝时的「去设置」。未分类的失败为 null。
+  final String? code;
 }
 
 /// Anki 仓库 provider。默认返回按平台编译期选择的本地仓库（AnkiConnect/AnkiDroid/
