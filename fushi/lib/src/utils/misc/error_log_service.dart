@@ -565,6 +565,12 @@ String? localizeAnkiMineError(String? code) {
       // BUG-824：AnkiDroid 权限未授予。native 侧已同时弹出系统授权对话框，这里给
       // 用户一句可读、可操作的提醒，替代 provider 抛出的英文技术原文。
       return t.anki_error_permission_denied;
+    // BUG-2098：权限拒绝的另外两种终态，下一步动作与上面那条完全不同——「再点一次
+    // 按钮就会弹框」在这两种情况下都是空头支票（系统不再弹 / 权限压根不存在）。
+    case AnkiErrorCode.permissionPermanentlyDenied:
+      return t.anki_error_permission_permanently_denied;
+    case AnkiErrorCode.ankiDroidUnavailable:
+      return t.anki_error_ankidroid_unavailable;
     case AnkiErrorCode.connectionRefused:
       return t.anki_error_connection_refused;
     case AnkiErrorCode.connectionTimeout:

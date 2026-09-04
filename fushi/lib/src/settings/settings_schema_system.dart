@@ -1,11 +1,17 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:fushi/pages.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
+import 'package:fushi/src/onboarding/recommended_pack_download_row.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/sync/sync_http.dart';
+import 'package:fushi/src/sync/sync_settings_schema.dart'
+    show runBackupImportFlowForFile;
 import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/utils/misc/crash_dump_locator.dart';
 import 'package:fushi/src/utils/misc/platform_updater.dart';
@@ -84,6 +90,19 @@ SettingsDestination buildSystemDestination() {
                 (_) => const OnboardingWizardPage(),
               );
             },
+          ),
+          // 推荐包下载的常驻可见入口（BUG-2097）。下载归 [AppModel] 上的
+          // controller 所有，关掉向导也照跑——那就必须有一个不依赖向导的地方
+          // 看得到它、停得掉它、下完能就地导入。空闲时整行不渲染，设置页不常驻
+          // 一条恒为「无任务」的死行；本行随 controller 的阶段变化实时显隐，靠
+          // [SettingsDetailPage] 订阅 stage 重建（同 galgame 准入那一行的做法）。
+          SettingsCustomItem(
+            id: 'system.recommended_pack_download',
+            searchTitle: t.onboarding_step_pack_title,
+            subtitle: t.onboarding_pack_intro,
+            visible: (SettingsContext settingsContext) => settingsContext
+                .appModel.recommendedPackDownloadController.isActive,
+            builder: _buildRecommendedPackDownloadRow,
           ),
           SettingsSwitchItem(
             id: 'system.low_memory_mode',
@@ -613,6 +632,26 @@ Widget _buildTmdbAttributionRow(SettingsContext settingsContext) {
       Uri.parse('https://www.themoviedb.org/'),
       mode: LaunchMode.externalApplication,
     ),
+  );
+}
+
+Widget _buildRecommendedPackDownloadRow(SettingsContext settingsContext) {
+  final AppModel appModel = settingsContext.appModel;
+  return RecommendedPackDownloadRow(
+    controller: appModel.recommendedPackDownloadController,
+    onImport: () => unawaited(_importDownloadedRecommendedPack(appModel)),
+  );
+}
+
+/// 就地导入已下好的推荐包，走备份导入的共享编排（确认覆盖/合并 → 导入 → 重启）。
+/// 与新手引导那条路径同一个真相源，只是发起点在设置里。
+Future<void> _importDownloadedRecommendedPack(AppModel appModel) async {
+  final RecommendedPackDownloadController controller =
+      appModel.recommendedPackDownloadController;
+  await runBackupImportFlowForFile(
+    appModel: appModel,
+    filePath: controller.packFile.path,
+    onImportConfirmed: controller.markImportStarted,
   );
 }
 

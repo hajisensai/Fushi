@@ -58,6 +58,14 @@ add_fushi_test(text_processor_test text_processor_test.cpp
     "${FUSHI_ROOT}/fushidicts_external/utfcpp/source")
 # 弹窗 deinflectionTrace：纯内存，直接喂 LookupResult 给 build_popup_json。
 add_fushi_test(popup_json_deinflection_test popup_json_deinflection_test.cpp)
+# FFI 边界异常闸门覆盖守卫：扫 fushidicts_ffi.cpp 源码，确认每个导出都经过
+# ffi_guard*。漏掉闸门的后果是异常逃出 extern "C" → std::terminate → 进程静默
+# 消失（用户侧：「转圈转一半 app 自己退出，没有报错」），人工 review 兜不住。
+# 走统一的 add_fushi_test 注册（多链一个静态库换来「不会掉出清单守卫」）；
+# 源码路径用编译期宏传入，别依赖 ctest 的工作目录。
+add_fushi_test(ffi_guard_coverage_test ffi_guard_coverage_test.cpp)
+target_compile_definitions(ffi_guard_coverage_test PRIVATE
+    "FUSHI_FFI_SOURCE=\"${FUSHI_ROOT}/fushidicts_ffi.cpp\"")
 # zip64 includes "zip/zip.hpp" -> root at fushidicts_src/.
 add_fushi_test(zip64_central_dir_test zip64_central_dir_test.cpp
     "${FUSHI_SRC}")

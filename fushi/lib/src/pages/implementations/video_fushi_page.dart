@@ -43,6 +43,7 @@ import 'package:fushi/src/media/video/danmaku_manual_match_panel.dart';
 import 'package:fushi/src/media/source_library/source_stream_headers.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
 import 'package:fushi/src/media/video/subtitle_embedded_fonts.dart';
+import 'package:fushi/src/media/video/video_display_claim.dart';
 import 'package:fushi/src/media/video/video_episode_start_policy.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
 import 'package:fushi/src/media/video/video_top_bar_slots.dart';
@@ -1939,6 +1940,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // TODO-057: 进入视频即快照系统屏幕亮度（移动端），供亮度手势初值与退出还原；
     // 桌面 no-op。
     unawaited(_ensureEnterBrightness());
+    // BUG-2105：先登记「本页持有进程级显示态」（横屏锁 / 系统栏回调 / macOS 交通灯），
+    // 再去设这三件。换集的窗口模式分支用 `pushReplacement`，旧页 dispose 晚于本页
+    // initState —— 登记表让旧页释放时看到「还有人持有」而不还原，否则新页刚设好的
+    // 横屏锁被放宽成含竖屏（旋转锁定下当即翻竖屏 = 掉出全屏）、刚注册的系统栏回调被
+    // 置空。见 [VideoDisplayClaim] 与 [_releaseVideoDisplayClaim]。
+    VideoDisplayClaim.claim(this);
     // TODO-099: 进入视频页强制横屏（移动端），退出 [dispose] 还原；桌面 no-op。
     unawaited(_lockLandscapeForVideo());
     // BUG-973: 进入视频页隐藏 macOS 系统交通灯（左上角三个圆点），退出 [dispose] 恢复。
@@ -3088,10 +3095,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   }
 
   /// 字幕菜单来源：保留当前视频枚举结果，再只补入「当前视频已持久化」的导入字幕。
+  ///
+  /// BUG-2094：主字幕与副字幕**两条**持久化指针都要补——只被选作副字幕的导入档否则
+  /// 在重开视频后从列表里消失（画面还在显示它）。
   Future<List<SubtitleSource>> _subtitleSourcesForMenu({
     required String videoPath,
     required String? currentSubtitleSource,
     required List<AudioCue> currentCues,
+    required String? currentSecondarySubtitleSource,
+    required List<AudioCue> currentSecondaryCues,
   }) async {
     final List<SubtitleSource> sources = await listAllSubtitleSources(
       videoPath,
@@ -3103,6 +3115,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       bookUid: widget.bookUid,
       currentSubtitleSource: currentSubtitleSource,
       currentCues: currentCues,
+      currentSecondarySubtitleSource: currentSecondarySubtitleSource,
+      currentSecondaryCues: currentSecondaryCues,
     );
   }
 
@@ -3752,10 +3766,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       );
     }
     WidgetsBinding.instance.removeObserver(this);
-    // TODO-658/BUG-383: 摘除系统栏可见性回调（全局单例，避免退页后仍回调已释放 State）。
-    if (isMobilePlatform) {
-      unawaited(SystemChrome.setSystemUIChangeCallback(null));
-    }
+    // BUG-2105：进程级显示态（系统栏回调 / 横屏锁 / macOS 交通灯）统一在
+    // [_releaseVideoDisplayClaim] 里按所有者记账还原——本页不是最后一个持有者
+    // （换集期间新页已认领）就不得还原，否则会把新页刚设好的显示态掰掉。
+    _releaseVideoDisplayClaim();
     final ExitFlushCallback? exitFlush = _exitFlushCallback;
     if (exitFlush != null) {
       ExitFlushRegistry.instance.unregister(exitFlush);
@@ -3787,11 +3801,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // TODO-057: 退出播放器还原屏幕亮度——把进页快照写回（iOS 系统级亮度），未
     // 取过快照时 Android 侧设回「跟随系统」(-1)。防止把用户系统亮度永久留在拖动后值。
     unawaited(_brightness.restore(previous: _enterBrightness));
-    // TODO-099: 退出视频页还原屏幕方向允许态（移动端），不把其他页锁死在横屏；桌面 no-op。
-    unawaited(_restoreOrientationOnExit());
-    // BUG-973: 退出视频页恢复 macOS 系统交通灯（与 initState 的隐藏对称）；桌面非
-    // macOS / 移动端 no-op。
-    unawaited(setMacOSTrafficLightsHidden(false));
+    // TODO-099 / BUG-973 / BUG-2105：方向允许态与 macOS 交通灯的还原已并入
+    // [_releaseVideoDisplayClaim]（dispose 开头调用，按所有者记账），此处不再各自还原。
     _clearClipExportState();
     // TODO-669：销毁缩略图预览（作废在途取帧 + 销毁离屏 Player + 释放末帧）。
     _disposeThumbnailPreview();
@@ -5361,18 +5372,31 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     required bool desktop,
     required bool roomyBottomBar,
   }) {
-    final List<VideoControlItem> rawItems = _controlLayout.itemsIn(slot);
+    // **一次遍历**，按用户在槽内摆的真实顺序出控件。
+    //
+    // 旧写法是「先画完所有 chip，再把 volume 追加到槽尾」：`itemsIn(slot)` 里
+    // volume 的真实下标被整个丢掉，用户在底栏槽内怎么拖音量都零视觉变化。默认
+    // 布局出厂就已经分叉——bottomRight 是 `[volume, fullscreen, speed, …]`，
+    // 编辑器按真实下标画、音量排**第一**，播放器却把它画在**最后**。
+    //
+    // 音量与其它按钮的差别只在**用哪个 widget 画**（它有浮层、要按槽位做几何避让），
+    // 不在**画在第几位**。位置逻辑因此不该为它分叉：分派在循环体内做，顺序由
+    // 唯一真相源 `itemsIn(slot)` 决定。
+    //
+    // volume 不经 [_shouldRenderControlItem]：与旧行为一致（旧写法问的是未经过滤
+    // 的原始槽列表「在不在」），本次只改顺序、不改「画不画」。
     return <Widget>[
-      for (final VideoControlItem item in _slotChipItems(slot))
-        _buildBottomSlotButton(
-          item,
-          controller,
-          desktop: desktop,
-          slot: slot,
-          roomyBottomBar: roomyBottomBar,
-        ),
-      if (rawItems.contains(VideoControlItem.volume))
-        _buildVolumeButton(controller, desktop: desktop, slot: slot),
+      for (final VideoControlItem item in _controlLayout.itemsIn(slot))
+        if (item == VideoControlItem.volume)
+          _buildVolumeButton(controller, desktop: desktop, slot: slot)
+        else if (item.isChipRenderable && _shouldRenderControlItem(item))
+          _buildBottomSlotButton(
+            item,
+            controller,
+            desktop: desktop,
+            slot: slot,
+            roomyBottomBar: roomyBottomBar,
+          ),
     ];
   }
 
@@ -6610,6 +6634,32 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
     ]);
+  }
+
+  /// BUG-2105：释放本页对**进程级显示态**的所有权，并**仅在本页是最后一个持有者时**
+  /// 还原它们（系统栏可见性回调 / 屏幕方向允许态 / macOS 交通灯）。
+  ///
+  /// 三件都是进程唯一的全局单槽，谁最后设谁生效。换集的窗口模式分支
+  /// （[_VideoEpisode._switchEpisode]）用 `pushReplacement`，Flutter 语义下旧路由要等
+  /// 新页入场动画结束才被移除并 `dispose` —— 于是真实顺序是「新页 initState 认领并设好
+  /// 三件 → 旧页 dispose」。旧实现在 dispose 里无条件还原，等于把新页刚设的显示态掀掉：
+  /// 方向集被放宽成含 `portraitUp`（移动端开着自动旋转锁定时会退回用户锁定的竖屏，
+  /// 观感就是「换集后掉出全屏播放」）、系统栏可见性回调被置空（此后
+  /// [_systemBarsVisible] 再不更新，进度条 / 字幕避让几何回到 BUG-383 的错态）。
+  ///
+  /// 判据交给 [VideoDisplayClaim.release]（纯 Dart 登记表，真值可单测），这里只消费
+  /// 布尔结论，不在页面里手写「还有没有别人持有」。释放幂等：`release` 对没认领过的
+  /// owner 返回 false。
+  void _releaseVideoDisplayClaim() {
+    if (!VideoDisplayClaim.release(this)) return;
+    // TODO-658/BUG-383: 摘除系统栏可见性回调（全局单例，避免退页后仍回调已释放 State）。
+    if (isMobilePlatform) {
+      unawaited(SystemChrome.setSystemUIChangeCallback(null));
+    }
+    // TODO-099: 还原屏幕方向允许态（移动端），不把其他页锁死在横屏；桌面 no-op。
+    unawaited(_restoreOrientationOnExit());
+    // BUG-973: 恢复 macOS 系统交通灯（与 initState 的隐藏对称）；非 macOS 恒 no-op。
+    unawaited(setMacOSTrafficLightsHidden(false));
   }
 
   Future<void> _setLockWindowAspectRatio(bool value) async {

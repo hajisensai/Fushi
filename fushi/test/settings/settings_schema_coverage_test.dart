@@ -53,6 +53,14 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 底栏真值 homeNavItemFor 的 label（Novels→Books、Galgame→Game、
   // Browser extension→Extension）。键是 `$destId/${row.title}`，两处任一变了本表
   // 就得跟着变。
+  // 互联「允许已配对设备读写本机配置」（host 侧许可，默认关）。写 prefsRepo
+  // （changed=true），生效点在 **HTTP 端点**里：host 收到 GET/PUT
+  // /api/interconnect/profile 时先查这个开关，关着回 403。harness 里没有起 server、
+  // 也没有 TLS 会话与已配对 peer，探不到。由专项测试逐条咬住：开关默认关、开启后
+  // 可用、依赖未接线时即使开着也不可用、以及端点三道门（TLS → peer token → 能力
+  // → 本开关）的顺序守卫。
+  'interconnect/Allow paired devices to read/write configuration':
+      'test/sync/interconnect_profile_transfer_test.dart',
   'appearance/Books': 'test/pages/home_page_tabs_test.dart',
   'appearance/Manga': 'test/pages/home_page_tabs_test.dart',
   'appearance/Video': 'test/pages/home_page_tabs_test.dart',

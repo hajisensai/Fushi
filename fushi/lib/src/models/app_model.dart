@@ -27,10 +27,12 @@ import 'package:fushi/pages.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/override_thumbnail_migration.dart';
 import 'package:fushi/src/models/dictionary_download_controller.dart';
+import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/books_directory.dart';
 import 'package:fushi/src/storage/export_directory.dart';
 import 'package:fushi/src/storage/installer_data_root_bootstrap.dart';
+import 'package:fushi/src/storage/sandbox_relocation.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/lookup_input_limits.dart';
 import 'package:fushi/src/media/drag_drop/desktop_drop_reinitializer.dart';
@@ -569,6 +571,39 @@ class AppModel with ChangeNotifier {
       localAudioStagingDir: temporaryDirectory,
       onLocalAudioImported: importSyncedLocalAudioDb,
       audioDatabaseRoot: Directory('${appDirectory.path}/audiobooks'),
+      // 互联「配置文件」（Profile）双向搬运（用户诉求：把一台设备调好的配置搬到另一台）。
+      // 三条依赖都注入回调而不是把 ProfileRepository 拖进 host service：它的构造还要
+      // anki repo 与「词典装没装」的磁盘判据，那两样只有 AppModel 这里凑得齐。
+      isProfileTransferEnabled: () =>
+          SyncRepository(database).isInterconnectProfileTransferEnabled(),
+      exportActiveProfileJson: () async {
+        final ProfileRepository repo = interconnectProfileRepository();
+        final int activeId = await repo.getActiveProfileId();
+        if (activeId < 0) {
+          // 没有激活 Profile（理论上 ensureDefaultProfile 之后不该出现）：如实报错，
+          // 别回一份空 JSON 让对端导入出一个空配置。
+          throw StateError('no active profile to export');
+        }
+        return repo.exportProfileToJson(
+          activeId,
+          // 与「配置管理」页导出同参：把指向本机 custom_fonts/ 的绝对路径剥成相对，
+          // 免得对端拿到一堆指向不存在目录的字体路径。
+          fontsRootDirectory: path.join(appDirectory.path, 'custom_fonts'),
+        );
+      },
+      importProfileJson: (String json) async {
+        final ProfileRepository repo = interconnectProfileRepository();
+        try {
+          // 永远 createNew：入站配置不得覆盖本机任何既有 Profile，也不动当前激活的。
+          final int id = await repo.importProfileFromJson(json);
+          final ProfileRow? row = await repo.getProfileById(id);
+          return row?.name ?? 'profile';
+        } on ProfileImportException catch (e) {
+          // wire 层只认 FormatException → 400（见 InterconnectProfileHost 的契约），
+          // 不让 profile 层的异常类型漏进 sync 层。
+          throw FormatException(e.toString());
+        }
+      },
       videoSubtitleLangCode: JapaneseLanguage.instance.languageCode,
       // client→host 视频上传（syncVideoFiles 开关驱动）：落 <documents>/remote_videos
       // （与 client 下载远端视频落点一致，AppPaths.remoteVideosDirectory 同目录）。
@@ -944,6 +979,16 @@ class AppModel with ChangeNotifier {
   final DictionaryDownloadController dictionaryDownloadController =
       DictionaryDownloadController();
 
+  /// BUG-2097：新手引导推荐包（9.5 GB 整包）下载任务的所有权持有者。同样挂在
+  /// [AppModel] 上：此前它活在向导页的 State 里，向导 `dispose()` 直接 cancel，
+  /// 于是「点下载 → 走下一步 → 走完向导」就把下载静默掐断，而且没有任何地方还能
+  /// 看到它。包目录惰性求值——本字段在 [appDirectory] 定下来之前就构造。
+  late final RecommendedPackDownloadController
+      recommendedPackDownloadController = RecommendedPackDownloadController(
+    packDirectory: () =>
+        Directory(path.join(appDirectory.path, 'recommended_pack')),
+  );
+
   late FileExportManager _fileExportManager;
   late LocalAudioManager _localAudioManager;
 
@@ -1208,6 +1253,21 @@ class AppModel with ChangeNotifier {
   BackupImportPhase? get backupImportPhase => _backupImportPhase;
   bool get backupImportActive => _backupImportPhase != null;
 
+  /// BUG-2106：备份导入遮罩是否要**独占 app 根**（换根、卸载整棵子树含 Navigator）。
+  ///
+  /// 只有 [BackupImportPhase.running] / [BackupImportPhase.done] /
+  /// [BackupImportPhase.failed] 才为真：这三个相位之前已 [closeDatabase]，页面若还挂着
+  /// 就会去查已关闭的库，必须换根独占（且随后重启进程）。
+  ///
+  /// [BackupImportPhase.validating] **恒为假**：那一段只是读 zip + 生成合并预览，DB 仍
+  /// 打开、可取消，换根却会把调用方路由连 Navigator 一起销毁 —— 引导向导因此被整段摧毁
+  /// （进度丢失、`await Navigator.push` 的 future 永不完成、失败提示无处可弹 = 用户报的
+  /// 「选完本地包就强制退出引导且没有任何提醒」）。该相位改由压在调用方页面之上的模态
+  /// 路由承载，见 [buildBackupValidatingOverlayRoute]。
+  bool get backupImportOwnsAppRoot =>
+      _backupImportPhase != null &&
+      _backupImportPhase != BackupImportPhase.validating;
+
   /// 导入完成/失败后展示在确认视图里的文案（成功提示或失败原因）。
   String? _backupImportMessage;
   String? get backupImportMessage => _backupImportMessage;
@@ -1375,6 +1435,17 @@ class AppModel with ChangeNotifier {
       Directory(path.join(_dictionaryResourceDirectory.path, name))
           .existsSync();
 
+  /// 互联「配置文件」搬运用的 [ProfileRepository]。
+  ///
+  /// 与 `profileRepositoryProvider` 同构造参数（同一个 db + anki repo + 「词典装没装」
+  /// 的磁盘判据）。host 侧回调是无 ref 的后台路径，拿不到 Riverpod 容器，故就地建一个
+  /// —— [ProfileRepository] 本身不持状态、不持缓存，重复构造无副作用。
+  ProfileRepository interconnectProfileRepository() => ProfileRepository(
+        database,
+        platformServices.createAnkiRepository(),
+        isDictionaryInstalled: isDictionaryInstalledOnDisk,
+      );
+
   Directory get dictionaryResourceDirectory => _dictionaryResourceDirectory;
   late Directory _dictionaryResourceDirectory;
 
@@ -1478,11 +1549,26 @@ class AppModel with ChangeNotifier {
 
   bool _dictTypesMigrated = false;
 
+  /// 启动期的词典类型自愈：把历史误分类的词典改回正确的桶。
+  ///
+  /// **每本词典一生只探一次**（[kDictTypeProbeKey] 标记，探测器版本变了才重探）。
+  /// 这不是省几毫秒的优化，是本函数能不能在词典多的设备上跑完的问题：kanji 分支的
+  /// [FushiDicts.probeDictContent] 会把整张 hash 表扫完、逐槽随机跳读 blobs.bin，
+  /// 而纯 kanji 词典永远触发不了「term+kanji 都找到」的提前退出，扫的就是全表。
+  /// 旧实现只在「需要改判」时才写标记，于是「探过、无需改判」和「没探过」在数据上
+  /// 不可区分，纯 kanji 词典每次启动全表重扫一遍。这些扫描是同步 FFI，跑在 UI
+  /// isolate 上，词典一多就把启动整个吞掉（用户报告：导入很多词典后 app 打不开）。
+  ///
+  /// 探测结果无论是否导致改判都会落库，所以第二次启动开始，这个循环对存量词典是
+  /// 纯内存遍历、零 IO。
   void _migrateDictionaryTypes() {
     if (_dictTypesMigrated) return;
     _dictTypesMigrated = true;
     final dicts = dictRepo.dictionaries;
     for (final d in dicts) {
+      // 探过就跳过——包括「探过、结论是什么都不用改」。
+      if (d.isTypeProbed) continue;
+
       // TODO-622 self-heal: a mixed JA-JA dictionary (term + embedded kanji
       // appendix) was misclassified as 'kanji' by the old detect_type, so its
       // 80k+ term entries only ever reached the kanji bucket and word lookup
@@ -1494,29 +1580,38 @@ class AppModel with ChangeNotifier {
       if (d.type == DictionaryType.kanji) {
         try {
           final dir = path.join(dictionaryResourceDirectory.path, d.name);
+          // 目录不在（词典文件已被删/未落盘）时不落标记：这本压根没被探过，
+          // 等文件回来再探。
           if (!Directory(dir).existsSync()) continue;
           final int mask = FushiDicts.probeDictContent(dir);
           const int hasTerm = 0x1;
           const int hasKanji = 0x2;
-          if (mask & hasTerm == 0) continue; // pure kanji dict, nothing to fix
 
           final Map<String, String> meta = Map<String, String>.from(d.metadata);
-          if (mask & hasKanji != 0) {
+          meta[kDictTypeProbeKey] = kDictTypeProbeVersion;
+          final bool mixed = mask & hasTerm != 0;
+          if (mixed && mask & hasKanji != 0) {
             meta['hasKanji'] = 'true';
-          } else {
+          } else if (mixed) {
             meta.remove('hasKanji');
           }
+          // 纯 kanji 词典（mask 里没有 term）保持 kanji 类型不动，但**同样**要把
+          // 标记写下去——这正是旧实现漏掉的那一半，也是每次启动全表重扫的来源。
           final updated = Dictionary(
             name: d.name,
             formatKey: d.formatKey,
             order: d.order,
-            type: DictionaryType.term,
+            type: mixed ? DictionaryType.term : d.type,
             metadata: meta,
             hiddenLanguages: d.hiddenLanguages,
             collapsedLanguages: d.collapsedLanguages,
+            languageOverride: d.languageOverride,
           );
           dictRepo.persistDictionary(updated);
-          debugPrint('[Fushi] reclassified kanji→term (mixed dict): ${d.name}');
+          if (mixed) {
+            debugPrint(
+                '[Fushi] reclassified kanji→term (mixed dict): ${d.name}');
+          }
         } catch (e, stack) {
           ErrorLogService.instance
               .log('AppModel.dictKanjiReclassify', e, stack);
@@ -1525,6 +1620,8 @@ class AppModel with ChangeNotifier {
         continue;
       }
 
+      // freq/pitch 不需要探测（它们的类型来自导入时的 mode 串，没有历史误判形态），
+      // 也就不落标记：这条分支不做任何 IO，重跑的代价是零。
       if (d.type != DictionaryType.term) continue;
 
       final blobsFile = File(
@@ -1532,6 +1629,7 @@ class AppModel with ChangeNotifier {
       if (!blobsFile.existsSync()) continue;
 
       final raf = blobsFile.openSync();
+      DictionaryType? detected;
       try {
         final int len = raf.lengthSync();
         if (len < 4) continue;
@@ -1543,25 +1641,31 @@ class AppModel with ChangeNotifier {
         final int prefixLen = 3 + exprLen + 1 + 255;
         raf.setPositionSync(0);
         final List<int> head = raf.readSync(prefixLen < len ? prefixLen : len);
-        final DictionaryType? detected = decodeDictTypeFromBlobHeader(head);
-        if (detected == null) continue;
-
-        final updated = Dictionary(
-          name: d.name,
-          formatKey: d.formatKey,
-          order: d.order,
-          type: detected,
-          metadata: d.metadata,
-          hiddenLanguages: d.hiddenLanguages,
-          collapsedLanguages: d.collapsedLanguages,
-        );
-        dictRepo.persistDictionary(updated);
-        debugPrint('[Fushi] migrated dict type: ${d.name} → ${detected.name}');
+        detected = decodeDictTypeFromBlobHeader(head);
       } catch (e, stack) {
         ErrorLogService.instance.log('AppModel.dictTypeMigration', e, stack);
         debugPrint('[Fushi] dict type migration error for ${d.name}: $e');
+        continue;
       } finally {
         raf.closeSync();
+      }
+
+      // 与 kanji 分支同理：探过就落标记，哪怕结论是「类型没错，不用改」。
+      final Map<String, String> meta = Map<String, String>.from(d.metadata);
+      meta[kDictTypeProbeKey] = kDictTypeProbeVersion;
+      final updated = Dictionary(
+        name: d.name,
+        formatKey: d.formatKey,
+        order: d.order,
+        type: detected ?? d.type,
+        metadata: meta,
+        hiddenLanguages: d.hiddenLanguages,
+        collapsedLanguages: d.collapsedLanguages,
+        languageOverride: d.languageOverride,
+      );
+      dictRepo.persistDictionary(updated);
+      if (detected != null) {
+        debugPrint('[Fushi] migrated dict type: ${d.name} → ${detected.name}');
       }
     }
   }
@@ -1583,7 +1687,10 @@ class AppModel with ChangeNotifier {
       ));
     }
     final b = bucketDictPaths(entries);
-    FushiDicts.initializeTyped(
+    // 排期而不是就地重建：这个回调挂在**每一次**词典元数据写入上（导入每本、
+    // 类型自愈每本、隐藏/折叠/语言开关），就地重建会把总代价推成 O(N²)。真正的
+    // 装载推迟到下次要用引擎时，批量写入期间的 N 次排期塌成 1 次装载。
+    FushiDicts.scheduleTyped(
       termPaths: b.term,
       freqPaths: b.freq,
       pitchPaths: b.pitch,
@@ -1591,6 +1698,48 @@ class AppModel with ChangeNotifier {
     );
   }
 
+  /// 查词管线预热：跑几次真实查询，把 native 侧的去屈折表、mmap 页、Dart 侧的
+  /// 结果构建路径都热一遍，用户第一次查词就不必等这些冷启动成本。
+  ///
+  /// 三条纪律，都是被启动卡死这件事逼出来的：
+  /// 1. **等首帧画完再开始**。`searchDictionary` 里的 FFI lookup 是同步的，放在
+  ///    初始化尾巴上就是首帧前的又一段主 isolate 阻塞。预热是优化，不该跟「让
+  ///    用户看到界面」抢时间。
+  /// 2. **串行 + 每次之间让出**，而不是 `Future.wait` 三条并发。它们本来就跑在
+  ///    同一个 isolate 上，"并发"只是把三次同步阻塞连成一段更长的阻塞，还刚好
+  ///    骗过了看起来很安全的 `unawaited`。
+  /// 3. 失败只记日志。预热失败绝不能影响 app 可用性。
+  Future<void> _warmUpSearchAfterFirstFrame() async {
+    try {
+      // 首帧还没画时等它画完；已经画过则立即返回下一帧的结束点。
+      await WidgetsBinding.instance.endOfFrame;
+      final String warmupChar =
+          JapaneseLanguage.instance.helloWorld.substring(0, 1);
+      final List<(String, bool)> warmups = <(String, bool)>[
+        (JapaneseLanguage.instance.helloWorld, false),
+        ('$warmupChar?', true),
+        ('$warmupChar*', true),
+      ];
+      for (final (String term, bool wildcards) in warmups) {
+        await searchDictionary(
+          searchTerm: term,
+          searchWithWildcards: wildcards,
+          useCache: false,
+        );
+        await Future<void>.delayed(Duration.zero);
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance.log('AppModel.searchWarmup', e, stack);
+      debugPrint('[Fushi] search warmup failed (non-fatal): $e');
+    }
+  }
+
+  /// 启动/Profile 切换用的词典引擎装载。
+  ///
+  /// 与同步的 [_rebuildDictPathsCache] 的区别不只是「用 await 包一层」：装载本身
+  /// 是分批让出的（[FushiDicts.loadPendingAsync]），每装一本把控制权还给事件循环
+  /// 一次。词典多的设备上这一步可能要好几秒，一口气同步跑完会连带冻掉两层启动
+  /// 看门狗（它们都是 Timer），把「慢」变成「无逃生口地卡死」。
   Future<void> _rebuildDictPathsCacheAsync() async {
     _migrateDictionaryTypes();
     final dictList = dictRepo.dictionaries;
@@ -1612,12 +1761,15 @@ class AppModel with ChangeNotifier {
         ),
     ];
     final b = bucketDictPaths(entries);
-    FushiDicts.initializeTyped(
+    FushiDicts.scheduleTyped(
       termPaths: b.term,
       freqPaths: b.freq,
       pitchPaths: b.pitch,
       kanjiPaths: b.kanji,
     );
+    // 在这里就把它装完（而不是留给第一次查词）：启动期是有预算做这件事的地方，
+    // 而且分批让出后它不再阻塞首帧。
+    await FushiDicts.loadPendingAsync();
   }
 
   List<DictionarySearchResult> get dictionaryHistory =>
@@ -2316,6 +2468,25 @@ class AppModel with ChangeNotifier {
       //    selection to the independent interconnect toggle (interconnect and a
       //    cloud backup backend can now coexist).
       await BackupService.recoverPendingImport(_databaseDirectory.path);
+
+      // 沙箱重定位自愈：数据根被**平台**挪走后，把库里的绝对路径重基过去。
+      //
+      // iOS 每次安装/更新都会换掉 app 容器 UUID，文件随容器走、库里记的旧路径
+      // 集体悬空 —— 症状是「更新一次，整个书架全部『找不到书籍文件』」，每次更新
+      // 复发。这一步必须在**任何消费路径的东西读库之前**跑（下面的 SyncRepository
+      // 迁移、各 repository 的 load、媒体历史都要读路径列），也必须在
+      // recoverPendingImport **之后**：崩在半途的备份导入恢复出来的库同样带着
+      // 导出设备的旧根，要一起重基。
+      //
+      // 自愈失败只上报、不阻塞启动：用户至多回到修复前的状态，绝不能因为对账
+      // 出错而进不去 app（台账故意不写，下次启动会重试）。
+      await SandboxRelocation.reconcile(
+        db: _database,
+        documentsRoot: _appDirectory.path,
+        supportRoot: _databaseDirectory.path,
+        onError: (Object e, StackTrace stack) => ErrorLogService.instance
+            .log('AppModel.sandboxRelocation', e, stack),
+      );
       //    cloud backup backend can now coexist);
       // 4) BUG-1576: drop the pre-decoupling GLOBAL folder cache. Two channels
       //    took turns writing that single pair of keys, so its value can no
@@ -2562,30 +2733,8 @@ class AppModel with ChangeNotifier {
         defaultTargetPlatform,
       );
 
-      debugPrint('[Fushi] init: search preload (parallel)');
-      final String warmupChar =
-          JapaneseLanguage.instance.helloWorld.substring(0, 1);
-      unawaited(Future.wait(<Future<void>>[
-        searchDictionary(
-          searchTerm: JapaneseLanguage.instance.helloWorld,
-          searchWithWildcards: false,
-          useCache: false,
-        ),
-        searchDictionary(
-          searchTerm: '$warmupChar?',
-          searchWithWildcards: true,
-          useCache: false,
-        ),
-        searchDictionary(
-          searchTerm: '$warmupChar*',
-          searchWithWildcards: true,
-          useCache: false,
-        ),
-      ]).catchError((Object e, StackTrace stack) {
-        ErrorLogService.instance.log('AppModel.searchWarmup', e, stack);
-        debugPrint('[Fushi] search warmup failed (non-fatal): $e');
-        return <void>[];
-      }));
+      debugPrint('[Fushi] init: search preload (deferred to after first frame)');
+      unawaited(_warmUpSearchAfterFirstFrame());
 
       debugPrint('[Fushi] init: DONE');
       // TODO-1260：启动正常跑完，清掉启动步进面包屑（否则下次启动会误报上次 hang）。
@@ -2662,6 +2811,28 @@ class AppModel with ChangeNotifier {
           startAnimeDownloadService().catchError((Object e, StackTrace s) {
         ErrorLogService.instance
             .log('AppModel.startAnimeDownloadService', e, s);
+      }));
+      // 推荐包（9.5 GB zip）的包目录进场收尾：删掉「已导入」的残包、搬改名前的旧
+      // 半截文件，再把下载阶段对齐磁盘。
+      //
+      // BUG-2109：收尾必须挂在**启动必经路径**上，不能挂新手引导页 ——
+      // 推荐包本身是一份含 settings 类目的备份，导入时 `preferences` 表被整层
+      // 替换，`onboarding_completed` 随之变成 true，导入后的那次重启根本不会再
+      // 打开引导页，9.5 GB 就永久留在盘上。
+      //
+      // BUG-2109：但它**不能**挂进 `_guardInitIo` 那批启动关键 IO：那层是 12s
+      // 硬超时，同批其它任务全是毫秒级 mkdir，而删 9.5 GB（外置卡 / FAT32 /
+      // 网络盘）超 12s 完全可能 —— 清个残包把启动干成错误屏。它不是启动关键
+      // IO，放到这里 fire-and-forget。
+      //
+      // BUG-2109：同时这也是 `stage` 在新进程里唯一的对盘点。不跑它，stage 永远
+      // 停在 idle，设置 → 系统里那行（判据是 `isActive`）就不渲染：下完没导入就
+      // 关 app 的用户，重开后磁盘上躺着的 9.5 GB 既看不见也导不了。
+      unawaited(recommendedPackDownloadController
+          .prepareDiskState()
+          .catchError((Object e, StackTrace s) {
+        ErrorLogService.instance
+            .log('AppModel.recommendedPackPrepareDiskState', e, s);
       }));
       notifyListeners();
     } on DataRootUnavailableException catch (e, stack) {
@@ -6315,6 +6486,7 @@ class AppModel with ChangeNotifier {
       _themeListenerAdded = false;
     }
     dictionaryDownloadController.dispose();
+    recommendedPackDownloadController.dispose();
     dictionaryEntriesNotifier.dispose();
     dictionarySearchAgainNotifier.dispose();
     dictionaryMenuNotifier.dispose();

@@ -38,6 +38,9 @@ void main() {
       'dict_name_uaf_e2e_test',
       'media_import_query_test',
       'freq_pitch_import_query_test',
+      // FFI 边界闸门的覆盖守卫。它守的是「异常逃出 extern "C" → 进程静默消失」
+      // 这条唯一无日志、无错误屏的死法，掉出 ctest 等于这层防护没有了。
+      'ffi_guard_coverage_test',
     ]) {
       expect(cmake, contains('add_fushi_test($testName'),
           reason: '$testName must be registered as a ctest case');
@@ -53,6 +56,7 @@ void main() {
       'media_import_query_test.cpp',
       'freq_pitch_import_query_test.cpp',
       'kanji_import_query_test.cpp',
+      'ffi_guard_coverage_test.cpp',
     ]) {
       final File file = File('../native/fushidicts/tests/$src');
       expect(file.existsSync(), isTrue,
