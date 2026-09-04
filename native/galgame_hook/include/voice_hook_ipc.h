@@ -480,6 +480,19 @@ constexpr uint32_t kXAudioDiag2KirikiriLookupSeamFired = 0x00100000u;          /
 constexpr uint32_t kXAudioDiag2KirikiriLookupExportQueryFailed = 0x00200000u;  // 5 个核心导出名查不到
 constexpr uint32_t kXAudioDiag2KirikiriLookupExpressionQueryFailed = 0x00400000u;  // TVPExecuteExpression 查不到
 constexpr uint32_t kXAudioDiag2KirikiriLookupBootstrapStarted = 0x00800000u;   // bootstrap 脚本已登记进连续事件
+// 「登记进连续事件」与「引擎真的回调进来并把脚本跑完」是两件事：前者只证明
+// TVPAddContinuousEventHook 接受了我们的回调对象，后者才证明引擎事件循环在跑我们的 TJS。
+// 中间还隔着一次 TVPExecuteScript——在 BCB 上它抛的是 Borland 异常，只有 SEH 拦得住，
+// 拦下来之后脚本就是"静默没执行"，与"回调压根没来"同形（BUG-2121 第三段）。
+constexpr uint32_t kXAudioDiag2KirikiriLookupBootstrapFired = 0x01000000u;     // 连续事件回调真的进来了
+constexpr uint32_t kXAudioDiag2KirikiriLookupBootstrapFaulted = 0x02000000u;   // TVPExecuteScript 抛了（SEH 拦下）
+// bootstrap 脚本跑完之后，TJS 侧那个 System.addContinuousHandler 回调每帧都在前置条件
+// `typeof global.kag == "Object" && typeof global.kag.addHook == "Object"` 上静默 return，
+// 症状与「脚本没跑」完全同形（都是 fushiLookupNotify 不存在、控制台无 [HibikiLookup] 行）。
+// 这三位把前置条件拆开量：脚本活着吗 / kag 出来了吗 / 这个 KAG 分支有 addHook 吗。
+constexpr uint32_t kXAudioDiag2KirikiriLookupTjsBootstrapFnAlive = 0x04000000u;  // global.fushiLookupBootstrap 仍在
+constexpr uint32_t kXAudioDiag2KirikiriLookupKagObjectReady = 0x08000000u;       // global.kag 是对象
+constexpr uint32_t kXAudioDiag2KirikiriLookupKagAddHookReady = 0x10000000u;      // global.kag.addHook 存在
 
 // reserved_luna 的资源音频诊断位。KiriKiriZ 的 TVPCreateStream hook 直接导出当前播放的
 // 已解密 Ogg；Siglus 从 OVK 索引导出逐句 Ogg。它们只代表“资源捕获链已安装”，不要求 PCM

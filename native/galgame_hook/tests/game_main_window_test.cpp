@@ -65,14 +65,27 @@ void TestUnownedMainBeatsOwnedDialogAndSmallerTools() {
          "unowned largest visible window wins; visible-owned dialog excluded");
 }
 
-// Borland VCL（KiriKiri2 2.x/BCB）的形状：TApplication 窗永远隐藏，每个 TForm 都被它 own。
+// Borland VCL（KiriKiri2 2.x/BCB）的真实形状（Fate/stay night[Realta Nua] 实测）：TApplication 窗
+// **可见但 0x0**（cls=TApplication vis=True client=0x0），每个 TForm 都被它 own。
+void TestFormOwnedByVisibleZeroSizeOwnerIsMainWindow() {
+  Windows w;
+  const HWND app = w.Create(nullptr, 0, 0, true);     // TApplication：可见、0x0
+  const HWND form = w.Create(app, 800, 600, true);    // TTVPWindowForm
+  const HWND dialog = w.Create(form, 300, 200, true);  // form 的对话框
+  Expect(app != nullptr && form != nullptr && dialog != nullptr, "vcl windows created");
+  Expect(GetWindow(form, GW_OWNER) == app, "form is owned by the app window");
+  Expect(IsWindowVisible(app) && fushi_voice_hook::WindowClientArea(app) == 0,
+         "app window is visible with an empty client area");
+  Expect(fushi_voice_hook::FindGameMainWindow() == form,
+         "form owned by a visible 0x0 owner is the main window (BUG-2121)");
+}
+
+// 同一形状的隐藏 owner 变体（新 VCL MainFormOnTaskBar 下 Application 窗不显示）。
 void TestFormOwnedByHiddenOwnerIsMainWindow() {
   Windows w;
   const HWND app = w.Create(nullptr, 0, 0, false);  // TApplication：隐藏、0x0
   const HWND form = w.Create(app, 800, 600, true);   // TTVPWindowForm
-  const HWND dialog = w.Create(form, 300, 200, true);  // form 的对话框
-  Expect(app != nullptr && form != nullptr && dialog != nullptr, "vcl windows created");
-  Expect(GetWindow(form, GW_OWNER) == app, "form is owned by hidden app window");
+  Expect(app != nullptr && form != nullptr, "vcl windows created");
   Expect(fushi_voice_hook::FindGameMainWindow() == form,
          "form owned by a hidden owner is the main window (BUG-2121)");
 }
@@ -101,6 +114,7 @@ int main() {
   RegisterTestClass();
   TestNoVisibleWindowReturnsNull();
   TestUnownedMainBeatsOwnedDialogAndSmallerTools();
+  TestFormOwnedByVisibleZeroSizeOwnerIsMainWindow();
   TestFormOwnedByHiddenOwnerIsMainWindow();
   TestHiddenFormUnderHiddenOwnerStaysExcluded();
   TestForeignPidSeesNothing();

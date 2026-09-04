@@ -1249,9 +1249,12 @@ def find_invalid_lookup_entry_visibility_lifecycle(
     # 两道门必须分开，且顺序固定：kag 无条件等；TextRender 只有**半就绪**（类在、方法
     # 没挂全）才等。把第二道并回第一道会让「完全没有 TextRender」的经典 KAG3 游戏在
     # bootstrap 开头就 return，KAGEX 缺席门的 else 分支随即变成永远走不到的死代码。
+    # kag.addHook **不在**这道门里：它是 KAGEX 系框架的扩展点，经典 KAG3（Fate RN 真机
+    # 实测）没有；写进前置条件同样会让下面的经典分支变成死代码（BUG-2121 第四段，与
+    # TextRender 那条是同一个错误）。两条安装路在 installStage 40 由
+    # fushiLookupInstallKagSeams 分叉。
     readiness_gate = (
-        'if(typeofglobal.kag!="Object"||global.kag===null||'
-        'typeofglobal.kag.addHook!="Object")return;'
+        'if(typeofglobal.kag!="Object"||global.kag===null)return;'
         'if(typeofglobal.TextRender=="Object"&&global.TextRender!==null&&'
         '(typeofglobal.TextRender.render!="Object"||'
         'typeofglobal.TextRender.done!="Object"||'
@@ -1282,16 +1285,17 @@ def find_invalid_lookup_entry_visibility_lifecycle(
         # carrier，仅 stable=false 的 run 边沿补 renderer/getRender 采集桥。
         "38",
         "39",
+        # 40→43：输入接缝安装。两条路（addHook / kag 实例逐个包装）都收在
+        # fushiLookupInstallKagSeams 里，所以中间没有 41/42 这两段——它们过去对应
+        # 四次 addHook 调用中的两次（BUG-2121 第四段）。
         "40",
-        "41",
-        "42",
         "43",
         "50",
     ]
     if install_stages != expected_install_stages:
         violations.append(
             f"{ADAPTER.name}: bootstrap installStage 必须固定为 "
-            "0→10/11→20/21→30/31→35/36/37→38/39→40/41/42/43→50；"
+            "0→10/11→20/21→30/31→35/36/37→38/39→40/43→50；"
             f"实际 {install_stages}"
         )
 
@@ -1653,31 +1657,40 @@ def find_invalid_lookup_entry_visibility_lifecycle(
             continue
         wrapper_ends.append(wrapper_spans[0][1])
 
+    # 40→50 之间必须：调用两路合一的接缝安装器，然后**核实真装上了至少一条**。
+    # 「装了传感器但一条输入接缝都没挂上」= 卡片永远收不到点击，与没装同形，所以那种情况
+    # 必须走 install failed 的 catch 分支留下证据，而不是留个假成功（BUG-2121 第四段）。
     staged_hooks = (
         re.escape("installStage=40;"),
-        re.escape(
-            'global.kag.addHook("leftClick",global.fushiLookupLeftClickHook);'
-        ),
-        re.escape("installStage=41;"),
-        re.escape(
-            'global.kag.addHook("mouseMove",global.fushiLookupMouseMoveHook);'
-        ),
-        re.escape("installStage=42;"),
-        re.escape(
-            'global.kag.addHook("onMouseWheelHook",'
-            "global.fushiLookupMouseWheelHook);"
-        ),
+        re.escape("global.fushiLookupInstallKagSeams();"),
         re.escape("installStage=43;"),
-        re.escape(
-            'global.kag.addHook("keyDown",global.fushiLookupKeyDownHook);'
-        ),
+        re.escape("if(global.fushiLookupKagSeams==0)"),
         re.escape("installStage=50;"),
     )
     if not _matches_once_in_order(bootstrap, staged_hooks):
         violations.append(
-            f"{ADAPTER.name}: installStage 40→50 必须逐个包住 leftClick/mouseMove/"
-            "wheel/keyDown hook 安装"
+            f"{ADAPTER.name}: installStage 40→50 必须调用 fushiLookupInstallKagSeams "
+            "并核实 fushiLookupKagSeams 非空"
         )
+    # 四个 hook 必须都被接缝安装器接进去（哪条路都算），否则等于少挂一路输入。
+    seam_installer = _assigned_tjs_functions(tjs, "fushiLookupInstallKagSeams")
+    if len(seam_installer) != 1:
+        violations.append(
+            f"{ADAPTER.name}: fushiLookupInstallKagSeams 定义数应为 1，"
+            f"实际 {len(seam_installer)}"
+        )
+    else:
+        installer_body = _compact_tjs(seam_installer[0][1])
+        for hook_name in (
+            "fushiLookupLeftClickHook",
+            "fushiLookupMouseMoveHook",
+            "fushiLookupMouseWheelHook",
+            "fushiLookupKeyDownHook",
+        ):
+            if hook_name not in installer_body:
+                violations.append(
+                    f"{ADAPTER.name}: fushiLookupInstallKagSeams 没有接进 {hook_name}"
+                )
 
     bootstrap_stage_note = (
         'global.fushiLookupNoteError("bootstrap.stage",'
@@ -2878,6 +2891,70 @@ def find_ungated_exe_exporter_probe(source: MaskedSource) -> list[str]:
     return []
 
 
+VOICE_STREAM_POLL_RESULT = "return g_voice_installed != 0;"
+
+# BUG-2121 第四段：`kag.addHook` 是 KAGEX 系框架的扩展点，经典 KAG3 没有。它只能作为
+# **安装手段**出现在 fushiLookupInstallKagSeams 的分叉里，绝不能回到 bootstrap 的前置条件
+# ——那会让整条经典逐实例分支（BUG-2116）变成死代码，且症状与「引擎不支持」同形。
+KAG_SEAM_INSTALLER = "global.fushiLookupInstallKagSeams = function()"
+BOOTSTRAP_PRECONDITION = 'if(typeof global.kag != "Object" || global.kag === null'
+
+
+def find_addhook_in_bootstrap_precondition(source: MaskedSource) -> list[str]:
+    text = _strip_line_comments(source.text)
+    start = text.find(BOOTSTRAP_PRECONDITION)
+    if start < 0:
+        return ["找不到 bootstrap 的 kag 前置条件"]
+    offenders: list[str] = []
+    # 前置条件那一条 if 语句本身（到分号为止）不得提到 addHook。
+    end = text.find(";", start)
+    if end < 0:
+        end = start + 400
+    if "addHook" in text[start:end]:
+        offenders.append(
+            "bootstrap 前置条件里又出现了 kag.addHook：经典 KAG3 没有这个方法，"
+            "整条逐实例分支会变成死代码（BUG-2121）"
+        )
+    if KAG_SEAM_INSTALLER not in text:
+        offenders.append(
+            "缺少 fushiLookupInstallKagSeams：addHook 与逐实例包装的两条安装路必须在这里分叉"
+        )
+    else:
+        installer = text[text.find(KAG_SEAM_INSTALLER):]
+        if 'typeof global.kag.addHook == "Object"' not in installer[:2000]:
+            offenders.append("fushiLookupInstallKagSeams 里没有 addHook 分支")
+        if "fushiLookupWrapKagSeam" not in installer[:4000]:
+            offenders.append(
+                "fushiLookupInstallKagSeams 缺少经典 KAG3 的逐实例包装路（fushiLookupWrapKagSeam）"
+            )
+    return offenders
+
+
+def find_voice_stream_poll_stopping_before_exporter(source: MaskedSource) -> list[str]:
+    """`TryHookKirikiriVoiceStream` 的返回值必须是「exporter 已到手」（BUG-2121 第二段）。
+
+    registry 按返回值决定还轮不轮询。KiriKiri2/BCB 的插件全在 boot 首帧内 link 完，早于
+    worker 装 LoadLibrary hook（Fate/stay night[Realta Nua] 真机：8 个插件同一 tick），V2Link
+    路径永远等不到 exporter；唯一确定的路径是 exe 直取，而它要等主窗（BUG-2118 门）。旧实现
+    装完 LoadLibrary hook 就 `return ll_installed`（恒 true），registry 立刻停轮询，exe 直取只在
+    启动瞬间评估过一次——两条路径一起静默死掉。
+    """
+    body = _cpp_function_body(source, VOICE_STREAM_TRY_ENTRY)
+    if body is None:
+        return [f"找不到 {VOICE_STREAM_TRY_ENTRY.strip()}"]
+    offenders: list[str] = []
+    if re.search(r"return\s+(?:ll_installed|true)\s*;", body):
+        offenders.append(
+            f"{VOICE_STREAM_TRY_ENTRY.strip()} 用「LoadLibrary hook 已装」或恒 true 作返回值："
+            "registry 会停止轮询，exe 直取门再也不会在主窗出现后评估（BUG-2121）"
+        )
+    if VOICE_STREAM_POLL_RESULT not in body:
+        offenders.append(
+            f"{VOICE_STREAM_TRY_ENTRY.strip()} 的返回值不是 g_voice_installed（exporter 是否到手）"
+        )
+    return offenders
+
+
 def find_missing_main_thread_identity_check(source: MaskedSource) -> list[str]:
     body = _cpp_function_body(source, MAIN_THREAD_INSTALL_ENTRY)
     if body is None:
@@ -2960,6 +3037,11 @@ def find_unshared_main_window_area_criterion(header_source: str) -> list[str]:
         )
     if not re.search(r"IsWindowVisible\s*\(\s*owner\s*\)", text):
         offenders.append("owner 排除没有以「owner 可见」为条件（BUG-2121）")
+    if not re.search(r"WindowClientArea\s*\(\s*owner\s*\)\s*>\s*0", text):
+        offenders.append(
+            "owner 排除没有以「owner 客户区非空」为条件：老 VCL 的 TApplication 窗可见但 0x0，"
+            "只看可见还是把主窗排掉（BUG-2121，Fate RN 实测）"
+        )
     return offenders
 
 
@@ -3068,6 +3150,23 @@ class RealAdapterTest(unittest.TestCase):
             find_ungated_exe_exporter_probe(self.source),
             "BUG-2118：早注入下在引擎静态构造前调 TVPGetFunctionExporter 会灌满又清空导出表，"
             "之后所有插件链接失败（Fate RN 9/9 启动即崩）；exe 直取必须等主窗存在。",
+        )
+
+    def test_bootstrap_precondition_does_not_require_addhook(self) -> None:
+        self.assertEqual(
+            [],
+            find_addhook_in_bootstrap_precondition(self.source),
+            "BUG-2121：kag.addHook 只存在于 KAGEX 系框架；把它写进 bootstrap 前置条件会让"
+            "经典 KAG3（Fate RN 真机实测无 addHook）的整条逐实例分支变成死代码。",
+        )
+
+    def test_voice_stream_poll_continues_until_exporter_obtained(self) -> None:
+        self.assertEqual(
+            [],
+            find_voice_stream_poll_stopping_before_exporter(self.source),
+            "BUG-2121：TryHookKirikiriVoiceStream 必须以 g_voice_installed 作返回值；"
+            "装完 LoadLibrary hook 就返回 true 会让 registry 停轮询，插件先于 hook link 完的 "
+            "KiriKiri2/BCB 上 exe 直取门永远只在主窗出现前评估一次。",
         )
 
     def test_classic_kag3_capture_is_a_per_instance_sweep_inside_the_gate(
@@ -3229,7 +3328,7 @@ bool TryHookKirikiriVoiceStream() {
     ITVPFunctionExporter* exp = ObtainExporter();
     if (exp != nullptr) InstallVoiceStreamHookWithExporter(exp);
   }
-  return true;
+  return g_voice_installed != 0;
 }
 """
 
@@ -3392,8 +3491,7 @@ ENTRY_VISIBILITY_LIFECYCLE_CLEAN_SAMPLE = r'''
 static const wchar_t kEntryBootstrap[] = LR"TJS(
 global.fushiLookupBootstrap = function(tick)
 {
-  if(typeof global.kag != "Object" || global.kag === null ||
-    typeof global.kag.addHook != "Object") return;
+  if(typeof global.kag != "Object" || global.kag === null) return;
   if(typeof global.TextRender == "Object" && global.TextRender !== null &&
     (typeof global.TextRender.render != "Object" ||
     typeof global.TextRender.done != "Object" ||
@@ -4210,6 +4308,66 @@ global.fushiLookupMouseMoveHook = function(x, y)
   catch(e) { global.fushiLookupFault(); }
   return false;
 };
+global.fushiLookupKagSeams = 0;
+global.fushiLookupWrapKagSeam = function(name, wrapper)
+{
+  try
+  {
+    if(typeof global.kag[name] != "Object") return false;
+    global.kag["fushiLookupOrig_" + name] = global.kag[name];
+    global.kag[name] = wrapper;
+    return true;
+  }
+  catch(e) { return false; }
+};
+global.fushiLookupInstallKagSeams = function()
+{
+  if(typeof global.kag.addHook == "Object")
+  {
+    global.kag.addHook("leftClick", global.fushiLookupLeftClickHook);
+    global.kag.addHook("mouseMove", global.fushiLookupMouseMoveHook);
+    global.kag.addHook("onMouseWheelHook", global.fushiLookupMouseWheelHook);
+    global.kag.addHook("keyDown", global.fushiLookupKeyDownHook);
+    global.fushiLookupKagSeams = 0x1F;
+    return;
+  }
+  var seams = 0;
+  if(global.fushiLookupWrapKagSeam("onPrimaryClick",
+    function()
+    {
+      var consumed = false;
+      try { consumed = global.fushiLookupLeftClickHook(); }
+      catch(e) { global.fushiLookupFault(); }
+      if(consumed) return true;
+      return (this.fushiLookupOrig_onPrimaryClick incontextof this)(...);
+    } incontextof global.kag)) seams = seams | 0x2;
+  if(global.fushiLookupWrapKagSeam("onMouseMove",
+    function(x, y)
+    {
+      try { global.fushiLookupMouseMoveHook(x, y); }
+      catch(e) { global.fushiLookupFault(); }
+      return (this.fushiLookupOrig_onMouseMove incontextof this)(...);
+    } incontextof global.kag)) seams = seams | 0x4;
+  if(global.fushiLookupWrapKagSeam("onMouseWheel",
+    function(shift, delta, x, y)
+    {
+      var consumed = false;
+      try { consumed = global.fushiLookupMouseWheelHook(shift, delta, x, y); }
+      catch(e) { global.fushiLookupFault(); }
+      if(consumed) return true;
+      return (this.fushiLookupOrig_onMouseWheel incontextof this)(...);
+    } incontextof global.kag)) seams = seams | 0x8;
+  if(global.fushiLookupWrapKagSeam("onKeyDown",
+    function(key, shift)
+    {
+      var consumed = false;
+      try { consumed = global.fushiLookupKeyDownHook(key, shift); }
+      catch(e) { global.fushiLookupFault(); }
+      if(consumed) return true;
+      return (this.fushiLookupOrig_onKeyDown incontextof this)(...);
+    } incontextof global.kag)) seams = seams | 0x10;
+  global.fushiLookupKagSeams = seams;
+};
 
 installStage = 10;
 global.fushiLookupOriginalRender = global.TextRender.render;
@@ -4304,13 +4462,10 @@ if(typeof global.kag.addPlugin == "Object")
 }
 installStage = 39;
 installStage = 40;
-global.kag.addHook("leftClick", global.fushiLookupLeftClickHook);
-installStage = 41;
-global.kag.addHook("mouseMove", global.fushiLookupMouseMoveHook);
-installStage = 42;
-global.kag.addHook("onMouseWheelHook", global.fushiLookupMouseWheelHook);
+global.fushiLookupInstallKagSeams();
 installStage = 43;
-global.kag.addHook("keyDown", global.fushiLookupKeyDownHook);
+if(global.fushiLookupKagSeams == 0)
+  throw new Exception("fushiLookup: no kag input seam available");
 installStage = 50;
 System.removeContinuousHandler(global.fushiLookupBootstrap);
 global.fushiLookupBootstrap = void;
@@ -4396,9 +4551,15 @@ DWORD ResolveKirikiriEngineMainThreadId() {
 """
 
 CLEAN_AREA_OWNER = """
+inline long WindowClientArea(HWND window) {
+  RECT rect = {};
+  if (!GetClientRect(window, &rect)) return 0;
+  return (rect.right - rect.left) * (rect.bottom - rect.top);
+}
+
 inline bool IsOwnedByVisibleWindow(HWND window) {
   const HWND owner = GetWindow(window, GW_OWNER);
-  return owner != nullptr && IsWindowVisible(owner);
+  return owner != nullptr && IsWindowVisible(owner) && WindowClientArea(owner) > 0;
 }
 
 inline BOOL CALLBACK GameMainWindowEnumProc(HWND window, LPARAM param) {
@@ -4443,13 +4604,19 @@ DIRTY_FIRST_MATCH_OWNER = CLEAN_AREA_OWNER.replace(
 DIRTY_BARE_OWNER_EXCLUSION = CLEAN_AREA_OWNER.replace(
     """inline bool IsOwnedByVisibleWindow(HWND window) {
   const HWND owner = GetWindow(window, GW_OWNER);
-  return owner != nullptr && IsWindowVisible(owner);
+  return owner != nullptr && IsWindowVisible(owner) && WindowClientArea(owner) > 0;
 }
 """,
     "",
 ).replace(
     "  if (IsOwnedByVisibleWindow(window)) return TRUE;",
     "  if (GetWindow(window, GW_OWNER) != nullptr) return TRUE;",
+)
+
+# BUG-2121 的中间版本：只看 owner 可见——老 VCL 的 TApplication 可见但 0x0，主窗照样被排掉。
+DIRTY_OWNER_VISIBLE_ONLY = CLEAN_AREA_OWNER.replace(
+    "  return owner != nullptr && IsWindowVisible(owner) && WindowClientArea(owner) > 0;",
+    "  return owner != nullptr && IsWindowVisible(owner);",
 )
 
 CLEAN_OVERLAY_FORWARDER = """
@@ -4553,6 +4720,13 @@ class MutationSelfTest(unittest.TestCase):
             any("BUG-2121" in offender for offender in offenders), offenders
         )
 
+    def test_owner_visible_only_exclusion_is_red(self) -> None:
+        self.assertNotEqual(DIRTY_OWNER_VISIBLE_ONLY, CLEAN_AREA_OWNER)
+        offenders = find_unshared_main_window_area_criterion(DIRTY_OWNER_VISIBLE_ONLY)
+        self.assertTrue(
+            any("客户区非空" in offender for offender in offenders), offenders
+        )
+
     def test_area_owner_search_stays_green(self) -> None:
         self.assertEqual(
             [], find_unshared_main_window_area_criterion(CLEAN_AREA_OWNER)
@@ -4638,7 +4812,12 @@ class MutationSelfTest(unittest.TestCase):
                 'typeof global.kag != "Object"',
                 'typeof global.kag == "undefined"',
             ),
-            ('typeof global.kag.addHook != "Object"', "false"),
+            # kag.addHook 已从前置条件移除（BUG-2121 第四段）；把它加回来必须红。
+            (
+                'if(typeof global.kag != "Object" || global.kag === null) return;',
+                'if(typeof global.kag != "Object" || global.kag === null ||\n'
+                '    typeof global.kag.addHook != "Object") return;',
+            ),
             (
                 'typeof global.TextRender != "Object"',
                 'typeof global.TextRender == "undefined"',
@@ -4656,8 +4835,7 @@ class MutationSelfTest(unittest.TestCase):
 
     def test_bootstrap_readiness_precedes_lookup_state_initialization(self) -> None:
         readiness = (
-            '  if(typeof global.kag != "Object" || global.kag === null ||\n'
-            '    typeof global.kag.addHook != "Object") return;\n'
+            '  if(typeof global.kag != "Object" || global.kag === null) return;\n'
             '  if(typeof global.TextRender == "Object" && '
             'global.TextRender !== null &&\n'
             '    (typeof global.TextRender.render != "Object" ||\n'
@@ -5505,6 +5683,25 @@ class MutationSelfTest(unittest.TestCase):
             "bool TryHookKirikiriVoiceStreamRenamed() {",
         )
         self.assertNotEqual([], find_ungated_exe_exporter_probe(dirty))
+        self.assertNotEqual([], find_voice_stream_poll_stopping_before_exporter(dirty))
+
+    def test_voice_stream_poll_result_stays_green(self) -> None:
+        self.assertEqual([], find_voice_stream_poll_stopping_before_exporter(self.clean))
+
+    def test_voice_stream_returning_loadlibrary_state_is_red(self) -> None:
+        # 旧形状：LoadLibrary hook 装好就 return ll_installed——registry 立刻停轮询（BUG-2121）。
+        dirty = self._mutate(
+            "  return g_voice_installed != 0;\n}",
+            "  return ll_installed;\n}",
+        )
+        self.assertNotEqual([], find_voice_stream_poll_stopping_before_exporter(dirty))
+
+    def test_voice_stream_returning_constant_true_is_red(self) -> None:
+        dirty = self._mutate(
+            "  return g_voice_installed != 0;\n}",
+            "  return true;\n}",
+        )
+        self.assertNotEqual([], find_voice_stream_poll_stopping_before_exporter(dirty))
 
     def test_instance_patch_definition_alone_is_not_enough(self) -> None:
         # 只留逐实例补丁函数、删掉 sweep 调用：正向规则仍然红——定义了没人调用等于没有。
