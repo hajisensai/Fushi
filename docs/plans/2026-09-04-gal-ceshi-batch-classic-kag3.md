@@ -72,6 +72,13 @@ Fate RN 引擎版本（来自用户 7-24 遗留 `krkr.console.log`，UTF-16）�
 - 游戏目录 `savedata/krkr.console.log`：8 次会话**全部**在 `override.tjs(28) Plugins.link("fstat.dll")` 处 `Access Violation(write 0x0)`（fstat.dll 解到 `%TEMP%\krkr_*`），启动即崩。
 - `Documents\FateRealtaNua_savedata\krkr.console.log`：5 次会话中 4 次正常、1 次同样 fstat 崩。→ 该崩溃**间歇**且与 Fushi 无关（7-24 早于 hook 工作），真机时若撞上就重开一次；不要把它记成 hook 缺口。两份日志都没有 `[HibikiLookup]` 行（8-14 那次的控制台输出没落盘）。
 
+## 真机门第一轮（2026-09-04 13:40–13:50，桌面短暂空闲时）
+
+**隔离 harness 本身有 bug（先于任何游戏结论）**：上一批沿用的 `launch_fushi_iso.ps1` 用 `APPDATA`/`LOCALAPPDATA` 环境变量隔离偏好与库——**无效**。path_provider 走 `SHGetKnownFolderPath`，不读环境变量，所以「隔离实例」一直在读写用户**生产库** `D:\APP\HIBIKI_date\support\fushi.db`（证据：往 `HIBIKI_gal_test\support\fushi.db` 插 Fate RN 行 + 把 tenshi_sz 改名成 `tenshi_sz (iso-marker)`，实例两次重启都不显示；实例运行期间该库无 `-wal/-shm`；库页 5 款与生产库逐条相同）。**推论：上一批（SGRE/ATRI/tenshi_sz）隔离实例的制卡、游戏会话、学习统计都写进了用户生产库**，schema 相同不会损坏，但活动记录里会多出测试会话。
+正确隔离：`FUSHI_TEST_ROOT=<root>`（测试根优先于 dataRoot，`fushi/lib/src/storage/app_paths.dart` 顺序铁律），`<root>/app-support/fushi.db` 放快照、`<root>/app-documents` junction 到词典目录、`<root>/temp`。新脚本 `C:\Users\wrds\.claude\jobs\a188f70d\tmp\launch_fushi_iso2.ps1`，已验证：库页出现 `tenshi_sz (iso-marker)` 与 Fate RN，`test-root/app-support` 下出现 `-wal/-shm`。
+
+**Fate RN 启动门（第一个未通过边界）**：库内点卡启动 → injector（staged `voice_hook_runtime/0dd3f669f39926fa/x86`，DLL sha 与本分支 dist 一致 `F75951C3…`）→ `Fate／stay night[Realta Nua] -Fate-.exe` PID 92360 起 → 立刻弹「スクリプトで例外が発生しました EAccessViolation」，主窗从未出现。krkr 控制台日志（游戏目录 `savedata/krkr.console.log` 第 9 个会话，13:45:29）：`Plugins.link("fstat.dll")` 处 `Access Violation(write 0x0)`，EIP 落在 `%TEMP%\krkr_*\fstat.dll` 偏移 `…A111`，与 7-24 用户自己经 Fushi 启动的 8 次完全同形。**相关性**：崩溃会话全部先有 `file://./c/users/wrds/documents/faterealtanua_savedata/ が存在していません`（目录实际存在），经 Fushi 启动 9/9 崩、普通启动 5 次仅 1 崩（那次也带同一「不存在」行）。Fushi 对 KiriKiri2 x86 默认 `auto` → 转区（Locale Emulator）；假说：转区下游戏对 Documents 路径的存在性判定失败 → 存档目录缺失 → `fstat.dll` 链接时写空指针。**下一门**：`galgames.japanese_locale_mode='off'` 已写入 test-root 快照（Fate RN 行），重启隔离实例后再点卡：若主窗出现 → 转区是根因（记 Fushi 侧 auto 判据缺口，另立 BUG）；若仍崩 → 与转区无关，回到 hook 早注入排查。桌面在 13:50 被用户占用，本轮到此。
+
 ## 队列其余游戏引擎盘点（静态，未启动）
 
 | 目录 | 引擎 | yaml 条目 | 备注 |
