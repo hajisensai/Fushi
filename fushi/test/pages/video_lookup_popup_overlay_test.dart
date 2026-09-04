@@ -285,6 +285,86 @@ void main() {
     }
   });
 
+  // 用户报的正是这一形状：「字幕列表查词框不应该挡住词」。被查词靠近列表底部时下方放不
+  // 下弹窗，[calcPopupPosition] 走**上方**分支——BUG-098 保证弹窗底边贴在词上方、绝不重叠。
+  // 但根 Overlay 被标题栏压低后整栈下移，这条「绝不重叠」的保证被平移打破：弹窗底边反而
+  // 探进词里。上面那条用例只覆盖了下方分支（下移只是留出空隙、看不出压词），故此处单独钉
+  // 死上方分支的**重叠判据**——这才是用户可见的症状。
+  testWidgets(
+      'BUG-2092: 词靠底走「上方」分支时，裸屏幕 rect 让弹窗底边压进词里；'
+      '减去 rootOverlayScreenOrigin 后底边重新贴在词上方（各缩放）',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = physical;
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    const double titleBar = 32;
+
+    for (final double scale in <double>[1.0, 1.4]) {
+      final GlobalKey charKey = GlobalKey();
+      final GlobalKey pageKey = GlobalKey();
+      await tester.pumpWidget(Directionality(
+        textDirection: TextDirection.ltr,
+        child: Column(
+          children: <Widget>[
+            const SizedBox(height: titleBar),
+            Expanded(
+              child: harness(
+                scale: scale,
+                home: Stack(
+                  key: pageKey,
+                  children: <Widget>[
+                    // 贴画布底部的「字符」box：下方装不下 360 高的弹窗 → 走上方分支。
+                    Positioned(
+                      left: 300,
+                      bottom: 20,
+                      width: 40,
+                      height: 50,
+                      child: SizedBox(key: charKey),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ));
+
+      final BuildContext pageContext = pageKey.currentContext!;
+      final Rect charScreen = globalRectOfBox(
+          charKey.currentContext!.findRenderObject()! as RenderBox);
+
+      // 病灶：屏幕 rect 直传 → 整栈下移一个标题栏 → 上方分支的底边探进词里。
+      final (Rect rawPopup, OverlayEntry rawEntry) = await insertPopup(
+        tester,
+        pageContext,
+        selectionRect: charScreen,
+        neutralize: true,
+      );
+      expect(rawPopup.bottom, greaterThan(charScreen.top),
+          reason: 'scale $scale：未换算时弹窗底边必须（回归性地）压住被查词');
+      expect(rawPopup.bottom, closeTo(charScreen.top + titleBar - 4, 2.0),
+          reason: '压入深度恰为「标题栏高 - gap」');
+      rawEntry.remove();
+      rawEntry.dispose();
+      await tester.pump();
+
+      // 修复：减去根 Overlay 屏幕原点后，底边贴在词上方 gap 处、零重叠。
+      final (Rect fixedPopup, OverlayEntry fixedEntry) = await insertPopup(
+        tester,
+        pageContext,
+        selectionRect: charScreen.shift(-rootOverlayScreenOrigin(pageContext)),
+        neutralize: true,
+      );
+      expect(fixedPopup.bottom, lessThanOrEqualTo(charScreen.top),
+          reason: 'scale $scale：弹窗绝不能盖住被查词');
+      expect(fixedPopup.bottom, closeTo(charScreen.top - 4, 2.0),
+          reason: '底边应紧贴词上方 gap=4');
+      fixedEntry.remove();
+      fixedEntry.dispose();
+      await tester.pump();
+    }
+  });
+
   test(
       'BUG-2092: mixin 的定位收口 _calcMixinPopupPosition 必须先减去根 Overlay 屏幕原点 '
       '（四个根 Overlay 宿主唯一换算点）', () {
