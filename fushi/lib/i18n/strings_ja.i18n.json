@@ -4200,9 +4200,11 @@
   "onboarding_pack_import_now": "Import now",
   "onboarding_pack_download_finished": "Recommended pack finished downloading. Import it from Settings → System.",
   "onboarding_pack_download_background_hint": "The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.",
-  "sync_desktop_oauth_waiting_title": "Waiting for the browser sign-in",
-  "sync_desktop_oauth_waiting_body": "The sign-in page was opened in your default browser. If nothing opened, or the page shows an error, copy the link and open it in another browser or a private window.",
-  "sync_desktop_oauth_link_copy": "Copy sign-in link",
-  "sync_desktop_oauth_browser_reopen": "Open browser again",
-  "sync_err_sign_in_cancelled": "Sign-in cancelled."
+  "sync_desktop_oauth_waiting_title": "ブラウザでのログイン完了を待っています",
+  "sync_desktop_oauth_waiting_body": "既定のブラウザでログインページを開きました。開かない場合やエラーが表示される場合は、リンクをコピーして別のブラウザまたはプライベートウィンドウで開いてください。",
+  "sync_desktop_oauth_link_copy": "ログインリンクをコピー",
+  "sync_desktop_oauth_browser_reopen": "ブラウザをもう一度開く",
+  "sync_err_sign_in_cancelled": "ログインをキャンセルしました。",
+  "sync_desktop_oauth_browser_open_failed": "ブラウザを開けませんでした。リンクをコピーして、ブラウザで自分で開いてください。",
+  "sync_desktop_oauth_link_copy_failed": "リンクをコピーできませんでした。リンクのテキストを選択して手動でコピーしてください。"
 }

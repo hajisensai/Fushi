@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -13,18 +14,27 @@ class DesktopOAuthResult {
   final String redirectUri;
 }
 
-/// 桌面 loopback 授权**已经拉起浏览器**之后交给 UI 的句柄（BUG-2120）。
+/// 桌面 loopback 授权的等待期句柄，交给 UI（BUG-2120）。
 ///
 /// 浏览器那半程完全在 app 之外：默认浏览器可能根本没弹出来，也可能弹出来却被该机器的
 /// cookie / 扩展 / 代理弄成一张 Google 通用 400 页。这些 app 都看不见，唯一能做的是把
 /// **那条授权链接本身**交到用户手里，让他自己换浏览器、开无痕、或者干脆放弃——而不是
-/// 让他对着转圈干等 5 分钟超时。三个动作各自只做一件事：
+/// 让他对着转圈干等 5 分钟超时。
+///
+/// 句柄在回环端口 **bind 完成、浏览器尚未拉起** 时就交出：拉起失败恰恰是最需要链接的
+/// 场景，不能等拉起成功才给。三个动作各自只做一件事：
 ///   * [authUrl]：拿去复制。
-///   * [reopenBrowser]：用同一条链接再拉一次默认浏览器（第一次没弹出来的场景）。
+///   * [reopenBrowser]：用同一条链接再拉一次默认浏览器。
 ///   * [cancel]：立刻结束等待，流程以 [SyncAuthFailureKind.cancelled] 收场。
+/// 两个信号：
+///   * [browserOpened]：第一次拉起的结果，false 时 UI 该提示「请复制链接」。
+///   * [finished]：回环等待结束（授权码到达 / 拒绝 / 超时 / 取消），UI 据此关闭——之后
+///     是 token 交换，「等浏览器」已经过去，重开和取消都不再有意义。
 class DesktopOAuthLaunch {
   const DesktopOAuthLaunch({
     required this.authUrl,
+    required this.browserOpened,
+    required this.finished,
     required Future<bool> Function() reopenBrowser,
     required void Function() cancel,
   })  : _reopenBrowser = reopenBrowser,
@@ -32,13 +42,21 @@ class DesktopOAuthLaunch {
 
   /// 交给浏览器的那条授权 URL，与 [runDesktopOAuthLoopback] 实际拉起的逐字节相同。
   final Uri authUrl;
+
+  /// 第一次拉起默认浏览器是否成功。插件在 ShellExecute / xdg-open 失败时抛
+  /// `PlatformException` 而不是回 false，这里已统一收成 false。
+  final Future<bool> browserOpened;
+
+  /// 回环等待结束即完成，永不抛错（错误由 [runDesktopOAuthLoopback] 本身抛给调用方）。
+  final Future<void> finished;
+
   final Future<bool> Function() _reopenBrowser;
   final void Function() _cancel;
 
-  /// 再拉一次默认浏览器。返回值同 [launchUrl]。
+  /// 再拉一次默认浏览器。false = 没拉起来（含插件异常）。
   Future<bool> reopenBrowser() => _reopenBrowser();
 
-  /// 用户主动放弃：等待立即结束，不再占着回环端口。重复调用无副作用。
+  /// 用户主动放弃：等待立即结束，不再占着回环端口。回环已结束后调用无副作用。
   void cancel() => _cancel();
 }
 
@@ -51,22 +69,32 @@ typedef DesktopOAuthLaunchListener = void Function(DesktopOAuthLaunch launch);
 /// 穿过 `SyncBackend.authenticate` 的签名意味着 10 个实现里 7 个无关后端（FTP / SFTP /
 /// WebDAV / 互联…）都要接一个自己永远不用的参数；桌面授权同一时刻只可能有一条（UI 在
 /// 等待期间禁用登录按钮，helper 还独占一个回环端口），一个进程级槽位是对现实的如实
-/// 建模，而不是偷懒。[observe] 用作用域保证离开 body 就还原，不会把监听器漏到下一次。
+/// 建模。槽位是一个栈而不是「记住上一个再还原」：用户在拉起浏览器的窗口期关掉设置页
+/// 再回来重新登录，两次 observe 会**交错**结束——先结束的那次只能把自己从栈里剔掉，
+/// 既不能抹掉后来者，也不能在后来者结束时把自己这个已经死掉的监听器还原回去。
 abstract final class DesktopOAuthLaunchObserver {
-  static DesktopOAuthLaunchListener? _current;
+  static final List<DesktopOAuthLaunchListener> _stack =
+      <DesktopOAuthLaunchListener>[];
+
+  static DesktopOAuthLaunchListener? get _current =>
+      _stack.isEmpty ? null : _stack.last;
 
   /// 在 [body] 执行期间把 [listener] 接到 [runDesktopOAuthLoopback] 上；无论 body 正常
-  /// 返回还是抛出，离开时都还原成之前的监听器。
+  /// 返回还是抛出，离开时都只移除自己。
   static Future<T> observe<T>(
     DesktopOAuthLaunchListener listener,
     Future<T> Function() body,
   ) async {
-    final DesktopOAuthLaunchListener? previous = _current;
-    _current = listener;
+    _stack.add(listener);
     try {
       return await body();
     } finally {
-      _current = previous;
+      for (int i = _stack.length - 1; i >= 0; i--) {
+        if (identical(_stack[i], listener)) {
+          _stack.removeAt(i);
+          break;
+        }
+      }
     }
   }
 
@@ -102,11 +130,13 @@ bool get isDesktopOAuthPlatform =>
 /// Providers that accept any loopback redirect (Google desktop clients) should
 /// pass `127.0.0.1`.
 ///
-/// [onLaunched] fires once the browser has been asked to open the auth URL,
-/// handing over a [DesktopOAuthLaunch] so the UI can offer copy / reopen /
-/// cancel while the flow waits (BUG-2120). Defaults to whatever
-/// [DesktopOAuthLaunchObserver.observe] scoped in — the backends never pass it
-/// themselves.
+/// [onLaunched] receives the [DesktopOAuthLaunch] handle as soon as the
+/// loopback port is bound — before the browser launch is awaited — so the UI
+/// can offer copy / reopen / cancel even when the browser never opens
+/// (BUG-2120). Defaults to whatever [DesktopOAuthLaunchObserver.observe]
+/// scoped in; the backends never pass it themselves. With a listener attached a
+/// failed browser launch is **not** fatal (the user holds the link); without one
+/// it still throws as before.
 Future<DesktopOAuthResult> runDesktopOAuthLoopback({
   required Uri Function(String redirectUri) buildAuthUrl,
   int port = 0,
@@ -118,10 +148,8 @@ Future<DesktopOAuthResult> runDesktopOAuthLoopback({
   try {
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, port);
   } on SocketException catch (e) {
-    throw SyncAuthError(
-      'Failed to start local OAuth listener on port '
-      '${port == 0 ? 'auto' : port}: ${e.message}',
-    );
+    throw SyncAuthError('Failed to start local OAuth listener on port '
+        '${port == 0 ? 'auto' : port}: ${e.message}');
   }
 
   try {
@@ -130,13 +158,19 @@ Future<DesktopOAuthResult> runDesktopOAuthLoopback({
     final redirectUri = 'http://$host:${server.port}';
     final authUrl = buildAuthUrl(redirectUri);
 
-    Future<bool> openBrowser() =>
-        launchUrl(authUrl, mode: LaunchMode.externalApplication);
-
-    if (!await openBrowser()) {
-      throw SyncAuthError('Failed to launch browser for authentication');
+    // 本仓钉的 url_launcher_windows / _linux 在 ShellExecuteW ≤ 32（含默认浏览器
+    // 关联损坏）/ xdg-open 失败时抛 PlatformException 而不是回 false；两种都收成
+    // false，让「浏览器没打开」成为一个可展示的状态而不是未捕获异常。
+    Future<bool> openBrowser() async {
+      try {
+        return await launchUrl(authUrl, mode: LaunchMode.externalApplication);
+      } on PlatformException {
+        return false;
+      }
     }
 
+    // 所有收场（授权码 / 拒绝 / 超时 / 取消）都经由同一个 completer，句柄的 finished
+    // 才能可靠地跟着结束——`.timeout()` 会另起一个 future 而让 completer 悬着。
     final completer = Completer<DesktopOAuthResult>();
     final subscription = server.listen((HttpRequest request) async {
       final code = request.uri.queryParameters['code'];
@@ -150,47 +184,50 @@ Future<DesktopOAuthResult> runDesktopOAuthLoopback({
 
       if (completer.isCompleted) return;
       if (code != null) {
-        completer.complete(
-          DesktopOAuthResult(code: code, redirectUri: redirectUri),
-        );
+        completer
+            .complete(DesktopOAuthResult(code: code, redirectUri: redirectUri));
       } else if (error != null) {
         completer.completeError(SyncAuthError('Authorization denied: $error'));
       }
       // Ignore unrelated requests (e.g. favicon) without completing.
     });
+    final Timer timer = Timer(timeout, () {
+      if (completer.isCompleted) return;
+      completer.completeError(SyncAuthError(
+        'Timed out waiting for authorization',
+        // Typed, not guessed: the message contains "authorization", which the
+        // error-message mapper's `contains('auth')` branch used to swallow as
+        // "sign-in expired" — telling the user to re-authenticate when the
+        // real problem is that the browser callback never reached us
+        // (BUG-1348).
+        kind: SyncAuthFailureKind.browserTimeout,
+      ));
+    });
 
-    final DesktopOAuthLaunchListener? listener =
-        onLaunched ?? DesktopOAuthLaunchObserver._current;
-    listener?.call(
-      DesktopOAuthLaunch(
+    try {
+      final DesktopOAuthLaunchListener? listener =
+          onLaunched ?? DesktopOAuthLaunchObserver._current;
+      final Future<bool> opened = openBrowser();
+      listener?.call(DesktopOAuthLaunch(
         authUrl: authUrl,
+        browserOpened: opened,
+        finished: completer.future
+            .then<void>((_) {}, onError: (Object _, StackTrace __) {}),
         reopenBrowser: openBrowser,
         cancel: () {
           if (completer.isCompleted) return;
-          completer.completeError(
-            SyncAuthError(
-              'Sign-in cancelled by user',
-              kind: SyncAuthFailureKind.cancelled,
-            ),
-          );
+          completer.completeError(SyncAuthError(
+            'Sign-in cancelled by user',
+            kind: SyncAuthFailureKind.cancelled,
+          ));
         },
-      ),
-    );
-
-    try {
-      return await completer.future.timeout(
-        timeout,
-        onTimeout: () => throw SyncAuthError(
-          'Timed out waiting for authorization',
-          // Typed, not guessed: the message contains "authorization", which the
-          // error-message mapper's `contains('auth')` branch used to swallow as
-          // "sign-in expired" — telling the user to re-authenticate when the
-          // real problem is that the browser callback never reached us
-          // (BUG-1348).
-          kind: SyncAuthFailureKind.browserTimeout,
-        ),
-      );
+      ));
+      if (!await opened && listener == null) {
+        throw SyncAuthError('Failed to launch browser for authentication');
+      }
+      return await completer.future;
     } finally {
+      timer.cancel();
       await subscription.cancel();
     }
   } finally {

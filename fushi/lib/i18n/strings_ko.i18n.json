@@ -4200,9 +4200,11 @@
   "onboarding_pack_import_now": "Import now",
   "onboarding_pack_download_finished": "Recommended pack finished downloading. Import it from Settings → System.",
   "onboarding_pack_download_background_hint": "The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.",
-  "sync_desktop_oauth_waiting_title": "Waiting for the browser sign-in",
-  "sync_desktop_oauth_waiting_body": "The sign-in page was opened in your default browser. If nothing opened, or the page shows an error, copy the link and open it in another browser or a private window.",
-  "sync_desktop_oauth_link_copy": "Copy sign-in link",
-  "sync_desktop_oauth_browser_reopen": "Open browser again",
-  "sync_err_sign_in_cancelled": "Sign-in cancelled."
+  "sync_desktop_oauth_waiting_title": "브라우저 로그인 완료를 기다리는 중",
+  "sync_desktop_oauth_waiting_body": "기본 브라우저에서 로그인 페이지를 열었습니다. 열리지 않거나 오류가 표시되면 링크를 복사해 다른 브라우저나 시크릿 창에서 여세요.",
+  "sync_desktop_oauth_link_copy": "로그인 링크 복사",
+  "sync_desktop_oauth_browser_reopen": "브라우저 다시 열기",
+  "sync_err_sign_in_cancelled": "로그인을 취소했습니다.",
+  "sync_desktop_oauth_browser_open_failed": "브라우저를 열 수 없습니다. 링크를 복사해 직접 브라우저에서 여세요.",
+  "sync_desktop_oauth_link_copy_failed": "링크를 복사할 수 없습니다. 링크 텍스트를 선택해 직접 복사하세요."
 }

@@ -4200,9 +4200,11 @@
   "onboarding_pack_import_now": "Import now",
   "onboarding_pack_download_finished": "Recommended pack finished downloading. Import it from Settings → System.",
   "onboarding_pack_download_background_hint": "The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.",
-  "sync_desktop_oauth_waiting_title": "Waiting for the browser sign-in",
-  "sync_desktop_oauth_waiting_body": "The sign-in page was opened in your default browser. If nothing opened, or the page shows an error, copy the link and open it in another browser or a private window.",
-  "sync_desktop_oauth_link_copy": "Copy sign-in link",
-  "sync_desktop_oauth_browser_reopen": "Open browser again",
-  "sync_err_sign_in_cancelled": "Sign-in cancelled."
+  "sync_desktop_oauth_waiting_title": "Đang chờ đăng nhập trong trình duyệt",
+  "sync_desktop_oauth_waiting_body": "Trang đăng nhập đã được mở trong trình duyệt mặc định. Nếu không có gì mở ra hoặc trang báo lỗi, hãy sao chép liên kết và mở trong trình duyệt khác hoặc cửa sổ riêng tư.",
+  "sync_desktop_oauth_link_copy": "Sao chép liên kết đăng nhập",
+  "sync_desktop_oauth_browser_reopen": "Mở lại trình duyệt",
+  "sync_err_sign_in_cancelled": "Đã hủy đăng nhập.",
+  "sync_desktop_oauth_browser_open_failed": "Không thể mở trình duyệt. Hãy sao chép liên kết và tự mở trong trình duyệt.",
+  "sync_desktop_oauth_link_copy_failed": "Không thể sao chép liên kết. Hãy chọn văn bản liên kết và sao chép thủ công."
 }

@@ -4204,5 +4204,7 @@
   "sync_desktop_oauth_waiting_body": "已在默认浏览器打开登录页。如果没有打开，或页面显示错误，可复制链接到其他浏览器或无痕窗口打开。",
   "sync_desktop_oauth_link_copy": "复制登录链接",
   "sync_desktop_oauth_browser_reopen": "重新打开浏览器",
-  "sync_err_sign_in_cancelled": "已取消登录。"
+  "sync_err_sign_in_cancelled": "已取消登录。",
+  "sync_desktop_oauth_browser_open_failed": "无法打开浏览器。请复制链接，自行在浏览器中打开。",
+  "sync_desktop_oauth_link_copy_failed": "复制失败。请手动选中链接文本后复制。"
 }

@@ -4200,9 +4200,11 @@
   "onboarding_pack_import_now": "Import now",
   "onboarding_pack_download_finished": "Recommended pack finished downloading. Import it from Settings → System.",
   "onboarding_pack_download_background_hint": "The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.",
-  "sync_desktop_oauth_waiting_title": "Waiting for the browser sign-in",
-  "sync_desktop_oauth_waiting_body": "The sign-in page was opened in your default browser. If nothing opened, or the page shows an error, copy the link and open it in another browser or a private window.",
-  "sync_desktop_oauth_link_copy": "Copy sign-in link",
-  "sync_desktop_oauth_browser_reopen": "Open browser again",
-  "sync_err_sign_in_cancelled": "Sign-in cancelled."
+  "sync_desktop_oauth_waiting_title": "Ожидание входа в браузере",
+  "sync_desktop_oauth_waiting_body": "Страница входа открыта в браузере по умолчанию. Если ничего не открылось или страница показывает ошибку, скопируйте ссылку и откройте её в другом браузере или в приватном окне.",
+  "sync_desktop_oauth_link_copy": "Скопировать ссылку для входа",
+  "sync_desktop_oauth_browser_reopen": "Открыть браузер снова",
+  "sync_err_sign_in_cancelled": "Вход отменён.",
+  "sync_desktop_oauth_browser_open_failed": "Не удалось открыть браузер. Скопируйте ссылку и откройте её в браузере вручную.",
+  "sync_desktop_oauth_link_copy_failed": "Не удалось скопировать ссылку. Выделите текст ссылки и скопируйте его вручную."
 }

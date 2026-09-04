@@ -4200,9 +4200,11 @@
   "onboarding_pack_import_now": "Import now",
   "onboarding_pack_download_finished": "Recommended pack finished downloading. Import it from Settings → System.",
   "onboarding_pack_download_background_hint": "The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.",
-  "sync_desktop_oauth_waiting_title": "Waiting for the browser sign-in",
-  "sync_desktop_oauth_waiting_body": "The sign-in page was opened in your default browser. If nothing opened, or the page shows an error, copy the link and open it in another browser or a private window.",
-  "sync_desktop_oauth_link_copy": "Copy sign-in link",
-  "sync_desktop_oauth_browser_reopen": "Open browser again",
-  "sync_err_sign_in_cancelled": "Sign-in cancelled."
+  "sync_desktop_oauth_waiting_title": "กำลังรอการเข้าสู่ระบบในเบราว์เซอร์",
+  "sync_desktop_oauth_waiting_body": "เปิดหน้าเข้าสู่ระบบในเบราว์เซอร์เริ่มต้นแล้ว หากไม่มีอะไรเปิดขึ้นมาหรือหน้าแสดงข้อผิดพลาด ให้คัดลอกลิงก์แล้วเปิดในเบราว์เซอร์อื่นหรือหน้าต่างส่วนตัว",
+  "sync_desktop_oauth_link_copy": "คัดลอกลิงก์เข้าสู่ระบบ",
+  "sync_desktop_oauth_browser_reopen": "เปิดเบราว์เซอร์อีกครั้ง",
+  "sync_err_sign_in_cancelled": "ยกเลิกการเข้าสู่ระบบแล้ว",
+  "sync_desktop_oauth_browser_open_failed": "ไม่สามารถเปิดเบราว์เซอร์ได้ ให้คัดลอกลิงก์แล้วเปิดในเบราว์เซอร์ด้วยตนเอง",
+  "sync_desktop_oauth_link_copy_failed": "ไม่สามารถคัดลอกลิงก์ได้ ให้เลือกข้อความลิงก์แล้วคัดลอกด้วยตนเอง"
 }

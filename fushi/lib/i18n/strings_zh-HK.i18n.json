@@ -4200,9 +4200,11 @@
   "onboarding_pack_import_now": "Import now",
   "onboarding_pack_download_finished": "Recommended pack finished downloading. Import it from Settings → System.",
   "onboarding_pack_download_background_hint": "The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.",
-  "sync_desktop_oauth_waiting_title": "Waiting for the browser sign-in",
-  "sync_desktop_oauth_waiting_body": "The sign-in page was opened in your default browser. If nothing opened, or the page shows an error, copy the link and open it in another browser or a private window.",
-  "sync_desktop_oauth_link_copy": "Copy sign-in link",
-  "sync_desktop_oauth_browser_reopen": "Open browser again",
-  "sync_err_sign_in_cancelled": "Sign-in cancelled."
+  "sync_desktop_oauth_waiting_title": "正在等待瀏覽器完成登入",
+  "sync_desktop_oauth_waiting_body": "已在預設瀏覽器開啟登入頁面。如果沒有開啟，或頁面顯示錯誤，可複製連結到其他瀏覽器或無痕視窗開啟。",
+  "sync_desktop_oauth_link_copy": "複製登入連結",
+  "sync_desktop_oauth_browser_reopen": "重新開啟瀏覽器",
+  "sync_err_sign_in_cancelled": "已取消登入。",
+  "sync_desktop_oauth_browser_open_failed": "無法開啟瀏覽器。請複製連結，自行在瀏覽器中開啟。",
+  "sync_desktop_oauth_link_copy_failed": "複製失敗。請手動選取連結文字後複製。"
 }

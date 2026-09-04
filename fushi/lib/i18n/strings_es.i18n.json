@@ -4200,9 +4200,11 @@
   "onboarding_pack_import_now": "Import now",
   "onboarding_pack_download_finished": "Recommended pack finished downloading. Import it from Settings → System.",
   "onboarding_pack_download_background_hint": "The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.",
-  "sync_desktop_oauth_waiting_title": "Waiting for the browser sign-in",
-  "sync_desktop_oauth_waiting_body": "The sign-in page was opened in your default browser. If nothing opened, or the page shows an error, copy the link and open it in another browser or a private window.",
-  "sync_desktop_oauth_link_copy": "Copy sign-in link",
-  "sync_desktop_oauth_browser_reopen": "Open browser again",
-  "sync_err_sign_in_cancelled": "Sign-in cancelled."
+  "sync_desktop_oauth_waiting_title": "Esperando el inicio de sesión en el navegador",
+  "sync_desktop_oauth_waiting_body": "La página de inicio de sesión se abrió en tu navegador predeterminado. Si no se abrió nada o la página muestra un error, copia el enlace y ábrelo en otro navegador o en una ventana privada.",
+  "sync_desktop_oauth_link_copy": "Copiar enlace de inicio de sesión",
+  "sync_desktop_oauth_browser_reopen": "Abrir el navegador de nuevo",
+  "sync_err_sign_in_cancelled": "Inicio de sesión cancelado.",
+  "sync_desktop_oauth_browser_open_failed": "No se pudo abrir el navegador. Copia el enlace y ábrelo tú mismo en un navegador.",
+  "sync_desktop_oauth_link_copy_failed": "No se pudo copiar el enlace. Selecciona el texto del enlace y cópialo manualmente."
 }

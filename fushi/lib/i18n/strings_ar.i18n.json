@@ -4200,9 +4200,11 @@
   "onboarding_pack_import_now": "Import now",
   "onboarding_pack_download_finished": "Recommended pack finished downloading. Import it from Settings → System.",
   "onboarding_pack_download_background_hint": "The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.",
-  "sync_desktop_oauth_waiting_title": "Waiting for the browser sign-in",
-  "sync_desktop_oauth_waiting_body": "The sign-in page was opened in your default browser. If nothing opened, or the page shows an error, copy the link and open it in another browser or a private window.",
-  "sync_desktop_oauth_link_copy": "Copy sign-in link",
-  "sync_desktop_oauth_browser_reopen": "Open browser again",
-  "sync_err_sign_in_cancelled": "Sign-in cancelled."
+  "sync_desktop_oauth_waiting_title": "في انتظار تسجيل الدخول في المتصفح",
+  "sync_desktop_oauth_waiting_body": "تم فتح صفحة تسجيل الدخول في المتصفح الافتراضي. إذا لم يُفتح شيء أو ظهر خطأ في الصفحة، فانسخ الرابط وافتحه في متصفح آخر أو في نافذة خاصة.",
+  "sync_desktop_oauth_link_copy": "نسخ رابط تسجيل الدخول",
+  "sync_desktop_oauth_browser_reopen": "فتح المتصفح مرة أخرى",
+  "sync_err_sign_in_cancelled": "تم إلغاء تسجيل الدخول.",
+  "sync_desktop_oauth_browser_open_failed": "تعذّر فتح المتصفح. انسخ الرابط وافتحه بنفسك في متصفح.",
+  "sync_desktop_oauth_link_copy_failed": "تعذّر نسخ الرابط. حدّد نص الرابط وانسخه يدويًا."
 }

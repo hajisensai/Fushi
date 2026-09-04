@@ -4200,9 +4200,11 @@
   "onboarding_pack_import_now": "Import now",
   "onboarding_pack_download_finished": "Recommended pack finished downloading. Import it from Settings → System.",
   "onboarding_pack_download_background_hint": "The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.",
-  "sync_desktop_oauth_waiting_title": "Waiting for the browser sign-in",
-  "sync_desktop_oauth_waiting_body": "The sign-in page was opened in your default browser. If nothing opened, or the page shows an error, copy the link and open it in another browser or a private window.",
-  "sync_desktop_oauth_link_copy": "Copy sign-in link",
-  "sync_desktop_oauth_browser_reopen": "Open browser again",
-  "sync_err_sign_in_cancelled": "Sign-in cancelled."
+  "sync_desktop_oauth_waiting_title": "Wachten op aanmelding in de browser",
+  "sync_desktop_oauth_waiting_body": "De aanmeldpagina is geopend in je standaardbrowser. Als er niets is geopend of de pagina een fout toont, kopieer dan de link en open die in een andere browser of een privévenster.",
+  "sync_desktop_oauth_link_copy": "Aanmeldlink kopiëren",
+  "sync_desktop_oauth_browser_reopen": "Browser opnieuw openen",
+  "sync_err_sign_in_cancelled": "Aanmelden geannuleerd.",
+  "sync_desktop_oauth_browser_open_failed": "De browser kon niet worden geopend. Kopieer de link en open die zelf in een browser.",
+  "sync_desktop_oauth_link_copy_failed": "De link kon niet worden gekopieerd. Selecteer de linktekst en kopieer die handmatig."
 }
