@@ -108,7 +108,9 @@ void main() {
       );
 
       expect(
-        registry.bindingsFor(ShortcutAction.readerToggleChrome).keyboardBindings,
+        registry
+            .bindingsFor(ShortcutAction.readerToggleChrome)
+            .keyboardBindings,
         isNot(contains(binding)),
       );
       expect(
@@ -260,6 +262,86 @@ void main() {
         ),
         ShortcutAction.readerPageForward,
       );
+    });
+
+    // TODO-1066：手柄那条 app 外查词在 `GamepadService` 里排在页面 Actions **之前**
+    // （主窗失焦时焦点树整棵不可聚焦，页面那条必然落空）。于是把某个手柄键绑给它，
+    // 那个键在阅读器 / 视频 / 漫画里会被**静默吃掉**——设置页必须报冲突，否则用户
+    // 无从知道是谁吃的。`globalExternal` 的 coactiveScopes 仍是它自己（那张表喂运行时
+    // 解析，动不得），所以补在检测这一侧。
+    test('hasGamepadConflict 额外扫 globalExternal（它抢在页面之前）', () {
+      const List<ShortcutScope> pageScopes = <ShortcutScope>[
+        ShortcutScope.reader,
+        ShortcutScope.video,
+        ShortcutScope.manga,
+        ShortcutScope.home,
+      ];
+      // 挑一个四个页面 scope 里都还没人占的手柄键，才能证明「冲突是 globalExternal
+      // 带来的」而不是本来就撞了页面动作。
+      GamepadButton? free;
+      for (final GamepadButton candidate in GamepadButton.values) {
+        final GamepadBinding probe = GamepadBinding(candidate);
+        final bool clean = pageScopes.every(
+          (ShortcutScope s) =>
+              registry.hasGamepadConflict(s, probe, exclude: null) == null,
+        );
+        if (clean) {
+          free = candidate;
+          break;
+        }
+      }
+      expect(free, isNotNull, reason: '找不到空闲手柄键，本用例的前提失效了');
+
+      final GamepadBinding binding = GamepadBinding(free!);
+      registry.updateBinding(
+        ShortcutAction.globalExternalLookup,
+        ShortcutBindingSet(gamepadBindings: <GamepadBinding>[binding]),
+      );
+      for (final ShortcutScope scope in pageScopes) {
+        expect(
+          registry.hasGamepadConflict(scope, binding, exclude: null),
+          ShortcutAction.globalExternalLookup,
+          reason: '$scope 里按这个键会被 app 外查词抢走，设置页必须报出来',
+        );
+      }
+    });
+
+    test('键盘 / 鼠标冲突检测不受上面那条影响（只改手柄一侧）', () {
+      registry.updateBinding(
+        ShortcutAction.globalExternalLookup,
+        const ShortcutBindingSet(
+          gamepadBindings: [GamepadBinding(GamepadButton.y)],
+          mouseBindings: [MouseBinding(3)],
+        ),
+      );
+      expect(
+        registry.hasMouseConflict(
+          ShortcutScope.reader,
+          const MouseBinding(3),
+          exclude: null,
+        ),
+        isNull,
+        reason: '鼠标那条 native 侧就不在 app 内触发，不该报冲突',
+      );
+    });
+
+    // 通道 gating 只管到「有没有鼠标这条路」，管不到按钮号。没有这道按钮级白名单，
+    // 中键 / 右键会一路录进去、保存、回显，而消费侧只认侧键 3/4——按下毫无反应。
+    test('globalExternalLookup 只接受鼠标侧键 3/4', () {
+      expect(
+        ShortcutAction.globalExternalLookup.allowedMouseButtons,
+        <int>{3, 4},
+      );
+      for (final ShortcutAction other in <ShortcutAction>[
+        ShortcutAction.globalContextMenu,
+        ShortcutAction.readerPageForward,
+      ]) {
+        expect(
+          other.allowedMouseButtons,
+          isNull,
+          reason: '$other 没有按钮级收窄，不该被这道门误伤',
+        );
+      }
     });
 
     test('toJson and loadFromJson round-trip', () {

@@ -110,8 +110,7 @@ class GlobalLookupController {
     int physicalDx,
     int physicalDy,
     int physicalRootHeight,
-  )?
-  onRoutedRevealed;
+  )? onRoutedRevealed;
 
   /// Interactive gal-card pixels changed after the first reveal.  The route
   /// owner coalesces these notifications into bitmap recaptures.
@@ -158,8 +157,7 @@ class GlobalLookupController {
     double left,
     double top,
     int attempt,
-  })?
-  _pendingGalCapture;
+  })? _pendingGalCapture;
   Timer? _galCaptureReadySafety;
   int _galCaptureGeneration = 0;
   // TODO-1231 (BUG-583) — the overlay window's min-corner (bbox origin, CSS px)
@@ -413,13 +411,11 @@ class GlobalLookupController {
   }
 
   /// TODO-1066 — DOM `MouseEvent.button` 号里**允许**当全局触发的那两个：
-  /// 3=侧键后退（XBUTTON1）/ 4=侧键前进（XBUTTON2）。
-  ///
-  /// 中键(1)与右键(2)刻意不接。全局触发是**不拦截**的（RawInput 只能监听），所以
-  /// 绑上去等于"查词 + 前台程序的原有动作同时发生"：右键会同时弹出上下文菜单、
-  /// 中键会同时触发自动滚动/新标签页。侧键没有这种全系统级的默认语义（它的常见
-  /// 用途是浏览器前进后退，且只在浏览器里），是唯一能安全共存的一对。
-  static const Set<int> _globalMouseTriggerButtons = <int>{3, 4};
+  /// 3=侧键后退（XBUTTON1）/ 4=侧键前进（XBUTTON2）。理由与真相源都在
+  /// [ShortcutAction.allowedMouseButtons]——设置页的录制门读同一份，否则会出现
+  /// 「设置里能录、按下去没反应」。
+  static Set<int> get _globalMouseTriggerButtons =>
+      ShortcutAction.globalExternalLookup.allowedMouseButtons ?? const <int>{};
 
   /// 当前已推给 native 的触发按钮号（0 = 未注册）。用来避免注册表每次变更都
   /// 无谓地重推一次 native 注册。
@@ -521,12 +517,12 @@ class GlobalLookupController {
   /// Absolute folder that holds popup.html on Windows:
   /// <exeDir>/data/flutter_assets/assets/popup.
   String _popupAssetsDir() => p.join(
-    p.dirname(Platform.resolvedExecutable),
-    'data',
-    'flutter_assets',
-    'assets',
-    'popup',
-  );
+        p.dirname(Platform.resolvedExecutable),
+        'data',
+        'flutter_assets',
+        'assets',
+        'popup',
+      );
 
   /// TODO-1066 — app 外查词的**触发源无关**入口：抓前台程序当前选中的文本，
   /// 查词，弹出覆盖窗卡片。
@@ -593,12 +589,11 @@ class GlobalLookupController {
         // stillWanted：剪贴板捕获是串行的全局事务（见 SelectionCapture 的闸门）。
         // 手柄按钮/鼠标侧键比键盘热键容易连击，排队期间本次若已被新触发取代，就
         // 别再去动一次剪贴板——反正结果下一行就会被丢弃。
-        text =
-            (await SelectionCapture.captureForegroundSelection(
-                      stillWanted: () => _isCurrentRoute,
-                    ) ??
-                    '')
-                .trim();
+        text = (await SelectionCapture.captureForegroundSelection(
+                  stillWanted: () => _isCurrentRoute,
+                ) ??
+                '')
+            .trim();
         if (!_isCurrentRoute) return;
         sentence = '';
       }
@@ -654,10 +649,9 @@ class GlobalLookupController {
   }) {
     _physicalCap =
         (width == null || height == null || width <= 0 || height <= 0)
-        ? null
-        : (w: width, h: height);
-    _physicalLayoutWorkArea =
-        (workWidth == null ||
+            ? null
+            : (w: width, h: height);
+    _physicalLayoutWorkArea = (workWidth == null ||
             workHeight == null ||
             workWidth <= 0 ||
             workHeight <= 0)
@@ -674,8 +668,8 @@ class GlobalLookupController {
   /// 二选一——真机上就是「游戏内过小、浮窗过大」。这里按 route 分流，形态各读各的键。
   LookupSize _effectiveLookupSizeForCurrentRoute(AppModel model) =>
       GlobalLookupChannel.currentRoute.source == 'galCard'
-      ? model.galCardLookupEffectiveSize
-      : model.overlayLookupEffectiveSize;
+          ? model.galCardLookupEffectiveSize
+          : model.overlayLookupEffectiveSize;
 
   /// 卡片尺寸上界（物理像素）。真机上它决定「最大宽/高」这个设置到底生不生效。
   @visibleForTesting
@@ -1121,11 +1115,7 @@ class GlobalLookupController {
     }
     return WidgetsBinding.instance.platformDispatcher.views.isNotEmpty
         ? WidgetsBinding
-              .instance
-              .platformDispatcher
-              .views
-              .first
-              .devicePixelRatio
+            .instance.platformDispatcher.views.first.devicePixelRatio
         : 1.0;
   }
 
@@ -1175,9 +1165,8 @@ class GlobalLookupController {
     if (!_acceptsRoute(event.route) || event.message == null) {
       return;
     }
-    final GlobalLookupRoute route = event.route.lookupEpoch == 0
-        ? _activeRoute!
-        : event.route;
+    final GlobalLookupRoute route =
+        event.route.lookupEpoch == 0 ? _activeRoute! : event.route;
     GlobalLookupChannel.runWithRoute(route, () => _onJsMessage(event.message!));
   }
 
@@ -1185,9 +1174,8 @@ class GlobalLookupController {
     if (!_acceptsRoute(event.route)) {
       return;
     }
-    final GlobalLookupRoute route = event.route.lookupEpoch == 0
-        ? _activeRoute!
-        : event.route;
+    final GlobalLookupRoute route =
+        event.route.lookupEpoch == 0 ? _activeRoute! : event.route;
     GlobalLookupChannel.runWithRoute(route, () => _onOverlayHidden(route));
   }
 
@@ -1330,12 +1318,12 @@ class GlobalLookupController {
         final Object? args = message['args'];
         final int? readyWidth =
             args is List && args.isNotEmpty && args[0] is num
-            ? (args[0] as num).toInt()
-            : null;
+                ? (args[0] as num).toInt()
+                : null;
         final int? readyHeight =
             args is List && args.length > 1 && args[1] is num
-            ? (args[1] as num).toInt()
-            : null;
+                ? (args[1] as num).toInt()
+                : null;
         final int? readyGeometryEpoch = args is List && args.length > 2
             ? parseGlobalLookupGeometryEpoch(args[2])
             : null;
@@ -1647,9 +1635,8 @@ class GlobalLookupController {
     if (query.isEmpty) {
       return;
     }
-    final Rect? anchor = (args.length >= 2)
-        ? _anchorRectFromArg(args[1])
-        : null;
+    final Rect? anchor =
+        (args.length >= 2) ? _anchorRectFromArg(args[1]) : null;
     final String? sourceFrameId = message['__frameId'] as String?;
     final GlobalLookupNestedParent? source = resolveNestedLookupParent(
       _stack,
@@ -1692,12 +1679,12 @@ class GlobalLookupController {
       unawaited(
         model.database
             .addLookupCount(
-              sourceType: kStatSourceBook,
-              dateKey: statTodayKey(),
-            )
+          sourceType: kStatSourceBook,
+          dateKey: statTodayKey(),
+        )
             .catchError((Object e, StackTrace st) {
-              glog('lookup-count: EXCEPTION $e\n$st');
-            }),
+          glog('lookup-count: EXCEPTION $e\n$st');
+        }),
       );
     } catch (e, st) {
       glog('lookup-count: EXCEPTION (sync) $e\n$st');
@@ -1913,9 +1900,8 @@ class GlobalLookupController {
   /// Drops cached results for frames no longer in the stack (after a close /
   /// truncate), so the result map does not leak removed layers.
   void _pruneFrameResults() {
-    final Set<String> live = _stack.frames
-        .map((GlobalLookupFrame f) => f.id)
-        .toSet();
+    final Set<String> live =
+        _stack.frames.map((GlobalLookupFrame f) => f.id).toSet();
     _frameResults.removeWhere((String id, _) => !live.contains(id));
     _frameAnchors.removeWhere((String id, _) => !live.contains(id));
   }
@@ -2111,7 +2097,8 @@ class GlobalLookupController {
     }
     // BUG-2128 — root card height rides the same box; 0 = host did not report.
     final double rootHeightCss = num2(box['rootHeight']) ?? 0;
-    final int rootHeight = rootHeightCss > 0 ? (rootHeightCss * dpr).round() : 0;
+    final int rootHeight =
+        rootHeightCss > 0 ? (rootHeightCss * dpr).round() : 0;
     // TODO-1231 (BUG-583) — ratchet the origin outward-only so a nested close
     // never slides the window top-left back inward (which raced the host's
     // compensating layer shift across the DWM/WebView2 boundary and lurched the
@@ -2426,9 +2413,8 @@ class GlobalLookupController {
 
   return (
     revision: asInt(args.first),
-    hostGeometryEpoch: args.length > 1
-        ? parseGlobalLookupGeometryEpoch(args[1])
-        : null,
+    hostGeometryEpoch:
+        args.length > 1 ? parseGlobalLookupGeometryEpoch(args[1]) : null,
   );
 }
 

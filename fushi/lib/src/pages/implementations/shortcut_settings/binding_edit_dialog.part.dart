@@ -307,6 +307,18 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
   }
 
   Future<void> _addMouse(int button) async {
+    // 按钮级白名单：通道 gating 只管到「有没有鼠标这条路」，管不到按钮号。不在这里
+    // 拒收，`globalExternalLookup` 绑中键/右键就会一路录进去、保存、回显，而消费侧
+    // 只认侧键 3/4——按下毫无反应，正是本仓反复警告的「设置里能配、按了没反应」，
+    // 比压根没有这个选项更糟。真相源是 [ShortcutAction.allowedMouseButtons]。
+    final Set<int>? allowed = widget.action.allowedMouseButtons;
+    if (allowed != null && !allowed.contains(button)) {
+      setState(() {
+        _mouseCapturing = false;
+        _conflictWarning = t.shortcut_mouse_button_not_supported;
+      });
+      return;
+    }
     final MouseBinding binding = MouseBinding(button);
     if (_mouse.contains(binding)) {
       setState(() {
