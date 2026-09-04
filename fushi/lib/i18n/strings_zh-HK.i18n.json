@@ -4199,5 +4199,7 @@
   "onboarding_pack_status_ready": "Recommended pack downloaded",
   "onboarding_pack_import_now": "Import now",
   "onboarding_pack_download_finished": "Recommended pack finished downloading. Import it from Settings → System.",
-  "onboarding_pack_download_background_hint": "The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System."
+  "onboarding_pack_download_background_hint": "The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.",
+  "onboarding_anki_fsrs_action": "在 Anki 裡開啟 FSRS",
+  "onboarding_anki_action_fsrs_desc": "Anki 預設仍用三十多年前的 SM-2 演算法排程。FSRS 已內建但預設關閉：進入牌組選項，打開 FSRS 開關，再點「最佳化」。點這裡看圖文指引。"
 }

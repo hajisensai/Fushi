@@ -4199,5 +4199,7 @@
   "onboarding_pack_status_ready": "Recommended pack downloaded",
   "onboarding_pack_import_now": "Import now",
   "onboarding_pack_download_finished": "Recommended pack finished downloading. Import it from Settings → System.",
-  "onboarding_pack_download_background_hint": "The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System."
+  "onboarding_pack_download_background_hint": "The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.",
+  "onboarding_anki_fsrs_action": "Turn on FSRS in Anki",
+  "onboarding_anki_action_fsrs_desc": "Anki still schedules with SM-2, an algorithm from the 1980s. FSRS is built in but off by default: open Deck Options, switch FSRS on, then press Optimize. Opens a guide."
 }

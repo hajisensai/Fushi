@@ -4199,5 +4199,7 @@
   "onboarding_pack_status_ready": "推荐包已下载完成",
   "onboarding_pack_import_now": "现在导入",
   "onboarding_pack_download_finished": "推荐包下载完成。可在「设置 → 系统」里导入。",
-  "onboarding_pack_download_background_hint": "下载会在后台继续：可以直接走下一步，也可以关掉向导。进度、取消和导入都在「设置 → 系统」里。"
+  "onboarding_pack_download_background_hint": "下载会在后台继续：可以直接走下一步，也可以关掉向导。进度、取消和导入都在「设置 → 系统」里。",
+  "onboarding_anki_fsrs_action": "在 Anki 里开启 FSRS",
+  "onboarding_anki_action_fsrs_desc": "Anki 默认仍用三十多年前的 SM-2 算法排程。FSRS 已内置但默认关闭：进入牌组选项，打开 FSRS 开关，再点「优化」。点这里看图文指引。"
 }
