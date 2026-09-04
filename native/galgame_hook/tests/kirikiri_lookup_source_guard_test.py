@@ -2897,6 +2897,8 @@ EXPORTER_SCAN_CALL = "ScanLinkedPluginsForExporter()"
 EXPORTER_SCAN_SHAPE_GATE = "LooksLikeExporter("
 EXPORTER_SCAN_REAL_CALL_GATE = "ExporterAnswersQuery("
 EXPORTER_SCAN_ADOPTED_BIT = "kXAudioDiag2KirikiriExporterScanAdopted"
+EXPORTER_SCAN_RAN_BIT = "kXAudioDiag2KirikiriExporterScanRan"
+EXPORTER_SCAN_PLUGIN_GATE = "kMinPlugins"
 
 # BUG-2121 第四段：`kag.addHook` 是 KAGEX 系框架的扩展点，经典 KAG3 没有。它只能作为
 # **安装手段**出现在 fushiLookupInstallKagSeams 的分叉里，绝不能回到 bootstrap 的前置条件
@@ -3021,6 +3023,23 @@ def find_exporter_adopted_without_real_call(source: MaskedSource) -> list[str]:
         offenders.append(
             f"{EXPORTER_SCAN_REAL_CALL_GATE} 排在 {EXPORTER_SCAN_ADOPTED_BIT} 之后："
             "先宣布采用再校验等于没校验（BUG-2145）"
+        )
+    # 本函数被通用启动路径调到，非 KiriKiri 游戏也会走进来（Siglus 真机实测：
+    # xaudiodiag2 曾出现 ScanRan|ScanNoCandidate）。诊断位必须只在真的凑够插件、
+    # 真的做了交集之后才置，否则这三个位在跨引擎读数里就是噪声。
+    if EXPORTER_SCAN_RAN_BIT not in body:
+        offenders.append(f"{EXPORTER_SCAN_ENTRY.strip()} 没有置 {EXPORTER_SCAN_RAN_BIT}")
+        return offenders
+    if EXPORTER_SCAN_PLUGIN_GATE not in body:
+        offenders.append(
+            f"{EXPORTER_SCAN_ENTRY.strip()} 缺插件数门 {EXPORTER_SCAN_PLUGIN_GATE}："
+            "没凑够导出 V2Link 的模块就不算「扫描跑过」"
+        )
+        return offenders
+    if body.index(EXPORTER_SCAN_PLUGIN_GATE) > body.index(EXPORTER_SCAN_RAN_BIT):
+        offenders.append(
+            f"{EXPORTER_SCAN_RAN_BIT} 排在插件数门之前："
+            "非 KiriKiri 进程上也会点亮该位，位的含义与字面不符（BUG-2145）"
         )
     return offenders
 
@@ -3421,6 +3440,9 @@ bool TryHookKirikiriVoiceStream() {
 }
 
 ITVPFunctionExporter* ScanLinkedPluginsForExporter() {
+  if (per_module.size() < fushi_voice_hook::kirikiri_exporter::kMinPlugins) {
+    return nullptr;
+  }
   SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2KirikiriExporterScanRan);
   for (size_t i = 0; i < candidates.size(); ++i) {
     if (!LooksLikeExporter(candidates[i], base, size, &DefaultReadableSpan)) continue;
@@ -5829,6 +5851,29 @@ class MutationSelfTest(unittest.TestCase):
     def test_dropping_the_shape_gate_is_red(self) -> None:
         dirty = self._mutate(
             "    if (!LooksLikeExporter(candidates[i], base, size, &DefaultReadableSpan)) continue;\n",
+            "",
+        )
+        self.assertNotEqual([], find_exporter_adopted_without_real_call(dirty))
+
+    def test_scan_ran_bit_before_the_plugin_gate_is_red(self) -> None:
+        # 把插件数门挪到 ScanRan 之后：非 KiriKiri 进程也会点亮该位（Siglus 真机实测过）。
+        dirty = self._mutate(
+            "  if (per_module.size() < fushi_voice_hook::kirikiri_exporter::kMinPlugins) {\n"
+            "    return nullptr;\n"
+            "  }\n"
+            "  SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2KirikiriExporterScanRan);\n",
+            "  SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2KirikiriExporterScanRan);\n"
+            "  if (per_module.size() < fushi_voice_hook::kirikiri_exporter::kMinPlugins) {\n"
+            "    return nullptr;\n"
+            "  }\n",
+        )
+        self.assertNotEqual([], find_exporter_adopted_without_real_call(dirty))
+
+    def test_dropping_the_plugin_gate_is_red(self) -> None:
+        dirty = self._mutate(
+            "  if (per_module.size() < fushi_voice_hook::kirikiri_exporter::kMinPlugins) {\n"
+            "    return nullptr;\n"
+            "  }\n",
             "",
         )
         self.assertNotEqual([], find_exporter_adopted_without_real_call(dirty))

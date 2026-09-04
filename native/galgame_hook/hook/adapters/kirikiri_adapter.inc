@@ -6635,15 +6635,13 @@ bool ExporterAnswersQuery(ITVPFunctionExporter* candidate) {
 // 判据、代价上限与真机实测数字见 adapters/kirikiri_exporter_scan.h。
 // 只在 ①（exe 直取）落空后才跑，且次数有上限——插件可能还在陆续 link，但不能无界重扫。
 ITVPFunctionExporter* ScanLinkedPluginsForExporter() {
-  SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2KirikiriExporterScanRan);
+  // 诊断位只在**真的做了交集**之后才置（见下面凑够插件的那一步）：本函数被通用启动路径
+  // 调到，非 KiriKiri 游戏也会走进来（Siglus 真机实测）。在那些进程上点亮 ScanRan 会让这
+  // 三个位在跨引擎读数里变成噪声——位必须只表示它字面上说的那件事。
   uint8_t* image_base = nullptr;
   uint32_t image_size = 0;
   GetMainModuleRange(&image_base, &image_size);
-  if (image_base == nullptr || image_size == 0) {
-    SetXAudioDiagnostic2(
-        fushi_voice_hook::kXAudioDiag2KirikiriExporterScanNoCandidate);
-    return nullptr;
-  }
+  if (image_base == nullptr || image_size == 0) return nullptr;
 
   std::vector<std::vector<uintptr_t>> per_module;
   HANDLE snapshot = CreateToolhelp32Snapshot(
@@ -6679,6 +6677,13 @@ ITVPFunctionExporter* ScanLinkedPluginsForExporter() {
     }
     CloseHandle(snapshot);
   }
+
+  // 没凑够导出 V2Link 的模块 = 这根本不是个装了 KiriKiri 插件的进程，什么都没试过，
+  // 一个位都不置。
+  if (per_module.size() < fushi_voice_hook::kirikiri_exporter::kMinPlugins) {
+    return nullptr;
+  }
+  SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2KirikiriExporterScanRan);
 
   std::vector<uintptr_t> candidates;
   if (!fushi_voice_hook::kirikiri_exporter::IntersectWritableWords(per_module,
