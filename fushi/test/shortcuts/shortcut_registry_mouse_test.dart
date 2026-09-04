@@ -97,25 +97,30 @@ void main() {
   // 这条钉住「channels 只是设置页的录入门，不是派发门」这个契约本身——只要有人再想
   // 拿「通道没开」推出「绑定是死的」，这里就会红。
   test('BUG-1995: channels 不含 mouse 的 scope，已有鼠标绑定仍可解析', () {
-    // 取样从 home 换成 globalExternal：home 本轮接上了真实的鼠标派发入口、通道已开。
-    // globalExternal 是**按构造**开不了的那一类（OS 级 RegisterHotKey 的 `HotKey.key`
-    // 类型就是 `KeyboardKey`），所以它会长期留在关着的一侧，适合当这条契约的锚点。
+    // 锚点几经辗转：home → globalExternal → gamepad。前两个都是因为**后来真的接上了
+    // 鼠标解析入口**而被迫让位（home 是 BUG-1995 那轮，globalExternal 是 TODO-1066
+    // 那轮——app 外查词的鼠标侧键触发走 native RawInput，通道随之打开）。
+    //
+    // `gamepad` scope（dpad 四向）是目前唯一**按构造**开不了鼠标的那个：它的唯一
+    // 消费者是 `GamepadService._dispatchButton` 按 `GamepadButton` 解析，键盘/鼠标
+    // 绑定在那里没有也不可能有读取方（见 ShortcutScope.channels 的 gamepad case）。
+    // 所以它能长期留在关着的一侧，适合当这条契约的锚点。
     expect(
-      ShortcutScope.globalExternal.channels.contains(ShortcutChannel.mouse),
+      ShortcutScope.gamepad.channels.contains(ShortcutChannel.mouse),
       isFalse,
-      reason: '前提：globalExternal 没有开鼠标通道（开了就换一个仍关着的 scope）',
+      reason: '前提：gamepad scope 没有开鼠标通道（开了就换一个仍关着的 scope）',
     );
 
     final FushiShortcutRegistry reg = FushiShortcutRegistry()
       ..loadDefaults(TargetPlatform.windows);
     reg.updateBinding(
-      ShortcutAction.globalExternalLookup,
+      ShortcutAction.dpadUp,
       const ShortcutBindingSet(mouseBindings: <MouseBinding>[MouseBinding(4)]),
     );
 
     expect(
-      reg.resolveMouse(4, scope: ShortcutScope.globalExternal),
-      ShortcutAction.globalExternalLookup,
+      reg.resolveMouse(4, scope: ShortcutScope.gamepad),
+      ShortcutAction.dpadUp,
       reason: 'resolveMouse 不查 channels —— 通道开关管不着已存在的绑定能否派发',
     );
   });

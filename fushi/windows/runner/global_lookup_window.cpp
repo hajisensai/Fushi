@@ -1236,6 +1236,21 @@ void GlobalLookupWindow::Reveal(int width, int height,
   revealed_ = true;
   visible_ = true;
   offscreen_active_ = false;
+  // BUG-2123：这条 legacy 路径把窗口放在**光标处、单卡尺寸**，而不是 bbox 原点 +
+  // bbox 尺寸。首帧预落位（host 的 measureAndReport 在 postToHost('overlaySize') 之前
+  // 把图层推了 (-minLeft,-minTop)，为的是消掉「先闪在工作区左上角」）只对后者成立：
+  // 不复位，根卡就被推到窗口之外，用户看到一个**空白弹窗**。
+  //
+  // 这里是唯一合适的复位点——Dart 侧那两个调用点（450ms READY-SAFETY 兜底 /
+  // reveal(scalar)）都不知道自己最终会走哪条 C++ 路径，而本函数正是「窗口按光标 +
+  // 单卡尺寸摆好了」这个事实的发生地。RevealStack 走 commitLayerShift，不经过这里。
+  if (webview_ != nullptr) {
+    webview_->ExecuteScript(
+        L"(function(){var h=window.__globalLookupHost;"
+        L"if(h&&typeof h.resetLayerOffsetForLegacyReveal==='function'){"
+        L"h.resetLayerOffsetForLegacyReveal();}})();",
+        nullptr);
+  }
   // BUG-1479：只设一次不够——同置顶带里「最后一次 SetWindowPos 的赢」，
   // 而大量 galgame 会周期性重申自己的置顶。
   StartTopmostGuard();

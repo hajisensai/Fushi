@@ -158,11 +158,18 @@ abstract final class GlobalLookupChannel {
     void Function()? onOverlayHidden,
     void Function(OverlayReverseEvent event)? onRoutedJsMessage,
     void Function(OverlayReverseEvent event)? onRoutedOverlayHidden,
+    void Function()? onGlobalMouseTrigger,
   }) => _impl.setHandlers(
     onGetMedia: onGetMedia,
     onJsMessage: onJsMessage,
     onOverlayHidden: onOverlayHidden,
     onRoutedJsMessage: onRoutedJsMessage,
     onRoutedOverlayHidden: onRoutedOverlayHidden,
+    onGlobalMouseTrigger: onGlobalMouseTrigger,
   );
+
+  /// TODO-1066 — 注册/注销全局鼠标侧键触发（[OverlayWindowChannel
+  /// .setGlobalMouseTrigger]）。0 = 注销。
+  static Future<void> setGlobalMouseTrigger(int button) =>
+      _impl.setGlobalMouseTrigger(button);
 }

@@ -2738,9 +2738,48 @@ function createTranscriptionsHtml(transcriptions) {
     return list;
 }
 
+// BUG-2122：同一个音调型被多本词典各渲染成一行。五本音调词典都把「ギター」
+// 标成 [1] 时，用户看到的是五行一模一样的 ￣ギター [1]，读起来像坏了。Yomitan 在
+// getGroupedPronunciations 里把相同发音合并成一条、后面挂上全部来源；这里做同样的事：
+// 整份 payload 全等（pitchPositions / patterns / transcriptions 三者）的词典合并成一行，
+// dictionaries 带上全部来源名。判据故意取「全等」而不是逐条位置求交：宁可少合
+// 一次，也不把读法不同的两本词典混进同一行。
+//
+// 本函数是渲染前的最后一道纯变换，跑在 deduplicatePitchAccents 分支之后：去重打开
+// 时（app 默认）各存活组的位置互斥，payload 不可能全等，合并对位置组恒为 no-op，
+// 默认外观一字不变；去重关闭时才塌行。（两本纯 IPA 词典给出完全相同的
+// transcriptions 是唯一例外，那也本就该合。）
+function mergeIdenticalPitchGroups(groups) {
+    const merged = [];
+    const byPayload = new Map();
+    groups.forEach((group) => {
+        // 位置数组**排序后**入键：同一音调型的两本词典给的位置顺序可能不同，
+        // 不排序就漏合。渲染仍用原组的原顺序，排序只影响「是不是同一型」的判断。
+        const key = JSON.stringify([
+            [...(group.pitchPositions || [])].sort((a, b) => a - b),
+            group.patterns || [],
+            group.transcriptions || [],
+        ]);
+        const existing = byPayload.get(key);
+        if (existing) {
+            if (!existing.dictionaries.includes(group.dictionary)) {
+                existing.dictionaries.push(group.dictionary);
+            }
+            return;
+        }
+        const entry = Object.assign({}, group, { dictionaries: [group.dictionary] });
+        byPayload.set(key, entry);
+        merged.push(entry);
+    });
+    return merged;
+}
+
 function createPitchGroup(pitchData, reading) {
-    const container = el('div', { className: 'pitch-group', 'data-details': pitchData.dictionary });
-    container.appendChild(el('span', { className: 'pitch-dict-label', textContent: pitchData.dictionary }));
+    const dictionaries = pitchData.dictionaries || [pitchData.dictionary];
+    const container = el('div', { className: 'pitch-group', 'data-details': dictionaries.join(', ') });
+    dictionaries.forEach((dictionary) => {
+        container.appendChild(el('span', { className: 'pitch-dict-label', textContent: dictionary }));
+    });
 
     const list = el('ul', { className: 'pitch-entries' });
     (pitchData.pitchPositions || []).forEach((pitch) => {
@@ -2820,26 +2859,36 @@ function createPitchSection(pitches, reading) {
     const section = el('div', { className: 'category-section pitch-section' });
     const body = el('div', { className: 'category-body' });
     const pitchContainer = el('div', { className: 'pitch-list' });
+    // BUG-2122：**先合并再去重**。反过来（去重在前）时，`deduplicate_pitch_accents`
+    // 默认为 true 的那一档里，第二本同型词典的 `unique` 已经是空数组，整组被丢掉，
+    // 词典来源名随之消失——那正是本 bug 的「一档丢信息」那一半，也是绝大多数用户
+    // 所在的那一档。先合并则 5 本同标 [1] 的词典先并成一组 5 枚药丸，再走去重，
+    // `unique=[1]` 存活，5 个来源全留住。
+    //
+    // 关去重那一档逐字节不变：合并对它本来就是幂等的（原实现也是合并后渲染）。
+    const merged = mergeIdenticalPitchGroups(pitches);
+    const groups = [];
     if (window.deduplicatePitchAccents) {
         const seen = new Set();
-        pitches.forEach(pitch => {
-            const unique = (pitch.pitchPositions || []).filter(pos => !seen.has(pos));
+        merged.forEach(group => {
+            const unique = (group.pitchPositions || []).filter(pos => !seen.has(pos));
             // TODO-688: a group with no unique pitch positions but with IPA
             // transcriptions (Yomitan `ipa`-mode dicts have no pitch positions)
             // must still render, or the transcriptions are silently dropped.
             // Pattern-style accents (79c55c2) likewise keep the group alive.
-            const hasTranscriptions = pitch.transcriptions?.length;
-            const hasPatterns = pitch.patterns?.length;
+            const hasTranscriptions = group.transcriptions?.length;
+            const hasPatterns = group.patterns?.length;
             if (unique.length > 0 || hasTranscriptions || hasPatterns) {
                 unique.forEach(pos => seen.add(pos));
-                pitchContainer.appendChild(createPitchGroup(
-                    { dictionary: pitch.dictionary, pitchPositions: unique, patterns: pitch.patterns, transcriptions: pitch.transcriptions },
-                    reading));
+                // 保留合并出来的 `dictionaries`，只把位置换成去重后的那份。
+                groups.push(Object.assign({}, group, { pitchPositions: unique }));
             }
         });
     } else {
-        pitches.forEach(pitch => pitchContainer.appendChild(createPitchGroup(pitch, reading)));
+        merged.forEach(group => groups.push(group));
     }
+    groups.forEach(
+        group => pitchContainer.appendChild(createPitchGroup(group, reading)));
     body.appendChild(pitchContainer);
     section.appendChild(body);
     return section;

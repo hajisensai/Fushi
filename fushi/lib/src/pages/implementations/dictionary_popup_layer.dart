@@ -272,6 +272,27 @@ double resolveAutoFitPopupHeight({
   return desired.clamp(minHeight, maxHeight).toDouble();
 }
 
+/// 根 Overlay 左上角在**屏幕（`localToGlobal` 根坐标）**里的位置。
+///
+/// mixin 家族（video / 首页词典 / texthooker / 网页视频）把查词浮层插进根 Overlay，
+/// 再用 [FushiAppUiScaleNeutralizer] 中和回净缩放 1；选区矩形则来自被点字符的
+/// `localToGlobal`。两者只有在根 Overlay 原点与屏幕原点重合时才同系。Windows 上
+/// `FushiWindowsTitleBar` 把整个导航器（含根 Overlay）压在一条 32 逻辑像素的自绘
+/// 标题栏之下（main.dart），根 Overlay 原点就比屏幕原点低一个标题栏：浮层按
+/// 「屏幕 rect」摆到 Overlay 坐标里，整栈集体下移 32px，贴在被查词上方的弹窗底边
+/// 正好压进词里。中和层的原点与根 Overlay 原点重合（FittedBox 左上对齐、净缩放 1），
+/// 故屏幕 rect 减去本偏移即中和层坐标——一处换算覆盖首层 / 嵌套 / 搜索占位全部入口，
+/// 不需要各宿主逐个 `globalToLocal`。
+///
+/// 无根 Overlay（纯逻辑测试 / 独立窗口）或尚未布局时返回 [Offset.zero]，行为与历史
+/// 逐字节一致。
+Offset rootOverlayScreenOrigin(BuildContext context) {
+  final OverlayState? overlay = Overlay.maybeOf(context, rootOverlay: true);
+  final RenderObject? box = overlay?.context.findRenderObject();
+  if (box is! RenderBox || !box.hasSize || !box.attached) return Offset.zero;
+  return box.localToGlobal(Offset.zero);
+}
+
 /// Phase B 拖拽尺寸（2026-07-15）— 把贴词算出的 [anchored] rect 的**原点钉回**
 /// [topLeft]（拖拽起始时那张卡的左上角），只保留其尺寸并夹住不越出屏幕（右下不出界）。
 ///

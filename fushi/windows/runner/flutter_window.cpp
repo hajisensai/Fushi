@@ -28,6 +28,7 @@
 #include "audio_loopback_capture.h"
 #include "voice_hook_reader.h"
 #include "foreground_selection.h"
+#include "global_mouse_trigger.h"
 #include "ime_space_dispatch.h"
 #include "window_capture.h"
 #include "window_recorder.h"
@@ -2349,6 +2350,16 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
           win->SetOutsideClickConsumeOwner(reinterpret_cast<HWND>(
               static_cast<uintptr_t>(Int64FromValue(args, "hwnd", 0))));
           result->Success();
+        } else if (method == "setGlobalMouseTrigger") {
+          // TODO-1066 — 全局鼠标侧键触发的注册/注销。**进程级**，与 win / route
+          // 无关（它要在一张卡片都没有的时候生效——那正是它的用途），所以这里
+          // 不碰上面按 target 取到的那个 win。
+          //
+          // 按钮号 0 = 注销，native 侧不留任何 Raw Input 监听（Dart 侧在用户没绑
+          // 侧键时就是推 0，沿用 BUG-1077「不查词不留全局钩子」的纪律）。
+          const bool ok = fushi::SetGlobalMouseTrigger(
+              GetHandle(), IntFromValue(args, "button", 0));
+          result->Success(flutter::EncodableValue(ok));
         } else if (method == "setBlockCapture") {
           // 防截屏（WDA_EXCLUDEFROMCAPTURE）：瞬态查词窗对用户可见但不进截图 /
           // 录屏 / 屏幕共享。GlobalLookupWindow 记住该值，窗口重建后由
@@ -3282,6 +3293,10 @@ bool FlutterWindow::ApplyWindowIcon(const std::wstring& path) {
 }
 
 void FlutterWindow::OnDestroy() {
+  // TODO-1066 — 撤销全局侧键的 Raw Input 登记。登记是绑在**本窗口 HWND** 上的
+  // （RIDEV_INPUTSINK 要求 hwndTarget），HWND 一销毁那条登记就成了悬空目标，
+  // 必须在这里主动摘掉而不是等进程退出兜底。
+  fushi::SetGlobalMouseTrigger(nullptr, fushi::kGlobalMouseTriggerNone);
   // Attached surface callbacks invoke gal_hook_text_channel_; tear the HWND and
   // its follow timer down while the Flutter messenger is still alive.
   attached_text_surface_window_.reset();
@@ -3476,6 +3491,18 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
     //   WM_THEMECHANGED — 经典主题切换。
     // 收到后通知 Dart 重新取系统色（refreshSystemPalette），随后 **不消费** 消息、
     // 落到下面 Win32Window::MessageHandler 走默认处理，保持既有其它消息分支语义不变。
+    case WM_INPUT:
+      // TODO-1066 — 全局鼠标侧键触发（Raw Input + RIDEV_INPUTSINK，见
+      // global_mouse_trigger.h 里"为什么不用 WH_MOUSE_LL"）。只在用户真绑了侧键
+      // 时才有注册，没绑时 HandleGlobalMouseTriggerRawInput 第一行就返回 false。
+      //
+      // **必须 break 而不是 return**：WM_INPUT 要交给 DefWindowProc 做清理。
+      if (fushi::HandleGlobalMouseTriggerRawInput(lparam) &&
+          global_lookup_channel_ != nullptr) {
+        global_lookup_channel_->InvokeMethod(
+            "globalMouseTrigger", std::make_unique<flutter::EncodableValue>());
+      }
+      break;
     case WM_DWMCOLORIZATIONCOLORCHANGED:
     case WM_THEMECHANGED:
       NotifySystemColorChanged();
