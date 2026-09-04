@@ -4,6 +4,11 @@
 // WS_VISIBLE、GW_OWNER 取的是 CreateWindowEx 的 hWndParent（对 WS_POPUP 即 owner）、
 // 隐藏 owner 不影响 owned 窗口的可见性——都只有系统自己能作证。窗口全部放到屏幕外并以
 // WS_EX_NOACTIVATE / SW_SHOWNOACTIVATE 显示，跑测试时不会在开发机桌面上闪窗、不抢焦点。
+// CI 走 `--config Release`，MSVC 在该配置下定义 NDEBUG，裸 assert 会被整条编译掉。
+// 本文件用 Expect() 计数而不是 assert，但守卫要求这条不变式对所有原生测试一致成立，
+// 免得后来者往里加 assert 时静默失效。守卫：tests/assert_liveness_guard_test.py
+#undef NDEBUG
+
 #include "game_main_window.h"
 
 #include <cstdio>
