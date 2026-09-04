@@ -33,7 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-2118](bugs/BUG-2118-gal-kirikiri2-early-exporter-probe-poisons-export-table.md) | ✅ | ✅ | 早注入时 exe 直取 TVPGetFunctionExporter 先于引擎静态构造把导出表灌满又被清空致所有插件链接失败 |
+| [BUG-2118](bugs/BUG-2118-gal-kirikiri2-exporter-called-before-static-init.md) | ✅ | ✅ | 启动期过早调用 TVPGetFunctionExporter 抢在引擎静态构造之前，导出表随后被构造函数重置致插件链接全失败 |
 | [BUG-2116](bugs/BUG-2116-gal-classic-kag3-class-patch-invisible-to-instances.md) | ✅ | ✅ | 经典 KAG3 游戏内查词传感器给 TJS 类对象打补丁对实例永远不可见 |
 | [BUG-2115](bugs/BUG-2115-kirikiri-voice-stream-filter-captures-se-bgm.md) | ✅ | ✅ | KiriKiri 资源流语音过滤按裸 .ogg/.opus 后缀把 SE/BGM/脚本当语音并配给旁白 |
 | [BUG-2114](bugs/BUG-2114-kirikiri-direct-route-term-highlight-missing.md) | ✅ | ✅ | KiriKiri 直连路由下被查整词不高亮，只亮点击的单字 |
