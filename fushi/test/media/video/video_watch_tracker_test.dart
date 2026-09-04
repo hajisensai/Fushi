@@ -464,8 +464,7 @@ void main() {
           reason: '跳过的 10000..60000 不在并集里，之后真看到时仍按首看计');
     });
 
-    test('两次采样之间发生的 seek（墙钟走了 1s、位置跳了 10s）判为跳变：不覆盖、不计时',
-        () async {
+    test('两次采样之间发生的 seek（墙钟走了 1s、位置跳了 10s）判为跳变：不覆盖、不计时', () async {
       final _Session s = await _Session.start(_Coverage());
       s.play(fromMs: 0, toMs: 10000, wallMs: 10000);
       // 定时器采样节奏下 seek 不一定恰好有通知：上一采样 10000，1s 后采到 20000。
@@ -511,6 +510,56 @@ void main() {
       expect(cov.saved, '[[0,61000]]');
     });
 
+    test('睡眠唤醒：墙钟跳 8 小时、位置只前进 1.5s → 只记那 1.5s', () async {
+      final _Session s = await _Session.start(_Coverage());
+      s.src.isPlaying = true;
+      s.src.positionMs = 0;
+      s.src.emit();
+      // 合盖睡眠：Flutter 桌面端 S3 唤醒不走 paused，sampler 全程没停。唤醒后
+      // mpv 刚恢复、位置只前进了一点点，而 isContinuousPlaybackAdvance 的容差是
+      // wallMs * rate * 1.25——wallMs 越大越松，恒判「连续」，于是这一窗会按墙钟
+      // 记满 8 小时，还会被 addActiveMs 塞进单个小时桶造出一条跨小时的段。
+      _advanceWall(8 * 60 * 60 * 1000);
+      s.src.positionMs = 1500;
+      s.src.emit();
+      await s.tracker.stop();
+      expect(
+        s.sink.writes.single.durationMs.value,
+        1500,
+        reason: '只有这 1.5s 是真的新看到的内容；没有封顶会记满 8 小时，'
+            '还会被 addActiveMs 塞进单个小时桶造出一条跨小时的段',
+      );
+      expect(s.tracker.debugCoverage.ranges, <(int, int)>[(0, 1500)]);
+    });
+
+    test('网络流卡缓冲十分钟后位置前进 1.2s → 只记那 1.2s', () async {
+      final _Session s = await _Session.start(_Coverage());
+      s.src.isPlaying = true;
+      s.src.positionMs = 0;
+      s.src.emit();
+      _advanceWall(10 * 60 * 1000);
+      s.src.positionMs = 1200;
+      s.src.emit();
+      await s.tracker.stop();
+      expect(s.sink.writes.single.durationMs.value, 1200);
+    });
+
+    test('记账不超过「这段内容按当前倍速播完所需的真实时间」', () async {
+      final _Session s = await _Session.start(_Coverage());
+      s.src.isPlaying = true;
+      s.src.positionMs = 0;
+      s.src.emit();
+      // 墙钟走得比内容多（短暂卡顿 / 机器忙）：位置前进 1600ms，墙钟走了 4000ms。
+      // 按 `wallMs * fresh / advanced` 会记 4000ms——比这段内容本身还长。封顶让
+      // 「时钟收到的记账永远对得上它声称看掉的内容」成为不变式。
+      _advanceWall(4000);
+      s.src.positionMs = 1600;
+      s.src.emit();
+      await s.tracker.stop();
+      expect(s.sink.writes.single.durationMs.value, 1600);
+      expect(s.tracker.debugCoverage.ranges, <(int, int)>[(0, 1600)]);
+    });
+
     test('部分重叠：只按新增比例折算墙钟', () async {
       final _Session s = await _Session.start(_Coverage(initial: '[[0,5000]]'));
       // 一个采样窗口 0..10000 中前 5000 已覆盖 → 记 10000 × 5000/10000 = 5000。
@@ -520,7 +569,8 @@ void main() {
     });
 
     test('本次会话前已整段看过的 cue 不再计字幕字数（字数与时长同律）', () async {
-      final _Session s = await _Session.start(_Coverage(initial: '[[0,10000]]'));
+      final _Session s =
+          await _Session.start(_Coverage(initial: '[[0,10000]]'));
       // 已覆盖的句：0..4000
       s.src
         ..currentCueIndex = 0
@@ -583,8 +633,7 @@ void main() {
       s.src.isPlaying = false;
       s.tick(wallMs: 30000);
       await s.tracker.stop();
-      expect(s.sink.writes, isEmpty,
-          reason: '没有位置推进就没有首次覆盖，不开段不写');
+      expect(s.sink.writes, isEmpty, reason: '没有位置推进就没有首次覆盖，不开段不写');
     });
   });
 }

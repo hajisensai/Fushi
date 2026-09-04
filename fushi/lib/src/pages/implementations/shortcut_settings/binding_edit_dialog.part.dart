@@ -467,6 +467,17 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
   Future<_ConflictResolution?> _showConflictReassignmentDialog(
     ShortcutAction conflict,
   ) async {
+    // 「两者都保留」只在**跨 scope** 撞键时是真选项。
+    //
+    // 同一个 scope 里撞键，解析（`ShortcutRegistry.resolveMouse`）按枚举声明序返回第一个
+    // 命中，枚举序靠后的那个**永远解析不到**——而设置页两处都亮着同一个键，用户无从
+    // 判断哪个是死的。仓库自己的守卫 `shortcut_defaults_test` 对这种状态的失败信息
+    // 原文就是 `the later one is shadowed`。
+    //
+    // 注意 `video` / `manga` / `gamepad` / `universal` / `globalExternal` /
+    // `dictionaryPopup` 六个 scope 的 coactiveScopes **就是它自己**，所以这些 scope 里
+    // 任何撞键都是同 scope 撞键，全都落进这个分支。
+    final bool keepBothResolvable = conflict.scope != widget.action.scope;
     return showAppDialog<_ConflictResolution>(
       context: context,
       builder: (BuildContext ctx) {
@@ -500,11 +511,15 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                     s: conflict.label,
                   ),
                 ),
-                SizedBox(height: tokens.spacing.gap),
-                Text(
-                  t.shortcut_conflict_keep_both_hint,
-                  style: Theme.of(ctx).textTheme.bodySmall,
-                ),
+                // 提示文案说的是「由作用域先后仲裁」——同 scope 时没有这回事，
+                // 连提示带按钮一起收起来，别给用户一个造不出正确结果的选项。
+                if (keepBothResolvable) ...<Widget>[
+                  SizedBox(height: tokens.spacing.gap),
+                  Text(
+                    t.shortcut_conflict_keep_both_hint,
+                    style: Theme.of(ctx).textTheme.bodySmall,
+                  ),
+                ],
               ],
             ),
             footer: Wrap(
@@ -517,12 +532,13 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                   onPressed: () => Navigator.pop(ctx, null),
                   child: Text(t.dialog_cancel),
                 ),
-                adaptiveDialogAction(
-                  context: ctx,
-                  onPressed: () =>
-                      Navigator.pop(ctx, _ConflictResolution.keepBoth),
-                  child: Text(t.shortcut_conflict_keep_both),
-                ),
+                if (keepBothResolvable)
+                  adaptiveDialogAction(
+                    context: ctx,
+                    onPressed: () =>
+                        Navigator.pop(ctx, _ConflictResolution.keepBoth),
+                    child: Text(t.shortcut_conflict_keep_both),
+                  ),
                 adaptiveDialogAction(
                   context: ctx,
                   isDefaultAction: true,
@@ -622,7 +638,10 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
     // 只渲染这个 scope 真正会被消费的通道（见 [ShortcutScope.channels]）：查词弹窗
     // 的词条导航只由弹窗 WebView 的滚轮触发，给它键盘/手柄入口等于制造死绑定。
     // 已有绑定即使通道被关也照常显示（历史快照不隐身，可删）。
-    final Set<ShortcutChannel> channels = widget.action.scope.channels;
+    // **按 action 而不是 scope 取通道**：通道能力是 scope 级声明，个别动作会继承到
+    // 没有派发点的通道（globalContextMenu 的 keyboard/gamepad）。下面 show* 的
+    // isNotEmpty 兜底保留——历史快照里已存在的绑定仍要可见可删。
+    final Set<ShortcutChannel> channels = widget.action.channels;
     final bool showKeyboard =
         channels.contains(ShortcutChannel.keyboard) || _keyboard.isNotEmpty;
     final bool showGamepad =

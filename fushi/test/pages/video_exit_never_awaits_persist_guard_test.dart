@@ -38,11 +38,23 @@ void main() {
         'lib/src/pages/implementations/video_fushi/episode.part.dart',
       ).readAsStringSync(),
     );
-    expect(source, contains('persistInBackground('));
+    // 本地分支与远端分支各一处，两处都必须走后台落库。
     expect(
-      source,
-      isNot(contains('await _persistPosition(')),
-      reason: '换集前 await 落库：连接被毒化时换集按钮 / 剧集列表 / 连播全部卡死',
+      'persistInBackground('.allMatches(source).length,
+      greaterThanOrEqualTo(2),
+      reason: '换集有本地 / 远端两条分支，两条都要不等落库',
     );
+    for (final String awaited in <String>[
+      'await _persistPosition(',
+      // 远端分支此前漏在外面：守卫只查了本地那个符号，用例名却声称覆盖了整个
+      // episode.part，于是远端 await 稳稳地绿着通过。
+      'await _persistRemotePosition(',
+    ]) {
+      expect(
+        source,
+        isNot(contains(awaited)),
+        reason: '换集前 `$awaited` 落库：连接被毒化时换集按钮 / 剧集列表 / 连播全部卡死',
+      );
+    }
   });
 }

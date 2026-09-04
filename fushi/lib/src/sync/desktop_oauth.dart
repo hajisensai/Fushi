@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
-import 'package:flutter/services.dart' show PlatformException;
 import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// Result of a desktop loopback OAuth flow: the authorization [code] plus the
@@ -134,6 +134,21 @@ bool get isDesktopOAuthPlatform =>
 /// loopback port is bound — before the browser launch is awaited — so the UI
 /// can offer copy / reopen / cancel even when the browser never opens
 /// (BUG-2120). Defaults to whatever [DesktopOAuthLaunchObserver.observe]
+/// 通知观察者。**吞掉观察者自己的异常**：它是 UI 代码（`showAppDialog`），一旦抛错
+/// 就会顺着通知点把整条 OAuth 流程带崩、服务器立刻关闭——用户那边表现为「点了登录，
+/// 浏览器开了，然后什么都没发生」。观察者坏了只该丢掉「有个等待对话框」，不该丢掉授权。
+void _notifyLaunchListener(
+  DesktopOAuthLaunchListener? listener,
+  DesktopOAuthLaunch launch,
+) {
+  if (listener == null) return;
+  try {
+    listener(launch);
+  } catch (e, st) {
+    ErrorLogService.instance.log('runDesktopOAuthLoopback.listener', e, st);
+  }
+}
+
 /// scoped in; the backends never pass it themselves. With a listener attached a
 /// failed browser launch is **not** fatal (the user holds the link); without one
 /// it still throws as before.
@@ -164,7 +179,13 @@ Future<DesktopOAuthResult> runDesktopOAuthLoopback({
     Future<bool> openBrowser() async {
       try {
         return await launchUrl(authUrl, mode: LaunchMode.externalApplication);
-      } on PlatformException {
+      } catch (e, st) {
+        // **收所有异常，不只 PlatformException**：MissingPluginException 之类会让
+        // `browserOpened` 以错误完成，而等待对话框是 `browserOpened.then((opened) {...})`
+        // 不带 onError 的——那就是一条无人接管的异步错误。「浏览器没打开」必须是一个
+        // 可展示的状态，不是异常。
+        ErrorLogService.instance
+            .log('runDesktopOAuthLoopback.openBrowser', e, st);
         return false;
       }
     }
@@ -208,20 +229,22 @@ Future<DesktopOAuthResult> runDesktopOAuthLoopback({
       final DesktopOAuthLaunchListener? listener =
           onLaunched ?? DesktopOAuthLaunchObserver._current;
       final Future<bool> opened = openBrowser();
-      listener?.call(DesktopOAuthLaunch(
-        authUrl: authUrl,
-        browserOpened: opened,
-        finished: completer.future
-            .then<void>((_) {}, onError: (Object _, StackTrace __) {}),
-        reopenBrowser: openBrowser,
-        cancel: () {
-          if (completer.isCompleted) return;
-          completer.completeError(SyncAuthError(
-            'Sign-in cancelled by user',
-            kind: SyncAuthFailureKind.cancelled,
+      _notifyLaunchListener(
+          listener,
+          DesktopOAuthLaunch(
+            authUrl: authUrl,
+            browserOpened: opened,
+            finished: completer.future
+                .then<void>((_) {}, onError: (Object _, StackTrace __) {}),
+            reopenBrowser: openBrowser,
+            cancel: () {
+              if (completer.isCompleted) return;
+              completer.completeError(SyncAuthError(
+                'Sign-in cancelled by user',
+                kind: SyncAuthFailureKind.cancelled,
+              ));
+            },
           ));
-        },
-      ));
       if (!await opened && listener == null) {
         throw SyncAuthError('Failed to launch browser for authentication');
       }

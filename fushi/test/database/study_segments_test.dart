@@ -1,6 +1,7 @@
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/stats/stat_facts.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 // v92 统计域重构：study_segments 是学习统计的唯一事实表。本测试锁定 DAO 契约：
@@ -22,21 +23,22 @@ StudySegmentsCompanion _seg(
   int pages = 0,
   int updatedAt = 1000,
   int endAt = 2000,
-}) => StudySegmentsCompanion.insert(
-  uid: uid,
-  deviceId: 'dev',
-  mediaKind: kind,
-  mediaKey: key,
-  title: 'T',
-  startAt: 1000,
-  endAt: endAt,
-  dateKey: dateKey,
-  hour: hour,
-  durationMs: Value(ms),
-  chars: Value(chars),
-  pages: Value(pages),
-  updatedAt: updatedAt,
-);
+}) =>
+    StudySegmentsCompanion.insert(
+      uid: uid,
+      deviceId: 'dev',
+      mediaKind: kind,
+      mediaKey: key,
+      title: 'T',
+      startAt: 1000,
+      endAt: endAt,
+      dateKey: dateKey,
+      hour: hour,
+      durationMs: Value(ms),
+      chars: Value(chars),
+      pages: Value(pages),
+      updatedAt: updatedAt,
+    );
 
 void main() {
   group('用户按日删统计（BUG-2108：时段明细长按删一条）', () {
@@ -62,18 +64,61 @@ void main() {
       };
       expect(rows['a']!.durationMs, 0);
       expect(rows['b']!.chars, 0);
-      expect(rows['a']!.updatedAt, greaterThan(1000), reason: 'LWW 用新 updatedAt 传播');
+      expect(rows['a']!.updatedAt, greaterThan(1000),
+          reason: 'LWW 用新 updatedAt 传播');
       expect(rows['c']!.durationMs, 9000, reason: '不在日集内不动');
       expect(rows['d']!.durationMs, 1000, reason: '别的身份不动');
       expect(rows, hasLength(4), reason: '写零不删行');
     });
 
+    test('写零的段不进 StatFacts：删掉的那条不会以「0 字」原地复活', () async {
+      final FushiDatabase db = await _openDb();
+      await db.upsertStudySegment(
+          _seg('a', kind: 'video', key: 'v1', dateKey: '2026-09-01', ms: 5000));
+      await db.upsertStudySegment(
+          _seg('b', kind: 'video', key: 'v2', dateKey: '2026-09-01', ms: 7000));
+      await db.zeroStudySegmentsOnDays(
+        mediaKind: 'video',
+        mediaKey: 'v1',
+        dateKeys: <String>{'2026-09-01'},
+      );
+
+      final StatFacts facts = await loadStatFacts(db);
+      // 写零而不删行是**同步语义要求**：真删行会被对端旧数据按 LWW 复活。于是过滤
+      // 责任落在读侧——不过滤的话，时段明细里长按删掉的那条会以「0 字」原地回来
+      // （sheet 对任何命中该 dateKey 的 fact 都建 entry，ms==0 走 formatStatChars(0)），
+      // 而且零行还会污染排行 / 热力图等所有吃 StatFacts.daily 的消费方。
+      expect(
+        facts.daily.where((StatFact f) => f.mediaKey == 'v1'),
+        isEmpty,
+        reason: '被删的那条不该再出现在日面',
+      );
+      expect(
+        facts.hourly.where((StatFact f) => f.mediaKey == 'v1'),
+        isEmpty,
+        reason: '小时面同理（热力图气泡）',
+      );
+      expect(
+        facts.daily.where((StatFact f) => f.mediaKey == 'v2').single.ms,
+        7000,
+        reason: '没被删的照常在',
+      );
+    });
+
     test('零行不是「最近看过」：getLatestStudyEndAtByMedia 排除', () async {
       final FushiDatabase db = await _openDb();
       await db.upsertStudySegment(_seg('old',
-          kind: 'video', key: 'v1', dateKey: '2026-09-01', ms: 5000, endAt: 100));
+          kind: 'video',
+          key: 'v1',
+          dateKey: '2026-09-01',
+          ms: 5000,
+          endAt: 100));
       await db.upsertStudySegment(_seg('new',
-          kind: 'video', key: 'v1', dateKey: '2026-09-02', ms: 5000, endAt: 900));
+          kind: 'video',
+          key: 'v1',
+          dateKey: '2026-09-02',
+          ms: 5000,
+          endAt: 900));
       await db.zeroStudySegmentsOnDays(
         mediaKind: 'video',
         mediaKey: 'v1',
@@ -141,7 +186,8 @@ void main() {
       (await db.getStudySegments(
         fromDateKey: '2026-08-15',
         toDateKey: '2026-08-31',
-      )).map((r) => r.uid),
+      ))
+          .map((r) => r.uid),
       <String>['b', 'c'],
     );
     expect((await db.getStudySegments(toDateKey: '2026-08-01')).length, 1);
@@ -162,12 +208,13 @@ void main() {
       (await db.getStudySegmentsForMedia(
         mediaKind: kActivityMediaBook,
         mediaKey: 'b1',
-      )).isEmpty,
+      ))
+          .isEmpty,
       isTrue,
     );
     expect((await db.getStudySegments()).single.uid, 'c', reason: '同名不同身份不连坐');
-    final List<StudySegmentTombstoneRow> tombs = await db
-        .getStudySegmentTombstones();
+    final List<StudySegmentTombstoneRow> tombs =
+        await db.getStudySegmentTombstones();
     expect(tombs.single.mediaKey, 'b1');
     expect(tombs.single.mediaKind, kActivityMediaBook);
   });
@@ -241,8 +288,8 @@ void main() {
         ),
       );
     }
-    final List<(String, String, int)> rows = await db
-        .getGalgameDailySecondsByGame();
+    final List<(String, String, int)> rows =
+        await db.getGalgameDailySecondsByGame();
     expect(rows.toSet(), <(String, String, int)>{
       ('g1', '2026-08-29', 900),
       ('g1', '2026-08-30', 120),

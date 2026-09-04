@@ -77,9 +77,12 @@ class _DesktopOAuthWaitDialogState extends State<DesktopOAuthWaitDialog> {
 
   void _close() {
     if (_closed || !mounted) return;
-    _closed = true;
     final ModalRoute<Object?>? route = ModalRoute.of(context);
+    // **拿不到路由时不能置 _closed**：置了就等于把对话框永久钉死——第二个信号
+    // （done）会被 _closed 挡掉，再没有第二次关闭机会。置位必须发生在真正 pop /
+    // removeRoute 之后。
     if (route == null) return;
+    _closed = true;
     final NavigatorState navigator = Navigator.of(context);
     if (route.isCurrent) {
       navigator.pop();
@@ -130,6 +133,11 @@ class _DesktopOAuthWaitDialogState extends State<DesktopOAuthWaitDialog> {
             if (!didPop) widget.launch.cancel();
           },
           child: AlertDialog(
+            // **必须 scrollable**：AlertDialog 在 `scrollable == false` 时只把 content
+            // 塞进 `Flexible`，没有任何滚动兜底，超高就是 Column 溢出 + 裁切。桌面最小
+            // 窗口 360×480（`desktop_window_placement.dart`）下可用宽约 230px，一条
+            // 440 字符的授权 URL 要折十几行——被裁掉的恰恰是这个对话框存在的唯一理由。
+            scrollable: true,
             title: Text(t.sync_desktop_oauth_waiting_title),
             content: SizedBox(
               width: 440,

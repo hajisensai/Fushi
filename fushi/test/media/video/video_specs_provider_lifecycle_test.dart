@@ -1,6 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import '../../helpers/source_guard.dart';
 
 /// 回归护栏：**别把「别人持有的 ChangeNotifier」从 ChangeNotifierProvider 里返回。**
 ///
@@ -71,10 +75,61 @@ void main() {
     container.read(source).bump();
     container.read(good);
 
-    expect(owner.owned.disposed, isFalse,
-        reason: 'Provider 不接管返回值的生命周期');
+    expect(owner.owned.disposed, isFalse, reason: 'Provider 不接管返回值的生命周期');
     // 仍然是同一个实例，消费方可以安全地 ListenableBuilder 订阅它。
     expect(identical(container.read(good), owner.owned), isTrue);
+  });
+
+  _providerDeclarationGuards();
+}
+
+/// 上面两条钉的是 riverpod 的**机制**，它们不引用 `videoSpecsProvider` 一个字——
+/// 也就是说把产品代码改回 `ChangeNotifierProvider` 它们照样全绿。下面这组才是压在
+/// 产品代码上的判据。
+///
+/// 之所以只能做到源码扫描这一层：`videoSpecsProvider` 读的是
+/// `ref.watch(appProvider).videoSpecsService`，而 `appModel` 是不可替身的重型对象，
+/// 想跑真容器就得起半个 app。源码判据在这里是**最强可落地层**。
+void _providerDeclarationGuards() {
+  group('videoSpecsProvider 的声明形态（产品代码判据）', () {
+    late String src;
+
+    setUpAll(() {
+      src = maskComments(
+        File('lib/src/media/video/video_specs_service.dart').readAsStringSync(),
+      );
+    });
+
+    test('必须是普通 Provider，不能是 ChangeNotifierProvider', () {
+      expect(
+        containsCodeLine(
+            src, 'final videoSpecsProvider = Provider<VideoSpecsService>('),
+        isTrue,
+        reason: 'videoSpecsProvider 必须用普通 Provider 交出 AppModel 持有的实例；'
+            '换成 ChangeNotifierProvider 会在每次 AppModel.notifyListeners() 时把'
+            '那个实例就地 dispose（机制见本文件上面两条）',
+      );
+      expect(
+        src.contains('ChangeNotifierProvider'),
+        isFalse,
+        reason: '本文件里不该出现 ChangeNotifierProvider',
+      );
+    });
+
+    test('服务实例与 db 连接身份绑定，不靠逐条关库路径记得清空', () {
+      final String appModel = maskComments(
+        File('lib/src/models/app_model.dart').readAsStringSync(),
+      );
+      expect(
+        containsCodeLine(appModel,
+            'if (_videoSpecsService == null || !identical(_videoSpecsServiceDb, db)) {'),
+        isTrue,
+        reason: 'videoSpecsService getter 必须比对建立时那个 FushiDatabase 的身份；'
+            '否则 close/reopen 之后（retryInitialise / 数据根迁移 / 切 Profile / '
+            '恢复备份）服务会继续绑着已关闭的连接，读写被 try 吞成 debugPrint，'
+            '静默退化成「每次滚动都重探、永不落库」',
+      );
+    });
   });
 }
 

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/stats/stat_facts.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -172,7 +173,8 @@ class _PeriodDetailSheetBody extends StatefulWidget {
 }
 
 class _PeriodDetailSheetBodyState extends State<_PeriodDetailSheetBody> {
-  late final List<_PeriodEntry> _entries = List<_PeriodEntry>.of(widget.entries);
+  late final List<_PeriodEntry> _entries =
+      List<_PeriodEntry>.of(widget.entries);
 
   StatPeriodDetailResolvers get _resolvers => widget.resolvers;
 
@@ -337,19 +339,27 @@ class _PeriodDetailSheetBodyState extends State<_PeriodDetailSheetBody> {
     final Future<void> Function(String, String)? onTap = _resolvers.onEntryTap;
     final bool canDelete = _resolvers.onEntryDelete != null;
     if (onTap == null && !canDelete) return row;
-    return InkWell(
-      onTap: onTap == null
-          ? null
-          : () {
-              // 先收 sheet 再跳转：sheet 是 modal route，不 pop 会盖住目标页。
-              Navigator.of(context).pop();
-              unawaited(onTap(e.mediaKind, e.mediaKey));
-            },
-      // 移动端长按、桌面端右键都弹删除确认（统计页 tile 同款交互）。
-      onLongPress: canDelete ? () => unawaited(_confirmAndDelete(e)) : null,
-      onSecondaryTap: canDelete ? () => unawaited(_confirmAndDelete(e)) : null,
-      borderRadius: FushiBorderRadius.card,
-      child: row,
+    // 桌面端右键**不能**直接接 `InkWell.onSecondaryTap`（BUG-2111）：那是把鼠标次按钮
+    // 硬绑死，绕过绑定表——用户把任何动作绑到右键，一次按下会同时触发那个动作和这里的
+    // 删除确认。右键的归属统一交给 [ContextMenuTrigger] 仲裁：它按绑定表决定哪个鼠标键
+    // 唤出（默认仍是右键），被别的动作占用时自动让位。InkWell 只留 tap / longPress。
+    return ContextMenuTrigger(
+      onInvoke: canDelete
+          ? contextMenuInvoker(() => unawaited(_confirmAndDelete(e)))
+          : null,
+      child: InkWell(
+        onTap: onTap == null
+            ? null
+            : () {
+                // 先收 sheet 再跳转：sheet 是 modal route，不 pop 会盖住目标页。
+                Navigator.of(context).pop();
+                unawaited(onTap(e.mediaKind, e.mediaKey));
+              },
+        // 移动端长按弹删除确认（统计页 tile 同款交互）；桌面端右键见上。
+        onLongPress: canDelete ? () => unawaited(_confirmAndDelete(e)) : null,
+        borderRadius: FushiBorderRadius.card,
+        child: row,
+      ),
     );
   }
 

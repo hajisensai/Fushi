@@ -273,6 +273,37 @@ void main() {
     });
   });
 
+  group('清晰度短标：原生超宽 vs 裁边', () {
+    String? label(int w, int h) =>
+        VideoStreamFacts(width: w, height: h).resolutionLabel;
+
+    test('原生超宽按短边（21:9 的多出来的是宽，不是清晰度档）', () {
+      // 只按长边会判成 1440p——用户在角标看到 1440p，点进去只有 1080 行像素。
+      expect(label(2560, 1080), '1080p', reason: 'UW-FHD');
+      expect(label(3440, 1440), '1440p', reason: 'UW-QHD');
+      expect(label(5120, 2160), '4K', reason: 'UW-4K');
+      expect(label(2160, 1080), '1080p', reason: '正好 2.0:1');
+    });
+
+    test('2.35:1 裁边仍按长边（短边落不到标准档上）', () {
+      expect(label(1920, 800), '1080p');
+      expect(label(1920, 872), '1080p');
+      expect(label(1280, 534), '720p');
+      // 这一条是窄窗口判据的判例：4096×1716 短边 1716，任何 `>= 1400` 的开区间
+      // 都会把它吞成 1440p。
+      expect(label(4096, 1716), '4K', reason: 'DCI 4K 的 2.39:1 裁边');
+      expect(label(2048, 858), '1080p', reason: 'DCI 2K 的 2.39:1 裁边');
+    });
+
+    test('普通 16:9 与竖屏不受超宽分支影响', () {
+      expect(label(1920, 1080), '1080p');
+      expect(label(2560, 1440), '1440p');
+      expect(label(3840, 2160), '4K');
+      expect(label(1080, 1920), '1080p', reason: '竖屏');
+      expect(label(1440, 2560), '1440p', reason: '竖屏');
+    });
+  });
+
   group('色深从 pix_fmt 推', () {
     test('以 p 结尾无后缀数字 = 8bit', () {
       expect(bitDepthFromPixelFormat('yuv420p'), 8);
@@ -284,6 +315,22 @@ void main() {
       expect(bitDepthFromPixelFormat('yuv420p10le'), 10);
       expect(bitDepthFromPixelFormat('yuv444p12le'), 12);
       expect(bitDepthFromPixelFormat('gbrp10le'), 10);
+    });
+
+    test('pNXX 半平面族按 `p<子采样><位深>` 解，不是「p 后面全是位深」', () {
+      // p010/p012/p016 此前是撞巧对上的（子采样位恰好是 0）；p2xx / p4xx 会被通用
+      // 规则解析成 210~416，详情页显示「色深 210 bit」，而且返回非 null 还会短路掉
+      // 调用方对 bits_per_raw_sample 的回退。
+      expect(bitDepthFromPixelFormat('p010le'), 10, reason: '4:2:0 10bit');
+      expect(bitDepthFromPixelFormat('p016le'), 16);
+      expect(bitDepthFromPixelFormat('p210le'), 10, reason: '4:2:2 10bit');
+      expect(bitDepthFromPixelFormat('p212le'), 12);
+      expect(bitDepthFromPixelFormat('p216le'), 16);
+      expect(bitDepthFromPixelFormat('p410le'), 10, reason: '4:4:4 10bit');
+      expect(bitDepthFromPixelFormat('p412le'), 12);
+      expect(bitDepthFromPixelFormat('p416le'), 16);
+      // 大小端后缀可缺省。
+      expect(bitDepthFromPixelFormat('p010'), 10);
     });
 
     test('不以 p 收尾的格式 → null（回退到 bits_per_raw_sample）', () {
@@ -337,8 +384,8 @@ void main() {
 
     test('缺尺寸 → null', () {
       expect(const VideoStreamFacts().resolutionLabel, isNull);
-      expect(const VideoStreamFacts(width: 0, height: 0).resolutionLabel,
-          isNull);
+      expect(
+          const VideoStreamFacts(width: 0, height: 0).resolutionLabel, isNull);
     });
   });
 

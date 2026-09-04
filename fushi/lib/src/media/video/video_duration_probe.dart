@@ -22,7 +22,8 @@ library;
 import 'dart:convert';
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart' show debugPrint, immutable, visibleForTesting;
+import 'package:flutter/foundation.dart'
+    show debugPrint, immutable, visibleForTesting;
 
 import 'package:fushi/src/media/video/ffmpeg_backend.dart';
 import 'package:fushi/src/media/video/video_dynamic_range.dart';
@@ -170,6 +171,31 @@ class VideoStreamFacts {
     final int? h = height;
     if (w == null || h == null || w <= 0 || h <= 0) return null;
     final int longEdge = math.max(w, h);
+    final int shortEdge = math.min(w, h);
+
+    // 原生超宽片源（21:9 的 2560×1080、3440×1440）：短边正好落在某个标准档高度上，
+    // 多出来的是**宽**，不是清晰度档位。只按长边会把 2560×1080 判成 1440p——用户在
+    // 角标看到 1440p，点进去像素只有 1080 行。
+    //
+    // 与「2.35:1 裁边」的唯一可靠区分点就是这条：裁边片源的短边是非标准值
+    // （1920×800 的那个 800），落不到任何标准档上，于是继续走长边判据。两者的宽高比
+    // 几乎一样（2.40 vs 2.37），靠宽高比分不开。
+    if (longEdge >= shortEdge * 2) {
+      // **必须是标准档高度附近的窄窗口，不能写成 `>=` 阈值**：DCI 4K 的 2.39:1 裁边
+      // 是 4096×1716，短边 1716 会被任何 `>= 1400` 之类的开区间吞成 1440p。窄窗口
+      // 才表达得出「短边恰好落在某个标准档上」这件事。
+      const List<(int, int, String)> nativeUltrawide = <(int, int, String)>[
+        (2100, 2220, '4K'), // 2160
+        (1400, 1480, '1440p'),
+        (1050, 1110, '1080p'),
+        (700, 740, '720p'),
+      ];
+      for (final (int lo, int hi, String label) in nativeUltrawide) {
+        if (shortEdge >= lo && shortEdge <= hi) return label;
+      }
+      // 短边不在任何标准档窗口里 = 裁边，落回下面的长边判据。
+    }
+
     if (longEdge >= 3800) return '4K';
     if (longEdge >= 2500) return '1440p';
     if (longEdge >= 1800) return '1080p';
@@ -521,7 +547,8 @@ List<SubtitleTrackFacts> _subtitleTracksFrom(Object? streams) {
   return List<SubtitleTrackFacts>.unmodifiable(out);
 }
 
-Iterable<Map<String, dynamic>> _streamsOfType(Object? streams, String type) sync* {
+Iterable<Map<String, dynamic>> _streamsOfType(
+    Object? streams, String type) sync* {
   if (streams is! List) return;
   for (final Object? stream in streams) {
     if (stream is! Map<String, dynamic>) continue;
@@ -559,6 +586,19 @@ bool _flagFrom(Map<String, dynamic>? disposition, String key) =>
 int? bitDepthFromPixelFormat(String? pixelFormat) {
   final String? value = _stringFrom(pixelFormat)?.toLowerCase();
   if (value == null) return null;
+  // `pNXX` 半平面族（p010 / p210 / p410 …）的命名是 `p<色度子采样><位深>`，**不是**
+  // 「p 后面全是位深」：`p210le` 是 4:2:2 10-bit，不是 210-bit。必须先按这条更具体的
+  // 规则收口——否则下面的通用规则会把 p210/p212/p216/p410/p412/p416 解析成 210~416，
+  // 详情页显示「色深 210 bit」；更糟的是它返回了非 null，还会短路掉调用方对
+  // `bits_per_raw_sample` 的回退，而正确值就在同一条 JSON 里。
+  // （p010/p012/p016 此前是撞巧对上的：子采样位恰好是 0。）
+  final RegExpMatch? semiPlanar =
+      RegExp(r'^p([024])(\d{2})(?:le|be)?$').firstMatch(value);
+  if (semiPlanar != null) {
+    final int? depth = int.tryParse(semiPlanar.group(2)!);
+    if (depth != null && depth > 0) return depth;
+  }
+
   final RegExpMatch? match = RegExp(r'p(\d+)').firstMatch(value);
   if (match != null) {
     final int? depth = int.tryParse(match.group(1)!);

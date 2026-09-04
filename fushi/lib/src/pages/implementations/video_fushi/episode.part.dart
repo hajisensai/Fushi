@@ -107,7 +107,17 @@ extension _VideoEpisode on _VideoFushiPageState {
     if (_isRemote) {
       final int? curPos = _controller?.positionMs;
       if (curPos != null) {
-        await _persistRemotePosition(widget.bookUid, curPos);
+        // BUG-2119：与本地分支同律，远端换集也不等落库。
+        // `_persistRemotePosition` 里两次 `setPref` 加一次 `updatePosition` 走同一条
+        // 连接，任一次事务 COMMIT 抛错，异常就从这里逃逸——`_loadRemoteEpisode` 永不
+        // 执行、`_currentEpisode` 不推进，互联 / Jellyfin / 流媒体书的换集按钮、剧集
+        // 列表、连播全部失灵，与本地分支此前那条同形。
+        persistInBackground(
+          persist: () => _persistRemotePosition(widget.bookUid, curPos),
+          onPersistError: (Object error, StackTrace stack) => ErrorLogService
+              .instance
+              .log('VideoFushiPage.switchRemoteEpisodePersist', error, stack),
+        );
       }
       _watchTracker?.onEpisodeChanged();
       await _loadRemoteEpisode(index, startIntent: intent);

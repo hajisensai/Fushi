@@ -51,9 +51,19 @@ class _VideoSpecsBadgeStripState extends State<VideoSpecsBadgeStrip> {
     // GridView 复用 element：同一个 widget 位置可能换成另一个文件。
     if (oldWidget.filePath != widget.filePath ||
         oldWidget.service != widget.service) {
+      _unprime(oldWidget.service);
       _prime();
     }
   }
+
+  @override
+  void dispose() {
+    _unprime(widget.service);
+    super.dispose();
+  }
+
+  /// 本 widget 当前持有的路径（已 retain 过的那个），用于换路径 / 卸载时精确撤回。
+  String? _held;
 
   void _prime() {
     final VideoSpecsService? service = widget.service;
@@ -61,7 +71,18 @@ class _VideoSpecsBadgeStripState extends State<VideoSpecsBadgeStrip> {
     if (service == null || path == null || path.isEmpty) return;
     // 流 URL 不是本地文件，ffprobe 探不了，别白起进程。
     if (isProbableStreamUrl(path)) return;
+    service.retain(path);
+    _held = path;
     service.prime(<String>[path]);
+  }
+
+  /// 撤回 [_prime] 的 retain。**必须走 [_held] 而不是当前 `widget.filePath`**：
+  /// didUpdateWidget 里要撤的是**旧**路径，而那时 widget 已经换成新的了。
+  void _unprime(VideoSpecsService? service) {
+    final String? held = _held;
+    if (held == null) return;
+    _held = null;
+    service?.release(held);
   }
 
   @override

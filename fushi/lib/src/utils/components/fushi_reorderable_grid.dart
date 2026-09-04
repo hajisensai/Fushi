@@ -454,9 +454,8 @@ class _FushiReorderableGridState extends State<FushiReorderableGrid> {
     // RawGestureDetector 与其活跃识别器；此处不再重复挂 key。
     return ContextMenuTrigger(
       // 右键菜单改由绑定表决定唤出键（默认仍是右键）；右键被别的动作占用时自动让位。
-      onInvoke: menu == null
-          ? null
-          : (Offset position) => menu(original, position),
+      onInvoke:
+          menu == null ? null : (Offset position) => menu(original, position),
       child: RawGestureDetector(
         behavior: HitTestBehavior.opaque,
         gestures: <Type, GestureRecognizerFactory>{
@@ -468,15 +467,24 @@ class _FushiReorderableGridState extends State<FushiReorderableGrid> {
             () => TapGestureRecognizer(),
             (TapGestureRecognizer instance) {
               final FushiReorderGridActivate? activate = widget.onActivateItem;
-              instance.onTap = activate == null ? null : () => activate(original);
+              instance.onTap =
+                  activate == null ? null : () => activate(original);
             },
           ),
           // 鼠标等精确指针：按下即拖。
           ImmediateMultiDragGestureRecognizer:
               GestureRecognizerFactoryWithHandlers<
                   ImmediateMultiDragGestureRecognizer>(
+            // **必须限主键**：`ContextMenuTrigger` 是 `Listener`，不进手势竞技场、
+            // 按下即弹菜单；而 `MultiDragGestureRecognizer` 没有覆写 `isPointerAllowed`，
+            // 基类默认的 `allowedButtonsFilter` 恒真、任意按钮都接。于是右键按住拖一下
+            // = 菜单弹出 + 背后同时起拖实时重排 + 松手提交一次顺序变更——正是本次改造
+            // 要消灭的双触发形态。改造前右键走 `onSecondaryTapUp`，与 immediate-drag
+            // 在竞技场里互斥，天然不会同时发生。
             () => ImmediateMultiDragGestureRecognizer(
-                supportedDevices: _immediateDragDevices),
+              supportedDevices: _immediateDragDevices,
+              allowedButtonsFilter: (int buttons) => buttons == kPrimaryButton,
+            ),
             (ImmediateMultiDragGestureRecognizer instance) {
               instance.onStart =
                   (Offset position) => _onMouseDragStart(original, position);
@@ -485,17 +493,19 @@ class _FushiReorderableGridState extends State<FushiReorderableGrid> {
           // 触摸屏：长按待命，移动过 slop 起拖，原地松手弹菜单。
           LongPressGestureRecognizer:
               GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
-            () => LongPressGestureRecognizer(supportedDevices: _touchDragDevices),
+            () =>
+                LongPressGestureRecognizer(supportedDevices: _touchDragDevices),
             (LongPressGestureRecognizer instance) {
-              instance.onLongPressStart =
-                  (LongPressStartDetails d) => _touchLongPressStart(original, d);
+              instance.onLongPressStart = (LongPressStartDetails d) =>
+                  _touchLongPressStart(original, d);
               instance.onLongPressMoveUpdate = (LongPressMoveUpdateDetails d) =>
                   _touchLongPressMove(original, d);
               instance.onLongPressEnd =
                   (LongPressEndDetails d) => _touchLongPressEnd(original, d);
               // 系统取消指针（通知栏下拉/来电/切后台）→ 清待命 + 复位拖拽（防幽灵浮层
               // 与下次错序提交）。
-              instance.onLongPressCancel = () => _touchLongPressCancel(original);
+              instance.onLongPressCancel =
+                  () => _touchLongPressCancel(original);
             },
           ),
         },

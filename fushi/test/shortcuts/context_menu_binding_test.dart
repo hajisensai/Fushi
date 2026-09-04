@@ -4,6 +4,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
+import 'package:fushi/src/shortcuts/global_navigation.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
@@ -43,8 +44,8 @@ void main() {
         TargetPlatform.android,
       ]) {
         expect(
-          ShortcutDefaults.forPlatform(platform)[
-                  ShortcutAction.globalContextMenu]!
+          ShortcutDefaults.forPlatform(
+                  platform)[ShortcutAction.globalContextMenu]!
               .mouseBindings,
           contains(const MouseBinding(2)),
           reason: '$platform 默认表丢了右键 → 该平台右键菜单会整个消失',
@@ -118,7 +119,8 @@ void main() {
     test('② 右键绑给视频页动作：视频页让位，书架 / 首页照常弹（快捷键可共用）', () {
       registry.updateBinding(
         ShortcutAction.videoScreenshot,
-        const ShortcutBindingSet(mouseBindings: <MouseBinding>[MouseBinding(2)]),
+        const ShortcutBindingSet(
+            mouseBindings: <MouseBinding>[MouseBinding(2)]),
       );
 
       // 视频页阶梯：video scope 先命中 videoScreenshot → 菜单让位，一次按下只做一件事。
@@ -142,9 +144,7 @@ void main() {
         isTrue,
       );
       expect(
-        registry
-            .bindingsFor(ShortcutAction.globalContextMenu)
-            .mouseBindings,
+        registry.bindingsFor(ShortcutAction.globalContextMenu).mouseBindings,
         contains(const MouseBinding(2)),
       );
     });
@@ -152,7 +152,8 @@ void main() {
     test('③ 菜单改绑中键：中键弹菜单，右键不再弹', () {
       registry.updateBinding(
         ShortcutAction.globalContextMenu,
-        const ShortcutBindingSet(mouseBindings: <MouseBinding>[MouseBinding(1)]),
+        const ShortcutBindingSet(
+            mouseBindings: <MouseBinding>[MouseBinding(1)]),
       );
       expect(
         contextMenuButtonMatches(
@@ -189,7 +190,8 @@ void main() {
       // 漫画页把右键绑给翻页 → 菜单让位（否则一次右键既翻页又弹菜单）。
       registry.updateBinding(
         ShortcutAction.mangaPageForward,
-        const ShortcutBindingSet(mouseBindings: <MouseBinding>[MouseBinding(2)]),
+        const ShortcutBindingSet(
+            mouseBindings: <MouseBinding>[MouseBinding(2)]),
       );
       expect(
         contextMenuButtonNumberMatches(
@@ -283,11 +285,11 @@ void main() {
       expect(hits, isEmpty);
     });
 
-    testWidgets('右键被页面动作占用后不再弹（同一份注册表，判据走阶梯）',
-        (WidgetTester tester) async {
+    testWidgets('右键被页面动作占用后不再弹（同一份注册表，判据走阶梯）', (WidgetTester tester) async {
       registry.updateBinding(
         ShortcutAction.homeFocusSearch,
-        const ShortcutBindingSet(mouseBindings: <MouseBinding>[MouseBinding(2)]),
+        const ShortcutBindingSet(
+            mouseBindings: <MouseBinding>[MouseBinding(2)]),
       );
       final List<Offset> hits = <Offset>[];
       await pumpTrigger(tester, hits: hits, scopeRegistry: registry);
@@ -324,8 +326,7 @@ void main() {
       expect(hits, hasLength(1));
     });
 
-    testWidgets('同一次按下只被认领一次：菜单弹了，外层鼠标绑定就不再派发',
-        (WidgetTester tester) async {
+    testWidgets('同一次按下只被认领一次：菜单弹了，外层鼠标绑定就不再派发', (WidgetTester tester) async {
       final List<Offset> hits = <Offset>[];
       int outerRuns = 0;
       await tester.pumpWidget(
@@ -358,6 +359,36 @@ void main() {
       await pressButton(tester, kSecondaryMouseButton);
       expect(hits, hasLength(1));
       expect(outerRuns, 0, reason: '外层若也派发，就是「一次右键做两件事」的老症状');
+    });
+  });
+
+  group('注册表真的送到了子树', () {
+    // 全 app 唯一安装点是 `wrapWithGlobalNavigation`（global_navigation.dart）。
+    // 把那一层删掉 / 挪到 Navigator 之外，16 处 ContextMenuTrigger 会全部落进
+    // `registry == null` 回退分支 = 逐字退回硬绑右键 = BUG-2111 原样复发，而此前
+    // **没有任何测试会红**：新测试全都是自己 pumpWidget 手搭一棵带 scope 的树。
+    testWidgets('wrapWithGlobalNavigation 把 registry 装进 ShortcutBindingScope',
+        (WidgetTester tester) async {
+      FushiShortcutRegistry? seen;
+      bool built = false;
+      await tester.pumpWidget(MaterialApp(
+        home: wrapWithGlobalNavigation(
+          navigatorKey: GlobalKey<NavigatorState>(),
+          registry: registry,
+          child: Builder(builder: (BuildContext ctx) {
+            built = true;
+            seen = ShortcutBindingScope.maybeOf(ctx);
+            return const SizedBox.shrink();
+          }),
+        ),
+      ));
+      expect(built, isTrue, reason: '子树没建起来，下面的断言会空过');
+      expect(
+        identical(seen, registry),
+        isTrue,
+        reason: 'wrapWithGlobalNavigation 没把注册表装进 ShortcutBindingScope：'
+            '全部 ContextMenuTrigger 会退回硬绑右键（BUG-2111 复发）',
+      );
     });
   });
 
@@ -408,6 +439,77 @@ void main() {
       );
       expect(body.contains('_kMangaMouseLadder'), isTrue,
           reason: '必须用漫画页那条阶梯，页面动作才排在菜单之前');
+    });
+
+    /// 取 `构造名(` 之后**深度 1** 的具名实参名字集合。
+    ///
+    /// 只看深度 1 是关键：`InkWell(child: FushiCard(onSecondaryTap: …))` 里那个
+    /// `onSecondaryTap` 属于内层的 Fushi 组件（它自己走 ContextMenuTrigger），不是
+    /// InkWell 的裸手势入口，不能算 InkWell 头上。
+    Set<String> topLevelArgNames(String source, int openParen) {
+      final Set<String> names = <String>{};
+      int depth = 0;
+      final StringBuffer ident = StringBuffer();
+      for (int i = openParen; i < source.length; i++) {
+        final String c = source[i];
+        if (c == '(' || c == '[' || c == '{') {
+          depth++;
+          ident.clear();
+          continue;
+        }
+        if (c == ')' || c == ']' || c == '}') {
+          depth--;
+          ident.clear();
+          if (depth == 0) break;
+          continue;
+        }
+        if (depth == 1) {
+          if (RegExp(r'[A-Za-z0-9_]').hasMatch(c)) {
+            ident.write(c);
+            continue;
+          }
+          if (c == ':' && ident.isNotEmpty) names.add(ident.toString());
+          ident.clear();
+        }
+      }
+      return names;
+    }
+
+    // Flutter 自带的这三个 widget 是仅有的「裸手势消费次按钮」入口。它们头上一旦出现
+    // onSecondaryTap*，那个物理按钮就被硬绑死、绕过绑定表——正是 BUG-2111 的形态。
+    //
+    // **按目录枚举，不是硬编码路径清单**：原来那条只盯死三个共享卡片文件，于是
+    // `stat_period_detail_sheet.dart` 里新写的 `InkWell(onSecondaryTap: …)` 一个字都
+    // 碰不到（那条同批 PR 引入的裸硬绑就是这么溜进来的）。新文件自动落进扫描面。
+    test('lib/ 里没有任何裸手势 widget 直接消费次按钮', () {
+      const List<String> rawGestureWidgets = <String>[
+        'InkWell(',
+        'InkResponse(',
+        'GestureDetector(',
+      ];
+      final List<String> offenders = <String>[];
+      for (final FileSystemEntity entity
+          in Directory('lib').listSync(recursive: true)) {
+        if (entity is! File || !entity.path.endsWith('.dart')) continue;
+        final String source = stripComments(entity.readAsStringSync());
+        for (final String widget in rawGestureWidgets) {
+          int at = source.indexOf(widget);
+          while (at >= 0) {
+            final Set<String> args =
+                topLevelArgNames(source, at + widget.length - 1);
+            if (args.any((String a) => a.startsWith('onSecondaryTap'))) {
+              offenders.add('${entity.path} -> $widget');
+            }
+            at = source.indexOf(widget, at + widget.length);
+          }
+        }
+      }
+      expect(
+        offenders,
+        isEmpty,
+        reason: '这些地方把鼠标次按钮硬绑死、绕过绑定表 → 右键被别的动作占用时会双触发。'
+            '请改用 ContextMenuTrigger + contextMenuInvoker：${offenders.join(', ')}',
+      );
     });
 
     test('三个共享卡片组件的 onSecondaryTap 参数只经 ContextMenuTrigger 落地', () {

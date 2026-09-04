@@ -29,6 +29,16 @@ import 'package:fushi/src/models/app_model.dart' show appProvider;
 /// 机械盘/网络盘上互相抢寻道，反而更慢，还会跟正在播放的视频抢 IO。
 const int kVideoSpecsProbeConcurrency = 2;
 
+/// 等待队列的容量上限。
+///
+/// 队列是**栈**：最近一次 [VideoSpecsService.prime] 交进来的路径就是用户正在看的
+/// 那一屏，必须最先探。溢出时从**栈底**丢——栈底恰好是最早入队、早已滚出视口的那些，
+/// 丢掉它们没有任何损失（下次滚回去会重新 prime）。
+///
+/// 没有这个上限时，快速下滑几秒就能把几百条早已离屏的路径排进队列，而当前视口排在
+/// 队尾，角标要等前面几百个 ffprobe 跑完才浮出来。
+const int kVideoSpecsQueueCapacity = 256;
+
 /// 取服务实例。生命周期归 `AppModel`（那里懒建、db 关闭时销毁）。
 ///
 /// **必须是普通 [Provider]，不能是 `ChangeNotifierProvider`**：后者会给它返回的
@@ -64,11 +74,19 @@ class VideoSpecsService extends ChangeNotifier {
   final Queue<String> _queue = Queue<String>();
   final Set<String> _queued = <String>{};
 
-  /// 在途探测：路径 → 那一次探测的 Future。队列与详情页直探共用，保证同一文件
-  /// 同时只有一个 ffprobe（见 [_startProbe]）。
+  /// 在途探测：路径 → 那一次探测的 Future。**「已排队」与「正在跑」共用这一张表**，
+  /// 于是同一文件同时只会有一个 ffprobe，也只会有一个 Future 被多方 await（见 [_schedule]）。
   final Map<String, Future<VideoProbeFacts?>> _inFlight =
       <String, Future<VideoProbeFacts?>>{};
 
+  /// 已排队但还没轮到的路径 → 它那一次探测的 completer。出队时交给 [_pump]。
+  final Map<String, Completer<VideoProbeFacts?>> _pending =
+      <String, Completer<VideoProbeFacts?>>{};
+
+  /// 每个路径当前有几个活着的 widget 需要它。见 [retain] / [release]。
+  final Map<String, int> _holds = <String, int>{};
+
+  /// 真正在跑 ffprobe 的个数（**不含**还在栈里等的）。
   int _running = 0;
   bool _disposed = false;
 
@@ -91,7 +109,9 @@ class VideoSpecsService extends ChangeNotifier {
     if (_disposed) return;
     final List<String> unknown = <String>[
       for (final String path in filePaths.toSet())
-        if (path.isNotEmpty && !_cache.containsKey(path) && !_queued.contains(path))
+        if (path.isNotEmpty &&
+            !_cache.containsKey(path) &&
+            !_inFlight.containsKey(path))
           path,
     ];
     if (unknown.isEmpty) return;
@@ -118,11 +138,10 @@ class VideoSpecsService extends ChangeNotifier {
         changed = true;
         continue;
       }
-      // 库里没有、或已过期 → 排队现探。
-      _enqueue(path);
+      // 库里没有、或已过期 → 压进探测栈。
+      unawaited(_schedule(path));
     }
     if (changed) notifyListeners();
-    _pump();
   }
 
   /// 立刻探一个文件并等结果（详情页用：只有一个文件，值得等）。
@@ -132,11 +151,14 @@ class VideoSpecsService extends ChangeNotifier {
     if (filePath.isEmpty) return null;
     if (_cache.containsKey(filePath)) return _cache[filePath];
 
-    // 同一个文件很容易两条路径同时进来：集卡渲染 prime() 把它排进队列，用户紧接着
+    // 同一个文件很容易两条路径同时进来：集卡渲染 prime() 把它排进栈，用户紧接着
     // 打开该集的「媒体信息」弹窗触发 resolve()。共用在途表就只探一次——否则会起第二个
     // ffprobe，正好废掉 kVideoSpecsProbeConcurrency 想守的东西（别跟正在播放的视频抢 IO）。
     final Future<VideoProbeFacts?>? inFlight = _inFlight[filePath];
-    if (inFlight != null) return inFlight;
+    if (inFlight != null) {
+      _bumpToTop(filePath);
+      return inFlight;
+    }
 
     VideoFileSpecRow? row;
     try {
@@ -153,26 +175,118 @@ class VideoSpecsService extends ChangeNotifier {
       return facts;
     }
 
-    return _startProbe(filePath);
+    // **不自己起探测**：压栈顶再等。栈顶意味着下一个空出来的槽就是它的，用户打开的
+    // 那个文件依然最先探；而并发闸门只有 [_pump] 一个执行入口，`kVideoSpecsProbeConcurrency`
+    // 才是真上限。早先这里直接起探测，闸门只管住队列那一半，详情页一开就能有 3 个
+    // ffprobe 同时跑。
+    return _schedule(filePath);
   }
 
-  /// 起一次探测，**同一路径共用同一个 Future**。
+  /// 排一次探测，**同一路径共用同一个 Future**。
   ///
-  /// 队列与详情页的直探都经过这里，所以「一个文件同时被探两次」在结构上不可能发生，
-  /// 而不是靠两处各自记得检查对方的集合。
-  Future<VideoProbeFacts?> _startProbe(String path) {
+  /// 这是**唯一**的探测入口：队列消费与详情页直探都经过它，所以「一个文件同时被探
+  /// 两次」和「并发数越过上限」在结构上不可能发生，而不是靠两处各自记得检查对方的集合。
+  Future<VideoProbeFacts?> _schedule(String path) {
     final Future<VideoProbeFacts?>? existing = _inFlight[path];
-    if (existing != null) return existing;
-    final Future<VideoProbeFacts?> future =
-        _probeAndStore(path).whenComplete(() {
-      // **必须是块体，不能写成 `() => _inFlight.remove(path)`**：
-      // `Map.remove` 返回被移除的值（这里正是这个 future 自己），而
-      // `Future.whenComplete` 的契约是「回调返回 Future 就等它完成」——
-      // 于是 future 等自己，永久挂死。箭头函数会把返回值隐式带出去。
-      _inFlight.remove(path);
-    });
-    _inFlight[path] = future;
-    return future;
+    if (existing != null) {
+      _bumpToTop(path);
+      return existing;
+    }
+    final Completer<VideoProbeFacts?> completer = Completer<VideoProbeFacts?>();
+    _pending[path] = completer;
+    _inFlight[path] = completer.future;
+    _queue.addLast(path);
+    _queued.add(path);
+    while (_queue.length > kVideoSpecsQueueCapacity) {
+      // 栈底 = 最早入队 = 早就滚出视口。丢掉不写缓存（没有得出任何结论），
+      // 于是 isResolved 仍为 false，下次滚回去会重新排。
+      final String dropped = _queue.removeFirst();
+      _queued.remove(dropped);
+      _inFlight.remove(dropped);
+      _pending.remove(dropped)?.complete(null);
+    }
+    _pump();
+    return completer.future;
+  }
+
+  /// 把一个还没轮到的路径提到栈顶（用户又滚回来了，或正好打开了它的详情页）。
+  /// 声明「有一个活着的 widget 正需要这个路径」。与 [release] 成对。
+  ///
+  /// 队列纪律（FIFO 还是 LIFO）本身拿不到「谁在视口里」这个信息，而 widget 的生命
+  /// 周期拿得到，且对两种宿主形状都成立：
+  ///  * 惰性库页（`SliverGrid.builder`）——滚出视口即 dispose，队列自然收敛到当前屏；
+  ///  * 非惰性合集页（`FushiReorderableGrid` 全量构建）——整页关闭才 dispose，于是
+  ///    整季按构建序（= 从上到下）排队，这也正是那一页想要的顺序。
+  ///
+  /// 没有它时，快速下滑几秒就能把几百条早已离屏的路径留在队列里，当前视口排在最后。
+  void retain(String path) {
+    if (path.isEmpty) return;
+    _holds[path] = (_holds[path] ?? 0) + 1;
+  }
+
+  /// 撤回一次 [retain]。最后一个持有者走人、且该路径**还没轮到探测**时把它撤下队列。
+  ///
+  /// 已经在跑的不撤——ffprobe 进程已经起来了，半路丢弃只会浪费掉已付出的开销，
+  /// 而结果本身跨启动有效（落库），下次滚回来直接命中。
+  void release(String path) {
+    if (path.isEmpty) return;
+    final int? held = _holds[path];
+    if (held == null) return;
+    if (held > 1) {
+      _holds[path] = held - 1;
+      return;
+    }
+    _holds.remove(path);
+    if (!_queued.contains(path)) return; // 已在跑 / 已完成
+    _queue.remove(path);
+    _queued.remove(path);
+    _inFlight.remove(path);
+    // 不写 _cache：没有得出任何结论，isResolved 保持 false，下次滚回来会重新排。
+    _pending.remove(path)?.complete(null);
+  }
+
+  void _bumpToTop(String path) {
+    if (!_queued.contains(path)) return; // 已经在跑，无所谓次序
+    _queue.remove(path);
+    _queue.addLast(path);
+  }
+
+  /// 把栈跑到并发上限。每完成一个就再拉一个，不用定时器轮询。
+  void _pump() {
+    while (!_disposed &&
+        _running < kVideoSpecsProbeConcurrency &&
+        _queue.isNotEmpty) {
+      final String path = _queue.removeLast();
+      _queued.remove(path);
+      final Completer<VideoProbeFacts?>? completer = _pending.remove(path);
+      if (completer == null) continue; // 已被溢出丢弃
+
+      // **出队时才复查缓存**：入队到出队之间隔着前面所有排队项，这中间详情页的
+      // resolve() 或别处完全可能已经把它探完写进缓存。不复查就是对同一个文件起
+      // 第二个 ffprobe。
+      if (_cache.containsKey(path)) {
+        _inFlight.remove(path);
+        completer.complete(_cache[path]);
+        continue;
+      }
+
+      _running++;
+      unawaited(() async {
+        VideoProbeFacts? result;
+        try {
+          result = await _probeAndStore(path);
+        } catch (e) {
+          // _probeAndStore 自己已经分层兜住了探测与落库的异常；这里是最后一道，
+          // 保证无论如何都不会有未捕获异步错误，也不会把槽位漏掉。
+          debugPrint('[VideoSpecsService] probe task failed for "$path": $e');
+        } finally {
+          _running--;
+          _inFlight.remove(path);
+          if (!completer.isCompleted) completer.complete(result);
+          _pump();
+        }
+      }());
+    }
   }
 
   /// 等队列与在途探测全部落地。
@@ -197,29 +311,14 @@ class VideoSpecsService extends ChangeNotifier {
   /// 丢弃一个文件的缓存（文件被删/被替换时）。
   Future<void> invalidate(String filePath) async {
     _cache.remove(filePath);
-    await _db.deleteVideoFileSpec(filePath);
-    if (!_disposed) notifyListeners();
-  }
-
-  void _enqueue(String path) {
-    if (_queued.contains(path)) return;
-    _queued.add(path);
-    _queue.add(path);
-  }
-
-  /// 把队列跑到并发上限。每完成一个就再拉一个，不用定时器轮询。
-  void _pump() {
-    while (!_disposed &&
-        _running < kVideoSpecsProbeConcurrency &&
-        _queue.isNotEmpty) {
-      final String path = _queue.removeFirst();
-      _running++;
-      unawaited(_startProbe(path).whenComplete(() {
-        _running--;
-        _queued.remove(path);
-        _pump();
-      }));
+    try {
+      await _db.deleteVideoFileSpec(filePath);
+    } catch (e) {
+      // 与 prime()/resolve() 同理：db 可能已在别处被关掉。内存缓存已经清了，
+      // 库里那行过期就过期，失效判据（大小+修改时刻+字段集版本）下次会兜住。
+      debugPrint('[VideoSpecsService] invalidate failed for "$filePath": $e');
     }
+    if (!_disposed) notifyListeners();
   }
 
   /// 真探一次并落库。
@@ -280,6 +379,13 @@ class VideoSpecsService extends ChangeNotifier {
     _disposed = true;
     _queue.clear();
     _queued.clear();
+    // 还在等的 resolve() 必须收到结果，否则详情页那个 await 永远挂着。
+    for (final Completer<VideoProbeFacts?> c in _pending.values) {
+      if (!c.isCompleted) c.complete(null);
+    }
+    _pending.clear();
+    _inFlight.clear();
+    _holds.clear();
     super.dispose();
   }
 }

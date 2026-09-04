@@ -142,24 +142,35 @@ void main() {
   });
 
   group('isHdrVideoParams 薄壳与归一等价', () {
-    // 直通链路的既有行为不能变（Never break userspace）：逐组比对薄壳与归一结果。
-    const List<(String?, String?)> inputs = <(String?, String?)>[
-      ('bt.2020', 'pq'),
-      ('bt.2020', 'hlg'),
-      ('bt.2020', 'bt.1886'),
-      ('bt.2020', null),
-      ('bt.709', 'pq'),
-      ('bt.709', 'bt.1886'),
-      (null, 'pq'),
-      (null, null),
-      ('', ''),
+    // 直通链路的既有行为不能变（Never break userspace）。
+    //
+    // **期望值必须是字面量**：`isHdrVideoParams` 的实现就是
+    // `dynamicRangeFromMpv(...).isHdr`，拿它俩互相比对是同源恒真——把
+    // `dynamicRangeFromMpv` 改成恒返回 sdr，这一组照样全绿。钉死第三方期望值之后，
+    // 这组同时承住了薄壳等价性**和**归一判据本身。
+    const List<(String?, String?, bool)> inputs = <(String?, String?, bool)>[
+      ('bt.2020', 'pq', true),
+      ('bt.2020', 'hlg', true),
+      ('bt.2020', 'bt.1886', false),
+      ('bt.2020', null, false),
+      ('bt.709', 'pq', false),
+      ('bt.709', 'bt.1886', false),
+      (null, 'pq', false),
+      (null, null, false),
+      ('', '', false),
     ];
 
-    for (final (String? primaries, String? gamma) in inputs) {
-      test('primaries=$primaries gamma=$gamma', () {
+    for (final (String? primaries, String? gamma, bool expected) in inputs) {
+      test('primaries=$primaries gamma=$gamma -> hdr=$expected', () {
+        expect(
+          dynamicRangeFromMpv(primaries: primaries, gamma: gamma).isHdr,
+          expected,
+          reason: '归一判据变了',
+        );
         expect(
           isHdrVideoParams(primaries: primaries, gamma: gamma),
-          dynamicRangeFromMpv(primaries: primaries, gamma: gamma).isHdr,
+          expected,
+          reason: '薄壳与归一判据脱钩了',
         );
       });
     }

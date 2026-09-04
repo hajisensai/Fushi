@@ -48,8 +48,8 @@ bool shouldCountCueDwell({
 }) {
   final int threshold =
       (cueStartMs != null && cueEndMs != null && cueEndMs > cueStartMs)
-      ? math.min(kCueDwellMs, cueEndMs - cueStartMs)
-      : kCueDwellMs;
+          ? math.min(kCueDwellMs, cueEndMs - cueStartMs)
+          : kCueDwellMs;
   return playedMs >= threshold;
 }
 
@@ -96,15 +96,15 @@ class VideoWatchTracker {
     FutureOr<void> Function()? onEpisodeCompleted,
     Future<String?> Function()? loadCoverage,
     Future<void> Function(String json)? saveCoverage,
-  }) : assert(
-         clock.accrual == StudyAccrual.explicit,
-         '视频面时钟必须是显式记账：时长由 tracker 按首次覆盖推入',
-       ),
-       _clock = clock,
-       _markCompleted = markCompleted,
-       _onEpisodeCompleted = onEpisodeCompleted,
-       _loadCoverage = loadCoverage,
-       _saveCoverage = saveCoverage {
+  })  : assert(
+          clock.accrual == StudyAccrual.explicit,
+          '视频面时钟必须是显式记账：时长由 tracker 按首次覆盖推入',
+        ),
+        _clock = clock,
+        _markCompleted = markCompleted,
+        _onEpisodeCompleted = onEpisodeCompleted,
+        _loadCoverage = loadCoverage,
+        _saveCoverage = saveCoverage {
     _clock.onTick = (DateTime _) {
       unawaited(_checkCompletion());
       unawaited(_persistCoverage());
@@ -237,7 +237,28 @@ class VideoWatchTracker {
     final int fresh = _coverage.add(from, pos);
     if (fresh <= 0) return;
     _coverageDirty = true;
-    _clock.addActiveMs((wallMs * fresh) ~/ advanced);
+    // 记账封顶：这段新内容按当前倍速播完本来就只需要 `fresh / rate` 毫秒真实时间，
+    // 记账不可能比它多。
+    //
+    // 没有这条时，采样窗口的墙钟没有任何上界，而 [isContinuousPlaybackAdvance] 的容差
+    // 是 `wallMs * rate * 1.25`——窗口越大越松，恒判「连续」，于是整段墙钟被记成观看
+    // 时长。两条真实路径都会踩到：
+    //  * **合盖睡眠**：Flutter 桌面端 S3 唤醒不走 `paused`（只有 paused/hidden 分支才
+    //    `stop()`），sampler 全程没停；唤醒后位置只前进几百毫秒，墙钟却走了 8 小时；
+    //  * **网络流长时间卡缓冲**：`isPlaying` 仍为 true，位置冻结十分钟后前进 100ms。
+    // 后果不只是数字虚高——`addActiveMs` 会把这些毫秒全塞进单个小时桶，产出一条
+    // `durationMs = 8h` 的段，直接破坏本域「段不跨小时边界」的不变式。
+    //
+    // **不用「窗口超界就整窗丢弃」**：那会误杀「采样被拖慢但内容真的在播」的合法窗口
+    // （位置与墙钟同步推进 10s，本该记 10s）。封顶按内容量结算，两种病态各自收敛到
+    // 它们真正看掉的那点内容，合法窗口分毫不动。
+    final double rate = s.speed > 0 ? s.speed : 1.0;
+    final int credit = math.min(
+      (wallMs * fresh) ~/ advanced,
+      (fresh / rate).round(),
+    );
+    if (credit <= 0) return;
+    _clock.addActiveMs(credit);
   }
 
   Future<void> _persistCoverage() async {

@@ -1,6 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart';
+
+import '../helpers/source_guard.dart';
 
 /// 新手引导 Anki 步骤里的「开启 FSRS」教程。
 ///
@@ -73,5 +77,33 @@ void main() {
       expect(find.text(steps[index].title), findsOneWidget);
     }
     expect(tester.takeException(), isNull);
+  });
+
+  // 上面几条测的都是纯函数 `ankiFsrsTutorialSteps` 与它渲染出来的样子——**它们不关心
+  // 这段教程有没有真的挂进向导**。把 `_buildAnkiStep` 里那段 `OnboardingSectionLabel`
+  // + for 循环整段删掉，上面每一条依旧全绿，而用户永远看不到这段教程；而 Anki 默认
+  // 排程仍是 SM-2，这段教程是用户找到那个开关的唯一出口。
+  //
+  // 只能做到源码扫描这一层：`_buildAnkiStep` 是 `ConsumerState` 的私有方法，pump 它
+  // 要起整个向导页 + AnkiViewModel + Riverpod 容器，代价与收益不成比例。
+  test('FSRS 教程真的挂在向导的 Anki 步里（产品代码判据）', () {
+    final String src = maskComments(
+      File(
+        'lib/src/pages/implementations/onboarding_wizard_page.dart',
+      ).readAsStringSync(),
+    );
+    final String body = methodBody(src, 'Widget _buildAnkiStep() {');
+    for (final String needle in <String>[
+      'ankiFsrsTutorialSteps(',
+      't.onboarding_anki_fsrs_title',
+      'OnboardingTutorialStep(',
+    ]) {
+      expect(
+        body.contains(needle),
+        isTrue,
+        reason: '_buildAnkiStep 里没有 `$needle`：FSRS 教程没挂进向导，'
+            '用户看不到它，而这是打开 FSRS 开关的唯一指引',
+      );
+    }
   });
 }

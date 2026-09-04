@@ -540,6 +540,25 @@ enum ShortcutAction {
   final ShortcutScope scope;
   final String key;
 
+  /// 这个动作**真正有派发点**的通道。
+  ///
+  /// 默认等于 `scope.channels`——绝大多数动作的通道能力就是它所在 scope 的能力。
+  /// 但通道能力是按 scope 声明的，个别动作会因此继承到自己根本没有消费者的通道，
+  /// 于是出现本文件反复警告的那种状态：**设置里能配、按下去什么都不发生**。
+  /// 那比压根没有这个选项更糟——用户会以为是自己配错了。
+  ///
+  /// 这里是**唯一**的收窄处：设置页读它而不是 `scope.channels`，别在对话框里写特例。
+  Set<ShortcutChannel> get channels => switch (this) {
+        // 右键菜单只有鼠标一条路：`ContextMenuTrigger` 只读鼠标通道，键盘兜底
+        // （`global_navigation.dart` 的 `_handleGlobalKey`）只认 globalToggleFullscreen、
+        // 其余一律 ignored，手柄同理。它继承 global 的 keyboard+gamepad 就是两条死通道，
+        // 而 Windows 键盘上有 Menu 键，用户几乎必然会去试着绑一下。
+        ShortcutAction.globalContextMenu => const <ShortcutChannel>{
+            ShortcutChannel.mouse,
+          },
+        _ => scope.channels,
+      };
+
   static ShortcutAction? fromKey(String key) {
     for (final action in values) {
       if (action.key == key) return action;
