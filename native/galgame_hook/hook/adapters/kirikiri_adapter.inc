@@ -5890,12 +5890,60 @@ DWORD ResolveKirikiriEngineMainThreadId() {
 // 时刻在引擎内部（实测落点 tTVPBasicDrawDevice）虚调用一个读成 NULL 的成员指针，
 // 游戏弹 KiriKiri 的 "Fatal Error / Access Violation" (BUG-1724)。
 // 真正的安装改由 RunKirikiriLookupInstallOnMainThread 在主线程接缝上执行。
+// 引擎主线程的消息循环接缝（BUG-2118 第二段，Fate/stay night[Realta Nua] 真机）。
+//
+// RunKirikiriLookupInstallOnMainThread 只能在主线程跑，原来的调用点全是引擎自己在主线程
+// 上调进来的 detour：V2Link（插件链接栈）、TVPCreateIStream 导入桩、内部 TVPCreateStream。
+// 这三条在 KiriKiri2/BCB 上**没有一条在 host 打开查词之后还会再来**：V2Link 只在启动期
+// 插件链接时发生一次（那时 host 还没请求安装）；BCB 分支 hook 的是导出桩，引擎自己开文件
+// 走内部函数不经过它（真机整局 0x40000 从未置位）；内部 TVPCreateStream 只有 MSVC 分支才
+// hook。于是 lookup_install_requested 置上后永远等不到主线程接缝，传感器静默永不安装——
+// 症状与「这个引擎不支持」同形。
+//
+// WH_GETMESSAGE 线程钩子是与引擎构建无关的主线程接缝：钩子过程在主线程从 GetMessage 返回
+// 时执行，装/卸都允许在别的线程发起（同进程线程钩子 hMod 传 NULL）。只在有安装请求且
+// bootstrap 尚未开始时挂上，安装一旦启动（或请求撤销）就在钩子过程里自卸，稳态零开销。
+HHOOK g_lookup_main_thread_seam = nullptr;
+volatile LONG g_lookup_main_thread_seam_tid = 0;
+void RunKirikiriLookupInstallOnMainThread();
+
+LRESULT CALLBACK LookupMainThreadSeamProc(int code, WPARAM wparam, LPARAM lparam) {
+  if (code >= 0) {
+    RunKirikiriLookupInstallOnMainThread();
+    const bool done = InterlockedCompareExchange(&g_lookup_bootstrap_state, 0, 0) != 0 ||
+                      InterlockedCompareExchange(&g_lookup_install_requested, 0, 0) == 0;
+    if (done && g_lookup_main_thread_seam != nullptr) {
+      UnhookWindowsHookEx(g_lookup_main_thread_seam);
+      g_lookup_main_thread_seam = nullptr;
+      InterlockedExchange(&g_lookup_main_thread_seam_tid, 0);
+    }
+  }
+  return CallNextHookEx(nullptr, code, wparam, lparam);
+}
+
+void EnsureLookupMainThreadSeam() {
+  if (g_lookup_main_thread_seam != nullptr) return;
+  const DWORD main_tid = ResolveKirikiriEngineMainThreadId();
+  if (main_tid == 0) return;
+  if (InterlockedCompareExchange(&g_lookup_main_thread_seam_tid,
+                                 static_cast<LONG>(main_tid), 0) != 0) {
+    return;  // 另一次轮询已在装
+  }
+  HHOOK seam = SetWindowsHookExW(WH_GETMESSAGE, &LookupMainThreadSeamProc, nullptr, main_tid);
+  if (seam == nullptr) {
+    InterlockedExchange(&g_lookup_main_thread_seam_tid, 0);
+    return;
+  }
+  g_lookup_main_thread_seam = seam;
+}
+
 void PollKirikiriLookupInstall() {
   if (g_stop || g_lookup_exporter == nullptr) return;
   if (!fushi_voice_hook::HasLookupRegion(g_header)) return;
   if (LookupEnabledNow() == 0) return;
   if (InterlockedCompareExchange(&g_lookup_bootstrap_state, 0, 0) != 0) return;
   InterlockedExchange(&g_lookup_install_requested, 1);
+  EnsureLookupMainThreadSeam();
 }
 
 // 主线程接缝上的真正安装。调用点必须是引擎自己在主线程上调进来的 detour

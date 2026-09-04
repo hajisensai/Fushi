@@ -79,6 +79,13 @@ Fate RN 引擎版本（来自用户 7-24 遗留 `krkr.console.log`，UTF-16）�
 
 **Fate RN 启动门（第一个未通过边界）**：库内点卡启动 → injector（staged `voice_hook_runtime/0dd3f669f39926fa/x86`，DLL sha 与本分支 dist 一致 `F75951C3…`）→ `Fate／stay night[Realta Nua] -Fate-.exe` PID 92360 起 → 立刻弹「スクリプトで例外が発生しました EAccessViolation」，主窗从未出现。krkr 控制台日志（游戏目录 `savedata/krkr.console.log` 第 9 个会话，13:45:29）：`Plugins.link("fstat.dll")` 处 `Access Violation(write 0x0)`，EIP 落在 `%TEMP%\krkr_*\fstat.dll` 偏移 `…A111`，与 7-24 用户自己经 Fushi 启动的 8 次完全同形。**相关性**：崩溃会话全部先有 `file://./c/users/wrds/documents/faterealtanua_savedata/ が存在していません`（目录实际存在），经 Fushi 启动 9/9 崩、普通启动 5 次仅 1 崩（那次也带同一「不存在」行）。Fushi 对 KiriKiri2 x86 默认 `auto` → 转区（Locale Emulator）；假说：转区下游戏对 Documents 路径的存在性判定失败 → 存档目录缺失 → `fstat.dll` 链接时写空指针。**下一门**：`galgames.japanese_locale_mode='off'` 已写入 test-root 快照（Fate RN 行），重启隔离实例后再点卡：若主窗出现 → 转区是根因（记 Fushi 侧 auto 判据缺口，另立 BUG）；若仍崩 → 与转区无关，回到 hook 早注入排查。桌面在 13:50 被用户占用，本轮到此。
 
+## 真机门第二轮（2026-09-04 14:40–15:10）：Fate RN 启动门 → BUG-2118
+
+分型（同一 helper 构建 `069a4dee…`）：转区 off 经 Fushi 启动 → 仍崩（injector 命令行无 `--japanese-locale`）→ **LE 证伪**；injector `--launch --no-luna`（只装我们的 DLL）→ 崩；不注入双击 → `TTVPWindowForm` 出现（但没转区时 `xxx.ks を開くことができません` 脚本异常，是 CP932 需求，与 hook 无关）；先起再 `--pid` 晚附着 → 不崩。崩溃时 decdiag=0x02a30000（exe 直取 exporter 0x10000 + BCB 桩钩子已装 0x20000，**0x40000 detour 从未触发**）。`%TEMP%\krkr_*\fstat.dll` RVA 0xA111 反汇编 = tp_stub `TVPGetImportFuncPtr` 两次 `QueryFunctionsByNarrowString` 都失败后的 `mov dword ptr [0], 0`。krkrz `base/win32/PluginImpl.cpp`：`TVPGetFunctionExporter()` 首次调用置 `TVPExportFuncsInit` 并向静态 `TVPExportFuncs` 灌 653 个函数——早注入 worker 在 exe 静态构造前调它，表被灌后又被构造函数清空。
+修复：`TryHookKirikiriVoiceStream()` exe 直取加门 `FindGameMainWindow() != nullptr`。守卫 `find_ungated_exe_exporter_probe` + 3 变异（135/135），CTest 57/57×2。**真机复验通过**（helper x86 `1605249f…`）：Fushi 库内启动（auto 转区）→ `TTVPWindowForm` 出现、无错误框、序章文本正常；decdiag=0x06a20101（exporter 经 V2Link 0x4000000，exe 直取位不再亮）、`luna_active=1`、`text_hooked=1`、`voice_clips=51`。
+
+**第三个边界：查词传感器不装**。`lookup_enabled=1`、`text_writes=8`，但 `lookup_diag` 没有 `sensor_installed`。原因：`RunKirikiriLookupInstallOnMainThread` 只在三条引擎 detour 里被调（V2Link / TVPCreateIStream 导入桩 / 内部 TVPCreateStream），KiriKiri2 BCB 上 host 打开查词之后没有一条会再来（V2Link 只在启动期、BCB 桩整局不触发、内部函数只 MSVC 分支 hook）。修复：`WH_GETMESSAGE` 主线程钩子作与引擎构建无关的接缝（`EnsureLookupMainThreadSeam`，装上即在钩子过程里跑安装、启动后自卸）。构建复验见下一段。
+
 ## 队列其余游戏引擎盘点（静态，未启动）
 
 | 目录 | 引擎 | yaml 条目 | 备注 |
