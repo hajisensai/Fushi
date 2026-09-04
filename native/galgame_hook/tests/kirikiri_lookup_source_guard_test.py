@@ -16,12 +16,19 @@
    进程启动后改不了，做不到运行期开关。v14 用共享内存的 `lookup_enabled` 取代它。
 
 3. 不得往引擎全局类上打 monkey-patch（`global.Layer.drawText` /
-   `global.MessageLayer.processCh`）。这两条是已被运行日志证伪的捕获路径（只有
-   TextRender 命中），而且挂在**全局** Layer 上意味着游戏所有 UI 绘制都要多绕一层
-   ——游戏内渲染下每一毫秒都直接变成掉帧。
+   `global.MessageLayer.processCh`）。在 TJS2 里这种赋值对**任何实例都不可见**：
+   `tTJSNativeClass::CreateNew` 把原生成员逐个注册到每个新实例上、脚本类把类体在新实例
+   上执行一遍（tjsNative.cpp / tjsInterCodeExec.cpp），类对象上的成员既改不了已有实例
+   也不进入以后的实例化——Fate/stay night[Realta Nua] 真机（2026-08-14）挂上后连推 7 句
+   一次都没被调用正是这个语义。所以它不只是"让所有 UI 绘制多绕一层"的性能问题，而是
+   **根本不工作**的死代码。
    唯一豁免：留在 `if(global.fushiLookupProbeMode)` 这个**默认关闭**的探测分支里，
    供换游戏时判断"文本到底走哪条路"。所以这条规则有配套的第二问——那个开关必须默认
    false，否则豁免立刻退化成"全局补丁常驻"。
+   配套的正向规则（`find_classic_sweep_missing`）：经典 KAG3（没有 global.TextRender）
+   的采集面必须以**逐实例**补丁的形式存在——KAGEX 缺席门的 else 里调用
+   `fushiLookupSweepClassicLayers()`，而它逐个给 `kag.fore/back.messages` 的实例赋
+   `layer.drawText`。把 sweep 从 else 里挪走、把门删掉、或把逐实例补丁改回类补丁，都红。
 
 4. 字形层与 `kag.primaryLayer` 的坐标不能假定共享父子链。KAG 的 fore/back 页可以是
    同一窗口根下的兄弟子树；必须分别沿父链累加到**同一个根**，再以两个绝对图层坐标相减。
@@ -46,8 +53,11 @@
    mouseMove 只做一次 identity 基线，leftClick 低频复核后续覆写，且 bitmask 仅在状态变化时发布。
 
 7. **「哪个才是游戏主窗口」只能有一套答案。** `ResolveKirikiriEngineMainThreadId` 必须
-   复用 `lookup_overlay_window.inc` 的 `FindGameMainWindow()`（可见 + 无 owner + 客户区
-   面积最大），不得自带一份「EnumWindows 第一个匹配」。第一个匹配那套是错的：TVP 控制台窗、
+   复用 `FindGameMainWindow()`；判据只活在 `hook/game_main_window.h`（可见 + 客户区面积
+   最大 + 只排除被**可见**窗口 own 的），`lookup_overlay_window.inc` 只许转发不许再抄。
+   「有 owner 就排除」是 BUG-2121 的形状：Borland VCL（KiriKiri2 2.x/BCB）把每个 TForm
+   都建成隐藏 TApplication 窗的 owned window，一刀切排除就一个主窗都选不出，查词安装、
+   exe 直取门、overlay owner 三处静默死掉。不得自带一份「EnumWindows 第一个匹配」。第一个匹配那套是错的：TVP 控制台窗、
    splash、同进程启动器窗，或本模块自己那个 1x1 的 `WS_EX_TOPMOST` `FushiLookupOverlay`
    （EnumWindows 会先枚举到它）都会抢走判定，把别的线程 id 当引擎主线程
    `InterlockedCompareExchange(..., 0)` **一次性**缓存下来，写错永不自愈；此后
@@ -69,9 +79,10 @@ from typing import Iterator
 
 # KAGEX 缺席门：`if(typeof global.TextRender == "Object") { ... } else { ... }`。
 # 经典 KAG3 游戏（Fate/stay night[Realta Nua]、PRETTY×CATION2、フタマタ恋愛）整个
-# global.TextRender 都不存在，逐字几何只从原生 Layer.drawText 经过——全局补丁在**这个
-# else 里**是唯一可行采集面，不是又一条兜底。装了 textrender.dll 的游戏走 if 分支，
-# 一行都不多绕，所以"全局补丁让所有 UI 绘制多绕一层"的代价只落在别无来源的游戏上。
+# global.TextRender 都不存在，逐字几何只从消息层实例的 drawText 经过——else 里必须
+# 调用逐实例 sweep（`fushiLookupSweepClassicLayers()`），而且只能是逐实例：TJS2 的
+# 实例化把成员拷进实例，类对象上的补丁对实例永远不可见（见规则 3）。装了 textrender.dll
+# 的游戏走 if 分支，sweep 以 classic 位为门，一行都不多绕。
 KAGEX_GATE_RE = re.compile(
     r'if\s*\(\s*typeof\s+global\.TextRender\s*==\s*"Object"\s*\)'
 )
@@ -442,21 +453,52 @@ def _classic_fallback_spans(text: str) -> list[tuple[int, int]]:
 def find_global_monkey_patches(source: MaskedSource) -> list[str]:
     """引擎全局类的补丁只允许出现在默认关闭的探测分支里。
 
-    `global.Layer.drawText` 挂上包装之后，游戏**所有** UI 绘制都要多绕一层；游戏内
-    渲染下这直接变成掉帧。所以补丁只允许出现在两处**有门的**位置：
-
-    1. 默认关闭的探测分支（换游戏时数次数用）；
-    2. KAGEX 缺席门的 else——那类游戏没有 global.TextRender，逐字几何只从原生
-       Layer.drawText 经过，不绕就等于游戏内查词整个不存在。
-
-    两处之外的补丁一律红：那是"所有游戏都多绕一层"，代价没有对价。
+    TJS2 的类对象成员赋值对实例永远不可见（模块 docstring 规则 3），所以
+    `global.Layer.drawText = ...` 在生产路径上**不是**"多绕一层"而是根本不工作的
+    死代码。唯一允许的位置是默认关闭的探测分支（换游戏时数次数用——数到 0 本身就是
+    这条语义的自证）。KAGEX 缺席门的 else 曾是第二处豁免，2026-09-04 起取消：那里的
+    采集面必须是逐实例补丁（`find_classic_sweep_missing`）。
     """
-    spans = _probe_block_spans(source.text) + _classic_fallback_spans(source.text)
+    spans = _probe_block_spans(source.text)
     hits: list[str] = []
     for m in GLOBAL_PATCH_RE.finditer(source.text):
         if any(start <= m.start() < end for start, end in spans):
             continue
         hits.append(f"{ADAPTER.name}:{source.line_of(m.start())} {m.group(0)}")
+    return hits
+
+
+# 逐实例补丁的形状：给某个**变量**（实例）而不是 global.Layer 赋 drawText。
+INSTANCE_DRAWTEXT_PATCH_RE = re.compile(
+    r"(?<![\w.])(?!global\.)(\w+)\.drawText\s*=(?!=)\s*function"
+)
+CLASSIC_SWEEP_CALL_RE = re.compile(r"global\.fushiLookupSweepClassicLayers\s*\(\s*\)\s*;")
+
+
+def find_classic_sweep_missing(source: MaskedSource) -> list[str]:
+    """经典 KAG3 采集面必须存在，且必须是逐实例补丁。
+
+    三个缺一不可：
+
+    1. KAGEX 缺席门 `if(typeof global.TextRender == "Object") {...} else {...}` 存在
+       ——门没了就是"所有游戏都跑 classic sweep"或"经典 KAG3 整个没有采集面"。
+    2. else 里调用 `global.fushiLookupSweepClassicLayers();`——sweep 挪出 else 或被删，
+       经典 KAG3 的游戏内查词整个不存在，而症状与"这个引擎不支持"同形，没人会发现。
+    3. 源码里存在逐实例补丁 `<layer>.drawText = function` 且不是 `global.Layer.drawText`
+       ——改回类补丁就是规则 3 里那条永远不工作的死代码。
+    """
+    text = source.text
+    hits: list[str] = []
+    spans = _classic_fallback_spans(text)
+    if not spans:
+        hits.append(f"{ADAPTER.name}: KAGEX 缺席门的 else 区间不存在")
+    elif not any(CLASSIC_SWEEP_CALL_RE.search(text[start:end]) for start, end in spans):
+        hits.append(
+            f"{ADAPTER.name}: KAGEX 缺席门的 else 里没有 "
+            "global.fushiLookupSweepClassicLayers();"
+        )
+    if not INSTANCE_DRAWTEXT_PATCH_RE.search(text):
+        hits.append(f"{ADAPTER.name}: 没有逐实例的 <layer>.drawText = function 补丁")
     return hits
 
 
@@ -1207,9 +1249,12 @@ def find_invalid_lookup_entry_visibility_lifecycle(
     # 两道门必须分开，且顺序固定：kag 无条件等；TextRender 只有**半就绪**（类在、方法
     # 没挂全）才等。把第二道并回第一道会让「完全没有 TextRender」的经典 KAG3 游戏在
     # bootstrap 开头就 return，KAGEX 缺席门的 else 分支随即变成永远走不到的死代码。
+    # kag.addHook **不在**这道门里：它是 KAGEX 系框架的扩展点，经典 KAG3（Fate RN 真机
+    # 实测）没有；写进前置条件同样会让下面的经典分支变成死代码（BUG-2121 第四段，与
+    # TextRender 那条是同一个错误）。两条安装路在 installStage 40 由
+    # fushiLookupInstallKagSeams 分叉。
     readiness_gate = (
-        'if(typeofglobal.kag!="Object"||global.kag===null||'
-        'typeofglobal.kag.addHook!="Object")return;'
+        'if(typeofglobal.kag!="Object"||global.kag===null)return;'
         'if(typeofglobal.TextRender=="Object"&&global.TextRender!==null&&'
         '(typeofglobal.TextRender.render!="Object"||'
         'typeofglobal.TextRender.done!="Object"||'
@@ -1240,16 +1285,17 @@ def find_invalid_lookup_entry_visibility_lifecycle(
         # carrier，仅 stable=false 的 run 边沿补 renderer/getRender 采集桥。
         "38",
         "39",
+        # 40→43：输入接缝安装。两条路（addHook / kag 实例逐个包装）都收在
+        # fushiLookupInstallKagSeams 里，所以中间没有 41/42 这两段——它们过去对应
+        # 四次 addHook 调用中的两次（BUG-2121 第四段）。
         "40",
-        "41",
-        "42",
         "43",
         "50",
     ]
     if install_stages != expected_install_stages:
         violations.append(
             f"{ADAPTER.name}: bootstrap installStage 必须固定为 "
-            "0→10/11→20/21→30/31→35/36/37→38/39→40/41/42/43→50；"
+            "0→10/11→20/21→30/31→35/36/37→38/39→40/43→50；"
             f"实际 {install_stages}"
         )
 
@@ -1611,31 +1657,40 @@ def find_invalid_lookup_entry_visibility_lifecycle(
             continue
         wrapper_ends.append(wrapper_spans[0][1])
 
+    # 40→50 之间必须：调用两路合一的接缝安装器，然后**核实真装上了至少一条**。
+    # 「装了传感器但一条输入接缝都没挂上」= 卡片永远收不到点击，与没装同形，所以那种情况
+    # 必须走 install failed 的 catch 分支留下证据，而不是留个假成功（BUG-2121 第四段）。
     staged_hooks = (
         re.escape("installStage=40;"),
-        re.escape(
-            'global.kag.addHook("leftClick",global.fushiLookupLeftClickHook);'
-        ),
-        re.escape("installStage=41;"),
-        re.escape(
-            'global.kag.addHook("mouseMove",global.fushiLookupMouseMoveHook);'
-        ),
-        re.escape("installStage=42;"),
-        re.escape(
-            'global.kag.addHook("onMouseWheelHook",'
-            "global.fushiLookupMouseWheelHook);"
-        ),
+        re.escape("global.fushiLookupInstallKagSeams();"),
         re.escape("installStage=43;"),
-        re.escape(
-            'global.kag.addHook("keyDown",global.fushiLookupKeyDownHook);'
-        ),
+        re.escape("if(global.fushiLookupKagSeams==0)"),
         re.escape("installStage=50;"),
     )
     if not _matches_once_in_order(bootstrap, staged_hooks):
         violations.append(
-            f"{ADAPTER.name}: installStage 40→50 必须逐个包住 leftClick/mouseMove/"
-            "wheel/keyDown hook 安装"
+            f"{ADAPTER.name}: installStage 40→50 必须调用 fushiLookupInstallKagSeams "
+            "并核实 fushiLookupKagSeams 非空"
         )
+    # 四个 hook 必须都被接缝安装器接进去（哪条路都算），否则等于少挂一路输入。
+    seam_installer = _assigned_tjs_functions(tjs, "fushiLookupInstallKagSeams")
+    if len(seam_installer) != 1:
+        violations.append(
+            f"{ADAPTER.name}: fushiLookupInstallKagSeams 定义数应为 1，"
+            f"实际 {len(seam_installer)}"
+        )
+    else:
+        installer_body = _compact_tjs(seam_installer[0][1])
+        for hook_name in (
+            "fushiLookupLeftClickHook",
+            "fushiLookupMouseMoveHook",
+            "fushiLookupMouseWheelHook",
+            "fushiLookupKeyDownHook",
+        ):
+            if hook_name not in installer_body:
+                violations.append(
+                    f"{ADAPTER.name}: fushiLookupInstallKagSeams 没有接进 {hook_name}"
+                )
 
     bootstrap_stage_note = (
         'global.fushiLookupNoteError("bootstrap.stage",'
@@ -2808,6 +2863,187 @@ def find_engine_calls_on_hook_worker(source: MaskedSource) -> list[str]:
     ]
 
 
+VOICE_STREAM_TRY_ENTRY = "bool TryHookKirikiriVoiceStream() "
+
+
+def find_ungated_exe_exporter_probe(source: MaskedSource) -> list[str]:
+    """exe 直取 `ObtainExporter()` 必须被 `FindGameMainWindow()` 门住（BUG-2118）。
+
+    `TVPGetFunctionExporter()` 第一次被调用时置 `TVPExportFuncsInit` 并把导出函数灌进
+    **静态** `TVPExportFuncs` 哈希表（krkrz base/win32/PluginImpl.cpp，kirikiri2 同构）。
+    CREATE_SUSPENDED 早注入下 worker 比 exe 静态构造函数还早：表先被灌满、再被构造函数清空，
+    而 init 标志已置——之后所有插件 QueryFunctions 查不到，fstat.dll 走 tp_stub 的
+    `*(int*)0 = 0` 故意崩（Fate/stay night[Realta Nua] 真机 9/9 启动即崩）。引擎主窗存在
+    是「静态初始化已完成」的现成信号；主窗出现前只能靠 LoadLibrary→V2Link 路径。
+    """
+    body = _cpp_function_body(source, VOICE_STREAM_TRY_ENTRY)
+    if body is None:
+        return [f"找不到 {VOICE_STREAM_TRY_ENTRY.strip()}"]
+    probe = body.find("ObtainExporter()")
+    if probe < 0:
+        return []
+    gate = body.find("FindGameMainWindow()")
+    if gate < 0 or gate > probe:
+        return [
+            f"{VOICE_STREAM_TRY_ENTRY.strip()} 里 ObtainExporter() 没有被 "
+            "FindGameMainWindow() 门住（早注入会在引擎静态初始化前灌导出表）"
+        ]
+    return []
+
+
+VOICE_STREAM_POLL_RESULT = "return g_voice_installed != 0;"
+EXPORTER_SCAN_ENTRY = "ITVPFunctionExporter* ScanLinkedPluginsForExporter() "
+EXPORTER_SCAN_CALL = "ScanLinkedPluginsForExporter()"
+EXPORTER_SCAN_SHAPE_GATE = "LooksLikeExporter("
+EXPORTER_SCAN_REAL_CALL_GATE = "ExporterAnswersQuery("
+EXPORTER_SCAN_ADOPTED_BIT = "kXAudioDiag2KirikiriExporterScanAdopted"
+EXPORTER_SCAN_RAN_BIT = "kXAudioDiag2KirikiriExporterScanRan"
+EXPORTER_SCAN_PLUGIN_GATE = "kMinPlugins"
+
+# BUG-2121 第四段：`kag.addHook` 是 KAGEX 系框架的扩展点，经典 KAG3 没有。它只能作为
+# **安装手段**出现在 fushiLookupInstallKagSeams 的分叉里，绝不能回到 bootstrap 的前置条件
+# ——那会让整条经典逐实例分支（BUG-2116）变成死代码，且症状与「引擎不支持」同形。
+KAG_SEAM_INSTALLER = "global.fushiLookupInstallKagSeams = function()"
+BOOTSTRAP_PRECONDITION = 'if(typeof global.kag != "Object" || global.kag === null'
+
+
+def find_addhook_in_bootstrap_precondition(source: MaskedSource) -> list[str]:
+    text = _strip_line_comments(source.text)
+    start = text.find(BOOTSTRAP_PRECONDITION)
+    if start < 0:
+        return ["找不到 bootstrap 的 kag 前置条件"]
+    offenders: list[str] = []
+    # 前置条件那一条 if 语句本身（到分号为止）不得提到 addHook。
+    end = text.find(";", start)
+    if end < 0:
+        end = start + 400
+    if "addHook" in text[start:end]:
+        offenders.append(
+            "bootstrap 前置条件里又出现了 kag.addHook：经典 KAG3 没有这个方法，"
+            "整条逐实例分支会变成死代码（BUG-2121）"
+        )
+    if KAG_SEAM_INSTALLER not in text:
+        offenders.append(
+            "缺少 fushiLookupInstallKagSeams：addHook 与逐实例包装的两条安装路必须在这里分叉"
+        )
+    else:
+        installer = text[text.find(KAG_SEAM_INSTALLER):]
+        if 'typeof global.kag.addHook == "Object"' not in installer[:2000]:
+            offenders.append("fushiLookupInstallKagSeams 里没有 addHook 分支")
+        if "fushiLookupWrapKagSeam" not in installer[:4000]:
+            offenders.append(
+                "fushiLookupInstallKagSeams 缺少经典 KAG3 的逐实例包装路（fushiLookupWrapKagSeam）"
+            )
+    return offenders
+
+
+def find_voice_stream_poll_stopping_before_exporter(source: MaskedSource) -> list[str]:
+    """`TryHookKirikiriVoiceStream` 的返回值必须是「exporter 已到手」（BUG-2121 第二段）。
+
+    registry 按返回值决定还轮不轮询。KiriKiri2/BCB 的插件全在 boot 首帧内 link 完，早于
+    worker 装 LoadLibrary hook（Fate/stay night[Realta Nua] 真机：8 个插件同一 tick），V2Link
+    路径永远等不到 exporter；唯一确定的路径是 exe 直取，而它要等主窗（BUG-2118 门）。旧实现
+    装完 LoadLibrary hook 就 `return ll_installed`（恒 true），registry 立刻停轮询，exe 直取只在
+    启动瞬间评估过一次——两条路径一起静默死掉。
+    """
+    body = _cpp_function_body(source, VOICE_STREAM_TRY_ENTRY)
+    if body is None:
+        return [f"找不到 {VOICE_STREAM_TRY_ENTRY.strip()}"]
+    offenders: list[str] = []
+    if re.search(r"return\s+(?:ll_installed|true)\s*;", body):
+        offenders.append(
+            f"{VOICE_STREAM_TRY_ENTRY.strip()} 用「LoadLibrary hook 已装」或恒 true 作返回值："
+            "registry 会停止轮询，exe 直取门再也不会在主窗出现后评估（BUG-2121）"
+        )
+    if VOICE_STREAM_POLL_RESULT not in body:
+        offenders.append(
+            f"{VOICE_STREAM_TRY_ENTRY.strip()} 的返回值不是 g_voice_installed（exporter 是否到手）"
+        )
+    return offenders
+
+
+def find_exporter_scan_not_wired(source: MaskedSource) -> list[str]:
+    """第三条 exporter 路径必须真的接在 ① 落空之后（BUG-2145）。
+
+    KiriKiri2 有一族 build ① 和 ② 同时不可能成立：exe **连导出表都没有**
+    （フタマタ恋愛 Ver1.00 真机：磁盘与运行期导出目录 RVA 都是 0），而插件全在 boot 首帧
+    link 完、早于我们装 LoadLibrary hook。两条路径都是静默 return，症状与「这个引擎不支持
+    游戏内查词」完全同形——所以第三条路径被删掉或被改成"① 成功也扫"都必须红。
+    """
+    body = _cpp_function_body(source, VOICE_STREAM_TRY_ENTRY)
+    if body is None:
+        return [f"找不到 {VOICE_STREAM_TRY_ENTRY.strip()}"]
+    offenders: list[str] = []
+    if EXPORTER_SCAN_CALL not in body:
+        offenders.append(
+            f"{VOICE_STREAM_TRY_ENTRY.strip()} 没有调用 {EXPORTER_SCAN_CALL}："
+            "exe 无导出表且插件早于 hook link 的 KiriKiri2 build 上，两条 exporter 路径"
+            "同时静默落空，整条查词安装路径永远不会被进入（BUG-2145）"
+        )
+        return offenders
+    call_at = body.index(EXPORTER_SCAN_CALL)
+    guard = body[:call_at]
+    if "== nullptr" not in guard:
+        offenders.append(
+            f"{EXPORTER_SCAN_CALL} 的调用没有以「① 落空」为前提："
+            "① 成功时再全量重扫所有插件数据段是不该付的常驻代价（BUG-2145）"
+        )
+    return offenders
+
+
+def find_exporter_adopted_without_real_call(source: MaskedSource) -> list[str]:
+    """候选必须过**真调用**才能采用，形状门只负责收敛（BUG-2145）。
+
+    形状门（首字是可读虚表 + 虚表槽落在 exe 映像内）在真机上把 19 个插件的 28 个公共值
+    收敛到唯一 1 个，但它终究只是形状。把一个形状对而并非 exporter 的对象当成 exporter
+    装上去 = 拿野指针调虚函数，游戏当场崩。唯一站得住的判定是问它一句只有 exporter 答得上
+    的话：`QueryFunctionsByNarrowString` 查一个必然存在的导出名。
+    """
+    body = _cpp_function_body(source, EXPORTER_SCAN_ENTRY)
+    if body is None:
+        return [f"找不到 {EXPORTER_SCAN_ENTRY.strip()}"]
+    offenders: list[str] = []
+    if EXPORTER_SCAN_SHAPE_GATE not in body:
+        offenders.append(
+            f"{EXPORTER_SCAN_ENTRY.strip()} 缺形状门 {EXPORTER_SCAN_SHAPE_GATE}"
+        )
+    if EXPORTER_SCAN_REAL_CALL_GATE not in body:
+        offenders.append(
+            f"{EXPORTER_SCAN_ENTRY.strip()} 缺真调用门 {EXPORTER_SCAN_REAL_CALL_GATE}："
+            "只按形状采用候选 = 拿野指针调虚函数（BUG-2145）"
+        )
+        return offenders
+    if EXPORTER_SCAN_ADOPTED_BIT not in body:
+        offenders.append(
+            f"{EXPORTER_SCAN_ENTRY.strip()} 没有置 {EXPORTER_SCAN_ADOPTED_BIT}："
+            "采用与否必须留证据，否则第三条路径与「没跑过」同形"
+        )
+        return offenders
+    if body.index(EXPORTER_SCAN_REAL_CALL_GATE) > body.index(EXPORTER_SCAN_ADOPTED_BIT):
+        offenders.append(
+            f"{EXPORTER_SCAN_REAL_CALL_GATE} 排在 {EXPORTER_SCAN_ADOPTED_BIT} 之后："
+            "先宣布采用再校验等于没校验（BUG-2145）"
+        )
+    # 本函数被通用启动路径调到，非 KiriKiri 游戏也会走进来（Siglus 真机实测：
+    # xaudiodiag2 曾出现 ScanRan|ScanNoCandidate）。诊断位必须只在真的凑够插件、
+    # 真的做了交集之后才置，否则这三个位在跨引擎读数里就是噪声。
+    if EXPORTER_SCAN_RAN_BIT not in body:
+        offenders.append(f"{EXPORTER_SCAN_ENTRY.strip()} 没有置 {EXPORTER_SCAN_RAN_BIT}")
+        return offenders
+    if EXPORTER_SCAN_PLUGIN_GATE not in body:
+        offenders.append(
+            f"{EXPORTER_SCAN_ENTRY.strip()} 缺插件数门 {EXPORTER_SCAN_PLUGIN_GATE}："
+            "没凑够导出 V2Link 的模块就不算「扫描跑过」"
+        )
+        return offenders
+    if body.index(EXPORTER_SCAN_PLUGIN_GATE) > body.index(EXPORTER_SCAN_RAN_BIT):
+        offenders.append(
+            f"{EXPORTER_SCAN_RAN_BIT} 排在插件数门之前："
+            "非 KiriKiri 进程上也会点亮该位，位的含义与字面不符（BUG-2145）"
+        )
+    return offenders
+
+
 def find_missing_main_thread_identity_check(source: MaskedSource) -> list[str]:
     body = _cpp_function_body(source, MAIN_THREAD_INSTALL_ENTRY)
     if body is None:
@@ -2839,6 +3075,12 @@ def find_missing_main_thread_identity_check(source: MaskedSource) -> list[str]:
 MAIN_THREAD_RESOLVER_ENTRY = "DWORD ResolveKirikiriEngineMainThreadId() "
 SHARED_MAIN_WINDOW_FN = "FindGameMainWindow("
 OVERLAY_WINDOW_INC = ROOT / "hook" / "lookup_overlay_window.inc"
+MAIN_WINDOW_HEADER = ROOT / "hook" / "game_main_window.h"
+# 旧判据的形状：有 owner 就排除。BUG-2121（Fate/stay night[Realta Nua] KiriKiri2 2.31/BCB）：
+# VCL 主窗 TTVPWindowForm 被隐藏 TApplication 窗 own，这一行让它永远不入选。
+BARE_OWNER_EXCLUSION = re.compile(
+    r"GetWindow\s*\(\s*\w+\s*,\s*GW_OWNER\s*\)\s*!=\s*nullptr\s*\)\s*return"
+)
 
 
 def find_divergent_main_window_criteria(source: MaskedSource) -> list[str]:
@@ -2859,21 +3101,49 @@ def find_divergent_main_window_criteria(source: MaskedSource) -> list[str]:
     return offenders
 
 
-def find_unshared_main_window_area_criterion(overlay_source: str) -> list[str]:
-    """共享的那套判据本身必须是「面积最大」，否则统一了也是统一到错的那套。"""
-    text = _strip_line_comments(overlay_source)
+def find_unshared_main_window_area_criterion(header_source: str) -> list[str]:
+    """共享的那套判据本身必须是「可见 + 面积最大 + 只排除被可见窗口 own 的」。
+
+    统一到一套之后它就是唯一真相源：改成第一个匹配、或把 owner 排除改回「有 owner 就排除」
+    （BUG-2121），错的就是全部三处调用方。
+    """
+    text = _strip_line_comments(header_source)
     if "HWND FindGameMainWindow(" not in text:
-        return ["lookup_overlay_window.inc 里没有 FindGameMainWindow()"]
+        return ["game_main_window.h 里没有 FindGameMainWindow()"]
     offenders: list[str] = []
     if not re.search(r"\bbest_area\b", text):
         offenders.append(
-            "FindOverlayOwner 不再按客户区面积挑选：启动器/工具窗口/1x1 overlay "
-            "会被当成游戏主窗口"
+            "主窗判据不再按客户区面积挑选：启动器/工具窗口/1x1 overlay 会被当成游戏主窗口"
         )
-    if not re.search(r"IsWindowVisible\s*\(", text):
-        offenders.append("FindOverlayOwner 少了可见性判据")
+    if not re.search(r"IsWindowVisible\s*\(\s*window\s*\)", text):
+        offenders.append("主窗判据少了可见性判据")
     if not re.search(r"GW_OWNER", text):
-        offenders.append("FindOverlayOwner 少了顶层（无 owner）判据")
+        offenders.append("主窗判据少了 owner 判据：对话框/工具提示/overlay 会抢主窗")
+    if BARE_OWNER_EXCLUSION.search(text):
+        offenders.append(
+            "主窗判据按「有 owner 就排除」：VCL 主窗被隐藏 TApplication 窗 own，"
+            "KiriKiri2/BCB 上一个主窗都选不出（BUG-2121）"
+        )
+    if not re.search(r"IsWindowVisible\s*\(\s*owner\s*\)", text):
+        offenders.append("owner 排除没有以「owner 可见」为条件（BUG-2121）")
+    if not re.search(r"WindowClientArea\s*\(\s*owner\s*\)\s*>\s*0", text):
+        offenders.append(
+            "owner 排除没有以「owner 客户区非空」为条件：老 VCL 的 TApplication 窗可见但 0x0，"
+            "只看可见还是把主窗排掉（BUG-2121，Fate RN 实测）"
+        )
+    return offenders
+
+
+def find_main_window_criteria_copied_into_overlay(overlay_source: str) -> list[str]:
+    """lookup_overlay_window.inc 只许转发到共享头，不许再抄一份判据。"""
+    text = _strip_line_comments(overlay_source)
+    if "fushi_voice_hook::FindGameMainWindow()" not in text:
+        return ["lookup_overlay_window.inc 没有转发到 fushi_voice_hook::FindGameMainWindow()"]
+    offenders: list[str] = []
+    if re.search(r"EnumWindows\s*\(", text) or "GW_OWNER" in text:
+        offenders.append(
+            "lookup_overlay_window.inc 里又抄了一份主窗判据：同概念两套答案"
+        )
     return offenders
 
 
@@ -2920,10 +3190,21 @@ class RealAdapterTest(unittest.TestCase):
         self.assertEqual(
             [],
             find_unshared_main_window_area_criterion(
+                MAIN_WINDOW_HEADER.read_text(encoding="utf-8")
+            ),
+            "统一到 FindGameMainWindow 之后，game_main_window.h 里的「可见 + 面积最大 + "
+            "只排除被可见窗口 own」判据就是唯一真相源，不能被悄悄改成第一个匹配或"
+            "「有 owner 就排除」（BUG-2121）",
+        )
+
+    def test_overlay_inc_forwards_main_window_lookup(self) -> None:
+        self.assertEqual(
+            [],
+            find_main_window_criteria_copied_into_overlay(
                 OVERLAY_WINDOW_INC.read_text(encoding="utf-8")
             ),
-            "统一到 FindGameMainWindow 之后，它本身的「可见 + 无 owner + 面积最大」"
-            "判据就是唯一真相源，不能被悄悄改成第一个匹配",
+            "lookup_overlay_window.inc 只许转发到 fushi_voice_hook::FindGameMainWindow()，"
+            "再抄一份判据就又是同概念两套答案",
         )
 
     def test_never_builds_tjs_source_from_dynamic_strings(self) -> None:
@@ -2947,9 +3228,63 @@ class RealAdapterTest(unittest.TestCase):
         self.assertEqual(
             [],
             find_global_monkey_patches(self.source),
-            "global.Layer.drawText / global.MessageLayer.processCh 的全局补丁已被运行"
-            "日志证伪（只有 TextRender 命中）；挂在全局类上会让游戏所有 UI 绘制多绕一层，"
-            "游戏内渲染下直接掉帧。只允许留在默认关闭的探测分支里。",
+            "global.Layer.drawText / global.MessageLayer.processCh 的全局补丁在 TJS2 里"
+            "对实例永远不可见（实例化把成员拷进实例；Fate RN 真机挂上后一次都没被调用）。"
+            "只允许留在默认关闭的探测分支里；经典 KAG3 走逐实例补丁。",
+        )
+
+    def test_exe_direct_exporter_probe_waits_for_engine_main_window(self) -> None:
+        self.assertEqual(
+            [],
+            find_ungated_exe_exporter_probe(self.source),
+            "BUG-2118：早注入下在引擎静态构造前调 TVPGetFunctionExporter 会灌满又清空导出表，"
+            "之后所有插件链接失败（Fate RN 9/9 启动即崩）；exe 直取必须等主窗存在。",
+        )
+
+    def test_bootstrap_precondition_does_not_require_addhook(self) -> None:
+        self.assertEqual(
+            [],
+            find_addhook_in_bootstrap_precondition(self.source),
+            "BUG-2121：kag.addHook 只存在于 KAGEX 系框架；把它写进 bootstrap 前置条件会让"
+            "经典 KAG3（Fate RN 真机实测无 addHook）的整条逐实例分支变成死代码。",
+        )
+
+    def test_voice_stream_poll_continues_until_exporter_obtained(self) -> None:
+        self.assertEqual(
+            [],
+            find_voice_stream_poll_stopping_before_exporter(self.source),
+            "BUG-2121：TryHookKirikiriVoiceStream 必须以 g_voice_installed 作返回值；"
+            "装完 LoadLibrary hook 就返回 true 会让 registry 停轮询，插件先于 hook link 完的 "
+            "KiriKiri2/BCB 上 exe 直取门永远只在主窗出现前评估一次。",
+        )
+
+    def test_exporter_scan_is_wired_after_the_exe_direct_path(self) -> None:
+        self.assertEqual(
+            [],
+            find_exporter_scan_not_wired(self.source),
+            "BUG-2145：exe 无导出表（フタマタ恋愛 Ver1.00 真机：导出目录 RVA=0）且插件早于"
+            "LoadLibrary hook link 时，① 与 ② 同时静默落空；第三条路径缺席就等于经典 KAG3"
+            "整族游戏内查词不存在，且症状与「引擎不支持」同形。",
+        )
+
+    def test_exporter_candidate_is_adopted_only_after_a_real_call(self) -> None:
+        self.assertEqual(
+            [],
+            find_exporter_adopted_without_real_call(self.source),
+            "BUG-2145：形状门只负责把候选收敛到个位数，判定必须是真调用"
+            "（QueryFunctionsByNarrowString 查一个必然存在的导出名）。只按形状采用"
+            "= 拿野指针调虚函数，游戏当场崩。",
+        )
+
+    def test_classic_kag3_capture_is_a_per_instance_sweep_inside_the_gate(
+        self,
+    ) -> None:
+        self.assertEqual(
+            [],
+            find_classic_sweep_missing(self.source),
+            "经典 KAG3（无 textrender.dll）的采集面必须是 KAGEX 缺席门 else 里的"
+            "fushiLookupSweepClassicLayers() + 逐实例 layer.drawText 补丁；缺任何一环，"
+            "Fate RN / フタマタ恋愛 的游戏内查词整个不存在且症状与「引擎不支持」同形。",
         )
 
     def test_probe_branch_is_off_by_default(self) -> None:
@@ -3068,9 +3403,19 @@ if(typeof global.TextRender == "Object")
 }
 else
 {
-	global.fushiLookupOriginalDrawText = global.Layer.drawText;
-	global.Layer.drawText = function(x, y, text) { return 0; };
+	global.fushiLookupClassicSource = global.fushiLookupClassicSource | 1;
+	global.fushiLookupSweepClassicLayers();
 }
+global.fushiLookupPatchClassicLayer = function(layer)
+{
+	layer.fushiLookupOriginalDrawText = layer.drawText;
+	layer.drawText = function(x, y, text) { return 0; } incontextof layer;
+};
+global.fushiLookupSweepClassicLayers = function()
+{
+	if((global.fushiLookupClassicSource & 1) == 0) return 0;
+	return 0;
+};
 global.fushiLookupCapture = function(renderer)
 {
     var entry = global.fushiLookupEntryFor(renderer);
@@ -3083,6 +3428,32 @@ global.fushiLookupCapture = function(renderer)
     }
 };
 )TJS";
+
+// exe 直取 exporter 只在引擎主窗存在后（静态初始化已完成）；之前只靠 V2Link 路径。
+bool TryHookKirikiriVoiceStream() {
+  if (!g_voice_installed && FindGameMainWindow() != nullptr) {
+    ITVPFunctionExporter* exp = ObtainExporter();
+    if (exp == nullptr) exp = ScanLinkedPluginsForExporter();
+    if (exp != nullptr) InstallVoiceStreamHookWithExporter(exp);
+  }
+  return g_voice_installed != 0;
+}
+
+ITVPFunctionExporter* ScanLinkedPluginsForExporter() {
+  if (per_module.size() < fushi_voice_hook::kirikiri_exporter::kMinPlugins) {
+    return nullptr;
+  }
+  SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2KirikiriExporterScanRan);
+  for (size_t i = 0; i < candidates.size(); ++i) {
+    if (!LooksLikeExporter(candidates[i], base, size, &DefaultReadableSpan)) continue;
+    auto* exporter = reinterpret_cast<ITVPFunctionExporter*>(candidates[i]);
+    if (!ExporterAnswersQuery(exporter)) continue;
+    SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2KirikiriExporterScanAdopted);
+    return exporter;
+  }
+  SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2KirikiriExporterScanNoCandidate);
+  return nullptr;
+}
 """
 
 # 干净样本里那条带归属的收卡判据（变异自测的锚点）。
@@ -3244,8 +3615,7 @@ ENTRY_VISIBILITY_LIFECYCLE_CLEAN_SAMPLE = r'''
 static const wchar_t kEntryBootstrap[] = LR"TJS(
 global.fushiLookupBootstrap = function(tick)
 {
-  if(typeof global.kag != "Object" || global.kag === null ||
-    typeof global.kag.addHook != "Object") return;
+  if(typeof global.kag != "Object" || global.kag === null) return;
   if(typeof global.TextRender == "Object" && global.TextRender !== null &&
     (typeof global.TextRender.render != "Object" ||
     typeof global.TextRender.done != "Object" ||
@@ -4062,6 +4432,66 @@ global.fushiLookupMouseMoveHook = function(x, y)
   catch(e) { global.fushiLookupFault(); }
   return false;
 };
+global.fushiLookupKagSeams = 0;
+global.fushiLookupWrapKagSeam = function(name, wrapper)
+{
+  try
+  {
+    if(typeof global.kag[name] != "Object") return false;
+    global.kag["fushiLookupOrig_" + name] = global.kag[name];
+    global.kag[name] = wrapper;
+    return true;
+  }
+  catch(e) { return false; }
+};
+global.fushiLookupInstallKagSeams = function()
+{
+  if(typeof global.kag.addHook == "Object")
+  {
+    global.kag.addHook("leftClick", global.fushiLookupLeftClickHook);
+    global.kag.addHook("mouseMove", global.fushiLookupMouseMoveHook);
+    global.kag.addHook("onMouseWheelHook", global.fushiLookupMouseWheelHook);
+    global.kag.addHook("keyDown", global.fushiLookupKeyDownHook);
+    global.fushiLookupKagSeams = 0x1F;
+    return;
+  }
+  var seams = 0;
+  if(global.fushiLookupWrapKagSeam("onPrimaryClick",
+    function()
+    {
+      var consumed = false;
+      try { consumed = global.fushiLookupLeftClickHook(); }
+      catch(e) { global.fushiLookupFault(); }
+      if(consumed) return true;
+      return (this.fushiLookupOrig_onPrimaryClick incontextof this)(...);
+    } incontextof global.kag)) seams = seams | 0x2;
+  if(global.fushiLookupWrapKagSeam("onMouseMove",
+    function(x, y)
+    {
+      try { global.fushiLookupMouseMoveHook(x, y); }
+      catch(e) { global.fushiLookupFault(); }
+      return (this.fushiLookupOrig_onMouseMove incontextof this)(...);
+    } incontextof global.kag)) seams = seams | 0x4;
+  if(global.fushiLookupWrapKagSeam("onMouseWheel",
+    function(shift, delta, x, y)
+    {
+      var consumed = false;
+      try { consumed = global.fushiLookupMouseWheelHook(shift, delta, x, y); }
+      catch(e) { global.fushiLookupFault(); }
+      if(consumed) return true;
+      return (this.fushiLookupOrig_onMouseWheel incontextof this)(...);
+    } incontextof global.kag)) seams = seams | 0x8;
+  if(global.fushiLookupWrapKagSeam("onKeyDown",
+    function(key, shift)
+    {
+      var consumed = false;
+      try { consumed = global.fushiLookupKeyDownHook(key, shift); }
+      catch(e) { global.fushiLookupFault(); }
+      if(consumed) return true;
+      return (this.fushiLookupOrig_onKeyDown incontextof this)(...);
+    } incontextof global.kag)) seams = seams | 0x10;
+  global.fushiLookupKagSeams = seams;
+};
 
 installStage = 10;
 global.fushiLookupOriginalRender = global.TextRender.render;
@@ -4156,13 +4586,10 @@ if(typeof global.kag.addPlugin == "Object")
 }
 installStage = 39;
 installStage = 40;
-global.kag.addHook("leftClick", global.fushiLookupLeftClickHook);
-installStage = 41;
-global.kag.addHook("mouseMove", global.fushiLookupMouseMoveHook);
-installStage = 42;
-global.kag.addHook("onMouseWheelHook", global.fushiLookupMouseWheelHook);
+global.fushiLookupInstallKagSeams();
 installStage = 43;
-global.kag.addHook("keyDown", global.fushiLookupKeyDownHook);
+if(global.fushiLookupKagSeams == 0)
+  throw new Exception("fushiLookup: no kag input seam available");
 installStage = 50;
 System.removeContinuousHandler(global.fushiLookupBootstrap);
 global.fushiLookupBootstrap = void;
@@ -4247,33 +4674,25 @@ DWORD ResolveKirikiriEngineMainThreadId() {
 }
 """
 
-DIRTY_FIRST_MATCH_OWNER = """
-BOOL CALLBACK FindOverlayOwner(HWND window, LPARAM param) {
-  OwnerSearch* search = reinterpret_cast<OwnerSearch*>(param);
-  DWORD pid = 0;
-  GetWindowThreadProcessId(window, &pid);
-  if (pid != search->pid) return TRUE;
-  if (!IsWindowVisible(window)) return TRUE;
-  if (GetWindow(window, GW_OWNER) != nullptr) return TRUE;
-  search->best = window;
-  return FALSE;
-}
-
-HWND FindGameMainWindow() {
-  OwnerSearch search;
-  EnumWindows(&FindOverlayOwner, reinterpret_cast<LPARAM>(&search));
-  return search.best;
-}
-"""
-
 CLEAN_AREA_OWNER = """
-BOOL CALLBACK FindOverlayOwner(HWND window, LPARAM param) {
-  OwnerSearch* search = reinterpret_cast<OwnerSearch*>(param);
+inline long WindowClientArea(HWND window) {
+  RECT rect = {};
+  if (!GetClientRect(window, &rect)) return 0;
+  return (rect.right - rect.left) * (rect.bottom - rect.top);
+}
+
+inline bool IsOwnedByVisibleWindow(HWND window) {
+  const HWND owner = GetWindow(window, GW_OWNER);
+  return owner != nullptr && IsWindowVisible(owner) && WindowClientArea(owner) > 0;
+}
+
+inline BOOL CALLBACK GameMainWindowEnumProc(HWND window, LPARAM param) {
+  auto* search = reinterpret_cast<GameMainWindowSearch*>(param);
   DWORD pid = 0;
   GetWindowThreadProcessId(window, &pid);
   if (pid != search->pid) return TRUE;
   if (!IsWindowVisible(window)) return TRUE;
-  if (GetWindow(window, GW_OWNER) != nullptr) return TRUE;
+  if (IsOwnedByVisibleWindow(window)) return TRUE;
   RECT rect = {};
   if (!GetClientRect(window, &rect)) return TRUE;
   const long area = (rect.right - rect.left) * (rect.bottom - rect.top);
@@ -4284,6 +4703,55 @@ BOOL CALLBACK FindOverlayOwner(HWND window, LPARAM param) {
   return TRUE;
 }
 
+inline HWND FindGameMainWindow() {
+  GameMainWindowSearch search;
+  EnumWindows(&GameMainWindowEnumProc, reinterpret_cast<LPARAM>(&search));
+  return search.best;
+}
+"""
+
+# 第一个匹配就收工：面积判据没了。
+DIRTY_FIRST_MATCH_OWNER = CLEAN_AREA_OWNER.replace(
+    """  RECT rect = {};
+  if (!GetClientRect(window, &rect)) return TRUE;
+  const long area = (rect.right - rect.left) * (rect.bottom - rect.top);
+  if (area > search->best_area) {
+    search->best_area = area;
+    search->best = window;
+  }
+  return TRUE;""",
+    """  search->best = window;
+  return FALSE;""",
+)
+
+# BUG-2121 的形状：有 owner 就排除，owner 可不可见不问。
+DIRTY_BARE_OWNER_EXCLUSION = CLEAN_AREA_OWNER.replace(
+    """inline bool IsOwnedByVisibleWindow(HWND window) {
+  const HWND owner = GetWindow(window, GW_OWNER);
+  return owner != nullptr && IsWindowVisible(owner) && WindowClientArea(owner) > 0;
+}
+""",
+    "",
+).replace(
+    "  if (IsOwnedByVisibleWindow(window)) return TRUE;",
+    "  if (GetWindow(window, GW_OWNER) != nullptr) return TRUE;",
+)
+
+# BUG-2121 的中间版本：只看 owner 可见——老 VCL 的 TApplication 可见但 0x0，主窗照样被排掉。
+DIRTY_OWNER_VISIBLE_ONLY = CLEAN_AREA_OWNER.replace(
+    "  return owner != nullptr && IsWindowVisible(owner) && WindowClientArea(owner) > 0;",
+    "  return owner != nullptr && IsWindowVisible(owner);",
+)
+
+CLEAN_OVERLAY_FORWARDER = """
+HWND FindGameMainWindow() { return fushi_voice_hook::FindGameMainWindow(); }
+"""
+
+DIRTY_OVERLAY_COPY = """
+BOOL CALLBACK FindOverlayOwner(HWND window, LPARAM param) {
+  if (GetWindow(window, GW_OWNER) != nullptr) return TRUE;
+  return TRUE;
+}
 HWND FindGameMainWindow() {
   OwnerSearch search;
   EnumWindows(&FindOverlayOwner, reinterpret_cast<LPARAM>(&search));
@@ -4364,13 +4832,38 @@ class MutationSelfTest(unittest.TestCase):
         )
 
     def test_first_match_owner_search_is_red(self) -> None:
+        self.assertNotEqual(DIRTY_FIRST_MATCH_OWNER, CLEAN_AREA_OWNER)
         self.assertNotEqual(
             [], find_unshared_main_window_area_criterion(DIRTY_FIRST_MATCH_OWNER)
+        )
+
+    def test_bare_owner_exclusion_is_red(self) -> None:
+        self.assertNotEqual(DIRTY_BARE_OWNER_EXCLUSION, CLEAN_AREA_OWNER)
+        offenders = find_unshared_main_window_area_criterion(DIRTY_BARE_OWNER_EXCLUSION)
+        self.assertTrue(
+            any("BUG-2121" in offender for offender in offenders), offenders
+        )
+
+    def test_owner_visible_only_exclusion_is_red(self) -> None:
+        self.assertNotEqual(DIRTY_OWNER_VISIBLE_ONLY, CLEAN_AREA_OWNER)
+        offenders = find_unshared_main_window_area_criterion(DIRTY_OWNER_VISIBLE_ONLY)
+        self.assertTrue(
+            any("客户区非空" in offender for offender in offenders), offenders
         )
 
     def test_area_owner_search_stays_green(self) -> None:
         self.assertEqual(
             [], find_unshared_main_window_area_criterion(CLEAN_AREA_OWNER)
+        )
+
+    def test_overlay_forwarder_stays_green(self) -> None:
+        self.assertEqual(
+            [], find_main_window_criteria_copied_into_overlay(CLEAN_OVERLAY_FORWARDER)
+        )
+
+    def test_overlay_copy_of_criteria_is_red(self) -> None:
+        self.assertNotEqual(
+            [], find_main_window_criteria_copied_into_overlay(DIRTY_OVERLAY_COPY)
         )
 
     def test_clean_sample_passes_every_rule(self) -> None:
@@ -4381,8 +4874,12 @@ class MutationSelfTest(unittest.TestCase):
         self.assertEqual([], find_unvalidated_placeholder_values(self.clean))
         self.assertEqual([], find_unguarded_bitmap_copies(self.clean))
         self.assertEqual([], find_ownerless_card_dismissals(self.clean))
-        # 干净样本里确实有一个 KAGEX 缺席门 else，否则放行 classic 采集面这条分支
-        # 在自测里根本没被走到（放行规则会变成永远走不到的死代码而无人察觉）。
+        self.assertEqual([], find_classic_sweep_missing(self.clean))
+        self.assertEqual([], find_ungated_exe_exporter_probe(self.clean))
+        # 干净样本里确实有 exe 直取探针，否则 BUG-2118 这条规则在自测里根本没被走到。
+        self.assertIn("ObtainExporter()", CLEAN_SAMPLE)
+        # 干净样本里确实有一个 KAGEX 缺席门 else，否则 classic sweep 的正向规则在自测里
+        # 根本没被走到（规则会变成永远走不到的死代码而无人察觉）。
         self.assertNotEqual([], _classic_fallback_spans(CLEAN_SAMPLE))
         # 干净样本里确实有一次收卡，否则归属这条规则根本没被走到。
         self.assertIsNotNone(_tjs_function_body(CLEAN_SAMPLE, "fushiLookupCapture"))
@@ -4439,7 +4936,12 @@ class MutationSelfTest(unittest.TestCase):
                 'typeof global.kag != "Object"',
                 'typeof global.kag == "undefined"',
             ),
-            ('typeof global.kag.addHook != "Object"', "false"),
+            # kag.addHook 已从前置条件移除（BUG-2121 第四段）；把它加回来必须红。
+            (
+                'if(typeof global.kag != "Object" || global.kag === null) return;',
+                'if(typeof global.kag != "Object" || global.kag === null ||\n'
+                '    typeof global.kag.addHook != "Object") return;',
+            ),
             (
                 'typeof global.TextRender != "Object"',
                 'typeof global.TextRender == "undefined"',
@@ -4457,8 +4959,7 @@ class MutationSelfTest(unittest.TestCase):
 
     def test_bootstrap_readiness_precedes_lookup_state_initialization(self) -> None:
         readiness = (
-            '  if(typeof global.kag != "Object" || global.kag === null ||\n'
-            '    typeof global.kag.addHook != "Object") return;\n'
+            '  if(typeof global.kag != "Object" || global.kag === null) return;\n'
             '  if(typeof global.TextRender == "Object" && '
             'global.TextRender !== null &&\n'
             '    (typeof global.TextRender.render != "Object" ||\n'
@@ -5234,22 +5735,163 @@ class MutationSelfTest(unittest.TestCase):
         )
         self.assertNotEqual([], find_global_monkey_patches(dirty))
 
-    def test_removing_the_kagex_gate_turns_the_classic_patch_red(self) -> None:
+    def test_removing_the_kagex_gate_turns_the_classic_sweep_red(self) -> None:
         # 门被改成恒真（typeof global.TextRender 判据没了）：else 区间随之消失，
-        # 门内补丁立刻落进红区——这正是"别的游戏也跟着多绕一层"那一刻。
+        # sweep 失去了"只在经典 KAG3 才跑"的门——正向规则必须红。
         dirty = self._mutate(
             'if(typeof global.TextRender == "Object")',
             "if(global.fushiLookupAlways)",
         )
         self.assertEqual([], _classic_fallback_spans(dirty.text))
-        self.assertNotEqual([], find_global_monkey_patches(dirty))
+        self.assertNotEqual([], find_classic_sweep_missing(dirty))
 
     def test_gate_without_else_does_not_open_a_span(self) -> None:
         # 只有真正的 else 才代表"这台游戏没有 KAGEX"。把 else 换成新的无条件块，
-        # 区间必须消失，块里的补丁必须红。
+        # 区间必须消失，正向规则必须红。
         dirty = self._mutate("else", "if(1)")
         self.assertEqual([], _classic_fallback_spans(dirty.text))
+        self.assertNotEqual([], find_classic_sweep_missing(dirty))
+
+    def test_global_patch_inside_the_kagex_else_is_red(self) -> None:
+        # 2026-09-04 前 else 里是全局类补丁且被豁免；TJS2 语义证明它对实例永远不可见，
+        # 豁免取消：把 sweep 换回类补丁，规则 3 与正向规则都必须红。
+        dirty = self._mutate(
+            "global.fushiLookupSweepClassicLayers();\n}",
+            "global.Layer.drawText = function(x, y, text) { return 0; };\n}",
+        )
         self.assertNotEqual([], find_global_monkey_patches(dirty))
+        self.assertNotEqual([], find_classic_sweep_missing(dirty))
+
+    def test_sweep_removed_from_the_kagex_else_is_red(self) -> None:
+        # sweep 从 else 里消失（分支只剩置位）：经典 KAG3 的采集面整个不存在，而
+        # 症状与"引擎不支持"同形——必须由守卫而不是真机来发现。
+        dirty = self._mutate(
+            "global.fushiLookupSweepClassicLayers();\n}",
+            "global.fushiLookupClassicSource = global.fushiLookupClassicSource | 16;\n}",
+        )
+        self.assertNotEqual([], find_classic_sweep_missing(dirty))
+
+    def test_instance_patch_degraded_to_class_patch_is_red(self) -> None:
+        # 逐实例补丁改回 global.Layer：规则 3 红（不在探测分支）且正向规则红（没有
+        # 逐实例形状）。
+        dirty = self._mutate(
+            "layer.drawText = function(x, y, text) { return 0; } incontextof layer;",
+            "global.Layer.drawText = function(x, y, text) { return 0; };",
+        )
+        self.assertNotEqual([], find_global_monkey_patches(dirty))
+        self.assertNotEqual([], find_classic_sweep_missing(dirty))
+
+    def test_exe_exporter_probe_without_window_gate_is_red(self) -> None:
+        # 把主窗门拿掉：早注入下 worker 会在引擎静态构造前灌导出表——BUG-2118 原样复活。
+        dirty = self._mutate(
+            "if (!g_voice_installed && FindGameMainWindow() != nullptr) {",
+            "if (!g_voice_installed) {",
+        )
+        self.assertNotEqual([], find_ungated_exe_exporter_probe(dirty))
+
+    def test_exe_exporter_probe_gate_after_probe_is_red(self) -> None:
+        # 门在探针之后不算门：先调了 TVPGetFunctionExporter 再看窗口，表已经被灌过了。
+        dirty = self._mutate(
+            "if (!g_voice_installed && FindGameMainWindow() != nullptr) {\n"
+            "    ITVPFunctionExporter* exp = ObtainExporter();",
+            "if (!g_voice_installed) {\n"
+            "    ITVPFunctionExporter* exp = ObtainExporter();\n"
+            "    if (FindGameMainWindow() == nullptr) return true;",
+        )
+        self.assertNotEqual([], find_ungated_exe_exporter_probe(dirty))
+
+    def test_missing_voice_stream_entry_is_red(self) -> None:
+        # 函数没了（改名/删除）守卫必须红，而不是「没找到就算通过」。
+        dirty = self._mutate(
+            "bool TryHookKirikiriVoiceStream() {",
+            "bool TryHookKirikiriVoiceStreamRenamed() {",
+        )
+        self.assertNotEqual([], find_ungated_exe_exporter_probe(dirty))
+        self.assertNotEqual([], find_voice_stream_poll_stopping_before_exporter(dirty))
+
+    def test_voice_stream_poll_result_stays_green(self) -> None:
+        self.assertEqual([], find_voice_stream_poll_stopping_before_exporter(self.clean))
+
+    def test_voice_stream_returning_loadlibrary_state_is_red(self) -> None:
+        # 旧形状：LoadLibrary hook 装好就 return ll_installed——registry 立刻停轮询（BUG-2121）。
+        dirty = self._mutate(
+            "  return g_voice_installed != 0;\n}",
+            "  return ll_installed;\n}",
+        )
+        self.assertNotEqual([], find_voice_stream_poll_stopping_before_exporter(dirty))
+
+    def test_exporter_scan_stays_green_on_the_clean_sample(self) -> None:
+        self.assertEqual([], find_exporter_scan_not_wired(self.clean))
+        self.assertEqual([], find_exporter_adopted_without_real_call(self.clean))
+
+    def test_dropping_the_third_exporter_path_is_red(self) -> None:
+        # 把第三条路径删掉 = 回到 BUG-2145 的原始形状（两条路径静默落空）。
+        dirty = self._mutate(
+            "    if (exp == nullptr) exp = ScanLinkedPluginsForExporter();\n",
+            "",
+        )
+        self.assertNotEqual([], find_exporter_scan_not_wired(dirty))
+
+    def test_scanning_even_when_the_exe_direct_path_succeeded_is_red(self) -> None:
+        # 去掉「① 落空」前提：每轮轮询都全量重扫所有插件数据段。
+        dirty = self._mutate(
+            "    if (exp == nullptr) exp = ScanLinkedPluginsForExporter();\n",
+            "    exp = ScanLinkedPluginsForExporter();\n",
+        )
+        self.assertNotEqual([], find_exporter_scan_not_wired(dirty))
+
+    def test_adopting_a_candidate_without_the_real_call_is_red(self) -> None:
+        # 删掉真调用门：只按形状采用候选 = 拿野指针调虚函数。
+        dirty = self._mutate(
+            "    if (!ExporterAnswersQuery(exporter)) continue;\n",
+            "",
+        )
+        self.assertNotEqual([], find_exporter_adopted_without_real_call(dirty))
+
+    def test_dropping_the_shape_gate_is_red(self) -> None:
+        dirty = self._mutate(
+            "    if (!LooksLikeExporter(candidates[i], base, size, &DefaultReadableSpan)) continue;\n",
+            "",
+        )
+        self.assertNotEqual([], find_exporter_adopted_without_real_call(dirty))
+
+    def test_scan_ran_bit_before_the_plugin_gate_is_red(self) -> None:
+        # 把插件数门挪到 ScanRan 之后：非 KiriKiri 进程也会点亮该位（Siglus 真机实测过）。
+        dirty = self._mutate(
+            "  if (per_module.size() < fushi_voice_hook::kirikiri_exporter::kMinPlugins) {\n"
+            "    return nullptr;\n"
+            "  }\n"
+            "  SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2KirikiriExporterScanRan);\n",
+            "  SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2KirikiriExporterScanRan);\n"
+            "  if (per_module.size() < fushi_voice_hook::kirikiri_exporter::kMinPlugins) {\n"
+            "    return nullptr;\n"
+            "  }\n",
+        )
+        self.assertNotEqual([], find_exporter_adopted_without_real_call(dirty))
+
+    def test_dropping_the_plugin_gate_is_red(self) -> None:
+        dirty = self._mutate(
+            "  if (per_module.size() < fushi_voice_hook::kirikiri_exporter::kMinPlugins) {\n"
+            "    return nullptr;\n"
+            "  }\n",
+            "",
+        )
+        self.assertNotEqual([], find_exporter_adopted_without_real_call(dirty))
+
+    def test_voice_stream_returning_constant_true_is_red(self) -> None:
+        dirty = self._mutate(
+            "  return g_voice_installed != 0;\n}",
+            "  return true;\n}",
+        )
+        self.assertNotEqual([], find_voice_stream_poll_stopping_before_exporter(dirty))
+
+    def test_instance_patch_definition_alone_is_not_enough(self) -> None:
+        # 只留逐实例补丁函数、删掉 sweep 调用：正向规则仍然红——定义了没人调用等于没有。
+        dirty = self._mutate(
+            "\tglobal.fushiLookupSweepClassicLayers();\n",
+            "",
+        )
+        self.assertNotEqual([], find_classic_sweep_missing(dirty))
 
     def test_unrelated_string_concatenation_stays_green(self) -> None:
         # 反向变异：非 TJS 语句里加更多字符串拼接，守卫必须仍然绿（否则它一改就红）。

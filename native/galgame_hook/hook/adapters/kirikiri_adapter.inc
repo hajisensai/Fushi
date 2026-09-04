@@ -789,8 +789,12 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 		// 静默跳过包装器，却仍安装鼠标 hook、移除 continuous handler，之后整局都不会
 		// 再得到逐字符几何（registry 永远为 0，且因为没有异常也不会置 SensorFault）。
 		// 未就绪时只返回并保留 handler，下一帧继续观察真实生命周期，不用 sleep/盲重试。
-		if(typeof global.kag != "Object" || global.kag === null ||
-			typeof global.kag.addHook != "Object") return;
+		// 前置条件只认 `kag` 这个真实生命周期信号。**不要**再把 `kag.addHook` 加回来：
+		// 它是 KAGEX 系框架的扩展点，经典 KAG3（Fate/stay night[Realta Nua] 的 KAG 3.25
+		// TYPE-MOON customized 真机实测）根本没有，写在这里就是把下面整条经典分支变成死
+		// 代码，且症状与「这个引擎不支持」同形（BUG-2121 第四段）。输入接缝的两条路由
+		// fushiLookupInstallKagSeams 在 installStage 40 分叉。
+		if(typeof global.kag != "Object" || global.kag === null) return;
 		// TextRender **半就绪**（类已在、三个方法还没挂全）必须继续等——那正是上面说的
 		// 早注入窗口。但"完全没有 TextRender"是**另一回事**：经典 KAG3 游戏（没装
 		// textrender.dll）永远等不到它，在这里一并 return 就等于把下面的 KAGEX 缺席门
@@ -2005,6 +2009,9 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			{
 				global.fushiLookupInstallGetRenderBridge();
 				global.fushiLookupSweepMsgwinRenders();
+				// classic KAG3：numMessageLayers 变化新建的消息层在这之后才存在；非 classic
+				// 游戏里这一步以位 0 为门，零开销。
+				global.fushiLookupSweepClassicLayers();
 				global.fushiLookupAuditWrappers(true);
 			};
 
@@ -2894,6 +2901,24 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					if(h <= 0) return;
 					var entry = global.fushiLookupEntryFor(layer);
 					var glyphs = entry.glyphs;
+					// 影/边重绘去重：KAG3 一个字可能连画多次（先影后本体、或描边的多个偏移），
+					// 同一字在上一字形 ±4px 内再来一次就是同一个字，不是下一个字——放进
+					// 「回到左上 = 换屏」判据前面，否则本体 (x,y) 落在影 (x+2,y+2) 的左上方会被
+					// 误判成清屏，整行永远只剩最后一个字。合并时把字形钉到最小 x/y（本体在影
+					// 的左上），包围盒同步收进来。
+					if(glyphs.count > 0 && text.length == 1)
+					{
+						var prev = glyphs[glyphs.count - 1];
+						var dx = x - prev.x, dy = y - prev.y;
+						if(prev.ch == text && dx >= -4 && dx <= 4 && dy >= -4 && dy <= 4)
+						{
+							if(x < prev.x) prev.x = x;
+							if(y < prev.y) prev.y = y;
+							if(prev.x < entry.minX) entry.minX = prev.x;
+							if(prev.y < entry.minY) entry.minY = prev.y;
+							return;
+						}
+					}
 					var restart = glyphs.count == 0;
 					if(!restart)
 					{
@@ -2969,6 +2994,70 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					global.fushiLookupClassicSource = global.fushiLookupClassicSource | 4;
 				}
 				catch(e) {}
+			};
+
+)TJS" LR"TJS(
+
+			// 给**一个**消息层实例挂 classic 采集包装。返回 true = 本次真挂上了。
+			// 为什么必须逐实例而不是改类，见 KAGEX 缺席门 else 分支的注释（TJS2 实例化把
+			// 成员拷进实例，类对象上的赋值对实例永远不可见）。幂等：实例上留标记，重扫零开销。
+			// 包装用 incontextof 钉死实例，原方法先跑、采集只做不抛出的 sidecar。
+			global.fushiLookupPatchClassicLayer = function(layer)
+			{
+				if(layer === void || layer === null || !isvalid layer) return false;
+				if(typeof layer.fushiLookupClassicPatched != "undefined") return false;
+				if(typeof layer.fushiLookupIgnore != "undefined") return false;
+				if(typeof layer.drawText != "Object") return false;
+				layer.fushiLookupOriginalDrawText = layer.drawText;
+				layer.drawText = function(x, y, text, color, opacity, antialiased)
+				{
+					var result = (this.fushiLookupOriginalDrawText incontextof this)(...);
+					global.fushiLookupCaptureDrawText(this, x, y, text);
+					return result;
+				} incontextof layer;
+				// processCh 是 KAG3 MessageLayer 的脚本方法（不是每个 Layer 都有）；同样只作
+				// 「字走不走这里」的自证位，不产出几何。
+				if(typeof layer.processCh == "Object")
+				{
+					layer.fushiLookupOriginalProcessCh = layer.processCh;
+					layer.processCh = function(ch, steptime)
+					{
+						var result = (this.fushiLookupOriginalProcessCh incontextof this)(...);
+						global.fushiLookupCaptureProcessCh(this, ch);
+						return result;
+					} incontextof layer;
+				}
+				layer.fushiLookupClassicPatched = 1;
+				return true;
+			};
+
+			// 扫 fore/back 两页的全部消息层并补挂。只在 classic 采集面启用（位 0）时工作，
+			// KAGEX 游戏一行不跑。安装时跑一次；之后由 fushiLookupRefreshCaptureBridges 在
+			// KAG stable 边沿重扫——numMessageLayers 变化新建的层就在那之后出现。
+			// 位 3 = 至少挂上过一个实例（与位 0「分支跑到」分开：分支跑到但一个层都没挂上
+			// 说明 kag.fore.messages 结构不是标准 KAG3，真机上要能一眼分出这两种失败）。
+			global.fushiLookupSweepClassicLayers = function()
+			{
+				if((global.fushiLookupClassicSource & 1) == 0) return 0;
+				var patched = 0;
+				for(var page = 1; page <= 2; page++)
+				{
+					var messages = global.fushiLookupMessagesForPage(page);
+					if(messages === void || messages === null) continue;
+					var count = 0;
+					try { count = messages.count; } catch(e) { continue; }
+					for(var i = 0; i < count; i++)
+					{
+						try
+						{
+							if(global.fushiLookupPatchClassicLayer(messages[i])) patched++;
+						}
+						catch(e) { global.fushiLookupFault(); }
+					}
+				}
+				if(patched > 0)
+					global.fushiLookupClassicSource = global.fushiLookupClassicSource | 8;
+				return patched;
 			};
 
 			// Freeze the KAG message slot while drawCh is actually executing.  A later
@@ -3550,6 +3639,91 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				catch(e) { global.fushiLookupFault(); }
 				return false;
 			};
+
+)TJS" LR"TJS(
+
+			// 输入接缝安装：**两条路，不是一条**（BUG-2121 第四段，Fate/stay night[Realta Nua]
+			// 真机 KAG 3.25 TYPE-MOON customized 实测 kag.addHook 不存在）。
+			//
+			// `kag.addHook(name, func)` 是带 textrender/KAGEX 那一系框架才有的钩子链。经典
+			// KAG3 的 kag 只是个普通 KAGWindow 实例，没有这个方法。旧实现把
+			// `typeof global.kag.addHook != "Object"` 当成**整个 bootstrap 的前置条件**（排在
+			// KAGEX 缺席门之前），于是经典 KAG3 上这个函数每帧都在第一行 return——BUG-2116 那套
+			// 逐实例采集补丁连一次都没执行过，是死代码。症状与「这个引擎不支持」完全同形：
+			// fushiLookupNotify 不存在、控制台既无 "sensor installed" 也无 "install failed"。
+			//
+			// 经典分支的等价接缝是 kag 实例自己的事件方法。为什么是**实例**成员：TJS2 的类不是
+			// 原型链，类对象上的赋值对实例永远不可见（tjsNative.cpp / tjsInterCodeExec.cpp 的
+			// CreateNew 把成员逐个拷进新实例），这正是 BUG-2116 的同一条语义，只是对象从
+			// MessageLayer 换成 kag 本身。
+			//
+			// 每个包装器都 fail-open：我们的 hook 抛异常或返回假一律转发原方法，绝不吞掉玩家的
+			// 输入——查词坏掉是小事，把点击吃掉、剧情推不动是大事。
+			global.fushiLookupKagSeams = 0;
+			global.fushiLookupWrapKagSeam = function(name, wrapper)
+			{
+				try
+				{
+					if(typeof global.kag[name] != "Object") return false;
+					global.kag["fushiLookupOrig_" + name] = global.kag[name];
+					global.kag[name] = wrapper;
+					return true;
+				}
+				catch(e) { return false; }
+			};
+			global.fushiLookupInstallKagSeams = function()
+			{
+				// 有 addHook 就用它：那是框架给的正式扩展点，比包装实例方法更稳。
+				if(typeof global.kag.addHook == "Object")
+				{
+					global.kag.addHook("leftClick", global.fushiLookupLeftClickHook);
+					global.kag.addHook("mouseMove", global.fushiLookupMouseMoveHook);
+					global.kag.addHook("onMouseWheelHook", global.fushiLookupMouseWheelHook);
+					global.kag.addHook("keyDown", global.fushiLookupKeyDownHook);
+					global.fushiLookupKagSeams = 0x1F;  // 位 0 = 走的 addHook 路
+					return;
+				}
+				var seams = 0;
+				// 左键：KAG3 由 primary 层把左击交给窗口的 onPrimaryClick。消费 = 不转发原方法，
+				// 剧情就不推进（验收第 4 条「点卡片外关闭卡片时台词不推进」正是靠这一步）。
+				if(global.fushiLookupWrapKagSeam("onPrimaryClick",
+					function()
+					{
+						var consumed = false;
+						try { consumed = global.fushiLookupLeftClickHook(); }
+						catch(e) { global.fushiLookupFault(); }
+						if(consumed) return true;
+						return (this.fushiLookupOrig_onPrimaryClick incontextof this)(...);
+					} incontextof global.kag)) seams = seams | 0x2;
+				if(global.fushiLookupWrapKagSeam("onMouseMove",
+					function(x, y)
+					{
+						try { global.fushiLookupMouseMoveHook(x, y); }
+						catch(e) { global.fushiLookupFault(); }
+						return (this.fushiLookupOrig_onMouseMove incontextof this)(...);
+					} incontextof global.kag)) seams = seams | 0x4;
+				if(global.fushiLookupWrapKagSeam("onMouseWheel",
+					function(shift, delta, x, y)
+					{
+						var consumed = false;
+						try { consumed = global.fushiLookupMouseWheelHook(shift, delta, x, y); }
+						catch(e) { global.fushiLookupFault(); }
+						if(consumed) return true;
+						return (this.fushiLookupOrig_onMouseWheel incontextof this)(...);
+					} incontextof global.kag)) seams = seams | 0x8;
+				if(global.fushiLookupWrapKagSeam("onKeyDown",
+					function(key, shift)
+					{
+						var consumed = false;
+						try { consumed = global.fushiLookupKeyDownHook(key, shift); }
+						catch(e) { global.fushiLookupFault(); }
+						if(consumed) return true;
+						return (this.fushiLookupOrig_onKeyDown incontextof this)(...);
+					} incontextof global.kag)) seams = seams | 0x10;
+				global.fushiLookupKagSeams = seams;
+			};
+
+)TJS" LR"TJS(
 
 			// bootstrap 只装传感器，**一个渲染层都不建**：卡片层由 fushiLookupPrepare 在真要
 			// 显示第一帧时建，高亮层由 fushiLookupEnsureHighlight 在第一次真要高亮时建。
@@ -4400,51 +4574,30 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			}
 			else
 			{
-				// ⚠️ 真机实测结论（2026-08-14，务必先读再改）：
-				//   Fate/stay night[Realta Nua]（KiriKiri2、无 textrender.dll）——传感器装上、
-				//   查词开关打开、连推 7 句台词，**drawText 与 processCh 两条包装一次都没被
-				//   调用**（classic_patch_installed 亮，classic_geometry_captured 与
-				//   classic_processch_fired 全灭），同期 LunaHook 正常收到 7 行文本。
-				//   フタマタ恋愛（KiriKiri、KAGParser.dll）——TJS exporter 始终没拿到，整个
-				//   传感器（含原有 KAGEX 路径）根本没装起来，lookup_diag 恒为 0。
+				// 没有 KAGEX TextRender 的经典 KAG3 游戏（Fate/stay night[Realta Nua]、
+				// フタマタ恋愛、PRETTY×CATION2）：逐字几何只从消息层的 drawText 经过。
 				//
-				// 也就是说：给**原生类** Layer 的成员赋值，在 TJS 里拦不住实例上的调用；而
-				// MessageLayer 在这些游戏里也不是可覆写的全局 TJS 类。下面两条目前只作为
-				// **自证探针**存在——它们不产出可用几何，只回答"这台游戏的字走不走这里"。
-				// 想让经典 KAG3 真能用，得先在真机上找到这些游戏实际的绘字边界（候选：引擎
-				// 内部 TVPDrawText 的原生 detour），而不是继续在 TJS 层加包装。
-				//
-				// 没有 KAGEX TextRender 的经典 KAG3 游戏：逐字几何原以为只从原生 Layer.drawText 经过。
-				// 这是**有条件**的全局补丁——装了 textrender.dll 的游戏走上面那条，一行都不多绕，
-				// 所以"全局类补丁让所有 UI 绘制多绕一层"的代价只落在别无来源的游戏上；而在那些
-				// 游戏里，不绕就等于游戏内查词整个不存在。
+				// ⚠️ 为什么是**逐实例**补丁而不是给 global.Layer / global.MessageLayer 赋值
+				// （2026-08-14 真机 + 2026-09-04 TJS2 源码，务必先读再改）：
+				//   真机——Fate RN 传感器装上、查词开、连推 7 句，挂在 global.Layer.drawText 与
+				//   global.MessageLayer.processCh 上的包装**一次都没被调用**，同期 LunaHook 正常
+				//   收到 7 行文本。
+				//   源码——TJS2 的类不是原型链：tTJSNativeClass::CreateNew 把原生成员逐个注册到
+				//   **每个新实例**上（tjsNative.cpp「add member to dsp」），脚本类的
+				//   tTJSInterCodeContext::CreateNew 也是把类体在新实例上执行一遍。类对象上的
+				//   成员赋值既改不了已存在的实例，也不进入以后的实例化——它对实例**永远**
+				//   不可见，这不是时序问题，改早改晚都一样。
+				// 所以唯一拦得住的位置是实例自己的成员表：给 kag.fore/back.messages 里每个
+				// MessageLayer 实例赋 drawText / processCh。代价也只落在消息层本身，其他 UI 层
+				// 一行都不多绕（比旧的全局类补丁还便宜）。新建的消息层由
+				// fushiLookupRefreshCaptureBridges 在 KAG stable 边沿补扫。
 				// 传感器本身只在 host 真开启查词后才安装（PollKirikiriLookupInstall），关着的时候
 				// 游戏渲染路径与注入前逐字节一致。
-				global.fushiLookupOriginalDrawText = global.Layer.drawText;
-				global.Layer.drawText = function(x, y, text, color, opacity, antialiased)
-				{
-					// 先让游戏画完再采集：原方法抛异常时不留半条几何。
-					var result = (global.fushiLookupOriginalDrawText incontextof this)(...);
-					global.fushiLookupCaptureDrawText(this, x, y, text);
-					return result;
-				};
-				// 位 0 = 补丁真的装上了（这一行跑到就说明 else 分支没有中途抛异常）。
+				//
+				// 位 0 = classic 采集面已启用（这一行跑到就说明 else 分支没有中途抛异常）；
+				// 必须先置位，sweep 以它为门。
 				global.fushiLookupClassicSource = global.fushiLookupClassicSource | 1;
-				// MessageLayer 是 KAG3 的 **TJS 类**，Layer 是引擎的**原生类**。给原生类的
-				// 成员赋值在 TJS 里拦不住实例上的调用（Fate/stay night[Realta Nua] 实测：补丁
-				// 装上、游戏连画 4 句台词，包装一次都没被调用），TJS 类才拦得住。两条同时挂、
-				// 各自自证，真机一轮就能判出这台游戏的字到底从哪儿过。
-				if(typeof global.MessageLayer == "Object")
-				{
-					global.fushiLookupOriginalProcessCh = global.MessageLayer.processCh;
-					global.MessageLayer.processCh = function(ch, steptime)
-					{
-						var result =
-							(global.fushiLookupOriginalProcessCh incontextof this)(...);
-						global.fushiLookupCaptureProcessCh(this, ch);
-						return result;
-					} incontextof global.MessageLayer;
-				}
+				global.fushiLookupSweepClassicLayers();
 			}
 			// 私有插件已出现时才封未来入口并扫既有 MsgwinRender；它不是通用
 			// Kirikiri readiness。若插件稍后加载，首次 leftClick 会执行同一安全 ensure。
@@ -4510,13 +4663,15 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			}
 
 			installStage = 40;
-			global.kag.addHook("leftClick", global.fushiLookupLeftClickHook);
-			installStage = 41;
-			global.kag.addHook("mouseMove", global.fushiLookupMouseMoveHook);
-			installStage = 42;
-			global.kag.addHook("onMouseWheelHook", global.fushiLookupMouseWheelHook);
+			// addHook（KAGEX 系）或 kag 实例方法逐个包装（经典 KAG3）——见
+			// fushiLookupInstallKagSeams 的注释（BUG-2121 第四段）。
+			global.fushiLookupInstallKagSeams();
 			installStage = 43;
-			global.kag.addHook("keyDown", global.fushiLookupKeyDownHook);
+			// 一个接缝都没挂上 = 传感器装了也收不到任何输入，宁可当安装失败：
+			// 让 install failed 走 catch 分支留下 Debug.notice 和 fault 计数，
+			// 而不是留一个"装好了但永远不响应"的假成功。
+			if(global.fushiLookupKagSeams == 0)
+				throw new Exception("fushiLookup: no kag input seam available");
 			installStage = 50;
 
 			Debug.notice("[HibikiLookup] sensor installed");
@@ -4662,6 +4817,10 @@ uint64_t g_lookup_capture_suppress_pending_ack_seq = 0;
 uint32_t g_lookup_sensor_idle_ticks = 0;
 uint32_t g_lookup_sensor_eval_failures = 0;
 uint32_t g_lookup_sensor_eval_backoff = 0;
+// TJS 侧 bootstrap 前置条件的**有界**探测次数（BUG-2121）。粘滞诊断位只需要量到一次为真，
+// 而传感器装不上的会话会一直走这条路径——不设上界就是每 30 帧三次 TJS 求值的长期开销。
+uint32_t g_lookup_precondition_probes = 0;
+constexpr uint32_t kLookupTjsPreconditionProbes = 8;
 
 constexpr uint32_t kKirikiriLookupFrameRetryLimit = 3;
 constexpr uint32_t kKirikiriLookupHitRetryLimit = 3;
@@ -4717,6 +4876,30 @@ int64_t ReadVariantI64(const uint8_t* variant, uint32_t offset) {
   return value;
 }
 
+// 引擎 ABI 边界只能用 SEH，不能用 C++ try/catch(...)（BUG-2121 第三段，Fate/stay night[Realta
+// Nua] 真机）：KiriKiri2/BCB 里 TJS 抛出的是 Borland C++ 异常（SEH 码 0x0EEDFADE），MSVC 的
+// catch(...) 只认 0xE06D7363，拦不住 → 异常直穿回引擎事件循环 → 引擎弹「下記のエラーが発生
+// しました：メンバ "fushiLookupNotify" が見つかりません」并把当前状态写进用户的快速存档 0。
+// __except 对两家编译器的异常码一视同仁；OS 级 unwind 仍会逐帧调用引擎自己的帧处理器做清理。
+// 这两个函数体里不能有带析构的对象（C2712），所以只收引用/裸指针。
+bool CallTjsExecuteExpressionSeh(const TjsString& content, uint8_t* variant) {
+  __try {
+    g_lookup_execute_expression(content, variant);
+    return true;
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    return false;
+  }
+}
+
+bool CallTjsExecuteScriptSeh(const TjsString& content) {
+  __try {
+    g_lookup_execute_script(content, nullptr);
+    return true;
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    return false;
+  }
+}
+
 // 分配 ttstr → 求值 → 释放。缓冲必须先清零：TJS 的 tTJSVariant 赋值会先 Clear() 目标，
 // 全零在任何候选布局下都是 tvtVoid，Clear() 不会去释放一个野指针。
 bool ExecuteTjsExpressionGuarded(const wchar_t* expression, uint8_t* variant) {
@@ -4726,19 +4909,16 @@ bool ExecuteTjsExpressionGuarded(const wchar_t* expression, uint8_t* variant) {
   }
   memset(variant, 0, kTjsVariantBytes);
   TjsVariantString* text = nullptr;
-  bool ok = false;
   try {
     text = g_lookup_alloc_string(expression);
-    if (text != nullptr) {
-      const TjsString content = {text};
-      g_lookup_execute_expression(content, variant);
-      ok = true;
-    }
   } catch (...) {
-    // 传感器还没建立时表达式会引用不存在的 global，TJS 抛异常是正常时序而非故障。
-    ok = false;
+    text = nullptr;
   }
-  if (text != nullptr) g_lookup_release_string(text);
+  if (text == nullptr) return false;
+  const TjsString content = {text};
+  // 表达式求值失败（含传感器未建立时引用不存在的 global）走 SEH 返回 false，绝不穿透。
+  const bool ok = CallTjsExecuteExpressionSeh(content, variant);
+  g_lookup_release_string(text);
   return ok;
 }
 
@@ -4813,14 +4993,14 @@ void ExecuteTjsScriptGuarded(const wchar_t* script) {
   TjsVariantString* text = nullptr;
   try {
     text = g_lookup_alloc_string(script);
-    if (text != nullptr) {
-      const TjsString content = {text};
-      g_lookup_execute_script(content, nullptr);
-    }
   } catch (...) {
-    // 插件 ABI 边界绝不把 C++/TJS 异常抛回游戏事件循环。
+    text = nullptr;
   }
-  if (text != nullptr) g_lookup_release_string(text);
+  if (text == nullptr) return;
+  const TjsString content = {text};
+  // 插件 ABI 边界绝不把 C++/TJS 异常抛回游戏事件循环——SEH 边界，两家编译器的异常都拦。
+  CallTjsExecuteScriptSeh(content);
+  g_lookup_release_string(text);
 }
 
 void ApplyKirikiriLookupHighlight(uint32_t highlight_start,
@@ -5577,13 +5757,50 @@ void PumpKirikiriLookup() {
     SetLookupDiag(fushi_voice_hook::kLookupDiagExpressionReady);
   }
   if (!g_lookup_sensor_live) {
-    // TJS bootstrap 由 System.addContinuousHandler 驱动，可能比这里晚若干帧；在它建立
-    // 之前每帧求值都会走一次 TJS 异常，故退避到每 30 帧探一次。
+    // TJS bootstrap 由 System.addContinuousHandler 驱动，可能比这里晚若干帧；退避到每 30 帧
+    // 探一次。探测用 typeof：TJS2 对不存在的成员 typeof 返回 "undefined" 而**不抛异常**——
+    // 旧实现直接求值 global.fushiLookupNotify、靠 catch TJS 异常判「还没建立」，在 KiriKiri2/
+    // BCB 上那个异常是 MSVC catch(...) 拦不住的 Borland 异常，直穿回引擎弹错（BUG-2121）。
     if (++g_lookup_sensor_idle_ticks < 30) {
       PresentKirikiriLookupFrame();
       return;
     }
     g_lookup_sensor_idle_ticks = 0;
+    int64_t defined = 0;
+    if (!EvaluateTjsInteger(
+            L"(typeof global.fushiLookupNotify == \"Integer\") ? 1 : 0", &defined) ||
+        defined == 0) {
+      // 传感器迟迟不来时，把 TJS 侧 bootstrap 的前置条件逐项量一次（有界：只量前
+      // kLookupTjsPreconditionProbes 轮，稳态零额外 TJS 求值）。没有这三位就分不出
+      // 「脚本没跑」「kag 还没出来」「这个 KAG 分支没有 addHook」——三者同形（BUG-2121）。
+      if (g_lookup_precondition_probes < kLookupTjsPreconditionProbes) {
+        ++g_lookup_precondition_probes;
+        int64_t value = 0;
+        if (EvaluateTjsInteger(
+                L"(typeof global.fushiLookupBootstrap == \"Object\") ? 1 : 0", &value) &&
+            value != 0) {
+          SetXAudioDiagnostic2(
+              fushi_voice_hook::kXAudioDiag2KirikiriLookupTjsBootstrapFnAlive);
+        }
+        value = 0;
+        if (EvaluateTjsInteger(
+                L"(typeof global.kag == \"Object\" && global.kag !== null) ? 1 : 0",
+                &value) &&
+            value != 0) {
+          SetXAudioDiagnostic2(
+              fushi_voice_hook::kXAudioDiag2KirikiriLookupKagObjectReady);
+          value = 0;
+          if (EvaluateTjsInteger(
+                  L"(typeof global.kag.addHook == \"Object\") ? 1 : 0", &value) &&
+              value != 0) {
+            SetXAudioDiagnostic2(
+                fushi_voice_hook::kXAudioDiag2KirikiriLookupKagAddHookReady);
+          }
+        }
+      }
+      PresentKirikiriLookupFrame();
+      return;
+    }
   }
   int64_t notify = 0;
   // 稳态下每帧只有这一次求值：notify 不变就一行 TJS 都不再跑。
@@ -5757,6 +5974,7 @@ std::wstring BuildKirikiriLookupBootstrapScript() {
 class KiriKiriLookupBootstrapCallback final : public TvpContinuousEventCallback {
  public:
   void __cdecl OnContinuousCallback(uint64_t) override {
+    SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2KirikiriLookupBootstrapFired);
     if (InterlockedCompareExchange(&g_lookup_bootstrap_state, 2, 1) != 1) return;
 
     // 官方实现允许 continuous callback 在遍历时移除自身；先移除再执行，确保任何异常也不会
@@ -5768,10 +5986,11 @@ class KiriKiriLookupBootstrapCallback final : public TvpContinuousEventCallback 
     g_lookup_bootstrap_script = nullptr;
     if (script != nullptr && g_lookup_execute_script != nullptr) {
       const TjsString content = {script};
-      try {
-        g_lookup_execute_script(content, nullptr);
-      } catch (...) {
-        // 插件 ABI 边界绝不把 TJS/C++ 异常抛回游戏事件循环；脚本自身也有 TJS try/catch。
+      // 插件 ABI 边界绝不把 TJS/C++ 异常抛回游戏事件循环（SEH，两家编译器都拦）；脚本自身
+      // 也有 TJS try/catch。抛了必须留位——否则"脚本静默没跑完"与"回调没来"同形。
+      if (!CallTjsExecuteScriptSeh(content)) {
+        SetXAudioDiagnostic2(
+            fushi_voice_hook::kXAudioDiag2KirikiriLookupBootstrapFaulted);
       }
     }
     if (script != nullptr && g_lookup_release_string != nullptr) {
@@ -5835,12 +6054,68 @@ DWORD ResolveKirikiriEngineMainThreadId() {
 // 时刻在引擎内部（实测落点 tTVPBasicDrawDevice）虚调用一个读成 NULL 的成员指针，
 // 游戏弹 KiriKiri 的 "Fatal Error / Access Violation" (BUG-1724)。
 // 真正的安装改由 RunKirikiriLookupInstallOnMainThread 在主线程接缝上执行。
+// 引擎主线程的消息循环接缝（BUG-2118 第二段，Fate/stay night[Realta Nua] 真机）。
+//
+// RunKirikiriLookupInstallOnMainThread 只能在主线程跑，原来的调用点全是引擎自己在主线程
+// 上调进来的 detour：V2Link（插件链接栈）、TVPCreateIStream 导入桩、内部 TVPCreateStream。
+// 这三条在 KiriKiri2/BCB 上**没有一条在 host 打开查词之后还会再来**：V2Link 只在启动期
+// 插件链接时发生一次（那时 host 还没请求安装）；BCB 分支 hook 的是导出桩，引擎自己开文件
+// 走内部函数不经过它（真机整局 0x40000 从未置位）；内部 TVPCreateStream 只有 MSVC 分支才
+// hook。于是 lookup_install_requested 置上后永远等不到主线程接缝，传感器静默永不安装——
+// 症状与「这个引擎不支持」同形。
+//
+// WH_GETMESSAGE 线程钩子是与引擎构建无关的主线程接缝：钩子过程在主线程从 GetMessage 返回
+// 时执行，装/卸都允许在别的线程发起（同进程线程钩子 hMod 传 NULL）。只在有安装请求且
+// bootstrap 尚未开始时挂上，安装一旦启动（或请求撤销）就在钩子过程里自卸，稳态零开销。
+HHOOK g_lookup_main_thread_seam = nullptr;
+volatile LONG g_lookup_main_thread_seam_tid = 0;
+void RunKirikiriLookupInstallOnMainThread();
+
+LRESULT CALLBACK LookupMainThreadSeamProc(int code, WPARAM wparam, LPARAM lparam) {
+  if (code >= 0) {
+    SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2KirikiriLookupSeamFired);
+    RunKirikiriLookupInstallOnMainThread();
+    const bool done = InterlockedCompareExchange(&g_lookup_bootstrap_state, 0, 0) != 0 ||
+                      InterlockedCompareExchange(&g_lookup_install_requested, 0, 0) == 0;
+    if (done && g_lookup_main_thread_seam != nullptr) {
+      UnhookWindowsHookEx(g_lookup_main_thread_seam);
+      g_lookup_main_thread_seam = nullptr;
+      InterlockedExchange(&g_lookup_main_thread_seam_tid, 0);
+    }
+  }
+  return CallNextHookEx(nullptr, code, wparam, lparam);
+}
+
+void EnsureLookupMainThreadSeam() {
+  if (g_lookup_main_thread_seam != nullptr) return;
+  const DWORD main_tid = ResolveKirikiriEngineMainThreadId();
+  if (main_tid == 0) {
+    // 主窗解析不到 = 整条安装路径的第一道门没开（BUG-2121：BCB VCL 主窗被隐藏 owner
+    // own 时就死在这里，且下面每一步都不会再有任何位）。
+    SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2KirikiriLookupMainWindowMissing);
+    return;
+  }
+  if (InterlockedCompareExchange(&g_lookup_main_thread_seam_tid,
+                                 static_cast<LONG>(main_tid), 0) != 0) {
+    return;  // 另一次轮询已在装
+  }
+  HHOOK seam = SetWindowsHookExW(WH_GETMESSAGE, &LookupMainThreadSeamProc, nullptr, main_tid);
+  if (seam == nullptr) {
+    SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2KirikiriLookupSeamHookFailed);
+    InterlockedExchange(&g_lookup_main_thread_seam_tid, 0);
+    return;
+  }
+  g_lookup_main_thread_seam = seam;
+  SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2KirikiriLookupSeamArmed);
+}
+
 void PollKirikiriLookupInstall() {
   if (g_stop || g_lookup_exporter == nullptr) return;
   if (!fushi_voice_hook::HasLookupRegion(g_header)) return;
   if (LookupEnabledNow() == 0) return;
   if (InterlockedCompareExchange(&g_lookup_bootstrap_state, 0, 0) != 0) return;
   InterlockedExchange(&g_lookup_install_requested, 1);
+  EnsureLookupMainThreadSeam();
 }
 
 // 主线程接缝上的真正安装。调用点必须是引擎自己在主线程上调进来的 detour
@@ -5865,6 +6140,7 @@ void RunKirikiriLookupInstallOnMainThread() {
   };
   void* functions[5] = {};
   if (!QueryKirikiriNativeLookupFunctions(g_lookup_exporter, names, functions, 5)) {
+    SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2KirikiriLookupExportQueryFailed);
     return;
   }
   // 单独查：缺 TVPExecuteExpression 就读不回任何传感器读数（hit 与 input 都靠它），此时
@@ -5875,6 +6151,8 @@ void RunKirikiriLookupInstallOnMainThread() {
   if (!QueryKirikiriNativeLookupFunctions(g_lookup_exporter, &expression_name,
                                           &expression, 1) ||
       expression == nullptr) {
+    SetXAudioDiagnostic2(
+        fushi_voice_hook::kXAudioDiag2KirikiriLookupExpressionQueryFailed);
     return;
   }
 
@@ -5903,6 +6181,7 @@ void RunKirikiriLookupInstallOnMainThread() {
     InterlockedExchange(&g_lookup_bootstrap_state, 1);
     g_lookup_add_continuous(&g_lookup_pump_callback);
     g_lookup_add_continuous(&g_lookup_bootstrap_callback);
+    SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2KirikiriLookupBootstrapStarted);
   } catch (...) {
     TjsVariantString* script = g_lookup_bootstrap_script;
     g_lookup_bootstrap_script = nullptr;
@@ -6333,6 +6612,103 @@ ITVPFunctionExporter* ObtainExporter() {
   }
 }
 
+// 候选的最后一道门：真调用。QueryFunctionsByNarrowString 是 ITVPFunctionExporter 的
+// 一号虚函数；拿一个必然存在的导出名查一次，成功才认。形状对但不是 exporter 的候选在
+// 这里被否掉——判据因此不是"猜一个像的"，而是"问它一句只有 exporter 答得上的话"。
+// 跨编译器边界（KiriKiri2 是 BCB 编译的）必须 SEH，MSVC 的 catch(...) 拦不住 BCB 的
+// 0x0EEDFADE（BUG-2144）。
+bool ExporterAnswersQuery(ITVPFunctionExporter* candidate) {
+  static const char* const kProbeName =
+      "IStream * ::TVPCreateIStream(const ttstr &,tjs_uint32)";
+  const char* name = kProbeName;
+  void* stub = nullptr;
+  bool ok = false;
+  __try {
+    ok = candidate->QueryFunctionsByNarrowString(&name, &stub, 1);
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    return false;
+  }
+  return ok && stub != nullptr;
+}
+
+// 第三条 exporter 路径（BUG-2145）：从**已经 link 完**的插件数据段反查 exporter 单例。
+// 判据、代价上限与真机实测数字见 adapters/kirikiri_exporter_scan.h。
+// 只在 ①（exe 直取）落空后才跑，且次数有上限——插件可能还在陆续 link，但不能无界重扫。
+ITVPFunctionExporter* ScanLinkedPluginsForExporter() {
+  // 诊断位只在**真的做了交集**之后才置（见下面凑够插件的那一步）：本函数被通用启动路径
+  // 调到，非 KiriKiri 游戏也会走进来（Siglus 真机实测）。在那些进程上点亮 ScanRan 会让这
+  // 三个位在跨引擎读数里变成噪声——位必须只表示它字面上说的那件事。
+  uint8_t* image_base = nullptr;
+  uint32_t image_size = 0;
+  GetMainModuleRange(&image_base, &image_size);
+  if (image_base == nullptr || image_size == 0) return nullptr;
+
+  std::vector<std::vector<uintptr_t>> per_module;
+  HANDLE snapshot = CreateToolhelp32Snapshot(
+      TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, GetCurrentProcessId());
+  if (snapshot != INVALID_HANDLE_VALUE) {
+    const HMODULE exe = GetModuleHandleW(nullptr);
+    MODULEENTRY32W entry = {};
+    entry.dwSize = sizeof(entry);
+    if (Module32FirstW(snapshot, &entry)) {
+      do {
+        HMODULE mod = entry.hModule;
+        if (mod == nullptr || mod == exe) continue;
+        // 「导出 V2Link」就是 KiriKiri 插件的定义，比按路径匹配 plugin\ 稳：插件可以被
+        // 引擎解到 %TEMP%\krkr_* 再加载（Fate/stay night[Realta Nua] 真机就是这样）。
+        if (GetProcAddress(mod, "V2Link") == nullptr) continue;
+        fushi_voice_hook::exact_lookup::LoadedPeImage image;
+        if (!fushi_voice_hook::exact_lookup::OpenLoadedPeImage(mod, &image)) continue;
+        std::vector<uintptr_t> words;
+        std::vector<uintptr_t> module_words;
+        for (size_t i = 0; i < image.section_count; ++i) {
+          const auto& section = image.sections[i];
+          if ((section.characteristics & IMAGE_SCN_MEM_WRITE) == 0u) continue;
+          if (!fushi_voice_hook::exact_lookup::IsReadableSpan(section.bytes,
+                                                              section.size)) {
+            continue;
+          }
+          fushi_voice_hook::kirikiri_exporter::CollectWritableWords(
+              section.bytes, section.size, &words);
+          module_words.insert(module_words.end(), words.begin(), words.end());
+        }
+        if (!module_words.empty()) per_module.push_back(std::move(module_words));
+      } while (Module32NextW(snapshot, &entry));
+    }
+    CloseHandle(snapshot);
+  }
+
+  // 没凑够导出 V2Link 的模块 = 这根本不是个装了 KiriKiri 插件的进程，什么都没试过，
+  // 一个位都不置。
+  if (per_module.size() < fushi_voice_hook::kirikiri_exporter::kMinPlugins) {
+    return nullptr;
+  }
+  SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2KirikiriExporterScanRan);
+
+  std::vector<uintptr_t> candidates;
+  if (!fushi_voice_hook::kirikiri_exporter::IntersectWritableWords(per_module,
+                                                                  &candidates)) {
+    SetXAudioDiagnostic2(
+        fushi_voice_hook::kXAudioDiag2KirikiriExporterScanNoCandidate);
+    return nullptr;
+  }
+  for (size_t i = 0; i < candidates.size(); ++i) {
+    if (!fushi_voice_hook::kirikiri_exporter::LooksLikeExporter(
+            candidates[i], reinterpret_cast<uintptr_t>(image_base), image_size,
+            &fushi_voice_hook::kirikiri_exporter::DefaultReadableSpan)) {
+      continue;
+    }
+    auto* exporter = reinterpret_cast<ITVPFunctionExporter*>(candidates[i]);
+    if (!ExporterAnswersQuery(exporter)) continue;
+    SetXAudioDiagnostic2(
+        fushi_voice_hook::kXAudioDiag2KirikiriExporterScanAdopted);
+    return exporter;
+  }
+  SetXAudioDiagnostic2(
+      fushi_voice_hook::kXAudioDiag2KirikiriExporterScanNoCandidate);
+  return nullptr;
+}
+
 // 幂等一次性安装：拿到 exporter（任一路径）后跑「导入 TVPCreateIStream + 反汇编定位内部
 // TVPCreateStream + 装 detour」。InterlockedCompareExchange 保证 exe 直取 / V2Link 两条路径只跑一次。
 void InstallVoiceStreamHookWithExporter(ITVPFunctionExporter* exporter) {
@@ -6510,8 +6886,13 @@ bool InstallLoadLibraryHooks() {
 // 装 KiriKiriZ 语音流 hook。两条拿 exporter 的路径，幂等只安装一次：
 //  ① exe 直取 TVPGetFunctionExporter（未加壳游戏更早可用；加壳返回 null，置 0x1000000）。
 //  ② hook LoadLibrary → 插件 V2Link 兜底（对付加壳 exe，异步在游戏加载插件时完成）。
-// LoadLibrary hook 装好即返回 true 停止轮询；真正安装可能稍后由 V2Link detour 异步触发。保活循环里
-// exporter 迟迟没到不必强等——V2Link 会随游戏加载插件自动触发（30s 轮询窗口足够覆盖插件加载）。
+// 返回值 = exporter 是否已到手（g_voice_installed），**不是** LoadLibrary hook 是否装好：registry 按
+// 返回值决定还轮不轮询，而 ② 只在「插件在我们 hook 之后才 link」时才有机会——KiriKiri2/BCB 的
+// 插件全在 boot 首帧内 link 完（Fate/stay night[Realta Nua] 真机：8 个插件同一 tick 连号的 krkr
+// temp 目录，全部早于本 worker 的 hook 安装），V2Link 永远等不到；此时唯一确定的路径是 ①，而 ①
+// 要等主窗（BUG-2118 静态初始化门）。旧实现装完 LoadLibrary hook 就返回 true，registry 立刻停止
+// 轮询，① 只在启动瞬间（主窗还没出现）评估过一次——两条路径一起静默死掉，症状与「这个引擎不
+// 支持」同形（BUG-2121 第二段）。150 次轮询窗口（≈30 s）足够覆盖 LE + 引擎 boot 到主窗出现。
 bool TryHookKirikiriVoiceStream() {
   static bool ll_installed = false;
 
@@ -6522,8 +6903,27 @@ bool TryHookKirikiriVoiceStream() {
     }
   }
 
-  if (!g_voice_installed) {
+  // ⚠️ exe 直取只允许在引擎**静态初始化完成之后**（BUG-2118，Fate/stay night[Realta Nua]
+  // KiriKiri2 2.31 真机 9/9 启动即崩）。`TVPGetFunctionExporter()` 第一次被调用时会置
+  // `TVPExportFuncsInit = true` 并把全部导出函数灌进**静态** `tTJSHashTable TVPExportFuncs`
+  // （krkrz base/win32/PluginImpl.cpp，kirikiri2 同构）。CREATE_SUSPENDED 早注入下本 worker
+  // 比 exe 的静态构造函数还早：表先被我们灌满、随后被构造函数清空，而 init 标志已经置上——
+  // 之后每个插件的 QueryFunctions 都查不到，dirlist.dll 链接抛异常、fstat.dll 走 tp_stub 的
+  // 「导入缺失就 *(int*)0 = 0」故意崩。我们自己那次 TVPCreateIStream 查询恰好夹在灌表与
+  // 清表之间才成功，所以诊断位看起来一切正常（0x10000 | 0x20000 亮）。
+  // 「静态初始化已完成」的可靠且现成的信号是引擎主窗已存在（窗口由 TJS 脚本创建，远在 CRT
+  // 之后）；主窗出现前只靠 LoadLibrary→V2Link 路径——插件链接时引擎自己已调过
+  // TVPGetFunctionExporter，表必然已就绪。两条路径仍由 g_voice_installed 幂等互斥。
+  if (!g_voice_installed && FindGameMainWindow() != nullptr) {
     ITVPFunctionExporter* exp = ObtainExporter();  // exe 直取（加壳置 0x1000000 返回 null）
+    // ③ 两条都空时从已 link 插件反查（BUG-2145）。次数有上限：插件可能还在陆续 link，
+    // 但每次轮询都全量重扫 19 个模块的数据段是不可接受的常驻代价。
+    static int scan_attempts = 0;
+    constexpr int kMaxScanAttempts = 12;
+    if (exp == nullptr && scan_attempts < kMaxScanAttempts) {
+      ++scan_attempts;
+      exp = ScanLinkedPluginsForExporter();
+    }
     if (exp != nullptr) {
       if (g_header != nullptr) g_header->reserved_luna |= 0x10000;  // 经 exe 导出拿到 exporter
       InstallVoiceStreamHookWithExporter(exp);                      // 幂等
@@ -6532,7 +6932,8 @@ bool TryHookKirikiriVoiceStream() {
     }
   }
 
-  return ll_installed;
+  // 只有 exporter 到手才算「语音流 hook 已装」；ll_installed 只是 ② 的前提，不是结果。
+  return g_voice_installed != 0;
 }
 
 #else  // !_M_IX86

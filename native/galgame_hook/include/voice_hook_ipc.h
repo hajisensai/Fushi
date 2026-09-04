@@ -477,6 +477,42 @@ constexpr uint32_t kXAudioDiag2LeafReturnSitesRejected = 0x00008000u;
 // 失败就让本会话的 Leaf adapter 永久出局，表现为整场音频降级到系统 Loopback。
 constexpr uint32_t kXAudioDiag2LeafExecutableUnmeasurable = 0x00010000u;
 
+// KiriKiri 查词传感器**安装路径**的分型位（BUG-2121，Fate/stay night[Realta Nua] KiriKiri2
+// 2.31/BCB 真机）。lookup_diag 只在传感器装上之后才开始有位，装不上时整局零位——而安装路径
+// 上有 9 个静默 return（主窗解析不到 / 接缝挂不上 / 线程身份 / 导出表查不到 / 表达式查不到 /
+// bootstrap 分配失败…），没有这组位就分不出「这个引擎没做」和「装到第 N 步死了」。粘滞位
+// 语义（曾经到过哪一步）正合适：安装是单向推进的，读侧按位序就能看出卡在哪。
+// 放这个字而不是 reserved_luna / lookup_diag：那两个 32 位都已满（见各自注释）。
+constexpr uint32_t kXAudioDiag2KirikiriLookupMainWindowMissing = 0x00020000u;  // 安装已请求但 FindGameMainWindow()==null
+constexpr uint32_t kXAudioDiag2KirikiriLookupSeamArmed = 0x00040000u;          // WH_GETMESSAGE 主线程接缝已挂
+constexpr uint32_t kXAudioDiag2KirikiriLookupSeamHookFailed = 0x00080000u;     // SetWindowsHookEx 失败
+constexpr uint32_t kXAudioDiag2KirikiriLookupSeamFired = 0x00100000u;          // 接缝在主线程上跑过安装
+constexpr uint32_t kXAudioDiag2KirikiriLookupExportQueryFailed = 0x00200000u;  // 5 个核心导出名查不到
+constexpr uint32_t kXAudioDiag2KirikiriLookupExpressionQueryFailed = 0x00400000u;  // TVPExecuteExpression 查不到
+constexpr uint32_t kXAudioDiag2KirikiriLookupBootstrapStarted = 0x00800000u;   // bootstrap 脚本已登记进连续事件
+// 「登记进连续事件」与「引擎真的回调进来并把脚本跑完」是两件事：前者只证明
+// TVPAddContinuousEventHook 接受了我们的回调对象，后者才证明引擎事件循环在跑我们的 TJS。
+// 中间还隔着一次 TVPExecuteScript——在 BCB 上它抛的是 Borland 异常，只有 SEH 拦得住，
+// 拦下来之后脚本就是"静默没执行"，与"回调压根没来"同形（BUG-2121 第三段）。
+constexpr uint32_t kXAudioDiag2KirikiriLookupBootstrapFired = 0x01000000u;     // 连续事件回调真的进来了
+constexpr uint32_t kXAudioDiag2KirikiriLookupBootstrapFaulted = 0x02000000u;   // TVPExecuteScript 抛了（SEH 拦下）
+// bootstrap 脚本跑完之后，TJS 侧那个 System.addContinuousHandler 回调每帧都在前置条件
+// `typeof global.kag == "Object" && typeof global.kag.addHook == "Object"` 上静默 return，
+// 症状与「脚本没跑」完全同形（都是 fushiLookupNotify 不存在、控制台无 [HibikiLookup] 行）。
+// 这三位把前置条件拆开量：脚本活着吗 / kag 出来了吗 / 这个 KAG 分支有 addHook 吗。
+constexpr uint32_t kXAudioDiag2KirikiriLookupTjsBootstrapFnAlive = 0x04000000u;  // global.fushiLookupBootstrap 仍在
+constexpr uint32_t kXAudioDiag2KirikiriLookupKagObjectReady = 0x08000000u;       // global.kag 是对象
+constexpr uint32_t kXAudioDiag2KirikiriLookupKagAddHookReady = 0x10000000u;      // global.kag.addHook 存在
+
+// 第三条 exporter 路径（BUG-2145）：exe 无导出表 + 插件早于我们 link 时，从已 link 插件
+// 的可写节反查 exporter 单例。三态互斥可判：扫描是否跑过 / 有没有过形状门的候选 /
+// 真调用校验后是否采用。
+// ⚠️ 本字至此 32 位用尽；下一族诊断位必须另立新字（照 reserved_luna→xaudio_diagnostics2
+// 的先例），不要拓宽本字或挤占已有位。
+constexpr uint32_t kXAudioDiag2KirikiriExporterScanRan = 0x20000000u;          // 前两条路径都空，扫描已跑
+constexpr uint32_t kXAudioDiag2KirikiriExporterScanNoCandidate = 0x40000000u;  // 交集/形状门后无候选
+constexpr uint32_t kXAudioDiag2KirikiriExporterScanAdopted = 0x80000000u;      // 候选过真调用校验并被采用
+
 // reserved_luna 的资源音频诊断位。KiriKiriZ 的 TVPCreateStream hook 直接导出当前播放的
 // 已解密 Ogg；Siglus 从 OVK 索引导出逐句 Ogg。它们只代表“资源捕获链已安装”，不要求 PCM
 // 环已有格式，因此 host 应优先按时间戳配对资源文件，并把系统回环保留为逐句 fallback。

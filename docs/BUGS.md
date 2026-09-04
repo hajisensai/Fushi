@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2014 条。点号进各自文件。
+> 共 2019 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2145](bugs/BUG-2145-gal-kirikiri2-no-export-table-and-late-loadlibrary-hook.md) | ✅ | ✅ | KiriKiri2 无导出表 + 插件早于 LoadLibrary hook link：两条 exporter 路径同时静默落空，游戏内查词整条不装 |
+| [BUG-2144](bugs/BUG-2144-gal-kirikiri2-bcb-exception-escapes-msvc-catch.md) | ✅ | ✅ | KiriKiri2/BCB 上 TJS 抛的 Borland 异常穿透 MSVC catch(...)，注入的每帧求值把游戏打成致命错误框并强制写快速存档 |
 | [BUG-2143](bugs/BUG-2143-attached-status-without-reason-undiagnosable.md) | ✅ | 🚧 | attached 状态机十二处 `needsRiskAcceptance` / `needsCalibration` / `waitingForBodyThread` 不带 reason，真机上无法定位是哪条分支 |
 | [BUG-2142](bugs/BUG-2142-attached-provider-claim-livelock.md) | ✅ | ✅ | 被抢占的旧轮次撤回 attached provider 认领，与注入侧 registry 形成活锁 |
 | [BUG-2141](bugs/BUG-2141-attached-risk-accepted-but-status-traps.md) | ✅ | 🚧 | profile 里风险已接受时 `needsRiskAcceptance` 变成死局：不生成 request、按钮不渲染、也没有恢复触发点 |
@@ -55,9 +57,12 @@
 | [BUG-2124](bugs/BUG-2124-video-wall-hover-lift-lags-scroll.md) | ✅ | ✅ | 视频墙格滚动时放大态残留在已滚走的卡上 |
 | [BUG-2123](bugs/BUG-2123-global-lookup-first-frame-topleft-flash.md) | ✅ | ✅ | app 外全局查词弹窗首帧先闪在屏幕左上角再飞到光标 |
 | [BUG-2122](bugs/BUG-2122-pitch-duplicate-rows.md) | ✅ | ✅ | 音调区同一音调型被多本词典重复渲染成多行 |
+| [BUG-2121](bugs/BUG-2121-gal-main-window-owned-by-hidden-vcl-owner.md) | ✅ | ✅ | FindGameMainWindow 排除所有有 owner 的窗口：BCB VCL 窗体被隐藏 TApplication own，KiriKiri2 查词安装 / exe 直取门 / overlay owner 整局静默失败 |
 | [BUG-2120](bugs/BUG-2120-desktop-oauth-no-manual-link.md) | ✅ | ✅ | 桌面云盘 OAuth 登录无「复制链接/重开/取消」兜底，浏览器页失败只能等 5 分钟超时 |
 | [BUG-2119](bugs/BUG-2119-sqlite-busy-statement-poisons-connection-exit-trap.md) | ✅ | ✅ | 视频页 Esc/返回退不出去：写语句 SQLITE_BUSY 后未 reset 毒化整条连接，退出被落库绑架 |
+| [BUG-2118](bugs/BUG-2118-gal-kirikiri2-exporter-called-before-static-init.md) | ✅ | ✅ | 启动期过早调用 TVPGetFunctionExporter 抢在引擎静态构造之前，导出表随后被构造函数重置致插件链接全失败 |
 | [BUG-2117](bugs/BUG-2117-shortcut-scope-order.md) | ✅ | ✅ | 快捷键设置页 scope 卡片顺序是枚举累加顺序而非通用→页面→设备 |
+| [BUG-2116](bugs/BUG-2116-gal-classic-kag3-class-patch-invisible-to-instances.md) | ✅ | ✅ | 经典 KAG3 游戏内查词传感器给 TJS 类对象打补丁对实例永远不可见 |
 | [BUG-2115](bugs/BUG-2115-kirikiri-voice-stream-filter-captures-se-bgm.md) | ✅ | ✅ | KiriKiri 资源流语音过滤按裸 .ogg/.opus 后缀把 SE/BGM/脚本当语音并配给旁白 |
 | [BUG-2114](bugs/BUG-2114-kirikiri-direct-route-term-highlight-missing.md) | ✅ | ✅ | KiriKiri 直连路由下被查整词不高亮，只亮点击的单字 |
 | [BUG-2113](bugs/BUG-2113-kirikiri-ingame-card-mining-text-generation-mismatch.md) | ✅ | ✅ | KiriKiri 点击载荷 text_generation 填成 TJS 提交序号，游戏内「+」制卡恒失败 |
