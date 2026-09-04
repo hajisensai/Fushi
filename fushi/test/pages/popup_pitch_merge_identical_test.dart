@@ -10,9 +10,11 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// 修法：渲染前加一道纯变换 `mergeIdenticalPitchGroups` —— 整份 payload 全等
 /// （pitchPositions / patterns / transcriptions 三者）的词典合并成一行，
-/// `dictionaries` 带上全部来源名。它跑在 `deduplicatePitchAccents` 分支**之后**：
-/// 去重打开（app 默认）时各存活组的位置互斥、合并对位置组恒为 no-op，默认外观
-/// 一字不变；去重关闭（官网 demo 就是这一档）时才塌行。
+/// `dictionaries` 带上全部来源名。它必须跑在 `deduplicatePitchAccents` 分支**之前**：
+/// 去重先跑的话，第二本同型词典的 `unique` 已经是空数组、整组被丢，词典来源名随之
+/// 消失——那正是本 bug 的「一档丢信息」那一半，而且**绝大多数用户在那一档**
+/// （`deduplicate_pitch_accents` 默认为 true）。先合并则 5 本同型先并成一组、
+/// `unique` 仍非空，5 个来源全留住；关去重那一档逐字节不变（合并对它本来就幂等）。
 ///
 /// 两层守护：
 /// ① 行为级——用 Node 真执行 popup.js 的 `createPitchSection`，断言五本同型词典
@@ -31,6 +33,13 @@ void main() {
     'app popup': 'assets/popup/popup.css',
     'extension vendor (assets)': 'assets/browser_extension/vendor/popup.css',
     'extension vendor (tools)': '../tools/browser-extension/vendor/popup.css',
+    // 两份 content.css 也必须列进来：既有的 `browser_extension_popup_parity_guard_test`
+    // 只做选择器级完整性 + 两份 content.css 互相字节比对，**属性级漂移抓不到**
+    // （`flex-wrap` 掉了它照样绿）。而合并后的一行要靠 flex-wrap 才能把多枚来源药丸
+    // 折行，掉了就是溢出。
+    'extension content (assets)': 'assets/browser_extension/vendor/content.css',
+    'extension content (tools)':
+        '../tools/browser-extension/vendor/content.css',
   };
 
   test(
@@ -100,28 +109,50 @@ void main() {
       }
 
       // 非恒真：helper 存在但没人调用等于没改。调用点必须在 createPitchSection 内，
-      // 且在去重分支之后（去重先跑，合并是最后一道变换）。
+      // 且在去重分支**之前**——顺序反了，默认档（去重开）就会把同型词典的来源名整组
+      // 丢掉，那正是 BUG-2122 的另一半。
       final int section =
           js.indexOf('function createPitchSection(pitches, reading)');
       expect(section, greaterThanOrEqualTo(0));
+      final int call =
+          js.indexOf('mergeIdenticalPitchGroups(pitches)', section);
+      expect(
+        call,
+        greaterThan(section),
+        reason: 'createPitchSection must call the merge on the raw pitches',
+      );
       final int dedup =
           js.indexOf('if (window.deduplicatePitchAccents)', section);
       expect(dedup, greaterThan(section));
-      final int call =
-          js.indexOf('mergeIdenticalPitchGroups(groups).forEach(', section);
       expect(
         call,
-        greaterThan(dedup),
-        reason: 'createPitchSection must run the merge AFTER the dedup branch, '
-            'so dedup ON keeps the pre-change default look',
+        lessThan(dedup),
+        reason: 'the merge must run BEFORE the dedup branch; running it after '
+            'drops every source label but the first whenever dedup is ON '
+            '(the app default) — that is the other half of BUG-2122',
       );
 
-      // 去重分支不得再直接 append，必须先攒进 groups 交给合并。
+      // 去重分支不得直接 append：它得把合并结果攒进 groups，最后统一渲染。
+      final int render = js.indexOf('groups.forEach(', dedup);
       expect(
-        js.substring(dedup, call),
+        render,
+        greaterThan(dedup),
+        reason: 'groups must be rendered in one place after the dedup branch',
+      );
+      expect(
+        js.substring(dedup, render),
         isNot(contains('pitchContainer.appendChild(createPitchGroup(')),
         reason: 'the dedup branch must collect groups instead of appending '
-            'rows directly, or merging never sees them',
+            'rows directly',
+      );
+
+      // 合并键必须排序后再比：同一音调型的两本词典给的位置顺序可能不同。
+      final int helperKey =
+          js.indexOf('function mergeIdenticalPitchGroups(groups)');
+      expect(
+        js.substring(helperKey, helperKey + 700),
+        contains('.sort((a, b) => a - b)'),
+        reason: '不排序会把 [1,0] 与 [0,1] 判成不同型，漏合',
       );
 
       // createPitchGroup 每本来源渲染一枚药丸。

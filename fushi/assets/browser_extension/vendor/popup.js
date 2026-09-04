@@ -2753,8 +2753,10 @@ function mergeIdenticalPitchGroups(groups) {
     const merged = [];
     const byPayload = new Map();
     groups.forEach((group) => {
+        // 位置数组**排序后**入键：同一音调型的两本词典给的位置顺序可能不同，
+        // 不排序就漏合。渲染仍用原组的原顺序，排序只影响「是不是同一型」的判断。
         const key = JSON.stringify([
-            group.pitchPositions || [],
+            [...(group.pitchPositions || [])].sort((a, b) => a - b),
             group.patterns || [],
             group.transcriptions || [],
         ]);
@@ -2857,26 +2859,35 @@ function createPitchSection(pitches, reading) {
     const section = el('div', { className: 'category-section pitch-section' });
     const body = el('div', { className: 'category-body' });
     const pitchContainer = el('div', { className: 'pitch-list' });
+    // BUG-2122：**先合并再去重**。反过来（去重在前）时，`deduplicate_pitch_accents`
+    // 默认为 true 的那一档里，第二本同型词典的 `unique` 已经是空数组，整组被丢掉，
+    // 词典来源名随之消失——那正是本 bug 的「一档丢信息」那一半，也是绝大多数用户
+    // 所在的那一档。先合并则 5 本同标 [1] 的词典先并成一组 5 枚药丸，再走去重，
+    // `unique=[1]` 存活，5 个来源全留住。
+    //
+    // 关去重那一档逐字节不变：合并对它本来就是幂等的（原实现也是合并后渲染）。
+    const merged = mergeIdenticalPitchGroups(pitches);
     const groups = [];
     if (window.deduplicatePitchAccents) {
         const seen = new Set();
-        pitches.forEach(pitch => {
-            const unique = (pitch.pitchPositions || []).filter(pos => !seen.has(pos));
+        merged.forEach(group => {
+            const unique = (group.pitchPositions || []).filter(pos => !seen.has(pos));
             // TODO-688: a group with no unique pitch positions but with IPA
             // transcriptions (Yomitan `ipa`-mode dicts have no pitch positions)
             // must still render, or the transcriptions are silently dropped.
             // Pattern-style accents (79c55c2) likewise keep the group alive.
-            const hasTranscriptions = pitch.transcriptions?.length;
-            const hasPatterns = pitch.patterns?.length;
+            const hasTranscriptions = group.transcriptions?.length;
+            const hasPatterns = group.patterns?.length;
             if (unique.length > 0 || hasTranscriptions || hasPatterns) {
                 unique.forEach(pos => seen.add(pos));
-                groups.push({ dictionary: pitch.dictionary, pitchPositions: unique, patterns: pitch.patterns, transcriptions: pitch.transcriptions });
+                // 保留合并出来的 `dictionaries`，只把位置换成去重后的那份。
+                groups.push(Object.assign({}, group, { pitchPositions: unique }));
             }
         });
     } else {
-        pitches.forEach(pitch => groups.push(pitch));
+        merged.forEach(group => groups.push(group));
     }
-    mergeIdenticalPitchGroups(groups).forEach(
+    groups.forEach(
         group => pitchContainer.appendChild(createPitchGroup(group, reading)));
     body.appendChild(pitchContainer);
     section.appendChild(body);

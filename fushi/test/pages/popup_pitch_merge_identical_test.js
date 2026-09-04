@@ -21,119 +21,11 @@
 //  `flutter test`).
 
 const assert = require('assert');
-const fs = require('fs');
-const path = require('path');
-const vm = require('vm');
-
-const popupPath = path.resolve(__dirname, '../../assets/popup/popup.js');
-const source = fs.readFileSync(popupPath, 'utf8');
-
-function makeElement(tag) {
-  return {
-    tagName: (tag || 'div').toUpperCase(),
-    className: '',
-    id: '',
-    textContent: '',
-    innerHTML: '',
-    nodeType: 1,
-    style: {},
-    dataset: {},
-    children: [],
-    childNodes: [],
-    attributes: {},
-    classList: {
-      _set: new Set(),
-      add(name) { this._set.add(name); },
-      remove(name) { this._set.delete(name); },
-      contains(name) { return this._set.has(name); },
-    },
-    appendChild(child) { this.children.push(child); this.childNodes.push(child); return child; },
-    append(...nodes) { this.children.push(...nodes); this.childNodes.push(...nodes); },
-    setAttribute(k, v) { this.attributes[k] = v; },
-    removeAttribute(k) { delete this.attributes[k]; },
-    addEventListener() {},
-    querySelectorAll() { return []; },
-    querySelector() { return null; },
-    closest() { return null; },
-  };
-}
-
-function makeTextNode(text) {
-  return { nodeType: 3, textContent: String(text), children: [], childNodes: [] };
-}
-
-function makeSandbox() {
-  const documentObj = {
-    documentElement: { style: {}, classList: makeElement().classList },
-    head: { appendChild() {} },
-    body: makeElement('body'),
-    getElementById() { return null; },
-    querySelector() { return null; },
-    querySelectorAll() { return []; },
-    createElement(tag) { return makeElement(tag); },
-    createTextNode(text) { return makeTextNode(text); },
-    addEventListener() {},
-  };
-
-  const windowObj = {
-    audioSources: [],
-    needsAudio: false,
-    lookupEntries: [],
-    dictionaryStyles: {},
-    // 官网 demo 与「关掉去重」的用户就是这一档；每个 case 各自覆写。
-    deduplicatePitchAccents: false,
-    flutter_inappwebview: { callHandler() { return Promise.resolve(false); } },
-    getSelection() { return { toString() { return ''; } }; },
-  };
-  documentObj.defaultView = windowObj;
-
-  const sandbox = {
-    Node: { TEXT_NODE: 3, ELEMENT_NODE: 1 },
-    Date, Math, URL, JSON, RegExp, Set, Map, Object, Array, console,
-    performance: { now() { return 0; } },
-    setTimeout, clearTimeout,
-    DOMParser: class { parseFromString() { return { body: makeElement('body'), querySelectorAll() { return []; } }; } },
-    document: documentObj,
-    window: windowObj,
-    getComputedStyle() { return {}; },
-  };
-  sandbox.globalThis = sandbox;
-  return sandbox;
-}
-
-function loadPopup() {
-  const sandbox = makeSandbox();
-  vm.createContext(sandbox);
-  const exported = source + `
-    ;window.__test = {
-      createPitchSection: createPitchSection,
-    };
-  `;
-  vm.runInContext(exported, sandbox, { filename: 'popup.js' });
-  return sandbox;
-}
-
-// 深度优先收集所有 className == cls 的元素节点。
-function collectByClass(node, cls, acc) {
-  acc = acc || [];
-  if (!node) return acc;
-  if (node.nodeType !== 3 && node.className === cls) acc.push(node);
-  const kids = node.children || node.childNodes || [];
-  for (const k of kids) collectByClass(k, cls, acc);
-  return acc;
-}
-
-function collectText(node) {
-  if (!node) return '';
-  let out = node.nodeType === 3 ? (node.textContent || '') : '';
-  if (typeof node.textContent === 'string' && node.nodeType !== 3 &&
-      (!node.children || node.children.length === 0)) {
-    out += node.textContent;
-  }
-  const kids = node.children || node.childNodes || [];
-  for (const k of kids) out += collectText(k);
-  return out;
-}
+const {
+  loadPopup,
+  collectByClass,
+  collectText,
+} = require('./_popup_dom_host.js');
 
 function labelNames(section) {
   return collectByClass(section, 'pitch-dict-label').map(n => n.textContent);
@@ -191,15 +83,38 @@ const FIVE_SAME = ['词典14', '词典13', '词典15', '词典16', '词典17'].m
       'partially overlapping position sets must NOT be merged (payload equality is the rule)');
   }
 
-  // Case 4: 去重打开（app 默认）—— 行为与改动前逐字一致：1 行 1 枚药丸。
+  // Case 4: 去重打开（**app 默认档**）—— 这才是 BUG-2122 的另一半。
+  //
+  // 旧行为：去重先跑，第二本同型词典的 unique 已经是空数组，整组被丢，来源名随之
+  // 消失，弹窗只剩 `[词典14] ￣ギター [1]` 一枚药丸。BUG 文件自己写的判据是
+  // 「一档丢信息，另一档出重复」——这一档丢的就是**信息**，而且绝大多数用户在这一档。
+  // 合并挪到去重之前后：5 本先并成一组，unique=[1] 存活，5 个来源全留住。
   {
     const sb = loadPopup();
     sb.window.deduplicatePitchAccents = true;
     const section = sb.window.__test.createPitchSection(FIVE_SAME, 'ギター');
     assert.strictEqual(pitchGroupCount(section), 1,
       'dedup ON must still yield exactly one row');
-    assert.deepStrictEqual(labelNames(section), ['词典14'],
-      'dedup ON keeps only the first dictionary — the default look must not change');
+    assert.deepStrictEqual(labelNames(section),
+      ['词典14', '词典13', '词典15', '词典16', '词典17'],
+      'dedup ON must keep EVERY source label — dropping four of them is the '
+        + '"one setting loses information" half of BUG-2122');
+    const text = collectText(section);
+    assert.strictEqual(text.split('[1]').length - 1, 1,
+      'the accent [1] must still be drawn exactly once; got ' + JSON.stringify(text));
+  }
+
+  // Case 4b: 位置顺序不同但集合相同 —— 同一音调型，必须合并。
+  {
+    const sb = loadPopup();
+    sb.window.deduplicatePitchAccents = false;
+    const section = sb.window.__test.createPitchSection([
+      { dictionary: 'A', pitchPositions: [1, 0], patterns: [], transcriptions: [] },
+      { dictionary: 'B', pitchPositions: [0, 1], patterns: [], transcriptions: [] },
+    ], 'ねこ');
+    assert.strictEqual(pitchGroupCount(section), 1,
+      '[1,0] and [0,1] are the same accent set; key must sort before comparing');
+    assert.deepStrictEqual(labelNames(section), ['A', 'B']);
   }
 
   // Case 5: 两本纯 IPA 词典给出完全相同的 transcriptions → 合并。
