@@ -99,6 +99,7 @@ import 'package:fushi/src/media/torrent/anime_download_subscription.dart';
 import 'package:fushi/src/media/torrent/torrent_memory.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
 import 'package:fushi/src/media/video/video_lua_capability.dart';
+import 'package:fushi/src/media/video/video_specs_service.dart';
 import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi/src/media/video/download/video_download_path_mapping.dart';
 import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
@@ -3779,6 +3780,16 @@ class AppModel with ChangeNotifier {
             MokuroMoeClient(baseUrl: mangaOnlineCatalogBaseUrl),
       );
 
+  /// 视频文件技术规格缓存（v95，懒建）：库页卡片的清晰度/HDR 角标与作品详情页的
+  /// 规格表共用一份，跨页面存活以免来回切页反复 ffprobe。
+  ///
+  /// **刻意不接 `addListener(notifyListeners)`**：它每探完一个文件就通知一次（滚一屏
+  /// 几十次），转发成 AppModel 的全局通知会让每个 `ref.watch(appProvider)` 的页面
+  /// 跟着重建。消费方走 [videoSpecsProvider] 单独订阅，重建面收敛到卡片子树。
+  VideoSpecsService? _videoSpecsService;
+  VideoSpecsService get videoSpecsService =>
+      _videoSpecsService ??= VideoSpecsService(database);
+
   /// Mihon 扩展生态宿主（Android 原生 / Windows、macOS 内置 Java sidecar）。
   ///
   /// 与 mokuro 下载队列一样按首次访问懒建：普通书架和 Mokuro 浏览不会启动 JVM，
@@ -6404,6 +6415,10 @@ class AppModel with ChangeNotifier {
     _animeDownloadSubscriptionService?.stop();
     _mokuroMoeDownloadQueue?.dispose();
     _mokuroMoeDownloadQueue = null;
+    // 服务持有 FushiDatabase 引用，db 关闭/重开时必须一并销毁，否则新库开出来后
+    // 旧实例还拿着已关闭的连接，探测队列一落库就抛。
+    _videoSpecsService?.dispose();
+    _videoSpecsService = null;
     _discoveryDownloadQueue?.dispose();
     _discoveryDownloadQueue = null;
     _mediaDiscoveryService?.close();
@@ -6473,6 +6488,10 @@ class AppModel with ChangeNotifier {
     unawaited(_disposeVideoDownloadPipelineRuntime());
     _mokuroMoeDownloadQueue?.dispose();
     _mokuroMoeDownloadQueue = null;
+    // 服务持有 FushiDatabase 引用，db 关闭/重开时必须一并销毁，否则新库开出来后
+    // 旧实例还拿着已关闭的连接，探测队列一落库就抛。
+    _videoSpecsService?.dispose();
+    _videoSpecsService = null;
     _discoveryDownloadQueue?.dispose();
     _discoveryDownloadQueue = null;
     _mediaDiscoveryService?.close();

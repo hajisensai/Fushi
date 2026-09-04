@@ -693,6 +693,7 @@ void _requireOneVideoMetadataOwner({
   StudySegmentTombstones,
   StudySegments,
   WebMineQueue,
+  VideoFileSpecs,
 ])
 class FushiDatabase extends _$FushiDatabase
     with
@@ -723,7 +724,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 94;
+  int get schemaVersion => 95;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -2883,6 +2884,18 @@ class FushiDatabase extends _$FushiDatabase
                     'video_download_subscriptions', 'identity_json')) {
               await m.addColumn(videoDownloadSubscriptions,
                   videoDownloadSubscriptions.identityJson);
+            }
+          }
+          if (from < 95) {
+            // v95（库页/详情页技术规格标注）：新表 video_file_specs，缓存 ffprobe 探到的
+            // 分辨率 / HDR 色彩标签 / 编码 / 色深 / 帧率 / 音轨 / 字幕轨。身份键是**文件
+            // 路径**而非 bookUid——一个 video_books 行可能是多集播放列表，各集规格不同
+            // （详见 tables.dart 的表注释）。
+            // 无损：纯新增表，不动任何既有表和列；旧库升级后表为空 = 规格未探，UI 不显示
+            // 角标，与升级前行为一致，探测队列会按需回填。
+            // 幂等：fresh DB 由 onCreate 的 createAll 建好；重复升级被 `_tableExists` 短路。
+            if (!await _tableExists('video_file_specs')) {
+              await m.createTable(videoFileSpecs);
             }
           }
         },

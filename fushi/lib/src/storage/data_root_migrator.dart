@@ -986,6 +986,7 @@ class DataRootMigrator {
       if (debugFailMidRebase) {
         throw StateError('debugFailMidRebase');
       }
+      await _rebaseVideoFileSpecs(db, docs);
       await _rebaseGalgames(db, docs);
       await _rebaseMediaCollections(db, docs);
       await _rebaseCollectionScrapeMeta(db, docs);
@@ -1088,6 +1089,33 @@ class DataRootMigrator {
           newSecondary,
           v.bookUid,
         ],
+      );
+    }
+  }
+
+  /// video_file_specs：file_path（v95 规格探测缓存的**主键**）。
+  ///
+  /// 这张表是可重建缓存，理论上不改写也不会丢数据——但键指向旧路径就永远命不中，用户
+  /// 换完数据位置后整个库的清晰度/HDR 角标会集体消失，然后几百个文件挨个重新 ffprobe
+  /// 才慢慢长回来。改写只是一条 UPDATE，没有理由让用户白等这一轮。
+  ///
+  /// 用 `UPDATE OR REPLACE`：主键改写理论上可能撞上一条已存在的目标行（旧根与新根
+  /// 嵌套时两条路径可能归一到同一新值），撞了就让后写的覆盖，**不让整个迁移事务因为
+  /// 一条缓存行的主键冲突而回滚**——缓存的正确性远低于迁移本身。
+  static Future<void> _rebaseVideoFileSpecs(
+    FushiDatabase db,
+    DocumentsPathRebaser docs,
+  ) async {
+    final List<QueryRow> rows =
+        await db.customSelect('SELECT file_path FROM video_file_specs').get();
+    for (final QueryRow row in rows) {
+      final String oldPath = row.read<String>('file_path');
+      final String newPath = docs.rebase(oldPath);
+      if (newPath == oldPath) continue;
+      await db.customStatement(
+        'UPDATE OR REPLACE video_file_specs SET file_path = ? '
+        'WHERE file_path = ?',
+        <Object?>[newPath, oldPath],
       );
     }
   }

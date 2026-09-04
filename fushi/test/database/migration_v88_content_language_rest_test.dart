@@ -94,7 +94,7 @@ void main() {
     final sqlite3.Database probe =
         sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
     try {
-      expect(probe.select('PRAGMA user_version').first.values.first, 94);
+      expect(probe.select('PRAGMA user_version').first.values.first, 95);
       expect(hasColumn(probe, 'video_books', 'language'), isTrue);
       expect(hasColumn(probe, 'srt_books', 'language'), isTrue);
       expect(hasColumn(probe, 'galgames', 'language'), isTrue);

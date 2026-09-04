@@ -258,6 +258,28 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
       'TODO-1157 流媒体加载凭据 {subtitleUrl,subtitleFileName,referer,userAgent}，'
           '全是远端 URL / HTTP header，无本机路径。'),
 
+  // ── video_file_specs（v95 规格探测缓存）────────────────────────────
+  PathRebaseColumn(
+      'VideoFileSpecs',
+      'filePath',
+      PathRebaseKind.documentsRooted,
+      '本表的**主键**，与 video_books.video_path 同语义（数据根内下载副本 / 用户原位'
+          '外部文件）。不改写 = 数据根搬家后整张规格缓存的键全部指向旧路径，永远命不中，'
+          '每个条目都要重探一遍（几百个文件的 ffprobe）。虽是可重建的缓存，但改写成本'
+          '只是一条 UPDATE，没有理由让用户白等。'),
+  PathRebaseColumn(
+      'VideoFileSpecs',
+      'audioTracksJson',
+      PathRebaseKind.notAPath,
+      'ffprobe 音轨事实数组 [{index,codec,channels,language,title,标志位}]，'
+          '全是流属性与语言 tag，无任何文件系统路径。'),
+  PathRebaseColumn(
+      'VideoFileSpecs',
+      'subtitleTracksJson',
+      PathRebaseKind.notAPath,
+      '内封字幕轨事实数组，与 audioTracksJson 同型——内封轨没有外部文件，'
+          '外挂字幕路径存在 video_books.subtitle_source，不在本表。'),
+
   // ── 统计 / 收藏 ────────────────────────────────────────────────────
   PathRebaseColumn('FavoriteWords', 'sourceType', PathRebaseKind.notAPath,
       '统计桶枚举值（book/video/...），不是路径。'),

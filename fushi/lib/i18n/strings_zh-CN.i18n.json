@@ -4219,5 +4219,17 @@
   "game_text_thread_artifact_hint": "逐字重复伪影线程，不会有可用台词",
   "shortcut_action_global_context_menu": "打开右键菜单",
   "shortcut_conflict_keep_both": "两者都保留",
-  "shortcut_conflict_keep_both_hint": "两个动作都保留这个绑定，按下时由作用域先后仲裁，先命中的那个生效。"
+  "shortcut_conflict_keep_both_hint": "两个动作都保留这个绑定，按下时由作用域先后仲裁，先命中的那个生效。",
+  "video_specs_title": "媒体信息",
+  "video_specs_resolution": "清晰度",
+  "video_specs_dynamic_range": "动态范围",
+  "video_specs_video_codec": "视频编码",
+  "video_specs_bit_depth": "色深",
+  "video_specs_frame_rate": "帧率",
+  "video_specs_bitrate": "码率",
+  "video_specs_audio_tracks": "音轨",
+  "video_specs_subtitle_tracks": "字幕轨",
+  "video_specs_track_commentary": "评论音轨",
+  "video_specs_track_forced": "强制",
+  "video_specs_track_default": "默认"
 }

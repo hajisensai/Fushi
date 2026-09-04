@@ -565,9 +565,11 @@ class BackupService {
     'sync_baselines',
     'fushi_paired_peers',
     'web_mine_queue',
+    'video_file_specs',
   ];
 
   static const List<String> _deviceLocalTablesParentFirst = <String>[
+    'video_file_specs',
     'web_mine_queue',
     'sync_baselines',
     'fushi_paired_peers',
