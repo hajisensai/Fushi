@@ -243,6 +243,22 @@ add_executable(fushi_voice_resource_filename_test
 target_include_directories(fushi_voice_resource_filename_test PRIVATE "hook")
 add_test(NAME fushi_voice_resource_filename_test COMMAND fushi_voice_resource_filename_test)
 
+# KiriKiri 资源流「是不是语音」判据（tenshi_sz 真机：SE/BGM/脚本误当语音）。纯函数头，双架构同跑。
+add_executable(fushi_kirikiri_voice_storage_name_test
+  "tests/kirikiri_voice_storage_name_test.cpp"
+)
+target_include_directories(fushi_kirikiri_voice_storage_name_test PRIVATE "hook")
+add_test(NAME fushi_kirikiri_voice_storage_name_test
+  COMMAND fushi_kirikiri_voice_storage_name_test)
+
+# 查词整句 ↔ 文本道行的同句判据（点击载荷 text_generation 反查，BUG-2085 家族）。
+add_executable(fushi_lookup_line_text_match_test
+  "tests/lookup_line_text_match_test.cpp"
+)
+target_include_directories(fushi_lookup_line_text_match_test PRIVATE "hook")
+add_test(NAME fushi_lookup_line_text_match_test
+  COMMAND fushi_lookup_line_text_match_test)
+
 add_executable(fushi_qlie_pack_test
   "tests/qlie_pack_test.cpp"
 )
