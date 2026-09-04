@@ -11,3 +11,4 @@
   HunexGgeAdapter hunex_gge_;
   CmvsAdapter cmvs_;
   UnrealIostoreAdapter unreal_iostore_;
+  AosSfaAdapter aos_sfa_;

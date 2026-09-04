@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "id": "aos_sfa",
+  "status": "implemented_unverified",
+  "detection": {
+    "executable_sha256": [
+      "FA965F070C0337098CA6ABDB31C4C3D049D1480C3056A4DB3B8BD43DD834B996"
+    ],
+    "module_sha256": []
+  },
+  "capabilities": {
+    "text": false,
+    "resource_audio": false,
+    "pcm_audio": true
+  },
+  "evidence": [
+    {
+      "kind": "real_sample",
+      "reference": "姫様ＬＯＶＥライフ！ (Princess Sugar, 2015-08): x86 game executable named after the title, importing DDRAW/DINPUT/DSOUND/d3d9/d3dx9_43. Five *.aos archives (bgm 61 MB, cv 675 MB, grp 2.99 GB, scr 2.5 MB, se 14 MB); every one of them starts with four zero bytes, two little-endian u32 fields, and its own file name as NUL-terminated ASCII at offset 12. Static probe 2026-09-05."
+    },
+    {
+      "kind": "real_sample",
+      "reference": "Same title, runtime measurement 2026-09-05 via injector --launch --hold with the original ISO mounted read-only (Mount-DiskImage, dismounted afterwards; nothing installed). Without the disc the game only shows a #32770 message box asking for it. With the disc: the visible window class is SFA, hook_diagnostics = StartupAudioHooksReady|LunaHostReady|LunaConnected, and the generic Windows audio path published non-silent PCM (44100/2/16, voice_clips rising to 57, peak 14570). luna_active stayed 0 and text_events stayed 0 on the title screen, so no text capability is claimed."
+    }
+  ]
+}
