@@ -16,12 +16,19 @@
    进程启动后改不了，做不到运行期开关。v14 用共享内存的 `lookup_enabled` 取代它。
 
 3. 不得往引擎全局类上打 monkey-patch（`global.Layer.drawText` /
-   `global.MessageLayer.processCh`）。这两条是已被运行日志证伪的捕获路径（只有
-   TextRender 命中），而且挂在**全局** Layer 上意味着游戏所有 UI 绘制都要多绕一层
-   ——游戏内渲染下每一毫秒都直接变成掉帧。
+   `global.MessageLayer.processCh`）。在 TJS2 里这种赋值对**任何实例都不可见**：
+   `tTJSNativeClass::CreateNew` 把原生成员逐个注册到每个新实例上、脚本类把类体在新实例
+   上执行一遍（tjsNative.cpp / tjsInterCodeExec.cpp），类对象上的成员既改不了已有实例
+   也不进入以后的实例化——Fate/stay night[Realta Nua] 真机（2026-08-14）挂上后连推 7 句
+   一次都没被调用正是这个语义。所以它不只是"让所有 UI 绘制多绕一层"的性能问题，而是
+   **根本不工作**的死代码。
    唯一豁免：留在 `if(global.fushiLookupProbeMode)` 这个**默认关闭**的探测分支里，
    供换游戏时判断"文本到底走哪条路"。所以这条规则有配套的第二问——那个开关必须默认
    false，否则豁免立刻退化成"全局补丁常驻"。
+   配套的正向规则（`find_classic_sweep_missing`）：经典 KAG3（没有 global.TextRender）
+   的采集面必须以**逐实例**补丁的形式存在——KAGEX 缺席门的 else 里调用
+   `fushiLookupSweepClassicLayers()`，而它逐个给 `kag.fore/back.messages` 的实例赋
+   `layer.drawText`。把 sweep 从 else 里挪走、把门删掉、或把逐实例补丁改回类补丁，都红。
 
 4. 字形层与 `kag.primaryLayer` 的坐标不能假定共享父子链。KAG 的 fore/back 页可以是
    同一窗口根下的兄弟子树；必须分别沿父链累加到**同一个根**，再以两个绝对图层坐标相减。
@@ -69,9 +76,10 @@ from typing import Iterator
 
 # KAGEX 缺席门：`if(typeof global.TextRender == "Object") { ... } else { ... }`。
 # 经典 KAG3 游戏（Fate/stay night[Realta Nua]、PRETTY×CATION2、フタマタ恋愛）整个
-# global.TextRender 都不存在，逐字几何只从原生 Layer.drawText 经过——全局补丁在**这个
-# else 里**是唯一可行采集面，不是又一条兜底。装了 textrender.dll 的游戏走 if 分支，
-# 一行都不多绕，所以"全局补丁让所有 UI 绘制多绕一层"的代价只落在别无来源的游戏上。
+# global.TextRender 都不存在，逐字几何只从消息层实例的 drawText 经过——else 里必须
+# 调用逐实例 sweep（`fushiLookupSweepClassicLayers()`），而且只能是逐实例：TJS2 的
+# 实例化把成员拷进实例，类对象上的补丁对实例永远不可见（见规则 3）。装了 textrender.dll
+# 的游戏走 if 分支，sweep 以 classic 位为门，一行都不多绕。
 KAGEX_GATE_RE = re.compile(
     r'if\s*\(\s*typeof\s+global\.TextRender\s*==\s*"Object"\s*\)'
 )
@@ -442,21 +450,52 @@ def _classic_fallback_spans(text: str) -> list[tuple[int, int]]:
 def find_global_monkey_patches(source: MaskedSource) -> list[str]:
     """引擎全局类的补丁只允许出现在默认关闭的探测分支里。
 
-    `global.Layer.drawText` 挂上包装之后，游戏**所有** UI 绘制都要多绕一层；游戏内
-    渲染下这直接变成掉帧。所以补丁只允许出现在两处**有门的**位置：
-
-    1. 默认关闭的探测分支（换游戏时数次数用）；
-    2. KAGEX 缺席门的 else——那类游戏没有 global.TextRender，逐字几何只从原生
-       Layer.drawText 经过，不绕就等于游戏内查词整个不存在。
-
-    两处之外的补丁一律红：那是"所有游戏都多绕一层"，代价没有对价。
+    TJS2 的类对象成员赋值对实例永远不可见（模块 docstring 规则 3），所以
+    `global.Layer.drawText = ...` 在生产路径上**不是**"多绕一层"而是根本不工作的
+    死代码。唯一允许的位置是默认关闭的探测分支（换游戏时数次数用——数到 0 本身就是
+    这条语义的自证）。KAGEX 缺席门的 else 曾是第二处豁免，2026-09-04 起取消：那里的
+    采集面必须是逐实例补丁（`find_classic_sweep_missing`）。
     """
-    spans = _probe_block_spans(source.text) + _classic_fallback_spans(source.text)
+    spans = _probe_block_spans(source.text)
     hits: list[str] = []
     for m in GLOBAL_PATCH_RE.finditer(source.text):
         if any(start <= m.start() < end for start, end in spans):
             continue
         hits.append(f"{ADAPTER.name}:{source.line_of(m.start())} {m.group(0)}")
+    return hits
+
+
+# 逐实例补丁的形状：给某个**变量**（实例）而不是 global.Layer 赋 drawText。
+INSTANCE_DRAWTEXT_PATCH_RE = re.compile(
+    r"(?<![\w.])(?!global\.)(\w+)\.drawText\s*=(?!=)\s*function"
+)
+CLASSIC_SWEEP_CALL_RE = re.compile(r"global\.fushiLookupSweepClassicLayers\s*\(\s*\)\s*;")
+
+
+def find_classic_sweep_missing(source: MaskedSource) -> list[str]:
+    """经典 KAG3 采集面必须存在，且必须是逐实例补丁。
+
+    三个缺一不可：
+
+    1. KAGEX 缺席门 `if(typeof global.TextRender == "Object") {...} else {...}` 存在
+       ——门没了就是"所有游戏都跑 classic sweep"或"经典 KAG3 整个没有采集面"。
+    2. else 里调用 `global.fushiLookupSweepClassicLayers();`——sweep 挪出 else 或被删，
+       经典 KAG3 的游戏内查词整个不存在，而症状与"这个引擎不支持"同形，没人会发现。
+    3. 源码里存在逐实例补丁 `<layer>.drawText = function` 且不是 `global.Layer.drawText`
+       ——改回类补丁就是规则 3 里那条永远不工作的死代码。
+    """
+    text = source.text
+    hits: list[str] = []
+    spans = _classic_fallback_spans(text)
+    if not spans:
+        hits.append(f"{ADAPTER.name}: KAGEX 缺席门的 else 区间不存在")
+    elif not any(CLASSIC_SWEEP_CALL_RE.search(text[start:end]) for start, end in spans):
+        hits.append(
+            f"{ADAPTER.name}: KAGEX 缺席门的 else 里没有 "
+            "global.fushiLookupSweepClassicLayers();"
+        )
+    if not INSTANCE_DRAWTEXT_PATCH_RE.search(text):
+        hits.append(f"{ADAPTER.name}: 没有逐实例的 <layer>.drawText = function 补丁")
     return hits
 
 
@@ -2947,9 +2986,20 @@ class RealAdapterTest(unittest.TestCase):
         self.assertEqual(
             [],
             find_global_monkey_patches(self.source),
-            "global.Layer.drawText / global.MessageLayer.processCh 的全局补丁已被运行"
-            "日志证伪（只有 TextRender 命中）；挂在全局类上会让游戏所有 UI 绘制多绕一层，"
-            "游戏内渲染下直接掉帧。只允许留在默认关闭的探测分支里。",
+            "global.Layer.drawText / global.MessageLayer.processCh 的全局补丁在 TJS2 里"
+            "对实例永远不可见（实例化把成员拷进实例；Fate RN 真机挂上后一次都没被调用）。"
+            "只允许留在默认关闭的探测分支里；经典 KAG3 走逐实例补丁。",
+        )
+
+    def test_classic_kag3_capture_is_a_per_instance_sweep_inside_the_gate(
+        self,
+    ) -> None:
+        self.assertEqual(
+            [],
+            find_classic_sweep_missing(self.source),
+            "经典 KAG3（无 textrender.dll）的采集面必须是 KAGEX 缺席门 else 里的"
+            "fushiLookupSweepClassicLayers() + 逐实例 layer.drawText 补丁；缺任何一环，"
+            "Fate RN / フタマタ恋愛 的游戏内查词整个不存在且症状与「引擎不支持」同形。",
         )
 
     def test_probe_branch_is_off_by_default(self) -> None:
@@ -3068,9 +3118,19 @@ if(typeof global.TextRender == "Object")
 }
 else
 {
-	global.fushiLookupOriginalDrawText = global.Layer.drawText;
-	global.Layer.drawText = function(x, y, text) { return 0; };
+	global.fushiLookupClassicSource = global.fushiLookupClassicSource | 1;
+	global.fushiLookupSweepClassicLayers();
 }
+global.fushiLookupPatchClassicLayer = function(layer)
+{
+	layer.fushiLookupOriginalDrawText = layer.drawText;
+	layer.drawText = function(x, y, text) { return 0; } incontextof layer;
+};
+global.fushiLookupSweepClassicLayers = function()
+{
+	if((global.fushiLookupClassicSource & 1) == 0) return 0;
+	return 0;
+};
 global.fushiLookupCapture = function(renderer)
 {
     var entry = global.fushiLookupEntryFor(renderer);
@@ -4381,8 +4441,9 @@ class MutationSelfTest(unittest.TestCase):
         self.assertEqual([], find_unvalidated_placeholder_values(self.clean))
         self.assertEqual([], find_unguarded_bitmap_copies(self.clean))
         self.assertEqual([], find_ownerless_card_dismissals(self.clean))
-        # 干净样本里确实有一个 KAGEX 缺席门 else，否则放行 classic 采集面这条分支
-        # 在自测里根本没被走到（放行规则会变成永远走不到的死代码而无人察觉）。
+        self.assertEqual([], find_classic_sweep_missing(self.clean))
+        # 干净样本里确实有一个 KAGEX 缺席门 else，否则 classic sweep 的正向规则在自测里
+        # 根本没被走到（规则会变成永远走不到的死代码而无人察觉）。
         self.assertNotEqual([], _classic_fallback_spans(CLEAN_SAMPLE))
         # 干净样本里确实有一次收卡，否则归属这条规则根本没被走到。
         self.assertIsNotNone(_tjs_function_body(CLEAN_SAMPLE, "fushiLookupCapture"))
@@ -5234,22 +5295,59 @@ class MutationSelfTest(unittest.TestCase):
         )
         self.assertNotEqual([], find_global_monkey_patches(dirty))
 
-    def test_removing_the_kagex_gate_turns_the_classic_patch_red(self) -> None:
+    def test_removing_the_kagex_gate_turns_the_classic_sweep_red(self) -> None:
         # 门被改成恒真（typeof global.TextRender 判据没了）：else 区间随之消失，
-        # 门内补丁立刻落进红区——这正是"别的游戏也跟着多绕一层"那一刻。
+        # sweep 失去了"只在经典 KAG3 才跑"的门——正向规则必须红。
         dirty = self._mutate(
             'if(typeof global.TextRender == "Object")',
             "if(global.fushiLookupAlways)",
         )
         self.assertEqual([], _classic_fallback_spans(dirty.text))
-        self.assertNotEqual([], find_global_monkey_patches(dirty))
+        self.assertNotEqual([], find_classic_sweep_missing(dirty))
 
     def test_gate_without_else_does_not_open_a_span(self) -> None:
         # 只有真正的 else 才代表"这台游戏没有 KAGEX"。把 else 换成新的无条件块，
-        # 区间必须消失，块里的补丁必须红。
+        # 区间必须消失，正向规则必须红。
         dirty = self._mutate("else", "if(1)")
         self.assertEqual([], _classic_fallback_spans(dirty.text))
+        self.assertNotEqual([], find_classic_sweep_missing(dirty))
+
+    def test_global_patch_inside_the_kagex_else_is_red(self) -> None:
+        # 2026-09-04 前 else 里是全局类补丁且被豁免；TJS2 语义证明它对实例永远不可见，
+        # 豁免取消：把 sweep 换回类补丁，规则 3 与正向规则都必须红。
+        dirty = self._mutate(
+            "global.fushiLookupSweepClassicLayers();\n}",
+            "global.Layer.drawText = function(x, y, text) { return 0; };\n}",
+        )
         self.assertNotEqual([], find_global_monkey_patches(dirty))
+        self.assertNotEqual([], find_classic_sweep_missing(dirty))
+
+    def test_sweep_removed_from_the_kagex_else_is_red(self) -> None:
+        # sweep 从 else 里消失（分支只剩置位）：经典 KAG3 的采集面整个不存在，而
+        # 症状与"引擎不支持"同形——必须由守卫而不是真机来发现。
+        dirty = self._mutate(
+            "global.fushiLookupSweepClassicLayers();\n}",
+            "global.fushiLookupClassicSource = global.fushiLookupClassicSource | 16;\n}",
+        )
+        self.assertNotEqual([], find_classic_sweep_missing(dirty))
+
+    def test_instance_patch_degraded_to_class_patch_is_red(self) -> None:
+        # 逐实例补丁改回 global.Layer：规则 3 红（不在探测分支）且正向规则红（没有
+        # 逐实例形状）。
+        dirty = self._mutate(
+            "layer.drawText = function(x, y, text) { return 0; } incontextof layer;",
+            "global.Layer.drawText = function(x, y, text) { return 0; };",
+        )
+        self.assertNotEqual([], find_global_monkey_patches(dirty))
+        self.assertNotEqual([], find_classic_sweep_missing(dirty))
+
+    def test_instance_patch_definition_alone_is_not_enough(self) -> None:
+        # 只留逐实例补丁函数、删掉 sweep 调用：正向规则仍然红——定义了没人调用等于没有。
+        dirty = self._mutate(
+            "\tglobal.fushiLookupSweepClassicLayers();\n",
+            "",
+        )
+        self.assertNotEqual([], find_classic_sweep_missing(dirty))
 
     def test_unrelated_string_concatenation_stays_green(self) -> None:
         # 反向变异：非 TJS 语句里加更多字符串拼接，守卫必须仍然绿（否则它一改就红）。

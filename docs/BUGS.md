@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1970 条。点号进各自文件。
+> 共 1971 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2116](bugs/BUG-2116-gal-classic-kag3-class-patch-invisible-to-instances.md) | ✅ | ✅ | 经典 KAG3 游戏内查词传感器给 TJS 类对象打补丁对实例永远不可见 |
 | [BUG-2115](bugs/BUG-2115-kirikiri-voice-stream-filter-captures-se-bgm.md) | ✅ | ✅ | KiriKiri 资源流语音过滤按裸 .ogg/.opus 后缀把 SE/BGM/脚本当语音并配给旁白 |
 | [BUG-2114](bugs/BUG-2114-kirikiri-direct-route-term-highlight-missing.md) | ✅ | ✅ | KiriKiri 直连路由下被查整词不高亮，只亮点击的单字 |
 | [BUG-2113](bugs/BUG-2113-kirikiri-ingame-card-mining-text-generation-mismatch.md) | ✅ | ✅ | KiriKiri 点击载荷 text_generation 填成 TJS 提交序号，游戏内「+」制卡恒失败 |

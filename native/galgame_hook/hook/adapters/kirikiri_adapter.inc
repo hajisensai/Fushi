@@ -2005,6 +2005,9 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			{
 				global.fushiLookupInstallGetRenderBridge();
 				global.fushiLookupSweepMsgwinRenders();
+				// classic KAG3：numMessageLayers 变化新建的消息层在这之后才存在；非 classic
+				// 游戏里这一步以位 0 为门，零开销。
+				global.fushiLookupSweepClassicLayers();
 				global.fushiLookupAuditWrappers(true);
 			};
 
@@ -2894,6 +2897,24 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					if(h <= 0) return;
 					var entry = global.fushiLookupEntryFor(layer);
 					var glyphs = entry.glyphs;
+					// 影/边重绘去重：KAG3 一个字可能连画多次（先影后本体、或描边的多个偏移），
+					// 同一字在上一字形 ±4px 内再来一次就是同一个字，不是下一个字——放进
+					// 「回到左上 = 换屏」判据前面，否则本体 (x,y) 落在影 (x+2,y+2) 的左上方会被
+					// 误判成清屏，整行永远只剩最后一个字。合并时把字形钉到最小 x/y（本体在影
+					// 的左上），包围盒同步收进来。
+					if(glyphs.count > 0 && text.length == 1)
+					{
+						var prev = glyphs[glyphs.count - 1];
+						var dx = x - prev.x, dy = y - prev.y;
+						if(prev.ch == text && dx >= -4 && dx <= 4 && dy >= -4 && dy <= 4)
+						{
+							if(x < prev.x) prev.x = x;
+							if(y < prev.y) prev.y = y;
+							if(prev.x < entry.minX) entry.minX = prev.x;
+							if(prev.y < entry.minY) entry.minY = prev.y;
+							return;
+						}
+					}
 					var restart = glyphs.count == 0;
 					if(!restart)
 					{
@@ -2969,6 +2990,70 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					global.fushiLookupClassicSource = global.fushiLookupClassicSource | 4;
 				}
 				catch(e) {}
+			};
+
+)TJS" LR"TJS(
+
+			// 给**一个**消息层实例挂 classic 采集包装。返回 true = 本次真挂上了。
+			// 为什么必须逐实例而不是改类，见 KAGEX 缺席门 else 分支的注释（TJS2 实例化把
+			// 成员拷进实例，类对象上的赋值对实例永远不可见）。幂等：实例上留标记，重扫零开销。
+			// 包装用 incontextof 钉死实例，原方法先跑、采集只做不抛出的 sidecar。
+			global.fushiLookupPatchClassicLayer = function(layer)
+			{
+				if(layer === void || layer === null || !isvalid layer) return false;
+				if(typeof layer.fushiLookupClassicPatched != "undefined") return false;
+				if(typeof layer.fushiLookupIgnore != "undefined") return false;
+				if(typeof layer.drawText != "Object") return false;
+				layer.fushiLookupOriginalDrawText = layer.drawText;
+				layer.drawText = function(x, y, text, color, opacity, antialiased)
+				{
+					var result = (this.fushiLookupOriginalDrawText incontextof this)(...);
+					global.fushiLookupCaptureDrawText(this, x, y, text);
+					return result;
+				} incontextof layer;
+				// processCh 是 KAG3 MessageLayer 的脚本方法（不是每个 Layer 都有）；同样只作
+				// 「字走不走这里」的自证位，不产出几何。
+				if(typeof layer.processCh == "Object")
+				{
+					layer.fushiLookupOriginalProcessCh = layer.processCh;
+					layer.processCh = function(ch, steptime)
+					{
+						var result = (this.fushiLookupOriginalProcessCh incontextof this)(...);
+						global.fushiLookupCaptureProcessCh(this, ch);
+						return result;
+					} incontextof layer;
+				}
+				layer.fushiLookupClassicPatched = 1;
+				return true;
+			};
+
+			// 扫 fore/back 两页的全部消息层并补挂。只在 classic 采集面启用（位 0）时工作，
+			// KAGEX 游戏一行不跑。安装时跑一次；之后由 fushiLookupRefreshCaptureBridges 在
+			// KAG stable 边沿重扫——numMessageLayers 变化新建的层就在那之后出现。
+			// 位 3 = 至少挂上过一个实例（与位 0「分支跑到」分开：分支跑到但一个层都没挂上
+			// 说明 kag.fore.messages 结构不是标准 KAG3，真机上要能一眼分出这两种失败）。
+			global.fushiLookupSweepClassicLayers = function()
+			{
+				if((global.fushiLookupClassicSource & 1) == 0) return 0;
+				var patched = 0;
+				for(var page = 1; page <= 2; page++)
+				{
+					var messages = global.fushiLookupMessagesForPage(page);
+					if(messages === void || messages === null) continue;
+					var count = 0;
+					try { count = messages.count; } catch(e) { continue; }
+					for(var i = 0; i < count; i++)
+					{
+						try
+						{
+							if(global.fushiLookupPatchClassicLayer(messages[i])) patched++;
+						}
+						catch(e) { global.fushiLookupFault(); }
+					}
+				}
+				if(patched > 0)
+					global.fushiLookupClassicSource = global.fushiLookupClassicSource | 8;
+				return patched;
 			};
 
 			// Freeze the KAG message slot while drawCh is actually executing.  A later
@@ -4400,51 +4485,30 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			}
 			else
 			{
-				// ⚠️ 真机实测结论（2026-08-14，务必先读再改）：
-				//   Fate/stay night[Realta Nua]（KiriKiri2、无 textrender.dll）——传感器装上、
-				//   查词开关打开、连推 7 句台词，**drawText 与 processCh 两条包装一次都没被
-				//   调用**（classic_patch_installed 亮，classic_geometry_captured 与
-				//   classic_processch_fired 全灭），同期 LunaHook 正常收到 7 行文本。
-				//   フタマタ恋愛（KiriKiri、KAGParser.dll）——TJS exporter 始终没拿到，整个
-				//   传感器（含原有 KAGEX 路径）根本没装起来，lookup_diag 恒为 0。
+				// 没有 KAGEX TextRender 的经典 KAG3 游戏（Fate/stay night[Realta Nua]、
+				// フタマタ恋愛、PRETTY×CATION2）：逐字几何只从消息层的 drawText 经过。
 				//
-				// 也就是说：给**原生类** Layer 的成员赋值，在 TJS 里拦不住实例上的调用；而
-				// MessageLayer 在这些游戏里也不是可覆写的全局 TJS 类。下面两条目前只作为
-				// **自证探针**存在——它们不产出可用几何，只回答"这台游戏的字走不走这里"。
-				// 想让经典 KAG3 真能用，得先在真机上找到这些游戏实际的绘字边界（候选：引擎
-				// 内部 TVPDrawText 的原生 detour），而不是继续在 TJS 层加包装。
-				//
-				// 没有 KAGEX TextRender 的经典 KAG3 游戏：逐字几何原以为只从原生 Layer.drawText 经过。
-				// 这是**有条件**的全局补丁——装了 textrender.dll 的游戏走上面那条，一行都不多绕，
-				// 所以"全局类补丁让所有 UI 绘制多绕一层"的代价只落在别无来源的游戏上；而在那些
-				// 游戏里，不绕就等于游戏内查词整个不存在。
+				// ⚠️ 为什么是**逐实例**补丁而不是给 global.Layer / global.MessageLayer 赋值
+				// （2026-08-14 真机 + 2026-09-04 TJS2 源码，务必先读再改）：
+				//   真机——Fate RN 传感器装上、查词开、连推 7 句，挂在 global.Layer.drawText 与
+				//   global.MessageLayer.processCh 上的包装**一次都没被调用**，同期 LunaHook 正常
+				//   收到 7 行文本。
+				//   源码——TJS2 的类不是原型链：tTJSNativeClass::CreateNew 把原生成员逐个注册到
+				//   **每个新实例**上（tjsNative.cpp「add member to dsp」），脚本类的
+				//   tTJSInterCodeContext::CreateNew 也是把类体在新实例上执行一遍。类对象上的
+				//   成员赋值既改不了已存在的实例，也不进入以后的实例化——它对实例**永远**
+				//   不可见，这不是时序问题，改早改晚都一样。
+				// 所以唯一拦得住的位置是实例自己的成员表：给 kag.fore/back.messages 里每个
+				// MessageLayer 实例赋 drawText / processCh。代价也只落在消息层本身，其他 UI 层
+				// 一行都不多绕（比旧的全局类补丁还便宜）。新建的消息层由
+				// fushiLookupRefreshCaptureBridges 在 KAG stable 边沿补扫。
 				// 传感器本身只在 host 真开启查词后才安装（PollKirikiriLookupInstall），关着的时候
 				// 游戏渲染路径与注入前逐字节一致。
-				global.fushiLookupOriginalDrawText = global.Layer.drawText;
-				global.Layer.drawText = function(x, y, text, color, opacity, antialiased)
-				{
-					// 先让游戏画完再采集：原方法抛异常时不留半条几何。
-					var result = (global.fushiLookupOriginalDrawText incontextof this)(...);
-					global.fushiLookupCaptureDrawText(this, x, y, text);
-					return result;
-				};
-				// 位 0 = 补丁真的装上了（这一行跑到就说明 else 分支没有中途抛异常）。
+				//
+				// 位 0 = classic 采集面已启用（这一行跑到就说明 else 分支没有中途抛异常）；
+				// 必须先置位，sweep 以它为门。
 				global.fushiLookupClassicSource = global.fushiLookupClassicSource | 1;
-				// MessageLayer 是 KAG3 的 **TJS 类**，Layer 是引擎的**原生类**。给原生类的
-				// 成员赋值在 TJS 里拦不住实例上的调用（Fate/stay night[Realta Nua] 实测：补丁
-				// 装上、游戏连画 4 句台词，包装一次都没被调用），TJS 类才拦得住。两条同时挂、
-				// 各自自证，真机一轮就能判出这台游戏的字到底从哪儿过。
-				if(typeof global.MessageLayer == "Object")
-				{
-					global.fushiLookupOriginalProcessCh = global.MessageLayer.processCh;
-					global.MessageLayer.processCh = function(ch, steptime)
-					{
-						var result =
-							(global.fushiLookupOriginalProcessCh incontextof this)(...);
-						global.fushiLookupCaptureProcessCh(this, ch);
-						return result;
-					} incontextof global.MessageLayer;
-				}
+				global.fushiLookupSweepClassicLayers();
 			}
 			// 私有插件已出现时才封未来入口并扫既有 MsgwinRender；它不是通用
 			// Kirikiri readiness。若插件稍后加载，首次 leftClick 会执行同一安全 ensure。
