@@ -12,5 +12,5 @@
   if (nextText.isNotEmpty && _status == GalAttachedTextStatus.waitingForBodyThread) {
   ```
   `bodyArrived` 是它的真子集，只放宽**恢复时机**，不放宽任何准入判据（profile / 风险 / variant / registry 四道门一字未动）。
-- **[x] ② 已加自动化测试** — `fushi/test/lookup/gal_attached_text_controller_test.dart` 的「BUG-2138 已在等正文且正文一直都在时，同一句也要能把状态救回来」：先激活 → 子面回 `emptyText` 把状态推回等正文（此时正文早已非空）→ 同一句再同步一轮 → 断言恢复到 `activeAttached`。**变异实测**：把判据换回 `bodyArrived` 当场红。同文件 46 条全绿。
+- **[x] ② 已加自动化测试** — `fushi/test/lookup/gal_attached_text_controller_test.dart` 的「BUG-2139 已在等正文且正文一直都在时，同一句也要能把状态救回来」：先激活 → 子面回 `emptyText` 把状态推回等正文（此时正文早已非空）→ 同一句再同步一轮 → 断言恢复到 `activeAttached`。**变异实测**：把判据换回 `bodyArrived` 当场红。同文件 46 条全绿。
 - **关联**：[[BUG-2137]]（本条是它第二条分支暴露出来的）、[[BUG-2138]]（本条修好后才走到真正的建簇失败）。

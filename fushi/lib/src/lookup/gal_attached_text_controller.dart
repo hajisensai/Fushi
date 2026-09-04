@@ -442,7 +442,7 @@ class GalAttachedTextController extends ChangeNotifier {
       );
       return;
     }
-    // BUG-2138：`waitingForBodyThread` 的恢复原本只挂在「正文从无到有」这一个边沿上。
+    // BUG-2139：`waitingForBodyThread` 的恢复原本只挂在「正文从无到有」这一个边沿上。
     // 但该状态还有第二个来源——子面在正文真正落地前回 `noGlyphClusters`，那时
     // `_latestSourceText` 早已非空，`bodyArrived` 这个边沿**再也不会出现**，于是状态
     // 永久停在「等正文」，尽管正文每一行都在到。判据改成「还在等正文 && 手上确实有

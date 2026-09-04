@@ -43,6 +43,12 @@
   2. `render_item` 的另外三个参数（本轮新加的 `body_arg_words[3][32]` 探针）：arg2 与 arg3 是**同一个**指针，指向 `{ptr, ptr, 像素数据…}`；arg1 是 `{ptr 0x8003edfef0, ptr 0x80158b5470, 0, 0, 0x1001, …, 7}`。三者前 32 dword 内**无候选**。
   3. 引擎自己的 viewport/scale 全局（`rva.viewport=0x00596660`、`scale_x=0x0059c140`、`scale_y=0x0059c144`）：读出恒为 `{0,0,1788,1006}` + `0.93125/0.931481`，即 `1920×0.93125=1788`、`1080×0.931481=1006`，**与实际客户区无关也不随窗口尺寸变化**，不含原点。
   下一步候选（按代价排序）：① 沿 `outer={caller:0013340b,function:00130020}` 取该外层函数的 `this`，正文层对象大概率在那里；② `body_submit`（rva `0x00138640`）的入参；③ 承认 origin 是本作版式常量、收进 profile 并加运行期自校验（SOP 允许「引擎特例收进 profile/adapter」，但必须能被证伪）。
-- **[x] ② 已加自动化测试** — 本轮改动是纯诊断探针（trace v16→v17，头部新增 `body_arg_words[3][32]` + `body_arg_captured`，`slots` 偏移 584→976），无行为不变式变化，由既有守卫整批兜底：`hunex_gge_trace.h` 的 static_assert 与 `tests/hunex_gge_lookup_test.cpp` 的镜像断言在编译期钉住 v17 ABI，probe 侧镜像结构逐字段同序补齐（probe 与 helper 同源构建、版本不匹配即拒读）。
+- **[x] ② 已加自动化测试** — `native/galgame_hook/tests/layer_origin_pixels_test.cpp`（ctest `fushi_layer_origin_pixels_test`，8 条合成夹具用例）：单带命中的 origin 数值与「用中点而不是左上角」、**多带同宽必须拒绝**（无 glyph_count 时直接拒、有 glyph_count时按列投影连通段数唯一消歧、并列仍拒）、宽度不符拒、全黑拒、全白拒（明亮场景不得把背景整片吃成一行字）、四种非法入参 fail-closed。变异实测：把多解判据退回「静默取 weight最大者」即转红。
+
+  为此把像素判据从 `fushi/windows/runner/layer_origin_solver.cpp` 拆进`native/galgame_hook/include/layer_origin_pixels.h`（与 `host_executable_digest.h` 同一范式：需要被测的 host 逻辑放 include/，runner 用相对路径 include 真相源）——原先抓帧与像素分析焊死在 `SolveLookupLayerOrigin(HWND game, ...)` 一个函数里，结构上不可测，而它承载的正是「免手动校准」的全部算法。
+
+  trace v16→v17 的 ABI 那半仍由既有守卫兜底：`hunex_gge_trace.h` 的 static_assert 与`tests/hunex_gge_lookup_test.cpp` 的镜像断言在编译期钉住，probe 侧镜像结构逐字段同序补齐（probe 与 helper 同源构建、版本不匹配即拒读）。
+
+  *（此前这一条写的是「本轮改动是纯诊断探针、无行为不变式变化」——那是上一轮的说明，与本文件 ① 描述的新增求解器 + 双向 IPC 自相矛盾。）*
 - **备注**：`engine-support.yaml` 的 `hunex_gge` 不因本条提升，仍 `implemented_unverified`。本条的价值是把 BUG-2135 留下的死胡同换成一个**只差一个二维常量**的问题：一旦拿到 origin，正文几何可以直接由字形矩形发布，**整条 compose → texture upload → quad → sprite 证据链都不需要**（那四段已被真机计数证明在 WoH 上分别是 0 次调用 / 描述符 0 成功 14 万失败 / 18.8 万次全部在形状校验早退 / 无源可配）。
 - **关联**：[[BUG-2135]]（WoH 正文没有 compose 层）、[[BUG-2134]]（compose wrapper 锚点假阳性）、[[BUG-2129]]（WoH 真机边界台账）。

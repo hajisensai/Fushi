@@ -336,7 +336,7 @@ void main() {
   );
 
   test(
-    'BUG-2138 已在等正文且正文一直都在时，同一句也要能把状态救回来',
+    'BUG-2139 已在等正文且正文一直都在时，同一句也要能把状态救回来',
     () async {
       preferences[key()] = jsonEncode(_profile().toJson());
       await sync();
@@ -359,7 +359,7 @@ void main() {
       expect(
         controller.status,
         GalAttachedTextStatus.activeAttached,
-        reason: 'BUG-2138：恢复不能只挂在 bodyArrived 这个一次性边沿上',
+        reason: 'BUG-2139：恢复不能只挂在 bodyArrived 这个一次性边沿上',
       );
     },
   );

@@ -38,7 +38,7 @@
 | [BUG-2141](bugs/BUG-2141-attached-risk-accepted-but-status-traps.md) | ✅ | 🚧 | profile 里风险已接受时 `needsRiskAcceptance` 变成死局：不生成 request、按钮不渲染、也没有恢复触发点 |
 | [BUG-2140](bugs/BUG-2140-attached-first-lookup-disarms-shield-click-passes-through.md) | — | ✅ | 第一次查词后 attached 表面再也武装不起来，之后每次点击都穿透并推进剧情 |
 | [BUG-2139](bugs/BUG-2139-attached-body-thread-recovery-edge-only.md) | ✅ | ✅ | attached 从 `waitingForBodyThread` 的恢复只挂在「正文从无到有」这一次性边沿上 |
-| [BUG-2138](bugs/BUG-2138-attached-dwrite-baseline-breaks-japanese-clusters.md) | ✅ | ✅ | attached 子面 DirectWrite 基线硬编码 0.8em，日文正文必然上溢版面框，字形簇永远建不出来 |
+| [BUG-2138](bugs/BUG-2138-attached-dwrite-baseline-breaks-japanese-clusters.md) | ✅ | 🚧 | attached 子面 DirectWrite 基线硬编码 0.8em，日文正文必然上溢版面框，字形簇永远建不出来 |
 | [BUG-2137](bugs/BUG-2137-attached-noglyphclusters-withdraws-claim.md) | ✅ | ✅ | attached 子面回 `noGlyphClusters` 时撤回了跨轮次共享的 provider 认领，与 BUG-2142 是同一个活锁的另一道门 |
 | [BUG-2136](bugs/BUG-2136-hunex-body-glyph-coords-are-logical-layer-local.md) | ✅ | ✅ | WoH 正文字形 render x/y 是「1920×1080 逻辑空间的文本层局部坐标」，客户区映射已实测成立，只差层原点 |
 | [BUG-2135](bugs/BUG-2135-hunex-body-render-has-no-compose-layer.md) | ✅ | 🚧 | WoH 正文渲染没有合成层，HUNEX 几何模型的三级 compose 假设不成立 |

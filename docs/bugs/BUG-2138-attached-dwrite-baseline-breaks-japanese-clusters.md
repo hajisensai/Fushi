@@ -12,11 +12,12 @@
 - **[x] ① 已修复** — 不去猜一个新常数，而是**量出来**：先用一次性版面（同字体、同字号、同行距）读 `GetOverhangMetrics`，把测到的 `overhang.top` 加回基线，再建正式版面。
   - 本来就不上溢的字体量到 0，基线一字不变 —— 存量校准的垂直位置不受影响。
   - 上溢的字体正好抵消，`overhang.top` 归零，既有的严格 overhang 校验**一条都没有放宽**。
-- **[x] ② 同轮补齐的量具（是本条能被定位的唯一原因）** — `RebuildClusters()` 20 个失败点逐点报因：`empty_text_or_no_surface_rect` / `dwrite_factory_failed` / `calibration_rect_invalid` / `layout_bounds_too_small` / `create_text_format_failed` / `create_text_layout_failed` / `metrics_overflow_body_rect` / `overhang_outside_body_rect` / `line_metrics_unavailable` / `line_metrics_read_failed` / `line_trimmed` / `line_units_or_height_mismatch` / `cluster_metrics_unavailable` / `cluster_count_zero` / `cluster_metrics_read_failed` / `cluster_range_out_of_text` / `hit_test_range_empty` / `hit_test_range_failed` / `cluster_box_outside_surface` / `text_position_mismatch` / `clusters_empty`；`SetState` 带出具体 token。另外 `layout_dirty_` 为假那一轮本来会用泛化的 `clusters_empty_after_build` **覆盖掉上一轮的真因**，改成保留 `last_cluster_failure_`。
+- **同轮补齐的量具（是本条能被定位的唯一原因）** — `RebuildClusters()` 20 个失败点逐点报因：`empty_text_or_no_surface_rect` / `dwrite_factory_failed` / `calibration_rect_invalid` / `layout_bounds_too_small` / `create_text_format_failed` / `create_text_layout_failed` / `metrics_overflow_body_rect` / `overhang_outside_body_rect` / `line_metrics_unavailable` / `line_metrics_read_failed` / `line_trimmed` / `line_units_or_height_mismatch` / `cluster_metrics_unavailable` / `cluster_count_zero` / `cluster_metrics_read_failed` / `cluster_range_out_of_text` / `hit_test_range_empty` / `hit_test_range_failed` / `cluster_box_outside_surface` / `text_position_mismatch` / `clusters_empty`；`SetState` 带出具体 token。另外 `layout_dirty_` 为假那一轮本来会用泛化的 `clusters_empty_after_build` **覆盖掉上一轮的真因**，改成保留 `last_cluster_failure_`。
 - **真机证据**（WoH v1.0，client 1874×1049）：
   ```
   修前：attached=fallback/overhang_outside_body_rect
   修后：attached=activeAttached/null   → 点字弹出查词卡、剧情不推进（同一轮实测）
   ```
-- **[ ] ③ 待补自动化测试** — 计划在 `fushi/windows/runner` 的可测层加一条纯函数守卫：给定字体 ascent > 0.8em 时，基线必须 ≥ ascent（即 `overhang.top ≤ 0`）。当前该逻辑与 DirectWrite 实例耦合，抽出前先记在此。
+- **[ ] ② 未加自动化测试** — 计划在 `fushi/windows/runner` 的可测层加一条纯函数守卫：给定字体 ascent > 0.8em 时，基线必须 ≥ ascent（即 `overhang.top ≤ 0`）。当前该逻辑与 DirectWrite 实例耦合，抽出前先记在此。
 - **关联**：[[BUG-2137]]（先解开活锁才走到这一步）、[[BUG-2143]]（同一条「状态不带原因就无法定位」的纪律，这次发生在 native 侧）、[[BUG-2139]]（本条修好后暴露的下一道边界）。
+- **索引说明**：此前 ② 挂在「量具」那条上，于是自动索引把「已加测试」列显示成 ✅，而真正的测试项是未勾的 ③——按 `docs/BUGS.md` 头部约定归位，② 恒指自动化测试。
