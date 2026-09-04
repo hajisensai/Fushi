@@ -7,6 +7,7 @@ import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/mining/external_window_mining.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_window_gif.dart';
+import 'package:fushi/src/mining/galgame_window_video.dart';
 import 'package:fushi/src/mining/immersion_mining_engine.dart';
 import 'package:fushi/src/mining/immersion_mining_request.dart';
 import 'package:fushi/src/mining/serial_job_queue.dart';
@@ -32,12 +33,34 @@ typedef GalHookAudioCapture = Future<Uint8List?> Function({
   required String outputExtension,
 });
 
+/// 该台词行到达时刻（hook 侧 tick 毫秒域，与录制帧同一时钟）；无时间戳返回 null。
+typedef GalHookLineTimestampLookup = int? Function(String lineId);
+
+/// 把会话录制环里 `[fromTickMs, toTickMs]` 的帧导出成 JPEG 文件（`toTickMs <= 0` =
+/// 现在）。生产指向 [WindowCaptureChannel.exportWindowRecording]。
+typedef GalHookRecordingExport = Future<WindowRecordingExport> Function({
+  required int fromTickMs,
+  required int toTickMs,
+  required String directory,
+});
+
+/// 录制帧 + 句子音频 → mp4。生产指向 [buildGalWindowVideoClip]；测试注入假编码器。
+typedef GalHookVideoClipBuilder = Future<GalWindowVideoClip?> Function({
+  required WindowRecordingExport export,
+  required int? fromTickMs,
+  required int toTickMs,
+  Uint8List? audioBytes,
+  required String audioExtension,
+  required Directory workDir,
+});
+
 class GalHookMiningResult {
   const GalHookMiningResult({
     this.outcome,
     this.failureReason,
     this.sentenceAudioMissing = false,
     this.degradedToStill = false,
+    this.degradedToAnimated = false,
     this.staleScene = false,
     this.audioFallbackDisabled = false,
     this.unmappedTokens = const <String>[],
@@ -47,6 +70,10 @@ class GalHookMiningResult {
   final String? failureReason;
   final bool sentenceAudioMissing;
   final bool degradedToStill;
+
+  /// 用户选了「视频片段」但片段没做出来（录制未启动 / 帧不足 2 张 / ffmpeg 失败），
+  /// 退回动图成卡时置真。再退到静图时置的是 [degradedToStill]（两者互斥）。
+  final bool degradedToAnimated;
 
   /// 制卡的是**历史行**（非当前最新行）时置真：画面截图只能抓 mine 时刻的当前窗口帧，
   /// 无法重建历史行当时的画面，故显式标注「画面可能与该台词不对应」，供调用方提示用户
@@ -96,6 +123,9 @@ class GalHookMiningCoordinator {
     GalHookLineValidator? lineValidator,
     GalHookSessionStateLoader? stateLoader,
     GalHookAudioCapture? captureAudio,
+    GalHookLineTimestampLookup? lineTimestampLookup,
+    GalHookRecordingExport? exportRecording,
+    GalHookVideoClipBuilder? buildVideoClip,
   })  : _session = session ?? GalHookSessionController.instance,
         _textService = textService ?? TexthookerService.instance,
         _engine = engine ?? ImmersionMiningEngine(),
@@ -103,11 +133,15 @@ class GalHookMiningCoordinator {
         _captureGifUsesDefault = captureGif == null,
         _captureStill = captureStill ?? WindowCaptureChannel.captureWindow,
         _createTempDirectory =
-            createTempDirectory ?? _defaultCreateTempDirectory {
+            createTempDirectory ?? _defaultCreateTempDirectory,
+        _exportRecording =
+            exportRecording ?? WindowCaptureChannel.exportWindowRecording,
+        _buildVideoClip = buildVideoClip ?? _defaultBuildVideoClip {
     _lineLookup = lineLookup ?? _textService.entryById;
     _lineValidator = lineValidator ?? _session.isLineInCurrentSession;
     _stateLoader = stateLoader ?? (() => _session.state);
     _captureAudio = captureAudio ?? _session.captureAudioBytes;
+    _lineTimestampLookup = lineTimestampLookup ?? _session.lineTimestampMs;
   }
 
   static final GalHookMiningCoordinator instance = GalHookMiningCoordinator();
@@ -119,10 +153,13 @@ class GalHookMiningCoordinator {
   final bool _captureGifUsesDefault;
   final GalHookStillCapture _captureStill;
   final GalHookTempDirectoryFactory _createTempDirectory;
+  final GalHookRecordingExport _exportRecording;
+  final GalHookVideoClipBuilder _buildVideoClip;
   late final GalHookLineLookup _lineLookup;
   late final GalHookLineValidator _lineValidator;
   late final GalHookSessionStateLoader _stateLoader;
   late final GalHookAudioCapture _captureAudio;
+  late final GalHookLineTimestampLookup _lineTimestampLookup;
 
   final SerialJobQueue _miningQueue = SerialJobQueue();
 
@@ -131,6 +168,23 @@ class GalHookMiningCoordinator {
     MiningAnimatedFormat format = MiningAnimatedFormat.gif,
   }) =>
       captureWindowGifBytes(hwnd: hwnd, format: format);
+
+  static Future<GalWindowVideoClip?> _defaultBuildVideoClip({
+    required WindowRecordingExport export,
+    required int? fromTickMs,
+    required int toTickMs,
+    Uint8List? audioBytes,
+    required String audioExtension,
+    required Directory workDir,
+  }) =>
+      buildGalWindowVideoClip(
+        export: export,
+        fromTickMs: fromTickMs,
+        toTickMs: toTickMs,
+        audioBytes: audioBytes,
+        audioExtension: audioExtension,
+        workDir: workDir,
+      );
 
   static Future<Directory> _defaultCreateTempDirectory() =>
       Directory.systemTemp.createTemp('fushi-gal-card-job-');
@@ -313,7 +367,30 @@ class GalHookMiningCoordinator {
     Uint8List? coverBytes;
     String coverName = 'external_window.gif';
     bool degradedToStill = false;
-    if (imageMode.isStill) {
+    bool degradedToAnimated = false;
+    if (imageMode.isVideoClip) {
+      // 视频片段：先收音频再定终点——片段必须覆盖到语音播完（captureAudio 在台词
+      // 语音结束后才返回），而且音频要混流进 mp4，两件事都要求这里先 await。
+      // 这与上面「音频与封面并行」不矛盾：并行只对动图 / 静图那两条链成立。
+      final Uint8List? earlyAudio = await audioFuture;
+      if (audioError != null) {
+        Error.throwWithStackTrace(
+            audioError!, audioStack ?? StackTrace.current);
+      }
+      final GalWindowVideoClip? clip = await _captureVideoClip(
+        lineId: entry.id,
+        audioBytes: earlyAudio,
+        audioExtension: audioExtension,
+      );
+      if (clip != null) {
+        coverBytes = clip.bytes;
+        coverName = 'external_window.${clip.extension}';
+      }
+      // 片段没做出来（录制未启动 / 帧不足 / ffmpeg 失败）：退回既有动图 → 静图阶梯。
+    }
+    if (coverBytes != null) {
+      // 视频片段已就位，不再走动图 / 静图。
+    } else if (imageMode.isStill) {
       // 用户主动选静态截图：直接抓单帧，**不**先试 GIF。galgame 一句台词内画面基本
       // 静止，动图多半只是把同一帧存二十遍，白白撑大卡片。这不是降级，故不置
       // degradedToStill，也就不会弹「已降级为静态图」的提示（与视频侧同语义）。
@@ -365,6 +442,8 @@ class GalHookMiningCoordinator {
       coverBytes = animated?.bytes;
       if (animated != null) {
         coverName = 'external_window.${animated.format.fileExtension}';
+        // 用户要的是视频片段，拿到的是动图：是降级，与静图降级分开标。
+        degradedToAnimated = imageMode.isVideoClip;
       }
       if (coverBytes == null || coverBytes.isEmpty) {
         final WindowCaptureResult still = await captureStillWithDiagnostics();
@@ -378,9 +457,11 @@ class GalHookMiningCoordinator {
         coverBytes = shrunk.bytes;
         coverName = shrunk.name;
         degradedToStill = true;
+        degradedToAnimated = false;
       }
     }
 
+    // 视频片段分支已经 await 过同一个 Future；对已完成的 Future 再 await 只是取值。
     final Uint8List? audioBytes = await audioFuture;
     if (audioError != null) {
       Error.throwWithStackTrace(audioError!, audioStack ?? StackTrace.current);
@@ -431,6 +512,7 @@ class GalHookMiningCoordinator {
           failureReason: mined.abortReason ?? 'scene card mining aborted',
           sentenceAudioMissing: sentenceAudioMissing,
           degradedToStill: degradedToStill,
+          degradedToAnimated: degradedToAnimated,
           staleScene: staleScene,
         );
       }
@@ -451,6 +533,7 @@ class GalHookMiningCoordinator {
         outcome: outcome,
         sentenceAudioMissing: sentenceAudioMissing,
         degradedToStill: degradedToStill,
+        degradedToAnimated: degradedToAnimated,
         staleScene: staleScene,
         unmappedTokens: await _unmappedTokens(
           repo,
@@ -461,6 +544,60 @@ class GalHookMiningCoordinator {
       try {
         await jobDirectory.delete(recursive: true);
       } catch (_) {}
+    }
+  }
+
+  /// 视频片段：从会话录制环导出 `[台词到达 - 300ms, 现在]` 的帧，与句子音频混成 mp4。
+  ///
+  /// 无 hook 时间戳（纯 loopback 会话 / 历史行时间戳已淘汰）时导出整个录制环
+  /// （`fromTickMs: 0`），起点交给 [buildGalWindowVideoClip] 按「音频时长 + 1 秒 /
+  /// 无音频 6 秒」从终点倒推——Dart 侧拿不到 hook 的 tick 时钟，「现在」只能由导出结果
+  /// 的 `nowTickMs` 告知。
+  ///
+  /// 已知限制：截图 lease（`captureLeaseFactory`，游戏内查词卡隐藏屏障）对录制帧无意义
+  /// ——帧是过去按固定间隔录下的，制卡那一刻查词卡多半已经在最后几帧里。这里**不**
+  /// 为此改 lease 逻辑；要干净帧请用动图 / 截图模式。
+  ///
+  /// fail-open：任一步失败返回 null，调用方降级动图 → 静图。临时目录只活在本函数内
+  /// （产物字节已在内存）。
+  Future<GalWindowVideoClip?> _captureVideoClip({
+    required String lineId,
+    required Uint8List? audioBytes,
+    required String audioExtension,
+  }) async {
+    final int? lineTickMs = _lineTimestampLookup(lineId);
+    final int? fromTickMs = lineTickMs == null
+        ? null
+        : (lineTickMs - kGalWindowVideoLeadMs).clamp(0, lineTickMs);
+    Directory? recordingDir;
+    try {
+      recordingDir = await _createTempDirectory();
+      final WindowRecordingExport export = await _exportRecording(
+        fromTickMs: fromTickMs ?? 0,
+        toTickMs: 0,
+        directory: recordingDir.path,
+      );
+      return await _buildVideoClip(
+        export: export,
+        fromTickMs: fromTickMs,
+        toTickMs: 0,
+        audioBytes: audioBytes,
+        audioExtension: audioExtension,
+        workDir: recordingDir,
+      );
+    } catch (error, stack) {
+      ErrorLogService.instance.log(
+        'GalHookMiningCoordinator.captureVideoClip',
+        error,
+        stack,
+      );
+      return null;
+    } finally {
+      if (recordingDir != null) {
+        try {
+          await recordingDir.delete(recursive: true);
+        } catch (_) {}
+      }
     }
   }
 

@@ -115,6 +115,12 @@ bool ArmLowLevelMouseHookAndWait(HWND target, HWND consume_outside_owner);
 // 这样透明命中层只拥有用户实际点中的裸左击，其余输入保持游戏原行为。
 bool ArmLowLevelMouseHookForAttachedGlyph(HWND target, HWND game_owner);
 
+// BUG-2098：上一次 attached 单例抢占失败的具体原因（五个闸门之一），失败后有效。
+const char *LastAttachedGlyphArmFailure();
+
+// BUG-2098：|candidate| 是否就是本进程为 |game_owner| 打开的那张查词卡。
+bool IsLookupCardConsumingForOwner(HWND candidate, HWND game_owner);
+
 // True only while |target| owns the singleton attached binding through the
 // explicit HHOOK+v19 risk fallback.  A successful Arm is not by itself proof of
 // exact sampled-input coverage; surface state uses this bit to report risky

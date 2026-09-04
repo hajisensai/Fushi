@@ -1631,9 +1631,11 @@ void ArmLowLevelMouseHook(HWND target) {
   const DWORD thread_id = EnsureHookThread();
   if (thread_id == 0) return;
   std::lock_guard<std::mutex> guard(g_binding_mutex);
-  // Desktop/global lookup owns a different GlobalLookupWindow instance from the
-  // dedicated gal card, so this HWND never receives the consume-owner property.
-  // Do not mutate properties here: async Arm has no callback barrier.
+  // The desktop/global popup HWND may have carried a consume-owner property
+  // for one attached-surface lookup (GlobalLookupWindow::
+  // SetOutsideClickConsumeOwner); DisarmLowLevelMouseHook removed it behind
+  // the target clear, so this async Arm never inherits it. Do not mutate
+  // properties here: async Arm has no callback barrier.
   g_attached_risky_target.store(nullptr, std::memory_order_release);
   g_target.store(target, std::memory_order_release);
   PostThreadMessage(thread_id, kThreadArm, 0, 0);
@@ -1740,6 +1742,20 @@ bool AttachedArmHasConflictingTransaction() {
          (status.request_seq != 0 && status.request_seq != status.applied_seq);
 }
 
+// BUG-2098：attached 表面抢不到低层鼠标单例时，对外只有一条
+// `low_level_mouse_singleton_busy_or_unavailable`，而这一路上有五个互不相干的
+// 闸门（命中快照缺失 / owner 不符 / 注入侧 shield 目标没准备好 / 单例被别的
+// HWND 占着 / 有未结清的事务）。真机上「第一次查词成功、之后每次点击都穿透」
+// 就卡在其中一条，靠一条泛化消息完全分不出是哪条。逐条记原因，只加量具。
+std::atomic<const char *> g_attached_arm_failure{nullptr};
+
+namespace {
+bool AttachedArmFail(const char *reason) {
+  g_attached_arm_failure.store(reason, std::memory_order_release);
+  return false;
+}
+}  // namespace
+
 bool ArmLowLevelMouseHookWithSampledShield(HWND target, HWND game_owner,
                                            bool target_only,
                                            bool allow_sampled_risk,
@@ -1747,23 +1763,27 @@ bool ArmLowLevelMouseHookWithSampledShield(HWND target, HWND game_owner,
   if (target == nullptr || game_owner == nullptr) return false;
   if (idle_only &&
       !VoiceHookReader::Instance().PrepareLookupShieldTarget(game_owner)) {
-    return false;
+    return AttachedArmFail("injected_shield_target_not_prepared");
   }
   const DWORD thread_id = EnsureHookThread();
-  if (thread_id == 0 || g_arm_applied_event == nullptr) return false;
+  if (thread_id == 0 || g_arm_applied_event == nullptr) {
+    return idle_only ? AttachedArmFail("hook_thread_unavailable") : false;
+  }
 
   std::lock_guard<std::mutex> guard(g_binding_mutex);
   const HWND current = g_target.load(std::memory_order_acquire);
   if (idle_only && current != nullptr && current != target) {
     // Attached is the lower-priority transparent surface. Never clear or
     // mutate the desktop/global popup's singleton binding.
-    return false;
+    return AttachedArmFail("singleton_owned_by_other_hwnd");
   }
   if (idle_only && current == target &&
       AttachedBindingHealthy(target, game_owner, allow_sampled_risk)) {
     return true;
   }
-  if (idle_only && AttachedArmHasConflictingTransaction()) return false;
+  if (idle_only && AttachedArmHasConflictingTransaction()) {
+    return AttachedArmFail("conflicting_transaction_pending");
+  }
   // Keep the already-created off-screen renderer non-consuming while the hook
   // thread installs/acknowledges HHOOK. Only after that succeeds do we publish
   // the direct target; Reveal moves it on-screen immediately after this returns.
@@ -1842,11 +1862,34 @@ bool ArmLowLevelMouseHookAndWait(HWND target, HWND consume_outside_owner) {
       target, consume_outside_owner, false, false, false);
 }
 
+// BUG-2098：判断 |candidate| 是否就是**本进程**为 |game_owner| 打开的那张查词卡。
+// 依据是 SetOutsideClickConsumeOwner 落在卡片 HWND 上的 owner 属性——已有的身份
+// 链，不是「同 PID」这种弱判据。
+bool IsLookupCardConsumingForOwner(HWND candidate, HWND game_owner) {
+  if (candidate == nullptr || game_owner == nullptr) return false;
+  DWORD pid = 0;
+  GetWindowThreadProcessId(candidate, &pid);
+  if (pid != GetCurrentProcessId()) return false;
+  return reinterpret_cast<HWND>(
+             GetPropW(candidate, kConsumeOutsideOwnerProperty)) == game_owner;
+}
+
+const char *LastAttachedGlyphArmFailure() {
+  return g_attached_arm_failure.load(std::memory_order_acquire);
+}
+
 bool ArmLowLevelMouseHookForAttachedGlyph(HWND target, HWND game_owner) {
   const auto snapshot = AttachedGlyphSnapshotForTarget(target);
-  if (snapshot == nullptr || snapshot->game_owner != game_owner) return false;
-  return ArmLowLevelMouseHookWithSampledShield(
+  if (snapshot == nullptr) return AttachedArmFail("hit_snapshot_missing");
+  if (snapshot->game_owner != game_owner) {
+    return AttachedArmFail("hit_snapshot_owner_mismatch");
+  }
+  const bool armed = ArmLowLevelMouseHookWithSampledShield(
       target, game_owner, true, snapshot->allow_risk, true);
+  if (armed) {
+    g_attached_arm_failure.store(nullptr, std::memory_order_release);
+  }
+  return armed;
 }
 
 bool LowLevelAttachedGlyphUsesRiskFallback(HWND target) {
@@ -1871,6 +1914,16 @@ void DisarmLowLevelMouseHook(HWND expected_target) {
   if (owns_binding) {
     g_target.store(nullptr, std::memory_order_release);
   }
+  // The consume-owner property lives on |expected_target| itself and is read
+  // by HookProc only while that HWND is the published target. Removing it
+  // after the target clear is safe: a callback that already snapshotted the
+  // target either sees the owner (the popup was still on-screen for that
+  // click) or nullptr (pass-through); the paired-up swallow is carried by
+  // g_swallowed_buttons, never by this property. Removing it here is what
+  // keeps the same desktop popup HWND from consuming game clicks on a later
+  // lookup that never set an owner (attached-surface lookups set it per reveal,
+  // the plain async Arm never touches properties).
+  RemovePropW(expected_target, kConsumeOutsideOwnerProperty);
   HWND risky_target = expected_target;
   g_attached_risky_target.compare_exchange_strong(
       risky_target, nullptr, std::memory_order_acq_rel,

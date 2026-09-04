@@ -4231,5 +4231,8 @@
   "video_specs_subtitle_tracks": "字幕轨",
   "video_specs_track_commentary": "评论音轨",
   "video_specs_track_forced": "强制",
-  "video_specs_track_default": "默认"
+  "video_specs_track_default": "默认",
+  "gal_mining_image_mode_video_clip": "视频片段",
+  "gal_mining_image_mode_video_clip_hint": "从台词出现到制卡这段时间的游戏画面，并混入句子音频。未开始录制或不足 2 帧时降级为动图/截图。",
+  "game_hook_reason_native_loopback_ack_timeout": "音频采集策略未在超时内确认。文本采集不受影响；若缺少游戏内语音可重试一次。"
 }

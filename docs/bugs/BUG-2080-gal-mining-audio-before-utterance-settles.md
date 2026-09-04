@@ -1,0 +1,6 @@
+## BUG-2080 · 台词一出就制卡只拿到句子音频的开头（引擎 PCM 收敛 / loopback 冻结未收口）
+- **报告**：2026-09-03（用户：制卡要有完整句子音频）
+- **真实性**：✅ 真 bug。`fushi/lib/src/mining/gal_hook_session_controller.dart` 的 `captureAudioBytes` 直接把采集作业排进串行音频队列；`_captureAudioBytesNow` 在 loopback 会话里先 `_flushLoopbackFreeze`（按**已等时长**提前收束，用户在语音播到一半时制卡就只回取前半段），在引擎 PCM 会话里直接读 `_lineVoiceCache`——而这份缓存正由 `_settleLineUtterance` 每 250ms **单调加长**（最长 6s），制卡时刻它还没收敛。BUG-1287 的到点补全只把更长的整句写回列表缓存，卡片早已写进 Anki。资源原件路径（Siglus OVK / Leaf VOICE.PAK / SGRE 归档）不受影响：整段原件本来就完整。
+- **[x] ① 已修复** — `captureAudioBytes` 改为 `async`，在入队**之前**（队列之内等会自锁：收敛的每次 grab 也排在同一条队列上）调用 `_awaitLineAudioSettled(lineId)`：① 引擎 PCM 会话等该行在途的 `_settleLineUtterance` Future（新增 `_utteranceSettleInFlight` 台账，下一句到达 / 6s 上限即结束，另有 `utteranceSettleMax + 6×interval` 的兜底超时）；② loopback 会话等该行的延迟冻结定时器到点并把冻结作业排进队列（随后本次采集按串行顺序排在其后），预算 = 剩余等待 + 1.5s；③ 用户裁决行 / 历史行 / 资源原件行零等待。超时一律放行，宁短勿挂。制卡「视频片段」模式（同 PR）依赖这一顺序：先等音频收口，再导出台词出现到此刻的画面。
+- **[x] ② 已加自动化测试** — `fushi/test/mining/gal_attach_pchooks_loopback_settle_test.dart`：「语音还在播时制卡 → 首次回取就是完整窗口 `freezeDelay + preRoll`，没有任何半窗口回取，且等待发生在 `captureAudioBytes` 内部」；「冻结已到点的历史行 → 不多等、不重复回取」。原 BUG-1287「提前收束后再补全」用例按新契约改写（提前收束只在等待预算耗尽时才发生）。
+- **备注**：代价是制卡按钮到出卡之间多等一句语音的长度（loopback 最多 4s、引擎 PCM 最多 6s）。真机复测：白2（Leaf，原件路径不受影响）/ Limelight（KiriKiri，DirectSound 混音 PCM 路径）/ SGRE 原始路径「台词一出就制卡 → 卡内音频包含整句」待用户在原始启动路径确认，本轮未在用户正在游玩的会话上重启 Fushi。

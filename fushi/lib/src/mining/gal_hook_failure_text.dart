@@ -39,6 +39,8 @@ String? galHookFailureLabel(GalHookInjectorFailure failure) =>
       GalHookInjectorFailure.residentHookMismatch =>
         t.game_hook_reason_resident_hook_mismatch,
       GalHookInjectorFailure.readyTimeout => t.game_hook_reason_ready_timeout,
+      GalHookInjectorFailure.nativeLoopbackAckTimeout =>
+        t.game_hook_reason_native_loopback_ack_timeout,
       GalHookInjectorFailure.injectionFailed =>
         t.game_hook_reason_injection_failed,
       GalHookInjectorFailure.guardedHookFailed =>

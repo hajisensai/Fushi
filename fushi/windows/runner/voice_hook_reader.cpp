@@ -1,5 +1,7 @@
 #include "voice_hook_reader.h"
 
+#include "layer_origin_solver.h"
+
 #include "game_client_extent.h"
 
 #include <windows.h>
@@ -61,6 +63,10 @@ struct ReaderState {
   // Validated outside WH_MOUSE_LL. The callback compares this exact handle and
   // never calls IsWindow/GetWindowThreadProcessId while the system waits.
   HWND lookup_shield_prevalidated_target = nullptr;
+  // BUG-2093：已经解出过原点的客户区尺寸（0 = 本会话还没解过）。origin 是常量，
+  // 但缩放随客户区变，所以按尺寸记一次。
+  int32_t layer_origin_solved_client_w = 0;
+  int32_t layer_origin_solved_client_h = 0;
   // 用户的开关**意图**，与共享内存段的身份无关。
   //
   // 🔴 段会被换掉：退出一局再开一局 = 注入器建一段全新的共享内存，`lookup_enabled`
@@ -2154,6 +2160,49 @@ VoiceHookLookupError VoiceHookReader::SetLookupGeometryAdmission(
         &h->lookup_geometry_admission_applied_seq);
   }
   return VoiceHookLookupError::kNone;
+}
+
+bool VoiceHookReader::TrySolveAndPublishLookupLayerOrigin(HWND game) {
+  if (game == nullptr || !IsWindow(game)) return false;
+  RECT client{};
+  if (!GetClientRect(game, &client)) return false;
+  const int32_t client_w = client.right - client.left;
+  const int32_t client_h = client.bottom - client.top;
+  if (client_w <= 0 || client_h <= 0) return false;
+
+  fushi_voice_hook::LookupLayerLineSnapshot line;
+  {
+    ReaderState& st = State();
+    std::lock_guard<std::mutex> lock(st.mutex);
+    if (st.header == nullptr) return false;
+    if (st.layer_origin_solved_client_w == client_w &&
+        st.layer_origin_solved_client_h == client_h) {
+      return false;  // 这个尺寸已经解过，origin 是常量，不必重解
+    }
+    line = fushi_voice_hook::ReadLookupLayerLine(st.header);
+  }
+  if (!line.valid) return false;
+
+  // 抓帧与像素分析在锁外做：它要几十毫秒，不能占着共享内存的锁。
+  const LayerOriginSolveResult solved = SolveLookupLayerOrigin(
+      game, line.left, line.top, line.right, line.bottom, line.design_w,
+      line.design_h);
+  if (!solved.ok) return false;
+
+  ReaderState& st = State();
+  std::lock_guard<std::mutex> lock(st.mutex);
+  if (st.header == nullptr) return false;
+  // 抓帧期间注入侧可能换了行；换了就这轮作废，下一拍用新行重解。
+  const fushi_voice_hook::LookupLayerLineSnapshot now =
+      fushi_voice_hook::ReadLookupLayerLine(st.header);
+  if (!now.valid || now.seq != line.seq) return false;
+  if (!fushi_voice_hook::PublishLookupLayerOrigin(st.header, solved.origin_x,
+                                                  solved.origin_y)) {
+    return false;
+  }
+  st.layer_origin_solved_client_w = client_w;
+  st.layer_origin_solved_client_h = client_h;
+  return true;
 }
 
 bool VoiceHookReader::PrepareLookupShieldTarget(HWND target) {

@@ -17,6 +17,11 @@ enum class LaunchFailureReason {
   kSharedMemoryUnavailable,
   kInjectionFailed,
   kReadyTimeout,
+  // native loopback 策略确认超时。与 kReadyTimeout 分开是因为**处置完全不同**：
+  // kReadyTimeout 说的是「hook DLL 根本没跑到通知点」（架构/契约/权限问题），
+  // 本条说的是「DLL 活着、就绪事件已收到，只是 loopback 这一项能力的确认慢了」。
+  // 旧实现两者共用一个 token，host 无从分辨，而它们一个是致命的、一个只该降级。
+  kNativeLoopbackAckTimeout,
   kGuardedHookFailed,
   kResumeFailed,
   kCreateProcessFailed,
@@ -41,6 +46,8 @@ inline const char* LaunchFailureToken(LaunchFailureReason reason) {
       return "injectionFailed";
     case LaunchFailureReason::kReadyTimeout:
       return "readyTimeout";
+    case LaunchFailureReason::kNativeLoopbackAckTimeout:
+      return "nativeLoopbackAckTimeout";
     case LaunchFailureReason::kGuardedHookFailed:
       return "guardedHookFailed";
     case LaunchFailureReason::kResumeFailed:
@@ -100,6 +107,28 @@ inline unsigned long SuspendedStartupWaitBudgetMs(unsigned long total_wait_ms) {
   if (capped >= kFloor) return capped;
   // 预算本来就很小（测试/短超时）时不再切分，但也绝不超过总预算。
   return total_wait_ms < kFloor ? total_wait_ms : kFloor;
+}
+
+// native loopback 策略确认超时后，本次注入该不该中止（纯函数）。
+//
+// 两种请求的语义**不对称**，必须分开处置：
+//
+//   deny  = 隐私边界。宿主要求「不许用整机回环录音」，只有确认 stopped/applied 才
+//           证明没有 worker 在录、此前的 IAudioClient 已 Stop/Release 并 join。
+//           拿不到这个确认就必须判失败——这是安全承诺，不能降级。
+//   allow = 一项**能力**是否就绪。确认超时只意味着「native loopback 这一路音频还没
+//           起来」，它与文本 hook 毫无关系。
+//
+// 旧实现对两者一视同仁地 `return kReadyTimeout`，而那个返回点位于 InitLunaHook 的
+// **所有**调用点之前。于是「音频能力慢了一拍」被放大成「这一局永远没有台词」：
+// 游戏内 DLL 自装的音频 hook 全部存活（26 条音轨、game_resource 就绪都正常），而由
+// injector 进程负责安装的 LunaHook 文本 hook 一次都没装，宿主侧表现为 lines=0、
+// phase 永远停在 waitingSignals（BUG-2086 / 真机 WoH）。
+//
+// 因此 allow 的确认超时降级为能力位（见 kLoopbackDiagPolicyAckTimeout），注入继续，
+// 文本 hook 照常安装；loopback worker 稍后自己 ack 时宿主仍会读到 running。
+inline bool NativeLoopbackAckTimeoutAbortsInjection(bool requested_allow) {
+  return !requested_allow;
 }
 
 // 注入失败后，已经创建出来的游戏进程该怎么处置。

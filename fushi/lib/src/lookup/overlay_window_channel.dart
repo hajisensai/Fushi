@@ -302,6 +302,14 @@ class OverlayWindowChannel {
   Future<void> setBlockCapture(bool block) =>
       _invoke<void>('setBlockCapture', <String, Object?>{'block': block});
 
+  /// attached 校准字形表面（通用回退）打开的桌面弹窗：把游戏 HWND 记给 native，
+  /// 随后的 reveal/revealStack 走与 direct galCard 同款的同步吞点击 Arm——
+  /// 「点卡外关闭」那一记 down/up 成对吞掉，不再穿透到游戏推进台词。
+  /// 只活一次查词：native `Hide()` 自清；[hwnd] 为 0 = 清空。普通桌面查词
+  /// （热键 / 浮窗点词）**从不**调用本方法，行为零变化。
+  Future<void> setOutsideClickOwner(int hwnd) =>
+      _invoke<void>('setOutsideClickOwner', <String, Object?>{'hwnd': hwnd});
+
   /// Wires the overlay's reverse calls. [onGetMedia] resolves gaiji bytes for
   /// an `image://` url; [onJsMessage] receives raw bridge messages decoded
   /// from JSON; [onOverlayHidden] fires on a genuine native dismissal.

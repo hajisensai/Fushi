@@ -13,6 +13,7 @@ int main() {
   using fushi_voice_hook::LaunchedProcessDisposition;
   using fushi_voice_hook::LaunchFailureReason;
   using fushi_voice_hook::LaunchFailureToken;
+  using fushi_voice_hook::NativeLoopbackAckTimeoutAbortsInjection;
   // 这三个 using 是补上的：`#undef NDEBUG` 之前，用到它们的 assert 整条被预处理器
   // 删掉，编译器从没见过这些标识符。也就是说这些断言从来没有被编译过，更谈不上执行。
   using fushi_voice_hook::LaunchedProcessIsSuspended;
@@ -121,5 +122,25 @@ int main() {
              LaunchedProcessIsSuspended(false, /*locale_launched=*/true),
              /*already_resumed=*/false, LaunchFailureReason::kReadyTimeout) ==
          LaunchedProcessDisposition::kResumeDegraded);
+
+  // ---- native loopback 策略确认超时：deny 与 allow 的处置必须相反（BUG-2086）----
+  //
+  // deny 是隐私边界：拿不到 stopped 的确认就不能证明没有 worker 在录，必须判失败。
+  assert(NativeLoopbackAckTimeoutAbortsInjection(/*requested_allow=*/false));
+  // allow 只是一项能力：确认超时绝不能中止注入——那个返回点位于 InitLunaHook 的所有
+  // 调用点之前，中止即等于「这一局永远没有台词」（真机 WoH：音频 26 条轨全好、
+  // lines=0、phase 永远 waitingSignals）。
+  assert(!NativeLoopbackAckTimeoutAbortsInjection(/*requested_allow=*/true));
+
+  // 该超时必须有独立 token：与 kReadyTimeout 共用会让 host 无法分辨
+  // 「DLL 根本没跑起来」和「DLL 活着、只是 loopback 能力慢了一拍」。
+  assert(std::strcmp(
+             LaunchFailureToken(
+                 LaunchFailureReason::kNativeLoopbackAckTimeout),
+             "nativeLoopbackAckTimeout") == 0);
+  assert(std::strcmp(
+             LaunchFailureToken(
+                 LaunchFailureReason::kNativeLoopbackAckTimeout),
+             LaunchFailureToken(LaunchFailureReason::kReadyTimeout)) != 0);
   return 0;
 }

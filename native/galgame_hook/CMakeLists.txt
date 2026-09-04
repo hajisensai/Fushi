@@ -111,6 +111,19 @@ target_compile_definitions(fushi_exact_lookup_signature_test PRIVATE
 add_test(NAME fushi_exact_lookup_signature_test
   COMMAND fushi_exact_lookup_signature_test)
 
+# Leaf/AQUAPLUS 锚点自推导：合成 PE 夹具（含导入表与 load config），要求推导把五处签名、
+# 两个 IAT 槽与栈 cookie 全部找回来，并在不一致/不唯一/跨引擎场景下拒绝认领。
+# 游戏二进制不入库，跨构建正确性只能靠这种结构夹具 + 真机自检来钉。
+add_executable(fushi_leaf_autoprofile_test
+  "tests/leaf_autoprofile_test.cpp"
+)
+target_include_directories(fushi_leaf_autoprofile_test PRIVATE
+  "hook/adapters")
+target_compile_definitions(fushi_leaf_autoprofile_test PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_leaf_autoprofile_test
+  COMMAND fushi_leaf_autoprofile_test)
+
 # Siglus OVK 索引/Ogg 完整性解析是纯函数，独立小测试不需启动或注入游戏。
 enable_testing()
 add_executable(fushi_siglus_ovk_test

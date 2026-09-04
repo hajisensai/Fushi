@@ -18,6 +18,10 @@ namespace fushi_voice_hook {
 struct LeftButtonShieldLatch {
   bool owned = false;
   bool release_seen = false;
+  // BUG-2098：ownership 是**推测**上的（PreArm，没有任何真实按下作证），还是被一次
+  // 真实采样坐实的。推测上的 latch 不该把 applied_seq 永久扣住——见
+  // AbandonSpeculativeLeftButtonLatch。
+  bool speculative = false;
 };
 
 struct InputShieldFilterResult {
@@ -40,6 +44,26 @@ inline void PreArmLeftButtonShieldLatch(LeftButtonShieldLatch *latch) {
     return;
   latch->owned = true;
   latch->release_seen = false;
+  latch->speculative = true;
+}
+
+// BUG-2098：宿主已经发布中性请求（active_buttons==0）之后，一个**从未被真实采样坐实**
+// 的推测 latch 就不该再扣住 applied_seq。它等的那条「释放 + 中性尾」可能永远不会到：
+// 该输入面在这一局里根本不再被游戏采样（例如引擎自带的 GetAsyncKeyState 轮询被适配器
+// 接管、或这一局改走别的 API）。真机 WoH 上就是这样死锁的：applied_seq 恒比 request_seq
+// 落后 1 ⇒ 宿主 IsNeutralForRehandshake 恒假 ⇒ attached 表面首次查词后再也武装不起来，
+// 之后每次点击都穿透并推进剧情。
+// 被真实按下坐实过的 latch（speculative=false）不受影响，「绝不暴露游戏没看见的 down
+// 的尾巴」这条不变式一字未改。
+inline void AbandonSpeculativeLeftButtonLatch(bool request_active,
+                                              LeftButtonShieldLatch *latch) {
+  if (latch == nullptr || request_active || !latch->owned ||
+      !latch->speculative || latch->release_seen) {
+    return;
+  }
+  latch->owned = false;
+  latch->release_seen = false;
+  latch->speculative = false;
 }
 
 inline uint32_t PreArmEligibleShieldMask(uint32_t required_mask,
@@ -101,6 +125,7 @@ inline void ObserveLeftButtonNeutralTail(bool request_active,
   }
   latch->owned = false;
   latch->release_seen = false;
+  latch->speculative = false;
 }
 
 // GetKeyState/GetAsyncKeyState expose the current state in bit 15.  The latter
@@ -123,6 +148,8 @@ FilterSampledLeftButtonState(bool request_active, bool has_press_edge,
 
   if (request_active && signal)
     latch->owned = true;
+    // 被真实采样坐实：不再是推测（BUG-2098）。
+    latch->speculative = false;
   const bool suppress = request_active || latch->owned;
   if (suppress) {
     const uint16_t filtered = static_cast<uint16_t>(
@@ -160,6 +187,8 @@ FilterKeyboardStateLeftButton(bool request_active, uint8_t *keys,
   const bool down = (raw & 0x80u) != 0;
   if (request_active && down)
     latch->owned = true;
+    // 被真实采样坐实：不再是推测（BUG-2098）。
+    latch->speculative = false;
   const bool suppress = request_active || latch->owned;
   if (suppress) {
     keys[kVkLButton] = static_cast<uint8_t>(raw & ~0x80u);
@@ -210,6 +239,8 @@ FilterDirectInputImmediateLeftButton(bool request_active, uint8_t *state,
   const bool down = (raw & 0x80u) != 0;
   if (request_active && down)
     latch->owned = true;
+    // 被真实采样坐实：不再是推测（BUG-2098）。
+    latch->speculative = false;
   const bool suppress = request_active || latch->owned;
   if (suppress) {
     // DirectInput button bytes are data, not a bit field shared with another
@@ -248,6 +279,8 @@ FilterRawInputLeftButtonFlags(bool request_active, uint16_t *button_flags,
   const bool signal = down || up;
   if (request_active && signal)
     latch->owned = true;
+    // 被真实采样坐实：不再是推测（BUG-2098）。
+    latch->speculative = false;
   const bool suppress = request_active || latch->owned;
   if (suppress && signal) {
     *button_flags = static_cast<uint16_t>(
@@ -282,6 +315,8 @@ inline InputShieldFilterResult FilterDirectInputBufferedLeftButton(
     const bool up = left && !down;
     if (request_active && left)
       latch->owned = true;
+      // 被真实采样坐实：不再是推测（BUG-2098）。
+      latch->speculative = false;
     const bool suppress = left && (request_active || latch->owned);
     if (suppress) {
       out.changed = true;
