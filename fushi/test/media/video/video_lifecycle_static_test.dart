@@ -140,20 +140,25 @@ void main() {
           reason: 'onPop 必须委托给退出汇聚点 _handleBackOrExit');
     });
 
-    test('_handleBackOrExit awaits flushPosition() before manually popping',
+    test('_handleBackOrExit starts flushPosition() via exitAfterPersist, no await',
         () {
+      // BUG-2119：旧契约「pop 前 await flushPosition()」把退出押在一次落库成功上，
+      // 连接被毒化时四条退出通道一起失灵。新契约：经 exitAfterPersist 同步发起
+      // 落库、无条件 pop，方法体里不得再有任何 await。
       final RegExpMatch? body = RegExp(
         r'Future<void> _handleBackOrExit\(\) async \{(.*?)\n  \}',
         dotAll: true,
       ).firstMatch(page);
       expect(body, isNotNull, reason: '找不到 _handleBackOrExit 方法体');
       final String b = body!.group(1)!;
-      final int flushAt = b.indexOf('await _controller?.flushPosition()');
-      final int popAt = b.indexOf('nav.pop()');
-      expect(flushAt, greaterThanOrEqualTo(0),
-          reason: '退出前必须 await _controller.flushPosition()（可靠落库）');
-      expect(popAt, greaterThan(flushAt),
-          reason: '手动 pop 必须在 await flush 之后（否则 State 销毁后写不完）');
+      expect(b, contains('exitAfterPersist('),
+          reason: '退出必须走 exitAfterPersist 原语');
+      expect(b, contains('flushPosition()'),
+          reason: '退出前仍必须发起 flushPosition()（进度落库不能丢）');
+      expect(b, contains('exit: nav.pop'),
+          reason: 'pop 由 exitAfterPersist 无条件执行');
+      expect(b, isNot(contains('await ')),
+          reason: '退出路径不得 await 任何东西（BUG-2119）');
     });
 
     test('background lifecycle flushes the playback position (hard-kill cover)',

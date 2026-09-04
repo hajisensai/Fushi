@@ -45,6 +45,7 @@ import 'package:fushi/src/media/video/stream_video_launch.dart';
 import 'package:fushi/src/media/video/subtitle_embedded_fonts.dart';
 import 'package:fushi/src/media/video/video_display_claim.dart';
 import 'package:fushi/src/media/video/video_episode_start_policy.dart';
+import 'package:fushi/src/media/video/video_exit_flush.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
 import 'package:fushi/src/media/video/video_top_bar_slots.dart';
 import 'package:fushi/src/media/video/m3u8_playlist.dart';
@@ -4590,10 +4591,17 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   ) =>
       _onUpdateEntryImpl(noteId, fields);
 
-  /// 退出/返回汇聚点：前台浮层还开着就先关一层（逐级退出），一层都没开才 await
-  /// 落库后真正 pop 路由。[PopScope]、Escape 快捷键、手柄 B、以及**屏幕上的返回箭头
+  /// 退出/返回汇聚点：前台浮层还开着就先关一层（逐级退出），一层都没开才发起落库
+  /// 并 pop 路由。[PopScope]、Escape 快捷键、手柄 B、以及**屏幕上的返回箭头
   /// 按钮**（[_activateVideoControlItem] 的 [VideoControlItem.back]）共用同一份层级表
   /// [_dismissTopForegroundLayer]，四条通道行为一致。
+  ///
+  /// BUG-2119：落库与 pop 之间**不再有 await**。此前是 `await flushPosition()` 再
+  /// `nav.pop()`，等于把「能不能离开视频页」押在一次数据库写入成功上——写入抛错
+  /// 或永不完成（连接被一条 `SQLITE_BUSY` 后未 reset 的写语句毒化，之后每次 COMMIT
+  /// 都抛「SQL statements in progress」）时，四条退出通道一起失灵，用户被锁在页里。
+  /// 现在走 [exitAfterPersist]：同步发起落库（drift 请求已排进队列，后续页面读同一
+  /// 行排在它之后），随即无条件 pop，落库失败只记 [ErrorLogService]。
   ///
   /// 「返回箭头也逐级退一层」是 BUG-1862 的**有意**取舍，不是顺带的副作用：收敛的意义
   /// 就是「返回上一级」只有一份语义，不为屏幕按钮再开第二套。用户可见变化：push-aside
@@ -4613,8 +4621,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   Future<void> _handleBackOrExit() async {
     if (_dismissTopForegroundLayer()) return;
     final NavigatorState nav = Navigator.of(context);
-    await _controller?.flushPosition();
-    if (mounted) nav.pop();
+    final VideoPlayerController? controller = _controller;
+    exitAfterPersist(
+      persist: () => controller?.flushPosition() ?? Future<void>.value(),
+      exit: nav.pop,
+      onPersistError: (Object error, StackTrace stack) => ErrorLogService
+          .instance
+          .log('VideoFushiPage.exitFlushPosition', error, stack),
+    );
   }
 
   /// 逐级退出的**唯一**层级表（BUG-1862）：从最前台到最后台关掉一层并返回 true；一层
@@ -7324,10 +7338,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         PopScope(
           // 始终 `canPop: false` 自管退出：① 浮层栈非空时 back 先关栈（一层一层退），
           // 浮层在根 Overlay 退出视频路由不会自动清它，必须在 pop 前拦截；② 栈空真退出
-          // 时，**先 await `flushPosition()` 把退出瞬间位置可靠落库再手动 pop**——否则只剩
-          // controller.dispose() 里 fire-and-forget 的 `_forceSavePositionSync()`，drift
-          // 写库 Future 与 Navigator 同步销毁 State 竞争、常写不完，导致「退出再进没回到
-          // 上次位置」（对齐阅读器 `onWillPop` 先 await 落库再 pop 的做法）。
+          // 时，先**同步发起** `flushPosition()` 把退出瞬间位置排进 drift 队列，再手动
+          // pop（BUG-2119：不 await——退出不能被落库成败绑架；写请求一旦发出就在后台
+          // 完成，不随 State 销毁消失，后续页面对同一行的读排在它之后）。
           canPop: false,
           onPopInvokedWithResult: (bool didPop, Object? _) async {
             if (didPop) return;

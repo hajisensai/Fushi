@@ -51,9 +51,10 @@ void main() {
       reason: '_handleBackOrExit 必须先问 _dismissTopForegroundLayer 再 pop 路由，'
           '否则侧栏 / 字幕列表开着时按系统返回键会直接退掉整页（BUG-1862）',
     );
-    // pop 路由必须排在关层之后。
+    // pop 路由必须排在关层之后（BUG-2119 起 pop 经 exitAfterPersist 的
+    // `exit: nav.pop` 无条件执行，锚点跟着改成 `nav.pop`）。
     final int dismissAt = body.indexOf('_dismissTopForegroundLayer()');
-    final int popAt = body.indexOf('nav.pop()');
+    final int popAt = body.indexOf('nav.pop');
     expect(popAt, greaterThan(dismissAt), reason: '真正 pop 路由必须排在逐级关层之后');
   });
 
