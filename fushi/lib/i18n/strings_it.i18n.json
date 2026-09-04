@@ -4199,5 +4199,6 @@
   "onboarding_pack_status_ready": "Recommended pack downloaded",
   "onboarding_pack_import_now": "Import now",
   "onboarding_pack_download_finished": "Recommended pack finished downloading. Import it from Settings → System.",
-  "onboarding_pack_download_background_hint": "The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System."
+  "onboarding_pack_download_background_hint": "The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.",
+  "shortcut_scope_global_external_desktop_note": "Mouse triggers support side buttons only (back/forward); other buttons keep their normal meaning in other apps and are not accepted here."
 }

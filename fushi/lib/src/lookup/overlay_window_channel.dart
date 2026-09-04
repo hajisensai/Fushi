@@ -302,15 +302,30 @@ class OverlayWindowChannel {
   Future<void> setBlockCapture(bool block) =>
       _invoke<void>('setBlockCapture', <String, Object?>{'block': block});
 
+  /// TODO-1066 — 让 native 侧开始/停止监听全局鼠标侧键（RawInput +
+  /// `RIDEV_INPUTSINK`）。[button] 用 DOM `MouseEvent.button` 号：3=侧键后退
+  /// （XBUTTON1）/ 4=侧键前进（XBUTTON2）；**0 = 注销**，native 侧不留任何监听。
+  ///
+  /// 这是**进程级**设置，与 overlay 的 route/epoch 无关（它在没有任何卡片显示时
+  /// 也必须生效——那正是它的用途）。
+  Future<void> setGlobalMouseTrigger(int button) => _invoke<void>(
+    'setGlobalMouseTrigger',
+    <String, Object?>{'button': button},
+  );
+
   /// Wires the overlay's reverse calls. [onGetMedia] resolves gaiji bytes for
   /// an `image://` url; [onJsMessage] receives raw bridge messages decoded
   /// from JSON; [onOverlayHidden] fires on a genuine native dismissal.
+  ///
+  /// [onGlobalMouseTrigger] 是 TODO-1066 的全局鼠标侧键触发：与上面几个不同，
+  /// 它**不带 route**——它是"用户在别的程序里按了侧键"，此刻通常一张卡片都没有。
   void setHandlers({
     required Future<Uint8List> Function(String url) onGetMedia,
     required void Function(Map<String, Object?> message) onJsMessage,
     void Function()? onOverlayHidden,
     void Function(OverlayReverseEvent event)? onRoutedJsMessage,
     void Function(OverlayReverseEvent event)? onRoutedOverlayHidden,
+    void Function()? onGlobalMouseTrigger,
   }) {
     _channel.setMethodCallHandler((MethodCall call) async {
       switch (call.method) {
@@ -373,6 +388,12 @@ class OverlayWindowChannel {
               }
             }
           }
+          return null;
+        case 'globalMouseTrigger':
+          // TODO-1066 — 全局鼠标侧键按下（native RawInput 监听，见
+          // windows/runner/global_mouse_trigger.cpp）。无 route：这条通知与任何
+          // 已显示的卡片无关，它就是"去开一次新查词"。
+          onGlobalMouseTrigger?.call();
           return null;
         case 'nativeError':
           // TODO-1153 -- the native overlay reported a WebView2 bring-up
