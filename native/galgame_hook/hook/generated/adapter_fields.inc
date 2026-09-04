@@ -9,3 +9,4 @@
   SgreAdapter sgre_;
   LeafAquaplusAdapter leaf_aquaplus_;
   HunexGgeAdapter hunex_gge_;
+  CmvsAdapter cmvs_;

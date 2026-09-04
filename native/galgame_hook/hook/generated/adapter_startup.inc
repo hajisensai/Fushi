@@ -5,3 +5,4 @@
     sgre_.install();
     leaf_aquaplus_.install();
     hunex_gge_.install();
+    cmvs_.install();
