@@ -97,14 +97,25 @@ void main() {
     });
 
     test('会话在跑 + 绑了窗口 → 录那个 hwnd，且与超分判据逐相等', () {
+      // **期望值必须是字面量**：`windowRecordingTargetHwnd` 的实现字面就是
+      // `=> magpieUpscalingTargetHwnd(state)`，拿它俩互相比对是同源恒真——把
+      // `magpieUpscalingTargetHwnd` 改成恒返回 null，这一整组照样全绿。
+      // 钉死第三方期望值之后，这组同时承住了「两者共用判据」**和**判据本身。
       for (final GalHookSessionPhase phase in GalHookSessionPhase.values) {
         final GalHookSessionState state = GalHookSessionState(
           boundWindow: kWindow,
           phase: phase,
         );
+        final int? expected =
+            phase == GalHookSessionPhase.idle ? null : kWindow.hwnd;
+        expect(
+          GalHookSessionController.magpieUpscalingTargetHwnd(state),
+          expected,
+          reason: '$phase：超分判据本身变了（idle 不挂、其余挂在绑定窗口上）',
+        );
         expect(
           GalHookSessionController.windowRecordingTargetHwnd(state),
-          GalHookSessionController.magpieUpscalingTargetHwnd(state),
+          expected,
           reason: '$phase：录制与超分必须共用同一条判据',
         );
       }
