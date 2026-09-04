@@ -97,21 +97,29 @@ void main() {
     // the transcriptions into createPitchGroup.
     final int dedup = js.indexOf('if (window.deduplicatePitchAccents)');
     expect(dedup, greaterThanOrEqualTo(0));
-    final int hasTranscriptions =
-        js.indexOf('pitch.transcriptions?.length', dedup);
+    // BUG-2122 起合并跑在去重之前，去重分支遍历的是合并结果 `group`（此前是原始
+    // `pitch`）。判据钉的是「IPA-only 组在去重分支里被保住」，与变量名无关。
+    final int hasTranscriptions = js.indexOf('.transcriptions?.length', dedup);
     expect(
       hasTranscriptions,
       greaterThan(dedup),
       reason:
           'the dedup branch must keep IPA-only groups (transcriptions guard)',
     );
-    final int forwarded =
-        js.indexOf('transcriptions: pitch.transcriptions', dedup);
+    // 判据从「逐字段列出 transcriptions」升级成「整组透传」：BUG-2122 之后去重分支
+    // 拿到的是合并结果，用 `Object.assign({}, group, {pitchPositions: unique})`
+    // 只替换位置、其余字段（transcriptions / patterns / dictionaries）**按构造**全部
+    // 保留。这比列举字段更强——将来再加字段也不会被悄悄漏掉。
+    final int forwarded = js.indexOf(
+      'Object.assign({}, group, { pitchPositions: unique })',
+      dedup,
+    );
     expect(
       forwarded,
       greaterThan(dedup),
-      reason:
-          'the dedup branch must forward transcriptions into createPitchGroup',
+      reason: 'the dedup branch must pass the merged group through intact '
+          '(only pitchPositions may be narrowed), or transcriptions / patterns '
+          '/ source labels get dropped',
     );
   });
 }

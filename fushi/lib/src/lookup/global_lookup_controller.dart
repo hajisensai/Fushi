@@ -30,6 +30,7 @@ import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/shortcuts/global_external_lookup_route.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
@@ -109,8 +110,7 @@ class GlobalLookupController {
     int physicalDx,
     int physicalDy,
     int physicalRootHeight,
-  )?
-  onRoutedRevealed;
+  )? onRoutedRevealed;
 
   /// Interactive gal-card pixels changed after the first reveal.  The route
   /// owner coalesces these notifications into bitmap recaptures.
@@ -157,8 +157,7 @@ class GlobalLookupController {
     double left,
     double top,
     int attempt,
-  })?
-  _pendingGalCapture;
+  })? _pendingGalCapture;
   Timer? _galCaptureReadySafety;
   int _galCaptureGeneration = 0;
   // TODO-1231 (BUG-583) — the overlay window's min-corner (bbox origin, CSS px)
@@ -277,6 +276,9 @@ class GlobalLookupController {
       onOverlayHidden: _onOverlayHidden,
       onRoutedJsMessage: _onRoutedJsMessage,
       onRoutedOverlayHidden: _onRoutedOverlayHidden,
+      // TODO-1066 — 全局鼠标侧键：与键盘热键、手柄按钮同一执行体。
+      onGlobalMouseTrigger: () =>
+          unawaited(triggerSelectionLookup(source: 'mouse')),
     );
 
     // 防截屏初值（pref lookupBlockCapture，默认关）。native GlobalLookupWindow
@@ -296,6 +298,15 @@ class GlobalLookupController {
     _registry = appModel.shortcutRegistry;
     _registry!.addListener(_onRegistryChanged);
     await _registerHotKeyFromRegistry();
+
+    // TODO-1066 — 另外两条非键盘触发源（手柄按钮 / 鼠标侧键）。它们与上面的键盘
+    // 热键是**同一个执行体、不同的 OS 机制**（见 ShortcutScope.globalExternal 的
+    // channels 注释）：手柄经 shortcuts 层的进程级登记处拿到入口，鼠标侧键在
+    // native 侧按绑定注册 RawInput 监听。两者都随注册表变更重推（_onRegistryChanged）。
+    GlobalExternalLookupRoute.set(
+      () => triggerSelectionLookup(source: 'gamepad'),
+    );
+    await _registerMouseTriggerFromRegistry();
 
     // TODO-1079 — root-cause fix: PREWARM the overlay WebView2 off-screen now,
     // so the first hotkey lookup hits a WARM surface instead of racing a cold
@@ -376,7 +387,10 @@ class GlobalLookupController {
     }
     _hotKey = hotKey;
     try {
-      await hotKeyManager.register(hotKey, keyDownHandler: (_) => _onHotKey());
+      await hotKeyManager.register(
+        hotKey,
+        keyDownHandler: (_) => triggerSelectionLookup(source: 'hotkey'),
+      );
       glog(
         'hotkey: registered ${set.keyboardBindings.first.displayLabel} '
         'from registry OK',
@@ -396,11 +410,73 @@ class GlobalLookupController {
     }
   }
 
+  /// TODO-1066 — DOM `MouseEvent.button` 号里**允许**当全局触发的那两个：
+  /// 3=侧键后退（XBUTTON1）/ 4=侧键前进（XBUTTON2）。理由与真相源都在
+  /// [ShortcutAction.allowedMouseButtons]——设置页的录制门读同一份，否则会出现
+  /// 「设置里能录、按下去没反应」。
+  static Set<int> get _globalMouseTriggerButtons =>
+      ShortcutAction.globalExternalLookup.allowedMouseButtons ?? const <int>{};
+
+  /// 当前已推给 native 的触发按钮号（0 = 未注册）。用来避免注册表每次变更都
+  /// 无谓地重推一次 native 注册。
+  int _mouseTriggerButton = 0;
+
+  /// TODO-1066 — 按注册表里的鼠标绑定，让 native 侧开始/停止监听全局鼠标侧键。
+  ///
+  /// **没绑就不注册**：native 侧一个 RawInput 监听都不留（见
+  /// global_mouse_trigger.cpp）。这是刻意的——BUG-1077 立的契约是「不查词不留
+  /// 全局钩子」，这里沿用同样的纪律：不用这个功能的用户，不该为它付任何常驻代价。
+  Future<void> _registerMouseTriggerFromRegistry() async {
+    final FushiShortcutRegistry? registry = _registry;
+    int button = 0;
+    if (registry != null) {
+      final ShortcutBindingSet set = registry.bindingsFor(
+        ShortcutAction.globalExternalLookup,
+      );
+      for (final MouseBinding binding in set.mouseBindings) {
+        if (_globalMouseTriggerButtons.contains(binding.button)) {
+          button = binding.button;
+          break;
+        }
+      }
+      if (button == 0 && set.mouseBindings.isNotEmpty) {
+        glog(
+          'mouseTrigger: bound button(s) '
+          '${set.mouseBindings.map((MouseBinding b) => b.button).toList()} '
+          'are not side buttons (only 3/4 supported) — not registered',
+        );
+      }
+    }
+    if (button == _mouseTriggerButton) {
+      return;
+    }
+    _mouseTriggerButton = button;
+    try {
+      await GlobalLookupChannel.setGlobalMouseTrigger(button);
+      glog(
+        button == 0
+            ? 'mouseTrigger: unregistered (no side-button binding)'
+            : 'mouseTrigger: registered button=$button',
+      );
+    } catch (e, st) {
+      glog('mouseTrigger: register FAILED: $e');
+      ErrorLogService.instance.log(
+        'GlobalLookupController.registerMouseTrigger',
+        'Failed to register global mouse trigger (button=$button): $e',
+        st,
+      );
+    }
+  }
+
   /// TODO-1066 — re-registers the OS hotkey when the registry changes (user
   /// remaps the key in settings, or a profile switch reloads bindings). Fire and
   /// forget; failures are logged inside [_registerHotKeyFromRegistry].
+  ///
+  /// 鼠标侧键触发同样跟着重推（手柄那条不用：它每次按下都现查注册表，没有需要
+  /// 同步的 OS 侧状态）。
   void _onRegistryChanged() {
     unawaited(_registerHotKeyFromRegistry());
+    unawaited(_registerMouseTriggerFromRegistry());
   }
 
   /// TODO-1066 — maps a registry keyboard [binding] to a hotkey_manager [HotKey].
@@ -441,26 +517,37 @@ class GlobalLookupController {
   /// Absolute folder that holds popup.html on Windows:
   /// <exeDir>/data/flutter_assets/assets/popup.
   String _popupAssetsDir() => p.join(
-    p.dirname(Platform.resolvedExecutable),
-    'data',
-    'flutter_assets',
-    'assets',
-    'popup',
-  );
+        p.dirname(Platform.resolvedExecutable),
+        'data',
+        'flutter_assets',
+        'assets',
+        'popup',
+      );
 
-  Future<void> _onHotKey() async {
+  /// TODO-1066 — app 外查词的**触发源无关**入口：抓前台程序当前选中的文本，
+  /// 查词，弹出覆盖窗卡片。
+  ///
+  /// 三个触发源共用这一个方法，语义完全一致，不各自复制一条链路（route 铸造、
+  /// epoch 作废、prewarm、隐藏时序都在这条链上，复制一份必然漂移）：
+  ///   · 键盘：OS 级热键（win32 `RegisterHotKey`，见 [_registerHotKeyFromRegistry]）；
+  ///   · 手柄：`GamepadService` 的后台分支（不经 Flutter 焦点树，app 失焦时仍有效）；
+  ///   · 鼠标侧键：native RawInput 监听（见 windows/runner/global_mouse_trigger.cpp）。
+  ///
+  /// 方法体里没有任何键盘/修饰键相关的逻辑——它本来就是触发源无关的，改成公开
+  /// 是零行为变更。[source] 只进诊断日志，用来区分是哪个触发源点的火。
+  Future<void> triggerSelectionLookup({String source = 'hotkey'}) async {
     final GlobalLookupRoute route = GlobalLookupRoute.desktop(
       lookupEpoch: ++_desktopLookupEpoch,
     );
     return GlobalLookupChannel.runWithRoute(
       route,
-      () => _onHotKeyRouted(route),
+      () => _onHotKeyRouted(route, source),
     );
   }
 
-  Future<void> _onHotKeyRouted(GlobalLookupRoute route) async {
+  Future<void> _onHotKeyRouted(GlobalLookupRoute route, String source) async {
     _activateRoute(route);
-    glog('hotkey: FIRED');
+    glog('hotkey: FIRED (source=$source)');
     try {
       // Re-press ALWAYS does a fresh lookup of the current selection (no
       // toggle): the user selects a new word and presses the hotkey expecting
@@ -499,7 +586,13 @@ class GlobalLookupController {
       }
       if (text.isEmpty) {
         // No context (or feature off): fall back to the clipboard selection.
-        text = (await SelectionCapture.captureForegroundSelection() ?? '')
+        // stillWanted：剪贴板捕获是串行的全局事务（见 SelectionCapture 的闸门）。
+        // 手柄按钮/鼠标侧键比键盘热键容易连击，排队期间本次若已被新触发取代，就
+        // 别再去动一次剪贴板——反正结果下一行就会被丢弃。
+        text = (await SelectionCapture.captureForegroundSelection(
+                  stillWanted: () => _isCurrentRoute,
+                ) ??
+                '')
             .trim();
         if (!_isCurrentRoute) return;
         sentence = '';
@@ -556,10 +649,9 @@ class GlobalLookupController {
   }) {
     _physicalCap =
         (width == null || height == null || width <= 0 || height <= 0)
-        ? null
-        : (w: width, h: height);
-    _physicalLayoutWorkArea =
-        (workWidth == null ||
+            ? null
+            : (w: width, h: height);
+    _physicalLayoutWorkArea = (workWidth == null ||
             workHeight == null ||
             workWidth <= 0 ||
             workHeight <= 0)
@@ -576,8 +668,8 @@ class GlobalLookupController {
   /// 二选一——真机上就是「游戏内过小、浮窗过大」。这里按 route 分流，形态各读各的键。
   LookupSize _effectiveLookupSizeForCurrentRoute(AppModel model) =>
       GlobalLookupChannel.currentRoute.source == 'galCard'
-      ? model.galCardLookupEffectiveSize
-      : model.overlayLookupEffectiveSize;
+          ? model.galCardLookupEffectiveSize
+          : model.overlayLookupEffectiveSize;
 
   /// 卡片尺寸上界（物理像素）。真机上它决定「最大宽/高」这个设置到底生不生效。
   @visibleForTesting
@@ -1023,11 +1115,7 @@ class GlobalLookupController {
     }
     return WidgetsBinding.instance.platformDispatcher.views.isNotEmpty
         ? WidgetsBinding
-              .instance
-              .platformDispatcher
-              .views
-              .first
-              .devicePixelRatio
+            .instance.platformDispatcher.views.first.devicePixelRatio
         : 1.0;
   }
 
@@ -1077,9 +1165,8 @@ class GlobalLookupController {
     if (!_acceptsRoute(event.route) || event.message == null) {
       return;
     }
-    final GlobalLookupRoute route = event.route.lookupEpoch == 0
-        ? _activeRoute!
-        : event.route;
+    final GlobalLookupRoute route =
+        event.route.lookupEpoch == 0 ? _activeRoute! : event.route;
     GlobalLookupChannel.runWithRoute(route, () => _onJsMessage(event.message!));
   }
 
@@ -1087,9 +1174,8 @@ class GlobalLookupController {
     if (!_acceptsRoute(event.route)) {
       return;
     }
-    final GlobalLookupRoute route = event.route.lookupEpoch == 0
-        ? _activeRoute!
-        : event.route;
+    final GlobalLookupRoute route =
+        event.route.lookupEpoch == 0 ? _activeRoute! : event.route;
     GlobalLookupChannel.runWithRoute(route, () => _onOverlayHidden(route));
   }
 
@@ -1232,12 +1318,12 @@ class GlobalLookupController {
         final Object? args = message['args'];
         final int? readyWidth =
             args is List && args.isNotEmpty && args[0] is num
-            ? (args[0] as num).toInt()
-            : null;
+                ? (args[0] as num).toInt()
+                : null;
         final int? readyHeight =
             args is List && args.length > 1 && args[1] is num
-            ? (args[1] as num).toInt()
-            : null;
+                ? (args[1] as num).toInt()
+                : null;
         final int? readyGeometryEpoch = args is List && args.length > 2
             ? parseGlobalLookupGeometryEpoch(args[2])
             : null;
@@ -1549,9 +1635,8 @@ class GlobalLookupController {
     if (query.isEmpty) {
       return;
     }
-    final Rect? anchor = (args.length >= 2)
-        ? _anchorRectFromArg(args[1])
-        : null;
+    final Rect? anchor =
+        (args.length >= 2) ? _anchorRectFromArg(args[1]) : null;
     final String? sourceFrameId = message['__frameId'] as String?;
     final GlobalLookupNestedParent? source = resolveNestedLookupParent(
       _stack,
@@ -1594,12 +1679,12 @@ class GlobalLookupController {
       unawaited(
         model.database
             .addLookupCount(
-              sourceType: kStatSourceBook,
-              dateKey: statTodayKey(),
-            )
+          sourceType: kStatSourceBook,
+          dateKey: statTodayKey(),
+        )
             .catchError((Object e, StackTrace st) {
-              glog('lookup-count: EXCEPTION $e\n$st');
-            }),
+          glog('lookup-count: EXCEPTION $e\n$st');
+        }),
       );
     } catch (e, st) {
       glog('lookup-count: EXCEPTION (sync) $e\n$st');
@@ -1815,9 +1900,8 @@ class GlobalLookupController {
   /// Drops cached results for frames no longer in the stack (after a close /
   /// truncate), so the result map does not leak removed layers.
   void _pruneFrameResults() {
-    final Set<String> live = _stack.frames
-        .map((GlobalLookupFrame f) => f.id)
-        .toSet();
+    final Set<String> live =
+        _stack.frames.map((GlobalLookupFrame f) => f.id).toSet();
     _frameResults.removeWhere((String id, _) => !live.contains(id));
     _frameAnchors.removeWhere((String id, _) => !live.contains(id));
   }
@@ -2013,7 +2097,8 @@ class GlobalLookupController {
     }
     // BUG-2128 — root card height rides the same box; 0 = host did not report.
     final double rootHeightCss = num2(box['rootHeight']) ?? 0;
-    final int rootHeight = rootHeightCss > 0 ? (rootHeightCss * dpr).round() : 0;
+    final int rootHeight =
+        rootHeightCss > 0 ? (rootHeightCss * dpr).round() : 0;
     // TODO-1231 (BUG-583) — ratchet the origin outward-only so a nested close
     // never slides the window top-left back inward (which raced the host's
     // compensating layer shift across the DWM/WebView2 boundary and lurched the
@@ -2328,9 +2413,8 @@ class GlobalLookupController {
 
   return (
     revision: asInt(args.first),
-    hostGeometryEpoch: args.length > 1
-        ? parseGlobalLookupGeometryEpoch(args[1])
-        : null,
+    hostGeometryEpoch:
+        args.length > 1 ? parseGlobalLookupGeometryEpoch(args[1]) : null,
   );
 }
 

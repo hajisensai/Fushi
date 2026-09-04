@@ -10,4 +10,5 @@
 #include "../adapters/leaf_aquaplus_adapter.inc"
 #include "../adapters/hunex_gge_adapter.inc"
 #include "../adapters/cmvs_adapter.inc"
+#include "../adapters/unreal_iostore_adapter.inc"
 #include "../adapters/aos_sfa_adapter.inc"

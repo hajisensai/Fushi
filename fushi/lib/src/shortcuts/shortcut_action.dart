@@ -88,9 +88,14 @@ enum ShortcutScope {
       // 按钮跨组冲突，冲突检测只扫 gamepad 自身。
       case gamepad:
         return const <ShortcutScope>[gamepad];
-      // globalExternal（系统级 app 外查词热键）是独立 co-active 组：它不经页面
-      // 派发，只由 controller 注册到操作系统热键；冲突检测只扫自己，永不与任何
-      // 应用内 scope 牵连。
+      // globalExternal（系统级 app 外查词）是独立 co-active 组：**运行时解析**永不与
+      // 任何应用内 scope 牵连（`resolveMouse` / `reverse_binding_index` 都按这里扫）。
+      //
+      // ⚠ 但「冲突检测只扫自己」这句自 TODO-1066 起已不再成立：键盘那条走 win32
+      // `RegisterHotKey`（OS 级），手柄那条在 `GamepadService` 里排在页面 Actions
+      // **之前**——两者在 app 内都会抢走页面的那个键。所以手柄冲突检测额外扫这一组，
+      // 见 `FushiShortcutRegistry.hasGamepadConflict`；那里只改检测、不动本表，因为
+      // 本表同时喂运行时解析。
       case globalExternal:
         return const <ShortcutScope>[globalExternal];
       // universal（「返回上一级」）是独立 co-active 组：它由每个表面在自身 scope
@@ -198,13 +203,32 @@ enum ShortcutScope {
       // 与摇杆负责，见 shortcut_defaults 的 dpad* 注释。
       case gamepad:
         return const <ShortcutChannel>{ShortcutChannel.gamepad};
-      // app 外全局查词热键：GlobalLookupController 只读 `.keyboardBindings` 注册到
-      // OS 级 hotkey_manager，而 `HotKey.key` 的类型就是 Flutter 的 `KeyboardKey`，
-      // 底层是 win32 `RegisterHotKey`（修饰键位掩码 + 虚拟键码）。手柄按钮无法表达，
-      // 鼠标键则要装 WH_MOUSE_LL 全局钩子并全系统吞掉该键——两者都不是这条机制能
-      // 提供的，故只开键盘。
+      // app 外全局查词：三通道，但**三条通道各走各的 OS 机制**，不共用一套注册。
+      // 这是全 app 唯一一处「同一个动作、三种底层触发机制」的 scope，故在此写明
+      // 各自的边界（TODO-1066）：
+      //   · 键盘：`.keyboardBindings` → hotkey_manager → win32 `RegisterHotKey`。
+      //     `HotKey.key` 的类型就是 Flutter 的 `KeyboardKey`（修饰键位掩码 + 虚拟
+      //     键码），所以手柄按钮和鼠标键**按构造无法**表达成它——这正是另外两条
+      //     必须另起机制的原因，不是偷懒。
+      //   · 手柄：`.gamepadBindings` → `GamepadService._dispatchButton` 里一条
+      //     **不经 Flutter 焦点树**的分支（`GlobalExternalLookupRoute`）。底层
+      //     GameInput 是每手柄一条 native 线程的进程级轮询，与前台焦点无关，所以
+      //     app 失焦时按钮照样读得到；断掉的只是 Actions/Focus 那条派发链，那条
+      //     分支补的就是它。默认绑定必须留空——它优先于页面，给默认值等于抢键。
+      //   · 鼠标：`.mouseBindings` → native RawInput + `RIDEV_INPUTSINK`
+      //     （windows/runner/global_mouse_trigger.cpp），且**只在用户真绑了侧键
+      //     时才注册**，没绑就一个系统级监听都不留。
+      //     刻意**不用** WH_MOUSE_LL：低级鼠标钩子是同步钩子，全系统每一次鼠标
+      //     移动都要排队等我们的回调返回（BUG-1048 的原始症状），而 BUG-1077 已
+      //     立下「不查词不留全局钩子」的契约。RawInput 是异步投递，不插进系统输入
+      //     分发的关键路径。代价是它只能监听、不能拦截——而侧键在浏览器里是"后退"，
+      //     本来就**必须放行**，所以这个"限制"恰好就是我们要的语义。
       case globalExternal:
-        return const <ShortcutChannel>{ShortcutChannel.keyboard};
+        return const <ShortcutChannel>{
+          ShortcutChannel.keyboard,
+          ShortcutChannel.gamepad,
+          ShortcutChannel.mouse,
+        };
       // 漫画页：键盘走 `_resolveMangaKeyAction`（resolveKeyboard），手柄走
       // `_handleGamepadButton`（resolveGamepad manga → universal，桌面轮询的
       // GamepadButtonIntent 与 Android gameButton* 键事件汇合到同一入口，与
@@ -548,6 +572,21 @@ enum ShortcutAction {
   /// 那比压根没有这个选项更糟——用户会以为是自己配错了。
   ///
   /// 这里是**唯一**的收窄处：设置页读它而不是 `scope.channels`，别在对话框里写特例。
+  /// 这个动作在鼠标通道上**真正接得住**的按钮号（DOM `MouseEvent.button` 口径）。
+  ///
+  /// `null` = 不限（通道里所有按钮都有消费者）。非 null 时设置页的按键录制必须当场
+  /// 拒收表外按钮——通道级 gating 只管到「有没有鼠标这条路」，管不到按钮号，于是
+  /// 会出现同一个病：**设置里能录、能保存、能回显，按下去什么都不发生**。
+  Set<int>? get allowedMouseButtons => switch (this) {
+        // app 外全局查词是**不拦截**的（RawInput 只能监听），绑中键(1)/右键(2)等于
+        // 「查词 + 前台程序的原有动作同时发生」：右键会同时弹出上下文菜单、中键会
+        // 同时触发自动滚动。侧键 3/4 没有这种全系统级默认语义，是唯一能安全共存的
+        // 一对，消费侧（`GlobalLookupController._globalMouseTriggerButtons`）也只认
+        // 它俩——真相源在这里，那边读它。
+        ShortcutAction.globalExternalLookup => const <int>{3, 4},
+        _ => null,
+      };
+
   Set<ShortcutChannel> get channels => switch (this) {
         // 右键菜单只有鼠标一条路：`ContextMenuTrigger` 只读鼠标通道，键盘兜底
         // （`global_navigation.dart` 的 `_handleGlobalKey`）只认 globalToggleFullscreen、

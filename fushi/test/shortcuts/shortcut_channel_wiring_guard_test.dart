@@ -78,8 +78,11 @@ void main() {
   ///     `resolveMouse(scope: video)` 派发，所以它不再出现在本清单里。）
   ///   · `gamepad.keyboard/mouse`：dpad 四向只由 `GamepadService._dispatchButton` 按
   ///     `GamepadButton` 解析，键盘/鼠标绑定没有也不可能有读取方；
-  ///   · `globalExternal.gamepad/mouse`：OS 级热键走 win32 `RegisterHotKey`，
-  ///     `HotKey.key` 类型就是 `KeyboardKey`，手柄/鼠标压根无法表达。
+  ///   （`globalExternal.gamepad/mouse` 曾在此列，理由是「OS 级热键走 win32
+  ///     `RegisterHotKey`，`HotKey.key` 类型就是 `KeyboardKey`，手柄/鼠标压根无法
+  ///     表达」——TODO-1066 之后两条都真接上了消费者：手柄经 `GamepadService` 的
+  ///     `tryGlobalExternalLookupGamepadButton`，鼠标经 `GlobalLookupController`
+  ///     的 RawInput 侧键监听，故已从清单划掉。）
   /// 详见 `ShortcutScope.channels` 各 case 的注释。
   ///
   /// 本清单是**棘轮**：下面断言的是「实际欠账集合 == 本清单」，因此
