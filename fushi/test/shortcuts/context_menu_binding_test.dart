@@ -11,6 +11,8 @@ import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 
+import '../helpers/source_guard.dart';
+
 /// 「右键菜单」纳入绑定表（[ShortcutAction.globalContextMenu]）之后的三条不变式：
 ///
 ///   ① 谁都没改键 → 右键仍然弹菜单（Never break userspace）；
@@ -393,24 +395,17 @@ void main() {
   });
 
   group('源码守卫：右键菜单不得再硬绑次按钮', () {
-    /// 剥掉注释再扫——本仓库注释里满是 `onSecondaryTapDown` 的历史说明，不剥必假红。
-    String stripComments(String source) {
-      final StringBuffer out = StringBuffer();
-      for (final String line in source.split('\n')) {
-        final String trimmed = line.trimLeft();
-        if (trimmed.startsWith('//')) continue;
-        final int idx = line.indexOf('//');
-        out.writeln(idx >= 0 ? line.substring(0, idx) : line);
-      }
-      return out.toString();
-    }
-
+    // 注释一律走 `helpers/source_guard.dart` 的 maskComments：本仓库注释里满是
+    // `onSecondaryTapDown` 的历史说明，不剥必假红；而手写版只删 `//` 开头的整行，
+    // 骗得过行尾注释与 `/* needle */` 一行流，且删行会让 indexOf/substring 的下标
+    // 与原文错位——本文件下面的 topLevelArgNames 正是按下标扫的。maskComments 把
+    // 注释替换成等长空白，偏移原样保留。
     test('lib/ 里不再有 onSecondaryTapDown / onSecondaryTapUp 的手势入口', () {
       final List<String> offenders = <String>[];
       for (final FileSystemEntity entity
           in Directory('lib').listSync(recursive: true)) {
         if (entity is! File || !entity.path.endsWith('.dart')) continue;
-        final String source = stripComments(entity.readAsStringSync());
+        final String source = maskComments(entity.readAsStringSync());
         if (source.contains('onSecondaryTapDown') ||
             source.contains('onSecondaryTapUp')) {
           offenders.add(entity.path);
@@ -428,7 +423,7 @@ void main() {
       final File file =
           File('lib/src/media/manga/reader/manga_fushi_page.dart');
       expect(file.existsSync(), isTrue, reason: '路径过期请更新守卫');
-      final String source = stripComments(file.readAsStringSync());
+      final String source = maskComments(file.readAsStringSync());
       final int handler = source.indexOf("handlerName: 'onMangaContextMenu'");
       expect(handler, isNonNegative, reason: '漫画右键菜单 handler 不见了');
       final String body = source.substring(handler, handler + 600);
@@ -491,7 +486,7 @@ void main() {
       for (final FileSystemEntity entity
           in Directory('lib').listSync(recursive: true)) {
         if (entity is! File || !entity.path.endsWith('.dart')) continue;
-        final String source = stripComments(entity.readAsStringSync());
+        final String source = maskComments(entity.readAsStringSync());
         for (final String widget in rawGestureWidgets) {
           int at = source.indexOf(widget);
           while (at >= 0) {
@@ -521,7 +516,7 @@ void main() {
       for (final String path in shells) {
         final File file = File(path);
         expect(file.existsSync(), isTrue, reason: '路径过期请更新守卫：$path');
-        final String source = stripComments(file.readAsStringSync());
+        final String source = maskComments(file.readAsStringSync());
         expect(
           source.contains('ContextMenuTrigger('),
           isTrue,
