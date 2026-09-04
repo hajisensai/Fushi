@@ -1,6 +1,8 @@
+/// 声明顺序**就是**快捷键设置页的卡片顺序（页面直接遍历 `values`，不另存一份
+/// 显示顺序表）：跨页面通用（global / universal / globalExternal）→ 各页面
+/// （home / reader / audiobook / manga / video）→ 输入设备（gamepad）→ 查词弹窗。
+/// 没有任何地方按 index 持久化或解析 scope，调整顺序只影响显示。
 enum ShortcutScope {
-  reader,
-  home,
   global,
 
   // 「返回上一级」这一件事的唯一归属地（用户拍板：Esc 一键从任何界面退一层，
@@ -21,22 +23,25 @@ enum ShortcutScope {
   // 组是唯一登记在案的有意例外。
   universal,
 
-  audiobook,
-  video,
-  // 漫画阅读器（mokuro 页图 + OCR 文本层）。与 reader 分开是因为动作集不同：漫画
-  // 没有章节/振假名/有声书，翻页是整页跨页步进而非文字流分页，且左右键要按跨页
-  // 方向（日漫默认 rtl）校正。
-  manga,
-  // TODO-700 T6：摇杆与 dpad 解耦后，dpad 四向成为「可绑触发键」，落在独立的
-  // gamepad 作用域（自成 co-active 组，不与 reader/home 等任何组冲突）。摇杆固定
-  // 做方向焦点移动、永不经注册表，故没有对应 action——只有 dpad 进这个 scope。
-  gamepad,
   // TODO-1066：桌面「app 外全局查词」的系统级触发热键作用域。此 scope 的动作
   // **不经 resolveKeyboard / 页面派发**，而是由 GlobalLookupController 直接读其
   // 绑定注册到操作系统级 hotkey_manager（默认 Ctrl+Alt+D）。它跨页面常驻、不与
   // 任何应用内页面的键盘绑定竞争，故自成独立 co-active 组，冲突检测只扫自己，
   // 绝不与 global/home 等页面 scope 互相牵连。仅桌面（Windows）有意义。
   globalExternal,
+
+  home,
+  reader,
+  audiobook,
+  // 漫画阅读器（mokuro 页图 + OCR 文本层）。与 reader 分开是因为动作集不同：漫画
+  // 没有章节/振假名/有声书，翻页是整页跨页步进而非文字流分页，且左右键要按跨页
+  // 方向（日漫默认 rtl）校正。
+  manga,
+  video,
+  // TODO-700 T6：摇杆与 dpad 解耦后，dpad 四向成为「可绑触发键」，落在独立的
+  // gamepad 作用域（自成 co-active 组，不与 reader/home 等任何组冲突）。摇杆固定
+  // 做方向焦点移动、永不经注册表，故没有对应 action——只有 dpad 进这个 scope。
+  gamepad,
 
   // 查词弹窗内部的导航动作（Yomitan 式「上/下一个词条」）。这些动作**不经
   // resolveKeyboard / 页面派发**：弹窗内容是 WebView，输入事件先到 WebView 的
