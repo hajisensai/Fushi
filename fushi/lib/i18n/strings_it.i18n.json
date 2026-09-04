@@ -4178,5 +4178,6 @@
   "discovery_opds_allow_http_hint": "Necessario per un server self-hosted sulla rete locale",
   "discovery_opds_test": "Prova connessione",
   "discovery_opds_test_ok": "Connesso. Il catalogo radice ha ${count} voci",
-  "discovery_opds_test_failed": "Connessione non riuscita: ${reason}"
+  "discovery_opds_test_failed": "Connessione non riuscita: ${reason}",
+  "game_text_thread_artifact_hint": "Repeated-character artifact thread, no usable lines"
 }

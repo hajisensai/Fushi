@@ -4178,5 +4178,6 @@
   "discovery_opds_allow_http_hint": "ローカルネットワークの自前サーバーに必要です",
   "discovery_opds_test": "接続をテスト",
   "discovery_opds_test_ok": "接続しました。ルートカタログに ${count} 件あります",
-  "discovery_opds_test_failed": "接続に失敗しました: ${reason}"
+  "discovery_opds_test_failed": "接続に失敗しました: ${reason}",
+  "game_text_thread_artifact_hint": "Repeated-character artifact thread, no usable lines"
 }

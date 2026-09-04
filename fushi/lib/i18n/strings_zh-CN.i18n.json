@@ -4178,5 +4178,6 @@
   "discovery_opds_allow_http_hint": "局域网自建服务器需要打开",
   "discovery_opds_test": "测试连接",
   "discovery_opds_test_ok": "连接成功，根目录有 ${count} 个条目",
-  "discovery_opds_test_failed": "连接失败：${reason}"
+  "discovery_opds_test_failed": "连接失败：${reason}",
+  "game_text_thread_artifact_hint": "逐字重复伪影线程，不会有可用台词"
 }

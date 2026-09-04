@@ -4178,5 +4178,6 @@
   "discovery_opds_allow_http_hint": "로컬 네트워크의 자체 호스팅 서버에 필요합니다",
   "discovery_opds_test": "연결 테스트",
   "discovery_opds_test_ok": "연결되었습니다. 루트 카탈로그에 ${count}개 항목이 있습니다",
-  "discovery_opds_test_failed": "연결 실패: ${reason}"
+  "discovery_opds_test_failed": "연결 실패: ${reason}",
+  "game_text_thread_artifact_hint": "Repeated-character artifact thread, no usable lines"
 }

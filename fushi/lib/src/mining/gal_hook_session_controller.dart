@@ -2496,6 +2496,24 @@ class GalHookSessionController extends ChangeNotifier {
           details: <String, Object?>{'threadKey': _selectedTextThreadKey},
         );
       }
+      // BUG-2112：选中的是伪影主导线程（逐字 ×N 重绘）。它的行在 native 采集期就被
+      // 伪影门丢在文本道之外，只有预览槽计数——选中后必然一行都不来，而预览折叠后
+      // 又像干净整句。这里显式报出来，让「预览有字、选进去没文字」有一个可读的原因。
+      final TexthookerTextThread? chosenNow = selectedTextThread;
+      if (chosenNow != null && chosenNow.isArtifactDominated) {
+        _record(
+          GalHookEventSeverity.warning,
+          'text',
+          'text.thread_selection_artifact_dominated',
+          'Selected text thread is artifact-dominated; its lines are dropped '
+              'before the text lane and will not arrive',
+          details: <String, Object?>{
+            'threadKey': chosenNow.key,
+            'observedLineCount': chosenNow.observedLineCount,
+            'observedArtifactCount': chosenNow.observedArtifactCount,
+          },
+        );
+      }
       // 新线程在被选中之前写进自己那条道的行，现在补回来（v13 分道的直接收益）。
       await _recoverSelectedThreadHistory();
       if (remember) {
@@ -2860,6 +2878,10 @@ class GalHookSessionController extends ChangeNotifier {
       // 线程都是 0，用它做判据会让这里永远选不出候选 → 记忆永远恢复不了 → 每次开游戏
       // 都要重新手选。这正是「第一次由用户选」与「之后自动恢复」能同时成立的关键。
       if (thread.observedLineCount < _textThreadRestoreMinLines) continue;
+      // BUG-2112：指纹只锚到 hook 面，同一 hook 的逐字重绘兄弟线程指纹相同且
+      // 行数往往更多（每字一行）。它们的行全被 native 伪影门丢掉，恢复到它等于
+      // 恢复到一条永远 0 行的线程。
+      if (thread.isArtifactDominated) continue;
       if (best == null || thread.observedLineCount > best.observedLineCount) {
         best = thread;
       }
@@ -2898,6 +2920,7 @@ class GalHookSessionController extends ChangeNotifier {
       if (!isEngineExactTextThread(thread)) continue;
       if (thread.nativeThreadId == null || thread.nativeThreadId == 0) continue;
       if (thread.observedLineCount < _textThreadRestoreMinLines) continue;
+      if (thread.isArtifactDominated) continue; // BUG-2112，同记忆恢复
       if (best == null || thread.observedLineCount > best.observedLineCount) {
         best = thread;
       }

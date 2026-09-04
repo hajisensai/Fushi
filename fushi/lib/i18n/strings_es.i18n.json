@@ -4178,5 +4178,6 @@
   "discovery_opds_allow_http_hint": "Necesario para un servidor autoalojado en tu red local",
   "discovery_opds_test": "Probar conexión",
   "discovery_opds_test_ok": "Conectado. El catálogo raíz tiene ${count} entradas",
-  "discovery_opds_test_failed": "Error de conexión: ${reason}"
+  "discovery_opds_test_failed": "Error de conexión: ${reason}",
+  "game_text_thread_artifact_hint": "Repeated-character artifact thread, no usable lines"
 }

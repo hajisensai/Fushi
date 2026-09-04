@@ -4178,5 +4178,6 @@
   "discovery_opds_allow_http_hint": "Diperlukan untuk server milik sendiri di jaringan lokal",
   "discovery_opds_test": "Uji koneksi",
   "discovery_opds_test_ok": "Terhubung. Katalog akar berisi ${count} entri",
-  "discovery_opds_test_failed": "Koneksi gagal: ${reason}"
+  "discovery_opds_test_failed": "Koneksi gagal: ${reason}",
+  "game_text_thread_artifact_hint": "Repeated-character artifact thread, no usable lines"
 }

@@ -4178,5 +4178,6 @@
   "discovery_opds_allow_http_hint": "Cần thiết cho máy chủ tự dựng trong mạng nội bộ",
   "discovery_opds_test": "Kiểm tra kết nối",
   "discovery_opds_test_ok": "Đã kết nối. Danh mục gốc có ${count} mục",
-  "discovery_opds_test_failed": "Kết nối thất bại: ${reason}"
+  "discovery_opds_test_failed": "Kết nối thất bại: ${reason}",
+  "game_text_thread_artifact_hint": "Repeated-character artifact thread, no usable lines"
 }

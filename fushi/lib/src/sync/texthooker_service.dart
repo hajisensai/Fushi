@@ -22,6 +22,12 @@ String? texthookerThreadSubtitle({
   /// native 线程预览区每线程恒一条，一句话根本不够用户判断"这条是不是正文流"。
   /// 缺省 const [] ⇒ 与旧行为逐字等价（既有调用点/测试不受影响）。
   List<String> recentTexts = const <String>[],
+
+  /// BUG-2112：该线程以伪影为主时（[TexthookerTextThread.isArtifactDominated]）要
+  /// 显示的提示，放在副标题**最前**。预览文本经 [collapseTexthookerPreview] 折叠后
+  /// 看起来就是干净整句，不加这行字用户根本分不出「这条选了不会有台词」。
+  /// null ⇒ 不是伪影线程，与旧行为逐字等价。
+  String? artifactLabel,
 }) {
   final List<String> previews = <String>[
     for (final String text in recentTexts)
@@ -32,6 +38,7 @@ String? texthookerThreadSubtitle({
       ? previews.join('\n')
       : (latestText == null ? '' : collapseTexthookerPreview(latestText));
   final List<String> parts = <String>[
+    if (artifactLabel != null && artifactLabel.isNotEmpty) artifactLabel,
     if (audioLineCount > 0) audioLabel,
     if (preview.isNotEmpty) preview,
   ];
@@ -281,6 +288,16 @@ class TexthookerTextThread {
 
   /// 该线程是否出过内容（发布与否无关）。
   bool get hasObservedLines => observedLineCount > 0 || lineCount > 0;
+
+  /// 该线程的观测行是否**以伪影为主**（逐字 ×2/×3 重绘等被 native `LunaTextIsArtifact`
+  /// 判掉的行超过一半）。
+  ///
+  /// BUG-2112：native 采集期会把伪影行丢在文本道之外，只在预览槽计数；而预览文本经
+  /// [collapseTexthookerPreview] 折叠后**看起来是干净整句**。若不把这个判据显式摆出来，
+  /// 用户会照着预览选中一条永远 0 行的线程，且没有任何提示说明为什么。排序、记忆恢复、
+  /// 自动选择、选中后的告警都必须读同一个判据，不能各写一份阈值。
+  bool get isArtifactDominated =>
+      observedLineCount > 0 && observedArtifactCount * 2 > observedLineCount;
 }
 
 /// native 线程预览区的一条快照（v12）。按 native thread id 对齐到线程目录。
@@ -612,11 +629,9 @@ class TexthookerService extends ChangeNotifier {
       return b.audioLineCount.compareTo(a.audioLineCount);
     }
     // 干净线程排在脏线程之前：伪影占比低者优先。脏线程仍然可见可选（对齐 Luna），
-    // 只是不该挡在真台词前面。
-    final bool aDirty = a.observedArtifactCount * 2 > a.observedLineCount &&
-        a.observedLineCount > 0;
-    final bool bDirty = b.observedArtifactCount * 2 > b.observedLineCount &&
-        b.observedLineCount > 0;
+    // 只是不该挡在真台词前面。判据与 UI 标记/记忆恢复同一份（BUG-2112）。
+    final bool aDirty = a.isArtifactDominated;
+    final bool bDirty = b.isArtifactDominated;
     if (aDirty != bDirty) return aDirty ? 1 : -1;
     if (a.observedLineCount != b.observedLineCount) {
       return b.observedLineCount.compareTo(a.observedLineCount);
