@@ -522,15 +522,44 @@ void main() {
       },
     );
 
-    test('TODO-1231 P2: layer shift is C++-ordered after SetWindowPos', () {
-      // measureAndReport must NOT shift the layer synchronously (that raced the
-      // window move across vsync -> the parent card lurched then snapped back).
-      // The shift rides commitLayerShift, which C++ RevealStack calls AFTER
-      // SetWindowPos so the window move and content shift are causally ordered.
+    test('TODO-1231 P2 / BUG-2123: the layer shift is C++-ordered after '
+        'SetWindowPos for a VISIBLE window, and pre-applied only on the first '
+        '(still off-screen) transaction', () {
+      // TODO-1231 P2: once the window is on screen, measureAndReport must NOT
+      // shift the layer synchronously (that raced the window move across vsync
+      // -> the parent card lurched then snapped back). The shift rides
+      // commitLayerShift, which C++ RevealStack calls AFTER SetWindowPos so the
+      // window move and content shift are causally ordered.
+      // BUG-2123: the FIRST transaction of a lookup is the exception — the
+      // window is still parked off-screen, so deferring the shift there bought
+      // nothing and cost the "弹窗先在左上角闪一下" frame (the reserve-to-edge
+      // floor puts the first bbox origin at the work-area corner on EVERY
+      // lookup). It is applied up front, gated on `committedGeometryEpoch === 0`.
       expect(
         hostJs.contains('function commitLayerShift('),
         isTrue,
         reason: 'the host exposes a commit hook for the deferred layer shift',
+      );
+      // One writer for the DOM translate + layerOffset* pair (they must stay in
+      // lock-step; splitting them once already caused BUG-859).
+      final int layerOriginWrites =
+          'layerOffsetLeft = '.allMatches(hostJs).length -
+              'var layerOffsetLeft = '.allMatches(hostJs).length;
+      expect(
+        layerOriginWrites,
+        1,
+        reason: 'applyLayerOffset is the single writer of the layer origin',
+      );
+      final int aAt = hostJs.indexOf('function applyLayerOffset(');
+      expect(aAt, greaterThan(-1));
+      final int aEnd = hostJs.indexOf('function commitLayerShift(', aAt);
+      expect(aEnd, greaterThan(aAt));
+      final String applyBody = hostJs.substring(aAt, aEnd);
+      expect(
+        applyBody.contains('layerEl.style.left') &&
+            applyBody.contains('layerOffsetLeft = l'),
+        isTrue,
+        reason: 'applyLayerOffset writes the DOM translate and the offset pair',
       );
       final int mAt = hostJs.indexOf('function measureAndReport(');
       final int mEnd = hostJs.indexOf('function measureContentHeight(', mAt);
@@ -540,8 +569,23 @@ void main() {
         measureBody.contains('layerEl.style.left'),
         isFalse,
         reason:
-            'measureAndReport must not shift the layer synchronously '
-            '(TODO-1231 P2: it races the window move across vsync)',
+            'measureAndReport must go through applyLayerOffset, never poke the '
+            'layer DOM behind the offset bookkeeping',
+      );
+      expect(
+        'applyLayerOffset('.allMatches(measureBody).length,
+        1,
+        reason: 'measureAndReport shifts the layer at most once, under a gate',
+      );
+      expect(
+        measureBody.contains(
+          "if (route.source !== 'galCard' && committedGeometryEpoch === 0) {\n"
+          '      applyLayerOffset(minLeft, minTop);',
+        ),
+        isTrue,
+        reason:
+            'the pre-shift is gated on an uncommitted (still hidden) window; a '
+            'visible window keeps the TODO-1231 P2 window-first ordering',
       );
       // C++ RevealStack triggers the commit AFTER SetWindowPos.
       final int rsAt = cpp.indexOf('void GlobalLookupWindow::RevealStack(');
@@ -781,13 +825,13 @@ void main() {
       expect(bEnd, greaterThan(bAt));
       final String beginBody = hostJs.substring(bAt, bEnd);
       expect(
-        beginBody.contains('layerOffsetLeft = 0') &&
-            beginBody.contains('layerOffsetTop = 0') &&
+        beginBody.contains('applyLayerOffset(0, 0)') &&
             beginBody.contains('resetGeometryTransaction()'),
         isTrue,
         reason:
-            'beginLookup retires the committed transaction while the global '
-            'epoch counter remains monotonic',
+            'beginLookup retires the committed transaction (and zeroes the layer '
+            'origin through the single writer) while the global epoch counter '
+            'remains monotonic',
       );
     });
 

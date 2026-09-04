@@ -2548,22 +2548,15 @@
     // up/left child as already-covered (which would reveal it clipped). Mirrors the
     // Dart ratchet reset (_ratchetLeft/_ratchetTop = infinity) one layer up. The
     // real layer transform is re-applied by this lookup's first commitLayerShift.
-    layerOffsetLeft = 0;
-    layerOffsetTop = 0;
     // BUG-859 — reset the layer's DOM transform IN LOCK-STEP with the shadow
-    // offsets above. Resetting only the variables left the previous lookup's
+    // offsets. Resetting only the variables left the previous lookup's
     // translate (layer.style.left/top) applied while shellCoveredByOrigin /
     // frameIdAtPoint reasoned against the zeroed offsets: the reveal gate was
     // defeated (a stale-shifted card counted as covered) and any reveal that
     // bypasses commitLayerShift (legacy Reveal / ready-safety fallback) showed
-    // the fresh root displaced by the stale shift. The normal revealStack path
-    // re-applies the correct transform via commitLayerShift, so this is a no-op
-    // there (style already 0 for a fresh down-right cascade).
-    var layerEl = document.getElementById(LAYER_ID);
-    if (layerEl) {
-      layerEl.style.left = '0px';
-      layerEl.style.top = '0px';
-    }
+    // the fresh root displaced by the stale shift. This lookup's real transform
+    // is re-applied by its first measureAndReport / commitLayerShift.
+    applyLayerOffset(0, 0);
     // TODO-1345 (BUG-583 深层根因续) — drop the previous lookup's reserved cascade
     // floor so it can never leak into a fresh lookup (a new lookup re-computes its
     // own floor from the new cursor position and pushes it via the next renderStack).
@@ -2874,7 +2867,26 @@
         !isFinite(maxRight) || !isFinite(maxBottom)) {
       return;
     }
-    // TODO-1231 P2 — do NOT shift the host layer (nor set layerOffset*) HERE. The
+    // BUG-2123 — 首帧例外，把补偿平移**提前**到 overlaySize 之前。
+    // 下面 TODO-1231 P2 的「窗口先动、内容后跟」次序只为保护**已经画在屏幕上**的
+    // 父卡；本次查词还没提交过任何几何（committedGeometryEpoch === 0）时窗口仍停在
+    // OffscreenX() 之外、对用户不可见，被保护的对象根本不存在，代价却照收：
+    // reserve-to-edge 地板（computeCascadeHeadroomSeed·BUG-670）让**每一次**查词的
+    // bbox 原点都被拉到工作区左上角，于是 RevealStack 的 SetWindowPos +
+    // SWP_SHOWWINDOW 先让窗口带着「平移量仍为 0」的图层可见 —— 根卡就画在窗口本地
+    // (0,0) = 工作区左上角，直到一帧后 ExecuteScript 的 commitLayerShift 才把它搬到
+    // 光标处。用户看到的正是「弹窗先在屏幕左上角闪一下再飞到光标」。
+    // 在 postToHost('overlaySize') 之前落位是安全的：窗口要等这条消息走完一整趟
+    // Dart 往返（overlaySize → _applyOverlayBox → revealStack → SetWindowPos）才第一
+    // 次可见，内容早已合成到位，首帧即正确；随后 C++ 那次 commitLayerShift 带着同样
+    // 的 (minLeft, minTop) 到达，DOM 写入是幂等 no-op，嵌套 / 后续 resize 路径逐字节
+    // 不变。galCard 的窗口永远在屏外（截图后贴进游戏画面），没有可闪的首帧，保持
+    // 原样以免动到 captureReady 的两帧握手。
+    if (route.source !== 'galCard' && committedGeometryEpoch === 0) {
+      applyLayerOffset(minLeft, minTop);
+    }
+    // TODO-1231 P2 — for every LATER transaction (the window is already visible)
+    // do NOT shift the host layer (nor set layerOffset*) HERE. The
     // layer translation (-minLeft,-minTop) that pins the ROOT card at the cursor
     // while the window covers the whole cascade bbox must be applied ONLY AFTER
     // C++ SetWindowPos has moved the window to the new bbox origin. When the host
@@ -3037,6 +3049,18 @@
   // negation and layerOffset* is kept in lock-step for the hit-test (TODO-1189).
   // CSS px only (no dpr; the dpr boundary is the C++ window). Bad args default to
   // 0 (no shift), matching a single popup / down-right cascade.
+  // 图层补偿平移的**唯一**写入口：DOM 平移与 layerOffset*（命中测试 /
+  // frameIdAtPoint 用的同一坐标域）必须锁步，分开写过一次就出过 BUG-859。
+  function applyLayerOffset(l, t) {
+    var layerEl = document.getElementById(LAYER_ID);
+    if (layerEl) {
+      layerEl.style.left = (-l) + 'px';
+      layerEl.style.top = (-t) + 'px';
+    }
+    layerOffsetLeft = l;
+    layerOffsetTop = t;
+  }
+
   function commitLayerShift(
       bboxLeft, bboxTop, geometryEpoch, deferSuffixSwapFinalize) {
     var epoch = (typeof geometryEpoch === 'number' && isFinite(geometryEpoch) &&
@@ -3061,13 +3085,9 @@
     }
     var l = (typeof bboxLeft === 'number' && isFinite(bboxLeft)) ? bboxLeft : 0;
     var t = (typeof bboxTop === 'number' && isFinite(bboxTop)) ? bboxTop : 0;
-    var layerEl = document.getElementById(LAYER_ID);
-    if (layerEl) {
-      layerEl.style.left = (-l) + 'px';
-      layerEl.style.top = (-t) + 'px';
-    }
-    layerOffsetLeft = l;
-    layerOffsetTop = t;
+    // 首帧路径可能已经把同一组值提前落位（见 measureAndReport 的 BUG-2123 分支），
+    // 那时这次写入是幂等 no-op，本函数只剩「提交 bounds + 翻 reveal 门」的职责。
+    applyLayerOffset(l, t);
     // TODO-1231 v3 (BUG-583) — the window just settled at this origin, so any shell
     // held hidden because it fell OUTSIDE the previous (narrower) window is now
     // covered; flip its reveal-ready so it paints IN PLACE, coincident with the
