@@ -379,6 +379,11 @@ class GalHookMiningCoordinator {
       }
       final GalWindowVideoClip? clip = await _captureVideoClip(
         lineId: entry.id,
+        // 历史行（staleScene）的片段终点必须是**这一行不再是当前行的那一刻**，也就是
+        // 下一行的时间戳。用 0（= 现在）会把从那句到现在的所有后续台词画面全拼进
+        // mp4——用户拿到的是一段跑马灯，而不是那句话的画面。这与上面 staleScene 的
+        // 记账是同一件事的两半：那半只是标注「画面不是当时的」，这半才真的把范围收住。
+        toTickMs: _historicalLineEndTickMs(entry, liveEntries),
         audioBytes: earlyAudio,
         audioExtension: audioExtension,
       );
@@ -489,9 +494,8 @@ class GalHookMiningCoordinator {
           screenshotBytes: coverBytes,
           coverName: coverName,
           audioBytes: audioBytes,
-          audioName: sentenceAudioMissing
-              ? null
-              : 'galgame_audio.$audioExtension',
+          audioName:
+              sentenceAudioMissing ? null : 'galgame_audio.$audioExtension',
           documentTitle:
               window.title.isEmpty ? 'External window' : window.title,
           // BUG-1137：gal 场景卡归「游戏」分类标签（曾吃默认 video 被误标）。
@@ -560,8 +564,24 @@ class GalHookMiningCoordinator {
   ///
   /// fail-open：任一步失败返回 null，调用方降级动图 → 静图。临时目录只活在本函数内
   /// （产物字节已在内存）。
+  /// 制卡目标是历史行时，片段应当在哪一刻收尾（0 = 一直录到现在，即该行仍是当前行）。
+  ///
+  /// 取下一行的时间戳：那正是这一行画面被替换掉的时刻。取不到（下一行没有时间戳 /
+  /// 找不到该行）就退回 0，与改前行为一致——宁可多录，也不要因为算不出终点而不出片段。
+  int _historicalLineEndTickMs(
+    TexthookerLineEntry entry,
+    List<TexthookerLineEntry> liveEntries,
+  ) {
+    final int at = liveEntries.indexWhere(
+      (TexthookerLineEntry e) => e.id == entry.id,
+    );
+    if (at < 0 || at + 1 >= liveEntries.length) return 0;
+    return _lineTimestampLookup(liveEntries[at + 1].id) ?? 0;
+  }
+
   Future<GalWindowVideoClip?> _captureVideoClip({
     required String lineId,
+    required int toTickMs,
     required Uint8List? audioBytes,
     required String audioExtension,
   }) async {
@@ -574,13 +594,13 @@ class GalHookMiningCoordinator {
       recordingDir = await _createTempDirectory();
       final WindowRecordingExport export = await _exportRecording(
         fromTickMs: fromTickMs ?? 0,
-        toTickMs: 0,
+        toTickMs: toTickMs,
         directory: recordingDir.path,
       );
       return await _buildVideoClip(
         export: export,
         fromTickMs: fromTickMs,
-        toTickMs: 0,
+        toTickMs: toTickMs,
         audioBytes: audioBytes,
         audioExtension: audioExtension,
         workDir: recordingDir,

@@ -86,6 +86,9 @@ void main() {
 
   GalHookMiningCoordinator coordinator({
     int? lineTimestampMs,
+    // 逐行时间戳（历史行制卡要靠下一行的时间戳定片段终点）。给了就按 id 查，
+    // 没给就退回单值 [lineTimestampMs]，既有用例一字不用改。
+    Map<String, int>? lineTimestamps,
     Duration audioDelay = const Duration(milliseconds: 20),
     Uint8List? audioBytes,
     bool clipSucceeds = true,
@@ -96,7 +99,8 @@ void main() {
         lineLookup: service.entryById,
         lineValidator: (_) => true,
         stateLoader: () => activeState,
-        lineTimestampLookup: (String lineId) => lineTimestampMs,
+        lineTimestampLookup: (String lineId) =>
+            lineTimestamps?[lineId] ?? lineTimestampMs,
         captureAudio: ({
           required String lineId,
           required String sentence,
@@ -204,6 +208,53 @@ void main() {
     expect(exportCalls.single.toTickMs, 0);
     expect(buildCalls.single.fromTickMs, 5000 - kGalWindowVideoLeadMs);
     expect(buildCalls.single.toTickMs, 0);
+  });
+
+  test('制卡历史行：片段在下一行出现的那一刻收尾，不是「现在」', () async {
+    final TexthookerLineEntry first = service.appendLine('前の台詞')!;
+    final TexthookerLineEntry second = service.appendLine('今の台詞')!;
+    await mine(
+      coordinator(lineTimestamps: <String, int>{
+        first.id: 5000,
+        second.id: 9000,
+      }),
+      first,
+      _RecordingRepo(),
+    );
+
+    expect(exportCalls.single.fromTickMs, 5000 - kGalWindowVideoLeadMs);
+    expect(
+      exportCalls.single.toTickMs,
+      9000,
+      reason: '用 0（=现在）会把从那句到现在的所有后续台词画面全拼进 mp4，'
+          '用户拿到一段跑马灯而不是那句话的画面',
+    );
+    expect(buildCalls.single.toTickMs, 9000);
+  });
+
+  test('制卡当前行仍录到「现在」（Never break）', () async {
+    final TexthookerLineEntry first = service.appendLine('前の台詞')!;
+    final TexthookerLineEntry latest = service.appendLine('今の台詞')!;
+    await mine(
+      coordinator(lineTimestamps: <String, int>{
+        first.id: 5000,
+        latest.id: 9000,
+      }),
+      latest,
+      _RecordingRepo(),
+    );
+    expect(exportCalls.single.toTickMs, 0);
+  });
+
+  test('下一行没有时间戳 → 退回「现在」，不因为算不出终点就不出片段', () async {
+    final TexthookerLineEntry first = service.appendLine('前の台詞')!;
+    service.appendLine('今の台詞');
+    await mine(
+      coordinator(lineTimestamps: <String, int>{first.id: 5000}),
+      first,
+      _RecordingRepo(),
+    );
+    expect(exportCalls.single.toTickMs, 0);
   });
 
   test('时间戳很小不会算成负起点', () async {

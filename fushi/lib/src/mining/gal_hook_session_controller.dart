@@ -957,7 +957,8 @@ class GalHookSessionController extends ChangeNotifier {
   /// 逐行 loopback「延迟冻结」定时器（BUG-1101）：lineId → 到点后把环形缓冲冻结成该行
   /// 语音的定时器。等待必须在队列**之外**——在串行音频队列里 sleep 会把后续台词的抓取
   /// 和制卡全部堵住。
-  final Map<String, Timer> _loopbackFreezeTimers = <String, Timer>{};
+  final Map<String, _LoopbackFreeze> _loopbackFreezeTimers =
+      <String, _LoopbackFreeze>{};
 
   /// 每条待冻结行的台词到达时刻，用于提前收束（制卡 / 升格）时算真实已等待长度。
   final Map<String, DateTime> _loopbackFreezeStartedAt = <String, DateTime>{};
@@ -1024,7 +1025,9 @@ class GalHookSessionController extends ChangeNotifier {
 
       // ② 用户裁决：任一被吞行裁决过，合并结果就算裁决过——否则 `_isUserAdjudicated`
       //    对新 id 恒 false，自动配对会把用户手动选的轨/补录盖回去。
-      if (_manualRecaptureLines.remove(old)) _manualRecaptureLines.add(mergedId);
+      if (_manualRecaptureLines.remove(old)) {
+        _manualRecaptureLines.add(mergedId);
+      }
       final int? ptr = _lineVoiceSourcePtr.remove(old);
       if (ptr != null) _lineVoiceSourcePtr[mergedId] = ptr;
 
@@ -1039,7 +1042,7 @@ class GalHookSessionController extends ChangeNotifier {
 
       // ④ loopback：掐掉被吞行的冻结定时器；起点取**最早**那个——这句话是从那一刻
       //    开始说的，用晚的那个会把回取窗口算短。
-      _loopbackFreezeTimers.remove(old)?.cancel();
+      _loopbackFreezeTimers.remove(old)?.resolve();
       final DateTime? startedAt = _loopbackFreezeStartedAt.remove(old);
       if (startedAt != null) {
         final DateTime? current = _loopbackFreezeStartedAt[mergedId];
@@ -2229,7 +2232,7 @@ class GalHookSessionController extends ChangeNotifier {
     _recaptureTempSource = temp;
     _recapturingLineId = lineId;
     // 这行的自动延迟冻结已被用户裁决取代，别让它到点后再盖一次。
-    _loopbackFreezeTimers.remove(lineId)?.cancel();
+    _loopbackFreezeTimers.remove(lineId)?.resolve();
     _loopbackFreezeStartedAt.remove(lineId);
     _recaptureElapsed = Stopwatch()..start();
     _recaptureTimer = Timer(
@@ -2677,7 +2680,7 @@ class GalHookSessionController extends ChangeNotifier {
     // 选轨与补录互斥，且都要挡住延迟资源匹配 / 延迟 loopback 冻结把结果改回去。
     _manualRecaptureLines.remove(lineId);
     _pendingResourceMatches.remove(lineId);
-    _loopbackFreezeTimers.remove(lineId)?.cancel();
+    _loopbackFreezeTimers.remove(lineId)?.resolve();
     _loopbackFreezeStartedAt.remove(lineId);
     _textService.updateLineAudio(
       lineId,
@@ -3125,12 +3128,15 @@ class GalHookSessionController extends ChangeNotifier {
     final int remainingMs =
         (_loopbackFreezeDelay.inMilliseconds - elapsedMs).clamp(0, 1 << 30);
     if (remainingMs > kGalMiningAudioSettleMaxWait.inMilliseconds) return;
-    final Stopwatch waited = Stopwatch()..start();
-    final int budgetMs = remainingMs + 1500;
-    while (_loopbackFreezeTimers.containsKey(lineId) &&
-        waited.elapsedMilliseconds < budgetMs) {
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-    }
+    // **一次 await，不是 100ms 轮询**。轮询是仓库明令禁止的「加延时掩盖时序」形状：
+    // 冻结明明已经提前收束了，制卡还要再空等最多 100ms；而且「醒来」这件事挂在
+    // 「有没有人记得从 map 里删掉这一项」上，六个移除点漏一个就永久空转到预算耗尽。
+    // 定时器与等待点焊成一对（[_LoopbackFreeze]）之后，移除即完成，超时只剩兜底。
+    final _LoopbackFreeze? freeze = _loopbackFreezeTimers[lineId];
+    if (freeze == null) return;
+    await freeze.done.future
+        .timeout(Duration(milliseconds: remainingMs + 1500), onTimeout: () {})
+        .catchError((Object _) {});
   }
 
   Future<Uint8List?> _captureAudioBytesNow({
@@ -3830,9 +3836,9 @@ class GalHookSessionController extends ChangeNotifier {
 
   /// WS / 剪贴板路径：整行进来，去重与打字机增量仍由 [GalgameLineCharCounter] 负责
   /// ——那边没有上游折叠，这是唯一一份。
-  void _recordExternalLine(String text) => _recordActivity(
-      _activityCharCounter.countLine(text),
-      fromEngineHook: false);
+  void _recordExternalLine(String text) =>
+      _recordActivity(_activityCharCounter.countLine(text),
+          fromEngineHook: false);
 
   void _recordActivity(int chars, {required bool fromEngineHook}) {
     if (_activityGameTitle == null) return;
@@ -3966,15 +3972,13 @@ class GalHookSessionController extends ChangeNotifier {
     // textHookReady，让事件自解释。
     final bool textReady = engine.textHookReady;
     _record(
-      textReady
-          ? GalHookEventSeverity.success
-          : GalHookEventSeverity.warning,
+      textReady ? GalHookEventSeverity.success : GalHookEventSeverity.warning,
       'inject',
       textReady ? 'engine.hook_ready' : 'engine.audio_hook_ready_text_missing',
       textReady
           ? 'Engine hook and IPC are ready; waiting for text signals'
           : 'Engine audio hook and IPC are ready, but the text hook is NOT '
-                'installed; no lines will arrive until it is',
+              'installed; no lines will arrive until it is',
       details: <String, Object?>{
         'pid': gamePid,
         'sampleRate': format.sampleRate,
@@ -4544,7 +4548,7 @@ class GalHookSessionController extends ChangeNotifier {
       recoveredText
           ? 'Engine hook recovered after a bounded retry'
           : 'Engine AUDIO hook recovered after a bounded retry; the text hook '
-                'is still missing',
+              'is still missing',
       details: <String, Object?>{
         'attempt': attempt,
         'pid': gamePid,
@@ -5403,7 +5407,7 @@ class GalHookSessionController extends ChangeNotifier {
       // 资源原件配上后，为这一行排的 loopback 冻结兜底已经无意义：制卡走整段源 Ogg，
       // 那段整机混音永远不会被读取，留着定时器只会到点抓一段纯 BGM 并让制卡按
       // _lineAudioSettleWait 白等（BUG-2127 §2.4）。撤掉它。
-      _loopbackFreezeTimers.remove(pending.key)?.cancel();
+      _loopbackFreezeTimers.remove(pending.key)?.resolve();
       _loopbackFreezeStartedAt.remove(pending.key);
       matched.add(pending.key);
     }
@@ -5473,8 +5477,13 @@ class GalHookSessionController extends ChangeNotifier {
     _loopbackFreezeStartedAt[entry.id] = _now();
     _trimCache(_loopbackFreezeStartedAt);
     final int backMs = _loopbackFreezeDelay.inMilliseconds + _loopbackPreRollMs;
-    _loopbackFreezeTimers[entry.id] = Timer(_loopbackFreezeDelay, () {
-      _loopbackFreezeTimers.remove(entry.id);
+    late final _LoopbackFreeze freeze;
+    freeze = _LoopbackFreeze(Timer(_loopbackFreezeDelay, () {
+      // 到点也要 resolve：等待方等的是「这一行的冻结结束了」，到点与提前收束同义。
+      if (identical(_loopbackFreezeTimers[entry.id], freeze)) {
+        _loopbackFreezeTimers.remove(entry.id);
+      }
+      freeze.resolve();
       unawaited(
         _audioQueue.enqueue<bool>(
           () async {
@@ -5491,7 +5500,8 @@ class GalHookSessionController extends ChangeNotifier {
           ),
         ),
       );
-    });
+    }));
+    _loopbackFreezeTimers[entry.id] = freeze;
   }
 
   /// 提前收束 [lineId] 的延迟冻结：按**真实已等待时长**回取，而不是白等满窗口。
@@ -5505,9 +5515,9 @@ class GalHookSessionController extends ChangeNotifier {
   /// 到点后若拿到更长的再覆盖。这与引擎 PCM 路径的 [_settleLineUtterance] 是同一条
   /// 纪律，Loopback 此前缺了对称的这一半。
   Future<void> _flushLoopbackFreeze(String lineId, {bool settle = true}) async {
-    final Timer? timer = _loopbackFreezeTimers.remove(lineId);
-    if (timer == null) return;
-    timer.cancel();
+    final _LoopbackFreeze? freeze = _loopbackFreezeTimers.remove(lineId);
+    if (freeze == null) return;
+    freeze.resolve();
     final TexthookerLineEntry? entry = _textService.entryById(lineId);
     if (entry == null) {
       _loopbackFreezeStartedAt.remove(lineId);
@@ -5547,9 +5557,12 @@ class GalHookSessionController extends ChangeNotifier {
     // 完整窗口 = 原本延迟冻结会用的 backMs，等价于取 `[t0-preRoll, t0+delay]`。
     final int fullBackMs =
         _loopbackFreezeDelay.inMilliseconds + _loopbackPreRollMs;
-    _loopbackFreezeTimers[entry.id] =
-        Timer(Duration(milliseconds: remainingMs), () {
-      _loopbackFreezeTimers.remove(entry.id);
+    late final _LoopbackFreeze settle;
+    settle = _LoopbackFreeze(Timer(Duration(milliseconds: remainingMs), () {
+      if (identical(_loopbackFreezeTimers[entry.id], settle)) {
+        _loopbackFreezeTimers.remove(entry.id);
+      }
+      settle.resolve();
       unawaited(
         _audioQueue.enqueue<bool>(
           () async {
@@ -5570,7 +5583,8 @@ class GalHookSessionController extends ChangeNotifier {
           ),
         ),
       );
-    });
+    }));
+    _loopbackFreezeTimers[entry.id] = settle;
   }
 
   /// 收束所有待冻结行（音源即将被换走时调用；此刻还持有旧 Loopback）。
@@ -5585,8 +5599,11 @@ class GalHookSessionController extends ChangeNotifier {
 
   /// 丢弃所有待冻结行（会话结束/重启）。
   void _cancelLoopbackFreezes() {
-    for (final Timer timer in _loopbackFreezeTimers.values) {
-      timer.cancel();
+    // **resolve 而不是只 cancel**：会话结束时还挂在 `_awaitLineAudioSettled` 上的制卡
+    // 必须当场醒来。旧实现只 cancel，等待方那条 `while (containsKey(...))` 轮询会一直
+    // 空转到预算耗尽——这正是把定时器与等待点焊成一对要消掉的那类洞。
+    for (final _LoopbackFreeze freeze in _loopbackFreezeTimers.values) {
+      freeze.resolve();
     }
     _loopbackFreezeTimers.clear();
     _loopbackFreezeStartedAt.clear();
@@ -5891,5 +5908,26 @@ class GalHookSessionController extends ChangeNotifier {
     while (cache.length > _voiceCacheMax) {
       cache.remove(cache.keys.first);
     }
+  }
+}
+
+/// 一行正在冻结的 loopback：定时器 **+ 「冻结结束」的等待点**。
+///
+/// 两者必须成对存在。此前等待方写的是
+/// `while (timers.containsKey(id)) await Future.delayed(100ms)`——轮询把「冻结结束」
+/// 这个事件退化成了「隔一会儿去看一眼」，制卡因此最多白等 100ms；更要命的是叫醒
+/// 等待方这件事被摊派给了六个各自独立的移除点，漏一个就是永久空转到预算耗尽。
+/// 把 completer 焊在 timer 旁边之后，「从表里移除」与「叫醒等待方」成了同一个动作。
+class _LoopbackFreeze {
+  _LoopbackFreeze(this.timer);
+
+  final Timer timer;
+  final Completer<void> done = Completer<void>();
+
+  /// 冻结结束（提前收束 / 到点 / 被裁决取代 / 行被吞并 / 升格成引擎 PCM 都算）。
+  /// 幂等。
+  void resolve() {
+    timer.cancel();
+    if (!done.isCompleted) done.complete();
   }
 }
