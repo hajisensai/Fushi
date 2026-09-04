@@ -3061,6 +3061,22 @@
     layerOffsetTop = t;
   }
 
+  // legacy Reveal 专用的图层复位（BUG-2123）。
+  //
+  // 首帧预落位（见 measureAndReport 的 BUG-2123 分支）把图层推了 (-minLeft,-minTop)，
+  // 这只有在窗口随后被放到 **bbox 原点、bbox 尺寸** 时才对得上。而桌面还有两条 reveal
+  // 旁路**从不**调 commitLayerShift，并且把窗口放在 **光标处、单卡尺寸**：
+  // `_scheduleReadyDrivenSafety` 的 450ms 兜底与 `reveal(scalar)` 路径，两者都进 C++ 的
+  // legacy `GlobalLookupWindow::Reveal`。图层不复位，根卡就被推到 420px 宽的窗口之外
+  // ——用户看到一个**空白弹窗**（TODO-1079 那条「弹窗有时不出现」的老症状）。
+  //
+  // 复位的责任只能在 native：Dart 侧两个调用点都不知道自己最终会走哪条 C++ 路径，
+  // 而 `Reveal` 正是「窗口按光标+单卡尺寸摆好了」这个事实的唯一发生地。
+  function resetLayerOffsetForLegacyReveal() {
+    applyLayerOffset(0, 0);
+    return true;
+  }
+
   function commitLayerShift(
       bboxLeft, bboxTop, geometryEpoch, deferSuffixSwapFinalize) {
     var epoch = (typeof geometryEpoch === 'number' && isFinite(geometryEpoch) &&
@@ -3722,6 +3738,7 @@
     gamepadAction: gamepadAction,
     measureAndReport: measureAndReport,
     commitLayerShift: commitLayerShift,
+    resetLayerOffsetForLegacyReveal: resetLayerOffsetForLegacyReveal,
     commitLayerShiftAndArmCapture: commitLayerShiftAndArmCapture,
     frameGateState: frameGateState,
     dismissRootWithSlide: dismissRootWithSlide,
