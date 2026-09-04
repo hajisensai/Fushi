@@ -520,6 +520,13 @@ constexpr uint32_t kDiagKirikiriVoiceStreamHookReady = 0x00020000u;
 constexpr uint32_t kDiagKirikiriVoiceStreamDumped = 0x00080000u;
 constexpr uint32_t kDiagSiglusOvkHooksReady = 0x10000000u;
 
+// reserved_luna 里 KiriKiri 经典 KAG3 的采集自证位。TJS 侧的 fushiLookupClassicSource
+// 位 3 = 「至少给一个消息层实例挂上过 classic 采集包装」。它与位 0（classic 分支跑到了）
+// 必须分开读：分支跑到但一个层都没挂上，说明 kag.fore.messages 不是标准 KAG3 结构——
+// 这两种失败在真机上完全同形，而 lookup_diag 与 xaudiodiag2 两个 32 位字都已用满，
+// 所以这一位落在 reserved_luna（KiriKiri 的 exporter 溯源位本来就住这儿）。
+constexpr uint32_t kDiagKirikiriClassicLayerPatched = 0x00000040u;
+
 inline constexpr bool HasReadyGameResourceAudio(uint32_t reserved_luna,
                                                 uint32_t hook_diagnostics,
                                                 uint32_t reserved_hook_diagnostics = 0,

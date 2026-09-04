@@ -3008,6 +3008,14 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				if(typeof layer.fushiLookupClassicPatched != "undefined") return false;
 				if(typeof layer.fushiLookupIgnore != "undefined") return false;
 				if(typeof layer.drawText != "Object") return false;
+				// 幂等标记必须**先**写：包装分两步（drawText、processCh），第二步在定制
+				// MessageLayer 上可能抛（只读成员），而调用方 fushiLookupSweepClassicLayers
+				// 把异常吞进 catch。标记若留到两步都成功后再写，那次半途失败就会让
+				// drawText 已被包装、标记却没落下，于是每个 KAG stable 边沿重扫都把
+				// 「上一层包装」当成 original 再包一层——N 次推进后一次 drawText 调用递归
+				// N 层，主线程在画字时栈溢出。先写标记的代价只是「半装状态保持半装」，
+				// 而 drawText 采集本身仍然有效。
+				layer.fushiLookupClassicPatched = 1;
 				layer.fushiLookupOriginalDrawText = layer.drawText;
 				layer.drawText = function(x, y, text, color, opacity, antialiased)
 				{
@@ -3027,7 +3035,6 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 						return result;
 					} incontextof layer;
 				}
-				layer.fushiLookupClassicPatched = 1;
 				return true;
 			};
 
@@ -4687,6 +4694,14 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 						%[message: "stage=" + installStage]);
 			}
 			catch(e2) {}
+			// 撤销传感器契约。DLL 判「传感器活了没」的唯一判据是
+			// (typeof global.fushiLookupNotify == "Integer")，而它在 installStage 0 就建立；
+			// 不在这里撤掉的话，任何一段安装失败（包括上面「一个接缝都没挂上」那次 throw）
+			// 在 host 看来都与成功完全同形：lookup_diag 亮 sensor_installed、几何 provider
+			// 被认领、UI 显示查词就绪，而点字永远没有卡片、也没有任何一位说明卡在哪。
+			// 那正是这批改动通篇在消灭的「同形失败」。撤掉之后 DLL 退回每 30 帧一次的
+			// typeof 探测并继续记前置条件位，失败点仍然读得出来。
+			global.fushiLookupNotify = void;
 			Debug.notice("[HibikiLookup] install failed: " + e.message);
 			System.removeContinuousHandler(global.fushiLookupBootstrap);
 			global.fushiLookupBootstrap = void;
@@ -4891,6 +4906,24 @@ bool CallTjsExecuteExpressionSeh(const TjsString& content, uint8_t* variant) {
   }
 }
 
+// 同一条边界上的**每一次**调用都适用 BUG-2144 的结论，不只是求值：
+// TJSAllocVariantString / TJSVariantString::Release 在 KiriKiri2 上同样是 BCB 编译的，
+// OOM 或引擎内部错误时抛的仍是 0x0EEDFADE，MSVC 的 catch(...) 一样拦不住。
+TjsVariantString* CallTjsAllocStringSeh(const wchar_t* text) {
+  __try {
+    return g_lookup_alloc_string(text);
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    return nullptr;
+  }
+}
+
+void CallTjsReleaseStringSeh(TjsVariantString* text) {
+  __try {
+    g_lookup_release_string(text);
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+  }
+}
+
 bool CallTjsExecuteScriptSeh(const TjsString& content) {
   __try {
     g_lookup_execute_script(content, nullptr);
@@ -4908,17 +4941,12 @@ bool ExecuteTjsExpressionGuarded(const wchar_t* expression, uint8_t* variant) {
     return false;
   }
   memset(variant, 0, kTjsVariantBytes);
-  TjsVariantString* text = nullptr;
-  try {
-    text = g_lookup_alloc_string(expression);
-  } catch (...) {
-    text = nullptr;
-  }
+  TjsVariantString* text = CallTjsAllocStringSeh(expression);
   if (text == nullptr) return false;
   const TjsString content = {text};
   // 表达式求值失败（含传感器未建立时引用不存在的 global）走 SEH 返回 false，绝不穿透。
   const bool ok = CallTjsExecuteExpressionSeh(content, variant);
-  g_lookup_release_string(text);
+  CallTjsReleaseStringSeh(text);
   return ok;
 }
 
@@ -4981,7 +5009,7 @@ bool EvaluateTjsString(const wchar_t* expression, wchar_t* out, size_t out_chars
     return true;
   }
   const bool copied = CopyTjsVariantStringGuarded(text, out, out_chars);
-  if (g_lookup_release_string != nullptr) g_lookup_release_string(text);
+  if (g_lookup_release_string != nullptr) CallTjsReleaseStringSeh(text);
   return copied;
 }
 
@@ -4990,17 +5018,12 @@ void ExecuteTjsScriptGuarded(const wchar_t* script) {
       g_lookup_release_string == nullptr || script == nullptr) {
     return;
   }
-  TjsVariantString* text = nullptr;
-  try {
-    text = g_lookup_alloc_string(script);
-  } catch (...) {
-    text = nullptr;
-  }
+  TjsVariantString* text = CallTjsAllocStringSeh(script);
   if (text == nullptr) return;
   const TjsString content = {text};
   // 插件 ABI 边界绝不把 C++/TJS 异常抛回游戏事件循环——SEH 边界，两家编译器的异常都拦。
   CallTjsExecuteScriptSeh(content);
-  g_lookup_release_string(text);
+  CallTjsReleaseStringSeh(text);
 }
 
 void ApplyKirikiriLookupHighlight(uint32_t highlight_start,
@@ -5846,6 +5869,15 @@ void PumpKirikiriLookup() {
       if ((classic & 4) != 0) {
         SetLookupDiag(fushi_voice_hook::kLookupDiagClassicProcessCh);
       }
+      // 位 3「至少给一个消息层实例挂上过包装」。lookup_diag 与 xaudiodiag2 两个字都已
+      // 用满，而这一位恰恰是当前唯一还没答上的问题（真机两个样本都没有 classic_geometry：
+      // 分不出「分支根本没跑到」还是「跑到了但 kag.fore.messages 不是标准 KAG3 结构、
+      // 一个层都没挂上」）。落在 reserved_luna——KiriKiri 的 exporter 溯源位本来就住这儿，
+      // 不改协议布局、不动 kSharedVersion。
+      if ((classic & 8) != 0 && g_header != nullptr) {
+        g_header->reserved_luna |=
+            fushi_voice_hook::kDiagKirikiriClassicLayerPatched;
+      }
     }
   }
   const bool new_notification = notify != g_lookup_last_notify;
@@ -5994,7 +6026,7 @@ class KiriKiriLookupBootstrapCallback final : public TvpContinuousEventCallback 
       }
     }
     if (script != nullptr && g_lookup_release_string != nullptr) {
-      g_lookup_release_string(script);
+      CallTjsReleaseStringSeh(script);
     }
     InterlockedExchange(&g_lookup_bootstrap_state, 3);
   }
@@ -6067,9 +6099,21 @@ DWORD ResolveKirikiriEngineMainThreadId() {
 // WH_GETMESSAGE 线程钩子是与引擎构建无关的主线程接缝：钩子过程在主线程从 GetMessage 返回
 // 时执行，装/卸都允许在别的线程发起（同进程线程钩子 hMod 传 NULL）。只在有安装请求且
 // bootstrap 尚未开始时挂上，安装一旦启动（或请求撤销）就在钩子过程里自卸，稳态零开销。
-HHOOK g_lookup_main_thread_seam = nullptr;
+// 句柄本身跨线程：装在 host 轮询线程上，卸可能来自游戏主线程（钩子过程自卸）也可能
+// 来自轮询线程（用户关掉查词 / 停机）。普通指针在这两侧读写会留下「首次触发时看到
+// nullptr 于是不卸」的窗口，也可能两侧同时 Unhook 同一个句柄。统一走
+// InterlockedExchangePointer：取走的那一方才有权 Unhook，另一方拿到 nullptr。
+void* volatile g_lookup_main_thread_seam = nullptr;  // 实际类型 HHOOK
 volatile LONG g_lookup_main_thread_seam_tid = 0;
 void RunKirikiriLookupInstallOnMainThread();
+
+// 取走并卸掉主线程接缝。可从任意线程调用；重复调用无害。
+void ReleaseLookupMainThreadSeam() {
+  void* seam = InterlockedExchangePointer(&g_lookup_main_thread_seam, nullptr);
+  if (seam == nullptr) return;
+  UnhookWindowsHookEx(static_cast<HHOOK>(seam));
+  InterlockedExchange(&g_lookup_main_thread_seam_tid, 0);
+}
 
 LRESULT CALLBACK LookupMainThreadSeamProc(int code, WPARAM wparam, LPARAM lparam) {
   if (code >= 0) {
@@ -6077,17 +6121,16 @@ LRESULT CALLBACK LookupMainThreadSeamProc(int code, WPARAM wparam, LPARAM lparam
     RunKirikiriLookupInstallOnMainThread();
     const bool done = InterlockedCompareExchange(&g_lookup_bootstrap_state, 0, 0) != 0 ||
                       InterlockedCompareExchange(&g_lookup_install_requested, 0, 0) == 0;
-    if (done && g_lookup_main_thread_seam != nullptr) {
-      UnhookWindowsHookEx(g_lookup_main_thread_seam);
-      g_lookup_main_thread_seam = nullptr;
-      InterlockedExchange(&g_lookup_main_thread_seam_tid, 0);
-    }
+    if (done) ReleaseLookupMainThreadSeam();
   }
   return CallNextHookEx(nullptr, code, wparam, lparam);
 }
 
 void EnsureLookupMainThreadSeam() {
-  if (g_lookup_main_thread_seam != nullptr) return;
+  if (InterlockedCompareExchangePointer(&g_lookup_main_thread_seam, nullptr,
+                                        nullptr) != nullptr) {
+    return;
+  }
   const DWORD main_tid = ResolveKirikiriEngineMainThreadId();
   if (main_tid == 0) {
     // 主窗解析不到 = 整条安装路径的第一道门没开（BUG-2121：BCB VCL 主窗被隐藏 owner
@@ -6105,15 +6148,30 @@ void EnsureLookupMainThreadSeam() {
     InterlockedExchange(&g_lookup_main_thread_seam_tid, 0);
     return;
   }
-  g_lookup_main_thread_seam = seam;
+  InterlockedExchangePointer(&g_lookup_main_thread_seam, seam);
   SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2KirikiriLookupSeamArmed);
 }
 
 void PollKirikiriLookupInstall() {
-  if (g_stop || g_lookup_exporter == nullptr) return;
-  if (!fushi_voice_hook::HasLookupRegion(g_header)) return;
-  if (LookupEnabledNow() == 0) return;
-  if (InterlockedCompareExchange(&g_lookup_bootstrap_state, 0, 0) != 0) return;
+  // 前置条件不再成立（停机 / 还没拿到 exporter / 段没了 / 用户关掉查词）就必须**撤销
+  // 请求**并把接缝摘掉。原来这里只是 return：g_lookup_install_requested 全文件只置 1、
+  // 从不清 0，于是钩子过程里 done 判据的「或请求撤销」那一半恒为假，退化成「只有
+  // bootstrap 真起来了才卸」。bootstrap 起不来的机器（例如 exporter 查询失败的非标准
+  // build）上，WH_GETMESSAGE 钩子会挂在游戏主线程上直到进程退出，每条消息跑一次完整
+  // 安装尝试；用户关掉查词也停不下来。
+  const bool wanted = !g_stop && g_lookup_exporter != nullptr &&
+                      fushi_voice_hook::HasLookupRegion(g_header) &&
+                      LookupEnabledNow() != 0;
+  if (!wanted) {
+    InterlockedExchange(&g_lookup_install_requested, 0);
+    ReleaseLookupMainThreadSeam();
+    return;
+  }
+  if (InterlockedCompareExchange(&g_lookup_bootstrap_state, 0, 0) != 0) {
+    // 安装已经起来了，接缝的活干完了：这里也摘一次，不必等下一条窗口消息。
+    ReleaseLookupMainThreadSeam();
+    return;
+  }
   InterlockedExchange(&g_lookup_install_requested, 1);
   EnsureLookupMainThreadSeam();
 }
@@ -6176,7 +6234,7 @@ void RunKirikiriLookupInstallOnMainThread() {
   try {
     PrepareKirikiriLookupCardPath();  // 备路缺失不阻断主路
     const std::wstring bootstrap = BuildKirikiriLookupBootstrapScript();
-    g_lookup_bootstrap_script = g_lookup_alloc_string(bootstrap.c_str());
+    g_lookup_bootstrap_script = CallTjsAllocStringSeh(bootstrap.c_str());
     if (g_lookup_bootstrap_script == nullptr) return;
     InterlockedExchange(&g_lookup_bootstrap_state, 1);
     g_lookup_add_continuous(&g_lookup_pump_callback);
@@ -6186,7 +6244,7 @@ void RunKirikiriLookupInstallOnMainThread() {
     TjsVariantString* script = g_lookup_bootstrap_script;
     g_lookup_bootstrap_script = nullptr;
     InterlockedExchange(&g_lookup_bootstrap_state, 0);
-    if (script != nullptr) g_lookup_release_string(script);
+    if (script != nullptr) CallTjsReleaseStringSeh(script);
   }
 }
 
@@ -6628,7 +6686,13 @@ bool ExporterAnswersQuery(ITVPFunctionExporter* candidate) {
   } __except (EXCEPTION_EXECUTE_HANDLER) {
     return false;
   }
-  return ok && stub != nullptr;
+  // 形状门只保证「首字可读 + 前 8 个虚表槽落在 exe 映像内」，任何来自 exe、虚函数
+  // 不少于 8 个的 C++ 对象都能过；然后我们对它盲调一号槽。SEH 只拦得住访问违例，
+  // 拦不住「这个槽其实是别的方法、跑完把引擎状态改了」。真 exporter 回填的必然是
+  // exe 里的一段代码地址，所以再加一道几乎零成本、冒牌货极难同时满足的收口：
+  // 回填值必须可读、且落在可执行页上。
+  return ok && stub != nullptr &&
+         fushi_voice_hook::exact_lookup::IsExecutableAddress(stub);
 }
 
 // 第三条 exporter 路径（BUG-2145）：从**已经 link 完**的插件数据段反查 exporter 单例。
@@ -6916,6 +6980,10 @@ bool TryHookKirikiriVoiceStream() {
   // TVPGetFunctionExporter，表必然已就绪。两条路径仍由 g_voice_installed 幂等互斥。
   if (!g_voice_installed && FindGameMainWindow() != nullptr) {
     ITVPFunctionExporter* exp = ObtainExporter();  // exe 直取（加壳置 0x1000000 返回 null）
+    // 溯源位必须只表示它字面上说的那件事：③（插件反查）拿到的 exporter 不算「经 exe
+    // 导出」。混用会让 BUG-2145 的分型读数自相矛盾——0x1000000（exe 未导出）与 0x10000
+    // （经 exe 导出）可以同时亮。
+    const bool exporter_from_exe_export = exp != nullptr;
     // ③ 两条都空时从已 link 插件反查（BUG-2145）。次数有上限：插件可能还在陆续 link，
     // 但每次轮询都全量重扫 19 个模块的数据段是不可接受的常驻代价。
     static int scan_attempts = 0;
@@ -6925,7 +6993,9 @@ bool TryHookKirikiriVoiceStream() {
       exp = ScanLinkedPluginsForExporter();
     }
     if (exp != nullptr) {
-      if (g_header != nullptr) g_header->reserved_luna |= 0x10000;  // 经 exe 导出拿到 exporter
+      if (g_header != nullptr && exporter_from_exe_export) {
+        g_header->reserved_luna |= 0x10000;  // 经 exe 导出拿到 exporter
+      }
       InstallVoiceStreamHookWithExporter(exp);                      // 幂等
       // 未加壳游戏在这条路径上就能拿到 exporter，不必等插件 V2Link。同样幂等。
       InstallKirikiriLookupSensor(exp);

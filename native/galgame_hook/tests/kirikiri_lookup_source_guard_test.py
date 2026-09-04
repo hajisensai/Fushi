@@ -6444,5 +6444,246 @@ class MutationSelfTest(unittest.TestCase):
         )
 
 
+def find_install_failure_keeping_sensor_contract(source: MaskedSource) -> list[str]:
+    """bootstrap 的 catch 必须撤销 `global.fushiLookupNotify`。
+
+    DLL 判「传感器活了没」的唯一判据是 `typeof global.fushiLookupNotify == "Integer"`，
+    而它在 installStage 0 就建立。catch 不撤销的话，任何一段安装失败（包括
+    「一个接缝都没挂上」那次 throw）在 host 看来与成功完全同形：lookup_diag 亮
+    sensor_installed、几何 provider 被认领、UI 显示查词就绪，点字却永远没有卡片，
+    而且没有任何一位说明卡在哪。
+    """
+    marker = '[HibikiLookup] install failed: '
+    index = source.text.find(marker)
+    if index < 0:
+        return [f"{ADAPTER.name}: 找不到 install failed 的 catch 分支（锚点漂了）"]
+    window = source.text[max(0, index - 1200):index]
+    if 'global.fushiLookupNotify = void;' not in window:
+        return [
+            f"{ADAPTER.name}: install failed 的 catch 没有撤销 "
+            "global.fushiLookupNotify —— 安装失败会被 host 读成 sensor_installed"
+        ]
+    return []
+
+
+def find_unreleasable_install_request(source: MaskedSource) -> list[str]:
+    """安装请求必须可撤销，接缝句柄必须原子。
+
+    1. `g_lookup_install_requested` 必须存在清 0 的写点。只置 1 的话，钩子过程里
+       `done` 判据的「或请求撤销」那一半恒为假，WH_GETMESSAGE 钩子会挂在游戏主线程上
+       直到进程退出（bootstrap 起不来的机器上是永久的），用户关掉查词也停不下来。
+    2. `g_lookup_main_thread_seam` 装在 host 轮询线程、卸可能在游戏主线程，必须走
+       Interlocked*Pointer；裸赋值会留下「首次触发看到 nullptr 于是不卸」的窗口，
+       也可能两侧同时 Unhook 同一个句柄。
+    """
+    hits: list[str] = []
+    if 'InterlockedExchange(&g_lookup_install_requested, 0)' not in source.masked:
+        hits.append(
+            f"{ADAPTER.name}: g_lookup_install_requested 没有清 0 的写点 —— "
+            "接缝的自卸判据退化成「只有 bootstrap 起来了才卸」"
+        )
+    for line in source.masked.splitlines():
+        if 'g_lookup_main_thread_seam' not in line:
+            continue
+        if 'volatile' in line or 'Interlocked' in line:
+            continue  # 声明行 / 原子读写
+        if re.search(r"g_lookup_main_thread_seam\s*=\s*(?!=)", line):
+            hits.append(
+                f"{ADAPTER.name}: g_lookup_main_thread_seam 有裸赋值 —— "
+                "跨线程句柄必须走 InterlockedExchangePointer"
+            )
+    if 'ReleaseLookupMainThreadSeam' not in source.masked:
+        hits.append(f"{ADAPTER.name}: 没有集中的接缝释放入口")
+    return hits
+
+
+def find_unread_classic_patched_bit(source: MaskedSource) -> list[str]:
+    """TJS 侧写的 classic 位 3 必须有人读。
+
+    位 3 =「至少给一个消息层实例挂上过包装」，与位 0（classic 分支跑到了）分开正是
+    为了在真机上区分「分支根本没跑到」和「跑到了但 kag.fore.messages 不是标准 KAG3
+    结构、一个层都没挂上」。写了没人读 = 那个区分能力不存在，而注释还声称有。
+    """
+    if 'fushiLookupClassicSource | 8' not in source.text:
+        return [f"{ADAPTER.name}: TJS 侧不再置 classic 位 3（锚点漂了）"]
+    if 'classic & 8' not in source.masked:
+        return [
+            f"{ADAPTER.name}: DLL 侧没有读 classic 位 3 —— "
+            "「分支跑到但一个层都没挂上」读不出来"
+        ]
+    if 'kDiagKirikiriClassicLayerPatched' not in source.masked:
+        return [f"{ADAPTER.name}: classic 位 3 没有落到具名的 reserved_luna 位上"]
+    return []
+
+
+def find_late_classic_patch_marker(source: MaskedSource) -> list[str]:
+    """幂等标记必须先于第一次包装赋值写入。
+
+    包装分两步（drawText、processCh）。第二步在定制 MessageLayer 上可能抛（只读成员），
+    而调用方把异常吞进 catch。标记若留到两步都成功后再写，那次半途失败就会让 drawText
+    已被包装、标记却没落下；此后每个 KAG stable 边沿重扫都把「上一层包装」当成 original
+    再包一层，N 次推进后一次 drawText 调用递归 N 层，主线程画字时栈溢出。
+    """
+    body = _tjs_function_body(source.text, 'fushiLookupPatchClassicLayer')
+    if body is None:
+        return [f"{ADAPTER.name}: 找不到 fushiLookupPatchClassicLayer（锚点漂了）"]
+    text = source.text[body[0]:body[1]]
+    marker = text.find('fushiLookupClassicPatched = 1;')
+    first_wrap = text.find('fushiLookupOriginalDrawText = layer.drawText')
+    if marker < 0:
+        return [f"{ADAPTER.name}: fushiLookupPatchClassicLayer 没有幂等标记"]
+    if first_wrap < 0:
+        return [f"{ADAPTER.name}: fushiLookupPatchClassicLayer 没有 drawText 包装"]
+    if marker > first_wrap:
+        return [
+            f"{ADAPTER.name}: 幂等标记写在第一次包装之后 —— "
+            "半途失败会让重扫层层嵌套包装，最终栈溢出"
+        ]
+    return []
+
+
+def find_unvalidated_exporter_stub(source: MaskedSource) -> list[str]:
+    """候选真调用回填的 stub 必须落在可执行页上。
+
+    形状门只要求「首字可读 + 前 8 个虚表槽落在 exe 映像内」，任何来自 exe、虚函数不少于
+    8 个的 C++ 对象都能过，然后我们对它盲调一号槽。SEH 只拦访问违例，拦不住「这个槽其实
+    是别的方法、跑完把引擎状态改了」。真 exporter 回填的必然是 exe 里的一段代码地址。
+    """
+    body = _cpp_function_body(
+        source, 'bool ExporterAnswersQuery(ITVPFunctionExporter* candidate) '
+    )
+    if body is None:
+        return [f"{ADAPTER.name}: 找不到 ExporterAnswersQuery（锚点漂了）"]
+    if 'IsExecutableAddress' not in body:
+        return [
+            f"{ADAPTER.name}: ExporterAnswersQuery 没有校验回填的 stub 可执行 —— "
+            "形状门后的盲调没有第二道收口"
+        ]
+    return []
+
+
+def find_mislabelled_exe_export_provenance(source: MaskedSource) -> list[str]:
+    """`reserved_luna |= 0x10000` 只能表示「经 exe 导出拿到 exporter」。
+
+    第三条路径（插件反查，BUG-2145）拿到的 exporter 也置这一位，会让分型读数自相矛盾：
+    0x1000000（exe 未导出）与 0x10000（经 exe 导出）可以同时亮。位必须只表示它字面上
+    说的那件事。
+    """
+    index = source.masked.find('reserved_luna |= 0x10000;')
+    if index < 0:
+        return [f"{ADAPTER.name}: 找不到 exe 导出溯源位（锚点漂了）"]
+    window = source.masked[max(0, index - 400):index]
+    if 'exporter_from_exe_export' not in window:
+        return [
+            f"{ADAPTER.name}: 0x10000 没有被「exporter 来自 exe 导出」门控 —— "
+            "插件反查路径也会点亮它"
+        ]
+    return []
+
+
+def find_cpp_catch_on_tjs_string_abi(source: MaskedSource) -> list[str]:
+    """跨 BCB/MSVC 边界的 alloc/release 只能走 SEH 包装。
+
+    BUG-2144 的结论适用于**这条边界上的每一次调用**，不只是求值：
+    TJSAllocVariantString / TJSVariantString::Release 在 KiriKiri2 上同样是 BCB 编译的，
+    抛的仍是 0x0EEDFADE，MSVC 的 catch(...) 只认 0xE06D7363。
+    """
+    hits: list[str] = []
+    for name, wrapper in (
+        ('g_lookup_alloc_string', 'CallTjsAllocStringSeh'),
+        ('g_lookup_release_string', 'CallTjsReleaseStringSeh'),
+    ):
+        for match in re.finditer(name + r"\(", source.masked):
+            # 包装函数自己那一次调用是唯一允许的裸调用。
+            window = source.masked[max(0, match.start() - 400):match.start()]
+            if '__try' in window and wrapper in window:
+                continue
+            hits.append(
+                f"{ADAPTER.name}: {name} 在 SEH 包装之外被直接调用 —— "
+                f"必须走 {wrapper}（BCB 异常穿透 MSVC catch(...)）"
+            )
+    return hits
+
+
+class ReviewFixGuardTest(unittest.TestCase):
+    """七条必须修的正向守卫 + 逐条变异自测（变异跑在真文件的副本上）。"""
+
+    maxDiff = None
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.raw = ADAPTER.read_text(encoding='utf-8')
+        cls.source = MaskedSource(cls.raw)
+
+    def _mutate_real(self, old: str, new: str) -> MaskedSource:
+        self.assertIn(old, self.raw, '变异锚点必须真的存在于当前实现里')
+        dirty = self.raw.replace(old, new, 1)
+        self.assertNotEqual(dirty, self.raw, '变异必须真的改变了源码')
+        return MaskedSource(dirty)
+
+    # -- 正向 ---------------------------------------------------------------
+    def test_all_review_rules_hold_on_the_real_adapter(self) -> None:
+        self.assertEqual([], find_install_failure_keeping_sensor_contract(self.source))
+        self.assertEqual([], find_unreleasable_install_request(self.source))
+        self.assertEqual([], find_unread_classic_patched_bit(self.source))
+        self.assertEqual([], find_late_classic_patch_marker(self.source))
+        self.assertEqual([], find_unvalidated_exporter_stub(self.source))
+        self.assertEqual([], find_mislabelled_exe_export_provenance(self.source))
+        self.assertEqual([], find_cpp_catch_on_tjs_string_abi(self.source))
+
+    # -- 变异 ---------------------------------------------------------------
+    def test_catch_not_clearing_notify_is_red(self) -> None:
+        dirty = self._mutate_real('global.fushiLookupNotify = void;', '')
+        self.assertNotEqual([], find_install_failure_keeping_sensor_contract(dirty))
+
+    def test_install_request_never_cleared_is_red(self) -> None:
+        dirty = self._mutate_real(
+            'InterlockedExchange(&g_lookup_install_requested, 0);',
+            'InterlockedExchange(&g_lookup_install_requested, 1);',
+        )
+        self.assertNotEqual([], find_unreleasable_install_request(dirty))
+
+    def test_bare_seam_handle_assignment_is_red(self) -> None:
+        dirty = self._mutate_real(
+            'InterlockedExchangePointer(&g_lookup_main_thread_seam, seam);',
+            'g_lookup_main_thread_seam = seam;',
+        )
+        self.assertNotEqual([], find_unreleasable_install_request(dirty))
+
+    def test_unread_classic_bit_is_red(self) -> None:
+        dirty = self._mutate_real('classic & 8', 'classic & 0')
+        self.assertNotEqual([], find_unread_classic_patched_bit(dirty))
+
+    def test_late_idempotence_marker_is_red(self) -> None:
+        dirty = self._mutate_real(
+            'layer.fushiLookupClassicPatched = 1;\n'
+            '\t\t\t\tlayer.fushiLookupOriginalDrawText = layer.drawText;',
+            'layer.fushiLookupOriginalDrawText = layer.drawText;\n'
+            '\t\t\t\tlayer.fushiLookupClassicPatched = 1;',
+        )
+        self.assertNotEqual([], find_late_classic_patch_marker(dirty))
+
+    def test_unvalidated_exporter_stub_is_red(self) -> None:
+        dirty = self._mutate_real(
+            'fushi_voice_hook::exact_lookup::IsExecutableAddress(stub)',
+            'true',
+        )
+        self.assertNotEqual([], find_unvalidated_exporter_stub(dirty))
+
+    def test_ungated_exe_export_provenance_is_red(self) -> None:
+        dirty = self._mutate_real(
+            'if (g_header != nullptr && exporter_from_exe_export) {',
+            'if (g_header != nullptr) {',
+        )
+        self.assertNotEqual([], find_mislabelled_exe_export_provenance(dirty))
+
+    def test_cpp_catch_around_tjs_alloc_is_red(self) -> None:
+        dirty = self._mutate_real(
+            'TjsVariantString* text = CallTjsAllocStringSeh(script);',
+            'TjsVariantString* text = g_lookup_alloc_string(script);',
+        )
+        self.assertNotEqual([], find_cpp_catch_on_tjs_string_abi(dirty))
+
+
 if __name__ == "__main__":
     unittest.main()

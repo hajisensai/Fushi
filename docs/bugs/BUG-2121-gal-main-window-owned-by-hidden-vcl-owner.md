@@ -18,3 +18,33 @@
   `xaudiodiag2=0x0194000c` 经 `galhook.py explain-diag --xaudiodiag2` 符号化 = `SeamArmed` | `SeamFired` | `BootstrapStarted` | `BootstrapFired`（外加与本 bug 无关的既有低位 `SgreAnchorsUnresolved` | `LeafProfileUnmatched`），**无** `BootstrapFaulted` / `ExportQueryFailed` / `ExpressionQueryFailed` / `MainWindowMissing`；
   `text_hooked=1 luna_active=1 text_events=8 voice_clips=47`；进程内可见窗口只有 `TTVPWindowForm` + `TApplication`，**没有 `#32770` 致命错误框**（[[BUG-2144]] 的 SEH 边界随之复验）。
   四段至此全部真机复验通过，游戏内查词传感器在经典 KAG3 / KiriKiri2-BCB 上装得上了。
+
+  **审查补修（2026-09-05 集成时，7 条必须修）**。这四段落地后集成审查又沿同一条安装路径查出
+  七个问题，都在合入 develop 前修完，双架构 CTest 63/63、源码守卫 163/163（含 8 条新变异自测）：
+
+  1. **安装失败仍报 `sensor_installed`**。DLL 判「传感器活了没」的唯一判据是
+     `typeof global.fushiLookupNotify == "Integer"`，而它在 installStage 0 就建立；第四段新加的
+     「一个接缝都没挂上就抛异常」那条 throw 走 catch 分支后**没有撤销它**——于是 host 读到的仍是
+     sensor_installed + 几何 provider 被认领 + UI 显示查词就绪，点字永远没有卡片，且没有任何一位
+     说明卡在哪。这正是本 bug 通篇在消灭的「同形失败」，只是换了个位置又长回来。修复：catch 里
+     `global.fushiLookupNotify = void;`，DLL 退回每 30 帧一次的 typeof 探测并继续记前置条件位。
+  2. **主线程接缝永不卸载**。`g_lookup_install_requested` 全文件只置 1、从不清 0，于是钩子过程里
+     `done` 判据的「或请求撤销」那一半恒为假，退化成「只有 bootstrap 真起来了才卸」。bootstrap
+     起不来的机器（例如 `ExportQueryFailed` 那种非标准 build）上，`WH_GETMESSAGE` 会挂在游戏主
+     线程上直到进程退出、每条消息跑一次完整安装尝试，用户关掉查词也停不下来。同处 `HHOOK` 是普通
+     非原子指针而装/卸分属两个线程。修复：`PollKirikiriLookupInstall` 在前置条件不成立时撤销请求并
+     摘接缝，句柄统一走 `InterlockedExchangePointer`（新 `ReleaseLookupMainThreadSeam`）。
+  3. **classic 位 3 读不到**。`fushiLookupSweepClassicLayers` 置的位 3（至少挂上过一个实例）DLL 侧
+     从没读过，而它恰恰是当前唯一还没答上的问题——真机两个样本都没有 `classic_geometry`，分不出
+     「分支根本没跑到」和「跑到了但 `kag.fore.messages` 不是标准 KAG3 结构」。`lookup_diag` 与
+     `xaudiodiag2` 两个字都已用满，故落在 `reserved_luna` 的新具名位
+     `kDiagKirikiriClassicLayerPatched`（0x40），不动协议布局、不动 `kSharedVersion`；
+     `galhook_evidence.py` 的 lunadiag 段自动符号化它。
+  4. **逐实例补丁的幂等标记写晚了**（见 [[BUG-2116]]）。
+  5. **exporter 候选盲调后没校验回填值**（见 [[BUG-2145]]）。
+  6. **`reserved_luna |= 0x10000` 的语义被第三条路径污染**（见 [[BUG-2145]]）。
+  7. **SEH 边界漏了 alloc/release**（见 [[BUG-2144]]）。
+
+  七条各配一条源码守卫 + 变异自测（`tests/kirikiri_lookup_source_guard_test.py` 的
+  `ReviewFixGuardTest`，变异跑在真文件副本上）。第 7 条的守卫当场又抓出一处我自己漏掉的裸
+  `g_lookup_release_string(script)`（bootstrap 回调里，跑在引擎主线程的连续事件上）。

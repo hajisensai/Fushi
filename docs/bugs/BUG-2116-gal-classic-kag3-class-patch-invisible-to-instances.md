@@ -4,3 +4,11 @@
 - **[x] ① 已修复** — `kirikiri_adapter.inc`：新增 `fushiLookupPatchClassicLayer(layer)`（给单个消息层实例赋 `layer.drawText` / `layer.processCh` 包装，`incontextof layer` 钉死，幂等标记）与 `fushiLookupSweepClassicLayers()`（扫 `kag.fore/back.messages`，以 classic 位 0 为门，KAGEX 游戏零开销）；else 分支改为置位 + sweep；`fushiLookupRefreshCaptureBridges` 在 KAG stable 边沿补扫新建的消息层；`fushiLookupCaptureDrawText` 加影/边重绘去重（同字 ±4px 内再画一次 = 同一个字，钉到最小 x/y），否则本体落在影的左上会被「回到左上 = 换屏」判据误判成清屏。真机门未跑（用户桌面占用中），状态仍 implemented_unverified，见台账 `docs/plans/2026-09-04-gal-ceshi-batch-classic-kag3.md`。
 - **[x] ② 已加自动化测试** — `native/galgame_hook/tests/kirikiri_lookup_source_guard_test.py`：规则 3 取消 KAGEX 缺席门 else 的全局补丁豁免（`find_global_monkey_patches` 只认探测分支）；新增正向规则 `find_classic_sweep_missing`（门存在 + else 里调用 sweep + 存在逐实例 `<layer>.drawText = function` 形状）；`RealAdapterTest` 加真文件断言；`MutationSelfTest` 加 5 条变异（门恒真 / else 变无条件块 / else 换回类补丁 / sweep 从 else 删除 / 逐实例补丁退化为类补丁 / 只定义不调用）全部红。
 - **备注**：用户原始报告是「验收要求 2-4（单击/Shift 查词、整词高亮、点外不推进）」在经典 KAG3 上不可能满足；本条只修传感器采集面，MessageLayer 每字是否真走 `this.drawText`（而非 TYPE-MOON 定制路径）要真机 `classic_geometry_captured` 位来判，那是下一个边界。
+
+- **审查补修（2026-09-05 集成时）**：`fushiLookupPatchClassicLayer` 的幂等标记
+  `layer.fushiLookupClassicPatched = 1;` 原本写在 drawText、processCh **两次包装都成功之后**。
+  第二步在定制 MessageLayer 上可能抛（只读成员），而调用方 `fushiLookupSweepClassicLayers`
+  把异常吞进 `catch(e) { fushiLookupFault(); }`——于是 drawText 已被包装、标记却没落下，此后
+  每个 KAG stable 边沿重扫都把「上一层包装」当成 original 再包一层，N 次推进后一次 drawText
+  调用递归 N 层，主线程在画字时栈溢出。标记提到第一次赋值之前：半途失败只是保持半装，
+  drawText 采集仍然有效。守卫 `find_late_classic_patch_marker` + 变异自测。详见 [[BUG-2121]]。
