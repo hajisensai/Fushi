@@ -4208,5 +4208,12 @@
   "onboarding_anki_fsrs_step_toggle_title": "Switch FSRS on",
   "onboarding_anki_fsrs_step_toggle_desc": "Scroll to the FSRS section at the bottom of the options page (older builds hide it under Advanced) and turn the switch on. It applies to your whole collection, so once is enough.",
   "onboarding_anki_fsrs_step_optimize_title": "Optimize, then save",
-  "onboarding_anki_fsrs_step_optimize_desc": "Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while."
+  "onboarding_anki_fsrs_step_optimize_desc": "Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while.",
+  "sync_desktop_oauth_waiting_title": "Đang chờ đăng nhập trong trình duyệt",
+  "sync_desktop_oauth_waiting_body": "Trang đăng nhập đã được mở trong trình duyệt mặc định. Nếu không có gì mở ra hoặc trang báo lỗi, hãy sao chép liên kết và mở trong trình duyệt khác hoặc cửa sổ riêng tư.",
+  "sync_desktop_oauth_link_copy": "Sao chép liên kết đăng nhập",
+  "sync_desktop_oauth_browser_reopen": "Mở lại trình duyệt",
+  "sync_err_sign_in_cancelled": "Đã hủy đăng nhập.",
+  "sync_desktop_oauth_browser_open_failed": "Không thể mở trình duyệt. Hãy sao chép liên kết và tự mở trong trình duyệt.",
+  "sync_desktop_oauth_link_copy_failed": "Không thể sao chép liên kết. Hãy chọn văn bản liên kết và sao chép thủ công."
 }

@@ -4208,5 +4208,12 @@
   "onboarding_anki_fsrs_step_toggle_title": "Switch FSRS on",
   "onboarding_anki_fsrs_step_toggle_desc": "Scroll to the FSRS section at the bottom of the options page (older builds hide it under Advanced) and turn the switch on. It applies to your whole collection, so once is enough.",
   "onboarding_anki_fsrs_step_optimize_title": "Optimize, then save",
-  "onboarding_anki_fsrs_step_optimize_desc": "Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while."
+  "onboarding_anki_fsrs_step_optimize_desc": "Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while.",
+  "sync_desktop_oauth_waiting_title": "Menunggu masuk di browser",
+  "sync_desktop_oauth_waiting_body": "Halaman masuk telah dibuka di browser bawaan. Jika tidak ada yang terbuka atau halaman menampilkan kesalahan, salin tautannya dan buka di browser lain atau jendela privat.",
+  "sync_desktop_oauth_link_copy": "Salin tautan masuk",
+  "sync_desktop_oauth_browser_reopen": "Buka browser lagi",
+  "sync_err_sign_in_cancelled": "Masuk dibatalkan.",
+  "sync_desktop_oauth_browser_open_failed": "Browser tidak dapat dibuka. Salin tautannya dan buka sendiri di browser.",
+  "sync_desktop_oauth_link_copy_failed": "Tautan tidak dapat disalin. Pilih teks tautan dan salin secara manual."
 }

@@ -4208,5 +4208,12 @@
   "onboarding_anki_fsrs_step_toggle_title": "Switch FSRS on",
   "onboarding_anki_fsrs_step_toggle_desc": "Scroll to the FSRS section at the bottom of the options page (older builds hide it under Advanced) and turn the switch on. It applies to your whole collection, so once is enough.",
   "onboarding_anki_fsrs_step_optimize_title": "Optimize, then save",
-  "onboarding_anki_fsrs_step_optimize_desc": "Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while."
+  "onboarding_anki_fsrs_step_optimize_desc": "Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while.",
+  "sync_desktop_oauth_waiting_title": "브라우저 로그인 완료를 기다리는 중",
+  "sync_desktop_oauth_waiting_body": "기본 브라우저에서 로그인 페이지를 열었습니다. 열리지 않거나 오류가 표시되면 링크를 복사해 다른 브라우저나 시크릿 창에서 여세요.",
+  "sync_desktop_oauth_link_copy": "로그인 링크 복사",
+  "sync_desktop_oauth_browser_reopen": "브라우저 다시 열기",
+  "sync_err_sign_in_cancelled": "로그인을 취소했습니다.",
+  "sync_desktop_oauth_browser_open_failed": "브라우저를 열 수 없습니다. 링크를 복사해 직접 브라우저에서 여세요.",
+  "sync_desktop_oauth_link_copy_failed": "링크를 복사할 수 없습니다. 링크 텍스트를 선택해 직접 복사하세요."
 }

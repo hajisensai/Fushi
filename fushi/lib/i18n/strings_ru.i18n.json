@@ -4208,5 +4208,12 @@
   "onboarding_anki_fsrs_step_toggle_title": "Switch FSRS on",
   "onboarding_anki_fsrs_step_toggle_desc": "Scroll to the FSRS section at the bottom of the options page (older builds hide it under Advanced) and turn the switch on. It applies to your whole collection, so once is enough.",
   "onboarding_anki_fsrs_step_optimize_title": "Optimize, then save",
-  "onboarding_anki_fsrs_step_optimize_desc": "Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while."
+  "onboarding_anki_fsrs_step_optimize_desc": "Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while.",
+  "sync_desktop_oauth_waiting_title": "Ожидание входа в браузере",
+  "sync_desktop_oauth_waiting_body": "Страница входа открыта в браузере по умолчанию. Если ничего не открылось или страница показывает ошибку, скопируйте ссылку и откройте её в другом браузере или в приватном окне.",
+  "sync_desktop_oauth_link_copy": "Скопировать ссылку для входа",
+  "sync_desktop_oauth_browser_reopen": "Открыть браузер снова",
+  "sync_err_sign_in_cancelled": "Вход отменён.",
+  "sync_desktop_oauth_browser_open_failed": "Не удалось открыть браузер. Скопируйте ссылку и откройте её в браузере вручную.",
+  "sync_desktop_oauth_link_copy_failed": "Не удалось скопировать ссылку. Выделите текст ссылки и скопируйте его вручную."
 }

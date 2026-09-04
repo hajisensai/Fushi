@@ -4208,5 +4208,12 @@
   "onboarding_anki_fsrs_step_toggle_title": "Switch FSRS on",
   "onboarding_anki_fsrs_step_toggle_desc": "Scroll to the FSRS section at the bottom of the options page (older builds hide it under Advanced) and turn the switch on. It applies to your whole collection, so once is enough.",
   "onboarding_anki_fsrs_step_optimize_title": "Optimize, then save",
-  "onboarding_anki_fsrs_step_optimize_desc": "Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while."
+  "onboarding_anki_fsrs_step_optimize_desc": "Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while.",
+  "sync_desktop_oauth_waiting_title": "Warten auf die Anmeldung im Browser",
+  "sync_desktop_oauth_waiting_body": "Die Anmeldeseite wurde im Standardbrowser geöffnet. Falls nichts geöffnet wurde oder die Seite einen Fehler zeigt, kopiere den Link und öffne ihn in einem anderen Browser oder einem privaten Fenster.",
+  "sync_desktop_oauth_link_copy": "Anmeldelink kopieren",
+  "sync_desktop_oauth_browser_reopen": "Browser erneut öffnen",
+  "sync_err_sign_in_cancelled": "Anmeldung abgebrochen.",
+  "sync_desktop_oauth_browser_open_failed": "Der Browser konnte nicht geöffnet werden. Kopiere den Link und öffne ihn selbst in einem Browser.",
+  "sync_desktop_oauth_link_copy_failed": "Der Link konnte nicht kopiert werden. Markiere den Linktext und kopiere ihn manuell."
 }

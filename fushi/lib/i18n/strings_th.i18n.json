@@ -4208,5 +4208,12 @@
   "onboarding_anki_fsrs_step_toggle_title": "Switch FSRS on",
   "onboarding_anki_fsrs_step_toggle_desc": "Scroll to the FSRS section at the bottom of the options page (older builds hide it under Advanced) and turn the switch on. It applies to your whole collection, so once is enough.",
   "onboarding_anki_fsrs_step_optimize_title": "Optimize, then save",
-  "onboarding_anki_fsrs_step_optimize_desc": "Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while."
+  "onboarding_anki_fsrs_step_optimize_desc": "Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while.",
+  "sync_desktop_oauth_waiting_title": "กำลังรอการเข้าสู่ระบบในเบราว์เซอร์",
+  "sync_desktop_oauth_waiting_body": "เปิดหน้าเข้าสู่ระบบในเบราว์เซอร์เริ่มต้นแล้ว หากไม่มีอะไรเปิดขึ้นมาหรือหน้าแสดงข้อผิดพลาด ให้คัดลอกลิงก์แล้วเปิดในเบราว์เซอร์อื่นหรือหน้าต่างส่วนตัว",
+  "sync_desktop_oauth_link_copy": "คัดลอกลิงก์เข้าสู่ระบบ",
+  "sync_desktop_oauth_browser_reopen": "เปิดเบราว์เซอร์อีกครั้ง",
+  "sync_err_sign_in_cancelled": "ยกเลิกการเข้าสู่ระบบแล้ว",
+  "sync_desktop_oauth_browser_open_failed": "ไม่สามารถเปิดเบราว์เซอร์ได้ ให้คัดลอกลิงก์แล้วเปิดในเบราว์เซอร์ด้วยตนเอง",
+  "sync_desktop_oauth_link_copy_failed": "ไม่สามารถคัดลอกลิงก์ได้ ให้เลือกข้อความลิงก์แล้วคัดลอกด้วยตนเอง"
 }

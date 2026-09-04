@@ -4208,5 +4208,12 @@
   "onboarding_anki_fsrs_step_toggle_title": "Switch FSRS on",
   "onboarding_anki_fsrs_step_toggle_desc": "Scroll to the FSRS section at the bottom of the options page (older builds hide it under Advanced) and turn the switch on. It applies to your whole collection, so once is enough.",
   "onboarding_anki_fsrs_step_optimize_title": "Optimize, then save",
-  "onboarding_anki_fsrs_step_optimize_desc": "Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while."
+  "onboarding_anki_fsrs_step_optimize_desc": "Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while.",
+  "sync_desktop_oauth_waiting_title": "Tarayıcıda oturum açılması bekleniyor",
+  "sync_desktop_oauth_waiting_body": "Oturum açma sayfası varsayılan tarayıcınızda açıldı. Hiçbir şey açılmadıysa veya sayfa hata gösteriyorsa bağlantıyı kopyalayıp başka bir tarayıcıda ya da gizli pencerede açın.",
+  "sync_desktop_oauth_link_copy": "Oturum açma bağlantısını kopyala",
+  "sync_desktop_oauth_browser_reopen": "Tarayıcıyı yeniden aç",
+  "sync_err_sign_in_cancelled": "Oturum açma iptal edildi.",
+  "sync_desktop_oauth_browser_open_failed": "Tarayıcı açılamadı. Bağlantıyı kopyalayıp bir tarayıcıda kendiniz açın.",
+  "sync_desktop_oauth_link_copy_failed": "Bağlantı kopyalanamadı. Bağlantı metnini seçip elle kopyalayın."
 }

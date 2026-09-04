@@ -4208,5 +4208,12 @@
   "onboarding_anki_fsrs_step_toggle_title": "Switch FSRS on",
   "onboarding_anki_fsrs_step_toggle_desc": "Scroll to the FSRS section at the bottom of the options page (older builds hide it under Advanced) and turn the switch on. It applies to your whole collection, so once is enough.",
   "onboarding_anki_fsrs_step_optimize_title": "Optimize, then save",
-  "onboarding_anki_fsrs_step_optimize_desc": "Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while."
+  "onboarding_anki_fsrs_step_optimize_desc": "Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while.",
+  "sync_desktop_oauth_waiting_title": "Wachten op aanmelding in de browser",
+  "sync_desktop_oauth_waiting_body": "De aanmeldpagina is geopend in je standaardbrowser. Als er niets is geopend of de pagina een fout toont, kopieer dan de link en open die in een andere browser of een privévenster.",
+  "sync_desktop_oauth_link_copy": "Aanmeldlink kopiëren",
+  "sync_desktop_oauth_browser_reopen": "Browser opnieuw openen",
+  "sync_err_sign_in_cancelled": "Aanmelden geannuleerd.",
+  "sync_desktop_oauth_browser_open_failed": "De browser kon niet worden geopend. Kopieer de link en open die zelf in een browser.",
+  "sync_desktop_oauth_link_copy_failed": "De link kon niet worden gekopieerd. Selecteer de linktekst en kopieer die handmatig."
 }

@@ -4208,5 +4208,12 @@
   "onboarding_anki_fsrs_step_toggle_title": "打開 FSRS 開關",
   "onboarding_anki_fsrs_step_toggle_desc": "捲到選項頁最底部的「FSRS」區塊（舊版藏在「進階」裡），把開關打開。它對整個收藏生效，開一次就夠。",
   "onboarding_anki_fsrs_step_optimize_title": "點「最佳化」再儲存",
-  "onboarding_anki_fsrs_step_optimize_desc": "在開關下方點「最佳化」，讓參數貼合你自己的複習記錄，然後儲存。複習記錄不足約 1000 條時預設參數已經比 SM-2 準，攢夠以後再最佳化一次即可。"
+  "onboarding_anki_fsrs_step_optimize_desc": "在開關下方點「最佳化」，讓參數貼合你自己的複習記錄，然後儲存。複習記錄不足約 1000 條時預設參數已經比 SM-2 準，攢夠以後再最佳化一次即可。",
+  "sync_desktop_oauth_waiting_title": "正在等待瀏覽器完成登入",
+  "sync_desktop_oauth_waiting_body": "已在預設瀏覽器開啟登入頁面。如果沒有開啟，或頁面顯示錯誤，可複製連結到其他瀏覽器或無痕視窗開啟。",
+  "sync_desktop_oauth_link_copy": "複製登入連結",
+  "sync_desktop_oauth_browser_reopen": "重新開啟瀏覽器",
+  "sync_err_sign_in_cancelled": "已取消登入。",
+  "sync_desktop_oauth_browser_open_failed": "無法開啟瀏覽器。請複製連結，自行在瀏覽器中開啟。",
+  "sync_desktop_oauth_link_copy_failed": "複製失敗。請手動選取連結文字後複製。"
 }

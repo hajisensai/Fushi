@@ -4208,5 +4208,12 @@
   "onboarding_anki_fsrs_step_toggle_title": "Switch FSRS on",
   "onboarding_anki_fsrs_step_toggle_desc": "Scroll to the FSRS section at the bottom of the options page (older builds hide it under Advanced) and turn the switch on. It applies to your whole collection, so once is enough.",
   "onboarding_anki_fsrs_step_optimize_title": "Optimize, then save",
-  "onboarding_anki_fsrs_step_optimize_desc": "Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while."
+  "onboarding_anki_fsrs_step_optimize_desc": "Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while.",
+  "sync_desktop_oauth_waiting_title": "في انتظار تسجيل الدخول في المتصفح",
+  "sync_desktop_oauth_waiting_body": "تم فتح صفحة تسجيل الدخول في المتصفح الافتراضي. إذا لم يُفتح شيء أو ظهر خطأ في الصفحة، فانسخ الرابط وافتحه في متصفح آخر أو في نافذة خاصة.",
+  "sync_desktop_oauth_link_copy": "نسخ رابط تسجيل الدخول",
+  "sync_desktop_oauth_browser_reopen": "فتح المتصفح مرة أخرى",
+  "sync_err_sign_in_cancelled": "تم إلغاء تسجيل الدخول.",
+  "sync_desktop_oauth_browser_open_failed": "تعذّر فتح المتصفح. انسخ الرابط وافتحه بنفسك في متصفح.",
+  "sync_desktop_oauth_link_copy_failed": "تعذّر نسخ الرابط. حدّد نص الرابط وانسخه يدويًا."
 }
