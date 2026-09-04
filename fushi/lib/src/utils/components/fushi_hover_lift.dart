@@ -66,13 +66,13 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
   /// 指针是否真的在这张卡上（[MouseRegion] 的真值，滚动**不得**改它）。
   bool _hovering = false;
 
-  /// 祖先滚动区处在 `ScrollStart..ScrollEnd` 之间。覆盖走补间动画的滚动
-  /// （桌面粗滚轮经 `FushiScrollController` 的 `animateTo`，跨十几帧）。
-  bool _scrolling = false;
-
-  /// 本帧发生过滚动位移。覆盖 Flutter 默认的滚轮路径——它在**同一次事件处理里**
-  /// 就把 `ScrollStart / ScrollUpdate / ScrollEnd` 全发完（已用探针实测），
-  /// [_scrolling] 那一位置起又立刻落下，单靠它压不住这条路径。
+  /// 本帧发生过滚动位移。**这是唯一的压制位**——覆盖三条路径：Flutter 默认滚轮
+  /// （同一次事件处理里把 Start/Update/End 全发完）、拖拽滚动、以及
+  /// `FushiScrollController` 的 140ms 补间（走 `DrivenScrollActivity`，每帧一条
+  /// ScrollUpdate）。
+  ///
+  /// 置位与落位写在同一处（[_onScrollNotification]）：落位若挂在 build 里，
+  /// `!enabled` 那条提前 return 就会让它永远注册不上、这一位永久为真。
   bool _moved = false;
 
   /// 缩放动效是否开启（墨水屏 / 减弱动态效果两处降级）。依赖 InheritedWidget，
@@ -103,8 +103,16 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
     _curved = CurvedAnimation(parent: _lift, curve: Curves.easeOut);
   }
 
-  /// 抬升的唯一判据：指针在这张卡上，且没在滚动（BUG-2124）。
-  bool get _lifted => widget.enabled && _hovering && !_scrolling && !_moved;
+  /// 抬升的唯一判据：指针在这张卡上，且**这一帧刚滚过**（BUG-2124）。
+  ///
+  /// **刻意不看 ScrollStart/End 那对通知**：Flutter 不保证它们配对——
+  /// `ScrollPosition.dispose()` 不调 `didEndScroll()`，而首页各 tab 的卡挂在同一个
+  /// Scaffold 的 observer 下、被 `TickerMode` 冻住的惯性滚动永远发不出 ScrollEnd。
+  /// 拿一个「开始了就置 true、只靠 End 落下」的位当判据，命中即整片卡的悬停放大**永久**
+  /// 失效。而按帧位判本来就更准：ScrollStart 那一刻还没有任何位移，第一条 ScrollUpdate
+  /// 才是真的滚起来了；`FushiScrollController` 的 140ms 补间走 `DrivenScrollActivity`，
+  /// 每帧都发 ScrollUpdate，同样被这一位盖住。
+  bool get _lifted => widget.enabled && _hovering && !_moved;
 
   /// [immediate] 为真时同帧落位，不走缓动。
   void _syncLift({bool immediate = false}) {
@@ -129,29 +137,21 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
     // depth 不过滤：横滚行卡在纵向页里滚动时通知来自更外层的 Scrollable，
     // 同样必须压制抬升。
     //
-    // **不要**把 ScrollUpdateNotification 也当作 [_scrolling] 的起点：
-    // `jumpTo` / 恢复滚动位置这类一次性位移会单发 update 而没有配对的 end，
-    // [_scrolling] 会永久卡在 true、连初次悬停都不再抬升（已实测踩过）。
-    // 它只用来置本帧位 [_moved]，由 build 的 post-frame 负责落下。
-    bool changed = false;
-    if (notification is ScrollStartNotification) {
-      changed = !_scrolling;
-      _scrolling = true;
-    } else if (notification is ScrollEndNotification) {
-      changed = _scrolling;
-      _scrolling = false;
-    } else if (notification is ScrollUpdateNotification) {
-      // 本帧位只在正悬停时才置：它靠 build 的 post-frame 落下，而没悬停的卡这里
-      // 不 setState、也就走不到那次 build，置了就会永久卡住、之后鼠标移上来再也
-      // 不抬升。没悬停时抬升本来就是 0，这一位对它毫无意义。
-      if (!_hovering) return;
-      changed = !_moved;
-      _moved = true;
-    } else {
-      return;
-    }
-    // 只有正抬升着的那张卡需要重建；其余卡记下位即可，避免一次滚动把整墙刷一遍。
-    if (!changed || !_hovering) return;
+    // 只认 ScrollUpdate：它是「真的滚了」的唯一可靠信号，且不依赖任何配对通知。
+    if (notification is! ScrollUpdateNotification) return;
+    // 本帧位只在正悬停时才置：没悬停的卡抬升本来就是 0，这一位对它毫无意义，
+    // 而置了却不重建就会一直挂着。
+    if (!_hovering || _moved) return;
+    _moved = true;
+    // 落下这一位的 post-frame **在这里挂**，不在 build 里挂：build 有 `!enabled`
+    // 的提前 return 分支（长按进多选正好会在指针停在卡上时把 enabled 翻假），
+    // 从那条分支走过去就永远注册不上，`_moved` 永久为真、之后再也不抬升。
+    // 置位与落位是同一件事的两半，必须写在一起。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_moved) return;
+      setState(() => _moved = false);
+      _syncLift();
+    });
     setState(() {});
     // 压制必须同帧落位；解除则走正常缓动涨回来。
     _syncLift(immediate: !_lifted);
@@ -203,15 +203,6 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
         });
       }
       return widget.builder(context, false);
-    }
-    // 本帧位只压这一帧：下一帧 MouseTracker 已经重算过 hover，[_hovering] 就是
-    // 新的真值，该不该抬升由它说了算。
-    if (_moved) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || !_moved) return;
-        setState(() => _moved = false);
-        _syncLift();
-      });
     }
     final Widget content = widget.builder(context, _lifted);
     if (!_animate) return _wrapHover(content);
