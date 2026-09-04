@@ -2847,6 +2847,34 @@ def find_engine_calls_on_hook_worker(source: MaskedSource) -> list[str]:
     ]
 
 
+VOICE_STREAM_TRY_ENTRY = "bool TryHookKirikiriVoiceStream() "
+
+
+def find_ungated_exe_exporter_probe(source: MaskedSource) -> list[str]:
+    """exe 直取 `ObtainExporter()` 必须被 `FindGameMainWindow()` 门住（BUG-2118）。
+
+    `TVPGetFunctionExporter()` 第一次被调用时置 `TVPExportFuncsInit` 并把导出函数灌进
+    **静态** `TVPExportFuncs` 哈希表（krkrz base/win32/PluginImpl.cpp，kirikiri2 同构）。
+    CREATE_SUSPENDED 早注入下 worker 比 exe 静态构造函数还早：表先被灌满、再被构造函数清空，
+    而 init 标志已置——之后所有插件 QueryFunctions 查不到，fstat.dll 走 tp_stub 的
+    `*(int*)0 = 0` 故意崩（Fate/stay night[Realta Nua] 真机 9/9 启动即崩）。引擎主窗存在
+    是「静态初始化已完成」的现成信号；主窗出现前只能靠 LoadLibrary→V2Link 路径。
+    """
+    body = _cpp_function_body(source, VOICE_STREAM_TRY_ENTRY)
+    if body is None:
+        return [f"找不到 {VOICE_STREAM_TRY_ENTRY.strip()}"]
+    probe = body.find("ObtainExporter()")
+    if probe < 0:
+        return []
+    gate = body.find("FindGameMainWindow()")
+    if gate < 0 or gate > probe:
+        return [
+            f"{VOICE_STREAM_TRY_ENTRY.strip()} 里 ObtainExporter() 没有被 "
+            "FindGameMainWindow() 门住（早注入会在引擎静态初始化前灌导出表）"
+        ]
+    return []
+
+
 def find_missing_main_thread_identity_check(source: MaskedSource) -> list[str]:
     body = _cpp_function_body(source, MAIN_THREAD_INSTALL_ENTRY)
     if body is None:
@@ -2989,6 +3017,14 @@ class RealAdapterTest(unittest.TestCase):
             "global.Layer.drawText / global.MessageLayer.processCh 的全局补丁在 TJS2 里"
             "对实例永远不可见（实例化把成员拷进实例；Fate RN 真机挂上后一次都没被调用）。"
             "只允许留在默认关闭的探测分支里；经典 KAG3 走逐实例补丁。",
+        )
+
+    def test_exe_direct_exporter_probe_waits_for_engine_main_window(self) -> None:
+        self.assertEqual(
+            [],
+            find_ungated_exe_exporter_probe(self.source),
+            "BUG-2118：早注入下在引擎静态构造前调 TVPGetFunctionExporter 会灌满又清空导出表，"
+            "之后所有插件链接失败（Fate RN 9/9 启动即崩）；exe 直取必须等主窗存在。",
         )
 
     def test_classic_kag3_capture_is_a_per_instance_sweep_inside_the_gate(
@@ -3143,6 +3179,15 @@ global.fushiLookupCapture = function(renderer)
     }
 };
 )TJS";
+
+// exe 直取 exporter 只在引擎主窗存在后（静态初始化已完成）；之前只靠 V2Link 路径。
+bool TryHookKirikiriVoiceStream() {
+  if (!g_voice_installed && FindGameMainWindow() != nullptr) {
+    ITVPFunctionExporter* exp = ObtainExporter();
+    if (exp != nullptr) InstallVoiceStreamHookWithExporter(exp);
+  }
+  return true;
+}
 """
 
 # 干净样本里那条带归属的收卡判据（变异自测的锚点）。
@@ -4442,6 +4487,9 @@ class MutationSelfTest(unittest.TestCase):
         self.assertEqual([], find_unguarded_bitmap_copies(self.clean))
         self.assertEqual([], find_ownerless_card_dismissals(self.clean))
         self.assertEqual([], find_classic_sweep_missing(self.clean))
+        self.assertEqual([], find_ungated_exe_exporter_probe(self.clean))
+        # 干净样本里确实有 exe 直取探针，否则 BUG-2118 这条规则在自测里根本没被走到。
+        self.assertIn("ObtainExporter()", CLEAN_SAMPLE)
         # 干净样本里确实有一个 KAGEX 缺席门 else，否则 classic sweep 的正向规则在自测里
         # 根本没被走到（规则会变成永远走不到的死代码而无人察觉）。
         self.assertNotEqual([], _classic_fallback_spans(CLEAN_SAMPLE))
@@ -5340,6 +5388,33 @@ class MutationSelfTest(unittest.TestCase):
         )
         self.assertNotEqual([], find_global_monkey_patches(dirty))
         self.assertNotEqual([], find_classic_sweep_missing(dirty))
+
+    def test_exe_exporter_probe_without_window_gate_is_red(self) -> None:
+        # 把主窗门拿掉：早注入下 worker 会在引擎静态构造前灌导出表——BUG-2118 原样复活。
+        dirty = self._mutate(
+            "if (!g_voice_installed && FindGameMainWindow() != nullptr) {",
+            "if (!g_voice_installed) {",
+        )
+        self.assertNotEqual([], find_ungated_exe_exporter_probe(dirty))
+
+    def test_exe_exporter_probe_gate_after_probe_is_red(self) -> None:
+        # 门在探针之后不算门：先调了 TVPGetFunctionExporter 再看窗口，表已经被灌过了。
+        dirty = self._mutate(
+            "if (!g_voice_installed && FindGameMainWindow() != nullptr) {\n"
+            "    ITVPFunctionExporter* exp = ObtainExporter();",
+            "if (!g_voice_installed) {\n"
+            "    ITVPFunctionExporter* exp = ObtainExporter();\n"
+            "    if (FindGameMainWindow() == nullptr) return true;",
+        )
+        self.assertNotEqual([], find_ungated_exe_exporter_probe(dirty))
+
+    def test_missing_voice_stream_entry_is_red(self) -> None:
+        # 函数没了（改名/删除）守卫必须红，而不是「没找到就算通过」。
+        dirty = self._mutate(
+            "bool TryHookKirikiriVoiceStream() {",
+            "bool TryHookKirikiriVoiceStreamRenamed() {",
+        )
+        self.assertNotEqual([], find_ungated_exe_exporter_probe(dirty))
 
     def test_instance_patch_definition_alone_is_not_enough(self) -> None:
         # 只留逐实例补丁函数、删掉 sweep 调用：正向规则仍然红——定义了没人调用等于没有。

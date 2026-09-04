@@ -6577,7 +6577,18 @@ bool TryHookKirikiriVoiceStream() {
     }
   }
 
-  if (!g_voice_installed) {
+  // ⚠️ exe 直取只允许在引擎**静态初始化完成之后**（BUG-2118，Fate/stay night[Realta Nua]
+  // KiriKiri2 2.31 真机 9/9 启动即崩）。`TVPGetFunctionExporter()` 第一次被调用时会置
+  // `TVPExportFuncsInit = true` 并把全部导出函数灌进**静态** `tTJSHashTable TVPExportFuncs`
+  // （krkrz base/win32/PluginImpl.cpp，kirikiri2 同构）。CREATE_SUSPENDED 早注入下本 worker
+  // 比 exe 的静态构造函数还早：表先被我们灌满、随后被构造函数清空，而 init 标志已经置上——
+  // 之后每个插件的 QueryFunctions 都查不到，dirlist.dll 链接抛异常、fstat.dll 走 tp_stub 的
+  // 「导入缺失就 *(int*)0 = 0」故意崩。我们自己那次 TVPCreateIStream 查询恰好夹在灌表与
+  // 清表之间才成功，所以诊断位看起来一切正常（0x10000 | 0x20000 亮）。
+  // 「静态初始化已完成」的可靠且现成的信号是引擎主窗已存在（窗口由 TJS 脚本创建，远在 CRT
+  // 之后）；主窗出现前只靠 LoadLibrary→V2Link 路径——插件链接时引擎自己已调过
+  // TVPGetFunctionExporter，表必然已就绪。两条路径仍由 g_voice_installed 幂等互斥。
+  if (!g_voice_installed && FindGameMainWindow() != nullptr) {
     ITVPFunctionExporter* exp = ObtainExporter();  // exe 直取（加壳置 0x1000000 返回 null）
     if (exp != nullptr) {
       if (g_header != nullptr) g_header->reserved_luna |= 0x10000;  // 经 exe 导出拿到 exporter
