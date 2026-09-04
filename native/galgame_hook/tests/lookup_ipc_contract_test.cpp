@@ -636,8 +636,8 @@ void TestV14LookupRegionIsPureAppendOverV13() {
 }
 
 void TestV16V17AndV19OnlyAppendOverV15() {
-  Check(kSharedVersion == 21,
-        "本测试锁的是 v21 契约（NativeInputAllowed 改变 v20 flags 语义，与 geometry discovery 独立）");
+  Check(kSharedVersion == 22,
+        "本测试锁的是 v22 契约（BUG-2093 层原点双向面在 v19 摘要后纯追加）");
 
   // v14 的最后一个字段是 lookup_diag。v15 只能紧随其后追加一个 64 位 applied seq；
   // 把字段插进 v14 中间，或在 applied seq 后再偷偷长出别的字段，都必须判红。
@@ -934,11 +934,40 @@ void TestV19AdmissionIsPureAppendOverV17() {
   Check(offsetof(SharedHeader, lookup_executable_sha256) ==
             offsetof(SharedHeader, lookup_admission_seq) + sizeof(uint32_t),
         "exe 摘要必须紧跟 admission_seq");
+  // v22 层原点块是 v19 摘要之后的纯追加，所以摘要不再是尾部。逐字段锁死新块的
+  // 相对次序——插字段 / 改序都必须判红，只有继续在**最后**尾追加才允许。
+  Check(offsetof(SharedHeader, lookup_layer_line_seq) ==
+            (offsetof(SharedHeader, lookup_executable_sha256) +
+             fushi_voice_hook::kHookModuleDigestChars + 3u) /
+                4u * 4u,
+        "v22 层原点块必须紧接 v19 摘要，不得插进既有布局");
+  const size_t layer0 = offsetof(SharedHeader, lookup_layer_line_seq);
+  const char* kLayerOrder[] = {
+      "design_w", "design_h", "glyph_count", "line_left", "line_top",
+      "line_right", "line_bottom", "origin_x", "origin_y", "origin_seq",
+      "reserved"};
+  const size_t kLayerOffsets[] = {
+      offsetof(SharedHeader, lookup_layer_design_w),
+      offsetof(SharedHeader, lookup_layer_design_h),
+      offsetof(SharedHeader, lookup_layer_glyph_count),
+      offsetof(SharedHeader, lookup_layer_line_left),
+      offsetof(SharedHeader, lookup_layer_line_top),
+      offsetof(SharedHeader, lookup_layer_line_right),
+      offsetof(SharedHeader, lookup_layer_line_bottom),
+      offsetof(SharedHeader, lookup_layer_origin_x),
+      offsetof(SharedHeader, lookup_layer_origin_y),
+      offsetof(SharedHeader, lookup_layer_origin_seq),
+      offsetof(SharedHeader, lookup_layer_reserved)};
+  for (size_t i = 0; i < sizeof(kLayerOffsets) / sizeof(kLayerOffsets[0]); ++i) {
+    Check(kLayerOffsets[i] == layer0 + (i + 1) * sizeof(uint32_t),
+          kLayerOrder[i]);
+    Check(kLayerOffsets[i] % 4 == 0, "层原点字段必须 4 字节对齐（Interlocked 前提）");
+  }
   Check(sizeof(SharedHeader) ==
-            ((offsetof(SharedHeader, lookup_executable_sha256) +
-              fushi_voice_hook::kHookModuleDigestChars + 7u) /
+            ((offsetof(SharedHeader, lookup_layer_reserved) +
+              sizeof(uint32_t) + 7u) /
              8u) * 8u,
-        "v19 末尾除 8 字节对齐填充外不得混入其他字段");
+        "v22 末尾除 8 字节对齐填充外不得混入其他字段");
 }
 
 // 准入的读写往返。这些性质全都是「UI 会不会误导用户」的直接决定因素，不是内部细节。

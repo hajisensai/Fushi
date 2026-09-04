@@ -208,6 +208,53 @@ void TestFastClickPreArmHidesQueuedSignalsAfterReleasePublication() {
   assert(!raw_result.pending && raw_flags == 0);
 }
 
+// BUG-2098 的死锁判据：**与左键无关的数据包不得把 latch 从「推测」翻成「坐实」**。
+//
+// 两条释放路径的前置条件互补——Abandon 要 `speculative && !release_seen`，
+// ObserveNeutralTail 要 `release_seen`。所以只要有一次调用「清了 speculative 却没置
+// release_seen」，latch 就两条路都走不了、永久 owned。raw input 与 buffered DirectInput
+// 的无关数据包（纯鼠标移动是游戏里最常见的事件）正好是这种调用。
+void TestIrrelevantPacketKeepsLatchAbandonable() {
+  // ① raw input：纯移动包（既无 down 也无 up）
+  {
+    fushi_voice_hook::LeftButtonShieldLatch latch;
+    fushi_voice_hook::PreArmLeftButtonShieldLatch(&latch);
+    uint16_t flags = 0;  // 移动，无按钮标志
+    fushi_voice_hook::FilterRawInputLeftButtonFlags(true, &flags, &latch);
+    assert(latch.speculative && "无关数据包不该把 latch 翻成坐实");
+    assert(!latch.release_seen && "它也没看到任何释放");
+    fushi_voice_hook::AbandonSpeculativeLeftButtonLatch(false, &latch);
+    assert(!latch.owned &&
+           "宿主发布中性请求后必须能放掉从未被按下坐实的推测 latch；"
+           "放不掉就是 applied_seq 永久落后一拍");
+  }
+  // ② buffered DirectInput：事件不是左键
+  {
+    fushi_voice_hook::LeftButtonShieldLatch latch;
+    fushi_voice_hook::PreArmLeftButtonShieldLatch(&latch);
+    std::array<BufferedEvent, 1> events{};
+    events[0].dwOfs = 4;  // 非 button0
+    events[0].dwData = 0x80u;
+    size_t count = events.size();
+    fushi_voice_hook::FilterDirectInputBufferedLeftButton(
+        true, events.data(), &count, /*button0_offset=*/12, &latch);
+    assert(latch.speculative && !latch.release_seen);
+    fushi_voice_hook::AbandonSpeculativeLeftButtonLatch(false, &latch);
+    assert(!latch.owned);
+  }
+  // ③ 真按下必须坐实，之后不得被放弃——「绝不暴露游戏没看见的 down 的尾巴」这条
+  //    不变式一字未改。
+  {
+    fushi_voice_hook::LeftButtonShieldLatch latch;
+    fushi_voice_hook::PreArmLeftButtonShieldLatch(&latch);
+    uint16_t flags = fushi_voice_hook::kRawMouseLeftButtonDown;
+    fushi_voice_hook::FilterRawInputLeftButtonFlags(true, &flags, &latch);
+    assert(!latch.speculative && "真按下必须坐实");
+    fushi_voice_hook::AbandonSpeculativeLeftButtonLatch(false, &latch);
+    assert(latch.owned && "坐实过的 latch 不得被放弃：它欠着一条释放尾");
+  }
+}
+
 void TestPreArmEligibilityExcludesNeverObservedAlternatives() {
   constexpr uint32_t kKey = 0x1u;
   constexpr uint32_t kRawData = 0x2u;
@@ -280,6 +327,7 @@ int main() {
   TestRawInputPreservesMovementWheelAndOtherButtons();
   TestBufferedDirectInputCompactsStably();
   TestFastClickPreArmHidesQueuedSignalsAfterReleasePublication();
+  TestIrrelevantPacketKeepsLatchAbandonable();
   TestPreArmEligibilityExcludesNeverObservedAlternatives();
   TestObservationOnlyKeyDetourIsKnownUncovered();
   TestDestroyedTargetFaultDoesNotPolluteReplacementWindow();

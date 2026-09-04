@@ -146,10 +146,24 @@ FilterSampledLeftButtonState(bool request_active, bool has_press_edge,
   const bool pressed = has_press_edge && (raw & 0x0001u) != 0;
   const bool signal = down || pressed;
 
-  if (request_active && signal)
+  if (request_active && signal) {
     latch->owned = true;
     // 被真实采样坐实：不再是推测（BUG-2098）。
+    //
+    // **花括号是必须的**。没有它时 `speculative = false` 每次调用都无条件执行，而
+    // 两条释放路径的前置条件正好互补：
+    //   · AbandonSpeculativeLeftButtonLatch 要 `speculative && !release_seen`；
+    //   · ObserveLeftButtonNeutralTail    要 `release_seen`。
+    // 于是只要存在「清了 speculative 却没置 release_seen」的调用，latch 就两条路都走
+    // 不了、永久 owned ⇒ applied_seq 恒落后 request_seq 一拍 ⇒ 宿主 IsNeutralForRehandshake
+    // 恒假 ⇒ attached 表面首次查词后再也武装不起来，正是 BUG-2098 那条死锁本身。
+    //
+    // 本函数（raw input）与 FilterDirectInputBufferedLeftButton 恰恰就是那种调用：
+    // 与左键无关的数据包（纯鼠标移动——游戏里最常见的事件）走 `signal == false` /
+    // `left == false` 分支，不置 release_seen。另外三条采样路径每次都会置，所以单独看
+    // 无害；但五处是同一个形状，一起收口。
     latch->speculative = false;
+  }
   const bool suppress = request_active || latch->owned;
   if (suppress) {
     const uint16_t filtered = static_cast<uint16_t>(
@@ -185,10 +199,12 @@ FilterKeyboardStateLeftButton(bool request_active, uint8_t *keys,
   out.supported = true;
   const uint8_t raw = keys[kVkLButton];
   const bool down = (raw & 0x80u) != 0;
-  if (request_active && down)
+  if (request_active && down) {
     latch->owned = true;
-    // 被真实采样坐实：不再是推测（BUG-2098）。
+    // 被真实采样坐实：不再是推测（BUG-2098）。花括号必须有，理由见
+    // FilterSampledLeftButtonState 处。
     latch->speculative = false;
+  }
   const bool suppress = request_active || latch->owned;
   if (suppress) {
     keys[kVkLButton] = static_cast<uint8_t>(raw & ~0x80u);
@@ -237,10 +253,12 @@ FilterDirectInputImmediateLeftButton(bool request_active, uint8_t *state,
   constexpr size_t kButton0Offset = 12;
   const uint8_t raw = state[kButton0Offset];
   const bool down = (raw & 0x80u) != 0;
-  if (request_active && down)
+  if (request_active && down) {
     latch->owned = true;
-    // 被真实采样坐实：不再是推测（BUG-2098）。
+    // 被真实采样坐实：不再是推测（BUG-2098）。花括号必须有，理由见
+    // FilterSampledLeftButtonState 处。
     latch->speculative = false;
+  }
   const bool suppress = request_active || latch->owned;
   if (suppress) {
     // DirectInput button bytes are data, not a bit field shared with another
@@ -277,10 +295,24 @@ FilterRawInputLeftButtonFlags(bool request_active, uint16_t *button_flags,
   const bool down = (raw & kRawMouseLeftButtonDown) != 0;
   const bool up = (raw & kRawMouseLeftButtonUp) != 0;
   const bool signal = down || up;
-  if (request_active && signal)
+  if (request_active && signal) {
     latch->owned = true;
     // 被真实采样坐实：不再是推测（BUG-2098）。
+    //
+    // **花括号是必须的**。没有它时 `speculative = false` 每次调用都无条件执行，而
+    // 两条释放路径的前置条件正好互补：
+    //   · AbandonSpeculativeLeftButtonLatch 要 `speculative && !release_seen`；
+    //   · ObserveLeftButtonNeutralTail    要 `release_seen`。
+    // 于是只要存在「清了 speculative 却没置 release_seen」的调用，latch 就两条路都走
+    // 不了、永久 owned ⇒ applied_seq 恒落后 request_seq 一拍 ⇒ 宿主 IsNeutralForRehandshake
+    // 恒假 ⇒ attached 表面首次查词后再也武装不起来，正是 BUG-2098 那条死锁本身。
+    //
+    // 本函数（raw input）与 FilterDirectInputBufferedLeftButton 恰恰就是那种调用：
+    // 与左键无关的数据包（纯鼠标移动——游戏里最常见的事件）走 `signal == false` /
+    // `left == false` 分支，不置 release_seen。另外三条采样路径每次都会置，所以单独看
+    // 无害；但五处是同一个形状，一起收口。
     latch->speculative = false;
+  }
   const bool suppress = request_active || latch->owned;
   if (suppress && signal) {
     *button_flags = static_cast<uint16_t>(
@@ -313,10 +345,12 @@ inline InputShieldFilterResult FilterDirectInputBufferedLeftButton(
     const bool left = events[read].dwOfs == button0_offset;
     const bool down = left && (events[read].dwData & 0x80u) != 0;
     const bool up = left && !down;
-    if (request_active && left)
+    if (request_active && left) {
       latch->owned = true;
-      // 被真实采样坐实：不再是推测（BUG-2098）。
+      // 被真实采样坐实：不再是推测（BUG-2098）。花括号必须有，理由见
+      // FilterSampledLeftButtonState 处。
       latch->speculative = false;
+    }
     const bool suppress = left && (request_active || latch->owned);
     if (suppress) {
       out.changed = true;

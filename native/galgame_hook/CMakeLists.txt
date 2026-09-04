@@ -629,6 +629,14 @@ target_compile_definitions(fushi_sgre_adapter_test PRIVATE
   UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_link_libraries(fushi_sgre_adapter_test PRIVATE bcrypt)
 add_test(NAME fushi_sgre_adapter_test COMMAND fushi_sgre_adapter_test)
+# BUG-2093 层原点：纯像素求解（host 侧算法，与 host_executable_digest 同一范式——
+# 需要被测的 host 逻辑放 include/，runner 用相对路径 include 真相源）。
+add_executable(fushi_layer_origin_pixels_test
+  "tests/layer_origin_pixels_test.cpp")
+target_include_directories(fushi_layer_origin_pixels_test PRIVATE include)
+add_test(NAME fushi_layer_origin_pixels_test
+  COMMAND fushi_layer_origin_pixels_test)
+
 add_executable(fushi_cmvs_adapter_test "tests/cmvs_adapter_test.cpp")
 target_include_directories(fushi_cmvs_adapter_test PRIVATE "hook")
 add_test(NAME fushi_cmvs_adapter_test COMMAND fushi_cmvs_adapter_test)

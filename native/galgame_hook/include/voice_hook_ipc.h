@@ -117,7 +117,13 @@ constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
 //     fail-closed 门控。同布局、异语义仍必须升版（与 v18 的
 //     LookupInputSlot::keys 完全同理），否则旧 helper 会被版本门误判兼容，
 //     host 以为已撤销输入而驻留 DLL 仍继续消费。
-constexpr uint32_t kSharedVersion = 21;
+//  v22 — BUG-2093 引擎层原点双向面。SharedHeader 尾部在 v19 摘要之后**纯追加**了
+//     12 个 32 位字（hook→host 的行包围盒 + 设计分辨率 + 字形数，host→hook 的
+//     解出原点 + seq）。**布局变了就必须升版**：`hook/dll_main.cpp` 与
+//     `injector/injector_main.cpp` 都用 `sizeof(SharedHeader)` 现算 ring / region
+//     基址，新旧混装会整体差 48 字节，而版本门本会放行——症状是跨进程读到完全
+//     错位的数据，不报错。
+constexpr uint32_t kSharedVersion = 22;
 constexpr uint32_t kStableIpcVersion = 1;
 
 // BUG-1882 — SGRE 的鼠标输入走 DirectInput immediate state，不经过普通
