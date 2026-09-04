@@ -86,6 +86,18 @@ Fate RN 引擎版本（来自用户 7-24 遗留 `krkr.console.log`，UTF-16）�
 
 **第三个边界：查词传感器不装**。`lookup_enabled=1`、`text_writes=8`，但 `lookup_diag` 没有 `sensor_installed`。原因：`RunKirikiriLookupInstallOnMainThread` 只在三条引擎 detour 里被调（V2Link / TVPCreateIStream 导入桩 / 内部 TVPCreateStream），KiriKiri2 BCB 上 host 打开查词之后没有一条会再来（V2Link 只在启动期、BCB 桩整局不触发、内部函数只 MSVC 分支 hook）。修复：`WH_GETMESSAGE` 主线程钩子作与引擎构建无关的接缝（`EnsureLookupMainThreadSeam`，装上即在钩子过程里跑安装、启动后自卸）。构建复验见下一段。
 
+## 真机门第三轮（2026-09-04 15:10–15:20）：Fate RN 工作台实测（seam helper `66fabdaa…`）
+
+库内启动 Fate RN → 打开采集工作台，**文本与音频链路已通**：
+- 「正在监听 · 游戏资源音频 · 已转区」，可用；「本局以日文区域 (CP932) 启动」。
+- 文本线程列表出全：干净线程 **`KiriKiri2 · 0x51bb93 · #9e78`**（LunaHook，台词「それは、稲妻のような切っ先だった。」）、`KiriKiri4 · 0x5d2f80`、以及 **`tTVPNativeBaseBitmap::DrawText · 0x528760`**（标「逐字重复伪影线程」——这正是 BUG-2116 经典 drawText 采集面在产出几何候选的证据，被伪影判据正确降级；干净线程优先选 LunaHook 那条）。
+- 右侧「本句音轨 · 语音 1 · 44100 Hz · 0x164a280 · 音频段 291」= 游戏资源音频按句直提就绪。
+- 选干净线程后「实时台词 · 1」收到该句，`engine_hook · KiriKiri2 · 0x51bb93 · #8`。
+
+**仍未过：游戏内查词传感器 + 前台准入**。工作台「游戏内查词 模式:自动 · 状态:suspended · 原生状态:targetBackground · 几何来源:未上报」；`lookup_diag` 无 kirikiri sensor 位。根因是 harness 前台限制（[[reference_test_hidden_fushi_steals_foreground_from_game]]）：host 把 shm `lookup_enabled` 门在游戏前台上，而测试实例抢前台（且我每跑一条 PowerShell 命令 VS Code 就夺回前台），无法在探测时干净保持游戏前台 → lookup 挂起 → 传感器不被请求 → 无法验证 seam 是否真的装上传感器。`EnableWindow(FALSE)` 止住了 Fushi 抢前台，但 `SetForegroundWindow(game)` 从后台进程被系统拒。**下一步（需用户前台空闲或专门的前台驱动）**：让 Fate RN 稳前台 ≥5s，再看 `sensor_installed`（0x1）与 `expression_ready`（0x40）；装上后走单击字形弹卡 → 整词高亮 → 点外不推进 → 制卡（游戏资源音频按句）→ 全屏一轮。
+
+**阶段结论（engine-support.yaml 不升级）**：`process_found ✓ / helper_ready ✓ / ipc_ready ✓ / text_observed ✓（干净线程 + classic DrawText 候选）/ resource_observed ✓（语音资源）/ text_thread_selected ✓ / 查词 sensor ✗（前台准入未过）/ card_e2e ✗`。KiriKiri2/BCB 启动与文本/音频采集三门在本轮从「9/9 崩溃」推进到「全通」，是本任务的主交付；查词 sensor 与 E2E 留待前台可控的下一轮。
+
 ## 队列其余游戏引擎盘点（静态，未启动）
 
 | 目录 | 引擎 | yaml 条目 | 备注 |
