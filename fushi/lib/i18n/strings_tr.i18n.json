@@ -4215,5 +4215,6 @@
   "sync_desktop_oauth_browser_reopen": "Tarayıcıyı yeniden aç",
   "sync_err_sign_in_cancelled": "Oturum açma iptal edildi.",
   "sync_desktop_oauth_browser_open_failed": "Tarayıcı açılamadı. Bağlantıyı kopyalayıp bir tarayıcıda kendiniz açın.",
-  "sync_desktop_oauth_link_copy_failed": "Bağlantı kopyalanamadı. Bağlantı metnini seçip elle kopyalayın."
+  "sync_desktop_oauth_link_copy_failed": "Bağlantı kopyalanamadı. Bağlantı metnini seçip elle kopyalayın.",
+  "game_text_thread_artifact_hint": "Repeated-character artifact thread, no usable lines"
 }

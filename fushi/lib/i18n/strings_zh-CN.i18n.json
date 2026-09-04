@@ -4215,5 +4215,6 @@
   "sync_desktop_oauth_browser_reopen": "重新打开浏览器",
   "sync_err_sign_in_cancelled": "已取消登录。",
   "sync_desktop_oauth_browser_open_failed": "无法打开浏览器。请复制链接，自行在浏览器中打开。",
-  "sync_desktop_oauth_link_copy_failed": "复制失败。请手动选中链接文本后复制。"
+  "sync_desktop_oauth_link_copy_failed": "复制失败。请手动选中链接文本后复制。",
+  "game_text_thread_artifact_hint": "逐字重复伪影线程，不会有可用台词"
 }

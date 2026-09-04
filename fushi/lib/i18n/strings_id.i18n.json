@@ -4215,5 +4215,6 @@
   "sync_desktop_oauth_browser_reopen": "Buka browser lagi",
   "sync_err_sign_in_cancelled": "Masuk dibatalkan.",
   "sync_desktop_oauth_browser_open_failed": "Browser tidak dapat dibuka. Salin tautannya dan buka sendiri di browser.",
-  "sync_desktop_oauth_link_copy_failed": "Tautan tidak dapat disalin. Pilih teks tautan dan salin secara manual."
+  "sync_desktop_oauth_link_copy_failed": "Tautan tidak dapat disalin. Pilih teks tautan dan salin secara manual.",
+  "game_text_thread_artifact_hint": "Repeated-character artifact thread, no usable lines"
 }

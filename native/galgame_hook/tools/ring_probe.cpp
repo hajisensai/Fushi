@@ -210,6 +210,53 @@ void DumpTextEvents(const SharedHeader* h) {
   fflush(stdout);
 }
 
+// 导出 Luna 线程预览槽（injector 在 LunaOutput 里**门控之前**写的每线程最新一行）：
+// `thread_id|line_count|artifact_count|flags|byte_len|text(转义)`。与 --dump-text-events 对照，
+// 能直接分出「行从没到过 Luna」「到了但被伪影门丢弃」「进了道但被消费端过滤」三种同形症状。
+// 文本用 \uXXXX 转义非可见字符（空白/控制），因为伪影判定不 trim，肉眼看不见的填充正是关键。
+void DumpThreadPreviews(const SharedHeader* h) {
+  if (h->thread_preview_offset == 0) {
+    printf("no thread preview region\n");
+    return;
+  }
+  const uint32_t slots = (std::min)(h->thread_preview_slot_count,
+                                    fushi_voice_hook::kThreadPreviewCount);
+  const auto* base = reinterpret_cast<const fushi_voice_hook::ThreadPreviewSlot*>(
+      reinterpret_cast<const uint8_t*>(h) + h->thread_preview_offset);
+  for (uint32_t i = 0; i < slots; i++) {
+    fushi_voice_hook::ThreadPreviewSnapshot snapshot;
+    if (!fushi_voice_hook::TryReadThreadPreviewSnapshot(base[i], &snapshot) ||
+        snapshot.thread_id == 0) {
+      continue;
+    }
+    uint32_t wlen = snapshot.byte_len / 2;
+    if (wlen > fushi_voice_hook::kThreadPreviewTextChars) {
+      wlen = fushi_voice_hook::kThreadPreviewTextChars;
+    }
+    std::string escaped;
+    for (uint32_t k = 0; k < wlen; k++) {
+      const wchar_t c = snapshot.text[k];
+      const bool visible = c > 0x20 && c != 0x3000 && c != 0x7F;
+      if (visible) {
+        char u8[8] = {0};
+        const int n = WideCharToMultiByte(CP_UTF8, 0, &c, 1, u8, sizeof(u8),
+                                          nullptr, nullptr);
+        escaped.append(u8, n > 0 ? static_cast<size_t>(n) : 0);
+      } else {
+        char esc[8];
+        snprintf(esc, sizeof(esc), "\\u%04X", static_cast<unsigned>(c));
+        escaped.append(esc);
+      }
+    }
+    printf("%llu|%llu|%llu|%u|%u|%s\n",
+           static_cast<unsigned long long>(snapshot.thread_id),
+           static_cast<unsigned long long>(snapshot.line_count),
+           static_cast<unsigned long long>(snapshot.artifact_count),
+           snapshot.event_flags, snapshot.byte_len, escaped.c_str());
+  }
+  fflush(stdout);
+}
+
 void DumpUnityEvents(const SharedHeader* h) {
   const uint64_t count = h->unity_voice_write_count;
   const uint64_t start = count > fushi_voice_hook::kUnityVoiceEventCount
@@ -2222,6 +2269,12 @@ int main(int argc, char** argv) {
   }
   if (argc >= 3 && strcmp(argv[2], "--dump-text-events") == 0) {
     DumpTextEvents(header);
+    UnmapViewOfFile(header);
+    CloseHandle(mapping);
+    return 0;
+  }
+  if (argc >= 3 && strcmp(argv[2], "--dump-thread-previews") == 0) {
+    DumpThreadPreviews(header);
     UnmapViewOfFile(header);
     CloseHandle(mapping);
     return 0;

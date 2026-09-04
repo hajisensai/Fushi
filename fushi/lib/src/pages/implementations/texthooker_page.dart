@@ -2065,6 +2065,10 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                           audioLabel: t.game_text_thread_audio_count(
                             count: thread.audioLineCount,
                           ),
+                          // BUG-2112：预览折叠后伪影线程看着像干净整句，必须明示。
+                          artifactLabel: thread.isArtifactDominated
+                              ? t.game_text_thread_artifact_hint
+                              : null,
                         );
                       }
                     }

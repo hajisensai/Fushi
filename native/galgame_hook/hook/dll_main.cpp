@@ -78,6 +78,8 @@
 #include "voice_hook_ipc.h"
 #include "voice_resource_filename.h"
 #include "voice_resource_pairing.h"
+#include "kirikiri_voice_storage_name.h"
+#include "lookup_line_text_match.h"
 #include "xaudio_resource_dispatch.h"
 #include "xaudio_source_format.h"
 #include "xaudio_trace.h"
@@ -196,9 +198,16 @@ fushi_voice_hook::HookOriginalRegistry<16> g_submit_source_buffer_originals;
 fushi_voice_hook::HookOriginalRegistry<16> g_flush_source_buffers_originals;
 
 // 原始语音流落盘的共用出口（KiriKiri 与 Siglus 都写同一目录，供 Dart 按 tick 配对）。
-std::wstring VoiceBaseName(const wchar_t* storagename) {
+//
+// `>` 也是路径分隔符：KiriKiri 归档放置路径形如 `voice.xp3>坒`，条目名被哈希且无扩展名。
+// 旧实现只切 `/`、`\`，于是 base 成了 `voice.xp3>坒`——含 `.xp3` 的点骗过「无点补 .ogg」，
+// 落盘名 `voice.xp3_坒` 没有音频扩展名，host 的资源索引按扩展名扫就看不见它（tenshi_sz
+// 真机：源资源 6.86 s 已落盘，卡里却是 5 s loopback）。扩展名按载荷魔数补（Ogg/RIFF），
+// 不按名字猜。
+std::wstring VoiceBaseName(const wchar_t* storagename, const uint8_t* data,
+                           uint32_t len) {
   std::wstring s(storagename);
-  const size_t pos = s.find_last_of(L"/\\");
+  const size_t pos = s.find_last_of(L"/\\>");  // `>` = KiriKiri 归档放置路径分隔符
   std::wstring base =
       (pos == std::wstring::npos) ? s : s.substr(pos + 1);
   for (wchar_t& c : base) {
@@ -208,7 +217,11 @@ std::wstring VoiceBaseName(const wchar_t* storagename) {
     }
   }
   if (base.empty()) base = L"voice";
-  if (base.find(L'.') == std::wstring::npos) base += L".ogg";
+  if (base.find(L'.') == std::wstring::npos) {
+    const wchar_t* sniffed =
+        fushi_voice_hook::KirikiriVoicePayloadExtension(data, len);
+    base += sniffed != nullptr ? sniffed : L".ogg";
+  }
   return base;
 }
 
@@ -226,7 +239,8 @@ bool WriteVoiceOggAt(const uint8_t* data, uint32_t len,
   }
   std::wstring file =
       dir + L"\\" + fushi_voice_hook::BuildVoiceResourceFileName(
-                          tick_ms, VoiceBaseName(storagename), text_event_id);
+                          tick_ms, VoiceBaseName(storagename, data, len),
+                          text_event_id);
   HANDLE f = CreateFileW(file.c_str(), GENERIC_WRITE, 0, nullptr,
                          CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
   if (f == INVALID_HANDLE_VALUE) return false;

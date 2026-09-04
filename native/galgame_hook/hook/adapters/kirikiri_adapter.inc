@@ -2261,15 +2261,16 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				global.fushiLookupFlushVisualWork();
 			};
 
-			// 兼容旧 host 的无像素高亮帧。绝不 prepare、改尺寸、改位置或把隐藏的卡重新
-			// visible；新主路的 hover 已由 fushiLookupReport 在游戏线程同步完成。
+			// 无像素高亮帧：host 在卡片呈现后追加的「被查整词」区间（BUG-2087）。绝不 prepare、
+			// 改尺寸、改位置或把隐藏的卡重新 visible。**不以 TJS 卡片可见为门**：直连路由
+			// （BUG-1882）下卡片是 host 贴在客户区的 WebView2 窗口，TJS 卡片层从不 visible，
+			// 若在这里看 card.visible/CardSeq 就把直连下的整词高亮全部吞掉，只剩点击那一个
+			// 字（tenshi_sz 真机，2026-09-04）。区间只画在命中 entry 的字形上；收卡由
+			// fushiLookupDismiss → fushiLookupClearHover 擦除，同一条路径两种路由共用。
 			global.fushiLookupApplyHighlight = function(highlightStart, highlightLen)
 			{
 				try
 				{
-					var card = global.fushiLookupCard;
-					if(card === void || !isvalid card || !card.visible ||
-						global.fushiLookupCardSeq == 0) return;
 					var entry = global.fushiLookupHitEntry;
 					if(entry !== void && highlightLen > 0)
 						global.fushiLookupPaintHighlight(entry, global.fushiLookupHitOffsetX,
@@ -5092,10 +5093,14 @@ void PresentKirikiriLookupFrame() {
                                             best_highlight_seq)) {
       return;
     }
-    if (g_lookup_card_shown) {
-      ApplyKirikiriLookupHighlight(best_highlight_frame.highlight_start,
-                                   best_highlight_frame.highlight_len);
-    }
+    // 不再以 g_lookup_card_shown 门控：直连路由（host 把 WebView2 卡片直接贴在游戏客户区，
+    // BUG-1882）下 TJS 卡片层从不 visible，g_lookup_card_shown 恒 false，于是 host 追加的
+    // 词区间高亮帧（BUG-2087）在这里被静默吃掉，被查的整词永远只亮点击那一个字
+    // （tenshi_sz 真机，2026-09-04）。高亮帧本身就是「此刻有卡」的证据——host 只在卡片
+    // 成功呈现后才写它；dismiss 帧走 HideKirikiriLookupCard → fushiLookupDismiss → ClearHover
+    // 一并擦掉。TJS 侧 fushiLookupApplyHighlight 同步去掉了 card.visible 门。
+    ApplyKirikiriLookupHighlight(best_highlight_frame.highlight_start,
+                                 best_highlight_frame.highlight_len);
     g_lookup_highlight_presented_seq = best_highlight_seq;
     return;
   }
@@ -5272,6 +5277,54 @@ bool RetryOrDropKirikiriLookupHit(uint64_t seq) {
   return true;
 }
 
+// 点击载荷的 text_generation 必须是这句台词在文本道里的 TextSlot.seq——host 按它解析制卡
+// occurrence，且有值不命中就 fail closed（BUG-2085 家族：SGRE 曾填成捕获代数，Siglus 填成
+// geometry 代数，KiriKiri 填成 TJS 提交序号，三家同病，症状都是游戏内「+」恒 ankiConnect:false）。
+// KiriKiri 的文本来自 injector 进程的 Luna 线程，hook 拿不到「当前行」的 seq；但共享内存里
+// 选定线程的道就在手边：按整句内容从最新往回反查最近一条 line 事件。找不到（Luna 未出行、
+// ruby 改写、线程未选）发 0 = 未知，host 走文本回退而不是拿错序号被 fail closed。
+uint64_t ResolveKirikiriLookupTextGeneration(const wchar_t* line) {
+  if (g_header == nullptr || g_text_base == nullptr || line == nullptr) return 0;
+  const size_t line_len = wcslen(line);
+  if (line_len == 0) return 0;
+  const uint64_t selected =
+      ReadKirikiriSharedU64(&g_header->selected_text_thread_id);
+  if (selected == 0) return 0;
+  fushi_voice_hook::TextLane* lanes = fushi_voice_hook::TextLanesOf(g_header);
+  const uint32_t lane_count = lanes == nullptr ? 0 : g_header->text_lane_count;
+  for (uint32_t i = 0; i < lane_count; ++i) {
+    if (ReadKirikiriSharedU64(&lanes[i].thread_id) != selected) continue;
+    const uint64_t written = ReadKirikiriSharedU64(&lanes[i].write_count);
+    const uint32_t slots = g_header->text_lane_slot_count;
+    const uint64_t first = written > slots ? written - slots + 1 : 1;
+    for (uint64_t lane_seq = written; lane_seq >= first && lane_seq > 0;
+         --lane_seq) {
+      auto* slot = reinterpret_cast<TextSlot*>(
+          fushi_voice_hook::TextLaneSlotAt(g_header, i, lane_seq));
+      if (slot == nullptr) continue;
+      if (ReadKirikiriSharedU64(&slot->lane_seq) != lane_seq) continue;
+      MemoryBarrier();
+      if (slot->event_kind != fushi_voice_hook::kTextEventLine ||
+          slot->is_utf8 != 0) {
+        continue;
+      }
+      const uint64_t seq = ReadKirikiriSharedU64(&slot->seq);
+      const auto* text = reinterpret_cast<const wchar_t*>(
+          reinterpret_cast<const uint8_t*>(slot) + sizeof(TextSlot));
+      const size_t chars = slot->byte_len / sizeof(wchar_t);
+      if (!fushi_voice_hook::LookupLineTextMatches(line, line_len, text, chars)) {
+        continue;
+      }
+      MemoryBarrier();
+      // 复读完成标记：拷完之后槽被覆盖就不算命中（与 ProcessKirikiriVoiceTasks 同纪律）。
+      if (ReadKirikiriSharedU64(&slot->lane_seq) != lane_seq) continue;
+      return seq;
+    }
+    return 0;
+  }
+  return 0;
+}
+
 bool ObserveKirikiriLookupSubmitSeq(uint64_t seq) {
   if (seq == 0 || seq <= g_lookup_submit_source_seq) return false;
   g_lookup_submit_source_seq = seq;
@@ -5433,7 +5486,9 @@ bool PublishKirikiriLookupHit(bool new_notification) {
   publication.coordinate_space =
       fushi_voice_hook::kLookupCoordinateSpacePrimaryLayer;
   publication.writing_mode = fushi_voice_hook::kLookupWritingModeHorizontal;
-  publication.text_generation = hit_seq;
+  // 文本道里这句的 TextSlot.seq；未知发 0（见 ResolveKirikiriLookupTextGeneration）。
+  // 绝不能填 TJS 提交序号 hit_seq——那与文本行序号毫无关系，host 会按它 fail closed。
+  publication.text_generation = ResolveKirikiriLookupTextGeneration(line);
   publication.geometry_generation = hit_seq;
   publication.glyph_x = static_cast<int32_t>(glyph_x);
   publication.glyph_y = static_cast<int32_t>(glyph_y);
@@ -6151,8 +6206,13 @@ bool ExtractStorageNameGuarded(const void* name, wchar_t* out, size_t out_cap) {
   }
 }
 
-// storagename 是否语音：小写化后含 "voice" 或后缀 .ogg/.opus（任务约定过滤；host 侧再按时间戳精配）。
+// storagename 粗筛：小写化后含 "voice"/"koe" 或后缀 .ogg/.opus/.wav。这一层**故意宽**——
+// 真机上 KiriKiri Z 的语音逻辑名可能是裸 `yuz_001_0004.ogg`（无 voice 目录段、无 voice 子串，
+// 只有扩展名），收窄到「必须含 voice 段」会把整局语音全丢（tenshi_sz 真机，2026-09-04：天音
+// 有声台词一条都不 dump）。SE/BGM 的过度采集由**下游按容器魔数 + textseq/整句反查**收敛，
+// 不在这条粗筛里做——把语音也误杀的代价远高于多 dump 几个 SE。
 bool IsVoiceStorageName(const wchar_t* name) {
+  if (name == nullptr) return false;
   wchar_t low[520];
   size_t n = 0;
   for (; name[n] != 0 && n + 1 < 520; n++) {
@@ -6163,7 +6223,8 @@ bool IsVoiceStorageName(const wchar_t* name) {
   low[n] = 0;
   if (n >= 4 && wcscmp(low + n - 4, L".ogg") == 0) return true;
   if (n >= 5 && wcscmp(low + n - 5, L".opus") == 0) return true;
-  return wcsstr(low, L"voice") != nullptr;
+  if (n >= 4 && wcscmp(low + n - 4, L".wav") == 0) return true;
+  return wcsstr(low, L"voice") != nullptr || wcsstr(low, L"koe") != nullptr;
 }
 
 // Krkr2/BCB：hook 插件导入的稳定 __stdcall 边界。wuvorbis/wuopus 通过该 API 打开 XP3 中的音频；

@@ -4215,5 +4215,6 @@
   "sync_desktop_oauth_browser_reopen": "Browser erneut öffnen",
   "sync_err_sign_in_cancelled": "Anmeldung abgebrochen.",
   "sync_desktop_oauth_browser_open_failed": "Der Browser konnte nicht geöffnet werden. Kopiere den Link und öffne ihn selbst in einem Browser.",
-  "sync_desktop_oauth_link_copy_failed": "Der Link konnte nicht kopiert werden. Markiere den Linktext und kopiere ihn manuell."
+  "sync_desktop_oauth_link_copy_failed": "Der Link konnte nicht kopiert werden. Markiere den Linktext und kopiere ihn manuell.",
+  "game_text_thread_artifact_hint": "Repeated-character artifact thread, no usable lines"
 }

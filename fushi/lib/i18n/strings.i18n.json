@@ -4215,5 +4215,6 @@
   "sync_desktop_oauth_browser_reopen": "Open browser again",
   "sync_err_sign_in_cancelled": "Sign-in cancelled.",
   "sync_desktop_oauth_browser_open_failed": "Could not open the browser. Copy the link and open it in a browser yourself.",
-  "sync_desktop_oauth_link_copy_failed": "Could not copy the link. Select the link text and copy it manually."
+  "sync_desktop_oauth_link_copy_failed": "Could not copy the link. Select the link text and copy it manually.",
+  "game_text_thread_artifact_hint": "Repeated-character artifact thread, no usable lines"
 }

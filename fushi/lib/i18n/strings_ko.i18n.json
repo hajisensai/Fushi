@@ -4215,5 +4215,6 @@
   "sync_desktop_oauth_browser_reopen": "브라우저 다시 열기",
   "sync_err_sign_in_cancelled": "로그인을 취소했습니다.",
   "sync_desktop_oauth_browser_open_failed": "브라우저를 열 수 없습니다. 링크를 복사해 직접 브라우저에서 여세요.",
-  "sync_desktop_oauth_link_copy_failed": "링크를 복사할 수 없습니다. 링크 텍스트를 선택해 직접 복사하세요."
+  "sync_desktop_oauth_link_copy_failed": "링크를 복사할 수 없습니다. 링크 텍스트를 선택해 직접 복사하세요.",
+  "game_text_thread_artifact_hint": "Repeated-character artifact thread, no usable lines"
 }

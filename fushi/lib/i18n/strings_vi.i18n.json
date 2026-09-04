@@ -4215,5 +4215,6 @@
   "sync_desktop_oauth_browser_reopen": "Mở lại trình duyệt",
   "sync_err_sign_in_cancelled": "Đã hủy đăng nhập.",
   "sync_desktop_oauth_browser_open_failed": "Không thể mở trình duyệt. Hãy sao chép liên kết và tự mở trong trình duyệt.",
-  "sync_desktop_oauth_link_copy_failed": "Không thể sao chép liên kết. Hãy chọn văn bản liên kết và sao chép thủ công."
+  "sync_desktop_oauth_link_copy_failed": "Không thể sao chép liên kết. Hãy chọn văn bản liên kết và sao chép thủ công.",
+  "game_text_thread_artifact_hint": "Repeated-character artifact thread, no usable lines"
 }

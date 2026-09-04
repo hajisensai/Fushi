@@ -1844,6 +1844,10 @@ class GalHookTextOverlayController extends ChangeNotifier {
   /// [TexthookerLineEntry.sourceSequence]。只在命中时的同一 session/HWND 内按这个身份
   /// 精确匹配，不能让重复台词或 containment 把当前截图/音频绑到另一 occurrence。
   /// 旧载荷没有 generation 时才保留原有的“当前最新行 exact → 受限 containment”回退。
+  /// generation 未知时按原文回查的最近行数上界。多语言引擎一句最多吐 3~4 个变体
+  /// （日文 / 译文 / ruby 读音替换），8 已盖住并留有余量，又不会扫到上一场景的同句。
+  static const int _ingameMiningRecentLineWindow = 8;
+
   String? _resolveIngameMiningLineId(
     String line, {
     required int? textGeneration,
@@ -1870,6 +1874,18 @@ class GalHookTextOverlayController extends ChangeNotifier {
     final TexthookerLineEntry latest = lines.last;
     if (latest.text == line) return latest.id;
     final String normalizedLine = line.replaceAll(RegExp(r'\s+'), '');
+    // generation 未知（引擎 hook 在文本道里反查不到这句，发 0）时，先在最近几行里按原文
+    // 精确匹配再落到 containment。只看 latest 在多语言 KiriKiri Z 上必败：引擎把译文行
+    // 紧跟日文行发出，latest 恒是译文，而用户点的是日文那一行（tenshi_sz 真机，2026-09-04）。
+    // 窗口有界（[_ingameMiningRecentLineWindow]）且只认逐字/去空白相等，不做包含。
+    int scanned = 0;
+    for (final TexthookerLineEntry entry in lines.reversed) {
+      if (scanned++ >= _ingameMiningRecentLineWindow) break;
+      if (entry.text == line ||
+          entry.text.replaceAll(RegExp(r'\s+'), '') == normalizedLine) {
+        return entry.id;
+      }
+    }
     final String normalizedLatest = latest.text.replaceAll(RegExp(r'\s+'), '');
     // 短串 containment 太容易误绑助词/人名；8 个 UTF-16 code unit 是保守门槛，
     // 当前真机的净句远高于此值。只有“当前最新行包含完整净句”才复用其 lineId。

@@ -4215,5 +4215,6 @@
   "sync_desktop_oauth_browser_reopen": "ブラウザをもう一度開く",
   "sync_err_sign_in_cancelled": "ログインをキャンセルしました。",
   "sync_desktop_oauth_browser_open_failed": "ブラウザを開けませんでした。リンクをコピーして、ブラウザで自分で開いてください。",
-  "sync_desktop_oauth_link_copy_failed": "リンクをコピーできませんでした。リンクのテキストを選択して手動でコピーしてください。"
+  "sync_desktop_oauth_link_copy_failed": "リンクをコピーできませんでした。リンクのテキストを選択して手動でコピーしてください。",
+  "game_text_thread_artifact_hint": "Repeated-character artifact thread, no usable lines"
 }
