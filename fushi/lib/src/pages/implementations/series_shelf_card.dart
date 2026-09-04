@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/utils.dart';
@@ -68,57 +69,59 @@ class SeriesShelfCard extends StatelessWidget {
     final VoidCallback effectiveTap =
         selectionMode && onSelectionToggle != null ? onSelectionToggle! : onTap;
 
-    final Widget card = Padding(
-      padding: EdgeInsets.all(tokens.spacing.rowVertical),
-      child: Material(
-        type: MaterialType.transparency,
-        child: InkWell(
-          canRequestFocus: false,
-          borderRadius: tokens.radii.cardRadius,
-          onTap: effectiveTap,
-          onLongPress: selectionMode ? null : onLongPress,
-          onSecondaryTap: selectionMode ? null : onSecondaryTap,
-          child: AspectRatio(
-            aspectRatio: slotAspectRatio,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                Expanded(
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: <Widget>[
-                      Positioned.fill(
-                        child: FushiCard(
-                          padding: EdgeInsets.zero,
-                          margin: EdgeInsets.zero,
-                          child: ClipRRect(
-                            borderRadius: tokens.radii.cardRadius,
-                            child: SeriesFolderCover(covers: covers),
+    final Widget card = ContextMenuTrigger(
+      onInvoke: contextMenuInvoker(selectionMode ? null : onSecondaryTap),
+      child: Padding(
+        padding: EdgeInsets.all(tokens.spacing.rowVertical),
+        child: Material(
+          type: MaterialType.transparency,
+          child: InkWell(
+            canRequestFocus: false,
+            borderRadius: tokens.radii.cardRadius,
+            onTap: effectiveTap,
+            onLongPress: selectionMode ? null : onLongPress,
+            child: AspectRatio(
+              aspectRatio: slotAspectRatio,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Expanded(
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: <Widget>[
+                        Positioned.fill(
+                          child: FushiCard(
+                            padding: EdgeInsets.zero,
+                            margin: EdgeInsets.zero,
+                            child: ClipRRect(
+                              borderRadius: tokens.radii.cardRadius,
+                              child: SeriesFolderCover(covers: covers),
+                            ),
                           ),
                         ),
-                      ),
-                      PositionedDirectional(
-                        end: overlayInset + 6,
-                        top: overlayInset + 4,
-                        child: _countBadge(theme, tokens),
-                      ),
-                      if (selectionMode && selectionKey != null)
-                        Positioned(
-                          top: tokens.spacing.gap / 2,
-                          left: tokens.spacing.gap / 2,
-                          child: ShelfSelectionCheck(selected: selected),
+                        PositionedDirectional(
+                          end: overlayInset + 6,
+                          top: overlayInset + 4,
+                          child: _countBadge(theme, tokens),
                         ),
-                      if (selected)
-                        const Positioned.fill(child: ShelfSelectedOverlay()),
-                    ],
+                        if (selectionMode && selectionKey != null)
+                          Positioned(
+                            top: tokens.spacing.gap / 2,
+                            left: tokens.spacing.gap / 2,
+                            child: ShelfSelectionCheck(selected: selected),
+                          ),
+                        if (selected)
+                          const Positioned.fill(child: ShelfSelectedOverlay()),
+                      ],
+                    ),
                   ),
-                ),
-                SizedBox(
-                  // BUG-1184：与散书卡同步，随文字缩放变高，防止系列名第二行被裁。
-                  height: ShelfCardFooter.heightFor(context),
-                  child: ShelfCardFooter(title: name),
-                ),
-              ],
+                  SizedBox(
+                    // BUG-1184：与散书卡同步，随文字缩放变高，防止系列名第二行被裁。
+                    height: ShelfCardFooter.heightFor(context),
+                    child: ShelfCardFooter(title: name),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

@@ -4216,5 +4216,8 @@
   "sync_err_sign_in_cancelled": "ยกเลิกการเข้าสู่ระบบแล้ว",
   "sync_desktop_oauth_browser_open_failed": "ไม่สามารถเปิดเบราว์เซอร์ได้ ให้คัดลอกลิงก์แล้วเปิดในเบราว์เซอร์ด้วยตนเอง",
   "sync_desktop_oauth_link_copy_failed": "ไม่สามารถคัดลอกลิงก์ได้ ให้เลือกข้อความลิงก์แล้วคัดลอกด้วยตนเอง",
-  "game_text_thread_artifact_hint": "Repeated-character artifact thread, no usable lines"
+  "game_text_thread_artifact_hint": "Repeated-character artifact thread, no usable lines",
+  "shortcut_action_global_context_menu": "Open context menu",
+  "shortcut_conflict_keep_both": "Keep both",
+  "shortcut_conflict_keep_both_hint": "Both actions keep this binding. Whichever scope resolves first wins at press time."
 }

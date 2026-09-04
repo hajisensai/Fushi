@@ -4216,5 +4216,8 @@
   "sync_err_sign_in_cancelled": "ログインをキャンセルしました。",
   "sync_desktop_oauth_browser_open_failed": "ブラウザを開けませんでした。リンクをコピーして、ブラウザで自分で開いてください。",
   "sync_desktop_oauth_link_copy_failed": "リンクをコピーできませんでした。リンクのテキストを選択して手動でコピーしてください。",
-  "game_text_thread_artifact_hint": "Repeated-character artifact thread, no usable lines"
+  "game_text_thread_artifact_hint": "Repeated-character artifact thread, no usable lines",
+  "shortcut_action_global_context_menu": "Open context menu",
+  "shortcut_conflict_keep_both": "Keep both",
+  "shortcut_conflict_keep_both_hint": "Both actions keep this binding. Whichever scope resolves first wins at press time."
 }

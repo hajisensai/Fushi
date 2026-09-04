@@ -759,11 +759,14 @@ void main() {
         contains('Platform.isAndroid || isWindowsPlatform'),
         reason: 'Windows 与 Android 各自按真实原生缺陷禁系统项；iOS 保持原生。',
       );
-      // 右键入口 onSecondaryTapDown，仅 Windows 包 GestureDetector。
-      expect(source, contains('onSecondaryTapDown:'),
-          reason: '桌面右键经 GestureDetector.onSecondaryTapDown 进入 Flutter 菜单');
+      // 右键入口：BUG-2111 后由 ContextMenuTrigger 按绑定表判定唤出键（默认右键），
+      // 包裹范围不变（仍只在 Windows）。
+      expect(source, contains('ContextMenuTrigger('),
+          reason: '桌面右键经 ContextMenuTrigger（绑定表判定）进入 Flutter 菜单');
+      expect(source, contains('_showWindowsContextMenu(context, position)'),
+          reason: '按下处坐标仍作 showMenu 锚点');
       expect(source, contains('if (isWindowsPlatform) {'),
-          reason: '右键 GestureDetector 包裹仅在 Windows 生效，其它平台返回裸 WebView');
+          reason: '右键包裹仅在 Windows 生效，其它平台返回裸 WebView');
 
       // 窗口由花括号配对给出，不再是 `menuStart + 1800` 的定长切片：该方法体实测
       // 1671 字符，旧窗口一头越界读进后面的 static 成员，另一头只给末尾的

@@ -17,6 +17,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:share_plus/share_plus.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/utils/misc/collection_exporter.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:window_manager/window_manager.dart';
@@ -5189,6 +5190,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   static const List<ShortcutScope> kVideoMouseLadder = <ShortcutScope>[
     ShortcutScope.video,
     ShortcutScope.universal,
+    // global 是 reader / manga / home 三条阶梯早就有的尾段，video 此前是唯一缺口。
+    // 补上它才能让 [ShortcutAction.globalContextMenu]（住在 global）在视频页解析得到
+    // ——否则视频画面上的右键菜单会整个消失。对既有动作零影响：视频页的执行体表
+    // （videoActionCallbacks）里没有任何 global 动作，解析到也返回 false 不认领，
+    // app 根的兜底照常有机会派发同一次按下。
+    ShortcutScope.global,
   ];
 
   /// 视频页的**鼠标绑定通道**（BUG-1995）：页面根 [Listener] 的 `onPointerDown` 入口。

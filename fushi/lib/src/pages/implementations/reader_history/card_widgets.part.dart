@@ -233,36 +233,38 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
       onTap();
     }
 
-    Widget interactiveCard = Padding(
-      key: cardKey,
-      padding: EdgeInsets.all(tokens.spacing.rowVertical),
-      child: Material(
-        type: MaterialType.transparency,
-        child: InkWell(
-          canRequestFocus: false,
-          borderRadius: tokens.radii.cardRadius,
-          onTap: handleTap,
-          // 未进入选择态时，触屏与桌面长按都保留上下文菜单；只有显式进入选择态后
-          // 才摘掉卡片识别器，让祖先 SelectionDragArea 接管长按扫选。
-          onLongPress: _selectionMode ? null : onLongPress,
-          // 桌面端鼠标右键打开与长按相同的书籍上下文菜单（PC 用户惯例）。多选态
-          // 压制不变。
-          onSecondaryTap: _selectionMode ? null : onLongPress,
-          child: AspectRatio(
-            aspectRatio: slotAspectRatio,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                child,
-                if (_selectionMode && selectionKey != null)
-                  Positioned(
-                    top: selectionInset,
-                    left: selectionInset,
-                    child: ShelfSelectionCheck(selected: selected),
-                  ),
-                if (selected)
-                  const Positioned.fill(child: ShelfSelectedOverlay()),
-              ],
+    Widget interactiveCard = ContextMenuTrigger(
+      // 桌面端鼠标右键打开与长按相同的书籍上下文菜单（PC 用户惯例），多选态压制不变。
+      // 哪个鼠标键唤出由绑定表决定（默认右键），不再硬绑次按钮。
+      onInvoke: contextMenuInvoker(_selectionMode ? null : onLongPress),
+      child: Padding(
+        key: cardKey,
+        padding: EdgeInsets.all(tokens.spacing.rowVertical),
+        child: Material(
+          type: MaterialType.transparency,
+          child: InkWell(
+            canRequestFocus: false,
+            borderRadius: tokens.radii.cardRadius,
+            onTap: handleTap,
+            // 未进入选择态时，触屏与桌面长按都保留上下文菜单；只有显式进入选择态后
+            // 才摘掉卡片识别器，让祖先 SelectionDragArea 接管长按扫选。
+            onLongPress: _selectionMode ? null : onLongPress,
+            child: AspectRatio(
+              aspectRatio: slotAspectRatio,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  child,
+                  if (_selectionMode && selectionKey != null)
+                    Positioned(
+                      top: selectionInset,
+                      left: selectionInset,
+                      child: ShelfSelectionCheck(selected: selected),
+                    ),
+                  if (selected)
+                    const Positioned.fill(child: ShelfSelectedOverlay()),
+                ],
+              ),
             ),
           ),
         ),

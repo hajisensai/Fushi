@@ -4216,5 +4216,8 @@
   "sync_err_sign_in_cancelled": "Accesso annullato.",
   "sync_desktop_oauth_browser_open_failed": "Impossibile aprire il browser. Copia il link e aprilo tu stesso in un browser.",
   "sync_desktop_oauth_link_copy_failed": "Impossibile copiare il link. Seleziona il testo del link e copialo manualmente.",
-  "game_text_thread_artifact_hint": "Repeated-character artifact thread, no usable lines"
+  "game_text_thread_artifact_hint": "Repeated-character artifact thread, no usable lines",
+  "shortcut_action_global_context_menu": "Open context menu",
+  "shortcut_conflict_keep_both": "Keep both",
+  "shortcut_conflict_keep_both_hint": "Both actions keep this binding. Whichever scope resolves first wins at press time."
 }

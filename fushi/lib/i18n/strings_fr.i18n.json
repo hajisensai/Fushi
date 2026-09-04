@@ -4216,5 +4216,8 @@
   "sync_err_sign_in_cancelled": "Connexion annulée.",
   "sync_desktop_oauth_browser_open_failed": "Impossible d'ouvrir le navigateur. Copiez le lien et ouvrez-le vous-même dans un navigateur.",
   "sync_desktop_oauth_link_copy_failed": "Impossible de copier le lien. Sélectionnez le texte du lien et copiez-le manuellement.",
-  "game_text_thread_artifact_hint": "Repeated-character artifact thread, no usable lines"
+  "game_text_thread_artifact_hint": "Repeated-character artifact thread, no usable lines",
+  "shortcut_action_global_context_menu": "Open context menu",
+  "shortcut_conflict_keep_both": "Keep both",
+  "shortcut_conflict_keep_both_hint": "Both actions keep this binding. Whichever scope resolves first wins at press time."
 }

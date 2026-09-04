@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
@@ -429,62 +430,65 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
     final colorScheme = Theme.of(context).colorScheme;
     final tokens = FushiDesignTokens.of(context);
 
-    return Material(
-      type: MaterialType.transparency,
-      child: InkWell(
-        // 移动端长按、桌面端右键都弹删除确认（与阅读统计页同款交互）。
-        onLongPress: () => _confirmAndDeleteVideo(video),
-        onSecondaryTap: () => _confirmAndDeleteVideo(video),
-        child: Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: tokens.spacing.card,
-            vertical: tokens.spacing.gap / 2,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                video.title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-              if (collectionName != null) ...[
-                SizedBox(height: tokens.spacing.gap / 4),
-                buildStatCollectionLabel(context, collectionName),
-              ],
-              SizedBox(height: tokens.spacing.gap / 2),
-              Row(
-                children: [
-                  Expanded(
-                    child: ClipRRect(
-                      borderRadius: tokens.radii.chipRadius,
-                      child: LinearProgressIndicator(
-                        value: fraction,
-                        minHeight: 8,
-                        backgroundColor: colorScheme.surfaceContainerHighest,
-                        color: colorScheme.primary,
+    return ContextMenuTrigger(
+      // 右键菜单改由绑定表决定唤出键（默认仍是右键）；右键被别的动作占用时自动让位。
+      onInvoke: (Offset _) => _confirmAndDeleteVideo(video),
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          // 移动端长按、桌面端右键都弹删除确认（与阅读统计页同款交互）。
+          onLongPress: () => _confirmAndDeleteVideo(video),
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: tokens.spacing.card,
+              vertical: tokens.spacing.gap / 2,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  video.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                if (collectionName != null) ...[
+                  SizedBox(height: tokens.spacing.gap / 4),
+                  buildStatCollectionLabel(context, collectionName),
+                ],
+                SizedBox(height: tokens.spacing.gap / 2),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ClipRRect(
+                        borderRadius: tokens.radii.chipRadius,
+                        child: LinearProgressIndicator(
+                          value: fraction,
+                          minHeight: 8,
+                          backgroundColor: colorScheme.surfaceContainerHighest,
+                          color: colorScheme.primary,
+                        ),
                       ),
                     ),
-                  ),
-                  SizedBox(width: tokens.spacing.gap + tokens.spacing.gap / 2),
-                  Text(
-                    formatStatTime(video.ms),
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
-                        ),
-                  ),
-                ],
-              ),
-              SizedBox(height: tokens.spacing.gap / 2),
-              Text(
-                '${t.stat_lookup}: ${video.lookups} · ${t.stat_mined}: ${video.mines} · ${t.stat_favorited}: $favorites',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
+                    SizedBox(width: tokens.spacing.gap + tokens.spacing.gap / 2),
+                    Text(
+                      formatStatTime(video.ms),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
                     ),
-              ),
-              SizedBox(height: tokens.spacing.gap / 2),
-            ],
+                  ],
+                ),
+                SizedBox(height: tokens.spacing.gap / 2),
+                Text(
+                  '${t.stat_lookup}: ${video.lookups} · ${t.stat_mined}: ${video.mines} · ${t.stat_favorited}: $favorites',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                ),
+                SizedBox(height: tokens.spacing.gap / 2),
+              ],
+            ),
           ),
         ),
       ),

@@ -4216,5 +4216,8 @@
   "sync_err_sign_in_cancelled": "已取消登入。",
   "sync_desktop_oauth_browser_open_failed": "無法開啟瀏覽器。請複製連結，自行在瀏覽器中開啟。",
   "sync_desktop_oauth_link_copy_failed": "複製失敗。請手動選取連結文字後複製。",
-  "game_text_thread_artifact_hint": "Repeated-character artifact thread, no usable lines"
+  "game_text_thread_artifact_hint": "Repeated-character artifact thread, no usable lines",
+  "shortcut_action_global_context_menu": "Open context menu",
+  "shortcut_conflict_keep_both": "Keep both",
+  "shortcut_conflict_keep_both_hint": "Both actions keep this binding. Whichever scope resolves first wins at press time."
 }

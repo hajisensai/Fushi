@@ -4216,5 +4216,8 @@
   "sync_err_sign_in_cancelled": "تم إلغاء تسجيل الدخول.",
   "sync_desktop_oauth_browser_open_failed": "تعذّر فتح المتصفح. انسخ الرابط وافتحه بنفسك في متصفح.",
   "sync_desktop_oauth_link_copy_failed": "تعذّر نسخ الرابط. حدّد نص الرابط وانسخه يدويًا.",
-  "game_text_thread_artifact_hint": "Repeated-character artifact thread, no usable lines"
+  "game_text_thread_artifact_hint": "Repeated-character artifact thread, no usable lines",
+  "shortcut_action_global_context_menu": "Open context menu",
+  "shortcut_conflict_keep_both": "Keep both",
+  "shortcut_conflict_keep_both_hint": "Both actions keep this binding. Whichever scope resolves first wins at press time."
 }

@@ -4216,5 +4216,8 @@
   "sync_err_sign_in_cancelled": "已取消登录。",
   "sync_desktop_oauth_browser_open_failed": "无法打开浏览器。请复制链接，自行在浏览器中打开。",
   "sync_desktop_oauth_link_copy_failed": "复制失败。请手动选中链接文本后复制。",
-  "game_text_thread_artifact_hint": "逐字重复伪影线程，不会有可用台词"
+  "game_text_thread_artifact_hint": "逐字重复伪影线程，不会有可用台词",
+  "shortcut_action_global_context_menu": "打开右键菜单",
+  "shortcut_conflict_keep_both": "两者都保留",
+  "shortcut_conflict_keep_both_hint": "两个动作都保留这个绑定，按下时由作用域先后仲裁，先命中的那个生效。"
 }

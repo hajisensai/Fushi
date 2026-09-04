@@ -4216,5 +4216,8 @@
   "sync_err_sign_in_cancelled": "Вход отменён.",
   "sync_desktop_oauth_browser_open_failed": "Не удалось открыть браузер. Скопируйте ссылку и откройте её в браузере вручную.",
   "sync_desktop_oauth_link_copy_failed": "Не удалось скопировать ссылку. Выделите текст ссылки и скопируйте его вручную.",
-  "game_text_thread_artifact_hint": "Repeated-character artifact thread, no usable lines"
+  "game_text_thread_artifact_hint": "Repeated-character artifact thread, no usable lines",
+  "shortcut_action_global_context_menu": "Open context menu",
+  "shortcut_conflict_keep_both": "Keep both",
+  "shortcut_conflict_keep_both_hint": "Both actions keep this binding. Whichever scope resolves first wins at press time."
 }
