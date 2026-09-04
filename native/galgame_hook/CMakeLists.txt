@@ -640,3 +640,6 @@ add_test(NAME fushi_layer_origin_pixels_test
 add_executable(fushi_cmvs_adapter_test "tests/cmvs_adapter_test.cpp")
 target_include_directories(fushi_cmvs_adapter_test PRIVATE "hook")
 add_test(NAME fushi_cmvs_adapter_test COMMAND fushi_cmvs_adapter_test)
+add_executable(fushi_aos_sfa_adapter_test "tests/aos_sfa_adapter_test.cpp")
+target_include_directories(fushi_aos_sfa_adapter_test PRIVATE "hook")
+add_test(NAME fushi_aos_sfa_adapter_test COMMAND fushi_aos_sfa_adapter_test)

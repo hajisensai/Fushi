@@ -6,3 +6,4 @@
     leaf_aquaplus_.install();
     hunex_gge_.install();
     cmvs_.install();
+    aos_sfa_.install();

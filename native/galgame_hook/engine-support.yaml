@@ -2535,6 +2535,128 @@
         "tests/exact_lookup_signature_test.cpp",
         "tests/adapter_structure_test.py"
       ]
+    },
+    {
+      "id": "aos_sfa",
+      "display_name": "AOS / SFA (Princess Sugar, Atelier Kaguya family)",
+      "aliases": [
+        "AOS",
+        "SFA",
+        "Princess Sugar",
+        "アトリエかぐや"
+      ],
+      "family": {
+        "id": "aos_sfa",
+        "relation": "In-house engine of the Princess Sugar / Atelier Kaguya family; no verified sibling in this repository"
+      },
+      "detection": {
+        "executable_names": {
+          "values": [],
+          "evidence": null
+        },
+        "pe_architectures": {
+          "values": [
+            "x86"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "The 姫様ＬＯＶＥライフ！ game executable is machine 0x14c (862720 bytes), importing DDRAW/DINPUT/DSOUND/d3d9/d3dx9_43; static probe 2026-09-05"
+          }
+        },
+        "directory_files_all": {
+          "values": [
+            "scr.aos",
+            "cv.aos"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Sample ships bgm/cv/grp/scr/se.aos next to the executable. All five open with four zero bytes, two little-endian u32 fields, and their own file name as NUL-terminated ASCII at offset 12 -- that self-naming header is what the adapter matches, not the extension; measured 2026-09-05"
+          }
+        },
+        "pe_imports": {
+          "values": [
+            "DDRAW.dll",
+            "DINPUT.dll",
+            "DSOUND.dll",
+            "d3d9.dll",
+            "d3dx9_43.dll"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "PE import table of the 姫様ＬＯＶＥライフ！ executable (13 imports); DirectSound is the only audio API imported"
+          }
+        },
+        "runtime_modules": {
+          "values": [],
+          "evidence": null
+        },
+        "resource_extensions": {
+          "values": [
+            ".aos"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "cv.aos (675 MB) is the voice archive; grp.aos (2.99 GB) art, bgm/se.aos audio, scr.aos scripts"
+          }
+        },
+        "hashes": {
+          "values": [
+            "fa965f070c0337098ca6abdb31c4c3d049d1480c3056a4db3b8bd43dd834b996"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "姫様ＬＯＶＥライフ！ game executable, catalogue only; the adapter does not hash-pin because the self-naming archive header is the identity"
+          }
+        }
+      },
+      "process_strategy": {
+        "launch": "generic_launch_available",
+        "attach": "generic_attach_available",
+        "follow_child_processes": false,
+        "notes": [
+          "The sample is a retail disc title. Copying the disc contents to a directory is not enough: without the original disc present the executable only shows a #32770 message box asking for it, and no window, text or audio follows.",
+          "The 2026-09-05 measurement mounted the original ISO read-only with Mount-DiskImage and dismounted it afterwards. Nothing was installed and no registry key was written, so whether a normal installation changes the launch path is unmeasured.",
+          "The runtime main window class is SFA. That is a strong engine signal but it cannot be part of the identity check, which has to answer during process startup before any window exists."
+        ]
+      },
+      "text": {
+        "capabilities": [],
+        "codepage": "932",
+        "thread_selection_hint": "Unmeasured. In the recorded session LunaHook connected but produced no output (luna_active 0, text_events 0) on the title screen; whether the vendored LunaHook carries an engine hook for this family is unverified."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "xaudio2_or_directsound_pcm",
+            "format": "DirectSound source PCM via the generic Windows audio adapter",
+            "status": "implemented_unverified",
+            "clean_voice": "engine_dependent"
+          },
+          {
+            "kind": "process_loopback",
+            "format": "host PCM fallback",
+            "status": "implemented_unverified",
+            "clean_voice": false
+          }
+        ]
+      },
+      "verified_games": [],
+      "current_status": "implemented_unverified",
+      "known_limitations": [
+        "No text capability is claimed. LunaHook connected but emitted nothing in the recorded session, and the DLL does not expose engine names as strings, so there is no evidence either way yet.",
+        "Per-line voice lives in cv.aos; no resource layer is implemented and none is claimed until the engine's own read path is measured on a real session.",
+        "Only the title screen was reached. text_observed, text_thread_selected, paired and card_e2e are all not_run.",
+        "The identity check requires at least one *.aos whose header names itself. Titles of this family that ship differently named or differently structured archives would not match, and none were available to measure.",
+        "In-game lookup sensor is not implemented; lookupAdmission stays EngineUnsupported."
+      ],
+      "adapter_path": "hook/adapters/aos_sfa_adapter.inc",
+      "fixture_paths": [
+        "tests/fixtures/aos_sfa_replay.json"
+      ],
+      "test_paths": [
+        "tests/aos_sfa_adapter_test.cpp",
+        "../../fushi/test/mining/aos_sfa_pairing_test.dart"
+      ]
     }
   ]
 }

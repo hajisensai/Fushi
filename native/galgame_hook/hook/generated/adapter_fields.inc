@@ -10,3 +10,4 @@
   LeafAquaplusAdapter leaf_aquaplus_;
   HunexGgeAdapter hunex_gge_;
   CmvsAdapter cmvs_;
+  AosSfaAdapter aos_sfa_;

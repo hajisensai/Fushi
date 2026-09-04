@@ -10,3 +10,4 @@
     leaf_aquaplus_.shutdown();
     hunex_gge_.shutdown();
     cmvs_.shutdown();
+    aos_sfa_.shutdown();
