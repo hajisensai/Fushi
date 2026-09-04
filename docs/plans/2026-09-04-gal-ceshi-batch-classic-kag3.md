@@ -58,3 +58,28 @@
 - worktree `D:\APP\vs_claude_code\hibiki\.claude\worktrees\gal-kirikiri-classic-kag3`，分支 `worktree-gal-kirikiri-classic-kag3`（堆叠在 PR #1205 分支上，#1205 合入后 rebase 到 develop 再开 PR）。
 - 构建脚本：`C:\Users\wrds\.claude\jobs\a188f70d\tmp\build_dist.sh`（unset 小写代理变量 → `tools/build_distribution.ps1` → 双架构 ctest）。真机驱动脚本沿用 `C:\Users\wrds\.claude\jobs\3f9f84ac\tmp\`（launch_fushi_iso.ps1 / drive/galdrive.ps1 / media_probe.py）。
 - 守卫：`native/galgame_hook` 下 `python tests/kirikiri_lookup_source_guard_test.py` / `adapter_structure_test.py`。
+## 静态 probe 与遗留日志（2026-09-04 下午，桌面仍被占用）
+
+`tool/galhook.ps1 probe` 三份脱敏包在 worktree `native/galgame_hook/build/probes/p{1,2,3}.zip`（不入库）：
+
+| 样本 | exe SHA-256 | 架构 | 要点 |
+|---|---|---|---|
+| Fate RN 主 exe | `9c195563b8724131cfc5cfd7b32767597efba136d98bb81dfda2fdb242695c2a` | x86 | imports 只有系统 DLL（BCB 静态链接）；目录 `krmovie.dll` / `paul.dll` / `lang.ini` |
+| フタマタ恋愛.exe | `07a2a3d6aa665e3e2c4958fbf9fecfd93a5c9baac797813a152736b1edba3245` | x86 | imports 含 MF/MFPlat/QUARTZ/dbghelp（KiriKiri Z MSVC）；plugin 目录 116 项含 KAGParser/ExtKAGParser/kropus/krdstheora/krmovie |
+| Amakano3.exe | `5132eed8c2e4a7d0ec4d853cd2b8247f3a0641c4a3825a8210fd435530e7d716` | x64 | imports DSOUND/DINPUT/D3DCOMPILER_47/MF；`artemis_pfs` 引擎 |
+
+Fate RN 引擎版本（来自用户 7-24 遗留 `krkr.console.log`，UTF-16）：**Kirikiri 2.31.2010.425 + KAG 3.25 beta 10 TYPE-MOON customized**。两份日志：
+- 游戏目录 `savedata/krkr.console.log`：8 次会话**全部**在 `override.tjs(28) Plugins.link("fstat.dll")` 处 `Access Violation(write 0x0)`（fstat.dll 解到 `%TEMP%\krkr_*`），启动即崩。
+- `Documents\FateRealtaNua_savedata\krkr.console.log`：5 次会话中 4 次正常、1 次同样 fstat 崩。→ 该崩溃**间歇**且与 Fushi 无关（7-24 早于 hook 工作），真机时若撞上就重开一次；不要把它记成 hook 缺口。两份日志都没有 `[HibikiLookup]` 行（8-14 那次的控制台输出没落盘）。
+
+## 队列其余游戏引擎盘点（静态，未启动）
+
+| 目录 | 引擎 | yaml 条目 | 备注 |
+|---|---|---|---|
+| `AngelBeats-trial/StartData/gamedata/SiglusEngine.exe` | SiglusEngine | `siglus`（查词诊断位齐全） | 入口 `Start.exe` 是启动器 |
+| `Sakura Swim Club/` | Ren'Py（`renpy/`、`lib/`、`.py`） | `renpy_ffmpeg` | 英文游戏，验收「日语查词」意义待用户定 |
+| `昨日魔女今日的梦1.0汉化版/kinomajo/` | Unity（`Engine/`、`Manifest_UFSFiles_Win64.txt`） | `unity_il2cpp` | 汉化版，另有「带修改器启动.exe」 |
+| `chronoclock-trial/.../cmvs32.exe / cmvs64.exe` | CMVS（Purple Software） | **无** | 新引擎，需骨架 |
+| `manosaba_Ver1.0.3.part1~4.rar` | 未解压 | — | 先解压再判 |
+| `bgimage/`（BootStrap.exe + plugin/…） | KiriKiri Z（库内 id 1785146004529760 也指向它的 tenshi_sz.exe） | `kirikiri_z` | 是天使☆騒々的另一份/引导器目录，非新游戏 |
+| ISO 类（姫様LOVEライフ / 恋愛フェイズ / 屋上の百合霊さん / カスタムメイド3D2） | 未挂载 | — | 上一批已判堵塞 |
