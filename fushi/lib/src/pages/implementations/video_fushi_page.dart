@@ -178,6 +178,7 @@ import 'package:fushi/src/platform/windows_ime_space_dispatch.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/utils/overlay_entry_lifecycle.dart';
+import 'package:fushi/src/utils/components/copy_feedback.dart';
 import 'package:fushi/src/utils/components/fading_chrome_gate.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_destructive_confirm_dialog.dart';
@@ -4127,12 +4128,23 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                 enabled: hasCue,
                 onTap: _jumpToLookupCue,
               ),
-              FushiIconButton(
-                key: const Key('video_popup_copy_sentence_button'),
-                tooltip: t.copy,
-                icon: Icons.content_copy_outlined,
-                size: 20,
-                onTap: _copyLookupSentence,
+              // 复制后按钮就地切成 ✓ / 「已复制」——OSD 画在视频区，弹窗里看不见。
+              CopyFeedback(
+                builder: (
+                  BuildContext _,
+                  bool copied,
+                  VoidCallback markCopied,
+                ) {
+                  return FushiIconButton(
+                    key: const Key('video_popup_copy_sentence_button'),
+                    tooltip: copied ? t.copied : t.copy,
+                    icon: copied ? Icons.check : Icons.content_copy_outlined,
+                    size: 20,
+                    onTap: () {
+                      if (_copyLookupSentence()) markCopied();
+                    },
+                  );
+                },
               ),
               FushiIconButton(
                 key: const Key('video_favorite_sentence_button'),
