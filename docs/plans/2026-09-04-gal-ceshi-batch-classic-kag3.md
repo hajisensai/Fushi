@@ -125,3 +125,19 @@ Fate RN 引擎版本（来自用户 7-24 遗留 `krkr.console.log`，UTF-16）�
 **Proved**：根因定位到一行 + 修复在合成 VCL 窗口形状上通过 + 安装路径 7 个位可观测。**Not proved**：Fate RN 真机上 sensor 真装上、单击弹卡、制卡 E2E。**Next gate**：桌面空闲时 `launch_fushi_iso2.ps1` 起隔离实例（本分支新 helper 已 install 进 `fushi/build/.../voice_hook/x86/`？——**没有**，需先 `tools/install_into_bundle.ps1` 或手动解 zip）→ 库内启动 Fate RN → 工作台打开查词 → `fushi_voice_ring_probe` 看 `xaudiodiag2`：期望 0x40000|0x100000 亮、随后 `lookup_diag` 0x1；停在 0x200000/0x400000 = BCB 导出表查不到名（下一边界：改用 exe 直取内部函数指针）；0x20000 仍亮 = 主窗判据还有别的形状。
 
 **旁注（未做，建议单独立项）**：隔离实例每 ~1.25 s 抢前台的根因是 `desktop_foreground_guard.dart` `isMainWindowForeground()` 在 `FUSHI_TEST_HIDDEN` 下恒 true（itest 焦点遍历需要），被动焦点修复照常 `SetFocus(FlutterView)`。它同时堵着 KiriKiri Z ① 音频时长复验与本任务真机门；`EnableWindow(FALSE)` 只是绕过。真修要在 galgame 会话活跃期间让该判据走真实探测，属 Fushi 侧焦点域，不在本 worktree 范围。
+
+## 真机门第四轮（2026-09-04 19:00–2026-09-05 凌晨，桌面空闲窗口）：四段根因全部量出
+
+**不经 Fushi、直接用 injector 驱动**是本轮能推进的关键：`fushi_voice_injector.exe --launch <exe> --japanese-locale --hold` 起游戏，探针读位。这样绕开了「隔离 Fushi 抢前台」那条堵点——查词开关由 `fushi_voice_lookup_probe <pid>` 自己置位（它就是干这个的），不需要 Fushi 在场。**这条路子应写进 SOP**：验 native 侧安装链时 Fushi 不是必要条件。
+（脚本 `C:\Users\wrds\.claude\jobs\81491d86\tmp\{fate_launch,fate_gate,fate_advance}.ps1`。坑：游戏 exe 名含全角「／」，PS 5.1 以 ANSI 读无 BOM 脚本会把它读坏 → injector 报 gameExeMissing；脚本里改用 ASCII 通配 `Fate*Realta Nua*-Fate-.exe` 解析。另：`.NET MainWindowHandle` 在老 VCL 上取到的是**那个 0x0 的 TApplication 窗**，驱动窗口必须按类名 `TTVPWindowForm` 自己枚举。）
+
+| 段 | 根因 | 判据 | 状态 |
+|---|---|---|---|
+| 1 | `FindGameMainWindow` 的 owner 判据；VCL 主窗被**可见但 0x0** 的 TApplication own | `SeamArmed(0x40000)|SeamFired(0x100000)` 由灭转亮 | ✅ 真机复验通过 |
+| 2 | `TryHookKirikiriVoiceStream` 返回 `ll_installed` → registry 停轮询，exe 直取只在主窗出现前评估一次 | 同上（第一段亮起本身证明轮询继续到主窗出现之后） | ✅ 随第一段复验 |
+| 3 | BCB 的 Borland 异常穿透 MSVC `catch(...)` → 游戏弹致命错误框 + 强制写用户快速存档（[[BUG-2144]]） | 修复前 2/2 弹 `#32770 Information`；修复后可见窗口只剩 `TTVPWindowForm`+`TApplication`，控制台无新 exception | ✅ 真机复验通过 |
+| 4 | `kag.addHook` 写进 bootstrap 前置条件；KAG 3.25 无此方法 → BUG-2116 经典分支是死代码 | `xaudiodiag2=0x0d94000c`：`TjsBootstrapFnAlive`✓ `KagObjectReady`✓ **`KagAddHookReady`✗** | 🟡 已修，真机复验待桌面空闲 |
+
+**过程中量到的其它事实**：`decdiag=0x02a30101`（LoadLibrary hook 已装 0x2000000 + BCB 桩 0x20000 + 版本确认 Krkr2 0x200000 + 解码 hook；exe 直取位 0x10000 与 V2Link 位 0x4000000 都不亮 → exporter 是**经 exe 直取在主窗出现后**拿到的，与第二段修复一致）；`hookdiag=0x00101c01` = 启动音频 hook + Luna host ready/connected/output observed + KiriKiri vorbis 开流 hook；文本走 LunaHook 干净线程，8 次 Enter 推进拿到 18 条 `text_events`、`voice_clips` 稳定增长（语音资源链正常）。`lookup_diag` 仍只有 `expression_ready(0x40)`——传感器未装，与第四段判据一致。
+
+**第四段复验判据（下一轮照做）**：起游戏 → `fushi_voice_lookup_probe <pid> 8 1000` → 看 `lookup_diag` 是否出现 `sensor_installed(0x1)`；同时 `Documents\FateRealtaNua_savedata\krkr.console.log` 应出现 `[HibikiLookup] sensor installed`（成功）或 `install failed: …` + `bootstrap.stage` 号（失败，号即卡点）。通过后才谈验收 2→7。
