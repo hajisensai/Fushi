@@ -2833,8 +2833,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     ({int columns, double cardWidth}) cardLayout,
   ) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    // 行卡高走横滚行自己的口径（[videoRowCoverHeightForPortraitWidth]），不是
+    // 库墙的 videoCoverHeightForPortraitWidth——后者按竖卡定高，横卡会撑到竖卡
+    // 目标宽的 8/3 倍（桌面 626px，一屏只剩 3 张）。
     final double coverHeight =
-        videoCoverHeightForPortraitWidth(cardLayout.cardWidth);
+        videoRowCoverHeightForPortraitWidth(cardLayout.cardWidth);
     final Widget? continueRow =
         _buildContinueRow(filtered, remoteVideos, coverHeight);
     final Widget? nextRow =
