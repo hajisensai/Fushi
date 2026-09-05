@@ -199,6 +199,10 @@ class EnergyVadScorer implements AsrVadScorer {
 /// 实测最坏触发延迟并留余量；多出来的静默对 RNN-T 是无害的（不会发射 token）。
 const int kAsrVadDefaultSpeechPadMs = 500;
 
+/// VAD 单段上限缺省值（毫秒）；GPU 静态桶模式另有更短的上限，见
+/// `asr_encoder_buckets.dart` 的 `kAsrStaticMaxSegmentMs`。
+const int kAsrDefaultMaxSegmentMs = 20000;
+
 class AsrVadSegmenter implements AsrSegmenter {
   /// [scorer] 与 [session] 二选一：给 [session] 即 silero-vad v4；都不给用
   /// [EnergyVadScorer] 默认参数。
@@ -209,7 +213,7 @@ class AsrVadSegmenter implements AsrSegmenter {
     this.minSilenceMs = 500,
     this.minSpeechMs = 250,
     this.speechPadMs = kAsrVadDefaultSpeechPadMs,
-    this.maxSegmentMs = 20000,
+    this.maxSegmentMs = kAsrDefaultMaxSegmentMs,
   }) : _scorer = _resolveScorer(session, scorer),
        _minSilenceSamples = _msToSamples(minSilenceMs),
        _minSpeechSamples = _msToSamples(minSpeechMs),

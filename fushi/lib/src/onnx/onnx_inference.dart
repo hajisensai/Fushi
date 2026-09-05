@@ -62,10 +62,17 @@ abstract interface class OnnxSession {
 abstract interface class OnnxSessionFactory {
   /// [intraOpNumThreads]：ORT 单算子内并行线程数；null 用 ORT 默认（全核）。
   /// 小矩阵逐帧型的图（ASR 贪心 Loop 图）全核反而慢，调用方按实测传。
+  ///
+  /// [freeDimensionOverrides]：把模型输入的符号维度（如 `N` / `T`）钉成固定值
+  /// （ORT `AddFreeDimensionOverrideByName`）。全部输入 shape 静态后 ORT 能在建
+  /// 会话时把整图融合/编译一次，而不是每次 run 重新规划——DirectML 上 zipformer
+  /// 编码器吞吐 5~7 倍（见 `asr_encoder_buckets.dart`）。之后喂进来的张量必须
+  /// **恰好**是这些维度。只有 Windows 插件实现了此项，其它平台忽略。
   Future<OnnxSession> createSession(
     String modelPath, {
     required List<OnnxExecutionProvider> providers,
     int? intraOpNumThreads,
+    Map<String, int>? freeDimensionOverrides,
   });
 }
 

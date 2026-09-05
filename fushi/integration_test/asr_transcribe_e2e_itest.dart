@@ -326,6 +326,7 @@ Future<void> _phaseBenchmark({
       joiner: sessions.joiner,
       tokens: sessions.tokens,
       greedy: sessions.greedy,
+      staticEncoders: sessions.staticEncoders,
     );
     // ignore: avoid_print
     print(
@@ -352,7 +353,10 @@ Future<void> _phaseBenchmark({
     }
     asrClock.stop();
     // ignore: avoid_print
-    print('[asr-e2e][bench][$label] ${decoder.stats}');
+    print(
+      '[asr-e2e][bench][$label] ${decoder.stats} '
+      'staticUnavailable=${sessions.staticEncoders?.unavailableReasons}',
+    );
     final int audioMs = samples * 1000 ~/ kAsrSampleRate;
     final int speechMs = segments.fold<int>(
       0,

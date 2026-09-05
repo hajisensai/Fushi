@@ -244,6 +244,7 @@ class OrtOnnxSessionFactory implements OnnxSessionFactory {
     required List<OnnxExecutionProvider> providers,
     void Function(OnnxProviderResolution resolution)? onProviderResolved,
     int? intraOpNumThreads,
+    Map<String, int>? freeDimensionOverrides,
   }) async {
     final OrtSession session =
         await createOnnxSessionWithProviderFallback<OrtSession>(
@@ -256,6 +257,7 @@ class OrtOnnxSessionFactory implements OnnxSessionFactory {
         options: OrtSessionOptions(
           providers: effectiveProviders.map(_toOrtProvider).toList(),
           intraOpNumThreads: intraOpNumThreads,
+          freeDimensionOverrides: freeDimensionOverrides,
         ),
       ),
     );

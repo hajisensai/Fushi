@@ -30,6 +30,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart'
     show BackgroundIsolateBinaryMessenger, RootIsolateToken;
 
+import 'package:fushi/src/asr/asr_encoder_buckets.dart';
 import 'package:fushi/src/asr/asr_engine.dart';
 import 'package:fushi/src/asr/asr_model_manifest.dart';
 import 'package:fushi/src/asr/asr_model_store.dart';
@@ -332,15 +333,26 @@ Future<void> _isolateMain(_IsolateArgs args) async {
       joiner: sessions.joiner,
       tokens: sessions.tokens,
       greedy: sessions.greedy,
+      staticEncoders: sessions.staticEncoders,
     );
+    // 静态桶模式段切短到 10 s（见 kAsrStaticMaxSegmentMs），否则保持 VAD 默认。
+    final int maxSegmentMs = sessions.staticEncoders != null
+        ? kAsrStaticMaxSegmentMs
+        : kAsrDefaultMaxSegmentMs;
     final AsrTranscribeJob j = AsrTranscribeJob(
       jobDir: Directory(spec.jobDirPath),
       audioPaths: spec.audioPaths,
       modelId: store.pack.id,
       pcm: FfmpegAsrPcmSource(),
       segmenter: switch (spec.segmenterKind) {
-        AsrSegmenterKind.energy => AsrVadSegmenter(scorer: EnergyVadScorer()),
-        AsrSegmenterKind.silero => AsrVadSegmenter(session: sessions.vad),
+        AsrSegmenterKind.energy => AsrVadSegmenter(
+          scorer: EnergyVadScorer(),
+          maxSegmentMs: maxSegmentMs,
+        ),
+        AsrSegmenterKind.silero => AsrVadSegmenter(
+          session: sessions.vad,
+          maxSegmentMs: maxSegmentMs,
+        ),
       },
       decoder: decoder,
       batchSize:

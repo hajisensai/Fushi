@@ -66,6 +66,7 @@ class _FakeFactory extends OrtOnnxSessionFactory {
     required List<OnnxExecutionProvider> providers,
     void Function(OnnxProviderResolution resolution)? onProviderResolved,
     int? intraOpNumThreads,
+    Map<String, int>? freeDimensionOverrides,
   }) async {
     final String? suffix = failOnPathSuffix;
     if (suffix != null && modelPath.endsWith(suffix)) {

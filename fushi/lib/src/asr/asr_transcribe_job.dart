@@ -45,6 +45,13 @@ abstract interface class AsrBatchDecoder {
   Future<List<AsrDecodedSegment>> decodeBatch(List<AsrSpeechSegment> segments);
 }
 
+/// 解码器对成批形状的约束（可选实现）：GPU 静态 shape 桶一批**恰好** N 行，
+/// 任务侧按最长段的桶封顶、攒够 N 行就发，不再按音频预算/半长规则切。
+abstract interface class AsrBatchShaper {
+  /// 最长段为 [longestSamples] 样本时一批最多几行；null = 无约束。
+  int? batchCapFor(int longestSamples);
+}
+
 /// 任务进度快照。
 @immutable
 class AsrTranscribeProgress {
@@ -429,13 +436,24 @@ class AsrTranscribeJob {
 
       final int budgetSamples =
           batchSize * kAsrBatchReferenceSeconds * kAsrSampleRate;
+      final AsrBatchShaper? shaper =
+          decoder is AsrBatchShaper ? decoder as AsrBatchShaper : null;
       int pendingSamples() => pending.fold<int>(
             0,
             (int acc, AsrSpeechSegment s) => acc + s.samples.length,
           );
-      bool enoughPending() =>
-          pending.length >= maxBatchSegments ||
-          pendingSamples() >= budgetSamples;
+      int longestPending() => pending.fold<int>(
+            0,
+            (int acc, AsrSpeechSegment s) =>
+                s.samples.length > acc ? s.samples.length : acc,
+          );
+      bool enoughPending() {
+        if (pending.isEmpty) return false;
+        final int? cap = shaper?.batchCapFor(longestPending());
+        if (cap != null) return pending.length >= cap;
+        return pending.length >= maxBatchSegments ||
+            pendingSamples() >= budgetSamples;
+      }
 
       Future<void> drain({required bool all}) async {
         // 按段长降序、按音频预算成批：encoder 按批内最长 pad、Loop 图每一步都
@@ -448,11 +466,15 @@ class AsrTranscribeJob {
               b.samples.length.compareTo(a.samples.length),
         );
         while (pending.isNotEmpty && (all || enoughPending())) {
-          final int take = pickBatchSize(
-            pending,
-            budgetSamples: budgetSamples,
-            maxSegments: maxBatchSegments,
-          );
+          final int? cap = shaper?.batchCapFor(pending.first.samples.length);
+          // 静态桶：一批就是桶的行数（桶内每行成本相同，装满最划算）。
+          final int take = cap != null
+              ? (pending.length < cap ? pending.length : cap)
+              : pickBatchSize(
+                  pending,
+                  budgetSamples: budgetSamples,
+                  maxSegments: maxBatchSegments,
+                );
           final List<AsrSpeechSegment> batch = pending.sublist(0, take);
           pending.removeRange(0, take);
           final List<AsrDecodedSegment> decoded = await decoder.decodeBatch(

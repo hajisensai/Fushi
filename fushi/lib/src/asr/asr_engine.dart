@@ -8,6 +8,7 @@ library;
 import 'dart:developer' as developer;
 import 'dart:io';
 
+import 'package:fushi/src/asr/asr_encoder_buckets.dart';
 import 'package:fushi/src/asr/asr_greedy_graph.dart';
 import 'package:fushi/src/asr/asr_model_manifest.dart';
 import 'package:fushi/src/asr/asr_model_store.dart';
@@ -129,6 +130,7 @@ class AsrEngineSessions {
     required this.encoderResolution,
     this.greedy,
     this.greedyUnavailableReason,
+    this.staticEncoders,
   });
 
   final OnnxSession encoder;
@@ -147,7 +149,12 @@ class AsrEngineSessions {
   /// 编码器实际落到的 EP 与（若有）降级原因——降级必须可观测（BUG-1163）。
   final OnnxProviderResolution encoderResolution;
 
+  /// GPU 静态 shape 编码器桶池（只在编码器真落到 GPU EP 时有）；桶按需建、建
+  /// 失败回退 [encoder]。
+  final AsrStaticEncoderPool? staticEncoders;
+
   Future<void> close() async {
+    await staticEncoders?.close();
     await encoder.close();
     await decoder.close();
     await joiner.close();
@@ -189,6 +196,7 @@ class AsrEngineLoader {
     required AsrEncoderVariant variant,
     required AsrAccelerationPreference preference,
     bool useGreedyGraph = true,
+    bool useStaticEncoderBuckets = true,
     int? greedyIntraOpThreads = kAsrGreedyGraphIntraOpThreads,
   }) async {
     Set<OnnxExecutionProvider> available = const <OnnxExecutionProvider>{};
@@ -286,14 +294,28 @@ class AsrEngineLoader {
           );
         }
       }
+      // 静态 shape 桶只给 GPU EP：CPU 上动态 shape 没有 DML 那种每次 run 的
+      // 固定开销，而静态桶要多占一份权重内存。桶按需惰性建，这里只装池子。
+      final OnnxExecutionProvider effective = encoderResolution.effective;
+      final AsrStaticEncoderPool? staticEncoders =
+          useStaticEncoderBuckets && effective != OnnxExecutionProvider.cpu
+          ? AsrStaticEncoderPool(
+              factory: _factory,
+              modelPath: store.fileFor(encoderRole).path,
+              providers: <OnnxExecutionProvider>[effective],
+              logName: kAsrLogName,
+            )
+          : null;
+      staticEncoders?.prewarm();
       developer.log(
         'ASR engine loaded (${variant.name} encoder): $encoderResolution '
-        'greedyGraph=${greedy != null}',
+        'greedyGraph=${greedy != null} staticBuckets=${staticEncoders != null}',
         name: kAsrLogName,
       );
       return AsrEngineSessions(
         greedy: greedy,
         greedyUnavailableReason: greedyUnavailableReason,
+        staticEncoders: staticEncoders,
         encoder: encoder,
         decoder: decoder,
         joiner: joiner,
