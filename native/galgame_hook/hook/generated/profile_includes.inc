@@ -10,3 +10,4 @@
 #include "../adapters/hunex_gge_profile.h"
 #include "../adapters/cmvs_profile.h"
 #include "../adapters/unreal_iostore_profile.h"
+#include "../adapters/aos_sfa_profile.h"

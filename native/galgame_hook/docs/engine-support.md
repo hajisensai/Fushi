@@ -26,6 +26,7 @@
 | `hunex_gge` | HUNEX GGE / HFA-HW | `implemented_unverified` | luna_typemoon_dialogue_thread (implemented_unverified) | hunex_hfa_hw_ogg_resource (implemented_unverified) | 0 |
 | `sgre` | M2 wind3d11 runtime (STEINS;GATE RE:BOOT) | `implemented_unverified` | ingame_lookup_geometry (implemented_unverified)；ingame_lookup_directinput_shield (implemented_unverified) | engine_archive_resource (implemented_unverified) | 0 |
 | `unreal_iostore` | Unreal Engine (IoStore) | `implemented_unverified` | luna_pc_hooks (implemented_unverified) | xaudio2_or_directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
+| `aos_sfa` | AOS / SFA (Princess Sugar, Atelier Kaguya family) | `implemented_unverified` | — | xaudio2_or_directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 
 ## 无 OCR 内嵌查词矩阵
 
@@ -868,6 +869,48 @@ Tests：`tests/sgre_adapter_test.cpp`、`tests/exact_lookup_signature_test.cpp`�
 Fixtures：`tests/fixtures/unreal_iostore_replay.json`
 
 Tests：`tests/unreal_iostore_adapter_test.cpp`、`../../fushi/test/mining/unreal_iostore_pairing_test.dart`
+
+### AOS / SFA (Princess Sugar, Atelier Kaguya family) (`aos_sfa`)
+
+- 状态：`implemented_unverified`
+- 别名：AOS、SFA、Princess Sugar、アトリエかぐや
+- 家族：`aos_sfa`（In-house engine of the Princess Sugar / Atelier Kaguya family; no verified sibling in this repository）
+- 当前 adapter：`hook/adapters/aos_sfa_adapter.inc`
+- 进程策略：launch=`generic_launch_available`，attach=`generic_attach_available`，follow-child=`false`
+
+识别签名（所有非空项均带真实样本或运行时观察证据）：
+
+- `pe_architectures`：x86；证据：real_sample — The 姫様ＬＯＶＥライフ！ game executable is machine 0x14c (862720 bytes), importing DDRAW/DINPUT/DSOUND/d3d9/d3dx9_43; static probe 2026-09-05
+- `directory_files_all`：scr.aos、cv.aos；证据：real_sample — Sample ships bgm/cv/grp/scr/se.aos next to the executable. All five open with four zero bytes, two little-endian u32 fields, and their own file name as NUL-terminated ASCII at offset 12 -- that self-naming header is what the adapter matches, not the extension; measured 2026-09-05
+- `pe_imports`：DDRAW.dll、DINPUT.dll、DSOUND.dll、d3d9.dll、d3dx9_43.dll；证据：real_sample — PE import table of the 姫様ＬＯＶＥライフ！ executable (13 imports); DirectSound is the only audio API imported
+- `resource_extensions`：.aos；证据：real_sample — cv.aos (675 MB) is the voice archive; grp.aos (2.99 GB) art, bgm/se.aos audio, scr.aos scripts
+- `hashes`：fa965f070c0337098ca6abdb31c4c3d049d1480c3056a4db3b8bd43dd834b996；证据：real_sample — 姫様ＬＯＶＥライフ！ game executable, catalogue only; the adapter does not hash-pin because the self-naming archive header is the identity
+
+文本能力：
+
+- 不适用；文本由具体引擎 profile / Luna 线程处理。
+- codepage：932
+- 线程提示：Unmeasured. In the recorded session LunaHook connected but produced no output (luna_active 0, text_events 0) on the title screen; whether the vendored LunaHook carries an engine hook for this family is unverified.
+
+音频优先级：
+
+1. `xaudio2_or_directsound_pcm` — `implemented_unverified`；格式：DirectSound source PCM via the generic Windows audio adapter；clean voice：engine_dependent
+2. `process_loopback` — `implemented_unverified`；格式：host PCM fallback；clean voice：否
+
+真实样本证据：
+
+
+已知限制：
+
+- No text capability is claimed. LunaHook connected but emitted nothing in the recorded session, and the DLL does not expose engine names as strings, so there is no evidence either way yet.
+- Per-line voice lives in cv.aos; no resource layer is implemented and none is claimed until the engine's own read path is measured on a real session.
+- Only the title screen was reached. text_observed, text_thread_selected, paired and card_e2e are all not_run.
+- The identity check requires at least one *.aos whose header names itself. Titles of this family that ship differently named or differently structured archives would not match, and none were available to measure.
+- In-game lookup sensor is not implemented; lookupAdmission stays EngineUnsupported.
+
+Fixtures：`tests/fixtures/aos_sfa_replay.json`
+
+Tests：`tests/aos_sfa_adapter_test.cpp`、`../../fushi/test/mining/aos_sfa_pairing_test.dart`
 
 ## 状态定义
 

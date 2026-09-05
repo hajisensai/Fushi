@@ -11,3 +11,4 @@
     consider(hunex_gge_);
     consider(cmvs_);
     consider(unreal_iostore_);
+    consider(aos_sfa_);

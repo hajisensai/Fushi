@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "engine_id": "aos_sfa",
+  "status": "implemented_unverified",
+  "config": {
+    "selected_thread": 3,
+    "duplicate_window_ms": 1000,
+    "audio_priority": ["resource_audio", "pcm", "loopback"],
+    "resource_late_wait_ms": 500
+  },
+  "events": [
+    {"kind": "text", "id": "aos-line", "timestamp_ms": 7000, "thread": 3, "text": "synthetic aos dialogue line"},
+    {"kind": "text", "id": "aos-ui-thread", "timestamp_ms": 7001, "thread": 6, "text": "synthetic aos ui thread"},
+    {"kind": "pcm", "id": "aos-source-pcm", "timestamp_ms": 7013, "format": "s16le"},
+    {"kind": "loopback", "id": "aos-loopback", "timestamp_ms": 7017, "format": "s16le"},
+    {"kind": "session_end", "timestamp_ms": 7600}
+  ],
+  "expected": {
+    "cards": [
+      {"text_id": "aos-line", "audio_backend": "pcm", "audio_id": "aos-source-pcm"}
+    ],
+    "duplicate_text_events": 0,
+    "thread_filtered_events": 1,
+    "session_clean": true
+  }
+}

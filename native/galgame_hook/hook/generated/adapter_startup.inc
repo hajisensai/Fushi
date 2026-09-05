@@ -7,3 +7,4 @@
     hunex_gge_.install();
     cmvs_.install();
     unreal_iostore_.install();
+    aos_sfa_.install();

@@ -11,3 +11,4 @@
     hunex_gge_.shutdown();
     cmvs_.shutdown();
     unreal_iostore_.shutdown();
+    aos_sfa_.shutdown();
