@@ -3251,6 +3251,17 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 						// top=790 不变。取值必须在调原始实现**之前**——之后 x 已经推过这个字。
 						var px = global.fushiLookupNumOr(this, "x");
 						var py = global.fushiLookupNumOr(this, "y");
+						// 光标 y 指向**行盒顶部**，字形画在 y + lineSpacing 处。
+						// 真机 フタマタ恋愛 Ver1.00 像素实测（客户区坐标）：正文墨迹占
+						// y 904..936 共 33 行（= fontSize），而未订正的高亮落在 896..928，
+						// **正好差 8px**，与该图层的 lineSpacing=8 相等；marginT=106 说明这
+						// 还是首行，所以这段间距是加在字形**上方**而不是行间。
+						// 用图层自己报的 lineSpacing 而不是写死 8：它是每个消息层各自的属性。
+						if(py !== void)
+						{
+							var gap = global.fushiLookupNumOr(this, "lineSpacing");
+							if(gap !== void && gap > 0) py += gap;
+						}
 						var result = (this.fushiLookupOriginalProcessCh incontextof this)(...);
 						// 与 drawText 路共用同一条采集：它本来就按 text.length == 1 处理
 						// 单字（影/边重绘去重那条判据），逐字符喂正合它的形状。
@@ -3258,6 +3269,21 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 							global.fushiLookupCaptureDrawText(this, px, py, ch);
 						global.fushiLookupCaptureProcessCh(this, ch);
 						return result;
+					} incontextof layer;
+				}
+				// 悬停接缝。点击能收到而悬停收不到，是因为两者在 KiriKiri 里走**不同的
+				// 派发路径**：KAG3 的点击推进是窗口级的（kag 的 leftClick 接缝拿得到），
+				// 而鼠标移动到一个可命中的图层上时，事件派给**该图层**的 onMouseMove，
+				// 窗口那道就不再触发。查词要的恰恰是"指针在字上"，所以必须在消息层实例
+				// 自己身上再挂一道（真机 フタマタ恋愛 Ver1.00：点击有高亮、悬停没有）。
+				if(typeof layer.onMouseMove == "Object")
+				{
+					layer.fushiLookupOriginalOnMouseMove = layer.onMouseMove;
+					layer.onMouseMove = function(x, y, shift)
+					{
+						// 异常一律不影响原逻辑：悬停高亮坏掉是小事，把鼠标移动吞掉是大事。
+						try { global.fushiLookupMouseMoveHook(); } catch(e) {}
+						return (this.fushiLookupOriginalOnMouseMove incontextof this)(...);
 					} incontextof layer;
 				}
 				return true;
@@ -3268,9 +3294,59 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			// KAG stable 边沿重扫——numMessageLayers 变化新建的层就在那之后出现。
 			// 位 3 = 至少挂上过一个实例（与位 0「分支跑到」分开：分支跑到但一个层都没挂上
 			// 说明 kag.fore.messages 结构不是标准 KAG3，真机上要能一眼分出这两种失败）。
+			// 悬停：不靠"谁收到鼠标移动事件"，改为在引擎的连续回调里轮询光标位置。
+			//
+			// 真机 フタマタ恋愛 Ver1.00 实测：同一坐标**点击**能出高亮（KAG3 的点击推进是
+			// 窗口级的，kag 的 leftClick 接缝拿得到），**悬停**完全没有。逐个试过三道接缝
+			// 都不触发——kag 的 onMouseMove、消息层实例的 onMouseMove、primaryLayer 的
+			// onMouseMove——这个定制 KAG（19 个插件，含 extNagano/hutamata.tpm）把移动事件
+			// 消费在了别处。继续找"到底谁收到"是没有尽头的猜谜。
+			//
+			// 而引擎自己一直暴露着光标位置：primary.cursorX / cursorY（本文件的
+			// fushiLookupMouseWheelHook 早就在用它算卡内局部坐标）。所以换成轮询：连续
+			// 回调里比对上一帧的光标，动了才跑一次悬停判定。这不依赖任何一个可能被定制
+			// 掉的事件派发路径，对所有 KAG 变体都成立。
+			//
+			// 代价可控：只在光标真的移动时才走 registry，而 fushiLookupReport 对"命中字符
+			// 没变"本来就直接 return（同一个字连续悬停不会重绘也不惊动 host）。
+			global.fushiLookupHoverPollInstalled = false;
+			global.fushiLookupHoverPollX = -99999;
+			global.fushiLookupHoverPollY = -99999;
+
+)TJS" LR"TJS(
+
+			global.fushiLookupHoverPoll = function()
+			{
+				try
+				{
+					var primary = global.kag.primaryLayer;
+					if(primary === void || primary === null || !isvalid primary) return;
+					var cx = primary.cursorX;
+					var cy = primary.cursorY;
+					if(cx == global.fushiLookupHoverPollX &&
+						cy == global.fushiLookupHoverPollY) return;
+					global.fushiLookupHoverPollX = cx;
+					global.fushiLookupHoverPollY = cy;
+					global.fushiLookupMouseMoveHook();
+				}
+				catch(e) {}
+			};
+
+			global.fushiLookupInstallHoverPoll = function()
+			{
+				if(global.fushiLookupHoverPollInstalled) return;
+				try
+				{
+					System.addContinuousHandler(global.fushiLookupHoverPoll);
+					global.fushiLookupHoverPollInstalled = true;
+				}
+				catch(e) { global.fushiLookupFault(); }
+			};
+
 			global.fushiLookupSweepClassicLayers = function()
 			{
 				if((global.fushiLookupClassicSource & 1) == 0) return 0;
+				global.fushiLookupInstallHoverPoll();
 				var patched = 0;
 				for(var page = 1; page <= 2; page++)
 				{
