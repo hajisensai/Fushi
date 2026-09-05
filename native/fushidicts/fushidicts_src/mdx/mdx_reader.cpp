@@ -705,7 +705,8 @@ std::string link_target_of(const std::string& definition) {
 
 }  // namespace
 
-MdxMeta mdx_reader::parse_streaming(const uint8_t* data, size_t size, const EntrySink& sink) {
+MdxMeta mdx_reader::parse_streaming(const uint8_t* data, size_t size, const EntrySink& sink,
+                                    const MetaSink& on_meta) {
   ContainerIndex idx = parse_container_index(data, size);
 
   MdxMeta meta;
@@ -713,6 +714,8 @@ MdxMeta mdx_reader::parse_streaming(const uint8_t* data, size_t size, const Entr
   meta.encoding = idx.encoding;
   meta.version_major = idx.version_major;
   meta.version_minor = idx.version_minor;
+  meta.entry_count = idx.keys.size();
+  if (on_meta) on_meta(meta);
 
   // Text semantics for one record slice.
   const bool is_utf16 = idx.is_utf16;
