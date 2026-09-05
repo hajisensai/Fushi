@@ -93,8 +93,9 @@ Future<List<AsrSpeechSegment>> runAll(
 }) async {
   final List<AsrSpeechSegment> out = <AsrSpeechSegment>[];
   for (int off = 0; off < audio.length; off += chunkSize) {
-    final int end =
-        off + chunkSize > audio.length ? audio.length : off + chunkSize;
+    final int end = off + chunkSize > audio.length
+        ? audio.length
+        : off + chunkSize;
     out.addAll(
       await seg.feed(
         AsrPcmChunk(
@@ -129,7 +130,10 @@ void main() {
         (1000, false),
       ]);
       final FakeVadSession fake = FakeVadSession();
-      final AsrVadSegmenter seg = AsrVadSegmenter(session: fake);
+      final AsrVadSegmenter seg = AsrVadSegmenter(
+        session: fake,
+        speechPadMs: 200,
+      );
       final List<AsrSpeechSegment> segs = await runAll(
         seg,
         audio,
@@ -155,7 +159,10 @@ void main() {
         (500, true),
         (800, false),
       ]);
-      final AsrVadSegmenter seg = AsrVadSegmenter(session: FakeVadSession());
+      final AsrVadSegmenter seg = AsrVadSegmenter(
+        session: FakeVadSession(),
+        speechPadMs: 200,
+      );
       final List<AsrSpeechSegment> segs = await runAll(seg, audio);
       expect(segs, hasLength(1));
       expect(segs.single.startMs, lessThan(100));
@@ -170,7 +177,10 @@ void main() {
         (600, true),
         (800, false),
       ]);
-      final AsrVadSegmenter seg = AsrVadSegmenter(session: FakeVadSession());
+      final AsrVadSegmenter seg = AsrVadSegmenter(
+        session: FakeVadSession(),
+        speechPadMs: 200,
+      );
       final List<AsrSpeechSegment> segs = await runAll(seg, audio);
       expect(segs, hasLength(2));
       // 语音从文件头开始：首 pad 不越过 0。
@@ -193,7 +203,10 @@ void main() {
         (400, true), // 保留
         (800, false),
       ]);
-      final AsrVadSegmenter seg = AsrVadSegmenter(session: FakeVadSession());
+      final AsrVadSegmenter seg = AsrVadSegmenter(
+        session: FakeVadSession(),
+        speechPadMs: 200,
+      );
       final List<AsrSpeechSegment> segs = await runAll(seg, audio);
       expect(segs, hasLength(1));
       expect(segs.single.startMs, greaterThan(900));
@@ -203,7 +216,10 @@ void main() {
       final Float32List audio = synth(<(int, bool)>[(300, false), (700, true)]);
       // 16000 样本 = 31 窗 + 128 尾样本。
       expect(audio.length % kWin, 128);
-      final AsrVadSegmenter seg = AsrVadSegmenter(session: FakeVadSession());
+      final AsrVadSegmenter seg = AsrVadSegmenter(
+        session: FakeVadSession(),
+        speechPadMs: 200,
+      );
       final List<AsrSpeechSegment> segs = await runAll(
         seg,
         audio,
@@ -228,6 +244,7 @@ void main() {
       );
       final AsrVadSegmenter seg = AsrVadSegmenter(
         session: fake,
+        speechPadMs: 200,
         maxSegmentMs: 6000,
       );
       final Float32List audio = Float32List(kWin * 300);
@@ -261,6 +278,7 @@ void main() {
       );
       final AsrVadSegmenter seg = AsrVadSegmenter(
         session: fake,
+        speechPadMs: 200,
         maxSegmentMs: 6000,
       );
       final Float32List audio = Float32List(kWin * 230);
@@ -282,7 +300,10 @@ void main() {
         (800, false),
       ]);
       final FakeVadSession fake = FakeVadSession();
-      final AsrVadSegmenter seg = AsrVadSegmenter(session: fake);
+      final AsrVadSegmenter seg = AsrVadSegmenter(
+        session: fake,
+        speechPadMs: 200,
+      );
       final List<AsrSpeechSegment> first = await runAll(seg, audio);
       final int callsAfterFirst = fake.calls;
       // 状态链：第 k 次调用看到的 h[0] == k。
@@ -299,7 +320,10 @@ void main() {
     });
 
     test('不连续的块抛 ArgumentError', () async {
-      final AsrVadSegmenter seg = AsrVadSegmenter(session: FakeVadSession());
+      final AsrVadSegmenter seg = AsrVadSegmenter(
+        session: FakeVadSession(),
+        speechPadMs: 200,
+      );
       await seg.feed(AsrPcmChunk(startSample: 0, samples: Float32List(1000)));
       expect(
         () =>
@@ -308,15 +332,17 @@ void main() {
       );
     });
 
-    test(
-        'inProgressSpeechStartSample：静默为 null，语音中为含 pad 的段起点，'
+    test('inProgressSpeechStartSample：静默为 null，语音中为含 pad 的段起点，'
         '从该点 reset 续跑得到相同段', () async {
       final Float32List audio = synth(<(int, bool)>[
         (400, false),
         (1500, true),
         (1000, false),
       ]);
-      final AsrVadSegmenter seg = AsrVadSegmenter(session: FakeVadSession());
+      final AsrVadSegmenter seg = AsrVadSegmenter(
+        session: FakeVadSession(),
+        speechPadMs: 200,
+      );
       expect(seg.inProgressSpeechStartSample, isNull);
 
       const int chunk = 4000;
@@ -357,6 +383,14 @@ void main() {
       expect(resumed.single.startSample, full.single.startSample);
       expect(resumed.single.endSample, full.single.endSample);
       expectSamplesMatch(resumed.single, audio, 0);
+    });
+
+    test('默认外扩 500 ms（真机实测 200 ms 会切掉句首，见 kAsrVadDefaultSpeechPadMs）', () {
+      expect(kAsrVadDefaultSpeechPadMs, 500);
+      expect(
+        AsrVadSegmenter(session: FakeVadSession()).speechPadMs,
+        kAsrVadDefaultSpeechPadMs,
+      );
     });
 
     test('参数校验', () {

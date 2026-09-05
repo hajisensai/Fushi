@@ -25,6 +25,10 @@ import 'package:fushi/src/onnx/onnx_inference.dart';
 import 'package:fushi/src/onnx/onnx_inference_ort.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 
+/// 切段器种类：默认能量门限（零模型调用，见 `asr_vad.dart` 文件头的实测依据）；
+/// silero 作为带背景音乐/噪声音源的可选高质量路径。
+enum AsrSegmenterKind { energy, silero }
+
 /// 开跑前的计划：会用哪个编码器变体、期望落到哪个 EP、模型是否就绪。
 @immutable
 class AsrTranscribePlan {
@@ -72,8 +76,9 @@ class AsrTranscriptionService {
     AsrPcmSource? pcm,
     Future<AsrModelStore> Function()? openStore,
     Future<Directory> Function()? jobsRoot,
-    this.batchSize = 8,
+    this.batchSize,
     this.chunkSeconds = 300,
+    this.segmenterKind = AsrSegmenterKind.energy,
   }) : _loader = loader ?? AsrEngineLoader(),
        _pcm = pcm ?? FfmpegAsrPcmSource(),
        _openStore = openStore ?? AsrModelStore.open,
@@ -83,8 +88,18 @@ class AsrTranscriptionService {
   final AsrPcmSource _pcm;
   final Future<AsrModelStore> Function() _openStore;
   final Future<Directory> Function() _jobsRoot;
-  final int batchSize;
+
+  /// 一次 encoder 前向的段数；null 时按编码器实际落到的 EP 取
+  /// [defaultBatchSizeFor]。
+  final int? batchSize;
   final int chunkSeconds;
+  final AsrSegmenterKind segmenterKind;
+
+  /// 默认批次：GPU 上 batch 越大越省逐帧 joiner 的往返（2026-09-05 真机分阶段计时
+  /// 里逐帧循环是 ASR 阶段的大头，encoder 本身在 DirectML 上只占零头）；CPU 上
+  /// int8 encoder 的算力随 batch 线性增长，取一半平衡内存与往返。
+  static int defaultBatchSizeFor(OnnxExecutionProvider encoderProvider) =>
+      encoderProvider == OnnxExecutionProvider.cpu ? 16 : 32;
 
   /// 本平台是否具备设备端转录能力（= 本地 ONNX Runtime 随包）。
   static bool get isSupported => isLocalOnnxRuntimeAvailable;
@@ -195,14 +210,19 @@ class AsrTranscriptionService {
         jobDir: jobDir,
         audioPaths: audioPaths,
         pcm: _pcm,
-        segmenter: AsrVadSegmenter(session: sessions.vad),
+        segmenter: switch (segmenterKind) {
+          AsrSegmenterKind.energy => AsrVadSegmenter(scorer: EnergyVadScorer()),
+          AsrSegmenterKind.silero => AsrVadSegmenter(session: sessions.vad),
+        },
         decoder: AsrTransducerDecoder(
           encoder: sessions.encoder,
           decoder: sessions.decoder,
           joiner: sessions.joiner,
           tokens: sessions.tokens,
         ),
-        batchSize: batchSize,
+        batchSize:
+            batchSize ??
+            defaultBatchSizeFor(sessions.encoderResolution.effective),
         chunkSeconds: chunkSeconds,
       );
       return AsrRunningTranscription(sessions: sessions, job: job);

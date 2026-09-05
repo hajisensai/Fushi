@@ -327,6 +327,12 @@ class _OrtOnnxSession implements OnnxSession {
 
   static Future<OnnxTensor> _readAsFloat32(String name, OrtValue value) async {
     final List<dynamic> flat = await value.asFlattenedList();
+    // 快路径：Windows/Android 端 float32 输出经 StandardMessageCodec 直接落成
+    // Float32List，逐元素拆箱再拷一遍纯属浪费——RNN-T 逐帧 joiner 每步要读回
+    // batch×5224 个 logit，这条路径是热点。
+    if (flat is Float32List) {
+      return OnnxTensor.float32(flat, List<int>.from(value.shape));
+    }
     final Float32List data = Float32List(flat.length);
     switch (value.dataType) {
       case OrtDataType.float32:
