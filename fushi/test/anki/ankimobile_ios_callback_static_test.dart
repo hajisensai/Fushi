@@ -70,6 +70,28 @@ void main() {
     expect(src, contains('"status"'));
   });
 
+  // 等 active 超时后**不能**再「尽力读一次」：非 active 下内容读不到、类型元数据
+  // 却看得见，三态必落 denied——把「app 还没回到前台」谎报成「iOS 拒绝了粘贴」。
+  // 超时那条路径必须回独立的 notActive（PR#1222 事后审查补修）。
+  test('等 active 超时报 notActive，而不是读出一个假的 denied', () {
+    final String src = File('ios/Runner/AppDelegate.swift').readAsStringSync();
+
+    expect(src, contains('"notActive"'));
+
+    const String anchor = 'let work = DispatchWorkItem {';
+    final int at = src.indexOf(anchor);
+    expect(at, greaterThan(-1), reason: '找不到超时 DispatchWorkItem，锚点失效');
+    final int end = src.indexOf('\n', at + anchor.length);
+    final String body = src.substring(at, end);
+    // 自检：截出来的必须真是那一行，否则下面的断言变空转。
+    expect(body.trim(), isNotEmpty);
+    expect(
+      body,
+      contains('finish(false)'),
+      reason: '超时路径必须以「没变成 active」的身份收尾，否则又会去读剪贴板',
+    );
+  });
+
   test('Dart startup consumes the AnkiMobile info callback', () {
     final main = File('lib/main.dart').readAsStringSync();
     final vm = File('lib/src/anki/anki_view_model.dart').readAsStringSync();

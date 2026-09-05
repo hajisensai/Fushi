@@ -411,6 +411,23 @@ void main() {
             ],
             marker: 'window.collapsedDictionaryNames = ["CollapsedDict"]',
           ),
+          // BUG-2158 补修：与折叠名单成对的第三态。它是三档转移里唯一**不动**
+          // collapsedLanguages 的那档，所以 memo 漏登记它时「继承 → 显式展开」
+          // 会静默失效（点『展开』毫无反应）。
+          (
+            name: 'expandedDictionaryNames（显式展开名单）',
+            mutate: (MemoAppModel m) => m.dictionariesValue = <Dictionary>[
+              Dictionary(
+                name: 'ExpandedDict',
+                formatKey: 'yomichan',
+                order: 0,
+                expandedLanguages: <String>[
+                  JapaneseLanguage.instance.languageCode,
+                ],
+              ),
+            ],
+            marker: 'window.expandedDictionaryNames = ["ExpandedDict"]',
+          ),
           (
             name: 'globalDictCSS',
             mutate: (MemoAppModel m) => m.globalDictCSSValue = '.g{color:blue}',
