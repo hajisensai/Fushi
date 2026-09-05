@@ -612,6 +612,60 @@ class AdapterRegistry {
       ++tyrano_retry_;
     }
     PublishLookupAdmissionSummary();
+    PublishAdapterReportSnapshot();
+  }
+
+  // v23：把每个 adapter 的 diagnostics() 抄进共享内存（BUG-2149）。唯一写者，与下面的
+  // 准入汇总同处、同纪律。
+  //
+  // 为什么需要：AdapterDiagnostics 以前只被契约测试读，运行期没有消费方，于是「这局
+  // 到底哪个 adapter 认领了、装上没有」在真机上看不见——每加一个引擎就多一个答不出的
+  // 问题，而 engine-support 的证据门恰恰要求逐门可判。
+  //
+  // 这里**不**沿用准入汇总那份「只算引擎身份 adapter」的过滤。那条过滤是为了不让
+  // generic_audio_ / text_render_ / loopback_ 的恒真 probe() 污染「这游戏是哪个引擎」
+  // 的结论；而本面回答的是另一个问题——「哪些 adapter 现在是活的」，横切能力生效与否
+  // 恰恰是要看的。每行自带 id，读者不会把 `process_loopback applicable=1` 误读成引擎判定。
+  //
+  // 限速 1 秒：diagnostics() 内部会调 probe()，而 CMVS / AOS / Unreal 的 probe 要读盘
+  // 枚举（cfg 前缀、*.aos 头、Content\Paks\*.utoc），Poll 最快 16ms 一轮。诊断面没有
+  // 低延迟需求，不该为它每秒付几十次目录枚举。
+  void PublishAdapterReportSnapshot() {
+    if (g_header == nullptr) return;
+    const ULONGLONG now = GetTickCount64();
+    if (adapter_report_tick_ != 0 && now - adapter_report_tick_ < 1000) return;
+    adapter_report_tick_ = now;
+
+    fushi_voice_hook::AdapterReportSlot slots[fushi_voice_hook::kAdapterReportSlots] = {};
+    size_t used = 0;
+    auto consider = [&slots, &used](const fushi_voice_hook::EngineAdapter& adapter) {
+      if (used >= fushi_voice_hook::kAdapterReportSlots) return;
+      const fushi_voice_hook::AdapterDiagnostics diagnostics = adapter.diagnostics();
+      fushi_voice_hook::AdapterReportSlot& slot = slots[used++];
+      const char* id = diagnostics.id == nullptr ? "" : diagnostics.id;
+      // 有界拷贝：id 由 adapter 自己给，长度不受本文件控制。
+      size_t n = 0;
+      while (id[n] != '\0' && n + 1 < fushi_voice_hook::kAdapterReportIdChars) {
+        slot.id[n] = id[n];
+        ++n;
+      }
+      slot.id[n] = '\0';
+      slot.applicable = diagnostics.applicable ? 1u : 0u;
+      slot.installed = diagnostics.installed ? 1u : 0u;
+      slot.flags = diagnostics.flags;
+    };
+    // 手写的 8 个（含三个横切能力），随后复用**同一份生成清单**——新引擎由脚手架写进
+    // adapter_admission.inc，于是自动出现在本读数里，不存在第二份会漂移的清单。
+    consider(generic_audio_);
+    consider(siglus_);
+    consider(unity_);
+    consider(text_render_);
+    consider(kirikiri_);
+    consider(renpy_);
+    consider(tyrano_);
+    consider(loopback_);
+#include "generated/adapter_admission.inc"
+    fushi_voice_hook::PublishAdapterReports(g_header, slots, used);
   }
 
   // v19：把「本会话游戏内查词能不能用」汇总成一个值发布给 host。
@@ -763,6 +817,7 @@ class AdapterRegistry {
   }
 
   static constexpr int kRetryLimit = 150;
+  ULONGLONG adapter_report_tick_ = 0;  // v23 读数限速（见 PublishAdapterReportSnapshot）
   GenericWindowsAudioAdapter generic_audio_;
   SiglusAdapter siglus_;
   UnityIl2CppAdapter unity_;

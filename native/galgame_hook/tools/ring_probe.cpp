@@ -2565,6 +2565,30 @@ int main(int argc, char** argv) {
            static_cast<unsigned long long>(twc),
            static_cast<unsigned long long>(cwc),
            static_cast<unsigned long long>(uwc));
+    // v23 adapter 读数（BUG-2149）。没有这个读点，「哪个 adapter 认领了、装上没有」
+    // 在真机上仍然看不见——写点有了、读点一个没有，就是这条面原来的病。
+    // 只打 applicable 或 installed 为真的行：21 个 adapter 全打会把真正有信息的那几行
+    // 淹掉；seq==0 时明确说"未上报"，不能与"一个都没认领"混为一谈。
+    {
+      fushi_voice_hook::AdapterReportSlot reports[
+          fushi_voice_hook::kAdapterReportSlots] = {};
+      uint32_t report_seq = 0;
+      const uint32_t n = fushi_voice_hook::ReadAdapterReports(
+          header, reports, fushi_voice_hook::kAdapterReportSlots, &report_seq);
+      printf("\n     [adapters] seq=%u", report_seq);
+      if (report_seq == 0) {
+        printf(" (未上报：helper 未起或为 v22 之前的构建)");
+      } else {
+        bool any = false;
+        for (uint32_t i = 0; i < n; ++i) {
+          if (!reports[i].applicable && !reports[i].installed) continue;
+          any = true;
+          printf(" %s=probe:%u/installed:%u", reports[i].id,
+                 reports[i].applicable, reports[i].installed);
+        }
+        if (!any) printf(" 无 adapter 认领（已上报 %u 个，全部 probe=0）", n);
+      }
+    }
     if (twc > 0) {
       const uint32_t idx =
           static_cast<uint32_t>((twc - 1) % fushi_voice_hook::kTextSlotCount);

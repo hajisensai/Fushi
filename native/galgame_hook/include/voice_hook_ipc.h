@@ -123,7 +123,19 @@ constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
 //     `injector/injector_main.cpp` 都用 `sizeof(SharedHeader)` 现算 ring / region
 //     基址，新旧混装会整体差 48 字节，而版本门本会放行——症状是跨进程读到完全
 //     错位的数据，不报错。
-constexpr uint32_t kSharedVersion = 22;
+//  v23 — adapter 运行期读数（BUG-2149）。SharedHeader 尾部**纯追加**一张
+//     `AdapterReportSlot adapter_reports[kAdapterReportSlots]` + count + seq。
+//     动机：`AdapterDiagnostics`（id/applicable/installed/flags）每个 adapter 都实现了，
+//     但全仓只有 `tests/adapter_contract_test.cpp` 在读——运行期没有任何消费方，于是
+//     **任何引擎**都答不出「我的 adapter 到底有没有被选中并安装」。CMVS 台账里那条
+//     Next gate「探针 cmvs probe=1 installed=1」读不出来，不是探针失败，是这个只写
+//     接口的表现。
+//     槽里带**自己的 id 字符串**而不是按注册顺序编号：顺序编号在有人往
+//     `hook/generated/adapter_*.inc` 中间插一行时会整体错位，而且**不报错**——
+//     读数看着正常，说的却是另一个 adapter。
+//     与 v22 同理，布局变了就必须升版（两侧都用 `sizeof(SharedHeader)` 现算 ring /
+//     region 基址，新旧混装会整体错位而版本门本会放行）。
+constexpr uint32_t kSharedVersion = 23;
 constexpr uint32_t kStableIpcVersion = 1;
 
 // BUG-1882 — SGRE 的鼠标输入走 DirectInput immediate state，不经过普通
@@ -1078,6 +1090,22 @@ constexpr uint32_t kLookupInputVirtualKeyXButton2 = 0x0040u;
 // 内存布局：[SharedHeader][音频环形 ring_capacity][文本区 TextRegionBytes()]
 //           [clip 索引 kClipCount*sizeof(VoiceClip)]，各区偏移由 injector 填进 header。
 // 文本区自 v13 起是 [TextLane 表][按道分块的槽区]，寻址一律走 TextLaneSlotAt。
+// ── v23 adapter 运行期读数 ─────────────────────────────────────────────────
+// 每个 adapter 一槽。id 是**槽自带的**，不靠下标对齐：往 generated 清单中间插一行
+// 就会让下标制的读数整体错位且不报错（读到的是别人的 probe/installed）。
+constexpr size_t kAdapterReportSlots = 32u;      // 当前 21 个 adapter，留一倍余量
+constexpr size_t kAdapterReportIdChars = 32u;    // 最长 id "xaudio2_directsound" 19 + NUL
+
+struct AdapterReportSlot {
+  char id[kAdapterReportIdChars];  // NUL 结尾；空串 = 该槽未使用
+  uint8_t applicable;              // adapter->probe()
+  uint8_t installed;               // adapter->installed
+  uint16_t slot_reserved;
+  uint32_t flags;                  // adapter 自报的 flags（各家含义不同，只作透传）
+};
+static_assert(sizeof(AdapterReportSlot) == kAdapterReportIdChars + 8u,
+              "AdapterReportSlot must stay tightly packed");
+
 struct SharedHeader {
   uint32_t magic;           // = kSharedMagic
   uint32_t version;         // = kSharedVersion
@@ -1256,6 +1284,13 @@ struct SharedHeader {
   volatile int32_t lookup_layer_origin_y;
   volatile uint32_t lookup_layer_origin_seq;
   uint32_t lookup_layer_reserved;
+  // ── v23 adapter 运行期读数（纯追加；hook→host）──────────────────────────
+  // 写者唯一：AdapterRegistry::Poll 每轮把每个 adapter 的 diagnostics() 抄进来，
+  // 与 lookup_admission 同一处、同一套纪律（内容先写，seq 最后发布）。
+  // 各 adapter 自己不碰这块——多写者会让"谁在第几槽"取决于调用顺序。
+  AdapterReportSlot adapter_reports[kAdapterReportSlots];
+  volatile uint32_t adapter_report_count;  // 实际使用的槽数，<= kAdapterReportSlots
+  volatile uint32_t adapter_report_seq;    // 单调；0 = 从未上报过（≠"没有 adapter"）
 };
 #pragma pack(pop)
 
@@ -1798,6 +1833,71 @@ inline LookupAdmissionReport ReadLookupAdmission(const SharedHeader* header,
   std::memcpy(report.executable_sha256, digest, length);
   report.executable_sha256[length] = '\0';
   return report;
+}
+
+// ── v23 adapter 运行期读数：两侧读写器 ────────────────────────────────────
+//
+// 为什么要有这条面：`AdapterDiagnostics` 以前只被契约测试读，运行期没有消费方。
+// 于是「这局到底哪个 adapter 认领了、装上没有」在真机上是**看不见的**——每加一个
+// 引擎就多一个答不出的问题，而 engine-support 的证据门恰恰要求逐门可判。
+//
+// 写侧只有 AdapterRegistry::Poll 一处。内容先写、seq 最后发布；读侧 seq→读→复核 seq，
+// 与 LookupHitSlot / VoiceClip 同一套。
+inline uint32_t PublishAdapterReports(SharedHeader* header,
+                                      const AdapterReportSlot* slots,
+                                      size_t count) {
+  if (header == nullptr || slots == nullptr) return 0u;
+  const size_t writable =
+      count < kAdapterReportSlots ? count : kAdapterReportSlots;
+  for (size_t i = 0; i < writable; ++i) {
+    AdapterReportSlot& dst = header->adapter_reports[i];
+    // 有界拷贝 + 强制 NUL：写侧可能是别的构建，读侧不许假设对面给了结尾。
+    std::memcpy(dst.id, slots[i].id, kAdapterReportIdChars);
+    dst.id[kAdapterReportIdChars - 1] = '\0';
+    dst.applicable = slots[i].applicable;
+    dst.installed = slots[i].installed;
+    dst.slot_reserved = 0u;
+    dst.flags = slots[i].flags;
+  }
+  // 尾部残留必须清掉：adapter 数变少时（换构建），旧槽会以陈旧读数继续存在。
+  for (size_t i = writable; i < kAdapterReportSlots; ++i) {
+    header->adapter_reports[i].id[0] = '\0';
+    header->adapter_reports[i].applicable = 0u;
+    header->adapter_reports[i].installed = 0u;
+    header->adapter_reports[i].slot_reserved = 0u;
+    header->adapter_reports[i].flags = 0u;
+  }
+  AtomicStoreShared32(&header->adapter_report_count,
+                      static_cast<uint32_t>(writable));
+  AtomicStoreShared32(&header->adapter_report_seq,
+                      AtomicLoadShared32(&header->adapter_report_seq) + 1u);
+  return static_cast<uint32_t>(writable);
+}
+
+// 读侧。seq==0 表示 hook 从未上报过（helper 还没起来 / 是旧版本），此时返回 0 槽——
+// 那是"还不知道"，**不是**"一个 adapter 都没认领"。两者混在一起会让诊断在启动头
+// 几百毫秒里稳定误报。
+inline uint32_t ReadAdapterReports(const SharedHeader* header,
+                                   AdapterReportSlot* out, size_t capacity,
+                                   uint32_t* out_seq = nullptr) {
+  if (out_seq != nullptr) *out_seq = 0u;
+  if (header == nullptr || out == nullptr || capacity == 0u) return 0u;
+  auto* mutable_header = const_cast<SharedHeader*>(header);
+  for (int attempt = 0; attempt < 8; ++attempt) {
+    const uint32_t seq = AtomicLoadShared32(&mutable_header->adapter_report_seq);
+    if (seq == 0u) return 0u;
+    uint32_t count = AtomicLoadShared32(&mutable_header->adapter_report_count);
+    if (count > kAdapterReportSlots) count = kAdapterReportSlots;
+    const size_t take = count < capacity ? count : capacity;
+    for (size_t i = 0; i < take; ++i) out[i] = mutable_header->adapter_reports[i];
+    if (AtomicLoadShared32(&mutable_header->adapter_report_seq) != seq) continue;
+    for (size_t i = 0; i < take; ++i) {
+      out[i].id[kAdapterReportIdChars - 1] = '\0';  // 有界：不信写侧给了 NUL
+    }
+    if (out_seq != nullptr) *out_seq = seq;
+    return static_cast<uint32_t>(take);
+  }
+  return 0u;
 }
 
 inline NativeLoopbackRequestSnapshot ReadNativeLoopbackRequest(
