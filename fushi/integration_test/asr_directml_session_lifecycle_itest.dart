@@ -53,15 +53,20 @@ Future<void> _round({
   required int batchSize,
   required String label,
   int lookaheadFrames = AsrTransducerDecoder.kDefaultLookaheadFrames,
+  bool useGreedyGraph = true,
+  int? greedyThreads = kAsrGreedyGraphIntraOpThreads,
 }) async {
   final Stopwatch sw = Stopwatch()..start();
   final AsrEngineSessions sessions = await AsrEngineLoader().load(
     store: store,
     variant: variant,
     preference: preference,
+    greedyIntraOpThreads: greedyThreads,
   );
   _log(
-    '$label load ok ${sw.elapsedMilliseconds}ms ${sessions.encoderResolution}',
+    '$label load ok ${sw.elapsedMilliseconds}ms ${sessions.encoderResolution} '
+    'greedyGraph=${sessions.greedy != null}'
+    '${sessions.greedyUnavailableReason == null ? '' : ' (unavailable: ${sessions.greedyUnavailableReason})'}',
   );
   try {
     final AsrTransducerDecoder decoder = AsrTransducerDecoder(
@@ -70,6 +75,7 @@ Future<void> _round({
       joiner: sessions.joiner,
       tokens: sessions.tokens,
       lookaheadFrames: lookaheadFrames,
+      greedy: useGreedyGraph ? sessions.greedy : null,
     );
     int tokens = 0;
     for (int i = 0; i < segments.length; i += batchSize) {
@@ -150,7 +156,51 @@ void main() {
       );
       _log('all rounds survived');
 
-      // 前瞻帧数扫描：同一批段、同一 EP，只变 K，看 ASR 阶段耗时。
+      // Loop 图 vs Dart 逐帧：同一批段、同一 EP。
+      for (final bool graph in <bool>[true, false]) {
+        await _round(
+          store: store,
+          segments: segments,
+          variant: AsrEncoderVariant.fp32,
+          preference: AsrAccelerationPreference.auto,
+          batchSize: 32,
+          useGreedyGraph: graph,
+          label: 'gpu-${graph ? 'loopgraph' : 'perframe'}',
+        );
+        await _round(
+          store: store,
+          segments: segments,
+          variant: AsrEncoderVariant.int8,
+          preference: AsrAccelerationPreference.cpuOnly,
+          batchSize: 16,
+          useGreedyGraph: graph,
+          label: 'cpu-${graph ? 'loopgraph' : 'perframe'}',
+        );
+      }
+      // 贪心图 intra-op 线程数扫描（null = ORT 默认全核）。
+      for (final int? threads in <int?>[null, 1, 2, 4, 8]) {
+        await _round(
+          store: store,
+          segments: segments,
+          variant: AsrEncoderVariant.fp32,
+          preference: AsrAccelerationPreference.auto,
+          batchSize: 32,
+          greedyThreads: threads,
+          label: 'gpu-loopgraph(threads=${threads ?? 'default'})',
+        );
+      }
+      for (final int? threads in <int?>[null, 2, 4]) {
+        await _round(
+          store: store,
+          segments: segments,
+          variant: AsrEncoderVariant.int8,
+          preference: AsrAccelerationPreference.cpuOnly,
+          batchSize: 16,
+          greedyThreads: threads,
+          label: 'cpu-loopgraph(threads=${threads ?? 'default'})',
+        );
+      }
+      // 前瞻帧数扫描：同一批段、同一 EP，只变 K，看 ASR 阶段耗时（逐帧路径）。
       for (final int k in <int>[1, 4, 8, 16, 32]) {
         await _round(
           store: store,
@@ -159,6 +209,7 @@ void main() {
           preference: AsrAccelerationPreference.auto,
           batchSize: 32,
           lookaheadFrames: k,
+          useGreedyGraph: false,
           label: 'gpu-sweep(k=$k)',
         );
       }
@@ -170,6 +221,7 @@ void main() {
           preference: AsrAccelerationPreference.cpuOnly,
           batchSize: 16,
           lookaheadFrames: k,
+          useGreedyGraph: false,
           label: 'cpu-sweep(k=$k)',
         );
       }

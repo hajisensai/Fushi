@@ -66,10 +66,10 @@ OrtProvider _toOrtProvider(OnnxExecutionProvider provider) {
 /// 运行时回报的其他 EP（TensorRT、XNNPACK…）两个子系统都不选，落 null 被滤掉。
 const Map<OrtProvider, OnnxExecutionProvider> _acceleratedProviders =
     <OrtProvider, OnnxExecutionProvider>{
-      OrtProvider.CUDA: OnnxExecutionProvider.cuda,
-      OrtProvider.DIRECT_ML: OnnxExecutionProvider.directml,
-      OrtProvider.CORE_ML: OnnxExecutionProvider.coreml,
-    };
+  OrtProvider.CUDA: OnnxExecutionProvider.cuda,
+  OrtProvider.DIRECT_ML: OnnxExecutionProvider.directml,
+  OrtProvider.CORE_ML: OnnxExecutionProvider.coreml,
+};
 
 /// 用配置的加速 EP 创建会话；首选 EP 建不起来时，按 [providers] 中已有的 CPU
 /// 后备重试一次。
@@ -101,9 +101,8 @@ Future<T> createOnnxSessionWithProviderFallback<T>({
   void Function(OnnxProviderResolution resolution)? onResolved,
   String logName = kOnnxLogName,
 }) async {
-  final OnnxExecutionProvider preferred = providers.isEmpty
-      ? OnnxExecutionProvider.cpu
-      : providers.first;
+  final OnnxExecutionProvider preferred =
+      providers.isEmpty ? OnnxExecutionProvider.cpu : providers.first;
   try {
     final T session = await create(providers);
     _notifyResolved(
@@ -113,8 +112,7 @@ Future<T> createOnnxSessionWithProviderFallback<T>({
     );
     return session;
   } on Exception catch (error) {
-    final bool canRetryOnCpu =
-        preferred != OnnxExecutionProvider.cpu &&
+    final bool canRetryOnCpu = preferred != OnnxExecutionProvider.cpu &&
         providers.contains(OnnxExecutionProvider.cpu);
     if (!canRetryOnCpu) rethrow;
     developer.log(
@@ -196,11 +194,10 @@ void _notifyResolved(
 /// `asr_types.dart` 集中核实，不需要也不该猜）。OCR 传
 /// `resolveOcrSessionInputs`：manga-ocr 下载源不同导出版本用过 `pixel_values` /
 /// `images` 等名字，单输入模型按元数据对齐——那是 OCR 特有的兼容层，不进共享层。
-typedef OnnxSessionInputResolver =
-    Map<String, OnnxTensor> Function(
-      Map<String, OnnxTensor> inputs,
-      List<String> sessionInputNames,
-    );
+typedef OnnxSessionInputResolver = Map<String, OnnxTensor> Function(
+  Map<String, OnnxTensor> inputs,
+  List<String> sessionInputNames,
+);
 
 /// flutter_onnxruntime 会话工厂。
 class OrtOnnxSessionFactory implements OnnxSessionFactory {
@@ -208,8 +205,8 @@ class OrtOnnxSessionFactory implements OnnxSessionFactory {
     OnnxRuntime? runtime,
     OnnxSessionInputResolver? resolveInputs,
     this.logName = kOnnxLogName,
-  }) : _runtime = runtime ?? OnnxRuntime(),
-       _resolveInputs = resolveInputs;
+  })  : _runtime = runtime ?? OnnxRuntime(),
+        _resolveInputs = resolveInputs;
 
   final OnnxRuntime _runtime;
   final OnnxSessionInputResolver? _resolveInputs;
@@ -246,20 +243,22 @@ class OrtOnnxSessionFactory implements OnnxSessionFactory {
     String modelPath, {
     required List<OnnxExecutionProvider> providers,
     void Function(OnnxProviderResolution resolution)? onProviderResolved,
+    int? intraOpNumThreads,
   }) async {
     final OrtSession session =
         await createOnnxSessionWithProviderFallback<OrtSession>(
-          providers: providers,
-          onResolved: onProviderResolved,
-          logName: logName,
-          create: (List<OnnxExecutionProvider> effectiveProviders) =>
-              _runtime.createSession(
-                modelPath,
-                options: OrtSessionOptions(
-                  providers: effectiveProviders.map(_toOrtProvider).toList(),
-                ),
-              ),
-        );
+      providers: providers,
+      onResolved: onProviderResolved,
+      logName: logName,
+      create: (List<OnnxExecutionProvider> effectiveProviders) =>
+          _runtime.createSession(
+        modelPath,
+        options: OrtSessionOptions(
+          providers: effectiveProviders.map(_toOrtProvider).toList(),
+          intraOpNumThreads: intraOpNumThreads,
+        ),
+      ),
+    );
     return _OrtOnnxSession(session, _resolveInputs);
   }
 }
@@ -287,9 +286,8 @@ class _OrtOnnxSession implements OnnxSession {
     final Map<String, OrtValue> ortInputs = <String, OrtValue>{};
     try {
       final OnnxSessionInputResolver? resolve = _resolveInputs;
-      final Map<String, OnnxTensor> resolvedInputs = resolve == null
-          ? inputs
-          : resolve(inputs, _session.inputNames);
+      final Map<String, OnnxTensor> resolvedInputs =
+          resolve == null ? inputs : resolve(inputs, _session.inputNames);
       for (final MapEntry<String, OnnxTensor> entry in resolvedInputs.entries) {
         final OnnxTensor tensor = entry.value;
         switch (tensor.type) {

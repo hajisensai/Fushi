@@ -60,9 +60,12 @@ abstract interface class OnnxSession {
 
 /// 会话工厂：模型文件路径由调用方注入（模型下载管理不在本层）。
 abstract interface class OnnxSessionFactory {
+  /// [intraOpNumThreads]：ORT 单算子内并行线程数；null 用 ORT 默认（全核）。
+  /// 小矩阵逐帧型的图（ASR 贪心 Loop 图）全核反而慢，调用方按实测传。
   Future<OnnxSession> createSession(
     String modelPath, {
     required List<OnnxExecutionProvider> providers,
+    int? intraOpNumThreads,
   });
 }
 

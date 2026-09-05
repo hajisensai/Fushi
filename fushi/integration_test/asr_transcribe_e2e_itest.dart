@@ -94,7 +94,9 @@ _runOnce({
   print(
     '[asr-e2e][load] variant=${variant.name} preference=${preference.name} '
     'engineLoad=${loadClock.elapsedMilliseconds}ms '
-    'resolution=${running.encoderResolution}',
+    'resolution=${running.encoderResolution} '
+    'greedyGraph=${running.sessions.greedy != null}'
+    '${running.sessions.greedyUnavailableReason == null ? '' : ' (unavailable: ${running.sessions.greedyUnavailableReason})'}',
   );
   final Stopwatch sw = Stopwatch()..start();
   try {
@@ -300,6 +302,12 @@ Future<void> _phaseBenchmark({
       decoder: sessions.decoder,
       joiner: sessions.joiner,
       tokens: sessions.tokens,
+      greedy: sessions.greedy,
+    );
+    // ignore: avoid_print
+    print(
+      '[asr-e2e][bench][$label] greedyGraph=${decoder.usesGreedyGraph} '
+      '${sessions.greedyUnavailableReason ?? ''}',
     );
     // 预热一次（DirectML 首次前向含着色器编译，不算进稳态）。
     if (segments.isNotEmpty) {

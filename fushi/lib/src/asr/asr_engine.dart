@@ -8,6 +8,7 @@ library;
 import 'dart:developer' as developer;
 import 'dart:io';
 
+import 'package:fushi/src/asr/asr_greedy_graph.dart';
 import 'package:fushi/src/asr/asr_model_manifest.dart';
 import 'package:fushi/src/asr/asr_model_store.dart';
 import 'package:fushi/src/asr/asr_types.dart';
@@ -126,6 +127,8 @@ class AsrEngineSessions {
     required this.tokens,
     required this.variant,
     required this.encoderResolution,
+    this.greedy,
+    this.greedyUnavailableReason,
   });
 
   final OnnxSession encoder;
@@ -135,6 +138,12 @@ class AsrEngineSessions {
   final AsrTokenTable tokens;
   final AsrEncoderVariant variant;
 
+  /// 派生的贪心 Loop 图会话（CPU）；null 表示拼装/建会话失败，解码器回退到
+  /// Dart 逐帧循环（结果等价，只是慢）。回退不静默：原因在
+  /// [greedyUnavailableReason]，UI/日志据此提示。
+  final OnnxSession? greedy;
+  final String? greedyUnavailableReason;
+
   /// 编码器实际落到的 EP 与（若有）降级原因——降级必须可观测（BUG-1163）。
   final OnnxProviderResolution encoderResolution;
 
@@ -143,8 +152,15 @@ class AsrEngineSessions {
     await decoder.close();
     await joiner.close();
     await vad.close();
+    await greedy?.close();
   }
 }
+
+/// 贪心 Loop 图会话的 intra-op 线程数默认值。图里每帧都是 N×512 级别的小矩阵，
+/// ORT 默认把全部核心都拉起来做线程同步反而拖慢（Python 侧 int8 N8T250：默认
+/// 全核 111 ms，2~4 线程 45 ms）；具体取值以真机扫描为准，见
+/// `integration_test/asr_directml_session_lifecycle_itest.dart`。
+const int kAsrGreedyGraphIntraOpThreads = 4;
 
 /// 从 [AsrModelStore] 装载四个会话 + 词表。
 class AsrEngineLoader {
@@ -172,6 +188,8 @@ class AsrEngineLoader {
     required AsrModelStore store,
     required AsrEncoderVariant variant,
     required AsrAccelerationPreference preference,
+    bool useGreedyGraph = true,
+    int? greedyIntraOpThreads = kAsrGreedyGraphIntraOpThreads,
   }) async {
     Set<OnnxExecutionProvider> available = const <OnnxExecutionProvider>{};
     Object? probeError;
@@ -240,11 +258,42 @@ class AsrEngineLoader {
       final AsrTokenTable tokens = AsrTokenTable.parse(
         await store.fileFor(AsrModelRole.tokens).readAsString(),
       );
+      // 贪心 Loop 图：拼装或建会话失败都不致命——逐帧路径永远在，但要把原因
+      // 留下来（速度差一个量级，用户看到慢要能知道为什么）。
+      OnnxSession? greedy;
+      String? greedyUnavailableReason;
+      if (useGreedyGraph) {
+        try {
+          final File graphFile = await store.ensureGreedyGraph(
+            variant,
+            build: buildAsrGreedyGraph,
+            blankId: tokens.blankId,
+            unkId: tokens.unkId,
+          );
+          greedy = await _factory.createSession(
+            graphFile.path,
+            providers: cpu,
+            intraOpNumThreads: greedyIntraOpThreads,
+          );
+          opened.add(greedy);
+        } catch (error, stack) {
+          greedyUnavailableReason = '$error';
+          developer.log(
+            'ASR greedy graph unavailable; falling back to per-frame decoding',
+            name: kAsrLogName,
+            error: error,
+            stackTrace: stack,
+          );
+        }
+      }
       developer.log(
-        'ASR engine loaded (${variant.name} encoder): $encoderResolution',
+        'ASR engine loaded (${variant.name} encoder): $encoderResolution '
+        'greedyGraph=${greedy != null}',
         name: kAsrLogName,
       );
       return AsrEngineSessions(
+        greedy: greedy,
+        greedyUnavailableReason: greedyUnavailableReason,
         encoder: encoder,
         decoder: decoder,
         joiner: joiner,

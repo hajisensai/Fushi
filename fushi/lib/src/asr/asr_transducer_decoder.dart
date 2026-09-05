@@ -20,6 +20,7 @@ library;
 import 'dart:typed_data';
 
 import 'package:fushi/src/asr/asr_fbank.dart';
+import 'package:fushi/src/asr/asr_greedy_graph.dart' show AsrGreedyGraphIo;
 import 'package:fushi/src/asr/asr_types.dart';
 import 'package:fushi/src/asr/asr_transcribe_job.dart' show AsrBatchDecoder;
 import 'package:fushi/src/onnx/onnx_inference.dart';
@@ -32,9 +33,11 @@ class AsrTransducerDecoder implements AsrBatchDecoder {
     required AsrTokenTable tokens,
     AsrFbank fbank = const AsrFbank(),
     this.lookaheadFrames = kDefaultLookaheadFrames,
+    OnnxSession? greedy,
   }) : _encoder = encoder,
        _decoder = decoder,
        _joiner = joiner,
+       _greedy = greedy,
        _tokens = tokens,
        _fbank = fbank {
     if (tokens.blankId < 0) {
@@ -65,8 +68,16 @@ class AsrTransducerDecoder implements AsrBatchDecoder {
   final OnnxSession _encoder;
   final OnnxSession _decoder;
   final OnnxSession _joiner;
+
+  /// 派生的贪心 Loop 图（`asr_greedy_graph.dart`）：给了就整批一次调用完成
+  /// 逐帧贪心，decoder/joiner 会话不再被调用；null 走 Dart 逐帧循环。两条路径
+  /// 语义逐字等价（等价性由 `tool/asr/verify_greedy_graph.py` 真模型对拍钉住）。
+  final OnnxSession? _greedy;
   final AsrTokenTable _tokens;
   final AsrFbank _fbank;
+
+  /// 当前是否走 Loop 图路径。
+  bool get usesGreedyGraph => _greedy != null;
 
   /// 一次 encoder 前向 + 整批逐帧贪心解码；返回与 [segments] 等长、同序的结果。
   @override
@@ -138,6 +149,19 @@ class AsrTransducerDecoder implements AsrBatchDecoder {
       }
       return len;
     });
+
+    final OnnxSession? greedy = _greedy;
+    if (greedy != null) {
+      return _decodeWithGreedyGraph(
+        greedy: greedy,
+        encoderOut: encoderOut,
+        encoderLens: encoderLens,
+        encData: encData,
+        encFrames: encFrames,
+        encLens: encLens,
+        batch: batch,
+      );
+    }
 
     // 3. 初始上下文 [blank, blank] 与首个 decoder_out。
     final int blank = _tokens.blankId;
@@ -255,6 +279,49 @@ class AsrTransducerDecoder implements AsrBatchDecoder {
         tokenOffsetsMs: List<int>.unmodifiable(
           frames[i].map((int f) => f * kAsrEncoderFrameMs),
         ),
+      );
+    });
+  }
+
+  /// Loop 图路径：把 encoder 输出原样喂进派生图，读回 `emitted[N,T]`（每帧发射的
+  /// token id，-1 = 无），按帧还原 token 与时间。
+  Future<List<AsrDecodedSegment>> _decodeWithGreedyGraph({
+    required OnnxSession greedy,
+    required OnnxTensor encoderOut,
+    required OnnxTensor encoderLens,
+    required Float32List encData,
+    required int encFrames,
+    required List<int> encLens,
+    required int batch,
+  }) async {
+    final Int64List lens = Int64List.fromList(encLens);
+    final Map<String, OnnxTensor> out = await greedy.run(<String, OnnxTensor>{
+      AsrGreedyGraphIo.encoderOut: OnnxTensor.float32(
+        encData,
+        List<int>.from(encoderOut.shape),
+      ),
+      AsrGreedyGraphIo.encoderOutLens: OnnxTensor.int64(lens, <int>[batch]),
+    });
+    final OnnxTensor emitted = _require(out, AsrGreedyGraphIo.emitted);
+    if (emitted.shape.length != 2 ||
+        emitted.shape[0] != batch ||
+        emitted.shape[1] != encFrames) {
+      throw StateError(
+        'greedy 图 emitted 形状异常：${emitted.shape}（期望 [$batch, $encFrames]）',
+      );
+    }
+    return List<AsrDecodedSegment>.generate(batch, (int i) {
+      final List<String> tokens = <String>[];
+      final List<int> offsets = <int>[];
+      for (int t = 0; t < encLens[i]; t++) {
+        final int y = _lengthAt(emitted, i * encFrames + t);
+        if (y < 0) continue;
+        tokens.add(_tokens.tokenAt(y));
+        offsets.add(t * kAsrEncoderFrameMs);
+      }
+      return AsrDecodedSegment(
+        tokens: List<String>.unmodifiable(tokens),
+        tokenOffsetsMs: List<int>.unmodifiable(offsets),
       );
     });
   }

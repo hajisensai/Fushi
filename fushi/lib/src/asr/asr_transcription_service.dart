@@ -227,6 +227,7 @@ class AsrTranscriptionService {
           decoder: sessions.decoder,
           joiner: sessions.joiner,
           tokens: sessions.tokens,
+          greedy: sessions.greedy,
         ),
         batchSize:
             batchSize ??

@@ -4,7 +4,9 @@
 /// 本类只负责「哪些文件、放哪、算多少」。
 library;
 
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
 
@@ -12,6 +14,18 @@ import 'package:fushi/src/asr/asr_model_manifest.dart';
 import 'package:fushi/src/onnx/model_file_downloader.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/utils/misc/directory_bytes.dart';
+
+/// 贪心 Loop 图的拼装器签名（见 `asr_greedy_graph.dart` 的 `buildAsrGreedyGraph`）。
+typedef AsrGreedyGraphBuilder =
+    Uint8List Function({
+      required Uint8List decoderOnnx,
+      required Uint8List joinerOnnx,
+      required int blankId,
+      required int unkId,
+    });
+
+/// 派生图的格式版本：拼装逻辑（IO 名、语义）变了就 +1，旧缓存自动重建。
+const int kAsrGreedyGraphFormatVersion = 1;
 
 /// 某个编码器变体的模型就绪 / 占用状态。
 class AsrModelStatus {
@@ -111,6 +125,59 @@ class AsrModelStore {
       targetDir: dir,
       isReady: isAsrModelFileReady,
     );
+  }
+
+  /// 派生的贪心解码 Loop 图（decoder + joiner + 逐帧贪心编成一张图，一个批次只调
+  /// ORT 一次）。不下载、不托管：由本目录里同变体的 decoder/joiner 文件在设备上
+  /// 生成并缓存；sidecar 记录源文件字节数与 blank/unk，源文件换了就重建。
+  ///
+  /// [build] 注入图拼装器（生产用 `buildAsrGreedyGraph`），拼装抛出的
+  /// [FormatException] 原样透出，调用方决定回退到逐帧路径。
+  Future<File> ensureGreedyGraph(
+    AsrEncoderVariant variant, {
+    required AsrGreedyGraphBuilder build,
+    required int blankId,
+    required int unkId,
+  }) async {
+    final File decoder = fileFor(asrDecoderRole(variant));
+    final File joiner = fileFor(asrJoinerRole(variant));
+    final File graph = File(p.join(dir.path, 'greedy-${variant.name}.onnx'));
+    final File meta = File('${graph.path}.meta.json');
+    final Map<String, Object?> expected = <String, Object?>{
+      'version': kAsrGreedyGraphFormatVersion,
+      'decoderBytes': decoder.lengthSync(),
+      'joinerBytes': joiner.lengthSync(),
+      'blankId': blankId,
+      'unkId': unkId,
+    };
+    if (graph.existsSync() && graph.lengthSync() > 0 && meta.existsSync()) {
+      try {
+        final Object? current = jsonDecode(await meta.readAsString());
+        if (current is Map && _sameMeta(current, expected)) return graph;
+      } on FormatException {
+        // 坏 sidecar：当作过期，重建。
+      }
+    }
+    final Uint8List bytes = build(
+      decoderOnnx: await decoder.readAsBytes(),
+      joinerOnnx: await joiner.readAsBytes(),
+      blankId: blankId,
+      unkId: unkId,
+    );
+    // 先写临时名再 rename：崩溃不留半个 onnx 被下次当成品加载。
+    final File tmp = File('${graph.path}.part');
+    await tmp.writeAsBytes(bytes, flush: true);
+    await tmp.rename(graph.path);
+    await meta.writeAsString(jsonEncode(expected), flush: true);
+    return graph;
+  }
+
+  static bool _sameMeta(Map<Object?, Object?> a, Map<String, Object?> b) {
+    if (a.length != b.length) return false;
+    for (final MapEntry<String, Object?> e in b.entries) {
+      if (a[e.key] != e.value) return false;
+    }
+    return true;
   }
 
   /// 删除整个模型目录（两个变体、`.part` 残留一并清掉）；返回释放的字节数。
