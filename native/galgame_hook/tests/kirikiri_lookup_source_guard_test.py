@@ -540,6 +540,23 @@ def find_classic_tree_walk_missing(source: MaskedSource) -> list[str]:
         hits.append(
             f"{ADAPTER.name}: 图层树遍历没有读 .children——扫描面没有真的扩到树里"
         )
+    # 第三条：树遍历必须被探测开关门住，绝不能默认开。
+    # 2026-09-05 真机两次实测（フタマタ恋愛 Ver1.00）：给 kag.fore/back.messages 之外的
+    # 任何层注入成员都会和游戏自身逻辑冲突——整棵窗口树（预算 512）和收窄到消息层子树
+    # （深度 4 / 预算 64）**两版都让游戏抛 `Member "enabled" does not exist` 并丢掉窗口**。
+    # 收窄规模没用，说明问题不是补挂面太大，而是"给消息层以外的层注入成员"这件事本身。
+    call = TREE_WALK_CALL_RE.search(source.text)
+    if call is not None:
+        head = source.text[:call.start()]
+        gate = head.rfind("fushiLookupProbeMode")
+        sweep = head.rfind("global.fushiLookupSweepClassicLayers = function")
+        if gate < 0 or (sweep >= 0 and gate < sweep):
+            hits.append(
+                f"{ADAPTER.name}:{source.line_of(call.start())} "
+                "图层树遍历没有被 fushiLookupProbeMode 门住——给 messages 之外的层注入"
+                "成员会打坏游戏（真机两次实测抛 Member \"enabled\" does not exist 并丢窗口），"
+                "它只能留在默认关闭的探测分支里"
+            )
     return hits
 
 
@@ -3494,6 +3511,7 @@ global.fushiLookupPatchClassicLayer = function(layer)
 global.fushiLookupSweepClassicLayers = function()
 {
 	if((global.fushiLookupClassicSource & 1) == 0) return 0;
+	if(!global.fushiLookupProbeMode) return 0;
 	var roots = global.fushiLookupLayerTreeRoots();
 	for(var r = 0; r < roots.count; r++) global.fushiLookupPatchLayerTree(roots[r], 0);
 	return 0;
@@ -5841,6 +5859,11 @@ class MutationSelfTest(unittest.TestCase):
             "global.fushiLookupPatchLayerTree(roots[r], 0);",
             "0;",
         )
+        self.assertNotEqual([], find_classic_tree_walk_missing(dirty))
+
+    def test_tree_walk_not_gated_by_probe_mode_is_red(self) -> None:
+        # 树遍历默认开 = 给 messages 之外的层注入成员常驻，真机两次都把游戏打崩。
+        dirty = self._mutate("if(!global.fushiLookupProbeMode) return 0;", "")
         self.assertNotEqual([], find_classic_tree_walk_missing(dirty))
 
     def test_tree_walk_without_children_recursion_is_red(self) -> None:
