@@ -74,7 +74,8 @@ void main() {
       () async {
     final repo = AnkiMobileRepository(
       openUrl: (_) async => true,
-      readInfoForAddingJson: () async => jsonEncode(<String, Object?>{
+      readInfoForAddingJson: () async =>
+          AnkiMobilePasteboardRead.ok(jsonEncode(<String, Object?>{
         'profiles': <Object>[
           <String, Object?>{'name': 'User 1'},
         ],
@@ -91,7 +92,7 @@ void main() {
             ],
           },
         ],
-      }),
+      })),
     );
 
     final result = await repo.consumeInfoForAddingPasteboard();
@@ -113,7 +114,8 @@ void main() {
         launched.add(uri);
         return true;
       },
-      readInfoForAddingJson: () async => null,
+      readInfoForAddingJson: () async =>
+          const AnkiMobilePasteboardRead.empty(),
       mediaServerLifetime: Duration.zero,
     );
     await repo.saveSettings(const AnkiSettings(
@@ -194,7 +196,8 @@ void main() {
         launched.add(uri);
         return true;
       },
-      readInfoForAddingJson: () async => null,
+      readInfoForAddingJson: () async =>
+          const AnkiMobilePasteboardRead.empty(),
       mediaServerLifetime: Duration.zero,
       beginMediaImportBackgroundTask: () async {
         events.add('begin-background-task');
@@ -303,7 +306,8 @@ void main() {
         launched.add(uri);
         return true;
       },
-      readInfoForAddingJson: () async => null,
+      readInfoForAddingJson: () async =>
+          const AnkiMobilePasteboardRead.empty(),
       mediaServerLifetime: const Duration(milliseconds: 500),
       beginMediaImportBackgroundTask: () async {},
       endMediaImportBackgroundTask: () async {
