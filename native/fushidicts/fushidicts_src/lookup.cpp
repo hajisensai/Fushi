@@ -74,8 +74,17 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
           auto it = result_map.find(key);
           if (it != result_map.end()) {
             // we only need the longest matched form
-            if (utf8::distance(search_str.begin(), search_str.end()) >
-                utf8::distance(it->second.matched.begin(), it->second.matched.end())) {
+            const size_t incoming = utf8::distance(search_str.begin(), search_str.end());
+            const size_t held = utf8::distance(it->second.matched.begin(), it->second.matched.end());
+            // 同长时按**预处理步数更少**取胜。`process()` 的变体是 std::map，按码点
+            // 字典序迭代，拆字形（首字 ㅂ U+3142）排在原形（부 U+BD80）之前，于是
+            // 一个根本不需要变形的韩语词会先由拆字变体（steps=1）落进 result_map，
+            // 原形变体（steps=0）随后长度相等、进不来——整批韩语结果的
+            // preprocessor_steps 被无谓抬成 1。它是排序的第 3 档键（见下方
+            // sort_results）并经 FFI 出到 Dart，纯韩语结果集内部只是整体平移，但与
+            // 其它语言混排时会把韩语的精确命中往后压（BUG-2148 审查发现）。
+            if (incoming > held ||
+                (incoming == held && variant.steps < it->second.preprocessor_steps)) {
               it->second = LookupResult{.matched = search_str,
                                         .deinflected = query_text,
                                         .trace = deinflection.trace,

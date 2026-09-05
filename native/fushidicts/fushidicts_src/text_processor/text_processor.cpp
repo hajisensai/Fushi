@@ -593,7 +593,9 @@ std::u32string text_processor::disassemble_hangul(const std::u32string& text) {
   if (!has_hangul) return text;
 
   std::u32string out;
-  out.reserve(text.size() * 3);
+  // 单音节最大展开是 5，不是 3：`곿` = ㄱ + (ㅘ→ㅗㅏ) + (ㄳ→ㄱㅅ)。11172 个音节里
+  // 1463 个展开成 5、5054 个展开成 4，按 3 倍预留则绝大多数韩语串都要 realloc。
+  out.reserve(text.size() * 5);
   for (char32_t c : text) {
     if (c >= kSyllableFirst && c <= kSyllableLast) {
       const int s = static_cast<int>(c - kSyllableFirst);
@@ -707,6 +709,15 @@ std::vector<TextVariant> text_processor::process(const std::string& src) {
   all_processors.insert(all_processors.end(), en_processors.begin(), en_processors.end());
   auto dia_processors = get_diacritic_removal_processors();
   all_processors.insert(all_processors.end(), dia_processors.begin(), dia_processors.end());
+  // 韩语拆字**必须挂在链尾**，这是一条隐式但要命的顺序不变式：链首附近的 nfkc
+  // （get_japanese_processors 里那条）会把兼容字母兼容分解再规范合成回预合成音节，
+  // NFKC("ㅂㅜㄷㅡ") == "부드"。把 get_korean_processors 前移到 nfkc 之前，拆字会被
+  // 静默撤销、BUG-2148 原样复发，且端到端测试之外的任何单测都照绿。
+  // 守卫见 korean_hangul_lookup_test 的「链序」一组。
+  //
+  // 反向也靠这个顺序：NFD 形式的韩语（U+1100 组合字母块，macOS 文件名/字幕常见）
+  // disassemble_hangul 的早退范围认不出，靠链首 nfkc 先归一成预合成音节，韩语处理器
+  // 在链尾正好接住。
   auto ko_processors = get_korean_processors();
   all_processors.insert(all_processors.end(), ko_processors.begin(), ko_processors.end());
 

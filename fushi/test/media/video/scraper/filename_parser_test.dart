@@ -473,22 +473,18 @@ void main() {
       expect(b.episode, 14);
     });
 
-    test('[总第80] 这类绝对集号不参与解析，也不污染已解出的集号', () {
-      final ParsedMediaName p = FilenameParser.parse(
+    test('[总第80] 这类绝对集号不参与解析，两种块顺序都不得抢走集号', () {
+      // 顺序敏感是真实风险：绝对集号写在季集块**之前**在真实命名里完全正常，
+      // 只测一种顺序会让「不污染」变成空壳断言（它其实只是被前面的块先占了）。
+      for (final String name in <String>[
         '[Group][Show][4th - 14][总第80][1080P].mp4',
-      );
-      expect(p.episode, 14, reason: '80 是绝对集号，抢走 episode 会把整季归错');
-      expect(p.season, 4);
-    });
-
-    test('裸序数词只在独占整段时算季号，标题里的序数词不受影响', () {
-      // 「4th」是块里剥掉集号后剩下的全部内容 -> 季号；
-      // 「The 4th Ninja」里的 4th 是标题的一部分 -> 原样保留。
-      final ParsedMediaName p =
-          FilenameParser.parse('[Group] The 4th Ninja [05][1080P].mp4');
-      expect(p.title, 'The 4th Ninja');
-      expect(p.season, isNull);
-      expect(p.episode, 5);
+        '[Group][Show][总第80][4th - 14][1080P].mp4',
+        '[Group][Show][总第 80][4th - 14][1080P].mp4',
+      ]) {
+        final ParsedMediaName p = FilenameParser.parse(name);
+        expect(p.episode, 14, reason: '$name：80 是绝对集号，抢走 episode 会把整季归错');
+        expect(p.season, 4, reason: name);
+      }
     });
 
     test('多个未识别块时标题仍取第一个非空候选，不被后面的块顶掉', () {
@@ -497,6 +493,79 @@ void main() {
       );
       expect(p.title, 'Real Title');
       expect(p.episode, 14);
+    });
+  });
+
+  // 块判据的安全性全靠「整块锚定 + 季标记必需」。把括号外那套位置启发式
+  // （尾部裸数字季号、` - ` 副标题分割、尾部裸集数、电影 token）搬进块里，下面
+  // 每一条都会解错——它们是 BUG-2146 第一版修法的实测回归，逐条钉死。
+  group('未识别括号块不得被当作自由文本解析（BUG-2146 负样本）', () {
+    test('[Disc 2] / [Reseed 2] / [Special 3] 不是季号', () {
+      const Map<String, String> cases = <String, String>{
+        '[VCB-Studio] Yuru Camp - 05 [Disc 2][Ma10p_1080p][x265_flac].mkv':
+            'Yuru Camp',
+        '[VCB-Studio] Yuru Camp - 05 [Reseed 2][Ma10p_1080p][x265_flac].mkv':
+            'Yuru Camp',
+        '[Nekomoe kissaten] Bocchi the Rock! - 05 [Special 3][1080p][JPSC].mp4':
+            'Bocchi the Rock!',
+        '[Group] Show - 05 [Repack 2][1080p].mkv': 'Show',
+      };
+      cases.forEach((String name, String title) {
+        final ParsedMediaName p = FilenameParser.parse(name);
+        expect(p.season, isNull, reason: '$name：块尾的 2/3 是碟号/重发号，不是季号');
+        expect(p.episode, 5, reason: name);
+        expect(p.title, title, reason: name);
+      });
+    });
+
+    test('字幕组招募块 / 索引站标签不得变成副标题', () {
+      final ParsedMediaName a = FilenameParser.parse(
+        '[幻樱字幕组] 间谍过家家 - 05 [招募新人 - 详情见置顶][1080P][简体].mp4',
+      );
+      expect(a.secondaryTitle, isNull, reason: '副标题会被当作并列标题参与资源贴合度判据');
+      expect(a.episode, 5);
+
+      final ParsedMediaName b = FilenameParser.parse(
+        '[Erai-raws] Frieren - 05 [1080p][Nyaa - Torrent][Multiple Subtitle].mkv',
+      );
+      expect(b.secondaryTitle, isNull);
+      expect(b.episode, 5);
+
+      final ParsedMediaName c = FilenameParser.parse(
+        '[Group] Show - 05 [~Director Cut~][1080p].mkv',
+      );
+      expect(c.secondaryTitle, isNull);
+      expect(c.episode, 5);
+    });
+
+    test('整季合集包不得被解成末集', () {
+      for (final String name in <String>[
+        '[桜都字幕组] 摇曳露营△ [第01-12话][1080p][简繁内封].mkv',
+        '[北宇治字幕组] 孤独摇滚 [01-12话][WebRip][1080p][简繁内封].mkv',
+        '[桜都字幕组] 作品名 [全 12 话][1080p][简体内嵌].mkv',
+        '【某某字幕组】【作品名】【TV 01 - 25 END】【1080P】.mp4',
+        '[Group] Title [01 - 12] [1080p].mkv',
+      ]) {
+        expect(FilenameParser.parse(name).episode, isNull, reason: name);
+      }
+    });
+
+    test('块里的 Movie/剧场版 token 判定面不变（`TV-Movie` 不算电影提示）', () {
+      final ParsedMediaName p = FilenameParser.parse(
+        '[LoliHouse] Mushoku Tensei - 05 [TV-Movie]'
+        '[WebRip 1080p HEVC-10bit AAC].mkv',
+      );
+      expect(p.isMovieHint, isFalse, reason: '这是画质/来源标记里的 Movie，不是剧场版');
+      expect(p.episode, 5);
+    });
+
+    test('块顺序不得改变解析结果', () {
+      final ParsedMediaName a =
+          FilenameParser.parse('[Group] Show [Fix 2] [S1] - 05 [1080p].mkv');
+      final ParsedMediaName b =
+          FilenameParser.parse('[Group] Show [S1] [Fix 2] - 05 [1080p].mkv');
+      expect(a.season, b.season, reason: '同一批块换顺序解出不同季号 = 行为不确定');
+      expect(a.episode, b.episode);
     });
   });
 

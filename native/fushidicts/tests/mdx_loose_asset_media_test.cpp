@@ -21,7 +21,9 @@
 #include <string>
 #include <vector>
 
+#include "fushidicts/deinflector.hpp"
 #include "fushidicts/importer.hpp"
+#include "fushidicts/lookup.hpp"
 #include "fushidicts/query.hpp"
 #include "mdx_fixture.hpp"
 #include "zip_fixture.hpp"
@@ -125,6 +127,45 @@ int main() {
     }
     if (!q.get_media_file(r.title, "x.png").empty()) {
       fail("a remote url() must not be resolved against the dictionary directory");
+    }
+  }
+
+  // ── zip 导入：放宽抽取白名单不得让第二本词典的 .mdx 覆盖主 .mdx ──────────
+  //
+  // import_mdx_from_zip 把 entry 扁平化成 `stem + ext` 抽到临时目录。放宽之前只收
+  // .css/.js/.mdd，撞不到已抽出的主 .mdx；放宽成「除 .mdx 与非同名 .mdd 外全取」
+  // 之后，一个装了 `en/Foo.mdx` + `jp/Foo.mdx` 的合集 zip 会把第二本直接写在主
+  // .mdx 上，然后解析**错的那本词典**。这里钉住主词典的条目仍然是它自己的。
+  {
+    const std::string base2 = fushi_test::temp_dir() + "/fushi_mdx_zip_collision";
+    std::filesystem::remove_all(std::filesystem::u8path(base2));
+    std::filesystem::create_directories(std::filesystem::u8path(base2));
+
+    auto primary = mdx_fixture::build_mdx_plain("Primary", {{"alpha", "<div>PRIMARY DEF</div>"}});
+    auto decoy = mdx_fixture::build_mdx_plain("Decoy", {{"omega", "<div>DECOY DEF</div>"}});
+
+    const std::string zip_path = fushi_test::write_zip(
+        "mdx_collision", {
+                             {"en/Same.mdx", std::string(primary.begin(), primary.end())},
+                             {"jp/Same.mdx", std::string(decoy.begin(), decoy.end())},
+                             {"en/Same.css", ".x{color:red}"},
+                         });
+    if (zip_path.empty()) {
+      fail("could not write the collision fixture zip");
+    } else {
+      const std::string zip_out = base2 + "/out";
+      ImportResult rz = dictionary_importer::import(zip_path, zip_out);
+      if (!rz.success) {
+        fail(rz.errors.empty() ? "zip import failed" : rz.errors.front().c_str());
+      } else {
+        DictionaryQuery qz;
+        qz.add_term_dict(zip_out + "/" + rz.title);
+        Deinflector dz;
+        Lookup lz(qz, dz);
+        if (lz.lookup("alpha").empty()) {
+          fail("the primary .mdx was overwritten by a second .mdx flattened onto its name");
+        }
+      }
     }
   }
 

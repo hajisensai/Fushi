@@ -1498,15 +1498,30 @@ ImportResult import_mdx_from_zip(Zip& zip, const std::string& output_dir) {
     //
     // The enumeration this replaces was `.css`/`.js` only, which silently
     // dropped every loose image/font before import_mdx ever got to look for it
-    // (BUG-2147). The two things still worth excluding are the .mdx itself
-    // (skipped above) and a .mdd that belongs to a *different* dictionary —
-    // those are the only entries that are routinely huge. Everything else is
-    // bounded by kMaxLooseSiblingBytes so a pathological archive cannot make
-    // the temp dir explode.
+    // (BUG-2147). What must still be excluded:
+    //
+    //   * **any other .mdx** — it is another dictionary's main file, never this
+    //     one's asset. Critically, entries are flattened to `fstem + ext`, so a
+    //     bundle holding `en/Foo.mdx` + `jp/Foo.mdx` (or any second .mdx whose
+    //     bare name collides) would extract straight over the primary .mdx this
+    //     import already wrote and then parse the wrong dictionary. The old
+    //     `.css`/`.js` enumeration could never collide with it; widening the
+    //     rule is what makes this reachable.
+    //   * a .mdd belonging to a *different* dictionary — those are the entries
+    //     that are routinely huge (OALD splits ~3.7 GB across parts).
+    //
+    // Everything else is bounded by kMaxLooseSiblingBytes so a pathological
+    // archive cannot make the temp dir explode. The flattened-name collision
+    // among assets themselves (`images/logo.png` vs `icons/logo.png`) predates
+    // this change and stays as-is: both are candidate media for the same bare
+    // name and the entries can only ever ask for one of them.
+    if (ext == ".mdx") continue;
     const bool is_mdd = ext == ".mdd";
     const bool wanted = is_mdd ? (fstem == stem || is_numbered_part_stem(fstem))
                                : zip.entries[i].uncompressed_size <= kMaxLooseSiblingBytes;
-    if (wanted) {
+    // Belt and braces: never write over the .mdx already extracted above, even
+    // if some entry without an .mdx extension flattens onto its name.
+    if (wanted && fstem + ext != mdx_filename) {
       extract(static_cast<int>(i), fstem + ext);
     }
   }
