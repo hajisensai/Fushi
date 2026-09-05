@@ -4236,5 +4236,10 @@
   "gal_mining_image_mode_video_clip_hint": "Records the game window from the moment the line appears until you mine the card, mixed with the sentence audio. Falls back to an animated image or screenshot when recording has not started or fewer than 2 frames were captured.",
   "game_hook_reason_native_loopback_ack_timeout": "The audio capture policy was not confirmed in time. Text capture still works; try again if game audio is missing.",
   "shortcut_scope_global_external_desktop_note": "鼠标触发只接受侧键（后退/前进）。其它按钮在别的程序里有各自的固有含义，这里会拒绝录入。",
-  "shortcut_mouse_button_not_supported": "This action only accepts mouse side buttons (back/forward)."
+  "shortcut_mouse_button_not_supported": "This action only accepts mouse side buttons (back/forward).",
+  "anki_ankimobile_opened": "AnkiMobile opened. Approve the request there, then return to Fushi.",
+  "anki_error_ankimobile_pasteboard_empty": "AnkiMobile did not return any configuration. Approve the request in AnkiMobile, then come back to Fushi.",
+  "anki_error_ankimobile_pasteboard_denied": "iOS blocked reading the clipboard. Choose Allow Paste when returning to Fushi, then try again.",
+  "anki_error_ankimobile_no_decks": "AnkiMobile returned no decks or note types.",
+  "anki_error_ankimobile_unavailable": "Could not open AnkiMobile. Install AnkiMobile and try again."
 }

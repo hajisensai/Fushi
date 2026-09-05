@@ -93,6 +93,20 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
     if (code == AnkiErrorCode.collectionUnavailable) {
       return t.anki_error_collection_unavailable;
     }
+    // BUG-2150：iOS AnkiMobile 的配置回传（URL scheme + 系统剪贴板）此前把「已跳转、
+    // 等你去同意」「AnkiMobile 没写」「系统不让读」三种情形压成同一句硬编码英文
+    // 「No AnkiMobile configuration was found on the clipboard.」——用户既看不出该做
+    // 什么，中文 UI 里也是英文。按稳定码分开映射。
+    switch (code) {
+      case AnkiErrorCode.ankiMobileOpened:
+        return t.anki_ankimobile_opened;
+      case AnkiErrorCode.ankiMobilePasteboardEmpty:
+        return t.anki_error_ankimobile_pasteboard_empty;
+      case AnkiErrorCode.ankiMobilePasteboardDenied:
+        return t.anki_error_ankimobile_pasteboard_denied;
+      case AnkiErrorCode.ankiMobileNoDecks:
+        return t.anki_error_ankimobile_no_decks;
+    }
     // TODO-752a：AnkiConnect 网络错误也按稳定码本地化（与制卡 toast 同一组码），
     // 不再透传后端拼好的英文/可能乱码的 [message]。
     final String? mineLocalized = localizeAnkiMineError(code);
