@@ -119,6 +119,7 @@ class DictionaryRepository {
     Map<String, String> metadata;
     List<String> hiddenLanguages;
     List<String> collapsedLanguages;
+    List<String> expandedLanguages;
     try {
       metadata = Map<String, String>.from(jsonDecode(r.metadataJson));
     } catch (e, stack) {
@@ -140,6 +141,14 @@ class DictionaryRepository {
           .log('_rowToDictionary.collapsedLanguages', e, stack);
       collapsedLanguages = [];
     }
+    try {
+      expandedLanguages =
+          List<String>.from(jsonDecode(r.expandedLanguagesJson));
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('_rowToDictionary.expandedLanguages', e, stack);
+      expandedLanguages = [];
+    }
     return Dictionary(
       name: r.name,
       formatKey: r.formatKey,
@@ -151,6 +160,7 @@ class DictionaryRepository {
       metadata: metadata,
       hiddenLanguages: hiddenLanguages,
       collapsedLanguages: collapsedLanguages,
+      expandedLanguages: expandedLanguages,
       languageOverride: r.languageOverride,
     );
   }
@@ -164,6 +174,7 @@ class DictionaryRepository {
       metadataJson: Value(jsonEncode(d.metadata)),
       hiddenLanguagesJson: Value(jsonEncode(d.hiddenLanguages)),
       collapsedLanguagesJson: Value(jsonEncode(d.collapsedLanguages)),
+      expandedLanguagesJson: Value(jsonEncode(d.expandedLanguages)),
       languageOverride: Value(d.languageOverride),
     );
   }
@@ -221,17 +232,48 @@ class DictionaryRepository {
     clearDictionaryResultsCache();
   }
 
-  void toggleDictionaryCollapsed(Dictionary dictionary, String languageCode) {
-    if (dictionary.collapsedLanguages.contains(languageCode)) {
-      dictionary.collapsedLanguages = [...dictionary.collapsedLanguages]
-        ..remove(languageCode);
-    } else {
-      dictionary.collapsedLanguages = [
-        ...dictionary.collapsedLanguages,
-        languageCode,
-      ];
-    }
+  /// 折叠三态的**唯一写入点**（BUG-2158）。两个名单在这里保持互斥。
+  ///
+  /// 修复前这里是个双态 toggle：只往 `collapsedLanguages` 里加/减，于是「不在名单
+  /// 里」既是「展开」又是「继承」。全局 `collapse_dictionaries` 默认 true，用户对
+  /// 自动展开窗口之外的词典点「展开」就等于什么都没做。老那个双态入口已**删除**
+  /// 而不是与本方法并存——留着它就等于留着一条能写出「两个名单都不含」却自称
+  /// 「已展开」的路径。
+  void setDictionaryCollapseState(
+    Dictionary dictionary,
+    String languageCode,
+    DictionaryCollapseState state,
+  ) {
+    dictionary.collapsedLanguages = <String>[
+      for (final String code in dictionary.collapsedLanguages)
+        if (code != languageCode) code,
+      if (state == DictionaryCollapseState.collapsed) languageCode,
+    ];
+    dictionary.expandedLanguages = <String>[
+      for (final String code in dictionary.expandedLanguages)
+        if (code != languageCode) code,
+      if (state == DictionaryCollapseState.expanded) languageCode,
+    ];
     persistDictionary(dictionary);
+  }
+
+  /// 设置页那个一键按钮：继承 → 显式展开 → 显式折叠 → 继承。
+  ///
+  /// 起点是「继承」而不是「展开」，因为存量用户的每一本都是继承态；第一次点下去
+  /// 得到「显式展开」，正是他们本来以为自己在做的那件事。
+  void cycleDictionaryCollapseState(
+      Dictionary dictionary, String languageCode) {
+    const Map<DictionaryCollapseState, DictionaryCollapseState> next =
+        <DictionaryCollapseState, DictionaryCollapseState>{
+      DictionaryCollapseState.inherit: DictionaryCollapseState.expanded,
+      DictionaryCollapseState.expanded: DictionaryCollapseState.collapsed,
+      DictionaryCollapseState.collapsed: DictionaryCollapseState.inherit,
+    };
+    setDictionaryCollapseState(
+      dictionary,
+      languageCode,
+      next[dictionary.collapseStateForCode(languageCode)]!,
+    );
   }
 
   void toggleDictionaryHidden(Dictionary dictionary, String languageCode) {

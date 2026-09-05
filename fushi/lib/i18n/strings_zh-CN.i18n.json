@@ -4236,5 +4236,11 @@
   "gal_mining_image_mode_video_clip_hint": "从台词出现到制卡这段时间的游戏画面，并混入句子音频。未开始录制或不足 2 帧时降级为动图/截图。",
   "game_hook_reason_native_loopback_ack_timeout": "音频采集策略未在超时内确认。文本采集不受影响；若缺少游戏内语音可重试一次。",
   "shortcut_scope_global_external_desktop_note": "鼠标触发只接受侧键（后退/前进）。其它按钮在别的程序里有各自的固有含义，这里会拒绝录入。",
-  "shortcut_mouse_button_not_supported": "该动作只接受鼠标侧键（后退/前进）。"
+  "shortcut_mouse_button_not_supported": "该动作只接受鼠标侧键（后退/前进）。",
+  "anki_ankimobile_opened": "已打开 AnkiMobile。请在其中同意该请求，然后返回 Fushi。",
+  "anki_error_ankimobile_pasteboard_empty": "AnkiMobile 没有回传配置。请在 AnkiMobile 中同意该请求后再返回 Fushi。",
+  "anki_error_ankimobile_pasteboard_denied": "iOS 阻止了读取剪贴板。返回 Fushi 时请在系统提示里选「允许粘贴」，然后重试。",
+  "anki_error_ankimobile_no_decks": "AnkiMobile 没有回传任何牌组或笔记类型。",
+  "anki_error_ankimobile_unavailable": "无法打开 AnkiMobile。请先安装 AnkiMobile 再试。",
+  "dictionary_collapse_follow_global": "跟随全局设置"
 }
