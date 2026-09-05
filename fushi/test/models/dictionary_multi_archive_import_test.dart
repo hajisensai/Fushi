@@ -152,23 +152,93 @@ void main() {
       '../native/fushidicts/fushidicts_src/importer.cpp',
     ).readAsStringSync();
 
+    // 取整个 SimpleEntryAccumulator 类体。不要用「锚点 + 固定字符数」的窗口：
+    // 注释一增删窗口就够不到目标，本守卫就这么误红过一次。
+    String accumulatorBody() {
+      final int at = importer.indexOf('class SimpleEntryAccumulator');
+      expect(at, greaterThan(0), reason: '累加器不在了，守卫需更新');
+      final int end = importer.indexOf('\n};', at);
+      expect(end, greaterThan(at), reason: '找不到累加器类体结尾，守卫需更新');
+      return importer.substring(at, end);
+    }
+
     test('simple entries（MDX/DSL 整本词典流）用 kMaxTotalEntries 而非 per-bank', () {
-      final int at = importer.indexOf('ProcessedFile process_simple_entries(');
-      expect(at, greaterThan(0), reason: '函数不在了，守卫需更新');
-      final String body = importer.substring(at, at + 2000);
+      // 上限住在 SimpleEntryAccumulator::add()。MDX 导入改成流式之后，整词典流
+      // 由累加器逐条喂进来，StarDict/DSL 的整表入口喂的是同一个累加器
+      // （下一条守卫盯着这个共用关系）。
+      final String body = accumulatorBody();
       expect(
-        body.contains('processed.count >= kMaxTotalEntries'),
+        body.contains('records_.count >= kMaxTotalEntries'),
         isTrue,
         reason:
             '大辞林第四版声明 1086308 条，per-bank 的 100 万上限会把它砍到'
             '正好 1000000 还报 success；整词典级别的上限应当是 kMaxTotalEntries',
       );
+      // 注意查的是代码形式：类体注释里就提到了 kMaxEntriesPerBank 这个名字，
+      // 裸子串会假阳性。
       expect(
-        body.contains('processed.count >= kMaxEntriesPerBank'),
+        body.contains('records_.count >= kMaxEntriesPerBank'),
         isFalse,
         reason:
             'kMaxEntriesPerBank 是给 Yomitan 单个 term_bank_N.json 设计的，'
             '同一个常量套到整词典流上语义就错位了',
+      );
+    });
+
+    test('整表入口与流式入口共用同一条 per-entry 逻辑', () {
+      final int at = importer.indexOf(
+        'ImportResult dictionary_importer::write_simple_dict(',
+      );
+      expect(at, greaterThan(0), reason: 'write_simple_dict 不在了，守卫需更新');
+      // 取到函数体结束，不用「锚点 + 固定字符数」——上面 accumulatorBody() 的注释
+      // 已经记过这个教训，这条当时漏改：余量只有 243 字符，给 write_simple_dict
+      // 补一段注释就够不到目标了（实测在 CI 的真单测门上红了一次）。
+      final int end = importer.indexOf('\n}', at);
+      expect(end, greaterThan(at), reason: '找不到 write_simple_dict 结尾，守卫需更新');
+      final String body = importer.substring(at, end);
+      expect(
+        body.contains('SimpleEntryAccumulator accumulator(sink.blobs)'),
+        isTrue,
+        reason:
+            'StarDict/DSL 的整表入口必须和 MDX 流式入口走同一个累加器；'
+            '各自复制一份 per-entry 逻辑，上限/glossary 去重/记录布局就会分叉',
+      );
+    });
+
+    test('BUG-2160：glossary blob 边压边写盘，不在内存里攒整本', () {
+      // 旧写法把整本词典的压缩正文攒在 processed.glossaries，再抄进
+      // glossary_buf 一次性写出——同一份 1.24 GB 在内存里存了两遍（实测
+      // 389 MB 的 Wuliyanquan.mdx）。累加器现在拿到 blobs 流直接写，内存
+      // 只留 hash -> (offset, size)。
+      final String body = accumulatorBody();
+      expect(
+        body.contains('blobs_.write('),
+        isTrue,
+        reason: '新 glossary 必须当场写进 blobs.bin，而不是留在内存等最后统一写',
+      );
+      expect(
+        RegExp(r'map<uint64_t,\s*BlobRef>').hasMatch(body),
+        isTrue,
+        reason: '去重表只该记 (offset, size)，不该再持有压缩后的字节',
+      );
+      // 简单词典的落盘路径不得再把 blob 区整个攒进一个缓冲。Yomitan 那条路径
+      // 仍有同名 glossary_buf，但它是按 bank 缓冲（受单个 bank 大小约束），
+      // 不是整本词典，所以只约束这一条路径，不做全文断言。
+      // lastIndexOf：文件里先有一条前向声明（import_mdx 要用），定义在后面。
+      final int fa = importer.lastIndexOf('void finish_simple_dict(');
+      expect(fa, greaterThan(0), reason: 'finish_simple_dict 不在了，守卫需更新');
+      final int fe = importer.indexOf('\n}', fa);
+      expect(fe, greaterThan(fa), reason: '找不到 finish_simple_dict 结尾');
+      final String finishBody = importer.substring(fa, fe);
+      expect(
+        finishBody.contains('glossary_buf'),
+        isFalse,
+        reason: 'glossary_buf 会是整个 blob 区的第二份全量副本，必须不再出现',
+      );
+      expect(
+        finishBody.contains('blob_region_size'),
+        isTrue,
+        reason: 'term 记录偏移要按已写出的 blob 区大小平移，说明 blob 已在盘上',
       );
     });
 

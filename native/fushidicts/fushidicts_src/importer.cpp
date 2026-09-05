@@ -19,6 +19,7 @@
 #include <limits>
 #include <map>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -30,6 +31,7 @@
 #include "hash/hash.hpp"
 #include "json/yomitan_parser.hpp"
 #include "mdx/mdx_reader.hpp"
+#include "memory/memory.hpp"
 #include "stardict/stardict_reader.hpp"
 #include "util/fs_utf8.hpp"
 #include "util/import_breadcrumb.hpp"
@@ -1073,22 +1075,68 @@ std::vector<std::string> collect_sibling_mdd_paths(const std::string& mdx_path) 
   return mdd_paths;
 }
 
-ProcessedFile process_simple_entries(const std::vector<SimpleEntry>& entries) {
-  ProcessedFile processed;
-  if (entries.empty()) {
-    return processed;
+// Term records for a simple dictionary. The glossary blobs they point at are
+// already on disk, so each record carries its final blob offset and only the
+// per-term bytes are held in memory.
+struct SimpleDictRecords {
+  std::vector<char> data;
+  std::vector<std::pair<uint64_t, uint64_t>> offsets;  // (headword hash, offset within data)
+  uint64_t blob_region_size = 0;                       // bytes of glossary blobs written ahead of data
+  size_t count = 0;
+};
+
+// A simple dictionary's output directory, opened before any entry is processed
+// so glossary blobs can be streamed straight into blobs.bin.
+struct SimpleDictSink {
+  std::string title;  // sanitized
+  std::string path;
+  std::ofstream blobs;
+};
+
+// Incremental builder for the simple-dictionary (MDX / StarDict / DSL) record
+// stream. The per-entry logic lives here exactly once so the whole-vector
+// callers and the streaming MDX caller cannot drift apart on caps, glossary
+// dedup or record layout.
+//
+// Feeding entries one at a time, straight through to disk, is what lets a large
+// dictionary import at all: the 389 MB sample in BUG-2160 used to need the file
+// buffer, the fully decompressed record stream, a copy of every entry, the whole
+// compressed glossary table AND a second copy of that table staged for writing.
+class SimpleEntryAccumulator {
+ public:
+  // `blobs` is the dictionary's blobs.bin, already open. Each newly-seen
+  // glossary is compressed and written to it immediately; only its offset and
+  // size are remembered (24 bytes), never the compressed bytes. That is what
+  // makes peak memory scale with the entry COUNT rather than with the
+  // dictionary's total text -- the 389 MB sample expands to 8.6 GB of HTML,
+  // whose compressed form alone is 1.24 GB.
+  explicit SimpleEntryAccumulator(std::ostream& blobs) : blobs_(blobs), cctx_(ZSTD_createCCtx()) {}
+  ~SimpleEntryAccumulator() {
+    if (cctx_) ZSTD_freeCCtx(cctx_);
+  }
+  SimpleEntryAccumulator(const SimpleEntryAccumulator&) = delete;
+  SimpleEntryAccumulator& operator=(const SimpleEntryAccumulator&) = delete;
+
+  // Size the record buffers up front when the entry count is known. Growing by
+  // doubling instead costs a multi-million-entry dictionary both the overshoot
+  // (up to 2x the bytes it needs) and a transient copy of the whole buffer at
+  // every reallocation, right where memory is tightest.
+  void reserve(size_t entries) {
+    if (entries == 0 || entries > kMaxTotalEntries) return;
+    records_.offsets.reserve(entries);
+    records_.data.reserve(entries * kEstimatedRecordBytes);
   }
 
-  std::vector<char> compressed;
-  ZSTD_CCtx* cctx = ZSTD_createCCtx();
-  if (!cctx) {
-    return processed;
-  }
+  // Returns false once a whole-dictionary cap is hit; the caller should stop
+  // feeding, and anything fed afterwards is ignored. An entry rejected on its
+  // own merits (oversized glossary or headword) is skipped but returns true.
+  bool add(std::string_view headword, std::string_view glossary) {
+    if (!cctx_ || stopped_) return false;
 
-  for (const auto& entry : entries) {
-    if (processed.data.size() > kMaxDataBufferBytes) {
+    if (records_.data.size() > kMaxDataBufferBytes) {
       FUSHI_LOGW("simple entries data buffer exceeded %zu bytes, stopping", kMaxDataBufferBytes);
-      break;
+      stopped_ = true;
+      return false;
     }
     // BUG-1904：这里是 MDX / DSL 的**整本词典**条目流，不是 Yomitan 的单个
     // term_bank_N.json。kMaxEntriesPerBank 是给后者设计的——一本 Yomitan 词典摊成
@@ -1097,67 +1145,95 @@ ProcessedFile process_simple_entries(const std::vector<SimpleEntry>& entries) {
     // 1,086,308 条，被这里砍到正好 1,000,000（少 86,308），导入还报 success。
     // 整词典级别的 OOM 保护应当是 kMaxTotalEntries；数据量本身另有
     // kMaxDataBufferBytes（1 GB）与单条 kMaxGlossarySizeBytes 兜底，三道都还在。
-    if (processed.count >= kMaxTotalEntries) {
+    if (records_.count >= kMaxTotalEntries) {
       FUSHI_LOGW("simple entries count exceeded %zu, stopping", kMaxTotalEntries);
-      break;
+      stopped_ = true;
+      return false;
     }
 
-    const std::string_view glossary = entry.definition;
     if (glossary.size() > kMaxGlossarySizeBytes) {
       FUSHI_LOGW("glossary too large (%zu bytes), skipping entry", glossary.size());
-      continue;
+      return true;
+    }
+    // Checked before the glossary is compressed: a rejected entry must not leave
+    // an unreferenced blob behind in the dedup table.
+    if (headword.size() > std::numeric_limits<uint16_t>::max()) {
+      FUSHI_LOGW("expression too long (%zu bytes), skipping entry", headword.size());
+      return true;
     }
 
+    // Identical glossaries share one blob, which is what collapses @@@LINK=
+    // aliases onto their lemma (BUG-1665). The dedup table now holds a
+    // (offset, size) pair instead of the compressed bytes.
     uint64_t glossary_hash = XXH3_64bits(glossary.data(), glossary.size());
-    auto it = processed.glossaries.find(glossary_hash);
-    if (it == processed.glossaries.end()) {
+    auto it = blob_of_.find(glossary_hash);
+    if (it == blob_of_.end()) {
       const size_t bound = ZSTD_compressBound(glossary.size());
-      compressed.resize(bound);
+      compressed_.resize(bound);
       const size_t compressed_size =
-          ZSTD_compressCCtx(cctx, compressed.data(), bound, glossary.data(), glossary.size(), 0);
+          ZSTD_compressCCtx(cctx_, compressed_.data(), bound, glossary.data(), glossary.size(), 0);
       if (ZSTD_isError(compressed_size)) {
-        ZSTD_freeCCtx(cctx);
         throw std::runtime_error("failed to compress glossary");
       }
-      compressed.resize(compressed_size);
-      processed.glossaries.emplace(glossary_hash, compressed);
+      BlobRef ref{records_.blob_region_size, static_cast<uint32_t>(compressed_size)};
+      blobs_.write(compressed_.data(), static_cast<std::streamsize>(compressed_size));
+      records_.blob_region_size += compressed_size;
+      it = blob_of_.emplace(glossary_hash, ref).first;
     }
+    const BlobRef blob = it->second;
 
-    uint64_t offset = processed.data.size();
-    uint32_t blob_size = static_cast<uint32_t>(processed.glossaries[glossary_hash].size());
-    std::string_view expr = entry.headword;
+    uint64_t offset = records_.data.size();
 
-    if (expr.size() > std::numeric_limits<uint16_t>::max()) {
-      FUSHI_LOGW("expression too long (%zu bytes), skipping entry", expr.size());
-      continue;
-    }
+    write_val<uint8_t>(records_.data, 0);
+    write_val<uint16_t>(records_.data, static_cast<uint16_t>(headword.size()));
+    write_str(records_.data, headword);
+    write_val<uint16_t>(records_.data, 0);  // reading_len = 0
 
-    write_val<uint8_t>(processed.data, 0);
-    write_val<uint16_t>(processed.data, static_cast<uint16_t>(expr.size()));
-    write_str(processed.data, expr);
-    write_val<uint16_t>(processed.data, 0);  // reading_len = 0
+    // The blob is already on disk at a known offset, so the term record carries
+    // the final value -- no placeholder and no whole-file patch-up pass.
+    write_val<uint64_t>(records_.data, blob.offset);
+    write_val<uint32_t>(records_.data, blob.size);
 
-    uint64_t glossary_offset = processed.data.size();
-    write_val<uint64_t>(processed.data, 0);
-    write_val<uint32_t>(processed.data, blob_size);
-    processed.glossary_offsets.emplace_back(glossary_hash, glossary_offset);
-
-    write_val<uint8_t>(processed.data, 0);  // def_tags_len = 0
+    write_val<uint8_t>(records_.data, 0);  // def_tags_len = 0
     // rules = "*": simple dicts have no per-term POS. The wildcard makes
     // filter_by_pos keep these terms for deinflected (inflected-form) lookups
     // instead of erasing them; see Deinflector::pos_to_conditions. Stored as a
     // normal variable-length rules string (reader consumes it by length).
-    write_val<uint8_t>(processed.data, 1);  // rules_len = 1
-    write_val<uint8_t>(processed.data, static_cast<uint8_t>('*'));
-    write_val<uint8_t>(processed.data, 0);  // term_tags_len = 0
+    write_val<uint8_t>(records_.data, 1);  // rules_len = 1
+    write_val<uint8_t>(records_.data, static_cast<uint8_t>('*'));
+    write_val<uint8_t>(records_.data, 0);  // term_tags_len = 0
 
-    processed.offsets.emplace_back(XXH3_64bits(expr.data(), expr.size()), offset);
-    processed.count++;
+    records_.offsets.emplace_back(XXH3_64bits(headword.data(), headword.size()), offset);
+    records_.count++;
+    return true;
   }
-  ZSTD_freeCCtx(cctx);
 
-  return processed;
-}
+  SimpleDictRecords finish() { return std::move(records_); }
+
+ private:
+  // Fixed part of a term record (21 B) plus room for a typical headword; only a
+  // sizing hint, the buffer still grows if the estimate is low.
+  static constexpr size_t kEstimatedRecordBytes = 40;
+
+  struct BlobRef {
+    uint64_t offset;
+    uint32_t size;
+  };
+
+  std::ostream& blobs_;
+  ankerl::unordered_dense::map<uint64_t, BlobRef> blob_of_;
+  SimpleDictRecords records_;
+  ZSTD_CCtx* cctx_ = nullptr;
+  std::vector<char> compressed_;
+  bool stopped_ = false;
+};
+
+// Declared here so import_mdx can drive the same two-phase write the
+// vector-taking entry point uses. Both are defined next to write_simple_dict.
+std::string sanitize_title(const std::string& raw);
+SimpleDictSink open_simple_dict(const std::string& title, const std::string& output_dir);
+void finish_simple_dict(SimpleDictSink& sink, SimpleDictRecords&& records, const std::string& styles_css,
+                        ImportResult& result);
 
 // Read a whole file into a string. "" if absent/empty/unreadable.
 std::string read_file_text(const std::filesystem::path& p) {
@@ -1349,50 +1425,93 @@ std::string read_sibling_css(const std::string& primary_path, const std::vector<
 }
 
 ImportResult import_mdx(const std::string& mdx_path, const std::string& output_dir) {
-  std::ifstream file(fushi::fs_path(mdx_path), std::ios::binary | std::ios::ate);
-  if (!file.is_open()) {
+  // Mapped, not read: a 400 MB dictionary would otherwise open with a 400 MB
+  // heap buffer that stays resident for the whole import. Mapped pages are clean
+  // and file-backed, so the OS reclaims them under pressure instead of the
+  // process being killed for holding them (iOS jetsam).
+  memory::mapped_file mapped = memory::map_rd(mdx_path);
+  if (!mapped) {
     return {.success = false, .errors = {"failed to open MDX file"}};
   }
+  struct MappingGuard {
+    memory::mapped_file file;
+    ~MappingGuard() { memory::unmap(file); }
+  } mapping_guard{mapped};
 
-  auto size = file.tellg();
-  file.seekg(0);
-  std::vector<uint8_t> data(size);
-  file.read(reinterpret_cast<char*>(data.data()), size);
+  // The <link>/<script> scans only look at the first kCssScanEntryLimit
+  // definitions, so retain exactly that many as they stream past. That is the
+  // only reason to hold on to any entry at all.
+  std::vector<SimpleEntry> css_scan_sample;
+  ImportResult result;
+  result.detected_type = "term";
+  std::string sanitized;
+  // 声明在 try 之前：解析结束后挂载媒体伴生件那一段（`if (result.success)`，在 try
+  // 之外）要用它做 url() 资源收集（BUG-2147）。流式化之前它是整个函数的局部，
+  // 流式化把它挪进了 try 内，两处合并后作用域正好错开。
+  std::string styles_css;
 
-  MdxResult mdx;
   try {
-    mdx = mdx_reader::parse(data.data(), data.size());
+    // The dictionary directory is opened from the header, before any entry is
+    // read, so glossary blobs can stream straight to disk while the records
+    // arrive. Nothing here ever holds the whole dictionary.
+    std::optional<SimpleDictSink> sink;
+    std::optional<SimpleEntryAccumulator> accumulator;
+    bool capped = false;
+
+    mdx_reader::parse_streaming(
+        mapped.data, mapped.size,
+        [&](std::string&& key, std::string&& definition) {
+          // A whole-dictionary cap latches here the same way the vector entry
+          // point breaks out of its loop, so both stop admitting entries at the
+          // same point instead of one silently carrying on.
+          if (capped) return;
+          if (key.empty()) return;
+          // Unresolvable @@@LINK= (circular or dangling) — already attempted in mdx_reader
+          if (definition.starts_with("@@@LINK=")) return;
+          if (css_scan_sample.size() < kCssScanEntryLimit) {
+            css_scan_sample.push_back({key, definition});
+          }
+          if (!accumulator->add(key, definition)) capped = true;
+        },
+        [&](const MdxMeta& meta) {
+          std::string title =
+              meta.title.empty() ? fushi::fs_to_utf8(fushi::fs_path(mdx_path).stem()) : meta.title;
+          // Recorded before open_simple_dict runs: it creates the directory and
+          // can still throw afterwards (index.json, opening blobs.bin), and the
+          // failure path below can only clean up a name it already knows.
+          sanitized = sanitize_title(title);
+          result.title = sanitized;
+          sink.emplace(open_simple_dict(title, output_dir));
+          accumulator.emplace(sink->blobs);
+          accumulator->reserve(meta.entry_count);
+        });
+
+    if (!accumulator) {
+      throw std::runtime_error("MDX parse error: no dictionary header");
+    }
+
+    // MDX glossaries are HTML that <link> a stylesheet sitting next to the .mdx.
+    // Inline it as the dict's styles.css so the popup's constructDictCss scopes
+    // and injects it; otherwise the definitions render unstyled. The name comes
+    // from the <link> tags themselves (it need not match the .mdx stem), falling
+    // back to the stem-named sibling. Nothing found -> empty -> no styles.css.
+    //
+    // Inlining, rather than letting the rewritten <link> fetch it over
+    // dictmedia://, is what keeps the rules scoped to this dictionary: these
+    // sheets style bare tags (table/th/td), which unscoped would repaint every
+    // other dictionary's tables in the shared popup document.
+    styles_css = read_sibling_css(mdx_path, css_scan_sample);
+
+    finish_simple_dict(*sink, accumulator->finish(), styles_css, result);
+    result.success = true;
   } catch (const std::exception& e) {
-    return {.success = false, .errors = {std::string("MDX parse error: ") + e.what()}};
+    result.success = false;
+    result.errors.emplace_back(std::string("MDX parse error: ") + e.what());
   }
 
-  std::string title = mdx.title;
-  if (title.empty()) {
-    title = fushi::fs_to_utf8(fushi::fs_path(mdx_path).stem());
+  if (!result.success && !sanitized.empty()) {
+    std::filesystem::remove_all(fushi::fs_path(output_dir) / fushi::fs_path(sanitized));
   }
-
-  std::vector<SimpleEntry> entries;
-  entries.reserve(mdx.entries.size());
-  for (auto& e : mdx.entries) {
-    if (e.key.empty()) continue;
-    // Unresolvable @@@LINK= (circular or dangling) — already attempted in mdx_reader
-    if (e.definition.starts_with("@@@LINK=")) continue;
-    entries.push_back({std::move(e.key), std::move(e.definition)});
-  }
-
-  // MDX glossaries are HTML that <link> a stylesheet sitting next to the .mdx.
-  // Inline it as the dict's styles.css so the popup's constructDictCss scopes
-  // and injects it; otherwise the definitions render unstyled. The name comes
-  // from the <link> tags themselves (it need not match the .mdx stem), falling
-  // back to the stem-named sibling. Nothing found -> empty -> no styles.css.
-  //
-  // Inlining, rather than letting the rewritten <link> fetch it over
-  // dictmedia://, is what keeps the rules scoped to this dictionary: these
-  // sheets style bare tags (table/th/td), which unscoped would repaint every
-  // other dictionary's tables in the shared popup document.
-  std::string styles_css = read_sibling_css(mdx_path, entries);
-
-  ImportResult result = dictionary_importer::write_simple_dict(title, entries, output_dir, styles_css);
 
   // Auto-mount the media companions (Foo.mdx -> Foo.mdd + numbered overflow
   // parts Foo.N.mdd) into the same dict dir, so <img>/<link>/sound:// in the
@@ -1416,8 +1535,8 @@ ImportResult import_mdx(const std::string& mdx_path, const std::string& output_d
     // .mdd at all, so its pronunciation button rendered as a broken 0x0 <img>
     // that could not be clicked — the entry's <audio> was fine, nothing could
     // reach it (BUG-2147).
-    std::vector<std::string> asset_names = extract_linked_script_names(entries, kCssScanEntryLimit);
-    for (auto& name : extract_img_src_names(entries, kCssScanEntryLimit)) {
+    std::vector<std::string> asset_names = extract_linked_script_names(css_scan_sample, kCssScanEntryLimit);
+    for (auto& name : extract_img_src_names(css_scan_sample, kCssScanEntryLimit)) {
       if (std::find(asset_names.begin(), asset_names.end(), name) == asset_names.end()) {
         asset_names.push_back(std::move(name));
       }
@@ -1853,113 +1972,136 @@ ImportResult import_yomitan(Zip& zip, const std::string& output_dir, bool low_ra
 ImportResult dictionary_importer::write_simple_dict(const std::string& title, const std::vector<SimpleEntry>& entries,
                                                     const std::string& output_dir, const std::string& styles_css) {
   ImportResult result;
+  result.detected_type = "term";
+  // Recorded before open_simple_dict runs: it creates the directory and can
+  // still throw afterwards (index.json, opening blobs.bin), and the failure
+  // path below can only clean up a name it already knows.
+  //
+  // Inside the try, not before it: sanitize_title uses utfcpp's *checked* API
+  // on titles over 200 bytes, so a StarDict `.ifo` bookname (fully user
+  // controlled, zero validation upstream) carrying a stray 0xFF throws
+  // utf8::invalid_utf8. Thrown from out here it escapes this function's own
+  // catch — the caller's temp dir (`import_temp/_sd_temp`) is then never
+  // removed and the classified per-domain error degrades to a bare
+  // "Invalid UTF-8".
+  std::string sanitized;
   try {
-    result.title = sanitize_title(title);
-    result.detected_type = "term";
+    sanitized = sanitize_title(title);
+    result.title = sanitized;
+    SimpleDictSink sink = open_simple_dict(title, output_dir);
 
-    std::filesystem::path dict_path = fushi::fs_path(output_dir) / fushi::fs_path(result.title);
-    {
-      auto canonical_parent = std::filesystem::weakly_canonical(fushi::fs_path(output_dir));
-      auto canonical_child = std::filesystem::weakly_canonical(dict_path);
-      auto rel = std::filesystem::relative(canonical_child, canonical_parent);
-      if (rel.empty() || *rel.begin() == "..") {
-        throw std::runtime_error("path traversal detected in dictionary title");
-      }
+    SimpleEntryAccumulator accumulator(sink.blobs);
+    for (const auto& entry : entries) {
+      if (!accumulator.add(entry.headword, entry.definition)) break;
     }
-    std::string path = fushi::fs_to_utf8(dict_path);
-    std::filesystem::create_directories(dict_path);
-
-    Index index;
-    index.title = result.title;
-    index.format = 3;
-    {
-      std::string index_buf;
-      if (glz::write_json(index, index_buf)) {
-        throw std::runtime_error("failed to write index.json");
-      }
-      std::ofstream index_out(fushi::fs_path(path + "/index.json"), std::ios::binary);
-      index_out.write(index_buf.data(), static_cast<std::streamsize>(index_buf.size()));
-      if (!index_out.good()) {
-        throw std::runtime_error("failed to write index.json");
-      }
-    }
-
-    if (!styles_css.empty()) {
-      std::ofstream styles_file(fushi::fs_path(path + "/styles.css"), std::ios::binary);
-      setup_stream_exceptions(styles_file);
-      styles_file.write(styles_css.data(), static_cast<std::streamsize>(styles_css.size()));
-    }
-
-    ProcessedFile processed = process_simple_entries(entries);
-    if (processed.data.empty()) {
-      throw std::runtime_error("empty dictionary");
-    }
-
-    ankerl::unordered_dense::map<uint64_t, uint64_t> glossaries;
-    std::ofstream blobs(fushi::fs_path(path + "/blobs.bin"), std::ios::binary);
-    setup_stream_exceptions(blobs);
-    uint64_t write_offset = 0;
-
-    // Write glossary blobs first
-    std::vector<char> glossary_buf;
-    for (auto& [hash, compressed] : processed.glossaries) {
-      auto [it, inserted] = glossaries.try_emplace(hash, write_offset);
-      if (inserted) {
-        write_bytes(glossary_buf, compressed.data(), compressed.size());
-        write_offset += compressed.size();
-      }
-    }
-    if (!glossary_buf.empty()) {
-      blobs.write(glossary_buf.data(), static_cast<std::streamsize>(glossary_buf.size()));
-    }
-
-    // Fix up glossary offsets in term data
-    for (auto& [hash, pos] : processed.glossary_offsets) {
-      uint64_t glossary_offset = glossaries[hash];
-      std::memcpy(processed.data.data() + pos, &glossary_offset, sizeof(uint64_t));
-    }
-
-    // Adjust term offsets to account for glossary blob region
-    std::vector<std::pair<uint64_t, uint64_t>> offsets;
-    for (auto& [hash, offset] : processed.offsets) {
-      offsets.emplace_back(hash, offset + write_offset);
-    }
-
-    blobs.write(processed.data.data(), static_cast<std::streamsize>(processed.data.size()));
-    write_offset += processed.data.size();
-    result.term_count = processed.count;
-
-    if (offsets.empty()) {
-      throw std::runtime_error("empty dictionary");
-    }
-
-    std::vector<std::pair<uint64_t, uint64_t>> hash_entries;
-    auto offset_buf = build_offset_index(offsets, write_offset, hash_entries);
-    std::vector<std::pair<uint64_t, uint64_t>>().swap(offsets);
-
-    auto hash_thread = std::async(std::launch::async, [&hash_entries, &path]() {
-      hash::linear table;
-      table.build_to_file(hash_entries, path + "/hash.table");
-      auto hashes = hash_entries | std::views::keys | std::ranges::to<std::vector>();
-      hash::bloom::build_to_file(hashes, path + "/bloom.filter");
-    });
-
-    blobs.write(offset_buf.data(), static_cast<std::streamsize>(offset_buf.size()));
-    hash_thread.get();
-
-    std::ofstream sui(fushi::fs_path(path + "/.fushidicts_1"), std::ios::binary);
+    finish_simple_dict(sink, accumulator.finish(), styles_css, result);
     result.success = true;
   } catch (const std::exception& e) {
+    // The import runs on its own pthread; an escaped exception would terminate
+    // the process rather than fail the import.
     result.success = false;
     result.errors.emplace_back(e.what());
   }
 
-  if (!result.success && !result.title.empty()) {
-    std::filesystem::remove_all(fushi::fs_path(output_dir) / fushi::fs_path(result.title));
+  if (!result.success && !sanitized.empty()) {
+    std::filesystem::remove_all(fushi::fs_path(output_dir) / fushi::fs_path(sanitized));
   }
-
   return result;
 }
+
+namespace {
+
+// Phase 1 of writing a simple dictionary: validate the title, create the
+// directory and index.json, and open blobs.bin. This happens BEFORE entries are
+// processed so the accumulator can stream glossary blobs straight into the file.
+SimpleDictSink open_simple_dict(const std::string& title, const std::string& output_dir) {
+  SimpleDictSink sink;
+  sink.title = sanitize_title(title);
+
+  std::filesystem::path dict_path = fushi::fs_path(output_dir) / fushi::fs_path(sink.title);
+  {
+    auto canonical_parent = std::filesystem::weakly_canonical(fushi::fs_path(output_dir));
+    auto canonical_child = std::filesystem::weakly_canonical(dict_path);
+    auto rel = std::filesystem::relative(canonical_child, canonical_parent);
+    if (rel.empty() || *rel.begin() == "..") {
+      throw std::runtime_error("path traversal detected in dictionary title");
+    }
+  }
+  sink.path = fushi::fs_to_utf8(dict_path);
+  std::filesystem::create_directories(dict_path);
+
+  Index index;
+  index.title = sink.title;
+  index.format = 3;
+  {
+    std::string index_buf;
+    if (glz::write_json(index, index_buf)) {
+      throw std::runtime_error("failed to write index.json");
+    }
+    std::ofstream index_out(fushi::fs_path(sink.path + "/index.json"), std::ios::binary);
+    index_out.write(index_buf.data(), static_cast<std::streamsize>(index_buf.size()));
+    if (!index_out.good()) {
+      throw std::runtime_error("failed to write index.json");
+    }
+  }
+
+  sink.blobs.open(fushi::fs_path(sink.path + "/blobs.bin"), std::ios::binary);
+  setup_stream_exceptions(sink.blobs);
+  return sink;
+}
+
+// Phase 2: the glossary blob region is already in blobs.bin, so append the term
+// records after it, then build the offset index, hash table and bloom filter.
+// Writes the optional stylesheet and the format marker.
+void finish_simple_dict(SimpleDictSink& sink, SimpleDictRecords&& records_in, const std::string& styles_css,
+                        ImportResult& result) {
+  SimpleDictRecords records = std::move(records_in);
+  if (records.data.empty()) {
+    throw std::runtime_error("empty dictionary");
+  }
+
+  if (!styles_css.empty()) {
+    std::ofstream styles_file(fushi::fs_path(sink.path + "/styles.css"), std::ios::binary);
+    setup_stream_exceptions(styles_file);
+    styles_file.write(styles_css.data(), static_cast<std::streamsize>(styles_css.size()));
+  }
+
+  // Term records sit after the blob region, so their offsets shift by its size.
+  // Shifted in place: a second vector here would be another 16 bytes per entry
+  // alive at the peak, which on a multi-million-entry dictionary is real money.
+  for (auto& [hash, offset] : records.offsets) {
+    (void)hash;
+    offset += records.blob_region_size;
+  }
+
+  sink.blobs.write(records.data.data(), static_cast<std::streamsize>(records.data.size()));
+  uint64_t write_offset = records.blob_region_size + records.data.size();
+  result.term_count = records.count;
+  std::vector<char>().swap(records.data);
+
+  if (records.offsets.empty()) {
+    throw std::runtime_error("empty dictionary");
+  }
+
+  std::vector<std::pair<uint64_t, uint64_t>> hash_entries;
+  auto offset_buf = build_offset_index(records.offsets, write_offset, hash_entries);
+  std::vector<std::pair<uint64_t, uint64_t>>().swap(records.offsets);
+
+  const std::string& path = sink.path;
+  auto hash_thread = std::async(std::launch::async, [&hash_entries, &path]() {
+    hash::linear table;
+    table.build_to_file(hash_entries, path + "/hash.table");
+    auto hashes = hash_entries | std::views::keys | std::ranges::to<std::vector>();
+    hash::bloom::build_to_file(hashes, path + "/bloom.filter");
+  });
+
+  sink.blobs.write(offset_buf.data(), static_cast<std::streamsize>(offset_buf.size()));
+  hash_thread.get();
+
+  std::ofstream sui(fushi::fs_path(path + "/.fushidicts_1"), std::ios::binary);
+}
+
+}  // namespace
 
 ImportResult dictionary_importer::import(const std::string& file_path, const std::string& output_dir, bool low_ram,
                                         const std::string& breadcrumb_dir) {
