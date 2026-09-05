@@ -1274,6 +1274,11 @@ bool ends_with_ci(std::string_view text, std::string_view suffix) {
 // survive a few leading entries that are pure @@@LINK redirects or stubs.
 constexpr size_t kCssScanEntryLimit = 50;
 
+// Per-file ceiling for a loose sibling pulled out of an .mdx zip (stylesheets,
+// scripts, images, fonts). Real ones are KB-to-low-MB; the cap only exists so a
+// crafted archive cannot use the "take every sibling" rule to fill the temp dir.
+constexpr uint64_t kMaxLooseSiblingBytes = 64ull * 1024ull * 1024ull;
+
 // A bare file name safe to resolve against the dictionary's own directory:
 // no separators, no "..", no drive letter. Everything else is dropped rather
 // than sanitised, so a crafted href can never escape that directory.
@@ -1296,6 +1301,11 @@ bool is_plain_file_name(std::string_view name) {
 // next to the .mdx — is skipped here and served from the media store instead.
 // Only the first entries are scanned: the tags are boilerplate repeated per
 // entry, so a handful of definitions surfaces every referenced file in practice.
+//
+// `required_ext` empty means "any bare file name": <img src> has no single
+// extension worth enumerating (.png/.gif/.jpg/.svg/.webp all show up), and the
+// name still has to survive is_plain_file_name and actually exist on disk next
+// to the .mdx before anything is read.
 std::vector<std::string> extract_referenced_names(const std::vector<SimpleEntry>& entries, size_t scan_limit,
                                                   std::string_view tag_name, std::string_view attr,
                                                   std::string_view required_ext) {
@@ -1323,7 +1333,7 @@ std::vector<std::string> extract_referenced_names(const std::vector<SimpleEntry>
 
       const std::string_view value = tag.substr(vs + 1, ve - vs - 1);
       if (!is_plain_file_name(value)) continue;
-      if (!ends_with_ci(value, required_ext)) continue;
+      if (!required_ext.empty() && !ends_with_ci(value, required_ext)) continue;
 
       std::string name(value);
       if (std::find(names.begin(), names.end(), name) == names.end()) {
@@ -1341,6 +1351,52 @@ std::vector<std::string> extract_linked_css_names(const std::vector<SimpleEntry>
 
 std::vector<std::string> extract_linked_script_names(const std::vector<SimpleEntry>& entries, size_t scan_limit) {
   return extract_referenced_names(entries, scan_limit, "<script", "src", ".js");
+}
+
+// Bare-name images the entries themselves show: <img src="sound.png">.
+std::vector<std::string> extract_img_src_names(const std::vector<SimpleEntry>& entries, size_t scan_limit) {
+  return extract_referenced_names(entries, scan_limit, "<img", "src", "");
+}
+
+// Bare file names a stylesheet asks for: `url(cdoicons.woff)`,
+// `url("bg.png")`, `url('sprite.gif?v=3')`.
+//
+// The stylesheet is inlined into the dictionary's styles.css and injected as a
+// <style> element, so every relative url() inside it resolves against the popup
+// *document* — `file:///android_asset/.../popup/` on Android, an opaque origin
+// on Windows/iOS. Neither has any relation to the .mdx's directory, so those
+// bytes are unreachable unless they are pulled into the media store at import
+// time and served by name through the one dictionary-asset channel.
+std::vector<std::string> extract_css_url_names(std::string_view css) {
+  std::vector<std::string> names;
+  for (size_t pos = 0; (pos = ci_find(css, "url(", pos)) != std::string_view::npos;) {
+    pos += 4;
+    size_t vs = css.find_first_not_of(" \t\r\n", pos);
+    if (vs == std::string_view::npos) break;
+    // Optional quoting; unquoted values run to the closing paren.
+    const char quote = (css[vs] == '"' || css[vs] == '\'') ? css[vs] : '\0';
+    const size_t start = quote ? vs + 1 : vs;
+    const size_t end = quote ? css.find(quote, start) : css.find(')', start);
+    if (end == std::string_view::npos) break;
+    pos = end + 1;
+
+    std::string_view value = css.substr(start, end - start);
+    // Trim trailing whitespace of an unquoted value, then drop ?query/#fragment
+    // (`sprite.png?version=5.0.287` names the file `sprite.png`).
+    while (!value.empty() && (value.back() == ' ' || value.back() == '\t' || value.back() == '\r' ||
+                              value.back() == '\n')) {
+      value.remove_suffix(1);
+    }
+    const size_t cut = value.find_first_of("?#");
+    if (cut != std::string_view::npos) value = value.substr(0, cut);
+    if (!is_plain_file_name(value)) continue;  // data:/http:/ absolute/nested all rejected
+
+    std::string name(value);
+    if (std::find(names.begin(), names.end(), name) == names.end()) {
+      names.push_back(std::move(name));
+    }
+  }
+  return names;
 }
 
 // The stylesheet(s) to inline as the dictionary's styles.css.
@@ -1389,6 +1445,10 @@ ImportResult import_mdx(const std::string& mdx_path, const std::string& output_d
   ImportResult result;
   result.detected_type = "term";
   std::string sanitized;
+  // 声明在 try 之前：解析结束后挂载媒体伴生件那一段（`if (result.success)`，在 try
+  // 之外）要用它做 url() 资源收集（BUG-2147）。流式化之前它是整个函数的局部，
+  // 流式化把它挪进了 try 内，两处合并后作用域正好错开。
+  std::string styles_css;
 
   try {
     // The dictionary directory is opened from the header, before any entry is
@@ -1440,7 +1500,7 @@ ImportResult import_mdx(const std::string& mdx_path, const std::string& output_d
     // dictmedia://, is what keeps the rules scoped to this dictionary: these
     // sheets style bare tags (table/th/td), which unscoped would repaint every
     // other dictionary's tables in the shared popup document.
-    std::string styles_css = read_sibling_css(mdx_path, css_scan_sample);
+    styles_css = read_sibling_css(mdx_path, css_scan_sample);
 
     finish_simple_dict(*sink, accumulator->finish(), styles_css, result);
     result.success = true;
@@ -1464,7 +1524,29 @@ ImportResult import_mdx(const std::string& mdx_path, const std::string& output_d
   if (result.success) {
     const auto dir = fushi::fs_path(mdx_path).parent_path();
     std::vector<ExtraMediaFile> extra;
-    for (const auto& name : extract_linked_script_names(css_scan_sample, kCssScanEntryLimit)) {
+
+    // Every bare name the dictionary's own content asks for, from all three
+    // places it can ask: <script src> (JS), <img src> (entry images) and the
+    // stylesheet's url() (icon fonts, sprites, backgrounds).
+    //
+    // Only <script src>/<link href> used to be collected, so a dictionary that
+    // keeps its assets loose next to the .mdx instead of inside a .mdd lost
+    // them all: 剑桥在线2023_发音词典 ships sound.png + cdoicons.woff and no
+    // .mdd at all, so its pronunciation button rendered as a broken 0x0 <img>
+    // that could not be clicked — the entry's <audio> was fine, nothing could
+    // reach it (BUG-2147).
+    std::vector<std::string> asset_names = extract_linked_script_names(css_scan_sample, kCssScanEntryLimit);
+    for (auto& name : extract_img_src_names(css_scan_sample, kCssScanEntryLimit)) {
+      if (std::find(asset_names.begin(), asset_names.end(), name) == asset_names.end()) {
+        asset_names.push_back(std::move(name));
+      }
+    }
+    for (auto& name : extract_css_url_names(styles_css)) {
+      if (std::find(asset_names.begin(), asset_names.end(), name) == asset_names.end()) {
+        asset_names.push_back(std::move(name));
+      }
+    }
+    for (const auto& name : asset_names) {
       std::string bytes = read_file_text(dir / fushi::fs_path(name));
       if (!bytes.empty()) extra.push_back({name, std::move(bytes)});
     }
@@ -1525,13 +1607,40 @@ ImportResult import_mdx_from_zip(Zip& zip, const std::string& output_dir) {
     std::string fn = fushi::fs_to_utf8(fushi::fs_path(name).filename());
     std::string ext = fushi::fs_to_utf8(fushi::fs_path(fn).extension());
     std::string fstem = fushi::fs_to_utf8(fushi::fs_path(fn).stem());
-    // .css/.js are taken regardless of stem: a dictionary's stylesheet and
-    // scripts are routinely named differently from its .mdx ("NLT（話し言葉）.mdx"
-    // + "NLT.css" + "NLT.js"), and import_mdx resolves the ones its <link>/
-    // <script> tags actually name. Extracting a file the entries never
-    // reference costs one file in the temp dir and is otherwise inert.
-    if ((ext == ".mdd" && (fstem == stem || is_numbered_part_stem(fstem))) || ext == ".css" ||
-        ext == ".js") {
+    // Loose siblings are taken regardless of stem or extension: a dictionary's
+    // stylesheet, scripts and assets are routinely named differently from its
+    // .mdx ("NLT（話し言葉）.mdx" + "NLT.css" + "NLT.js"; 剑桥发音词典 +
+    // "sound.png" + "cdoicons.woff"), and import_mdx resolves the ones its
+    // <link>/<script>/<img> tags and its stylesheet's url() actually name.
+    // Extracting a file the entries never reference costs one file in the temp
+    // dir and is otherwise inert.
+    //
+    // The enumeration this replaces was `.css`/`.js` only, which silently
+    // dropped every loose image/font before import_mdx ever got to look for it
+    // (BUG-2147). What must still be excluded:
+    //
+    //   * **any other .mdx** — it is another dictionary's main file, never this
+    //     one's asset. Critically, entries are flattened to `fstem + ext`, so a
+    //     bundle holding `en/Foo.mdx` + `jp/Foo.mdx` (or any second .mdx whose
+    //     bare name collides) would extract straight over the primary .mdx this
+    //     import already wrote and then parse the wrong dictionary. The old
+    //     `.css`/`.js` enumeration could never collide with it; widening the
+    //     rule is what makes this reachable.
+    //   * a .mdd belonging to a *different* dictionary — those are the entries
+    //     that are routinely huge (OALD splits ~3.7 GB across parts).
+    //
+    // Everything else is bounded by kMaxLooseSiblingBytes so a pathological
+    // archive cannot make the temp dir explode. The flattened-name collision
+    // among assets themselves (`images/logo.png` vs `icons/logo.png`) predates
+    // this change and stays as-is: both are candidate media for the same bare
+    // name and the entries can only ever ask for one of them.
+    if (ext == ".mdx") continue;
+    const bool is_mdd = ext == ".mdd";
+    const bool wanted = is_mdd ? (fstem == stem || is_numbered_part_stem(fstem))
+                               : zip.entries[i].uncompressed_size <= kMaxLooseSiblingBytes;
+    // Belt and braces: never write over the .mdx already extracted above, even
+    // if some entry without an .mdx extension flattens onto its name.
+    if (wanted && fstem + ext != mdx_filename) {
       extract(static_cast<int>(i), fstem + ext);
     }
   }

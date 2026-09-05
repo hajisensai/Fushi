@@ -258,8 +258,13 @@ import Flutter
   /// 用户看到的却是「剪贴板上没有 AnkiMobile 配置」——一句与事实无关的错误。
   ///
   /// 非 active 时挂一次性 `didBecomeActiveNotification` 观察者，等真正活跃后再读；
-  /// 万一始终等不到（用户又切走了），超时后仍尽力读一次并如实报告看到的状态，而不是
+  /// 万一始终等不到（用户又切走了），超时后**不读**、如实报 `notActive`，而不是
   /// 无限挂起让 Dart 侧的 Future 永不完成。
+  ///
+  /// 超时后不能"尽力读一次"：非 active 下 `data(forPasteboardType:)` 必然返回 nil，
+  /// 而 `contains(pasteboardTypes:)` 仍看得见类型（只查元数据），于是三态判定会落到
+  /// `denied` —— 把「app 还没回到前台」谎报成「iOS 拒绝了粘贴」，用户被指去改一个
+  /// 根本没出问题的权限。这正是 BUG-2150 要消灭的那类误导诊断。
   private static func consumeAnkiMobilePasteboard(result: @escaping FlutterResult) {
     if UIApplication.shared.applicationState == .active {
       result(readAnkiMobilePasteboard())
@@ -270,12 +275,18 @@ import Flutter
     var timeout: DispatchWorkItem? = nil
     var finished = false
     // FlutterResult 必须恰好回调一次：两条路径（变 active / 超时）共用这道闸门。
-    let finish = {
+    // `becameActive` 决定读不读剪贴板——超时那条路径下 app 仍非 active，读出来的
+    // 三态没有意义（必落 denied），只能如实报 notActive。
+    let finish = { (becameActive: Bool) in
       guard !finished else { return }
       finished = true
       timeout?.cancel()
       if let observer = observer {
         NotificationCenter.default.removeObserver(observer)
+      }
+      guard becameActive else {
+        result(["status": "notActive"])
+        return
       }
       result(readAnkiMobilePasteboard())
     }
@@ -284,9 +295,9 @@ import Flutter
       forName: UIApplication.didBecomeActiveNotification,
       object: nil,
       queue: .main
-    ) { _ in finish() }
+    ) { _ in finish(true) }
 
-    let work = DispatchWorkItem { finish() }
+    let work = DispatchWorkItem { finish(false) }
     timeout = work
     DispatchQueue.main.asyncAfter(
       deadline: .now() + ankiMobilePasteboardActiveTimeout,

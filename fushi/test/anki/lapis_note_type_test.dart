@@ -63,6 +63,18 @@ void main() {
       // appended after the vendored css so it wins by source order.
       expect(LapisNoteType.css, isNot(contains('Hibiki delta')),
           reason: 'vendored css must stay byte-identical to upstream');
+      // BUG-2151 / BUG-2155 曾把四处补丁直接写进 vendored `css`，而上面那条
+      // 只认 'Hibiki delta' 这一个串，没抓到。本仓的补丁一律带 `BUG-NNNN` 引用，
+      // 拿它当判据：vendored 常量里出现本仓的 bug 号 = 有人又在里面打补丁了。
+      // 代价是真实的：重新 vendor 会把补丁静默冲掉（没有守卫会红），且原版
+      // Lapis 用户会被 lapis_styling 的 pristine 集合判成「手改过」，每次点
+      // 「应用样式到 Anki」都要多确认一次。
+      expect(
+        RegExp(r'BUG-\d+').hasMatch(LapisNoteType.css),
+        isFalse,
+        reason: 'Hibiki 的 CSS 补丁只能写在 fushiCssOverride 里，'
+            '不能改 vendored 的 css 常量',
+      );
       expect(LapisNoteType.fushiCssOverride, contains('.def-info'));
       expect(LapisNoteType.fushiCssOverride, contains('Hibiki delta'));
       expect(LapisNoteType.fushiCssOverride, contains('margin-top'));
