@@ -336,7 +336,15 @@ class GalAttachedTextController extends ChangeNotifier {
   bool get forceAttachedProvider => _forceAttachedProvider;
   GalLookupNormalizedRectV1? get draftBodyRect => _draftBodyRect;
   GalLookupTextLayoutV1? get draftLayout => _draftLayout;
+
+  /// 手动校准只在用户显式把模式切到「仅贴附层」之后才存在。自动模式下原生几何
+  /// 缺席时不再把校准入口推到用户面前——那条路的第一步就是往游戏正文上盖一个
+  /// 预置矩形，属于用户没要过的干扰。
+  bool get calibrationManuallyEnabled =>
+      (_profile?.mode ?? GalLookupSurfaceMode.auto) ==
+      GalLookupSurfaceMode.attachedOnly;
   bool get canCalibrate =>
+      calibrationManuallyEnabled &&
       _target != null &&
       _currentClient != null &&
       _exePath != null &&
@@ -662,6 +670,17 @@ class GalAttachedTextController extends ChangeNotifier {
     }
     if (profile == null) {
       _setAttachedProviderClaim(false);
+      // 没有档案时只有「仅贴附层」才提示去校准；其余模式安静挂起，不再引导用户
+      // 走那条会在游戏上画框的路。
+      if (mode != GalLookupSurfaceMode.attachedOnly) {
+        _activeVariant = null;
+        _surfaceVisible = false;
+        _setStatus(
+          GalAttachedTextStatus.suspended,
+          reason: 'evaluate_calibration_manual_only',
+        );
+        return;
+      }
       _setStatus(
         GalAttachedTextStatus.needsCalibration,
         reason: 'evaluate_profile_missing',
@@ -683,6 +702,17 @@ class GalAttachedTextController extends ChangeNotifier {
     );
     if (variant == null) {
       _setAttachedProviderClaim(false);
+      // 已有档案但当前客户区没有匹配 variant：同样只在手动模式下提示重新校准。
+      // 老用户已校准过的 variant 走的是上面 `variant != null` 那条，不受影响。
+      if (mode != GalLookupSurfaceMode.attachedOnly) {
+        _activeVariant = null;
+        _surfaceVisible = false;
+        _setStatus(
+          GalAttachedTextStatus.suspended,
+          reason: 'evaluate_variant_manual_only',
+        );
+        return;
+      }
       _setStatus(
         GalAttachedTextStatus.needsCalibration,
         reason: 'evaluate_no_variant_for_client',
@@ -823,6 +853,10 @@ class GalAttachedTextController extends ChangeNotifier {
     if (target == null || client == null || _latestSourceText.isEmpty) {
       return false;
     }
+    // UI 门控之外再守一道：校准只能由「仅贴附层」这一显式手动模式触发，
+    // 任何其它入口（自动模式下的残留回调、测试、真机驱动）都不得把游戏窗口
+    // 拖进校准态。
+    if (!calibrationManuallyEnabled) return false;
     if (!acceptUnsafeLeftClick) {
       _setStatus(
         GalAttachedTextStatus.needsRiskAcceptance,

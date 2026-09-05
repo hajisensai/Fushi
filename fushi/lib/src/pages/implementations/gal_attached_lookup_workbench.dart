@@ -38,8 +38,14 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
         final GalAttachedUnsafeRiskAcceptanceRequest? riskRequest =
             controller.unsafeRiskAcceptanceRequest;
         final bool riskPending = controller.needsUnsafeRiskAcceptance;
+        // 手动校准只在用户显式选了「仅贴附层」之后才露面：自动模式下工具条上
+        // 不再出现校准按钮，也不再挂「未选正文线程」这类只为校准服务的提示。
+        final bool calibrationExposed =
+            mode == GalLookupSurfaceMode.attachedOnly;
         final bool canOpenCalibration =
             hasSelectedBodyThread && controller.canCalibrate;
+        final bool showThreadRequiredPill =
+            calibrationExposed && !hasSelectedBodyThread;
 
         return Material(
           key: const ValueKey<String>('game-attached-lookup-workbench'),
@@ -133,7 +139,7 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
                                 : t.game_lookup_attached_risk_safe,
                             warning: riskModeActive || riskPending,
                           ),
-                          if (!hasSelectedBodyThread) ...<Widget>[
+                          if (showThreadRequiredPill) ...<Widget>[
                             const SizedBox(width: 6),
                             _WorkbenchPill(
                               label: t.game_lookup_attached_calibrate,
@@ -146,21 +152,24 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
                     ),
                   ),
                 ),
-                IconButton(
-                  key: const ValueKey<String>('game-attached-lookup-calibrate'),
-                  padding: EdgeInsets.zero,
-                  constraints: BoxConstraints.tightFor(
-                    width: tokens.density.compactControlHeight,
-                    height: tokens.density.compactControlHeight,
+                if (calibrationExposed)
+                  IconButton(
+                    key: const ValueKey<String>(
+                      'game-attached-lookup-calibrate',
+                    ),
+                    padding: EdgeInsets.zero,
+                    constraints: BoxConstraints.tightFor(
+                      width: tokens.density.compactControlHeight,
+                      height: tokens.density.compactControlHeight,
+                    ),
+                    tooltip: canOpenCalibration
+                        ? t.game_lookup_attached_calibrate
+                        : t.game_lookup_attached_thread_required,
+                    onPressed: canOpenCalibration
+                        ? () => _openCalibration(context)
+                        : null,
+                    icon: const Icon(Icons.crop_free_outlined, size: 20),
                   ),
-                  tooltip: canOpenCalibration
-                      ? t.game_lookup_attached_calibrate
-                      : t.game_lookup_attached_thread_required,
-                  onPressed: canOpenCalibration
-                      ? () => _openCalibration(context)
-                      : null,
-                  icon: const Icon(Icons.crop_free_outlined, size: 20),
-                ),
                 PopupMenuButton<String>(
                   key: const ValueKey<String>('game-attached-lookup-mode'),
                   tooltip: t.game_lookup_attached_mode,
