@@ -78,7 +78,7 @@ void main() {
     expect(main, contains('fushiAnkiFetchCallback'));
     expect(main, contains('consumeInfoForAddingPasteboard'));
     expect(main, contains('ankiViewModelProvider.notifier'));
-    expect(vm, contains('Future<void> reloadSettings()'));
+    expect(vm, contains('Future<void> applyFetchedConfiguration()'));
     // BUG-2150：失败文案必须过本地化入口（此前是硬编码英文，中文 UI 里原样显示）。
     expect(main, contains('AnkiViewModel.localizeAnkiFetchError'));
   });

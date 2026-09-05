@@ -33,10 +33,17 @@
     （17 语言，`i18n_sync --add` + `dart run slang`）。制卡路径的「打不开 AnkiMobile」共用同一个码。
   - **顺带**：`fetchConfiguration` 的 `infoForAdding` URL 改走 `_buildAnkiMobileQuery`，与 BUG-558 为 `addnote`
     定下的百分号编码规则统一 —— 此前它是同一个类里的第二套编码（`Uri.replace(queryParameters:)` 把空格编成 `+`）。
+  - **UI 尾巴（同一条链路）**：`AnkiViewModel.reloadSettings()` 只装载 settings、**从不清 `errorMessage`**，
+    而它唯一的调用点就是 `main.dart` 里回传成功那一支。于是即便配置成功落地，设置页仍挂着
+    `fetchConfiguration` 写下的中间态「已打开 AnkiMobile，请去同意」——在用户眼里就是「又失败了一次」。
+    改为语义明确的 `applyFetchedConfiguration()`（装载 + `isFetching: false` + `clearError: true`），
+    并且**不复用** `_loadSettings()`：那条路在「选了牌组但可用列表为空」时会反过来再触发一次
+    `fetchConfiguration()`，把用户又弹去 AnkiMobile。
 - **[x] ② 已加自动化测试** —
   - `fushi/test/anki/ankimobile_pasteboard_states_test.dart`（新，12 条）：三态各自的稳定码、
     `denied`/`empty` 不共用码也不共用文案、`ok` 但 json 为空按 `empty` 处理、`fetchConfiguration` 两个码、
     `x-success` 百分号编码、以及「五个码在中文 UI 下都不再吐英文原文且五条互不相同」。
+  - 同文件另一条：`fetchConfiguration()` 写下中间态后，`applyFetchedConfiguration()` 必须把它清空。
   - `fushi/test/anki/ankimobile_ios_callback_static_test.dart`（+2 条）：Swift 进不了 `flutter test`，
     源码守卫是这层唯一可落地的自动化。守「方法通道的 case 只许分发给带时序门的 helper、不许在那一刻直接碰
     `UIPasteboard`」+「`applicationState == .active` / `didBecomeActiveNotification` / `removeObserver` 必须在」

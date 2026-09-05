@@ -66,7 +66,22 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
     }
   }
 
-  Future<void> reloadSettings() => _loadSettings();
+  /// BUG-2150：AnkiMobile 的配置回传是**跨 app 异步**完成的——
+  /// [fetchConfiguration] 只能先把「已跳转 AnkiMobile，去那边点同意」写进
+  /// [AnkiUiState.errorMessage]，真正的结果稍后经 `fushi://ankiFetch` 回调送达。
+  /// 回调成功时必须把那条中间态一并清掉，否则设置页会一直挂着「请去同意」，
+  /// 在用户眼里就是「又失败了一次」。
+  ///
+  /// 这里不复用 `_loadSettings()`：那条路只负责装载，还会在「选了牌组但可用列表为空」
+  /// 时反过来再触发一次 [fetchConfiguration]（又把用户弹去 AnkiMobile）。
+  Future<void> applyFetchedConfiguration() async {
+    final settings = await _repository.loadSettings();
+    state = state.copyWith(
+      settings: settings,
+      isFetching: false,
+      clearError: true,
+    );
+  }
 
   Future<void> fetchConfiguration() async {
     state = state.copyWith(isFetching: true, clearError: true);

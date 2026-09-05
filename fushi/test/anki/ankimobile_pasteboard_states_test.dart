@@ -1,3 +1,4 @@
+// ignore_for_file: invalid_use_of_protected_member
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
@@ -14,6 +15,42 @@ import 'package:fushi_anki/fushi_anki.dart';
 // `application(_:open:)` 跑在 `.inactive` 阶段，那一刻读通用剪贴板必然拿到 nil。
 // 原生侧的时序门由 ankimobile_ios_callback_static_test.dart 守；这里守 Dart 侧的
 // 三态契约与文案本地化。
+
+
+/// 只回「已跳转 AnkiMobile，去那边点同意」的假后端：真实 AnkiMobile 的
+/// `fetchConfiguration` 就是这个形状——它不可能同步拿到结果。
+class _AnkiMobileOpenedRepo extends BaseAnkiRepository {
+  AnkiSettings _settings = const AnkiSettings();
+
+  @override
+  Future<AnkiSettings> loadSettings() async => _settings;
+
+  @override
+  Future<void> saveSettings(AnkiSettings s) async => _settings = s;
+
+  @override
+  Future<AnkiFetchResult> fetchConfiguration() async =>
+      const AnkiFetchResult.error(
+        'AnkiMobile opened. Approve the request, then return to Fushi.',
+        code: AnkiErrorCode.ankiMobileOpened,
+      );
+
+  @override
+  Future<bool> createNoteType(AnkiNoteTypeTemplate template) async => false;
+
+  @override
+  Future<bool> createDeck(String name) async => false;
+
+  @override
+  Future<MineOutcome> mineEntry({
+    required String rawPayloadJson,
+    required AnkiMiningContext context,
+  }) async =>
+      MineOutcome.failure('test stub');
+
+  @override
+  Future<bool> isDuplicate(String expression, String reading) async => false;
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -136,6 +173,25 @@ void main() {
       expect(uri.query, isNot(contains('+')));
       expect(uri.query, 'x-success=fushi%3A%2F%2FankiFetch');
       expect(uri.queryParameters['x-success'], fushiAnkiFetchCallback);
+    });
+  });
+
+  // BUG-2150 的 UI 尾巴：配置回传是跨 app 异步完成的，`fetchConfiguration()` 只能先
+  // 把「已跳转，去 AnkiMobile 点同意」写进 errorMessage。回调成功时若不清掉它，设置页
+  // 会在牌组已经装好之后仍挂着「请去同意」——在用户眼里就是「又失败了一次」。
+  group('回传成功后的中间态清理', () {
+    setUp(() => LocaleSettings.setLocale(AppLocale.en));
+
+    test('applyFetchedConfiguration 清掉「去 AnkiMobile 点同意」', () async {
+      final AnkiViewModel vm = AnkiViewModel(_AnkiMobileOpenedRepo());
+      await vm.fetchConfiguration();
+      expect(vm.state.errorMessage, isNotNull);
+      expect(vm.state.errorMessage, t.anki_ankimobile_opened);
+
+      await vm.applyFetchedConfiguration();
+
+      expect(vm.state.errorMessage, isNull);
+      expect(vm.state.isFetching, isFalse);
     });
   });
 
