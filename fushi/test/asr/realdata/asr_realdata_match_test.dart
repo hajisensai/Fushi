@@ -71,19 +71,75 @@ void main() {
         final List<AudioCue> ref = await load(refPath);
         final List<AudioCue> ours = await load(oursPath);
 
-        MatchResult run(List<AudioCue> cues) =>
-            EpubSrtMatcher.match(sections: sections, cues: cues);
-        final MatchResult refResult = run(ref);
-        final MatchResult oursResult = run(ours);
+        final List<double> thresholds =
+            (Platform.environment['ASR_REALDATA_THRESHOLDS'] ?? '0.8')
+                .split(',')
+                .map((String v) => double.parse(v.trim()))
+                .toList();
+        MatchResult run(List<AudioCue> cues, double threshold) =>
+            EpubSrtMatcher.match(
+              sections: sections,
+              cues: cues,
+              similarityThreshold: threshold,
+            );
+        MatchResult oursResult = run(ours, thresholds.first);
+        for (final double th in thresholds) {
+          final MatchResult r = run(ref, th);
+          final MatchResult o = run(ours, th);
+          if (th == thresholds.first) oursResult = o;
+          // ignore: avoid_print
+          print(
+            '[realdata] threshold=$th  SubPlz ${r.matchedCues}/${r.totalCues} '
+            '(${(r.matchRate * 100).toStringAsFixed(1)}%)  ours ${o.matchedCues}/${o.totalCues} '
+            '(${(o.matchRate * 100).toStringAsFixed(1)}%)',
+          );
+        }
+        // 导入链路默认 autoWindow：三档窗口探测取最高。
+        for (final int w in EpubCueMatcher.defaultProbeWindows) {
+          final MatchResult r = EpubSrtMatcher.match(
+            sections: sections,
+            cues: ref,
+            searchWindow: w,
+          );
+          final MatchResult o = EpubSrtMatcher.match(
+            sections: sections,
+            cues: ours,
+            searchWindow: w,
+          );
+          // ignore: avoid_print
+          print(
+            '[realdata] window=$w  SubPlz ${(r.matchRate * 100).toStringAsFixed(1)}%  '
+            'ours ${(o.matchRate * 100).toStringAsFixed(1)}%',
+          );
+        }
+        // 前 30 条逐条：命中章节 / 归一化偏移 / 分数（看游标怎么走的）。
+        final Map<int, CueMatch> byCue = <int, CueMatch>{
+          for (final CueMatch m in oursResult.matches) m.cueSentenceIndex: m,
+        };
+        final StringBuffer trace = StringBuffer();
+        for (final AudioCue c in ours.take(30)) {
+          final CueMatch? m = byCue[c.sentenceIndex];
+          trace.write(
+            '\n  #${c.sentenceIndex} ${c.startMs ~/ 1000}s ${c.text} -> '
+            '${m == null || m.sectionIndex < 0 ? 'MISS' : 's${m.sectionIndex}@${m.normCharStart}-${m.normCharEnd} score=${m.score.toStringAsFixed(2)}'}',
+          );
+        }
+        // ignore: avoid_print
+        print('[realdata] ours trace:$trace');
+        // 未命中的 cue 长什么样（默认阈值）。
+        final Set<int> hit = oursResult.matches
+            .where((CueMatch m) => m.sectionIndex >= 0)
+            .map((CueMatch m) => m.cueSentenceIndex)
+            .toSet();
+        final List<String> misses = <String>[];
+        for (final AudioCue c in ours) {
+          if (!hit.contains(c.sentenceIndex)) {
+            misses.add('${c.startMs ~/ 1000}s ${c.text}');
+          }
+        }
         // ignore: avoid_print
         print(
-          '[realdata] SubPlz: cues=${ref.length} matched=${refResult.matchedCues} '
-          'rate=${(refResult.matchRate * 100).toStringAsFixed(1)}%',
-        );
-        // ignore: avoid_print
-        print(
-          '[realdata] ours  : cues=${ours.length} matched=${oursResult.matchedCues} '
-          'rate=${(oursResult.matchRate * 100).toStringAsFixed(1)}%',
+          '[realdata] ours unmatched (${misses.length}): ${misses.take(40).join(' | ')}',
         );
 
         // 时间差：对我们的每条 cue，找参照里起点最近的一条。

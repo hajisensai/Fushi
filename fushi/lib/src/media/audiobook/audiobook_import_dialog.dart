@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/asr/asr_cue_builder.dart'
+    show kAsrSuggestedSimilarityThreshold;
 import 'package:fushi/src/asr/asr_transcription_service.dart';
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
 import 'package:fushi/src/media/audiobook/audiobook_alignment_service.dart'
@@ -500,6 +502,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       _alignmentName = t.audiobook_transcribe_result_name;
       _probedCues = null;
       _probedCuesSourcePath = null;
+      // ASR 文本有听写差，匹配阈值按实测放宽（用户仍可在滑条上改）。
+      _similarityThreshold = kAsrSuggestedSimilarityThreshold;
     });
   }
 
@@ -1050,7 +1054,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
         target: DeletionDisclosureTarget.attachedAudiobook,
       ),
       db: widget.repo.database,
-      localFilesSubtitle: hasLocalFiles ? t.delete_local_files_audio_desc : null,
+      localFilesSubtitle:
+          hasLocalFiles ? t.delete_local_files_audio_desc : null,
     );
     debugPrint('AudiobookImportDialog: decision=$decision');
     if (decision == null) return;

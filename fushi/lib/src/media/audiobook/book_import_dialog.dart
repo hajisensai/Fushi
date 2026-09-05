@@ -11,6 +11,8 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/drag_drop/import_dialog_drop.dart';
+import 'package:fushi/src/asr/asr_cue_builder.dart'
+    show kAsrSuggestedSimilarityThreshold;
 import 'package:fushi/src/asr/asr_transcription_service.dart';
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
 import 'package:fushi/src/media/audiobook/audiobook_alignment_service.dart';
@@ -460,6 +462,8 @@ class _BookImportDialogState extends State<BookImportDialog>
     setState(() {
       _subtitlePath = srtPath;
       _subtitleName = t.audiobook_transcribe_result_name;
+      // ASR 文本有听写差，匹配阈值按实测放宽（用户仍可在滑条上改）。
+      _similarityThreshold = kAsrSuggestedSimilarityThreshold;
     });
   }
 

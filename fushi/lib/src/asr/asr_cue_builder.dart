@@ -21,6 +21,14 @@ import 'package:flutter/foundation.dart';
 
 import 'package:fushi/src/asr/asr_types.dart';
 
+/// ASR 产物喂给 Dice 匹配器时建议的相似度阈值。
+///
+/// 用户自带的 .srt（SubPlz 等）文本就是正文，默认 0.8 合适；ASR 文本有听写差
+/// （かな⇄漢字、同音字），bigram Dice 掉得快。2026-09-05 无職転生 01 前 10 分钟真机
+/// 对照（`test/asr/realdata/asr_realdata_match_test.dart`）：0.8 → 78.4%，0.7 → 82.7%，
+/// 0.6 → 83.8%，0.5 → 84.9%；0.6 以下增益趋平而误配风险上升，取 0.6。
+const double kAsrSuggestedSimilarityThreshold = 0.6;
+
 /// 一条待写 SRT 的 cue（全局单时间轴，毫秒）。
 @immutable
 class AsrCue {
