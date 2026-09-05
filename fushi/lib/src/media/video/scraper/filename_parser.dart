@@ -80,12 +80,20 @@ class FilenameParser {
       );
     }
     String title = _parseTitleText(scan.outside, st);
-    if (title.isEmpty) {
-      // 外部文本为空（全括号命名）：按序取第一个能产出标题的未识别块。
-      for (final String tb in titleBlocks) {
-        title = _parseTitleText(tb, st);
-        if (title.isNotEmpty) break;
-      }
+    // 未识别的括号块与括号外文本同质：都是「尚未被结构化规则认领的自由文本」，
+    // 必须过同一套规则。此前它们只在标题为空时才过一遍、且取到第一个非空标题就
+    // `break`，于是「季 + 集写在同一个块里」的命名——`[4th - 14]` / `[S4 - 14]` /
+    // `[第4季 - 14]`——整族解不出集数：块分类（[_classifyBlock]）只认纯数字
+    // `[04]`、`[第04话]`、`[13 END]` 三种形态，而认得 ` - 14` 的 [_dashEpisode]
+    // 只长在这条通路上，块却永远走不到（BUG-2146）。组织器随即抛
+    // `unable to determine episode number`，整条下载任务卡死。
+    //
+    // [_parseTitleText] 全程 first-wins（`st.episode ??=` / `if (st.season == null)`），
+    // 所以让每个块都跑一遍是纯增量：先解出的值不会被后面的块覆盖，标题仍取
+    // 第一个非空候选。
+    for (final String tb in titleBlocks) {
+      final String candidate = _parseTitleText(tb, st);
+      if (title.isEmpty) title = candidate;
     }
     return ParsedMediaName(
       title: title,
@@ -459,6 +467,15 @@ class FilenameParser {
     caseSensitive: false,
   );
 
+  /// 剩下的整段就是一个裸序数词：`[4th - 14]` 剥掉集号后的那个 `4th`。
+  /// 字幕组把 `Season` 省掉是常见写法，但裸序数词在标题里同样常见
+  /// （`The 4th Ninja` / `12th man`），所以这里**锚定整段**：只有当一段文本除了
+  /// 序数词什么都不剩时才认季号——没有哪部作品叫「4th」（BUG-2146）。
+  static final RegExp _bareOrdinalSeasonOnly = RegExp(
+    r'^\s*(\d{1,2})\s*(?:st|nd|rd|th)\s*$',
+    caseSensitive: false,
+  );
+
   /// `Season 3` / `Season.3`。
   static final RegExp _seasonWord = RegExp(
     r'Season[\s._]*(\d{1,2})',
@@ -674,6 +691,11 @@ class FilenameParser {
     }
     if (st.season == null) {
       text = _extractFirst(text, _ordinalSeason, (RegExpMatch m) {
+        st.season = int.parse(m.group(1)!);
+      });
+    }
+    if (st.season == null) {
+      text = _extractFirst(text, _bareOrdinalSeasonOnly, (RegExpMatch m) {
         st.season = int.parse(m.group(1)!);
       });
     }

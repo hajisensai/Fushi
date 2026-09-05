@@ -15,8 +15,11 @@ final RegExp _seasonEpisodePattern = RegExp(
   r'\bS(\d{1,3})[ ._-]*E(\d{1,4})(?:v\d+)?\b',
   caseSensitive: false,
 );
+/// 右边界要收住「后面还有数字/字母」的情况，但闭括号同样是合法收尾：集号写在
+/// 块**内部**的 `[4th - 14][总第80]` 这一族，`14` 后面跟的是 `]` 而不是 `[`，
+/// 原先的先行断言只认开括号，整族发布标题聚类不出集号（BUG-2146）。
 final RegExp _animeEpisodePattern = RegExp(
-  r'(?:^|\s)-\s*(\d{1,4})(?:v\d+)?(?=\s*(?:\[|\(|$))',
+  r'(?:^|\s)-\s*(\d{1,4})(?:v\d+)?(?=\s*(?:[\[\(\]】）]|$))',
   caseSensitive: false,
 );
 

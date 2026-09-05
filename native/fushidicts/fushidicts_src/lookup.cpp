@@ -61,8 +61,11 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
     auto processor_results = text_processor::process(search_str);
     for (auto& variant : processor_results) {
       auto deinflection_results = deinflector_.deinflect(variant.text);
-      for (auto& deinflection : deinflection_results) {
-        auto terms = query_.query_raw(deinflection.text);
+
+      // 用一个还原形去查库并并入结果。`query_text` 未必等于 `deinflection.text`
+      // ——见下面的谚文重组。
+      auto merge_query = [&](const std::string& query_text, const DeinflectionResult& deinflection) {
+        auto terms = query_.query_raw(query_text);
         filter_by_pos(terms, deinflection);
 
         for (auto& term : terms) {
@@ -74,19 +77,35 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
             if (utf8::distance(search_str.begin(), search_str.end()) >
                 utf8::distance(it->second.matched.begin(), it->second.matched.end())) {
               it->second = LookupResult{.matched = search_str,
-                                        .deinflected = deinflection.text,
+                                        .deinflected = query_text,
                                         .trace = deinflection.trace,
                                         .term = std::move(term),
                                         .preprocessor_steps = variant.steps};
             }
           } else {
             result_map.emplace(key, LookupResult{.matched = search_str,
-                                                 .deinflected = deinflection.text,
+                                                 .deinflected = query_text,
                                                  .trace = deinflection.trace,
                                                  .term = std::move(term),
                                                  .preprocessor_steps = variant.steps});
           }
         }
+      };
+
+      for (auto& deinflection : deinflection_results) {
+        // 后处理（Yomitan `textPostprocessors`，本引擎此前完全没有这个阶段）：
+        // 韩语的还原是在**兼容字母域**里做的（ko.json 整表这么写，预处理端由
+        // text_processor::disassemble_hangul 拆字对齐），而词典索引的键是**预合成
+        // 音节**，所以还原结果必须拼回音节才查得到（BUG-2148）。
+        //
+        // 两种形态都查而不是二选一：ko.json 有 116 条 rule 的 toSuffix 直接写着
+        // 预合成音节（`있다`），还原输出本就可能是混合串；而对不含兼容字母的语言，
+        // reassemble 恒等、一次字符串比较就跳过，既有结果集一个都不会变。
+        // _utf8 版带字节级前置判据：不含兼容字母时原样返回、一次编码转换都不做
+        // （一次日语查词的还原形有几十上百个，无条件往返是白烧 CPU）。
+        const std::string reassembled = text_processor::reassemble_hangul_utf8(deinflection.text);
+        merge_query(deinflection.text, deinflection);
+        if (reassembled != deinflection.text) merge_query(reassembled, deinflection);
       }
     }
   }

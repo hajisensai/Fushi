@@ -440,6 +440,66 @@ void main() {
     });
   });
 
+  group('季 + 集写在同一个括号块里（BUG-2146）', () {
+    test('用户实测文件名：[4th - 14] 解出第 4 季第 14 集，不再抛不出集号', () {
+      final ParsedMediaName p = FilenameParser.parse(
+        '[晚街与灯][Re Zero kara Hajimeru Isekai Seikatsu][4th - 14][总第80]'
+        '[WebRip][1080P_AVC_AAC][简日双语内嵌].mp4',
+      );
+      expect(p.title, 'Re Zero kara Hajimeru Isekai Seikatsu');
+      expect(p.season, 4, reason: '裸序数词 4th 是季标记，落进 Season 01 就归错目录');
+      expect(p.episode, 14);
+      expect(p.releaseGroup, '晚街与灯');
+      expect(p.resolution, '1080P');
+    });
+
+    test('括号外已有标题时，块里的季+集照样解得出（旧实现根本不看这些块）', () {
+      final ParsedMediaName p =
+          FilenameParser.parse('[Group] Show Name [S4 - 14][1080P].mp4');
+      expect(p.title, 'Show Name');
+      expect(p.season, 4);
+      expect(p.episode, 14);
+    });
+
+    test('[4th Season - 14] / [第4季 - 14] 同族一起解', () {
+      final ParsedMediaName a =
+          FilenameParser.parse('[Group] Show [4th Season - 14][1080P].mp4');
+      expect(a.season, 4);
+      expect(a.episode, 14);
+
+      final ParsedMediaName b =
+          FilenameParser.parse('[Group] Show [第4季 - 14][1080P].mp4');
+      expect(b.season, 4);
+      expect(b.episode, 14);
+    });
+
+    test('[总第80] 这类绝对集号不参与解析，也不污染已解出的集号', () {
+      final ParsedMediaName p = FilenameParser.parse(
+        '[Group][Show][4th - 14][总第80][1080P].mp4',
+      );
+      expect(p.episode, 14, reason: '80 是绝对集号，抢走 episode 会把整季归错');
+      expect(p.season, 4);
+    });
+
+    test('裸序数词只在独占整段时算季号，标题里的序数词不受影响', () {
+      // 「4th」是块里剥掉集号后剩下的全部内容 -> 季号；
+      // 「The 4th Ninja」里的 4th 是标题的一部分 -> 原样保留。
+      final ParsedMediaName p =
+          FilenameParser.parse('[Group] The 4th Ninja [05][1080P].mp4');
+      expect(p.title, 'The 4th Ninja');
+      expect(p.season, isNull);
+      expect(p.episode, 5);
+    });
+
+    test('多个未识别块时标题仍取第一个非空候选，不被后面的块顶掉', () {
+      final ParsedMediaName p = FilenameParser.parse(
+        '[Group][Real Title][4th - 14][Some Note][1080P].mp4',
+      );
+      expect(p.title, 'Real Title');
+      expect(p.episode, 14);
+    });
+  });
+
   group('扩展名剥离与导入共用 kVideoExtensions（G10 第一步）', () {
     test('导入认的每个扩展名刮削端都能剥掉（.rmvb 不再留在标题里）', () {
       for (final String ext in kVideoExtensions) {

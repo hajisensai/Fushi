@@ -99,6 +99,12 @@ add_fushi_test(format_v2_upstream_sync_test format_v2_upstream_sync_test.cpp)
 # Simple dicts (MDX/StarDict/DSL) store rules="*" so filter_by_pos keeps them
 # for inflected-form lookups; pins pos_to_conditions("*")==~0 + the stored rule.
 add_fushi_test(simple_dict_deinflection_test simple_dict_deinflection_test.cpp)
+# BUG-2148: ko.json 整表用 Hangul 兼容字母书写，不拆字则韩语 450 条 transform 一条
+# 都点不着火（查 부드러운 只降级到 부）。拆字预处理 + 合字后处理互为逆变换，端到端
+# 钉住 부드러운 -> 부드럽다 且 matched 回报原始预合成串（字幕高亮长度吃它）。
+add_fushi_test(korean_hangul_lookup_test korean_hangul_lookup_test.cpp
+    "${FUSHI_SRC}/text_processor"
+    "${FUSHI_ROOT}/fushidicts_external/utfcpp/source")
 # BUG-1665: an MDX @@@LINK= redirect entry (definition bytes copied from its
 # lemma at import) must collapse into the lemma at lookup time, so the popup
 # header / mined Anki term is the dictionary form, not the inflected surface.
@@ -151,6 +157,11 @@ add_fushi_test(mdx_linked_css_name_test mdx_linked_css_name_test.cpp
 # Scripts referenced by a bare <script src> sit next to the .mdx, not in the
 # .mdd; they must join the media store so assets have ONE fetch-by-name channel.
 add_fushi_test(mdx_sibling_script_media_test mdx_sibling_script_media_test.cpp
+    "${FUSHI_ROOT}/fushidicts_external/libdeflate")
+# BUG-2147: 同理的另外两路 —— 条目 <img src> 与样式表 url() 点名的松散兄弟文件
+# （剑桥发音词典的 sound.png / cdoicons.woff，该词典没有 .mdd）此前一个都不收，
+# 发音按钮渲染成 0×0 破图、点不着。
+add_fushi_test(mdx_loose_asset_media_test mdx_loose_asset_media_test.cpp
     "${FUSHI_ROOT}/fushidicts_external/libdeflate")
 # Phase A: MDD (MDX media companion) parses byte-exact and auto-mounts into the
 # dict as media.bin/idx; get_media_file returns the bytes by normalized path.

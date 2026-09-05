@@ -45,6 +45,25 @@ void main() {
     });
   });
 
+  group('episodeNumberFromReleaseTitle', () {
+    test('集号写在块内部（`[4th - 14]`）时右边界是 `]`，照样解得出（BUG-2146）', () {
+      expect(
+        episodeNumberFromReleaseTitle(
+          '[晚街与灯][Re Zero kara Hajimeru Isekai Seikatsu][4th - 14][总第80]'
+          '[WebRip][1080P_AVC_AAC][简日双语内嵌]',
+        ),
+        14,
+      );
+      expect(episodeNumberFromReleaseTitle('[G] Show [S4 - 14][1080P]'), 14);
+    });
+
+    test('原有的块外形态不受影响', () {
+      expect(episodeNumberFromReleaseTitle('[Group] Show - 03 [1080p]'), 3);
+      expect(episodeNumberFromReleaseTitle('Show S02E07 1080p'), 7);
+      expect(episodeNumberFromReleaseTitle('[Group] Movie [1080p]'), isNull);
+    });
+  });
+
   group('buildVideoResourceVersionGroups', () {
     // 回归锚：VideoResourceRegistry 在返回前专门跑过 rankVideoResourcesByRelevance
     // （按季号/标题贴合度），理由写在那个函数上：「Nyaa 只做模糊词匹配，搜 "xxx 2"
