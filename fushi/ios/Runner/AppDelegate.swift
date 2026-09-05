@@ -4,6 +4,9 @@ import Flutter
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterStreamHandler, FlutterImplicitEngineDelegate {
   private static let ankiMobilePasteboardType = "net.ankimobile.json"
+  /// BUG-2150: how long to wait for the app to actually become active after an
+  /// AnkiMobile x-callback return before giving up and reading anyway.
+  private static let ankiMobilePasteboardActiveTimeout: TimeInterval = 5
   private var initialUrl: String?
   private var urlEventSink: FlutterEventSink?
   private var ankiMobileMediaBackgroundTask: UIBackgroundTaskIdentifier = .invalid
@@ -61,16 +64,7 @@ import Flutter
     ankiMobileChannel.setMethodCallHandler { [weak self] (call, result) in
       switch call.method {
       case "consumeInfoForAddingPasteboard":
-        if let data = UIPasteboard.general.data(
-          forPasteboardType: Self.ankiMobilePasteboardType
-        ) {
-          UIPasteboard.general.setData(
-            Data(),
-            forPasteboardType: Self.ankiMobilePasteboardType)
-          result(String(data: data, encoding: .utf8))
-        } else {
-          result(nil)
-        }
+        Self.consumeAnkiMobilePasteboard(result: result)
       case "beginMediaImportBackgroundTask":
         self?.beginAnkiMobileMediaBackgroundTask()
         result(nil)
@@ -251,6 +245,83 @@ import Flutter
   func onCancel(withArguments arguments: Any?) -> FlutterError? {
     urlEventSink = nil
     return nil
+  }
+
+  /// 读取 AnkiMobile 经系统剪贴板回传的 `infoForAdding` JSON（BUG-2150）。
+  ///
+  /// 前置条件不是「URL 回调到了」，而是「app 真的 active 了」：iOS 只允许**前台活跃**
+  /// 的 app 读别的 app 写进通用剪贴板的内容，iOS 16+ 还要为此弹一次系统「允许粘贴」
+  /// 确认，而这个弹窗只有 active 的 app 能呈现。AnkiMobile 的
+  /// `x-success=fushi://ankiFetch` 把我们拉回前台时，系统的调用顺序是
+  /// `willEnterForeground` → `application(_:open:)` → `didBecomeActive`，也就是说
+  /// URL 回调整个跑在 `.inactive` 阶段。旧实现就在这一刻直接读剪贴板，必然拿到 nil，
+  /// 用户看到的却是「剪贴板上没有 AnkiMobile 配置」——一句与事实无关的错误。
+  ///
+  /// 非 active 时挂一次性 `didBecomeActiveNotification` 观察者，等真正活跃后再读；
+  /// 万一始终等不到（用户又切走了），超时后仍尽力读一次并如实报告看到的状态，而不是
+  /// 无限挂起让 Dart 侧的 Future 永不完成。
+  private static func consumeAnkiMobilePasteboard(result: @escaping FlutterResult) {
+    if UIApplication.shared.applicationState == .active {
+      result(readAnkiMobilePasteboard())
+      return
+    }
+
+    var observer: NSObjectProtocol? = nil
+    var timeout: DispatchWorkItem? = nil
+    var finished = false
+    // FlutterResult 必须恰好回调一次：两条路径（变 active / 超时）共用这道闸门。
+    let finish = {
+      guard !finished else { return }
+      finished = true
+      timeout?.cancel()
+      if let observer = observer {
+        NotificationCenter.default.removeObserver(observer)
+      }
+      result(readAnkiMobilePasteboard())
+    }
+
+    observer = NotificationCenter.default.addObserver(
+      forName: UIApplication.didBecomeActiveNotification,
+      object: nil,
+      queue: .main
+    ) { _ in finish() }
+
+    let work = DispatchWorkItem { finish() }
+    timeout = work
+    DispatchQueue.main.asyncAfter(
+      deadline: .now() + ankiMobilePasteboardActiveTimeout,
+      execute: work)
+  }
+
+  /// 三态读取（BUG-2150）。这三种情形用户的下一步动作完全不同，压成一句
+  /// 「剪贴板上没有 AnkiMobile 配置」只会把人带进死路：
+  /// - `ok`：读到 JSON，按官方手册取走后清空剪贴板；
+  /// - `denied`：剪贴板上**确实有** AnkiMobile 写的数据，但系统不让读——用户选了
+  ///   「不允许粘贴」，或此刻根本弹不出确认；
+  /// - `empty`：AnkiMobile 压根没写，通常是用户没在 AnkiMobile 里同意那次请求。
+  ///
+  /// `contains(pasteboardTypes:)` 只查元数据、不访问内容，不会触发粘贴确认弹窗，
+  /// 因此可以拿它把 `denied` 和 `empty` 分开。
+  /// 「类型在但内容为空」归 `empty`：那是我们自己取走后写回的空 Data（重复消费同一次
+  /// 回调时会撞上），不是被拒绝。
+  private static func readAnkiMobilePasteboard() -> [String: Any] {
+    let data = UIPasteboard.general.data(
+      forPasteboardType: ankiMobilePasteboardType)
+    if let data = data, !data.isEmpty,
+      let json = String(data: data, encoding: .utf8), !json.isEmpty
+    {
+      // 官方手册要求取走后清空剪贴板。
+      UIPasteboard.general.setData(
+        Data(),
+        forPasteboardType: ankiMobilePasteboardType)
+      return ["status": "ok", "json": json]
+    }
+    if data != nil {
+      return ["status": "empty"]
+    }
+    let hasType = UIPasteboard.general.contains(
+      pasteboardTypes: [ankiMobilePasteboardType])
+    return ["status": hasType ? "denied" : "empty"]
   }
 
   private func beginAnkiMobileMediaBackgroundTask() {
