@@ -190,7 +190,12 @@ void main() {
         'ImportResult dictionary_importer::write_simple_dict(',
       );
       expect(at, greaterThan(0), reason: 'write_simple_dict 不在了，守卫需更新');
-      final String body = importer.substring(at, at + 900);
+      // 取到函数体结束，不用「锚点 + 固定字符数」——上面 accumulatorBody() 的注释
+      // 已经记过这个教训，这条当时漏改：余量只有 243 字符，给 write_simple_dict
+      // 补一段注释就够不到目标了（实测在 CI 的真单测门上红了一次）。
+      final int end = importer.indexOf('\n}', at);
+      expect(end, greaterThan(at), reason: '找不到 write_simple_dict 结尾，守卫需更新');
+      final String body = importer.substring(at, end);
       expect(
         body.contains('SimpleEntryAccumulator accumulator(sink.blobs)'),
         isTrue,
