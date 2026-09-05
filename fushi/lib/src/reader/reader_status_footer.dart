@@ -71,12 +71,24 @@ String readerTrackerLabel(StudySessionTotals totals) {
   return '$cph / h  ${formatReadingSessionClock(totals.durationMs)}';
 }
 
-/// 右侧进度文案：`<已读> / <总字数>  <百分比>%`，与顶部进度 pill 同一格式。
+/// 右侧进度文案：`<已读> / <总字数>  <百分比>%`，与顶部进度 pill 同一格式；
+/// 本章字数已知时再接一段括号 `(<本章已读> / <本章总字数> <本章百分比>%)`。
 /// 总字数未知 / 为 0 时返回 null（右侧不画）。
-String? readerProgressLabel({required int? current, required int? total}) {
+String? readerProgressLabel({
+  required int? current,
+  required int? total,
+  int? chapterCurrent,
+  int? chapterTotal,
+}) {
   if (current == null || total == null || total <= 0) return null;
   final double ratio = (current / total).clamp(0.0, 1.0);
-  return '$current / $total  ${(ratio * 100).toStringAsFixed(2)}%';
+  final String book = '$current / $total  ${(ratio * 100).toStringAsFixed(2)}%';
+  if (chapterCurrent == null || chapterTotal == null || chapterTotal <= 0) {
+    return book;
+  }
+  final int c = chapterCurrent.clamp(0, chapterTotal);
+  final double chapterRatio = (c / chapterTotal).clamp(0.0, 1.0);
+  return '$book  ($c / $chapterTotal ${(chapterRatio * 100).toStringAsFixed(2)}%)';
 }
 
 class ReaderStatusFooter extends StatefulWidget {
@@ -86,6 +98,8 @@ class ReaderStatusFooter extends StatefulWidget {
     required this.currentChars,
     required this.totalChars,
     required this.showProgress,
+    this.chapterCurrentChars,
+    this.chapterTotalChars,
     required this.textColor,
     required this.backgroundColor,
     this.height = kReaderStatusFooterHeight,
@@ -99,6 +113,10 @@ class ReaderStatusFooter extends StatefulWidget {
 
   final int? currentChars;
   final int? totalChars;
+
+  /// 本章已读 / 本章总字数（右侧括号段；任一未知则不画括号）。
+  final int? chapterCurrentChars;
+  final int? chapterTotalChars;
 
   /// 右侧进度是否显示（桌面端「阅读进度指示」开关落到这里）。
   final bool showProgress;
@@ -147,6 +165,8 @@ class _ReaderStatusFooterState extends State<ReaderStatusFooter> {
         ? readerProgressLabel(
             current: widget.currentChars,
             total: widget.totalChars,
+            chapterCurrent: widget.chapterCurrentChars,
+            chapterTotal: widget.chapterTotalChars,
           )
         : null;
     return GestureDetector(

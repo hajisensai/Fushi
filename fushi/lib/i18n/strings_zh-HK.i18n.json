@@ -4294,5 +4294,12 @@
   "onboarding_pack_status_paused": "Recommended pack download paused",
   "onboarding_pack_download_resume": "Resume download",
   "onboarding_pack_paused_desc": "Progress is kept on disk — resuming picks up where it stopped.",
-  "onboarding_pack_mini_bar_hide": "Hide"
+  "onboarding_pack_mini_bar_hide": "Hide",
+  "reader_stats_session": "This session",
+  "reader_stats_time_to_finish": "Time to finish",
+  "reader_stats_finish_chapter": "Chapter",
+  "reader_stats_finish_book": "Book",
+  "reader_audiobook_tab_files": "Audio files",
+  "reader_audiobook_tab_chapters": "Chapters",
+  "reader_audiobook_current_chapter": "Current chapter"
 }

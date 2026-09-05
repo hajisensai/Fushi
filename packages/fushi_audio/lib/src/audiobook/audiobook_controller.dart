@@ -642,6 +642,20 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 当前速度。
   double get speed => _player.speed;
 
+  /// 各音频文件时长（毫秒，按 [audioFiles] 顺序）；未就绪时为空。只读快照。
+  List<int> get fileDurationsMs => List<int>.unmodifiable(_fileDurationsMs);
+
+  /// 某句 cue 在全书时间轴上的起点（毫秒）：其所在文件之前所有文件时长之和 +
+  /// 文件内 [AudioCue.startMs]。有声书面板的章节时间戳用它，与 [globalPosition]
+  /// 同一套累加口径。
+  int globalMsOfCue(AudioCue cue) {
+    int base = 0;
+    for (int i = 0; i < cue.audioFileIndex && i < _fileDurationsMs.length; i++) {
+      base += _fileDurationsMs[i];
+    }
+    return base + cue.startMs;
+  }
+
   // ── 初始化 ─────────────────────────────────────────────────────────────────
 
   /// 加载有声书并配置音频会话。

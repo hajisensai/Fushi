@@ -215,7 +215,10 @@ class ReaderSideSheetSectionLabel extends StatelessWidget {
   }
 }
 
-/// 从右贴边滑出一条全高抽屉路由。遮罩透明（正文照常可见），点抽屉外空白即关。
+/// 抽屉贴哪一边：ッツ 形态下「导航 / 章节」贴左、「外观」贴右。
+enum ReaderSideSheetSide { left, right }
+
+/// 从左或右贴边滑出一条全高抽屉路由。遮罩透明（正文照常可见），点抽屉外空白即关。
 ///
 /// 用**路由**而非页内 Stack 叠层：抽屉里有输入框（书内搜索 / 按字数跳转），焦点
 /// 需要真正离开正文；走路由让焦点体系与既有的居中设置对话框完全一致
@@ -223,7 +226,9 @@ class ReaderSideSheetSectionLabel extends StatelessWidget {
 Future<T?> showReaderSideSheet<T>({
   required BuildContext context,
   required WidgetBuilder builder,
+  ReaderSideSheetSide side = ReaderSideSheetSide.right,
 }) {
+  final bool left = side == ReaderSideSheetSide.left;
   return showGeneralDialog<T>(
     context: context,
     barrierDismissible: true,
@@ -233,7 +238,7 @@ Future<T?> showReaderSideSheet<T>({
     pageBuilder: (BuildContext ctx, Animation<double> a, Animation<double> b) {
       final double width = readerSideSheetWidth(MediaQuery.sizeOf(ctx).width);
       return Align(
-        alignment: Alignment.centerRight,
+        alignment: left ? Alignment.centerLeft : Alignment.centerRight,
         child: SizedBox(
           width: width,
           height: double.infinity,
@@ -255,7 +260,7 @@ Future<T?> showReaderSideSheet<T>({
         ) {
           final Animation<Offset> slide =
               Tween<Offset>(
-                begin: const Offset(1, 0),
+                begin: Offset(left ? -1 : 1, 0),
                 end: Offset.zero,
               ).animate(
                 CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),

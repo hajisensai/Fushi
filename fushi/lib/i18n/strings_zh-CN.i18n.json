@@ -4294,5 +4294,12 @@
   "onboarding_pack_status_paused": "推荐包下载已暂停",
   "onboarding_pack_download_resume": "继续下载",
   "onboarding_pack_paused_desc": "进度留在磁盘上，继续下载会从中断处接着下。",
-  "onboarding_pack_mini_bar_hide": "收起"
+  "onboarding_pack_mini_bar_hide": "收起",
+  "reader_stats_session": "本次会话",
+  "reader_stats_time_to_finish": "预计读完",
+  "reader_stats_finish_chapter": "本章",
+  "reader_stats_finish_book": "全书",
+  "reader_audiobook_tab_files": "资源",
+  "reader_audiobook_tab_chapters": "章节",
+  "reader_audiobook_current_chapter": "当前章节"
 }

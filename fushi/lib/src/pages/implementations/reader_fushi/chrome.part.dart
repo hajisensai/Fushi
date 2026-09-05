@@ -1472,7 +1472,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
           bar: AudiobookPlayBar(
             controller: ctrl,
             skipActionSeconds: ReaderFushiSource.instance.skipActionSeconds,
-            onOpenSettings: _showAppearanceSheet,
+            onOpenSettings: () =>
+                unawaited(_showAppearanceSheet(initialSubPage: 'audiobook')),
             backgroundColor: _themeBackgroundColor(),
             foregroundColor: _themeTextColor(),
             reversed: appModel.reverseReaderBottomBar,
@@ -1651,13 +1652,15 @@ extension _ReaderChrome on _ReaderFushiPageState {
 
       if (!mounted) return;
 
-      // 桌面端 ッツ 形态：右侧抽屉。「导航」子页直达导航抽屉，其余进「外观」抽屉。
+      // 桌面端 ッツ 形态：「导航」→ 左抽屉；「有声书」→ 居中面板；其余 → 右侧设置抽屉。
       final bool useSideSheet = isDesktopPlatform && _desktopChromeEnabled;
       final ReaderQuickSettingsPresentation presentation = !useSideSheet
           ? ReaderQuickSettingsPresentation.sheet
-          : initialSubPage == 'location'
-              ? ReaderQuickSettingsPresentation.sideSheetNavigation
-              : ReaderQuickSettingsPresentation.sideSheetAppearance;
+          : switch (initialSubPage) {
+              'location' => ReaderQuickSettingsPresentation.sideSheetNavigation,
+              'audiobook' => ReaderQuickSettingsPresentation.audiobookPanel,
+              _ => ReaderQuickSettingsPresentation.sideSheetAppearance,
+            };
       final Widget sheetContent = _buildQuickSettingsSheet(
         favorites: favorites,
         favRepo: favRepo,
@@ -1665,12 +1668,27 @@ extension _ReaderChrome on _ReaderFushiPageState {
         initialSubPage: initialSubPage,
       );
 
-      if (useSideSheet) {
+      if (presentation == ReaderQuickSettingsPresentation.audiobookPanel) {
+        await showAppDialog<void>(
+          context: context,
+          builder: (_) => FushiDialogFrame(
+            maxWidth: 680,
+            maxHeightFactor: 0.88,
+            scrollable: false,
+            child: sheetContent,
+          ),
+        );
+      } else if (useSideSheet) {
         // 抽屉开着期间顶部工具栏不自动收起（否则用户改设置时工具栏在背后消失，
         // 关抽屉后点空白又要再唤一次）；关掉后若仍是悬浮可见态，重新武装计时。
         _cancelChromeAutoHide();
         await showReaderSideSheet<void>(
           context: context,
+          // ッツ 形态：导航 / 章节贴左，外观设置贴右。
+          side: presentation ==
+                  ReaderQuickSettingsPresentation.sideSheetNavigation
+              ? ReaderSideSheetSide.left
+              : ReaderSideSheetSide.right,
           builder: (_) => sheetContent,
         );
         if (mounted && _anyChromeFloating && _chromeTransientVisible) {
@@ -1712,9 +1730,16 @@ extension _ReaderChrome on _ReaderFushiPageState {
     String? initialSubPage,
   }) {
     final List<TtuTocEntry> toc = _buildTtuToc();
+    final String? extractDir = _extractDir;
     return ReaderQuickSettingsSheet(
       controller: _audiobookController,
       toc: toc,
+      coverPath: extractDir == null
+          ? null
+          : ReaderFushiSource.resolveCoverFilePath(
+              extractDir: extractDir,
+              coverPath: _book?.coverHref,
+            ),
       readerProgress: (_currentChapter, _book!.chapters.length),
       onJumpSection: (index) async {
         _navigateToChapter(index, manual: true);
@@ -2049,9 +2074,14 @@ extension _ReaderChrome on _ReaderFushiPageState {
             trailing: <Widget>[
               ReaderDesktopHeaderButton(
                 icon: Icons.headphones_outlined,
-                tooltip: t.audio_import,
+                tooltip: t.section_audiobook,
                 color: fg,
-                onPressed: _openAudioImportDialog,
+                semanticsId: 'hibiki.reader.header.audiobook',
+                // 已挂有声书 → 居中面板；没有 → 直接进导入。
+                onPressed: _audiobookController != null
+                    ? () =>
+                        unawaited(_showAppearanceSheet(initialSubPage: 'audiobook'))
+                    : _openAudioImportDialog,
               ),
               if (desktopWindowFullscreenSupported)
                 ReaderDesktopHeaderButton(
@@ -2079,17 +2109,42 @@ extension _ReaderChrome on _ReaderFushiPageState {
     );
   }
 
-  /// 顶部工具栏「统计」：推入统计中心的阅读 tab（阅读器页留在下层，WebView 不销毁）。
+  /// 顶部工具栏「统计」：阅读器内浮层（ッツ Statistics 形态）——本次会话实时秒表 /
+  /// 今日 / 累计（本书，统一事实面切片）/ 预计读完本章 · 全书。不跳统计中心。
   void _openReadingStatistics() {
+    final int? chapterTotal = _footerChapterTotalChars;
+    final int? chapterCurrent = _footerChapterCurrentChars;
+    final int? bookTotal = _progressTotalChars;
+    final int? bookCurrent = _progressCurrentChars;
     unawaited(
-      Navigator.of(context).push(
-        adaptivePageRoute<void>(
-          context: context,
-          builder: (_) => const StatisticsCenterPage(
-            initialTab: StatsCenterTab.reading,
+      showAppDialog<void>(
+        context: context,
+        builder: (_) => FushiDialogFrame(
+          maxWidth: 640,
+          child: ReaderStatisticsDialog(
+            sessionTotals: _readingSessionTotals,
+            loadBookTotals: _loadReaderBookStatTotals,
+            remainingChapterChars: chapterTotal != null && chapterCurrent != null
+                ? chapterTotal - chapterCurrent
+                : null,
+            remainingBookChars: bookTotal != null && bookCurrent != null
+                ? bookTotal - bookCurrent
+                : null,
           ),
         ),
       ),
+    );
+  }
+
+  /// 本书今日 / 累计：只经统一事实面 `loadStatFacts`（统计域 v92 读取纪律）。
+  Future<ReaderBookStatTotals> _loadReaderBookStatTotals() async {
+    final StatFacts facts =
+        await loadStatFacts(appModel.database, activityLimit: 0);
+    return summarizeReaderBookStats(
+      facts.dailyBooks,
+      bookKey: widget.bookKey,
+      title: _book?.title,
+      now: DateTime.now(),
     );
   }
 
@@ -2122,6 +2177,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
           sessionTotals: _readingSessionTotals,
           currentChars: _progressCurrentChars,
           totalChars: _progressTotalChars,
+          chapterCurrentChars: _footerChapterCurrentChars,
+          chapterTotalChars: _footerChapterTotalChars,
           showProgress: ReaderFushiSource.instance.showTopProgressBar,
           textColor: _themeTextColor(),
           backgroundColor: _themeBackgroundColor(),
@@ -2131,6 +2188,24 @@ extension _ReaderChrome on _ReaderFushiPageState {
         ),
       ),
     );
+  }
+
+  /// 本章总字数（状态行括号段 / 预计读完）；字数尚未落定时 null。
+  int? get _footerChapterTotalChars =>
+      _currentChapter >= 0 && _currentChapter < _chapterCharCounts.length
+          ? _chapterCharCounts[_currentChapter]
+          : null;
+
+  /// 本章已读字数 = 全书已读 − 本章前累计（TODO-131 前缀表）；未知时 null。
+  int? get _footerChapterCurrentChars {
+    final int? current = _progressCurrentChars;
+    final int? total = _footerChapterTotalChars;
+    if (current == null ||
+        total == null ||
+        _currentChapter >= _chapterCumulativeChars.length) {
+      return null;
+    }
+    return (current - _chapterCumulativeChars[_currentChapter]).clamp(0, total);
   }
 
   /// 状态行左侧的会话累计读口：账只在 [StudyClock] 一本（v92 纪律），时钟未建
@@ -2595,92 +2670,256 @@ class _ReaderGalleryPage extends StatefulWidget {
   State<_ReaderGalleryPage> createState() => _ReaderGalleryPageState();
 }
 
+/// 插图画廊（ッツ / Hoshi Reader Gallery 形态）：顶栏「Gallery + 关闭」，中央一张大图，
+/// 左右圆形箭头切图，底部一条横向缩略图带（选中项描边）。左右方向键切图、Esc 关闭；
+/// 点大图进既有的缩放查看器（[onOpenImage]），顶栏「跳到此插图」回正文对应章
+/// （[onJumpTo]）。初始定位到当前章的第一张插图。
 class _ReaderGalleryPageState extends State<_ReaderGalleryPage> {
-  final ScrollController _scrollController = ScrollController();
+  static const double _kThumbWidth = 56;
+  static const double _kThumbHeight = 72;
+  static const double _kThumbGap = 8;
+  static const double _kStripPadding = 12;
+
+  final ScrollController _thumbController = ScrollController();
+  final FocusNode _focusNode = FocusNode(debugLabel: 'reader-gallery');
+  late int _index = _initialIndex();
+
+  int _initialIndex() {
+    final int first = widget.images.indexWhere(
+        (EpubImageRef r) => r.chapterIndex == widget.currentChapter);
+    return first < 0 ? 0 : first;
+  }
 
   @override
   void initState() {
     super.initState();
-    // Auto-scroll to the first image of the current chapter once laid out.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToCurrent());
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _scrollThumbsTo(_index, animate: false),
+    );
   }
 
   @override
   void dispose() {
-    _scrollController.dispose();
+    _thumbController.dispose();
+    _focusNode.dispose();
     super.dispose();
   }
 
-  int _columnCount(double width) {
-    const double target = 150.0;
-    final int count = (width / target).floor();
-    return count < 2 ? 2 : count;
+  bool get _hasImages => widget.images.isNotEmpty;
+  EpubImageRef? get _current => _hasImages ? widget.images[_index] : null;
+
+  void _select(int index) {
+    if (!_hasImages) return;
+    final int next = index.clamp(0, widget.images.length - 1);
+    if (next == _index) return;
+    setState(() => _index = next);
+    _scrollThumbsTo(next, animate: true);
   }
 
-  // Grid layout constants — single source of truth shared by [build] and
-  // [_scrollToCurrent] so the auto-scroll estimate matches the real layout.
-  static const double _kGridPadding = 8.0;
-  static const double _kGridSpacing = 8.0;
-  static const double _kTileAspect = 0.78;
+  /// 把选中缩略图滚到缩略图带正中（两端夹到滚动范围内）。
+  void _scrollThumbsTo(int index, {required bool animate}) {
+    if (!_thumbController.hasClients) return;
+    final double viewport = _thumbController.position.viewportDimension;
+    final double target = (_kStripPadding +
+            index * (_kThumbWidth + _kThumbGap) -
+            (viewport - _kThumbWidth) / 2)
+        .clamp(0.0, _thumbController.position.maxScrollExtent);
+    if (animate) {
+      _thumbController.animateTo(
+        target,
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+      );
+    } else {
+      _thumbController.jumpTo(target);
+    }
+  }
 
-  void _scrollToCurrent() {
-    if (!_scrollController.hasClients) return;
-    final int firstCurrent = widget.images.indexWhere(
-        (EpubImageRef r) => r.chapterIndex == widget.currentChapter);
-    if (firstCurrent < 0) return;
-    final double width = MediaQuery.of(context).size.width;
-    final int columns = _columnCount(width);
-    final int row = firstCurrent ~/ columns;
-    // Reproduce the grid's row pitch: subtract the horizontal padding, split the
-    // remaining width across columns (minus inter-column spacing), divide tile
-    // width by the aspect ratio for the tile height, then add the main-axis
-    // spacing between rows. Clamped to the scroll extent so an over-estimate
-    // never throws.
-    final double availWidth =
-        (width - _kGridPadding * 2 - _kGridSpacing * (columns - 1))
-            .clamp(0.0, double.infinity);
-    final double tileWidth = availWidth / columns;
-    final double rowPitch = tileWidth / _kTileAspect + _kGridSpacing;
-    final double target =
-        (row * rowPitch).clamp(0.0, _scrollController.position.maxScrollExtent);
-    _scrollController.jumpTo(target);
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+      _select(_index - 1);
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+      _select(_index + 1);
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.escape) {
+      Navigator.of(context).maybePop();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
   }
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: Text(t.reader_gallery)),
-      body: widget.images.isEmpty
-          ? Center(
-              child: Text(
-                t.reader_gallery_empty,
-                style: theme.textTheme.bodyLarge,
-              ),
-            )
-          : LayoutBuilder(
-              builder: (BuildContext context, BoxConstraints constraints) {
-                final int columns = _columnCount(constraints.maxWidth);
-                return GridView.builder(
-                  controller: _scrollController,
-                  padding: const EdgeInsets.all(_kGridPadding),
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: columns,
-                    crossAxisSpacing: _kGridSpacing,
-                    mainAxisSpacing: _kGridSpacing,
-                    childAspectRatio: _kTileAspect,
-                  ),
-                  itemCount: widget.images.length,
-                  itemBuilder: (BuildContext context, int index) =>
-                      _buildTile(theme, widget.images[index]),
-                );
-              },
+      backgroundColor: theme.colorScheme.surface,
+      body: Focus(
+        focusNode: _focusNode,
+        autofocus: true,
+        onKeyEvent: _onKey,
+        child: Column(
+          children: <Widget>[
+            _buildHeader(theme),
+            Expanded(
+              child: _hasImages
+                  ? _buildStage(theme)
+                  : Center(
+                      child: Text(
+                        t.reader_gallery_empty,
+                        style: theme.textTheme.bodyLarge,
+                      ),
+                    ),
             ),
+            if (_hasImages) _buildThumbStrip(theme),
+          ],
+        ),
+      ),
     );
   }
 
-  Widget _buildTile(ThemeData theme, EpubImageRef ref) {
-    final bool isCurrent = ref.chapterIndex == widget.currentChapter;
+  Widget _buildHeader(ThemeData theme) {
+    final EpubImageRef? current = _current;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 8, 4),
+      child: Row(
+        children: <Widget>[
+          Text(
+            t.reader_gallery,
+            style: theme.textTheme.titleMedium,
+          ),
+          if (current != null) ...<Widget>[
+            const SizedBox(width: 12),
+            Text(
+              '${_index + 1} / ${widget.images.length}',
+              style: theme.textTheme.labelMedium
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+            if (current.chapterIndex == widget.currentChapter) ...<Widget>[
+              const SizedBox(width: 12),
+              Text(
+                t.reader_gallery_current,
+                style: theme.textTheme.labelSmall
+                    ?.copyWith(color: theme.colorScheme.primary),
+              ),
+            ],
+          ],
+          const Spacer(),
+          if (current != null)
+            IconButton(
+              key: const ValueKey<String>('fushi_gallery_jump'),
+              tooltip: t.reader_gallery_jump,
+              icon: const Icon(Icons.my_location_outlined),
+              onPressed: () => widget.onJumpTo(current),
+            ),
+          IconButton(
+            key: const ValueKey<String>('fushi_gallery_close'),
+            tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+            icon: const Icon(Icons.close),
+            onPressed: () => Navigator.of(context).maybePop(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStage(ThemeData theme) {
+    final EpubImageRef current = _current!;
+    final File? file = widget.fileForRef(current);
+    final Widget image = file == null
+        ? Icon(
+            Icons.broken_image_outlined,
+            size: 64,
+            color: theme.colorScheme.onSurfaceVariant,
+          )
+        : Image.file(
+            file,
+            key: ValueKey<String>('fushi_gallery_stage_${current.src}'),
+            fit: BoxFit.contain,
+            gaplessPlayback: true,
+          );
+    return Stack(
+      children: <Widget>[
+        Positioned.fill(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 72, vertical: 8),
+            child: GestureDetector(
+              onTap: () => widget.onOpenImage(current),
+              child: Center(child: image),
+            ),
+          ),
+        ),
+        Positioned(
+          left: 16,
+          top: 0,
+          bottom: 0,
+          child: Center(
+            child: _arrowButton(
+              theme,
+              icon: Icons.chevron_left,
+              enabled: _index > 0,
+              onPressed: () => _select(_index - 1),
+            ),
+          ),
+        ),
+        Positioned(
+          right: 16,
+          top: 0,
+          bottom: 0,
+          child: Center(
+            child: _arrowButton(
+              theme,
+              icon: Icons.chevron_right,
+              enabled: _index < widget.images.length - 1,
+              onPressed: () => _select(_index + 1),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _arrowButton(
+    ThemeData theme, {
+    required IconData icon,
+    required bool enabled,
+    required VoidCallback onPressed,
+  }) {
+    return Material(
+      color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.8),
+      shape: const CircleBorder(),
+      child: IconButton(
+        icon: Icon(icon),
+        iconSize: 24,
+        color: theme.colorScheme.onSurface,
+        onPressed: enabled ? onPressed : null,
+      ),
+    );
+  }
+
+  Widget _buildThumbStrip(ThemeData theme) {
+    return SizedBox(
+      height: _kThumbHeight + _kStripPadding * 2,
+      child: ListView.separated(
+        controller: _thumbController,
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.all(_kStripPadding),
+        itemCount: widget.images.length,
+        separatorBuilder: (_, __) => const SizedBox(width: _kThumbGap),
+        itemBuilder: (BuildContext context, int index) =>
+            _buildThumb(theme, index),
+      ),
+    );
+  }
+
+  Widget _buildThumb(ThemeData theme, int index) {
+    final EpubImageRef ref = widget.images[index];
+    final bool selected = index == _index;
     final File? file = widget.fileForRef(ref);
     final Widget thumbnail = file == null
         ? ColoredBox(
@@ -2688,74 +2927,35 @@ class _ReaderGalleryPageState extends State<_ReaderGalleryPage> {
             child: Center(
               child: Icon(
                 Icons.broken_image_outlined,
+                size: 18,
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
           )
         : Image.file(file, fit: BoxFit.cover);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        Expanded(
-          child: GestureDetector(
-            onTap: () => widget.onOpenImage(ref),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                border: isCurrent
-                    ? Border.all(color: theme.colorScheme.primary, width: 2)
-                    : null,
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(6),
-                child: thumbnail,
-              ),
-            ),
+    return GestureDetector(
+      onTap: () => _select(index),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        width: _kThumbWidth,
+        height: _kThumbHeight,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(
+            color: selected
+                ? theme.colorScheme.primary
+                : theme.colorScheme.outlineVariant,
+            width: selected ? 2 : 1,
           ),
         ),
-        if (isCurrent)
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: <Widget>[
-                Flexible(
-                  child: Text(
-                    t.reader_gallery_current,
-                    style: theme.textTheme.labelSmall
-                        ?.copyWith(color: theme.colorScheme.primary),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  iconSize: 18,
-                  tooltip: t.reader_gallery_jump,
-                  icon: const Icon(Icons.my_location_outlined),
-                  onPressed: () => widget.onJumpTo(ref),
-                ),
-              ],
-            ),
-          )
-        else
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Align(
-              alignment: AlignmentDirectional.centerEnd,
-              child: IconButton(
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-                iconSize: 18,
-                tooltip: t.reader_gallery_jump,
-                icon: const Icon(Icons.my_location_outlined),
-                onPressed: () => widget.onJumpTo(ref),
-              ),
-            ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(3),
+          child: Opacity(
+            opacity: selected ? 1 : 0.7,
+            child: thumbnail,
           ),
-      ],
+        ),
+      ),
     );
   }
 }
