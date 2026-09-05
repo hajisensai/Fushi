@@ -1,0 +1,163 @@
+/// 有声书设备端转录的**端到端真机测试**：真 ONNX Runtime + 真 ReazonSpeech 模型 +
+/// 真 ffmpeg 解码，把一段日语音频跑成 SRT，并断言识别文本与 ground truth 一致。
+///
+/// 单测层（`test/asr/`）用 fake 会话只能证明算法结构正确；这条证明在这台机器上
+/// GPU / CPU 两条 EP 路径都真能把日语读出来，并给出实时因子——「GPU 快多少」
+/// 的结论只能从这里拿数，不能靠推断。
+///
+/// 输入：
+///   --dart-define=ASR_MODEL_SEED=<dir>   含 encoder/decoder/joiner/tokens/vad 的目录
+///                                        （fp32 与 int8 编码器都在时才会跑 GPU 用例）
+///   --dart-define=ASR_AUDIO=<wav/mp3>    日语音频；缺省用 test/asr/fixtures/ja_tts_16k.wav
+///                                        （相对 fushi/，仅桌面可读）
+///   --dart-define=ASR_EXPECT=<text>      期望文本子串；缺省「今日はいい天気ですね」
+///
+/// 跑法（Windows，从 fushi/）：
+///   .\tool\run_windows_itest.ps1 -Target integration_test\asr_transcribe_e2e_itest.dart
+///   （脚本会透传 --dart-define；或直接 flutter test -d windows ... --dart-define=...）
+library;
+
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:integration_test/integration_test.dart';
+import 'package:path/path.dart' as p;
+
+import 'package:fushi/src/asr/asr_engine.dart';
+import 'package:fushi/src/asr/asr_model_manifest.dart';
+import 'package:fushi/src/asr/asr_model_store.dart';
+import 'package:fushi/src/asr/asr_transcribe_job.dart';
+import 'package:fushi/src/asr/asr_transcription_service.dart';
+import 'package:fushi/src/asr/asr_types.dart';
+import 'package:fushi/src/onnx/onnx_inference.dart';
+
+const String _kSeed = String.fromEnvironment('ASR_MODEL_SEED');
+const String _kAudio = String.fromEnvironment(
+  'ASR_AUDIO',
+  defaultValue: 'test/asr/fixtures/ja_tts_16k.wav',
+);
+const String _kExpect = String.fromEnvironment(
+  'ASR_EXPECT',
+  defaultValue: '今日はいい天気ですね',
+);
+
+String _normalize(String s) => s.replaceAll(RegExp(r'[\s、。！？!?]'), '');
+
+Future<({String text, AsrTranscribeResult result, OnnxProviderResolution resolution, Duration wall})>
+    _runOnce({
+  required AsrModelStore store,
+  required Directory jobsRoot,
+  required String audio,
+  required AsrAccelerationPreference preference,
+  required AsrEncoderVariant variant,
+}) async {
+  final AsrTranscriptionService service = AsrTranscriptionService(
+    openStore: () async => store,
+    jobsRoot: () async => jobsRoot,
+    // 短音频：块与批都不需要大。
+    chunkSeconds: 60,
+    batchSize: 4,
+  );
+  await service.discard(<String>[audio]);
+  final Stopwatch sw = Stopwatch()..start();
+  final AsrRunningTranscription running = await service.start(
+    audioPaths: <String>[audio],
+    variant: variant,
+    preference: preference,
+  );
+  try {
+    AsrTranscribeResult? result;
+    await for (final AsrTranscribeEvent e in running.run()) {
+      if (e is AsrTranscribeFinishedEvent) result = e.result;
+    }
+    sw.stop();
+    expect(result, isNotNull, reason: '任务没有以 finished 结束');
+    final List<AsrTranscribedSegment> segments =
+        await AsrTranscribeJob.loadSegments(await service.jobDirFor(<String>[audio]));
+    final String text = segments.map((AsrTranscribedSegment s) => s.text).join();
+    return (
+      text: text,
+      result: result!,
+      resolution: running.encoderResolution,
+      wall: sw.elapsed,
+    );
+  } finally {
+    await running.dispose();
+  }
+}
+
+void main() {
+  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+
+  late Directory jobsRoot;
+  late AsrModelStore store;
+  late String audio;
+
+  setUpAll(() async {
+    expect(_kSeed, isNotEmpty, reason: '需要 --dart-define=ASR_MODEL_SEED=<模型目录>');
+    store = AsrModelStore(Directory(_kSeed));
+    expect(store.isReady(AsrEncoderVariant.int8), isTrue,
+        reason: '模型目录缺 int8 全套文件：${store.dir.path}');
+    audio = p.isAbsolute(_kAudio) ? _kAudio : p.join(Directory.current.path, _kAudio);
+    expect(File(audio).existsSync(), isTrue, reason: '音频不存在：$audio');
+    jobsRoot = await Directory.systemTemp.createTemp('fushi_asr_e2e_');
+  });
+
+  tearDownAll(() async {
+    if (jobsRoot.existsSync()) await jobsRoot.delete(recursive: true);
+  });
+
+  testWidgets('CPU int8：真模型把日语读出来并生成 SRT', (WidgetTester tester) async {
+    final r = await _runOnce(
+      store: store,
+      jobsRoot: jobsRoot,
+      audio: audio,
+      preference: AsrAccelerationPreference.cpuOnly,
+      variant: AsrEncoderVariant.int8,
+    );
+    // ignore: avoid_print
+    print('[asr-e2e][cpu-int8] text="${r.text}" cues=${r.result.cueCount} '
+        'segments=${r.result.segmentCount} audioMs=${r.result.totalMs} '
+        'wall=${r.wall.inMilliseconds}ms '
+        'rtf=${(r.wall.inMilliseconds / r.result.totalMs).toStringAsFixed(3)} '
+        'resolution=${r.resolution}');
+    expect(r.resolution.effective, OnnxExecutionProvider.cpu);
+    expect(_normalize(r.text), contains(_normalize(_kExpect)));
+    expect(r.result.cueCount, greaterThan(0));
+    final String srt = File(r.result.srtPath).readAsStringSync();
+    expect(srt, contains('-->'));
+    expect(_normalize(srt), contains(_normalize(_kExpect)));
+  }, timeout: const Timeout(Duration(minutes: 10)));
+
+  testWidgets('GPU fp32（auto）：真加速 EP 跑通且文本一致', (WidgetTester tester) async {
+    if (!store.isReady(AsrEncoderVariant.fp32)) {
+      // ignore: avoid_print
+      print('[asr-e2e][gpu-fp32] skipped: fp32 encoder not in ${store.dir.path}');
+      return;
+    }
+    final Set<OnnxExecutionProvider> available =
+        await AsrEngineLoader().availableAcceleratedProviders();
+    // ignore: avoid_print
+    print('[asr-e2e][gpu-fp32] available accelerated EPs: $available');
+    final r = await _runOnce(
+      store: store,
+      jobsRoot: jobsRoot,
+      audio: audio,
+      preference: AsrAccelerationPreference.auto,
+      variant: AsrEncoderVariant.fp32,
+    );
+    // ignore: avoid_print
+    print('[asr-e2e][gpu-fp32] text="${r.text}" cues=${r.result.cueCount} '
+        'segments=${r.result.segmentCount} audioMs=${r.result.totalMs} '
+        'wall=${r.wall.inMilliseconds}ms '
+        'rtf=${(r.wall.inMilliseconds / r.result.totalMs).toStringAsFixed(3)} '
+        'resolution=${r.resolution}');
+    expect(_normalize(r.text), contains(_normalize(_kExpect)));
+    if (available.isNotEmpty) {
+      // 有加速 EP 编译在运行时里：必须真落到它上，不允许静默退 CPU。
+      expect(r.resolution.effective, isNot(OnnxExecutionProvider.cpu),
+          reason: '有加速 EP 却退到 CPU：${r.resolution}');
+      expect(r.resolution.didFallBack, isFalse, reason: '$r.resolution');
+    }
+  }, timeout: const Timeout(Duration(minutes: 15)));
+}

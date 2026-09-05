@@ -32,7 +32,7 @@
 - 全局状态：`fushi/lib/src/models/app_model.dart`（`AppModel`，~5150 行，初始化流程 + 子系统委托核心，改前先理解）。
 - Drift 数据库：`packages/fushi_core/lib/src/database/database.dart` 和 `tables.dart`（schema v62，53 张表，WAL）。
 - 词典：Dart 封装 `packages/fushi_dictionary/lib/src/engine/fushidicts.dart` + FFI 绑定 `lib/src/ffi/fushidicts_ffi_bindings.dart`；C++ 引擎源码全在 `native/fushidicts/`（包内已无 C++），`fushidicts_external/` 是 vendored 第三方，上游同步基线见 `native/fushidicts/UPSTREAM.md`。
-- 有声书：`packages/fushi_audio/` + `fushi/lib/src/media/audiobook/`（导入入口 `book_import_dialog.dart` / `audiobook_import_dialog.dart`）。
+- 有声书：`packages/fushi_audio/` + `fushi/lib/src/media/audiobook/`（导入入口 `book_import_dialog.dart` / `audiobook_import_dialog.dart`）。设备端语音转录生成字幕在 `fushi/lib/src/asr/`（ReazonSpeech k2-v2 字符级 zipformer RNN-T + silero-vad v4，经 `flutter_onnxruntime`；Windows fp32 编码器走 DirectML，其余 int8 CPU；PCM 抽取走 ffmpeg `asr_pcm_source.dart`，任务可暂停续跑 `asr_transcribe_job.dart`，产物是单时间轴 SRT 喂既有匹配链路；UI 入口 `media/audiobook/asr_transcribe_sheet.dart`）。OCR/ASR 共用的 ONNX 会话抽象与模型下载器在 `fushi/lib/src/onnx/`。
 - 互联/同步：`fushi/lib/src/sync/`（`interconnect_*.dart`、`aggregate_sync_service.dart`、`backup_*`）。
 - galgame 制卡：Flutter 侧 `fushi/lib/src/lookup/`（overlay 浮窗）+ `fushi/lib/src/mining/galgame_*`；C++ hook（injector + hook DLL + vendored LunaHook）在本仓 `native/galgame_hook/`。`tools/build_distribution.ps1` 单独构建两架构 helper zip，再由 `tools/install_into_bundle.ps1` 在**构建期**解压进 `fushi.exe` 同级 `voice_hook/<arch>/`（BUG-1449），与本体同一次构建产出、同一个安装包落地，运行期不下载任何组件。helper **不链接进 `fushi.exe`**，运行时仍是隔离子进程/DLL。
 - 浏览器扩展：`tools/browser-extension/`（注意是根级 `tools/`，与 `tool/` 不同目录）。

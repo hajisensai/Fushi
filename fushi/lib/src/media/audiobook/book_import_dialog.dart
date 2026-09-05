@@ -11,6 +11,8 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/drag_drop/import_dialog_drop.dart';
+import 'package:fushi/src/asr/asr_transcription_service.dart';
+import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
 import 'package:fushi/src/media/audiobook/audiobook_alignment_service.dart';
 import 'package:fushi/src/media/audiobook/subtitle_rematch.dart';
 import 'package:fushi/src/media/audiobook/text_to_epub.dart';
@@ -429,8 +431,36 @@ class _BookImportDialogState extends State<BookImportDialog>
           isWideTapArea: true,
           onTap: _pickSubtitle,
         ),
+        if (AsrTranscriptionService.isSupported)
+          FushiIconButton(
+            icon: Icons.record_voice_over_outlined,
+            tooltip: t.audiobook_transcribe_action,
+            isWideTapArea: true,
+            onTap: importing ? null : _transcribeSubtitleFromAudio,
+          ),
       ],
     );
+  }
+
+  /// 没有 .srt 时用设备端语音模型从已选音频生成一份，回填到字幕位；之后的导入
+  /// 路径与用户自带 SRT 完全相同（解析 → 匹配 → 落库）。
+  Future<void> _transcribeSubtitleFromAudio() async {
+    if (_audioPaths.isEmpty) {
+      FushiToast.show(
+        msg: t.audiobook_transcribe_needs_audio,
+        severity: ToastSeverity.warning,
+      );
+      return;
+    }
+    final String? srtPath = await showAsrTranscribeSheet(
+      context: context,
+      audioPaths: List<String>.of(_audioPaths),
+    );
+    if (srtPath == null || !mounted) return;
+    setState(() {
+      _subtitlePath = srtPath;
+      _subtitleName = t.audiobook_transcribe_result_name;
+    });
   }
 
   Widget _audioRow() {

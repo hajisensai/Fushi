@@ -1,0 +1,277 @@
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/asr/asr_transcribe_job.dart';
+import 'package:fushi/src/asr/asr_types.dart';
+
+/// 合成 PCM 源：每个文件 [durationsMs] 毫秒的静音，按 chunkSeconds 切块。
+class _FakePcm implements AsrPcmSource {
+  _FakePcm(this.durationsMs, {this.probeFails = const <int>{}});
+
+  final Map<String, int> durationsMs;
+  final Set<int> probeFails;
+  final List<({String path, int start})> decodeCalls =
+      <({String path, int start})>[];
+
+  @override
+  Future<int?> probeDurationMs(String audioPath) async {
+    final int idx = durationsMs.keys.toList().indexOf(audioPath);
+    if (probeFails.contains(idx)) return null;
+    return durationsMs[audioPath];
+  }
+
+  @override
+  Stream<AsrPcmChunk> decode(
+    String audioPath, {
+    int startSample = 0,
+    int chunkSeconds = 600,
+  }) async* {
+    decodeCalls.add((path: audioPath, start: startSample));
+    final int total = durationsMs[audioPath]! * kAsrSampleRate ~/ 1000;
+    int pos = startSample;
+    while (pos < total) {
+      final int n = (chunkSeconds * kAsrSampleRate).clamp(0, total - pos);
+      yield AsrPcmChunk(startSample: pos, samples: Float32List(n));
+      pos += n;
+    }
+  }
+}
+
+/// 假切段器：每块产出固定数量的 1 秒语音段；可模拟块边界处的进行中语音。
+class _FakeSegmenter implements AsrSegmenter {
+  _FakeSegmenter({this.segmentsPerChunk = 3, this.inProgressOffsetSamples});
+
+  final int segmentsPerChunk;
+
+  /// 非 null 时：feed 后报告「块末尾往前这么多样本处有进行中语音」。
+  final int? inProgressOffsetSamples;
+  int? _inProgress;
+  int resets = 0;
+
+  @override
+  Future<List<AsrSpeechSegment>> feed(AsrPcmChunk chunk) async {
+    final List<AsrSpeechSegment> out = <AsrSpeechSegment>[];
+    final int step = chunk.samples.length ~/ (segmentsPerChunk + 1);
+    for (int i = 0; i < segmentsPerChunk; i++) {
+      out.add(
+        AsrSpeechSegment(
+          startSample: chunk.startSample + i * step,
+          samples: Float32List(kAsrSampleRate),
+        ),
+      );
+    }
+    _inProgress = inProgressOffsetSamples == null
+        ? null
+        : chunk.endSample - inProgressOffsetSamples!;
+    return out;
+  }
+
+  @override
+  Future<List<AsrSpeechSegment>> flush() async {
+    _inProgress = null;
+    return <AsrSpeechSegment>[];
+  }
+
+  @override
+  void reset() {
+    resets++;
+    _inProgress = null;
+  }
+
+  @override
+  int? get inProgressSpeechStartSample => _inProgress;
+}
+
+class _FakeDecoder implements AsrBatchDecoder {
+  final List<int> batchSizes = <int>[];
+
+  @override
+  Future<List<AsrDecodedSegment>> decodeBatch(
+    List<AsrSpeechSegment> segments,
+  ) async {
+    batchSizes.add(segments.length);
+    return segments
+        .map(
+          (AsrSpeechSegment s) => AsrDecodedSegment(
+            tokens: const <String>['あ', '。'],
+            tokenOffsetsMs: const <int>[100, 500],
+          ),
+        )
+        .toList();
+  }
+}
+
+void main() {
+  late Directory tmp;
+  setUp(() async {
+    tmp = await Directory.systemTemp.createTemp('asr_job_test_');
+  });
+  tearDown(() async {
+    if (tmp.existsSync()) await tmp.delete(recursive: true);
+  });
+
+  test('两文件全程跑完：进度单调、检查点落盘、SRT 生成、时间按文件偏移', () async {
+    final _FakePcm pcm = _FakePcm(<String, int>{
+      'a.mp3': 20000,
+      'b.mp3': 10000,
+    });
+    final _FakeDecoder decoder = _FakeDecoder();
+    final AsrTranscribeJob job = AsrTranscribeJob(
+      jobDir: tmp,
+      audioPaths: <String>['a.mp3', 'b.mp3'],
+      pcm: pcm,
+      segmenter: _FakeSegmenter(),
+      decoder: decoder,
+      batchSize: 2,
+      chunkSeconds: 5,
+      progressInterval: Duration.zero,
+    );
+    final List<AsrTranscribeEvent> events = await job.run().toList();
+    expect(events.last, isA<AsrTranscribeFinishedEvent>());
+    final AsrTranscribeResult r =
+        (events.last as AsrTranscribeFinishedEvent).result;
+    // a: 4 块 × 3 段 = 12；b: 2 块 × 3 段 = 6。
+    expect(r.segmentCount, 18);
+    expect(r.cueCount, 18);
+    expect(r.totalMs, 30000);
+    expect(File(r.srtPath).existsSync(), isTrue);
+    final String srt = File(r.srtPath).readAsStringSync();
+    // 第二个文件的第一条 cue 落在 20 s 偏移之后。
+    expect(srt, contains('00:00:20,000 --> '));
+    // 进度单调不减。
+    int last = -1;
+    for (final AsrTranscribeEvent e in events) {
+      if (e is AsrTranscribeProgressEvent) {
+        expect(e.progress.processedMs, greaterThanOrEqualTo(last));
+        last = e.progress.processedMs;
+      }
+    }
+    // 批次大小 ≤ batchSize。
+    expect(decoder.batchSizes.every((int n) => n <= 2), isTrue);
+    final AsrJobState state = await AsrTranscribeJob.loadState(tmp, <String>[
+      'a.mp3',
+      'b.mp3',
+    ]);
+    expect(state.finished, isTrue);
+    expect(state.isFileDone(0), isTrue);
+    expect(state.isFileDone(1), isTrue);
+  });
+
+  test('暂停后从检查点续跑：不重复段落，恢复点取进行中语音起点', () async {
+    final List<String> paths = <String>['a.mp3'];
+    final _FakePcm pcm = _FakePcm(<String, int>{'a.mp3': 15000});
+    // 每块末尾前 1 秒有进行中语音。
+    final _FakeSegmenter seg = _FakeSegmenter(
+      inProgressOffsetSamples: kAsrSampleRate,
+    );
+    final AsrTranscribeJob first = AsrTranscribeJob(
+      jobDir: tmp,
+      audioPaths: paths,
+      pcm: pcm,
+      segmenter: seg,
+      decoder: _FakeDecoder(),
+      batchSize: 8,
+      chunkSeconds: 5,
+      progressInterval: Duration.zero,
+    );
+    // 第一块处理完即请求暂停。
+    final List<AsrTranscribeEvent> firstEvents = <AsrTranscribeEvent>[];
+    await for (final AsrTranscribeEvent e in first.run()) {
+      firstEvents.add(e);
+      if (e is AsrTranscribeProgressEvent) first.requestPause();
+    }
+    expect(firstEvents.last, isA<AsrTranscribePausedEvent>());
+    final AsrJobState paused = await AsrTranscribeJob.loadState(tmp, paths);
+    // 第一块 5 s = 80000 样本，进行中语音起点 = 80000 - 16000。
+    expect(paused.resumeSamples.single, 5 * kAsrSampleRate - kAsrSampleRate);
+    final int segmentsAfterPause = (await AsrTranscribeJob.loadSegments(
+      tmp,
+    ))
+        .length;
+    expect(segmentsAfterPause, 3);
+
+    // 续跑：从恢复点开始解码。
+    final _FakePcm pcm2 = _FakePcm(<String, int>{'a.mp3': 15000});
+    final AsrTranscribeJob second = AsrTranscribeJob(
+      jobDir: tmp,
+      audioPaths: paths,
+      pcm: pcm2,
+      segmenter: _FakeSegmenter(),
+      decoder: _FakeDecoder(),
+      batchSize: 8,
+      chunkSeconds: 5,
+      progressInterval: Duration.zero,
+    );
+    final List<AsrTranscribeEvent> secondEvents = await second.run().toList();
+    expect(secondEvents.last, isA<AsrTranscribeFinishedEvent>());
+    expect(pcm2.decodeCalls.single.start, 5 * kAsrSampleRate - kAsrSampleRate);
+    // 第一块 3 段保留 + 续跑覆盖剩余 11 s（3 块）× 3 段。
+    final List<AsrTranscribedSegment> all = await AsrTranscribeJob.loadSegments(
+      tmp,
+    );
+    expect(all.length, 3 + 9);
+    // 无重复起点。
+    expect(
+      all.map((AsrTranscribedSegment s) => s.startMs).toSet().length,
+      all.length,
+    );
+  });
+
+  test('路径列表变化视为新任务，旧产物清空', () async {
+    // 旧产物里放一条**合法**段落：若不清空会被当成本任务的段落带进结果。
+    File(
+      '${tmp.path}/${AsrJobFiles.segments}',
+    ).writeAsStringSync('{"f":0,"s":0,"e":900,"t":["旧"],"m":[100]}\n');
+    File('${tmp.path}/${AsrJobFiles.state}').writeAsStringSync(
+      '{"version":1,"audioPaths":["x.mp3"],"resumeSamples":[-1],"finished":true}',
+    );
+    final AsrTranscribeJob job = AsrTranscribeJob(
+      jobDir: tmp,
+      audioPaths: <String>['a.mp3'],
+      pcm: _FakePcm(<String, int>{'a.mp3': 3000}),
+      segmenter: _FakeSegmenter(segmentsPerChunk: 1),
+      decoder: _FakeDecoder(),
+      chunkSeconds: 5,
+      progressInterval: Duration.zero,
+    );
+    final List<AsrTranscribeEvent> events = await job.run().toList();
+    final AsrTranscribeResult r =
+        (events.last as AsrTranscribeFinishedEvent).result;
+    expect(r.segmentCount, 1);
+  });
+
+  test('时长探测失败：用实际解码样本数补时长，SRT 偏移仍正确', () async {
+    final _FakePcm pcm = _FakePcm(
+      <String, int>{'a.mp3': 6000, 'b.mp3': 4000},
+      probeFails: <int>{0},
+    );
+    final AsrTranscribeJob job = AsrTranscribeJob(
+      jobDir: tmp,
+      audioPaths: <String>['a.mp3', 'b.mp3'],
+      pcm: pcm,
+      segmenter: _FakeSegmenter(segmentsPerChunk: 1),
+      decoder: _FakeDecoder(),
+      chunkSeconds: 10,
+      progressInterval: Duration.zero,
+    );
+    final List<AsrTranscribeEvent> events = await job.run().toList();
+    final AsrTranscribeResult r =
+        (events.last as AsrTranscribeFinishedEvent).result;
+    expect(r.fileDurationsMs, <int>[6000, 4000]);
+    expect(r.totalMs, 10000);
+  });
+
+  test('run 只能调用一次', () async {
+    final AsrTranscribeJob job = AsrTranscribeJob(
+      jobDir: tmp,
+      audioPaths: <String>['a.mp3'],
+      pcm: _FakePcm(<String, int>{'a.mp3': 1000}),
+      segmenter: _FakeSegmenter(segmentsPerChunk: 1),
+      decoder: _FakeDecoder(),
+      progressInterval: Duration.zero,
+    );
+    await job.run().toList();
+    expect(() => job.run().toList(), throwsStateError);
+  });
+}

@@ -223,7 +223,13 @@ ENCODERS="gif,aac,mjpeg,png,libx264,libsvtav1,libwebp,libwebp_anim,ass,ssa,subri
 # 通用、任意播放器/浏览器直接打开）；mp4 muxer 与 mov 同一 movenc，体积增量近零。
 # avif / webp：动图封面的两个新容器（ffmpeg 按输出扩展名选 muxer）。avif muxer 自
 # FFmpeg 6.1 进主线，本 build 钉的 n7.1.5 已有；它与 mov/mp4 同属 movenc，体积增量近零。
-MUXERS="gif,adts,image2,mjpeg,mov,mp4,avif,webp,srt,ass,webvtt,null"
+# s16le / wav：有声书设备端语音转录（ASR，fushi/lib/src/asr/asr_pcm_source.dart）把
+# m4b/mp3/flac 分块解码成 16 kHz 单声道 pcm_s16le 喂模型。`-f s16le` 直出裸 PCM 是
+# 主路径；wav 一并带上（同一 pcmenc/wavenc 家族，体积增量近零），给「要带头的 PCM」
+# 场景与外部调试用。缺 s16le 时 ffmpeg 在打开输出阶段报 "Requested output format
+# 's16le' is not known"，Dart 侧会临时回退 `-f mov -c:a pcm_s16le` 再抠 mdat——那是过渡
+# 兼容层，本白名单补齐并重新 vendor 入库二进制后即可删除（见 asr_pcm_source.dart 文件头）。
+MUXERS="gif,adts,image2,mjpeg,mov,mp4,avif,webp,srt,ass,webvtt,null,wav,s16le"
 # pad：有声书片段导出（buildFfmpegImageAudioToVideoArgs）用
 #   `scale=W:H:force_original_aspect_ratio=decrease,pad=W:H:(ow-iw)/2:(oh-ih)/2:color=black`
 #   把文本图缩进框内再黑边填充到精确 WxH；漏 pad → "No option name near '...'" +

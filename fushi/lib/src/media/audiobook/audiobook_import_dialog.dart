@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/asr/asr_transcription_service.dart';
+import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
 import 'package:fushi/src/media/audiobook/audiobook_alignment_service.dart'
     show epubSectionsFromExtractDir, parseCuesForFormat;
 import 'package:fushi/src/media/import/audiobook_health_summary.dart';
@@ -466,8 +468,39 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
           isWideTapArea: true,
           onTap: _pickAlignment,
         ),
+        if (AsrTranscriptionService.isSupported)
+          FushiIconButton(
+            icon: Icons.record_voice_over_outlined,
+            tooltip: t.audiobook_transcribe_action,
+            isWideTapArea: true,
+            onTap: importing ? null : _transcribeAlignmentFromAudio,
+          ),
       ],
     );
+  }
+
+  /// 没有对齐文件时用设备端语音模型从已选音频生成一份 SRT 回填；后续导入路径
+  /// 与用户自带 SRT 相同（持久化 → 解析 → 匹配 → 落库）。
+  Future<void> _transcribeAlignmentFromAudio() async {
+    final List<String>? audio = _audioPaths;
+    if (audio == null || audio.isEmpty) {
+      FushiToast.show(
+        msg: t.audiobook_transcribe_needs_audio,
+        severity: ToastSeverity.warning,
+      );
+      return;
+    }
+    final String? srtPath = await showAsrTranscribeSheet(
+      context: context,
+      audioPaths: List<String>.of(audio),
+    );
+    if (srtPath == null || !mounted) return;
+    setState(() {
+      _alignmentPath = srtPath;
+      _alignmentName = t.audiobook_transcribe_result_name;
+      _probedCues = null;
+      _probedCuesSourcePath = null;
+    });
   }
 
   // ── 文件/目录选择 ────────────────────────────────────────────────────────────

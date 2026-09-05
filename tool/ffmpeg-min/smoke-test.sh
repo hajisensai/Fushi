@@ -265,6 +265,33 @@ if ! "$FFMPEG_MIN" -hide_banner -nostats -i "$WORK/tone.wav" -af "aresample=8000
 fi
 assert_log_contains "$WORK/rms.log" "lavfi.astats.Overall.RMS_level"
 
+echo "[ffmpeg-min-smoke] verifying s16le + wav muxers (audiobook ASR PCM extraction)"
+# 有声书设备端语音转录（fushi/lib/src/asr/asr_pcm_source.dart）用
+# `-ss <pre-roll> -i <book> -ss <offset> -t <chunk> -map 0:a:0 -vn -ac 1 -ar 16000
+#  -c:a pcm_s16le -f s16le <chunk.pcm>` 分块抠 16 kHz 单声道 PCM。入库的 n7.1.5 二进制
+# 曾没有 s16le/wav muxer（打开输出阶段 "Requested output format 's16le' is not
+# known"），Dart 侧只能回退 mov 容器再抠 mdat。这里钉住两个 muxer 都在，并真跑一次
+# 分块抠取形态、用全量 ffmpeg 校验产物，防止白名单再丢。
+"$FFMPEG_MIN" -hide_banner -muxers > "$WORK/muxers3.txt" 2>&1
+for muxer in s16le wav; do
+  if ! grep -Eq "^[[:space:]]*[D.]?E[[:space:].d]*[[:space:]]+$muxer([[:space:]]|\$)" "$WORK/muxers3.txt"; then
+    echo "MISSING MUXER (need $muxer for audiobook ASR PCM extraction):"
+    cat "$WORK/muxers3.txt"
+    exit 1
+  fi
+done
+run "$FFMPEG_MIN" -hide_banner -loglevel error -y   -ss 0.100 -i "$WORK/covered.m4a" -ss 0.400 -t 0.800   -map 0:a:0 -vn -ac 1 -ar 16000 -c:a pcm_s16le -f s16le "$WORK/asr-chunk.pcm"
+assert_nonempty "$WORK/asr-chunk.pcm"
+# 0.8 s × 16000 Hz × 2 B = 25600 B；允许 AAC 尾部冲洗多出几十个样本。
+asr_bytes=$(wc -c <"$WORK/asr-chunk.pcm")
+if [ "$asr_bytes" -lt 25600 ] || [ "$asr_bytes" -gt 25856 ]; then
+  echo "[ffmpeg-min-smoke] unexpected ASR PCM chunk size: $asr_bytes bytes (want 25600..25856)" >&2
+  exit 1
+fi
+run "$FFMPEG_MIN" -hide_banner -loglevel error -y   -i "$WORK/tone.wav" -t 0.500 -map 0:a:0 -vn -ac 1 -ar 16000 -c:a pcm_s16le   -f wav "$WORK/asr-chunk.wav"
+assert_nonempty "$WORK/asr-chunk.wav"
+run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -i "$WORK/asr-chunk.wav" -f null -
+
 echo "[ffmpeg-min-smoke] verifying network protocols (http/https/tls for YouTube mining)"
 # TODO-1214: YouTube/remote mining feeds ffmpeg an http(s) googlevideo stream and
 # adds -reconnect* input options (buildFfmpegRemoteInputArgs,
