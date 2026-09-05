@@ -474,24 +474,6 @@ INSTANCE_DRAWTEXT_PATCH_RE = re.compile(
 )
 CLASSIC_SWEEP_CALL_RE = re.compile(r"global\.fushiLookupSweepClassicLayers\s*\(\s*\)\s*;")
 
-# 整棵图层树的补挂。只扫 kag.fore/back.messages 是不够的：重度定制的 KAG3 把对白正文画在
-# messages 数组**之外**的层上（真机 フタマタ恋愛 Ver1.00，19 个插件含 hutamata.tpm /
-# extNagano.dll / layerExDraw.dll——messages 里那些层的 drawText 包装整段对白零触发）。
-# 只扫两个数组时，「对白层不在扫描面里」与「引擎根本不走 TJS drawText」在诊断上完全同形，
-# 真机上分不出来。sweep 必须调用 fushiLookupPatchLayerTree，而它必须真的沿 children 递归
-# ——只留个函数不递归等于扫描面没扩。
-TREE_WALK_CALL_RE = re.compile(r"global\.fushiLookupPatchLayerTree\s*\(")
-TREE_WALK_CHILDREN_RE = re.compile(r"\.children\s*;")
-
-# 活的引擎对象**绝不能**整体枚举成员。Dictionary.assign 会逐个**读取**源对象的所有成员，
-# 踩到任何一个读取即抛的属性（真机实测是 `enabled`）就抛 KiriKiri 全局脚本异常框，
-# 而那是 native 侧抛的、**TJS 的 try/catch 拦不住**——游戏当场被打断，一条数据都采不到。
-# 2026-09-05 真机上真的这么崩过一次（见 BUG-2116 踩坑记录）。要按名发现字段只能逐个候选名
-# 各自 try/catch 单独读。
-UNSAFE_BULK_ENUM_RE = re.compile(
-    r"\.assign\s*\(\s*(this|layer|root|obj|renderer|kag|window)\b"
-)
-
 
 def find_classic_sweep_missing(source: MaskedSource) -> list[str]:
     """经典 KAG3 采集面必须存在，且必须是逐实例补丁。
@@ -517,67 +499,6 @@ def find_classic_sweep_missing(source: MaskedSource) -> list[str]:
         )
     if not INSTANCE_DRAWTEXT_PATCH_RE.search(text):
         hits.append(f"{ADAPTER.name}: 没有逐实例的 <layer>.drawText = function 补丁")
-    return hits
-
-
-def find_classic_tree_walk_missing(source: MaskedSource) -> list[str]:
-    """经典 KAG3 的采集面必须覆盖整棵图层树，不能只扫两个 messages 数组。
-
-    两个缺一不可：
-    1. 源码里存在 `global.fushiLookupPatchLayerTree(` 调用——退回只扫
-       `kag.fore/back.messages` 时，重度定制的 KAG3（对白画在 messages 之外的层上）
-       永远采不到几何，而症状与「引擎根本不走 TJS drawText」完全同形。
-    2. 那个函数必须真的读 `.children` 递归下去——只留个空壳函数等于扫描面没扩，
-       而 1 依然绿。
-    """
-    hits: list[str] = []
-    if not TREE_WALK_CALL_RE.search(source.text):
-        hits.append(
-            f"{ADAPTER.name}: 没有 global.fushiLookupPatchLayerTree( 调用——"
-            "采集面退回只扫 kag.fore/back.messages"
-        )
-    if not TREE_WALK_CHILDREN_RE.search(source.text):
-        hits.append(
-            f"{ADAPTER.name}: 图层树遍历没有读 .children——扫描面没有真的扩到树里"
-        )
-    # 第三条：树遍历必须被探测开关门住，绝不能默认开。
-    # 2026-09-05 真机两次实测（フタマタ恋愛 Ver1.00）：给 kag.fore/back.messages 之外的
-    # 任何层注入成员都会和游戏自身逻辑冲突——整棵窗口树（预算 512）和收窄到消息层子树
-    # （深度 4 / 预算 64）**两版都让游戏抛 `Member "enabled" does not exist` 并丢掉窗口**。
-    # 收窄规模没用，说明问题不是补挂面太大，而是"给消息层以外的层注入成员"这件事本身。
-    call = TREE_WALK_CALL_RE.search(source.text)
-    if call is not None:
-        head = source.text[:call.start()]
-        gate = head.rfind("fushiLookupProbeMode")
-        sweep = head.rfind("global.fushiLookupSweepClassicLayers = function")
-        if gate < 0 or (sweep >= 0 and gate < sweep):
-            hits.append(
-                f"{ADAPTER.name}:{source.line_of(call.start())} "
-                "图层树遍历没有被 fushiLookupProbeMode 门住——给 messages 之外的层注入"
-                "成员会打坏游戏（真机两次实测抛 Member \"enabled\" does not exist 并丢窗口），"
-                "它只能留在默认关闭的探测分支里"
-            )
-    return hits
-
-
-def find_unsafe_engine_object_enumeration(source: MaskedSource) -> list[str]:
-    """禁止对活的引擎对象整体枚举成员（Dictionary.assign）。
-
-    2026-09-05 真机踩过：为了不猜字段名，用 `var dic = %[]; dic.assign(layer);` 想枚举
-    图层的数值成员做自校准光标发现，游戏立刻弹 KiriKiri 全局脚本异常框
-    `Member "enabled" does not exist`，一条数据都没采到。assign 会逐个**读取**源对象所有
-    成员，踩到读取即抛的属性就炸，而那是 native 侧抛的、**TJS 的 try/catch 拦不住**
-    （assign 已经包在 catch 里了，照样弹框）。
-
-    要按名发现字段只能逐个候选名各自 try/catch 单独读。
-    """
-    hits: list[str] = []
-    for match in UNSAFE_BULK_ENUM_RE.finditer(source.text):
-        hits.append(
-            f"{ADAPTER.name}:{source.line_of(match.start())} "
-            f"对活的引擎对象整体枚举成员 .assign({match.group(1)})——"
-            "读取即抛的属性会抛出 TJS catch 拦不住的 native 异常并打断游戏"
-        )
     return hits
 
 
@@ -3366,24 +3287,6 @@ class RealAdapterTest(unittest.TestCase):
             "Fate RN / フタマタ恋愛 的游戏内查词整个不存在且症状与「引擎不支持」同形。",
         )
 
-    def test_classic_capture_walks_the_whole_layer_tree(self) -> None:
-        self.assertEqual(
-            [],
-            find_classic_tree_walk_missing(self.source),
-            "经典 KAG3 的采集面必须覆盖整棵图层树：重度定制的 KAG3 把对白正文画在"
-            "kag.fore/back.messages 之外的层上，只扫那两个数组时永远采不到几何，"
-            "而症状与「引擎根本不走 TJS drawText」完全同形。",
-        )
-
-    def test_no_bulk_enumeration_of_live_engine_objects(self) -> None:
-        self.assertEqual(
-            [],
-            find_unsafe_engine_object_enumeration(self.source),
-            "Dictionary.assign 会逐个读取源对象所有成员，踩到读取即抛的属性就抛出"
-            "TJS catch 拦不住的 native 异常并当场打断游戏（真机实测 `enabled`）。"
-            "要按名发现字段只能逐个候选名各自 try/catch 单独读。",
-        )
-
     def test_probe_branch_is_off_by_default(self) -> None:
         self.assertEqual(
             [],
@@ -3511,15 +3414,6 @@ global.fushiLookupPatchClassicLayer = function(layer)
 global.fushiLookupSweepClassicLayers = function()
 {
 	if((global.fushiLookupClassicSource & 1) == 0) return 0;
-	if(!global.fushiLookupProbeMode) return 0;
-	var roots = global.fushiLookupLayerTreeRoots();
-	for(var r = 0; r < roots.count; r++) global.fushiLookupPatchLayerTree(roots[r], 0);
-	return 0;
-};
-global.fushiLookupPatchLayerTree = function(root, depth)
-{
-	var kids = void;
-	try { kids = root.children; } catch(e) { return 0; }
 	return 0;
 };
 global.fushiLookupCapture = function(renderer)
@@ -4981,8 +4875,6 @@ class MutationSelfTest(unittest.TestCase):
         self.assertEqual([], find_unguarded_bitmap_copies(self.clean))
         self.assertEqual([], find_ownerless_card_dismissals(self.clean))
         self.assertEqual([], find_classic_sweep_missing(self.clean))
-        self.assertEqual([], find_classic_tree_walk_missing(self.clean))
-        self.assertEqual([], find_unsafe_engine_object_enumeration(self.clean))
         self.assertEqual([], find_ungated_exe_exporter_probe(self.clean))
         # 干净样本里确实有 exe 直取探针，否则 BUG-2118 这条规则在自测里根本没被走到。
         self.assertIn("ObtainExporter()", CLEAN_SAMPLE)
@@ -5852,32 +5744,6 @@ class MutationSelfTest(unittest.TestCase):
         )
         self.assertEqual([], _classic_fallback_spans(dirty.text))
         self.assertNotEqual([], find_classic_sweep_missing(dirty))
-
-    def test_tree_walk_removed_is_red(self) -> None:
-        # 采集面退回只扫两个 messages 数组——正向规则必须红。
-        dirty = self._mutate(
-            "global.fushiLookupPatchLayerTree(roots[r], 0);",
-            "0;",
-        )
-        self.assertNotEqual([], find_classic_tree_walk_missing(dirty))
-
-    def test_tree_walk_not_gated_by_probe_mode_is_red(self) -> None:
-        # 树遍历默认开 = 给 messages 之外的层注入成员常驻，真机两次都把游戏打崩。
-        dirty = self._mutate("if(!global.fushiLookupProbeMode) return 0;", "")
-        self.assertNotEqual([], find_classic_tree_walk_missing(dirty))
-
-    def test_tree_walk_without_children_recursion_is_red(self) -> None:
-        # 只留函数壳、不再沿 children 递归，等于扫描面没扩——必须红。
-        dirty = self._mutate("kids = root.children;", "kids = void;")
-        self.assertNotEqual([], find_classic_tree_walk_missing(dirty))
-
-    def test_bulk_member_enumeration_is_red(self) -> None:
-        # 真机上真的这么崩过一次：整体枚举活图层的成员 → native 侧抛异常 → 游戏被打断。
-        dirty = self._mutate(
-            "try { kids = root.children; } catch(e) { return 0; }",
-            "var dic = %[]; dic.assign(root);",
-        )
-        self.assertNotEqual([], find_unsafe_engine_object_enumeration(dirty))
 
     def test_gate_without_else_does_not_open_a_span(self) -> None:
         # 只有真正的 else 才代表"这台游戏没有 KAGEX"。把 else 换成新的无条件块，

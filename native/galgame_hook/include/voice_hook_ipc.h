@@ -527,13 +527,6 @@ constexpr uint32_t kDiagSiglusOvkHooksReady = 0x10000000u;
 // 所以这一位落在 reserved_luna（KiriKiri 的 exporter 溯源位本来就住这儿）。
 constexpr uint32_t kDiagKirikiriClassicLayerPatched = 0x00000040u;
 
-// TJS 侧 fushiLookupClassicSource 位 4 =「整棵图层树扫描补挂到了 kag.fore/back.messages
-// **之外**的层」。分开读的理由与上一位同源：重度定制的 KAG3（真机 フタマタ恋愛 Ver1.00
-// 装了 19 个插件，含 hutamata.tpm / extNagano.dll / layerExDraw.dll）把对白正文画在
-// messages 数组之外的层上，只扫那两个数组就永远采不到几何，而现象与「引擎根本不走
-// TJS drawText」完全同形。这一位一亮就说明扫描面确实扩到了树里，两种失败从此可分。
-constexpr uint32_t kDiagKirikiriClassicTreePatched = 0x00000080u;
-
 inline constexpr bool HasReadyGameResourceAudio(uint32_t reserved_luna,
                                                 uint32_t hook_diagnostics,
                                                 uint32_t reserved_hook_diagnostics = 0,
