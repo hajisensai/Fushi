@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2020 条。点号进各自文件。
+> 共 2021 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2154](bugs/BUG-2154-gal-lookup-verified-unreachable.md) | 🚧 | 🚧 | 内嵌查词对每个游戏都恒需手动「确认点击风险」：shield 的 Verified 状态在 hook 里无任何生产者、结构上不可达 |
 | [BUG-2153](bugs/BUG-2153-gal-exe-level-identity-gates.md) | ✅ | ✅ | galgame 引擎身份判据绑死单个 exe（文件名/SHA-256/硬编码 RVA），改名或换版本即整个 adapter 不被认领 |
 | [BUG-2145](bugs/BUG-2145-gal-kirikiri2-no-export-table-and-late-loadlibrary-hook.md) | ✅ | ✅ | KiriKiri2 无导出表 + 插件早于 LoadLibrary hook link：两条 exporter 路径同时静默落空，游戏内查词整条不装 |
 | [BUG-2144](bugs/BUG-2144-gal-kirikiri2-bcb-exception-escapes-msvc-catch.md) | ✅ | ✅ | KiriKiri2/BCB 上 TJS 抛的 Borland 异常穿透 MSVC catch(...)，注入的每帧求值把游戏打成致命错误框并强制写快速存档 |
