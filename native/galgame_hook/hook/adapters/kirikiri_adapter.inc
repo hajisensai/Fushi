@@ -4667,14 +4667,44 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 						}
 						catch(e) {}
 					};
+					// 按 2 的幂报告（1,2,4,8,…）。固定间隔（每 256 次）在这里是错的：
+					// drawText 可能按**整串**调用而不是逐字符，一段剧情只有几十次，
+					// 永远到不了报告点，于是「这条路根本没被走」和「走了但次数少」
+					// 在日志上同形——正是本次要判别的那个歧义。2 的幂在低位有分辨率、
+					// 在高位自动稀疏，不会拖垮逐字符路径。
+					global.fushiLookupProbeShouldReport = function(count)
+					{
+						if(count <= 0) return false;
+						return (count & (count - 1)) == 0;
+					};
 					global.fushiLookupProbeOriginalDrawText = global.Layer.drawText;
 					global.Layer.drawText = function(x, y, text, color, opacity, antialiased)
 					{
 						global.fushiLookupProbeDrawText++;
-						// 只在第一次和每 256 次报一行：这是逐字符路径，每次都写日志会把
-						// 游戏拖垮，而判别只需要知道"到底动没动"。
-						if(global.fushiLookupProbeDrawText == 1 ||
-							global.fushiLookupProbeDrawText % 256 == 0)
+						// 前 8 次连内容一起带出来：判别的核心问题是「对白正文到底走不走
+						// 这条路」，而这只有看见画的是什么字才答得上来。同时报这个图层
+						// 有没有我们的实例补丁——没有就说明我们扫的层集合漏了它。
+						if(global.fushiLookupProbeDrawText <= 8)
+						{
+							try
+							{
+								var patched = 0;
+								try { if(this.fushiLookupClassicPatched) patched = 1; }
+								catch(e) { patched = -1; }
+								// 只用确定可用的操作：字符串拼接和 .length。不用 substr /
+								// (int) 强制转换——那些在 TJS2 里的可用性我没验证过，一个
+								// 语法错会让整段 bootstrap 编不过，而这是要靠重启游戏才能
+								// 发现的代价。对白行本来就短，整串带出来没问题。
+								global.fushiLookupNoteError("probe.drawText",
+									%[message: "n=" + global.fushiLookupProbeDrawText +
+										",patched=" + patched +
+										",len=" + ("" + text).length +
+										",x=" + x + ",y=" + y +
+										",s=" + text]);
+							}
+							catch(e2) {}
+						}
+						if(global.fushiLookupProbeShouldReport(global.fushiLookupProbeDrawText))
 							global.fushiLookupProbeReport();
 						return (global.fushiLookupProbeOriginalDrawText incontextof this)(...);
 					};
@@ -4682,8 +4712,7 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					global.MessageLayer.processCh = function(ch, steptime)
 					{
 						global.fushiLookupProbeProcessCh++;
-						if(global.fushiLookupProbeProcessCh == 1 ||
-							global.fushiLookupProbeProcessCh % 256 == 0)
+						if(global.fushiLookupProbeShouldReport(global.fushiLookupProbeProcessCh))
 							global.fushiLookupProbeReport();
 						return (global.fushiLookupProbeOriginalProcessCh incontextof this)(...);
 					} incontextof global.MessageLayer;
