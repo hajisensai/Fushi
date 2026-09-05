@@ -4650,16 +4650,41 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			{
 				try
 				{
+					// 计数必须能被读出来，否则这个分支等于不存在：原实现只自增两个
+					// 全局整数，DLL 侧一处都没读过（BUG-2153 同族）。走
+					// fushiLookupNoteError 落 %TEMP%\fushi_galhook.log——它自带
+					// ++notify，DLL 会在下一次回读时把这行搬进日志。
+					global.fushiLookupProbeReport = function()
+					{
+						try
+						{
+							global.fushiLookupNoteError("probe.counts",
+								%[message:
+									"classDrawText=" + global.fushiLookupProbeDrawText +
+									",classProcessCh=" + global.fushiLookupProbeProcessCh +
+									",kagSeams=" + global.fushiLookupKagSeams +
+									",classicSource=" + global.fushiLookupClassicSource]);
+						}
+						catch(e) {}
+					};
 					global.fushiLookupProbeOriginalDrawText = global.Layer.drawText;
 					global.Layer.drawText = function(x, y, text, color, opacity, antialiased)
 					{
 						global.fushiLookupProbeDrawText++;
+						// 只在第一次和每 256 次报一行：这是逐字符路径，每次都写日志会把
+						// 游戏拖垮，而判别只需要知道"到底动没动"。
+						if(global.fushiLookupProbeDrawText == 1 ||
+							global.fushiLookupProbeDrawText % 256 == 0)
+							global.fushiLookupProbeReport();
 						return (global.fushiLookupProbeOriginalDrawText incontextof this)(...);
 					};
 					global.fushiLookupProbeOriginalProcessCh = global.MessageLayer.processCh;
 					global.MessageLayer.processCh = function(ch, steptime)
 					{
 						global.fushiLookupProbeProcessCh++;
+						if(global.fushiLookupProbeProcessCh == 1 ||
+							global.fushiLookupProbeProcessCh % 256 == 0)
+							global.fushiLookupProbeReport();
 						return (global.fushiLookupProbeOriginalProcessCh incontextof this)(...);
 					} incontextof global.MessageLayer;
 				}
@@ -5997,6 +6022,11 @@ void ReplaceLookupPlaceholder(std::wstring& script, const wchar_t* placeholder,
 
 std::wstring BuildKirikiriLookupBootstrapScript() {
   std::wstring script = kKirikiriLookupBootstrapScript;
+  // 开关**必须**保持编译期常量且默认 false：探测分支会在 global.Layer.drawText /
+  // global.MessageLayer.processCh 上打**类级**补丁，一旦能被运行期条件（环境变量之类）
+  // 打开，用户机器上一个残留变量就会让全局补丁常驻在每一个 KiriKiri 游戏里。
+  // 守卫：tests/kirikiri_lookup_source_guard_test.py::find_default_on_probe_switches。
+  // 要诊断新引擎就改这个常量重编译一份 helper——那是刻意的高门槛，不是疏漏。
   ReplaceLookupPlaceholder(script, L"__FUSHI_PROBE_MODE__",
                            kKirikiriLookupProbePaths ? L"1" : L"0");
   ReplaceLookupPlaceholder(script, L"__FUSHI_CARD_PATH__", g_lookup_card_path);
