@@ -228,6 +228,165 @@ void main() {
       );
       expect(_byCue(filled, cues)[1]!.matched, isFalse);
     });
+
+    test('邻句区间吞掉短句（间隙为空）时，连同两侧邻句用编辑距离重切', () {
+      final List<EpubSection> secs = <EpubSection>[
+        _section(0, 'ＭＰが増えていくものだ。しかし、この世界では増えないらしい。'),
+      ];
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(0, 'mpが増えていくものだ'),
+        _cue(1, 'しかし'),
+        _cue(2, 'この世界では増えないらしい'),
+      ];
+      // 第一遍 Dice 的 ±1 长度容忍让前一句多吃了「しか」、后一句从「し」起——
+      // 短句「しかし」独占的间隙为零。
+      final MatchResult first = _firstPass(secs, cues, <int, String>{
+        0: 'mpが増えていくものだしか',
+        2: 'しこの世界では増えないらしい',
+      });
+      final MatchResult filled = filler.fill(
+        sections: secs,
+        cues: cues,
+        result: first,
+      );
+      final Map<int, CueMatch> by = _byCue(filled, cues);
+      expect(filled.matchedCues, 3);
+      expect(by[1]!.matched, isTrue);
+      final String norm = AudioTextNormalizer.normalize(secs.single.text);
+      expect(norm.substring(by[1]!.normCharStart, by[1]!.normCharEnd), 'しかし');
+      // 邻句边界被纠正到字。
+      expect(norm.substring(by[0]!.normCharStart, by[0]!.normCharEnd),
+          'mpが増えていくものだ');
+      expect(norm.substring(by[2]!.normCharStart, by[2]!.normCharEnd),
+          'この世界では増えないらしい');
+    });
+
+    test('重切放不下任何中间句时锚点原样保留（不是正文里的感叹词）', () {
+      final List<EpubSection> secs = <EpubSection>[
+        _section(0, '家族三人でお出迎え。彼女の姿を見て。'),
+      ];
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(0, '家族三人でお出迎え'),
+        _cue(1, 'ああ'),
+        _cue(2, '彼女の姿を見て'),
+      ];
+      final MatchResult first = _firstPass(secs, cues, <int, String>{
+        0: '家族三人でお出迎え',
+        2: '彼女の姿を見て',
+      });
+      final MatchResult filled = filler.fill(
+        sections: secs,
+        cues: cues,
+        result: first,
+      );
+      expect(filled.matchedCues, 2);
+      expect(_byCue(filled, cues)[1]!.matched, isFalse);
+      for (final int k in <int>[0, 2]) {
+        expect(filled.matches[k].normCharStart, first.matches[k].normCharStart);
+        expect(filled.matches[k].normCharEnd, first.matches[k].normCharEnd);
+      }
+    });
+
+    test('整串纯かな⇄漢字零重叠但总长相称时按长度比例切开', () {
+      final List<EpubSection> secs = <EpubSection>[
+        _section(0, '召喚できるのは、魔獣、精霊、そして悪魔だ。'),
+      ];
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(0, '召喚できるのは'),
+        _cue(1, 'まじゅう'),
+        _cue(2, 'せいれい'),
+        _cue(3, 'そして悪魔だ'),
+      ];
+      final MatchResult first = _firstPass(secs, cues, <int, String>{
+        0: '召喚できるのは',
+        3: 'そして悪魔だ',
+      });
+      final MatchResult filled = filler.fill(
+        sections: secs,
+        cues: cues,
+        result: first,
+      );
+      final Map<int, CueMatch> by = _byCue(filled, cues);
+      expect(filled.matchedCues, 4);
+      final String norm = AudioTextNormalizer.normalize(secs.single.text);
+      expect(norm.substring(by[1]!.normCharStart, by[1]!.normCharEnd), '魔獣');
+      expect(norm.substring(by[2]!.normCharStart, by[2]!.normCharEnd), '精霊');
+    });
+
+    test('邻句让位：多读出来的字从「替换邻句正文」改成「删除」，把正文让给中间句', () {
+      final List<EpubSection> secs = <EpubSection>[
+        _section(
+          0,
+          'ロキシーは続けた。まず魔術というのは古代長耳族が創りだしたものだと言われています。当時は違ったそうです。',
+        ),
+      ];
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(0, 'ロキシーは続けた'),
+        _cue(1, 'まず魔術というのは'),
+        _cue(2, '古代ナガミミ族'), // 正文 古代長耳族（ルビ读法），字符几乎零重叠
+        _cue(3, 'ハイエルフが作り出したものだといわれています'), // 朗读者把 長耳族 读成 ハイエルフ
+        _cue(4, '当時は違ったそうです'),
+      ];
+      // 第一遍把「はいえるふ」替换到「は古代長耳族」上——与删掉它们代价相同，
+      // 但更长的区间在 max(needle, 区间) 分母下相似度更高，Dice/编辑距离都会选它。
+      final MatchResult first = _firstPass(secs, cues, <int, String>{
+        0: 'ロキシーは続けた',
+        1: 'まず魔術というの',
+        3: 'は古代長耳族が創りだしたものだと言われています',
+        4: '当時は違ったそうです',
+      });
+      final MatchResult filled = filler.fill(
+        sections: secs,
+        cues: cues,
+        result: first,
+      );
+      final Map<int, CueMatch> by = _byCue(filled, cues);
+      expect(filled.matchedCues, 5);
+      final String norm = AudioTextNormalizer.normalize(secs.single.text);
+      expect(
+        norm.substring(by[2]!.normCharStart, by[2]!.normCharEnd),
+        contains('古代長耳族'),
+      );
+      expect(
+        norm.substring(by[3]!.normCharStart, by[3]!.normCharEnd),
+        'が創りだしたものだと言われています',
+      );
+    });
+
+    test('伪短锚点（うん 命中到别处）连同串一起重排，长句先落位、短句退回自己的位置', () {
+      final List<EpubSection> secs = <EpubSection>[
+        _section(
+          0,
+          '遠まわしな皮肉とかもやめておいたほうがいいですね。ふむ。すごい癇癪持ちなのだろうか。しかし迫害を受けているという話だ。',
+        ),
+      ];
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(0, '遠回しな皮肉とかもやめておいた方がいいですね'),
+        _cue(1, 'うん'), // 正文 ふむ
+        _cue(2, 'すごいかんしゃく持ちなのだろうか'),
+        _cue(3, 'しかし迫害を受けているという話だ'),
+      ];
+      // 第一遍：うん 以 0.5 抢到了「うか」（だろうか 的尾巴），把 2 挤到零间隙。
+      final String norm = AudioTextNormalizer.normalize(secs.single.text);
+      final MatchResult first = _firstPass(secs, cues, <int, String>{
+        0: '遠まわしな皮肉とかもやめておいたほうがいいですね',
+        1: 'うか',
+        3: 'しかし迫害を受けているという話だ',
+      });
+      final MatchResult filled = filler.fill(
+        sections: secs,
+        cues: cues,
+        result: first,
+      );
+      final Map<int, CueMatch> by = _byCue(filled, cues);
+      expect(
+        norm.substring(by[2]!.normCharStart, by[2]!.normCharEnd),
+        'すごい癇癪持ちなのだろうか',
+      );
+      // うん 退回 ふむ（长度相称整段认领）。
+      expect(norm.substring(by[1]!.normCharStart, by[1]!.normCharEnd), 'ふむ');
+      expect(filled.matchedCues, 4);
+    });
   });
 
   group('AudioTextNormalizer.normalizeWithOffsets', () {

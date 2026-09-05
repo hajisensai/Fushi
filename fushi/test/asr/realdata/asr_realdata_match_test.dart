@@ -25,9 +25,8 @@ void main() {
   final String oursPath = Platform.environment['ASR_REALDATA_SRT_OURS'] ?? '';
   final int limitMs =
       int.tryParse(Platform.environment['ASR_REALDATA_LIMIT_MS'] ?? '') ??
-      1 << 62;
-  final bool available =
-      epubPath.isNotEmpty &&
+          1 << 62;
+  final bool available = epubPath.isNotEmpty &&
       refPath.isNotEmpty &&
       oursPath.isNotEmpty &&
       File(epubPath).existsSync() &&
@@ -161,6 +160,102 @@ void main() {
         print(
           '[realdata] ours unmatched (${misses.length}): ${misses.take(40).join(' | ')}',
         );
+        // 未命中分型：对每条未命中（两侧都有已定位 cue 的），看它独占的正文间隙。
+        final StringBuffer buf = StringBuffer();
+        final List<int> secStarts = <int>[];
+        for (final EpubSection sec in sections) {
+          secStarts.add(buf.length);
+          AudioTextNormalizer.appendNormalized(buf, sec.text);
+        }
+        final String big = buf.toString();
+        int gStart(CueMatch m) => secStarts[m.sectionIndex] + m.normCharStart;
+        int gEnd(CueMatch m) => secStarts[m.sectionIndex] + m.normCharEnd;
+        final Map<String, int> kinds = <String, int>{};
+        final List<String> samples = <String>[];
+        for (int i = 0; i < ours.length; i++) {
+          if (oursResult.matches[i].matched) continue;
+          int l = i - 1;
+          while (l >= 0 && !oursResult.matches[l].matched) {
+            l--;
+          }
+          int r = i + 1;
+          while (r < ours.length && !oursResult.matches[r].matched) {
+            r++;
+          }
+          String kind;
+          String detail = '';
+          if (l < 0) {
+            kind = 'no-left-anchor(片头)';
+          } else if (r >= ours.length) {
+            kind = 'no-right-anchor(尾)';
+          } else {
+            final int gs = gEnd(oursResult.matches[l]);
+            final int ge = gStart(oursResult.matches[r]);
+            final String nc = AudioTextNormalizer.normalize(ours[i].text);
+            if (ge <= gs) {
+              kind = 'gap-empty(邻句已吞)';
+              final int regionStart = gStart(oursResult.matches[l]);
+              final int regionEnd = gEnd(oursResult.matches[r]);
+              detail =
+                  'prev="${ours[l].text}"@${gStart(oursResult.matches[l])}-$gs '
+                  'next="${ours[r].text}"@$ge-$regionEnd '
+                  'region="${regionEnd > regionStart ? big.substring(regionStart, regionEnd) : '<<non-monotonic>>'}"';
+            } else {
+              final String gap = big.substring(gs, ge);
+              final int run = r - l - 1;
+              kind = run == 1
+                  ? 'single-cue-gap ratio=${(gap.length / (nc.isEmpty ? 1 : nc.length)).toStringAsFixed(1)}'
+                  : 'multi-cue-gap(run=$run)';
+              final List<String> runLens = <String>[
+                for (int k = l + 1; k < r; k++)
+                  '${AudioTextNormalizer.normalize(ours[k].text)}(${AudioTextNormalizer.normalize(ours[k].text).length})',
+              ];
+              detail =
+                  'gap="${gap.length > 40 ? '${gap.substring(0, 40)}…' : gap}" '
+                  'run=${runLens.join('/')}';
+            }
+          }
+          kinds[kind.split(' ').first] =
+              (kinds[kind.split(' ').first] ?? 0) + 1;
+          if (samples.length < 60) {
+            samples.add(
+              '${ours[i].startMs ~/ 1000}s [$kind] "${ours[i].text}" $detail',
+            );
+          }
+        }
+        // ASR_REALDATA_DUMP=<fromSec>-<toSec>：逐条打印该时段 cue 的命中区间，并把
+        // 覆盖到的正文（含两侧 80 字）整段打出来，用来看伪锚点/边界渗入的实况。
+        final String dumpSpec = Platform.environment['ASR_REALDATA_DUMP'] ?? '';
+        if (dumpSpec.contains('-')) {
+          final List<String> parts = dumpSpec.split('-');
+          final int fromMs = int.parse(parts[0]) * 1000;
+          final int toMs = int.parse(parts[1]) * 1000;
+          int lo = big.length, hi = 0;
+          final StringBuffer d = StringBuffer();
+          for (int i = 0; i < ours.length; i++) {
+            if (ours[i].startMs < fromMs || ours[i].startMs > toMs) continue;
+            final CueMatch m = oursResult.matches[i];
+            if (m.matched) {
+              lo = lo < gStart(m) ? lo : gStart(m);
+              hi = hi > gEnd(m) ? hi : gEnd(m);
+            }
+            d.write(
+              '\n  ${ours[i].startMs ~/ 1000}s "${ours[i].text}" -> '
+              '${m.matched ? '@${gStart(m)}-${gEnd(m)} "${big.substring(gStart(m), gEnd(m))}" score=${m.score.toStringAsFixed(2)}' : 'MISS'}',
+            );
+          }
+          if (hi > lo) {
+            final int a = (lo - 80).clamp(0, big.length);
+            final int b = (hi + 80).clamp(0, big.length);
+            d.write('\n  book[$a-$b]="${big.substring(a, b)}"');
+          }
+          // ignore: avoid_print
+          print('[realdata] dump $dumpSpec:$d');
+        }
+        // ignore: avoid_print
+        print('[realdata] unmatched kinds: $kinds');
+        // ignore: avoid_print
+        print('[realdata] unmatched samples:\n  ${samples.join('\n  ')}');
         final List<AudioCue> replaced = List<AudioCue>.of(ours);
         replaceMatchedCueTextWithBookText(
           sections: sections,
@@ -213,8 +308,7 @@ void main() {
         if (extract.existsSync()) await extract.delete(recursive: true);
       }
     },
-    skip: available
-        ? false
-        : '需要 ASR_REALDATA_EPUB / _SRT_REF / _SRT_OURS 环境变量',
+    skip:
+        available ? false : '需要 ASR_REALDATA_EPUB / _SRT_REF / _SRT_OURS 环境变量',
   );
 }
