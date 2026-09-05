@@ -1188,8 +1188,16 @@ main {
 }
 
 /* When multiple pitch */
+/* BUG-2151：`ol` 与 `ul` 一起归一。Lapis 自己的 handlePitches 只在字段里能解析出
+   数字/假名声调时才重建 `#pitch-tags`（英语 IPA 两者都没有 → 提前 return），此时框
+   里留的是制卡侧原样写入的列表 HTML。存量卡片的字段里存的是 `<ol>`（BUG-2151 之前
+   popup.js 的产出），漏掉 `ol` 就等于让这批已经躺在用户 Anki 里、改不了的卡继续吃
+   浏览器默认的 `padding-inline-start: 40px` + `margin-block: 1em`：黑框超高、左边一
+   大块空白、条目之间还没有分隔符。 */
 .pitch ul,
-#pitch-tags ul {
+.pitch ol,
+#pitch-tags ul,
+#pitch-tags ol {
   list-style: none;
   display: inline;
   margin: 0;
@@ -1201,12 +1209,14 @@ main {
   display: inline;
 }
 
-.pitch ul > li:not(:last-child)::after {
+.pitch ul > li:not(:last-child)::after,
+.pitch ol > li:not(:last-child)::after {
   content: "・";
   color: var(--fg-color);
 }
 
-#pitch-tags ul > li:not(:last-child)::after {
+#pitch-tags ul > li:not(:last-child)::after,
+#pitch-tags ol > li:not(:last-child)::after {
   content: "・";
   color: var(--bg-color);
   font-size: 0.8em;

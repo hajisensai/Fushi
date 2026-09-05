@@ -56,8 +56,8 @@ class _TestRepo extends BaseAnkiRepository {
       );
 }
 
-const String _ipaHtml = '<ol><li><span style="display:inline;">'
-    '<span>[</span><span>ˈwɜːd</span><span>]</span></span></li></ol>';
+const String _ipaHtml = '<ul><li><span style="display:inline;">'
+    '<span>[</span><span>ˈwɜːd</span><span>]</span></span></li></ul>';
 
 void main() {
   group('{phonetic-transcriptions} marker (Yomitan 命名)', () {
@@ -127,7 +127,7 @@ void main() {
     /// 旧写法是「丢掉整行以 `//` 开头的行」，只堵住了行注释一种形态：
     /// `/* items += ... */` 这样的块注释、以及 `foo(); // pitchGroup.transcriptions`
     /// 这样的行尾注释都一概放行。[maskComments] 是词法扫描，三种形态一并吃掉，
-    /// 且模板串 / 引号串内容原样保留（本文件断言里的 `` `<ol>${items}</ol>` `` 不受影响）。
+    /// 且模板串 / 引号串内容原样保留（本文件断言里的 `` `<ul>${items}</ul>` `` 不受影响）。
     String functionBody(String name) {
       final int start = src.indexOf('function $name(');
       expect(start, greaterThanOrEqualTo(0),
@@ -145,8 +145,10 @@ void main() {
           reason: '制卡侧不再消费 transcriptions —— 英语卡声调字段会回到恒空');
       expect(body, contains('escapePitchText(ipa)'),
           reason: 'IPA 来自词典数据，进 HTML 前必须转义');
-      // 全空组返回 ''（而不是 <ol></ol> 空壳），字段才会被按空跳过。
-      expect(body, contains(r"items ? `<ol>${items}</ol>` : ''"));
+      // 全空组返回 ''（而不是 <ul></ul> 空壳），字段才会被按空跳过。
+      // 列表标记为什么必须是 ul（BUG-2151）见
+      // lapis_pitch_tag_list_markup_test.dart。
+      expect(body, contains(r"items ? `<ul>${items}</ul>` : ''"));
     });
 
     test(

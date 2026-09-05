@@ -1556,6 +1556,17 @@ function escapePitchText(text) {
 // them too — that is what makes English cards get their transcription with the
 // default field mappings, no remap needed. Plain pitch-accent dicts (Japanese)
 // have an empty transcriptions array and render byte-identically to before.
+//
+// BUG-2151: the list tag MUST stay `<ul>` (frequency does the same; only the
+// glossary is a genuinely ORDERED list of senses). Lapis normalises the pitch
+// box with `#pitch-tags ul` / `#pitch-tags ol` — but every OTHER note type out
+// there only ever normalises `ul`, because that is what Lapis' own
+// `handlePitches` builds. And `handlePitches` rebuilds the box only when it can
+// parse a pitch NUMBER or kana out of the field: English IPA has neither, so it
+// returns early and whatever we wrote here is what the user sees. Emitting
+// `<ol>` therefore meant the tag box rendered with the browser's default list
+// styling — 40px of dead space on the left, 1em of margin above and below, and
+// no `・` between two transcriptions.
 function constructPitchPositionHtml(pitches) {
     if (!pitches?.length) {
         return '';
@@ -1575,8 +1586,8 @@ function constructPitchPositionHtml(pitches) {
         });
     });
     // No positions AND no patterns AND no transcriptions: return '' instead of
-    // an empty <ol> shell, so the field is treated as empty and skipped.
-    return items ? `<ol>${items}</ol>` : '';
+    // an empty <ul> shell, so the field is treated as empty and skipped.
+    return items ? `<ul>${items}</ul>` : '';
 }
 
 // Yomitan-named {phonetic-transcriptions}: ONLY the IPA transcriptions, for
@@ -1592,7 +1603,7 @@ function constructPhoneticTranscriptionsHtml(pitches) {
             items += `<li><span style="display:inline;"><span>[</span><span>${escapePitchText(ipa)}</span><span>]</span></span></li>`;
         });
     });
-    return items ? `<ol>${items}</ol>` : '';
+    return items ? `<ul>${items}</ul>` : '';
 }
 
 function constructPitchCategories(pitches, reading, rules) {
