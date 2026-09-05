@@ -29,6 +29,7 @@ mixin _FushiDbContentMisc
     required int order,
     required String hiddenLanguagesJson,
     required String collapsedLanguagesJson,
+    required String expandedLanguagesJson,
     required String? languageOverride,
   }) =>
       (update(dictionaryMetadata)..where((t) => t.name.equals(name))).write(
@@ -36,6 +37,7 @@ mixin _FushiDbContentMisc
           order: Value(order),
           hiddenLanguagesJson: Value(hiddenLanguagesJson),
           collapsedLanguagesJson: Value(collapsedLanguagesJson),
+          expandedLanguagesJson: Value(expandedLanguagesJson),
           languageOverride: Value(languageOverride),
         ),
       );
