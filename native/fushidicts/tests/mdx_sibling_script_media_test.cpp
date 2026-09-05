@@ -19,30 +19,15 @@
 
 #include "fushidicts/importer.hpp"
 #include "fushidicts/query.hpp"
+#include "media_fixture.hpp"
 #include "mdx_fixture.hpp"
 #include "zip_fixture.hpp"
 
 namespace {
-int g_fail = 0;
-void fail(const char* msg) {
-  std::fprintf(stderr, "FAIL: %s\n", msg);
-  ++g_fail;
-}
-
-void write_bytes(const std::string& path, const std::vector<uint8_t>& b) {
-  std::ofstream f(std::filesystem::u8path(path), std::ios::binary);
-  f.write(reinterpret_cast<const char*>(b.data()), static_cast<std::streamsize>(b.size()));
-}
-
-void write_text(const std::string& path, const std::string& t) {
-  std::ofstream f(std::filesystem::u8path(path), std::ios::binary);
-  f.write(t.data(), static_cast<std::streamsize>(t.size()));
-}
-
-std::string media_str(DictionaryQuery& q, const std::string& dict, const char* path) {
-  std::vector<char> b = q.get_media_file(dict, path);
-  return std::string(b.begin(), b.end());
-}
+using fushi_test::fail;
+using fushi_test::media_str;
+using fushi_test::write_bytes;
+using fushi_test::write_text;
 }  // namespace
 
 int main() {
@@ -117,8 +102,8 @@ int main() {
     }
   }
 
-  if (g_fail) {
-    std::fprintf(stderr, "%d FAIL\n", g_fail);
+  if (fushi_test::g_fail) {
+    std::fprintf(stderr, "%d FAIL\n", fushi_test::g_fail);
     return 1;
   }
   std::printf("PASS\n");
