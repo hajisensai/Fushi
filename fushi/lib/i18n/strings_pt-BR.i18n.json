@@ -4237,5 +4237,10 @@
   "game_hook_reason_native_loopback_ack_timeout": "The audio capture policy was not confirmed in time. Text capture still works; try again if game audio is missing.",
   "shortcut_scope_global_external_desktop_note": "Mouse triggers accept side buttons only (back/forward). Other buttons keep their normal meaning in other apps, so they are rejected here.",
   "shortcut_mouse_button_not_supported": "This action only accepts mouse side buttons (back/forward).",
+  "anki_ankimobile_opened": "AnkiMobile opened. Approve the request there, then return to Fushi.",
+  "anki_error_ankimobile_pasteboard_empty": "AnkiMobile did not return any configuration. Approve the request in AnkiMobile, then come back to Fushi.",
+  "anki_error_ankimobile_pasteboard_denied": "iOS blocked reading the clipboard. Choose Allow Paste when returning to Fushi, then try again.",
+  "anki_error_ankimobile_no_decks": "AnkiMobile returned no decks or note types.",
+  "anki_error_ankimobile_unavailable": "Could not open AnkiMobile. Install AnkiMobile and try again.",
   "dictionary_collapse_follow_global": "Follow global setting"
 }
