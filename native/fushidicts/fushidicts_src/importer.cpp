@@ -1867,9 +1867,18 @@ ImportResult dictionary_importer::write_simple_dict(const std::string& title, co
   // Recorded before open_simple_dict runs: it creates the directory and can
   // still throw afterwards (index.json, opening blobs.bin), and the failure
   // path below can only clean up a name it already knows.
-  std::string sanitized = sanitize_title(title);
-  result.title = sanitized;
+  //
+  // Inside the try, not before it: sanitize_title uses utfcpp's *checked* API
+  // on titles over 200 bytes, so a StarDict `.ifo` bookname (fully user
+  // controlled, zero validation upstream) carrying a stray 0xFF throws
+  // utf8::invalid_utf8. Thrown from out here it escapes this function's own
+  // catch — the caller's temp dir (`import_temp/_sd_temp`) is then never
+  // removed and the classified per-domain error degrades to a bare
+  // "Invalid UTF-8".
+  std::string sanitized;
   try {
+    sanitized = sanitize_title(title);
+    result.title = sanitized;
     SimpleDictSink sink = open_simple_dict(title, output_dir);
 
     SimpleEntryAccumulator accumulator(sink.blobs);

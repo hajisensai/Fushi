@@ -244,6 +244,46 @@ int main() {
     }
   }
 
+  // --- Case J: circular and over-long redirect chains must terminate --------
+  // The resolver's loop guard has two arms -- "already seen this target" and
+  // "hop budget spent" -- and neither was reachable from the fixtures above
+  // (gamma/epsilon/eta are 1- and 2-hop acyclic). Mutation-tested: dropping the
+  // seen-set check leaves every case above green while `aa` silently resolves
+  // to its own `@@@LINK=` text, so this is the only thing standing between a
+  // hostile .mdx and an unbounded walk.
+  {
+    // aa <-> bb is a two-node cycle; cc..cn is a 13-hop chain, past the budget.
+    std::vector<std::pair<std::string, std::string>> rows{
+        {"aa", "@@@LINK=bb"},
+        {"bb", "@@@LINK=aa"},
+    };
+    for (int i = 0; i < 13; i++) {
+      char key[8];
+      char target[24];
+      std::snprintf(key, sizeof(key), "c%02d", i);
+      std::snprintf(target, sizeof(target), "@@@LINK=c%02d", i + 1);
+      rows.emplace_back(key, target);
+    }
+    rows.emplace_back("c13", "<div>END of the long chain</div>");
+
+    auto file = mdx_fixture::build_mdx_record_splits("Cycles", rows, {40, 90});
+    auto m = parse_to_map(file);
+    // Every headword survives -- a cycle must not drop entries or hang.
+    expect_size("circular redirects keep every headword", m.size(), rows.size());
+    auto get = [&](const char* k) -> std::string {
+      auto it = m.find(k);
+      return it == m.end() ? std::string("<MISSING>") : it->second;
+    };
+    // Unresolvable: the cycle has no body anywhere, so the raw link text stays.
+    // It must be the *other* node's link (one hop taken, then the cycle is cut),
+    // never its own -- resolving to itself is what the broken loop guard did.
+    expect_eq("aa in a cycle keeps an unresolved link", get("aa"), "@@@LINK=bb");
+    expect_eq("bb in a cycle keeps an unresolved link", get("bb"), "@@@LINK=aa");
+    // The chain's tail is within budget and resolves to the real body.
+    expect_eq("c13 is the real body", get("c13"), "<div>END of the long chain</div>");
+    expect_eq("c04 resolves through the chain", get("c04"), "<div>END of the long chain</div>");
+  }
+
   if (g_fail == 0) std::printf("PASS\n");
   return g_fail == 0 ? 0 : 1;
 }

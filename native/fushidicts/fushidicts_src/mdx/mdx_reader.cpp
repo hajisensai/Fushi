@@ -675,6 +675,12 @@ void extract_records(const uint8_t* data, size_t size, const ContainerIndex& idx
     const uint64_t start = idx.keys[ki].record_offset;
     const uint64_t end = record_end_offset(idx, ki);
     if (start >= end || end > idx.total_decompressed) continue;
+    // Same ceiling the streaming pass applies (`stream_records`): a corrupt key
+    // table can make one "record" span the whole decompressed stream, and this
+    // path would then stitch every block into `joined` — gigabytes for a
+    // dictionary the streaming pass had already refused. Redirect targets reach
+    // this function by key id, so the discard done upstream does not cover them.
+    if (end - start > kMaxStreamedRecordBytes) continue;
 
     const size_t first = block_for(start);
     const size_t last = block_for(end - 1);
