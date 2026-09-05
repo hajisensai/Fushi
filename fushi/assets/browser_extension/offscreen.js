@@ -2,6 +2,10 @@
 // 每次 beginClip 新起一个 MediaRecorder（自包含、可解码），endClip 停止并回 base64。
 // 不再滚动分段、不暂停、不算墙钟偏移（旧模型的时钟错配就是「完全不行」根因）。
 let stream = null;
+// BUG-2159 审查：在途的 startCapture Promise。并发调用共用同一次 getUserMedia，绝不起第二条流。
+let startInFlight = null;
+// stopCapture 每次 +1。在途 getUserMedia 落地时代数变了 = 等待期间被 stop → 这条流已无主，自行停轨。
+let captureGen = 0;
 let recorder = null;
 let chunks = [];
 let clipStartWall = 0; // 本段 clip 起始墙钟，用来回给服务端真实时长（否则整段裁默认封顶 6s → 长句被截）
@@ -20,13 +24,24 @@ async function startCapture(streamId) {
   // 只有 stream.active 才算「已在录」直接复用；否则先把这个死流拆掉再重新 getUserMedia，
   // 不然 nfEnsureCapture 会以为还在录 → 之后每段都从死流录出黑/空片（跨集失败根因）。
   if (stream && stream.active) return { ok: true, already: true };
+  // BUG-2159 审查：fushiIconClick 先写 storage 再起录，content 收到变化后 800ms 即发 nfEnsureCapture；
+  // 慢机上首个 getUserMedia 未 resolve 时 isRecording 为 false → background 再起一条。旧实现只守
+  // 已落地的 stream：两条流先后 resolve、后者覆盖变量，前者的音轨永远没人 stop → 标签页在批量结束
+  // 后持续哑掉（接回扬声器还在时这条泄漏听不出来）。在途 Promise 共享：第二个调用直接等第一个。
+  if (startInFlight) return startInFlight;
+  startInFlight = openCapture(streamId).finally(() => { startInFlight = null; });
+  return startInFlight;
+}
+
+async function openCapture(streamId) {
   if (stream) {
     try { stream.getTracks().forEach((t) => t.stop()); } catch (_) {}
     stream = null;
     recorder = null;
     chunks = [];
   }
-  stream = await navigator.mediaDevices.getUserMedia({
+  const gen = captureGen;
+  const opened = await navigator.mediaDevices.getUserMedia({
     audio: { mandatory: { chromeMediaSource: 'tab', chromeMediaSourceId: streamId } },
     video: {
       mandatory: {
@@ -45,11 +60,19 @@ async function startCapture(streamId) {
   // 字幕/控制条/光标（content.fushiRunNetflixBatch），用户不是在看片；那段声音只是把整集台词
   // 对着房间放。删掉接回：录制照走流里的音轨（与扬声器无关），stopCapture 停轨后 Chrome 自动把
   // 标签页音频还给扬声器。不要再把流 connect 到 destination。
+  if (gen !== captureGen) {
+    // 等 getUserMedia 期间被 stopCapture（用户点取消 / 跨集停录）：这条流没有主人，立即停轨，
+    // 否则它一直占着 tab 音频捕获、标签页持续无声，而 isRecording 还汇报 false。
+    try { opened.getTracks().forEach((t) => t.stop()); } catch (_) {}
+    return { ok: false, error: 'stopped' };
+  }
+  stream = opened;
   mime = pickMime();
   return { ok: true };
 }
 
 function stopCapture() {
+  captureGen += 1;
   try { if (recorder && recorder.state !== 'inactive') { recorder.onstop = null; recorder.stop(); } } catch (_) {}
   recorder = null; chunks = [];
   if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }

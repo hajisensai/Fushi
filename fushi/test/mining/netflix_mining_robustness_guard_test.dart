@@ -139,8 +139,7 @@ void main() {
             reason: '${offscreen.path} endClip 错误路径未解绑 ondataavailable');
       });
 
-      test('BUG-2159 offscreen ${offscreen.path} 录制期间不把 tabCapture 流接回扬声器',
-          () {
+      test('BUG-2159 offscreen ${offscreen.path} 录制期间不把 tabCapture 流接回扬声器', () {
         final String src = offscreen.readAsStringSync();
         // 正向：仍向 tabCapture 请求音轨（录出的 webm 必须带音频，静音不是靠丢音轨实现的）。
         expect(
@@ -154,9 +153,21 @@ void main() {
         expect(src.contains('createMediaStreamSource'), isFalse,
             reason: '${offscreen.path} 仍把 tabCapture 流接回扬声器（BUG-2159）');
         expect(src.contains('.destination'), isFalse,
-            reason: '${offscreen.path} 仍把音频路由到 AudioContext.destination（BUG-2159）');
+            reason:
+                '${offscreen.path} 仍把音频路由到 AudioContext.destination（BUG-2159）');
         expect(src.contains('audioPlaybackCtx'), isFalse,
             reason: '${offscreen.path} 残留 audioPlaybackCtx（BUG-2159）');
+      });
+
+      test('BUG-2159 offscreen ${offscreen.path} startCapture 在途互斥 + stop 代数',
+          () {
+        final String src = offscreen.readAsStringSync();
+        // 并发 startCapture 共用同一次 getUserMedia（行为测试见 tools/browser-extension/
+        // offscreen-capture-inflight.test.js；这里只守源码结构不被回退）。
+        expect(src.contains('if (startInFlight) return startInFlight;'), isTrue,
+            reason: '${offscreen.path} startCapture 缺在途互斥（并发会起第二条流）');
+        expect(src.contains('if (gen !== captureGen) {'), isTrue,
+            reason: '${offscreen.path} 在途落地未按代数判断是否已被 stopCapture');
       });
     }
 
