@@ -17,6 +17,7 @@ import 'package:fushi/src/asr/asr_engine.dart';
 import 'package:fushi/src/asr/asr_model_manifest.dart';
 import 'package:fushi/src/asr/asr_model_store.dart';
 import 'package:fushi/src/asr/asr_pcm_source.dart';
+import 'package:fushi/src/asr/asr_transcribe_isolate.dart';
 import 'package:fushi/src/asr/asr_transcribe_job.dart';
 import 'package:fushi/src/asr/asr_transducer_decoder.dart';
 import 'package:fushi/src/asr/asr_types.dart';
@@ -55,20 +56,60 @@ class AsrTranscribePlan {
       );
 }
 
-/// 一次正在运行的转录（会话 + 任务）。用完必须 [dispose] 释放 native 会话。
-class AsrRunningTranscription {
-  AsrRunningTranscription({required this.sessions, required this.job});
+/// 一次正在运行的转录。用完必须 [dispose] 释放 native 会话。
+///
+/// 两个实现：生产走 [AsrIsolateTranscription]（整条链路在后台 isolate，主 isolate
+/// 不卡）；[AsrInProcessTranscription] 在当前 isolate 跑，给注入 fake 的测试与
+/// 需要直接拿会话的基准用。
+abstract interface class AsrRunningTranscription {
+  OnnxProviderResolution get encoderResolution;
+
+  /// 贪心 Loop 图是否建成；没建成时 [greedyUnavailableReason] 说明原因。
+  bool get greedyGraphAvailable;
+  String? get greedyUnavailableReason;
+
+  /// 任务结束后的分阶段耗时（isolate 路径在 finished / paused 之后才有）。
+  AsrDecodeStats? get decodeStats;
+
+  /// 事件流（一次性；见 [AsrTranscribeJob.run]）。
+  Stream<AsrTranscribeEvent> run();
+
+  void requestPause();
+
+  Future<void> dispose();
+}
+
+/// 在当前 isolate 里跑的转录（会话 + 任务）。
+class AsrInProcessTranscription implements AsrRunningTranscription {
+  AsrInProcessTranscription({
+    required this.sessions,
+    required this.job,
+    AsrTransducerDecoder? decoder,
+  }) : _decoder = decoder;
 
   final AsrEngineSessions sessions;
   final AsrTranscribeJob job;
+  final AsrTransducerDecoder? _decoder;
 
+  @override
   OnnxProviderResolution get encoderResolution => sessions.encoderResolution;
 
-  /// 事件流（一次性；见 [AsrTranscribeJob.run]）。
+  @override
+  bool get greedyGraphAvailable => sessions.greedy != null;
+
+  @override
+  String? get greedyUnavailableReason => sessions.greedyUnavailableReason;
+
+  @override
+  AsrDecodeStats? get decodeStats => _decoder?.stats;
+
+  @override
   Stream<AsrTranscribeEvent> run() => job.run();
 
+  @override
   void requestPause() => job.requestPause();
 
+  @override
   Future<void> dispose() => sessions.close();
 }
 
@@ -82,6 +123,7 @@ class AsrTranscriptionService {
     this.batchSize,
     this.chunkSeconds = 300,
     this.segmenterKind = AsrSegmenterKind.energy,
+    this.runInIsolate = true,
   }) : _loader = loader ?? AsrEngineLoader(),
        _pcm = pcm ?? FfmpegAsrPcmSource(),
        _openStore = openStore ?? AsrModelStore.open,
@@ -97,6 +139,11 @@ class AsrTranscriptionService {
   final int? batchSize;
   final int chunkSeconds;
   final AsrSegmenterKind segmenterKind;
+
+  /// 真转录是否下放后台 isolate（生产默认 true）。false 走进程内路径，注入的
+  /// [AsrEngineLoader] / [AsrPcmSource] 只在该路径生效——闭包与 fake 会话过不了
+  /// isolate 边界。
+  final bool runInIsolate;
 
   /// 默认批次：GPU 上 batch 越大越省逐帧 joiner 的往返（2026-09-05 真机分阶段计时
   /// 里逐帧循环是 ASR 阶段的大头，encoder 本身在 DirectML 上只占零头）；CPU 上
@@ -236,13 +283,35 @@ class AsrTranscriptionService {
     required AsrAccelerationPreference preference,
   }) async {
     final AsrModelStore store = await _openStore(language);
+    final Directory jobDir = await jobDirFor(audioPaths, language);
+    if (runInIsolate) {
+      return AsrIsolateTranscription.spawn(
+        AsrIsolateJobSpec(
+          storeDirPath: store.dir.path,
+          language: language,
+          variant: variant,
+          preference: preference,
+          audioPaths: List<String>.unmodifiable(audioPaths),
+          jobDirPath: jobDir.path,
+          chunkSeconds: chunkSeconds,
+          segmenterKind: segmenterKind,
+          batchSize: batchSize,
+        ),
+      );
+    }
     final AsrEngineSessions sessions = await _loader.load(
       store: store,
       variant: variant,
       preference: preference,
     );
     try {
-      final Directory jobDir = await jobDirFor(audioPaths, language);
+      final AsrTransducerDecoder decoder = AsrTransducerDecoder(
+        encoder: sessions.encoder,
+        decoder: sessions.decoder,
+        joiner: sessions.joiner,
+        tokens: sessions.tokens,
+        greedy: sessions.greedy,
+      );
       final AsrTranscribeJob job = AsrTranscribeJob(
         jobDir: jobDir,
         audioPaths: audioPaths,
@@ -252,19 +321,17 @@ class AsrTranscriptionService {
           AsrSegmenterKind.energy => AsrVadSegmenter(scorer: EnergyVadScorer()),
           AsrSegmenterKind.silero => AsrVadSegmenter(session: sessions.vad),
         },
-        decoder: AsrTransducerDecoder(
-          encoder: sessions.encoder,
-          decoder: sessions.decoder,
-          joiner: sessions.joiner,
-          tokens: sessions.tokens,
-          greedy: sessions.greedy,
-        ),
+        decoder: decoder,
         batchSize:
             batchSize ??
             defaultBatchSizeFor(sessions.encoderResolution.effective),
         chunkSeconds: chunkSeconds,
       );
-      return AsrRunningTranscription(sessions: sessions, job: job);
+      return AsrInProcessTranscription(
+        sessions: sessions,
+        job: job,
+        decoder: decoder,
+      );
     } catch (_) {
       await sessions.close();
       rethrow;

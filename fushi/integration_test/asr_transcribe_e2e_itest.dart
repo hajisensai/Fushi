@@ -49,6 +49,7 @@ String _param(String name, {String defaultValue = ''}) {
     'ASR_EXPECT' => const String.fromEnvironment('ASR_EXPECT'),
     'ASR_OUT' => const String.fromEnvironment('ASR_OUT'),
     'ASR_ONLY' => const String.fromEnvironment('ASR_ONLY'),
+    'ASR_CHUNK_SECONDS' => const String.fromEnvironment('ASR_CHUNK_SECONDS'),
     _ => '',
   };
   if (fromDefine.isNotEmpty) return fromDefine;
@@ -60,7 +61,7 @@ String _param(String name, {String defaultValue = ''}) {
 final String _kSeed = _param('ASR_MODEL_SEED');
 final AsrLanguage _kLang =
     AsrLanguage.fromTag(_param('ASR_LANG', defaultValue: 'ja')) ??
-        AsrLanguage.japanese;
+    AsrLanguage.japanese;
 final String _kAudio = _param(
   'ASR_AUDIO',
   defaultValue: 'test/asr/fixtures/ja_tts_16k.wav',
@@ -88,7 +89,8 @@ _runOnce({
   final AsrTranscriptionService service = AsrTranscriptionService(
     openStore: (AsrLanguage _) async => store,
     jobsRoot: () async => jobsRoot,
-    chunkSeconds: 60,
+    // 缺省 60 s 让检查点/续跑路径多走几次；ASR_CHUNK_SECONDS=300 对齐生产值拿速度数。
+    chunkSeconds: int.tryParse(_param('ASR_CHUNK_SECONDS')) ?? 60,
   );
   await service.discard(<String>[audio], _kLang);
   final Stopwatch loadClock = Stopwatch()..start();
@@ -104,8 +106,8 @@ _runOnce({
     '[asr-e2e][load] variant=${variant.name} preference=${preference.name} '
     'engineLoad=${loadClock.elapsedMilliseconds}ms '
     'resolution=${running.encoderResolution} '
-    'greedyGraph=${running.sessions.greedy != null}'
-    '${running.sessions.greedyUnavailableReason == null ? '' : ' (unavailable: ${running.sessions.greedyUnavailableReason})'}',
+    'greedyGraph=${running.greedyGraphAvailable}'
+    '${running.greedyUnavailableReason == null ? '' : ' (unavailable: ${running.greedyUnavailableReason})'}',
   );
   final Stopwatch sw = Stopwatch()..start();
   try {
@@ -115,6 +117,8 @@ _runOnce({
     }
     sw.stop();
     expect(result, isNotNull, reason: '任务没有以 finished 结束');
+    // ignore: avoid_print
+    print('[asr-e2e][stats] variant=${variant.name} ${running.decodeStats}');
     // ASR_OUT=<dir>：把产物 SRT 拷出去（按 variant 命名），供
     // test/asr/realdata/asr_realdata_match_test.dart 与 SubPlz 字幕对照。
     final String outDir = _param('ASR_OUT');
@@ -158,9 +162,10 @@ void main() {
     );
     store = AsrModelStore(Directory(_kSeed), asrModelPackFor(_kLang));
     expect(
-      store.isReady(AsrEncoderVariant.int8),
+      store.isReady(AsrEncoderVariant.int8) ||
+          store.isReady(AsrEncoderVariant.fp32),
       isTrue,
-      reason: '模型目录缺 int8 全套文件：${store.dir.path}',
+      reason: '模型目录缺 int8 / fp32 任一变体的全套文件：${store.dir.path}',
     );
     audio = p.isAbsolute(_kAudio)
         ? _kAudio
@@ -178,6 +183,13 @@ void main() {
 
   testWidgets('CPU int8：真模型把话读出来并生成 SRT', (WidgetTester tester) async {
     if (onlyGpu) return;
+    if (!store.isReady(AsrEncoderVariant.int8)) {
+      // ignore: avoid_print
+      print(
+        '[asr-e2e][cpu-int8] skipped: int8 encoder not in ${store.dir.path}',
+      );
+      return;
+    }
     final r = await _runOnce(
       store: store,
       jobsRoot: jobsRoot,
@@ -244,13 +256,15 @@ void main() {
     '分阶段计时：ffmpeg / VAD / ASR（CPU int8 与 GPU fp32）',
     (WidgetTester tester) async {
       if (onlyGpu) return;
-      await _phaseBenchmark(
-        store: store,
-        audio: audio,
-        preference: AsrAccelerationPreference.cpuOnly,
-        variant: AsrEncoderVariant.int8,
-        label: 'cpu-int8',
-      );
+      if (store.isReady(AsrEncoderVariant.int8)) {
+        await _phaseBenchmark(
+          store: store,
+          audio: audio,
+          preference: AsrAccelerationPreference.cpuOnly,
+          variant: AsrEncoderVariant.int8,
+          label: 'cpu-int8',
+        );
+      }
       if (store.isReady(AsrEncoderVariant.fp32)) {
         await _phaseBenchmark(
           store: store,
@@ -337,6 +351,8 @@ Future<void> _phaseBenchmark({
       }
     }
     asrClock.stop();
+    // ignore: avoid_print
+    print('[asr-e2e][bench][$label] ${decoder.stats}');
     final int audioMs = samples * 1000 ~/ kAsrSampleRate;
     final int speechMs = segments.fold<int>(
       0,

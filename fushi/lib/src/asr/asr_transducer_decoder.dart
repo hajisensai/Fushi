@@ -17,13 +17,68 @@
 /// （`log(1e-10) ≈ -23.0259`），`x_lens` 给真实帧数。
 library;
 
-import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 
 import 'package:fushi/src/asr/asr_fbank.dart';
 import 'package:fushi/src/asr/asr_greedy_graph.dart' show AsrGreedyGraphIo;
 import 'package:fushi/src/asr/asr_types.dart';
 import 'package:fushi/src/asr/asr_transcribe_job.dart' show AsrBatchDecoder;
 import 'package:fushi/src/onnx/onnx_inference.dart';
+
+/// 解码器累计的分阶段耗时与帧数（诊断用，进度 UI / 集成测试打印）。
+///
+/// [paddedFrames] 是 encoder 实际算过的帧数（batch × 批内最长），[realFrames] 是
+/// 各段真实帧数之和；两者之比就是 padding 浪费——批内段长参差时 Loop 图每一步都
+/// 要带着已结束的行一起算。
+@immutable
+class AsrDecodeStats {
+  const AsrDecodeStats({
+    this.batches = 0,
+    this.segments = 0,
+    this.realFrames = 0,
+    this.paddedFrames = 0,
+    this.fbank = Duration.zero,
+    this.encoder = Duration.zero,
+    this.search = Duration.zero,
+  });
+
+  final int batches;
+  final int segments;
+  final int realFrames;
+  final int paddedFrames;
+  final Duration fbank;
+  final Duration encoder;
+  final Duration search;
+
+  double get paddingRatio => realFrames == 0 ? 1 : paddedFrames / realFrames;
+
+  AsrDecodeStats add({
+    required int segments,
+    required int realFrames,
+    required int paddedFrames,
+    required Duration fbank,
+    required Duration encoder,
+    required Duration search,
+  }) {
+    return AsrDecodeStats(
+      batches: batches + 1,
+      segments: this.segments + segments,
+      realFrames: this.realFrames + realFrames,
+      paddedFrames: this.paddedFrames + paddedFrames,
+      fbank: this.fbank + fbank,
+      encoder: this.encoder + encoder,
+      search: this.search + search,
+    );
+  }
+
+  @override
+  String toString() =>
+      'AsrDecodeStats(batches=$batches segments=$segments '
+      'frames=$realFrames padded=$paddedFrames '
+      'padding=${paddingRatio.toStringAsFixed(2)}x '
+      'fbank=${fbank.inMilliseconds}ms encoder=${encoder.inMilliseconds}ms '
+      'search=${search.inMilliseconds}ms)';
+}
 
 class AsrTransducerDecoder implements AsrBatchDecoder {
   AsrTransducerDecoder({
@@ -79,6 +134,11 @@ class AsrTransducerDecoder implements AsrBatchDecoder {
   /// 当前是否走 Loop 图路径。
   bool get usesGreedyGraph => _greedy != null;
 
+  AsrDecodeStats _stats = const AsrDecodeStats();
+
+  /// 自构造起累计的分阶段耗时与帧数。
+  AsrDecodeStats get stats => _stats;
+
   /// 一次 encoder 前向 + 整批逐帧贪心解码；返回与 [segments] 等长、同序的结果。
   @override
   Future<List<AsrDecodedSegment>> decodeBatch(
@@ -86,6 +146,7 @@ class AsrTransducerDecoder implements AsrBatchDecoder {
   ) async {
     if (segments.isEmpty) return <AsrDecodedSegment>[];
     final int batch = segments.length;
+    final Stopwatch clock = Stopwatch()..start();
 
     // 1. fbank + pad。
     final List<Float32List> features = <Float32List>[];
@@ -100,6 +161,11 @@ class AsrTransducerDecoder implements AsrBatchDecoder {
     }
     if (maxFrames == 0) {
       return List<AsrDecodedSegment>.filled(batch, AsrDecodedSegment.empty);
+    }
+    final Duration fbankTime = clock.elapsed;
+    int realFrames = 0;
+    for (int i = 0; i < batch; i++) {
+      realFrames += frameCounts[i];
     }
     final Float32List x = Float32List(batch * maxFrames * kAsrFeatureDim);
     for (int i = 0; i < batch; i++) {
@@ -134,6 +200,7 @@ class AsrTransducerDecoder implements AsrBatchDecoder {
     if (encoderOut.shape.length != 3 || encoderOut.shape[0] != batch) {
       throw StateError('encoder_out 形状异常：${encoderOut.shape}（batch=$batch）');
     }
+    final Duration encoderTime = clock.elapsed - fbankTime;
     final int encFrames = encoderOut.shape[1];
     final int encDim = encoderOut.shape[2];
     final Float32List encData = _floatData(
@@ -150,9 +217,20 @@ class AsrTransducerDecoder implements AsrBatchDecoder {
       return len;
     });
 
+    void account() {
+      _stats = _stats.add(
+        segments: batch,
+        realFrames: realFrames,
+        paddedFrames: batch * maxFrames,
+        fbank: fbankTime,
+        encoder: encoderTime,
+        search: clock.elapsed - fbankTime - encoderTime,
+      );
+    }
+
     final OnnxSession? greedy = _greedy;
     if (greedy != null) {
-      return _decodeWithGreedyGraph(
+      final List<AsrDecodedSegment> out = await _decodeWithGreedyGraph(
         greedy: greedy,
         encoderOut: encoderOut,
         encoderLens: encoderLens,
@@ -161,6 +239,8 @@ class AsrTransducerDecoder implements AsrBatchDecoder {
         encLens: encLens,
         batch: batch,
       );
+      account();
+      return out;
     }
 
     // 3. 初始上下文 [blank, blank] 与首个 decoder_out。
@@ -272,6 +352,7 @@ class AsrTransducerDecoder implements AsrBatchDecoder {
     }
 
     // 5. 组装结果（去掉前置两个 blank 上下文）。
+    account();
     return List<AsrDecodedSegment>.generate(batch, (int i) {
       return AsrDecodedSegment.fromTokenIds(
         table: _tokens,

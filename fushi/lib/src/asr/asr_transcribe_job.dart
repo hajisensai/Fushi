@@ -258,8 +258,16 @@ class AsrTranscribeJob {
   final AsrSegmenter segmenter;
   final AsrBatchDecoder decoder;
 
-  /// 一次 encoder 前向的段数。GPU 上越大越省往返；CPU 上受内存约束。
+  /// 成批的**参考**段数：一批的音频预算 = [batchSize] × [kAsrBatchReferenceSeconds]
+  /// 秒。段短时一批可以装比它多得多的段（上限 [maxBatchSegments]），段都顶到
+  /// 20 s 时恰好是 [batchSize] 段。GPU 上越大越省往返；CPU 上受内存约束。
   final int batchSize;
+
+  /// 一批最多装多少段（防止全是 1 s 短句时把一批撑到几百行）。
+  int get maxBatchSegments => batchSize * 4;
+
+  /// [batchSize] 对应的每段参考时长（= VAD 的 maxSegment 上限）。
+  static const int kAsrBatchReferenceSeconds = 20;
 
   /// 每块 PCM 的时长（秒）。也是检查点粒度上限。
   final int chunkSeconds;
@@ -419,10 +427,32 @@ class AsrTranscribeJob {
       segmenter.reset();
       final List<AsrSpeechSegment> pending = <AsrSpeechSegment>[];
 
+      final int budgetSamples =
+          batchSize * kAsrBatchReferenceSeconds * kAsrSampleRate;
+      int pendingSamples() => pending.fold<int>(
+            0,
+            (int acc, AsrSpeechSegment s) => acc + s.samples.length,
+          );
+      bool enoughPending() =>
+          pending.length >= maxBatchSegments ||
+          pendingSamples() >= budgetSamples;
+
       Future<void> drain({required bool all}) async {
-        while (pending.length >= batchSize || (all && pending.isNotEmpty)) {
-          final int take =
-              pending.length >= batchSize ? batchSize : pending.length;
+        // 按段长降序、按音频预算成批：encoder 按批内最长 pad、Loop 图每一步都
+        // 带着整批算，长短混批的 padding 全是白付（2026-09-06 实测：英语朗读段
+        // 普遍顶到 20 s 上限、日语对话段几秒一段，固定 32 段一批时 padding
+        // 2.7x / 2.2x，encoder 占 ASR 阶段九成）。段落顺序本身无意义：落盘按
+        // startMs 恢复、cue 构造前会重排。
+        pending.sort(
+          (AsrSpeechSegment a, AsrSpeechSegment b) =>
+              b.samples.length.compareTo(a.samples.length),
+        );
+        while (pending.isNotEmpty && (all || enoughPending())) {
+          final int take = pickBatchSize(
+            pending,
+            budgetSamples: budgetSamples,
+            maxSegments: maxBatchSegments,
+          );
           final List<AsrSpeechSegment> batch = pending.sublist(0, take);
           pending.removeRange(0, take);
           final List<AsrDecodedSegment> decoded = await decoder.decodeBatch(
@@ -459,7 +489,7 @@ class AsrTranscribeJob {
           pending.addAll(await segmenter.feed(chunk));
           lastEndSample = chunk.endSample;
           // 块内按批解码并节流发进度。
-          while (pending.length >= batchSize) {
+          while (enoughPending()) {
             await drain(all: false);
             final DateTime now = DateTime.now();
             if (now.difference(lastProgressAt) >= progressInterval) {
@@ -528,6 +558,30 @@ class AsrTranscribeJob {
   }
 
   static int _samplesToMs(int samples) => samples * 1000 ~/ kAsrSampleRate;
+
+  /// 从**按段长降序**的 [sorted] 头部取一批的段数（纯函数）：
+  /// - 段数 × 最长段 ≤ [budgetSamples]（encoder 真正要算的就是这个 pad 后面积）；
+  /// - 不超过 [maxSegments]；
+  /// - 遇到比批内最长段短一半以上的段就停（它和后面更短的段自成一批更划算，
+  ///   否则整批的 padding 直接翻倍）；
+  /// - 至少 1 段（超预算的单段也得解）。
+  @visibleForTesting
+  static int pickBatchSize(
+    List<AsrSpeechSegment> sorted, {
+    required int budgetSamples,
+    required int maxSegments,
+  }) {
+    if (sorted.isEmpty) return 0;
+    final int longest = sorted.first.samples.length;
+    if (longest <= 0) return 1;
+    int n = 1;
+    while (n < sorted.length && n < maxSegments) {
+      if ((n + 1) * longest > budgetSamples) break;
+      if (sorted[n].samples.length * 2 < longest) break;
+      n++;
+    }
+    return n;
+  }
 
   static int _maxEndMs(List<AsrTranscribedSegment> all, int fileIndex) {
     int m = 0;

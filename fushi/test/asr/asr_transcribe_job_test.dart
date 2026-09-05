@@ -151,8 +151,11 @@ void main() {
         last = e.progress.processedMs;
       }
     }
-    // 批次大小 ≤ batchSize。
-    expect(decoder.batchSizes.every((int n) => n <= 2), isTrue);
+    // 批次大小 ≤ maxBatchSegments（batchSize 是 20 s 段的参考值，短段按音频预算
+    // 可以多装，上限 4 倍）。
+    expect(
+        decoder.batchSizes.every((int n) => n <= job.maxBatchSegments), isTrue);
+    expect(decoder.batchSizes.every((int n) => n >= 1), isTrue);
     final AsrJobState state = await AsrTranscribeJob.loadState(
       tmp,
       <String>['a.mp3', 'b.mp3'],
@@ -419,5 +422,80 @@ void main() {
     );
     await job.run().toList();
     expect(() => job.run().toList(), throwsStateError);
+  });
+
+  group('pickBatchSize（按音频预算成批）', () {
+    AsrSpeechSegment seg(int seconds) => AsrSpeechSegment(
+          startSample: 0,
+          samples: Float32List(seconds * kAsrSampleRate),
+        );
+    const int budget = 32 * 20 * kAsrSampleRate;
+
+    test('全是 20 s 长段：恰好 batchSize 段', () {
+      final List<AsrSpeechSegment> sorted = List<AsrSpeechSegment>.filled(
+        40,
+        seg(20),
+      );
+      expect(
+        AsrTranscribeJob.pickBatchSize(
+          sorted,
+          budgetSamples: budget,
+          maxSegments: 128,
+        ),
+        32,
+      );
+    });
+
+    test('短段可以装更多，但不超过 maxSegments', () {
+      final List<AsrSpeechSegment> sorted = List<AsrSpeechSegment>.filled(
+        300,
+        seg(2),
+      );
+      expect(
+        AsrTranscribeJob.pickBatchSize(
+          sorted,
+          budgetSamples: budget,
+          maxSegments: 128,
+        ),
+        128,
+      );
+    });
+
+    test('比批内最长段短一半以上的段留给下一批（padding 不翻倍）', () {
+      final List<AsrSpeechSegment> sorted = <AsrSpeechSegment>[
+        seg(20),
+        seg(18),
+        seg(11),
+        seg(9),
+        seg(3),
+      ];
+      expect(
+        AsrTranscribeJob.pickBatchSize(
+          sorted,
+          budgetSamples: budget,
+          maxSegments: 128,
+        ),
+        3,
+      );
+    });
+
+    test('单段超预算也至少取 1；空列表取 0', () {
+      expect(
+        AsrTranscribeJob.pickBatchSize(
+          <AsrSpeechSegment>[seg(30)],
+          budgetSamples: 10 * kAsrSampleRate,
+          maxSegments: 4,
+        ),
+        1,
+      );
+      expect(
+        AsrTranscribeJob.pickBatchSize(
+          const <AsrSpeechSegment>[],
+          budgetSamples: budget,
+          maxSegments: 4,
+        ),
+        0,
+      );
+    });
   });
 }

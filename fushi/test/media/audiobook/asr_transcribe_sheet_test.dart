@@ -185,7 +185,7 @@ class _FakeService extends AsrTranscriptionService {
       decoder: _FakeDecoder(),
       progressInterval: Duration.zero,
     );
-    return AsrRunningTranscription(sessions: sessions, job: job);
+    return AsrInProcessTranscription(sessions: sessions, job: job);
   }
 }
 
