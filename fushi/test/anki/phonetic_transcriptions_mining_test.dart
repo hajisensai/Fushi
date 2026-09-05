@@ -162,10 +162,16 @@ void main() {
 
     test('buildMinePayload computes and ships phoneticTranscriptions', () {
       final String body = functionBody('buildMinePayload');
+      // BUG-2152 起喂的是 mergeIdenticalPitchGroups 归一化过的那份（与展示侧同源），
+      // 不再是原始 pitches；这里只钉「有算、且算的是归一化后的」，形状本身由
+      // lapis_pitch_tag_list_markup_test 的同名用例锁。
       expect(
         body,
-        contains(
-            'const phoneticTranscriptions = constructPhoneticTranscriptionsHtml(pitches);'),
+        contains('const phoneticTranscriptions ='),
+      );
+      expect(
+        body,
+        contains('constructPhoneticTranscriptionsHtml(normalizedPitches)'),
       );
       // return 对象里必须带该 key（shorthand 属性）。
       expect(body, contains('\n        phoneticTranscriptions,'));

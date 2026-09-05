@@ -1,44 +1,38 @@
 ## BUG-2152 · 英语制卡音标重复两遍 —— 同一 PitchEntry 的 transcriptions 数组内没有去重
-- **报告**：2026-09-05（用户：截图一张英语卡，`PitchPosition` 里是 `[/spəʊk/][/spəʊk/]`）
-- **真实性**：⚠️ 代码路径成立，**本机未复现**。两件事都要说清：
-  - **成立的部分**：`native/fushidicts/fushidicts_src/query.cpp:504-583` 的 `enrich_pitch()`
-    对**每本 pitch 词典只产出一个 `PitchEntry`**（`:576-580`），循环里把该词典下所有匹配 meta
-    记录的 transcription 平铺累加进同一个 `transcriptions` vector（`:517` 声明、`:569-570`
-    `emplace_back`），**全程没有任何去重**；`parse_ipa`（`json/yomitan_parser.cpp:224-235`）
-    原样复制。于是一本词典把 `spoke` 拆成名词条 + speak 过去式条、两条各带一个 `/spəʊk/`
-    时，得到的就是 `transcriptions: ["/spəʊk/","/spəʊk/"]`。
-  - 下游三道去重**全部是记录级（PitchEntry 级），够不着记录内部的数组**：
-    `packages/fushi_dictionary/lib/src/language/language.dart:673-675` 的 `pKey`
-    （`dictName:positions,patterns|transcriptions`，整个数组进 key，所以只算一次就留下）、
-    原生镜像 `popup_json.cpp:128-161`、以及 popup.js 的 `mergeIdenticalPitchGroups`
-    （`fushi/assets/popup/popup.js:2752-2775`，key 里同样带整个 transcriptions 数组）。
-    `window.deduplicatePitchAccents`（`popup.js:2871-2874`）只过滤 `pitchPositions`。
-  - 因此**弹窗展示侧和制卡侧一样会重复**，不是只有制卡坏。渲染点分别是
-    `createTranscriptionsHtml`（`popup.js:2730-2739`）与 `constructPitchPositionHtml`
-    （`popup.js:1573-1575`）。
-  - **未复现的部分**：本机 `D:\APP\HIBIKI_date` 这套 24 本词典里**一条 ipa meta 记录都没有**
-    （按 `\x01<u16 len>spoke` 和 mode 串 `\x03ipa` 扫全部 blobs.bin 均 0 命中；meta 记录在
-    blobs.bin 里是明文，`importer.cpp:405-413`），唯一的英语词典 OALDPE 登记为 `term`。
-    所以本机 `entry.pitches` 对 `spoke` 应为空数组，`constructPitchPositionHtml` 应返回 `''`。
-    **这条是真阴性不是扫描失灵**：同一套方法在 `NHK/blobs.bin` 命中 73100 条 `pitch`、
-    `BCCWJ/blobs.bin` 命中 100 万+ 条 `freq`（阳性对照），两种工具（Python mmap 与
-    `grep -P`）两条独立路径同一结论。
-    另外经 AnkiConnect 查证，本机 Anki（单 profile「账户 1」，13656 条，全日语牌组）
-    **没有这张英语卡**（`Amane`/`Mahiru`/`OALD`/`spəʊk` 全 0 命中）。
-- **[ ] ① 未修复** — 卡在「不知道它是哪来的」这一步，不做猜测式修复。待确认：那张卡是哪台设备 /
-  哪个 collection 制的、当时装的是哪本英语词典（带 ipa meta 的）。拿到之后按下列判断落刀：
-  - 若确为 transcriptions 重复：真根因在 `enrich_pitch()` 的累加处去重（保序），
-    Dart/原生两份 popup_json 的记录级去重不动；
-  - 若其实来自 `patterns`（`popup.js:1570-1572` 同一函数、同一 `[...]` 形状，肉眼分不出）：
-    同理在 `enrich_pitch` 的 pattern 累加处修。
-- **[ ] ② 未加自动化测试** — 跟着 ① 一起做。
+- **报告**：2026-09-05（用户转述用户反馈：英语卡 `PitchPosition` 里是 `[/spəʊk/][/spəʊk/]`）
+- **真实性**：✅ 真 bug。卡不是本机产的（本机 Anki 单 profile、13656 条、全日语牌组，查 `Amane`/`Mahiru`/`OALD`/`spəʊk` 全 0 命中；
+  本机 24 本词典一条 ipa meta 记录都没有——同一扫描方法在 NHK 命中 73100 条 `pitch`、BCCWJ 命中 100 万+ 条 `freq` 作阳性对照，
+  两种工具两条独立路径同一结论），所以本机复现不出来；但**用户后续换维基音标词典的截图直接坐实了**：
+  `first` 的标签框里 `[/fɜːst/]` 等条目肉眼可见地重复出现。
+- **根因（两条独立路径，同一个可见症状）**：
+  1. **词典内重复**（主路径）——`native/fushidicts/fushidicts_src/query.cpp` 的 `enrich_pitch()`：
+     每本 pitch 词典**只产出一个 `PitchEntry`**，循环里把该词典下所有匹配 meta 记录的 transcription
+     平铺 `emplace_back` 进同一个 vector，全程无去重；`pitches`（声调/pattern）那支同理。
+     一个词典把 `spoke` 拆成名词条 + speak 过去式条、两条各带一个 `/spəʊk/`，就得到
+     `transcriptions: ["/spəʊk/","/spəʊk/"]`。
+     下游三道去重**全是记录级（PitchEntry 级）**，整个数组进 key，结构上够不着数组内部：
+     `packages/fushi_dictionary/lib/src/language/language.dart:673-675` 的 `pKey`、
+     原生镜像 `popup_json.cpp:128-161`、popup.js 的 `mergeIdenticalPitchGroups`。
+  2. **跨词典重复**——展示侧 `createPitchSection` 先跑 `mergeIdenticalPitchGroups` 再渲染，
+     制卡侧 `buildMinePayload` 却直接吃原始 `entry.pitches`。两本词典给出同一份发音时，
+     弹窗里合成一行、卡片上却重复两遍。**制卡与展示分叉**。
+- **[x] ① 已修复**：
+  - 路径 1 在 `enrich_pitch()` 的**累加处**去重（保序、首次出现胜出），transcriptions 与 pitch accents 两支都覆盖
+    ——因为两者渲染成同样的 `[...]` 形状，截图里分不出是哪支。
+  - 路径 2 让 `buildMinePayload` 复用展示侧同一份 `mergeIdenticalPitchGroups`，制卡与展示不再分叉。
+    popup.js 三镜像同步。
+- **[x] ② 已加自动化测试**：`native/fushidicts/tests/pitch_duplicate_notation_test.cpp`（已登记进
+  `tests/CMakeLists.txt` 的 ctest 清单），fixture 覆盖「跨记录重复 + 单记录内重复 + 不同记法必须全留下且保序」。
+  **变异实测**：摘掉两处去重后 `ipa transcription count: got 5 want 2` / `pitch accent count: got 4 want 2` 双双变红；
+  修复后 **29/29 原生测试全绿**（含 `ipa_import_query_test` 等相邻用例，说明去重没伤到既有行为）。
+  制卡侧那半由 `fushi/test/anki/lapis_pitch_tag_list_markup_test.dart` 的
+  「制卡侧复用展示侧的 pitch 归一化」用例锁。
 - **顺带查出的路由缺口（同一条链上，尚未单独立号，因为手头没有能触发它的词典）**：
   带 term_bank 的混合词典（term + ipa meta）在 `importer.cpp:104-107` 必然判 `term`
   （term_bank 探测先于 meta 探测），而 `app_model.dart:317-346 bucketDictPaths` 对 `term`
   只有 `hasKanji` 一条双桶例外（`:340-343`，TODO-622），**没有 hasPitch 对应物**；
   `enrich_pitch` 又只遍历 `pitch_dicts_`（`query.cpp:509`、注册见 `:205-213`/`:171-173`）。
-  于是这类词典的 ipa meta 彻底不可达。与 TODO-622 同型。本机 OALDPE 本身没有 ipa meta，
-  所以这个缺口在本机无可观测后果；等真拿到一本带 ipa meta 的混合英语词典再验并立号。
-- **备注**：与 BUG-2151（同一张卡上黑框错版）是两个独立缺陷。BUG-2151 已修并验证；
+  于是这类词典的 ipa meta 彻底不可达。与 TODO-622 同型。
+- **备注**：与 BUG-2151（`<ol>` 标记契约错版）、BUG-2155（标签框撑爆卡头）是同一张卡上的三个独立缺陷。
   顺带实证：本机真 Fushi 制的 Lapis 卡（noteId 1788450543147）`PitchPosition` 字段确实是
   `<ol><li><span style="display:inline;">…`，即 BUG-2151 描述的存量形态。

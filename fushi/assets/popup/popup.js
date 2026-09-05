@@ -1962,9 +1962,18 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
     const glossarySelectionHighlighted = currentSelectionHighlights > 0;
     currentSelectionHighlights = 0;
     const glossaryFirst = Object.values(singleGlossaries)[0] || '';
-    const pitchPositions = constructPitchPositionHtml(pitches);
+    // BUG-2152 第二条路径：跨词典的同一份发音。展示侧在 createPitchSection 里先跑
+    // mergeIdenticalPitchGroups 才渲染，制卡侧以前直接吃原始 pitches —— 于是两本词典
+    // 把 spoke 都标成 /spəʊk/ 时，弹窗里合成一行、卡片上却是 [/spəʊk/][/spəʊk/]。
+    // 同一份归一化喂给两边，两处显示就不会再分叉。（词典内部的重复由原生
+    // enrich_pitch 去掉，那一层这里看不见。）
+    const normalizedPitches = mergeIdenticalPitchGroups(pitches || []);
+    const pitchPositions = constructPitchPositionHtml(normalizedPitches);
+    // categories 自己按值去重（`!categories.includes(category)`），且要的是原始分组，
+    // 不受合并影响，保持喂原始 pitches。
     const pitchCategories = constructPitchCategories(pitches, reading, rules);
-    const phoneticTranscriptions = constructPhoneticTranscriptionsHtml(pitches);
+    const phoneticTranscriptions =
+        constructPhoneticTranscriptionsHtml(normalizedPitches);
 
     const audioReading = reading || expression;
     let audio = '';
