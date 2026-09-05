@@ -353,6 +353,41 @@ void main() {
       );
     });
 
+    test('软锚点被重排丢弃后，剩余子串的比例认领要重新找邻句（不能拿被丢的锚当邻句）', () {
+      final List<EpubSection> secs = <EpubSection>[
+        _section(
+          0,
+          '前の文章はここまでである。次の長い文章がここに続いている。'
+          'さらに別の長い文章もここに続いている。最後の文章で終わる。',
+        ),
+      ];
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(0, '前の文章はここまでである'),
+        _cue(1, 'うん'), // 正文里没有；第一遍却以 0.5 抢到了「うぜ」之类
+        _cue(2, 'ざわざわ'), // 旁白拟声，正文没有 → 永远放不下
+        _cue(3, '次の長い文章がここにつづいている'), // 続→つづ
+        _cue(4, 'さらに別の長い文章もここにつづいている'),
+        _cue(5, '最後の文章で終わる'),
+      ];
+      final MatchResult first = _firstPass(secs, cues, <int, String>{
+        0: '前の文章はここまでである',
+        1: 'る次', // 伪命中：跨句吃字（である 的尾 + 次 的头）
+        5: '最後の文章で終わる',
+      });
+      // 之前这里在 _splitProportionally 里读被丢弃锚点的区间 → RangeError(-1)。
+      final MatchResult filled = filler.fill(
+        sections: secs,
+        cues: cues,
+        result: first,
+      );
+      final Map<int, CueMatch> by = _byCue(filled, cues);
+      expect(by[3]!.matched, isTrue);
+      expect(by[4]!.matched, isTrue);
+      expect(by[1]!.matched, isFalse, reason: 'うん 正文里没有，重排后应被丢弃');
+      expect(by[2]!.matched, isFalse);
+      expect(filled.matchedCues, 4);
+    });
+
     test('伪短锚点（うん 命中到别处）连同串一起重排，长句先落位、短句退回自己的位置', () {
       final List<EpubSection> secs = <EpubSection>[
         _section(

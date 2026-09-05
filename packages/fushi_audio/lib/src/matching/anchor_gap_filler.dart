@@ -105,7 +105,8 @@ class AnchorGapFiller {
       }
       // ① 连同两侧锚点按长度降序重切。
       matchedDelta += _realign(c, i - 1, j);
-      // ② 剩下的每个子串以「当前已定位的邻句」为界按长度比例认领。
+      // ② 剩下的每个子串以「当前已定位的邻句」为界按长度比例认领。邻句要现找：
+      // ① 可能把软锚点（原 i-1 / j 上的两字句）丢成未命中，不能再当它们是锚。
       int k = i;
       while (k < j) {
         if (c.out[k].matched) {
@@ -116,7 +117,17 @@ class AnchorGapFiller {
         while (e < j && !c.out[e].matched) {
           e++;
         }
-        matchedDelta += _splitProportionally(c, k - 1, e);
+        int leftAnchor = k - 1;
+        while (leftAnchor >= 0 && !c.out[leftAnchor].matched) {
+          leftAnchor--;
+        }
+        int rightAnchor = e;
+        while (rightAnchor < cues.length && !c.out[rightAnchor].matched) {
+          rightAnchor++;
+        }
+        if (leftAnchor >= 0 && rightAnchor < cues.length) {
+          matchedDelta += _splitProportionally(c, leftAnchor, rightAnchor);
+        }
         k = e;
       }
       i = j;
@@ -191,9 +202,8 @@ class AnchorGapFiller {
           break;
         }
       }
-      final _Span? best = ub > lb
-          ? _bestSpan(nc, region.substring(0, ub), lb)
-          : null;
+      final _Span? best =
+          ub > lb ? _bestSpan(nc, region.substring(0, ub), lb) : null;
       if (best == null ||
           best.similarity < (hard ? anchorMinSimilarity : minSimilarity)) {
         if (hard) return 0;
@@ -251,7 +261,7 @@ class AnchorGapFiller {
     }
     final bool anchorsInsideUnion =
         regionStart + spans.first!.start >= unionStart &&
-        regionStart + spans.last!.end <= unionEnd;
+            regionStart + spans.last!.end <= unionEnd;
     if (placed <= dropped && !(dropped == 0 && anchorsInsideUnion)) return 0;
     for (int o = 0; o < count; o++) {
       final int k = left + o;
@@ -304,8 +314,7 @@ class AnchorGapFiller {
           if (!_lengthPlausible(nm.length, ub - lb)) continue;
           m = _Span(lb, ub, _similarity(nm, region.substring(lb, ub)));
         }
-        final bool better =
-            bestM == null ||
+        final bool better = bestM == null ||
             m.similarity > bestM.similarity + 1e-9 ||
             (m.similarity > bestM.similarity - 1e-9 &&
                 da + db < bestDa + bestDb);
@@ -456,8 +465,7 @@ class AnchorGapFiller {
         // 邻句的字，比 needle 短得多意味着丢了本句的字。同分但方向相反的歧义
         // （多读的字是「删掉」还是「替换成邻句的字」）留给 [_negotiate] 用邻句的
         // 需要来裁决。
-        final bool better =
-            best == null ||
+        final bool better = best == null ||
             sim > best.similarity + 1e-9 ||
             (sim > best.similarity - 1e-9 &&
                 _tieRank(n, len) < _tieRank(n, best.end - best.start));

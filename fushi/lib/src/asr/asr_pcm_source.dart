@@ -99,6 +99,12 @@ Duration asrPcmChunkTimeout(int chunkSeconds) {
 /// * `-map 0:a:0` + `-vn -sn -dn`：只取第一条音轨。很多有声书 mp3/m4b 带封面图
 ///   （attached_pic 视频流），不排除会被 mov muxer 当视频流封进去（或 s16le muxer
 ///   直接拒绝多流），三个 `-xn` 兜住没被 `-map` 排除的字幕/数据流。
+/// * `-map_chapters -1 -map_metadata -1`：**不要**把输入的章节/元数据复制到输出。
+///   ffmpeg 默认复制章节，`-f mov` 输出时章节变成一条 `text` 轨，其样本（章节标题）
+///   与 PCM **交错写进同一个 mdat**；[extractMovMdatPayload] 把 mdat 当纯 PCM，标题
+///   字节数为奇数的章节就让整块样本错位成白噪声（BUG-2148：無職転生 12/13 卷 m4b
+///   十几个章节里奇数字节标题的整章转出来全是「あ」，匹配率 0%）。`-map` 只管流，
+///   管不到章节，必须单独关。s16le 裸输出没有容器，天然免疫。
 /// * `-ac 1 -ar 16000 -c:a pcm_s16le`：下混单声道、重采样 16 kHz、16 位小端。
 /// * `-f s16le` / `-f mov`：见 [AsrPcmContainer]。
 List<String> buildAsrPcmChunkArgs({
@@ -131,6 +137,10 @@ List<String> buildAsrPcmChunkArgs({
     '-vn',
     '-sn',
     '-dn',
+    '-map_chapters',
+    '-1',
+    '-map_metadata',
+    '-1',
     '-ac',
     '1',
     '-ar',
@@ -195,6 +205,10 @@ Uint8List extractMovMdatPayload(Uint8List bytes) {
   final ByteData view = ByteData.sublistView(bytes);
   final int length = bytes.length;
   int offset = 0;
+  Uint8List? mdat;
+  int trackCount = 0;
+  bool sawMoov = false;
+  bool mdatToEof = false;
   while (offset + 8 <= length) {
     int size = view.getUint32(offset);
     int headerLength = 8;
@@ -219,6 +233,7 @@ Uint8List extractMovMdatPayload(Uint8List bytes) {
       headerLength = 16;
     } else if (size == 0) {
       size = length - offset;
+      mdatToEof = type == 'mdat';
     }
     if (size < headerLength) {
       throw FormatException(
@@ -227,11 +242,56 @@ Uint8List extractMovMdatPayload(Uint8List bytes) {
     }
     if (type == 'mdat') {
       final int end = math.min(offset + size, length);
-      return Uint8List.sublistView(bytes, offset + headerLength, end);
+      mdat = Uint8List.sublistView(bytes, offset + headerLength, end);
+      // size==0 的 mdat 延伸到文件尾（不可 seek 的输出），后面不可能再有 moov，
+      // 轨数无从校验——按纯 PCM 接受。
+      if (mdatToEof) break;
+    } else if (type == 'moov') {
+      sawMoov = true;
+      trackCount = _countMovTracks(
+        view,
+        offset + headerLength,
+        math.min(offset + size, length),
+      );
     }
     offset += size;
   }
-  throw const FormatException('no mdat box found');
+  if (mdat == null) throw const FormatException('no mdat box found');
+  // mdat 是所有轨的样本交错区。多于一条轨（章节 text 轨 / 封面 / 元数据轨）意味着
+  // payload 里混着非 PCM 字节——宁可在这里炸掉，也不能把错位的样本当语音喂给模型
+  // （BUG-2148）。没有 moov（ffmpeg 被中断、文件截断）同样判坏。
+  if (mdatToEof) return mdat;
+  // 空 mdat（块起点已在文件尾之外，ffmpeg 一个样本都没写）：没有可被错位的字节，
+  // 此时 moov 里也没有 trak，照常返回空 payload 让调用方按 0 样本收尾。
+  if (mdat.isEmpty) return mdat;
+  if (!sawMoov) {
+    throw const FormatException('no moov box found (truncated mov output)');
+  }
+  if (trackCount != 1) {
+    throw FormatException(
+      'mov has $trackCount tracks, expected exactly 1 PCM track; '
+      'chapter/metadata tracks would interleave into mdat',
+    );
+  }
+  return mdat;
+}
+
+/// 数 `moov` 直接子层里的 `trak` 盒。子盒尺寸不合法就停止计数（当前值即结果），
+/// 不抛——调用方以「≠ 1」判坏。
+int _countMovTracks(ByteData view, int start, int end) {
+  int count = 0;
+  int offset = start;
+  while (offset + 8 <= end) {
+    final int size = view.getUint32(offset);
+    if (size < 8 || offset + size > end) break;
+    final int a = view.getUint8(offset + 4);
+    final int b = view.getUint8(offset + 5);
+    final int c = view.getUint8(offset + 6);
+    final int d = view.getUint8(offset + 7);
+    if (a == 0x74 && b == 0x72 && c == 0x61 && d == 0x6B) count++; // 'trak'
+    offset += size;
+  }
+  return count;
 }
 
 /// **纯函数**：s16le 小端字节 → float32（`/32768`，范围 [-1, 1)）。奇数尾字节丢弃。
@@ -255,8 +315,8 @@ class FfmpegAsrPcmSource implements AsrPcmSource {
     FfmpegBackend? backend,
     Directory? tempDir,
     this.preRollSeconds = kAsrPcmSeekPreRollSeconds,
-  }) : _backend = backend,
-       _tempDir = tempDir ?? Directory.systemTemp;
+  })  : _backend = backend,
+        _tempDir = tempDir ?? Directory.systemTemp;
 
   final FfmpegBackend? _backend;
   final Directory _tempDir;

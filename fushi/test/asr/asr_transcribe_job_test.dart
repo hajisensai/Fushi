@@ -241,6 +241,43 @@ void main() {
     expect(r.segmentCount, 1);
   });
 
+  test('state.json 版本不是当前版本（v1 旧链路产物）视为新任务，旧产物不复用', () async {
+    // BUG-2148：v1 时期带章节的 m4b 转出来整章噪声「あ」，但任务已 finished，UI 会
+    // 直接复用。升版后同路径的旧目录必须重跑。
+    File(
+      '${tmp.path}/${AsrJobFiles.segments}',
+    ).writeAsStringSync('{"f":0,"s":0,"e":900,"t":["あ"],"m":[100]}\n');
+    File('${tmp.path}/${AsrJobFiles.state}').writeAsStringSync(
+      '{"version":1,"audioPaths":["a.mp3"],"fileDurationsMs":[3000],'
+      '"resumeSamples":[-1],"finished":true}',
+    );
+    final ({AsrJobState state, bool fresh}) loaded =
+        await AsrTranscribeJob.loadStateDetailed(tmp, <String>['a.mp3']);
+    expect(loaded.fresh, isTrue);
+    final AsrTranscribeJob job = AsrTranscribeJob(
+      jobDir: tmp,
+      audioPaths: <String>['a.mp3'],
+      pcm: _FakePcm(<String, int>{'a.mp3': 3000}),
+      segmenter: _FakeSegmenter(segmentsPerChunk: 1),
+      decoder: _FakeDecoder(),
+      chunkSeconds: 5,
+      progressInterval: Duration.zero,
+    );
+    final List<AsrTranscribeEvent> events = await job.run().toList();
+    final AsrTranscribeResult r =
+        (events.last as AsrTranscribeFinishedEvent).result;
+    expect(r.segmentCount, 1);
+    expect(
+      File('${tmp.path}/${AsrJobFiles.segments}').readAsStringSync(),
+      isNot(contains('"旧噪"')),
+    );
+    // 重跑后写回的是当前版本。
+    expect(
+      File('${tmp.path}/${AsrJobFiles.state}').readAsStringSync(),
+      contains('"version":${AsrJobState.currentVersion}'),
+    );
+  });
+
   test('时长探测失败：用实际解码样本数补时长，SRT 偏移仍正确', () async {
     final _FakePcm pcm = _FakePcm(
       <String, int>{'a.mp3': 6000, 'b.mp3': 4000},

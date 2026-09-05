@@ -118,17 +118,22 @@ Uint8List _largeBox(String type, List<int> payload) {
 }
 
 /// 模拟 ffmpeg mov 输出：`ftyp` `wide` `mdat`(pcm) `moov`。
-Uint8List _mov(List<int> pcm, {bool largesize = false}) {
+Uint8List _mov(List<int> pcm, {bool largesize = false, int tracks = 1}) {
   final BytesBuilder b = BytesBuilder(copy: false);
   b.add(_box('ftyp', 'qt  \x00\x00\x02\x00qt  '.codeUnits));
   b.add(_box('wide', const <int>[]));
   b.add(largesize ? _largeBox('mdat', pcm) : _box('mdat', pcm));
-  b.add(_box('moov', List<int>.filled(24, 0x11)));
+  // moov：mvhd 占位 + N 条 trak（ffmpeg 真输出里 trak 是 moov 的直接子盒）。
+  final BytesBuilder moov = BytesBuilder(copy: false);
+  moov.add(_box('mvhd', List<int>.filled(24, 0x11)));
+  for (int i = 0; i < tracks; i++) {
+    moov.add(_box('trak', _box('tkhd', List<int>.filled(8, 0x22))));
+  }
+  b.add(_box('moov', moov.toBytes()));
   return b.toBytes();
 }
 
-const String _kNoS16le =
-    '[AVFormatContext @ 0x1] Requested output format '
+const String _kNoS16le = '[AVFormatContext @ 0x1] Requested output format '
     "'s16le' is not known.\nError opening output file x.pcm.\n"
     'Error opening output files: Invalid argument';
 
@@ -256,7 +261,8 @@ void main() {
       expect(args, isNot(contains('-ss')));
       expect(args.indexOf('-i'), lessThan(args.indexOf('-t')));
       expect(args.sublist(args.indexOf('-t')), <String>[
-        '-t', '600.000', '-map', '0:a:0', '-vn', '-sn', '-dn', '-ac', '1', //
+        '-t', '600.000', '-map', '0:a:0', '-vn', '-sn', '-dn', //
+        '-map_chapters', '-1', '-map_metadata', '-1', '-ac', '1', //
         '-ar', '16000', '-c:a', 'pcm_s16le', '-f', 's16le', 'out.pcm',
       ]);
     });
@@ -357,6 +363,34 @@ void main() {
       expect(f, <double>[0.0, 0.5, -0.5, 32767 / 32768, -1.0]);
     });
 
+    test('extractMovMdatPayload：moov 里多于一条轨（章节 text 轨混入）直接判坏', () {
+      // BUG-2148：ffmpeg 默认复制章节，-f mov 时章节成 text 轨、样本交错进 mdat。
+      final List<int> pcm = List<int>.generate(64, (int i) => i);
+      expect(
+        () => extractMovMdatPayload(_mov(pcm, tracks: 2)),
+        throwsA(isA<FormatException>().having(
+          (FormatException e) => e.message,
+          'message',
+          contains('2 tracks'),
+        )),
+      );
+      // 零轨（moov 里没有 trak）同样不是合法的单 PCM 轨输出。
+      expect(
+        () => extractMovMdatPayload(_mov(pcm, tracks: 0)),
+        throwsA(isA<FormatException>()),
+      );
+    });
+
+    test('extractMovMdatPayload：缺 moov（ffmpeg 被中断、文件截断）判坏', () {
+      final BytesBuilder b = BytesBuilder(copy: false);
+      b.add(_box('ftyp', 'qt  '.codeUnits));
+      b.add(_box('mdat', const <int>[1, 2, 3, 4]));
+      expect(
+        () => extractMovMdatPayload(b.toBytes()),
+        throwsA(isA<FormatException>()),
+      );
+    });
+
     test('extractMovMdatPayload：32 位 size', () {
       final Uint8List pcm = _s16le(<int>[1, 2, 3]);
       expect(extractMovMdatPayload(_mov(pcm)), pcm);
@@ -433,9 +467,8 @@ void main() {
         tempDir: tempRoot,
       );
 
-      final List<AsrPcmChunk> chunks = await source
-          .decode(input.path, chunkSeconds: 1)
-          .toList();
+      final List<AsrPcmChunk> chunks =
+          await source.decode(input.path, chunkSeconds: 1).toList();
 
       expect(chunks.map((AsrPcmChunk c) => c.startSample), <int>[
         0,
@@ -524,9 +557,8 @@ void main() {
         tempDir: tempRoot,
       );
 
-      final List<AsrPcmChunk> chunks = await source
-          .decode(input.path, chunkSeconds: 1)
-          .toList();
+      final List<AsrPcmChunk> chunks =
+          await source.decode(input.path, chunkSeconds: 1).toList();
 
       expect(chunks.map((AsrPcmChunk c) => c.startSample), <int>[0, 16000]);
       expect(chunks[0].samples[0], closeTo(111 / 32768, 1e-7));
@@ -830,12 +862,12 @@ void main() {
 
     for (final (String label, String Function() path, int tailLsb, int tail)
         in <(String, String Function(), int, int)>[
-          ('mp3 CBR', () => mp3Path, 2, 0),
-          ('mp3 VBR', () => vbrMp3Path, 2, 0),
-          ('mp3 带封面', () => coveredMp3Path, 2, 0),
-          // AAC：寻址后 EOF 冲洗的舍入不同，文件尾最后 ~240 个样本实测 ≤ 12/32768。
-          ('m4b (aac)', () => m4bPath, 16, 512),
-        ]) {
+      ('mp3 CBR', () => mp3Path, 2, 0),
+      ('mp3 VBR', () => vbrMp3Path, 2, 0),
+      ('mp3 带封面', () => coveredMp3Path, 2, 0),
+      // AAC：寻址后 EOF 冲洗的舍入不同，文件尾最后 ~240 个样本实测 ≤ 12/32768。
+      ('m4b (aac)', () => m4bPath, 16, 512),
+    ]) {
       test('$label：chunkSeconds=7 分块拼接与整段解码逐样本一致（|diff| ≤ 2/32768）', () async {
         final FfmpegAsrPcmSource source = FfmpegAsrPcmSource(
           backend: _ExecutableFfmpegBackend(ffmpeg!, ffprobe!),
@@ -853,22 +885,20 @@ void main() {
         expect(
           body.badCount,
           0,
-          reason:
-              '$label 块边界失真：首个坏样本 ${body.firstBadIndex}，'
+          reason: '$label 块边界失真：首个坏样本 ${body.firstBadIndex}，'
               '最大 |diff| ${body.maxDiffLsb}/32768',
         );
         if (tail > 0) {
           final ({int maxDiffLsb, int firstBadIndex, int badCount}) tailCmp =
               _compare(
-                Float32List.sublistView(ref, ref.length - tail),
-                Float32List.sublistView(got, got.length - tail),
-                toleranceLsb: tailLsb,
-              );
+            Float32List.sublistView(ref, ref.length - tail),
+            Float32List.sublistView(got, got.length - tail),
+            toleranceLsb: tailLsb,
+          );
           expect(
             tailCmp.badCount,
             0,
-            reason:
-                '$label 文件尾差异超 $tailLsb/32768：'
+            reason: '$label 文件尾差异超 $tailLsb/32768：'
                 '${tailCmp.maxDiffLsb}',
           );
         }
@@ -935,8 +965,7 @@ void main() {
       expect(
         source.resolvedContainer,
         AsrPcmContainer.mov,
-        reason:
-            '入库 ffmpeg-min 目前没有 s16le muxer，应走 mov 回退；'
+        reason: '入库 ffmpeg-min 目前没有 s16le muxer，应走 mov 回退；'
             '若已重建带 s16le，请按 asr_pcm_source.dart 文件头说明删除 mov 分支',
       );
       expect(leftovers(), isEmpty);

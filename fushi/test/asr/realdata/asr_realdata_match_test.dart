@@ -160,6 +160,28 @@ void main() {
         print(
           '[realdata] ours unmatched (${misses.length}): ${misses.take(40).join(' | ')}',
         );
+        // 失同步定位：每 500 条 cue 一桶的命中率（第一遍 Dice / 回填后），一眼看出
+        // 游标从哪里开始丢。
+        {
+          final MatchResult raw = run(ours, thresholds.first);
+          final StringBuffer b = StringBuffer();
+          for (int s0 = 0; s0 < ours.length; s0 += 500) {
+            final int e0 = (s0 + 500).clamp(0, ours.length);
+            int hitRaw = 0;
+            int hitFill = 0;
+            for (int i = s0; i < e0; i++) {
+              if (raw.matches[i].matched) hitRaw++;
+              if (oursResult.matches[i].matched) hitFill++;
+            }
+            b.write(
+              '\n  #$s0-$e0 (${ours[s0].startMs ~/ 60000}min) '
+              'dice=${(hitRaw * 100 / (e0 - s0)).round()}% '
+              'fill=${(hitFill * 100 / (e0 - s0)).round()}%',
+            );
+          }
+          // ignore: avoid_print
+          print('[realdata] buckets:$b');
+        }
         // 未命中分型：对每条未命中（两侧都有已定位 cue 的），看它独占的正文间隙。
         final StringBuffer buf = StringBuffer();
         final List<int> secStarts = <int>[];

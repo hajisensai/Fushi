@@ -143,15 +143,15 @@ class AsrJobState {
   });
 
   factory AsrJobState.fresh(List<String> audioPaths) => AsrJobState(
-    audioPaths: List<String>.unmodifiable(audioPaths),
-    fileDurationsMs: List<int?>.filled(audioPaths.length, null),
-    resumeSamples: List<int>.filled(audioPaths.length, 0),
-    finished: false,
-  );
+        audioPaths: List<String>.unmodifiable(audioPaths),
+        fileDurationsMs: List<int?>.filled(audioPaths.length, null),
+        resumeSamples: List<int>.filled(audioPaths.length, 0),
+        finished: false,
+      );
 
   factory AsrJobState.fromJson(Map<String, Object?> json) {
-    final List<String> paths = (json['audioPaths'] as List<Object?>)
-        .cast<String>();
+    final List<String> paths =
+        (json['audioPaths'] as List<Object?>).cast<String>();
     final List<Object?> durations =
         (json['fileDurationsMs'] as List<Object?>?) ?? const <Object?>[];
     final List<Object?> resumes =
@@ -181,13 +181,19 @@ class AsrJobState {
   /// 文件是否已处理完（resumeSample 用 -1 标记）。
   bool isFileDone(int i) => resumeSamples[i] < 0;
 
+  /// `state.json` 的格式版本。**v1 产物一律作废**：v1 时期的 PCM 抽取会把 m4b 章节
+  /// text 轨交错进 mdat（BUG-2148），带章节的有声书转出来的 transcript.srt 整章是
+  /// 噪声识别出的「あ」，而任务已标 finished、UI 会直接进完成态复用它。升版让
+  /// [AsrTranscribeJob.loadStateDetailed] 把旧目录当新任务重跑。
+  static const int currentVersion = 2;
+
   Map<String, Object?> toJson() => <String, Object?>{
-    'version': 1,
-    'audioPaths': audioPaths,
-    'fileDurationsMs': fileDurationsMs,
-    'resumeSamples': resumeSamples,
-    'finished': finished,
-  };
+        'version': currentVersion,
+        'audioPaths': audioPaths,
+        'fileDurationsMs': fileDurationsMs,
+        'resumeSamples': resumeSamples,
+        'finished': finished,
+      };
 
   AsrJobState copyWith({
     List<int?>? fileDurationsMs,
@@ -222,9 +228,9 @@ class AsrTranscribeJob {
     this.chunkSeconds = 300,
     this.cueBuilder = const AsrCueBuilder(),
     this.progressInterval = const Duration(milliseconds: 500),
-  }) : assert(audioPaths.isNotEmpty),
-       assert(batchSize > 0),
-       assert(chunkSeconds > 0);
+  })  : assert(audioPaths.isNotEmpty),
+        assert(batchSize > 0),
+        assert(chunkSeconds > 0);
 
   final Directory jobDir;
   final List<String> audioPaths;
@@ -267,6 +273,10 @@ class AsrTranscribeJob {
     try {
       final Map<String, Object?> json =
           jsonDecode(await f.readAsString()) as Map<String, Object?>;
+      // 版本不符（含缺失）= 旧格式或已知会产出坏产物的旧链路，整个任务重来。
+      if ((json['version'] as num?)?.toInt() != AsrJobState.currentVersion) {
+        return (state: AsrJobState.fresh(audioPaths), fresh: true);
+      }
       final AsrJobState state = AsrJobState.fromJson(json);
       if (!listEquals(state.audioPaths, audioPaths)) {
         return (state: AsrJobState.fresh(audioPaths), fresh: true);
@@ -283,7 +293,8 @@ class AsrTranscribeJob {
   static Future<AsrJobState> loadState(
     Directory jobDir,
     List<String> audioPaths,
-  ) async => (await loadStateDetailed(jobDir, audioPaths)).state;
+  ) async =>
+      (await loadStateDetailed(jobDir, audioPaths)).state;
 
   /// 已落盘的段落（顺序即写入顺序）。
   static Future<List<AsrTranscribedSegment>> loadSegments(
@@ -386,9 +397,8 @@ class AsrTranscribeJob {
 
       Future<void> drain({required bool all}) async {
         while (pending.length >= batchSize || (all && pending.isNotEmpty)) {
-          final int take = pending.length >= batchSize
-              ? batchSize
-              : pending.length;
+          final int take =
+              pending.length >= batchSize ? batchSize : pending.length;
           final List<AsrSpeechSegment> batch = pending.sublist(0, take);
           pending.removeRange(0, take);
           final List<AsrDecodedSegment> decoded = await decoder.decodeBatch(
