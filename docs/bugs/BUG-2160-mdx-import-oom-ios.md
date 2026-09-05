@@ -33,7 +33,15 @@
   - 顺带修掉一个潜在缺陷：旧代码某 record 块解压失败时不追加字节却保留其跨度，
     会让**其后全部** entry 的切片错位；现改为跳过该块内 entry 并重新对齐。
   - StarDict / DSL 共用同一累加器，同样受益。公开 header `importer.hpp` 一字未改。
-  - 提交：`f319af3b43`（解析侧）+ 本轮（写盘侧）
+  - **代码审查追加修的三处**（`1386f1fe5f`，另 `249a5ce18e` 修越界 erase）：
+    - `record_offset` 直接读自文件、无任何校验。若某条记录的 `end` 是垃圾大值，
+      `end > window_end` 恒成立 → 每块都 break、永不 erase → 滑动窗口一路吃到把
+      **整条解压流**装进内存（本样本 8.6 GB），且该 key 之后所有条目永久送不出。
+      **一个坏掉的 8 字节就能让整个流式保证失效。** 现给跨块记录设 64 MiB 上限。
+    - 窗口回收区间未按 window 长度钳位，损坏 key 表可让 `erase` 跑出缓冲（UB）。
+    - `open_simple_dict` 建目录后仍可能抛，而 `sanitized` 要等它返回才赋值，
+      导致失败时不清理、留下半成品目录（相对旧实现是回归）。
+  - 提交：`f319af3b43`（解析侧）+ `c73478aae8`（写盘侧）+ `249a5ce18e` + `1386f1fe5f`（审查修复）
 
   实测（用户原文件，同一台机器）：
   | 阶段 | 峰值 private commit |
@@ -53,6 +61,11 @@
     可指定分块边界——原有 fixture **全是单块容器**，结构上覆盖不到这些路径。
     **变异实测**：打断窗口进位后该测试全红，而 `mdx_redirect_lemma_lookup` /
     `mdx_encrypted_keyinfo` / `mdd_media_import` **依然全绿**，证明旧套件抓不到这类回归。
+    审查后补三例：损坏 key 表下坏 key 之后的条目仍要送出（变异实测：去掉 64 MiB
+    上限后只剩 1 条、应为 3 条）、全越界 offset 不得让窗口回收跑出缓冲、
+    `.mdd` 二进制记录跨块仍逐字节精确（`parse_mdd` 多块路径此前完全没被测过）。
+    `mdx_fixture` 另加 `build_mdx_bad_offsets`（写任意 `record_offset`）与
+    `build_mdd_record_splits`。
   - `fushi/test/dictionary/mdx_block_bounds_guard_test.dart`：OOB bound 守卫按新形状重写
     （不是绕过），并新增「不得再出现 all_records」。
   - `fushi/test/models/dictionary_multi_archive_import_test.dart`：BUG-1904 上限守卫改锚
