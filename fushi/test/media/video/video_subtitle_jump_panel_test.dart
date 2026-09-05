@@ -1624,8 +1624,50 @@ void main() {
         emptyHint: 'empty',
       )));
       expect(fontOf('sized'), closeTo(28.0, 0.01),
-          reason: '种子字号档位 6 = 2.0× × 基准 14 = 28（持久化 + 提高上限）');
-      // 已在最大档：A+ 应禁用（越界短路不再放大）。
+          reason: '种子字号档位 6 = 2.0× × 基准 14 = 28。BUG-2156 往数组尾部追加了更高档位，'
+              '这条断言必须**保持不变**——下标就是持久化值，既有元素一旦改动，'
+              '所有存量用户的字号都会静默漂移');
+      // BUG-2156 之后 2.0× 不再是最大档，A+ 应当仍然可用。
+      final IconButton increase = tester.widget<IconButton>(
+        find.ancestor(
+          of: find.byIcon(Icons.text_increase),
+          matching: find.byType(IconButton),
+        ),
+      );
+      expect(increase.onPressed, isNotNull,
+          reason: '2.0× 上面还有档位（BUG-2156），A+ 不该禁用');
+    });
+
+    // ── BUG-2156：上限从 2.0× 再抬到 3.0×（用户第二次反馈「还是不够」）───────
+    testWidgets(
+        'BUG-2156: the top step reaches 3.0x and only there does A+ disable',
+        (WidgetTester tester) async {
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'sized')]);
+
+      double fontOf(String text) =>
+          tester.widget<Text>(find.text(text)).style!.fontSize!;
+
+      // 下标 10 = 3.0×，基准 14 → 42。撤掉追加的四档 → 种子被 clamp 回下标 6（2.0×）
+      // → 字号 28 → 红。
+      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        key: const ValueKey<String>('seed-max-2156'),
+        controller: controller,
+        onTapCue: (_) {},
+        onCopyCue: (_) => true,
+        onFavoriteCue: (_) async {},
+        isCueFavorited: (_) => false,
+        onClose: () {},
+        initialFontScaleIndex: 10,
+        fontSize: 14,
+        colorScheme: const ColorScheme.dark(),
+        title: 'Subtitle list',
+        emptyHint: 'empty',
+      )));
+      expect(fontOf('sized'), closeTo(42.0, 0.01),
+          reason: '最高档 3.0× × 基准 14 = 42');
+
       final IconButton increase = tester.widget<IconButton>(
         find.ancestor(
           of: find.byIcon(Icons.text_increase),

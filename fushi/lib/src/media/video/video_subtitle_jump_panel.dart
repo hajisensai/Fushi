@@ -293,9 +293,19 @@ int resolveSubtitleListGraphemeHit(
   return bestIndex;
 }
 
-/// 字幕列表行字号缩放档位（BUG-878）。原上限只到 1.3×，用户反馈「字号拉到最大才够用、
-/// 上限不够」，向上扩到 2.0×（1.5 / 1.75 / 2.0 三档）。默认档 [_kDefaultFontScaleIndex]=1
-/// （1.0×）。数组扩容后旧持久化下标仍安全（seed / [_stepFont] 都 clamp 到数组范围）。
+/// 字幕列表行字号缩放档位。默认档 [_kDefaultFontScaleIndex]=1（1.0×）。
+///
+/// 两轮反馈都是同一句「拉到最大还是不够」：BUG-878 把上限从 1.3× 抬到 2.0×，
+/// BUG-2156 再抬到 3.0×。**只在数组尾部追加**——下标即持久化值
+/// （`video_subtitle_list_font_scale_index`），改动既有元素会让所有存量用户的字号
+/// 静默漂移。追加则旧下标恒指向同一倍率，零迁移。
+/// 两处 clamp（seed 在 [_VideoSubtitleJumpPanelState.initState]、步进在 [_stepFont]）
+/// 都写的是 `_kFontScaleSteps.length - 1`，自动跟随数组长度，不用改。
+///
+/// 注意收益在窄面板上会递减：时间戳列宽（[subtitleTimestampColumnWidth]）与动作列宽
+/// （[subtitleRowActionsWidth]）都随字号线性放大，而面板宽下界是 240px，
+/// 正文列还有 48px 硬下界。最窄面板 + 带小时的时间戳时，2.0× 附近正文列就已经触底，
+/// 再往上主要是时间戳和按钮变大。宽面板（≥420px）下高档位才真正有用。
 const List<double> _kFontScaleSteps = <double>[
   0.85,
   1.0,
@@ -304,6 +314,10 @@ const List<double> _kFontScaleSteps = <double>[
   1.5,
   1.75,
   2.0,
+  2.25,
+  2.5,
+  2.75,
+  3.0,
 ];
 
 /// 默认字号档位（1.0×）。持久化 key 从未写过时的初值，与 `preferences_repository.dart`
