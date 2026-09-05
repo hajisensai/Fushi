@@ -4,14 +4,12 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_row.dart';
+import 'package:fushi/src/onboarding/recommended_pack_import.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/sync/sync_http.dart';
-import 'package:fushi/src/sync/sync_settings_schema.dart'
-    show runBackupImportFlowForFile;
 import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/utils/misc/crash_dump_locator.dart';
 import 'package:fushi/src/utils/misc/platform_updater.dart';
@@ -639,19 +637,9 @@ Widget _buildRecommendedPackDownloadRow(SettingsContext settingsContext) {
   final AppModel appModel = settingsContext.appModel;
   return RecommendedPackDownloadRow(
     controller: appModel.recommendedPackDownloadController,
-    onImport: () => unawaited(_importDownloadedRecommendedPack(appModel)),
-  );
-}
-
-/// 就地导入已下好的推荐包，走备份导入的共享编排（确认覆盖/合并 → 导入 → 重启）。
-/// 与新手引导那条路径同一个真相源，只是发起点在设置里。
-Future<void> _importDownloadedRecommendedPack(AppModel appModel) async {
-  final RecommendedPackDownloadController controller =
-      appModel.recommendedPackDownloadController;
-  await runBackupImportFlowForFile(
-    appModel: appModel,
-    filePath: controller.packFile.path,
-    onImportConfirmed: controller.markImportStarted,
+    // 导入编排是库级共享的（[importDownloadedRecommendedPack]）：设置这一行、
+    // 新手引导那一步、首页迷你条三个发起点同一个真相源。
+    onImport: () => unawaited(importDownloadedRecommendedPack(appModel)),
   );
 }
 

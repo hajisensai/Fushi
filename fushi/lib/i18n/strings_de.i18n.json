@@ -4242,5 +4242,9 @@
   "anki_error_ankimobile_pasteboard_denied": "iOS blocked reading the clipboard. Choose Allow Paste when returning to Fushi, then try again.",
   "anki_error_ankimobile_no_decks": "AnkiMobile returned no decks or note types.",
   "anki_error_ankimobile_unavailable": "Could not open AnkiMobile. Install AnkiMobile and try again.",
-  "dictionary_collapse_follow_global": "Follow global setting"
+  "dictionary_collapse_follow_global": "Follow global setting",
+  "onboarding_pack_status_paused": "Recommended pack download paused",
+  "onboarding_pack_download_resume": "Resume download",
+  "onboarding_pack_paused_desc": "Progress is kept on disk — resuming picks up where it stopped.",
+  "onboarding_pack_mini_bar_hide": "Hide"
 }

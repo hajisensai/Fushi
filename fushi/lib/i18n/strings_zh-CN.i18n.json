@@ -4242,5 +4242,9 @@
   "anki_error_ankimobile_pasteboard_denied": "iOS 阻止了读取剪贴板。返回 Fushi 时请在系统提示里选「允许粘贴」，然后重试。",
   "anki_error_ankimobile_no_decks": "AnkiMobile 没有回传任何牌组或笔记类型。",
   "anki_error_ankimobile_unavailable": "无法打开 AnkiMobile。请先安装 AnkiMobile 再试。",
-  "dictionary_collapse_follow_global": "跟随全局设置"
+  "dictionary_collapse_follow_global": "跟随全局设置",
+  "onboarding_pack_status_paused": "推荐包下载已暂停",
+  "onboarding_pack_download_resume": "继续下载",
+  "onboarding_pack_paused_desc": "进度留在磁盘上，继续下载会从中断处接着下。",
+  "onboarding_pack_mini_bar_hide": "收起"
 }

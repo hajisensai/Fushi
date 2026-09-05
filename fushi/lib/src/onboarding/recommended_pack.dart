@@ -379,15 +379,20 @@ class RecommendedPackDownloader {
   File get packFile => packFileIn(_packDir);
 
   /// 单流续传的半截文件。
-  File get _partFile => File(p.join(_packDir.path, '$_fileName.part'));
+  static File _partFileIn(Directory packDir) =>
+      File(p.join(packDir.path, '$_fileName.part'));
+
+  File get _partFile => _partFileIn(_packDir);
 
   /// 分片下载的半截文件（预分配到完整大小）。与单流的 `.part` **分开命名**：两条
   /// 路的半截文件语义不同（一个是「已下这么多字节」，一个是「预分配好、按片填」），
   /// 共用一个名字会让另一条路把对方的半截当成自己的断点。
   File get _multiPartFile => File(p.join(_packDir.path, '$_fileName.mpart'));
 
-  File get _multiPartProgressFile =>
-      File(p.join(_packDir.path, '$_fileName.mpart.json'));
+  static File _multiPartProgressFileIn(Directory packDir) =>
+      File(p.join(packDir.path, '$_fileName.mpart.json'));
+
+  File get _multiPartProgressFile => _multiPartProgressFileIn(_packDir);
 
   static File _importedFlagFileIn(Directory packDir) =>
       File(p.join(packDir.path, 'imported.flag'));
@@ -423,21 +428,28 @@ class RecommendedPackDownloader {
 
   /// 已下字节（两条路合一）。分片路的 `.mpart` 是**预分配**的完整大小，长度不代表
   /// 进度，必须读进度文件——否则 UI 一进来就显示「已下 9.5 GB」。
-  int get partialBytes {
+  ///
+  /// **目录级**（与 [packFileIn] / [hasCompletedFileIn] 同纪律）：「盘上躺着多少
+  /// 半截」是磁盘事实，与走哪条线路无关。UI 要判「有没有可续的半截」时不该、也
+  /// 不需要先挑出一个线路实例来问——挑实例要先解析清单，而清单要联网。
+  static int partialBytesIn(Directory packDir) {
     try {
-      if (_multiPartProgressFile.existsSync()) {
-        return _receivedFromProgressFile();
+      final File progressFile = _multiPartProgressFileIn(packDir);
+      if (progressFile.existsSync()) {
+        return _receivedFromProgressFile(progressFile);
       }
-      return _partFile.existsSync() ? _partFile.lengthSync() : 0;
+      final File partFile = _partFileIn(packDir);
+      return partFile.existsSync() ? partFile.lengthSync() : 0;
     } on FileSystemException {
       return 0;
     }
   }
 
-  int _receivedFromProgressFile() {
+  int get partialBytes => partialBytesIn(_packDir);
+
+  static int _receivedFromProgressFile(File progressFile) {
     try {
-      final Object? decoded =
-          json.decode(_multiPartProgressFile.readAsStringSync());
+      final Object? decoded = json.decode(progressFile.readAsStringSync());
       if (decoded is! Map<String, dynamic>) return 0;
       final Object? parts = decoded['parts'];
       if (parts is! Map<String, dynamic>) return 0;
