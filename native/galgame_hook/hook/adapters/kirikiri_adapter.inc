@@ -3062,7 +3062,10 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			global.fushiLookupPatchLayerTree = function(root, depth)
 			{
 				if(root === void || root === null) return 0;
-				if(depth > 12 || global.fushiLookupLayerWalkBudget <= 0) return 0;
+				// 深度 4 / 预算 64：消息层子树本来就浅（行层、描边层、插件绘制层各一两级）。
+				// 上限收紧的直接理由见 fushiLookupLayerTreeRoots 的注释——补挂面越大，
+				// 被注入成员的层参与游戏自身路径的概率越高，真机上已经因此崩过一次。
+				if(depth > 4 || global.fushiLookupLayerWalkBudget <= 0) return 0;
 				var patched = 0;
 				try
 				{
@@ -3087,17 +3090,34 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				return patched;
 			};
 
-			// 树的根。primaryLayer 覆盖整个窗口内容；fore/back 的 base 是兜底（某些定制
-			// KAG 不经由 primaryLayer 挂载）。取不到就跳过，不算故障。
+			// 树的根 = **消息层自己**，不是整个窗口树。
+			//
+			// 2026-09-05 真机血的教训：第一版从 kag.primaryLayer / fore.base / back.base
+			// 三个根走整棵树，预算 512 层，等于给窗口里每一个层都注入三个新成员
+			// （fushiLookupClassicPatched / fushiLookupOriginalDrawText / 包装后的
+			// drawText）。フタマタ恋愛 上游戏随即抛
+			// `Script exception raised / Member "enabled" does not exist`——我们的 TJS 源码
+			// 一处都没碰 enabled，是被改动的层参与了**游戏自己**的路径（KAG3 存/恢复图层
+			// 状态时会连我们注入的成员一起拷走，再在错误的宿主上调用）。
+			//
+			// 收窄到消息层子树：定制 KAG3 若把正文画在 messages 之外，最可能是消息层自己
+			// 的**子层**（行层 / 描边层 / 插件建的绘制层），而不是窗口里随便哪个层。
+			// 爆炸半径从"整个窗口"降到"消息层附近"，泛化能力保留，游戏自身逻辑不再被波及。
 			global.fushiLookupLayerTreeRoots = function()
 			{
 				var roots = [];
-				try { if(global.kag.primaryLayer !== void) roots.add(global.kag.primaryLayer); }
-				catch(e) {}
-				try { if(global.kag.fore.base !== void) roots.add(global.kag.fore.base); }
-				catch(e) {}
-				try { if(global.kag.back.base !== void) roots.add(global.kag.back.base); }
-				catch(e) {}
+				for(var page = 1; page <= 2; page++)
+				{
+					var messages = global.fushiLookupMessagesForPage(page);
+					if(messages === void || messages === null) continue;
+					var count = 0;
+					try { count = messages.count; } catch(e) { continue; }
+					for(var i = 0; i < count; i++)
+					{
+						try { if(messages[i] !== void) roots.add(messages[i]); }
+						catch(e) {}
+					}
+				}
 				return roots;
 			};
 
@@ -3125,7 +3145,7 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				if(patched > 0)
 					global.fushiLookupClassicSource = global.fushiLookupClassicSource | 8;
 				// messages 之外的层：位 4 单独记，好让真机上一眼看出扫描面到底扩没扩到树里。
-				global.fushiLookupLayerWalkBudget = 512;
+				global.fushiLookupLayerWalkBudget = 64;
 				var roots = global.fushiLookupLayerTreeRoots();
 				var tree = 0;
 				for(var r = 0; r < roots.count; r++)
