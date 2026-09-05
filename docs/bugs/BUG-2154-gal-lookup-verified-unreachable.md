@@ -4,18 +4,28 @@
 
 ### 根因链（每一步都有代码位置）
 
-1. **`Verified` 没有任何生产者。** 全仓 `lookup_shield_status_flags` 只有三个赋值点，
-   都在通用遮罩层里：`hook/generic_input_shield.inc:1119`（Faulted）、`:1122`
-   （KnownUncovered）、`:1128`（Partial）。`kLookupShieldStatusVerified` 除了在
-   `include/voice_hook_ipc.h:1591-1597` 被**消费**之外，全仓一处都没被**请求**过。
-2. **判定函数根本没有 Verified 这个返回值。** `ClassifyGenericShieldCoverage`
-   （`include/generic_input_shield.h:95-104`）只返回 Faulted / KnownUncovered /
-   Partial / Unknown。`:1128` 的注释自述了理由：
-   > Public API hooks alone are not executable-specific verification. Keep generic
-   > coverage partial until the **per-build 1,000-transaction evidence gate** is recorded.
+1. **通用覆盖恒 Partial 是有意设计，不是 bug。** `hook/generic_input_shield.inc:115-119`
+   把这条写死在注释里：
+   > Generic public-API coverage is always Partial (or a stricter KnownUncovered/Faulted
+   > conclusion), **never Verified**; this micro-window is part of the **explicit risk
+   > acceptance**.
 
-   而那个 "per-build 1,000-transaction evidence gate" **在代码里根本不存在**——注释引用了
-   一个从未实现的机制，于是「暂时 partial」变成了「永远 partial」。
+   `ClassifyGenericShieldCoverage`（`include/generic_input_shield.h:95-104`）因此根本没有
+   Verified 这个返回值，只有 Faulted / KnownUncovered / Partial / Unknown。**这一层没错。**
+2. **但 `Verified` 在全仓没有任何生产者，所以它对谁都不可达——包括有精确 profile 的游戏。**
+   `lookup_shield_status_flags` 全仓只有三个赋值点，全在通用层：
+   `generic_input_shield.inc:1119`（Faulted）、`:1122`（KnownUncovered）、`:1128`（Partial）。
+   `kLookupShieldStatusVerified` 只在 `include/voice_hook_ipc.h:1591-1597` 被**消费**，
+   从未被**请求**过 ⇒ 那段消费逻辑（`fully_ready && !risk_allowed → Verified`）是死代码。
+   精确 profile 的 `ReadExactSampledShieldState`（`:1090-1100`）只贡献 required/ready，
+   结论仍然由通用判定给出。**这一条是真缺陷**：设计上「精确 profile 可免确认」的那条路
+   在代码里断了。
+3. **`:1128` 的注释引用了一个不存在的机制。**
+   > Keep generic coverage partial until the **per-build 1,000-transaction evidence gate**
+   > is recorded.
+
+   该 evidence gate 全仓查无此物。「暂时 partial」于是永远是 partial，而读代码的人会以为
+   存在一条自动升级路径。
 3. **Fushi 侧的门因此恒成立。** `fushi/lib/src/lookup/gal_attached_text_controller.dart:672-681`：
    ```dart
    if (!riskAccepted && _shieldStatus.conclusion != verified) {
@@ -53,8 +63,27 @@
 
 这是真的不对称，但**补齐它不会改变结论**——`ready == required` 之后
 `ClassifyGenericShieldCoverage` 仍然只能返回 Partial。所以它是独立缺陷，另计。
-顺带：`DirectInputCreateEx` 全仓没钩（只钩了 `DirectInputCreateA/W` 和
-`DirectInput8Create`），游戏直接调 `Ex` 就完全绕过。
+
+其中一半**已在本条修掉**：`DirectInputCreateEx` 原来全仓没钩（只钩了 `DirectInputCreateA/W`
+和 `DirectInput8Create`），而 A/W 在 dinput.dll 内部只是 Ex 的包装——游戏直接
+`GetProcAddress("DirectInputCreateEx")` 就完全绕过遮罩层，设备建出来了我们一无所知，
+左键照样穿到游戏里推进对话。这是一条**静默漏路**：没有任何断言会红，只有真机上"点了没反应"。
+- 修复：`hook/generic_input_shield.inc` 增 `Detour_GenericDirectInputCreateEx`（签名与
+  `DirectInput8Create` 同形、带 REFIID，不是 A/W 的四参数形状）+ 独立的 original 指针与
+  hooked 闩。
+- 守卫：`tests/direct_input_factory_coverage_guard_test.py`。判据**不是**手写名单——那正是
+  「漏一个」的同一个失效模式——而是在 Windows 上读系统 `dinput.dll`/`dinput8.dll` 的导出表，
+  取所有 `DirectInput*Create*` 当作必须覆盖集（实测推导出 `DirectInput8Create`/
+  `DirectInputCreateA`/`DirectInputCreateEx`/`DirectInputCreateW` 四个）；系统 DLL 不可读时
+  退回文档集合，绝不静默跳过。另有一条断言禁止两个入口共用同一个 detour 或 original 指针
+  （会串台）。变异实测：抹掉 Ex 那段安装块后守卫报
+  `DirectInputCreateEx: 没有 detour + original 指针的安装块`。
+
+**剩下那一半没修**：`required` 由「dinput 模块在不在」点亮而 `ready` 要靠抓到一次工厂调用，
+这条不对称仍在。正确修法是让 `ready` 也能只靠「模块在」达成——直接给 dinput 设备的**共享
+vtable** 打补丁（`HookFnWithOriginalRegistry` 钩的是槽位里那个函数，一个设备等于全进程），
+再在 detour 里对未注册设备惰性分类（vtable 槽 3 = `GetCapabilities`，`dwDevType` 低字节 == 2
+即鼠标）。没做是因为它不影响本条结论，且需要真机验证「游戏到底建不建 DirectInput 鼠标设备」。
 
 ### 与 BUG-2121 第④段的关系
 
