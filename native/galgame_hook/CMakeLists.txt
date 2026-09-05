@@ -663,3 +663,6 @@ add_test(NAME fushi_unreal_iostore_adapter_test COMMAND fushi_unreal_iostore_ada
 add_executable(fushi_aos_sfa_adapter_test "tests/aos_sfa_adapter_test.cpp")
 target_include_directories(fushi_aos_sfa_adapter_test PRIVATE "hook")
 add_test(NAME fushi_aos_sfa_adapter_test COMMAND fushi_aos_sfa_adapter_test)
+add_executable(fushi_unity_mono_adapter_test "tests/unity_mono_adapter_test.cpp")
+target_include_directories(fushi_unity_mono_adapter_test PRIVATE "hook")
+add_test(NAME fushi_unity_mono_adapter_test COMMAND fushi_unity_mono_adapter_test)
