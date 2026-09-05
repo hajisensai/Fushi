@@ -14,6 +14,8 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/book_css_editor_page.dart';
+import 'package:fushi/src/reader/reader_desktop_chrome.dart'
+    show ReaderSideSheet, ReaderSideSheetSectionLabel;
 import 'package:fushi/src/settings/cupertino_settings_renderer.dart';
 import 'package:fushi/src/settings/master_detail_settings_sheet.dart';
 import 'package:fushi/src/settings/material_settings_renderer.dart';
@@ -23,6 +25,19 @@ import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_renderer.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
 import 'package:fushi/utils.dart';
+
+/// 面板的呈现形态。
+enum ReaderQuickSettingsPresentation {
+  /// 居中对话框（桌面）/ 底部 modal sheet（移动端）：主页 + 分类子页 / 宽窗 master-detail。
+  sheet,
+
+  /// 桌面端右侧抽屉「导航」：阅读进度 + 书内搜索 + 按字数跳转 + 章节列表 + 收藏。
+  sideSheetNavigation,
+
+  /// 桌面端右侧抽屉「外观」（ッツ Appearance 形态）：布局显示 / 阅读操作 / 查词 /
+  /// [有声书] 各组纵向平铺、组名作小号大写标签，末尾歌词模式切换。
+  sideSheetAppearance,
+}
 
 class ReaderQuickSettingsSheet extends StatefulWidget {
   const ReaderQuickSettingsSheet({
@@ -64,6 +79,8 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
     this.onLyricsReload,
     this.onAudioImport,
     this.initialSubPage,
+    this.presentation = ReaderQuickSettingsPresentation.sheet,
+    this.onClose,
     super.key,
   });
 
@@ -131,6 +148,12 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
   /// 默认落主菜单（窄窗）/ 默认分类（宽窗）。仅用于初始化 [_subPage]，
   /// 之后由用户导航自行覆盖。
   final String? initialSubPage;
+
+  /// 呈现形态（桌面端右侧抽屉 vs 既有 sheet），见 [ReaderQuickSettingsPresentation]。
+  final ReaderQuickSettingsPresentation presentation;
+
+  /// 抽屉形态的关闭回调（标题行 ×）。sheet 形态不用（由外壳路由自行关闭）。
+  final VoidCallback? onClose;
 
   @override
   State<ReaderQuickSettingsSheet> createState() =>
@@ -263,6 +286,15 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     final ThemeData theme = Theme.of(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
+    switch (widget.presentation) {
+      case ReaderQuickSettingsPresentation.sideSheetNavigation:
+        return _buildNavigationSideSheet(context, theme);
+      case ReaderQuickSettingsPresentation.sideSheetAppearance:
+        return _buildAppearanceSideSheet(context, theme);
+      case ReaderQuickSettingsPresentation.sheet:
+        break;
+    }
+
     return FushiMasterDetailSettingsSheet(
       // 宽窗 master-detail：选中态始终有值（默认 appearance），返回键应直接关
       // 弹窗而非退回「未选中」；窄窗 push 时保留原「先回主页」语义。
@@ -350,6 +382,69 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
           ),
         );
       },
+    );
+  }
+
+  VoidCallback _sideSheetClose(BuildContext context) =>
+      widget.onClose ?? () => Navigator.of(context).maybePop();
+
+  /// 桌面端右侧抽屉「导航」：进度 + 既有的导航子页内容（搜索 / 字数跳转 / 章节 / 收藏）。
+  Widget _buildNavigationSideSheet(BuildContext context, ThemeData theme) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final double sectionGap = tokens.spacing.gap + tokens.spacing.gap / 2;
+    final Widget progress = _buildProgressSection(theme);
+    return ReaderSideSheet(
+      title: t.section_navigation,
+      onClose: _sideSheetClose(context),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          if (progress is! SizedBox) ...[
+            progress,
+            SizedBox(height: sectionGap),
+          ],
+          _buildLocationSection(theme),
+        ],
+      ),
+    );
+  }
+
+  /// 桌面端右侧抽屉「外观」（ッツ Appearance 形态）：除导航外的各分类纵向平铺，
+  /// 组名作小号大写标签；末尾放歌词模式切换（退出走顶部工具栏的返回键）。
+  Widget _buildAppearanceSideSheet(BuildContext context, ThemeData theme) {
+    final List<Widget> children = <Widget>[];
+    for (final cat in _wideCategories()) {
+      if (cat.id == 'location') continue;
+      children
+        ..add(ReaderSideSheetSectionLabel(cat.label))
+        ..add(_subPageContent(cat.id));
+    }
+    if (widget.onToggleLyricsMode != null) {
+      children
+        ..add(ReaderSideSheetSectionLabel(t.lyrics_mode))
+        ..add(AdaptiveSettingsSection(children: <Widget>[
+          AdaptiveSettingsNavigationRow(
+            key: const ValueKey<String>('fushi_lyrics_mode_toggle'),
+            title: widget.lyricsMode ? t.book_mode : t.lyrics_mode,
+            icon: widget.lyricsMode
+                ? Icons.auto_stories_outlined
+                : Icons.lyrics_outlined,
+            onTap: () {
+              Navigator.of(context).pop();
+              widget.onToggleLyricsMode!();
+            },
+          ),
+        ]));
+    }
+    return ReaderSideSheet(
+      title: t.settings_destination_appearance,
+      onClose: _sideSheetClose(context),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: children,
+      ),
     );
   }
 

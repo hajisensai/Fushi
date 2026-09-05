@@ -72,6 +72,7 @@ import 'package:fushi/src/reader/reader_selection_data.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi/src/reader/reader_chrome_floating.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
+import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 import 'package:fushi/src/reader/reader_status_footer.dart';
 import 'package:fushi/src/reader/reader_top_progress.dart';
 import 'package:fushi/src/reader/ttu_toc_flatten.dart';
@@ -1922,6 +1923,22 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
         footerHeight: kReaderStatusFooterHeight,
       );
 
+  /// 桌面端 ッツ 形态 chrome（顶部工具栏 + 右侧抽屉）是否启用：与状态行同判据
+  /// （桌面且非歌词模式），单一真相源 [readerDesktopChromeEnabled]。
+  bool get _desktopChromeEnabled => readerDesktopChromeEnabled(
+        desktop: isDesktopPlatform,
+        lyricsMode: _lyricsMode,
+      );
+
+  /// 顶部工具栏的顶部预留高：悬浮态（默认）恒 0；挤压态且底栏占位时占工具栏高
+  /// （与 [_bottomChromeReserve] 同一台状态机的上端），并入 [_readerTopOffset]。
+  double get _desktopHeaderReserve => readerDesktopHeaderReserve(
+        enabled: _desktopChromeEnabled,
+        barOccupiesLayout: _hasEverLoaded && _showChrome,
+        floating: _bottomBarFloating,
+        headerHeight: kReaderDesktopHeaderHeight,
+      );
+
   /// 顶部进度信息条的预留高（单一真相源 [kTopProgressStripHeight]）。历史值为裸
   /// `_infoFontSize * 1.5`，未计入 BUG-547 毛玻璃 pill 后加的上下内边距，导致挤压模式
   /// 下 pill 实高（文字行盒 + 6px 内边距）超出预留、压住正文首行；现改为共享
@@ -1994,8 +2011,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// macOS 原生全屏态。非 macOS 恒为 false。
   bool _macosFullscreen = false;
 
-  double get _readerTopOffset =>
-      _stableTopInset + _macosWindowTitlebarInset + _topProgressReserve;
+  double get _readerTopOffset => _stableTopInset +
+      _macosWindowTitlebarInset +
+      _topProgressReserve +
+      _desktopHeaderReserve;
 
   double get _readerBottomReserve =>
       _bottomChromeReserve + _statusFooterReserve + _stableBottomInset;
@@ -3080,6 +3099,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                         ),
                       ),
                     _buildTopProgressBar(),
+                    // 桌面端顶部工具栏（ッツ 形态）：与底栏同一显隐状态机，排在词典弹层之前。
+                    _buildDesktopHeader(),
                     // 桌面端底部状态行：排在词典弹层 / 底栏之前，让它们盖在其上。
                     _buildStatusFooter(),
                     buildDictionary(),
