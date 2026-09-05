@@ -724,7 +724,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 95;
+  int get schemaVersion => 96;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -2896,6 +2896,25 @@ class FushiDatabase extends _$FushiDatabase
             // 幂等：fresh DB 由 onCreate 的 createAll 建好；重复升级被 `_tableExists` 短路。
             if (!await _tableExists('video_file_specs')) {
               await m.createTable(videoFileSpecs);
+            }
+          }
+          if (from < 96) {
+            // v96（BUG-2158 词典折叠三态）：dictionary_metadata 加
+            // expanded_languages_json，给「用户显式展开」一个可持久化的态。
+            //
+            // 为什么只能开新台阶而不是塞进 from < 95：已发布的版本号是只读的
+            // （v88 那步的注释里记着这条教训的实测代价）——已经跑过 95 的库不会再
+            // 执行 `from < 95`，那批用户的写路径会直接撞 no such column。
+            //
+            // 无损：列有 default '[]' → 旧库既有行升级后全是空名单 = 全部「继承」
+            // = 逐字节保持 v96 前的折叠行为（Never break userspace）。
+            // 幂等：fresh DB 由 onCreate 的 createAll 建好；重复升级被
+            // _columnExists 短路。
+            if (await _tableExists('dictionary_metadata') &&
+                !await _columnExists(
+                    'dictionary_metadata', 'expanded_languages_json')) {
+              await m.addColumn(dictionaryMetadata,
+                  dictionaryMetadata.expandedLanguagesJson);
             }
           }
         },
