@@ -191,21 +191,38 @@ struct BlockMeta {
 
 namespace {
 
-struct ContainerData {
+// One record block: where its compressed bytes sit in the file, and where its
+// decompressed bytes land in the conceptual concatenated stream that the key
+// table's record_offset values index into.
+struct RecordBlockMeta {
+  uint64_t file_offset = 0;
+  uint64_t compressed_size = 0;
+  uint64_t decompressed_size = 0;
+  uint64_t decompressed_base = 0;
+};
+
+// The container parsed down to its index: header metadata, the decoded key
+// table, and the record block table. Record bytes are deliberately NOT
+// decompressed here -- callers stream them one block at a time (stream_records)
+// or pull individual records back (extract_records). Materialising the whole
+// decompressed stream is what used to make a 400 MB dictionary need well over a
+// gigabyte of heap and get the app jetsam-killed on iOS.
+struct ContainerIndex {
   std::string title;
   std::string encoding;
   int version_major = 0;
   int version_minor = 0;
   bool is_utf16 = false;
   std::vector<KeyEntry> keys;
-  std::vector<uint8_t> all_records;
+  std::vector<RecordBlockMeta> record_metas;
+  uint64_t total_decompressed = 0;
 };
 
-// Parse the MDX/MDD container down to decoded keys + the concatenated raw record
-// stream. Shared by parse() (text records) and parse_mdd() (binary records) --
-// they differ only in how each record slice is interpreted afterwards.
-ContainerData parse_container(const uint8_t* data, size_t size) {
-  ContainerData result;
+// Parse the MDX/MDD container down to decoded keys + the record block table.
+// Shared by parse() (text records) and parse_mdd() (binary records) -- they
+// differ only in how each record slice is interpreted afterwards.
+ContainerIndex parse_container_index(const uint8_t* data, size_t size) {
+  ContainerIndex result;
   if (size < 8) throw std::runtime_error("mdx: file too small");
 
   size_t pos = 0;
@@ -472,10 +489,6 @@ ContainerData parse_container(const uint8_t* data, size_t size) {
 
   if (pos + record_block_info_size > size) throw std::runtime_error("mdx: record block info overflow");
 
-  struct RecordBlockMeta {
-    uint64_t compressed_size;
-    uint64_t decompressed_size;
-  };
   std::vector<RecordBlockMeta> record_metas;
   record_metas.reserve(num_record_blocks);
 
@@ -497,110 +510,341 @@ ContainerData parse_container(const uint8_t* data, size_t size) {
     record_metas.push_back(meta);
   }
 
-  // Decompress all record blocks
-  std::vector<uint8_t> all_records;
+  // Locate each record block instead of decompressing it. `pos` now sits at the
+  // first block's compressed bytes; walking the table assigns every block both
+  // its file offset and its base in the decompressed stream, which is what lets
+  // a block be inflated on its own later (in order, or by targeted lookup).
+  //
+  // A block whose compressed bytes run past EOF truncates the table here, which
+  // is the same point the old eager loop stopped decompressing at.
   {
-    uint64_t total = 0;
-    for (const auto& m : record_metas) total += m.decompressed_size;
-    all_records.reserve(total);
-  }
-
-  for (const auto& meta : record_metas) {
-    if (pos + meta.compressed_size > size) break;
-
-    if (meta.compressed_size != meta.decompressed_size && meta.compressed_size >= 8) {
-      auto block = decompress_block(data + pos, meta.compressed_size, meta.decompressed_size);
-      if (!block.empty()) {
-        all_records.insert(all_records.end(), block.begin(), block.end());
-      }
-    } else {
-      // Uncompressed (or runt < 8B) record block: same OOB hazard as the key
-      // block path above -- the pos+compressed_size guard does not cover a
-      // decompressed_size that runs past data + size. Bound the copy.
-      if (pos + meta.decompressed_size > size) break;
-      all_records.insert(all_records.end(), data + pos, data + pos + meta.decompressed_size);
+    uint64_t block_pos = pos;
+    uint64_t running_base = 0;
+    size_t usable = 0;
+    for (auto& meta : record_metas) {
+      if (block_pos + meta.compressed_size > size) break;
+      meta.file_offset = block_pos;
+      meta.decompressed_base = running_base;
+      block_pos += meta.compressed_size;
+      running_base += meta.decompressed_size;
+      usable++;
     }
-    pos += meta.compressed_size;
+    record_metas.resize(usable);
+    result.total_decompressed = running_base;
   }
 
   result.is_utf16 = is_utf16;
   result.keys = std::move(keys);
-  result.all_records = std::move(all_records);
+  result.record_metas = std::move(record_metas);
   return result;
+}
+
+// Inflate a single record block. Mirrors the old inline logic: a block whose
+// compressed size equals its decompressed size (or is a runt < 8 B) is stored
+// verbatim, and that raw copy is bounded against the source buffer exactly like
+// the key-block path -- the file_offset+compressed_size check does not cover a
+// corrupt decompressed_size that would read past data + size.
+bool decompress_record_block(const uint8_t* data, size_t size, const RecordBlockMeta& meta,
+                             std::vector<uint8_t>& out) {
+  if (meta.file_offset + meta.compressed_size > size) return false;
+  const uint8_t* src = data + meta.file_offset;
+
+  if (meta.compressed_size != meta.decompressed_size && meta.compressed_size >= 8) {
+    out = decompress_block(src, meta.compressed_size, meta.decompressed_size);
+    return !out.empty();
+  }
+  if (meta.file_offset + meta.decompressed_size > size) return false;
+  out.assign(src, src + meta.decompressed_size);
+  return true;
+}
+
+// Byte span of the record belonging to key `i` within the decompressed stream.
+uint64_t record_end_offset(const ContainerIndex& idx, size_t i) {
+  return (i + 1 < idx.keys.size()) ? idx.keys[i + 1].record_offset : idx.total_decompressed;
+}
+
+// Visit every record in key order while holding at most one block -- plus any
+// record straddling a block boundary -- in memory.
+//
+// A block that fails to inflate is skipped along with the entries living in it,
+// rather than dropping its bytes while keeping its span: key offsets index the
+// decompressed stream, so a silent hole would misalign every later entry and
+// hand back garbage definitions for the rest of the dictionary.
+void stream_records(const uint8_t* data, size_t size, ContainerIndex& idx,
+                    const std::function<void(size_t key_index, const uint8_t* rec, size_t len)>& sink) {
+  if (idx.keys.empty()) return;
+
+  std::vector<uint8_t> window;  // covers [window_base, window_base + window.size())
+  std::vector<uint8_t> block;
+  uint64_t window_base = 0;
+  size_t key_index = 0;
+
+  for (const auto& meta : idx.record_metas) {
+    if (key_index >= idx.keys.size()) break;
+
+    if (!decompress_record_block(data, size, meta, block)) {
+      const uint64_t block_end = meta.decompressed_base + meta.decompressed_size;
+      while (key_index < idx.keys.size() && idx.keys[key_index].record_offset < block_end) key_index++;
+      window.clear();
+      window_base = block_end;
+      continue;
+    }
+
+    // Resync rather than concatenating across a dropped block.
+    if (window_base + window.size() != meta.decompressed_base) {
+      window.clear();
+      window_base = meta.decompressed_base;
+    }
+    window.insert(window.end(), block.begin(), block.end());
+    const uint64_t window_end = window_base + window.size();
+
+    while (key_index < idx.keys.size()) {
+      const uint64_t start = idx.keys[key_index].record_offset;
+      const uint64_t end = record_end_offset(idx, key_index);
+      if (end > window_end) break;  // record continues into the next block
+      if (start < window_base || start >= end) {
+        key_index++;
+        continue;
+      }
+      sink(key_index, window.data() + (start - window_base), static_cast<size_t>(end - start));
+      key_index++;
+    }
+
+    // Release everything the remaining entries can no longer reach.
+    const uint64_t keep_from = (key_index < idx.keys.size())
+                                   ? std::max<uint64_t>(idx.keys[key_index].record_offset, window_base)
+                                   : window_end;
+    if (keep_from > window_base) {
+      window.erase(window.begin(), window.begin() + static_cast<std::ptrdiff_t>(keep_from - window_base));
+      window_base = keep_from;
+    }
+  }
+}
+
+// Pull back individual records named by key index, inflating only the blocks
+// those records actually live in. Used to resolve @@@LINK= targets after the
+// forward pass, so a redirect-heavy dictionary costs a handful of extra block
+// inflations instead of a second full decompression.
+void extract_records(const uint8_t* data, size_t size, const ContainerIndex& idx,
+                     const std::vector<size_t>& wanted,
+                     const std::function<void(size_t key_index, const uint8_t* rec, size_t len)>& sink) {
+  if (idx.record_metas.empty()) return;
+
+  // Last block whose decompressed_base is <= off.
+  auto block_for = [&](uint64_t off) -> size_t {
+    size_t lo = 0, hi = idx.record_metas.size();
+    while (lo + 1 < hi) {
+      size_t mid = lo + (hi - lo) / 2;
+      if (idx.record_metas[mid].decompressed_base <= off) {
+        lo = mid;
+      } else {
+        hi = mid;
+      }
+    }
+    return lo;
+  };
+
+  std::vector<uint8_t> block;
+  std::vector<uint8_t> joined;
+  size_t cached = SIZE_MAX;
+
+  for (size_t ki : wanted) {
+    if (ki >= idx.keys.size()) continue;
+    const uint64_t start = idx.keys[ki].record_offset;
+    const uint64_t end = record_end_offset(idx, ki);
+    if (start >= end || end > idx.total_decompressed) continue;
+
+    const size_t first = block_for(start);
+    const size_t last = block_for(end - 1);
+
+    if (first == last) {
+      if (cached != first) {
+        if (!decompress_record_block(data, size, idx.record_metas[first], block)) {
+          cached = SIZE_MAX;
+          continue;
+        }
+        cached = first;
+      }
+      const uint64_t base = idx.record_metas[first].decompressed_base;
+      if (start < base || end - base > block.size()) continue;
+      sink(ki, block.data() + (start - base), static_cast<size_t>(end - start));
+      continue;
+    }
+
+    // Straddles a boundary: stitch just the covered blocks for this one record.
+    joined.clear();
+    bool ok = true;
+    for (size_t b = first; b <= last; b++) {
+      std::vector<uint8_t> part;
+      if (!decompress_record_block(data, size, idx.record_metas[b], part)) {
+        ok = false;
+        break;
+      }
+      joined.insert(joined.end(), part.begin(), part.end());
+    }
+    cached = SIZE_MAX;
+    if (!ok) continue;
+    const uint64_t base = idx.record_metas[first].decompressed_base;
+    if (start < base || end - base > joined.size()) continue;
+    sink(ki, joined.data() + (start - base), static_cast<size_t>(end - start));
+  }
 }
 
 }  // namespace
 
+namespace {
+
+// Strip the trailing CR/LF/space MDict writers leave on a redirect target.
+std::string link_target_of(const std::string& definition) {
+  std::string target = definition.substr(8);
+  while (!target.empty() && (target.back() == '\r' || target.back() == '\n' || target.back() == ' ')) {
+    target.pop_back();
+  }
+  return target;
+}
+
+}  // namespace
+
+MdxMeta mdx_reader::parse_streaming(const uint8_t* data, size_t size, const EntrySink& sink) {
+  ContainerIndex idx = parse_container_index(data, size);
+
+  MdxMeta meta;
+  meta.title = idx.title;
+  meta.encoding = idx.encoding;
+  meta.version_major = idx.version_major;
+  meta.version_minor = idx.version_minor;
+
+  // Text semantics for one record slice.
+  const bool is_utf16 = idx.is_utf16;
+  auto to_text = [is_utf16](const uint8_t* rec, size_t len) -> std::string {
+    std::string s = is_utf16 ? utf16le_to_utf8(rec, len)
+                             : std::string(reinterpret_cast<const char*>(rec), len);
+    while (!s.empty() && s.back() == '\0') s.pop_back();
+    return s;
+  };
+
+  // A @@@LINK= redirect names a headword that can sit anywhere in the file, so
+  // it cannot be resolved during a single forward pass. Redirect bodies are a
+  // few dozen bytes each, so park them and resolve afterwards by inflating only
+  // the blocks their targets live in -- rather than keeping the whole
+  // dictionary around just in case something points backwards.
+  struct PendingLink {
+    size_t key_index;
+    std::string target;
+  };
+  std::vector<PendingLink> links;
+
+  stream_records(data, size, idx, [&](size_t ki, const uint8_t* rec, size_t len) {
+    std::string text = to_text(rec, len);
+    if (text.starts_with("@@@LINK=")) {
+      links.push_back({ki, link_target_of(text)});
+      return;
+    }
+    sink(std::string(idx.keys[ki].headword), std::move(text));
+  });
+
+  if (links.empty()) return meta;
+
+  // Redirects are resolved entirely at the INDEX level: chains are walked over
+  // key indices and no definition text is ever retained. Holding target text
+  // instead would reintroduce exactly the blow-up this rewrite exists to remove
+  // -- a redirect-heavy dictionary can name millions of targets whose combined
+  // HTML runs to gigabytes.
+  constexpr size_t kNoKey = static_cast<size_t>(-1);
+
+  // Only the headwords redirects actually name, not a table over every key.
+  std::unordered_map<std::string_view, size_t> target_index;
+  target_index.reserve(links.size());
+  for (const auto& link : links) {
+    target_index.emplace(std::string_view(link.target), kNoKey);
+  }
+  // One linear pass over the key table resolves them all. Duplicate headwords
+  // keep the first, matching the old whole-table key_map.
+  for (size_t i = 0; i < idx.keys.size(); i++) {
+    auto it = target_index.find(std::string_view(idx.keys[i].headword));
+    if (it != target_index.end() && it->second == kNoKey) it->second = i;
+  }
+
+  // Redirect key index -> the key index it points at.
+  std::unordered_map<size_t, size_t> redirect_target;
+  redirect_target.reserve(links.size());
+  for (const auto& link : links) {
+    auto it = target_index.find(std::string_view(link.target));
+    redirect_target.emplace(link.key_index, it == target_index.end() ? kNoKey : it->second);
+  }
+
+  // Walk chains over indices (a target may itself be a redirect, and a chain may
+  // point backwards), bounded by the same 10 hops the old resolution allowed.
+  // Group the redirects by the record they ultimately need, carrying the link's
+  // position so each one can be marked off once its text has been handed over.
+  std::unordered_map<size_t, std::vector<size_t>> links_by_target;
+  for (size_t pos = 0; pos < links.size(); pos++) {
+    size_t target = redirect_target[links[pos].key_index];
+    for (int hop = 0; hop < 10 && target != kNoKey; hop++) {
+      auto next = redirect_target.find(target);
+      if (next == redirect_target.end()) break;  // lands on a real entry
+      target = next->second;
+    }
+    if (target == kNoKey || redirect_target.count(target)) continue;  // dangling or circular
+    links_by_target[target].push_back(pos);
+  }
+
+  // Pull each needed record back once and emit its aliases on the spot, so the
+  // text lives only for the duration of the callback. Sorted so the targeted
+  // reader walks blocks forward and can reuse the one it just inflated.
+  std::vector<size_t> targets;
+  targets.reserve(links_by_target.size());
+  for (const auto& [target, _] : links_by_target) targets.push_back(target);
+  std::sort(targets.begin(), targets.end());
+
+  // Aliases carry their target's bytes verbatim: byte-identical definitions are
+  // what let the importer collapse them onto one glossary blob by hash
+  // (BUG-1665), so this must stay a faithful copy, not a reference.
+  std::vector<bool> resolved(links.size(), false);
+  extract_records(data, size, idx, targets, [&](size_t ki, const uint8_t* rec, size_t len) {
+    auto it = links_by_target.find(ki);
+    if (it == links_by_target.end()) return;
+    std::string definition = to_text(rec, len);
+    for (size_t pos : it->second) {
+      sink(std::string(idx.keys[links[pos].key_index].headword), std::string(definition));
+      resolved[pos] = true;
+    }
+  });
+
+  // A redirect whose target is dangling, circular or unreadable keeps its
+  // "@@@LINK=" body -- import_mdx drops those, and parse() reports them exactly
+  // as the old whole-table resolution left them.
+  for (size_t pos = 0; pos < links.size(); pos++) {
+    if (resolved[pos]) continue;
+    sink(std::string(idx.keys[links[pos].key_index].headword), "@@@LINK=" + links[pos].target);
+  }
+
+  return meta;
+}
+
 MdxResult mdx_reader::parse(const uint8_t* data, size_t size) {
-  ContainerData c = parse_container(data, size);
-
   MdxResult result;
-  result.title = std::move(c.title);
-  result.encoding = std::move(c.encoding);
-  result.version_major = c.version_major;
-  result.version_minor = c.version_minor;
-
-  // Build entries: each record slice is a text (HTML) definition.
-  result.entries.reserve(c.keys.size());
-  for (size_t i = 0; i < c.keys.size(); i++) {
-    uint64_t start = c.keys[i].record_offset;
-    uint64_t end = (i + 1 < c.keys.size()) ? c.keys[i + 1].record_offset : c.all_records.size();
-
-    if (start >= c.all_records.size() || end > c.all_records.size() || start >= end) continue;
-
-    std::string definition;
-    if (c.is_utf16) {
-      definition = utf16le_to_utf8(c.all_records.data() + start, end - start);
-    } else {
-      definition.assign(reinterpret_cast<const char*>(c.all_records.data() + start), end - start);
-    }
-
-    while (!definition.empty() && definition.back() == '\0') definition.pop_back();
-
-    result.entries.push_back({std::move(c.keys[i].headword), std::move(definition)});
-  }
-
-  // Resolve @@@LINK= redirects (follow chains up to 10 hops)
-  std::unordered_map<std::string, size_t> key_map;
-  key_map.reserve(result.entries.size());
-  for (size_t i = 0; i < result.entries.size(); i++) {
-    key_map.emplace(result.entries[i].key, i);
-  }
-
-  for (auto& entry : result.entries) {
-    int depth = 0;
-    while (entry.definition.starts_with("@@@LINK=") && depth < 10) {
-      std::string target = entry.definition.substr(8);
-      while (!target.empty() && (target.back() == '\r' || target.back() == '\n' || target.back() == ' ')) {
-        target.pop_back();
-      }
-      auto it = key_map.find(target);
-      if (it == key_map.end()) break;
-      entry.definition = result.entries[it->second].definition;
-      depth++;
-    }
-  }
-
+  MdxMeta meta = parse_streaming(data, size, [&](std::string&& key, std::string&& definition) {
+    result.entries.push_back({std::move(key), std::move(definition)});
+  });
+  result.title = std::move(meta.title);
+  result.encoding = std::move(meta.encoding);
+  result.version_major = meta.version_major;
+  result.version_minor = meta.version_minor;
   return result;
 }
 
 std::vector<MddEntry> mdx_reader::parse_mdd(const uint8_t* data, size_t size) {
-  ContainerData c = parse_container(data, size);
+  ContainerIndex idx = parse_container_index(data, size);
 
   // Each record slice is a raw binary file (image/audio/css/font); the key is
   // its path. Keep bytes verbatim -- no transcoding, no trailing-NUL stripping
   // (a PNG/JPEG legitimately ends in NUL bytes), no @@@LINK resolution.
   std::vector<MddEntry> out;
-  out.reserve(c.keys.size());
-  for (size_t i = 0; i < c.keys.size(); i++) {
-    uint64_t start = c.keys[i].record_offset;
-    uint64_t end = (i + 1 < c.keys.size()) ? c.keys[i + 1].record_offset : c.all_records.size();
-
-    if (start >= c.all_records.size() || end > c.all_records.size() || start >= end) continue;
-
-    out.push_back(MddEntry{std::move(c.keys[i].headword),
-                           std::string(reinterpret_cast<const char*>(c.all_records.data() + start),
-                                       static_cast<size_t>(end - start))});
-  }
+  out.reserve(idx.keys.size());
+  stream_records(data, size, idx, [&](size_t ki, const uint8_t* rec, size_t len) {
+    out.push_back(MddEntry{std::move(idx.keys[ki].headword),
+                           std::string(reinterpret_cast<const char*>(rec), len)});
+  });
   return out;
 }

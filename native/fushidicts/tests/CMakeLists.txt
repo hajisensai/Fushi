@@ -163,6 +163,13 @@ add_fushi_test(mdd_media_import_test mdd_media_import_test.cpp
 add_fushi_test(mdd_empty_encoding_test mdd_empty_encoding_test.cpp
     "${FUSHI_SRC}/mdx"
     "${FUSHI_ROOT}/fushidicts_external/libdeflate")
+# MDX records are inflated one block at a time (streaming import), so a record
+# can straddle a block boundary and a @@@LINK= target can live in a different
+# block than the redirect. Every other fixture emits a single record block and
+# cannot reach those paths.
+add_fushi_test(mdx_streaming_blocks_test mdx_streaming_blocks_test.cpp
+    "${FUSHI_SRC}/mdx"
+    "${FUSHI_ROOT}/fushidicts_external/libdeflate")
 # import_breadcrumb_test includes "util/import_breadcrumb.hpp" rooted at
 # fushidicts_src/.
 add_fushi_test(import_breadcrumb_test import_breadcrumb_test.cpp

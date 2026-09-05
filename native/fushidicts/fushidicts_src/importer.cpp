@@ -30,6 +30,7 @@
 #include "hash/hash.hpp"
 #include "json/yomitan_parser.hpp"
 #include "mdx/mdx_reader.hpp"
+#include "memory/memory.hpp"
 #include "stardict/stardict_reader.hpp"
 #include "util/fs_utf8.hpp"
 #include "util/import_breadcrumb.hpp"
@@ -1073,22 +1074,34 @@ std::vector<std::string> collect_sibling_mdd_paths(const std::string& mdx_path) 
   return mdd_paths;
 }
 
-ProcessedFile process_simple_entries(const std::vector<SimpleEntry>& entries) {
-  ProcessedFile processed;
-  if (entries.empty()) {
-    return processed;
+// Incremental builder for the simple-dictionary (MDX / StarDict / DSL) record
+// stream. The per-entry logic lives here exactly once so the whole-vector
+// callers and the streaming MDX caller cannot drift apart on caps, glossary
+// dedup or record layout.
+//
+// Feeding entries one at a time is what lets import_mdx avoid materialising the
+// dictionary: a 400 MB .mdx used to need the file buffer, the fully decompressed
+// record stream and a copy of every entry alive at once (~1.6 GB peak), which
+// iOS jetsam kills the app for.
+class SimpleEntryAccumulator {
+ public:
+  SimpleEntryAccumulator() : cctx_(ZSTD_createCCtx()) {}
+  ~SimpleEntryAccumulator() {
+    if (cctx_) ZSTD_freeCCtx(cctx_);
   }
+  SimpleEntryAccumulator(const SimpleEntryAccumulator&) = delete;
+  SimpleEntryAccumulator& operator=(const SimpleEntryAccumulator&) = delete;
 
-  std::vector<char> compressed;
-  ZSTD_CCtx* cctx = ZSTD_createCCtx();
-  if (!cctx) {
-    return processed;
-  }
+  // Returns false once a whole-dictionary cap is hit; the caller should stop
+  // feeding, and anything fed afterwards is ignored. An entry rejected on its
+  // own merits (oversized glossary or headword) is skipped but returns true.
+  bool add(std::string_view headword, std::string_view glossary) {
+    if (!cctx_ || stopped_) return false;
 
-  for (const auto& entry : entries) {
-    if (processed.data.size() > kMaxDataBufferBytes) {
+    if (processed_.data.size() > kMaxDataBufferBytes) {
       FUSHI_LOGW("simple entries data buffer exceeded %zu bytes, stopping", kMaxDataBufferBytes);
-      break;
+      stopped_ = true;
+      return false;
     }
     // BUG-1904：这里是 MDX / DSL 的**整本词典**条目流，不是 Yomitan 的单个
     // term_bank_N.json。kMaxEntriesPerBank 是给后者设计的——一本 Yomitan 词典摊成
@@ -1097,67 +1110,85 @@ ProcessedFile process_simple_entries(const std::vector<SimpleEntry>& entries) {
     // 1,086,308 条，被这里砍到正好 1,000,000（少 86,308），导入还报 success。
     // 整词典级别的 OOM 保护应当是 kMaxTotalEntries；数据量本身另有
     // kMaxDataBufferBytes（1 GB）与单条 kMaxGlossarySizeBytes 兜底，三道都还在。
-    if (processed.count >= kMaxTotalEntries) {
+    if (processed_.count >= kMaxTotalEntries) {
       FUSHI_LOGW("simple entries count exceeded %zu, stopping", kMaxTotalEntries);
-      break;
+      stopped_ = true;
+      return false;
     }
 
-    const std::string_view glossary = entry.definition;
     if (glossary.size() > kMaxGlossarySizeBytes) {
       FUSHI_LOGW("glossary too large (%zu bytes), skipping entry", glossary.size());
-      continue;
+      return true;
+    }
+    // Checked before the glossary is compressed: a rejected entry must not leave
+    // an unreferenced blob behind in the dedup table.
+    if (headword.size() > std::numeric_limits<uint16_t>::max()) {
+      FUSHI_LOGW("expression too long (%zu bytes), skipping entry", headword.size());
+      return true;
     }
 
     uint64_t glossary_hash = XXH3_64bits(glossary.data(), glossary.size());
-    auto it = processed.glossaries.find(glossary_hash);
-    if (it == processed.glossaries.end()) {
+    auto it = processed_.glossaries.find(glossary_hash);
+    if (it == processed_.glossaries.end()) {
       const size_t bound = ZSTD_compressBound(glossary.size());
-      compressed.resize(bound);
+      compressed_.resize(bound);
       const size_t compressed_size =
-          ZSTD_compressCCtx(cctx, compressed.data(), bound, glossary.data(), glossary.size(), 0);
+          ZSTD_compressCCtx(cctx_, compressed_.data(), bound, glossary.data(), glossary.size(), 0);
       if (ZSTD_isError(compressed_size)) {
-        ZSTD_freeCCtx(cctx);
         throw std::runtime_error("failed to compress glossary");
       }
-      compressed.resize(compressed_size);
-      processed.glossaries.emplace(glossary_hash, compressed);
+      compressed_.resize(compressed_size);
+      processed_.glossaries.emplace(glossary_hash, compressed_);
     }
 
-    uint64_t offset = processed.data.size();
-    uint32_t blob_size = static_cast<uint32_t>(processed.glossaries[glossary_hash].size());
-    std::string_view expr = entry.headword;
+    uint64_t offset = processed_.data.size();
+    uint32_t blob_size = static_cast<uint32_t>(processed_.glossaries[glossary_hash].size());
 
-    if (expr.size() > std::numeric_limits<uint16_t>::max()) {
-      FUSHI_LOGW("expression too long (%zu bytes), skipping entry", expr.size());
-      continue;
-    }
+    write_val<uint8_t>(processed_.data, 0);
+    write_val<uint16_t>(processed_.data, static_cast<uint16_t>(headword.size()));
+    write_str(processed_.data, headword);
+    write_val<uint16_t>(processed_.data, 0);  // reading_len = 0
 
-    write_val<uint8_t>(processed.data, 0);
-    write_val<uint16_t>(processed.data, static_cast<uint16_t>(expr.size()));
-    write_str(processed.data, expr);
-    write_val<uint16_t>(processed.data, 0);  // reading_len = 0
+    uint64_t glossary_offset = processed_.data.size();
+    write_val<uint64_t>(processed_.data, 0);
+    write_val<uint32_t>(processed_.data, blob_size);
+    processed_.glossary_offsets.emplace_back(glossary_hash, glossary_offset);
 
-    uint64_t glossary_offset = processed.data.size();
-    write_val<uint64_t>(processed.data, 0);
-    write_val<uint32_t>(processed.data, blob_size);
-    processed.glossary_offsets.emplace_back(glossary_hash, glossary_offset);
-
-    write_val<uint8_t>(processed.data, 0);  // def_tags_len = 0
+    write_val<uint8_t>(processed_.data, 0);  // def_tags_len = 0
     // rules = "*": simple dicts have no per-term POS. The wildcard makes
     // filter_by_pos keep these terms for deinflected (inflected-form) lookups
     // instead of erasing them; see Deinflector::pos_to_conditions. Stored as a
     // normal variable-length rules string (reader consumes it by length).
-    write_val<uint8_t>(processed.data, 1);  // rules_len = 1
-    write_val<uint8_t>(processed.data, static_cast<uint8_t>('*'));
-    write_val<uint8_t>(processed.data, 0);  // term_tags_len = 0
+    write_val<uint8_t>(processed_.data, 1);  // rules_len = 1
+    write_val<uint8_t>(processed_.data, static_cast<uint8_t>('*'));
+    write_val<uint8_t>(processed_.data, 0);  // term_tags_len = 0
 
-    processed.offsets.emplace_back(XXH3_64bits(expr.data(), expr.size()), offset);
-    processed.count++;
+    processed_.offsets.emplace_back(XXH3_64bits(headword.data(), headword.size()), offset);
+    processed_.count++;
+    return true;
   }
-  ZSTD_freeCCtx(cctx);
 
-  return processed;
+  ProcessedFile finish() { return std::move(processed_); }
+
+ private:
+  ProcessedFile processed_;
+  ZSTD_CCtx* cctx_ = nullptr;
+  std::vector<char> compressed_;
+  bool stopped_ = false;
+};
+
+ProcessedFile process_simple_entries(const std::vector<SimpleEntry>& entries) {
+  SimpleEntryAccumulator accumulator;
+  for (const auto& entry : entries) {
+    if (!accumulator.add(entry.headword, entry.definition)) break;
+  }
+  return accumulator.finish();
 }
+
+// Defined next to write_simple_dict; declared here so import_mdx can hand it a
+// stream-built ProcessedFile without going through a materialised entry vector.
+ImportResult write_processed_simple_dict(const std::string& title, ProcessedFile&& processed,
+                                         const std::string& output_dir, const std::string& styles_css);
 
 // Read a whole file into a string. "" if absent/empty/unreadable.
 std::string read_file_text(const std::filesystem::path& p) {
@@ -1293,35 +1324,45 @@ std::string read_sibling_css(const std::string& primary_path, const std::vector<
 }
 
 ImportResult import_mdx(const std::string& mdx_path, const std::string& output_dir) {
-  std::ifstream file(fushi::fs_path(mdx_path), std::ios::binary | std::ios::ate);
-  if (!file.is_open()) {
+  // Mapped, not read: a 400 MB dictionary would otherwise open with a 400 MB
+  // heap buffer that stays resident for the whole import. Mapped pages are clean
+  // and file-backed, so the OS reclaims them under pressure instead of the
+  // process being killed for holding them (iOS jetsam).
+  memory::mapped_file mapped = memory::map_rd(mdx_path);
+  if (!mapped) {
     return {.success = false, .errors = {"failed to open MDX file"}};
   }
+  struct MappingGuard {
+    memory::mapped_file file;
+    ~MappingGuard() { memory::unmap(file); }
+  } mapping_guard{mapped};
 
-  auto size = file.tellg();
-  file.seekg(0);
-  std::vector<uint8_t> data(size);
-  file.read(reinterpret_cast<char*>(data.data()), size);
+  // The <link>/<script> scans only look at the first kCssScanEntryLimit
+  // definitions, so retain exactly that many as they stream past. That is the
+  // only reason to hold on to any entry at all.
+  std::vector<SimpleEntry> css_scan_sample;
+  SimpleEntryAccumulator accumulator;
+  std::string title;
 
-  MdxResult mdx;
   try {
-    mdx = mdx_reader::parse(data.data(), data.size());
+    MdxMeta meta = mdx_reader::parse_streaming(mapped.data, mapped.size,
+                                               [&](std::string&& key, std::string&& definition) {
+                                                 if (key.empty()) return;
+                                                 // Unresolvable @@@LINK= (circular or dangling) —
+                                                 // already attempted in mdx_reader
+                                                 if (definition.starts_with("@@@LINK=")) return;
+                                                 if (css_scan_sample.size() < kCssScanEntryLimit) {
+                                                   css_scan_sample.push_back({key, definition});
+                                                 }
+                                                 accumulator.add(key, definition);
+                                               });
+    title = std::move(meta.title);
   } catch (const std::exception& e) {
     return {.success = false, .errors = {std::string("MDX parse error: ") + e.what()}};
   }
 
-  std::string title = mdx.title;
   if (title.empty()) {
     title = fushi::fs_to_utf8(fushi::fs_path(mdx_path).stem());
-  }
-
-  std::vector<SimpleEntry> entries;
-  entries.reserve(mdx.entries.size());
-  for (auto& e : mdx.entries) {
-    if (e.key.empty()) continue;
-    // Unresolvable @@@LINK= (circular or dangling) — already attempted in mdx_reader
-    if (e.definition.starts_with("@@@LINK=")) continue;
-    entries.push_back({std::move(e.key), std::move(e.definition)});
   }
 
   // MDX glossaries are HTML that <link> a stylesheet sitting next to the .mdx.
@@ -1334,9 +1375,9 @@ ImportResult import_mdx(const std::string& mdx_path, const std::string& output_d
   // dictmedia://, is what keeps the rules scoped to this dictionary: these
   // sheets style bare tags (table/th/td), which unscoped would repaint every
   // other dictionary's tables in the shared popup document.
-  std::string styles_css = read_sibling_css(mdx_path, entries);
+  std::string styles_css = read_sibling_css(mdx_path, css_scan_sample);
 
-  ImportResult result = dictionary_importer::write_simple_dict(title, entries, output_dir, styles_css);
+  ImportResult result = write_processed_simple_dict(title, accumulator.finish(), output_dir, styles_css);
 
   // Auto-mount the media companions (Foo.mdx -> Foo.mdd + numbered overflow
   // parts Foo.N.mdd) into the same dict dir, so <img>/<link>/sound:// in the
@@ -1349,7 +1390,7 @@ ImportResult import_mdx(const std::string& mdx_path, const std::string& output_d
   if (result.success) {
     const auto dir = fushi::fs_path(mdx_path).parent_path();
     std::vector<ExtraMediaFile> extra;
-    for (const auto& name : extract_linked_script_names(entries, kCssScanEntryLimit)) {
+    for (const auto& name : extract_linked_script_names(css_scan_sample, kCssScanEntryLimit)) {
       std::string bytes = read_file_text(dir / fushi::fs_path(name));
       if (!bytes.empty()) extra.push_back({name, std::move(bytes)});
     }
@@ -1747,6 +1788,29 @@ ImportResult import_yomitan(Zip& zip, const std::string& output_dir, bool low_ra
 
 ImportResult dictionary_importer::write_simple_dict(const std::string& title, const std::vector<SimpleEntry>& entries,
                                                     const std::string& output_dir, const std::string& styles_css) {
+  // Accumulation used to sit inside write_simple_dict's try block; it throws on
+  // a zstd failure and this runs on the import pthread, where an escaped
+  // exception terminates the process instead of failing the import.
+  ProcessedFile processed;
+  try {
+    SimpleEntryAccumulator accumulator;
+    for (const auto& entry : entries) {
+      if (!accumulator.add(entry.headword, entry.definition)) break;
+    }
+    processed = accumulator.finish();
+  } catch (const std::exception& e) {
+    return {.success = false, .errors = {e.what()}};
+  }
+  return write_processed_simple_dict(title, std::move(processed), output_dir, styles_css);
+}
+
+namespace {
+
+// Lay a finished entry stream down on disk: index.json, the optional stylesheet,
+// the deduplicated glossary blob region, the term records and the hash index.
+ImportResult write_processed_simple_dict(const std::string& title, ProcessedFile&& processed_in,
+                                         const std::string& output_dir, const std::string& styles_css) {
+  ProcessedFile processed = std::move(processed_in);
   ImportResult result;
   try {
     result.title = sanitize_title(title);
@@ -1785,7 +1849,6 @@ ImportResult dictionary_importer::write_simple_dict(const std::string& title, co
       styles_file.write(styles_css.data(), static_cast<std::streamsize>(styles_css.size()));
     }
 
-    ProcessedFile processed = process_simple_entries(entries);
     if (processed.data.empty()) {
       throw std::runtime_error("empty dictionary");
     }
@@ -1855,6 +1918,8 @@ ImportResult dictionary_importer::write_simple_dict(const std::string& title, co
 
   return result;
 }
+
+}  // namespace
 
 ImportResult dictionary_importer::import(const std::string& file_path, const std::string& output_dir, bool low_ram,
                                         const std::string& breadcrumb_dir) {

@@ -153,22 +153,40 @@ void main() {
     ).readAsStringSync();
 
     test('simple entries（MDX/DSL 整本词典流）用 kMaxTotalEntries 而非 per-bank', () {
-      final int at = importer.indexOf('ProcessedFile process_simple_entries(');
-      expect(at, greaterThan(0), reason: '函数不在了，守卫需更新');
+      // 上限住在 SimpleEntryAccumulator::add()。MDX 导入改成流式之后，整词典流
+      // 由累加器逐条喂进来，process_simple_entries 只是它的整表包装——两个入口
+      // 共用同一份 per-entry 逻辑（下一条守卫盯着这个共用关系）。
+      final int at = importer.indexOf(
+        'bool add(std::string_view headword, std::string_view glossary)',
+      );
+      expect(at, greaterThan(0), reason: '累加器 add() 不在了，守卫需更新');
       final String body = importer.substring(at, at + 2000);
       expect(
-        body.contains('processed.count >= kMaxTotalEntries'),
+        body.contains('processed_.count >= kMaxTotalEntries'),
         isTrue,
         reason:
             '大辞林第四版声明 1086308 条，per-bank 的 100 万上限会把它砍到'
             '正好 1000000 还报 success；整词典级别的上限应当是 kMaxTotalEntries',
       );
       expect(
-        body.contains('processed.count >= kMaxEntriesPerBank'),
+        body.contains('processed_.count >= kMaxEntriesPerBank'),
         isFalse,
         reason:
             'kMaxEntriesPerBank 是给 Yomitan 单个 term_bank_N.json 设计的，'
             '同一个常量套到整词典流上语义就错位了',
+      );
+    });
+
+    test('整表入口与流式入口共用同一条 per-entry 逻辑', () {
+      final int at = importer.indexOf('ProcessedFile process_simple_entries(');
+      expect(at, greaterThan(0), reason: '函数不在了，守卫需更新');
+      final String body = importer.substring(at, at + 400);
+      expect(
+        body.contains('SimpleEntryAccumulator'),
+        isTrue,
+        reason:
+            'MDX 流式导入与 StarDict/DSL 整表导入必须走同一个累加器；'
+            '各自复制一份 per-entry 逻辑，上限/glossary 去重/记录布局就会分叉',
       );
     });
 

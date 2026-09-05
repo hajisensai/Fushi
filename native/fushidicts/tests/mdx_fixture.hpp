@@ -211,6 +211,101 @@ inline std::vector<uint8_t> build_container(
   return file;
 }
 
+// MDX whose record stream is split across several zlib blocks, with the split
+// points given as byte offsets into the concatenated DECOMPRESSED stream. A
+// split may fall in the middle of a record.
+//
+// Key offsets index that concatenated stream and are unaffected by where the
+// splits land -- which is precisely the invariant the streaming reader leans on
+// when it inflates one block at a time. Every other fixture here emits a single
+// record block, so nothing else in the suite can exercise a record that
+// straddles a block boundary, a window that must carry bytes forward, or a
+// redirect whose target lives in a different block than the redirect itself.
+inline std::vector<uint8_t> build_mdx_record_splits(
+    const std::string& title, const std::vector<std::pair<std::string, std::string>>& entries,
+    const std::vector<size_t>& split_offsets) {
+  std::vector<uint8_t> records;
+  std::vector<uint64_t> offsets;
+  for (const auto& [k, d] : entries) {
+    (void)k;
+    offsets.push_back(records.size());
+    records.insert(records.end(), d.begin(), d.end());
+    records.push_back(0);  // MDX text records are NUL-terminated
+  }
+
+  std::vector<uint8_t> key_entries;
+  for (size_t i = 0; i < entries.size(); i++) {
+    put_be64(key_entries, offsets[i]);
+    key_entries.insert(key_entries.end(), entries[i].first.begin(), entries[i].first.end());
+    key_entries.push_back(0);
+  }
+  std::vector<uint8_t> key_block = make_zlib_block(key_entries);
+
+  std::vector<uint8_t> kbi_plain;
+  put_be64(kbi_plain, entries.size());
+  const std::string& first = entries.front().first;
+  const std::string& last = entries.back().first;
+  put_be16(kbi_plain, uint16_t(first.size()));
+  kbi_plain.insert(kbi_plain.end(), first.begin(), first.end());
+  kbi_plain.push_back(0);
+  put_be16(kbi_plain, uint16_t(last.size()));
+  kbi_plain.insert(kbi_plain.end(), last.begin(), last.end());
+  kbi_plain.push_back(0);
+  put_be64(kbi_plain, key_block.size());
+  put_be64(kbi_plain, key_entries.size());
+  std::vector<uint8_t> kbi = make_zlib_block(kbi_plain);
+
+  // Cut the record stream at the requested offsets and zlib each piece.
+  std::vector<size_t> bounds{0};
+  for (size_t off : split_offsets) {
+    if (off > 0 && off < records.size() && off > bounds.back()) bounds.push_back(off);
+  }
+  bounds.push_back(records.size());
+
+  std::vector<std::vector<uint8_t>> record_blocks;
+  std::vector<uint64_t> decompressed_sizes;
+  for (size_t i = 0; i + 1 < bounds.size(); i++) {
+    std::vector<uint8_t> chunk(records.begin() + static_cast<std::ptrdiff_t>(bounds[i]),
+                               records.begin() + static_cast<std::ptrdiff_t>(bounds[i + 1]));
+    decompressed_sizes.push_back(chunk.size());
+    record_blocks.push_back(make_zlib_block(chunk));
+  }
+
+  std::vector<uint8_t> record_block_info;
+  uint64_t record_blocks_total = 0;
+  for (size_t i = 0; i < record_blocks.size(); i++) {
+    put_be64(record_block_info, record_blocks[i].size());
+    put_be64(record_block_info, decompressed_sizes[i]);
+    record_blocks_total += record_blocks[i].size();
+  }
+
+  std::vector<uint8_t> file;
+  std::string header = "<Dictionary GeneratedByEngineVersion=\"2.0\" Encrypted=\"0\" "
+                       "Encoding=\"UTF-8\" Title=\"" + title + "\"/>";
+  put_be32(file, uint32_t(header.size()));
+  file.insert(file.end(), header.begin(), header.end());
+  put_be32(file, 0);
+
+  put_be64(file, 1);
+  put_be64(file, entries.size());
+  put_be64(file, kbi_plain.size());
+  put_be64(file, kbi.size());
+  put_be64(file, key_block.size());
+  put_be32(file, 0);
+  file.insert(file.end(), kbi.begin(), kbi.end());
+  file.insert(file.end(), key_block.begin(), key_block.end());
+
+  put_be64(file, record_blocks.size());
+  put_be64(file, entries.size());
+  put_be64(file, record_block_info.size());
+  put_be64(file, record_blocks_total);
+  file.insert(file.end(), record_block_info.begin(), record_block_info.end());
+  for (const auto& block : record_blocks) {
+    file.insert(file.end(), block.begin(), block.end());
+  }
+  return file;
+}
+
 // MDX: text (HTML) records, NUL-terminated.
 inline std::vector<uint8_t> build_mdx_plain(
     const std::string& title, const std::vector<std::pair<std::string, std::string>>& entries) {
