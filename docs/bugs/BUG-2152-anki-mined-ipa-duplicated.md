@@ -20,6 +20,9 @@
     （按 `\x01<u16 len>spoke` 和 mode 串 `\x03ipa` 扫全部 blobs.bin 均 0 命中；meta 记录在
     blobs.bin 里是明文，`importer.cpp:405-413`），唯一的英语词典 OALDPE 登记为 `term`。
     所以本机 `entry.pitches` 对 `spoke` 应为空数组，`constructPitchPositionHtml` 应返回 `''`。
+    **这条是真阴性不是扫描失灵**：同一套方法在 `NHK/blobs.bin` 命中 73100 条 `pitch`、
+    `BCCWJ/blobs.bin` 命中 100 万+ 条 `freq`（阳性对照），两种工具（Python mmap 与
+    `grep -P`）两条独立路径同一结论。
     另外经 AnkiConnect 查证，本机 Anki（单 profile「账户 1」，13656 条，全日语牌组）
     **没有这张英语卡**（`Amane`/`Mahiru`/`OALD`/`spəʊk` 全 0 命中）。
 - **[ ] ① 未修复** — 卡在「不知道它是哪来的」这一步，不做猜测式修复。待确认：那张卡是哪台设备 /
@@ -29,6 +32,13 @@
   - 若其实来自 `patterns`（`popup.js:1570-1572` 同一函数、同一 `[...]` 形状，肉眼分不出）：
     同理在 `enrich_pitch` 的 pattern 累加处修。
 - **[ ] ② 未加自动化测试** — 跟着 ① 一起做。
+- **顺带查出的路由缺口（同一条链上，尚未单独立号，因为手头没有能触发它的词典）**：
+  带 term_bank 的混合词典（term + ipa meta）在 `importer.cpp:104-107` 必然判 `term`
+  （term_bank 探测先于 meta 探测），而 `app_model.dart:317-346 bucketDictPaths` 对 `term`
+  只有 `hasKanji` 一条双桶例外（`:340-343`，TODO-622），**没有 hasPitch 对应物**；
+  `enrich_pitch` 又只遍历 `pitch_dicts_`（`query.cpp:509`、注册见 `:205-213`/`:171-173`）。
+  于是这类词典的 ipa meta 彻底不可达。与 TODO-622 同型。本机 OALDPE 本身没有 ipa meta，
+  所以这个缺口在本机无可观测后果；等真拿到一本带 ipa meta 的混合英语词典再验并立号。
 - **备注**：与 BUG-2151（同一张卡上黑框错版）是两个独立缺陷。BUG-2151 已修并验证；
   顺带实证：本机真 Fushi 制的 Lapis 卡（noteId 1788450543147）`PitchPosition` 字段确实是
   `<ol><li><span style="display:inline;">…`，即 BUG-2151 描述的存量形态。
