@@ -31,6 +31,7 @@ class AsrTransducerDecoder implements AsrBatchDecoder {
     required OnnxSession joiner,
     required AsrTokenTable tokens,
     AsrFbank fbank = const AsrFbank(),
+    this.lookaheadFrames = kDefaultLookaheadFrames,
   }) : _encoder = encoder,
        _decoder = decoder,
        _joiner = joiner,
@@ -39,10 +40,27 @@ class AsrTransducerDecoder implements AsrBatchDecoder {
     if (tokens.blankId < 0) {
       throw ArgumentError.value(tokens, 'tokens', '词表缺少 <blk>');
     }
+    if (lookaheadFrames < 1) {
+      throw ArgumentError.value(lookaheadFrames, 'lookaheadFrames', '至少 1');
+    }
   }
 
   /// sherpa-onnx `PadSequence` 的填充值：`log(1e-10)`。
   static const double kFeaturePadValue = -23.025850929940457;
+
+  /// 前瞻帧数默认值。1 = 经典逐帧贪心；越大往返越少，但每次 joiner 的行数与
+  /// 读回的 logit（rows × 5224 float）随之变大，且发射后多算的帧作废。
+  ///
+  /// 2026-09-05 真机扫描（`integration_test/asr_directml_session_lifecycle_itest.dart`，
+  /// 无職転生 01 前 10 分钟、185 段）：GPU/DirectML 编码器 + CPU joiner 下 K=1 5.78 s、
+  /// K=4 5.86 s、K=8 5.97 s、K=16 7.68 s、K=32 9.58 s；CPU int8 K=1 18.9 s、K=8 17.6 s、
+  /// K=16 19.0 s。往返次数确实降了，但耗时与 joiner **行数**成正比而不是与调用次数
+  /// 成正比——前瞻多算的帧全是白付。故默认 1；机制保留给后续「argmax 融进 joiner
+  /// 图」之类把逐行成本压下去之后再评估。
+  static const int kDefaultLookaheadFrames = 1;
+
+  /// 每轮 joiner 对每条假设最多前瞻的编码器帧数（结果与逐帧贪心逐字等价）。
+  final int lookaheadFrames;
 
   final OnnxSession _encoder;
   final OnnxSession _decoder;
@@ -143,42 +161,56 @@ class AsrTransducerDecoder implements AsrBatchDecoder {
           Float32List.sublistView(decoderOutAll, i * decDim, (i + 1) * decDim),
     );
 
-    // 4. 逐帧整批贪心。
-    int maxLen = 0;
-    for (final int len in encLens) {
-      if (len > maxLen) maxLen = len;
-    }
+    // 4. 前瞻批量贪心，与逐帧贪心**逐字等价**：两次发射之间 decoder_out 不变，
+    //    所以先用当前 decoder_out 对接下来最多 [lookaheadFrames] 帧一次算 joiner，
+    //    顺序扫到第一个非 blank 才停下（发射 + 更新 decoder），其余前瞻帧丢弃、
+    //    下一轮从发射帧之后重算。ORT 往返从 T 次降到约 tokens + T/lookahead 次
+    //    （2026-09-05 真机：逐帧 joiner 往返是 ASR 阶段的大头，encoder 本身在
+    //    DirectML 上只占零头）。
+    final List<int> pos = List<int>.filled(batch, 0);
     final List<int> active = <int>[];
+    final List<int> rowsPer = <int>[];
     final List<int> emitted = <int>[];
-    for (int t = 0; t < maxLen; t++) {
+    while (true) {
       active.clear();
+      rowsPer.clear();
+      int totalRows = 0;
       for (int i = 0; i < batch; i++) {
-        if (t < encLens[i]) active.add(i);
+        final int remain = encLens[i] - pos[i];
+        if (remain <= 0) continue;
+        final int k = remain < lookaheadFrames ? remain : lookaheadFrames;
+        active.add(i);
+        rowsPer.add(k);
+        totalRows += k;
       }
-      final int a = active.length;
-      final Float32List encRows = Float32List(a * encDim);
-      final Float32List decRows = Float32List(a * decDim);
-      for (int r = 0; r < a; r++) {
-        final int i = active[r];
-        final int encBase = (i * encFrames + t) * encDim;
-        encRows.setRange(r * encDim, (r + 1) * encDim, encData, encBase);
-        decRows.setRange(r * decDim, (r + 1) * decDim, decoderOut[i]);
+      if (active.isEmpty) break;
+      final Float32List encRows = Float32List(totalRows * encDim);
+      final Float32List decRows = Float32List(totalRows * decDim);
+      int row = 0;
+      for (int a = 0; a < active.length; a++) {
+        final int i = active[a];
+        for (int k = 0; k < rowsPer[a]; k++) {
+          final int encBase = (i * encFrames + pos[i] + k) * encDim;
+          encRows.setRange(row * encDim, (row + 1) * encDim, encData, encBase);
+          decRows.setRange(row * decDim, (row + 1) * decDim, decoderOut[i]);
+          row++;
+        }
       }
       final Map<String, OnnxTensor> joinOut = await _joiner.run(
         <String, OnnxTensor>{
           AsrModelIo.joinerInputEncoder: OnnxTensor.float32(encRows, <int>[
-            a,
+            totalRows,
             encDim,
           ]),
           AsrModelIo.joinerInputDecoder: OnnxTensor.float32(decRows, <int>[
-            a,
+            totalRows,
             decDim,
           ]),
         },
       );
       final OnnxTensor logit = _require(joinOut, AsrModelIo.joinerOutputLogit);
-      if (logit.shape.length != 2 || logit.shape[0] != a) {
-        throw StateError('joiner logit 形状异常：${logit.shape}（rows=$a）');
+      if (logit.shape.length != 2 || logit.shape[0] != totalRows) {
+        throw StateError('joiner logit 形状异常：${logit.shape}（rows=$totalRows）');
       }
       final int vocab = logit.shape[1];
       final Float32List logitData = _floatData(
@@ -187,13 +219,21 @@ class AsrTransducerDecoder implements AsrBatchDecoder {
       );
 
       emitted.clear();
-      for (int r = 0; r < a; r++) {
-        final int y = _argmax(logitData, r * vocab, vocab);
-        if (y == blank || y == unk) continue;
-        final int i = active[r];
-        hyps[i].add(y);
-        frames[i].add(t);
-        emitted.add(i);
+      row = 0;
+      for (int a = 0; a < active.length; a++) {
+        final int i = active[a];
+        bool stopped = false;
+        for (int k = 0; k < rowsPer[a]; k++, row++) {
+          if (stopped) continue;
+          final int y = _argmax(logitData, row * vocab, vocab);
+          final int t = pos[i];
+          pos[i] = t + 1;
+          if (y == blank || y == unk) continue;
+          hyps[i].add(y);
+          frames[i].add(t);
+          emitted.add(i);
+          stopped = true;
+        }
       }
       if (emitted.isNotEmpty) {
         final Float32List fresh = await _runDecoder(emitted, hyps);

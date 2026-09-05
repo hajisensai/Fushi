@@ -35,8 +35,21 @@ import 'package:fushi/src/onnx/model_file_downloader.dart';
 /// 编码器变体：fp32 给 GPU EP，int8 给 CPU（选择策略见 `asr_engine.dart`）。
 enum AsrEncoderVariant { fp32, int8 }
 
-/// 模型文件角色。
-enum AsrModelRole { encoderFp32, encoderInt8, decoder, joiner, tokens, vad }
+/// 模型文件角色。decoder / joiner 也分精度：它们恒在 CPU 上逐帧跑，2026-09-05
+/// 真机对拍（无職転生 01 前 10 分钟、185 段）：编码器走 DirectML 时 fp32
+/// decoder/joiner 的 ASR 阶段 6.18 s、int8 8.66 s（小批次动态量化开销大于收益）；
+/// 编码器走 CPU int8 时两者持平（19.5 s vs 18.9 s）。故 fp32 变体全套 fp32、int8
+/// 变体全套 int8。
+enum AsrModelRole {
+  encoderFp32,
+  encoderInt8,
+  decoderFp32,
+  decoderInt8,
+  joinerFp32,
+  joinerInt8,
+  tokens,
+  vad,
+}
 
 /// 清单里的一个模型文件。
 class AsrModelFile implements DownloadableModelFile {
@@ -87,18 +100,34 @@ const AsrModelFile kAsrEncoderInt8File = AsrModelFile(
   mirrorUrls: <String>['${_kSecondaryBase}encoder-epoch-99-avg-1.int8.onnx'],
 );
 
-const AsrModelFile kAsrDecoderFile = AsrModelFile(
+const AsrModelFile kAsrDecoderFp32File = AsrModelFile(
+  fileName: 'decoder-epoch-99-avg-1.onnx',
+  url: '${_kPrimaryBase}decoder-epoch-99-avg-1.onnx',
+  expectedBytes: 11767836,
+  role: AsrModelRole.decoderFp32,
+  mirrorUrls: <String>['${_kSecondaryBase}decoder-epoch-99-avg-1.onnx'],
+);
+
+const AsrModelFile kAsrDecoderInt8File = AsrModelFile(
   fileName: 'decoder-epoch-99-avg-1.int8.onnx',
   url: '${_kPrimaryBase}decoder-epoch-99-avg-1.int8.onnx',
   expectedBytes: 2959337,
-  role: AsrModelRole.decoder,
+  role: AsrModelRole.decoderInt8,
 );
 
-const AsrModelFile kAsrJoinerFile = AsrModelFile(
+const AsrModelFile kAsrJoinerFp32File = AsrModelFile(
+  fileName: 'joiner-epoch-99-avg-1.onnx',
+  url: '${_kPrimaryBase}joiner-epoch-99-avg-1.onnx',
+  expectedBytes: 10720115,
+  role: AsrModelRole.joinerFp32,
+  mirrorUrls: <String>['${_kSecondaryBase}joiner-epoch-99-avg-1.onnx'],
+);
+
+const AsrModelFile kAsrJoinerInt8File = AsrModelFile(
   fileName: 'joiner-epoch-99-avg-1.int8.onnx',
   url: '${_kPrimaryBase}joiner-epoch-99-avg-1.int8.onnx',
   expectedBytes: 2696970,
-  role: AsrModelRole.joiner,
+  role: AsrModelRole.joinerInt8,
 );
 
 const AsrModelFile kAsrTokensFile = AsrModelFile(
@@ -122,27 +151,40 @@ const AsrModelFile kAsrVadFile = AsrModelFile(
 const List<AsrModelFile> kAsrModelFiles = <AsrModelFile>[
   kAsrEncoderFp32File,
   kAsrEncoderInt8File,
-  kAsrDecoderFile,
-  kAsrJoinerFile,
+  kAsrDecoderFp32File,
+  kAsrDecoderInt8File,
+  kAsrJoinerFp32File,
+  kAsrJoinerInt8File,
   kAsrTokensFile,
   kAsrVadFile,
 ];
 
-/// 某个编码器变体跑起来需要的全部文件（编码器 + 共用的 decoder / joiner /
-/// tokens / vad）。
+/// 某个编码器变体跑起来需要的全部文件（同精度的 encoder / decoder / joiner +
+/// 共用的 tokens / vad）。
 List<AsrModelFile> asrModelFilesFor(AsrEncoderVariant variant) {
-  final AsrModelFile encoder = switch (variant) {
-    AsrEncoderVariant.fp32 => kAsrEncoderFp32File,
-    AsrEncoderVariant.int8 => kAsrEncoderInt8File,
-  };
   return <AsrModelFile>[
-    encoder,
-    kAsrDecoderFile,
-    kAsrJoinerFile,
+    asrModelFileForRole(asrEncoderRole(variant)),
+    asrModelFileForRole(asrDecoderRole(variant)),
+    asrModelFileForRole(asrJoinerRole(variant)),
     kAsrTokensFile,
     kAsrVadFile,
   ];
 }
+
+AsrModelRole asrEncoderRole(AsrEncoderVariant variant) => switch (variant) {
+  AsrEncoderVariant.fp32 => AsrModelRole.encoderFp32,
+  AsrEncoderVariant.int8 => AsrModelRole.encoderInt8,
+};
+
+AsrModelRole asrDecoderRole(AsrEncoderVariant variant) => switch (variant) {
+  AsrEncoderVariant.fp32 => AsrModelRole.decoderFp32,
+  AsrEncoderVariant.int8 => AsrModelRole.decoderInt8,
+};
+
+AsrModelRole asrJoinerRole(AsrEncoderVariant variant) => switch (variant) {
+  AsrEncoderVariant.fp32 => AsrModelRole.joinerFp32,
+  AsrEncoderVariant.int8 => AsrModelRole.joinerInt8,
+};
 
 /// 某个变体全套文件的预期总字节数（用于「需要下多少」展示）。
 int asrModelTotalBytes(AsrEncoderVariant variant) {

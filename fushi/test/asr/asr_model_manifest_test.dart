@@ -7,16 +7,15 @@ import 'package:path/path.dart' as p;
 
 void main() {
   group('清单构成', () {
-    test('每个变体恰好五个文件：编码器 + decoder/joiner/tokens/vad', () {
+    test('每个变体恰好五个文件：同精度 encoder/decoder/joiner + tokens/vad', () {
       for (final AsrEncoderVariant variant in AsrEncoderVariant.values) {
         final List<AsrModelFile> files = asrModelFilesFor(variant);
         expect(files, hasLength(5), reason: variant.name);
+        final bool fp32 = variant == AsrEncoderVariant.fp32;
         expect(files.map((AsrModelFile f) => f.role).toSet(), <AsrModelRole>{
-          variant == AsrEncoderVariant.fp32
-              ? AsrModelRole.encoderFp32
-              : AsrModelRole.encoderInt8,
-          AsrModelRole.decoder,
-          AsrModelRole.joiner,
+          fp32 ? AsrModelRole.encoderFp32 : AsrModelRole.encoderInt8,
+          fp32 ? AsrModelRole.decoderFp32 : AsrModelRole.decoderInt8,
+          fp32 ? AsrModelRole.joinerFp32 : AsrModelRole.joinerInt8,
           AsrModelRole.tokens,
           AsrModelRole.vad,
         });
@@ -50,15 +49,17 @@ void main() {
         <AsrModelRole, int>{
           AsrModelRole.encoderFp32: 592347848,
           AsrModelRole.encoderInt8: 154670139,
-          AsrModelRole.decoder: 2959337,
-          AsrModelRole.joiner: 2696970,
+          AsrModelRole.decoderFp32: 11767836,
+          AsrModelRole.decoderInt8: 2959337,
+          AsrModelRole.joinerFp32: 10720115,
+          AsrModelRole.joinerInt8: 2696970,
           AsrModelRole.tokens: 45754,
           AsrModelRole.vad: 643854,
         },
       );
       expect(
         asrModelTotalBytes(AsrEncoderVariant.fp32),
-        592347848 + 2959337 + 2696970 + 45754 + 643854,
+        592347848 + 11767836 + 10720115 + 45754 + 643854,
       );
       expect(
         asrModelTotalBytes(AsrEncoderVariant.int8),
@@ -98,13 +99,15 @@ void main() {
       },
     );
 
-    test('第二源只挂在 int8 编码器与 tokens 上', () {
+    test('第二源只挂在它真有的四个文件上：int8 编码器、fp32 decoder/joiner、tokens', () {
       final Set<AsrModelRole> withMirror = <AsrModelRole>{
         for (final AsrModelFile f in kAsrModelFiles)
           if (f.mirrorUrls.isNotEmpty) f.role,
       };
       expect(withMirror, <AsrModelRole>{
         AsrModelRole.encoderInt8,
+        AsrModelRole.decoderFp32,
+        AsrModelRole.joinerFp32,
         AsrModelRole.tokens,
       });
       for (final AsrModelFile f in kAsrModelFiles) {
@@ -138,9 +141,9 @@ void main() {
     });
 
     test('只有主源的 HF 文件派生两个候选', () {
-      expect(asrModelUrlCandidates(kAsrDecoderFile), <String>[
-        kAsrDecoderFile.url,
-        kAsrDecoderFile.url.replaceFirst('huggingface.co', 'hf-mirror.com'),
+      expect(asrModelUrlCandidates(kAsrDecoderInt8File), <String>[
+        kAsrDecoderInt8File.url,
+        kAsrDecoderInt8File.url.replaceFirst('huggingface.co', 'hf-mirror.com'),
       ]);
     });
 

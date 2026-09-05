@@ -359,8 +359,8 @@ void main() {
           reason: '只建请求的变体',
         );
         for (final String name in <String>[
-          kAsrDecoderFile.fileName,
-          kAsrJoinerFile.fileName,
+          kAsrDecoderFp32File.fileName,
+          kAsrJoinerFp32File.fileName,
           kAsrVadFile.fileName,
         ]) {
           expect(factory.sessions[name]!.providers, _cpu, reason: name);
@@ -382,12 +382,15 @@ void main() {
         expect(
           identical(
             sessions.decoder,
-            factory.sessions[kAsrDecoderFile.fileName],
+            factory.sessions[kAsrDecoderFp32File.fileName],
           ),
           isTrue,
         );
         expect(
-          identical(sessions.joiner, factory.sessions[kAsrJoinerFile.fileName]),
+          identical(
+            sessions.joiner,
+            factory.sessions[kAsrJoinerFp32File.fileName],
+          ),
           isTrue,
         );
         expect(
@@ -492,7 +495,7 @@ void main() {
 
     test('中途建会话失败：已建的会话全部关闭，异常原样抛出', () async {
       final _FakeFactory factory = _FakeFactory(
-        failOnPathSuffix: kAsrJoinerFile.fileName,
+        failOnPathSuffix: kAsrJoinerInt8File.fileName,
       );
       await expectLater(
         AsrEngineLoader(factory: factory).load(
@@ -506,7 +509,7 @@ void main() {
         factory.sessions.keys,
         containsAll(<String>[
           kAsrEncoderInt8File.fileName,
-          kAsrDecoderFile.fileName,
+          kAsrDecoderInt8File.fileName,
         ]),
       );
       for (final _FakeSession session in factory.sessions.values) {

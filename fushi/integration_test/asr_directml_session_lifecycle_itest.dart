@@ -52,6 +52,7 @@ Future<void> _round({
   required AsrAccelerationPreference preference,
   required int batchSize,
   required String label,
+  int lookaheadFrames = AsrTransducerDecoder.kDefaultLookaheadFrames,
 }) async {
   final Stopwatch sw = Stopwatch()..start();
   final AsrEngineSessions sessions = await AsrEngineLoader().load(
@@ -68,6 +69,7 @@ Future<void> _round({
       decoder: sessions.decoder,
       joiner: sessions.joiner,
       tokens: sessions.tokens,
+      lookaheadFrames: lookaheadFrames,
     );
     int tokens = 0;
     for (int i = 0; i < segments.length; i += batchSize) {
@@ -147,6 +149,30 @@ void main() {
         label: 'gpu#3(b32)',
       );
       _log('all rounds survived');
+
+      // 前瞻帧数扫描：同一批段、同一 EP，只变 K，看 ASR 阶段耗时。
+      for (final int k in <int>[1, 4, 8, 16, 32]) {
+        await _round(
+          store: store,
+          segments: segments,
+          variant: AsrEncoderVariant.fp32,
+          preference: AsrAccelerationPreference.auto,
+          batchSize: 32,
+          lookaheadFrames: k,
+          label: 'gpu-sweep(k=$k)',
+        );
+      }
+      for (final int k in <int>[1, 8, 16]) {
+        await _round(
+          store: store,
+          segments: segments,
+          variant: AsrEncoderVariant.int8,
+          preference: AsrAccelerationPreference.cpuOnly,
+          batchSize: 16,
+          lookaheadFrames: k,
+          label: 'cpu-sweep(k=$k)',
+        );
+      }
     },
     timeout: const Timeout(Duration(minutes: 20)),
   );

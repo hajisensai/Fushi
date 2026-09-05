@@ -93,8 +93,8 @@ void main() {
   test('就绪按变体独立：只下了 int8 编码器时 fp32 仍未就绪', () async {
     for (final AsrModelRole role in <AsrModelRole>[
       AsrModelRole.encoderInt8,
-      AsrModelRole.decoder,
-      AsrModelRole.joiner,
+      AsrModelRole.decoderInt8,
+      AsrModelRole.joinerInt8,
       AsrModelRole.tokens,
       AsrModelRole.vad,
     ]) {
@@ -115,7 +115,7 @@ void main() {
   });
 
   test('status：obtainedBytes 含 .part，diskBytes 是目录真实占用（含另一变体）', () async {
-    writeReady(AsrModelRole.decoder, 10);
+    writeReady(AsrModelRole.decoderInt8, 10);
     writeReady(AsrModelRole.tokens, 5);
     // 另一个变体的编码器：占磁盘，但不算进 int8 的 obtained。
     writeReady(AsrModelRole.encoderFp32, 100);
@@ -173,7 +173,7 @@ void main() {
 
   test('deleteAll：返回释放字节数并删掉整个目录；目录不存在返回 0', () async {
     expect(await store.deleteAll(), 0);
-    writeReady(AsrModelRole.decoder, 10);
+    writeReady(AsrModelRole.decoderInt8, 10);
     File(
       '${store.fileFor(AsrModelRole.encoderInt8).path}.part',
     ).writeAsBytesSync(List<int>.filled(6, 2));

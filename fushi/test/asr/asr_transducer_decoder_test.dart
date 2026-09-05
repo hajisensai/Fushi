@@ -167,6 +167,8 @@ void main() {
       decoder: dec,
       joiner: join,
       tokens: tokens,
+      // 这些用例断言的是逐帧语义（每帧一次 joiner）：显式关掉前瞻。
+      lookaheadFrames: 1,
     );
     final List<AsrDecodedSegment> out = await decoder.decodeBatch(
       <AsrSpeechSegment>[segmentOfSamples(1600)],
@@ -198,8 +200,7 @@ void main() {
     expect(join.rowCounts, List<int>.filled(5, 1));
   });
 
-  test(
-      '多条 batch：按最长帧数 pad（pad 值 log 1e-10）、x_lens 给真实帧数、'
+  test('多条 batch：按最长帧数 pad（pad 值 log 1e-10）、x_lens 给真实帧数、'
       '结束的样本不再进 joiner、同帧多条发射合并成一次 decoder 调用', () async {
     // 样本 0：1600 样本 = 10 帧；样本 1：800 样本 = 5 帧。编码后帧数 3 / 2。
     final FakeEncoderSession enc = FakeEncoderSession(lens: <int>[3, 2]);
@@ -227,6 +228,8 @@ void main() {
       decoder: dec,
       joiner: join,
       tokens: tokens,
+      // 这些用例断言的是逐帧语义（每帧一次 joiner）：显式关掉前瞻。
+      lookaheadFrames: 1,
     );
     final List<AsrDecodedSegment> out = await decoder.decodeBatch(
       <AsrSpeechSegment>[
@@ -284,6 +287,8 @@ void main() {
       decoder: dec,
       joiner: join,
       tokens: tokens,
+      // 这些用例断言的是逐帧语义（每帧一次 joiner）：显式关掉前瞻。
+      lookaheadFrames: 1,
     );
     final List<AsrDecodedSegment> out = await decoder.decodeBatch(
       <AsrSpeechSegment>[segmentOfSamples(800)],
@@ -304,6 +309,8 @@ void main() {
       decoder: dec,
       joiner: join,
       tokens: tokens,
+      // 这些用例断言的是逐帧语义（每帧一次 joiner）：显式关掉前瞻。
+      lookaheadFrames: 1,
     );
     expect(await decoder.decodeBatch(<AsrSpeechSegment>[]), isEmpty);
     expect(enc.xShapes, isEmpty);

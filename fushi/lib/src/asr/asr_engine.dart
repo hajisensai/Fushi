@@ -197,10 +197,7 @@ class AsrEngineLoader {
     const List<OnnxExecutionProvider> cpu = <OnnxExecutionProvider>[
       OnnxExecutionProvider.cpu,
     ];
-    final AsrModelRole encoderRole = switch (variant) {
-      AsrEncoderVariant.fp32 => AsrModelRole.encoderFp32,
-      AsrEncoderVariant.int8 => AsrModelRole.encoderInt8,
-    };
+    final AsrModelRole encoderRole = asrEncoderRole(variant);
 
     final List<OnnxSession> opened = <OnnxSession>[];
     Future<void> closeOpened() async {
@@ -226,12 +223,12 @@ class AsrEngineLoader {
         probeError,
       );
       final OnnxSession decoder = await _factory.createSession(
-        store.fileFor(AsrModelRole.decoder).path,
+        store.fileFor(asrDecoderRole(variant)).path,
         providers: cpu,
       );
       opened.add(decoder);
       final OnnxSession joiner = await _factory.createSession(
-        store.fileFor(AsrModelRole.joiner).path,
+        store.fileFor(asrJoinerRole(variant)).path,
         providers: cpu,
       );
       opened.add(joiner);
