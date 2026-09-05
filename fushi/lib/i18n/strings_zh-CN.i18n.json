@@ -4256,12 +4256,16 @@
   "audiobook_transcribe_discard": "放弃进度",
   "audiobook_transcribe_use_result": "使用字幕",
   "audiobook_transcribe_progress": "$done / $total · 文件 $file/$files",
-  "audiobook_transcribe_speed": "已用 $elapsed · 剩余 $eta · $speed× 实时",
+  "audiobook_transcribe_speed": "已用 $elapsed · 剩余 $eta · $speed 倍速",
   "audiobook_transcribe_done": "完成：$segments 段语音生成 $cues 条字幕",
   "audiobook_transcribe_failed": "转录失败：$error",
   "audiobook_transcribe_needs_audio": "请先选择音频文件",
   "audiobook_transcribe_result_name": "设备端转录生成",
   "audiobook_transcribe_paused_hint": "进度已保存，之后选同一组音频文件即可继续。",
   "audiobook_transcribe_unavailable": "此平台不支持设备端转录",
-  "audiobook_transcribe_preparing": "正在加载模型…"
+  "audiobook_transcribe_preparing": "正在加载模型…",
+  "audiobook_transcribe_export": "导出字幕文件",
+  "audiobook_transcribe_export_saved": "字幕文件已导出",
+  "audiobook_subtitle_source_title": "字幕来源",
+  "audiobook_subtitle_source_transcribe_hint": "用设备端语音模型从已选音频生成"
 }

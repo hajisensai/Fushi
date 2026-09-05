@@ -15,6 +15,7 @@ import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
 import 'package:fushi/src/onnx/model_file_downloader.dart';
 import 'package:fushi/src/onnx/onnx_inference.dart';
 import 'package:fushi/utils.dart';
+import 'package:path/path.dart' as p;
 
 class _NoopSession implements OnnxSession {
   @override
@@ -43,9 +44,11 @@ class _FakeSegmenter implements AsrSegmenter {
   @override
   Future<List<AsrSpeechSegment>> feed(
     AsrPcmChunk chunk,
-  ) async => <AsrSpeechSegment>[
-    AsrSpeechSegment(startSample: 0, samples: Float32List(2 * kAsrSampleRate)),
-  ];
+  ) async =>
+      <AsrSpeechSegment>[
+        AsrSpeechSegment(
+            startSample: 0, samples: Float32List(2 * kAsrSampleRate)),
+      ];
 
   @override
   Future<List<AsrSpeechSegment>> flush() async => <AsrSpeechSegment>[];
@@ -61,24 +64,25 @@ class _FakeDecoder implements AsrBatchDecoder {
   @override
   Future<List<AsrDecodedSegment>> decodeBatch(
     List<AsrSpeechSegment> segments,
-  ) async => segments
-      .map(
-        (AsrSpeechSegment _) => AsrDecodedSegment(
-          tokens: const <String>['今', '日', '。'],
-          tokenOffsetsMs: const <int>[100, 300, 600],
-        ),
-      )
-      .toList();
+  ) async =>
+      segments
+          .map(
+            (AsrSpeechSegment _) => AsrDecodedSegment(
+              tokens: const <String>['今', '日', '。'],
+              tokenOffsetsMs: const <int>[100, 300, 600],
+            ),
+          )
+          .toList();
 }
 
 /// 假服务：模型就绪与否、已完成产物可编程；`start` 装配真任务 + 假会话。
 class _FakeService extends AsrTranscriptionService {
   _FakeService({required this.ready, required this.jobsDir, this.existingSrt})
-    : super(
-        pcm: _FakePcm(),
-        openStore: () async => AsrModelStore(jobsDir),
-        jobsRoot: () async => jobsDir,
-      );
+      : super(
+          pcm: _FakePcm(),
+          openStore: () async => AsrModelStore(jobsDir),
+          jobsRoot: () async => jobsDir,
+        );
 
   bool ready;
   final Directory jobsDir;
@@ -168,7 +172,14 @@ void main() {
     if (tmp.existsSync()) await tmp.delete(recursive: true);
   });
 
-  Widget wrap(_FakeService service, void Function(String?) onResult) {
+  Widget wrap(
+    _FakeService service,
+    void Function(String?) onResult, {
+    Future<String?> Function({
+      required String fileName,
+      required String? initialDirectory,
+    })? saveFilePicker,
+  }) {
     return ProviderScope(
       child: TranslationProvider(
         child: MaterialApp(
@@ -182,6 +193,7 @@ void main() {
                       context: context,
                       audioPaths: const <String>['a.mp3'],
                       service: service,
+                      saveFilePicker: saveFilePicker,
                     );
                     onResult(r);
                   },
@@ -257,6 +269,102 @@ void main() {
     expect(result, isNotNull);
     expect(result, endsWith(AsrJobFiles.srt));
     expect(File(result!).readAsStringSync(), contains('今日。'));
+  });
+
+  testWidgets('完成态有「导出字幕文件」：桌面存盘对话框拿到路径后拷贝产物', (WidgetTester tester) async {
+    final _FakeService service = _FakeService(ready: true, jobsDir: tmp);
+    final Directory exportDir = Directory(p.join(tmp.path, 'export'))
+      ..createSync();
+    String? askedName;
+    String? askedDir;
+    final String target = p.join(exportDir.path, 'out.srt');
+    await tester.pumpWidget(
+      wrap(
+        service,
+        (String? _) {},
+        saveFilePicker: ({
+          required String fileName,
+          required String? initialDirectory,
+        }) async {
+          askedName = fileName;
+          askedDir = initialDirectory;
+          return target;
+        },
+      ),
+    );
+    await tester.tap(find.byKey(const ValueKey<String>('open')));
+    await tester.pumpAndSettle();
+    await tester.runAsync(() async {
+      await tester.tap(
+        find.widgetWithText(FilledButton, t.audiobook_transcribe_start),
+      );
+      for (int i = 0; i < 50; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        if (find
+            .widgetWithText(OutlinedButton, t.audiobook_transcribe_export)
+            .evaluate()
+            .isNotEmpty) {
+          break;
+        }
+      }
+      await tester.tap(
+        find.widgetWithText(OutlinedButton, t.audiobook_transcribe_export),
+      );
+      for (int i = 0; i < 20 && !File(target).existsSync(); i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+    });
+    await tester.pumpAndSettle();
+    expect(File(target).existsSync(), isTrue);
+    expect(File(target).readAsStringSync(), contains('今日。'));
+    // 默认文件名 = 首个音频同名 .srt，起始目录 = 音频所在目录。
+    expect(askedName, endsWith('.srt'));
+    expect(askedDir, isNotNull);
+    // 导出不消费产物：「使用字幕」仍在。
+    expect(
+      find.widgetWithText(FilledButton, t.audiobook_transcribe_use_result),
+      findsOneWidget,
+    );
+  });
+
+  test('字幕行点击分流：能转录且有音频才弹来源选择', () {
+    expect(
+      shouldOfferSubtitleSourceChooser(asrSupported: true, hasAudio: true),
+      isTrue,
+    );
+    expect(
+      shouldOfferSubtitleSourceChooser(asrSupported: true, hasAudio: false),
+      isFalse,
+    );
+    expect(
+      shouldOfferSubtitleSourceChooser(asrSupported: false, hasAudio: true),
+      isFalse,
+    );
+  });
+
+  test('导出默认文件名：首个音频同名 .srt；无音频退回 transcript.srt', () {
+    expect(
+      suggestedTranscriptFileName(<String>[r'D:\第01巻.m4b', r'D:.mp3']),
+      '第01巻.srt',
+    );
+    expect(suggestedTranscriptFileName(const <String>[]), 'transcript.srt');
+  });
+
+  test('导出：用户取消存盘对话框时不写文件、返回 false', () async {
+    final File src = File(p.join(tmp.path, 'src.srt'))..writeAsStringSync('1');
+    final bool r = await exportTranscribedSrt(
+      srtPath: src.path,
+      audioPaths: <String>[p.join(tmp.path, 'x.m4b')],
+      desktop: true,
+      saveFilePicker: ({
+        required String fileName,
+        required String? initialDirectory,
+      }) async =>
+          null,
+    );
+    expect(r, isFalse);
   });
 
   testWidgets('已有完成产物：直接进入完成态，可放弃后重转', (WidgetTester tester) async {

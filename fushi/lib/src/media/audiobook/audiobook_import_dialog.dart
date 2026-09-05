@@ -462,7 +462,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
           ? null
           : _alignmentName ?? p.basename(_alignmentPath!),
       icon: Icons.align_horizontal_left,
-      onTap: _pickAlignment,
+      onTap: _onAlignmentRowTap,
       actions: [
         FushiIconButton(
           icon: Icons.align_horizontal_left,
@@ -479,6 +479,28 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
           ),
       ],
     );
+  }
+
+  /// 点对齐文件行：本机能转录且已选音频时先问来源（选文件 / 转录），否则直进选择器。
+  Future<void> _onAlignmentRowTap() async {
+    if (importing) return;
+    if (!shouldOfferSubtitleSourceChooser(
+      asrSupported: AsrTranscriptionService.isSupported,
+      hasAudio: _audioPaths?.isNotEmpty ?? false,
+    )) {
+      await _pickAlignment();
+      return;
+    }
+    final SubtitleSourceChoice? choice = await showSubtitleSourceChooser(
+      context: context,
+    );
+    if (choice == null || !mounted) return;
+    switch (choice) {
+      case SubtitleSourceChoice.pickFile:
+        await _pickAlignment();
+      case SubtitleSourceChoice.transcribe:
+        await _transcribeAlignmentFromAudio();
+    }
   }
 
   /// 没有对齐文件时用设备端语音模型从已选音频生成一份 SRT 回填；后续导入路径

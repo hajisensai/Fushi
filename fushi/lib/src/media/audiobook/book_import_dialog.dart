@@ -415,7 +415,7 @@ class _BookImportDialogState extends State<BookImportDialog>
           ? null
           : _subtitleName ?? p.basename(_subtitlePath!),
       icon: Icons.subtitles_outlined,
-      onTap: _pickSubtitle,
+      onTap: _onSubtitleRowTap,
       actions: [
         if (_subtitlePath != null)
           FushiIconButton(
@@ -442,6 +442,29 @@ class _BookImportDialogState extends State<BookImportDialog>
           ),
       ],
     );
+  }
+
+  /// 点字幕行：本机能转录且已选音频时先问来源（选文件 / 转录），否则直进选择器。
+  /// 同目录自动带入的字幕不阻止走这里——选「转录」就是替换它。
+  Future<void> _onSubtitleRowTap() async {
+    if (importing) return;
+    if (!shouldOfferSubtitleSourceChooser(
+      asrSupported: AsrTranscriptionService.isSupported,
+      hasAudio: _audioPaths.isNotEmpty,
+    )) {
+      await _pickSubtitle();
+      return;
+    }
+    final SubtitleSourceChoice? choice = await showSubtitleSourceChooser(
+      context: context,
+    );
+    if (choice == null || !mounted) return;
+    switch (choice) {
+      case SubtitleSourceChoice.pickFile:
+        await _pickSubtitle();
+      case SubtitleSourceChoice.transcribe:
+        await _transcribeSubtitleFromAudio();
+    }
   }
 
   /// 没有 .srt 时用设备端语音模型从已选音频生成一份，回填到字幕位；之后的导入

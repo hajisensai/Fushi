@@ -7,8 +7,12 @@
 library;
 
 import 'dart:async';
+import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
+import 'package:share_plus/share_plus.dart';
 
 import 'package:fushi/src/asr/asr_engine.dart';
 import 'package:fushi/src/asr/asr_model_manifest.dart';
@@ -16,6 +20,7 @@ import 'package:fushi/src/asr/asr_transcribe_job.dart';
 import 'package:fushi/src/asr/asr_transcription_service.dart';
 import 'package:fushi/src/onnx/model_file_downloader.dart';
 import 'package:fushi/src/onnx/onnx_inference.dart';
+import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/utils.dart';
 
 /// 打开转录弹层。返回生成的 SRT 绝对路径；用户关闭 / 暂停 / 失败时返回 null。
@@ -23,11 +28,18 @@ Future<String?> showAsrTranscribeSheet({
   required BuildContext context,
   required List<String> audioPaths,
   AsrTranscriptionService? service,
+  Future<String?> Function({
+    required String fileName,
+    required String? initialDirectory,
+  })? saveFilePicker,
 }) {
   final AsrTranscriptionService effective =
       service ?? AsrTranscriptionService();
-  Widget build(BuildContext ctx) =>
-      AsrTranscribeSheet(audioPaths: audioPaths, service: effective);
+  Widget build(BuildContext ctx) => AsrTranscribeSheet(
+        audioPaths: audioPaths,
+        service: effective,
+        saveFilePicker: saveFilePicker,
+      );
   if (isDesktopPlatform) {
     return showAppDialog<String>(
       context: context,
@@ -47,6 +59,130 @@ Future<String?> showAsrTranscribeSheet({
   );
 }
 
+/// 字幕 / 对齐文件行被点击时的来源选择。
+enum SubtitleSourceChoice {
+  /// 打开文件选择器挑现成字幕。
+  pickFile,
+
+  /// 用设备端语音模型从已选音频转录生成。
+  transcribe,
+}
+
+/// 纯函数：字幕行点击要不要先弹「字幕来源」选择。只有本机能转录**且**已选了音频时
+/// 转录才是一个可用选项，否则多一步选择只是打扰——直接进文件选择器。
+bool shouldOfferSubtitleSourceChooser({
+  required bool asrSupported,
+  required bool hasAudio,
+}) =>
+    asrSupported && hasAudio;
+
+/// 弹「字幕来源」选择：选现成文件 / 设备端转录。关闭返回 null。
+///
+/// 放在这里而不是各导入对话框里：书导入（字幕行）与附加有声书（对齐文件行）两个
+/// 入口共用同一份文案与顺序，转录入口不再只是行尾一枚无字图标（用户点了行本身
+/// 找不到转录——那是文件选择器直接弹出来的）。
+Future<SubtitleSourceChoice?> showSubtitleSourceChooser({
+  required BuildContext context,
+}) {
+  Widget build(BuildContext ctx) => const _SubtitleSourceChooser();
+  if (isDesktopPlatform) {
+    return showAppDialog<SubtitleSourceChoice>(
+      context: context,
+      builder: (BuildContext ctx) => FushiDialogFrame(
+        maxWidth: 440,
+        maxHeightFactor: 0.6,
+        scrollable: false,
+        child: build(ctx),
+      ),
+    );
+  }
+  return adaptiveModalSheet<SubtitleSourceChoice>(
+    context: context,
+    showDragHandle: true,
+    builder: build,
+  );
+}
+
+class _SubtitleSourceChooser extends StatelessWidget {
+  const _SubtitleSourceChooser();
+
+  @override
+  Widget build(BuildContext context) {
+    return FushiModalSheetFrame(
+      title: t.audiobook_subtitle_source_title,
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          FushiListItem(
+            leading: const Icon(Icons.subtitles_outlined),
+            title: Text(t.srt_import_pick_subtitle_files),
+            onTap: () => Navigator.pop(context, SubtitleSourceChoice.pickFile),
+          ),
+          FushiListItem(
+            leading: const Icon(Icons.record_voice_over_outlined),
+            title: Text(t.audiobook_transcribe_action),
+            subtitle: Text(t.audiobook_subtitle_source_transcribe_hint),
+            onTap: () =>
+                Navigator.pop(context, SubtitleSourceChoice.transcribe),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 导出转录产物：桌面走存盘对话框（默认文件名 = 首个音频同名 `.srt`、起始目录 =
+/// 音频所在目录），移动端走系统分享。返回是否真的导出了（用户取消返回 false）。
+/// [saveFilePicker] 可注入，测试里替换掉真的平台对话框。
+Future<bool> exportTranscribedSrt({
+  required String srtPath,
+  required List<String> audioPaths,
+  Future<String?> Function({
+    required String fileName,
+    required String? initialDirectory,
+  })? saveFilePicker,
+  bool? desktop,
+}) async {
+  final String suggestedName = suggestedTranscriptFileName(audioPaths);
+  if (desktop ?? isDesktopPlatform) {
+    final String? initialDirectory =
+        audioPaths.isEmpty ? null : File(audioPaths.first).parent.path;
+    final Future<String?> Function({
+      required String fileName,
+      required String? initialDirectory,
+    }) pick = saveFilePicker ??
+        ({required String fileName, required String? initialDirectory}) =>
+            FilePicker.platform.saveFile(
+              dialogTitle: t.audiobook_transcribe_export,
+              fileName: fileName,
+              initialDirectory: initialDirectory,
+              type: FileType.custom,
+              allowedExtensions: const <String>['srt'],
+            );
+    final String? savePath = await pick(
+      fileName: suggestedName,
+      initialDirectory: initialDirectory,
+    );
+    if (savePath == null || savePath.trim().isEmpty) return false;
+    await File(srtPath).copy(savePath);
+    return true;
+  }
+  await FushiShare.shareFiles(
+    <XFile>[
+      XFile(srtPath, mimeType: 'application/x-subrip', name: suggestedName)
+    ],
+    subject: suggestedName,
+  );
+  return true;
+}
+
+/// 纯函数：导出用的默认文件名——首个音频去扩展名 + `.srt`；多文件有声书取首个
+/// （单时间轴 SRT 本来就是整本一份）。没有音频时退回固定名。
+String suggestedTranscriptFileName(List<String> audioPaths) {
+  if (audioPaths.isEmpty) return 'transcript.srt';
+  return '${p.basenameWithoutExtension(audioPaths.first)}.srt';
+}
+
 enum _Phase {
   checking,
   needDownload,
@@ -64,11 +200,18 @@ enum _Phase {
 class AsrTranscribeSheet extends StatefulWidget {
   const AsrTranscribeSheet({
     required this.audioPaths,
+    this.saveFilePicker,
     required this.service,
     super.key,
   });
 
   final List<String> audioPaths;
+
+  /// 测试注入：替换桌面端的存盘对话框。null = 真的 `FilePicker.saveFile`。
+  final Future<String?> Function({
+    required String fileName,
+    required String? initialDirectory,
+  })? saveFilePicker;
   final AsrTranscriptionService service;
 
   @override
@@ -168,33 +311,31 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     int completedBytes = 0;
     String lastFile = '';
     int lastFileTotal = 0;
-    _downloadSub = widget.service
-        .downloadModel(plan.variant)
-        .listen(
-          (ModelDownloadEvent e) {
-            if (e.fileName != lastFile) {
-              completedBytes += lastFileTotal;
-              lastFile = e.fileName;
-              lastFileTotal = e.totalBytes;
-            }
-            if (!mounted) return;
-            setState(() {
-              _downloadFile = e.fileName;
-              _downloadReceived = completedBytes + e.receivedBytes;
-            });
-          },
-          onError: (Object e, StackTrace _) {
-            if (!mounted) return;
-            setState(() {
-              _phase = _Phase.error;
-              _error = '$e';
-            });
-          },
-          onDone: () {
-            if (!mounted) return;
-            _refreshPlan();
-          },
-        );
+    _downloadSub = widget.service.downloadModel(plan.variant).listen(
+      (ModelDownloadEvent e) {
+        if (e.fileName != lastFile) {
+          completedBytes += lastFileTotal;
+          lastFile = e.fileName;
+          lastFileTotal = e.totalBytes;
+        }
+        if (!mounted) return;
+        setState(() {
+          _downloadFile = e.fileName;
+          _downloadReceived = completedBytes + e.receivedBytes;
+        });
+      },
+      onError: (Object e, StackTrace _) {
+        if (!mounted) return;
+        setState(() {
+          _phase = _Phase.error;
+          _error = '$e';
+        });
+      },
+      onDone: () {
+        if (!mounted) return;
+        _refreshPlan();
+      },
+    );
   }
 
   Future<void> _startTranscription() async {
@@ -225,19 +366,19 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
           if (!mounted) return;
           switch (e) {
             case AsrTranscribeProgressEvent(
-              progress: final AsrTranscribeProgress p,
-            ):
+                progress: final AsrTranscribeProgress p,
+              ):
               setState(() => _progress = p);
             case AsrTranscribePausedEvent(
-              progress: final AsrTranscribeProgress p,
-            ):
+                progress: final AsrTranscribeProgress p,
+              ):
               setState(() {
                 _progress = p;
                 _phase = _Phase.paused;
               });
             case AsrTranscribeFinishedEvent(
-              result: final AsrTranscribeResult r,
-            ):
+                result: final AsrTranscribeResult r,
+              ):
               setState(() {
                 _result = r;
                 _finishedSrt = r.srtPath;
@@ -278,6 +419,23 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     setState(() => _phase = _Phase.pausing);
   }
 
+  /// 把转录产物导出到用户指定位置（桌面存盘 / 移动端分享）。产物文件本身留在
+  /// 任务目录里，导出只是拷一份，之后仍可「使用字幕」。
+  Future<void> _export() async {
+    final String? srt = _finishedSrt;
+    if (srt == null) return;
+    final bool exported = await exportTranscribedSrt(
+      srtPath: srt,
+      audioPaths: widget.audioPaths,
+      saveFilePicker: widget.saveFilePicker,
+    );
+    if (!exported || !mounted || !isDesktopPlatform) return;
+    FushiToast.show(
+      msg: t.audiobook_transcribe_export_saved,
+      severity: ToastSeverity.success,
+    );
+  }
+
   Future<void> _discard() async {
     await widget.service.discard(widget.audioPaths);
     if (!mounted) return;
@@ -290,16 +448,16 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
   // ── 展示 ───────────────────────────────────────────────────────────────────
 
   String _providerLabel(OnnxExecutionProvider p) => switch (p) {
-    OnnxExecutionProvider.cuda => 'CUDA (GPU)',
-    OnnxExecutionProvider.directml => 'DirectML (GPU)',
-    OnnxExecutionProvider.coreml => 'CoreML',
-    OnnxExecutionProvider.cpu => 'CPU',
-  };
+        OnnxExecutionProvider.cuda => 'CUDA (GPU)',
+        OnnxExecutionProvider.directml => 'DirectML (GPU)',
+        OnnxExecutionProvider.coreml => 'CoreML',
+        OnnxExecutionProvider.cpu => 'CPU',
+      };
 
   String _variantLabel(AsrEncoderVariant v) => switch (v) {
-    AsrEncoderVariant.fp32 => 'fp32 · GPU',
-    AsrEncoderVariant.int8 => 'int8 · CPU',
-  };
+        AsrEncoderVariant.fp32 => 'fp32 · GPU',
+        AsrEncoderVariant.int8 => 'int8 · CPU',
+      };
 
   static String _fmtDuration(Duration d) {
     final int h = d.inHours;
@@ -367,9 +525,8 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
             t.audiobook_transcribe_speed(
               elapsed: _fmtDuration(p.elapsed),
               eta: eta == null ? '—' : _fmtDuration(eta),
-              speed: rtf == null || rtf <= 0
-                  ? '—'
-                  : (1 / rtf).toStringAsFixed(1),
+              speed:
+                  rtf == null || rtf <= 0 ? '—' : (1 / rtf).toStringAsFixed(1),
             ),
           );
         }
@@ -431,8 +588,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final bool showProgressBar =
-        _phase == _Phase.downloading ||
+    final bool showProgressBar = _phase == _Phase.downloading ||
         _phase == _Phase.running ||
         _phase == _Phase.pausing ||
         _phase == _Phase.loading ||
@@ -550,6 +706,13 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
           TextButton(
             onPressed: _discard,
             child: Text(t.audiobook_transcribe_discard),
+          ),
+        );
+        add(
+          OutlinedButton.icon(
+            icon: const Icon(Icons.save_alt_outlined, size: 18),
+            label: Text(t.audiobook_transcribe_export),
+            onPressed: _finishedSrt == null ? null : _export,
           ),
         );
         add(
