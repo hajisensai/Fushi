@@ -4687,10 +4687,22 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 							global.fushiLookupProbeReport();
 						return (global.fushiLookupProbeOriginalProcessCh incontextof this)(...);
 					} incontextof global.MessageLayer;
+					// 装成功也要留一行。没有它的话，"类级补丁装上了但游戏从不调用"和
+					// "补丁压根没装上"在日志里完全同形——而这两者指向完全相反的修法。
+					global.fushiLookupNoteError("probe.install",
+						%[message: "classPatched=1,drawText=" +
+							(typeof global.Layer.drawText) + ",processCh=" +
+							(typeof global.MessageLayer.processCh)]);
 				}
 				catch(error)
 				{
 					global.fushiLookupProbeError = error.message;
+					// 同上：探针自己装失败必须喊出来，否则它和"探针没发现任何东西"同形。
+					try
+					{
+						global.fushiLookupNoteError("probe.install", error);
+					}
+					catch(e2) {}
 				}
 			}
 
