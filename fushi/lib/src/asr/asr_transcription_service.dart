@@ -186,6 +186,14 @@ class AsrTranscriptionService {
     return srt.existsSync() ? srt.path : null;
   }
 
+  /// 该字幕路径是否是本服务转录出来的产物（任务目录里的 `transcript.srt`，
+  /// 旁边有 `state.json`）。导入链路据此决定要不要把命中 cue 的文本换成正文
+  /// （听写文本换成正文后阅读器 DOM 重定位才精确）。
+  static bool isAsrGeneratedSubtitlePath(String path) {
+    if (p.basename(path) != AsrJobFiles.srt) return false;
+    return File(p.join(p.dirname(path), AsrJobFiles.state)).existsSync();
+  }
+
   /// 丢弃该组音频的全部转录进度与产物。
   Future<void> discard(List<String> audioPaths) async {
     final Directory dir = await jobDirFor(audioPaths);

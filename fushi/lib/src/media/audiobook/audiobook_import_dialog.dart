@@ -923,6 +923,17 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
         searchWindow: _searchWindow,
         similarityThreshold: _similarityThreshold,
       );
+      final String? alignment = _alignmentPath;
+      if (alignment != null &&
+          AsrTranscriptionService.isAsrGeneratedSubtitlePath(alignment)) {
+        // 设备端转录产物：命中 cue 的听写文本换成正文（与 alignAndPersistAudiobook
+        // 同一规则），阅读器 DOM 重定位才精确。
+        replaceMatchedCueTextWithBookText(
+          sections: sections,
+          cues: cues,
+          result: result,
+        );
+      }
       SubtitleRematchCodec.applyToCues(cues: cues, result: result);
       final int pct = (result.matchRate * 100).round();
       return AudiobookHealth.fromRatePct(

@@ -94,6 +94,26 @@ void main() {
             '(${(o.matchRate * 100).toStringAsFixed(1)}%)',
           );
         }
+        // 锚点间隙回填（导入链路经 EpubCueMatcher 门面默认启用）。
+        for (final double th in thresholds) {
+          final MatchResult o = EpubCueMatcher.match(
+            sections: sections,
+            cues: ours,
+            similarityThreshold: th,
+          );
+          final MatchResult r = EpubCueMatcher.match(
+            sections: sections,
+            cues: ref,
+            similarityThreshold: th,
+          );
+          // ignore: avoid_print
+          print(
+            '[realdata] +gapfill threshold=$th  SubPlz ${r.matchedCues}/${r.totalCues} '
+            '(${(r.matchRate * 100).toStringAsFixed(1)}%)  ours ${o.matchedCues}/${o.totalCues} '
+            '(${(o.matchRate * 100).toStringAsFixed(1)}%)',
+          );
+          if (th == thresholds.first) oursResult = o;
+        }
         // 导入链路默认 autoWindow：三档窗口探测取最高。
         for (final int w in EpubCueMatcher.defaultProbeWindows) {
           final MatchResult r = EpubSrtMatcher.match(
@@ -140,6 +160,16 @@ void main() {
         // ignore: avoid_print
         print(
           '[realdata] ours unmatched (${misses.length}): ${misses.take(40).join(' | ')}',
+        );
+        final List<AudioCue> replaced = List<AudioCue>.of(ours);
+        replaceMatchedCueTextWithBookText(
+          sections: sections,
+          cues: replaced,
+          result: oursResult,
+        );
+        // ignore: avoid_print
+        print(
+          '[realdata] ours text→book (first 14): ${replaced.skip(9).take(14).map((AudioCue c) => c.text).join(' | ')}',
         );
 
         // 时间差：对我们的每条 cue，找参照里起点最近的一条。

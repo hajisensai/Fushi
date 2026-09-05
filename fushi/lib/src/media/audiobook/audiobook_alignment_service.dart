@@ -111,6 +111,9 @@ Future<List<AudioCue>> parseCuesForFormat(
 /// 配对 SrtBook + cue + health overlay）；对话框只保留 UI 相关的 EPUB 导入、
 /// 封面、同名书弹窗，导入完拿到 [bookKey] 后调本函数，行为逐字节等价。
 ///
+/// [replaceCueTextWithBookText]：字幕是设备端转录产物时置 true，命中 cue 的文本
+/// 落库前换成正文原文（见 `replaceMatchedCueTextWithBookText`）。
+///
 /// 入参均为已就位的本地绝对路径（[subtitlePath] 必给；[audioPaths] 可空）。
 /// [autoWindow] / [searchWindow] / [similarityThreshold] 与对话框同名字段语义
 /// 一致。[onProgress] 替代 reportProgress，[messages] 注入步骤文案；二者皆可
@@ -129,6 +132,7 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
   double similarityThreshold = EpubSrtMatcher.defaultSimilarityThreshold,
   AudiobookAlignmentProgress? onProgress,
   AudiobookAlignmentMessages messages = const AudiobookAlignmentMessages(),
+  bool replaceCueTextWithBookText = false,
 }) async {
   void report(double f, String m) => onProgress?.call(f, m);
 
@@ -173,6 +177,15 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
       searchWindow: chosenWindow,
       similarityThreshold: similarityThreshold,
     );
+    if (replaceCueTextWithBookText) {
+      // ASR 听写文本 → 正文原文：阅读器按 cue 文本在 DOM 里重定位，听写差会让
+      // 高亮漂移；换成正文后逐字精确（未命中的保留听写文本）。
+      replaceMatchedCueTextWithBookText(
+        sections: sections,
+        cues: cues,
+        result: matchResult,
+      );
+    }
     SubtitleRematchCodec.applyToCues(cues: cues, result: matchResult);
     final int pct = (matchResult.matchRate * 100).round();
     health = AudiobookHealth.fromRatePct(

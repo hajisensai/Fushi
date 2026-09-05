@@ -1125,6 +1125,8 @@ class _BookImportDialogState extends State<BookImportDialog>
       autoWindow: _autoWindow,
       searchWindow: _searchWindow,
       similarityThreshold: _similarityThreshold,
+      replaceCueTextWithBookText:
+          AsrTranscriptionService.isAsrGeneratedSubtitlePath(_subtitlePath!),
       onProgress: reportProgress,
       messages: AudiobookAlignmentMessages(
         readingIdb: t.import_step_reading_idb,
