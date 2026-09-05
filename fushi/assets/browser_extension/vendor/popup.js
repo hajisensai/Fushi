@@ -4058,10 +4058,21 @@ function ensureDictionaryStyle(dictName, styleText) {
 
 function createGlossarySection(dictName, contents, dictIdx, entryIdx, totalDicts) {
     const details = el('details', { className: 'glossary-group' });
+    // BUG-2158：折叠是**三态**，优先级 显式展开 > 显式折叠 > 继承。
+    //
+    // 修复前只有 collapsedDictionaryNames 一个名单，「不在名单里」既表示「用户要
+    // 展开」又表示「用户没表态」。两者在这里的行为天差地别：没表态时
+    // `window.collapseDictionaries`（默认 true）会把它关掉，于是用户在设置页点
+    // 「展开」的那些词典，只要落在自动展开窗口之外就照样是关的——他点了个寂寞。
+    // 现在多一个 expandedDictionaryNames 名单专门表达「用户要展开」，它压过
+    // 自动展开窗口和全局开关。
+    const perDictExpanded = (window.expandedDictionaryNames || []).includes(dictName);
     const perDictCollapsed = (window.collapsedDictionaryNames || []).includes(dictName);
     const autoExpandN = autoExpandCount(totalDicts);
     const autoExpanded = dictIdx < autoExpandN;
-    if (!perDictCollapsed && (autoExpanded || !window.collapseDictionaries)) {
+    if (perDictExpanded) {
+        details.open = true;
+    } else if (!perDictCollapsed && (autoExpanded || !window.collapseDictionaries)) {
         details.open = true;
     }
 

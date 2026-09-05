@@ -1606,6 +1606,7 @@ class AppModel with ChangeNotifier {
             metadata: meta,
             hiddenLanguages: d.hiddenLanguages,
             collapsedLanguages: d.collapsedLanguages,
+            expandedLanguages: d.expandedLanguages,
             languageOverride: d.languageOverride,
           );
           dictRepo.persistDictionary(updated);
@@ -1662,6 +1663,7 @@ class AppModel with ChangeNotifier {
         metadata: meta,
         hiddenLanguages: d.hiddenLanguages,
         collapsedLanguages: d.collapsedLanguages,
+        expandedLanguages: d.expandedLanguages,
         languageOverride: d.languageOverride,
       );
       dictRepo.persistDictionary(updated);
@@ -5198,8 +5200,10 @@ class AppModel with ChangeNotifier {
   void setDictionaryLanguageOverride(Dictionary dictionary, String? language) =>
       dictRepo.setDictionaryLanguageOverride(dictionary, language);
 
-  void toggleDictionaryCollapsed(Dictionary dictionary) =>
-      dictRepo.toggleDictionaryCollapsed(
+  /// BUG-2158：折叠三态循环（继承 → 显式展开 → 显式折叠 → 继承）。
+  /// 旧的 `toggleDictionaryCollapsed` 双态入口已删除，不与本方法并存。
+  void cycleDictionaryCollapseState(Dictionary dictionary) =>
+      dictRepo.cycleDictionaryCollapseState(
           dictionary, JapaneseLanguage.instance.languageCode);
 
   void toggleDictionaryHidden(Dictionary dictionary) {

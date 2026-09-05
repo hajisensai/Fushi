@@ -249,27 +249,57 @@ void main() {
     });
   });
 
-  // ── toggleDictionaryCollapsed / Hidden ───────────────────────────────
+  // ── 折叠三态 / Hidden ────────────────────────────────────────────────
 
-  group('toggleDictionaryCollapsed', () {
-    test('adds language code when not collapsed', () {
+  // BUG-2158：折叠有三个态，一个 collapsedLanguages 名单只装得下两个。
+  // 旧的 toggleDictionaryCollapsed 双态入口已删除。
+  group('setDictionaryCollapseState / cycleDictionaryCollapseState', () {
+    test('三态循环：继承 → 显式展开 → 显式折叠 → 继承', () {
       final d = _dict(name: 'D');
       repo.persistDictionary(d);
-      repo.toggleDictionaryCollapsed(d, 'ja');
-      expect(
-        repo.dictionaries.first.collapsedLanguages,
-        contains('ja'),
-      );
+      expect(d.collapseStateForCode('ja'), DictionaryCollapseState.inherit,
+          reason: '存量词典两个名单都空 = 继承');
+
+      repo.cycleDictionaryCollapseState(d, 'ja');
+      expect(repo.dictionaries.first.expandedLanguages, contains('ja'));
+      expect(repo.dictionaries.first.collapsedLanguages, isNot(contains('ja')));
+      expect(d.collapseStateForCode('ja'), DictionaryCollapseState.expanded,
+          reason: '第一次点下去必须是「显式展开」—— 那正是用户以为自己一直在做的事');
+
+      repo.cycleDictionaryCollapseState(d, 'ja');
+      expect(repo.dictionaries.first.collapsedLanguages, contains('ja'));
+      expect(repo.dictionaries.first.expandedLanguages, isNot(contains('ja')));
+      expect(d.collapseStateForCode('ja'), DictionaryCollapseState.collapsed);
+
+      repo.cycleDictionaryCollapseState(d, 'ja');
+      expect(repo.dictionaries.first.collapsedLanguages, isNot(contains('ja')));
+      expect(repo.dictionaries.first.expandedLanguages, isNot(contains('ja')));
+      expect(d.collapseStateForCode('ja'), DictionaryCollapseState.inherit);
     });
 
-    test('removes language code when already collapsed', () {
+    test('两个名单互斥：从显式折叠直接设成显式展开，不会两边都留', () {
       final d = _dict(name: 'D', collapsedLanguages: ['ja']);
       repo.persistDictionary(d);
-      repo.toggleDictionaryCollapsed(d, 'ja');
-      expect(
-        repo.dictionaries.first.collapsedLanguages,
-        isNot(contains('ja')),
-      );
+      repo.setDictionaryCollapseState(
+          d, 'ja', DictionaryCollapseState.expanded);
+      expect(repo.dictionaries.first.expandedLanguages, contains('ja'));
+      expect(repo.dictionaries.first.collapsedLanguages, isNot(contains('ja')),
+          reason: '同一语言同时出现在两个名单里 = 状态自相矛盾，写入点必须保证互斥');
+    });
+
+    test('只动被指定的那个语言码，其它语言的表态不受影响', () {
+      final d = _dict(name: 'D', collapsedLanguages: ['ja', 'en']);
+      repo.persistDictionary(d);
+      repo.setDictionaryCollapseState(d, 'ja', DictionaryCollapseState.inherit);
+      expect(repo.dictionaries.first.collapsedLanguages, <String>['en']);
+      expect(repo.dictionaries.first.expandedLanguages, isEmpty);
+    });
+
+    test('重叠时读取仍是确定的：显式展开压过显式折叠', () {
+      // 外部写入（同步落库 / 手改 DB）可能弄出重叠，读取侧不能因此未定义。
+      final d = _dict(name: 'D', collapsedLanguages: ['ja']);
+      d.expandedLanguages = <String>['ja'];
+      expect(d.collapseStateForCode('ja'), DictionaryCollapseState.expanded);
     });
   });
 

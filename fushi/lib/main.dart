@@ -1072,7 +1072,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     final result = await repo.consumeInfoForAddingPasteboard();
     switch (result) {
       case AnkiFetchSuccess():
-        await ref.read(ankiViewModelProvider.notifier).reloadSettings();
+        await ref
+            .read(ankiViewModelProvider.notifier)
+            .applyFetchedConfiguration();
         FushiToast.show(
           msg: 'AnkiMobile configuration imported.',
           severity: ToastSeverity.success,

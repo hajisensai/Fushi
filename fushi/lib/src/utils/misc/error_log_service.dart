@@ -571,6 +571,10 @@ String? localizeAnkiMineError(String? code) {
       return t.anki_error_permission_permanently_denied;
     case AnkiErrorCode.ankiDroidUnavailable:
       return t.anki_error_ankidroid_unavailable;
+    // BUG-2150：iOS 上 `anki://` 打不开 = 没装 AnkiMobile。fetch 与制卡两条路径共用
+    // 这一个码，所以放在这里（[localizeAnkiFetchError] 会回落到本函数）。
+    case AnkiErrorCode.ankiMobileUnavailable:
+      return t.anki_error_ankimobile_unavailable;
     case AnkiErrorCode.connectionRefused:
       return t.anki_error_connection_refused;
     case AnkiErrorCode.connectionTimeout:

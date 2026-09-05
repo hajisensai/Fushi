@@ -2533,8 +2533,9 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// respectAssStyle 关 = **纯字幕模式**（BUG-915/1264）：**颜色语义整体归零**——行内 `\c`
   /// / `\1c` 主色与 `\3c` 描边色（[_resolveStroke]）、`\1a` 填充透明度、cueStyle 主色、`\t`
   /// 颜色动画、卡拉 OK SecondaryColour（[_applyDynamicFill]）同源门控，一律回落用户
-  /// textColor。只保留行内 `\i \b \u \s` 这些**文本语义**与历史 `\fs` 裸像素字号；字体 /
-  /// 字号 / 颜色的基线恒为用户统一样式。
+  /// textColor；行内 `\fs` 字号同样门控（BUG-2149，此前按裸像素放行、架空用户字号
+  /// 滑块）。只保留行内 `\i \b \u \s` 这些**文本语义**；字体 / 字号 / 颜色的基线恒为
+  /// 用户统一样式。
   /// respectAssStyle 开：字体名 / 主色 / 字号 / 粗斜下删线优先取 .ass 值（行内 span >
   /// [SubtitleCueStyle] cue 默认 > 用户统一样式，TODO-1105）。字体缺字时仍挂
   /// [_subtitleCjkFallback] 兜底。
@@ -2663,17 +2664,21 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       letterSpacing: (respect && span.letterSpacingPx != null)
           ? span.letterSpacingPx! * assFontScale
           : null,
-      // 行内字号（respect 时）同按 ASS 缩放 + cell/em 校准；respect 关时保持历史
-      // 裸像素（旧 span 行为）。
-      fontSize: span.fontSizePx != null
-          ? (respect
-              ? _scaleAssFontSize(_assFontSizeToEm(
-                      span.fontSizePx! * assFontScale,
-                      spanFontFamily ?? baseFontFamily,
-                      span.bold ? FontWeight.bold : baseWeight,
-                      span.italic || baseItalic) *
-                  spanMissingFontRasterCompensation.fontScale)
-              : span.fontSizePx!)
+      // 行内字号（respect 时）同按 ASS 缩放 + cell/em 校准。
+      // respect 关 = 纯字幕模式：**字号与兄弟属性同源门控**（BUG-2149）。曾按「历史
+      // 裸像素」放行 `span.fontSizePx`，那是最后一条穿透的外观通道——`\c` 主色
+      // （BUG-1285）、`\3c` 描边色、`\1a` 填充透明度、`\fsp` 字距、`\shad` 阴影、
+      // `\fscx/\fscy` 缩放早已全部门控，唯独它把作者字号直接写进 TextStyle，且写的是
+      // **PlayRes 空间裸数字**（连显示几何缩放都没走）。fansub 对白普遍每行套
+      // `{\fs...}` → 用户字号滑块被整条架空（用户报「尊重 ass 关了也是改不了大小」）。
+      // 开关文案明示「关闭则一律使用你的外观设置」，故这里回落 base.fontSize。
+      fontSize: (respect && span.fontSizePx != null)
+          ? _scaleAssFontSize(_assFontSizeToEm(
+                  span.fontSizePx! * assFontScale,
+                  spanFontFamily ?? baseFontFamily,
+                  span.bold ? FontWeight.bold : baseWeight,
+                  span.italic || baseItalic) *
+              spanMissingFontRasterCompensation.fontScale)
           : base.fontSize,
       decoration: decos.isEmpty ? null : TextDecoration.combine(decos),
     );
