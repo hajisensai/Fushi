@@ -367,6 +367,21 @@ class FilenameParser {
       st.episode ??= int.parse(cnEp.group(1)!);
       return;
     }
+    // ④' 块内「季 + 集」（`[4th - 14]` / `[S4 - 14]` / `[第4季 - 14]`，BUG-2146）。
+    // 放在这里而不是让块去过括号外那套规则链：块判据的安全性全靠「整块锚定」，
+    // 把位置启发式搬进块里会让 `[Disc 2]` 变成第 2 季、`[第01-12话]` 变成第 12 集。
+    final RegExpMatch? seBlock = _seasonEpisodeBlock.firstMatch(content);
+    if (seBlock != null) {
+      final String? cnSeason = seBlock.group(1);
+      final String? ordinal = seBlock.group(2);
+      final String? seasonWord = seBlock.group(3);
+      final String? sToken = seBlock.group(4);
+      st.season ??= cnSeason != null
+          ? _parseCnNumeral(cnSeason)
+          : int.parse((ordinal ?? seasonWord ?? sToken)!);
+      st.episode ??= int.parse(seBlock.group(5)!);
+      return;
+    }
     // ⑤ 纯数字集数（须位于标题之后，否则按噪音丢弃）。
     if (_plainEpisodeBlock.hasMatch(content)) {
       if (titleSeen) st.episode ??= int.parse(content);
@@ -456,6 +471,29 @@ class FilenameParser {
   /// `2nd Season` / `3rd Season`。
   static final RegExp _ordinalSeason = RegExp(
     r'(\d{1,2})\s*(?:st|nd|rd|th)\s*Season',
+    caseSensitive: false,
+  );
+
+  /// 块内「季 + 集」：`[4th - 14]` / `[S4 - 14]` / `[第4季 - 14]` /
+  /// `[4th Season - 14]` / `[Season 4 - 14]`（BUG-2146）。
+  ///
+  /// 这一族此前整批解不出集号：块分类只认纯数字 `[04]` / `[第04话]` / `[13 END]`
+  /// 三种形态，而认得 ` - 14` 的 [_dashEpisode] 只长在括号外文本那条通路上，块
+  /// 永远走不到 —— 组织器随即抛 `unable to determine episode number`。
+  ///
+  /// **季标记是必需的、且整块锚定**，这两条都不能松：
+  /// - 没有季标记就分不清 `[01-12]` / `[第01-12话]` 这种**合集区间**，会把整季
+  ///   合集包解成「第 12 集」；
+  /// - 不锚定整块就等于把括号外那套位置启发式（尾部裸数字季号、` - ` 副标题
+  ///   分割）搬进块里，`[Disc 2]` 会变成第 2 季、`[招募新人 - 详情见置顶]` 会变成
+  ///   副标题。块判据的安全性全靠「整块必须匹配」。
+  static final RegExp _seasonEpisodeBlock = RegExp(
+    r'^(?:'
+    r'第\s*([0-9零一二两三四五六七八九十]{1,3})\s*[季期]' // 第4季 / 第三季
+    r'|(\d{1,2})\s*(?:st|nd|rd|th)(?:\s*Season)?' //        4th / 4th Season
+    r'|Season[\s._]*(\d{1,2})' //                           Season 4
+    r'|[Ss](\d{1,2})' //                                    S4
+    r')\s*[-‐–—]\s*(\d{1,4})(?:[vV]\d{1,2})?(?:\s*(?:END|Fin|完))?$',
     caseSensitive: false,
   );
 

@@ -45,6 +45,32 @@ void main() {
     });
   });
 
+  group('episodeNumberFromReleaseTitle 的右边界刻意不放宽（BUG-2146）', () {
+    test('块内集号在这里解不出——这是有意的，放宽会让更靠左的位置抢答', () {
+      // 这个函数用 firstMatch。把右边界放宽到认闭括号，下面每一条都会解出错的值，
+      // 而错值比 null 更糟：它会被填进版本卡的集号标签和「从第 N 集之后」的订阅起点。
+      expect(
+        episodeNumberFromReleaseTitle('[G] Show [4th - 14][1080P]'),
+        isNull,
+        reason: '要真修得先排掉区间形态并约束命中位置，见 BUG-2146 的已知剩余缺口',
+      );
+      expect(episodeNumberFromReleaseTitle('[Anime Time - 2] Show - 05'), 5,
+          reason: '放宽右边界会让发布组标签里的 2 抢答');
+      expect(episodeNumberFromReleaseTitle('[G] Show [Vol.1 - 2] - 05'), 5);
+      expect(episodeNumberFromReleaseTitle('[G] Title [01 - 12] [1080p]'), isNull,
+          reason: '合集区间不是集号');
+      expect(episodeNumberFromReleaseTitle('[G] Doraemon （1979 - 2005） [BDRip]'),
+          isNull,
+          reason: '年份区间不是集号');
+    });
+
+    test('原有的块外形态照常', () {
+      expect(episodeNumberFromReleaseTitle('[Group] Show - 03 [1080p]'), 3);
+      expect(episodeNumberFromReleaseTitle('Show S02E07 1080p'), 7);
+      expect(episodeNumberFromReleaseTitle('[Group] Movie [1080p]'), isNull);
+    });
+  });
+
   group('buildVideoResourceVersionGroups', () {
     // 回归锚：VideoResourceRegistry 在返回前专门跑过 rankVideoResourcesByRelevance
     // （按季号/标题贴合度），理由写在那个函数上：「Nyaa 只做模糊词匹配，搜 "xxx 2"
