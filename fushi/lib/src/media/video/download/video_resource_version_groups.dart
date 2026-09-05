@@ -15,6 +15,14 @@ final RegExp _seasonEpisodePattern = RegExp(
   r'\bS(\d{1,3})[ ._-]*E(\d{1,4})(?:v\d+)?\b',
   caseSensitive: false,
 );
+// 右边界只认开括号与串尾，所以集号写在块**内部**的 `[4th - 14][总第80]` 这一族
+// 在这里解不出集号（`14` 后面跟的是 `]`）。**刻意不在 BUG-2146 里放宽**：这个
+// 函数用 firstMatch，放宽右边界会让更靠左的位置抢答 ——
+// `[Anime Time - 2] Show - 05` 解成 2、`[Title [Vol.1 - 2] - 05]` 解成 2、
+// 合集 `[01 - 12]` 从 null 变成 12、`（1979 - 2005）` 解成 2005。后果是版本卡的
+// 集号标签与「从第 N 集之后」订阅起点被填错值（比原先的空更糟）。
+// 要真修得先用 isLikelyBatchVideoRelease 排掉区间形态、并约束命中位置不落在开头的
+// 发布组标签里，那是独立于本 bug 的改动。见 BUG-2146 的「已知剩余缺口」。
 final RegExp _animeEpisodePattern = RegExp(
   r'(?:^|\s)-\s*(\d{1,4})(?:v\d+)?(?=\s*(?:\[|\(|$))',
   caseSensitive: false,
