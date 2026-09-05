@@ -44,6 +44,7 @@ String _param(String name, {String defaultValue = ''}) {
     'ASR_AUDIO' => const String.fromEnvironment('ASR_AUDIO'),
     'ASR_EXPECT' => const String.fromEnvironment('ASR_EXPECT'),
     'ASR_OUT' => const String.fromEnvironment('ASR_OUT'),
+    'ASR_ONLY' => const String.fromEnvironment('ASR_ONLY'),
     _ => '',
   };
   if (fromDefine.isNotEmpty) return fromDefine;
@@ -161,7 +162,11 @@ void main() {
     if (jobsRoot.existsSync()) await jobsRoot.delete(recursive: true);
   });
 
+  /// ASR_ONLY=gpu 时跳过 CPU 与分阶段计时用例（整本 7 小时的音频只跑 GPU）。
+  final bool onlyGpu = _param('ASR_ONLY') == 'gpu';
+
   testWidgets('CPU int8：真模型把日语读出来并生成 SRT', (WidgetTester tester) async {
+    if (onlyGpu) return;
     final r = await _runOnce(
       store: store,
       jobsRoot: jobsRoot,
@@ -222,11 +227,12 @@ void main() {
       );
       expect(r.resolution.didFallBack, isFalse, reason: '$r.resolution');
     }
-  }, timeout: const Timeout(Duration(minutes: 15)));
+  }, timeout: const Timeout(Duration(minutes: 40)));
 
   testWidgets(
     '分阶段计时：ffmpeg / VAD / ASR（CPU int8 与 GPU fp32）',
     (WidgetTester tester) async {
+      if (onlyGpu) return;
       await _phaseBenchmark(
         store: store,
         audio: audio,
