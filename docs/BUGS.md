@@ -33,7 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-2152](bugs/BUG-2152-anki-mined-ipa-duplicated.md) | 🚧 | 🚧 | 英语制卡音标重复两遍 —— 制卡侧未复用展示侧的 pitch 归一化 |
+| [BUG-2152](bugs/BUG-2152-anki-mined-ipa-duplicated.md) | 🚧 | 🚧 | 英语制卡音标重复两遍 —— 同一 PitchEntry 的 transcriptions 数组内没有去重 |
 | [BUG-2151](bugs/BUG-2151-anki-pitch-tags-ol-markup.md) | ✅ | ✅ | Anki 卡片音标黑框巨大且无分隔符 —— popup.js 产出 `<ol>`，Lapis `#pitch-tags` 样式契约是 `ul` |
 | [BUG-2145](bugs/BUG-2145-gal-kirikiri2-no-export-table-and-late-loadlibrary-hook.md) | ✅ | ✅ | KiriKiri2 无导出表 + 插件早于 LoadLibrary hook link：两条 exporter 路径同时静默落空，游戏内查词整条不装 |
 | [BUG-2144](bugs/BUG-2144-gal-kirikiri2-bcb-exception-escapes-msvc-catch.md) | ✅ | ✅ | KiriKiri2/BCB 上 TJS 抛的 Borland 异常穿透 MSVC catch(...)，注入的每帧求值把游戏打成致命错误框并强制写快速存档 |
