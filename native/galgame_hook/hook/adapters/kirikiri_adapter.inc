@@ -3144,7 +3144,22 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				}
 				if(patched > 0)
 					global.fushiLookupClassicSource = global.fushiLookupClassicSource | 8;
-				// messages 之外的层：位 4 单独记，好让真机上一眼看出扫描面到底扩没扩到树里。
+				// messages 之外的层：**默认不做**，只在探测分支打开时才走。
+				//
+				// 2026-09-05 真机两次实测（フタマタ恋愛 Ver1.00）：给 messages 数组之外的
+				// 任何层注入成员都会和游戏自身逻辑冲突。第一版走整棵窗口树（预算 512）、
+				// 第二版收窄到消息层子树（深度 4 / 预算 64），**两版都让游戏抛
+				// `Script exception raised / Member "enabled" does not exist` 并丢掉窗口**。
+				// 我们的 TJS 源码一处都没碰 enabled——是被注入成员的层参与了游戏自己的路径
+				// （KAG3 在页交换 / 状态存恢复时会把层的成员整体拷走，再在别的宿主上调用）。
+				// 收窄规模没用，说明问题不是"补挂面太大"，而是"给消息层以外的层注入成员"
+				// 这件事本身。
+				//
+				// 所以默认路径退回只补 kag.fore/back.messages（BUG-2116 的已知可工作行为），
+				// 树遍历留在探测开关后面，供换游戏时判断"对白层到底在不在 messages 里"——
+				// 它已经答过一次：フタマタ的 kDiagKirikiriClassicTreePatched 亮，说明消息层
+				// 确实有子层，扫描面扩得到，只是不能带着注入常驻。
+				if(!global.fushiLookupProbeMode) return patched;
 				global.fushiLookupLayerWalkBudget = 64;
 				var roots = global.fushiLookupLayerTreeRoots();
 				var tree = 0;
