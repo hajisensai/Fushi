@@ -4241,5 +4241,6 @@
   "anki_error_ankimobile_pasteboard_empty": "AnkiMobile 没有回传配置。请在 AnkiMobile 中同意该请求后再返回 Fushi。",
   "anki_error_ankimobile_pasteboard_denied": "iOS 阻止了读取剪贴板。返回 Fushi 时请在系统提示里选「允许粘贴」，然后重试。",
   "anki_error_ankimobile_no_decks": "AnkiMobile 没有回传任何牌组或笔记类型。",
-  "anki_error_ankimobile_unavailable": "无法打开 AnkiMobile。请先安装 AnkiMobile 再试。"
+  "anki_error_ankimobile_unavailable": "无法打开 AnkiMobile。请先安装 AnkiMobile 再试。",
+  "dictionary_collapse_follow_global": "跟随全局设置"
 }

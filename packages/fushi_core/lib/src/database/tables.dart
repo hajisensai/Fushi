@@ -314,6 +314,26 @@ class DictionaryMetadata extends Table {
   TextColumn get collapsedLanguagesJson =>
       text().withDefault(const Constant('[]'))();
 
+  /// v96：用户**显式展开**这本词典的语言列表（BCP-47，与 [collapsedLanguagesJson]
+  /// 同形）。BUG-2158。
+  ///
+  /// 为什么必须是独立的第二列而不是把 collapsed 当布尔用：折叠有**三**个态，
+  /// 一个列表只装得下两个。
+  ///   * 在 collapsed 名单里 → 显式折叠；
+  ///   * 在本名单里 → 显式展开；
+  ///   * 两个名单都不在 → **继承**（自动展开窗口 + 全局 `collapse_dictionaries`）。
+  /// 修复前只有 collapsed 一个名单，「不在名单里」被 UI 当成「展开」呈现（那个
+  /// unfold_more / unfold_less 双态按钮），实际却是「继承」——而全局默认是折叠，
+  /// 于是用户给自动展开窗口之外的词典点「展开」，视觉上毫无反应。UI 在撒谎。
+  ///
+  /// 两个名单**互斥**，由唯一写入点 `DictionaryRepository.setDictionaryCollapseState`
+  /// 维持；读取侧（[Dictionary.isCollapsed]）仍把「显式展开」排在「显式折叠」之前，
+  /// 所以即使外部写入弄出重叠，行为也是确定的而不是未定义。
+  ///
+  /// 存量数据零迁移：旧库升级后本列为 `[]` = 全部继承 = 逐字节保持 v96 前的行为。
+  TextColumn get expandedLanguagesJson =>
+      text().withDefault(const Constant('[]'))();
+
   /// v87：用户**手动指定**的词典内容语言（BCP-47，如 `ja` / `zh-Hant`）。
   ///
   /// null = 未指定，按自动来源推断（yomitan `index.json` 的 `sourceLanguage`，

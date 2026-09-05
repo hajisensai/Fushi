@@ -269,6 +269,7 @@ class ProfileRepository {
             order: companion.order.value,
             hiddenLanguagesJson: companion.hiddenLanguagesJson.value,
             collapsedLanguagesJson: companion.collapsedLanguagesJson.value,
+            expandedLanguagesJson: companion.expandedLanguagesJson.value,
             languageOverride: companion.languageOverride.value,
           );
           if (updated == 0 &&
@@ -630,6 +631,7 @@ class ProfileRepository {
       'metadataJson': row.metadataJson,
       'hiddenLanguagesJson': row.hiddenLanguagesJson,
       'collapsedLanguagesJson': row.collapsedLanguagesJson,
+      'expandedLanguagesJson': row.expandedLanguagesJson,
       'languageOverride': row.languageOverride,
     });
   }
@@ -657,6 +659,9 @@ class ProfileRepository {
             Value(asString(decoded['hiddenLanguagesJson'], '[]')),
         collapsedLanguagesJson:
             Value(asString(decoded['collapsedLanguagesJson'], '[]')),
+        // 旧快照没有这个键 → '[]' = 全部「继承」= 与 BUG-2158 之前的行为一致。
+        expandedLanguagesJson:
+            Value(asString(decoded['expandedLanguagesJson'], '[]')),
         // null（未指定）是合法值，不能像上面几个那样塞空串默认值——空串会让
         // effectiveSourceLanguage 的「非空即用户指定」判据失真。
         languageOverride: Value(decoded['languageOverride'] is String

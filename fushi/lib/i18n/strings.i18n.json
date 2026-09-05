@@ -4241,5 +4241,6 @@
   "anki_error_ankimobile_pasteboard_empty": "AnkiMobile did not return any configuration. Approve the request in AnkiMobile, then come back to Fushi.",
   "anki_error_ankimobile_pasteboard_denied": "iOS blocked reading the clipboard. Choose Allow Paste when returning to Fushi, then try again.",
   "anki_error_ankimobile_no_decks": "AnkiMobile returned no decks or note types.",
-  "anki_error_ankimobile_unavailable": "Could not open AnkiMobile. Install AnkiMobile and try again."
+  "anki_error_ankimobile_unavailable": "Could not open AnkiMobile. Install AnkiMobile and try again.",
+  "dictionary_collapse_follow_global": "Follow global setting"
 }
