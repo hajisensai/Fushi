@@ -1230,6 +1230,7 @@ class SimpleEntryAccumulator {
 
 // Declared here so import_mdx can drive the same two-phase write the
 // vector-taking entry point uses. Both are defined next to write_simple_dict.
+std::string sanitize_title(const std::string& raw);
 SimpleDictSink open_simple_dict(const std::string& title, const std::string& output_dir);
 void finish_simple_dict(SimpleDictSink& sink, SimpleDictRecords&& records, const std::string& styles_css,
                         ImportResult& result);
@@ -1395,24 +1396,32 @@ ImportResult import_mdx(const std::string& mdx_path, const std::string& output_d
     // arrive. Nothing here ever holds the whole dictionary.
     std::optional<SimpleDictSink> sink;
     std::optional<SimpleEntryAccumulator> accumulator;
+    bool capped = false;
 
     mdx_reader::parse_streaming(
         mapped.data, mapped.size,
         [&](std::string&& key, std::string&& definition) {
+          // A whole-dictionary cap latches here the same way the vector entry
+          // point breaks out of its loop, so both stop admitting entries at the
+          // same point instead of one silently carrying on.
+          if (capped) return;
           if (key.empty()) return;
           // Unresolvable @@@LINK= (circular or dangling) — already attempted in mdx_reader
           if (definition.starts_with("@@@LINK=")) return;
           if (css_scan_sample.size() < kCssScanEntryLimit) {
             css_scan_sample.push_back({key, definition});
           }
-          accumulator->add(key, definition);
+          if (!accumulator->add(key, definition)) capped = true;
         },
         [&](const MdxMeta& meta) {
           std::string title =
               meta.title.empty() ? fushi::fs_to_utf8(fushi::fs_path(mdx_path).stem()) : meta.title;
-          sink.emplace(open_simple_dict(title, output_dir));
-          sanitized = sink->title;
+          // Recorded before open_simple_dict runs: it creates the directory and
+          // can still throw afterwards (index.json, opening blobs.bin), and the
+          // failure path below can only clean up a name it already knows.
+          sanitized = sanitize_title(title);
           result.title = sanitized;
+          sink.emplace(open_simple_dict(title, output_dir));
           accumulator.emplace(sink->blobs);
           accumulator->reserve(meta.entry_count);
         });
@@ -1855,11 +1864,13 @@ ImportResult dictionary_importer::write_simple_dict(const std::string& title, co
                                                     const std::string& output_dir, const std::string& styles_css) {
   ImportResult result;
   result.detected_type = "term";
-  std::string sanitized;
+  // Recorded before open_simple_dict runs: it creates the directory and can
+  // still throw afterwards (index.json, opening blobs.bin), and the failure
+  // path below can only clean up a name it already knows.
+  std::string sanitized = sanitize_title(title);
+  result.title = sanitized;
   try {
     SimpleDictSink sink = open_simple_dict(title, output_dir);
-    sanitized = sink.title;
-    result.title = sanitized;
 
     SimpleEntryAccumulator accumulator(sink.blobs);
     for (const auto& entry : entries) {

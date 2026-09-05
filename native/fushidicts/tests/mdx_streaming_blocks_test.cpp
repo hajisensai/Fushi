@@ -172,6 +172,78 @@ int main() {
     expect_eq("blob b across boundary", m["\\img\\b.png"], png_b);
   }
 
+  // --- Case G: a corrupt key table must not strand every later entry --------
+  // record_offset comes straight out of the file with no validation. A garbage
+  // value makes one record claim a span larger than the whole dictionary; the
+  // reader has to drop that key and carry on. Honouring it instead would grow
+  // the sliding window until it held the entire decompressed stream (gigabytes
+  // on a real dictionary) AND leave every later entry permanently unreachable,
+  // because that key can never complete.
+  {
+    std::vector<std::pair<std::string, std::string>> rows5{
+        {"k0", "DEF0-body"}, {"k1", "DEF1-body"}, {"k2", "DEF2-body"},
+        {"k3", "DEF3-body"}, {"k4", "DEF4-body"},
+    };
+    // Each record is 9 bytes + NUL = 10; the real offsets would be 0,10,20,30,40.
+    // k1 is given an end far past the stream, k2 an impossible backwards span.
+    const std::vector<uint64_t> corrupt{0, 10, 0x40000000ull, 30, 40};
+    auto file = mdx_fixture::build_mdx_bad_offsets("Corrupt", rows5, corrupt, {17, 33});
+    auto m = parse_to_map(file);
+
+    expect_size("corrupt key table: entries after the bad key survive", m.size(), 3);
+    expect_eq("corrupt k0", m.count("k0") ? m["k0"] : "<MISSING>", "DEF0-body");
+    expect_eq("corrupt k3 (after the oversized key)", m.count("k3") ? m["k3"] : "<MISSING>",
+              "DEF3-body");
+    expect_eq("corrupt k4 (after the oversized key)", m.count("k4") ? m["k4"] : "<MISSING>",
+              "DEF4-body");
+  }
+
+  // --- Case H: offsets past the window must not run the erase off the buffer -
+  // Every offset here is beyond the record stream, so nothing is emitted; the
+  // point is that reclaiming the window clamps to what it actually holds
+  // instead of trusting the key table's arithmetic (UB / heap corruption).
+  {
+    std::vector<std::pair<std::string, std::string>> rows5{
+        {"k0", "DEF0-body"}, {"k1", "DEF1-body"}, {"k2", "DEF2-body"},
+        {"k3", "DEF3-body"}, {"k4", "DEF4-body"},
+    };
+    const std::vector<uint64_t> corrupt{900, 800, 950, 1000, 1100};
+    auto file = mdx_fixture::build_mdx_bad_offsets("Corrupt2", rows5, corrupt, {20, 35});
+    auto m = parse_to_map(file);
+    expect_size("out-of-range key table yields nothing and does not crash", m.size(), 0);
+  }
+
+  // --- Case I: .mdd binary records across block boundaries ------------------
+  // parse_mdd shares the streaming reader but keeps bytes verbatim -- no
+  // transcoding, no trailing-NUL stripping, no @@@LINK. Only single-block .mdd
+  // fixtures existed, so the multi-block path was never exercised.
+  {
+    const std::string blob_a("\x89PNG\x00\x01\xFF\x00 alpha resource bytes", 30);
+    const std::string blob_b("\x00\x00OggS\xFF\x00 beta resource bytes\x00", 29);
+    std::vector<std::pair<std::string, std::string>> media{
+        {"\\img\\a.png", blob_a},
+        {"\\audio\\b.ogg", blob_b},
+    };
+    // Split inside the first blob and again inside the second.
+    auto file = mdx_fixture::build_mdd_record_splits("MddSplit", media, {11, 34});
+    auto out = mdx_reader::parse_mdd(file.data(), file.size());
+    expect_size("mdd multi-block record count", out.size(), 2);
+    if (out.size() == 2) {
+      expect_eq("mdd path a", out[0].path, "\\img\\a.png");
+      expect_eq("mdd path b", out[1].path, "\\audio\\b.ogg");
+      if (out[0].blob != blob_a) {
+        std::fprintf(stderr, "FAIL mdd blob a not byte-exact (got %zu want %zu)\n", out[0].blob.size(),
+                     blob_a.size());
+        ++g_fail;
+      }
+      if (out[1].blob != blob_b) {
+        std::fprintf(stderr, "FAIL mdd blob b not byte-exact (got %zu want %zu)\n", out[1].blob.size(),
+                     blob_b.size());
+        ++g_fail;
+      }
+    }
+  }
+
   if (g_fail == 0) std::printf("PASS\n");
   return g_fail == 0 ? 0 : 1;
 }

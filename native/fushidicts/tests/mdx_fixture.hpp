@@ -221,17 +221,33 @@ inline std::vector<uint8_t> build_container(
 // record block, so nothing else in the suite can exercise a record that
 // straddles a block boundary, a window that must carry bytes forward, or a
 // redirect whose target lives in a different block than the redirect itself.
-inline std::vector<uint8_t> build_mdx_record_splits(
+struct RecordSplitOptions {
+  // MDX text records are NUL-terminated; .mdd binary records are not.
+  bool null_terminate = true;
+  // Byte offsets into the concatenated decompressed stream where a new block starts.
+  std::vector<size_t> split_offsets;
+  // When non-empty, these values are written into the key table instead of the
+  // real record positions -- for exercising a corrupt/hostile key table, whose
+  // record_offset values are read straight out of the file with no validation.
+  std::vector<uint64_t> record_offset_override;
+};
+
+inline std::vector<uint8_t> build_container_record_splits(
     const std::string& title, const std::vector<std::pair<std::string, std::string>>& entries,
-    const std::vector<size_t>& split_offsets) {
+    const RecordSplitOptions& opts) {
   std::vector<uint8_t> records;
   std::vector<uint64_t> offsets;
   for (const auto& [k, d] : entries) {
     (void)k;
     offsets.push_back(records.size());
     records.insert(records.end(), d.begin(), d.end());
-    records.push_back(0);  // MDX text records are NUL-terminated
+    if (opts.null_terminate) records.push_back(0);
   }
+  if (!opts.record_offset_override.empty()) {
+    offsets = opts.record_offset_override;
+    offsets.resize(entries.size(), 0);
+  }
+  const std::vector<size_t>& split_offsets = opts.split_offsets;
 
   std::vector<uint8_t> key_entries;
   for (size_t i = 0; i < entries.size(); i++) {
@@ -304,6 +320,34 @@ inline std::vector<uint8_t> build_mdx_record_splits(
     file.insert(file.end(), block.begin(), block.end());
   }
   return file;
+}
+
+inline std::vector<uint8_t> build_mdx_record_splits(
+    const std::string& title, const std::vector<std::pair<std::string, std::string>>& entries,
+    const std::vector<size_t>& split_offsets) {
+  RecordSplitOptions opts;
+  opts.split_offsets = split_offsets;
+  return build_container_record_splits(title, entries, opts);
+}
+
+// .mdd shape (binary records, no NUL terminator) split across several blocks.
+inline std::vector<uint8_t> build_mdd_record_splits(
+    const std::string& title, const std::vector<std::pair<std::string, std::string>>& entries,
+    const std::vector<size_t>& split_offsets) {
+  RecordSplitOptions opts;
+  opts.null_terminate = false;
+  opts.split_offsets = split_offsets;
+  return build_container_record_splits(title, entries, opts);
+}
+
+// Key table carrying caller-chosen record_offset values -- a corrupt container.
+inline std::vector<uint8_t> build_mdx_bad_offsets(
+    const std::string& title, const std::vector<std::pair<std::string, std::string>>& entries,
+    const std::vector<uint64_t>& record_offsets, const std::vector<size_t>& split_offsets) {
+  RecordSplitOptions opts;
+  opts.split_offsets = split_offsets;
+  opts.record_offset_override = record_offsets;
+  return build_container_record_splits(title, entries, opts);
 }
 
 // MDX: text (HTML) records, NUL-terminated.

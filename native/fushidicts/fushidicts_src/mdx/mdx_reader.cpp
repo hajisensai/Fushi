@@ -558,6 +558,12 @@ bool decompress_record_block(const uint8_t* data, size_t size, const RecordBlock
   return true;
 }
 
+// Ceiling on how many bytes one record may span while being carried across
+// block boundaries. Real entries are dictionary definitions or single .mdd
+// resources, orders of magnitude below this; anything larger is a corrupt key
+// table, and the streaming window must not be sized by it.
+constexpr uint64_t kMaxStreamedRecordBytes = 64ull * 1024 * 1024;
+
 // Byte span of the record belonging to key `i` within the decompressed stream.
 uint64_t record_end_offset(const ContainerIndex& idx, size_t i) {
   return (i + 1 < idx.keys.size()) ? idx.keys[i + 1].record_offset : idx.total_decompressed;
@@ -601,7 +607,18 @@ void stream_records(const uint8_t* data, size_t size, ContainerIndex& idx,
     while (key_index < idx.keys.size()) {
       const uint64_t start = idx.keys[key_index].record_offset;
       const uint64_t end = record_end_offset(idx, key_index);
-      if (end > window_end) break;  // record continues into the next block
+      if (end > window_end) {
+        // A record whose span is larger than any real entry means a corrupt key
+        // table, and honouring it would defeat the whole point of streaming:
+        // the window would keep growing until it held the entire decompressed
+        // stream (gigabytes), and every later entry would be stranded behind it
+        // because this key can never complete. Drop the key and keep going.
+        if (end - start > kMaxStreamedRecordBytes) {
+          key_index++;
+          continue;
+        }
+        break;  // genuinely straddles into the next block
+      }
       if (start < window_base || start >= end) {
         key_index++;
         continue;
@@ -787,7 +804,12 @@ MdxMeta mdx_reader::parse_streaming(const uint8_t* data, size_t size, const Entr
   // position so each one can be marked off once its text has been handed over.
   std::unordered_map<size_t, std::vector<size_t>> links_by_target;
   for (size_t pos = 0; pos < links.size(); pos++) {
-    size_t target = redirect_target[links[pos].key_index];
+    // find, not operator[]: a missing key would otherwise be default-inserted as
+    // 0, which is a *valid* key index rather than kNoKey, and silently resolve
+    // the redirect to whatever entry happens to be first.
+    auto seed = redirect_target.find(links[pos].key_index);
+    if (seed == redirect_target.end()) continue;
+    size_t target = seed->second;
     for (int hop = 0; hop < 10 && target != kNoKey; hop++) {
       auto next = redirect_target.find(target);
       if (next == redirect_target.end()) break;  // lands on a real entry
