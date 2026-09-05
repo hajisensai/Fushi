@@ -12,3 +12,42 @@
   每个 KAG stable 边沿重扫都把「上一层包装」当成 original 再包一层，N 次推进后一次 drawText
   调用递归 N 层，主线程在画字时栈溢出。标记提到第一次赋值之前：半途失败只是保持半装，
   drawText 采集仍然有效。守卫 `find_late_classic_patch_marker` + 变异自测。详见 [[BUG-2121]]。
+
+- **真机答案（2026-09-05，フタマタ恋愛 Ver1.00 / KiriKiri Z，注入器直驱、探测分支打开）**：
+  上面备注留的那个「下一个边界」——MessageLayer 每字是否真走 `this.drawText`——**答案是否定的**。
+
+  **实测到的（不是推断）**：
+  - 一段产生 15 条 LunaHook 文本事件的对白里，**实例级** `drawText` 包装一次都没触发
+    （`classic_geometry` 恒灭），**类级** `global.Layer.drawText` 包装也一次都没触发
+    （`probe.drawText` 零行、`classDrawText` 在该会话里没到过 1）。同一实例的 `processCh`
+    包装**会**触发（`classic_processch_fired` 亮）。
+  - 类级 `global.MessageLayer.processCh` 包装恒不触发（`classProcessCh=0`）。原因是顺序：
+    实例补丁（`fushiLookupSweepClassicLayers`，KAGEX 缺席门 else 分支）装在探测分支
+    （installStage 39）**之前**，实例包装保存的 `fushiLookupOriginalProcessCh` 是**未被类补丁
+    包过**的类方法，调用链因此绕过类级探针。**这一位灭不代表「类补丁无效」**，别再据此推断。
+  - 游戏 exe 静态导入 `gdi32!GetGlyphOutlineW` / `GetTextExtentPoint32W` /
+    `CreateFontIndirectW` / `CreateDIBSection` / `GetFontData`；进程加载 19 个 `plugin\*.dll`，
+    含 `layerExDraw.dll`（GDI+ 绘图插件）、`KAGParser.dll` / `ExtKAGParser.dll`。
+  - 输入侧没有问题：`kagSeams=30`（`0x1E` = onPrimaryClick|onMouseMove|onMouseWheel|onKeyDown）
+    四个接缝全装上；鼠标移动时 `lookup.coord.v1` 正常流动，只是 `N=0`（registry 空）。
+
+  **推断（标注为推断）**：对白正文由引擎 native 层逐字形光栅化后直接合成，不经过 TJS 的
+  `Layer.drawText` 成员查找。`Layer.drawText` 是 native 成员，TJS 层给类或给实例赋值都不在
+  它的内部调用路径上——所以几何采不到**不是补丁装错了对象**，是这条路上根本没有可拦截的
+  TJS 调用。BUG-2116 的修复（逐实例补丁）本身是对的，只是对这一类游戏拿不到 drawText。
+
+- **踩坑记录：不要整体枚举活的引擎对象成员（2026-09-05，真机把游戏弄崩了一次）**：
+  为了不猜字段名，我试过在 `processCh` 实例包装里用
+  `var dic = %[]; dic.assign(layer);` 整体枚举图层的数值成员，想靠「调原始实现前后谁前进了
+  `font.getTextWidth(ch)`」自校准出 x 光标。**结果游戏弹出 KiriKiri 全局脚本异常框
+  `Script exception raised / Member "enabled" does not exist`，一条数据都没采到。**
+  `Dictionary.assign` 会逐个**读取**源对象的所有成员，踩到任何一个读取即抛的属性就炸，
+  而那是 native 侧抛的、**TJS 的 `try/catch` 拦不住**（我已经把 assign 包在 catch 里了，
+  照样弹框）。已回退，未进任何提交。
+  后续要做自校准发现，只能**逐个候选名各自 try/catch 单独读**，绝不能整体 assign。
+
+- **下一个边界**：几何来源。processCh 拦得到、每字符一次、能拿到字符本身和
+  `font.getTextWidth(ch)`，缺的只是屏幕坐标锚点。候选方向（都未验证，别当结论）：
+  ① 逐个候选名安全读取 KAG3 标准字段推出光标；② 从已被 `text_render_adapter` 钩住的
+  `gdi32!GetGlyphOutlineW` 侧取字形度量并与 processCh 关联；③ 自己维护光标（累加字宽 +
+  按层宽推断换行）。三条都要真机验证，不要在没有实测前写进采集路径。
