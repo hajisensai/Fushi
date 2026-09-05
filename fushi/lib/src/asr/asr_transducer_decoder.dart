@@ -273,12 +273,10 @@ class AsrTransducerDecoder implements AsrBatchDecoder {
 
     // 5. 组装结果（去掉前置两个 blank 上下文）。
     return List<AsrDecodedSegment>.generate(batch, (int i) {
-      final List<int> ys = hyps[i].sublist(kAsrDecoderContextSize);
-      return AsrDecodedSegment(
-        tokens: List<String>.unmodifiable(ys.map(_tokens.tokenAt)),
-        tokenOffsetsMs: List<int>.unmodifiable(
-          frames[i].map((int f) => f * kAsrEncoderFrameMs),
-        ),
+      return AsrDecodedSegment.fromTokenIds(
+        table: _tokens,
+        ids: hyps[i].sublist(kAsrDecoderContextSize),
+        offsetsMs: <int>[for (final int f in frames[i]) f * kAsrEncoderFrameMs],
       );
     });
   }
@@ -311,17 +309,18 @@ class AsrTransducerDecoder implements AsrBatchDecoder {
       );
     }
     return List<AsrDecodedSegment>.generate(batch, (int i) {
-      final List<String> tokens = <String>[];
+      final List<int> ids = <int>[];
       final List<int> offsets = <int>[];
       for (int t = 0; t < encLens[i]; t++) {
         final int y = _lengthAt(emitted, i * encFrames + t);
         if (y < 0) continue;
-        tokens.add(_tokens.tokenAt(y));
+        ids.add(y);
         offsets.add(t * kAsrEncoderFrameMs);
       }
-      return AsrDecodedSegment(
-        tokens: List<String>.unmodifiable(tokens),
-        tokenOffsetsMs: List<int>.unmodifiable(offsets),
+      return AsrDecodedSegment.fromTokenIds(
+        table: _tokens,
+        ids: ids,
+        offsetsMs: offsets,
       );
     });
   }

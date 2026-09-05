@@ -1,16 +1,19 @@
-/// 有声书设备端转录的**端到端真机测试**：真 ONNX Runtime + 真 ReazonSpeech 模型 +
-/// 真 ffmpeg 解码，把一段日语音频跑成 SRT，并断言识别文本与 ground truth 一致。
+/// 有声书设备端转录的**端到端真机测试**：真 ONNX Runtime + 真模型（日语 ReazonSpeech
+/// 或英语 LibriHeavy）+ 真 ffmpeg 解码，把一段音频跑成 SRT，并断言识别文本与
+/// ground truth 一致。
 ///
 /// 单测层（`test/asr/`）用 fake 会话只能证明算法结构正确；这条证明在这台机器上
-/// GPU / CPU 两条 EP 路径都真能把日语读出来，并给出实时因子——「GPU 快多少」
+/// GPU / CPU 两条 EP 路径都真能把话读出来，并给出实时因子——「GPU 快多少」
 /// 的结论只能从这里拿数，不能靠推断。
 ///
 /// 输入：
 ///   --dart-define=ASR_MODEL_SEED=<dir>   含 encoder/decoder/joiner/tokens/vad 的目录（或同名环境变量）
 ///                                        （fp32 与 int8 编码器都在时才会跑 GPU 用例）
-///   --dart-define=ASR_AUDIO=<wav/mp3>    日语音频；缺省用 test/asr/fixtures/ja_tts_16k.wav
+///   --dart-define=ASR_LANG=ja|en         模型包语言（决定文件名与词表形态）；缺省 ja
+///   --dart-define=ASR_AUDIO=<wav/mp3>    音频；缺省用 test/asr/fixtures/ja_tts_16k.wav
 ///                                        （相对 fushi/，仅桌面可读）
-///   --dart-define=ASR_EXPECT=<text>      期望文本子串；缺省「今日はいい天気ですね」
+///   --dart-define=ASR_EXPECT=<text>      期望文本子串（比较前去空白/标点并小写）；
+///                                        缺省「今日はいい天気ですね」
 ///
 /// 跑法（Windows，从 fushi/）：
 ///   $env:ASR_MODEL_SEED = '<模型目录>'
@@ -41,6 +44,7 @@ import 'package:fushi/src/onnx/onnx_inference.dart';
 String _param(String name, {String defaultValue = ''}) {
   final String fromDefine = switch (name) {
     'ASR_MODEL_SEED' => const String.fromEnvironment('ASR_MODEL_SEED'),
+    'ASR_LANG' => const String.fromEnvironment('ASR_LANG'),
     'ASR_AUDIO' => const String.fromEnvironment('ASR_AUDIO'),
     'ASR_EXPECT' => const String.fromEnvironment('ASR_EXPECT'),
     'ASR_OUT' => const String.fromEnvironment('ASR_OUT'),
@@ -54,13 +58,17 @@ String _param(String name, {String defaultValue = ''}) {
 }
 
 final String _kSeed = _param('ASR_MODEL_SEED');
+final AsrLanguage _kLang =
+    AsrLanguage.fromTag(_param('ASR_LANG', defaultValue: 'ja')) ??
+        AsrLanguage.japanese;
 final String _kAudio = _param(
   'ASR_AUDIO',
   defaultValue: 'test/asr/fixtures/ja_tts_16k.wav',
 );
 final String _kExpect = _param('ASR_EXPECT', defaultValue: '今日はいい天気ですね');
 
-String _normalize(String s) => s.replaceAll(RegExp(r'[\s、。！？!?]'), '');
+String _normalize(String s) =>
+    s.toLowerCase().replaceAll(RegExp(r'[\s、。！？!?,.\x27"“”’]'), '');
 
 Future<
   ({
@@ -78,14 +86,15 @@ _runOnce({
   required AsrEncoderVariant variant,
 }) async {
   final AsrTranscriptionService service = AsrTranscriptionService(
-    openStore: () async => store,
+    openStore: (AsrLanguage _) async => store,
     jobsRoot: () async => jobsRoot,
     chunkSeconds: 60,
   );
-  await service.discard(<String>[audio]);
+  await service.discard(<String>[audio], _kLang);
   final Stopwatch loadClock = Stopwatch()..start();
   final AsrRunningTranscription running = await service.start(
     audioPaths: <String>[audio],
+    language: _kLang,
     variant: variant,
     preference: preference,
   );
@@ -118,7 +127,7 @@ _runOnce({
     }
     final List<AsrTranscribedSegment> segments =
         await AsrTranscribeJob.loadSegments(
-          await service.jobDirFor(<String>[audio]),
+          await service.jobDirFor(<String>[audio], _kLang),
         );
     final String text = segments
         .map((AsrTranscribedSegment s) => s.text)
@@ -147,7 +156,7 @@ void main() {
       isNotEmpty,
       reason: '需要 --dart-define=ASR_MODEL_SEED=<模型目录>',
     );
-    store = AsrModelStore(Directory(_kSeed));
+    store = AsrModelStore(Directory(_kSeed), asrModelPackFor(_kLang));
     expect(
       store.isReady(AsrEncoderVariant.int8),
       isTrue,
@@ -167,7 +176,7 @@ void main() {
   /// ASR_ONLY=gpu 时跳过 CPU 与分阶段计时用例（整本 7 小时的音频只跑 GPU）。
   final bool onlyGpu = _param('ASR_ONLY') == 'gpu';
 
-  testWidgets('CPU int8：真模型把日语读出来并生成 SRT', (WidgetTester tester) async {
+  testWidgets('CPU int8：真模型把话读出来并生成 SRT', (WidgetTester tester) async {
     if (onlyGpu) return;
     final r = await _runOnce(
       store: store,

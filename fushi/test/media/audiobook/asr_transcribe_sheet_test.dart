@@ -76,11 +76,14 @@ class _FakeDecoder implements AsrBatchDecoder {
 }
 
 /// 假服务：模型就绪与否、已完成产物可编程；`start` 装配真任务 + 假会话。
+/// 每次 plan / download / start 收到的语言都记下来，供「切语言真的传到了
+/// service」的断言。
 class _FakeService extends AsrTranscriptionService {
   _FakeService({required this.ready, required this.jobsDir, this.existingSrt})
       : super(
           pcm: _FakePcm(),
-          openStore: () async => AsrModelStore(jobsDir),
+          openStore: (AsrLanguage l) async =>
+              AsrModelStore(jobsDir, asrModelPackFor(l)),
           jobsRoot: () async => jobsDir,
         );
 
@@ -89,10 +92,18 @@ class _FakeService extends AsrTranscriptionService {
   String? existingSrt;
   int downloadCalls = 0;
   int discardCalls = 0;
+  final List<AsrLanguage> planLanguages = <AsrLanguage>[];
+  AsrLanguage? lastDownloadLanguage;
+  AsrLanguage? lastStartLanguage;
 
   @override
-  Future<AsrTranscribePlan> plan(AsrAccelerationPreference preference) async {
+  Future<AsrTranscribePlan> plan({
+    required AsrLanguage language,
+    required AsrAccelerationPreference preference,
+  }) async {
+    planLanguages.add(language);
     return AsrTranscribePlan(
+      language: language,
       variant: AsrEncoderVariant.int8,
       expectedProvider: OnnxExecutionProvider.cpu,
       modelStatus: AsrModelStatus(
@@ -105,8 +116,12 @@ class _FakeService extends AsrTranscriptionService {
   }
 
   @override
-  Stream<ModelDownloadEvent> downloadModel(AsrEncoderVariant variant) async* {
+  Stream<ModelDownloadEvent> downloadModel({
+    required AsrLanguage language,
+    required AsrEncoderVariant variant,
+  }) async* {
     downloadCalls++;
+    lastDownloadLanguage = language;
     yield const ModelDownloadEvent(
       fileName: 'a.onnx',
       receivedBytes: 500,
@@ -122,13 +137,21 @@ class _FakeService extends AsrTranscriptionService {
   }
 
   @override
-  Future<String?> finishedSrtPath(List<String> audioPaths) async => existingSrt;
+  Future<String?> finishedSrtPath(
+    List<String> audioPaths,
+    AsrLanguage language,
+  ) async =>
+      existingSrt;
 
   @override
-  Future<AsrJobState?> existingState(List<String> audioPaths) async => null;
+  Future<AsrJobState?> existingState(
+    List<String> audioPaths,
+    AsrLanguage language,
+  ) async =>
+      null;
 
   @override
-  Future<void> discard(List<String> audioPaths) async {
+  Future<void> discard(List<String> audioPaths, AsrLanguage language) async {
     discardCalls++;
     existingSrt = null;
   }
@@ -136,9 +159,11 @@ class _FakeService extends AsrTranscriptionService {
   @override
   Future<AsrRunningTranscription> start({
     required List<String> audioPaths,
+    required AsrLanguage language,
     required AsrEncoderVariant variant,
     required AsrAccelerationPreference preference,
   }) async {
+    lastStartLanguage = language;
     final AsrEngineSessions sessions = AsrEngineSessions(
       encoder: _NoopSession(),
       decoder: _NoopSession(),
@@ -154,6 +179,7 @@ class _FakeService extends AsrTranscriptionService {
     final AsrTranscribeJob job = AsrTranscribeJob(
       jobDir: Directory('${jobsDir.path}/job'),
       audioPaths: audioPaths,
+      modelId: asrModelPackFor(language).id,
       pcm: _FakePcm(),
       segmenter: _FakeSegmenter(),
       decoder: _FakeDecoder(),
@@ -165,8 +191,12 @@ class _FakeService extends AsrTranscriptionService {
 
 void main() {
   late Directory tmp;
+
+  /// 「上次选的语言」偏好桩：默认日语；setter 写回 [savedLanguage]。
+  String savedLanguage = 'ja';
   setUp(() async {
     tmp = await Directory.systemTemp.createTemp('asr_sheet_test_');
+    savedLanguage = 'ja';
   });
   tearDown(() async {
     if (tmp.existsSync()) await tmp.delete(recursive: true);
@@ -194,6 +224,8 @@ void main() {
                       audioPaths: const <String>['a.mp3'],
                       service: service,
                       saveFilePicker: saveFilePicker,
+                      languageGetter: () => savedLanguage,
+                      languageSetter: (String tag) async => savedLanguage = tag,
                     );
                     onResult(r);
                   },
@@ -227,6 +259,59 @@ void main() {
       find.widgetWithText(FilledButton, t.audiobook_transcribe_start),
       findsOneWidget,
     );
+  });
+
+  testWidgets('切到英语：plan / 下载都带英语，且语言偏好被写成 en', (WidgetTester tester) async {
+    final _FakeService service = _FakeService(ready: false, jobsDir: tmp);
+    await tester.pumpWidget(wrap(service, (String? _) {}));
+    await tester.tap(find.byKey(const ValueKey<String>('open')));
+    await tester.pumpAndSettle();
+    // 初值来自偏好（ja），模型就绪行标出日语包名。
+    expect(service.planLanguages, <AsrLanguage>[AsrLanguage.japanese]);
+
+    await tester.tap(find.text(t.audiobook_transcribe_language_en));
+    await tester.pumpAndSettle();
+    expect(service.planLanguages.last, AsrLanguage.english);
+    expect(savedLanguage, 'en');
+
+    await tester.tap(
+      find.widgetWithText(FilledButton, t.audiobook_transcribe_model_download),
+    );
+    await tester.pumpAndSettle();
+    expect(service.lastDownloadLanguage, AsrLanguage.english);
+    // 下载完成后的就绪行带英语包名。
+    expect(
+      find.textContaining(kAsrEnglishPack.displayName),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('偏好里存的是 en：弹层初值就是英语，start 也带英语', (WidgetTester tester) async {
+    savedLanguage = 'en';
+    final _FakeService service = _FakeService(ready: true, jobsDir: tmp);
+    await tester.pumpWidget(wrap(service, (String? _) {}));
+    await tester.tap(find.byKey(const ValueKey<String>('open')));
+    await tester.pumpAndSettle();
+    expect(service.planLanguages, <AsrLanguage>[AsrLanguage.english]);
+    await tester.runAsync(() async {
+      await tester.tap(
+        find.widgetWithText(FilledButton, t.audiobook_transcribe_start),
+      );
+      // 要等到任务真跑完（完成态）再回 fake async：运行中的不定进度条会让
+      // pumpAndSettle 永远等不到安定。
+      for (int i = 0; i < 50; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        if (find
+            .widgetWithText(FilledButton, t.audiobook_transcribe_use_result)
+            .evaluate()
+            .isNotEmpty) {
+          break;
+        }
+      }
+    });
+    await tester.pumpAndSettle();
+    expect(service.lastStartLanguage, AsrLanguage.english);
   });
 
   testWidgets('就绪 → 开始 → 完成 → 使用字幕返回 SRT 路径', (WidgetTester tester) async {

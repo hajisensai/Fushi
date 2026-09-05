@@ -54,37 +54,44 @@ class AsrModelStatus {
   bool get hasAnyFiles => diskBytes > 0;
 }
 
-/// ASR 模型目录。
+/// 一种语言的 ASR 模型目录。
 class AsrModelStore {
-  AsrModelStore(this.dir);
+  AsrModelStore(this.dir, this.pack);
 
-  /// 模型目录：`<appSupport>/asr_models/reazonspeech-k2-v2`——与漫画 OCR 的
-  /// `<appSupport>/ocr_models/manga` 同级同构，经 [AppPaths] 数据根单一入口，
-  /// 不硬编码平台路径。
-  static Future<AsrModelStore> open() async {
+  /// 模型目录：`<appSupport>/asr_models/<pack.id>`（日语 `reazonspeech-k2-v2`）——
+  /// 与漫画 OCR 的 `<appSupport>/ocr_models/manga` 同级同构，经 [AppPaths] 数据根
+  /// 单一入口，不硬编码平台路径。一语言一目录：删包即清空，互不牵连。
+  static Future<AsrModelStore> open(AsrLanguage language) async {
     final Directory support = await AppPaths.supportRootDirectory();
+    final AsrModelPack pack = asrModelPackFor(language);
     return AsrModelStore(
-      Directory(p.join(support.path, 'asr_models', 'reazonspeech-k2-v2')),
+      Directory(p.join(support.path, 'asr_models', pack.id)),
+      pack,
     );
   }
 
   final Directory dir;
 
+  /// 本目录对应的模型包（决定文件名、下载源、词表形态）。
+  final AsrModelPack pack;
+
+  AsrLanguage get language => pack.language;
+
   /// 某角色文件的落盘位置（不保证存在）。
   File fileFor(AsrModelRole role) =>
-      File(p.join(dir.path, asrModelFileForRole(role).fileName));
+      File(p.join(dir.path, pack.fileForRole(role).fileName));
 
   /// 该变体全套文件是否都已就绪（只 stat 清单里那几个文件，不遍历目录）。
   bool isReady(AsrEncoderVariant variant) {
-    return asrModelFilesFor(
-      variant,
-    ).every((AsrModelFile file) => isAsrModelFileReady(fileFor(file.role)));
+    return pack
+        .filesFor(variant)
+        .every((AsrModelFile file) => isAsrModelFileReady(fileFor(file.role)));
   }
 
   /// 该变体的就绪 / 占用状态（递归量目录，别放热路径）。
   Future<AsrModelStatus> status(AsrEncoderVariant variant) async {
     int obtained = 0;
-    for (final AsrModelFile model in asrModelFilesFor(variant)) {
+    for (final AsrModelFile model in pack.filesFor(variant)) {
       final File file = fileFor(model.role);
       if (isAsrModelFileReady(file)) {
         obtained += file.lengthSync();
@@ -100,7 +107,7 @@ class AsrModelStore {
     return AsrModelStatus(
       ready: isReady(variant),
       diskBytes: await measureDirectoryBytes(dir),
-      totalBytes: asrModelTotalBytes(variant),
+      totalBytes: pack.totalBytes(variant),
       obtainedBytes: obtained,
     );
   }
@@ -121,7 +128,7 @@ class AsrModelStore {
               asrModelUrlCandidates(file as AsrModelFile),
         );
     return effective.downloadAll(
-      files: asrModelFilesFor(variant),
+      files: pack.filesFor(variant),
       targetDir: dir,
       isReady: isAsrModelFileReady,
     );
@@ -180,7 +187,8 @@ class AsrModelStore {
     return true;
   }
 
-  /// 删除整个模型目录（两个变体、`.part` 残留一并清掉）；返回释放的字节数。
+  /// 删除整个模型目录（本语言两个变体、`.part` 残留、派生图一并清掉）；返回
+  /// 释放的字节数。
   Future<int> deleteAll() async {
     if (!await dir.exists()) {
       return 0;

@@ -98,10 +98,54 @@ class AsrCueBuilder {
     '’',
   };
 
+  /// 句点后**不**切句的英文缩写（小写比较）：`Mr. Dursley` 切成两条 cue 只会
+  /// 产出一条 200 ms 的「Mr.」碎片并把人名甩到下一句。单个大写字母缩写
+  /// （`J. K. Rowling`）由 [_isAbbreviationDot] 按形态识别，不列在这里。
+  static const Set<String> dotAbbreviations = <String>{
+    'mr',
+    'mrs',
+    'ms',
+    'dr',
+    'prof',
+    'sr',
+    'jr',
+    'st',
+    'mt',
+    'no',
+    'vs',
+    'etc',
+  };
+
   /// 只由这些字符组成的 cue 不产出（纯标点/空白）。
   static final RegExp _punctOnly = RegExp(
     r'^[\s、。！？!?…‥．.,，「」『』（）()【】〔〕《》〈〉"”’・ー〜~\-]*$',
   );
+
+  /// token 是否以句末标点收尾。字符级词表下 token 就是那个标点；BPE 词表下
+  /// 标点也可能粘在词尾（`world.`），故按尾字符判。
+  static bool endsWithTerminator(String token) {
+    final String t = token.trimRight();
+    if (t.isEmpty) return false;
+    return sentenceTerminators.contains(t.substring(t.length - 1));
+  }
+
+  /// token（去掉 BPE 前导空格后）是否是闭合符号。
+  static bool isClosingMark(String token) => closingMarks.contains(token.trim());
+
+  /// 本句到目前为止以 `.` 收尾时，这个点是不是缩写点（不该切句）：
+  /// 最后一个词是 [dotAbbreviations] 之一，或单个大写字母（人名首字母）。
+  static bool _isAbbreviationDot(String sentenceSoFar) {
+    final String s = sentenceSoFar.trimRight();
+    if (!s.endsWith('.')) return false;
+    final String body = s.substring(0, s.length - 1);
+    final int cut = body.lastIndexOf(RegExp(r'\s'));
+    final String word = (cut < 0 ? body : body.substring(cut + 1)).trim();
+    if (word.isEmpty) return false;
+    if (word.length == 1 && word.toUpperCase() == word && word != word.toLowerCase()) {
+      return true;
+    }
+    return dotAbbreviations.contains(word.toLowerCase());
+  }
 
   /// 把（同一本书全部文件的）转录段落变成单时间轴 cue。
   ///
@@ -196,9 +240,10 @@ class AsrCueBuilder {
         current = <int>[];
       }
       current.add(i);
-      if (sentenceTerminators.contains(tok)) {
+      if (endsWithTerminator(tok) &&
+          !_isAbbreviationDot(_joinTokens(seg.tokens, current))) {
         // 吞掉紧随的闭合符号。
-        while (i + 1 < n && closingMarks.contains(seg.tokens[i + 1])) {
+        while (i + 1 < n && isClosingMark(seg.tokens[i + 1])) {
           i++;
           current.add(i);
         }

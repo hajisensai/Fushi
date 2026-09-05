@@ -137,13 +137,19 @@ class AsrTranscribeFinishedEvent extends AsrTranscribeEvent {
 class AsrJobState {
   const AsrJobState({
     required this.audioPaths,
+    required this.modelId,
     required this.fileDurationsMs,
     required this.resumeSamples,
     required this.finished,
   });
 
-  factory AsrJobState.fresh(List<String> audioPaths) => AsrJobState(
+  factory AsrJobState.fresh(
+    List<String> audioPaths, {
+    required String modelId,
+  }) =>
+      AsrJobState(
         audioPaths: List<String>.unmodifiable(audioPaths),
+        modelId: modelId,
         fileDurationsMs: List<int?>.filled(audioPaths.length, null),
         resumeSamples: List<int>.filled(audioPaths.length, 0),
         finished: false,
@@ -158,6 +164,7 @@ class AsrJobState {
         (json['resumeSamples'] as List<Object?>?) ?? const <Object?>[];
     return AsrJobState(
       audioPaths: List<String>.unmodifiable(paths),
+      modelId: (json['modelId'] as String?) ?? '',
       fileDurationsMs: List<int?>.generate(
         paths.length,
         (int i) =>
@@ -172,6 +179,10 @@ class AsrJobState {
   }
 
   final List<String> audioPaths;
+
+  /// 产出这些段落的模型包 id（`AsrModelPack.id`）：不同词表的段落不能混在一个
+  /// `segments.jsonl` 里续跑，不符即整个任务重来。
+  final String modelId;
   final List<int?> fileDurationsMs;
 
   /// 每个文件的恢复点（样本）。等于文件总样本数（或 -1）表示该文件已完成。
@@ -185,11 +196,15 @@ class AsrJobState {
   /// text 轨交错进 mdat（BUG-2148），带章节的有声书转出来的 transcript.srt 整章是
   /// 噪声识别出的「あ」，而任务已标 finished、UI 会直接进完成态复用它。升版让
   /// [AsrTranscribeJob.loadStateDetailed] 把旧目录当新任务重跑。
-  static const int currentVersion = 2;
+  ///
+  /// v3：加 `modelId`（多语言模型包）。任务目录哈希同时也含包 id，故 v2 目录本就
+  /// 找不到，升版只是让格式自描述。
+  static const int currentVersion = 3;
 
   Map<String, Object?> toJson() => <String, Object?>{
         'version': currentVersion,
         'audioPaths': audioPaths,
+        'modelId': modelId,
         'fileDurationsMs': fileDurationsMs,
         'resumeSamples': resumeSamples,
         'finished': finished,
@@ -202,6 +217,7 @@ class AsrJobState {
   }) {
     return AsrJobState(
       audioPaths: audioPaths,
+      modelId: modelId,
       fileDurationsMs: fileDurationsMs ?? this.fileDurationsMs,
       resumeSamples: resumeSamples ?? this.resumeSamples,
       finished: finished ?? this.finished,
@@ -221,6 +237,7 @@ class AsrTranscribeJob {
   AsrTranscribeJob({
     required this.jobDir,
     required this.audioPaths,
+    required this.modelId,
     required this.pcm,
     required this.segmenter,
     required this.decoder,
@@ -234,6 +251,9 @@ class AsrTranscribeJob {
 
   final Directory jobDir;
   final List<String> audioPaths;
+
+  /// 见 [AsrJobState.modelId]。
+  final String modelId;
   final AsrPcmSource pcm;
   final AsrSegmenter segmenter;
   final AsrBatchDecoder decoder;
@@ -260,41 +280,44 @@ class AsrTranscribeJob {
   File get _segmentsFile => File(p.join(jobDir.path, AsrJobFiles.segments));
   File get _srtFile => File(p.join(jobDir.path, AsrJobFiles.srt));
 
-  /// 读取（或初始化）任务状态。路径列表与磁盘状态不一致、文件缺失或损坏时视为
-  /// 新任务（`fresh == true`，调用方据此清空旧产物）。
+  /// 读取（或初始化）任务状态。路径列表 / 模型包与磁盘状态不一致、文件缺失或
+  /// 损坏时视为新任务（`fresh == true`，调用方据此清空旧产物）。
   static Future<({AsrJobState state, bool fresh})> loadStateDetailed(
     Directory jobDir,
-    List<String> audioPaths,
-  ) async {
+    List<String> audioPaths, {
+    required String modelId,
+  }) async {
+    final ({AsrJobState state, bool fresh}) fresh = (
+      state: AsrJobState.fresh(audioPaths, modelId: modelId),
+      fresh: true,
+    );
     final File f = File(p.join(jobDir.path, AsrJobFiles.state));
-    if (!f.existsSync()) {
-      return (state: AsrJobState.fresh(audioPaths), fresh: true);
-    }
+    if (!f.existsSync()) return fresh;
     try {
       final Map<String, Object?> json =
           jsonDecode(await f.readAsString()) as Map<String, Object?>;
       // 版本不符（含缺失）= 旧格式或已知会产出坏产物的旧链路，整个任务重来。
       if ((json['version'] as num?)?.toInt() != AsrJobState.currentVersion) {
-        return (state: AsrJobState.fresh(audioPaths), fresh: true);
+        return fresh;
       }
       final AsrJobState state = AsrJobState.fromJson(json);
-      if (!listEquals(state.audioPaths, audioPaths)) {
-        return (state: AsrJobState.fresh(audioPaths), fresh: true);
-      }
+      if (!listEquals(state.audioPaths, audioPaths)) return fresh;
+      if (state.modelId != modelId) return fresh;
       return (state: state, fresh: false);
     } on FormatException {
-      return (state: AsrJobState.fresh(audioPaths), fresh: true);
+      return fresh;
     } on TypeError {
-      return (state: AsrJobState.fresh(audioPaths), fresh: true);
+      return fresh;
     }
   }
 
   /// [loadStateDetailed] 的简写。
   static Future<AsrJobState> loadState(
     Directory jobDir,
-    List<String> audioPaths,
-  ) async =>
-      (await loadStateDetailed(jobDir, audioPaths)).state;
+    List<String> audioPaths, {
+    required String modelId,
+  }) async =>
+      (await loadStateDetailed(jobDir, audioPaths, modelId: modelId)).state;
 
   /// 已落盘的段落（顺序即写入顺序）。
   static Future<List<AsrTranscribedSegment>> loadSegments(
@@ -332,6 +355,7 @@ class AsrTranscribeJob {
     final ({AsrJobState state, bool fresh}) loaded = await loadStateDetailed(
       jobDir,
       audioPaths,
+      modelId: modelId,
     );
     AsrJobState state = loaded.state;
     if (loaded.fresh) {

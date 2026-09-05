@@ -16,7 +16,8 @@ import 'package:fushi_audio/fushi_audio.dart';
 /// 指标，时间差是 cue 边界准不准。
 ///
 ///   ASR_REALDATA_EPUB      EPUB 路径
-///   ASR_REALDATA_SRT_REF   参照 SRT（SubPlz）
+///   ASR_REALDATA_SRT_REF   参照 SRT（SubPlz）；可缺省——没有参照时只报我们自己的
+///                          匹配率与未命中分型（英语书通常没有 SubPlz 产物）
 ///   ASR_REALDATA_SRT_OURS  我们的 SRT（由 asr_transcribe_e2e_itest 产出，见 ASR_OUT）
 ///   ASR_REALDATA_LIMIT_MS  只比较该时间之前的 cue（裁过的音频），缺省不限
 void main() {
@@ -26,11 +27,10 @@ void main() {
   final int limitMs =
       int.tryParse(Platform.environment['ASR_REALDATA_LIMIT_MS'] ?? '') ??
           1 << 62;
+  final bool hasRef = refPath.isNotEmpty && File(refPath).existsSync();
   final bool available = epubPath.isNotEmpty &&
-      refPath.isNotEmpty &&
       oursPath.isNotEmpty &&
       File(epubPath).existsSync() &&
-      File(refPath).existsSync() &&
       File(oursPath).existsSync();
 
   test(
@@ -67,7 +67,8 @@ void main() {
           return cues.where((AudioCue c) => c.startMs < limitMs).toList();
         }
 
-        final List<AudioCue> ref = await load(refPath);
+        final List<AudioCue> ref =
+            hasRef ? await load(refPath) : const <AudioCue>[];
         final List<AudioCue> ours = await load(oursPath);
 
         final List<double> thresholds =
@@ -81,16 +82,16 @@ void main() {
               cues: cues,
               similarityThreshold: threshold,
             );
+        String pct(MatchResult r) =>
+            '${r.matchedCues}/${r.totalCues} (${(r.matchRate * 100).toStringAsFixed(1)}%)';
         MatchResult oursResult = run(ours, thresholds.first);
         for (final double th in thresholds) {
-          final MatchResult r = run(ref, th);
           final MatchResult o = run(ours, th);
           if (th == thresholds.first) oursResult = o;
           // ignore: avoid_print
           print(
-            '[realdata] threshold=$th  SubPlz ${r.matchedCues}/${r.totalCues} '
-            '(${(r.matchRate * 100).toStringAsFixed(1)}%)  ours ${o.matchedCues}/${o.totalCues} '
-            '(${(o.matchRate * 100).toStringAsFixed(1)}%)',
+            '[realdata] threshold=$th  '
+            '${hasRef ? 'SubPlz ${pct(run(ref, th))}  ' : ''}ours ${pct(o)}',
           );
         }
         // 锚点间隙回填（导入链路经 EpubCueMatcher 门面默认启用）。
@@ -100,35 +101,26 @@ void main() {
             cues: ours,
             similarityThreshold: th,
           );
-          final MatchResult r = EpubCueMatcher.match(
-            sections: sections,
-            cues: ref,
-            similarityThreshold: th,
-          );
+          final String refPart = hasRef
+              ? 'SubPlz ${pct(EpubCueMatcher.match(sections: sections, cues: ref, similarityThreshold: th))}  '
+              : '';
           // ignore: avoid_print
-          print(
-            '[realdata] +gapfill threshold=$th  SubPlz ${r.matchedCues}/${r.totalCues} '
-            '(${(r.matchRate * 100).toStringAsFixed(1)}%)  ours ${o.matchedCues}/${o.totalCues} '
-            '(${(o.matchRate * 100).toStringAsFixed(1)}%)',
-          );
+          print('[realdata] +gapfill threshold=$th  ${refPart}ours ${pct(o)}');
           if (th == thresholds.first) oursResult = o;
         }
         // 导入链路默认 autoWindow：三档窗口探测取最高。
         for (final int w in EpubCueMatcher.defaultProbeWindows) {
-          final MatchResult r = EpubSrtMatcher.match(
-            sections: sections,
-            cues: ref,
-            searchWindow: w,
-          );
           final MatchResult o = EpubSrtMatcher.match(
             sections: sections,
             cues: ours,
             searchWindow: w,
           );
+          final String refPart = hasRef
+              ? 'SubPlz ${(EpubSrtMatcher.match(sections: sections, cues: ref, searchWindow: w).matchRate * 100).toStringAsFixed(1)}%  '
+              : '';
           // ignore: avoid_print
           print(
-            '[realdata] window=$w  SubPlz ${(r.matchRate * 100).toStringAsFixed(1)}%  '
-            'ours ${(o.matchRate * 100).toStringAsFixed(1)}%',
+            '[realdata] window=$w  ${refPart}ours ${(o.matchRate * 100).toStringAsFixed(1)}%',
           );
         }
         // 前 30 条逐条：命中章节 / 归一化偏移 / 分数（看游标怎么走的）。
@@ -289,11 +281,11 @@ void main() {
           '[realdata] ours text→book (first 14): ${replaced.skip(9).take(14).map((AudioCue c) => c.text).join(' | ')}',
         );
 
-        // 时间差：对我们的每条 cue，找参照里起点最近的一条。
+        // 时间差：对我们的每条 cue，找参照里起点最近的一条（有参照时）。
         final List<int> refStarts = ref.map((AudioCue c) => c.startMs).toList()
           ..sort();
         final List<int> diffs = <int>[];
-        for (final AudioCue c in ours) {
+        for (final AudioCue c in hasRef ? ours : const <AudioCue>[]) {
           int lo = 0, hi = refStarts.length;
           while (lo < hi) {
             final int mid = (lo + hi) >> 1;
@@ -330,7 +322,6 @@ void main() {
         if (extract.existsSync()) await extract.delete(recursive: true);
       }
     },
-    skip:
-        available ? false : '需要 ASR_REALDATA_EPUB / _SRT_REF / _SRT_OURS 环境变量',
+    skip: available ? false : '需要 ASR_REALDATA_EPUB / _SRT_OURS 环境变量',
   );
 }

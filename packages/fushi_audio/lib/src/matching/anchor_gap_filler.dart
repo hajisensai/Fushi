@@ -599,7 +599,8 @@ void replaceMatchedCueTextWithBookText({
 
 /// 归一化区间 `[from, to)` 对应的原文，并把归一化时剥掉的标点带回来：向后一直
 /// 带到下一个保留字符之前（句号、引号、逗号都属于本句），但把紧挨下一句的开引号
-/// 留给下一句；向前只带紧邻的开引号/开括号。空白一律去掉。
+/// 留给下一句；向前只带紧邻的开引号/开括号。空白按 [_collapseWhitespace] 折叠：
+/// CJK 之间的换行/空格去掉，拉丁词之间保留一个空格。
 String _bookSliceWithPunctuation(
   String original,
   NormalizedTextWithOffsets norm,
@@ -617,8 +618,51 @@ String _bookSliceWithPunctuation(
           _isWhitespace(original.codeUnitAt(end - 1)))) {
     end--;
   }
-  return original.substring(start, end).replaceAll(RegExp(r'\s+'), '');
+  return _collapseWhitespace(original.substring(start, end));
 }
+
+/// 折叠正文里的空白：一段空白若两侧都是非 CJK 字符（英文词与词之间）压成一个
+/// 空格，否则整段去掉（日文正文里的换行/缩进不是内容）。首尾空白一律去掉。
+///
+/// 原先「空白一律去掉」只对日文成立：英语有声书的 cue 换成正文后会变成
+/// `Mr.Dursleywasthedirector…`，歌词模式显示与导出全废（2026-09-06 英语模型
+/// 接入时在《Harry Potter》真实数据上发现）。
+String _collapseWhitespace(String s) {
+  final StringBuffer out = StringBuffer();
+  int i = 0;
+  final int n = s.length;
+  while (i < n) {
+    final int c = s.codeUnitAt(i);
+    if (!_isAnyWhitespace(c)) {
+      out.writeCharCode(c);
+      i++;
+      continue;
+    }
+    int j = i;
+    while (j < n && _isAnyWhitespace(s.codeUnitAt(j))) {
+      j++;
+    }
+    final bool atEdge = out.isEmpty || j >= n;
+    if (!atEdge) {
+      final int prev = s.codeUnitAt(i - 1);
+      final int next = s.codeUnitAt(j);
+      if (!_isCjk(prev) && !_isCjk(next)) out.writeCharCode(0x20);
+    }
+    i = j;
+  }
+  return out.toString();
+}
+
+bool _isAnyWhitespace(int c) =>
+    _isWhitespace(c) || c == 0x0B || c == 0x0C || c == 0xA0;
+
+/// 粗判 CJK：假名、汉字、全角标点与兼容区。只用来决定空白该不该保留，
+/// 不要求与 [AudioTextNormalizer] 的白名单逐段一致。
+bool _isCjk(int c) =>
+    (c >= 0x2E80 && c <= 0x9FFF) ||
+    (c >= 0xF900 && c <= 0xFAFF) ||
+    (c >= 0xFF00 && c <= 0xFFEF) ||
+    (c >= 0x3000 && c <= 0x303F);
 
 bool _isOpeningMark(int c) =>
     c == 0x300C || // 「

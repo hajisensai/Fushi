@@ -11,6 +11,7 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
 
@@ -18,12 +19,16 @@ import 'package:fushi/src/asr/asr_engine.dart';
 import 'package:fushi/src/asr/asr_model_manifest.dart';
 import 'package:fushi/src/asr/asr_transcribe_job.dart';
 import 'package:fushi/src/asr/asr_transcription_service.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/onnx/model_file_downloader.dart';
 import 'package:fushi/src/onnx/onnx_inference.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/utils.dart';
 
 /// 打开转录弹层。返回生成的 SRT 绝对路径；用户关闭 / 暂停 / 失败时返回 null。
+///
+/// [languageGetter] / [languageSetter] 是「上次选的语音语言」偏好的读写口
+/// （存 [AsrLanguage.tag]）；null 时从 [appProvider] 取 [AppModel] 接线，测试注 fake。
 Future<String?> showAsrTranscribeSheet({
   required BuildContext context,
   required List<String> audioPaths,
@@ -32,13 +37,25 @@ Future<String?> showAsrTranscribeSheet({
     required String fileName,
     required String? initialDirectory,
   })? saveFilePicker,
+  String Function()? languageGetter,
+  Future<void> Function(String tag)? languageSetter,
 }) {
   final AsrTranscriptionService effective =
       service ?? AsrTranscriptionService();
+  String Function() getter = languageGetter ?? () => '';
+  Future<void> Function(String) setter = languageSetter ?? (String _) async {};
+  if (languageGetter == null || languageSetter == null) {
+    final AppModel appModel =
+        ProviderScope.containerOf(context, listen: false).read(appProvider);
+    getter = languageGetter ?? () => appModel.asrTranscribeLanguage;
+    setter = languageSetter ?? appModel.setAsrTranscribeLanguage;
+  }
   Widget build(BuildContext ctx) => AsrTranscribeSheet(
         audioPaths: audioPaths,
         service: effective,
         saveFilePicker: saveFilePicker,
+        languageGetter: getter,
+        languageSetter: setter,
       );
   if (isDesktopPlatform) {
     return showAppDialog<String>(
@@ -58,6 +75,12 @@ Future<String?> showAsrTranscribeSheet({
     builder: build,
   );
 }
+
+/// 语音语言的用户可见名（转录弹层分段按钮与设置页模型行共用）。
+String asrLanguageLabel(AsrLanguage language) => switch (language) {
+      AsrLanguage.japanese => t.audiobook_transcribe_language_ja,
+      AsrLanguage.english => t.audiobook_transcribe_language_en,
+    };
 
 /// 字幕 / 对齐文件行被点击时的来源选择。
 enum SubtitleSourceChoice {
@@ -202,6 +225,8 @@ class AsrTranscribeSheet extends StatefulWidget {
     required this.audioPaths,
     this.saveFilePicker,
     required this.service,
+    this.languageGetter,
+    this.languageSetter,
     super.key,
   });
 
@@ -214,6 +239,13 @@ class AsrTranscribeSheet extends StatefulWidget {
   })? saveFilePicker;
   final AsrTranscriptionService service;
 
+  /// 「上次选的语音语言」偏好读取（[AsrLanguage.tag]）；null / 不认识的标签
+  /// 一律回退日语。
+  final String Function()? languageGetter;
+
+  /// 切换语言后写回偏好（[AsrLanguage.tag]）；null = 不记忆。
+  final Future<void> Function(String tag)? languageSetter;
+
   @override
   State<AsrTranscribeSheet> createState() => _AsrTranscribeSheetState();
 }
@@ -221,6 +253,7 @@ class AsrTranscribeSheet extends StatefulWidget {
 class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
   _Phase _phase = _Phase.checking;
   AsrAccelerationPreference _preference = AsrAccelerationPreference.auto;
+  AsrLanguage _language = AsrLanguage.japanese;
   AsrTranscribePlan? _plan;
   String? _finishedSrt;
   String? _error;
@@ -241,6 +274,8 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
   @override
   void initState() {
     super.initState();
+    _language = AsrLanguage.fromTag(widget.languageGetter?.call()) ??
+        AsrLanguage.japanese;
     _refreshPlan();
   }
 
@@ -268,13 +303,22 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
       _error = null;
     });
     try {
-      final AsrTranscribePlan plan = await widget.service.plan(_preference);
+      final AsrLanguage language = _language;
+      final AsrTranscribePlan plan = await widget.service.plan(
+        language: language,
+        preference: _preference,
+      );
       final String? finished = await widget.service.finishedSrtPath(
         widget.audioPaths,
+        language,
       );
       final AsrJobState? existing = await widget.service.existingState(
         widget.audioPaths,
+        language,
       );
+      // 等待期间用户又切了语言：这份结果已经过期，丢掉（新一轮 _refreshPlan 会
+      // 带着新语言再来）。
+      if (language != _language) return;
       if (!mounted) return;
       setState(() {
         _plan = plan;
@@ -311,7 +355,9 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     int completedBytes = 0;
     String lastFile = '';
     int lastFileTotal = 0;
-    _downloadSub = widget.service.downloadModel(plan.variant).listen(
+    _downloadSub = widget.service
+        .downloadModel(language: plan.language, variant: plan.variant)
+        .listen(
       (ModelDownloadEvent e) {
         if (e.fileName != lastFile) {
           completedBytes += lastFileTotal;
@@ -349,6 +395,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     try {
       final AsrRunningTranscription running = await widget.service.start(
         audioPaths: widget.audioPaths,
+        language: plan.language,
         variant: plan.variant,
         preference: _preference,
       );
@@ -419,6 +466,17 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     setState(() => _phase = _Phase.pausing);
   }
 
+  /// 切换语音语言：记住选择，再按新语言包重新规划（模型是否就绪 / 该语言下这组
+  /// 音频有没有进行中或已完成的任务都随语言变）。
+  void _changeLanguage(AsrLanguage language) {
+    if (language == _language) return;
+    _language = language;
+    _result = null;
+    _progress = null;
+    unawaited(widget.languageSetter?.call(language.tag));
+    _refreshPlan();
+  }
+
   /// 把转录产物导出到用户指定位置（桌面存盘 / 移动端分享）。产物文件本身留在
   /// 任务目录里，导出只是拷一份，之后仍可「使用字幕」。
   Future<void> _export() async {
@@ -437,7 +495,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
   }
 
   Future<void> _discard() async {
-    await widget.service.discard(widget.audioPaths);
+    await widget.service.discard(widget.audioPaths, _language);
     if (!mounted) return;
     _result = null;
     _finishedSrt = null;
@@ -485,7 +543,10 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
       case _Phase.ready:
       case _Phase.paused:
         final String ready = t.audiobook_transcribe_model_ready(
-          variant: plan == null ? '' : _variantLabel(plan.variant),
+          variant: plan == null
+              ? ''
+              : '${asrModelPackFor(plan.language).displayName} · '
+                  '${_variantLabel(plan.variant)}',
         );
         if (_phase == _Phase.paused) {
           return '$ready\n${t.audiobook_transcribe_paused_hint}';
@@ -603,6 +664,26 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Text(t.audiobook_transcribe_intro, style: tokens.type.metadata),
+          SizedBox(height: tokens.spacing.rowVertical),
+          Text(
+            t.audiobook_transcribe_language_label,
+            style: tokens.type.listTitle,
+          ),
+          SizedBox(height: tokens.spacing.gap),
+          adaptiveSegmentedButton<AsrLanguage>(
+            context: context,
+            segments: <ButtonSegment<AsrLanguage>>[
+              for (final AsrLanguage language in AsrLanguage.values)
+                ButtonSegment<AsrLanguage>(
+                  value: language,
+                  label: Text(asrLanguageLabel(language)),
+                ),
+            ],
+            selected: <AsrLanguage>{_language},
+            onSelectionChanged: !_canChangePreference
+                ? (Set<AsrLanguage> _) {}
+                : (Set<AsrLanguage> s) => _changeLanguage(s.first),
+          ),
           SizedBox(height: tokens.spacing.rowVertical),
           Text(
             t.audiobook_transcribe_accel_label,

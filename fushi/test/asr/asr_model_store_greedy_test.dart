@@ -12,7 +12,7 @@ void main() {
 
   setUp(() async {
     tmp = await Directory.systemTemp.createTemp('asr_store_greedy_');
-    store = AsrModelStore(tmp);
+    store = AsrModelStore(tmp, kAsrJapanesePack);
     store
         .fileFor(AsrModelRole.decoderInt8)
         .writeAsBytesSync(List<int>.filled(10, 1));

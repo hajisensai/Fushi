@@ -55,7 +55,10 @@ void main() {
 
   setUp(() {
     tempDir = Directory.systemTemp.createTempSync('asr_store_');
-    store = AsrModelStore(Directory(p.join(tempDir.path, 'models')));
+    store = AsrModelStore(
+      Directory(p.join(tempDir.path, 'models')),
+      kAsrJapanesePack,
+    );
   });
 
   tearDown(() {
@@ -79,6 +82,29 @@ void main() {
     );
   });
 
+  test('英语包：fileFor 用英语清单的文件名，pack 就是构造传入的包', () {
+    final AsrModelStore en = AsrModelStore(
+      Directory(p.join(tempDir.path, 'en')),
+      kAsrEnglishPack,
+    );
+    expect(en.pack, same(kAsrEnglishPack));
+    expect(en.language, AsrLanguage.english);
+    expect(
+      en.fileFor(AsrModelRole.encoderInt8).path,
+      p.join(en.dir.path, 'encoder-epoch-16-avg-2.int8.onnx'),
+    );
+    expect(
+      en.fileFor(AsrModelRole.decoderFp32).path,
+      p.join(en.dir.path, 'decoder-epoch-16-avg-2.onnx'),
+    );
+    expect(
+      en.fileFor(AsrModelRole.tokens).path,
+      p.join(en.dir.path, 'tokens.txt'),
+    );
+    expect(store.pack, same(kAsrJapanesePack));
+    expect(store.language, AsrLanguage.japanese);
+  });
+
   test('空目录：两个变体都未就绪，状态全零', () async {
     expect(store.isReady(AsrEncoderVariant.int8), isFalse);
     expect(store.isReady(AsrEncoderVariant.fp32), isFalse);
@@ -86,7 +112,10 @@ void main() {
     expect(status.ready, isFalse);
     expect(status.diskBytes, 0);
     expect(status.obtainedBytes, 0);
-    expect(status.totalBytes, asrModelTotalBytes(AsrEncoderVariant.int8));
+    expect(
+      status.totalBytes,
+      kAsrJapanesePack.totalBytes(AsrEncoderVariant.int8),
+    );
     expect(status.hasAnyFiles, isFalse);
   });
 
@@ -107,7 +136,9 @@ void main() {
   });
 
   test('空文件不算就绪', () {
-    for (final AsrModelFile f in asrModelFilesFor(AsrEncoderVariant.int8)) {
+    for (final AsrModelFile f in kAsrJapanesePack.filesFor(
+      AsrEncoderVariant.int8,
+    )) {
       writeReady(f.role);
     }
     store.fileFor(AsrModelRole.vad).writeAsBytesSync(<int>[]);
@@ -147,7 +178,7 @@ void main() {
         .download(AsrEncoderVariant.int8, downloader: downloader)
         .toList();
 
-    expect(downloader.files, asrModelFilesFor(AsrEncoderVariant.int8));
+    expect(downloader.files, kAsrJapanesePack.filesFor(AsrEncoderVariant.int8));
     expect(downloader.targetDir!.path, store.dir.path);
     // 就绪判定就是清单里那条规则（存在且非空）。
     expect(downloader.isReady!(store.fileFor(AsrModelRole.tokens)), isTrue);
@@ -165,7 +196,9 @@ void main() {
     // 不真的发请求：只验证默认构造不抛，且候选派生走清单函数。
     expect(store.download(AsrEncoderVariant.int8), isA<Stream<Object?>>());
     expect(
-      asrModelUrlCandidates(kAsrTokensFile).length,
+      asrModelUrlCandidates(
+        kAsrJapanesePack.fileForRole(AsrModelRole.tokens),
+      ).length,
       4,
       reason: 'tokens 有第二源：2 个源 × (主 + hf-mirror)',
     );

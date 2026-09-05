@@ -107,7 +107,13 @@ void main() {
     (WidgetTester tester) async {
       final String seed = _env('ASR_MODEL_SEED');
       expect(seed, isNotEmpty);
-      final AsrModelStore store = AsrModelStore(Directory(seed));
+      final AsrModelStore store = AsrModelStore(
+        Directory(seed),
+        asrModelPackFor(
+          AsrLanguage.fromTag(_env('ASR_LANG', defaultValue: 'ja')) ??
+              AsrLanguage.japanese,
+        ),
+      );
       final String audioParam = _env(
         'ASR_AUDIO',
         defaultValue: 'test/asr/fixtures/ja_tts_16k.wav',

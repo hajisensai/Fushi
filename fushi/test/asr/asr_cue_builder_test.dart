@@ -117,6 +117,123 @@ void main() {
     });
   });
 
+  group('英语 BPE token 切句', () {
+    AsrTranscribedSegment bpe({
+      required int startMs,
+      required int endMs,
+      required List<String> tokens,
+      int stepMs = 200,
+      int firstMs = 300,
+    }) {
+      return AsrTranscribedSegment(
+        audioFileIndex: 0,
+        startMs: startMs,
+        endMs: endMs,
+        tokens: tokens,
+        tokenTimesMs: List<int>.generate(
+          tokens.length,
+          (int i) => firstMs + i * stepMs,
+        ),
+      );
+    }
+
+    test('Mr. / Mrs. 的缩写点不切，只在句末的点切', () {
+      final AsrTranscribedSegment seg = bpe(
+        startMs: 0,
+        endMs: 4000,
+        tokens: <String>[
+          ' Mr',
+          '.',
+          ' and',
+          ' Mrs',
+          '.',
+          ' Dursley',
+          ',',
+          ' were',
+          ' proud',
+          '.',
+        ],
+      );
+      final List<AsrCue> cues = builder.build(<AsrTranscribedSegment>[seg]);
+      expect(cues.map((AsrCue c) => c.text), <String>[
+        'Mr. and Mrs. Dursley, were proud.',
+      ]);
+      expect(cues.single.startMs, 0);
+      expect(cues.single.endMs, 4000);
+    });
+
+    test('单个大写字母缩写（J. K. Rowling.）只切一次', () {
+      final AsrTranscribedSegment seg = bpe(
+        startMs: 0,
+        endMs: 3000,
+        tokens: <String>['J', '.', ' K', '.', ' Rowling', '.'],
+      );
+      final List<AsrCue> cues = builder.build(<AsrTranscribedSegment>[seg]);
+      expect(cues.map((AsrCue c) => c.text), <String>['J. K. Rowling.']);
+    });
+
+    test('标点粘在 token 尾（world.）也能切', () {
+      final AsrTranscribedSegment seg = bpe(
+        startMs: 0,
+        endMs: 5000,
+        tokens: <String>[' Hello', ' world.', ' Good', ' night', '.'],
+      );
+      final List<AsrCue> cues = builder.build(<AsrTranscribedSegment>[seg]);
+      expect(cues.map((AsrCue c) => c.text), <String>[
+        'Hello world.',
+        'Good night.',
+      ]);
+      // 下一句首 token（第 3 个，300 + 2×200 = 700）减 leadIn 150。
+      expect(cues[0].endMs, 700 - 150);
+      expect(cues[1].startMs, 700 - 150);
+      expect(cues[1].endMs, 5000);
+    });
+
+    test('句末标点后带前导空格的闭合引号并入前句', () {
+      final AsrTranscribedSegment seg = bpe(
+        startMs: 0,
+        endMs: 5000,
+        tokens: <String>[' "', 'Yes', '.', ' "', ' She', ' left', '.'],
+      );
+      final List<AsrCue> cues = builder.build(<AsrTranscribedSegment>[seg]);
+      expect(cues.map((AsrCue c) => c.text), <String>['"Yes. "', 'She left.']);
+    });
+
+    test('cue 文本 trim 后没有前导空格；两句起点均由 BPE 词首空格 token 开头', () {
+      final AsrTranscribedSegment seg = bpe(
+        startMs: 0,
+        endMs: 5000,
+        tokens: <String>[' It', ' was', ' cold', '.', ' Very', ' cold', '.'],
+      );
+      final List<AsrCue> cues = builder.build(<AsrTranscribedSegment>[seg]);
+      expect(cues, hasLength(2));
+      for (final AsrCue c in cues) {
+        expect(c.text, isNot(startsWith(' ')));
+        expect(c.text, isNot(endsWith(' ')));
+        expect(c.text, c.text.trim());
+      }
+      expect(cues[0].text, 'It was cold.');
+      expect(cues[1].text, 'Very cold.');
+    });
+
+    test('endsWithTerminator / isClosingMark 静态判定', () {
+      expect(AsrCueBuilder.endsWithTerminator(' world.'), isTrue);
+      expect(AsrCueBuilder.endsWithTerminator('.'), isTrue);
+      expect(AsrCueBuilder.endsWithTerminator('。'), isTrue);
+      expect(AsrCueBuilder.endsWithTerminator('? '), isTrue);
+      expect(AsrCueBuilder.endsWithTerminator(' Mr'), isFalse);
+      expect(AsrCueBuilder.endsWithTerminator(','), isFalse);
+      expect(AsrCueBuilder.endsWithTerminator(''), isFalse);
+      expect(AsrCueBuilder.endsWithTerminator('   '), isFalse);
+      expect(AsrCueBuilder.isClosingMark(' "'), isTrue);
+      expect(AsrCueBuilder.isClosingMark('”'), isTrue);
+      expect(AsrCueBuilder.isClosingMark('」'), isTrue);
+      expect(AsrCueBuilder.isClosingMark(' She'), isFalse);
+      expect(AsrCueBuilder.dotAbbreviations, contains('mr'));
+      expect(AsrCueBuilder.dotAbbreviations, contains('mrs'));
+    });
+  });
+
   group('多文件单时间轴', () {
     test('按文件偏移折算，且跨段不重叠', () {
       final AsrTranscribedSegment a = _seg(

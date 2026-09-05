@@ -1,8 +1,9 @@
 /// 有声书设备端转录的装配层：模型存储 / 引擎加载 / PCM 源 / 任务目录 三者拼成
 /// 一次可运行的 [AsrRunningTranscription]，UI 只与本层对话。
 ///
-/// 任务目录按「音频文件名 + 字节数」的 SHA-1 命名（`<appSupport>/asr_jobs/<hash>`），
-/// 与绝对路径无关：用户把有声书目录挪个位置再选同一组文件，进度照样接上。
+/// 任务目录按「音频文件名 + 字节数 + 模型包 id」的 SHA-1 命名
+/// （`<appSupport>/asr_jobs/<hash>`），与绝对路径无关：用户把有声书目录挪个位置
+/// 再选同一组文件，进度照样接上；同一组音频换语言转录是另一个任务，互不覆盖。
 library;
 
 import 'dart:convert';
@@ -29,15 +30,17 @@ import 'package:fushi/src/storage/app_paths.dart';
 /// silero 作为带背景音乐/噪声音源的可选高质量路径。
 enum AsrSegmenterKind { energy, silero }
 
-/// 开跑前的计划：会用哪个编码器变体、期望落到哪个 EP、模型是否就绪。
+/// 开跑前的计划：哪个语言包、会用哪个编码器变体、期望落到哪个 EP、模型是否就绪。
 @immutable
 class AsrTranscribePlan {
   const AsrTranscribePlan({
+    required this.language,
     required this.variant,
     required this.expectedProvider,
     required this.modelStatus,
   });
 
+  final AsrLanguage language;
   final AsrEncoderVariant variant;
 
   /// 按平台策略与本机 EP 集合预期的编码器 EP（真正生效以运行期 resolution 为准）。
@@ -74,7 +77,7 @@ class AsrTranscriptionService {
   AsrTranscriptionService({
     AsrEngineLoader? loader,
     AsrPcmSource? pcm,
-    Future<AsrModelStore> Function()? openStore,
+    Future<AsrModelStore> Function(AsrLanguage language)? openStore,
     Future<Directory> Function()? jobsRoot,
     this.batchSize,
     this.chunkSeconds = 300,
@@ -86,7 +89,7 @@ class AsrTranscriptionService {
 
   final AsrEngineLoader _loader;
   final AsrPcmSource _pcm;
-  final Future<AsrModelStore> Function() _openStore;
+  final Future<AsrModelStore> Function(AsrLanguage language) _openStore;
   final Future<Directory> Function() _jobsRoot;
 
   /// 一次 encoder 前向的段数；null 时按编码器实际落到的 EP 取
@@ -109,10 +112,14 @@ class AsrTranscriptionService {
     return Directory(p.join(support.path, 'asr_jobs'));
   }
 
-  Future<AsrModelStore> modelStore() => _openStore();
+  Future<AsrModelStore> modelStore(AsrLanguage language) =>
+      _openStore(language);
 
-  /// 计算计划：探测 EP → 推荐变体 → 查模型状态。
-  Future<AsrTranscribePlan> plan(AsrAccelerationPreference preference) async {
+  /// 计算计划：探测 EP → 推荐变体 → 查该语言包的模型状态。
+  Future<AsrTranscribePlan> plan({
+    required AsrLanguage language,
+    required AsrAccelerationPreference preference,
+  }) async {
     Set<OnnxExecutionProvider> available = const <OnnxExecutionProvider>{};
     if (preference != AsrAccelerationPreference.cpuOnly) {
       try {
@@ -134,27 +141,34 @@ class AsrTranscriptionService {
       preference: preference,
       variant: variant,
     ).first;
-    final AsrModelStore store = await _openStore();
+    final AsrModelStore store = await _openStore(language);
     return AsrTranscribePlan(
+      language: language,
       variant: variant,
       expectedProvider: expected,
       modelStatus: await store.status(variant),
     );
   }
 
-  Stream<ModelDownloadEvent> downloadModel(AsrEncoderVariant variant) async* {
-    final AsrModelStore store = await _openStore();
+  Stream<ModelDownloadEvent> downloadModel({
+    required AsrLanguage language,
+    required AsrEncoderVariant variant,
+  }) async* {
+    final AsrModelStore store = await _openStore(language);
     yield* store.download(variant);
   }
 
-  /// 任务目录：文件名 + 字节数 的 SHA-1。
-  Future<Directory> jobDirFor(List<String> audioPaths) async {
+  /// 任务目录：文件名 + 字节数 + 模型包 id 的 SHA-1。
+  Future<Directory> jobDirFor(
+    List<String> audioPaths,
+    AsrLanguage language,
+  ) async {
     final Directory root = await _jobsRoot();
-    return Directory(p.join(root.path, jobIdFor(audioPaths)));
+    return Directory(p.join(root.path, jobIdFor(audioPaths, language)));
   }
 
-  /// 纯函数：由文件名与字节数派生稳定 id（文件不存在按 0 字节计）。
-  static String jobIdFor(List<String> audioPaths) {
+  /// 纯函数：由文件名、字节数与模型包 id 派生稳定 id（文件不存在按 0 字节计）。
+  static String jobIdFor(List<String> audioPaths, AsrLanguage language) {
     final StringBuffer sb = StringBuffer();
     for (final String path in audioPaths) {
       final File f = File(path);
@@ -165,23 +179,37 @@ class AsrTranscriptionService {
         ..write(bytes)
         ..write('\n');
     }
+    sb
+      ..write('model=')
+      ..write(asrModelPackFor(language).id)
+      ..write('\n');
     return sha1.convert(utf8.encode(sb.toString())).toString();
   }
 
   /// 已有的任务状态（没有则 null）。
-  Future<AsrJobState?> existingState(List<String> audioPaths) async {
-    final Directory dir = await jobDirFor(audioPaths);
+  Future<AsrJobState?> existingState(
+    List<String> audioPaths,
+    AsrLanguage language,
+  ) async {
+    final Directory dir = await jobDirFor(audioPaths, language);
     if (!File(p.join(dir.path, AsrJobFiles.state)).existsSync()) return null;
     final ({AsrJobState state, bool fresh}) loaded =
-        await AsrTranscribeJob.loadStateDetailed(dir, audioPaths);
+        await AsrTranscribeJob.loadStateDetailed(
+          dir,
+          audioPaths,
+          modelId: asrModelPackFor(language).id,
+        );
     return loaded.fresh ? null : loaded.state;
   }
 
   /// 已完成任务的 SRT 路径（未完成或不存在则 null）。
-  Future<String?> finishedSrtPath(List<String> audioPaths) async {
-    final AsrJobState? state = await existingState(audioPaths);
+  Future<String?> finishedSrtPath(
+    List<String> audioPaths,
+    AsrLanguage language,
+  ) async {
+    final AsrJobState? state = await existingState(audioPaths, language);
     if (state == null || !state.finished) return null;
-    final Directory dir = await jobDirFor(audioPaths);
+    final Directory dir = await jobDirFor(audioPaths, language);
     final File srt = File(p.join(dir.path, AsrJobFiles.srt));
     return srt.existsSync() ? srt.path : null;
   }
@@ -194,29 +222,31 @@ class AsrTranscriptionService {
     return File(p.join(p.dirname(path), AsrJobFiles.state)).existsSync();
   }
 
-  /// 丢弃该组音频的全部转录进度与产物。
-  Future<void> discard(List<String> audioPaths) async {
-    final Directory dir = await jobDirFor(audioPaths);
+  /// 丢弃该组音频在该语言下的全部转录进度与产物。
+  Future<void> discard(List<String> audioPaths, AsrLanguage language) async {
+    final Directory dir = await jobDirFor(audioPaths, language);
     if (dir.existsSync()) await dir.delete(recursive: true);
   }
 
   /// 装载引擎并构造任务（不开跑；调用方订阅 [AsrRunningTranscription.run]）。
   Future<AsrRunningTranscription> start({
     required List<String> audioPaths,
+    required AsrLanguage language,
     required AsrEncoderVariant variant,
     required AsrAccelerationPreference preference,
   }) async {
-    final AsrModelStore store = await _openStore();
+    final AsrModelStore store = await _openStore(language);
     final AsrEngineSessions sessions = await _loader.load(
       store: store,
       variant: variant,
       preference: preference,
     );
     try {
-      final Directory jobDir = await jobDirFor(audioPaths);
+      final Directory jobDir = await jobDirFor(audioPaths, language);
       final AsrTranscribeJob job = AsrTranscribeJob(
         jobDir: jobDir,
         audioPaths: audioPaths,
+        modelId: store.pack.id,
         pcm: _pcm,
         segmenter: switch (segmenterKind) {
           AsrSegmenterKind.energy => AsrVadSegmenter(scorer: EnergyVadScorer()),

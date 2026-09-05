@@ -424,6 +424,54 @@ void main() {
     });
   });
 
+  group('replaceMatchedCueTextWithBookText 的空白折叠', () {
+    test('英文正文：词间空白保留一个空格，换行/缩进折成空格，首尾空白去掉', () {
+      final List<EpubSection> en = <EpubSection>[
+        _section(
+          0,
+          'Mr. and Mrs. Dursley, of number four, Privet Drive,\n'
+          '    were proud to say that they were perfectly normal, thank you very much. '
+          'They were the last people you’d expect to be involved in anything strange.',
+        ),
+      ];
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(0,
+            'Mr. and Mrs. Dursley, of No. 4 Privet Drive, were proud to say that they were perfectly normal'),
+        _cue(1,
+            'They were the last people you would expect to be involved in anything strange'),
+      ];
+      final MatchResult first = _firstPass(en, cues, <int, String>{
+        0: 'Mr. and Mrs. Dursley, of number four, Privet Drive, were proud to say that they were perfectly normal',
+        1: 'They were the last people you’d expect to be involved in anything strange',
+      });
+      replaceMatchedCueTextWithBookText(
+          sections: en, cues: cues, result: first);
+      expect(
+        cues[0].text,
+        // 归一化区间只到 normal；逗号属于本句，后面的空格与下一句一起留下。
+        'Mr. and Mrs. Dursley, of number four, Privet Drive, '
+        'were proud to say that they were perfectly normal,',
+      );
+      expect(
+        cues[1].text,
+        'They were the last people you’d expect to be involved in anything strange.',
+      );
+    });
+
+    test('日文正文：换行/全角空格照旧去掉，不在假名汉字之间塞空格', () {
+      final List<EpubSection> ja = <EpubSection>[
+        _section(0, '　俺は三十四歳、\n住所不定無職。\n人生を後悔している。'),
+      ];
+      final List<AudioCue> cues = <AudioCue>[_cue(0, '俺は三十四歳住所不定無職')];
+      final MatchResult first = _firstPass(ja, cues, <int, String>{
+        0: '俺は三十四歳、住所不定無職',
+      });
+      replaceMatchedCueTextWithBookText(
+          sections: ja, cues: cues, result: first);
+      expect(cues[0].text, '俺は三十四歳、住所不定無職。');
+    });
+  });
+
   group('AudioTextNormalizer.normalizeWithOffsets', () {
     test('偏移能把归一化区间换回原文（含标点与星光面字符）', () {
       const String original = '「目の前に崖がある。」踏み出して\n𠮷野家へ。';

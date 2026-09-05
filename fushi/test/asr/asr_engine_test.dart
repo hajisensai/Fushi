@@ -300,9 +300,9 @@ void main() {
 
     setUp(() {
       tempDir = Directory.systemTemp.createTempSync('asr_engine_');
-      store = AsrModelStore(tempDir);
+      store = AsrModelStore(tempDir, kAsrJapanesePack);
       // 会话是 fake，模型文件只需存在；tokens 需要真内容。
-      for (final AsrModelFile f in kAsrModelFiles) {
+      for (final AsrModelFile f in kAsrJapanesePack.files) {
         final File file = store.fileFor(f.role);
         if (f.role == AsrModelRole.tokens) {
           file.writeAsStringSync(
@@ -351,17 +351,23 @@ void main() {
         );
         expect(factory.probeCalls, 1);
         expect(
-          factory.sessions[kAsrEncoderFp32File.fileName]!.providers,
+          factory
+              .sessions[kAsrJapanesePack
+                  .fileForRole(AsrModelRole.encoderFp32)
+                  .fileName]!
+              .providers,
           expected,
         );
         expect(
-          factory.sessions.containsKey(kAsrEncoderInt8File.fileName),
+          factory.sessions.containsKey(
+            kAsrJapanesePack.fileForRole(AsrModelRole.encoderInt8).fileName,
+          ),
           isFalse,
           reason: '只建请求的变体',
         );
         for (final String name in <String>[
-          kAsrDecoderFp32File.fileName,
-          kAsrJoinerFp32File.fileName,
+          kAsrJapanesePack.fileForRole(AsrModelRole.decoderFp32).fileName,
+          kAsrJapanesePack.fileForRole(AsrModelRole.joinerFp32).fileName,
           kAsrVadFile.fileName,
         ]) {
           expect(factory.sessions[name]!.providers, _cpu, reason: name);
@@ -376,21 +382,27 @@ void main() {
         expect(
           identical(
             sessions.encoder,
-            factory.sessions[kAsrEncoderFp32File.fileName],
+            factory.sessions[kAsrJapanesePack
+                .fileForRole(AsrModelRole.encoderFp32)
+                .fileName],
           ),
           isTrue,
         );
         expect(
           identical(
             sessions.decoder,
-            factory.sessions[kAsrDecoderFp32File.fileName],
+            factory.sessions[kAsrJapanesePack
+                .fileForRole(AsrModelRole.decoderFp32)
+                .fileName],
           ),
           isTrue,
         );
         expect(
           identical(
             sessions.joiner,
-            factory.sessions[kAsrJoinerFp32File.fileName],
+            factory.sessions[kAsrJapanesePack
+                .fileForRole(AsrModelRole.joinerFp32)
+                .fileName],
           ),
           isTrue,
         );
@@ -413,9 +425,18 @@ void main() {
             variant: AsrEncoderVariant.int8,
             preference: AsrAccelerationPreference.auto,
           );
-      expect(factory.sessions[kAsrEncoderInt8File.fileName]!.providers, _cpu);
       expect(
-        factory.sessions.containsKey(kAsrEncoderFp32File.fileName),
+        factory
+            .sessions[kAsrJapanesePack
+                .fileForRole(AsrModelRole.encoderInt8)
+                .fileName]!
+            .providers,
+        _cpu,
+      );
+      expect(
+        factory.sessions.containsKey(
+          kAsrJapanesePack.fileForRole(AsrModelRole.encoderFp32).fileName,
+        ),
         isFalse,
       );
       expect(sessions.encoderResolution.effective, OnnxExecutionProvider.cpu);
@@ -468,7 +489,14 @@ void main() {
             variant: AsrEncoderVariant.fp32,
             preference: AsrAccelerationPreference.auto,
           );
-      expect(factory.sessions[kAsrEncoderFp32File.fileName]!.providers, _cpu);
+      expect(
+        factory
+            .sessions[kAsrJapanesePack
+                .fileForRole(AsrModelRole.encoderFp32)
+                .fileName]!
+            .providers,
+        _cpu,
+      );
       expect(sessions.encoderResolution.requested, expected);
       expect(sessions.encoderResolution.effective, OnnxExecutionProvider.cpu);
       expect(sessions.encoderResolution.didFallBack, isTrue);
@@ -485,7 +513,14 @@ void main() {
             variant: AsrEncoderVariant.fp32,
             preference: AsrAccelerationPreference.auto,
           );
-      expect(factory.sessions[kAsrEncoderFp32File.fileName]!.providers, _cpu);
+      expect(
+        factory
+            .sessions[kAsrJapanesePack
+                .fileForRole(AsrModelRole.encoderFp32)
+                .fileName]!
+            .providers,
+        _cpu,
+      );
       expect(sessions.encoderResolution.effective, OnnxExecutionProvider.cpu);
       expect(sessions.encoderResolution.didFallBack, isTrue);
       expect(
@@ -496,7 +531,9 @@ void main() {
 
     test('中途建会话失败：已建的会话全部关闭，异常原样抛出', () async {
       final _FakeFactory factory = _FakeFactory(
-        failOnPathSuffix: kAsrJoinerInt8File.fileName,
+        failOnPathSuffix: kAsrJapanesePack
+            .fileForRole(AsrModelRole.joinerInt8)
+            .fileName,
       );
       await expectLater(
         AsrEngineLoader(factory: factory).load(
@@ -509,8 +546,8 @@ void main() {
       expect(
         factory.sessions.keys,
         containsAll(<String>[
-          kAsrEncoderInt8File.fileName,
-          kAsrDecoderInt8File.fileName,
+          kAsrJapanesePack.fileForRole(AsrModelRole.encoderInt8).fileName,
+          kAsrJapanesePack.fileForRole(AsrModelRole.decoderInt8).fileName,
         ]),
       );
       for (final _FakeSession session in factory.sessions.values) {
