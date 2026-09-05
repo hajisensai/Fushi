@@ -77,41 +77,70 @@ void main() {
     );
   });
 
-  testWidgets('workbench is persistent and calibration is body-thread gated', (
-    WidgetTester tester,
-  ) async {
-    final GalAttachedTextController controller = GalAttachedTextController(
-      preferenceReader: (_) => null,
-      preferenceWriter: (_, __) async {},
-    );
-    addTearDown(controller.dispose);
+  testWidgets(
+    'workbench is persistent and calibration entry is manual-mode gated',
+    (WidgetTester tester) async {
+      final GalAttachedTextController controller = GalAttachedTextController(
+        preferenceReader: (_) => null,
+        preferenceWriter: (_, __) async {},
+        surfacePort: _PartialNativeSurfacePort(),
+      );
+      addTearDown(() async {
+        await controller.detach();
+        controller.dispose();
+      });
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: GalAttachedLookupWorkbench(
-            controller: controller,
-            hasSelectedBodyThread: false,
-            bodyPreview: '',
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: GalAttachedLookupWorkbench(
+              controller: controller,
+              hasSelectedBodyThread: false,
+              bodyPreview: '',
+            ),
           ),
         ),
-      ),
-    );
+      );
 
-    expect(
-      find.byKey(const ValueKey<String>('game-attached-lookup-workbench')),
-      findsOneWidget,
-    );
-    final IconButton calibrate = tester.widget<IconButton>(
-      find.byKey(const ValueKey<String>('game-attached-lookup-calibrate')),
-    );
-    expect(calibrate.onPressed, isNull);
-    expect(find.textContaining('Select one body-text thread'), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey<String>('game-attached-lookup-risk-status')),
-      findsOneWidget,
-    );
-  });
+      expect(
+        find.byKey(const ValueKey<String>('game-attached-lookup-workbench')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('game-attached-lookup-calibrate')),
+        findsNothing,
+        reason: '自动模式下工具条不得再出现校准入口——那条路第一步就是往游戏上盖框',
+      );
+      expect(
+        find.textContaining('Select one body-text thread'),
+        findsNothing,
+        reason: '这条提示只为校准服务，校准不露面时它也不该占位',
+      );
+      expect(
+        find.byKey(const ValueKey<String>('game-attached-lookup-risk-status')),
+        findsOneWidget,
+      );
+
+      await controller.syncSession(
+        active: true,
+        sessionEpoch: 1,
+        targetPid: 2,
+        targetHwnd: 3,
+        sourceText: '本文です',
+      );
+      await controller.setMode(GalLookupSurfaceMode.attachedOnly);
+      await tester.pump();
+
+      final IconButton calibrate = tester.widget<IconButton>(
+        find.byKey(const ValueKey<String>('game-attached-lookup-calibrate')),
+      );
+      expect(calibrate.onPressed, isNull, reason: '手动模式下入口出现，但未选正文线程时仍然禁用');
+      expect(
+        find.textContaining('Select one body-text thread'),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('partial native without profile exposes risk acceptance', (
     WidgetTester tester,
@@ -176,9 +205,9 @@ void main() {
       lessThan(
         tester
             .getTopLeft(
-              find.byKey(
-                const ValueKey<String>('game-attached-lookup-calibrate'),
-              ),
+              // 用常驻的模式菜单当右侧基准：校准入口已收进手动模式，
+              // 自动模式下它根本不存在，拿它当锚点会让本条恒为异常。
+              find.byKey(const ValueKey<String>('game-attached-lookup-mode')),
             )
             .dx,
       ),

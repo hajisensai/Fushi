@@ -558,7 +558,18 @@ void main() {
     'missing profile calibrates only after unsafe risk and three probes',
     () async {
       await sync();
-      expect(controller.status, GalAttachedTextStatus.needsCalibration);
+      // 自动模式不再引导校准：没有档案时安静挂起，校准入口也不给。
+      expect(controller.status, GalAttachedTextStatus.suspended);
+      expect(controller.canCalibrate, isFalse);
+      expect(
+        await controller.beginCalibration(acceptUnsafeLeftClick: true),
+        isFalse,
+        reason: '自动模式下即便已接受风险也不得进入校准态',
+      );
+      // 切进手动模式：setMode 建出的档案风险位是 false，所以先卡在风险确认，
+      // 而不是直接报「未校准」——校准入口此时已经可用。
+      await controller.setMode(GalLookupSurfaceMode.attachedOnly);
+      expect(controller.status, GalAttachedTextStatus.needsRiskAcceptance);
       expect(controller.canCalibrate, isTrue);
       expect(
         await controller.beginCalibration(acceptUnsafeLeftClick: false),
@@ -606,7 +617,7 @@ void main() {
 
       expect(controller.status, GalAttachedTextStatus.activeAttached);
       expect(controller.profile?.variants.single.bodyRect, committed);
-      expect(controller.profile?.mode, GalLookupSurfaceMode.auto);
+      expect(controller.profile?.mode, GalLookupSurfaceMode.attachedOnly);
       expect(
         GalLookupSurfaceProfileV1.tryFromJson(
           jsonDecode(preferences[key()]! as String),
@@ -618,7 +629,12 @@ void main() {
 
   test('incomplete or invalid probe positions cannot commit', () async {
     await sync();
-    await controller.beginCalibration(acceptUnsafeLeftClick: true);
+    await controller.setMode(GalLookupSurfaceMode.attachedOnly);
+    expect(
+      await controller.beginCalibration(acceptUnsafeLeftClick: true),
+      isTrue,
+      reason: '手动模式下校准必须真起来，否则下面的断言全是空转',
+    );
     const GalAttachedCalibrationProbes invalid = GalAttachedCalibrationProbes(
       startIndex: 0,
       middleIndex: 0,
@@ -633,7 +649,12 @@ void main() {
 
   test('calibration updates accumulate partial probe confirmations', () async {
     await sync();
-    await controller.beginCalibration(acceptUnsafeLeftClick: true);
+    await controller.setMode(GalLookupSurfaceMode.attachedOnly);
+    expect(
+      await controller.beginCalibration(acceptUnsafeLeftClick: true),
+      isTrue,
+      reason: '手动模式下校准必须真起来，否则下面的断言全是空转',
+    );
     const GalAttachedCalibrationProbes startOnly = GalAttachedCalibrationProbes(
       startIndex: 0,
       middleIndex: 3,
@@ -663,6 +684,8 @@ void main() {
 
   test('empty selected thread waits and cannot start calibration', () async {
     await sync(text: '');
+    // 先切到手动模式，把「模式不对」这条门排除掉，剩下的唯一拦截理由才是空正文。
+    await controller.setMode(GalLookupSurfaceMode.attachedOnly);
     expect(controller.status, GalAttachedTextStatus.waitingForBodyThread);
     expect(controller.canCalibrate, isFalse);
     expect(
@@ -780,7 +803,9 @@ void main() {
 
     await sync();
 
-    expect(controller.status, GalAttachedTextStatus.needsCalibration);
+    // kind/id 配对不合法 → 不得赢下 auto；自动模式没有档案时安静挂起，
+    // 不再报 needsCalibration 去引导用户开校准。
+    expect(controller.status, GalAttachedTextStatus.suspended);
     expect(controller.surfaceVisible, isFalse);
     expect(port.calls, <String>['inspect']);
     expect(port.texts, isEmpty);
@@ -941,6 +966,9 @@ void main() {
         shield: GalAttachedShieldStatus(available: true, statusFlags: 0x02),
       );
       await sync(sessionEpoch: 9152);
+      // 校准只能从「仅贴附层」这一显式手动模式起步，所以竞态场景先切模式；
+      // 档案由 setMode 建出来，风险位仍是 false，竞态判据不变。
+      await controller.setMode(GalLookupSurfaceMode.attachedOnly);
       final GalAttachedUnsafeRiskAcceptanceRequest request =
           controller.unsafeRiskAcceptanceRequest!;
       preferenceWriteGate = Completer<void>();
@@ -949,7 +977,7 @@ void main() {
         request,
       );
       await pumpEventQueue();
-      expect(controller.profile, isNull);
+      expect(controller.profile?.unsafeLeftClickAccepted, isFalse);
       expect(controller.needsUnsafeRiskAcceptance, isTrue);
       expect(
         controller.unsafeRiskAcceptanceRequest,
@@ -966,7 +994,11 @@ void main() {
 
       expect(await accepting, isTrue);
       expect(controller.status, GalAttachedTextStatus.calibrating);
-      expect(controller.profile, isNull);
+      expect(
+        controller.profile?.unsafeLeftClickAccepted,
+        isFalse,
+        reason: '在途的风险持久化不得覆盖后起的校准会话',
+      );
       expect(controller.needsUnsafeRiskAcceptance, isFalse);
       expect(
         port.calls.where((String call) => call.startsWith('configure:')),
@@ -1238,13 +1270,16 @@ void main() {
       expect(controller.profile, isNull);
 
       stale = await beginRisk(9304);
+      // 校准只能从显式手动模式起步；setMode 会建出档案，但风险位仍是 false，
+      // 「陈旧请求不得追认」这条判据不变。
+      await controller.setMode(GalLookupSurfaceMode.attachedOnly);
       expect(
         await controller.beginCalibration(acceptUnsafeLeftClick: true),
         isTrue,
       );
       expect(controller.status, GalAttachedTextStatus.calibrating);
       expect(await controller.acceptUnsafeRiskAndRetry(stale), isFalse);
-      expect(controller.profile, isNull);
+      expect(controller.profile?.unsafeLeftClickAccepted, isFalse);
     },
   );
 
