@@ -7,13 +7,11 @@ void main() {
   test(
     'unreal_iostore fixture pairs the selected thread with generic source PCM',
     () async {
-      final Map<String, dynamic> data =
-          jsonDecode(
-                await File(
-                  'test/fixtures/galhook/unreal_iostore_replay.json',
-                ).readAsString(),
-              )
-              as Map<String, dynamic>;
+      final Map<String, dynamic> data = jsonDecode(
+        await File(
+          'test/fixtures/galhook/unreal_iostore_replay.json',
+        ).readAsString(),
+      ) as Map<String, dynamic>;
       expect(data['status'], 'implemented_unverified');
 
       final Map<String, dynamic> config =
@@ -30,8 +28,8 @@ void main() {
       final List<dynamic> events = data['events'] as List<dynamic>;
       Map<String, dynamic> eventById(String id) =>
           events.cast<Map<String, dynamic>>().firstWhere(
-            (Map<String, dynamic> e) => e['id'] == id,
-          );
+                (Map<String, dynamic> e) => e['id'] == id,
+              );
 
       // 「PCM 胜过 loopback」必须是**优先级**判出来的，不能是时间差碰巧判出来的。
       // 所以 fixture 故意把 loopback 放得比 PCM **更靠近**台词：候选排序键是

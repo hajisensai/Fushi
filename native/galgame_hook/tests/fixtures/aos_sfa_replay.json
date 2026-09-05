@@ -11,15 +11,16 @@
   "events": [
     {"kind": "text", "id": "aos-line", "timestamp_ms": 7000, "thread": 3, "text": "synthetic aos dialogue line"},
     {"kind": "text", "id": "aos-ui-thread", "timestamp_ms": 7001, "thread": 6, "text": "synthetic aos ui thread"},
-    {"kind": "pcm", "id": "aos-source-pcm", "timestamp_ms": 7013, "format": "s16le"},
-    {"kind": "loopback", "id": "aos-loopback", "timestamp_ms": 7017, "format": "s16le"},
+    {"kind": "loopback", "id": "aos-loopback", "timestamp_ms": 7002, "format": "s16le"},
+    {"kind": "pcm", "id": "aos-source-pcm", "timestamp_ms": 7014, "format": "s16le"},
+    {"kind": "text", "id": "aos-line-repeat", "timestamp_ms": 7300, "thread": 3, "text": "synthetic aos dialogue line"},
     {"kind": "session_end", "timestamp_ms": 7600}
   ],
   "expected": {
     "cards": [
       {"text_id": "aos-line", "audio_backend": "pcm", "audio_id": "aos-source-pcm"}
     ],
-    "duplicate_text_events": 0,
+    "duplicate_text_events": 1,
     "thread_filtered_events": 1,
     "session_clean": true
   }

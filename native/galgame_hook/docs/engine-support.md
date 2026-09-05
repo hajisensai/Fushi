@@ -906,6 +906,8 @@ Tests：`tests/unreal_iostore_adapter_test.cpp`、`../../fushi/test/mining/unrea
 - Per-line voice lives in cv.aos; no resource layer is implemented and none is claimed until the engine's own read path is measured on a real session.
 - Only the title screen was reached. text_observed, text_thread_selected, paired and card_e2e are all not_run.
 - The identity check requires at least one *.aos whose header names itself. Titles of this family that ship differently named or differently structured archives would not match, and none were available to measure.
+- The sample was measured from a self-unpacked run directory where the exe sits beside its five *.aos archives. This is a retail disc title that was never installed, so the layout a normal installer produces was not measured: if it copies only the exe and leaves the archives on the disc, the directory criterion does not hold and the engine is simply not detected. Not guessed from a shape that was never measured.
+- The recorded runtime evidence (StartupAudioHooksReady | LunaHostReady | LunaConnected plus non-silent PCM) is produced by the shared generic Windows audio path and looks identical when MatchesAosSfaProfile() returns false. It therefore does NOT confirm that the new identity criterion evaluates true on the real game; that has only been shown offline against synthetic archives.
 - In-game lookup sensor is not implemented; lookupAdmission stays EngineUnsupported.
 
 Fixtures：`tests/fixtures/aos_sfa_replay.json`

@@ -103,10 +103,25 @@ int main() {
     RemoveDirectoryW(root.c_str());
   }
   // 6. 文件名含非 ASCII → 一律不匹配，而不是去猜编码。
+  //
+  //    必须用**自命名**的归档才能测到 ASCII 门：文件叫 `é.aos`（U+00E9）、
+  //    头里存的是单字节 0xE9 '.' 'a' 'o' 's'。去掉 ASCII 门后
+  //    `towlower(0xE9) == towlower(0xE9)` 恢复成立，它就会被认成 AOS 游戏——
+  //    这才是这条用例要挡的东西。旧写法把文件叫 `あ.aos` 而头里写 `scr.aos`，
+  //    两个名字本来就不同，走的是用例 2 已覆盖的「名字对不上」分支；
+  //    变异实测：把 ASCII 门删掉，旧用例 8 组全部照样绿。
   {
     const std::wstring root = MakeTempRoot(L"nonascii");
-    const std::string h = MakeHeader("scr.aos");
-    WriteBytes(root + L"\\あ.aos", h.data(), h.size());
+    std::string h(64, '\0');
+    h[4] = '\x31'; h[5] = '\x2c';
+    h[8] = '\x20'; h[9] = '\x2b';
+    h[12] = '\xe9'; h[13] = '.'; h[14] = 'a'; h[15] = 'o'; h[16] = 's';
+    WriteBytes(root + L"\\\u00e9.aos", h.data(), h.size());
+    assert(!fushi_voice_hook::MatchesAosSfaLayout(root));
+    Remove(root, L"\u00e9.aos");
+    // 旧形状（名字本来就不同）也一并留着，不交叉覆盖不代表该删。
+    const std::string mismatched = MakeHeader("scr.aos");
+    WriteBytes(root + L"\\あ.aos", mismatched.data(), mismatched.size());
     assert(!fushi_voice_hook::MatchesAosSfaLayout(root));
     Remove(root, L"あ.aos");
     RemoveDirectoryW(root.c_str());
