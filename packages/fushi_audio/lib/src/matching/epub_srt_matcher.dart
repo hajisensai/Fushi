@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'anchor_gap_filler.dart';
 import 'audio_text_normalizer.dart';
 import '../audiobook/audiobook_model.dart';
 
@@ -56,11 +57,16 @@ class MatchResult {
     required this.matches,
     required this.totalCues,
     required this.matchedCues,
+    this.gapFill,
   });
 
   final List<CueMatch> matches;
   final int totalCues;
   final int matchedCues;
+
+  /// 锚点间隙回填（[AnchorGapFiller.fill]）的统计；第一遍结果上为 null。
+  /// 回填跳过/放弃了哪些串、有没有因不变式退回，都从这里看。
+  final GapFillStats? gapFill;
 
   double get matchRate => totalCues == 0 ? 0.0 : matchedCues / totalCues;
 }
@@ -139,6 +145,47 @@ class EpubSrtMatcher {
       maxConsecutiveMisses: maxConsecutiveMisses,
     );
     return compute(_probeEntrypoint, req);
+  }
+
+  /// [probeInIsolate] 的同步版：在当前 isolate 里对多档 window 各跑一遍
+  /// [match]（共用一份归一化索引），返回命中率最高的那档。测试 / 小数据场景，
+  /// 或已经身在后台 isolate 时（`EpubCueMatcher.probeInIsolate` 的入口函数）用。
+  static ProbeResult probe({
+    required List<EpubSection> sections,
+    required List<AudioCue> cues,
+    required List<int> windows,
+    double similarityThreshold = defaultSimilarityThreshold,
+    int maxConsecutiveMisses = defaultMaxConsecutiveMisses,
+  }) {
+    final Map<int, double> map = <int, double>{};
+    int bestWindow = windows.first;
+    double bestRate = -1;
+    MatchResult? bestResult;
+
+    final _Index idx = _buildIndex(sections);
+    final List<String> normCueTexts = <String>[
+      for (final AudioCue c in cues) AudioTextNormalizer.normalize(c.text),
+    ];
+
+    for (final int w in windows) {
+      final MatchResult r = _matchCore(
+        idx: idx,
+        sections: sections,
+        cues: cues,
+        searchWindow: w,
+        similarityThreshold: similarityThreshold,
+        maxConsecutiveMisses: maxConsecutiveMisses,
+        preNormCueTexts: normCueTexts,
+      );
+      map[w] = r.matchRate;
+      if (r.matchRate > bestRate + 1e-9 ||
+          (r.matchRate > bestRate - 1e-9 && w < bestWindow)) {
+        bestRate = r.matchRate;
+        bestWindow = w;
+        bestResult = r;
+      }
+    }
+    return ProbeResult(perWindow: map, bestResult: bestResult);
   }
 
   static MatchResult match({
@@ -738,36 +785,13 @@ class _ProbeRequest {
 }
 
 ProbeResult _probeEntrypoint(_ProbeRequest req) {
-  final Map<int, double> map = <int, double>{};
-  int bestWindow = req.windows.first;
-  double bestRate = -1;
-  MatchResult? bestResult;
-
-  final _Index idx = EpubSrtMatcher._buildIndex(req.sections);
-  final List<String> normCueTexts = <String>[
-    for (final String t in req.cueTexts) AudioTextNormalizer.normalize(t),
-  ];
-
-  for (final int w in req.windows) {
-    final List<AudioCue> cues = _rebuildCues(req.cueTexts, req.cueIndexes);
-    final MatchResult r = EpubSrtMatcher._matchCore(
-      idx: idx,
-      sections: req.sections,
-      cues: cues,
-      searchWindow: w,
-      similarityThreshold: req.similarityThreshold,
-      maxConsecutiveMisses: req.maxConsecutiveMisses,
-      preNormCueTexts: normCueTexts,
-    );
-    map[w] = r.matchRate;
-    if (r.matchRate > bestRate + 1e-9 ||
-        (r.matchRate > bestRate - 1e-9 && w < bestWindow)) {
-      bestRate = r.matchRate;
-      bestWindow = w;
-      bestResult = r;
-    }
-  }
-  return ProbeResult(perWindow: map, bestResult: bestResult);
+  return EpubSrtMatcher.probe(
+    sections: req.sections,
+    cues: _rebuildCues(req.cueTexts, req.cueIndexes),
+    windows: req.windows,
+    similarityThreshold: req.similarityThreshold,
+    maxConsecutiveMisses: req.maxConsecutiveMisses,
+  );
 }
 
 List<AudioCue> _rebuildCues(List<String> texts, List<int> indexes) {

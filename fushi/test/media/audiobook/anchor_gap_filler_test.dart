@@ -18,11 +18,16 @@ EpubSection _section(int i, String text) =>
 
 /// 手工构造第一遍结果：[hits] 给「cue 序号 → 正文里的精确子串」，其余未命中。
 /// 归一化偏移按 [AudioTextNormalizer] 在第 0 节里 indexOf 得到，与匹配器同口径。
+///
+/// 默认 score = 1（精确命中 = 硬锚点，回填后逐字段不变）。第一遍模糊命中（Dice
+/// ±1 长度容忍多吃/少吃了字的那种）在真实匹配器里 score < 1，是可在边界内重切的
+/// 软锚点；夹具要表达这种命中时用 [scores] 给出 < 1 的分。
 MatchResult _firstPass(
   List<EpubSection> sections,
   List<AudioCue> cues,
-  Map<int, String> hits,
-) {
+  Map<int, String> hits, {
+  Map<int, double> scores = const <int, double>{},
+}) {
   final String norm = AudioTextNormalizer.normalize(sections.single.text);
   final List<CueMatch> matches = <CueMatch>[];
   for (final AudioCue c in cues) {
@@ -40,7 +45,7 @@ MatchResult _firstPass(
         sectionIndex: 0,
         normCharStart: at,
         normCharEnd: at + nh.length,
-        score: 1,
+        score: scores[c.sentenceIndex] ?? 1,
       ),
     );
   }
@@ -239,11 +244,17 @@ void main() {
         _cue(2, 'この世界では増えないらしい'),
       ];
       // 第一遍 Dice 的 ±1 长度容忍让前一句多吃了「しか」、后一句从「し」起——
-      // 短句「しかし」独占的间隙为零。
-      final MatchResult first = _firstPass(secs, cues, <int, String>{
-        0: 'mpが増えていくものだしか',
-        2: 'しこの世界では増えないらしい',
-      });
+      // 短句「しかし」独占的间隙为零。这两条是模糊命中（score < 1）的软锚点，
+      // 所以允许在边界内重切；若是精确命中（硬锚点）则钉死不动，しかし 保持未命中。
+      final MatchResult first = _firstPass(
+        secs,
+        cues,
+        <int, String>{
+          0: 'mpが増えていくものだしか',
+          2: 'しこの世界では増えないらしい',
+        },
+        scores: <int, double>{0: 0.9, 2: 0.9},
+      );
       final MatchResult filled = filler.fill(
         sections: secs,
         cues: cues,
@@ -329,12 +340,18 @@ void main() {
       ];
       // 第一遍把「はいえるふ」替换到「は古代長耳族」上——与删掉它们代价相同，
       // 但更长的区间在 max(needle, 区间) 分母下相似度更高，Dice/编辑距离都会选它。
-      final MatchResult first = _firstPass(secs, cues, <int, String>{
-        0: 'ロキシーは続けた',
-        1: 'まず魔術というの',
-        3: 'は古代長耳族が創りだしたものだと言われています',
-        4: '当時は違ったそうです',
-      });
+      // 1、3 是模糊命中（软锚点，可在边界内重切）；0、4 精确命中（硬锚点，钉死）。
+      final MatchResult first = _firstPass(
+        secs,
+        cues,
+        <int, String>{
+          0: 'ロキシーは続けた',
+          1: 'まず魔術というの',
+          3: 'は古代長耳族が創りだしたものだと言われています',
+          4: '当時は違ったそうです',
+        },
+        scores: <int, double>{1: 0.85, 3: 0.8},
+      );
       final MatchResult filled = filler.fill(
         sections: secs,
         cues: cues,
@@ -421,6 +438,121 @@ void main() {
       // うん 退回 ふむ（长度相称整段认领）。
       expect(norm.substring(by[1]!.normCharStart, by[1]!.normCharEnd), 'ふむ');
       expect(filled.matchedCues, 4);
+    });
+  });
+
+  group('AnchorGapFiller 锚点不变式（上游审查 A2）', () {
+    test('硬锚点（精确命中）即使被短句挤到零间隙也钉死不动，短句保持未命中', () {
+      final List<EpubSection> secs = <EpubSection>[
+        _section(0, 'ＭＰが増えていくものだ。しかし、この世界では増えないらしい。'),
+      ];
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(0, 'mpが増えていくものだ'),
+        _cue(1, 'しかし'),
+        _cue(2, 'この世界では増えないらしい'),
+      ];
+      // 与「邻句区间吞掉短句」同一夹具，但两端是精确命中（score = 1）：回填不许
+      // 拿 0.5 相似度的重切去替换 100% 的锚点，宁可让 しかし 留空。
+      final MatchResult first = _firstPass(secs, cues, <int, String>{
+        0: 'mpが増えていくものだしか',
+        2: 'しこの世界では増えないらしい',
+      });
+      final MatchResult filled = filler.fill(
+        sections: secs,
+        cues: cues,
+        result: first,
+      );
+      expect(filled.matches[0], same(first.matches[0]));
+      expect(filled.matches[2], same(first.matches[2]));
+      expect(filled.matches[1].matched, isFalse);
+      expect(filled.matchedCues, 2);
+      expect(filled.gapFill!.invariantViolated, isFalse);
+      expect(filled.gapFill!.filledRuns, 0);
+    });
+
+    test('软锚点（模糊命中）放不回边界内就整串放弃，绝不变成未命中', () {
+      final List<EpubSection> secs = <EpubSection>[
+        _section(
+          0,
+          '前の文章はここまでである。次の長い文章がここに続いている。'
+          'さらに別の長い文章もここに続いている。最後の文章で終わる。',
+        ),
+      ];
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(0, '前の文章はここまでである'),
+        _cue(1, 'まったく違う言葉の列'), // 长句的模糊伪命中：正文里根本没有
+        _cue(2, '次の長い文章がここにつづいている'),
+        _cue(3, 'さらに別の長い文章もここにつづいている'),
+        _cue(4, '最後の文章で終わる'),
+      ];
+      // 1 以 0.8 抢到了「である次の長い文章」（跨句吃字）。旧实现会在重排里把它
+      // 丢成未命中来换 2、3 的命中（净 +1）；新不变式下长句软锚点不可丢、又在
+      // 边界内放不到 ≥ anchorMinSimilarity，整串原样保留。
+      final MatchResult first = _firstPass(
+        secs,
+        cues,
+        <int, String>{
+          0: '前の文章はここまでである',
+          1: 'である次の長い文章',
+          4: '最後の文章で終わる',
+        },
+        scores: <int, double>{1: 0.8},
+      );
+      final MatchResult filled = filler.fill(
+        sections: secs,
+        cues: cues,
+        result: first,
+      );
+      expect(filled.matches[1].matched, isTrue, reason: '软锚点不得被丢弃');
+      // 重切整串放弃：软锚点 1 与两端硬锚点逐字段原样（② 的比例认领仍可能在
+      // 1 与 4 之间给 2、3 切区间，那是既有行为，不动锚点）。
+      for (final int k in <int>[0, 1, 4]) {
+        expect(filled.matches[k].sectionIndex, first.matches[k].sectionIndex);
+        expect(filled.matches[k].normCharStart, first.matches[k].normCharStart);
+        expect(filled.matches[k].normCharEnd, first.matches[k].normCharEnd);
+        expect(filled.matches[k].score, first.matches[k].score);
+      }
+      expect(filled.matches[0], same(first.matches[0]));
+      expect(filled.matches[4], same(first.matches[4]));
+      expect(filled.gapFill!.invariantViolated, isFalse);
+      expect(filled.gapFill!.filledRuns, 0);
+      expect(filled.gapFill!.abandonedRuns, 1);
+    });
+
+    test('region 超过 maxRegionChars 的串整串跳过并计入 gapFill', () {
+      const AnchorGapFiller small = AnchorGapFiller(maxRegionChars: 20);
+      final List<EpubSection> sections = <EpubSection>[
+        _section(
+          0,
+          '俺は三十四歳、住所不定無職。人生を後悔している真っ最中だ。'
+          '着のみ着のまま家から叩き出された。多分、そうだろう。',
+        ),
+      ];
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(0, '俺は三十四歳住所不定無職'),
+        _cue(1, '人生を後悔している真っ最中だ'),
+        _cue(2, '着のみ着のまま家からたたき出された'),
+        _cue(3, 'そうだろう'),
+      ];
+      final MatchResult first = _firstPass(sections, cues, <int, String>{
+        0: '俺は三十四歳、住所不定無職',
+        1: '人生を後悔している真っ最中だ',
+        3: 'そうだろう',
+      });
+      final MatchResult filled = small.fill(
+        sections: sections,
+        cues: cues,
+        result: first,
+      );
+      expect(filled.matches[2].matched, isFalse);
+      expect(filled.matchedCues, 3);
+      expect(filled.gapFill!.oversizeRuns, 1);
+      expect(filled.gapFill!.skippedAny, isTrue);
+      // 同一输入不设上限就能回填——证明跳过的确是门控而不是算法放弃。
+      expect(
+        filler.fill(sections: sections, cues: cues, result: first).matchedCues,
+        4,
+      );
     });
   });
 
