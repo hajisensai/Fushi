@@ -2580,13 +2580,26 @@ int main(int argc, char** argv) {
         printf(" (未上报：helper 未起或为 v22 之前的构建)");
       } else {
         bool any = false;
+        bool shared_only = false;
         for (uint32_t i = 0; i < n; ++i) {
           if (!reports[i].applicable && !reports[i].installed) continue;
           any = true;
+          if (!reports[i].applicable && reports[i].installed) shared_only = true;
           printf(" %s=probe:%u/installed:%u", reports[i].id,
                  reports[i].applicable, reports[i].installed);
         }
         if (!any) printf(" 无 adapter 认领（已上报 %u 个，全部 probe=0）", n);
+        // probe:0/installed:1 **不是**矛盾，但不解释就一定会被读成矛盾：
+        // installed 是各 adapter 自定义的，对 siglus / reallive / kirikiri_z 它包含
+        // 「该 adapter 代管的共享中间件装上了」——TryHookSiglusOvk 装的是 KernelBase
+        // 文件 API 共享中转（HUNEX/Malie 都复用它），装成功就置 installed，与本局是不是
+        // Siglus 无关。引擎身份只看 probe。真机实测（chronoclock，CMVS）：siglus/reallive
+        // 报 installed:1 而 hookdiag 里并没有 SiglusOvkHooksReady——后者只在确实是 Siglus
+        // 时才置，两者一致。
+        if (shared_only) {
+          printf("\n                （probe:0/installed:1 不是矛盾：installed 含该 adapter "
+                 "代管的共享中间件；引擎身份只看 probe）");
+        }
       }
     }
     if (twc > 0) {

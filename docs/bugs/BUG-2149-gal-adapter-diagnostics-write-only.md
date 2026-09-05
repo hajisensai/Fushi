@@ -36,6 +36,30 @@
     正常往返按槽对号、adapter 变少时尾部旧槽必须清零（否则读到上一次的 probe/installed）、
     超长 id 截断且带 NUL、写侧超容量夹住、读侧按自身容量截断。
 
-- **备注**：**端到端未验**——写点与读点各自有测试，但「在真游戏上打出那一行」尚未跑过
-  （改动时用户在用机器，不启动游戏打断）。桌面空闲后第一件事就是拿 chronoclock 体験版复验，
-  那同时就是 CMVS 台账里那条 Next gate。在此之前不得宣称本条面「可用」。
+- **端到端已验（2026-09-05，四个引擎，helper x86 `119ef214…` / x64 `950e0d03…`）**：
+  写点（helper DLL）与读点（ring_probe）取自同一次构建——v23 版本门本来就要求这样，否则判不兼容。
+
+  | 游戏 | `[adapters]` 读数 | 其它引擎 |
+  |---|---|---|
+  | chronoclock 体験版 v2（CMVS） | `cmvs=probe:1/installed:1` | 无 kirikiri / renpy / unity 行 |
+  | ATRI -My Dear Moments-（KiriKiri） | `kirikiri_z=probe:1/installed:1` | **cmvs 行整条消失** |
+  | Sakura Swim Club（Ren'Py） | `renpy_ffmpeg=probe:1/installed:1` | 无 kirikiri / cmvs |
+  | manosaba Ver1.0.3（Unity IL2CPP） | `unity_il2cpp=probe:1/installed:1` | 无 cmvs / renpy |
+
+  第一行正是 CMVS 台账里那条 Next gate「探针 `cmvs probe=1 installed=1`」——它现在读得出来了。
+  四局互为跨引擎负样本：每局只有该引擎的 probe 为 1，别家的行因 probe/installed 全 0 被滤掉。
+
+- **顺带查实的一件事：`installed` 是各 adapter 自定义的，`probe:0/installed:1` 不是矛盾。**
+  第一次读到 `siglus=probe:0/installed:1`、`reallive=probe:0/installed:1`、
+  `kirikiri_z=probe:0/installed:1`（在 CMVS 游戏上）时看着像 bug，查下来是真数据：
+  `TryHookSiglusOvk()` 装的是 **KernelBase 文件 API 共享中转**（`CreateFileW/A`/`ReadFile`/
+  `CloseHandle`），HUNEX 与 Malie 都复用它，`reallive.install()` 干脆就是
+  `installed_ = TryHookSiglusOvk()`。装成功就置 `installed_`，与本局是不是 Siglus 无关；
+  Siglus 专属诊断位 `kDiagSiglusOvkHooksReady` 只在确实是 Siglus 时才置。
+  **证据**：CMVS 那局 `hookdiag=0x00000c21` 里确实**没有** `SiglusOvkHooksReady`，与该解释一致。
+  数据没错，但不解释一定会被读成矛盾——所以读点在**恰好出现这种形状时**打一行说明：
+  「installed 含该 adapter 代管的共享中间件；引擎身份只看 probe」。这与本仓对诊断位的既有
+  纪律同源：位只能表示它字面上说的那件事。
+
+- **备注**：本条面只解决「读得出来」。各 adapter 的 `installed_` 语义不统一是另一件事，
+  本轮**没有**去统一——那要逐个 adapter 重新定义并回归，属独立任务。
