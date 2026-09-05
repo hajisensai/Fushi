@@ -3043,6 +3043,66 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			// KAG stable 边沿重扫——numMessageLayers 变化新建的层就在那之后出现。
 			// 位 3 = 至少挂上过一个实例（与位 0「分支跑到」分开：分支跑到但一个层都没挂上
 			// 说明 kag.fore.messages 结构不是标准 KAG3，真机上要能一眼分出这两种失败）。
+			// 整棵图层树的补挂。只扫 kag.fore/back.messages 是不够的：重度定制的 KAG3
+			// 把对白正文画在 messages 数组**之外**的层上（真机 フタマタ恋愛 Ver1.00 装了
+			// 19 个插件，含游戏专用 hutamata.tpm / extNagano.dll / layerExDraw.dll，
+			// 一整段对白里 messages 里那些层的 drawText 包装零触发，而同一实例的
+			// processCh 会触发）。只扫两个数组时，「层没扫到」与「引擎根本不走 TJS
+			// drawText」在诊断上完全同形——扩到整棵树才能把这两种失败分开。
+			//
+			// 只读 children（native 数组属性）+ 逐个 try/catch。**绝不整体枚举成员**：
+			// Dictionary.assign 会逐个读取源对象所有成员，踩到读取即抛的属性（实测是
+			// `enabled`）就抛 KiriKiri 全局脚本异常框，而那是 native 侧抛的、TJS 的
+			// try/catch 拦不住，直接把游戏打断（见 BUG-2116 的踩坑记录）。
+			//
+			// 预算与深度都设上限：图层树在动画期可能很深很宽，而本函数跑在 KAG stable
+			// 边沿的重扫路径上，不能退化成每次推进都遍历上千个对象。
+			global.fushiLookupLayerWalkBudget = 0;
+
+			global.fushiLookupPatchLayerTree = function(root, depth)
+			{
+				if(root === void || root === null) return 0;
+				if(depth > 12 || global.fushiLookupLayerWalkBudget <= 0) return 0;
+				var patched = 0;
+				try
+				{
+					if(global.fushiLookupPatchClassicLayer(root)) patched++;
+				}
+				catch(e) { global.fushiLookupFault(); }
+				var kids = void;
+				try { kids = root.children; } catch(e) { return patched; }
+				if(kids === void || kids === null) return patched;
+				var count = 0;
+				try { count = kids.count; } catch(e) { return patched; }
+				for(var i = 0; i < count; i++)
+				{
+					if(global.fushiLookupLayerWalkBudget <= 0) break;
+					global.fushiLookupLayerWalkBudget--;
+					try
+					{
+						patched += global.fushiLookupPatchLayerTree(kids[i], depth + 1);
+					}
+					catch(e) {}
+				}
+				return patched;
+			};
+
+			// 树的根。primaryLayer 覆盖整个窗口内容；fore/back 的 base 是兜底（某些定制
+			// KAG 不经由 primaryLayer 挂载）。取不到就跳过，不算故障。
+			global.fushiLookupLayerTreeRoots = function()
+			{
+				var roots = [];
+				try { if(global.kag.primaryLayer !== void) roots.add(global.kag.primaryLayer); }
+				catch(e) {}
+				try { if(global.kag.fore.base !== void) roots.add(global.kag.fore.base); }
+				catch(e) {}
+				try { if(global.kag.back.base !== void) roots.add(global.kag.back.base); }
+				catch(e) {}
+				return roots;
+			};
+
+)TJS" LR"TJS(
+
 			global.fushiLookupSweepClassicLayers = function()
 			{
 				if((global.fushiLookupClassicSource & 1) == 0) return 0;
@@ -3064,7 +3124,18 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				}
 				if(patched > 0)
 					global.fushiLookupClassicSource = global.fushiLookupClassicSource | 8;
-				return patched;
+				// messages 之外的层：位 4 单独记，好让真机上一眼看出扫描面到底扩没扩到树里。
+				global.fushiLookupLayerWalkBudget = 512;
+				var roots = global.fushiLookupLayerTreeRoots();
+				var tree = 0;
+				for(var r = 0; r < roots.count; r++)
+				{
+					try { tree += global.fushiLookupPatchLayerTree(roots[r], 0); }
+					catch(e) { global.fushiLookupFault(); }
+				}
+				if(tree > 0)
+					global.fushiLookupClassicSource = global.fushiLookupClassicSource | 16;
+				return patched + tree;
 			};
 
 			// Freeze the KAG message slot while drawCh is actually executing.  A later
@@ -5943,6 +6014,13 @@ void PumpKirikiriLookup() {
       if ((classic & 8) != 0 && g_header != nullptr) {
         g_header->reserved_luna |=
             fushi_voice_hook::kDiagKirikiriClassicLayerPatched;
+      }
+      // 位 4「整棵图层树扫到了 messages 之外的层」。与位 3 分开读：只扫两个 messages
+      // 数组时，「对白层不在扫描面里」与「引擎根本不走 TJS drawText」完全同形，真机上
+      // 分不出来（BUG-2116）。这一位一亮，前者就被排除了。
+      if ((classic & 16) != 0 && g_header != nullptr) {
+        g_header->reserved_luna |=
+            fushi_voice_hook::kDiagKirikiriClassicTreePatched;
       }
     }
   }
