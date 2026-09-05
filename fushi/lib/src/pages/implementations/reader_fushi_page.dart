@@ -72,6 +72,7 @@ import 'package:fushi/src/reader/reader_selection_data.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi/src/reader/reader_chrome_floating.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
+import 'package:fushi/src/reader/reader_status_footer.dart';
 import 'package:fushi/src/reader/reader_top_progress.dart';
 import 'package:fushi/src/reader/ttu_toc_flatten.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
@@ -1897,11 +1898,29 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   set _caretBusy(bool value) => _caret.busy = value;
 
   bool get _showTopProgress =>
+      // 桌面端底部状态行取代顶部进度 pill：进度数字挪到右下角，顶部不再有 chrome。
+      // 「阅读进度指示」开关在桌面端落到状态行右侧（见 _buildStatusFooter）。
+      !_statusFooterEnabled &&
       _readerContentReady &&
       _progressCurrentChars != null &&
       _progressTotalChars != null &&
       _progressTotalChars! > 0 &&
       ReaderFushiSource.instance.showTopProgressBar;
+
+  /// 桌面端底部状态行（ッツ Reader 风格：左阅读追踪 / 右字数进度）是否启用。
+  /// 单一真相源 [readerStatusFooterEnabled]：桌面且非歌词模式。
+  bool get _statusFooterEnabled => readerStatusFooterEnabled(
+        desktop: isDesktopPlatform,
+        lyricsMode: _lyricsMode,
+      );
+
+  /// 状态行的底部预留高（挤压式：视觉高度 == 预留高度，正文永不压到它下面）。
+  /// 不随 `_hasEverLoaded` 翻转——预留从初始 HTML 起就含它，首屏就绪后不必再补发
+  /// insets 触发一次 reflow；只有**绘制**才等首次冷加载完成（[_buildStatusFooter]）。
+  double get _statusFooterReserve => readerStatusFooterReserve(
+        enabled: _statusFooterEnabled,
+        footerHeight: kReaderStatusFooterHeight,
+      );
 
   /// 顶部进度信息条的预留高（单一真相源 [kTopProgressStripHeight]）。历史值为裸
   /// `_infoFontSize * 1.5`，未计入 BUG-547 毛玻璃 pill 后加的上下内边距，导致挤压模式
@@ -1954,7 +1973,12 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   /// TODO-975：是否有任一 chrome 处于悬浮模式（决定是否启用「点击唤出 + 自动收起」
   /// 状态机；都不悬浮时走纯挤压旧路径，无 timer）。
-  bool get _anyChromeFloating => _topProgressFloating || _bottomBarFloating;
+  ///
+  /// 桌面端状态行取代顶部进度 pill 之后，顶部进度的悬浮开关在桌面端没有对应的
+  /// 可见面，不再算作「有悬浮 chrome」——否则底栏挤压 + 顶部悬浮的组合下点空白会
+  /// 进一台什么都不画的状态机（点了没反应）。
+  bool get _anyChromeFloating =>
+      (_topProgressFloating && !_statusFooterEnabled) || _bottomBarFloating;
 
   /// BUG-1343：macOS 的 NSWindow 全局启用了透明标题栏 + full-size content，而默认 MD3 根壳
   /// 不挂 MacosWindow/ToolBar。阅读器需自行保留一条可拖拽标题栏，否则原生 WebView
@@ -1973,7 +1997,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   double get _readerTopOffset =>
       _stableTopInset + _macosWindowTitlebarInset + _topProgressReserve;
 
-  double get _readerBottomReserve => _bottomChromeReserve + _stableBottomInset;
+  double get _readerBottomReserve =>
+      _bottomChromeReserve + _statusFooterReserve + _stableBottomInset;
 
   @override
   double get popupBottomReserve =>
@@ -3055,6 +3080,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                         ),
                       ),
                     _buildTopProgressBar(),
+                    // 桌面端底部状态行：排在词典弹层 / 底栏之前，让它们盖在其上。
+                    _buildStatusFooter(),
                     buildDictionary(),
                     // The bottom chrome returns a Positioned; it MUST stay a direct
                     // child of this Stack. The chrome FocusScope is mounted INSIDE

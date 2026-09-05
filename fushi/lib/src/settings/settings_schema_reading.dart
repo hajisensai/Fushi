@@ -438,7 +438,10 @@ SettingsDestination buildReadingDestination() {
             id: 'reading_controls.top_progress_floating',
             title: t.reader_top_progress_floating,
             icon: Icons.flip_to_front_outlined,
-            visible: (SettingsContext c) => c.readerSource.showTopProgressBar,
+            // 桌面端底部状态行取代顶部进度 pill，「悬浮 / 位置」两项在桌面端没有
+            // 对应的可见面，不展示（持久化 key 不动，移动端照旧）。
+            visible: (SettingsContext c) =>
+                c.readerSource.showTopProgressBar && !isDesktopPlatform,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
               order: 17,
@@ -478,7 +481,8 @@ SettingsDestination buildReadingDestination() {
             title: t.top_progress_position,
             icon: Icons.align_horizontal_center,
             controlBelow: true,
-            visible: (SettingsContext c) => c.readerSource.showTopProgressBar,
+            visible: (SettingsContext c) =>
+                c.readerSource.showTopProgressBar && !isDesktopPlatform,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
               order: 15,
@@ -518,7 +522,7 @@ SettingsDestination buildReadingDestination() {
             max: 10,
             divisions: 9,
             visible: (SettingsContext c) =>
-                c.readerSource.topProgressFloating ||
+                (c.readerSource.topProgressFloating && !isDesktopPlatform) ||
                 c.readerSource.tapEmptyToHideChrome,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,

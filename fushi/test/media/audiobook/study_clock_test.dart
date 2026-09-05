@@ -153,8 +153,7 @@ void main() {
       expect(
         h.sink.writes,
         hasLength(1),
-        reason:
-            '第二条 stop 看到的是已清空的状态，不重复写（旧 VideoWatchTracker '
+        reason: '第二条 stop 看到的是已清空的状态，不重复写（旧 VideoWatchTracker '
             '在 await 之后才清零累计器，两条 stop 各写一条活动行）',
       );
       expect(h.sink.last.durationMs.value, 45000);
@@ -248,6 +247,91 @@ void main() {
       await h.clock.flushNow();
       expect(h.sink.writes, hasLength(1));
       expect(h.sink.last.durationMs.value, 30000);
+    });
+  });
+
+  group('sessionTotals：阅读器底部状态行的只读会话累计', () {
+    test('未 start / 已 stop：零值 + 未计时；stop 后读数冻结不再增长', () async {
+      final _Harness h = _Harness();
+      expect(
+        h.clock.sessionTotals(),
+        (durationMs: 0, chars: 0, active: false),
+      );
+      h.clock.start();
+      h.advance(const Duration(seconds: 30));
+      await h.clock.stop();
+      final StudySessionTotals stopped = h.clock.sessionTotals();
+      expect(stopped.durationMs, 30000);
+      expect(stopped.active, isFalse);
+      h.advance(const Duration(hours: 1));
+      expect(
+        h.clock.sessionTotals().durationMs,
+        30000,
+        reason: '停表期间（后台）读数不动，与落库口径同律',
+      );
+    });
+
+    test('未结算的部分窗口实时计入（秒表连续跳动，不是 60s 一跳）', () async {
+      final _Harness h = _Harness();
+      h.clock.start();
+      h.advance(const Duration(seconds: 7));
+      final StudySessionTotals live = h.clock.sessionTotals();
+      expect(live.durationMs, 7000);
+      expect(live.active, isTrue);
+      expect(h.sink.writes, isEmpty, reason: '只读：不结算、不写库');
+      expect(h.clock.debugOpenUid, isNull, reason: '只读：不开段');
+    });
+
+    test('跨段累计不清零：封段（小时边界）后会话读数继续累加', () async {
+      final _Harness h = _Harness(start: DateTime(2026, 8, 29, 12, 59, 30));
+      h.clock.start();
+      h.advance(const Duration(seconds: 60));
+      await h.clock.flushNow();
+      expect(h.sink.uids.toSet(), <String>{'u1', 'u2'}, reason: '跨小时切两段');
+      h.advance(const Duration(seconds: 15));
+      expect(h.clock.sessionTotals().durationMs, 75000);
+    });
+
+    test('字数随 addChars 累计；chars/h 由 UI 按 durationMs 派生', () async {
+      final _Harness h = _Harness();
+      h.clock.start();
+      h.clock.addChars(120);
+      h.advance(const Duration(seconds: 60));
+      await h.clock.flushNow();
+      h.clock.addChars(30);
+      final StudySessionTotals t = h.clock.sessionTotals();
+      expect(t.chars, 150);
+      expect(t.durationMs, 60000);
+    });
+
+    test('空闲 / 断档：当前窗口被拒时读数回落且 active=false（与入账同判据）', () async {
+      final _Harness h = _Harness(idleTimeout: const Duration(minutes: 10));
+      h.clock.start();
+      h.advance(const Duration(seconds: 60));
+      await h.clock.flushNow();
+      // 挂机 11 分钟：本窗口此刻会被空闲门拒绝 → 不计入、暂停态。
+      h.advance(const Duration(minutes: 11));
+      final StudySessionTotals idle = h.clock.sessionTotals();
+      expect(idle.durationMs, 60000);
+      expect(idle.active, isFalse);
+      // 有输入后下一窗口恢复计时。
+      h.clock.touch();
+      await h.clock.flushNow();
+      h.advance(const Duration(seconds: 5));
+      final StudySessionTotals back = h.clock.sessionTotals();
+      expect(back.active, isTrue);
+      expect(back.durationMs, 65000);
+    });
+
+    test('显式记账模式：时长只随 addActiveMs，active 随本窗口是否记过账', () async {
+      final _Harness h = _Harness(accrual: StudyAccrual.explicit);
+      h.clock.start();
+      h.advance(const Duration(seconds: 30));
+      expect(h.clock.sessionTotals(), (durationMs: 0, chars: 0, active: false));
+      h.clock.addActiveMs(900);
+      final StudySessionTotals t = h.clock.sessionTotals();
+      expect(t.durationMs, 900);
+      expect(t.active, isTrue);
     });
   });
 

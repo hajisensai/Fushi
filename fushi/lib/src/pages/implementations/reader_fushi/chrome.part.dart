@@ -1949,6 +1949,51 @@ extension _ReaderChrome on _ReaderFushiPageState {
     }
   }
 
+  // ── Desktop status footer ─────────────────────────────────────────
+
+  /// 桌面端底部状态行（ッツ Reader 风格）。左：计时器图标 + `<字/时> / h <本次时长>`；
+  /// 右：`<已读> / <总字数>  <百分比>%`。常驻、挤压式（预留高见 [_statusFooterReserve]）。
+  ///
+  /// 绘制门控与底栏同源用 set-once `_hasEverLoaded`（不用每切章翻转的
+  /// `_readerContentReady`，否则切章闪烁）；预留高**不**随它翻转，见 getter 注释。
+  /// 悬浮底栏（默认形态）唤出时 `Positioned(bottom: 0)` 盖在状态行之上，与顶部进度
+  /// pill 被底栏盖住是同一形态；底栏挤压模式下状态行坐在底栏之上
+  /// （`bottom: _bottomChromeReserve + _stableBottomInset`）。
+  ///
+  /// 点状态行 = 点顶部进度 pill 的同义动作（悬浮态唤出 / 收起，挤压态切底栏）。
+  /// 纯指针面，不进焦点遍历池（TODO-700 不变式）。
+  Widget _buildStatusFooter() {
+    if (!_statusFooterEnabled || !_hasEverLoaded) {
+      return const SizedBox.shrink();
+    }
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: _bottomChromeReserve + _stableBottomInset,
+      // BUG-1692：状态行排在 WebView **之后**绘制，必须自带 RepaintBoundary，否则并进
+      // 页面级 PictureLayer 的整窗 cull rect，macOS 上整块 WebView 收不到鼠标事件。
+      child: RepaintBoundary(
+        child: ReaderStatusFooter(
+          key: const ValueKey<String>('fushi_status_footer'),
+          sessionTotals: _readingSessionTotals,
+          currentChars: _progressCurrentChars,
+          totalChars: _progressTotalChars,
+          showProgress: ReaderFushiSource.instance.showTopProgressBar,
+          textColor: _themeTextColor(),
+          backgroundColor: _themeBackgroundColor(),
+          onTap: _anyChromeFloating
+              ? () => _handleFloatingChromeReveal()
+              : _toggleChrome,
+        ),
+      ),
+    );
+  }
+
+  /// 状态行左侧的会话累计读口：账只在 [StudyClock] 一本（v92 纪律），时钟未建
+  /// （首屏未就绪）时给零值 + 未计时。
+  StudySessionTotals _readingSessionTotals() =>
+      _studyClock?.sessionTotals() ?? (durationMs: 0, chars: 0, active: false);
+
   // ── Top Progress Bar ──────────────────────────────────────────────
 
   Widget _buildTopProgressBar() {
