@@ -128,6 +128,14 @@ class SyncAssetPackageService {
           Value(_stringValue(dictionary, 'hiddenLanguagesJson')),
       collapsedLanguagesJson:
           Value(_stringValue(dictionary, 'collapsedLanguagesJson')),
+      // BUG-2158 新增列。**不能用 _stringValue**：它缺键就抛 FormatException，
+      // 而本次改动之前生成的同步包里根本没有这个键——那样等于让所有存量同步包
+      // 一导入就炸。缺键 → '[]' = 全部「继承」= 与新增此列前的行为一致。
+      expandedLanguagesJson: Value(
+        dictionary['expandedLanguagesJson'] is String
+            ? dictionary['expandedLanguagesJson']! as String
+            : '[]',
+      ),
     ));
 
     final Directory targetDir = Directory(
@@ -543,6 +551,7 @@ class SyncAssetPackageService {
       'metadataJson': row.metadataJson,
       'hiddenLanguagesJson': row.hiddenLanguagesJson,
       'collapsedLanguagesJson': row.collapsedLanguagesJson,
+      'expandedLanguagesJson': row.expandedLanguagesJson,
     };
   }
 
