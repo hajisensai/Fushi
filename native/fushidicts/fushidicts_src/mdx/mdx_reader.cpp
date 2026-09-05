@@ -610,13 +610,18 @@ void stream_records(const uint8_t* data, size_t size, ContainerIndex& idx,
       key_index++;
     }
 
-    // Release everything the remaining entries can no longer reach.
+    // Release everything the remaining entries can no longer reach. The drop is
+    // clamped to what the window actually holds: record_offset comes straight
+    // out of the file, so a corrupt key table can name an offset past the end of
+    // the current window (a hole between blocks), and an unclamped erase range
+    // would run off the buffer.
     const uint64_t keep_from = (key_index < idx.keys.size())
                                    ? std::max<uint64_t>(idx.keys[key_index].record_offset, window_base)
                                    : window_end;
-    if (keep_from > window_base) {
-      window.erase(window.begin(), window.begin() + static_cast<std::ptrdiff_t>(keep_from - window_base));
-      window_base = keep_from;
+    const size_t drop = static_cast<size_t>(std::min<uint64_t>(keep_from - window_base, window.size()));
+    if (drop > 0) {
+      window.erase(window.begin(), window.begin() + static_cast<std::ptrdiff_t>(drop));
+      window_base += drop;
     }
   }
 }
