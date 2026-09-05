@@ -4,6 +4,24 @@ import '../language/language.dart';
 
 enum DictionaryType { term, frequency, pitch, kanji }
 
+/// 一本词典在某个语言下的折叠三态（BUG-2158）。
+///
+/// 为什么必须是三态而不是一个布尔：**「没有显式折叠」不等于「展开」**。它等于
+/// 「按全局默认来」，而全局 `collapse_dictionaries` 默认是 true。修复前只有一个
+/// `collapsedLanguages` 名单，两种意思被压成同一个状态，而设置页那个
+/// unfold_more / unfold_less 按钮却把它呈现成双态开关——用户给自动展开窗口之外的
+/// 词典点「展开」，模型里根本没有那个状态可写，于是视觉上毫无反应。
+enum DictionaryCollapseState {
+  /// 用户显式展开：压过自动展开窗口和全局折叠开关。
+  expanded,
+
+  /// 用户显式折叠：压过自动展开窗口。
+  collapsed,
+
+  /// 未表态：按自动展开窗口 + 全局折叠开关决定。
+  inherit,
+}
+
 /// [Dictionary.metadata] 里记录「启动期类型自愈探测已经做过了」的键。
 ///
 /// 为什么需要一个显式的键，而不是从 `hasKanji` 之类的结果反推：反推会把「没探测过」
@@ -39,6 +57,7 @@ class Dictionary {
       ),
       hiddenLanguages: List<String>.from(map['hiddenLanguages'] ?? []),
       collapsedLanguages: List<String>.from(map['collapsedLanguages'] ?? []),
+      expandedLanguages: List<String>.from(map['expandedLanguages'] ?? []),
       languageOverride: map['languageOverride'] as String?,
     );
   }
@@ -50,6 +69,7 @@ class Dictionary {
     this.metadata = const {},
     this.hiddenLanguages = const [],
     this.collapsedLanguages = const [],
+    this.expandedLanguages = const [],
     this.languageOverride,
   });
 
@@ -59,7 +79,16 @@ class Dictionary {
   final DictionaryType type;
   final Map<String, String> metadata;
   List<String> hiddenLanguages;
+
+  /// 用户**显式折叠**这本词典的语言列表。与 [expandedLanguages] 互斥；两个都不含
+  /// 某语言 = 该语言下走 [DictionaryCollapseState.inherit]。见 [collapseStateFor]。
   List<String> collapsedLanguages;
+
+  /// 用户**显式展开**这本词典的语言列表（BUG-2158）。
+  ///
+  /// 修复前只有 [collapsedLanguages] 一个名单，于是「不在名单里」同时承担了
+  /// 「展开」和「继承」两种意思——而全局默认是折叠，用户点「展开」等于什么都没做。
+  List<String> expandedLanguages;
 
   /// 用户**手动指定**的词典内容语言（BCP-47，如 `ja` / `zh-Hant`）。null = 未指定。
   ///
@@ -108,8 +137,35 @@ class Dictionary {
     return hiddenLanguages.contains(language.languageCode);
   }
 
+  /// 这本词典在 [language] 下的折叠三态（BUG-2158）。
+  ///
+  /// 「显式展开」排在「显式折叠」之前是**故意**的：两个名单本该互斥（由
+  /// `DictionaryRepository.setDictionaryCollapseState` 这个唯一写入点维持），
+  /// 但外部写入（同步落库、手改 DB、旧版本写的行）弄出重叠时，这里给出的是
+  /// 确定的答案而不是未定义行为。
+  DictionaryCollapseState collapseStateFor(Language language) =>
+      collapseStateForCode(language.languageCode);
+
+  /// 同 [collapseStateFor]，但直接吃语言码。持久化层与设置页手上只有码，没有
+  /// [Language] 实例；让它们各自去造一个实例只会多一条能写错的路径。
+  DictionaryCollapseState collapseStateForCode(String languageCode) {
+    if (expandedLanguages.contains(languageCode)) {
+      return DictionaryCollapseState.expanded;
+    }
+    if (collapsedLanguages.contains(languageCode)) {
+      return DictionaryCollapseState.collapsed;
+    }
+    return DictionaryCollapseState.inherit;
+  }
+
+  /// 用户是否**显式折叠**了这本词典（不含「继承而恰好折叠」）。
   bool isCollapsed(Language language) {
-    return collapsedLanguages.contains(language.languageCode);
+    return collapseStateFor(language) == DictionaryCollapseState.collapsed;
+  }
+
+  /// 用户是否**显式展开**了这本词典（压过自动展开窗口与全局折叠开关）。
+  bool isExplicitlyExpanded(Language language) {
+    return collapseStateFor(language) == DictionaryCollapseState.expanded;
   }
 
   /// TODO-609：在线来源词典的版本号（yomitan index.json 的 revision），导入时
@@ -139,6 +195,7 @@ class Dictionary {
       'metadata': jsonEncode(metadata),
       'hiddenLanguages': hiddenLanguages,
       'collapsedLanguages': collapsedLanguages,
+      'expandedLanguages': expandedLanguages,
       'languageOverride': languageOverride,
     });
   }

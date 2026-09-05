@@ -4,21 +4,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite3;
 
-/// v96（schema 漂移修补，BUG-2146）：真实用户库 `user_version = 95`，却缺 v52 /
+/// v97（schema 漂移修补，BUG-2146）：真实用户库 `user_version = 95`，却缺 v52 /
 /// v57 / v87 / v88 四级台阶的产物——五个 `language` 系列列、`media_collections`
 /// 的 `audio_track_id` / `subtitle_delay_ms`、两张墓碑表的 `removed_at` 没改名
 /// `deleted_at`。版本号已经写高，`from < N` 对它永远不会再进；导入书时
 /// `INSERT INTO epub_books (... language)` 直接 no such column。
 ///
 /// 这里从「真实的漂移 v95 库」出发：建当前库 → DROP 掉那七列、把两列改回旧名 →
-/// `user_version` 写回 95。只有 95 这个起点能证明修补落在 v96 而不是被并进了
+/// `user_version` 写回 95。只有 95 这个起点能证明修补落在 v97 而不是被并进了
 /// 已发布的旧台阶。
 void main() {
   late Directory tempDir;
   late String dbPath;
 
   setUp(() {
-    tempDir = Directory.systemTemp.createTempSync('fushi_v96_schema_drift');
+    tempDir = Directory.systemTemp.createTempSync('fushi_v97_schema_drift');
     dbPath = '${tempDir.path}${Platform.pathSeparator}v95-drifted.db';
   });
 
@@ -86,7 +86,7 @@ void main() {
     }
   });
 
-  test('v95 -> v96：七列补齐、墓碑列改名、存量行无损、导入书能落库', () async {
+  test('v95 -> v97：七列补齐、墓碑列改名、存量行无损、导入书能落库', () async {
     await seedDriftedV95();
 
     final FushiDatabase migrated =
@@ -116,7 +116,7 @@ void main() {
     final sqlite3.Database probe =
         sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
     try {
-      expect(probe.select('PRAGMA user_version').first.values.first, 96);
+      expect(probe.select('PRAGMA user_version').first.values.first, 97);
       for (final (String table, String column) in <(String, String)>[
         ('epub_books', 'language'),
         ('dictionary_metadata', 'language_override'),
@@ -140,7 +140,7 @@ void main() {
     }
   });
 
-  test('正常 v95 库（列齐全）升到 v96 全部短路 no-op、不报列已存在', () async {
+  test('正常 v95 库（列齐全）升到 v97 全部短路 no-op、不报列已存在', () async {
     final FushiDatabase fresh =
         FushiDatabase.atFile(dbPath, isMainProcess: false);
     // LazyDatabase 懒打开：不查一次文件里连表都没有。
@@ -159,7 +159,7 @@ void main() {
     final sqlite3.Database probe =
         sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
     try {
-      expect(probe.select('PRAGMA user_version').first.values.first, 96);
+      expect(probe.select('PRAGMA user_version').first.values.first, 97);
     } finally {
       probe.dispose();
     }

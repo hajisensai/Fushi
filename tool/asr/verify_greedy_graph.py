@@ -51,6 +51,52 @@ NO_EMIT = -1
 
 
 # ---------------------------------------------------------------------------
+# CLI 入参消毒
+#
+# --dart / --models-dir / --out-dir / --wav 都会被直接拼进子进程命令行和文件路径。
+# 这里在入口处一次性把它们解析成真实绝对路径并校验形态（可执行文件 / 目录 / 文件），
+# 之后所有拼接都走 _child_path，越出给定根目录即拒绝——命令与路径都不再由未校验的
+# 外部串直接决定。
+# ---------------------------------------------------------------------------
+
+
+def _checked_program(name: str) -> str:
+    """把 --dart 解析成一个确实存在且可执行的绝对路径。"""
+    candidate = shutil.which(name) if os.path.basename(name) == name else name
+    if not candidate:
+        raise SystemExit(f"找不到可执行文件：{name}")
+    real = os.path.realpath(os.path.expanduser(candidate))
+    if not os.path.isfile(real) or not os.access(real, os.X_OK):
+        raise SystemExit(f"不是可执行文件：{name}")
+    return real
+
+
+def _checked_dir(label: str, path: str, *, create: bool = False) -> str:
+    real = os.path.realpath(os.path.expanduser(path))
+    if create:
+        os.makedirs(real, exist_ok=True)
+    if not os.path.isdir(real):
+        raise SystemExit(f"{label} 不是目录：{path}")
+    return real
+
+
+def _checked_file(label: str, path: str) -> str:
+    real = os.path.realpath(os.path.expanduser(path))
+    if not os.path.isfile(real):
+        raise SystemExit(f"{label} 不存在：{path}")
+    return real
+
+
+def _child_path(base: str, *parts: str) -> str:
+    """base 下的固定子路径；解析后仍必须落在 base 内（挡住 .. 与符号链接穿越）。"""
+    real = os.path.realpath(os.path.join(base, *parts))
+    if os.path.commonpath([real, base]) != base:
+        raise SystemExit(f"路径越界：{os.path.join(*parts)} 不在 {base} 内")
+    return real
+
+
+
+# ---------------------------------------------------------------------------
 # 构图
 # ---------------------------------------------------------------------------
 
@@ -217,7 +263,7 @@ def encoder_out_for_wav(models_dir: str, wav: str) -> tuple[np.ndarray, np.ndarr
     samples, sr = sf.read(wav, dtype="float32")
     assert sr == 16000 and samples.ndim == 1, (sr, samples.shape)
     feats = compute_fbank(samples)
-    enc = ort.InferenceSession(os.path.join(models_dir, "encoder-epoch-99-avg-1.int8.onnx"), providers=["CPUExecutionProvider"])
+    enc = ort.InferenceSession(_child_path(models_dir, "encoder-epoch-99-avg-1.int8.onnx"), providers=["CPUExecutionProvider"])
     out, lens = enc.run(None, {"x": feats[None], "x_lens": np.array([feats.shape[0]], dtype=np.int64)})
     print(f"  [enc  ] fbank {feats.shape} -> encoder_out {out.shape}, lens {lens.tolist()}")
     return out.astype(np.float32), lens.astype(np.int64)
@@ -318,15 +364,16 @@ def main() -> None:
     ap.add_argument("--skip-tiny", action="store_true")
     args = ap.parse_args()
 
-    out_dir = args.out_dir or tempfile.mkdtemp(prefix="fushi_greedy_")
-    os.makedirs(out_dir, exist_ok=True)
+    dart_exe = _checked_program(args.dart)
+    out_dir = (_checked_dir("--out-dir", args.out_dir, create=True) if args.out_dir
+               else tempfile.mkdtemp(prefix="fushi_greedy_"))
     all_ok = True
     try:
         if not args.skip_tiny:
             dec_p = os.path.join(FIXTURES, "greedy_tiny_decoder.onnx")
             joi_p = os.path.join(FIXTURES, "greedy_tiny_joiner.onnx")
-            g = os.path.join(out_dir, "tiny.onnx")
-            build_graph(args.dart, dec_p, joi_p, g, blank=0, unk=5)
+            g = _child_path(out_dir, "tiny.onnx")
+            build_graph(dart_exe, dec_p, joi_p, g, blank=0, unk=5)
             rng = np.random.default_rng(7)
             enc = rng.standard_normal((3, 25, 4)).astype(np.float32) * 2.0
             lens = np.array([25, 13, 6], dtype=np.int64)
@@ -335,8 +382,10 @@ def main() -> None:
         if not args.skip_real:
             if not args.models_dir:
                 raise SystemExit("--models-dir 必填（或用 --skip-real）")
-            tokens, blank, unk = load_tokens(os.path.join(args.models_dir, "tokens.txt"))
-            enc_out, lens = encoder_out_for_wav(args.models_dir, args.wav)
+            models_dir = _checked_dir("--models-dir", args.models_dir)
+            wav_path = _checked_file("--wav", args.wav)
+            tokens, blank, unk = load_tokens(_child_path(models_dir, "tokens.txt"))
+            enc_out, lens = encoder_out_for_wav(models_dir, wav_path)
             b3, b3_lens = make_batch3(enc_out, lens, np.random.default_rng(3))
             cases = [("single", enc_out, lens), ("batch3", b3, b3_lens)]
             if args.bench_shape:
@@ -346,10 +395,10 @@ def main() -> None:
                 ("int8", "decoder-epoch-99-avg-1.int8.onnx", "joiner-epoch-99-avg-1.int8.onnx"),
                 ("fp32", "decoder-epoch-99-avg-1.onnx", "joiner-epoch-99-avg-1.onnx"),
             ]:
-                dec_p = os.path.join(args.models_dir, dec_name)
-                joi_p = os.path.join(args.models_dir, joi_name)
-                g = os.path.join(out_dir, f"{tag}.onnx")
-                build_graph(args.dart, dec_p, joi_p, g, blank, unk)
+                dec_p = _child_path(models_dir, dec_name)
+                joi_p = _child_path(models_dir, joi_name)
+                g = _child_path(out_dir, f"{tag}.onnx")
+                build_graph(dart_exe, dec_p, joi_p, g, blank, unk)
                 all_ok &= verify_variant(tag, g, dec_p, joi_p, blank, unk, cases, tokens, args.repeat, args.strict_dart or tag == "fp32")
     finally:
         if not args.out_dir:

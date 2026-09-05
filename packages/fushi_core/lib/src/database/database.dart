@@ -724,9 +724,9 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 96;
+  int get schemaVersion => 97;
 
-  /// v96：把 v52 / v57 / v87 / v88 四级台阶里「加列 / 改列名」的幂等语句重放一次，
+  /// v97：把 v52 / v57 / v87 / v88 四级台阶里「加列 / 改列名」的幂等语句重放一次，
   /// 补齐漂移库（版本号先于这些台阶被写高的库）。每条都先查 `_columnExists`，
   /// 正常库全部 no-op。语句与原台阶逐字相同，避免两处定义出现分叉。
   Future<void> _replayColumnStepsForDriftedSchema(Migrator m) async {
@@ -2976,7 +2976,26 @@ class FushiDatabase extends _$FushiDatabase
             }
           }
           if (from < 96) {
-            // v96（schema 漂移修补，BUG-2146）：真实用户库 user_version 已是 95，却缺
+            // v96（BUG-2158 词典折叠三态）：dictionary_metadata 加
+            // expanded_languages_json，给「用户显式展开」一个可持久化的态。
+            //
+            // 为什么只能开新台阶而不是塞进 from < 95：已发布的版本号是只读的
+            // （v88 那步的注释里记着这条教训的实测代价）——已经跑过 95 的库不会再
+            // 执行 `from < 95`，那批用户的写路径会直接撞 no such column。
+            //
+            // 无损：列有 default '[]' → 旧库既有行升级后全是空名单 = 全部「继承」
+            // = 逐字节保持 v96 前的折叠行为（Never break userspace）。
+            // 幂等：fresh DB 由 onCreate 的 createAll 建好；重复升级被
+            // _columnExists 短路。
+            if (await _tableExists('dictionary_metadata') &&
+                !await _columnExists(
+                    'dictionary_metadata', 'expanded_languages_json')) {
+              await m.addColumn(dictionaryMetadata,
+                  dictionaryMetadata.expandedLanguagesJson);
+            }
+          }
+          if (from < 97) {
+            // v97（schema 漂移修补，BUG-2146）：真实用户库 user_version 已是 95，却缺
             // v52 / v57 / v87 / v88 四级台阶的产物——epub_books / dictionary_metadata /
             // video_books / srt_books / galgames 的 language 系列列、media_collections 的
             // audio_track_id + subtitle_delay_ms、两张墓碑表的 removed_at 没改名

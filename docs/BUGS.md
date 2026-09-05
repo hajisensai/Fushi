@@ -29,10 +29,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2022 条。点号进各自文件。
+> 共 2026 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2158](bugs/BUG-2158-dict-collapse-missing-explicit-expand-state.md) | ✅ | ✅ | 词典折叠只有两个态：点「展开」对自动展开窗口外的词典毫无反应 |
+| [BUG-2157](bugs/BUG-2157-plain-mode-inline-fs-overrides-user-font-size.md) | ✅ | ✅ | 关闭尊重字幕自带样式后行内 fs 仍覆盖用户字号，字号滑块整条失效 |
+| [BUG-2156](bugs/BUG-2156-video-subtitle-list-font-cap-too-low.md) | ✅ | ✅ | 字幕列表字号上限还是不够（BUG-878 抬到 2.0× 后的第二次反馈） |
+| [BUG-2150](bugs/BUG-2150-ios-ankimobile-pasteboard-read-inactive.md) | ✅ | ✅ | iOS AnkiMobile 配置回传读不到剪贴板：URL 回调跑在 .inactive 阶段 |
 | [BUG-2148](bugs/BUG-2148-asr-pcm-mov-chapter-track-noise.md) | ✅ | ✅ | ASR PCM 抽取 mov 容器混入章节 text 轨，奇数字节标题的整章解成白噪声 |
 | [BUG-2147](bugs/BUG-2147-asr-match-start-anchor-colophon.md) | ✅ | ✅ | ASR 字幕匹配起点被片头出版社名钉到书尾版权页，整本匹配率 0% |
 | [BUG-2146](bugs/BUG-2146-schema-drift-v95-missing-columns.md) | ✅ | ✅ | 用户库 user_version=95 却缺 v52/v57/v87/v88 台阶产物，导入书撞 epub_books 无 language 列 |
