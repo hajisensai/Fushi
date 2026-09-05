@@ -193,7 +193,7 @@ class AsrJobState {
   bool isFileDone(int i) => resumeSamples[i] < 0;
 
   /// `state.json` 的格式版本。**v1 产物一律作废**：v1 时期的 PCM 抽取会把 m4b 章节
-  /// text 轨交错进 mdat（BUG-2148），带章节的有声书转出来的 transcript.srt 整章是
+  /// text 轨交错进 mdat（BUG-2164），带章节的有声书转出来的 transcript.srt 整章是
   /// 噪声识别出的「あ」，而任务已标 finished、UI 会直接进完成态复用它。升版让
   /// [AsrTranscribeJob.loadStateDetailed] 把旧目录当新任务重跑。
   ///

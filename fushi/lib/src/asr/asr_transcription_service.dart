@@ -7,6 +7,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:developer' as developer;
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
@@ -39,6 +40,7 @@ class AsrTranscribePlan {
     required this.variant,
     required this.expectedProvider,
     required this.modelStatus,
+    this.probeError,
   });
 
   final AsrLanguage language;
@@ -47,6 +49,13 @@ class AsrTranscribePlan {
   /// 按平台策略与本机 EP 集合预期的编码器 EP（真正生效以运行期 resolution 为准）。
   final OnnxExecutionProvider expectedProvider;
   final AsrModelStatus modelStatus;
+
+  /// EP 探测本身抛错时的原因；null = 探测正常（含 cpuOnly 不探测）。
+  ///
+  /// 探测失败是一条真实的降级路径：有 GPU 的机器探测抛错会被推荐成 int8 · CPU，
+  /// 用户按 CPU 速度跑完整本却不知道探测失败过——所以不吞掉，交给 UI 提示
+  /// （BUG-1163 同一条纪律）。
+  final String? probeError;
 
   bool get modelReady => modelStatus.ready;
   int get bytesToDownload =>
@@ -168,12 +177,20 @@ class AsrTranscriptionService {
     required AsrAccelerationPreference preference,
   }) async {
     Set<OnnxExecutionProvider> available = const <OnnxExecutionProvider>{};
+    String? probeError;
     if (preference != AsrAccelerationPreference.cpuOnly) {
       try {
         available = await _loader.availableAcceleratedProviders();
-      } catch (_) {
-        // 探测失败按 CPU 规划；运行期 loader 会把原因记进 resolution。
+      } catch (error) {
+        // 探测失败按 CPU 规划，但原因随计划带给 UI；运行期 loader 会再把它记进
+        // resolution.fallbackReason。不允许 catch (_) 静默吞掉。
         available = const <OnnxExecutionProvider>{};
+        probeError = '$error';
+        developer.log(
+          'ASR accelerated provider probe failed; planning for CPU only',
+          name: kAsrLogName,
+          error: error,
+        );
       }
     }
     final AsrPlatform platform = currentAsrPlatform();
@@ -194,6 +211,7 @@ class AsrTranscriptionService {
       variant: variant,
       expectedProvider: expected,
       modelStatus: await store.status(variant),
+      probeError: probeError,
     );
   }
 

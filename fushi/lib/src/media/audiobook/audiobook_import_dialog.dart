@@ -514,9 +514,15 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       );
       return;
     }
+    // 语言初值跟随书本身的语言（导入时从 OPF 回填的 `epub_books.language`）；
+    // 认不出（如中文书、没写语言）再退回上次选择。
+    final EpubBookRow? book =
+        await widget.repo.database.getEpubBook(widget.bookKey);
+    if (!mounted) return;
     final String? srtPath = await showAsrTranscribeSheet(
       context: context,
       audioPaths: List<String>.of(audio),
+      languageHint: asrLanguageHintFromBookLanguage(book?.language),
     );
     if (srtPath == null || !mounted) return;
     setState(() {

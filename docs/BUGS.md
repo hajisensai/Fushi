@@ -33,6 +33,9 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2164](bugs/BUG-2164-asr-pcm-mov-chapter-track-noise.md) | ✅ | ✅ | ASR PCM 抽取 mov 容器混入章节 text 轨，奇数字节标题的整章解成白噪声 |
+| [BUG-2163](bugs/BUG-2163-asr-match-start-anchor-colophon.md) | ✅ | ✅ | ASR 字幕匹配起点被片头出版社名钉到书尾版权页，整本匹配率 0% |
+| [BUG-2162](bugs/BUG-2162-schema-drift-v95-missing-columns.md) | ✅ | ✅ | 用户库 user_version=95 却缺 v52/v57/v87/v88 台阶产物，导入书撞 epub_books 无 language 列 |
 | [BUG-2161](bugs/BUG-2161-mdx-loose-asset-scan-and-size-limits.md) | 🚧 | 🚧 | MDX 松散资源两条上限缺口：img src 只扫前 50 条词条、zip 全取无总量上限 |
 | [BUG-2159](bugs/BUG-2159-netflix-ext-mine-audible-playback.md) | ✅ | ✅ | 网飞扩展批量制卡期间扬声器出声 |
 | [BUG-2158](bugs/BUG-2158-dict-collapse-missing-explicit-expand-state.md) | ✅ | ✅ | 词典折叠只有两个态：点「展开」对自动展开窗口外的词典毫无反应 |
@@ -43,10 +46,7 @@
 | [BUG-2151](bugs/BUG-2151-anki-pitch-tags-ol-markup.md) | ✅ | ✅ | Anki 卡片音标黑框巨大且无分隔符 —— popup.js 产出 `<ol>`，Lapis `#pitch-tags` 样式契约是 `ul` |
 | [BUG-2150](bugs/BUG-2150-ios-ankimobile-pasteboard-read-inactive.md) | ✅ | ✅ | iOS AnkiMobile 配置回传读不到剪贴板：URL 回调跑在 .inactive 阶段 |
 | [BUG-2148](bugs/BUG-2148-korean-deinflection-never-fires.md) | ✅ | ✅ | 韩语词形还原一条都点不着火：ko.json 用兼容字母而引擎不拆谚文，划词只剩 1 个音节 |
-| [BUG-2148](bugs/BUG-2148-asr-pcm-mov-chapter-track-noise.md) | ✅ | ✅ | ASR PCM 抽取 mov 容器混入章节 text 轨，奇数字节标题的整章解成白噪声 |
 | [BUG-2147](bugs/BUG-2147-mdx-loose-sibling-assets-dropped.md) | ✅ | ✅ | MDX 松散兄弟资源（sound.png / 图标字体）从不进 media store，发音按钮渲染成 0x0 破图 |
-| [BUG-2147](bugs/BUG-2147-asr-match-start-anchor-colophon.md) | ✅ | ✅ | ASR 字幕匹配起点被片头出版社名钉到书尾版权页，整本匹配率 0% |
-| [BUG-2146](bugs/BUG-2146-schema-drift-v95-missing-columns.md) | ✅ | ✅ | 用户库 user_version=95 却缺 v52/v57/v87/v88 台阶产物，导入书撞 epub_books 无 language 列 |
 | [BUG-2146](bugs/BUG-2146-episode-in-season-block.md) | ✅ | ✅ | 括号块内「季 - 集」形态解不出集数，下载任务报 unable to determine episode number |
 | [BUG-2145](bugs/BUG-2145-gal-kirikiri2-no-export-table-and-late-loadlibrary-hook.md) | ✅ | ✅ | KiriKiri2 无导出表 + 插件早于 LoadLibrary hook link：两条 exporter 路径同时静默落空，游戏内查词整条不装 |
 | [BUG-2144](bugs/BUG-2144-gal-kirikiri2-bcb-exception-escapes-msvc-catch.md) | ✅ | ✅ | KiriKiri2/BCB 上 TJS 抛的 Borland 异常穿透 MSVC catch(...)，注入的每帧求值把游戏打成致命错误框并强制写快速存档 |

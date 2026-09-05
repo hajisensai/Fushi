@@ -254,7 +254,7 @@ void main() {
   });
 
   test('state.json 版本不是当前版本（v1 旧链路产物）视为新任务，旧产物不复用', () async {
-    // BUG-2148：v1 时期带章节的 m4b 转出来整章噪声「あ」，但任务已 finished，UI 会
+    // BUG-2164：v1 时期带章节的 m4b 转出来整章噪声「あ」，但任务已 finished，UI 会
     // 直接复用。升版后同路径的旧目录必须重跑。
     File(
       '${tmp.path}/${AsrJobFiles.segments}',

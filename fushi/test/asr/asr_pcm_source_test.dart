@@ -364,7 +364,7 @@ void main() {
     });
 
     test('extractMovMdatPayload：moov 里多于一条轨（章节 text 轨混入）直接判坏', () {
-      // BUG-2148：ffmpeg 默认复制章节，-f mov 时章节成 text 轨、样本交错进 mdat。
+      // BUG-2164：ffmpeg 默认复制章节，-f mov 时章节成 text 轨、样本交错进 mdat。
       final List<int> pcm = List<int>.generate(64, (int i) => i);
       expect(
         () => extractMovMdatPayload(_mov(pcm, tracks: 2)),

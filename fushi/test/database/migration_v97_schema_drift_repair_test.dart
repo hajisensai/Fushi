@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite3;
 
-/// v97（schema 漂移修补，BUG-2146）：真实用户库 `user_version = 95`，却缺 v52 /
+/// v97（schema 漂移修补，BUG-2162）：真实用户库 `user_version = 95`，却缺 v52 /
 /// v57 / v87 / v88 四级台阶的产物——五个 `language` 系列列、`media_collections`
 /// 的 `audio_track_id` / `subtitle_delay_ms`、两张墓碑表的 `removed_at` 没改名
 /// `deleted_at`。版本号已经写高，`from < N` 对它永远不会再进；导入书时

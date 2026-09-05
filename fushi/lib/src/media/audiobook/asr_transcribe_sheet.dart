@@ -29,10 +29,15 @@ import 'package:fushi/utils.dart';
 ///
 /// [languageGetter] / [languageSetter] 是「上次选的语音语言」偏好的读写口
 /// （存 [AsrLanguage.tag]）；null 时从 [appProvider] 取 [AppModel] 接线，测试注 fake。
+///
+/// [languageHint]：书本身的语言（EPUB `dc:language` 经 [asrLanguageHintFromBookLanguage]
+/// 换算）。有 hint 时语言初值用 hint、不写回偏好；用户手动切换时才写回。没 hint
+/// 沿用偏好。
 Future<String?> showAsrTranscribeSheet({
   required BuildContext context,
   required List<String> audioPaths,
   AsrTranscriptionService? service,
+  AsrLanguage? languageHint,
   Future<String?> Function({
     required String fileName,
     required String? initialDirectory,
@@ -54,6 +59,7 @@ Future<String?> showAsrTranscribeSheet({
         audioPaths: audioPaths,
         service: effective,
         saveFilePicker: saveFilePicker,
+        languageHint: languageHint,
         languageGetter: getter,
         languageSetter: setter,
       );
@@ -81,6 +87,18 @@ String asrLanguageLabel(AsrLanguage language) => switch (language) {
       AsrLanguage.japanese => t.audiobook_transcribe_language_ja,
       AsrLanguage.english => t.audiobook_transcribe_language_en,
     };
+
+/// 纯函数：由书的语言标签（EPUB `dc:language`，如 `ja-JP` / `en_GB` / `EN`）推
+/// 转录弹层的语言初值——取 BCP-47 主子标签（`-` / `_` 前那段，大小写不敏感）再
+/// [AsrLanguage.fromTag]；空 / 空白 / 没有对应语音模型的语言（如 `zh`）返回 null，
+/// 调用方回退到「上次选择」偏好。
+AsrLanguage? asrLanguageHintFromBookLanguage(String? bookLanguage) {
+  if (bookLanguage == null) return null;
+  final String trimmed = bookLanguage.trim();
+  if (trimmed.isEmpty) return null;
+  final String primary = trimmed.split(RegExp(r'[-_]')).first.toLowerCase();
+  return AsrLanguage.fromTag(primary);
+}
 
 /// 字幕 / 对齐文件行被点击时的来源选择。
 enum SubtitleSourceChoice {
@@ -225,6 +243,7 @@ class AsrTranscribeSheet extends StatefulWidget {
     required this.audioPaths,
     this.saveFilePicker,
     required this.service,
+    this.languageHint,
     this.languageGetter,
     this.languageSetter,
     super.key,
@@ -238,6 +257,10 @@ class AsrTranscribeSheet extends StatefulWidget {
     required String? initialDirectory,
   })? saveFilePicker;
   final AsrTranscriptionService service;
+
+  /// 书本身的语言推出的初值（见 [showAsrTranscribeSheet]）；优先于 [languageGetter]，
+  /// 且不写回偏好。
+  final AsrLanguage? languageHint;
 
   /// 「上次选的语音语言」偏好读取（[AsrLanguage.tag]）；null / 不认识的标签
   /// 一律回退日语。
@@ -274,7 +297,8 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
   @override
   void initState() {
     super.initState();
-    _language = AsrLanguage.fromTag(widget.languageGetter?.call()) ??
+    _language = widget.languageHint ??
+        AsrLanguage.fromTag(widget.languageGetter?.call()) ??
         AsrLanguage.japanese;
     _refreshPlan();
   }
@@ -531,9 +555,13 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
       case _Phase.checking:
         return t.audiobook_transcribe_preparing;
       case _Phase.needDownload:
-        return t.audiobook_transcribe_model_download_needed(
-          size: FushiByteFormat.bytes(plan?.bytesToDownload),
+        final StringBuffer sb = StringBuffer(
+          t.audiobook_transcribe_model_download_needed(
+            size: FushiByteFormat.bytes(plan?.bytesToDownload),
+          ),
         );
+        _appendProbeHint(sb, plan);
+        return sb.toString();
       case _Phase.downloading:
         return t.audiobook_transcribe_model_downloading(
           name: _downloadFile,
@@ -548,10 +576,14 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
               : '${asrModelPackFor(plan.language).displayName} · '
                   '${_variantLabel(plan.variant)}',
         );
+        final StringBuffer sb = StringBuffer(ready);
         if (_phase == _Phase.paused) {
-          return '$ready\n${t.audiobook_transcribe_paused_hint}';
+          sb
+            ..writeln()
+            ..write(t.audiobook_transcribe_paused_hint);
         }
-        return ready;
+        _appendProbeHint(sb, plan);
+        return sb.toString();
       case _Phase.loading:
         return t.audiobook_transcribe_preparing;
       case _Phase.running:
@@ -609,6 +641,16 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
       case _Phase.error:
         return t.audiobook_transcribe_failed(error: _error ?? '');
     }
+  }
+
+  /// 计划阶段 EP 探测抛错过：推荐的「int8 · CPU」不是本机没有 GPU，而是探测失败——
+  /// 追加一行说明，用户才知道整本按 CPU 速度跑是降级而非常态。
+  static void _appendProbeHint(StringBuffer sb, AsrTranscribePlan? plan) {
+    final String? reason = plan?.probeError;
+    if (reason == null) return;
+    sb
+      ..writeln()
+      ..write(t.audiobook_transcribe_probe_failed(reason: reason));
   }
 
   double? _progressValue() {

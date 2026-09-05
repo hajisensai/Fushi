@@ -2995,7 +2995,7 @@ class FushiDatabase extends _$FushiDatabase
             }
           }
           if (from < 97) {
-            // v97（schema 漂移修补，BUG-2146）：真实用户库 user_version 已是 95，却缺
+            // v97（schema 漂移修补，BUG-2162）：真实用户库 user_version 已是 95，却缺
             // v52 / v57 / v87 / v88 四级台阶的产物——epub_books / dictionary_metadata /
             // video_books / srt_books / galgames 的 language 系列列、media_collections 的
             // audio_track_id + subtitle_delay_ms、两张墓碑表的 removed_at 没改名

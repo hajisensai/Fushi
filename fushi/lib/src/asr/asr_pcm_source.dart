@@ -102,7 +102,7 @@ Duration asrPcmChunkTimeout(int chunkSeconds) {
 /// * `-map_chapters -1 -map_metadata -1`：**不要**把输入的章节/元数据复制到输出。
 ///   ffmpeg 默认复制章节，`-f mov` 输出时章节变成一条 `text` 轨，其样本（章节标题）
 ///   与 PCM **交错写进同一个 mdat**；[extractMovMdatPayload] 把 mdat 当纯 PCM，标题
-///   字节数为奇数的章节就让整块样本错位成白噪声（BUG-2148：無職転生 12/13 卷 m4b
+///   字节数为奇数的章节就让整块样本错位成白噪声（BUG-2164：無職転生 12/13 卷 m4b
 ///   十几个章节里奇数字节标题的整章转出来全是「あ」，匹配率 0%）。`-map` 只管流，
 ///   管不到章节，必须单独关。s16le 裸输出没有容器，天然免疫。
 /// * `-ac 1 -ar 16000 -c:a pcm_s16le`：下混单声道、重采样 16 kHz、16 位小端。
@@ -259,7 +259,7 @@ Uint8List extractMovMdatPayload(Uint8List bytes) {
   if (mdat == null) throw const FormatException('no mdat box found');
   // mdat 是所有轨的样本交错区。多于一条轨（章节 text 轨 / 封面 / 元数据轨）意味着
   // payload 里混着非 PCM 字节——宁可在这里炸掉，也不能把错位的样本当语音喂给模型
-  // （BUG-2148）。没有 moov（ffmpeg 被中断、文件截断）同样判坏。
+  // （BUG-2164）。没有 moov（ffmpeg 被中断、文件截断）同样判坏。
   if (mdatToEof) return mdat;
   // 空 mdat（块起点已在文件尾之外，ffmpeg 一个样本都没写）：没有可被错位的字节，
   // 此时 moov 里也没有 trak，照常返回空 payload 让调用方按 0 样本收尾。

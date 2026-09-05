@@ -79,8 +79,12 @@ class _FakeDecoder implements AsrBatchDecoder {
 /// 每次 plan / download / start 收到的语言都记下来，供「切语言真的传到了
 /// service」的断言。
 class _FakeService extends AsrTranscriptionService {
-  _FakeService({required this.ready, required this.jobsDir, this.existingSrt})
-      : super(
+  _FakeService({
+    required this.ready,
+    required this.jobsDir,
+    this.existingSrt,
+    this.probeError,
+  }) : super(
           pcm: _FakePcm(),
           openStore: (AsrLanguage l) async =>
               AsrModelStore(jobsDir, asrModelPackFor(l)),
@@ -90,6 +94,9 @@ class _FakeService extends AsrTranscriptionService {
   bool ready;
   final Directory jobsDir;
   String? existingSrt;
+
+  /// 非 null 时 plan 报「EP 探测失败」（模拟有 GPU 的机器探测抛错被推荐成 CPU）。
+  final String? probeError;
   int downloadCalls = 0;
   int discardCalls = 0;
   final List<AsrLanguage> planLanguages = <AsrLanguage>[];
@@ -112,6 +119,7 @@ class _FakeService extends AsrTranscriptionService {
         totalBytes: 1000,
         obtainedBytes: ready ? 1000 : 250,
       ),
+      probeError: probeError,
     );
   }
 
@@ -209,6 +217,7 @@ void main() {
       required String fileName,
       required String? initialDirectory,
     })? saveFilePicker,
+    AsrLanguage? languageHint,
   }) {
     return ProviderScope(
       child: TranslationProvider(
@@ -224,6 +233,7 @@ void main() {
                       audioPaths: const <String>['a.mp3'],
                       service: service,
                       saveFilePicker: saveFilePicker,
+                      languageHint: languageHint,
                       languageGetter: () => savedLanguage,
                       languageSetter: (String tag) async => savedLanguage = tag,
                     );
@@ -431,10 +441,82 @@ void main() {
 
   test('导出默认文件名：首个音频同名 .srt；无音频退回 transcript.srt', () {
     expect(
-      suggestedTranscriptFileName(<String>[r'D:\第01巻.m4b', r'D:.mp3']),
+      // 用平台自己的分隔符拼路径：`basenameWithoutExtension` 走平台上下文，写死
+      // `D:\...` 在 Linux CI 上 `\` 不是分隔符、会整串当文件名（曾让 CI 真红）。
+      suggestedTranscriptFileName(<String>[
+        p.join(tmp.path, '第01巻.m4b'),
+        p.join(tmp.path, 'b.mp3'),
+      ]),
       '第01巻.srt',
     );
     expect(suggestedTranscriptFileName(const <String>[]), 'transcript.srt');
+  });
+
+  test('asrLanguageHintFromBookLanguage：取 BCP-47 主子标签，认不出 / 空返回 null', () {
+    expect(asrLanguageHintFromBookLanguage('ja-JP'), AsrLanguage.japanese);
+    expect(asrLanguageHintFromBookLanguage('ja'), AsrLanguage.japanese);
+    expect(asrLanguageHintFromBookLanguage('en-GB'), AsrLanguage.english);
+    expect(asrLanguageHintFromBookLanguage('en_GB'), AsrLanguage.english);
+    expect(asrLanguageHintFromBookLanguage('EN'), AsrLanguage.english);
+    expect(asrLanguageHintFromBookLanguage(' en-US '), AsrLanguage.english);
+    expect(asrLanguageHintFromBookLanguage('zh'), isNull);
+    expect(asrLanguageHintFromBookLanguage('zh-Hans-CN'), isNull);
+    expect(asrLanguageHintFromBookLanguage(null), isNull);
+    expect(asrLanguageHintFromBookLanguage(''), isNull);
+    expect(asrLanguageHintFromBookLanguage('   '), isNull);
+  });
+
+  testWidgets('languageHint=english 且偏好存 ja：初值英语、plan 收到英语、偏好不被改写',
+      (WidgetTester tester) async {
+    savedLanguage = 'ja';
+    final _FakeService service = _FakeService(ready: true, jobsDir: tmp);
+    await tester.pumpWidget(
+      wrap(service, (String? _) {}, languageHint: AsrLanguage.english),
+    );
+    await tester.tap(find.byKey(const ValueKey<String>('open')));
+    await tester.pumpAndSettle();
+    expect(service.planLanguages, <AsrLanguage>[AsrLanguage.english]);
+    expect(
+      find.textContaining(kAsrEnglishPack.displayName),
+      findsOneWidget,
+      reason: '就绪行应标出英语包名（初值来自书的语言而非偏好）',
+    );
+    expect(savedLanguage, 'ja', reason: 'hint 只作初值，不写回偏好');
+
+    // 用户手动切回日语才写回。
+    await tester.tap(find.text(t.audiobook_transcribe_language_ja));
+    await tester.pumpAndSettle();
+    expect(service.planLanguages.last, AsrLanguage.japanese);
+    expect(savedLanguage, 'ja');
+  });
+
+  testWidgets('plan 带 probeError：就绪行追加「GPU 探测失败，按 CPU 规划」提示',
+      (WidgetTester tester) async {
+    final _FakeService service = _FakeService(
+      ready: true,
+      jobsDir: tmp,
+      probeError: 'DirectML.dll not found',
+    );
+    await tester.pumpWidget(wrap(service, (String? _) {}));
+    await tester.tap(find.byKey(const ValueKey<String>('open')));
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining(
+        t.audiobook_transcribe_probe_failed(reason: 'DirectML.dll not found'),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('plan 无 probeError：就绪行不含探测失败提示', (WidgetTester tester) async {
+    final _FakeService service = _FakeService(ready: true, jobsDir: tmp);
+    await tester.pumpWidget(wrap(service, (String? _) {}));
+    await tester.tap(find.byKey(const ValueKey<String>('open')));
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining(t.audiobook_transcribe_probe_failed(reason: '')),
+      findsNothing,
+    );
   });
 
   test('导出：用户取消存盘对话框时不写文件、返回 false', () async {
