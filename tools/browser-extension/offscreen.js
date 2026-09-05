@@ -2,7 +2,6 @@
 // 每次 beginClip 新起一个 MediaRecorder（自包含、可解码），endClip 停止并回 base64。
 // 不再滚动分段、不暂停、不算墙钟偏移（旧模型的时钟错配就是「完全不行」根因）。
 let stream = null;
-let audioPlaybackCtx = null;
 let recorder = null;
 let chunks = [];
 let clipStartWall = 0; // 本段 clip 起始墙钟，用来回给服务端真实时长（否则整段裁默认封顶 6s → 长句被截）
@@ -24,7 +23,6 @@ async function startCapture(streamId) {
   if (stream) {
     try { stream.getTracks().forEach((t) => t.stop()); } catch (_) {}
     stream = null;
-    if (audioPlaybackCtx) { try { audioPlaybackCtx.close(); } catch (_) {} audioPlaybackCtx = null; }
     recorder = null;
     chunks = [];
   }
@@ -42,11 +40,11 @@ async function startCapture(streamId) {
       },
     },
   });
-  // tabCapture 会把标签页音频改道进流 → 默认不再对用户放音。接回扬声器，回放时仍能听到。
-  try {
-    audioPlaybackCtx = new AudioContext();
-    audioPlaybackCtx.createMediaStreamSource(stream).connect(audioPlaybackCtx.destination);
-  } catch (_) {}
+  // BUG-2159：tabCapture 会把标签页音频改道进流 → 录制期间标签页**本来就不对用户放音**。
+  // 旧实现在这里用 AudioContext 把流接回 destination「回放时仍能听到」，但批量回放期间页面已藏
+  // 字幕/控制条/光标（content.fushiRunNetflixBatch），用户不是在看片；那段声音只是把整集台词
+  // 对着房间放。删掉接回：录制照走流里的音轨（与扬声器无关），stopCapture 停轨后 Chrome 自动把
+  // 标签页音频还给扬声器。不要再把流 connect 到 destination。
   mime = pickMime();
   return { ok: true };
 }
@@ -54,7 +52,6 @@ async function startCapture(streamId) {
 function stopCapture() {
   try { if (recorder && recorder.state !== 'inactive') { recorder.onstop = null; recorder.stop(); } } catch (_) {}
   recorder = null; chunks = [];
-  if (audioPlaybackCtx) { try { audioPlaybackCtx.close(); } catch (_) {} audioPlaybackCtx = null; }
   if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
 }
 

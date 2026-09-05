@@ -138,6 +138,26 @@ void main() {
         expect(catchBlock.contains('recorder.ondataavailable = null;'), isTrue,
             reason: '${offscreen.path} endClip 错误路径未解绑 ondataavailable');
       });
+
+      test('BUG-2159 offscreen ${offscreen.path} 录制期间不把 tabCapture 流接回扬声器',
+          () {
+        final String src = offscreen.readAsStringSync();
+        // 正向：仍向 tabCapture 请求音轨（录出的 webm 必须带音频，静音不是靠丢音轨实现的）。
+        expect(
+          src.contains(
+              "audio: { mandatory: { chromeMediaSource: 'tab', chromeMediaSourceId: streamId } }"),
+          isTrue,
+          reason: '${offscreen.path} startCapture 不再请求 tab 音轨（会录出无声 clip）',
+        );
+        // 反向：不得再用 AudioContext 把流 connect 到 destination——tabCapture 已把标签页
+        // 音频改道进流，接回 destination 就是批量回放期间整集台词对着房间放的根因。
+        expect(src.contains('createMediaStreamSource'), isFalse,
+            reason: '${offscreen.path} 仍把 tabCapture 流接回扬声器（BUG-2159）');
+        expect(src.contains('.destination'), isFalse,
+            reason: '${offscreen.path} 仍把音频路由到 AudioContext.destination（BUG-2159）');
+        expect(src.contains('audioPlaybackCtx'), isFalse,
+            reason: '${offscreen.path} 残留 audioPlaybackCtx（BUG-2159）');
+      });
     }
 
     for (final File bg in <File>[assetsBg, toolsBg]) {
