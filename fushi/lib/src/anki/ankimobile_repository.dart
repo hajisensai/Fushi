@@ -35,6 +35,11 @@ enum AnkiMobilePasteboardStatus {
   /// 数据在，但系统不让读：用户在 iOS 的「允许粘贴」提示里选了不允许，或此刻
   /// 根本弹不出那个提示。
   denied,
+
+  /// app 一直没回到前台，剪贴板**压根没被读过**（原生侧等 active 超时）。
+  /// 与 [denied] 必须分开：非 active 时读出来的三态恒为 denied（内容读不到、
+  /// 类型元数据却看得见），合并会把「没回前台」谎报成「权限被拒」。
+  notActive,
 }
 
 /// 一次剪贴板读取的结果。[json] 仅在 [status] == [AnkiMobilePasteboardStatus.ok]
@@ -50,6 +55,9 @@ class AnkiMobilePasteboardRead {
 
   const AnkiMobilePasteboardRead.denied()
       : this(AnkiMobilePasteboardStatus.denied);
+
+  const AnkiMobilePasteboardRead.notActive()
+      : this(AnkiMobilePasteboardStatus.notActive);
 
   final AnkiMobilePasteboardStatus status;
   final String? json;
@@ -131,6 +139,8 @@ class AnkiMobileRepository extends BaseAnkiRepository {
         return AnkiMobilePasteboardRead.ok(json);
       case 'denied':
         return const AnkiMobilePasteboardRead.denied();
+      case 'notActive':
+        return const AnkiMobilePasteboardRead.notActive();
       default:
         return const AnkiMobilePasteboardRead.empty();
     }
@@ -186,6 +196,13 @@ class AnkiMobileRepository extends BaseAnkiRepository {
   Future<AnkiFetchResult> consumeInfoForAddingPasteboard() async {
     final read = await _readInfoForAddingJson();
     final String? raw = read.json;
+    if (read.status == AnkiMobilePasteboardStatus.notActive) {
+      return const AnkiFetchResult.error(
+        'Fushi did not come back to the foreground in time, so the clipboard '
+        'was never read. Return to Fushi and try again.',
+        code: AnkiErrorCode.ankiMobileNotActive,
+      );
+    }
     if (read.status == AnkiMobilePasteboardStatus.denied) {
       return const AnkiFetchResult.error(
         'iOS blocked reading the clipboard. Choose Allow Paste when returning '

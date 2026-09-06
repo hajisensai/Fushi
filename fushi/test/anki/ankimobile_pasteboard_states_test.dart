@@ -110,6 +110,23 @@ void main() {
       );
     });
 
+    // app 一直没回到前台时，原生侧压根没读剪贴板。此前它超时后仍「尽力读一次」：
+    // 非 active 下内容读不到、类型元数据却看得见，三态必落 denied——把「没回前台」
+    // 谎报成「iOS 拒绝了粘贴」，把用户支去改一个没出问题的权限
+    // （PR#1222 事后审查补修）。
+    test('没回到前台 → not-active 码（不是 denied）', () async {
+      final result = await repoReading(
+        const AnkiMobilePasteboardRead.notActive(),
+      ).consumeInfoForAddingPasteboard();
+
+      expect(result, isA<AnkiFetchError>());
+      expect(
+        (result as AnkiFetchError).code,
+        AnkiErrorCode.ankiMobileNotActive,
+      );
+      expect(result.code, isNot(AnkiErrorCode.ankiMobilePasteboardDenied));
+    });
+
     test('回传了 JSON 但里面没牌组 → no-decks 码', () async {
       final result = await repoReading(
         const AnkiMobilePasteboardRead.ok('{"decks":[],"notetypes":[]}'),
@@ -192,6 +209,24 @@ void main() {
 
       expect(vm.state.errorMessage, isNull);
       expect(vm.state.isFetching, isFalse);
+    });
+
+    // 失败侧的对偶：此前只弹一条几秒即逝的 toast，设置页那行红字仍旧是中间态
+    // 「去 AnkiMobile 点同意」——用户于是反复回 AnkiMobile 同意，永远看不到真正
+    // 卡住的原因（PR#1222 事后审查补修）。
+    test('applyFetchedFailure 用真失败覆盖中间态，而不是让它继续挂着', () async {
+      final AnkiViewModel vm = AnkiViewModel(_AnkiMobileOpenedRepo());
+      await vm.fetchConfiguration();
+      expect(vm.state.errorMessage, t.anki_ankimobile_opened);
+
+      vm.applyFetchedFailure(
+        'iOS blocked reading the clipboard.',
+        AnkiErrorCode.ankiMobilePasteboardDenied,
+      );
+
+      expect(vm.state.isFetching, isFalse);
+      expect(vm.state.errorMessage, t.anki_error_ankimobile_pasteboard_denied);
+      expect(vm.state.errorMessage, isNot(t.anki_ankimobile_opened));
     });
   });
 

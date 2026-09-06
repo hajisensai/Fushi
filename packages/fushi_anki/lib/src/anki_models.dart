@@ -1347,6 +1347,9 @@ class AnkiErrorCode {
   /// `ankiMobilePasteboardEmpty`：剪贴板上没有 AnkiMobile 的数据——通常是用户没在
   ///   AnkiMobile 里同意那次请求。
   /// `ankiMobilePasteboardDenied`：数据在，但 iOS 不让读（「允许粘贴」被拒/弹不出）。
+  /// `ankiMobileNotActive`：app 一直没回到前台，剪贴板压根没被读过（等待超时）。
+  ///   与 denied 必须分开：非 active 时读出来的三态恒为 denied，合并会把「没回
+  ///   前台」谎报成「权限被拒」，把用户支去改一个没出问题的权限。
   /// `ankiMobileNoDecks`：AnkiMobile 回传了 JSON，但里面没有牌组或笔记类型。
   /// `ankiMobileUnavailable`：`anki://` 打不开——没装 AnkiMobile。
   static const String ankiMobileOpened = 'ANKI_MOBILE_OPENED';
@@ -1354,6 +1357,7 @@ class AnkiErrorCode {
       'ANKI_MOBILE_PASTEBOARD_EMPTY';
   static const String ankiMobilePasteboardDenied =
       'ANKI_MOBILE_PASTEBOARD_DENIED';
+  static const String ankiMobileNotActive = 'ANKI_MOBILE_NOT_ACTIVE';
   static const String ankiMobileNoDecks = 'ANKI_MOBILE_NO_DECKS';
   static const String ankiMobileUnavailable = 'ANKI_MOBILE_UNAVAILABLE';
 
