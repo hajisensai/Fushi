@@ -43,6 +43,12 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_reader_open_menu;
       case ShortcutAction.readerOpenNavigation:
         return t.shortcut_action_reader_open_navigation;
+      case ShortcutAction.readerOpenGallery:
+        return t.shortcut_action_reader_open_gallery;
+      case ShortcutAction.readerOpenStatistics:
+        return t.shortcut_action_reader_open_statistics;
+      case ShortcutAction.readerOpenAudiobook:
+        return t.shortcut_action_reader_open_audiobook;
       case ShortcutAction.readerDismissDict:
         return t.shortcut_action_reader_dismiss_dict;
       case ShortcutAction.readerToggleFurigana:

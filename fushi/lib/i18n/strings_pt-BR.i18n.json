@@ -4346,5 +4346,16 @@
   "theme_role_actual_color": "Shown as",
   "theme_preview_card": "Card",
   "theme_neutral_derived": "Neutral derived colors",
-  "theme_neutral_derived_desc": "Tags, selected items, menus and surfaces stay gray instead of taking on the accent's hue; only the accent color itself stands out (like the Windows light theme). White, gray or black accents do this automatically."
+  "theme_neutral_derived_desc": "Tags, selected items, menus and surfaces stay gray instead of taking on the accent's hue; only the accent color itself stands out (like the Windows light theme). White, gray or black accents do this automatically.",
+  "reader_stats_session": "This session",
+  "reader_stats_time_to_finish": "Time to finish",
+  "reader_stats_finish_chapter": "Chapter",
+  "reader_stats_finish_book": "Book",
+  "reader_audiobook_tab_files": "Audio files",
+  "reader_audiobook_tab_chapters": "Chapters",
+  "reader_audiobook_current_chapter": "Current chapter",
+  "reader_stats_this_book": "This book",
+  "shortcut_action_reader_open_gallery": "Open illustrations gallery",
+  "shortcut_action_reader_open_statistics": "Open reading statistics",
+  "shortcut_action_reader_open_audiobook": "Open audiobook panel"
 }

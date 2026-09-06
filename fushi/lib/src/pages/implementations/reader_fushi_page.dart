@@ -35,6 +35,8 @@ import 'package:fushi/src/media/audiobook/floating_lyric_lookup_routing.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/audiobook/highlight_bridge.dart';
 import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart';
+import 'package:fushi/src/asr/asr_transcription_service.dart';
+import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
 import 'package:fushi/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:fushi/src/media/audiobook/srt_book_reimport_dialog.dart';
 import 'package:fushi/src/media/import/srt_book_reimport.dart';
@@ -74,6 +76,14 @@ import 'package:fushi/src/reader/reader_selection_data.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi/src/reader/reader_chrome_floating.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
+import 'package:fushi/src/reader/reader_chrome_controller.dart';
+import 'package:fushi/src/reader/reader_desktop_chrome.dart';
+import 'package:fushi/src/reader/reader_gallery_page.dart';
+import 'package:fushi/src/reader/reader_open_trace.dart';
+import 'package:fushi/src/reader/reader_progress_state.dart';
+import 'package:fushi/src/reader/reader_statistics_dialog.dart';
+import 'package:fushi/src/reader/reader_status_footer.dart';
+import 'package:fushi/src/stats/stat_facts.dart';
 import 'package:fushi/src/reader/reader_top_progress.dart';
 import 'package:fushi/src/reader/ttu_toc_flatten.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
@@ -1488,6 +1498,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     setState(fn);
   }
 
+  void _onChromeControllerChanged() => _rebuild(() {});
+
   /// 同 [_rebuild] 的理由：part 扩展不被视作 State 子类实例成员，直接读写
   /// `BaseSourcePageState` 的 @protected 弹窗栈成员会报 invalid_use_of_protected_member。
   /// 由本 State 子类持有的下面三个转发器统一承接（仅转发，零行为变化），供 caret
@@ -1580,8 +1592,13 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       _readerChromeBaseHeight, _readerChromeScale);
   static const double _infoFontSize = kTopProgressFontSize;
 
-  int? _progressCurrentChars;
-  int? _progressTotalChars;
+  /// 字数进度状态（[ReaderProgressState]）；下面四个同名 getter/setter 只是转发，
+  /// 保持既有调用点与源码守卫不变。
+  final ReaderProgressState _progress = ReaderProgressState();
+  int? get _progressCurrentChars => _progress.currentChars;
+  set _progressCurrentChars(int? v) => _progress.currentChars = v;
+  int? get _progressTotalChars => _progress.totalChars;
+  set _progressTotalChars(int? v) => _progress.totalChars = v;
 
   // TODO-147 / BUG-211：本 session 历史最高已读绝对字符位置（high-water mark，
   // 只升不降）。统计字数只在越过它时增量计入，往返翻页不重复累计。导航/后台
@@ -1598,8 +1615,11 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 折算 —— 挂机不攒无限额度，但正常阅读攒下的额度不会被第一个碎片一次吃光。
   int _readChargeCreditMilliChars = 0;
 
-  List<int> _chapterCharCounts = [];
-  List<int> _chapterCumulativeChars = [];
+  List<int> get _chapterCharCounts => _progress.chapterCharCounts;
+  set _chapterCharCounts(List<int> v) => _progress.chapterCharCounts = v;
+  List<int> get _chapterCumulativeChars => _progress.chapterCumulativeChars;
+  set _chapterCumulativeChars(List<int> v) =>
+      _progress.chapterCumulativeChars = v;
 
   /// 书自带 CSS 的净化结果缓存（拦截器热路径，键 = 文件绝对路径）。与
   /// [_sanitizedHtmlCache] 对称封顶：HTML 侧早有 LRU 上限，这侧此前无上限，
@@ -1800,7 +1820,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   bool _gamepadALongFired = false;
   // 重入守卫：「调整」面板从点击到 show 之间有 DB 读 await，快速连点会二次进入并
   // 弹出两个面板（BUG-026）。打开期间置 true、关闭后于 finally 复位。
-  bool _appearanceSheetOpen = false;
+  bool get _appearanceSheetOpen => _chrome.appearanceSheetOpen;
+  set _appearanceSheetOpen(bool value) => _chrome.appearanceSheetOpen = value;
 
   // BUG-969：设置实时预览的合并执行器。拖 slider 时 onSettingsChangedLive 每个
   // tick 触发一次，旧实现每次直接跑「CSS 注入 + 样式重锚 + tap-gate 同步 + 整页
@@ -1847,6 +1868,11 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// （BUG-1052 / BUG-1107 的形状）。页面不再持有任何可被重锚的会话计数字段。
   StudyClock? _studyClock;
 
+  /// 用户在阅读统计浮层里手动暂停了会话计时。为 true 时 [_ensureStudyClock] /
+  /// 生命周期 resumed 都不再 `start()`，直到用户再点一次继续；切屏自动暂停
+  /// （BUG-892）与之正交——账仍只在 [StudyClock] 一本。
+  bool _studyClockManualPause = false;
+
   // TODO-291 阶段2：audioHandler 控制流（play/seek/skip/悬浮字幕翻转）订阅已上移到
   // [AudiobookSession]（进程级），reader 不再持有这些订阅。
 
@@ -1860,13 +1886,24 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 全屏切换的串行闸：native 往返期间再点按钮不重入。
   bool _windowFullscreenTransitioning = false;
 
-  bool _showChrome = true;
+  /// chrome 显隐状态机的唯一持有者（[ReaderChromeController]）；下面的
+  /// `_showChrome` / `_chromeTransientVisible` / `_appearanceSheetOpen` /
+  /// `_chromeAutoHideTimer` 只是同名转发，保持既有调用点与源码守卫不变。
+  final ReaderChromeController _chrome = ReaderChromeController();
+
+  /// 开书分阶段计时（initState → 首屏恢复完成；有声书槽迟到时补一行）。
+  late final ReaderOpenTrace _openTrace = ReaderOpenTrace(widget.bookKey);
+
+  bool get _showChrome => _chrome.showChrome;
+  set _showChrome(bool value) => _chrome.showChrome = value;
+
   // TODO-975: floating chrome (顶部进度 / 底栏) 的「被点击唤出、临时可见」态。挤压
   // 模式恒忽略此旗；悬浮模式下唤出置 true + 武装 _chromeAutoHideTimer，计时到 / 再点
   // 一下立即收起置 false。顶部与底栏共用同一旗与同一计时器（决策#1 时长共用、决策#2
   // 两栏唤出/收起联动）。改 _chromeTransientVisible 不改预留高 → 不需重锚。
-  bool _chromeTransientVisible = false;
-  Timer? _chromeAutoHideTimer;
+  bool get _chromeTransientVisible => _chrome.transientVisible;
+  set _chromeTransientVisible(bool value) => _chrome.transientVisible = value;
+  Timer? get _chromeAutoHideTimer => _chrome.autoHideTimer;
   double _lastSyncedWidth = 0;
   double _lastSyncedHeight = 0;
   // TODO-690 / BUG-399：桌面拖窗口边框 resize 的尾沿防抖。阅读器树内的透明
@@ -1941,11 +1978,45 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   set _caretBusy(bool value) => _caret.busy = value;
 
   bool get _showTopProgress =>
+      // 桌面端底部状态行取代顶部进度 pill：进度数字挪到右下角，顶部不再有 chrome。
+      // 「阅读进度指示」开关在桌面端落到状态行右侧（见 _buildStatusFooter）。
+      !_statusFooterEnabled &&
       _readerContentReady &&
       _progressCurrentChars != null &&
       _progressTotalChars != null &&
       _progressTotalChars! > 0 &&
       ReaderFushiSource.instance.showTopProgressBar;
+
+  /// 桌面端底部状态行（ッツ Reader 风格：左阅读追踪 / 右字数进度）是否启用。
+  /// 单一真相源 [readerStatusFooterEnabled]：桌面且非歌词模式。
+  bool get _statusFooterEnabled => readerStatusFooterEnabled(
+        desktop: isDesktopPlatform,
+        lyricsMode: _lyricsMode,
+      );
+
+  /// 状态行的底部预留高（挤压式：视觉高度 == 预留高度，正文永不压到它下面）。
+  /// 不随 `_hasEverLoaded` 翻转——预留从初始 HTML 起就含它，首屏就绪后不必再补发
+  /// insets 触发一次 reflow；只有**绘制**才等首次冷加载完成（[_buildStatusFooter]）。
+  double get _statusFooterReserve => readerStatusFooterReserve(
+        enabled: _statusFooterEnabled,
+        footerHeight: kReaderStatusFooterHeight,
+      );
+
+  /// 桌面端 ッツ 形态 chrome（顶部工具栏 + 右侧抽屉）是否启用：与状态行同判据
+  /// （桌面且非歌词模式），单一真相源 [readerDesktopChromeEnabled]。
+  bool get _desktopChromeEnabled => readerDesktopChromeEnabled(
+        desktop: isDesktopPlatform,
+        lyricsMode: _lyricsMode,
+      );
+
+  /// 顶部工具栏的顶部预留高：悬浮态（默认）恒 0；挤压态且底栏占位时占工具栏高
+  /// （与 [_bottomChromeReserve] 同一台状态机的上端），并入 [_readerTopOffset]。
+  double get _desktopHeaderReserve => readerDesktopHeaderReserve(
+        enabled: _desktopChromeEnabled,
+        barOccupiesLayout: _hasEverLoaded && _showChrome,
+        floating: _bottomBarFloating,
+        headerHeight: kReaderDesktopHeaderHeight,
+      );
 
   /// 顶部进度信息条的预留高（单一真相源 [kTopProgressStripHeight]）。历史值为裸
   /// `_infoFontSize * 1.5`，未计入 BUG-547 毛玻璃 pill 后加的上下内边距，导致挤压模式
@@ -1998,7 +2069,12 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   /// TODO-975：是否有任一 chrome 处于悬浮模式（决定是否启用「点击唤出 + 自动收起」
   /// 状态机；都不悬浮时走纯挤压旧路径，无 timer）。
-  bool get _anyChromeFloating => _topProgressFloating || _bottomBarFloating;
+  ///
+  /// 桌面端状态行取代顶部进度 pill 之后，顶部进度的悬浮开关在桌面端没有对应的
+  /// 可见面，不再算作「有悬浮 chrome」——否则底栏挤压 + 顶部悬浮的组合下点空白会
+  /// 进一台什么都不画的状态机（点了没反应）。
+  bool get _anyChromeFloating =>
+      (_topProgressFloating && !_statusFooterEnabled) || _bottomBarFloating;
 
   /// BUG-1343：macOS 的 NSWindow 全局启用了透明标题栏 + full-size content，而默认 MD3 根壳
   /// 不挂 MacosWindow/ToolBar。阅读器需自行保留一条可拖拽标题栏，否则原生 WebView
@@ -2015,9 +2091,13 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   bool _macosFullscreen = false;
 
   double get _readerTopOffset =>
-      _stableTopInset + _macosWindowTitlebarInset + _topProgressReserve;
+      _stableTopInset +
+      _macosWindowTitlebarInset +
+      _topProgressReserve +
+      _desktopHeaderReserve;
 
-  double get _readerBottomReserve => _bottomChromeReserve + _stableBottomInset;
+  double get _readerBottomReserve =>
+      _bottomChromeReserve + _statusFooterReserve + _stableBottomInset;
 
   @override
   double get popupBottomReserve =>
@@ -2035,6 +2115,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   @override
   void initState() {
     super.initState();
+    // chrome 状态机的变更（含自动收起计时到点）统一经此重建。
+    _chrome.addListener(_onChromeControllerChanged);
     assert(() {
       ReaderFushiPage.debugOpenQuickSettings = () async {
         unawaited(_showAppearanceSheet());
@@ -2176,9 +2258,11 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     await profileSettingsFuture;
     if (!mounted) return;
     _settings = ReaderFushiSource.readerSettings;
+    _openTrace.mark('settings');
 
     final _BookLocateResult located = await bookLocateFuture;
     if (!mounted) return;
+    _openTrace.mark('located');
     if (!located.exists) {
       debugPrint('[ReaderFushi] book ${widget.bookKey} not found on disk');
       FushiToast.show(
@@ -2234,6 +2318,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
     final List<String> hrefs = _book!.chapters.map((ch) => ch.href).toList();
     debugPrint('[ReaderFushi] chapter hrefs: $hrefs');
+    _openTrace.mark('parsed');
 
     if (charsFromDb != null) {
       // TODO-1192: 先立刻用命中的计数（即便是旧口径 v1，先让进度/总字数有值不闪 0）；
@@ -2261,12 +2346,25 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
     // TODO-131: spread map 与 audio slot 互不依赖（前者写 _spreadMap/_edgeMatchResults，
     // 后者写 _audiobookController，都只读已就绪的 _book），并行等待两组 DB 往返。
+    _openTrace.mark('charCounts');
+
+    // 有声书槽（音频服务初始化 + 会话附着 + 全书 cue 预热）不再挡首屏：正文 WebView
+    // 只等书与 spread 表；音频在后台落定后再 _rebuild（底栏出现）并补发 chrome insets。
+    // 两种情况必须先等它：① 没有保存位置 → 起点要从当前音频 cue 推；② 歌词模式要
+    // 恢复（依赖控制器）。
+    final Future<void> audioSlotFuture = _resolveAudioSlot().then((_) {
+      _openTrace.markLate('audioSlot');
+    });
     await Future.wait(<Future<void>>[
       _initSpreadMap(appModelNoUpdate.database),
-      _resolveAudioSlot(),
       _loadRevealedImageKeys(db),
     ]);
     if (!mounted) return;
+    _openTrace.mark('spreadMap');
+    if (ReaderFushiSource.instance.lyricsMode) {
+      await audioSlotFuture;
+      if (!mounted) return;
+    }
 
     final Bookmark? bm = widget.initialBookmarkJump;
     if (bm != null &&
@@ -2320,9 +2418,13 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
         _lastProgressValue = _initialProgress;
         _lastProgressCharOffset = _initialCharOffset;
       } else {
+        // 没有保存位置：起点从当前音频 cue 推，这条路必须等有声书槽落定。
+        await audioSlotFuture;
+        if (!mounted) return;
         _restoreFromCurrentAudioCue();
       }
     }
+    _openTrace.mark('position');
 
     if (_settings!.keepScreenAwake) {
       try {
@@ -2350,6 +2452,17 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _audioSlotResolved = true;
 
     setState(() {});
+
+    // 有声书槽迟到落定：底栏 / 状态行接线要重建，且底栏预留可能从 0 变非 0，补发一次
+    // chrome insets（与 BUG-467 首屏补发同一条路）。附着失败只记日志，不影响正文。
+    unawaited(audioSlotFuture.then((_) {
+      if (!mounted) return;
+      _rebuild(() {});
+      if (_hasEverLoaded) _reapplyChromeInsetsAfterFirstLoad();
+    }).catchError((Object e, StackTrace s) {
+      ErrorLogService.instance
+          .log('ReaderFushi.resolveAudioSlot(deferred)', e, s);
+    }));
   }
 
   /// TODO-131: 按 bookKey 查 EpubBooks 行 + 校验磁盘目录存在。与 profile/settings
@@ -2610,6 +2723,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     }
     _resizeRepaginateDebounce?.cancel();
     _chromeAutoHideTimer?.cancel();
+    _chrome.removeListener(_onChromeControllerChanged);
+    _chrome.dispose();
     _clearGamepadAHold();
     VolumeKeyChannel.instance.setHandlers();
     VolumeKeyChannel.instance.setInterceptEnabled(false);
@@ -2793,8 +2908,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       _focusOwnership.reclaim(FocusReclaimCause.appResumed);
       // BUG-892 / BUG-1052: 后台那段间隔靠「时钟停着」丢弃，而不是靠回前台重锚一个
       // 墙钟基准——后者会连同重锚前那段**真实前台阅读时长**一起抹掉。start() 只重锚
-      // tick 起点并开新段；不存在第二个可被重置的时钟。
-      _studyClock?.start();
+      // tick 起点并开新段；不存在第二个可被重置的时钟。用户手动暂停时不自动续表。
+      if (!_studyClockManualPause) _studyClock?.start();
     }
   }
 
@@ -3100,6 +3215,12 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                           ),
                         ),
                       _buildTopProgressBar(),
+                      // 桌面端顶边悬停热区（收起时才存在）+ 顶部工具栏（ッツ 形态）：与底栏
+                      // 同一显隐状态机，排在词典弹层之前。
+                      _buildHoverRevealLayer(),
+                      _buildDesktopHeader(),
+                      // 桌面端底部状态行：排在词典弹层 / 底栏之前，让它们盖在其上。
+                      _buildStatusFooter(),
                       buildDictionary(),
                       // The bottom chrome returns a Positioned; it MUST stay a direct
                       // child of this Stack. The chrome FocusScope is mounted INSIDE
