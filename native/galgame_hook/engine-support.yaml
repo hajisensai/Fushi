@@ -35,7 +35,7 @@
         },
         "risky_left_click": {
           "status": "implemented_unverified",
-          "evidence": "Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded."
+          "evidence": "Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate, which was unsatisfiable: the generic shield can never reach Verified); allow_risk still crosses the IPC contract, but no measured real-build click-leak rate is recorded."
         }
       },
       {
@@ -51,7 +51,7 @@
         },
         "risky_left_click": {
           "status": "implemented_unverified",
-          "evidence": "Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded."
+          "evidence": "Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate, which was unsatisfiable: the generic shield can never reach Verified); allow_risk still crosses the IPC contract, but no measured real-build click-leak rate is recorded."
         }
       },
       {
@@ -67,7 +67,7 @@
         },
         "risky_left_click": {
           "status": "implemented_unverified",
-          "evidence": "Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded."
+          "evidence": "Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate, which was unsatisfiable: the generic shield can never reach Verified); allow_risk still crosses the IPC contract, but no measured real-build click-leak rate is recorded."
         }
       },
       {
@@ -83,7 +83,7 @@
         },
         "risky_left_click": {
           "status": "implemented_unverified",
-          "evidence": "Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded."
+          "evidence": "Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate, which was unsatisfiable: the generic shield can never reach Verified); allow_risk still crosses the IPC contract, but no measured real-build click-leak rate is recorded."
         }
       },
       {
@@ -99,7 +99,7 @@
         },
         "risky_left_click": {
           "status": "implemented_unverified",
-          "evidence": "Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded."
+          "evidence": "Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate, which was unsatisfiable: the generic shield can never reach Verified); allow_risk still crosses the IPC contract, but no measured real-build click-leak rate is recorded."
         }
       },
       {
@@ -115,7 +115,7 @@
         },
         "risky_left_click": {
           "status": "implemented_unverified",
-          "evidence": "Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded."
+          "evidence": "Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate, which was unsatisfiable: the generic shield can never reach Verified); allow_risk still crosses the IPC contract, but no measured real-build click-leak rate is recorded."
         }
       },
       {
@@ -131,7 +131,7 @@
         },
         "risky_left_click": {
           "status": "implemented_unverified",
-          "evidence": "Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded."
+          "evidence": "Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate, which was unsatisfiable: the generic shield can never reach Verified); allow_risk still crosses the IPC contract, but no measured real-build click-leak rate is recorded."
         }
       },
       {
@@ -147,7 +147,7 @@
         },
         "risky_left_click": {
           "status": "implemented_unverified",
-          "evidence": "Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded."
+          "evidence": "Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate, which was unsatisfiable: the generic shield can never reach Verified); allow_risk still crosses the IPC contract, but no measured real-build click-leak rate is recorded."
         }
       },
       {
@@ -163,7 +163,7 @@
         },
         "risky_left_click": {
           "status": "implemented_unverified",
-          "evidence": "Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded."
+          "evidence": "Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate, which was unsatisfiable: the generic shield can never reach Verified); allow_risk still crosses the IPC contract, but no measured real-build click-leak rate is recorded."
         }
       },
       {
@@ -179,7 +179,7 @@
         },
         "risky_left_click": {
           "status": "implemented_unverified",
-          "evidence": "Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded."
+          "evidence": "Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate, which was unsatisfiable: the generic shield can never reach Verified); allow_risk still crosses the IPC contract, but no measured real-build click-leak rate is recorded."
         }
       },
       {
@@ -195,7 +195,7 @@
         },
         "risky_left_click": {
           "status": "implemented_unverified",
-          "evidence": "Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded."
+          "evidence": "Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate, which was unsatisfiable: the generic shield can never reach Verified); allow_risk still crosses the IPC contract, but no measured real-build click-leak rate is recorded."
         }
       },
       {
@@ -211,7 +211,7 @@
         },
         "risky_left_click": {
           "status": "implemented_unverified",
-          "evidence": "Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded."
+          "evidence": "Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate, which was unsatisfiable: the generic shield can never reach Verified); allow_risk still crosses the IPC contract, but no measured real-build click-leak rate is recorded."
         }
       },
       {
@@ -227,7 +227,7 @@
         },
         "risky_left_click": {
           "status": "implemented_unverified",
-          "evidence": "Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded."
+          "evidence": "Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate, which was unsatisfiable: the generic shield can never reach Verified); allow_risk still crosses the IPC contract, but no measured real-build click-leak rate is recorded."
         }
       },
       {
@@ -243,7 +243,7 @@
         },
         "risky_left_click": {
           "status": "implemented_unverified",
-          "evidence": "Per-executable risk gating and fail-closed native-input admission are implemented; no measured real-build click-leak rate is recorded."
+          "evidence": "Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate); fail-closed native-input admission is implemented; no measured real-build click-leak rate is recorded."
         }
       },
       {
@@ -259,7 +259,7 @@
         },
         "risky_left_click": {
           "status": "implemented_unverified",
-          "evidence": "Per-executable risk gating is implemented. 2026-09-03 measurement on the measured build: 8 popup-outside quick clicks (60 ms down/up) after Shift or click lookups, 7 were swallowed by the WH_MOUSE_LL + DirectInput shield pair with no line advance; the first click right after the mid-session risk acceptance (needsRiskAcceptance → activeNative) leaked and advanced the line once, and the leak did not reproduce on a fresh session whose acceptance was restored from memory. Too few transactions for a rate; the 1,000-transaction gate has not run."
+          "evidence": "Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate). 2026-09-03 measurement, taken while that gate still existed: 8 popup-outside quick clicks (60 ms down/up) after Shift or click lookups, 7 were swallowed by the WH_MOUSE_LL + DirectInput shield pair with no line advance; the first click right after the mid-session risk acceptance (needsRiskAcceptance → activeNative) leaked and advanced the line once, and the leak did not reproduce on a fresh session whose acceptance was restored from memory. That one leak sat on the acceptance transition itself, which no longer happens; the shield pair it measured is unchanged. Too few transactions for a rate; the 1,000-transaction gate has not run."
         }
       }
     ]

@@ -93,12 +93,23 @@ add_fushi_test(lookup_freq_pitch_enrichment_test lookup_freq_pitch_enrichment_te
 add_fushi_test(hash_truncated_table_guard_test hash_truncated_table_guard_test.cpp)
 set_tests_properties(hash_truncated_table_guard_test PROPERTIES TIMEOUT 60)
 add_fushi_test(ipa_import_query_test ipa_import_query_test.cpp)
+# BUG-2152: enrich_pitch flattens every meta record of one dict into ONE
+# PitchEntry, so a headword split across entries repeats the same notation.
+# Covers both accumulators (ipa transcriptions + pitch accents) and pins the
+# negative half (distinct notations all survive, in dictionary order).
+add_fushi_test(pitch_duplicate_notation_test pitch_duplicate_notation_test.cpp)
 # 上游同步批4：v2 格式阶梯（.fushidicts_2）——kanji stats 追加段读回、marker
 # 拒载语义、bloom 截断置空降级（d4183d4 size 校验）、zstd 训练字典往返。
 add_fushi_test(format_v2_upstream_sync_test format_v2_upstream_sync_test.cpp)
 # Simple dicts (MDX/StarDict/DSL) store rules="*" so filter_by_pos keeps them
 # for inflected-form lookups; pins pos_to_conditions("*")==~0 + the stored rule.
 add_fushi_test(simple_dict_deinflection_test simple_dict_deinflection_test.cpp)
+# BUG-2148: ko.json 整表用 Hangul 兼容字母书写，不拆字则韩语 450 条 transform 一条
+# 都点不着火（查 부드러운 只降级到 부）。拆字预处理 + 合字后处理互为逆变换，端到端
+# 钉住 부드러운 -> 부드럽다 且 matched 回报原始预合成串（字幕高亮长度吃它）。
+add_fushi_test(korean_hangul_lookup_test korean_hangul_lookup_test.cpp
+    "${FUSHI_SRC}/text_processor"
+    "${FUSHI_ROOT}/fushidicts_external/utfcpp/source")
 # BUG-1665: an MDX @@@LINK= redirect entry (definition bytes copied from its
 # lemma at import) must collapse into the lemma at lookup time, so the popup
 # header / mined Anki term is the dictionary form, not the inflected surface.
@@ -152,6 +163,11 @@ add_fushi_test(mdx_linked_css_name_test mdx_linked_css_name_test.cpp
 # .mdd; they must join the media store so assets have ONE fetch-by-name channel.
 add_fushi_test(mdx_sibling_script_media_test mdx_sibling_script_media_test.cpp
     "${FUSHI_ROOT}/fushidicts_external/libdeflate")
+# BUG-2147: 同理的另外两路 —— 条目 <img src> 与样式表 url() 点名的松散兄弟文件
+# （剑桥发音词典的 sound.png / cdoicons.woff，该词典没有 .mdd）此前一个都不收，
+# 发音按钮渲染成 0×0 破图、点不着。
+add_fushi_test(mdx_loose_asset_media_test mdx_loose_asset_media_test.cpp
+    "${FUSHI_ROOT}/fushidicts_external/libdeflate")
 # Phase A: MDD (MDX media companion) parses byte-exact and auto-mounts into the
 # dict as media.bin/idx; get_media_file returns the bytes by normalized path.
 add_fushi_test(mdd_media_import_test mdd_media_import_test.cpp
@@ -161,6 +177,13 @@ add_fushi_test(mdd_media_import_test mdd_media_import_test.cpp
 # defaulting that empty attribute to UTF-8 lost the entire media companion
 # (fonts/images/audio/scripts) while the import still reported success.
 add_fushi_test(mdd_empty_encoding_test mdd_empty_encoding_test.cpp
+    "${FUSHI_SRC}/mdx"
+    "${FUSHI_ROOT}/fushidicts_external/libdeflate")
+# MDX records are inflated one block at a time (streaming import), so a record
+# can straddle a block boundary and a @@@LINK= target can live in a different
+# block than the redirect. Every other fixture emits a single record block and
+# cannot reach those paths.
+add_fushi_test(mdx_streaming_blocks_test mdx_streaming_blocks_test.cpp
     "${FUSHI_SRC}/mdx"
     "${FUSHI_ROOT}/fushidicts_external/libdeflate")
 # import_breadcrumb_test includes "util/import_breadcrumb.hpp" rooted at

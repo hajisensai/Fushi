@@ -1556,6 +1556,17 @@ function escapePitchText(text) {
 // them too — that is what makes English cards get their transcription with the
 // default field mappings, no remap needed. Plain pitch-accent dicts (Japanese)
 // have an empty transcriptions array and render byte-identically to before.
+//
+// BUG-2151: the list tag MUST stay `<ul>` (frequency does the same; only the
+// glossary is a genuinely ORDERED list of senses). Lapis normalises the pitch
+// box with `#pitch-tags ul` / `#pitch-tags ol` — but every OTHER note type out
+// there only ever normalises `ul`, because that is what Lapis' own
+// `handlePitches` builds. And `handlePitches` rebuilds the box only when it can
+// parse a pitch NUMBER or kana out of the field: English IPA has neither, so it
+// returns early and whatever we wrote here is what the user sees. Emitting
+// `<ol>` therefore meant the tag box rendered with the browser's default list
+// styling — 40px of dead space on the left, 1em of margin above and below, and
+// no `・` between two transcriptions.
 function constructPitchPositionHtml(pitches) {
     if (!pitches?.length) {
         return '';
@@ -1575,8 +1586,8 @@ function constructPitchPositionHtml(pitches) {
         });
     });
     // No positions AND no patterns AND no transcriptions: return '' instead of
-    // an empty <ol> shell, so the field is treated as empty and skipped.
-    return items ? `<ol>${items}</ol>` : '';
+    // an empty <ul> shell, so the field is treated as empty and skipped.
+    return items ? `<ul>${items}</ul>` : '';
 }
 
 // Yomitan-named {phonetic-transcriptions}: ONLY the IPA transcriptions, for
@@ -1592,7 +1603,7 @@ function constructPhoneticTranscriptionsHtml(pitches) {
             items += `<li><span style="display:inline;"><span>[</span><span>${escapePitchText(ipa)}</span><span>]</span></span></li>`;
         });
     });
-    return items ? `<ol>${items}</ol>` : '';
+    return items ? `<ul>${items}</ul>` : '';
 }
 
 function constructPitchCategories(pitches, reading, rules) {
@@ -1951,9 +1962,18 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
     const glossarySelectionHighlighted = currentSelectionHighlights > 0;
     currentSelectionHighlights = 0;
     const glossaryFirst = Object.values(singleGlossaries)[0] || '';
-    const pitchPositions = constructPitchPositionHtml(pitches);
+    // BUG-2152 第二条路径：跨词典的同一份发音。展示侧在 createPitchSection 里先跑
+    // mergeIdenticalPitchGroups 才渲染，制卡侧以前直接吃原始 pitches —— 于是两本词典
+    // 把 spoke 都标成 /spəʊk/ 时，弹窗里合成一行、卡片上却是 [/spəʊk/][/spəʊk/]。
+    // 同一份归一化喂给两边，两处显示就不会再分叉。（词典内部的重复由原生
+    // enrich_pitch 去掉，那一层这里看不见。）
+    const normalizedPitches = mergeIdenticalPitchGroups(pitches || []);
+    const pitchPositions = constructPitchPositionHtml(normalizedPitches);
+    // categories 自己按值去重（`!categories.includes(category)`），且要的是原始分组，
+    // 不受合并影响，保持喂原始 pitches。
     const pitchCategories = constructPitchCategories(pitches, reading, rules);
-    const phoneticTranscriptions = constructPhoneticTranscriptionsHtml(pitches);
+    const phoneticTranscriptions =
+        constructPhoneticTranscriptionsHtml(normalizedPitches);
 
     const audioReading = reading || expression;
     let audio = '';
@@ -4038,10 +4058,21 @@ function ensureDictionaryStyle(dictName, styleText) {
 
 function createGlossarySection(dictName, contents, dictIdx, entryIdx, totalDicts) {
     const details = el('details', { className: 'glossary-group' });
+    // BUG-2158：折叠是**三态**，优先级 显式展开 > 显式折叠 > 继承。
+    //
+    // 修复前只有 collapsedDictionaryNames 一个名单，「不在名单里」既表示「用户要
+    // 展开」又表示「用户没表态」。两者在这里的行为天差地别：没表态时
+    // `window.collapseDictionaries`（默认 true）会把它关掉，于是用户在设置页点
+    // 「展开」的那些词典，只要落在自动展开窗口之外就照样是关的——他点了个寂寞。
+    // 现在多一个 expandedDictionaryNames 名单专门表达「用户要展开」，它压过
+    // 自动展开窗口和全局开关。
+    const perDictExpanded = (window.expandedDictionaryNames || []).includes(dictName);
     const perDictCollapsed = (window.collapsedDictionaryNames || []).includes(dictName);
     const autoExpandN = autoExpandCount(totalDicts);
     const autoExpanded = dictIdx < autoExpandN;
-    if (!perDictCollapsed && (autoExpanded || !window.collapseDictionaries)) {
+    if (perDictExpanded) {
+        details.open = true;
+    } else if (!perDictCollapsed && (autoExpanded || !window.collapseDictionaries)) {
         details.open = true;
     }
 

@@ -15,11 +15,13 @@ library;
 
 import 'dart:io';
 
+import 'package:fushi/src/onnx/model_file_downloader.dart';
+
 /// 模型文件归属：检测 / 识别（[MangaOcrModelStatus] 的两个就绪位分别聚合）。
 enum MangaOcrModelRole { detector, recognizer }
 
-/// 清单里的一个模型文件。
-class MangaOcrModelFile {
+/// 清单里的一个模型文件（实现共享下载器的 [DownloadableModelFile]）。
+class MangaOcrModelFile implements DownloadableModelFile {
   const MangaOcrModelFile({
     required this.fileName,
     required this.url,
@@ -28,12 +30,15 @@ class MangaOcrModelFile {
   });
 
   /// 落盘文件名（与远端 basename 一致，Range 续传直接复用同 URL）。
+  @override
   final String fileName;
 
   /// HF resolve 直链。
+  @override
   final String url;
 
   /// 预期字节数（HF API 精确值；用于 totalBytes 展示与下载后长度校验）。
+  @override
   final int expectedBytes;
 
   final MangaOcrModelRole role;
@@ -83,32 +88,17 @@ bool isMangaOcrModelFileReady(File file) {
   return file.lengthSync() > 0;
 }
 
-/// 主源 host：清单里所有 URL 的出处。
-const String kMangaOcrModelPrimaryHost = 'huggingface.co';
+/// 主源 host：清单里所有 URL 的出处（与共享层 [kHuggingFaceHost] 同值）。
+const String kMangaOcrModelPrimaryHost = kHuggingFaceHost;
 
-/// 镜像 host（与 huggingface.co **路径完全同构**，只换域名即可命中同一个 blob）。
-///
-/// 存在的唯一理由是主源在部分网络下握手就断——470MB 的模型对这类用户等于下不动。
-/// 镜像只在主源失败后按序尝试（见 `manga_ocr_model_downloader.dart`），不改变
-/// 默认信任关系；字节一致性仍由下载器 rename 前的长度校验兜底。
-const List<String> kMangaOcrModelMirrorHosts = <String>[
-  'hf-mirror.com',
-];
+/// 镜像 host（与共享层 [kHuggingFaceMirrorHosts] 同一份；只换域名即可命中同一个
+/// blob 的理由与信任边界见那里）。
+const List<String> kMangaOcrModelMirrorHosts = kHuggingFaceMirrorHosts;
 
 /// 一个模型文件的**下载候选 URL 序列**：主源在前，镜像依次在后。
 ///
-/// 刻意做成从 [MangaOcrModelFile.url] 派生而不是让清单逐条列出多个 URL：
-/// 清单里每多一个手写 URL 就多一处能写错的地方，而镜像与主源本就只差 host。
-/// 非 huggingface.co 的 URL（测试注入的 localhost、将来换源）原样返回单元素
-/// 列表——没有「测试专用分支」，只有「不认识的 host 不派生镜像」这一条规则。
-List<String> mangaOcrModelUrlCandidates(MangaOcrModelFile file) {
-  final Uri primary = Uri.parse(file.url);
-  if (primary.host != kMangaOcrModelPrimaryHost) {
-    return <String>[file.url];
-  }
-  return <String>[
-    file.url,
-    for (final String host in kMangaOcrModelMirrorHosts)
-      primary.replace(host: host).toString(),
-  ];
-}
+/// 规则住在共享层 [defaultHuggingFaceUrlCandidates]：从 [MangaOcrModelFile.url]
+/// 派生而不是让清单逐条列出多个 URL；非 huggingface.co 的 URL（测试注入的
+/// localhost、将来换源）原样返回单元素列表。
+List<String> mangaOcrModelUrlCandidates(MangaOcrModelFile file) =>
+    defaultHuggingFaceUrlCandidates(file.url);

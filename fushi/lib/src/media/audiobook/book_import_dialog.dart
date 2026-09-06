@@ -1,4 +1,6 @@
+import 'dart:developer' as developer;
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:drift/drift.dart' show Value;
@@ -11,6 +13,11 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/drag_drop/import_dialog_drop.dart';
+import 'package:fushi/src/asr/asr_cue_builder.dart'
+    show kAsrSuggestedSimilarityThreshold;
+import 'package:fushi/src/asr/asr_model_manifest.dart';
+import 'package:fushi/src/asr/asr_transcription_service.dart';
+import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
 import 'package:fushi/src/media/audiobook/audiobook_alignment_service.dart';
 import 'package:fushi/src/media/audiobook/subtitle_rematch.dart';
 import 'package:fushi/src/media/audiobook/text_to_epub.dart';
@@ -25,6 +32,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/epub/book_title_conflict.dart';
 import 'package:fushi/src/epub/epub_importer.dart';
+import 'package:fushi/src/epub/epub_parser.dart';
 import 'package:fushi/src/media/manga/manga_import_dialog.dart';
 import 'package:fushi/src/media/manga/manga_module.dart';
 import 'package:fushi/src/pdf/pdf_importer.dart';
@@ -411,7 +419,7 @@ class _BookImportDialogState extends State<BookImportDialog>
           ? null
           : _subtitleName ?? p.basename(_subtitlePath!),
       icon: Icons.subtitles_outlined,
-      onTap: _pickSubtitle,
+      onTap: _onSubtitleRowTap,
       actions: [
         if (_subtitlePath != null)
           FushiIconButton(
@@ -429,8 +437,89 @@ class _BookImportDialogState extends State<BookImportDialog>
           isWideTapArea: true,
           onTap: _pickSubtitle,
         ),
+        if (AsrTranscriptionService.isSupported)
+          FushiIconButton(
+            icon: Icons.record_voice_over_outlined,
+            tooltip: t.audiobook_transcribe_action,
+            isWideTapArea: true,
+            onTap: importing ? null : _transcribeSubtitleFromAudio,
+          ),
       ],
     );
+  }
+
+  /// 点字幕行：本机能转录且已选音频时先问来源（选文件 / 转录），否则直进选择器。
+  /// 同目录自动带入的字幕不阻止走这里——选「转录」就是替换它。
+  Future<void> _onSubtitleRowTap() async {
+    if (importing) return;
+    if (!shouldOfferSubtitleSourceChooser(
+      asrSupported: AsrTranscriptionService.isSupported,
+      hasAudio: _audioPaths.isNotEmpty,
+    )) {
+      await _pickSubtitle();
+      return;
+    }
+    final SubtitleSourceChoice? choice = await showSubtitleSourceChooser(
+      context: context,
+    );
+    if (choice == null || !mounted) return;
+    switch (choice) {
+      case SubtitleSourceChoice.pickFile:
+        await _pickSubtitle();
+      case SubtitleSourceChoice.transcribe:
+        await _transcribeSubtitleFromAudio();
+    }
+  }
+
+  /// 已选但尚未导入的书的语言 → 转录语言初值。只有 EPUB 载体带 OPF 元数据；
+  /// txt / pdf / 漫画没有语言可读，直接 null。读取在后台 isolate 做（zip 解码 +
+  /// 两份 XML，大书也就几十毫秒，但不占 UI 线程）；文件坏了按 null 处理并记日志，
+  /// 不让「猜个初值」这种锦上添花的事挡住转录入口。
+  Future<AsrLanguage?> _asrLanguageHintFromPendingBook() async {
+    final String? path = _epubPath;
+    if (path == null || _classifyCarrier(path) != ImportCarrier.epub) {
+      return null;
+    }
+    try {
+      final String? language =
+          await Isolate.run(() => EpubParser.readLanguageSync(path));
+      return asrLanguageHintFromBookLanguage(language);
+    } catch (error, stack) {
+      developer.log(
+        'read EPUB language for ASR hint failed: $path',
+        name: 'fushi.import',
+        error: error,
+        stackTrace: stack,
+      );
+      return null;
+    }
+  }
+
+  /// 没有 .srt 时用设备端语音模型从已选音频生成一份，回填到字幕位；之后的导入
+  /// 路径与用户自带 SRT 完全相同（解析 → 匹配 → 落库）。
+  Future<void> _transcribeSubtitleFromAudio() async {
+    if (_audioPaths.isEmpty) {
+      FushiToast.show(
+        msg: t.audiobook_transcribe_needs_audio,
+        severity: ToastSeverity.warning,
+      );
+      return;
+    }
+    // 语言初值跟随书本身的语言；此时书还没导入，只能从文件上读 OPF 元数据。
+    final AsrLanguage? languageHint = await _asrLanguageHintFromPendingBook();
+    if (!mounted) return;
+    final String? srtPath = await showAsrTranscribeSheet(
+      context: context,
+      audioPaths: List<String>.of(_audioPaths),
+      languageHint: languageHint,
+    );
+    if (srtPath == null || !mounted) return;
+    setState(() {
+      _subtitlePath = srtPath;
+      _subtitleName = t.audiobook_transcribe_result_name;
+      // ASR 文本有听写差，匹配阈值按实测放宽（用户仍可在滑条上改）。
+      _similarityThreshold = kAsrSuggestedSimilarityThreshold;
+    });
   }
 
   Widget _audioRow() {
@@ -1091,6 +1180,8 @@ class _BookImportDialogState extends State<BookImportDialog>
       autoWindow: _autoWindow,
       searchWindow: _searchWindow,
       similarityThreshold: _similarityThreshold,
+      replaceCueTextWithBookText:
+          AsrTranscriptionService.isAsrGeneratedSubtitlePath(_subtitlePath!),
       onProgress: reportProgress,
       messages: AudiobookAlignmentMessages(
         readingIdb: t.import_step_reading_idb,

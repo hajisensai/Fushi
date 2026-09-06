@@ -1072,12 +1072,19 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     final result = await repo.consumeInfoForAddingPasteboard();
     switch (result) {
       case AnkiFetchSuccess():
-        await ref.read(ankiViewModelProvider.notifier).reloadSettings();
+        await ref
+            .read(ankiViewModelProvider.notifier)
+            .applyFetchedConfiguration();
         FushiToast.show(
-          msg: 'AnkiMobile configuration imported.',
+          msg: t.anki_ankimobile_imported,
           severity: ToastSeverity.success,
         );
       case AnkiFetchError(:final message, :final code):
+        // toast 几秒即逝，设置页那行错误才是用户真正盯着的：真结果必须覆盖
+        // fetchConfiguration 留下的「去 AnkiMobile 点同意」中间态（BUG-2150）。
+        ref
+            .read(ankiViewModelProvider.notifier)
+            .applyFetchedFailure(message, code);
         FushiToast.show(
           msg: AnkiViewModel.localizeAnkiFetchError(message, code),
           severity: ToastSeverity.error,

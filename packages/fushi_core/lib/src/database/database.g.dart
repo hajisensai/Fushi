@@ -5737,6 +5737,18 @@ class $DictionaryMetadataTable extends DictionaryMetadata
         requiredDuringInsert: false,
         defaultValue: const Constant('[]'),
       );
+  static const VerificationMeta _expandedLanguagesJsonMeta =
+      const VerificationMeta('expandedLanguagesJson');
+  @override
+  late final GeneratedColumn<String> expandedLanguagesJson =
+      GeneratedColumn<String>(
+        'expanded_languages_json',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        defaultValue: const Constant('[]'),
+      );
   static const VerificationMeta _languageOverrideMeta = const VerificationMeta(
     'languageOverride',
   );
@@ -5757,6 +5769,7 @@ class $DictionaryMetadataTable extends DictionaryMetadata
     metadataJson,
     hiddenLanguagesJson,
     collapsedLanguagesJson,
+    expandedLanguagesJson,
     languageOverride,
   ];
   @override
@@ -5828,6 +5841,15 @@ class $DictionaryMetadataTable extends DictionaryMetadata
         ),
       );
     }
+    if (data.containsKey('expanded_languages_json')) {
+      context.handle(
+        _expandedLanguagesJsonMeta,
+        expandedLanguagesJson.isAcceptableOrUnknown(
+          data['expanded_languages_json']!,
+          _expandedLanguagesJsonMeta,
+        ),
+      );
+    }
     if (data.containsKey('language_override')) {
       context.handle(
         _languageOverrideMeta,
@@ -5874,6 +5896,10 @@ class $DictionaryMetadataTable extends DictionaryMetadata
         DriftSqlType.string,
         data['${effectivePrefix}collapsed_languages_json'],
       )!,
+      expandedLanguagesJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}expanded_languages_json'],
+      )!,
       languageOverride: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}language_override'],
@@ -5897,6 +5923,25 @@ class DictionaryMetaRow extends DataClass
   final String hiddenLanguagesJson;
   final String collapsedLanguagesJson;
 
+  /// v96：用户**显式展开**这本词典的语言列表（BCP-47，与 [collapsedLanguagesJson]
+  /// 同形）。BUG-2158。
+  ///
+  /// 为什么必须是独立的第二列而不是把 collapsed 当布尔用：折叠有**三**个态，
+  /// 一个列表只装得下两个。
+  ///   * 在 collapsed 名单里 → 显式折叠；
+  ///   * 在本名单里 → 显式展开；
+  ///   * 两个名单都不在 → **继承**（自动展开窗口 + 全局 `collapse_dictionaries`）。
+  /// 修复前只有 collapsed 一个名单，「不在名单里」被 UI 当成「展开」呈现（那个
+  /// unfold_more / unfold_less 双态按钮），实际却是「继承」——而全局默认是折叠，
+  /// 于是用户给自动展开窗口之外的词典点「展开」，视觉上毫无反应。UI 在撒谎。
+  ///
+  /// 两个名单**互斥**，由唯一写入点 `DictionaryRepository.setDictionaryCollapseState`
+  /// 维持；读取侧（[Dictionary.isCollapsed]）仍把「显式展开」排在「显式折叠」之前，
+  /// 所以即使外部写入弄出重叠，行为也是确定的而不是未定义。
+  ///
+  /// 存量数据零迁移：旧库升级后本列为 `[]` = 全部继承 = 逐字节保持 v96 前的行为。
+  final String expandedLanguagesJson;
+
   /// v87：用户**手动指定**的词典内容语言（BCP-47，如 `ja` / `zh-Hant`）。
   ///
   /// null = 未指定，按自动来源推断（yomitan `index.json` 的 `sourceLanguage`，
@@ -5915,6 +5960,7 @@ class DictionaryMetaRow extends DataClass
     required this.metadataJson,
     required this.hiddenLanguagesJson,
     required this.collapsedLanguagesJson,
+    required this.expandedLanguagesJson,
     this.languageOverride,
   });
   @override
@@ -5927,6 +5973,7 @@ class DictionaryMetaRow extends DataClass
     map['metadata_json'] = Variable<String>(metadataJson);
     map['hidden_languages_json'] = Variable<String>(hiddenLanguagesJson);
     map['collapsed_languages_json'] = Variable<String>(collapsedLanguagesJson);
+    map['expanded_languages_json'] = Variable<String>(expandedLanguagesJson);
     if (!nullToAbsent || languageOverride != null) {
       map['language_override'] = Variable<String>(languageOverride);
     }
@@ -5942,6 +5989,7 @@ class DictionaryMetaRow extends DataClass
       metadataJson: Value(metadataJson),
       hiddenLanguagesJson: Value(hiddenLanguagesJson),
       collapsedLanguagesJson: Value(collapsedLanguagesJson),
+      expandedLanguagesJson: Value(expandedLanguagesJson),
       languageOverride: languageOverride == null && nullToAbsent
           ? const Value.absent()
           : Value(languageOverride),
@@ -5965,6 +6013,9 @@ class DictionaryMetaRow extends DataClass
       collapsedLanguagesJson: serializer.fromJson<String>(
         json['collapsedLanguagesJson'],
       ),
+      expandedLanguagesJson: serializer.fromJson<String>(
+        json['expandedLanguagesJson'],
+      ),
       languageOverride: serializer.fromJson<String?>(json['languageOverride']),
     );
   }
@@ -5981,6 +6032,7 @@ class DictionaryMetaRow extends DataClass
       'collapsedLanguagesJson': serializer.toJson<String>(
         collapsedLanguagesJson,
       ),
+      'expandedLanguagesJson': serializer.toJson<String>(expandedLanguagesJson),
       'languageOverride': serializer.toJson<String?>(languageOverride),
     };
   }
@@ -5993,6 +6045,7 @@ class DictionaryMetaRow extends DataClass
     String? metadataJson,
     String? hiddenLanguagesJson,
     String? collapsedLanguagesJson,
+    String? expandedLanguagesJson,
     Value<String?> languageOverride = const Value.absent(),
   }) => DictionaryMetaRow(
     name: name ?? this.name,
@@ -6003,6 +6056,7 @@ class DictionaryMetaRow extends DataClass
     hiddenLanguagesJson: hiddenLanguagesJson ?? this.hiddenLanguagesJson,
     collapsedLanguagesJson:
         collapsedLanguagesJson ?? this.collapsedLanguagesJson,
+    expandedLanguagesJson: expandedLanguagesJson ?? this.expandedLanguagesJson,
     languageOverride: languageOverride.present
         ? languageOverride.value
         : this.languageOverride,
@@ -6022,6 +6076,9 @@ class DictionaryMetaRow extends DataClass
       collapsedLanguagesJson: data.collapsedLanguagesJson.present
           ? data.collapsedLanguagesJson.value
           : this.collapsedLanguagesJson,
+      expandedLanguagesJson: data.expandedLanguagesJson.present
+          ? data.expandedLanguagesJson.value
+          : this.expandedLanguagesJson,
       languageOverride: data.languageOverride.present
           ? data.languageOverride.value
           : this.languageOverride,
@@ -6038,6 +6095,7 @@ class DictionaryMetaRow extends DataClass
           ..write('metadataJson: $metadataJson, ')
           ..write('hiddenLanguagesJson: $hiddenLanguagesJson, ')
           ..write('collapsedLanguagesJson: $collapsedLanguagesJson, ')
+          ..write('expandedLanguagesJson: $expandedLanguagesJson, ')
           ..write('languageOverride: $languageOverride')
           ..write(')'))
         .toString();
@@ -6052,6 +6110,7 @@ class DictionaryMetaRow extends DataClass
     metadataJson,
     hiddenLanguagesJson,
     collapsedLanguagesJson,
+    expandedLanguagesJson,
     languageOverride,
   );
   @override
@@ -6065,6 +6124,7 @@ class DictionaryMetaRow extends DataClass
           other.metadataJson == this.metadataJson &&
           other.hiddenLanguagesJson == this.hiddenLanguagesJson &&
           other.collapsedLanguagesJson == this.collapsedLanguagesJson &&
+          other.expandedLanguagesJson == this.expandedLanguagesJson &&
           other.languageOverride == this.languageOverride);
 }
 
@@ -6076,6 +6136,7 @@ class DictionaryMetadataCompanion extends UpdateCompanion<DictionaryMetaRow> {
   final Value<String> metadataJson;
   final Value<String> hiddenLanguagesJson;
   final Value<String> collapsedLanguagesJson;
+  final Value<String> expandedLanguagesJson;
   final Value<String?> languageOverride;
   final Value<int> rowid;
   const DictionaryMetadataCompanion({
@@ -6086,6 +6147,7 @@ class DictionaryMetadataCompanion extends UpdateCompanion<DictionaryMetaRow> {
     this.metadataJson = const Value.absent(),
     this.hiddenLanguagesJson = const Value.absent(),
     this.collapsedLanguagesJson = const Value.absent(),
+    this.expandedLanguagesJson = const Value.absent(),
     this.languageOverride = const Value.absent(),
     this.rowid = const Value.absent(),
   });
@@ -6097,6 +6159,7 @@ class DictionaryMetadataCompanion extends UpdateCompanion<DictionaryMetaRow> {
     this.metadataJson = const Value.absent(),
     this.hiddenLanguagesJson = const Value.absent(),
     this.collapsedLanguagesJson = const Value.absent(),
+    this.expandedLanguagesJson = const Value.absent(),
     this.languageOverride = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : name = Value(name),
@@ -6110,6 +6173,7 @@ class DictionaryMetadataCompanion extends UpdateCompanion<DictionaryMetaRow> {
     Expression<String>? metadataJson,
     Expression<String>? hiddenLanguagesJson,
     Expression<String>? collapsedLanguagesJson,
+    Expression<String>? expandedLanguagesJson,
     Expression<String>? languageOverride,
     Expression<int>? rowid,
   }) {
@@ -6123,6 +6187,8 @@ class DictionaryMetadataCompanion extends UpdateCompanion<DictionaryMetaRow> {
         'hidden_languages_json': hiddenLanguagesJson,
       if (collapsedLanguagesJson != null)
         'collapsed_languages_json': collapsedLanguagesJson,
+      if (expandedLanguagesJson != null)
+        'expanded_languages_json': expandedLanguagesJson,
       if (languageOverride != null) 'language_override': languageOverride,
       if (rowid != null) 'rowid': rowid,
     });
@@ -6136,6 +6202,7 @@ class DictionaryMetadataCompanion extends UpdateCompanion<DictionaryMetaRow> {
     Value<String>? metadataJson,
     Value<String>? hiddenLanguagesJson,
     Value<String>? collapsedLanguagesJson,
+    Value<String>? expandedLanguagesJson,
     Value<String?>? languageOverride,
     Value<int>? rowid,
   }) {
@@ -6148,6 +6215,8 @@ class DictionaryMetadataCompanion extends UpdateCompanion<DictionaryMetaRow> {
       hiddenLanguagesJson: hiddenLanguagesJson ?? this.hiddenLanguagesJson,
       collapsedLanguagesJson:
           collapsedLanguagesJson ?? this.collapsedLanguagesJson,
+      expandedLanguagesJson:
+          expandedLanguagesJson ?? this.expandedLanguagesJson,
       languageOverride: languageOverride ?? this.languageOverride,
       rowid: rowid ?? this.rowid,
     );
@@ -6181,6 +6250,11 @@ class DictionaryMetadataCompanion extends UpdateCompanion<DictionaryMetaRow> {
         collapsedLanguagesJson.value,
       );
     }
+    if (expandedLanguagesJson.present) {
+      map['expanded_languages_json'] = Variable<String>(
+        expandedLanguagesJson.value,
+      );
+    }
     if (languageOverride.present) {
       map['language_override'] = Variable<String>(languageOverride.value);
     }
@@ -6200,6 +6274,7 @@ class DictionaryMetadataCompanion extends UpdateCompanion<DictionaryMetaRow> {
           ..write('metadataJson: $metadataJson, ')
           ..write('hiddenLanguagesJson: $hiddenLanguagesJson, ')
           ..write('collapsedLanguagesJson: $collapsedLanguagesJson, ')
+          ..write('expandedLanguagesJson: $expandedLanguagesJson, ')
           ..write('languageOverride: $languageOverride, ')
           ..write('rowid: $rowid')
           ..write(')'))
@@ -53649,6 +53724,7 @@ typedef $$DictionaryMetadataTableCreateCompanionBuilder =
       Value<String> metadataJson,
       Value<String> hiddenLanguagesJson,
       Value<String> collapsedLanguagesJson,
+      Value<String> expandedLanguagesJson,
       Value<String?> languageOverride,
       Value<int> rowid,
     });
@@ -53661,6 +53737,7 @@ typedef $$DictionaryMetadataTableUpdateCompanionBuilder =
       Value<String> metadataJson,
       Value<String> hiddenLanguagesJson,
       Value<String> collapsedLanguagesJson,
+      Value<String> expandedLanguagesJson,
       Value<String?> languageOverride,
       Value<int> rowid,
     });
@@ -53706,6 +53783,11 @@ class $$DictionaryMetadataTableFilterComposer
 
   ColumnFilters<String> get collapsedLanguagesJson => $composableBuilder(
     column: $table.collapsedLanguagesJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get expandedLanguagesJson => $composableBuilder(
+    column: $table.expandedLanguagesJson,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -53759,6 +53841,11 @@ class $$DictionaryMetadataTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get expandedLanguagesJson => $composableBuilder(
+    column: $table.expandedLanguagesJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get languageOverride => $composableBuilder(
     column: $table.languageOverride,
     builder: (column) => ColumnOrderings(column),
@@ -53798,6 +53885,11 @@ class $$DictionaryMetadataTableAnnotationComposer
 
   GeneratedColumn<String> get collapsedLanguagesJson => $composableBuilder(
     column: $table.collapsedLanguagesJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get expandedLanguagesJson => $composableBuilder(
+    column: $table.expandedLanguagesJson,
     builder: (column) => column,
   );
 
@@ -53854,6 +53946,7 @@ class $$DictionaryMetadataTableTableManager
                 Value<String> metadataJson = const Value.absent(),
                 Value<String> hiddenLanguagesJson = const Value.absent(),
                 Value<String> collapsedLanguagesJson = const Value.absent(),
+                Value<String> expandedLanguagesJson = const Value.absent(),
                 Value<String?> languageOverride = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => DictionaryMetadataCompanion(
@@ -53864,6 +53957,7 @@ class $$DictionaryMetadataTableTableManager
                 metadataJson: metadataJson,
                 hiddenLanguagesJson: hiddenLanguagesJson,
                 collapsedLanguagesJson: collapsedLanguagesJson,
+                expandedLanguagesJson: expandedLanguagesJson,
                 languageOverride: languageOverride,
                 rowid: rowid,
               ),
@@ -53876,6 +53970,7 @@ class $$DictionaryMetadataTableTableManager
                 Value<String> metadataJson = const Value.absent(),
                 Value<String> hiddenLanguagesJson = const Value.absent(),
                 Value<String> collapsedLanguagesJson = const Value.absent(),
+                Value<String> expandedLanguagesJson = const Value.absent(),
                 Value<String?> languageOverride = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => DictionaryMetadataCompanion.insert(
@@ -53886,6 +53981,7 @@ class $$DictionaryMetadataTableTableManager
                 metadataJson: metadataJson,
                 hiddenLanguagesJson: hiddenLanguagesJson,
                 collapsedLanguagesJson: collapsedLanguagesJson,
+                expandedLanguagesJson: expandedLanguagesJson,
                 languageOverride: languageOverride,
                 rowid: rowid,
               ),
