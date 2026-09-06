@@ -280,11 +280,14 @@ class ReaderSideSheet extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              IconButton(
-                key: const ValueKey<String>('fushi_side_sheet_close'),
-                icon: const Icon(Icons.close),
-                tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
-                onPressed: onClose,
+              Semantics(
+                identifier: 'hibiki.reader.side_sheet.close',
+                child: IconButton(
+                  key: const ValueKey<String>('fushi_side_sheet_close'),
+                  icon: const Icon(Icons.close),
+                  tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+                  onPressed: onClose,
+                ),
               ),
             ],
           ),

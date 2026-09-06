@@ -39,6 +39,9 @@ class ReaderChromeController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 右侧设置抽屉上次打开的分组 id（会话内记忆；默认布局显示）。
+  String lastSettingsTab = 'layout';
+
   Timer? _autoHideTimer;
 
   /// 自动收起计时器（只读；页面 dispose 路径按旧守卫字面量 `cancel()` 它）。

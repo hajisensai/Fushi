@@ -129,12 +129,23 @@ class ReaderStatisticsDialog extends StatefulWidget {
 class _ReaderStatisticsDialogState extends State<ReaderStatisticsDialog> {
   Timer? _ticker;
   ReaderBookStatTotals? _book;
+  ({int seconds, int chars, bool active, bool paused})? _lastSnapshot;
 
   @override
   void initState() {
     super.initState();
+    // 会话读数按秒采样，但只在秒 / 字数 / 计时态变了才重建（暂停时零重建）。
     _ticker = Timer.periodic(widget.tick, (_) {
-      if (mounted) setState(() {});
+      if (!mounted) return;
+      final StudySessionTotals s = widget.sessionTotals();
+      final ({int seconds, int chars, bool active, bool paused}) snap = (
+        seconds: s.durationMs ~/ 1000,
+        chars: s.chars,
+        active: s.active,
+        paused: widget.trackingPaused(),
+      );
+      if (snap == _lastSnapshot) return;
+      setState(() => _lastSnapshot = snap);
     });
     unawaited(widget.loadBookTotals().then((ReaderBookStatTotals totals) {
       if (mounted) setState(() => _book = totals);

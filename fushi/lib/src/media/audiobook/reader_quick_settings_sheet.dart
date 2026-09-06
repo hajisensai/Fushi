@@ -85,6 +85,9 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
     this.onAudioImport,
     this.onPickAlignment,
     this.onTranscribe,
+    this.onOpenStatistics,
+    this.initialSideSheetTab = 'layout',
+    this.onSideSheetTabChanged,
     this.initialSubPage,
     this.presentation = ReaderQuickSettingsPresentation.sheet,
     this.onClose,
@@ -158,6 +161,13 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
   /// 有声书面板「资源」页：对当前音频做设备端转录生成字幕。null = 本机不支持。
   final VoidCallback? onTranscribe;
 
+  /// 移动端 / 窄窗主页的「阅读统计」行（打开阅读器内统计浮层）；null 不显示。
+  final VoidCallback? onOpenStatistics;
+
+  /// 桌面端右侧设置抽屉初始分组（页面记忆上次打开的 tab）。
+  final String initialSideSheetTab;
+  final ValueChanged<String>? onSideSheetTabChanged;
+
   /// TODO-1309①：打开面板时直达的子页 id（如 'location' 导航子页）。null =
   /// 默认落主菜单（窄窗）/ 默认分类（宽窗）。仅用于初始化 [_subPage]，
   /// 之后由用户导航自行覆盖。
@@ -192,8 +202,11 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
 
   late String? _subPage = widget.initialSubPage;
 
-  /// 桌面端右侧「设置」抽屉当前展开的分组 id（默认布局显示）。
-  String _sideSheetTab = 'layout';
+  /// 桌面端右侧「设置」抽屉当前展开的分组 id（初值来自页面记忆）。
+  late String _sideSheetTab = widget.initialSideSheetTab;
+
+  /// 导航抽屉里当前章那一行的 key：打开时滚到它。
+  final GlobalKey _currentTocRowKey = GlobalKey();
 
   /// 最近一次 LayoutBuilder 是否判定为宽窗。供 PopScope.canPop 读取：宽窗
   /// master-detail 下选中态非 null 也允许直接关闭（不会卡在「返回上一级」）。
@@ -415,6 +428,16 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double sectionGap = tokens.spacing.gap + tokens.spacing.gap / 2;
     final Widget progress = _buildProgressSection(theme);
+    // 打开即滚到当前章那一行（首帧后；行不存在时 no-op）。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final BuildContext? rowContext = _currentTocRowKey.currentContext;
+      if (rowContext == null || !mounted) return;
+      unawaited(Scrollable.ensureVisible(
+        rowContext,
+        alignment: 0.3,
+        duration: const Duration(milliseconds: 160),
+      ));
+    });
     return ReaderSideSheet(
       title: t.section_navigation,
       onClose: _sideSheetClose(context),
@@ -453,7 +476,10 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
         ],
         selected: tab,
         alignment: Alignment.center,
-        onChanged: (String id) => setState(() => _sideSheetTab = id),
+        onChanged: (String id) {
+          setState(() => _sideSheetTab = id);
+          widget.onSideSheetTabChanged?.call(id);
+        },
       ),
       SizedBox(height: tokens.spacing.gap),
       // KeyedSubtree：按 tab 编码，切换时整棵内容子树作废重建，避免 Switch /
@@ -638,6 +664,21 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
           page: 'audiobook',
         ),
     ];
+
+    if (widget.onOpenStatistics != null) {
+      // 移动端 / 窄窗也能到阅读器内统计浮层（桌面端在顶部工具栏）。
+      navigationRows.add(
+        AdaptiveSettingsNavigationRow(
+          key: const ValueKey<String>('fushi_sheet_statistics_row'),
+          title: t.reading_statistics,
+          icon: Icons.insights_outlined,
+          onTap: () {
+            Navigator.of(context).pop();
+            widget.onOpenStatistics!();
+          },
+        ),
+      );
+    }
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -1181,6 +1222,9 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
       children: [
         for (final TtuTocEntry entry in widget.toc)
           _InBookTocRow(
+            key: !entry.isHeader && currentIdx == entry.index
+                ? _currentTocRowKey
+                : null,
             entry: entry,
             selected: !entry.isHeader && currentIdx == entry.index,
             onTap: entry.isHeader
@@ -1822,6 +1866,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
 
 class _InBookTocRow extends StatelessWidget {
   const _InBookTocRow({
+    super.key,
     required this.entry,
     required this.selected,
     this.onTap,

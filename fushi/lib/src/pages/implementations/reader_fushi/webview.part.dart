@@ -1825,6 +1825,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
       ),
       onWebViewCreated: (controller) {
         _controller = controller;
+        _openTrace.mark('webViewCreated');
         assert(() {
           // TODO-2603：调试钩子的生命周期属于**本页 State**，不属于单个 WebView
           // 实例。旧判据是「钩子必须为 null」——它把「同一页重装钩子」和「两个阅读器

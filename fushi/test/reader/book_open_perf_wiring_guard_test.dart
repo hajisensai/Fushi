@@ -113,8 +113,10 @@ void main() {
     // 单独锁住，不因这次迁移丢覆盖。
     expect(containsCodeLine(src, 'Widget _buildTopProgressBar()'), isTrue,
         reason: '顶栏进度条构建入口必须还在');
-    final String settingsBody = methodBody(
-        src, 'Future<void> _showAppearanceSheet({String? initialSubPage})');
+    // 面板构造已从 _showAppearanceSheet 抽成 _buildQuickSettingsSheet（三种呈现共用
+    // 一份回调接线），删除收藏的闭包随之搬家；守卫跟着看新方法体。
+    final String settingsBody =
+        methodBody(src, 'Widget _buildQuickSettingsSheet({');
     final String toggleBody =
         methodBody(src, 'Future<void> _toggleFavoriteSentence()');
     // 这两条锚点是**跨行**的相邻语句对（「删完紧接着失效缓存」），containsCodeLine 逐行
@@ -122,7 +124,7 @@ void main() {
     expect(
         settingsBody,
         contains(
-            'await favRepo.removeById(fav.id);\n          _invalidateFavoriteSentenceCache();'),
+            'await favRepo.removeById(fav.id);\n        _invalidateFavoriteSentenceCache();'),
         reason: '设置面板删除收藏后，当前 reader 缓存必须失效');
     // BUG-494：取消收藏优先按缓存的精确条目 id removeById 删单条，无 id 时才回退内容键
     // removeByContent（包在 else 分支里，故内容键删单条这段多缩进一层，text: 现为 10 空格

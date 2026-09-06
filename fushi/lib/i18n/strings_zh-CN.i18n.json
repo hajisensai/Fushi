@@ -4302,5 +4302,8 @@
   "reader_audiobook_tab_files": "资源",
   "reader_audiobook_tab_chapters": "章节",
   "reader_audiobook_current_chapter": "当前章节",
-  "reader_stats_this_book": "本书"
+  "reader_stats_this_book": "本书",
+  "shortcut_action_reader_open_gallery": "打开插图画廊",
+  "shortcut_action_reader_open_statistics": "打开阅读统计",
+  "shortcut_action_reader_open_audiobook": "打开有声书面板"
 }

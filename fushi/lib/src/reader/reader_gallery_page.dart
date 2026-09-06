@@ -177,11 +177,14 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
               icon: const Icon(Icons.my_location_outlined),
               onPressed: () => widget.onJumpTo(current),
             ),
-          IconButton(
-            key: const ValueKey<String>('fushi_gallery_close'),
-            tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
-            icon: const Icon(Icons.close),
-            onPressed: () => Navigator.of(context).maybePop(),
+          Semantics(
+            identifier: 'hibiki.reader.gallery.close',
+            child: IconButton(
+              key: const ValueKey<String>('fushi_gallery_close'),
+              tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+              icon: const Icon(Icons.close),
+              onPressed: () => Navigator.of(context).maybePop(),
+            ),
           ),
         ],
       ),

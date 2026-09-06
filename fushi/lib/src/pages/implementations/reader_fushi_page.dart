@@ -77,6 +77,8 @@ import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/reader/reader_chrome_controller.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 import 'package:fushi/src/reader/reader_gallery_page.dart';
+import 'package:fushi/src/reader/reader_open_trace.dart';
+import 'package:fushi/src/reader/reader_progress_state.dart';
 import 'package:fushi/src/reader/reader_statistics_dialog.dart';
 import 'package:fushi/src/reader/reader_status_footer.dart';
 import 'package:fushi/src/stats/stat_facts.dart';
@@ -1546,8 +1548,13 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       _readerChromeBaseHeight, _readerChromeScale);
   static const double _infoFontSize = kTopProgressFontSize;
 
-  int? _progressCurrentChars;
-  int? _progressTotalChars;
+  /// 字数进度状态（[ReaderProgressState]）；下面四个同名 getter/setter 只是转发，
+  /// 保持既有调用点与源码守卫不变。
+  final ReaderProgressState _progress = ReaderProgressState();
+  int? get _progressCurrentChars => _progress.currentChars;
+  set _progressCurrentChars(int? v) => _progress.currentChars = v;
+  int? get _progressTotalChars => _progress.totalChars;
+  set _progressTotalChars(int? v) => _progress.totalChars = v;
 
   // TODO-147 / BUG-211：本 session 历史最高已读绝对字符位置（high-water mark，
   // 只升不降）。统计字数只在越过它时增量计入，往返翻页不重复累计。导航/后台
@@ -1564,8 +1571,11 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 折算 —— 挂机不攒无限额度，但正常阅读攒下的额度不会被第一个碎片一次吃光。
   int _readChargeCreditMilliChars = 0;
 
-  List<int> _chapterCharCounts = [];
-  List<int> _chapterCumulativeChars = [];
+  List<int> get _chapterCharCounts => _progress.chapterCharCounts;
+  set _chapterCharCounts(List<int> v) => _progress.chapterCharCounts = v;
+  List<int> get _chapterCumulativeChars => _progress.chapterCumulativeChars;
+  set _chapterCumulativeChars(List<int> v) =>
+      _progress.chapterCumulativeChars = v;
 
   /// 书自带 CSS 的净化结果缓存（拦截器热路径，键 = 文件绝对路径）。与
   /// [_sanitizedHtmlCache] 对称封顶：HTML 侧早有 LRU 上限，这侧此前无上限，
@@ -1836,6 +1846,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// `_showChrome` / `_chromeTransientVisible` / `_appearanceSheetOpen` /
   /// `_chromeAutoHideTimer` 只是同名转发，保持既有调用点与源码守卫不变。
   final ReaderChromeController _chrome = ReaderChromeController();
+
+  /// 开书分阶段计时（initState → 首屏恢复完成；有声书槽迟到时补一行）。
+  late final ReaderOpenTrace _openTrace = ReaderOpenTrace(widget.bookKey);
 
   bool get _showChrome => _chrome.showChrome;
   set _showChrome(bool value) => _chrome.showChrome = value;
@@ -2200,9 +2213,11 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     await profileSettingsFuture;
     if (!mounted) return;
     _settings = ReaderFushiSource.readerSettings;
+    _openTrace.mark('settings');
 
     final _BookLocateResult located = await bookLocateFuture;
     if (!mounted) return;
+    _openTrace.mark('located');
     if (!located.exists) {
       debugPrint('[ReaderFushi] book ${widget.bookKey} not found on disk');
       FushiToast.show(
@@ -2258,6 +2273,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
     final List<String> hrefs = _book!.chapters.map((ch) => ch.href).toList();
     debugPrint('[ReaderFushi] chapter hrefs: $hrefs');
+    _openTrace.mark('parsed');
 
     if (charsFromDb != null) {
       // TODO-1192: 先立刻用命中的计数（即便是旧口径 v1，先让进度/总字数有值不闪 0）；
@@ -2285,12 +2301,25 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
     // TODO-131: spread map 与 audio slot 互不依赖（前者写 _spreadMap/_edgeMatchResults，
     // 后者写 _audiobookController，都只读已就绪的 _book），并行等待两组 DB 往返。
+    _openTrace.mark('charCounts');
+
+    // 有声书槽（音频服务初始化 + 会话附着 + 全书 cue 预热）不再挡首屏：正文 WebView
+    // 只等书与 spread 表；音频在后台落定后再 _rebuild（底栏出现）并补发 chrome insets。
+    // 两种情况必须先等它：① 没有保存位置 → 起点要从当前音频 cue 推；② 歌词模式要
+    // 恢复（依赖控制器）。
+    final Future<void> audioSlotFuture = _resolveAudioSlot().then((_) {
+      _openTrace.markLate('audioSlot');
+    });
     await Future.wait(<Future<void>>[
       _initSpreadMap(appModelNoUpdate.database),
-      _resolveAudioSlot(),
       _loadRevealedImageKeys(db),
     ]);
     if (!mounted) return;
+    _openTrace.mark('spreadMap');
+    if (ReaderFushiSource.instance.lyricsMode) {
+      await audioSlotFuture;
+      if (!mounted) return;
+    }
 
     final Bookmark? bm = widget.initialBookmarkJump;
     if (bm != null &&
@@ -2344,9 +2373,13 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
         _lastProgressValue = _initialProgress;
         _lastProgressCharOffset = _initialCharOffset;
       } else {
+        // 没有保存位置：起点从当前音频 cue 推，这条路必须等有声书槽落定。
+        await audioSlotFuture;
+        if (!mounted) return;
         _restoreFromCurrentAudioCue();
       }
     }
+    _openTrace.mark('position');
 
     if (_settings!.keepScreenAwake) {
       try {
@@ -2374,6 +2407,16 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _audioSlotResolved = true;
 
     setState(() {});
+
+    // 有声书槽迟到落定：底栏 / 状态行接线要重建，且底栏预留可能从 0 变非 0，补发一次
+    // chrome insets（与 BUG-467 首屏补发同一条路）。附着失败只记日志，不影响正文。
+    unawaited(audioSlotFuture.then((_) {
+      if (!mounted) return;
+      _rebuild(() {});
+      if (_hasEverLoaded) _reapplyChromeInsetsAfterFirstLoad();
+    }).catchError((Object e, StackTrace s) {
+      ErrorLogService.instance.log('ReaderFushi.resolveAudioSlot(deferred)', e, s);
+    }));
   }
 
   /// TODO-131: 按 bookKey 查 EpubBooks 行 + 校验磁盘目录存在。与 profile/settings

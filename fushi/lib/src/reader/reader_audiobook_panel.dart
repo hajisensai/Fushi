@@ -149,10 +149,13 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
             ),
           ),
           SizedBox(height: tokens.spacing.gap * 1.5),
-          FilledButton(
-            key: const ValueKey<String>('fushi_audiobook_panel_close_button'),
-            onPressed: () => Navigator.of(context).maybePop(),
-            child: Text(MaterialLocalizations.of(context).closeButtonLabel),
+          Semantics(
+            identifier: 'hibiki.reader.audiobook_panel.close',
+            child: FilledButton(
+              key: const ValueKey<String>('fushi_audiobook_panel_close_button'),
+              onPressed: () => Navigator.of(context).maybePop(),
+              child: Text(MaterialLocalizations.of(context).closeButtonLabel),
+            ),
           ),
         ],
       ),

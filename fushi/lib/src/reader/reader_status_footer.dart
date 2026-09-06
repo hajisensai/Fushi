@@ -137,12 +137,17 @@ class ReaderStatusFooter extends StatefulWidget {
 
 class _ReaderStatusFooterState extends State<ReaderStatusFooter> {
   Timer? _ticker;
+  String? _lastTracker;
 
   @override
   void initState() {
     super.initState();
+    // 秒表 tick 只在文案真的变了才重建：计时暂停 / 失焦期间读数不动，不白重建。
     _ticker = Timer.periodic(widget.tick, (_) {
-      if (mounted) setState(() {});
+      if (!mounted) return;
+      final String tracker = readerTrackerLabel(widget.sessionTotals());
+      if (tracker == _lastTracker) return;
+      setState(() => _lastTracker = tracker);
     });
   }
 
@@ -208,6 +213,101 @@ class _ReaderStatusFooterState extends State<ReaderStatusFooter> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// 状态行文案的单行内联版：桌面端有声书播放条唤出时，把「阅读追踪 + 进度」并进播放条
+/// 右端（底部只留一条）。同一读口、同一格式函数，只是排版成一行两段。
+class ReaderStatusInline extends StatefulWidget {
+  const ReaderStatusInline({
+    super.key,
+    required this.sessionTotals,
+    required this.currentChars,
+    required this.totalChars,
+    required this.showProgress,
+    required this.textColor,
+    this.chapterCurrentChars,
+    this.chapterTotalChars,
+    this.tick = const Duration(seconds: 1),
+  });
+
+  final StudySessionTotals Function() sessionTotals;
+  final int? currentChars;
+  final int? totalChars;
+  final int? chapterCurrentChars;
+  final int? chapterTotalChars;
+  final bool showProgress;
+  final Color textColor;
+  final Duration tick;
+
+  @override
+  State<ReaderStatusInline> createState() => _ReaderStatusInlineState();
+}
+
+class _ReaderStatusInlineState extends State<ReaderStatusInline> {
+  Timer? _ticker;
+  String? _lastTracker;
+
+  @override
+  void initState() {
+    super.initState();
+    _ticker = Timer.periodic(widget.tick, (_) {
+      if (!mounted) return;
+      final String tracker = readerTrackerLabel(widget.sessionTotals());
+      if (tracker == _lastTracker) return;
+      setState(() => _lastTracker = tracker);
+    });
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final StudySessionTotals totals = widget.sessionTotals();
+    final Color muted = widget.textColor.withValues(alpha: 0.55);
+    final TextStyle style = TextStyle(
+      fontSize: kReaderStatusFooterFontSize,
+      color: muted,
+      height: 1.0,
+    );
+    final String? progress = widget.showProgress
+        ? readerProgressLabel(
+            current: widget.currentChars,
+            total: widget.totalChars,
+            chapterCurrent: widget.chapterCurrentChars,
+            chapterTotal: widget.chapterTotalChars,
+          )
+        : null;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Icon(
+          totals.active ? Icons.timer_outlined : Icons.timer_off_outlined,
+          size: kReaderStatusFooterFontSize + 2,
+          color: muted,
+        ),
+        const SizedBox(width: 6),
+        Text(
+          readerTrackerLabel(totals),
+          key: const ValueKey<String>('fushi_bar_status_tracker'),
+          style: style,
+          maxLines: 1,
+        ),
+        if (progress != null) ...<Widget>[
+          const SizedBox(width: 16),
+          Text(
+            progress,
+            key: const ValueKey<String>('fushi_bar_status_progress'),
+            style: style,
+            maxLines: 1,
+          ),
+        ],
+      ],
     );
   }
 }

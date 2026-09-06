@@ -1400,10 +1400,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
       key: key,
       left: 0,
       right: 0,
-      // 桌面端悬浮态：底栏（有声书播放条）坐在状态行之上，别盖住阅读追踪 / 进度
-      // 数字；挤压态状态行本来就排在底栏上方（bottom: _bottomChromeReserve），底栏
-      // 仍贴底。
-      bottom: _bottomBarFloating ? _statusFooterReserve : 0,
+      // 桌面端底栏（有声书播放条）唤出时盖住状态行，但把状态行的文字并进播放条右端
+      // （[_buildBarStatusText]）——底部只有一条，而不是播放条 + 状态行叠两条。
+      bottom: 0,
       // BUG-1692：底栏排在 WebView **之后**绘制。不自带 RepaintBoundary 就会并进
       // 页面级 RepaintBoundary 那张 cull rect = 整窗的 PictureLayer，macOS engine
       // 把整窗写进 FlutterMutatorView 的 _hitTestIgnoreRegion，整块 WebView 收不到
@@ -1477,6 +1476,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
             invertSkip: ReaderFushiSource.instance.invertAudiobookSkipDirection,
             // TODO-728: per-reader toggle for the current-sentence cue.
             showCue: ReaderFushiSource.instance.showBottomBarCue,
+            // 桌面端：播放条唤出时覆盖状态行，阅读追踪 / 进度并进条右端。
+            trailing: _desktopChromeEnabled ? _buildBarStatusText() : null,
           ),
         );
       },
@@ -1908,6 +1909,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
               }
             },
       presentation: presentation,
+      onOpenStatistics: _openReadingStatistics,
+      initialSideSheetTab: _chrome.lastSettingsTab,
+      onSideSheetTabChanged: (String id) => _chrome.lastSettingsTab = id,
     );
   }
 
@@ -2114,10 +2118,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// 顶部工具栏「统计」：阅读器内浮层（ッツ Statistics 形态）——本次会话实时秒表 /
   /// 今日 / 累计（本书，统一事实面切片）/ 预计读完本章 · 全书。不跳统计中心。
   void _openReadingStatistics() {
-    final int? chapterTotal = _footerChapterTotalChars;
-    final int? chapterCurrent = _footerChapterCurrentChars;
-    final int? bookTotal = _progressTotalChars;
-    final int? bookCurrent = _progressCurrentChars;
+    final int? remainingChapter = _progress.remainingChapterChars(_currentChapter);
+    final int? remainingBook = _progress.remainingBookChars;
     unawaited(
       showAppDialog<void>(
         context: context,
@@ -2128,12 +2130,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
             loadBookTotals: _loadReaderBookStatTotals,
             trackingPaused: () => _studyClockManualPause,
             onToggleTracking: _toggleStudyClockManualPause,
-            remainingChapterChars: chapterTotal != null && chapterCurrent != null
-                ? chapterTotal - chapterCurrent
-                : null,
-            remainingBookChars: bookTotal != null && bookCurrent != null
-                ? bookTotal - bookCurrent
-                : null,
+            remainingChapterChars: remainingChapter,
+            remainingBookChars: remainingBook,
           ),
         ),
       ),
@@ -2253,23 +2251,22 @@ extension _ReaderChrome on _ReaderFushiPageState {
     );
   }
 
-  /// 本章总字数（状态行括号段 / 预计读完）；字数尚未落定时 null。
-  int? get _footerChapterTotalChars =>
-      _currentChapter >= 0 && _currentChapter < _chapterCharCounts.length
-          ? _chapterCharCounts[_currentChapter]
-          : null;
+  /// 本章总字数 / 已读字数（状态行括号段 / 预计读完）——派生量在
+  /// [ReaderProgressState]，这里只是按当前章取。
+  int? get _footerChapterTotalChars => _progress.chapterTotal(_currentChapter);
+  int? get _footerChapterCurrentChars =>
+      _progress.chapterCurrent(_currentChapter);
 
-  /// 本章已读字数 = 全书已读 − 本章前累计（TODO-131 前缀表）；未知时 null。
-  int? get _footerChapterCurrentChars {
-    final int? current = _progressCurrentChars;
-    final int? total = _footerChapterTotalChars;
-    if (current == null ||
-        total == null ||
-        _currentChapter >= _chapterCumulativeChars.length) {
-      return null;
-    }
-    return (current - _chapterCumulativeChars[_currentChapter]).clamp(0, total);
-  }
+  /// 播放条右端的状态文字（与状态行同一套文案 / 同一读口），只在桌面端播放条可见时用。
+  Widget _buildBarStatusText() => ReaderStatusInline(
+        sessionTotals: _readingSessionTotals,
+        currentChars: _progressCurrentChars,
+        totalChars: _progressTotalChars,
+        chapterCurrentChars: _footerChapterCurrentChars,
+        chapterTotalChars: _footerChapterTotalChars,
+        showProgress: ReaderFushiSource.instance.showTopProgressBar,
+        textColor: _themeTextColor(),
+      );
 
   /// 状态行左侧的会话累计读口：账只在 [StudyClock] 一本（v92 纪律），时钟未建
   /// （首屏未就绪）时给零值 + 未计时。

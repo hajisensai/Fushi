@@ -21,6 +21,7 @@ class AudiobookPlayBar extends StatelessWidget {
     this.reversed = false,
     this.invertSkip = false,
     this.showCue = true,
+    this.trailing,
     super.key,
   });
 
@@ -61,6 +62,9 @@ class AudiobookPlayBar extends StatelessWidget {
   /// 用户点 ⚙ 设置按钮后触发。由 reader 页面侧注入，因为设置面板要
   /// 访问 WebView controller 才能 probe ttu 当前章节 / TOC、触发书签。
   final VoidCallback onOpenSettings;
+
+  /// 跟随键之前的可选尾部内容（桌面端把状态行文字并进播放条右端）。
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -182,6 +186,10 @@ class AudiobookPlayBar extends StatelessWidget {
               )
             : const SizedBox.shrink(),
       ),
+      if (trailing != null) ...<Widget>[
+        trailing!,
+        SizedBox(width: tokens.spacing.gap),
+      ],
       AudiobookFollowAudioButton(
         controller: controller,
         foregroundColor: fg,

@@ -653,6 +653,34 @@ extension _ReaderCaret on _ReaderFushiPageState {
         }
         unawaited(_showAppearanceSheet(initialSubPage: 'location'));
         return KeyEventResult.handled;
+      case ShortcutAction.readerOpenGallery:
+        // 一键打开插图画廊（默认 G）；先关词典弹窗，与 readerOpenMenu 同一范式。
+        if (isDictionaryShown) {
+          clearDictionaryResult();
+          return KeyEventResult.handled;
+        }
+        _openGallery();
+        return KeyEventResult.handled;
+      case ShortcutAction.readerOpenStatistics:
+        // 一键打开阅读统计浮层（默认 I）。
+        if (isDictionaryShown) {
+          clearDictionaryResult();
+          return KeyEventResult.handled;
+        }
+        _openReadingStatistics();
+        return KeyEventResult.handled;
+      case ShortcutAction.readerOpenAudiobook:
+        // 一键打开有声书面板（默认 B）；没挂有声书时直接进导入。
+        if (isDictionaryShown) {
+          clearDictionaryResult();
+          return KeyEventResult.handled;
+        }
+        if (_audiobookController != null) {
+          unawaited(_showAppearanceSheet(initialSubPage: 'audiobook'));
+        } else {
+          unawaited(_openAudioImportDialog());
+        }
+        return KeyEventResult.handled;
       case ShortcutAction.readerToggleFurigana:
         // Mirror the double-tap furigana toggle so a gamepad (R3) can show/hide
         // furigana without a pointer double-tap the WebView can't synthesise.
