@@ -27,6 +27,7 @@
 | `sgre` | M2 wind3d11 runtime (STEINS;GATE RE:BOOT) | `implemented_unverified` | ingame_lookup_geometry (implemented_unverified)；ingame_lookup_directinput_shield (implemented_unverified) | engine_archive_resource (implemented_unverified) | 0 |
 | `unreal_iostore` | Unreal Engine (IoStore) | `implemented_unverified` | luna_pc_hooks (implemented_unverified) | xaudio2_or_directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `aos_sfa` | AOS / SFA (Princess Sugar, Atelier Kaguya family) | `implemented_unverified` | — | xaudio2_or_directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
+| `unity_mono` | Unity (Mono runtime) | `implemented_unverified` | luna_hook (implemented_unverified) | xaudio2_or_directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 
 ## 无 OCR 内嵌查词矩阵
 
@@ -913,6 +914,48 @@ Tests：`tests/unreal_iostore_adapter_test.cpp`、`../../fushi/test/mining/unrea
 Fixtures：`tests/fixtures/aos_sfa_replay.json`
 
 Tests：`tests/aos_sfa_adapter_test.cpp`、`../../fushi/test/mining/aos_sfa_pairing_test.dart`
+
+### Unity (Mono runtime) (`unity_mono`)
+
+- 状态：`implemented_unverified`
+- 别名：Unity Mono、Unity 5、ユニティ
+- 家族：`unity`（Same engine family as unity_il2cpp but the Mono scripting backend; the two adapters are mutually exclusive by construction）
+- 当前 adapter：`hook/adapters/unity_mono_adapter.inc`
+- 进程策略：launch=`generic_launch_available`，attach=`generic_attach_available`，follow-child=`false`
+
+识别签名（所有非空项均带真实样本或运行时观察证据）：
+
+- `pe_architectures`：x86、x64；证据：real_sample — カスタムメイド3D2 CHU-B LIP ships CM3D2OHx86.exe (machine 0x14c) and CM3D2OHx64.exe (machine 0x8664) side by side; static probe 2026-09-05
+- `directory_files_all`：<stem>_Data/Managed/Assembly-CSharp.dll、<stem>_Data/Mono/mono.dll；证据：real_sample — Both present in CM3D2OHx64_Data. The adapter additionally requires that GameAssembly.dll is ABSENT next to the executable -- that negative gate is what keeps unity_mono and unity_il2cpp mutually exclusive. Measured 2026-09-05
+- `runtime_modules`：mono.dll；证据：real_sample — <stem>_Data/Mono/mono.dll is the Mono runtime. Note there is NO UnityPlayer.dll: this Unity 5.x generation links the engine statically into the executable, which is exactly why UnityIl2CppAdapter::probe() and the injector's LooksLikeUnityRuntime() -- both of which require UnityPlayer.dll -- leave this family unclaimed
+- `resource_extensions`：.assets、.resS；证据：real_sample — Standard Unity data layout under <stem>_Data; no per-line voice extraction is implemented for it
+- `hashes`：5bb03fe8a924720f8da4df7a714565a8fcede94d2ef7b6f4b3b4e044f80d3eaa、7d79c2369e1a38107ccaaa9a089503506e05890edfda32d6eef25433612905c1；证据：real_sample — CM3D2OHx64.exe / CM3D2OHx86.exe, catalogue only; the adapter does not hash-pin because the structural Managed+Mono check is the identity
+
+文本能力：
+
+- `luna_hook`：`implemented_unverified` — LunaHook connected and produced output on the real sample (luna_active 1, LunaOutputObserved, text_events 7) but only title-screen strings were seen; no dialogue line was traversed and no thread was selected.
+- codepage：932
+- 线程提示：Unmeasured. Only title-screen strings have been observed.
+
+音频优先级：
+
+1. `xaudio2_or_directsound_pcm` — `implemented_unverified`；格式：source PCM via the generic Windows audio adapter；clean voice：engine_dependent
+2. `process_loopback` — `implemented_unverified`；格式：host PCM fallback；clean voice：否
+
+真实样本证据：
+
+
+已知限制：
+
+- This entry exists because the IL2CPP adapter and the injector's Unity heuristic both require UnityPlayer.dll, which the Unity 5.x generation does not ship. The v23 adapter readout confirmed on a live process that unity_il2cpp does not claim this family.
+- Identity is structural (Managed assembly + Mono runtime, and GameAssembly.dll absent). Executable hashes are catalogued but not pinned.
+- Per-line voice resources are Unity AudioClip assets; unity_events stayed 0 on the sample, so the existing Unity resource extractor produces nothing here. No resource layer is implemented and none is claimed.
+- Only title-screen strings were observed. text_thread_selected, paired and card_e2e are all not_run.
+- In-game lookup sensor is not implemented; lookupAdmission stays EngineUnsupported.
+
+Fixtures：`tests/fixtures/unity_mono_replay.json`
+
+Tests：`tests/unity_mono_adapter_test.cpp`、`../../fushi/test/mining/unity_mono_pairing_test.dart`
 
 ## 状态定义
 

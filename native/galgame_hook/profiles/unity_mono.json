@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "id": "unity_mono",
+  "status": "implemented_unverified",
+  "detection": {
+    "executable_sha256": [
+      "5BB03FE8A924720F8DA4DF7A714565A8FCEDE94D2EF7B6F4B3B4E044F80D3EAA",
+      "7D79C2369E1A38107CCAAA9A089503506E05890EDFDA32D6EEF25433612905C1"
+    ],
+    "module_sha256": []
+  },
+  "capabilities": {
+    "text": true,
+    "resource_audio": false,
+    "pcm_audio": true
+  },
+  "evidence": [
+    {
+      "kind": "real_sample",
+      "reference": "カスタムメイド3D2 CHU-B LIP (KISS, 2015-09): data\\CM3D2OHx64.exe x64 and data\\CM3D2OHx86.exe x86 next to CM3D2OHx64_Data\\Managed\\Assembly-CSharp.dll and CM3D2OHx64_Data\\Mono\\mono.dll. There is NO UnityPlayer.dll -- this Unity 5.x generation links the engine statically into the executable. Static probe 2026-09-05."
+    },
+    {
+      "kind": "real_sample",
+      "reference": "Same title, runtime measurement 2026-09-05 via injector --launch --hold on CM3D2OHx64.exe: hook_diagnostics = StartupAudioHooksReady|UnityResourceExtractorReady|LunaHostReady|LunaConnected|LunaOutputObserved, luna_active 1, text_events 7 on the title screen, voice_clips rising to 981 (non-silent generic source PCM), unity_events 0. The v23 adapter readout showed NO unity_il2cpp row on this game, confirming on a live process that the IL2CPP adapter does not claim this family."
+    },
+    {
+      "kind": "real_sample",
+      "reference": "Same title, LunaHook PC-hook A/B on the same title screen: text_events settled at 7 both with and without --luna-pchooks. Unlike the Unreal case (11 -> 29) there is no measured benefit, so the injector's auto PC-hook criterion was deliberately NOT extended for this family."
+    }
+  ]
+}

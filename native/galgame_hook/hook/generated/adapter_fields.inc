@@ -12,3 +12,4 @@
   CmvsAdapter cmvs_;
   UnrealIostoreAdapter unreal_iostore_;
   AosSfaAdapter aos_sfa_;
+  UnityMonoAdapter unity_mono_;
