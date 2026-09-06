@@ -232,7 +232,18 @@ MUXERS="gif,adts,image2,mjpeg,mov,mp4,avif,webp,srt,ass,webvtt,null"
 #   audio_energy_probe.dart，TODO-701 字幕自动对轴）用
 #   `aresample=R,asetnsamples=n=N:p=0,astats=metadata=1:reset=1,ametadata=print:key=...`
 #   逐帧算 RMS 能量；三者缺一即滤镜链解析失败 → 空包络。aresample 已在。
-FILTERS="scale,fps,split,palettegen,paletteuse,format,aformat,aresample,anull,null,copy,setpts,asetpts,pad,asetnsamples,astats,ametadata"
+# overlay：视频片段导出把字幕**烧进画面**（硬字幕，BUG-2202）。软字幕轨走不通——
+#   mp4 里的文本字幕只能是 3GPP Timed Text（tx3g），而带 tx3g 轨的片段会被 QQ 这类
+#   IM 的内置播放器整个判为不可播（实测：去掉轨就能放；把轨 tkhd 的 enabled 位清零、
+#   或把 hdlr 从 sbtl 改成规范的 text，两种都仍然打不开）。
+#   布局全在 Dart 侧算完（渲染成与视频同分辨率的全画幅 RGBA PNG，overlay 到 0:0），
+#   所以这里**只需要 overlay 一个词**：实测 `ffmpeg -v verbose` 解图，这条链真正
+#   实例化的只有 overlay + ffmpeg 为 rgba→yuva420p 自动插入的 scale（已在表内），
+#   连 format 都用不上。
+#   选 overlay 而不是 libass 的 subtitles filter：overlay 是**内建** filter，五平台
+#   零新增原生依赖；libass 要拖进 libass+freetype+fribidi+fontconfig 四个库，而 macOS
+#   自 BUG-1443 起不能用 brew 的动态库，得把整条链从源码静态编一遍。
+FILTERS="scale,fps,split,palettegen,paletteuse,format,aformat,aresample,anull,null,copy,setpts,asetpts,pad,asetnsamples,astats,ametadata,overlay"
 PARSERS="h264,hevc,av1,vp9,vp8,mpeg4video,mpegvideo,vc1,aac,aac_latm,ac3,dca,mlp,mpegaudio,vorbis,opus,flac,mjpeg,png,webp"
 BSFS="aac_adtstoasc,h264_mp4toannexb,hevc_mp4toannexb"
 # http/https/tcp/tls/crypto：YouTube/远端制卡（TODO-1214）的 http(s) googlevideo
