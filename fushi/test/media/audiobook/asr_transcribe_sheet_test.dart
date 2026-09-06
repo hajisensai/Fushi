@@ -480,7 +480,11 @@ void main() {
     expect(asrLanguageHintFromBookLanguage('zh-Hant-HK'), AsrLanguage.cantonese);
     expect(asrLanguageHintFromBookLanguage('yue'), AsrLanguage.cantonese);
     expect(asrLanguageHintFromBookLanguage('ko-KR'), AsrLanguage.korean);
-    expect(asrLanguageHintFromBookLanguage('de'), isNull);
+    // Omnilingual 兜住的 9 种也能从书的语言标签推出来。
+    expect(asrLanguageHintFromBookLanguage('de'), AsrLanguage.german);
+    expect(asrLanguageHintFromBookLanguage('pt-BR'), AsrLanguage.portuguese);
+    expect(asrLanguageHintFromBookLanguage('ar-SA'), AsrLanguage.arabic);
+    expect(asrLanguageHintFromBookLanguage('xx'), isNull);
     expect(asrLanguageHintFromBookLanguage('zh-Hans-CN'), AsrLanguage.mandarin);
     expect(asrLanguageHintFromBookLanguage(null), isNull);
     expect(asrLanguageHintFromBookLanguage(''), isNull);

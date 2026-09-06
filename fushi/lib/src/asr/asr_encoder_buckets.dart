@@ -33,14 +33,22 @@ const String kAsrEncoderTimeDim = 'T';
 /// 真实行最多 [realRows]（末尾至少一行哨兵，见文件头）。
 @immutable
 class AsrEncoderBucket {
-  const AsrEncoderBucket({required this.frames, required this.batch})
-    : assert(frames > 0),
-      assert(batch > 1);
+  const AsrEncoderBucket({
+    required this.frames,
+    required this.batch,
+    this.sentinel = true,
+  }) : assert(frames > 0),
+       assert(batch > (sentinel ? 1 : 0));
 
+  /// 时间轴长度：zipformer 桶是 fbank 帧数，CTC（原始波形）桶是样本数。
   final int frames;
   final int batch;
 
-  int get realRows => batch - 1;
+  /// 是否留一行哨兵填充行（zipformer 的 `x_lens.max()` 掩码需要，见文件头）；
+  /// 没有长度输入的 CTC 模型不需要，整批都是真实行。
+  final bool sentinel;
+
+  int get realRows => sentinel ? batch - 1 : batch;
 
   @override
   String toString() => 'Bucket(N=$batch, T=$frames)';
@@ -147,6 +155,8 @@ class AsrStaticEncoderPool {
     required this.modelPath,
     required this.providers,
     this.buckets = kAsrGpuEncoderBuckets,
+    this.batchDimName = kAsrEncoderBatchDim,
+    this.timeDimName = kAsrEncoderTimeDim,
     this.logName = 'hibiki.asr',
   }) : _factory = factory {
     if (buckets.isEmpty) {
@@ -166,6 +176,11 @@ class AsrStaticEncoderPool {
   /// 来就该回退到已有的动态会话，而不是在 CPU 上再建一份静态图。
   final List<OnnxExecutionProvider> providers;
   final List<AsrEncoderBucket> buckets;
+
+  /// 模型输入上要钉死的两个符号维名（zipformer `N` / `T`，Omnilingual
+  /// `N` / `num_samples`）。
+  final String batchDimName;
+  final String timeDimName;
   final String logName;
 
   final Map<AsrEncoderBucket, AsrStaticEncoderSession> _sessions =
@@ -209,8 +224,8 @@ class AsrStaticEncoderPool {
         modelPath,
         providers: providers,
         freeDimensionOverrides: <String, int>{
-          kAsrEncoderBatchDim: bucket.batch,
-          kAsrEncoderTimeDim: bucket.frames,
+          batchDimName: bucket.batch,
+          timeDimName: bucket.frames,
         },
       );
       if (_closed) {

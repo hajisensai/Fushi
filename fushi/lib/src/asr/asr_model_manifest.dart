@@ -2,9 +2,11 @@
 /// 预期字节数、角色，以及该包与通用解码路径的两个契约参数（decoder 上下文长度、
 /// 索引张量整型）。
 ///
-/// 全部包都是 sherpa-onnx / icefall 导出的非流式 zipformer2 RNN-T，IO **名称**
-/// 完全同构（见 `asr_types.dart` 文件头），差异只在词表与两个契约参数——每个包
-/// 的 IO 都已用 `onnx` 逐文件核实（2026-09-06，`inspect_models.py`）：
+/// 17 种界面语言各有一个包服务。前 8 种是 sherpa-onnx / icefall 导出的非流式
+/// zipformer2 RNN-T，IO **名称**完全同构（见 `asr_types.dart` 文件头），差异只在
+/// 词表与两个契约参数；其余 9 种（de / es / fr / it / nl / pt / tr / id / ar）共用
+/// Meta Omnilingual ASR 1B CTC（[AsrModelArchitecture.ctc]，原始波形输入）。每个
+/// 包的 IO 都已用 `onnx` 逐文件核实（2026-09-06，`inspect_models.py`）：
 ///
 /// | 语言 | 模型 | 词表 | ctx | 索引整型 | 备注 |
 /// |---|---|---|---|---|---|
@@ -16,6 +18,12 @@
 /// | ru | zipformer-ru-2025-04-20 | BPE 500 小写 | 2 | int64 | int8 仓库不含 int8 decoder，两变体共用 fp32 decoder |
 /// | vi | zipformer-vi-2025-04-20 | BPE 2000 全大写 | 2 | int64 | 同上 |
 /// | th | GigaSpeech 2 泰语 zipformer（2024-06-20） | BPE 2000 | 2 | int64 | icefall 仓库 `exp/` 里的导出 |
+/// | 其余 9 种 | Omnilingual ASR 1B CTC v2（2026-02-05） | 字符级 10288，blank=`<s>` | — | — | `x[N,num_samples]` → `logits[N,T,10288]`，20 ms/帧；fp32 3.9 GB 外置权重走 GPU（≥ 8 GiB 显存），int8 1 GB 走 CPU |
+///
+/// 真机核对（2026-09-06，RTX 5090，各包自带 test wav，CPU int8 / GPU DirectML 两条
+/// 路径）：韩语逐字命中参考；泰语除一个外来词外一致；越/俄/粤/中读出完整句子；
+/// Omnilingual 德/英/法逐字命中（`alles hat ein ende nur die wurst hat zwei` /
+/// `ask not what your country…` / `ne vous demandez pas…`），西语一处词序差。
 ///
 /// - **英语**选 LibriHeavy 而不是 GigaSpeech / LibriSpeech 导出：LibriHeavy 本身就是
 ///   有声书语料，且输出**带标点大小写**——切句（`asr_cue_builder.dart` 按句末标点切）
@@ -69,7 +77,18 @@ enum AsrLanguage {
   korean('ko', '한국어'),
   russian('ru', 'Русский'),
   vietnamese('vi', 'Tiếng Việt'),
-  thai('th', 'ไทย');
+  thai('th', 'ไทย'),
+  // 以下 9 种走 Omnilingual CTC 包（[kAsrOmnilingualPack]），与界面语言表
+  // （`FushiLocalisations.localeNames`）一一对应。
+  german('de', 'Deutsch'),
+  spanish('es', 'Español'),
+  french('fr', 'Français'),
+  italian('it', 'Italiano'),
+  dutch('nl', 'Nederlands'),
+  portuguese('pt', 'Português'),
+  turkish('tr', 'Türkçe'),
+  indonesian('id', 'Bahasa Indonesia'),
+  arabic('ar', 'العربية');
 
   const AsrLanguage(this.tag, this.nativeName);
 
@@ -118,7 +137,15 @@ enum AsrEncoderVariant { fp32, int8 }
 /// 模型索引张量（`x_lens` / `y` / `encoder_out_lens`）的整型宽度。
 enum AsrIndexType { int64, int32 }
 
-/// 模型文件角色。
+/// 模型架构 = 解码路径：
+/// - [transducer]：zipformer RNN-T，encoder / decoder / joiner 三个文件，逐帧贪心
+///   （`asr_transducer_decoder.dart`）；
+/// - [ctc]：单个编码器直接吐 `logits[N, T, V]`，逐帧 argmax 折叠
+///   （`asr_ctc_decoder.dart`）。Omnilingual 吃**原始波形** `x[N, num_samples]`，
+///   没有 fbank。
+enum AsrModelArchitecture { transducer, ctc }
+
+/// 模型文件角色。transducer 包用前六个，ctc 包用 `ctc*` 三个；tokens / vad 共用。
 enum AsrModelRole {
   encoderFp32,
   encoderInt8,
@@ -126,6 +153,12 @@ enum AsrModelRole {
   decoderInt8,
   joinerFp32,
   joinerInt8,
+  ctcModelFp32,
+  ctcModelInt8,
+
+  /// fp32 CTC 模型的 ONNX 外置权重（`model.weights`，与 `model.onnx` 同目录才能
+  /// 建会话；ORT 按 `model.onnx` 所在目录解析相对路径）。
+  ctcWeightsFp32,
   tokens,
   vad,
 }
@@ -161,16 +194,35 @@ class AsrModelFile implements DownloadableModelFile {
 /// 一种语言的整套模型文件（两个编码器变体的并集 + 共用 tokens / vad）。
 class AsrModelPack {
   const AsrModelPack({
-    required this.language,
+    required this.languages,
     required this.id,
     required this.displayName,
     required this.sourceUrl,
     required this.files,
+    this.architecture = AsrModelArchitecture.transducer,
     this.decoderContextSize = 2,
     this.indexType = AsrIndexType.int64,
+    this.blankToken = '<blk>',
+    this.fp32GpuMinBudgetBytes,
   });
 
-  final AsrLanguage language;
+  /// 本包服务的语言（transducer 包一语言一包；Omnilingual 一包多语言）。
+  final List<AsrLanguage> languages;
+
+  /// 主语言（一语言一包时就是那一种；多语言包取首个，只作诊断/排序用）。
+  AsrLanguage get language => languages.first;
+
+  final AsrModelArchitecture architecture;
+
+  /// `tokens.txt` 里 CTC blank / transducer blank 的记号名：sherpa-onnx 导出统一
+  /// `<blk>`；Omnilingual 词表是 fairseq2 的 `<s> <pad> </s> <unk>`，blank 是 id 0
+  /// 的 `<s>`（2026-09-06 用 onnxruntime 对四个 test wav 逐帧核实：id 0 占 6~7 成
+  /// 帧、按它折叠得到正确文本，按 `<pad>`=1 折叠满屏 `<s>`）。
+  final String blankToken;
+
+  /// fp32 变体要上 GPU 至少需要的本进程显存预算（字节）；null = 不设门槛。
+  /// Omnilingual 1B fp32 权重 3.9 GB + 激活，8 GiB 以下的卡直接给 int8 · CPU。
+  final int? fp32GpuMinBudgetBytes;
 
   /// 磁盘目录名（`<appSupport>/asr_models/<id>`）与任务目录哈希的一部分；
   /// **冻结**，改了等于让用户已下载的模型与进行中的任务全部失联。
@@ -199,13 +251,24 @@ class AsrModelPack {
   /// 某个编码器变体跑起来需要的全部文件（同精度的 encoder / decoder / joiner +
   /// 共用的 tokens / vad）。编码器排第一：下载进度条与「先下最大的」都依赖这个顺序。
   List<AsrModelFile> filesFor(AsrEncoderVariant variant) {
-    return <AsrModelFile>[
-      fileForRole(asrEncoderRole(variant)),
-      fileForRole(asrDecoderRole(variant)),
-      fileForRole(asrJoinerRole(variant)),
-      fileForRole(AsrModelRole.tokens),
-      fileForRole(AsrModelRole.vad),
-    ];
+    return switch (architecture) {
+      AsrModelArchitecture.transducer => <AsrModelFile>[
+        fileForRole(asrEncoderRole(variant)),
+        fileForRole(asrDecoderRole(variant)),
+        fileForRole(asrJoinerRole(variant)),
+        fileForRole(AsrModelRole.tokens),
+        fileForRole(AsrModelRole.vad),
+      ],
+      // ctc：模型（fp32 可能带外置权重）+ tokens / vad。
+      AsrModelArchitecture.ctc => <AsrModelFile>[
+        fileForRole(asrCtcModelRole(variant)),
+        if (variant == AsrEncoderVariant.fp32)
+          for (final AsrModelFile f in files)
+            if (f.role == AsrModelRole.ctcWeightsFp32) f,
+        fileForRole(AsrModelRole.tokens),
+        fileForRole(AsrModelRole.vad),
+      ],
+    };
   }
 
   /// 某个变体全套文件的预期总字节数（用于「需要下多少」展示）。
@@ -236,7 +299,7 @@ const String _kJaSecondaryBase =
     'sherpa-onnx-zipformer-ja-reazonspeech-2024-08-01/resolve/main/';
 
 const AsrModelPack kAsrJapanesePack = AsrModelPack(
-  language: AsrLanguage.japanese,
+  languages: <AsrLanguage>[AsrLanguage.japanese],
   id: 'reazonspeech-k2-v2',
   displayName: 'ReazonSpeech k2-v2',
   sourceUrl: 'https://huggingface.co/reazon-research/reazonspeech-k2-v2',
@@ -300,7 +363,7 @@ const String _kEnRepo =
 const String _kEnPrimaryBase = 'https://huggingface.co/$_kEnRepo/resolve/main/';
 
 const AsrModelPack kAsrEnglishPack = AsrModelPack(
-  language: AsrLanguage.english,
+  languages: <AsrLanguage>[AsrLanguage.english],
   id: 'zipformer-en-libriheavy-punct-case',
   displayName: 'LibriHeavy zipformer (English)',
   sourceUrl: 'https://huggingface.co/$_kEnRepo',
@@ -366,7 +429,7 @@ const String _kZhBase = '$_kHf$_kZhRepo/resolve/main/';
 const String _kZhInt8Base = '$_kHf$_kZhInt8Repo/resolve/main/';
 
 const AsrModelPack kAsrMandarinPack = AsrModelPack(
-  language: AsrLanguage.mandarin,
+  languages: <AsrLanguage>[AsrLanguage.mandarin],
   id: 'x-asr-zipformer-zh-en-punct-2026-06-03',
   displayName: 'X-ASR zipformer zh-en (punct)',
   sourceUrl: '$_kHf$_kZhRepo',
@@ -427,7 +490,7 @@ const String _kYueRepo = 'zrjin/icefall-asr-mdcc-zipformer-2024-03-11';
 const String _kYueBase = '$_kHf$_kYueRepo/resolve/main/';
 
 const AsrModelPack kAsrCantonesePack = AsrModelPack(
-  language: AsrLanguage.cantonese,
+  languages: <AsrLanguage>[AsrLanguage.cantonese],
   id: 'zipformer-cantonese-mdcc-2024-03-11',
   displayName: 'MDCC zipformer (Cantonese)',
   sourceUrl: '$_kHf$_kYueRepo',
@@ -485,7 +548,7 @@ const String _kKoRepo = 'k2-fsa/sherpa-onnx-zipformer-korean-2024-06-24';
 const String _kKoBase = '$_kHf$_kKoRepo/resolve/main/';
 
 const AsrModelPack kAsrKoreanPack = AsrModelPack(
-  language: AsrLanguage.korean,
+  languages: <AsrLanguage>[AsrLanguage.korean],
   id: 'zipformer-korean-2024-06-24',
   displayName: 'Zipformer (Korean, 2024-06-24)',
   sourceUrl: '$_kHf$_kKoRepo',
@@ -544,7 +607,7 @@ const String _kRuBase = '$_kHf$_kRuRepo/resolve/main/';
 const String _kRuInt8Base = '$_kHf$_kRuInt8Repo/resolve/main/';
 
 const AsrModelPack kAsrRussianPack = AsrModelPack(
-  language: AsrLanguage.russian,
+  languages: <AsrLanguage>[AsrLanguage.russian],
   id: 'zipformer-ru-2025-04-20',
   displayName: 'Zipformer (Russian, 2025-04-20)',
   sourceUrl: '$_kHf$_kRuRepo',
@@ -603,7 +666,7 @@ const String _kViBase = '$_kHf$_kViRepo/resolve/main/';
 const String _kViInt8Base = '$_kHf$_kViInt8Repo/resolve/main/';
 
 const AsrModelPack kAsrVietnamesePack = AsrModelPack(
-  language: AsrLanguage.vietnamese,
+  languages: <AsrLanguage>[AsrLanguage.vietnamese],
   id: 'zipformer-vi-2025-04-20',
   displayName: 'Zipformer (Vietnamese, 2025-04-20)',
   sourceUrl: '$_kHf$_kViRepo',
@@ -660,7 +723,7 @@ const String _kThRepo = 'yfyeung/icefall-asr-gigaspeech2-th-zipformer-2024-06-20
 const String _kThBase = '$_kHf$_kThRepo/resolve/main/';
 
 const AsrModelPack kAsrThaiPack = AsrModelPack(
-  language: AsrLanguage.thai,
+  languages: <AsrLanguage>[AsrLanguage.thai],
   id: 'zipformer-th-gigaspeech2-2024-06-20',
   displayName: 'GigaSpeech 2 zipformer (Thai)',
   sourceUrl: '$_kHf$_kThRepo',
@@ -711,7 +774,74 @@ const AsrModelPack kAsrThaiPack = AsrModelPack(
   ],
 );
 
-/// 全部模型包，与 [AsrLanguage.values] 同序。
+// ── 其余 9 种界面语言：Meta Omnilingual ASR 1B CTC v2（1600+ 语言） ─────────
+//
+// 输入原始波形 `x[N, num_samples]` f32（逐段零均值单位方差归一化，同 sherpa-onnx
+// `OfflineOmnilingualAsrCtcModel::NormalizeFeatures`），输出 `logits[N, num_frames,
+// 10288]`，每帧 320 样本（20 ms）；词表字符级（含空格 token），无标点无大小写。
+// 上限 40 s 音频，VAD 段 ≤ 20 s 在范围内。选 1B 不选 300M：2026-09-06 用 300M
+// 跑四个 test wav，德语 Wurst→worst、西语 tu propio→te un puerto，字符级仍可用于
+// 匹配但 1B 更稳；fp32 走 GPU（3.9 GB 外置权重）、int8 走 CPU（1 GB）。
+// Apache-2.0（LICENSE 随包）。
+
+const String _kOmniRepo =
+    'csukuangfj2/sherpa-onnx-omnilingual-asr-1600-languages-1B-ctc-v2-2026-02-05';
+const String _kOmniInt8Repo =
+    'csukuangfj2/'
+    'sherpa-onnx-omnilingual-asr-1600-languages-1B-ctc-v2-int8-2026-02-05';
+const String _kOmniBase = '$_kHf$_kOmniRepo/resolve/main/';
+const String _kOmniInt8Base = '$_kHf$_kOmniInt8Repo/resolve/main/';
+
+const AsrModelPack kAsrOmnilingualPack = AsrModelPack(
+  languages: <AsrLanguage>[
+    AsrLanguage.german,
+    AsrLanguage.spanish,
+    AsrLanguage.french,
+    AsrLanguage.italian,
+    AsrLanguage.dutch,
+    AsrLanguage.portuguese,
+    AsrLanguage.turkish,
+    AsrLanguage.indonesian,
+    AsrLanguage.arabic,
+  ],
+  id: 'omnilingual-asr-1b-ctc-v2',
+  displayName: 'Omnilingual ASR 1B (CTC, 1600+ languages)',
+  sourceUrl: 'https://github.com/facebookresearch/omnilingual-asr',
+  architecture: AsrModelArchitecture.ctc,
+  blankToken: '<s>',
+  fp32GpuMinBudgetBytes: 8 * 1024 * 1024 * 1024,
+  files: <AsrModelFile>[
+    AsrModelFile(
+      fileName: 'model.onnx',
+      url: '${_kOmniBase}model.onnx',
+      expectedBytes: 1417766,
+      role: AsrModelRole.ctcModelFp32,
+    ),
+    AsrModelFile(
+      fileName: 'model.weights',
+      url: '${_kOmniBase}model.weights',
+      expectedBytes: 3902699712,
+      role: AsrModelRole.ctcWeightsFp32,
+    ),
+    AsrModelFile(
+      fileName: 'model.int8.onnx',
+      url: '${_kOmniInt8Base}model.int8.onnx',
+      expectedBytes: 1032239439,
+      role: AsrModelRole.ctcModelInt8,
+    ),
+    AsrModelFile(
+      fileName: 'tokens.txt',
+      url: '${_kOmniBase}tokens.txt',
+      expectedBytes: 90630,
+      role: AsrModelRole.tokens,
+      mirrorUrls: <String>['${_kOmniInt8Base}tokens.txt'],
+    ),
+    kAsrVadFile,
+  ],
+);
+
+/// 全部模型包。transducer 包与 [AsrLanguage.values] 前 8 项同序，Omnilingual 包
+/// 兜住其余 9 种。
 const List<AsrModelPack> kAsrModelPacks = <AsrModelPack>[
   kAsrJapanesePack,
   kAsrEnglishPack,
@@ -721,14 +851,20 @@ const List<AsrModelPack> kAsrModelPacks = <AsrModelPack>[
   kAsrRussianPack,
   kAsrVietnamesePack,
   kAsrThaiPack,
+  kAsrOmnilingualPack,
 ];
 
-/// 某语言的模型包。
+/// 某语言的模型包（每种 [AsrLanguage] 恰有一个包服务它，见清单测试）。
 AsrModelPack asrModelPackFor(AsrLanguage language) {
   return kAsrModelPacks.firstWhere(
-    (AsrModelPack pack) => pack.language == language,
+    (AsrModelPack pack) => pack.languages.contains(language),
   );
 }
+
+AsrModelRole asrCtcModelRole(AsrEncoderVariant variant) => switch (variant) {
+  AsrEncoderVariant.fp32 => AsrModelRole.ctcModelFp32,
+  AsrEncoderVariant.int8 => AsrModelRole.ctcModelInt8,
+};
 
 AsrModelRole asrEncoderRole(AsrEncoderVariant variant) => switch (variant) {
   AsrEncoderVariant.fp32 => AsrModelRole.encoderFp32,

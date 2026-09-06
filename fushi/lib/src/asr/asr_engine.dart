@@ -8,12 +8,15 @@ library;
 import 'dart:developer' as developer;
 import 'dart:io';
 
+import 'package:fushi/src/asr/asr_ctc_decoder.dart';
 import 'package:fushi/src/asr/asr_encoder_buckets.dart';
 import 'package:fushi/src/asr/asr_greedy_graph.dart';
 import 'package:fushi/src/asr/asr_model_manifest.dart';
 import 'package:fushi/src/asr/asr_model_store.dart';
+import 'package:fushi/src/asr/asr_transcribe_job.dart' show AsrSegmentDecoder;
 import 'package:fushi/src/asr/asr_transducer_decoder.dart';
 import 'package:fushi/src/asr/asr_types.dart';
+import 'package:fushi/src/asr/asr_vad.dart' show kAsrDefaultMaxSegmentMs;
 import 'package:fushi/src/onnx/onnx_inference.dart';
 import 'package:fushi/src/onnx/onnx_inference_ort.dart';
 
@@ -114,7 +117,8 @@ bool shouldPrewarmAllStaticBuckets({
   required int? materialMs,
 }) {
   if (!identical(buckets, kAsrGpuEncoderBuckets) &&
-      !identical(buckets, kAsrGpuEncoderBucketsLarge)) {
+      !identical(buckets, kAsrGpuEncoderBucketsLarge) &&
+      !identical(buckets, kAsrCtcGpuBuckets)) {
     return false;
   }
   if (budgetBytes == null) return false;
@@ -130,10 +134,16 @@ const int kAsrPrewarmAllMinMaterialMs = 15 * 60 * 1000;
 ///
 /// fp32 比 int8 大 437 MB，只有 GPU 能把这笔磁盘换成速度；CPU 上 int8 反而更快
 /// （BUG-2050 对照：int8 CPU 81.5 ms vs fp32 CPU 419.4 ms）。
+///
+/// [fp32GpuMinBudgetBytes]（`AsrModelPack.fp32GpuMinBudgetBytes`）给了时，
+/// GPU 显存预算 [budgetBytes] 未知或不足就退回 int8：Omnilingual 1B fp32 的 3.9 GB
+/// 权重塞进 6 GB 卡会溢出到主机内存，比 CPU int8 还慢且照不到回退。
 AsrEncoderVariant recommendAsrEncoderVariant({
   required AsrPlatform platform,
   required Set<OnnxExecutionProvider> available,
   required AsrAccelerationPreference preference,
+  int? fp32GpuMinBudgetBytes,
+  int? budgetBytes,
 }) {
   final List<OnnxExecutionProvider> providers = selectAsrEncoderProviders(
     platform: platform,
@@ -141,31 +151,47 @@ AsrEncoderVariant recommendAsrEncoderVariant({
     preference: preference,
     variant: AsrEncoderVariant.fp32,
   );
-  return providers.first == OnnxExecutionProvider.cpu
-      ? AsrEncoderVariant.int8
-      : AsrEncoderVariant.fp32;
+  if (providers.first == OnnxExecutionProvider.cpu) {
+    return AsrEncoderVariant.int8;
+  }
+  if (fp32GpuMinBudgetBytes != null &&
+      (budgetBytes == null || budgetBytes < fp32GpuMinBudgetBytes)) {
+    return AsrEncoderVariant.int8;
+  }
+  return AsrEncoderVariant.fp32;
 }
 
 /// 一套已装载的 ASR 会话。
 class AsrEngineSessions {
   AsrEngineSessions({
     required this.encoder,
-    required this.decoder,
-    required this.joiner,
     required this.vad,
     required this.tokens,
     required this.variant,
     required this.encoderResolution,
+    this.architecture = AsrModelArchitecture.transducer,
+    this.decoder,
+    this.joiner,
     this.greedy,
     this.greedyUnavailableReason,
     this.staticEncoders,
     this.decoderContextSize = kAsrDecoderContextSize,
     this.indexType = AsrIndexType.int64,
-  });
+  }) : assert(
+         architecture == AsrModelArchitecture.ctc ||
+             (decoder != null && joiner != null),
+         'transducer 需要 decoder / joiner 会话',
+       );
 
+  /// 模型包架构：决定 [newDecoder] 装哪种解码器、[maxSegmentMs] 取哪档。
+  final AsrModelArchitecture architecture;
+
+  /// transducer 的 encoder；CTC 的整个模型。
   final OnnxSession encoder;
-  final OnnxSession decoder;
-  final OnnxSession joiner;
+
+  /// transducer 专有（CTC 为 null）。
+  final OnnxSession? decoder;
+  final OnnxSession? joiner;
   final OnnxSession vad;
   final AsrTokenTable tokens;
   final AsrEncoderVariant variant;
@@ -177,16 +203,30 @@ class AsrEngineSessions {
 
   /// 用本套会话构造批量解码器。in-process 与 isolate 两条装配路径都从这里拿，
   /// 包契约参数只在此处传递一次。
-  AsrTransducerDecoder newDecoder() => AsrTransducerDecoder(
-    encoder: encoder,
-    decoder: decoder,
-    joiner: joiner,
-    tokens: tokens,
-    greedy: greedy,
-    staticEncoders: staticEncoders,
-    contextSize: decoderContextSize,
-    indexType: indexType,
-  );
+  AsrSegmentDecoder newDecoder() => switch (architecture) {
+    AsrModelArchitecture.transducer => AsrTransducerDecoder(
+      encoder: encoder,
+      decoder: decoder!,
+      joiner: joiner!,
+      tokens: tokens,
+      greedy: greedy,
+      staticEncoders: staticEncoders,
+      contextSize: decoderContextSize,
+      indexType: indexType,
+    ),
+    AsrModelArchitecture.ctc => AsrCtcDecoder(
+      model: encoder,
+      tokens: tokens,
+      staticSessions: staticEncoders,
+    ),
+  };
+
+  /// VAD 单段上限：zipformer 静态桶把段切到 10 s（见 [kAsrStaticMaxSegmentMs]），
+  /// CTC 桶按 21 s 建、Omnilingual 本身吃得下 40 s，保持 VAD 默认 20 s。
+  int get maxSegmentMs =>
+      architecture == AsrModelArchitecture.transducer && staticEncoders != null
+      ? kAsrStaticMaxSegmentMs
+      : kAsrDefaultMaxSegmentMs;
 
   /// 派生的贪心 Loop 图会话（CPU）；null 表示拼装/建会话失败，解码器回退到
   /// Dart 逐帧循环（结果等价，只是慢）。回退不静默：原因在
@@ -204,8 +244,8 @@ class AsrEngineSessions {
   Future<void> close() async {
     await staticEncoders?.close();
     await encoder.close();
-    await decoder.close();
-    await joiner.close();
+    await decoder?.close();
+    await joiner?.close();
     await vad.close();
     await greedy?.close();
   }
@@ -228,6 +268,10 @@ class AsrEngineLoader {
   /// [OrtOnnxSessionFactory.availableAcceleratedProviders]；不吞异常）。
   Future<Set<OnnxExecutionProvider>> availableAcceleratedProviders() =>
       _factory.availableAcceleratedProviders();
+
+  /// 本进程 GPU 显存预算（字节；查不到为 null），给 `AsrModelPack.
+  /// fp32GpuMinBudgetBytes` 门槛用。
+  Future<int?> deviceMemoryBudgetBytes() => _factory.deviceMemoryBudgetBytes();
 
   /// 装载。编码器按 [selectAsrEncoderProviders] 选出的 EP 建（经共享的
   /// provider 回退，resolution 记入 [AsrEngineSessions.encoderResolution]）；
@@ -273,6 +317,17 @@ class AsrEngineLoader {
     const List<OnnxExecutionProvider> cpu = <OnnxExecutionProvider>[
       OnnxExecutionProvider.cpu,
     ];
+    if (store.pack.architecture == AsrModelArchitecture.ctc) {
+      return _loadCtc(
+        store: store,
+        variant: variant,
+        providers: encoderProviders,
+        probeError: probeError,
+        useStaticEncoderBuckets: useStaticEncoderBuckets,
+        staticBucketsOverride: staticBucketsOverride,
+        materialMs: materialMs,
+      );
+    }
     final AsrModelRole encoderRole = asrEncoderRole(variant);
 
     final List<OnnxSession> opened = <OnnxSession>[];
@@ -315,6 +370,7 @@ class AsrEngineLoader {
       opened.add(vad);
       final AsrTokenTable tokens = AsrTokenTable.parse(
         await store.fileFor(AsrModelRole.tokens).readAsString(),
+        blankToken: store.pack.blankToken,
       );
       // 贪心 Loop 图：拼装或建会话失败都不致命——逐帧路径永远在，但要把原因
       // 留下来（速度差一个量级，用户看到慢要能知道为什么）。
@@ -413,6 +469,97 @@ class AsrEngineLoader {
       );
     } catch (_) {
       await closeOpened();
+      rethrow;
+    }
+  }
+
+  /// CTC 包：一个模型会话（fp32 走 GPU EP、int8 走 CPU）+ VAD + 词表。GPU 上按
+  /// 样本数建静态桶（[kAsrCtcGpuBuckets]，`N` / `num_samples` 钉死，无哨兵行），
+  /// 预热策略与 transducer 相同。
+  Future<AsrEngineSessions> _loadCtc({
+    required AsrModelStore store,
+    required AsrEncoderVariant variant,
+    required List<OnnxExecutionProvider> providers,
+    required Object? probeError,
+    required bool useStaticEncoderBuckets,
+    required List<AsrEncoderBucket>? staticBucketsOverride,
+    required int? materialMs,
+  }) async {
+    const List<OnnxExecutionProvider> cpu = <OnnxExecutionProvider>[
+      OnnxExecutionProvider.cpu,
+    ];
+    final String modelPath = store.fileFor(asrCtcModelRole(variant)).path;
+    final List<OnnxSession> opened = <OnnxSession>[];
+    try {
+      OnnxProviderResolution? resolution;
+      final OnnxSession model = await _factory.createSession(
+        modelPath,
+        providers: providers,
+        onProviderResolved: (OnnxProviderResolution r) => resolution = r,
+      );
+      opened.add(model);
+      final OnnxProviderResolution modelResolution = _withProbeError(
+        resolution ??
+            OnnxProviderResolution(
+              requested: providers,
+              effective: providers.first,
+            ),
+        probeError,
+      );
+      final OnnxSession vad = await _factory.createSession(
+        store.fileFor(AsrModelRole.vad).path,
+        providers: cpu,
+      );
+      opened.add(vad);
+      final AsrTokenTable tokens = AsrTokenTable.parse(
+        await store.fileFor(AsrModelRole.tokens).readAsString(),
+        blankToken: store.pack.blankToken,
+      );
+      final OnnxExecutionProvider effective = modelResolution.effective;
+      AsrStaticEncoderPool? staticSessions;
+      if (useStaticEncoderBuckets &&
+          kAsrStaticBucketProviders.contains(effective)) {
+        final int? budget = await _factory.deviceMemoryBudgetBytes();
+        final List<AsrEncoderBucket> buckets =
+            staticBucketsOverride ?? kAsrCtcGpuBuckets;
+        staticSessions = AsrStaticEncoderPool(
+          factory: _factory,
+          modelPath: modelPath,
+          providers: <OnnxExecutionProvider>[effective],
+          buckets: buckets,
+          batchDimName: kAsrCtcBatchDim,
+          timeDimName: kAsrCtcSamplesDim,
+          logName: kAsrLogName,
+        );
+        if (staticBucketsOverride != null ||
+            shouldPrewarmAllStaticBuckets(
+              buckets: buckets,
+              budgetBytes: budget,
+              materialMs: materialMs,
+            )) {
+          await staticSessions.prewarmAll();
+        } else {
+          await staticSessions.prewarmSmallest();
+        }
+      }
+      developer.log(
+        'ASR CTC engine loaded (${variant.name}): $modelResolution '
+        'staticBuckets=${staticSessions != null}',
+        name: kAsrLogName,
+      );
+      return AsrEngineSessions(
+        architecture: AsrModelArchitecture.ctc,
+        encoder: model,
+        vad: vad,
+        tokens: tokens,
+        variant: variant,
+        encoderResolution: modelResolution,
+        staticEncoders: staticSessions,
+      );
+    } catch (_) {
+      for (final OnnxSession s in opened) {
+        await s.close();
+      }
       rethrow;
     }
   }

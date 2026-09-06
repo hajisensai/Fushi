@@ -340,11 +340,8 @@ Future<void> _isolateMain(_IsolateArgs args) async {
         greedyUnavailableReason: sessions.greedyUnavailableReason,
       ),
     );
-    final AsrTransducerDecoder decoder = sessions.newDecoder();
-    // 静态桶模式段切短到 10 s（见 kAsrStaticMaxSegmentMs），否则保持 VAD 默认。
-    final int maxSegmentMs = sessions.staticEncoders != null
-        ? kAsrStaticMaxSegmentMs
-        : kAsrDefaultMaxSegmentMs;
+    final AsrSegmentDecoder decoder = sessions.newDecoder();
+    final int maxSegmentMs = sessions.maxSegmentMs;
     final AsrTranscribeJob j = AsrTranscribeJob(
       jobDir: Directory(spec.jobDirPath),
       audioPaths: spec.audioPaths,

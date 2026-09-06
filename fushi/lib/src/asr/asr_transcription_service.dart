@@ -94,12 +94,12 @@ class AsrInProcessTranscription implements AsrRunningTranscription {
   AsrInProcessTranscription({
     required this.sessions,
     required this.job,
-    AsrTransducerDecoder? decoder,
+    AsrSegmentDecoder? decoder,
   }) : _decoder = decoder;
 
   final AsrEngineSessions sessions;
   final AsrTranscribeJob job;
-  final AsrTransducerDecoder? _decoder;
+  final AsrSegmentDecoder? _decoder;
 
   @override
   OnnxProviderResolution get encoderResolution => sessions.encoderResolution;
@@ -204,10 +204,26 @@ class AsrTranscriptionService {
       }
     }
     final AsrPlatform platform = currentAsrPlatform();
+    final AsrModelPack pack = asrModelPackFor(language);
+    // 有显存门槛的包（Omnilingual 1B）才去查预算；查失败按未知处理 → int8。
+    int? budgetBytes;
+    if (pack.fp32GpuMinBudgetBytes != null && available.isNotEmpty) {
+      try {
+        budgetBytes = await _loader.deviceMemoryBudgetBytes();
+      } catch (error) {
+        developer.log(
+          'ASR device memory budget probe failed; assuming unknown',
+          name: kAsrLogName,
+          error: error,
+        );
+      }
+    }
     final AsrEncoderVariant variant = recommendAsrEncoderVariant(
       platform: platform,
       available: available,
       preference: preference,
+      fp32GpuMinBudgetBytes: pack.fp32GpuMinBudgetBytes,
+      budgetBytes: budgetBytes,
     );
     final OnnxExecutionProvider expected = selectAsrEncoderProviders(
       platform: platform,
@@ -352,11 +368,8 @@ class AsrTranscriptionService {
       materialMs: materialMs,
     );
     try {
-      final AsrTransducerDecoder decoder = sessions.newDecoder();
-      // 静态桶模式段切短到 10 s（见 kAsrStaticMaxSegmentMs），否则保持 VAD 默认。
-      final int maxSegmentMs = sessions.staticEncoders != null
-          ? kAsrStaticMaxSegmentMs
-          : kAsrDefaultMaxSegmentMs;
+      final AsrSegmentDecoder decoder = sessions.newDecoder();
+      final int maxSegmentMs = sessions.maxSegmentMs;
       final AsrTranscribeJob job = AsrTranscribeJob(
         jobDir: jobDir,
         audioPaths: audioPaths,

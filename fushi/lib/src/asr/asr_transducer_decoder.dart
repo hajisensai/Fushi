@@ -25,7 +25,7 @@ import 'package:fushi/src/asr/asr_greedy_graph.dart' show AsrGreedyGraphIo;
 import 'package:fushi/src/asr/asr_model_manifest.dart' show AsrIndexType;
 import 'package:fushi/src/asr/asr_types.dart';
 import 'package:fushi/src/asr/asr_transcribe_job.dart'
-    show AsrBatchDecoder, AsrBatchShaper, AsrPipelinedDecoder;
+    show AsrBatchDecoder, AsrBatchShaper, AsrPipelinedDecoder, AsrSegmentDecoder;
 import 'package:fushi/src/onnx/onnx_inference.dart';
 
 /// 解码器累计的分阶段耗时与帧数（诊断用，进度 UI / 集成测试打印）。
@@ -93,7 +93,11 @@ class AsrDecodeStats {
 }
 
 class AsrTransducerDecoder
-    implements AsrBatchDecoder, AsrBatchShaper, AsrPipelinedDecoder {
+    implements
+        AsrBatchDecoder,
+        AsrBatchShaper,
+        AsrPipelinedDecoder,
+        AsrSegmentDecoder {
   AsrTransducerDecoder({
     required OnnxSession encoder,
     required OnnxSession decoder,
@@ -193,6 +197,7 @@ class AsrTransducerDecoder
   AsrDecodeStats _stats = const AsrDecodeStats();
 
   /// 自构造起累计的分阶段耗时与帧数。
+  @override
   AsrDecodeStats get stats => _stats;
 
   /// 一次 encoder 前向 + 整批逐帧贪心解码；返回与 [segments] 等长、同序的结果。
@@ -281,7 +286,7 @@ class AsrTransducerDecoder
     final int batch = segments.length;
     final int maxFrames = feats.maxFrames;
     if (maxFrames == 0) {
-      return AsrEncodedBatch._empty(segments, feats.fbankTime);
+      return AsrTransducerEncodedBatch._empty(segments, feats.fbankTime);
     }
     final Stopwatch clock = Stopwatch()..start();
 
@@ -356,7 +361,7 @@ class AsrTransducerDecoder
       }
       return len;
     });
-    return AsrEncodedBatch._(
+    return AsrTransducerEncodedBatch._(
       segments: segments,
       encData: encData,
       encFrames: encFrames,
@@ -372,7 +377,9 @@ class AsrTransducerDecoder
 
   /// 第三段：逐帧贪心搜索（CPU 会话：Loop 图或 decoder/joiner 逐帧）。
   @override
-  Future<List<AsrDecodedSegment>> search(AsrEncodedBatch encoded) async {
+  Future<List<AsrDecodedSegment>> search(AsrEncodedBatch encodedBatch) async {
+    final AsrTransducerEncodedBatch encoded =
+        encodedBatch as AsrTransducerEncodedBatch;
     final int batch = encoded.segments.length;
     if (encoded.isEmpty) {
       _stats = _stats.add(
@@ -657,6 +664,17 @@ class AsrBatchFeatures {
     required this.fbankTime,
   });
 
+  /// 其它架构（CTC 的归一化波形）也用这个容器：`features` 每段一条一维数组，
+  /// `frameCounts` / `maxFrames` / `realFrames` 的「帧」按该架构的时间轴解释。
+  const factory AsrBatchFeatures.raw({
+    required List<AsrSpeechSegment> segments,
+    required List<Float32List> features,
+    required Int64List frameCounts,
+    required int maxFrames,
+    required int realFrames,
+    required Duration fbankTime,
+  }) = AsrBatchFeatures._;
+
   /// 测试用：不算特征的占位（fake 解码器只关心段与身份）。
   @visibleForTesting
   factory AsrBatchFeatures.forTest(List<AsrSpeechSegment> segments) =>
@@ -677,29 +695,55 @@ class AsrBatchFeatures {
   final Duration fbankTime;
 }
 
-/// [AsrTransducerDecoder.encode] 的产物：已读回主机的 encoder 输出（只含真实行）。
+/// `encode` 的产物基类：段列表 + 统计口径（真实帧 / 编码器实际算过的帧 / 各段
+/// 耗时）。任务流水线只认这一层；两条架构各自的子类带自己的中间结果
+/// （[AsrTransducerEncodedBatch] 的 encoder 输出、`AsrCtcEncodedBatch` 的逐帧 id）。
 class AsrEncodedBatch {
-  const AsrEncodedBatch._({
+  const AsrEncodedBatch({
     required this.segments,
-    required this.encData,
-    required this.encFrames,
-    required this.encDim,
-    required this.encLens,
     required this.realFrames,
     required this.paddedFrames,
     required this.fbankTime,
     required this.encoderTime,
     required this.isStatic,
+    required this.isEmpty,
   });
 
   /// 测试用：只带段列表的占位。
   @visibleForTesting
   factory AsrEncodedBatch.forTest(List<AsrSpeechSegment> segments) =>
-      AsrEncodedBatch._empty(segments, Duration.zero);
+      AsrTransducerEncodedBatch._empty(segments, Duration.zero);
+
+  final List<AsrSpeechSegment> segments;
+  final int realFrames;
+  final int paddedFrames;
+  final Duration fbankTime;
+  final Duration encoderTime;
+  final bool isStatic;
 
   /// 全部段都没有一帧特征（极短静音）：搜索直接返回空结果。
-  AsrEncodedBatch._empty(List<AsrSpeechSegment> segments, Duration fbankTime)
-    : this._(
+  final bool isEmpty;
+}
+
+/// [AsrTransducerDecoder.encode] 的产物：已读回主机的 encoder 输出（只含真实行）。
+class AsrTransducerEncodedBatch extends AsrEncodedBatch {
+  const AsrTransducerEncodedBatch._({
+    required super.segments,
+    required this.encData,
+    required this.encFrames,
+    required this.encDim,
+    required this.encLens,
+    required super.realFrames,
+    required super.paddedFrames,
+    required super.fbankTime,
+    required super.encoderTime,
+    required super.isStatic,
+  }) : super(isEmpty: encFrames == 0);
+
+  AsrTransducerEncodedBatch._empty(
+    List<AsrSpeechSegment> segments,
+    Duration fbankTime,
+  ) : this._(
         segments: segments,
         encData: Float32List(0),
         encFrames: 0,
@@ -712,16 +756,8 @@ class AsrEncodedBatch {
         isStatic: false,
       );
 
-  final List<AsrSpeechSegment> segments;
   final Float32List encData;
   final int encFrames;
   final int encDim;
   final List<int> encLens;
-  final int realFrames;
-  final int paddedFrames;
-  final Duration fbankTime;
-  final Duration encoderTime;
-  final bool isStatic;
-
-  bool get isEmpty => encFrames == 0;
 }

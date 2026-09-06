@@ -344,10 +344,10 @@ Future<void> _phaseBenchmark({
     }
     segments.addAll(await vad.flush());
     vadClock.stop();
-    final AsrTransducerDecoder decoder = sessions.newDecoder();
+    final AsrSegmentDecoder decoder = sessions.newDecoder();
     // ignore: avoid_print
     print(
-      '[asr-e2e][bench][$label] greedyGraph=${decoder.usesGreedyGraph} '
+      '[asr-e2e][bench][$label] greedyGraph=${decoder is AsrTransducerDecoder && decoder.usesGreedyGraph} '
       '${sessions.greedyUnavailableReason ?? ''}',
     );
     // 预热一次（DirectML 首次前向含着色器编译，不算进稳态）。

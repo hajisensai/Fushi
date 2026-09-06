@@ -20,10 +20,23 @@ const String _kVadUrl =
 
 void main() {
   group('模型包总表', () {
-    test('与 AsrLanguage.values 同序、id 互不相同且冻结', () {
+    test('每种语言恰有一个包服务；transducer 包与枚举同序；id 互不相同且冻结', () {
+      // 17 种界面语言一个不少（`FushiLocalisations.localeNames` 的每一项都有
+      // 对应的口语模型）。
+      expect(AsrLanguage.values, hasLength(17));
+      for (final AsrLanguage language in AsrLanguage.values) {
+        expect(
+          kAsrModelPacks.where((AsrModelPack p) => p.languages.contains(language)),
+          hasLength(1),
+          reason: language.tag,
+        );
+      }
+      final List<AsrModelPack> transducers = kAsrModelPacks
+          .where((AsrModelPack p) => p.architecture == AsrModelArchitecture.transducer)
+          .toList();
       expect(
-        kAsrModelPacks.map((AsrModelPack pack) => pack.language).toList(),
-        AsrLanguage.values,
+        transducers.map((AsrModelPack pack) => pack.language).toList(),
+        AsrLanguage.values.take(transducers.length).toList(),
       );
       expect(
         kAsrModelPacks.map((AsrModelPack pack) => pack.id).toSet(),
@@ -31,8 +44,17 @@ void main() {
       );
       // id 是磁盘目录名与任务目录哈希的一部分：改了等于让用户已下载的模型与
       // 进行中的任务全部失联，这里钉死。
-      expect(kAsrJapanesePack.id, 'reazonspeech-k2-v2');
-      expect(kAsrEnglishPack.id, 'zipformer-en-libriheavy-punct-case');
+      expect(kAsrModelPacks.map((AsrModelPack p) => p.id), <String>[
+        'reazonspeech-k2-v2',
+        'zipformer-en-libriheavy-punct-case',
+        'x-asr-zipformer-zh-en-punct-2026-06-03',
+        'zipformer-cantonese-mdcc-2024-03-11',
+        'zipformer-korean-2024-06-24',
+        'zipformer-ru-2025-04-20',
+        'zipformer-vi-2025-04-20',
+        'zipformer-th-gigaspeech2-2024-06-20',
+        'omnilingual-asr-1b-ctc-v2',
+      ]);
       expect(kAsrJapanesePack.language, AsrLanguage.japanese);
       expect(kAsrEnglishPack.language, AsrLanguage.english);
     });
@@ -40,9 +62,29 @@ void main() {
     test('asrModelPackFor 每种语言都能取到自己的包', () {
       expect(asrModelPackFor(AsrLanguage.japanese), same(kAsrJapanesePack));
       expect(asrModelPackFor(AsrLanguage.english), same(kAsrEnglishPack));
+      expect(asrModelPackFor(AsrLanguage.german), same(kAsrOmnilingualPack));
+      expect(asrModelPackFor(AsrLanguage.arabic), same(kAsrOmnilingualPack));
       for (final AsrLanguage language in AsrLanguage.values) {
-        expect(asrModelPackFor(language).language, language);
+        expect(asrModelPackFor(language).languages, contains(language));
       }
+    });
+
+    test('模型包契约参数：粤语 ctx=1、中文 int32、Omnilingual blank=<s> + 显存门槛', () {
+      expect(kAsrCantonesePack.decoderContextSize, 1);
+      expect(kAsrMandarinPack.indexType, AsrIndexType.int32);
+      for (final AsrModelPack p in kAsrModelPacks) {
+        if (p != kAsrCantonesePack) expect(p.decoderContextSize, 2, reason: p.id);
+        if (p != kAsrMandarinPack) expect(p.indexType, AsrIndexType.int64, reason: p.id);
+        if (p != kAsrOmnilingualPack) {
+          expect(p.architecture, AsrModelArchitecture.transducer, reason: p.id);
+          expect(p.blankToken, '<blk>', reason: p.id);
+          expect(p.fp32GpuMinBudgetBytes, isNull, reason: p.id);
+        }
+      }
+      expect(kAsrOmnilingualPack.architecture, AsrModelArchitecture.ctc);
+      expect(kAsrOmnilingualPack.blankToken, '<s>');
+      expect(kAsrOmnilingualPack.fp32GpuMinBudgetBytes, 8 * 1024 * 1024 * 1024);
+      expect(kAsrOmnilingualPack.languages, hasLength(9));
     });
 
     test('AsrLanguage.fromTag 往返；未知标签返回 null', () {
@@ -60,11 +102,30 @@ void main() {
   group('每个包的清单构成', () {
     for (final AsrModelPack pack in kAsrModelPacks) {
       group(pack.id, () {
-        test('八个角色各一、每个变体内文件名唯一，且每个角色都能按角色取到', () {
-          expect(pack.files, hasLength(AsrModelRole.values.length));
+        test('角色各一、每个变体内文件名唯一，且每个角色都能按角色取到', () {
+          final Set<AsrModelRole> expectedRoles = switch (pack.architecture) {
+            AsrModelArchitecture.transducer => <AsrModelRole>{
+              AsrModelRole.encoderFp32,
+              AsrModelRole.encoderInt8,
+              AsrModelRole.decoderFp32,
+              AsrModelRole.decoderInt8,
+              AsrModelRole.joinerFp32,
+              AsrModelRole.joinerInt8,
+              AsrModelRole.tokens,
+              AsrModelRole.vad,
+            },
+            AsrModelArchitecture.ctc => <AsrModelRole>{
+              AsrModelRole.ctcModelFp32,
+              AsrModelRole.ctcWeightsFp32,
+              AsrModelRole.ctcModelInt8,
+              AsrModelRole.tokens,
+              AsrModelRole.vad,
+            },
+          };
+          expect(pack.files, hasLength(expectedRoles.length));
           expect(
             pack.files.map((AsrModelFile f) => f.role).toSet(),
-            AsrModelRole.values.toSet(),
+            expectedRoles,
           );
           // 上游没给 int8 decoder 的包两变体共用同一个 decoder 文件，所以只要求
           // 「每个变体内」文件名唯一（同名条目必须指向同一 URL、同一字节数）。
@@ -85,30 +146,41 @@ void main() {
             }
             byName[f.fileName] = f;
           }
-          for (final AsrModelRole role in AsrModelRole.values) {
+          for (final AsrModelRole role in expectedRoles) {
             expect(pack.fileForRole(role).role, role);
           }
         });
 
-        test('每个变体恰好五个文件：同精度 encoder/decoder/joiner + tokens/vad', () {
+        test('每个变体的文件集：同精度模型 + tokens/vad（fp32 CTC 另带外置权重）', () {
           for (final AsrEncoderVariant variant in AsrEncoderVariant.values) {
             final List<AsrModelFile> files = pack.filesFor(variant);
-            expect(files, hasLength(5), reason: variant.name);
             final bool fp32 = variant == AsrEncoderVariant.fp32;
-            expect(
-              files.map((AsrModelFile f) => f.role).toSet(),
-              <AsrModelRole>{
+            final Set<AsrModelRole> expected = switch (pack.architecture) {
+              AsrModelArchitecture.transducer => <AsrModelRole>{
                 fp32 ? AsrModelRole.encoderFp32 : AsrModelRole.encoderInt8,
                 fp32 ? AsrModelRole.decoderFp32 : AsrModelRole.decoderInt8,
                 fp32 ? AsrModelRole.joinerFp32 : AsrModelRole.joinerInt8,
                 AsrModelRole.tokens,
                 AsrModelRole.vad,
               },
-            );
-            // 编码器排第一：下载进度条与「先下最大的」都依赖这个顺序。
+              AsrModelArchitecture.ctc => <AsrModelRole>{
+                fp32 ? AsrModelRole.ctcModelFp32 : AsrModelRole.ctcModelInt8,
+                if (fp32) AsrModelRole.ctcWeightsFp32,
+                AsrModelRole.tokens,
+                AsrModelRole.vad,
+              },
+            };
+            expect(files, hasLength(expected.length), reason: variant.name);
+            expect(files.map((AsrModelFile f) => f.role).toSet(), expected);
+            // 模型排第一：下载进度条与「先下最大的」都依赖这个顺序。
             expect(
               files.first.role,
-              fp32 ? AsrModelRole.encoderFp32 : AsrModelRole.encoderInt8,
+              switch (pack.architecture) {
+                AsrModelArchitecture.transducer =>
+                  fp32 ? AsrModelRole.encoderFp32 : AsrModelRole.encoderInt8,
+                AsrModelArchitecture.ctc =>
+                  fp32 ? AsrModelRole.ctcModelFp32 : AsrModelRole.ctcModelInt8,
+              },
             );
             expect(
               pack.totalBytes(variant),

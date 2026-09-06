@@ -72,6 +72,14 @@ abstract interface class AsrBatchShaper {
   int? bucketKeyFor(int longestSamples);
 }
 
+/// 一套引擎会话对应的完整解码器（三段式 + 成批约束 + 统计）：transducer
+/// （`AsrTransducerDecoder`）与 CTC（`AsrCtcDecoder`）都实现它，任务侧与
+/// isolate / 服务只认这个接口。
+abstract interface class AsrSegmentDecoder
+    implements AsrPipelinedDecoder, AsrBatchShaper {
+  AsrDecodeStats get stats;
+}
+
 /// 任务进度快照。
 @immutable
 class AsrTranscribeProgress {
