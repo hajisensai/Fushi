@@ -1,9 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
   <background android:drawable="@color/ic_launcher_squircle_background"/>
-  <foreground>
-      <inset
-          android:drawable="@drawable/ic_launcher_minimal_foreground"
-          android:inset="16%" />
-  </foreground>
+  <!-- 前景图已按 108dp 画布 0.63 的比例内缩，兔子本体完整落在 72dp 安全区内，
+       因此这里不再叠加 inset（旧的 wordmark 前景是满幅图，才需要 inset 16%）。 -->
+  <foreground android:drawable="@drawable/ic_launcher_foreground"/>
 </adaptive-icon>
