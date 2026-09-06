@@ -108,6 +108,72 @@ void main() {
     );
   });
 
+  test('WorkQueue 的 thread_ 必须是最后一个成员（否则线程跑在成员构造之前）', () {
+    // 成员按声明顺序初始化，而构造函数在初始化 thread_ 的同时就启动了线程，
+    // 新线程进 Run() 立刻 lock(mutex_) / cv_.wait / 读 stopping_。thread_ 声明在
+    // 前面时，这三者可能都还没构造完 —— UB，且失败形态是静默的：stopping_ 读到
+    // 非零垃圾就让 Run() 立刻返回，之后每次 Post 都判队列已停机、任务被丢，
+    // 每个 ORT 调用的 Dart Future 永不完成，转录直接挂死且无异常无日志。
+    final String header = maskComments(
+      File('$vendored/windows/src/async_dispatch.h').readAsStringSync(),
+    );
+    final int classAt = header.indexOf('class WorkQueue {');
+    expect(classAt, greaterThan(0), reason: 'WorkQueue 改名了，守卫需更新');
+    final int end = header.indexOf('\n};', classAt);
+    expect(end, greaterThan(classAt));
+    final String body = header.substring(classAt, end);
+    final int threadAt = body.indexOf('std::thread thread_;');
+    expect(threadAt, greaterThan(0), reason: '找不到 thread_ 成员');
+    for (final String member in <String>[
+      'std::mutex mutex_;',
+      'std::condition_variable cv_;',
+      'std::deque<std::function<void()>> tasks_;',
+      'bool stopping_',
+    ]) {
+      final int at = body.indexOf(member);
+      expect(at, greaterThan(0), reason: '找不到成员 `$member`，守卫需更新');
+      expect(
+        at,
+        lessThan(threadAt),
+        reason: '`$member` 必须声明在 thread_ **之前**：构造函数一初始化 thread_ '
+            '线程就跑起来了，它会立刻用到这个成员',
+      );
+    }
+  });
+
+  test('tensor id 分配必须线程安全（两条 worker 并发调它）', () {
+    // generateTensorId 是 TensorManager 里唯一不持锁的方法——**故意**的，因为 13 个
+    // 内部调用点调它时已经持着 mutex_（非递归锁不能再上）。插件线程化之前全进程
+    // 只有平台线程会碰它；现在 GPU / CPU 两条 worker 按设计并发调用。
+    // 用无同步的函数局部 static RNG，两线程读到同一游标就发出**相同**的 id：
+    // storeTensor 互相覆盖，或 releaseTensor 释放掉对方的 backing buffer。
+    final String impl = maskComments(
+      File('$vendored/windows/src/tensor_manager.cc').readAsStringSync(),
+    );
+    final int at = impl.indexOf('TensorManager::generateTensorId()');
+    expect(at, greaterThan(0), reason: 'generateTensorId 改名了，守卫需更新');
+    final int end = impl.indexOf('\n}', at);
+    expect(end, greaterThan(at));
+    final String body = impl.substring(at, end);
+    expect(
+      body.contains('static std::mt19937'),
+      isFalse,
+      reason: '函数局部 static RNG 在两条 worker 并发下会发出重复 id',
+    );
+    expect(
+      body.contains('fetch_add'),
+      isTrue,
+      reason: 'id 分配必须是原子的（与 SessionManager::generateSessionId 同形）',
+    );
+    expect(
+      maskComments(
+        File('$vendored/windows/src/tensor_manager.h').readAsStringSync(),
+      ),
+      contains('std::atomic<uint64_t> next_tensor_id_'),
+      reason: '计数器本身必须是 atomic；普通 uint64_t 的自增在两线程下同样会撞',
+    );
+  });
+
   test('PATCHES.md 记了 delta #9', () {
     final String md = File('$vendored/PATCHES.md').readAsStringSync();
     expect(md, contains('async_dispatch'));

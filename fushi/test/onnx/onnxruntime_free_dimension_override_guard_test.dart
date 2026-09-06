@@ -81,11 +81,27 @@ void main() {
       contains('AddFreeDimensionOverrideByName'),
       reason: 'delta 表里必须有这一条，否则重新 vendor 时没人知道要补回来',
     );
-    // 「照 re-vendor 清单做一遍」必须真能把 8 条 delta 都带回来。
+    // 「照 re-vendor 清单做一遍」必须真能把**当前全部** delta 带回来。
+    //
+    // 这条一度被放宽成 `#1[–-]#(8|9|1[0-9])` —— 那样它就重新接受了自己当初被写出来
+    // 要抓的那个陈旧编号 `#1–#8`，delta #11 落地后也会照单全收 `#1–#10`，等于没守。
+    // 改成从文档里解析出真实的最大 delta 号，再要求清单覆盖到它：编号涨了而清单
+    // 没跟，这里当场红。
+    // delta 表是 `## Delta vs upstream` 下的有序列表，条目就是行首的 `N. `。
+    final List<int> declared = RegExp(r'^(\d+)\. ', multiLine: true)
+        .allMatches(md)
+        .map((RegExpMatch m) => int.parse(m.group(1)!))
+        .toList();
+    expect(declared, isNotEmpty, reason: 'PATCHES.md 的 delta 列表解析不出条目？守卫需更新');
+    final int maxDelta = declared.reduce((int a, int b) => a > b ? a : b);
+    final RegExpMatch? revendor =
+        RegExp(r're-apply deltas #1[\u2013-]#(\d+)').firstMatch(md);
+    expect(revendor, isNotNull, reason: '找不到 re-vendor 清单那句话');
     expect(
-      RegExp(r're-apply deltas #1[–-]#(8|9|1[0-9])').hasMatch(md),
-      isTrue,
-      reason: 're-vendor 清单还停在旧编号 = 照它做就会丢掉后面的 delta',
+      int.parse(revendor!.group(1)!),
+      maxDelta,
+      reason: 're-vendor 清单只覆盖到 #${revendor.group(1)}，而 delta 表里已经有 '
+          '$maxDelta 条 —— 照它做会丢掉后面的 delta',
     );
     expect(
       md,

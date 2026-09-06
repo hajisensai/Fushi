@@ -44,11 +44,20 @@ public:
 private:
   void Run();
 
-  std::thread thread_;
+  // Declaration order matters: members are initialised in declaration order,
+  // and the constructor starts the thread as part of initialising thread_.
+  // With thread_ declared first, the worker enters Run() -- which immediately
+  // locks mutex_, waits on cv_ and reads stopping_ -- while those four members
+  // may still be uninitialised. That is UB, and its failure mode is silent:
+  // stopping_ read as garbage-nonzero makes Run() return at once, every later
+  // Post() then reports the queue as shutting down, tasks are dropped, and the
+  // Dart Future behind each ORT call never completes (transcription just hangs,
+  // no exception, no log). Keep thread_ LAST.
   std::mutex mutex_;
   std::condition_variable cv_;
   std::deque<std::function<void()>> tasks_;
   bool stopping_ = false;
+  std::thread thread_;
 };
 
 class PlatformThreadDispatcher {
