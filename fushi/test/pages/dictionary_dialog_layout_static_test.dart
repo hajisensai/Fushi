@@ -292,8 +292,9 @@ void main() {
   // 切换，且按用户诉求放到行**最左**（leading），从拥挤的右侧控件串里拿出来。
   // 守卫：
   //  ① 折叠/展开按钮放在 FushiListItem 的 leading（最左），不在 trailing；
-  //  ② 该按钮单击即 toggleDictionaryCollapsed（一键，非先开菜单）；
-  //  ③ 图标随 isCollapsed 状态切换（unfold_more/unfold_less = 状态一览）；
+  //  ② 该按钮单击即 cycleDictionaryCollapseState（一键，非先开菜单）；
+  //  ③ 图标随折叠**三态**切换（BUG-2158：横杠=继承 / unfold_more=显式展开 /
+  //     unfold_less=显式折叠，三个图标 = 状态一览）；
   //  ④ trailing 串里不再有三点菜单（TODO-422 已移除），自然也没有折叠项入口。
   test(
       'dictionary row puts the one-tap collapse toggle in leading (leftmost), '
@@ -344,13 +345,18 @@ void main() {
     expect(btnStart, isNonNegative);
     expect(btnEnd, greaterThan(btnStart));
     final String btnSource = source.substring(btnStart, btnEnd);
-    expect(
-        btnSource, contains('appModel.toggleDictionaryCollapsed(dictionary)'));
+    expect(btnSource,
+        contains('appModel.cycleDictionaryCollapseState(dictionary)'));
     expect(btnSource, contains('setState(() {})'));
 
-    // ③ 图标随状态切换，状态可一览。
+    // ③ 图标随**三态**切换，状态可一览（BUG-2158）。少一个分支就意味着两个态
+    // 共用一个图标 —— 那正是修复前「显式展开」和「继承」长得一模一样的老毛病。
     expect(btnSource,
-        contains('dictionary.isCollapsed(JapaneseLanguage.instance)'));
+        contains('dictionary.collapseStateFor(JapaneseLanguage.instance)'));
+    expect(btnSource, contains('DictionaryCollapseState.inherit'));
+    expect(btnSource, contains('DictionaryCollapseState.expanded'));
+    expect(btnSource, contains('DictionaryCollapseState.collapsed'));
+    expect(btnSource, contains('Icons.horizontal_rule'));
     expect(btnSource, contains('Icons.unfold_more'));
     expect(btnSource, contains('Icons.unfold_less'));
     expect(btnSource, contains('t.options_expand'));

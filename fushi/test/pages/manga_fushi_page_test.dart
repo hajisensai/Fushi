@@ -341,6 +341,15 @@ void main() {
 
     expect(find.byKey(const ValueKey<String>('manga_full_ocr_button')),
         findsNothing);
+    // 但**出口必须还在**。加载失败时正文只剩一行「找不到书籍文件」，返回键若
+    // 跟着顶栏一起消失，iOS 上就彻底无路可走：没有系统返回键，本页
+    // PopScope(canPop: false) 又关掉了侧滑返回，正文原生 WebView 的空白点击
+    // 已被翻页占用——用户只能杀进程。出口不随内容存亡。
+    expect(
+      find.byKey(const ValueKey<String>('manga_reader_back_button')),
+      findsOneWidget,
+      reason: '加载失败态必须仍有返回按钮，否则 iOS 上是死锁',
+    );
   });
 
   testWidgets('页码弹窗关闭动画期间不使用已 dispose 的输入控制器', (WidgetTester tester) async {

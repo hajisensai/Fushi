@@ -72,6 +72,11 @@ enum SyncAuthFailureKind {
   /// 「登录已过期」——把「浏览器没回来」说成「凭据坏了」，把用户指向完全错误的修复
   /// 方向。判据是类型，不是字符串。
   browserTimeout,
+
+  /// 用户在桌面 loopback 等待对话框里自己点了「取消」（BUG-2120）。既不是凭据坏了，
+  /// 也不是浏览器没回来，而是**用户决定不等了**——UI 对它必须静默：不弹错误、不写
+  /// 错误日志、不登出。单立枚举值的理由同 [browserTimeout]：判据是类型，不是字符串。
+  cancelled,
 }
 
 class SyncAuthError implements Exception {

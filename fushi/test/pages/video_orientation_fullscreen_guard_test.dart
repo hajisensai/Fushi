@@ -207,7 +207,9 @@ void main() {
           reason: '缺统一返回收口 _handleBackOrExit');
       final String body =
           methodBody(src, 'Future<void> _handleBackOrExit() async {');
-      expect(body.contains('nav.pop()'), isTrue,
+      // BUG-2119 起 pop 经 exitAfterPersist 的 `exit: nav.pop` 无条件执行，
+      // 锚点从 `nav.pop()` 改成 `nav.pop`；语义不变：直接退页，无全屏路由中间态。
+      expect(body.contains('nav.pop'), isTrue,
           reason: '_handleBackOrExit 应直接退页 (无全屏路由中间态)');
       expect(body.contains('_pushNeutralizedVideoFullscreen'), isFalse,
           reason: '返回收口不得反向进全屏路由');

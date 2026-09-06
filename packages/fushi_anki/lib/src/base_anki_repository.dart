@@ -62,6 +62,29 @@ class RenderedMinedFields {
   final String? audioWarning;
 }
 
+/// 封面媒体扩展名里会被渲染成 `[sound:]` 而非 `<img>` 的那几种（视频片段）。
+const Set<String> kAnkiVideoCoverExtensions = <String>{'mp4', 'webm'};
+
+/// 纯函数：把已写入 Anki 媒体库的封面文件名 [mediaName] 渲染成卡片字段里的引用串。
+///
+/// - 图片（jpg / png / gif / webp / avif…）→ `<img src="name">`（`src` 做 HTML 转义；
+///   文件名由内容哈希定，实际不含特殊字符，转义只是守底线）；
+/// - 视频（[kAnkiVideoCoverExtensions]：galgame 视频片段 mp4）→ `[sound:name]`——
+///   Anki 桌面对 `[sound:]` 里的视频文件用 mpv 弹窗播放，AnkiDroid 用内置 VideoView；
+///   而 `<video>` 标签在 Anki 桌面的 Qt WebEngine 里**没有 H.264 解码器**，不可用。
+///
+/// AnkiConnect 与 AnkiDroid 两个 backend 必须都经这里出引用串，杜绝一边会播视频、
+/// 另一边把 mp4 塞进 `<img>` 变成坏图。
+String coverMediaRef(String mediaName) {
+  final int dot = mediaName.lastIndexOf('.');
+  final String extension =
+      dot < 0 ? '' : mediaName.substring(dot + 1).toLowerCase();
+  if (kAnkiVideoCoverExtensions.contains(extension)) {
+    return '[sound:$mediaName]';
+  }
+  return '<img src="${const HtmlEscape().convert(mediaName)}">';
+}
+
 abstract class BaseAnkiRepository {
   @protected
   static const settingsKey = 'fushi_anki_settings';

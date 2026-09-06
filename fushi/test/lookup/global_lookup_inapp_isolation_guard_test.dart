@@ -50,8 +50,7 @@ void main() {
       expect(
         html.contains('global_lookup_host.js'),
         isFalse,
-        reason:
-            'host.js is injected ONLY into the top-level WebView2 '
+        reason: 'host.js is injected ONLY into the top-level WebView2 '
             'document by C++ (AddScriptToExecuteOnDocumentCreated); the '
             'iframes load popup.html WITHOUT the host script',
       );
@@ -79,8 +78,7 @@ void main() {
         expect(
           fn.contains('window.__globalLookupHost.renderStack('),
           isTrue,
-          reason:
-              'the stack renderer drives the host renderStack diff, not a '
+          reason: 'the stack renderer drives the host renderStack diff, not a '
               'bare single-frame renderPopup()',
         );
       },
@@ -99,8 +97,7 @@ void main() {
         expect(
           render.contains('String buildOverlayRenderScript('),
           isFalse,
-          reason:
-              'the retired top-level direct-render entry must not exist '
+          reason: 'the retired top-level direct-render entry must not exist '
               '(single-frame = stack depth 1 via renderStack)',
         );
         final String controller = read(
@@ -137,15 +134,13 @@ void main() {
       expect(
         html.contains('popup.js'),
         isFalse,
-        reason:
-            'the top-level host holds ZERO popup.js instance — popup.js '
+        reason: 'the top-level host holds ZERO popup.js instance — popup.js '
             'lives only inside each per-layer iframe (popup.html)',
       );
       expect(
         html.contains('global_lookup_host.js'),
         isFalse,
-        reason:
-            'host.js is C++-injected only (AddScriptToExecuteOn'
+        reason: 'host.js is C++-injected only (AddScriptToExecuteOn'
             'DocumentCreated), never <script>-referenced in the host document',
       );
     });
@@ -155,8 +150,7 @@ void main() {
       expect(
         hostJs.contains('window.top !== window.self'),
         isTrue,
-        reason:
-            'AddScriptToExecuteOnDocumentCreated runs on every frame incl. '
+        reason: 'AddScriptToExecuteOnDocumentCreated runs on every frame incl. '
             'child iframes; host.js must bail on sub-frames so only the host '
             'document installs the frames Map / renderStack',
       );
@@ -190,8 +184,7 @@ void main() {
       expect(
         cpp.contains('AddScriptToExecuteOnDocumentCreated(host.c_str()'),
         isTrue,
-        reason:
-            'host.js must be injected at document start so '
+        reason: 'host.js must be injected at document start so '
             'window.__globalLookupHost exists before navigation',
       );
       final String h = read('windows/runner/global_lookup_window.h');
@@ -216,7 +209,7 @@ void main() {
       render = read('lib/src/lookup/global_lookup_render.dart');
       channel = // spec 2026-07-10: channel 实现在 overlay_window_channel.dart（门面+实现拼接扫描）
           read('lib/src/lookup/global_lookup_channel.dart') +
-          read('lib/src/lookup/overlay_window_channel.dart');
+              read('lib/src/lookup/overlay_window_channel.dart');
     });
 
     test(
@@ -241,8 +234,7 @@ void main() {
         expect(
           hostJs.contains('var FRAME_CONTENT_TOP = 0;'),
           isTrue,
-          reason:
-              'Hibiki iframe fills its shell -> content-top offset is 0 '
+          reason: 'Hibiki iframe fills its shell -> content-top offset is 0 '
               '(not hoshi 74); explicit + testable per plan section 8',
         );
       },
@@ -273,13 +265,13 @@ void main() {
       expect(
         c.contains('closeChildPopupsAndClearSelection(_stack, layerIndex)'),
         isTrue,
-        reason:
-            'tapping a layer closes its children (point a layer -> close '
+        reason: 'tapping a layer closes its children (point a layer -> close '
             'the cards above it)',
       );
     });
 
-    test('C4/E2: the window-thread click handler no longer unconditionally '
+    test(
+        'C4/E2: the window-thread click handler no longer unconditionally '
         'hides; forwards inside', () {
       // BUG-1048: the WH_MOUSE_LL hook moved OFF the window class onto a
       // dedicated GetMessage thread (low_level_mouse_hook.cpp) so a busy Flutter
@@ -307,8 +299,7 @@ void main() {
       expect(
         hookAt,
         greaterThan(-1),
-        reason:
-            'the window-thread click handler must exist (BUG-1048 moved '
+        reason: 'the window-thread click handler must exist (BUG-1048 moved '
             'the raw hook to a dedicated thread)',
       );
       final int hookEnd = cpp.indexOf(
@@ -361,7 +352,8 @@ void main() {
       );
     });
 
-    test('TODO-1231 P1: __hasChildPopup rides its own channel, not the body', () {
+    test('TODO-1231 P1: __hasChildPopup rides its own channel, not the body',
+        () {
       // Baking the flag into the per-frame body made the parent settingsJs change
       // on every nested open/close, so the host re-eval'd the WHOLE body (a
       // renderPopup() card rebuild) = the "父弹窗闪烁". It now rides a dedicated
@@ -371,15 +363,13 @@ void main() {
       expect(
         render.contains("map['hasChildPopup'] = i < payloads.length - 1"),
         isTrue,
-        reason:
-            'has-child is a per-frame descriptor field (index<len-1), NOT '
+        reason: 'has-child is a per-frame descriptor field (index<len-1), NOT '
             'baked into settingsJs',
       );
       expect(
         render.contains('window.__hasChildPopup ='),
         isFalse,
-        reason:
-            'the settings body must NOT bake __hasChildPopup anymore '
+        reason: 'the settings body must NOT bake __hasChildPopup anymore '
             '(that forced a full re-render on every nested open/close)',
       );
       expect(
@@ -457,8 +447,7 @@ void main() {
         expect(
           RegExp(r'_retainRenderedStack\(\)').allMatches(controller).length,
           greaterThanOrEqualTo(5),
-          reason:
-              'helper 本体 + tapOutside/dismissPopupAt/closeChildPopups/'
+          reason: 'helper 本体 + tapOutside/dismissPopupAt/closeChildPopups/'
               '嵌套无结果截栈都必须走轻量路径',
         );
 
@@ -522,15 +511,45 @@ void main() {
       },
     );
 
-    test('TODO-1231 P2: layer shift is C++-ordered after SetWindowPos', () {
-      // measureAndReport must NOT shift the layer synchronously (that raced the
-      // window move across vsync -> the parent card lurched then snapped back).
-      // The shift rides commitLayerShift, which C++ RevealStack calls AFTER
-      // SetWindowPos so the window move and content shift are causally ordered.
+    test(
+        'TODO-1231 P2 / BUG-2123: the layer shift is C++-ordered after '
+        'SetWindowPos for a VISIBLE window, and pre-applied only on the first '
+        '(still off-screen) transaction', () {
+      // TODO-1231 P2: once the window is on screen, measureAndReport must NOT
+      // shift the layer synchronously (that raced the window move across vsync
+      // -> the parent card lurched then snapped back). The shift rides
+      // commitLayerShift, which C++ RevealStack calls AFTER SetWindowPos so the
+      // window move and content shift are causally ordered.
+      // BUG-2123: the FIRST transaction of a lookup is the exception — the
+      // window is still parked off-screen, so deferring the shift there bought
+      // nothing and cost the "弹窗先在左上角闪一下" frame (the reserve-to-edge
+      // floor puts the first bbox origin at the work-area corner on EVERY
+      // lookup). It is applied up front, gated on `committedGeometryEpoch === 0`.
       expect(
         hostJs.contains('function commitLayerShift('),
         isTrue,
         reason: 'the host exposes a commit hook for the deferred layer shift',
+      );
+      // One writer for the DOM translate + layerOffset* pair (they must stay in
+      // lock-step; splitting them once already caused BUG-859).
+      final int layerOriginWrites =
+          'layerOffsetLeft = '.allMatches(hostJs).length -
+              'var layerOffsetLeft = '.allMatches(hostJs).length;
+      expect(
+        layerOriginWrites,
+        1,
+        reason: 'applyLayerOffset is the single writer of the layer origin',
+      );
+      final int aAt = hostJs.indexOf('function applyLayerOffset(');
+      expect(aAt, greaterThan(-1));
+      final int aEnd = hostJs.indexOf('function commitLayerShift(', aAt);
+      expect(aEnd, greaterThan(aAt));
+      final String applyBody = hostJs.substring(aAt, aEnd);
+      expect(
+        applyBody.contains('layerEl.style.left') &&
+            applyBody.contains('layerOffsetLeft = l'),
+        isTrue,
+        reason: 'applyLayerOffset writes the DOM translate and the offset pair',
       );
       final int mAt = hostJs.indexOf('function measureAndReport(');
       final int mEnd = hostJs.indexOf('function measureContentHeight(', mAt);
@@ -540,9 +559,52 @@ void main() {
         measureBody.contains('layerEl.style.left'),
         isFalse,
         reason:
-            'measureAndReport must not shift the layer synchronously '
-            '(TODO-1231 P2: it races the window move across vsync)',
+            'measureAndReport must go through applyLayerOffset, never poke the '
+            'layer DOM behind the offset bookkeeping',
       );
+      expect(
+        'applyLayerOffset('.allMatches(measureBody).length,
+        1,
+        reason: 'measureAndReport shifts the layer at most once, under a gate',
+      );
+      expect(
+        measureBody.contains(
+          "if (route.source !== 'galCard' && committedGeometryEpoch === 0) {\n"
+          '      applyLayerOffset(minLeft, minTop);',
+        ),
+        isTrue,
+        reason:
+            'the pre-shift is gated on an uncommitted (still hidden) window; a '
+            'visible window keeps the TODO-1231 P2 window-first ordering',
+      );
+      // BUG-2123：预落位只对「窗口最终落在 bbox 原点 + bbox 尺寸」成立。桌面还有两条
+      // 旁路（450ms READY-SAFETY 兜底 / reveal(scalar)）走 C++ 的 legacy `Reveal`，
+      // 它把窗口放在**光标处、单卡尺寸**——图层不复位，根卡就被推到窗口之外，用户看到
+      // 一个空白弹窗（TODO-1079 那条老症状）。复位必须在 native 的 Reveal 里，因为
+      // Dart 侧两个调用点都不知道自己会走哪条 C++ 路径。
+      final int revealAt = cpp.indexOf(
+        'void GlobalLookupWindow::Reveal(int width, int height,',
+      );
+      expect(revealAt, greaterThan(-1), reason: 'legacy Reveal 不见了，守卫锚点要更新');
+      final int revealEnd = cpp.indexOf(
+        'void GlobalLookupWindow::RevealStack(',
+        revealAt,
+      );
+      expect(revealEnd, greaterThan(revealAt));
+      expect(
+        cpp.substring(revealAt, revealEnd).contains(
+              'resetLayerOffsetForLegacyReveal',
+            ),
+        isTrue,
+        reason: 'legacy Reveal 必须把图层复位，否则首帧预落位会让这条路径显示空白卡',
+      );
+      expect(
+        hostJs.contains(
+            'resetLayerOffsetForLegacyReveal: resetLayerOffsetForLegacyReveal,'),
+        isTrue,
+        reason: 'host 必须导出该复位入口，否则 native 那次 ExecuteScript 是空调用',
+      );
+
       // C++ RevealStack triggers the commit AFTER SetWindowPos.
       final int rsAt = cpp.indexOf('void GlobalLookupWindow::RevealStack(');
       expect(rsAt, greaterThan(-1));
@@ -578,7 +640,8 @@ void main() {
       );
     });
 
-    test('TODO-1231 (BUG-583): beginLookup re-gates WITHOUT observing the stale '
+    test(
+        'TODO-1231 (BUG-583): beginLookup re-gates WITHOUT observing the stale '
         'card (no premature reveal off the previous lookup)', () {
       // beginLookup used to call observeContent, which synchronously re-satisfied
       // content-ready off the reused iframe's still-present old .glossary-content
@@ -594,8 +657,7 @@ void main() {
       expect(
         beginBody.contains('observeContent('),
         isFalse,
-        reason:
-            'beginLookup must NOT re-observe the stale card (that fired a '
+        reason: 'beginLookup must NOT re-observe the stale card (that fired a '
             'premature overlaySize off the previous lookup — BUG-583)',
       );
       expect(
@@ -621,7 +683,8 @@ void main() {
       );
     });
 
-    test('TODO-1231 (BUG-583): the overlay window origin is ratcheted '
+    test(
+        'TODO-1231 (BUG-583): the overlay window origin is ratcheted '
         'outward-only (nested close does not lurch the pinned root)', () {
       // A nested up/left cascade CLOSE moved the window top-left back inward while
       // the host layer shift lagged ~1 frame across the DWM/WebView2 boundary ->
@@ -654,8 +717,7 @@ void main() {
         applyBody.contains('ratcheted.left') &&
             applyBody.contains('ratcheted.top'),
         isTrue,
-        reason:
-            'revealStack is fed the ratcheted origin (window + layer shift '
+        reason: 'revealStack is fed the ratcheted origin (window + layer shift '
             'both use the held outward min-corner)',
       );
       // The ratchet is reset per fresh lookup + on dismiss so a session starts
@@ -667,8 +729,10 @@ void main() {
       );
     });
 
-    test('TODO-1231 v2 (BUG-583): the bbox MIN-corner (window origin) follows '
-        'only content-ready shells so a hidden child never lurches the parent', () {
+    test(
+        'TODO-1231 v2 (BUG-583): the bbox MIN-corner (window origin) follows '
+        'only content-ready shells so a hidden child never lurches the parent',
+        () {
       // The residual "父弹窗出现子弹窗时闪一下": a freshly-opened, still-gated-
       // hidden child that cascades up/left used to drag the union bbox MIN-corner
       // outward, moving the window origin (SetWindowPos) while the compensating
@@ -712,7 +776,8 @@ void main() {
       );
     });
 
-    test('BUG-1833: nested reveal waits for the exact committed full geometry', () {
+    test('BUG-1833: nested reveal waits for the exact committed full geometry',
+        () {
       // Origin-only coverage missed the SGRE down/right case: the child's
       // top-left sat inside the old HWND while its right/bottom edge was clipped.
       // The gate now requires a matching bbox + shellRects epoch and verifies the
@@ -744,8 +809,7 @@ void main() {
       expect(
         renderBody.contains('setGateFlag(record, ATTR_REVEAL_READY,'),
         isFalse,
-        reason:
-            'renderPayload must NOT flip reveal-ready unconditionally '
+        reason: 'renderPayload must NOT flip reveal-ready unconditionally '
             '(an up/left child would paint clipped — BUG-583)',
       );
       // commitLayerShift re-checks held shells so a child covered by the new
@@ -781,17 +845,18 @@ void main() {
       expect(bEnd, greaterThan(bAt));
       final String beginBody = hostJs.substring(bAt, bEnd);
       expect(
-        beginBody.contains('layerOffsetLeft = 0') &&
-            beginBody.contains('layerOffsetTop = 0') &&
+        beginBody.contains('applyLayerOffset(0, 0)') &&
             beginBody.contains('resetGeometryTransaction()'),
         isTrue,
         reason:
-            'beginLookup retires the committed transaction while the global '
-            'epoch counter remains monotonic',
+            'beginLookup retires the committed transaction (and zeroes the layer '
+            'origin through the single writer) while the global epoch counter '
+            'remains monotonic',
       );
     });
 
-    test('TODO-1345 (BUG-583 deeper): a reserved origin FLOOR freezes the window '
+    test(
+        'TODO-1345 (BUG-583 deeper): a reserved origin FLOOR freezes the window '
         'origin so an up/left child never lurches the pinned parent', () {
       // The residual "第二个弹窗出现导致第一个弹窗位置变动": rounds 1-4 let the union
       // bbox MIN-corner move outward ONCE when an up/left child became content-ready,
@@ -837,8 +902,7 @@ void main() {
         measureBody.contains('if (originFloorLeft < minLeft)') &&
             measureBody.contains('if (originFloorTop < minTop)'),
         isTrue,
-        reason:
-            'measureAndReport pulls the origin OUT to at least the floor '
+        reason: 'measureAndReport pulls the origin OUT to at least the floor '
             '(a lower bound, never a cap — freezes the origin for an up/left '
             'child within the floor)',
       );
@@ -882,8 +946,7 @@ void main() {
       expect(
         hostJs.contains('function observeContent('),
         isTrue,
-        reason:
-            'host watches the same-origin iframe DOM for content-ready '
+        reason: 'host watches the same-origin iframe DOM for content-ready '
             '(no popup.js change)',
       );
       expect(
@@ -913,7 +976,8 @@ void main() {
       );
     });
 
-    test('coordinate-domain rule: host.js + computeFrameRect carry NO dpr math', () {
+    test('coordinate-domain rule: host.js + computeFrameRect carry NO dpr math',
+        () {
       // The layout math is CSS / logical px throughout; the only dpr boundary is
       // C++ window geometry / the WH_MOUSE_LL hook. So neither host.js nor the
       // pure layout function may multiply/divide by a device pixel ratio.
@@ -931,8 +995,7 @@ void main() {
         expect(
           layoutCode.contains(token),
           isFalse,
-          reason:
-              'global_lookup_layout CODE must stay unit-agnostic CSS px '
+          reason: 'global_lookup_layout CODE must stay unit-agnostic CSS px '
               '(no "$token") — the dpr boundary is the C++ window only',
         );
       }
@@ -944,8 +1007,7 @@ void main() {
             hostJs.contains('*dpr') ||
             hostJs.contains('/dpr'),
         isFalse,
-        reason:
-            'host.js must not scale shell geometry by dpr; geometry stays '
+        reason: 'host.js must not scale shell geometry by dpr; geometry stays '
             'CSS px and the dpr is converted at the C++ window boundary',
       );
     });
@@ -960,14 +1022,16 @@ void main() {
       }
       final File jsTest = File('test/lookup/global_lookup_host_test.mjs');
       expect(jsTest.existsSync(), isTrue);
-      final ProcessResult result = await Process.run(nodeExe, <String>[
-        jsTest.path,
-      ], workingDirectory: Directory.current.path);
+      final ProcessResult result = await Process.run(
+          nodeExe,
+          <String>[
+            jsTest.path,
+          ],
+          workingDirectory: Directory.current.path);
       expect(
         result.exitCode,
         0,
-        reason:
-            'global_lookup_host JS harness failed.\n'
+        reason: 'global_lookup_host JS harness failed.\n'
             'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
       );
       expect(
@@ -1004,8 +1068,7 @@ void main() {
         expect(
           hostJs.contains('https://hibiki.popup/popup.html'),
           isTrue,
-          reason:
-              'each frame loads the same-origin popup document so the host '
+          reason: 'each frame loads the same-origin popup document so the host '
               'can inject its settings via contentWindow',
         );
       },
@@ -1023,9 +1086,8 @@ void main() {
 
 /// Resolve a usable `node` executable, returning null when none is on PATH.
 String? _resolveNode() {
-  final List<String> candidates = Platform.isWindows
-      ? <String>['node.exe', 'node']
-      : <String>['node'];
+  final List<String> candidates =
+      Platform.isWindows ? <String>['node.exe', 'node'] : <String>['node'];
   for (final String name in candidates) {
     try {
       final ProcessResult probe = Process.runSync(name, <String>['--version']);

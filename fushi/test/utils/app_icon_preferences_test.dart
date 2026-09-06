@@ -25,29 +25,28 @@ void main() {
   });
 
   group('windowIconAssetForPreset', () {
-    test('返回三套预设各自的 asset（TODO-1241）', () {
+    test('唯一预设 default 指向 squircle 资源', () {
       expect(
         windowIconAssetForPreset('default'),
         'assets/meta/launcher_icon_squircle.png',
       );
-      expect(
-        windowIconAssetForPreset('hibiki_transparent'),
-        'assets/meta/launcher_icon_minimal.png',
-      );
-      expect(
-        windowIconAssetForPreset('hibiki_full'),
-        'assets/meta/launcher_icon_full.png',
-      );
     });
 
-    test('老用户残留的 hibiki_minimal 安全回退到 default 的 asset', () {
-      // TODO-868 去重：hibiki_minimal 曾与旧 default 映射同一张图，已移除该档；
-      // 老用户 app_icon_preset=hibiki_minimal 读取时必须回退到 default（现为 squircle），
-      // 不崩、不空图标。
-      expect(
-        windowIconAssetForPreset('hibiki_minimal'),
-        'assets/meta/launcher_icon_squircle.png',
-      );
+    test('已下线档在老用户偏好里残留时安全回退到 default 的 asset', () {
+      // hibiki_minimal（TODO-868 去重）、hibiki_transparent 与 hibiki_full（随
+      // 换新图标下线）都可能留在老用户的 app_icon_preset 里。它们的 asset 已被
+      // 删除，读取时必须回退到 default，不崩、不空图标。
+      for (final String retired in <String>[
+        'hibiki_minimal',
+        'hibiki_transparent',
+        'hibiki_full',
+      ]) {
+        expect(
+          windowIconAssetForPreset(retired),
+          'assets/meta/launcher_icon_squircle.png',
+          reason: '$retired 应回退到 default 的 asset',
+        );
+      }
     });
 
     test('未知 key 回退到 default 的 asset', () {
@@ -63,35 +62,38 @@ void main() {
   });
 
   group('presetIconAssets', () {
-    test('三档 default + hibiki_transparent + full，不含 hibiki_minimal', () {
-      expect(
-        presetIconAssets.keys,
-        containsAll(<String>['default', 'hibiki_transparent', 'hibiki_full']),
-      );
-      expect(presetIconAssets.containsKey('hibiki_minimal'), isFalse);
-      expect(presetIconAssets.length, 3);
+    test('只剩 default 一档，已下线档不再出现', () {
+      expect(presetIconAssets.keys, <String>['default']);
+      for (final String retired in <String>[
+        'hibiki_minimal',
+        'hibiki_transparent',
+        'hibiki_full',
+      ]) {
+        expect(presetIconAssets.containsKey(retired), isFalse,
+            reason: '$retired 已随换新图标下线，资源也已删除');
+      }
     });
 
-    test('default 指向不透明白 squircle，透明档指向透明 wordmark', () {
+    test('default 指向兔子图标的 squircle 资源', () {
       expect(
         presetIconAssets['default'],
         'assets/meta/launcher_icon_squircle.png',
-      );
-      expect(
-        presetIconAssets['hibiki_transparent'],
-        'assets/meta/launcher_icon_minimal.png',
       );
     });
   });
 
   group('isPresetKey', () {
-    test('default/hibiki_transparent/full 合法；hibiki_minimal/custom/未知不合法', () {
+    test('只有 default 合法；已下线档 / custom / 未知都不合法', () {
       expect(isPresetKey('default'), isTrue);
-      expect(isPresetKey('hibiki_transparent'), isTrue);
-      expect(isPresetKey('hibiki_full'), isTrue);
-      expect(isPresetKey('hibiki_minimal'), isFalse);
-      expect(isPresetKey('custom'), isFalse);
-      expect(isPresetKey('nope'), isFalse);
+      for (final String invalid in <String>[
+        'hibiki_transparent',
+        'hibiki_full',
+        'hibiki_minimal',
+        'custom',
+        'nope',
+      ]) {
+        expect(isPresetKey(invalid), isFalse, reason: '$invalid 不应再是合法预设');
+      }
     });
   });
 
@@ -124,22 +126,41 @@ void main() {
       expect(customProvider.imageProvider, isA<FileImage>());
       expect(customProvider.width, appIconDecodePixelWidth);
 
-      final AssetImage full =
-          appIconImageProvider(const AppIconSelection(presetKey: 'hibiki_full'))
+      final AssetImage preset =
+          appIconImageProvider(const AppIconSelection(presetKey: 'default'))
               as AssetImage;
-      expect(full.assetName, presetIconAssets['hibiki_full']);
+      expect(preset.assetName, presetIconAssets['default']);
     });
 
     test('启动读取会归一化选择并发布给侧栏监听器', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{
-        iconPresetPrefKey: 'hibiki_full',
+        iconPresetPrefKey: 'default',
       });
 
       final AppIconSelection loaded = await loadAppIconSelection();
 
-      expect(loaded.presetKey, 'hibiki_full');
+      expect(loaded.presetKey, 'default');
       expect(loaded.revision, 1);
-      expect(currentAppIconSelection.value.presetKey, 'hibiki_full');
+      expect(currentAppIconSelection.value.presetKey, 'default');
+    });
+
+    test('老用户偏好里残留的已下线档在启动读取时归一化成 default', () async {
+      // 换新图标后 hibiki_full / hibiki_transparent 的 asset 已删除；若启动读取
+      // 原样返回这些 key，侧栏与窗口图标会去解码不存在的 asset。
+      for (final String retired in <String>[
+        'hibiki_full',
+        'hibiki_transparent',
+        'hibiki_minimal',
+      ]) {
+        SharedPreferences.setMockInitialValues(<String, Object>{
+          iconPresetPrefKey: retired,
+        });
+
+        final AppIconSelection loaded = await loadAppIconSelection();
+
+        expect(loaded.presetKey, 'default', reason: '$retired 应归一化成 default');
+        expect(currentAppIconSelection.value.presetKey, 'default');
+      }
     });
 
     test('保存自定义图标会持久化并为同一路径连续发布新 revision', () async {

@@ -778,9 +778,13 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
           mediaKind: kActivityMediaVideo,
           mediaKey: widget.bookUid,
           title: row.title,
+          accrual: StudyAccrual.explicit,
           onWriteError: (Object e, StackTrace st) =>
               ErrorLogService.instance.log('StudyClock.write(web-video)', e, st),
         ),
+        loadCoverage: () => db.getPref(videoWatchCoveragePrefKey(widget.bookUid)),
+        saveCoverage: (String json) =>
+            db.setPref(videoWatchCoveragePrefKey(widget.bookUid), json),
         markCompleted: (String uid) =>
             db.markVideoCompleted(uid, DateTime.now()),
       )..attach(_controller);
@@ -1079,10 +1083,16 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     await _toggleFavoriteCue(cue);
   }
 
-  void _copyCue(AudioCue cue) {
+  /// 字幕列表行内复制。走 [AppModel.copyToClipboard]：写剪贴板 + 按平台决定要不要
+  /// 弹「已复制」toast（Android 13+ 系统自带提示，不重复）。网页视频页没有视频页那套
+  /// OSD，此前这里复制完毫无反馈。
+  /// 返回是否真的写了剪贴板（[VideoSubtitleJumpPanel.onCopyCue] 的契约）：空句不算
+  /// 成功，面板据此决定要不要把行内按钮切成 ✓。
+  bool _copyCue(AudioCue cue) {
     final String text = cue.text.trim();
-    if (text.isEmpty) return;
-    Clipboard.setData(ClipboardData(text: text));
+    if (text.isEmpty) return false;
+    _appModel.copyToClipboard(text);
+    return true;
   }
 
   // ── 查词（与视频页 `_lookupAt` 同步骤）──────────────────────────────────

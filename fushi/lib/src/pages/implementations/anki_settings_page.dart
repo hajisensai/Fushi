@@ -570,19 +570,25 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   /// 动图能拍出口型和动作，galgame 一句台词内画面基本静止，动图多半只是把同一帧存
   /// 二十遍。共用一个开关会逼用户为一边将就另一边。
   ///
-  /// galgame 没有「字幕区间」，所以只给 gif / 静态截图两档——不渲染 subtitleStart，
-  /// 免得暗示能选一个对这个场景无意义的模式。
+  /// galgame 没有「字幕区间」，所以给 gif / 静态截图 / 视频片段三档——不渲染
+  /// subtitleStart，免得暗示能选一个对这个场景无意义的模式。视频片段（mp4）反过来
+  /// 只在这里渲染：它靠 hook 会话的窗口录制 + 台词时间戳，视频页没有这两样。
   Widget _buildGalMiningImageModePicker() {
+    final VideoMiningImageMode current = appModel.galMiningImageMode;
     return AdaptiveSettingsPickerRow<VideoMiningImageMode>(
       title: t.gal_mining_image_mode,
-      subtitle: t.gal_mining_image_mode_hint,
+      subtitle: '${t.gal_mining_image_mode_hint}\n'
+          '${t.gal_mining_image_mode_video_clip}: '
+          '${t.gal_mining_image_mode_video_clip_hint}',
       icon: Icons.photo_camera_back_outlined,
       controlBelow: true,
       // 历史值可能是 subtitleStart（与视频项共用枚举）：按 isStill 归到静态截图，
       // 不让 picker 落在一个没渲染的选项上。
-      selected: appModel.galMiningImageMode.isStill
-          ? VideoMiningImageMode.currentFrame
-          : VideoMiningImageMode.gif,
+      selected: current.isVideoClip
+          ? VideoMiningImageMode.videoClip
+          : current.isStill
+              ? VideoMiningImageMode.currentFrame
+              : VideoMiningImageMode.gif,
       options: [
         AdaptiveSettingsPickerOption<VideoMiningImageMode>(
           value: VideoMiningImageMode.gif,
@@ -591,6 +597,10 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
         AdaptiveSettingsPickerOption<VideoMiningImageMode>(
           value: VideoMiningImageMode.currentFrame,
           label: t.gal_mining_image_mode_screenshot,
+        ),
+        AdaptiveSettingsPickerOption<VideoMiningImageMode>(
+          value: VideoMiningImageMode.videoClip,
+          label: t.gal_mining_image_mode_video_clip,
         ),
       ],
       onChanged: (VideoMiningImageMode mode) {

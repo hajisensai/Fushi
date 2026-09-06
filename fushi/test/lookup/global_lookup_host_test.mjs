@@ -884,11 +884,16 @@ function commitLatestGeometry(host) {
 }
 
 // 11. D2 overlaySize: the host reports the UNION bounding box of all shells
-//     (window-local CSS px) + dpr. TODO-1231 P2: measureAndReport NO LONGER
-//     shifts the layer synchronously (that raced the window move across vsync ->
-//     geometry lurch); the shift is applied by commitLayerShift, which C++
-//     RevealStack calls AFTER SetWindowPos. So the layer stays un-shifted until
-//     commitLayerShift(box.left, box.top) runs.
+//     (window-local CSS px) + dpr. Layer-shift ordering is two-phase:
+//     * FIRST transaction of a lookup (BUG-2123): the native window is still
+//       parked off-screen, so measureAndReport applies the compensating shift
+//       RIGHT AWAY -- the window only becomes visible a full Dart round-trip
+//       later (overlaySize -> revealStack -> SetWindowPos) and must show settled
+//       content on its very first frame.
+//     * LATER transactions (test 11c): the window is already on screen, so
+//       TODO-1231 P2 holds -- the shift waits for commitLayerShift, which C++
+//       RevealStack calls AFTER SetWindowPos, so window and content move in a
+//       causal order instead of racing across vsync.
 {
   const { host, document, window } = freshHost();
   window.devicePixelRatio = 1.5;
@@ -907,16 +912,88 @@ function commitLatestGeometry(host) {
   assert.strictEqual(box.top, 0, 'bbox top = min shell top');
   assert.strictEqual(box.width, 140, 'bbox width = maxRight - minLeft');
   assert.strictEqual(box.height, 140, 'bbox height = maxBottom - minTop');
-  // TODO-1231 P2: measureAndReport must NOT have shifted the layer yet (it only
-  // reports the bbox; the shift is C++-ordered after SetWindowPos).
+  // BUG-2123: this is the lookup's FIRST transaction (the window has never been
+  // revealed), so the compensating translation is already applied when
+  // overlaySize is posted -- the window cannot become visible before Dart has
+  // round-tripped this very message.
   const layer = document.getElementById('global-lookup-host-layer');
-  assert.strictEqual(layer.style.left, '0', 'layer NOT shifted by measureAndReport');
-  assert.strictEqual(layer.style.top, '0', 'layer NOT shifted by measureAndReport');
-  // commitLayerShift (called by C++ RevealStack after the window moved) applies
-  // the compensating translation so the bbox origin maps to the window origin.
+  assert.strictEqual(layer.style.left, '40px',
+    'first transaction shifts the layer by -minLeft before overlaySize');
+  assert.strictEqual(layer.style.top, '0px',
+    'first transaction shifts the layer by -minTop before overlaySize');
+  // commitLayerShift (called by C++ RevealStack after the window moved) carries
+  // the same origin, so it is an idempotent no-op on the DOM.
   host.commitLayerShift(box.left, box.top, box.geometryEpoch);
-  assert.strictEqual(layer.style.left, '40px', 'commitLayerShift shifts by -minLeft');
-  assert.strictEqual(layer.style.top, '0px', 'commitLayerShift shifts by -minTop');
+  assert.strictEqual(layer.style.left, '40px', 'commitLayerShift keeps -minLeft');
+  assert.strictEqual(layer.style.top, '0px', 'commitLayerShift keeps -minTop');
+}
+
+// 11c. BUG-2123 -- "app 外查词的弹窗先在屏幕左上角闪一下再飞到光标".
+//      Root cause: the reserve-to-edge origin floor (computeCascadeHeadroomSeed,
+//      BUG-670) drags the FIRST bbox origin all the way out to the work-area
+//      corner on EVERY lookup, and C++ RevealStack made the window visible
+//      (SetWindowPos | SWP_SHOWWINDOW) at that origin while the compensating
+//      layer translate was still queued behind an ExecuteScript round-trip. For
+//      that one frame the root card painted at window-local (0,0) == the
+//      work-area top-left corner, then jumped to the cursor.
+//      Invariant locked here, in the SAME coordinate arithmetic the C++ window
+//      uses (screen = windowOrigin + layerOffset + shellLocal):
+//        A) first transaction  -> layer already compensates the floor, so the
+//           root card's window-local position is the reserved cursor offset,
+//           NOT (0,0);
+//        B) later transactions -> layer must NOT move until commitLayerShift
+//           (TODO-1231 P2 anti-lurch ordering is preserved for a visible window).
+{
+  const { host, document } = freshHost();
+  // Cursor 300x200 CSS px inside the work area -> Dart reserves that whole
+  // distance so any up/left cascade fits without moving the window origin.
+  host.renderStack({
+    originFloor: { left: -300, top: -200 },
+    popups: [
+      { id: 'frame-0', parentIndex: -1, frame: { left: 0, top: 0, width: 100, height: 80 }, settingsJs: '' },
+    ],
+  });
+  const first = latestGeometryBox();
+  assert.strictEqual(first.left, -300, 'precondition: the floor owns the bbox origin');
+  assert.strictEqual(first.top, -200, 'precondition: the floor owns the bbox origin');
+  const layer = document.getElementById('global-lookup-host-layer');
+  // (A) The window is placed at (cursor + bbox.left, cursor + bbox.top) == the
+  // work-area corner. The root shell is at layer-local (0,0), so its window-local
+  // position is layerOffset + 0. Un-shifted that is (0,0) -> the corner flash.
+  assert.strictEqual(layer.style.left, '300px',
+    'first reveal: layer compensates the reserved floor BEFORE the window shows');
+  assert.strictEqual(layer.style.top, '200px',
+    'first reveal: layer compensates the reserved floor BEFORE the window shows');
+  const rootShell = shellsOf(document)[0];
+  assert.strictEqual(
+    parseFloat(layer.style.left) + (parseFloat(rootShell.style.left) || 0), 300,
+    'root card lands at the cursor on the window\'s FIRST visible frame');
+  assert.strictEqual(
+    parseFloat(layer.style.top) + (parseFloat(rootShell.style.top) || 0), 200,
+    'root card lands at the cursor on the window\'s FIRST visible frame');
+  // Commit it the way C++ RevealStack does; the window is now visible.
+  commitLatestGeometry(host);
+
+  // (B) A nested child cascading further up/left produces a NEW transaction.
+  // The window is on screen now, so the layer must stay put until C++ has moved
+  // the window (otherwise the pinned parent lurches -- TODO-1231 P2).
+  hostPostLog = [];
+  host.renderStack({
+    originFloor: { left: -300, top: -200 },
+    popups: [
+      { id: 'frame-0', parentIndex: -1, frame: { left: 0, top: 0, width: 100, height: 80 }, settingsJs: '' },
+      { id: 'frame-1', parentIndex: 0, frame: { left: -420, top: -260, width: 100, height: 80 }, settingsJs: '' },
+    ],
+  });
+  const second = latestGeometryBox();
+  assert.strictEqual(second.left, -420, 'precondition: the child pushes the origin past the floor');
+  assert.strictEqual(layer.style.left, '300px',
+    'visible window: measureAndReport must NOT move the layer (anti-lurch)');
+  assert.strictEqual(layer.style.top, '200px',
+    'visible window: measureAndReport must NOT move the layer (anti-lurch)');
+  host.commitLayerShift(second.left, second.top, second.geometryEpoch);
+  assert.strictEqual(layer.style.left, '420px', 'commitLayerShift applies the new origin');
+  assert.strictEqual(layer.style.top, '260px', 'commitLayerShift applies the new origin');
 }
 
 // 11b. BUG-2082 — the overlaySize box also carries the ROOT card's own measured

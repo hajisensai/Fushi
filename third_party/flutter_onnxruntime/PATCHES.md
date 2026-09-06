@@ -76,14 +76,39 @@ and macOS 13.4–14.0 for free, with no change to the ORT binary or the Dart API
    surrogates and anything past U+10FFFF); anything looser would let a string
    pass here and still blow up on the far side.
 
-**The Dart API under `lib/` is byte-for-byte upstream.** The Apple, Android and
-Linux native trees are untouched as well; the Windows tree carries deltas 6 and
-7 above, both confined to provider wiring and error-string encoding — no ORT
-wrapper or inference logic changed anywhere.
+8. `windows/flutter_onnxruntime_plugin.cpp` + `lib/src/ort_session.dart`:
+   `OrtSessionOptions.freeDimensionOverrides` (`Map<String, int>`) is forwarded
+   to ORT's `AddFreeDimensionOverrideByName`.
 
-Guard: `fushi/test/ocr/onnxruntime_windows_error_encoding_guard_test.dart` keeps
-delta 7 in place — a re-vendor that drops it, or a new error branch that calls
-`result->Error` directly, fails the guard.
+   The zipformer encoder declares symbolic `N`/`T`, so ORT re-plans the whole
+   graph on every `Run` — measured 19k frames/s on a 4070 Ti with DirectML.
+   Pinning both dimensions lets ORT fuse the model into a single DML graph:
+   129k frames/s at N=32/T=550, outputs identical to the dynamic session to
+   within 1e-5. The ORT C++ wrapper shipped with this version does not expose
+   the call, hence the raw `Ort::GetApi()` use.
+
+   Windows-only by construction: the other platform plugins never read the key
+   and silently ignore it. The Dart-side consumer must therefore gate on the
+   execution provider actually in use (`AsrStaticEncoderPool` is created only
+   for DirectML), because a session built with the key on a platform that
+   ignores it stays dynamic and accepts the static-shaped tensors anyway — it
+   is 5-7x slower with no error anywhere.
+
+**The Dart API under `lib/` carries exactly one delta (#8, the
+`freeDimensionOverrides` option); everything else there is byte-for-byte
+upstream.** The Apple, Android and Linux native trees are untouched; the Windows
+tree carries deltas 6, 7 and 8 above — provider wiring, error-string encoding
+and free-dimension overrides. No ORT wrapper or inference logic changed
+anywhere.
+
+Guards: `fushi/test/ocr/onnxruntime_windows_error_encoding_guard_test.dart`
+keeps delta 7 in place, and
+`fushi/test/onnx/onnxruntime_free_dimension_override_guard_test.dart` keeps
+delta 8 — a re-vendor that drops either half fails a guard. Delta 8 needs a
+guard more than the others do because losing only its C++ half is **silent**:
+Dart keeps putting the key in the map, the plugin no longer reads it, the
+session falls back to dynamic shapes, and every result stays correct while the
+encoder runs 5-7x slower.
 
 ## Deployment targets this fork requires
 
@@ -101,7 +126,7 @@ path or drift the floors apart.
 
 ## Re-vendoring on upgrade
 
-Copy the new upstream version over this folder, then re-apply deltas #1–#6.
+Copy the new upstream version over this folder, then re-apply deltas #1–#8.
 Before bumping the `onnxruntime-objc` pin, check the new version's podspec
 platforms (`pod spec cat onnxruntime-objc --version=X.Y.Z`) — if the floor moved,
 the four project deployment targets and the guard test move with it.

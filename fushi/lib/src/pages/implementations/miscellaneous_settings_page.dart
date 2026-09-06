@@ -312,16 +312,6 @@ class _MiscellaneousSettingsBodyState
         label: t.icon_default,
         asset: presetIconAssets['default']!,
       ),
-      _IconOption(
-        key: 'hibiki_transparent',
-        label: t.icon_transparent,
-        asset: presetIconAssets['hibiki_transparent']!,
-      ),
-      _IconOption(
-        key: 'hibiki_full',
-        label: t.icon_full,
-        asset: presetIconAssets['hibiki_full']!,
-      ),
     ];
 
     return Wrap(

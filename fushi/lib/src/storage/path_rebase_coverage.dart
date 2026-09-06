@@ -200,6 +200,8 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
       PathRebaseKind.notAPath, '语言代码列表 JSON，无路径。'),
   PathRebaseColumn('DictionaryMetadata', 'collapsedLanguagesJson',
       PathRebaseKind.notAPath, '语言代码列表 JSON，无路径。'),
+  PathRebaseColumn('DictionaryMetadata', 'expandedLanguagesJson',
+      PathRebaseKind.notAPath, '语言代码列表 JSON，无路径。'),
   PathRebaseColumn('DictionaryHistory', 'resultJson', PathRebaseKind.notAPath,
       '查询结果快照 JSON（词条文本），无路径。'),
 
@@ -257,6 +259,28 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
       PathRebaseKind.notAPath,
       'TODO-1157 流媒体加载凭据 {subtitleUrl,subtitleFileName,referer,userAgent}，'
           '全是远端 URL / HTTP header，无本机路径。'),
+
+  // ── video_file_specs（v95 规格探测缓存）────────────────────────────
+  PathRebaseColumn(
+      'VideoFileSpecs',
+      'filePath',
+      PathRebaseKind.documentsRooted,
+      '本表的**主键**，与 video_books.video_path 同语义（数据根内下载副本 / 用户原位'
+          '外部文件）。不改写 = 数据根搬家后整张规格缓存的键全部指向旧路径，永远命不中，'
+          '每个条目都要重探一遍（几百个文件的 ffprobe）。虽是可重建的缓存，但改写成本'
+          '只是一条 UPDATE，没有理由让用户白等。'),
+  PathRebaseColumn(
+      'VideoFileSpecs',
+      'audioTracksJson',
+      PathRebaseKind.notAPath,
+      'ffprobe 音轨事实数组 [{index,codec,channels,language,title,标志位}]，'
+          '全是流属性与语言 tag，无任何文件系统路径。'),
+  PathRebaseColumn(
+      'VideoFileSpecs',
+      'subtitleTracksJson',
+      PathRebaseKind.notAPath,
+      '内封字幕轨事实数组，与 audioTracksJson 同型——内封轨没有外部文件，'
+          '外挂字幕路径存在 video_books.subtitle_source，不在本表。'),
 
   // ── 统计 / 收藏 ────────────────────────────────────────────────────
   PathRebaseColumn('FavoriteWords', 'sourceType', PathRebaseKind.notAPath,
@@ -417,8 +441,7 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
       PathRebaseKind.notAPath, '发布标题文本，不是路径。'),
   PathRebaseColumn('VideoDownloadJobs', 'coverUrl', PathRebaseKind.notAPath,
       '发现来源的远端封面 URL，不是本机路径。'),
-  PathRebaseColumn('VideoDownloadJobs', 'identityJson',
-      PathRebaseKind.notAPath,
+  PathRebaseColumn('VideoDownloadJobs', 'identityJson', PathRebaseKind.notAPath,
       'v94 发现页身份快照 JSON（VideoMediaReference：providerId/mediaId/标题/原名/别名/年份/季集号 + tmdb/imdb/tvdb/anidb/anilist/bangumi 等外部 id），全是标识与文本，不承载任何路径。'),
   PathRebaseColumn('VideoDownloadJobs', 'backendProfileId',
       PathRebaseKind.notAPath, '下载后端配置身份，不是文件路径。'),
@@ -458,7 +481,9 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
       PathRebaseKind.notAPath, '发现来源的远端封面 URL，不是本机路径。'),
   PathRebaseColumn('VideoDownloadSubscriptions', 'filterJson',
       PathRebaseKind.notAPath, '严格版本规则 JSON（组、分辨率、编码、语言），不承载路径或凭据。'),
-  PathRebaseColumn('VideoDownloadSubscriptions', 'identityJson',
+  PathRebaseColumn(
+      'VideoDownloadSubscriptions',
+      'identityJson',
       PathRebaseKind.notAPath,
       'v94 发现页身份快照 JSON（VideoMediaReference：providerId/mediaId/标题/原名/别名/年份/季集号 + tmdb/imdb/tvdb/anidb/anilist/bangumi 等外部 id），全是标识与文本，不承载任何路径。'),
   PathRebaseColumn('VideoDownloadSubscriptions', 'backendProfileId',

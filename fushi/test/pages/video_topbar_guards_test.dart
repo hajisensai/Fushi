@@ -174,9 +174,13 @@ void main() {
           reason: 'editableSlots 应含 topLeft（TODO-388）');
       expect(block.contains('VideoControlSlot.topRight'), isTrue,
           reason: 'editableSlots 应含 topRight（TODO-388）');
-      // topCenter 仍是固定标题 chrome 区，不开放为可拖动槽。
-      expect(block.contains('VideoControlSlot.topCenter'), isFalse,
-          reason: 'topCenter（标题固定 chrome）不应纳入可编辑槽');
+      // topCenter 也在集合里：两个编辑器一直把它画成可投放区域，`canMoveToSlot`
+      // 也一直允许标题进 topCenter——旧断言钉住的是一份与真实能力相反的清单。
+      // 「区域被暴露」与「这个按钮能不能放进去」是两个维度，后者仍由
+      // `canMoveToSlot` 单独把关（topCenter 依旧只收标题，见
+      // video_control_layout_test.dart 的「两个维度」用例）。
+      expect(block.contains('VideoControlSlot.topCenter'), isTrue,
+          reason: 'topCenter 是编辑器真实暴露的槽（标题能放），清单必须与之一致');
     });
 
     test('控件拖拽编辑器呈现顶部两槽放置区', () {

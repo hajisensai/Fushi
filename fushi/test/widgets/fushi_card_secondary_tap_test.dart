@@ -61,12 +61,18 @@ void main() {
     });
   });
 
-  test('书架卡片外壳把 onSecondaryTap 配线到长按回调（源码守卫）', () {
+  test('书架卡片外壳把右键配线到长按回调（源码守卫）', () {
     // TODO-587: reader_fushi_history_page 拆成主壳 + reader_history/*.part.dart；
     // _bookCardShell 现落在 card_widgets.part.dart，故读合并语料。
+    //
+    // BUG-2111 之后判据换成语义等价物：右键不再由 InkWell.onSecondaryTap 硬绑，而是
+    // 经 [ContextMenuTrigger] 按绑定表判定唤出键。断言的事实没变——书架卡的右键必须
+    // 落到与长按相同的那个回调，且多选态压制（让位祖先 SelectionDragArea 扫选）。
     final String text = readReaderHistorySource();
     expect(
-      text.contains('onSecondaryTap: _selectionMode ? null : onLongPress'),
+      text.contains(
+        'onInvoke: contextMenuInvoker(_selectionMode ? null : onLongPress)',
+      ),
       isTrue,
       reason: '_bookCardShell 必须把右键映射到与长按相同的上下文菜单回调，否则桌面右键回归无效',
     );

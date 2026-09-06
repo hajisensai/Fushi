@@ -784,6 +784,95 @@ TODO016 imported subtitle survives reopen.
       expect(sources, hasLength(1));
       expect(sources.single.label, 'already-listed.srt');
     });
+
+    // BUG-2094：只被选作**副**字幕的导入档也必须有一行。此前菜单只补主字幕那条
+    // 持久化指针，重开视频后（本会话登记的导入档已按视频源作用域清空、枚举又永远
+    // 看不到 video_subtitles/）副字幕那个档在列表里彻底消失，而它的 cue 仍从库里
+    // 重放——「副字幕没了，但视频里还在显示」。
+    test('lists an import that is only used as the secondary subtitle',
+        () async {
+      final List<SubtitleSource> sources =
+          await includeCurrentPersistedSubtitleForMenu(
+        const <SubtitleSource>[
+          SubtitleSource.embedded(streamIndex: 0, label: '内封 0: jpn / ass'),
+        ],
+        videoPath: video.path,
+        bookUid: 'video/todo016',
+        currentSubtitleSource: 'embedded:0',
+        currentSecondarySubtitleSource: imported.path,
+        currentSecondaryCues: <AudioCue>[
+          _cue('video/todo016', 'secondary line'),
+        ],
+        loadCues: (_, __, ___) {
+          fail('已有副字幕 cues 时不应再二次解析');
+        },
+      );
+
+      expect(
+        sources.map((SubtitleSource s) => s.label).toList(),
+        <String>[
+          'todo016-imported-reentry.srt',
+          '内封 0: jpn / ass',
+        ],
+      );
+    });
+
+    test('lists both persisted imports with the primary one first', () async {
+      final File secondaryImported = File(p.join(
+        tempDir.path,
+        'video_subtitles',
+        'todo016-secondary.srt',
+      ))
+        ..createSync(recursive: true)
+        ..writeAsStringSync('''
+1
+00:00:00,000 --> 00:00:01,000
+BUG-2094 secondary import.
+''');
+
+      final List<SubtitleSource> sources =
+          await includeCurrentPersistedSubtitleForMenu(
+        const <SubtitleSource>[
+          SubtitleSource.embedded(streamIndex: 0, label: '内封 0: jpn / ass'),
+        ],
+        videoPath: video.path,
+        bookUid: 'video/todo016',
+        currentSubtitleSource: imported.path,
+        currentCues: <AudioCue>[_cue('video/todo016', 'primary line')],
+        currentSecondarySubtitleSource: secondaryImported.path,
+        currentSecondaryCues: <AudioCue>[
+          _cue('video/todo016', 'secondary line'),
+        ],
+      );
+
+      expect(
+        sources.map((SubtitleSource s) => s.label).toList(),
+        <String>[
+          'todo016-imported-reentry.srt',
+          'todo016-secondary.srt',
+          '内封 0: jpn / ass',
+        ],
+      );
+    });
+
+    test('lists a single row when primary and secondary share one file',
+        () async {
+      final List<SubtitleSource> sources =
+          await includeCurrentPersistedSubtitleForMenu(
+        const <SubtitleSource>[],
+        videoPath: video.path,
+        bookUid: 'video/todo016',
+        currentSubtitleSource: imported.path,
+        currentCues: <AudioCue>[_cue('video/todo016', 'primary line')],
+        currentSecondarySubtitleSource: p.normalize(imported.path),
+        currentSecondaryCues: <AudioCue>[
+          _cue('video/todo016', 'secondary line'),
+        ],
+      );
+
+      expect(sources, hasLength(1));
+      expect(sources.single.externalPath, imported.path);
+    });
   });
 
   group('embedded subtitle cache prewarm (TODO-011)', () {

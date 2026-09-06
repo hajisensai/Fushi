@@ -63,7 +63,7 @@ void main() {
         controller: controller,
         onTapCue: (_) {},
         onClose: () {},
-        onCopyCue: (_) {},
+        onCopyCue: (_) => true,
         onFavoriteCue: (_) async {},
         isCueFavorited: isFavorited ?? (_) => false,
         colorScheme: const ColorScheme.dark(),

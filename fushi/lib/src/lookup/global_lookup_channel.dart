@@ -137,6 +137,11 @@ abstract final class GlobalLookupChannel {
   static Future<void> setBlockCapture(bool block) =>
       _impl.setBlockCapture(block);
 
+  /// attached 表面打开的桌面弹窗：点卡外关闭的点击成对吞掉、不推进游戏
+  /// （见 [OverlayWindowChannel.setOutsideClickOwner]）。
+  static Future<void> setOutsideClickOwner(int hwnd) =>
+      _impl.setOutsideClickOwner(hwnd);
+
   static Future<void> hide({bool notify = true}) => _impl.hide(notify: notify);
 
   static Future<bool> isShowing() => _impl.isShowing();
@@ -153,11 +158,18 @@ abstract final class GlobalLookupChannel {
     void Function()? onOverlayHidden,
     void Function(OverlayReverseEvent event)? onRoutedJsMessage,
     void Function(OverlayReverseEvent event)? onRoutedOverlayHidden,
+    void Function()? onGlobalMouseTrigger,
   }) => _impl.setHandlers(
     onGetMedia: onGetMedia,
     onJsMessage: onJsMessage,
     onOverlayHidden: onOverlayHidden,
     onRoutedJsMessage: onRoutedJsMessage,
     onRoutedOverlayHidden: onRoutedOverlayHidden,
+    onGlobalMouseTrigger: onGlobalMouseTrigger,
   );
+
+  /// TODO-1066 — 注册/注销全局鼠标侧键触发（[OverlayWindowChannel
+  /// .setGlobalMouseTrigger]）。0 = 注销。
+  static Future<void> setGlobalMouseTrigger(int button) =>
+      _impl.setGlobalMouseTrigger(button);
 }

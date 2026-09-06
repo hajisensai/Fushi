@@ -82,6 +82,7 @@ function makeSandbox(opts) {
     dictionaryStyles: {},
     hiddenDictionaryNames: [],
     collapsedDictionaryNames: opts.collapsedDictionaryNames || [],
+    expandedDictionaryNames: opts.expandedDictionaryNames || [],
     collapseDictionaries: opts.collapseDictionaries,
     autoExpandRows: opts.autoExpandRows,
     // effectiveDictColumns() converges the configured column count against the
@@ -275,6 +276,46 @@ function isOpen(opts, dictName, dictIdx, totalDicts) {
     const opts = { collapseDictionaries: true, autoExpandRows: 0, dictColumns: 3 };
     assert.strictEqual(isOpen(opts, 'D0', 0, 9), false,
       'rows=0 unflagged: still collapsed after the precedence fix');
+  }
+
+  // --- BUG-2158: an explicit per-dictionary EXPAND outranks both the
+  //     auto-expand window and the global collapse switch. ---
+  // 修复前只有 collapsedDictionaryNames 一个名单，「不在名单里」既是「用户要展开」
+  // 又是「用户没表态」。全局 collapseDictionaries 默认 true，于是用户在词典管理里
+  // 对自动展开窗口之外的词典点「展开」，视觉上毫无反应 —— 模型里根本没有那个状态。
+  {
+    const opts = {
+      collapseDictionaries: true,
+      autoExpandRows: 1,
+      dictColumns: 1,
+      expandedDictionaryNames: ['Daijisen'],
+    };
+    // 自动展开窗口之外（idx>=1）：这正是修复前点了没反应的那一档。
+    assert.strictEqual(isOpen(opts, 'Daijisen', 5, 9), true,
+      'explicit expand opens a dictionary far outside the auto-expand window');
+    assert.strictEqual(isOpen(opts, 'Daijirin', 5, 9), false,
+      'a dictionary WITHOUT the explicit-expand flag stays collapsed there');
+  }
+  // 显式展开压过显式折叠：两个名单本该互斥，重叠时行为必须是确定的而不是未定义。
+  {
+    const opts = {
+      collapseDictionaries: true,
+      autoExpandRows: 1,
+      dictColumns: 1,
+      collapsedDictionaryNames: ['Daijisen'],
+      expandedDictionaryNames: ['Daijisen'],
+    };
+    assert.strictEqual(isOpen(opts, 'Daijisen', 5, 9), true,
+      'explicit expand outranks explicit collapse when both lists overlap');
+  }
+  // 没有 expandedDictionaryNames 的宿主（旧版本注入 / 扩展未更新）必须逐字节保持
+  // 旧行为，而不是把所有词典都打开。
+  {
+    const opts = { collapseDictionaries: true, autoExpandRows: 1, dictColumns: 1 };
+    assert.strictEqual(isOpen(opts, 'D0', 0, 9), true,
+      'no expand list: idx0 still auto-expands');
+    assert.strictEqual(isOpen(opts, 'D1', 1, 9), false,
+      'no expand list: idx1 still collapsed (absent list must not open everything)');
   }
 
   console.log('popup_auto_expand_dictionaries_test.js: all assertions passed');

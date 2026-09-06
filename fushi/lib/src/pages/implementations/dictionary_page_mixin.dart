@@ -264,8 +264,14 @@ mixin DictionaryPageMixin {
         : (autoFitHeight ?? preferredMaxHeight)
             .clamp(0.0, preferredMaxHeight)
             .toDouble();
+    // 选区是屏幕 rect（`localToGlobal`），浮层坐标系是根 Overlay（中和后净缩放 1、
+    // 原点与根 Overlay 重合）。Windows 自绘标题栏把根 Overlay 压低 32px 时两者不同
+    // 系，整栈弹窗会集体下移压进被查词（BUG-2092）。在唯一收口处减去偏移，首层 /
+    // 嵌套 / 搜索占位三条入口一并归正；无偏移时是零位移，历史行为不变。
+    final Rect layerSelection =
+        selectionRect.shift(-rootOverlayScreenOrigin(context));
     final Rect anchored = resolvePopupRect(
-      selectionRect: selectionRect,
+      selectionRect: layerSelection,
       screen: screen,
       bottomDocked: mixinAppModel.popupBottomDocked,
       maxWidth: (_popupResizePreview?.width ?? mixinAppModel.popupMaxWidth) *

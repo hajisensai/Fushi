@@ -2015,7 +2015,8 @@ class _HomeDashboardPageState
   /// 单日=退化时段，与统计页时段卡同一实现——来源分节 + 合集分组 + 时长倒序 +
   /// 条目跳转）。
   Future<void> _showDayDetailSheet(String dateKey) async {
-    await showStatPeriodDetailSheet(
+    final FushiDatabase db = ref.read(appProvider).database;
+    final bool deleted = await showStatPeriodDetailSheet(
       context,
       periodLabel: formatStatHeatmapDay(dateKey),
       contains: (String key) => key == dateKey,
@@ -2024,8 +2025,11 @@ class _HomeDashboardPageState
         titleOf: _statEntryTitle,
         collectionOf: _statEntryCollection,
         onEntryTap: _openStatEntry,
+        onEntryDelete: (StatPeriodEntryTarget t) => deleteStatPeriodEntry(db, t),
       ),
     );
+    // 删过就重拉首页数据：热力图 / 今日目标 / 时间轴都吃同一份事实面。
+    if (deleted && mounted) await _loadDashboardData();
   }
 
   /// 事实行 → 展示标题（合集名由 sheet 组头承担，这里**不**拼合集前缀）。

@@ -21,12 +21,14 @@ void main() {
       methodBody(page, 'void _showVideoContextMenu(');
 
   group('右键菜单触发与门控', () {
-    test('视频控制层挂 onSecondaryTapUp（右键触发）', () {
-      expect(page.contains('onSecondaryTapUp:'), isTrue,
-          reason: '桌面右键须经 GestureDetector.onSecondaryTapUp 进入菜单');
-      expect(
-          page.contains('_handleSecondaryTap(details.globalPosition)'), isTrue,
-          reason: '右键松手处的 globalPosition 作 showMenu 锚点');
+    test('视频控制层挂 ContextMenuTrigger（菜单键触发，默认右键）', () {
+      expect(page.contains('ContextMenuTrigger('), isTrue,
+          reason: '桌面右键须经 ContextMenuTrigger（绑定表判定）进入菜单');
+      expect(page.contains('_handleSecondaryTap(position)'), isTrue,
+          reason: '按下处的 globalPosition 作 showMenu 锚点');
+      expect(page.contains('ladder: _VideoFushiPageState.kVideoMouseLadder'),
+          isTrue,
+          reason: '必须用视频页那条阶梯，右键改绑本页动作时菜单才会让位');
     });
 
     test('手柄映射器合成的同源右键在 showMenu 前去重（BUG-1453）', () {

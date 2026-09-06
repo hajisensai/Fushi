@@ -5,7 +5,6 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi/src/pages/base_module_tab_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart' show HomeTab;
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -21,6 +20,8 @@ import 'package:fushi/src/media/video/cover_ui/cover_orientation_builder.dart';
 import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/video_scrape_actions.dart';
+import 'package:fushi/src/media/video/cover_ui/video_specs_badges.dart';
+import 'package:fushi/src/media/video/video_specs_service.dart';
 import 'package:fushi/src/media/video/video_home_layout.dart';
 import 'package:fushi/src/media/video/scraper/auto_scrape_service.dart';
 import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
@@ -97,6 +98,7 @@ import 'package:fushi/src/pages/implementations/collection_name_dialog.dart';
 import 'package:fushi/src/media/video/video_filename_parser.dart';
 import 'package:fushi/src/utils/misc/shelf_ordering.dart';
 import 'package:fushi/src/media/source_library/add_local_folder_source.dart';
+import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:path/path.dart' as p;
 
 /// 顶层 helper：打开本地视频播放页的**共享路由入口**（本页 hero/卡片与首页
@@ -2323,12 +2325,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   }
 
   Future<void> _pickSubtitle(VideoBookRow book) async {
-    final FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const <String>['srt', 'vtt', 'ass', 'ssa'],
-      allowMultiple: false,
+    final String? subtitlePath = await pickSystemFilePath(
+      context: context,
+      allowedExtensions: const <String>{'srt', 'vtt', 'ass', 'ssa'},
     );
-    final String? subtitlePath = result?.files.single.path;
     if (subtitlePath == null || !mounted) return;
     await _attachSubtitleToVideoCard(book, subtitlePath);
   }
@@ -2833,8 +2833,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     ({int columns, double cardWidth}) cardLayout,
   ) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    // 行卡高走横滚行自己的口径（[videoRowCoverHeightForPortraitWidth]），不是
+    // 库墙的 videoCoverHeightForPortraitWidth——后者按竖卡定高，横卡会撑到竖卡
+    // 目标宽的 8/3 倍（桌面 626px，一屏只剩 3 张）。
     final double coverHeight =
-        videoCoverHeightForPortraitWidth(cardLayout.cardWidth);
+        videoRowCoverHeightForPortraitWidth(cardLayout.cardWidth);
     final Widget? continueRow =
         _buildContinueRow(filtered, remoteVideos, coverHeight);
     final Widget? nextRow =
@@ -5939,6 +5942,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         context: context,
         builder: (_) => VideoWorkDetailPage(
           database: db,
+          videoSpecs: ref.read(videoSpecsProvider),
           repository: repo,
           workRef: VideoWorkRef.collection(collection.id),
           onChanged: _refresh,
@@ -5966,6 +5970,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         context: context,
         builder: (_) => VideoWorkDetailPage(
           database: ref.read(appProvider).database,
+          videoSpecs: ref.read(videoSpecsProvider),
           repository: widget.repo,
           workRef: VideoWorkRef.book(book.bookUid),
           onChanged: _refresh,
@@ -6111,6 +6116,19 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                       ),
                     ),
                   ),
+                // v95：清晰度 / HDR 角标。落左下角是因为另外三角已被占满（左上=标签
+                // 与勾选框、右上=集数/新增、右下=云端），bottom 给 6 让开 3px 进度条。
+                // 不随多选态隐藏——它在左下，与左上的勾选框本就不同角，没有让位的必要。
+                Positioned(
+                  bottom: 6,
+                  left: 6,
+                  child: IgnorePointer(
+                    child: VideoSpecsBadgeStrip(
+                      service: ref.read(videoSpecsProvider),
+                      filePath: book.videoPath,
+                    ),
+                  ),
+                ),
               ],
             ),
           ),

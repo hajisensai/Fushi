@@ -247,6 +247,87 @@ Future<String?> pickSystemFilePath({
 }) =>
     _fallbackPickFile(context: context, allowedExtensions: allowedExtensions);
 
+/// [pickSystemFilePath] 的多选版：同为「当场消费」语义（选中即读进 app 存储 / 经
+/// FFI 导入，与原路径脱钩），因此不申请全文件访问、不走 SAF 真实路径解析——与
+/// [pickRealFilePaths] 的分工同 [pickSystemFilePath] vs [pickRealFilePath]。
+///
+/// 返回列表恒可增长（BUG-1574 纪律，见 [pickRealFilePaths]）。
+Future<List<String>> pickSystemFilePaths({
+  required BuildContext context,
+  Set<String>? allowedExtensions,
+}) =>
+    _fallbackPickFiles(
+      context: context,
+      allowedExtensions: allowedExtensions,
+      allowMultiple: true,
+    );
+
+/// 平台安全的「按扩展名选文件」，语义等同
+/// `FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: …)`，
+/// 差别只在**移动端不把扩展名过滤交给平台**（见 [_platformDropsUnknownExtensions]）。
+///
+/// 什么时候用它、什么时候用 [pickSystemFilePath]：只要路径就用后者（更薄）；需要
+/// 平台交回的其它字段（`withData: true` 的 bytes、多选的 `files` 列表）才用这个。
+///
+/// 返回的 [FilePickerResult] 原样保留平台交回的内容，只是 `files` 已按扩展名过滤；
+/// 选中的文件全部不合格时返回 null（并已就地提示），与「用户取消」一样是空结果，
+/// 调用方无需区分——需要区分的调用方走 [pickRealFilePathDetailed]。
+Future<FilePickerResult?> pickFilesByExtensions({
+  required BuildContext? context,
+  Iterable<String>? allowedExtensions,
+  bool allowMultiple = false,
+  bool withData = false,
+  String? dialogTitle,
+  String? initialDirectory,
+}) async {
+  final Set<String> extensions = _normalizeExtensions(allowedExtensions);
+  final bool filterAfterPick =
+      _platformDropsUnknownExtensions && extensions.isNotEmpty;
+  final bool nativeFilter = extensions.isNotEmpty && !filterAfterPick;
+
+  final FilePickerResult? result = await FilePicker.platform.pickFiles(
+    dialogTitle: dialogTitle,
+    initialDirectory: initialDirectory,
+    type: nativeFilter ? FileType.custom : FileType.any,
+    allowedExtensions: nativeFilter ? extensions.toList() : null,
+    allowMultiple: allowMultiple,
+    withData: withData,
+  );
+  if (result == null || !filterAfterPick) return result;
+
+  // 按 `name` 判定而非 `path`：部分平台只回 bytes 不回 path（BUG-446），拿 path
+  // 当判据会把那些条目全判成「扩展名不合格」，把一类失败伪装成一次格式不符。
+  final List<PlatformFile> accepted = <PlatformFile>[];
+  final List<PlatformFile> rejected = <PlatformFile>[];
+  for (final PlatformFile file in result.files) {
+    if (extensions.contains(_extensionOf(file.name))) {
+      accepted.add(file);
+    } else {
+      rejected.add(file);
+    }
+  }
+  if (rejected.isNotEmpty) {
+    _warnUnsupportedPick(
+      context: context != null && context.mounted ? context : null,
+      name: rejected.first.name,
+    );
+  }
+  return accepted.isEmpty ? null : FilePickerResult(accepted);
+}
+
+/// 平台的原生「按扩展名过滤」是否会**静默丢弃**它不认识的扩展名。
+///
+/// 安卓与 iOS 都会（BUG-2099，详见 [_fallbackPickRaw] 里的完整说明）；桌面三端的
+/// 原生对话框直接吃扩展名字符串，过滤可靠，维持原生过滤（选择器里只列相关文件，
+/// 体验更好）。
+bool get _platformDropsUnknownExtensions =>
+    defaultTargetPlatform == TargetPlatform.iOS ||
+    defaultTargetPlatform == TargetPlatform.android;
+
+/// 文件名 / 路径的扩展名，小写、不带点（`a.MDX` → `mdx`；无扩展名 → 空串）。
+String _extensionOf(String nameOrPath) =>
+    p.extension(nameOrPath).toLowerCase().replaceFirst('.', '');
+
 /// 「选多个文件并返回真实文件系统绝对路径」。
 ///
 /// 多选走 file_picker。iOS 上不能使用 file_picker 的 audio 类型，它会打开
@@ -334,8 +415,27 @@ Future<_RawPickResult> _fallbackPickRaw({
 }) async {
   final Set<String> normalizedExtensions =
       _normalizeExtensions(allowedExtensions);
-  final bool filterAfterPick = defaultTargetPlatform == TargetPlatform.iOS &&
-      normalizedExtensions.isNotEmpty;
+  // 移动端一律「先 `FileType.any` 打开选择器、再在 Dart 端按扩展名校验」。两个平台
+  // 的原生过滤各有一条**静默丢弃扩展名**的路径，把过滤交给它们的结果不是「少过滤
+  // 一点」，而是用户**选不中自己的文件**：
+  //
+  // - iOS：`.srt` 等扩展名的 UTI 解析可能返回 `dyn.*`，传给 `FileType.custom`
+  //   后被原生插件丢弃。
+  // - 安卓（BUG-2099）：SAF 只认 MIME、不认扩展名。file_picker 的
+  //   `FileUtils.getMimeTypes()` 逐个扩展名查 `MimeTypeMap.getMimeTypeFromExtension()`，
+  //   **查不到就 `continue` 跳过**（只打一行 warning），剩下的才进
+  //   `Intent.EXTRA_MIME_TYPES`。于是词典导入传的
+  //   `['zip','dsl','mdx','ifo','css']` 到了 SAF 只剩 `application/zip` +
+  //   `text/css` 两条，`.mdx` / `.dsl` / `.ifo` 在选择器里全部置灰点不动
+  //   （用户报「文件选择器直接对 mdx 是灰的」）。
+  //
+  // 为什么不做「哪些扩展名有 MIME」的白名单：`MimeTypeMap` 是**系统词表**，各
+  // 厂商 ROM / 各 Android 版本内容不同，app 侧既改不了也查不到，任何硬编码清单都
+  // 只是把下一个扩展名的同款事故推迟发生。一律降级则零特例、零维护面，代价仅是
+  // 选择器不再灰掉无关文件（选错时下面的 [_filterPickedFilesByExtension] 会挡住
+  // 并提示），比「根本选不到」好得多。
+  final bool filterAfterPick =
+      _platformDropsUnknownExtensions && normalizedExtensions.isNotEmpty;
 
   final FilePickerResult? result;
   if (filterAfterPick || normalizedExtensions.isEmpty) {
@@ -380,7 +480,7 @@ Future<_RawPickResult> _fallbackPickRaw({
   );
 }
 
-Set<String> _normalizeExtensions(Set<String>? extensions) {
+Set<String> _normalizeExtensions(Iterable<String>? extensions) {
   // 同上：本文件不向外交出不可变集合（零特例，省得下一个消费方 add 时再炸一次）。
   if (extensions == null || extensions.isEmpty) return <String>{};
   return extensions
@@ -397,21 +497,36 @@ List<String> _filterPickedFilesByExtension({
   final List<String> accepted = <String>[];
   final List<String> rejected = <String>[];
   for (final String path in paths) {
-    final String ext = p.extension(path).toLowerCase().replaceFirst('.', '');
-    if (allowedExtensions.contains(ext)) {
+    if (allowedExtensions.contains(_extensionOf(path))) {
       accepted.add(path);
     } else {
       rejected.add(path);
     }
   }
-  if (rejected.isNotEmpty && context != null && context.mounted) {
-    final String ext = p.extension(rejected.first).toLowerCase();
-    FushiToast.show(
-      msg: t.import_unsupported_file_format(
-        ext: ext.isEmpty ? p.basename(rejected.first) : ext,
-      ),
-      severity: ToastSeverity.error,
+  if (rejected.isNotEmpty) {
+    _warnUnsupportedPick(
+      context: context != null && context.mounted ? context : null,
+      name: rejected.first,
     );
   }
   return accepted;
+}
+
+/// 「选中的文件扩展名不在允许集」的统一提示。两条 Dart 端过滤路径（路径版
+/// [_filterPickedFilesByExtension] 与结果版 [pickFilesByExtensions]）共用它，
+/// 免得同一句提示在两处各写一遍、各自漂移。
+///
+/// [context] 为 null（页面已在原生选择器打开期间销毁）时只是不提示，过滤本身照常。
+void _warnUnsupportedPick({
+  required BuildContext? context,
+  required String name,
+}) {
+  if (context == null) return;
+  final String ext = p.extension(name).toLowerCase();
+  FushiToast.show(
+    msg: t.import_unsupported_file_format(
+      ext: ext.isEmpty ? p.basename(name) : ext,
+    ),
+    severity: ToastSeverity.error,
+  );
 }

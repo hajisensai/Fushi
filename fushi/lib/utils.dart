@@ -3,6 +3,7 @@ export 'i18n/strings.g.dart';
 export 'src/utils/fushi_localisations.dart';
 
 export 'src/utils/components/cache_image_provider.dart';
+export 'src/utils/components/copy_feedback.dart';
 export 'src/utils/components/fushi_gamepad_keyboard.dart';
 export 'src/utils/components/fushi_icon_button.dart';
 export 'src/utils/components/fushi_reorderable_column.dart';

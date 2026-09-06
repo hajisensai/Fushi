@@ -19,34 +19,30 @@ public class IconSwitchHelper {
 
     private static final String PACKAGE_NAME = "app.fushi.reader";
 
-    // 对外提供的三套预设：default（不透明白 squircle，任意壁纸可见）+ hibiki_transparent
-    // （藏青 wordmark，透明无背景）+ full（响·书本精绘）。TODO-1241 把默认档从透明
-    // wordmark 换成 squircle，并把透明档保留为独立可选项（与旧的去重 hibiki_minimal
-    // 不同：hibiki_minimal 曾与 default 是同一张图，而 hibiki_transparent 是独立的透明档）。
+    // 唯一对外预设：default（兔子图标，薰衣草底 squircle）。「立绘」与「透明 wordmark」
+    // 两档已下线，图标资源随之删除。
     private static final List<String> ALIAS_NAMES = Arrays.asList(
-        ".MainActivityDefault",
+        ".MainActivityDefault"
+    );
+
+    private static final List<String> ALIAS_KEYS = Arrays.asList(
+        "default"
+    );
+
+    // 已退役的 alias：不再作为可选项，但 manifest 仍声明它们，以免老用户（当前启动器
+    // 指向其中之一、且 default alias 已被禁用）在升级后 launcher 图标消失
+    // （zero-LAUNCHER）。getCurrentIcon 会把这类老用户安全迁回 default alias。
+    private static final List<String> RETIRED_ALIASES = Arrays.asList(
+        ".MainActivityFushiMinimal",
         ".MainActivityFushiTransparent",
         ".MainActivityFushiFull"
     );
 
-    private static final List<String> ALIAS_KEYS = Arrays.asList(
-        "default",
-        "hibiki_transparent",
-        "hibiki_full"
-    );
-
-    // 已退役的「简约」alias：不再作为可选项，但 manifest 仍声明它，以免老用户
-    // （当前 launcher 指向此 alias、且 default alias 已被禁用）在升级后 launcher
-    // 图标消失。getCurrentIcon 会把这类老用户安全迁回 default alias（图标字节相同，
-    // 无视觉变化）。
-    private static final String RETIRED_MINIMAL_ALIAS = ".MainActivityFushiMinimal";
-
     public static String getCurrentIcon(Context context) {
         PackageManager pm = context.getPackageManager();
 
-        // 老用户迁移：若退役的「简约」alias 当前启用，把它迁回 default alias
-        // （两者图标字节相同，无视觉变化），消除去重后残留的孤立启用态。
-        migrateRetiredMinimalIfEnabled(context, pm);
+        // 老用户迁移：若任一退役 alias 当前启用，把它迁回 default alias。
+        migrateRetiredAliasesIfEnabled(pm);
 
         for (int i = 0; i < ALIAS_NAMES.size(); i++) {
             ComponentName cn = new ComponentName(PACKAGE_NAME, PACKAGE_NAME + ALIAS_NAMES.get(i));
@@ -59,26 +55,37 @@ public class IconSwitchHelper {
         return "default";
     }
 
-    /// 若退役的 hibiki_minimal alias 当前为启用态，先启用 hibiki_transparent alias 再
-    /// 禁用它，把老用户的启动器入口迁到透明档。退役 minimal 与 hibiki_transparent 都指向
-    /// launcher_icon_minimal（透明 wordmark），字节相同、真正无视觉变化；不迁到 default，
-    /// 因为 TODO-1241 后 default 已变成不透明白 squircle（会改变观感）。先启用后禁用，避免
-    /// 出现零 LAUNCHER 入口的瞬态。已迁移过（minimal 非启用）则为 no-op。
-    private static void migrateRetiredMinimalIfEnabled(Context context, PackageManager pm) {
-        ComponentName minimal = new ComponentName(PACKAGE_NAME, PACKAGE_NAME + RETIRED_MINIMAL_ALIAS);
-        int minimalState = pm.getComponentEnabledSetting(minimal);
-        if (minimalState != PackageManager.COMPONENT_ENABLED_STATE_ENABLED) {
+    /// 把仍处于启用态的退役 alias 迁回 default alias。
+    ///
+    /// 先启用 default 再逐个禁用退役 alias，避免出现零 LAUNCHER 入口的瞬态。退役档的
+    /// 图标资源已删除、manifest 里也已改指向 default 的图标，所以迁移不会改变观感；
+    /// 没有启用态的退役 alias 时为 no-op。
+    private static void migrateRetiredAliasesIfEnabled(PackageManager pm) {
+        boolean anyEnabled = false;
+        for (String alias : RETIRED_ALIASES) {
+            ComponentName cn = new ComponentName(PACKAGE_NAME, PACKAGE_NAME + alias);
+            if (pm.getComponentEnabledSetting(cn) == PackageManager.COMPONENT_ENABLED_STATE_ENABLED) {
+                anyEnabled = true;
+                break;
+            }
+        }
+        if (!anyEnabled) {
             return;
         }
-        int transparentIndex = ALIAS_KEYS.indexOf("hibiki_transparent");
-        ComponentName transparent = new ComponentName(
-            PACKAGE_NAME, PACKAGE_NAME + ALIAS_NAMES.get(transparentIndex));
-        pm.setComponentEnabledSetting(transparent,
+
+        ComponentName fallback = new ComponentName(PACKAGE_NAME, PACKAGE_NAME + ALIAS_NAMES.get(0));
+        pm.setComponentEnabledSetting(fallback,
             PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
             PackageManager.DONT_KILL_APP);
-        pm.setComponentEnabledSetting(minimal,
-            PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-            PackageManager.DONT_KILL_APP);
+
+        for (String alias : RETIRED_ALIASES) {
+            ComponentName cn = new ComponentName(PACKAGE_NAME, PACKAGE_NAME + alias);
+            if (pm.getComponentEnabledSetting(cn) == PackageManager.COMPONENT_ENABLED_STATE_ENABLED) {
+                pm.setComponentEnabledSetting(cn,
+                    PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                    PackageManager.DONT_KILL_APP);
+            }
+        }
     }
 
     public static boolean switchPresetIcon(Context context, String targetKey) {

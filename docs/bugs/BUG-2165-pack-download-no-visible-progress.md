@@ -1,0 +1,22 @@
+## BUG-2165 · 推荐包后台下载没有任何看得见的地方，半截包重启后既看不见也续不上
+- **报告**：2026-09-06（用户：「过了新手教程，那个备份我没等他下载完就到了下一步，会不会好像不会在后台下载？如果后台下载的话需要给个地方看进度。」——与 BUG-2097 同一句原话的**第二次**报告）
+- **真实性**：✅ 真 bug（两条独立缺口）。[BUG-2097](BUG-2097-onboarding-pack-download-cancelled-on-leave.md) 修的是**任务所有权**（下载不再随向导 dispose 被掐断），那条确实闭合了；用户这次问的后半句「给个地方看进度」并没有真正被满足：
+  - **缺口 A —— 唯一的可见入口埋在设置深处**。修完之后全仓消费 `recommendedPackDownloadController` 的只有 4 处：`app_model.dart`、`settings_schema_system.dart:99`、`settings_detail_page.dart:61`、`onboarding_wizard_page.dart`。首页 / dashboard **零引用**，已有的「下载中心」`downloads_page.dart:35` 只收漫画卷与 torrent、不含推荐包。要看进度得走「设置 tab → 系统分类 → 通用区第 5 项」，宽屏还得先手动切到「系统」分类。而**新用户走完引导正好落在首页**，屏幕上一个像素都不说明那 9.5 GB 还在下 —— 「在后台跑」如果没有一个用户不用去找的地方看得到，从用户视角就等于没在跑。引导页里那句 `onboarding_pack_download_background_hint` 只在推荐包那一步、且只在 `isDownloading` 时渲染（`onboarding_wizard_page.dart:1265`/`:1283`），走到下一步就再也看不到。
+  - **缺口 B —— 状态机只有 3 个阶段，而磁盘有 4 种状态**。根因 `recommended_pack_download_controller.dart:126`（修复前）：`_settleStageFromDisk()` 只问 `hasCompletedFileIn`（= 完整包 `fushi-recommended.fushi.zip` 存在与否），半截文件 `.part` / `.mpart` + `.mpart.json`（`recommended_pack.dart:382`/`:387`/`:390`）根本不在判据里。于是「盘上躺着 3 GB 半截」与「盘上什么都没有」都是 `idle`：
+    - 下载中途关掉 app → 重开 → `app_model.dart:2833` 的启动对盘点判成 `idle` → 判据是 `isActive` 的设置行不渲染（连设置搜索也索引不到，`settings_search.dart:77` 只收可见项）→ 那 3 GB **既看不见也续不上**；唯一的续传入口是重开新手引导，而那条按钮还写着「下载 (9.5 GB)」、点下去 `receivedBytes` 先归零、进度从 0 起跳。
+    - 下载失败同理落回 `idle`（`controller` 的 catch → `_settleStageFromDisk`），设置行整行消失、没有任何重试入口，用户只看到一条 3.5 秒 toast。`RecommendedPackDownloader.partialBytes`（全仓唯一能读出半截字节数的 API）此前**没有任何消费者**。
+- **[x] ① 已修复** —
+  - **状态机补第四态 `paused`**：`recommended_pack_download_controller.dart` 的 `_settleStageFromDisk()` 改为「完整包 → `downloaded` / 有半截 → `paused` 并把已下字节读进 `receivedBytes` / 什么都没有 → `idle`」；`partialBytes` 提成目录级静态 `RecommendedPackDownloader.partialBytesIn()`（`recommended_pack.dart`，UI 判「有没有可续的半截」不必先解析清单挑线路实例）。`start()` 的 `receivedBytes` 从盘上半截起跳而不是归零。取消 / 失败 / 上个进程被关掉三条路径现在全部落到 `paused`，`isActive` 认得它，设置行与新迷你条据此显示「已下 3.2 GB · 继续下载」+ 失败原因。向导里那条主动作在 `paused` 时也改成「继续下载 (3.2 GB)」。
+  - **加全局常驻可见入口**：新增 `recommended_pack_download_mini_bar.dart`，挂在 `home_page.dart` 的 `_bodyWithMiniBar()` —— 这是移动底栏 / 桌面 rail / macOS 三套布局**唯一**的共用点，也是 app 里唯一「跨全部 home tab 常驻」的挂载位（与既有的「正在听书」迷你条并列）。三态：下载中（进度条 + 已下量 + 取消）/ 已暂停（已下量 + 继续下载）/ 已下完（立即导入）；空闲时 `SizedBox.shrink()` 不占布局。收起（×）与主动取消只压制这条迷你条**本次会话内**的显示，绝不动下载本身，设置那一行照旧 —— 「不想看」不等于「不想下」。
+  - **设置页宽屏内联路径补订阅**：`settings_home_page.dart` 的 `initState`/`dispose` 加上 `stage` 订阅。宽屏（>=720，桌面主用形态）详情是内联渲染的，走不到 `settings_detail_page.dart` 那份订阅，那一行的显隐此前只能靠 `AppModel.notifyListeners()` 顺带撞上。
+  - **导入编排提成库级** `importDownloadedRecommendedPack()`（`recommended_pack_import.dart`）：发起点已有三个（引导步骤 / 设置行 / 迷你条），漏一处配对的 `markImportStarted` 就意味着重启后 9.5 GB 残包永留（BUG-2109 的形状）。
+  - **`controller.dispose()` 收口 in-flight 任务**：先立 `_disposed` 门再取消令牌再 dispose notifier；此前只 dispose 四个 notifier、不 cancel，下载体后续的进度回调会写已 dispose 的 `ValueNotifier`。
+- **[x] ② 已加自动化测试** —
+  - `fushi/test/onboarding/recommended_pack_download_controller_test.dart`（新增 6 例）：单流 `.part` 与分片 `.mpart.json` 两条路的进场对盘都落 `paused` 并读出已下字节（分片路要读进度文件求和，不能拿预分配长度当已下）、盘上空才是 `idle`、用户取消走真实令牌路径后落 `paused` 且收起迷你条、失败留半截 → `paused` + 保留失败原因且 `isActive` 仍真、续传从半截起跳并重新放开迷你条。
+  - `fushi/test/onboarding/recommended_pack_download_mini_bar_test.dart`（新建，6 例）：四态渲染、收起只收这条而不动 `stage`、下完后重新出现。
+  - `fushi/test/onboarding/recommended_pack_download_row_test.dart`（新增 2 例）：设置行的 `paused` 与失败态。
+  - `fushi/test/onboarding/recommended_pack_background_download_guard_test.dart`（新增 3 条源码守卫）：首页 shell 必须挂 `RecommendedPackDownloadMiniBar` 且在三布局共用点上、设置页宽屏路径必须订阅 `stage`、controller 必须保留 `paused` 与 `partialBytesIn`（防有人把四态折回三态）。
+- **备注**：
+  - **未做真机复测**（真实路径要下 9.5 GB 整包）。已验证的是 controller 的四态行为、两个可见入口的渲染与回调、以及结构守卫。
+  - **本轮未修、留作独立缺口**：① 完成提示只有 app 内 toast（`fushi_toast.dart:113` overlay 为空时静默丢弃），Windows 最小化时看不到，全仓无 `flutter_local_notifications` 类系统通知能力，引入它是新依赖 + 五平台权限；② 没有任何流程知道「有下载在跑」—— 备份导入 / 数据根迁移会真重启进程（`backup.part.dart:106`、`data_root.part.dart:492`），`main.dart:811` 点 X 关窗直接 `exit(0)`，都不问一句；Android 侧这条下载也没有 foreground service 承载。这三条的半截文件现在**不会再丢**（重启后落 `paused` 可见可续），但「静默中断」本身仍在。
+  - 下载器本身（分片并发 / 续传 / sha256 校验 / 清单解析）一行未动。

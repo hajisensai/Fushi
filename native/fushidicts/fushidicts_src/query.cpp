@@ -515,6 +515,30 @@ void DictionaryQuery::enrich_pitch(TermResult& term) const {
 
     std::vector<Pitch> pitches;
     std::vector<std::string> transcriptions;
+
+    // BUG-2152: one dict contributes ONE PitchEntry, and every meta record it
+    // holds for this expression is flattened into the two vectors below. A
+    // headword the dictionary splits into several entries (English `spoke` =
+    // the noun + the past tense of `speak`) therefore hands us the SAME
+    // notation once per entry, and the consumer renders it once per element:
+    // `[/spəʊk/][/spəʊk/]` on the Anki card, two identical rows in the popup.
+    //
+    // The three downstream dedups cannot help — Dart `buildPopupJsonFromLookup`
+    // (pKey), the native popup_json mirror and popup.js
+    // `mergeIdenticalPitchGroups` all key on the WHOLE entry (dict name +
+    // positions + patterns + transcriptions), so a single entry carrying a
+    // duplicate inside itself is seen once and kept whole. Deduping has to
+    // happen here, where the flattening happens.
+    //
+    // Order is preserved (first occurrence wins) — the dictionary's own order
+    // is the only meaningful one, and callers render these as an ordered list.
+    // Linear scans are fine: a headword has a handful of notations, not
+    // thousands.
+    const auto same_pitch = [](const Pitch& a, const Pitch& b) {
+      return a.position == b.position && a.pattern == b.pattern &&
+             a.nasal == b.nasal && a.devoice == b.devoice;
+    };
+
     for (uint32_t i = 0; i < count; i++) {
       if (!idx.has(sizeof(uint64_t))) {
         break;
@@ -553,10 +577,16 @@ void DictionaryQuery::enrich_pitch(TermResult& term) const {
             continue;
           }
           for (auto& accent : parsed.pitches) {
-            pitches.push_back(Pitch{.position = accent.position,
-                                    .pattern = std::move(accent.pattern),
-                                    .nasal = std::move(accent.nasal),
-                                    .devoice = std::move(accent.devoice)});
+            Pitch pitch{.position = accent.position,
+                        .pattern = std::move(accent.pattern),
+                        .nasal = std::move(accent.nasal),
+                        .devoice = std::move(accent.devoice)};
+            if (std::none_of(pitches.begin(), pitches.end(),
+                             [&](const Pitch& seen) {
+                               return same_pitch(seen, pitch);
+                             })) {
+              pitches.push_back(std::move(pitch));
+            }
           }
         }
       } else if (mode == "ipa") {
@@ -567,7 +597,10 @@ void DictionaryQuery::enrich_pitch(TermResult& term) const {
             continue;
           }
           for (std::string_view transcription : parsed.transcriptions) {
-            transcriptions.emplace_back(transcription);
+            if (std::find(transcriptions.begin(), transcriptions.end(),
+                          transcription) == transcriptions.end()) {
+              transcriptions.emplace_back(transcription);
+            }
           }
         }
       }

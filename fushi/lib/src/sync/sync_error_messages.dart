@@ -109,6 +109,10 @@ String friendlySyncAuthFailure(SyncAuthFailureKind kind, String? serverReason) {
       // BUG-1348：浏览器授权页没能把回调送回 app。凭据没坏，叫用户「重新登录」只会让他
       // 把同一条死路再走一遍——要说的是「回调没回来，让代理放行本机回环」。
       return t.sync_err_browser_timeout;
+    case SyncAuthFailureKind.cancelled:
+      // BUG-2120：用户自己取消的。设置页对它静默；这里只为把 switch 补全（同步报告
+      // 等其它出口若沉淀了这条失败，也该说「已取消」而不是「登录过期」）。
+      return t.sync_err_sign_in_cancelled;
     case SyncAuthFailureKind.forbidden:
       final String? reason = serverReason;
       if (reason == null || reason.isEmpty) return t.sync_err_forbidden;

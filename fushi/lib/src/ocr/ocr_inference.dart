@@ -1,101 +1,34 @@
-/// ONNX 推理会话抽象层。
+/// OCR 侧的 ONNX 推理会话抽象层。
 ///
-/// 把 `flutter_onnxruntime` 包在窄接口后面：算法层（检测/识别/beam search）
-/// 只依赖 [OcrSession] / [OcrTensor]，单元测试用 fake 实现即可，不需要真模型
-/// 或 native 绑定。真实现见 `ocr_inference_ort.dart`。
+/// 会话 / 张量 / 工厂 / EP / 降级结果这套与业务无关的类型如今**唯一定义**在
+/// `lib/src/onnx/onnx_inference.dart`（OCR / ASR 共用）；本文件里的 `Ocr*` 名字
+/// 是它们的 typedef 别名，OCR 调用方与测试零改动。真实现见
+/// `onnx_inference_ort.dart`（共享）与 `ocr_inference_ort.dart`（OCR 薄封装）。
+///
+/// OCR 特有的部分——模型种类、平台、EP 偏好表与选择函数——仍住在这里。
 library;
 
-import 'dart:typed_data';
+import 'package:fushi/src/onnx/onnx_inference.dart';
 
-/// 支持的张量元素类型（本子系统只需要 float32 与 int64）。
-enum OcrTensorType { float32, int64 }
+export 'package:fushi/src/onnx/onnx_inference.dart';
 
-/// 不可变张量：扁平数据 + 形状。
-class OcrTensor {
-  OcrTensor.float32(Float32List data, this.shape)
-      : type = OcrTensorType.float32,
-        floatData = data,
-        intData = null {
-    _checkLength(data.length);
-  }
+/// 支持的张量元素类型（别名，见 [OnnxTensorType]）。
+typedef OcrTensorType = OnnxTensorType;
 
-  OcrTensor.int64(Int64List data, this.shape)
-      : type = OcrTensorType.int64,
-        floatData = null,
-        intData = data {
-    _checkLength(data.length);
-  }
+/// 不可变张量：扁平数据 + 形状（别名，见 [OnnxTensor]）。
+typedef OcrTensor = OnnxTensor;
 
-  final OcrTensorType type;
-  final List<int> shape;
-  final Float32List? floatData;
-  final Int64List? intData;
+/// 一次可运行的 ONNX 会话（别名，见 [OnnxSession]）。
+typedef OcrSession = OnnxSession;
 
-  int get elementCount => shape.fold<int>(1, (int acc, int dim) => acc * dim);
+/// 会话工厂（别名，见 [OnnxSessionFactory]）。
+typedef OcrSessionFactory = OnnxSessionFactory;
 
-  void _checkLength(int length) {
-    if (length != elementCount) {
-      throw ArgumentError(
-          'OcrTensor data length $length does not match shape $shape '
-          '($elementCount elements)');
-    }
-  }
-}
+/// 执行后端（别名，见 [OnnxExecutionProvider]）。
+typedef OcrExecutionProvider = OnnxExecutionProvider;
 
-/// 一次可运行的 ONNX 会话。
-abstract interface class OcrSession {
-  /// 运行推理：输入/输出均为 名字 -> 张量。
-  Future<Map<String, OcrTensor>> run(Map<String, OcrTensor> inputs);
-
-  /// 释放 native 资源。
-  Future<void> close();
-}
-
-/// 会话工厂：模型文件路径由调用方注入（模型下载管理不在本层）。
-abstract interface class OcrSessionFactory {
-  Future<OcrSession> createSession(
-    String modelPath, {
-    required List<OcrExecutionProvider> providers,
-  });
-}
-
-/// 执行后端（execution provider）。
-enum OcrExecutionProvider { cuda, directml, coreml, cpu }
-
-/// 一次会话创建实际落到哪个执行后端，以及（若发生）降级原因。
-///
-/// 粒度就是插件边界能给出的粒度：`flutter_onnxruntime` 只回报「整张 provider
-/// 列表被接受」或「被拒绝」，不告诉我们 ORT 内部最终选中的 EP。因此
-/// [effective] 的语义是「本次真正提交给 ORT 的首选 provider」——列表被接受时
-/// 是 [requested] 的首项，被拒绝并回退时是 [OcrExecutionProvider.cpu]。
-///
-/// 存在的唯一理由：降级路径必须显式可观测。把 GPU 静默换成 CPU 会让用户在
-/// 整卷 OCR 这种耗时任务上误判性能，本仓不允许无声降级。
-class OcrProviderResolution {
-  const OcrProviderResolution({
-    required this.requested,
-    required this.effective,
-    this.fallbackReason,
-  });
-
-  /// 调用方按平台策略请求的 provider 列表（首项为首选）。
-  final List<OcrExecutionProvider> requested;
-
-  /// 本次会话真正提交给 ORT 的首选 provider。
-  final OcrExecutionProvider effective;
-
-  /// 降级原因；null 表示未降级。
-  final String? fallbackReason;
-
-  bool get didFallBack => fallbackReason != null;
-
-  @override
-  String toString() {
-    if (!didFallBack) return 'OcrProviderResolution(${effective.name})';
-    final String from = requested.isEmpty ? 'none' : requested.first.name;
-    return 'OcrProviderResolution($from -> ${effective.name}: $fallbackReason)';
-  }
-}
+/// 一次会话创建实际落到哪个执行后端（别名，见 [OnnxProviderResolution]）。
+typedef OcrProviderResolution = OnnxProviderResolution;
 
 /// 模型种类：检测（单次前向）与识别（自回归解码）的 EP 策略不同。
 enum OcrModelKind { detection, recognition }

@@ -3,6 +3,10 @@
 
 #include <windows.h>
 
+#include <d3d11.h>
+
+#include <wrl/client.h>
+
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -40,6 +44,15 @@ struct WindowCaptureResult {
 // 必然得到「游戏自绘光标 + Magpie 补画的一个」= 两个指针。返回 nullptr 表示不是
 // 这种窗口（或属性指向的句柄已失效），调用方保持原窗口不变。绝不抛异常。
 HWND ResolveScalingSourceWindow(HWND hwnd);
+
+// BUG-1854：算出把 WGC 整窗纹理（[width]×[height]）裁到窗口**客户区**的子矩形。
+// 两个角都经 ClientToScreen 换算到与 DWM 扩展框架同一坐标系（DPI-unaware 老游戏在
+// 缩放屏上也对）。返回 true 时 [box] 非空且已与纹理求交；失败返回 false，调用方回退
+// 整窗（宁可带标题栏也不丢图）。单帧截图与持续录制共用。绝不抛异常。
+bool ComputeClientCropBox(HWND hwnd, UINT width, UINT height, RECT* box);
+
+// D3D11 设备（BGRA 支持），硬件失败回退 WARP；两条路都失败返回空指针。
+Microsoft::WRL::ComPtr<ID3D11Device> CreateD3DDevice();
 
 // 枚举可见、有标题、未 cloaked 的顶层窗口（排除自身 [self]，绝不截自己）。
 // 按 EnumWindows 的 Z 序返回；Magpie 缩放窗按 [ResolveScalingSourceWindow] 重定向到

@@ -487,6 +487,216 @@ std::vector<TextProcessor> get_japanese_processors() {
          return opt == 1 ? numbers_to_kanji(text) : text;
        }}};
 }
+}  // namespace
+
+// ─────────────────────────── 谚文拆字 / 合字 ───────────────────────────
+//
+// 韩语的 transform 表（assets/transforms/ko.json，导自 Yomitan 的
+// korean-transforms.js）**整表用 Hangul 兼容字母书写**：`부드러운 → 부드럽다`
+// 那条 ㅂ 不规则写成 `{"fromSuffix":"ㅇㅜㄴ","toSuffix":"ㅂㄷㅏ"}`。实测 2682 条
+// rule 里 2681 条含兼容字母。而 Deinflector 是**字节级精确查表**
+// （deinflector.cpp 的 suffix_transforms_.find），预合成音节串 "부드러운"
+// （U+BD80 U+B4DC U+B7EC U+C6B4）里永远不存在 "ㅇㅜㄴ" 那三个码点，于是韩语
+// 450 条 transform 一条都点不着火（BUG-2148）。
+//
+// 上游靠一对处理器把两边编码对齐：`disassembleHangul` 预处理拆字去匹配规则，
+// `reassembleHangul` 后处理拼回音节去查词典索引。这里补的就是这一对。
+//
+// 拆到**简单字母**——复合元音 ㅘ 拆成 ㅗㅏ、复合终声 ㄺ 拆成 ㄹㄱ。这不是选择而是
+// 实测：ko.json 的字符表里 ㅘㅙㅚㅝㅞㅟㅢ 与 ㄳㄵㄶㄺㄻㄼㄽㄾㄿㅀㅄ **一个都没有**，
+// 表就是按拆到底写的。
+namespace {
+// 初声 19 个（L 索引 0..18）→ 兼容字母。
+constexpr char32_t kLeadCompat[19] = {U'ㄱ', U'ㄲ', U'ㄴ', U'ㄷ', U'ㄸ', U'ㄹ', U'ㅁ',
+                                      U'ㅂ', U'ㅃ', U'ㅅ', U'ㅆ', U'ㅇ', U'ㅈ', U'ㅉ',
+                                      U'ㅊ', U'ㅋ', U'ㅌ', U'ㅍ', U'ㅎ'};
+// 中声 21 个在兼容字母区连续排列，直接算：U+314F + V。
+constexpr char32_t kVowelBase = 0x314F;
+constexpr char32_t kVowelLast = 0x3163;
+// 终声 28 个（T 索引 0 = 无终声）→ 兼容字母。
+constexpr char32_t kTailCompat[28] = {0,    U'ㄱ', U'ㄲ', U'ㄳ', U'ㄴ', U'ㄵ', U'ㄶ',
+                                      U'ㄷ', U'ㄹ', U'ㄺ', U'ㄻ', U'ㄼ', U'ㄽ', U'ㄾ',
+                                      U'ㄿ', U'ㅀ', U'ㅁ', U'ㅂ', U'ㅄ', U'ㅅ', U'ㅆ',
+                                      U'ㅇ', U'ㅈ', U'ㅊ', U'ㅋ', U'ㅌ', U'ㅍ', U'ㅎ'};
+
+constexpr char32_t kSyllableFirst = 0xAC00;
+constexpr char32_t kSyllableLast = 0xD7A3;
+constexpr int kVowelCount = 21;
+constexpr int kTailCount = 28;
+
+// 复合字母 ↔ 组成它的两个简单字母。元音与终声共用一张表：两侧值域不相交
+// （元音在 U+314F..U+3163，终声簇在 U+3133..U+3144），合成时再按位置校验。
+struct JamoPair {
+  char32_t complex_jamo;
+  char32_t first;
+  char32_t second;
+};
+constexpr JamoPair kComplexJamo[] = {
+    {U'ㄳ', U'ㄱ', U'ㅅ'}, {U'ㄵ', U'ㄴ', U'ㅈ'}, {U'ㄶ', U'ㄴ', U'ㅎ'}, {U'ㄺ', U'ㄹ', U'ㄱ'},
+    {U'ㄻ', U'ㄹ', U'ㅁ'}, {U'ㄼ', U'ㄹ', U'ㅂ'}, {U'ㄽ', U'ㄹ', U'ㅅ'}, {U'ㄾ', U'ㄹ', U'ㅌ'},
+    {U'ㄿ', U'ㄹ', U'ㅍ'}, {U'ㅀ', U'ㄹ', U'ㅎ'}, {U'ㅄ', U'ㅂ', U'ㅅ'}, {U'ㅘ', U'ㅗ', U'ㅏ'},
+    {U'ㅙ', U'ㅗ', U'ㅐ'}, {U'ㅚ', U'ㅗ', U'ㅣ'}, {U'ㅝ', U'ㅜ', U'ㅓ'}, {U'ㅞ', U'ㅜ', U'ㅔ'},
+    {U'ㅟ', U'ㅜ', U'ㅣ'}, {U'ㅢ', U'ㅡ', U'ㅣ'},
+};
+
+bool is_compat_vowel(char32_t c) { return c >= kVowelBase && c <= kVowelLast; }
+
+// 把复合字母摊成组成字母；简单字母原样追加。
+void append_decomposed(std::u32string& out, char32_t jamo) {
+  for (const auto& pair : kComplexJamo) {
+    if (pair.complex_jamo == jamo) {
+      out += pair.first;
+      out += pair.second;
+      return;
+    }
+  }
+  out += jamo;
+}
+
+// 两个简单字母能否合成一个复合字母；不能则返回 0。
+char32_t compose_pair(char32_t first, char32_t second) {
+  for (const auto& pair : kComplexJamo) {
+    if (pair.first == first && pair.second == second) return pair.complex_jamo;
+  }
+  return 0;
+}
+
+// 兼容字母 → 初声索引，非初声返回 -1。
+int lead_index(char32_t c) {
+  for (int i = 0; i < 19; i++) {
+    if (kLeadCompat[i] == c) return i;
+  }
+  return -1;
+}
+
+// 兼容字母 → 终声索引，非终声返回 0（= 无终声）。
+int tail_index(char32_t c) {
+  for (int i = 1; i < kTailCount; i++) {
+    if (kTailCompat[i] == c) return i;
+  }
+  return 0;
+}
+}  // namespace
+
+std::u32string text_processor::disassemble_hangul(const std::u32string& text) {
+  // 早退：串里既没有预合成音节也没有兼容字母时原样返回。这个处理器挂在**所有语言**
+  // 共用的处理器链上（process() 无语言路由），日/英查询的每个变体都会过一遍它，
+  // 而下面的 append_decomposed 对每个字符都要线性扫一遍复合字母表——不早退等于
+  // 给非韩语查询白加一份开销。
+  bool has_hangul = false;
+  for (char32_t c : text) {
+    if ((c >= kSyllableFirst && c <= kSyllableLast) || (c >= 0x3130 && c <= 0x318F)) {
+      has_hangul = true;
+      break;
+    }
+  }
+  if (!has_hangul) return text;
+
+  std::u32string out;
+  // 单音节最大展开是 5，不是 3：`곿` = ㄱ + (ㅘ→ㅗㅏ) + (ㄳ→ㄱㅅ)。11172 个音节里
+  // 1463 个展开成 5、5054 个展开成 4，按 3 倍预留则绝大多数韩语串都要 realloc。
+  out.reserve(text.size() * 5);
+  for (char32_t c : text) {
+    if (c >= kSyllableFirst && c <= kSyllableLast) {
+      const int s = static_cast<int>(c - kSyllableFirst);
+      const int lead = s / (kVowelCount * kTailCount);
+      const int vowel = (s % (kVowelCount * kTailCount)) / kTailCount;
+      const int tail = s % kTailCount;
+      append_decomposed(out, kLeadCompat[lead]);
+      append_decomposed(out, kVowelBase + static_cast<char32_t>(vowel));
+      if (tail != 0) append_decomposed(out, kTailCompat[tail]);
+    } else {
+      // 已经是兼容字母的复合形（用户直接输入、或词典里就这么写）也拆开，
+      // 这样拆字后的串与 ko.json 的书写法完全同域。
+      append_decomposed(out, c);
+    }
+  }
+  return out;
+}
+
+std::u32string text_processor::reassemble_hangul(const std::u32string& text) {
+  std::u32string out;
+  out.reserve(text.size());
+  const size_t n = text.size();
+  size_t i = 0;
+  while (i < n) {
+    const int lead = lead_index(text[i]);
+    if (lead < 0 || i + 1 >= n) {
+      out += text[i++];
+      continue;
+    }
+    // 中声：优先按两个简单元音合成复合元音（ㅗ+ㅏ → ㅘ）。
+    char32_t vowel = text[i + 1];
+    size_t vowel_len = 1;
+    if (i + 2 < n) {
+      const char32_t merged = compose_pair(text[i + 1], text[i + 2]);
+      if (merged != 0 && is_compat_vowel(merged)) {
+        vowel = merged;
+        vowel_len = 2;
+      }
+    }
+    if (!is_compat_vowel(vowel)) {
+      out += text[i++];
+      continue;
+    }
+    size_t j = i + 1 + vowel_len;
+    // 终声：**只有后面不跟元音时才收**——这正是「ㅂ 是上一个音节的终声还是下一个
+    // 音节的初声」的唯一判据。`ㅂㅜㄷㅡㄹㅓㅂㄷㅏ` 里第二个 ㅂ 后面是 ㄷ 不是元音，
+    // 收进 러 得到 럽；`ㅎㅏㄱㅗ` 里 ㄱ 后面是 ㅗ，不收，另起一个音节 고。
+    int tail = 0;
+    size_t tail_len = 0;
+    if (j < n) {
+      if (j + 1 < n) {
+        const char32_t merged = compose_pair(text[j], text[j + 1]);
+        const int merged_tail = merged != 0 ? tail_index(merged) : 0;
+        if (merged_tail != 0 && (j + 2 >= n || !is_compat_vowel(text[j + 2]))) {
+          tail = merged_tail;
+          tail_len = 2;
+        }
+      }
+      if (tail_len == 0) {
+        const int single = tail_index(text[j]);
+        if (single != 0 && (j + 1 >= n || !is_compat_vowel(text[j + 1]))) {
+          tail = single;
+          tail_len = 1;
+        }
+      }
+    }
+    const int vowel_idx = static_cast<int>(vowel - kVowelBase);
+    out += kSyllableFirst +
+           static_cast<char32_t>((lead * kVowelCount + vowel_idx) * kTailCount + tail);
+    i = j + tail_len;
+  }
+  return out;
+}
+
+std::string text_processor::reassemble_hangul_utf8(const std::string& text) {
+  // U+3130..U+318F（兼容字母）在 UTF-8 里恒为 E3 84/85/86 xx。扫到这个两字节前缀
+  // 才值得做编码转换；扫不到就一定没有可合成的字母，原样返回。判据是**超集**
+  // （E3 84.. 还覆盖 U+3000..U+31BF 的别的字符），误判只是多做一次恒等转换，
+  // 不会漏掉真正需要合成的串。
+  bool maybe_jamo = false;
+  for (size_t i = 0; i + 1 < text.size(); i++) {
+    const auto b0 = static_cast<unsigned char>(text[i]);
+    const auto b1 = static_cast<unsigned char>(text[i + 1]);
+    if (b0 == 0xE3 && (b1 == 0x84 || b1 == 0x85 || b1 == 0x86)) {
+      maybe_jamo = true;
+      break;
+    }
+  }
+  if (!maybe_jamo) return text;
+  return utf8::utf32to8(reassemble_hangul(utf8::utf8to32(text)));
+}
+
+namespace {
+std::vector<TextProcessor> get_korean_processors() {
+  return {
+      // 拆字（BUG-2148）。对不含谚文的文本是恒等变换，变体表按结果去重，
+      // 所以日/英查询不会因为它多出任何一个变体。
+      {.options = {0, 1}, .process = [](const std::u32string& text, int opt) -> std::u32string {
+         return opt == 1 ? text_processor::disassemble_hangul(text) : text;
+       }}};
+}
 }
 
 // https://github.com/yomidevs/yomitan/blob/81d17d877fb18c62ba826210bf6db2b7f4d4deed/ext/js/language/translator.js#L564
@@ -499,6 +709,17 @@ std::vector<TextVariant> text_processor::process(const std::string& src) {
   all_processors.insert(all_processors.end(), en_processors.begin(), en_processors.end());
   auto dia_processors = get_diacritic_removal_processors();
   all_processors.insert(all_processors.end(), dia_processors.begin(), dia_processors.end());
+  // 韩语拆字**必须挂在链尾**，这是一条隐式但要命的顺序不变式：链首附近的 nfkc
+  // （get_japanese_processors 里那条）会把兼容字母兼容分解再规范合成回预合成音节，
+  // NFKC("ㅂㅜㄷㅡ") == "부드"。把 get_korean_processors 前移到 nfkc 之前，拆字会被
+  // 静默撤销、BUG-2148 原样复发，且端到端测试之外的任何单测都照绿。
+  // 守卫见 korean_hangul_lookup_test 的「链序」一组。
+  //
+  // 反向也靠这个顺序：NFD 形式的韩语（U+1100 组合字母块，macOS 文件名/字幕常见）
+  // disassemble_hangul 的早退范围认不出，靠链首 nfkc 先归一成预合成音节，韩语处理器
+  // 在链尾正好接住。
+  auto ko_processors = get_korean_processors();
+  all_processors.insert(all_processors.end(), ko_processors.begin(), ko_processors.end());
 
   for (const auto& processor : all_processors) {
     std::map<std::u32string, int> next;

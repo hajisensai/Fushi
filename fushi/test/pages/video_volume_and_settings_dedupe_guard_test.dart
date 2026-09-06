@@ -117,9 +117,13 @@ void main() {
 
     test('音量完整按钮只从底栏左右槽渲染一次，不进入 top bar / side rail', () {
       final String bottom = methodBody('List<Widget> _bottomSlotButtons(');
-      expect(
-          bottom.contains('rawItems.contains(VideoControlItem.volume)'), isTrue,
-          reason: '底栏左右槽应按真实 slot 渲染完整 _buildVolumeButton');
+      // 旧断言钉的是「先画完 chip、再把 volume 追加到槽尾」那行代码本身——那正是
+      // 「音量在槽内怎么拖都不动」的成因，等于把 bug 锁进了守卫。改为钉住真正要
+      // 保的东西：底栏按**布局真相源的顺序**出控件，音量在循环体内按位分派。
+      expect(bottom.contains('_controlLayout.itemsIn(slot)'), isTrue,
+          reason: '底栏出控件的顺序必须直接取自布局真相源');
+      expect(bottom.contains('if (item == VideoControlItem.volume)'), isTrue,
+          reason: '音量按位分派，不得在循环之外追加（会丢掉槽内真实下标）');
       expect(
           bottom.contains('_buildVolumeButton(') &&
               bottom.contains('slot: slot'),

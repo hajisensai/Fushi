@@ -39,25 +39,41 @@ void main() {
         reason: '缺失 launcher_icon_squircle legacy png');
   });
 
-  test('Android 透明（无背景）档保留为独立可选 alias（TODO-1241）', () {
+  test('退役档（立绘 / 透明 wordmark）资源已删且 manifest 无悬空引用', () {
     final String manifest = read('android/app/src/main/AndroidManifest.xml');
-    // 透明档 alias 存在、默认禁用、引用透明 wordmark（launcher_icon_minimal）。
-    final RegExp transparentAlias = RegExp(
-      r'MainActivityFushiTransparent[\s\S]*?android:icon="@mipmap/launcher_icon_minimal"',
-    );
-    expect(transparentAlias.hasMatch(manifest), isTrue,
-        reason:
-            '.MainActivityFushiTransparent 应引用 launcher_icon_minimal（透明 wordmark）');
-    // 透明档在原生映射与预设映射里都可选。
-    final String helper = read(
-        'android/app/src/main/java/app/fushi/reader/IconSwitchHelper.java');
-    expect(helper.contains('"hibiki_transparent"'), isTrue,
-        reason: 'IconSwitchHelper 应把 hibiki_transparent 列为可选档');
-    expect(helper.contains('.MainActivityFushiTransparent'), isTrue);
-    final String prefs = read('lib/src/utils/misc/app_icon_preferences.dart');
-    expect(prefs.contains("'hibiki_transparent':"), isTrue);
-    expect(prefs.contains('assets/meta/launcher_icon_squircle.png'), isTrue,
-        reason: 'default 预设预览应指向 squircle 资源');
+    // 三个退役 alias 的图标必须改指向存活的 squircle：资源已删，留着旧引用会让
+    // aapt 打包直接失败。
+    for (final String alias in <String>[
+      'MainActivityFushiFull',
+      'MainActivityFushiTransparent',
+      'MainActivityFushiMinimal',
+    ]) {
+      final RegExp ref = RegExp(
+        '$alias' r'[\s\S]{0,400}?android:icon="@mipmap/([a-z_0-9]+)"',
+      );
+      final RegExpMatch? m = ref.firstMatch(manifest);
+      expect(m, isNotNull, reason: '$alias 应仍声明并带 android:icon');
+      expect(m!.group(1), 'launcher_icon_squircle',
+          reason: '$alias 的图标必须指向存活的 launcher_icon_squircle，'
+              '旧的 launcher_icon_full / launcher_icon_minimal 资源已删除');
+    }
+    // 整个 res 树不得再引用已删资源。
+    expect(manifest.contains('launcher_icon_full'), isFalse);
+    expect(manifest.contains('launcher_icon_minimal'), isFalse);
+
+    // 被删的资源确实不在磁盘上（否则「已删除」这一前提本身就是假的）。
+    for (final String rel in <String>[
+      'android/app/src/main/res/mipmap-anydpi-v26/launcher_icon_full.xml',
+      'android/app/src/main/res/mipmap-anydpi-v26/launcher_icon_minimal.xml',
+      'android/app/src/main/res/mipmap-xxxhdpi/launcher_icon_full.png',
+      'android/app/src/main/res/mipmap-xxxhdpi/launcher_icon_minimal.png',
+      'android/app/src/main/res/drawable-xxxhdpi/ic_launcher_full_foreground.png',
+      'android/app/src/main/res/drawable-xxxhdpi/ic_launcher_minimal_foreground.png',
+      'assets/meta/launcher_icon_full.png',
+      'assets/meta/launcher_icon_minimal.png',
+    ]) {
+      expect(File(rel).existsSync(), isFalse, reason: '$rel 应已随预设下线删除');
+    }
   });
 
   test('Windows runner 暴露 setWindowIcon 通道方法', () {
@@ -93,8 +109,8 @@ void main() {
     expect(prefs.contains('currentAppIconSelection'), isTrue);
     expect(prefs.contains('appIconDecodePixelWidth = 256'), isTrue,
         reason: '侧栏不得按原尺寸解码用户选择的相机/8K 图片');
-    expect(prefs.contains('await appIconImageProvider(resolved).evict()'),
-        isTrue,
+    expect(
+        prefs.contains('await appIconImageProvider(resolved).evict()'), isTrue,
         reason: '固定自定义路径覆盖内容后必须清掉旧 ResizeImage cache');
     expect(page.contains('saveAppIconSelection('), isTrue,
         reason: '预设与自定义成功路径必须在持久化后发布运行时选择');
@@ -113,10 +129,10 @@ void main() {
         reason: 'rail 不得再读取 AppModel 中固定的 assets/meta/icon.png');
     expect(brand.contains('child: DecoratedBox('), isFalse,
         reason: 'rail 应直接显示应用图标，不得再套卡片底色和描边');
-    expect(component.contains('ValueListenableBuilder<AppIconSelection>'),
-        isTrue);
-    expect(main.contains('startupAppIcon = await loadAppIconSelection()'),
-        isTrue,
+    expect(
+        component.contains('ValueListenableBuilder<AppIconSelection>'), isTrue);
+    expect(
+        main.contains('startupAppIcon = await loadAppIconSelection()'), isTrue,
         reason: 'runApp 前必须恢复选择，避免第一帧画旧图标');
     expect(main.contains("'getCurrentIcon'"), isTrue,
         reason: 'Android 冷启动必须以 launcher alias 为当前图标真值');
@@ -163,43 +179,86 @@ void main() {
     }
   });
 
-  test('TODO-868/1241：预设三档 default+hibiki_transparent+full，无重复的 hibiki_minimal',
-      () {
-    // 预设映射为三档，且不含去重掉的 hibiki_minimal。
+  test('预设只剩 default 一档（立绘 / 透明 wordmark 已下线）', () {
     final String prefs = read('lib/src/utils/misc/app_icon_preferences.dart');
-    expect(prefs.contains("'hibiki_minimal':"), isFalse,
-        reason: 'presetIconAssets 不应再映射已去重的 hibiki_minimal');
-    expect(prefs.contains("'default':"), isTrue);
-    expect(prefs.contains("'hibiki_transparent':"), isTrue);
-    expect(prefs.contains("'hibiki_full':"), isTrue);
+    // 数 presetIconAssets 里真实的条目数，而不是「包含某字符串」——后者在
+    // map 里多塞一档时不会红。
+    final int mapStart =
+        prefs.indexOf('const Map<String, String> presetIconAssets');
+    expect(mapStart, greaterThanOrEqualTo(0),
+        reason: '找不到 presetIconAssets 定义');
+    final int mapEnd = prefs.indexOf('};', mapStart);
+    final String body = prefs.substring(mapStart, mapEnd);
+    final List<String> keys = RegExp(r"'([a-z_0-9]+)':")
+        .allMatches(body)
+        .map((RegExpMatch m) => m.group(1)!)
+        .toList();
+    expect(keys, <String>['default'],
+        reason: 'presetIconAssets 应只保留 default 一档，实际: $keys');
+    expect(body.contains('assets/meta/launcher_icon_squircle.png'), isTrue,
+        reason: 'default 预设预览应指向 squircle 资源');
 
-    // 设置页渲染三档 tile（含新透明档），仍不引用已删除的 hibiki_minimal / icon_minimal。
+    // 设置页只渲染 default 一个预设 tile。
     final String page =
         read('lib/src/pages/implementations/miscellaneous_settings_page.dart');
-    expect(page.contains("key: 'hibiki_transparent'"), isTrue,
-        reason: '设置页应渲染 hibiki_transparent 预设 tile');
-    expect(page.contains("key: 'hibiki_minimal'"), isFalse,
-        reason: '设置页不应再渲染 hibiki_minimal 预设 tile');
-    expect(page.contains('t.icon_minimal'), isFalse,
-        reason: '设置页不应再引用已删除的 icon_minimal label');
+    final List<String> tileKeys = RegExp(r"key: '([a-z_0-9]+)',")
+        .allMatches(page)
+        .map((RegExpMatch m) => m.group(1)!)
+        .where((String k) => k != 'custom')
+        .toList();
+    expect(tileKeys, <String>['default'],
+        reason: '设置页应只渲染 default 预设 tile，实际: $tileKeys');
+    for (final String gone in <String>[
+      't.icon_minimal',
+      't.icon_transparent',
+      't.icon_full',
+    ]) {
+      expect(page.contains(gone), isFalse, reason: '设置页不应再引用已删除的 $gone');
+    }
   });
 
-  test(
-      'TODO-868 Android 老用户安全：minimal alias 仍声明 + IconSwitchHelper 迁移回 default',
-      () {
-    // manifest 保留退役 alias 声明，避免老用户升级后 launcher 图标消失。
+  test('Android 老用户安全：退役 alias 仍声明 + IconSwitchHelper 迁移回 default', () {
+    // manifest 保留全部退役 alias 声明：老用户若当前启动器指向其中之一，删掉声明
+    // 会让升级后 launcher 图标直接消失（zero-LAUNCHER）。
     final String manifest = read('android/app/src/main/AndroidManifest.xml');
-    expect(manifest.contains('.MainActivityFushiMinimal'), isTrue,
-        reason: '退役 minimal alias 必须保留声明（老用户 launcher 安全）');
+    for (final String alias in <String>[
+      '.MainActivityFushiMinimal',
+      '.MainActivityFushiTransparent',
+      '.MainActivityFushiFull',
+    ]) {
+      expect(manifest.contains(alias), isTrue,
+          reason: '退役 alias $alias 必须保留声明（老用户 launcher 安全）');
+    }
 
-    // IconSwitchHelper：不再把 hibiki_minimal 列为可选项，但提供迁移逻辑。
     final String helper = read(
         'android/app/src/main/java/app/fushi/reader/IconSwitchHelper.java');
-    expect(helper.contains('"hibiki_minimal"'), isFalse,
-        reason: 'hibiki_minimal 不应再出现在可选 ALIAS_KEYS 中');
-    expect(helper.contains('migrateRetiredMinimalIfEnabled'), isTrue,
-        reason: '必须提供老用户迁移逻辑，把启用的 minimal alias 迁回 default');
-    expect(helper.contains('RETIRED_MINIMAL_ALIAS'), isTrue);
+    // ALIAS_KEYS 只剩 default：数真实条目，不用「不包含某串」这种反向断言。
+    final int keysStart = helper.indexOf('ALIAS_KEYS = Arrays.asList(');
+    expect(keysStart, greaterThanOrEqualTo(0));
+    final String keysBody =
+        helper.substring(keysStart, helper.indexOf(');', keysStart));
+    final List<String> keys = RegExp(r'"([a-z_0-9]+)"')
+        .allMatches(keysBody)
+        .map((RegExpMatch m) => m.group(1)!)
+        .toList();
+    expect(keys, <String>['default'],
+        reason: 'IconSwitchHelper 可选档应只剩 default，实际: $keys');
+
+    // 迁移逻辑覆盖全部三个退役 alias。
+    expect(helper.contains('migrateRetiredAliasesIfEnabled'), isTrue,
+        reason: '必须提供老用户迁移逻辑，把启用的退役 alias 迁回 default');
+    final int retiredStart = helper.indexOf('RETIRED_ALIASES = Arrays.asList(');
+    expect(retiredStart, greaterThanOrEqualTo(0));
+    final String retiredBody =
+        helper.substring(retiredStart, helper.indexOf(');', retiredStart));
+    for (final String alias in <String>[
+      '.MainActivityFushiMinimal',
+      '.MainActivityFushiTransparent',
+      '.MainActivityFushiFull',
+    ]) {
+      expect(retiredBody.contains(alias), isTrue,
+          reason: 'RETIRED_ALIASES 必须覆盖 $alias，否则该档老用户迁不回 default');
+    }
   });
   test('TODO-1269 回归守卫：所有启动器自适应图标背景必须不透明且非纯黑（纯透明会被渲染成黑）', () {
     // 根因：TODO-1241 把 ic_launcher_minimal_background 从 #FFFFFF 改成纯透明

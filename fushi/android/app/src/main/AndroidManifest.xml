@@ -63,10 +63,14 @@
                 android:resource="@style/NormalTheme"/>
         </activity-alias>
 
+        <!-- 退役的「立绘」alias：预设已下线，图标资源已删除，但保留声明——老用户若当前
+             启动器指向此 alias，删除声明会导致升级后 launcher 图标消失（zero-LAUNCHER）。
+             图标改指向存活的默认档；IconSwitchHelper.getCurrentIcon 会把这类老用户迁回
+             .MainActivityDefault。迁移普及后方可删除。 -->
         <activity-alias
             android:name=".MainActivityFushiFull"
             android:targetActivity=".MainActivity"
-            android:icon="@mipmap/launcher_icon_full"
+            android:icon="@mipmap/launcher_icon_squircle"
             android:label="Fushi"
             android:enabled="false"
             android:exported="true">
@@ -79,13 +83,12 @@
                 android:resource="@style/NormalTheme"/>
         </activity-alias>
 
-        <!-- 「透明（无背景）」备选档（TODO-1241）：藏青 wordmark，自适应背景全透明、
-             legacy png 也透明。默认档已改用不透明白 squircle（任意壁纸可见），此档保留
-             给偏好极简透明观感的用户。 -->
+        <!-- 退役的「透明」alias：同上，预设已下线、资源已删，声明保留仅为避免老用户
+             zero-LAUNCHER，图标改指向存活的默认档。 -->
         <activity-alias
             android:name=".MainActivityFushiTransparent"
             android:targetActivity=".MainActivity"
-            android:icon="@mipmap/launcher_icon_minimal"
+            android:icon="@mipmap/launcher_icon_squircle"
             android:label="Fushi"
             android:enabled="false"
             android:exported="true">
@@ -106,7 +109,7 @@
         <activity-alias
             android:name=".MainActivityFushiMinimal"
             android:targetActivity=".MainActivity"
-            android:icon="@mipmap/launcher_icon_minimal"
+            android:icon="@mipmap/launcher_icon_squircle"
             android:label="Fushi"
             android:enabled="false"
             android:exported="true">

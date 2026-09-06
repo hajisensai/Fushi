@@ -1,7 +1,11 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:fushi/pages.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/onboarding/recommended_pack_download_row.dart';
+import 'package:fushi/src/onboarding/recommended_pack_import.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -84,6 +88,19 @@ SettingsDestination buildSystemDestination() {
                 (_) => const OnboardingWizardPage(),
               );
             },
+          ),
+          // 推荐包下载的常驻可见入口（BUG-2097）。下载归 [AppModel] 上的
+          // controller 所有，关掉向导也照跑——那就必须有一个不依赖向导的地方
+          // 看得到它、停得掉它、下完能就地导入。空闲时整行不渲染，设置页不常驻
+          // 一条恒为「无任务」的死行；本行随 controller 的阶段变化实时显隐，靠
+          // [SettingsDetailPage] 订阅 stage 重建（同 galgame 准入那一行的做法）。
+          SettingsCustomItem(
+            id: 'system.recommended_pack_download',
+            searchTitle: t.onboarding_step_pack_title,
+            subtitle: t.onboarding_pack_intro,
+            visible: (SettingsContext settingsContext) => settingsContext
+                .appModel.recommendedPackDownloadController.isActive,
+            builder: _buildRecommendedPackDownloadRow,
           ),
           SettingsSwitchItem(
             id: 'system.low_memory_mode',
@@ -613,6 +630,16 @@ Widget _buildTmdbAttributionRow(SettingsContext settingsContext) {
       Uri.parse('https://www.themoviedb.org/'),
       mode: LaunchMode.externalApplication,
     ),
+  );
+}
+
+Widget _buildRecommendedPackDownloadRow(SettingsContext settingsContext) {
+  final AppModel appModel = settingsContext.appModel;
+  return RecommendedPackDownloadRow(
+    controller: appModel.recommendedPackDownloadController,
+    // 导入编排是库级共享的（[importDownloadedRecommendedPack]）：设置这一行、
+    // 新手引导那一步、首页迷你条三个发起点同一个真相源。
+    onImport: () => unawaited(importDownloadedRecommendedPack(appModel)),
   );
 }
 

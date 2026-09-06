@@ -11,6 +11,7 @@
 | `siglus` | SiglusEngine | `verified` | engine_exact_utf16_hook (implemented_unverified)；luna_hook (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | resource_audio (verified)；directsound_pcm (verified)；process_loopback (verified) | 1 |
 | `elf_ai6` | elf AI6 | `implemented_unverified` | luna_textouta_hook (implemented_unverified) | ai6_voice_arc_resource (implemented_unverified)；directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `reallive` | RealLive / old VisualArt's | `implemented_unverified` | luna_hook (implemented_unverified) | visual_arts_ovk_resource (implemented_unverified)；xaudio2_or_directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
+| `cmvs` | CMVS (Purple Software) | `implemented_unverified` | luna_hook (implemented_unverified) | xaudio2_or_directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `kirikiri_z` | KiriKiri2 / KiriKiriZ | `partial` | luna_auto_or_pc_hooks (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | kirikiri_resource_stream (implemented_unverified)；kirikiri_decoder_pcm (implemented_unverified)；directsound_pcm (verified)；process_loopback (verified) | 2 |
 | `xaudio2_directsound` | XAudio2 / DirectSound generic capture | `verified` | — | xaudio2_source_voice_pcm (verified)；directsound_buffer_pcm (verified)；xwma_compressed_resource (implemented_unverified) | 1 |
 | `renpy_ffmpeg` | Ren'Py / FFmpeg | `implemented_unverified` | luna_auto_or_pc_hooks (implemented_unverified) | ffmpeg_resource_event (implemented_unverified)；ffmpeg54_decoder_pcm (implemented_unverified)；process_loopback (verified) | 1 |
@@ -24,6 +25,8 @@
 | `leaf_aquaplus` | Leaf / AQUAPLUS (WHITE ALBUM2 exact profile) | `implemented_unverified` | luna_exact_cp932_thread (implemented_unverified)；ingame_lookup_geometry (implemented_unverified)；ingame_lookup_sampled_input_shield (implemented_unverified) | leaf_lac_voice_resource (implemented_unverified)；directsound_pcm (implemented_unverified) | 0 |
 | `hunex_gge` | HUNEX GGE / HFA-HW | `implemented_unverified` | luna_typemoon_dialogue_thread (implemented_unverified) | hunex_hfa_hw_ogg_resource (implemented_unverified) | 0 |
 | `sgre` | M2 wind3d11 runtime (STEINS;GATE RE:BOOT) | `implemented_unverified` | ingame_lookup_geometry (implemented_unverified)；ingame_lookup_directinput_shield (implemented_unverified) | engine_archive_resource (implemented_unverified) | 0 |
+| `unreal_iostore` | Unreal Engine (IoStore) | `implemented_unverified` | luna_pc_hooks (implemented_unverified) | xaudio2_or_directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
+| `aos_sfa` | AOS / SFA (Princess Sugar, Atelier Kaguya family) | `implemented_unverified` | — | xaudio2_or_directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 
 ## 无 OCR 内嵌查词矩阵
 
@@ -51,49 +54,49 @@
 
 - `kirikiri_z` geometry：IPC v19 registry migration and offline adapter/attached-surface tests only; no same-session real-game card E2E is recorded.
   - verified shield：The v19 transaction protocol and standard public input-surface filters exist, but the 1,000-transaction real-build gate has not run.
-  - risky left click：Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded.
+  - risky left click：Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate, which was unsatisfiable: the generic shield can never reach Verified); allow_risk still crosses the IPC contract, but no measured real-build click-leak rate is recorded.
 - `renpy_ffmpeg` geometry：IPC v19 registry migration and offline adapter/attached-surface tests only; Ren'Py 8 custom-screen coverage still needs real builds.
   - verified shield：The generic standard-surface shield is present, without the required real-build transaction corpus.
-  - risky left click：Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded.
+  - risky left click：Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate, which was unsatisfiable: the generic shield can never reach Verified); allow_risk still crosses the IPC contract, but no measured real-build click-leak rate is recorded.
 - `tyrano_nwjs` geometry：The calibrated fallback is implemented offline; a Tyrano DOM runtime-layout provider is not yet admitted.
   - verified shield：The generic standard-surface shield is present, without the required real-build transaction corpus.
-  - risky left click：Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded.
+  - risky left click：Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate, which was unsatisfiable: the generic shield can never reach Verified); allow_risk still crosses the IPC contract, but no measured real-build click-leak rate is recorded.
 - `unity_il2cpp` geometry：The calibrated fallback is implemented offline; TMP/UGUI source-index and Canvas-transform geometry are not yet admitted.
   - verified shield：The generic standard-surface shield is present, without the required real-build transaction corpus.
-  - risky left click：Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded.
+  - risky left click：Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate, which was unsatisfiable: the generic shield can never reach Verified); allow_risk still crosses the IPC contract, but no measured real-build click-leak rate is recorded.
 - `elf_ai6` geometry：The calibrated fallback is implemented offline; positioned GDI lineage has not been admitted for this engine.
   - verified shield：The generic standard-surface shield is present, without the required real-build transaction corpus.
-  - risky left click：Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded.
+  - risky left click：Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate, which was unsatisfiable: the generic shield can never reach Verified); allow_risk still crosses the IPC contract, but no measured real-build click-leak rate is recorded.
 - `reallive` geometry：The calibrated fallback is implemented offline; positioned GDI lineage has not been admitted for this engine.
   - verified shield：The generic standard-surface shield is present, without the required real-build transaction corpus.
-  - risky left click：Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded.
+  - risky left click：Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate, which was unsatisfiable: the generic shield can never reach Verified); allow_risk still crosses the IPC contract, but no measured real-build click-leak rate is recorded.
 - `bgi_ethornell` geometry：The calibrated fallback is implemented offline; positioned GDI/DWrite lineage has not been admitted for this engine.
   - verified shield：The generic standard-surface shield is present, without the required real-build transaction corpus.
-  - risky left click：Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded.
+  - risky left click：Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate, which was unsatisfiable: the generic shield can never reach Verified); allow_risk still crosses the IPC contract, but no measured real-build click-leak rate is recorded.
 - `catsystem2` geometry：The calibrated fallback is implemented offline; positioned GDI/DWrite lineage has not been admitted for this engine.
   - verified shield：The generic standard-surface shield is present, without the required real-build transaction corpus.
-  - risky left click：Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded.
+  - risky left click：Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate, which was unsatisfiable: the generic shield can never reach Verified); allow_risk still crosses the IPC contract, but no measured real-build click-leak rate is recorded.
 - `malie_libp` geometry：The calibrated fallback is implemented offline; positioned GDI/DWrite lineage has not been admitted for this engine.
   - verified shield：The generic standard-surface shield is present, without the required real-build transaction corpus.
-  - risky left click：Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded.
+  - risky left click：Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate, which was unsatisfiable: the generic shield can never reach Verified); allow_risk still crosses the IPC contract, but no measured real-build click-leak rate is recorded.
 - `qlie_filepack` geometry：The calibrated fallback is implemented offline; positioned GDI/DWrite lineage has not been admitted for this engine.
   - verified shield：The generic standard-surface shield is present, without the required real-build transaction corpus.
-  - risky left click：Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded.
+  - risky left click：Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate, which was unsatisfiable: the generic shield can never reach Verified); allow_risk still crosses the IPC contract, but no measured real-build click-leak rate is recorded.
 - `artemis_pfs` geometry：The calibrated fallback is implemented offline; no uniquely traced hybrid positioned-text provider is admitted.
   - verified shield：The generic standard-surface shield is present, without the required real-build transaction corpus.
-  - risky left click：Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded.
+  - risky left click：Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate, which was unsatisfiable: the generic shield can never reach Verified); allow_risk still crosses the IPC contract, but no measured real-build click-leak rate is recorded.
 - `siglus` geometry：The portable exact SHA-256 identity is followed by a hydrated-image gate that requires one glyph signature and one build-specific input signature across all executable sections, exact profile RVAs, and internal callgraph boundaries. Zero/multiple candidates and unknown hashes fail closed; lookup/card E2E is not recorded.
   - verified shield：Exact and generic shield code exists, but the 1,000-transaction real-build gate has not run.
-  - risky left click：Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded.
+  - risky left click：Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate, which was unsatisfiable: the generic shield can never reach Verified); allow_risk still crosses the IPC contract, but no measured real-build click-leak rate is recorded.
 - `leaf_aquaplus` geometry：The portable exact SHA-256 identity is followed by hydrated-image, all-executable-section unique masked signatures, module-relative relocated-operand checks, callgraph gates and a D3D9 ABI gate. Zero/multiple candidates and unknown hashes fail closed; lookup/card E2E is not recorded.
   - verified shield：Exact and generic shield code exists, but the 1,000-transaction real-build gate has not run.
-  - risky left click：Per-executable risk gating is implemented; no measured real-build click-leak rate is recorded.
+  - risky left click：Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate, which was unsatisfiable: the generic shield can never reach Verified); allow_risk still crosses the IPC contract, but no measured real-build click-leak rate is recorded.
 - `hunex_gge` geometry：The calibrated fallback and a fail-closed exact provider are implemented. The HUNEX hydrated-image scanner requires unique executable-section renderer/input/projection anchors plus callgraph, unwind and imported-API validation before it can publish geometry. The original WoH session has not yet produced a complete glyph-to-client projection or lookup/card E2E. The engine_exact_layout entry above is a deliberate 2026-08-31 graduation from observation-only; only the geometry provider layer graduated, and the resource-capture and pairing gates stay not_verified.
   - verified shield：Generic shielding plus HUNEX semantic-submit ownership are implemented, but the real-build click, Shift and popup transaction gates have not run.
-  - risky left click：Per-executable risk gating and fail-closed native-input admission are implemented; no measured real-build click-leak rate is recorded.
+  - risky left click：Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate); fail-closed native-input admission is implemented; no measured real-build click-leak rate is recorded.
 - `sgre` geometry：The measured SHA-256 row is a consistency check only. Known and unknown hashes traverse populated, mutually corroborated draw/vtable/DirectInput signatures across all executable sections, PE exception-directory function bounds, decoded module-relative targets and live vtable/COM ABI gates. Zero/multiple intersections, layout/codegen mismatches and structure faults fail closed. 2026-09-03 original-path E2E on the measured Steam x64 build (SHA-256 75A83A0E…C404B9D8, Fushi 2.2.4-debug.13075 launching sgre_steam.exe, injected helper, IPC v21): hover+Shift lookups (いて/サイ) and a bare left click on 話 each published a hit, presented the direct galCard inside the game and the game line did not advance; one word card was written (Sentence エル・プ<b>サイ</b>・コングルゥ, 3.19 s paired xWMA voice re-encoded to AAC, 480×270 AVIF animation). Evidence grade for the audio stops at captured: neither a byte-hash comparison against the source voice_body.bin entry nor a pure-voice classification was recorded, so hash_verified and voice_classified are NOT claimed and the run does not satisfy the per-sentence original-resource claim in full. Only this one build is covered.
   - verified shield：Exact DirectInput and generic shield code exists, but the 1,000-transaction real-build gate has not run.
-  - risky left click：Per-executable risk gating is implemented. 2026-09-03 measurement on the measured build: 8 popup-outside quick clicks (60 ms down/up) after Shift or click lookups, 7 were swallowed by the WH_MOUSE_LL + DirectInput shield pair with no line advance; the first click right after the mid-session risk acceptance (needsRiskAcceptance → activeNative) leaked and advanced the line once, and the leak did not reproduce on a fresh session whose acceptance was restored from memory. Too few transactions for a rate; the 1,000-transaction gate has not run.
+  - risky left click：Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate). 2026-09-03 measurement, taken while that gate still existed: 8 popup-outside quick clicks (60 ms down/up) after Shift or click lookups, 7 were swallowed by the WH_MOUSE_LL + DirectInput shield pair with no line advance; the first click right after the mid-session risk acceptance (needsRiskAcceptance → activeNative) leaked and advanced the line once, and the leak did not reproduce on a fresh session whose acceptance was restored from memory. That one leak sat on the acceptance transition itself, which no longer happens; the shield pair it measured is unchanged. Too few transactions for a rate; the 1,000-transaction gate has not run.
 
 ## 识别与能力明细
 
@@ -217,6 +220,48 @@ Fixtures：`tests/fixtures/reallive_replay.json`
 
 Tests：`tests/reallive_adapter_test.cpp`
 
+### CMVS (Purple Software) (`cmvs`)
+
+- 状态：`implemented_unverified`
+- 别名：CMVS、Purple Software、パープルソフトウェア
+- 家族：`cmvs`（Purple Software in-house engine; no verified sibling）
+- 当前 adapter：`hook/adapters/cmvs_adapter.inc`
+- 进程策略：launch=`generic_launch_available`，attach=`generic_attach_available`，follow-child=`false`
+
+识别签名（所有非空项均带真实样本或运行时观察证据）：
+
+- `executable_names`：cmvs32.exe、cmvs64.exe；证据：real_sample — Purple Software クロノクロック 体験版v2 (2015-03-20) ships both cmvs32.exe (x86) and cmvs64.exe (x64); static probe 2026-09-04. Retail builds may rename the exe, so names are catalogue only and the adapter matches on cmvs.cfg + CPZ archives instead
+- `pe_architectures`：x86、x64；证据：real_sample — cmvs32.exe machine 0x14c, cmvs64.exe machine 0x8664 (same trial package)
+- `directory_files_all`：cmvs.cfg、data/pack/start.ps3；证据：real_sample — cmvs.cfg opens with [CMVS_SYSTEM_MAIN] and SCRIPT_INIT_PATH=data\pack\; data/pack/start.ps3 (PS2A) is the script entry; trial package 2015-03-20
+- `pe_imports`：DSOUND.dll、WINMM.dll、d3d9.dll、mog2x32.dll、mog2x64.dll；证据：real_sample — PE import tables of cmvs32.exe / cmvs64.exe (static probe 2026-09-04); DirectSound is the only audio API imported
+- `runtime_modules`：mog2x32.dll、mog2x64.dll；证据：real_sample — Purple MOG2 image library shipped next to the exe (sha256 6b8dc960… / c51ba0c3…); static import only, runtime load not yet observed
+- `resource_extensions`：.cpz、.ps3、.cmv；证据：real_sample — data/pack/*.cpz (CPZ6 magic; voice.cpz + voice2.cpz hold voice), data/pack/start.ps3, data/video/*.cmv, data/music/*.ogg in the trial package
+- `hashes`：c5e715d98b56468df0a3d6bd8ec263b72bab736e0ad004de4e443a54c470ddad、aa89205a61c7078a167f9e6668eea2e4328bdd5c9cbcdd6f45b238cf475acea2；证据：real_sample — cmvs32.exe / cmvs64.exe of クロノクロック 体験版v2, catalogue only; the adapter does not hash-pin because the structural cfg + CPZ check is the identity
+
+文本能力：
+
+- `luna_hook`：`implemented_unverified` — Vendored LunaHook32/64 both carry the EmbedCMVS engine hook; no real-session dialogue thread has been observed yet.
+- codepage：932
+- 线程提示：Prefer the LunaHook EmbedCMVS thread once observed; the adapter installs no text hook of its own.
+
+音频优先级：
+
+1. `xaudio2_or_directsound_pcm` — `implemented_unverified`；格式：DirectSound source PCM via the generic Windows audio adapter；clean voice：engine_dependent
+2. `process_loopback` — `implemented_unverified`；格式：host PCM fallback；clean voice：否
+
+真实样本证据：
+
+
+已知限制：
+
+- Per-line voice resources live inside CPZ6-encrypted voice.cpz / voice2.cpz; no resource layer is implemented and none is claimed until a runtime decrypt-read seam is measured on a real session.
+- Identity is structural (cmvs.cfg section + CPZ archive magic); executable hashes are catalogued but not pinned.
+- In-game lookup sensor is not implemented; lookupAdmission stays EngineUnsupported.
+
+Fixtures：`tests/fixtures/cmvs_replay.json`
+
+Tests：`tests/cmvs_adapter_test.cpp`、`../../fushi/test/mining/cmvs_pairing_test.dart`
+
 ### KiriKiri2 / KiriKiriZ (`kirikiri_z`)
 
 - 状态：`partial`
@@ -260,6 +305,7 @@ Tests：`tests/reallive_adapter_test.cpp`
 - In-game dictionary lookup remains implemented_unverified. The production route reuses the Fushi popup in an off-screen galCard WebView2, captures a bounded BGRA frame, and displays it through the v15 KiriKiri Layer route; the game-side sensor still owns glyph hit-testing and selection highlighting. The v15 CaptureSuppress/applied-seq handshake was verified in one 2026-08-13 target-game same-session E2E: applied_seq advanced only after suppression, a later full frame restored the popup, and the real Anki AVIF contained no Fushi popup or selection highlight. Required automated/offline verification was explicitly skipped, and the geometry sensor is gated on a third-party textrender.dll plus a runtime probe for global.TextRender.getCharacters, so it does not generalise to KiriKiri as an engine. No capability or support-state upgrade is claimed.
 - 2026-08-19 measurement, both directions, same hook build. Positive: on a second KiriKiri Z sample (tenshi_sz.exe, Chinese release, KAGEX plus third-party textrender.dll) launched by Fushi 2.1.1-debug.11887, one session completed the whole in-game chain: lookup_diag reached 0x0000106F (sensor_installed | geometry_observed | hit_submitted | buffer_route_ready | frame_presented | expression_ready), clicking a glyph rendered the lookup card inside the game layer, and the card's mining button wrote a real Anki note (total notes 13200 -> 13201) whose media are genuine (10138-byte AVIF starting with ftypavis, 9260-byte MP3 starting with ID3) and whose sentence field holds the clicked line. Negative: on a classic KAG3 sample that ships no textrender.dll (フタマタ恋愛 Ver1.00, KiriKiri2/BCB), with lookup_enabled forced to 1 by the diagnostic probe, lookup_diag stayed 0x00000000 for the entire session while text capture worked (text_writes=8) - the sensor never installs and in-game lookup is entirely absent there. In-game lookup therefore stays scoped to KiriKiri Z builds shipping textrender.dll and is still not a KiriKiri-engine-wide capability. Recorded as measurement only; no status or capability upgrade is claimed.
 - Text-thread choice is not free on this engine: the same game exposes one EmbedKrkrZ thread carrying whole-string-doubled dialogue (folded correctly by the block-level normaliser) and several KiriKiriZ threads carrying per-character doubled/tripled strings that the artifact gate correctly drops. Selecting a KiriKiriZ thread leaves the workbench with zero lines forever and makes in-game mining fail silently. Tracked as BUG-1733/1734/1735; the native filtering is correct and must not be relaxed.
+- 2026-09-05 measurement, classic KAG3 in-game lookup, same hook build (helper x86 a180314c5688eca6eb03269c5c1dc958fe103a57b2fed6c28d74e1a80447afad). This supersedes the 2026-08-19 negative on classic KAG3, whose stated cause (no textrender.dll) was wrong. Two classic KAG3 / KiriKiri2-BCB samples were driven by the injector directly (--launch --hold) with lookup_enabled forced by the diagnostic probe. Fate/stay night[Realta Nua] -Fate-: lookup_diag 0xB0000541 (sensor_installed | expression_ready | classic_patch_installed | classic_processch_fired), xaudiodiag2 0x0194000c (SeamArmed | SeamFired | BootstrapStarted | BootstrapFired). Futamata Renai Ver1.00, the very sample recorded as the 2026-08-19 negative: lookup_diag 0xB0000141 (sensor_installed | expression_ready | classic_patch_installed), xaudiodiag2 0xa194000c, which additionally carries ExporterScanRan | ExporterScanAdopted. Four distinct root causes were fixed to get here: BUG-2121 (main-window shape, poll semantics, and the addHook precondition), BUG-2144 (Borland exceptions crossing an MSVC catch(...)), and BUG-2145 (a build with no export directory at all whose plugins all link before the LoadLibrary hook). The sensor now installs on classic KAG3 without textrender.dll. This is an install-stage measurement only: no glyph hit, card render, or mining E2E was run on either sample in this session, and no status or capability upgrade is claimed.
 
 Fixtures：`tests/fixtures/kirikiri_lookup_replay.tsv`
 
@@ -777,6 +823,96 @@ Tests：`tests/hunex_gge_adapter_test.cpp`、`tests/hunex_gge_capture_bridge_tes
 Fixtures：尚无（P5 补齐）
 
 Tests：`tests/sgre_adapter_test.cpp`、`tests/exact_lookup_signature_test.cpp`、`tests/adapter_structure_test.py`
+
+### Unreal Engine (IoStore) (`unreal_iostore`)
+
+- 状态：`implemented_unverified`
+- 别名：Unreal Engine、UE4、UE5、アンリアルエンジン
+- 家族：`unreal`（Epic Games Unreal Engine; this entry covers the IoStore (.utoc/.ucas) packaging only）
+- 当前 adapter：`hook/adapters/unreal_iostore_adapter.inc`
+- 进程策略：launch=`generic_launch_available`，attach=`generic_attach_available`，follow-child=`true`
+
+识别签名（所有非空项均带真实样本或运行时观察证据）：
+
+- `executable_names`：*-Win64-Shipping.exe；证据：real_sample — 昨日魔女今日的梦 1.0 汉化版 ships kinomajo\Binaries\Win64\kinomajo-Win64-Shipping.exe behind an outer kinomajo.exe launcher; static probe 2026-09-05. The name is a UE build convention and is catalogue only -- the adapter matches on the Binaries\Win64 directory shape plus IoStore archive magic, so -Win64-Test and -Win64-Debug builds are covered too
+- `pe_architectures`：x64；证据：real_sample — kinomajo-Win64-Shipping.exe machine 0x8664; the launcher kinomajo.exe is x64 as well
+- `directory_files_all`：Content/Paks/global.utoc、Content/Paks/global.ucas；证据：real_sample — Every IoStore build carries the global.utoc/global.ucas pair; this sample also has kinomajo-Windows.* and kinomajo-Windows_zh-CN_P.*. All three .utoc files open with the 16-byte IoStore TOC magic '-==--==--==--==-' followed by version byte 6, which is what the adapter actually matches on (any *.utoc under Content\Paks carrying that magic); measured 2026-09-05
+- `pe_imports`：DSOUND.dll、WINMM.dll、OPENGL32.dll、WINHTTP.dll、MSVCP140.dll；证据：real_sample — PE import table of kinomajo-Win64-Shipping.exe (38 imports, static probe 2026-09-05). DirectSound is the only audio API imported statically; the UE tree also ships Engine\Binaries\ThirdParty\Windows\XAudio2_9\x64\xaudio2_9redist.dll for runtime loading, so the audio backend actually used at runtime was not determined
+- `runtime_modules`：D3D12Core.dll、xaudio2_9redist.dll；证据：real_sample — Shipped next to the binary / under Engine\Binaries\ThirdParty; presence measured statically, runtime load not individually confirmed
+- `resource_extensions`：.utoc、.ucas、.pak；证据：real_sample — Content\Paks holds paired .pak/.ucas/.utoc sets; the 2.7 GB kinomajo-Windows.ucas carries the asset payload including SoundWave assets
+- `hashes`：f7018ae75f820a204bf48ac444d4688f3b7ccada51ae6b161ab701ecb0a492a2、877ff376a5e7233f903f778f6163e5e39924df1da9e5eeef055bb14b125026fd；证据：real_sample — kinomajo-Win64-Shipping.exe / kinomajo.exe launcher, catalogue only; the adapter does not hash-pin because the structural directory + IoStore magic check is the identity
+
+文本能力：
+
+- `luna_pc_hooks`：`implemented_unverified` — Unreal is a C++ engine with no scripting host to hook, so text goes through LunaHook's generic PC hooks. Measured both ways on the same title screen of the same build: without PC hooks text_events settled at 11, with them at 29. No dialogue line was traversed, so no thread was selected and no dialogue text is claimed.
+- codepage：932
+- 线程提示：Unmeasured. Only title-screen strings have been observed; the dialogue thread must be identified on a real session before any selection hint is recorded.
+
+音频优先级：
+
+1. `xaudio2_or_directsound_pcm` — `implemented_unverified`；格式：source PCM via the generic Windows audio adapter；clean voice：engine_dependent
+2. `process_loopback` — `implemented_unverified`；格式：host PCM fallback；clean voice：否
+
+真实样本证据：
+
+
+已知限制：
+
+- Identity is anchored on IoStore only: the criterion requires Content\Paks\*.utoc with the 16-byte TOC magic. UE4 builds packaged as .pak alone do NOT match. This is deliberate -- the .pak magic (0x5A6F12E1) sits in a trailing footer whose offset varies by pak version, and no .pak-only sample was available to measure. Closing that gap needs a real .pak-only title.
+- Per-line voice resources are SoundWave assets inside *.ucas, chunked and compressed by IoStore. No resource layer is implemented and none is claimed until a runtime post-unpack read seam is measured on a real session.
+- Only title-screen strings have been observed. Dialogue text, thread selection, text/audio pairing and card E2E are all not_run.
+- The runtime PCM measurement did not distinguish DirectSound from XAudio2; only 'the generic Windows audio path published PCM' is proved.
+- In-game lookup sensor is not implemented; lookupAdmission stays EngineUnsupported.
+- The shipping-binary criterion hard-codes the Win64 platform segment, so 32-bit UE packages under <Game>\Binaries\Win32 do NOT match and the whole Unreal path is inert for them. The measured sample is x64-only; no Win32 UE sample was available, and a platform segment is not guessed from a shape that was never measured.
+- Auto-enabling LunaHook PC hooks was measured only through the explicit --luna-pchooks switch (11 vs 29 text_events). The automatic route reaches that switch by way of launcher detection plus child-process following, and is covered by offline tests only; it has not been re-measured end to end from the original launch entry.
+
+Fixtures：`tests/fixtures/unreal_iostore_replay.json`
+
+Tests：`tests/unreal_iostore_adapter_test.cpp`、`../../fushi/test/mining/unreal_iostore_pairing_test.dart`
+
+### AOS / SFA (Princess Sugar, Atelier Kaguya family) (`aos_sfa`)
+
+- 状态：`implemented_unverified`
+- 别名：AOS、SFA、Princess Sugar、アトリエかぐや
+- 家族：`aos_sfa`（In-house engine of the Princess Sugar / Atelier Kaguya family; no verified sibling in this repository）
+- 当前 adapter：`hook/adapters/aos_sfa_adapter.inc`
+- 进程策略：launch=`generic_launch_available`，attach=`generic_attach_available`，follow-child=`false`
+
+识别签名（所有非空项均带真实样本或运行时观察证据）：
+
+- `pe_architectures`：x86；证据：real_sample — The 姫様ＬＯＶＥライフ！ game executable is machine 0x14c (862720 bytes), importing DDRAW/DINPUT/DSOUND/d3d9/d3dx9_43; static probe 2026-09-05
+- `directory_files_all`：scr.aos、cv.aos；证据：real_sample — Sample ships bgm/cv/grp/scr/se.aos next to the executable. All five open with four zero bytes, two little-endian u32 fields, and their own file name as NUL-terminated ASCII at offset 12 -- that self-naming header is what the adapter matches, not the extension; measured 2026-09-05
+- `pe_imports`：DDRAW.dll、DINPUT.dll、DSOUND.dll、d3d9.dll、d3dx9_43.dll；证据：real_sample — PE import table of the 姫様ＬＯＶＥライフ！ executable (13 imports); DirectSound is the only audio API imported
+- `resource_extensions`：.aos；证据：real_sample — cv.aos (675 MB) is the voice archive; grp.aos (2.99 GB) art, bgm/se.aos audio, scr.aos scripts
+- `hashes`：fa965f070c0337098ca6abdb31c4c3d049d1480c3056a4db3b8bd43dd834b996；证据：real_sample — 姫様ＬＯＶＥライフ！ game executable, catalogue only; the adapter does not hash-pin because the self-naming archive header is the identity
+
+文本能力：
+
+- 不适用；文本由具体引擎 profile / Luna 线程处理。
+- codepage：932
+- 线程提示：Unmeasured. In the recorded session LunaHook connected but produced no output (luna_active 0, text_events 0) on the title screen; whether the vendored LunaHook carries an engine hook for this family is unverified.
+
+音频优先级：
+
+1. `xaudio2_or_directsound_pcm` — `implemented_unverified`；格式：DirectSound source PCM via the generic Windows audio adapter；clean voice：engine_dependent
+2. `process_loopback` — `implemented_unverified`；格式：host PCM fallback；clean voice：否
+
+真实样本证据：
+
+
+已知限制：
+
+- No text capability is claimed. LunaHook connected but emitted nothing in the recorded session, and the DLL does not expose engine names as strings, so there is no evidence either way yet.
+- Per-line voice lives in cv.aos; no resource layer is implemented and none is claimed until the engine's own read path is measured on a real session.
+- Only the title screen was reached. text_observed, text_thread_selected, paired and card_e2e are all not_run.
+- The identity check requires at least one *.aos whose header names itself. Titles of this family that ship differently named or differently structured archives would not match, and none were available to measure.
+- The sample was measured from a self-unpacked run directory where the exe sits beside its five *.aos archives. This is a retail disc title that was never installed, so the layout a normal installer produces was not measured: if it copies only the exe and leaves the archives on the disc, the directory criterion does not hold and the engine is simply not detected. Not guessed from a shape that was never measured.
+- The recorded runtime evidence (StartupAudioHooksReady | LunaHostReady | LunaConnected plus non-silent PCM) is produced by the shared generic Windows audio path and looks identical when MatchesAosSfaProfile() returns false. It therefore does NOT confirm that the new identity criterion evaluates true on the real game; that has only been shown offline against synthetic archives.
+- In-game lookup sensor is not implemented; lookupAdmission stays EngineUnsupported.
+
+Fixtures：`tests/fixtures/aos_sfa_replay.json`
+
+Tests：`tests/aos_sfa_adapter_test.cpp`、`../../fushi/test/mining/aos_sfa_pairing_test.dart`
 
 ## 状态定义
 

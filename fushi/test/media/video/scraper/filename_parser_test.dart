@@ -440,6 +440,135 @@ void main() {
     });
   });
 
+  group('季 + 集写在同一个括号块里（BUG-2146）', () {
+    test('用户实测文件名：[4th - 14] 解出第 4 季第 14 集，不再抛不出集号', () {
+      final ParsedMediaName p = FilenameParser.parse(
+        '[晚街与灯][Re Zero kara Hajimeru Isekai Seikatsu][4th - 14][总第80]'
+        '[WebRip][1080P_AVC_AAC][简日双语内嵌].mp4',
+      );
+      expect(p.title, 'Re Zero kara Hajimeru Isekai Seikatsu');
+      expect(p.season, 4, reason: '裸序数词 4th 是季标记，落进 Season 01 就归错目录');
+      expect(p.episode, 14);
+      expect(p.releaseGroup, '晚街与灯');
+      expect(p.resolution, '1080P');
+    });
+
+    test('括号外已有标题时，块里的季+集照样解得出（旧实现根本不看这些块）', () {
+      final ParsedMediaName p =
+          FilenameParser.parse('[Group] Show Name [S4 - 14][1080P].mp4');
+      expect(p.title, 'Show Name');
+      expect(p.season, 4);
+      expect(p.episode, 14);
+    });
+
+    test('[4th Season - 14] / [第4季 - 14] 同族一起解', () {
+      final ParsedMediaName a =
+          FilenameParser.parse('[Group] Show [4th Season - 14][1080P].mp4');
+      expect(a.season, 4);
+      expect(a.episode, 14);
+
+      final ParsedMediaName b =
+          FilenameParser.parse('[Group] Show [第4季 - 14][1080P].mp4');
+      expect(b.season, 4);
+      expect(b.episode, 14);
+    });
+
+    test('[总第80] 这类绝对集号不参与解析，两种块顺序都不得抢走集号', () {
+      // 顺序敏感是真实风险：绝对集号写在季集块**之前**在真实命名里完全正常，
+      // 只测一种顺序会让「不污染」变成空壳断言（它其实只是被前面的块先占了）。
+      for (final String name in <String>[
+        '[Group][Show][4th - 14][总第80][1080P].mp4',
+        '[Group][Show][总第80][4th - 14][1080P].mp4',
+        '[Group][Show][总第 80][4th - 14][1080P].mp4',
+      ]) {
+        final ParsedMediaName p = FilenameParser.parse(name);
+        expect(p.episode, 14, reason: '$name：80 是绝对集号，抢走 episode 会把整季归错');
+        expect(p.season, 4, reason: name);
+      }
+    });
+
+    test('多个未识别块时标题仍取第一个非空候选，不被后面的块顶掉', () {
+      final ParsedMediaName p = FilenameParser.parse(
+        '[Group][Real Title][4th - 14][Some Note][1080P].mp4',
+      );
+      expect(p.title, 'Real Title');
+      expect(p.episode, 14);
+    });
+  });
+
+  // 块判据的安全性全靠「整块锚定 + 季标记必需」。把括号外那套位置启发式
+  // （尾部裸数字季号、` - ` 副标题分割、尾部裸集数、电影 token）搬进块里，下面
+  // 每一条都会解错——它们是 BUG-2146 第一版修法的实测回归，逐条钉死。
+  group('未识别括号块不得被当作自由文本解析（BUG-2146 负样本）', () {
+    test('[Disc 2] / [Reseed 2] / [Special 3] 不是季号', () {
+      const Map<String, String> cases = <String, String>{
+        '[VCB-Studio] Yuru Camp - 05 [Disc 2][Ma10p_1080p][x265_flac].mkv':
+            'Yuru Camp',
+        '[VCB-Studio] Yuru Camp - 05 [Reseed 2][Ma10p_1080p][x265_flac].mkv':
+            'Yuru Camp',
+        '[Nekomoe kissaten] Bocchi the Rock! - 05 [Special 3][1080p][JPSC].mp4':
+            'Bocchi the Rock!',
+        '[Group] Show - 05 [Repack 2][1080p].mkv': 'Show',
+      };
+      cases.forEach((String name, String title) {
+        final ParsedMediaName p = FilenameParser.parse(name);
+        expect(p.season, isNull, reason: '$name：块尾的 2/3 是碟号/重发号，不是季号');
+        expect(p.episode, 5, reason: name);
+        expect(p.title, title, reason: name);
+      });
+    });
+
+    test('字幕组招募块 / 索引站标签不得变成副标题', () {
+      final ParsedMediaName a = FilenameParser.parse(
+        '[幻樱字幕组] 间谍过家家 - 05 [招募新人 - 详情见置顶][1080P][简体].mp4',
+      );
+      expect(a.secondaryTitle, isNull, reason: '副标题会被当作并列标题参与资源贴合度判据');
+      expect(a.episode, 5);
+
+      final ParsedMediaName b = FilenameParser.parse(
+        '[Erai-raws] Frieren - 05 [1080p][Nyaa - Torrent][Multiple Subtitle].mkv',
+      );
+      expect(b.secondaryTitle, isNull);
+      expect(b.episode, 5);
+
+      final ParsedMediaName c = FilenameParser.parse(
+        '[Group] Show - 05 [~Director Cut~][1080p].mkv',
+      );
+      expect(c.secondaryTitle, isNull);
+      expect(c.episode, 5);
+    });
+
+    test('整季合集包不得被解成末集', () {
+      for (final String name in <String>[
+        '[桜都字幕组] 摇曳露营△ [第01-12话][1080p][简繁内封].mkv',
+        '[北宇治字幕组] 孤独摇滚 [01-12话][WebRip][1080p][简繁内封].mkv',
+        '[桜都字幕组] 作品名 [全 12 话][1080p][简体内嵌].mkv',
+        '【某某字幕组】【作品名】【TV 01 - 25 END】【1080P】.mp4',
+        '[Group] Title [01 - 12] [1080p].mkv',
+      ]) {
+        expect(FilenameParser.parse(name).episode, isNull, reason: name);
+      }
+    });
+
+    test('块里的 Movie/剧场版 token 判定面不变（`TV-Movie` 不算电影提示）', () {
+      final ParsedMediaName p = FilenameParser.parse(
+        '[LoliHouse] Mushoku Tensei - 05 [TV-Movie]'
+        '[WebRip 1080p HEVC-10bit AAC].mkv',
+      );
+      expect(p.isMovieHint, isFalse, reason: '这是画质/来源标记里的 Movie，不是剧场版');
+      expect(p.episode, 5);
+    });
+
+    test('块顺序不得改变解析结果', () {
+      final ParsedMediaName a =
+          FilenameParser.parse('[Group] Show [Fix 2] [S1] - 05 [1080p].mkv');
+      final ParsedMediaName b =
+          FilenameParser.parse('[Group] Show [S1] [Fix 2] - 05 [1080p].mkv');
+      expect(a.season, b.season, reason: '同一批块换顺序解出不同季号 = 行为不确定');
+      expect(a.episode, b.episode);
+    });
+  });
+
   group('扩展名剥离与导入共用 kVideoExtensions（G10 第一步）', () {
     test('导入认的每个扩展名刮削端都能剥掉（.rmvb 不再留在标题里）', () {
       for (final String ext in kVideoExtensions) {

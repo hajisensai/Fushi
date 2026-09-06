@@ -82,13 +82,13 @@ void main() {
       () {
     final String source = readReaderPageSource();
 
-    // Windows: native WebView2 context menu disabled, right-click captured by a
-    // translucent GestureDetector onSecondaryTapDown -> Flutter menu.
+    // Windows: native WebView2 context menu disabled, the menu button (per the
+    // binding table, right-click by default) captured by ContextMenuTrigger.
     expect(source, contains('hideDefaultSystemContextMenuItems: true'));
-    expect(source, contains('onSecondaryTapDown'));
+    expect(source, contains('ContextMenuTrigger('));
     expect(
       source,
-      contains('_showReaderTextContextMenu(details.globalPosition)'),
+      contains('_showReaderTextContextMenu(position)'),
     );
     expect(source, contains('HitTestBehavior.translucent'));
 

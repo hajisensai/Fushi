@@ -48,7 +48,10 @@ void main() {
     });
 
     test('macOS 的「来源」视图有 Aidoku 单包与仓库导入入口', () {
-      expect(sources, contains("allowedExtensions: const <String>['aix']"));
+      // BUG-2099 后 picker 走统一原语 pickSystemFilePath，扩展名集是 Set 字面量
+      // （裸 FilePicker + FileType.custom 在安卓会被 MimeTypeMap 静默丢掉 aix，
+      // 那个文件在 SAF 里是灰的）。断言的仍是「白名单还在、没被放宽成任意文件」。
+      expect(sources, contains("allowedExtensions: const <String>{'aix'}"));
       expect(sources, contains("ValueKey<String>('aidoku_import_aix')"));
       expect(sources, contains("ValueKey<String>('aidoku_add_repository')"));
       expect(sources, contains("ValueKey<String>('aidoku_repository_url')"));

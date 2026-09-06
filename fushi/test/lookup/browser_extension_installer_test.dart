@@ -6,10 +6,27 @@ import 'package:fushi/src/lookup/browser_extension_installer.dart';
 
 void main() {
   group('browserExtensionsPageUrl', () {
-    test('chrome / edge management page urls', () {
+    test('management page url of every supported Chromium browser', () {
       expect(
           browserExtensionsPageUrl(BrowserKind.chrome), 'chrome://extensions');
       expect(browserExtensionsPageUrl(BrowserKind.edge), 'edge://extensions');
+      expect(browserExtensionsPageUrl(BrowserKind.brave), 'brave://extensions');
+      expect(browserExtensionsPageUrl(BrowserKind.vivaldi),
+          'vivaldi://extensions');
+      expect(browserExtensionsPageUrl(BrowserKind.opera), 'opera://extensions');
+    });
+
+    // 形状守卫：新增 BrowserKind 时，switch 穷尽性已保证「必须给出一个 URL」，
+    // 这里再钉住「URL 长什么样」——不能返回空串、别的浏览器已占用的 scheme，
+    // 或忘了 `://extensions` 后缀（引导页把这串原样给用户粘贴到地址栏）。
+    test('every kind maps to a distinct <scheme>://extensions url', () {
+      final Set<String> seen = <String>{};
+      for (final BrowserKind kind in BrowserKind.values) {
+        final String url = browserExtensionsPageUrl(kind);
+        expect(url, endsWith('://extensions'), reason: '$kind 的扩展页 URL 形状不对');
+        expect(url.split('://').first, isNotEmpty, reason: '$kind 缺 scheme');
+        expect(seen.add(url), isTrue, reason: '$kind 的扩展页 URL 与其它浏览器重复');
+      }
     });
   });
 

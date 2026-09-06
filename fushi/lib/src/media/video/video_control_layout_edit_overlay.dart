@@ -44,17 +44,13 @@ class _VideoControlLayoutEditOverlayState
   static List<VideoControlItem> get _onVideoDraggableItems =>
       VideoControlItem.customizableItems;
 
-  static const List<VideoControlSlot> _editorSlots = <VideoControlSlot>[
-    VideoControlSlot.topLeft,
-    VideoControlSlot.topCenter,
-    VideoControlSlot.topRight,
-    VideoControlSlot.bottomLeft,
-    VideoControlSlot.bottomCenter,
-    VideoControlSlot.bottomRight,
-    VideoControlSlot.screenLeft,
-    VideoControlSlot.screenRight,
-    VideoControlSlot.hidden,
-  ];
+  /// 编辑器暴露的槽位表 —— 直接取自唯一真相源。
+  ///
+  /// 此前这里硬编码了一份**与 [VideoControlSlot.editableSlots] 不一致**的副本
+  /// （多一个 topCenter），而那个常量零生产消费方。两份表谁也管不住谁，新增槽位
+  /// 时必然漏改其中一处。
+  static List<VideoControlSlot> get _editorSlots =>
+      VideoControlSlot.editableSlots;
 
   late VideoControlLayout _layout = widget.layout;
   bool _dirty = false;

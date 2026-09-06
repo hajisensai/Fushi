@@ -21,20 +21,13 @@
 
 #include "fushidicts/importer.hpp"
 #include "fushidicts/query.hpp"
+#include "media_fixture.hpp"
 #include "mdx_fixture.hpp"
 #include "zip_fixture.hpp"
 
 namespace {
-int g_fail = 0;
-void fail(const char* msg) {
-  std::fprintf(stderr, "FAIL: %s\n", msg);
-  ++g_fail;
-}
-
-void write_bytes(const std::string& path, const std::vector<uint8_t>& bytes) {
-  std::ofstream f(std::filesystem::u8path(path), std::ios::binary);
-  f.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
-}
+using fushi_test::fail;
+using fushi_test::write_bytes;
 }  // namespace
 
 int main() {
@@ -87,11 +80,11 @@ int main() {
       std::vector<char> got = q.get_media_file(r.title, e.path);
       if (got.empty()) {
         std::fprintf(stderr, "FAIL: '%s' missing from the media store\n", e.path);
-        ++g_fail;
+        ++fushi_test::g_fail;
       } else if (std::string(got.begin(), got.end()) != *e.want) {
         std::fprintf(stderr, "FAIL: '%s' bytes differ (got %zu want %zu)\n", e.path, got.size(),
                      e.want->size());
-        ++g_fail;
+        ++fushi_test::g_fail;
       }
     }
   }
@@ -123,8 +116,8 @@ int main() {
     }
   }
 
-  if (g_fail) {
-    std::fprintf(stderr, "%d FAIL\n", g_fail);
+  if (fushi_test::g_fail) {
+    std::fprintf(stderr, "%d FAIL\n", fushi_test::g_fail);
     return 1;
   }
   std::printf("PASS\n");

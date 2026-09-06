@@ -539,7 +539,9 @@ class BrowserExtensionInstallSteps extends StatelessWidget {
           ),
           const SizedBox(height: 16),
         ],
-        // 步骤 1：打开扩展管理页（chrome:// / edge:// 无法程序化导航，给可复制文本）。
+        // 步骤 1：打开扩展管理页（这些私有 scheme 无法程序化导航，给可复制文本）。
+        // 逐个浏览器写死过一次（只有 chrome / edge），新增浏览器要记得同步改这里；
+        // 现按 [BrowserKind.values] 遍历，支持列表的唯一真相源是那个枚举。
         _step(
           context,
           index: 1,
@@ -547,12 +549,10 @@ class BrowserExtensionInstallSteps extends StatelessWidget {
           text: t.browser_extension_step_open_page,
           trailing: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            spacing: 6,
             children: <Widget>[
-              _copyableField(
-                  context, browserExtensionsPageUrl(BrowserKind.chrome)),
-              const SizedBox(height: 6),
-              _copyableField(
-                  context, browserExtensionsPageUrl(BrowserKind.edge)),
+              for (final BrowserKind kind in BrowserKind.values)
+                _copyableField(context, browserExtensionsPageUrl(kind)),
             ],
           ),
         ),

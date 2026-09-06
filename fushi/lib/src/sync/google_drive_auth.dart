@@ -14,12 +14,18 @@ import 'package:http/http.dart' as http;
 import 'package:fushi/src/sync/desktop_oauth.dart';
 import 'package:fushi/src/sync/google_drive_sync_space.dart';
 import 'package:fushi/src/sync/google_oauth_secret.dart';
+import 'package:fushi/src/sync/sync_backend.dart'
+    show SyncAuthError, SyncAuthFailureKind;
 import 'package:fushi/src/sync/sync_http.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 
 class GoogleDriveAuthError implements Exception {
-  GoogleDriveAuthError(this.message);
+  GoogleDriveAuthError(this.message, {this.cancelled = false});
   final String message;
+
+  /// 用户自己取消了登录（移动端账号选择器点了返回）。与桌面 loopback 的
+  /// `SyncAuthFailureKind.cancelled` 同一语义：不是错误，UI 静默（BUG-2120）。
+  final bool cancelled;
 
   @override
   String toString() => 'GoogleDriveAuthError: $message';
@@ -176,7 +182,7 @@ class GoogleDriveAuth {
     if (useMobileAuth) {
       final account = await _signIn.signIn();
       if (account == null) {
-        throw GoogleDriveAuthError('Sign-in cancelled');
+        throw GoogleDriveAuthError('Sign-in cancelled', cancelled: true);
       }
       _mobileUser = account;
       return;
@@ -248,6 +254,10 @@ class GoogleDriveAuth {
       if (repo != null) await _persistDesktopCredentials(repo);
     } catch (e, st) {
       baseClient.close();
+      // 用户在等待对话框里自己取消的（BUG-2120）：不是失败，不记带栈的失败日志。
+      if (e is SyncAuthError && e.kind == SyncAuthFailureKind.cancelled) {
+        rethrow;
+      }
       // Log the raw failure so the real root cause — invalid_client /
       // redirect_uri_mismatch / access_denied / a blocked-direct-connection
       // timeout — is visible instead of a friendly-mapped or bare HTTP error.

@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:archive/archive_io.dart';
 import 'package:dio/dio.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
@@ -15,6 +14,7 @@ import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/net/app_user_agent.dart';
+import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:path/path.dart' as p;
 
 const _fontExtensions = {'.ttf', '.otf', '.ttc', '.woff', '.woff2'};
@@ -756,8 +756,8 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
   }
 
   Future<void> _importFontFile() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
+    final result = await pickFilesByExtensions(
+      context: context,
       allowedExtensions: [
         'ttf',
         'otf',

@@ -7,6 +7,7 @@ import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/src/epub/epub_book.dart' show fallbackMimeType;
 import 'package:fushi/src/media/collections/shelf_sort.dart'
@@ -587,14 +588,16 @@ class _FullScreenGalleryState extends State<_FullScreenGallery> {
                   child: Center(child: image),
                 );
                 // Windows 右键复制 / 移动端长按分享：仅当前页可操作。
-                return GestureDetector(
-                  behavior: HitTestBehavior.translucent,
-                  onSecondaryTapDown: isWindowsPlatform
-                      ? (TapDownDetails details) =>
-                          _showImageContextMenu(details.globalPosition)
+                return ContextMenuTrigger(
+                  // 右键菜单改由绑定表决定唤出键（默认仍是右键）；右键被别的动作占用时自动让位。
+                  onInvoke: isWindowsPlatform
+                      ? (Offset position) => _showImageContextMenu(position)
                       : null,
-                  onLongPress: isWindowsPlatform ? null : _shareCurrentImage,
-                  child: viewer,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onLongPress: isWindowsPlatform ? null : _shareCurrentImage,
+                    child: viewer,
+                  ),
                 );
               },
             ),

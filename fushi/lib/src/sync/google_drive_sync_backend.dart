@@ -46,7 +46,13 @@ class GoogleDriveSyncBackend extends SyncBackend
     } on GoogleDriveError catch (e) {
       throw mapDriveError(e);
     } on GoogleDriveAuthError catch (e) {
-      throw SyncAuthError(e.message);
+      // 移动端用户自己取消账号选择：与桌面 loopback 的取消同一语义，UI 静默（BUG-2120）。
+      throw SyncAuthError(
+        e.message,
+        kind: e.cancelled
+            ? SyncAuthFailureKind.cancelled
+            : SyncAuthFailureKind.credentials,
+      );
     }
   }
 
@@ -56,7 +62,13 @@ class GoogleDriveSyncBackend extends SyncBackend
     } on GoogleDriveError catch (e) {
       throw mapDriveError(e);
     } on GoogleDriveAuthError catch (e) {
-      throw SyncAuthError(e.message);
+      // 移动端用户自己取消账号选择：与桌面 loopback 的取消同一语义，UI 静默（BUG-2120）。
+      throw SyncAuthError(
+        e.message,
+        kind: e.cancelled
+            ? SyncAuthFailureKind.cancelled
+            : SyncAuthFailureKind.credentials,
+      );
     }
   }
 

@@ -593,12 +593,29 @@ class FushiShortcutRegistry extends ChangeNotifier {
     return null;
   }
 
+  /// 手柄冲突检测**额外**扫 `globalExternal`。
+  ///
+  /// `globalExternal` 的 `coactiveScopes` 是它自己（"不经页面派发"），但 TODO-1066
+  /// 之后手柄那条已经**排在页面 Actions 之前**（`GamepadService` 里
+  /// `tryGlobalExternalLookupGamepadButton` 先跑，理由是主窗失焦时焦点树整棵不可
+  /// 聚焦、页面那条必然落空）。于是用户把手柄 Y 绑给 app 外查词后，Y 在阅读器 /
+  /// 视频 / 漫画里会被静默吃掉，而设置页一声不吭。
+  ///
+  /// 只改**检测**不改 `coactiveScopes`：后者同时喂运行时解析
+  /// （`resolveMouse` / `reverse_binding_index`），动它就是改派发。
+  static const List<ShortcutScope> _gamepadPreemptingScopes = <ShortcutScope>[
+    ShortcutScope.globalExternal
+  ];
+
   ShortcutAction? hasGamepadConflict(
     ShortcutScope scope,
     GamepadBinding binding, {
     required ShortcutAction? exclude,
   }) {
-    for (final coactive in scope.coactiveScopes) {
+    final List<ShortcutScope> scopes = scope == ShortcutScope.globalExternal
+        ? scope.coactiveScopes
+        : <ShortcutScope>[...scope.coactiveScopes, ..._gamepadPreemptingScopes];
+    for (final coactive in scopes) {
       for (final action in ShortcutAction.actionsForScope(coactive)) {
         if (action == exclude) continue;
         final bindings = _bindings[action];

@@ -636,6 +636,7 @@ class GalAttachedLookupHitV19 {
     required this.charIndex,
     required this.sourceLength,
     this.wordRect,
+    this.hover = false,
   });
 
   static const String surface = 'attached';
@@ -646,6 +647,11 @@ class GalAttachedLookupHitV19 {
   final int charIndex;
   final int sourceLength;
   final Rect? wordRect;
+
+  /// True when the runner's Shift+hover timer emitted the hit instead of a
+  /// completed shielded click. Both take the same lookup chain; the flag is
+  /// diagnostic only. Missing on the wire (older runner) = click.
+  final bool hover;
 
   bool get isAddressable =>
       sourceText.isNotEmpty &&
@@ -680,6 +686,7 @@ class GalAttachedLookupHitV19 {
       charIndex: charIndex,
       sourceLength: sourceLength,
       wordRect: GalHookTextOverlayChannel._wordRect(map),
+      hover: map['hover'] == true,
     );
     return hit.isAddressable && hit.hasConsistentSourceLength ? hit : null;
   }

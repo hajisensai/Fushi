@@ -12,7 +12,9 @@ namespace fushi_voice_hook {
 // exporting the user's game text.
 inline constexpr char kHunexGgeTraceExportName[] = "FushiHunexGgeTraceV3";
 inline constexpr uint32_t kHunexGgeTraceMagic = 0x33544748u;  // "HGT3"
-inline constexpr uint32_t kHunexGgeTraceVersion = 3u;
+// v4（BUG-2134）：头部增加四个投影 detour 的调用计数。probe 与 helper 同源构建，
+// 版本号不匹配时 probe 直接拒读，不存在跨版本误解释。
+inline constexpr uint32_t kHunexGgeTraceVersion = 17u;
 inline constexpr uint32_t kHunexGgeTraceCapacity = 512u;
 
 enum class HunexGgeTraceKind : uint32_t {
@@ -46,6 +48,10 @@ enum class HunexGgeProjectionTraceStage : uint32_t {
   kCompositor = 2u,
   kTexture = 3u,
   kSprite = 4u,
+  // BUG-2134：worker 侧的投影求解。前四段都在 render 线程的 detour 里，唯独这一段在
+  // lookup worker 线程上跑，且此前**整段没有任何诊断**——真机上只表现为
+  // kHunexGgeLookupWorkerProjectionRejected 这一个笼统状态，读不出九选一的真实原因。
+  kWorker = 5u,
 };
 
 // Values are diagnostic only. They identify the first exact story-chain gate
@@ -72,6 +78,33 @@ enum class HunexGgeProjectionTraceFailure : int32_t {
   kSpriteQuadExpired = 18,
   kSpriteProjectionSizesRejected = 19,
   kSpriteDrawFailed = 20,
+  // 21..23 补的是段 3/段 4 的**诊断盲区**：这两段原本在拒绝时直接 return，不发任何
+  // 事件，于是真机 trace 里表现为「compositor 成功后就没有下文」，无法分辨是纹理上传
+  // 没对上、还是 quad 形状被拒。投影链共 20 个显式失败点却留了 4 个哑口，等于让下一次
+  // 真机会话大概率读不出结论（BUG-2132）。复用既有 V3 事件布局，不改导出 ABI。
+  kTextureSurfaceMismatch = 21,
+  kQuadShapeRejected = 22,
+  kQuadVertexBufferMissing = 23,
+  kQuadProjectionNotFinite = 24,
+  // 25..33 = kWorker 段（BUG-2134）。此前 BuildHunexGgeClientProjection 的每个拒绝点
+  // 都是裸 return false，其中「证据身份」更是九个子条件的合取，一旦不成立完全无法分辨
+  // 是没有证据、故事身份不符、渲染线程不符、客户区尺寸不符，还是证据过期。
+  kWorkerInputShapeRejected = 25,
+  kWorkerRubyProjectionRejected = 26,
+  // 根本没有可读的投影证据（sprite draw 从未成功发布过）。
+  kWorkerEvidenceUnavailable = 27,
+  kWorkerEvidenceStoryMismatch = 28,
+  kWorkerEvidenceThreadMismatch = 29,
+  kWorkerEvidenceClientMismatch = 30,
+  kWorkerEvidenceStale = 31,
+  kWorkerAffineRejected = 32,
+  kWorkerClientTransformRejected = 33,
+  // 34..37 = BUG-2135 直连正文合成路径（draw → compositor）。四个子条件必须分开报，
+  // 否则又回到「一个码盖住四种原因」的老问题。
+  kBodyComposeDescriptorUnreadable = 34,
+  kBodyComposeSourceMismatch = 35,
+  kBodyComposeDestinationMismatch = 36,
+  kBodyComposeSurfaceInsane = 37,
 };
 
 enum HunexGgeTraceScannerStatus : uint32_t {
@@ -248,6 +281,81 @@ struct alignas(8) HunexGgeTraceBuffer {
   uint32_t capture_quarantine_reason = 0;
   uint32_t capture_quarantine_bound_thread_id = 0;
   uint32_t capture_quarantine_conflicting_thread_id = 0;
+  // BUG-2134：投影四段 detour 的**调用计数**。诊断事件只在「能归属到某条语义行」时才
+  // 发，因此「零事件」既可能是从没被调用、也可能是调用了但当时没有待定故事行——两者
+  // 的排障方向完全相反（前者说明 WoH 的正文走的不是扫描锚点假设的那条渲染路径）。
+  // 只有无条件的调用计数能把它们分开。
+  int64_t surface_compose_wrapper_calls = 0;
+  // v5：wrapper 之外的另两个合成入口也要单独计数。上一轮只数了 wrapper，无法回答
+  // 「是整条合成路径都不走，还是只有 wrapper 这一个锚点选错了」——后者的修法要小得多。
+  int64_t surface_compose_calls = 0;
+  int64_t surface_compositor_calls = 0;
+  // v6（BUG-2134 ③）：compositor 实际被调用了，但两个 compose 锚点都零调用，说明
+  // compositor 的真实调用者是另一个函数——那个函数才是 WoH 正文的合成入口。这里记下
+  // 最多 4 个**互异**的调用返回地址 RVA，直接把「该去哪找锚点」变成可读数字。
+  uint32_t compositor_caller_rvas[4] = {};
+  uint32_t compositor_caller_rva_count = 0;
+  uint32_t compositor_caller_rva_overflow = 0;
+  // v7（BUG-2135）：draw→compositor 直连锚点的推导结果。0 表示没推导出来（rel32 扫描
+  // 零解或多解），据此可分辨「锚点没建立」与「建立了但运行期判据不成立」。
+  uint32_t body_compositor_return_rva = 0;
+  uint32_t body_compositor_call_count = 0;
+  uint32_t body_compositor_return_alt_rva = 0;
+  uint32_t body_compositor_reserved = 0;
+  // v9：直连正文合成路径的尝试/命中/发布计数。诊断事件按 (行, 阶段, 失败码) 去重，
+  // 只能看到**第一条**失败，无法回答「后面有没有一次命中」。计数才能。
+  int64_t body_compose_attempts = 0;
+  int64_t body_compose_source_matches = 0;
+  int64_t body_compose_published = 0;
+  // v10：检验「逐字形贴图」假设。若 WoH 把每个字形位图直接上传为纹理再画成 quad，
+  // 那么待定正文行新鲜期内，应能观察到 upload 的表面**就是**该行末字形的位图。
+  int64_t glyph_texture_upload_attempts = 0;
+  int64_t glyph_texture_upload_matches = 0;
+  // v11：待定正文行期间**上传纹理的尺寸**。字形 render x/y 已证明是「行条带」内部的
+  // 局部坐标（全部 y=4、x 每字 +27），条带本身落在哪原本要靠 compose 段给出，而 WoH
+  // 没有那一层。若这里出现「整行文字」那种长条尺寸，就说明条带是作为纹理上传再画成
+  // quad 的，模型确认且拿到可匹配的身份。记最多 6 组互异 (w,h)。
+  uint32_t pending_upload_dims[12] = {};
+  uint32_t pending_upload_dim_count = 0;
+  uint32_t pending_upload_dim_overflow = 0;
+  // v12：区分「上传发生在别的线程」。上一轮 attempts 恒为 0 而 compositor 侧有 4 次，
+  // 唯一差别就是线程判据——WoH 很可能在另一条线程上传纹理/呈现。
+  int64_t pending_upload_any_thread = 0;
+  uint32_t pending_upload_story_tid = 0;
+  uint32_t pending_upload_caller_tid = 0;
+  // v13：上传描述符可读性，以及「有待定正文行时」的上传次数（不受描述符门限制）。
+  // 之前的计数全在 `if (descriptor_read)` 内，若描述符读不出来就整体记不到，
+  // 会被误读成「没有上传发生在待定期」。
+  int64_t upload_descriptor_ok = 0;
+  int64_t upload_descriptor_fail = 0;
+  int64_t upload_with_active_story = 0;
+  // v14：在纹理上传 wrapper 对象里**结构化搜索** CPU 表面描述符的偏移。既有的
+  // +0xd8 / +0x84 对 WoH 一次都没读出合法表面（ok:0 / fail:130507），说明偏移不对。
+  // 记下前 4 个能读出 sane CPU surface 的指针槽偏移及其尺寸，供确定新锚点。
+  uint32_t upload_desc_offsets[4] = {};
+  uint32_t upload_desc_dims[8] = {};
+  uint32_t upload_desc_offset_count = 0;
+  // v15：待定正文行活着时的 quad 观测。quad/sprite 两段**不需要 CPU 表面**，quad 自带
+  // 纹理尺寸与 XYZRHW 顶点，归一化后即屏幕坐标。行条带是很扁很宽的形状（N×27 宽、
+  // 约 34 高），据此可直接认出条带并拿到客户区矩形——绕开整条 compose/上传链。
+  // 每条记录 6 个 uint32：tex_w, tex_h, x0, y0, x1, y1（后四个是顶点包围盒取整）。
+  uint32_t story_quads[24] = {};
+  uint32_t story_quad_count = 0;
+  int64_t story_quad_seen = 0;
+  // v16：区分「这轮根本没有正文行封存过」与「封存了但 quad 段读不到」。
+  int64_t story_sealed_published = 0;
+  int64_t quad_reached_record = 0;
+  int64_t texture_upload_calls = 0;
+  int64_t quad_vertex_calls = 0;
+  int64_t sprite_draw_calls = 0;
+  // v17（BUG-2136）：正文字形的 render x/y 已被真机证明是「1920x1080 逻辑空间里的
+  // 文本层局部坐标」——两种窗口尺寸下 client = (render + origin) * client/(1920,1080)
+  // 都成立，唯一未知量是文本层原点 origin。origin 不在字形 item 自身（前 0x70 字节已
+  // 全量 dump，无候选），只能在 render_item 的另外三个参数所指对象里。这里把它们各前
+  // 32 dword 无条件抄一份，供离线定位；只读、只抄一次，不参与任何判据。
+  uint32_t body_arg_words[3][32] = {};
+  uint32_t body_arg_captured = 0;
+  uint32_t body_arg_reserved = 0;
   HunexGgeTraceSlot slots[kHunexGgeTraceCapacity] = {};
 };
 
@@ -285,7 +393,7 @@ static_assert(offsetof(HunexGgeTraceEvent, lookup_gate_mask) == 440,
               "HUNEX/GGE lookup diagnostic trace ABI drifted");
 static_assert(sizeof(HunexGgeTraceSlot) == 464,
               "HUNEX/GGE trace slot ABI drifted");
-static_assert(offsetof(HunexGgeTraceBuffer, slots) == 184,
+static_assert(offsetof(HunexGgeTraceBuffer, slots) == 976,
               "HUNEX/GGE trace header ABI drifted");
 
 }  // namespace fushi_voice_hook

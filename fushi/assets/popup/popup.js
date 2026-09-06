@@ -1556,6 +1556,17 @@ function escapePitchText(text) {
 // them too — that is what makes English cards get their transcription with the
 // default field mappings, no remap needed. Plain pitch-accent dicts (Japanese)
 // have an empty transcriptions array and render byte-identically to before.
+//
+// BUG-2151: the list tag MUST stay `<ul>` (frequency does the same; only the
+// glossary is a genuinely ORDERED list of senses). Lapis normalises the pitch
+// box with `#pitch-tags ul` / `#pitch-tags ol` — but every OTHER note type out
+// there only ever normalises `ul`, because that is what Lapis' own
+// `handlePitches` builds. And `handlePitches` rebuilds the box only when it can
+// parse a pitch NUMBER or kana out of the field: English IPA has neither, so it
+// returns early and whatever we wrote here is what the user sees. Emitting
+// `<ol>` therefore meant the tag box rendered with the browser's default list
+// styling — 40px of dead space on the left, 1em of margin above and below, and
+// no `・` between two transcriptions.
 function constructPitchPositionHtml(pitches) {
     if (!pitches?.length) {
         return '';
@@ -1575,8 +1586,8 @@ function constructPitchPositionHtml(pitches) {
         });
     });
     // No positions AND no patterns AND no transcriptions: return '' instead of
-    // an empty <ol> shell, so the field is treated as empty and skipped.
-    return items ? `<ol>${items}</ol>` : '';
+    // an empty <ul> shell, so the field is treated as empty and skipped.
+    return items ? `<ul>${items}</ul>` : '';
 }
 
 // Yomitan-named {phonetic-transcriptions}: ONLY the IPA transcriptions, for
@@ -1592,7 +1603,7 @@ function constructPhoneticTranscriptionsHtml(pitches) {
             items += `<li><span style="display:inline;"><span>[</span><span>${escapePitchText(ipa)}</span><span>]</span></span></li>`;
         });
     });
-    return items ? `<ol>${items}</ol>` : '';
+    return items ? `<ul>${items}</ul>` : '';
 }
 
 function constructPitchCategories(pitches, reading, rules) {
@@ -1951,9 +1962,18 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
     const glossarySelectionHighlighted = currentSelectionHighlights > 0;
     currentSelectionHighlights = 0;
     const glossaryFirst = Object.values(singleGlossaries)[0] || '';
-    const pitchPositions = constructPitchPositionHtml(pitches);
+    // BUG-2152 第二条路径：跨词典的同一份发音。展示侧在 createPitchSection 里先跑
+    // mergeIdenticalPitchGroups 才渲染，制卡侧以前直接吃原始 pitches —— 于是两本词典
+    // 把 spoke 都标成 /spəʊk/ 时，弹窗里合成一行、卡片上却是 [/spəʊk/][/spəʊk/]。
+    // 同一份归一化喂给两边，两处显示就不会再分叉。（词典内部的重复由原生
+    // enrich_pitch 去掉，那一层这里看不见。）
+    const normalizedPitches = mergeIdenticalPitchGroups(pitches || []);
+    const pitchPositions = constructPitchPositionHtml(normalizedPitches);
+    // categories 自己按值去重（`!categories.includes(category)`），且要的是原始分组，
+    // 不受合并影响，保持喂原始 pitches。
     const pitchCategories = constructPitchCategories(pitches, reading, rules);
-    const phoneticTranscriptions = constructPhoneticTranscriptionsHtml(pitches);
+    const phoneticTranscriptions =
+        constructPhoneticTranscriptionsHtml(normalizedPitches);
 
     const audioReading = reading || expression;
     let audio = '';
@@ -2738,9 +2758,48 @@ function createTranscriptionsHtml(transcriptions) {
     return list;
 }
 
+// BUG-2122：同一个音调型被多本词典各渲染成一行。五本音调词典都把「ギター」
+// 标成 [1] 时，用户看到的是五行一模一样的 ￣ギター [1]，读起来像坏了。Yomitan 在
+// getGroupedPronunciations 里把相同发音合并成一条、后面挂上全部来源；这里做同样的事：
+// 整份 payload 全等（pitchPositions / patterns / transcriptions 三者）的词典合并成一行，
+// dictionaries 带上全部来源名。判据故意取「全等」而不是逐条位置求交：宁可少合
+// 一次，也不把读法不同的两本词典混进同一行。
+//
+// 本函数是渲染前的最后一道纯变换，跑在 deduplicatePitchAccents 分支之后：去重打开
+// 时（app 默认）各存活组的位置互斥，payload 不可能全等，合并对位置组恒为 no-op，
+// 默认外观一字不变；去重关闭时才塌行。（两本纯 IPA 词典给出完全相同的
+// transcriptions 是唯一例外，那也本就该合。）
+function mergeIdenticalPitchGroups(groups) {
+    const merged = [];
+    const byPayload = new Map();
+    groups.forEach((group) => {
+        // 位置数组**排序后**入键：同一音调型的两本词典给的位置顺序可能不同，
+        // 不排序就漏合。渲染仍用原组的原顺序，排序只影响「是不是同一型」的判断。
+        const key = JSON.stringify([
+            [...(group.pitchPositions || [])].sort((a, b) => a - b),
+            group.patterns || [],
+            group.transcriptions || [],
+        ]);
+        const existing = byPayload.get(key);
+        if (existing) {
+            if (!existing.dictionaries.includes(group.dictionary)) {
+                existing.dictionaries.push(group.dictionary);
+            }
+            return;
+        }
+        const entry = Object.assign({}, group, { dictionaries: [group.dictionary] });
+        byPayload.set(key, entry);
+        merged.push(entry);
+    });
+    return merged;
+}
+
 function createPitchGroup(pitchData, reading) {
-    const container = el('div', { className: 'pitch-group', 'data-details': pitchData.dictionary });
-    container.appendChild(el('span', { className: 'pitch-dict-label', textContent: pitchData.dictionary }));
+    const dictionaries = pitchData.dictionaries || [pitchData.dictionary];
+    const container = el('div', { className: 'pitch-group', 'data-details': dictionaries.join(', ') });
+    dictionaries.forEach((dictionary) => {
+        container.appendChild(el('span', { className: 'pitch-dict-label', textContent: dictionary }));
+    });
 
     const list = el('ul', { className: 'pitch-entries' });
     (pitchData.pitchPositions || []).forEach((pitch) => {
@@ -2820,26 +2879,36 @@ function createPitchSection(pitches, reading) {
     const section = el('div', { className: 'category-section pitch-section' });
     const body = el('div', { className: 'category-body' });
     const pitchContainer = el('div', { className: 'pitch-list' });
+    // BUG-2122：**先合并再去重**。反过来（去重在前）时，`deduplicate_pitch_accents`
+    // 默认为 true 的那一档里，第二本同型词典的 `unique` 已经是空数组，整组被丢掉，
+    // 词典来源名随之消失——那正是本 bug 的「一档丢信息」那一半，也是绝大多数用户
+    // 所在的那一档。先合并则 5 本同标 [1] 的词典先并成一组 5 枚药丸，再走去重，
+    // `unique=[1]` 存活，5 个来源全留住。
+    //
+    // 关去重那一档逐字节不变：合并对它本来就是幂等的（原实现也是合并后渲染）。
+    const merged = mergeIdenticalPitchGroups(pitches);
+    const groups = [];
     if (window.deduplicatePitchAccents) {
         const seen = new Set();
-        pitches.forEach(pitch => {
-            const unique = (pitch.pitchPositions || []).filter(pos => !seen.has(pos));
+        merged.forEach(group => {
+            const unique = (group.pitchPositions || []).filter(pos => !seen.has(pos));
             // TODO-688: a group with no unique pitch positions but with IPA
             // transcriptions (Yomitan `ipa`-mode dicts have no pitch positions)
             // must still render, or the transcriptions are silently dropped.
             // Pattern-style accents (79c55c2) likewise keep the group alive.
-            const hasTranscriptions = pitch.transcriptions?.length;
-            const hasPatterns = pitch.patterns?.length;
+            const hasTranscriptions = group.transcriptions?.length;
+            const hasPatterns = group.patterns?.length;
             if (unique.length > 0 || hasTranscriptions || hasPatterns) {
                 unique.forEach(pos => seen.add(pos));
-                pitchContainer.appendChild(createPitchGroup(
-                    { dictionary: pitch.dictionary, pitchPositions: unique, patterns: pitch.patterns, transcriptions: pitch.transcriptions },
-                    reading));
+                // 保留合并出来的 `dictionaries`，只把位置换成去重后的那份。
+                groups.push(Object.assign({}, group, { pitchPositions: unique }));
             }
         });
     } else {
-        pitches.forEach(pitch => pitchContainer.appendChild(createPitchGroup(pitch, reading)));
+        merged.forEach(group => groups.push(group));
     }
+    groups.forEach(
+        group => pitchContainer.appendChild(createPitchGroup(group, reading)));
     body.appendChild(pitchContainer);
     section.appendChild(body);
     return section;
@@ -3989,10 +4058,21 @@ function ensureDictionaryStyle(dictName, styleText) {
 
 function createGlossarySection(dictName, contents, dictIdx, entryIdx, totalDicts) {
     const details = el('details', { className: 'glossary-group' });
+    // BUG-2158：折叠是**三态**，优先级 显式展开 > 显式折叠 > 继承。
+    //
+    // 修复前只有 collapsedDictionaryNames 一个名单，「不在名单里」既表示「用户要
+    // 展开」又表示「用户没表态」。两者在这里的行为天差地别：没表态时
+    // `window.collapseDictionaries`（默认 true）会把它关掉，于是用户在设置页点
+    // 「展开」的那些词典，只要落在自动展开窗口之外就照样是关的——他点了个寂寞。
+    // 现在多一个 expandedDictionaryNames 名单专门表达「用户要展开」，它压过
+    // 自动展开窗口和全局开关。
+    const perDictExpanded = (window.expandedDictionaryNames || []).includes(dictName);
     const perDictCollapsed = (window.collapsedDictionaryNames || []).includes(dictName);
     const autoExpandN = autoExpandCount(totalDicts);
     const autoExpanded = dictIdx < autoExpandN;
-    if (!perDictCollapsed && (autoExpanded || !window.collapseDictionaries)) {
+    if (perDictExpanded) {
+        details.open = true;
+    } else if (!perDictCollapsed && (autoExpanded || !window.collapseDictionaries)) {
         details.open = true;
     }
 

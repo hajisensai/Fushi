@@ -79,6 +79,12 @@ try {
   # 从不 UnregisterClass ⇒ 类常驻 ⇒ 每次重建窗口再 CreateSolidBrush 都无人接管，
   # overlay 线程每 Stop→Start 一轮漏一个 brush，而本 DLL 常驻在游戏进程里（BUG-2090）。
   Invoke-Checked $python 'tests/overlay_gdi_ownership_guard_test.py'
+  # dinput/dinput8 的每一个 DirectInput*Create* 工厂入口都必须钩上。漏一个是静默的：
+  # 设备照常建出来、左键照样穿到游戏里推进对话，而 required 仍按「模块已加载」点亮。
+  # 实测漏掉过 DirectInputCreateEx（A/W 在 dinput.dll 内部只是它的包装，游戏直接
+  # GetProcAddress 就绕过），フタマタ恋愛 上 ready 的 DirectInput 两位始终不亮。
+  # 必须覆盖的集合从系统 DLL 导出表推导，不靠手写名单（BUG-2154）。
+  Invoke-Checked $python 'tests/direct_input_factory_coverage_guard_test.py'
   # 每个原生测试都必须在任何 include 之前 `#undef NDEBUG`，否则 CI 的
   # `--config Release` 会把裸 assert 整条编译掉，测试恒绿。这条守卫本身
   # 必须登记在此：它曾经写好却没接进来，于是 generic_input_shield_test.cpp

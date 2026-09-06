@@ -52,7 +52,14 @@ const String _payload = '{"expression":"勉強","reading":"べんきょう"}';
 
 void _mockChannel(Future<Object?> Function(MethodCall call) responder) {
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-      .setMockMethodCallHandler(_channel, responder);
+      .setMockMethodCallHandler(_channel, (MethodCall call) async {
+    // BUG-2098：申请权限是每个碰 provider 的入口的前置条件。本文件测的是**授权之后
+    // provider 仍然拒绝**（native requirePermission 抛 PERMISSION_DENIED）如何被分类，
+    // 所以前置这一步统一答「已授权」，把用例留在它真正的判据上；否则每个 responder
+    // 都会先在 `fail('unexpected channel call')` 上炸掉，看不到分类结果。
+    if (call.method == 'requestAnkidroidPermissions') return true;
+    return responder(call);
+  });
   addTearDown(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(_channel, null);

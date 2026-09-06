@@ -64,10 +64,14 @@ void main() {
       isTrue,
       reason: '锚点必须是 GalCaptureSetupDialog 的 build，不是同文件另一个 build',
     );
+    // BUG-2154 把逐 exe 的裸左击风险门整个去掉之后（风险恒定接受），
+    // `needsUnsafeRiskAcceptance` 恒 false，弹窗里那条「给风险确认让位」的腿恒不
+    // 可达。守卫因此反过来钉：**不许**再引用它——否则读代码的人会以为弹窗还会
+    // 因为风险确认自动关，而那个答案永远不成立（守卫还在、被守的行为没了）。
     expect(
       containsIdentifier(build, 'needsUnsafeRiskAcceptance'),
-      isTrue,
-      reason: '捕获设置弹窗必须监听逐 exe 查词风险门，不能继续挡住工作台确认入口',
+      isFalse,
+      reason: '风险门已恒定接受，弹窗不该再有一条永不成立的自动关闭理由',
     );
     // 原来这里只断言 build 里出现过 `_scheduleAutoClose(`——改动之前就已经为真，
     // 零检出能力。真正要钉的是「让位」与「用户选中线程」用两个不同实参：前者要
@@ -76,9 +80,9 @@ void main() {
       RegExp(r'_scheduleAutoClose\(yieldingToRiskConsent:\s*true\)')
           .allMatches(maskComments(build))
           .length,
-      1,
-      reason: '风险让位必须声明自己是让位，调用方据此回滚「已提示过」标记，'
-          '否则确认完风险后本会话再也拿不到捕获设置弹窗',
+      0,
+      reason: '让位出口的唯一触发者（风险门）已经去掉，build 里不该还留着它；'
+          '`yieldingToRiskConsent` 参数本身保留，门若按引擎重开只是接回一个 else-if',
     );
     expect(
       RegExp(r'_scheduleAutoClose\(yieldingToRiskConsent:\s*false\)')

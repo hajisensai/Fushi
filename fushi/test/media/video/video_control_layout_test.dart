@@ -1,7 +1,10 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
+
+import '../../helpers/source_guard.dart';
 
 void main() {
   // TODO-274 phase 0: data model foundation for full 9-slot drag customization.
@@ -847,16 +850,20 @@ void main() {
   });
 
   group('phase 2 editor catalog (slots + items the picker exposes)', () {
-    test('editableSlots == the 6 rendered on-player slots + hidden (TODO-388)',
-        () {
+    test('editableSlots == 编辑器真正暴露的那一组槽（含 topCenter）', () {
       // TODO-388: top-area left/right floating rails joined the editable set so
       // learning buttons can also be placed near the top (rendered via the same
-      // learning-button rail path). topCenter (title chrome) + bottomCenter
-      // (transport cluster) stay fixed and are never offered to the user.
+      // learning-button rail path).
       // TODO-399 decision 2: bottomCenter joined the editable set so the central
-      // transport cluster can be moved. topCenter (fixed title chrome) stays out.
+      // transport cluster can be moved.
+      //
+      // topCenter 此前被断言**排除**在外，但两个编辑器都一直把它画成可投放区域，
+      // 且 canMoveToSlot 一直允许标题进 topCenter —— 这条断言当时钉住的是一个与
+      // 真实能力相反的清单。清单的语义是「编辑器暴露哪些槽」，不是「每个槽收哪些
+      // 按钮」；后者由 canMoveToSlot 单独负责（见下一条）。
       expect(VideoControlSlot.editableSlots, <VideoControlSlot>[
         VideoControlSlot.topLeft,
+        VideoControlSlot.topCenter,
         VideoControlSlot.topRight,
         VideoControlSlot.bottomLeft,
         VideoControlSlot.bottomCenter,
@@ -867,8 +874,56 @@ void main() {
       ]);
       expect(VideoControlSlot.editableSlots,
           contains(VideoControlSlot.bottomCenter));
-      expect(VideoControlSlot.editableSlots,
-          isNot(contains(VideoControlSlot.topCenter)));
+    });
+
+    test('「区域可编辑」与「这个按钮能放这儿」是两个维度', () {
+      // topCenter 进了 editableSlots，但它收谁不变：只收标题。两个维度分开之后，
+      // 「区域存在」不再冒充「什么都能放」。
+      expect(
+        VideoControlItem.title.canMoveToSlot(VideoControlSlot.topCenter),
+        isTrue,
+        reason: '标题本来就能放顶栏中间——这正是 topCenter 必须被暴露的理由',
+      );
+      for (final VideoControlItem item in VideoControlItem.values) {
+        if (item == VideoControlItem.title) continue;
+        expect(
+          item.canMoveToSlot(VideoControlSlot.topCenter),
+          isFalse,
+          reason: '$item 不该能放进顶栏中间——该槽的收件能力不因暴露而放宽',
+        );
+      }
+    });
+
+    test('两个编辑器的槽位表都来自唯一真相源，不再各自硬编码', () {
+      // 画面内编辑覆盖层直接消费常量。
+      final String overlay = File(
+        'lib/src/media/video/video_control_layout_edit_overlay.dart',
+      ).readAsStringSync();
+      expect(
+        overlay,
+        contains('VideoControlSlot.editableSlots'),
+        reason: '覆盖层必须消费 editableSlots，而不是再抄一份槽位表',
+      );
+
+      // 设置页编辑器按三行分组排版（那是版式，不是成员资格），所以只断言
+      // 「它提到的槽位集合 == 真相源」：多一个少一个都会红。
+      final String editor = File(
+        'lib/src/media/video/video_control_layout_editor.dart',
+      ).readAsStringSync();
+      final Set<String> mentioned = RegExp(r'VideoControlSlot\.([a-zA-Z]+)')
+          .allMatches(maskComments(editor))
+          .map((RegExpMatch m) => m.group(1)!)
+          .where((String name) =>
+              VideoControlSlot.values.any((VideoControlSlot s) => s.name == name))
+          .toSet();
+      expect(
+        mentioned,
+        VideoControlSlot.editableSlots
+            .map((VideoControlSlot s) => s.name)
+            .toSet(),
+        reason: '设置页编辑器呈现的槽位集合必须与 editableSlots 逐个对齐——'
+            '新增槽位时漏改其中一处，用户就会看到一个「画出来了却不存在」的区域',
+      );
     });
 
     test(
@@ -890,16 +945,27 @@ void main() {
       expect(learning, isNot(contains(VideoControlItem.volume)));
     });
 
-    test('moving a learning key to every editable slot is honored', () {
+    test('学习键能移进每一个「它被允许进」的可编辑槽', () {
+      // 判据是 canMoveToSlot，而不是「editableSlots 里的每一个」。两者是不同维度：
+      // 槽被编辑器暴露 ≠ 任意按钮都能进（topCenter 就只收标题）。用能力谓词做判据
+      // 之后，这条测试对「今后再暴露一个收件受限的槽」也保持正确。
+      int honored = 0;
       for (final VideoControlItem item
           in VideoControlItem.customizableLearning) {
         for (final VideoControlSlot slot in VideoControlSlot.editableSlots) {
           final VideoControlLayout moved =
               VideoControlLayout.defaults.moveItem(item, slot);
-          expect(moved.slotOf(item), slot,
-              reason: '${item.name} should move into ${slot.name}');
+          if (item.canMoveToSlot(slot)) {
+            expect(moved.slotOf(item), slot,
+                reason: '${item.name} should move into ${slot.name}');
+            honored++;
+          } else {
+            expect(moved.slotOf(item), isNot(slot),
+                reason: '${item.name} 不该被放进 ${slot.name}（该槽拒收它）');
+          }
         }
       }
+      expect(honored, greaterThan(0), reason: '断言不能空转');
     });
   });
 

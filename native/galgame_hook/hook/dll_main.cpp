@@ -48,6 +48,10 @@
 #include "module_settle.h"
 #include "host_executable_digest.h"
 #include "lookup_overlay_geometry.h"
+#include "game_main_window.h"
+// KiriKiri 第三条 exporter 路径的判据（BUG-2145）。必须在**顶层**引入：adapters/*.inc 是被
+// 包进本文件匿名命名空间里的，从那里 include 会把 std:: 解析成匿名命名空间下的名字。
+#include "adapters/kirikiri_exporter_scan.h"
 #include "hunex_gge_trace.h"
 #include "leaf_d3d_trace.h"
 #include "artemis_pfs.h"
@@ -78,6 +82,8 @@
 #include "voice_hook_ipc.h"
 #include "voice_resource_filename.h"
 #include "voice_resource_pairing.h"
+#include "kirikiri_voice_storage_name.h"
+#include "lookup_line_text_match.h"
 #include "xaudio_resource_dispatch.h"
 #include "xaudio_source_format.h"
 #include "xaudio_trace.h"
@@ -196,11 +202,24 @@ fushi_voice_hook::HookOriginalRegistry<16> g_submit_source_buffer_originals;
 fushi_voice_hook::HookOriginalRegistry<16> g_flush_source_buffers_originals;
 
 // 原始语音流落盘的共用出口（KiriKiri 与 Siglus 都写同一目录，供 Dart 按 tick 配对）。
-std::wstring VoiceBaseName(const wchar_t* storagename) {
+//
+// `>` 也是路径分隔符：KiriKiri 归档放置路径形如 `voice.xp3>坒`，条目名被哈希且无扩展名。
+// 旧实现只切 `/`、`\`，于是 base 成了 `voice.xp3>坒`——含 `.xp3` 的点骗过「无点补 .ogg」，
+// 落盘名 `voice.xp3_坒` 没有音频扩展名，host 的资源索引按扩展名扫就看不见它（tenshi_sz
+// 真机：源资源 6.86 s 已落盘，卡里却是 5 s loopback）。扩展名按载荷魔数补（Ogg/RIFF），
+// 不按名字猜。
+std::wstring VoiceBaseName(const wchar_t* storagename, const uint8_t* data,
+                           uint32_t len) {
   std::wstring s(storagename);
-  const size_t pos = s.find_last_of(L"/\\");
-  std::wstring base =
-      (pos == std::wstring::npos) ? s : s.substr(pos + 1);
+  // 分隔符判据的唯一真相源是 `kirikiri_voice_storage_name.h`——这里从尾往前扫并
+  // **调用**它，而不是把字符集再抄一遍。抄一遍的代价已经付过：BUG-2115 的根因就是
+  // 这个集合里少了 `>`；而 `fushi_kirikiri_voice_storage_name_test` 里那 4 条分隔符
+  // 断言压的是那个函数，只要生产代码自己硬写字符集，把它改窄测试照样全绿。
+  size_t cut = s.size();
+  while (cut > 0 && !fushi_voice_hook::IsKirikiriPathSeparator(s[cut - 1])) {
+    --cut;
+  }
+  std::wstring base = s.substr(cut);
   for (wchar_t& c : base) {
     if (c == L':' || c == L'*' || c == L'?' || c == L'"' || c == L'<' ||
         c == L'>' || c == L'|') {
@@ -208,7 +227,11 @@ std::wstring VoiceBaseName(const wchar_t* storagename) {
     }
   }
   if (base.empty()) base = L"voice";
-  if (base.find(L'.') == std::wstring::npos) base += L".ogg";
+  if (base.find(L'.') == std::wstring::npos) {
+    const wchar_t* sniffed =
+        fushi_voice_hook::KirikiriVoicePayloadExtension(data, len);
+    base += sniffed != nullptr ? sniffed : L".ogg";
+  }
   return base;
 }
 
@@ -226,7 +249,8 @@ bool WriteVoiceOggAt(const uint8_t* data, uint32_t len,
   }
   std::wstring file =
       dir + L"\\" + fushi_voice_hook::BuildVoiceResourceFileName(
-                          tick_ms, VoiceBaseName(storagename), text_event_id);
+                          tick_ms, VoiceBaseName(storagename, data, len),
+                          text_event_id);
   HANDLE f = CreateFileW(file.c_str(), GENERIC_WRITE, 0, nullptr,
                          CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
   if (f == INVALID_HANDLE_VALUE) return false;
@@ -651,6 +675,19 @@ DWORD WINAPI HookWorker(LPVOID module_context) {
   // still never creates the loopback worker; explicit allow remains
   // independent of MinHook just as the historical fallback was.
   registry.InstallFallbackAdapters();
+  // install() 只起 worker 并发布 starting；allow 的 applied/running 确认要等 worker
+  // 真正 Start() 成功后的下一轮 PollPolicy。若把那一轮留到 MH_Initialize() +
+  // InstallStartupAdapters() 之后，早注入 5s 的确认预算基本必然超时（BUG-2131）。
+  // 这里用一个短的有界追平循环，只推进策略状态机、不碰引擎适配器：worker 起流通常
+  // 在几百毫秒内完成，追平后立即继续引擎探测；追不平也照常往下走，绝不无界等待。
+  {
+    const ULONGLONG ack_deadline = GetTickCount64() + 1500ull;
+    while (!g_stop && GetTickCount64() < ack_deadline) {
+      registry.PollLoopbackPolicyOnly();
+      if (fushi_voice_hook::NativeLoopbackRequestAcknowledged(g_header)) break;
+      Sleep(20);
+    }
+  }
   InitializeCriticalSection(&g_cs);
   g_cs_ready = true;
   InitializeCriticalSection(&g_text_cs);

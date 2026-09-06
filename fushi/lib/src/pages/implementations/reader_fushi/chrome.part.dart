@@ -921,24 +921,26 @@ extension _ReaderChrome on _ReaderFushiPageState {
         barrierColor:
             Theme.of(context).colorScheme.scrim.withValues(alpha: 0.87),
         barrierDismissible: true,
-        pageBuilder: (BuildContext routeContext, __, ___) => GestureDetector(
-          onTap: () => Navigator.pop(context),
-          onSecondaryTapDown: isWindowsPlatform
-              ? (TapDownDetails details) {
-                  unawaited(
+        pageBuilder: (BuildContext routeContext, __, ___) => ContextMenuTrigger(
+          // 右键菜单改由绑定表决定唤出键（默认仍是右键）；右键被别的动作占用时自动让位。
+          onInvoke: isWindowsPlatform
+              ? (Offset position) => unawaited(
                     _showReaderImageContextMenuAtGlobalPosition(
                       imgUrl,
-                      details.globalPosition,
+                      position,
                       menuContext: routeContext,
                     ),
-                  );
-                }
+                  )
               : null,
-          child: InteractiveViewer(
-            minScale: 0.5,
-            maxScale: 10,
-            child: Center(
-              child: Image.file(file, fit: BoxFit.contain),
+          ladder: kReaderMouseLadder,
+          child: GestureDetector(
+            onTap: () => Navigator.pop(context),
+            child: InteractiveViewer(
+              minScale: 0.5,
+              maxScale: 10,
+              child: Center(
+                child: Image.file(file, fit: BoxFit.contain),
+              ),
             ),
           ),
         ),

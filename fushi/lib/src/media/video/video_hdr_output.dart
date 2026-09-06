@@ -5,6 +5,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'package:fushi/src/media/video/video_dynamic_range.dart';
 import 'package:fushi/src/models/preferences_repository.dart' show VideoFitMode;
 
 /// Windows HDR 直通 / 10-bit 输出（计划 `docs/plans/2026-08-30-video-hdr-passthrough.md`）。
@@ -99,9 +100,13 @@ class HdrDisplayInfo {
 }
 
 /// 片源是否 HDR：libmpv `video-params/primaries` 为 bt.2020 且 `gamma` 为 PQ / HLG。
-bool isHdrVideoParams({required String? primaries, required String? gamma}) {
-  return primaries == 'bt.2020' && (gamma == 'pq' || gamma == 'hlg');
-}
+///
+/// 判据本体已收口到 [VideoDynamicRange]（`video_dynamic_range.dart`）——同一个「这片子
+/// 是不是 HDR」原先在 mpv、ffprobe、种子标题三处各写一遍、字符串还各不相同。这里保留
+/// 成薄壳是因为直通链路只关心一个 bool，且调用点/单测都以这个名字为准；语义与归一后的
+/// [dynamicRangeFromMpv] 逐位等价。
+bool isHdrVideoParams({required String? primaries, required String? gamma}) =>
+    dynamicRangeFromMpv(primaries: primaries, gamma: gamma).isHdr;
 
 /// 唯一的模式判据（计划 §4.4）——所有「要不要走宿主窗」都只问这里。
 bool shouldUseHdrHostWindow({

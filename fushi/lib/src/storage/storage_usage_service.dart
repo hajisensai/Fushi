@@ -593,27 +593,48 @@ class StorageUsageService {
     final List<List<String>> perBookPaths = <List<String>>[
       for (final StorageBookPaths paths in perBook) paths.counted,
     ];
-    final List<int> sizes = await _run(() {
-      return <int>[
-        _pathsSizeSync(categoryRoots),
-        for (final List<String> paths in perBookPaths) _pathsSizeSync(paths),
-      ];
+    // 一次 isolate 调用同时拿「类目根的直接子项」与「每本书的大小」：子项之和
+    // 恒等于整树之和（根目录自身不占字节），所以类目总量改由子项求得，扫描量与
+    // 旧的整树求和一致，却顺带拿到了求差集所需的子项清单。
+    final Map<String, Object> raw = await _run(() {
+      return <String, Object>{
+        'children': _childEntriesSync(categoryRoots),
+        'sizes': <int>[
+          for (final List<String> paths in perBookPaths) _pathsSizeSync(paths),
+        ],
+      };
     });
+    final List<Map<String, Object>> children =
+        (raw['children']! as List<dynamic>).cast<Map<String, Object>>();
+    final List<int> sizes = (raw['sizes']! as List<dynamic>).cast<int>();
     final List<StorageEntryUsage> entries = <StorageEntryUsage>[
       for (int i = 0; i < books.length; i++)
         StorageEntryUsage(
           id: books[i].id,
           label: books[i].title,
-          bytes: sizes[i + 1],
+          bytes: sizes[i],
           paths: perBookPaths[i],
           externalPaths: perBook[i].external,
           kind: books[i].kind,
         ),
+      // BUG-2096：DB 不认识、却确实占着盘的直接子项（删书留下的孤儿目录、导入
+      // 残留）。不铺出来的话它们只活在「类目总量 − 明细之和」的差里，而页面从不
+      // 显示那个差——用户只看见类目行的大数字，展开却对不上账。只读展示：裸删
+      // 会绕过墓碑/引用护栏。
+      ..._childEntries(
+        children,
+        excludePaths: _topLevelOwners(
+          paths: <String>[
+            for (final List<String> paths in perBookPaths) ...paths,
+          ],
+          roots: categoryRoots,
+        ),
+      ),
     ]..sort((StorageEntryUsage a, StorageEntryUsage b) =>
         b.bytes.compareTo(a.bytes));
     return StorageCategoryUsage(
       id: StorageCategoryId.books,
-      bytes: sizes[0],
+      bytes: _sumChildBytes(children),
       entries: entries,
     );
   }
@@ -631,26 +652,41 @@ class StorageUsageService {
     final List<String> perDictPaths = <String>[
       for (final String name in dictionaryNames) p.join(resourcesRoot, name),
     ];
-    final List<int> sizes = await _run(() {
-      return <int>[
-        _pathsSizeSync(categoryRoots),
-        for (final String path in perDictPaths) directorySizeSync(path),
-      ];
+    // 口径同 [_scanBooks]：子项之和 == 整树之和，扫描量不变。
+    final Map<String, Object> raw = await _run(() {
+      return <String, Object>{
+        'children': _childEntriesSync(categoryRoots),
+        'sizes': <int>[
+          for (final String path in perDictPaths) directorySizeSync(path),
+        ],
+      };
     });
+    final List<Map<String, Object>> children =
+        (raw['children']! as List<dynamic>).cast<Map<String, Object>>();
+    final List<int> sizes = (raw['sizes']! as List<dynamic>).cast<int>();
     final List<StorageEntryUsage> entries = <StorageEntryUsage>[
       for (int i = 0; i < dictionaryNames.length; i++)
         StorageEntryUsage(
           id: dictionaryNames[i],
           label: dictionaryNames[i],
-          bytes: sizes[i + 1],
+          bytes: sizes[i],
           paths: <String>[perDictPaths[i]],
           kind: StorageEntryKind.dictionary,
         ),
+      // BUG-2096：本类目的三个根里只有 `dictionaryResources/<名>` 是 DB 认识的。
+      // 导入工作目录的残留、删词典留下的孤儿目录，以及新手引导下的推荐包暂存
+      // （`recommended_pack/` 里那个 9.5 GB zip，BUG-2109 之前永不删）全落在差集
+      // 里——正是用户报的「词典 11.3 GB，展开只有 583 MB」。
+      ..._childEntries(
+        children,
+        excludePaths:
+            _topLevelOwners(paths: perDictPaths, roots: categoryRoots),
+      ),
     ]..sort((StorageEntryUsage a, StorageEntryUsage b) =>
         b.bytes.compareTo(a.bytes));
     return StorageCategoryUsage(
       id: StorageCategoryId.dictionaries,
-      bytes: sizes[0],
+      bytes: _sumChildBytes(children),
       entries: entries,
     );
   }
@@ -882,6 +918,36 @@ class StorageUsageService {
 
   static int _sumBytes(final List<StorageEntryUsage> entries) =>
       entries.fold<int>(0, (int sum, StorageEntryUsage e) => sum + e.bytes);
+
+  /// [_childEntriesSync] 产出的子项字节和 == 类目根整树字节和（根目录自身不占
+  /// 字节）；书籍/词典类目的总量由它得出。
+  static int _sumChildBytes(final List<Map<String, Object>> children) =>
+      children.fold<int>(
+          0, (int sum, Map<String, Object> e) => sum + (e['bytes'] as int));
+
+  /// 把已知条目的路径收敛到「类目根的直接子项」层级，供 [_childEntries] 求差集。
+  ///
+  /// 书籍/词典的明细口径是 DB 已知条目，其路径可能深于直接子项（有声书音频在
+  /// `fushi_books/<bookKey>/…` 之下），而孤儿只能按直接子项铺开——两套口径必须
+  /// 先落到同一层级才能相减，否则整个 `fushi_books/<bookKey>` 会被当成没人认领，
+  /// 与那本书的条目重复计一遍。[roots] 之外的路径（桌面「引用原文件」导入留在
+  /// app 目录外的音频）不归任何根，自然不参与。
+  static Set<String> _topLevelOwners({
+    required final Iterable<String> paths,
+    required final List<String> roots,
+  }) {
+    final Set<String> owners = <String>{};
+    for (final String path in paths) {
+      for (final String root in roots) {
+        if (!p.isWithin(root, path)) continue;
+        final List<String> segments = p.split(p.relative(path, from: root));
+        if (segments.isEmpty) continue;
+        owners.add(p.join(root, segments.first));
+        break;
+      }
+    }
+    return owners;
+  }
 
   /// 随包组件占用（桌面端安装目录内、随安装包携带；**只展示不可删**——
   /// 更新 = 安装器整体重写安装目录，删掉的必然回来）。移动端返回空。

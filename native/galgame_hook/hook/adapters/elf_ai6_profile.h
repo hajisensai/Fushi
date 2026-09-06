@@ -6,6 +6,7 @@
 #include <string>
 
 #include "../elf_ai6_arc.h"
+#include "engine_dir_signature.h"
 
 namespace fushi_voice_hook {
 struct ElfAi6FileIdentity {
@@ -32,14 +33,14 @@ inline bool SameElfAi6FileIdentity(const ElfAi6FileIdentity& left,
       left.file_index_low == right.file_index_low;
 }
 
-inline bool ProbeElfAi6Profile(ElfAi6FileIdentity* identity_out) {
-  wchar_t executable[MAX_PATH] = {0};
-  if (GetModuleFileNameW(nullptr, executable, MAX_PATH) == 0) return false;
-  wchar_t* slash = wcsrchr(executable, L'\\');
-  const wchar_t* leaf = slash == nullptr ? executable : slash + 1;
-  if (_wcsicmp(leaf, L"AI6WIN.exe") != 0 || slash == nullptr) return false;
-  *slash = 0;
-  const std::wstring archive = std::wstring(executable) + L"\\voice.arc";
+// 给定游戏根目录的结构判据；测试用临时目录直接喂它。
+//
+// exe 名（`AI6WIN.exe`）**不进判据**。它原本是先决条件，名字不符时下面这整套
+// voice.arc 索引校验一行都不跑——而那套校验（索引长度自洽 + 首条目 packed==unpacked +
+// offset 恰好等于索引末尾）本身已经强到足以单独定身份，用不着名字兜底。
+inline bool ProbeElfAi6Layout(const std::wstring& directory,
+                              ElfAi6FileIdentity* identity_out) {
+  const std::wstring archive = directory + L"\\voice.arc";
   HANDLE file = CreateFileW(archive.c_str(), GENERIC_READ,
                             FILE_SHARE_READ | FILE_SHARE_WRITE |
                                 FILE_SHARE_DELETE,
@@ -73,6 +74,12 @@ inline bool ProbeElfAi6Profile(ElfAi6FileIdentity* identity_out) {
       packed <= static_cast<uint64_t>(file_size.QuadPart) - offset;
   if (valid && identity_out != nullptr) *identity_out = identity;
   return valid;
+}
+
+inline bool ProbeElfAi6Profile(ElfAi6FileIdentity* identity_out) {
+  std::wstring directory;
+  if (!engine_dir::ModuleDirectory(&directory)) return false;
+  return ProbeElfAi6Layout(directory, identity_out);
 }
 
 inline bool MatchesElfAi6Profile(const wchar_t*) {

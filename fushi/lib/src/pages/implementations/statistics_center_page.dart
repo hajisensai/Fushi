@@ -221,23 +221,31 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
     return StatPeriodSummary(
       label: label,
       primaryValue: formatStatTime(ms),
-      onTap: () => unawaited(
-        showStatPeriodDetailSheet(
-          context,
-          periodLabel: label,
-          contains: contains,
-          facts: _daily,
-          resolvers: StatPeriodDetailResolvers(
-            titleOf: _entryTitle,
-            collectionOf: _entryCollection,
-            onEntryTap: _openEntry,
-          ),
-        ),
-      ),
+      onTap: () => unawaited(_showPeriodDetail(label, contains)),
       lines: <StatSummaryLine>[
         StatSummaryLine(value: formatStatChars(chars)),
       ],
     );
+  }
+
+  Future<void> _showPeriodDetail(
+    String label,
+    bool Function(String dateKey) contains,
+  ) async {
+    final FushiDatabase db = ref.read(appProvider).database;
+    final bool deleted = await showStatPeriodDetailSheet(
+      context,
+      periodLabel: label,
+      contains: contains,
+      facts: _daily,
+      resolvers: StatPeriodDetailResolvers(
+        titleOf: _entryTitle,
+        collectionOf: _entryCollection,
+        onEntryTap: _openEntry,
+        onEntryDelete: (StatPeriodEntryTarget t) => deleteStatPeriodEntry(db, t),
+      ),
+    );
+    if (deleted && mounted) await _load();
   }
 
   /// 事实行 → 展示标题（合集名走 sheet 组头；与首页 dashboard 同判据）。

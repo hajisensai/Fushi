@@ -14,6 +14,7 @@ import 'dart:async';
 import 'dart:ffi';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
 import 'package:fushi/src/lookup/sentence_extraction.dart';
@@ -46,17 +47,85 @@ abstract final class SelectionCapture {
   static const MethodChannel _foregroundSelectionChannel =
       MethodChannel('app.fushi.reader/foreground_selection');
 
+  /// 剪贴板捕获的进程内串行闸门（TODO-1066 手柄/鼠标触发）。
+  ///
+  /// [captureForegroundSelection] 的「存旧剪贴板 → 清空 → 注入 Ctrl+C → 轮询
+  /// → 还原」是一段**跨 await 的事务**，而剪贴板是全局单资源。两次重叠会互相
+  /// 拆台：A 存下旧值 → A 清空 → **B 存下的是 A 刚清空的空值** → A 注入并读到
+  /// 选区 → A 还原 → B 轮询超时 → B 把剪贴板「还原」成空。用户的剪贴板就这么
+  /// 没了（同源事故有前科，见 BUG-707 剪贴板回声）。
+  ///
+  /// 上游的 route 作废机制救不了这里：它只让**已返回**的旧调用在 await 边界
+  /// 自杀，而这段事务一旦开始就必须跑完（半途放弃 = 剪贴板停在被清空的状态）。
+  /// 所以正确的层是这里——把事务本身串起来，而不是在调用方丢弃触发。
+  ///
+  /// 串行而非丢弃，是为了不破坏「再按一次总是查当前选区」的既有语义（见
+  /// `global_lookup_controller._onHotKeyRouted` 的注释）：后到的那次照常执行，
+  /// 只是排在前一次事务之后；它自己的 route 更新，先到的那次结果被上游丢弃。
+  static Future<void> _clipboardCaptureGate = Future<void>.value();
+
+  /// 闸门本体。用 Completer 而不是 `_gate = _gate.then(...)`，是为了让**闸门推进
+  /// 与本次事务的成败无关**——事务抛异常也必须放行后来者，否则一次失败就永久
+  /// 堵死这条路。
+  static Future<T?> _runClipboardExclusive<T>(
+    Future<T?> Function() body, {
+    bool Function()? stillWanted,
+  }) async {
+    final Completer<void> tail = Completer<void>();
+    final Future<void> previous = _clipboardCaptureGate;
+    _clipboardCaptureGate = tail.future;
+    await previous;
+    try {
+      if (stillWanted != null && !stillWanted()) {
+        glog('capture: superseded while queued — skipped');
+        return null;
+      }
+      return await body();
+    } finally {
+      tail.complete();
+    }
+  }
+
+  /// 只给测试：在**同一道闸门**上跑一段任意事务体。
+  ///
+  /// 存在的理由是 [captureForegroundSelection] 本身在测试里不可调用——它会真的
+  /// 注入 Ctrl+C 并改写跑测试这台机器的剪贴板。串行语义又必须有行为测试兜底
+  /// （源码守卫看不出 `await previous` 是不是漏了），故把闸门单独暴露出来。
+  @visibleForTesting
+  static Future<T?> debugRunClipboardExclusive<T>(
+    Future<T?> Function() body, {
+    bool Function()? stillWanted,
+  }) =>
+      _runClipboardExclusive<T>(body, stillWanted: stillWanted);
+
   /// Saves the clipboard, clears it, injects a clean Ctrl+C so the foreground
   /// app copies its current selection, reads it back, then restores the
   /// previous clipboard text. Returns the selected text, or null if nothing was
   /// captured.
-  static Future<String?> captureForegroundSelection() async {
+  ///
+  /// 并发安全：多次重叠调用按到达顺序**串行**执行（见 [_clipboardCaptureGate]）。
+  ///
+  /// [stillWanted] 在**排队结束、事务开始前**被求值一次：返回 false 表示这次捕获
+  /// 在排队期间已被更新的一次触发取代，于是直接返回 null，一次剪贴板操作都不做。
+  /// 没有它，手柄连按/侧键抖动会排出一队各自最长 600ms 的事务，用户要等最后一次
+  /// 才看到卡片（每一次都真的去动了剪贴板，只是结果被上游丢弃）。
+  static Future<String?> captureForegroundSelection({
+    bool Function()? stillWanted,
+  }) async {
     if (!Platform.isWindows || _keybdEvent == null) {
       glog('capture: unsupported (windows=${Platform.isWindows} '
           'ffi=${_keybdEvent != null})');
       return null;
     }
+    return _runClipboardExclusive(
+      _captureForegroundSelectionExclusive,
+      stillWanted: stillWanted,
+    );
+  }
 
+  /// [captureForegroundSelection] 的事务体。**只允许经那道闸门调用**——直接调它
+  /// 就绕过了串行保证。
+  static Future<String?> _captureForegroundSelectionExclusive() async {
     final String? oldText =
         (await Clipboard.getData(Clipboard.kTextPlain))?.text;
 

@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi_anki/fushi_anki.dart';
@@ -65,7 +66,34 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
     }
   }
 
-  Future<void> reloadSettings() => _loadSettings();
+  /// BUG-2150：AnkiMobile 的配置回传是**跨 app 异步**完成的——
+  /// [fetchConfiguration] 只能先把「已跳转 AnkiMobile，去那边点同意」写进
+  /// [AnkiUiState.errorMessage]，真正的结果稍后经 `fushi://ankiFetch` 回调送达。
+  /// 回调成功时必须把那条中间态一并清掉，否则设置页会一直挂着「请去同意」，
+  /// 在用户眼里就是「又失败了一次」。
+  ///
+  /// 这里不复用 `_loadSettings()`：那条路只负责装载，还会在「选了牌组但可用列表为空」
+  /// 时反过来再触发一次 [fetchConfiguration]（又把用户弹去 AnkiMobile）。
+  Future<void> applyFetchedConfiguration() async {
+    final settings = await _repository.loadSettings();
+    state = state.copyWith(
+      settings: settings,
+      isFetching: false,
+      clearError: true,
+    );
+  }
+
+  /// 回调带回的是**失败**时的对偶动作（BUG-2150 补修）：中间态「已跳转 AnkiMobile，
+  /// 去那边点同意」是 [fetchConfiguration] 写进 [AnkiUiState.errorMessage] 的，
+  /// 此前只有成功侧清了它。失败侧只弹一条几秒即逝的 toast，设置页那行红字仍旧说
+  /// 「去 AnkiMobile 点同意」——用户于是反复回 AnkiMobile 同意，永远看不到真正
+  /// 卡住的原因（例如系统「允许粘贴」被拒）。真结果必须覆盖中间态。
+  void applyFetchedFailure(String message, String? code) {
+    state = state.copyWith(
+      isFetching: false,
+      errorMessage: localizeAnkiFetchError(message, code),
+    );
+  }
 
   Future<void> fetchConfiguration() async {
     state = state.copyWith(isFetching: true, clearError: true);
@@ -91,6 +119,22 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
   static String localizeAnkiFetchError(String message, String? code) {
     if (code == AnkiErrorCode.collectionUnavailable) {
       return t.anki_error_collection_unavailable;
+    }
+    // BUG-2150：iOS AnkiMobile 的配置回传（URL scheme + 系统剪贴板）此前把「已跳转、
+    // 等你去同意」「AnkiMobile 没写」「系统不让读」三种情形压成同一句硬编码英文
+    // 「No AnkiMobile configuration was found on the clipboard.」——用户既看不出该做
+    // 什么，中文 UI 里也是英文。按稳定码分开映射。
+    switch (code) {
+      case AnkiErrorCode.ankiMobileOpened:
+        return t.anki_ankimobile_opened;
+      case AnkiErrorCode.ankiMobilePasteboardEmpty:
+        return t.anki_error_ankimobile_pasteboard_empty;
+      case AnkiErrorCode.ankiMobilePasteboardDenied:
+        return t.anki_error_ankimobile_pasteboard_denied;
+      case AnkiErrorCode.ankiMobileNotActive:
+        return t.anki_error_ankimobile_not_active;
+      case AnkiErrorCode.ankiMobileNoDecks:
+        return t.anki_error_ankimobile_no_decks;
     }
     // TODO-752a：AnkiConnect 网络错误也按稳定码本地化（与制卡 toast 同一组码），
     // 不再透传后端拼好的英文/可能乱码的 [message]。
@@ -232,8 +276,17 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
 
       final fetch = await _repository.fetchConfiguration();
       if (fetch is AnkiFetchError) {
-        state = state.copyWith(isFetching: false, errorMessage: fetch.message);
-        return LapisSetupResult(LapisSetupOutcome.failed, fetch.message);
+        // BUG-2098：这里此前直接用 `fetch.message`（后端英文原文），漏了
+        // [localizeAnkiFetchError]——同一个 fetch 失败，走 fetchConfiguration() 是
+        // 中文提示，走建 Lapis 就变英文。两条路径统一过同一个本地化入口。
+        final String message =
+            localizeAnkiFetchError(fetch.message, fetch.code);
+        state = state.copyWith(isFetching: false, errorMessage: message);
+        return LapisSetupResult(
+          LapisSetupOutcome.failed,
+          message,
+          fetch.code,
+        );
       }
 
       final settings = await _repository.loadSettings();
@@ -257,13 +310,18 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
           : LapisSetupOutcome.alreadyExisted);
     } catch (e, stack) {
       debugPrint('AnkiViewModel.createLapisSetup: $e\n$stack');
-      final String message = _lapisSetupFailureMessage(e);
-      state = state.copyWith(isFetching: false, errorMessage: message);
-      return LapisSetupResult(LapisSetupOutcome.failed, message);
+      final failure = _lapisSetupFailure(e);
+      state = state.copyWith(isFetching: false, errorMessage: failure.message);
+      return LapisSetupResult(
+        LapisSetupOutcome.failed,
+        failure.message,
+        failure.code,
+      );
     }
   }
 
-  /// 一键配置 Lapis 失败时给用户看的那句话。
+  /// 一键配置 Lapis 失败时给用户看的那句话（连同稳定错误码，供 UI 决定是否给
+  /// 「去设置」这类可操作按钮）。
   ///
   /// 这里此前是裸的 `e.toString()`，于是 AnkiConnect 端口被别的程序占着（连得上、
   /// 不应答）时，用户在新手引导里拿到的是一句
@@ -271,10 +329,26 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
   /// 更看不出下一步该干什么。传输层异常改走与 fetchConfiguration 同一套稳定码分类 +
   /// 本地化（TODO-752a）；其余（payload / 空列表 firstWhere 之类的本地编程错误）不是
   /// 连接问题，不套连接文案，保留原文供排障——它们不经 socket，不是乱码源。
-  static String _lapisSetupFailureMessage(Object e) {
-    if (!isAnkiConnectTransportError(e)) return e.toString();
+  ///
+  /// BUG-2098：AnkiDroid 抛的 [PlatformException] 不是传输错误，此前径直落进
+  /// `e.toString()`，于是整条 `PlatformException(PERMISSION_DENIED, AnkiDroid
+  /// permission not granted...)` 原样糊进 snackbar。现在先过 AnkiDroid 的稳定码
+  /// 分类；仍未分类的才退回原文，且只取 message 而非整个 `toString()`。
+  static ({String message, String? code}) _lapisSetupFailure(Object e) {
+    if (e is PlatformException) {
+      final String? code = AnkiRepository.classifyPlatformError(e);
+      final String? localized = localizeAnkiMineError(code);
+      if (localized != null) return (message: localized, code: code);
+      return (message: e.message ?? e.code, code: code);
+    }
+    if (!isAnkiConnectTransportError(e)) {
+      return (message: e.toString(), code: null);
+    }
     final String code = classifyAnkiConnectError(e);
-    return localizeAnkiFetchError(ankiConnectErrorHint(code), code);
+    return (
+      message: localizeAnkiFetchError(ankiConnectErrorHint(code), code),
+      code: code,
+    );
   }
 
   // ── Lapis 样式客制化（备份/恢复/应用见 LapisTemplateService）──────────
@@ -418,9 +492,13 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
 enum LapisSetupOutcome { created, alreadyExisted, failed }
 
 class LapisSetupResult {
-  const LapisSetupResult(this.outcome, [this.message]);
+  const LapisSetupResult(this.outcome, [this.message, this.code]);
   final LapisSetupOutcome outcome;
   final String? message;
+
+  /// BUG-2098：失败时的稳定错误码（[AnkiErrorCode]），供 UI 决定要不要给可操作
+  /// 按钮——例如权限被永久拒绝时的「去设置」。未分类的失败为 null。
+  final String? code;
 }
 
 /// Anki 仓库 provider。默认返回按平台编译期选择的本地仓库（AnkiConnect/AnkiDroid/

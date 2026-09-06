@@ -52,6 +52,10 @@ void _mockChannel(
 ) {
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .setMockMethodCallHandler(_channel, (MethodCall call) async {
+    // BUG-2098：申请权限成了每个碰 provider 的入口的前置条件。本文件断言的是业务调用
+    // 序列（addNote / checkForDuplicates / updateNote…），权限只是前置，故统一答
+    // 「已授权」且不记账，既有断言继续描述它们真正关心的调用。
+    if (call.method == 'requestAnkidroidPermissions') return true;
     calls.add(call);
     return responder(call);
   });

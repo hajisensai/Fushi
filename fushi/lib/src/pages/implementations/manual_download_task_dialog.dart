@@ -16,6 +16,7 @@ import 'package:fushi/src/media/video/metadata/video_metadata_models.dart'
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/download_backend_setup_dialog.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi_core/fushi_core.dart' show MediaSourceRow;
 
 /// 「管线 + 后端落点」的一次性解析结果。两者要么都有（可以开表单），要么就是
@@ -181,8 +182,8 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
   }
 
   Future<void> _pickTorrentFile() async {
-    final FilePickerResult? picked = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
+    final FilePickerResult? picked = await pickFilesByExtensions(
+      context: context,
       allowedExtensions: <String>['torrent'],
       withData: true,
     );

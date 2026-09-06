@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
@@ -30,6 +31,26 @@ class _ThrowingLoadDroidRepo extends AnkiRepository {
 }
 
 void main() {
+  // BUG-2098 把 requestAnkidroidPermissions 提到 mineEntry 里 loadSettings **之前**，
+  // 于是 AnkiDroid 那两条用例的「第一个未被守卫的调用」从 loadSettings 变成了通道调用。
+  // 没有 binding + mock 时它先抛 FlutterError("Binding has not yet been initialized")，
+  // 契约断言（不抛、MineResult.error）仍然成立，但 `outcome.error` 不再是本用例要验的
+  // StateError——真正的判据被一个环境错误顶掉了。这里把权限前置答成「已授权」，让
+  // loadSettings 重新成为第一个抛出点，用例回到它本来的判据上。
+  TestWidgetsFlutterBinding.ensureInitialized();
+  const MethodChannel ankiChannel = MethodChannel('app.fushi.reader/anki');
+  setUp(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(ankiChannel, (MethodCall call) async {
+      if (call.method == 'requestAnkidroidPermissions') return true;
+      return null;
+    });
+  });
+  tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(ankiChannel, null);
+  });
+
   const AnkiMiningContext context = AnkiMiningContext(sentence: '');
   const String payload = '{"expression":"勉強","reading":"べんきょう"}';
 

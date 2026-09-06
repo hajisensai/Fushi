@@ -26,9 +26,9 @@ void main() {
   group('A — overlay WebView2 is prewarmed off-screen (own ownership)', () {
     test('Dart channel exposes prewarmWebView', () {
       final String
-      ch = // spec 2026-07-10: channel 实现在 overlay_window_channel.dart（门面+实现拼接扫描）
+          ch = // spec 2026-07-10: channel 实现在 overlay_window_channel.dart（门面+实现拼接扫描）
           read('lib/src/lookup/global_lookup_channel.dart') +
-          read('lib/src/lookup/overlay_window_channel.dart');
+              read('lib/src/lookup/overlay_window_channel.dart');
       expect(
         ch.contains("_invoke<void>('prewarmWebView'"),
         isTrue,
@@ -62,7 +62,8 @@ void main() {
       );
     });
 
-    test('native window has a PrewarmWebView entry that navigates host.html', () {
+    test('native window has a PrewarmWebView entry that navigates host.html',
+        () {
       final String h = read('windows/runner/global_lookup_window.h');
       expect(h.contains('void PrewarmWebView('), isTrue);
       final String cpp = read('windows/runner/global_lookup_window.cpp');
@@ -92,9 +93,9 @@ void main() {
 
     test('a readiness query exists on the channel + native', () {
       final String
-      ch = // spec 2026-07-10: channel 实现在 overlay_window_channel.dart（门面+实现拼接扫描）
+          ch = // spec 2026-07-10: channel 实现在 overlay_window_channel.dart（门面+实现拼接扫描）
           read('lib/src/lookup/global_lookup_channel.dart') +
-          read('lib/src/lookup/overlay_window_channel.dart');
+              read('lib/src/lookup/overlay_window_channel.dart');
       expect(ch.contains("_invoke<bool>('isWebViewReady')"), isTrue);
       final String fw = read('windows/runner/flutter_window.cpp');
       expect(fw.contains('method == "isWebViewReady"'), isTrue);
@@ -162,9 +163,12 @@ void main() {
   });
 
   group('D — reveal state is reset from zero every lookup', () {
-    test('_onHotKey issues an unconditional hide() up front', () {
+    test('triggerSelectionLookup issues an unconditional hide() up front', () {
       final String c = read('lib/src/lookup/global_lookup_controller.dart');
-      final int fire = c.indexOf("glog('hotkey: FIRED');");
+      // 锚点只取前缀：这行日志后来带上了触发源标签（`FIRED (source=…)`，
+      // TODO-1066 手柄/鼠标侧键触发）。守卫要钉的是「开火 → hide → 抓选区」这个
+      // 顺序，不是那行日志的全文；用全等文本当锚点会让任何一次日志增补都变成假红。
+      final int fire = c.indexOf("glog('hotkey: FIRED");
       final int capture = c.indexOf(
         'SelectionCapture.captureForegroundSelection',
       );

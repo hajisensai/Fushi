@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 71060 (4180 per locale)
+/// Strings: 72998 (4294 per locale)
 ///
-/// Built on 2026-09-03 at 03:52 UTC
+/// Built on 2026-09-06 at 14:42 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -1556,12 +1556,10 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get icon_custom_hint =>
       'Tap an icon to switch, or pick a custom image below.';
   String get icon_default => 'Default';
-  String get icon_full => 'Full';
   String get icon_shortcut_created => 'Home screen shortcut created.';
   String get icon_shortcut_unsupported =>
       'Shortcuts are not supported on this device.';
   String get icon_switch_success => 'App icon changed successfully.';
-  String get icon_transparent => 'Transparent';
   String image_page_counter({required Object current, required Object total}) =>
       '${current} / ${total}';
   String get image_pause => 'Pause on image';
@@ -5734,6 +5732,195 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Connected. Root catalog has ${count} entries';
   String discovery_opds_test_failed({required Object reason}) =>
       'Connection failed: ${reason}';
+  String get anki_error_permission_permanently_denied =>
+      'AnkiDroid card access was permanently denied, so the system no longer shows the permission dialog. Open app settings and grant the AnkiDroid permission, then try again.';
+  String get anki_error_ankidroid_unavailable =>
+      'AnkiDroid is not installed (or its API is disabled), so card access cannot be granted. Install AnkiDroid and enable its API, or switch to AnkiConnect.';
+  String get anki_action_open_settings => 'Open settings';
+  String onboarding_pack_pick_failed({required Object message}) =>
+      'Could not use the chosen file: ${message}';
+  String get onboarding_pack_pick_no_path =>
+      'The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access.';
+  String get interconnect_profile_section => 'Configuration file';
+  String get interconnect_profile_upload => 'Upload configuration to host';
+  String get interconnect_profile_upload_desc =>
+      'Send this device\'s active configuration to the paired host, where it lands as a new configuration.';
+  String get interconnect_profile_download =>
+      'Download configuration from host';
+  String get interconnect_profile_download_desc =>
+      'Import the host\'s active configuration as a new configuration here. Your current one is untouched.';
+  String get interconnect_profile_host_toggle =>
+      'Allow paired devices to read/write configuration';
+  String get interconnect_profile_host_toggle_desc =>
+      'Off by default. Requires HTTPS and a paired-device token. Incoming configurations are always added as new ones.';
+  String interconnect_profile_uploaded({required Object name}) =>
+      'Configuration uploaded: ${name}';
+  String interconnect_profile_downloaded({required Object name}) =>
+      'Configuration imported: ${name}';
+  String get interconnect_profile_unsupported =>
+      'The paired host does not offer configuration transfer (needs HTTPS and a newer version).';
+  String interconnect_profile_failed({required Object message}) =>
+      'Configuration transfer failed: ${message}';
+  String get onboarding_pack_status_downloading =>
+      'Downloading recommended pack';
+  String get onboarding_pack_status_ready => 'Recommended pack downloaded';
+  String get onboarding_pack_import_now => 'Import now';
+  String get onboarding_pack_download_finished =>
+      'Recommended pack finished downloading. Import it from Settings → System.';
+  String get onboarding_pack_download_background_hint =>
+      'The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.';
+  String get onboarding_anki_fsrs_title => 'Turn on FSRS in Anki';
+  String get onboarding_anki_fsrs_body =>
+      'Anki has FSRS built in — one of the best spaced-repetition algorithms around — but it keeps scheduling with SM-2 from the 1980s until you turn FSRS on. FSRS reads your real review history and predicts when you are about to forget, so you keep the same retention with fewer reviews. You flip this switch once, inside Anki; nothing changes on the Fushi side.';
+  String get onboarding_anki_fsrs_step_options_title => 'Open deck options';
+  String get onboarding_anki_fsrs_step_options_desktop_desc =>
+      'In Anki, click the gear next to a deck and choose Options.';
+  String get onboarding_anki_fsrs_step_options_mobile_desc =>
+      'In AnkiDroid (2.17 or newer) or AnkiMobile, long-press the deck and choose Options.';
+  String get onboarding_anki_fsrs_step_toggle_title => 'Switch FSRS on';
+  String get onboarding_anki_fsrs_step_toggle_desc =>
+      'Scroll to the FSRS section at the bottom of the options page (older builds hide it under Advanced) and turn the switch on. It applies to your whole collection, so once is enough.';
+  String get onboarding_anki_fsrs_step_optimize_title => 'Optimize, then save';
+  String get onboarding_anki_fsrs_step_optimize_desc =>
+      'Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while.';
+  String get sync_desktop_oauth_waiting_title =>
+      'Waiting for the browser sign-in';
+  String get sync_desktop_oauth_waiting_body =>
+      'The sign-in page was opened in your default browser. If nothing opened, or the page shows an error, copy the link and open it in another browser or a private window.';
+  String get sync_desktop_oauth_link_copy => 'Copy sign-in link';
+  String get sync_desktop_oauth_browser_reopen => 'Open browser again';
+  String get sync_err_sign_in_cancelled => 'Sign-in cancelled.';
+  String get sync_desktop_oauth_browser_open_failed =>
+      'Could not open the browser. Copy the link and open it in a browser yourself.';
+  String get sync_desktop_oauth_link_copy_failed =>
+      'Could not copy the link. Select the link text and copy it manually.';
+  String get game_text_thread_artifact_hint =>
+      'Repeated-character artifact thread, no usable lines';
+  String get shortcut_action_global_context_menu => 'Open context menu';
+  String get shortcut_conflict_keep_both => 'Keep both';
+  String get shortcut_conflict_keep_both_hint =>
+      'Both actions keep this binding. Whichever scope resolves first wins at press time.';
+  String get video_specs_title => 'Media info';
+  String get video_specs_resolution => 'Resolution';
+  String get video_specs_dynamic_range => 'Dynamic range';
+  String get video_specs_video_codec => 'Video codec';
+  String get video_specs_bit_depth => 'Bit depth';
+  String get video_specs_frame_rate => 'Frame rate';
+  String get video_specs_bitrate => 'Bitrate';
+  String get video_specs_audio_tracks => 'Audio tracks';
+  String get video_specs_subtitle_tracks => 'Subtitle tracks';
+  String get video_specs_track_commentary => 'Commentary';
+  String get video_specs_track_forced => 'Forced';
+  String get video_specs_track_default => 'Default';
+  String get gal_mining_image_mode_video_clip => 'Video clip';
+  String get gal_mining_image_mode_video_clip_hint =>
+      'Records the game window from the moment the line appears until you mine the card, mixed with the sentence audio. Falls back to an animated image or screenshot when recording has not started or fewer than 2 frames were captured.';
+  String get game_hook_reason_native_loopback_ack_timeout =>
+      'The audio capture policy was not confirmed in time. Text capture still works; try again if game audio is missing.';
+  String get shortcut_scope_global_external_desktop_note =>
+      'Mouse triggers accept side buttons only (back/forward). Other buttons keep their normal meaning in other apps, so they are rejected here.';
+  String get shortcut_mouse_button_not_supported =>
+      'This action only accepts mouse side buttons (back/forward).';
+  String get anki_ankimobile_opened =>
+      'AnkiMobile opened. Approve the request there, then return to Fushi.';
+  String get anki_error_ankimobile_pasteboard_empty =>
+      'AnkiMobile did not return any configuration. Approve the request in AnkiMobile, then come back to Fushi.';
+  String get anki_error_ankimobile_pasteboard_denied =>
+      'iOS blocked reading the clipboard. Choose Allow Paste when returning to Fushi, then try again.';
+  String get anki_error_ankimobile_no_decks =>
+      'AnkiMobile returned no decks or note types.';
+  String get anki_error_ankimobile_unavailable =>
+      'Could not open AnkiMobile. Install AnkiMobile and try again.';
+  String get dictionary_collapse_follow_global => 'Follow global setting';
+  String get anki_ankimobile_imported => 'AnkiMobile configuration imported.';
+  String get anki_error_ankimobile_not_active =>
+      'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+  String get audiobook_transcribe_action => 'Generate subtitles on device';
+  String get audiobook_transcribe_title => 'On-device transcription';
+  String audiobook_transcribe_model_download_needed({required Object size}) =>
+      'Model download required: ${size}';
+  String get audiobook_transcribe_model_download => 'Download model';
+  String audiobook_transcribe_model_downloading(
+          {required Object name,
+          required Object received,
+          required Object total}) =>
+      'Downloading ${name}… ${received} / ${total}';
+  String audiobook_transcribe_model_ready({required Object variant}) =>
+      'Model ready (${variant})';
+  String get audiobook_transcribe_accel_label => 'Acceleration';
+  String get audiobook_transcribe_accel_auto => 'Auto (GPU when available)';
+  String get audiobook_transcribe_accel_cpu => 'CPU only';
+  String audiobook_transcribe_running_on({required Object provider}) =>
+      'Running on ${provider}';
+  String audiobook_transcribe_fallback({required Object reason}) =>
+      'GPU unavailable, fell back to CPU: ${reason}';
+  String get audiobook_transcribe_start => 'Start transcription';
+  String get audiobook_transcribe_resume => 'Resume transcription';
+  String get audiobook_transcribe_pause => 'Pause';
+  String get audiobook_transcribe_pausing => 'Pausing at the next checkpoint…';
+  String get audiobook_transcribe_discard => 'Discard progress';
+  String get audiobook_transcribe_use_result => 'Use subtitles';
+  String audiobook_transcribe_progress(
+          {required Object done,
+          required Object total,
+          required Object file,
+          required Object files}) =>
+      '${done} / ${total} · file ${file}/${files}';
+  String audiobook_transcribe_speed(
+          {required Object elapsed,
+          required Object eta,
+          required Object speed}) =>
+      'Elapsed ${elapsed} · remaining ${eta} · ${speed}× realtime';
+  String audiobook_transcribe_done(
+          {required Object cues, required Object segments}) =>
+      'Done: ${cues} cues from ${segments} speech segments';
+  String audiobook_transcribe_failed({required Object error}) =>
+      'Transcription failed: ${error}';
+  String get audiobook_transcribe_needs_audio => 'Pick audio files first';
+  String get audiobook_transcribe_result_name =>
+      'Generated by on-device transcription';
+  String get audiobook_transcribe_paused_hint =>
+      'Progress is saved. Pick the same audio files later to resume.';
+  String get audiobook_transcribe_unavailable =>
+      'On-device transcription is not available on this platform';
+  String get audiobook_transcribe_preparing => 'Loading model…';
+  String get audiobook_transcribe_export => 'Export subtitle file';
+  String get audiobook_transcribe_export_saved => 'Subtitle file saved';
+  String get audiobook_subtitle_source_title => 'Subtitle source';
+  String get audiobook_subtitle_source_transcribe_hint =>
+      'Generate from the selected audio with the on-device speech model';
+  String get audiobook_transcribe_intro =>
+      'Transcribes the audio locally with an on-device speech model for the selected language and generates subtitles for alignment. Nothing is uploaded.';
+  String get audiobook_transcribe_language_label => 'Speech language';
+  String get audiobook_transcribe_language_ja => 'Japanese';
+  String get audiobook_transcribe_language_en => 'English';
+  String get asr_models_section => 'Speech recognition models';
+  String get asr_models_section_summary =>
+      'Models for on-device audiobook transcription. Download only the languages you need.';
+  String asr_models_status_ready({required Object size}) =>
+      'Downloaded · ${size} on disk';
+  String asr_models_status_partial(
+          {required Object obtained, required Object total}) =>
+      'Partially downloaded · ${obtained} / ${total}';
+  String asr_models_status_missing({required Object size}) =>
+      'Not downloaded · ${size}';
+  String get asr_models_download => 'Download';
+  String get asr_models_delete => 'Delete';
+  String get asr_models_delete_confirm_title => 'Delete this model?';
+  String get asr_models_delete_confirm_message =>
+      'Transcription in this language will need the model downloaded again.';
+  String asr_models_delete_done_freed({required Object size}) =>
+      'Deleted, freed ${size}';
+  String asr_models_download_failed({required Object error}) =>
+      'Download failed: ${error}';
+  String audiobook_transcribe_probe_failed({required Object reason}) =>
+      'GPU detection failed, planning for CPU: ${reason}';
+  String get onboarding_pack_status_paused =>
+      'Recommended pack download paused';
+  String get onboarding_pack_download_resume => 'Resume download';
+  String get onboarding_pack_paused_desc =>
+      'Progress is kept on disk — resuming picks up where it stopped.';
+  String get onboarding_pack_mini_bar_hide => 'Hide';
 }
 
 // Path: <root>
@@ -8190,16 +8377,12 @@ class _StringsAr extends _StringsEn {
   @override
   String get icon_default => 'افتراضي';
   @override
-  String get icon_full => 'كامل';
-  @override
   String get icon_shortcut_created => 'تم إنشاء اختصار على الشاشة الرئيسية.';
   @override
   String get icon_shortcut_unsupported =>
       'الاختصارات غير مدعومة على هذا الجهاز.';
   @override
   String get icon_switch_success => 'تم تغيير أيقونة التطبيق بنجاح.';
-  @override
-  String get icon_transparent => 'شفاف';
   @override
   String image_page_counter({required Object current, required Object total}) =>
       '${current} / ${total}';
@@ -15474,6 +15657,311 @@ class _StringsAr extends _StringsEn {
   @override
   String discovery_opds_test_failed({required Object reason}) =>
       'فشل الاتصال: ${reason}';
+  @override
+  String get anki_error_permission_permanently_denied =>
+      'AnkiDroid card access was permanently denied, so the system no longer shows the permission dialog. Open app settings and grant the AnkiDroid permission, then try again.';
+  @override
+  String get anki_error_ankidroid_unavailable =>
+      'AnkiDroid is not installed (or its API is disabled), so card access cannot be granted. Install AnkiDroid and enable its API, or switch to AnkiConnect.';
+  @override
+  String get anki_action_open_settings => 'Open settings';
+  @override
+  String onboarding_pack_pick_failed({required Object message}) =>
+      'Could not use the chosen file: ${message}';
+  @override
+  String get onboarding_pack_pick_no_path =>
+      'The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access.';
+  @override
+  String get interconnect_profile_section => 'Configuration file';
+  @override
+  String get interconnect_profile_upload => 'Upload configuration to host';
+  @override
+  String get interconnect_profile_upload_desc =>
+      'Send this device\'s active configuration to the paired host, where it lands as a new configuration.';
+  @override
+  String get interconnect_profile_download =>
+      'Download configuration from host';
+  @override
+  String get interconnect_profile_download_desc =>
+      'Import the host\'s active configuration as a new configuration here. Your current one is untouched.';
+  @override
+  String get interconnect_profile_host_toggle =>
+      'Allow paired devices to read/write configuration';
+  @override
+  String get interconnect_profile_host_toggle_desc =>
+      'Off by default. Requires HTTPS and a paired-device token. Incoming configurations are always added as new ones.';
+  @override
+  String interconnect_profile_uploaded({required Object name}) =>
+      'Configuration uploaded: ${name}';
+  @override
+  String interconnect_profile_downloaded({required Object name}) =>
+      'Configuration imported: ${name}';
+  @override
+  String get interconnect_profile_unsupported =>
+      'The paired host does not offer configuration transfer (needs HTTPS and a newer version).';
+  @override
+  String interconnect_profile_failed({required Object message}) =>
+      'Configuration transfer failed: ${message}';
+  @override
+  String get onboarding_pack_status_downloading =>
+      'Downloading recommended pack';
+  @override
+  String get onboarding_pack_status_ready => 'Recommended pack downloaded';
+  @override
+  String get onboarding_pack_import_now => 'Import now';
+  @override
+  String get onboarding_pack_download_finished =>
+      'Recommended pack finished downloading. Import it from Settings → System.';
+  @override
+  String get onboarding_pack_download_background_hint =>
+      'The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.';
+  @override
+  String get onboarding_anki_fsrs_title => 'Turn on FSRS in Anki';
+  @override
+  String get onboarding_anki_fsrs_body =>
+      'Anki has FSRS built in — one of the best spaced-repetition algorithms around — but it keeps scheduling with SM-2 from the 1980s until you turn FSRS on. FSRS reads your real review history and predicts when you are about to forget, so you keep the same retention with fewer reviews. You flip this switch once, inside Anki; nothing changes on the Fushi side.';
+  @override
+  String get onboarding_anki_fsrs_step_options_title => 'Open deck options';
+  @override
+  String get onboarding_anki_fsrs_step_options_desktop_desc =>
+      'In Anki, click the gear next to a deck and choose Options.';
+  @override
+  String get onboarding_anki_fsrs_step_options_mobile_desc =>
+      'In AnkiDroid (2.17 or newer) or AnkiMobile, long-press the deck and choose Options.';
+  @override
+  String get onboarding_anki_fsrs_step_toggle_title => 'Switch FSRS on';
+  @override
+  String get onboarding_anki_fsrs_step_toggle_desc =>
+      'Scroll to the FSRS section at the bottom of the options page (older builds hide it under Advanced) and turn the switch on. It applies to your whole collection, so once is enough.';
+  @override
+  String get onboarding_anki_fsrs_step_optimize_title => 'Optimize, then save';
+  @override
+  String get onboarding_anki_fsrs_step_optimize_desc =>
+      'Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while.';
+  @override
+  String get sync_desktop_oauth_waiting_title =>
+      'في انتظار تسجيل الدخول في المتصفح';
+  @override
+  String get sync_desktop_oauth_waiting_body =>
+      'تم فتح صفحة تسجيل الدخول في المتصفح الافتراضي. إذا لم يُفتح شيء أو ظهر خطأ في الصفحة، فانسخ الرابط وافتحه في متصفح آخر أو في نافذة خاصة.';
+  @override
+  String get sync_desktop_oauth_link_copy => 'نسخ رابط تسجيل الدخول';
+  @override
+  String get sync_desktop_oauth_browser_reopen => 'فتح المتصفح مرة أخرى';
+  @override
+  String get sync_err_sign_in_cancelled => 'تم إلغاء تسجيل الدخول.';
+  @override
+  String get sync_desktop_oauth_browser_open_failed =>
+      'تعذّر فتح المتصفح. انسخ الرابط وافتحه بنفسك في متصفح.';
+  @override
+  String get sync_desktop_oauth_link_copy_failed =>
+      'تعذّر نسخ الرابط. حدّد نص الرابط وانسخه يدويًا.';
+  @override
+  String get game_text_thread_artifact_hint =>
+      'Repeated-character artifact thread, no usable lines';
+  @override
+  String get shortcut_action_global_context_menu => 'Open context menu';
+  @override
+  String get shortcut_conflict_keep_both => 'Keep both';
+  @override
+  String get shortcut_conflict_keep_both_hint =>
+      'Both actions keep this binding. Whichever scope resolves first wins at press time.';
+  @override
+  String get video_specs_title => 'Media info';
+  @override
+  String get video_specs_resolution => 'Resolution';
+  @override
+  String get video_specs_dynamic_range => 'Dynamic range';
+  @override
+  String get video_specs_video_codec => 'Video codec';
+  @override
+  String get video_specs_bit_depth => 'Bit depth';
+  @override
+  String get video_specs_frame_rate => 'Frame rate';
+  @override
+  String get video_specs_bitrate => 'Bitrate';
+  @override
+  String get video_specs_audio_tracks => 'Audio tracks';
+  @override
+  String get video_specs_subtitle_tracks => 'Subtitle tracks';
+  @override
+  String get video_specs_track_commentary => 'Commentary';
+  @override
+  String get video_specs_track_forced => 'Forced';
+  @override
+  String get video_specs_track_default => 'Default';
+  @override
+  String get gal_mining_image_mode_video_clip => 'Video clip';
+  @override
+  String get gal_mining_image_mode_video_clip_hint =>
+      'Records the game window from the moment the line appears until you mine the card, mixed with the sentence audio. Falls back to an animated image or screenshot when recording has not started or fewer than 2 frames were captured.';
+  @override
+  String get game_hook_reason_native_loopback_ack_timeout =>
+      'The audio capture policy was not confirmed in time. Text capture still works; try again if game audio is missing.';
+  @override
+  String get shortcut_scope_global_external_desktop_note =>
+      'Mouse triggers accept side buttons only (back/forward). Other buttons keep their normal meaning in other apps, so they are rejected here.';
+  @override
+  String get shortcut_mouse_button_not_supported =>
+      'This action only accepts mouse side buttons (back/forward).';
+  @override
+  String get anki_ankimobile_opened =>
+      'AnkiMobile opened. Approve the request there, then return to Fushi.';
+  @override
+  String get anki_error_ankimobile_pasteboard_empty =>
+      'AnkiMobile did not return any configuration. Approve the request in AnkiMobile, then come back to Fushi.';
+  @override
+  String get anki_error_ankimobile_pasteboard_denied =>
+      'iOS blocked reading the clipboard. Choose Allow Paste when returning to Fushi, then try again.';
+  @override
+  String get anki_error_ankimobile_no_decks =>
+      'AnkiMobile returned no decks or note types.';
+  @override
+  String get anki_error_ankimobile_unavailable =>
+      'Could not open AnkiMobile. Install AnkiMobile and try again.';
+  @override
+  String get dictionary_collapse_follow_global => 'Follow global setting';
+  @override
+  String get anki_ankimobile_imported => 'AnkiMobile configuration imported.';
+  @override
+  String get anki_error_ankimobile_not_active =>
+      'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+  @override
+  String get audiobook_transcribe_action => 'Generate subtitles on device';
+  @override
+  String get audiobook_transcribe_title => 'On-device transcription';
+  @override
+  String audiobook_transcribe_model_download_needed({required Object size}) =>
+      'Model download required: ${size}';
+  @override
+  String get audiobook_transcribe_model_download => 'Download model';
+  @override
+  String audiobook_transcribe_model_downloading(
+          {required Object name,
+          required Object received,
+          required Object total}) =>
+      'Downloading ${name}… ${received} / ${total}';
+  @override
+  String audiobook_transcribe_model_ready({required Object variant}) =>
+      'Model ready (${variant})';
+  @override
+  String get audiobook_transcribe_accel_label => 'Acceleration';
+  @override
+  String get audiobook_transcribe_accel_auto => 'Auto (GPU when available)';
+  @override
+  String get audiobook_transcribe_accel_cpu => 'CPU only';
+  @override
+  String audiobook_transcribe_running_on({required Object provider}) =>
+      'Running on ${provider}';
+  @override
+  String audiobook_transcribe_fallback({required Object reason}) =>
+      'GPU unavailable, fell back to CPU: ${reason}';
+  @override
+  String get audiobook_transcribe_start => 'Start transcription';
+  @override
+  String get audiobook_transcribe_resume => 'Resume transcription';
+  @override
+  String get audiobook_transcribe_pause => 'Pause';
+  @override
+  String get audiobook_transcribe_pausing => 'Pausing at the next checkpoint…';
+  @override
+  String get audiobook_transcribe_discard => 'Discard progress';
+  @override
+  String get audiobook_transcribe_use_result => 'Use subtitles';
+  @override
+  String audiobook_transcribe_progress(
+          {required Object done,
+          required Object total,
+          required Object file,
+          required Object files}) =>
+      '${done} / ${total} · file ${file}/${files}';
+  @override
+  String audiobook_transcribe_speed(
+          {required Object elapsed,
+          required Object eta,
+          required Object speed}) =>
+      'Elapsed ${elapsed} · remaining ${eta} · ${speed}× realtime';
+  @override
+  String audiobook_transcribe_done(
+          {required Object cues, required Object segments}) =>
+      'Done: ${cues} cues from ${segments} speech segments';
+  @override
+  String audiobook_transcribe_failed({required Object error}) =>
+      'Transcription failed: ${error}';
+  @override
+  String get audiobook_transcribe_needs_audio => 'Pick audio files first';
+  @override
+  String get audiobook_transcribe_result_name =>
+      'Generated by on-device transcription';
+  @override
+  String get audiobook_transcribe_paused_hint =>
+      'Progress is saved. Pick the same audio files later to resume.';
+  @override
+  String get audiobook_transcribe_unavailable =>
+      'On-device transcription is not available on this platform';
+  @override
+  String get audiobook_transcribe_preparing => 'Loading model…';
+  @override
+  String get audiobook_transcribe_export => 'Export subtitle file';
+  @override
+  String get audiobook_transcribe_export_saved => 'Subtitle file saved';
+  @override
+  String get audiobook_subtitle_source_title => 'Subtitle source';
+  @override
+  String get audiobook_subtitle_source_transcribe_hint =>
+      'Generate from the selected audio with the on-device speech model';
+  @override
+  String get audiobook_transcribe_intro =>
+      'Transcribes the audio locally with an on-device speech model for the selected language and generates subtitles for alignment. Nothing is uploaded.';
+  @override
+  String get audiobook_transcribe_language_label => 'Speech language';
+  @override
+  String get audiobook_transcribe_language_ja => 'Japanese';
+  @override
+  String get audiobook_transcribe_language_en => 'English';
+  @override
+  String get asr_models_section => 'Speech recognition models';
+  @override
+  String get asr_models_section_summary =>
+      'Models for on-device audiobook transcription. Download only the languages you need.';
+  @override
+  String asr_models_status_ready({required Object size}) =>
+      'Downloaded · ${size} on disk';
+  @override
+  String asr_models_status_partial(
+          {required Object obtained, required Object total}) =>
+      'Partially downloaded · ${obtained} / ${total}';
+  @override
+  String asr_models_status_missing({required Object size}) =>
+      'Not downloaded · ${size}';
+  @override
+  String get asr_models_download => 'Download';
+  @override
+  String get asr_models_delete => 'Delete';
+  @override
+  String get asr_models_delete_confirm_title => 'Delete this model?';
+  @override
+  String get asr_models_delete_confirm_message =>
+      'Transcription in this language will need the model downloaded again.';
+  @override
+  String asr_models_delete_done_freed({required Object size}) =>
+      'Deleted, freed ${size}';
+  @override
+  String asr_models_download_failed({required Object error}) =>
+      'Download failed: ${error}';
+  @override
+  String audiobook_transcribe_probe_failed({required Object reason}) =>
+      'GPU detection failed, planning for CPU: ${reason}';
+  @override
+  String get onboarding_pack_status_paused =>
+      'Recommended pack download paused';
+  @override
+  String get onboarding_pack_download_resume => 'Resume download';
+  @override
+  String get onboarding_pack_paused_desc =>
+      'Progress is kept on disk — resuming picks up where it stopped.';
+  @override
+  String get onboarding_pack_mini_bar_hide => 'Hide';
 }
 
 // Path: <root>
@@ -17991,16 +18479,12 @@ class _StringsDe extends _StringsEn {
   @override
   String get icon_default => 'Standard';
   @override
-  String get icon_full => 'Vollständig';
-  @override
   String get icon_shortcut_created => 'Startbildschirm-Verknüpfung erstellt.';
   @override
   String get icon_shortcut_unsupported =>
       'Verknüpfungen werden auf diesem Gerät nicht unterstützt.';
   @override
   String get icon_switch_success => 'App-Symbol erfolgreich geändert.';
-  @override
-  String get icon_transparent => 'Transparent';
   @override
   String image_page_counter({required Object current, required Object total}) =>
       '${current} / ${total}';
@@ -25441,6 +25925,311 @@ class _StringsDe extends _StringsEn {
   @override
   String discovery_opds_test_failed({required Object reason}) =>
       'Verbindung fehlgeschlagen: ${reason}';
+  @override
+  String get anki_error_permission_permanently_denied =>
+      'AnkiDroid card access was permanently denied, so the system no longer shows the permission dialog. Open app settings and grant the AnkiDroid permission, then try again.';
+  @override
+  String get anki_error_ankidroid_unavailable =>
+      'AnkiDroid is not installed (or its API is disabled), so card access cannot be granted. Install AnkiDroid and enable its API, or switch to AnkiConnect.';
+  @override
+  String get anki_action_open_settings => 'Open settings';
+  @override
+  String onboarding_pack_pick_failed({required Object message}) =>
+      'Could not use the chosen file: ${message}';
+  @override
+  String get onboarding_pack_pick_no_path =>
+      'The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access.';
+  @override
+  String get interconnect_profile_section => 'Configuration file';
+  @override
+  String get interconnect_profile_upload => 'Upload configuration to host';
+  @override
+  String get interconnect_profile_upload_desc =>
+      'Send this device\'s active configuration to the paired host, where it lands as a new configuration.';
+  @override
+  String get interconnect_profile_download =>
+      'Download configuration from host';
+  @override
+  String get interconnect_profile_download_desc =>
+      'Import the host\'s active configuration as a new configuration here. Your current one is untouched.';
+  @override
+  String get interconnect_profile_host_toggle =>
+      'Allow paired devices to read/write configuration';
+  @override
+  String get interconnect_profile_host_toggle_desc =>
+      'Off by default. Requires HTTPS and a paired-device token. Incoming configurations are always added as new ones.';
+  @override
+  String interconnect_profile_uploaded({required Object name}) =>
+      'Configuration uploaded: ${name}';
+  @override
+  String interconnect_profile_downloaded({required Object name}) =>
+      'Configuration imported: ${name}';
+  @override
+  String get interconnect_profile_unsupported =>
+      'The paired host does not offer configuration transfer (needs HTTPS and a newer version).';
+  @override
+  String interconnect_profile_failed({required Object message}) =>
+      'Configuration transfer failed: ${message}';
+  @override
+  String get onboarding_pack_status_downloading =>
+      'Downloading recommended pack';
+  @override
+  String get onboarding_pack_status_ready => 'Recommended pack downloaded';
+  @override
+  String get onboarding_pack_import_now => 'Import now';
+  @override
+  String get onboarding_pack_download_finished =>
+      'Recommended pack finished downloading. Import it from Settings → System.';
+  @override
+  String get onboarding_pack_download_background_hint =>
+      'The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.';
+  @override
+  String get onboarding_anki_fsrs_title => 'Turn on FSRS in Anki';
+  @override
+  String get onboarding_anki_fsrs_body =>
+      'Anki has FSRS built in — one of the best spaced-repetition algorithms around — but it keeps scheduling with SM-2 from the 1980s until you turn FSRS on. FSRS reads your real review history and predicts when you are about to forget, so you keep the same retention with fewer reviews. You flip this switch once, inside Anki; nothing changes on the Fushi side.';
+  @override
+  String get onboarding_anki_fsrs_step_options_title => 'Open deck options';
+  @override
+  String get onboarding_anki_fsrs_step_options_desktop_desc =>
+      'In Anki, click the gear next to a deck and choose Options.';
+  @override
+  String get onboarding_anki_fsrs_step_options_mobile_desc =>
+      'In AnkiDroid (2.17 or newer) or AnkiMobile, long-press the deck and choose Options.';
+  @override
+  String get onboarding_anki_fsrs_step_toggle_title => 'Switch FSRS on';
+  @override
+  String get onboarding_anki_fsrs_step_toggle_desc =>
+      'Scroll to the FSRS section at the bottom of the options page (older builds hide it under Advanced) and turn the switch on. It applies to your whole collection, so once is enough.';
+  @override
+  String get onboarding_anki_fsrs_step_optimize_title => 'Optimize, then save';
+  @override
+  String get onboarding_anki_fsrs_step_optimize_desc =>
+      'Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while.';
+  @override
+  String get sync_desktop_oauth_waiting_title =>
+      'Warten auf die Anmeldung im Browser';
+  @override
+  String get sync_desktop_oauth_waiting_body =>
+      'Die Anmeldeseite wurde im Standardbrowser geöffnet. Falls nichts geöffnet wurde oder die Seite einen Fehler zeigt, kopiere den Link und öffne ihn in einem anderen Browser oder einem privaten Fenster.';
+  @override
+  String get sync_desktop_oauth_link_copy => 'Anmeldelink kopieren';
+  @override
+  String get sync_desktop_oauth_browser_reopen => 'Browser erneut öffnen';
+  @override
+  String get sync_err_sign_in_cancelled => 'Anmeldung abgebrochen.';
+  @override
+  String get sync_desktop_oauth_browser_open_failed =>
+      'Der Browser konnte nicht geöffnet werden. Kopiere den Link und öffne ihn selbst in einem Browser.';
+  @override
+  String get sync_desktop_oauth_link_copy_failed =>
+      'Der Link konnte nicht kopiert werden. Markiere den Linktext und kopiere ihn manuell.';
+  @override
+  String get game_text_thread_artifact_hint =>
+      'Repeated-character artifact thread, no usable lines';
+  @override
+  String get shortcut_action_global_context_menu => 'Open context menu';
+  @override
+  String get shortcut_conflict_keep_both => 'Keep both';
+  @override
+  String get shortcut_conflict_keep_both_hint =>
+      'Both actions keep this binding. Whichever scope resolves first wins at press time.';
+  @override
+  String get video_specs_title => 'Media info';
+  @override
+  String get video_specs_resolution => 'Resolution';
+  @override
+  String get video_specs_dynamic_range => 'Dynamic range';
+  @override
+  String get video_specs_video_codec => 'Video codec';
+  @override
+  String get video_specs_bit_depth => 'Bit depth';
+  @override
+  String get video_specs_frame_rate => 'Frame rate';
+  @override
+  String get video_specs_bitrate => 'Bitrate';
+  @override
+  String get video_specs_audio_tracks => 'Audio tracks';
+  @override
+  String get video_specs_subtitle_tracks => 'Subtitle tracks';
+  @override
+  String get video_specs_track_commentary => 'Commentary';
+  @override
+  String get video_specs_track_forced => 'Forced';
+  @override
+  String get video_specs_track_default => 'Default';
+  @override
+  String get gal_mining_image_mode_video_clip => 'Video clip';
+  @override
+  String get gal_mining_image_mode_video_clip_hint =>
+      'Records the game window from the moment the line appears until you mine the card, mixed with the sentence audio. Falls back to an animated image or screenshot when recording has not started or fewer than 2 frames were captured.';
+  @override
+  String get game_hook_reason_native_loopback_ack_timeout =>
+      'The audio capture policy was not confirmed in time. Text capture still works; try again if game audio is missing.';
+  @override
+  String get shortcut_scope_global_external_desktop_note =>
+      'Mouse triggers accept side buttons only (back/forward). Other buttons keep their normal meaning in other apps, so they are rejected here.';
+  @override
+  String get shortcut_mouse_button_not_supported =>
+      'This action only accepts mouse side buttons (back/forward).';
+  @override
+  String get anki_ankimobile_opened =>
+      'AnkiMobile opened. Approve the request there, then return to Fushi.';
+  @override
+  String get anki_error_ankimobile_pasteboard_empty =>
+      'AnkiMobile did not return any configuration. Approve the request in AnkiMobile, then come back to Fushi.';
+  @override
+  String get anki_error_ankimobile_pasteboard_denied =>
+      'iOS blocked reading the clipboard. Choose Allow Paste when returning to Fushi, then try again.';
+  @override
+  String get anki_error_ankimobile_no_decks =>
+      'AnkiMobile returned no decks or note types.';
+  @override
+  String get anki_error_ankimobile_unavailable =>
+      'Could not open AnkiMobile. Install AnkiMobile and try again.';
+  @override
+  String get dictionary_collapse_follow_global => 'Follow global setting';
+  @override
+  String get anki_ankimobile_imported => 'AnkiMobile configuration imported.';
+  @override
+  String get anki_error_ankimobile_not_active =>
+      'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+  @override
+  String get audiobook_transcribe_action => 'Generate subtitles on device';
+  @override
+  String get audiobook_transcribe_title => 'On-device transcription';
+  @override
+  String audiobook_transcribe_model_download_needed({required Object size}) =>
+      'Model download required: ${size}';
+  @override
+  String get audiobook_transcribe_model_download => 'Download model';
+  @override
+  String audiobook_transcribe_model_downloading(
+          {required Object name,
+          required Object received,
+          required Object total}) =>
+      'Downloading ${name}… ${received} / ${total}';
+  @override
+  String audiobook_transcribe_model_ready({required Object variant}) =>
+      'Model ready (${variant})';
+  @override
+  String get audiobook_transcribe_accel_label => 'Acceleration';
+  @override
+  String get audiobook_transcribe_accel_auto => 'Auto (GPU when available)';
+  @override
+  String get audiobook_transcribe_accel_cpu => 'CPU only';
+  @override
+  String audiobook_transcribe_running_on({required Object provider}) =>
+      'Running on ${provider}';
+  @override
+  String audiobook_transcribe_fallback({required Object reason}) =>
+      'GPU unavailable, fell back to CPU: ${reason}';
+  @override
+  String get audiobook_transcribe_start => 'Start transcription';
+  @override
+  String get audiobook_transcribe_resume => 'Resume transcription';
+  @override
+  String get audiobook_transcribe_pause => 'Pause';
+  @override
+  String get audiobook_transcribe_pausing => 'Pausing at the next checkpoint…';
+  @override
+  String get audiobook_transcribe_discard => 'Discard progress';
+  @override
+  String get audiobook_transcribe_use_result => 'Use subtitles';
+  @override
+  String audiobook_transcribe_progress(
+          {required Object done,
+          required Object total,
+          required Object file,
+          required Object files}) =>
+      '${done} / ${total} · file ${file}/${files}';
+  @override
+  String audiobook_transcribe_speed(
+          {required Object elapsed,
+          required Object eta,
+          required Object speed}) =>
+      'Elapsed ${elapsed} · remaining ${eta} · ${speed}× realtime';
+  @override
+  String audiobook_transcribe_done(
+          {required Object cues, required Object segments}) =>
+      'Done: ${cues} cues from ${segments} speech segments';
+  @override
+  String audiobook_transcribe_failed({required Object error}) =>
+      'Transcription failed: ${error}';
+  @override
+  String get audiobook_transcribe_needs_audio => 'Pick audio files first';
+  @override
+  String get audiobook_transcribe_result_name =>
+      'Generated by on-device transcription';
+  @override
+  String get audiobook_transcribe_paused_hint =>
+      'Progress is saved. Pick the same audio files later to resume.';
+  @override
+  String get audiobook_transcribe_unavailable =>
+      'On-device transcription is not available on this platform';
+  @override
+  String get audiobook_transcribe_preparing => 'Loading model…';
+  @override
+  String get audiobook_transcribe_export => 'Export subtitle file';
+  @override
+  String get audiobook_transcribe_export_saved => 'Subtitle file saved';
+  @override
+  String get audiobook_subtitle_source_title => 'Subtitle source';
+  @override
+  String get audiobook_subtitle_source_transcribe_hint =>
+      'Generate from the selected audio with the on-device speech model';
+  @override
+  String get audiobook_transcribe_intro =>
+      'Transcribes the audio locally with an on-device speech model for the selected language and generates subtitles for alignment. Nothing is uploaded.';
+  @override
+  String get audiobook_transcribe_language_label => 'Speech language';
+  @override
+  String get audiobook_transcribe_language_ja => 'Japanese';
+  @override
+  String get audiobook_transcribe_language_en => 'English';
+  @override
+  String get asr_models_section => 'Speech recognition models';
+  @override
+  String get asr_models_section_summary =>
+      'Models for on-device audiobook transcription. Download only the languages you need.';
+  @override
+  String asr_models_status_ready({required Object size}) =>
+      'Downloaded · ${size} on disk';
+  @override
+  String asr_models_status_partial(
+          {required Object obtained, required Object total}) =>
+      'Partially downloaded · ${obtained} / ${total}';
+  @override
+  String asr_models_status_missing({required Object size}) =>
+      'Not downloaded · ${size}';
+  @override
+  String get asr_models_download => 'Download';
+  @override
+  String get asr_models_delete => 'Delete';
+  @override
+  String get asr_models_delete_confirm_title => 'Delete this model?';
+  @override
+  String get asr_models_delete_confirm_message =>
+      'Transcription in this language will need the model downloaded again.';
+  @override
+  String asr_models_delete_done_freed({required Object size}) =>
+      'Deleted, freed ${size}';
+  @override
+  String asr_models_download_failed({required Object error}) =>
+      'Download failed: ${error}';
+  @override
+  String audiobook_transcribe_probe_failed({required Object reason}) =>
+      'GPU detection failed, planning for CPU: ${reason}';
+  @override
+  String get onboarding_pack_status_paused =>
+      'Recommended pack download paused';
+  @override
+  String get onboarding_pack_download_resume => 'Resume download';
+  @override
+  String get onboarding_pack_paused_desc =>
+      'Progress is kept on disk — resuming picks up where it stopped.';
+  @override
+  String get onboarding_pack_mini_bar_hide => 'Hide';
 }
 
 // Path: <root>
@@ -27960,8 +28749,6 @@ class _StringsEs extends _StringsEn {
   @override
   String get icon_default => 'Predeterminado';
   @override
-  String get icon_full => 'Completo';
-  @override
   String get icon_shortcut_created =>
       'Acceso directo creado en la pantalla de inicio.';
   @override
@@ -27969,8 +28756,6 @@ class _StringsEs extends _StringsEn {
       'Los accesos directos no son compatibles con este dispositivo.';
   @override
   String get icon_switch_success => 'Icono de la app cambiado correctamente.';
-  @override
-  String get icon_transparent => 'Transparente';
   @override
   String image_page_counter({required Object current, required Object total}) =>
       '${current} / ${total}';
@@ -35460,6 +36245,312 @@ class _StringsEs extends _StringsEn {
   @override
   String discovery_opds_test_failed({required Object reason}) =>
       'Error de conexión: ${reason}';
+  @override
+  String get anki_error_permission_permanently_denied =>
+      'AnkiDroid card access was permanently denied, so the system no longer shows the permission dialog. Open app settings and grant the AnkiDroid permission, then try again.';
+  @override
+  String get anki_error_ankidroid_unavailable =>
+      'AnkiDroid is not installed (or its API is disabled), so card access cannot be granted. Install AnkiDroid and enable its API, or switch to AnkiConnect.';
+  @override
+  String get anki_action_open_settings => 'Open settings';
+  @override
+  String onboarding_pack_pick_failed({required Object message}) =>
+      'Could not use the chosen file: ${message}';
+  @override
+  String get onboarding_pack_pick_no_path =>
+      'The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access.';
+  @override
+  String get interconnect_profile_section => 'Configuration file';
+  @override
+  String get interconnect_profile_upload => 'Upload configuration to host';
+  @override
+  String get interconnect_profile_upload_desc =>
+      'Send this device\'s active configuration to the paired host, where it lands as a new configuration.';
+  @override
+  String get interconnect_profile_download =>
+      'Download configuration from host';
+  @override
+  String get interconnect_profile_download_desc =>
+      'Import the host\'s active configuration as a new configuration here. Your current one is untouched.';
+  @override
+  String get interconnect_profile_host_toggle =>
+      'Allow paired devices to read/write configuration';
+  @override
+  String get interconnect_profile_host_toggle_desc =>
+      'Off by default. Requires HTTPS and a paired-device token. Incoming configurations are always added as new ones.';
+  @override
+  String interconnect_profile_uploaded({required Object name}) =>
+      'Configuration uploaded: ${name}';
+  @override
+  String interconnect_profile_downloaded({required Object name}) =>
+      'Configuration imported: ${name}';
+  @override
+  String get interconnect_profile_unsupported =>
+      'The paired host does not offer configuration transfer (needs HTTPS and a newer version).';
+  @override
+  String interconnect_profile_failed({required Object message}) =>
+      'Configuration transfer failed: ${message}';
+  @override
+  String get onboarding_pack_status_downloading =>
+      'Downloading recommended pack';
+  @override
+  String get onboarding_pack_status_ready => 'Recommended pack downloaded';
+  @override
+  String get onboarding_pack_import_now => 'Import now';
+  @override
+  String get onboarding_pack_download_finished =>
+      'Recommended pack finished downloading. Import it from Settings → System.';
+  @override
+  String get onboarding_pack_download_background_hint =>
+      'The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.';
+  @override
+  String get onboarding_anki_fsrs_title => 'Turn on FSRS in Anki';
+  @override
+  String get onboarding_anki_fsrs_body =>
+      'Anki has FSRS built in — one of the best spaced-repetition algorithms around — but it keeps scheduling with SM-2 from the 1980s until you turn FSRS on. FSRS reads your real review history and predicts when you are about to forget, so you keep the same retention with fewer reviews. You flip this switch once, inside Anki; nothing changes on the Fushi side.';
+  @override
+  String get onboarding_anki_fsrs_step_options_title => 'Open deck options';
+  @override
+  String get onboarding_anki_fsrs_step_options_desktop_desc =>
+      'In Anki, click the gear next to a deck and choose Options.';
+  @override
+  String get onboarding_anki_fsrs_step_options_mobile_desc =>
+      'In AnkiDroid (2.17 or newer) or AnkiMobile, long-press the deck and choose Options.';
+  @override
+  String get onboarding_anki_fsrs_step_toggle_title => 'Switch FSRS on';
+  @override
+  String get onboarding_anki_fsrs_step_toggle_desc =>
+      'Scroll to the FSRS section at the bottom of the options page (older builds hide it under Advanced) and turn the switch on. It applies to your whole collection, so once is enough.';
+  @override
+  String get onboarding_anki_fsrs_step_optimize_title => 'Optimize, then save';
+  @override
+  String get onboarding_anki_fsrs_step_optimize_desc =>
+      'Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while.';
+  @override
+  String get sync_desktop_oauth_waiting_title =>
+      'Esperando el inicio de sesión en el navegador';
+  @override
+  String get sync_desktop_oauth_waiting_body =>
+      'La página de inicio de sesión se abrió en tu navegador predeterminado. Si no se abrió nada o la página muestra un error, copia el enlace y ábrelo en otro navegador o en una ventana privada.';
+  @override
+  String get sync_desktop_oauth_link_copy =>
+      'Copiar enlace de inicio de sesión';
+  @override
+  String get sync_desktop_oauth_browser_reopen => 'Abrir el navegador de nuevo';
+  @override
+  String get sync_err_sign_in_cancelled => 'Inicio de sesión cancelado.';
+  @override
+  String get sync_desktop_oauth_browser_open_failed =>
+      'No se pudo abrir el navegador. Copia el enlace y ábrelo tú mismo en un navegador.';
+  @override
+  String get sync_desktop_oauth_link_copy_failed =>
+      'No se pudo copiar el enlace. Selecciona el texto del enlace y cópialo manualmente.';
+  @override
+  String get game_text_thread_artifact_hint =>
+      'Repeated-character artifact thread, no usable lines';
+  @override
+  String get shortcut_action_global_context_menu => 'Open context menu';
+  @override
+  String get shortcut_conflict_keep_both => 'Keep both';
+  @override
+  String get shortcut_conflict_keep_both_hint =>
+      'Both actions keep this binding. Whichever scope resolves first wins at press time.';
+  @override
+  String get video_specs_title => 'Media info';
+  @override
+  String get video_specs_resolution => 'Resolution';
+  @override
+  String get video_specs_dynamic_range => 'Dynamic range';
+  @override
+  String get video_specs_video_codec => 'Video codec';
+  @override
+  String get video_specs_bit_depth => 'Bit depth';
+  @override
+  String get video_specs_frame_rate => 'Frame rate';
+  @override
+  String get video_specs_bitrate => 'Bitrate';
+  @override
+  String get video_specs_audio_tracks => 'Audio tracks';
+  @override
+  String get video_specs_subtitle_tracks => 'Subtitle tracks';
+  @override
+  String get video_specs_track_commentary => 'Commentary';
+  @override
+  String get video_specs_track_forced => 'Forced';
+  @override
+  String get video_specs_track_default => 'Default';
+  @override
+  String get gal_mining_image_mode_video_clip => 'Video clip';
+  @override
+  String get gal_mining_image_mode_video_clip_hint =>
+      'Records the game window from the moment the line appears until you mine the card, mixed with the sentence audio. Falls back to an animated image or screenshot when recording has not started or fewer than 2 frames were captured.';
+  @override
+  String get game_hook_reason_native_loopback_ack_timeout =>
+      'The audio capture policy was not confirmed in time. Text capture still works; try again if game audio is missing.';
+  @override
+  String get shortcut_scope_global_external_desktop_note =>
+      'Mouse triggers accept side buttons only (back/forward). Other buttons keep their normal meaning in other apps, so they are rejected here.';
+  @override
+  String get shortcut_mouse_button_not_supported =>
+      'This action only accepts mouse side buttons (back/forward).';
+  @override
+  String get anki_ankimobile_opened =>
+      'AnkiMobile opened. Approve the request there, then return to Fushi.';
+  @override
+  String get anki_error_ankimobile_pasteboard_empty =>
+      'AnkiMobile did not return any configuration. Approve the request in AnkiMobile, then come back to Fushi.';
+  @override
+  String get anki_error_ankimobile_pasteboard_denied =>
+      'iOS blocked reading the clipboard. Choose Allow Paste when returning to Fushi, then try again.';
+  @override
+  String get anki_error_ankimobile_no_decks =>
+      'AnkiMobile returned no decks or note types.';
+  @override
+  String get anki_error_ankimobile_unavailable =>
+      'Could not open AnkiMobile. Install AnkiMobile and try again.';
+  @override
+  String get dictionary_collapse_follow_global => 'Follow global setting';
+  @override
+  String get anki_ankimobile_imported => 'AnkiMobile configuration imported.';
+  @override
+  String get anki_error_ankimobile_not_active =>
+      'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+  @override
+  String get audiobook_transcribe_action => 'Generate subtitles on device';
+  @override
+  String get audiobook_transcribe_title => 'On-device transcription';
+  @override
+  String audiobook_transcribe_model_download_needed({required Object size}) =>
+      'Model download required: ${size}';
+  @override
+  String get audiobook_transcribe_model_download => 'Download model';
+  @override
+  String audiobook_transcribe_model_downloading(
+          {required Object name,
+          required Object received,
+          required Object total}) =>
+      'Downloading ${name}… ${received} / ${total}';
+  @override
+  String audiobook_transcribe_model_ready({required Object variant}) =>
+      'Model ready (${variant})';
+  @override
+  String get audiobook_transcribe_accel_label => 'Acceleration';
+  @override
+  String get audiobook_transcribe_accel_auto => 'Auto (GPU when available)';
+  @override
+  String get audiobook_transcribe_accel_cpu => 'CPU only';
+  @override
+  String audiobook_transcribe_running_on({required Object provider}) =>
+      'Running on ${provider}';
+  @override
+  String audiobook_transcribe_fallback({required Object reason}) =>
+      'GPU unavailable, fell back to CPU: ${reason}';
+  @override
+  String get audiobook_transcribe_start => 'Start transcription';
+  @override
+  String get audiobook_transcribe_resume => 'Resume transcription';
+  @override
+  String get audiobook_transcribe_pause => 'Pause';
+  @override
+  String get audiobook_transcribe_pausing => 'Pausing at the next checkpoint…';
+  @override
+  String get audiobook_transcribe_discard => 'Discard progress';
+  @override
+  String get audiobook_transcribe_use_result => 'Use subtitles';
+  @override
+  String audiobook_transcribe_progress(
+          {required Object done,
+          required Object total,
+          required Object file,
+          required Object files}) =>
+      '${done} / ${total} · file ${file}/${files}';
+  @override
+  String audiobook_transcribe_speed(
+          {required Object elapsed,
+          required Object eta,
+          required Object speed}) =>
+      'Elapsed ${elapsed} · remaining ${eta} · ${speed}× realtime';
+  @override
+  String audiobook_transcribe_done(
+          {required Object cues, required Object segments}) =>
+      'Done: ${cues} cues from ${segments} speech segments';
+  @override
+  String audiobook_transcribe_failed({required Object error}) =>
+      'Transcription failed: ${error}';
+  @override
+  String get audiobook_transcribe_needs_audio => 'Pick audio files first';
+  @override
+  String get audiobook_transcribe_result_name =>
+      'Generated by on-device transcription';
+  @override
+  String get audiobook_transcribe_paused_hint =>
+      'Progress is saved. Pick the same audio files later to resume.';
+  @override
+  String get audiobook_transcribe_unavailable =>
+      'On-device transcription is not available on this platform';
+  @override
+  String get audiobook_transcribe_preparing => 'Loading model…';
+  @override
+  String get audiobook_transcribe_export => 'Export subtitle file';
+  @override
+  String get audiobook_transcribe_export_saved => 'Subtitle file saved';
+  @override
+  String get audiobook_subtitle_source_title => 'Subtitle source';
+  @override
+  String get audiobook_subtitle_source_transcribe_hint =>
+      'Generate from the selected audio with the on-device speech model';
+  @override
+  String get audiobook_transcribe_intro =>
+      'Transcribes the audio locally with an on-device speech model for the selected language and generates subtitles for alignment. Nothing is uploaded.';
+  @override
+  String get audiobook_transcribe_language_label => 'Speech language';
+  @override
+  String get audiobook_transcribe_language_ja => 'Japanese';
+  @override
+  String get audiobook_transcribe_language_en => 'English';
+  @override
+  String get asr_models_section => 'Speech recognition models';
+  @override
+  String get asr_models_section_summary =>
+      'Models for on-device audiobook transcription. Download only the languages you need.';
+  @override
+  String asr_models_status_ready({required Object size}) =>
+      'Downloaded · ${size} on disk';
+  @override
+  String asr_models_status_partial(
+          {required Object obtained, required Object total}) =>
+      'Partially downloaded · ${obtained} / ${total}';
+  @override
+  String asr_models_status_missing({required Object size}) =>
+      'Not downloaded · ${size}';
+  @override
+  String get asr_models_download => 'Download';
+  @override
+  String get asr_models_delete => 'Delete';
+  @override
+  String get asr_models_delete_confirm_title => 'Delete this model?';
+  @override
+  String get asr_models_delete_confirm_message =>
+      'Transcription in this language will need the model downloaded again.';
+  @override
+  String asr_models_delete_done_freed({required Object size}) =>
+      'Deleted, freed ${size}';
+  @override
+  String asr_models_download_failed({required Object error}) =>
+      'Download failed: ${error}';
+  @override
+  String audiobook_transcribe_probe_failed({required Object reason}) =>
+      'GPU detection failed, planning for CPU: ${reason}';
+  @override
+  String get onboarding_pack_status_paused =>
+      'Recommended pack download paused';
+  @override
+  String get onboarding_pack_download_resume => 'Resume download';
+  @override
+  String get onboarding_pack_paused_desc =>
+      'Progress is kept on disk — resuming picks up where it stopped.';
+  @override
+  String get onboarding_pack_mini_bar_hide => 'Hide';
 }
 
 // Path: <root>
@@ -37989,8 +39080,6 @@ class _StringsFr extends _StringsEn {
   @override
   String get icon_default => 'Par défaut';
   @override
-  String get icon_full => 'Complet';
-  @override
   String get icon_shortcut_created => 'Raccourci de l\'écran d\'accueil créé.';
   @override
   String get icon_shortcut_unsupported =>
@@ -37998,8 +39087,6 @@ class _StringsFr extends _StringsEn {
   @override
   String get icon_switch_success =>
       'Icône de l\'application modifiée avec succès.';
-  @override
-  String get icon_transparent => 'Transparent';
   @override
   String image_page_counter({required Object current, required Object total}) =>
       '${current} / ${total}';
@@ -45514,6 +46601,311 @@ class _StringsFr extends _StringsEn {
   @override
   String discovery_opds_test_failed({required Object reason}) =>
       'Échec de la connexion : ${reason}';
+  @override
+  String get anki_error_permission_permanently_denied =>
+      'AnkiDroid card access was permanently denied, so the system no longer shows the permission dialog. Open app settings and grant the AnkiDroid permission, then try again.';
+  @override
+  String get anki_error_ankidroid_unavailable =>
+      'AnkiDroid is not installed (or its API is disabled), so card access cannot be granted. Install AnkiDroid and enable its API, or switch to AnkiConnect.';
+  @override
+  String get anki_action_open_settings => 'Open settings';
+  @override
+  String onboarding_pack_pick_failed({required Object message}) =>
+      'Could not use the chosen file: ${message}';
+  @override
+  String get onboarding_pack_pick_no_path =>
+      'The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access.';
+  @override
+  String get interconnect_profile_section => 'Configuration file';
+  @override
+  String get interconnect_profile_upload => 'Upload configuration to host';
+  @override
+  String get interconnect_profile_upload_desc =>
+      'Send this device\'s active configuration to the paired host, where it lands as a new configuration.';
+  @override
+  String get interconnect_profile_download =>
+      'Download configuration from host';
+  @override
+  String get interconnect_profile_download_desc =>
+      'Import the host\'s active configuration as a new configuration here. Your current one is untouched.';
+  @override
+  String get interconnect_profile_host_toggle =>
+      'Allow paired devices to read/write configuration';
+  @override
+  String get interconnect_profile_host_toggle_desc =>
+      'Off by default. Requires HTTPS and a paired-device token. Incoming configurations are always added as new ones.';
+  @override
+  String interconnect_profile_uploaded({required Object name}) =>
+      'Configuration uploaded: ${name}';
+  @override
+  String interconnect_profile_downloaded({required Object name}) =>
+      'Configuration imported: ${name}';
+  @override
+  String get interconnect_profile_unsupported =>
+      'The paired host does not offer configuration transfer (needs HTTPS and a newer version).';
+  @override
+  String interconnect_profile_failed({required Object message}) =>
+      'Configuration transfer failed: ${message}';
+  @override
+  String get onboarding_pack_status_downloading =>
+      'Downloading recommended pack';
+  @override
+  String get onboarding_pack_status_ready => 'Recommended pack downloaded';
+  @override
+  String get onboarding_pack_import_now => 'Import now';
+  @override
+  String get onboarding_pack_download_finished =>
+      'Recommended pack finished downloading. Import it from Settings → System.';
+  @override
+  String get onboarding_pack_download_background_hint =>
+      'The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.';
+  @override
+  String get onboarding_anki_fsrs_title => 'Turn on FSRS in Anki';
+  @override
+  String get onboarding_anki_fsrs_body =>
+      'Anki has FSRS built in — one of the best spaced-repetition algorithms around — but it keeps scheduling with SM-2 from the 1980s until you turn FSRS on. FSRS reads your real review history and predicts when you are about to forget, so you keep the same retention with fewer reviews. You flip this switch once, inside Anki; nothing changes on the Fushi side.';
+  @override
+  String get onboarding_anki_fsrs_step_options_title => 'Open deck options';
+  @override
+  String get onboarding_anki_fsrs_step_options_desktop_desc =>
+      'In Anki, click the gear next to a deck and choose Options.';
+  @override
+  String get onboarding_anki_fsrs_step_options_mobile_desc =>
+      'In AnkiDroid (2.17 or newer) or AnkiMobile, long-press the deck and choose Options.';
+  @override
+  String get onboarding_anki_fsrs_step_toggle_title => 'Switch FSRS on';
+  @override
+  String get onboarding_anki_fsrs_step_toggle_desc =>
+      'Scroll to the FSRS section at the bottom of the options page (older builds hide it under Advanced) and turn the switch on. It applies to your whole collection, so once is enough.';
+  @override
+  String get onboarding_anki_fsrs_step_optimize_title => 'Optimize, then save';
+  @override
+  String get onboarding_anki_fsrs_step_optimize_desc =>
+      'Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while.';
+  @override
+  String get sync_desktop_oauth_waiting_title =>
+      'En attente de la connexion dans le navigateur';
+  @override
+  String get sync_desktop_oauth_waiting_body =>
+      'La page de connexion a été ouverte dans votre navigateur par défaut. Si rien ne s\'est ouvert ou si la page affiche une erreur, copiez le lien et ouvrez-le dans un autre navigateur ou une fenêtre privée.';
+  @override
+  String get sync_desktop_oauth_link_copy => 'Copier le lien de connexion';
+  @override
+  String get sync_desktop_oauth_browser_reopen => 'Rouvrir le navigateur';
+  @override
+  String get sync_err_sign_in_cancelled => 'Connexion annulée.';
+  @override
+  String get sync_desktop_oauth_browser_open_failed =>
+      'Impossible d\'ouvrir le navigateur. Copiez le lien et ouvrez-le vous-même dans un navigateur.';
+  @override
+  String get sync_desktop_oauth_link_copy_failed =>
+      'Impossible de copier le lien. Sélectionnez le texte du lien et copiez-le manuellement.';
+  @override
+  String get game_text_thread_artifact_hint =>
+      'Repeated-character artifact thread, no usable lines';
+  @override
+  String get shortcut_action_global_context_menu => 'Open context menu';
+  @override
+  String get shortcut_conflict_keep_both => 'Keep both';
+  @override
+  String get shortcut_conflict_keep_both_hint =>
+      'Both actions keep this binding. Whichever scope resolves first wins at press time.';
+  @override
+  String get video_specs_title => 'Media info';
+  @override
+  String get video_specs_resolution => 'Resolution';
+  @override
+  String get video_specs_dynamic_range => 'Dynamic range';
+  @override
+  String get video_specs_video_codec => 'Video codec';
+  @override
+  String get video_specs_bit_depth => 'Bit depth';
+  @override
+  String get video_specs_frame_rate => 'Frame rate';
+  @override
+  String get video_specs_bitrate => 'Bitrate';
+  @override
+  String get video_specs_audio_tracks => 'Audio tracks';
+  @override
+  String get video_specs_subtitle_tracks => 'Subtitle tracks';
+  @override
+  String get video_specs_track_commentary => 'Commentary';
+  @override
+  String get video_specs_track_forced => 'Forced';
+  @override
+  String get video_specs_track_default => 'Default';
+  @override
+  String get gal_mining_image_mode_video_clip => 'Video clip';
+  @override
+  String get gal_mining_image_mode_video_clip_hint =>
+      'Records the game window from the moment the line appears until you mine the card, mixed with the sentence audio. Falls back to an animated image or screenshot when recording has not started or fewer than 2 frames were captured.';
+  @override
+  String get game_hook_reason_native_loopback_ack_timeout =>
+      'The audio capture policy was not confirmed in time. Text capture still works; try again if game audio is missing.';
+  @override
+  String get shortcut_scope_global_external_desktop_note =>
+      'Mouse triggers accept side buttons only (back/forward). Other buttons keep their normal meaning in other apps, so they are rejected here.';
+  @override
+  String get shortcut_mouse_button_not_supported =>
+      'This action only accepts mouse side buttons (back/forward).';
+  @override
+  String get anki_ankimobile_opened =>
+      'AnkiMobile opened. Approve the request there, then return to Fushi.';
+  @override
+  String get anki_error_ankimobile_pasteboard_empty =>
+      'AnkiMobile did not return any configuration. Approve the request in AnkiMobile, then come back to Fushi.';
+  @override
+  String get anki_error_ankimobile_pasteboard_denied =>
+      'iOS blocked reading the clipboard. Choose Allow Paste when returning to Fushi, then try again.';
+  @override
+  String get anki_error_ankimobile_no_decks =>
+      'AnkiMobile returned no decks or note types.';
+  @override
+  String get anki_error_ankimobile_unavailable =>
+      'Could not open AnkiMobile. Install AnkiMobile and try again.';
+  @override
+  String get dictionary_collapse_follow_global => 'Follow global setting';
+  @override
+  String get anki_ankimobile_imported => 'AnkiMobile configuration imported.';
+  @override
+  String get anki_error_ankimobile_not_active =>
+      'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+  @override
+  String get audiobook_transcribe_action => 'Generate subtitles on device';
+  @override
+  String get audiobook_transcribe_title => 'On-device transcription';
+  @override
+  String audiobook_transcribe_model_download_needed({required Object size}) =>
+      'Model download required: ${size}';
+  @override
+  String get audiobook_transcribe_model_download => 'Download model';
+  @override
+  String audiobook_transcribe_model_downloading(
+          {required Object name,
+          required Object received,
+          required Object total}) =>
+      'Downloading ${name}… ${received} / ${total}';
+  @override
+  String audiobook_transcribe_model_ready({required Object variant}) =>
+      'Model ready (${variant})';
+  @override
+  String get audiobook_transcribe_accel_label => 'Acceleration';
+  @override
+  String get audiobook_transcribe_accel_auto => 'Auto (GPU when available)';
+  @override
+  String get audiobook_transcribe_accel_cpu => 'CPU only';
+  @override
+  String audiobook_transcribe_running_on({required Object provider}) =>
+      'Running on ${provider}';
+  @override
+  String audiobook_transcribe_fallback({required Object reason}) =>
+      'GPU unavailable, fell back to CPU: ${reason}';
+  @override
+  String get audiobook_transcribe_start => 'Start transcription';
+  @override
+  String get audiobook_transcribe_resume => 'Resume transcription';
+  @override
+  String get audiobook_transcribe_pause => 'Pause';
+  @override
+  String get audiobook_transcribe_pausing => 'Pausing at the next checkpoint…';
+  @override
+  String get audiobook_transcribe_discard => 'Discard progress';
+  @override
+  String get audiobook_transcribe_use_result => 'Use subtitles';
+  @override
+  String audiobook_transcribe_progress(
+          {required Object done,
+          required Object total,
+          required Object file,
+          required Object files}) =>
+      '${done} / ${total} · file ${file}/${files}';
+  @override
+  String audiobook_transcribe_speed(
+          {required Object elapsed,
+          required Object eta,
+          required Object speed}) =>
+      'Elapsed ${elapsed} · remaining ${eta} · ${speed}× realtime';
+  @override
+  String audiobook_transcribe_done(
+          {required Object cues, required Object segments}) =>
+      'Done: ${cues} cues from ${segments} speech segments';
+  @override
+  String audiobook_transcribe_failed({required Object error}) =>
+      'Transcription failed: ${error}';
+  @override
+  String get audiobook_transcribe_needs_audio => 'Pick audio files first';
+  @override
+  String get audiobook_transcribe_result_name =>
+      'Generated by on-device transcription';
+  @override
+  String get audiobook_transcribe_paused_hint =>
+      'Progress is saved. Pick the same audio files later to resume.';
+  @override
+  String get audiobook_transcribe_unavailable =>
+      'On-device transcription is not available on this platform';
+  @override
+  String get audiobook_transcribe_preparing => 'Loading model…';
+  @override
+  String get audiobook_transcribe_export => 'Export subtitle file';
+  @override
+  String get audiobook_transcribe_export_saved => 'Subtitle file saved';
+  @override
+  String get audiobook_subtitle_source_title => 'Subtitle source';
+  @override
+  String get audiobook_subtitle_source_transcribe_hint =>
+      'Generate from the selected audio with the on-device speech model';
+  @override
+  String get audiobook_transcribe_intro =>
+      'Transcribes the audio locally with an on-device speech model for the selected language and generates subtitles for alignment. Nothing is uploaded.';
+  @override
+  String get audiobook_transcribe_language_label => 'Speech language';
+  @override
+  String get audiobook_transcribe_language_ja => 'Japanese';
+  @override
+  String get audiobook_transcribe_language_en => 'English';
+  @override
+  String get asr_models_section => 'Speech recognition models';
+  @override
+  String get asr_models_section_summary =>
+      'Models for on-device audiobook transcription. Download only the languages you need.';
+  @override
+  String asr_models_status_ready({required Object size}) =>
+      'Downloaded · ${size} on disk';
+  @override
+  String asr_models_status_partial(
+          {required Object obtained, required Object total}) =>
+      'Partially downloaded · ${obtained} / ${total}';
+  @override
+  String asr_models_status_missing({required Object size}) =>
+      'Not downloaded · ${size}';
+  @override
+  String get asr_models_download => 'Download';
+  @override
+  String get asr_models_delete => 'Delete';
+  @override
+  String get asr_models_delete_confirm_title => 'Delete this model?';
+  @override
+  String get asr_models_delete_confirm_message =>
+      'Transcription in this language will need the model downloaded again.';
+  @override
+  String asr_models_delete_done_freed({required Object size}) =>
+      'Deleted, freed ${size}';
+  @override
+  String asr_models_download_failed({required Object error}) =>
+      'Download failed: ${error}';
+  @override
+  String audiobook_transcribe_probe_failed({required Object reason}) =>
+      'GPU detection failed, planning for CPU: ${reason}';
+  @override
+  String get onboarding_pack_status_paused =>
+      'Recommended pack download paused';
+  @override
+  String get onboarding_pack_download_resume => 'Resume download';
+  @override
+  String get onboarding_pack_paused_desc =>
+      'Progress is kept on disk — resuming picks up where it stopped.';
+  @override
+  String get onboarding_pack_mini_bar_hide => 'Hide';
 }
 
 // Path: <root>
@@ -47994,16 +49386,12 @@ class _StringsId extends _StringsEn {
   @override
   String get icon_default => 'Default';
   @override
-  String get icon_full => 'Penuh';
-  @override
   String get icon_shortcut_created => 'Pintasan layar beranda dibuat.';
   @override
   String get icon_shortcut_unsupported =>
       'Pintasan tidak didukung di perangkat ini.';
   @override
   String get icon_switch_success => 'Ikon aplikasi berhasil diubah.';
-  @override
-  String get icon_transparent => 'Transparan';
   @override
   String image_page_counter({required Object current, required Object total}) =>
       '${current} / ${total}';
@@ -55373,6 +56761,310 @@ class _StringsId extends _StringsEn {
   @override
   String discovery_opds_test_failed({required Object reason}) =>
       'Koneksi gagal: ${reason}';
+  @override
+  String get anki_error_permission_permanently_denied =>
+      'AnkiDroid card access was permanently denied, so the system no longer shows the permission dialog. Open app settings and grant the AnkiDroid permission, then try again.';
+  @override
+  String get anki_error_ankidroid_unavailable =>
+      'AnkiDroid is not installed (or its API is disabled), so card access cannot be granted. Install AnkiDroid and enable its API, or switch to AnkiConnect.';
+  @override
+  String get anki_action_open_settings => 'Open settings';
+  @override
+  String onboarding_pack_pick_failed({required Object message}) =>
+      'Could not use the chosen file: ${message}';
+  @override
+  String get onboarding_pack_pick_no_path =>
+      'The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access.';
+  @override
+  String get interconnect_profile_section => 'Configuration file';
+  @override
+  String get interconnect_profile_upload => 'Upload configuration to host';
+  @override
+  String get interconnect_profile_upload_desc =>
+      'Send this device\'s active configuration to the paired host, where it lands as a new configuration.';
+  @override
+  String get interconnect_profile_download =>
+      'Download configuration from host';
+  @override
+  String get interconnect_profile_download_desc =>
+      'Import the host\'s active configuration as a new configuration here. Your current one is untouched.';
+  @override
+  String get interconnect_profile_host_toggle =>
+      'Allow paired devices to read/write configuration';
+  @override
+  String get interconnect_profile_host_toggle_desc =>
+      'Off by default. Requires HTTPS and a paired-device token. Incoming configurations are always added as new ones.';
+  @override
+  String interconnect_profile_uploaded({required Object name}) =>
+      'Configuration uploaded: ${name}';
+  @override
+  String interconnect_profile_downloaded({required Object name}) =>
+      'Configuration imported: ${name}';
+  @override
+  String get interconnect_profile_unsupported =>
+      'The paired host does not offer configuration transfer (needs HTTPS and a newer version).';
+  @override
+  String interconnect_profile_failed({required Object message}) =>
+      'Configuration transfer failed: ${message}';
+  @override
+  String get onboarding_pack_status_downloading =>
+      'Downloading recommended pack';
+  @override
+  String get onboarding_pack_status_ready => 'Recommended pack downloaded';
+  @override
+  String get onboarding_pack_import_now => 'Import now';
+  @override
+  String get onboarding_pack_download_finished =>
+      'Recommended pack finished downloading. Import it from Settings → System.';
+  @override
+  String get onboarding_pack_download_background_hint =>
+      'The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.';
+  @override
+  String get onboarding_anki_fsrs_title => 'Turn on FSRS in Anki';
+  @override
+  String get onboarding_anki_fsrs_body =>
+      'Anki has FSRS built in — one of the best spaced-repetition algorithms around — but it keeps scheduling with SM-2 from the 1980s until you turn FSRS on. FSRS reads your real review history and predicts when you are about to forget, so you keep the same retention with fewer reviews. You flip this switch once, inside Anki; nothing changes on the Fushi side.';
+  @override
+  String get onboarding_anki_fsrs_step_options_title => 'Open deck options';
+  @override
+  String get onboarding_anki_fsrs_step_options_desktop_desc =>
+      'In Anki, click the gear next to a deck and choose Options.';
+  @override
+  String get onboarding_anki_fsrs_step_options_mobile_desc =>
+      'In AnkiDroid (2.17 or newer) or AnkiMobile, long-press the deck and choose Options.';
+  @override
+  String get onboarding_anki_fsrs_step_toggle_title => 'Switch FSRS on';
+  @override
+  String get onboarding_anki_fsrs_step_toggle_desc =>
+      'Scroll to the FSRS section at the bottom of the options page (older builds hide it under Advanced) and turn the switch on. It applies to your whole collection, so once is enough.';
+  @override
+  String get onboarding_anki_fsrs_step_optimize_title => 'Optimize, then save';
+  @override
+  String get onboarding_anki_fsrs_step_optimize_desc =>
+      'Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while.';
+  @override
+  String get sync_desktop_oauth_waiting_title => 'Menunggu masuk di browser';
+  @override
+  String get sync_desktop_oauth_waiting_body =>
+      'Halaman masuk telah dibuka di browser bawaan. Jika tidak ada yang terbuka atau halaman menampilkan kesalahan, salin tautannya dan buka di browser lain atau jendela privat.';
+  @override
+  String get sync_desktop_oauth_link_copy => 'Salin tautan masuk';
+  @override
+  String get sync_desktop_oauth_browser_reopen => 'Buka browser lagi';
+  @override
+  String get sync_err_sign_in_cancelled => 'Masuk dibatalkan.';
+  @override
+  String get sync_desktop_oauth_browser_open_failed =>
+      'Browser tidak dapat dibuka. Salin tautannya dan buka sendiri di browser.';
+  @override
+  String get sync_desktop_oauth_link_copy_failed =>
+      'Tautan tidak dapat disalin. Pilih teks tautan dan salin secara manual.';
+  @override
+  String get game_text_thread_artifact_hint =>
+      'Repeated-character artifact thread, no usable lines';
+  @override
+  String get shortcut_action_global_context_menu => 'Open context menu';
+  @override
+  String get shortcut_conflict_keep_both => 'Keep both';
+  @override
+  String get shortcut_conflict_keep_both_hint =>
+      'Both actions keep this binding. Whichever scope resolves first wins at press time.';
+  @override
+  String get video_specs_title => 'Media info';
+  @override
+  String get video_specs_resolution => 'Resolution';
+  @override
+  String get video_specs_dynamic_range => 'Dynamic range';
+  @override
+  String get video_specs_video_codec => 'Video codec';
+  @override
+  String get video_specs_bit_depth => 'Bit depth';
+  @override
+  String get video_specs_frame_rate => 'Frame rate';
+  @override
+  String get video_specs_bitrate => 'Bitrate';
+  @override
+  String get video_specs_audio_tracks => 'Audio tracks';
+  @override
+  String get video_specs_subtitle_tracks => 'Subtitle tracks';
+  @override
+  String get video_specs_track_commentary => 'Commentary';
+  @override
+  String get video_specs_track_forced => 'Forced';
+  @override
+  String get video_specs_track_default => 'Default';
+  @override
+  String get gal_mining_image_mode_video_clip => 'Video clip';
+  @override
+  String get gal_mining_image_mode_video_clip_hint =>
+      'Records the game window from the moment the line appears until you mine the card, mixed with the sentence audio. Falls back to an animated image or screenshot when recording has not started or fewer than 2 frames were captured.';
+  @override
+  String get game_hook_reason_native_loopback_ack_timeout =>
+      'The audio capture policy was not confirmed in time. Text capture still works; try again if game audio is missing.';
+  @override
+  String get shortcut_scope_global_external_desktop_note =>
+      'Mouse triggers accept side buttons only (back/forward). Other buttons keep their normal meaning in other apps, so they are rejected here.';
+  @override
+  String get shortcut_mouse_button_not_supported =>
+      'This action only accepts mouse side buttons (back/forward).';
+  @override
+  String get anki_ankimobile_opened =>
+      'AnkiMobile opened. Approve the request there, then return to Fushi.';
+  @override
+  String get anki_error_ankimobile_pasteboard_empty =>
+      'AnkiMobile did not return any configuration. Approve the request in AnkiMobile, then come back to Fushi.';
+  @override
+  String get anki_error_ankimobile_pasteboard_denied =>
+      'iOS blocked reading the clipboard. Choose Allow Paste when returning to Fushi, then try again.';
+  @override
+  String get anki_error_ankimobile_no_decks =>
+      'AnkiMobile returned no decks or note types.';
+  @override
+  String get anki_error_ankimobile_unavailable =>
+      'Could not open AnkiMobile. Install AnkiMobile and try again.';
+  @override
+  String get dictionary_collapse_follow_global => 'Follow global setting';
+  @override
+  String get anki_ankimobile_imported => 'AnkiMobile configuration imported.';
+  @override
+  String get anki_error_ankimobile_not_active =>
+      'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+  @override
+  String get audiobook_transcribe_action => 'Generate subtitles on device';
+  @override
+  String get audiobook_transcribe_title => 'On-device transcription';
+  @override
+  String audiobook_transcribe_model_download_needed({required Object size}) =>
+      'Model download required: ${size}';
+  @override
+  String get audiobook_transcribe_model_download => 'Download model';
+  @override
+  String audiobook_transcribe_model_downloading(
+          {required Object name,
+          required Object received,
+          required Object total}) =>
+      'Downloading ${name}… ${received} / ${total}';
+  @override
+  String audiobook_transcribe_model_ready({required Object variant}) =>
+      'Model ready (${variant})';
+  @override
+  String get audiobook_transcribe_accel_label => 'Acceleration';
+  @override
+  String get audiobook_transcribe_accel_auto => 'Auto (GPU when available)';
+  @override
+  String get audiobook_transcribe_accel_cpu => 'CPU only';
+  @override
+  String audiobook_transcribe_running_on({required Object provider}) =>
+      'Running on ${provider}';
+  @override
+  String audiobook_transcribe_fallback({required Object reason}) =>
+      'GPU unavailable, fell back to CPU: ${reason}';
+  @override
+  String get audiobook_transcribe_start => 'Start transcription';
+  @override
+  String get audiobook_transcribe_resume => 'Resume transcription';
+  @override
+  String get audiobook_transcribe_pause => 'Pause';
+  @override
+  String get audiobook_transcribe_pausing => 'Pausing at the next checkpoint…';
+  @override
+  String get audiobook_transcribe_discard => 'Discard progress';
+  @override
+  String get audiobook_transcribe_use_result => 'Use subtitles';
+  @override
+  String audiobook_transcribe_progress(
+          {required Object done,
+          required Object total,
+          required Object file,
+          required Object files}) =>
+      '${done} / ${total} · file ${file}/${files}';
+  @override
+  String audiobook_transcribe_speed(
+          {required Object elapsed,
+          required Object eta,
+          required Object speed}) =>
+      'Elapsed ${elapsed} · remaining ${eta} · ${speed}× realtime';
+  @override
+  String audiobook_transcribe_done(
+          {required Object cues, required Object segments}) =>
+      'Done: ${cues} cues from ${segments} speech segments';
+  @override
+  String audiobook_transcribe_failed({required Object error}) =>
+      'Transcription failed: ${error}';
+  @override
+  String get audiobook_transcribe_needs_audio => 'Pick audio files first';
+  @override
+  String get audiobook_transcribe_result_name =>
+      'Generated by on-device transcription';
+  @override
+  String get audiobook_transcribe_paused_hint =>
+      'Progress is saved. Pick the same audio files later to resume.';
+  @override
+  String get audiobook_transcribe_unavailable =>
+      'On-device transcription is not available on this platform';
+  @override
+  String get audiobook_transcribe_preparing => 'Loading model…';
+  @override
+  String get audiobook_transcribe_export => 'Export subtitle file';
+  @override
+  String get audiobook_transcribe_export_saved => 'Subtitle file saved';
+  @override
+  String get audiobook_subtitle_source_title => 'Subtitle source';
+  @override
+  String get audiobook_subtitle_source_transcribe_hint =>
+      'Generate from the selected audio with the on-device speech model';
+  @override
+  String get audiobook_transcribe_intro =>
+      'Transcribes the audio locally with an on-device speech model for the selected language and generates subtitles for alignment. Nothing is uploaded.';
+  @override
+  String get audiobook_transcribe_language_label => 'Speech language';
+  @override
+  String get audiobook_transcribe_language_ja => 'Japanese';
+  @override
+  String get audiobook_transcribe_language_en => 'English';
+  @override
+  String get asr_models_section => 'Speech recognition models';
+  @override
+  String get asr_models_section_summary =>
+      'Models for on-device audiobook transcription. Download only the languages you need.';
+  @override
+  String asr_models_status_ready({required Object size}) =>
+      'Downloaded · ${size} on disk';
+  @override
+  String asr_models_status_partial(
+          {required Object obtained, required Object total}) =>
+      'Partially downloaded · ${obtained} / ${total}';
+  @override
+  String asr_models_status_missing({required Object size}) =>
+      'Not downloaded · ${size}';
+  @override
+  String get asr_models_download => 'Download';
+  @override
+  String get asr_models_delete => 'Delete';
+  @override
+  String get asr_models_delete_confirm_title => 'Delete this model?';
+  @override
+  String get asr_models_delete_confirm_message =>
+      'Transcription in this language will need the model downloaded again.';
+  @override
+  String asr_models_delete_done_freed({required Object size}) =>
+      'Deleted, freed ${size}';
+  @override
+  String asr_models_download_failed({required Object error}) =>
+      'Download failed: ${error}';
+  @override
+  String audiobook_transcribe_probe_failed({required Object reason}) =>
+      'GPU detection failed, planning for CPU: ${reason}';
+  @override
+  String get onboarding_pack_status_paused =>
+      'Recommended pack download paused';
+  @override
+  String get onboarding_pack_download_resume => 'Resume download';
+  @override
+  String get onboarding_pack_paused_desc =>
+      'Progress is kept on disk — resuming picks up where it stopped.';
+  @override
+  String get onboarding_pack_mini_bar_hide => 'Hide';
 }
 
 // Path: <root>
@@ -57878,8 +59570,6 @@ class _StringsIt extends _StringsEn {
   @override
   String get icon_default => 'Predefinita';
   @override
-  String get icon_full => 'Completa';
-  @override
   String get icon_shortcut_created =>
       'Collegamento sulla schermata iniziale creato.';
   @override
@@ -57887,8 +59577,6 @@ class _StringsIt extends _StringsEn {
       'I collegamenti non sono supportati su questo dispositivo.';
   @override
   String get icon_switch_success => 'Icona dell\'app cambiata con successo.';
-  @override
-  String get icon_transparent => 'Trasparente';
   @override
   String image_page_counter({required Object current, required Object total}) =>
       '${current} / ${total}';
@@ -65323,6 +67011,311 @@ class _StringsIt extends _StringsEn {
   @override
   String discovery_opds_test_failed({required Object reason}) =>
       'Connessione non riuscita: ${reason}';
+  @override
+  String get anki_error_permission_permanently_denied =>
+      'AnkiDroid card access was permanently denied, so the system no longer shows the permission dialog. Open app settings and grant the AnkiDroid permission, then try again.';
+  @override
+  String get anki_error_ankidroid_unavailable =>
+      'AnkiDroid is not installed (or its API is disabled), so card access cannot be granted. Install AnkiDroid and enable its API, or switch to AnkiConnect.';
+  @override
+  String get anki_action_open_settings => 'Open settings';
+  @override
+  String onboarding_pack_pick_failed({required Object message}) =>
+      'Could not use the chosen file: ${message}';
+  @override
+  String get onboarding_pack_pick_no_path =>
+      'The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access.';
+  @override
+  String get interconnect_profile_section => 'Configuration file';
+  @override
+  String get interconnect_profile_upload => 'Upload configuration to host';
+  @override
+  String get interconnect_profile_upload_desc =>
+      'Send this device\'s active configuration to the paired host, where it lands as a new configuration.';
+  @override
+  String get interconnect_profile_download =>
+      'Download configuration from host';
+  @override
+  String get interconnect_profile_download_desc =>
+      'Import the host\'s active configuration as a new configuration here. Your current one is untouched.';
+  @override
+  String get interconnect_profile_host_toggle =>
+      'Allow paired devices to read/write configuration';
+  @override
+  String get interconnect_profile_host_toggle_desc =>
+      'Off by default. Requires HTTPS and a paired-device token. Incoming configurations are always added as new ones.';
+  @override
+  String interconnect_profile_uploaded({required Object name}) =>
+      'Configuration uploaded: ${name}';
+  @override
+  String interconnect_profile_downloaded({required Object name}) =>
+      'Configuration imported: ${name}';
+  @override
+  String get interconnect_profile_unsupported =>
+      'The paired host does not offer configuration transfer (needs HTTPS and a newer version).';
+  @override
+  String interconnect_profile_failed({required Object message}) =>
+      'Configuration transfer failed: ${message}';
+  @override
+  String get onboarding_pack_status_downloading =>
+      'Downloading recommended pack';
+  @override
+  String get onboarding_pack_status_ready => 'Recommended pack downloaded';
+  @override
+  String get onboarding_pack_import_now => 'Import now';
+  @override
+  String get onboarding_pack_download_finished =>
+      'Recommended pack finished downloading. Import it from Settings → System.';
+  @override
+  String get onboarding_pack_download_background_hint =>
+      'The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.';
+  @override
+  String get onboarding_anki_fsrs_title => 'Turn on FSRS in Anki';
+  @override
+  String get onboarding_anki_fsrs_body =>
+      'Anki has FSRS built in — one of the best spaced-repetition algorithms around — but it keeps scheduling with SM-2 from the 1980s until you turn FSRS on. FSRS reads your real review history and predicts when you are about to forget, so you keep the same retention with fewer reviews. You flip this switch once, inside Anki; nothing changes on the Fushi side.';
+  @override
+  String get onboarding_anki_fsrs_step_options_title => 'Open deck options';
+  @override
+  String get onboarding_anki_fsrs_step_options_desktop_desc =>
+      'In Anki, click the gear next to a deck and choose Options.';
+  @override
+  String get onboarding_anki_fsrs_step_options_mobile_desc =>
+      'In AnkiDroid (2.17 or newer) or AnkiMobile, long-press the deck and choose Options.';
+  @override
+  String get onboarding_anki_fsrs_step_toggle_title => 'Switch FSRS on';
+  @override
+  String get onboarding_anki_fsrs_step_toggle_desc =>
+      'Scroll to the FSRS section at the bottom of the options page (older builds hide it under Advanced) and turn the switch on. It applies to your whole collection, so once is enough.';
+  @override
+  String get onboarding_anki_fsrs_step_optimize_title => 'Optimize, then save';
+  @override
+  String get onboarding_anki_fsrs_step_optimize_desc =>
+      'Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while.';
+  @override
+  String get sync_desktop_oauth_waiting_title =>
+      'In attesa dell\'accesso nel browser';
+  @override
+  String get sync_desktop_oauth_waiting_body =>
+      'La pagina di accesso è stata aperta nel browser predefinito. Se non si è aperto nulla o la pagina mostra un errore, copia il link e aprilo in un altro browser o in una finestra privata.';
+  @override
+  String get sync_desktop_oauth_link_copy => 'Copia link di accesso';
+  @override
+  String get sync_desktop_oauth_browser_reopen => 'Riapri il browser';
+  @override
+  String get sync_err_sign_in_cancelled => 'Accesso annullato.';
+  @override
+  String get sync_desktop_oauth_browser_open_failed =>
+      'Impossibile aprire il browser. Copia il link e aprilo tu stesso in un browser.';
+  @override
+  String get sync_desktop_oauth_link_copy_failed =>
+      'Impossibile copiare il link. Seleziona il testo del link e copialo manualmente.';
+  @override
+  String get game_text_thread_artifact_hint =>
+      'Repeated-character artifact thread, no usable lines';
+  @override
+  String get shortcut_action_global_context_menu => 'Open context menu';
+  @override
+  String get shortcut_conflict_keep_both => 'Keep both';
+  @override
+  String get shortcut_conflict_keep_both_hint =>
+      'Both actions keep this binding. Whichever scope resolves first wins at press time.';
+  @override
+  String get video_specs_title => 'Media info';
+  @override
+  String get video_specs_resolution => 'Resolution';
+  @override
+  String get video_specs_dynamic_range => 'Dynamic range';
+  @override
+  String get video_specs_video_codec => 'Video codec';
+  @override
+  String get video_specs_bit_depth => 'Bit depth';
+  @override
+  String get video_specs_frame_rate => 'Frame rate';
+  @override
+  String get video_specs_bitrate => 'Bitrate';
+  @override
+  String get video_specs_audio_tracks => 'Audio tracks';
+  @override
+  String get video_specs_subtitle_tracks => 'Subtitle tracks';
+  @override
+  String get video_specs_track_commentary => 'Commentary';
+  @override
+  String get video_specs_track_forced => 'Forced';
+  @override
+  String get video_specs_track_default => 'Default';
+  @override
+  String get gal_mining_image_mode_video_clip => 'Video clip';
+  @override
+  String get gal_mining_image_mode_video_clip_hint =>
+      'Records the game window from the moment the line appears until you mine the card, mixed with the sentence audio. Falls back to an animated image or screenshot when recording has not started or fewer than 2 frames were captured.';
+  @override
+  String get game_hook_reason_native_loopback_ack_timeout =>
+      'The audio capture policy was not confirmed in time. Text capture still works; try again if game audio is missing.';
+  @override
+  String get shortcut_scope_global_external_desktop_note =>
+      'Mouse triggers accept side buttons only (back/forward). Other buttons keep their normal meaning in other apps, so they are rejected here.';
+  @override
+  String get shortcut_mouse_button_not_supported =>
+      'This action only accepts mouse side buttons (back/forward).';
+  @override
+  String get anki_ankimobile_opened =>
+      'AnkiMobile opened. Approve the request there, then return to Fushi.';
+  @override
+  String get anki_error_ankimobile_pasteboard_empty =>
+      'AnkiMobile did not return any configuration. Approve the request in AnkiMobile, then come back to Fushi.';
+  @override
+  String get anki_error_ankimobile_pasteboard_denied =>
+      'iOS blocked reading the clipboard. Choose Allow Paste when returning to Fushi, then try again.';
+  @override
+  String get anki_error_ankimobile_no_decks =>
+      'AnkiMobile returned no decks or note types.';
+  @override
+  String get anki_error_ankimobile_unavailable =>
+      'Could not open AnkiMobile. Install AnkiMobile and try again.';
+  @override
+  String get dictionary_collapse_follow_global => 'Follow global setting';
+  @override
+  String get anki_ankimobile_imported => 'AnkiMobile configuration imported.';
+  @override
+  String get anki_error_ankimobile_not_active =>
+      'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+  @override
+  String get audiobook_transcribe_action => 'Generate subtitles on device';
+  @override
+  String get audiobook_transcribe_title => 'On-device transcription';
+  @override
+  String audiobook_transcribe_model_download_needed({required Object size}) =>
+      'Model download required: ${size}';
+  @override
+  String get audiobook_transcribe_model_download => 'Download model';
+  @override
+  String audiobook_transcribe_model_downloading(
+          {required Object name,
+          required Object received,
+          required Object total}) =>
+      'Downloading ${name}… ${received} / ${total}';
+  @override
+  String audiobook_transcribe_model_ready({required Object variant}) =>
+      'Model ready (${variant})';
+  @override
+  String get audiobook_transcribe_accel_label => 'Acceleration';
+  @override
+  String get audiobook_transcribe_accel_auto => 'Auto (GPU when available)';
+  @override
+  String get audiobook_transcribe_accel_cpu => 'CPU only';
+  @override
+  String audiobook_transcribe_running_on({required Object provider}) =>
+      'Running on ${provider}';
+  @override
+  String audiobook_transcribe_fallback({required Object reason}) =>
+      'GPU unavailable, fell back to CPU: ${reason}';
+  @override
+  String get audiobook_transcribe_start => 'Start transcription';
+  @override
+  String get audiobook_transcribe_resume => 'Resume transcription';
+  @override
+  String get audiobook_transcribe_pause => 'Pause';
+  @override
+  String get audiobook_transcribe_pausing => 'Pausing at the next checkpoint…';
+  @override
+  String get audiobook_transcribe_discard => 'Discard progress';
+  @override
+  String get audiobook_transcribe_use_result => 'Use subtitles';
+  @override
+  String audiobook_transcribe_progress(
+          {required Object done,
+          required Object total,
+          required Object file,
+          required Object files}) =>
+      '${done} / ${total} · file ${file}/${files}';
+  @override
+  String audiobook_transcribe_speed(
+          {required Object elapsed,
+          required Object eta,
+          required Object speed}) =>
+      'Elapsed ${elapsed} · remaining ${eta} · ${speed}× realtime';
+  @override
+  String audiobook_transcribe_done(
+          {required Object cues, required Object segments}) =>
+      'Done: ${cues} cues from ${segments} speech segments';
+  @override
+  String audiobook_transcribe_failed({required Object error}) =>
+      'Transcription failed: ${error}';
+  @override
+  String get audiobook_transcribe_needs_audio => 'Pick audio files first';
+  @override
+  String get audiobook_transcribe_result_name =>
+      'Generated by on-device transcription';
+  @override
+  String get audiobook_transcribe_paused_hint =>
+      'Progress is saved. Pick the same audio files later to resume.';
+  @override
+  String get audiobook_transcribe_unavailable =>
+      'On-device transcription is not available on this platform';
+  @override
+  String get audiobook_transcribe_preparing => 'Loading model…';
+  @override
+  String get audiobook_transcribe_export => 'Export subtitle file';
+  @override
+  String get audiobook_transcribe_export_saved => 'Subtitle file saved';
+  @override
+  String get audiobook_subtitle_source_title => 'Subtitle source';
+  @override
+  String get audiobook_subtitle_source_transcribe_hint =>
+      'Generate from the selected audio with the on-device speech model';
+  @override
+  String get audiobook_transcribe_intro =>
+      'Transcribes the audio locally with an on-device speech model for the selected language and generates subtitles for alignment. Nothing is uploaded.';
+  @override
+  String get audiobook_transcribe_language_label => 'Speech language';
+  @override
+  String get audiobook_transcribe_language_ja => 'Japanese';
+  @override
+  String get audiobook_transcribe_language_en => 'English';
+  @override
+  String get asr_models_section => 'Speech recognition models';
+  @override
+  String get asr_models_section_summary =>
+      'Models for on-device audiobook transcription. Download only the languages you need.';
+  @override
+  String asr_models_status_ready({required Object size}) =>
+      'Downloaded · ${size} on disk';
+  @override
+  String asr_models_status_partial(
+          {required Object obtained, required Object total}) =>
+      'Partially downloaded · ${obtained} / ${total}';
+  @override
+  String asr_models_status_missing({required Object size}) =>
+      'Not downloaded · ${size}';
+  @override
+  String get asr_models_download => 'Download';
+  @override
+  String get asr_models_delete => 'Delete';
+  @override
+  String get asr_models_delete_confirm_title => 'Delete this model?';
+  @override
+  String get asr_models_delete_confirm_message =>
+      'Transcription in this language will need the model downloaded again.';
+  @override
+  String asr_models_delete_done_freed({required Object size}) =>
+      'Deleted, freed ${size}';
+  @override
+  String asr_models_download_failed({required Object error}) =>
+      'Download failed: ${error}';
+  @override
+  String audiobook_transcribe_probe_failed({required Object reason}) =>
+      'GPU detection failed, planning for CPU: ${reason}';
+  @override
+  String get onboarding_pack_status_paused =>
+      'Recommended pack download paused';
+  @override
+  String get onboarding_pack_download_resume => 'Resume download';
+  @override
+  String get onboarding_pack_paused_desc =>
+      'Progress is kept on disk — resuming picks up where it stopped.';
+  @override
+  String get onboarding_pack_mini_bar_hide => 'Hide';
 }
 
 // Path: <root>
@@ -67693,15 +69686,11 @@ class _StringsJa extends _StringsEn {
   @override
   String get icon_default => 'デフォルト';
   @override
-  String get icon_full => 'フル';
-  @override
   String get icon_shortcut_created => 'ホーム画面にショートカットを作成しました。';
   @override
   String get icon_shortcut_unsupported => 'このデバイスではショートカットがサポートされていません。';
   @override
   String get icon_switch_success => 'アプリアイコンを変更しました。';
-  @override
-  String get icon_transparent => '透明';
   @override
   String image_page_counter({required Object current, required Object total}) =>
       '${current} / ${total}';
@@ -74661,6 +76650,310 @@ class _StringsJa extends _StringsEn {
   @override
   String discovery_opds_test_failed({required Object reason}) =>
       '接続に失敗しました: ${reason}';
+  @override
+  String get anki_error_permission_permanently_denied =>
+      'AnkiDroid card access was permanently denied, so the system no longer shows the permission dialog. Open app settings and grant the AnkiDroid permission, then try again.';
+  @override
+  String get anki_error_ankidroid_unavailable =>
+      'AnkiDroid is not installed (or its API is disabled), so card access cannot be granted. Install AnkiDroid and enable its API, or switch to AnkiConnect.';
+  @override
+  String get anki_action_open_settings => 'Open settings';
+  @override
+  String onboarding_pack_pick_failed({required Object message}) =>
+      'Could not use the chosen file: ${message}';
+  @override
+  String get onboarding_pack_pick_no_path =>
+      'The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access.';
+  @override
+  String get interconnect_profile_section => 'Configuration file';
+  @override
+  String get interconnect_profile_upload => 'Upload configuration to host';
+  @override
+  String get interconnect_profile_upload_desc =>
+      'Send this device\'s active configuration to the paired host, where it lands as a new configuration.';
+  @override
+  String get interconnect_profile_download =>
+      'Download configuration from host';
+  @override
+  String get interconnect_profile_download_desc =>
+      'Import the host\'s active configuration as a new configuration here. Your current one is untouched.';
+  @override
+  String get interconnect_profile_host_toggle =>
+      'Allow paired devices to read/write configuration';
+  @override
+  String get interconnect_profile_host_toggle_desc =>
+      'Off by default. Requires HTTPS and a paired-device token. Incoming configurations are always added as new ones.';
+  @override
+  String interconnect_profile_uploaded({required Object name}) =>
+      'Configuration uploaded: ${name}';
+  @override
+  String interconnect_profile_downloaded({required Object name}) =>
+      'Configuration imported: ${name}';
+  @override
+  String get interconnect_profile_unsupported =>
+      'The paired host does not offer configuration transfer (needs HTTPS and a newer version).';
+  @override
+  String interconnect_profile_failed({required Object message}) =>
+      'Configuration transfer failed: ${message}';
+  @override
+  String get onboarding_pack_status_downloading =>
+      'Downloading recommended pack';
+  @override
+  String get onboarding_pack_status_ready => 'Recommended pack downloaded';
+  @override
+  String get onboarding_pack_import_now => 'Import now';
+  @override
+  String get onboarding_pack_download_finished =>
+      'Recommended pack finished downloading. Import it from Settings → System.';
+  @override
+  String get onboarding_pack_download_background_hint =>
+      'The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.';
+  @override
+  String get onboarding_anki_fsrs_title => 'Turn on FSRS in Anki';
+  @override
+  String get onboarding_anki_fsrs_body =>
+      'Anki has FSRS built in — one of the best spaced-repetition algorithms around — but it keeps scheduling with SM-2 from the 1980s until you turn FSRS on. FSRS reads your real review history and predicts when you are about to forget, so you keep the same retention with fewer reviews. You flip this switch once, inside Anki; nothing changes on the Fushi side.';
+  @override
+  String get onboarding_anki_fsrs_step_options_title => 'Open deck options';
+  @override
+  String get onboarding_anki_fsrs_step_options_desktop_desc =>
+      'In Anki, click the gear next to a deck and choose Options.';
+  @override
+  String get onboarding_anki_fsrs_step_options_mobile_desc =>
+      'In AnkiDroid (2.17 or newer) or AnkiMobile, long-press the deck and choose Options.';
+  @override
+  String get onboarding_anki_fsrs_step_toggle_title => 'Switch FSRS on';
+  @override
+  String get onboarding_anki_fsrs_step_toggle_desc =>
+      'Scroll to the FSRS section at the bottom of the options page (older builds hide it under Advanced) and turn the switch on. It applies to your whole collection, so once is enough.';
+  @override
+  String get onboarding_anki_fsrs_step_optimize_title => 'Optimize, then save';
+  @override
+  String get onboarding_anki_fsrs_step_optimize_desc =>
+      'Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while.';
+  @override
+  String get sync_desktop_oauth_waiting_title => 'ブラウザでのログイン完了を待っています';
+  @override
+  String get sync_desktop_oauth_waiting_body =>
+      '既定のブラウザでログインページを開きました。開かない場合やエラーが表示される場合は、リンクをコピーして別のブラウザまたはプライベートウィンドウで開いてください。';
+  @override
+  String get sync_desktop_oauth_link_copy => 'ログインリンクをコピー';
+  @override
+  String get sync_desktop_oauth_browser_reopen => 'ブラウザをもう一度開く';
+  @override
+  String get sync_err_sign_in_cancelled => 'ログインをキャンセルしました。';
+  @override
+  String get sync_desktop_oauth_browser_open_failed =>
+      'ブラウザを開けませんでした。リンクをコピーして、ブラウザで自分で開いてください。';
+  @override
+  String get sync_desktop_oauth_link_copy_failed =>
+      'リンクをコピーできませんでした。リンクのテキストを選択して手動でコピーしてください。';
+  @override
+  String get game_text_thread_artifact_hint =>
+      'Repeated-character artifact thread, no usable lines';
+  @override
+  String get shortcut_action_global_context_menu => 'Open context menu';
+  @override
+  String get shortcut_conflict_keep_both => 'Keep both';
+  @override
+  String get shortcut_conflict_keep_both_hint =>
+      'Both actions keep this binding. Whichever scope resolves first wins at press time.';
+  @override
+  String get video_specs_title => 'Media info';
+  @override
+  String get video_specs_resolution => 'Resolution';
+  @override
+  String get video_specs_dynamic_range => 'Dynamic range';
+  @override
+  String get video_specs_video_codec => 'Video codec';
+  @override
+  String get video_specs_bit_depth => 'Bit depth';
+  @override
+  String get video_specs_frame_rate => 'Frame rate';
+  @override
+  String get video_specs_bitrate => 'Bitrate';
+  @override
+  String get video_specs_audio_tracks => 'Audio tracks';
+  @override
+  String get video_specs_subtitle_tracks => 'Subtitle tracks';
+  @override
+  String get video_specs_track_commentary => 'Commentary';
+  @override
+  String get video_specs_track_forced => 'Forced';
+  @override
+  String get video_specs_track_default => 'Default';
+  @override
+  String get gal_mining_image_mode_video_clip => 'Video clip';
+  @override
+  String get gal_mining_image_mode_video_clip_hint =>
+      'Records the game window from the moment the line appears until you mine the card, mixed with the sentence audio. Falls back to an animated image or screenshot when recording has not started or fewer than 2 frames were captured.';
+  @override
+  String get game_hook_reason_native_loopback_ack_timeout =>
+      'The audio capture policy was not confirmed in time. Text capture still works; try again if game audio is missing.';
+  @override
+  String get shortcut_scope_global_external_desktop_note =>
+      'Mouse triggers accept side buttons only (back/forward). Other buttons keep their normal meaning in other apps, so they are rejected here.';
+  @override
+  String get shortcut_mouse_button_not_supported =>
+      'This action only accepts mouse side buttons (back/forward).';
+  @override
+  String get anki_ankimobile_opened =>
+      'AnkiMobile opened. Approve the request there, then return to Fushi.';
+  @override
+  String get anki_error_ankimobile_pasteboard_empty =>
+      'AnkiMobile did not return any configuration. Approve the request in AnkiMobile, then come back to Fushi.';
+  @override
+  String get anki_error_ankimobile_pasteboard_denied =>
+      'iOS blocked reading the clipboard. Choose Allow Paste when returning to Fushi, then try again.';
+  @override
+  String get anki_error_ankimobile_no_decks =>
+      'AnkiMobile returned no decks or note types.';
+  @override
+  String get anki_error_ankimobile_unavailable =>
+      'Could not open AnkiMobile. Install AnkiMobile and try again.';
+  @override
+  String get dictionary_collapse_follow_global => 'Follow global setting';
+  @override
+  String get anki_ankimobile_imported => 'AnkiMobile configuration imported.';
+  @override
+  String get anki_error_ankimobile_not_active =>
+      'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+  @override
+  String get audiobook_transcribe_action => 'Generate subtitles on device';
+  @override
+  String get audiobook_transcribe_title => 'On-device transcription';
+  @override
+  String audiobook_transcribe_model_download_needed({required Object size}) =>
+      'Model download required: ${size}';
+  @override
+  String get audiobook_transcribe_model_download => 'Download model';
+  @override
+  String audiobook_transcribe_model_downloading(
+          {required Object name,
+          required Object received,
+          required Object total}) =>
+      'Downloading ${name}… ${received} / ${total}';
+  @override
+  String audiobook_transcribe_model_ready({required Object variant}) =>
+      'Model ready (${variant})';
+  @override
+  String get audiobook_transcribe_accel_label => 'Acceleration';
+  @override
+  String get audiobook_transcribe_accel_auto => 'Auto (GPU when available)';
+  @override
+  String get audiobook_transcribe_accel_cpu => 'CPU only';
+  @override
+  String audiobook_transcribe_running_on({required Object provider}) =>
+      'Running on ${provider}';
+  @override
+  String audiobook_transcribe_fallback({required Object reason}) =>
+      'GPU unavailable, fell back to CPU: ${reason}';
+  @override
+  String get audiobook_transcribe_start => 'Start transcription';
+  @override
+  String get audiobook_transcribe_resume => 'Resume transcription';
+  @override
+  String get audiobook_transcribe_pause => 'Pause';
+  @override
+  String get audiobook_transcribe_pausing => 'Pausing at the next checkpoint…';
+  @override
+  String get audiobook_transcribe_discard => 'Discard progress';
+  @override
+  String get audiobook_transcribe_use_result => 'Use subtitles';
+  @override
+  String audiobook_transcribe_progress(
+          {required Object done,
+          required Object total,
+          required Object file,
+          required Object files}) =>
+      '${done} / ${total} · file ${file}/${files}';
+  @override
+  String audiobook_transcribe_speed(
+          {required Object elapsed,
+          required Object eta,
+          required Object speed}) =>
+      'Elapsed ${elapsed} · remaining ${eta} · ${speed}× realtime';
+  @override
+  String audiobook_transcribe_done(
+          {required Object cues, required Object segments}) =>
+      'Done: ${cues} cues from ${segments} speech segments';
+  @override
+  String audiobook_transcribe_failed({required Object error}) =>
+      'Transcription failed: ${error}';
+  @override
+  String get audiobook_transcribe_needs_audio => 'Pick audio files first';
+  @override
+  String get audiobook_transcribe_result_name =>
+      'Generated by on-device transcription';
+  @override
+  String get audiobook_transcribe_paused_hint =>
+      'Progress is saved. Pick the same audio files later to resume.';
+  @override
+  String get audiobook_transcribe_unavailable =>
+      'On-device transcription is not available on this platform';
+  @override
+  String get audiobook_transcribe_preparing => 'Loading model…';
+  @override
+  String get audiobook_transcribe_export => 'Export subtitle file';
+  @override
+  String get audiobook_transcribe_export_saved => 'Subtitle file saved';
+  @override
+  String get audiobook_subtitle_source_title => 'Subtitle source';
+  @override
+  String get audiobook_subtitle_source_transcribe_hint =>
+      'Generate from the selected audio with the on-device speech model';
+  @override
+  String get audiobook_transcribe_intro =>
+      'Transcribes the audio locally with an on-device speech model for the selected language and generates subtitles for alignment. Nothing is uploaded.';
+  @override
+  String get audiobook_transcribe_language_label => 'Speech language';
+  @override
+  String get audiobook_transcribe_language_ja => 'Japanese';
+  @override
+  String get audiobook_transcribe_language_en => 'English';
+  @override
+  String get asr_models_section => 'Speech recognition models';
+  @override
+  String get asr_models_section_summary =>
+      'Models for on-device audiobook transcription. Download only the languages you need.';
+  @override
+  String asr_models_status_ready({required Object size}) =>
+      'Downloaded · ${size} on disk';
+  @override
+  String asr_models_status_partial(
+          {required Object obtained, required Object total}) =>
+      'Partially downloaded · ${obtained} / ${total}';
+  @override
+  String asr_models_status_missing({required Object size}) =>
+      'Not downloaded · ${size}';
+  @override
+  String get asr_models_download => 'Download';
+  @override
+  String get asr_models_delete => 'Delete';
+  @override
+  String get asr_models_delete_confirm_title => 'Delete this model?';
+  @override
+  String get asr_models_delete_confirm_message =>
+      'Transcription in this language will need the model downloaded again.';
+  @override
+  String asr_models_delete_done_freed({required Object size}) =>
+      'Deleted, freed ${size}';
+  @override
+  String asr_models_download_failed({required Object error}) =>
+      'Download failed: ${error}';
+  @override
+  String audiobook_transcribe_probe_failed({required Object reason}) =>
+      'GPU detection failed, planning for CPU: ${reason}';
+  @override
+  String get onboarding_pack_status_paused =>
+      'Recommended pack download paused';
+  @override
+  String get onboarding_pack_download_resume => 'Resume download';
+  @override
+  String get onboarding_pack_paused_desc =>
+      'Progress is kept on disk — resuming picks up where it stopped.';
+  @override
+  String get onboarding_pack_mini_bar_hide => 'Hide';
 }
 
 // Path: <root>
@@ -77027,15 +79320,11 @@ class _StringsKo extends _StringsEn {
   @override
   String get icon_default => '기본';
   @override
-  String get icon_full => '전체';
-  @override
   String get icon_shortcut_created => '홈 화면 바로가기가 생성되었습니다.';
   @override
   String get icon_shortcut_unsupported => '이 기기에서는 바로가기가 지원되지 않습니다.';
   @override
   String get icon_switch_success => '앱 아이콘이 변경되었습니다.';
-  @override
-  String get icon_transparent => '투명';
   @override
   String image_page_counter({required Object current, required Object total}) =>
       '${current} / ${total}';
@@ -84009,6 +86298,310 @@ class _StringsKo extends _StringsEn {
   @override
   String discovery_opds_test_failed({required Object reason}) =>
       '연결 실패: ${reason}';
+  @override
+  String get anki_error_permission_permanently_denied =>
+      'AnkiDroid card access was permanently denied, so the system no longer shows the permission dialog. Open app settings and grant the AnkiDroid permission, then try again.';
+  @override
+  String get anki_error_ankidroid_unavailable =>
+      'AnkiDroid is not installed (or its API is disabled), so card access cannot be granted. Install AnkiDroid and enable its API, or switch to AnkiConnect.';
+  @override
+  String get anki_action_open_settings => 'Open settings';
+  @override
+  String onboarding_pack_pick_failed({required Object message}) =>
+      'Could not use the chosen file: ${message}';
+  @override
+  String get onboarding_pack_pick_no_path =>
+      'The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access.';
+  @override
+  String get interconnect_profile_section => 'Configuration file';
+  @override
+  String get interconnect_profile_upload => 'Upload configuration to host';
+  @override
+  String get interconnect_profile_upload_desc =>
+      'Send this device\'s active configuration to the paired host, where it lands as a new configuration.';
+  @override
+  String get interconnect_profile_download =>
+      'Download configuration from host';
+  @override
+  String get interconnect_profile_download_desc =>
+      'Import the host\'s active configuration as a new configuration here. Your current one is untouched.';
+  @override
+  String get interconnect_profile_host_toggle =>
+      'Allow paired devices to read/write configuration';
+  @override
+  String get interconnect_profile_host_toggle_desc =>
+      'Off by default. Requires HTTPS and a paired-device token. Incoming configurations are always added as new ones.';
+  @override
+  String interconnect_profile_uploaded({required Object name}) =>
+      'Configuration uploaded: ${name}';
+  @override
+  String interconnect_profile_downloaded({required Object name}) =>
+      'Configuration imported: ${name}';
+  @override
+  String get interconnect_profile_unsupported =>
+      'The paired host does not offer configuration transfer (needs HTTPS and a newer version).';
+  @override
+  String interconnect_profile_failed({required Object message}) =>
+      'Configuration transfer failed: ${message}';
+  @override
+  String get onboarding_pack_status_downloading =>
+      'Downloading recommended pack';
+  @override
+  String get onboarding_pack_status_ready => 'Recommended pack downloaded';
+  @override
+  String get onboarding_pack_import_now => 'Import now';
+  @override
+  String get onboarding_pack_download_finished =>
+      'Recommended pack finished downloading. Import it from Settings → System.';
+  @override
+  String get onboarding_pack_download_background_hint =>
+      'The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.';
+  @override
+  String get onboarding_anki_fsrs_title => 'Turn on FSRS in Anki';
+  @override
+  String get onboarding_anki_fsrs_body =>
+      'Anki has FSRS built in — one of the best spaced-repetition algorithms around — but it keeps scheduling with SM-2 from the 1980s until you turn FSRS on. FSRS reads your real review history and predicts when you are about to forget, so you keep the same retention with fewer reviews. You flip this switch once, inside Anki; nothing changes on the Fushi side.';
+  @override
+  String get onboarding_anki_fsrs_step_options_title => 'Open deck options';
+  @override
+  String get onboarding_anki_fsrs_step_options_desktop_desc =>
+      'In Anki, click the gear next to a deck and choose Options.';
+  @override
+  String get onboarding_anki_fsrs_step_options_mobile_desc =>
+      'In AnkiDroid (2.17 or newer) or AnkiMobile, long-press the deck and choose Options.';
+  @override
+  String get onboarding_anki_fsrs_step_toggle_title => 'Switch FSRS on';
+  @override
+  String get onboarding_anki_fsrs_step_toggle_desc =>
+      'Scroll to the FSRS section at the bottom of the options page (older builds hide it under Advanced) and turn the switch on. It applies to your whole collection, so once is enough.';
+  @override
+  String get onboarding_anki_fsrs_step_optimize_title => 'Optimize, then save';
+  @override
+  String get onboarding_anki_fsrs_step_optimize_desc =>
+      'Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while.';
+  @override
+  String get sync_desktop_oauth_waiting_title => '브라우저 로그인 완료를 기다리는 중';
+  @override
+  String get sync_desktop_oauth_waiting_body =>
+      '기본 브라우저에서 로그인 페이지를 열었습니다. 열리지 않거나 오류가 표시되면 링크를 복사해 다른 브라우저나 시크릿 창에서 여세요.';
+  @override
+  String get sync_desktop_oauth_link_copy => '로그인 링크 복사';
+  @override
+  String get sync_desktop_oauth_browser_reopen => '브라우저 다시 열기';
+  @override
+  String get sync_err_sign_in_cancelled => '로그인을 취소했습니다.';
+  @override
+  String get sync_desktop_oauth_browser_open_failed =>
+      '브라우저를 열 수 없습니다. 링크를 복사해 직접 브라우저에서 여세요.';
+  @override
+  String get sync_desktop_oauth_link_copy_failed =>
+      '링크를 복사할 수 없습니다. 링크 텍스트를 선택해 직접 복사하세요.';
+  @override
+  String get game_text_thread_artifact_hint =>
+      'Repeated-character artifact thread, no usable lines';
+  @override
+  String get shortcut_action_global_context_menu => 'Open context menu';
+  @override
+  String get shortcut_conflict_keep_both => 'Keep both';
+  @override
+  String get shortcut_conflict_keep_both_hint =>
+      'Both actions keep this binding. Whichever scope resolves first wins at press time.';
+  @override
+  String get video_specs_title => 'Media info';
+  @override
+  String get video_specs_resolution => 'Resolution';
+  @override
+  String get video_specs_dynamic_range => 'Dynamic range';
+  @override
+  String get video_specs_video_codec => 'Video codec';
+  @override
+  String get video_specs_bit_depth => 'Bit depth';
+  @override
+  String get video_specs_frame_rate => 'Frame rate';
+  @override
+  String get video_specs_bitrate => 'Bitrate';
+  @override
+  String get video_specs_audio_tracks => 'Audio tracks';
+  @override
+  String get video_specs_subtitle_tracks => 'Subtitle tracks';
+  @override
+  String get video_specs_track_commentary => 'Commentary';
+  @override
+  String get video_specs_track_forced => 'Forced';
+  @override
+  String get video_specs_track_default => 'Default';
+  @override
+  String get gal_mining_image_mode_video_clip => 'Video clip';
+  @override
+  String get gal_mining_image_mode_video_clip_hint =>
+      'Records the game window from the moment the line appears until you mine the card, mixed with the sentence audio. Falls back to an animated image or screenshot when recording has not started or fewer than 2 frames were captured.';
+  @override
+  String get game_hook_reason_native_loopback_ack_timeout =>
+      'The audio capture policy was not confirmed in time. Text capture still works; try again if game audio is missing.';
+  @override
+  String get shortcut_scope_global_external_desktop_note =>
+      'Mouse triggers accept side buttons only (back/forward). Other buttons keep their normal meaning in other apps, so they are rejected here.';
+  @override
+  String get shortcut_mouse_button_not_supported =>
+      'This action only accepts mouse side buttons (back/forward).';
+  @override
+  String get anki_ankimobile_opened =>
+      'AnkiMobile opened. Approve the request there, then return to Fushi.';
+  @override
+  String get anki_error_ankimobile_pasteboard_empty =>
+      'AnkiMobile did not return any configuration. Approve the request in AnkiMobile, then come back to Fushi.';
+  @override
+  String get anki_error_ankimobile_pasteboard_denied =>
+      'iOS blocked reading the clipboard. Choose Allow Paste when returning to Fushi, then try again.';
+  @override
+  String get anki_error_ankimobile_no_decks =>
+      'AnkiMobile returned no decks or note types.';
+  @override
+  String get anki_error_ankimobile_unavailable =>
+      'Could not open AnkiMobile. Install AnkiMobile and try again.';
+  @override
+  String get dictionary_collapse_follow_global => 'Follow global setting';
+  @override
+  String get anki_ankimobile_imported => 'AnkiMobile configuration imported.';
+  @override
+  String get anki_error_ankimobile_not_active =>
+      'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+  @override
+  String get audiobook_transcribe_action => 'Generate subtitles on device';
+  @override
+  String get audiobook_transcribe_title => 'On-device transcription';
+  @override
+  String audiobook_transcribe_model_download_needed({required Object size}) =>
+      'Model download required: ${size}';
+  @override
+  String get audiobook_transcribe_model_download => 'Download model';
+  @override
+  String audiobook_transcribe_model_downloading(
+          {required Object name,
+          required Object received,
+          required Object total}) =>
+      'Downloading ${name}… ${received} / ${total}';
+  @override
+  String audiobook_transcribe_model_ready({required Object variant}) =>
+      'Model ready (${variant})';
+  @override
+  String get audiobook_transcribe_accel_label => 'Acceleration';
+  @override
+  String get audiobook_transcribe_accel_auto => 'Auto (GPU when available)';
+  @override
+  String get audiobook_transcribe_accel_cpu => 'CPU only';
+  @override
+  String audiobook_transcribe_running_on({required Object provider}) =>
+      'Running on ${provider}';
+  @override
+  String audiobook_transcribe_fallback({required Object reason}) =>
+      'GPU unavailable, fell back to CPU: ${reason}';
+  @override
+  String get audiobook_transcribe_start => 'Start transcription';
+  @override
+  String get audiobook_transcribe_resume => 'Resume transcription';
+  @override
+  String get audiobook_transcribe_pause => 'Pause';
+  @override
+  String get audiobook_transcribe_pausing => 'Pausing at the next checkpoint…';
+  @override
+  String get audiobook_transcribe_discard => 'Discard progress';
+  @override
+  String get audiobook_transcribe_use_result => 'Use subtitles';
+  @override
+  String audiobook_transcribe_progress(
+          {required Object done,
+          required Object total,
+          required Object file,
+          required Object files}) =>
+      '${done} / ${total} · file ${file}/${files}';
+  @override
+  String audiobook_transcribe_speed(
+          {required Object elapsed,
+          required Object eta,
+          required Object speed}) =>
+      'Elapsed ${elapsed} · remaining ${eta} · ${speed}× realtime';
+  @override
+  String audiobook_transcribe_done(
+          {required Object cues, required Object segments}) =>
+      'Done: ${cues} cues from ${segments} speech segments';
+  @override
+  String audiobook_transcribe_failed({required Object error}) =>
+      'Transcription failed: ${error}';
+  @override
+  String get audiobook_transcribe_needs_audio => 'Pick audio files first';
+  @override
+  String get audiobook_transcribe_result_name =>
+      'Generated by on-device transcription';
+  @override
+  String get audiobook_transcribe_paused_hint =>
+      'Progress is saved. Pick the same audio files later to resume.';
+  @override
+  String get audiobook_transcribe_unavailable =>
+      'On-device transcription is not available on this platform';
+  @override
+  String get audiobook_transcribe_preparing => 'Loading model…';
+  @override
+  String get audiobook_transcribe_export => 'Export subtitle file';
+  @override
+  String get audiobook_transcribe_export_saved => 'Subtitle file saved';
+  @override
+  String get audiobook_subtitle_source_title => 'Subtitle source';
+  @override
+  String get audiobook_subtitle_source_transcribe_hint =>
+      'Generate from the selected audio with the on-device speech model';
+  @override
+  String get audiobook_transcribe_intro =>
+      'Transcribes the audio locally with an on-device speech model for the selected language and generates subtitles for alignment. Nothing is uploaded.';
+  @override
+  String get audiobook_transcribe_language_label => 'Speech language';
+  @override
+  String get audiobook_transcribe_language_ja => 'Japanese';
+  @override
+  String get audiobook_transcribe_language_en => 'English';
+  @override
+  String get asr_models_section => 'Speech recognition models';
+  @override
+  String get asr_models_section_summary =>
+      'Models for on-device audiobook transcription. Download only the languages you need.';
+  @override
+  String asr_models_status_ready({required Object size}) =>
+      'Downloaded · ${size} on disk';
+  @override
+  String asr_models_status_partial(
+          {required Object obtained, required Object total}) =>
+      'Partially downloaded · ${obtained} / ${total}';
+  @override
+  String asr_models_status_missing({required Object size}) =>
+      'Not downloaded · ${size}';
+  @override
+  String get asr_models_download => 'Download';
+  @override
+  String get asr_models_delete => 'Delete';
+  @override
+  String get asr_models_delete_confirm_title => 'Delete this model?';
+  @override
+  String get asr_models_delete_confirm_message =>
+      'Transcription in this language will need the model downloaded again.';
+  @override
+  String asr_models_delete_done_freed({required Object size}) =>
+      'Deleted, freed ${size}';
+  @override
+  String asr_models_download_failed({required Object error}) =>
+      'Download failed: ${error}';
+  @override
+  String audiobook_transcribe_probe_failed({required Object reason}) =>
+      'GPU detection failed, planning for CPU: ${reason}';
+  @override
+  String get onboarding_pack_status_paused =>
+      'Recommended pack download paused';
+  @override
+  String get onboarding_pack_download_resume => 'Resume download';
+  @override
+  String get onboarding_pack_paused_desc =>
+      'Progress is kept on disk — resuming picks up where it stopped.';
+  @override
+  String get onboarding_pack_mini_bar_hide => 'Hide';
 }
 
 // Path: <root>
@@ -86501,8 +89094,6 @@ class _StringsNl extends _StringsEn {
   @override
   String get icon_default => 'Standaard';
   @override
-  String get icon_full => 'Volledig';
-  @override
   String get icon_shortcut_created =>
       'Snelkoppeling op startscherm aangemaakt.';
   @override
@@ -86510,8 +89101,6 @@ class _StringsNl extends _StringsEn {
       'Snelkoppelingen worden niet ondersteund op dit apparaat.';
   @override
   String get icon_switch_success => 'App-icoon succesvol gewijzigd.';
-  @override
-  String get icon_transparent => 'Transparant';
   @override
   String image_page_counter({required Object current, required Object total}) =>
       '${current} / ${total}';
@@ -93914,6 +96503,311 @@ class _StringsNl extends _StringsEn {
   @override
   String discovery_opds_test_failed({required Object reason}) =>
       'Verbinding mislukt: ${reason}';
+  @override
+  String get anki_error_permission_permanently_denied =>
+      'AnkiDroid card access was permanently denied, so the system no longer shows the permission dialog. Open app settings and grant the AnkiDroid permission, then try again.';
+  @override
+  String get anki_error_ankidroid_unavailable =>
+      'AnkiDroid is not installed (or its API is disabled), so card access cannot be granted. Install AnkiDroid and enable its API, or switch to AnkiConnect.';
+  @override
+  String get anki_action_open_settings => 'Open settings';
+  @override
+  String onboarding_pack_pick_failed({required Object message}) =>
+      'Could not use the chosen file: ${message}';
+  @override
+  String get onboarding_pack_pick_no_path =>
+      'The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access.';
+  @override
+  String get interconnect_profile_section => 'Configuration file';
+  @override
+  String get interconnect_profile_upload => 'Upload configuration to host';
+  @override
+  String get interconnect_profile_upload_desc =>
+      'Send this device\'s active configuration to the paired host, where it lands as a new configuration.';
+  @override
+  String get interconnect_profile_download =>
+      'Download configuration from host';
+  @override
+  String get interconnect_profile_download_desc =>
+      'Import the host\'s active configuration as a new configuration here. Your current one is untouched.';
+  @override
+  String get interconnect_profile_host_toggle =>
+      'Allow paired devices to read/write configuration';
+  @override
+  String get interconnect_profile_host_toggle_desc =>
+      'Off by default. Requires HTTPS and a paired-device token. Incoming configurations are always added as new ones.';
+  @override
+  String interconnect_profile_uploaded({required Object name}) =>
+      'Configuration uploaded: ${name}';
+  @override
+  String interconnect_profile_downloaded({required Object name}) =>
+      'Configuration imported: ${name}';
+  @override
+  String get interconnect_profile_unsupported =>
+      'The paired host does not offer configuration transfer (needs HTTPS and a newer version).';
+  @override
+  String interconnect_profile_failed({required Object message}) =>
+      'Configuration transfer failed: ${message}';
+  @override
+  String get onboarding_pack_status_downloading =>
+      'Downloading recommended pack';
+  @override
+  String get onboarding_pack_status_ready => 'Recommended pack downloaded';
+  @override
+  String get onboarding_pack_import_now => 'Import now';
+  @override
+  String get onboarding_pack_download_finished =>
+      'Recommended pack finished downloading. Import it from Settings → System.';
+  @override
+  String get onboarding_pack_download_background_hint =>
+      'The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.';
+  @override
+  String get onboarding_anki_fsrs_title => 'Turn on FSRS in Anki';
+  @override
+  String get onboarding_anki_fsrs_body =>
+      'Anki has FSRS built in — one of the best spaced-repetition algorithms around — but it keeps scheduling with SM-2 from the 1980s until you turn FSRS on. FSRS reads your real review history and predicts when you are about to forget, so you keep the same retention with fewer reviews. You flip this switch once, inside Anki; nothing changes on the Fushi side.';
+  @override
+  String get onboarding_anki_fsrs_step_options_title => 'Open deck options';
+  @override
+  String get onboarding_anki_fsrs_step_options_desktop_desc =>
+      'In Anki, click the gear next to a deck and choose Options.';
+  @override
+  String get onboarding_anki_fsrs_step_options_mobile_desc =>
+      'In AnkiDroid (2.17 or newer) or AnkiMobile, long-press the deck and choose Options.';
+  @override
+  String get onboarding_anki_fsrs_step_toggle_title => 'Switch FSRS on';
+  @override
+  String get onboarding_anki_fsrs_step_toggle_desc =>
+      'Scroll to the FSRS section at the bottom of the options page (older builds hide it under Advanced) and turn the switch on. It applies to your whole collection, so once is enough.';
+  @override
+  String get onboarding_anki_fsrs_step_optimize_title => 'Optimize, then save';
+  @override
+  String get onboarding_anki_fsrs_step_optimize_desc =>
+      'Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while.';
+  @override
+  String get sync_desktop_oauth_waiting_title =>
+      'Wachten op aanmelding in de browser';
+  @override
+  String get sync_desktop_oauth_waiting_body =>
+      'De aanmeldpagina is geopend in je standaardbrowser. Als er niets is geopend of de pagina een fout toont, kopieer dan de link en open die in een andere browser of een privévenster.';
+  @override
+  String get sync_desktop_oauth_link_copy => 'Aanmeldlink kopiëren';
+  @override
+  String get sync_desktop_oauth_browser_reopen => 'Browser opnieuw openen';
+  @override
+  String get sync_err_sign_in_cancelled => 'Aanmelden geannuleerd.';
+  @override
+  String get sync_desktop_oauth_browser_open_failed =>
+      'De browser kon niet worden geopend. Kopieer de link en open die zelf in een browser.';
+  @override
+  String get sync_desktop_oauth_link_copy_failed =>
+      'De link kon niet worden gekopieerd. Selecteer de linktekst en kopieer die handmatig.';
+  @override
+  String get game_text_thread_artifact_hint =>
+      'Repeated-character artifact thread, no usable lines';
+  @override
+  String get shortcut_action_global_context_menu => 'Open context menu';
+  @override
+  String get shortcut_conflict_keep_both => 'Keep both';
+  @override
+  String get shortcut_conflict_keep_both_hint =>
+      'Both actions keep this binding. Whichever scope resolves first wins at press time.';
+  @override
+  String get video_specs_title => 'Media info';
+  @override
+  String get video_specs_resolution => 'Resolution';
+  @override
+  String get video_specs_dynamic_range => 'Dynamic range';
+  @override
+  String get video_specs_video_codec => 'Video codec';
+  @override
+  String get video_specs_bit_depth => 'Bit depth';
+  @override
+  String get video_specs_frame_rate => 'Frame rate';
+  @override
+  String get video_specs_bitrate => 'Bitrate';
+  @override
+  String get video_specs_audio_tracks => 'Audio tracks';
+  @override
+  String get video_specs_subtitle_tracks => 'Subtitle tracks';
+  @override
+  String get video_specs_track_commentary => 'Commentary';
+  @override
+  String get video_specs_track_forced => 'Forced';
+  @override
+  String get video_specs_track_default => 'Default';
+  @override
+  String get gal_mining_image_mode_video_clip => 'Video clip';
+  @override
+  String get gal_mining_image_mode_video_clip_hint =>
+      'Records the game window from the moment the line appears until you mine the card, mixed with the sentence audio. Falls back to an animated image or screenshot when recording has not started or fewer than 2 frames were captured.';
+  @override
+  String get game_hook_reason_native_loopback_ack_timeout =>
+      'The audio capture policy was not confirmed in time. Text capture still works; try again if game audio is missing.';
+  @override
+  String get shortcut_scope_global_external_desktop_note =>
+      'Mouse triggers accept side buttons only (back/forward). Other buttons keep their normal meaning in other apps, so they are rejected here.';
+  @override
+  String get shortcut_mouse_button_not_supported =>
+      'This action only accepts mouse side buttons (back/forward).';
+  @override
+  String get anki_ankimobile_opened =>
+      'AnkiMobile opened. Approve the request there, then return to Fushi.';
+  @override
+  String get anki_error_ankimobile_pasteboard_empty =>
+      'AnkiMobile did not return any configuration. Approve the request in AnkiMobile, then come back to Fushi.';
+  @override
+  String get anki_error_ankimobile_pasteboard_denied =>
+      'iOS blocked reading the clipboard. Choose Allow Paste when returning to Fushi, then try again.';
+  @override
+  String get anki_error_ankimobile_no_decks =>
+      'AnkiMobile returned no decks or note types.';
+  @override
+  String get anki_error_ankimobile_unavailable =>
+      'Could not open AnkiMobile. Install AnkiMobile and try again.';
+  @override
+  String get dictionary_collapse_follow_global => 'Follow global setting';
+  @override
+  String get anki_ankimobile_imported => 'AnkiMobile configuration imported.';
+  @override
+  String get anki_error_ankimobile_not_active =>
+      'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+  @override
+  String get audiobook_transcribe_action => 'Generate subtitles on device';
+  @override
+  String get audiobook_transcribe_title => 'On-device transcription';
+  @override
+  String audiobook_transcribe_model_download_needed({required Object size}) =>
+      'Model download required: ${size}';
+  @override
+  String get audiobook_transcribe_model_download => 'Download model';
+  @override
+  String audiobook_transcribe_model_downloading(
+          {required Object name,
+          required Object received,
+          required Object total}) =>
+      'Downloading ${name}… ${received} / ${total}';
+  @override
+  String audiobook_transcribe_model_ready({required Object variant}) =>
+      'Model ready (${variant})';
+  @override
+  String get audiobook_transcribe_accel_label => 'Acceleration';
+  @override
+  String get audiobook_transcribe_accel_auto => 'Auto (GPU when available)';
+  @override
+  String get audiobook_transcribe_accel_cpu => 'CPU only';
+  @override
+  String audiobook_transcribe_running_on({required Object provider}) =>
+      'Running on ${provider}';
+  @override
+  String audiobook_transcribe_fallback({required Object reason}) =>
+      'GPU unavailable, fell back to CPU: ${reason}';
+  @override
+  String get audiobook_transcribe_start => 'Start transcription';
+  @override
+  String get audiobook_transcribe_resume => 'Resume transcription';
+  @override
+  String get audiobook_transcribe_pause => 'Pause';
+  @override
+  String get audiobook_transcribe_pausing => 'Pausing at the next checkpoint…';
+  @override
+  String get audiobook_transcribe_discard => 'Discard progress';
+  @override
+  String get audiobook_transcribe_use_result => 'Use subtitles';
+  @override
+  String audiobook_transcribe_progress(
+          {required Object done,
+          required Object total,
+          required Object file,
+          required Object files}) =>
+      '${done} / ${total} · file ${file}/${files}';
+  @override
+  String audiobook_transcribe_speed(
+          {required Object elapsed,
+          required Object eta,
+          required Object speed}) =>
+      'Elapsed ${elapsed} · remaining ${eta} · ${speed}× realtime';
+  @override
+  String audiobook_transcribe_done(
+          {required Object cues, required Object segments}) =>
+      'Done: ${cues} cues from ${segments} speech segments';
+  @override
+  String audiobook_transcribe_failed({required Object error}) =>
+      'Transcription failed: ${error}';
+  @override
+  String get audiobook_transcribe_needs_audio => 'Pick audio files first';
+  @override
+  String get audiobook_transcribe_result_name =>
+      'Generated by on-device transcription';
+  @override
+  String get audiobook_transcribe_paused_hint =>
+      'Progress is saved. Pick the same audio files later to resume.';
+  @override
+  String get audiobook_transcribe_unavailable =>
+      'On-device transcription is not available on this platform';
+  @override
+  String get audiobook_transcribe_preparing => 'Loading model…';
+  @override
+  String get audiobook_transcribe_export => 'Export subtitle file';
+  @override
+  String get audiobook_transcribe_export_saved => 'Subtitle file saved';
+  @override
+  String get audiobook_subtitle_source_title => 'Subtitle source';
+  @override
+  String get audiobook_subtitle_source_transcribe_hint =>
+      'Generate from the selected audio with the on-device speech model';
+  @override
+  String get audiobook_transcribe_intro =>
+      'Transcribes the audio locally with an on-device speech model for the selected language and generates subtitles for alignment. Nothing is uploaded.';
+  @override
+  String get audiobook_transcribe_language_label => 'Speech language';
+  @override
+  String get audiobook_transcribe_language_ja => 'Japanese';
+  @override
+  String get audiobook_transcribe_language_en => 'English';
+  @override
+  String get asr_models_section => 'Speech recognition models';
+  @override
+  String get asr_models_section_summary =>
+      'Models for on-device audiobook transcription. Download only the languages you need.';
+  @override
+  String asr_models_status_ready({required Object size}) =>
+      'Downloaded · ${size} on disk';
+  @override
+  String asr_models_status_partial(
+          {required Object obtained, required Object total}) =>
+      'Partially downloaded · ${obtained} / ${total}';
+  @override
+  String asr_models_status_missing({required Object size}) =>
+      'Not downloaded · ${size}';
+  @override
+  String get asr_models_download => 'Download';
+  @override
+  String get asr_models_delete => 'Delete';
+  @override
+  String get asr_models_delete_confirm_title => 'Delete this model?';
+  @override
+  String get asr_models_delete_confirm_message =>
+      'Transcription in this language will need the model downloaded again.';
+  @override
+  String asr_models_delete_done_freed({required Object size}) =>
+      'Deleted, freed ${size}';
+  @override
+  String asr_models_download_failed({required Object error}) =>
+      'Download failed: ${error}';
+  @override
+  String audiobook_transcribe_probe_failed({required Object reason}) =>
+      'GPU detection failed, planning for CPU: ${reason}';
+  @override
+  String get onboarding_pack_status_paused =>
+      'Recommended pack download paused';
+  @override
+  String get onboarding_pack_download_resume => 'Resume download';
+  @override
+  String get onboarding_pack_paused_desc =>
+      'Progress is kept on disk — resuming picks up where it stopped.';
+  @override
+  String get onboarding_pack_mini_bar_hide => 'Hide';
 }
 
 // Path: <root>
@@ -96422,16 +99316,12 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get icon_default => 'Padrão';
   @override
-  String get icon_full => 'Completo';
-  @override
   String get icon_shortcut_created => 'Atalho criado na tela inicial.';
   @override
   String get icon_shortcut_unsupported =>
       'Atalhos não são suportados neste dispositivo.';
   @override
   String get icon_switch_success => 'Ícone do app alterado com sucesso.';
-  @override
-  String get icon_transparent => 'Transparente';
   @override
   String image_page_counter({required Object current, required Object total}) =>
       '${current} / ${total}';
@@ -103873,6 +106763,311 @@ class _StringsPtBr extends _StringsEn {
   @override
   String discovery_opds_test_failed({required Object reason}) =>
       'Falha na conexão: ${reason}';
+  @override
+  String get anki_error_permission_permanently_denied =>
+      'AnkiDroid card access was permanently denied, so the system no longer shows the permission dialog. Open app settings and grant the AnkiDroid permission, then try again.';
+  @override
+  String get anki_error_ankidroid_unavailable =>
+      'AnkiDroid is not installed (or its API is disabled), so card access cannot be granted. Install AnkiDroid and enable its API, or switch to AnkiConnect.';
+  @override
+  String get anki_action_open_settings => 'Open settings';
+  @override
+  String onboarding_pack_pick_failed({required Object message}) =>
+      'Could not use the chosen file: ${message}';
+  @override
+  String get onboarding_pack_pick_no_path =>
+      'The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access.';
+  @override
+  String get interconnect_profile_section => 'Configuration file';
+  @override
+  String get interconnect_profile_upload => 'Upload configuration to host';
+  @override
+  String get interconnect_profile_upload_desc =>
+      'Send this device\'s active configuration to the paired host, where it lands as a new configuration.';
+  @override
+  String get interconnect_profile_download =>
+      'Download configuration from host';
+  @override
+  String get interconnect_profile_download_desc =>
+      'Import the host\'s active configuration as a new configuration here. Your current one is untouched.';
+  @override
+  String get interconnect_profile_host_toggle =>
+      'Allow paired devices to read/write configuration';
+  @override
+  String get interconnect_profile_host_toggle_desc =>
+      'Off by default. Requires HTTPS and a paired-device token. Incoming configurations are always added as new ones.';
+  @override
+  String interconnect_profile_uploaded({required Object name}) =>
+      'Configuration uploaded: ${name}';
+  @override
+  String interconnect_profile_downloaded({required Object name}) =>
+      'Configuration imported: ${name}';
+  @override
+  String get interconnect_profile_unsupported =>
+      'The paired host does not offer configuration transfer (needs HTTPS and a newer version).';
+  @override
+  String interconnect_profile_failed({required Object message}) =>
+      'Configuration transfer failed: ${message}';
+  @override
+  String get onboarding_pack_status_downloading =>
+      'Downloading recommended pack';
+  @override
+  String get onboarding_pack_status_ready => 'Recommended pack downloaded';
+  @override
+  String get onboarding_pack_import_now => 'Import now';
+  @override
+  String get onboarding_pack_download_finished =>
+      'Recommended pack finished downloading. Import it from Settings → System.';
+  @override
+  String get onboarding_pack_download_background_hint =>
+      'The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.';
+  @override
+  String get onboarding_anki_fsrs_title => 'Turn on FSRS in Anki';
+  @override
+  String get onboarding_anki_fsrs_body =>
+      'Anki has FSRS built in — one of the best spaced-repetition algorithms around — but it keeps scheduling with SM-2 from the 1980s until you turn FSRS on. FSRS reads your real review history and predicts when you are about to forget, so you keep the same retention with fewer reviews. You flip this switch once, inside Anki; nothing changes on the Fushi side.';
+  @override
+  String get onboarding_anki_fsrs_step_options_title => 'Open deck options';
+  @override
+  String get onboarding_anki_fsrs_step_options_desktop_desc =>
+      'In Anki, click the gear next to a deck and choose Options.';
+  @override
+  String get onboarding_anki_fsrs_step_options_mobile_desc =>
+      'In AnkiDroid (2.17 or newer) or AnkiMobile, long-press the deck and choose Options.';
+  @override
+  String get onboarding_anki_fsrs_step_toggle_title => 'Switch FSRS on';
+  @override
+  String get onboarding_anki_fsrs_step_toggle_desc =>
+      'Scroll to the FSRS section at the bottom of the options page (older builds hide it under Advanced) and turn the switch on. It applies to your whole collection, so once is enough.';
+  @override
+  String get onboarding_anki_fsrs_step_optimize_title => 'Optimize, then save';
+  @override
+  String get onboarding_anki_fsrs_step_optimize_desc =>
+      'Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while.';
+  @override
+  String get sync_desktop_oauth_waiting_title =>
+      'Aguardando o login no navegador';
+  @override
+  String get sync_desktop_oauth_waiting_body =>
+      'A página de login foi aberta no seu navegador padrão. Se nada abriu ou a página mostra um erro, copie o link e abra em outro navegador ou em uma janela anônima.';
+  @override
+  String get sync_desktop_oauth_link_copy => 'Copiar link de login';
+  @override
+  String get sync_desktop_oauth_browser_reopen => 'Abrir o navegador novamente';
+  @override
+  String get sync_err_sign_in_cancelled => 'Login cancelado.';
+  @override
+  String get sync_desktop_oauth_browser_open_failed =>
+      'Não foi possível abrir o navegador. Copie o link e abra você mesmo em um navegador.';
+  @override
+  String get sync_desktop_oauth_link_copy_failed =>
+      'Não foi possível copiar o link. Selecione o texto do link e copie manualmente.';
+  @override
+  String get game_text_thread_artifact_hint =>
+      'Repeated-character artifact thread, no usable lines';
+  @override
+  String get shortcut_action_global_context_menu => 'Open context menu';
+  @override
+  String get shortcut_conflict_keep_both => 'Keep both';
+  @override
+  String get shortcut_conflict_keep_both_hint =>
+      'Both actions keep this binding. Whichever scope resolves first wins at press time.';
+  @override
+  String get video_specs_title => 'Media info';
+  @override
+  String get video_specs_resolution => 'Resolution';
+  @override
+  String get video_specs_dynamic_range => 'Dynamic range';
+  @override
+  String get video_specs_video_codec => 'Video codec';
+  @override
+  String get video_specs_bit_depth => 'Bit depth';
+  @override
+  String get video_specs_frame_rate => 'Frame rate';
+  @override
+  String get video_specs_bitrate => 'Bitrate';
+  @override
+  String get video_specs_audio_tracks => 'Audio tracks';
+  @override
+  String get video_specs_subtitle_tracks => 'Subtitle tracks';
+  @override
+  String get video_specs_track_commentary => 'Commentary';
+  @override
+  String get video_specs_track_forced => 'Forced';
+  @override
+  String get video_specs_track_default => 'Default';
+  @override
+  String get gal_mining_image_mode_video_clip => 'Video clip';
+  @override
+  String get gal_mining_image_mode_video_clip_hint =>
+      'Records the game window from the moment the line appears until you mine the card, mixed with the sentence audio. Falls back to an animated image or screenshot when recording has not started or fewer than 2 frames were captured.';
+  @override
+  String get game_hook_reason_native_loopback_ack_timeout =>
+      'The audio capture policy was not confirmed in time. Text capture still works; try again if game audio is missing.';
+  @override
+  String get shortcut_scope_global_external_desktop_note =>
+      'Mouse triggers accept side buttons only (back/forward). Other buttons keep their normal meaning in other apps, so they are rejected here.';
+  @override
+  String get shortcut_mouse_button_not_supported =>
+      'This action only accepts mouse side buttons (back/forward).';
+  @override
+  String get anki_ankimobile_opened =>
+      'AnkiMobile opened. Approve the request there, then return to Fushi.';
+  @override
+  String get anki_error_ankimobile_pasteboard_empty =>
+      'AnkiMobile did not return any configuration. Approve the request in AnkiMobile, then come back to Fushi.';
+  @override
+  String get anki_error_ankimobile_pasteboard_denied =>
+      'iOS blocked reading the clipboard. Choose Allow Paste when returning to Fushi, then try again.';
+  @override
+  String get anki_error_ankimobile_no_decks =>
+      'AnkiMobile returned no decks or note types.';
+  @override
+  String get anki_error_ankimobile_unavailable =>
+      'Could not open AnkiMobile. Install AnkiMobile and try again.';
+  @override
+  String get dictionary_collapse_follow_global => 'Follow global setting';
+  @override
+  String get anki_ankimobile_imported => 'AnkiMobile configuration imported.';
+  @override
+  String get anki_error_ankimobile_not_active =>
+      'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+  @override
+  String get audiobook_transcribe_action => 'Generate subtitles on device';
+  @override
+  String get audiobook_transcribe_title => 'On-device transcription';
+  @override
+  String audiobook_transcribe_model_download_needed({required Object size}) =>
+      'Model download required: ${size}';
+  @override
+  String get audiobook_transcribe_model_download => 'Download model';
+  @override
+  String audiobook_transcribe_model_downloading(
+          {required Object name,
+          required Object received,
+          required Object total}) =>
+      'Downloading ${name}… ${received} / ${total}';
+  @override
+  String audiobook_transcribe_model_ready({required Object variant}) =>
+      'Model ready (${variant})';
+  @override
+  String get audiobook_transcribe_accel_label => 'Acceleration';
+  @override
+  String get audiobook_transcribe_accel_auto => 'Auto (GPU when available)';
+  @override
+  String get audiobook_transcribe_accel_cpu => 'CPU only';
+  @override
+  String audiobook_transcribe_running_on({required Object provider}) =>
+      'Running on ${provider}';
+  @override
+  String audiobook_transcribe_fallback({required Object reason}) =>
+      'GPU unavailable, fell back to CPU: ${reason}';
+  @override
+  String get audiobook_transcribe_start => 'Start transcription';
+  @override
+  String get audiobook_transcribe_resume => 'Resume transcription';
+  @override
+  String get audiobook_transcribe_pause => 'Pause';
+  @override
+  String get audiobook_transcribe_pausing => 'Pausing at the next checkpoint…';
+  @override
+  String get audiobook_transcribe_discard => 'Discard progress';
+  @override
+  String get audiobook_transcribe_use_result => 'Use subtitles';
+  @override
+  String audiobook_transcribe_progress(
+          {required Object done,
+          required Object total,
+          required Object file,
+          required Object files}) =>
+      '${done} / ${total} · file ${file}/${files}';
+  @override
+  String audiobook_transcribe_speed(
+          {required Object elapsed,
+          required Object eta,
+          required Object speed}) =>
+      'Elapsed ${elapsed} · remaining ${eta} · ${speed}× realtime';
+  @override
+  String audiobook_transcribe_done(
+          {required Object cues, required Object segments}) =>
+      'Done: ${cues} cues from ${segments} speech segments';
+  @override
+  String audiobook_transcribe_failed({required Object error}) =>
+      'Transcription failed: ${error}';
+  @override
+  String get audiobook_transcribe_needs_audio => 'Pick audio files first';
+  @override
+  String get audiobook_transcribe_result_name =>
+      'Generated by on-device transcription';
+  @override
+  String get audiobook_transcribe_paused_hint =>
+      'Progress is saved. Pick the same audio files later to resume.';
+  @override
+  String get audiobook_transcribe_unavailable =>
+      'On-device transcription is not available on this platform';
+  @override
+  String get audiobook_transcribe_preparing => 'Loading model…';
+  @override
+  String get audiobook_transcribe_export => 'Export subtitle file';
+  @override
+  String get audiobook_transcribe_export_saved => 'Subtitle file saved';
+  @override
+  String get audiobook_subtitle_source_title => 'Subtitle source';
+  @override
+  String get audiobook_subtitle_source_transcribe_hint =>
+      'Generate from the selected audio with the on-device speech model';
+  @override
+  String get audiobook_transcribe_intro =>
+      'Transcribes the audio locally with an on-device speech model for the selected language and generates subtitles for alignment. Nothing is uploaded.';
+  @override
+  String get audiobook_transcribe_language_label => 'Speech language';
+  @override
+  String get audiobook_transcribe_language_ja => 'Japanese';
+  @override
+  String get audiobook_transcribe_language_en => 'English';
+  @override
+  String get asr_models_section => 'Speech recognition models';
+  @override
+  String get asr_models_section_summary =>
+      'Models for on-device audiobook transcription. Download only the languages you need.';
+  @override
+  String asr_models_status_ready({required Object size}) =>
+      'Downloaded · ${size} on disk';
+  @override
+  String asr_models_status_partial(
+          {required Object obtained, required Object total}) =>
+      'Partially downloaded · ${obtained} / ${total}';
+  @override
+  String asr_models_status_missing({required Object size}) =>
+      'Not downloaded · ${size}';
+  @override
+  String get asr_models_download => 'Download';
+  @override
+  String get asr_models_delete => 'Delete';
+  @override
+  String get asr_models_delete_confirm_title => 'Delete this model?';
+  @override
+  String get asr_models_delete_confirm_message =>
+      'Transcription in this language will need the model downloaded again.';
+  @override
+  String asr_models_delete_done_freed({required Object size}) =>
+      'Deleted, freed ${size}';
+  @override
+  String asr_models_download_failed({required Object error}) =>
+      'Download failed: ${error}';
+  @override
+  String audiobook_transcribe_probe_failed({required Object reason}) =>
+      'GPU detection failed, planning for CPU: ${reason}';
+  @override
+  String get onboarding_pack_status_paused =>
+      'Recommended pack download paused';
+  @override
+  String get onboarding_pack_download_resume => 'Resume download';
+  @override
+  String get onboarding_pack_paused_desc =>
+      'Progress is kept on disk — resuming picks up where it stopped.';
+  @override
+  String get onboarding_pack_mini_bar_hide => 'Hide';
 }
 
 // Path: <root>
@@ -106371,16 +109566,12 @@ class _StringsRu extends _StringsEn {
   @override
   String get icon_default => 'По умолчанию';
   @override
-  String get icon_full => 'Полная';
-  @override
   String get icon_shortcut_created => 'Ярлык на главном экране создан.';
   @override
   String get icon_shortcut_unsupported =>
       'Ярлыки не поддерживаются на этом устройстве.';
   @override
   String get icon_switch_success => 'Иконка приложения успешно изменена.';
-  @override
-  String get icon_transparent => 'Прозрачный';
   @override
   String image_page_counter({required Object current, required Object total}) =>
       '${current} / ${total}';
@@ -113811,6 +117002,310 @@ class _StringsRu extends _StringsEn {
   @override
   String discovery_opds_test_failed({required Object reason}) =>
       'Не удалось подключиться: ${reason}';
+  @override
+  String get anki_error_permission_permanently_denied =>
+      'AnkiDroid card access was permanently denied, so the system no longer shows the permission dialog. Open app settings and grant the AnkiDroid permission, then try again.';
+  @override
+  String get anki_error_ankidroid_unavailable =>
+      'AnkiDroid is not installed (or its API is disabled), so card access cannot be granted. Install AnkiDroid and enable its API, or switch to AnkiConnect.';
+  @override
+  String get anki_action_open_settings => 'Open settings';
+  @override
+  String onboarding_pack_pick_failed({required Object message}) =>
+      'Could not use the chosen file: ${message}';
+  @override
+  String get onboarding_pack_pick_no_path =>
+      'The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access.';
+  @override
+  String get interconnect_profile_section => 'Configuration file';
+  @override
+  String get interconnect_profile_upload => 'Upload configuration to host';
+  @override
+  String get interconnect_profile_upload_desc =>
+      'Send this device\'s active configuration to the paired host, where it lands as a new configuration.';
+  @override
+  String get interconnect_profile_download =>
+      'Download configuration from host';
+  @override
+  String get interconnect_profile_download_desc =>
+      'Import the host\'s active configuration as a new configuration here. Your current one is untouched.';
+  @override
+  String get interconnect_profile_host_toggle =>
+      'Allow paired devices to read/write configuration';
+  @override
+  String get interconnect_profile_host_toggle_desc =>
+      'Off by default. Requires HTTPS and a paired-device token. Incoming configurations are always added as new ones.';
+  @override
+  String interconnect_profile_uploaded({required Object name}) =>
+      'Configuration uploaded: ${name}';
+  @override
+  String interconnect_profile_downloaded({required Object name}) =>
+      'Configuration imported: ${name}';
+  @override
+  String get interconnect_profile_unsupported =>
+      'The paired host does not offer configuration transfer (needs HTTPS and a newer version).';
+  @override
+  String interconnect_profile_failed({required Object message}) =>
+      'Configuration transfer failed: ${message}';
+  @override
+  String get onboarding_pack_status_downloading =>
+      'Downloading recommended pack';
+  @override
+  String get onboarding_pack_status_ready => 'Recommended pack downloaded';
+  @override
+  String get onboarding_pack_import_now => 'Import now';
+  @override
+  String get onboarding_pack_download_finished =>
+      'Recommended pack finished downloading. Import it from Settings → System.';
+  @override
+  String get onboarding_pack_download_background_hint =>
+      'The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.';
+  @override
+  String get onboarding_anki_fsrs_title => 'Turn on FSRS in Anki';
+  @override
+  String get onboarding_anki_fsrs_body =>
+      'Anki has FSRS built in — one of the best spaced-repetition algorithms around — but it keeps scheduling with SM-2 from the 1980s until you turn FSRS on. FSRS reads your real review history and predicts when you are about to forget, so you keep the same retention with fewer reviews. You flip this switch once, inside Anki; nothing changes on the Fushi side.';
+  @override
+  String get onboarding_anki_fsrs_step_options_title => 'Open deck options';
+  @override
+  String get onboarding_anki_fsrs_step_options_desktop_desc =>
+      'In Anki, click the gear next to a deck and choose Options.';
+  @override
+  String get onboarding_anki_fsrs_step_options_mobile_desc =>
+      'In AnkiDroid (2.17 or newer) or AnkiMobile, long-press the deck and choose Options.';
+  @override
+  String get onboarding_anki_fsrs_step_toggle_title => 'Switch FSRS on';
+  @override
+  String get onboarding_anki_fsrs_step_toggle_desc =>
+      'Scroll to the FSRS section at the bottom of the options page (older builds hide it under Advanced) and turn the switch on. It applies to your whole collection, so once is enough.';
+  @override
+  String get onboarding_anki_fsrs_step_optimize_title => 'Optimize, then save';
+  @override
+  String get onboarding_anki_fsrs_step_optimize_desc =>
+      'Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while.';
+  @override
+  String get sync_desktop_oauth_waiting_title => 'Ожидание входа в браузере';
+  @override
+  String get sync_desktop_oauth_waiting_body =>
+      'Страница входа открыта в браузере по умолчанию. Если ничего не открылось или страница показывает ошибку, скопируйте ссылку и откройте её в другом браузере или в приватном окне.';
+  @override
+  String get sync_desktop_oauth_link_copy => 'Скопировать ссылку для входа';
+  @override
+  String get sync_desktop_oauth_browser_reopen => 'Открыть браузер снова';
+  @override
+  String get sync_err_sign_in_cancelled => 'Вход отменён.';
+  @override
+  String get sync_desktop_oauth_browser_open_failed =>
+      'Не удалось открыть браузер. Скопируйте ссылку и откройте её в браузере вручную.';
+  @override
+  String get sync_desktop_oauth_link_copy_failed =>
+      'Не удалось скопировать ссылку. Выделите текст ссылки и скопируйте его вручную.';
+  @override
+  String get game_text_thread_artifact_hint =>
+      'Repeated-character artifact thread, no usable lines';
+  @override
+  String get shortcut_action_global_context_menu => 'Open context menu';
+  @override
+  String get shortcut_conflict_keep_both => 'Keep both';
+  @override
+  String get shortcut_conflict_keep_both_hint =>
+      'Both actions keep this binding. Whichever scope resolves first wins at press time.';
+  @override
+  String get video_specs_title => 'Media info';
+  @override
+  String get video_specs_resolution => 'Resolution';
+  @override
+  String get video_specs_dynamic_range => 'Dynamic range';
+  @override
+  String get video_specs_video_codec => 'Video codec';
+  @override
+  String get video_specs_bit_depth => 'Bit depth';
+  @override
+  String get video_specs_frame_rate => 'Frame rate';
+  @override
+  String get video_specs_bitrate => 'Bitrate';
+  @override
+  String get video_specs_audio_tracks => 'Audio tracks';
+  @override
+  String get video_specs_subtitle_tracks => 'Subtitle tracks';
+  @override
+  String get video_specs_track_commentary => 'Commentary';
+  @override
+  String get video_specs_track_forced => 'Forced';
+  @override
+  String get video_specs_track_default => 'Default';
+  @override
+  String get gal_mining_image_mode_video_clip => 'Video clip';
+  @override
+  String get gal_mining_image_mode_video_clip_hint =>
+      'Records the game window from the moment the line appears until you mine the card, mixed with the sentence audio. Falls back to an animated image or screenshot when recording has not started or fewer than 2 frames were captured.';
+  @override
+  String get game_hook_reason_native_loopback_ack_timeout =>
+      'The audio capture policy was not confirmed in time. Text capture still works; try again if game audio is missing.';
+  @override
+  String get shortcut_scope_global_external_desktop_note =>
+      'Mouse triggers accept side buttons only (back/forward). Other buttons keep their normal meaning in other apps, so they are rejected here.';
+  @override
+  String get shortcut_mouse_button_not_supported =>
+      'This action only accepts mouse side buttons (back/forward).';
+  @override
+  String get anki_ankimobile_opened =>
+      'AnkiMobile opened. Approve the request there, then return to Fushi.';
+  @override
+  String get anki_error_ankimobile_pasteboard_empty =>
+      'AnkiMobile did not return any configuration. Approve the request in AnkiMobile, then come back to Fushi.';
+  @override
+  String get anki_error_ankimobile_pasteboard_denied =>
+      'iOS blocked reading the clipboard. Choose Allow Paste when returning to Fushi, then try again.';
+  @override
+  String get anki_error_ankimobile_no_decks =>
+      'AnkiMobile returned no decks or note types.';
+  @override
+  String get anki_error_ankimobile_unavailable =>
+      'Could not open AnkiMobile. Install AnkiMobile and try again.';
+  @override
+  String get dictionary_collapse_follow_global => 'Follow global setting';
+  @override
+  String get anki_ankimobile_imported => 'AnkiMobile configuration imported.';
+  @override
+  String get anki_error_ankimobile_not_active =>
+      'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+  @override
+  String get audiobook_transcribe_action => 'Generate subtitles on device';
+  @override
+  String get audiobook_transcribe_title => 'On-device transcription';
+  @override
+  String audiobook_transcribe_model_download_needed({required Object size}) =>
+      'Model download required: ${size}';
+  @override
+  String get audiobook_transcribe_model_download => 'Download model';
+  @override
+  String audiobook_transcribe_model_downloading(
+          {required Object name,
+          required Object received,
+          required Object total}) =>
+      'Downloading ${name}… ${received} / ${total}';
+  @override
+  String audiobook_transcribe_model_ready({required Object variant}) =>
+      'Model ready (${variant})';
+  @override
+  String get audiobook_transcribe_accel_label => 'Acceleration';
+  @override
+  String get audiobook_transcribe_accel_auto => 'Auto (GPU when available)';
+  @override
+  String get audiobook_transcribe_accel_cpu => 'CPU only';
+  @override
+  String audiobook_transcribe_running_on({required Object provider}) =>
+      'Running on ${provider}';
+  @override
+  String audiobook_transcribe_fallback({required Object reason}) =>
+      'GPU unavailable, fell back to CPU: ${reason}';
+  @override
+  String get audiobook_transcribe_start => 'Start transcription';
+  @override
+  String get audiobook_transcribe_resume => 'Resume transcription';
+  @override
+  String get audiobook_transcribe_pause => 'Pause';
+  @override
+  String get audiobook_transcribe_pausing => 'Pausing at the next checkpoint…';
+  @override
+  String get audiobook_transcribe_discard => 'Discard progress';
+  @override
+  String get audiobook_transcribe_use_result => 'Use subtitles';
+  @override
+  String audiobook_transcribe_progress(
+          {required Object done,
+          required Object total,
+          required Object file,
+          required Object files}) =>
+      '${done} / ${total} · file ${file}/${files}';
+  @override
+  String audiobook_transcribe_speed(
+          {required Object elapsed,
+          required Object eta,
+          required Object speed}) =>
+      'Elapsed ${elapsed} · remaining ${eta} · ${speed}× realtime';
+  @override
+  String audiobook_transcribe_done(
+          {required Object cues, required Object segments}) =>
+      'Done: ${cues} cues from ${segments} speech segments';
+  @override
+  String audiobook_transcribe_failed({required Object error}) =>
+      'Transcription failed: ${error}';
+  @override
+  String get audiobook_transcribe_needs_audio => 'Pick audio files first';
+  @override
+  String get audiobook_transcribe_result_name =>
+      'Generated by on-device transcription';
+  @override
+  String get audiobook_transcribe_paused_hint =>
+      'Progress is saved. Pick the same audio files later to resume.';
+  @override
+  String get audiobook_transcribe_unavailable =>
+      'On-device transcription is not available on this platform';
+  @override
+  String get audiobook_transcribe_preparing => 'Loading model…';
+  @override
+  String get audiobook_transcribe_export => 'Export subtitle file';
+  @override
+  String get audiobook_transcribe_export_saved => 'Subtitle file saved';
+  @override
+  String get audiobook_subtitle_source_title => 'Subtitle source';
+  @override
+  String get audiobook_subtitle_source_transcribe_hint =>
+      'Generate from the selected audio with the on-device speech model';
+  @override
+  String get audiobook_transcribe_intro =>
+      'Transcribes the audio locally with an on-device speech model for the selected language and generates subtitles for alignment. Nothing is uploaded.';
+  @override
+  String get audiobook_transcribe_language_label => 'Speech language';
+  @override
+  String get audiobook_transcribe_language_ja => 'Japanese';
+  @override
+  String get audiobook_transcribe_language_en => 'English';
+  @override
+  String get asr_models_section => 'Speech recognition models';
+  @override
+  String get asr_models_section_summary =>
+      'Models for on-device audiobook transcription. Download only the languages you need.';
+  @override
+  String asr_models_status_ready({required Object size}) =>
+      'Downloaded · ${size} on disk';
+  @override
+  String asr_models_status_partial(
+          {required Object obtained, required Object total}) =>
+      'Partially downloaded · ${obtained} / ${total}';
+  @override
+  String asr_models_status_missing({required Object size}) =>
+      'Not downloaded · ${size}';
+  @override
+  String get asr_models_download => 'Download';
+  @override
+  String get asr_models_delete => 'Delete';
+  @override
+  String get asr_models_delete_confirm_title => 'Delete this model?';
+  @override
+  String get asr_models_delete_confirm_message =>
+      'Transcription in this language will need the model downloaded again.';
+  @override
+  String asr_models_delete_done_freed({required Object size}) =>
+      'Deleted, freed ${size}';
+  @override
+  String asr_models_download_failed({required Object error}) =>
+      'Download failed: ${error}';
+  @override
+  String audiobook_transcribe_probe_failed({required Object reason}) =>
+      'GPU detection failed, planning for CPU: ${reason}';
+  @override
+  String get onboarding_pack_status_paused =>
+      'Recommended pack download paused';
+  @override
+  String get onboarding_pack_download_resume => 'Resume download';
+  @override
+  String get onboarding_pack_paused_desc =>
+      'Progress is kept on disk — resuming picks up where it stopped.';
+  @override
+  String get onboarding_pack_mini_bar_hide => 'Hide';
 }
 
 // Path: <root>
@@ -116262,15 +119757,11 @@ class _StringsTh extends _StringsEn {
   @override
   String get icon_default => 'ค่าเริ่มต้น';
   @override
-  String get icon_full => 'เต็ม';
-  @override
   String get icon_shortcut_created => 'สร้างทางลัดบนหน้าจอหลักแล้ว';
   @override
   String get icon_shortcut_unsupported => 'อุปกรณ์นี้ไม่รองรับทางลัด';
   @override
   String get icon_switch_success => 'เปลี่ยนไอคอนแอปสำเร็จ';
-  @override
-  String get icon_transparent => 'โปร่งใส';
   @override
   String image_page_counter({required Object current, required Object total}) =>
       '${current} / ${total}';
@@ -123547,6 +127038,311 @@ class _StringsTh extends _StringsEn {
   @override
   String discovery_opds_test_failed({required Object reason}) =>
       'เชื่อมต่อไม่สำเร็จ: ${reason}';
+  @override
+  String get anki_error_permission_permanently_denied =>
+      'AnkiDroid card access was permanently denied, so the system no longer shows the permission dialog. Open app settings and grant the AnkiDroid permission, then try again.';
+  @override
+  String get anki_error_ankidroid_unavailable =>
+      'AnkiDroid is not installed (or its API is disabled), so card access cannot be granted. Install AnkiDroid and enable its API, or switch to AnkiConnect.';
+  @override
+  String get anki_action_open_settings => 'Open settings';
+  @override
+  String onboarding_pack_pick_failed({required Object message}) =>
+      'Could not use the chosen file: ${message}';
+  @override
+  String get onboarding_pack_pick_no_path =>
+      'The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access.';
+  @override
+  String get interconnect_profile_section => 'Configuration file';
+  @override
+  String get interconnect_profile_upload => 'Upload configuration to host';
+  @override
+  String get interconnect_profile_upload_desc =>
+      'Send this device\'s active configuration to the paired host, where it lands as a new configuration.';
+  @override
+  String get interconnect_profile_download =>
+      'Download configuration from host';
+  @override
+  String get interconnect_profile_download_desc =>
+      'Import the host\'s active configuration as a new configuration here. Your current one is untouched.';
+  @override
+  String get interconnect_profile_host_toggle =>
+      'Allow paired devices to read/write configuration';
+  @override
+  String get interconnect_profile_host_toggle_desc =>
+      'Off by default. Requires HTTPS and a paired-device token. Incoming configurations are always added as new ones.';
+  @override
+  String interconnect_profile_uploaded({required Object name}) =>
+      'Configuration uploaded: ${name}';
+  @override
+  String interconnect_profile_downloaded({required Object name}) =>
+      'Configuration imported: ${name}';
+  @override
+  String get interconnect_profile_unsupported =>
+      'The paired host does not offer configuration transfer (needs HTTPS and a newer version).';
+  @override
+  String interconnect_profile_failed({required Object message}) =>
+      'Configuration transfer failed: ${message}';
+  @override
+  String get onboarding_pack_status_downloading =>
+      'Downloading recommended pack';
+  @override
+  String get onboarding_pack_status_ready => 'Recommended pack downloaded';
+  @override
+  String get onboarding_pack_import_now => 'Import now';
+  @override
+  String get onboarding_pack_download_finished =>
+      'Recommended pack finished downloading. Import it from Settings → System.';
+  @override
+  String get onboarding_pack_download_background_hint =>
+      'The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.';
+  @override
+  String get onboarding_anki_fsrs_title => 'Turn on FSRS in Anki';
+  @override
+  String get onboarding_anki_fsrs_body =>
+      'Anki has FSRS built in — one of the best spaced-repetition algorithms around — but it keeps scheduling with SM-2 from the 1980s until you turn FSRS on. FSRS reads your real review history and predicts when you are about to forget, so you keep the same retention with fewer reviews. You flip this switch once, inside Anki; nothing changes on the Fushi side.';
+  @override
+  String get onboarding_anki_fsrs_step_options_title => 'Open deck options';
+  @override
+  String get onboarding_anki_fsrs_step_options_desktop_desc =>
+      'In Anki, click the gear next to a deck and choose Options.';
+  @override
+  String get onboarding_anki_fsrs_step_options_mobile_desc =>
+      'In AnkiDroid (2.17 or newer) or AnkiMobile, long-press the deck and choose Options.';
+  @override
+  String get onboarding_anki_fsrs_step_toggle_title => 'Switch FSRS on';
+  @override
+  String get onboarding_anki_fsrs_step_toggle_desc =>
+      'Scroll to the FSRS section at the bottom of the options page (older builds hide it under Advanced) and turn the switch on. It applies to your whole collection, so once is enough.';
+  @override
+  String get onboarding_anki_fsrs_step_optimize_title => 'Optimize, then save';
+  @override
+  String get onboarding_anki_fsrs_step_optimize_desc =>
+      'Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while.';
+  @override
+  String get sync_desktop_oauth_waiting_title =>
+      'กำลังรอการเข้าสู่ระบบในเบราว์เซอร์';
+  @override
+  String get sync_desktop_oauth_waiting_body =>
+      'เปิดหน้าเข้าสู่ระบบในเบราว์เซอร์เริ่มต้นแล้ว หากไม่มีอะไรเปิดขึ้นมาหรือหน้าแสดงข้อผิดพลาด ให้คัดลอกลิงก์แล้วเปิดในเบราว์เซอร์อื่นหรือหน้าต่างส่วนตัว';
+  @override
+  String get sync_desktop_oauth_link_copy => 'คัดลอกลิงก์เข้าสู่ระบบ';
+  @override
+  String get sync_desktop_oauth_browser_reopen => 'เปิดเบราว์เซอร์อีกครั้ง';
+  @override
+  String get sync_err_sign_in_cancelled => 'ยกเลิกการเข้าสู่ระบบแล้ว';
+  @override
+  String get sync_desktop_oauth_browser_open_failed =>
+      'ไม่สามารถเปิดเบราว์เซอร์ได้ ให้คัดลอกลิงก์แล้วเปิดในเบราว์เซอร์ด้วยตนเอง';
+  @override
+  String get sync_desktop_oauth_link_copy_failed =>
+      'ไม่สามารถคัดลอกลิงก์ได้ ให้เลือกข้อความลิงก์แล้วคัดลอกด้วยตนเอง';
+  @override
+  String get game_text_thread_artifact_hint =>
+      'Repeated-character artifact thread, no usable lines';
+  @override
+  String get shortcut_action_global_context_menu => 'Open context menu';
+  @override
+  String get shortcut_conflict_keep_both => 'Keep both';
+  @override
+  String get shortcut_conflict_keep_both_hint =>
+      'Both actions keep this binding. Whichever scope resolves first wins at press time.';
+  @override
+  String get video_specs_title => 'Media info';
+  @override
+  String get video_specs_resolution => 'Resolution';
+  @override
+  String get video_specs_dynamic_range => 'Dynamic range';
+  @override
+  String get video_specs_video_codec => 'Video codec';
+  @override
+  String get video_specs_bit_depth => 'Bit depth';
+  @override
+  String get video_specs_frame_rate => 'Frame rate';
+  @override
+  String get video_specs_bitrate => 'Bitrate';
+  @override
+  String get video_specs_audio_tracks => 'Audio tracks';
+  @override
+  String get video_specs_subtitle_tracks => 'Subtitle tracks';
+  @override
+  String get video_specs_track_commentary => 'Commentary';
+  @override
+  String get video_specs_track_forced => 'Forced';
+  @override
+  String get video_specs_track_default => 'Default';
+  @override
+  String get gal_mining_image_mode_video_clip => 'Video clip';
+  @override
+  String get gal_mining_image_mode_video_clip_hint =>
+      'Records the game window from the moment the line appears until you mine the card, mixed with the sentence audio. Falls back to an animated image or screenshot when recording has not started or fewer than 2 frames were captured.';
+  @override
+  String get game_hook_reason_native_loopback_ack_timeout =>
+      'The audio capture policy was not confirmed in time. Text capture still works; try again if game audio is missing.';
+  @override
+  String get shortcut_scope_global_external_desktop_note =>
+      'Mouse triggers accept side buttons only (back/forward). Other buttons keep their normal meaning in other apps, so they are rejected here.';
+  @override
+  String get shortcut_mouse_button_not_supported =>
+      'This action only accepts mouse side buttons (back/forward).';
+  @override
+  String get anki_ankimobile_opened =>
+      'AnkiMobile opened. Approve the request there, then return to Fushi.';
+  @override
+  String get anki_error_ankimobile_pasteboard_empty =>
+      'AnkiMobile did not return any configuration. Approve the request in AnkiMobile, then come back to Fushi.';
+  @override
+  String get anki_error_ankimobile_pasteboard_denied =>
+      'iOS blocked reading the clipboard. Choose Allow Paste when returning to Fushi, then try again.';
+  @override
+  String get anki_error_ankimobile_no_decks =>
+      'AnkiMobile returned no decks or note types.';
+  @override
+  String get anki_error_ankimobile_unavailable =>
+      'Could not open AnkiMobile. Install AnkiMobile and try again.';
+  @override
+  String get dictionary_collapse_follow_global => 'Follow global setting';
+  @override
+  String get anki_ankimobile_imported => 'AnkiMobile configuration imported.';
+  @override
+  String get anki_error_ankimobile_not_active =>
+      'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+  @override
+  String get audiobook_transcribe_action => 'Generate subtitles on device';
+  @override
+  String get audiobook_transcribe_title => 'On-device transcription';
+  @override
+  String audiobook_transcribe_model_download_needed({required Object size}) =>
+      'Model download required: ${size}';
+  @override
+  String get audiobook_transcribe_model_download => 'Download model';
+  @override
+  String audiobook_transcribe_model_downloading(
+          {required Object name,
+          required Object received,
+          required Object total}) =>
+      'Downloading ${name}… ${received} / ${total}';
+  @override
+  String audiobook_transcribe_model_ready({required Object variant}) =>
+      'Model ready (${variant})';
+  @override
+  String get audiobook_transcribe_accel_label => 'Acceleration';
+  @override
+  String get audiobook_transcribe_accel_auto => 'Auto (GPU when available)';
+  @override
+  String get audiobook_transcribe_accel_cpu => 'CPU only';
+  @override
+  String audiobook_transcribe_running_on({required Object provider}) =>
+      'Running on ${provider}';
+  @override
+  String audiobook_transcribe_fallback({required Object reason}) =>
+      'GPU unavailable, fell back to CPU: ${reason}';
+  @override
+  String get audiobook_transcribe_start => 'Start transcription';
+  @override
+  String get audiobook_transcribe_resume => 'Resume transcription';
+  @override
+  String get audiobook_transcribe_pause => 'Pause';
+  @override
+  String get audiobook_transcribe_pausing => 'Pausing at the next checkpoint…';
+  @override
+  String get audiobook_transcribe_discard => 'Discard progress';
+  @override
+  String get audiobook_transcribe_use_result => 'Use subtitles';
+  @override
+  String audiobook_transcribe_progress(
+          {required Object done,
+          required Object total,
+          required Object file,
+          required Object files}) =>
+      '${done} / ${total} · file ${file}/${files}';
+  @override
+  String audiobook_transcribe_speed(
+          {required Object elapsed,
+          required Object eta,
+          required Object speed}) =>
+      'Elapsed ${elapsed} · remaining ${eta} · ${speed}× realtime';
+  @override
+  String audiobook_transcribe_done(
+          {required Object cues, required Object segments}) =>
+      'Done: ${cues} cues from ${segments} speech segments';
+  @override
+  String audiobook_transcribe_failed({required Object error}) =>
+      'Transcription failed: ${error}';
+  @override
+  String get audiobook_transcribe_needs_audio => 'Pick audio files first';
+  @override
+  String get audiobook_transcribe_result_name =>
+      'Generated by on-device transcription';
+  @override
+  String get audiobook_transcribe_paused_hint =>
+      'Progress is saved. Pick the same audio files later to resume.';
+  @override
+  String get audiobook_transcribe_unavailable =>
+      'On-device transcription is not available on this platform';
+  @override
+  String get audiobook_transcribe_preparing => 'Loading model…';
+  @override
+  String get audiobook_transcribe_export => 'Export subtitle file';
+  @override
+  String get audiobook_transcribe_export_saved => 'Subtitle file saved';
+  @override
+  String get audiobook_subtitle_source_title => 'Subtitle source';
+  @override
+  String get audiobook_subtitle_source_transcribe_hint =>
+      'Generate from the selected audio with the on-device speech model';
+  @override
+  String get audiobook_transcribe_intro =>
+      'Transcribes the audio locally with an on-device speech model for the selected language and generates subtitles for alignment. Nothing is uploaded.';
+  @override
+  String get audiobook_transcribe_language_label => 'Speech language';
+  @override
+  String get audiobook_transcribe_language_ja => 'Japanese';
+  @override
+  String get audiobook_transcribe_language_en => 'English';
+  @override
+  String get asr_models_section => 'Speech recognition models';
+  @override
+  String get asr_models_section_summary =>
+      'Models for on-device audiobook transcription. Download only the languages you need.';
+  @override
+  String asr_models_status_ready({required Object size}) =>
+      'Downloaded · ${size} on disk';
+  @override
+  String asr_models_status_partial(
+          {required Object obtained, required Object total}) =>
+      'Partially downloaded · ${obtained} / ${total}';
+  @override
+  String asr_models_status_missing({required Object size}) =>
+      'Not downloaded · ${size}';
+  @override
+  String get asr_models_download => 'Download';
+  @override
+  String get asr_models_delete => 'Delete';
+  @override
+  String get asr_models_delete_confirm_title => 'Delete this model?';
+  @override
+  String get asr_models_delete_confirm_message =>
+      'Transcription in this language will need the model downloaded again.';
+  @override
+  String asr_models_delete_done_freed({required Object size}) =>
+      'Deleted, freed ${size}';
+  @override
+  String asr_models_download_failed({required Object error}) =>
+      'Download failed: ${error}';
+  @override
+  String audiobook_transcribe_probe_failed({required Object reason}) =>
+      'GPU detection failed, planning for CPU: ${reason}';
+  @override
+  String get onboarding_pack_status_paused =>
+      'Recommended pack download paused';
+  @override
+  String get onboarding_pack_download_resume => 'Resume download';
+  @override
+  String get onboarding_pack_paused_desc =>
+      'Progress is kept on disk — resuming picks up where it stopped.';
+  @override
+  String get onboarding_pack_mini_bar_hide => 'Hide';
 }
 
 // Path: <root>
@@ -126030,16 +129826,12 @@ class _StringsTr extends _StringsEn {
   @override
   String get icon_default => 'Varsayılan';
   @override
-  String get icon_full => 'Tam';
-  @override
   String get icon_shortcut_created => 'Ana ekran kısayolu oluşturuldu.';
   @override
   String get icon_shortcut_unsupported =>
       'Bu cihazda kısayollar desteklenmiyor.';
   @override
   String get icon_switch_success => 'Uygulama simgesi başarıyla değiştirildi.';
-  @override
-  String get icon_transparent => 'Saydam';
   @override
   String image_page_counter({required Object current, required Object total}) =>
       '${current} / ${total}';
@@ -133400,6 +137192,311 @@ class _StringsTr extends _StringsEn {
   @override
   String discovery_opds_test_failed({required Object reason}) =>
       'Bağlantı başarısız: ${reason}';
+  @override
+  String get anki_error_permission_permanently_denied =>
+      'AnkiDroid card access was permanently denied, so the system no longer shows the permission dialog. Open app settings and grant the AnkiDroid permission, then try again.';
+  @override
+  String get anki_error_ankidroid_unavailable =>
+      'AnkiDroid is not installed (or its API is disabled), so card access cannot be granted. Install AnkiDroid and enable its API, or switch to AnkiConnect.';
+  @override
+  String get anki_action_open_settings => 'Open settings';
+  @override
+  String onboarding_pack_pick_failed({required Object message}) =>
+      'Could not use the chosen file: ${message}';
+  @override
+  String get onboarding_pack_pick_no_path =>
+      'The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access.';
+  @override
+  String get interconnect_profile_section => 'Configuration file';
+  @override
+  String get interconnect_profile_upload => 'Upload configuration to host';
+  @override
+  String get interconnect_profile_upload_desc =>
+      'Send this device\'s active configuration to the paired host, where it lands as a new configuration.';
+  @override
+  String get interconnect_profile_download =>
+      'Download configuration from host';
+  @override
+  String get interconnect_profile_download_desc =>
+      'Import the host\'s active configuration as a new configuration here. Your current one is untouched.';
+  @override
+  String get interconnect_profile_host_toggle =>
+      'Allow paired devices to read/write configuration';
+  @override
+  String get interconnect_profile_host_toggle_desc =>
+      'Off by default. Requires HTTPS and a paired-device token. Incoming configurations are always added as new ones.';
+  @override
+  String interconnect_profile_uploaded({required Object name}) =>
+      'Configuration uploaded: ${name}';
+  @override
+  String interconnect_profile_downloaded({required Object name}) =>
+      'Configuration imported: ${name}';
+  @override
+  String get interconnect_profile_unsupported =>
+      'The paired host does not offer configuration transfer (needs HTTPS and a newer version).';
+  @override
+  String interconnect_profile_failed({required Object message}) =>
+      'Configuration transfer failed: ${message}';
+  @override
+  String get onboarding_pack_status_downloading =>
+      'Downloading recommended pack';
+  @override
+  String get onboarding_pack_status_ready => 'Recommended pack downloaded';
+  @override
+  String get onboarding_pack_import_now => 'Import now';
+  @override
+  String get onboarding_pack_download_finished =>
+      'Recommended pack finished downloading. Import it from Settings → System.';
+  @override
+  String get onboarding_pack_download_background_hint =>
+      'The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.';
+  @override
+  String get onboarding_anki_fsrs_title => 'Turn on FSRS in Anki';
+  @override
+  String get onboarding_anki_fsrs_body =>
+      'Anki has FSRS built in — one of the best spaced-repetition algorithms around — but it keeps scheduling with SM-2 from the 1980s until you turn FSRS on. FSRS reads your real review history and predicts when you are about to forget, so you keep the same retention with fewer reviews. You flip this switch once, inside Anki; nothing changes on the Fushi side.';
+  @override
+  String get onboarding_anki_fsrs_step_options_title => 'Open deck options';
+  @override
+  String get onboarding_anki_fsrs_step_options_desktop_desc =>
+      'In Anki, click the gear next to a deck and choose Options.';
+  @override
+  String get onboarding_anki_fsrs_step_options_mobile_desc =>
+      'In AnkiDroid (2.17 or newer) or AnkiMobile, long-press the deck and choose Options.';
+  @override
+  String get onboarding_anki_fsrs_step_toggle_title => 'Switch FSRS on';
+  @override
+  String get onboarding_anki_fsrs_step_toggle_desc =>
+      'Scroll to the FSRS section at the bottom of the options page (older builds hide it under Advanced) and turn the switch on. It applies to your whole collection, so once is enough.';
+  @override
+  String get onboarding_anki_fsrs_step_optimize_title => 'Optimize, then save';
+  @override
+  String get onboarding_anki_fsrs_step_optimize_desc =>
+      'Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while.';
+  @override
+  String get sync_desktop_oauth_waiting_title =>
+      'Tarayıcıda oturum açılması bekleniyor';
+  @override
+  String get sync_desktop_oauth_waiting_body =>
+      'Oturum açma sayfası varsayılan tarayıcınızda açıldı. Hiçbir şey açılmadıysa veya sayfa hata gösteriyorsa bağlantıyı kopyalayıp başka bir tarayıcıda ya da gizli pencerede açın.';
+  @override
+  String get sync_desktop_oauth_link_copy => 'Oturum açma bağlantısını kopyala';
+  @override
+  String get sync_desktop_oauth_browser_reopen => 'Tarayıcıyı yeniden aç';
+  @override
+  String get sync_err_sign_in_cancelled => 'Oturum açma iptal edildi.';
+  @override
+  String get sync_desktop_oauth_browser_open_failed =>
+      'Tarayıcı açılamadı. Bağlantıyı kopyalayıp bir tarayıcıda kendiniz açın.';
+  @override
+  String get sync_desktop_oauth_link_copy_failed =>
+      'Bağlantı kopyalanamadı. Bağlantı metnini seçip elle kopyalayın.';
+  @override
+  String get game_text_thread_artifact_hint =>
+      'Repeated-character artifact thread, no usable lines';
+  @override
+  String get shortcut_action_global_context_menu => 'Open context menu';
+  @override
+  String get shortcut_conflict_keep_both => 'Keep both';
+  @override
+  String get shortcut_conflict_keep_both_hint =>
+      'Both actions keep this binding. Whichever scope resolves first wins at press time.';
+  @override
+  String get video_specs_title => 'Media info';
+  @override
+  String get video_specs_resolution => 'Resolution';
+  @override
+  String get video_specs_dynamic_range => 'Dynamic range';
+  @override
+  String get video_specs_video_codec => 'Video codec';
+  @override
+  String get video_specs_bit_depth => 'Bit depth';
+  @override
+  String get video_specs_frame_rate => 'Frame rate';
+  @override
+  String get video_specs_bitrate => 'Bitrate';
+  @override
+  String get video_specs_audio_tracks => 'Audio tracks';
+  @override
+  String get video_specs_subtitle_tracks => 'Subtitle tracks';
+  @override
+  String get video_specs_track_commentary => 'Commentary';
+  @override
+  String get video_specs_track_forced => 'Forced';
+  @override
+  String get video_specs_track_default => 'Default';
+  @override
+  String get gal_mining_image_mode_video_clip => 'Video clip';
+  @override
+  String get gal_mining_image_mode_video_clip_hint =>
+      'Records the game window from the moment the line appears until you mine the card, mixed with the sentence audio. Falls back to an animated image or screenshot when recording has not started or fewer than 2 frames were captured.';
+  @override
+  String get game_hook_reason_native_loopback_ack_timeout =>
+      'The audio capture policy was not confirmed in time. Text capture still works; try again if game audio is missing.';
+  @override
+  String get shortcut_scope_global_external_desktop_note =>
+      'Mouse triggers accept side buttons only (back/forward). Other buttons keep their normal meaning in other apps, so they are rejected here.';
+  @override
+  String get shortcut_mouse_button_not_supported =>
+      'This action only accepts mouse side buttons (back/forward).';
+  @override
+  String get anki_ankimobile_opened =>
+      'AnkiMobile opened. Approve the request there, then return to Fushi.';
+  @override
+  String get anki_error_ankimobile_pasteboard_empty =>
+      'AnkiMobile did not return any configuration. Approve the request in AnkiMobile, then come back to Fushi.';
+  @override
+  String get anki_error_ankimobile_pasteboard_denied =>
+      'iOS blocked reading the clipboard. Choose Allow Paste when returning to Fushi, then try again.';
+  @override
+  String get anki_error_ankimobile_no_decks =>
+      'AnkiMobile returned no decks or note types.';
+  @override
+  String get anki_error_ankimobile_unavailable =>
+      'Could not open AnkiMobile. Install AnkiMobile and try again.';
+  @override
+  String get dictionary_collapse_follow_global => 'Follow global setting';
+  @override
+  String get anki_ankimobile_imported => 'AnkiMobile configuration imported.';
+  @override
+  String get anki_error_ankimobile_not_active =>
+      'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+  @override
+  String get audiobook_transcribe_action => 'Generate subtitles on device';
+  @override
+  String get audiobook_transcribe_title => 'On-device transcription';
+  @override
+  String audiobook_transcribe_model_download_needed({required Object size}) =>
+      'Model download required: ${size}';
+  @override
+  String get audiobook_transcribe_model_download => 'Download model';
+  @override
+  String audiobook_transcribe_model_downloading(
+          {required Object name,
+          required Object received,
+          required Object total}) =>
+      'Downloading ${name}… ${received} / ${total}';
+  @override
+  String audiobook_transcribe_model_ready({required Object variant}) =>
+      'Model ready (${variant})';
+  @override
+  String get audiobook_transcribe_accel_label => 'Acceleration';
+  @override
+  String get audiobook_transcribe_accel_auto => 'Auto (GPU when available)';
+  @override
+  String get audiobook_transcribe_accel_cpu => 'CPU only';
+  @override
+  String audiobook_transcribe_running_on({required Object provider}) =>
+      'Running on ${provider}';
+  @override
+  String audiobook_transcribe_fallback({required Object reason}) =>
+      'GPU unavailable, fell back to CPU: ${reason}';
+  @override
+  String get audiobook_transcribe_start => 'Start transcription';
+  @override
+  String get audiobook_transcribe_resume => 'Resume transcription';
+  @override
+  String get audiobook_transcribe_pause => 'Pause';
+  @override
+  String get audiobook_transcribe_pausing => 'Pausing at the next checkpoint…';
+  @override
+  String get audiobook_transcribe_discard => 'Discard progress';
+  @override
+  String get audiobook_transcribe_use_result => 'Use subtitles';
+  @override
+  String audiobook_transcribe_progress(
+          {required Object done,
+          required Object total,
+          required Object file,
+          required Object files}) =>
+      '${done} / ${total} · file ${file}/${files}';
+  @override
+  String audiobook_transcribe_speed(
+          {required Object elapsed,
+          required Object eta,
+          required Object speed}) =>
+      'Elapsed ${elapsed} · remaining ${eta} · ${speed}× realtime';
+  @override
+  String audiobook_transcribe_done(
+          {required Object cues, required Object segments}) =>
+      'Done: ${cues} cues from ${segments} speech segments';
+  @override
+  String audiobook_transcribe_failed({required Object error}) =>
+      'Transcription failed: ${error}';
+  @override
+  String get audiobook_transcribe_needs_audio => 'Pick audio files first';
+  @override
+  String get audiobook_transcribe_result_name =>
+      'Generated by on-device transcription';
+  @override
+  String get audiobook_transcribe_paused_hint =>
+      'Progress is saved. Pick the same audio files later to resume.';
+  @override
+  String get audiobook_transcribe_unavailable =>
+      'On-device transcription is not available on this platform';
+  @override
+  String get audiobook_transcribe_preparing => 'Loading model…';
+  @override
+  String get audiobook_transcribe_export => 'Export subtitle file';
+  @override
+  String get audiobook_transcribe_export_saved => 'Subtitle file saved';
+  @override
+  String get audiobook_subtitle_source_title => 'Subtitle source';
+  @override
+  String get audiobook_subtitle_source_transcribe_hint =>
+      'Generate from the selected audio with the on-device speech model';
+  @override
+  String get audiobook_transcribe_intro =>
+      'Transcribes the audio locally with an on-device speech model for the selected language and generates subtitles for alignment. Nothing is uploaded.';
+  @override
+  String get audiobook_transcribe_language_label => 'Speech language';
+  @override
+  String get audiobook_transcribe_language_ja => 'Japanese';
+  @override
+  String get audiobook_transcribe_language_en => 'English';
+  @override
+  String get asr_models_section => 'Speech recognition models';
+  @override
+  String get asr_models_section_summary =>
+      'Models for on-device audiobook transcription. Download only the languages you need.';
+  @override
+  String asr_models_status_ready({required Object size}) =>
+      'Downloaded · ${size} on disk';
+  @override
+  String asr_models_status_partial(
+          {required Object obtained, required Object total}) =>
+      'Partially downloaded · ${obtained} / ${total}';
+  @override
+  String asr_models_status_missing({required Object size}) =>
+      'Not downloaded · ${size}';
+  @override
+  String get asr_models_download => 'Download';
+  @override
+  String get asr_models_delete => 'Delete';
+  @override
+  String get asr_models_delete_confirm_title => 'Delete this model?';
+  @override
+  String get asr_models_delete_confirm_message =>
+      'Transcription in this language will need the model downloaded again.';
+  @override
+  String asr_models_delete_done_freed({required Object size}) =>
+      'Deleted, freed ${size}';
+  @override
+  String asr_models_download_failed({required Object error}) =>
+      'Download failed: ${error}';
+  @override
+  String audiobook_transcribe_probe_failed({required Object reason}) =>
+      'GPU detection failed, planning for CPU: ${reason}';
+  @override
+  String get onboarding_pack_status_paused =>
+      'Recommended pack download paused';
+  @override
+  String get onboarding_pack_download_resume => 'Resume download';
+  @override
+  String get onboarding_pack_paused_desc =>
+      'Progress is kept on disk — resuming picks up where it stopped.';
+  @override
+  String get onboarding_pack_mini_bar_hide => 'Hide';
 }
 
 // Path: <root>
@@ -135881,15 +139978,11 @@ class _StringsVi extends _StringsEn {
   @override
   String get icon_default => 'Mặc định';
   @override
-  String get icon_full => 'Đầy đủ';
-  @override
   String get icon_shortcut_created => 'Đã tạo lối tắt trên màn hình chính.';
   @override
   String get icon_shortcut_unsupported => 'Thiết bị không hỗ trợ lối tắt.';
   @override
   String get icon_switch_success => 'Đã đổi biểu tượng ứng dụng.';
-  @override
-  String get icon_transparent => 'Trong suốt';
   @override
   String image_page_counter({required Object current, required Object total}) =>
       '${current} / ${total}';
@@ -143224,6 +147317,311 @@ class _StringsVi extends _StringsEn {
   @override
   String discovery_opds_test_failed({required Object reason}) =>
       'Kết nối thất bại: ${reason}';
+  @override
+  String get anki_error_permission_permanently_denied =>
+      'AnkiDroid card access was permanently denied, so the system no longer shows the permission dialog. Open app settings and grant the AnkiDroid permission, then try again.';
+  @override
+  String get anki_error_ankidroid_unavailable =>
+      'AnkiDroid is not installed (or its API is disabled), so card access cannot be granted. Install AnkiDroid and enable its API, or switch to AnkiConnect.';
+  @override
+  String get anki_action_open_settings => 'Open settings';
+  @override
+  String onboarding_pack_pick_failed({required Object message}) =>
+      'Could not use the chosen file: ${message}';
+  @override
+  String get onboarding_pack_pick_no_path =>
+      'The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access.';
+  @override
+  String get interconnect_profile_section => 'Configuration file';
+  @override
+  String get interconnect_profile_upload => 'Upload configuration to host';
+  @override
+  String get interconnect_profile_upload_desc =>
+      'Send this device\'s active configuration to the paired host, where it lands as a new configuration.';
+  @override
+  String get interconnect_profile_download =>
+      'Download configuration from host';
+  @override
+  String get interconnect_profile_download_desc =>
+      'Import the host\'s active configuration as a new configuration here. Your current one is untouched.';
+  @override
+  String get interconnect_profile_host_toggle =>
+      'Allow paired devices to read/write configuration';
+  @override
+  String get interconnect_profile_host_toggle_desc =>
+      'Off by default. Requires HTTPS and a paired-device token. Incoming configurations are always added as new ones.';
+  @override
+  String interconnect_profile_uploaded({required Object name}) =>
+      'Configuration uploaded: ${name}';
+  @override
+  String interconnect_profile_downloaded({required Object name}) =>
+      'Configuration imported: ${name}';
+  @override
+  String get interconnect_profile_unsupported =>
+      'The paired host does not offer configuration transfer (needs HTTPS and a newer version).';
+  @override
+  String interconnect_profile_failed({required Object message}) =>
+      'Configuration transfer failed: ${message}';
+  @override
+  String get onboarding_pack_status_downloading =>
+      'Downloading recommended pack';
+  @override
+  String get onboarding_pack_status_ready => 'Recommended pack downloaded';
+  @override
+  String get onboarding_pack_import_now => 'Import now';
+  @override
+  String get onboarding_pack_download_finished =>
+      'Recommended pack finished downloading. Import it from Settings → System.';
+  @override
+  String get onboarding_pack_download_background_hint =>
+      'The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.';
+  @override
+  String get onboarding_anki_fsrs_title => 'Turn on FSRS in Anki';
+  @override
+  String get onboarding_anki_fsrs_body =>
+      'Anki has FSRS built in — one of the best spaced-repetition algorithms around — but it keeps scheduling with SM-2 from the 1980s until you turn FSRS on. FSRS reads your real review history and predicts when you are about to forget, so you keep the same retention with fewer reviews. You flip this switch once, inside Anki; nothing changes on the Fushi side.';
+  @override
+  String get onboarding_anki_fsrs_step_options_title => 'Open deck options';
+  @override
+  String get onboarding_anki_fsrs_step_options_desktop_desc =>
+      'In Anki, click the gear next to a deck and choose Options.';
+  @override
+  String get onboarding_anki_fsrs_step_options_mobile_desc =>
+      'In AnkiDroid (2.17 or newer) or AnkiMobile, long-press the deck and choose Options.';
+  @override
+  String get onboarding_anki_fsrs_step_toggle_title => 'Switch FSRS on';
+  @override
+  String get onboarding_anki_fsrs_step_toggle_desc =>
+      'Scroll to the FSRS section at the bottom of the options page (older builds hide it under Advanced) and turn the switch on. It applies to your whole collection, so once is enough.';
+  @override
+  String get onboarding_anki_fsrs_step_optimize_title => 'Optimize, then save';
+  @override
+  String get onboarding_anki_fsrs_step_optimize_desc =>
+      'Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while.';
+  @override
+  String get sync_desktop_oauth_waiting_title =>
+      'Đang chờ đăng nhập trong trình duyệt';
+  @override
+  String get sync_desktop_oauth_waiting_body =>
+      'Trang đăng nhập đã được mở trong trình duyệt mặc định. Nếu không có gì mở ra hoặc trang báo lỗi, hãy sao chép liên kết và mở trong trình duyệt khác hoặc cửa sổ riêng tư.';
+  @override
+  String get sync_desktop_oauth_link_copy => 'Sao chép liên kết đăng nhập';
+  @override
+  String get sync_desktop_oauth_browser_reopen => 'Mở lại trình duyệt';
+  @override
+  String get sync_err_sign_in_cancelled => 'Đã hủy đăng nhập.';
+  @override
+  String get sync_desktop_oauth_browser_open_failed =>
+      'Không thể mở trình duyệt. Hãy sao chép liên kết và tự mở trong trình duyệt.';
+  @override
+  String get sync_desktop_oauth_link_copy_failed =>
+      'Không thể sao chép liên kết. Hãy chọn văn bản liên kết và sao chép thủ công.';
+  @override
+  String get game_text_thread_artifact_hint =>
+      'Repeated-character artifact thread, no usable lines';
+  @override
+  String get shortcut_action_global_context_menu => 'Open context menu';
+  @override
+  String get shortcut_conflict_keep_both => 'Keep both';
+  @override
+  String get shortcut_conflict_keep_both_hint =>
+      'Both actions keep this binding. Whichever scope resolves first wins at press time.';
+  @override
+  String get video_specs_title => 'Media info';
+  @override
+  String get video_specs_resolution => 'Resolution';
+  @override
+  String get video_specs_dynamic_range => 'Dynamic range';
+  @override
+  String get video_specs_video_codec => 'Video codec';
+  @override
+  String get video_specs_bit_depth => 'Bit depth';
+  @override
+  String get video_specs_frame_rate => 'Frame rate';
+  @override
+  String get video_specs_bitrate => 'Bitrate';
+  @override
+  String get video_specs_audio_tracks => 'Audio tracks';
+  @override
+  String get video_specs_subtitle_tracks => 'Subtitle tracks';
+  @override
+  String get video_specs_track_commentary => 'Commentary';
+  @override
+  String get video_specs_track_forced => 'Forced';
+  @override
+  String get video_specs_track_default => 'Default';
+  @override
+  String get gal_mining_image_mode_video_clip => 'Video clip';
+  @override
+  String get gal_mining_image_mode_video_clip_hint =>
+      'Records the game window from the moment the line appears until you mine the card, mixed with the sentence audio. Falls back to an animated image or screenshot when recording has not started or fewer than 2 frames were captured.';
+  @override
+  String get game_hook_reason_native_loopback_ack_timeout =>
+      'The audio capture policy was not confirmed in time. Text capture still works; try again if game audio is missing.';
+  @override
+  String get shortcut_scope_global_external_desktop_note =>
+      'Mouse triggers accept side buttons only (back/forward). Other buttons keep their normal meaning in other apps, so they are rejected here.';
+  @override
+  String get shortcut_mouse_button_not_supported =>
+      'This action only accepts mouse side buttons (back/forward).';
+  @override
+  String get anki_ankimobile_opened =>
+      'AnkiMobile opened. Approve the request there, then return to Fushi.';
+  @override
+  String get anki_error_ankimobile_pasteboard_empty =>
+      'AnkiMobile did not return any configuration. Approve the request in AnkiMobile, then come back to Fushi.';
+  @override
+  String get anki_error_ankimobile_pasteboard_denied =>
+      'iOS blocked reading the clipboard. Choose Allow Paste when returning to Fushi, then try again.';
+  @override
+  String get anki_error_ankimobile_no_decks =>
+      'AnkiMobile returned no decks or note types.';
+  @override
+  String get anki_error_ankimobile_unavailable =>
+      'Could not open AnkiMobile. Install AnkiMobile and try again.';
+  @override
+  String get dictionary_collapse_follow_global => 'Follow global setting';
+  @override
+  String get anki_ankimobile_imported => 'AnkiMobile configuration imported.';
+  @override
+  String get anki_error_ankimobile_not_active =>
+      'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+  @override
+  String get audiobook_transcribe_action => 'Generate subtitles on device';
+  @override
+  String get audiobook_transcribe_title => 'On-device transcription';
+  @override
+  String audiobook_transcribe_model_download_needed({required Object size}) =>
+      'Model download required: ${size}';
+  @override
+  String get audiobook_transcribe_model_download => 'Download model';
+  @override
+  String audiobook_transcribe_model_downloading(
+          {required Object name,
+          required Object received,
+          required Object total}) =>
+      'Downloading ${name}… ${received} / ${total}';
+  @override
+  String audiobook_transcribe_model_ready({required Object variant}) =>
+      'Model ready (${variant})';
+  @override
+  String get audiobook_transcribe_accel_label => 'Acceleration';
+  @override
+  String get audiobook_transcribe_accel_auto => 'Auto (GPU when available)';
+  @override
+  String get audiobook_transcribe_accel_cpu => 'CPU only';
+  @override
+  String audiobook_transcribe_running_on({required Object provider}) =>
+      'Running on ${provider}';
+  @override
+  String audiobook_transcribe_fallback({required Object reason}) =>
+      'GPU unavailable, fell back to CPU: ${reason}';
+  @override
+  String get audiobook_transcribe_start => 'Start transcription';
+  @override
+  String get audiobook_transcribe_resume => 'Resume transcription';
+  @override
+  String get audiobook_transcribe_pause => 'Pause';
+  @override
+  String get audiobook_transcribe_pausing => 'Pausing at the next checkpoint…';
+  @override
+  String get audiobook_transcribe_discard => 'Discard progress';
+  @override
+  String get audiobook_transcribe_use_result => 'Use subtitles';
+  @override
+  String audiobook_transcribe_progress(
+          {required Object done,
+          required Object total,
+          required Object file,
+          required Object files}) =>
+      '${done} / ${total} · file ${file}/${files}';
+  @override
+  String audiobook_transcribe_speed(
+          {required Object elapsed,
+          required Object eta,
+          required Object speed}) =>
+      'Elapsed ${elapsed} · remaining ${eta} · ${speed}× realtime';
+  @override
+  String audiobook_transcribe_done(
+          {required Object cues, required Object segments}) =>
+      'Done: ${cues} cues from ${segments} speech segments';
+  @override
+  String audiobook_transcribe_failed({required Object error}) =>
+      'Transcription failed: ${error}';
+  @override
+  String get audiobook_transcribe_needs_audio => 'Pick audio files first';
+  @override
+  String get audiobook_transcribe_result_name =>
+      'Generated by on-device transcription';
+  @override
+  String get audiobook_transcribe_paused_hint =>
+      'Progress is saved. Pick the same audio files later to resume.';
+  @override
+  String get audiobook_transcribe_unavailable =>
+      'On-device transcription is not available on this platform';
+  @override
+  String get audiobook_transcribe_preparing => 'Loading model…';
+  @override
+  String get audiobook_transcribe_export => 'Export subtitle file';
+  @override
+  String get audiobook_transcribe_export_saved => 'Subtitle file saved';
+  @override
+  String get audiobook_subtitle_source_title => 'Subtitle source';
+  @override
+  String get audiobook_subtitle_source_transcribe_hint =>
+      'Generate from the selected audio with the on-device speech model';
+  @override
+  String get audiobook_transcribe_intro =>
+      'Transcribes the audio locally with an on-device speech model for the selected language and generates subtitles for alignment. Nothing is uploaded.';
+  @override
+  String get audiobook_transcribe_language_label => 'Speech language';
+  @override
+  String get audiobook_transcribe_language_ja => 'Japanese';
+  @override
+  String get audiobook_transcribe_language_en => 'English';
+  @override
+  String get asr_models_section => 'Speech recognition models';
+  @override
+  String get asr_models_section_summary =>
+      'Models for on-device audiobook transcription. Download only the languages you need.';
+  @override
+  String asr_models_status_ready({required Object size}) =>
+      'Downloaded · ${size} on disk';
+  @override
+  String asr_models_status_partial(
+          {required Object obtained, required Object total}) =>
+      'Partially downloaded · ${obtained} / ${total}';
+  @override
+  String asr_models_status_missing({required Object size}) =>
+      'Not downloaded · ${size}';
+  @override
+  String get asr_models_download => 'Download';
+  @override
+  String get asr_models_delete => 'Delete';
+  @override
+  String get asr_models_delete_confirm_title => 'Delete this model?';
+  @override
+  String get asr_models_delete_confirm_message =>
+      'Transcription in this language will need the model downloaded again.';
+  @override
+  String asr_models_delete_done_freed({required Object size}) =>
+      'Deleted, freed ${size}';
+  @override
+  String asr_models_download_failed({required Object error}) =>
+      'Download failed: ${error}';
+  @override
+  String audiobook_transcribe_probe_failed({required Object reason}) =>
+      'GPU detection failed, planning for CPU: ${reason}';
+  @override
+  String get onboarding_pack_status_paused =>
+      'Recommended pack download paused';
+  @override
+  String get onboarding_pack_download_resume => 'Resume download';
+  @override
+  String get onboarding_pack_paused_desc =>
+      'Progress is kept on disk — resuming picks up where it stopped.';
+  @override
+  String get onboarding_pack_mini_bar_hide => 'Hide';
 }
 
 // Path: <root>
@@ -145523,15 +149921,11 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get icon_default => '默认';
   @override
-  String get icon_full => '完整';
-  @override
   String get icon_shortcut_created => '已创建主屏幕快捷方式。';
   @override
   String get icon_shortcut_unsupported => '此设备不支持快捷方式。';
   @override
   String get icon_switch_success => '应用图标已更改。';
-  @override
-  String get icon_transparent => '透明';
   @override
   String image_page_counter({required Object current, required Object total}) =>
       '${current} / ${total}';
@@ -152251,6 +156645,289 @@ class _StringsZhCn extends _StringsEn {
   @override
   String discovery_opds_test_failed({required Object reason}) =>
       '连接失败：${reason}';
+  @override
+  String get anki_error_permission_permanently_denied =>
+      'AnkiDroid 卡片访问权限已被永久拒绝，系统不再弹出授权对话框。请到应用设置里授予该权限后重试。';
+  @override
+  String get anki_error_ankidroid_unavailable =>
+      '未安装 AnkiDroid（或其 API 被禁用），无法授予卡片访问权限。请安装 AnkiDroid 并启用其 API，或改用 AnkiConnect。';
+  @override
+  String get anki_action_open_settings => '去设置';
+  @override
+  String onboarding_pack_pick_failed({required Object message}) =>
+      '选择包文件失败：${message}';
+  @override
+  String get onboarding_pack_pick_no_path =>
+      '系统没有交出这个文件的路径。请把包放到手机存储里再选，或授予「所有文件访问」权限。';
+  @override
+  String get interconnect_profile_section => '配置文件';
+  @override
+  String get interconnect_profile_upload => '上传配置到对端';
+  @override
+  String get interconnect_profile_upload_desc => '把本机当前配置发给已配对的对端，在那边落成一份新配置。';
+  @override
+  String get interconnect_profile_download => '从对端下载配置';
+  @override
+  String get interconnect_profile_download_desc =>
+      '把对端当前配置作为一份新配置导入本机，不动你正在用的那份。';
+  @override
+  String get interconnect_profile_host_toggle => '允许已配对设备读写本机配置';
+  @override
+  String get interconnect_profile_host_toggle_desc =>
+      '默认关闭。需要 HTTPS 与已配对设备令牌；收到的配置一律作为新配置追加，不覆盖现有配置。';
+  @override
+  String interconnect_profile_uploaded({required Object name}) =>
+      '配置已上传：${name}';
+  @override
+  String interconnect_profile_downloaded({required Object name}) =>
+      '配置已导入：${name}';
+  @override
+  String get interconnect_profile_unsupported => '对端不提供配置传输（需要 HTTPS 且对端版本较新）。';
+  @override
+  String interconnect_profile_failed({required Object message}) =>
+      '配置传输失败：${message}';
+  @override
+  String get onboarding_pack_status_downloading => '推荐包下载中';
+  @override
+  String get onboarding_pack_status_ready => '推荐包已下载完成';
+  @override
+  String get onboarding_pack_import_now => '现在导入';
+  @override
+  String get onboarding_pack_download_finished => '推荐包下载完成。可在「设置 → 系统」里导入。';
+  @override
+  String get onboarding_pack_download_background_hint =>
+      '下载会在后台继续：可以直接走下一步，也可以关掉向导。进度、取消和导入都在「设置 → 系统」里。';
+  @override
+  String get onboarding_anki_fsrs_title => '在 Anki 里开启 FSRS';
+  @override
+  String get onboarding_anki_fsrs_body =>
+      'Anki 内置了 FSRS —— 目前最好的间隔重复算法之一，但你不打开它，排程就一直走三十多年前的 SM-2。FSRS 拿你的真实复习记录预测遗忘时点，同样的记忆效果复习量更少。这个开关只在 Anki 里开一次，Fushi 这边不用改任何设置。';
+  @override
+  String get onboarding_anki_fsrs_step_options_title => '打开牌组选项';
+  @override
+  String get onboarding_anki_fsrs_step_options_desktop_desc =>
+      '在 Anki 主界面点牌组右侧的齿轮，选「选项」。';
+  @override
+  String get onboarding_anki_fsrs_step_options_mobile_desc =>
+      '在 AnkiDroid（2.17 及以上）或 AnkiMobile 里长按牌组，选「选项」。';
+  @override
+  String get onboarding_anki_fsrs_step_toggle_title => '打开 FSRS 开关';
+  @override
+  String get onboarding_anki_fsrs_step_toggle_desc =>
+      '滚到选项页最底部的「FSRS」区块（旧版藏在「高级」里），把开关打开。它对整个收藏生效，开一次就够。';
+  @override
+  String get onboarding_anki_fsrs_step_optimize_title => '点「优化」再保存';
+  @override
+  String get onboarding_anki_fsrs_step_optimize_desc =>
+      '在开关下方点「优化」，让参数贴合你自己的复习记录，然后保存。复习记录不足约 1000 条时默认参数已经比 SM-2 准，攒够以后再优化一次即可。';
+  @override
+  String get sync_desktop_oauth_waiting_title => '正在等待浏览器完成登录';
+  @override
+  String get sync_desktop_oauth_waiting_body =>
+      '已在默认浏览器打开登录页。如果没有打开，或页面显示错误，可复制链接到其他浏览器或无痕窗口打开。';
+  @override
+  String get sync_desktop_oauth_link_copy => '复制登录链接';
+  @override
+  String get sync_desktop_oauth_browser_reopen => '重新打开浏览器';
+  @override
+  String get sync_err_sign_in_cancelled => '已取消登录。';
+  @override
+  String get sync_desktop_oauth_browser_open_failed =>
+      '无法打开浏览器。请复制链接，自行在浏览器中打开。';
+  @override
+  String get sync_desktop_oauth_link_copy_failed => '复制失败。请手动选中链接文本后复制。';
+  @override
+  String get game_text_thread_artifact_hint => '逐字重复伪影线程，不会有可用台词';
+  @override
+  String get shortcut_action_global_context_menu => '打开右键菜单';
+  @override
+  String get shortcut_conflict_keep_both => '两者都保留';
+  @override
+  String get shortcut_conflict_keep_both_hint =>
+      '两个动作都保留这个绑定，按下时由作用域先后仲裁，先命中的那个生效。';
+  @override
+  String get video_specs_title => '媒体信息';
+  @override
+  String get video_specs_resolution => '清晰度';
+  @override
+  String get video_specs_dynamic_range => '动态范围';
+  @override
+  String get video_specs_video_codec => '视频编码';
+  @override
+  String get video_specs_bit_depth => '色深';
+  @override
+  String get video_specs_frame_rate => '帧率';
+  @override
+  String get video_specs_bitrate => '码率';
+  @override
+  String get video_specs_audio_tracks => '音轨';
+  @override
+  String get video_specs_subtitle_tracks => '字幕轨';
+  @override
+  String get video_specs_track_commentary => '评论音轨';
+  @override
+  String get video_specs_track_forced => '强制';
+  @override
+  String get video_specs_track_default => '默认';
+  @override
+  String get gal_mining_image_mode_video_clip => '视频片段';
+  @override
+  String get gal_mining_image_mode_video_clip_hint =>
+      '从台词出现到制卡这段时间的游戏画面，并混入句子音频。未开始录制或不足 2 帧时降级为动图/截图。';
+  @override
+  String get game_hook_reason_native_loopback_ack_timeout =>
+      '音频采集策略未在超时内确认。文本采集不受影响；若缺少游戏内语音可重试一次。';
+  @override
+  String get shortcut_scope_global_external_desktop_note =>
+      '鼠标触发只接受侧键（后退/前进）。其它按钮在别的程序里有各自的固有含义，这里会拒绝录入。';
+  @override
+  String get shortcut_mouse_button_not_supported => '该动作只接受鼠标侧键（后退/前进）。';
+  @override
+  String get anki_ankimobile_opened => '已打开 AnkiMobile。请在其中同意该请求，然后返回 Fushi。';
+  @override
+  String get anki_error_ankimobile_pasteboard_empty =>
+      'AnkiMobile 没有回传配置。请在 AnkiMobile 中同意该请求后再返回 Fushi。';
+  @override
+  String get anki_error_ankimobile_pasteboard_denied =>
+      'iOS 阻止了读取剪贴板。返回 Fushi 时请在系统提示里选「允许粘贴」，然后重试。';
+  @override
+  String get anki_error_ankimobile_no_decks => 'AnkiMobile 没有回传任何牌组或笔记类型。';
+  @override
+  String get anki_error_ankimobile_unavailable =>
+      '无法打开 AnkiMobile。请先安装 AnkiMobile 再试。';
+  @override
+  String get dictionary_collapse_follow_global => '跟随全局设置';
+  @override
+  String get anki_ankimobile_imported => '已导入 AnkiMobile 配置。';
+  @override
+  String get anki_error_ankimobile_not_active =>
+      'Fushi 没能及时回到前台，剪贴板还没被读取。回到 Fushi 后重试即可。';
+  @override
+  String get audiobook_transcribe_action => '设备端转录生成字幕';
+  @override
+  String get audiobook_transcribe_title => '设备端语音转录';
+  @override
+  String audiobook_transcribe_model_download_needed({required Object size}) =>
+      '需要下载模型：${size}';
+  @override
+  String get audiobook_transcribe_model_download => '下载模型';
+  @override
+  String audiobook_transcribe_model_downloading(
+          {required Object name,
+          required Object received,
+          required Object total}) =>
+      '正在下载 ${name}… ${received} / ${total}';
+  @override
+  String audiobook_transcribe_model_ready({required Object variant}) =>
+      '模型已就绪（${variant}）';
+  @override
+  String get audiobook_transcribe_accel_label => '加速';
+  @override
+  String get audiobook_transcribe_accel_auto => '自动（有 GPU 则用）';
+  @override
+  String get audiobook_transcribe_accel_cpu => '仅 CPU';
+  @override
+  String audiobook_transcribe_running_on({required Object provider}) =>
+      '运行于 ${provider}';
+  @override
+  String audiobook_transcribe_fallback({required Object reason}) =>
+      'GPU 不可用，已回退到 CPU：${reason}';
+  @override
+  String get audiobook_transcribe_start => '开始转录';
+  @override
+  String get audiobook_transcribe_resume => '继续转录';
+  @override
+  String get audiobook_transcribe_pause => '暂停';
+  @override
+  String get audiobook_transcribe_pausing => '将在下一个检查点暂停…';
+  @override
+  String get audiobook_transcribe_discard => '放弃进度';
+  @override
+  String get audiobook_transcribe_use_result => '使用字幕';
+  @override
+  String audiobook_transcribe_progress(
+          {required Object done,
+          required Object total,
+          required Object file,
+          required Object files}) =>
+      '${done} / ${total} · 文件 ${file}/${files}';
+  @override
+  String audiobook_transcribe_speed(
+          {required Object elapsed,
+          required Object eta,
+          required Object speed}) =>
+      '已用 ${elapsed} · 剩余 ${eta} · ${speed} 倍速';
+  @override
+  String audiobook_transcribe_done(
+          {required Object segments, required Object cues}) =>
+      '完成：${segments} 段语音生成 ${cues} 条字幕';
+  @override
+  String audiobook_transcribe_failed({required Object error}) =>
+      '转录失败：${error}';
+  @override
+  String get audiobook_transcribe_needs_audio => '请先选择音频文件';
+  @override
+  String get audiobook_transcribe_result_name => '设备端转录生成';
+  @override
+  String get audiobook_transcribe_paused_hint => '进度已保存，之后选同一组音频文件即可继续。';
+  @override
+  String get audiobook_transcribe_unavailable => '此平台不支持设备端转录';
+  @override
+  String get audiobook_transcribe_preparing => '正在加载模型…';
+  @override
+  String get audiobook_transcribe_export => '导出字幕文件';
+  @override
+  String get audiobook_transcribe_export_saved => '字幕文件已导出';
+  @override
+  String get audiobook_subtitle_source_title => '字幕来源';
+  @override
+  String get audiobook_subtitle_source_transcribe_hint => '用设备端语音模型从已选音频生成';
+  @override
+  String get audiobook_transcribe_intro =>
+      '在本机用所选语言的语音模型转录音频并生成用于对齐的字幕，不会上传任何内容。';
+  @override
+  String get audiobook_transcribe_language_label => '语音语言';
+  @override
+  String get audiobook_transcribe_language_ja => '日语';
+  @override
+  String get audiobook_transcribe_language_en => '英语';
+  @override
+  String get asr_models_section => '语音识别模型';
+  @override
+  String get asr_models_section_summary => '有声书设备端转录用的模型，只下载你需要的语言。';
+  @override
+  String asr_models_status_ready({required Object size}) => '已下载 · 占用 ${size}';
+  @override
+  String asr_models_status_partial(
+          {required Object obtained, required Object total}) =>
+      '已下载一部分 · ${obtained} / ${total}';
+  @override
+  String asr_models_status_missing({required Object size}) =>
+      '未下载 · 需要 ${size}';
+  @override
+  String get asr_models_download => '下载';
+  @override
+  String get asr_models_delete => '删除';
+  @override
+  String get asr_models_delete_confirm_title => '删除这个模型？';
+  @override
+  String get asr_models_delete_confirm_message => '再转录这种语言时需要重新下载模型。';
+  @override
+  String asr_models_delete_done_freed({required Object size}) =>
+      '已删除，释放 ${size}';
+  @override
+  String asr_models_download_failed({required Object error}) => '下载失败：${error}';
+  @override
+  String audiobook_transcribe_probe_failed({required Object reason}) =>
+      'GPU 探测失败，按 CPU 规划：${reason}';
+  @override
+  String get onboarding_pack_status_paused => '推荐包下载已暂停';
+  @override
+  String get onboarding_pack_download_resume => '继续下载';
+  @override
+  String get onboarding_pack_paused_desc => '进度留在磁盘上，继续下载会从中断处接着下。';
+  @override
+  String get onboarding_pack_mini_bar_hide => '收起';
 }
 
 // Path: <root>
@@ -154550,15 +159227,11 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get icon_default => '預設';
   @override
-  String get icon_full => '完整';
-  @override
   String get icon_shortcut_created => '已建立主畫面捷徑。';
   @override
   String get icon_shortcut_unsupported => '此裝置不支援捷徑。';
   @override
   String get icon_switch_success => '應用程式圖示已變更。';
-  @override
-  String get icon_transparent => '透明';
   @override
   String image_page_counter({required Object current, required Object total}) =>
       '${current} / ${total}';
@@ -161283,6 +165956,309 @@ class _StringsZhHk extends _StringsEn {
   @override
   String discovery_opds_test_failed({required Object reason}) =>
       '連線失敗：${reason}';
+  @override
+  String get anki_error_permission_permanently_denied =>
+      'AnkiDroid card access was permanently denied, so the system no longer shows the permission dialog. Open app settings and grant the AnkiDroid permission, then try again.';
+  @override
+  String get anki_error_ankidroid_unavailable =>
+      'AnkiDroid is not installed (or its API is disabled), so card access cannot be granted. Install AnkiDroid and enable its API, or switch to AnkiConnect.';
+  @override
+  String get anki_action_open_settings => 'Open settings';
+  @override
+  String onboarding_pack_pick_failed({required Object message}) =>
+      'Could not use the chosen file: ${message}';
+  @override
+  String get onboarding_pack_pick_no_path =>
+      'The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access.';
+  @override
+  String get interconnect_profile_section => 'Configuration file';
+  @override
+  String get interconnect_profile_upload => 'Upload configuration to host';
+  @override
+  String get interconnect_profile_upload_desc =>
+      'Send this device\'s active configuration to the paired host, where it lands as a new configuration.';
+  @override
+  String get interconnect_profile_download =>
+      'Download configuration from host';
+  @override
+  String get interconnect_profile_download_desc =>
+      'Import the host\'s active configuration as a new configuration here. Your current one is untouched.';
+  @override
+  String get interconnect_profile_host_toggle =>
+      'Allow paired devices to read/write configuration';
+  @override
+  String get interconnect_profile_host_toggle_desc =>
+      'Off by default. Requires HTTPS and a paired-device token. Incoming configurations are always added as new ones.';
+  @override
+  String interconnect_profile_uploaded({required Object name}) =>
+      'Configuration uploaded: ${name}';
+  @override
+  String interconnect_profile_downloaded({required Object name}) =>
+      'Configuration imported: ${name}';
+  @override
+  String get interconnect_profile_unsupported =>
+      'The paired host does not offer configuration transfer (needs HTTPS and a newer version).';
+  @override
+  String interconnect_profile_failed({required Object message}) =>
+      'Configuration transfer failed: ${message}';
+  @override
+  String get onboarding_pack_status_downloading =>
+      'Downloading recommended pack';
+  @override
+  String get onboarding_pack_status_ready => 'Recommended pack downloaded';
+  @override
+  String get onboarding_pack_import_now => 'Import now';
+  @override
+  String get onboarding_pack_download_finished =>
+      'Recommended pack finished downloading. Import it from Settings → System.';
+  @override
+  String get onboarding_pack_download_background_hint =>
+      'The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.';
+  @override
+  String get onboarding_anki_fsrs_title => '在 Anki 裡開啟 FSRS';
+  @override
+  String get onboarding_anki_fsrs_body =>
+      'Anki 內建了 FSRS —— 目前最好的間隔重複演算法之一，但你不打開它，排程就一直走三十多年前的 SM-2。FSRS 拿你的真實複習記錄預測遺忘時點，同樣的記憶效果複習量更少。這個開關只在 Anki 裡開一次，Fushi 這邊不用改任何設定。';
+  @override
+  String get onboarding_anki_fsrs_step_options_title => '打開牌組選項';
+  @override
+  String get onboarding_anki_fsrs_step_options_desktop_desc =>
+      '在 Anki 主介面點牌組右側的齒輪，選「選項」。';
+  @override
+  String get onboarding_anki_fsrs_step_options_mobile_desc =>
+      '在 AnkiDroid（2.17 及以上）或 AnkiMobile 裡長按牌組，選「選項」。';
+  @override
+  String get onboarding_anki_fsrs_step_toggle_title => '打開 FSRS 開關';
+  @override
+  String get onboarding_anki_fsrs_step_toggle_desc =>
+      '捲到選項頁最底部的「FSRS」區塊（舊版藏在「進階」裡），把開關打開。它對整個收藏生效，開一次就夠。';
+  @override
+  String get onboarding_anki_fsrs_step_optimize_title => '點「最佳化」再儲存';
+  @override
+  String get onboarding_anki_fsrs_step_optimize_desc =>
+      '在開關下方點「最佳化」，讓參數貼合你自己的複習記錄，然後儲存。複習記錄不足約 1000 條時預設參數已經比 SM-2 準，攢夠以後再最佳化一次即可。';
+  @override
+  String get sync_desktop_oauth_waiting_title => '正在等待瀏覽器完成登入';
+  @override
+  String get sync_desktop_oauth_waiting_body =>
+      '已在預設瀏覽器開啟登入頁面。如果沒有開啟，或頁面顯示錯誤，可複製連結到其他瀏覽器或無痕視窗開啟。';
+  @override
+  String get sync_desktop_oauth_link_copy => '複製登入連結';
+  @override
+  String get sync_desktop_oauth_browser_reopen => '重新開啟瀏覽器';
+  @override
+  String get sync_err_sign_in_cancelled => '已取消登入。';
+  @override
+  String get sync_desktop_oauth_browser_open_failed =>
+      '無法開啟瀏覽器。請複製連結，自行在瀏覽器中開啟。';
+  @override
+  String get sync_desktop_oauth_link_copy_failed => '複製失敗。請手動選取連結文字後複製。';
+  @override
+  String get game_text_thread_artifact_hint =>
+      'Repeated-character artifact thread, no usable lines';
+  @override
+  String get shortcut_action_global_context_menu => 'Open context menu';
+  @override
+  String get shortcut_conflict_keep_both => 'Keep both';
+  @override
+  String get shortcut_conflict_keep_both_hint =>
+      'Both actions keep this binding. Whichever scope resolves first wins at press time.';
+  @override
+  String get video_specs_title => 'Media info';
+  @override
+  String get video_specs_resolution => 'Resolution';
+  @override
+  String get video_specs_dynamic_range => 'Dynamic range';
+  @override
+  String get video_specs_video_codec => 'Video codec';
+  @override
+  String get video_specs_bit_depth => 'Bit depth';
+  @override
+  String get video_specs_frame_rate => 'Frame rate';
+  @override
+  String get video_specs_bitrate => 'Bitrate';
+  @override
+  String get video_specs_audio_tracks => 'Audio tracks';
+  @override
+  String get video_specs_subtitle_tracks => 'Subtitle tracks';
+  @override
+  String get video_specs_track_commentary => 'Commentary';
+  @override
+  String get video_specs_track_forced => 'Forced';
+  @override
+  String get video_specs_track_default => 'Default';
+  @override
+  String get gal_mining_image_mode_video_clip => 'Video clip';
+  @override
+  String get gal_mining_image_mode_video_clip_hint =>
+      'Records the game window from the moment the line appears until you mine the card, mixed with the sentence audio. Falls back to an animated image or screenshot when recording has not started or fewer than 2 frames were captured.';
+  @override
+  String get game_hook_reason_native_loopback_ack_timeout =>
+      'The audio capture policy was not confirmed in time. Text capture still works; try again if game audio is missing.';
+  @override
+  String get shortcut_scope_global_external_desktop_note =>
+      '鼠标触发只接受侧键（后退/前进）。其它按钮在别的程序里有各自的固有含义，这里会拒绝录入。';
+  @override
+  String get shortcut_mouse_button_not_supported =>
+      'This action only accepts mouse side buttons (back/forward).';
+  @override
+  String get anki_ankimobile_opened =>
+      'AnkiMobile opened. Approve the request there, then return to Fushi.';
+  @override
+  String get anki_error_ankimobile_pasteboard_empty =>
+      'AnkiMobile did not return any configuration. Approve the request in AnkiMobile, then come back to Fushi.';
+  @override
+  String get anki_error_ankimobile_pasteboard_denied =>
+      'iOS blocked reading the clipboard. Choose Allow Paste when returning to Fushi, then try again.';
+  @override
+  String get anki_error_ankimobile_no_decks =>
+      'AnkiMobile returned no decks or note types.';
+  @override
+  String get anki_error_ankimobile_unavailable =>
+      'Could not open AnkiMobile. Install AnkiMobile and try again.';
+  @override
+  String get dictionary_collapse_follow_global => 'Follow global setting';
+  @override
+  String get anki_ankimobile_imported => 'AnkiMobile configuration imported.';
+  @override
+  String get anki_error_ankimobile_not_active =>
+      'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+  @override
+  String get audiobook_transcribe_action => 'Generate subtitles on device';
+  @override
+  String get audiobook_transcribe_title => 'On-device transcription';
+  @override
+  String audiobook_transcribe_model_download_needed({required Object size}) =>
+      'Model download required: ${size}';
+  @override
+  String get audiobook_transcribe_model_download => 'Download model';
+  @override
+  String audiobook_transcribe_model_downloading(
+          {required Object name,
+          required Object received,
+          required Object total}) =>
+      'Downloading ${name}… ${received} / ${total}';
+  @override
+  String audiobook_transcribe_model_ready({required Object variant}) =>
+      'Model ready (${variant})';
+  @override
+  String get audiobook_transcribe_accel_label => 'Acceleration';
+  @override
+  String get audiobook_transcribe_accel_auto => 'Auto (GPU when available)';
+  @override
+  String get audiobook_transcribe_accel_cpu => 'CPU only';
+  @override
+  String audiobook_transcribe_running_on({required Object provider}) =>
+      'Running on ${provider}';
+  @override
+  String audiobook_transcribe_fallback({required Object reason}) =>
+      'GPU unavailable, fell back to CPU: ${reason}';
+  @override
+  String get audiobook_transcribe_start => 'Start transcription';
+  @override
+  String get audiobook_transcribe_resume => 'Resume transcription';
+  @override
+  String get audiobook_transcribe_pause => 'Pause';
+  @override
+  String get audiobook_transcribe_pausing => 'Pausing at the next checkpoint…';
+  @override
+  String get audiobook_transcribe_discard => 'Discard progress';
+  @override
+  String get audiobook_transcribe_use_result => 'Use subtitles';
+  @override
+  String audiobook_transcribe_progress(
+          {required Object done,
+          required Object total,
+          required Object file,
+          required Object files}) =>
+      '${done} / ${total} · file ${file}/${files}';
+  @override
+  String audiobook_transcribe_speed(
+          {required Object elapsed,
+          required Object eta,
+          required Object speed}) =>
+      'Elapsed ${elapsed} · remaining ${eta} · ${speed}× realtime';
+  @override
+  String audiobook_transcribe_done(
+          {required Object cues, required Object segments}) =>
+      'Done: ${cues} cues from ${segments} speech segments';
+  @override
+  String audiobook_transcribe_failed({required Object error}) =>
+      'Transcription failed: ${error}';
+  @override
+  String get audiobook_transcribe_needs_audio => 'Pick audio files first';
+  @override
+  String get audiobook_transcribe_result_name =>
+      'Generated by on-device transcription';
+  @override
+  String get audiobook_transcribe_paused_hint =>
+      'Progress is saved. Pick the same audio files later to resume.';
+  @override
+  String get audiobook_transcribe_unavailable =>
+      'On-device transcription is not available on this platform';
+  @override
+  String get audiobook_transcribe_preparing => 'Loading model…';
+  @override
+  String get audiobook_transcribe_export => 'Export subtitle file';
+  @override
+  String get audiobook_transcribe_export_saved => 'Subtitle file saved';
+  @override
+  String get audiobook_subtitle_source_title => 'Subtitle source';
+  @override
+  String get audiobook_subtitle_source_transcribe_hint =>
+      'Generate from the selected audio with the on-device speech model';
+  @override
+  String get audiobook_transcribe_intro =>
+      'Transcribes the audio locally with an on-device speech model for the selected language and generates subtitles for alignment. Nothing is uploaded.';
+  @override
+  String get audiobook_transcribe_language_label => 'Speech language';
+  @override
+  String get audiobook_transcribe_language_ja => 'Japanese';
+  @override
+  String get audiobook_transcribe_language_en => 'English';
+  @override
+  String get asr_models_section => 'Speech recognition models';
+  @override
+  String get asr_models_section_summary =>
+      'Models for on-device audiobook transcription. Download only the languages you need.';
+  @override
+  String asr_models_status_ready({required Object size}) =>
+      'Downloaded · ${size} on disk';
+  @override
+  String asr_models_status_partial(
+          {required Object obtained, required Object total}) =>
+      'Partially downloaded · ${obtained} / ${total}';
+  @override
+  String asr_models_status_missing({required Object size}) =>
+      'Not downloaded · ${size}';
+  @override
+  String get asr_models_download => 'Download';
+  @override
+  String get asr_models_delete => 'Delete';
+  @override
+  String get asr_models_delete_confirm_title => 'Delete this model?';
+  @override
+  String get asr_models_delete_confirm_message =>
+      'Transcription in this language will need the model downloaded again.';
+  @override
+  String asr_models_delete_done_freed({required Object size}) =>
+      'Deleted, freed ${size}';
+  @override
+  String asr_models_download_failed({required Object error}) =>
+      'Download failed: ${error}';
+  @override
+  String audiobook_transcribe_probe_failed({required Object reason}) =>
+      'GPU detection failed, planning for CPU: ${reason}';
+  @override
+  String get onboarding_pack_status_paused =>
+      'Recommended pack download paused';
+  @override
+  String get onboarding_pack_download_resume => 'Resume download';
+  @override
+  String get onboarding_pack_paused_desc =>
+      'Progress is kept on disk — resuming picks up where it stopped.';
+  @override
+  String get onboarding_pack_mini_bar_hide => 'Hide';
 }
 
 /// Flat map(s) containing all translations.
@@ -163464,16 +168440,12 @@ extension on _StringsEn {
         return 'Tap an icon to switch, or pick a custom image below.';
       case 'icon_default':
         return 'Default';
-      case 'icon_full':
-        return 'Full';
       case 'icon_shortcut_created':
         return 'Home screen shortcut created.';
       case 'icon_shortcut_unsupported':
         return 'Shortcuts are not supported on this device.';
       case 'icon_switch_success':
         return 'App icon changed successfully.';
-      case 'icon_transparent':
-        return 'Transparent';
       case 'image_page_counter':
         return ({required Object current, required Object total}) =>
             '${current} / ${total}';
@@ -169859,6 +174831,257 @@ extension on _StringsEn {
             'Connected. Root catalog has ${count} entries';
       case 'discovery_opds_test_failed':
         return ({required Object reason}) => 'Connection failed: ${reason}';
+      case 'anki_error_permission_permanently_denied':
+        return 'AnkiDroid card access was permanently denied, so the system no longer shows the permission dialog. Open app settings and grant the AnkiDroid permission, then try again.';
+      case 'anki_error_ankidroid_unavailable':
+        return 'AnkiDroid is not installed (or its API is disabled), so card access cannot be granted. Install AnkiDroid and enable its API, or switch to AnkiConnect.';
+      case 'anki_action_open_settings':
+        return 'Open settings';
+      case 'onboarding_pack_pick_failed':
+        return ({required Object message}) =>
+            'Could not use the chosen file: ${message}';
+      case 'onboarding_pack_pick_no_path':
+        return 'The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access.';
+      case 'interconnect_profile_section':
+        return 'Configuration file';
+      case 'interconnect_profile_upload':
+        return 'Upload configuration to host';
+      case 'interconnect_profile_upload_desc':
+        return 'Send this device\'s active configuration to the paired host, where it lands as a new configuration.';
+      case 'interconnect_profile_download':
+        return 'Download configuration from host';
+      case 'interconnect_profile_download_desc':
+        return 'Import the host\'s active configuration as a new configuration here. Your current one is untouched.';
+      case 'interconnect_profile_host_toggle':
+        return 'Allow paired devices to read/write configuration';
+      case 'interconnect_profile_host_toggle_desc':
+        return 'Off by default. Requires HTTPS and a paired-device token. Incoming configurations are always added as new ones.';
+      case 'interconnect_profile_uploaded':
+        return ({required Object name}) => 'Configuration uploaded: ${name}';
+      case 'interconnect_profile_downloaded':
+        return ({required Object name}) => 'Configuration imported: ${name}';
+      case 'interconnect_profile_unsupported':
+        return 'The paired host does not offer configuration transfer (needs HTTPS and a newer version).';
+      case 'interconnect_profile_failed':
+        return ({required Object message}) =>
+            'Configuration transfer failed: ${message}';
+      case 'onboarding_pack_status_downloading':
+        return 'Downloading recommended pack';
+      case 'onboarding_pack_status_ready':
+        return 'Recommended pack downloaded';
+      case 'onboarding_pack_import_now':
+        return 'Import now';
+      case 'onboarding_pack_download_finished':
+        return 'Recommended pack finished downloading. Import it from Settings → System.';
+      case 'onboarding_pack_download_background_hint':
+        return 'The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.';
+      case 'onboarding_anki_fsrs_title':
+        return 'Turn on FSRS in Anki';
+      case 'onboarding_anki_fsrs_body':
+        return 'Anki has FSRS built in — one of the best spaced-repetition algorithms around — but it keeps scheduling with SM-2 from the 1980s until you turn FSRS on. FSRS reads your real review history and predicts when you are about to forget, so you keep the same retention with fewer reviews. You flip this switch once, inside Anki; nothing changes on the Fushi side.';
+      case 'onboarding_anki_fsrs_step_options_title':
+        return 'Open deck options';
+      case 'onboarding_anki_fsrs_step_options_desktop_desc':
+        return 'In Anki, click the gear next to a deck and choose Options.';
+      case 'onboarding_anki_fsrs_step_options_mobile_desc':
+        return 'In AnkiDroid (2.17 or newer) or AnkiMobile, long-press the deck and choose Options.';
+      case 'onboarding_anki_fsrs_step_toggle_title':
+        return 'Switch FSRS on';
+      case 'onboarding_anki_fsrs_step_toggle_desc':
+        return 'Scroll to the FSRS section at the bottom of the options page (older builds hide it under Advanced) and turn the switch on. It applies to your whole collection, so once is enough.';
+      case 'onboarding_anki_fsrs_step_optimize_title':
+        return 'Optimize, then save';
+      case 'onboarding_anki_fsrs_step_optimize_desc':
+        return 'Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while.';
+      case 'sync_desktop_oauth_waiting_title':
+        return 'Waiting for the browser sign-in';
+      case 'sync_desktop_oauth_waiting_body':
+        return 'The sign-in page was opened in your default browser. If nothing opened, or the page shows an error, copy the link and open it in another browser or a private window.';
+      case 'sync_desktop_oauth_link_copy':
+        return 'Copy sign-in link';
+      case 'sync_desktop_oauth_browser_reopen':
+        return 'Open browser again';
+      case 'sync_err_sign_in_cancelled':
+        return 'Sign-in cancelled.';
+      case 'sync_desktop_oauth_browser_open_failed':
+        return 'Could not open the browser. Copy the link and open it in a browser yourself.';
+      case 'sync_desktop_oauth_link_copy_failed':
+        return 'Could not copy the link. Select the link text and copy it manually.';
+      case 'game_text_thread_artifact_hint':
+        return 'Repeated-character artifact thread, no usable lines';
+      case 'shortcut_action_global_context_menu':
+        return 'Open context menu';
+      case 'shortcut_conflict_keep_both':
+        return 'Keep both';
+      case 'shortcut_conflict_keep_both_hint':
+        return 'Both actions keep this binding. Whichever scope resolves first wins at press time.';
+      case 'video_specs_title':
+        return 'Media info';
+      case 'video_specs_resolution':
+        return 'Resolution';
+      case 'video_specs_dynamic_range':
+        return 'Dynamic range';
+      case 'video_specs_video_codec':
+        return 'Video codec';
+      case 'video_specs_bit_depth':
+        return 'Bit depth';
+      case 'video_specs_frame_rate':
+        return 'Frame rate';
+      case 'video_specs_bitrate':
+        return 'Bitrate';
+      case 'video_specs_audio_tracks':
+        return 'Audio tracks';
+      case 'video_specs_subtitle_tracks':
+        return 'Subtitle tracks';
+      case 'video_specs_track_commentary':
+        return 'Commentary';
+      case 'video_specs_track_forced':
+        return 'Forced';
+      case 'video_specs_track_default':
+        return 'Default';
+      case 'gal_mining_image_mode_video_clip':
+        return 'Video clip';
+      case 'gal_mining_image_mode_video_clip_hint':
+        return 'Records the game window from the moment the line appears until you mine the card, mixed with the sentence audio. Falls back to an animated image or screenshot when recording has not started or fewer than 2 frames were captured.';
+      case 'game_hook_reason_native_loopback_ack_timeout':
+        return 'The audio capture policy was not confirmed in time. Text capture still works; try again if game audio is missing.';
+      case 'shortcut_scope_global_external_desktop_note':
+        return 'Mouse triggers accept side buttons only (back/forward). Other buttons keep their normal meaning in other apps, so they are rejected here.';
+      case 'shortcut_mouse_button_not_supported':
+        return 'This action only accepts mouse side buttons (back/forward).';
+      case 'anki_ankimobile_opened':
+        return 'AnkiMobile opened. Approve the request there, then return to Fushi.';
+      case 'anki_error_ankimobile_pasteboard_empty':
+        return 'AnkiMobile did not return any configuration. Approve the request in AnkiMobile, then come back to Fushi.';
+      case 'anki_error_ankimobile_pasteboard_denied':
+        return 'iOS blocked reading the clipboard. Choose Allow Paste when returning to Fushi, then try again.';
+      case 'anki_error_ankimobile_no_decks':
+        return 'AnkiMobile returned no decks or note types.';
+      case 'anki_error_ankimobile_unavailable':
+        return 'Could not open AnkiMobile. Install AnkiMobile and try again.';
+      case 'dictionary_collapse_follow_global':
+        return 'Follow global setting';
+      case 'anki_ankimobile_imported':
+        return 'AnkiMobile configuration imported.';
+      case 'anki_error_ankimobile_not_active':
+        return 'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+      case 'audiobook_transcribe_action':
+        return 'Generate subtitles on device';
+      case 'audiobook_transcribe_title':
+        return 'On-device transcription';
+      case 'audiobook_transcribe_model_download_needed':
+        return ({required Object size}) => 'Model download required: ${size}';
+      case 'audiobook_transcribe_model_download':
+        return 'Download model';
+      case 'audiobook_transcribe_model_downloading':
+        return (
+                {required Object name,
+                required Object received,
+                required Object total}) =>
+            'Downloading ${name}… ${received} / ${total}';
+      case 'audiobook_transcribe_model_ready':
+        return ({required Object variant}) => 'Model ready (${variant})';
+      case 'audiobook_transcribe_accel_label':
+        return 'Acceleration';
+      case 'audiobook_transcribe_accel_auto':
+        return 'Auto (GPU when available)';
+      case 'audiobook_transcribe_accel_cpu':
+        return 'CPU only';
+      case 'audiobook_transcribe_running_on':
+        return ({required Object provider}) => 'Running on ${provider}';
+      case 'audiobook_transcribe_fallback':
+        return ({required Object reason}) =>
+            'GPU unavailable, fell back to CPU: ${reason}';
+      case 'audiobook_transcribe_start':
+        return 'Start transcription';
+      case 'audiobook_transcribe_resume':
+        return 'Resume transcription';
+      case 'audiobook_transcribe_pause':
+        return 'Pause';
+      case 'audiobook_transcribe_pausing':
+        return 'Pausing at the next checkpoint…';
+      case 'audiobook_transcribe_discard':
+        return 'Discard progress';
+      case 'audiobook_transcribe_use_result':
+        return 'Use subtitles';
+      case 'audiobook_transcribe_progress':
+        return (
+                {required Object done,
+                required Object total,
+                required Object file,
+                required Object files}) =>
+            '${done} / ${total} · file ${file}/${files}';
+      case 'audiobook_transcribe_speed':
+        return (
+                {required Object elapsed,
+                required Object eta,
+                required Object speed}) =>
+            'Elapsed ${elapsed} · remaining ${eta} · ${speed}× realtime';
+      case 'audiobook_transcribe_done':
+        return ({required Object cues, required Object segments}) =>
+            'Done: ${cues} cues from ${segments} speech segments';
+      case 'audiobook_transcribe_failed':
+        return ({required Object error}) => 'Transcription failed: ${error}';
+      case 'audiobook_transcribe_needs_audio':
+        return 'Pick audio files first';
+      case 'audiobook_transcribe_result_name':
+        return 'Generated by on-device transcription';
+      case 'audiobook_transcribe_paused_hint':
+        return 'Progress is saved. Pick the same audio files later to resume.';
+      case 'audiobook_transcribe_unavailable':
+        return 'On-device transcription is not available on this platform';
+      case 'audiobook_transcribe_preparing':
+        return 'Loading model…';
+      case 'audiobook_transcribe_export':
+        return 'Export subtitle file';
+      case 'audiobook_transcribe_export_saved':
+        return 'Subtitle file saved';
+      case 'audiobook_subtitle_source_title':
+        return 'Subtitle source';
+      case 'audiobook_subtitle_source_transcribe_hint':
+        return 'Generate from the selected audio with the on-device speech model';
+      case 'audiobook_transcribe_intro':
+        return 'Transcribes the audio locally with an on-device speech model for the selected language and generates subtitles for alignment. Nothing is uploaded.';
+      case 'audiobook_transcribe_language_label':
+        return 'Speech language';
+      case 'audiobook_transcribe_language_ja':
+        return 'Japanese';
+      case 'audiobook_transcribe_language_en':
+        return 'English';
+      case 'asr_models_section':
+        return 'Speech recognition models';
+      case 'asr_models_section_summary':
+        return 'Models for on-device audiobook transcription. Download only the languages you need.';
+      case 'asr_models_status_ready':
+        return ({required Object size}) => 'Downloaded · ${size} on disk';
+      case 'asr_models_status_partial':
+        return ({required Object obtained, required Object total}) =>
+            'Partially downloaded · ${obtained} / ${total}';
+      case 'asr_models_status_missing':
+        return ({required Object size}) => 'Not downloaded · ${size}';
+      case 'asr_models_download':
+        return 'Download';
+      case 'asr_models_delete':
+        return 'Delete';
+      case 'asr_models_delete_confirm_title':
+        return 'Delete this model?';
+      case 'asr_models_delete_confirm_message':
+        return 'Transcription in this language will need the model downloaded again.';
+      case 'asr_models_delete_done_freed':
+        return ({required Object size}) => 'Deleted, freed ${size}';
+      case 'asr_models_download_failed':
+        return ({required Object error}) => 'Download failed: ${error}';
+      case 'audiobook_transcribe_probe_failed':
+        return ({required Object reason}) =>
+            'GPU detection failed, planning for CPU: ${reason}';
+      case 'onboarding_pack_status_paused':
+        return 'Recommended pack download paused';
+      case 'onboarding_pack_download_resume':
+        return 'Resume download';
+      case 'onboarding_pack_paused_desc':
+        return 'Progress is kept on disk — resuming picks up where it stopped.';
+      case 'onboarding_pack_mini_bar_hide':
+        return 'Hide';
       default:
         return null;
     }
@@ -172038,16 +177261,12 @@ extension on _StringsAr {
         return 'انقر على أيقونة للتبديل، أو اختر صورة مخصصة أدناه.';
       case 'icon_default':
         return 'افتراضي';
-      case 'icon_full':
-        return 'كامل';
       case 'icon_shortcut_created':
         return 'تم إنشاء اختصار على الشاشة الرئيسية.';
       case 'icon_shortcut_unsupported':
         return 'الاختصارات غير مدعومة على هذا الجهاز.';
       case 'icon_switch_success':
         return 'تم تغيير أيقونة التطبيق بنجاح.';
-      case 'icon_transparent':
-        return 'شفاف';
       case 'image_page_counter':
         return ({required Object current, required Object total}) =>
             '${current} / ${total}';
@@ -178430,6 +183649,257 @@ extension on _StringsAr {
             'تم الاتصال. يحتوي الفهرس الجذر على ${count} عنصرًا';
       case 'discovery_opds_test_failed':
         return ({required Object reason}) => 'فشل الاتصال: ${reason}';
+      case 'anki_error_permission_permanently_denied':
+        return 'AnkiDroid card access was permanently denied, so the system no longer shows the permission dialog. Open app settings and grant the AnkiDroid permission, then try again.';
+      case 'anki_error_ankidroid_unavailable':
+        return 'AnkiDroid is not installed (or its API is disabled), so card access cannot be granted. Install AnkiDroid and enable its API, or switch to AnkiConnect.';
+      case 'anki_action_open_settings':
+        return 'Open settings';
+      case 'onboarding_pack_pick_failed':
+        return ({required Object message}) =>
+            'Could not use the chosen file: ${message}';
+      case 'onboarding_pack_pick_no_path':
+        return 'The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access.';
+      case 'interconnect_profile_section':
+        return 'Configuration file';
+      case 'interconnect_profile_upload':
+        return 'Upload configuration to host';
+      case 'interconnect_profile_upload_desc':
+        return 'Send this device\'s active configuration to the paired host, where it lands as a new configuration.';
+      case 'interconnect_profile_download':
+        return 'Download configuration from host';
+      case 'interconnect_profile_download_desc':
+        return 'Import the host\'s active configuration as a new configuration here. Your current one is untouched.';
+      case 'interconnect_profile_host_toggle':
+        return 'Allow paired devices to read/write configuration';
+      case 'interconnect_profile_host_toggle_desc':
+        return 'Off by default. Requires HTTPS and a paired-device token. Incoming configurations are always added as new ones.';
+      case 'interconnect_profile_uploaded':
+        return ({required Object name}) => 'Configuration uploaded: ${name}';
+      case 'interconnect_profile_downloaded':
+        return ({required Object name}) => 'Configuration imported: ${name}';
+      case 'interconnect_profile_unsupported':
+        return 'The paired host does not offer configuration transfer (needs HTTPS and a newer version).';
+      case 'interconnect_profile_failed':
+        return ({required Object message}) =>
+            'Configuration transfer failed: ${message}';
+      case 'onboarding_pack_status_downloading':
+        return 'Downloading recommended pack';
+      case 'onboarding_pack_status_ready':
+        return 'Recommended pack downloaded';
+      case 'onboarding_pack_import_now':
+        return 'Import now';
+      case 'onboarding_pack_download_finished':
+        return 'Recommended pack finished downloading. Import it from Settings → System.';
+      case 'onboarding_pack_download_background_hint':
+        return 'The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.';
+      case 'onboarding_anki_fsrs_title':
+        return 'Turn on FSRS in Anki';
+      case 'onboarding_anki_fsrs_body':
+        return 'Anki has FSRS built in — one of the best spaced-repetition algorithms around — but it keeps scheduling with SM-2 from the 1980s until you turn FSRS on. FSRS reads your real review history and predicts when you are about to forget, so you keep the same retention with fewer reviews. You flip this switch once, inside Anki; nothing changes on the Fushi side.';
+      case 'onboarding_anki_fsrs_step_options_title':
+        return 'Open deck options';
+      case 'onboarding_anki_fsrs_step_options_desktop_desc':
+        return 'In Anki, click the gear next to a deck and choose Options.';
+      case 'onboarding_anki_fsrs_step_options_mobile_desc':
+        return 'In AnkiDroid (2.17 or newer) or AnkiMobile, long-press the deck and choose Options.';
+      case 'onboarding_anki_fsrs_step_toggle_title':
+        return 'Switch FSRS on';
+      case 'onboarding_anki_fsrs_step_toggle_desc':
+        return 'Scroll to the FSRS section at the bottom of the options page (older builds hide it under Advanced) and turn the switch on. It applies to your whole collection, so once is enough.';
+      case 'onboarding_anki_fsrs_step_optimize_title':
+        return 'Optimize, then save';
+      case 'onboarding_anki_fsrs_step_optimize_desc':
+        return 'Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while.';
+      case 'sync_desktop_oauth_waiting_title':
+        return 'في انتظار تسجيل الدخول في المتصفح';
+      case 'sync_desktop_oauth_waiting_body':
+        return 'تم فتح صفحة تسجيل الدخول في المتصفح الافتراضي. إذا لم يُفتح شيء أو ظهر خطأ في الصفحة، فانسخ الرابط وافتحه في متصفح آخر أو في نافذة خاصة.';
+      case 'sync_desktop_oauth_link_copy':
+        return 'نسخ رابط تسجيل الدخول';
+      case 'sync_desktop_oauth_browser_reopen':
+        return 'فتح المتصفح مرة أخرى';
+      case 'sync_err_sign_in_cancelled':
+        return 'تم إلغاء تسجيل الدخول.';
+      case 'sync_desktop_oauth_browser_open_failed':
+        return 'تعذّر فتح المتصفح. انسخ الرابط وافتحه بنفسك في متصفح.';
+      case 'sync_desktop_oauth_link_copy_failed':
+        return 'تعذّر نسخ الرابط. حدّد نص الرابط وانسخه يدويًا.';
+      case 'game_text_thread_artifact_hint':
+        return 'Repeated-character artifact thread, no usable lines';
+      case 'shortcut_action_global_context_menu':
+        return 'Open context menu';
+      case 'shortcut_conflict_keep_both':
+        return 'Keep both';
+      case 'shortcut_conflict_keep_both_hint':
+        return 'Both actions keep this binding. Whichever scope resolves first wins at press time.';
+      case 'video_specs_title':
+        return 'Media info';
+      case 'video_specs_resolution':
+        return 'Resolution';
+      case 'video_specs_dynamic_range':
+        return 'Dynamic range';
+      case 'video_specs_video_codec':
+        return 'Video codec';
+      case 'video_specs_bit_depth':
+        return 'Bit depth';
+      case 'video_specs_frame_rate':
+        return 'Frame rate';
+      case 'video_specs_bitrate':
+        return 'Bitrate';
+      case 'video_specs_audio_tracks':
+        return 'Audio tracks';
+      case 'video_specs_subtitle_tracks':
+        return 'Subtitle tracks';
+      case 'video_specs_track_commentary':
+        return 'Commentary';
+      case 'video_specs_track_forced':
+        return 'Forced';
+      case 'video_specs_track_default':
+        return 'Default';
+      case 'gal_mining_image_mode_video_clip':
+        return 'Video clip';
+      case 'gal_mining_image_mode_video_clip_hint':
+        return 'Records the game window from the moment the line appears until you mine the card, mixed with the sentence audio. Falls back to an animated image or screenshot when recording has not started or fewer than 2 frames were captured.';
+      case 'game_hook_reason_native_loopback_ack_timeout':
+        return 'The audio capture policy was not confirmed in time. Text capture still works; try again if game audio is missing.';
+      case 'shortcut_scope_global_external_desktop_note':
+        return 'Mouse triggers accept side buttons only (back/forward). Other buttons keep their normal meaning in other apps, so they are rejected here.';
+      case 'shortcut_mouse_button_not_supported':
+        return 'This action only accepts mouse side buttons (back/forward).';
+      case 'anki_ankimobile_opened':
+        return 'AnkiMobile opened. Approve the request there, then return to Fushi.';
+      case 'anki_error_ankimobile_pasteboard_empty':
+        return 'AnkiMobile did not return any configuration. Approve the request in AnkiMobile, then come back to Fushi.';
+      case 'anki_error_ankimobile_pasteboard_denied':
+        return 'iOS blocked reading the clipboard. Choose Allow Paste when returning to Fushi, then try again.';
+      case 'anki_error_ankimobile_no_decks':
+        return 'AnkiMobile returned no decks or note types.';
+      case 'anki_error_ankimobile_unavailable':
+        return 'Could not open AnkiMobile. Install AnkiMobile and try again.';
+      case 'dictionary_collapse_follow_global':
+        return 'Follow global setting';
+      case 'anki_ankimobile_imported':
+        return 'AnkiMobile configuration imported.';
+      case 'anki_error_ankimobile_not_active':
+        return 'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+      case 'audiobook_transcribe_action':
+        return 'Generate subtitles on device';
+      case 'audiobook_transcribe_title':
+        return 'On-device transcription';
+      case 'audiobook_transcribe_model_download_needed':
+        return ({required Object size}) => 'Model download required: ${size}';
+      case 'audiobook_transcribe_model_download':
+        return 'Download model';
+      case 'audiobook_transcribe_model_downloading':
+        return (
+                {required Object name,
+                required Object received,
+                required Object total}) =>
+            'Downloading ${name}… ${received} / ${total}';
+      case 'audiobook_transcribe_model_ready':
+        return ({required Object variant}) => 'Model ready (${variant})';
+      case 'audiobook_transcribe_accel_label':
+        return 'Acceleration';
+      case 'audiobook_transcribe_accel_auto':
+        return 'Auto (GPU when available)';
+      case 'audiobook_transcribe_accel_cpu':
+        return 'CPU only';
+      case 'audiobook_transcribe_running_on':
+        return ({required Object provider}) => 'Running on ${provider}';
+      case 'audiobook_transcribe_fallback':
+        return ({required Object reason}) =>
+            'GPU unavailable, fell back to CPU: ${reason}';
+      case 'audiobook_transcribe_start':
+        return 'Start transcription';
+      case 'audiobook_transcribe_resume':
+        return 'Resume transcription';
+      case 'audiobook_transcribe_pause':
+        return 'Pause';
+      case 'audiobook_transcribe_pausing':
+        return 'Pausing at the next checkpoint…';
+      case 'audiobook_transcribe_discard':
+        return 'Discard progress';
+      case 'audiobook_transcribe_use_result':
+        return 'Use subtitles';
+      case 'audiobook_transcribe_progress':
+        return (
+                {required Object done,
+                required Object total,
+                required Object file,
+                required Object files}) =>
+            '${done} / ${total} · file ${file}/${files}';
+      case 'audiobook_transcribe_speed':
+        return (
+                {required Object elapsed,
+                required Object eta,
+                required Object speed}) =>
+            'Elapsed ${elapsed} · remaining ${eta} · ${speed}× realtime';
+      case 'audiobook_transcribe_done':
+        return ({required Object cues, required Object segments}) =>
+            'Done: ${cues} cues from ${segments} speech segments';
+      case 'audiobook_transcribe_failed':
+        return ({required Object error}) => 'Transcription failed: ${error}';
+      case 'audiobook_transcribe_needs_audio':
+        return 'Pick audio files first';
+      case 'audiobook_transcribe_result_name':
+        return 'Generated by on-device transcription';
+      case 'audiobook_transcribe_paused_hint':
+        return 'Progress is saved. Pick the same audio files later to resume.';
+      case 'audiobook_transcribe_unavailable':
+        return 'On-device transcription is not available on this platform';
+      case 'audiobook_transcribe_preparing':
+        return 'Loading model…';
+      case 'audiobook_transcribe_export':
+        return 'Export subtitle file';
+      case 'audiobook_transcribe_export_saved':
+        return 'Subtitle file saved';
+      case 'audiobook_subtitle_source_title':
+        return 'Subtitle source';
+      case 'audiobook_subtitle_source_transcribe_hint':
+        return 'Generate from the selected audio with the on-device speech model';
+      case 'audiobook_transcribe_intro':
+        return 'Transcribes the audio locally with an on-device speech model for the selected language and generates subtitles for alignment. Nothing is uploaded.';
+      case 'audiobook_transcribe_language_label':
+        return 'Speech language';
+      case 'audiobook_transcribe_language_ja':
+        return 'Japanese';
+      case 'audiobook_transcribe_language_en':
+        return 'English';
+      case 'asr_models_section':
+        return 'Speech recognition models';
+      case 'asr_models_section_summary':
+        return 'Models for on-device audiobook transcription. Download only the languages you need.';
+      case 'asr_models_status_ready':
+        return ({required Object size}) => 'Downloaded · ${size} on disk';
+      case 'asr_models_status_partial':
+        return ({required Object obtained, required Object total}) =>
+            'Partially downloaded · ${obtained} / ${total}';
+      case 'asr_models_status_missing':
+        return ({required Object size}) => 'Not downloaded · ${size}';
+      case 'asr_models_download':
+        return 'Download';
+      case 'asr_models_delete':
+        return 'Delete';
+      case 'asr_models_delete_confirm_title':
+        return 'Delete this model?';
+      case 'asr_models_delete_confirm_message':
+        return 'Transcription in this language will need the model downloaded again.';
+      case 'asr_models_delete_done_freed':
+        return ({required Object size}) => 'Deleted, freed ${size}';
+      case 'asr_models_download_failed':
+        return ({required Object error}) => 'Download failed: ${error}';
+      case 'audiobook_transcribe_probe_failed':
+        return ({required Object reason}) =>
+            'GPU detection failed, planning for CPU: ${reason}';
+      case 'onboarding_pack_status_paused':
+        return 'Recommended pack download paused';
+      case 'onboarding_pack_download_resume':
+        return 'Resume download';
+      case 'onboarding_pack_paused_desc':
+        return 'Progress is kept on disk — resuming picks up where it stopped.';
+      case 'onboarding_pack_mini_bar_hide':
+        return 'Hide';
       default:
         return null;
     }
@@ -180619,16 +186089,12 @@ extension on _StringsDe {
         return 'Tippen Sie auf ein Symbol zum Wechseln oder wählen Sie unten ein eigenes Bild.';
       case 'icon_default':
         return 'Standard';
-      case 'icon_full':
-        return 'Vollständig';
       case 'icon_shortcut_created':
         return 'Startbildschirm-Verknüpfung erstellt.';
       case 'icon_shortcut_unsupported':
         return 'Verknüpfungen werden auf diesem Gerät nicht unterstützt.';
       case 'icon_switch_success':
         return 'App-Symbol erfolgreich geändert.';
-      case 'icon_transparent':
-        return 'Transparent';
       case 'image_page_counter':
         return ({required Object current, required Object total}) =>
             '${current} / ${total}';
@@ -187046,6 +192512,257 @@ extension on _StringsDe {
       case 'discovery_opds_test_failed':
         return ({required Object reason}) =>
             'Verbindung fehlgeschlagen: ${reason}';
+      case 'anki_error_permission_permanently_denied':
+        return 'AnkiDroid card access was permanently denied, so the system no longer shows the permission dialog. Open app settings and grant the AnkiDroid permission, then try again.';
+      case 'anki_error_ankidroid_unavailable':
+        return 'AnkiDroid is not installed (or its API is disabled), so card access cannot be granted. Install AnkiDroid and enable its API, or switch to AnkiConnect.';
+      case 'anki_action_open_settings':
+        return 'Open settings';
+      case 'onboarding_pack_pick_failed':
+        return ({required Object message}) =>
+            'Could not use the chosen file: ${message}';
+      case 'onboarding_pack_pick_no_path':
+        return 'The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access.';
+      case 'interconnect_profile_section':
+        return 'Configuration file';
+      case 'interconnect_profile_upload':
+        return 'Upload configuration to host';
+      case 'interconnect_profile_upload_desc':
+        return 'Send this device\'s active configuration to the paired host, where it lands as a new configuration.';
+      case 'interconnect_profile_download':
+        return 'Download configuration from host';
+      case 'interconnect_profile_download_desc':
+        return 'Import the host\'s active configuration as a new configuration here. Your current one is untouched.';
+      case 'interconnect_profile_host_toggle':
+        return 'Allow paired devices to read/write configuration';
+      case 'interconnect_profile_host_toggle_desc':
+        return 'Off by default. Requires HTTPS and a paired-device token. Incoming configurations are always added as new ones.';
+      case 'interconnect_profile_uploaded':
+        return ({required Object name}) => 'Configuration uploaded: ${name}';
+      case 'interconnect_profile_downloaded':
+        return ({required Object name}) => 'Configuration imported: ${name}';
+      case 'interconnect_profile_unsupported':
+        return 'The paired host does not offer configuration transfer (needs HTTPS and a newer version).';
+      case 'interconnect_profile_failed':
+        return ({required Object message}) =>
+            'Configuration transfer failed: ${message}';
+      case 'onboarding_pack_status_downloading':
+        return 'Downloading recommended pack';
+      case 'onboarding_pack_status_ready':
+        return 'Recommended pack downloaded';
+      case 'onboarding_pack_import_now':
+        return 'Import now';
+      case 'onboarding_pack_download_finished':
+        return 'Recommended pack finished downloading. Import it from Settings → System.';
+      case 'onboarding_pack_download_background_hint':
+        return 'The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.';
+      case 'onboarding_anki_fsrs_title':
+        return 'Turn on FSRS in Anki';
+      case 'onboarding_anki_fsrs_body':
+        return 'Anki has FSRS built in — one of the best spaced-repetition algorithms around — but it keeps scheduling with SM-2 from the 1980s until you turn FSRS on. FSRS reads your real review history and predicts when you are about to forget, so you keep the same retention with fewer reviews. You flip this switch once, inside Anki; nothing changes on the Fushi side.';
+      case 'onboarding_anki_fsrs_step_options_title':
+        return 'Open deck options';
+      case 'onboarding_anki_fsrs_step_options_desktop_desc':
+        return 'In Anki, click the gear next to a deck and choose Options.';
+      case 'onboarding_anki_fsrs_step_options_mobile_desc':
+        return 'In AnkiDroid (2.17 or newer) or AnkiMobile, long-press the deck and choose Options.';
+      case 'onboarding_anki_fsrs_step_toggle_title':
+        return 'Switch FSRS on';
+      case 'onboarding_anki_fsrs_step_toggle_desc':
+        return 'Scroll to the FSRS section at the bottom of the options page (older builds hide it under Advanced) and turn the switch on. It applies to your whole collection, so once is enough.';
+      case 'onboarding_anki_fsrs_step_optimize_title':
+        return 'Optimize, then save';
+      case 'onboarding_anki_fsrs_step_optimize_desc':
+        return 'Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while.';
+      case 'sync_desktop_oauth_waiting_title':
+        return 'Warten auf die Anmeldung im Browser';
+      case 'sync_desktop_oauth_waiting_body':
+        return 'Die Anmeldeseite wurde im Standardbrowser geöffnet. Falls nichts geöffnet wurde oder die Seite einen Fehler zeigt, kopiere den Link und öffne ihn in einem anderen Browser oder einem privaten Fenster.';
+      case 'sync_desktop_oauth_link_copy':
+        return 'Anmeldelink kopieren';
+      case 'sync_desktop_oauth_browser_reopen':
+        return 'Browser erneut öffnen';
+      case 'sync_err_sign_in_cancelled':
+        return 'Anmeldung abgebrochen.';
+      case 'sync_desktop_oauth_browser_open_failed':
+        return 'Der Browser konnte nicht geöffnet werden. Kopiere den Link und öffne ihn selbst in einem Browser.';
+      case 'sync_desktop_oauth_link_copy_failed':
+        return 'Der Link konnte nicht kopiert werden. Markiere den Linktext und kopiere ihn manuell.';
+      case 'game_text_thread_artifact_hint':
+        return 'Repeated-character artifact thread, no usable lines';
+      case 'shortcut_action_global_context_menu':
+        return 'Open context menu';
+      case 'shortcut_conflict_keep_both':
+        return 'Keep both';
+      case 'shortcut_conflict_keep_both_hint':
+        return 'Both actions keep this binding. Whichever scope resolves first wins at press time.';
+      case 'video_specs_title':
+        return 'Media info';
+      case 'video_specs_resolution':
+        return 'Resolution';
+      case 'video_specs_dynamic_range':
+        return 'Dynamic range';
+      case 'video_specs_video_codec':
+        return 'Video codec';
+      case 'video_specs_bit_depth':
+        return 'Bit depth';
+      case 'video_specs_frame_rate':
+        return 'Frame rate';
+      case 'video_specs_bitrate':
+        return 'Bitrate';
+      case 'video_specs_audio_tracks':
+        return 'Audio tracks';
+      case 'video_specs_subtitle_tracks':
+        return 'Subtitle tracks';
+      case 'video_specs_track_commentary':
+        return 'Commentary';
+      case 'video_specs_track_forced':
+        return 'Forced';
+      case 'video_specs_track_default':
+        return 'Default';
+      case 'gal_mining_image_mode_video_clip':
+        return 'Video clip';
+      case 'gal_mining_image_mode_video_clip_hint':
+        return 'Records the game window from the moment the line appears until you mine the card, mixed with the sentence audio. Falls back to an animated image or screenshot when recording has not started or fewer than 2 frames were captured.';
+      case 'game_hook_reason_native_loopback_ack_timeout':
+        return 'The audio capture policy was not confirmed in time. Text capture still works; try again if game audio is missing.';
+      case 'shortcut_scope_global_external_desktop_note':
+        return 'Mouse triggers accept side buttons only (back/forward). Other buttons keep their normal meaning in other apps, so they are rejected here.';
+      case 'shortcut_mouse_button_not_supported':
+        return 'This action only accepts mouse side buttons (back/forward).';
+      case 'anki_ankimobile_opened':
+        return 'AnkiMobile opened. Approve the request there, then return to Fushi.';
+      case 'anki_error_ankimobile_pasteboard_empty':
+        return 'AnkiMobile did not return any configuration. Approve the request in AnkiMobile, then come back to Fushi.';
+      case 'anki_error_ankimobile_pasteboard_denied':
+        return 'iOS blocked reading the clipboard. Choose Allow Paste when returning to Fushi, then try again.';
+      case 'anki_error_ankimobile_no_decks':
+        return 'AnkiMobile returned no decks or note types.';
+      case 'anki_error_ankimobile_unavailable':
+        return 'Could not open AnkiMobile. Install AnkiMobile and try again.';
+      case 'dictionary_collapse_follow_global':
+        return 'Follow global setting';
+      case 'anki_ankimobile_imported':
+        return 'AnkiMobile configuration imported.';
+      case 'anki_error_ankimobile_not_active':
+        return 'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+      case 'audiobook_transcribe_action':
+        return 'Generate subtitles on device';
+      case 'audiobook_transcribe_title':
+        return 'On-device transcription';
+      case 'audiobook_transcribe_model_download_needed':
+        return ({required Object size}) => 'Model download required: ${size}';
+      case 'audiobook_transcribe_model_download':
+        return 'Download model';
+      case 'audiobook_transcribe_model_downloading':
+        return (
+                {required Object name,
+                required Object received,
+                required Object total}) =>
+            'Downloading ${name}… ${received} / ${total}';
+      case 'audiobook_transcribe_model_ready':
+        return ({required Object variant}) => 'Model ready (${variant})';
+      case 'audiobook_transcribe_accel_label':
+        return 'Acceleration';
+      case 'audiobook_transcribe_accel_auto':
+        return 'Auto (GPU when available)';
+      case 'audiobook_transcribe_accel_cpu':
+        return 'CPU only';
+      case 'audiobook_transcribe_running_on':
+        return ({required Object provider}) => 'Running on ${provider}';
+      case 'audiobook_transcribe_fallback':
+        return ({required Object reason}) =>
+            'GPU unavailable, fell back to CPU: ${reason}';
+      case 'audiobook_transcribe_start':
+        return 'Start transcription';
+      case 'audiobook_transcribe_resume':
+        return 'Resume transcription';
+      case 'audiobook_transcribe_pause':
+        return 'Pause';
+      case 'audiobook_transcribe_pausing':
+        return 'Pausing at the next checkpoint…';
+      case 'audiobook_transcribe_discard':
+        return 'Discard progress';
+      case 'audiobook_transcribe_use_result':
+        return 'Use subtitles';
+      case 'audiobook_transcribe_progress':
+        return (
+                {required Object done,
+                required Object total,
+                required Object file,
+                required Object files}) =>
+            '${done} / ${total} · file ${file}/${files}';
+      case 'audiobook_transcribe_speed':
+        return (
+                {required Object elapsed,
+                required Object eta,
+                required Object speed}) =>
+            'Elapsed ${elapsed} · remaining ${eta} · ${speed}× realtime';
+      case 'audiobook_transcribe_done':
+        return ({required Object cues, required Object segments}) =>
+            'Done: ${cues} cues from ${segments} speech segments';
+      case 'audiobook_transcribe_failed':
+        return ({required Object error}) => 'Transcription failed: ${error}';
+      case 'audiobook_transcribe_needs_audio':
+        return 'Pick audio files first';
+      case 'audiobook_transcribe_result_name':
+        return 'Generated by on-device transcription';
+      case 'audiobook_transcribe_paused_hint':
+        return 'Progress is saved. Pick the same audio files later to resume.';
+      case 'audiobook_transcribe_unavailable':
+        return 'On-device transcription is not available on this platform';
+      case 'audiobook_transcribe_preparing':
+        return 'Loading model…';
+      case 'audiobook_transcribe_export':
+        return 'Export subtitle file';
+      case 'audiobook_transcribe_export_saved':
+        return 'Subtitle file saved';
+      case 'audiobook_subtitle_source_title':
+        return 'Subtitle source';
+      case 'audiobook_subtitle_source_transcribe_hint':
+        return 'Generate from the selected audio with the on-device speech model';
+      case 'audiobook_transcribe_intro':
+        return 'Transcribes the audio locally with an on-device speech model for the selected language and generates subtitles for alignment. Nothing is uploaded.';
+      case 'audiobook_transcribe_language_label':
+        return 'Speech language';
+      case 'audiobook_transcribe_language_ja':
+        return 'Japanese';
+      case 'audiobook_transcribe_language_en':
+        return 'English';
+      case 'asr_models_section':
+        return 'Speech recognition models';
+      case 'asr_models_section_summary':
+        return 'Models for on-device audiobook transcription. Download only the languages you need.';
+      case 'asr_models_status_ready':
+        return ({required Object size}) => 'Downloaded · ${size} on disk';
+      case 'asr_models_status_partial':
+        return ({required Object obtained, required Object total}) =>
+            'Partially downloaded · ${obtained} / ${total}';
+      case 'asr_models_status_missing':
+        return ({required Object size}) => 'Not downloaded · ${size}';
+      case 'asr_models_download':
+        return 'Download';
+      case 'asr_models_delete':
+        return 'Delete';
+      case 'asr_models_delete_confirm_title':
+        return 'Delete this model?';
+      case 'asr_models_delete_confirm_message':
+        return 'Transcription in this language will need the model downloaded again.';
+      case 'asr_models_delete_done_freed':
+        return ({required Object size}) => 'Deleted, freed ${size}';
+      case 'asr_models_download_failed':
+        return ({required Object error}) => 'Download failed: ${error}';
+      case 'audiobook_transcribe_probe_failed':
+        return ({required Object reason}) =>
+            'GPU detection failed, planning for CPU: ${reason}';
+      case 'onboarding_pack_status_paused':
+        return 'Recommended pack download paused';
+      case 'onboarding_pack_download_resume':
+        return 'Resume download';
+      case 'onboarding_pack_paused_desc':
+        return 'Progress is kept on disk — resuming picks up where it stopped.';
+      case 'onboarding_pack_mini_bar_hide':
+        return 'Hide';
       default:
         return null;
     }
@@ -189235,16 +194952,12 @@ extension on _StringsEs {
         return 'Toca un icono para cambiar, o elige una imagen personalizada abajo.';
       case 'icon_default':
         return 'Predeterminado';
-      case 'icon_full':
-        return 'Completo';
       case 'icon_shortcut_created':
         return 'Acceso directo creado en la pantalla de inicio.';
       case 'icon_shortcut_unsupported':
         return 'Los accesos directos no son compatibles con este dispositivo.';
       case 'icon_switch_success':
         return 'Icono de la app cambiado correctamente.';
-      case 'icon_transparent':
-        return 'Transparente';
       case 'image_page_counter':
         return ({required Object current, required Object total}) =>
             '${current} / ${total}';
@@ -195653,6 +201366,257 @@ extension on _StringsEs {
             'Conectado. El catálogo raíz tiene ${count} entradas';
       case 'discovery_opds_test_failed':
         return ({required Object reason}) => 'Error de conexión: ${reason}';
+      case 'anki_error_permission_permanently_denied':
+        return 'AnkiDroid card access was permanently denied, so the system no longer shows the permission dialog. Open app settings and grant the AnkiDroid permission, then try again.';
+      case 'anki_error_ankidroid_unavailable':
+        return 'AnkiDroid is not installed (or its API is disabled), so card access cannot be granted. Install AnkiDroid and enable its API, or switch to AnkiConnect.';
+      case 'anki_action_open_settings':
+        return 'Open settings';
+      case 'onboarding_pack_pick_failed':
+        return ({required Object message}) =>
+            'Could not use the chosen file: ${message}';
+      case 'onboarding_pack_pick_no_path':
+        return 'The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access.';
+      case 'interconnect_profile_section':
+        return 'Configuration file';
+      case 'interconnect_profile_upload':
+        return 'Upload configuration to host';
+      case 'interconnect_profile_upload_desc':
+        return 'Send this device\'s active configuration to the paired host, where it lands as a new configuration.';
+      case 'interconnect_profile_download':
+        return 'Download configuration from host';
+      case 'interconnect_profile_download_desc':
+        return 'Import the host\'s active configuration as a new configuration here. Your current one is untouched.';
+      case 'interconnect_profile_host_toggle':
+        return 'Allow paired devices to read/write configuration';
+      case 'interconnect_profile_host_toggle_desc':
+        return 'Off by default. Requires HTTPS and a paired-device token. Incoming configurations are always added as new ones.';
+      case 'interconnect_profile_uploaded':
+        return ({required Object name}) => 'Configuration uploaded: ${name}';
+      case 'interconnect_profile_downloaded':
+        return ({required Object name}) => 'Configuration imported: ${name}';
+      case 'interconnect_profile_unsupported':
+        return 'The paired host does not offer configuration transfer (needs HTTPS and a newer version).';
+      case 'interconnect_profile_failed':
+        return ({required Object message}) =>
+            'Configuration transfer failed: ${message}';
+      case 'onboarding_pack_status_downloading':
+        return 'Downloading recommended pack';
+      case 'onboarding_pack_status_ready':
+        return 'Recommended pack downloaded';
+      case 'onboarding_pack_import_now':
+        return 'Import now';
+      case 'onboarding_pack_download_finished':
+        return 'Recommended pack finished downloading. Import it from Settings → System.';
+      case 'onboarding_pack_download_background_hint':
+        return 'The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.';
+      case 'onboarding_anki_fsrs_title':
+        return 'Turn on FSRS in Anki';
+      case 'onboarding_anki_fsrs_body':
+        return 'Anki has FSRS built in — one of the best spaced-repetition algorithms around — but it keeps scheduling with SM-2 from the 1980s until you turn FSRS on. FSRS reads your real review history and predicts when you are about to forget, so you keep the same retention with fewer reviews. You flip this switch once, inside Anki; nothing changes on the Fushi side.';
+      case 'onboarding_anki_fsrs_step_options_title':
+        return 'Open deck options';
+      case 'onboarding_anki_fsrs_step_options_desktop_desc':
+        return 'In Anki, click the gear next to a deck and choose Options.';
+      case 'onboarding_anki_fsrs_step_options_mobile_desc':
+        return 'In AnkiDroid (2.17 or newer) or AnkiMobile, long-press the deck and choose Options.';
+      case 'onboarding_anki_fsrs_step_toggle_title':
+        return 'Switch FSRS on';
+      case 'onboarding_anki_fsrs_step_toggle_desc':
+        return 'Scroll to the FSRS section at the bottom of the options page (older builds hide it under Advanced) and turn the switch on. It applies to your whole collection, so once is enough.';
+      case 'onboarding_anki_fsrs_step_optimize_title':
+        return 'Optimize, then save';
+      case 'onboarding_anki_fsrs_step_optimize_desc':
+        return 'Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while.';
+      case 'sync_desktop_oauth_waiting_title':
+        return 'Esperando el inicio de sesión en el navegador';
+      case 'sync_desktop_oauth_waiting_body':
+        return 'La página de inicio de sesión se abrió en tu navegador predeterminado. Si no se abrió nada o la página muestra un error, copia el enlace y ábrelo en otro navegador o en una ventana privada.';
+      case 'sync_desktop_oauth_link_copy':
+        return 'Copiar enlace de inicio de sesión';
+      case 'sync_desktop_oauth_browser_reopen':
+        return 'Abrir el navegador de nuevo';
+      case 'sync_err_sign_in_cancelled':
+        return 'Inicio de sesión cancelado.';
+      case 'sync_desktop_oauth_browser_open_failed':
+        return 'No se pudo abrir el navegador. Copia el enlace y ábrelo tú mismo en un navegador.';
+      case 'sync_desktop_oauth_link_copy_failed':
+        return 'No se pudo copiar el enlace. Selecciona el texto del enlace y cópialo manualmente.';
+      case 'game_text_thread_artifact_hint':
+        return 'Repeated-character artifact thread, no usable lines';
+      case 'shortcut_action_global_context_menu':
+        return 'Open context menu';
+      case 'shortcut_conflict_keep_both':
+        return 'Keep both';
+      case 'shortcut_conflict_keep_both_hint':
+        return 'Both actions keep this binding. Whichever scope resolves first wins at press time.';
+      case 'video_specs_title':
+        return 'Media info';
+      case 'video_specs_resolution':
+        return 'Resolution';
+      case 'video_specs_dynamic_range':
+        return 'Dynamic range';
+      case 'video_specs_video_codec':
+        return 'Video codec';
+      case 'video_specs_bit_depth':
+        return 'Bit depth';
+      case 'video_specs_frame_rate':
+        return 'Frame rate';
+      case 'video_specs_bitrate':
+        return 'Bitrate';
+      case 'video_specs_audio_tracks':
+        return 'Audio tracks';
+      case 'video_specs_subtitle_tracks':
+        return 'Subtitle tracks';
+      case 'video_specs_track_commentary':
+        return 'Commentary';
+      case 'video_specs_track_forced':
+        return 'Forced';
+      case 'video_specs_track_default':
+        return 'Default';
+      case 'gal_mining_image_mode_video_clip':
+        return 'Video clip';
+      case 'gal_mining_image_mode_video_clip_hint':
+        return 'Records the game window from the moment the line appears until you mine the card, mixed with the sentence audio. Falls back to an animated image or screenshot when recording has not started or fewer than 2 frames were captured.';
+      case 'game_hook_reason_native_loopback_ack_timeout':
+        return 'The audio capture policy was not confirmed in time. Text capture still works; try again if game audio is missing.';
+      case 'shortcut_scope_global_external_desktop_note':
+        return 'Mouse triggers accept side buttons only (back/forward). Other buttons keep their normal meaning in other apps, so they are rejected here.';
+      case 'shortcut_mouse_button_not_supported':
+        return 'This action only accepts mouse side buttons (back/forward).';
+      case 'anki_ankimobile_opened':
+        return 'AnkiMobile opened. Approve the request there, then return to Fushi.';
+      case 'anki_error_ankimobile_pasteboard_empty':
+        return 'AnkiMobile did not return any configuration. Approve the request in AnkiMobile, then come back to Fushi.';
+      case 'anki_error_ankimobile_pasteboard_denied':
+        return 'iOS blocked reading the clipboard. Choose Allow Paste when returning to Fushi, then try again.';
+      case 'anki_error_ankimobile_no_decks':
+        return 'AnkiMobile returned no decks or note types.';
+      case 'anki_error_ankimobile_unavailable':
+        return 'Could not open AnkiMobile. Install AnkiMobile and try again.';
+      case 'dictionary_collapse_follow_global':
+        return 'Follow global setting';
+      case 'anki_ankimobile_imported':
+        return 'AnkiMobile configuration imported.';
+      case 'anki_error_ankimobile_not_active':
+        return 'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+      case 'audiobook_transcribe_action':
+        return 'Generate subtitles on device';
+      case 'audiobook_transcribe_title':
+        return 'On-device transcription';
+      case 'audiobook_transcribe_model_download_needed':
+        return ({required Object size}) => 'Model download required: ${size}';
+      case 'audiobook_transcribe_model_download':
+        return 'Download model';
+      case 'audiobook_transcribe_model_downloading':
+        return (
+                {required Object name,
+                required Object received,
+                required Object total}) =>
+            'Downloading ${name}… ${received} / ${total}';
+      case 'audiobook_transcribe_model_ready':
+        return ({required Object variant}) => 'Model ready (${variant})';
+      case 'audiobook_transcribe_accel_label':
+        return 'Acceleration';
+      case 'audiobook_transcribe_accel_auto':
+        return 'Auto (GPU when available)';
+      case 'audiobook_transcribe_accel_cpu':
+        return 'CPU only';
+      case 'audiobook_transcribe_running_on':
+        return ({required Object provider}) => 'Running on ${provider}';
+      case 'audiobook_transcribe_fallback':
+        return ({required Object reason}) =>
+            'GPU unavailable, fell back to CPU: ${reason}';
+      case 'audiobook_transcribe_start':
+        return 'Start transcription';
+      case 'audiobook_transcribe_resume':
+        return 'Resume transcription';
+      case 'audiobook_transcribe_pause':
+        return 'Pause';
+      case 'audiobook_transcribe_pausing':
+        return 'Pausing at the next checkpoint…';
+      case 'audiobook_transcribe_discard':
+        return 'Discard progress';
+      case 'audiobook_transcribe_use_result':
+        return 'Use subtitles';
+      case 'audiobook_transcribe_progress':
+        return (
+                {required Object done,
+                required Object total,
+                required Object file,
+                required Object files}) =>
+            '${done} / ${total} · file ${file}/${files}';
+      case 'audiobook_transcribe_speed':
+        return (
+                {required Object elapsed,
+                required Object eta,
+                required Object speed}) =>
+            'Elapsed ${elapsed} · remaining ${eta} · ${speed}× realtime';
+      case 'audiobook_transcribe_done':
+        return ({required Object cues, required Object segments}) =>
+            'Done: ${cues} cues from ${segments} speech segments';
+      case 'audiobook_transcribe_failed':
+        return ({required Object error}) => 'Transcription failed: ${error}';
+      case 'audiobook_transcribe_needs_audio':
+        return 'Pick audio files first';
+      case 'audiobook_transcribe_result_name':
+        return 'Generated by on-device transcription';
+      case 'audiobook_transcribe_paused_hint':
+        return 'Progress is saved. Pick the same audio files later to resume.';
+      case 'audiobook_transcribe_unavailable':
+        return 'On-device transcription is not available on this platform';
+      case 'audiobook_transcribe_preparing':
+        return 'Loading model…';
+      case 'audiobook_transcribe_export':
+        return 'Export subtitle file';
+      case 'audiobook_transcribe_export_saved':
+        return 'Subtitle file saved';
+      case 'audiobook_subtitle_source_title':
+        return 'Subtitle source';
+      case 'audiobook_subtitle_source_transcribe_hint':
+        return 'Generate from the selected audio with the on-device speech model';
+      case 'audiobook_transcribe_intro':
+        return 'Transcribes the audio locally with an on-device speech model for the selected language and generates subtitles for alignment. Nothing is uploaded.';
+      case 'audiobook_transcribe_language_label':
+        return 'Speech language';
+      case 'audiobook_transcribe_language_ja':
+        return 'Japanese';
+      case 'audiobook_transcribe_language_en':
+        return 'English';
+      case 'asr_models_section':
+        return 'Speech recognition models';
+      case 'asr_models_section_summary':
+        return 'Models for on-device audiobook transcription. Download only the languages you need.';
+      case 'asr_models_status_ready':
+        return ({required Object size}) => 'Downloaded · ${size} on disk';
+      case 'asr_models_status_partial':
+        return ({required Object obtained, required Object total}) =>
+            'Partially downloaded · ${obtained} / ${total}';
+      case 'asr_models_status_missing':
+        return ({required Object size}) => 'Not downloaded · ${size}';
+      case 'asr_models_download':
+        return 'Download';
+      case 'asr_models_delete':
+        return 'Delete';
+      case 'asr_models_delete_confirm_title':
+        return 'Delete this model?';
+      case 'asr_models_delete_confirm_message':
+        return 'Transcription in this language will need the model downloaded again.';
+      case 'asr_models_delete_done_freed':
+        return ({required Object size}) => 'Deleted, freed ${size}';
+      case 'asr_models_download_failed':
+        return ({required Object error}) => 'Download failed: ${error}';
+      case 'audiobook_transcribe_probe_failed':
+        return ({required Object reason}) =>
+            'GPU detection failed, planning for CPU: ${reason}';
+      case 'onboarding_pack_status_paused':
+        return 'Recommended pack download paused';
+      case 'onboarding_pack_download_resume':
+        return 'Resume download';
+      case 'onboarding_pack_paused_desc':
+        return 'Progress is kept on disk — resuming picks up where it stopped.';
+      case 'onboarding_pack_mini_bar_hide':
+        return 'Hide';
       default:
         return null;
     }
@@ -197846,16 +203810,12 @@ extension on _StringsFr {
         return 'Appuyez sur une icône pour changer, ou choisissez une image personnalisée ci-dessous.';
       case 'icon_default':
         return 'Par défaut';
-      case 'icon_full':
-        return 'Complet';
       case 'icon_shortcut_created':
         return 'Raccourci de l\'écran d\'accueil créé.';
       case 'icon_shortcut_unsupported':
         return 'Les raccourcis ne sont pas pris en charge sur cet appareil.';
       case 'icon_switch_success':
         return 'Icône de l\'application modifiée avec succès.';
-      case 'icon_transparent':
-        return 'Transparent';
       case 'image_page_counter':
         return ({required Object current, required Object total}) =>
             '${current} / ${total}';
@@ -204269,6 +210229,257 @@ extension on _StringsFr {
       case 'discovery_opds_test_failed':
         return ({required Object reason}) =>
             'Échec de la connexion : ${reason}';
+      case 'anki_error_permission_permanently_denied':
+        return 'AnkiDroid card access was permanently denied, so the system no longer shows the permission dialog. Open app settings and grant the AnkiDroid permission, then try again.';
+      case 'anki_error_ankidroid_unavailable':
+        return 'AnkiDroid is not installed (or its API is disabled), so card access cannot be granted. Install AnkiDroid and enable its API, or switch to AnkiConnect.';
+      case 'anki_action_open_settings':
+        return 'Open settings';
+      case 'onboarding_pack_pick_failed':
+        return ({required Object message}) =>
+            'Could not use the chosen file: ${message}';
+      case 'onboarding_pack_pick_no_path':
+        return 'The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access.';
+      case 'interconnect_profile_section':
+        return 'Configuration file';
+      case 'interconnect_profile_upload':
+        return 'Upload configuration to host';
+      case 'interconnect_profile_upload_desc':
+        return 'Send this device\'s active configuration to the paired host, where it lands as a new configuration.';
+      case 'interconnect_profile_download':
+        return 'Download configuration from host';
+      case 'interconnect_profile_download_desc':
+        return 'Import the host\'s active configuration as a new configuration here. Your current one is untouched.';
+      case 'interconnect_profile_host_toggle':
+        return 'Allow paired devices to read/write configuration';
+      case 'interconnect_profile_host_toggle_desc':
+        return 'Off by default. Requires HTTPS and a paired-device token. Incoming configurations are always added as new ones.';
+      case 'interconnect_profile_uploaded':
+        return ({required Object name}) => 'Configuration uploaded: ${name}';
+      case 'interconnect_profile_downloaded':
+        return ({required Object name}) => 'Configuration imported: ${name}';
+      case 'interconnect_profile_unsupported':
+        return 'The paired host does not offer configuration transfer (needs HTTPS and a newer version).';
+      case 'interconnect_profile_failed':
+        return ({required Object message}) =>
+            'Configuration transfer failed: ${message}';
+      case 'onboarding_pack_status_downloading':
+        return 'Downloading recommended pack';
+      case 'onboarding_pack_status_ready':
+        return 'Recommended pack downloaded';
+      case 'onboarding_pack_import_now':
+        return 'Import now';
+      case 'onboarding_pack_download_finished':
+        return 'Recommended pack finished downloading. Import it from Settings → System.';
+      case 'onboarding_pack_download_background_hint':
+        return 'The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.';
+      case 'onboarding_anki_fsrs_title':
+        return 'Turn on FSRS in Anki';
+      case 'onboarding_anki_fsrs_body':
+        return 'Anki has FSRS built in — one of the best spaced-repetition algorithms around — but it keeps scheduling with SM-2 from the 1980s until you turn FSRS on. FSRS reads your real review history and predicts when you are about to forget, so you keep the same retention with fewer reviews. You flip this switch once, inside Anki; nothing changes on the Fushi side.';
+      case 'onboarding_anki_fsrs_step_options_title':
+        return 'Open deck options';
+      case 'onboarding_anki_fsrs_step_options_desktop_desc':
+        return 'In Anki, click the gear next to a deck and choose Options.';
+      case 'onboarding_anki_fsrs_step_options_mobile_desc':
+        return 'In AnkiDroid (2.17 or newer) or AnkiMobile, long-press the deck and choose Options.';
+      case 'onboarding_anki_fsrs_step_toggle_title':
+        return 'Switch FSRS on';
+      case 'onboarding_anki_fsrs_step_toggle_desc':
+        return 'Scroll to the FSRS section at the bottom of the options page (older builds hide it under Advanced) and turn the switch on. It applies to your whole collection, so once is enough.';
+      case 'onboarding_anki_fsrs_step_optimize_title':
+        return 'Optimize, then save';
+      case 'onboarding_anki_fsrs_step_optimize_desc':
+        return 'Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while.';
+      case 'sync_desktop_oauth_waiting_title':
+        return 'En attente de la connexion dans le navigateur';
+      case 'sync_desktop_oauth_waiting_body':
+        return 'La page de connexion a été ouverte dans votre navigateur par défaut. Si rien ne s\'est ouvert ou si la page affiche une erreur, copiez le lien et ouvrez-le dans un autre navigateur ou une fenêtre privée.';
+      case 'sync_desktop_oauth_link_copy':
+        return 'Copier le lien de connexion';
+      case 'sync_desktop_oauth_browser_reopen':
+        return 'Rouvrir le navigateur';
+      case 'sync_err_sign_in_cancelled':
+        return 'Connexion annulée.';
+      case 'sync_desktop_oauth_browser_open_failed':
+        return 'Impossible d\'ouvrir le navigateur. Copiez le lien et ouvrez-le vous-même dans un navigateur.';
+      case 'sync_desktop_oauth_link_copy_failed':
+        return 'Impossible de copier le lien. Sélectionnez le texte du lien et copiez-le manuellement.';
+      case 'game_text_thread_artifact_hint':
+        return 'Repeated-character artifact thread, no usable lines';
+      case 'shortcut_action_global_context_menu':
+        return 'Open context menu';
+      case 'shortcut_conflict_keep_both':
+        return 'Keep both';
+      case 'shortcut_conflict_keep_both_hint':
+        return 'Both actions keep this binding. Whichever scope resolves first wins at press time.';
+      case 'video_specs_title':
+        return 'Media info';
+      case 'video_specs_resolution':
+        return 'Resolution';
+      case 'video_specs_dynamic_range':
+        return 'Dynamic range';
+      case 'video_specs_video_codec':
+        return 'Video codec';
+      case 'video_specs_bit_depth':
+        return 'Bit depth';
+      case 'video_specs_frame_rate':
+        return 'Frame rate';
+      case 'video_specs_bitrate':
+        return 'Bitrate';
+      case 'video_specs_audio_tracks':
+        return 'Audio tracks';
+      case 'video_specs_subtitle_tracks':
+        return 'Subtitle tracks';
+      case 'video_specs_track_commentary':
+        return 'Commentary';
+      case 'video_specs_track_forced':
+        return 'Forced';
+      case 'video_specs_track_default':
+        return 'Default';
+      case 'gal_mining_image_mode_video_clip':
+        return 'Video clip';
+      case 'gal_mining_image_mode_video_clip_hint':
+        return 'Records the game window from the moment the line appears until you mine the card, mixed with the sentence audio. Falls back to an animated image or screenshot when recording has not started or fewer than 2 frames were captured.';
+      case 'game_hook_reason_native_loopback_ack_timeout':
+        return 'The audio capture policy was not confirmed in time. Text capture still works; try again if game audio is missing.';
+      case 'shortcut_scope_global_external_desktop_note':
+        return 'Mouse triggers accept side buttons only (back/forward). Other buttons keep their normal meaning in other apps, so they are rejected here.';
+      case 'shortcut_mouse_button_not_supported':
+        return 'This action only accepts mouse side buttons (back/forward).';
+      case 'anki_ankimobile_opened':
+        return 'AnkiMobile opened. Approve the request there, then return to Fushi.';
+      case 'anki_error_ankimobile_pasteboard_empty':
+        return 'AnkiMobile did not return any configuration. Approve the request in AnkiMobile, then come back to Fushi.';
+      case 'anki_error_ankimobile_pasteboard_denied':
+        return 'iOS blocked reading the clipboard. Choose Allow Paste when returning to Fushi, then try again.';
+      case 'anki_error_ankimobile_no_decks':
+        return 'AnkiMobile returned no decks or note types.';
+      case 'anki_error_ankimobile_unavailable':
+        return 'Could not open AnkiMobile. Install AnkiMobile and try again.';
+      case 'dictionary_collapse_follow_global':
+        return 'Follow global setting';
+      case 'anki_ankimobile_imported':
+        return 'AnkiMobile configuration imported.';
+      case 'anki_error_ankimobile_not_active':
+        return 'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+      case 'audiobook_transcribe_action':
+        return 'Generate subtitles on device';
+      case 'audiobook_transcribe_title':
+        return 'On-device transcription';
+      case 'audiobook_transcribe_model_download_needed':
+        return ({required Object size}) => 'Model download required: ${size}';
+      case 'audiobook_transcribe_model_download':
+        return 'Download model';
+      case 'audiobook_transcribe_model_downloading':
+        return (
+                {required Object name,
+                required Object received,
+                required Object total}) =>
+            'Downloading ${name}… ${received} / ${total}';
+      case 'audiobook_transcribe_model_ready':
+        return ({required Object variant}) => 'Model ready (${variant})';
+      case 'audiobook_transcribe_accel_label':
+        return 'Acceleration';
+      case 'audiobook_transcribe_accel_auto':
+        return 'Auto (GPU when available)';
+      case 'audiobook_transcribe_accel_cpu':
+        return 'CPU only';
+      case 'audiobook_transcribe_running_on':
+        return ({required Object provider}) => 'Running on ${provider}';
+      case 'audiobook_transcribe_fallback':
+        return ({required Object reason}) =>
+            'GPU unavailable, fell back to CPU: ${reason}';
+      case 'audiobook_transcribe_start':
+        return 'Start transcription';
+      case 'audiobook_transcribe_resume':
+        return 'Resume transcription';
+      case 'audiobook_transcribe_pause':
+        return 'Pause';
+      case 'audiobook_transcribe_pausing':
+        return 'Pausing at the next checkpoint…';
+      case 'audiobook_transcribe_discard':
+        return 'Discard progress';
+      case 'audiobook_transcribe_use_result':
+        return 'Use subtitles';
+      case 'audiobook_transcribe_progress':
+        return (
+                {required Object done,
+                required Object total,
+                required Object file,
+                required Object files}) =>
+            '${done} / ${total} · file ${file}/${files}';
+      case 'audiobook_transcribe_speed':
+        return (
+                {required Object elapsed,
+                required Object eta,
+                required Object speed}) =>
+            'Elapsed ${elapsed} · remaining ${eta} · ${speed}× realtime';
+      case 'audiobook_transcribe_done':
+        return ({required Object cues, required Object segments}) =>
+            'Done: ${cues} cues from ${segments} speech segments';
+      case 'audiobook_transcribe_failed':
+        return ({required Object error}) => 'Transcription failed: ${error}';
+      case 'audiobook_transcribe_needs_audio':
+        return 'Pick audio files first';
+      case 'audiobook_transcribe_result_name':
+        return 'Generated by on-device transcription';
+      case 'audiobook_transcribe_paused_hint':
+        return 'Progress is saved. Pick the same audio files later to resume.';
+      case 'audiobook_transcribe_unavailable':
+        return 'On-device transcription is not available on this platform';
+      case 'audiobook_transcribe_preparing':
+        return 'Loading model…';
+      case 'audiobook_transcribe_export':
+        return 'Export subtitle file';
+      case 'audiobook_transcribe_export_saved':
+        return 'Subtitle file saved';
+      case 'audiobook_subtitle_source_title':
+        return 'Subtitle source';
+      case 'audiobook_subtitle_source_transcribe_hint':
+        return 'Generate from the selected audio with the on-device speech model';
+      case 'audiobook_transcribe_intro':
+        return 'Transcribes the audio locally with an on-device speech model for the selected language and generates subtitles for alignment. Nothing is uploaded.';
+      case 'audiobook_transcribe_language_label':
+        return 'Speech language';
+      case 'audiobook_transcribe_language_ja':
+        return 'Japanese';
+      case 'audiobook_transcribe_language_en':
+        return 'English';
+      case 'asr_models_section':
+        return 'Speech recognition models';
+      case 'asr_models_section_summary':
+        return 'Models for on-device audiobook transcription. Download only the languages you need.';
+      case 'asr_models_status_ready':
+        return ({required Object size}) => 'Downloaded · ${size} on disk';
+      case 'asr_models_status_partial':
+        return ({required Object obtained, required Object total}) =>
+            'Partially downloaded · ${obtained} / ${total}';
+      case 'asr_models_status_missing':
+        return ({required Object size}) => 'Not downloaded · ${size}';
+      case 'asr_models_download':
+        return 'Download';
+      case 'asr_models_delete':
+        return 'Delete';
+      case 'asr_models_delete_confirm_title':
+        return 'Delete this model?';
+      case 'asr_models_delete_confirm_message':
+        return 'Transcription in this language will need the model downloaded again.';
+      case 'asr_models_delete_done_freed':
+        return ({required Object size}) => 'Deleted, freed ${size}';
+      case 'asr_models_download_failed':
+        return ({required Object error}) => 'Download failed: ${error}';
+      case 'audiobook_transcribe_probe_failed':
+        return ({required Object reason}) =>
+            'GPU detection failed, planning for CPU: ${reason}';
+      case 'onboarding_pack_status_paused':
+        return 'Recommended pack download paused';
+      case 'onboarding_pack_download_resume':
+        return 'Resume download';
+      case 'onboarding_pack_paused_desc':
+        return 'Progress is kept on disk — resuming picks up where it stopped.';
+      case 'onboarding_pack_mini_bar_hide':
+        return 'Hide';
       default:
         return null;
     }
@@ -206455,16 +212666,12 @@ extension on _StringsId {
         return 'Ketuk ikon untuk mengganti, atau pilih gambar kustom di bawah.';
       case 'icon_default':
         return 'Default';
-      case 'icon_full':
-        return 'Penuh';
       case 'icon_shortcut_created':
         return 'Pintasan layar beranda dibuat.';
       case 'icon_shortcut_unsupported':
         return 'Pintasan tidak didukung di perangkat ini.';
       case 'icon_switch_success':
         return 'Ikon aplikasi berhasil diubah.';
-      case 'icon_transparent':
-        return 'Transparan';
       case 'image_page_counter':
         return ({required Object current, required Object total}) =>
             '${current} / ${total}';
@@ -212856,6 +219063,257 @@ extension on _StringsId {
             'Terhubung. Katalog akar berisi ${count} entri';
       case 'discovery_opds_test_failed':
         return ({required Object reason}) => 'Koneksi gagal: ${reason}';
+      case 'anki_error_permission_permanently_denied':
+        return 'AnkiDroid card access was permanently denied, so the system no longer shows the permission dialog. Open app settings and grant the AnkiDroid permission, then try again.';
+      case 'anki_error_ankidroid_unavailable':
+        return 'AnkiDroid is not installed (or its API is disabled), so card access cannot be granted. Install AnkiDroid and enable its API, or switch to AnkiConnect.';
+      case 'anki_action_open_settings':
+        return 'Open settings';
+      case 'onboarding_pack_pick_failed':
+        return ({required Object message}) =>
+            'Could not use the chosen file: ${message}';
+      case 'onboarding_pack_pick_no_path':
+        return 'The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access.';
+      case 'interconnect_profile_section':
+        return 'Configuration file';
+      case 'interconnect_profile_upload':
+        return 'Upload configuration to host';
+      case 'interconnect_profile_upload_desc':
+        return 'Send this device\'s active configuration to the paired host, where it lands as a new configuration.';
+      case 'interconnect_profile_download':
+        return 'Download configuration from host';
+      case 'interconnect_profile_download_desc':
+        return 'Import the host\'s active configuration as a new configuration here. Your current one is untouched.';
+      case 'interconnect_profile_host_toggle':
+        return 'Allow paired devices to read/write configuration';
+      case 'interconnect_profile_host_toggle_desc':
+        return 'Off by default. Requires HTTPS and a paired-device token. Incoming configurations are always added as new ones.';
+      case 'interconnect_profile_uploaded':
+        return ({required Object name}) => 'Configuration uploaded: ${name}';
+      case 'interconnect_profile_downloaded':
+        return ({required Object name}) => 'Configuration imported: ${name}';
+      case 'interconnect_profile_unsupported':
+        return 'The paired host does not offer configuration transfer (needs HTTPS and a newer version).';
+      case 'interconnect_profile_failed':
+        return ({required Object message}) =>
+            'Configuration transfer failed: ${message}';
+      case 'onboarding_pack_status_downloading':
+        return 'Downloading recommended pack';
+      case 'onboarding_pack_status_ready':
+        return 'Recommended pack downloaded';
+      case 'onboarding_pack_import_now':
+        return 'Import now';
+      case 'onboarding_pack_download_finished':
+        return 'Recommended pack finished downloading. Import it from Settings → System.';
+      case 'onboarding_pack_download_background_hint':
+        return 'The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.';
+      case 'onboarding_anki_fsrs_title':
+        return 'Turn on FSRS in Anki';
+      case 'onboarding_anki_fsrs_body':
+        return 'Anki has FSRS built in — one of the best spaced-repetition algorithms around — but it keeps scheduling with SM-2 from the 1980s until you turn FSRS on. FSRS reads your real review history and predicts when you are about to forget, so you keep the same retention with fewer reviews. You flip this switch once, inside Anki; nothing changes on the Fushi side.';
+      case 'onboarding_anki_fsrs_step_options_title':
+        return 'Open deck options';
+      case 'onboarding_anki_fsrs_step_options_desktop_desc':
+        return 'In Anki, click the gear next to a deck and choose Options.';
+      case 'onboarding_anki_fsrs_step_options_mobile_desc':
+        return 'In AnkiDroid (2.17 or newer) or AnkiMobile, long-press the deck and choose Options.';
+      case 'onboarding_anki_fsrs_step_toggle_title':
+        return 'Switch FSRS on';
+      case 'onboarding_anki_fsrs_step_toggle_desc':
+        return 'Scroll to the FSRS section at the bottom of the options page (older builds hide it under Advanced) and turn the switch on. It applies to your whole collection, so once is enough.';
+      case 'onboarding_anki_fsrs_step_optimize_title':
+        return 'Optimize, then save';
+      case 'onboarding_anki_fsrs_step_optimize_desc':
+        return 'Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while.';
+      case 'sync_desktop_oauth_waiting_title':
+        return 'Menunggu masuk di browser';
+      case 'sync_desktop_oauth_waiting_body':
+        return 'Halaman masuk telah dibuka di browser bawaan. Jika tidak ada yang terbuka atau halaman menampilkan kesalahan, salin tautannya dan buka di browser lain atau jendela privat.';
+      case 'sync_desktop_oauth_link_copy':
+        return 'Salin tautan masuk';
+      case 'sync_desktop_oauth_browser_reopen':
+        return 'Buka browser lagi';
+      case 'sync_err_sign_in_cancelled':
+        return 'Masuk dibatalkan.';
+      case 'sync_desktop_oauth_browser_open_failed':
+        return 'Browser tidak dapat dibuka. Salin tautannya dan buka sendiri di browser.';
+      case 'sync_desktop_oauth_link_copy_failed':
+        return 'Tautan tidak dapat disalin. Pilih teks tautan dan salin secara manual.';
+      case 'game_text_thread_artifact_hint':
+        return 'Repeated-character artifact thread, no usable lines';
+      case 'shortcut_action_global_context_menu':
+        return 'Open context menu';
+      case 'shortcut_conflict_keep_both':
+        return 'Keep both';
+      case 'shortcut_conflict_keep_both_hint':
+        return 'Both actions keep this binding. Whichever scope resolves first wins at press time.';
+      case 'video_specs_title':
+        return 'Media info';
+      case 'video_specs_resolution':
+        return 'Resolution';
+      case 'video_specs_dynamic_range':
+        return 'Dynamic range';
+      case 'video_specs_video_codec':
+        return 'Video codec';
+      case 'video_specs_bit_depth':
+        return 'Bit depth';
+      case 'video_specs_frame_rate':
+        return 'Frame rate';
+      case 'video_specs_bitrate':
+        return 'Bitrate';
+      case 'video_specs_audio_tracks':
+        return 'Audio tracks';
+      case 'video_specs_subtitle_tracks':
+        return 'Subtitle tracks';
+      case 'video_specs_track_commentary':
+        return 'Commentary';
+      case 'video_specs_track_forced':
+        return 'Forced';
+      case 'video_specs_track_default':
+        return 'Default';
+      case 'gal_mining_image_mode_video_clip':
+        return 'Video clip';
+      case 'gal_mining_image_mode_video_clip_hint':
+        return 'Records the game window from the moment the line appears until you mine the card, mixed with the sentence audio. Falls back to an animated image or screenshot when recording has not started or fewer than 2 frames were captured.';
+      case 'game_hook_reason_native_loopback_ack_timeout':
+        return 'The audio capture policy was not confirmed in time. Text capture still works; try again if game audio is missing.';
+      case 'shortcut_scope_global_external_desktop_note':
+        return 'Mouse triggers accept side buttons only (back/forward). Other buttons keep their normal meaning in other apps, so they are rejected here.';
+      case 'shortcut_mouse_button_not_supported':
+        return 'This action only accepts mouse side buttons (back/forward).';
+      case 'anki_ankimobile_opened':
+        return 'AnkiMobile opened. Approve the request there, then return to Fushi.';
+      case 'anki_error_ankimobile_pasteboard_empty':
+        return 'AnkiMobile did not return any configuration. Approve the request in AnkiMobile, then come back to Fushi.';
+      case 'anki_error_ankimobile_pasteboard_denied':
+        return 'iOS blocked reading the clipboard. Choose Allow Paste when returning to Fushi, then try again.';
+      case 'anki_error_ankimobile_no_decks':
+        return 'AnkiMobile returned no decks or note types.';
+      case 'anki_error_ankimobile_unavailable':
+        return 'Could not open AnkiMobile. Install AnkiMobile and try again.';
+      case 'dictionary_collapse_follow_global':
+        return 'Follow global setting';
+      case 'anki_ankimobile_imported':
+        return 'AnkiMobile configuration imported.';
+      case 'anki_error_ankimobile_not_active':
+        return 'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+      case 'audiobook_transcribe_action':
+        return 'Generate subtitles on device';
+      case 'audiobook_transcribe_title':
+        return 'On-device transcription';
+      case 'audiobook_transcribe_model_download_needed':
+        return ({required Object size}) => 'Model download required: ${size}';
+      case 'audiobook_transcribe_model_download':
+        return 'Download model';
+      case 'audiobook_transcribe_model_downloading':
+        return (
+                {required Object name,
+                required Object received,
+                required Object total}) =>
+            'Downloading ${name}… ${received} / ${total}';
+      case 'audiobook_transcribe_model_ready':
+        return ({required Object variant}) => 'Model ready (${variant})';
+      case 'audiobook_transcribe_accel_label':
+        return 'Acceleration';
+      case 'audiobook_transcribe_accel_auto':
+        return 'Auto (GPU when available)';
+      case 'audiobook_transcribe_accel_cpu':
+        return 'CPU only';
+      case 'audiobook_transcribe_running_on':
+        return ({required Object provider}) => 'Running on ${provider}';
+      case 'audiobook_transcribe_fallback':
+        return ({required Object reason}) =>
+            'GPU unavailable, fell back to CPU: ${reason}';
+      case 'audiobook_transcribe_start':
+        return 'Start transcription';
+      case 'audiobook_transcribe_resume':
+        return 'Resume transcription';
+      case 'audiobook_transcribe_pause':
+        return 'Pause';
+      case 'audiobook_transcribe_pausing':
+        return 'Pausing at the next checkpoint…';
+      case 'audiobook_transcribe_discard':
+        return 'Discard progress';
+      case 'audiobook_transcribe_use_result':
+        return 'Use subtitles';
+      case 'audiobook_transcribe_progress':
+        return (
+                {required Object done,
+                required Object total,
+                required Object file,
+                required Object files}) =>
+            '${done} / ${total} · file ${file}/${files}';
+      case 'audiobook_transcribe_speed':
+        return (
+                {required Object elapsed,
+                required Object eta,
+                required Object speed}) =>
+            'Elapsed ${elapsed} · remaining ${eta} · ${speed}× realtime';
+      case 'audiobook_transcribe_done':
+        return ({required Object cues, required Object segments}) =>
+            'Done: ${cues} cues from ${segments} speech segments';
+      case 'audiobook_transcribe_failed':
+        return ({required Object error}) => 'Transcription failed: ${error}';
+      case 'audiobook_transcribe_needs_audio':
+        return 'Pick audio files first';
+      case 'audiobook_transcribe_result_name':
+        return 'Generated by on-device transcription';
+      case 'audiobook_transcribe_paused_hint':
+        return 'Progress is saved. Pick the same audio files later to resume.';
+      case 'audiobook_transcribe_unavailable':
+        return 'On-device transcription is not available on this platform';
+      case 'audiobook_transcribe_preparing':
+        return 'Loading model…';
+      case 'audiobook_transcribe_export':
+        return 'Export subtitle file';
+      case 'audiobook_transcribe_export_saved':
+        return 'Subtitle file saved';
+      case 'audiobook_subtitle_source_title':
+        return 'Subtitle source';
+      case 'audiobook_subtitle_source_transcribe_hint':
+        return 'Generate from the selected audio with the on-device speech model';
+      case 'audiobook_transcribe_intro':
+        return 'Transcribes the audio locally with an on-device speech model for the selected language and generates subtitles for alignment. Nothing is uploaded.';
+      case 'audiobook_transcribe_language_label':
+        return 'Speech language';
+      case 'audiobook_transcribe_language_ja':
+        return 'Japanese';
+      case 'audiobook_transcribe_language_en':
+        return 'English';
+      case 'asr_models_section':
+        return 'Speech recognition models';
+      case 'asr_models_section_summary':
+        return 'Models for on-device audiobook transcription. Download only the languages you need.';
+      case 'asr_models_status_ready':
+        return ({required Object size}) => 'Downloaded · ${size} on disk';
+      case 'asr_models_status_partial':
+        return ({required Object obtained, required Object total}) =>
+            'Partially downloaded · ${obtained} / ${total}';
+      case 'asr_models_status_missing':
+        return ({required Object size}) => 'Not downloaded · ${size}';
+      case 'asr_models_download':
+        return 'Download';
+      case 'asr_models_delete':
+        return 'Delete';
+      case 'asr_models_delete_confirm_title':
+        return 'Delete this model?';
+      case 'asr_models_delete_confirm_message':
+        return 'Transcription in this language will need the model downloaded again.';
+      case 'asr_models_delete_done_freed':
+        return ({required Object size}) => 'Deleted, freed ${size}';
+      case 'asr_models_download_failed':
+        return ({required Object error}) => 'Download failed: ${error}';
+      case 'audiobook_transcribe_probe_failed':
+        return ({required Object reason}) =>
+            'GPU detection failed, planning for CPU: ${reason}';
+      case 'onboarding_pack_status_paused':
+        return 'Recommended pack download paused';
+      case 'onboarding_pack_download_resume':
+        return 'Resume download';
+      case 'onboarding_pack_paused_desc':
+        return 'Progress is kept on disk — resuming picks up where it stopped.';
+      case 'onboarding_pack_mini_bar_hide':
+        return 'Hide';
       default:
         return null;
     }
@@ -215045,16 +221503,12 @@ extension on _StringsIt {
         return 'Tocca un\'icona per cambiarla, oppure scegli un\'immagine personalizzata qui sotto.';
       case 'icon_default':
         return 'Predefinita';
-      case 'icon_full':
-        return 'Completa';
       case 'icon_shortcut_created':
         return 'Collegamento sulla schermata iniziale creato.';
       case 'icon_shortcut_unsupported':
         return 'I collegamenti non sono supportati su questo dispositivo.';
       case 'icon_switch_success':
         return 'Icona dell\'app cambiata con successo.';
-      case 'icon_transparent':
-        return 'Trasparente';
       case 'image_page_counter':
         return ({required Object current, required Object total}) =>
             '${current} / ${total}';
@@ -221465,6 +227919,257 @@ extension on _StringsIt {
       case 'discovery_opds_test_failed':
         return ({required Object reason}) =>
             'Connessione non riuscita: ${reason}';
+      case 'anki_error_permission_permanently_denied':
+        return 'AnkiDroid card access was permanently denied, so the system no longer shows the permission dialog. Open app settings and grant the AnkiDroid permission, then try again.';
+      case 'anki_error_ankidroid_unavailable':
+        return 'AnkiDroid is not installed (or its API is disabled), so card access cannot be granted. Install AnkiDroid and enable its API, or switch to AnkiConnect.';
+      case 'anki_action_open_settings':
+        return 'Open settings';
+      case 'onboarding_pack_pick_failed':
+        return ({required Object message}) =>
+            'Could not use the chosen file: ${message}';
+      case 'onboarding_pack_pick_no_path':
+        return 'The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access.';
+      case 'interconnect_profile_section':
+        return 'Configuration file';
+      case 'interconnect_profile_upload':
+        return 'Upload configuration to host';
+      case 'interconnect_profile_upload_desc':
+        return 'Send this device\'s active configuration to the paired host, where it lands as a new configuration.';
+      case 'interconnect_profile_download':
+        return 'Download configuration from host';
+      case 'interconnect_profile_download_desc':
+        return 'Import the host\'s active configuration as a new configuration here. Your current one is untouched.';
+      case 'interconnect_profile_host_toggle':
+        return 'Allow paired devices to read/write configuration';
+      case 'interconnect_profile_host_toggle_desc':
+        return 'Off by default. Requires HTTPS and a paired-device token. Incoming configurations are always added as new ones.';
+      case 'interconnect_profile_uploaded':
+        return ({required Object name}) => 'Configuration uploaded: ${name}';
+      case 'interconnect_profile_downloaded':
+        return ({required Object name}) => 'Configuration imported: ${name}';
+      case 'interconnect_profile_unsupported':
+        return 'The paired host does not offer configuration transfer (needs HTTPS and a newer version).';
+      case 'interconnect_profile_failed':
+        return ({required Object message}) =>
+            'Configuration transfer failed: ${message}';
+      case 'onboarding_pack_status_downloading':
+        return 'Downloading recommended pack';
+      case 'onboarding_pack_status_ready':
+        return 'Recommended pack downloaded';
+      case 'onboarding_pack_import_now':
+        return 'Import now';
+      case 'onboarding_pack_download_finished':
+        return 'Recommended pack finished downloading. Import it from Settings → System.';
+      case 'onboarding_pack_download_background_hint':
+        return 'The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.';
+      case 'onboarding_anki_fsrs_title':
+        return 'Turn on FSRS in Anki';
+      case 'onboarding_anki_fsrs_body':
+        return 'Anki has FSRS built in — one of the best spaced-repetition algorithms around — but it keeps scheduling with SM-2 from the 1980s until you turn FSRS on. FSRS reads your real review history and predicts when you are about to forget, so you keep the same retention with fewer reviews. You flip this switch once, inside Anki; nothing changes on the Fushi side.';
+      case 'onboarding_anki_fsrs_step_options_title':
+        return 'Open deck options';
+      case 'onboarding_anki_fsrs_step_options_desktop_desc':
+        return 'In Anki, click the gear next to a deck and choose Options.';
+      case 'onboarding_anki_fsrs_step_options_mobile_desc':
+        return 'In AnkiDroid (2.17 or newer) or AnkiMobile, long-press the deck and choose Options.';
+      case 'onboarding_anki_fsrs_step_toggle_title':
+        return 'Switch FSRS on';
+      case 'onboarding_anki_fsrs_step_toggle_desc':
+        return 'Scroll to the FSRS section at the bottom of the options page (older builds hide it under Advanced) and turn the switch on. It applies to your whole collection, so once is enough.';
+      case 'onboarding_anki_fsrs_step_optimize_title':
+        return 'Optimize, then save';
+      case 'onboarding_anki_fsrs_step_optimize_desc':
+        return 'Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while.';
+      case 'sync_desktop_oauth_waiting_title':
+        return 'In attesa dell\'accesso nel browser';
+      case 'sync_desktop_oauth_waiting_body':
+        return 'La pagina di accesso è stata aperta nel browser predefinito. Se non si è aperto nulla o la pagina mostra un errore, copia il link e aprilo in un altro browser o in una finestra privata.';
+      case 'sync_desktop_oauth_link_copy':
+        return 'Copia link di accesso';
+      case 'sync_desktop_oauth_browser_reopen':
+        return 'Riapri il browser';
+      case 'sync_err_sign_in_cancelled':
+        return 'Accesso annullato.';
+      case 'sync_desktop_oauth_browser_open_failed':
+        return 'Impossibile aprire il browser. Copia il link e aprilo tu stesso in un browser.';
+      case 'sync_desktop_oauth_link_copy_failed':
+        return 'Impossibile copiare il link. Seleziona il testo del link e copialo manualmente.';
+      case 'game_text_thread_artifact_hint':
+        return 'Repeated-character artifact thread, no usable lines';
+      case 'shortcut_action_global_context_menu':
+        return 'Open context menu';
+      case 'shortcut_conflict_keep_both':
+        return 'Keep both';
+      case 'shortcut_conflict_keep_both_hint':
+        return 'Both actions keep this binding. Whichever scope resolves first wins at press time.';
+      case 'video_specs_title':
+        return 'Media info';
+      case 'video_specs_resolution':
+        return 'Resolution';
+      case 'video_specs_dynamic_range':
+        return 'Dynamic range';
+      case 'video_specs_video_codec':
+        return 'Video codec';
+      case 'video_specs_bit_depth':
+        return 'Bit depth';
+      case 'video_specs_frame_rate':
+        return 'Frame rate';
+      case 'video_specs_bitrate':
+        return 'Bitrate';
+      case 'video_specs_audio_tracks':
+        return 'Audio tracks';
+      case 'video_specs_subtitle_tracks':
+        return 'Subtitle tracks';
+      case 'video_specs_track_commentary':
+        return 'Commentary';
+      case 'video_specs_track_forced':
+        return 'Forced';
+      case 'video_specs_track_default':
+        return 'Default';
+      case 'gal_mining_image_mode_video_clip':
+        return 'Video clip';
+      case 'gal_mining_image_mode_video_clip_hint':
+        return 'Records the game window from the moment the line appears until you mine the card, mixed with the sentence audio. Falls back to an animated image or screenshot when recording has not started or fewer than 2 frames were captured.';
+      case 'game_hook_reason_native_loopback_ack_timeout':
+        return 'The audio capture policy was not confirmed in time. Text capture still works; try again if game audio is missing.';
+      case 'shortcut_scope_global_external_desktop_note':
+        return 'Mouse triggers accept side buttons only (back/forward). Other buttons keep their normal meaning in other apps, so they are rejected here.';
+      case 'shortcut_mouse_button_not_supported':
+        return 'This action only accepts mouse side buttons (back/forward).';
+      case 'anki_ankimobile_opened':
+        return 'AnkiMobile opened. Approve the request there, then return to Fushi.';
+      case 'anki_error_ankimobile_pasteboard_empty':
+        return 'AnkiMobile did not return any configuration. Approve the request in AnkiMobile, then come back to Fushi.';
+      case 'anki_error_ankimobile_pasteboard_denied':
+        return 'iOS blocked reading the clipboard. Choose Allow Paste when returning to Fushi, then try again.';
+      case 'anki_error_ankimobile_no_decks':
+        return 'AnkiMobile returned no decks or note types.';
+      case 'anki_error_ankimobile_unavailable':
+        return 'Could not open AnkiMobile. Install AnkiMobile and try again.';
+      case 'dictionary_collapse_follow_global':
+        return 'Follow global setting';
+      case 'anki_ankimobile_imported':
+        return 'AnkiMobile configuration imported.';
+      case 'anki_error_ankimobile_not_active':
+        return 'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+      case 'audiobook_transcribe_action':
+        return 'Generate subtitles on device';
+      case 'audiobook_transcribe_title':
+        return 'On-device transcription';
+      case 'audiobook_transcribe_model_download_needed':
+        return ({required Object size}) => 'Model download required: ${size}';
+      case 'audiobook_transcribe_model_download':
+        return 'Download model';
+      case 'audiobook_transcribe_model_downloading':
+        return (
+                {required Object name,
+                required Object received,
+                required Object total}) =>
+            'Downloading ${name}… ${received} / ${total}';
+      case 'audiobook_transcribe_model_ready':
+        return ({required Object variant}) => 'Model ready (${variant})';
+      case 'audiobook_transcribe_accel_label':
+        return 'Acceleration';
+      case 'audiobook_transcribe_accel_auto':
+        return 'Auto (GPU when available)';
+      case 'audiobook_transcribe_accel_cpu':
+        return 'CPU only';
+      case 'audiobook_transcribe_running_on':
+        return ({required Object provider}) => 'Running on ${provider}';
+      case 'audiobook_transcribe_fallback':
+        return ({required Object reason}) =>
+            'GPU unavailable, fell back to CPU: ${reason}';
+      case 'audiobook_transcribe_start':
+        return 'Start transcription';
+      case 'audiobook_transcribe_resume':
+        return 'Resume transcription';
+      case 'audiobook_transcribe_pause':
+        return 'Pause';
+      case 'audiobook_transcribe_pausing':
+        return 'Pausing at the next checkpoint…';
+      case 'audiobook_transcribe_discard':
+        return 'Discard progress';
+      case 'audiobook_transcribe_use_result':
+        return 'Use subtitles';
+      case 'audiobook_transcribe_progress':
+        return (
+                {required Object done,
+                required Object total,
+                required Object file,
+                required Object files}) =>
+            '${done} / ${total} · file ${file}/${files}';
+      case 'audiobook_transcribe_speed':
+        return (
+                {required Object elapsed,
+                required Object eta,
+                required Object speed}) =>
+            'Elapsed ${elapsed} · remaining ${eta} · ${speed}× realtime';
+      case 'audiobook_transcribe_done':
+        return ({required Object cues, required Object segments}) =>
+            'Done: ${cues} cues from ${segments} speech segments';
+      case 'audiobook_transcribe_failed':
+        return ({required Object error}) => 'Transcription failed: ${error}';
+      case 'audiobook_transcribe_needs_audio':
+        return 'Pick audio files first';
+      case 'audiobook_transcribe_result_name':
+        return 'Generated by on-device transcription';
+      case 'audiobook_transcribe_paused_hint':
+        return 'Progress is saved. Pick the same audio files later to resume.';
+      case 'audiobook_transcribe_unavailable':
+        return 'On-device transcription is not available on this platform';
+      case 'audiobook_transcribe_preparing':
+        return 'Loading model…';
+      case 'audiobook_transcribe_export':
+        return 'Export subtitle file';
+      case 'audiobook_transcribe_export_saved':
+        return 'Subtitle file saved';
+      case 'audiobook_subtitle_source_title':
+        return 'Subtitle source';
+      case 'audiobook_subtitle_source_transcribe_hint':
+        return 'Generate from the selected audio with the on-device speech model';
+      case 'audiobook_transcribe_intro':
+        return 'Transcribes the audio locally with an on-device speech model for the selected language and generates subtitles for alignment. Nothing is uploaded.';
+      case 'audiobook_transcribe_language_label':
+        return 'Speech language';
+      case 'audiobook_transcribe_language_ja':
+        return 'Japanese';
+      case 'audiobook_transcribe_language_en':
+        return 'English';
+      case 'asr_models_section':
+        return 'Speech recognition models';
+      case 'asr_models_section_summary':
+        return 'Models for on-device audiobook transcription. Download only the languages you need.';
+      case 'asr_models_status_ready':
+        return ({required Object size}) => 'Downloaded · ${size} on disk';
+      case 'asr_models_status_partial':
+        return ({required Object obtained, required Object total}) =>
+            'Partially downloaded · ${obtained} / ${total}';
+      case 'asr_models_status_missing':
+        return ({required Object size}) => 'Not downloaded · ${size}';
+      case 'asr_models_download':
+        return 'Download';
+      case 'asr_models_delete':
+        return 'Delete';
+      case 'asr_models_delete_confirm_title':
+        return 'Delete this model?';
+      case 'asr_models_delete_confirm_message':
+        return 'Transcription in this language will need the model downloaded again.';
+      case 'asr_models_delete_done_freed':
+        return ({required Object size}) => 'Deleted, freed ${size}';
+      case 'asr_models_download_failed':
+        return ({required Object error}) => 'Download failed: ${error}';
+      case 'audiobook_transcribe_probe_failed':
+        return ({required Object reason}) =>
+            'GPU detection failed, planning for CPU: ${reason}';
+      case 'onboarding_pack_status_paused':
+        return 'Recommended pack download paused';
+      case 'onboarding_pack_download_resume':
+        return 'Resume download';
+      case 'onboarding_pack_paused_desc':
+        return 'Progress is kept on disk — resuming picks up where it stopped.';
+      case 'onboarding_pack_mini_bar_hide':
+        return 'Hide';
       default:
         return null;
     }
@@ -223637,16 +230342,12 @@ extension on _StringsJa {
         return 'アイコンをタップして切り替えるか、下からカスタム画像を選択してください。';
       case 'icon_default':
         return 'デフォルト';
-      case 'icon_full':
-        return 'フル';
       case 'icon_shortcut_created':
         return 'ホーム画面にショートカットを作成しました。';
       case 'icon_shortcut_unsupported':
         return 'このデバイスではショートカットがサポートされていません。';
       case 'icon_switch_success':
         return 'アプリアイコンを変更しました。';
-      case 'icon_transparent':
-        return '透明';
       case 'image_page_counter':
         return ({required Object current, required Object total}) =>
             '${current} / ${total}';
@@ -230001,6 +236702,257 @@ extension on _StringsJa {
         return ({required Object count}) => '接続しました。ルートカタログに ${count} 件あります';
       case 'discovery_opds_test_failed':
         return ({required Object reason}) => '接続に失敗しました: ${reason}';
+      case 'anki_error_permission_permanently_denied':
+        return 'AnkiDroid card access was permanently denied, so the system no longer shows the permission dialog. Open app settings and grant the AnkiDroid permission, then try again.';
+      case 'anki_error_ankidroid_unavailable':
+        return 'AnkiDroid is not installed (or its API is disabled), so card access cannot be granted. Install AnkiDroid and enable its API, or switch to AnkiConnect.';
+      case 'anki_action_open_settings':
+        return 'Open settings';
+      case 'onboarding_pack_pick_failed':
+        return ({required Object message}) =>
+            'Could not use the chosen file: ${message}';
+      case 'onboarding_pack_pick_no_path':
+        return 'The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access.';
+      case 'interconnect_profile_section':
+        return 'Configuration file';
+      case 'interconnect_profile_upload':
+        return 'Upload configuration to host';
+      case 'interconnect_profile_upload_desc':
+        return 'Send this device\'s active configuration to the paired host, where it lands as a new configuration.';
+      case 'interconnect_profile_download':
+        return 'Download configuration from host';
+      case 'interconnect_profile_download_desc':
+        return 'Import the host\'s active configuration as a new configuration here. Your current one is untouched.';
+      case 'interconnect_profile_host_toggle':
+        return 'Allow paired devices to read/write configuration';
+      case 'interconnect_profile_host_toggle_desc':
+        return 'Off by default. Requires HTTPS and a paired-device token. Incoming configurations are always added as new ones.';
+      case 'interconnect_profile_uploaded':
+        return ({required Object name}) => 'Configuration uploaded: ${name}';
+      case 'interconnect_profile_downloaded':
+        return ({required Object name}) => 'Configuration imported: ${name}';
+      case 'interconnect_profile_unsupported':
+        return 'The paired host does not offer configuration transfer (needs HTTPS and a newer version).';
+      case 'interconnect_profile_failed':
+        return ({required Object message}) =>
+            'Configuration transfer failed: ${message}';
+      case 'onboarding_pack_status_downloading':
+        return 'Downloading recommended pack';
+      case 'onboarding_pack_status_ready':
+        return 'Recommended pack downloaded';
+      case 'onboarding_pack_import_now':
+        return 'Import now';
+      case 'onboarding_pack_download_finished':
+        return 'Recommended pack finished downloading. Import it from Settings → System.';
+      case 'onboarding_pack_download_background_hint':
+        return 'The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.';
+      case 'onboarding_anki_fsrs_title':
+        return 'Turn on FSRS in Anki';
+      case 'onboarding_anki_fsrs_body':
+        return 'Anki has FSRS built in — one of the best spaced-repetition algorithms around — but it keeps scheduling with SM-2 from the 1980s until you turn FSRS on. FSRS reads your real review history and predicts when you are about to forget, so you keep the same retention with fewer reviews. You flip this switch once, inside Anki; nothing changes on the Fushi side.';
+      case 'onboarding_anki_fsrs_step_options_title':
+        return 'Open deck options';
+      case 'onboarding_anki_fsrs_step_options_desktop_desc':
+        return 'In Anki, click the gear next to a deck and choose Options.';
+      case 'onboarding_anki_fsrs_step_options_mobile_desc':
+        return 'In AnkiDroid (2.17 or newer) or AnkiMobile, long-press the deck and choose Options.';
+      case 'onboarding_anki_fsrs_step_toggle_title':
+        return 'Switch FSRS on';
+      case 'onboarding_anki_fsrs_step_toggle_desc':
+        return 'Scroll to the FSRS section at the bottom of the options page (older builds hide it under Advanced) and turn the switch on. It applies to your whole collection, so once is enough.';
+      case 'onboarding_anki_fsrs_step_optimize_title':
+        return 'Optimize, then save';
+      case 'onboarding_anki_fsrs_step_optimize_desc':
+        return 'Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while.';
+      case 'sync_desktop_oauth_waiting_title':
+        return 'ブラウザでのログイン完了を待っています';
+      case 'sync_desktop_oauth_waiting_body':
+        return '既定のブラウザでログインページを開きました。開かない場合やエラーが表示される場合は、リンクをコピーして別のブラウザまたはプライベートウィンドウで開いてください。';
+      case 'sync_desktop_oauth_link_copy':
+        return 'ログインリンクをコピー';
+      case 'sync_desktop_oauth_browser_reopen':
+        return 'ブラウザをもう一度開く';
+      case 'sync_err_sign_in_cancelled':
+        return 'ログインをキャンセルしました。';
+      case 'sync_desktop_oauth_browser_open_failed':
+        return 'ブラウザを開けませんでした。リンクをコピーして、ブラウザで自分で開いてください。';
+      case 'sync_desktop_oauth_link_copy_failed':
+        return 'リンクをコピーできませんでした。リンクのテキストを選択して手動でコピーしてください。';
+      case 'game_text_thread_artifact_hint':
+        return 'Repeated-character artifact thread, no usable lines';
+      case 'shortcut_action_global_context_menu':
+        return 'Open context menu';
+      case 'shortcut_conflict_keep_both':
+        return 'Keep both';
+      case 'shortcut_conflict_keep_both_hint':
+        return 'Both actions keep this binding. Whichever scope resolves first wins at press time.';
+      case 'video_specs_title':
+        return 'Media info';
+      case 'video_specs_resolution':
+        return 'Resolution';
+      case 'video_specs_dynamic_range':
+        return 'Dynamic range';
+      case 'video_specs_video_codec':
+        return 'Video codec';
+      case 'video_specs_bit_depth':
+        return 'Bit depth';
+      case 'video_specs_frame_rate':
+        return 'Frame rate';
+      case 'video_specs_bitrate':
+        return 'Bitrate';
+      case 'video_specs_audio_tracks':
+        return 'Audio tracks';
+      case 'video_specs_subtitle_tracks':
+        return 'Subtitle tracks';
+      case 'video_specs_track_commentary':
+        return 'Commentary';
+      case 'video_specs_track_forced':
+        return 'Forced';
+      case 'video_specs_track_default':
+        return 'Default';
+      case 'gal_mining_image_mode_video_clip':
+        return 'Video clip';
+      case 'gal_mining_image_mode_video_clip_hint':
+        return 'Records the game window from the moment the line appears until you mine the card, mixed with the sentence audio. Falls back to an animated image or screenshot when recording has not started or fewer than 2 frames were captured.';
+      case 'game_hook_reason_native_loopback_ack_timeout':
+        return 'The audio capture policy was not confirmed in time. Text capture still works; try again if game audio is missing.';
+      case 'shortcut_scope_global_external_desktop_note':
+        return 'Mouse triggers accept side buttons only (back/forward). Other buttons keep their normal meaning in other apps, so they are rejected here.';
+      case 'shortcut_mouse_button_not_supported':
+        return 'This action only accepts mouse side buttons (back/forward).';
+      case 'anki_ankimobile_opened':
+        return 'AnkiMobile opened. Approve the request there, then return to Fushi.';
+      case 'anki_error_ankimobile_pasteboard_empty':
+        return 'AnkiMobile did not return any configuration. Approve the request in AnkiMobile, then come back to Fushi.';
+      case 'anki_error_ankimobile_pasteboard_denied':
+        return 'iOS blocked reading the clipboard. Choose Allow Paste when returning to Fushi, then try again.';
+      case 'anki_error_ankimobile_no_decks':
+        return 'AnkiMobile returned no decks or note types.';
+      case 'anki_error_ankimobile_unavailable':
+        return 'Could not open AnkiMobile. Install AnkiMobile and try again.';
+      case 'dictionary_collapse_follow_global':
+        return 'Follow global setting';
+      case 'anki_ankimobile_imported':
+        return 'AnkiMobile configuration imported.';
+      case 'anki_error_ankimobile_not_active':
+        return 'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+      case 'audiobook_transcribe_action':
+        return 'Generate subtitles on device';
+      case 'audiobook_transcribe_title':
+        return 'On-device transcription';
+      case 'audiobook_transcribe_model_download_needed':
+        return ({required Object size}) => 'Model download required: ${size}';
+      case 'audiobook_transcribe_model_download':
+        return 'Download model';
+      case 'audiobook_transcribe_model_downloading':
+        return (
+                {required Object name,
+                required Object received,
+                required Object total}) =>
+            'Downloading ${name}… ${received} / ${total}';
+      case 'audiobook_transcribe_model_ready':
+        return ({required Object variant}) => 'Model ready (${variant})';
+      case 'audiobook_transcribe_accel_label':
+        return 'Acceleration';
+      case 'audiobook_transcribe_accel_auto':
+        return 'Auto (GPU when available)';
+      case 'audiobook_transcribe_accel_cpu':
+        return 'CPU only';
+      case 'audiobook_transcribe_running_on':
+        return ({required Object provider}) => 'Running on ${provider}';
+      case 'audiobook_transcribe_fallback':
+        return ({required Object reason}) =>
+            'GPU unavailable, fell back to CPU: ${reason}';
+      case 'audiobook_transcribe_start':
+        return 'Start transcription';
+      case 'audiobook_transcribe_resume':
+        return 'Resume transcription';
+      case 'audiobook_transcribe_pause':
+        return 'Pause';
+      case 'audiobook_transcribe_pausing':
+        return 'Pausing at the next checkpoint…';
+      case 'audiobook_transcribe_discard':
+        return 'Discard progress';
+      case 'audiobook_transcribe_use_result':
+        return 'Use subtitles';
+      case 'audiobook_transcribe_progress':
+        return (
+                {required Object done,
+                required Object total,
+                required Object file,
+                required Object files}) =>
+            '${done} / ${total} · file ${file}/${files}';
+      case 'audiobook_transcribe_speed':
+        return (
+                {required Object elapsed,
+                required Object eta,
+                required Object speed}) =>
+            'Elapsed ${elapsed} · remaining ${eta} · ${speed}× realtime';
+      case 'audiobook_transcribe_done':
+        return ({required Object cues, required Object segments}) =>
+            'Done: ${cues} cues from ${segments} speech segments';
+      case 'audiobook_transcribe_failed':
+        return ({required Object error}) => 'Transcription failed: ${error}';
+      case 'audiobook_transcribe_needs_audio':
+        return 'Pick audio files first';
+      case 'audiobook_transcribe_result_name':
+        return 'Generated by on-device transcription';
+      case 'audiobook_transcribe_paused_hint':
+        return 'Progress is saved. Pick the same audio files later to resume.';
+      case 'audiobook_transcribe_unavailable':
+        return 'On-device transcription is not available on this platform';
+      case 'audiobook_transcribe_preparing':
+        return 'Loading model…';
+      case 'audiobook_transcribe_export':
+        return 'Export subtitle file';
+      case 'audiobook_transcribe_export_saved':
+        return 'Subtitle file saved';
+      case 'audiobook_subtitle_source_title':
+        return 'Subtitle source';
+      case 'audiobook_subtitle_source_transcribe_hint':
+        return 'Generate from the selected audio with the on-device speech model';
+      case 'audiobook_transcribe_intro':
+        return 'Transcribes the audio locally with an on-device speech model for the selected language and generates subtitles for alignment. Nothing is uploaded.';
+      case 'audiobook_transcribe_language_label':
+        return 'Speech language';
+      case 'audiobook_transcribe_language_ja':
+        return 'Japanese';
+      case 'audiobook_transcribe_language_en':
+        return 'English';
+      case 'asr_models_section':
+        return 'Speech recognition models';
+      case 'asr_models_section_summary':
+        return 'Models for on-device audiobook transcription. Download only the languages you need.';
+      case 'asr_models_status_ready':
+        return ({required Object size}) => 'Downloaded · ${size} on disk';
+      case 'asr_models_status_partial':
+        return ({required Object obtained, required Object total}) =>
+            'Partially downloaded · ${obtained} / ${total}';
+      case 'asr_models_status_missing':
+        return ({required Object size}) => 'Not downloaded · ${size}';
+      case 'asr_models_download':
+        return 'Download';
+      case 'asr_models_delete':
+        return 'Delete';
+      case 'asr_models_delete_confirm_title':
+        return 'Delete this model?';
+      case 'asr_models_delete_confirm_message':
+        return 'Transcription in this language will need the model downloaded again.';
+      case 'asr_models_delete_done_freed':
+        return ({required Object size}) => 'Deleted, freed ${size}';
+      case 'asr_models_download_failed':
+        return ({required Object error}) => 'Download failed: ${error}';
+      case 'audiobook_transcribe_probe_failed':
+        return ({required Object reason}) =>
+            'GPU detection failed, planning for CPU: ${reason}';
+      case 'onboarding_pack_status_paused':
+        return 'Recommended pack download paused';
+      case 'onboarding_pack_download_resume':
+        return 'Resume download';
+      case 'onboarding_pack_paused_desc':
+        return 'Progress is kept on disk — resuming picks up where it stopped.';
+      case 'onboarding_pack_mini_bar_hide':
+        return 'Hide';
       default:
         return null;
     }
@@ -232173,16 +239125,12 @@ extension on _StringsKo {
         return '아이콘을 탭하여 전환하거나, 아래에서 사용자 정의 이미지를 선택하세요.';
       case 'icon_default':
         return '기본';
-      case 'icon_full':
-        return '전체';
       case 'icon_shortcut_created':
         return '홈 화면 바로가기가 생성되었습니다.';
       case 'icon_shortcut_unsupported':
         return '이 기기에서는 바로가기가 지원되지 않습니다.';
       case 'icon_switch_success':
         return '앱 아이콘이 변경되었습니다.';
-      case 'icon_transparent':
-        return '투명';
       case 'image_page_counter':
         return ({required Object current, required Object total}) =>
             '${current} / ${total}';
@@ -238541,6 +245489,257 @@ extension on _StringsKo {
             '연결되었습니다. 루트 카탈로그에 ${count}개 항목이 있습니다';
       case 'discovery_opds_test_failed':
         return ({required Object reason}) => '연결 실패: ${reason}';
+      case 'anki_error_permission_permanently_denied':
+        return 'AnkiDroid card access was permanently denied, so the system no longer shows the permission dialog. Open app settings and grant the AnkiDroid permission, then try again.';
+      case 'anki_error_ankidroid_unavailable':
+        return 'AnkiDroid is not installed (or its API is disabled), so card access cannot be granted. Install AnkiDroid and enable its API, or switch to AnkiConnect.';
+      case 'anki_action_open_settings':
+        return 'Open settings';
+      case 'onboarding_pack_pick_failed':
+        return ({required Object message}) =>
+            'Could not use the chosen file: ${message}';
+      case 'onboarding_pack_pick_no_path':
+        return 'The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access.';
+      case 'interconnect_profile_section':
+        return 'Configuration file';
+      case 'interconnect_profile_upload':
+        return 'Upload configuration to host';
+      case 'interconnect_profile_upload_desc':
+        return 'Send this device\'s active configuration to the paired host, where it lands as a new configuration.';
+      case 'interconnect_profile_download':
+        return 'Download configuration from host';
+      case 'interconnect_profile_download_desc':
+        return 'Import the host\'s active configuration as a new configuration here. Your current one is untouched.';
+      case 'interconnect_profile_host_toggle':
+        return 'Allow paired devices to read/write configuration';
+      case 'interconnect_profile_host_toggle_desc':
+        return 'Off by default. Requires HTTPS and a paired-device token. Incoming configurations are always added as new ones.';
+      case 'interconnect_profile_uploaded':
+        return ({required Object name}) => 'Configuration uploaded: ${name}';
+      case 'interconnect_profile_downloaded':
+        return ({required Object name}) => 'Configuration imported: ${name}';
+      case 'interconnect_profile_unsupported':
+        return 'The paired host does not offer configuration transfer (needs HTTPS and a newer version).';
+      case 'interconnect_profile_failed':
+        return ({required Object message}) =>
+            'Configuration transfer failed: ${message}';
+      case 'onboarding_pack_status_downloading':
+        return 'Downloading recommended pack';
+      case 'onboarding_pack_status_ready':
+        return 'Recommended pack downloaded';
+      case 'onboarding_pack_import_now':
+        return 'Import now';
+      case 'onboarding_pack_download_finished':
+        return 'Recommended pack finished downloading. Import it from Settings → System.';
+      case 'onboarding_pack_download_background_hint':
+        return 'The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.';
+      case 'onboarding_anki_fsrs_title':
+        return 'Turn on FSRS in Anki';
+      case 'onboarding_anki_fsrs_body':
+        return 'Anki has FSRS built in — one of the best spaced-repetition algorithms around — but it keeps scheduling with SM-2 from the 1980s until you turn FSRS on. FSRS reads your real review history and predicts when you are about to forget, so you keep the same retention with fewer reviews. You flip this switch once, inside Anki; nothing changes on the Fushi side.';
+      case 'onboarding_anki_fsrs_step_options_title':
+        return 'Open deck options';
+      case 'onboarding_anki_fsrs_step_options_desktop_desc':
+        return 'In Anki, click the gear next to a deck and choose Options.';
+      case 'onboarding_anki_fsrs_step_options_mobile_desc':
+        return 'In AnkiDroid (2.17 or newer) or AnkiMobile, long-press the deck and choose Options.';
+      case 'onboarding_anki_fsrs_step_toggle_title':
+        return 'Switch FSRS on';
+      case 'onboarding_anki_fsrs_step_toggle_desc':
+        return 'Scroll to the FSRS section at the bottom of the options page (older builds hide it under Advanced) and turn the switch on. It applies to your whole collection, so once is enough.';
+      case 'onboarding_anki_fsrs_step_optimize_title':
+        return 'Optimize, then save';
+      case 'onboarding_anki_fsrs_step_optimize_desc':
+        return 'Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while.';
+      case 'sync_desktop_oauth_waiting_title':
+        return '브라우저 로그인 완료를 기다리는 중';
+      case 'sync_desktop_oauth_waiting_body':
+        return '기본 브라우저에서 로그인 페이지를 열었습니다. 열리지 않거나 오류가 표시되면 링크를 복사해 다른 브라우저나 시크릿 창에서 여세요.';
+      case 'sync_desktop_oauth_link_copy':
+        return '로그인 링크 복사';
+      case 'sync_desktop_oauth_browser_reopen':
+        return '브라우저 다시 열기';
+      case 'sync_err_sign_in_cancelled':
+        return '로그인을 취소했습니다.';
+      case 'sync_desktop_oauth_browser_open_failed':
+        return '브라우저를 열 수 없습니다. 링크를 복사해 직접 브라우저에서 여세요.';
+      case 'sync_desktop_oauth_link_copy_failed':
+        return '링크를 복사할 수 없습니다. 링크 텍스트를 선택해 직접 복사하세요.';
+      case 'game_text_thread_artifact_hint':
+        return 'Repeated-character artifact thread, no usable lines';
+      case 'shortcut_action_global_context_menu':
+        return 'Open context menu';
+      case 'shortcut_conflict_keep_both':
+        return 'Keep both';
+      case 'shortcut_conflict_keep_both_hint':
+        return 'Both actions keep this binding. Whichever scope resolves first wins at press time.';
+      case 'video_specs_title':
+        return 'Media info';
+      case 'video_specs_resolution':
+        return 'Resolution';
+      case 'video_specs_dynamic_range':
+        return 'Dynamic range';
+      case 'video_specs_video_codec':
+        return 'Video codec';
+      case 'video_specs_bit_depth':
+        return 'Bit depth';
+      case 'video_specs_frame_rate':
+        return 'Frame rate';
+      case 'video_specs_bitrate':
+        return 'Bitrate';
+      case 'video_specs_audio_tracks':
+        return 'Audio tracks';
+      case 'video_specs_subtitle_tracks':
+        return 'Subtitle tracks';
+      case 'video_specs_track_commentary':
+        return 'Commentary';
+      case 'video_specs_track_forced':
+        return 'Forced';
+      case 'video_specs_track_default':
+        return 'Default';
+      case 'gal_mining_image_mode_video_clip':
+        return 'Video clip';
+      case 'gal_mining_image_mode_video_clip_hint':
+        return 'Records the game window from the moment the line appears until you mine the card, mixed with the sentence audio. Falls back to an animated image or screenshot when recording has not started or fewer than 2 frames were captured.';
+      case 'game_hook_reason_native_loopback_ack_timeout':
+        return 'The audio capture policy was not confirmed in time. Text capture still works; try again if game audio is missing.';
+      case 'shortcut_scope_global_external_desktop_note':
+        return 'Mouse triggers accept side buttons only (back/forward). Other buttons keep their normal meaning in other apps, so they are rejected here.';
+      case 'shortcut_mouse_button_not_supported':
+        return 'This action only accepts mouse side buttons (back/forward).';
+      case 'anki_ankimobile_opened':
+        return 'AnkiMobile opened. Approve the request there, then return to Fushi.';
+      case 'anki_error_ankimobile_pasteboard_empty':
+        return 'AnkiMobile did not return any configuration. Approve the request in AnkiMobile, then come back to Fushi.';
+      case 'anki_error_ankimobile_pasteboard_denied':
+        return 'iOS blocked reading the clipboard. Choose Allow Paste when returning to Fushi, then try again.';
+      case 'anki_error_ankimobile_no_decks':
+        return 'AnkiMobile returned no decks or note types.';
+      case 'anki_error_ankimobile_unavailable':
+        return 'Could not open AnkiMobile. Install AnkiMobile and try again.';
+      case 'dictionary_collapse_follow_global':
+        return 'Follow global setting';
+      case 'anki_ankimobile_imported':
+        return 'AnkiMobile configuration imported.';
+      case 'anki_error_ankimobile_not_active':
+        return 'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+      case 'audiobook_transcribe_action':
+        return 'Generate subtitles on device';
+      case 'audiobook_transcribe_title':
+        return 'On-device transcription';
+      case 'audiobook_transcribe_model_download_needed':
+        return ({required Object size}) => 'Model download required: ${size}';
+      case 'audiobook_transcribe_model_download':
+        return 'Download model';
+      case 'audiobook_transcribe_model_downloading':
+        return (
+                {required Object name,
+                required Object received,
+                required Object total}) =>
+            'Downloading ${name}… ${received} / ${total}';
+      case 'audiobook_transcribe_model_ready':
+        return ({required Object variant}) => 'Model ready (${variant})';
+      case 'audiobook_transcribe_accel_label':
+        return 'Acceleration';
+      case 'audiobook_transcribe_accel_auto':
+        return 'Auto (GPU when available)';
+      case 'audiobook_transcribe_accel_cpu':
+        return 'CPU only';
+      case 'audiobook_transcribe_running_on':
+        return ({required Object provider}) => 'Running on ${provider}';
+      case 'audiobook_transcribe_fallback':
+        return ({required Object reason}) =>
+            'GPU unavailable, fell back to CPU: ${reason}';
+      case 'audiobook_transcribe_start':
+        return 'Start transcription';
+      case 'audiobook_transcribe_resume':
+        return 'Resume transcription';
+      case 'audiobook_transcribe_pause':
+        return 'Pause';
+      case 'audiobook_transcribe_pausing':
+        return 'Pausing at the next checkpoint…';
+      case 'audiobook_transcribe_discard':
+        return 'Discard progress';
+      case 'audiobook_transcribe_use_result':
+        return 'Use subtitles';
+      case 'audiobook_transcribe_progress':
+        return (
+                {required Object done,
+                required Object total,
+                required Object file,
+                required Object files}) =>
+            '${done} / ${total} · file ${file}/${files}';
+      case 'audiobook_transcribe_speed':
+        return (
+                {required Object elapsed,
+                required Object eta,
+                required Object speed}) =>
+            'Elapsed ${elapsed} · remaining ${eta} · ${speed}× realtime';
+      case 'audiobook_transcribe_done':
+        return ({required Object cues, required Object segments}) =>
+            'Done: ${cues} cues from ${segments} speech segments';
+      case 'audiobook_transcribe_failed':
+        return ({required Object error}) => 'Transcription failed: ${error}';
+      case 'audiobook_transcribe_needs_audio':
+        return 'Pick audio files first';
+      case 'audiobook_transcribe_result_name':
+        return 'Generated by on-device transcription';
+      case 'audiobook_transcribe_paused_hint':
+        return 'Progress is saved. Pick the same audio files later to resume.';
+      case 'audiobook_transcribe_unavailable':
+        return 'On-device transcription is not available on this platform';
+      case 'audiobook_transcribe_preparing':
+        return 'Loading model…';
+      case 'audiobook_transcribe_export':
+        return 'Export subtitle file';
+      case 'audiobook_transcribe_export_saved':
+        return 'Subtitle file saved';
+      case 'audiobook_subtitle_source_title':
+        return 'Subtitle source';
+      case 'audiobook_subtitle_source_transcribe_hint':
+        return 'Generate from the selected audio with the on-device speech model';
+      case 'audiobook_transcribe_intro':
+        return 'Transcribes the audio locally with an on-device speech model for the selected language and generates subtitles for alignment. Nothing is uploaded.';
+      case 'audiobook_transcribe_language_label':
+        return 'Speech language';
+      case 'audiobook_transcribe_language_ja':
+        return 'Japanese';
+      case 'audiobook_transcribe_language_en':
+        return 'English';
+      case 'asr_models_section':
+        return 'Speech recognition models';
+      case 'asr_models_section_summary':
+        return 'Models for on-device audiobook transcription. Download only the languages you need.';
+      case 'asr_models_status_ready':
+        return ({required Object size}) => 'Downloaded · ${size} on disk';
+      case 'asr_models_status_partial':
+        return ({required Object obtained, required Object total}) =>
+            'Partially downloaded · ${obtained} / ${total}';
+      case 'asr_models_status_missing':
+        return ({required Object size}) => 'Not downloaded · ${size}';
+      case 'asr_models_download':
+        return 'Download';
+      case 'asr_models_delete':
+        return 'Delete';
+      case 'asr_models_delete_confirm_title':
+        return 'Delete this model?';
+      case 'asr_models_delete_confirm_message':
+        return 'Transcription in this language will need the model downloaded again.';
+      case 'asr_models_delete_done_freed':
+        return ({required Object size}) => 'Deleted, freed ${size}';
+      case 'asr_models_download_failed':
+        return ({required Object error}) => 'Download failed: ${error}';
+      case 'audiobook_transcribe_probe_failed':
+        return ({required Object reason}) =>
+            'GPU detection failed, planning for CPU: ${reason}';
+      case 'onboarding_pack_status_paused':
+        return 'Recommended pack download paused';
+      case 'onboarding_pack_download_resume':
+        return 'Resume download';
+      case 'onboarding_pack_paused_desc':
+        return 'Progress is kept on disk — resuming picks up where it stopped.';
+      case 'onboarding_pack_mini_bar_hide':
+        return 'Hide';
       default:
         return null;
     }
@@ -240729,16 +247928,12 @@ extension on _StringsNl {
         return 'Tik op een icoon om te wisselen, of kies hieronder een aangepaste afbeelding.';
       case 'icon_default':
         return 'Standaard';
-      case 'icon_full':
-        return 'Volledig';
       case 'icon_shortcut_created':
         return 'Snelkoppeling op startscherm aangemaakt.';
       case 'icon_shortcut_unsupported':
         return 'Snelkoppelingen worden niet ondersteund op dit apparaat.';
       case 'icon_switch_success':
         return 'App-icoon succesvol gewijzigd.';
-      case 'icon_transparent':
-        return 'Transparant';
       case 'image_page_counter':
         return ({required Object current, required Object total}) =>
             '${current} / ${total}';
@@ -247143,6 +254338,257 @@ extension on _StringsNl {
             'Verbonden. De hoofdcatalogus heeft ${count} items';
       case 'discovery_opds_test_failed':
         return ({required Object reason}) => 'Verbinding mislukt: ${reason}';
+      case 'anki_error_permission_permanently_denied':
+        return 'AnkiDroid card access was permanently denied, so the system no longer shows the permission dialog. Open app settings and grant the AnkiDroid permission, then try again.';
+      case 'anki_error_ankidroid_unavailable':
+        return 'AnkiDroid is not installed (or its API is disabled), so card access cannot be granted. Install AnkiDroid and enable its API, or switch to AnkiConnect.';
+      case 'anki_action_open_settings':
+        return 'Open settings';
+      case 'onboarding_pack_pick_failed':
+        return ({required Object message}) =>
+            'Could not use the chosen file: ${message}';
+      case 'onboarding_pack_pick_no_path':
+        return 'The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access.';
+      case 'interconnect_profile_section':
+        return 'Configuration file';
+      case 'interconnect_profile_upload':
+        return 'Upload configuration to host';
+      case 'interconnect_profile_upload_desc':
+        return 'Send this device\'s active configuration to the paired host, where it lands as a new configuration.';
+      case 'interconnect_profile_download':
+        return 'Download configuration from host';
+      case 'interconnect_profile_download_desc':
+        return 'Import the host\'s active configuration as a new configuration here. Your current one is untouched.';
+      case 'interconnect_profile_host_toggle':
+        return 'Allow paired devices to read/write configuration';
+      case 'interconnect_profile_host_toggle_desc':
+        return 'Off by default. Requires HTTPS and a paired-device token. Incoming configurations are always added as new ones.';
+      case 'interconnect_profile_uploaded':
+        return ({required Object name}) => 'Configuration uploaded: ${name}';
+      case 'interconnect_profile_downloaded':
+        return ({required Object name}) => 'Configuration imported: ${name}';
+      case 'interconnect_profile_unsupported':
+        return 'The paired host does not offer configuration transfer (needs HTTPS and a newer version).';
+      case 'interconnect_profile_failed':
+        return ({required Object message}) =>
+            'Configuration transfer failed: ${message}';
+      case 'onboarding_pack_status_downloading':
+        return 'Downloading recommended pack';
+      case 'onboarding_pack_status_ready':
+        return 'Recommended pack downloaded';
+      case 'onboarding_pack_import_now':
+        return 'Import now';
+      case 'onboarding_pack_download_finished':
+        return 'Recommended pack finished downloading. Import it from Settings → System.';
+      case 'onboarding_pack_download_background_hint':
+        return 'The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.';
+      case 'onboarding_anki_fsrs_title':
+        return 'Turn on FSRS in Anki';
+      case 'onboarding_anki_fsrs_body':
+        return 'Anki has FSRS built in — one of the best spaced-repetition algorithms around — but it keeps scheduling with SM-2 from the 1980s until you turn FSRS on. FSRS reads your real review history and predicts when you are about to forget, so you keep the same retention with fewer reviews. You flip this switch once, inside Anki; nothing changes on the Fushi side.';
+      case 'onboarding_anki_fsrs_step_options_title':
+        return 'Open deck options';
+      case 'onboarding_anki_fsrs_step_options_desktop_desc':
+        return 'In Anki, click the gear next to a deck and choose Options.';
+      case 'onboarding_anki_fsrs_step_options_mobile_desc':
+        return 'In AnkiDroid (2.17 or newer) or AnkiMobile, long-press the deck and choose Options.';
+      case 'onboarding_anki_fsrs_step_toggle_title':
+        return 'Switch FSRS on';
+      case 'onboarding_anki_fsrs_step_toggle_desc':
+        return 'Scroll to the FSRS section at the bottom of the options page (older builds hide it under Advanced) and turn the switch on. It applies to your whole collection, so once is enough.';
+      case 'onboarding_anki_fsrs_step_optimize_title':
+        return 'Optimize, then save';
+      case 'onboarding_anki_fsrs_step_optimize_desc':
+        return 'Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while.';
+      case 'sync_desktop_oauth_waiting_title':
+        return 'Wachten op aanmelding in de browser';
+      case 'sync_desktop_oauth_waiting_body':
+        return 'De aanmeldpagina is geopend in je standaardbrowser. Als er niets is geopend of de pagina een fout toont, kopieer dan de link en open die in een andere browser of een privévenster.';
+      case 'sync_desktop_oauth_link_copy':
+        return 'Aanmeldlink kopiëren';
+      case 'sync_desktop_oauth_browser_reopen':
+        return 'Browser opnieuw openen';
+      case 'sync_err_sign_in_cancelled':
+        return 'Aanmelden geannuleerd.';
+      case 'sync_desktop_oauth_browser_open_failed':
+        return 'De browser kon niet worden geopend. Kopieer de link en open die zelf in een browser.';
+      case 'sync_desktop_oauth_link_copy_failed':
+        return 'De link kon niet worden gekopieerd. Selecteer de linktekst en kopieer die handmatig.';
+      case 'game_text_thread_artifact_hint':
+        return 'Repeated-character artifact thread, no usable lines';
+      case 'shortcut_action_global_context_menu':
+        return 'Open context menu';
+      case 'shortcut_conflict_keep_both':
+        return 'Keep both';
+      case 'shortcut_conflict_keep_both_hint':
+        return 'Both actions keep this binding. Whichever scope resolves first wins at press time.';
+      case 'video_specs_title':
+        return 'Media info';
+      case 'video_specs_resolution':
+        return 'Resolution';
+      case 'video_specs_dynamic_range':
+        return 'Dynamic range';
+      case 'video_specs_video_codec':
+        return 'Video codec';
+      case 'video_specs_bit_depth':
+        return 'Bit depth';
+      case 'video_specs_frame_rate':
+        return 'Frame rate';
+      case 'video_specs_bitrate':
+        return 'Bitrate';
+      case 'video_specs_audio_tracks':
+        return 'Audio tracks';
+      case 'video_specs_subtitle_tracks':
+        return 'Subtitle tracks';
+      case 'video_specs_track_commentary':
+        return 'Commentary';
+      case 'video_specs_track_forced':
+        return 'Forced';
+      case 'video_specs_track_default':
+        return 'Default';
+      case 'gal_mining_image_mode_video_clip':
+        return 'Video clip';
+      case 'gal_mining_image_mode_video_clip_hint':
+        return 'Records the game window from the moment the line appears until you mine the card, mixed with the sentence audio. Falls back to an animated image or screenshot when recording has not started or fewer than 2 frames were captured.';
+      case 'game_hook_reason_native_loopback_ack_timeout':
+        return 'The audio capture policy was not confirmed in time. Text capture still works; try again if game audio is missing.';
+      case 'shortcut_scope_global_external_desktop_note':
+        return 'Mouse triggers accept side buttons only (back/forward). Other buttons keep their normal meaning in other apps, so they are rejected here.';
+      case 'shortcut_mouse_button_not_supported':
+        return 'This action only accepts mouse side buttons (back/forward).';
+      case 'anki_ankimobile_opened':
+        return 'AnkiMobile opened. Approve the request there, then return to Fushi.';
+      case 'anki_error_ankimobile_pasteboard_empty':
+        return 'AnkiMobile did not return any configuration. Approve the request in AnkiMobile, then come back to Fushi.';
+      case 'anki_error_ankimobile_pasteboard_denied':
+        return 'iOS blocked reading the clipboard. Choose Allow Paste when returning to Fushi, then try again.';
+      case 'anki_error_ankimobile_no_decks':
+        return 'AnkiMobile returned no decks or note types.';
+      case 'anki_error_ankimobile_unavailable':
+        return 'Could not open AnkiMobile. Install AnkiMobile and try again.';
+      case 'dictionary_collapse_follow_global':
+        return 'Follow global setting';
+      case 'anki_ankimobile_imported':
+        return 'AnkiMobile configuration imported.';
+      case 'anki_error_ankimobile_not_active':
+        return 'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+      case 'audiobook_transcribe_action':
+        return 'Generate subtitles on device';
+      case 'audiobook_transcribe_title':
+        return 'On-device transcription';
+      case 'audiobook_transcribe_model_download_needed':
+        return ({required Object size}) => 'Model download required: ${size}';
+      case 'audiobook_transcribe_model_download':
+        return 'Download model';
+      case 'audiobook_transcribe_model_downloading':
+        return (
+                {required Object name,
+                required Object received,
+                required Object total}) =>
+            'Downloading ${name}… ${received} / ${total}';
+      case 'audiobook_transcribe_model_ready':
+        return ({required Object variant}) => 'Model ready (${variant})';
+      case 'audiobook_transcribe_accel_label':
+        return 'Acceleration';
+      case 'audiobook_transcribe_accel_auto':
+        return 'Auto (GPU when available)';
+      case 'audiobook_transcribe_accel_cpu':
+        return 'CPU only';
+      case 'audiobook_transcribe_running_on':
+        return ({required Object provider}) => 'Running on ${provider}';
+      case 'audiobook_transcribe_fallback':
+        return ({required Object reason}) =>
+            'GPU unavailable, fell back to CPU: ${reason}';
+      case 'audiobook_transcribe_start':
+        return 'Start transcription';
+      case 'audiobook_transcribe_resume':
+        return 'Resume transcription';
+      case 'audiobook_transcribe_pause':
+        return 'Pause';
+      case 'audiobook_transcribe_pausing':
+        return 'Pausing at the next checkpoint…';
+      case 'audiobook_transcribe_discard':
+        return 'Discard progress';
+      case 'audiobook_transcribe_use_result':
+        return 'Use subtitles';
+      case 'audiobook_transcribe_progress':
+        return (
+                {required Object done,
+                required Object total,
+                required Object file,
+                required Object files}) =>
+            '${done} / ${total} · file ${file}/${files}';
+      case 'audiobook_transcribe_speed':
+        return (
+                {required Object elapsed,
+                required Object eta,
+                required Object speed}) =>
+            'Elapsed ${elapsed} · remaining ${eta} · ${speed}× realtime';
+      case 'audiobook_transcribe_done':
+        return ({required Object cues, required Object segments}) =>
+            'Done: ${cues} cues from ${segments} speech segments';
+      case 'audiobook_transcribe_failed':
+        return ({required Object error}) => 'Transcription failed: ${error}';
+      case 'audiobook_transcribe_needs_audio':
+        return 'Pick audio files first';
+      case 'audiobook_transcribe_result_name':
+        return 'Generated by on-device transcription';
+      case 'audiobook_transcribe_paused_hint':
+        return 'Progress is saved. Pick the same audio files later to resume.';
+      case 'audiobook_transcribe_unavailable':
+        return 'On-device transcription is not available on this platform';
+      case 'audiobook_transcribe_preparing':
+        return 'Loading model…';
+      case 'audiobook_transcribe_export':
+        return 'Export subtitle file';
+      case 'audiobook_transcribe_export_saved':
+        return 'Subtitle file saved';
+      case 'audiobook_subtitle_source_title':
+        return 'Subtitle source';
+      case 'audiobook_subtitle_source_transcribe_hint':
+        return 'Generate from the selected audio with the on-device speech model';
+      case 'audiobook_transcribe_intro':
+        return 'Transcribes the audio locally with an on-device speech model for the selected language and generates subtitles for alignment. Nothing is uploaded.';
+      case 'audiobook_transcribe_language_label':
+        return 'Speech language';
+      case 'audiobook_transcribe_language_ja':
+        return 'Japanese';
+      case 'audiobook_transcribe_language_en':
+        return 'English';
+      case 'asr_models_section':
+        return 'Speech recognition models';
+      case 'asr_models_section_summary':
+        return 'Models for on-device audiobook transcription. Download only the languages you need.';
+      case 'asr_models_status_ready':
+        return ({required Object size}) => 'Downloaded · ${size} on disk';
+      case 'asr_models_status_partial':
+        return ({required Object obtained, required Object total}) =>
+            'Partially downloaded · ${obtained} / ${total}';
+      case 'asr_models_status_missing':
+        return ({required Object size}) => 'Not downloaded · ${size}';
+      case 'asr_models_download':
+        return 'Download';
+      case 'asr_models_delete':
+        return 'Delete';
+      case 'asr_models_delete_confirm_title':
+        return 'Delete this model?';
+      case 'asr_models_delete_confirm_message':
+        return 'Transcription in this language will need the model downloaded again.';
+      case 'asr_models_delete_done_freed':
+        return ({required Object size}) => 'Deleted, freed ${size}';
+      case 'asr_models_download_failed':
+        return ({required Object error}) => 'Download failed: ${error}';
+      case 'audiobook_transcribe_probe_failed':
+        return ({required Object reason}) =>
+            'GPU detection failed, planning for CPU: ${reason}';
+      case 'onboarding_pack_status_paused':
+        return 'Recommended pack download paused';
+      case 'onboarding_pack_download_resume':
+        return 'Resume download';
+      case 'onboarding_pack_paused_desc':
+        return 'Progress is kept on disk — resuming picks up where it stopped.';
+      case 'onboarding_pack_mini_bar_hide':
+        return 'Hide';
       default:
         return null;
     }
@@ -249330,16 +256776,12 @@ extension on _StringsPtBr {
         return 'Toque em um ícone para trocar, ou escolha uma imagem personalizada abaixo.';
       case 'icon_default':
         return 'Padrão';
-      case 'icon_full':
-        return 'Completo';
       case 'icon_shortcut_created':
         return 'Atalho criado na tela inicial.';
       case 'icon_shortcut_unsupported':
         return 'Atalhos não são suportados neste dispositivo.';
       case 'icon_switch_success':
         return 'Ícone do app alterado com sucesso.';
-      case 'icon_transparent':
-        return 'Transparente';
       case 'image_page_counter':
         return ({required Object current, required Object total}) =>
             '${current} / ${total}';
@@ -255740,6 +263182,257 @@ extension on _StringsPtBr {
             'Conectado. O catálogo raiz tem ${count} itens';
       case 'discovery_opds_test_failed':
         return ({required Object reason}) => 'Falha na conexão: ${reason}';
+      case 'anki_error_permission_permanently_denied':
+        return 'AnkiDroid card access was permanently denied, so the system no longer shows the permission dialog. Open app settings and grant the AnkiDroid permission, then try again.';
+      case 'anki_error_ankidroid_unavailable':
+        return 'AnkiDroid is not installed (or its API is disabled), so card access cannot be granted. Install AnkiDroid and enable its API, or switch to AnkiConnect.';
+      case 'anki_action_open_settings':
+        return 'Open settings';
+      case 'onboarding_pack_pick_failed':
+        return ({required Object message}) =>
+            'Could not use the chosen file: ${message}';
+      case 'onboarding_pack_pick_no_path':
+        return 'The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access.';
+      case 'interconnect_profile_section':
+        return 'Configuration file';
+      case 'interconnect_profile_upload':
+        return 'Upload configuration to host';
+      case 'interconnect_profile_upload_desc':
+        return 'Send this device\'s active configuration to the paired host, where it lands as a new configuration.';
+      case 'interconnect_profile_download':
+        return 'Download configuration from host';
+      case 'interconnect_profile_download_desc':
+        return 'Import the host\'s active configuration as a new configuration here. Your current one is untouched.';
+      case 'interconnect_profile_host_toggle':
+        return 'Allow paired devices to read/write configuration';
+      case 'interconnect_profile_host_toggle_desc':
+        return 'Off by default. Requires HTTPS and a paired-device token. Incoming configurations are always added as new ones.';
+      case 'interconnect_profile_uploaded':
+        return ({required Object name}) => 'Configuration uploaded: ${name}';
+      case 'interconnect_profile_downloaded':
+        return ({required Object name}) => 'Configuration imported: ${name}';
+      case 'interconnect_profile_unsupported':
+        return 'The paired host does not offer configuration transfer (needs HTTPS and a newer version).';
+      case 'interconnect_profile_failed':
+        return ({required Object message}) =>
+            'Configuration transfer failed: ${message}';
+      case 'onboarding_pack_status_downloading':
+        return 'Downloading recommended pack';
+      case 'onboarding_pack_status_ready':
+        return 'Recommended pack downloaded';
+      case 'onboarding_pack_import_now':
+        return 'Import now';
+      case 'onboarding_pack_download_finished':
+        return 'Recommended pack finished downloading. Import it from Settings → System.';
+      case 'onboarding_pack_download_background_hint':
+        return 'The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.';
+      case 'onboarding_anki_fsrs_title':
+        return 'Turn on FSRS in Anki';
+      case 'onboarding_anki_fsrs_body':
+        return 'Anki has FSRS built in — one of the best spaced-repetition algorithms around — but it keeps scheduling with SM-2 from the 1980s until you turn FSRS on. FSRS reads your real review history and predicts when you are about to forget, so you keep the same retention with fewer reviews. You flip this switch once, inside Anki; nothing changes on the Fushi side.';
+      case 'onboarding_anki_fsrs_step_options_title':
+        return 'Open deck options';
+      case 'onboarding_anki_fsrs_step_options_desktop_desc':
+        return 'In Anki, click the gear next to a deck and choose Options.';
+      case 'onboarding_anki_fsrs_step_options_mobile_desc':
+        return 'In AnkiDroid (2.17 or newer) or AnkiMobile, long-press the deck and choose Options.';
+      case 'onboarding_anki_fsrs_step_toggle_title':
+        return 'Switch FSRS on';
+      case 'onboarding_anki_fsrs_step_toggle_desc':
+        return 'Scroll to the FSRS section at the bottom of the options page (older builds hide it under Advanced) and turn the switch on. It applies to your whole collection, so once is enough.';
+      case 'onboarding_anki_fsrs_step_optimize_title':
+        return 'Optimize, then save';
+      case 'onboarding_anki_fsrs_step_optimize_desc':
+        return 'Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while.';
+      case 'sync_desktop_oauth_waiting_title':
+        return 'Aguardando o login no navegador';
+      case 'sync_desktop_oauth_waiting_body':
+        return 'A página de login foi aberta no seu navegador padrão. Se nada abriu ou a página mostra um erro, copie o link e abra em outro navegador ou em uma janela anônima.';
+      case 'sync_desktop_oauth_link_copy':
+        return 'Copiar link de login';
+      case 'sync_desktop_oauth_browser_reopen':
+        return 'Abrir o navegador novamente';
+      case 'sync_err_sign_in_cancelled':
+        return 'Login cancelado.';
+      case 'sync_desktop_oauth_browser_open_failed':
+        return 'Não foi possível abrir o navegador. Copie o link e abra você mesmo em um navegador.';
+      case 'sync_desktop_oauth_link_copy_failed':
+        return 'Não foi possível copiar o link. Selecione o texto do link e copie manualmente.';
+      case 'game_text_thread_artifact_hint':
+        return 'Repeated-character artifact thread, no usable lines';
+      case 'shortcut_action_global_context_menu':
+        return 'Open context menu';
+      case 'shortcut_conflict_keep_both':
+        return 'Keep both';
+      case 'shortcut_conflict_keep_both_hint':
+        return 'Both actions keep this binding. Whichever scope resolves first wins at press time.';
+      case 'video_specs_title':
+        return 'Media info';
+      case 'video_specs_resolution':
+        return 'Resolution';
+      case 'video_specs_dynamic_range':
+        return 'Dynamic range';
+      case 'video_specs_video_codec':
+        return 'Video codec';
+      case 'video_specs_bit_depth':
+        return 'Bit depth';
+      case 'video_specs_frame_rate':
+        return 'Frame rate';
+      case 'video_specs_bitrate':
+        return 'Bitrate';
+      case 'video_specs_audio_tracks':
+        return 'Audio tracks';
+      case 'video_specs_subtitle_tracks':
+        return 'Subtitle tracks';
+      case 'video_specs_track_commentary':
+        return 'Commentary';
+      case 'video_specs_track_forced':
+        return 'Forced';
+      case 'video_specs_track_default':
+        return 'Default';
+      case 'gal_mining_image_mode_video_clip':
+        return 'Video clip';
+      case 'gal_mining_image_mode_video_clip_hint':
+        return 'Records the game window from the moment the line appears until you mine the card, mixed with the sentence audio. Falls back to an animated image or screenshot when recording has not started or fewer than 2 frames were captured.';
+      case 'game_hook_reason_native_loopback_ack_timeout':
+        return 'The audio capture policy was not confirmed in time. Text capture still works; try again if game audio is missing.';
+      case 'shortcut_scope_global_external_desktop_note':
+        return 'Mouse triggers accept side buttons only (back/forward). Other buttons keep their normal meaning in other apps, so they are rejected here.';
+      case 'shortcut_mouse_button_not_supported':
+        return 'This action only accepts mouse side buttons (back/forward).';
+      case 'anki_ankimobile_opened':
+        return 'AnkiMobile opened. Approve the request there, then return to Fushi.';
+      case 'anki_error_ankimobile_pasteboard_empty':
+        return 'AnkiMobile did not return any configuration. Approve the request in AnkiMobile, then come back to Fushi.';
+      case 'anki_error_ankimobile_pasteboard_denied':
+        return 'iOS blocked reading the clipboard. Choose Allow Paste when returning to Fushi, then try again.';
+      case 'anki_error_ankimobile_no_decks':
+        return 'AnkiMobile returned no decks or note types.';
+      case 'anki_error_ankimobile_unavailable':
+        return 'Could not open AnkiMobile. Install AnkiMobile and try again.';
+      case 'dictionary_collapse_follow_global':
+        return 'Follow global setting';
+      case 'anki_ankimobile_imported':
+        return 'AnkiMobile configuration imported.';
+      case 'anki_error_ankimobile_not_active':
+        return 'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+      case 'audiobook_transcribe_action':
+        return 'Generate subtitles on device';
+      case 'audiobook_transcribe_title':
+        return 'On-device transcription';
+      case 'audiobook_transcribe_model_download_needed':
+        return ({required Object size}) => 'Model download required: ${size}';
+      case 'audiobook_transcribe_model_download':
+        return 'Download model';
+      case 'audiobook_transcribe_model_downloading':
+        return (
+                {required Object name,
+                required Object received,
+                required Object total}) =>
+            'Downloading ${name}… ${received} / ${total}';
+      case 'audiobook_transcribe_model_ready':
+        return ({required Object variant}) => 'Model ready (${variant})';
+      case 'audiobook_transcribe_accel_label':
+        return 'Acceleration';
+      case 'audiobook_transcribe_accel_auto':
+        return 'Auto (GPU when available)';
+      case 'audiobook_transcribe_accel_cpu':
+        return 'CPU only';
+      case 'audiobook_transcribe_running_on':
+        return ({required Object provider}) => 'Running on ${provider}';
+      case 'audiobook_transcribe_fallback':
+        return ({required Object reason}) =>
+            'GPU unavailable, fell back to CPU: ${reason}';
+      case 'audiobook_transcribe_start':
+        return 'Start transcription';
+      case 'audiobook_transcribe_resume':
+        return 'Resume transcription';
+      case 'audiobook_transcribe_pause':
+        return 'Pause';
+      case 'audiobook_transcribe_pausing':
+        return 'Pausing at the next checkpoint…';
+      case 'audiobook_transcribe_discard':
+        return 'Discard progress';
+      case 'audiobook_transcribe_use_result':
+        return 'Use subtitles';
+      case 'audiobook_transcribe_progress':
+        return (
+                {required Object done,
+                required Object total,
+                required Object file,
+                required Object files}) =>
+            '${done} / ${total} · file ${file}/${files}';
+      case 'audiobook_transcribe_speed':
+        return (
+                {required Object elapsed,
+                required Object eta,
+                required Object speed}) =>
+            'Elapsed ${elapsed} · remaining ${eta} · ${speed}× realtime';
+      case 'audiobook_transcribe_done':
+        return ({required Object cues, required Object segments}) =>
+            'Done: ${cues} cues from ${segments} speech segments';
+      case 'audiobook_transcribe_failed':
+        return ({required Object error}) => 'Transcription failed: ${error}';
+      case 'audiobook_transcribe_needs_audio':
+        return 'Pick audio files first';
+      case 'audiobook_transcribe_result_name':
+        return 'Generated by on-device transcription';
+      case 'audiobook_transcribe_paused_hint':
+        return 'Progress is saved. Pick the same audio files later to resume.';
+      case 'audiobook_transcribe_unavailable':
+        return 'On-device transcription is not available on this platform';
+      case 'audiobook_transcribe_preparing':
+        return 'Loading model…';
+      case 'audiobook_transcribe_export':
+        return 'Export subtitle file';
+      case 'audiobook_transcribe_export_saved':
+        return 'Subtitle file saved';
+      case 'audiobook_subtitle_source_title':
+        return 'Subtitle source';
+      case 'audiobook_subtitle_source_transcribe_hint':
+        return 'Generate from the selected audio with the on-device speech model';
+      case 'audiobook_transcribe_intro':
+        return 'Transcribes the audio locally with an on-device speech model for the selected language and generates subtitles for alignment. Nothing is uploaded.';
+      case 'audiobook_transcribe_language_label':
+        return 'Speech language';
+      case 'audiobook_transcribe_language_ja':
+        return 'Japanese';
+      case 'audiobook_transcribe_language_en':
+        return 'English';
+      case 'asr_models_section':
+        return 'Speech recognition models';
+      case 'asr_models_section_summary':
+        return 'Models for on-device audiobook transcription. Download only the languages you need.';
+      case 'asr_models_status_ready':
+        return ({required Object size}) => 'Downloaded · ${size} on disk';
+      case 'asr_models_status_partial':
+        return ({required Object obtained, required Object total}) =>
+            'Partially downloaded · ${obtained} / ${total}';
+      case 'asr_models_status_missing':
+        return ({required Object size}) => 'Not downloaded · ${size}';
+      case 'asr_models_download':
+        return 'Download';
+      case 'asr_models_delete':
+        return 'Delete';
+      case 'asr_models_delete_confirm_title':
+        return 'Delete this model?';
+      case 'asr_models_delete_confirm_message':
+        return 'Transcription in this language will need the model downloaded again.';
+      case 'asr_models_delete_done_freed':
+        return ({required Object size}) => 'Deleted, freed ${size}';
+      case 'asr_models_download_failed':
+        return ({required Object error}) => 'Download failed: ${error}';
+      case 'audiobook_transcribe_probe_failed':
+        return ({required Object reason}) =>
+            'GPU detection failed, planning for CPU: ${reason}';
+      case 'onboarding_pack_status_paused':
+        return 'Recommended pack download paused';
+      case 'onboarding_pack_download_resume':
+        return 'Resume download';
+      case 'onboarding_pack_paused_desc':
+        return 'Progress is kept on disk — resuming picks up where it stopped.';
+      case 'onboarding_pack_mini_bar_hide':
+        return 'Hide';
       default:
         return null;
     }
@@ -257931,16 +265624,12 @@ extension on _StringsRu {
         return 'Нажмите на иконку, чтобы сменить, или выберите своё изображение ниже.';
       case 'icon_default':
         return 'По умолчанию';
-      case 'icon_full':
-        return 'Полная';
       case 'icon_shortcut_created':
         return 'Ярлык на главном экране создан.';
       case 'icon_shortcut_unsupported':
         return 'Ярлыки не поддерживаются на этом устройстве.';
       case 'icon_switch_success':
         return 'Иконка приложения успешно изменена.';
-      case 'icon_transparent':
-        return 'Прозрачный';
       case 'image_page_counter':
         return ({required Object current, required Object total}) =>
             '${current} / ${total}';
@@ -264344,6 +272033,257 @@ extension on _StringsRu {
       case 'discovery_opds_test_failed':
         return ({required Object reason}) =>
             'Не удалось подключиться: ${reason}';
+      case 'anki_error_permission_permanently_denied':
+        return 'AnkiDroid card access was permanently denied, so the system no longer shows the permission dialog. Open app settings and grant the AnkiDroid permission, then try again.';
+      case 'anki_error_ankidroid_unavailable':
+        return 'AnkiDroid is not installed (or its API is disabled), so card access cannot be granted. Install AnkiDroid and enable its API, or switch to AnkiConnect.';
+      case 'anki_action_open_settings':
+        return 'Open settings';
+      case 'onboarding_pack_pick_failed':
+        return ({required Object message}) =>
+            'Could not use the chosen file: ${message}';
+      case 'onboarding_pack_pick_no_path':
+        return 'The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access.';
+      case 'interconnect_profile_section':
+        return 'Configuration file';
+      case 'interconnect_profile_upload':
+        return 'Upload configuration to host';
+      case 'interconnect_profile_upload_desc':
+        return 'Send this device\'s active configuration to the paired host, where it lands as a new configuration.';
+      case 'interconnect_profile_download':
+        return 'Download configuration from host';
+      case 'interconnect_profile_download_desc':
+        return 'Import the host\'s active configuration as a new configuration here. Your current one is untouched.';
+      case 'interconnect_profile_host_toggle':
+        return 'Allow paired devices to read/write configuration';
+      case 'interconnect_profile_host_toggle_desc':
+        return 'Off by default. Requires HTTPS and a paired-device token. Incoming configurations are always added as new ones.';
+      case 'interconnect_profile_uploaded':
+        return ({required Object name}) => 'Configuration uploaded: ${name}';
+      case 'interconnect_profile_downloaded':
+        return ({required Object name}) => 'Configuration imported: ${name}';
+      case 'interconnect_profile_unsupported':
+        return 'The paired host does not offer configuration transfer (needs HTTPS and a newer version).';
+      case 'interconnect_profile_failed':
+        return ({required Object message}) =>
+            'Configuration transfer failed: ${message}';
+      case 'onboarding_pack_status_downloading':
+        return 'Downloading recommended pack';
+      case 'onboarding_pack_status_ready':
+        return 'Recommended pack downloaded';
+      case 'onboarding_pack_import_now':
+        return 'Import now';
+      case 'onboarding_pack_download_finished':
+        return 'Recommended pack finished downloading. Import it from Settings → System.';
+      case 'onboarding_pack_download_background_hint':
+        return 'The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.';
+      case 'onboarding_anki_fsrs_title':
+        return 'Turn on FSRS in Anki';
+      case 'onboarding_anki_fsrs_body':
+        return 'Anki has FSRS built in — one of the best spaced-repetition algorithms around — but it keeps scheduling with SM-2 from the 1980s until you turn FSRS on. FSRS reads your real review history and predicts when you are about to forget, so you keep the same retention with fewer reviews. You flip this switch once, inside Anki; nothing changes on the Fushi side.';
+      case 'onboarding_anki_fsrs_step_options_title':
+        return 'Open deck options';
+      case 'onboarding_anki_fsrs_step_options_desktop_desc':
+        return 'In Anki, click the gear next to a deck and choose Options.';
+      case 'onboarding_anki_fsrs_step_options_mobile_desc':
+        return 'In AnkiDroid (2.17 or newer) or AnkiMobile, long-press the deck and choose Options.';
+      case 'onboarding_anki_fsrs_step_toggle_title':
+        return 'Switch FSRS on';
+      case 'onboarding_anki_fsrs_step_toggle_desc':
+        return 'Scroll to the FSRS section at the bottom of the options page (older builds hide it under Advanced) and turn the switch on. It applies to your whole collection, so once is enough.';
+      case 'onboarding_anki_fsrs_step_optimize_title':
+        return 'Optimize, then save';
+      case 'onboarding_anki_fsrs_step_optimize_desc':
+        return 'Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while.';
+      case 'sync_desktop_oauth_waiting_title':
+        return 'Ожидание входа в браузере';
+      case 'sync_desktop_oauth_waiting_body':
+        return 'Страница входа открыта в браузере по умолчанию. Если ничего не открылось или страница показывает ошибку, скопируйте ссылку и откройте её в другом браузере или в приватном окне.';
+      case 'sync_desktop_oauth_link_copy':
+        return 'Скопировать ссылку для входа';
+      case 'sync_desktop_oauth_browser_reopen':
+        return 'Открыть браузер снова';
+      case 'sync_err_sign_in_cancelled':
+        return 'Вход отменён.';
+      case 'sync_desktop_oauth_browser_open_failed':
+        return 'Не удалось открыть браузер. Скопируйте ссылку и откройте её в браузере вручную.';
+      case 'sync_desktop_oauth_link_copy_failed':
+        return 'Не удалось скопировать ссылку. Выделите текст ссылки и скопируйте его вручную.';
+      case 'game_text_thread_artifact_hint':
+        return 'Repeated-character artifact thread, no usable lines';
+      case 'shortcut_action_global_context_menu':
+        return 'Open context menu';
+      case 'shortcut_conflict_keep_both':
+        return 'Keep both';
+      case 'shortcut_conflict_keep_both_hint':
+        return 'Both actions keep this binding. Whichever scope resolves first wins at press time.';
+      case 'video_specs_title':
+        return 'Media info';
+      case 'video_specs_resolution':
+        return 'Resolution';
+      case 'video_specs_dynamic_range':
+        return 'Dynamic range';
+      case 'video_specs_video_codec':
+        return 'Video codec';
+      case 'video_specs_bit_depth':
+        return 'Bit depth';
+      case 'video_specs_frame_rate':
+        return 'Frame rate';
+      case 'video_specs_bitrate':
+        return 'Bitrate';
+      case 'video_specs_audio_tracks':
+        return 'Audio tracks';
+      case 'video_specs_subtitle_tracks':
+        return 'Subtitle tracks';
+      case 'video_specs_track_commentary':
+        return 'Commentary';
+      case 'video_specs_track_forced':
+        return 'Forced';
+      case 'video_specs_track_default':
+        return 'Default';
+      case 'gal_mining_image_mode_video_clip':
+        return 'Video clip';
+      case 'gal_mining_image_mode_video_clip_hint':
+        return 'Records the game window from the moment the line appears until you mine the card, mixed with the sentence audio. Falls back to an animated image or screenshot when recording has not started or fewer than 2 frames were captured.';
+      case 'game_hook_reason_native_loopback_ack_timeout':
+        return 'The audio capture policy was not confirmed in time. Text capture still works; try again if game audio is missing.';
+      case 'shortcut_scope_global_external_desktop_note':
+        return 'Mouse triggers accept side buttons only (back/forward). Other buttons keep their normal meaning in other apps, so they are rejected here.';
+      case 'shortcut_mouse_button_not_supported':
+        return 'This action only accepts mouse side buttons (back/forward).';
+      case 'anki_ankimobile_opened':
+        return 'AnkiMobile opened. Approve the request there, then return to Fushi.';
+      case 'anki_error_ankimobile_pasteboard_empty':
+        return 'AnkiMobile did not return any configuration. Approve the request in AnkiMobile, then come back to Fushi.';
+      case 'anki_error_ankimobile_pasteboard_denied':
+        return 'iOS blocked reading the clipboard. Choose Allow Paste when returning to Fushi, then try again.';
+      case 'anki_error_ankimobile_no_decks':
+        return 'AnkiMobile returned no decks or note types.';
+      case 'anki_error_ankimobile_unavailable':
+        return 'Could not open AnkiMobile. Install AnkiMobile and try again.';
+      case 'dictionary_collapse_follow_global':
+        return 'Follow global setting';
+      case 'anki_ankimobile_imported':
+        return 'AnkiMobile configuration imported.';
+      case 'anki_error_ankimobile_not_active':
+        return 'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+      case 'audiobook_transcribe_action':
+        return 'Generate subtitles on device';
+      case 'audiobook_transcribe_title':
+        return 'On-device transcription';
+      case 'audiobook_transcribe_model_download_needed':
+        return ({required Object size}) => 'Model download required: ${size}';
+      case 'audiobook_transcribe_model_download':
+        return 'Download model';
+      case 'audiobook_transcribe_model_downloading':
+        return (
+                {required Object name,
+                required Object received,
+                required Object total}) =>
+            'Downloading ${name}… ${received} / ${total}';
+      case 'audiobook_transcribe_model_ready':
+        return ({required Object variant}) => 'Model ready (${variant})';
+      case 'audiobook_transcribe_accel_label':
+        return 'Acceleration';
+      case 'audiobook_transcribe_accel_auto':
+        return 'Auto (GPU when available)';
+      case 'audiobook_transcribe_accel_cpu':
+        return 'CPU only';
+      case 'audiobook_transcribe_running_on':
+        return ({required Object provider}) => 'Running on ${provider}';
+      case 'audiobook_transcribe_fallback':
+        return ({required Object reason}) =>
+            'GPU unavailable, fell back to CPU: ${reason}';
+      case 'audiobook_transcribe_start':
+        return 'Start transcription';
+      case 'audiobook_transcribe_resume':
+        return 'Resume transcription';
+      case 'audiobook_transcribe_pause':
+        return 'Pause';
+      case 'audiobook_transcribe_pausing':
+        return 'Pausing at the next checkpoint…';
+      case 'audiobook_transcribe_discard':
+        return 'Discard progress';
+      case 'audiobook_transcribe_use_result':
+        return 'Use subtitles';
+      case 'audiobook_transcribe_progress':
+        return (
+                {required Object done,
+                required Object total,
+                required Object file,
+                required Object files}) =>
+            '${done} / ${total} · file ${file}/${files}';
+      case 'audiobook_transcribe_speed':
+        return (
+                {required Object elapsed,
+                required Object eta,
+                required Object speed}) =>
+            'Elapsed ${elapsed} · remaining ${eta} · ${speed}× realtime';
+      case 'audiobook_transcribe_done':
+        return ({required Object cues, required Object segments}) =>
+            'Done: ${cues} cues from ${segments} speech segments';
+      case 'audiobook_transcribe_failed':
+        return ({required Object error}) => 'Transcription failed: ${error}';
+      case 'audiobook_transcribe_needs_audio':
+        return 'Pick audio files first';
+      case 'audiobook_transcribe_result_name':
+        return 'Generated by on-device transcription';
+      case 'audiobook_transcribe_paused_hint':
+        return 'Progress is saved. Pick the same audio files later to resume.';
+      case 'audiobook_transcribe_unavailable':
+        return 'On-device transcription is not available on this platform';
+      case 'audiobook_transcribe_preparing':
+        return 'Loading model…';
+      case 'audiobook_transcribe_export':
+        return 'Export subtitle file';
+      case 'audiobook_transcribe_export_saved':
+        return 'Subtitle file saved';
+      case 'audiobook_subtitle_source_title':
+        return 'Subtitle source';
+      case 'audiobook_subtitle_source_transcribe_hint':
+        return 'Generate from the selected audio with the on-device speech model';
+      case 'audiobook_transcribe_intro':
+        return 'Transcribes the audio locally with an on-device speech model for the selected language and generates subtitles for alignment. Nothing is uploaded.';
+      case 'audiobook_transcribe_language_label':
+        return 'Speech language';
+      case 'audiobook_transcribe_language_ja':
+        return 'Japanese';
+      case 'audiobook_transcribe_language_en':
+        return 'English';
+      case 'asr_models_section':
+        return 'Speech recognition models';
+      case 'asr_models_section_summary':
+        return 'Models for on-device audiobook transcription. Download only the languages you need.';
+      case 'asr_models_status_ready':
+        return ({required Object size}) => 'Downloaded · ${size} on disk';
+      case 'asr_models_status_partial':
+        return ({required Object obtained, required Object total}) =>
+            'Partially downloaded · ${obtained} / ${total}';
+      case 'asr_models_status_missing':
+        return ({required Object size}) => 'Not downloaded · ${size}';
+      case 'asr_models_download':
+        return 'Download';
+      case 'asr_models_delete':
+        return 'Delete';
+      case 'asr_models_delete_confirm_title':
+        return 'Delete this model?';
+      case 'asr_models_delete_confirm_message':
+        return 'Transcription in this language will need the model downloaded again.';
+      case 'asr_models_delete_done_freed':
+        return ({required Object size}) => 'Deleted, freed ${size}';
+      case 'asr_models_download_failed':
+        return ({required Object error}) => 'Download failed: ${error}';
+      case 'audiobook_transcribe_probe_failed':
+        return ({required Object reason}) =>
+            'GPU detection failed, planning for CPU: ${reason}';
+      case 'onboarding_pack_status_paused':
+        return 'Recommended pack download paused';
+      case 'onboarding_pack_download_resume':
+        return 'Resume download';
+      case 'onboarding_pack_paused_desc':
+        return 'Progress is kept on disk — resuming picks up where it stopped.';
+      case 'onboarding_pack_mini_bar_hide':
+        return 'Hide';
       default:
         return null;
     }
@@ -266524,16 +274464,12 @@ extension on _StringsTh {
         return 'แตะไอคอนเพื่อเปลี่ยน หรือเลือกรูปกำหนดเองด้านล่าง';
       case 'icon_default':
         return 'ค่าเริ่มต้น';
-      case 'icon_full':
-        return 'เต็ม';
       case 'icon_shortcut_created':
         return 'สร้างทางลัดบนหน้าจอหลักแล้ว';
       case 'icon_shortcut_unsupported':
         return 'อุปกรณ์นี้ไม่รองรับทางลัด';
       case 'icon_switch_success':
         return 'เปลี่ยนไอคอนแอปสำเร็จ';
-      case 'icon_transparent':
-        return 'โปร่งใส';
       case 'image_page_counter':
         return ({required Object current, required Object total}) =>
             '${current} / ${total}';
@@ -272920,6 +280856,257 @@ extension on _StringsTh {
             'เชื่อมต่อแล้ว แคตตาล็อกรากมี ${count} รายการ';
       case 'discovery_opds_test_failed':
         return ({required Object reason}) => 'เชื่อมต่อไม่สำเร็จ: ${reason}';
+      case 'anki_error_permission_permanently_denied':
+        return 'AnkiDroid card access was permanently denied, so the system no longer shows the permission dialog. Open app settings and grant the AnkiDroid permission, then try again.';
+      case 'anki_error_ankidroid_unavailable':
+        return 'AnkiDroid is not installed (or its API is disabled), so card access cannot be granted. Install AnkiDroid and enable its API, or switch to AnkiConnect.';
+      case 'anki_action_open_settings':
+        return 'Open settings';
+      case 'onboarding_pack_pick_failed':
+        return ({required Object message}) =>
+            'Could not use the chosen file: ${message}';
+      case 'onboarding_pack_pick_no_path':
+        return 'The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access.';
+      case 'interconnect_profile_section':
+        return 'Configuration file';
+      case 'interconnect_profile_upload':
+        return 'Upload configuration to host';
+      case 'interconnect_profile_upload_desc':
+        return 'Send this device\'s active configuration to the paired host, where it lands as a new configuration.';
+      case 'interconnect_profile_download':
+        return 'Download configuration from host';
+      case 'interconnect_profile_download_desc':
+        return 'Import the host\'s active configuration as a new configuration here. Your current one is untouched.';
+      case 'interconnect_profile_host_toggle':
+        return 'Allow paired devices to read/write configuration';
+      case 'interconnect_profile_host_toggle_desc':
+        return 'Off by default. Requires HTTPS and a paired-device token. Incoming configurations are always added as new ones.';
+      case 'interconnect_profile_uploaded':
+        return ({required Object name}) => 'Configuration uploaded: ${name}';
+      case 'interconnect_profile_downloaded':
+        return ({required Object name}) => 'Configuration imported: ${name}';
+      case 'interconnect_profile_unsupported':
+        return 'The paired host does not offer configuration transfer (needs HTTPS and a newer version).';
+      case 'interconnect_profile_failed':
+        return ({required Object message}) =>
+            'Configuration transfer failed: ${message}';
+      case 'onboarding_pack_status_downloading':
+        return 'Downloading recommended pack';
+      case 'onboarding_pack_status_ready':
+        return 'Recommended pack downloaded';
+      case 'onboarding_pack_import_now':
+        return 'Import now';
+      case 'onboarding_pack_download_finished':
+        return 'Recommended pack finished downloading. Import it from Settings → System.';
+      case 'onboarding_pack_download_background_hint':
+        return 'The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.';
+      case 'onboarding_anki_fsrs_title':
+        return 'Turn on FSRS in Anki';
+      case 'onboarding_anki_fsrs_body':
+        return 'Anki has FSRS built in — one of the best spaced-repetition algorithms around — but it keeps scheduling with SM-2 from the 1980s until you turn FSRS on. FSRS reads your real review history and predicts when you are about to forget, so you keep the same retention with fewer reviews. You flip this switch once, inside Anki; nothing changes on the Fushi side.';
+      case 'onboarding_anki_fsrs_step_options_title':
+        return 'Open deck options';
+      case 'onboarding_anki_fsrs_step_options_desktop_desc':
+        return 'In Anki, click the gear next to a deck and choose Options.';
+      case 'onboarding_anki_fsrs_step_options_mobile_desc':
+        return 'In AnkiDroid (2.17 or newer) or AnkiMobile, long-press the deck and choose Options.';
+      case 'onboarding_anki_fsrs_step_toggle_title':
+        return 'Switch FSRS on';
+      case 'onboarding_anki_fsrs_step_toggle_desc':
+        return 'Scroll to the FSRS section at the bottom of the options page (older builds hide it under Advanced) and turn the switch on. It applies to your whole collection, so once is enough.';
+      case 'onboarding_anki_fsrs_step_optimize_title':
+        return 'Optimize, then save';
+      case 'onboarding_anki_fsrs_step_optimize_desc':
+        return 'Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while.';
+      case 'sync_desktop_oauth_waiting_title':
+        return 'กำลังรอการเข้าสู่ระบบในเบราว์เซอร์';
+      case 'sync_desktop_oauth_waiting_body':
+        return 'เปิดหน้าเข้าสู่ระบบในเบราว์เซอร์เริ่มต้นแล้ว หากไม่มีอะไรเปิดขึ้นมาหรือหน้าแสดงข้อผิดพลาด ให้คัดลอกลิงก์แล้วเปิดในเบราว์เซอร์อื่นหรือหน้าต่างส่วนตัว';
+      case 'sync_desktop_oauth_link_copy':
+        return 'คัดลอกลิงก์เข้าสู่ระบบ';
+      case 'sync_desktop_oauth_browser_reopen':
+        return 'เปิดเบราว์เซอร์อีกครั้ง';
+      case 'sync_err_sign_in_cancelled':
+        return 'ยกเลิกการเข้าสู่ระบบแล้ว';
+      case 'sync_desktop_oauth_browser_open_failed':
+        return 'ไม่สามารถเปิดเบราว์เซอร์ได้ ให้คัดลอกลิงก์แล้วเปิดในเบราว์เซอร์ด้วยตนเอง';
+      case 'sync_desktop_oauth_link_copy_failed':
+        return 'ไม่สามารถคัดลอกลิงก์ได้ ให้เลือกข้อความลิงก์แล้วคัดลอกด้วยตนเอง';
+      case 'game_text_thread_artifact_hint':
+        return 'Repeated-character artifact thread, no usable lines';
+      case 'shortcut_action_global_context_menu':
+        return 'Open context menu';
+      case 'shortcut_conflict_keep_both':
+        return 'Keep both';
+      case 'shortcut_conflict_keep_both_hint':
+        return 'Both actions keep this binding. Whichever scope resolves first wins at press time.';
+      case 'video_specs_title':
+        return 'Media info';
+      case 'video_specs_resolution':
+        return 'Resolution';
+      case 'video_specs_dynamic_range':
+        return 'Dynamic range';
+      case 'video_specs_video_codec':
+        return 'Video codec';
+      case 'video_specs_bit_depth':
+        return 'Bit depth';
+      case 'video_specs_frame_rate':
+        return 'Frame rate';
+      case 'video_specs_bitrate':
+        return 'Bitrate';
+      case 'video_specs_audio_tracks':
+        return 'Audio tracks';
+      case 'video_specs_subtitle_tracks':
+        return 'Subtitle tracks';
+      case 'video_specs_track_commentary':
+        return 'Commentary';
+      case 'video_specs_track_forced':
+        return 'Forced';
+      case 'video_specs_track_default':
+        return 'Default';
+      case 'gal_mining_image_mode_video_clip':
+        return 'Video clip';
+      case 'gal_mining_image_mode_video_clip_hint':
+        return 'Records the game window from the moment the line appears until you mine the card, mixed with the sentence audio. Falls back to an animated image or screenshot when recording has not started or fewer than 2 frames were captured.';
+      case 'game_hook_reason_native_loopback_ack_timeout':
+        return 'The audio capture policy was not confirmed in time. Text capture still works; try again if game audio is missing.';
+      case 'shortcut_scope_global_external_desktop_note':
+        return 'Mouse triggers accept side buttons only (back/forward). Other buttons keep their normal meaning in other apps, so they are rejected here.';
+      case 'shortcut_mouse_button_not_supported':
+        return 'This action only accepts mouse side buttons (back/forward).';
+      case 'anki_ankimobile_opened':
+        return 'AnkiMobile opened. Approve the request there, then return to Fushi.';
+      case 'anki_error_ankimobile_pasteboard_empty':
+        return 'AnkiMobile did not return any configuration. Approve the request in AnkiMobile, then come back to Fushi.';
+      case 'anki_error_ankimobile_pasteboard_denied':
+        return 'iOS blocked reading the clipboard. Choose Allow Paste when returning to Fushi, then try again.';
+      case 'anki_error_ankimobile_no_decks':
+        return 'AnkiMobile returned no decks or note types.';
+      case 'anki_error_ankimobile_unavailable':
+        return 'Could not open AnkiMobile. Install AnkiMobile and try again.';
+      case 'dictionary_collapse_follow_global':
+        return 'Follow global setting';
+      case 'anki_ankimobile_imported':
+        return 'AnkiMobile configuration imported.';
+      case 'anki_error_ankimobile_not_active':
+        return 'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+      case 'audiobook_transcribe_action':
+        return 'Generate subtitles on device';
+      case 'audiobook_transcribe_title':
+        return 'On-device transcription';
+      case 'audiobook_transcribe_model_download_needed':
+        return ({required Object size}) => 'Model download required: ${size}';
+      case 'audiobook_transcribe_model_download':
+        return 'Download model';
+      case 'audiobook_transcribe_model_downloading':
+        return (
+                {required Object name,
+                required Object received,
+                required Object total}) =>
+            'Downloading ${name}… ${received} / ${total}';
+      case 'audiobook_transcribe_model_ready':
+        return ({required Object variant}) => 'Model ready (${variant})';
+      case 'audiobook_transcribe_accel_label':
+        return 'Acceleration';
+      case 'audiobook_transcribe_accel_auto':
+        return 'Auto (GPU when available)';
+      case 'audiobook_transcribe_accel_cpu':
+        return 'CPU only';
+      case 'audiobook_transcribe_running_on':
+        return ({required Object provider}) => 'Running on ${provider}';
+      case 'audiobook_transcribe_fallback':
+        return ({required Object reason}) =>
+            'GPU unavailable, fell back to CPU: ${reason}';
+      case 'audiobook_transcribe_start':
+        return 'Start transcription';
+      case 'audiobook_transcribe_resume':
+        return 'Resume transcription';
+      case 'audiobook_transcribe_pause':
+        return 'Pause';
+      case 'audiobook_transcribe_pausing':
+        return 'Pausing at the next checkpoint…';
+      case 'audiobook_transcribe_discard':
+        return 'Discard progress';
+      case 'audiobook_transcribe_use_result':
+        return 'Use subtitles';
+      case 'audiobook_transcribe_progress':
+        return (
+                {required Object done,
+                required Object total,
+                required Object file,
+                required Object files}) =>
+            '${done} / ${total} · file ${file}/${files}';
+      case 'audiobook_transcribe_speed':
+        return (
+                {required Object elapsed,
+                required Object eta,
+                required Object speed}) =>
+            'Elapsed ${elapsed} · remaining ${eta} · ${speed}× realtime';
+      case 'audiobook_transcribe_done':
+        return ({required Object cues, required Object segments}) =>
+            'Done: ${cues} cues from ${segments} speech segments';
+      case 'audiobook_transcribe_failed':
+        return ({required Object error}) => 'Transcription failed: ${error}';
+      case 'audiobook_transcribe_needs_audio':
+        return 'Pick audio files first';
+      case 'audiobook_transcribe_result_name':
+        return 'Generated by on-device transcription';
+      case 'audiobook_transcribe_paused_hint':
+        return 'Progress is saved. Pick the same audio files later to resume.';
+      case 'audiobook_transcribe_unavailable':
+        return 'On-device transcription is not available on this platform';
+      case 'audiobook_transcribe_preparing':
+        return 'Loading model…';
+      case 'audiobook_transcribe_export':
+        return 'Export subtitle file';
+      case 'audiobook_transcribe_export_saved':
+        return 'Subtitle file saved';
+      case 'audiobook_subtitle_source_title':
+        return 'Subtitle source';
+      case 'audiobook_subtitle_source_transcribe_hint':
+        return 'Generate from the selected audio with the on-device speech model';
+      case 'audiobook_transcribe_intro':
+        return 'Transcribes the audio locally with an on-device speech model for the selected language and generates subtitles for alignment. Nothing is uploaded.';
+      case 'audiobook_transcribe_language_label':
+        return 'Speech language';
+      case 'audiobook_transcribe_language_ja':
+        return 'Japanese';
+      case 'audiobook_transcribe_language_en':
+        return 'English';
+      case 'asr_models_section':
+        return 'Speech recognition models';
+      case 'asr_models_section_summary':
+        return 'Models for on-device audiobook transcription. Download only the languages you need.';
+      case 'asr_models_status_ready':
+        return ({required Object size}) => 'Downloaded · ${size} on disk';
+      case 'asr_models_status_partial':
+        return ({required Object obtained, required Object total}) =>
+            'Partially downloaded · ${obtained} / ${total}';
+      case 'asr_models_status_missing':
+        return ({required Object size}) => 'Not downloaded · ${size}';
+      case 'asr_models_download':
+        return 'Download';
+      case 'asr_models_delete':
+        return 'Delete';
+      case 'asr_models_delete_confirm_title':
+        return 'Delete this model?';
+      case 'asr_models_delete_confirm_message':
+        return 'Transcription in this language will need the model downloaded again.';
+      case 'asr_models_delete_done_freed':
+        return ({required Object size}) => 'Deleted, freed ${size}';
+      case 'asr_models_download_failed':
+        return ({required Object error}) => 'Download failed: ${error}';
+      case 'audiobook_transcribe_probe_failed':
+        return ({required Object reason}) =>
+            'GPU detection failed, planning for CPU: ${reason}';
+      case 'onboarding_pack_status_paused':
+        return 'Recommended pack download paused';
+      case 'onboarding_pack_download_resume':
+        return 'Resume download';
+      case 'onboarding_pack_paused_desc':
+        return 'Progress is kept on disk — resuming picks up where it stopped.';
+      case 'onboarding_pack_mini_bar_hide':
+        return 'Hide';
       default:
         return null;
     }
@@ -275105,16 +283292,12 @@ extension on _StringsTr {
         return 'Değiştirmek için bir simgeye dokunun veya aşağıdan özel bir görsel seçin.';
       case 'icon_default':
         return 'Varsayılan';
-      case 'icon_full':
-        return 'Tam';
       case 'icon_shortcut_created':
         return 'Ana ekran kısayolu oluşturuldu.';
       case 'icon_shortcut_unsupported':
         return 'Bu cihazda kısayollar desteklenmiyor.';
       case 'icon_switch_success':
         return 'Uygulama simgesi başarıyla değiştirildi.';
-      case 'icon_transparent':
-        return 'Saydam';
       case 'image_page_counter':
         return ({required Object current, required Object total}) =>
             '${current} / ${total}';
@@ -281511,6 +289694,257 @@ extension on _StringsTr {
             'Bağlanıldı. Kök katalogda ${count} girdi var';
       case 'discovery_opds_test_failed':
         return ({required Object reason}) => 'Bağlantı başarısız: ${reason}';
+      case 'anki_error_permission_permanently_denied':
+        return 'AnkiDroid card access was permanently denied, so the system no longer shows the permission dialog. Open app settings and grant the AnkiDroid permission, then try again.';
+      case 'anki_error_ankidroid_unavailable':
+        return 'AnkiDroid is not installed (or its API is disabled), so card access cannot be granted. Install AnkiDroid and enable its API, or switch to AnkiConnect.';
+      case 'anki_action_open_settings':
+        return 'Open settings';
+      case 'onboarding_pack_pick_failed':
+        return ({required Object message}) =>
+            'Could not use the chosen file: ${message}';
+      case 'onboarding_pack_pick_no_path':
+        return 'The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access.';
+      case 'interconnect_profile_section':
+        return 'Configuration file';
+      case 'interconnect_profile_upload':
+        return 'Upload configuration to host';
+      case 'interconnect_profile_upload_desc':
+        return 'Send this device\'s active configuration to the paired host, where it lands as a new configuration.';
+      case 'interconnect_profile_download':
+        return 'Download configuration from host';
+      case 'interconnect_profile_download_desc':
+        return 'Import the host\'s active configuration as a new configuration here. Your current one is untouched.';
+      case 'interconnect_profile_host_toggle':
+        return 'Allow paired devices to read/write configuration';
+      case 'interconnect_profile_host_toggle_desc':
+        return 'Off by default. Requires HTTPS and a paired-device token. Incoming configurations are always added as new ones.';
+      case 'interconnect_profile_uploaded':
+        return ({required Object name}) => 'Configuration uploaded: ${name}';
+      case 'interconnect_profile_downloaded':
+        return ({required Object name}) => 'Configuration imported: ${name}';
+      case 'interconnect_profile_unsupported':
+        return 'The paired host does not offer configuration transfer (needs HTTPS and a newer version).';
+      case 'interconnect_profile_failed':
+        return ({required Object message}) =>
+            'Configuration transfer failed: ${message}';
+      case 'onboarding_pack_status_downloading':
+        return 'Downloading recommended pack';
+      case 'onboarding_pack_status_ready':
+        return 'Recommended pack downloaded';
+      case 'onboarding_pack_import_now':
+        return 'Import now';
+      case 'onboarding_pack_download_finished':
+        return 'Recommended pack finished downloading. Import it from Settings → System.';
+      case 'onboarding_pack_download_background_hint':
+        return 'The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.';
+      case 'onboarding_anki_fsrs_title':
+        return 'Turn on FSRS in Anki';
+      case 'onboarding_anki_fsrs_body':
+        return 'Anki has FSRS built in — one of the best spaced-repetition algorithms around — but it keeps scheduling with SM-2 from the 1980s until you turn FSRS on. FSRS reads your real review history and predicts when you are about to forget, so you keep the same retention with fewer reviews. You flip this switch once, inside Anki; nothing changes on the Fushi side.';
+      case 'onboarding_anki_fsrs_step_options_title':
+        return 'Open deck options';
+      case 'onboarding_anki_fsrs_step_options_desktop_desc':
+        return 'In Anki, click the gear next to a deck and choose Options.';
+      case 'onboarding_anki_fsrs_step_options_mobile_desc':
+        return 'In AnkiDroid (2.17 or newer) or AnkiMobile, long-press the deck and choose Options.';
+      case 'onboarding_anki_fsrs_step_toggle_title':
+        return 'Switch FSRS on';
+      case 'onboarding_anki_fsrs_step_toggle_desc':
+        return 'Scroll to the FSRS section at the bottom of the options page (older builds hide it under Advanced) and turn the switch on. It applies to your whole collection, so once is enough.';
+      case 'onboarding_anki_fsrs_step_optimize_title':
+        return 'Optimize, then save';
+      case 'onboarding_anki_fsrs_step_optimize_desc':
+        return 'Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while.';
+      case 'sync_desktop_oauth_waiting_title':
+        return 'Tarayıcıda oturum açılması bekleniyor';
+      case 'sync_desktop_oauth_waiting_body':
+        return 'Oturum açma sayfası varsayılan tarayıcınızda açıldı. Hiçbir şey açılmadıysa veya sayfa hata gösteriyorsa bağlantıyı kopyalayıp başka bir tarayıcıda ya da gizli pencerede açın.';
+      case 'sync_desktop_oauth_link_copy':
+        return 'Oturum açma bağlantısını kopyala';
+      case 'sync_desktop_oauth_browser_reopen':
+        return 'Tarayıcıyı yeniden aç';
+      case 'sync_err_sign_in_cancelled':
+        return 'Oturum açma iptal edildi.';
+      case 'sync_desktop_oauth_browser_open_failed':
+        return 'Tarayıcı açılamadı. Bağlantıyı kopyalayıp bir tarayıcıda kendiniz açın.';
+      case 'sync_desktop_oauth_link_copy_failed':
+        return 'Bağlantı kopyalanamadı. Bağlantı metnini seçip elle kopyalayın.';
+      case 'game_text_thread_artifact_hint':
+        return 'Repeated-character artifact thread, no usable lines';
+      case 'shortcut_action_global_context_menu':
+        return 'Open context menu';
+      case 'shortcut_conflict_keep_both':
+        return 'Keep both';
+      case 'shortcut_conflict_keep_both_hint':
+        return 'Both actions keep this binding. Whichever scope resolves first wins at press time.';
+      case 'video_specs_title':
+        return 'Media info';
+      case 'video_specs_resolution':
+        return 'Resolution';
+      case 'video_specs_dynamic_range':
+        return 'Dynamic range';
+      case 'video_specs_video_codec':
+        return 'Video codec';
+      case 'video_specs_bit_depth':
+        return 'Bit depth';
+      case 'video_specs_frame_rate':
+        return 'Frame rate';
+      case 'video_specs_bitrate':
+        return 'Bitrate';
+      case 'video_specs_audio_tracks':
+        return 'Audio tracks';
+      case 'video_specs_subtitle_tracks':
+        return 'Subtitle tracks';
+      case 'video_specs_track_commentary':
+        return 'Commentary';
+      case 'video_specs_track_forced':
+        return 'Forced';
+      case 'video_specs_track_default':
+        return 'Default';
+      case 'gal_mining_image_mode_video_clip':
+        return 'Video clip';
+      case 'gal_mining_image_mode_video_clip_hint':
+        return 'Records the game window from the moment the line appears until you mine the card, mixed with the sentence audio. Falls back to an animated image or screenshot when recording has not started or fewer than 2 frames were captured.';
+      case 'game_hook_reason_native_loopback_ack_timeout':
+        return 'The audio capture policy was not confirmed in time. Text capture still works; try again if game audio is missing.';
+      case 'shortcut_scope_global_external_desktop_note':
+        return 'Mouse triggers accept side buttons only (back/forward). Other buttons keep their normal meaning in other apps, so they are rejected here.';
+      case 'shortcut_mouse_button_not_supported':
+        return 'This action only accepts mouse side buttons (back/forward).';
+      case 'anki_ankimobile_opened':
+        return 'AnkiMobile opened. Approve the request there, then return to Fushi.';
+      case 'anki_error_ankimobile_pasteboard_empty':
+        return 'AnkiMobile did not return any configuration. Approve the request in AnkiMobile, then come back to Fushi.';
+      case 'anki_error_ankimobile_pasteboard_denied':
+        return 'iOS blocked reading the clipboard. Choose Allow Paste when returning to Fushi, then try again.';
+      case 'anki_error_ankimobile_no_decks':
+        return 'AnkiMobile returned no decks or note types.';
+      case 'anki_error_ankimobile_unavailable':
+        return 'Could not open AnkiMobile. Install AnkiMobile and try again.';
+      case 'dictionary_collapse_follow_global':
+        return 'Follow global setting';
+      case 'anki_ankimobile_imported':
+        return 'AnkiMobile configuration imported.';
+      case 'anki_error_ankimobile_not_active':
+        return 'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+      case 'audiobook_transcribe_action':
+        return 'Generate subtitles on device';
+      case 'audiobook_transcribe_title':
+        return 'On-device transcription';
+      case 'audiobook_transcribe_model_download_needed':
+        return ({required Object size}) => 'Model download required: ${size}';
+      case 'audiobook_transcribe_model_download':
+        return 'Download model';
+      case 'audiobook_transcribe_model_downloading':
+        return (
+                {required Object name,
+                required Object received,
+                required Object total}) =>
+            'Downloading ${name}… ${received} / ${total}';
+      case 'audiobook_transcribe_model_ready':
+        return ({required Object variant}) => 'Model ready (${variant})';
+      case 'audiobook_transcribe_accel_label':
+        return 'Acceleration';
+      case 'audiobook_transcribe_accel_auto':
+        return 'Auto (GPU when available)';
+      case 'audiobook_transcribe_accel_cpu':
+        return 'CPU only';
+      case 'audiobook_transcribe_running_on':
+        return ({required Object provider}) => 'Running on ${provider}';
+      case 'audiobook_transcribe_fallback':
+        return ({required Object reason}) =>
+            'GPU unavailable, fell back to CPU: ${reason}';
+      case 'audiobook_transcribe_start':
+        return 'Start transcription';
+      case 'audiobook_transcribe_resume':
+        return 'Resume transcription';
+      case 'audiobook_transcribe_pause':
+        return 'Pause';
+      case 'audiobook_transcribe_pausing':
+        return 'Pausing at the next checkpoint…';
+      case 'audiobook_transcribe_discard':
+        return 'Discard progress';
+      case 'audiobook_transcribe_use_result':
+        return 'Use subtitles';
+      case 'audiobook_transcribe_progress':
+        return (
+                {required Object done,
+                required Object total,
+                required Object file,
+                required Object files}) =>
+            '${done} / ${total} · file ${file}/${files}';
+      case 'audiobook_transcribe_speed':
+        return (
+                {required Object elapsed,
+                required Object eta,
+                required Object speed}) =>
+            'Elapsed ${elapsed} · remaining ${eta} · ${speed}× realtime';
+      case 'audiobook_transcribe_done':
+        return ({required Object cues, required Object segments}) =>
+            'Done: ${cues} cues from ${segments} speech segments';
+      case 'audiobook_transcribe_failed':
+        return ({required Object error}) => 'Transcription failed: ${error}';
+      case 'audiobook_transcribe_needs_audio':
+        return 'Pick audio files first';
+      case 'audiobook_transcribe_result_name':
+        return 'Generated by on-device transcription';
+      case 'audiobook_transcribe_paused_hint':
+        return 'Progress is saved. Pick the same audio files later to resume.';
+      case 'audiobook_transcribe_unavailable':
+        return 'On-device transcription is not available on this platform';
+      case 'audiobook_transcribe_preparing':
+        return 'Loading model…';
+      case 'audiobook_transcribe_export':
+        return 'Export subtitle file';
+      case 'audiobook_transcribe_export_saved':
+        return 'Subtitle file saved';
+      case 'audiobook_subtitle_source_title':
+        return 'Subtitle source';
+      case 'audiobook_subtitle_source_transcribe_hint':
+        return 'Generate from the selected audio with the on-device speech model';
+      case 'audiobook_transcribe_intro':
+        return 'Transcribes the audio locally with an on-device speech model for the selected language and generates subtitles for alignment. Nothing is uploaded.';
+      case 'audiobook_transcribe_language_label':
+        return 'Speech language';
+      case 'audiobook_transcribe_language_ja':
+        return 'Japanese';
+      case 'audiobook_transcribe_language_en':
+        return 'English';
+      case 'asr_models_section':
+        return 'Speech recognition models';
+      case 'asr_models_section_summary':
+        return 'Models for on-device audiobook transcription. Download only the languages you need.';
+      case 'asr_models_status_ready':
+        return ({required Object size}) => 'Downloaded · ${size} on disk';
+      case 'asr_models_status_partial':
+        return ({required Object obtained, required Object total}) =>
+            'Partially downloaded · ${obtained} / ${total}';
+      case 'asr_models_status_missing':
+        return ({required Object size}) => 'Not downloaded · ${size}';
+      case 'asr_models_download':
+        return 'Download';
+      case 'asr_models_delete':
+        return 'Delete';
+      case 'asr_models_delete_confirm_title':
+        return 'Delete this model?';
+      case 'asr_models_delete_confirm_message':
+        return 'Transcription in this language will need the model downloaded again.';
+      case 'asr_models_delete_done_freed':
+        return ({required Object size}) => 'Deleted, freed ${size}';
+      case 'asr_models_download_failed':
+        return ({required Object error}) => 'Download failed: ${error}';
+      case 'audiobook_transcribe_probe_failed':
+        return ({required Object reason}) =>
+            'GPU detection failed, planning for CPU: ${reason}';
+      case 'onboarding_pack_status_paused':
+        return 'Recommended pack download paused';
+      case 'onboarding_pack_download_resume':
+        return 'Resume download';
+      case 'onboarding_pack_paused_desc':
+        return 'Progress is kept on disk — resuming picks up where it stopped.';
+      case 'onboarding_pack_mini_bar_hide':
+        return 'Hide';
       default:
         return null;
     }
@@ -283697,16 +292131,12 @@ extension on _StringsVi {
         return 'Chạm vào biểu tượng để chuyển đổi, hoặc chọn hình ảnh tùy chỉnh bên dưới.';
       case 'icon_default':
         return 'Mặc định';
-      case 'icon_full':
-        return 'Đầy đủ';
       case 'icon_shortcut_created':
         return 'Đã tạo lối tắt trên màn hình chính.';
       case 'icon_shortcut_unsupported':
         return 'Thiết bị không hỗ trợ lối tắt.';
       case 'icon_switch_success':
         return 'Đã đổi biểu tượng ứng dụng.';
-      case 'icon_transparent':
-        return 'Trong suốt';
       case 'image_page_counter':
         return ({required Object current, required Object total}) =>
             '${current} / ${total}';
@@ -290096,6 +298526,257 @@ extension on _StringsVi {
             'Đã kết nối. Danh mục gốc có ${count} mục';
       case 'discovery_opds_test_failed':
         return ({required Object reason}) => 'Kết nối thất bại: ${reason}';
+      case 'anki_error_permission_permanently_denied':
+        return 'AnkiDroid card access was permanently denied, so the system no longer shows the permission dialog. Open app settings and grant the AnkiDroid permission, then try again.';
+      case 'anki_error_ankidroid_unavailable':
+        return 'AnkiDroid is not installed (or its API is disabled), so card access cannot be granted. Install AnkiDroid and enable its API, or switch to AnkiConnect.';
+      case 'anki_action_open_settings':
+        return 'Open settings';
+      case 'onboarding_pack_pick_failed':
+        return ({required Object message}) =>
+            'Could not use the chosen file: ${message}';
+      case 'onboarding_pack_pick_no_path':
+        return 'The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access.';
+      case 'interconnect_profile_section':
+        return 'Configuration file';
+      case 'interconnect_profile_upload':
+        return 'Upload configuration to host';
+      case 'interconnect_profile_upload_desc':
+        return 'Send this device\'s active configuration to the paired host, where it lands as a new configuration.';
+      case 'interconnect_profile_download':
+        return 'Download configuration from host';
+      case 'interconnect_profile_download_desc':
+        return 'Import the host\'s active configuration as a new configuration here. Your current one is untouched.';
+      case 'interconnect_profile_host_toggle':
+        return 'Allow paired devices to read/write configuration';
+      case 'interconnect_profile_host_toggle_desc':
+        return 'Off by default. Requires HTTPS and a paired-device token. Incoming configurations are always added as new ones.';
+      case 'interconnect_profile_uploaded':
+        return ({required Object name}) => 'Configuration uploaded: ${name}';
+      case 'interconnect_profile_downloaded':
+        return ({required Object name}) => 'Configuration imported: ${name}';
+      case 'interconnect_profile_unsupported':
+        return 'The paired host does not offer configuration transfer (needs HTTPS and a newer version).';
+      case 'interconnect_profile_failed':
+        return ({required Object message}) =>
+            'Configuration transfer failed: ${message}';
+      case 'onboarding_pack_status_downloading':
+        return 'Downloading recommended pack';
+      case 'onboarding_pack_status_ready':
+        return 'Recommended pack downloaded';
+      case 'onboarding_pack_import_now':
+        return 'Import now';
+      case 'onboarding_pack_download_finished':
+        return 'Recommended pack finished downloading. Import it from Settings → System.';
+      case 'onboarding_pack_download_background_hint':
+        return 'The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.';
+      case 'onboarding_anki_fsrs_title':
+        return 'Turn on FSRS in Anki';
+      case 'onboarding_anki_fsrs_body':
+        return 'Anki has FSRS built in — one of the best spaced-repetition algorithms around — but it keeps scheduling with SM-2 from the 1980s until you turn FSRS on. FSRS reads your real review history and predicts when you are about to forget, so you keep the same retention with fewer reviews. You flip this switch once, inside Anki; nothing changes on the Fushi side.';
+      case 'onboarding_anki_fsrs_step_options_title':
+        return 'Open deck options';
+      case 'onboarding_anki_fsrs_step_options_desktop_desc':
+        return 'In Anki, click the gear next to a deck and choose Options.';
+      case 'onboarding_anki_fsrs_step_options_mobile_desc':
+        return 'In AnkiDroid (2.17 or newer) or AnkiMobile, long-press the deck and choose Options.';
+      case 'onboarding_anki_fsrs_step_toggle_title':
+        return 'Switch FSRS on';
+      case 'onboarding_anki_fsrs_step_toggle_desc':
+        return 'Scroll to the FSRS section at the bottom of the options page (older builds hide it under Advanced) and turn the switch on. It applies to your whole collection, so once is enough.';
+      case 'onboarding_anki_fsrs_step_optimize_title':
+        return 'Optimize, then save';
+      case 'onboarding_anki_fsrs_step_optimize_desc':
+        return 'Press Optimize under the switch to fit the parameters to your own review history, then save. Below roughly 1000 reviews the defaults already beat SM-2, so just optimize again once you have studied for a while.';
+      case 'sync_desktop_oauth_waiting_title':
+        return 'Đang chờ đăng nhập trong trình duyệt';
+      case 'sync_desktop_oauth_waiting_body':
+        return 'Trang đăng nhập đã được mở trong trình duyệt mặc định. Nếu không có gì mở ra hoặc trang báo lỗi, hãy sao chép liên kết và mở trong trình duyệt khác hoặc cửa sổ riêng tư.';
+      case 'sync_desktop_oauth_link_copy':
+        return 'Sao chép liên kết đăng nhập';
+      case 'sync_desktop_oauth_browser_reopen':
+        return 'Mở lại trình duyệt';
+      case 'sync_err_sign_in_cancelled':
+        return 'Đã hủy đăng nhập.';
+      case 'sync_desktop_oauth_browser_open_failed':
+        return 'Không thể mở trình duyệt. Hãy sao chép liên kết và tự mở trong trình duyệt.';
+      case 'sync_desktop_oauth_link_copy_failed':
+        return 'Không thể sao chép liên kết. Hãy chọn văn bản liên kết và sao chép thủ công.';
+      case 'game_text_thread_artifact_hint':
+        return 'Repeated-character artifact thread, no usable lines';
+      case 'shortcut_action_global_context_menu':
+        return 'Open context menu';
+      case 'shortcut_conflict_keep_both':
+        return 'Keep both';
+      case 'shortcut_conflict_keep_both_hint':
+        return 'Both actions keep this binding. Whichever scope resolves first wins at press time.';
+      case 'video_specs_title':
+        return 'Media info';
+      case 'video_specs_resolution':
+        return 'Resolution';
+      case 'video_specs_dynamic_range':
+        return 'Dynamic range';
+      case 'video_specs_video_codec':
+        return 'Video codec';
+      case 'video_specs_bit_depth':
+        return 'Bit depth';
+      case 'video_specs_frame_rate':
+        return 'Frame rate';
+      case 'video_specs_bitrate':
+        return 'Bitrate';
+      case 'video_specs_audio_tracks':
+        return 'Audio tracks';
+      case 'video_specs_subtitle_tracks':
+        return 'Subtitle tracks';
+      case 'video_specs_track_commentary':
+        return 'Commentary';
+      case 'video_specs_track_forced':
+        return 'Forced';
+      case 'video_specs_track_default':
+        return 'Default';
+      case 'gal_mining_image_mode_video_clip':
+        return 'Video clip';
+      case 'gal_mining_image_mode_video_clip_hint':
+        return 'Records the game window from the moment the line appears until you mine the card, mixed with the sentence audio. Falls back to an animated image or screenshot when recording has not started or fewer than 2 frames were captured.';
+      case 'game_hook_reason_native_loopback_ack_timeout':
+        return 'The audio capture policy was not confirmed in time. Text capture still works; try again if game audio is missing.';
+      case 'shortcut_scope_global_external_desktop_note':
+        return 'Mouse triggers accept side buttons only (back/forward). Other buttons keep their normal meaning in other apps, so they are rejected here.';
+      case 'shortcut_mouse_button_not_supported':
+        return 'This action only accepts mouse side buttons (back/forward).';
+      case 'anki_ankimobile_opened':
+        return 'AnkiMobile opened. Approve the request there, then return to Fushi.';
+      case 'anki_error_ankimobile_pasteboard_empty':
+        return 'AnkiMobile did not return any configuration. Approve the request in AnkiMobile, then come back to Fushi.';
+      case 'anki_error_ankimobile_pasteboard_denied':
+        return 'iOS blocked reading the clipboard. Choose Allow Paste when returning to Fushi, then try again.';
+      case 'anki_error_ankimobile_no_decks':
+        return 'AnkiMobile returned no decks or note types.';
+      case 'anki_error_ankimobile_unavailable':
+        return 'Could not open AnkiMobile. Install AnkiMobile and try again.';
+      case 'dictionary_collapse_follow_global':
+        return 'Follow global setting';
+      case 'anki_ankimobile_imported':
+        return 'AnkiMobile configuration imported.';
+      case 'anki_error_ankimobile_not_active':
+        return 'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+      case 'audiobook_transcribe_action':
+        return 'Generate subtitles on device';
+      case 'audiobook_transcribe_title':
+        return 'On-device transcription';
+      case 'audiobook_transcribe_model_download_needed':
+        return ({required Object size}) => 'Model download required: ${size}';
+      case 'audiobook_transcribe_model_download':
+        return 'Download model';
+      case 'audiobook_transcribe_model_downloading':
+        return (
+                {required Object name,
+                required Object received,
+                required Object total}) =>
+            'Downloading ${name}… ${received} / ${total}';
+      case 'audiobook_transcribe_model_ready':
+        return ({required Object variant}) => 'Model ready (${variant})';
+      case 'audiobook_transcribe_accel_label':
+        return 'Acceleration';
+      case 'audiobook_transcribe_accel_auto':
+        return 'Auto (GPU when available)';
+      case 'audiobook_transcribe_accel_cpu':
+        return 'CPU only';
+      case 'audiobook_transcribe_running_on':
+        return ({required Object provider}) => 'Running on ${provider}';
+      case 'audiobook_transcribe_fallback':
+        return ({required Object reason}) =>
+            'GPU unavailable, fell back to CPU: ${reason}';
+      case 'audiobook_transcribe_start':
+        return 'Start transcription';
+      case 'audiobook_transcribe_resume':
+        return 'Resume transcription';
+      case 'audiobook_transcribe_pause':
+        return 'Pause';
+      case 'audiobook_transcribe_pausing':
+        return 'Pausing at the next checkpoint…';
+      case 'audiobook_transcribe_discard':
+        return 'Discard progress';
+      case 'audiobook_transcribe_use_result':
+        return 'Use subtitles';
+      case 'audiobook_transcribe_progress':
+        return (
+                {required Object done,
+                required Object total,
+                required Object file,
+                required Object files}) =>
+            '${done} / ${total} · file ${file}/${files}';
+      case 'audiobook_transcribe_speed':
+        return (
+                {required Object elapsed,
+                required Object eta,
+                required Object speed}) =>
+            'Elapsed ${elapsed} · remaining ${eta} · ${speed}× realtime';
+      case 'audiobook_transcribe_done':
+        return ({required Object cues, required Object segments}) =>
+            'Done: ${cues} cues from ${segments} speech segments';
+      case 'audiobook_transcribe_failed':
+        return ({required Object error}) => 'Transcription failed: ${error}';
+      case 'audiobook_transcribe_needs_audio':
+        return 'Pick audio files first';
+      case 'audiobook_transcribe_result_name':
+        return 'Generated by on-device transcription';
+      case 'audiobook_transcribe_paused_hint':
+        return 'Progress is saved. Pick the same audio files later to resume.';
+      case 'audiobook_transcribe_unavailable':
+        return 'On-device transcription is not available on this platform';
+      case 'audiobook_transcribe_preparing':
+        return 'Loading model…';
+      case 'audiobook_transcribe_export':
+        return 'Export subtitle file';
+      case 'audiobook_transcribe_export_saved':
+        return 'Subtitle file saved';
+      case 'audiobook_subtitle_source_title':
+        return 'Subtitle source';
+      case 'audiobook_subtitle_source_transcribe_hint':
+        return 'Generate from the selected audio with the on-device speech model';
+      case 'audiobook_transcribe_intro':
+        return 'Transcribes the audio locally with an on-device speech model for the selected language and generates subtitles for alignment. Nothing is uploaded.';
+      case 'audiobook_transcribe_language_label':
+        return 'Speech language';
+      case 'audiobook_transcribe_language_ja':
+        return 'Japanese';
+      case 'audiobook_transcribe_language_en':
+        return 'English';
+      case 'asr_models_section':
+        return 'Speech recognition models';
+      case 'asr_models_section_summary':
+        return 'Models for on-device audiobook transcription. Download only the languages you need.';
+      case 'asr_models_status_ready':
+        return ({required Object size}) => 'Downloaded · ${size} on disk';
+      case 'asr_models_status_partial':
+        return ({required Object obtained, required Object total}) =>
+            'Partially downloaded · ${obtained} / ${total}';
+      case 'asr_models_status_missing':
+        return ({required Object size}) => 'Not downloaded · ${size}';
+      case 'asr_models_download':
+        return 'Download';
+      case 'asr_models_delete':
+        return 'Delete';
+      case 'asr_models_delete_confirm_title':
+        return 'Delete this model?';
+      case 'asr_models_delete_confirm_message':
+        return 'Transcription in this language will need the model downloaded again.';
+      case 'asr_models_delete_done_freed':
+        return ({required Object size}) => 'Deleted, freed ${size}';
+      case 'asr_models_download_failed':
+        return ({required Object error}) => 'Download failed: ${error}';
+      case 'audiobook_transcribe_probe_failed':
+        return ({required Object reason}) =>
+            'GPU detection failed, planning for CPU: ${reason}';
+      case 'onboarding_pack_status_paused':
+        return 'Recommended pack download paused';
+      case 'onboarding_pack_download_resume':
+        return 'Resume download';
+      case 'onboarding_pack_paused_desc':
+        return 'Progress is kept on disk — resuming picks up where it stopped.';
+      case 'onboarding_pack_mini_bar_hide':
+        return 'Hide';
       default:
         return null;
     }
@@ -292261,16 +300942,12 @@ extension on _StringsZhCn {
         return '点击图标切换，或在下方选择自定义图片。';
       case 'icon_default':
         return '默认';
-      case 'icon_full':
-        return '完整';
       case 'icon_shortcut_created':
         return '已创建主屏幕快捷方式。';
       case 'icon_shortcut_unsupported':
         return '此设备不支持快捷方式。';
       case 'icon_switch_success':
         return '应用图标已更改。';
-      case 'icon_transparent':
-        return '透明';
       case 'image_page_counter':
         return ({required Object current, required Object total}) =>
             '${current} / ${total}';
@@ -298609,6 +307286,253 @@ extension on _StringsZhCn {
         return ({required Object count}) => '连接成功，根目录有 ${count} 个条目';
       case 'discovery_opds_test_failed':
         return ({required Object reason}) => '连接失败：${reason}';
+      case 'anki_error_permission_permanently_denied':
+        return 'AnkiDroid 卡片访问权限已被永久拒绝，系统不再弹出授权对话框。请到应用设置里授予该权限后重试。';
+      case 'anki_error_ankidroid_unavailable':
+        return '未安装 AnkiDroid（或其 API 被禁用），无法授予卡片访问权限。请安装 AnkiDroid 并启用其 API，或改用 AnkiConnect。';
+      case 'anki_action_open_settings':
+        return '去设置';
+      case 'onboarding_pack_pick_failed':
+        return ({required Object message}) => '选择包文件失败：${message}';
+      case 'onboarding_pack_pick_no_path':
+        return '系统没有交出这个文件的路径。请把包放到手机存储里再选，或授予「所有文件访问」权限。';
+      case 'interconnect_profile_section':
+        return '配置文件';
+      case 'interconnect_profile_upload':
+        return '上传配置到对端';
+      case 'interconnect_profile_upload_desc':
+        return '把本机当前配置发给已配对的对端，在那边落成一份新配置。';
+      case 'interconnect_profile_download':
+        return '从对端下载配置';
+      case 'interconnect_profile_download_desc':
+        return '把对端当前配置作为一份新配置导入本机，不动你正在用的那份。';
+      case 'interconnect_profile_host_toggle':
+        return '允许已配对设备读写本机配置';
+      case 'interconnect_profile_host_toggle_desc':
+        return '默认关闭。需要 HTTPS 与已配对设备令牌；收到的配置一律作为新配置追加，不覆盖现有配置。';
+      case 'interconnect_profile_uploaded':
+        return ({required Object name}) => '配置已上传：${name}';
+      case 'interconnect_profile_downloaded':
+        return ({required Object name}) => '配置已导入：${name}';
+      case 'interconnect_profile_unsupported':
+        return '对端不提供配置传输（需要 HTTPS 且对端版本较新）。';
+      case 'interconnect_profile_failed':
+        return ({required Object message}) => '配置传输失败：${message}';
+      case 'onboarding_pack_status_downloading':
+        return '推荐包下载中';
+      case 'onboarding_pack_status_ready':
+        return '推荐包已下载完成';
+      case 'onboarding_pack_import_now':
+        return '现在导入';
+      case 'onboarding_pack_download_finished':
+        return '推荐包下载完成。可在「设置 → 系统」里导入。';
+      case 'onboarding_pack_download_background_hint':
+        return '下载会在后台继续：可以直接走下一步，也可以关掉向导。进度、取消和导入都在「设置 → 系统」里。';
+      case 'onboarding_anki_fsrs_title':
+        return '在 Anki 里开启 FSRS';
+      case 'onboarding_anki_fsrs_body':
+        return 'Anki 内置了 FSRS —— 目前最好的间隔重复算法之一，但你不打开它，排程就一直走三十多年前的 SM-2。FSRS 拿你的真实复习记录预测遗忘时点，同样的记忆效果复习量更少。这个开关只在 Anki 里开一次，Fushi 这边不用改任何设置。';
+      case 'onboarding_anki_fsrs_step_options_title':
+        return '打开牌组选项';
+      case 'onboarding_anki_fsrs_step_options_desktop_desc':
+        return '在 Anki 主界面点牌组右侧的齿轮，选「选项」。';
+      case 'onboarding_anki_fsrs_step_options_mobile_desc':
+        return '在 AnkiDroid（2.17 及以上）或 AnkiMobile 里长按牌组，选「选项」。';
+      case 'onboarding_anki_fsrs_step_toggle_title':
+        return '打开 FSRS 开关';
+      case 'onboarding_anki_fsrs_step_toggle_desc':
+        return '滚到选项页最底部的「FSRS」区块（旧版藏在「高级」里），把开关打开。它对整个收藏生效，开一次就够。';
+      case 'onboarding_anki_fsrs_step_optimize_title':
+        return '点「优化」再保存';
+      case 'onboarding_anki_fsrs_step_optimize_desc':
+        return '在开关下方点「优化」，让参数贴合你自己的复习记录，然后保存。复习记录不足约 1000 条时默认参数已经比 SM-2 准，攒够以后再优化一次即可。';
+      case 'sync_desktop_oauth_waiting_title':
+        return '正在等待浏览器完成登录';
+      case 'sync_desktop_oauth_waiting_body':
+        return '已在默认浏览器打开登录页。如果没有打开，或页面显示错误，可复制链接到其他浏览器或无痕窗口打开。';
+      case 'sync_desktop_oauth_link_copy':
+        return '复制登录链接';
+      case 'sync_desktop_oauth_browser_reopen':
+        return '重新打开浏览器';
+      case 'sync_err_sign_in_cancelled':
+        return '已取消登录。';
+      case 'sync_desktop_oauth_browser_open_failed':
+        return '无法打开浏览器。请复制链接，自行在浏览器中打开。';
+      case 'sync_desktop_oauth_link_copy_failed':
+        return '复制失败。请手动选中链接文本后复制。';
+      case 'game_text_thread_artifact_hint':
+        return '逐字重复伪影线程，不会有可用台词';
+      case 'shortcut_action_global_context_menu':
+        return '打开右键菜单';
+      case 'shortcut_conflict_keep_both':
+        return '两者都保留';
+      case 'shortcut_conflict_keep_both_hint':
+        return '两个动作都保留这个绑定，按下时由作用域先后仲裁，先命中的那个生效。';
+      case 'video_specs_title':
+        return '媒体信息';
+      case 'video_specs_resolution':
+        return '清晰度';
+      case 'video_specs_dynamic_range':
+        return '动态范围';
+      case 'video_specs_video_codec':
+        return '视频编码';
+      case 'video_specs_bit_depth':
+        return '色深';
+      case 'video_specs_frame_rate':
+        return '帧率';
+      case 'video_specs_bitrate':
+        return '码率';
+      case 'video_specs_audio_tracks':
+        return '音轨';
+      case 'video_specs_subtitle_tracks':
+        return '字幕轨';
+      case 'video_specs_track_commentary':
+        return '评论音轨';
+      case 'video_specs_track_forced':
+        return '强制';
+      case 'video_specs_track_default':
+        return '默认';
+      case 'gal_mining_image_mode_video_clip':
+        return '视频片段';
+      case 'gal_mining_image_mode_video_clip_hint':
+        return '从台词出现到制卡这段时间的游戏画面，并混入句子音频。未开始录制或不足 2 帧时降级为动图/截图。';
+      case 'game_hook_reason_native_loopback_ack_timeout':
+        return '音频采集策略未在超时内确认。文本采集不受影响；若缺少游戏内语音可重试一次。';
+      case 'shortcut_scope_global_external_desktop_note':
+        return '鼠标触发只接受侧键（后退/前进）。其它按钮在别的程序里有各自的固有含义，这里会拒绝录入。';
+      case 'shortcut_mouse_button_not_supported':
+        return '该动作只接受鼠标侧键（后退/前进）。';
+      case 'anki_ankimobile_opened':
+        return '已打开 AnkiMobile。请在其中同意该请求，然后返回 Fushi。';
+      case 'anki_error_ankimobile_pasteboard_empty':
+        return 'AnkiMobile 没有回传配置。请在 AnkiMobile 中同意该请求后再返回 Fushi。';
+      case 'anki_error_ankimobile_pasteboard_denied':
+        return 'iOS 阻止了读取剪贴板。返回 Fushi 时请在系统提示里选「允许粘贴」，然后重试。';
+      case 'anki_error_ankimobile_no_decks':
+        return 'AnkiMobile 没有回传任何牌组或笔记类型。';
+      case 'anki_error_ankimobile_unavailable':
+        return '无法打开 AnkiMobile。请先安装 AnkiMobile 再试。';
+      case 'dictionary_collapse_follow_global':
+        return '跟随全局设置';
+      case 'anki_ankimobile_imported':
+        return '已导入 AnkiMobile 配置。';
+      case 'anki_error_ankimobile_not_active':
+        return 'Fushi 没能及时回到前台，剪贴板还没被读取。回到 Fushi 后重试即可。';
+      case 'audiobook_transcribe_action':
+        return '设备端转录生成字幕';
+      case 'audiobook_transcribe_title':
+        return '设备端语音转录';
+      case 'audiobook_transcribe_model_download_needed':
+        return ({required Object size}) => '需要下载模型：${size}';
+      case 'audiobook_transcribe_model_download':
+        return '下载模型';
+      case 'audiobook_transcribe_model_downloading':
+        return (
+                {required Object name,
+                required Object received,
+                required Object total}) =>
+            '正在下载 ${name}… ${received} / ${total}';
+      case 'audiobook_transcribe_model_ready':
+        return ({required Object variant}) => '模型已就绪（${variant}）';
+      case 'audiobook_transcribe_accel_label':
+        return '加速';
+      case 'audiobook_transcribe_accel_auto':
+        return '自动（有 GPU 则用）';
+      case 'audiobook_transcribe_accel_cpu':
+        return '仅 CPU';
+      case 'audiobook_transcribe_running_on':
+        return ({required Object provider}) => '运行于 ${provider}';
+      case 'audiobook_transcribe_fallback':
+        return ({required Object reason}) => 'GPU 不可用，已回退到 CPU：${reason}';
+      case 'audiobook_transcribe_start':
+        return '开始转录';
+      case 'audiobook_transcribe_resume':
+        return '继续转录';
+      case 'audiobook_transcribe_pause':
+        return '暂停';
+      case 'audiobook_transcribe_pausing':
+        return '将在下一个检查点暂停…';
+      case 'audiobook_transcribe_discard':
+        return '放弃进度';
+      case 'audiobook_transcribe_use_result':
+        return '使用字幕';
+      case 'audiobook_transcribe_progress':
+        return (
+                {required Object done,
+                required Object total,
+                required Object file,
+                required Object files}) =>
+            '${done} / ${total} · 文件 ${file}/${files}';
+      case 'audiobook_transcribe_speed':
+        return (
+                {required Object elapsed,
+                required Object eta,
+                required Object speed}) =>
+            '已用 ${elapsed} · 剩余 ${eta} · ${speed} 倍速';
+      case 'audiobook_transcribe_done':
+        return ({required Object segments, required Object cues}) =>
+            '完成：${segments} 段语音生成 ${cues} 条字幕';
+      case 'audiobook_transcribe_failed':
+        return ({required Object error}) => '转录失败：${error}';
+      case 'audiobook_transcribe_needs_audio':
+        return '请先选择音频文件';
+      case 'audiobook_transcribe_result_name':
+        return '设备端转录生成';
+      case 'audiobook_transcribe_paused_hint':
+        return '进度已保存，之后选同一组音频文件即可继续。';
+      case 'audiobook_transcribe_unavailable':
+        return '此平台不支持设备端转录';
+      case 'audiobook_transcribe_preparing':
+        return '正在加载模型…';
+      case 'audiobook_transcribe_export':
+        return '导出字幕文件';
+      case 'audiobook_transcribe_export_saved':
+        return '字幕文件已导出';
+      case 'audiobook_subtitle_source_title':
+        return '字幕来源';
+      case 'audiobook_subtitle_source_transcribe_hint':
+        return '用设备端语音模型从已选音频生成';
+      case 'audiobook_transcribe_intro':
+        return '在本机用所选语言的语音模型转录音频并生成用于对齐的字幕，不会上传任何内容。';
+      case 'audiobook_transcribe_language_label':
+        return '语音语言';
+      case 'audiobook_transcribe_language_ja':
+        return '日语';
+      case 'audiobook_transcribe_language_en':
+        return '英语';
+      case 'asr_models_section':
+        return '语音识别模型';
+      case 'asr_models_section_summary':
+        return '有声书设备端转录用的模型，只下载你需要的语言。';
+      case 'asr_models_status_ready':
+        return ({required Object size}) => '已下载 · 占用 ${size}';
+      case 'asr_models_status_partial':
+        return ({required Object obtained, required Object total}) =>
+            '已下载一部分 · ${obtained} / ${total}';
+      case 'asr_models_status_missing':
+        return ({required Object size}) => '未下载 · 需要 ${size}';
+      case 'asr_models_download':
+        return '下载';
+      case 'asr_models_delete':
+        return '删除';
+      case 'asr_models_delete_confirm_title':
+        return '删除这个模型？';
+      case 'asr_models_delete_confirm_message':
+        return '再转录这种语言时需要重新下载模型。';
+      case 'asr_models_delete_done_freed':
+        return ({required Object size}) => '已删除，释放 ${size}';
+      case 'asr_models_download_failed':
+        return ({required Object error}) => '下载失败：${error}';
+      case 'audiobook_transcribe_probe_failed':
+        return ({required Object reason}) => 'GPU 探测失败，按 CPU 规划：${reason}';
+      case 'onboarding_pack_status_paused':
+        return '推荐包下载已暂停';
+      case 'onboarding_pack_download_resume':
+        return '继续下载';
+      case 'onboarding_pack_paused_desc':
+        return '进度留在磁盘上，继续下载会从中断处接着下。';
+      case 'onboarding_pack_mini_bar_hide':
+        return '收起';
       default:
         return null;
     }
@@ -300774,16 +309698,12 @@ extension on _StringsZhHk {
         return '點擊圖示切換，或在下方選擇自訂圖片。';
       case 'icon_default':
         return '預設';
-      case 'icon_full':
-        return '完整';
       case 'icon_shortcut_created':
         return '已建立主畫面捷徑。';
       case 'icon_shortcut_unsupported':
         return '此裝置不支援捷徑。';
       case 'icon_switch_success':
         return '應用程式圖示已變更。';
-      case 'icon_transparent':
-        return '透明';
       case 'image_page_counter':
         return ({required Object current, required Object total}) =>
             '${current} / ${total}';
@@ -307123,6 +316043,257 @@ extension on _StringsZhHk {
         return ({required Object count}) => '連線成功，根目錄有 ${count} 個項目';
       case 'discovery_opds_test_failed':
         return ({required Object reason}) => '連線失敗：${reason}';
+      case 'anki_error_permission_permanently_denied':
+        return 'AnkiDroid card access was permanently denied, so the system no longer shows the permission dialog. Open app settings and grant the AnkiDroid permission, then try again.';
+      case 'anki_error_ankidroid_unavailable':
+        return 'AnkiDroid is not installed (or its API is disabled), so card access cannot be granted. Install AnkiDroid and enable its API, or switch to AnkiConnect.';
+      case 'anki_action_open_settings':
+        return 'Open settings';
+      case 'onboarding_pack_pick_failed':
+        return ({required Object message}) =>
+            'Could not use the chosen file: ${message}';
+      case 'onboarding_pack_pick_no_path':
+        return 'The system did not hand over a path for that file. Move the pack into device storage and pick it again, or grant all-files access.';
+      case 'interconnect_profile_section':
+        return 'Configuration file';
+      case 'interconnect_profile_upload':
+        return 'Upload configuration to host';
+      case 'interconnect_profile_upload_desc':
+        return 'Send this device\'s active configuration to the paired host, where it lands as a new configuration.';
+      case 'interconnect_profile_download':
+        return 'Download configuration from host';
+      case 'interconnect_profile_download_desc':
+        return 'Import the host\'s active configuration as a new configuration here. Your current one is untouched.';
+      case 'interconnect_profile_host_toggle':
+        return 'Allow paired devices to read/write configuration';
+      case 'interconnect_profile_host_toggle_desc':
+        return 'Off by default. Requires HTTPS and a paired-device token. Incoming configurations are always added as new ones.';
+      case 'interconnect_profile_uploaded':
+        return ({required Object name}) => 'Configuration uploaded: ${name}';
+      case 'interconnect_profile_downloaded':
+        return ({required Object name}) => 'Configuration imported: ${name}';
+      case 'interconnect_profile_unsupported':
+        return 'The paired host does not offer configuration transfer (needs HTTPS and a newer version).';
+      case 'interconnect_profile_failed':
+        return ({required Object message}) =>
+            'Configuration transfer failed: ${message}';
+      case 'onboarding_pack_status_downloading':
+        return 'Downloading recommended pack';
+      case 'onboarding_pack_status_ready':
+        return 'Recommended pack downloaded';
+      case 'onboarding_pack_import_now':
+        return 'Import now';
+      case 'onboarding_pack_download_finished':
+        return 'Recommended pack finished downloading. Import it from Settings → System.';
+      case 'onboarding_pack_download_background_hint':
+        return 'The download keeps running in the background — you can move to the next step or close this guide. Progress, cancel and import live in Settings → System.';
+      case 'onboarding_anki_fsrs_title':
+        return '在 Anki 裡開啟 FSRS';
+      case 'onboarding_anki_fsrs_body':
+        return 'Anki 內建了 FSRS —— 目前最好的間隔重複演算法之一，但你不打開它，排程就一直走三十多年前的 SM-2。FSRS 拿你的真實複習記錄預測遺忘時點，同樣的記憶效果複習量更少。這個開關只在 Anki 裡開一次，Fushi 這邊不用改任何設定。';
+      case 'onboarding_anki_fsrs_step_options_title':
+        return '打開牌組選項';
+      case 'onboarding_anki_fsrs_step_options_desktop_desc':
+        return '在 Anki 主介面點牌組右側的齒輪，選「選項」。';
+      case 'onboarding_anki_fsrs_step_options_mobile_desc':
+        return '在 AnkiDroid（2.17 及以上）或 AnkiMobile 裡長按牌組，選「選項」。';
+      case 'onboarding_anki_fsrs_step_toggle_title':
+        return '打開 FSRS 開關';
+      case 'onboarding_anki_fsrs_step_toggle_desc':
+        return '捲到選項頁最底部的「FSRS」區塊（舊版藏在「進階」裡），把開關打開。它對整個收藏生效，開一次就夠。';
+      case 'onboarding_anki_fsrs_step_optimize_title':
+        return '點「最佳化」再儲存';
+      case 'onboarding_anki_fsrs_step_optimize_desc':
+        return '在開關下方點「最佳化」，讓參數貼合你自己的複習記錄，然後儲存。複習記錄不足約 1000 條時預設參數已經比 SM-2 準，攢夠以後再最佳化一次即可。';
+      case 'sync_desktop_oauth_waiting_title':
+        return '正在等待瀏覽器完成登入';
+      case 'sync_desktop_oauth_waiting_body':
+        return '已在預設瀏覽器開啟登入頁面。如果沒有開啟，或頁面顯示錯誤，可複製連結到其他瀏覽器或無痕視窗開啟。';
+      case 'sync_desktop_oauth_link_copy':
+        return '複製登入連結';
+      case 'sync_desktop_oauth_browser_reopen':
+        return '重新開啟瀏覽器';
+      case 'sync_err_sign_in_cancelled':
+        return '已取消登入。';
+      case 'sync_desktop_oauth_browser_open_failed':
+        return '無法開啟瀏覽器。請複製連結，自行在瀏覽器中開啟。';
+      case 'sync_desktop_oauth_link_copy_failed':
+        return '複製失敗。請手動選取連結文字後複製。';
+      case 'game_text_thread_artifact_hint':
+        return 'Repeated-character artifact thread, no usable lines';
+      case 'shortcut_action_global_context_menu':
+        return 'Open context menu';
+      case 'shortcut_conflict_keep_both':
+        return 'Keep both';
+      case 'shortcut_conflict_keep_both_hint':
+        return 'Both actions keep this binding. Whichever scope resolves first wins at press time.';
+      case 'video_specs_title':
+        return 'Media info';
+      case 'video_specs_resolution':
+        return 'Resolution';
+      case 'video_specs_dynamic_range':
+        return 'Dynamic range';
+      case 'video_specs_video_codec':
+        return 'Video codec';
+      case 'video_specs_bit_depth':
+        return 'Bit depth';
+      case 'video_specs_frame_rate':
+        return 'Frame rate';
+      case 'video_specs_bitrate':
+        return 'Bitrate';
+      case 'video_specs_audio_tracks':
+        return 'Audio tracks';
+      case 'video_specs_subtitle_tracks':
+        return 'Subtitle tracks';
+      case 'video_specs_track_commentary':
+        return 'Commentary';
+      case 'video_specs_track_forced':
+        return 'Forced';
+      case 'video_specs_track_default':
+        return 'Default';
+      case 'gal_mining_image_mode_video_clip':
+        return 'Video clip';
+      case 'gal_mining_image_mode_video_clip_hint':
+        return 'Records the game window from the moment the line appears until you mine the card, mixed with the sentence audio. Falls back to an animated image or screenshot when recording has not started or fewer than 2 frames were captured.';
+      case 'game_hook_reason_native_loopback_ack_timeout':
+        return 'The audio capture policy was not confirmed in time. Text capture still works; try again if game audio is missing.';
+      case 'shortcut_scope_global_external_desktop_note':
+        return '鼠标触发只接受侧键（后退/前进）。其它按钮在别的程序里有各自的固有含义，这里会拒绝录入。';
+      case 'shortcut_mouse_button_not_supported':
+        return 'This action only accepts mouse side buttons (back/forward).';
+      case 'anki_ankimobile_opened':
+        return 'AnkiMobile opened. Approve the request there, then return to Fushi.';
+      case 'anki_error_ankimobile_pasteboard_empty':
+        return 'AnkiMobile did not return any configuration. Approve the request in AnkiMobile, then come back to Fushi.';
+      case 'anki_error_ankimobile_pasteboard_denied':
+        return 'iOS blocked reading the clipboard. Choose Allow Paste when returning to Fushi, then try again.';
+      case 'anki_error_ankimobile_no_decks':
+        return 'AnkiMobile returned no decks or note types.';
+      case 'anki_error_ankimobile_unavailable':
+        return 'Could not open AnkiMobile. Install AnkiMobile and try again.';
+      case 'dictionary_collapse_follow_global':
+        return 'Follow global setting';
+      case 'anki_ankimobile_imported':
+        return 'AnkiMobile configuration imported.';
+      case 'anki_error_ankimobile_not_active':
+        return 'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+      case 'audiobook_transcribe_action':
+        return 'Generate subtitles on device';
+      case 'audiobook_transcribe_title':
+        return 'On-device transcription';
+      case 'audiobook_transcribe_model_download_needed':
+        return ({required Object size}) => 'Model download required: ${size}';
+      case 'audiobook_transcribe_model_download':
+        return 'Download model';
+      case 'audiobook_transcribe_model_downloading':
+        return (
+                {required Object name,
+                required Object received,
+                required Object total}) =>
+            'Downloading ${name}… ${received} / ${total}';
+      case 'audiobook_transcribe_model_ready':
+        return ({required Object variant}) => 'Model ready (${variant})';
+      case 'audiobook_transcribe_accel_label':
+        return 'Acceleration';
+      case 'audiobook_transcribe_accel_auto':
+        return 'Auto (GPU when available)';
+      case 'audiobook_transcribe_accel_cpu':
+        return 'CPU only';
+      case 'audiobook_transcribe_running_on':
+        return ({required Object provider}) => 'Running on ${provider}';
+      case 'audiobook_transcribe_fallback':
+        return ({required Object reason}) =>
+            'GPU unavailable, fell back to CPU: ${reason}';
+      case 'audiobook_transcribe_start':
+        return 'Start transcription';
+      case 'audiobook_transcribe_resume':
+        return 'Resume transcription';
+      case 'audiobook_transcribe_pause':
+        return 'Pause';
+      case 'audiobook_transcribe_pausing':
+        return 'Pausing at the next checkpoint…';
+      case 'audiobook_transcribe_discard':
+        return 'Discard progress';
+      case 'audiobook_transcribe_use_result':
+        return 'Use subtitles';
+      case 'audiobook_transcribe_progress':
+        return (
+                {required Object done,
+                required Object total,
+                required Object file,
+                required Object files}) =>
+            '${done} / ${total} · file ${file}/${files}';
+      case 'audiobook_transcribe_speed':
+        return (
+                {required Object elapsed,
+                required Object eta,
+                required Object speed}) =>
+            'Elapsed ${elapsed} · remaining ${eta} · ${speed}× realtime';
+      case 'audiobook_transcribe_done':
+        return ({required Object cues, required Object segments}) =>
+            'Done: ${cues} cues from ${segments} speech segments';
+      case 'audiobook_transcribe_failed':
+        return ({required Object error}) => 'Transcription failed: ${error}';
+      case 'audiobook_transcribe_needs_audio':
+        return 'Pick audio files first';
+      case 'audiobook_transcribe_result_name':
+        return 'Generated by on-device transcription';
+      case 'audiobook_transcribe_paused_hint':
+        return 'Progress is saved. Pick the same audio files later to resume.';
+      case 'audiobook_transcribe_unavailable':
+        return 'On-device transcription is not available on this platform';
+      case 'audiobook_transcribe_preparing':
+        return 'Loading model…';
+      case 'audiobook_transcribe_export':
+        return 'Export subtitle file';
+      case 'audiobook_transcribe_export_saved':
+        return 'Subtitle file saved';
+      case 'audiobook_subtitle_source_title':
+        return 'Subtitle source';
+      case 'audiobook_subtitle_source_transcribe_hint':
+        return 'Generate from the selected audio with the on-device speech model';
+      case 'audiobook_transcribe_intro':
+        return 'Transcribes the audio locally with an on-device speech model for the selected language and generates subtitles for alignment. Nothing is uploaded.';
+      case 'audiobook_transcribe_language_label':
+        return 'Speech language';
+      case 'audiobook_transcribe_language_ja':
+        return 'Japanese';
+      case 'audiobook_transcribe_language_en':
+        return 'English';
+      case 'asr_models_section':
+        return 'Speech recognition models';
+      case 'asr_models_section_summary':
+        return 'Models for on-device audiobook transcription. Download only the languages you need.';
+      case 'asr_models_status_ready':
+        return ({required Object size}) => 'Downloaded · ${size} on disk';
+      case 'asr_models_status_partial':
+        return ({required Object obtained, required Object total}) =>
+            'Partially downloaded · ${obtained} / ${total}';
+      case 'asr_models_status_missing':
+        return ({required Object size}) => 'Not downloaded · ${size}';
+      case 'asr_models_download':
+        return 'Download';
+      case 'asr_models_delete':
+        return 'Delete';
+      case 'asr_models_delete_confirm_title':
+        return 'Delete this model?';
+      case 'asr_models_delete_confirm_message':
+        return 'Transcription in this language will need the model downloaded again.';
+      case 'asr_models_delete_done_freed':
+        return ({required Object size}) => 'Deleted, freed ${size}';
+      case 'asr_models_download_failed':
+        return ({required Object error}) => 'Download failed: ${error}';
+      case 'audiobook_transcribe_probe_failed':
+        return ({required Object reason}) =>
+            'GPU detection failed, planning for CPU: ${reason}';
+      case 'onboarding_pack_status_paused':
+        return 'Recommended pack download paused';
+      case 'onboarding_pack_download_resume':
+        return 'Resume download';
+      case 'onboarding_pack_paused_desc':
+        return 'Progress is kept on disk — resuming picks up where it stopped.';
+      case 'onboarding_pack_mini_bar_hide':
+        return 'Hide';
       default:
         return null;
     }

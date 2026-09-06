@@ -299,6 +299,22 @@ public class MainActivity extends AudioServiceActivity {
                 AudioManager.FLAG_SHOW_UI);
     }
 
+    /**
+     * BUG-2098：把系统运行时权限结果转发给 {@link AnkiChannelHandler}。
+     *
+     * <p>此前整个 app 没有任何 onRequestPermissionsResult 实现：AnkiDroid 权限请求
+     * 发出去就没人接结果，Dart 侧也就无从等待，权限对话框还开着错误就已经报完了。
+     * 仍先调 super（Flutter 插件的权限回调也走这里）。
+     */
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions,
+                                           @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (ankiChannelHandler != null) {
+            ankiChannelHandler.onRequestPermissionsResult(requestCode, grantResults);
+        }
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);

@@ -7,12 +7,13 @@
         <item name="android:forceDarkAllowed">false</item>
         <item name="android:windowFullscreen">false</item>
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
-        <!-- Android 12+ 系统启动画面：图标用专用 splash 文字 wordmark 前景
-             （内容宽占比 ~0.52，窄于自适应图标安全区 0.667，避免被圆遮罩左右裁切）。
-             白色图标圆背景保证深蓝字样在浅/深色主题下都清晰（深色 splash 底也用白圆衬托文字）。 -->
+        <!-- Android 12+ 系统启动画面：图标用专用 splash 前景 ic_splash_minimal_foreground
+             （兔子本体、无投影，内容宽占比 ~0.55，窄于自适应图标安全区 0.667，避免被圆
+             遮罩左右裁切）。图标圆背景用与启动器图标同一档薰衣草 #E6E2F6，白兔子才不会
+             和白圆糊在一起。 -->
         <item name="android:windowSplashScreenBackground">#000000</item>
         <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_splash_minimal_foreground</item>
-        <item name="android:windowSplashScreenIconBackgroundColor">#FFFFFF</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">#E6E2F6</item>
     </style>
     <!-- Theme applied to the Android Window as soon as the process has started.
          This theme determines the color of the Android Window while your

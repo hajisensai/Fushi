@@ -176,10 +176,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
   bool _lookupRetirementPending = false;
 
   Future<GalLookupCallResult>? _geometrySyncInFlight;
-  ({
-    GalLookupGeometryAdmissionMode mode,
-    bool attachedReady,
-  })?
+  ({GalLookupGeometryAdmissionMode mode, bool attachedReady})?
   _geometrySyncDesiredRequest;
   bool _geometrySyncNeedsReconcile = false;
 
@@ -758,11 +755,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
 
   void _completeGeometrySync(
     Future<GalLookupCallResult> operation,
-    ({
-      GalLookupGeometryAdmissionMode mode,
-      bool attachedReady,
-    })
-    request,
+    ({GalLookupGeometryAdmissionMode mode, bool attachedReady}) request,
   ) {
     if (!identical(_geometrySyncInFlight, operation)) return;
     final bool reconcile =
@@ -974,7 +967,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
         disabledGeometry = await _setGeometryAdmissionBounded(
           GalLookupGeometryAdmissionMode.disabled,
           attachedReady: false,
-            stage: 'session-rollover',
+          stage: 'session-rollover',
           stillCurrent: () =>
               _isSyncSnapshotCurrent(syncRevision, nextSessionKey),
         );
@@ -1118,6 +1111,17 @@ class GalHookTextOverlayController extends ChangeNotifier {
 
     final bool attachedReady =
         lookupSurfaceActive && _attachedText.attachedProviderClaimed;
+    // BUG-2142 复验用：`attachedReady` 是两个输入的合取，只记结论就分不清是「宿主没
+    // 认领」还是「查词面整体没武装」——真机上这两种情况的排障方向完全相反。
+    glog(
+      'gal-overlay: attachedReady=$attachedReady '
+      'lookupSurfaceActive=$lookupSurfaceActive '
+      'claimed=${_attachedText.attachedProviderClaimed} '
+      'lookupActive=$lookupActive profileSynchronized=$profileSynchronized '
+      'attachedSynchronized=$attachedSynchronized '
+      'mode=${lookupMode.wireName} status=${_attachedText.status.name}/'
+      '${_attachedText.statusReason}',
+    );
     final bool nativeProviderDesired =
         sessionPushSucceeded &&
         lookupSurfaceActive &&
@@ -1692,12 +1696,16 @@ class GalHookTextOverlayController extends ChangeNotifier {
     await DesktopLookupService.instance.bringMainWindowToFront();
   }
 
+  /// [consumeOutsideClicksOwnerHwnd]：attached 校准字形表面命中时传游戏
+  /// HWND，桌面弹窗「点卡外关闭」的点击成对吞掉、不推进游戏；台词浮窗（C 表面）
+  /// 不传，行为不变。
   Future<void> _onLookupText(
     String lineId,
     String text,
     int index,
     Rect? wordRect, {
     GalHookCaptureLeaseFactory? captureLeaseFactory,
+    int? consumeOutsideClicksOwnerHwnd,
   }) async {
     final AppModel? model = _appModel;
     final TexthookerLineEntry? entry = _session.entryById(lineId);
@@ -1732,6 +1740,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
                 updateNoteId: updateNoteId,
                 captureLeaseFactory: captureLeaseFactory,
               ),
+      consumeOutsideClicksOwnerHwnd: consumeOutsideClicksOwnerHwnd,
     );
   }
 
@@ -1750,12 +1759,16 @@ class GalHookTextOverlayController extends ChangeNotifier {
     // generation 或长度漂移已在子控制器丢弃；这里再以 session line identity 收口，
     // 从而完整复用既有查词/制卡链而不发明第二份上下文模型。
     if (latest.rubySpans.isNotEmpty || latest.text != hit.sourceText) return;
+    // 点击与 Shift+悬浮（hit.hover）走同一条查词链：同一字簇的重复悬浮已在
+    // runner 去重。attached 表面打开的桌面弹窗必须带游戏 HWND——点卡外关闭
+    // 的 down/up 成对吞掉，不得穿透推进台词。
     await _onLookupText(
       latest.id,
       hit.sourceText,
       hit.charIndex,
       hit.wordRect,
       captureLeaseFactory: _acquireAttachedMiningCaptureLease,
+      consumeOutsideClicksOwnerHwnd: hit.target.targetHwnd,
     );
   }
 
@@ -1844,6 +1857,10 @@ class GalHookTextOverlayController extends ChangeNotifier {
   /// [TexthookerLineEntry.sourceSequence]。只在命中时的同一 session/HWND 内按这个身份
   /// 精确匹配，不能让重复台词或 containment 把当前截图/音频绑到另一 occurrence。
   /// 旧载荷没有 generation 时才保留原有的“当前最新行 exact → 受限 containment”回退。
+  /// generation 未知时按原文回查的最近行数上界。多语言引擎一句最多吐 3~4 个变体
+  /// （日文 / 译文 / ruby 读音替换），8 已盖住并留有余量，又不会扫到上一场景的同句。
+  static const int _ingameMiningRecentLineWindow = 8;
+
   String? _resolveIngameMiningLineId(
     String line, {
     required int? textGeneration,
@@ -1870,6 +1887,18 @@ class GalHookTextOverlayController extends ChangeNotifier {
     final TexthookerLineEntry latest = lines.last;
     if (latest.text == line) return latest.id;
     final String normalizedLine = line.replaceAll(RegExp(r'\s+'), '');
+    // generation 未知（引擎 hook 在文本道里反查不到这句，发 0）时，先在最近几行里按原文
+    // 精确匹配再落到 containment。只看 latest 在多语言 KiriKiri Z 上必败：引擎把译文行
+    // 紧跟日文行发出，latest 恒是译文，而用户点的是日文那一行（tenshi_sz 真机，2026-09-04）。
+    // 窗口有界（[_ingameMiningRecentLineWindow]）且只认逐字/去空白相等，不做包含。
+    int scanned = 0;
+    for (final TexthookerLineEntry entry in lines.reversed) {
+      if (scanned++ >= _ingameMiningRecentLineWindow) break;
+      if (entry.text == line ||
+          entry.text.replaceAll(RegExp(r'\s+'), '') == normalizedLine) {
+        return entry.id;
+      }
+    }
     final String normalizedLatest = latest.text.replaceAll(RegExp(r'\s+'), '');
     // 短串 containment 太容易误绑助词/人名；8 个 UTF-16 code unit 是保守门槛，
     // 当前真机的净句远高于此值。只有“当前最新行包含完整净句”才复用其 lineId。

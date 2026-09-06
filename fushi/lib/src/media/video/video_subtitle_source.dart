@@ -831,46 +831,71 @@ typedef SubtitleCueLoader = Future<List<AudioCue>> Function(
   String bookUid,
 );
 
-/// Adds the currently persisted imported subtitle to a menu source list.
+/// Adds the currently persisted imported subtitles to a menu source list.
 ///
 /// [listAllSubtitleSources] intentionally sees only embedded tracks and sidecar
 /// files next to [videoPath]. User-imported subtitles live in app documents, so
-/// the menu needs this one explicit persisted path. It never scans the import
+/// the menu needs these explicit persisted paths. It never scans the import
 /// directory and never adds unrelated historical imports.
 ///
-/// The current persisted import is placed before enumerated tracks. The subtitle
-/// sheet has a capped viewport; appending after embedded tracks can keep the
-/// active import below the initially visible menu items after reopening.
+/// The current persisted imports are placed before enumerated tracks. The
+/// subtitle sheet has a capped viewport; appending after embedded tracks can
+/// keep the active import below the initially visible menu items after
+/// reopening.
+///
+/// BUG-2094：**主字幕和副字幕各是一条独立的持久化指针，两条都要被补齐**。此前只补
+/// [currentSubtitleSource] 一条，于是「只被选作副字幕的导入档」在重开视频后从列表里
+/// 彻底消失：枚举按设计看不到 `<dataRoot>/documents/video_subtitles/`，本会话登记的
+/// [mergeImportedSubtitleSourcesForMenu] 输入又按视频源作用域清空，而副字幕 cue 仍从
+/// 库里重放——用户看到「副字幕没了，但视频里还在显示」，且副字幕组里没有任何一行是
+/// 高亮的（当前源不在列表里）。这正是 BUG-1861 在主字幕那半已修掉的同一个洞。
+/// 两条指针走**同一条**补齐规则（导入档 + 文件在盘上 + 能解析出 cue），用循环而不是
+/// 主/副两套分支；主字幕排在副字幕前，与「当前主字幕最靠前」的既有约定一致。
 Future<List<SubtitleSource>> includeCurrentPersistedSubtitleForMenu(
   List<SubtitleSource> sources, {
   required String videoPath,
   required String bookUid,
   required String? currentSubtitleSource,
+  String? currentSecondarySubtitleSource,
   List<AudioCue> currentCues = const <AudioCue>[],
+  List<AudioCue> currentSecondaryCues = const <AudioCue>[],
   SubtitleCueLoader? loadCues,
 }) async {
   final List<SubtitleSource> result = List<SubtitleSource>.of(sources);
-  if (currentSubtitleSource == null ||
-      !isImportedExternalSubtitlePath(currentSubtitleSource) ||
-      !File(currentSubtitleSource).existsSync()) {
-    return result;
+  final List<SubtitleSource> extras = <SubtitleSource>[];
+  final List<(String?, List<AudioCue>)> persistedSelections =
+      <(String?, List<AudioCue>)>[
+    (currentSubtitleSource, currentCues),
+    (currentSecondarySubtitleSource, currentSecondaryCues),
+  ];
+
+  for (final (String? persisted, List<AudioCue> cues) in persistedSelections) {
+    if (persisted == null ||
+        !isImportedExternalSubtitlePath(persisted) ||
+        !File(persisted).existsSync()) {
+      continue;
+    }
+    // 已被枚举列出（视频同目录 sidecar）或已被另一条指针补进来（主副选同一档）
+    // 都不重复列出——去重判据与列表高亮同一个（大小写 / 分隔符归一）。
+    if (result.any((SubtitleSource source) =>
+            sameExternalSubtitlePathForMenu(source, persisted)) ||
+        extras.any((SubtitleSource source) =>
+            sameExternalSubtitlePathForMenu(source, persisted))) {
+      continue;
+    }
+    final SubtitleSource source = SubtitleSource.external(
+      externalPath: persisted,
+      label: p.basename(persisted),
+    );
+    final bool hasUsableCues = cues.isNotEmpty ||
+        (await (loadCues ?? loadCuesForSource)(source, videoPath, bookUid))
+            .isNotEmpty;
+    if (!hasUsableCues) continue;
+    extras.add(source);
   }
 
-  if (result.any((SubtitleSource source) =>
-      sameExternalSubtitlePathForMenu(source, currentSubtitleSource))) {
-    return result;
-  }
-
-  final SubtitleSource source = SubtitleSource.external(
-    externalPath: currentSubtitleSource,
-    label: p.basename(currentSubtitleSource),
-  );
-  final bool hasUsableCues = currentCues.isNotEmpty ||
-      (await (loadCues ?? loadCuesForSource)(source, videoPath, bookUid))
-          .isNotEmpty;
-  if (!hasUsableCues) return result;
-
-  return <SubtitleSource>[source, ...result];
+  if (extras.isEmpty) return result;
+  return <SubtitleSource>[...extras, ...result];
 }
 
 bool subtitleSourceMatchesPersistedForMenu(

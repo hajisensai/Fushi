@@ -57,6 +57,8 @@ String summarizeSyncReport(SyncRunReport r) {
 ///   请求。登出就是用一条服务端策略抢先毁掉一个好端端的会话。
 /// - [SyncAuthFailureKind.browserTimeout]（BUG-1348）：浏览器的授权回调压根没回到
 ///   app，跟凭据毫无关系。登出只会把用户手上可能仍然有效的会话一起毁掉。
+/// - [SyncAuthFailureKind.cancelled]（BUG-2120）：用户自己在等待对话框里点了取消。
+///   连错误都算不上，更不该动会话。
 ///
 /// **逐值 switch，而不是 `!error.isForbidden`**：后者是「非 A 即 B」，
 /// [SyncAuthFailureKind] 一加新值就被默默归进「该登出」那一边，而编译器一声不吭
@@ -66,6 +68,7 @@ bool shouldSignOutOnAuthError(SyncAuthError error) => switch (error.kind) {
       SyncAuthFailureKind.credentials => true,
       SyncAuthFailureKind.forbidden => false,
       SyncAuthFailureKind.browserTimeout => false,
+      SyncAuthFailureKind.cancelled => false,
     };
 
 /// 一条**具名通道**的鉴权失败之后，该不该对这条通道执行登出（BUG-1578）。

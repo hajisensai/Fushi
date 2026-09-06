@@ -136,9 +136,9 @@ void main() {
     );
 
     expect(viewer, contains('_readerImageFileForUrl(imgUrl)'));
-    expect(viewer, contains('onSecondaryTapDown'));
+    expect(viewer, contains('ContextMenuTrigger('));
     expect(viewer, contains('isWindowsPlatform'));
-    expect(viewer, contains('details.globalPosition'));
+    expect(viewer, contains('(Offset position) => unawaited('));
     expect(viewer, contains('_showReaderImageContextMenuAtGlobalPosition'));
   });
 

@@ -69,11 +69,17 @@ void main() {
     expect(wrap.contains('if (source.isEmbedded) return row;'), isTrue,
         reason: '内嵌轨没有磁盘档案可删，不该出现「删除字幕文件」菜单');
     expect(wrap.contains('onLongPressStart:'), isTrue, reason: '触屏靠长按');
-    expect(wrap.contains('onSecondaryTapDown:'), isTrue, reason: '桌面靠右键');
+    expect(wrap.contains('ContextMenuTrigger('), isTrue,
+        reason: '桌面靠菜单键（BUG-2111 后由绑定表判定，默认右键）');
+    expect(
+        count(wrap,
+            '_showSubtitleFileMenu(context, controller, source, position)'),
+        1,
+        reason: '右键那一路接同一个菜单构建器');
     expect(
         count(wrap,
             '_showSubtitleFileMenu(context, controller, source, d.globalPosition)'),
-        2,
+        1,
         reason: '长按与右键必须落到同一个菜单、传手势自己报的视口坐标');
   });
 

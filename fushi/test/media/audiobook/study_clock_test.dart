@@ -29,8 +29,12 @@ class _Sink {
 }
 
 class _Harness {
-  _Harness({Duration? idleTimeout, bool Function()? isActive, DateTime? start})
-    : now = start ?? DateTime(2026, 8, 29, 12, 0, 0) {
+  _Harness({
+    Duration? idleTimeout,
+    bool Function()? isActive,
+    DateTime? start,
+    StudyAccrual accrual = StudyAccrual.wallClock,
+  }) : now = start ?? DateTime(2026, 8, 29, 12, 0, 0) {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     clock = StudyClock(
@@ -39,6 +43,7 @@ class _Harness {
       mediaKey: 'book-1',
       title: 'T',
       format: 'epub',
+      accrual: accrual,
       idleTimeout: idleTimeout,
       isActive: isActive,
       sink: sink.call,
@@ -59,6 +64,64 @@ class _Harness {
 }
 
 void main() {
+  group('显式记账模式（BUG-2108：视频面时长由 addActiveMs 推入，tick 不按墙钟计）', () {
+    test('tick 不再整窗计时：只有 addActiveMs 推入的毫秒进段', () async {
+      final _Harness h = _Harness(accrual: StudyAccrual.explicit);
+      h.clock.start();
+      h.advance(const Duration(seconds: 60));
+      await h.clock.flushNow();
+      expect(h.sink.writes, isEmpty, reason: '没推入过时长，60s 墙钟不该变成段');
+
+      h.clock.addActiveMs(900);
+      h.clock.addActiveMs(1100);
+      h.advance(const Duration(seconds: 60));
+      await h.clock.stop();
+      expect(h.sink.writes, hasLength(1));
+      expect(h.sink.last.durationMs.value, 2000);
+    });
+
+    test('一整个 tick 窗口没有记账 = 封段；再记账开新 uid', () async {
+      final _Harness h = _Harness(accrual: StudyAccrual.explicit);
+      h.clock.start();
+      h.clock.addActiveMs(3000);
+      // 第一个 tick：本窗有记账，段保持打开。
+      h.advance(const Duration(seconds: 60));
+      await h.clock.flushNow();
+      // 用 _accrue 走一遍 tick 裁决：flushNow 与 tick 共用 _accrue，等价。
+      final String? first = h.clock.debugOpenUid;
+      expect(first, isNotNull);
+      // 第二个窗口一次都没记账（用户暂停 / 回放）→ 封段。
+      h.advance(const Duration(seconds: 60));
+      await h.clock.flushNow();
+      expect(h.clock.debugOpenUid, isNull, reason: '无记账窗口封段');
+      h.clock.addActiveMs(1000);
+      expect(h.clock.debugOpenUid, isNot(first), reason: '再记账开新段');
+      await h.clock.stop();
+      expect(h.sink.uids.toSet(), hasLength(2));
+    });
+
+    test('跨小时的记账落到新段（段不跨小时边界）', () async {
+      final _Harness h = _Harness(
+        accrual: StudyAccrual.explicit,
+        start: DateTime(2026, 8, 29, 12, 59, 59),
+      );
+      h.clock.start();
+      // 各推 1.5s：落库门槛是「≥ 1s 或有内容账」，两段都得过门槛才能断言小时分布。
+      h.clock.addActiveMs(1500);
+      h.advance(const Duration(seconds: 2)); // 13:00:01
+      h.clock.addActiveMs(1500);
+      await h.clock.stop();
+      expect(h.sink.writes.map((w) => w.hour.value).toSet(), <int>{12, 13});
+    });
+
+    test('显式模式下传 isActive / idleTimeout 是构造期断言错误', () {
+      expect(
+        () => _Harness(accrual: StudyAccrual.explicit, isActive: () => true),
+        throwsA(isA<AssertionError>()),
+      );
+    });
+  });
+
   group('StudyClock 绝对值 upsert（重复计数在结构上不可能）', () {
     test('两次 flushNow 同 uid 同值：第二次不产生新行、不翻倍', () async {
       final _Harness h = _Harness();

@@ -67,6 +67,18 @@ public class AnkiDroidHelper {
         ActivityCompat.requestPermissions(callbackActivity, new String[]{READ_WRITE_PERMISSION}, callbackCode);
     }
 
+    /**
+     * BUG-2098：被拒之后系统还愿不愿意再弹框。
+     *
+     * <p>刚被拒绝一次时 Android 会让 rationale 为 true（可以再问）；勾了「不再询问」
+     * 或系统压根没弹（权限未被任何已安装包定义）时恒 false——那种情况下只能引导用户
+     * 去应用设置页手动授予，再调 requestPermissions 只会立刻静默失败。
+     */
+    public boolean canAskPermissionAgain(Activity callbackActivity) {
+        return ActivityCompat.shouldShowRequestPermissionRationale(
+                callbackActivity, READ_WRITE_PERMISSION);
+    }
+
 
     /**
      * Save a mapping from deckName to getDeckId in the SharedPreferences

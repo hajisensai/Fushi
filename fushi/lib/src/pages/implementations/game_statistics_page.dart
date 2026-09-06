@@ -208,7 +208,7 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
     return StatPeriodSummary(
       label: label,
       primaryValue: formatStatTime(ms),
-      onTap: () => _showPeriodDetail(label, contains),
+      onTap: () => unawaited(_showPeriodDetail(label, contains)),
       lines: <StatSummaryLine>[
         StatSummaryLine(
           label: t.game_stat_sessions,
@@ -221,11 +221,12 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
   /// 时段卡 → 时段明细 sheet（阶段 1 统一组件；本页是游戏统计，明细只吃游戏域
   /// 切片 [_gameFacts]）。条目点击进游戏详情页（不静默拉起游戏，BUG-1111 同一
   /// 约定）；已删游戏点了没有目标页，原地不动。
-  void _showPeriodDetail(
+  Future<void> _showPeriodDetail(
     String label,
     bool Function(String dateKey) contains,
-  ) {
-    unawaited(showStatPeriodDetailSheet(
+  ) async {
+    final FushiDatabase db = appModelNoUpdate.database;
+    final bool deleted = await showStatPeriodDetailSheet(
       context,
       periodLabel: label,
       contains: contains,
@@ -256,8 +257,10 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
             }
           }
         },
+        onEntryDelete: (StatPeriodEntryTarget t) => deleteStatPeriodEntry(db, t),
       ),
-    ));
+    );
+    if (deleted && mounted) await _load();
   }
 
   Widget _buildGameRow(GalgameEntry game) {

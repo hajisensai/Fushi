@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
@@ -121,12 +122,15 @@ class _GalgamePosterCardState extends State<GalgamePosterCard> {
     final Widget interactive = MouseRegion(
       cursor:
           widget.onTap == null ? MouseCursor.defer : SystemMouseCursors.click,
-      child: GestureDetector(
-        onTap: widget.onTap,
-        onLongPress: widget.onLongPress,
-        onSecondaryTap: widget.onSecondaryTap,
+      child: ContextMenuTrigger(
+        onInvoke: contextMenuInvoker(widget.onSecondaryTap),
         behavior: HitTestBehavior.opaque,
-        child: card,
+        child: GestureDetector(
+          onTap: widget.onTap,
+          onLongPress: widget.onLongPress,
+          behavior: HitTestBehavior.opaque,
+          child: card,
+        ),
       ),
     );
 

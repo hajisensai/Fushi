@@ -89,8 +89,29 @@ void main() {
     );
 
     // 权限弹窗路径必须对 activity==null 优雅降级（不能对 null 调 requestPermission）。
+    //
+    // 判据钉的是**危险调用点本身**，不是某一种写法：`requestPermission(activity, …)`
+    // 之前必须先出现 activity 的 null 门。两种等价形状都算数 ——
+    //   * 包裹式 `if (activity != null) { … requestPermission(activity …) }`
+    //   * 早退式 `if (activity == null) { … return; }`（BUG-2098 起用这种）
+    // 只断言其中一种字面量，换个等价写法就会假红（BUG-2098 就撞过一次）；
+    // 只断言「文件里有 activity 判断」又太松，判断可能落在别的方法里。
+    final int callAt = compact.indexOf('requestPermission(activity');
+    expect(callAt, greaterThan(0),
+        reason: 'BUG-865 锚点不在了：找不到 requestPermission(activity …) 调用点，'
+            '先修锚点再改断言');
+    final int methodAt =
+        compact.indexOf('private void requestAnkidroidPermissions(');
+    expect(methodAt, greaterThan(0),
+        reason: 'BUG-865 锚点不在了：找不到 requestAnkidroidPermissions 方法');
+    expect(methodAt, lessThan(callAt),
+        reason: '弹窗调用应当在 requestAnkidroidPermissions 里');
+    // 只看「方法开头 → 危险调用」这一段，不用固定窗口。
+    final String beforeCall = compact.substring(methodAt, callAt);
     expect(
-      compact.contains('if (activity != null)'),
+      beforeCall.contains('if (activity != null)') ||
+          RegExp(r'if \(activity == null\) \{[^}]*return;')
+              .hasMatch(beforeCall),
       isTrue,
       reason: 'BUG-865: activity==null（副 engine）时权限弹窗须跳过，否则 '
           'ActivityCompat.requestPermissions 对 null NPE。',

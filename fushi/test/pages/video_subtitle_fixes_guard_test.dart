@@ -122,6 +122,31 @@ void main() {
         reason: '已有 DB cues 的重进路径必须把当前 controller cues 传给菜单 helper');
     expect(helper.contains('Directory('), isFalse,
         reason: 'TODO-016 的保守方案禁止扫描整个 video_subtitles 目录');
+
+    // BUG-2094：副字幕是**另一条**独立的持久化指针，同样要补进菜单。少传这两个参数
+    // 时，只被选作副字幕的导入档在重开视频后没有任何一行承载它，而它的 cue 仍从库里
+    // 重放——「副字幕没了，但视频里还在显示」。
+    expect(
+        helper.contains(
+            'currentSecondarySubtitleSource: currentSecondarySubtitleSource'),
+        isTrue,
+        reason: '副字幕的持久化指针也要补进菜单，否则只作副字幕用的导入档会消失（BUG-2094）');
+    expect(
+        helper.contains('currentSecondaryCues: currentSecondaryCues'), isTrue,
+        reason: '已恢复的副字幕 cues 要作为「这个档能用」的证据传下去（BUG-2094）');
+
+    final String ensure = region(
+      'Future<void> _ensureSubtitleMenuSourcesLoaded()',
+      'void _registerImportedSubtitleSource(',
+    );
+    expect(
+        ensure.contains(
+            'currentSecondarySubtitleSource: _currentSecondarySubtitleSource'),
+        isTrue,
+        reason: '枚举入口须把当前副字幕持久化指针传给菜单 helper（BUG-2094）');
+    expect(ensure.contains('currentSecondaryCues: controller.secondaryCues'),
+        isTrue,
+        reason: '枚举入口须把当前副字幕 cues 传给菜单 helper（BUG-2094）');
   });
 
   test('BUG-133: 视频页有页级拖放目标 + 导入去重防护', () {

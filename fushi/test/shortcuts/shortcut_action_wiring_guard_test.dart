@@ -73,6 +73,11 @@ void main() {
       // fushiFocusDictionaryEntryMove。它与 globalExternalLookup 同类——不经页面
       // _executeShortcutAction 派发，但绝不是死项。
       'lib/src/pages/implementations/popup_settings_injection.dart',
+      // globalContextMenu（「唤出右键菜单」）的判据与触发口。它同样不经页面
+      // _executeShortcutAction 派发——菜单的执行体分散在各卡片 / 各媒体表面自己的
+      // showMenu，本文件回答的是「这次按下的鼠标键该不该弹菜单」，是那二十余处
+      // 入口共用的唯一消费者。与 globalExternalLookup / popupNextEntry 同类。
+      'lib/src/shortcuts/context_menu_trigger.dart',
     ];
 
     final StringBuffer corpus = StringBuffer();

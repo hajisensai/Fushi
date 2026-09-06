@@ -94,7 +94,18 @@ void main() {
     // 都不跑、只产发布物。于是 push 收到只剩 `['main']`。
     // **这不是「悄悄改窄」**——`release`（手动发 GitHub Release）与 `workflow_dispatch`
     // 两个触发器一个字没动，手动发测试版/正式版照常出桌面/Apple 产物。
+    //
+    // 2026-09-05 用户指示回退到 `['main', 'develop']`：上面那条依据里
+    // 「只产发布物、是冗余」的部分是**事实错误**——release.yml 只有 build(Android APK)
+    // 与 tests 两个 job，从来不产桌面/Apple 产物。收窄掉的不是重复，而是 develop 上
+    // 桌面 debug 包的唯一来源。实测后果：fushi-debug-rolling 里 Android APK 跟到 13529，
+    // 而 windows-setup.exe / macos.zip / ios.ipa 停在 13384（09-03 之后再没更新过），
+    // 桌面用户的更新器诚实地报「已是最新」。而本文件守的恰恰是「更新分区不再仅 Android」
+    // ——查更新的能力在桌面端是开着的，断的是产包那一侧。
+    // runner 开销那半是真的，属于重新接受的代价，不是正确性问题。
     // 判据跟着改成新基线，继续钉「不漂移」，而不是把这条断言删掉。
+    // 「两条发布 workflow 的分支清单必须一致」这条不变式另有专门守卫：
+    // test/build/release_workflow_push_branches_guard_test.dart。
     expect(workflow, contains('\n  push:\n'),
         reason: 'push 自动发布已恢复（2026-08-13 用户指示），触发块必须处于激活形态');
 
@@ -121,9 +132,9 @@ void main() {
         .firstWhere((String l) => l.trim().startsWith('branches:'),
             orElse: () => '')
         .trim();
-    expect(branchesLine, "branches: ['main']",
-        reason: 'push 触发分支范围不得漂移（2026-09-03 起 main-only，'
-            'develop push 只留 release.yml）');
+    expect(branchesLine, "branches: ['main', 'develop']",
+        reason: 'push 触发分支范围不得漂移（2026-09-05 起恢复 main+develop：'
+            'release.yml 不产桌面/Apple 产物，main-only 会让桌面包在 develop 上断更）');
     // 手动通道必须还在——这两条才是「桌面/Apple 产物随时发得出来」的保证。
     expect(workflow, contains('\n  workflow_dispatch:\n'),
         reason: '手动发布通道不得连带被删');

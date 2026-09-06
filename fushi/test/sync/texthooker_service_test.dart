@@ -522,6 +522,82 @@ void main() {
       expect(order, <String>['luna:clean', 'luna:dirty', 'luna:empty']);
     });
 
+    // BUG-2112：native 伪影门把逐字 ×N 重绘行丢在文本道之外，只有预览槽计数；预览
+    // 文本折叠后又像干净整句。判据必须是同一份，且要在副标题上明说。
+    test('isArtifactDominated：伪影超过一半才算，0 行不算', () {
+      TexthookerTextThread thread({
+        required int lines,
+        required int artifacts,
+      }) => TexthookerTextThread(
+        key: 'luna:x',
+        label: 'X',
+        lineCount: 0,
+        latestAt: DateTime(2026),
+        observedLineCount: lines,
+        observedArtifactCount: artifacts,
+      );
+      expect(thread(lines: 0, artifacts: 0).isArtifactDominated, isFalse);
+      expect(
+        thread(lines: 10, artifacts: 10).isArtifactDominated,
+        isTrue,
+        reason: 'tenshi_sz KiriKiriZ ctx 线程：10 行全是逐字 ×3 伪影',
+      );
+      expect(thread(lines: 10, artifacts: 6).isArtifactDominated, isTrue);
+      expect(
+        thread(lines: 10, artifacts: 5).isArtifactDominated,
+        isFalse,
+        reason: '恰好一半不算主导，与排序判据同阈值',
+      );
+      expect(thread(lines: 20, artifacts: 0).isArtifactDominated, isFalse);
+    });
+
+    test('isArtifactDominated 由预览快照的伪影计数驱动', () {
+      final TexthookerService svc = TexthookerService.instance;
+      svc.registerTextThread(
+        key: 'luna:fc19',
+        label: 'KiriKiriZ · 0xe1c450',
+        nativeThreadId: 0x3281903b66aafc19,
+      );
+      svc.applyTextThreadPreviews(<TexthookerThreadPreview>[
+        preview(
+          threadId: 0x3281903b66aafc19,
+          text: '徐徐徐々々々ににに汗汗汗ばばばむむむ',
+          lineCount: 10,
+          artifactCount: 10,
+          isArtifact: true,
+        ),
+      ]);
+      final TexthookerTextThread thread = svc.textThreads.single;
+      expect(thread.isArtifactDominated, isTrue);
+      // 折叠后的预览确实像干净句子——这正是没有标记时用户会选错的原因。
+      expect(
+        collapseTexthookerPreview(thread.displayPreviewText!),
+        '徐々に汗ばむ',
+      );
+    });
+
+    test('texthookerThreadSubtitle 把伪影提示放在最前', () {
+      expect(
+        texthookerThreadSubtitle(
+          audioLineCount: 0,
+          latestText: '徐徐徐々々々ににに汗汗汗ばばばむむむ',
+          audioLabel: '0 行有音频',
+          artifactLabel: '逐字重复伪影线程，不会有可用台词',
+        ),
+        '逐字重复伪影线程，不会有可用台词 · 徐々に汗ばむ',
+      );
+      // 不是伪影线程时不带提示，与旧行为逐字等价。
+      expect(
+        texthookerThreadSubtitle(
+          audioLineCount: 2,
+          latestText: '「あの……保科君」',
+          audioLabel: '2 行有音频',
+          artifactLabel: null,
+        ),
+        '2 行有音频 · 「あの……保科君」',
+      );
+    });
+
     test('applyTextThreadPreviews 是替换不是合并', () {
       final TexthookerService svc = TexthookerService.instance;
       svc.registerTextThread(key: 'luna:a', label: 'A', nativeThreadId: 1);

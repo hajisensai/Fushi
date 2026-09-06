@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,6 +10,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/utils/misc/collection_exporter.dart';
+import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:path/path.dart' as p;
 
 /// Full-screen page for managing profiles, media-type bindings,
@@ -382,11 +382,10 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
   }
 
   Future<void> _importProfile(ProfileViewModel vm) async {
-    final FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: <String>['json'],
+    final String? path = await pickSystemFilePath(
+      context: context,
+      allowedExtensions: <String>{'json'},
     );
-    final String? path = result?.files.single.path;
     if (path == null) return;
 
     String json;

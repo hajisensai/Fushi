@@ -138,12 +138,24 @@ void main() {
         ),
         '_bottomSlotButtons',
       );
-      expect(bottom, contains('rawItems.contains(VideoControlItem.volume)'),
-          reason: 'TODO-492：volume 可移动，但完整控件只在底栏左右槽渲染');
       expect(bottom, contains('_buildVolumeButton('),
           reason: '底栏 volume slot 必须渲染完整音量按钮入口');
       expect(bottom, contains('slot: slot'),
           reason: '音量按钮必须接收 slot，以使用按槽位区分的锚点和几何避让');
+      // 顺序真相源只有一个：`itemsIn(slot)`。音量的分派必须发生在**遍历它的循环
+      // 体内**，不能先画完别的再把音量追加到槽尾——那样 volume 在槽内的真实下标
+      // 会被丢掉，用户拖音量零视觉变化（默认 bottomRight 是
+      // `[volume, fullscreen, speed, …]`，编辑器画在第一位、播放器画在最后一位）。
+      expect(bottom, contains('_controlLayout.itemsIn(slot)'),
+          reason: '底栏出控件的顺序必须直接取自布局真相源');
+      expect(bottom, contains('if (item == VideoControlItem.volume)'),
+          reason: '音量的分派要在循环体内按位出现，而不是循环之外追加');
+      expect(
+        bottom,
+        isNot(contains('rawItems')),
+        reason: '不得再维护第二份「先画完 chip 再追加 volume」的列表——'
+            '那正是槽内顺序被丢掉的原因',
+      );
 
       final String chipItems = methodBody(
         page,

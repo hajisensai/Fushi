@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
@@ -782,7 +783,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     return StatPeriodSummary(
       label: label,
       primaryValue: _formatChars(chars),
-      onTap: () => _showPeriodDetail(label, contains),
+      onTap: () => unawaited(_showPeriodDetail(label, contains)),
       lines: <StatSummaryLine>[
         StatSummaryLine(value: formatStatTime(ms)),
         StatSummaryLine(label: t.stat_lookup, value: '$lookup'),
@@ -798,11 +799,12 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
 
   /// 时段卡 → 时段明细 sheet（阶段 1 统一组件；本页是阅读统计，明细只吃阅读域
   /// 切片 [_bookFacts]——域=行集，与 [studyGoalCharsForDay] 同原则）。
-  void _showPeriodDetail(
+  Future<void> _showPeriodDetail(
     String label,
     bool Function(String dateKey) contains,
-  ) {
-    unawaited(showStatPeriodDetailSheet(
+  ) async {
+    final FushiDatabase db = appModelNoUpdate.database;
+    final bool deleted = await showStatPeriodDetailSheet(
       context,
       periodLabel: label,
       contains: contains,
@@ -810,8 +812,10 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       resolvers: StatPeriodDetailResolvers(
         titleOf: _statFactDisplayTitle,
         collectionOf: _statFactCollectionName,
+        onEntryDelete: (StatPeriodEntryTarget t) => deleteStatPeriodEntry(db, t),
       ),
-    ));
+    );
+    if (deleted && mounted) await _loadFromDatabase();
   }
 
   /// 事实行 → 显示名（[_bookDisplayTitle] 的事实行版：override 书名上屏生效，
@@ -1412,61 +1416,63 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     final colorScheme = Theme.of(context).colorScheme;
     final tokens = FushiDesignTokens.of(context);
 
-    return Material(
-      type: MaterialType.transparency,
-      child: InkWell(
-        // 移动端长按、桌面端右键（onSecondaryTap）都弹删除确认（书架同款交互）。
-        onLongPress: () => _confirmAndDeleteBook(book),
-        onSecondaryTap: () => _confirmAndDeleteBook(book),
-        child: Padding(
-          padding: EdgeInsets.symmetric(
-            vertical: tokens.spacing.gap / 2,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                _bookDisplayTitle(book),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-              if (collectionName != null) ...[
-                SizedBox(height: tokens.spacing.gap / 4),
-                buildStatCollectionLabel(context, collectionName),
-              ],
-              SizedBox(height: tokens.spacing.gap / 2),
-              Row(
-                children: [
-                  Expanded(
-                    child: ClipRRect(
-                      borderRadius: tokens.radii.chipRadius,
-                      child: LinearProgressIndicator(
-                        value: fraction,
-                        minHeight: 8,
-                        backgroundColor: colorScheme.surfaceContainerHighest,
-                        color: colorScheme.primary,
+    return ContextMenuTrigger(
+      // 移动端长按、桌面端右键都弹删除确认（书架同款交互）；右键那一半现在走绑定表。
+      onInvoke: (Offset _) => _confirmAndDeleteBook(book),
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          onLongPress: () => _confirmAndDeleteBook(book),
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              vertical: tokens.spacing.gap / 2,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _bookDisplayTitle(book),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                if (collectionName != null) ...[
+                  SizedBox(height: tokens.spacing.gap / 4),
+                  buildStatCollectionLabel(context, collectionName),
+                ],
+                SizedBox(height: tokens.spacing.gap / 2),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ClipRRect(
+                        borderRadius: tokens.radii.chipRadius,
+                        child: LinearProgressIndicator(
+                          value: fraction,
+                          minHeight: 8,
+                          backgroundColor: colorScheme.surfaceContainerHighest,
+                          color: colorScheme.primary,
+                        ),
                       ),
                     ),
-                  ),
-                  SizedBox(width: tokens.spacing.gap + tokens.spacing.gap / 2),
-                  Text(
-                    '${_formatChars(book.chars)} · ${formatStatTime(book.ms)}',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
-                        ),
-                  ),
-                ],
-              ),
-              SizedBox(height: tokens.spacing.gap / 2),
-              Text(
-                '${t.stat_lookup}: ${counter.lookups} · ${t.stat_mined}: ${counter.mines} · ${t.stat_favorited}: $favorites',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
+                    SizedBox(width: tokens.spacing.gap + tokens.spacing.gap / 2),
+                    Text(
+                      '${_formatChars(book.chars)} · ${formatStatTime(book.ms)}',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
                     ),
-              ),
-              SizedBox(height: tokens.spacing.gap / 2),
-            ],
+                  ],
+                ),
+                SizedBox(height: tokens.spacing.gap / 2),
+                Text(
+                  '${t.stat_lookup}: ${counter.lookups} · ${t.stat_mined}: ${counter.mines} · ${t.stat_favorited}: $favorites',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                ),
+                SizedBox(height: tokens.spacing.gap / 2),
+              ],
+            ),
           ),
         ),
       ),

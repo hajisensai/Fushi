@@ -170,7 +170,9 @@ void main() {
     expect(shell, contains('InkWell('),
         reason: 'tap/long-press/right-click must still cover the whole card');
     expect(
-        shell, contains('onSecondaryTap: _selectionMode ? null : onLongPress'));
+        shell,
+        contains(
+            'onInvoke: contextMenuInvoker(_selectionMode ? null : onLongPress)'));
     expect(shell, contains('FushiFocusTarget('),
         reason: 'keyboard/gamepad activation must stay on the full card');
 

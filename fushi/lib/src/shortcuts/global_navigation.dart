@@ -10,6 +10,7 @@ import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/focus/page_scroll_registry.dart';
 import 'package:fushi/src/utils/window_caption_channel.dart';
 
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
@@ -379,8 +380,11 @@ void _handleGlobalPointerDown(
 ///     与手柄 LB/RB 完全同一条 [PageScrollRegistry] → [FushiFocusScroll] 路径
 ///     （`gamepad_service._tryScrollPage`）。
 ///
-/// 这三个是 global scope 的**全部**动作，加上 universal 的 globalBack 就是本兜底能
-/// 遇到的全集——没有落在 default 分支上的活动作，故不存在「绑了没反应」的死项。
+/// global scope 里只有 [ShortcutAction.globalContextMenu] 有意落在 `default` 上并返回
+/// **false**：它是「哪个鼠标键唤出右键菜单」的按钮归属声明，执行体分散在各表面自己的
+/// [ContextMenuTrigger]（那一层是更内层的 Listener，先于本兜底认领）。这里返回 false 而
+/// 不是 true 是关键——解析到却没执行的层若也认领，就会把同一按钮上其它层的合法绑定白白
+/// 挡掉。除它以外的四个动作都在上面有真执行体，故不存在「绑了没反应」的死项。
 ///
 /// 返回**本次是否真的执行了**：false 时调用方不得认领这次按下（见
 /// [MouseBindingDispatch] 的两步用法），否则「解析到但没执行」会把同一按钮上其它层
@@ -717,19 +721,27 @@ Widget wrapWithGlobalNavigation({
       // `translucent`：本层不画任何东西，默认的 deferToChild 会让它在子树没命中时
       // 也收不到事件（例如页面空白区）。旁听式监听必须自己占住命中，但它既不进手势
       // 竞技场也不消费事件，下层照常收到同一次按下——点击 / 划词 / 拖拽零影响。
+      // [ShortcutBindingScope] 把注册表递给子树里所有 [ContextMenuTrigger]
+      // （二十余处右键菜单的唯一触发口）。它只在指针按下的那一瞬间被读一次
+      // （`getInheritedWidgetOfExactType`，不建立依赖），故改键不会引发任何重建。
+      // 与下面的 Listener 同一个 `registry == null` 门：没有绑定表就回退到硬绑
+      // 右键的历史行为（见 kContextMenuFallbackButton），测试宿主无需搭注册表。
       child: registry == null
           ? child
-          : Builder(
-              builder: (BuildContext context) => Listener(
-                behavior: HitTestBehavior.translucent,
-                onPointerDown: (PointerDownEvent event) =>
-                    _handleGlobalPointerDown(
-                  context,
-                  navigatorKey,
-                  registry,
-                  event,
+          : ShortcutBindingScope(
+              registry: registry,
+              child: Builder(
+                builder: (BuildContext context) => Listener(
+                  behavior: HitTestBehavior.translucent,
+                  onPointerDown: (PointerDownEvent event) =>
+                      _handleGlobalPointerDown(
+                    context,
+                    navigatorKey,
+                    registry,
+                    event,
+                  ),
+                  child: child,
                 ),
-                child: child,
               ),
             ),
     ),

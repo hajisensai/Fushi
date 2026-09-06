@@ -197,6 +197,8 @@ void main() {
         SyncAuthFailureKind.forbidden: false,
         // 浏览器回调没回到 app：跟凭据无关，登出只会连坐一个可能仍有效的会话。
         SyncAuthFailureKind.browserTimeout: false,
+        // 用户自己在等待对话框里取消（BUG-2120）：连错误都不算，更不该动会话。
+        SyncAuthFailureKind.cancelled: false,
       };
       expect(
         signOutByKind.keys.toSet(),

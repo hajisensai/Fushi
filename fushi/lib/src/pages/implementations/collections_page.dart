@@ -7,6 +7,7 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_audio/fushi_audio.dart';
@@ -1654,92 +1655,93 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       child: GamepadLongPressActions(
         // Gamepad: hold-A opens the same item menu a mouse long-press does.
         onLongPress: () => _showItemDialog(item),
-        child: GestureDetector(
-          onLongPress: () => _showItemDialog(item),
-          // Desktop: right-click (secondary tap) opens the same item menu a
-          // touch long-press does. The menu is a centered modal dialog, so the
-          // click position is irrelevant -- no positioning needed.
-          onSecondaryTap: () => _showItemDialog(item),
-          child: FushiListItem(
-            leading: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: <Widget>[
-                Icon(
-                  icon,
-                  size: 20,
-                  color: Theme.of(context).colorScheme.tertiary,
-                ),
-                Text(
-                  typeLabel,
-                  style: textTheme.labelSmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-            title: Text(title, maxLines: 2, overflow: TextOverflow.ellipsis),
-            // BUG-469：副标题=可截断的元数据（书名/章节/来源） + **恒可见**的收藏日期。
-            // 旧实现把两者用 ' · ' 拼成一个 Text(maxLines:1, ellipsis)，窄屏（如 12.4"
-            // 平板横向空间不足）时书名+章节占满整行，排在末尾的日期被省略号吃掉看不见。
-            // 根因=两段不同截断语义（元数据可截、日期不可截）共用同一行宽预算。修=拆成
-            // Row：元数据 Flexible+ellipsis 优先让位，日期固定宽不参与收缩永远显示。
-            subtitle:
-                _buildSubtitle(metadata: subtitle, createdAt: item.createdAt),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // 巡检 PR-3：仅正在播的那一行显示小转圈，其余行保持可点（点即
-                // 先停旧后播新，见 [_playItemAudio]）。
-                if (_hasAudio(item))
-                  playingThis
-                      ? Padding(
-                          padding: EdgeInsets.all(tokens.spacing.gap / 2),
-                          child: const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                        )
-                      : FushiIconButton(
-                          tooltip: t.dialog_play,
-                          icon: Icons.volume_up_outlined,
-                          size: 18,
-                          padding: EdgeInsets.all(tokens.spacing.gap / 2),
-                          onTap: () => _playItemAudio(item),
-                        ),
-                if (item.text != null)
-                  FushiIconButton(
-                    tooltip: t.copy,
-                    icon: Icons.copy_outlined,
-                    size: 18,
-                    padding: EdgeInsets.all(tokens.spacing.gap / 2),
-                    onTap: () {
-                      Clipboard.setData(ClipboardData(text: item.text!));
-                    },
-                  ),
-                if (canNavigate)
+        child: ContextMenuTrigger(
+          // 桌面右键打开与触屏长按相同的条目菜单。菜单是居中模态框，不需要按下坐标。
+          // 右键菜单改由绑定表决定唤出键（默认仍是右键）；右键被别的动作占用时自动让位。
+          onInvoke: (Offset _) => _showItemDialog(item),
+          child: GestureDetector(
+            onLongPress: () => _showItemDialog(item),
+            child: FushiListItem(
+              leading: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
                   Icon(
-                    Icons.chevron_right,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    icon,
+                    size: 20,
+                    color: Theme.of(context).colorScheme.tertiary,
                   ),
-              ],
-            ),
-            // Non-navigable rows still get an onTap so they are a gamepad focus
-            // stop (otherwise hold-A / the item menu can never be reached).
-            onTap: canNavigate
-                ? () {
-                    switch (kind) {
-                      case SentenceSourceKind.video:
-                        _openVideoSentence(item);
-                      case SentenceSourceKind.book:
-                      case SentenceSourceKind.audiobook:
-                      case SentenceSourceKind.lyrics:
-                        // audiobook/lyrics 的 bookKey 共享 hoshi://book/ 身份，
-                        // reader 是正确目的地（内部处理有声书/歌词模式）。
-                        _openBook(item);
+                  Text(
+                    typeLabel,
+                    style: textTheme.labelSmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+              title: Text(title, maxLines: 2, overflow: TextOverflow.ellipsis),
+              // BUG-469：副标题=可截断的元数据（书名/章节/来源） + **恒可见**的收藏日期。
+              // 旧实现把两者用 ' · ' 拼成一个 Text(maxLines:1, ellipsis)，窄屏（如 12.4"
+              // 平板横向空间不足）时书名+章节占满整行，排在末尾的日期被省略号吃掉看不见。
+              // 根因=两段不同截断语义（元数据可截、日期不可截）共用同一行宽预算。修=拆成
+              // Row：元数据 Flexible+ellipsis 优先让位，日期固定宽不参与收缩永远显示。
+              subtitle:
+                  _buildSubtitle(metadata: subtitle, createdAt: item.createdAt),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // 巡检 PR-3：仅正在播的那一行显示小转圈，其余行保持可点（点即
+                  // 先停旧后播新，见 [_playItemAudio]）。
+                  if (_hasAudio(item))
+                    playingThis
+                        ? Padding(
+                            padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                            child: const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          )
+                        : FushiIconButton(
+                            tooltip: t.dialog_play,
+                            icon: Icons.volume_up_outlined,
+                            size: 18,
+                            padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                            onTap: () => _playItemAudio(item),
+                          ),
+                  if (item.text != null)
+                    FushiIconButton(
+                      tooltip: t.copy,
+                      icon: Icons.copy_outlined,
+                      size: 18,
+                      padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                      onTap: () {
+                        Clipboard.setData(ClipboardData(text: item.text!));
+                      },
+                    ),
+                  if (canNavigate)
+                    Icon(
+                      Icons.chevron_right,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                ],
+              ),
+              // Non-navigable rows still get an onTap so they are a gamepad focus
+              // stop (otherwise hold-A / the item menu can never be reached).
+              onTap: canNavigate
+                  ? () {
+                      switch (kind) {
+                        case SentenceSourceKind.video:
+                          _openVideoSentence(item);
+                        case SentenceSourceKind.book:
+                        case SentenceSourceKind.audiobook:
+                        case SentenceSourceKind.lyrics:
+                          // audiobook/lyrics 的 bookKey 共享 hoshi://book/ 身份，
+                          // reader 是正确目的地（内部处理有声书/歌词模式）。
+                          _openBook(item);
+                      }
                     }
-                  }
-                : () => _showItemDialog(item),
+                  : () => _showItemDialog(item),
+            ),
           ),
         ),
       ),

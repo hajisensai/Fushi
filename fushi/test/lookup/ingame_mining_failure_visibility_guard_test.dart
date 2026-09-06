@@ -126,6 +126,31 @@ void main() {
         isTrue,
         reason: '迟到 popup 不得跨 session 或 HWND 借用 lineId',
       );
+      // generation 未知（引擎发 0）时的文本回退不能只看 latest：多语言 KiriKiri Z 把译文行
+      // 紧跟日文行发出，latest 恒是译文。必须在有界窗口内按原文精确回查，且回查排在
+      // fail-closed 之后、containment 之前（tenshi_sz 真机，2026-09-04）。
+      // generation 精确匹配也是同形的 reversed 循环，必须从文本回退锚点之后开始找。
+      final int recentExact = resolver.indexOf(
+        'for(finalTexthookerLineEntryentryinlines.reversed)',
+        textFallback,
+      );
+      final int containment = resolver.indexOf('normalizedLatest.contains(');
+      expect(recentExact, greaterThan(textFallback));
+      expect(containment, greaterThan(recentExact));
+      expect(
+        resolver
+            .substring(recentExact, containment)
+            .contains('_ingameMiningRecentLineWindow'),
+        isTrue,
+        reason: '原文回查必须有界，不能扫整场会话',
+      );
+      expect(
+        resolver
+            .substring(recentExact, containment)
+            .contains('entry.text==line'),
+        isTrue,
+        reason: '回查只认逐字相等（另允许去空白相等），不做包含',
+      );
 
       final String handler = compactCode(
         methodBody(overlaySource, _handlerSignature),

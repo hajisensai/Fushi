@@ -13,16 +13,16 @@ const String iconPresetPrefKey = 'app_icon_preset';
 /// 用户自定义图标的本地文件路径偏好键（桌面端）。
 const String iconCustomPathPrefKey = 'app_icon_custom_path';
 
-/// 三套预设 key → 用于预览/桌面窗口图标的 asset 路径。
-/// `default` 指向不透明白色圆角方形（squircle）图标（任意壁纸可见，TODO-1241 起为默认）；
-/// `hibiki_transparent` 指向透明无背景的藏青 wordmark（旧默认，保留为可选项）；
-/// `hibiki_full` 指向響·书本精绘图标。
-/// 历史上曾有 `hibiki_minimal` 档，但它与旧 `default` 映射同一张图（重复选项），已去重
-/// 移除；老用户残留的 `hibiki_minimal` 由 [windowIconAssetForPreset] 安全回退到 default。
+/// 预设 key → 用于预览/桌面窗口图标的 asset 路径。
+///
+/// 目前只有 `default` 一档（兔子图标，薰衣草底 squircle）。历史上还有
+/// `hibiki_minimal`（与旧 default 重复，TODO-868 去重）、`hibiki_transparent`
+/// （藏青 wordmark）与 `hibiki_full`（響·书本精绘）三档，随换新图标一并下线，
+/// 对应资源已删除。老用户偏好里残留的这些 key 由 [windowIconAssetForPreset] 的
+/// 未知 key 分支安全回退到 default；Android 侧启动器入口的迁移在
+/// `IconSwitchHelper.migrateRetiredAliasesIfEnabled` 里做。
 const Map<String, String> presetIconAssets = <String, String>{
   'default': 'assets/meta/launcher_icon_squircle.png',
-  'hibiki_transparent': 'assets/meta/launcher_icon_minimal.png',
-  'hibiki_full': 'assets/meta/launcher_icon_full.png',
 };
 
 /// 自定义槽的保留 key。
@@ -52,18 +52,18 @@ class AppIconSelection {
   bool get usesCustomFile => presetKey == customIconKey && customPath != null;
 
   AppIconSelection withRevision(int value) => AppIconSelection(
-    presetKey: presetKey,
-    customPath: customPath,
-    revision: value,
-  );
+        presetKey: presetKey,
+        customPath: customPath,
+        revision: value,
+      );
 }
 
 /// 主窗口侧栏与设置页共享的运行时真值。启动恢复和每次成功切换都只发布到这里，
 /// 避免窗口图标、偏好和 Flutter 品牌位各维护一份互不通知的状态（BUG-1920）。
 final ValueNotifier<AppIconSelection> currentAppIconSelection =
     ValueNotifier<AppIconSelection>(
-      const AppIconSelection(presetKey: 'default'),
-    );
+  const AppIconSelection(presetKey: 'default'),
+);
 
 /// 是否为内置预设 key（custom / 未知都返回 false）。
 bool isPresetKey(String key) => presetIconAssets.containsKey(key);

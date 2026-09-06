@@ -96,6 +96,89 @@ class VideoSubtitleHitTester {
 /// 选词光标的一次方向移动（手柄 D-pad / 键盘方向键，物理方向）。
 enum SubtitleCaretMove { left, right, up, down }
 
+/// 视频字幕上「正在查的词」的高亮范围（BUG-2091）——与阅读器正文查词后高亮被查词
+/// 同语义。锚在 cue 身份（[sentence] + [cueStartMs]）加该 cue 内的 grapheme 区间
+/// `[graphemeStart, graphemeStart + graphemeCount)`。用文本+起点而非对象同一性匹配：
+/// 主/副字幕流、字幕列表侧栏与 overlay 各自持有的 cue 实例可能不同，但文本+起点唯一。
+/// 纯值对象，页面按「弹窗栈是否可见」派生传入（栈空即 null），不另存布尔镜像。
+@immutable
+class SubtitleLookupHighlight {
+  const SubtitleLookupHighlight({
+    required this.sentence,
+    required this.cueStartMs,
+    required this.graphemeStart,
+    required this.graphemeCount,
+  });
+
+  final String sentence;
+  final int cueStartMs;
+  final int graphemeStart;
+  final int graphemeCount;
+
+  /// 该 cue 的第 [graphemeIndex] 个字位是否落在高亮区间内。
+  bool covers({
+    required String sentence,
+    required int cueStartMs,
+    required int graphemeIndex,
+  }) =>
+      graphemeCount > 0 &&
+      cueStartMs == this.cueStartMs &&
+      sentence == this.sentence &&
+      graphemeIndex >= graphemeStart &&
+      graphemeIndex < graphemeStart + graphemeCount;
+
+  bool isFirst(int graphemeIndex) => graphemeIndex == graphemeStart;
+
+  bool isLast(int graphemeIndex) =>
+      graphemeIndex == graphemeStart + graphemeCount - 1;
+
+  @override
+  bool operator ==(Object other) =>
+      other is SubtitleLookupHighlight &&
+      other.sentence == sentence &&
+      other.cueStartMs == cueStartMs &&
+      other.graphemeStart == graphemeStart &&
+      other.graphemeCount == graphemeCount;
+
+  @override
+  int get hashCode =>
+      Object.hash(sentence, cueStartMs, graphemeStart, graphemeCount);
+}
+
+/// 被查词高亮的单字底色盒（BUG-2091）。画在字形**之下**（background，不是
+/// foreground——盖在字上会把白字染色），只在区间首/尾字位收圆角，中间字位方角相接，
+/// 整词看起来是一条连续的选区带。不改布局几何（DecoratedBox 零尺寸影响），字幕排版
+/// 与逐字命中矩形零位移。公开类型仅为测试可 `find.byType`。
+class SubtitleLookupHighlightBox extends StatelessWidget {
+  const SubtitleLookupHighlightBox({
+    required this.first,
+    required this.last,
+    required this.child,
+    super.key,
+  });
+
+  final bool first;
+  final bool last;
+  final Widget child;
+
+  static const double _radius = 4;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: scheme.primary.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.horizontal(
+          left: first ? const Radius.circular(_radius) : Radius.zero,
+          right: last ? const Radius.circular(_radius) : Radius.zero,
+        ),
+      ),
+      child: child,
+    );
+  }
+}
+
 /// 在一组字符矩形里按物理方向移动选词光标（纯函数，可测）。
 ///
 /// [rects] 是 overlay 当前帧全部登记字符的全局矩形（模糊字符为 [Rect.zero]，恒跳过）；
@@ -358,6 +441,10 @@ SubtitlePos resolveClipCueAnchorFraction(SubtitleMarkup markup) {
 /// [blurEnabled] 为听力沉浸模式：字幕默认打码（[ImageFiltered] 高斯模糊），桌面悬停
 /// （[MouseRegion]）或移动端点击右上角「显形」热区后变清晰，再次移开/点击恢复。
 /// 默认关闭，关闭时与历史外观完全一致。
+///
+/// [subtitleHidden] 是遮蔽的另一种视觉（[Opacity] 为 0：布局照常、不绘制），与
+/// [blurEnabled] 共用同一套显形状态机——悬停 / 点击同样能把隐藏的字幕临时唤出来。
+/// 两种遮蔽都**不是**「把 cue 从树上摘掉」：摘掉就没有几何可悬停了。
 class VideoSubtitleOverlay extends StatefulWidget {
   const VideoSubtitleOverlay({
     required this.controller,
@@ -367,6 +454,7 @@ class VideoSubtitleOverlay extends StatefulWidget {
     this.onHoverChanged,
     this.hitTester,
     this.caretEntryIndex,
+    this.lookupHighlight,
     this.isCueFavorited,
     this.blurEnabled = false,
     this.subtitleHidden = false,
@@ -435,6 +523,11 @@ class VideoSubtitleOverlay extends StatefulWidget {
   /// 登记表；越界（cue 已切换等）不画环，页面在下一次输入时重锚。
   final int? caretEntryIndex;
 
+  /// 正在查的词在字幕上的高亮范围（BUG-2091）；null = 不高亮。页面按弹窗栈可见性
+  /// 派生：栈空传 null，换词传新范围。命中区间内的非模糊字符套
+  /// [SubtitleLookupHighlightBox] 底色（不改布局几何）。
+  final SubtitleLookupHighlight? lookupHighlight;
+
   /// 当前字幕句是否已收藏（TODO-301 / BUG-264）。非 null 时，当前句已收藏会在字幕盒
   /// 起始处显示一枚实心星标记（与字幕列表行的收藏标记同语义）。null（测试 / 有声书等
   /// 无收藏数据源场景）= 不显示标记，外观与历史像素级一致。
@@ -443,10 +536,15 @@ class VideoSubtitleOverlay extends StatefulWidget {
   /// 听力沉浸：字幕默认模糊，悬停/点击显形。
   final bool blurEnabled;
 
-  /// 遮蔽模式「隐藏」（TODO-840 Part B）：为 true 时主字幕整条不渲染（即时返回空盒），
-  /// 与 [blurEnabled] 正交且优先级更高（两者来自互斥的 [VideoSubtitleObscureMode]，
-  /// 页面侧映射保证不会同时为 true，但即便同时为 true 也以隐藏为准）。默认 false =
-  /// 不隐藏，外观与历史一致。隐藏只针对底部主字幕 overlay，不影响查词 / 字幕列表 /
+  /// 遮蔽模式「隐藏」（TODO-840 Part B）：为 true 时主字幕**布局照常但不绘制**
+  /// （[Opacity] 为 0），与 [blurEnabled] 正交且优先级更高（两者来自互斥的
+  /// [VideoSubtitleObscureMode]，页面侧映射保证不会同时为 true，但即便同时为 true 也
+  /// 以隐藏为准）。默认 false = 不隐藏，外观与历史一致。
+  ///
+  /// **不是「整条不渲染」**：初版把 cue 从活动集里清空，屏幕上于是没有任何 widget，
+  /// 鼠标无处可悬停——用户报「隐藏了鼠标放上去也不显示」。改为保留几何后，隐藏与模糊
+  /// 共用同一套显形通道（桌面 [MouseRegion] 悬停 / 移动端点击热区），移开即复原。
+  /// 未显形时不登记查词命中（看不见的字不可点选），仍不影响查词浮层 / 字幕列表 /
   /// cue 同步等其它文本通道。
   final bool subtitleHidden;
 
@@ -454,9 +552,10 @@ class VideoSubtitleOverlay extends StatefulWidget {
   /// 悬停/点击显形。与主字幕 [blurEnabled] 相互独立（各有独立 reveal 态）。默认 false。
   final bool secondaryBlurEnabled;
 
-  /// 副字幕「隐藏」（TODO-1382，镜像 [subtitleHidden]）：为 true 时副字幕层整条不渲染
-  /// （build 时清空 secondaryCues），与 [secondaryBlurEnabled] 正交且优先级更高。默认
-  /// false。隐藏只针对顶部副字幕 overlay，不影响查词 / 字幕列表 / cue 同步等其它通道。
+  /// 副字幕「隐藏」（TODO-1382，镜像 [subtitleHidden]）：为 true 时副字幕层布局照常但
+  /// 不绘制（[Opacity] 为 0），与 [secondaryBlurEnabled] 正交且优先级更高。默认 false。
+  /// 与主字幕同构：悬停 / 点击可临时显形，未显形时不登记查词命中。隐藏只针对副字幕
+  /// overlay，不影响查词 / 字幕列表 / cue 同步等其它通道。
   final bool secondaryHidden;
 
   /// 字幕字号（外观设置）。
@@ -682,11 +781,39 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     return _cjkFallbackChain!;
   }
 
+  /// 主字幕层的**悬停**显形标志：拥有者是 [MouseRegion] 的 onEnter/onExit（外加
+  /// BUG-1068 的「本层活动集为空」兜底复位）。
   bool _revealed = false;
 
   /// 副字幕模糊态的独立显形标志（TODO-1382）：主/副字幕各有自己的 reveal，悬停/点击
   /// 副字幕层只显形副字幕、不误显形主字幕（两层可同时开模糊）。
   bool _secondaryRevealed = false;
+
+  /// 主/副字幕层的**点击**显形标志（与悬停分开记账）。
+  ///
+  /// 两个来源的复位事件根本不同：悬停有确定的 onExit，点击没有——移动端没有 OS hover，
+  /// 而显形热区在显形之后就撤下了（让位给逐字查词：热区盖在盒面上时会吃掉字符 tap）。
+  /// 合并成一个 bool 时，点击置起的 true 只能等「本层活动集为空」才复位，于是台词密集、
+  /// 没有字幕空档的片段里，**一次误触就把遮蔽废到下一个空档，用户没有任何撤销手段**。
+  /// 分开记账后，点击显形按「本层活动集换一轮」自然失效（= 只对当前这句临时豁免），
+  /// 悬停显形完全不受影响（同组连续 cue 不会重挂 MouseRegion，一刀切会把还停在字幕上的
+  /// 鼠标误复位，正是 BUG-1068 注释里要保住的「真悬停仍显形」）。
+  bool _tapRevealed = false;
+  bool _secondaryTapRevealed = false;
+
+  /// 上一帧各层的活动集（身份序列）：仅用于判定「本层活动集换过一轮」以失效点击显形。
+  List<AudioCue> _lastMainCues = const <AudioCue>[];
+  List<AudioCue> _lastSecondaryCues = const <AudioCue>[];
+
+  /// 两个活动集是否逐条同一对象（cue 身份序列相等）。列表极短（在屏 cue 数），逐帧比较
+  /// 的代价可忽略。
+  static bool _sameCues(List<AudioCue> a, List<AudioCue> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (!identical(a[i], b[i])) return false;
+    }
+    return true;
+  }
 
   /// 拖拽调整模式的**逐层实时预览**（TODO-2838）：非 null 时该层的用户锚定/基线以本值
   /// 为准（覆盖 widget 传入的持久化值），拖动中逐帧更新、松手经
@@ -941,10 +1068,16 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   @override
   void didUpdateWidget(VideoSubtitleOverlay oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // 关闭模糊时重置显形态，避免下次开启残留（主/副各自独立）。
-    if (!widget.blurEnabled && _revealed) _revealed = false;
-    if (!widget.secondaryBlurEnabled && _secondaryRevealed) {
+    // 关闭**遮蔽**（模糊与隐藏都关）时重置显形态，避免下次开启残留（主/副各自独立）。
+    // 判据必须含隐藏：隐藏态也用同一个显形态，只看 blurEnabled 会在「模糊→隐藏」切换
+    // 的那一帧把用户刚悬停出来的显形态误清掉。
+    if (!widget.blurEnabled && !widget.subtitleHidden) {
+      _revealed = false;
+      _tapRevealed = false;
+    }
+    if (!widget.secondaryBlurEnabled && !widget.secondaryHidden) {
       _secondaryRevealed = false;
+      _secondaryTapRevealed = false;
     }
     // 退出拖拽调整模式：清掉逐层预览，位置回归 widget 传入的持久化值（提交过的拖拽
     // 已写进 style，两者一致；未提交的中途退出则丢弃预览=取消语义）。
@@ -954,16 +1087,30 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     }
   }
 
-  bool _revealedFor({required bool isSecondary}) =>
-      isSecondary ? _secondaryRevealed : _revealed;
+  /// 该层当前是否显形：悬停与点击任一成立即显形（两个来源各自独立复位，见 [_tapRevealed]）。
+  bool _revealedFor({required bool isSecondary}) => isSecondary
+      ? (_secondaryRevealed || _secondaryTapRevealed)
+      : (_revealed || _tapRevealed);
 
-  void _setRevealed(bool v, {required bool isSecondary}) {
+  /// [byTap] 区分显形来源：true = 点击热区（移动端唯一通道，随活动集换轮失效），
+  /// false = 桌面悬停（由 onExit 复位）。写错来源会让复位路径接不上（显形态锁死）。
+  void _setRevealed(bool v, {required bool isSecondary, required bool byTap}) {
     if (isSecondary) {
-      if (_secondaryRevealed == v) return;
-      setState(() => _secondaryRevealed = v);
+      if (byTap) {
+        if (_secondaryTapRevealed == v) return;
+        setState(() => _secondaryTapRevealed = v);
+      } else {
+        if (_secondaryRevealed == v) return;
+        setState(() => _secondaryRevealed = v);
+      }
     } else {
-      if (_revealed == v) return;
-      setState(() => _revealed = v);
+      if (byTap) {
+        if (_tapRevealed == v) return;
+        setState(() => _tapRevealed = v);
+      } else {
+        if (_revealed == v) return;
+        setState(() => _revealed = v);
+      }
     }
   }
 
@@ -984,16 +1131,17 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
           anchorEntry: _caretAnchorEntry,
         );
 
-        // 主字幕活动集（重叠 cue 全渲染，TODO-1312）。遮蔽模式「隐藏」时主层不渲染
-        // （TODO-840 Part B）——只影响底部主字幕，不影响副字幕 / 查词 / 字幕列表。
-        final List<AudioCue> mainCues = widget.subtitleHidden
-            ? const <AudioCue>[]
-            : widget.controller.activeCues;
+        // 主字幕活动集（重叠 cue 全渲染，TODO-1312）。遮蔽模式「隐藏」**不在这里**清空
+        // 活动集（TODO-840 Part B 初版如此，导致隐藏态屏幕上没有任何 widget、鼠标无处可
+        // 悬停）：隐藏与模糊同为「遮蔽」的两种视觉，都走「照常布局 + 遮蔽视觉 + 共享显形
+        // 状态机」一条路径——隐藏的视觉是 Opacity(0)（不绘制），几何仍在，于是悬停 / 点击
+        // 显形对隐藏态同样成立（两种遮蔽的视觉都在 [_wrapInteractive] 同一层）。
+        final List<AudioCue> mainCues = widget.controller.activeCues;
         // 副字幕活动集（TODO-1312：并入 Flutter overlay 多层渲染、可查词）。遮蔽模式
-        // 「隐藏」时副层不渲染（TODO-1382，镜像主字幕），不影响查词 / 字幕列表 / cue 同步。
-        final List<AudioCue> secondaryCues = widget.secondaryHidden
-            ? const <AudioCue>[]
-            : widget.controller.secondaryActiveCues;
+        // 「隐藏」与主字幕同构（TODO-1382）：不在这里清空，隐藏态经 Opacity(0) 呈现、
+        // 悬停 / 点击可显形。
+        final List<AudioCue> secondaryCues =
+            widget.controller.secondaryActiveCues;
 
         // BUG-1068：显形态（_revealed / _secondaryRevealed）的生命周期必须绑定「该层
         // 当前有字幕盒在屏」。悬停某层显形（onEnter → _setRevealed(true)）后，该层进入
@@ -1008,6 +1156,15 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         if (secondaryCues.isEmpty && _secondaryRevealed) {
           _secondaryRevealed = false;
         }
+        // 点击显形（[_tapRevealed]）另有更紧的失效点：本层活动集只要换过一轮就复位。
+        // 触摸端没有 onExit，显形后热区又已撤下（让位给查词），不设这个失效点就等于
+        // 「一次误触把遮蔽废到下一个字幕空档、且无法撤销」。悬停显形不吃这条（见上）。
+        if (!_sameCues(mainCues, _lastMainCues)) _tapRevealed = false;
+        if (!_sameCues(secondaryCues, _lastSecondaryCues)) {
+          _secondaryTapRevealed = false;
+        }
+        _lastMainCues = mainCues;
+        _lastSecondaryCues = secondaryCues;
 
         // TODO-1372/BUG-698：清扫「组内已无任何在屏 cue」的槽位状态——整组离场即重置，
         // 下一条从锚点侧基线重新开始；同一活动集重复 build 幂等。放在空集早退之前，
@@ -1069,7 +1226,8 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// （副字幕=纯翻译参考），全部 cue 归一到一个顶部盒；但仍逐字符可查词（登记进同一
   /// [_charEntries]）。单组 / 单 cue 时结构退化为单字幕盒，与历史几何等价。TODO-1382：
   /// 副字幕也可经 [secondaryBlurEnabled]（模糊，独立 reveal）/ [secondaryHidden]（隐藏，
-  /// build 时已清空 cue）遮蔽，与主字幕对称。
+  /// [Opacity] 为 0：布局照常、不绘制）遮蔽，与主字幕对称——两种遮蔽都保留几何，
+  /// 悬停 / 点击即可临时显形。
   Widget _buildSubtitleLayer(
     BuildContext context,
     List<AudioCue> cues, {
@@ -1079,9 +1237,16 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     // 各按自己的 obscure 开关与独立 reveal 态决定是否模糊（副字幕不再无条件清晰）。
     final bool obscureBlurEnabled =
         isSecondary ? widget.secondaryBlurEnabled : widget.blurEnabled;
-    final bool blurred = obscureBlurEnabled &&
-        !_revealedFor(isSecondary: isSecondary) &&
-        widget.controller.isPlaying;
+    final bool revealed = _revealedFor(isSecondary: isSecondary);
+    final bool blurred =
+        obscureBlurEnabled && !revealed && widget.controller.isPlaying;
+    // 隐藏态（该层开着「隐藏」且当前未显形）。与 [blurred] 互斥（两者来自互斥的
+    // VideoSubtitleObscureMode），但共用同一个显形态：悬停 / 点击即显形。
+    // **不**吃 isPlaying 门（模糊有 BUG-199 的「暂停时清晰」，隐藏没有）：隐藏的语义是
+    // 「我不想看见它」，暂停时自己冒出来才是惊吓；历史上隐藏态暂停也不显示，保持不变。
+    final bool hidden =
+        (isSecondary ? widget.secondaryHidden : widget.subtitleHidden) &&
+            !revealed;
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -1131,6 +1296,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
                   group,
                   isSecondary: isSecondary,
                   blurred: blurred,
+                  hidden: hidden,
                   container: container,
                 ),
               )
@@ -1457,6 +1623,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     List<AudioCue> cues, {
     required bool isSecondary,
     required bool blurred,
+    required bool hidden,
     required Size container,
   }) {
     // 定位代表 markup（分组键已把 \pos / \an / MarginV 语义归一，组内任取一条定位等价，
@@ -1511,8 +1678,13 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
           KeyedSubtree(
             key: ObjectKey(slot.cue),
             child: slot.alive
+                // 隐藏且未显形时不登记查词命中（registerHits=false）：盒子虽在树上，
+                // 看不见的字就不该能被点中查词 / 被键盘选词光标走到。一条数据判据同时
+                // 掐掉字符 tap、glyph 命中吸收与 caret 目标，无需在三处各加分支。
                 ? _buildCueBox(context, slot.cue,
-                    isSecondary: isSecondary, blurred: blurred)
+                    isSecondary: isSecondary,
+                    blurred: blurred,
+                    registerHits: !hidden)
                 // 离场 cue 的隐形占位：保持原盒尺寸撑住远端在屏字幕的槽位（不登记查词
                 // 命中、不响应指针、无收藏角标）。libass「事件在屏期间位置不变」语义的
                 // 槽位版。
@@ -1530,7 +1702,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     );
 
     content = _wrapInteractive(context, content,
-        isSecondary: isSecondary, blurred: blurred);
+        isSecondary: isSecondary, blurred: blurred, hidden: hidden);
 
     final Offset? posScreen = _posScreen(posMarkup, container, cue: cues.first);
     if (posScreen != null) {
@@ -1597,6 +1769,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     Widget content, {
     required bool isSecondary,
     required bool blurred,
+    required bool hidden,
   }) {
     // 拖拽调整模式（TODO-2838）：该层指针面整体让给拖拽——不挂查词点击 / glyph 吸收 /
     // 模糊显形 / hover 通道（模式内字幕保持清晰便于对位），套可拖指示边框 + 竖直拖动。
@@ -1650,23 +1823,39 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     }
 
     if (blurred) {
-      // 模糊态（仅主层）：盖一层高斯模糊 + 拦字符点击（避免误触查词）+ 显形热区。
-      // 模糊强度随字号缩放（见 [VideoSubtitleOverlay.obscureBlurSigma]），字号越大糊得越狠，
-      // 保证任何字号下都真读不出（旧的固定 8px 对大字号太浅，用户报「模糊度不够」）。
+      // 模糊态：盖一层高斯模糊。强度随字号缩放（见 [VideoSubtitleOverlay.obscureBlurSigma]），
+      // 字号越大糊得越狠，保证任何字号下都真读不出（旧的固定 8px 对大字号太浅，用户报
+      // 「模糊度不够」）。
       final double sigma =
           VideoSubtitleOverlay.obscureBlurSigma(widget.fontSize);
+      content = ImageFiltered(
+        imageFilter: ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+        child: content,
+      );
+    }
+    if (hidden) {
+      // 隐藏态的视觉：布局照常、不绘制（RenderOpacity 在 alpha==0 直接跳过 paint，无额外
+      // 栅格化开销；布局与命中几何不变，MouseRegion / 点击热区才有真实面积可用）。
+      // **必须与上面的模糊视觉同一层**：两者都在 `dragAdjustEnabled` 早退之后，于是
+      // 「拖拽调整模式内字幕保持清晰便于对位」这条既有契约对两种遮蔽同时成立。放在
+      // [_positionCueGroup] 里（早退之外）会让拖拽模式内的隐藏字幕仍然全透明——用户拖一个
+      // 看不见的盒子、连可拖指示边框都被 Opacity 吞掉，而松手真会写入新的字幕位置。
+      content = Opacity(opacity: 0, child: content);
+    }
+    if (blurred || hidden) {
+      // 遮蔽态共用的「点击显形」热区：盖在遮蔽视觉之上，顺带拦掉落在盒面上的字符点击
+      // （避免误触查词）。移动端无 OS hover，这是隐藏 / 模糊态唯一的显形通道；桌面端另有
+      // 下面 MouseRegion 的悬停显形。模糊与隐藏共用同一条，隐藏不再是「整条不渲染」的特例。
       content = Stack(
         clipBehavior: Clip.none,
         children: <Widget>[
-          ImageFiltered(
-            imageFilter: ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-            child: content,
-          ),
+          content,
           Positioned.fill(
             child: GestureDetector(
               key: const Key('video-subtitle-reveal'),
               behavior: HitTestBehavior.translucent,
-              onTap: () => _setRevealed(true, isSecondary: isSecondary),
+              onTap: () =>
+                  _setRevealed(true, isSecondary: isSecondary, byTap: true),
             ),
           ),
         ],
@@ -1677,21 +1866,28 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     // hover（唤回光标 + 续命控制条，BUG-283/284）③Shift-鼠标悬停查词（TODO-756a）。三者
     // 合一个 opaque:false 的 MouseRegion（不阻断 hover 下探 media_kit，BUG-198）。仅确需
     // hover 时挂（外观零变化）。
-    final bool layerBlurEnabled =
-        isSecondary ? widget.secondaryBlurEnabled : widget.blurEnabled;
-    final bool needHover = layerBlurEnabled ||
+    // 显形的驱动者是该层的**遮蔽开关**（模糊 or 隐藏），不是当前遮蔽态——hidden/blurred
+    // 在已显形时为 false，拿它做判据会让 onExit 复位不回去（显形态锁死）。
+    final bool layerObscureEnabled =
+        (isSecondary ? widget.secondaryBlurEnabled : widget.blurEnabled) ||
+            (isSecondary ? widget.secondaryHidden : widget.subtitleHidden);
+    final bool needHover = layerObscureEnabled ||
         widget.onHoverChanged != null ||
         widget.onCharHover != null;
     if (!needHover) return content;
     return MouseRegion(
       opaque: false,
       onEnter: (_) {
-        if (layerBlurEnabled) _setRevealed(true, isSecondary: isSecondary);
+        if (layerObscureEnabled) {
+          _setRevealed(true, isSecondary: isSecondary, byTap: false);
+        }
         widget.onHoverChanged?.call(true);
       },
       onHover: _handleShiftHover,
       onExit: (_) {
-        if (layerBlurEnabled) _setRevealed(false, isSecondary: isSecondary);
+        if (layerObscureEnabled) {
+          _setRevealed(false, isSecondary: isSecondary, byTap: false);
+        }
         widget.onHoverChanged?.call(false);
         _lastShiftHoverPos = Offset.zero;
         _lastShiftHoverEntry = -1;
@@ -1823,8 +2019,26 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
               cue: cue,
             ));
           }
-          final Widget ch = _applyVerticalGlyphRotation(
+          Widget ch = _applyVerticalGlyphRotation(
               _buildSubtitleChar(chars[i], i, markup, cue), i, markup);
+          // 被查词高亮（BUG-2091）：本字位落在页面传入的查词区间内则垫底色。只对
+          // 可交互字符（已登记、非模糊）画——与查词命中同一门控，模糊层/离场占位
+          // 不会带着高亮。底色在字形之下、光标环之上再叠，两者互不遮挡。
+          final SubtitleLookupHighlight? highlight = widget.lookupHighlight;
+          if (entryIndex >= 0 &&
+              !blurred &&
+              highlight != null &&
+              highlight.covers(
+                sentence: text,
+                cueStartMs: cue.startMs,
+                graphemeIndex: i,
+              )) {
+            ch = SubtitleLookupHighlightBox(
+              first: highlight.isFirst(i),
+              last: highlight.isLast(i),
+              child: ch,
+            );
+          }
           // 选词光标环（手柄查词）：光标停在本字符时外画一圈主题色圆角框。
           // foregroundDecoration 画在字形之上、不改变布局几何（字幕排版零位移）。
           // 登记与画环同帧同源（entryIndex 即登记序），不存在几何滞后。
@@ -2319,8 +2533,9 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// respectAssStyle 关 = **纯字幕模式**（BUG-915/1264）：**颜色语义整体归零**——行内 `\c`
   /// / `\1c` 主色与 `\3c` 描边色（[_resolveStroke]）、`\1a` 填充透明度、cueStyle 主色、`\t`
   /// 颜色动画、卡拉 OK SecondaryColour（[_applyDynamicFill]）同源门控，一律回落用户
-  /// textColor。只保留行内 `\i \b \u \s` 这些**文本语义**与历史 `\fs` 裸像素字号；字体 /
-  /// 字号 / 颜色的基线恒为用户统一样式。
+  /// textColor；行内 `\fs` 字号同样门控（BUG-2157，此前按裸像素放行、架空用户字号
+  /// 滑块）。只保留行内 `\i \b \u \s` 这些**文本语义**；字体 / 字号 / 颜色的基线恒为
+  /// 用户统一样式。
   /// respectAssStyle 开：字体名 / 主色 / 字号 / 粗斜下删线优先取 .ass 值（行内 span >
   /// [SubtitleCueStyle] cue 默认 > 用户统一样式，TODO-1105）。字体缺字时仍挂
   /// [_subtitleCjkFallback] 兜底。
@@ -2449,17 +2664,21 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       letterSpacing: (respect && span.letterSpacingPx != null)
           ? span.letterSpacingPx! * assFontScale
           : null,
-      // 行内字号（respect 时）同按 ASS 缩放 + cell/em 校准；respect 关时保持历史
-      // 裸像素（旧 span 行为）。
-      fontSize: span.fontSizePx != null
-          ? (respect
-              ? _scaleAssFontSize(_assFontSizeToEm(
-                      span.fontSizePx! * assFontScale,
-                      spanFontFamily ?? baseFontFamily,
-                      span.bold ? FontWeight.bold : baseWeight,
-                      span.italic || baseItalic) *
-                  spanMissingFontRasterCompensation.fontScale)
-              : span.fontSizePx!)
+      // 行内字号（respect 时）同按 ASS 缩放 + cell/em 校准。
+      // respect 关 = 纯字幕模式：**字号与兄弟属性同源门控**（BUG-2157）。曾按「历史
+      // 裸像素」放行 `span.fontSizePx`，那是最后一条穿透的外观通道——`\c` 主色
+      // （BUG-1285）、`\3c` 描边色、`\1a` 填充透明度、`\fsp` 字距、`\shad` 阴影、
+      // `\fscx/\fscy` 缩放早已全部门控，唯独它把作者字号直接写进 TextStyle，且写的是
+      // **PlayRes 空间裸数字**（连显示几何缩放都没走）。fansub 对白普遍每行套
+      // `{\fs...}` → 用户字号滑块被整条架空（用户报「尊重 ass 关了也是改不了大小」）。
+      // 开关文案明示「关闭则一律使用你的外观设置」，故这里回落 base.fontSize。
+      fontSize: (respect && span.fontSizePx != null)
+          ? _scaleAssFontSize(_assFontSizeToEm(
+                  span.fontSizePx! * assFontScale,
+                  spanFontFamily ?? baseFontFamily,
+                  span.bold ? FontWeight.bold : baseWeight,
+                  span.italic || baseItalic) *
+              spanMissingFontRasterCompensation.fontScale)
           : base.fontSize,
       decoration: decos.isEmpty ? null : TextDecoration.combine(decos),
     );

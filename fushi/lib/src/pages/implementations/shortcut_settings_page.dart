@@ -470,6 +470,16 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
             icon: Icons.info_outline,
             showIcon: true,
           ),
+        // TODO-1066 — 桌面 app 外查词开了鼠标通道，但**只有侧键**能当全局触发：
+        // 这条触发不拦截原事件（native 走 RawInput，见 global_mouse_trigger.h），
+        // 右键/中键有全系统级默认语义（上下文菜单 / 自动滚动），绑上去等于两件事
+        // 同时发生。上面的 mobile 分支已提前 return，故这里只会在桌面渲染。
+        if (scope == ShortcutScope.globalExternal)
+          AdaptiveSettingsRow(
+            title: t.shortcut_scope_global_external_desktop_note,
+            icon: Icons.info_outline,
+            showIcon: true,
+          ),
         AdaptiveSettingsRow(
           title: t.shortcut_reset_defaults,
           icon: Icons.restore_outlined,

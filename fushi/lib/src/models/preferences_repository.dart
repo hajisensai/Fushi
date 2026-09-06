@@ -2583,6 +2583,16 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 有声书设备端转录上次选的语音语言（`AsrLanguage.tag`：`ja` / `en`）。
+  /// 只是转录弹层的记忆值；不认识的标签由弹层自己回退日语。
+  String get asrTranscribeLanguage =>
+      getPref('asr_transcribe_language', defaultValue: 'ja') as String;
+
+  Future<void> setAsrTranscribeLanguage(String value) async {
+    await setPref('asr_transcribe_language', value);
+    notifyListeners();
+  }
+
   /// 漫画阅读器「点一下没识别的对话框就地开跑 OCR」。
   ///
   /// 默认开：这条路径存在的全部意义就是让用户不必先去点识别模式。关掉它等于

@@ -206,11 +206,14 @@ void main() {
   // userspace）：捕获入口不出现，但老用户当年配下的绑定仍要能看见并删掉——否则那条
   // 永不触发的死绑定就永远删不掉了。
   //
-  // 取样从 home 换成 `globalExternalLookup`：home / global / universal / manga 四个
-  // scope 本轮都接上了真实的鼠标解析入口、通道随之打开，已经不再是「通道没开」的例子。
-  // `globalExternal` 是**按构造**开不了的那一类（OS 级 `RegisterHotKey` 的
-  // `HotKey.key` 类型就是 `KeyboardKey`，鼠标键要装 WH_MOUSE_LL 全局钩子并全系统吞掉
-  // 该键），所以它会长期留在这一侧，适合当这条不变式的锚点。
+  // 锚点几经辗转：home → globalExternalLookup → dpadUp。前两个都是因为**后来真的接上
+  // 了鼠标解析入口**而被迫让位（home / global / universal / manga 是 BUG-1995 那轮；
+  // globalExternal 是 TODO-1066 那轮——app 外查词的鼠标侧键触发走 native RawInput +
+  // RIDEV_INPUTSINK，通道随之打开）。
+  //
+  // `gamepad` scope（dpad 四向）是目前唯一**按构造**开不了鼠标的那个：它的唯一消费者
+  // 是 `GamepadService._dispatchButton` 按 `GamepadButton` 解析，键盘/鼠标绑定在那里
+  // 没有也不可能有读取方（见 ShortcutScope.channels 的 gamepad case）。
   testWidgets('desktop: 通道未开的 scope 仍显示并可删除历史鼠标绑定（但没有捕获入口）',
       (WidgetTester tester) async {
     usePlatform(TargetPlatform.windows);
@@ -218,13 +221,13 @@ void main() {
         buildRegistry(TargetPlatform.windows);
     // 前提自检：取样的 scope 必须真的没开 mouse，否则本用例测的是另一件事（假绿）。
     expect(
-      ShortcutAction.globalExternalLookup.scope.channels,
+      ShortcutAction.dpadUp.scope.channels,
       isNot(contains(ShortcutChannel.mouse)),
     );
     await pumpDialogHost(
       tester,
       registry,
-      action: ShortcutAction.globalExternalLookup,
+      action: ShortcutAction.dpadUp,
       initial: const ShortcutBindingSet(
         mouseBindings: <MouseBinding>[MouseBinding(2)],
       ),
@@ -239,7 +242,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      registry.bindingsFor(ShortcutAction.globalExternalLookup).mouseBindings,
+      registry.bindingsFor(ShortcutAction.dpadUp).mouseBindings,
       isEmpty,
     );
 

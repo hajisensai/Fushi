@@ -1,239 +1,70 @@
-/// 漫画 OCR 模型下载器：逐文件字节进度、`.part` 临时名 + 原子 rename、
-/// HTTP Range 断点续传、主源失败换镜像、系统代理环境变量。
+/// 漫画 OCR 模型下载器：共享 [ModelFileDownloader] 的薄适配。
 ///
-/// 事件契约对齐 [MangaOcrDownloadEvent]：按文件粒度报告 receivedBytes /
-/// totalBytes；全部文件完成后最后发一次 `done=true`；任何失败以 error 事件
-/// 结束流（async* 抛出即 error）。
-///
-/// http 栈：`dart:io` [HttpClient] + `findProxyFromEnvironment`（与
-/// `update_checker_net.dart` 同范式——只读 `HTTPS_PROXY`/`HTTP_PROXY` 等
-/// 环境变量，无覆盖时自然 DIRECT），不引新依赖。
+/// `.part` 临时名 + 原子 rename、HTTP Range 断点续传、主源失败换镜像、系统代理、
+/// 进度节流——全部住在 `lib/src/onnx/model_file_downloader.dart`（OCR / ASR 共用）；
+/// 本文件只做两件事：把清单里的 [MangaOcrModelFile] 交给共享下载器、把共享的
+/// `ModelDownloadEvent` 转成 OCR 接口面上的 [MangaOcrDownloadEvent]。构造签名与
+/// `downloadAll` 契约原样保留，`MangaOcrServiceImpl` 与既有测试零改动。
 library;
 
 import 'dart:io';
-import 'dart:math' as math;
-
-import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/ocr/manga_ocr_model_manifest.dart';
 import 'package:fushi/src/ocr/manga_ocr_service.dart';
-import 'package:fushi/src/utils/net/app_http.dart';
+import 'package:fushi/src/onnx/model_file_downloader.dart';
 
-/// 默认进度事件的字节间隔（避免大文件每 chunk 一事件淹没 UI）。
-const int kMangaOcrDownloadProgressInterval = 512 * 1024;
+/// 默认进度事件的字节间隔（与共享下载器同值）。
+const int kMangaOcrDownloadProgressInterval = kModelDownloadProgressInterval;
 
 /// 模型下载器。[createClient] 可注入（测试指向本地 HttpServer）。
 class MangaOcrModelDownloader {
   MangaOcrModelDownloader({
     HttpClient Function()? createClient,
     List<String> Function(MangaOcrModelFile file)? urlCandidates,
-    this.progressByteInterval = kMangaOcrDownloadProgressInterval,
-  })  : _createClient = createClient ?? _defaultClient,
-        _urlCandidates = urlCandidates ?? mangaOcrModelUrlCandidates;
+    int progressByteInterval = kMangaOcrDownloadProgressInterval,
+  }) : _inner = ModelFileDownloader(
+          createClient: createClient,
+          urlCandidates: _adaptUrlCandidates(urlCandidates),
+          progressByteInterval: progressByteInterval,
+        );
 
-  final HttpClient Function() _createClient;
-
-  /// 单文件的下载候选 URL 序列（主源 + 镜像）。可注入：镜像回退这条分支只有
-  /// 把候选序列做成参数才测得到——真实候选写死了 huggingface 域名，测试里的
-  /// 本地 HttpServer 永远派生不出第二个候选。
-  final List<String> Function(MangaOcrModelFile file) _urlCandidates;
+  final ModelFileDownloader _inner;
 
   /// 两次进度事件之间至少累积的字节数（首尾事件恒发）。
-  final int progressByteInterval;
+  int get progressByteInterval => _inner.progressByteInterval;
 
-  // BUG-1498：原先是 `findProxyFromEnvironment`——只读 HTTPS_PROXY/HTTP_PROXY 环境
-  // 变量，读不到 Windows 注册表 / macOS / Linux 的 GUI 系统代理。而这条链路要从
-  // huggingface 下约 470MB 模型，clash「系统代理」模式（写注册表、不导出 env）下
-  // 等于裸直连。改走统一装配点后 env > GUI 系统代理 > DIRECT 一致生效。
-  static HttpClient _defaultClient() => createAppHttpClient()
-    // 主源在部分网络下是「连不上」而非「连上后慢」。系统默认超时可以拖到
-    // 数十秒，三个文件叠起来用户只看到一个不动的进度条。20s 足够覆盖正常
-    // 握手，又能让镜像回退在可感知的时间内发生。
-    ..connectionTimeout = const Duration(seconds: 20);
+  /// 把 OCR 类型的候选函数适配成共享层签名。传入的 [MangaOcrModelFile] 经
+  /// `downloadAll` 的 `List<MangaOcrModelFile>` 进来，所以这里的向下转型是
+  /// 结构上保证成立的，不是猜。不注入时用清单默认的
+  /// [mangaOcrModelUrlCandidates]（主源 + hf-mirror）。
+  static List<String> Function(DownloadableModelFile file) _adaptUrlCandidates(
+    List<String> Function(MangaOcrModelFile file)? urlCandidates,
+  ) {
+    final List<String> Function(MangaOcrModelFile file) candidates =
+        urlCandidates ?? mangaOcrModelUrlCandidates;
+    return (DownloadableModelFile file) =>
+        candidates(file as MangaOcrModelFile);
+  }
 
-  /// 下载清单里所有未就绪文件到 [targetDir]。
-  ///
-  /// - 已就绪文件跳过（仍发一条 received==total 的完成进度，让 UI 汇总正确）。
-  /// - `.part` 残留触发 Range 续传；服务器不支持（非 206）则整文件重下。
-  /// - 单文件完成：长度非零 + （expected>0 时）长度==expected，然后原子
-  ///   rename `.part` → 最终名。
-  /// - 全部完成后补发 `done=true` 收尾事件。
+  /// 下载清单里所有未就绪文件到 [targetDir]（契约见共享层
+  /// [ModelFileDownloader.downloadAll]；就绪判定用 [isMangaOcrModelFileReady]）。
   Stream<MangaOcrDownloadEvent> downloadAll({
     required List<MangaOcrModelFile> files,
     required Directory targetDir,
-  }) async* {
-    if (files.isEmpty) {
-      return;
-    }
-    await targetDir.create(recursive: true);
-    final HttpClient client = _createClient();
-    try {
-      for (final MangaOcrModelFile file in files) {
-        final File target = File(p.join(targetDir.path, file.fileName));
-        if (isMangaOcrModelFileReady(target)) {
-          final int size = target.lengthSync();
-          yield MangaOcrDownloadEvent(
-            fileName: file.fileName,
-            receivedBytes: size,
-            totalBytes: size,
-          );
-          continue;
-        }
-        yield* _downloadFile(client, file, target);
-      }
-      final MangaOcrModelFile last = files.last;
-      yield MangaOcrDownloadEvent(
-        fileName: last.fileName,
-        receivedBytes: last.expectedBytes,
-        totalBytes: last.expectedBytes,
-        done: true,
-      );
-    } finally {
-      client.close(force: true);
-    }
-  }
-
-  /// 单文件下载：主源失败按序换镜像（候选序列见 [mangaOcrModelUrlCandidates]）。
-  ///
-  /// 换源不清 `.part`——镜像与主源是同一个 blob，续传直接接上；万一遇到内容不
-  /// 一致的源，rename 前的长度校验仍会拦下并删掉坏 `.part`。全部候选都失败时抛
-  /// 最后一个错误，语义与单源时代一致。
-  Stream<MangaOcrDownloadEvent> _downloadFile(
-    HttpClient client,
-    MangaOcrModelFile file,
-    File target,
-  ) async* {
-    final List<String> candidates = _urlCandidates(file);
-    Object? lastError;
-    StackTrace? lastStack;
-    for (final String url in candidates) {
-      try {
-        // 逐事件转发而不是 `yield*`：async* 里 `yield*` 委托出去的错误直接流向
-        // 下游监听者，**不经过**这里的 try/catch——那样写出来的回退循环长得
-        // 像模像样，实际第一个候选一失败就整条流报错，永远换不到镜像。
-        await for (final MangaOcrDownloadEvent event
-            in _downloadFileFrom(client, file, target, url)) {
-          yield event;
-        }
-        return;
-      } on Object catch (error, stack) {
-        lastError = error;
-        lastStack = stack;
-      }
-    }
-    Error.throwWithStackTrace(lastError!, lastStack!);
-  }
-
-  Stream<MangaOcrDownloadEvent> _downloadFileFrom(
-    HttpClient client,
-    MangaOcrModelFile file,
-    File target,
-    String url,
-  ) async* {
-    final File part = File('${target.path}.part');
-    int offset = part.existsSync() ? part.lengthSync() : 0;
-
-    final HttpClientRequest request = await client.getUrl(Uri.parse(url));
-    if (offset > 0) {
-      request.headers.set(HttpHeaders.rangeHeader, 'bytes=$offset-');
-    }
-    final HttpClientResponse response = await request.close();
-
-    if (offset > 0 &&
-        response.statusCode == HttpStatus.requestedRangeNotSatisfiable &&
-        file.expectedBytes > 0 &&
-        offset == file.expectedBytes) {
-      // `.part` 已经完整（上次在 rename 前中断），服务器对 bytes=<len>- 回 416：
-      // 不再拉流，直接走校验 + 原子转正。
-      await response.drain<void>();
-      yield _finalizePart(file, part, target);
-      return;
-    }
-
-    final IOSink sink;
-    int received;
-    int total;
-    if (offset > 0 && response.statusCode == HttpStatus.partialContent) {
-      // Range 命中：从 offset 续写。
-      received = offset;
-      total = response.contentLength > 0
-          ? offset + response.contentLength
-          : math.max(file.expectedBytes, offset);
-      sink = part.openWrite(mode: FileMode.append);
-    } else if (response.statusCode == HttpStatus.ok) {
-      // 服务器不支持 Range（或本就无残留）：整文件重下，截断旧残留。
-      received = 0;
-      total = response.contentLength > 0
-          ? response.contentLength
-          : file.expectedBytes;
-      sink = part.openWrite();
-      offset = 0;
-    } else {
-      await response.drain<void>();
-      throw HttpException(
-        'download ${file.fileName} failed: HTTP ${response.statusCode}',
-        uri: Uri.parse(url),
-      );
-    }
-
-    int lastEmitted = -1;
-    try {
-      yield MangaOcrDownloadEvent(
-        fileName: file.fileName,
-        receivedBytes: received,
-        totalBytes: total,
-      );
-      lastEmitted = received;
-      await for (final List<int> chunk in response) {
-        sink.add(chunk);
-        received += chunk.length;
-        if (received - lastEmitted >= progressByteInterval) {
-          yield MangaOcrDownloadEvent(
-            fileName: file.fileName,
-            receivedBytes: received,
-            totalBytes: total,
-          );
-          lastEmitted = received;
-        }
-      }
-      await sink.flush();
-    } finally {
-      await sink.close();
-    }
-
-    yield _finalizePart(file, part, target);
-  }
-
-  /// 完成一个 `.part`：实际大小校验（非零恒查；expected>0 时长度校验——传输
-  /// 截断/上游漂移都在 rename 前拦截，绝不把坏档转正）+ 原子 rename，返回该
-  /// 文件的完成事件。
-  MangaOcrDownloadEvent _finalizePart(
-    MangaOcrModelFile file,
-    File part,
-    File target,
-  ) {
-    final int actual = part.lengthSync();
-    if (actual <= 0) {
-      throw StateError('download ${file.fileName} produced empty file');
-    }
-    if (file.expectedBytes > 0 && actual != file.expectedBytes) {
-      // 长度不符的 .part 不可信，删掉避免下次 Range 续传在坏偏移上加码。
-      try {
-        part.deleteSync();
-      } catch (_) {}
-      throw StateError('download ${file.fileName} size mismatch: '
-          'got $actual, expected ${file.expectedBytes}');
-    }
-
-    // 原子转正：目标若有非法残留（0 字节）先清掉再 rename。
-    if (target.existsSync()) {
-      target.deleteSync();
-    }
-    part.renameSync(target.path);
-    return MangaOcrDownloadEvent(
-      fileName: file.fileName,
-      receivedBytes: actual,
-      totalBytes: actual,
-    );
+  }) {
+    return _inner
+        .downloadAll(
+          files: files,
+          targetDir: targetDir,
+          isReady: isMangaOcrModelFileReady,
+        )
+        .map(
+          (ModelDownloadEvent event) => MangaOcrDownloadEvent(
+            fileName: event.fileName,
+            receivedBytes: event.receivedBytes,
+            totalBytes: event.totalBytes,
+            done: event.done,
+          ),
+        );
   }
 }

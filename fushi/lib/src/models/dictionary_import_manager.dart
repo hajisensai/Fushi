@@ -305,9 +305,13 @@ class DictionaryImportManager {
           metadata: <String, String>{
             ...readSourceMetadataFromIndex(finalDir),
             if (result.kanjiCount > 0) 'hasKanji': 'true',
+            // 导入时 native 已经数过 term/kanji 记录，等于类型探测刚做完：直接落
+            // 标记，启动期的自愈循环就不会再对这本做一次全表扫描。
+            kDictTypeProbeKey: kDictTypeProbeVersion,
           },
           hiddenLanguages: preservedSettings?.hiddenLanguages ?? const [],
           collapsedLanguages: preservedSettings?.collapsedLanguages ?? const [],
+          expandedLanguages: preservedSettings?.expandedLanguages ?? const [],
           // 用户手动指定的内容语言属于用户设置，重导必须继承——metadata 会被包内
           // index.json 整体重建，塞那里等于每次更新都被抹掉。
           languageOverride: preservedSettings?.languageOverride,
@@ -356,15 +360,12 @@ class DictionaryImportManager {
       await Future<void>.delayed(Duration.zero);
       await extractFileToDisk(archive.path, work.path);
 
-      final List<File> dictionaries = work
-          .listSync(recursive: true)
-          .whereType<File>()
-          .where((File f) {
-            final String ext = path.extension(f.path).toLowerCase();
-            return ext == '.mdx' || ext == '.dsl';
-          })
-          .toList()
-        ..sort((File a, File b) => a.path.compareTo(b.path));
+      final List<File> dictionaries =
+          work.listSync(recursive: true).whereType<File>().where((File f) {
+        final String ext = path.extension(f.path).toLowerCase();
+        return ext == '.mdx' || ext == '.dsl';
+      }).toList()
+            ..sort((File a, File b) => a.path.compareTo(b.path));
 
       final List<String> failedNames = <String>[];
       for (int i = 0; i < dictionaries.length; i++) {
@@ -408,7 +409,8 @@ class DictionaryImportManager {
         try {
           work.deleteSync(recursive: true);
         } catch (e, stack) {
-          ErrorLogService.instance.log('DictImport.multiArchiveCleanup', e, stack);
+          ErrorLogService.instance
+              .log('DictImport.multiArchiveCleanup', e, stack);
         }
       }
     }
@@ -566,9 +568,12 @@ class DictionaryImportManager {
         metadata: <String, String>{
           ...metadata,
           if (result.kanjiCount > 0) 'hasKanji': 'true',
+          // 同目录导入路径：native 刚数完记录，探测标记直接落库（见另一处注释）。
+          kDictTypeProbeKey: kDictTypeProbeVersion,
         },
         hiddenLanguages: preservedSettings?.hiddenLanguages ?? const [],
         collapsedLanguages: preservedSettings?.collapsedLanguages ?? const [],
+        expandedLanguages: preservedSettings?.expandedLanguages ?? const [],
         // 同上：用户手动指定的内容语言随 preservedSettings 继承，不被重导冲掉。
         languageOverride: preservedSettings?.languageOverride,
       ));

@@ -256,8 +256,11 @@ void main() {
       // build 内的分支顺序，所以从 build 起点往后找。
       final int buildIdx = src.indexOf('Widget build(BuildContext context)');
       expect(buildIdx, greaterThan(0), reason: 'main.dart 必须有根 widget 的 build');
+      // BUG-2106：根分支的判据是 backupImportOwnsAppRoot（**排除 validating**）。
+      // validating 段 DB 仍打开、可取消，换根会把调用方路由连 Navigator 一起销毁
+      // （引导向导整段蒸发）；它改由模态遮罩路由承载。
       final int backupIdx =
-          src.indexOf('appModel.backupImportActive', buildIdx);
+          src.indexOf('appModel.backupImportOwnsAppRoot', buildIdx);
       final int loadingIdx =
           src.indexOf('if (!appModel.isInitialised)', buildIdx);
       expect(backupIdx, greaterThan(0), reason: '根 widget 必须有备份导入遮罩分支');
@@ -265,6 +268,15 @@ void main() {
       expect(backupIdx, lessThan(loadingIdx),
           reason: '导入遮罩必须在裸 loading 分支之前命中，否则导入期回退近黑屏');
       expect(src.contains('BackupImportOverlayView('), isTrue);
+      // 禁止回退到「所有相位都换根」：那正是 BUG-2106 的病根。
+      expect(
+        src.contains('if (appModel.backupImportActive) {'),
+        isFalse,
+        reason: 'BUG-2106：根分支不得再用 backupImportActive（会把 validating 也换根，'
+            '摧毁调用方路由与引导向导）',
+      );
+      expect(src.contains('if (appModel.backupImportOwnsAppRoot) {'), isTrue,
+          reason: '根分支必须只在关库后的相位（running/done/failed）独占 app 根');
       // 重启由确认视图按钮 + 导入成功后的自动触发共同驱动（onRestart 注入 backupImportRestart，
       // 需带 appModel 以委托 lifecycle.restartApp 真重启）。
       expect(src.contains('onRestart: () => backupImportRestart(appModel)'),
@@ -389,6 +401,19 @@ void main() {
       expect(src.contains('bool isBackupValidatingCurrent(int token)'), isTrue);
       expect(src.contains('void cancelBackupValidating()'), isTrue);
       expect(src.contains('void endBackupValidating()'), isTrue);
+      // BUG-2106：换根判据必须显式把 validating 排除在外。
+      expect(
+        src.contains('bool get backupImportOwnsAppRoot =>'),
+        isTrue,
+        reason: '必须有「是否独占 app 根」的派生判据，供 main.dart 消费',
+      );
+      final int ownsIdx = src.indexOf('bool get backupImportOwnsAppRoot =>');
+      final String ownsBody = src.substring(ownsIdx, ownsIdx + 240);
+      expect(
+        ownsBody.contains('_backupImportPhase != BackupImportPhase.validating'),
+        isTrue,
+        reason: 'BUG-2106：validating 相位不得独占 app 根（否则调用方路由被销毁）',
+      );
     });
 
     test('backup.part：validate/preview 期用 validating 遮罩，退出后经全局 navigator 弹确认框',
@@ -425,12 +450,71 @@ void main() {
           src.contains('appModel.isBackupValidatingCurrent(validatingToken)'),
           isTrue,
           reason: 'validate/preview 结果消费前必须用 token 判定是否仍是最新');
+      // BUG-2106：validating 遮罩是压在调用方页面之上的模态路由，不换根。
+      final int overlayIdx =
+          src.indexOf('_BackupValidatingOverlay.show(', importIdx);
+      expect(overlayIdx, greaterThan(beginValIdx),
+          reason: 'beginBackupValidating 之后必须压上遮罩路由（而非依赖换根）');
+      expect(overlayIdx, lessThan(endValIdx),
+          reason: '遮罩必须在校验期间就在栈上');
+      // 每条退出路径都得摘掉它：路由 canPop:false，漏一次 app 就被永久挡住。
+      expect(src.contains('overlay.dismiss();'), isTrue,
+          reason: '退出路径必须摘掉遮罩路由');
+      final int finallyIdx = src.indexOf('} finally {', overlayIdx);
+      expect(finallyIdx, greaterThan(overlayIdx),
+          reason: '遮罩摘除必须有 finally 兜底（早退 / 抛出都不能漏）');
+      expect(
+        src.indexOf('overlay.dismiss();', finallyIdx),
+        greaterThan(finallyIdx),
+        reason: 'finally 里必须 dismiss 遮罩路由',
+      );
     });
 
-    test('main.dart：validating 遮罩接线 onCancel（cancelBackupValidating）', () {
-      final String src = readSource('lib/main.dart').readAsStringSync();
-      expect(src.contains('onCancel: appModel.cancelBackupValidating'), isTrue,
-          reason: 'validating 遮罩的取消按钮须接 cancelBackupValidating');
+    test('backup.part：遮罩路由只能 removeRoute 摘除（pop 会被 PopScope 拦下）', () {
+      final String src =
+          readSource('lib/src/sync/sync_settings_schema/backup.part.dart')
+              .readAsStringSync();
+      final int cls = src.indexOf('class _BackupValidatingOverlay {');
+      expect(cls, greaterThan(0), reason: '必须有遮罩路由句柄类');
+      final String body = src.substring(cls);
+      expect(body.contains('navigator.removeRoute<void>(route)'), isTrue,
+          reason: 'BUG-2106：路由带 PopScope(canPop:false)，pop 摘不掉，必须 removeRoute');
+      expect(body.contains('navigator.pop('), isFalse,
+          reason: '禁止用 pop 摘遮罩路由（会被 PopScope 拦下，遮罩永久留在栈上）');
+    });
+
+    test('遮罩路由：不可 pop + 不透明 + 接线取消 (BUG-2106)', () {
+      final String src = readSource(
+        'lib/src/sync/backup_validating_overlay_route.dart',
+      ).readAsStringSync();
+      expect(src.contains('canPop: false'), isTrue,
+          reason: '系统返回不得穿过遮罩去 pop 底下的调用方页面（引导向导）');
+      expect(src.contains('opaque: true'), isTrue,
+          reason: '遮罩必须不透明：挡住底下页面的绘制与命中测试');
+      expect(src.contains('phase: BackupImportPhase.validating'), isTrue,
+          reason: '本路由只承载 validating 相位');
+      expect(src.contains('onCancel: onCancel'), isTrue,
+          reason: '取消按钮必须接调用方注入的回调');
+    });
+
+    test('validating 取消接线搬到遮罩路由的调用方 (BUG-2106)', () {
+      // 取消只属于 validating 相位，而 validating 已不由 main.dart 的根分支承载
+      // （那里只剩 running/done/failed，本视图在这三个相位不渲染取消按钮）。
+      final String main = readSource('lib/main.dart').readAsStringSync();
+      expect(
+        main.contains('onCancel: appModel.cancelBackupValidating'),
+        isFalse,
+        reason: 'BUG-2106：根分支不再承载 validating，取消接线不该留在这里',
+      );
+      final String src =
+          readSource('lib/src/sync/sync_settings_schema/backup.part.dart')
+              .readAsStringSync();
+      expect(src.contains('appModel.cancelBackupValidating();'), isTrue,
+          reason: '遮罩路由的取消回调必须作废 in-flight 校验 token');
+      final int cancelIdx = src.indexOf('appModel.cancelBackupValidating();');
+      final int dismissIdx = src.lastIndexOf('handle.dismiss();', cancelIdx);
+      expect(dismissIdx, greaterThan(0),
+          reason: '取消必须先摘掉遮罩路由再作废 token（否则遮罩留在栈上）');
     });
   });
 }

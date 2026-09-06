@@ -97,15 +97,14 @@ class StatFacts {
   /// **活动流的唯一数据源**：legacy 活动行 ∪ 段合成行 ∪ 游玩会话合成行，按精确
   /// 时刻倒序、截到 [activityLimit]。首页时间轴与游戏首页时间线都只吃它。
   List<ActivityEventRow> get activityRows {
-    final List<ActivityEventRow> all =
-        <ActivityEventRow>[
-          ...legacyActivity,
-          ...segmentsAsActivityRows(segments),
-          ...galgameSessionsAsActivityRows(recentGameSessions, gameNamesById),
-        ]..sort(
-          (ActivityEventRow a, ActivityEventRow b) =>
-              b.timestampMs.compareTo(a.timestampMs),
-        );
+    final List<ActivityEventRow> all = <ActivityEventRow>[
+      ...legacyActivity,
+      ...segmentsAsActivityRows(segments),
+      ...galgameSessionsAsActivityRows(recentGameSessions, gameNamesById),
+    ]..sort(
+        (ActivityEventRow a, ActivityEventRow b) =>
+            b.timestampMs.compareTo(a.timestampMs),
+      );
     return all.length <= activityLimit ? all : all.sublist(0, activityLimit);
   }
 
@@ -259,6 +258,18 @@ Future<StatFacts> loadStatFacts(
   // v92 段：两面各一份。
   final List<StudySegmentRow> segments = await db.getStudySegments();
   for (final StudySegmentRow s in segments) {
+    // **写零的段不进事实面**。`zeroStudySegmentsOnDays`（时段明细里长按删除走的那条）
+    // 只把行写成零而不删行——必须删的是同步语义：真删行会被对端的旧数据按 LWW 复活，
+    // 写零才能跨端传播「这段不算了」。
+    //
+    // 于是过滤责任落在读侧。不过滤的话，被删掉的那条会以「0 字」原地复活：sheet 聚合
+    // 侧对任何命中该 dateKey 的 fact 都建 entry，渲染侧 ms==0 就走 formatStatChars(0)。
+    // 用户看到的就是「删了、刷新、它又回来了」。零行同样会污染排行、热力图等所有吃
+    // StatFacts.daily 的消费方。
+    //
+    // 判据与 [segmentsAsActivityRows] 逐字一致——**同一件事只能有一条判据**，
+    // 两处分别写就是给「活动流干净、统计页脏」这种半修好状态留门。
+    if (s.durationMs <= 0 && s.chars <= 0 && s.pages <= 0) continue;
     final StatFact fact = StatFact(
       mediaKind: s.mediaKind,
       mediaKey: s.mediaKey,

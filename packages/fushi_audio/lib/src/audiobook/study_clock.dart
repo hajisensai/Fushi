@@ -72,6 +72,20 @@ DateTime hourBoundaryAfter(DateTime t) =>
 /// 一个口进 `study_segments`；抽成 typedef 是给纯单测注入 fake。
 typedef StudySegmentSink = Future<void> Function(StudySegmentsCompanion row);
 
+/// [StudyClock] 的时长来源。
+enum StudyAccrual {
+  /// 墙钟窗口：每个 tick 把 `[上次 tick, now]` 整窗计入（经断档 / 活跃态 / 空闲三道
+  /// 守卫）。阅读 / 漫画 / PDF 面用——「页面开着、没空闲」就是在读。
+  wallClock,
+
+  /// 显式记账：时长只由消费方经 [StudyClock.addActiveMs] 推入，tick 不再按墙钟计。
+  /// 视频面用（BUG-2108）：观看时长 = 位置推进到**首次覆盖**的片内区间所花的墙钟
+  /// 时间，由 `VideoWatchTracker` 按 1s 采样位置算出；回放 / 拖回 / 重看不推、不计。
+  /// 此前视频面按 tick 末刻 `isPlaying` 整窗计——一个 20s 回放可能记 60s 也可能记
+  /// 0s，且重听照计。
+  explicit,
+}
+
 /// 当前打开的段：内存里的**绝对值**累计器，每次 tick 原样写回同一 [uid]。
 class _OpenSegment {
   _OpenSegment({
@@ -121,6 +135,7 @@ class StudyClock {
     required String mediaKey,
     required String title,
     String format = '',
+    this.accrual = StudyAccrual.wallClock,
     this.isActive,
     this.idleTimeout,
     this.onTick,
@@ -130,7 +145,11 @@ class StudyClock {
     Future<String> Function()? deviceId,
     DateTime Function()? now,
     String Function()? uidFactory,
-  }) : _mediaKind = mediaKind,
+  }) : assert(
+         accrual == StudyAccrual.wallClock || (isActive == null && idleTimeout == null),
+         '显式记账模式下活跃态 / 空闲门无意义：时长全由 addActiveMs 决定',
+       ),
+       _mediaKind = mediaKind,
        _mediaKey = mediaKey,
        _title = title,
        _format = format,
@@ -150,7 +169,14 @@ class StudyClock {
   final DateTime Function() _now;
   final String Function() _uidFactory;
 
-  /// 活跃态判据（每个 tick 问一次）。null = 恒活跃。视频面接 `isPlaying`。
+  /// 时长来源（见 [StudyAccrual]）。
+  final StudyAccrual accrual;
+
+  /// 显式记账模式：本 tick 窗口内是否收到过 [addActiveMs]。没有 = 这一分钟没看新
+  /// 内容（暂停 / 回放 / 拖动），与墙钟模式「守卫拒绝整窗」同律：封段，下次记账开新段。
+  bool _creditedSinceTick = false;
+
+  /// 活跃态判据（每个 tick 问一次，仅墙钟模式）。null = 恒活跃。
   bool Function()? isActive;
 
   /// 空闲门：距上次 [touch] 超过它的 tick 不入账。null = 不设（视频 / 游戏）。
@@ -237,6 +263,20 @@ class StudyClock {
     _open!.dirty = true;
   }
 
+  /// 显式记账（仅 [StudyAccrual.explicit]）：把 [ms] 墙钟毫秒计到当前打开段（没有 /
+  /// 已跨小时就开新段）。消费方按自己的采样节奏（≤ 1s 一次）推入，不会跨小时边界
+  /// 拆分——单次记账最多几百毫秒，落在 `now` 所在小时即可。
+  void addActiveMs(int ms) {
+    assert(accrual == StudyAccrual.explicit, '墙钟模式的时长由 tick 结算，不许外推');
+    if (ms <= 0) return;
+    final DateTime now = _now();
+    final _OpenSegment seg = _ensureOpen(now);
+    seg.durationMs += ms;
+    seg.endAt = now;
+    seg.dirty = true;
+    _creditedSinceTick = true;
+  }
+
   /// 立刻结算当前部分窗口并落库（不停表、不封段）。页面在章导航 / 生命周期节点调用，
   /// 让「上一次 tick 到现在」这段不因随后的 dispose 而丢。
   Future<void> flushNow() async {
@@ -263,6 +303,13 @@ class StudyClock {
     // 紧随其后的正常窗口会开新 uid 把一次阅读切碎。
     if (!now.isAfter(start)) return;
     _tickStart = now;
+    if (accrual == StudyAccrual.explicit) {
+      // 时长已由 addActiveMs 逐次推入；tick 只裁决段的生命周期：这一窗一次记账都
+      // 没有 = 没在看新内容，封段（与墙钟模式守卫拒绝整窗同律）。
+      if (!_creditedSinceTick) _seal();
+      _creditedSinceTick = false;
+      return;
+    }
     final bool accepted =
         isContinuousReadingGap(start, now) &&
         (isActive?.call() ?? true) &&
@@ -297,8 +344,16 @@ class StudyClock {
     return now.difference(last) > timeout;
   }
 
-  _OpenSegment _ensureOpen(DateTime now) =>
-      _open ?? _openNew(now, FushiDatabase.statDateKeyOf(now), now.hour);
+  /// 当前打开段；没有或已跨小时 / 跨天（段不跨小时边界）就封旧开新。
+  _OpenSegment _ensureOpen(DateTime now) {
+    final String dateKey = FushiDatabase.statDateKeyOf(now);
+    final _OpenSegment? seg = _open;
+    if (seg != null && seg.dateKey == dateKey && seg.hour == now.hour) {
+      return seg;
+    }
+    _seal();
+    return _openNew(now, dateKey, now.hour);
+  }
 
   _OpenSegment _openNew(DateTime startAt, String dateKey, int hour) {
     final _OpenSegment seg = _OpenSegment(

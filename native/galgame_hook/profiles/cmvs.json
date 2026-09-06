@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "id": "cmvs",
+  "status": "implemented_unverified",
+  "detection": {
+    "executable_sha256": [
+      "C5E715D98B56468DF0A3D6BD8EC263B72BAB736E0AD004DE4E443A54C470DDAD",
+      "AA89205A61C7078A167F9E6668EEA2E4328BDD5C9CBCDD6F45B238CF475ACEA2"
+    ],
+    "module_sha256": [
+      "6B8DC960F581963BAE671EBAB81832DF0E39A43656875EB65A6B547DF1FAAF70",
+      "C51BA0C33E0153492B6CB2688701B35F0DDAE309828FC21A7631AC54ABB5B205"
+    ]
+  },
+  "capabilities": {
+    "text": true,
+    "resource_audio": false,
+    "pcm_audio": true
+  },
+  "evidence": [
+    {
+      "kind": "real_sample",
+      "reference": "Purple Software クロノクロック 体験版v2 (2015-03-20): cmvs32.exe x86 / cmvs64.exe x64 with mog2x32.dll / mog2x64.dll, cmvs.cfg [CMVS_SYSTEM_MAIN] and data\\pack\\*.cpz (CPZ6) measured by static probe on 2026-09-04; no runtime evidence yet"
+    }
+  ]
+}

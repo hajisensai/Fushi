@@ -18,6 +18,7 @@ import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 
 /// 视频设置唯一真相源（阶段 B）：每个条目声明一次，同时服务两个宿主——
 /// 全局设置页（本 destination 的 sections 直接渲染；无 host 时读写纯 pref、下次
@@ -1491,9 +1492,8 @@ SettingsDestination buildVideoDestination() {
               section: t.video_setting_mpv_group_advanced,
             ),
             onTap: (SettingsContext settingsContext) async {
-              final FilePickerResult? result =
-                  await FilePicker.platform.pickFiles(
-                type: FileType.custom,
+              final FilePickerResult? result = await pickFilesByExtensions(
+                context: settingsContext.context,
                 allowedExtensions: const <String>['lua'],
                 allowMultiple: true,
               );

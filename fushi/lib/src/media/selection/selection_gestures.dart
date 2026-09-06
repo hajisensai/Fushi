@@ -77,7 +77,8 @@ class SelectionSlotTarget extends StatelessWidget {
 /// 长按扫选的接管区：包在库页滚动体外面，多选态才生效。
 ///
 /// 只在 [enabled] 为真（= 多选态）时**接上**长按回调。多选态下参与多选的卡片
-/// 自身的 `onLongPress` / `onSecondaryTap` 已置 null（两页原有纪律），故这里的
+/// 自身的 `onLongPress` / 右键菜单已置 null（两页原有纪律；右键那一半 BUG-2111 后由
+/// 卡片外层的 [ContextMenuTrigger] 承担，`onInvoke` 传 null 即整层让路），故这里的
 /// 长按在这些卡上无竞争对手；快速点击仍归卡片 `InkWell.onTap`（长按识别器要过
 /// `kLongPressTimeout` 才宣布胜出），列表滚动仍归 `Scrollable`（手指先动就
 /// 由拖动识别器赢下竞技场，长按根本不会触发）。

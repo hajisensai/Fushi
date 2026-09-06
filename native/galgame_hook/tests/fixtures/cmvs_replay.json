@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "engine_id": "cmvs",
+  "status": "implemented_unverified",
+  "config": {
+    "selected_thread": 7,
+    "duplicate_window_ms": 1000,
+    "audio_priority": ["resource_audio", "pcm", "loopback"],
+    "resource_late_wait_ms": 500
+  },
+  "events": [
+    {"kind": "text", "id": "cmvs-line", "timestamp_ms": 3000, "thread": 7, "text": "synthetic cmvs EmbedCMVS line"},
+    {"kind": "text", "id": "cmvs-other-thread", "timestamp_ms": 3001, "thread": 8, "text": "synthetic cmvs ui thread"},
+    {"kind": "pcm", "id": "cmvs-directsound-pcm", "timestamp_ms": 3012, "format": "s16le"},
+    {"kind": "loopback", "id": "cmvs-loopback", "timestamp_ms": 3015, "format": "s16le"},
+    {"kind": "session_end", "timestamp_ms": 3600}
+  ],
+  "expected": {
+    "cards": [
+      {"text_id": "cmvs-line", "audio_backend": "pcm", "audio_id": "cmvs-directsound-pcm"}
+    ],
+    "duplicate_text_events": 0,
+    "thread_filtered_events": 1,
+    "session_clean": true
+  }
+}

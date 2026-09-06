@@ -10,11 +10,23 @@ on:
   # Fushi 改名过渡期曾暂停 push 自动发布（2026-08-07 用户指示），
   # 2026-08-13 用户指示恢复。
   push:
-    # develop push 只保留 release.yml（唯一带 app 全量单测门的那条）。本 workflow 不跑
-    # 任何 app 测试、只产发布物，合进 develop 后再出一份桌面/Apple 产物是纯冗余，且和
-    # 另外两条抢 runner（实测在 develop 上排队 30+ 分钟没跑上）。
-    # `release: [published]` 与 `workflow_dispatch` 不受影响 —— 手动发测试版/正式版照常。
-    branches: ['main']
+    # 2026-09-05：`branches: ['main']` 改回 `['main', 'develop']`。
+    #
+    # 摘掉 develop 的那次改动依据是「合进 develop 后再出一份桌面/Apple 产物是纯冗余」——
+    # 这句话是**事实错误**：release.yml 只有 `build`(Android APK) 与 `tests` 两个 job，
+    # 从来不产桌面/Apple 产物。所以摘掉的不是重复，而是 develop 上桌面 debug 包的
+    # **唯一来源**。后果实测：09-03 改完之后 fushi-debug-rolling 里 Android APK 一路跟到
+    # 13529，而 windows-setup.exe / macos.zip / ios.ipa 全部停在 13384——桌面用户的更新器
+    # 诚实地报「已是最新」，因为确实再没有更新的桌面包被发布过。这与「没人推代码」同形，
+    # 没有任何守卫会红（路径守卫只校验路径存在，不看分支）。
+    #
+    # 抢 runner 那半是真的，但它是代价不是正确性问题：两条 workflow 共用**按 sha 分组**的
+    # `fushi-release-${sha}` + `cancel-in-progress: false`，同一个 sha 上天然串行、互不取消；
+    # 不同 sha 分属不同组，不会互相饿死。桌面/Apple 包晚出几十分钟，好过根本不出。
+    #
+    # 不变式守卫：fushi/test/build/release_workflow_push_branches_guard_test.dart
+    # ——两条发布 workflow 产出的平台集合不相交，所以它们的 push 分支清单必须一致。
+    branches: ['main', 'develop']
     paths:
       - 'fushi/**'
       - 'packages/**'

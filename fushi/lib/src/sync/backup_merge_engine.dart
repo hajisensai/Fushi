@@ -1421,6 +1421,9 @@ List<String> mergeSkippedDeviceLocalTableNames() =>
       'video_download_subscriptions',
       'video_download_subscription_items',
       'web_mine_queue',
+      // v95：ffprobe 规格探测缓存。键是本机绝对路径、内容是本机文件的实测结果，
+      // 换台设备既命不中也可能与对端的同名文件规格不同——必须现探，不能合并进来。
+      'video_file_specs',
     ]);
 
 /// Read-only summary of what a backup MERGE import would change on this device

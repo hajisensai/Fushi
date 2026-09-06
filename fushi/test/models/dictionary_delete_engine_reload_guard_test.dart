@@ -67,17 +67,24 @@ void main() {
       'A: _rebuildDictPathsCache rebuilds the engine even when all path '
       'buckets are empty (deleting the last dictionary must reload)', () {
     final String body = bodyOf('void _rebuildDictPathsCache(');
-    expect(body.contains('FushiDicts.initializeTyped'), isTrue,
-        reason: 'rebuild must drive the FFI engine');
-    // The call to initializeTyped must NOT be gated behind an
-    // `isNotEmpty`-style guard that skips the rebuild for an empty path set —
-    // that is exactly the hole that left a stale engine after deleting the last
-    // dictionary (BUG-171 hole A).
+    // 引擎装载现在是「排期 + 用前结算」：这个回调挂在每一次词典元数据写入上，
+    // 就地全量重建会让批量导入变成 O(N²)（导第 N 本要把前 N-1 本卸了再装回）。
+    // 守的不变式没变——集合必须被推给引擎，且**不带空集合豁免**；变的只是推的
+    // 方式，所以这里认 scheduleTyped 与 initializeTyped 两种表达之一。
     expect(
-      RegExp(r'isNotEmpty\s*\)\s*\{?\s*FushiDicts\.initializeTyped')
+      body.contains('FushiDicts.scheduleTyped') ||
+          body.contains('FushiDicts.initializeTyped'),
+      isTrue,
+      reason: 'rebuild must drive the FFI engine (schedule or immediate)',
+    );
+    // The call must NOT be gated behind an `isNotEmpty`-style guard that skips
+    // the rebuild for an empty path set — that is exactly the hole that left a
+    // stale engine after deleting the last dictionary (BUG-171 hole A).
+    expect(
+      RegExp(r'isNotEmpty\s*\)\s*\{?\s*FushiDicts\.(scheduleTyped|initializeTyped)')
           .hasMatch(body.replaceAll(RegExp(r'\s+'), ' ')),
       isFalse,
-      reason: 'initializeTyped must run for an empty path set too; an empty '
+      reason: 'the engine must be driven for an empty path set too; an empty '
           'rebuild yields an empty-but-fresh engine so deleting the last '
           'dictionary stops queries from hitting it (BUG-171).',
     );
@@ -85,12 +92,20 @@ void main() {
 
   test('A2: _rebuildDictPathsCacheAsync also rebuilds unconditionally', () {
     final String body = bodyOf('Future<void> _rebuildDictPathsCacheAsync(');
-    expect(body.contains('FushiDicts.initializeTyped'), isTrue);
     expect(
-      RegExp(r'isNotEmpty\s*\)\s*\{?\s*FushiDicts\.initializeTyped')
+      body.contains('FushiDicts.scheduleTyped') ||
+          body.contains('FushiDicts.initializeTyped'),
+      isTrue,
+    );
+    // 启动路径必须**真的把它装完**，而不是只排期就走人：排期没结算时引擎里还是
+    // 空的/旧的，第一次查词才补装——那笔成本会掉在用户脸上。
+    expect(body.contains('FushiDicts.loadPendingAsync()'), isTrue,
+        reason: 'the startup path must settle the pending load itself');
+    expect(
+      RegExp(r'isNotEmpty\s*\)\s*\{?\s*FushiDicts\.(scheduleTyped|initializeTyped)')
           .hasMatch(body.replaceAll(RegExp(r'\s+'), ' ')),
       isFalse,
-      reason: 'async rebuild must not skip initializeTyped on empty path set '
+      reason: 'async rebuild must not skip the engine on empty path set '
           '(BUG-171).',
     );
   });

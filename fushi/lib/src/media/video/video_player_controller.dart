@@ -813,6 +813,7 @@ class VideoPlayerController extends ChangeNotifier
   int get delayMs => _delayMs;
 
   /// 当前播放倍速；未 [load] 时回退最近一次 [setSpeed] 之值（构造默认 1.0）。
+  @override
   double get speed => _player?.state.rate ?? _lastSpeed;
 
   double get volume => _player?.state.volume ?? _lastVolume;

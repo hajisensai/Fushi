@@ -3,6 +3,13 @@
 // （extension 方案在此翻车过）；私有 mixin 不进公共 API 面。
 part of 'database.dart';
 
+/// 视频「已看过的片内区间并集」偏好键前缀（BUG-2108：观看时长只计首次覆盖）。值是
+/// `WatchCoverage.toJson()`；按视频稳定身份 bookUid 键控，删该视频统计时连带删。
+const String kVideoWatchCoveragePrefPrefix = 'video_watch_coverage_';
+
+String videoWatchCoveragePrefKey(String bookUid) =>
+    '$kVideoWatchCoveragePrefPrefix$bookUid';
+
 mixin _FushiDbStatistics
     on
         _$FushiDatabase,
@@ -319,6 +326,9 @@ mixin _FushiDbStatistics
         }
       });
 
+  // zeroStudySegmentsOnDays / deleteStatFactsOnDays 住 _FushiDbContentMisc（同
+  // deleteStudySegmentsForMedia：legacy 删行在那层连带调用，mixin 只能向下看）。
+
   /// 同步 / 备份落地用：写入一条对端墓碑（只在 deletedAt 严格更新时覆盖），并删掉
   /// 本地该身份下 `updatedAt < deletedAt` 的段（删除跨端传播；之后又读的段不动）。
   Future<void> applyStudySegmentTombstone({
@@ -359,11 +369,13 @@ mixin _FushiDbStatistics
       select(studySegmentTombstones).get();
 
   /// 某媒体种类每个 media_key 的最后一段 end_at（书架 / 视频页「最近阅读 / 观看」
-  /// 时刻；legacy 行的 lastModified 由调用方另并）。
+  /// 时刻；legacy 行的 lastModified 由调用方另并）。被用户删成零值的段
+  /// （[zeroStudySegmentsOnDays]）不算「最近看过」。
   Future<Map<String, int>> getLatestStudyEndAtByMedia(String mediaKind) async {
     final List<QueryRow> rows = await customSelect(
       'SELECT media_key, MAX(end_at) AS last_end FROM study_segments '
-      'WHERE media_kind = ? GROUP BY media_key',
+      'WHERE media_kind = ? AND (duration_ms > 0 OR chars > 0 OR pages > 0) '
+      'GROUP BY media_key',
       variables: [Variable.withString(mediaKind)],
       readsFrom: {studySegments},
     ).get();

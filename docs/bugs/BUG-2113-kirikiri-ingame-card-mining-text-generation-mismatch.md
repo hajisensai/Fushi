@@ -1,0 +1,6 @@
+## BUG-2113 · KiriKiri 点击载荷 text_generation 填成 TJS 提交序号，游戏内「+」制卡恒失败
+- **报告**：2026-09-04（ceshi 批量适配 · KiriKiri Z `tenshi_sz.exe`（天使☆騒々 RE-BOOT! ver1.12，x86）真机：单击字形「朝」→ 直连卡片「朝ご飯」正常弹出 → 点卡上「+」→ 卡片关闭、工作台「已制卡 0」、Anki 无新卡、无任何反馈）
+- **真实性**：✅ 真 bug（BUG-2085 家族第三家）。`native/galgame_hook/hook/adapters/kirikiri_adapter.inc` 的 `PublishKirikiriLookupSubmit` 把 `publication.text_generation = hit_seq`（TJS 提交计数，1、2、3…），而 host `fushi/lib/src/lookup/gal_hook_text_overlay_controller.dart:_resolveIngameMiningLineId` 按「`entry.sourceSequence == textGeneration`」解析 occurrence，且有值不命中就 fail closed → 恒 `ankiConnect:false`。同一局探针 `hit seq=1…6` 而文本行 `#139`，对不上。SGRE 已修（BUG-2085），Siglus 仍填 `geometry_generation`（另案）。
+- **[x] ① 已修复** — hook：新增 `ResolveKirikiriLookupTextGeneration(line)`，在共享内存里**选定线程的文本道**按整句内容（忽略空白，`hook/lookup_line_text_match.h`）从最新往回反查最近一条 line 事件的 `TextSlot.seq`；找不到发 0 = 未知（Luna 未出行 / ruby 改写变体 / 线程未选）。host：generation 未知时不再只看 `lines.last`——多语言 KiriKiri Z 把译文行紧跟日文行发出，latest 恒是译文——改为在最近 8 行（`_ingameMiningRecentLineWindow`）内按原文/去空白精确回查，再落到原有 containment。
+- **[x] ② 已加自动化测试** — `native/galgame_hook/tests/lookup_line_text_match_test.cpp`（同句判据：空白差异放行、译文/前缀/ruby 变体拒绝，双架构 CTest）；`fushi/test/lookup/ingame_mining_failure_visibility_guard_test.dart` 追加顺序守卫：文本回退里必须有有界的原文精确回查、排在 fail-closed 之后 containment 之前。
+- **备注**：真机复验见 `docs/plans/2026-09-04-gal-ceshi-batch-kirikiri-z.md`。

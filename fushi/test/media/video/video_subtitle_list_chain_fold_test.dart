@@ -34,7 +34,7 @@ Future<void> _pumpPanel(
         controller: controller,
         onTapCue: (_) {},
         onClose: () {},
-        onCopyCue: (_) {},
+        onCopyCue: (_) => true,
         onFavoriteCue: (_) async {},
         isCueFavorited: (_) => false,
         colorScheme: const ColorScheme.dark(),

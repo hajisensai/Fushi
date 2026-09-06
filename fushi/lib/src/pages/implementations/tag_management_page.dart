@@ -2,6 +2,7 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/builtin_tags.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
@@ -266,20 +267,22 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
                         },
                       ),
                     },
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                      onLongPressStart: (LongPressStartDetails d) =>
-                          _showTagMenu(tag, d.globalPosition),
-                      onSecondaryTapDown: (TapDownDetails d) =>
-                          _showTagMenu(tag, d.globalPosition),
-                      child: FushiListItem(
-                        leading: CircleAvatar(
-                          backgroundColor: Color(tag.colorValue),
-                          radius: 14,
+                    child: ContextMenuTrigger(
+                      // 右键菜单改由绑定表决定唤出键（默认仍是右键）；右键被别的动作占用时自动让位。
+                      onInvoke: (Offset position) => _showTagMenu(tag, position),
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        onLongPressStart: (LongPressStartDetails d) =>
+                            _showTagMenu(tag, d.globalPosition),
+                        child: FushiListItem(
+                          leading: CircleAvatar(
+                            backgroundColor: Color(tag.colorValue),
+                            radius: 14,
+                          ),
+                          title: Text(tag.name),
+                          trailing: Text(t.tag_book_count(count: count)),
+                          onTap: () => _editTag(tag),
                         ),
-                        title: Text(tag.name),
-                        trailing: Text(t.tag_book_count(count: count)),
-                        onTap: () => _editTag(tag),
                       ),
                     ),
                   ),

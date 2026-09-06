@@ -56,6 +56,12 @@ class _SettingsDetailPageState extends BasePageState<SettingsDetailPage>
     // 游戏内查词准入是 hook **异步**报上来的：settingsContext.refresh 只由交互驱动，
     // 事件走不到它。不听这一条，用户开着设置页启动游戏时那一行永远停在旧状态。
     GalIngameLookupController.instance.admission.addListener(_onLogChanged);
+    // 推荐包下载同理（BUG-2097）：它跑在 app 级 controller 里，用户可能是在设置页
+    // 开着的时候点了下载、或者下载在后台跑完了——不听这一条，「推荐包」那一行的
+    // 显隐就停在进页面那一刻的旧状态。
+    appModelNoUpdate.recommendedPackDownloadController.stage.addListener(
+      _onLogChanged,
+    );
   }
 
   @override
@@ -63,6 +69,9 @@ class _SettingsDetailPageState extends BasePageState<SettingsDetailPage>
     ErrorLogService.instance.removeListener(_onLogChanged);
     DebugLogService.instance.removeListener(_onLogChanged);
     GalIngameLookupController.instance.admission.removeListener(_onLogChanged);
+    appModelNoUpdate.recommendedPackDownloadController.stage.removeListener(
+      _onLogChanged,
+    );
     super.dispose();
   }
 

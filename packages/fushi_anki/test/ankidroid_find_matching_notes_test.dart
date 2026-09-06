@@ -43,6 +43,12 @@ void _mockChannel(
 ) {
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .setMockMethodCallHandler(_channel, (MethodCall call) async {
+    // BUG-2098 把「先申请权限、等用户答复」变成每个碰 provider 的入口的**前置条件**，
+    // 于是每次业务调用前都多一次 requestAnkidroidPermissions。本文件的用例断言的是业务
+    // 调用本身（`calls.single` 等），权限只是前置：这里统一答「已授权」且**不记账**，
+    // 让既有断言继续描述它们真正关心的那次调用。测权限被拒的用例在
+    // ankidroid_permission_denied_test.dart。
+    if (call.method == 'requestAnkidroidPermissions') return true;
     calls.add(call);
     return responder(call);
   });

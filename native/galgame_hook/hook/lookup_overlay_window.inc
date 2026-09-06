@@ -215,37 +215,10 @@ fushi_voice_hook::OverlayRect OwnerClientRect(HWND owner) {
   return result;
 }
 
-struct OwnerSearch {
-  DWORD pid = 0;
-  HWND best = nullptr;
-  long best_area = 0;
-};
-
-BOOL CALLBACK FindOverlayOwner(HWND window, LPARAM param) {
-  OwnerSearch* search = reinterpret_cast<OwnerSearch*>(param);
-  DWORD pid = 0;
-  GetWindowThreadProcessId(window, &pid);
-  if (pid != search->pid) return TRUE;
-  if (!IsWindowVisible(window)) return TRUE;
-  if (GetWindow(window, GW_OWNER) != nullptr) return TRUE;  // 只要顶层主窗口
-  RECT rect = {};
-  if (!GetClientRect(window, &rect)) return TRUE;
-  const long area = static_cast<long>(rect.right - rect.left) *
-                    static_cast<long>(rect.bottom - rect.top);
-  // 最大的可见顶层窗口就是游戏主窗口。启动器/工具窗口都比它小。
-  if (area > search->best_area) {
-    search->best_area = area;
-    search->best = window;
-  }
-  return TRUE;
-}
-
-HWND FindGameMainWindow() {
-  OwnerSearch search;
-  search.pid = GetCurrentProcessId();
-  EnumWindows(&FindOverlayOwner, reinterpret_cast<LPARAM>(&search));
-  return search.best;
-}
+// 游戏主窗口判据只有一份：hook/game_main_window.h（dll_main.cpp 文件作用域引入，CTest 同源）。
+// 这里只是匿名命名空间内各 adapter 的无限定名转发；判据本身（含「隐藏 owner 不算 owner」，
+// BUG-2121 BCB VCL）别在这里再抄一遍。
+HWND FindGameMainWindow() { return fushi_voice_hook::FindGameMainWindow(); }
 
 void HideOverlay() {
   g_overlay.outside_dismiss_pending = false;
