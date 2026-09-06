@@ -933,6 +933,23 @@ SettingsDestination buildVideoDestination() {
               );
             },
           ),
+          // 从遮蔽模式里拆出来的独立开关（默认开 = 历史行为）：遮蔽模式管「遮什么」
+          // （模糊 / 隐藏），本开关管「能不能临时看一眼」。关掉后遮蔽在整句期间恒定
+          // 生效，不被路过的鼠标或误触揭开。主 / 副字幕共用一个开关（是「显形这个
+          // 行为」的总闸，不是逐层设置）。
+          SettingsSwitchItem(
+            id: 'video.subtitle.obscure_reveal',
+            title: t.video_setting_subtitle_obscure_reveal,
+            subtitle: t.video_setting_subtitle_obscure_reveal_hint,
+            icon: Icons.visibility_outlined,
+            video: VideoPlacement(group: VideoGroup.subtitle, order: 55),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoSubtitleObscureReveal,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await setVideoSubtitleObscureRevealDual(settingsContext, value);
+              settingsContext.refresh();
+            },
+          ),
           // TODO-1105：尊重 .ass 自带样式开关。开时字幕优先用 .ass 的字体/主色/描边/
           // 阴影，缺失回退统一外观；关时全走统一外观。默认开。
           SettingsSwitchItem(

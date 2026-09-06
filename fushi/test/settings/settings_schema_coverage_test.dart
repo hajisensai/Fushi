@@ -423,6 +423,14 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/media/video/video_subtitle_obscure_mode_test.dart + test/media/video/video_subtitle_overlay_test.dart + test/shortcuts/video_shortcut_registry_test.dart',
   'video/Obscure secondary subtitle':
       'test/media/video/video_secondary_subtitle_obscure_test.dart + test/media/video/video_subtitle_overlay_test.dart',
+  // 遮蔽态「悬停 / 点击显形」总闸（默认开）：写 prefsRepo（changed=true），生效点在
+  // [VideoSubtitleOverlay] 的显形状态机——门控落在 MouseRegion 的 onEnter/onExit 与
+  // 遮蔽态热区的 onTap 上，harness 里既没有播放器也没有字幕层，没有可探的渲染输入。
+  // 由专项测试第 ⑩ 组咬住：关掉后悬停 / 点击对模糊与隐藏都不再揭开、开着时两者照常
+  // 显形（两条防恒真基准）、关掉后热区仍拦住盒面上的字符点击、播放中关掉立刻收回
+  // 已有的显形态。
+  'video/Reveal on hover or tap':
+      'test/media/video/video_subtitle_hide_hover_reveal_test.dart',
   // TODO-286: pref-only video settings surfaced in home settings for parity with
   // the in-player sheet. Schema coverage here proves focus/change/persist/restore
   // through the DB; the runtime effect of each underlying config is guarded by the
