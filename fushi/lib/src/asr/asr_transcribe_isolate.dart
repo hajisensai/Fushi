@@ -56,6 +56,7 @@ class AsrIsolateJobSpec {
     required this.segmenterKind,
     this.batchSize,
     this.usePipeline = true,
+    this.useFp16Encoder = true,
     this.staticBucketsOverride,
     this.materialMs,
   });
@@ -70,6 +71,9 @@ class AsrIsolateJobSpec {
   final AsrSegmenterKind segmenterKind;
 
   final bool usePipeline;
+
+  /// 见 [AsrTranscriptionService.useFp16Encoder]。
+  final bool useFp16Encoder;
 
   /// 见 [AsrTranscriptionService.staticBucketsOverride]。
   final List<AsrEncoderBucket>? staticBucketsOverride;
@@ -108,11 +112,13 @@ class _LoadedMessage {
     required this.resolution,
     required this.greedyGraphAvailable,
     required this.greedyUnavailableReason,
+    required this.encoderFp16,
   });
 
   final OnnxProviderResolution resolution;
   final bool greedyGraphAvailable;
   final String? greedyUnavailableReason;
+  final bool encoderFp16;
 }
 
 class _StatsMessage {
@@ -223,6 +229,7 @@ class AsrIsolateTranscription implements AsrRunningTranscription {
       running._resolution = m.resolution;
       running._greedyGraphAvailable = m.greedyGraphAvailable;
       running._greedyUnavailableReason = m.greedyUnavailableReason;
+      running._encoderFp16 = m.encoderFp16;
       return running;
     } catch (_) {
       events.close();
@@ -240,6 +247,7 @@ class AsrIsolateTranscription implements AsrRunningTranscription {
   late OnnxProviderResolution _resolution;
   bool _greedyGraphAvailable = false;
   String? _greedyUnavailableReason;
+  bool _encoderFp16 = false;
   AsrDecodeStats? _stats;
   StreamController<AsrTranscribeEvent>? _stream;
   bool _isolateExited = false;
@@ -253,6 +261,9 @@ class AsrIsolateTranscription implements AsrRunningTranscription {
 
   @override
   String? get greedyUnavailableReason => _greedyUnavailableReason;
+
+  @override
+  bool get encoderFp16 => _encoderFp16;
 
   @override
   AsrDecodeStats? get decodeStats => _stats;
@@ -346,6 +357,7 @@ Future<void> _isolateMain(_IsolateArgs args) async {
       store: store,
       variant: spec.variant,
       preference: spec.preference,
+      useFp16Encoder: spec.useFp16Encoder,
       staticBucketsOverride: spec.staticBucketsOverride,
       materialMs: spec.materialMs,
     );
@@ -354,6 +366,7 @@ Future<void> _isolateMain(_IsolateArgs args) async {
         resolution: sessions.encoderResolution,
         greedyGraphAvailable: sessions.greedy != null,
         greedyUnavailableReason: sessions.greedyUnavailableReason,
+        encoderFp16: sessions.encoderFp16,
       ),
     );
     final AsrSegmentDecoder decoder = sessions.newDecoder();

@@ -78,6 +78,9 @@ abstract interface class AsrRunningTranscription {
   bool get greedyGraphAvailable;
   String? get greedyUnavailableReason;
 
+  /// 编码器是否跑在设备端派生的 fp16 图上（见 `AsrEngineSessions.encoderFp16`）。
+  bool get encoderFp16;
+
   /// 任务结束后的分阶段耗时（isolate 路径在 finished / paused 之后才有）。
   AsrDecodeStats? get decodeStats;
 
@@ -111,6 +114,9 @@ class AsrInProcessTranscription implements AsrRunningTranscription {
   String? get greedyUnavailableReason => sessions.greedyUnavailableReason;
 
   @override
+  bool get encoderFp16 => sessions.encoderFp16;
+
+  @override
   AsrDecodeStats? get decodeStats => _decoder?.stats;
 
   @override
@@ -135,6 +141,7 @@ class AsrTranscriptionService {
     this.segmenterKind = AsrSegmenterKind.energy,
     this.runInIsolate = true,
     this.usePipeline = true,
+    this.useFp16Encoder = true,
     this.staticBucketsOverride,
   }) : _loader = loader ?? AsrEngineLoader(),
        _pcm = pcm ?? FfmpegAsrPcmSource(),
@@ -163,6 +170,9 @@ class AsrTranscriptionService {
 
   /// 静态桶表覆盖（基准 / 调参用；生产为 null，按显存预算选表）。
   final List<AsrEncoderBucket>? staticBucketsOverride;
+
+  /// 见 [AsrEngineLoader.load] 的 `useFp16Encoder`（基准对照用；生产恒 true）。
+  final bool useFp16Encoder;
 
   /// 默认批次：GPU 上 batch 越大越省逐帧 joiner 的往返（2026-09-05 真机分阶段计时
   /// 里逐帧循环是 ASR 阶段的大头，encoder 本身在 DirectML 上只占零头）；CPU 上
@@ -356,6 +366,7 @@ class AsrTranscriptionService {
           segmenterKind: segmenterKind,
           batchSize: batchSize,
           usePipeline: usePipeline,
+          useFp16Encoder: useFp16Encoder,
           staticBucketsOverride: staticBucketsOverride,
           materialMs: materialMs,
         ),
@@ -365,6 +376,7 @@ class AsrTranscriptionService {
       store: store,
       variant: variant,
       preference: preference,
+      useFp16Encoder: useFp16Encoder,
       staticBucketsOverride: staticBucketsOverride,
       materialMs: materialMs,
     );

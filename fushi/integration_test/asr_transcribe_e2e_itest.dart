@@ -53,6 +53,7 @@ String _param(String name, {String defaultValue = ''}) {
     'ASR_CHUNK_SECONDS' => const String.fromEnvironment('ASR_CHUNK_SECONDS'),
     'ASR_PIPELINE' => const String.fromEnvironment('ASR_PIPELINE'),
     'ASR_BUCKETS' => const String.fromEnvironment('ASR_BUCKETS'),
+    'ASR_FP16' => const String.fromEnvironment('ASR_FP16'),
     _ => '',
   };
   if (fromDefine.isNotEmpty) return fromDefine;
@@ -115,6 +116,8 @@ _runOnce({
     usePipeline: _param('ASR_PIPELINE') != '0',
     // ASR_BUCKETS=560x32,1120x16：静态桶表覆盖（帧数x行数，按帧数递增）。
     staticBucketsOverride: _bucketsFromEnv(_param('ASR_BUCKETS')),
+    // ASR_FP16=0：GPU 上仍用 fp32 编码器（与 fp16 派生图做 A/B）。
+    useFp16Encoder: _param('ASR_FP16') != '0',
   );
   await service.discard(<String>[audio], _kLang);
   final Stopwatch loadClock = Stopwatch()..start();
@@ -130,6 +133,7 @@ _runOnce({
     '[asr-e2e][load] variant=${variant.name} preference=${preference.name} '
     'engineLoad=${loadClock.elapsedMilliseconds}ms '
     'resolution=${running.encoderResolution} '
+    'fp16=${running.encoderFp16} '
     'greedyGraph=${running.greedyGraphAvailable}'
     '${running.greedyUnavailableReason == null ? '' : ' (unavailable: ${running.greedyUnavailableReason})'}',
   );
@@ -202,8 +206,11 @@ void main() {
     if (jobsRoot.existsSync()) await jobsRoot.delete(recursive: true);
   });
 
-  /// ASR_ONLY=gpu 时跳过 CPU 与分阶段计时用例（整本 7 小时的音频只跑 GPU）。
+  /// ASR_ONLY=gpu 时跳过 CPU 与分阶段计时用例（整本 7 小时的音频只跑 GPU）；
+  /// ASR_ONLY=cpu 只跑 CPU int8 用例（量 CPU 侧成批 / padding，不跑 200 s 的
+  /// silero 分阶段计时）。
   final bool onlyGpu = _param('ASR_ONLY') == 'gpu';
+  final bool onlyCpu = _param('ASR_ONLY') == 'cpu';
 
   testWidgets('CPU int8：真模型把话读出来并生成 SRT', (WidgetTester tester) async {
     if (onlyGpu) return;
@@ -238,6 +245,7 @@ void main() {
   }, timeout: const Timeout(Duration(minutes: 10)));
 
   testWidgets('GPU fp32（auto）：真加速 EP 跑通且文本一致', (WidgetTester tester) async {
+    if (onlyCpu) return;
     if (!store.isReady(AsrEncoderVariant.fp32)) {
       // ignore: avoid_print
       print(
@@ -279,7 +287,7 @@ void main() {
   testWidgets(
     '分阶段计时：ffmpeg / VAD / ASR（CPU int8 与 GPU fp32）',
     (WidgetTester tester) async {
-      if (onlyGpu) return;
+      if (onlyGpu || onlyCpu) return;
       if (store.isReady(AsrEncoderVariant.int8)) {
         await _phaseBenchmark(
           store: store,

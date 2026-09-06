@@ -28,6 +28,12 @@ typedef AsrGreedyGraphBuilder =
 /// 派生图的格式版本：拼装逻辑（IO 名、语义）变了就 +1，旧缓存自动重建。
 const int kAsrGreedyGraphFormatVersion = 1;
 
+/// fp16 编码器的转换器签名（见 `asr_fp16_graph.dart` 的 `convertAsrModelToFp16`）。
+typedef AsrFp16Converter = Uint8List Function(Uint8List modelOnnx);
+
+/// fp16 派生文件的格式版本：转换规则变了就 +1，旧缓存自动重建。
+const int kAsrFp16EncoderFormatVersion = 1;
+
 /// 某个编码器变体的模型就绪 / 占用状态。
 class AsrModelStatus {
   const AsrModelStatus({
@@ -180,6 +186,42 @@ class AsrModelStore {
     await tmp.rename(graph.path);
     await meta.writeAsString(jsonEncode(expected), flush: true);
     return graph;
+  }
+
+  /// 派生的 fp16 编码器（整图半精度，主图 IO 仍是 fp32，见 `asr_fp16_graph.dart`）。
+  /// 不下载、不托管：由本目录里 [role] 的 fp32 文件在设备上转换并缓存为同名
+  /// `.fp16.onnx`；sidecar 记录源文件字节数，源文件换了就重建。
+  ///
+  /// [convert] 注入转换器（生产用 `convertAsrModelToFp16`），转换抛出的
+  /// [FormatException] 原样透出，调用方决定回退到 fp32。
+  Future<File> ensureFp16Encoder(
+    AsrModelRole role, {
+    required AsrFp16Converter convert,
+  }) async {
+    final File source = fileFor(role);
+    final File target = File(
+      p.join(dir.path, '${p.basenameWithoutExtension(source.path)}.fp16.onnx'),
+    );
+    final File meta = File('${target.path}.meta.json');
+    final Map<String, Object?> expected = <String, Object?>{
+      'version': kAsrFp16EncoderFormatVersion,
+      'source': p.basename(source.path),
+      'sourceBytes': source.lengthSync(),
+    };
+    if (target.existsSync() && target.lengthSync() > 0 && meta.existsSync()) {
+      try {
+        final Object? current = jsonDecode(await meta.readAsString());
+        if (current is Map && _sameMeta(current, expected)) return target;
+      } on FormatException {
+        // 坏 sidecar：当作过期，重建。
+      }
+    }
+    final Uint8List bytes = convert(await source.readAsBytes());
+    final File tmp = File('${target.path}.part');
+    await tmp.writeAsBytes(bytes, flush: true);
+    await tmp.rename(target.path);
+    await meta.writeAsString(jsonEncode(expected), flush: true);
+    return target;
   }
 
   static bool _sameMeta(Map<Object?, Object?> a, Map<String, Object?> b) {

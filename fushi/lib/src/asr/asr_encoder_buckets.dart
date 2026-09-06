@@ -50,6 +50,21 @@ class AsrEncoderBucket {
 
   int get realRows => sentinel ? batch - 1 : batch;
 
+  /// 行数乘 [factor] 的同帧数桶（fp16 桶表由 fp32 表按 2 倍派生，见
+  /// [asrEncoderBucketsForBudget]）。
+  AsrEncoderBucket scaledRows(int factor) =>
+      AsrEncoderBucket(frames: frames, batch: batch * factor, sentinel: sentinel);
+
+  @override
+  bool operator ==(Object other) =>
+      other is AsrEncoderBucket &&
+      other.frames == frames &&
+      other.batch == batch &&
+      other.sentinel == sentinel;
+
+  @override
+  int get hashCode => Object.hash(frames, batch, sentinel);
+
   @override
   String toString() => 'Bucket(N=$batch, T=$frames)';
 }
@@ -125,18 +140,47 @@ const List<AsrEncoderBucket> kAsrGpuEncoderBucketsSmall = <AsrEncoderBucket>[
 
 const int _kGiB = 1024 * 1024 * 1024;
 
+/// fp16 编码器（`asr_fp16_graph.dart`）下每桶行数相对 fp32 表的倍数。
+///
+/// 一个静态桶的显存 ≈ 权重 + 融合图一次分配的全部中间张量，后者 ∝ N × T 且与元素
+/// 字节数成正比：2026-09-07 RTX 5090 实测 fp16 下 560×64 / 1120×32 / 280×128
+/// 三种同批面积的桶各占 3.0~3.2 GB，正好是 fp32 同帧数桶的一半——所以同一档
+/// 显存预算下 fp16 可以把每桶行数翻倍而占用不变。而吞吐随 N 近乎线性涨到 N=128
+/// （560 帧桶：N=32 40 万帧/s → N=64 58 万 → N=128 72 万），fp16 的收益主要靠
+/// 这一倍行数拿到（单换精度不换桶只有 1.1×，见 `asr_fp16_graph.dart`）。
+const int kAsrFp16BucketRowFactor = 2;
+
 /// 按显存预算（字节，DXGI 本进程可分配上限；null = 查不到）选桶表：
+/// - ≥ 16 GiB：[kAsrGpuEncoderBucketsLarge]（多一档 280 帧桶）；
 /// - ≥ 10 GiB：[kAsrGpuEncoderBuckets]（12 GB 卡上 E2E 峰值 6.6~7.6 GB，含动态
 ///   会话与贪心图）；
 /// - 6~10 GiB：[kAsrGpuEncoderBucketsSmall]；
 /// - < 6 GiB：空表——静态图溢出到系统内存后比动态会话还慢，不如不建；
 /// - null：按默认表试，建失败自会回退（非 Windows 走不到 GPU 桶）。
-List<AsrEncoderBucket> asrEncoderBucketsForBudget(int? budgetBytes) {
-  if (budgetBytes == null) return kAsrGpuEncoderBuckets;
-  if (budgetBytes >= 16 * _kGiB) return kAsrGpuEncoderBucketsLarge;
-  if (budgetBytes >= 10 * _kGiB) return kAsrGpuEncoderBuckets;
-  if (budgetBytes >= 6 * _kGiB) return kAsrGpuEncoderBucketsSmall;
-  return const <AsrEncoderBucket>[];
+///
+/// [fp16] 时每桶行数乘 [kAsrFp16BucketRowFactor]，各档显存占用不变。
+List<AsrEncoderBucket> asrEncoderBucketsForBudget(
+  int? budgetBytes, {
+  bool fp16 = false,
+}) {
+  final List<AsrEncoderBucket> fp32Table;
+  if (budgetBytes == null) {
+    fp32Table = kAsrGpuEncoderBuckets;
+  } else if (budgetBytes >= 16 * _kGiB) {
+    fp32Table = kAsrGpuEncoderBucketsLarge;
+  } else if (budgetBytes >= 10 * _kGiB) {
+    fp32Table = kAsrGpuEncoderBuckets;
+  } else if (budgetBytes >= 6 * _kGiB) {
+    fp32Table = kAsrGpuEncoderBucketsSmall;
+  } else {
+    return const <AsrEncoderBucket>[];
+  }
+  if (!fp16) return fp32Table;
+  return List<AsrEncoderBucket>.unmodifiable(
+    fp32Table.map(
+      (AsrEncoderBucket b) => b.scaledRows(kAsrFp16BucketRowFactor),
+    ),
+  );
 }
 
 /// 一个已建好的静态桶会话。
