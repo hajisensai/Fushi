@@ -42,7 +42,6 @@ class HighlightBridge {
   // Rec.709/0.4 与滚动条判定对同一背景色会得出不同深浅）。默认 false = 浅色，
   // 与旧默认背景 #ffffff 的判定一致。
   window.__fushiHighlightBgDark = false;
-  window.__fushiCustomHighlightColor = null;
   window.__fushiHighlightRangeMap = {};
   window.__fushiHighlightRubyElements = [];
   window.__fushiFallbackHighlightRubyMap = {};
@@ -60,14 +59,12 @@ class HighlightBridge {
   }
 
   function _hlColor(name) {
-    if (window.__fushiCustomHighlightColor) return window.__fushiCustomHighlightColor;
     var rgb = BASE_COLORS[name] || BASE_COLORS.yellow;
     var a = _pickAlpha(name);
     return 'rgba('+rgb[0]+','+rgb[1]+','+rgb[2]+','+a+')';
   }
 
   function _hlMarkColor(name) {
-    if (window.__fushiCustomHighlightColor) return window.__fushiCustomHighlightColor;
     var rgb = MARK_COLORS[name] || MARK_COLORS.yellow;
     return 'rgb('+rgb[0]+','+rgb[1]+','+rgb[2]+')';
   }
@@ -484,7 +481,6 @@ class HighlightBridge {
     InAppWebViewController controller,
     List<FavoriteSentence> highlights, {
     String backgroundHex = '#ffffff',
-    String? customHighlightCss,
   }) async {
     final List<Map<String, dynamic>> payload = [];
     int backfillCount = 0;
@@ -536,11 +532,8 @@ class HighlightBridge {
     // JS 侧不再持有第二套亮度公式。
     final bool backgroundIsDark =
         ReaderContentStyles.isDarkBackground(backgroundHex);
-    final String escapedCustom =
-        customHighlightCss != null ? jsonEncode(customHighlightCss) : 'null';
     await controller.evaluateJavascript(
       source: 'window.__fushiHighlightBgDark=$backgroundIsDark;'
-          'window.__fushiCustomHighlightColor=$escapedCustom;'
           'window.__fushiApplyHighlights && window.__fushiApplyHighlights($json);',
     );
   }

@@ -16,7 +16,7 @@
 
 1. **永不空等**：任何 >30 秒的命令（bootstrap / test / gradle / build）一律后台跑，等待期间推进别的步骤。
 2. **按难度分工**：琐碎活主代理直接干（派发开销 > 收益）；机械面拆给子代理并行；根因、数据结构、整合这些错了会返工的难点主代理亲自把关。绝不让两个代理重复做同一件事。
-3. **验证按爆炸半径分级**：分支上定向验证 + PR CI 兜底全量；合入 `develop` 前才要求本地全量。
+3. **验证按爆炸半径分级**：分支上定向验证 + PR CI 兜底全量；本地**不跑**全量测试门（用户 2026-09-06 拍板，见 CLAUDE.md「验证」）。
 
 ## 难度分级 × 分工
 
@@ -25,7 +25,7 @@
 | **S 琐碎** | 文档、注释、单行改动、纯重命名 | 主代理直接干，**不派子代理**（派发开销 > 收益） | `git diff --cached --check`；涉及 Dart 再加定向 analyze |
 | **A 小修** | 单文件或单模块，根因明确 | 主代理修核心；测试可拆一个子代理并行写 | `flutter analyze` 全量 + 定向 `flutter test <目标> --no-pub` |
 | **B 功能 / 复杂 bug** | 跨模块、多文件、时序/状态/平台边界问题 | 主代理定根因和数据结构；机械面（样板、i18n、多文件同构、测试）拆子代理并行 | 定向 + 相邻功能测试；全量交 PR CI |
-| **C 大型 / 长周期** | 多阶段、需分批审查 | 按 claim 拆多 agent；integration owner 统一收口 | 本地全量（bash 环境） |
+| **C 大型 / 长周期** | 多阶段、需分批审查 | 按 claim 拆多 agent；integration owner 统一收口 | 定向 + 目录枚举型守卫整批；全量交 PR CI |
 
 **子代理纪律**（既有规则，重申）：后台派发，主代理不空等回传；每个子代理给明确文件清单，避免撞同一脏文件；强顺序依赖的步骤别硬拆；子代理回传必须核关键证据（`git diff --stat` / `test -f` / grep），不可全信叙述。
 
@@ -56,7 +56,7 @@ S/A 级同理裁剪：S 级连 worktree bootstrap 都可 `-SkipBootstrap` 到底
     只被 `test/lookup` 的定向测试擦肩而过，红直接进了 develop（TODO-2745）。
 - **`flutter analyze` 全量在 push 前必跑**（含 test 目录）——它本身只要秒级~1 分钟，而 CI 把 warning 当致命，省这一步只会在 CI 上浪费一轮。
 - **分支 draft PR**：定向测试绿 + 全量 analyze 绿即可 push；全量 test 由 CI 兜底（真单测门是 **Build Release APK 的 Run unit tests**，不是 Build and Test）。声明「修好了」的真机复测门槛**不变**（[integration-testing.md](integration-testing.md)）。
-- **合入 `develop`**：integration owner 本地全量 analyze + 全量 test **不变**（bash 环境跑；别 `| tail` 吞退出码；重叠跑会互抢 `sqlite3.dll`，见下节）。
+- **合入 `develop`**：integration owner 本地全量 analyze + 定向 test + 「目录枚举型守卫」整批；**不再本地跑全量 test**（用户 2026-09-06 拍板：`dart run tool/flutter_test_failures.dart` 全量 / 裸 `flutter test` 全量一律不跑，全量只由 PR CI 兜底）。别 `| tail` 吞退出码；重叠跑会互抢 `sqlite3.dll`，见下节。
 
 ## 并发伪红判别
 

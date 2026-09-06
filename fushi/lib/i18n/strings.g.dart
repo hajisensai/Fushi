@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 73032 (4296 per locale)
+/// Strings: 73321 (4313 per locale)
 ///
-/// Built on 2026-09-06 at 04:15 UTC
+/// Built on 2026-09-06 at 12:18 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -423,8 +423,6 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get av_sync => 'A/V Sync';
   String get av_sync_reset => 'Reset';
   String get back => 'Back';
-  String get background_color => 'Background color';
-  String get background_color_desc => 'Reader page background';
   String get backup_category_audiobooks => 'Audiobook audio';
   String get backup_category_audiobooks_desc => 'Audiobook audio and alignment';
   String get backup_category_books => 'Books';
@@ -714,19 +712,6 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Watched ${done}/${total}';
   String get collection_word => 'Word';
   String get collections => 'Collections';
-  String get color_container => 'Container';
-  String get color_container_desc => 'Switch tracks, play bar background';
-  String get color_link => 'Link color';
-  String get color_link_desc => 'Reader hyperlink color';
-  String get color_primary => 'Primary';
-  String get color_primary_desc => 'Audio highlight, buttons, switches';
-  String get color_sentence_audio_highlight => 'Audio highlight';
-  String get color_sentence_audio_highlight_desc =>
-      'Current-sentence highlight that follows audiobook playback';
-  String get color_secondary => 'Secondary';
-  String get color_secondary_desc => 'Dictionary entries, bookshelf badges';
-  String get color_tertiary => 'Tertiary';
-  String get color_tertiary_desc => 'Collections, reading statistics';
   String get columns_per_page => 'Columns per page';
   String get combine_into_series => 'Combine into series';
   String get copied => 'Copied';
@@ -1139,8 +1124,6 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Storage permission is required to browse folders';
   String get follow_audio_off_tooltip => 'Follow audio: OFF';
   String get follow_audio_on_tooltip => 'Follow audio: ON';
-  String get font_color => 'Font color';
-  String get font_color_desc => 'Reader text color';
   String get font_desc_hina_mincho =>
       'Soft decorative Mincho · Pairs well with Noto Sans JP fallback';
   String get font_desc_klee_one =>
@@ -2087,28 +2070,20 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get search => 'Search';
   String get search_ellipsis => 'Search...';
   String get searching_in_progress => 'Searching for ';
-  String get section_advanced_colors => 'Advanced';
   String get section_advanced_typography => 'Advanced';
   String get section_audiobook => 'Audiobook';
-  String get section_audiobook_lyrics => 'Audiobook & lyrics';
   String get section_epub => 'EPUB Library';
   String get section_floating_lyric => 'Floating lyric';
   String get section_interface => 'Interface';
   String get section_layout => 'Layout & display';
   String get section_navigation => 'Navigation';
   String get section_page_turn_direction => 'Page-turn direction';
-  String get section_reader_colors => 'Reader colors';
-  String get section_system_theme => 'System theme color';
   String get section_typography => 'Typography';
   String get section_update => 'Update settings';
   String get section_video_danmaku => 'Danmaku';
   String get section_video_library => 'Library';
   String get section_video_playback => 'Playback';
   String get section_video_subtitles => 'Subtitles';
-  String get seed_color => 'Seed color';
-  String get seed_color_desc => 'Generates all default colors below';
-  String get selection_color => 'Selection highlight';
-  String get selection_color_desc => 'Reader text selection highlight';
   String get send => 'Send';
   String get series => 'Series';
   String get series_created => 'Series created';
@@ -2639,8 +2614,6 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get theme_eyecare => 'Eye care';
   String get theme_gray => 'Gray dark';
   String get theme_light => 'White';
-  String get theme_seed_preview_hint =>
-      'Swatches below preview the colors actually generated from your seed. To force a specific color as the primary accent, turn on the Primary toggle and pick it explicitly.';
   String get theme_water => 'Water blue';
   String toc_section({required Object n}) => 'Table of Contents (${n})';
   String get top_progress_pos_center => 'Center';
@@ -5923,6 +5896,64 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get onboarding_pack_paused_desc =>
       'Progress is kept on disk — resuming picks up where it stopped.';
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  String get theme_section_reader => 'Reader';
+  String get theme_section_audiobook => 'Audiobook';
+  String get theme_section_fine_tune => 'Fine-tune derived colors';
+  String get theme_role_accent => 'Accent color';
+  String get theme_role_reader_text => 'Body text';
+  String get theme_role_reader_text_desc =>
+      'Reader text, toolbar icons and dictionary popup text';
+  String get theme_role_reader_background => 'Page background';
+  String get theme_role_reader_background_desc =>
+      'Reader page, toolbar and dictionary popup background';
+  String get theme_role_link => 'Links';
+  String get theme_role_link_desc =>
+      'Hyperlinks inside books and the selection handles';
+  String get theme_role_selection => 'Lookup highlight';
+  String get theme_role_selection_desc =>
+      'Background of the word or sentence being looked up';
+  String get theme_role_audio_highlight => 'Current sentence';
+  String get theme_role_audio_highlight_desc =>
+      'Follows audiobook playback. Applies to every theme, not just this one.';
+  String get theme_role_secondary => 'Secondary accent';
+  String get theme_role_secondary_desc =>
+      'Tags, badges and selected list items';
+  String get theme_role_tertiary => 'Decoration color';
+  String get theme_role_tertiary_desc => 'Collections and reading statistics';
+  String get theme_role_container => 'Control fill';
+  String get theme_role_container_desc =>
+      'Switch tracks, floating buttons and the play bar';
+  String get theme_role_follows_theme => 'Follows theme';
+  String get theme_role_reset => 'Follow theme again';
+  String get theme_preview_light => 'Light';
+  String get theme_preview_dark => 'Dark';
+  String get theme_preview_button => 'Button';
+  String get theme_preview_tag => 'Tag';
+  String get theme_preview_hint =>
+      'Pick a color to see where it is used outlined in the preview.';
+  String get theme_role_accent_desc =>
+      'Used exactly as picked for buttons, switches, icons and progress bars. Every other color is derived from it.';
+  String get theme_accent_low_contrast_dark =>
+      'Hard to see on the dark-mode background. Pick a lighter color.';
+  String get theme_accent_low_contrast_light =>
+      'Hard to see on the light-mode background. Pick a darker color.';
+  String get theme_section_accent => 'Interface colors';
+  String get theme_role_surface => 'Interface background';
+  String get theme_role_surface_desc =>
+      'Base color of pages, cards and menus; the other layers get a faint tint of gray from it.';
+  String get theme_accent_follow_system => 'Follow the system accent color';
+  String get theme_accent_follow_system_desc =>
+      'Use the wallpaper color on Android (Material You) or the OS accent color on desktop instead of a picked color.';
+  String get theme_accent_follow_system_unavailable =>
+      'The system does not expose an accent color on this device.';
+  String get theme_accent_auto_tone => 'Adjust tone for light and dark mode';
+  String get theme_accent_auto_tone_desc =>
+      'Off: the exact color is used. On: a lighter or darker tone is generated for each mode, so what you see differs from what you picked.';
+  String get theme_role_actual_color => 'Shown as';
+  String get theme_preview_card => 'Card';
+  String get theme_neutral_derived => 'Neutral derived colors';
+  String get theme_neutral_derived_desc =>
+      'Tags, selected items, menus and surfaces stay gray instead of taking on the accent\'s hue; only the accent color itself stands out (like the Windows light theme). White, gray or black accents do this automatically.';
 }
 
 // Path: <root>
@@ -6364,10 +6395,6 @@ class _StringsAr extends _StringsEn {
   String get av_sync_reset => 'إعادة تعيين';
   @override
   String get back => 'رجوع';
-  @override
-  String get background_color => 'لون الخلفية';
-  @override
-  String get background_color_desc => 'خلفية صفحة القارئ';
   @override
   String get backup_category_audiobooks => 'صوت الكتب الصوتية';
   @override
@@ -6873,31 +6900,6 @@ class _StringsAr extends _StringsEn {
   String get collection_word => 'كلمة';
   @override
   String get collections => 'المجموعات';
-  @override
-  String get color_container => 'حاوية';
-  @override
-  String get color_container_desc => 'خلفية تبديل المسارات وشريط التشغيل';
-  @override
-  String get color_link => 'لون الرابط';
-  @override
-  String get color_link_desc => 'لون الروابط في القارئ';
-  @override
-  String get color_primary => 'أساسي';
-  @override
-  String get color_primary_desc => 'تمييز الصوت، الأزرار، المفاتيح';
-  @override
-  String get color_sentence_audio_highlight => 'تمييز الصوت';
-  @override
-  String get color_sentence_audio_highlight_desc =>
-      'تمييز مزامنة ترجمة الكتاب المسموع';
-  @override
-  String get color_secondary => 'ثانوي';
-  @override
-  String get color_secondary_desc => 'إدخالات القاموس، شارات رف الكتب';
-  @override
-  String get color_tertiary => 'ثالثي';
-  @override
-  String get color_tertiary_desc => 'المجموعات، إحصائيات القراءة';
   @override
   String get columns_per_page => 'أعمدة لكل صفحة';
   @override
@@ -7629,10 +7631,6 @@ class _StringsAr extends _StringsEn {
   String get follow_audio_off_tooltip => 'تتبع الصوت: معطّل';
   @override
   String get follow_audio_on_tooltip => 'تتبع الصوت: مفعّل';
-  @override
-  String get font_color => 'لون الخط';
-  @override
-  String get font_color_desc => 'لون نص القارئ';
   @override
   String get font_desc_hina_mincho =>
       'مينتشو زخرفي ناعم · يُنصح مع Noto Sans JP';
@@ -9339,13 +9337,9 @@ class _StringsAr extends _StringsEn {
   @override
   String get searching_in_progress => 'جارٍ البحث عن ';
   @override
-  String get section_advanced_colors => 'متقدم';
-  @override
   String get section_advanced_typography => 'متقدم';
   @override
   String get section_audiobook => 'كتاب مسموع';
-  @override
-  String get section_audiobook_lyrics => 'الكتب الصوتية والكلمات';
   @override
   String get section_epub => 'مكتبة EPUB';
   @override
@@ -9359,10 +9353,6 @@ class _StringsAr extends _StringsEn {
   @override
   String get section_page_turn_direction => 'اتجاه قلب الصفحة';
   @override
-  String get section_reader_colors => 'ألوان القارئ';
-  @override
-  String get section_system_theme => 'لون سمة النظام';
-  @override
   String get section_typography => 'الطباعة';
   @override
   String get section_update => 'إعدادات التحديث';
@@ -9374,14 +9364,6 @@ class _StringsAr extends _StringsEn {
   String get section_video_playback => 'التشغيل';
   @override
   String get section_video_subtitles => 'الترجمات';
-  @override
-  String get seed_color => 'اللون الأساسي';
-  @override
-  String get seed_color_desc => 'يولّد جميع الألوان الافتراضية أدناه';
-  @override
-  String get selection_color => 'لون التحديد';
-  @override
-  String get selection_color_desc => 'تمييز تحديد نص القارئ';
   @override
   String get send => 'إرسال';
   @override
@@ -10357,9 +10339,6 @@ class _StringsAr extends _StringsEn {
   String get theme_gray => 'رمادي داكن';
   @override
   String get theme_light => 'أبيض';
-  @override
-  String get theme_seed_preview_hint =>
-      'تعرض العينات أدناه الألوان المُولَّدة فعليًا من لون البذرة. لفرض لون محدد كلون التمييز الأساسي، فعّل مفتاح «الأساسي» وحدّده صراحةً.';
   @override
   String get theme_water => 'أزرق مائي';
   @override
@@ -15968,6 +15947,106 @@ class _StringsAr extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get theme_section_reader => 'Reader';
+  @override
+  String get theme_section_audiobook => 'Audiobook';
+  @override
+  String get theme_section_fine_tune => 'Fine-tune derived colors';
+  @override
+  String get theme_role_accent => 'Accent color';
+  @override
+  String get theme_role_reader_text => 'Body text';
+  @override
+  String get theme_role_reader_text_desc =>
+      'Reader text, toolbar icons and dictionary popup text';
+  @override
+  String get theme_role_reader_background => 'Page background';
+  @override
+  String get theme_role_reader_background_desc =>
+      'Reader page, toolbar and dictionary popup background';
+  @override
+  String get theme_role_link => 'Links';
+  @override
+  String get theme_role_link_desc =>
+      'Hyperlinks inside books and the selection handles';
+  @override
+  String get theme_role_selection => 'Lookup highlight';
+  @override
+  String get theme_role_selection_desc =>
+      'Background of the word or sentence being looked up';
+  @override
+  String get theme_role_audio_highlight => 'Current sentence';
+  @override
+  String get theme_role_audio_highlight_desc =>
+      'Follows audiobook playback. Applies to every theme, not just this one.';
+  @override
+  String get theme_role_secondary => 'Secondary accent';
+  @override
+  String get theme_role_secondary_desc =>
+      'Tags, badges and selected list items';
+  @override
+  String get theme_role_tertiary => 'Decoration color';
+  @override
+  String get theme_role_tertiary_desc => 'Collections and reading statistics';
+  @override
+  String get theme_role_container => 'Control fill';
+  @override
+  String get theme_role_container_desc =>
+      'Switch tracks, floating buttons and the play bar';
+  @override
+  String get theme_role_follows_theme => 'Follows theme';
+  @override
+  String get theme_role_reset => 'Follow theme again';
+  @override
+  String get theme_preview_light => 'Light';
+  @override
+  String get theme_preview_dark => 'Dark';
+  @override
+  String get theme_preview_button => 'Button';
+  @override
+  String get theme_preview_tag => 'Tag';
+  @override
+  String get theme_preview_hint =>
+      'Pick a color to see where it is used outlined in the preview.';
+  @override
+  String get theme_role_accent_desc =>
+      'Used exactly as picked for buttons, switches, icons and progress bars. Every other color is derived from it.';
+  @override
+  String get theme_accent_low_contrast_dark =>
+      'Hard to see on the dark-mode background. Pick a lighter color.';
+  @override
+  String get theme_accent_low_contrast_light =>
+      'Hard to see on the light-mode background. Pick a darker color.';
+  @override
+  String get theme_section_accent => 'Interface colors';
+  @override
+  String get theme_role_surface => 'Interface background';
+  @override
+  String get theme_role_surface_desc =>
+      'Base color of pages, cards and menus; the other layers get a faint tint of gray from it.';
+  @override
+  String get theme_accent_follow_system => 'Follow the system accent color';
+  @override
+  String get theme_accent_follow_system_desc =>
+      'Use the wallpaper color on Android (Material You) or the OS accent color on desktop instead of a picked color.';
+  @override
+  String get theme_accent_follow_system_unavailable =>
+      'The system does not expose an accent color on this device.';
+  @override
+  String get theme_accent_auto_tone => 'Adjust tone for light and dark mode';
+  @override
+  String get theme_accent_auto_tone_desc =>
+      'Off: the exact color is used. On: a lighter or darker tone is generated for each mode, so what you see differs from what you picked.';
+  @override
+  String get theme_role_actual_color => 'Shown as';
+  @override
+  String get theme_preview_card => 'Card';
+  @override
+  String get theme_neutral_derived => 'Neutral derived colors';
+  @override
+  String get theme_neutral_derived_desc =>
+      'Tags, selected items, menus and surfaces stay gray instead of taking on the accent\'s hue; only the accent color itself stands out (like the Windows light theme). White, gray or black accents do this automatically.';
 }
 
 // Path: <root>
@@ -16416,10 +16495,6 @@ class _StringsDe extends _StringsEn {
   String get av_sync_reset => 'Zurücksetzen';
   @override
   String get back => 'Zurück';
-  @override
-  String get background_color => 'Hintergrundfarbe';
-  @override
-  String get background_color_desc => 'Hintergrund der Reader-Seite';
   @override
   String get backup_category_audiobooks => 'Hörbuch-Audio';
   @override
@@ -16935,34 +17010,6 @@ class _StringsDe extends _StringsEn {
   String get collection_word => 'Wort';
   @override
   String get collections => 'Sammlungen';
-  @override
-  String get color_container => 'Container';
-  @override
-  String get color_container_desc =>
-      'Schalterleisten, Wiedergabeleisten-Hintergrund';
-  @override
-  String get color_link => 'Linkfarbe';
-  @override
-  String get color_link_desc => 'Hyperlink-Farbe im Reader';
-  @override
-  String get color_primary => 'Primär';
-  @override
-  String get color_primary_desc =>
-      'Audio-Hervorhebung, Schaltflächen, Schalter';
-  @override
-  String get color_sentence_audio_highlight => 'Audio-Hervorhebung';
-  @override
-  String get color_sentence_audio_highlight_desc =>
-      'Untertitel-Synchronisierung des Hörbuchs';
-  @override
-  String get color_secondary => 'Sekundär';
-  @override
-  String get color_secondary_desc =>
-      'Wörterbucheinträge, Bücherregal-Abzeichen';
-  @override
-  String get color_tertiary => 'Tertiär';
-  @override
-  String get color_tertiary_desc => 'Sammlungen, Lesestatistiken';
   @override
   String get columns_per_page => 'Spalten pro Seite';
   @override
@@ -17723,10 +17770,6 @@ class _StringsDe extends _StringsEn {
   String get follow_audio_off_tooltip => 'Audio-Verfolgung: AUS';
   @override
   String get follow_audio_on_tooltip => 'Audio-Verfolgung: AN';
-  @override
-  String get font_color => 'Schriftfarbe';
-  @override
-  String get font_color_desc => 'Textfarbe im Reader';
   @override
   String get font_desc_hina_mincho =>
       'Weiches dekoratives Mincho · Passt gut zu Noto Sans JP';
@@ -19460,13 +19503,9 @@ class _StringsDe extends _StringsEn {
   @override
   String get searching_in_progress => 'Suche nach ';
   @override
-  String get section_advanced_colors => 'Erweitert';
-  @override
   String get section_advanced_typography => 'Erweitert';
   @override
   String get section_audiobook => 'Hörbuch';
-  @override
-  String get section_audiobook_lyrics => 'Hörbuch & Liedtext';
   @override
   String get section_epub => 'EPUB-Bibliothek';
   @override
@@ -19480,10 +19519,6 @@ class _StringsDe extends _StringsEn {
   @override
   String get section_page_turn_direction => 'Blätterrichtung';
   @override
-  String get section_reader_colors => 'Reader-Farben';
-  @override
-  String get section_system_theme => 'Systemfarbe';
-  @override
   String get section_typography => 'Typografie';
   @override
   String get section_update => 'Update-Einstellungen';
@@ -19495,14 +19530,6 @@ class _StringsDe extends _StringsEn {
   String get section_video_playback => 'Wiedergabe';
   @override
   String get section_video_subtitles => 'Untertitel';
-  @override
-  String get seed_color => 'Grundfarbe';
-  @override
-  String get seed_color_desc => 'Erzeugt alle folgenden Standardfarben';
-  @override
-  String get selection_color => 'Auswahlhervorhebung';
-  @override
-  String get selection_color_desc => 'Textauswahl-Hervorhebung im Reader';
   @override
   String get send => 'Senden';
   @override
@@ -20501,9 +20528,6 @@ class _StringsDe extends _StringsEn {
   String get theme_gray => 'Grau-Dunkel';
   @override
   String get theme_light => 'Weiß';
-  @override
-  String get theme_seed_preview_hint =>
-      'Die Farbfelder unten zeigen eine Vorschau der tatsächlich aus deiner Startfarbe generierten Farben. Um eine bestimmte Farbe als Primär-Akzentfarbe festzulegen, aktiviere den Schalter „Primär“ und wähle sie ausdrücklich.';
   @override
   String get theme_water => 'Wasserblau';
   @override
@@ -26240,6 +26264,106 @@ class _StringsDe extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get theme_section_reader => 'Reader';
+  @override
+  String get theme_section_audiobook => 'Audiobook';
+  @override
+  String get theme_section_fine_tune => 'Fine-tune derived colors';
+  @override
+  String get theme_role_accent => 'Accent color';
+  @override
+  String get theme_role_reader_text => 'Body text';
+  @override
+  String get theme_role_reader_text_desc =>
+      'Reader text, toolbar icons and dictionary popup text';
+  @override
+  String get theme_role_reader_background => 'Page background';
+  @override
+  String get theme_role_reader_background_desc =>
+      'Reader page, toolbar and dictionary popup background';
+  @override
+  String get theme_role_link => 'Links';
+  @override
+  String get theme_role_link_desc =>
+      'Hyperlinks inside books and the selection handles';
+  @override
+  String get theme_role_selection => 'Lookup highlight';
+  @override
+  String get theme_role_selection_desc =>
+      'Background of the word or sentence being looked up';
+  @override
+  String get theme_role_audio_highlight => 'Current sentence';
+  @override
+  String get theme_role_audio_highlight_desc =>
+      'Follows audiobook playback. Applies to every theme, not just this one.';
+  @override
+  String get theme_role_secondary => 'Secondary accent';
+  @override
+  String get theme_role_secondary_desc =>
+      'Tags, badges and selected list items';
+  @override
+  String get theme_role_tertiary => 'Decoration color';
+  @override
+  String get theme_role_tertiary_desc => 'Collections and reading statistics';
+  @override
+  String get theme_role_container => 'Control fill';
+  @override
+  String get theme_role_container_desc =>
+      'Switch tracks, floating buttons and the play bar';
+  @override
+  String get theme_role_follows_theme => 'Follows theme';
+  @override
+  String get theme_role_reset => 'Follow theme again';
+  @override
+  String get theme_preview_light => 'Light';
+  @override
+  String get theme_preview_dark => 'Dark';
+  @override
+  String get theme_preview_button => 'Button';
+  @override
+  String get theme_preview_tag => 'Tag';
+  @override
+  String get theme_preview_hint =>
+      'Pick a color to see where it is used outlined in the preview.';
+  @override
+  String get theme_role_accent_desc =>
+      'Used exactly as picked for buttons, switches, icons and progress bars. Every other color is derived from it.';
+  @override
+  String get theme_accent_low_contrast_dark =>
+      'Hard to see on the dark-mode background. Pick a lighter color.';
+  @override
+  String get theme_accent_low_contrast_light =>
+      'Hard to see on the light-mode background. Pick a darker color.';
+  @override
+  String get theme_section_accent => 'Interface colors';
+  @override
+  String get theme_role_surface => 'Interface background';
+  @override
+  String get theme_role_surface_desc =>
+      'Base color of pages, cards and menus; the other layers get a faint tint of gray from it.';
+  @override
+  String get theme_accent_follow_system => 'Follow the system accent color';
+  @override
+  String get theme_accent_follow_system_desc =>
+      'Use the wallpaper color on Android (Material You) or the OS accent color on desktop instead of a picked color.';
+  @override
+  String get theme_accent_follow_system_unavailable =>
+      'The system does not expose an accent color on this device.';
+  @override
+  String get theme_accent_auto_tone => 'Adjust tone for light and dark mode';
+  @override
+  String get theme_accent_auto_tone_desc =>
+      'Off: the exact color is used. On: a lighter or darker tone is generated for each mode, so what you see differs from what you picked.';
+  @override
+  String get theme_role_actual_color => 'Shown as';
+  @override
+  String get theme_preview_card => 'Card';
+  @override
+  String get theme_neutral_derived => 'Neutral derived colors';
+  @override
+  String get theme_neutral_derived_desc =>
+      'Tags, selected items, menus and surfaces stay gray instead of taking on the accent\'s hue; only the accent color itself stands out (like the Windows light theme). White, gray or black accents do this automatically.';
 }
 
 // Path: <root>
@@ -26687,10 +26811,6 @@ class _StringsEs extends _StringsEn {
   String get av_sync_reset => 'Restablecer';
   @override
   String get back => 'Atrás';
-  @override
-  String get background_color => 'Color de fondo';
-  @override
-  String get background_color_desc => 'Fondo de la página del lector';
   @override
   String get backup_category_audiobooks => 'Audio de audiolibros';
   @override
@@ -27206,32 +27326,6 @@ class _StringsEs extends _StringsEn {
   String get collection_word => 'Palabra';
   @override
   String get collections => 'Colecciones';
-  @override
-  String get color_container => 'Contenedor';
-  @override
-  String get color_container_desc => 'Fondo de pistas y barra de reproducción';
-  @override
-  String get color_link => 'Color de enlace';
-  @override
-  String get color_link_desc => 'Color de los hipervínculos del lector';
-  @override
-  String get color_primary => 'Primario';
-  @override
-  String get color_primary_desc => 'Resaltado de audio, botones, interruptores';
-  @override
-  String get color_sentence_audio_highlight => 'Resaltado de audio';
-  @override
-  String get color_sentence_audio_highlight_desc =>
-      'Resaltado de sincronización de subtítulos del audiolibro';
-  @override
-  String get color_secondary => 'Secundario';
-  @override
-  String get color_secondary_desc =>
-      'Entradas del diccionario, insignias de la estantería';
-  @override
-  String get color_tertiary => 'Terciario';
-  @override
-  String get color_tertiary_desc => 'Colecciones, estadísticas de lectura';
   @override
   String get columns_per_page => 'Columnas por página';
   @override
@@ -27996,10 +28090,6 @@ class _StringsEs extends _StringsEn {
   String get follow_audio_off_tooltip => 'Seguir audio: DESACTIVADO';
   @override
   String get follow_audio_on_tooltip => 'Seguir audio: ACTIVADO';
-  @override
-  String get font_color => 'Color de fuente';
-  @override
-  String get font_color_desc => 'Color del texto del lector';
   @override
   String get font_desc_hina_mincho =>
       'Mincho decorativo suave · Combina bien con Noto Sans JP';
@@ -29740,13 +29830,9 @@ class _StringsEs extends _StringsEn {
   @override
   String get searching_in_progress => 'Buscando ';
   @override
-  String get section_advanced_colors => 'Avanzado';
-  @override
   String get section_advanced_typography => 'Avanzado';
   @override
   String get section_audiobook => 'Audiolibro';
-  @override
-  String get section_audiobook_lyrics => 'Audiolibro y letras';
   @override
   String get section_epub => 'Biblioteca EPUB';
   @override
@@ -29760,10 +29846,6 @@ class _StringsEs extends _StringsEn {
   @override
   String get section_page_turn_direction => 'Dirección de paso de página';
   @override
-  String get section_reader_colors => 'Colores del lector';
-  @override
-  String get section_system_theme => 'Color del tema del sistema';
-  @override
   String get section_typography => 'Tipografía';
   @override
   String get section_update => 'Configuración de actualizaciones';
@@ -29775,16 +29857,6 @@ class _StringsEs extends _StringsEn {
   String get section_video_playback => 'Reproducción';
   @override
   String get section_video_subtitles => 'Subtítulos';
-  @override
-  String get seed_color => 'Color base';
-  @override
-  String get seed_color_desc =>
-      'Genera todos los colores predeterminados a continuación';
-  @override
-  String get selection_color => 'Color de selección';
-  @override
-  String get selection_color_desc =>
-      'Resaltado de selección de texto del lector';
   @override
   String get send => 'Enviar';
   @override
@@ -30794,9 +30866,6 @@ class _StringsEs extends _StringsEn {
   String get theme_gray => 'Gris oscuro';
   @override
   String get theme_light => 'Blanco';
-  @override
-  String get theme_seed_preview_hint =>
-      'Las muestras de abajo previsualizan los colores generados a partir de tu color semilla. Para fijar un color concreto como acento principal, activa el interruptor Principal y elígelo de forma explícita.';
   @override
   String get theme_water => 'Azul agua';
   @override
@@ -36565,6 +36634,106 @@ class _StringsEs extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get theme_section_reader => 'Reader';
+  @override
+  String get theme_section_audiobook => 'Audiobook';
+  @override
+  String get theme_section_fine_tune => 'Fine-tune derived colors';
+  @override
+  String get theme_role_accent => 'Accent color';
+  @override
+  String get theme_role_reader_text => 'Body text';
+  @override
+  String get theme_role_reader_text_desc =>
+      'Reader text, toolbar icons and dictionary popup text';
+  @override
+  String get theme_role_reader_background => 'Page background';
+  @override
+  String get theme_role_reader_background_desc =>
+      'Reader page, toolbar and dictionary popup background';
+  @override
+  String get theme_role_link => 'Links';
+  @override
+  String get theme_role_link_desc =>
+      'Hyperlinks inside books and the selection handles';
+  @override
+  String get theme_role_selection => 'Lookup highlight';
+  @override
+  String get theme_role_selection_desc =>
+      'Background of the word or sentence being looked up';
+  @override
+  String get theme_role_audio_highlight => 'Current sentence';
+  @override
+  String get theme_role_audio_highlight_desc =>
+      'Follows audiobook playback. Applies to every theme, not just this one.';
+  @override
+  String get theme_role_secondary => 'Secondary accent';
+  @override
+  String get theme_role_secondary_desc =>
+      'Tags, badges and selected list items';
+  @override
+  String get theme_role_tertiary => 'Decoration color';
+  @override
+  String get theme_role_tertiary_desc => 'Collections and reading statistics';
+  @override
+  String get theme_role_container => 'Control fill';
+  @override
+  String get theme_role_container_desc =>
+      'Switch tracks, floating buttons and the play bar';
+  @override
+  String get theme_role_follows_theme => 'Follows theme';
+  @override
+  String get theme_role_reset => 'Follow theme again';
+  @override
+  String get theme_preview_light => 'Light';
+  @override
+  String get theme_preview_dark => 'Dark';
+  @override
+  String get theme_preview_button => 'Button';
+  @override
+  String get theme_preview_tag => 'Tag';
+  @override
+  String get theme_preview_hint =>
+      'Pick a color to see where it is used outlined in the preview.';
+  @override
+  String get theme_role_accent_desc =>
+      'Used exactly as picked for buttons, switches, icons and progress bars. Every other color is derived from it.';
+  @override
+  String get theme_accent_low_contrast_dark =>
+      'Hard to see on the dark-mode background. Pick a lighter color.';
+  @override
+  String get theme_accent_low_contrast_light =>
+      'Hard to see on the light-mode background. Pick a darker color.';
+  @override
+  String get theme_section_accent => 'Interface colors';
+  @override
+  String get theme_role_surface => 'Interface background';
+  @override
+  String get theme_role_surface_desc =>
+      'Base color of pages, cards and menus; the other layers get a faint tint of gray from it.';
+  @override
+  String get theme_accent_follow_system => 'Follow the system accent color';
+  @override
+  String get theme_accent_follow_system_desc =>
+      'Use the wallpaper color on Android (Material You) or the OS accent color on desktop instead of a picked color.';
+  @override
+  String get theme_accent_follow_system_unavailable =>
+      'The system does not expose an accent color on this device.';
+  @override
+  String get theme_accent_auto_tone => 'Adjust tone for light and dark mode';
+  @override
+  String get theme_accent_auto_tone_desc =>
+      'Off: the exact color is used. On: a lighter or darker tone is generated for each mode, so what you see differs from what you picked.';
+  @override
+  String get theme_role_actual_color => 'Shown as';
+  @override
+  String get theme_preview_card => 'Card';
+  @override
+  String get theme_neutral_derived => 'Neutral derived colors';
+  @override
+  String get theme_neutral_derived_desc =>
+      'Tags, selected items, menus and surfaces stay gray instead of taking on the accent\'s hue; only the accent color itself stands out (like the Windows light theme). White, gray or black accents do this automatically.';
 }
 
 // Path: <root>
@@ -37018,10 +37187,6 @@ class _StringsFr extends _StringsEn {
   String get av_sync_reset => 'Réinitialiser';
   @override
   String get back => 'Retour';
-  @override
-  String get background_color => 'Couleur d\'arrière-plan';
-  @override
-  String get background_color_desc => 'Arrière-plan de la page du lecteur';
   @override
   String get backup_category_audiobooks => 'Audio des livres audio';
   @override
@@ -37539,33 +37704,6 @@ class _StringsFr extends _StringsEn {
   String get collection_word => 'Mot';
   @override
   String get collections => 'Collections';
-  @override
-  String get color_container => 'Conteneur';
-  @override
-  String get color_container_desc =>
-      'Pistes de commutateurs, arrière-plan de la barre de lecture';
-  @override
-  String get color_link => 'Couleur des liens';
-  @override
-  String get color_link_desc => 'Couleur des hyperliens du lecteur';
-  @override
-  String get color_primary => 'Primaire';
-  @override
-  String get color_primary_desc => 'Surlignage audio, boutons, commutateurs';
-  @override
-  String get color_sentence_audio_highlight => 'Surlignage audio';
-  @override
-  String get color_sentence_audio_highlight_desc =>
-      'Surlignage de synchronisation des sous-titres du livre audio';
-  @override
-  String get color_secondary => 'Secondaire';
-  @override
-  String get color_secondary_desc =>
-      'Entrées de dictionnaire, badges de la bibliothèque';
-  @override
-  String get color_tertiary => 'Tertiaire';
-  @override
-  String get color_tertiary_desc => 'Collections, statistiques de lecture';
   @override
   String get columns_per_page => 'Colonnes par page';
   @override
@@ -38335,10 +38473,6 @@ class _StringsFr extends _StringsEn {
   String get follow_audio_off_tooltip => 'Suivi audio : DéSACTIVé';
   @override
   String get follow_audio_on_tooltip => 'Suivi audio : ACTIVé';
-  @override
-  String get font_color => 'Couleur de police';
-  @override
-  String get font_color_desc => 'Couleur du texte du lecteur';
   @override
   String get font_desc_hina_mincho =>
       'Mincho décoratif doux · Se combine bien avec Noto Sans JP';
@@ -40078,13 +40212,9 @@ class _StringsFr extends _StringsEn {
   @override
   String get searching_in_progress => 'Recherche de ';
   @override
-  String get section_advanced_colors => 'Avancé';
-  @override
   String get section_advanced_typography => 'Avancé';
   @override
   String get section_audiobook => 'Livre audio';
-  @override
-  String get section_audiobook_lyrics => 'Livre audio et paroles';
   @override
   String get section_epub => 'Bibliothèque EPUB';
   @override
@@ -40098,10 +40228,6 @@ class _StringsFr extends _StringsEn {
   @override
   String get section_page_turn_direction => 'Sens de tournage des pages';
   @override
-  String get section_reader_colors => 'Couleurs du lecteur';
-  @override
-  String get section_system_theme => 'Couleur du thème système';
-  @override
   String get section_typography => 'Typographie';
   @override
   String get section_update => 'Paramètres de mise à jour';
@@ -40113,16 +40239,6 @@ class _StringsFr extends _StringsEn {
   String get section_video_playback => 'Lecture';
   @override
   String get section_video_subtitles => 'Sous-titres';
-  @override
-  String get seed_color => 'Couleur de base';
-  @override
-  String get seed_color_desc =>
-      'Génère toutes les couleurs par défaut ci-dessous';
-  @override
-  String get selection_color => 'Couleur de sélection';
-  @override
-  String get selection_color_desc =>
-      'Surlignage de sélection de texte du lecteur';
   @override
   String get send => 'Envoyer';
   @override
@@ -41132,9 +41248,6 @@ class _StringsFr extends _StringsEn {
   String get theme_gray => 'Gris foncé';
   @override
   String get theme_light => 'Blanc';
-  @override
-  String get theme_seed_preview_hint =>
-      'Les échantillons ci-dessous prévisualisent les couleurs réellement générées à partir de votre couleur de base. Pour imposer une couleur précise comme accent principal, activez l\'option « Couleur principale » et choisissez-la explicitement.';
   @override
   String get theme_water => 'Bleu eau';
   @override
@@ -46924,6 +47037,106 @@ class _StringsFr extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get theme_section_reader => 'Reader';
+  @override
+  String get theme_section_audiobook => 'Audiobook';
+  @override
+  String get theme_section_fine_tune => 'Fine-tune derived colors';
+  @override
+  String get theme_role_accent => 'Accent color';
+  @override
+  String get theme_role_reader_text => 'Body text';
+  @override
+  String get theme_role_reader_text_desc =>
+      'Reader text, toolbar icons and dictionary popup text';
+  @override
+  String get theme_role_reader_background => 'Page background';
+  @override
+  String get theme_role_reader_background_desc =>
+      'Reader page, toolbar and dictionary popup background';
+  @override
+  String get theme_role_link => 'Links';
+  @override
+  String get theme_role_link_desc =>
+      'Hyperlinks inside books and the selection handles';
+  @override
+  String get theme_role_selection => 'Lookup highlight';
+  @override
+  String get theme_role_selection_desc =>
+      'Background of the word or sentence being looked up';
+  @override
+  String get theme_role_audio_highlight => 'Current sentence';
+  @override
+  String get theme_role_audio_highlight_desc =>
+      'Follows audiobook playback. Applies to every theme, not just this one.';
+  @override
+  String get theme_role_secondary => 'Secondary accent';
+  @override
+  String get theme_role_secondary_desc =>
+      'Tags, badges and selected list items';
+  @override
+  String get theme_role_tertiary => 'Decoration color';
+  @override
+  String get theme_role_tertiary_desc => 'Collections and reading statistics';
+  @override
+  String get theme_role_container => 'Control fill';
+  @override
+  String get theme_role_container_desc =>
+      'Switch tracks, floating buttons and the play bar';
+  @override
+  String get theme_role_follows_theme => 'Follows theme';
+  @override
+  String get theme_role_reset => 'Follow theme again';
+  @override
+  String get theme_preview_light => 'Light';
+  @override
+  String get theme_preview_dark => 'Dark';
+  @override
+  String get theme_preview_button => 'Button';
+  @override
+  String get theme_preview_tag => 'Tag';
+  @override
+  String get theme_preview_hint =>
+      'Pick a color to see where it is used outlined in the preview.';
+  @override
+  String get theme_role_accent_desc =>
+      'Used exactly as picked for buttons, switches, icons and progress bars. Every other color is derived from it.';
+  @override
+  String get theme_accent_low_contrast_dark =>
+      'Hard to see on the dark-mode background. Pick a lighter color.';
+  @override
+  String get theme_accent_low_contrast_light =>
+      'Hard to see on the light-mode background. Pick a darker color.';
+  @override
+  String get theme_section_accent => 'Interface colors';
+  @override
+  String get theme_role_surface => 'Interface background';
+  @override
+  String get theme_role_surface_desc =>
+      'Base color of pages, cards and menus; the other layers get a faint tint of gray from it.';
+  @override
+  String get theme_accent_follow_system => 'Follow the system accent color';
+  @override
+  String get theme_accent_follow_system_desc =>
+      'Use the wallpaper color on Android (Material You) or the OS accent color on desktop instead of a picked color.';
+  @override
+  String get theme_accent_follow_system_unavailable =>
+      'The system does not expose an accent color on this device.';
+  @override
+  String get theme_accent_auto_tone => 'Adjust tone for light and dark mode';
+  @override
+  String get theme_accent_auto_tone_desc =>
+      'Off: the exact color is used. On: a lighter or darker tone is generated for each mode, so what you see differs from what you picked.';
+  @override
+  String get theme_role_actual_color => 'Shown as';
+  @override
+  String get theme_preview_card => 'Card';
+  @override
+  String get theme_neutral_derived => 'Neutral derived colors';
+  @override
+  String get theme_neutral_derived_desc =>
+      'Tags, selected items, menus and surfaces stay gray instead of taking on the accent\'s hue; only the accent color itself stands out (like the Windows light theme). White, gray or black accents do this automatically.';
 }
 
 // Path: <root>
@@ -47369,10 +47582,6 @@ class _StringsId extends _StringsEn {
   String get av_sync_reset => 'Atur Ulang';
   @override
   String get back => 'Kembali';
-  @override
-  String get background_color => 'Warna latar belakang';
-  @override
-  String get background_color_desc => 'Latar belakang halaman pembaca';
   @override
   String get backup_category_audiobooks => 'Audio buku audio';
   @override
@@ -47880,31 +48089,6 @@ class _StringsId extends _StringsEn {
   String get collection_word => 'Kata';
   @override
   String get collections => 'Koleksi';
-  @override
-  String get color_container => 'Kontainer';
-  @override
-  String get color_container_desc => 'Ganti trek, latar belakang bilah putar';
-  @override
-  String get color_link => 'Warna tautan';
-  @override
-  String get color_link_desc => 'Warna hyperlink di pembaca';
-  @override
-  String get color_primary => 'Primer';
-  @override
-  String get color_primary_desc => 'Sorotan audio, tombol, sakelar';
-  @override
-  String get color_sentence_audio_highlight => 'Sorotan audio';
-  @override
-  String get color_sentence_audio_highlight_desc =>
-      'Sorotan sinkronisasi subtitle buku audio';
-  @override
-  String get color_secondary => 'Sekunder';
-  @override
-  String get color_secondary_desc => 'Entri kamus, lencana rak buku';
-  @override
-  String get color_tertiary => 'Tersier';
-  @override
-  String get color_tertiary_desc => 'Koleksi, statistik membaca';
   @override
   String get columns_per_page => 'Kolom per halaman';
   @override
@@ -48647,10 +48831,6 @@ class _StringsId extends _StringsEn {
   String get follow_audio_off_tooltip => 'Ikuti audio: NONAKTIF';
   @override
   String get follow_audio_on_tooltip => 'Ikuti audio: AKTIF';
-  @override
-  String get font_color => 'Warna Font';
-  @override
-  String get font_color_desc => 'Warna teks pembaca';
   @override
   String get font_desc_hina_mincho =>
       'Mincho dekoratif lembut · Pasangkan dengan Noto Sans JP';
@@ -50377,13 +50557,9 @@ class _StringsId extends _StringsEn {
   @override
   String get searching_in_progress => 'Mencari ';
   @override
-  String get section_advanced_colors => 'Lanjutan';
-  @override
   String get section_advanced_typography => 'Lanjutan';
   @override
   String get section_audiobook => 'Buku Audio';
-  @override
-  String get section_audiobook_lyrics => 'Buku Audio & Lirik';
   @override
   String get section_epub => 'Perpustakaan EPUB';
   @override
@@ -50397,10 +50573,6 @@ class _StringsId extends _StringsEn {
   @override
   String get section_page_turn_direction => 'Arah ganti halaman';
   @override
-  String get section_reader_colors => 'Warna Pembaca';
-  @override
-  String get section_system_theme => 'Warna Tema Sistem';
-  @override
   String get section_typography => 'Tipografi';
   @override
   String get section_update => 'Pengaturan Pembaruan';
@@ -50412,14 +50584,6 @@ class _StringsId extends _StringsEn {
   String get section_video_playback => 'Pemutaran';
   @override
   String get section_video_subtitles => 'Subtitle';
-  @override
-  String get seed_color => 'Warna Dasar';
-  @override
-  String get seed_color_desc => 'Menghasilkan semua warna default di bawah';
-  @override
-  String get selection_color => 'Warna sorotan';
-  @override
-  String get selection_color_desc => 'Sorotan pilihan teks pembaca';
   @override
   String get send => 'Kirim';
   @override
@@ -51406,9 +51570,6 @@ class _StringsId extends _StringsEn {
   String get theme_gray => 'Abu-abu gelap';
   @override
   String get theme_light => 'Putih';
-  @override
-  String get theme_seed_preview_hint =>
-      'Petak warna di bawah menampilkan pratinjau warna yang sebenarnya dihasilkan dari warna benih kamu. Untuk memaksa warna tertentu sebagai aksen utama, aktifkan toggle Primer dan pilih warnanya secara eksplisit.';
   @override
   String get theme_water => 'Biru air';
   @override
@@ -57087,6 +57248,106 @@ class _StringsId extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get theme_section_reader => 'Reader';
+  @override
+  String get theme_section_audiobook => 'Audiobook';
+  @override
+  String get theme_section_fine_tune => 'Fine-tune derived colors';
+  @override
+  String get theme_role_accent => 'Accent color';
+  @override
+  String get theme_role_reader_text => 'Body text';
+  @override
+  String get theme_role_reader_text_desc =>
+      'Reader text, toolbar icons and dictionary popup text';
+  @override
+  String get theme_role_reader_background => 'Page background';
+  @override
+  String get theme_role_reader_background_desc =>
+      'Reader page, toolbar and dictionary popup background';
+  @override
+  String get theme_role_link => 'Links';
+  @override
+  String get theme_role_link_desc =>
+      'Hyperlinks inside books and the selection handles';
+  @override
+  String get theme_role_selection => 'Lookup highlight';
+  @override
+  String get theme_role_selection_desc =>
+      'Background of the word or sentence being looked up';
+  @override
+  String get theme_role_audio_highlight => 'Current sentence';
+  @override
+  String get theme_role_audio_highlight_desc =>
+      'Follows audiobook playback. Applies to every theme, not just this one.';
+  @override
+  String get theme_role_secondary => 'Secondary accent';
+  @override
+  String get theme_role_secondary_desc =>
+      'Tags, badges and selected list items';
+  @override
+  String get theme_role_tertiary => 'Decoration color';
+  @override
+  String get theme_role_tertiary_desc => 'Collections and reading statistics';
+  @override
+  String get theme_role_container => 'Control fill';
+  @override
+  String get theme_role_container_desc =>
+      'Switch tracks, floating buttons and the play bar';
+  @override
+  String get theme_role_follows_theme => 'Follows theme';
+  @override
+  String get theme_role_reset => 'Follow theme again';
+  @override
+  String get theme_preview_light => 'Light';
+  @override
+  String get theme_preview_dark => 'Dark';
+  @override
+  String get theme_preview_button => 'Button';
+  @override
+  String get theme_preview_tag => 'Tag';
+  @override
+  String get theme_preview_hint =>
+      'Pick a color to see where it is used outlined in the preview.';
+  @override
+  String get theme_role_accent_desc =>
+      'Used exactly as picked for buttons, switches, icons and progress bars. Every other color is derived from it.';
+  @override
+  String get theme_accent_low_contrast_dark =>
+      'Hard to see on the dark-mode background. Pick a lighter color.';
+  @override
+  String get theme_accent_low_contrast_light =>
+      'Hard to see on the light-mode background. Pick a darker color.';
+  @override
+  String get theme_section_accent => 'Interface colors';
+  @override
+  String get theme_role_surface => 'Interface background';
+  @override
+  String get theme_role_surface_desc =>
+      'Base color of pages, cards and menus; the other layers get a faint tint of gray from it.';
+  @override
+  String get theme_accent_follow_system => 'Follow the system accent color';
+  @override
+  String get theme_accent_follow_system_desc =>
+      'Use the wallpaper color on Android (Material You) or the OS accent color on desktop instead of a picked color.';
+  @override
+  String get theme_accent_follow_system_unavailable =>
+      'The system does not expose an accent color on this device.';
+  @override
+  String get theme_accent_auto_tone => 'Adjust tone for light and dark mode';
+  @override
+  String get theme_accent_auto_tone_desc =>
+      'Off: the exact color is used. On: a lighter or darker tone is generated for each mode, so what you see differs from what you picked.';
+  @override
+  String get theme_role_actual_color => 'Shown as';
+  @override
+  String get theme_preview_card => 'Card';
+  @override
+  String get theme_neutral_derived => 'Neutral derived colors';
+  @override
+  String get theme_neutral_derived_desc =>
+      'Tags, selected items, menus and surfaces stay gray instead of taking on the accent\'s hue; only the accent color itself stands out (like the Windows light theme). White, gray or black accents do this automatically.';
 }
 
 // Path: <root>
@@ -57534,10 +57795,6 @@ class _StringsIt extends _StringsEn {
   String get av_sync_reset => 'Reimposta';
   @override
   String get back => 'Indietro';
-  @override
-  String get background_color => 'Colore di sfondo';
-  @override
-  String get background_color_desc => 'Sfondo della pagina del lettore';
   @override
   String get backup_category_audiobooks => 'Audio degli audiolibri';
   @override
@@ -58051,34 +58308,6 @@ class _StringsIt extends _StringsEn {
   String get collection_word => 'Parola';
   @override
   String get collections => 'Raccolte';
-  @override
-  String get color_container => 'Contenitore';
-  @override
-  String get color_container_desc =>
-      'Sfondo tracce audio e barra di riproduzione';
-  @override
-  String get color_link => 'Colore link';
-  @override
-  String get color_link_desc => 'Colore dei collegamenti nel lettore';
-  @override
-  String get color_primary => 'Primario';
-  @override
-  String get color_primary_desc =>
-      'Evidenziazione audio, pulsanti, interruttori';
-  @override
-  String get color_sentence_audio_highlight => 'Evidenziazione audio';
-  @override
-  String get color_sentence_audio_highlight_desc =>
-      'Evidenziazione sincronizzazione sottotitoli audiolibro';
-  @override
-  String get color_secondary => 'Secondario';
-  @override
-  String get color_secondary_desc =>
-      'Voci del dizionario, badge della libreria';
-  @override
-  String get color_tertiary => 'Terziario';
-  @override
-  String get color_tertiary_desc => 'Raccolte, statistiche di lettura';
   @override
   String get columns_per_page => 'Colonne per pagina';
   @override
@@ -58834,10 +59063,6 @@ class _StringsIt extends _StringsEn {
   String get follow_audio_off_tooltip => 'Segui audio: DISATTIVO';
   @override
   String get follow_audio_on_tooltip => 'Segui audio: ATTIVO';
-  @override
-  String get font_color => 'Colore carattere';
-  @override
-  String get font_color_desc => 'Colore del testo del lettore';
   @override
   String get font_desc_hina_mincho =>
       'Mincho decorativo morbido · Si abbina bene con Noto Sans JP';
@@ -60571,13 +60796,9 @@ class _StringsIt extends _StringsEn {
   @override
   String get searching_in_progress => 'Ricerca di ';
   @override
-  String get section_advanced_colors => 'Avanzate';
-  @override
   String get section_advanced_typography => 'Avanzate';
   @override
   String get section_audiobook => 'Audiolibro';
-  @override
-  String get section_audiobook_lyrics => 'Audiolibri e testi';
   @override
   String get section_epub => 'Libreria EPUB';
   @override
@@ -60591,10 +60812,6 @@ class _StringsIt extends _StringsEn {
   @override
   String get section_page_turn_direction => 'Direzione di scorrimento pagine';
   @override
-  String get section_reader_colors => 'Colori del lettore';
-  @override
-  String get section_system_theme => 'Colore del tema di sistema';
-  @override
   String get section_typography => 'Tipografia';
   @override
   String get section_update => 'Impostazioni aggiornamento';
@@ -60606,15 +60823,6 @@ class _StringsIt extends _StringsEn {
   String get section_video_playback => 'Riproduzione';
   @override
   String get section_video_subtitles => 'Sottotitoli';
-  @override
-  String get seed_color => 'Colore base';
-  @override
-  String get seed_color_desc => 'Genera tutti i colori predefiniti sottostanti';
-  @override
-  String get selection_color => 'Colore di selezione';
-  @override
-  String get selection_color_desc =>
-      'Evidenziazione della selezione testo del lettore';
   @override
   String get send => 'Invia';
   @override
@@ -61615,9 +61823,6 @@ class _StringsIt extends _StringsEn {
   String get theme_gray => 'Grigio scuro';
   @override
   String get theme_light => 'Bianco';
-  @override
-  String get theme_seed_preview_hint =>
-      'I campioni qui sotto mostrano in anteprima i colori effettivamente generati dal tuo colore seme. Per forzare un colore specifico come accento primario, attiva l\'opzione Primario e selezionalo esplicitamente.';
   @override
   String get theme_water => 'Azzurro acqua';
   @override
@@ -67342,6 +67547,106 @@ class _StringsIt extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get theme_section_reader => 'Reader';
+  @override
+  String get theme_section_audiobook => 'Audiobook';
+  @override
+  String get theme_section_fine_tune => 'Fine-tune derived colors';
+  @override
+  String get theme_role_accent => 'Accent color';
+  @override
+  String get theme_role_reader_text => 'Body text';
+  @override
+  String get theme_role_reader_text_desc =>
+      'Reader text, toolbar icons and dictionary popup text';
+  @override
+  String get theme_role_reader_background => 'Page background';
+  @override
+  String get theme_role_reader_background_desc =>
+      'Reader page, toolbar and dictionary popup background';
+  @override
+  String get theme_role_link => 'Links';
+  @override
+  String get theme_role_link_desc =>
+      'Hyperlinks inside books and the selection handles';
+  @override
+  String get theme_role_selection => 'Lookup highlight';
+  @override
+  String get theme_role_selection_desc =>
+      'Background of the word or sentence being looked up';
+  @override
+  String get theme_role_audio_highlight => 'Current sentence';
+  @override
+  String get theme_role_audio_highlight_desc =>
+      'Follows audiobook playback. Applies to every theme, not just this one.';
+  @override
+  String get theme_role_secondary => 'Secondary accent';
+  @override
+  String get theme_role_secondary_desc =>
+      'Tags, badges and selected list items';
+  @override
+  String get theme_role_tertiary => 'Decoration color';
+  @override
+  String get theme_role_tertiary_desc => 'Collections and reading statistics';
+  @override
+  String get theme_role_container => 'Control fill';
+  @override
+  String get theme_role_container_desc =>
+      'Switch tracks, floating buttons and the play bar';
+  @override
+  String get theme_role_follows_theme => 'Follows theme';
+  @override
+  String get theme_role_reset => 'Follow theme again';
+  @override
+  String get theme_preview_light => 'Light';
+  @override
+  String get theme_preview_dark => 'Dark';
+  @override
+  String get theme_preview_button => 'Button';
+  @override
+  String get theme_preview_tag => 'Tag';
+  @override
+  String get theme_preview_hint =>
+      'Pick a color to see where it is used outlined in the preview.';
+  @override
+  String get theme_role_accent_desc =>
+      'Used exactly as picked for buttons, switches, icons and progress bars. Every other color is derived from it.';
+  @override
+  String get theme_accent_low_contrast_dark =>
+      'Hard to see on the dark-mode background. Pick a lighter color.';
+  @override
+  String get theme_accent_low_contrast_light =>
+      'Hard to see on the light-mode background. Pick a darker color.';
+  @override
+  String get theme_section_accent => 'Interface colors';
+  @override
+  String get theme_role_surface => 'Interface background';
+  @override
+  String get theme_role_surface_desc =>
+      'Base color of pages, cards and menus; the other layers get a faint tint of gray from it.';
+  @override
+  String get theme_accent_follow_system => 'Follow the system accent color';
+  @override
+  String get theme_accent_follow_system_desc =>
+      'Use the wallpaper color on Android (Material You) or the OS accent color on desktop instead of a picked color.';
+  @override
+  String get theme_accent_follow_system_unavailable =>
+      'The system does not expose an accent color on this device.';
+  @override
+  String get theme_accent_auto_tone => 'Adjust tone for light and dark mode';
+  @override
+  String get theme_accent_auto_tone_desc =>
+      'Off: the exact color is used. On: a lighter or darker tone is generated for each mode, so what you see differs from what you picked.';
+  @override
+  String get theme_role_actual_color => 'Shown as';
+  @override
+  String get theme_preview_card => 'Card';
+  @override
+  String get theme_neutral_derived => 'Neutral derived colors';
+  @override
+  String get theme_neutral_derived_desc =>
+      'Tags, selected items, menus and surfaces stay gray instead of taking on the accent\'s hue; only the accent color itself stands out (like the Windows light theme). White, gray or black accents do this automatically.';
 }
 
 // Path: <root>
@@ -67767,10 +68072,6 @@ class _StringsJa extends _StringsEn {
   String get av_sync_reset => 'リセット';
   @override
   String get back => '戻る';
-  @override
-  String get background_color => '背景色';
-  @override
-  String get background_color_desc => 'リーダーのページ背景';
   @override
   String get backup_category_audiobooks => 'オーディオブックの音声';
   @override
@@ -68255,30 +68556,6 @@ class _StringsJa extends _StringsEn {
   String get collection_word => '単語';
   @override
   String get collections => 'コレクション';
-  @override
-  String get color_container => 'コンテナ';
-  @override
-  String get color_container_desc => 'スイッチトラック、再生バー背景';
-  @override
-  String get color_link => 'リンクの色';
-  @override
-  String get color_link_desc => 'リーダーのハイパーリンク色';
-  @override
-  String get color_primary => 'プライマリ';
-  @override
-  String get color_primary_desc => '音声ハイライト、ボタン、スイッチ';
-  @override
-  String get color_sentence_audio_highlight => '音声ハイライト';
-  @override
-  String get color_sentence_audio_highlight_desc => 'オーディオブック字幕同期ハイライト';
-  @override
-  String get color_secondary => 'セカンダリ';
-  @override
-  String get color_secondary_desc => '辞書エントリ、本棚バッジ';
-  @override
-  String get color_tertiary => 'ターシャリ';
-  @override
-  String get color_tertiary_desc => 'コレクション、読書統計';
   @override
   String get columns_per_page => 'ページあたりの列数';
   @override
@@ -68989,10 +69266,6 @@ class _StringsJa extends _StringsEn {
   String get follow_audio_off_tooltip => '音声追従：OFF';
   @override
   String get follow_audio_on_tooltip => '音声追従：ON';
-  @override
-  String get font_color => '文字色';
-  @override
-  String get font_color_desc => 'リーダーのテキスト色';
   @override
   String get font_desc_hina_mincho => 'やわらかい装飾明朝 · Noto Sans JP との併用推奨';
   @override
@@ -70633,13 +70906,9 @@ class _StringsJa extends _StringsEn {
   @override
   String get searching_in_progress => '検索中：';
   @override
-  String get section_advanced_colors => '詳細設定';
-  @override
   String get section_advanced_typography => '詳細設定';
   @override
   String get section_audiobook => 'オーディオブック';
-  @override
-  String get section_audiobook_lyrics => 'オーディオブックと歌詞';
   @override
   String get section_epub => 'EPUBライブラリ';
   @override
@@ -70653,10 +70922,6 @@ class _StringsJa extends _StringsEn {
   @override
   String get section_page_turn_direction => 'ページめくり方向';
   @override
-  String get section_reader_colors => 'リーダーカラー';
-  @override
-  String get section_system_theme => 'システムテーマカラー';
-  @override
   String get section_typography => 'タイポグラフィ';
   @override
   String get section_update => '更新設定';
@@ -70668,14 +70933,6 @@ class _StringsJa extends _StringsEn {
   String get section_video_playback => '再生';
   @override
   String get section_video_subtitles => '字幕';
-  @override
-  String get seed_color => 'シードカラー';
-  @override
-  String get seed_color_desc => '以下のすべてのデフォルトカラーを自動生成';
-  @override
-  String get selection_color => '選択ハイライト';
-  @override
-  String get selection_color_desc => 'リーダーのテキスト選択ハイライト';
   @override
   String get send => '送信';
   @override
@@ -71611,9 +71868,6 @@ class _StringsJa extends _StringsEn {
   String get theme_gray => 'グレー';
   @override
   String get theme_light => 'ホワイト';
-  @override
-  String get theme_seed_preview_hint =>
-      '下のスウォッチは、シードカラーから実際に生成される色をプレビューしています。特定の色をメインのアクセントとして固定したい場合は、「メインカラー」をオンにして明示的に指定してください。';
   @override
   String get theme_water => '水色';
   @override
@@ -76984,6 +77238,106 @@ class _StringsJa extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get theme_section_reader => 'Reader';
+  @override
+  String get theme_section_audiobook => 'Audiobook';
+  @override
+  String get theme_section_fine_tune => 'Fine-tune derived colors';
+  @override
+  String get theme_role_accent => 'Accent color';
+  @override
+  String get theme_role_reader_text => 'Body text';
+  @override
+  String get theme_role_reader_text_desc =>
+      'Reader text, toolbar icons and dictionary popup text';
+  @override
+  String get theme_role_reader_background => 'Page background';
+  @override
+  String get theme_role_reader_background_desc =>
+      'Reader page, toolbar and dictionary popup background';
+  @override
+  String get theme_role_link => 'Links';
+  @override
+  String get theme_role_link_desc =>
+      'Hyperlinks inside books and the selection handles';
+  @override
+  String get theme_role_selection => 'Lookup highlight';
+  @override
+  String get theme_role_selection_desc =>
+      'Background of the word or sentence being looked up';
+  @override
+  String get theme_role_audio_highlight => 'Current sentence';
+  @override
+  String get theme_role_audio_highlight_desc =>
+      'Follows audiobook playback. Applies to every theme, not just this one.';
+  @override
+  String get theme_role_secondary => 'Secondary accent';
+  @override
+  String get theme_role_secondary_desc =>
+      'Tags, badges and selected list items';
+  @override
+  String get theme_role_tertiary => 'Decoration color';
+  @override
+  String get theme_role_tertiary_desc => 'Collections and reading statistics';
+  @override
+  String get theme_role_container => 'Control fill';
+  @override
+  String get theme_role_container_desc =>
+      'Switch tracks, floating buttons and the play bar';
+  @override
+  String get theme_role_follows_theme => 'Follows theme';
+  @override
+  String get theme_role_reset => 'Follow theme again';
+  @override
+  String get theme_preview_light => 'Light';
+  @override
+  String get theme_preview_dark => 'Dark';
+  @override
+  String get theme_preview_button => 'Button';
+  @override
+  String get theme_preview_tag => 'Tag';
+  @override
+  String get theme_preview_hint =>
+      'Pick a color to see where it is used outlined in the preview.';
+  @override
+  String get theme_role_accent_desc =>
+      'Used exactly as picked for buttons, switches, icons and progress bars. Every other color is derived from it.';
+  @override
+  String get theme_accent_low_contrast_dark =>
+      'Hard to see on the dark-mode background. Pick a lighter color.';
+  @override
+  String get theme_accent_low_contrast_light =>
+      'Hard to see on the light-mode background. Pick a darker color.';
+  @override
+  String get theme_section_accent => 'Interface colors';
+  @override
+  String get theme_role_surface => 'Interface background';
+  @override
+  String get theme_role_surface_desc =>
+      'Base color of pages, cards and menus; the other layers get a faint tint of gray from it.';
+  @override
+  String get theme_accent_follow_system => 'Follow the system accent color';
+  @override
+  String get theme_accent_follow_system_desc =>
+      'Use the wallpaper color on Android (Material You) or the OS accent color on desktop instead of a picked color.';
+  @override
+  String get theme_accent_follow_system_unavailable =>
+      'The system does not expose an accent color on this device.';
+  @override
+  String get theme_accent_auto_tone => 'Adjust tone for light and dark mode';
+  @override
+  String get theme_accent_auto_tone_desc =>
+      'Off: the exact color is used. On: a lighter or darker tone is generated for each mode, so what you see differs from what you picked.';
+  @override
+  String get theme_role_actual_color => 'Shown as';
+  @override
+  String get theme_preview_card => 'Card';
+  @override
+  String get theme_neutral_derived => 'Neutral derived colors';
+  @override
+  String get theme_neutral_derived_desc =>
+      'Tags, selected items, menus and surfaces stay gray instead of taking on the accent\'s hue; only the accent color itself stands out (like the Windows light theme). White, gray or black accents do this automatically.';
 }
 
 // Path: <root>
@@ -77408,10 +77762,6 @@ class _StringsKo extends _StringsEn {
   String get av_sync_reset => '초기화';
   @override
   String get back => '뒤로';
-  @override
-  String get background_color => '배경색';
-  @override
-  String get background_color_desc => '리더 페이지 배경';
   @override
   String get backup_category_audiobooks => '오디오북 오디오';
   @override
@@ -77897,30 +78247,6 @@ class _StringsKo extends _StringsEn {
   String get collection_word => '단어';
   @override
   String get collections => '모음';
-  @override
-  String get color_container => '컨테이너';
-  @override
-  String get color_container_desc => '트랙 전환, 재생 바 배경';
-  @override
-  String get color_link => '링크 색상';
-  @override
-  String get color_link_desc => '리더 하이퍼링크 색상';
-  @override
-  String get color_primary => '기본색';
-  @override
-  String get color_primary_desc => '오디오 하이라이트, 버튼, 스위치';
-  @override
-  String get color_sentence_audio_highlight => '오디오 하이라이트';
-  @override
-  String get color_sentence_audio_highlight_desc => '오디오북 자막 동기화 하이라이트';
-  @override
-  String get color_secondary => '보조색';
-  @override
-  String get color_secondary_desc => '사전 항목, 책장 뱃지';
-  @override
-  String get color_tertiary => '3차색';
-  @override
-  String get color_tertiary_desc => '모음, 독서 통계';
   @override
   String get columns_per_page => '페이지당 열 수';
   @override
@@ -78628,10 +78954,6 @@ class _StringsKo extends _StringsEn {
   String get follow_audio_off_tooltip => '오디오 따라가기: 꺼짐';
   @override
   String get follow_audio_on_tooltip => '오디오 따라가기: 켜짐';
-  @override
-  String get font_color => '글꼴 색상';
-  @override
-  String get font_color_desc => '리더 텍스트 색상';
   @override
   String get font_desc_hina_mincho => '부드러운 장식 명조 · Noto Sans JP 폴백 권장';
   @override
@@ -80273,13 +80595,9 @@ class _StringsKo extends _StringsEn {
   @override
   String get searching_in_progress => '검색 중 ';
   @override
-  String get section_advanced_colors => '고급';
-  @override
   String get section_advanced_typography => '고급';
   @override
   String get section_audiobook => '오디오북';
-  @override
-  String get section_audiobook_lyrics => '오디오북 및 가사';
   @override
   String get section_epub => 'EPUB 라이브러리';
   @override
@@ -80293,10 +80611,6 @@ class _StringsKo extends _StringsEn {
   @override
   String get section_page_turn_direction => '페이지 넘김 방향';
   @override
-  String get section_reader_colors => '리더 색상';
-  @override
-  String get section_system_theme => '시스템 테마 색상';
-  @override
   String get section_typography => '타이포그래피';
   @override
   String get section_update => '업데이트 설정';
@@ -80308,14 +80622,6 @@ class _StringsKo extends _StringsEn {
   String get section_video_playback => '재생';
   @override
   String get section_video_subtitles => '자막';
-  @override
-  String get seed_color => '시드 색상';
-  @override
-  String get seed_color_desc => '아래의 모든 기본 색상을 생성합니다';
-  @override
-  String get selection_color => '선택 강조색';
-  @override
-  String get selection_color_desc => '리더 텍스트 선택 강조';
   @override
   String get send => '보내기';
   @override
@@ -81255,9 +81561,6 @@ class _StringsKo extends _StringsEn {
   String get theme_gray => '그레이 다크';
   @override
   String get theme_light => '화이트';
-  @override
-  String get theme_seed_preview_hint =>
-      '아래 색상 견본은 시드 색상에서 실제로 생성된 색을 미리 보여 줍니다. 특정 색을 주요 강조색으로 고정하려면 「주요 색」 토글을 켜고 직접 선택하세요.';
   @override
   String get theme_water => '워터 블루';
   @override
@@ -86636,6 +86939,106 @@ class _StringsKo extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get theme_section_reader => 'Reader';
+  @override
+  String get theme_section_audiobook => 'Audiobook';
+  @override
+  String get theme_section_fine_tune => 'Fine-tune derived colors';
+  @override
+  String get theme_role_accent => 'Accent color';
+  @override
+  String get theme_role_reader_text => 'Body text';
+  @override
+  String get theme_role_reader_text_desc =>
+      'Reader text, toolbar icons and dictionary popup text';
+  @override
+  String get theme_role_reader_background => 'Page background';
+  @override
+  String get theme_role_reader_background_desc =>
+      'Reader page, toolbar and dictionary popup background';
+  @override
+  String get theme_role_link => 'Links';
+  @override
+  String get theme_role_link_desc =>
+      'Hyperlinks inside books and the selection handles';
+  @override
+  String get theme_role_selection => 'Lookup highlight';
+  @override
+  String get theme_role_selection_desc =>
+      'Background of the word or sentence being looked up';
+  @override
+  String get theme_role_audio_highlight => 'Current sentence';
+  @override
+  String get theme_role_audio_highlight_desc =>
+      'Follows audiobook playback. Applies to every theme, not just this one.';
+  @override
+  String get theme_role_secondary => 'Secondary accent';
+  @override
+  String get theme_role_secondary_desc =>
+      'Tags, badges and selected list items';
+  @override
+  String get theme_role_tertiary => 'Decoration color';
+  @override
+  String get theme_role_tertiary_desc => 'Collections and reading statistics';
+  @override
+  String get theme_role_container => 'Control fill';
+  @override
+  String get theme_role_container_desc =>
+      'Switch tracks, floating buttons and the play bar';
+  @override
+  String get theme_role_follows_theme => 'Follows theme';
+  @override
+  String get theme_role_reset => 'Follow theme again';
+  @override
+  String get theme_preview_light => 'Light';
+  @override
+  String get theme_preview_dark => 'Dark';
+  @override
+  String get theme_preview_button => 'Button';
+  @override
+  String get theme_preview_tag => 'Tag';
+  @override
+  String get theme_preview_hint =>
+      'Pick a color to see where it is used outlined in the preview.';
+  @override
+  String get theme_role_accent_desc =>
+      'Used exactly as picked for buttons, switches, icons and progress bars. Every other color is derived from it.';
+  @override
+  String get theme_accent_low_contrast_dark =>
+      'Hard to see on the dark-mode background. Pick a lighter color.';
+  @override
+  String get theme_accent_low_contrast_light =>
+      'Hard to see on the light-mode background. Pick a darker color.';
+  @override
+  String get theme_section_accent => 'Interface colors';
+  @override
+  String get theme_role_surface => 'Interface background';
+  @override
+  String get theme_role_surface_desc =>
+      'Base color of pages, cards and menus; the other layers get a faint tint of gray from it.';
+  @override
+  String get theme_accent_follow_system => 'Follow the system accent color';
+  @override
+  String get theme_accent_follow_system_desc =>
+      'Use the wallpaper color on Android (Material You) or the OS accent color on desktop instead of a picked color.';
+  @override
+  String get theme_accent_follow_system_unavailable =>
+      'The system does not expose an accent color on this device.';
+  @override
+  String get theme_accent_auto_tone => 'Adjust tone for light and dark mode';
+  @override
+  String get theme_accent_auto_tone_desc =>
+      'Off: the exact color is used. On: a lighter or darker tone is generated for each mode, so what you see differs from what you picked.';
+  @override
+  String get theme_role_actual_color => 'Shown as';
+  @override
+  String get theme_preview_card => 'Card';
+  @override
+  String get theme_neutral_derived => 'Neutral derived colors';
+  @override
+  String get theme_neutral_derived_desc =>
+      'Tags, selected items, menus and surfaces stay gray instead of taking on the accent\'s hue; only the accent color itself stands out (like the Windows light theme). White, gray or black accents do this automatically.';
 }
 
 // Path: <root>
@@ -87082,10 +87485,6 @@ class _StringsNl extends _StringsEn {
   String get av_sync_reset => 'Herstellen';
   @override
   String get back => 'Terug';
-  @override
-  String get background_color => 'Achtergrondkleur';
-  @override
-  String get background_color_desc => 'Achtergrond van de lezerpagina';
   @override
   String get backup_category_audiobooks => 'Luisterboekaudio';
   @override
@@ -87600,32 +87999,6 @@ class _StringsNl extends _StringsEn {
   String get collection_word => 'Woord';
   @override
   String get collections => 'Collecties';
-  @override
-  String get color_container => 'Container';
-  @override
-  String get color_container_desc => 'Schakelbanen, achtergrond afspeelbalk';
-  @override
-  String get color_link => 'Linkkleur';
-  @override
-  String get color_link_desc => 'Hyperlinkkleur in de lezer';
-  @override
-  String get color_primary => 'Primair';
-  @override
-  String get color_primary_desc => 'Audiomarkering, knoppen, schakelaars';
-  @override
-  String get color_sentence_audio_highlight => 'Audiomarkering';
-  @override
-  String get color_sentence_audio_highlight_desc =>
-      'Markering van ondertitelsynchronisatie van het luisterboek';
-  @override
-  String get color_secondary => 'Secundair';
-  @override
-  String get color_secondary_desc =>
-      'Woordenboekvermeldingen, boekenplankbadges';
-  @override
-  String get color_tertiary => 'Tertiair';
-  @override
-  String get color_tertiary_desc => 'Collecties, leesstatistieken';
   @override
   String get columns_per_page => 'Kolommen per pagina';
   @override
@@ -88373,10 +88746,6 @@ class _StringsNl extends _StringsEn {
   String get follow_audio_off_tooltip => 'Audio volgen: UIT';
   @override
   String get follow_audio_on_tooltip => 'Audio volgen: AAN';
-  @override
-  String get font_color => 'Letterkleur';
-  @override
-  String get font_color_desc => 'Tekstkleur van de lezer';
   @override
   String get font_desc_hina_mincho =>
       'Zacht decoratief Mincho · Past goed bij Noto Sans JP';
@@ -90102,13 +90471,9 @@ class _StringsNl extends _StringsEn {
   @override
   String get searching_in_progress => 'Zoeken naar ';
   @override
-  String get section_advanced_colors => 'Geavanceerd';
-  @override
   String get section_advanced_typography => 'Geavanceerd';
   @override
   String get section_audiobook => 'Audioboek';
-  @override
-  String get section_audiobook_lyrics => 'Luisterboek & songteksten';
   @override
   String get section_epub => 'EPUB-bibliotheek';
   @override
@@ -90122,10 +90487,6 @@ class _StringsNl extends _StringsEn {
   @override
   String get section_page_turn_direction => 'Bladerrichting';
   @override
-  String get section_reader_colors => 'Lezerkleuren';
-  @override
-  String get section_system_theme => 'Systeemthemakleur';
-  @override
   String get section_typography => 'Typografie';
   @override
   String get section_update => 'Update-instellingen';
@@ -90137,14 +90498,6 @@ class _StringsNl extends _StringsEn {
   String get section_video_playback => 'Afspelen';
   @override
   String get section_video_subtitles => 'Ondertitels';
-  @override
-  String get seed_color => 'Basiskleur';
-  @override
-  String get seed_color_desc => 'Genereert alle standaardkleuren hieronder';
-  @override
-  String get selection_color => 'Selectiekleur';
-  @override
-  String get selection_color_desc => 'Tekstselectiemarkering van de lezer';
   @override
   String get send => 'Verzenden';
   @override
@@ -91143,9 +91496,6 @@ class _StringsNl extends _StringsEn {
   String get theme_gray => 'Donkergrijs';
   @override
   String get theme_light => 'Wit';
-  @override
-  String get theme_seed_preview_hint =>
-      'De stalen hieronder tonen een voorbeeld van de kleuren die daadwerkelijk uit je startkleur worden gegenereerd. Om een specifieke kleur als primaire accentkleur af te dwingen, zet je de schakelaar Primair aan en kies je hem expliciet.';
   @override
   String get theme_water => 'Waterblauw';
   @override
@@ -96846,6 +97196,106 @@ class _StringsNl extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get theme_section_reader => 'Reader';
+  @override
+  String get theme_section_audiobook => 'Audiobook';
+  @override
+  String get theme_section_fine_tune => 'Fine-tune derived colors';
+  @override
+  String get theme_role_accent => 'Accent color';
+  @override
+  String get theme_role_reader_text => 'Body text';
+  @override
+  String get theme_role_reader_text_desc =>
+      'Reader text, toolbar icons and dictionary popup text';
+  @override
+  String get theme_role_reader_background => 'Page background';
+  @override
+  String get theme_role_reader_background_desc =>
+      'Reader page, toolbar and dictionary popup background';
+  @override
+  String get theme_role_link => 'Links';
+  @override
+  String get theme_role_link_desc =>
+      'Hyperlinks inside books and the selection handles';
+  @override
+  String get theme_role_selection => 'Lookup highlight';
+  @override
+  String get theme_role_selection_desc =>
+      'Background of the word or sentence being looked up';
+  @override
+  String get theme_role_audio_highlight => 'Current sentence';
+  @override
+  String get theme_role_audio_highlight_desc =>
+      'Follows audiobook playback. Applies to every theme, not just this one.';
+  @override
+  String get theme_role_secondary => 'Secondary accent';
+  @override
+  String get theme_role_secondary_desc =>
+      'Tags, badges and selected list items';
+  @override
+  String get theme_role_tertiary => 'Decoration color';
+  @override
+  String get theme_role_tertiary_desc => 'Collections and reading statistics';
+  @override
+  String get theme_role_container => 'Control fill';
+  @override
+  String get theme_role_container_desc =>
+      'Switch tracks, floating buttons and the play bar';
+  @override
+  String get theme_role_follows_theme => 'Follows theme';
+  @override
+  String get theme_role_reset => 'Follow theme again';
+  @override
+  String get theme_preview_light => 'Light';
+  @override
+  String get theme_preview_dark => 'Dark';
+  @override
+  String get theme_preview_button => 'Button';
+  @override
+  String get theme_preview_tag => 'Tag';
+  @override
+  String get theme_preview_hint =>
+      'Pick a color to see where it is used outlined in the preview.';
+  @override
+  String get theme_role_accent_desc =>
+      'Used exactly as picked for buttons, switches, icons and progress bars. Every other color is derived from it.';
+  @override
+  String get theme_accent_low_contrast_dark =>
+      'Hard to see on the dark-mode background. Pick a lighter color.';
+  @override
+  String get theme_accent_low_contrast_light =>
+      'Hard to see on the light-mode background. Pick a darker color.';
+  @override
+  String get theme_section_accent => 'Interface colors';
+  @override
+  String get theme_role_surface => 'Interface background';
+  @override
+  String get theme_role_surface_desc =>
+      'Base color of pages, cards and menus; the other layers get a faint tint of gray from it.';
+  @override
+  String get theme_accent_follow_system => 'Follow the system accent color';
+  @override
+  String get theme_accent_follow_system_desc =>
+      'Use the wallpaper color on Android (Material You) or the OS accent color on desktop instead of a picked color.';
+  @override
+  String get theme_accent_follow_system_unavailable =>
+      'The system does not expose an accent color on this device.';
+  @override
+  String get theme_accent_auto_tone => 'Adjust tone for light and dark mode';
+  @override
+  String get theme_accent_auto_tone_desc =>
+      'Off: the exact color is used. On: a lighter or darker tone is generated for each mode, so what you see differs from what you picked.';
+  @override
+  String get theme_role_actual_color => 'Shown as';
+  @override
+  String get theme_preview_card => 'Card';
+  @override
+  String get theme_neutral_derived => 'Neutral derived colors';
+  @override
+  String get theme_neutral_derived_desc =>
+      'Tags, selected items, menus and surfaces stay gray instead of taking on the accent\'s hue; only the accent color itself stands out (like the Windows light theme). White, gray or black accents do this automatically.';
 }
 
 // Path: <root>
@@ -97297,10 +97747,6 @@ class _StringsPtBr extends _StringsEn {
   String get av_sync_reset => 'Redefinir';
   @override
   String get back => 'Voltar';
-  @override
-  String get background_color => 'Cor de fundo';
-  @override
-  String get background_color_desc => 'Fundo da página do leitor';
   @override
   String get backup_category_audiobooks => 'Áudio de audiolivros';
   @override
@@ -97815,33 +98261,6 @@ class _StringsPtBr extends _StringsEn {
   String get collection_word => 'Palavra';
   @override
   String get collections => 'Coleções';
-  @override
-  String get color_container => 'Contêiner';
-  @override
-  String get color_container_desc =>
-      'Fundo das faixas de áudio e barra de reprodução';
-  @override
-  String get color_link => 'Cor do link';
-  @override
-  String get color_link_desc => 'Cor dos hiperlinks do leitor';
-  @override
-  String get color_primary => 'Primária';
-  @override
-  String get color_primary_desc => 'Destaque de áudio, botões, interruptores';
-  @override
-  String get color_sentence_audio_highlight => 'Destaque de áudio';
-  @override
-  String get color_sentence_audio_highlight_desc =>
-      'Destaque de sincronização de legendas do audiolivro';
-  @override
-  String get color_secondary => 'Secundária';
-  @override
-  String get color_secondary_desc =>
-      'Entradas do dicionário, emblemas da estante';
-  @override
-  String get color_tertiary => 'Terciária';
-  @override
-  String get color_tertiary_desc => 'Coleções, estatísticas de leitura';
   @override
   String get columns_per_page => 'Colunas por página';
   @override
@@ -98594,10 +99013,6 @@ class _StringsPtBr extends _StringsEn {
   String get follow_audio_off_tooltip => 'Acompanhar áudio: DESLIGADO';
   @override
   String get follow_audio_on_tooltip => 'Acompanhar áudio: LIGADO';
-  @override
-  String get font_color => 'Cor da Fonte';
-  @override
-  String get font_color_desc => 'Cor do texto do leitor';
   @override
   String get font_desc_hina_mincho =>
       'Mincho decorativo suave · Combina bem com Noto Sans JP';
@@ -100329,13 +100744,9 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get searching_in_progress => 'Buscando por ';
   @override
-  String get section_advanced_colors => 'Avançado';
-  @override
   String get section_advanced_typography => 'Avançado';
   @override
   String get section_audiobook => 'Audiolivro';
-  @override
-  String get section_audiobook_lyrics => 'Audiolivro e letras';
   @override
   String get section_epub => 'Biblioteca EPUB';
   @override
@@ -100349,10 +100760,6 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get section_page_turn_direction => 'Direção de virada de página';
   @override
-  String get section_reader_colors => 'Cores do leitor';
-  @override
-  String get section_system_theme => 'Cor do tema do sistema';
-  @override
   String get section_typography => 'Tipografia';
   @override
   String get section_update => 'Configurações de atualização';
@@ -100364,14 +100771,6 @@ class _StringsPtBr extends _StringsEn {
   String get section_video_playback => 'Reprodução';
   @override
   String get section_video_subtitles => 'Legendas';
-  @override
-  String get seed_color => 'Cor Base';
-  @override
-  String get seed_color_desc => 'Gera todas as cores padrão abaixo';
-  @override
-  String get selection_color => 'Cor de seleção';
-  @override
-  String get selection_color_desc => 'Destaque de seleção de texto do leitor';
   @override
   String get send => 'Enviar';
   @override
@@ -101368,9 +101767,6 @@ class _StringsPtBr extends _StringsEn {
   String get theme_gray => 'Cinza escuro';
   @override
   String get theme_light => 'Branco';
-  @override
-  String get theme_seed_preview_hint =>
-      'As amostras abaixo mostram uma prévia das cores realmente geradas a partir da sua cor-semente. Para forçar uma cor específica como o destaque primário, ative a opção Primária e escolha-a explicitamente.';
   @override
   String get theme_water => 'Azul Água';
   @override
@@ -107110,6 +107506,106 @@ class _StringsPtBr extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get theme_section_reader => 'Reader';
+  @override
+  String get theme_section_audiobook => 'Audiobook';
+  @override
+  String get theme_section_fine_tune => 'Fine-tune derived colors';
+  @override
+  String get theme_role_accent => 'Accent color';
+  @override
+  String get theme_role_reader_text => 'Body text';
+  @override
+  String get theme_role_reader_text_desc =>
+      'Reader text, toolbar icons and dictionary popup text';
+  @override
+  String get theme_role_reader_background => 'Page background';
+  @override
+  String get theme_role_reader_background_desc =>
+      'Reader page, toolbar and dictionary popup background';
+  @override
+  String get theme_role_link => 'Links';
+  @override
+  String get theme_role_link_desc =>
+      'Hyperlinks inside books and the selection handles';
+  @override
+  String get theme_role_selection => 'Lookup highlight';
+  @override
+  String get theme_role_selection_desc =>
+      'Background of the word or sentence being looked up';
+  @override
+  String get theme_role_audio_highlight => 'Current sentence';
+  @override
+  String get theme_role_audio_highlight_desc =>
+      'Follows audiobook playback. Applies to every theme, not just this one.';
+  @override
+  String get theme_role_secondary => 'Secondary accent';
+  @override
+  String get theme_role_secondary_desc =>
+      'Tags, badges and selected list items';
+  @override
+  String get theme_role_tertiary => 'Decoration color';
+  @override
+  String get theme_role_tertiary_desc => 'Collections and reading statistics';
+  @override
+  String get theme_role_container => 'Control fill';
+  @override
+  String get theme_role_container_desc =>
+      'Switch tracks, floating buttons and the play bar';
+  @override
+  String get theme_role_follows_theme => 'Follows theme';
+  @override
+  String get theme_role_reset => 'Follow theme again';
+  @override
+  String get theme_preview_light => 'Light';
+  @override
+  String get theme_preview_dark => 'Dark';
+  @override
+  String get theme_preview_button => 'Button';
+  @override
+  String get theme_preview_tag => 'Tag';
+  @override
+  String get theme_preview_hint =>
+      'Pick a color to see where it is used outlined in the preview.';
+  @override
+  String get theme_role_accent_desc =>
+      'Used exactly as picked for buttons, switches, icons and progress bars. Every other color is derived from it.';
+  @override
+  String get theme_accent_low_contrast_dark =>
+      'Hard to see on the dark-mode background. Pick a lighter color.';
+  @override
+  String get theme_accent_low_contrast_light =>
+      'Hard to see on the light-mode background. Pick a darker color.';
+  @override
+  String get theme_section_accent => 'Interface colors';
+  @override
+  String get theme_role_surface => 'Interface background';
+  @override
+  String get theme_role_surface_desc =>
+      'Base color of pages, cards and menus; the other layers get a faint tint of gray from it.';
+  @override
+  String get theme_accent_follow_system => 'Follow the system accent color';
+  @override
+  String get theme_accent_follow_system_desc =>
+      'Use the wallpaper color on Android (Material You) or the OS accent color on desktop instead of a picked color.';
+  @override
+  String get theme_accent_follow_system_unavailable =>
+      'The system does not expose an accent color on this device.';
+  @override
+  String get theme_accent_auto_tone => 'Adjust tone for light and dark mode';
+  @override
+  String get theme_accent_auto_tone_desc =>
+      'Off: the exact color is used. On: a lighter or darker tone is generated for each mode, so what you see differs from what you picked.';
+  @override
+  String get theme_role_actual_color => 'Shown as';
+  @override
+  String get theme_preview_card => 'Card';
+  @override
+  String get theme_neutral_derived => 'Neutral derived colors';
+  @override
+  String get theme_neutral_derived_desc =>
+      'Tags, selected items, menus and surfaces stay gray instead of taking on the accent\'s hue; only the accent color itself stands out (like the Windows light theme). White, gray or black accents do this automatically.';
 }
 
 // Path: <root>
@@ -107556,10 +108052,6 @@ class _StringsRu extends _StringsEn {
   String get av_sync_reset => 'Сброс';
   @override
   String get back => 'Назад';
-  @override
-  String get background_color => 'Цвет фона';
-  @override
-  String get background_color_desc => 'Фон страницы читалки';
   @override
   String get backup_category_audiobooks => 'Аудио аудиокниг';
   @override
@@ -108071,33 +108563,6 @@ class _StringsRu extends _StringsEn {
   String get collection_word => 'Слово';
   @override
   String get collections => 'Коллекции';
-  @override
-  String get color_container => 'Контейнер';
-  @override
-  String get color_container_desc =>
-      'Переключение дорожек, фон панели воспроизведения';
-  @override
-  String get color_link => 'Цвет ссылки';
-  @override
-  String get color_link_desc => 'Цвет гиперссылок в ридере';
-  @override
-  String get color_primary => 'Основной';
-  @override
-  String get color_primary_desc => 'Подсветка аудио, кнопки, переключатели';
-  @override
-  String get color_sentence_audio_highlight => 'Подсветка аудио';
-  @override
-  String get color_sentence_audio_highlight_desc =>
-      'Подсветка синхронизации субтитров аудиокниги';
-  @override
-  String get color_secondary => 'Вторичный';
-  @override
-  String get color_secondary_desc =>
-      'Словарные статьи, значки на книжной полке';
-  @override
-  String get color_tertiary => 'Третичный';
-  @override
-  String get color_tertiary_desc => 'Коллекции, статистика чтения';
   @override
   String get columns_per_page => 'Столбцов на странице';
   @override
@@ -108849,10 +109314,6 @@ class _StringsRu extends _StringsEn {
   String get follow_audio_off_tooltip => 'Следование за аудио: ВЫКЛ';
   @override
   String get follow_audio_on_tooltip => 'Следование за аудио: ВКЛ';
-  @override
-  String get font_color => 'Цвет шрифта';
-  @override
-  String get font_color_desc => 'Цвет текста в читалке';
   @override
   String get font_desc_hina_mincho =>
       'Мягкий декоративный Mincho · Хорошо сочетается с Noto Sans JP';
@@ -110586,13 +111047,9 @@ class _StringsRu extends _StringsEn {
   @override
   String get searching_in_progress => 'Поиск ';
   @override
-  String get section_advanced_colors => 'Расширенные';
-  @override
   String get section_advanced_typography => 'Дополнительно';
   @override
   String get section_audiobook => 'Аудиокнига';
-  @override
-  String get section_audiobook_lyrics => 'Аудиокниги и текст';
   @override
   String get section_epub => 'Библиотека EPUB';
   @override
@@ -110606,10 +111063,6 @@ class _StringsRu extends _StringsEn {
   @override
   String get section_page_turn_direction => 'Направление перелистывания';
   @override
-  String get section_reader_colors => 'Цвета читалки';
-  @override
-  String get section_system_theme => 'Системный цвет темы';
-  @override
   String get section_typography => 'Типографика';
   @override
   String get section_update => 'Настройки обновлений';
@@ -110621,14 +111074,6 @@ class _StringsRu extends _StringsEn {
   String get section_video_playback => 'Воспроизведение';
   @override
   String get section_video_subtitles => 'Субтитры';
-  @override
-  String get seed_color => 'Базовый цвет';
-  @override
-  String get seed_color_desc => 'Генерирует все цвета по умолчанию ниже';
-  @override
-  String get selection_color => 'Цвет выделения';
-  @override
-  String get selection_color_desc => 'Выделение текста в читалке';
   @override
   String get send => 'Отправить';
   @override
@@ -111625,9 +112070,6 @@ class _StringsRu extends _StringsEn {
   String get theme_gray => 'Тёмно-серая';
   @override
   String get theme_light => 'Белая';
-  @override
-  String get theme_seed_preview_hint =>
-      'Образцы ниже показывают цвета, фактически сгенерированные из вашего исходного цвета. Чтобы закрепить определённый цвет как основной акцент, включите переключатель «Основной» и выберите его явно.';
   @override
   String get theme_water => 'Голубая';
   @override
@@ -117352,6 +117794,106 @@ class _StringsRu extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get theme_section_reader => 'Reader';
+  @override
+  String get theme_section_audiobook => 'Audiobook';
+  @override
+  String get theme_section_fine_tune => 'Fine-tune derived colors';
+  @override
+  String get theme_role_accent => 'Accent color';
+  @override
+  String get theme_role_reader_text => 'Body text';
+  @override
+  String get theme_role_reader_text_desc =>
+      'Reader text, toolbar icons and dictionary popup text';
+  @override
+  String get theme_role_reader_background => 'Page background';
+  @override
+  String get theme_role_reader_background_desc =>
+      'Reader page, toolbar and dictionary popup background';
+  @override
+  String get theme_role_link => 'Links';
+  @override
+  String get theme_role_link_desc =>
+      'Hyperlinks inside books and the selection handles';
+  @override
+  String get theme_role_selection => 'Lookup highlight';
+  @override
+  String get theme_role_selection_desc =>
+      'Background of the word or sentence being looked up';
+  @override
+  String get theme_role_audio_highlight => 'Current sentence';
+  @override
+  String get theme_role_audio_highlight_desc =>
+      'Follows audiobook playback. Applies to every theme, not just this one.';
+  @override
+  String get theme_role_secondary => 'Secondary accent';
+  @override
+  String get theme_role_secondary_desc =>
+      'Tags, badges and selected list items';
+  @override
+  String get theme_role_tertiary => 'Decoration color';
+  @override
+  String get theme_role_tertiary_desc => 'Collections and reading statistics';
+  @override
+  String get theme_role_container => 'Control fill';
+  @override
+  String get theme_role_container_desc =>
+      'Switch tracks, floating buttons and the play bar';
+  @override
+  String get theme_role_follows_theme => 'Follows theme';
+  @override
+  String get theme_role_reset => 'Follow theme again';
+  @override
+  String get theme_preview_light => 'Light';
+  @override
+  String get theme_preview_dark => 'Dark';
+  @override
+  String get theme_preview_button => 'Button';
+  @override
+  String get theme_preview_tag => 'Tag';
+  @override
+  String get theme_preview_hint =>
+      'Pick a color to see where it is used outlined in the preview.';
+  @override
+  String get theme_role_accent_desc =>
+      'Used exactly as picked for buttons, switches, icons and progress bars. Every other color is derived from it.';
+  @override
+  String get theme_accent_low_contrast_dark =>
+      'Hard to see on the dark-mode background. Pick a lighter color.';
+  @override
+  String get theme_accent_low_contrast_light =>
+      'Hard to see on the light-mode background. Pick a darker color.';
+  @override
+  String get theme_section_accent => 'Interface colors';
+  @override
+  String get theme_role_surface => 'Interface background';
+  @override
+  String get theme_role_surface_desc =>
+      'Base color of pages, cards and menus; the other layers get a faint tint of gray from it.';
+  @override
+  String get theme_accent_follow_system => 'Follow the system accent color';
+  @override
+  String get theme_accent_follow_system_desc =>
+      'Use the wallpaper color on Android (Material You) or the OS accent color on desktop instead of a picked color.';
+  @override
+  String get theme_accent_follow_system_unavailable =>
+      'The system does not expose an accent color on this device.';
+  @override
+  String get theme_accent_auto_tone => 'Adjust tone for light and dark mode';
+  @override
+  String get theme_accent_auto_tone_desc =>
+      'Off: the exact color is used. On: a lighter or darker tone is generated for each mode, so what you see differs from what you picked.';
+  @override
+  String get theme_role_actual_color => 'Shown as';
+  @override
+  String get theme_preview_card => 'Card';
+  @override
+  String get theme_neutral_derived => 'Neutral derived colors';
+  @override
+  String get theme_neutral_derived_desc =>
+      'Tags, selected items, menus and surfaces stay gray instead of taking on the accent\'s hue; only the accent color itself stands out (like the Windows light theme). White, gray or black accents do this automatically.';
 }
 
 // Path: <root>
@@ -117792,10 +118334,6 @@ class _StringsTh extends _StringsEn {
   String get av_sync_reset => 'รีเซ็ต';
   @override
   String get back => 'กลับ';
-  @override
-  String get background_color => 'สีพื้นหลัง';
-  @override
-  String get background_color_desc => 'พื้นหลังหน้าอ่าน';
   @override
   String get backup_category_audiobooks => 'เสียงหนังสือเสียง';
   @override
@@ -118302,31 +118840,6 @@ class _StringsTh extends _StringsEn {
   String get collection_word => 'คำศัพท์';
   @override
   String get collections => 'คอลเลกชัน';
-  @override
-  String get color_container => 'คอนเทนเนอร์';
-  @override
-  String get color_container_desc => 'สลับแทร็ก พื้นหลังแถบเล่น';
-  @override
-  String get color_link => 'สีลิงก์';
-  @override
-  String get color_link_desc => 'สีไฮเปอร์ลิงก์ในตัวอ่าน';
-  @override
-  String get color_primary => 'สีหลัก';
-  @override
-  String get color_primary_desc => 'ไฮไลต์เสียง ปุ่ม สวิตช์';
-  @override
-  String get color_sentence_audio_highlight => 'ไฮไลท์เสียง';
-  @override
-  String get color_sentence_audio_highlight_desc =>
-      'ไฮไลท์การซิงค์คำบรรยายหนังสือเสียง';
-  @override
-  String get color_secondary => 'สีรอง';
-  @override
-  String get color_secondary_desc => 'รายการพจนานุกรม ป้ายชั้นหนังสือ';
-  @override
-  String get color_tertiary => 'สีที่สาม';
-  @override
-  String get color_tertiary_desc => 'คอลเลกชัน สถิติการอ่าน';
   @override
   String get columns_per_page => 'คอลัมน์ต่อหน้า';
   @override
@@ -119057,10 +119570,6 @@ class _StringsTh extends _StringsEn {
   String get follow_audio_off_tooltip => 'ตามเสียง: ปิด';
   @override
   String get follow_audio_on_tooltip => 'ตามเสียง: เปิด';
-  @override
-  String get font_color => 'สีตัวอักษร';
-  @override
-  String get font_color_desc => 'สีตัวอักษรหน้าอ่าน';
   @override
   String get font_desc_hina_mincho =>
       'Mincho ตกแต่งนุ่มนวล · แนะนำใช้คู่กับ Noto Sans JP';
@@ -120762,13 +121271,9 @@ class _StringsTh extends _StringsEn {
   @override
   String get searching_in_progress => 'กำลังค้นหา ';
   @override
-  String get section_advanced_colors => 'ขั้นสูง';
-  @override
   String get section_advanced_typography => 'ขั้นสูง';
   @override
   String get section_audiobook => 'หนังสือเสียง';
-  @override
-  String get section_audiobook_lyrics => 'หนังสือเสียงและเนื้อร้อง';
   @override
   String get section_epub => 'คลัง EPUB';
   @override
@@ -120782,10 +121287,6 @@ class _StringsTh extends _StringsEn {
   @override
   String get section_page_turn_direction => 'ทิศทางการพลิกหน้า';
   @override
-  String get section_reader_colors => 'สีเครื่องอ่าน';
-  @override
-  String get section_system_theme => 'สีธีมของระบบ';
-  @override
   String get section_typography => 'รูปแบบตัวอักษร';
   @override
   String get section_update => 'ตั้งค่าการอัปเดต';
@@ -120797,14 +121298,6 @@ class _StringsTh extends _StringsEn {
   String get section_video_playback => 'การเล่น';
   @override
   String get section_video_subtitles => 'คำบรรยาย';
-  @override
-  String get seed_color => 'สีพื้นฐาน';
-  @override
-  String get seed_color_desc => 'สร้างสีเริ่มต้นทั้งหมดด้านล่าง';
-  @override
-  String get selection_color => 'สีเน้นข้อความ';
-  @override
-  String get selection_color_desc => 'ไฮไลต์การเลือกข้อความในเครื่องอ่าน';
   @override
   String get send => 'ส่ง';
   @override
@@ -121786,9 +122279,6 @@ class _StringsTh extends _StringsEn {
   String get theme_gray => 'เทาเข้ม';
   @override
   String get theme_light => 'ขาว';
-  @override
-  String get theme_seed_preview_hint =>
-      'ตัวอย่างสีด้านล่างคือสีที่สร้างจริงจากสีเริ่มต้นของคุณ หากต้องการกำหนดสีใดเป็นสีเน้นหลักโดยเฉพาะ ให้เปิดสวิตช์ "สีหลัก" แล้วเลือกสีนั้นโดยตรง';
   @override
   String get theme_water => 'ฟ้าน้ำ';
   @override
@@ -127393,6 +127883,106 @@ class _StringsTh extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get theme_section_reader => 'Reader';
+  @override
+  String get theme_section_audiobook => 'Audiobook';
+  @override
+  String get theme_section_fine_tune => 'Fine-tune derived colors';
+  @override
+  String get theme_role_accent => 'Accent color';
+  @override
+  String get theme_role_reader_text => 'Body text';
+  @override
+  String get theme_role_reader_text_desc =>
+      'Reader text, toolbar icons and dictionary popup text';
+  @override
+  String get theme_role_reader_background => 'Page background';
+  @override
+  String get theme_role_reader_background_desc =>
+      'Reader page, toolbar and dictionary popup background';
+  @override
+  String get theme_role_link => 'Links';
+  @override
+  String get theme_role_link_desc =>
+      'Hyperlinks inside books and the selection handles';
+  @override
+  String get theme_role_selection => 'Lookup highlight';
+  @override
+  String get theme_role_selection_desc =>
+      'Background of the word or sentence being looked up';
+  @override
+  String get theme_role_audio_highlight => 'Current sentence';
+  @override
+  String get theme_role_audio_highlight_desc =>
+      'Follows audiobook playback. Applies to every theme, not just this one.';
+  @override
+  String get theme_role_secondary => 'Secondary accent';
+  @override
+  String get theme_role_secondary_desc =>
+      'Tags, badges and selected list items';
+  @override
+  String get theme_role_tertiary => 'Decoration color';
+  @override
+  String get theme_role_tertiary_desc => 'Collections and reading statistics';
+  @override
+  String get theme_role_container => 'Control fill';
+  @override
+  String get theme_role_container_desc =>
+      'Switch tracks, floating buttons and the play bar';
+  @override
+  String get theme_role_follows_theme => 'Follows theme';
+  @override
+  String get theme_role_reset => 'Follow theme again';
+  @override
+  String get theme_preview_light => 'Light';
+  @override
+  String get theme_preview_dark => 'Dark';
+  @override
+  String get theme_preview_button => 'Button';
+  @override
+  String get theme_preview_tag => 'Tag';
+  @override
+  String get theme_preview_hint =>
+      'Pick a color to see where it is used outlined in the preview.';
+  @override
+  String get theme_role_accent_desc =>
+      'Used exactly as picked for buttons, switches, icons and progress bars. Every other color is derived from it.';
+  @override
+  String get theme_accent_low_contrast_dark =>
+      'Hard to see on the dark-mode background. Pick a lighter color.';
+  @override
+  String get theme_accent_low_contrast_light =>
+      'Hard to see on the light-mode background. Pick a darker color.';
+  @override
+  String get theme_section_accent => 'Interface colors';
+  @override
+  String get theme_role_surface => 'Interface background';
+  @override
+  String get theme_role_surface_desc =>
+      'Base color of pages, cards and menus; the other layers get a faint tint of gray from it.';
+  @override
+  String get theme_accent_follow_system => 'Follow the system accent color';
+  @override
+  String get theme_accent_follow_system_desc =>
+      'Use the wallpaper color on Android (Material You) or the OS accent color on desktop instead of a picked color.';
+  @override
+  String get theme_accent_follow_system_unavailable =>
+      'The system does not expose an accent color on this device.';
+  @override
+  String get theme_accent_auto_tone => 'Adjust tone for light and dark mode';
+  @override
+  String get theme_accent_auto_tone_desc =>
+      'Off: the exact color is used. On: a lighter or darker tone is generated for each mode, so what you see differs from what you picked.';
+  @override
+  String get theme_role_actual_color => 'Shown as';
+  @override
+  String get theme_preview_card => 'Card';
+  @override
+  String get theme_neutral_derived => 'Neutral derived colors';
+  @override
+  String get theme_neutral_derived_desc =>
+      'Tags, selected items, menus and surfaces stay gray instead of taking on the accent\'s hue; only the accent color itself stands out (like the Windows light theme). White, gray or black accents do this automatically.';
 }
 
 // Path: <root>
@@ -127835,10 +128425,6 @@ class _StringsTr extends _StringsEn {
   String get av_sync_reset => 'Sıfırla';
   @override
   String get back => 'Geri';
-  @override
-  String get background_color => 'Arka plan rengi';
-  @override
-  String get background_color_desc => 'Okuyucu sayfa arka planı';
   @override
   String get backup_category_audiobooks => 'Sesli kitap sesi';
   @override
@@ -128351,32 +128937,6 @@ class _StringsTr extends _StringsEn {
   String get collection_word => 'Kelime';
   @override
   String get collections => 'Koleksiyonlar';
-  @override
-  String get color_container => 'Kapsayıcı';
-  @override
-  String get color_container_desc =>
-      'Parça değiştirme, oynatma çubuğu arka planı';
-  @override
-  String get color_link => 'Bağlantı rengi';
-  @override
-  String get color_link_desc => 'Okuyucu köprü rengi';
-  @override
-  String get color_primary => 'Birincil';
-  @override
-  String get color_primary_desc => 'Ses vurgusu, düğmeler, anahtarlar';
-  @override
-  String get color_sentence_audio_highlight => 'Ses vurgusu';
-  @override
-  String get color_sentence_audio_highlight_desc =>
-      'Sesli kitap altyazı senkronizasyon vurgusu';
-  @override
-  String get color_secondary => 'İkincil';
-  @override
-  String get color_secondary_desc => 'Sözlük girişleri, kitaplık rozetleri';
-  @override
-  String get color_tertiary => 'Üçüncül';
-  @override
-  String get color_tertiary_desc => 'Koleksiyonlar, okuma istatistikleri';
   @override
   String get columns_per_page => 'Sayfa başına sütun';
   @override
@@ -129122,10 +129682,6 @@ class _StringsTr extends _StringsEn {
   String get follow_audio_off_tooltip => 'Ses takibi: KAPALI';
   @override
   String get follow_audio_on_tooltip => 'Ses takibi: AÇIK';
-  @override
-  String get font_color => 'Yazı rengi';
-  @override
-  String get font_color_desc => 'Okuyucu metin rengi';
   @override
   String get font_desc_hina_mincho =>
       'Yumuşak dekoratif Mincho · Noto Sans JP ile iyi gider';
@@ -130843,13 +131399,9 @@ class _StringsTr extends _StringsEn {
   @override
   String get searching_in_progress => 'Aranıyor ';
   @override
-  String get section_advanced_colors => 'Gelişmiş';
-  @override
   String get section_advanced_typography => 'Gelişmiş';
   @override
   String get section_audiobook => 'Sesli Kitap';
-  @override
-  String get section_audiobook_lyrics => 'Sesli Kitap ve Şarkı Sözleri';
   @override
   String get section_epub => 'EPUB Kütüphanesi';
   @override
@@ -130863,10 +131415,6 @@ class _StringsTr extends _StringsEn {
   @override
   String get section_page_turn_direction => 'Sayfa çevirme yönü';
   @override
-  String get section_reader_colors => 'Okuyucu Renkleri';
-  @override
-  String get section_system_theme => 'Sistem Tema Rengi';
-  @override
   String get section_typography => 'Tipografi';
   @override
   String get section_update => 'Güncelleme Ayarları';
@@ -130878,14 +131426,6 @@ class _StringsTr extends _StringsEn {
   String get section_video_playback => 'Oynatma';
   @override
   String get section_video_subtitles => 'Altyazılar';
-  @override
-  String get seed_color => 'Ana renk';
-  @override
-  String get seed_color_desc => 'Aşağıdaki tüm varsayılan renkleri oluşturur';
-  @override
-  String get selection_color => 'Seçim vurgusu';
-  @override
-  String get selection_color_desc => 'Okuyucu metin seçim vurgusu';
   @override
   String get send => 'Gönder';
   @override
@@ -131873,9 +132413,6 @@ class _StringsTr extends _StringsEn {
   String get theme_gray => 'Koyu gri';
   @override
   String get theme_light => 'Beyaz';
-  @override
-  String get theme_seed_preview_hint =>
-      'Aşağıdaki örnekler, tohum renginizden gerçekte üretilen renkleri önizler. Belirli bir rengi birincil vurgu olarak zorlamak için Birincil anahtarını açıp rengi açıkça seçin.';
   @override
   String get theme_water => 'Su mavisi';
   @override
@@ -137551,6 +138088,106 @@ class _StringsTr extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get theme_section_reader => 'Reader';
+  @override
+  String get theme_section_audiobook => 'Audiobook';
+  @override
+  String get theme_section_fine_tune => 'Fine-tune derived colors';
+  @override
+  String get theme_role_accent => 'Accent color';
+  @override
+  String get theme_role_reader_text => 'Body text';
+  @override
+  String get theme_role_reader_text_desc =>
+      'Reader text, toolbar icons and dictionary popup text';
+  @override
+  String get theme_role_reader_background => 'Page background';
+  @override
+  String get theme_role_reader_background_desc =>
+      'Reader page, toolbar and dictionary popup background';
+  @override
+  String get theme_role_link => 'Links';
+  @override
+  String get theme_role_link_desc =>
+      'Hyperlinks inside books and the selection handles';
+  @override
+  String get theme_role_selection => 'Lookup highlight';
+  @override
+  String get theme_role_selection_desc =>
+      'Background of the word or sentence being looked up';
+  @override
+  String get theme_role_audio_highlight => 'Current sentence';
+  @override
+  String get theme_role_audio_highlight_desc =>
+      'Follows audiobook playback. Applies to every theme, not just this one.';
+  @override
+  String get theme_role_secondary => 'Secondary accent';
+  @override
+  String get theme_role_secondary_desc =>
+      'Tags, badges and selected list items';
+  @override
+  String get theme_role_tertiary => 'Decoration color';
+  @override
+  String get theme_role_tertiary_desc => 'Collections and reading statistics';
+  @override
+  String get theme_role_container => 'Control fill';
+  @override
+  String get theme_role_container_desc =>
+      'Switch tracks, floating buttons and the play bar';
+  @override
+  String get theme_role_follows_theme => 'Follows theme';
+  @override
+  String get theme_role_reset => 'Follow theme again';
+  @override
+  String get theme_preview_light => 'Light';
+  @override
+  String get theme_preview_dark => 'Dark';
+  @override
+  String get theme_preview_button => 'Button';
+  @override
+  String get theme_preview_tag => 'Tag';
+  @override
+  String get theme_preview_hint =>
+      'Pick a color to see where it is used outlined in the preview.';
+  @override
+  String get theme_role_accent_desc =>
+      'Used exactly as picked for buttons, switches, icons and progress bars. Every other color is derived from it.';
+  @override
+  String get theme_accent_low_contrast_dark =>
+      'Hard to see on the dark-mode background. Pick a lighter color.';
+  @override
+  String get theme_accent_low_contrast_light =>
+      'Hard to see on the light-mode background. Pick a darker color.';
+  @override
+  String get theme_section_accent => 'Interface colors';
+  @override
+  String get theme_role_surface => 'Interface background';
+  @override
+  String get theme_role_surface_desc =>
+      'Base color of pages, cards and menus; the other layers get a faint tint of gray from it.';
+  @override
+  String get theme_accent_follow_system => 'Follow the system accent color';
+  @override
+  String get theme_accent_follow_system_desc =>
+      'Use the wallpaper color on Android (Material You) or the OS accent color on desktop instead of a picked color.';
+  @override
+  String get theme_accent_follow_system_unavailable =>
+      'The system does not expose an accent color on this device.';
+  @override
+  String get theme_accent_auto_tone => 'Adjust tone for light and dark mode';
+  @override
+  String get theme_accent_auto_tone_desc =>
+      'Off: the exact color is used. On: a lighter or darker tone is generated for each mode, so what you see differs from what you picked.';
+  @override
+  String get theme_role_actual_color => 'Shown as';
+  @override
+  String get theme_preview_card => 'Card';
+  @override
+  String get theme_neutral_derived => 'Neutral derived colors';
+  @override
+  String get theme_neutral_derived_desc =>
+      'Tags, selected items, menus and surfaces stay gray instead of taking on the accent\'s hue; only the accent color itself stands out (like the Windows light theme). White, gray or black accents do this automatically.';
 }
 
 // Path: <root>
@@ -137993,10 +138630,6 @@ class _StringsVi extends _StringsEn {
   String get av_sync_reset => 'Đặt lại';
   @override
   String get back => 'Quay lại';
-  @override
-  String get background_color => 'Màu nền';
-  @override
-  String get background_color_desc => 'Nền trang đọc';
   @override
   String get backup_category_audiobooks => 'Âm thanh sách nói';
   @override
@@ -138507,31 +139140,6 @@ class _StringsVi extends _StringsEn {
   String get collection_word => 'Từ';
   @override
   String get collections => 'Bộ sưu tập';
-  @override
-  String get color_container => 'Vùng chứa';
-  @override
-  String get color_container_desc => 'Chuyển bản nhạc, nền thanh phát';
-  @override
-  String get color_link => 'Màu liên kết';
-  @override
-  String get color_link_desc => 'Màu siêu liên kết trong trình đọc';
-  @override
-  String get color_primary => 'Chính';
-  @override
-  String get color_primary_desc => 'Đánh dấu âm thanh, nút, công tắc';
-  @override
-  String get color_sentence_audio_highlight => 'Tô sáng âm thanh';
-  @override
-  String get color_sentence_audio_highlight_desc =>
-      'Tô sáng đồng bộ phụ đề sách nói';
-  @override
-  String get color_secondary => 'Phụ';
-  @override
-  String get color_secondary_desc => 'Mục từ điển, huy hiệu giá sách';
-  @override
-  String get color_tertiary => 'Cấp ba';
-  @override
-  String get color_tertiary_desc => 'Bộ sưu tập, thống kê đọc';
   @override
   String get columns_per_page => 'Số cột mỗi trang';
   @override
@@ -139274,10 +139882,6 @@ class _StringsVi extends _StringsEn {
   String get follow_audio_off_tooltip => 'Theo dõi âm thanh: TẮT';
   @override
   String get follow_audio_on_tooltip => 'Theo dõi âm thanh: BẬT';
-  @override
-  String get font_color => 'Màu chữ';
-  @override
-  String get font_color_desc => 'Màu chữ trình đọc';
   @override
   String get font_desc_hina_mincho =>
       'Mincho trang trí mềm mại · Nên dùng kèm Noto Sans JP';
@@ -141001,13 +141605,9 @@ class _StringsVi extends _StringsEn {
   @override
   String get searching_in_progress => 'Đang tìm kiếm ';
   @override
-  String get section_advanced_colors => 'Nâng cao';
-  @override
   String get section_advanced_typography => 'Nâng cao';
   @override
   String get section_audiobook => 'Sách nói';
-  @override
-  String get section_audiobook_lyrics => 'Sách nói & lời';
   @override
   String get section_epub => 'Thư viện EPUB';
   @override
@@ -141021,10 +141621,6 @@ class _StringsVi extends _StringsEn {
   @override
   String get section_page_turn_direction => 'Hướng lật trang';
   @override
-  String get section_reader_colors => 'Màu trình đọc';
-  @override
-  String get section_system_theme => 'Màu chủ đề hệ thống';
-  @override
   String get section_typography => 'Kiểu chữ';
   @override
   String get section_update => 'Cài đặt cập nhật';
@@ -141036,14 +141632,6 @@ class _StringsVi extends _StringsEn {
   String get section_video_playback => 'Phát';
   @override
   String get section_video_subtitles => 'Phụ đề';
-  @override
-  String get seed_color => 'Màu chủ đạo';
-  @override
-  String get seed_color_desc => 'Tạo tất cả màu mặc định bên dưới';
-  @override
-  String get selection_color => 'Màu đánh dấu';
-  @override
-  String get selection_color_desc => 'Đánh dấu chọn văn bản trong trình đọc';
   @override
   String get send => 'Gửi';
   @override
@@ -142025,9 +142613,6 @@ class _StringsVi extends _StringsEn {
   String get theme_gray => 'Xám tối';
   @override
   String get theme_light => 'Trắng';
-  @override
-  String get theme_seed_preview_hint =>
-      'Các ô màu bên dưới xem trước những màu thực sự được tạo từ màu hạt giống của bạn. Để buộc một màu cụ thể làm màu nhấn chính, hãy bật công tắc Màu chính và chọn nó rõ ràng.';
   @override
   String get theme_water => 'Xanh nước';
   @override
@@ -147680,6 +148265,106 @@ class _StringsVi extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get theme_section_reader => 'Reader';
+  @override
+  String get theme_section_audiobook => 'Audiobook';
+  @override
+  String get theme_section_fine_tune => 'Fine-tune derived colors';
+  @override
+  String get theme_role_accent => 'Accent color';
+  @override
+  String get theme_role_reader_text => 'Body text';
+  @override
+  String get theme_role_reader_text_desc =>
+      'Reader text, toolbar icons and dictionary popup text';
+  @override
+  String get theme_role_reader_background => 'Page background';
+  @override
+  String get theme_role_reader_background_desc =>
+      'Reader page, toolbar and dictionary popup background';
+  @override
+  String get theme_role_link => 'Links';
+  @override
+  String get theme_role_link_desc =>
+      'Hyperlinks inside books and the selection handles';
+  @override
+  String get theme_role_selection => 'Lookup highlight';
+  @override
+  String get theme_role_selection_desc =>
+      'Background of the word or sentence being looked up';
+  @override
+  String get theme_role_audio_highlight => 'Current sentence';
+  @override
+  String get theme_role_audio_highlight_desc =>
+      'Follows audiobook playback. Applies to every theme, not just this one.';
+  @override
+  String get theme_role_secondary => 'Secondary accent';
+  @override
+  String get theme_role_secondary_desc =>
+      'Tags, badges and selected list items';
+  @override
+  String get theme_role_tertiary => 'Decoration color';
+  @override
+  String get theme_role_tertiary_desc => 'Collections and reading statistics';
+  @override
+  String get theme_role_container => 'Control fill';
+  @override
+  String get theme_role_container_desc =>
+      'Switch tracks, floating buttons and the play bar';
+  @override
+  String get theme_role_follows_theme => 'Follows theme';
+  @override
+  String get theme_role_reset => 'Follow theme again';
+  @override
+  String get theme_preview_light => 'Light';
+  @override
+  String get theme_preview_dark => 'Dark';
+  @override
+  String get theme_preview_button => 'Button';
+  @override
+  String get theme_preview_tag => 'Tag';
+  @override
+  String get theme_preview_hint =>
+      'Pick a color to see where it is used outlined in the preview.';
+  @override
+  String get theme_role_accent_desc =>
+      'Used exactly as picked for buttons, switches, icons and progress bars. Every other color is derived from it.';
+  @override
+  String get theme_accent_low_contrast_dark =>
+      'Hard to see on the dark-mode background. Pick a lighter color.';
+  @override
+  String get theme_accent_low_contrast_light =>
+      'Hard to see on the light-mode background. Pick a darker color.';
+  @override
+  String get theme_section_accent => 'Interface colors';
+  @override
+  String get theme_role_surface => 'Interface background';
+  @override
+  String get theme_role_surface_desc =>
+      'Base color of pages, cards and menus; the other layers get a faint tint of gray from it.';
+  @override
+  String get theme_accent_follow_system => 'Follow the system accent color';
+  @override
+  String get theme_accent_follow_system_desc =>
+      'Use the wallpaper color on Android (Material You) or the OS accent color on desktop instead of a picked color.';
+  @override
+  String get theme_accent_follow_system_unavailable =>
+      'The system does not expose an accent color on this device.';
+  @override
+  String get theme_accent_auto_tone => 'Adjust tone for light and dark mode';
+  @override
+  String get theme_accent_auto_tone_desc =>
+      'Off: the exact color is used. On: a lighter or darker tone is generated for each mode, so what you see differs from what you picked.';
+  @override
+  String get theme_role_actual_color => 'Shown as';
+  @override
+  String get theme_preview_card => 'Card';
+  @override
+  String get theme_neutral_derived => 'Neutral derived colors';
+  @override
+  String get theme_neutral_derived_desc =>
+      'Tags, selected items, menus and surfaces stay gray instead of taking on the accent\'s hue; only the accent color itself stands out (like the Windows light theme). White, gray or black accents do this automatically.';
 }
 
 // Path: <root>
@@ -148087,10 +148772,6 @@ class _StringsZhCn extends _StringsEn {
   String get av_sync_reset => '归零';
   @override
   String get back => '返回';
-  @override
-  String get background_color => '背景颜色';
-  @override
-  String get background_color_desc => '阅读器页面背景';
   @override
   String get backup_category_audiobooks => '有声书音频';
   @override
@@ -148560,30 +149241,6 @@ class _StringsZhCn extends _StringsEn {
   String get collection_word => '单词';
   @override
   String get collections => '收藏夹';
-  @override
-  String get color_container => '容器色';
-  @override
-  String get color_container_desc => '开关轨道、播放栏';
-  @override
-  String get color_link => '链接颜色';
-  @override
-  String get color_link_desc => '阅读器超链接颜色';
-  @override
-  String get color_primary => '主色';
-  @override
-  String get color_primary_desc => '音频高亮、按钮、开关';
-  @override
-  String get color_sentence_audio_highlight => '音频高亮';
-  @override
-  String get color_sentence_audio_highlight_desc => '有声书播放时跟随当前句的高亮颜色';
-  @override
-  String get color_secondary => '辅色';
-  @override
-  String get color_secondary_desc => '词典条目、书架标签';
-  @override
-  String get color_tertiary => '第三色';
-  @override
-  String get color_tertiary_desc => '收藏夹、阅读统计';
   @override
   String get columns_per_page => '每页列数';
   @override
@@ -149277,10 +149934,6 @@ class _StringsZhCn extends _StringsEn {
   String get follow_audio_off_tooltip => '音频跟随：关闭';
   @override
   String get follow_audio_on_tooltip => '音频跟随：开启';
-  @override
-  String get font_color => '字体颜色';
-  @override
-  String get font_color_desc => '阅读器文字颜色';
   @override
   String get font_desc_hina_mincho => '柔和装饰性明朝体 · 建议搭配 Noto Sans JP 回退';
   @override
@@ -150877,13 +151530,9 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get searching_in_progress => '正在搜索 ';
   @override
-  String get section_advanced_colors => '高级选项';
-  @override
   String get section_advanced_typography => '高级选项';
   @override
   String get section_audiobook => '有声书';
-  @override
-  String get section_audiobook_lyrics => '有声书与歌词';
   @override
   String get section_epub => 'EPUB 书架';
   @override
@@ -150897,10 +151546,6 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get section_page_turn_direction => '翻页方向';
   @override
-  String get section_reader_colors => '阅读器颜色';
-  @override
-  String get section_system_theme => '系统主题色';
-  @override
   String get section_typography => '排版';
   @override
   String get section_update => '更新设置';
@@ -150912,14 +151557,6 @@ class _StringsZhCn extends _StringsEn {
   String get section_video_playback => '播放';
   @override
   String get section_video_subtitles => '字幕';
-  @override
-  String get seed_color => '种子色';
-  @override
-  String get seed_color_desc => '自动生成下方所有默认颜色';
-  @override
-  String get selection_color => '选中高亮色';
-  @override
-  String get selection_color_desc => '阅读器选中高亮';
   @override
   String get send => '发送';
   @override
@@ -151834,9 +152471,6 @@ class _StringsZhCn extends _StringsEn {
   String get theme_gray => '灰暗';
   @override
   String get theme_light => '白色';
-  @override
-  String get theme_seed_preview_hint =>
-      '下方色板预览由种子色实际生成的颜色。想让某个颜色固定作为主色强调色，请打开「主色」开关并显式指定。';
   @override
   String get theme_water => '水蓝';
   @override
@@ -156990,6 +157624,93 @@ class _StringsZhCn extends _StringsEn {
   String get onboarding_pack_paused_desc => '进度留在磁盘上，继续下载会从中断处接着下。';
   @override
   String get onboarding_pack_mini_bar_hide => '收起';
+  @override
+  String get theme_section_reader => '阅读器';
+  @override
+  String get theme_section_audiobook => '有声书';
+  @override
+  String get theme_section_fine_tune => '微调派生色';
+  @override
+  String get theme_role_accent => '主题色';
+  @override
+  String get theme_role_reader_text => '正文文字';
+  @override
+  String get theme_role_reader_text_desc => '阅读器正文、工具栏图标与词典弹窗文字';
+  @override
+  String get theme_role_reader_background => '页面背景';
+  @override
+  String get theme_role_reader_background_desc => '阅读器页面、工具栏与词典弹窗背景';
+  @override
+  String get theme_role_link => '链接';
+  @override
+  String get theme_role_link_desc => '书内超链接与选区拖拽手柄';
+  @override
+  String get theme_role_selection => '查词高亮';
+  @override
+  String get theme_role_selection_desc => '查词时选中文字的底色';
+  @override
+  String get theme_role_audio_highlight => '当前句高亮';
+  @override
+  String get theme_role_audio_highlight_desc => '有声书播放时跟随当前句；对所有主题生效，不限于本主题';
+  @override
+  String get theme_role_secondary => '次要强调色';
+  @override
+  String get theme_role_secondary_desc => '标签、徽章与选中的列表项';
+  @override
+  String get theme_role_tertiary => '点缀色';
+  @override
+  String get theme_role_tertiary_desc => '合集与阅读统计';
+  @override
+  String get theme_role_container => '控件底色';
+  @override
+  String get theme_role_container_desc => '开关轨道、悬浮按钮与播放条';
+  @override
+  String get theme_role_follows_theme => '跟随主题';
+  @override
+  String get theme_role_reset => '恢复跟随主题';
+  @override
+  String get theme_preview_light => '浅色';
+  @override
+  String get theme_preview_dark => '深色';
+  @override
+  String get theme_preview_button => '按钮';
+  @override
+  String get theme_preview_tag => '标签';
+  @override
+  String get theme_preview_hint => '点任一颜色，预览里会框出它影响的位置';
+  @override
+  String get theme_role_accent_desc => '按钮、开关、图标、进度条直接使用所选原色；其余颜色都由它自动生成';
+  @override
+  String get theme_accent_low_contrast_dark => '在深色模式背景上不易辨认，建议换个更亮的颜色';
+  @override
+  String get theme_accent_low_contrast_light => '在浅色模式背景上不易辨认，建议换个更深的颜色';
+  @override
+  String get theme_section_accent => '界面配色';
+  @override
+  String get theme_role_surface => '界面背景';
+  @override
+  String get theme_role_surface_desc => '页面、卡片、菜单的底色；其余层级由它推出微弱深浅';
+  @override
+  String get theme_accent_follow_system => '主题色跟随系统取色';
+  @override
+  String get theme_accent_follow_system_desc =>
+      'Android 用壁纸取色（Material You），桌面用系统强调色，代替手动选的主题色';
+  @override
+  String get theme_accent_follow_system_unavailable => '当前设备没有提供系统取色';
+  @override
+  String get theme_accent_auto_tone => '按明暗模式自动调整色调';
+  @override
+  String get theme_accent_auto_tone_desc =>
+      '关闭：直接使用所选原色。开启：为浅色/深色模式各自生成色调，实际显示会与所选不同';
+  @override
+  String get theme_role_actual_color => '实际显示';
+  @override
+  String get theme_preview_card => '卡片';
+  @override
+  String get theme_neutral_derived => '派生色用中性灰';
+  @override
+  String get theme_neutral_derived_desc =>
+      '标签、选中项、菜单与表面不带主题色相，只留主题色本身作强调（类似 Windows 亮色主题）。主题色选白/灰/黑时自动生效';
 }
 
 // Path: <root>
@@ -157397,10 +158118,6 @@ class _StringsZhHk extends _StringsEn {
   String get av_sync_reset => '歸零';
   @override
   String get back => '返回';
-  @override
-  String get background_color => '背景顏色';
-  @override
-  String get background_color_desc => '閱讀器頁面背景';
   @override
   String get backup_category_audiobooks => '有聲書音訊';
   @override
@@ -157870,30 +158587,6 @@ class _StringsZhHk extends _StringsEn {
   String get collection_word => '單詞';
   @override
   String get collections => '收藏';
-  @override
-  String get color_container => '容器色';
-  @override
-  String get color_container_desc => '開關滑軌、播放列背景';
-  @override
-  String get color_link => '連結顏色';
-  @override
-  String get color_link_desc => '閱讀器超連結顏色';
-  @override
-  String get color_primary => '主色';
-  @override
-  String get color_primary_desc => '音訊醒目標示、按鈕、開關';
-  @override
-  String get color_sentence_audio_highlight => '音訊醒目標示';
-  @override
-  String get color_sentence_audio_highlight_desc => '有聲書播放時跟隨當前句的醒目標示顏色';
-  @override
-  String get color_secondary => '輔色';
-  @override
-  String get color_secondary_desc => '辭典條目、書架徽章';
-  @override
-  String get color_tertiary => '第三色';
-  @override
-  String get color_tertiary_desc => '收藏、閱讀統計';
   @override
   String get columns_per_page => '每頁列數';
   @override
@@ -158587,10 +159280,6 @@ class _StringsZhHk extends _StringsEn {
   String get follow_audio_off_tooltip => '音頻跟隨：關閉';
   @override
   String get follow_audio_on_tooltip => '音頻跟隨：開啟';
-  @override
-  String get font_color => '字體顏色';
-  @override
-  String get font_color_desc => '閱讀器文字顏色';
   @override
   String get font_desc_hina_mincho => '柔和裝飾性明朝體 · 建議搭配 Noto Sans JP 回退';
   @override
@@ -160188,13 +160877,9 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get searching_in_progress => '正在搜尋 ';
   @override
-  String get section_advanced_colors => '進階';
-  @override
   String get section_advanced_typography => '進階選項';
   @override
   String get section_audiobook => '有聲書';
-  @override
-  String get section_audiobook_lyrics => '有聲書與歌詞';
   @override
   String get section_epub => 'EPUB 書架';
   @override
@@ -160208,10 +160893,6 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get section_page_turn_direction => '翻頁方向';
   @override
-  String get section_reader_colors => '閱讀器顏色';
-  @override
-  String get section_system_theme => '系統主題色';
-  @override
   String get section_typography => '排版';
   @override
   String get section_update => '更新設定';
@@ -160223,14 +160904,6 @@ class _StringsZhHk extends _StringsEn {
   String get section_video_playback => '播放';
   @override
   String get section_video_subtitles => '字幕';
-  @override
-  String get seed_color => '種子色';
-  @override
-  String get seed_color_desc => '自動產生下方所有預設顏色';
-  @override
-  String get selection_color => '選中高亮色';
-  @override
-  String get selection_color_desc => '閱讀器文字選取醒目標示';
   @override
   String get send => '傳送';
   @override
@@ -161148,9 +161821,6 @@ class _StringsZhHk extends _StringsEn {
   String get theme_gray => '灰暗';
   @override
   String get theme_light => '白色';
-  @override
-  String get theme_seed_preview_hint =>
-      '下方色板預覽由種子色實際產生的顏色。若想固定以某個顏色作為主要強調色，請開啟「主色」開關並明確指定。';
   @override
   String get theme_water => '水藍';
   @override
@@ -166325,6 +166995,106 @@ class _StringsZhHk extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get theme_section_reader => 'Reader';
+  @override
+  String get theme_section_audiobook => 'Audiobook';
+  @override
+  String get theme_section_fine_tune => 'Fine-tune derived colors';
+  @override
+  String get theme_role_accent => 'Accent color';
+  @override
+  String get theme_role_reader_text => 'Body text';
+  @override
+  String get theme_role_reader_text_desc =>
+      'Reader text, toolbar icons and dictionary popup text';
+  @override
+  String get theme_role_reader_background => 'Page background';
+  @override
+  String get theme_role_reader_background_desc =>
+      'Reader page, toolbar and dictionary popup background';
+  @override
+  String get theme_role_link => 'Links';
+  @override
+  String get theme_role_link_desc =>
+      'Hyperlinks inside books and the selection handles';
+  @override
+  String get theme_role_selection => 'Lookup highlight';
+  @override
+  String get theme_role_selection_desc =>
+      'Background of the word or sentence being looked up';
+  @override
+  String get theme_role_audio_highlight => 'Current sentence';
+  @override
+  String get theme_role_audio_highlight_desc =>
+      'Follows audiobook playback. Applies to every theme, not just this one.';
+  @override
+  String get theme_role_secondary => 'Secondary accent';
+  @override
+  String get theme_role_secondary_desc =>
+      'Tags, badges and selected list items';
+  @override
+  String get theme_role_tertiary => 'Decoration color';
+  @override
+  String get theme_role_tertiary_desc => 'Collections and reading statistics';
+  @override
+  String get theme_role_container => 'Control fill';
+  @override
+  String get theme_role_container_desc =>
+      'Switch tracks, floating buttons and the play bar';
+  @override
+  String get theme_role_follows_theme => 'Follows theme';
+  @override
+  String get theme_role_reset => 'Follow theme again';
+  @override
+  String get theme_preview_light => 'Light';
+  @override
+  String get theme_preview_dark => 'Dark';
+  @override
+  String get theme_preview_button => 'Button';
+  @override
+  String get theme_preview_tag => 'Tag';
+  @override
+  String get theme_preview_hint =>
+      'Pick a color to see where it is used outlined in the preview.';
+  @override
+  String get theme_role_accent_desc =>
+      'Used exactly as picked for buttons, switches, icons and progress bars. Every other color is derived from it.';
+  @override
+  String get theme_accent_low_contrast_dark =>
+      'Hard to see on the dark-mode background. Pick a lighter color.';
+  @override
+  String get theme_accent_low_contrast_light =>
+      'Hard to see on the light-mode background. Pick a darker color.';
+  @override
+  String get theme_section_accent => 'Interface colors';
+  @override
+  String get theme_role_surface => 'Interface background';
+  @override
+  String get theme_role_surface_desc =>
+      'Base color of pages, cards and menus; the other layers get a faint tint of gray from it.';
+  @override
+  String get theme_accent_follow_system => 'Follow the system accent color';
+  @override
+  String get theme_accent_follow_system_desc =>
+      'Use the wallpaper color on Android (Material You) or the OS accent color on desktop instead of a picked color.';
+  @override
+  String get theme_accent_follow_system_unavailable =>
+      'The system does not expose an accent color on this device.';
+  @override
+  String get theme_accent_auto_tone => 'Adjust tone for light and dark mode';
+  @override
+  String get theme_accent_auto_tone_desc =>
+      'Off: the exact color is used. On: a lighter or darker tone is generated for each mode, so what you see differs from what you picked.';
+  @override
+  String get theme_role_actual_color => 'Shown as';
+  @override
+  String get theme_preview_card => 'Card';
+  @override
+  String get theme_neutral_derived => 'Neutral derived colors';
+  @override
+  String get theme_neutral_derived_desc =>
+      'Tags, selected items, menus and surfaces stay gray instead of taking on the accent\'s hue; only the accent color itself stands out (like the Windows light theme). White, gray or black accents do this automatically.';
 }
 
 /// Flat map(s) containing all translations.
@@ -166689,10 +167459,6 @@ extension on _StringsEn {
         return 'Reset';
       case 'back':
         return 'Back';
-      case 'background_color':
-        return 'Background color';
-      case 'background_color_desc':
-        return 'Reader page background';
       case 'backup_category_audiobooks':
         return 'Audiobook audio';
       case 'backup_category_audiobooks_desc':
@@ -167146,30 +167912,6 @@ extension on _StringsEn {
         return 'Word';
       case 'collections':
         return 'Collections';
-      case 'color_container':
-        return 'Container';
-      case 'color_container_desc':
-        return 'Switch tracks, play bar background';
-      case 'color_link':
-        return 'Link color';
-      case 'color_link_desc':
-        return 'Reader hyperlink color';
-      case 'color_primary':
-        return 'Primary';
-      case 'color_primary_desc':
-        return 'Audio highlight, buttons, switches';
-      case 'color_sentence_audio_highlight':
-        return 'Audio highlight';
-      case 'color_sentence_audio_highlight_desc':
-        return 'Current-sentence highlight that follows audiobook playback';
-      case 'color_secondary':
-        return 'Secondary';
-      case 'color_secondary_desc':
-        return 'Dictionary entries, bookshelf badges';
-      case 'color_tertiary':
-        return 'Tertiary';
-      case 'color_tertiary_desc':
-        return 'Collections, reading statistics';
       case 'columns_per_page':
         return 'Columns per page';
       case 'combine_into_series':
@@ -167835,10 +168577,6 @@ extension on _StringsEn {
         return 'Follow audio: OFF';
       case 'follow_audio_on_tooltip':
         return 'Follow audio: ON';
-      case 'font_color':
-        return 'Font color';
-      case 'font_color_desc':
-        return 'Reader text color';
       case 'font_desc_hina_mincho':
         return 'Soft decorative Mincho · Pairs well with Noto Sans JP fallback';
       case 'font_desc_klee_one':
@@ -169379,14 +170117,10 @@ extension on _StringsEn {
         return 'Search...';
       case 'searching_in_progress':
         return 'Searching for ';
-      case 'section_advanced_colors':
-        return 'Advanced';
       case 'section_advanced_typography':
         return 'Advanced';
       case 'section_audiobook':
         return 'Audiobook';
-      case 'section_audiobook_lyrics':
-        return 'Audiobook & lyrics';
       case 'section_epub':
         return 'EPUB Library';
       case 'section_floating_lyric':
@@ -169399,10 +170133,6 @@ extension on _StringsEn {
         return 'Navigation';
       case 'section_page_turn_direction':
         return 'Page-turn direction';
-      case 'section_reader_colors':
-        return 'Reader colors';
-      case 'section_system_theme':
-        return 'System theme color';
       case 'section_typography':
         return 'Typography';
       case 'section_update':
@@ -169415,14 +170145,6 @@ extension on _StringsEn {
         return 'Playback';
       case 'section_video_subtitles':
         return 'Subtitles';
-      case 'seed_color':
-        return 'Seed color';
-      case 'seed_color_desc':
-        return 'Generates all default colors below';
-      case 'selection_color':
-        return 'Selection highlight';
-      case 'selection_color_desc':
-        return 'Reader text selection highlight';
       case 'send':
         return 'Send';
       case 'series':
@@ -170331,8 +171053,6 @@ extension on _StringsEn {
         return 'Gray dark';
       case 'theme_light':
         return 'White';
-      case 'theme_seed_preview_hint':
-        return 'Swatches below preview the colors actually generated from your seed. To force a specific color as the primary accent, turn on the Primary toggle and pick it explicitly.';
       case 'theme_water':
         return 'Water blue';
       case 'toc_section':
@@ -175152,6 +175872,90 @@ extension on _StringsEn {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'theme_section_reader':
+        return 'Reader';
+      case 'theme_section_audiobook':
+        return 'Audiobook';
+      case 'theme_section_fine_tune':
+        return 'Fine-tune derived colors';
+      case 'theme_role_accent':
+        return 'Accent color';
+      case 'theme_role_reader_text':
+        return 'Body text';
+      case 'theme_role_reader_text_desc':
+        return 'Reader text, toolbar icons and dictionary popup text';
+      case 'theme_role_reader_background':
+        return 'Page background';
+      case 'theme_role_reader_background_desc':
+        return 'Reader page, toolbar and dictionary popup background';
+      case 'theme_role_link':
+        return 'Links';
+      case 'theme_role_link_desc':
+        return 'Hyperlinks inside books and the selection handles';
+      case 'theme_role_selection':
+        return 'Lookup highlight';
+      case 'theme_role_selection_desc':
+        return 'Background of the word or sentence being looked up';
+      case 'theme_role_audio_highlight':
+        return 'Current sentence';
+      case 'theme_role_audio_highlight_desc':
+        return 'Follows audiobook playback. Applies to every theme, not just this one.';
+      case 'theme_role_secondary':
+        return 'Secondary accent';
+      case 'theme_role_secondary_desc':
+        return 'Tags, badges and selected list items';
+      case 'theme_role_tertiary':
+        return 'Decoration color';
+      case 'theme_role_tertiary_desc':
+        return 'Collections and reading statistics';
+      case 'theme_role_container':
+        return 'Control fill';
+      case 'theme_role_container_desc':
+        return 'Switch tracks, floating buttons and the play bar';
+      case 'theme_role_follows_theme':
+        return 'Follows theme';
+      case 'theme_role_reset':
+        return 'Follow theme again';
+      case 'theme_preview_light':
+        return 'Light';
+      case 'theme_preview_dark':
+        return 'Dark';
+      case 'theme_preview_button':
+        return 'Button';
+      case 'theme_preview_tag':
+        return 'Tag';
+      case 'theme_preview_hint':
+        return 'Pick a color to see where it is used outlined in the preview.';
+      case 'theme_role_accent_desc':
+        return 'Used exactly as picked for buttons, switches, icons and progress bars. Every other color is derived from it.';
+      case 'theme_accent_low_contrast_dark':
+        return 'Hard to see on the dark-mode background. Pick a lighter color.';
+      case 'theme_accent_low_contrast_light':
+        return 'Hard to see on the light-mode background. Pick a darker color.';
+      case 'theme_section_accent':
+        return 'Interface colors';
+      case 'theme_role_surface':
+        return 'Interface background';
+      case 'theme_role_surface_desc':
+        return 'Base color of pages, cards and menus; the other layers get a faint tint of gray from it.';
+      case 'theme_accent_follow_system':
+        return 'Follow the system accent color';
+      case 'theme_accent_follow_system_desc':
+        return 'Use the wallpaper color on Android (Material You) or the OS accent color on desktop instead of a picked color.';
+      case 'theme_accent_follow_system_unavailable':
+        return 'The system does not expose an accent color on this device.';
+      case 'theme_accent_auto_tone':
+        return 'Adjust tone for light and dark mode';
+      case 'theme_accent_auto_tone_desc':
+        return 'Off: the exact color is used. On: a lighter or darker tone is generated for each mode, so what you see differs from what you picked.';
+      case 'theme_role_actual_color':
+        return 'Shown as';
+      case 'theme_preview_card':
+        return 'Card';
+      case 'theme_neutral_derived':
+        return 'Neutral derived colors';
+      case 'theme_neutral_derived_desc':
+        return 'Tags, selected items, menus and surfaces stay gray instead of taking on the accent\'s hue; only the accent color itself stands out (like the Windows light theme). White, gray or black accents do this automatically.';
       default:
         return null;
     }
@@ -175515,10 +176319,6 @@ extension on _StringsAr {
         return 'إعادة تعيين';
       case 'back':
         return 'رجوع';
-      case 'background_color':
-        return 'لون الخلفية';
-      case 'background_color_desc':
-        return 'خلفية صفحة القارئ';
       case 'backup_category_audiobooks':
         return 'صوت الكتب الصوتية';
       case 'backup_category_audiobooks_desc':
@@ -175973,30 +176773,6 @@ extension on _StringsAr {
         return 'كلمة';
       case 'collections':
         return 'المجموعات';
-      case 'color_container':
-        return 'حاوية';
-      case 'color_container_desc':
-        return 'خلفية تبديل المسارات وشريط التشغيل';
-      case 'color_link':
-        return 'لون الرابط';
-      case 'color_link_desc':
-        return 'لون الروابط في القارئ';
-      case 'color_primary':
-        return 'أساسي';
-      case 'color_primary_desc':
-        return 'تمييز الصوت، الأزرار، المفاتيح';
-      case 'color_sentence_audio_highlight':
-        return 'تمييز الصوت';
-      case 'color_sentence_audio_highlight_desc':
-        return 'تمييز مزامنة ترجمة الكتاب المسموع';
-      case 'color_secondary':
-        return 'ثانوي';
-      case 'color_secondary_desc':
-        return 'إدخالات القاموس، شارات رف الكتب';
-      case 'color_tertiary':
-        return 'ثالثي';
-      case 'color_tertiary_desc':
-        return 'المجموعات، إحصائيات القراءة';
       case 'columns_per_page':
         return 'أعمدة لكل صفحة';
       case 'combine_into_series':
@@ -176661,10 +177437,6 @@ extension on _StringsAr {
         return 'تتبع الصوت: معطّل';
       case 'follow_audio_on_tooltip':
         return 'تتبع الصوت: مفعّل';
-      case 'font_color':
-        return 'لون الخط';
-      case 'font_color_desc':
-        return 'لون نص القارئ';
       case 'font_desc_hina_mincho':
         return 'مينتشو زخرفي ناعم · يُنصح مع Noto Sans JP';
       case 'font_desc_klee_one':
@@ -178203,14 +178975,10 @@ extension on _StringsAr {
         return 'بحث...';
       case 'searching_in_progress':
         return 'جارٍ البحث عن ';
-      case 'section_advanced_colors':
-        return 'متقدم';
       case 'section_advanced_typography':
         return 'متقدم';
       case 'section_audiobook':
         return 'كتاب مسموع';
-      case 'section_audiobook_lyrics':
-        return 'الكتب الصوتية والكلمات';
       case 'section_epub':
         return 'مكتبة EPUB';
       case 'section_floating_lyric':
@@ -178223,10 +178991,6 @@ extension on _StringsAr {
         return 'التنقل';
       case 'section_page_turn_direction':
         return 'اتجاه قلب الصفحة';
-      case 'section_reader_colors':
-        return 'ألوان القارئ';
-      case 'section_system_theme':
-        return 'لون سمة النظام';
       case 'section_typography':
         return 'الطباعة';
       case 'section_update':
@@ -178239,14 +179003,6 @@ extension on _StringsAr {
         return 'التشغيل';
       case 'section_video_subtitles':
         return 'الترجمات';
-      case 'seed_color':
-        return 'اللون الأساسي';
-      case 'seed_color_desc':
-        return 'يولّد جميع الألوان الافتراضية أدناه';
-      case 'selection_color':
-        return 'لون التحديد';
-      case 'selection_color_desc':
-        return 'تمييز تحديد نص القارئ';
       case 'send':
         return 'إرسال';
       case 'series':
@@ -179153,8 +179909,6 @@ extension on _StringsAr {
         return 'رمادي داكن';
       case 'theme_light':
         return 'أبيض';
-      case 'theme_seed_preview_hint':
-        return 'تعرض العينات أدناه الألوان المُولَّدة فعليًا من لون البذرة. لفرض لون محدد كلون التمييز الأساسي، فعّل مفتاح «الأساسي» وحدّده صراحةً.';
       case 'theme_water':
         return 'أزرق مائي';
       case 'toc_section':
@@ -183974,6 +184728,90 @@ extension on _StringsAr {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'theme_section_reader':
+        return 'Reader';
+      case 'theme_section_audiobook':
+        return 'Audiobook';
+      case 'theme_section_fine_tune':
+        return 'Fine-tune derived colors';
+      case 'theme_role_accent':
+        return 'Accent color';
+      case 'theme_role_reader_text':
+        return 'Body text';
+      case 'theme_role_reader_text_desc':
+        return 'Reader text, toolbar icons and dictionary popup text';
+      case 'theme_role_reader_background':
+        return 'Page background';
+      case 'theme_role_reader_background_desc':
+        return 'Reader page, toolbar and dictionary popup background';
+      case 'theme_role_link':
+        return 'Links';
+      case 'theme_role_link_desc':
+        return 'Hyperlinks inside books and the selection handles';
+      case 'theme_role_selection':
+        return 'Lookup highlight';
+      case 'theme_role_selection_desc':
+        return 'Background of the word or sentence being looked up';
+      case 'theme_role_audio_highlight':
+        return 'Current sentence';
+      case 'theme_role_audio_highlight_desc':
+        return 'Follows audiobook playback. Applies to every theme, not just this one.';
+      case 'theme_role_secondary':
+        return 'Secondary accent';
+      case 'theme_role_secondary_desc':
+        return 'Tags, badges and selected list items';
+      case 'theme_role_tertiary':
+        return 'Decoration color';
+      case 'theme_role_tertiary_desc':
+        return 'Collections and reading statistics';
+      case 'theme_role_container':
+        return 'Control fill';
+      case 'theme_role_container_desc':
+        return 'Switch tracks, floating buttons and the play bar';
+      case 'theme_role_follows_theme':
+        return 'Follows theme';
+      case 'theme_role_reset':
+        return 'Follow theme again';
+      case 'theme_preview_light':
+        return 'Light';
+      case 'theme_preview_dark':
+        return 'Dark';
+      case 'theme_preview_button':
+        return 'Button';
+      case 'theme_preview_tag':
+        return 'Tag';
+      case 'theme_preview_hint':
+        return 'Pick a color to see where it is used outlined in the preview.';
+      case 'theme_role_accent_desc':
+        return 'Used exactly as picked for buttons, switches, icons and progress bars. Every other color is derived from it.';
+      case 'theme_accent_low_contrast_dark':
+        return 'Hard to see on the dark-mode background. Pick a lighter color.';
+      case 'theme_accent_low_contrast_light':
+        return 'Hard to see on the light-mode background. Pick a darker color.';
+      case 'theme_section_accent':
+        return 'Interface colors';
+      case 'theme_role_surface':
+        return 'Interface background';
+      case 'theme_role_surface_desc':
+        return 'Base color of pages, cards and menus; the other layers get a faint tint of gray from it.';
+      case 'theme_accent_follow_system':
+        return 'Follow the system accent color';
+      case 'theme_accent_follow_system_desc':
+        return 'Use the wallpaper color on Android (Material You) or the OS accent color on desktop instead of a picked color.';
+      case 'theme_accent_follow_system_unavailable':
+        return 'The system does not expose an accent color on this device.';
+      case 'theme_accent_auto_tone':
+        return 'Adjust tone for light and dark mode';
+      case 'theme_accent_auto_tone_desc':
+        return 'Off: the exact color is used. On: a lighter or darker tone is generated for each mode, so what you see differs from what you picked.';
+      case 'theme_role_actual_color':
+        return 'Shown as';
+      case 'theme_preview_card':
+        return 'Card';
+      case 'theme_neutral_derived':
+        return 'Neutral derived colors';
+      case 'theme_neutral_derived_desc':
+        return 'Tags, selected items, menus and surfaces stay gray instead of taking on the accent\'s hue; only the accent color itself stands out (like the Windows light theme). White, gray or black accents do this automatically.';
       default:
         return null;
     }
@@ -184340,10 +185178,6 @@ extension on _StringsDe {
         return 'Zurücksetzen';
       case 'back':
         return 'Zurück';
-      case 'background_color':
-        return 'Hintergrundfarbe';
-      case 'background_color_desc':
-        return 'Hintergrund der Reader-Seite';
       case 'backup_category_audiobooks':
         return 'Hörbuch-Audio';
       case 'backup_category_audiobooks_desc':
@@ -184799,30 +185633,6 @@ extension on _StringsDe {
         return 'Wort';
       case 'collections':
         return 'Sammlungen';
-      case 'color_container':
-        return 'Container';
-      case 'color_container_desc':
-        return 'Schalterleisten, Wiedergabeleisten-Hintergrund';
-      case 'color_link':
-        return 'Linkfarbe';
-      case 'color_link_desc':
-        return 'Hyperlink-Farbe im Reader';
-      case 'color_primary':
-        return 'Primär';
-      case 'color_primary_desc':
-        return 'Audio-Hervorhebung, Schaltflächen, Schalter';
-      case 'color_sentence_audio_highlight':
-        return 'Audio-Hervorhebung';
-      case 'color_sentence_audio_highlight_desc':
-        return 'Untertitel-Synchronisierung des Hörbuchs';
-      case 'color_secondary':
-        return 'Sekundär';
-      case 'color_secondary_desc':
-        return 'Wörterbucheinträge, Bücherregal-Abzeichen';
-      case 'color_tertiary':
-        return 'Tertiär';
-      case 'color_tertiary_desc':
-        return 'Sammlungen, Lesestatistiken';
       case 'columns_per_page':
         return 'Spalten pro Seite';
       case 'combine_into_series':
@@ -185492,10 +186302,6 @@ extension on _StringsDe {
         return 'Audio-Verfolgung: AUS';
       case 'follow_audio_on_tooltip':
         return 'Audio-Verfolgung: AN';
-      case 'font_color':
-        return 'Schriftfarbe';
-      case 'font_color_desc':
-        return 'Textfarbe im Reader';
       case 'font_desc_hina_mincho':
         return 'Weiches dekoratives Mincho · Passt gut zu Noto Sans JP';
       case 'font_desc_klee_one':
@@ -187043,14 +187849,10 @@ extension on _StringsDe {
         return 'Suchen...';
       case 'searching_in_progress':
         return 'Suche nach ';
-      case 'section_advanced_colors':
-        return 'Erweitert';
       case 'section_advanced_typography':
         return 'Erweitert';
       case 'section_audiobook':
         return 'Hörbuch';
-      case 'section_audiobook_lyrics':
-        return 'Hörbuch & Liedtext';
       case 'section_epub':
         return 'EPUB-Bibliothek';
       case 'section_floating_lyric':
@@ -187063,10 +187865,6 @@ extension on _StringsDe {
         return 'Navigation';
       case 'section_page_turn_direction':
         return 'Blätterrichtung';
-      case 'section_reader_colors':
-        return 'Reader-Farben';
-      case 'section_system_theme':
-        return 'Systemfarbe';
       case 'section_typography':
         return 'Typografie';
       case 'section_update':
@@ -187079,14 +187877,6 @@ extension on _StringsDe {
         return 'Wiedergabe';
       case 'section_video_subtitles':
         return 'Untertitel';
-      case 'seed_color':
-        return 'Grundfarbe';
-      case 'seed_color_desc':
-        return 'Erzeugt alle folgenden Standardfarben';
-      case 'selection_color':
-        return 'Auswahlhervorhebung';
-      case 'selection_color_desc':
-        return 'Textauswahl-Hervorhebung im Reader';
       case 'send':
         return 'Senden';
       case 'series':
@@ -188000,8 +188790,6 @@ extension on _StringsDe {
         return 'Grau-Dunkel';
       case 'theme_light':
         return 'Weiß';
-      case 'theme_seed_preview_hint':
-        return 'Die Farbfelder unten zeigen eine Vorschau der tatsächlich aus deiner Startfarbe generierten Farben. Um eine bestimmte Farbe als Primär-Akzentfarbe festzulegen, aktiviere den Schalter „Primär“ und wähle sie ausdrücklich.';
       case 'theme_water':
         return 'Wasserblau';
       case 'toc_section':
@@ -192841,6 +193629,90 @@ extension on _StringsDe {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'theme_section_reader':
+        return 'Reader';
+      case 'theme_section_audiobook':
+        return 'Audiobook';
+      case 'theme_section_fine_tune':
+        return 'Fine-tune derived colors';
+      case 'theme_role_accent':
+        return 'Accent color';
+      case 'theme_role_reader_text':
+        return 'Body text';
+      case 'theme_role_reader_text_desc':
+        return 'Reader text, toolbar icons and dictionary popup text';
+      case 'theme_role_reader_background':
+        return 'Page background';
+      case 'theme_role_reader_background_desc':
+        return 'Reader page, toolbar and dictionary popup background';
+      case 'theme_role_link':
+        return 'Links';
+      case 'theme_role_link_desc':
+        return 'Hyperlinks inside books and the selection handles';
+      case 'theme_role_selection':
+        return 'Lookup highlight';
+      case 'theme_role_selection_desc':
+        return 'Background of the word or sentence being looked up';
+      case 'theme_role_audio_highlight':
+        return 'Current sentence';
+      case 'theme_role_audio_highlight_desc':
+        return 'Follows audiobook playback. Applies to every theme, not just this one.';
+      case 'theme_role_secondary':
+        return 'Secondary accent';
+      case 'theme_role_secondary_desc':
+        return 'Tags, badges and selected list items';
+      case 'theme_role_tertiary':
+        return 'Decoration color';
+      case 'theme_role_tertiary_desc':
+        return 'Collections and reading statistics';
+      case 'theme_role_container':
+        return 'Control fill';
+      case 'theme_role_container_desc':
+        return 'Switch tracks, floating buttons and the play bar';
+      case 'theme_role_follows_theme':
+        return 'Follows theme';
+      case 'theme_role_reset':
+        return 'Follow theme again';
+      case 'theme_preview_light':
+        return 'Light';
+      case 'theme_preview_dark':
+        return 'Dark';
+      case 'theme_preview_button':
+        return 'Button';
+      case 'theme_preview_tag':
+        return 'Tag';
+      case 'theme_preview_hint':
+        return 'Pick a color to see where it is used outlined in the preview.';
+      case 'theme_role_accent_desc':
+        return 'Used exactly as picked for buttons, switches, icons and progress bars. Every other color is derived from it.';
+      case 'theme_accent_low_contrast_dark':
+        return 'Hard to see on the dark-mode background. Pick a lighter color.';
+      case 'theme_accent_low_contrast_light':
+        return 'Hard to see on the light-mode background. Pick a darker color.';
+      case 'theme_section_accent':
+        return 'Interface colors';
+      case 'theme_role_surface':
+        return 'Interface background';
+      case 'theme_role_surface_desc':
+        return 'Base color of pages, cards and menus; the other layers get a faint tint of gray from it.';
+      case 'theme_accent_follow_system':
+        return 'Follow the system accent color';
+      case 'theme_accent_follow_system_desc':
+        return 'Use the wallpaper color on Android (Material You) or the OS accent color on desktop instead of a picked color.';
+      case 'theme_accent_follow_system_unavailable':
+        return 'The system does not expose an accent color on this device.';
+      case 'theme_accent_auto_tone':
+        return 'Adjust tone for light and dark mode';
+      case 'theme_accent_auto_tone_desc':
+        return 'Off: the exact color is used. On: a lighter or darker tone is generated for each mode, so what you see differs from what you picked.';
+      case 'theme_role_actual_color':
+        return 'Shown as';
+      case 'theme_preview_card':
+        return 'Card';
+      case 'theme_neutral_derived':
+        return 'Neutral derived colors';
+      case 'theme_neutral_derived_desc':
+        return 'Tags, selected items, menus and surfaces stay gray instead of taking on the accent\'s hue; only the accent color itself stands out (like the Windows light theme). White, gray or black accents do this automatically.';
       default:
         return null;
     }
@@ -193207,10 +194079,6 @@ extension on _StringsEs {
         return 'Restablecer';
       case 'back':
         return 'Atrás';
-      case 'background_color':
-        return 'Color de fondo';
-      case 'background_color_desc':
-        return 'Fondo de la página del lector';
       case 'backup_category_audiobooks':
         return 'Audio de audiolibros';
       case 'backup_category_audiobooks_desc':
@@ -193666,30 +194534,6 @@ extension on _StringsEs {
         return 'Palabra';
       case 'collections':
         return 'Colecciones';
-      case 'color_container':
-        return 'Contenedor';
-      case 'color_container_desc':
-        return 'Fondo de pistas y barra de reproducción';
-      case 'color_link':
-        return 'Color de enlace';
-      case 'color_link_desc':
-        return 'Color de los hipervínculos del lector';
-      case 'color_primary':
-        return 'Primario';
-      case 'color_primary_desc':
-        return 'Resaltado de audio, botones, interruptores';
-      case 'color_sentence_audio_highlight':
-        return 'Resaltado de audio';
-      case 'color_sentence_audio_highlight_desc':
-        return 'Resaltado de sincronización de subtítulos del audiolibro';
-      case 'color_secondary':
-        return 'Secundario';
-      case 'color_secondary_desc':
-        return 'Entradas del diccionario, insignias de la estantería';
-      case 'color_tertiary':
-        return 'Terciario';
-      case 'color_tertiary_desc':
-        return 'Colecciones, estadísticas de lectura';
       case 'columns_per_page':
         return 'Columnas por página';
       case 'combine_into_series':
@@ -194359,10 +195203,6 @@ extension on _StringsEs {
         return 'Seguir audio: DESACTIVADO';
       case 'follow_audio_on_tooltip':
         return 'Seguir audio: ACTIVADO';
-      case 'font_color':
-        return 'Color de fuente';
-      case 'font_color_desc':
-        return 'Color del texto del lector';
       case 'font_desc_hina_mincho':
         return 'Mincho decorativo suave · Combina bien con Noto Sans JP';
       case 'font_desc_klee_one':
@@ -195910,14 +196750,10 @@ extension on _StringsEs {
         return 'Buscar...';
       case 'searching_in_progress':
         return 'Buscando ';
-      case 'section_advanced_colors':
-        return 'Avanzado';
       case 'section_advanced_typography':
         return 'Avanzado';
       case 'section_audiobook':
         return 'Audiolibro';
-      case 'section_audiobook_lyrics':
-        return 'Audiolibro y letras';
       case 'section_epub':
         return 'Biblioteca EPUB';
       case 'section_floating_lyric':
@@ -195930,10 +196766,6 @@ extension on _StringsEs {
         return 'Navegación';
       case 'section_page_turn_direction':
         return 'Dirección de paso de página';
-      case 'section_reader_colors':
-        return 'Colores del lector';
-      case 'section_system_theme':
-        return 'Color del tema del sistema';
       case 'section_typography':
         return 'Tipografía';
       case 'section_update':
@@ -195946,14 +196778,6 @@ extension on _StringsEs {
         return 'Reproducción';
       case 'section_video_subtitles':
         return 'Subtítulos';
-      case 'seed_color':
-        return 'Color base';
-      case 'seed_color_desc':
-        return 'Genera todos los colores predeterminados a continuación';
-      case 'selection_color':
-        return 'Color de selección';
-      case 'selection_color_desc':
-        return 'Resaltado de selección de texto del lector';
       case 'send':
         return 'Enviar';
       case 'series':
@@ -196865,8 +197689,6 @@ extension on _StringsEs {
         return 'Gris oscuro';
       case 'theme_light':
         return 'Blanco';
-      case 'theme_seed_preview_hint':
-        return 'Las muestras de abajo previsualizan los colores generados a partir de tu color semilla. Para fijar un color concreto como acento principal, activa el interruptor Principal y elígelo de forma explícita.';
       case 'theme_water':
         return 'Azul agua';
       case 'toc_section':
@@ -201699,6 +202521,90 @@ extension on _StringsEs {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'theme_section_reader':
+        return 'Reader';
+      case 'theme_section_audiobook':
+        return 'Audiobook';
+      case 'theme_section_fine_tune':
+        return 'Fine-tune derived colors';
+      case 'theme_role_accent':
+        return 'Accent color';
+      case 'theme_role_reader_text':
+        return 'Body text';
+      case 'theme_role_reader_text_desc':
+        return 'Reader text, toolbar icons and dictionary popup text';
+      case 'theme_role_reader_background':
+        return 'Page background';
+      case 'theme_role_reader_background_desc':
+        return 'Reader page, toolbar and dictionary popup background';
+      case 'theme_role_link':
+        return 'Links';
+      case 'theme_role_link_desc':
+        return 'Hyperlinks inside books and the selection handles';
+      case 'theme_role_selection':
+        return 'Lookup highlight';
+      case 'theme_role_selection_desc':
+        return 'Background of the word or sentence being looked up';
+      case 'theme_role_audio_highlight':
+        return 'Current sentence';
+      case 'theme_role_audio_highlight_desc':
+        return 'Follows audiobook playback. Applies to every theme, not just this one.';
+      case 'theme_role_secondary':
+        return 'Secondary accent';
+      case 'theme_role_secondary_desc':
+        return 'Tags, badges and selected list items';
+      case 'theme_role_tertiary':
+        return 'Decoration color';
+      case 'theme_role_tertiary_desc':
+        return 'Collections and reading statistics';
+      case 'theme_role_container':
+        return 'Control fill';
+      case 'theme_role_container_desc':
+        return 'Switch tracks, floating buttons and the play bar';
+      case 'theme_role_follows_theme':
+        return 'Follows theme';
+      case 'theme_role_reset':
+        return 'Follow theme again';
+      case 'theme_preview_light':
+        return 'Light';
+      case 'theme_preview_dark':
+        return 'Dark';
+      case 'theme_preview_button':
+        return 'Button';
+      case 'theme_preview_tag':
+        return 'Tag';
+      case 'theme_preview_hint':
+        return 'Pick a color to see where it is used outlined in the preview.';
+      case 'theme_role_accent_desc':
+        return 'Used exactly as picked for buttons, switches, icons and progress bars. Every other color is derived from it.';
+      case 'theme_accent_low_contrast_dark':
+        return 'Hard to see on the dark-mode background. Pick a lighter color.';
+      case 'theme_accent_low_contrast_light':
+        return 'Hard to see on the light-mode background. Pick a darker color.';
+      case 'theme_section_accent':
+        return 'Interface colors';
+      case 'theme_role_surface':
+        return 'Interface background';
+      case 'theme_role_surface_desc':
+        return 'Base color of pages, cards and menus; the other layers get a faint tint of gray from it.';
+      case 'theme_accent_follow_system':
+        return 'Follow the system accent color';
+      case 'theme_accent_follow_system_desc':
+        return 'Use the wallpaper color on Android (Material You) or the OS accent color on desktop instead of a picked color.';
+      case 'theme_accent_follow_system_unavailable':
+        return 'The system does not expose an accent color on this device.';
+      case 'theme_accent_auto_tone':
+        return 'Adjust tone for light and dark mode';
+      case 'theme_accent_auto_tone_desc':
+        return 'Off: the exact color is used. On: a lighter or darker tone is generated for each mode, so what you see differs from what you picked.';
+      case 'theme_role_actual_color':
+        return 'Shown as';
+      case 'theme_preview_card':
+        return 'Card';
+      case 'theme_neutral_derived':
+        return 'Neutral derived colors';
+      case 'theme_neutral_derived_desc':
+        return 'Tags, selected items, menus and surfaces stay gray instead of taking on the accent\'s hue; only the accent color itself stands out (like the Windows light theme). White, gray or black accents do this automatically.';
       default:
         return null;
     }
@@ -202067,10 +202973,6 @@ extension on _StringsFr {
         return 'Réinitialiser';
       case 'back':
         return 'Retour';
-      case 'background_color':
-        return 'Couleur d\'arrière-plan';
-      case 'background_color_desc':
-        return 'Arrière-plan de la page du lecteur';
       case 'backup_category_audiobooks':
         return 'Audio des livres audio';
       case 'backup_category_audiobooks_desc':
@@ -202526,30 +203428,6 @@ extension on _StringsFr {
         return 'Mot';
       case 'collections':
         return 'Collections';
-      case 'color_container':
-        return 'Conteneur';
-      case 'color_container_desc':
-        return 'Pistes de commutateurs, arrière-plan de la barre de lecture';
-      case 'color_link':
-        return 'Couleur des liens';
-      case 'color_link_desc':
-        return 'Couleur des hyperliens du lecteur';
-      case 'color_primary':
-        return 'Primaire';
-      case 'color_primary_desc':
-        return 'Surlignage audio, boutons, commutateurs';
-      case 'color_sentence_audio_highlight':
-        return 'Surlignage audio';
-      case 'color_sentence_audio_highlight_desc':
-        return 'Surlignage de synchronisation des sous-titres du livre audio';
-      case 'color_secondary':
-        return 'Secondaire';
-      case 'color_secondary_desc':
-        return 'Entrées de dictionnaire, badges de la bibliothèque';
-      case 'color_tertiary':
-        return 'Tertiaire';
-      case 'color_tertiary_desc':
-        return 'Collections, statistiques de lecture';
       case 'columns_per_page':
         return 'Colonnes par page';
       case 'combine_into_series':
@@ -203221,10 +204099,6 @@ extension on _StringsFr {
         return 'Suivi audio : DéSACTIVé';
       case 'follow_audio_on_tooltip':
         return 'Suivi audio : ACTIVé';
-      case 'font_color':
-        return 'Couleur de police';
-      case 'font_color_desc':
-        return 'Couleur du texte du lecteur';
       case 'font_desc_hina_mincho':
         return 'Mincho décoratif doux · Se combine bien avec Noto Sans JP';
       case 'font_desc_klee_one':
@@ -204773,14 +205647,10 @@ extension on _StringsFr {
         return 'Rechercher...';
       case 'searching_in_progress':
         return 'Recherche de ';
-      case 'section_advanced_colors':
-        return 'Avancé';
       case 'section_advanced_typography':
         return 'Avancé';
       case 'section_audiobook':
         return 'Livre audio';
-      case 'section_audiobook_lyrics':
-        return 'Livre audio et paroles';
       case 'section_epub':
         return 'Bibliothèque EPUB';
       case 'section_floating_lyric':
@@ -204793,10 +205663,6 @@ extension on _StringsFr {
         return 'Navigation';
       case 'section_page_turn_direction':
         return 'Sens de tournage des pages';
-      case 'section_reader_colors':
-        return 'Couleurs du lecteur';
-      case 'section_system_theme':
-        return 'Couleur du thème système';
       case 'section_typography':
         return 'Typographie';
       case 'section_update':
@@ -204809,14 +205675,6 @@ extension on _StringsFr {
         return 'Lecture';
       case 'section_video_subtitles':
         return 'Sous-titres';
-      case 'seed_color':
-        return 'Couleur de base';
-      case 'seed_color_desc':
-        return 'Génère toutes les couleurs par défaut ci-dessous';
-      case 'selection_color':
-        return 'Couleur de sélection';
-      case 'selection_color_desc':
-        return 'Surlignage de sélection de texte du lecteur';
       case 'send':
         return 'Envoyer';
       case 'series':
@@ -205728,8 +206586,6 @@ extension on _StringsFr {
         return 'Gris foncé';
       case 'theme_light':
         return 'Blanc';
-      case 'theme_seed_preview_hint':
-        return 'Les échantillons ci-dessous prévisualisent les couleurs réellement générées à partir de votre couleur de base. Pour imposer une couleur précise comme accent principal, activez l\'option « Couleur principale » et choisissez-la explicitement.';
       case 'theme_water':
         return 'Bleu eau';
       case 'toc_section':
@@ -210566,6 +211422,90 @@ extension on _StringsFr {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'theme_section_reader':
+        return 'Reader';
+      case 'theme_section_audiobook':
+        return 'Audiobook';
+      case 'theme_section_fine_tune':
+        return 'Fine-tune derived colors';
+      case 'theme_role_accent':
+        return 'Accent color';
+      case 'theme_role_reader_text':
+        return 'Body text';
+      case 'theme_role_reader_text_desc':
+        return 'Reader text, toolbar icons and dictionary popup text';
+      case 'theme_role_reader_background':
+        return 'Page background';
+      case 'theme_role_reader_background_desc':
+        return 'Reader page, toolbar and dictionary popup background';
+      case 'theme_role_link':
+        return 'Links';
+      case 'theme_role_link_desc':
+        return 'Hyperlinks inside books and the selection handles';
+      case 'theme_role_selection':
+        return 'Lookup highlight';
+      case 'theme_role_selection_desc':
+        return 'Background of the word or sentence being looked up';
+      case 'theme_role_audio_highlight':
+        return 'Current sentence';
+      case 'theme_role_audio_highlight_desc':
+        return 'Follows audiobook playback. Applies to every theme, not just this one.';
+      case 'theme_role_secondary':
+        return 'Secondary accent';
+      case 'theme_role_secondary_desc':
+        return 'Tags, badges and selected list items';
+      case 'theme_role_tertiary':
+        return 'Decoration color';
+      case 'theme_role_tertiary_desc':
+        return 'Collections and reading statistics';
+      case 'theme_role_container':
+        return 'Control fill';
+      case 'theme_role_container_desc':
+        return 'Switch tracks, floating buttons and the play bar';
+      case 'theme_role_follows_theme':
+        return 'Follows theme';
+      case 'theme_role_reset':
+        return 'Follow theme again';
+      case 'theme_preview_light':
+        return 'Light';
+      case 'theme_preview_dark':
+        return 'Dark';
+      case 'theme_preview_button':
+        return 'Button';
+      case 'theme_preview_tag':
+        return 'Tag';
+      case 'theme_preview_hint':
+        return 'Pick a color to see where it is used outlined in the preview.';
+      case 'theme_role_accent_desc':
+        return 'Used exactly as picked for buttons, switches, icons and progress bars. Every other color is derived from it.';
+      case 'theme_accent_low_contrast_dark':
+        return 'Hard to see on the dark-mode background. Pick a lighter color.';
+      case 'theme_accent_low_contrast_light':
+        return 'Hard to see on the light-mode background. Pick a darker color.';
+      case 'theme_section_accent':
+        return 'Interface colors';
+      case 'theme_role_surface':
+        return 'Interface background';
+      case 'theme_role_surface_desc':
+        return 'Base color of pages, cards and menus; the other layers get a faint tint of gray from it.';
+      case 'theme_accent_follow_system':
+        return 'Follow the system accent color';
+      case 'theme_accent_follow_system_desc':
+        return 'Use the wallpaper color on Android (Material You) or the OS accent color on desktop instead of a picked color.';
+      case 'theme_accent_follow_system_unavailable':
+        return 'The system does not expose an accent color on this device.';
+      case 'theme_accent_auto_tone':
+        return 'Adjust tone for light and dark mode';
+      case 'theme_accent_auto_tone_desc':
+        return 'Off: the exact color is used. On: a lighter or darker tone is generated for each mode, so what you see differs from what you picked.';
+      case 'theme_role_actual_color':
+        return 'Shown as';
+      case 'theme_preview_card':
+        return 'Card';
+      case 'theme_neutral_derived':
+        return 'Neutral derived colors';
+      case 'theme_neutral_derived_desc':
+        return 'Tags, selected items, menus and surfaces stay gray instead of taking on the accent\'s hue; only the accent color itself stands out (like the Windows light theme). White, gray or black accents do this automatically.';
       default:
         return null;
     }
@@ -210932,10 +211872,6 @@ extension on _StringsId {
         return 'Atur Ulang';
       case 'back':
         return 'Kembali';
-      case 'background_color':
-        return 'Warna latar belakang';
-      case 'background_color_desc':
-        return 'Latar belakang halaman pembaca';
       case 'backup_category_audiobooks':
         return 'Audio buku audio';
       case 'backup_category_audiobooks_desc':
@@ -211390,30 +212326,6 @@ extension on _StringsId {
         return 'Kata';
       case 'collections':
         return 'Koleksi';
-      case 'color_container':
-        return 'Kontainer';
-      case 'color_container_desc':
-        return 'Ganti trek, latar belakang bilah putar';
-      case 'color_link':
-        return 'Warna tautan';
-      case 'color_link_desc':
-        return 'Warna hyperlink di pembaca';
-      case 'color_primary':
-        return 'Primer';
-      case 'color_primary_desc':
-        return 'Sorotan audio, tombol, sakelar';
-      case 'color_sentence_audio_highlight':
-        return 'Sorotan audio';
-      case 'color_sentence_audio_highlight_desc':
-        return 'Sorotan sinkronisasi subtitle buku audio';
-      case 'color_secondary':
-        return 'Sekunder';
-      case 'color_secondary_desc':
-        return 'Entri kamus, lencana rak buku';
-      case 'color_tertiary':
-        return 'Tersier';
-      case 'color_tertiary_desc':
-        return 'Koleksi, statistik membaca';
       case 'columns_per_page':
         return 'Kolom per halaman';
       case 'combine_into_series':
@@ -212081,10 +212993,6 @@ extension on _StringsId {
         return 'Ikuti audio: NONAKTIF';
       case 'follow_audio_on_tooltip':
         return 'Ikuti audio: AKTIF';
-      case 'font_color':
-        return 'Warna Font';
-      case 'font_color_desc':
-        return 'Warna teks pembaca';
       case 'font_desc_hina_mincho':
         return 'Mincho dekoratif lembut · Pasangkan dengan Noto Sans JP';
       case 'font_desc_klee_one':
@@ -213627,14 +214535,10 @@ extension on _StringsId {
         return 'Cari...';
       case 'searching_in_progress':
         return 'Mencari ';
-      case 'section_advanced_colors':
-        return 'Lanjutan';
       case 'section_advanced_typography':
         return 'Lanjutan';
       case 'section_audiobook':
         return 'Buku Audio';
-      case 'section_audiobook_lyrics':
-        return 'Buku Audio & Lirik';
       case 'section_epub':
         return 'Perpustakaan EPUB';
       case 'section_floating_lyric':
@@ -213647,10 +214551,6 @@ extension on _StringsId {
         return 'Navigasi';
       case 'section_page_turn_direction':
         return 'Arah ganti halaman';
-      case 'section_reader_colors':
-        return 'Warna Pembaca';
-      case 'section_system_theme':
-        return 'Warna Tema Sistem';
       case 'section_typography':
         return 'Tipografi';
       case 'section_update':
@@ -213663,14 +214563,6 @@ extension on _StringsId {
         return 'Pemutaran';
       case 'section_video_subtitles':
         return 'Subtitle';
-      case 'seed_color':
-        return 'Warna Dasar';
-      case 'seed_color_desc':
-        return 'Menghasilkan semua warna default di bawah';
-      case 'selection_color':
-        return 'Warna sorotan';
-      case 'selection_color_desc':
-        return 'Sorotan pilihan teks pembaca';
       case 'send':
         return 'Kirim';
       case 'series':
@@ -214580,8 +215472,6 @@ extension on _StringsId {
         return 'Abu-abu gelap';
       case 'theme_light':
         return 'Putih';
-      case 'theme_seed_preview_hint':
-        return 'Petak warna di bawah menampilkan pratinjau warna yang sebenarnya dihasilkan dari warna benih kamu. Untuk memaksa warna tertentu sebagai aksen utama, aktifkan toggle Primer dan pilih warnanya secara eksplisit.';
       case 'theme_water':
         return 'Biru air';
       case 'toc_section':
@@ -219404,6 +220294,90 @@ extension on _StringsId {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'theme_section_reader':
+        return 'Reader';
+      case 'theme_section_audiobook':
+        return 'Audiobook';
+      case 'theme_section_fine_tune':
+        return 'Fine-tune derived colors';
+      case 'theme_role_accent':
+        return 'Accent color';
+      case 'theme_role_reader_text':
+        return 'Body text';
+      case 'theme_role_reader_text_desc':
+        return 'Reader text, toolbar icons and dictionary popup text';
+      case 'theme_role_reader_background':
+        return 'Page background';
+      case 'theme_role_reader_background_desc':
+        return 'Reader page, toolbar and dictionary popup background';
+      case 'theme_role_link':
+        return 'Links';
+      case 'theme_role_link_desc':
+        return 'Hyperlinks inside books and the selection handles';
+      case 'theme_role_selection':
+        return 'Lookup highlight';
+      case 'theme_role_selection_desc':
+        return 'Background of the word or sentence being looked up';
+      case 'theme_role_audio_highlight':
+        return 'Current sentence';
+      case 'theme_role_audio_highlight_desc':
+        return 'Follows audiobook playback. Applies to every theme, not just this one.';
+      case 'theme_role_secondary':
+        return 'Secondary accent';
+      case 'theme_role_secondary_desc':
+        return 'Tags, badges and selected list items';
+      case 'theme_role_tertiary':
+        return 'Decoration color';
+      case 'theme_role_tertiary_desc':
+        return 'Collections and reading statistics';
+      case 'theme_role_container':
+        return 'Control fill';
+      case 'theme_role_container_desc':
+        return 'Switch tracks, floating buttons and the play bar';
+      case 'theme_role_follows_theme':
+        return 'Follows theme';
+      case 'theme_role_reset':
+        return 'Follow theme again';
+      case 'theme_preview_light':
+        return 'Light';
+      case 'theme_preview_dark':
+        return 'Dark';
+      case 'theme_preview_button':
+        return 'Button';
+      case 'theme_preview_tag':
+        return 'Tag';
+      case 'theme_preview_hint':
+        return 'Pick a color to see where it is used outlined in the preview.';
+      case 'theme_role_accent_desc':
+        return 'Used exactly as picked for buttons, switches, icons and progress bars. Every other color is derived from it.';
+      case 'theme_accent_low_contrast_dark':
+        return 'Hard to see on the dark-mode background. Pick a lighter color.';
+      case 'theme_accent_low_contrast_light':
+        return 'Hard to see on the light-mode background. Pick a darker color.';
+      case 'theme_section_accent':
+        return 'Interface colors';
+      case 'theme_role_surface':
+        return 'Interface background';
+      case 'theme_role_surface_desc':
+        return 'Base color of pages, cards and menus; the other layers get a faint tint of gray from it.';
+      case 'theme_accent_follow_system':
+        return 'Follow the system accent color';
+      case 'theme_accent_follow_system_desc':
+        return 'Use the wallpaper color on Android (Material You) or the OS accent color on desktop instead of a picked color.';
+      case 'theme_accent_follow_system_unavailable':
+        return 'The system does not expose an accent color on this device.';
+      case 'theme_accent_auto_tone':
+        return 'Adjust tone for light and dark mode';
+      case 'theme_accent_auto_tone_desc':
+        return 'Off: the exact color is used. On: a lighter or darker tone is generated for each mode, so what you see differs from what you picked.';
+      case 'theme_role_actual_color':
+        return 'Shown as';
+      case 'theme_preview_card':
+        return 'Card';
+      case 'theme_neutral_derived':
+        return 'Neutral derived colors';
+      case 'theme_neutral_derived_desc':
+        return 'Tags, selected items, menus and surfaces stay gray instead of taking on the accent\'s hue; only the accent color itself stands out (like the Windows light theme). White, gray or black accents do this automatically.';
       default:
         return null;
     }
@@ -219770,10 +220744,6 @@ extension on _StringsIt {
         return 'Reimposta';
       case 'back':
         return 'Indietro';
-      case 'background_color':
-        return 'Colore di sfondo';
-      case 'background_color_desc':
-        return 'Sfondo della pagina del lettore';
       case 'backup_category_audiobooks':
         return 'Audio degli audiolibri';
       case 'backup_category_audiobooks_desc':
@@ -220229,30 +221199,6 @@ extension on _StringsIt {
         return 'Parola';
       case 'collections':
         return 'Raccolte';
-      case 'color_container':
-        return 'Contenitore';
-      case 'color_container_desc':
-        return 'Sfondo tracce audio e barra di riproduzione';
-      case 'color_link':
-        return 'Colore link';
-      case 'color_link_desc':
-        return 'Colore dei collegamenti nel lettore';
-      case 'color_primary':
-        return 'Primario';
-      case 'color_primary_desc':
-        return 'Evidenziazione audio, pulsanti, interruttori';
-      case 'color_sentence_audio_highlight':
-        return 'Evidenziazione audio';
-      case 'color_sentence_audio_highlight_desc':
-        return 'Evidenziazione sincronizzazione sottotitoli audiolibro';
-      case 'color_secondary':
-        return 'Secondario';
-      case 'color_secondary_desc':
-        return 'Voci del dizionario, badge della libreria';
-      case 'color_tertiary':
-        return 'Terziario';
-      case 'color_tertiary_desc':
-        return 'Raccolte, statistiche di lettura';
       case 'columns_per_page':
         return 'Colonne per pagina';
       case 'combine_into_series':
@@ -220922,10 +221868,6 @@ extension on _StringsIt {
         return 'Segui audio: DISATTIVO';
       case 'follow_audio_on_tooltip':
         return 'Segui audio: ATTIVO';
-      case 'font_color':
-        return 'Colore carattere';
-      case 'font_color_desc':
-        return 'Colore del testo del lettore';
       case 'font_desc_hina_mincho':
         return 'Mincho decorativo morbido · Si abbina bene con Noto Sans JP';
       case 'font_desc_klee_one':
@@ -222471,14 +223413,10 @@ extension on _StringsIt {
         return 'Cerca...';
       case 'searching_in_progress':
         return 'Ricerca di ';
-      case 'section_advanced_colors':
-        return 'Avanzate';
       case 'section_advanced_typography':
         return 'Avanzate';
       case 'section_audiobook':
         return 'Audiolibro';
-      case 'section_audiobook_lyrics':
-        return 'Audiolibri e testi';
       case 'section_epub':
         return 'Libreria EPUB';
       case 'section_floating_lyric':
@@ -222491,10 +223429,6 @@ extension on _StringsIt {
         return 'Navigazione';
       case 'section_page_turn_direction':
         return 'Direzione di scorrimento pagine';
-      case 'section_reader_colors':
-        return 'Colori del lettore';
-      case 'section_system_theme':
-        return 'Colore del tema di sistema';
       case 'section_typography':
         return 'Tipografia';
       case 'section_update':
@@ -222507,14 +223441,6 @@ extension on _StringsIt {
         return 'Riproduzione';
       case 'section_video_subtitles':
         return 'Sottotitoli';
-      case 'seed_color':
-        return 'Colore base';
-      case 'seed_color_desc':
-        return 'Genera tutti i colori predefiniti sottostanti';
-      case 'selection_color':
-        return 'Colore di selezione';
-      case 'selection_color_desc':
-        return 'Evidenziazione della selezione testo del lettore';
       case 'send':
         return 'Invia';
       case 'series':
@@ -223428,8 +224354,6 @@ extension on _StringsIt {
         return 'Grigio scuro';
       case 'theme_light':
         return 'Bianco';
-      case 'theme_seed_preview_hint':
-        return 'I campioni qui sotto mostrano in anteprima i colori effettivamente generati dal tuo colore seme. Per forzare un colore specifico come accento primario, attiva l\'opzione Primario e selezionalo esplicitamente.';
       case 'theme_water':
         return 'Azzurro acqua';
       case 'toc_section':
@@ -228264,6 +229188,90 @@ extension on _StringsIt {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'theme_section_reader':
+        return 'Reader';
+      case 'theme_section_audiobook':
+        return 'Audiobook';
+      case 'theme_section_fine_tune':
+        return 'Fine-tune derived colors';
+      case 'theme_role_accent':
+        return 'Accent color';
+      case 'theme_role_reader_text':
+        return 'Body text';
+      case 'theme_role_reader_text_desc':
+        return 'Reader text, toolbar icons and dictionary popup text';
+      case 'theme_role_reader_background':
+        return 'Page background';
+      case 'theme_role_reader_background_desc':
+        return 'Reader page, toolbar and dictionary popup background';
+      case 'theme_role_link':
+        return 'Links';
+      case 'theme_role_link_desc':
+        return 'Hyperlinks inside books and the selection handles';
+      case 'theme_role_selection':
+        return 'Lookup highlight';
+      case 'theme_role_selection_desc':
+        return 'Background of the word or sentence being looked up';
+      case 'theme_role_audio_highlight':
+        return 'Current sentence';
+      case 'theme_role_audio_highlight_desc':
+        return 'Follows audiobook playback. Applies to every theme, not just this one.';
+      case 'theme_role_secondary':
+        return 'Secondary accent';
+      case 'theme_role_secondary_desc':
+        return 'Tags, badges and selected list items';
+      case 'theme_role_tertiary':
+        return 'Decoration color';
+      case 'theme_role_tertiary_desc':
+        return 'Collections and reading statistics';
+      case 'theme_role_container':
+        return 'Control fill';
+      case 'theme_role_container_desc':
+        return 'Switch tracks, floating buttons and the play bar';
+      case 'theme_role_follows_theme':
+        return 'Follows theme';
+      case 'theme_role_reset':
+        return 'Follow theme again';
+      case 'theme_preview_light':
+        return 'Light';
+      case 'theme_preview_dark':
+        return 'Dark';
+      case 'theme_preview_button':
+        return 'Button';
+      case 'theme_preview_tag':
+        return 'Tag';
+      case 'theme_preview_hint':
+        return 'Pick a color to see where it is used outlined in the preview.';
+      case 'theme_role_accent_desc':
+        return 'Used exactly as picked for buttons, switches, icons and progress bars. Every other color is derived from it.';
+      case 'theme_accent_low_contrast_dark':
+        return 'Hard to see on the dark-mode background. Pick a lighter color.';
+      case 'theme_accent_low_contrast_light':
+        return 'Hard to see on the light-mode background. Pick a darker color.';
+      case 'theme_section_accent':
+        return 'Interface colors';
+      case 'theme_role_surface':
+        return 'Interface background';
+      case 'theme_role_surface_desc':
+        return 'Base color of pages, cards and menus; the other layers get a faint tint of gray from it.';
+      case 'theme_accent_follow_system':
+        return 'Follow the system accent color';
+      case 'theme_accent_follow_system_desc':
+        return 'Use the wallpaper color on Android (Material You) or the OS accent color on desktop instead of a picked color.';
+      case 'theme_accent_follow_system_unavailable':
+        return 'The system does not expose an accent color on this device.';
+      case 'theme_accent_auto_tone':
+        return 'Adjust tone for light and dark mode';
+      case 'theme_accent_auto_tone_desc':
+        return 'Off: the exact color is used. On: a lighter or darker tone is generated for each mode, so what you see differs from what you picked.';
+      case 'theme_role_actual_color':
+        return 'Shown as';
+      case 'theme_preview_card':
+        return 'Card';
+      case 'theme_neutral_derived':
+        return 'Neutral derived colors';
+      case 'theme_neutral_derived_desc':
+        return 'Tags, selected items, menus and surfaces stay gray instead of taking on the accent\'s hue; only the accent color itself stands out (like the Windows light theme). White, gray or black accents do this automatically.';
       default:
         return null;
     }
@@ -228625,10 +229633,6 @@ extension on _StringsJa {
         return 'リセット';
       case 'back':
         return '戻る';
-      case 'background_color':
-        return '背景色';
-      case 'background_color_desc':
-        return 'リーダーのページ背景';
       case 'backup_category_audiobooks':
         return 'オーディオブックの音声';
       case 'backup_category_audiobooks_desc':
@@ -229078,30 +230082,6 @@ extension on _StringsJa {
         return '単語';
       case 'collections':
         return 'コレクション';
-      case 'color_container':
-        return 'コンテナ';
-      case 'color_container_desc':
-        return 'スイッチトラック、再生バー背景';
-      case 'color_link':
-        return 'リンクの色';
-      case 'color_link_desc':
-        return 'リーダーのハイパーリンク色';
-      case 'color_primary':
-        return 'プライマリ';
-      case 'color_primary_desc':
-        return '音声ハイライト、ボタン、スイッチ';
-      case 'color_sentence_audio_highlight':
-        return '音声ハイライト';
-      case 'color_sentence_audio_highlight_desc':
-        return 'オーディオブック字幕同期ハイライト';
-      case 'color_secondary':
-        return 'セカンダリ';
-      case 'color_secondary_desc':
-        return '辞書エントリ、本棚バッジ';
-      case 'color_tertiary':
-        return 'ターシャリ';
-      case 'color_tertiary_desc':
-        return 'コレクション、読書統計';
       case 'columns_per_page':
         return 'ページあたりの列数';
       case 'combine_into_series':
@@ -229765,10 +230745,6 @@ extension on _StringsJa {
         return '音声追従：OFF';
       case 'follow_audio_on_tooltip':
         return '音声追従：ON';
-      case 'font_color':
-        return '文字色';
-      case 'font_color_desc':
-        return 'リーダーのテキスト色';
       case 'font_desc_hina_mincho':
         return 'やわらかい装飾明朝 · Noto Sans JP との併用推奨';
       case 'font_desc_klee_one':
@@ -231305,14 +232281,10 @@ extension on _StringsJa {
         return '検索...';
       case 'searching_in_progress':
         return '検索中：';
-      case 'section_advanced_colors':
-        return '詳細設定';
       case 'section_advanced_typography':
         return '詳細設定';
       case 'section_audiobook':
         return 'オーディオブック';
-      case 'section_audiobook_lyrics':
-        return 'オーディオブックと歌詞';
       case 'section_epub':
         return 'EPUBライブラリ';
       case 'section_floating_lyric':
@@ -231325,10 +232297,6 @@ extension on _StringsJa {
         return 'ナビゲーション';
       case 'section_page_turn_direction':
         return 'ページめくり方向';
-      case 'section_reader_colors':
-        return 'リーダーカラー';
-      case 'section_system_theme':
-        return 'システムテーマカラー';
       case 'section_typography':
         return 'タイポグラフィ';
       case 'section_update':
@@ -231341,14 +232309,6 @@ extension on _StringsJa {
         return '再生';
       case 'section_video_subtitles':
         return '字幕';
-      case 'seed_color':
-        return 'シードカラー';
-      case 'seed_color_desc':
-        return '以下のすべてのデフォルトカラーを自動生成';
-      case 'selection_color':
-        return '選択ハイライト';
-      case 'selection_color_desc':
-        return 'リーダーのテキスト選択ハイライト';
       case 'send':
         return '送信';
       case 'series':
@@ -232250,8 +233210,6 @@ extension on _StringsJa {
         return 'グレー';
       case 'theme_light':
         return 'ホワイト';
-      case 'theme_seed_preview_hint':
-        return '下のスウォッチは、シードカラーから実際に生成される色をプレビューしています。特定の色をメインのアクセントとして固定したい場合は、「メインカラー」をオンにして明示的に指定してください。';
       case 'theme_water':
         return '水色';
       case 'toc_section':
@@ -237051,6 +238009,90 @@ extension on _StringsJa {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'theme_section_reader':
+        return 'Reader';
+      case 'theme_section_audiobook':
+        return 'Audiobook';
+      case 'theme_section_fine_tune':
+        return 'Fine-tune derived colors';
+      case 'theme_role_accent':
+        return 'Accent color';
+      case 'theme_role_reader_text':
+        return 'Body text';
+      case 'theme_role_reader_text_desc':
+        return 'Reader text, toolbar icons and dictionary popup text';
+      case 'theme_role_reader_background':
+        return 'Page background';
+      case 'theme_role_reader_background_desc':
+        return 'Reader page, toolbar and dictionary popup background';
+      case 'theme_role_link':
+        return 'Links';
+      case 'theme_role_link_desc':
+        return 'Hyperlinks inside books and the selection handles';
+      case 'theme_role_selection':
+        return 'Lookup highlight';
+      case 'theme_role_selection_desc':
+        return 'Background of the word or sentence being looked up';
+      case 'theme_role_audio_highlight':
+        return 'Current sentence';
+      case 'theme_role_audio_highlight_desc':
+        return 'Follows audiobook playback. Applies to every theme, not just this one.';
+      case 'theme_role_secondary':
+        return 'Secondary accent';
+      case 'theme_role_secondary_desc':
+        return 'Tags, badges and selected list items';
+      case 'theme_role_tertiary':
+        return 'Decoration color';
+      case 'theme_role_tertiary_desc':
+        return 'Collections and reading statistics';
+      case 'theme_role_container':
+        return 'Control fill';
+      case 'theme_role_container_desc':
+        return 'Switch tracks, floating buttons and the play bar';
+      case 'theme_role_follows_theme':
+        return 'Follows theme';
+      case 'theme_role_reset':
+        return 'Follow theme again';
+      case 'theme_preview_light':
+        return 'Light';
+      case 'theme_preview_dark':
+        return 'Dark';
+      case 'theme_preview_button':
+        return 'Button';
+      case 'theme_preview_tag':
+        return 'Tag';
+      case 'theme_preview_hint':
+        return 'Pick a color to see where it is used outlined in the preview.';
+      case 'theme_role_accent_desc':
+        return 'Used exactly as picked for buttons, switches, icons and progress bars. Every other color is derived from it.';
+      case 'theme_accent_low_contrast_dark':
+        return 'Hard to see on the dark-mode background. Pick a lighter color.';
+      case 'theme_accent_low_contrast_light':
+        return 'Hard to see on the light-mode background. Pick a darker color.';
+      case 'theme_section_accent':
+        return 'Interface colors';
+      case 'theme_role_surface':
+        return 'Interface background';
+      case 'theme_role_surface_desc':
+        return 'Base color of pages, cards and menus; the other layers get a faint tint of gray from it.';
+      case 'theme_accent_follow_system':
+        return 'Follow the system accent color';
+      case 'theme_accent_follow_system_desc':
+        return 'Use the wallpaper color on Android (Material You) or the OS accent color on desktop instead of a picked color.';
+      case 'theme_accent_follow_system_unavailable':
+        return 'The system does not expose an accent color on this device.';
+      case 'theme_accent_auto_tone':
+        return 'Adjust tone for light and dark mode';
+      case 'theme_accent_auto_tone_desc':
+        return 'Off: the exact color is used. On: a lighter or darker tone is generated for each mode, so what you see differs from what you picked.';
+      case 'theme_role_actual_color':
+        return 'Shown as';
+      case 'theme_preview_card':
+        return 'Card';
+      case 'theme_neutral_derived':
+        return 'Neutral derived colors';
+      case 'theme_neutral_derived_desc':
+        return 'Tags, selected items, menus and surfaces stay gray instead of taking on the accent\'s hue; only the accent color itself stands out (like the Windows light theme). White, gray or black accents do this automatically.';
       default:
         return null;
     }
@@ -237412,10 +238454,6 @@ extension on _StringsKo {
         return '초기화';
       case 'back':
         return '뒤로';
-      case 'background_color':
-        return '배경색';
-      case 'background_color_desc':
-        return '리더 페이지 배경';
       case 'backup_category_audiobooks':
         return '오디오북 오디오';
       case 'backup_category_audiobooks_desc':
@@ -237866,30 +238904,6 @@ extension on _StringsKo {
         return '단어';
       case 'collections':
         return '모음';
-      case 'color_container':
-        return '컨테이너';
-      case 'color_container_desc':
-        return '트랙 전환, 재생 바 배경';
-      case 'color_link':
-        return '링크 색상';
-      case 'color_link_desc':
-        return '리더 하이퍼링크 색상';
-      case 'color_primary':
-        return '기본색';
-      case 'color_primary_desc':
-        return '오디오 하이라이트, 버튼, 스위치';
-      case 'color_sentence_audio_highlight':
-        return '오디오 하이라이트';
-      case 'color_sentence_audio_highlight_desc':
-        return '오디오북 자막 동기화 하이라이트';
-      case 'color_secondary':
-        return '보조색';
-      case 'color_secondary_desc':
-        return '사전 항목, 책장 뱃지';
-      case 'color_tertiary':
-        return '3차색';
-      case 'color_tertiary_desc':
-        return '모음, 독서 통계';
       case 'columns_per_page':
         return '페이지당 열 수';
       case 'combine_into_series':
@@ -238553,10 +239567,6 @@ extension on _StringsKo {
         return '오디오 따라가기: 꺼짐';
       case 'follow_audio_on_tooltip':
         return '오디오 따라가기: 켜짐';
-      case 'font_color':
-        return '글꼴 색상';
-      case 'font_color_desc':
-        return '리더 텍스트 색상';
       case 'font_desc_hina_mincho':
         return '부드러운 장식 명조 · Noto Sans JP 폴백 권장';
       case 'font_desc_klee_one':
@@ -240093,14 +241103,10 @@ extension on _StringsKo {
         return '검색...';
       case 'searching_in_progress':
         return '검색 중 ';
-      case 'section_advanced_colors':
-        return '고급';
       case 'section_advanced_typography':
         return '고급';
       case 'section_audiobook':
         return '오디오북';
-      case 'section_audiobook_lyrics':
-        return '오디오북 및 가사';
       case 'section_epub':
         return 'EPUB 라이브러리';
       case 'section_floating_lyric':
@@ -240113,10 +241119,6 @@ extension on _StringsKo {
         return '탐색';
       case 'section_page_turn_direction':
         return '페이지 넘김 방향';
-      case 'section_reader_colors':
-        return '리더 색상';
-      case 'section_system_theme':
-        return '시스템 테마 색상';
       case 'section_typography':
         return '타이포그래피';
       case 'section_update':
@@ -240129,14 +241131,6 @@ extension on _StringsKo {
         return '재생';
       case 'section_video_subtitles':
         return '자막';
-      case 'seed_color':
-        return '시드 색상';
-      case 'seed_color_desc':
-        return '아래의 모든 기본 색상을 생성합니다';
-      case 'selection_color':
-        return '선택 강조색';
-      case 'selection_color_desc':
-        return '리더 텍스트 선택 강조';
       case 'send':
         return '보내기';
       case 'series':
@@ -241039,8 +242033,6 @@ extension on _StringsKo {
         return '그레이 다크';
       case 'theme_light':
         return '화이트';
-      case 'theme_seed_preview_hint':
-        return '아래 색상 견본은 시드 색상에서 실제로 생성된 색을 미리 보여 줍니다. 특정 색을 주요 강조색으로 고정하려면 「주요 색」 토글을 켜고 직접 선택하세요.';
       case 'theme_water':
         return '워터 블루';
       case 'toc_section':
@@ -245842,6 +246834,90 @@ extension on _StringsKo {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'theme_section_reader':
+        return 'Reader';
+      case 'theme_section_audiobook':
+        return 'Audiobook';
+      case 'theme_section_fine_tune':
+        return 'Fine-tune derived colors';
+      case 'theme_role_accent':
+        return 'Accent color';
+      case 'theme_role_reader_text':
+        return 'Body text';
+      case 'theme_role_reader_text_desc':
+        return 'Reader text, toolbar icons and dictionary popup text';
+      case 'theme_role_reader_background':
+        return 'Page background';
+      case 'theme_role_reader_background_desc':
+        return 'Reader page, toolbar and dictionary popup background';
+      case 'theme_role_link':
+        return 'Links';
+      case 'theme_role_link_desc':
+        return 'Hyperlinks inside books and the selection handles';
+      case 'theme_role_selection':
+        return 'Lookup highlight';
+      case 'theme_role_selection_desc':
+        return 'Background of the word or sentence being looked up';
+      case 'theme_role_audio_highlight':
+        return 'Current sentence';
+      case 'theme_role_audio_highlight_desc':
+        return 'Follows audiobook playback. Applies to every theme, not just this one.';
+      case 'theme_role_secondary':
+        return 'Secondary accent';
+      case 'theme_role_secondary_desc':
+        return 'Tags, badges and selected list items';
+      case 'theme_role_tertiary':
+        return 'Decoration color';
+      case 'theme_role_tertiary_desc':
+        return 'Collections and reading statistics';
+      case 'theme_role_container':
+        return 'Control fill';
+      case 'theme_role_container_desc':
+        return 'Switch tracks, floating buttons and the play bar';
+      case 'theme_role_follows_theme':
+        return 'Follows theme';
+      case 'theme_role_reset':
+        return 'Follow theme again';
+      case 'theme_preview_light':
+        return 'Light';
+      case 'theme_preview_dark':
+        return 'Dark';
+      case 'theme_preview_button':
+        return 'Button';
+      case 'theme_preview_tag':
+        return 'Tag';
+      case 'theme_preview_hint':
+        return 'Pick a color to see where it is used outlined in the preview.';
+      case 'theme_role_accent_desc':
+        return 'Used exactly as picked for buttons, switches, icons and progress bars. Every other color is derived from it.';
+      case 'theme_accent_low_contrast_dark':
+        return 'Hard to see on the dark-mode background. Pick a lighter color.';
+      case 'theme_accent_low_contrast_light':
+        return 'Hard to see on the light-mode background. Pick a darker color.';
+      case 'theme_section_accent':
+        return 'Interface colors';
+      case 'theme_role_surface':
+        return 'Interface background';
+      case 'theme_role_surface_desc':
+        return 'Base color of pages, cards and menus; the other layers get a faint tint of gray from it.';
+      case 'theme_accent_follow_system':
+        return 'Follow the system accent color';
+      case 'theme_accent_follow_system_desc':
+        return 'Use the wallpaper color on Android (Material You) or the OS accent color on desktop instead of a picked color.';
+      case 'theme_accent_follow_system_unavailable':
+        return 'The system does not expose an accent color on this device.';
+      case 'theme_accent_auto_tone':
+        return 'Adjust tone for light and dark mode';
+      case 'theme_accent_auto_tone_desc':
+        return 'Off: the exact color is used. On: a lighter or darker tone is generated for each mode, so what you see differs from what you picked.';
+      case 'theme_role_actual_color':
+        return 'Shown as';
+      case 'theme_preview_card':
+        return 'Card';
+      case 'theme_neutral_derived':
+        return 'Neutral derived colors';
+      case 'theme_neutral_derived_desc':
+        return 'Tags, selected items, menus and surfaces stay gray instead of taking on the accent\'s hue; only the accent color itself stands out (like the Windows light theme). White, gray or black accents do this automatically.';
       default:
         return null;
     }
@@ -246207,10 +247283,6 @@ extension on _StringsNl {
         return 'Herstellen';
       case 'back':
         return 'Terug';
-      case 'background_color':
-        return 'Achtergrondkleur';
-      case 'background_color_desc':
-        return 'Achtergrond van de lezerpagina';
       case 'backup_category_audiobooks':
         return 'Luisterboekaudio';
       case 'backup_category_audiobooks_desc':
@@ -246666,30 +247738,6 @@ extension on _StringsNl {
         return 'Woord';
       case 'collections':
         return 'Collecties';
-      case 'color_container':
-        return 'Container';
-      case 'color_container_desc':
-        return 'Schakelbanen, achtergrond afspeelbalk';
-      case 'color_link':
-        return 'Linkkleur';
-      case 'color_link_desc':
-        return 'Hyperlinkkleur in de lezer';
-      case 'color_primary':
-        return 'Primair';
-      case 'color_primary_desc':
-        return 'Audiomarkering, knoppen, schakelaars';
-      case 'color_sentence_audio_highlight':
-        return 'Audiomarkering';
-      case 'color_sentence_audio_highlight_desc':
-        return 'Markering van ondertitelsynchronisatie van het luisterboek';
-      case 'color_secondary':
-        return 'Secundair';
-      case 'color_secondary_desc':
-        return 'Woordenboekvermeldingen, boekenplankbadges';
-      case 'color_tertiary':
-        return 'Tertiair';
-      case 'color_tertiary_desc':
-        return 'Collecties, leesstatistieken';
       case 'columns_per_page':
         return 'Kolommen per pagina';
       case 'combine_into_series':
@@ -247359,10 +248407,6 @@ extension on _StringsNl {
         return 'Audio volgen: UIT';
       case 'follow_audio_on_tooltip':
         return 'Audio volgen: AAN';
-      case 'font_color':
-        return 'Letterkleur';
-      case 'font_color_desc':
-        return 'Tekstkleur van de lezer';
       case 'font_desc_hina_mincho':
         return 'Zacht decoratief Mincho · Past goed bij Noto Sans JP';
       case 'font_desc_klee_one':
@@ -248908,14 +249952,10 @@ extension on _StringsNl {
         return 'Zoeken...';
       case 'searching_in_progress':
         return 'Zoeken naar ';
-      case 'section_advanced_colors':
-        return 'Geavanceerd';
       case 'section_advanced_typography':
         return 'Geavanceerd';
       case 'section_audiobook':
         return 'Audioboek';
-      case 'section_audiobook_lyrics':
-        return 'Luisterboek & songteksten';
       case 'section_epub':
         return 'EPUB-bibliotheek';
       case 'section_floating_lyric':
@@ -248928,10 +249968,6 @@ extension on _StringsNl {
         return 'Navigatie';
       case 'section_page_turn_direction':
         return 'Bladerrichting';
-      case 'section_reader_colors':
-        return 'Lezerkleuren';
-      case 'section_system_theme':
-        return 'Systeemthemakleur';
       case 'section_typography':
         return 'Typografie';
       case 'section_update':
@@ -248944,14 +249980,6 @@ extension on _StringsNl {
         return 'Afspelen';
       case 'section_video_subtitles':
         return 'Ondertitels';
-      case 'seed_color':
-        return 'Basiskleur';
-      case 'seed_color_desc':
-        return 'Genereert alle standaardkleuren hieronder';
-      case 'selection_color':
-        return 'Selectiekleur';
-      case 'selection_color_desc':
-        return 'Tekstselectiemarkering van de lezer';
       case 'send':
         return 'Verzenden';
       case 'series':
@@ -249861,8 +250889,6 @@ extension on _StringsNl {
         return 'Donkergrijs';
       case 'theme_light':
         return 'Wit';
-      case 'theme_seed_preview_hint':
-        return 'De stalen hieronder tonen een voorbeeld van de kleuren die daadwerkelijk uit je startkleur worden gegenereerd. Om een specifieke kleur als primaire accentkleur af te dwingen, zet je de schakelaar Primair aan en kies je hem expliciet.';
       case 'theme_water':
         return 'Waterblauw';
       case 'toc_section':
@@ -254695,6 +255721,90 @@ extension on _StringsNl {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'theme_section_reader':
+        return 'Reader';
+      case 'theme_section_audiobook':
+        return 'Audiobook';
+      case 'theme_section_fine_tune':
+        return 'Fine-tune derived colors';
+      case 'theme_role_accent':
+        return 'Accent color';
+      case 'theme_role_reader_text':
+        return 'Body text';
+      case 'theme_role_reader_text_desc':
+        return 'Reader text, toolbar icons and dictionary popup text';
+      case 'theme_role_reader_background':
+        return 'Page background';
+      case 'theme_role_reader_background_desc':
+        return 'Reader page, toolbar and dictionary popup background';
+      case 'theme_role_link':
+        return 'Links';
+      case 'theme_role_link_desc':
+        return 'Hyperlinks inside books and the selection handles';
+      case 'theme_role_selection':
+        return 'Lookup highlight';
+      case 'theme_role_selection_desc':
+        return 'Background of the word or sentence being looked up';
+      case 'theme_role_audio_highlight':
+        return 'Current sentence';
+      case 'theme_role_audio_highlight_desc':
+        return 'Follows audiobook playback. Applies to every theme, not just this one.';
+      case 'theme_role_secondary':
+        return 'Secondary accent';
+      case 'theme_role_secondary_desc':
+        return 'Tags, badges and selected list items';
+      case 'theme_role_tertiary':
+        return 'Decoration color';
+      case 'theme_role_tertiary_desc':
+        return 'Collections and reading statistics';
+      case 'theme_role_container':
+        return 'Control fill';
+      case 'theme_role_container_desc':
+        return 'Switch tracks, floating buttons and the play bar';
+      case 'theme_role_follows_theme':
+        return 'Follows theme';
+      case 'theme_role_reset':
+        return 'Follow theme again';
+      case 'theme_preview_light':
+        return 'Light';
+      case 'theme_preview_dark':
+        return 'Dark';
+      case 'theme_preview_button':
+        return 'Button';
+      case 'theme_preview_tag':
+        return 'Tag';
+      case 'theme_preview_hint':
+        return 'Pick a color to see where it is used outlined in the preview.';
+      case 'theme_role_accent_desc':
+        return 'Used exactly as picked for buttons, switches, icons and progress bars. Every other color is derived from it.';
+      case 'theme_accent_low_contrast_dark':
+        return 'Hard to see on the dark-mode background. Pick a lighter color.';
+      case 'theme_accent_low_contrast_light':
+        return 'Hard to see on the light-mode background. Pick a darker color.';
+      case 'theme_section_accent':
+        return 'Interface colors';
+      case 'theme_role_surface':
+        return 'Interface background';
+      case 'theme_role_surface_desc':
+        return 'Base color of pages, cards and menus; the other layers get a faint tint of gray from it.';
+      case 'theme_accent_follow_system':
+        return 'Follow the system accent color';
+      case 'theme_accent_follow_system_desc':
+        return 'Use the wallpaper color on Android (Material You) or the OS accent color on desktop instead of a picked color.';
+      case 'theme_accent_follow_system_unavailable':
+        return 'The system does not expose an accent color on this device.';
+      case 'theme_accent_auto_tone':
+        return 'Adjust tone for light and dark mode';
+      case 'theme_accent_auto_tone_desc':
+        return 'Off: the exact color is used. On: a lighter or darker tone is generated for each mode, so what you see differs from what you picked.';
+      case 'theme_role_actual_color':
+        return 'Shown as';
+      case 'theme_preview_card':
+        return 'Card';
+      case 'theme_neutral_derived':
+        return 'Neutral derived colors';
+      case 'theme_neutral_derived_desc':
+        return 'Tags, selected items, menus and surfaces stay gray instead of taking on the accent\'s hue; only the accent color itself stands out (like the Windows light theme). White, gray or black accents do this automatically.';
       default:
         return null;
     }
@@ -255061,10 +256171,6 @@ extension on _StringsPtBr {
         return 'Redefinir';
       case 'back':
         return 'Voltar';
-      case 'background_color':
-        return 'Cor de fundo';
-      case 'background_color_desc':
-        return 'Fundo da página do leitor';
       case 'backup_category_audiobooks':
         return 'Áudio de audiolivros';
       case 'backup_category_audiobooks_desc':
@@ -255520,30 +256626,6 @@ extension on _StringsPtBr {
         return 'Palavra';
       case 'collections':
         return 'Coleções';
-      case 'color_container':
-        return 'Contêiner';
-      case 'color_container_desc':
-        return 'Fundo das faixas de áudio e barra de reprodução';
-      case 'color_link':
-        return 'Cor do link';
-      case 'color_link_desc':
-        return 'Cor dos hiperlinks do leitor';
-      case 'color_primary':
-        return 'Primária';
-      case 'color_primary_desc':
-        return 'Destaque de áudio, botões, interruptores';
-      case 'color_sentence_audio_highlight':
-        return 'Destaque de áudio';
-      case 'color_sentence_audio_highlight_desc':
-        return 'Destaque de sincronização de legendas do audiolivro';
-      case 'color_secondary':
-        return 'Secundária';
-      case 'color_secondary_desc':
-        return 'Entradas do dicionário, emblemas da estante';
-      case 'color_tertiary':
-        return 'Terciária';
-      case 'color_tertiary_desc':
-        return 'Coleções, estatísticas de leitura';
       case 'columns_per_page':
         return 'Colunas por página';
       case 'combine_into_series':
@@ -256211,10 +257293,6 @@ extension on _StringsPtBr {
         return 'Acompanhar áudio: DESLIGADO';
       case 'follow_audio_on_tooltip':
         return 'Acompanhar áudio: LIGADO';
-      case 'font_color':
-        return 'Cor da Fonte';
-      case 'font_color_desc':
-        return 'Cor do texto do leitor';
       case 'font_desc_hina_mincho':
         return 'Mincho decorativo suave · Combina bem com Noto Sans JP';
       case 'font_desc_klee_one':
@@ -257761,14 +258839,10 @@ extension on _StringsPtBr {
         return 'Buscar...';
       case 'searching_in_progress':
         return 'Buscando por ';
-      case 'section_advanced_colors':
-        return 'Avançado';
       case 'section_advanced_typography':
         return 'Avançado';
       case 'section_audiobook':
         return 'Audiolivro';
-      case 'section_audiobook_lyrics':
-        return 'Audiolivro e letras';
       case 'section_epub':
         return 'Biblioteca EPUB';
       case 'section_floating_lyric':
@@ -257781,10 +258855,6 @@ extension on _StringsPtBr {
         return 'Navegação';
       case 'section_page_turn_direction':
         return 'Direção de virada de página';
-      case 'section_reader_colors':
-        return 'Cores do leitor';
-      case 'section_system_theme':
-        return 'Cor do tema do sistema';
       case 'section_typography':
         return 'Tipografia';
       case 'section_update':
@@ -257797,14 +258867,6 @@ extension on _StringsPtBr {
         return 'Reprodução';
       case 'section_video_subtitles':
         return 'Legendas';
-      case 'seed_color':
-        return 'Cor Base';
-      case 'seed_color_desc':
-        return 'Gera todas as cores padrão abaixo';
-      case 'selection_color':
-        return 'Cor de seleção';
-      case 'selection_color_desc':
-        return 'Destaque de seleção de texto do leitor';
       case 'send':
         return 'Enviar';
       case 'series':
@@ -258711,8 +259773,6 @@ extension on _StringsPtBr {
         return 'Cinza escuro';
       case 'theme_light':
         return 'Branco';
-      case 'theme_seed_preview_hint':
-        return 'As amostras abaixo mostram uma prévia das cores realmente geradas a partir da sua cor-semente. Para forçar uma cor específica como o destaque primário, ative a opção Primária e escolha-a explicitamente.';
       case 'theme_water':
         return 'Azul Água';
       case 'toc_section':
@@ -263543,6 +264603,90 @@ extension on _StringsPtBr {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'theme_section_reader':
+        return 'Reader';
+      case 'theme_section_audiobook':
+        return 'Audiobook';
+      case 'theme_section_fine_tune':
+        return 'Fine-tune derived colors';
+      case 'theme_role_accent':
+        return 'Accent color';
+      case 'theme_role_reader_text':
+        return 'Body text';
+      case 'theme_role_reader_text_desc':
+        return 'Reader text, toolbar icons and dictionary popup text';
+      case 'theme_role_reader_background':
+        return 'Page background';
+      case 'theme_role_reader_background_desc':
+        return 'Reader page, toolbar and dictionary popup background';
+      case 'theme_role_link':
+        return 'Links';
+      case 'theme_role_link_desc':
+        return 'Hyperlinks inside books and the selection handles';
+      case 'theme_role_selection':
+        return 'Lookup highlight';
+      case 'theme_role_selection_desc':
+        return 'Background of the word or sentence being looked up';
+      case 'theme_role_audio_highlight':
+        return 'Current sentence';
+      case 'theme_role_audio_highlight_desc':
+        return 'Follows audiobook playback. Applies to every theme, not just this one.';
+      case 'theme_role_secondary':
+        return 'Secondary accent';
+      case 'theme_role_secondary_desc':
+        return 'Tags, badges and selected list items';
+      case 'theme_role_tertiary':
+        return 'Decoration color';
+      case 'theme_role_tertiary_desc':
+        return 'Collections and reading statistics';
+      case 'theme_role_container':
+        return 'Control fill';
+      case 'theme_role_container_desc':
+        return 'Switch tracks, floating buttons and the play bar';
+      case 'theme_role_follows_theme':
+        return 'Follows theme';
+      case 'theme_role_reset':
+        return 'Follow theme again';
+      case 'theme_preview_light':
+        return 'Light';
+      case 'theme_preview_dark':
+        return 'Dark';
+      case 'theme_preview_button':
+        return 'Button';
+      case 'theme_preview_tag':
+        return 'Tag';
+      case 'theme_preview_hint':
+        return 'Pick a color to see where it is used outlined in the preview.';
+      case 'theme_role_accent_desc':
+        return 'Used exactly as picked for buttons, switches, icons and progress bars. Every other color is derived from it.';
+      case 'theme_accent_low_contrast_dark':
+        return 'Hard to see on the dark-mode background. Pick a lighter color.';
+      case 'theme_accent_low_contrast_light':
+        return 'Hard to see on the light-mode background. Pick a darker color.';
+      case 'theme_section_accent':
+        return 'Interface colors';
+      case 'theme_role_surface':
+        return 'Interface background';
+      case 'theme_role_surface_desc':
+        return 'Base color of pages, cards and menus; the other layers get a faint tint of gray from it.';
+      case 'theme_accent_follow_system':
+        return 'Follow the system accent color';
+      case 'theme_accent_follow_system_desc':
+        return 'Use the wallpaper color on Android (Material You) or the OS accent color on desktop instead of a picked color.';
+      case 'theme_accent_follow_system_unavailable':
+        return 'The system does not expose an accent color on this device.';
+      case 'theme_accent_auto_tone':
+        return 'Adjust tone for light and dark mode';
+      case 'theme_accent_auto_tone_desc':
+        return 'Off: the exact color is used. On: a lighter or darker tone is generated for each mode, so what you see differs from what you picked.';
+      case 'theme_role_actual_color':
+        return 'Shown as';
+      case 'theme_preview_card':
+        return 'Card';
+      case 'theme_neutral_derived':
+        return 'Neutral derived colors';
+      case 'theme_neutral_derived_desc':
+        return 'Tags, selected items, menus and surfaces stay gray instead of taking on the accent\'s hue; only the accent color itself stands out (like the Windows light theme). White, gray or black accents do this automatically.';
       default:
         return null;
     }
@@ -263910,10 +265054,6 @@ extension on _StringsRu {
         return 'Сброс';
       case 'back':
         return 'Назад';
-      case 'background_color':
-        return 'Цвет фона';
-      case 'background_color_desc':
-        return 'Фон страницы читалки';
       case 'backup_category_audiobooks':
         return 'Аудио аудиокниг';
       case 'backup_category_audiobooks_desc':
@@ -264370,30 +265510,6 @@ extension on _StringsRu {
         return 'Слово';
       case 'collections':
         return 'Коллекции';
-      case 'color_container':
-        return 'Контейнер';
-      case 'color_container_desc':
-        return 'Переключение дорожек, фон панели воспроизведения';
-      case 'color_link':
-        return 'Цвет ссылки';
-      case 'color_link_desc':
-        return 'Цвет гиперссылок в ридере';
-      case 'color_primary':
-        return 'Основной';
-      case 'color_primary_desc':
-        return 'Подсветка аудио, кнопки, переключатели';
-      case 'color_sentence_audio_highlight':
-        return 'Подсветка аудио';
-      case 'color_sentence_audio_highlight_desc':
-        return 'Подсветка синхронизации субтитров аудиокниги';
-      case 'color_secondary':
-        return 'Вторичный';
-      case 'color_secondary_desc':
-        return 'Словарные статьи, значки на книжной полке';
-      case 'color_tertiary':
-        return 'Третичный';
-      case 'color_tertiary_desc':
-        return 'Коллекции, статистика чтения';
       case 'columns_per_page':
         return 'Столбцов на странице';
       case 'combine_into_series':
@@ -265063,10 +266179,6 @@ extension on _StringsRu {
         return 'Следование за аудио: ВЫКЛ';
       case 'follow_audio_on_tooltip':
         return 'Следование за аудио: ВКЛ';
-      case 'font_color':
-        return 'Цвет шрифта';
-      case 'font_color_desc':
-        return 'Цвет текста в читалке';
       case 'font_desc_hina_mincho':
         return 'Мягкий декоративный Mincho · Хорошо сочетается с Noto Sans JP';
       case 'font_desc_klee_one':
@@ -266613,14 +267725,10 @@ extension on _StringsRu {
         return 'Поиск...';
       case 'searching_in_progress':
         return 'Поиск ';
-      case 'section_advanced_colors':
-        return 'Расширенные';
       case 'section_advanced_typography':
         return 'Дополнительно';
       case 'section_audiobook':
         return 'Аудиокнига';
-      case 'section_audiobook_lyrics':
-        return 'Аудиокниги и текст';
       case 'section_epub':
         return 'Библиотека EPUB';
       case 'section_floating_lyric':
@@ -266633,10 +267741,6 @@ extension on _StringsRu {
         return 'Навигация';
       case 'section_page_turn_direction':
         return 'Направление перелистывания';
-      case 'section_reader_colors':
-        return 'Цвета читалки';
-      case 'section_system_theme':
-        return 'Системный цвет темы';
       case 'section_typography':
         return 'Типографика';
       case 'section_update':
@@ -266649,14 +267753,6 @@ extension on _StringsRu {
         return 'Воспроизведение';
       case 'section_video_subtitles':
         return 'Субтитры';
-      case 'seed_color':
-        return 'Базовый цвет';
-      case 'seed_color_desc':
-        return 'Генерирует все цвета по умолчанию ниже';
-      case 'selection_color':
-        return 'Цвет выделения';
-      case 'selection_color_desc':
-        return 'Выделение текста в читалке';
       case 'send':
         return 'Отправить';
       case 'series':
@@ -267564,8 +268660,6 @@ extension on _StringsRu {
         return 'Тёмно-серая';
       case 'theme_light':
         return 'Белая';
-      case 'theme_seed_preview_hint':
-        return 'Образцы ниже показывают цвета, фактически сгенерированные из вашего исходного цвета. Чтобы закрепить определённый цвет как основной акцент, включите переключатель «Основной» и выберите его явно.';
       case 'theme_water':
         return 'Голубая';
       case 'toc_section':
@@ -272398,6 +273492,90 @@ extension on _StringsRu {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'theme_section_reader':
+        return 'Reader';
+      case 'theme_section_audiobook':
+        return 'Audiobook';
+      case 'theme_section_fine_tune':
+        return 'Fine-tune derived colors';
+      case 'theme_role_accent':
+        return 'Accent color';
+      case 'theme_role_reader_text':
+        return 'Body text';
+      case 'theme_role_reader_text_desc':
+        return 'Reader text, toolbar icons and dictionary popup text';
+      case 'theme_role_reader_background':
+        return 'Page background';
+      case 'theme_role_reader_background_desc':
+        return 'Reader page, toolbar and dictionary popup background';
+      case 'theme_role_link':
+        return 'Links';
+      case 'theme_role_link_desc':
+        return 'Hyperlinks inside books and the selection handles';
+      case 'theme_role_selection':
+        return 'Lookup highlight';
+      case 'theme_role_selection_desc':
+        return 'Background of the word or sentence being looked up';
+      case 'theme_role_audio_highlight':
+        return 'Current sentence';
+      case 'theme_role_audio_highlight_desc':
+        return 'Follows audiobook playback. Applies to every theme, not just this one.';
+      case 'theme_role_secondary':
+        return 'Secondary accent';
+      case 'theme_role_secondary_desc':
+        return 'Tags, badges and selected list items';
+      case 'theme_role_tertiary':
+        return 'Decoration color';
+      case 'theme_role_tertiary_desc':
+        return 'Collections and reading statistics';
+      case 'theme_role_container':
+        return 'Control fill';
+      case 'theme_role_container_desc':
+        return 'Switch tracks, floating buttons and the play bar';
+      case 'theme_role_follows_theme':
+        return 'Follows theme';
+      case 'theme_role_reset':
+        return 'Follow theme again';
+      case 'theme_preview_light':
+        return 'Light';
+      case 'theme_preview_dark':
+        return 'Dark';
+      case 'theme_preview_button':
+        return 'Button';
+      case 'theme_preview_tag':
+        return 'Tag';
+      case 'theme_preview_hint':
+        return 'Pick a color to see where it is used outlined in the preview.';
+      case 'theme_role_accent_desc':
+        return 'Used exactly as picked for buttons, switches, icons and progress bars. Every other color is derived from it.';
+      case 'theme_accent_low_contrast_dark':
+        return 'Hard to see on the dark-mode background. Pick a lighter color.';
+      case 'theme_accent_low_contrast_light':
+        return 'Hard to see on the light-mode background. Pick a darker color.';
+      case 'theme_section_accent':
+        return 'Interface colors';
+      case 'theme_role_surface':
+        return 'Interface background';
+      case 'theme_role_surface_desc':
+        return 'Base color of pages, cards and menus; the other layers get a faint tint of gray from it.';
+      case 'theme_accent_follow_system':
+        return 'Follow the system accent color';
+      case 'theme_accent_follow_system_desc':
+        return 'Use the wallpaper color on Android (Material You) or the OS accent color on desktop instead of a picked color.';
+      case 'theme_accent_follow_system_unavailable':
+        return 'The system does not expose an accent color on this device.';
+      case 'theme_accent_auto_tone':
+        return 'Adjust tone for light and dark mode';
+      case 'theme_accent_auto_tone_desc':
+        return 'Off: the exact color is used. On: a lighter or darker tone is generated for each mode, so what you see differs from what you picked.';
+      case 'theme_role_actual_color':
+        return 'Shown as';
+      case 'theme_preview_card':
+        return 'Card';
+      case 'theme_neutral_derived':
+        return 'Neutral derived colors';
+      case 'theme_neutral_derived_desc':
+        return 'Tags, selected items, menus and surfaces stay gray instead of taking on the accent\'s hue; only the accent color itself stands out (like the Windows light theme). White, gray or black accents do this automatically.';
       default:
         return null;
     }
@@ -272761,10 +273939,6 @@ extension on _StringsTh {
         return 'รีเซ็ต';
       case 'back':
         return 'กลับ';
-      case 'background_color':
-        return 'สีพื้นหลัง';
-      case 'background_color_desc':
-        return 'พื้นหลังหน้าอ่าน';
       case 'backup_category_audiobooks':
         return 'เสียงหนังสือเสียง';
       case 'backup_category_audiobooks_desc':
@@ -273218,30 +274392,6 @@ extension on _StringsTh {
         return 'คำศัพท์';
       case 'collections':
         return 'คอลเลกชัน';
-      case 'color_container':
-        return 'คอนเทนเนอร์';
-      case 'color_container_desc':
-        return 'สลับแทร็ก พื้นหลังแถบเล่น';
-      case 'color_link':
-        return 'สีลิงก์';
-      case 'color_link_desc':
-        return 'สีไฮเปอร์ลิงก์ในตัวอ่าน';
-      case 'color_primary':
-        return 'สีหลัก';
-      case 'color_primary_desc':
-        return 'ไฮไลต์เสียง ปุ่ม สวิตช์';
-      case 'color_sentence_audio_highlight':
-        return 'ไฮไลท์เสียง';
-      case 'color_sentence_audio_highlight_desc':
-        return 'ไฮไลท์การซิงค์คำบรรยายหนังสือเสียง';
-      case 'color_secondary':
-        return 'สีรอง';
-      case 'color_secondary_desc':
-        return 'รายการพจนานุกรม ป้ายชั้นหนังสือ';
-      case 'color_tertiary':
-        return 'สีที่สาม';
-      case 'color_tertiary_desc':
-        return 'คอลเลกชัน สถิติการอ่าน';
       case 'columns_per_page':
         return 'คอลัมน์ต่อหน้า';
       case 'combine_into_series':
@@ -273907,10 +275057,6 @@ extension on _StringsTh {
         return 'ตามเสียง: ปิด';
       case 'follow_audio_on_tooltip':
         return 'ตามเสียง: เปิด';
-      case 'font_color':
-        return 'สีตัวอักษร';
-      case 'font_color_desc':
-        return 'สีตัวอักษรหน้าอ่าน';
       case 'font_desc_hina_mincho':
         return 'Mincho ตกแต่งนุ่มนวล · แนะนำใช้คู่กับ Noto Sans JP';
       case 'font_desc_klee_one':
@@ -275452,14 +276598,10 @@ extension on _StringsTh {
         return 'ค้นหา...';
       case 'searching_in_progress':
         return 'กำลังค้นหา ';
-      case 'section_advanced_colors':
-        return 'ขั้นสูง';
       case 'section_advanced_typography':
         return 'ขั้นสูง';
       case 'section_audiobook':
         return 'หนังสือเสียง';
-      case 'section_audiobook_lyrics':
-        return 'หนังสือเสียงและเนื้อร้อง';
       case 'section_epub':
         return 'คลัง EPUB';
       case 'section_floating_lyric':
@@ -275472,10 +276614,6 @@ extension on _StringsTh {
         return 'การนำทาง';
       case 'section_page_turn_direction':
         return 'ทิศทางการพลิกหน้า';
-      case 'section_reader_colors':
-        return 'สีเครื่องอ่าน';
-      case 'section_system_theme':
-        return 'สีธีมของระบบ';
       case 'section_typography':
         return 'รูปแบบตัวอักษร';
       case 'section_update':
@@ -275488,14 +276626,6 @@ extension on _StringsTh {
         return 'การเล่น';
       case 'section_video_subtitles':
         return 'คำบรรยาย';
-      case 'seed_color':
-        return 'สีพื้นฐาน';
-      case 'seed_color_desc':
-        return 'สร้างสีเริ่มต้นทั้งหมดด้านล่าง';
-      case 'selection_color':
-        return 'สีเน้นข้อความ';
-      case 'selection_color_desc':
-        return 'ไฮไลต์การเลือกข้อความในเครื่องอ่าน';
       case 'send':
         return 'ส่ง';
       case 'series':
@@ -276404,8 +277534,6 @@ extension on _StringsTh {
         return 'เทาเข้ม';
       case 'theme_light':
         return 'ขาว';
-      case 'theme_seed_preview_hint':
-        return 'ตัวอย่างสีด้านล่างคือสีที่สร้างจริงจากสีเริ่มต้นของคุณ หากต้องการกำหนดสีใดเป็นสีเน้นหลักโดยเฉพาะ ให้เปิดสวิตช์ "สีหลัก" แล้วเลือกสีนั้นโดยตรง';
       case 'theme_water':
         return 'ฟ้าน้ำ';
       case 'toc_section':
@@ -281225,6 +282353,90 @@ extension on _StringsTh {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'theme_section_reader':
+        return 'Reader';
+      case 'theme_section_audiobook':
+        return 'Audiobook';
+      case 'theme_section_fine_tune':
+        return 'Fine-tune derived colors';
+      case 'theme_role_accent':
+        return 'Accent color';
+      case 'theme_role_reader_text':
+        return 'Body text';
+      case 'theme_role_reader_text_desc':
+        return 'Reader text, toolbar icons and dictionary popup text';
+      case 'theme_role_reader_background':
+        return 'Page background';
+      case 'theme_role_reader_background_desc':
+        return 'Reader page, toolbar and dictionary popup background';
+      case 'theme_role_link':
+        return 'Links';
+      case 'theme_role_link_desc':
+        return 'Hyperlinks inside books and the selection handles';
+      case 'theme_role_selection':
+        return 'Lookup highlight';
+      case 'theme_role_selection_desc':
+        return 'Background of the word or sentence being looked up';
+      case 'theme_role_audio_highlight':
+        return 'Current sentence';
+      case 'theme_role_audio_highlight_desc':
+        return 'Follows audiobook playback. Applies to every theme, not just this one.';
+      case 'theme_role_secondary':
+        return 'Secondary accent';
+      case 'theme_role_secondary_desc':
+        return 'Tags, badges and selected list items';
+      case 'theme_role_tertiary':
+        return 'Decoration color';
+      case 'theme_role_tertiary_desc':
+        return 'Collections and reading statistics';
+      case 'theme_role_container':
+        return 'Control fill';
+      case 'theme_role_container_desc':
+        return 'Switch tracks, floating buttons and the play bar';
+      case 'theme_role_follows_theme':
+        return 'Follows theme';
+      case 'theme_role_reset':
+        return 'Follow theme again';
+      case 'theme_preview_light':
+        return 'Light';
+      case 'theme_preview_dark':
+        return 'Dark';
+      case 'theme_preview_button':
+        return 'Button';
+      case 'theme_preview_tag':
+        return 'Tag';
+      case 'theme_preview_hint':
+        return 'Pick a color to see where it is used outlined in the preview.';
+      case 'theme_role_accent_desc':
+        return 'Used exactly as picked for buttons, switches, icons and progress bars. Every other color is derived from it.';
+      case 'theme_accent_low_contrast_dark':
+        return 'Hard to see on the dark-mode background. Pick a lighter color.';
+      case 'theme_accent_low_contrast_light':
+        return 'Hard to see on the light-mode background. Pick a darker color.';
+      case 'theme_section_accent':
+        return 'Interface colors';
+      case 'theme_role_surface':
+        return 'Interface background';
+      case 'theme_role_surface_desc':
+        return 'Base color of pages, cards and menus; the other layers get a faint tint of gray from it.';
+      case 'theme_accent_follow_system':
+        return 'Follow the system accent color';
+      case 'theme_accent_follow_system_desc':
+        return 'Use the wallpaper color on Android (Material You) or the OS accent color on desktop instead of a picked color.';
+      case 'theme_accent_follow_system_unavailable':
+        return 'The system does not expose an accent color on this device.';
+      case 'theme_accent_auto_tone':
+        return 'Adjust tone for light and dark mode';
+      case 'theme_accent_auto_tone_desc':
+        return 'Off: the exact color is used. On: a lighter or darker tone is generated for each mode, so what you see differs from what you picked.';
+      case 'theme_role_actual_color':
+        return 'Shown as';
+      case 'theme_preview_card':
+        return 'Card';
+      case 'theme_neutral_derived':
+        return 'Neutral derived colors';
+      case 'theme_neutral_derived_desc':
+        return 'Tags, selected items, menus and surfaces stay gray instead of taking on the accent\'s hue; only the accent color itself stands out (like the Windows light theme). White, gray or black accents do this automatically.';
       default:
         return null;
     }
@@ -281590,10 +282802,6 @@ extension on _StringsTr {
         return 'Sıfırla';
       case 'back':
         return 'Geri';
-      case 'background_color':
-        return 'Arka plan rengi';
-      case 'background_color_desc':
-        return 'Okuyucu sayfa arka planı';
       case 'backup_category_audiobooks':
         return 'Sesli kitap sesi';
       case 'backup_category_audiobooks_desc':
@@ -282050,30 +283258,6 @@ extension on _StringsTr {
         return 'Kelime';
       case 'collections':
         return 'Koleksiyonlar';
-      case 'color_container':
-        return 'Kapsayıcı';
-      case 'color_container_desc':
-        return 'Parça değiştirme, oynatma çubuğu arka planı';
-      case 'color_link':
-        return 'Bağlantı rengi';
-      case 'color_link_desc':
-        return 'Okuyucu köprü rengi';
-      case 'color_primary':
-        return 'Birincil';
-      case 'color_primary_desc':
-        return 'Ses vurgusu, düğmeler, anahtarlar';
-      case 'color_sentence_audio_highlight':
-        return 'Ses vurgusu';
-      case 'color_sentence_audio_highlight_desc':
-        return 'Sesli kitap altyazı senkronizasyon vurgusu';
-      case 'color_secondary':
-        return 'İkincil';
-      case 'color_secondary_desc':
-        return 'Sözlük girişleri, kitaplık rozetleri';
-      case 'color_tertiary':
-        return 'Üçüncül';
-      case 'color_tertiary_desc':
-        return 'Koleksiyonlar, okuma istatistikleri';
       case 'columns_per_page':
         return 'Sayfa başına sütun';
       case 'combine_into_series':
@@ -282739,10 +283923,6 @@ extension on _StringsTr {
         return 'Ses takibi: KAPALI';
       case 'follow_audio_on_tooltip':
         return 'Ses takibi: AÇIK';
-      case 'font_color':
-        return 'Yazı rengi';
-      case 'font_color_desc':
-        return 'Okuyucu metin rengi';
       case 'font_desc_hina_mincho':
         return 'Yumuşak dekoratif Mincho · Noto Sans JP ile iyi gider';
       case 'font_desc_klee_one':
@@ -284285,14 +285465,10 @@ extension on _StringsTr {
         return 'Ara...';
       case 'searching_in_progress':
         return 'Aranıyor ';
-      case 'section_advanced_colors':
-        return 'Gelişmiş';
       case 'section_advanced_typography':
         return 'Gelişmiş';
       case 'section_audiobook':
         return 'Sesli Kitap';
-      case 'section_audiobook_lyrics':
-        return 'Sesli Kitap ve Şarkı Sözleri';
       case 'section_epub':
         return 'EPUB Kütüphanesi';
       case 'section_floating_lyric':
@@ -284305,10 +285481,6 @@ extension on _StringsTr {
         return 'Gezinme';
       case 'section_page_turn_direction':
         return 'Sayfa çevirme yönü';
-      case 'section_reader_colors':
-        return 'Okuyucu Renkleri';
-      case 'section_system_theme':
-        return 'Sistem Tema Rengi';
       case 'section_typography':
         return 'Tipografi';
       case 'section_update':
@@ -284321,14 +285493,6 @@ extension on _StringsTr {
         return 'Oynatma';
       case 'section_video_subtitles':
         return 'Altyazılar';
-      case 'seed_color':
-        return 'Ana renk';
-      case 'seed_color_desc':
-        return 'Aşağıdaki tüm varsayılan renkleri oluşturur';
-      case 'selection_color':
-        return 'Seçim vurgusu';
-      case 'selection_color_desc':
-        return 'Okuyucu metin seçim vurgusu';
       case 'send':
         return 'Gönder';
       case 'series':
@@ -285237,8 +286401,6 @@ extension on _StringsTr {
         return 'Koyu gri';
       case 'theme_light':
         return 'Beyaz';
-      case 'theme_seed_preview_hint':
-        return 'Aşağıdaki örnekler, tohum renginizden gerçekte üretilen renkleri önizler. Belirli bir rengi birincil vurgu olarak zorlamak için Birincil anahtarını açıp rengi açıkça seçin.';
       case 'theme_water':
         return 'Su mavisi';
       case 'toc_section':
@@ -290067,6 +291229,90 @@ extension on _StringsTr {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'theme_section_reader':
+        return 'Reader';
+      case 'theme_section_audiobook':
+        return 'Audiobook';
+      case 'theme_section_fine_tune':
+        return 'Fine-tune derived colors';
+      case 'theme_role_accent':
+        return 'Accent color';
+      case 'theme_role_reader_text':
+        return 'Body text';
+      case 'theme_role_reader_text_desc':
+        return 'Reader text, toolbar icons and dictionary popup text';
+      case 'theme_role_reader_background':
+        return 'Page background';
+      case 'theme_role_reader_background_desc':
+        return 'Reader page, toolbar and dictionary popup background';
+      case 'theme_role_link':
+        return 'Links';
+      case 'theme_role_link_desc':
+        return 'Hyperlinks inside books and the selection handles';
+      case 'theme_role_selection':
+        return 'Lookup highlight';
+      case 'theme_role_selection_desc':
+        return 'Background of the word or sentence being looked up';
+      case 'theme_role_audio_highlight':
+        return 'Current sentence';
+      case 'theme_role_audio_highlight_desc':
+        return 'Follows audiobook playback. Applies to every theme, not just this one.';
+      case 'theme_role_secondary':
+        return 'Secondary accent';
+      case 'theme_role_secondary_desc':
+        return 'Tags, badges and selected list items';
+      case 'theme_role_tertiary':
+        return 'Decoration color';
+      case 'theme_role_tertiary_desc':
+        return 'Collections and reading statistics';
+      case 'theme_role_container':
+        return 'Control fill';
+      case 'theme_role_container_desc':
+        return 'Switch tracks, floating buttons and the play bar';
+      case 'theme_role_follows_theme':
+        return 'Follows theme';
+      case 'theme_role_reset':
+        return 'Follow theme again';
+      case 'theme_preview_light':
+        return 'Light';
+      case 'theme_preview_dark':
+        return 'Dark';
+      case 'theme_preview_button':
+        return 'Button';
+      case 'theme_preview_tag':
+        return 'Tag';
+      case 'theme_preview_hint':
+        return 'Pick a color to see where it is used outlined in the preview.';
+      case 'theme_role_accent_desc':
+        return 'Used exactly as picked for buttons, switches, icons and progress bars. Every other color is derived from it.';
+      case 'theme_accent_low_contrast_dark':
+        return 'Hard to see on the dark-mode background. Pick a lighter color.';
+      case 'theme_accent_low_contrast_light':
+        return 'Hard to see on the light-mode background. Pick a darker color.';
+      case 'theme_section_accent':
+        return 'Interface colors';
+      case 'theme_role_surface':
+        return 'Interface background';
+      case 'theme_role_surface_desc':
+        return 'Base color of pages, cards and menus; the other layers get a faint tint of gray from it.';
+      case 'theme_accent_follow_system':
+        return 'Follow the system accent color';
+      case 'theme_accent_follow_system_desc':
+        return 'Use the wallpaper color on Android (Material You) or the OS accent color on desktop instead of a picked color.';
+      case 'theme_accent_follow_system_unavailable':
+        return 'The system does not expose an accent color on this device.';
+      case 'theme_accent_auto_tone':
+        return 'Adjust tone for light and dark mode';
+      case 'theme_accent_auto_tone_desc':
+        return 'Off: the exact color is used. On: a lighter or darker tone is generated for each mode, so what you see differs from what you picked.';
+      case 'theme_role_actual_color':
+        return 'Shown as';
+      case 'theme_preview_card':
+        return 'Card';
+      case 'theme_neutral_derived':
+        return 'Neutral derived colors';
+      case 'theme_neutral_derived_desc':
+        return 'Tags, selected items, menus and surfaces stay gray instead of taking on the accent\'s hue; only the accent color itself stands out (like the Windows light theme). White, gray or black accents do this automatically.';
       default:
         return null;
     }
@@ -290432,10 +291678,6 @@ extension on _StringsVi {
         return 'Đặt lại';
       case 'back':
         return 'Quay lại';
-      case 'background_color':
-        return 'Màu nền';
-      case 'background_color_desc':
-        return 'Nền trang đọc';
       case 'backup_category_audiobooks':
         return 'Âm thanh sách nói';
       case 'backup_category_audiobooks_desc':
@@ -290889,30 +292131,6 @@ extension on _StringsVi {
         return 'Từ';
       case 'collections':
         return 'Bộ sưu tập';
-      case 'color_container':
-        return 'Vùng chứa';
-      case 'color_container_desc':
-        return 'Chuyển bản nhạc, nền thanh phát';
-      case 'color_link':
-        return 'Màu liên kết';
-      case 'color_link_desc':
-        return 'Màu siêu liên kết trong trình đọc';
-      case 'color_primary':
-        return 'Chính';
-      case 'color_primary_desc':
-        return 'Đánh dấu âm thanh, nút, công tắc';
-      case 'color_sentence_audio_highlight':
-        return 'Tô sáng âm thanh';
-      case 'color_sentence_audio_highlight_desc':
-        return 'Tô sáng đồng bộ phụ đề sách nói';
-      case 'color_secondary':
-        return 'Phụ';
-      case 'color_secondary_desc':
-        return 'Mục từ điển, huy hiệu giá sách';
-      case 'color_tertiary':
-        return 'Cấp ba';
-      case 'color_tertiary_desc':
-        return 'Bộ sưu tập, thống kê đọc';
       case 'columns_per_page':
         return 'Số cột mỗi trang';
       case 'combine_into_series':
@@ -291582,10 +292800,6 @@ extension on _StringsVi {
         return 'Theo dõi âm thanh: TẮT';
       case 'follow_audio_on_tooltip':
         return 'Theo dõi âm thanh: BẬT';
-      case 'font_color':
-        return 'Màu chữ';
-      case 'font_color_desc':
-        return 'Màu chữ trình đọc';
       case 'font_desc_hina_mincho':
         return 'Mincho trang trí mềm mại · Nên dùng kèm Noto Sans JP';
       case 'font_desc_klee_one':
@@ -293128,14 +294342,10 @@ extension on _StringsVi {
         return 'Tìm kiếm…';
       case 'searching_in_progress':
         return 'Đang tìm kiếm ';
-      case 'section_advanced_colors':
-        return 'Nâng cao';
       case 'section_advanced_typography':
         return 'Nâng cao';
       case 'section_audiobook':
         return 'Sách nói';
-      case 'section_audiobook_lyrics':
-        return 'Sách nói & lời';
       case 'section_epub':
         return 'Thư viện EPUB';
       case 'section_floating_lyric':
@@ -293148,10 +294358,6 @@ extension on _StringsVi {
         return 'Điều hướng';
       case 'section_page_turn_direction':
         return 'Hướng lật trang';
-      case 'section_reader_colors':
-        return 'Màu trình đọc';
-      case 'section_system_theme':
-        return 'Màu chủ đề hệ thống';
       case 'section_typography':
         return 'Kiểu chữ';
       case 'section_update':
@@ -293164,14 +294370,6 @@ extension on _StringsVi {
         return 'Phát';
       case 'section_video_subtitles':
         return 'Phụ đề';
-      case 'seed_color':
-        return 'Màu chủ đạo';
-      case 'seed_color_desc':
-        return 'Tạo tất cả màu mặc định bên dưới';
-      case 'selection_color':
-        return 'Màu đánh dấu';
-      case 'selection_color_desc':
-        return 'Đánh dấu chọn văn bản trong trình đọc';
       case 'send':
         return 'Gửi';
       case 'series':
@@ -294080,8 +295278,6 @@ extension on _StringsVi {
         return 'Xám tối';
       case 'theme_light':
         return 'Trắng';
-      case 'theme_seed_preview_hint':
-        return 'Các ô màu bên dưới xem trước những màu thực sự được tạo từ màu hạt giống của bạn. Để buộc một màu cụ thể làm màu nhấn chính, hãy bật công tắc Màu chính và chọn nó rõ ràng.';
       case 'theme_water':
         return 'Xanh nước';
       case 'toc_section':
@@ -298903,6 +300099,90 @@ extension on _StringsVi {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'theme_section_reader':
+        return 'Reader';
+      case 'theme_section_audiobook':
+        return 'Audiobook';
+      case 'theme_section_fine_tune':
+        return 'Fine-tune derived colors';
+      case 'theme_role_accent':
+        return 'Accent color';
+      case 'theme_role_reader_text':
+        return 'Body text';
+      case 'theme_role_reader_text_desc':
+        return 'Reader text, toolbar icons and dictionary popup text';
+      case 'theme_role_reader_background':
+        return 'Page background';
+      case 'theme_role_reader_background_desc':
+        return 'Reader page, toolbar and dictionary popup background';
+      case 'theme_role_link':
+        return 'Links';
+      case 'theme_role_link_desc':
+        return 'Hyperlinks inside books and the selection handles';
+      case 'theme_role_selection':
+        return 'Lookup highlight';
+      case 'theme_role_selection_desc':
+        return 'Background of the word or sentence being looked up';
+      case 'theme_role_audio_highlight':
+        return 'Current sentence';
+      case 'theme_role_audio_highlight_desc':
+        return 'Follows audiobook playback. Applies to every theme, not just this one.';
+      case 'theme_role_secondary':
+        return 'Secondary accent';
+      case 'theme_role_secondary_desc':
+        return 'Tags, badges and selected list items';
+      case 'theme_role_tertiary':
+        return 'Decoration color';
+      case 'theme_role_tertiary_desc':
+        return 'Collections and reading statistics';
+      case 'theme_role_container':
+        return 'Control fill';
+      case 'theme_role_container_desc':
+        return 'Switch tracks, floating buttons and the play bar';
+      case 'theme_role_follows_theme':
+        return 'Follows theme';
+      case 'theme_role_reset':
+        return 'Follow theme again';
+      case 'theme_preview_light':
+        return 'Light';
+      case 'theme_preview_dark':
+        return 'Dark';
+      case 'theme_preview_button':
+        return 'Button';
+      case 'theme_preview_tag':
+        return 'Tag';
+      case 'theme_preview_hint':
+        return 'Pick a color to see where it is used outlined in the preview.';
+      case 'theme_role_accent_desc':
+        return 'Used exactly as picked for buttons, switches, icons and progress bars. Every other color is derived from it.';
+      case 'theme_accent_low_contrast_dark':
+        return 'Hard to see on the dark-mode background. Pick a lighter color.';
+      case 'theme_accent_low_contrast_light':
+        return 'Hard to see on the light-mode background. Pick a darker color.';
+      case 'theme_section_accent':
+        return 'Interface colors';
+      case 'theme_role_surface':
+        return 'Interface background';
+      case 'theme_role_surface_desc':
+        return 'Base color of pages, cards and menus; the other layers get a faint tint of gray from it.';
+      case 'theme_accent_follow_system':
+        return 'Follow the system accent color';
+      case 'theme_accent_follow_system_desc':
+        return 'Use the wallpaper color on Android (Material You) or the OS accent color on desktop instead of a picked color.';
+      case 'theme_accent_follow_system_unavailable':
+        return 'The system does not expose an accent color on this device.';
+      case 'theme_accent_auto_tone':
+        return 'Adjust tone for light and dark mode';
+      case 'theme_accent_auto_tone_desc':
+        return 'Off: the exact color is used. On: a lighter or darker tone is generated for each mode, so what you see differs from what you picked.';
+      case 'theme_role_actual_color':
+        return 'Shown as';
+      case 'theme_preview_card':
+        return 'Card';
+      case 'theme_neutral_derived':
+        return 'Neutral derived colors';
+      case 'theme_neutral_derived_desc':
+        return 'Tags, selected items, menus and surfaces stay gray instead of taking on the accent\'s hue; only the accent color itself stands out (like the Windows light theme). White, gray or black accents do this automatically.';
       default:
         return null;
     }
@@ -299262,10 +300542,6 @@ extension on _StringsZhCn {
         return '归零';
       case 'back':
         return '返回';
-      case 'background_color':
-        return '背景颜色';
-      case 'background_color_desc':
-        return '阅读器页面背景';
       case 'backup_category_audiobooks':
         return '有声书音频';
       case 'backup_category_audiobooks_desc':
@@ -299712,30 +300988,6 @@ extension on _StringsZhCn {
         return '单词';
       case 'collections':
         return '收藏夹';
-      case 'color_container':
-        return '容器色';
-      case 'color_container_desc':
-        return '开关轨道、播放栏';
-      case 'color_link':
-        return '链接颜色';
-      case 'color_link_desc':
-        return '阅读器超链接颜色';
-      case 'color_primary':
-        return '主色';
-      case 'color_primary_desc':
-        return '音频高亮、按钮、开关';
-      case 'color_sentence_audio_highlight':
-        return '音频高亮';
-      case 'color_sentence_audio_highlight_desc':
-        return '有声书播放时跟随当前句的高亮颜色';
-      case 'color_secondary':
-        return '辅色';
-      case 'color_secondary_desc':
-        return '词典条目、书架标签';
-      case 'color_tertiary':
-        return '第三色';
-      case 'color_tertiary_desc':
-        return '收藏夹、阅读统计';
       case 'columns_per_page':
         return '每页列数';
       case 'combine_into_series':
@@ -300398,10 +301650,6 @@ extension on _StringsZhCn {
         return '音频跟随：关闭';
       case 'follow_audio_on_tooltip':
         return '音频跟随：开启';
-      case 'font_color':
-        return '字体颜色';
-      case 'font_color_desc':
-        return '阅读器文字颜色';
       case 'font_desc_hina_mincho':
         return '柔和装饰性明朝体 · 建议搭配 Noto Sans JP 回退';
       case 'font_desc_klee_one':
@@ -301937,14 +303185,10 @@ extension on _StringsZhCn {
         return '搜索…';
       case 'searching_in_progress':
         return '正在搜索 ';
-      case 'section_advanced_colors':
-        return '高级选项';
       case 'section_advanced_typography':
         return '高级选项';
       case 'section_audiobook':
         return '有声书';
-      case 'section_audiobook_lyrics':
-        return '有声书与歌词';
       case 'section_epub':
         return 'EPUB 书架';
       case 'section_floating_lyric':
@@ -301957,10 +303201,6 @@ extension on _StringsZhCn {
         return '导航';
       case 'section_page_turn_direction':
         return '翻页方向';
-      case 'section_reader_colors':
-        return '阅读器颜色';
-      case 'section_system_theme':
-        return '系统主题色';
       case 'section_typography':
         return '排版';
       case 'section_update':
@@ -301973,14 +303213,6 @@ extension on _StringsZhCn {
         return '播放';
       case 'section_video_subtitles':
         return '字幕';
-      case 'seed_color':
-        return '种子色';
-      case 'seed_color_desc':
-        return '自动生成下方所有默认颜色';
-      case 'selection_color':
-        return '选中高亮色';
-      case 'selection_color_desc':
-        return '阅读器选中高亮';
       case 'send':
         return '发送';
       case 'series':
@@ -302879,8 +304111,6 @@ extension on _StringsZhCn {
         return '灰暗';
       case 'theme_light':
         return '白色';
-      case 'theme_seed_preview_hint':
-        return '下方色板预览由种子色实际生成的颜色。想让某个颜色固定作为主色强调色，请打开「主色」开关并显式指定。';
       case 'theme_water':
         return '水蓝';
       case 'toc_section':
@@ -307663,6 +308893,90 @@ extension on _StringsZhCn {
         return '进度留在磁盘上，继续下载会从中断处接着下。';
       case 'onboarding_pack_mini_bar_hide':
         return '收起';
+      case 'theme_section_reader':
+        return '阅读器';
+      case 'theme_section_audiobook':
+        return '有声书';
+      case 'theme_section_fine_tune':
+        return '微调派生色';
+      case 'theme_role_accent':
+        return '主题色';
+      case 'theme_role_reader_text':
+        return '正文文字';
+      case 'theme_role_reader_text_desc':
+        return '阅读器正文、工具栏图标与词典弹窗文字';
+      case 'theme_role_reader_background':
+        return '页面背景';
+      case 'theme_role_reader_background_desc':
+        return '阅读器页面、工具栏与词典弹窗背景';
+      case 'theme_role_link':
+        return '链接';
+      case 'theme_role_link_desc':
+        return '书内超链接与选区拖拽手柄';
+      case 'theme_role_selection':
+        return '查词高亮';
+      case 'theme_role_selection_desc':
+        return '查词时选中文字的底色';
+      case 'theme_role_audio_highlight':
+        return '当前句高亮';
+      case 'theme_role_audio_highlight_desc':
+        return '有声书播放时跟随当前句；对所有主题生效，不限于本主题';
+      case 'theme_role_secondary':
+        return '次要强调色';
+      case 'theme_role_secondary_desc':
+        return '标签、徽章与选中的列表项';
+      case 'theme_role_tertiary':
+        return '点缀色';
+      case 'theme_role_tertiary_desc':
+        return '合集与阅读统计';
+      case 'theme_role_container':
+        return '控件底色';
+      case 'theme_role_container_desc':
+        return '开关轨道、悬浮按钮与播放条';
+      case 'theme_role_follows_theme':
+        return '跟随主题';
+      case 'theme_role_reset':
+        return '恢复跟随主题';
+      case 'theme_preview_light':
+        return '浅色';
+      case 'theme_preview_dark':
+        return '深色';
+      case 'theme_preview_button':
+        return '按钮';
+      case 'theme_preview_tag':
+        return '标签';
+      case 'theme_preview_hint':
+        return '点任一颜色，预览里会框出它影响的位置';
+      case 'theme_role_accent_desc':
+        return '按钮、开关、图标、进度条直接使用所选原色；其余颜色都由它自动生成';
+      case 'theme_accent_low_contrast_dark':
+        return '在深色模式背景上不易辨认，建议换个更亮的颜色';
+      case 'theme_accent_low_contrast_light':
+        return '在浅色模式背景上不易辨认，建议换个更深的颜色';
+      case 'theme_section_accent':
+        return '界面配色';
+      case 'theme_role_surface':
+        return '界面背景';
+      case 'theme_role_surface_desc':
+        return '页面、卡片、菜单的底色；其余层级由它推出微弱深浅';
+      case 'theme_accent_follow_system':
+        return '主题色跟随系统取色';
+      case 'theme_accent_follow_system_desc':
+        return 'Android 用壁纸取色（Material You），桌面用系统强调色，代替手动选的主题色';
+      case 'theme_accent_follow_system_unavailable':
+        return '当前设备没有提供系统取色';
+      case 'theme_accent_auto_tone':
+        return '按明暗模式自动调整色调';
+      case 'theme_accent_auto_tone_desc':
+        return '关闭：直接使用所选原色。开启：为浅色/深色模式各自生成色调，实际显示会与所选不同';
+      case 'theme_role_actual_color':
+        return '实际显示';
+      case 'theme_preview_card':
+        return '卡片';
+      case 'theme_neutral_derived':
+        return '派生色用中性灰';
+      case 'theme_neutral_derived_desc':
+        return '标签、选中项、菜单与表面不带主题色相，只留主题色本身作强调（类似 Windows 亮色主题）。主题色选白/灰/黑时自动生效';
       default:
         return null;
     }
@@ -308022,10 +309336,6 @@ extension on _StringsZhHk {
         return '歸零';
       case 'back':
         return '返回';
-      case 'background_color':
-        return '背景顏色';
-      case 'background_color_desc':
-        return '閱讀器頁面背景';
       case 'backup_category_audiobooks':
         return '有聲書音訊';
       case 'backup_category_audiobooks_desc':
@@ -308472,30 +309782,6 @@ extension on _StringsZhHk {
         return '單詞';
       case 'collections':
         return '收藏';
-      case 'color_container':
-        return '容器色';
-      case 'color_container_desc':
-        return '開關滑軌、播放列背景';
-      case 'color_link':
-        return '連結顏色';
-      case 'color_link_desc':
-        return '閱讀器超連結顏色';
-      case 'color_primary':
-        return '主色';
-      case 'color_primary_desc':
-        return '音訊醒目標示、按鈕、開關';
-      case 'color_sentence_audio_highlight':
-        return '音訊醒目標示';
-      case 'color_sentence_audio_highlight_desc':
-        return '有聲書播放時跟隨當前句的醒目標示顏色';
-      case 'color_secondary':
-        return '輔色';
-      case 'color_secondary_desc':
-        return '辭典條目、書架徽章';
-      case 'color_tertiary':
-        return '第三色';
-      case 'color_tertiary_desc':
-        return '收藏、閱讀統計';
       case 'columns_per_page':
         return '每頁列數';
       case 'combine_into_series':
@@ -309158,10 +310444,6 @@ extension on _StringsZhHk {
         return '音頻跟隨：關閉';
       case 'follow_audio_on_tooltip':
         return '音頻跟隨：開啟';
-      case 'font_color':
-        return '字體顏色';
-      case 'font_color_desc':
-        return '閱讀器文字顏色';
       case 'font_desc_hina_mincho':
         return '柔和裝飾性明朝體 · 建議搭配 Noto Sans JP 回退';
       case 'font_desc_klee_one':
@@ -310697,14 +311979,10 @@ extension on _StringsZhHk {
         return '搜尋…';
       case 'searching_in_progress':
         return '正在搜尋 ';
-      case 'section_advanced_colors':
-        return '進階';
       case 'section_advanced_typography':
         return '進階選項';
       case 'section_audiobook':
         return '有聲書';
-      case 'section_audiobook_lyrics':
-        return '有聲書與歌詞';
       case 'section_epub':
         return 'EPUB 書架';
       case 'section_floating_lyric':
@@ -310717,10 +311995,6 @@ extension on _StringsZhHk {
         return '導覽';
       case 'section_page_turn_direction':
         return '翻頁方向';
-      case 'section_reader_colors':
-        return '閱讀器顏色';
-      case 'section_system_theme':
-        return '系統主題色';
       case 'section_typography':
         return '排版';
       case 'section_update':
@@ -310733,14 +312007,6 @@ extension on _StringsZhHk {
         return '播放';
       case 'section_video_subtitles':
         return '字幕';
-      case 'seed_color':
-        return '種子色';
-      case 'seed_color_desc':
-        return '自動產生下方所有預設顏色';
-      case 'selection_color':
-        return '選中高亮色';
-      case 'selection_color_desc':
-        return '閱讀器文字選取醒目標示';
       case 'send':
         return '傳送';
       case 'series':
@@ -311640,8 +312906,6 @@ extension on _StringsZhHk {
         return '灰暗';
       case 'theme_light':
         return '白色';
-      case 'theme_seed_preview_hint':
-        return '下方色板預覽由種子色實際產生的顏色。若想固定以某個顏色作為主要強調色，請開啟「主色」開關並明確指定。';
       case 'theme_water':
         return '水藍';
       case 'toc_section':
@@ -316428,6 +317692,90 @@ extension on _StringsZhHk {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'theme_section_reader':
+        return 'Reader';
+      case 'theme_section_audiobook':
+        return 'Audiobook';
+      case 'theme_section_fine_tune':
+        return 'Fine-tune derived colors';
+      case 'theme_role_accent':
+        return 'Accent color';
+      case 'theme_role_reader_text':
+        return 'Body text';
+      case 'theme_role_reader_text_desc':
+        return 'Reader text, toolbar icons and dictionary popup text';
+      case 'theme_role_reader_background':
+        return 'Page background';
+      case 'theme_role_reader_background_desc':
+        return 'Reader page, toolbar and dictionary popup background';
+      case 'theme_role_link':
+        return 'Links';
+      case 'theme_role_link_desc':
+        return 'Hyperlinks inside books and the selection handles';
+      case 'theme_role_selection':
+        return 'Lookup highlight';
+      case 'theme_role_selection_desc':
+        return 'Background of the word or sentence being looked up';
+      case 'theme_role_audio_highlight':
+        return 'Current sentence';
+      case 'theme_role_audio_highlight_desc':
+        return 'Follows audiobook playback. Applies to every theme, not just this one.';
+      case 'theme_role_secondary':
+        return 'Secondary accent';
+      case 'theme_role_secondary_desc':
+        return 'Tags, badges and selected list items';
+      case 'theme_role_tertiary':
+        return 'Decoration color';
+      case 'theme_role_tertiary_desc':
+        return 'Collections and reading statistics';
+      case 'theme_role_container':
+        return 'Control fill';
+      case 'theme_role_container_desc':
+        return 'Switch tracks, floating buttons and the play bar';
+      case 'theme_role_follows_theme':
+        return 'Follows theme';
+      case 'theme_role_reset':
+        return 'Follow theme again';
+      case 'theme_preview_light':
+        return 'Light';
+      case 'theme_preview_dark':
+        return 'Dark';
+      case 'theme_preview_button':
+        return 'Button';
+      case 'theme_preview_tag':
+        return 'Tag';
+      case 'theme_preview_hint':
+        return 'Pick a color to see where it is used outlined in the preview.';
+      case 'theme_role_accent_desc':
+        return 'Used exactly as picked for buttons, switches, icons and progress bars. Every other color is derived from it.';
+      case 'theme_accent_low_contrast_dark':
+        return 'Hard to see on the dark-mode background. Pick a lighter color.';
+      case 'theme_accent_low_contrast_light':
+        return 'Hard to see on the light-mode background. Pick a darker color.';
+      case 'theme_section_accent':
+        return 'Interface colors';
+      case 'theme_role_surface':
+        return 'Interface background';
+      case 'theme_role_surface_desc':
+        return 'Base color of pages, cards and menus; the other layers get a faint tint of gray from it.';
+      case 'theme_accent_follow_system':
+        return 'Follow the system accent color';
+      case 'theme_accent_follow_system_desc':
+        return 'Use the wallpaper color on Android (Material You) or the OS accent color on desktop instead of a picked color.';
+      case 'theme_accent_follow_system_unavailable':
+        return 'The system does not expose an accent color on this device.';
+      case 'theme_accent_auto_tone':
+        return 'Adjust tone for light and dark mode';
+      case 'theme_accent_auto_tone_desc':
+        return 'Off: the exact color is used. On: a lighter or darker tone is generated for each mode, so what you see differs from what you picked.';
+      case 'theme_role_actual_color':
+        return 'Shown as';
+      case 'theme_preview_card':
+        return 'Card';
+      case 'theme_neutral_derived':
+        return 'Neutral derived colors';
+      case 'theme_neutral_derived_desc':
+        return 'Tags, selected items, menus and surfaces stay gray instead of taking on the accent\'s hue; only the accent color itself stands out (like the Windows light theme). White, gray or black accents do this automatically.';
       default:
         return null;
     }

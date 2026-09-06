@@ -698,12 +698,15 @@ extension _ReaderCaret on _ReaderFushiPageState {
     }
   }
 
-  /// rgba() for the cursor focus ring — the reader accent (theme primary, or the
-  /// highlight yellow on dark backgrounds where primary lacks contrast).
+  /// rgba() for the cursor focus ring — the theme primary for the reader's
+  /// current brightness (dark paper used to hard-code the highlight yellow, so
+  /// the ring ignored the user's accent; now both follow the theme).
   String _caretRingColorCss() {
-    final Color accent = _isReaderThemeDark
-        ? FushiColor.defaultHighlightYellow
-        : Theme.of(context).colorScheme.primary;
+    final Color accent = appModel
+        .buildColorScheme(
+          _isReaderThemeDark ? Brightness.dark : Brightness.light,
+        )
+        .primary;
     return readerColorToCssRgba(accent, alphaOverride: 0.98);
   }
 
