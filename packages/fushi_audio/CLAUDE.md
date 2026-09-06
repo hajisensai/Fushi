@@ -24,7 +24,7 @@
 - `AudiobookRepository` / `AudiobookStorage` -- 有声书持久化。
 - `SrtBook` / `SrtBookRepository` -- 字幕书管理。
 - `ReaderPositionModel` / `ReaderPositionRepository` -- 阅读位置。
-- `ReadingStatisticModel` / `ReadingTimeTracker` -- 阅读统计。
+- `StudyClock` -- v92 唯一学习时钟（阅读 / 视频共用：60s tick、120s 间隙、空闲门、整点切段），取代已删除的 `ReadingTimeTracker`；`kArrivalDwellMs` 只剩视频 cue 停留门在用。`ReadingStatistic`（`reading_statistic_model.dart`）是冻结的 legacy 日聚合模型，新代码不再写它。
 - `BookmarkRepository` / `FavoriteSentenceRepository` -- 书签与收藏句子。
 - `AudiobookHealth` -- 有声书健康度检测。
 

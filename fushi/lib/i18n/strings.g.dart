@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 73032 (4296 per locale)
+/// Strings: 73066 (4298 per locale)
 ///
-/// Built on 2026-09-06 at 04:15 UTC
+/// Built on 2026-09-06 at 14:02 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -5923,6 +5923,9 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get onboarding_pack_paused_desc =>
       'Progress is kept on disk — resuming picks up where it stopped.';
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  String get reading_stats_day_reset_hour => 'Day starts at';
+  String get reading_stats_day_reset_hour_hint =>
+      'Reading before this hour counts toward the previous day. Affects today and the last N days in statistics; only records written after the change use the new boundary.';
 }
 
 // Path: <root>
@@ -15968,6 +15971,11 @@ class _StringsAr extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get reading_stats_day_reset_hour => 'Day starts at';
+  @override
+  String get reading_stats_day_reset_hour_hint =>
+      'Reading before this hour counts toward the previous day. Affects today and the last N days in statistics; only records written after the change use the new boundary.';
 }
 
 // Path: <root>
@@ -26240,6 +26248,11 @@ class _StringsDe extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get reading_stats_day_reset_hour => 'Day starts at';
+  @override
+  String get reading_stats_day_reset_hour_hint =>
+      'Reading before this hour counts toward the previous day. Affects today and the last N days in statistics; only records written after the change use the new boundary.';
 }
 
 // Path: <root>
@@ -36565,6 +36578,11 @@ class _StringsEs extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get reading_stats_day_reset_hour => 'Day starts at';
+  @override
+  String get reading_stats_day_reset_hour_hint =>
+      'Reading before this hour counts toward the previous day. Affects today and the last N days in statistics; only records written after the change use the new boundary.';
 }
 
 // Path: <root>
@@ -46924,6 +46942,11 @@ class _StringsFr extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get reading_stats_day_reset_hour => 'Day starts at';
+  @override
+  String get reading_stats_day_reset_hour_hint =>
+      'Reading before this hour counts toward the previous day. Affects today and the last N days in statistics; only records written after the change use the new boundary.';
 }
 
 // Path: <root>
@@ -57087,6 +57110,11 @@ class _StringsId extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get reading_stats_day_reset_hour => 'Day starts at';
+  @override
+  String get reading_stats_day_reset_hour_hint =>
+      'Reading before this hour counts toward the previous day. Affects today and the last N days in statistics; only records written after the change use the new boundary.';
 }
 
 // Path: <root>
@@ -67342,6 +67370,11 @@ class _StringsIt extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get reading_stats_day_reset_hour => 'Day starts at';
+  @override
+  String get reading_stats_day_reset_hour_hint =>
+      'Reading before this hour counts toward the previous day. Affects today and the last N days in statistics; only records written after the change use the new boundary.';
 }
 
 // Path: <root>
@@ -76984,6 +77017,11 @@ class _StringsJa extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get reading_stats_day_reset_hour => 'Day starts at';
+  @override
+  String get reading_stats_day_reset_hour_hint =>
+      'Reading before this hour counts toward the previous day. Affects today and the last N days in statistics; only records written after the change use the new boundary.';
 }
 
 // Path: <root>
@@ -86636,6 +86674,11 @@ class _StringsKo extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get reading_stats_day_reset_hour => 'Day starts at';
+  @override
+  String get reading_stats_day_reset_hour_hint =>
+      'Reading before this hour counts toward the previous day. Affects today and the last N days in statistics; only records written after the change use the new boundary.';
 }
 
 // Path: <root>
@@ -96846,6 +96889,11 @@ class _StringsNl extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get reading_stats_day_reset_hour => 'Day starts at';
+  @override
+  String get reading_stats_day_reset_hour_hint =>
+      'Reading before this hour counts toward the previous day. Affects today and the last N days in statistics; only records written after the change use the new boundary.';
 }
 
 // Path: <root>
@@ -107110,6 +107158,11 @@ class _StringsPtBr extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get reading_stats_day_reset_hour => 'Day starts at';
+  @override
+  String get reading_stats_day_reset_hour_hint =>
+      'Reading before this hour counts toward the previous day. Affects today and the last N days in statistics; only records written after the change use the new boundary.';
 }
 
 // Path: <root>
@@ -117352,6 +117405,11 @@ class _StringsRu extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get reading_stats_day_reset_hour => 'Day starts at';
+  @override
+  String get reading_stats_day_reset_hour_hint =>
+      'Reading before this hour counts toward the previous day. Affects today and the last N days in statistics; only records written after the change use the new boundary.';
 }
 
 // Path: <root>
@@ -127393,6 +127451,11 @@ class _StringsTh extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get reading_stats_day_reset_hour => 'Day starts at';
+  @override
+  String get reading_stats_day_reset_hour_hint =>
+      'Reading before this hour counts toward the previous day. Affects today and the last N days in statistics; only records written after the change use the new boundary.';
 }
 
 // Path: <root>
@@ -137551,6 +137614,11 @@ class _StringsTr extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get reading_stats_day_reset_hour => 'Day starts at';
+  @override
+  String get reading_stats_day_reset_hour_hint =>
+      'Reading before this hour counts toward the previous day. Affects today and the last N days in statistics; only records written after the change use the new boundary.';
 }
 
 // Path: <root>
@@ -147680,6 +147748,11 @@ class _StringsVi extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get reading_stats_day_reset_hour => 'Day starts at';
+  @override
+  String get reading_stats_day_reset_hour_hint =>
+      'Reading before this hour counts toward the previous day. Affects today and the last N days in statistics; only records written after the change use the new boundary.';
 }
 
 // Path: <root>
@@ -156990,6 +157063,11 @@ class _StringsZhCn extends _StringsEn {
   String get onboarding_pack_paused_desc => '进度留在磁盘上，继续下载会从中断处接着下。';
   @override
   String get onboarding_pack_mini_bar_hide => '收起';
+  @override
+  String get reading_stats_day_reset_hour => '「今日」从几点开始';
+  @override
+  String get reading_stats_day_reset_hour_hint =>
+      '这个整点之前的阅读算作前一天。影响统计里的「今日」与近 N 天；只有改设置之后写入的记录按新边界归日。';
 }
 
 // Path: <root>
@@ -166325,6 +166403,11 @@ class _StringsZhHk extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get reading_stats_day_reset_hour => 'Day starts at';
+  @override
+  String get reading_stats_day_reset_hour_hint =>
+      'Reading before this hour counts toward the previous day. Affects today and the last N days in statistics; only records written after the change use the new boundary.';
 }
 
 /// Flat map(s) containing all translations.
@@ -175152,6 +175235,10 @@ extension on _StringsEn {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'reading_stats_day_reset_hour':
+        return 'Day starts at';
+      case 'reading_stats_day_reset_hour_hint':
+        return 'Reading before this hour counts toward the previous day. Affects today and the last N days in statistics; only records written after the change use the new boundary.';
       default:
         return null;
     }
@@ -183974,6 +184061,10 @@ extension on _StringsAr {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'reading_stats_day_reset_hour':
+        return 'Day starts at';
+      case 'reading_stats_day_reset_hour_hint':
+        return 'Reading before this hour counts toward the previous day. Affects today and the last N days in statistics; only records written after the change use the new boundary.';
       default:
         return null;
     }
@@ -192841,6 +192932,10 @@ extension on _StringsDe {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'reading_stats_day_reset_hour':
+        return 'Day starts at';
+      case 'reading_stats_day_reset_hour_hint':
+        return 'Reading before this hour counts toward the previous day. Affects today and the last N days in statistics; only records written after the change use the new boundary.';
       default:
         return null;
     }
@@ -201699,6 +201794,10 @@ extension on _StringsEs {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'reading_stats_day_reset_hour':
+        return 'Day starts at';
+      case 'reading_stats_day_reset_hour_hint':
+        return 'Reading before this hour counts toward the previous day. Affects today and the last N days in statistics; only records written after the change use the new boundary.';
       default:
         return null;
     }
@@ -210566,6 +210665,10 @@ extension on _StringsFr {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'reading_stats_day_reset_hour':
+        return 'Day starts at';
+      case 'reading_stats_day_reset_hour_hint':
+        return 'Reading before this hour counts toward the previous day. Affects today and the last N days in statistics; only records written after the change use the new boundary.';
       default:
         return null;
     }
@@ -219404,6 +219507,10 @@ extension on _StringsId {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'reading_stats_day_reset_hour':
+        return 'Day starts at';
+      case 'reading_stats_day_reset_hour_hint':
+        return 'Reading before this hour counts toward the previous day. Affects today and the last N days in statistics; only records written after the change use the new boundary.';
       default:
         return null;
     }
@@ -228264,6 +228371,10 @@ extension on _StringsIt {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'reading_stats_day_reset_hour':
+        return 'Day starts at';
+      case 'reading_stats_day_reset_hour_hint':
+        return 'Reading before this hour counts toward the previous day. Affects today and the last N days in statistics; only records written after the change use the new boundary.';
       default:
         return null;
     }
@@ -237051,6 +237162,10 @@ extension on _StringsJa {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'reading_stats_day_reset_hour':
+        return 'Day starts at';
+      case 'reading_stats_day_reset_hour_hint':
+        return 'Reading before this hour counts toward the previous day. Affects today and the last N days in statistics; only records written after the change use the new boundary.';
       default:
         return null;
     }
@@ -245842,6 +245957,10 @@ extension on _StringsKo {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'reading_stats_day_reset_hour':
+        return 'Day starts at';
+      case 'reading_stats_day_reset_hour_hint':
+        return 'Reading before this hour counts toward the previous day. Affects today and the last N days in statistics; only records written after the change use the new boundary.';
       default:
         return null;
     }
@@ -254695,6 +254814,10 @@ extension on _StringsNl {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'reading_stats_day_reset_hour':
+        return 'Day starts at';
+      case 'reading_stats_day_reset_hour_hint':
+        return 'Reading before this hour counts toward the previous day. Affects today and the last N days in statistics; only records written after the change use the new boundary.';
       default:
         return null;
     }
@@ -263543,6 +263666,10 @@ extension on _StringsPtBr {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'reading_stats_day_reset_hour':
+        return 'Day starts at';
+      case 'reading_stats_day_reset_hour_hint':
+        return 'Reading before this hour counts toward the previous day. Affects today and the last N days in statistics; only records written after the change use the new boundary.';
       default:
         return null;
     }
@@ -272398,6 +272525,10 @@ extension on _StringsRu {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'reading_stats_day_reset_hour':
+        return 'Day starts at';
+      case 'reading_stats_day_reset_hour_hint':
+        return 'Reading before this hour counts toward the previous day. Affects today and the last N days in statistics; only records written after the change use the new boundary.';
       default:
         return null;
     }
@@ -281225,6 +281356,10 @@ extension on _StringsTh {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'reading_stats_day_reset_hour':
+        return 'Day starts at';
+      case 'reading_stats_day_reset_hour_hint':
+        return 'Reading before this hour counts toward the previous day. Affects today and the last N days in statistics; only records written after the change use the new boundary.';
       default:
         return null;
     }
@@ -290067,6 +290202,10 @@ extension on _StringsTr {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'reading_stats_day_reset_hour':
+        return 'Day starts at';
+      case 'reading_stats_day_reset_hour_hint':
+        return 'Reading before this hour counts toward the previous day. Affects today and the last N days in statistics; only records written after the change use the new boundary.';
       default:
         return null;
     }
@@ -298903,6 +299042,10 @@ extension on _StringsVi {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'reading_stats_day_reset_hour':
+        return 'Day starts at';
+      case 'reading_stats_day_reset_hour_hint':
+        return 'Reading before this hour counts toward the previous day. Affects today and the last N days in statistics; only records written after the change use the new boundary.';
       default:
         return null;
     }
@@ -307663,6 +307806,10 @@ extension on _StringsZhCn {
         return '进度留在磁盘上，继续下载会从中断处接着下。';
       case 'onboarding_pack_mini_bar_hide':
         return '收起';
+      case 'reading_stats_day_reset_hour':
+        return '「今日」从几点开始';
+      case 'reading_stats_day_reset_hour_hint':
+        return '这个整点之前的阅读算作前一天。影响统计里的「今日」与近 N 天；只有改设置之后写入的记录按新边界归日。';
       default:
         return null;
     }
@@ -316428,6 +316575,10 @@ extension on _StringsZhHk {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'reading_stats_day_reset_hour':
+        return 'Day starts at';
+      case 'reading_stats_day_reset_hour_hint':
+        return 'Reading before this hour counts toward the previous day. Affects today and the last N days in statistics; only records written after the change use the new boundary.';
       default:
         return null;
     }

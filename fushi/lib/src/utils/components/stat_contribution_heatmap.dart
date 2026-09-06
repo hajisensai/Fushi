@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 每屏**最少**列数（周数）。见 [StatContributionHeatmap.weeks]。
 const int kStatHeatmapMinWeeks = 17;
@@ -123,7 +124,7 @@ StatHeatmapModel buildStatHeatmap({
   int weeks = kStatHeatmapMinWeeks,
   int weekOffset = 0,
 }) {
-  final DateTime today = DateTime(now.year, now.month, now.day);
+  final DateTime today = statTodayDay(now);
   // 本周周一（DateTime.weekday: 周一=1..周日=7）。
   final DateTime thisMonday =
       today.subtract(Duration(days: today.weekday - DateTime.monday));
@@ -145,7 +146,9 @@ StatHeatmapModel buildStatHeatmap({
         col.add((dateKey: null, value: 0, day: day));
         continue;
       }
-      final String key = statDateKey(day);
+      // 格子是日历日：key 走日历日格式化，不能过 statDateKey——它会按重置时刻前移，
+      // 把 0 点合成的日历日当成前一日（重置 = 4 时整张图错位一天）。
+      final String key = FushiDatabase.statCalendarDayKeyOf(day);
       final int value = valueByDateKey[key] ?? 0;
       if (value > maxValue) maxValue = value;
       col.add((dateKey: key, value: value, day: day));
@@ -194,7 +197,7 @@ int maxHeatmapPageOffset({
   if (earliest == null) return 0;
   final DateTime earliestDay =
       DateTime(earliest.year, earliest.month, earliest.day);
-  final DateTime today = DateTime(now.year, now.month, now.day);
+  final DateTime today = statTodayDay(now);
   final DateTime thisMonday =
       today.subtract(Duration(days: today.weekday - DateTime.monday));
   final DateTime earliestMonday = earliestDay

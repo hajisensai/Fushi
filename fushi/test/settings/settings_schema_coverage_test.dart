@@ -43,6 +43,15 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'reading/Idle timeout':
       'test/media/audiobook/study_clock_test.dart（空闲门）+ '
           'test/tools/statistics_write_convergence_guard_test.dart',
+  // 「今日」重置时刻（整点）：写 prefsRepo（changed=true），生效点是
+  // AppModel._applyStatDayResetHour 镜像到 FushiDatabase.statDayResetHour——之后
+  // 每次 statDateKeyOf 派生 dateKey 才会前移，harness 的渲染输入观测不到。行为由
+  // stat_date_key_test（dateKey 前移 / 边界时长）+ stat_window_test / stat_summary_test /
+  // 热力图用例（读取面 key 算术）咬住。
+  'reading/Day starts at':
+      'test/stats/stat_date_key_test.dart + test/stats/stat_window_test.dart + '
+          'test/pages/stat_summary_test.dart + '
+          'test/widgets/stat_contribution_heatmap_test.dart',
   // 「功能模块」七开关（五库页 + 下载/查词两个工具 tab）。写 prefsRepo
   // （changed=true），生效点是 HomePage/macOS 侧栏的可见 tab 列表——harness 里没有
   // 挂 HomePage 外壳，探不到底栏。行为由 homeActiveTabs 纯函数用例咬住：各开关

@@ -10,6 +10,10 @@ const String kVideoWatchCoveragePrefPrefix = 'video_watch_coverage_';
 String videoWatchCoveragePrefKey(String bookUid) =>
     '$kVideoWatchCoveragePrefPrefix$bookUid';
 
+/// 「统计日」重置整点的偏好键（int 0..23，默认 0）。见
+/// [FushiDatabase.statDayResetHour]。
+const String kStatDayResetHourPrefKey = 'stats_day_reset_hour';
+
 mixin _FushiDbStatistics
     on
         _$FushiDatabase,
@@ -131,12 +135,69 @@ mixin _FushiDbStatistics
   // ── activity events (v49) ───────────────────────────────────────
   /// 追加一条活动事件（每次阅读/观看 session 结束或导入完成时写一行）。纯追加，
   /// 不去重、不累加——同书同日多次 session = 多行，读取端按需分组/计数。
-  /// 统计日分组键（本地时区 `yyyy-MM-dd`）。与 app 层 `statDateKey` /
-  /// fushi_audio 的小时桶 dateKey 同构——[recordReadingSession] 在 DB 层派生
-  /// dateKey 的单一来源，别再让调用方自算一份传进来。
-  static String statDateKeyOf(DateTime d) =>
-      '${d.year}-${d.month.toString().padLeft(2, '0')}-'
-      '${d.day.toString().padLeft(2, '0')}';
+  /// 「统计日」重置整点（0..23，默认 0 = 本地午夜）。用户可配「今日从几点开始」
+  /// （对齐 Hoshi Reader Android 的 `statisticsResetMinutes`，但只取整点：v92 学习段
+  /// 不跨整点边界，天边界落在整点上就永远不会撕裂一个段）。偏好键
+  /// [kStatDayResetHourPrefKey]，app 层加载偏好 / 用户改设置时写入这里；
+  /// [statDateKeyOf] 派生 dateKey 时按它把 `[reset, 次日 reset)` 归到起始那个日历日。
+  ///
+  /// 写入时定 dateKey（与 Hoshi 同）：改设置只影响之后写入的段，历史段保留写入时
+  /// 的 dateKey；`hour` 列保留真实本地小时，需要时可按 (dateKey, hour) 重分桶。
+  /// 跨设备同步的段带的是**写入设备**当时的 dateKey。
+  static int get statDayResetHour => _statDayResetHour;
+  static set statDayResetHour(int hour) {
+    _statDayResetHour = hour.clamp(0, 23);
+  }
+
+  static int _statDayResetHour = 0;
+
+  /// 统计日分组键（`yyyy-MM-dd`）：时刻 [d] 所属的**统计日**——按本地墙钟把小时
+  /// 减去 [statDayResetHour] 后取日历日（墙钟减法而不是 Duration 减法，DST 切换日
+  /// 不会多算 / 少算一小时）。与 app 层 `statDateKey` / fushi_audio 的小时桶 dateKey
+  /// 同构——[recordReadingSession] 在 DB 层派生 dateKey 的单一来源，别再让调用方
+  /// 自算一份传进来。
+  ///
+  /// **只给时刻用**。要拿「某个日历日」的键（热力图格子 / 近 N 天 / streak 回溯）
+  /// 走 [statDateKeyPlusDays] 做键算术或 [statCalendarDayKeyOf]，别把 `DateTime(y,m,d)`
+  /// 这种合成的午夜塞进来——重置整点非 0 时它会落到前一天。
+  static String statDateKeyOf(DateTime d) => statCalendarDayKeyOf(
+        DateTime(d.year, d.month, d.day, d.hour - _statDayResetHour, d.minute),
+      );
+
+  /// 日历日 → `yyyy-MM-dd`（不看重置整点，只取年月日）。
+  static String statCalendarDayKeyOf(DateTime day) =>
+      '${day.year}-${day.month.toString().padLeft(2, '0')}-'
+      '${day.day.toString().padLeft(2, '0')}';
+
+  /// dateKey → 该统计日对应的日历日（本地午夜的 DateTime；只用于日历算术，
+  /// 如求星期几 / 与另一个键相差几天）。非法键抛 [FormatException]。
+  static DateTime statDateKeyToDay(String dateKey) {
+    final List<String> parts = dateKey.split('-');
+    if (parts.length != 3) throw FormatException('bad dateKey', dateKey);
+    return DateTime(
+      int.parse(parts[0]),
+      int.parse(parts[1]),
+      int.parse(parts[2]),
+    );
+  }
+
+  /// 键算术：[dateKey] 往后 [days] 天（负数往前）的 dateKey，按日历加减、跨月跨年
+  /// 自动进位。近 N 天窗口 / streak 回溯 / 热力图格子一律走这里，不经时刻换算。
+  static String statDateKeyPlusDays(String dateKey, int days) {
+    final DateTime day = statDateKeyToDay(dateKey);
+    return statCalendarDayKeyOf(DateTime(day.year, day.month, day.day + days));
+  }
+
+  /// 从 [now] 起到下一个统计日边界（下一次 `statDayResetHour:00`）的时长，恒 > 0。
+  /// 统计页 / 首页用它排一次性 Timer：跨边界后整页重聚合（BUG-2181）。按日历取
+  /// 下一个整点（DST 切换日不是恰 24h）。
+  static Duration untilNextStatDayBoundary(DateTime now) {
+    DateTime next = DateTime(now.year, now.month, now.day, _statDayResetHour);
+    if (!next.isAfter(now)) {
+      next = DateTime(now.year, now.month, now.day + 1, _statDayResetHour);
+    }
+    return next.difference(now);
+  }
 
   Future<void> addActivityEvent({
     required String eventType,

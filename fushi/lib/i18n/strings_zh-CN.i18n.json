@@ -4294,5 +4294,7 @@
   "onboarding_pack_status_paused": "推荐包下载已暂停",
   "onboarding_pack_download_resume": "继续下载",
   "onboarding_pack_paused_desc": "进度留在磁盘上，继续下载会从中断处接着下。",
-  "onboarding_pack_mini_bar_hide": "收起"
+  "onboarding_pack_mini_bar_hide": "收起",
+  "reading_stats_day_reset_hour": "「今日」从几点开始",
+  "reading_stats_day_reset_hour_hint": "这个整点之前的阅读算作前一天。影响统计里的「今日」与近 N 天；只有改设置之后写入的记录按新边界归日。"
 }
