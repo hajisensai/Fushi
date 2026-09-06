@@ -2804,6 +2804,131 @@
         "tests/aos_sfa_adapter_test.cpp",
         "../../fushi/test/mining/aos_sfa_pairing_test.dart"
       ]
+    },
+    {
+      "id": "unity_mono",
+      "display_name": "Unity (Mono runtime)",
+      "aliases": [
+        "Unity Mono",
+        "Unity 5",
+        "ユニティ"
+      ],
+      "family": {
+        "id": "unity",
+        "relation": "Same engine family as unity_il2cpp but the Mono scripting backend; the two adapters are mutually exclusive by construction"
+      },
+      "detection": {
+        "executable_names": {
+          "values": [],
+          "evidence": null
+        },
+        "pe_architectures": {
+          "values": [
+            "x86",
+            "x64"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "カスタムメイド3D2 CHU-B LIP ships CM3D2OHx86.exe (machine 0x14c) and CM3D2OHx64.exe (machine 0x8664) side by side; static probe 2026-09-05"
+          }
+        },
+        "directory_files_all": {
+          "values": [
+            "<stem>_Data/Managed/Assembly-CSharp.dll",
+            "<stem>_Data/Mono/mono.dll"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Both present in CM3D2OHx64_Data. The adapter additionally requires that GameAssembly.dll is ABSENT next to the executable -- that negative gate is what keeps unity_mono and unity_il2cpp mutually exclusive. Measured 2026-09-05"
+          }
+        },
+        "pe_imports": {
+          "values": [],
+          "evidence": null
+        },
+        "runtime_modules": {
+          "values": [
+            "mono.dll"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "<stem>_Data/Mono/mono.dll is the Mono runtime. Note there is NO UnityPlayer.dll: this Unity 5.x generation links the engine statically into the executable, which is exactly why UnityIl2CppAdapter::probe() and the injector's LooksLikeUnityRuntime() -- both of which require UnityPlayer.dll -- leave this family unclaimed"
+          }
+        },
+        "resource_extensions": {
+          "values": [
+            ".assets",
+            ".resS"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Standard Unity data layout under <stem>_Data; no per-line voice extraction is implemented for it"
+          }
+        },
+        "hashes": {
+          "values": [
+            "5bb03fe8a924720f8da4df7a714565a8fcede94d2ef7b6f4b3b4e044f80d3eaa",
+            "7d79c2369e1a38107ccaaa9a089503506e05890edfda32d6eef25433612905c1"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "CM3D2OHx64.exe / CM3D2OHx86.exe, catalogue only; the adapter does not hash-pin because the structural Managed+Mono check is the identity"
+          }
+        }
+      },
+      "process_strategy": {
+        "launch": "generic_launch_available",
+        "attach": "generic_attach_available",
+        "follow_child_processes": false,
+        "notes": [
+          "The sample is a retail disc whose data\\ directory runs directly once extracted; the 2026-09-05 measurement launched data\\CM3D2OHx64.exe with --japanese-locale.",
+          "The injector's auto PC-hook criterion was deliberately NOT extended to this family: an A/B on the same title screen gave text_events 7 both with and without --luna-pchooks, so there is no measured benefit to widen the hook surface for."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "luna_hook",
+            "status": "implemented_unverified",
+            "verification": "LunaHook connected and produced output on the real sample (luna_active 1, LunaOutputObserved, text_events 7) but only title-screen strings were seen; no dialogue line was traversed and no thread was selected."
+          }
+        ],
+        "codepage": "932",
+        "thread_selection_hint": "Unmeasured. Only title-screen strings have been observed."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "xaudio2_or_directsound_pcm",
+            "format": "source PCM via the generic Windows audio adapter",
+            "status": "implemented_unverified",
+            "clean_voice": "engine_dependent"
+          },
+          {
+            "kind": "process_loopback",
+            "format": "host PCM fallback",
+            "status": "implemented_unverified",
+            "clean_voice": false
+          }
+        ]
+      },
+      "verified_games": [],
+      "current_status": "implemented_unverified",
+      "known_limitations": [
+        "This entry exists because the IL2CPP adapter and the injector's Unity heuristic both require UnityPlayer.dll, which the Unity 5.x generation does not ship. The v23 adapter readout confirmed on a live process that unity_il2cpp does not claim this family.",
+        "Identity is structural (Managed assembly + Mono runtime, and GameAssembly.dll absent). Executable hashes are catalogued but not pinned.",
+        "Per-line voice resources are Unity AudioClip assets; unity_events stayed 0 on the sample, so the existing Unity resource extractor produces nothing here. No resource layer is implemented and none is claimed.",
+        "Only title-screen strings were observed. text_thread_selected, paired and card_e2e are all not_run.",
+        "In-game lookup sensor is not implemented; lookupAdmission stays EngineUnsupported."
+      ],
+      "adapter_path": "hook/adapters/unity_mono_adapter.inc",
+      "fixture_paths": [
+        "tests/fixtures/unity_mono_replay.json"
+      ],
+      "test_paths": [
+        "tests/unity_mono_adapter_test.cpp",
+        "../../fushi/test/mining/unity_mono_pairing_test.dart"
+      ]
     }
   ]
 }
