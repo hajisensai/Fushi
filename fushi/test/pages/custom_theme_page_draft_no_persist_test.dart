@@ -94,6 +94,10 @@ class _RecordingAppModel extends AppModel {
   @override
   bool get isDarkMode => false;
 
+  // 编辑页预览在墨水屏模式下跟真机一样整套黑白，因此会读 einkMode。
+  @override
+  bool get einkMode => false;
+
   @override
   Color? get systemPrimaryColor => const Color(0xFF1F4959);
 }
@@ -227,8 +231,7 @@ void main() {
       final InkWell ink = tester.widget<InkWell>(
         find.ancestor(of: editIcon, matching: find.byType(InkWell)).first,
       );
-      expect(ink.onTap, isNull,
-          reason: '没有活跃自定义主题时编辑按钮必须禁用，而不是回落去开空草稿');
+      expect(ink.onTap, isNull, reason: '没有活跃自定义主题时编辑按钮必须禁用，而不是回落去开空草稿');
 
       await tester.tap(editIcon, warnIfMissed: false);
       await tester.pumpAndSettle();
@@ -286,7 +289,11 @@ void main() {
       final CustomThemeEntry saved = appModel.upserts.single;
       expect(saved.seed, kCustomThemeDefaultSeed);
       expect(saved.name, '');
-      expect(saved.primaryColor, isNull);
+      // 2026-09 重设计：新草稿默认所见即所得——主题色钉死为 primary（与 seed 同值），
+      // 其余角色全部跟随主题（null）。
+      expect(saved.primaryColor, kCustomThemeDefaultSeed);
+      expect(saved.fontColor, isNull);
+      expect(saved.bgColor, isNull);
       expect(saved.id, isNot(_existing.id));
       expect(appModel.customThemes, hasLength(2));
       expect(appModel.themeKeyWrites, <String>['custom-theme:${saved.id}']);

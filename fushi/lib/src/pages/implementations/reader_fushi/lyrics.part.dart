@@ -235,7 +235,9 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     return _themeTextColor();
   }
 
-  /// 歌词 / 悬浮窗高亮强调色。深色主题用固定高亮黄，浅色主题取当前主题 primary。
+  /// 歌词 / 悬浮窗高亮强调色：当前明暗下的主题 primary（深色纸底以前硬编码高亮黄，
+  /// 用户改主题色它不动；现在两档都跟主题色，深色下的可读性由主题色自己负责——
+  /// 编辑页有低对比提示）。
   ///
   /// TODO-953: 必须 context-free。本 getter 经 [AudiobookSession.installReaderSurfaces]
   /// 注入到进程级 session，悬浮窗样式可能在 reader 页 dispose / 未 mounted 之后被求值
@@ -246,8 +248,11 @@ extension _ReaderLyrics on _ReaderFushiPageState {
   /// ThemeData 的 ColorScheme 完全一致，颜色不变），明暗按 [_isReaderThemeDark] 派生，
   /// 彻底去掉对 reader State.context 的脆弱依赖。
   Color _readerLyricAccentColor() {
-    if (_isReaderThemeDark) return FushiColor.defaultHighlightYellow;
-    return appModel.buildColorScheme(Brightness.light).primary;
+    return appModel
+        .buildColorScheme(
+          _isReaderThemeDark ? Brightness.dark : Brightness.light,
+        )
+        .primary;
   }
 
   Future<void> _updateLyricsStyleLive() async {
