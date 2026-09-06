@@ -2521,7 +2521,7 @@ class AppModel with ChangeNotifier {
 
       debugPrint('[Fushi] init: repositories (parallel)');
       await Future.wait(<Future<void>>[
-        prefsRepo.loadFromDb(),
+        prefsRepo.loadFromDb().then((_) => _applyStatDayResetHour()),
         profileRepo.ensureDefaultProfile(),
         dictRepo.loadFromDb(),
         mediaHistoryRepo.loadFromDb(),
@@ -2916,6 +2916,7 @@ class AppModel with ChangeNotifier {
 
       _prefsRepo = PreferencesRepository(_database);
       await prefsRepo.loadFromDb();
+      _applyStatDayResetHour();
       prefsRepo.addListener(notifyListeners);
       // BUG-1647：同主进程路径，替换前取消旧实例可能挂起的重试定时器。
       _mediaTrackingService?.dispose();
@@ -6723,6 +6724,19 @@ class AppModel with ChangeNotifier {
       Duration(minutes: readingIdleTimeoutMinutes);
   Future<void> setReadingIdleTimeoutMinutes(int value) =>
       prefsRepo.setReadingIdleTimeoutMinutes(value);
+
+  /// 统计「今日」重置时刻（整点）。偏好层未就绪时回落 0（本地午夜）。
+  int get statDayResetHour => _prefsRepo?.statDayResetHour ?? 0;
+  Future<void> setStatDayResetHour(int value) async {
+    await prefsRepo.setStatDayResetHour(value);
+    _applyStatDayResetHour();
+  }
+
+  /// 把偏好镜像到 [FushiDatabase.statDayResetHour]——dateKey 派生的唯一输入。
+  /// 偏好加载后（主进程 / 弹窗进程两条初始化路径）与用户改设置时各调一次。
+  void _applyStatDayResetHour() {
+    FushiDatabase.statDayResetHour = statDayResetHour;
+  }
 
   int get readingGoalWeeklyChars => prefsRepo.readingGoalWeeklyChars;
   Future<void> setReadingGoalWeeklyChars(int value) =>

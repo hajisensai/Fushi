@@ -25,6 +25,12 @@ String statDateKey(DateTime d) => FushiDatabase.statDateKeyOf(d);
 /// 「今天」的统计 dateKey（按本地时区当天）。记账写入（[addMiningCount] 等）取此值。
 String statTodayKey() => statDateKey(DateTime.now());
 
+/// [now] 所属统计日的日历日（本地 0 点）：先按可配重置时刻取 dateKey 再还原成日期。
+/// 热力图等按「日历日」摆格子的地方用它当今日，不得用 `DateTime(y, m, d)` 合成午夜
+/// （重置时刻 = 4 点时凌晨 2 点仍属昨日）。
+DateTime statTodayDay(DateTime now) =>
+    FushiDatabase.statDateKeyToDay(statDateKey(now));
+
 /// 纯函数：把 (dateKey, count) 事件按 [now] 的今日/本周/本月/全部窗口累加。
 /// 窗口阈值只来自 [StatWindow]（v92：近 7 天恰 7 天、近 30 天恰 30 天）。
 StatActivityBuckets bucketActivityByDateKey(

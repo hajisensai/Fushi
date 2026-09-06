@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_summary.dart';
 import 'package:fushi/src/pages/implementations/stat_trends.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 造一个每日数据点（升序序列的一格）。
 StatDayData _day(String dateKey, int chars, int ms) {
@@ -54,6 +55,22 @@ void main() {
     test('neither today nor yesterday -> 0', () {
       final Set<String> keys = <String>{kBack(2), kBack(3)};
       expect(computeReadingStreak(keys, now), 0);
+    });
+
+    test('「今日」重置时刻 = 4：凌晨 2 点按昨日起算，不把日历今日当断档', () {
+      FushiDatabase.statDayResetHour = 4;
+      addTearDown(() => FushiDatabase.statDayResetHour = 0);
+      // 06-19 / 06-18 有记录、日历 06-20 没有；现在是 06-20 02:00 → 统计日仍是 06-19，
+      // streak 从「今日」(06-19) 起连 2 天；旧实现合成午夜会把 06-20 当今日、06-19 当
+      // 昨日，同样得 2，但 06-19 / 06-17 这种就分叉——见下一断言。
+      final DateTime now = DateTime(2026, 6, 20, 2);
+      expect(computeReadingStreak(<String>{kBack(1), kBack(2)}, now), 2);
+      // 06-19 有、06-18 没有、06-17 有：统计今日 = 06-19 → streak 1。
+      expect(computeReadingStreak(<String>{kBack(1), kBack(3)}, now), 1);
+      // 只有 06-17：统计今日 06-19、昨日 06-18 都没有 → 0（日历口径会把 06-19
+      // 当昨日、也得 0；但 06-18 单独有时，统计口径是「昨日」→ 1，日历口径 → 0）。
+      expect(computeReadingStreak(<String>{kBack(3)}, now), 0);
+      expect(computeReadingStreak(<String>{kBack(2)}, now), 1);
     });
   });
 

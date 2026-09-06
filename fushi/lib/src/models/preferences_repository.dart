@@ -2857,6 +2857,27 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 统计「今日」重置时刻（整点 0..23，默认 0 = 本地午夜）：写入时把 dateKey 前移
+  /// 该小时数（凌晨 2 点读的书在重置 = 4 时记到「昨日」）。全局唯一入口是
+  /// [FushiDatabase.statDayResetHour]，AppModel 在偏好加载后与变更时镜像过去；
+  /// 历史段不重分桶（用户改设置只影响之后写入）。
+  static const int statDayResetHourMin = 0;
+  static const int statDayResetHourMax = 23;
+
+  int get statDayResetHour =>
+      (getPref(kStatDayResetHourPrefKey, defaultValue: 0) as int).clamp(
+        statDayResetHourMin,
+        statDayResetHourMax,
+      );
+
+  Future<void> setStatDayResetHour(int value) async {
+    await setPref(
+      kStatDayResetHourPrefKey,
+      value.clamp(statDayResetHourMin, statDayResetHourMax),
+    );
+    notifyListeners();
+  }
+
   int get readingGoalDailyChars =>
       (getPref('reading_goal_daily_chars', defaultValue: 0) as int)
           .clamp(0, 1000000);

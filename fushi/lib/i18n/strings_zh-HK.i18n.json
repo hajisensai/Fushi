@@ -4296,5 +4296,7 @@
   "video_setting_subtitle_obscure_reveal": "懸停或點擊顯形",
   "video_setting_subtitle_obscure_reveal_hint": "字幕處於模糊或隱藏時，桌面懸停、流動裝置點擊可臨時顯形；關掉後遮蔽始終保持，不會被誤觸揭開。",
   "video_library_scrape_pending_banner": "$count works still need identity confirmation",
-  "video_library_scrape_pending_banner_action": "Confirm"
+  "video_library_scrape_pending_banner_action": "Confirm",
+  "reading_stats_day_reset_hour": "Day starts at",
+  "reading_stats_day_reset_hour_hint": "Reading before this hour counts toward the previous day. Affects today and the last N days in statistics; only records written after the change use the new boundary."
 }

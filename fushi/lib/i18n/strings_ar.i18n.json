@@ -4296,5 +4296,7 @@
   "video_setting_subtitle_obscure_reveal": "Reveal on hover or tap",
   "video_setting_subtitle_obscure_reveal_hint": "While subtitles are blurred or hidden, hovering (desktop) or tapping them reveals them temporarily. Turn this off to keep them obscured no matter what.",
   "video_library_scrape_pending_banner": "$count works still need identity confirmation",
-  "video_library_scrape_pending_banner_action": "Confirm"
+  "video_library_scrape_pending_banner_action": "Confirm",
+  "reading_stats_day_reset_hour": "Day starts at",
+  "reading_stats_day_reset_hour_hint": "Reading before this hour counts toward the previous day. Affects today and the last N days in statistics; only records written after the change use the new boundary."
 }

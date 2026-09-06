@@ -3762,6 +3762,29 @@ class FushiDatabase extends _$FushiDatabase
   static String statDateKeyOf(DateTime d) =>
       _FushiDbStatistics.statDateKeyOf(d);
 
+  /// 「统计日」重置整点（0..23，默认 0）——「今日」从几点开始；见
+  /// [_FushiDbStatistics.statDayResetHour]。偏好键 [kStatDayResetHourPrefKey]。
+  static int get statDayResetHour => _FushiDbStatistics.statDayResetHour;
+  static set statDayResetHour(int hour) =>
+      _FushiDbStatistics.statDayResetHour = hour;
+
+  /// 日历日 → `yyyy-MM-dd`（不看重置整点）。
+  static String statCalendarDayKeyOf(DateTime day) =>
+      _FushiDbStatistics.statCalendarDayKeyOf(day);
+
+  /// dateKey → 对应日历日（本地午夜 DateTime，只用于日历算术）。
+  static DateTime statDateKeyToDay(String dateKey) =>
+      _FushiDbStatistics.statDateKeyToDay(dateKey);
+
+  /// 键算术：[dateKey] 往后 [days] 天（负数往前）。窗口 / streak / 热力图一律走
+  /// 这里，不要把合成的午夜 DateTime 喂给 [statDateKeyOf]。
+  static String statDateKeyPlusDays(String dateKey, int days) =>
+      _FushiDbStatistics.statDateKeyPlusDays(dateKey, days);
+
+  /// 到下一个统计日边界（下一次 `statDayResetHour:00`）的时长，恒 > 0。
+  static Duration untilNextStatDayBoundary(DateTime now) =>
+      _FushiDbStatistics.untilNextStatDayBoundary(now);
+
   /// v92 学习事实段的幂等键生成（转发 [_FushiDbStatistics.newStudySegmentUid]；
   /// mixin 的 static 不经类继承，这里给调用方一个稳定入口）。
   static String newStudySegmentUid() => _FushiDbStatistics.newStudySegmentUid();
