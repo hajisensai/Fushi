@@ -11,8 +11,23 @@ name: Mirror release assets to R2
 # 只是少一层下载冗余。
 
 on:
+  # `release: published` 只说明 release 条目建好了，**不代表资产传完了**：正式版的
+  # 安装包由 release.yml / release-desktop.yml 分批上传，实测比 published 晚 30～100
+  # 分钟（v2.2.4：published 13:14，Android 13:44，Windows/macOS/iOS 14:52）。所以它
+  # 单独当触发器必然镜像到一个残缺集合。真正「这批资产已经就位」的信号是
+  # update-manifest 分支上的正式版清单被写入——那份 JSON 由上传完成的那个 job 写，
+  # 也正是 fushi.moe 的 Worker 判定「这个版本有哪些下载」的权威。
+  #
+  # 两个触发器都保留、判据统一（见 Require published manifest…那一步）：published
+  # 早到就跳过，清单写入后再来一次把它补齐；同一 tag 重跑是幂等的。
+  # paths 过滤是必需的：debug 通道每次 push 都写这个分支（一天几十次），
+  # 只有正式版清单变化才值得镜像。
   release:
     types: [published]
+  push:
+    branches: [update-manifest]
+    paths:
+      - latest-stable-fushi.json
   workflow_dispatch:
     inputs:
       tag:
@@ -54,6 +69,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # update-manifest 是只放 JSON 的孤儿分支，没有 tool/ 下的计划脚本。
+          # push 触发时不显式钉住默认分支，checkout 出来的树里跑不了本 workflow。
+          ref: ${{ github.event.repository.default_branch }}
 
       - name: Check Cloudflare credentials
         id: guard
@@ -79,8 +98,10 @@ jobs:
         run: |
           set -euo pipefail
 
+          MANUAL=false
           if [ -n "${INPUT_TAG:-}" ]; then
             TAG="$INPUT_TAG"
+            MANUAL=true
           elif [ -n "${EVENT_TAG:-}" ]; then
             TAG="$EVENT_TAG"
           else
@@ -95,8 +116,52 @@ jobs:
           if [ "$PRERELEASE" = "true" ] && [ "${FORCE_PRERELEASE:-false}" != "true" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "::notice::$TAG 是预发布版本，按策略不镜像（需要时用 workflow_dispatch 勾 force_prerelease）。"
-          else
+            exit 0
+          fi
+
+          # 人工指定 tag 是补救路径：明确知道要镜像哪个版本（含清单里没有的预发布），
+          # 不设下面的就位门，否则手动补镜像会被自己的门挡住。
+          if [ "$MANUAL" = "true" ]; then
             echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::人工指定 $TAG，跳过发布清单就位检查。"
+            exit 0
+          fi
+
+          # 资产就位门。
+          #
+          # `release: published` 只说明 release 条目建好了。正式版安装包由 release.yml /
+          # release-desktop.yml 分批上传，实测晚 30～100 分钟（v2.2.4：published 13:14，
+          # Android 13:44，Windows/macOS/iOS 14:52）。旧实现在 published 那一刻就把当时
+          # 存在的资产当成全集，于是只镜像到 3 个无关的 bridge apk 却报 success，
+          # fushi.moe 上「Cloudflare 镜像」三天都在 302 去 GitHub。
+          #
+          # 唯一可靠的「这批资产已就位」信号是 update-manifest 分支上的正式版清单：
+          # 它由上传完成的那个 job 写，也正是 Worker 判定「这个版本有哪些下载」的权威。
+          # 清单跨平台取并集，所以它列出的就是此刻该 tag 已发布的全部资产。
+          if ! gh api "repos/$GITHUB_REPOSITORY/contents/latest-stable-fushi.json?ref=update-manifest" \
+                 -q .content | base64 -d > published-manifest.json; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::读不到 update-manifest 分支的正式版清单，无法确认资产是否就位；本次不镜像。"
+            exit 0
+          fi
+
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets -q '.assets[].name' \
+            > release-assets.txt
+
+          # 判据本体在 tool/r2_mirror_readiness.mjs（有单测），这里只负责喂输入、播报结论。
+          # 它把 skip= 直接追加进 GITHUB_OUTPUT，就位时另写 expected-assets.txt 给下游断言。
+          node --test tool/r2_mirror_readiness.test.mjs
+          VERDICT="$(node tool/r2_mirror_readiness.mjs \
+            --published-manifest published-manifest.json \
+            --tag "$TAG" \
+            --release-assets release-assets.txt \
+            --out-expected expected-assets.txt \
+            --github-output "$GITHUB_OUTPUT")"
+
+          if [ -f expected-assets.txt ]; then
+            echo "发布清单已登记 $TAG 的资产（$VERDICT），开始镜像。"
+          else
+            echo "::notice::$TAG 的资产尚未就位（$VERDICT）。正式版清单写入时会再触发一次，本次不镜像。"
           fi
 
       - name: Download release assets
@@ -157,21 +222,46 @@ jobs:
             const fs = require("fs");
             const m = JSON.parse(fs.readFileSync("manifest-full.json", "utf8"));
             const max = Number(process.env.MAX_BYTES);
+            const oversize = [];
             m.assets = m.assets.filter((asset) => {
               const path = "assets/" + asset.name;
               if (!fs.existsSync(path)) return false;
               asset.size = fs.statSync(path).size;
               if (asset.size > max) {
+                oversize.push(asset.name);
                 console.log("跳过超限资产 " + asset.name + " (" + asset.size + " bytes)");
                 return false;
               }
               return true;
             });
+            // 先落盘再断言：断言红了 summary 照样要能说清哪些是被上限挡掉的。
+            fs.writeFileSync("oversize-assets.txt", oversize.join("\n") + (oversize.length ? "\n" : ""));
             if (m.assets.length === 0) throw new Error("没有可镜像的限额内资产");
+
+            // 完整性断言：发布清单登记了、又没超单文件上限的资产，必须全部进这一批。
+            // 少了任何一个都说明镜像集合和发布集合脱节了——那正是 v2.2.4 的形态：
+            // 只镜像到 bridge apk、一个本体包都没有，却报 success 三天没人发现。
+            // 这里宁可让 job 红，也不要再产出一次「成功但没用」的镜像。
+            if (fs.existsSync("expected-assets.txt")) {
+              const want = fs.readFileSync("expected-assets.txt", "utf8").split("\n").filter(Boolean);
+              const got = new Set(m.assets.map((a) => a.name));
+              const skipped = new Set(oversize);
+              const missing = want.filter((n) => !got.has(n) && !skipped.has(n));
+              if (missing.length) {
+                throw new Error("发布清单登记的资产没进镜像集合：" + missing.join(", "));
+              }
+            }
+
             m.mirroredAt = new Date().toISOString();
             fs.writeFileSync("manifest.json", JSON.stringify(m, null, 2));
             console.log("清单收录 " + m.assets.length + " 个资产");
           '
+
+          # 超限资产不是「没事」：它们永远只能从 GitHub 下（Worker 会 302 过去），
+          # 下载页上仍会显示成 Cloudflare 镜像。摆进 summary，别让它继续隐身在日志里。
+          if [ -s oversize-assets.txt ]; then
+            echo "::warning::以下资产超过 ${MAX_ASSET_MB}MB 单文件上限，未镜像到 R2，下载会 302 回 GitHub：$(tr '\n' ' ' < oversize-assets.txt)"
+          fi
 
       - name: Read current R2 ledger
         if: steps.guard.outputs.ready == 'true' && steps.target.outputs.skip == 'false' && github.event.inputs.bootstrap_empty_ledger != 'true'
@@ -285,4 +375,8 @@ jobs:
             printf -- '- 资产数: `%s`\n' "${ASSET_COUNT:-0}"
             printf -- '- 容量守卫通过: `%s`\n' "${CAPACITY_ALLOWED:-未运行}"
             printf -- '- 计划桶容量: `%s bytes`\n' "${PLANNED_BYTES:-0}"
+            if [ -s oversize-assets.txt ]; then
+              printf -- '- 超 %sMB 未镜像（下载会 302 回 GitHub）: `%s`\n' \
+                "$MAX_ASSET_MB" "$(tr '\n' ' ' < oversize-assets.txt)"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"

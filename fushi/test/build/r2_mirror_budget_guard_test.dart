@@ -65,6 +65,66 @@ void main() {
       reason: '零付费方案只允许 R2 免费层，不启用付费 Cache Reserve',
     );
   });
+
+  test('镜像只在发布清单确认资产就位后动手，且镜不全就红', () {
+    // v2.2.4：release published 13:14 触发镜像，Android 包 13:44、桌面包 14:52 才上传，
+    // 于是只镜像到 3 个 bridge apk 却报 success —— fushi.moe 的「Cloudflare 镜像」
+    // 三天都在 302 去 GitHub。这条守卫钉住修复后的两个不变式：就位再动手、镜不全就红。
+    final String workflow = File(
+      '../.github/workflows/mirror-releases.yml',
+    ).readAsStringSync();
+
+    expect(
+      workflow,
+      contains('branches: [update-manifest]'),
+      reason: '正式版清单写入才是「资产已就位」的信号，published 事件不是',
+    );
+    expect(
+      workflow,
+      contains('- latest-stable-fushi.json'),
+      reason: 'debug 通道一天写几十次这个分支，触发必须按路径收敛到正式版清单',
+    );
+    expect(
+      _step(workflow, 'Checkout'),
+      contains(r'ref: ${{ github.event.repository.default_branch }}'),
+      reason: 'update-manifest 是只放 JSON 的孤儿分支，不钉默认分支就没有 tool/ 脚本',
+    );
+
+    final String target = _step(workflow, 'Resolve target release');
+    expect(target, contains('latest-stable-fushi.json?ref=update-manifest'));
+    expect(
+      target,
+      contains('node tool/r2_mirror_readiness.mjs'),
+      reason: '就位判据必须走带单测的脚本，不要再内联进 workflow',
+    );
+    expect(
+      target,
+      contains('node --test tool/r2_mirror_readiness.test.mjs'),
+      reason: '判据脚本的单测要在用它之前跑，和 r2_mirror_plan 同规格',
+    );
+    expect(
+      File('../tool/r2_mirror_readiness.mjs').existsSync(),
+      isTrue,
+      reason: 'workflow 引用的判据脚本必须真的在仓库里',
+    );
+
+    final String build = _step(workflow, 'Build bounded mirror manifest');
+    expect(
+      build,
+      contains('expected-assets.txt'),
+      reason: '镜像集合要拿发布清单登记的名单核对，而不是「有几个算几个」',
+    );
+    expect(
+      build,
+      contains('发布清单登记的资产没进镜像集合'),
+      reason: '缺资产必须让 job 红，不能再产出一次「成功但没用」的镜像',
+    );
+    expect(
+      build,
+      contains('oversize-assets.txt'),
+      reason: '超单文件上限的资产要落盘并进 summary，别隐身在日志里',
+    );
+  });
 }
 
 /// 切出 workflow 里名为 [name] 的一个 step（从它的 `- name:` 到下一个 `- name:`）。
