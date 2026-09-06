@@ -328,13 +328,54 @@ void main() {
       expect(script, contains('OpenMutexW'));
       expect(script, contains('@kernel32.dll stdcall'));
       expect(script, contains('FushiSingleInstanceMutex'));
-      // Terminates hibiki.exe and its WebView2 child tree before the check.
+      // Terminates fushi.exe / hibiki.exe / WebView2 **by image name** before
+      // the check (BUG-2166: never by process tree — see the /T guard below).
       expect(script, contains('taskkill'));
       expect(script, contains('hibiki.exe'));
       expect(script, contains('msedgewebview2.exe'));
       // Bounded poll until the mutex is actually released (no infinite wait).
       expect(script, contains('MutexReleasePollAttempts'));
       expect(script, contains('Sleep(MutexReleasePollIntervalMs)'));
+    });
+
+    test(
+        'BUG-2166: taskkill 绝不带 /T —— 安装器自己就在 fushi.exe 的后代进程树里',
+        () {
+      // 应用内静默更新时进程链是
+      //   fushi.exe → fushi_update_launcher.exe → <本 setup.exe>
+      // 而 taskkill 的 /T 递归杀整条后代树（实测：/F /IM <parent> /T 连孙进程
+      // 一起终止）。于是 InitializeSetup 的自我防卫会把 launcher 和安装器自己
+      // 一并杀掉：安装器自杀、日志停在启动段、磁盘留在旧版，且 BUG-1708 的
+      // 「安装失败把 app 拉回来」兜底也随 launcher 一起没了。
+      //
+      // 断言落在**整个实参列表**上，而不是整份文件、也不是第一个字符串字面量：
+      // - 整份文件会假红：注释里就写着 /T（在解释为什么禁用）。
+      // - 只看第一个字面量会假绿：`'/F /IM ' + ExeName + ' /T'` 这种拼接能绕过去
+      //   （这条守卫第一版就是这么写的，变异实测当场放行）。
+      final String script = File(
+        'windows/installer/fushi.iss',
+      ).readAsStringSync();
+
+      final List<RegExpMatch> calls = RegExp(
+        r"Exec\(ExpandConstant\('\{sys\}\\taskkill\.exe'\)([\s\S]*?)\);",
+      ).allMatches(script).toList(growable: false);
+
+      expect(
+        calls,
+        isNotEmpty,
+        reason: '没找到任何 taskkill 调用 —— 要么调用形状变了、要么这条守卫失效了，'
+            '两种都必须有人看一眼，不能静默放行。',
+      );
+      for (final RegExpMatch call in calls) {
+        final String args = call.group(1)!;
+        expect(
+          args.contains('/T'),
+          isFalse,
+          reason: 'taskkill 实参 "${args.trim()}" 里出现了 /T：它会连同安装器'
+              '所在的祖先进程树一起杀掉（BUG-2166）。按 image 名杀就够了 —— '
+              'WebView2 的每个子进程都叫 msedgewebview2.exe，已被单独一行覆盖。',
+        );
+      }
     });
 
     test('update launcher is not the Flutter runner and does not take mutex',

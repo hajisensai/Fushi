@@ -109,6 +109,23 @@ class Gamepads {
   void init();
   void stop();
   std::list<GamepadData*> get_gamepads();
+
+  // BUG-2167: 唯一职责是「进程退出时不留下 joinable 的 std::thread」。
+  //
+  // 全局 `gamepads` 是静态存储期对象，进程退出时由 CRT 的 onexit 表析构。而
+  // `std::thread` 的析构函数对**仍 joinable** 的线程直接 `std::terminate()` →
+  // `abort()`，在 Windows 上表现为 `0xc0000409 FAST_FAIL_FATAL_APP_EXIT`。
+  // 这条路径**每次退出都会走到**：Fushi 的两条退出路径（更新交接
+  // `platform_updater.dart`、关窗 `desktop_lifecycle_service.dart`）最终都调
+  // `exit(0)`，而 `exit(0)` **故意**跳过 Flutter 插件析构，于是
+  // `~GamepadsWindowsPlugin()` 里的 `stop()` 永远不会执行，`reaper_thread`
+  // 带着 joinable 状态活到 onexit 表 —— 只要机器上有 GameInput.dll（即 init()
+  // 起过 reaper）就必然如此。
+  //
+  // 下游代价远不止一条崩溃记录：崩溃进程被 WER 冻住数分钟不死，
+  // `FushiSingleInstanceMutex` 随之一直被持有，应用内更新的整条交接链
+  // （launcher 等父进程退出 → 等互斥量释放 → 启动 Inno）全部超时。
+  ~Gamepads();
 };
 
 extern Gamepads gamepads;
