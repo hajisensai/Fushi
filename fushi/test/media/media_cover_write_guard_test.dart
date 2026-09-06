@@ -78,7 +78,9 @@ enum CoverDeriverRole {
 /// 语义与 BUG-1394 的 `allowedRawWriters` 一致：新增一个裸写函数、或把这些函数改
 /// 去写封面，都会让登记与实际不符而转红。
 const Map<String, Set<String>> kNonCoverRawWriters = <String, Set<String>>{
-  'lib/src/sync/app_model_library_host_service.dart': <String>{
+  // B4 拆分后视频域在 videos.part.dart：派生点（importVideo）与裸写点
+  // （_moveFileInto，已提为该 part 的顶层 helper）都在这一个文件里。
+  'lib/src/sync/local_library_host_service/videos.part.dart': <String>{
     // 上传落地：搬的是视频本体（1 处）与外挂字幕（1 处），都不是封面。
     // 本文件的封面路只派生 coversDir 交给 CoverMetaStore/extractVideoCover。
     '_moveFileInto',
@@ -166,7 +168,7 @@ const Map<String, (CoverDeriverRole, String)> kCoverPathDerivers =
     '库页手选/重取封面时派生 coversDir 做来源准入与指针更新，字节落盘由被调用的'
         '抽帧/服务侧完成，页面自身不写盘。',
   ),
-  'lib/src/sync/app_model_library_host_service.dart': (
+  'lib/src/sync/local_library_host_service/videos.part.dart': (
     CoverDeriverRole.rawWritesNonCoverAssets,
     '互联 host 收上传：派生 coversDir 只为 CoverMetaStore 的自动抽帧准入，封面字节'
         '由 extractVideoCover 写。文件里的裸写是 _moveFileInto 搬上传的视频本体与'

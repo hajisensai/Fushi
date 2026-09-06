@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/aggregate_snapshot.dart';
-import 'package:fushi/src/sync/app_model_library_host_service.dart';
+import 'package:fushi/src/sync/local_library_host_service.dart';
 import 'package:fushi/src/sync/sync_asset_package_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -11,8 +11,8 @@ import 'package:fushi_core/fushi_core.dart';
 /// service 层 getAggregateSnapshot / applyAggregateSnapshot 必须复用云后端 phase B
 /// 的 AggregateSyncService（materialize/apply），保证 MAX / 并集 / 幂等语义在互联
 /// 通道与云通道完全一致（不是第二套实现）。
-AppModelLibraryHostService _svc(FushiDatabase db) =>
-    AppModelLibraryHostService(
+LocalLibraryHostService _svc(FushiDatabase db) =>
+    LocalLibraryHostService(
       db: db,
       dictionaryResourceRoot: Directory.systemTemp,
       packages: SyncAssetPackageService(db: db),
@@ -64,7 +64,7 @@ void main() {
 
   group('applyAggregateSnapshot（host-apply：真写统计/收藏 DB）', () {
     test('空 host 收到 client 快照 → MAX / 并集写入本机 DB', () async {
-      final AppModelLibraryHostService svc = _svc(db);
+      final LocalLibraryHostService svc = _svc(db);
       final AggregateSnapshot incoming = AggregateSnapshot(
         readingStats: const <ReadingStatRecord>[
           ReadingStatRecord(
@@ -105,7 +105,7 @@ void main() {
         readingTimeMs: 9000,
         lastStatisticModified: 20,
       ));
-      final AppModelLibraryHostService svc = _svc(db);
+      final LocalLibraryHostService svc = _svc(db);
       await svc.applyAggregateSnapshot(AggregateSnapshot(
         readingStats: const <ReadingStatRecord>[
           ReadingStatRecord(
@@ -124,7 +124,7 @@ void main() {
     });
 
     test('重复 apply 同一快照 → 幂等（挖掘 MAX 非 SUM，不翻倍）', () async {
-      final AppModelLibraryHostService svc = _svc(db);
+      final LocalLibraryHostService svc = _svc(db);
       final AggregateSnapshot snap = AggregateSnapshot(
         miningStats: const <MiningRecord>[
           MiningRecord(sourceType: 'book', dateKey: '2026-06-01', count: 4),
@@ -143,7 +143,7 @@ void main() {
         sourceType: 'book',
         dateKey: '2026-06-01',
       );
-      final AppModelLibraryHostService svc = _svc(db);
+      final LocalLibraryHostService svc = _svc(db);
       await svc.applyAggregateSnapshot(AggregateSnapshot(
         favoriteWords: const <FavoriteWordRecord>[
           FavoriteWordRecord(

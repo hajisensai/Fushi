@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' show DatabaseConnection, Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/sync/app_model_library_host_service.dart';
+import 'package:fushi/src/sync/local_library_host_service.dart';
 import 'package:fushi/src/sync/collection_manifest.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/fushi_library_host_service.dart';
@@ -12,6 +12,8 @@ import 'package:fushi/src/sync/sync_asset_package_service.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
+
+import 'local_library_host_service_source_corpus.dart';
 
 /// 互联 host 合集能力测试（多端库联合视图 §2.3 任务5）：
 /// - 目录响应含合集归属（[RemoteBookInfo.collection] / [RemoteVideoInfo.collection]）；
@@ -26,8 +28,7 @@ void main() {
     return db;
   }
 
-  AppModelLibraryHostService buildSvc(FushiDatabase db) =>
-      AppModelLibraryHostService(
+  LocalLibraryHostService buildSvc(FushiDatabase db) => LocalLibraryHostService(
         db: db,
         dictionaryResourceRoot: Directory.systemTemp,
         packages: SyncAssetPackageService(db: db),
@@ -238,9 +239,9 @@ void main() {
     });
 
     test('BUG-814 守卫: host 库服务不得在列表路径引用 ffmpeg 内嵌探测', () {
-      final String src =
-          File('lib/src/sync/app_model_library_host_service.dart')
-              .readAsStringSync();
+      // B4 拆分后 listVideos 在 videos.part.dart；负向断言扫主库 + 全部 part 的
+      // 合并语料（只扫主库会真空通过）。
+      final String src = readLocalLibraryHostServiceSource();
       expect(src.contains('listEmbeddedSubtitleTracks'), isFalse,
           reason: 'listVideos 一旦重新引入内嵌字幕 ffmpeg 探测，大库互联视频列表会再次'
               '超过 client 15s 超时变空（BUG-814 回归）');

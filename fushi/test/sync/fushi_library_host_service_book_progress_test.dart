@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/sync/app_model_library_host_service.dart';
+import 'package:fushi/src/sync/local_library_host_service.dart';
 import 'package:fushi/src/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/sync_asset_package_service.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -11,7 +11,7 @@ import 'package:fushi_core/fushi_core.dart';
 /// host-apply 测试（TODO-767 / BUG-417）：互联书籍进度 live 端点必须真读写 host
 /// 自己的 `reader_positions` DB（修复根因：旧路径只把进度写进 host 永不回灌 DB 的
 /// WebDAV 文件箱 progress_*.json）。
-AppModelLibraryHostService _svc(FushiDatabase db) => AppModelLibraryHostService(
+LocalLibraryHostService _svc(FushiDatabase db) => LocalLibraryHostService(
       db: db,
       dictionaryResourceRoot: Directory.systemTemp,
       packages: SyncAssetPackageService(db: db),
@@ -131,7 +131,7 @@ void main() {
 
   group('getBookProgress', () {
     test('host 无记录 → empty', () async {
-      final AppModelLibraryHostService svc = _svc(db);
+      final LocalLibraryHostService svc = _svc(db);
       final RemoteBookProgress p = await svc.getBookProgress('BookX');
       expect(p.updatedAtMs, 0);
       expect(p.sectionIndex, 0);
@@ -147,7 +147,7 @@ void main() {
           normCharOffset: 4500,
           charOffset: 1234,
           updatedAt: 1700000000000);
-      final AppModelLibraryHostService svc = _svc(db);
+      final LocalLibraryHostService svc = _svc(db);
       final RemoteBookProgress p = await svc.getBookProgress('BookA');
       expect(p.sectionIndex, 4);
       expect(p.normCharOffset, 4500);
@@ -159,7 +159,7 @@ void main() {
   group('putBookProgress（host-apply：真写 reader_positions）', () {
     test('PUT 新进度 → host reader_positions 真更新（GET 拉回一致）', () async {
       await _seedHostBook(db, 'BookB');
-      final AppModelLibraryHostService svc = _svc(db);
+      final LocalLibraryHostService svc = _svc(db);
       await svc.putBookProgress(
         'BookB',
         const RemoteBookProgress(
@@ -192,7 +192,7 @@ void main() {
           normCharOffset: 9000,
           charOffset: 90,
           updatedAt: 2000);
-      final AppModelLibraryHostService svc = _svc(db);
+      final LocalLibraryHostService svc = _svc(db);
 
       await svc.putBookProgress(
         'BookC',
@@ -216,7 +216,7 @@ void main() {
           normCharOffset: 100,
           charOffset: 1,
           updatedAt: 1000);
-      final AppModelLibraryHostService svc = _svc(db);
+      final LocalLibraryHostService svc = _svc(db);
 
       await svc.putBookProgress(
         'BookD',
@@ -234,7 +234,7 @@ void main() {
 
     test('负 normCharOffset clamp 到 0', () async {
       await _seedHostBook(db, 'BookE');
-      final AppModelLibraryHostService svc = _svc(db);
+      final LocalLibraryHostService svc = _svc(db);
       await svc.putBookProgress(
         'BookE',
         const RemoteBookProgress(
@@ -250,7 +250,7 @@ void main() {
     test('host 书库无该书 → PUT 进度被闸门挡掉（不写孤儿 reader_positions 行）', () async {
       // host 没有 BookOrphan（任意 client 上报任意 bookKey）：闸门 no-op，
       // 不产生孤儿行，避免 host 日后导入同 sanitize bookKey 的书时取到陈旧污染位置。
-      final AppModelLibraryHostService svc = _svc(db);
+      final LocalLibraryHostService svc = _svc(db);
       await svc.putBookProgress(
         'BookOrphan',
         const RemoteBookProgress(

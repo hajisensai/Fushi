@@ -5310,7 +5310,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 删除互联对端 host 上的远端视频，删完强制刷新远端列表。
   ///
   /// 删的是 host 库里的条目 + host app 自己拥有的封面/字幕缓存与上传副本；host 用户
-  /// **自己导入的原始视频文件不删**（见 `AppModelLibraryHostService.deleteVideo`）。
+  /// **自己导入的原始视频文件不删**（见 `LocalLibraryHostService.deleteVideo`）。
   ///
   /// 三种结果各有可见反馈——静默失败正是远端书删除的老毛病（只写日志、用户以为删了）：
   /// * 成功 → 列表里消失（强制刷新绕过 [RemoteLibraryCache] TTL）；

@@ -14,8 +14,9 @@ void main() {
       final String player = File(
         'lib/src/pages/implementations/video_fushi_page.dart',
       ).readAsStringSync();
+      // B4 拆分后 deleteVideo 在 videos.part.dart。
       final String host = File(
-        'lib/src/sync/app_model_library_host_service.dart',
+        'lib/src/sync/local_library_host_service/videos.part.dart',
       ).readAsStringSync();
       final String appModel = File(
         'lib/src/models/app_model.dart',

@@ -2,7 +2,7 @@
 ///
 /// 覆盖整条上传链：
 /// 1. 纯函数 [listSidecarSubtitles] / [isSidecarSubtitleSuffix] 的匹配与白名单规则。
-/// 2. host [AppModelLibraryHostService.importVideoSubtitle]：sidecar 落视频同目录
+/// 2. host [LocalLibraryHostService.importVideoSubtitle]：sidecar 落视频同目录
 ///    `<stem><suffix>`、行语义镜像下载路径（subtitleSource/format、内嵌轨置 null、
 ///    cue 落库）、未知视频/非法后缀拒收。
 /// 3. 端到端（真实 server/host/client/orchestrator）：视频与其全部 sidecar 一并
@@ -16,7 +16,7 @@ import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_sidecar.dart';
-import 'package:fushi/src/sync/app_model_library_host_service.dart';
+import 'package:fushi/src/sync/local_library_host_service.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/fushi_sync_server.dart';
@@ -38,12 +38,12 @@ const String _srtContent = '1\n'
 FushiDatabase _memDb() =>
     FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
-AppModelLibraryHostService _hostService({
+LocalLibraryHostService _hostService({
   required FushiDatabase db,
   required Directory work,
   Directory? uploads,
 }) =>
-    AppModelLibraryHostService(
+    LocalLibraryHostService(
       db: db,
       dictionaryResourceRoot: work,
       packages: SyncAssetPackageService(db: db),
@@ -149,7 +149,7 @@ void main() {
       final File upload = File(p.join(work.path, 'upload.tmp'))
         ..writeAsStringSync(_srtContent);
 
-      final AppModelLibraryHostService svc = _hostService(db: db, work: work);
+      final LocalLibraryHostService svc = _hostService(db: db, work: work);
       await svc.importVideoSubtitle(upload,
           id: 'video/movie', suffix: '.ja.srt');
 
@@ -176,7 +176,7 @@ void main() {
     test('未知视频 StateError；非法后缀 ArgumentError（文件不落盘）', () async {
       final File upload = File(p.join(work.path, 'upload.tmp'))
         ..writeAsStringSync(_srtContent);
-      final AppModelLibraryHostService svc = _hostService(db: db, work: work);
+      final LocalLibraryHostService svc = _hostService(db: db, work: work);
       expect(
           () =>
               svc.importVideoSubtitle(upload, id: 'video/nope', suffix: '.srt'),

@@ -787,7 +787,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
             .writeHealth(bookKey: widget.bookKey, health: parsed.health);
       }
       // TODO-1288：EPUB-backed 有声书导入必须补写一条配对 srt_books 行，否则互联
-      // host 的 hasAudiobook 判据（app_model_library_host_service
+      // host 的 hasAudiobook 判据（local_library_host_service
       // ._srtBackedAudiobookKeys 要求 audiobooks + srt_books 两表齐备）认不出这本
       // 书 → 对端下载后显示成普通书、且 exportAudiobook 抛 StateError → 音频永不
       // 同步。book_import_dialog / audiobook_alignment_service / v29 backfill 三处

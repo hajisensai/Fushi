@@ -8,7 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/local_audio_manager.dart'
     show LocalAudioDbEntry;
 import 'package:fushi/src/models/local_audio_source_pref.dart';
-import 'package:fushi/src/sync/app_model_library_host_service.dart';
+import 'package:fushi/src/sync/local_library_host_service.dart';
 import 'package:fushi/src/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/sync_asset_package_service.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -64,15 +64,15 @@ Future<String> _insertAudiobook({
   return srtUid;
 }
 
-/// 构造一个用于音频测试的 [AppModelLibraryHostService]。
-AppModelLibraryHostService _buildSvc({
+/// 构造一个用于音频测试的 [LocalLibraryHostService]。
+LocalLibraryHostService _buildSvc({
   required FushiDatabase db,
   List<LocalAudioDbEntry> localAudioEntries = const <LocalAudioDbEntry>[],
   Directory? localAudioStagingDir,
   List<LocalAudioPackageContents>? importedAudioContents,
   Directory? audioDatabaseRoot,
 }) {
-  return AppModelLibraryHostService(
+  return LocalLibraryHostService(
     db: db,
     dictionaryResourceRoot: Directory.systemTemp,
     packages: SyncAssetPackageService(db: db),
@@ -287,7 +287,7 @@ void main() {
       );
       await insertStandalone('srt-standalone-1', '纯字幕书');
 
-      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final LocalLibraryHostService svc = _buildSvc(db: db);
       final List<RemoteAudiobookInfo> list = await svc.listAudiobooks();
       final Map<String, RemoteAudiobookInfo> byIdentity =
           <String, RemoteAudiobookInfo>{
@@ -306,14 +306,14 @@ void main() {
 
     test('audiobookExists(uid) 对 standalone 为 true', () async {
       await insertStandalone('srt-x', 'X');
-      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final LocalLibraryHostService svc = _buildSvc(db: db);
       expect(await svc.audiobookExists('srt-x'), isTrue);
       expect(await svc.audiobookExists('nonexistent'), isFalse);
     });
 
     test('exportAudiobook(uid) 打纯 SRT 包（无 audiobook 段）并可导入落 SrtBook', () async {
       await insertStandalone('srt-standalone-2', 'Standalone2');
-      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final LocalLibraryHostService svc = _buildSvc(db: db);
 
       final File pkg = await svc.exportAudiobook('srt-standalone-2');
       addTearDown(() {
@@ -355,7 +355,7 @@ void main() {
     });
 
     test('exportLocalAudio 拒绝 "../evil" 并抛 ArgumentError', () async {
-      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final LocalLibraryHostService svc = _buildSvc(db: db);
       await expectLater(
         svc.exportLocalAudio('../evil'),
         throwsA(isA<ArgumentError>()),
@@ -363,7 +363,7 @@ void main() {
     });
 
     test('exportLocalAudio 拒绝含斜线的名称', () async {
-      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final LocalLibraryHostService svc = _buildSvc(db: db);
       await expectLater(
         svc.exportLocalAudio('foo/bar'),
         throwsA(isA<ArgumentError>()),
@@ -371,7 +371,7 @@ void main() {
     });
 
     test('exportLocalAudio 拒绝空名称', () async {
-      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final LocalLibraryHostService svc = _buildSvc(db: db);
       await expectLater(
         svc.exportLocalAudio(''),
         throwsA(isA<ArgumentError>()),
@@ -379,7 +379,7 @@ void main() {
     });
 
     test('exportAudiobook 拒绝 "../evil" 并抛 ArgumentError', () async {
-      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final LocalLibraryHostService svc = _buildSvc(db: db);
       await expectLater(
         svc.exportAudiobook('../evil'),
         throwsA(isA<ArgumentError>()),
@@ -387,7 +387,7 @@ void main() {
     });
 
     test('exportAudiobook 拒绝含反斜线的名称', () async {
-      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final LocalLibraryHostService svc = _buildSvc(db: db);
       await expectLater(
         svc.exportAudiobook('foo\\bar'),
         throwsA(isA<ArgumentError>()),
@@ -395,7 +395,7 @@ void main() {
     });
 
     test('deleteAudiobook 拒绝 "../evil" 并抛 ArgumentError', () async {
-      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final LocalLibraryHostService svc = _buildSvc(db: db);
       await expectLater(
         svc.deleteAudiobook('../evil'),
         throwsA(isA<ArgumentError>()),
@@ -403,7 +403,7 @@ void main() {
     });
 
     test('deleteLocalAudio 拒绝 "../evil" 并抛 ArgumentError', () async {
-      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final LocalLibraryHostService svc = _buildSvc(db: db);
       await expectLater(
         svc.deleteLocalAudio('../evil'),
         throwsA(isA<ArgumentError>()),
@@ -415,7 +415,7 @@ void main() {
   // 本地音频 list / export / delete round-trip
   // ══════════════════════════════════════════════════════════════════════════
 
-  group('AppModelLibraryHostService 本地音频', () {
+  group('LocalLibraryHostService 本地音频', () {
     late Directory tmp;
     late FushiDatabase db;
 
@@ -432,7 +432,7 @@ void main() {
     test('listLocalAudio 反映注入的 localAudioEntries', () async {
       final File dbFile = File(p.join(tmp.path, 'nhk.db'))
         ..writeAsBytesSync(<int>[0, 1]);
-      final AppModelLibraryHostService svc = _buildSvc(
+      final LocalLibraryHostService svc = _buildSvc(
         db: db,
         localAudioEntries: <LocalAudioDbEntry>[
           LocalAudioDbEntry(path: dbFile.path, displayName: 'NHK'),
@@ -446,7 +446,7 @@ void main() {
     });
 
     test('listLocalAudio 无条目时返回空列表', () async {
-      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final LocalLibraryHostService svc = _buildSvc(db: db);
       expect(await svc.listLocalAudio(), isEmpty);
     });
 
@@ -456,7 +456,7 @@ void main() {
       final File dbFile = File(p.join(tmp.path, 'nhk.db'))
         ..writeAsBytesSync(List<int>.generate(16, (int i) => i));
 
-      final AppModelLibraryHostService svc = _buildSvc(
+      final LocalLibraryHostService svc = _buildSvc(
         db: db,
         localAudioEntries: <LocalAudioDbEntry>[
           LocalAudioDbEntry(
@@ -480,7 +480,7 @@ void main() {
     });
 
     test('exportLocalAudio 对不存在的 displayName 抛 StateError', () async {
-      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final LocalLibraryHostService svc = _buildSvc(db: db);
       await expectLater(
         svc.exportLocalAudio('NonExistent'),
         throwsA(isA<StateError>()),
@@ -488,7 +488,7 @@ void main() {
     });
 
     test('exportLocalAudio 对 DB 文件不存在的来源抛 StateError', () async {
-      final AppModelLibraryHostService svc = _buildSvc(
+      final LocalLibraryHostService svc = _buildSvc(
         db: db,
         localAudioEntries: <LocalAudioDbEntry>[
           LocalAudioDbEntry(
@@ -510,7 +510,7 @@ void main() {
       final File dbFile = File(p.join(tmp.path, 'nhk2.db'))
         ..writeAsBytesSync(<int>[0, 1, 2, 3]);
 
-      final AppModelLibraryHostService exportSvc = _buildSvc(
+      final LocalLibraryHostService exportSvc = _buildSvc(
         db: db,
         localAudioEntries: <LocalAudioDbEntry>[
           LocalAudioDbEntry(path: dbFile.path, displayName: 'NHK2'),
@@ -525,7 +525,7 @@ void main() {
           <LocalAudioPackageContents>[];
       final Directory stagingDir = Directory(p.join(tmp.path, 'staging'))
         ..createSync();
-      final AppModelLibraryHostService importSvc = _buildSvc(
+      final LocalLibraryHostService importSvc = _buildSvc(
         db: db,
         localAudioStagingDir: stagingDir,
         importedAudioContents: received,
@@ -541,7 +541,7 @@ void main() {
       final File dbFile = File(p.join(tmp.path, 'nhk3.db'))
         ..writeAsBytesSync(<int>[0]);
 
-      final AppModelLibraryHostService exportSvc = _buildSvc(
+      final LocalLibraryHostService exportSvc = _buildSvc(
         db: db,
         localAudioEntries: <LocalAudioDbEntry>[
           LocalAudioDbEntry(path: dbFile.path, displayName: 'NHK3'),
@@ -553,7 +553,7 @@ void main() {
       });
 
       // 无 onLocalAudioImported 回调
-      final AppModelLibraryHostService noCallbackSvc = _buildSvc(db: db);
+      final LocalLibraryHostService noCallbackSvc = _buildSvc(db: db);
       await expectLater(
         noCallbackSvc.importLocalAudio(pkg),
         throwsA(isA<UnsupportedError>()),
@@ -563,7 +563,7 @@ void main() {
     // ── deleteLocalAudio（基础实现：仅名称校验）────────────────────────────
 
     test('deleteLocalAudio 对合法名称不抛（基础 no-op 实现）', () async {
-      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final LocalLibraryHostService svc = _buildSvc(db: db);
       // 基础实现是 no-op，仅校验名称安全性
       await svc.deleteLocalAudio('ValidName'); // 不应抛异常
     });
@@ -573,7 +573,7 @@ void main() {
   // 有声书 list / export / delete round-trip
   // ══════════════════════════════════════════════════════════════════════════
 
-  group('AppModelLibraryHostService 有声书', () {
+  group('LocalLibraryHostService 有声书', () {
     late Directory tmp;
     late FushiDatabase db;
 
@@ -615,7 +615,7 @@ void main() {
         audioDir: audioDir,
       );
 
-      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final LocalLibraryHostService svc = _buildSvc(db: db);
       final List<RemoteAudiobookInfo> list = await svc.listAudiobooks();
 
       expect(list, hasLength(1));
@@ -630,13 +630,13 @@ void main() {
         alignmentPath: p.join(tmp.path, 'orphan.srt'),
       ));
 
-      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final LocalLibraryHostService svc = _buildSvc(db: db);
 
       expect(await svc.listAudiobooks(), isEmpty);
     });
 
     test('listAudiobooks 无有声书时返回空列表', () async {
-      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final LocalLibraryHostService svc = _buildSvc(db: db);
       expect(await svc.listAudiobooks(), isEmpty);
     });
 
@@ -648,7 +648,7 @@ void main() {
         audioDir: audioDir,
       );
 
-      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final LocalLibraryHostService svc = _buildSvc(db: db);
       final File pkg = await svc.exportAudiobook('ttu-export');
       addTearDown(() {
         if (pkg.parent.existsSync()) pkg.parent.deleteSync(recursive: true);
@@ -660,7 +660,7 @@ void main() {
     });
 
     test('exportAudiobook 对不存在的 bookKey 抛 StateError', () async {
-      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final LocalLibraryHostService svc = _buildSvc(db: db);
       await expectLater(
         svc.exportAudiobook('nonexistent-key'),
         throwsA(isA<StateError>()),
@@ -674,7 +674,7 @@ void main() {
       final File fakeAudio = File(p.join(tmp.path, 'fake.fushiaudio'))
         ..writeAsBytesSync(<int>[0]);
 
-      final AppModelLibraryHostService svc =
+      final LocalLibraryHostService svc =
           _buildSvc(db: db); // audioDatabaseRoot 为 null
       await expectLater(
         svc.importAudiobook(fakeAudio),
@@ -692,7 +692,7 @@ void main() {
         audioDir: audioDir,
       );
 
-      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final LocalLibraryHostService svc = _buildSvc(db: db);
       final File pkg = await svc.exportAudiobook('ttu-rt');
       addTearDown(() {
         if (pkg.parent.existsSync()) pkg.parent.deleteSync(recursive: true);
@@ -704,7 +704,7 @@ void main() {
       final Directory targetAudioRoot = Directory(p.join(tmp.path, 'target'))
         ..createSync();
 
-      final AppModelLibraryHostService importSvc = AppModelLibraryHostService(
+      final LocalLibraryHostService importSvc = LocalLibraryHostService(
         db: targetDb,
         dictionaryResourceRoot: Directory.systemTemp,
         packages: SyncAssetPackageService(db: targetDb),
@@ -737,7 +737,7 @@ void main() {
 
       expect(audioDir.existsSync(), isTrue);
 
-      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final LocalLibraryHostService svc = _buildSvc(db: db);
       await svc.deleteAudiobook('ttu-del');
 
       final List<RemoteAudiobookInfo> list = await svc.listAudiobooks();
@@ -757,7 +757,7 @@ void main() {
 
       expect(externalDir.existsSync(), isTrue);
 
-      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final LocalLibraryHostService svc = _buildSvc(db: db);
       await svc.deleteAudiobook('ttu-ref');
 
       final List<RemoteAudiobookInfo> list = await svc.listAudiobooks();
@@ -767,7 +767,7 @@ void main() {
     });
 
     test('deleteAudiobook 不存在的 bookKey 静默跳过（幂等）', () async {
-      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final LocalLibraryHostService svc = _buildSvc(db: db);
       // 不应抛异常
       await svc.deleteAudiobook('nonexistent');
     });

@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/sync/app_model_library_host_service.dart';
+import 'package:fushi/src/sync/local_library_host_service.dart';
 import 'package:fushi/src/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/sync_asset_package_service.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -10,8 +10,8 @@ import 'package:fushi_core/fushi_core.dart';
 /// host-apply 测试（BUG-471）：互联有声书进度 live 端点必须真读写 host 自己的
 /// `audiobook_pos_<bookKey>` + `audiobook_pos_at_<bookKey>` prefs（修复根因：互联
 /// 角色非对称，host 从不回灌自己的有声书位置 pref）。与视频 position host-apply 对称。
-AppModelLibraryHostService _svc(FushiDatabase db) =>
-    AppModelLibraryHostService(
+LocalLibraryHostService _svc(FushiDatabase db) =>
+    LocalLibraryHostService(
       db: db,
       dictionaryResourceRoot: Directory.systemTemp,
       packages: SyncAssetPackageService(db: db),
@@ -87,7 +87,7 @@ void main() {
 
   group('getAudiobookPosition', () {
     test('host 无记录 → (0, 0)', () async {
-      final AppModelLibraryHostService svc = _svc(db);
+      final LocalLibraryHostService svc = _svc(db);
       final ({int positionMs, int updatedAtMs}) p =
           await svc.getAudiobookPosition('book/x');
       expect(p.positionMs, 0);
@@ -97,7 +97,7 @@ void main() {
     test('host 有 prefs → 返回真实位置 + 时间戳', () async {
       await db.setPrefTyped<int>(audiobookPositionPrefKey('book/a'), 42000);
       await db.setPrefTyped<int>(audiobookPositionAtPrefKey('book/a'), 9999);
-      final AppModelLibraryHostService svc = _svc(db);
+      final LocalLibraryHostService svc = _svc(db);
       final ({int positionMs, int updatedAtMs}) p =
           await svc.getAudiobookPosition('book/a');
       expect(p.positionMs, 42000);
@@ -106,7 +106,7 @@ void main() {
 
     test('旧数据只有位置无时间戳 → 时间戳记 0（降级）', () async {
       await db.setPrefTyped<int>(audiobookPositionPrefKey('book/old'), 12345);
-      final AppModelLibraryHostService svc = _svc(db);
+      final LocalLibraryHostService svc = _svc(db);
       final ({int positionMs, int updatedAtMs}) p =
           await svc.getAudiobookPosition('book/old');
       expect(p.positionMs, 12345);
@@ -117,7 +117,7 @@ void main() {
   group('putAudiobookPosition（host-apply：真写 prefs）', () {
     test('PUT 新进度 → host prefs 真更新（GET 拉回一致）', () async {
       await _seedHostAudiobook(db, 'book/b');
-      final AppModelLibraryHostService svc = _svc(db);
+      final LocalLibraryHostService svc = _svc(db);
       await svc.putAudiobookPosition('book/b', 55000, 3000);
 
       // 直查 prefs：真写（这正是旧路径缺失的——host 从不回灌有声书位置 pref）。
@@ -137,7 +137,7 @@ void main() {
       await _seedHostAudiobook(db, 'book/c');
       await db.setPrefTyped<int>(audiobookPositionPrefKey('book/c'), 90000);
       await db.setPrefTyped<int>(audiobookPositionAtPrefKey('book/c'), 5000);
-      final AppModelLibraryHostService svc = _svc(db);
+      final LocalLibraryHostService svc = _svc(db);
 
       await svc.putAudiobookPosition('book/c', 100, 1000); // 更旧
 
@@ -152,7 +152,7 @@ void main() {
       await _seedHostAudiobook(db, 'book/d');
       await db.setPrefTyped<int>(audiobookPositionPrefKey('book/d'), 100);
       await db.setPrefTyped<int>(audiobookPositionAtPrefKey('book/d'), 1000);
-      final AppModelLibraryHostService svc = _svc(db);
+      final LocalLibraryHostService svc = _svc(db);
 
       await svc.putAudiobookPosition('book/d', 66000, 8000); // 更新
 
@@ -165,14 +165,14 @@ void main() {
 
     test('负位置 clamp 到 0', () async {
       await _seedHostAudiobook(db, 'book/e');
-      final AppModelLibraryHostService svc = _svc(db);
+      final LocalLibraryHostService svc = _svc(db);
       await svc.putAudiobookPosition('book/e', -50, 1234);
       expect(await db.getPrefTyped<int>(audiobookPositionPrefKey('book/e'), -1),
           0);
     });
 
     test('host 库无该有声书 → PUT 被闸门挡掉（不写孤儿 pref）', () async {
-      final AppModelLibraryHostService svc = _svc(db);
+      final LocalLibraryHostService svc = _svc(db);
       await svc.putAudiobookPosition('book/orphan', 77000, 9000);
 
       // 闸门 no-op：未 seed Audiobooks 行 → 不写 pref（默认 0 表示未写）。
