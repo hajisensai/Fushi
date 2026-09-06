@@ -1,4 +1,4 @@
-﻿; fushi/windows/installer/fushi.iss
+; fushi/windows/installer/fushi.iss
 ; 由 CI 用 ISCC 编译；AppVersion / SourceDir / OutputDir 由命令行 /D 传入。
 ; Fushi 改名（Phase 3）：AppId GUID 不变 => 对旧 Hibiki 安装做覆盖升级；
 ; 升级路径上的旧名残留（hibiki.exe / 快捷方式 / 注册表 ProgID）在本脚本内清理。
@@ -233,7 +233,7 @@ begin
             NamedMutexExists(LegacyAppMutexName);
 end;
 
-{ BUG-2166：这两个过程**绝不能带 /T**。
+{ BUG-2203：这两个过程**绝不能带 /T**。
 
   应用内静默更新时，本安装器就是被更新的那个 fushi.exe 的**孙进程**：
       fushi.exe → fushi_update_launcher.exe → <本 setup.exe>
@@ -716,7 +716,7 @@ begin
   end;
 
   { Still alive: force-kill both exe names, then sweep every msedgewebview2.exe.
-    按 image 名逐个杀，**不用进程树**（BUG-2166：安装器自己就在 fushi.exe 的后代树里）；
+    按 image 名逐个杀，**不用进程树**（BUG-2203：安装器自己就在 fushi.exe 的后代树里）；
     WebView2 的每一个子进程都叫 msedgewebview2.exe，第三行已经全数覆盖。 }
   KillImage('fushi.exe');
   KillImage('hibiki.exe');

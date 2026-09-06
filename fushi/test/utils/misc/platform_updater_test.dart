@@ -329,7 +329,7 @@ void main() {
       expect(script, contains('@kernel32.dll stdcall'));
       expect(script, contains('FushiSingleInstanceMutex'));
       // Terminates fushi.exe / hibiki.exe / WebView2 **by image name** before
-      // the check (BUG-2166: never by process tree — see the /T guard below).
+      // the check (BUG-2203: never by process tree — see the /T guard below).
       expect(script, contains('taskkill'));
       expect(script, contains('hibiki.exe'));
       expect(script, contains('msedgewebview2.exe'));
@@ -339,7 +339,7 @@ void main() {
     });
 
     test(
-        'BUG-2166: taskkill 绝不带 /T —— 安装器自己就在 fushi.exe 的后代进程树里',
+        'BUG-2203: taskkill 绝不带 /T —— 安装器自己就在 fushi.exe 的后代进程树里',
         () {
       // 应用内静默更新时进程链是
       //   fushi.exe → fushi_update_launcher.exe → <本 setup.exe>
@@ -372,7 +372,7 @@ void main() {
           args.contains('/T'),
           isFalse,
           reason: 'taskkill 实参 "${args.trim()}" 里出现了 /T：它会连同安装器'
-              '所在的祖先进程树一起杀掉（BUG-2166）。按 image 名杀就够了 —— '
+              '所在的祖先进程树一起杀掉（BUG-2203）。按 image 名杀就够了 —— '
               'WebView2 的每个子进程都叫 msedgewebview2.exe，已被单独一行覆盖。',
         );
       }

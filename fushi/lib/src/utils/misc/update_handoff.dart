@@ -296,7 +296,7 @@ class WindowsUpdateHandoffRecord {
 
   /// 本模型自己认识（读得回、写得出）的 marker 键。
   ///
-  /// BUG-2166：marker 文件有**两个**写者——Dart（本类）和 C++ 的
+  /// BUG-2203：marker 文件有**两个**写者——Dart（本类）和 C++ 的
   /// `fushi_update_launcher.exe`（`update_launcher.cpp` 的 `AppendMarkerFields`）。
   /// launcher 在 app 已经退出之后才写下整条交接链上最关键的观测：父进程到底退没退、
   /// 互斥量到底放没放、安装器结束后 app 有没有回来、是不是 launcher 把它拉回来的。
@@ -369,7 +369,7 @@ class WindowsUpdateHandoffRecord {
   /// `FushiSingleInstanceMutex` 是否已经被释放（`WaitForMutexReleased()`）。
   ///
   /// 这是「Fushi 是不是还开着」唯一的**观测**来源。日志里出现 mutex 字样不是
-  /// （BUG-2166：Inno 会把 `[Code]` 段的 `OpenMutexW@kernel32.dll` 导入记进每一份
+  /// （BUG-2203：Inno 会把 `[Code]` 段的 `OpenMutexW@kernel32.dll` 导入记进每一份
   /// 日志，无论成败）。
   final bool? launcherMutexReleased;
   final bool? installerLaunchSucceeded;
@@ -972,7 +972,7 @@ WindowsInstallerFailureSummary summarizeWindowsInstallerFailure({
 
   final String lower = log.toLowerCase();
 
-  // BUG-2166：安装器根本没走出启动段。这是**日志形状**上的判据，不是措辞猜测：
+  // BUG-2203：安装器根本没走出启动段。这是**日志形状**上的判据，不是措辞猜测：
   // 从 `Log opened.` 到 `[Code]` 段外部函数导入之间的那几行是 Inno 每次启动都会写的
   // 固定内容（且始终是英文，与安装器 UI 语言无关），之后一行都没有 —— 既没进复制阶段，
   // 也没留下任何自行中止的记录。现场就是这个形状：安装器被自己的
@@ -1001,7 +1001,7 @@ WindowsInstallerFailureSummary summarizeWindowsInstallerFailure({
   // 「Fushi 还开着」只认**观测**：launcher 在启动 Inno 之前实测互斥量仍被持有，
   // 或者 Inno 自己在日志里写下了它检测到实例在跑。
   //
-  // 这里**故意不再**匹配裸 `mutex` / `is running` 子串（BUG-2166 的误诊源头）：
+  // 这里**故意不再**匹配裸 `mutex` / `is running` 子串（BUG-2203 的误诊源头）：
   // Inno 会把 `[Code]` 段的外部函数导入逐个记进日志，其中就有
   // `Function and DLL name: OpenMutexW@kernel32.dll` —— 这一行**每一份**日志里都有，
   // 无论安装成功还是失败。于是旧判据对任何一次失败都恒真，把真正的失败原因
@@ -1063,7 +1063,7 @@ const List<String> _kInnoStartupLogMarkers = <String>[
 ];
 
 /// 日志是否停在 Inno 的启动段——即安装器**从未**走到复制文件的阶段，
-/// 也没有留下任何自行中止的记录（BUG-2166）。
+/// 也没有留下任何自行中止的记录（BUG-2203）。
 ///
 /// 判据是「除启动段固定行之外一行都没有」，方向刻意保守：名单不全时只会**少报**
 /// （落回 `installer_incomplete`），不会像旧的子串判据那样把每一次失败都误报成
