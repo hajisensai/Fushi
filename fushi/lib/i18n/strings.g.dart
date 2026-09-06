@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 72318 (4254 per locale)
+/// Strings: 72471 (4263 per locale)
 ///
-/// Built on 2026-09-06 at 03:22 UTC
+/// Built on 2026-09-06 at 03:38 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -5847,6 +5847,21 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get sync_asset_transfer_menu => 'Transfer';
   String get sync_asset_transfer_hint =>
       'Upload what only this device has, or download what only the remote has';
+  String get interconnect_devices_page => 'Pairing & devices';
+  String get interconnect_devices_hint =>
+      'Peer addresses, pairing and LAN discovery';
+  String interconnect_devices_paired_count({required Object n}) =>
+      'Paired devices: ${n}';
+  String get interconnect_host_page => 'Host service';
+  String get interconnect_host_hint =>
+      'Port, TLS, access token and paired devices';
+  String interconnect_host_running({required Object port}) =>
+      'Running on port ${port}';
+  String get interconnect_host_off => 'Off';
+  String get interconnect_related_entry =>
+      'Remote lookup, audio sources & remote entries';
+  String get interconnect_related_entry_hint =>
+      'Configured in the Lookup and Sync categories';
 }
 
 // Path: <root>
@@ -15774,6 +15789,30 @@ class _StringsAr extends _StringsEn {
   @override
   String get sync_asset_transfer_hint =>
       'Upload what only this device has, or download what only the remote has';
+  @override
+  String get interconnect_devices_page => 'Pairing & devices';
+  @override
+  String get interconnect_devices_hint =>
+      'Peer addresses, pairing and LAN discovery';
+  @override
+  String interconnect_devices_paired_count({required Object n}) =>
+      'Paired devices: ${n}';
+  @override
+  String get interconnect_host_page => 'Host service';
+  @override
+  String get interconnect_host_hint =>
+      'Port, TLS, access token and paired devices';
+  @override
+  String interconnect_host_running({required Object port}) =>
+      'Running on port ${port}';
+  @override
+  String get interconnect_host_off => 'Off';
+  @override
+  String get interconnect_related_entry =>
+      'Remote lookup, audio sources & remote entries';
+  @override
+  String get interconnect_related_entry_hint =>
+      'Configured in the Lookup and Sync categories';
 }
 
 // Path: <root>
@@ -25928,6 +25967,30 @@ class _StringsDe extends _StringsEn {
   @override
   String get sync_asset_transfer_hint =>
       'Upload what only this device has, or download what only the remote has';
+  @override
+  String get interconnect_devices_page => 'Pairing & devices';
+  @override
+  String get interconnect_devices_hint =>
+      'Peer addresses, pairing and LAN discovery';
+  @override
+  String interconnect_devices_paired_count({required Object n}) =>
+      'Paired devices: ${n}';
+  @override
+  String get interconnect_host_page => 'Host service';
+  @override
+  String get interconnect_host_hint =>
+      'Port, TLS, access token and paired devices';
+  @override
+  String interconnect_host_running({required Object port}) =>
+      'Running on port ${port}';
+  @override
+  String get interconnect_host_off => 'Off';
+  @override
+  String get interconnect_related_entry =>
+      'Remote lookup, audio sources & remote entries';
+  @override
+  String get interconnect_related_entry_hint =>
+      'Configured in the Lookup and Sync categories';
 }
 
 // Path: <root>
@@ -36135,6 +36198,30 @@ class _StringsEs extends _StringsEn {
   @override
   String get sync_asset_transfer_hint =>
       'Upload what only this device has, or download what only the remote has';
+  @override
+  String get interconnect_devices_page => 'Pairing & devices';
+  @override
+  String get interconnect_devices_hint =>
+      'Peer addresses, pairing and LAN discovery';
+  @override
+  String interconnect_devices_paired_count({required Object n}) =>
+      'Paired devices: ${n}';
+  @override
+  String get interconnect_host_page => 'Host service';
+  @override
+  String get interconnect_host_hint =>
+      'Port, TLS, access token and paired devices';
+  @override
+  String interconnect_host_running({required Object port}) =>
+      'Running on port ${port}';
+  @override
+  String get interconnect_host_off => 'Off';
+  @override
+  String get interconnect_related_entry =>
+      'Remote lookup, audio sources & remote entries';
+  @override
+  String get interconnect_related_entry_hint =>
+      'Configured in the Lookup and Sync categories';
 }
 
 // Path: <root>
@@ -46376,6 +46463,30 @@ class _StringsFr extends _StringsEn {
   @override
   String get sync_asset_transfer_hint =>
       'Upload what only this device has, or download what only the remote has';
+  @override
+  String get interconnect_devices_page => 'Pairing & devices';
+  @override
+  String get interconnect_devices_hint =>
+      'Peer addresses, pairing and LAN discovery';
+  @override
+  String interconnect_devices_paired_count({required Object n}) =>
+      'Paired devices: ${n}';
+  @override
+  String get interconnect_host_page => 'Host service';
+  @override
+  String get interconnect_host_hint =>
+      'Port, TLS, access token and paired devices';
+  @override
+  String interconnect_host_running({required Object port}) =>
+      'Running on port ${port}';
+  @override
+  String get interconnect_host_off => 'Off';
+  @override
+  String get interconnect_related_entry =>
+      'Remote lookup, audio sources & remote entries';
+  @override
+  String get interconnect_related_entry_hint =>
+      'Configured in the Lookup and Sync categories';
 }
 
 // Path: <root>
@@ -56421,6 +56532,30 @@ class _StringsId extends _StringsEn {
   @override
   String get sync_asset_transfer_hint =>
       'Upload what only this device has, or download what only the remote has';
+  @override
+  String get interconnect_devices_page => 'Pairing & devices';
+  @override
+  String get interconnect_devices_hint =>
+      'Peer addresses, pairing and LAN discovery';
+  @override
+  String interconnect_devices_paired_count({required Object n}) =>
+      'Paired devices: ${n}';
+  @override
+  String get interconnect_host_page => 'Host service';
+  @override
+  String get interconnect_host_hint =>
+      'Port, TLS, access token and paired devices';
+  @override
+  String interconnect_host_running({required Object port}) =>
+      'Running on port ${port}';
+  @override
+  String get interconnect_host_off => 'Off';
+  @override
+  String get interconnect_related_entry =>
+      'Remote lookup, audio sources & remote entries';
+  @override
+  String get interconnect_related_entry_hint =>
+      'Configured in the Lookup and Sync categories';
 }
 
 // Path: <root>
@@ -66558,6 +66693,30 @@ class _StringsIt extends _StringsEn {
   @override
   String get sync_asset_transfer_hint =>
       'Upload what only this device has, or download what only the remote has';
+  @override
+  String get interconnect_devices_page => 'Pairing & devices';
+  @override
+  String get interconnect_devices_hint =>
+      'Peer addresses, pairing and LAN discovery';
+  @override
+  String interconnect_devices_paired_count({required Object n}) =>
+      'Paired devices: ${n}';
+  @override
+  String get interconnect_host_page => 'Host service';
+  @override
+  String get interconnect_host_hint =>
+      'Port, TLS, access token and paired devices';
+  @override
+  String interconnect_host_running({required Object port}) =>
+      'Running on port ${port}';
+  @override
+  String get interconnect_host_off => 'Off';
+  @override
+  String get interconnect_related_entry =>
+      'Remote lookup, audio sources & remote entries';
+  @override
+  String get interconnect_related_entry_hint =>
+      'Configured in the Lookup and Sync categories';
 }
 
 // Path: <root>
@@ -76082,6 +76241,30 @@ class _StringsJa extends _StringsEn {
   @override
   String get sync_asset_transfer_hint =>
       'Upload what only this device has, or download what only the remote has';
+  @override
+  String get interconnect_devices_page => 'Pairing & devices';
+  @override
+  String get interconnect_devices_hint =>
+      'Peer addresses, pairing and LAN discovery';
+  @override
+  String interconnect_devices_paired_count({required Object n}) =>
+      'Paired devices: ${n}';
+  @override
+  String get interconnect_host_page => 'Host service';
+  @override
+  String get interconnect_host_hint =>
+      'Port, TLS, access token and paired devices';
+  @override
+  String interconnect_host_running({required Object port}) =>
+      'Running on port ${port}';
+  @override
+  String get interconnect_host_off => 'Off';
+  @override
+  String get interconnect_related_entry =>
+      'Remote lookup, audio sources & remote entries';
+  @override
+  String get interconnect_related_entry_hint =>
+      'Configured in the Lookup and Sync categories';
 }
 
 // Path: <root>
@@ -85616,6 +85799,30 @@ class _StringsKo extends _StringsEn {
   @override
   String get sync_asset_transfer_hint =>
       'Upload what only this device has, or download what only the remote has';
+  @override
+  String get interconnect_devices_page => 'Pairing & devices';
+  @override
+  String get interconnect_devices_hint =>
+      'Peer addresses, pairing and LAN discovery';
+  @override
+  String interconnect_devices_paired_count({required Object n}) =>
+      'Paired devices: ${n}';
+  @override
+  String get interconnect_host_page => 'Host service';
+  @override
+  String get interconnect_host_hint =>
+      'Port, TLS, access token and paired devices';
+  @override
+  String interconnect_host_running({required Object port}) =>
+      'Running on port ${port}';
+  @override
+  String get interconnect_host_off => 'Off';
+  @override
+  String get interconnect_related_entry =>
+      'Remote lookup, audio sources & remote entries';
+  @override
+  String get interconnect_related_entry_hint =>
+      'Configured in the Lookup and Sync categories';
 }
 
 // Path: <root>
@@ -95708,6 +95915,30 @@ class _StringsNl extends _StringsEn {
   @override
   String get sync_asset_transfer_hint =>
       'Upload what only this device has, or download what only the remote has';
+  @override
+  String get interconnect_devices_page => 'Pairing & devices';
+  @override
+  String get interconnect_devices_hint =>
+      'Peer addresses, pairing and LAN discovery';
+  @override
+  String interconnect_devices_paired_count({required Object n}) =>
+      'Paired devices: ${n}';
+  @override
+  String get interconnect_host_page => 'Host service';
+  @override
+  String get interconnect_host_hint =>
+      'Port, TLS, access token and paired devices';
+  @override
+  String interconnect_host_running({required Object port}) =>
+      'Running on port ${port}';
+  @override
+  String get interconnect_host_off => 'Off';
+  @override
+  String get interconnect_related_entry =>
+      'Remote lookup, audio sources & remote entries';
+  @override
+  String get interconnect_related_entry_hint =>
+      'Configured in the Lookup and Sync categories';
 }
 
 // Path: <root>
@@ -105854,6 +106085,30 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get sync_asset_transfer_hint =>
       'Upload what only this device has, or download what only the remote has';
+  @override
+  String get interconnect_devices_page => 'Pairing & devices';
+  @override
+  String get interconnect_devices_hint =>
+      'Peer addresses, pairing and LAN discovery';
+  @override
+  String interconnect_devices_paired_count({required Object n}) =>
+      'Paired devices: ${n}';
+  @override
+  String get interconnect_host_page => 'Host service';
+  @override
+  String get interconnect_host_hint =>
+      'Port, TLS, access token and paired devices';
+  @override
+  String interconnect_host_running({required Object port}) =>
+      'Running on port ${port}';
+  @override
+  String get interconnect_host_off => 'Off';
+  @override
+  String get interconnect_related_entry =>
+      'Remote lookup, audio sources & remote entries';
+  @override
+  String get interconnect_related_entry_hint =>
+      'Configured in the Lookup and Sync categories';
 }
 
 // Path: <root>
@@ -115978,6 +116233,30 @@ class _StringsRu extends _StringsEn {
   @override
   String get sync_asset_transfer_hint =>
       'Upload what only this device has, or download what only the remote has';
+  @override
+  String get interconnect_devices_page => 'Pairing & devices';
+  @override
+  String get interconnect_devices_hint =>
+      'Peer addresses, pairing and LAN discovery';
+  @override
+  String interconnect_devices_paired_count({required Object n}) =>
+      'Paired devices: ${n}';
+  @override
+  String get interconnect_host_page => 'Host service';
+  @override
+  String get interconnect_host_hint =>
+      'Port, TLS, access token and paired devices';
+  @override
+  String interconnect_host_running({required Object port}) =>
+      'Running on port ${port}';
+  @override
+  String get interconnect_host_off => 'Off';
+  @override
+  String get interconnect_related_entry =>
+      'Remote lookup, audio sources & remote entries';
+  @override
+  String get interconnect_related_entry_hint =>
+      'Configured in the Lookup and Sync categories';
 }
 
 // Path: <root>
@@ -125901,6 +126180,30 @@ class _StringsTh extends _StringsEn {
   @override
   String get sync_asset_transfer_hint =>
       'Upload what only this device has, or download what only the remote has';
+  @override
+  String get interconnect_devices_page => 'Pairing & devices';
+  @override
+  String get interconnect_devices_hint =>
+      'Peer addresses, pairing and LAN discovery';
+  @override
+  String interconnect_devices_paired_count({required Object n}) =>
+      'Paired devices: ${n}';
+  @override
+  String get interconnect_host_page => 'Host service';
+  @override
+  String get interconnect_host_hint =>
+      'Port, TLS, access token and paired devices';
+  @override
+  String interconnect_host_running({required Object port}) =>
+      'Running on port ${port}';
+  @override
+  String get interconnect_host_off => 'Off';
+  @override
+  String get interconnect_related_entry =>
+      'Remote lookup, audio sources & remote entries';
+  @override
+  String get interconnect_related_entry_hint =>
+      'Configured in the Lookup and Sync categories';
 }
 
 // Path: <root>
@@ -135941,6 +136244,30 @@ class _StringsTr extends _StringsEn {
   @override
   String get sync_asset_transfer_hint =>
       'Upload what only this device has, or download what only the remote has';
+  @override
+  String get interconnect_devices_page => 'Pairing & devices';
+  @override
+  String get interconnect_devices_hint =>
+      'Peer addresses, pairing and LAN discovery';
+  @override
+  String interconnect_devices_paired_count({required Object n}) =>
+      'Paired devices: ${n}';
+  @override
+  String get interconnect_host_page => 'Host service';
+  @override
+  String get interconnect_host_hint =>
+      'Port, TLS, access token and paired devices';
+  @override
+  String interconnect_host_running({required Object port}) =>
+      'Running on port ${port}';
+  @override
+  String get interconnect_host_off => 'Off';
+  @override
+  String get interconnect_related_entry =>
+      'Remote lookup, audio sources & remote entries';
+  @override
+  String get interconnect_related_entry_hint =>
+      'Configured in the Lookup and Sync categories';
 }
 
 // Path: <root>
@@ -145952,6 +146279,30 @@ class _StringsVi extends _StringsEn {
   @override
   String get sync_asset_transfer_hint =>
       'Upload what only this device has, or download what only the remote has';
+  @override
+  String get interconnect_devices_page => 'Pairing & devices';
+  @override
+  String get interconnect_devices_hint =>
+      'Peer addresses, pairing and LAN discovery';
+  @override
+  String interconnect_devices_paired_count({required Object n}) =>
+      'Paired devices: ${n}';
+  @override
+  String get interconnect_host_page => 'Host service';
+  @override
+  String get interconnect_host_hint =>
+      'Port, TLS, access token and paired devices';
+  @override
+  String interconnect_host_running({required Object port}) =>
+      'Running on port ${port}';
+  @override
+  String get interconnect_host_off => 'Off';
+  @override
+  String get interconnect_related_entry =>
+      'Remote lookup, audio sources & remote entries';
+  @override
+  String get interconnect_related_entry_hint =>
+      'Configured in the Lookup and Sync categories';
 }
 
 // Path: <root>
@@ -155152,6 +155503,25 @@ class _StringsZhCn extends _StringsEn {
   String get sync_asset_transfer_menu => '传输';
   @override
   String get sync_asset_transfer_hint => '上传本机独有的，或下载远端独有的';
+  @override
+  String get interconnect_devices_page => '配对与设备';
+  @override
+  String get interconnect_devices_hint => '对端地址、配对与 LAN 发现';
+  @override
+  String interconnect_devices_paired_count({required Object n}) => '已配对 ${n} 台';
+  @override
+  String get interconnect_host_page => '主机服务';
+  @override
+  String get interconnect_host_hint => '端口、TLS、访问令牌与已配对设备';
+  @override
+  String interconnect_host_running({required Object port}) =>
+      '运行中 · 端口 ${port}';
+  @override
+  String get interconnect_host_off => '未开启';
+  @override
+  String get interconnect_related_entry => '远端查词、音频源与远端条目';
+  @override
+  String get interconnect_related_entry_hint => '在「查词」与「同步」分类里设置';
 }
 
 // Path: <root>
@@ -164369,6 +164739,30 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get sync_asset_transfer_hint =>
       'Upload what only this device has, or download what only the remote has';
+  @override
+  String get interconnect_devices_page => 'Pairing & devices';
+  @override
+  String get interconnect_devices_hint =>
+      'Peer addresses, pairing and LAN discovery';
+  @override
+  String interconnect_devices_paired_count({required Object n}) =>
+      'Paired devices: ${n}';
+  @override
+  String get interconnect_host_page => 'Host service';
+  @override
+  String get interconnect_host_hint =>
+      'Port, TLS, access token and paired devices';
+  @override
+  String interconnect_host_running({required Object port}) =>
+      'Running on port ${port}';
+  @override
+  String get interconnect_host_off => 'Off';
+  @override
+  String get interconnect_related_entry =>
+      'Remote lookup, audio sources & remote entries';
+  @override
+  String get interconnect_related_entry_hint =>
+      'Configured in the Lookup and Sync categories';
 }
 
 /// Flat map(s) containing all translations.
@@ -173095,6 +173489,24 @@ extension on _StringsEn {
         return 'Transfer';
       case 'sync_asset_transfer_hint':
         return 'Upload what only this device has, or download what only the remote has';
+      case 'interconnect_devices_page':
+        return 'Pairing & devices';
+      case 'interconnect_devices_hint':
+        return 'Peer addresses, pairing and LAN discovery';
+      case 'interconnect_devices_paired_count':
+        return ({required Object n}) => 'Paired devices: ${n}';
+      case 'interconnect_host_page':
+        return 'Host service';
+      case 'interconnect_host_hint':
+        return 'Port, TLS, access token and paired devices';
+      case 'interconnect_host_running':
+        return ({required Object port}) => 'Running on port ${port}';
+      case 'interconnect_host_off':
+        return 'Off';
+      case 'interconnect_related_entry':
+        return 'Remote lookup, audio sources & remote entries';
+      case 'interconnect_related_entry_hint':
+        return 'Configured in the Lookup and Sync categories';
       default:
         return null;
     }
@@ -181816,6 +182228,24 @@ extension on _StringsAr {
         return 'Transfer';
       case 'sync_asset_transfer_hint':
         return 'Upload what only this device has, or download what only the remote has';
+      case 'interconnect_devices_page':
+        return 'Pairing & devices';
+      case 'interconnect_devices_hint':
+        return 'Peer addresses, pairing and LAN discovery';
+      case 'interconnect_devices_paired_count':
+        return ({required Object n}) => 'Paired devices: ${n}';
+      case 'interconnect_host_page':
+        return 'Host service';
+      case 'interconnect_host_hint':
+        return 'Port, TLS, access token and paired devices';
+      case 'interconnect_host_running':
+        return ({required Object port}) => 'Running on port ${port}';
+      case 'interconnect_host_off':
+        return 'Off';
+      case 'interconnect_related_entry':
+        return 'Remote lookup, audio sources & remote entries';
+      case 'interconnect_related_entry_hint':
+        return 'Configured in the Lookup and Sync categories';
       default:
         return null;
     }
@@ -190582,6 +191012,24 @@ extension on _StringsDe {
         return 'Transfer';
       case 'sync_asset_transfer_hint':
         return 'Upload what only this device has, or download what only the remote has';
+      case 'interconnect_devices_page':
+        return 'Pairing & devices';
+      case 'interconnect_devices_hint':
+        return 'Peer addresses, pairing and LAN discovery';
+      case 'interconnect_devices_paired_count':
+        return ({required Object n}) => 'Paired devices: ${n}';
+      case 'interconnect_host_page':
+        return 'Host service';
+      case 'interconnect_host_hint':
+        return 'Port, TLS, access token and paired devices';
+      case 'interconnect_host_running':
+        return ({required Object port}) => 'Running on port ${port}';
+      case 'interconnect_host_off':
+        return 'Off';
+      case 'interconnect_related_entry':
+        return 'Remote lookup, audio sources & remote entries';
+      case 'interconnect_related_entry_hint':
+        return 'Configured in the Lookup and Sync categories';
       default:
         return null;
     }
@@ -199339,6 +199787,24 @@ extension on _StringsEs {
         return 'Transfer';
       case 'sync_asset_transfer_hint':
         return 'Upload what only this device has, or download what only the remote has';
+      case 'interconnect_devices_page':
+        return 'Pairing & devices';
+      case 'interconnect_devices_hint':
+        return 'Peer addresses, pairing and LAN discovery';
+      case 'interconnect_devices_paired_count':
+        return ({required Object n}) => 'Paired devices: ${n}';
+      case 'interconnect_host_page':
+        return 'Host service';
+      case 'interconnect_host_hint':
+        return 'Port, TLS, access token and paired devices';
+      case 'interconnect_host_running':
+        return ({required Object port}) => 'Running on port ${port}';
+      case 'interconnect_host_off':
+        return 'Off';
+      case 'interconnect_related_entry':
+        return 'Remote lookup, audio sources & remote entries';
+      case 'interconnect_related_entry_hint':
+        return 'Configured in the Lookup and Sync categories';
       default:
         return null;
     }
@@ -208105,6 +208571,24 @@ extension on _StringsFr {
         return 'Transfer';
       case 'sync_asset_transfer_hint':
         return 'Upload what only this device has, or download what only the remote has';
+      case 'interconnect_devices_page':
+        return 'Pairing & devices';
+      case 'interconnect_devices_hint':
+        return 'Peer addresses, pairing and LAN discovery';
+      case 'interconnect_devices_paired_count':
+        return ({required Object n}) => 'Paired devices: ${n}';
+      case 'interconnect_host_page':
+        return 'Host service';
+      case 'interconnect_host_hint':
+        return 'Port, TLS, access token and paired devices';
+      case 'interconnect_host_running':
+        return ({required Object port}) => 'Running on port ${port}';
+      case 'interconnect_host_off':
+        return 'Off';
+      case 'interconnect_related_entry':
+        return 'Remote lookup, audio sources & remote entries';
+      case 'interconnect_related_entry_hint':
+        return 'Configured in the Lookup and Sync categories';
       default:
         return null;
     }
@@ -216842,6 +217326,24 @@ extension on _StringsId {
         return 'Transfer';
       case 'sync_asset_transfer_hint':
         return 'Upload what only this device has, or download what only the remote has';
+      case 'interconnect_devices_page':
+        return 'Pairing & devices';
+      case 'interconnect_devices_hint':
+        return 'Peer addresses, pairing and LAN discovery';
+      case 'interconnect_devices_paired_count':
+        return ({required Object n}) => 'Paired devices: ${n}';
+      case 'interconnect_host_page':
+        return 'Host service';
+      case 'interconnect_host_hint':
+        return 'Port, TLS, access token and paired devices';
+      case 'interconnect_host_running':
+        return ({required Object port}) => 'Running on port ${port}';
+      case 'interconnect_host_off':
+        return 'Off';
+      case 'interconnect_related_entry':
+        return 'Remote lookup, audio sources & remote entries';
+      case 'interconnect_related_entry_hint':
+        return 'Configured in the Lookup and Sync categories';
       default:
         return null;
     }
@@ -225601,6 +226103,24 @@ extension on _StringsIt {
         return 'Transfer';
       case 'sync_asset_transfer_hint':
         return 'Upload what only this device has, or download what only the remote has';
+      case 'interconnect_devices_page':
+        return 'Pairing & devices';
+      case 'interconnect_devices_hint':
+        return 'Peer addresses, pairing and LAN discovery';
+      case 'interconnect_devices_paired_count':
+        return ({required Object n}) => 'Paired devices: ${n}';
+      case 'interconnect_host_page':
+        return 'Host service';
+      case 'interconnect_host_hint':
+        return 'Port, TLS, access token and paired devices';
+      case 'interconnect_host_running':
+        return ({required Object port}) => 'Running on port ${port}';
+      case 'interconnect_host_off':
+        return 'Off';
+      case 'interconnect_related_entry':
+        return 'Remote lookup, audio sources & remote entries';
+      case 'interconnect_related_entry_hint':
+        return 'Configured in the Lookup and Sync categories';
       default:
         return null;
     }
@@ -234287,6 +234807,24 @@ extension on _StringsJa {
         return 'Transfer';
       case 'sync_asset_transfer_hint':
         return 'Upload what only this device has, or download what only the remote has';
+      case 'interconnect_devices_page':
+        return 'Pairing & devices';
+      case 'interconnect_devices_hint':
+        return 'Peer addresses, pairing and LAN discovery';
+      case 'interconnect_devices_paired_count':
+        return ({required Object n}) => 'Paired devices: ${n}';
+      case 'interconnect_host_page':
+        return 'Host service';
+      case 'interconnect_host_hint':
+        return 'Port, TLS, access token and paired devices';
+      case 'interconnect_host_running':
+        return ({required Object port}) => 'Running on port ${port}';
+      case 'interconnect_host_off':
+        return 'Off';
+      case 'interconnect_related_entry':
+        return 'Remote lookup, audio sources & remote entries';
+      case 'interconnect_related_entry_hint':
+        return 'Configured in the Lookup and Sync categories';
       default:
         return null;
     }
@@ -242977,6 +243515,24 @@ extension on _StringsKo {
         return 'Transfer';
       case 'sync_asset_transfer_hint':
         return 'Upload what only this device has, or download what only the remote has';
+      case 'interconnect_devices_page':
+        return 'Pairing & devices';
+      case 'interconnect_devices_hint':
+        return 'Peer addresses, pairing and LAN discovery';
+      case 'interconnect_devices_paired_count':
+        return ({required Object n}) => 'Paired devices: ${n}';
+      case 'interconnect_host_page':
+        return 'Host service';
+      case 'interconnect_host_hint':
+        return 'Port, TLS, access token and paired devices';
+      case 'interconnect_host_running':
+        return ({required Object port}) => 'Running on port ${port}';
+      case 'interconnect_host_off':
+        return 'Off';
+      case 'interconnect_related_entry':
+        return 'Remote lookup, audio sources & remote entries';
+      case 'interconnect_related_entry_hint':
+        return 'Configured in the Lookup and Sync categories';
       default:
         return null;
     }
@@ -251729,6 +252285,24 @@ extension on _StringsNl {
         return 'Transfer';
       case 'sync_asset_transfer_hint':
         return 'Upload what only this device has, or download what only the remote has';
+      case 'interconnect_devices_page':
+        return 'Pairing & devices';
+      case 'interconnect_devices_hint':
+        return 'Peer addresses, pairing and LAN discovery';
+      case 'interconnect_devices_paired_count':
+        return ({required Object n}) => 'Paired devices: ${n}';
+      case 'interconnect_host_page':
+        return 'Host service';
+      case 'interconnect_host_hint':
+        return 'Port, TLS, access token and paired devices';
+      case 'interconnect_host_running':
+        return ({required Object port}) => 'Running on port ${port}';
+      case 'interconnect_host_off':
+        return 'Off';
+      case 'interconnect_related_entry':
+        return 'Remote lookup, audio sources & remote entries';
+      case 'interconnect_related_entry_hint':
+        return 'Configured in the Lookup and Sync categories';
       default:
         return null;
     }
@@ -260476,6 +261050,24 @@ extension on _StringsPtBr {
         return 'Transfer';
       case 'sync_asset_transfer_hint':
         return 'Upload what only this device has, or download what only the remote has';
+      case 'interconnect_devices_page':
+        return 'Pairing & devices';
+      case 'interconnect_devices_hint':
+        return 'Peer addresses, pairing and LAN discovery';
+      case 'interconnect_devices_paired_count':
+        return ({required Object n}) => 'Paired devices: ${n}';
+      case 'interconnect_host_page':
+        return 'Host service';
+      case 'interconnect_host_hint':
+        return 'Port, TLS, access token and paired devices';
+      case 'interconnect_host_running':
+        return ({required Object port}) => 'Running on port ${port}';
+      case 'interconnect_host_off':
+        return 'Off';
+      case 'interconnect_related_entry':
+        return 'Remote lookup, audio sources & remote entries';
+      case 'interconnect_related_entry_hint':
+        return 'Configured in the Lookup and Sync categories';
       default:
         return null;
     }
@@ -269230,6 +269822,24 @@ extension on _StringsRu {
         return 'Transfer';
       case 'sync_asset_transfer_hint':
         return 'Upload what only this device has, or download what only the remote has';
+      case 'interconnect_devices_page':
+        return 'Pairing & devices';
+      case 'interconnect_devices_hint':
+        return 'Peer addresses, pairing and LAN discovery';
+      case 'interconnect_devices_paired_count':
+        return ({required Object n}) => 'Paired devices: ${n}';
+      case 'interconnect_host_page':
+        return 'Host service';
+      case 'interconnect_host_hint':
+        return 'Port, TLS, access token and paired devices';
+      case 'interconnect_host_running':
+        return ({required Object port}) => 'Running on port ${port}';
+      case 'interconnect_host_off':
+        return 'Off';
+      case 'interconnect_related_entry':
+        return 'Remote lookup, audio sources & remote entries';
+      case 'interconnect_related_entry_hint':
+        return 'Configured in the Lookup and Sync categories';
       default:
         return null;
     }
@@ -277956,6 +278566,24 @@ extension on _StringsTh {
         return 'Transfer';
       case 'sync_asset_transfer_hint':
         return 'Upload what only this device has, or download what only the remote has';
+      case 'interconnect_devices_page':
+        return 'Pairing & devices';
+      case 'interconnect_devices_hint':
+        return 'Peer addresses, pairing and LAN discovery';
+      case 'interconnect_devices_paired_count':
+        return ({required Object n}) => 'Paired devices: ${n}';
+      case 'interconnect_host_page':
+        return 'Host service';
+      case 'interconnect_host_hint':
+        return 'Port, TLS, access token and paired devices';
+      case 'interconnect_host_running':
+        return ({required Object port}) => 'Running on port ${port}';
+      case 'interconnect_host_off':
+        return 'Off';
+      case 'interconnect_related_entry':
+        return 'Remote lookup, audio sources & remote entries';
+      case 'interconnect_related_entry_hint':
+        return 'Configured in the Lookup and Sync categories';
       default:
         return null;
     }
@@ -286697,6 +287325,24 @@ extension on _StringsTr {
         return 'Transfer';
       case 'sync_asset_transfer_hint':
         return 'Upload what only this device has, or download what only the remote has';
+      case 'interconnect_devices_page':
+        return 'Pairing & devices';
+      case 'interconnect_devices_hint':
+        return 'Peer addresses, pairing and LAN discovery';
+      case 'interconnect_devices_paired_count':
+        return ({required Object n}) => 'Paired devices: ${n}';
+      case 'interconnect_host_page':
+        return 'Host service';
+      case 'interconnect_host_hint':
+        return 'Port, TLS, access token and paired devices';
+      case 'interconnect_host_running':
+        return ({required Object port}) => 'Running on port ${port}';
+      case 'interconnect_host_off':
+        return 'Off';
+      case 'interconnect_related_entry':
+        return 'Remote lookup, audio sources & remote entries';
+      case 'interconnect_related_entry_hint':
+        return 'Configured in the Lookup and Sync categories';
       default:
         return null;
     }
@@ -295432,6 +296078,24 @@ extension on _StringsVi {
         return 'Transfer';
       case 'sync_asset_transfer_hint':
         return 'Upload what only this device has, or download what only the remote has';
+      case 'interconnect_devices_page':
+        return 'Pairing & devices';
+      case 'interconnect_devices_hint':
+        return 'Peer addresses, pairing and LAN discovery';
+      case 'interconnect_devices_paired_count':
+        return ({required Object n}) => 'Paired devices: ${n}';
+      case 'interconnect_host_page':
+        return 'Host service';
+      case 'interconnect_host_hint':
+        return 'Port, TLS, access token and paired devices';
+      case 'interconnect_host_running':
+        return ({required Object port}) => 'Running on port ${port}';
+      case 'interconnect_host_off':
+        return 'Off';
+      case 'interconnect_related_entry':
+        return 'Remote lookup, audio sources & remote entries';
+      case 'interconnect_related_entry_hint':
+        return 'Configured in the Lookup and Sync categories';
       default:
         return null;
     }
@@ -304093,6 +304757,24 @@ extension on _StringsZhCn {
         return '传输';
       case 'sync_asset_transfer_hint':
         return '上传本机独有的，或下载远端独有的';
+      case 'interconnect_devices_page':
+        return '配对与设备';
+      case 'interconnect_devices_hint':
+        return '对端地址、配对与 LAN 发现';
+      case 'interconnect_devices_paired_count':
+        return ({required Object n}) => '已配对 ${n} 台';
+      case 'interconnect_host_page':
+        return '主机服务';
+      case 'interconnect_host_hint':
+        return '端口、TLS、访问令牌与已配对设备';
+      case 'interconnect_host_running':
+        return ({required Object port}) => '运行中 · 端口 ${port}';
+      case 'interconnect_host_off':
+        return '未开启';
+      case 'interconnect_related_entry':
+        return '远端查词、音频源与远端条目';
+      case 'interconnect_related_entry_hint':
+        return '在「查词」与「同步」分类里设置';
       default:
         return null;
     }
@@ -312757,6 +313439,24 @@ extension on _StringsZhHk {
         return 'Transfer';
       case 'sync_asset_transfer_hint':
         return 'Upload what only this device has, or download what only the remote has';
+      case 'interconnect_devices_page':
+        return 'Pairing & devices';
+      case 'interconnect_devices_hint':
+        return 'Peer addresses, pairing and LAN discovery';
+      case 'interconnect_devices_paired_count':
+        return ({required Object n}) => 'Paired devices: ${n}';
+      case 'interconnect_host_page':
+        return 'Host service';
+      case 'interconnect_host_hint':
+        return 'Port, TLS, access token and paired devices';
+      case 'interconnect_host_running':
+        return ({required Object port}) => 'Running on port ${port}';
+      case 'interconnect_host_off':
+        return 'Off';
+      case 'interconnect_related_entry':
+        return 'Remote lookup, audio sources & remote entries';
+      case 'interconnect_related_entry_hint':
+        return 'Configured in the Lookup and Sync categories';
       default:
         return null;
     }

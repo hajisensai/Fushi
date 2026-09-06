@@ -298,6 +298,7 @@ class SettingsNavigationItem extends SettingsItem {
     this.child,
     this.showIcon = false,
     super.subtitle,
+    super.subtitleBuilder,
     super.icon,
     super.visible,
     super.reader,

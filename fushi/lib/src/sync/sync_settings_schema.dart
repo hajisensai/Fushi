@@ -13,10 +13,14 @@ import 'package:fushi/src/pages/implementations/migration_page.dart';
 import 'package:fushi/src/pages/implementations/migration_import_page.dart';
 import 'package:fushi/src/migration/migration_target_channel.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
+import 'package:fushi/src/settings/settings_actions.dart' show pushSettingsPage;
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_lookup.dart'
-    show buildManageAudioSourcesItem, buildRemoteDictionaryLookupItem;
+    show buildLookupDestination;
+import 'package:fushi/src/settings/settings_search.dart'
+    show SettingsSearchReveal;
 import 'package:fushi/src/startup/media_handle_registry.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/data_root_migrator.dart';
@@ -481,23 +485,24 @@ SettingsDestination buildInterconnectDestination() {
           ),
         ],
       ),
-      // 连接到其他设备：client 连接配置（URL/token/配对）+ LAN 自动发现。
-      // item id 沿用 'sync.' 前缀（历史命名，非持久化 key，保持稳定便于排查）。
+      // 连接到其他设备：client 连接配置（URL/token/配对）+ LAN 自动发现，整块挪进
+      // 子页「配对与设备」（C2）——对端列表与 LAN 发现是整页最高的两个 widget，正是
+      // BUG-037 说的高度悬殊来源；主页只留一行带实时摘要的入口。
       SettingsSection(
         title: t.interconnect_section_client,
         visible: interconnectActive,
         items: <SettingsItem>[
-          SettingsCustomItem(
-            id: 'sync.hibiki_server_config',
+          SettingsNavigationItem(
+            id: 'interconnect.devices',
+            title: t.interconnect_devices_page,
+            subtitle: t.interconnect_devices_hint,
+            // 有对端就报数量，没有就留提示（告诉用户子页里能做什么）。
+            subtitleBuilder: (SettingsContext ctx) {
+              final int n = _syncSettings(ctx).peerCount;
+              return n == 0 ? null : t.interconnect_devices_paired_count(n: n);
+            },
             icon: Icons.devices_outlined,
-            builder: (SettingsContext ctx) =>
-                _FushiServerConfigWidget(settingsContext: ctx),
-          ),
-          SettingsCustomItem(
-            id: 'sync.lan_devices',
-            icon: Icons.wifi_find_outlined,
-            builder: (SettingsContext ctx) =>
-                _LanDiscoveryWidget(settingsContext: ctx),
+            child: _buildInterconnectDevicesPage,
           ),
         ],
       ),
@@ -675,12 +680,94 @@ SettingsDestination buildInterconnectDestination() {
           ),
         ],
       ),
-      // 本机作为服务器：host 模式开关（与 client 角色互斥，见 _SyncSettingsState
-      // 的 roleRevision 互斥锁）。
+      // 本机作为服务器：host 模式（开关 + 端口 + TLS + token + 已配对列表）整块挪进
+      // 子页「主机服务」（C2）；主页只留一行带运行状态的入口。角色互斥见
+      // _SyncSettingsState 的 roleRevision。
       SettingsSection(
         title: t.sync_section_host_server,
         footer: t.sync_section_host_server_footer,
         visible: interconnectActive,
+        items: <SettingsItem>[
+          SettingsNavigationItem(
+            id: 'interconnect.host',
+            title: t.interconnect_host_page,
+            subtitle: t.interconnect_host_hint,
+            subtitleBuilder: (SettingsContext ctx) {
+              final _SyncSettingsState s = _syncSettings(ctx);
+              return s.serverEnabled
+                  ? t.interconnect_host_running(port: s.serverPort)
+                  : t.interconnect_host_off;
+            },
+            icon: Icons.router_outlined,
+            child: _buildInterconnectHostPage,
+          ),
+        ],
+      ),
+      // 互联相关配置（远端词典查询 / 音频来源 / 远端占位卡）散落在查词、同步分类，
+      // 逻辑上都作用于互联对端。此前在这里镜像三行同一 builder；用户拍板（2026-09-06）
+      // 改成一行指路——不再重复渲染开关，点进去落到查词分类并定位到远端查词那一行。
+      SettingsSection(
+        title: t.interconnect_section_related,
+        visible: interconnectActive,
+        items: <SettingsItem>[
+          SettingsNavigationItem(
+            id: 'interconnect.related_settings',
+            title: t.interconnect_related_entry,
+            subtitle: t.interconnect_related_entry_hint,
+            icon: Icons.travel_explore_outlined,
+            onTap: (SettingsContext ctx) async {
+              SettingsSearchReveal.pendingItemId = 'lookup.remote_lookup';
+              await pushSettingsPage(
+                ctx,
+                (_) =>
+                    SettingsDetailPage(destination: buildLookupDestination()),
+              );
+            },
+          ),
+        ],
+      ),
+    ],
+  );
+}
+
+/// 「配对与设备」子页（C2）：client 连接配置（URL/token/配对）+ LAN 自动发现，
+/// 两个 widget 原样搬入。item id 沿用 'sync.' 前缀（历史命名，非持久化 key，
+/// 保持稳定便于排查）。
+SettingsDestination _buildInterconnectDevicesPage() {
+  return SettingsDestination(
+    id: SettingsDestinationId.interconnect,
+    title: t.interconnect_devices_page,
+    icon: Icons.devices_outlined,
+    sections: <SettingsSection>[
+      SettingsSection(
+        items: <SettingsItem>[
+          SettingsCustomItem(
+            id: 'sync.hibiki_server_config',
+            icon: Icons.devices_outlined,
+            builder: (SettingsContext ctx) =>
+                _FushiServerConfigWidget(settingsContext: ctx),
+          ),
+          SettingsCustomItem(
+            id: 'sync.lan_devices',
+            icon: Icons.wifi_find_outlined,
+            builder: (SettingsContext ctx) =>
+                _LanDiscoveryWidget(settingsContext: ctx),
+          ),
+        ],
+      ),
+    ],
+  );
+}
+
+/// 「主机服务」子页（C2）：host 模式开关 + 端口 + TLS + token + 已配对列表，以及
+/// host 侧「配置文件」读写许可，原样搬入。
+SettingsDestination _buildInterconnectHostPage() {
+  return SettingsDestination(
+    id: SettingsDestinationId.interconnect,
+    title: t.interconnect_host_page,
+    icon: Icons.router_outlined,
+    sections: <SettingsSection>[
+      SettingsSection(
         items: <SettingsItem>[
           SettingsCustomItem(
             id: 'sync.server_mode',
@@ -704,20 +791,6 @@ SettingsDestination buildInterconnectDestination() {
                   .setInterconnectProfileTransferEnabled(value);
             },
           ),
-        ],
-      ),
-      // 互联相关配置镜像：这些项散落在查词/同步分类，但逻辑上都作用于互联对端
-      // （远端词典查询直连对端词典、音频来源含互联音频源 fushiRemote、远端占位卡
-      // 渲染对端条目）。在互联分类也提供同一入口，用户配互联时一站式可改（原分类
-      // 保留，共享同一 builder 单一真相源，非复制）。与其它互联 section 一致，仅在
-      // 互联被选为同步方式时可见。
-      SettingsSection(
-        title: t.interconnect_section_related,
-        visible: interconnectActive,
-        items: <SettingsItem>[
-          buildRemoteDictionaryLookupItem(),
-          buildManageAudioSourcesItem(),
-          buildShowRemoteEntriesItem(),
         ],
       ),
     ],
@@ -846,7 +919,25 @@ class _SyncSettingsState {
   /// truth replacing the previous "loaded once in initState" stale state.
   final ValueNotifier<int> clientConfigRevision = ValueNotifier<int>(0);
 
-  void reloadClientConfig() => clientConfigRevision.value++;
+  /// 主页「配对与设备」入口行的实时摘要（C2）：已配对对端数。随 [load] 读入，
+  /// 配对/删除对端后经 [reloadClientConfig] 重读。
+  int peerCount = 0;
+
+  /// 主页「主机服务」入口行的实时摘要（C2）：服务端口。随 [load] 读入，改端口
+  /// 时由 _ServerModeWidget 就地更新。
+  int serverPort = 0;
+
+  void reloadClientConfig() {
+    clientConfigRevision.value++;
+    unawaited(_reloadPeerCount());
+  }
+
+  Future<void> _reloadPeerCount() async {
+    final int count = (await _repo.getFushiClientUrls()).length;
+    if (peerCount == count) return;
+    peerCount = count;
+    _settingsContext.refresh();
+  }
 
   /// Mutual-exclusion role state for the Hibiki interconnect: a device may be a
   /// host (server on, others connect to it) OR a client (connected outward to a
@@ -929,7 +1020,10 @@ class _SyncSettingsState {
       interconnectProfileTransfer =
           await _repo.isInterconnectProfileTransferEnabled();
       serverEnabled = await _repo.isServerEnabled();
-      hasClientConnection = (await _repo.getFushiClientUrls()).isNotEmpty;
+      serverPort = await _repo.getServerPort();
+      final List<FushiClientUrl> urls = await _repo.getFushiClientUrls();
+      hasClientConnection = urls.isNotEmpty;
+      peerCount = urls.length;
       _loaded = true;
       _settingsContext.refresh();
     } finally {

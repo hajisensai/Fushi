@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_card_creation.dart';
+import 'package:fushi/src/settings/settings_schema_lookup.dart'
+    show buildLookupDestination;
 import 'package:fushi/src/settings/settings_schema_storage.dart';
 import 'package:fushi/src/settings/settings_schema_system.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
@@ -380,9 +382,21 @@ void main() {
           reason: 'the note must say which device runs the sync server');
       expect(enableFooterText, contains('pair'),
           reason: 'the note must say the other device pairs with that server');
-      expect(idsOf(dest.sections[1]),
-          <String>['sync.hibiki_server_config', 'sync.lan_devices']);
+      // C2：对端列表 + LAN 发现（整页最高的两个 widget）挪进子页「配对与设备」，
+      // 主页只留一行带已配对数摘要的入口。
+      expect(idsOf(dest.sections[1]), <String>['interconnect.devices']);
       expect(dest.sections[1].visible, isNotNull);
+      final SettingsNavigationItem devices =
+          dest.sections[1].items.single as SettingsNavigationItem;
+      expect(devices.child, isNotNull, reason: '入口必须是子 schema 页');
+      expect(devices.subtitleBuilder, isNotNull, reason: '入口行带实时摘要');
+      final SettingsDestination devicesPage = devices.child!();
+      expect(devicesPage.id, dest.id, reason: '子页共用父分类 id');
+      expect(
+        devicesPage.sections.expand(
+            (SettingsSection s) => s.items.map((SettingsItem i) => i.id)),
+        <String>['sync.hibiki_server_config', 'sync.lan_devices'],
+      );
       // BUG-988：互联专属上传分项开关，与云备份/连接开关解耦，默认全关；仅互联启用时
       // 可见（host 无 outbound 时进一步隐藏）。
       expect(idsOf(dest.sections[2]), <String>[
@@ -412,12 +426,21 @@ void main() {
         'interconnect.profile_download',
       ]);
       expect(dest.sections[4].visible, isNotNull);
-      // 本机作为服务器：host 模式开关 + host 侧「允许对端读写本机配置」许可。
-      expect(idsOf(dest.sections[5]), <String>[
-        'sync.server_mode',
-        'interconnect.profile_transfer_host',
-      ]);
+      // 本机作为服务器：host 模式开关 + host 侧「允许对端读写本机配置」许可——C2
+      // 整块挪进子页「主机服务」，主页只留一行带运行状态（端口）摘要的入口。
+      expect(idsOf(dest.sections[5]), <String>['interconnect.host']);
       expect(dest.sections[5].visible, isNotNull);
+      final SettingsNavigationItem host =
+          dest.sections[5].items.single as SettingsNavigationItem;
+      expect(host.child, isNotNull, reason: '入口必须是子 schema 页');
+      expect(host.subtitleBuilder, isNotNull, reason: '入口行带运行状态摘要');
+      final SettingsDestination hostPage = host.child!();
+      expect(hostPage.id, dest.id, reason: '子页共用父分类 id');
+      expect(
+        hostPage.sections.expand(
+            (SettingsSection s) => s.items.map((SettingsItem i) => i.id)),
+        <String>['sync.server_mode', 'interconnect.profile_transfer_host'],
+      );
     });
 
     test('peer address list keeps its title and empty-state guidance', () {
@@ -455,20 +478,33 @@ void main() {
       expect(cardIds, isNot(contains('interconnect.mine_to_server')));
     });
 
-    test('mirrors interconnect-related settings from lookup/sync categories',
+    test('points at interconnect-related settings instead of mirroring them',
         () {
-      // 远端词典查询/管理音频来源/远端占位卡在查词、同步分类各有其位，但逻辑上都
-      // 作用于互联对端；在互联分类镜像同一入口（共享 builder，非复制），仅互联被选为
-      // 同步方式时可见（与其它互联配置区一致）。
+      // 远端词典查询/管理音频来源/远端占位卡在查词、同步分类各有其位。此前在互联
+      // 分类镜像三行同一 builder；用户拍板（2026-09-06）改成一行指路——不再重复
+      // 渲染开关，点进去落到查词分类并定位远端查词那一行。仅互联启用时可见。
       expect(
-        idsOf(dest.sections[6]),
-        <String>[
-          'lookup.remote_lookup',
-          'lookup.audio_sources',
-          'sync.show_remote_entries',
-        ],
-      );
+          idsOf(dest.sections[6]), <String>['interconnect.related_settings']);
       expect(dest.sections[6].visible, isNotNull);
+      final SettingsNavigationItem related =
+          dest.sections[6].items.single as SettingsNavigationItem;
+      expect(related.onTap, isNotNull, reason: '指路行必须能点进查词分类');
+      // 三个被指的行仍各在其位（查词两行 / 同步一行），没有随镜像一起消失。
+      final List<String> lookupIds = buildLookupDestination()
+          .sections
+          .expand((SettingsSection s) => s.items)
+          .map((SettingsItem i) => i.id)
+          .toList();
+      expect(
+          lookupIds,
+          containsAll(
+              <String>['lookup.remote_lookup', 'lookup.audio_sources']));
+      final List<String> syncIds = buildSyncBackupDestination()
+          .sections
+          .expand((SettingsSection s) => s.items)
+          .map((SettingsItem i) => i.id)
+          .toList();
+      expect(syncIds, contains('sync.show_remote_entries'));
     });
 
     test('host-server group keeps its explanatory footer', () {

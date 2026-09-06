@@ -4252,5 +4252,14 @@
   "sync_asset_dictionary": "Dictionaries",
   "sync_asset_local_audio": "Local audio databases",
   "sync_asset_transfer_menu": "Transfer",
-  "sync_asset_transfer_hint": "Upload what only this device has, or download what only the remote has"
+  "sync_asset_transfer_hint": "Upload what only this device has, or download what only the remote has",
+  "interconnect_devices_page": "Pairing & devices",
+  "interconnect_devices_hint": "Peer addresses, pairing and LAN discovery",
+  "interconnect_devices_paired_count": "Paired devices: $n",
+  "interconnect_host_page": "Host service",
+  "interconnect_host_hint": "Port, TLS, access token and paired devices",
+  "interconnect_host_running": "Running on port $port",
+  "interconnect_host_off": "Off",
+  "interconnect_related_entry": "Remote lookup, audio sources & remote entries",
+  "interconnect_related_entry_hint": "Configured in the Lookup and Sync categories"
 }
