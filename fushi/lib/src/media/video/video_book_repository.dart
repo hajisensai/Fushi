@@ -1106,8 +1106,14 @@ class _CoverDirSnapshot {
     final Set<String> names = <String>{};
     try {
       if (dir.existsSync()) {
-        await for (final FileSystemEntity entity
-            in dir.list(followLinks: false)) {
+        // 必须是 listSync，不能是 `await for (… in dir.list())`。
+        // 异步目录流的完成事件走真实事件循环，而 widget 测试在 fake-async 里推进
+        // 时钟——那个事件永远送不到，`listForShelf()` 的 future 因此永不 resolve，
+        // 加载转圈一直排帧，`pumpAndSettle` 必然超时（home_video_page_menu_test
+        // 的 5 条用例就是这么红的）。
+        // 省掉「每行一次 existsSync」这个收益与同步/异步无关：一次目录列举 vs
+        // N 次 stat，listSync 照样是一次。
+        for (final FileSystemEntity entity in dir.listSync(followLinks: false)) {
           if (entity is File) names.add(p.basename(entity.path));
         }
       }

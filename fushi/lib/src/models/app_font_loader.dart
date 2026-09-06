@@ -177,8 +177,24 @@ class AppFontLoader {
     if (!file.existsSync()) return null;
 
     if (_loadedFamilies.contains(family)) return family;
+    // 在飞去重只能复用**成功**的结果。
+    //
+    // `_loadedFamilies.add(family)` 只在 `loader.load()` 成功后才执行，所以在串行
+    // 年代「第一个同名条目失败」不会污染后续条目：A 装 P1 失败返回 null，B 照常去
+    // 装自己的 P2。改成并发 + 共享 future 之后，B 在 `_inFlight` 里拿到的是 A 的
+    // future，得到 null 就直接返回——**P2 永不被尝试**，family F 整条不可用，
+    // UI/字幕/游戏文本一起回落到主题字体。
+    // 触发条件不窄：`resolveAllHealth` 内部就是 Future.wait（同一条链的条目全部同时
+    // 在飞），AppModel 又把 appUiFonts / videoSubtitleFonts / gameLookupFonts 三条链
+    // 并发跑，而「跨链同名家族」正是 `_inFlight` 存在的理由。
     final Future<String?>? pending = _inFlight[family];
-    if (pending != null) return pending;
+    if (pending != null) {
+      final String? shared = await pending;
+      if (shared != null) return shared;
+      // 前一个装载失败了：不复用它的失败，退回去装自己这一份。
+      // 此时它已经把自己从 _inFlight 里摘掉了（finally），不会再互相等。
+      return _loadFileFamily(file, family, isWoff: isWoff, isWoff2: isWoff2);
+    }
     final Future<String?> loading =
         _loadFileFamily(file, family, isWoff: isWoff, isWoff2: isWoff2);
     _inFlight[family] = loading;
