@@ -177,7 +177,7 @@ class BackupRestoreService {
           dbAudiobookCount: dbAudiobookCount);
     } catch (e, st) {
       debugPrint(
-          'BackupService.summarizeBackupFile failed for $zipPath: $e\n$st');
+          'BackupRestoreService.summarizeBackupFile failed for $zipPath: $e\n$st');
       return const BackupContentSummary();
     } finally {
       await input?.close();
@@ -217,7 +217,7 @@ class BackupRestoreService {
         db.dispose();
       }
     } catch (e, st) {
-      debugPrint('BackupService._peekContentRowCounts failed: $e\n$st');
+      debugPrint('BackupRestoreService._peekContentRowCounts failed: $e\n$st');
       return null;
     } finally {
       try {
@@ -251,7 +251,7 @@ class BackupRestoreService {
     String bakPath,
   ) async {
     if (!File(bakPath).existsSync()) {
-      debugPrint('BackupService._reapplyDeviceLocalTablesFromBak: '
+      debugPrint('BackupRestoreService._reapplyDeviceLocalTablesFromBak: '
           'pre-restore.bak missing — local pairing/baselines could not be '
           'preserved on import.');
       return false;
@@ -260,7 +260,7 @@ class BackupRestoreService {
     try {
       hasSqliteHeader = await _hasSqliteHeader(bakPath);
     } catch (e, st) {
-      debugPrint('BackupService._reapplyDeviceLocalTablesFromBak: '
+      debugPrint('BackupRestoreService._reapplyDeviceLocalTablesFromBak: '
           'pre-restore.bak could not be inspected: $e\n$st');
       return false;
     }
@@ -268,7 +268,7 @@ class BackupRestoreService {
       // A few low-level restore callers intentionally swap opaque fixture
       // bytes rather than a Hibiki database. Such a snapshot cannot contain
       // device-local rows, so there is nothing to retry or retain.
-      debugPrint('BackupService._reapplyDeviceLocalTablesFromBak: '
+      debugPrint('BackupRestoreService._reapplyDeviceLocalTablesFromBak: '
           'pre-restore.bak is not a SQLite database; no local tables to '
           'preserve.');
       return true;
@@ -293,7 +293,7 @@ class BackupRestoreService {
     } catch (e, st) {
       // Best-effort preservation: a corrupt/unreadable imported DB must not
       // abort the whole restore (the primary overwrite already landed).
-      debugPrint('BackupService._reapplyDeviceLocalTablesFromBak failed: '
+      debugPrint('BackupRestoreService._reapplyDeviceLocalTablesFromBak failed: '
           '$e\n$st');
       return false;
     } finally {
@@ -529,7 +529,7 @@ class BackupRestoreService {
     ];
     if (keys.isEmpty) return;
     if (!File(bakPath).existsSync()) {
-      debugPrint('BackupService._reapplyExcludedContentRegistry: '
+      debugPrint('BackupRestoreService._reapplyExcludedContentRegistry: '
           'pre-restore.bak missing — local favorites/fonts/audio registry could '
           'not be preserved for a category-excluded backup.');
       return;
@@ -551,7 +551,7 @@ class BackupRestoreService {
       await db.customStatement('DETACH DATABASE crbak');
       await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
     } catch (e, st) {
-      debugPrint('BackupService._reapplyExcludedContentRegistry failed: '
+      debugPrint('BackupRestoreService._reapplyExcludedContentRegistry failed: '
           '$e\n$st');
     } finally {
       try {
@@ -588,7 +588,7 @@ class BackupRestoreService {
       // A null result tells the UI "invalid backup". Surface the real reason
       // (corrupt zip / read error / OOM) so it is not silently indistinguishable
       // from a genuinely malformed archive (review W4).
-      debugPrint('BackupService.validateBackup failed for $zipPath: $e\n$st');
+      debugPrint('BackupRestoreService.validateBackup failed for $zipPath: $e\n$st');
       return null;
     } finally {
       await input?.close();
@@ -983,7 +983,7 @@ class BackupRestoreService {
         await _safeDelete(sidecar.path);
         await _safeDelete(bakPath);
       } else {
-        debugPrint('BackupService.restoreBackup: device-local tables were not '
+        debugPrint('BackupRestoreService.restoreBackup: device-local tables were not '
             'reapplied; retaining restore sidecar and pre-restore.bak for '
             'startup recovery.');
       }
@@ -1245,7 +1245,7 @@ class BackupRestoreService {
     } catch (e, st) {
       // Never block the import on a preview failure — fall back to a generic
       // confirm dialog.
-      debugPrint('BackupService.previewMergeRestore failed: $e\n$st');
+      debugPrint('BackupRestoreService.previewMergeRestore failed: $e\n$st');
       return null;
     } finally {
       await _safeDelete(tmpSrc);
@@ -1299,7 +1299,7 @@ class BackupRestoreService {
         await _safeDelete('$mergeSrc-shm');
       }
     } catch (e, st) {
-      debugPrint('BackupService.recoverMergeRestore failed: $e\n$st');
+      debugPrint('BackupRestoreService.recoverMergeRestore failed: $e\n$st');
     }
     await _safeDelete(p.join(dbDirectory, _mergeSrcName));
     await _safeDelete(p.join(dbDirectory, '$_mergeSrcName-wal'));
@@ -1361,17 +1361,17 @@ class BackupRestoreService {
       // pre-restore DB snapshot can still rescue device-local tables. Preserve
       // the historical behavior of dropping an irreparably corrupt marker once
       // that table replay succeeds.
-      debugPrint('BackupService.recoverPendingRestore: corrupt sidecar: '
+      debugPrint('BackupRestoreService.recoverPendingRestore: corrupt sidecar: '
           '$e\n$st');
       sidecarStateApplied = true;
     } on TypeError catch (e, st) {
-      debugPrint('BackupService.recoverPendingRestore: invalid sidecar shape: '
+      debugPrint('BackupRestoreService.recoverPendingRestore: invalid sidecar shape: '
           '$e\n$st');
       sidecarStateApplied = true;
     } catch (e, st) {
       // Database/filesystem failures are retryable. Keep both artifacts so the
       // next startup can replay the same idempotent operations.
-      debugPrint('BackupService.recoverPendingRestore failed: $e\n$st');
+      debugPrint('BackupRestoreService.recoverPendingRestore failed: $e\n$st');
       return;
     }
 
@@ -1380,7 +1380,7 @@ class BackupRestoreService {
       final bool deviceLocalTablesReapplied =
           await _reapplyDeviceLocalTablesFromBak(dbDirectory, bakPath);
       if (!deviceLocalTablesReapplied) {
-        debugPrint('BackupService.recoverPendingRestore: retaining sidecar and '
+        debugPrint('BackupRestoreService.recoverPendingRestore: retaining sidecar and '
             'pre-restore.bak because device-local table replay did not finish.');
         return;
       }
@@ -1401,7 +1401,7 @@ class BackupRestoreService {
       // surface it loudly rather than silently dropping the user's settings.
       // (Normal flow restores inline while bak definitely exists; reaching here
       // means a crash + external deletion of bak before the next launch.)
-      debugPrint('BackupService._reapplySettingsLayer: pre-restore.bak missing '
+      debugPrint('BackupRestoreService._reapplySettingsLayer: pre-restore.bak missing '
           '— local settings/profiles could not be preserved on import.');
       return;
     }
@@ -1457,7 +1457,7 @@ class BackupRestoreService {
       // bak is the only copy of this device's settings/profiles after the
       // overwrite. Missing it means a crash + external deletion before this ran;
       // surface loudly rather than silently wiping the layer to empty.
-      debugPrint('BackupService._reapplyExcludedSettingsLayers: '
+      debugPrint('BackupRestoreService._reapplyExcludedSettingsLayers: '
           'pre-restore.bak missing — local settings/profiles could not be '
           'preserved for a settings/profiles-excluded backup.');
       return;
@@ -1517,7 +1517,7 @@ class BackupRestoreService {
       // bak is the only copy of this device's dictionary rows after the
       // overwrite. Missing it means a crash + external deletion before this
       // ran; surface loudly rather than silently dropping the dictionaries.
-      debugPrint('BackupService._reapplyDictionaryTablesFromBak: '
+      debugPrint('BackupRestoreService._reapplyDictionaryTablesFromBak: '
           'pre-restore.bak missing — local dictionaries could not be '
           'preserved on import.');
       return;
@@ -1567,7 +1567,7 @@ class BackupRestoreService {
     } catch (e, st) {
       // Current DB unreadable/corrupt: nothing to preserve. Import the backup
       // as-is rather than aborting — a broken local DB shouldn't block restore.
-      debugPrint('BackupService._readDeviceLocalPrefs failed: $e\n$st');
+      debugPrint('BackupRestoreService._readDeviceLocalPrefs failed: $e\n$st');
       return const <String, String>{};
     } finally {
       try {

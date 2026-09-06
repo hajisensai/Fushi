@@ -12,6 +12,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'backup_service_source_corpus.dart';
+
 void main() {
   String read(String rel) {
     final File f = File(rel);
@@ -21,24 +23,31 @@ void main() {
 
   group('TODO-1183 备份导入流式落盘 / failed 态守卫', () {
     test('backup_service：导入/合并路径不再把整个条目 materialize 后 writeAsBytes', () {
-      // B1 分家：恢复 / 合并路径在 restore.part.dart；负向断言两边一起扫，正向
-      // 断言只认恢复侧。
-      final String src = read('lib/src/sync/backup_service/restore.part.dart') +
-          read('lib/src/sync/backup_service.dart');
+      // B1 分家：恢复 / 合并路径搬进了 restore.part.dart。两类断言的数据源**不同**，
+      // 不能像最初那样拼成一个串喂给两边：
+      //   · 正向（「流式基础设施在场」）只认恢复侧那一个文件。拼起来扫等于把锁松成
+      //     「库里某处有流式就行」——今天导出侧用的是 `Isolate.run(` 而不是
+      //     `Isolate.spawn(`，所以还没假绿，但那是巧合不是保证。
+      //   · 负向（「不得 materialize 整条目」）要扫**整份合并语料**（主壳 + 全部
+      //     part），否则谁把裸 writeAsBytes 写进新加的 part，这几条就真空通过。
+      final String restoreSrc =
+          read('lib/src/sync/backup_service/restore.part.dart');
+      final String corpus = readBackupServiceSource();
+
       // 旧的整条目 materialize 直写必须消失（meta.content 仍可，因为它极小）。
-      expect(src.contains('writeAsBytes(dbFile.content'), isFalse,
+      expect(corpus.contains('writeAsBytes(dbFile.content'), isFalse,
           reason: 'DB 覆盖必须流式，不得 writeAsBytes 整个 DB（OOM 根因）');
-      expect(src.contains('writeAsBytes(file.content'), isFalse,
+      expect(corpus.contains('writeAsBytes(file.content'), isFalse,
           reason: 'local_audio DB（可数 GB）必须流式落盘');
-      expect(src.contains('entry.key.content as List<int>'), isFalse,
+      expect(corpus.contains('entry.key.content as List<int>'), isFalse,
           reason: '内容树/词典资源必须流式落盘，不得整条目读进堆');
-      // 流式 + 后台 isolate 基础设施在场。
-      expect(src.contains('_extractEntriesStreaming'), isTrue);
-      expect(src.contains('OutputFileStream'), isTrue,
+      // 流式 + 后台 isolate 基础设施必须在**恢复侧**在场。
+      expect(restoreSrc.contains('_extractEntriesStreaming'), isTrue);
+      expect(restoreSrc.contains('OutputFileStream'), isTrue,
           reason: '必须用 OutputFileStream 分块落盘');
-      expect(src.contains('Isolate.spawn('), isTrue,
+      expect(restoreSrc.contains('Isolate.spawn('), isTrue,
           reason: '重解压/落盘必须在后台 isolate，避免冻结 UI isolate（进度卡死）');
-      expect(src.contains('file.rawContent'), isTrue,
+      expect(restoreSrc.contains('file.rawContent'), isTrue,
           reason:
               '走 rawContent 分块流式（archive 3.6.1 writeContent 会 materialize）');
     });
