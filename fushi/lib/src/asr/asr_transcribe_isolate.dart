@@ -34,10 +34,11 @@ import 'package:fushi/src/asr/asr_encoder_buckets.dart';
 import 'package:fushi/src/asr/asr_engine.dart';
 import 'package:fushi/src/asr/asr_model_manifest.dart';
 import 'package:fushi/src/asr/asr_model_store.dart';
-import 'package:fushi/src/asr/asr_pcm_source.dart';
+import 'package:fushi/src/asr/asr_pcm_bridge.dart';
 import 'package:fushi/src/asr/asr_transcribe_job.dart';
 import 'package:fushi/src/asr/asr_transcription_service.dart';
 import 'package:fushi/src/asr/asr_transducer_decoder.dart';
+import 'package:fushi/src/asr/asr_types.dart';
 import 'package:fushi/src/asr/asr_vad.dart';
 import 'package:fushi/src/onnx/onnx_inference.dart';
 
@@ -85,11 +86,16 @@ class _IsolateArgs {
     required this.events,
     required this.rootIsolateToken,
     required this.spec,
+    required this.pcmPort,
   });
 
   final SendPort events;
   final RootIsolateToken? rootIsolateToken;
   final AsrIsolateJobSpec spec;
+
+  /// 根 isolate 的 [AsrPcmBridgeHost] 请求端口：PCM 解码留在根 isolate
+  /// （BUG-2197，`asr_pcm_bridge.dart` 文件头）。
+  final SendPort pcmPort;
 }
 
 class _ControlPortMessage {
@@ -136,9 +142,13 @@ class AsrIsolateTranscription implements AsrRunningTranscription {
   );
 
   /// 起 isolate、装载引擎；引擎装好（或装载失败）才返回，与进程内路径的
-  /// `start()` 契约一致。
-  static Future<AsrIsolateTranscription> spawn(AsrIsolateJobSpec spec) async {
+  /// `start()` 契约一致。[pcm] 留在根 isolate 服务转录 isolate 的解码请求。
+  static Future<AsrIsolateTranscription> spawn(
+    AsrIsolateJobSpec spec, {
+    required AsrPcmSource pcm,
+  }) async {
     final ReceivePort events = ReceivePort();
+    final AsrPcmBridgeHost pcmHost = AsrPcmBridgeHost(pcm);
     final Completer<SendPort> control = Completer<SendPort>();
     final Completer<_LoadedMessage> loaded = Completer<_LoadedMessage>();
     final Completer<void> exited = Completer<void>();
@@ -166,6 +176,7 @@ class AsrIsolateTranscription implements AsrRunningTranscription {
         if (!exited.isCompleted) exited.complete();
         running._onExited();
         events.close();
+        unawaited(pcmHost.close());
         return;
       }
       if (message is List<Object?> && message.length == 2) {
@@ -179,6 +190,7 @@ class AsrIsolateTranscription implements AsrRunningTranscription {
         if (!exited.isCompleted) exited.complete();
         running._onExited();
         events.close();
+        unawaited(pcmHost.close());
         return;
       }
       if (message is _StatsMessage) {
@@ -202,6 +214,7 @@ class AsrIsolateTranscription implements AsrRunningTranscription {
           events: events.sendPort,
           rootIsolateToken: RootIsolateToken.instance,
           spec: spec,
+          pcmPort: pcmHost.port,
         ),
         onError: events.sendPort,
         debugName: 'asr_transcribe_job',
@@ -213,6 +226,7 @@ class AsrIsolateTranscription implements AsrRunningTranscription {
       return running;
     } catch (_) {
       events.close();
+      await pcmHost.close();
       rethrow;
     }
   }
@@ -320,6 +334,8 @@ Future<void> _isolateMain(_IsolateArgs args) async {
   }
 
   final AsrIsolateJobSpec spec = args.spec;
+  // PCM 解码在根 isolate（ffmpeg_kit 的 EventChannel 只能在那边订阅，BUG-2197）。
+  final RemoteAsrPcmSource pcm = RemoteAsrPcmSource(args.pcmPort);
   AsrEngineSessions? sessions;
   try {
     final AsrModelStore store = AsrModelStore(
@@ -346,7 +362,7 @@ Future<void> _isolateMain(_IsolateArgs args) async {
       jobDir: Directory(spec.jobDirPath),
       audioPaths: spec.audioPaths,
       modelId: store.pack.id,
-      pcm: FfmpegAsrPcmSource(),
+      pcm: pcm,
       segmenter: switch (spec.segmenterKind) {
         AsrSegmenterKind.energy => AsrVadSegmenter(
           scorer: EnergyVadScorer(),
@@ -384,6 +400,7 @@ Future<void> _isolateMain(_IsolateArgs args) async {
     } catch (_) {
       // 关会话失败没有可做的补救；退出本 isolate 即可。
     }
+    pcm.close();
     args.events.send(const _ExitedMessage());
     control.close();
   }

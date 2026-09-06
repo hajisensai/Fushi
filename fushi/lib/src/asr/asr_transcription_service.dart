@@ -344,6 +344,7 @@ class AsrTranscriptionService {
     final int? materialMs = await _probeMaterialMs(audioPaths);
     if (runInIsolate) {
       return AsrIsolateTranscription.spawn(
+        pcm: _pcm,
         AsrIsolateJobSpec(
           storeDirPath: store.dir.path,
           language: language,
