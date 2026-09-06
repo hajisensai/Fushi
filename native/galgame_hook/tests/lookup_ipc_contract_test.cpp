@@ -636,8 +636,8 @@ void TestV14LookupRegionIsPureAppendOverV13() {
 }
 
 void TestV16V17AndV19OnlyAppendOverV15() {
-  Check(kSharedVersion == 22,
-        "本测试锁的是 v22 契约（BUG-2136 层原点双向面在 v19 摘要后纯追加）");
+  Check(kSharedVersion == 23,
+        "本测试锁的是 v23 契约（BUG-2149 adapter 运行期读数在层原点块后纯追加）");
 
   // v14 的最后一个字段是 lookup_diag。v15 只能紧随其后追加一个 64 位 applied seq；
   // 把字段插进 v14 中间，或在 applied seq 后再偷偷长出别的字段，都必须判红。
@@ -963,14 +963,130 @@ void TestV19AdmissionIsPureAppendOverV17() {
           kLayerOrder[i]);
     Check(kLayerOffsets[i] % 4 == 0, "层原点字段必须 4 字节对齐（Interlocked 前提）");
   }
+  // v23 adapter 读数块是层原点块之后的又一次纯追加，所以尾部再次后移。同等强度地
+  // 锁死它：新块不许插进既有布局、内部次序不许改、尾部不许混入别的字段——否则这块
+  // 就成了没人守的自由区，而它恰恰是跨进程按 sizeof 现算基址的那个结构。
+  Check(offsetof(SharedHeader, adapter_reports) ==
+            ((offsetof(SharedHeader, lookup_layer_reserved) + sizeof(uint32_t) +
+              alignof(fushi_voice_hook::AdapterReportSlot) - 1u) /
+             alignof(fushi_voice_hook::AdapterReportSlot)) *
+                alignof(fushi_voice_hook::AdapterReportSlot),
+        "v23 adapter 读数块必须紧接层原点块，不得插进既有布局");
+  Check(sizeof(fushi_voice_hook::AdapterReportSlot) ==
+            fushi_voice_hook::kAdapterReportIdChars + 8u,
+        "AdapterReportSlot 布局变了：id + applicable/installed/reserved + flags");
+  Check(offsetof(fushi_voice_hook::AdapterReportSlot, id) == 0,
+        "槽必须以自带的 id 开头——按注册顺序编号会在清单中间插行时整体错位且不报错");
+  Check(offsetof(SharedHeader, adapter_report_count) ==
+            offsetof(SharedHeader, adapter_reports) +
+                sizeof(fushi_voice_hook::AdapterReportSlot) *
+                    fushi_voice_hook::kAdapterReportSlots,
+        "adapter_report_count 必须紧跟槽数组");
+  Check(offsetof(SharedHeader, adapter_report_seq) ==
+            offsetof(SharedHeader, adapter_report_count) + sizeof(uint32_t),
+        "adapter_report_seq 必须紧跟 count（内容先写、seq 最后发布）");
+  Check(offsetof(SharedHeader, adapter_report_count) % 4 == 0 &&
+            offsetof(SharedHeader, adapter_report_seq) % 4 == 0,
+        "count/seq 必须 4 字节对齐（Interlocked 前提）");
   Check(sizeof(SharedHeader) ==
-            ((offsetof(SharedHeader, lookup_layer_reserved) +
+            ((offsetof(SharedHeader, adapter_report_seq) +
               sizeof(uint32_t) + 7u) /
              8u) * 8u,
-        "v22 末尾除 8 字节对齐填充外不得混入其他字段");
+        "v23 末尾除 8 字节对齐填充外不得混入其他字段");
 }
 
 // 准入的读写往返。这些性质全都是「UI 会不会误导用户」的直接决定因素，不是内部细节。
+// v23 adapter 读数的读写往返（BUG-2149）。这条面的价值全在「读出来的那行说的是不是
+// 那个 adapter」——所以每条断言都盯着"会不会把读者引到错误结论"。
+void TestAdapterReportRoundTrip() {
+  FakeMapping mapping;
+  SharedHeader* h = mapping.header();
+
+  auto make = [](const char* id, bool applicable, bool installed,
+                 uint32_t flags) {
+    fushi_voice_hook::AdapterReportSlot slot = {};
+    size_t n = 0;
+    while (id[n] != '\0' && n + 1 < fushi_voice_hook::kAdapterReportIdChars) {
+      slot.id[n] = id[n];
+      ++n;
+    }
+    slot.id[n] = '\0';
+    slot.applicable = applicable ? 1u : 0u;
+    slot.installed = installed ? 1u : 0u;
+    slot.flags = flags;
+    return slot;
+  };
+
+  // (a) 从未上报过：读到 0 槽，且 seq==0。这必须与"上报了但一个都没认领"区分开——
+  //     混在一起会让诊断在 helper 起来前的那几百毫秒稳定误报"没有 adapter"。
+  fushi_voice_hook::AdapterReportSlot out[fushi_voice_hook::kAdapterReportSlots] = {};
+  uint32_t seq = 0xffffffffu;
+  Check(fushi_voice_hook::ReadAdapterReports(
+            h, out, fushi_voice_hook::kAdapterReportSlots, &seq) == 0,
+        "未上报时必须读到 0 槽");
+  Check(seq == 0, "未上报时 seq 必须是 0");
+
+  // (b) 正常往返：id / applicable / installed / flags 都要原样回来，且**按槽对号**。
+  fushi_voice_hook::AdapterReportSlot in[3] = {
+      make("cmvs", true, true, 0x11u),
+      make("process_loopback", true, false, 0x22u),
+      make("sgre", false, false, 0x33u),
+  };
+  Check(fushi_voice_hook::PublishAdapterReports(h, in, 3) == 3,
+        "发布 3 槽必须返回 3");
+  Check(fushi_voice_hook::ReadAdapterReports(
+            h, out, fushi_voice_hook::kAdapterReportSlots, &seq) == 3,
+        "必须读回 3 槽");
+  Check(seq == 1, "首次发布后 seq 必须是 1");
+  Check(strcmp(out[0].id, "cmvs") == 0 && out[0].applicable == 1 &&
+            out[0].installed == 1 && out[0].flags == 0x11u,
+        "第 0 槽必须原样回来");
+  Check(strcmp(out[1].id, "process_loopback") == 0 && out[1].applicable == 1 &&
+            out[1].installed == 0,
+        "横切能力那行也要原样回来——它自带 id，不会被误读成引擎判定");
+  Check(strcmp(out[2].id, "sgre") == 0 && out[2].applicable == 0,
+        "probe 为假的行同样要如实回来");
+
+  // (c) adapter 数变少（换了个构建）时，尾部旧槽必须被清掉。不清就会读到上一次的
+  //     probe/installed，而那一行看着完全正常——这正是最难发现的错。
+  fushi_voice_hook::AdapterReportSlot fewer[1] = {make("aos_sfa", true, false, 0u)};
+  Check(fushi_voice_hook::PublishAdapterReports(h, fewer, 1) == 1,
+        "发布 1 槽必须返回 1");
+  Check(fushi_voice_hook::ReadAdapterReports(
+            h, out, fushi_voice_hook::kAdapterReportSlots, &seq) == 1,
+        "槽数必须跟着变少");
+  Check(h->adapter_reports[1].id[0] == '\0' &&
+            h->adapter_reports[1].applicable == 0 &&
+            h->adapter_reports[1].installed == 0,
+        "尾部残留槽必须清零，否则读到的是上一次的读数");
+
+  // (d) id 超长必须截断且仍带 NUL：id 由各 adapter 自己给，长度不受写侧文件控制，
+  //     读侧绝不能因此读出界。
+  char long_id[fushi_voice_hook::kAdapterReportIdChars + 16];
+  for (size_t i = 0; i + 1 < sizeof(long_id); ++i) long_id[i] = 'x';
+  long_id[sizeof(long_id) - 1] = '\0';
+  fushi_voice_hook::AdapterReportSlot huge[1] = {make(long_id, true, true, 0u)};
+  Check(fushi_voice_hook::PublishAdapterReports(h, huge, 1) == 1, "超长 id 也要发布成功");
+  Check(fushi_voice_hook::ReadAdapterReports(
+            h, out, fushi_voice_hook::kAdapterReportSlots, &seq) == 1,
+        "超长 id 仍读回 1 槽");
+  Check(strlen(out[0].id) == fushi_voice_hook::kAdapterReportIdChars - 1,
+        "超长 id 必须截断到槽宽减一");
+
+  // (e) 槽数超过容量必须被夹住，绝不越界写。
+  fushi_voice_hook::AdapterReportSlot many[fushi_voice_hook::kAdapterReportSlots + 4] = {};
+  for (size_t i = 0; i < sizeof(many) / sizeof(many[0]); ++i) many[i] = make("x", true, false, 0u);
+  Check(fushi_voice_hook::PublishAdapterReports(
+            h, many, sizeof(many) / sizeof(many[0])) ==
+            fushi_voice_hook::kAdapterReportSlots,
+        "超过槽数必须被夹到 kAdapterReportSlots");
+
+  // (f) 读侧容量小于已发布槽数时按容量截断，不得越界写调用方缓冲。
+  fushi_voice_hook::AdapterReportSlot small[2] = {};
+  Check(fushi_voice_hook::ReadAdapterReports(h, small, 2, &seq) == 2,
+        "读侧必须按自己的容量截断");
+}
+
 void TestAdmissionRoundTrip() {
   FakeMapping mapping;
   SharedHeader* h = mapping.header();
@@ -1123,6 +1239,7 @@ int main() {
   TestV19AttachedGeometryOwnershipSnapshot();
   TestV19AdmissionIsPureAppendOverV17();
   TestAdmissionRoundTrip();
+  TestAdapterReportRoundTrip();
   TestSha256HexFormatting();
   TestHeaderMirrorsCompileTimeConstants();
   if (g_failures != 0) {

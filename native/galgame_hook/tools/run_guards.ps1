@@ -67,6 +67,7 @@ try {
   # and workflow guards.
   Invoke-Checked $python 'tests/engine_support_manifest_test.py'
   Invoke-Checked $python 'tests/adapter_structure_test.py'
+  Invoke-Checked $python 'tests/adapter_report_guard_test.py'
   Invoke-Checked $python 'tests/kirikiri_lookup_source_guard_test.py'
   Invoke-Checked $python 'tests/lookup_presenter_wiring_guard_test.py'
   Invoke-Checked $python 'tests/renpy_lookup_source_guard_test.py'

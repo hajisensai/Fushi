@@ -60,3 +60,25 @@
 - worktree `D:\APP\vs_claude_code\hibiki\.claude\worktrees\gal-cmvs-chronoclock`，分支 `worktree-gal-cmvs-chronoclock`（基底 develop，可独立开 PR）。
 - 脚本：`C:\Users\wrds\.claude\jobs\81491d86\tmp\{build_cmvs,guards_cmvs,mutate_cmvs}.sh`、身份脚本 `cc_identity.py`；真机驱动沿用 `C:\Users\wrds\.claude\jobs\a188f70d\tmp\launch_fushi_iso2.ps1` + `C:\Users\wrds\.claude\jobs\3f9f84ac\tmp\drive\galdrive.ps1`。
 - 构建坑同前：bash 里 unset 小写代理再跑 `build_distribution.ps1`；`flutter test` 反过来要小写 `http_proxy` 才能下 native assets；`setup_worktree.ps1` 在 PowerShell 里要先把 `C:\Program Files\Git\bin` 加进 PATH（apply-patches 调 bash）。
+
+## Next gate 更新（2026-09-05）
+
+原 Next gate「探针 `cmvs probe=1 installed=1`」当时**读不出来**——不是探针失败，是全仓没有
+任何工具能打出这一对读数（`AdapterDiagnostics` 只被契约测试读，运行期零消费方）。
+那是跨引擎的诊断缺口，已作为 [[BUG-2149]] 独立修掉（IPC v23 加 adapter 运行期读数）。
+
+真机复验（chronoclock 体験版 v2，`cmvs64.exe`，2026-09-05）：
+
+```
+[adapters] seq=20 xaudio2_directsound=probe:1/installed:1 siglus=probe:0/installed:1
+           text_render=probe:1/installed:1 kirikiri_z=probe:0/installed:1
+           process_loopback=probe:1/installed:0 reallive=probe:0/installed:1
+           cmvs=probe:1/installed:1
+```
+
+**`cmvs=probe:1/installed:1` 达成**，且 ATRI / Sakura / manosaba 三局里 cmvs 行整条不出现
+（跨引擎负样本）。
+
+下一个未通过边界因此前移到 **`text_observed`**：本局 `text_events=1`（标题画面），
+需要走进一句真台词，确认 LunaHook 的 `EmbedCMVS` 线程携带对白。在那之前状态仍是
+`implemented_unverified`。
