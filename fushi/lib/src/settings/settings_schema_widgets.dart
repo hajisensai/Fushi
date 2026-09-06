@@ -162,19 +162,32 @@ class SettingsSchemaItem extends StatelessWidget {
 
   Widget _status(SettingsStatusItem status) {
     final SettingsItemAction? onAction = status.onAction;
+    // 行级 onTap 让本行注册成 FushiFocusTarget，方向导航 / 手柄 A 才到得了
+    // （BUG-016）。`AdaptiveSettingsRow` 里 `if (onTap == null) return content;`
+    // ——没有 onTap 的行根本不包 _SettingsRowFocusTarget、不进 FushiFocusController
+    // 的注册表，而方向导航只走已注册目标。带行尾按钮却不给行级 onTap，键盘/手柄
+    // 用户从上一行按 Down 会**整行被跳过**，本面板下方再无目标时焦点还会跨 pane
+    // 落到左侧导航栏——BUG-016 实报的原症状。
+    //
+    // 纯状态行（onAction == null）**故意**不给 onTap：它没有可执行的动作，不该
+    // 成为焦点停靠点。
+    Future<void> runAction() async {
+      await onAction!(settingsContext);
+      settingsContext.refresh();
+    }
+
     return AdaptiveSettingsRow(
       // resolveTitle / resolveSubtitle：状态文本在渲染时求值（schema 树是缓存的常量树）。
       title: status.resolveTitle(settingsContext),
       subtitle: status.resolveSubtitle(settingsContext),
       icon: status.icon,
       showIcon: showIcons,
+      controlBelow: onAction != null,
+      onTap: onAction == null ? null : runAction,
       trailing: onAction == null
           ? null
           : FilledButton.tonal(
-              onPressed: () async {
-                await onAction(settingsContext);
-                settingsContext.refresh();
-              },
+              onPressed: runAction,
               child: Text(status.actionLabel!),
             ),
     );

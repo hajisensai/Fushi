@@ -109,6 +109,9 @@ List<SettingsSearchEntry> flattenVisibleSettings(
   return entries;
 }
 
+/// 子页最大嵌套层数（见 [_flattenPageInto] 里为什么必须有上限）。
+const int _kSubPageMaxDepth = 3;
+
 /// 展平一页（顶层分类或子页）的可见行；遇到带 [SettingsNavigationItem.child] 的
 /// 导航行就递归进子页——子页的行也是 schema item，与顶层行同等进索引，面包屑
 /// 变成「分类 › 子页 › 分区」。
@@ -136,6 +139,18 @@ void _flattenPageInto(
       if (item is! SettingsNavigationItem) continue;
       final SettingsDestination Function()? childBuilder = item.child;
       if (childBuilder == null) continue;
+      // 深度上限：`child` 是闭包，每次调用返回**新实例**，所以基于 identical 的
+      // 环检测无效。A 的子页是 B、B 的子页又是 A 这种写法会让索引器在用户往搜索框
+      // 敲第一个字符时直接栈溢出（`_buildSearchResults` 每次击键都重新展平）。
+      // 三层已经远超现有形态（分类 › 子页 › 子页）。
+      if (subPagePath.length >= _kSubPageMaxDepth) {
+        assert(
+          false,
+          '设置子页嵌套超过 $_kSubPageMaxDepth 层：'
+          '要么 schema 真的这么深，要么 child 闭包成了环',
+        );
+        continue;
+      }
       final SettingsDestination child = childBuilder();
       if (!child.isVisible(context)) continue;
       _flattenPageInto(

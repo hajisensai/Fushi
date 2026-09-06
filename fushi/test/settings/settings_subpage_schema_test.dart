@@ -254,6 +254,72 @@ void main() {
       expect(calls, 1);
       expect(refreshes, 1);
     });
+
+    testWidgets('状态行：有动作时必须有行级 onTap（否则方向导航到不了这一行，BUG-016）',
+        (WidgetTester tester) async {
+      // 上面那条用 tester.tap 点行尾按钮，对本条完全不敏感：有没有行级 onTap，
+      // 鼠标点按钮都过。而 `AdaptiveSettingsRow` 里
+      // `if (onTap == null) return content;` —— 没有 onTap 的行根本不包
+      // _SettingsRowFocusTarget、不进 FushiFocusController 的注册表，而方向导航
+      // 只走已注册目标。带行尾按钮却不给行级 onTap，键盘/手柄用户从上一行按 Down
+      // 会整行被跳过，本面板下方再无目标时焦点还会跨 pane 落到左侧导航栏。
+      int calls = 0;
+      await pumpContext(
+        tester,
+        child: Builder(
+          builder: (BuildContext context) => SettingsSchemaItem(
+            item: SettingsStatusItem(
+              id: 's',
+              title: '主机服务',
+              subtitle: '未启动',
+              actionLabel: '重新生成 token',
+              onAction: (_) async => calls++,
+            ),
+            settingsContext: sctx,
+            showIcons: false,
+            routeBuilder: (_, WidgetBuilder b) =>
+                MaterialPageRoute<void>(builder: b),
+          ),
+        ),
+      );
+
+      final AdaptiveSettingsRow row =
+          tester.widget<AdaptiveSettingsRow>(find.byType(AdaptiveSettingsRow));
+      expect(row.onTap, isNotNull,
+          reason: '有行尾动作的状态行必须同时有行级 onTap —— 那是它进入'
+              'FushiFocusController 注册表的唯一条件（BUG-016）');
+
+      // 行级 onTap 必须跑同一个动作：手柄 A / Enter 落在行上，用户预期与按按钮一致。
+      await tester.tap(find.text('主机服务'));
+      await tester.pump();
+      expect(calls, 1);
+      expect(refreshes, 1);
+    });
+
+    testWidgets('状态行：纯状态行（无动作）不得有行级 onTap', (WidgetTester tester) async {
+      // 反向的一半：没有可执行动作的行不该成为焦点停靠点，否则方向导航会在一串
+      // 只读状态行上空转。
+      await pumpContext(
+        tester,
+        child: Builder(
+          builder: (BuildContext context) => SettingsSchemaItem(
+            item: const SettingsStatusItem(
+              id: 's',
+              title: '当前设备',
+              subtitle: 'Windows',
+            ),
+            settingsContext: sctx,
+            showIcons: false,
+            routeBuilder: (_, WidgetBuilder b) =>
+                MaterialPageRoute<void>(builder: b),
+          ),
+        ),
+      );
+
+      final AdaptiveSettingsRow row =
+          tester.widget<AdaptiveSettingsRow>(find.byType(AdaptiveSettingsRow));
+      expect(row.onTap, isNull, reason: '纯状态行没有动作，不该是焦点停靠点');
+    });
   });
 
   group('源码守卫：子页与状态行走框架，不走逃生口', () {

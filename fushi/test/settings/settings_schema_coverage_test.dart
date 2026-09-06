@@ -941,7 +941,8 @@ void main() {
               readerSource: ReaderFushiSource.instance,
               refresh: () {},
             );
-            final List<SettingsDestination> all = buildSettingsSchema(sctx);
+            final List<SettingsDestination> all =
+                _withSubPages(buildSettingsSchema(sctx));
             destinations = all;
             return ValueListenableBuilder<SettingsDestination?>(
               valueListenable: destNotifier,
@@ -1322,4 +1323,38 @@ class _CoverageAppModel extends AppModel {
 
   @override
   PackageInfo get packageInfo => _packageInfo;
+}
+
+/// 顶层 destination + 它们经 [SettingsNavigationItem.child] 挂出来的**子 schema 页**。
+///
+/// C0 引入子页之后，本 harness 如果只枚举 `buildSettingsSchema()` 的顶层结果，
+/// 那么 C1/C2 把同步/互联的行搬进子页的那一刻，这些行就**静默退出**了覆盖面——
+/// 测试照样绿，只是少测了 N 行。而本文件头部写的契约恰恰是「no silent caps：
+/// 每个 changed 但未 effect-verified 的设置都必须有去处」，静默缩小枚举面正是
+/// 它要防的事。
+///
+/// 子页复用 [SettingsDetailPage] 同一套详情壳，所以在这里把它们展平成同级
+/// destination 喂给同一个渲染 + Tab 遍历循环即可（子页共用父分类的 id，
+/// `probeFor(dest.id)` 因此继续命中父分类的探针）。
+///
+/// 深度上限 3：`child` 是闭包，每次调用返回新实例，基于 identical 的环检测无效，
+/// A→B→A 这种写法会直接栈溢出。
+List<SettingsDestination> _withSubPages(List<SettingsDestination> tops) {
+  final List<SettingsDestination> out = <SettingsDestination>[];
+  void visit(SettingsDestination destination, int depth) {
+    out.add(destination);
+    if (depth >= 3) return;
+    for (final SettingsSection section in destination.sections) {
+      for (final SettingsItem item in section.items) {
+        if (item is SettingsNavigationItem && item.child != null) {
+          visit(item.child!(), depth + 1);
+        }
+      }
+    }
+  }
+
+  for (final SettingsDestination destination in tops) {
+    visit(destination, 0);
+  }
+  return out;
 }
