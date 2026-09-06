@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'anchor_gap_filler.dart';
 import 'audio_text_normalizer.dart';
 import '../audiobook/audiobook_model.dart';
 
@@ -56,11 +57,16 @@ class MatchResult {
     required this.matches,
     required this.totalCues,
     required this.matchedCues,
+    this.gapFill,
   });
 
   final List<CueMatch> matches;
   final int totalCues;
   final int matchedCues;
+
+  /// 锚点间隙回填（[AnchorGapFiller.fill]）的统计；第一遍结果上为 null。
+  /// 回填跳过/放弃了哪些串、有没有因不变式退回，都从这里看。
+  final GapFillStats? gapFill;
 
   double get matchRate => totalCues == 0 ? 0.0 : matchedCues / totalCues;
 }
@@ -87,10 +93,23 @@ class MatchResult {
 ///       （O(attempts×window) 太慢），只靠恢复扫描跳过不匹配的段落。
 class EpubSrtMatcher {
   static const int defaultSearchWindow = 200;
-  static const int defaultProbeCount = 15;
+  static const int defaultProbeCount = 24;
+
+  /// 起点候选的「同伙半径」：两条探测 cue 的命中相距不超过这么多归一化字符就算
+  /// 互相佐证（前 24 条 cue 的正文通常几百到两千字）。
+  static const int startClusterSpan = 3000;
+
+  /// 起点之后至少要剩下 cue 总归一化长度的这个比例，否则音频塞不进去——出版社名
+  /// 只在书尾版权页命中就是这样被淘汰的。
+  static const double startMinRemainingRatio = 0.5;
   static const int defaultProbeMinLen = 6;
   static const double defaultSimilarityThreshold = 0.8;
   static const int defaultMaxConsecutiveMisses = 20;
+
+  /// 规范化后 ≤ 此长度的 cue 视为「超短 cue」：精确命中只在游标附近
+  /// [shortCueMaxAdvance] 字以内才作数（理由见主循环快速通道注释）。
+  static const int shortCueMaxLen = 2;
+  static const int shortCueMaxAdvance = 16;
 
   static Future<MatchResult> matchInIsolate({
     required List<EpubSection> sections,
@@ -126,6 +145,47 @@ class EpubSrtMatcher {
       maxConsecutiveMisses: maxConsecutiveMisses,
     );
     return compute(_probeEntrypoint, req);
+  }
+
+  /// [probeInIsolate] 的同步版：在当前 isolate 里对多档 window 各跑一遍
+  /// [match]（共用一份归一化索引），返回命中率最高的那档。测试 / 小数据场景，
+  /// 或已经身在后台 isolate 时（`EpubCueMatcher.probeInIsolate` 的入口函数）用。
+  static ProbeResult probe({
+    required List<EpubSection> sections,
+    required List<AudioCue> cues,
+    required List<int> windows,
+    double similarityThreshold = defaultSimilarityThreshold,
+    int maxConsecutiveMisses = defaultMaxConsecutiveMisses,
+  }) {
+    final Map<int, double> map = <int, double>{};
+    int bestWindow = windows.first;
+    double bestRate = -1;
+    MatchResult? bestResult;
+
+    final _Index idx = _buildIndex(sections);
+    final List<String> normCueTexts = <String>[
+      for (final AudioCue c in cues) AudioTextNormalizer.normalize(c.text),
+    ];
+
+    for (final int w in windows) {
+      final MatchResult r = _matchCore(
+        idx: idx,
+        sections: sections,
+        cues: cues,
+        searchWindow: w,
+        similarityThreshold: similarityThreshold,
+        maxConsecutiveMisses: maxConsecutiveMisses,
+        preNormCueTexts: normCueTexts,
+      );
+      map[w] = r.matchRate;
+      if (r.matchRate > bestRate + 1e-9 ||
+          (r.matchRate > bestRate - 1e-9 && w < bestWindow)) {
+        bestRate = r.matchRate;
+        bestWindow = w;
+        bestResult = r;
+      }
+    }
+    return ProbeResult(perWindow: map, bestResult: bestResult);
   }
 
   static MatchResult match({
@@ -189,9 +249,8 @@ class EpubSrtMatcher {
     );
     for (int si = 0; si < sections.length; si++) {
       final int s0 = idx.sectionNormStarts[si];
-      final int s1 = (si + 1 < sections.length)
-          ? idx.sectionNormStarts[si + 1]
-          : totalLen;
+      final int s1 =
+          (si + 1 < sections.length) ? idx.sectionNormStarts[si + 1] : totalLen;
       debugPrint(
         '[sentenceAudioHighlight] matcher.section[$si] href="${sections[si].href}" '
         'normStart=$s0 normLen=${s1 - s0}',
@@ -231,7 +290,16 @@ class EpubSrtMatcher {
       final int windowEnd = (cursor + searchWindow).clamp(0, totalLen);
       if (windowEnd - cursor >= nc.length) {
         final int found = big.indexOf(nc, cursor);
-        if (found >= 0 && found + nc.length <= windowEnd) {
+        // 超短 cue（≤ [shortCueMaxLen] 字）的精确命中只认紧邻游标的位置：一两个
+        // 字在 200 字窗口里几乎必然能撞上（「一」「え」「ああ」），撞上就把游标
+        // 拽走，后面整段正文全 miss。2026-09-05 无職転生 01 真机对照：ASR 字幕的
+        // 卷号 cue「一」命中了第七节「第一章」，游标越过第六节题词，12 条 cue
+        // 连锁错过（SubPlz 那份写作「＊1」，规范化后是数字 1 才侥幸没撞）。
+        final bool tooFarForShortCue =
+            nc.length <= shortCueMaxLen && found > cursor + shortCueMaxAdvance;
+        if (found >= 0 &&
+            found + nc.length <= windowEnd &&
+            !tooFarForShortCue) {
           final int matchEnd = found + nc.length;
           final int secIdx = _sectionForOffset(idx.sectionNormStarts, found);
           results.add(
@@ -450,7 +518,7 @@ class EpubSrtMatcher {
         final int outKey = tn == 1
             ? haystack.codeUnitAt(outIdx)
             : (haystack.codeUnitAt(outIdx) << 16) |
-                  haystack.codeUnitAt(outIdx + 1);
+                haystack.codeUnitAt(outIdx + 1);
         final int outOldCount = cGrams[outKey]!;
         final int outNCount = effectiveNGrams[outKey] ?? 0;
         // If this gram was contributing to matches, check if removing reduces it.
@@ -468,7 +536,7 @@ class EpubSrtMatcher {
         final int inKey = tn == 1
             ? haystack.codeUnitAt(inIdx)
             : (haystack.codeUnitAt(inIdx) << 16) |
-                  haystack.codeUnitAt(inIdx + 1);
+                haystack.codeUnitAt(inIdx + 1);
         final int inOldCount = cGrams[inKey] ?? 0;
         final int inNCount = effectiveNGrams[inKey] ?? 0;
         // If adding this gram brings the candidate count to within needle range.
@@ -493,18 +561,33 @@ class EpubSrtMatcher {
 
   // ---------- 起点检测 ----------
 
-  /// 取前 [defaultProbeCount] 条 cue，跳过 `＊` 开头 & 太短的，在全书做 indexOf
-  /// （精确 + 模糊兜底），返回最小命中偏移；全部 miss 则回到 0。
+  /// 前 [defaultProbeCount] 条 cue（跳过 `＊` 开头与短于 [defaultProbeMinLen] 的）
+  /// 各自在全书找候选位置——精确匹配取全部出现（上限几处），精确失败则做一次全书
+  /// 滚动 Dice，≥ [similarityThreshold] 才算——然后选**被最多条 cue 佐证**的位置：
+  /// 候选 p 的支持数 = 有候选落在 `[p, p + startClusterSpan]` 内的 cue 条数，取最大，
+  /// 同分取最早。任何候选若其后剩余正文不足 cue 总长 × [startMinRemainingRatio]
+  /// 则淘汰（BUG：ASR 片头的「株式会社KADOKAWA」只在书尾版权页精确命中，旧实现
+  /// 「任一条精确命中的最小偏移」就把游标钉到全书末尾，之后 8000 条 cue 全 miss、
+  /// 匹配率 0%；主循环的恢复只会向前 indexOf，回不来）。全部 miss 回到 0。
+  ///
+  /// 全书模糊扫描的代价：每条 O(全书长度)，最多 24 条，13 万字的书约几十毫秒，
+  /// 且本函数只在导入时跑一次（在 isolate 里）。
   static int _findStart(
     String big,
     List<AudioCue> cues,
     double similarityThreshold, [
     List<String>? preNormCueTexts,
   ]) {
-    int? minStart;
-    final int limit = cues.length < defaultProbeCount
-        ? cues.length
-        : defaultProbeCount;
+    final int limit =
+        cues.length < defaultProbeCount ? cues.length : defaultProbeCount;
+    // 每条 cue 的候选起点（去重）。
+    final List<List<int>> perCue = <List<int>>[];
+    int totalCueLen = 0;
+    for (int i = 0; i < cues.length; i++) {
+      totalCueLen += preNormCueTexts != null
+          ? preNormCueTexts[i].length
+          : AudioTextNormalizer.normalize(cues[i].text).length;
+    }
     for (int i = 0; i < limit; i++) {
       final String raw = cues[i].text;
       if (raw.startsWith('＊') || raw.startsWith('*')) {
@@ -516,19 +599,49 @@ class EpubSrtMatcher {
       if (nc.length < defaultProbeMinLen) {
         continue;
       }
-      // 精确
-      final int found = big.indexOf(nc);
-      if (found >= 0) {
-        if (minStart == null || found < minStart) {
-          minStart = found;
-        }
-        continue;
+      final List<int> found = <int>[];
+      int from = 0;
+      while (found.length < 8) {
+        final int at = big.indexOf(nc, from);
+        if (at < 0) break;
+        found.add(at);
+        from = at + 1;
       }
-      // 精确失败 → 跳过这条 cue，不做全书模糊扫描。
-      // 设计取舍：避免 O(big.length) 滚动窗口；首条若差 1 字，
-      // 由主循环的局部模糊通道在窗口内兜底。
+      if (found.isEmpty) {
+        final _SlidingDiceResult r = _slidingDice(
+          needle: nc,
+          haystack: big,
+          start: 0,
+          end: big.length,
+        );
+        if (r.pos >= 0 && r.score >= similarityThreshold) found.add(r.pos);
+      }
+      if (found.isNotEmpty) perCue.add(found);
     }
-    return minStart ?? 0;
+    if (perCue.isEmpty) return 0;
+
+    // 余量检查：起点之后剩下的正文得装得下音频。
+    final int minRemaining = (totalCueLen * startMinRemainingRatio).ceil();
+    final List<int> candidates = <int>[
+      for (final List<int> f in perCue)
+        for (final int p in f)
+          if (big.length - p >= minRemaining) p,
+    ]..sort();
+    if (candidates.isEmpty) return 0;
+
+    int bestPos = candidates.first;
+    int bestSupport = -1;
+    for (final int p in candidates) {
+      int support = 0;
+      for (final List<int> f in perCue) {
+        if (f.any((int q) => q >= p && q <= p + startClusterSpan)) support++;
+      }
+      if (support > bestSupport) {
+        bestSupport = support;
+        bestPos = p;
+      }
+    }
+    return bestPos;
   }
 
   static String _clip(String s, int n) {
@@ -672,36 +785,13 @@ class _ProbeRequest {
 }
 
 ProbeResult _probeEntrypoint(_ProbeRequest req) {
-  final Map<int, double> map = <int, double>{};
-  int bestWindow = req.windows.first;
-  double bestRate = -1;
-  MatchResult? bestResult;
-
-  final _Index idx = EpubSrtMatcher._buildIndex(req.sections);
-  final List<String> normCueTexts = <String>[
-    for (final String t in req.cueTexts) AudioTextNormalizer.normalize(t),
-  ];
-
-  for (final int w in req.windows) {
-    final List<AudioCue> cues = _rebuildCues(req.cueTexts, req.cueIndexes);
-    final MatchResult r = EpubSrtMatcher._matchCore(
-      idx: idx,
-      sections: req.sections,
-      cues: cues,
-      searchWindow: w,
-      similarityThreshold: req.similarityThreshold,
-      maxConsecutiveMisses: req.maxConsecutiveMisses,
-      preNormCueTexts: normCueTexts,
-    );
-    map[w] = r.matchRate;
-    if (r.matchRate > bestRate + 1e-9 ||
-        (r.matchRate > bestRate - 1e-9 && w < bestWindow)) {
-      bestRate = r.matchRate;
-      bestWindow = w;
-      bestResult = r;
-    }
-  }
-  return ProbeResult(perWindow: map, bestResult: bestResult);
+  return EpubSrtMatcher.probe(
+    sections: req.sections,
+    cues: _rebuildCues(req.cueTexts, req.cueIndexes),
+    windows: req.windows,
+    similarityThreshold: req.similarityThreshold,
+    maxConsecutiveMisses: req.maxConsecutiveMisses,
+  );
 }
 
 List<AudioCue> _rebuildCues(List<String> texts, List<int> indexes) {

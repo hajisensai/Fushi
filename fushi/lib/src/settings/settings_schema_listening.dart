@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/asr/asr_transcription_service.dart';
+import 'package:fushi/src/media/audiobook/asr_models_settings_section.dart';
 import 'package:fushi/src/media/audiobook/audiobook_material_library_dialog.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
@@ -76,6 +78,22 @@ SettingsDestination buildListeningDestination() {
               settingsContext.readerSource.toggleVolumeKeySentenceNavEnabled();
               notifyReaderSettingsChanged(settingsContext);
             },
+          ),
+        ],
+      ),
+      // 有声书设备端转录的语言模型包：让用户预先只下自己要的语言、也能删掉
+      // 腾磁盘。仅本机随包了 ONNX Runtime 的平台才有这一组（与转录入口同门控）。
+      SettingsSection(
+        title: t.asr_models_section,
+        footer: t.asr_models_section_summary,
+        collapsedByDefault: true,
+        visible: (_) => AsrTranscriptionService.isSupported,
+        items: <SettingsItem>[
+          SettingsCustomItem(
+            id: 'listening.asr_models',
+            searchTitle: t.asr_models_section,
+            builder: (SettingsContext _) =>
+                AsrModelsSettingsSection(service: AsrTranscriptionService()),
           ),
         ],
       ),

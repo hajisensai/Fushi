@@ -7586,6 +7586,10 @@ class AppModel with ChangeNotifier {
   Future<void> setMangaOcrLensLanguage(String value) =>
       prefsRepo.setMangaOcrLensLanguage(value);
 
+  String get asrTranscribeLanguage => prefsRepo.asrTranscribeLanguage;
+  Future<void> setAsrTranscribeLanguage(String value) =>
+      prefsRepo.setAsrTranscribeLanguage(value);
+
   bool get mangaTapToOcr => prefsRepo.mangaTapToOcr;
   Future<void> setMangaTapToOcr(bool value) =>
       prefsRepo.setMangaTapToOcr(value);
