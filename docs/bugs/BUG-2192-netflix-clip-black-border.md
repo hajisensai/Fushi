@@ -1,0 +1,6 @@
+## BUG-2192 · 网飞录屏制卡的动图/静帧四周带播放器黑边
+- **报告**：2026-09-06（用户：「网飞制卡周围有圈黑边」）
+- **真实性**：✅ 真 bug。Netflix（DRM）制卡走 offscreen `tabCapture` 录整个标签页视口（`tools/browser-extension/offscreen.js` `getUserMedia({chromeMediaSource:'tab'})`），视频四周的播放器黑底（窗口播放时元素框外/元素框内 contain 留白）一起进了片段；服务端 `transcodeClipToCapture`（`fushi/lib/src/mining/immersion_capture_channel.dart`）抽动图/静帧时对整帧编码，没有任何裁切。
+- **[x] ① 已修复** — 扩展：`subtitle-adapters.js` 纯函数 `fushiVideoCropFraction(video, vw, vh)` 按 `<video>` 元素框 + `videoWidth/Height` 的 contain 几何算出可见画面占视口的比例矩形（与视口求交、铺满则 null），`content.js` 批量回放在 `beginClip` 那一刻计算并随 `mineClip` 发 `clipCrop`，`background.js` 透传。服务端：`ImmersionMinePayload.clipCrop`（`ClipCropFraction`，容错解析）→ `transcodeClipToCapture(crop:)` 只对默认 ffmpeg 真身包一层注入 `cropFilter`（不改两个 typedef，九个测试假件不受影响）→ `buildFfmpegFrameArgs` / `buildFfmpegClipAnimatedArgs` 把 `crop=trunc(iw*w/2)*2:…` 排在 scale/fps 之前（先裁后缩，宽高截偶数满足 AVIF/WebP/yuv420）。
+- **[x] ② 已加自动化测试** — `fushi/test/mining/clip_crop_fraction_test.dart`（解析容错 / 滤镜串 / 两条 ffmpeg 参数里 crop 在前）；`tools/browser-extension/subtitle-adapters.test.js`（contain 几何、窗口播放、DRM 无尺寸退回元素框、伸出视口求交、铺满 null）；`mine-clip-timestamp-wire.test.js`（clipCrop 上 wire / 缺失不发）。
+- **备注**：Chrome 关硬件加速才有非黑帧，与本条无关。真机端到端待用户复测（`implemented_unverified`）。

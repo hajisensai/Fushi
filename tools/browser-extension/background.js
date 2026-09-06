@@ -882,6 +882,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           body: JSON.stringify({
             fields: msg.fields, sentence: msg.sentence || '',
             clipBase64: msg.clipBase64, clipDurationMs: msg.clipDurationMs,
+            // BUG-2192：可见画面比例矩形（{x,y,w,h} ∈ [0,1]），服务端抽帧前先 crop 掉黑边。
+            ...(msg.clipCrop && typeof msg.clipCrop === 'object' ? { clipCrop: msg.clipCrop } : {}),
             // BUG-1416：片段时间基锚点 + 句首 + 制卡那一刻（都是**视频时间**），服务端在静态帧
             // 模式下据此在片段里定位取帧。null（老队列项/采样失败）就不发 → 服务端退片段起点。
 

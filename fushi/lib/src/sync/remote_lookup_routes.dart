@@ -207,10 +207,39 @@ class RemoteLookupRoutes {
     final Map<String, dynamic>? body = await readJsonObjectBody(request);
     if (body == null) return shelf.Response(400, body: 'Invalid JSON');
     try {
-      return jsonResponse(await buildRemoteMineResponse(body, mining: svc));
+      return jsonResponse(await buildRemoteMineResponse(
+        body,
+        mining: svc,
+        wordAudio: _resolveMineWordAudio,
+      ));
     } on FormatException {
       return shelf.Response(400, body: 'Missing fields');
     }
+  }
+
+  /// BUG-2189：制卡时把 `fields.audio` 里本机签发的短命 token 换成自包含 `data:` URI
+  /// （见 [resolveRemoteMineWordAudio]）。token 仍活 → 直接取字节；已被 prune（批量
+  /// 队列几十分钟后才生成）→ 按 expression/reading 重走同一条 [lookupAudio]。
+  /// 音频库没这个词 → null，调用方保留原引用让既有 404 诊断浮出。
+  Future<String?> _resolveMineWordAudio(
+    String tokenId, {
+    required String expression,
+    required String reading,
+  }) async {
+    final RemoteAudioToken? token = audioTokens.take(tokenId);
+    if (token != null) {
+      return remoteAudioLookupToDataUri(RemoteAudioLookup(
+        bytes: token.bytes,
+        contentType: token.contentType,
+      ));
+    }
+    final FushiRemoteLookupService? service = lookup;
+    if (service == null || expression.trim().isEmpty) return null;
+    final RemoteAudioLookup? found = await service.lookupAudio(
+      expression: expression,
+      reading: reading,
+    );
+    return found == null ? null : remoteAudioLookupToDataUri(found);
   }
 
   /// 「制卡到服务端」：客户端转发未渲染的制卡请求 + 全部媒体字节，本机用自己的

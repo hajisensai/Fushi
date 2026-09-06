@@ -24,6 +24,7 @@ class ImmersionMinePayload {
     this.clipAnchorUncertaintyMs,
     this.cueStartMs,
     this.mineAtMs,
+    this.clipCrop,
   });
 
   final Map<String, String> fields;
@@ -136,8 +137,14 @@ class ImmersionMinePayload {
           (json['clipAnchorUncertaintyMs'] as num?)?.round(),
       cueStartMs: (json['cueStartMs'] as num?)?.round(),
       mineAtMs: (json['mineAtMs'] as num?)?.round(),
+      clipCrop: ClipCropFraction.fromJson(json['clipCrop']),
     );
   }
+
+  /// BUG-2192 —— 录屏片段里**可见视频画面**占整个捕获帧的比例矩形（扩展在录制那一刻按
+  /// `<video>` 的 contain 几何算出）。tabCapture 录的是整个标签页视口，视频四周的播放器
+  /// 黑底一起进了片段；服务端据此在抽动图/静帧时先 crop。null = 不裁（老扩展 / 画面已铺满）。
+  final ClipCropFraction? clipCrop;
 
   /// 容错 base64 解码：非字符串/空/格式错都返回 null（媒体缺失即降级，不抛异常）。
   static Uint8List? _tryDecodeBase64(Object? value) {
@@ -242,3 +249,48 @@ String _stripImmersionAudioPaths(String value) => value
     .replaceAll(RegExp(r'[ \t]+\n'), '\n')
     .replaceAll(RegExp(r'\n{2,}'), '\n')
     .trim();
+
+/// BUG-2192：捕获帧里可见视频画面的**比例**矩形（各分量 ∈ [0,1]，相对整帧宽/高）。
+///
+/// 用比例而不用像素：tabCapture 会把视口等比缩到 ≤1920×1080，扩展只知道 CSS 视口尺寸，
+/// 不知道最终帧的像素尺寸；比例在两边都成立。
+class ClipCropFraction {
+  const ClipCropFraction({
+    required this.x,
+    required this.y,
+    required this.w,
+    required this.h,
+  });
+
+  final double x;
+  final double y;
+  final double w;
+  final double h;
+
+  /// 容错解析：非对象 / 分量缺失或非数 / 越界（x,y<0、w,h≤0、超出 1）都返回 null——
+  /// 裁切是可选优化，坏输入就当没有，绝不让整张卡 400。
+  static ClipCropFraction? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    double? d(String k) {
+      final Object? v = raw[k];
+      if (v is! num || !v.isFinite) return null;
+      return v.toDouble();
+    }
+
+    final double? x = d('x');
+    final double? y = d('y');
+    final double? w = d('w');
+    final double? h = d('h');
+    if (x == null || y == null || w == null || h == null) return null;
+    if (x < 0 || y < 0 || w <= 0 || h <= 0) return null;
+    if (x + w > 1.0001 || y + h > 1.0001) return null;
+    return ClipCropFraction(x: x, y: y, w: w, h: h);
+  }
+
+  /// ffmpeg `crop` 滤镜段。宽高截成偶数（yuv420 / AVIF、WebP 编码器要求），起点向下取整。
+  String get ffmpegFilter =>
+      'crop=trunc(iw*${_f(w)}/2)*2:trunc(ih*${_f(h)}/2)*2'
+      ':trunc(iw*${_f(x)}):trunc(ih*${_f(y)})';
+
+  static String _f(double v) => v.toStringAsFixed(4);
+}

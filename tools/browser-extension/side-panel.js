@@ -715,7 +715,7 @@
     tracks.forEach(function (track) {
       var option = document.createElement('option');
       option.value = track.lang;
-      option.textContent = track.label + '（' + track.length + '）';
+      option.textContent = track.label + (track.pending ? '（选中加载）' : '（' + track.length + '）');
       trackEl.appendChild(option);
     });
     trackEl.hidden = tracks.length === 0;

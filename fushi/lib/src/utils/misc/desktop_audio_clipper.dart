@@ -727,8 +727,15 @@ List<String> buildFfmpegFrameArgs({
   // 缩略图只显示几百像素宽，让 ffmpeg 在编码前就缩好，省掉全尺寸 JPEG 的编码、
   // 落盘、读回、解码四段开销。null / <=0 表示不缩放（封面等既有调用方的行为不变）。
   int? scaleWidth,
+  // BUG-2192：网飞录屏片段裁掉播放器黑边——crop 段排在 scale 之前（先裁后缩，缩放
+  // 目标宽度指的是裁后画面）。null / 空 = 不裁。
+  String? cropFilter,
 }) {
   final double seek = atSeconds < 0 ? 0.0 : atSeconds;
+  final String vfChain = <String>[
+    if (cropFilter != null && cropFilter.isNotEmpty) cropFilter,
+    if (scaleWidth != null && scaleWidth > 0) 'scale=$scaleWidth:-2',
+  ].join(',');
   return <String>[
     '-y',
     ...buildFfmpegRemoteInputArgs(inputPath, tlsPinSha256: tlsPinSha256),
@@ -737,10 +744,7 @@ List<String> buildFfmpegFrameArgs({
     inputPath,
     if (decodeFromStart) ...<String>['-ss', seek.toStringAsFixed(3)],
     '-an',
-    if (scaleWidth != null && scaleWidth > 0) ...<String>[
-      '-vf',
-      'scale=$scaleWidth:-2',
-    ],
+    if (vfChain.isNotEmpty) ...<String>['-vf', vfChain],
     '-frames:v',
     '1',
     '-update',
@@ -775,6 +779,8 @@ Future<String?> extractVideoFrameViaFfmpeg({
   bool diagnosticOnly = false,
   // TODO-1082：缩略图消费方按目标宽度出图（见 [buildFfmpegFrameArgs]）；null 保持原尺寸。
   int? scaleWidth,
+  // BUG-2192：先裁再缩的 crop 滤镜段（`crop=…`），null = 不裁（既有调用方逐字不变）。
+  String? cropFilter,
 }) async {
   if (!_isRemoteFfmpegInput(inputPath) && !File(inputPath).existsSync()) {
     return null;
@@ -790,6 +796,7 @@ Future<String?> extractVideoFrameViaFfmpeg({
         decodeFromStart: decodeFromStart,
         tlsPinSha256: tlsPinSha256,
         scaleWidth: scaleWidth,
+        cropFilter: cropFilter,
       ),
       const Duration(seconds: 30),
     );
@@ -891,6 +898,8 @@ List<String> buildFfmpegClipAnimatedArgs({
   int width = 320,
   int maxDurationMs = 10000,
   String? tlsPinSha256,
+  // BUG-2192：crop 段排在 fps/scale 之前（先裁后缩）。null / 空 = 不裁。
+  String? cropFilter,
 }) {
   final double startSeconds = (startMs < 0 ? 0 : startMs) / 1000.0;
   final int rawDur = endMs - startMs;
@@ -901,6 +910,7 @@ List<String> buildFfmpegClipAnimatedArgs({
   // 已不产出 0（三种格式的顶格档都是有限上限，见 MiningAnimatedFormat 与 BUG-1039），
   // 这条分支只服务直接调用方；命中时对应滤镜段整段省略。
   final StringBuffer pre = StringBuffer();
+  if (cropFilter != null && cropFilter.isNotEmpty) pre.write('$cropFilter,');
   if (fps > 0) pre.write('fps=$fps,');
   if (width > 0) pre.write('scale=$width:-2:flags=lanczos,');
 
@@ -1006,6 +1016,8 @@ Future<String?> extractClipGifViaFfmpeg({
   bool diagnosticOnly = false,
   // BUG-891：远端自签主机的 TLS 证书 SHA-256 钉扎指纹（透传给 ffmpeg），非远端/公网源为 null。
   String? tlsPinSha256,
+  // BUG-2192：先裁再缩的 crop 滤镜段，null = 不裁。
+  String? cropFilter,
 }) async {
   if (endMs <= startMs) return null;
   if (!_isRemoteFfmpegInput(inputPath) && !File(inputPath).existsSync()) {
@@ -1025,6 +1037,7 @@ Future<String?> extractClipGifViaFfmpeg({
         fps: fps,
         width: width,
         tlsPinSha256: tlsPinSha256,
+        cropFilter: cropFilter,
       ),
       const Duration(seconds: 120),
     );

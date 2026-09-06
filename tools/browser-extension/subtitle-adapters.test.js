@@ -8,6 +8,9 @@ const {
   stripCueTags,
   parseWebVtt,
   parseTtml,
+  ttmlRubyToHtml,
+  fushiComposeCueContext,
+  fushiVideoCropFraction,
   parseBilibiliJson,
   netflixDocumentTitle,
   findCueIndexAt,
@@ -135,6 +138,68 @@ test('parseTtml honours ttp:tickRate offset times', () => {
 });
 
 
+// BUG-2191：IMSC 1.1（Netflix 日文轨）的注音是 `tts:ruby="base|text"` span，不是 <rt>。
+// 旧解析只剥标签留内容 → 读音拼进正文（用户卡片 Sentence 实录「地下牢ちかろう は…這は い回って」）。
+test('parseTtml：tts:ruby 读音不进正文，注音单元后的断词空格一并吃掉，ruby 分段挂 cue.ruby', () => {
+  const xml =
+    '<tt xmlns="http://www.w3.org/ns/ttml" xmlns:tts="http://www.w3.org/ns/ttml#styling"><body><div>' +
+    '<p begin="00:00:01.000" end="00:00:03.000">雛宮の' +
+    '<span tts:ruby="container"><span tts:ruby="base">地下牢</span><span tts:ruby="text">ちかろう</span> </span><br/>' +
+    'はネズミや虫が<span tts:ruby="container"><span tts:ruby="base">這</span>' +
+    '<span tts:ruby="delimiter">(</span><span tts:ruby="text">は</span><span tts:ruby="delimiter">)</span></span> い回って</p>' +
+    '<p begin="00:00:04.000" end="00:00:05.000"><span style="x">plain</span> text</p>' +
+    '</div></body></tt>';
+  const cues = parseTtml(xml);
+  assert.strictEqual(cues.length, 2);
+  assert.strictEqual(cues[0].text, '雛宮の地下牢\nはネズミや虫が這い回って');
+  assert.deepStrictEqual(cues[0].ruby, [
+    { text: '雛宮の', reading: '' },
+    { text: '地下牢', reading: 'ちかろう' },
+    { text: '\nはネズミや虫が', reading: '' },
+    { text: '這', reading: 'は' },
+    { text: 'い回って', reading: '' },
+  ]);
+  // 普通 span（无 tts:ruby）内容照旧保留，空格照旧保留。
+  assert.strictEqual(cues[1].text, 'plain text');
+  assert.strictEqual('ruby' in cues[1], false, '没有注音的行不挂 ruby');
+});
+
+test('parseTtml：不带 container 的裸 base/text 对也能剥读音（宽松形态）', () => {
+  const xml = '<tt><body><div><p begin="00:00:01.000" end="00:00:02.000">' +
+    '<span tts:ruby="base">漢</span><span tts:ruby="text">かん</span>字</p></div></body></tt>';
+  assert.strictEqual(parseTtml(xml)[0].text, '漢字');
+});
+
+test('ttmlRubyToHtml：畸形/无 tts:ruby 输入原样返回，不吃正文', () => {
+  assert.strictEqual(ttmlRubyToHtml('a <span>b</span> c'), 'a <span>b</span> c');
+  assert.strictEqual(ttmlRubyToHtml(''), '');
+  // 缺闭合的 text span：宁可多留读音也不能吃掉后面的正文。
+  const out = ttmlRubyToHtml('<span tts:ruby="text">かん</span');
+  assert.ok(out.indexOf('かん') >= 0);
+});
+
+// 多句合一制卡的纯函数（扩展侧 = app 内 joinMinedSentences / mergeMiningAudioRanges）。
+test('fushiComposeCueContext：前后封顶、换行连接、时间窗并集、越界 null', () => {
+  const cues = [
+    { startMs: 0, endMs: 900, text: 'A' },
+    { startMs: 1000, endMs: 2000, text: ' B ' },
+    { startMs: 2100, endMs: 2900, text: '' },
+    { startMs: 3000, endMs: 4000, text: 'D' },
+  ];
+  const c = fushiComposeCueContext(cues, 1, 5, 1);
+  assert.deepStrictEqual(c.prev, ['A']);
+  assert.strictEqual(c.current, ' B ');
+  assert.deepStrictEqual(c.next, ['']);
+  assert.strictEqual(c.sentence, 'A\nB', '空句丢弃、逐句 trim');
+  assert.strictEqual(c.startV, 0);
+  assert.strictEqual(c.endV, 2900, '并集含空句的时间窗（它仍是被录进去的一段）');
+  assert.strictEqual(c.prevAtMax, true);
+  assert.strictEqual(c.nextAtMax, false);
+  assert.strictEqual(fushiComposeCueContext(cues, 4, 1, 1), null);
+  assert.strictEqual(fushiComposeCueContext([], 0, 1, 1), null);
+  assert.strictEqual(fushiComposeCueContext(cues, 3, 0, 0).sentence, 'D');
+});
+
 // ── BUG-676（TODO-1361 ③）：网飞剧名抽取（Anki {document-title} 视频名字段）──
 function nfDoc(videoTitleEl, title) {
   return {
@@ -257,4 +322,39 @@ test('pickPrimaryCueTrack 不串视频身份，空轨不算', () => {
   assert.strictEqual(pickPrimaryCueTrack(store, 'v1', 'live'), null, '空轨不算整轨；别的视频的轨不得串进来');
   assert.strictEqual(pickPrimaryCueTrack(null, 'v1', 'live'), null);
   assert.strictEqual(pickPrimaryCueTrack({}, '', 'live'), null);
+});
+
+
+// BUG-2192：网飞录屏片段裁黑边——可见视频画面占视口的比例矩形。
+function fakeVideo(rect, iw, ih) {
+  return { getBoundingClientRect: () => rect, videoWidth: iw, videoHeight: ih };
+}
+
+test('fushiVideoCropFraction：contain 几何——宽视口里 16:9 视频居中，左右黑边被裁掉', () => {
+  // 视口 2000×1000，元素铺满视口，视频 1920×1080 → 内容 1777.8×1000 居中。
+  const f = fushiVideoCropFraction(fakeVideo({ left: 0, top: 0, width: 2000, height: 1000 }, 1920, 1080), 2000, 1000);
+  assert.deepStrictEqual(f, { x: 0.0556, y: 0, w: 0.8889, h: 1 });
+});
+
+test('fushiVideoCropFraction：元素框未铺满视口（窗口播放）→ 裁到元素内的内容矩形', () => {
+  // 视口 1600×900；播放器 1200×600 放在 (100,100)，视频 16:9 → 内容 1066.7×600 居中于元素。
+  const f = fushiVideoCropFraction(fakeVideo({ left: 100, top: 100, width: 1200, height: 600 }, 1920, 1080), 1600, 900);
+  assert.deepStrictEqual(f, { x: 0.1042, y: 0.1111, w: 0.6667, h: 0.6667 });
+});
+
+test('fushiVideoCropFraction：拿不到 videoWidth/Height（DRM 给 0）→ 退回整个元素框', () => {
+  const f = fushiVideoCropFraction(fakeVideo({ left: 100, top: 50, width: 800, height: 400 }, 0, 0), 1000, 500);
+  assert.deepStrictEqual(f, { x: 0.1, y: 0.1, w: 0.8, h: 0.8 });
+});
+
+test('fushiVideoCropFraction：元素伸出视口 → 与视口求交', () => {
+  const f = fushiVideoCropFraction(fakeVideo({ left: -100, top: 0, width: 1200, height: 500 }, 0, 0), 1000, 500);
+  assert.strictEqual(f, null, '交集恰好铺满视口 → 不裁');
+});
+
+test('fushiVideoCropFraction：铺满视口（全屏 16:9）/ 无效输入 → null（服务端不裁）', () => {
+  assert.strictEqual(fushiVideoCropFraction(fakeVideo({ left: 0, top: 0, width: 1920, height: 1080 }, 1920, 1080), 1920, 1080), null);
+  assert.strictEqual(fushiVideoCropFraction(null, 1920, 1080), null);
+  assert.strictEqual(fushiVideoCropFraction(fakeVideo({ left: 0, top: 0, width: 0, height: 0 }, 0, 0), 1920, 1080), null);
+  assert.strictEqual(fushiVideoCropFraction(fakeVideo({ left: 0, top: 0, width: 100, height: 100 }, 0, 0), 0, 0), null);
 });

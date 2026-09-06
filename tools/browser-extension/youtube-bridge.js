@@ -49,6 +49,47 @@
     return String(label).replace(/\|/g, '_');
   }
 
+  // BUG-2194：一条视频的 captionTracks 可能有几十条（自动配音视频每种配音语言各带一条
+  // ASR 轨）。此前为了不把整集轨 × N 全拉下来，按 YouTube 原始顺序只取前 12 条——**原语言**
+  // （用户在听的那条音轨的字幕，也就是学习语言）排在后面就被截掉：用户列表里俄/孟/德/旁遮普
+  // …12 条齐全，唯独没有英语。现在改成**按需加载**：整份清单（只有标签）立刻发给隔离世界
+  // 进列表；只急取 EAGER_TRACKS 条（排优先级后的头一条 = 当前音轨默认字幕轨）让覆盖层/
+  // 替代原生立即可用；其余等隔离世界发 {__fushiStream:'fetchTrack'}（用户在列表里选中）再取。
+  // 优先级：① 当前音轨默认字幕轨（defaultCaptionTrackIndex / isDefault）② 语言码与当前
+  // 音轨语言一致 ③ 人工轨（kind !== 'asr'）④ 其余按原顺序。
+  var EAGER_TRACKS = 1;
+  var pendingTracks = new Map(); // videoKey → Map(label → track)，供按需取
+  var lazyInFlight = new Set();
+  function prioritizeCaptionTracks(tracks, audioTrack) {
+    if (!Array.isArray(tracks)) return [];
+    var defIdx = audioTrack && typeof audioTrack.defaultCaptionTrackIndex === 'number'
+      ? audioTrack.defaultCaptionTrackIndex : -1;
+    var audioLang = '';
+    try {
+      var raw = audioTrack && (audioTrack.languageCode || audioTrack.language || '');
+      audioLang = String(raw || '').toLowerCase().split(/[-_]/)[0];
+    } catch (_) { audioLang = ''; }
+    function rank(track, i) {
+      if (!track) return 9;
+      if (i === defIdx || track.isDefault === true) return 0;
+      var lang = String(track.languageCode || '').toLowerCase().split(/[-_]/)[0];
+      if (audioLang && lang === audioLang) return 1;
+      if (track.kind !== 'asr') return 2;
+      return 3;
+    }
+    return tracks
+      .map(function (t, i) { return { t: t, i: i, r: rank(t, i) }; })
+      .sort(function (a, b) { return a.r - b.r || a.i - b.i; })
+      .map(function (e) { return e.t; });
+  }
+
+  function runtimeAudioTrack() {
+    try {
+      var player = document.querySelector('#movie_player');
+      return player && player.getAudioTrack ? player.getAudioTrack() : null;
+    } catch (_) { return null; }
+  }
+
   function runtimeTracks(id) {
     try {
       var player = document.querySelector('#movie_player');
@@ -164,18 +205,42 @@
     } catch (_) { return []; }
   }
 
-  async function fetchAndPublish(id, tracks) {
-    var unique = [];
+  function cacheMessage(key, message) {
+    cache.delete(key); // 重设已存在的键不会移动插入顺序，先删再插才能让 FIFO 淘汰真正淘汰最旧项
+    cache.set(key, message);
+    while (cache.size > CACHE_LIMIT) {
+      var oldest = cache.keys().next();
+      if (oldest.done) break;
+      cache.delete(oldest.value);
+    }
+  }
+
+  async function fetchAndPublish(id, rawTracks) {
+    var tracks = prioritizeCaptionTracks(rawTracks, runtimeAudioTrack());
+    var byLabel = new Map();
     var seen = new Set();
-    for (var i = 0; i < tracks.length && unique.length < 12; i++) {
+    for (var i = 0; i < tracks.length; i++) {
       var raw = tracks[i] && (tracks[i].url || tracks[i].baseUrl);
       if (!raw) continue;
       var identity = String(tracks[i].languageCode || '') + '|' + String(tracks[i].kind || '') + '|' + raw;
       if (seen.has(identity)) continue;
       seen.add(identity);
-      unique.push(tracks[i]);
+      var label = trackLabel(tracks[i]);
+      if (!byLabel.has(label)) byLabel.set(label, tracks[i]);
     }
-    var results = await Promise.all(unique.map(async function (track) {
+    if (!byLabel.size) return 0;
+    var videoKey = 'yt-' + id;
+    pendingTracks.set(videoKey, byLabel);
+    // 整份清单先到：隔离世界据此在列表里登记占位轨（无 cue），用户选中再回来取。
+    var list = {
+      __fushiStream: 'tracks',
+      videoKey: videoKey,
+      tracks: Array.from(byLabel.keys()).map(function (lang) { return { lang: lang }; }),
+    };
+    cacheMessage(videoKey + '|#tracks', list);
+    try { window.postMessage(list, '/'); } catch (_) {}
+    var eager = Array.from(byLabel.values()).slice(0, EAGER_TRACKS);
+    var results = await Promise.all(eager.map(async function (track) {
       var cues = await fetchTrack(track);
       if (!cues.length || id !== videoId()) return false;
       publish(id, track, cues);
@@ -183,6 +248,30 @@
     }));
     return results.filter(Boolean).length;
   }
+
+  // 按需取轨：隔离世界（subtitle-providers.js fushiRequestLazyTrack）在用户选中占位轨时发
+  // {__fushiStream:'fetchTrack', videoKey, lang}。已取过的直接重放缓存；在途的不重复取。
+  async function fetchLazyTrack(videoKey, lang) {
+    var byLabel = pendingTracks.get(videoKey);
+    var track = byLabel && byLabel.get(lang);
+    if (!track) return;
+    var key = videoKey + '|' + lang;
+    var cached = cache.get(key);
+    if (cached) { try { window.postMessage(cached, '/'); } catch (_) {} return; }
+    if (lazyInFlight.has(key)) return;
+    lazyInFlight.add(key);
+    try {
+      var cues = await fetchTrack(track);
+      if (cues.length) publish(videoKey.slice(3), track, cues);
+    } catch (_) {
+    } finally {
+      lazyInFlight.delete(key);
+    }
+  }
+  window.addEventListener('message', function (event) {
+    if (event.source !== window || !event.data || event.data.__fushiStream !== 'fetchTrack') return;
+    fetchLazyTrack(String(event.data.videoKey || ''), String(event.data.lang || ''));
+  });
 
   function publish(id, track, cues) {
     var message = {
@@ -192,14 +281,7 @@
       format: 'cues',
       cues: cues,
     };
-    var key = message.videoKey + '|' + message.lang;
-    cache.delete(key); // 重设已存在的键不会移动插入顺序，先删再插才能让 FIFO 淘汰真正淘汰最旧项
-    cache.set(key, message);
-    while (cache.size > CACHE_LIMIT) {
-      var oldest = cache.keys().next();
-      if (oldest.done) break;
-      cache.delete(oldest.value);
-    }
+    cacheMessage(message.videoKey + '|' + message.lang, message);
     try { window.postMessage(message, '/'); } catch (_) {}
   }
 

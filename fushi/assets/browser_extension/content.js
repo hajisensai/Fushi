@@ -443,6 +443,222 @@ function fushiQueueKey(q) {
   const vid = (q && (q.youtubeId || q.netflixId)) || '';
   return String(word) + '\0' + String(sent) + '\0' + String(site) + '\0' + String(vid);
 }
+// ── 多句合一制卡（与 app 内 MiningSentenceDraft 同一模型：上 N 句 / 下 N 句整体替换）──
+// 状态只有两个标量；句子文本、时间窗并集每次按整轨现算（fushiComposeCueContext，纯函数，
+// 与 Dart joinMinedSentences / mergeMiningAudioRanges 逐字对齐）。制卡成功即归零（一次性
+// 草稿，与 app 内 _miningDraft.clear() 同事件）；换词重渲染也归零。
+let fushiSentenceCtx = { prev: 0, next: 0 };
+const FUSHI_CTX_I18N = {
+  adjust: '调整上下文',
+  eyebrow: '制卡前调整',
+  title: '选择句子上下文',
+  count: '已选择 %d 句',
+  boxPrev: '前文',
+  boxCurrent: '当前句',
+  boxNext: '后文',
+  boxEmpty: '（无）',
+  prevMinus: '前退一句',
+  prevPlus: '前加一句',
+  nextMinus: '后退一句',
+  nextPlus: '后加一句',
+  confirm: '确认制卡',
+  cancel: '取消',
+};
+function fushiCtxCount(n) {
+  const v = Math.floor(Number(n));
+  return isFinite(v) && v > 0 ? v : 0;
+}
+// 当前句在整轨里的位置（{cues, idx}）。面板行精确窗优先（按起止匹配），否则按播放时刻；
+// 只有 DOM 采样窗（live 伪轨）时 null——没有整轨就没有「上一句/下一句」可言。
+function fushiCurrentCueLocation() {
+  const cw = fushiPendingCueWindow;
+  if (cw) {
+    return typeof fushiFullTrackCueMatching === 'function'
+      ? fushiFullTrackCueMatching(cw.startMs, cw.endMs) : null;
+  }
+  return typeof fushiFullTrackCueAt === 'function' ? fushiFullTrackCueAt() : null;
+}
+// 当前草稿按整轨合成的上下文；未选上下文、或定位不到整轨 → null。
+function fushiComposedContext() {
+  if (fushiSentenceCtx.prev <= 0 && fushiSentenceCtx.next <= 0) return null;
+  const loc = fushiCurrentCueLocation();
+  if (!loc || typeof fushiComposeCueContext !== 'function') return null;
+  return fushiComposeCueContext(loc.cues, loc.idx, fushiSentenceCtx.prev, fushiSentenceCtx.next);
+}
+// popup.js `setSentenceContext` 契约：整体替换「上 prev / 下 next」，回传实际拿到的上下文
+// 句总数（轨首/轨尾封顶后）。
+window.fushiSetSentenceContext = function (prev, next) {
+  fushiSentenceCtx = { prev: fushiCtxCount(prev), next: fushiCtxCount(next) };
+  const c = fushiComposedContext();
+  return c ? c.prev.length + c.next.length : 0;
+};
+window.fushiClearSentenceDraft = function () {
+  fushiSentenceCtx = { prev: 0, next: 0 };
+  return 0;
+};
+// 与 app 内 `onSentenceContextPreview*` 同形：{prev:[str], current, currentOffset, next:[str], total}
+// + 扩展自己用的 prevAtMax/nextAtMax（到轨首/轨尾时禁用对应「+」，诚实反馈）。
+window.fushiSentenceContextPreview = function (args) {
+  const loc = fushiCurrentCueLocation();
+  if (!loc || typeof fushiComposeCueContext !== 'function') return {};
+  const c = fushiComposeCueContext(loc.cues, loc.idx, fushiSentenceCtx.prev, fushiSentenceCtx.next);
+  if (!c) return {};
+  const matched = args && typeof args.matched === 'string' ? args.matched : '';
+  const off = matched ? c.current.indexOf(matched) : -1;
+  return {
+    prev: c.prev,
+    current: c.current,
+    currentOffset: off >= 0 ? off : null,
+    next: c.next,
+    total: c.prev.length + c.next.length,
+    prevAtMax: c.prevAtMax,
+    nextAtMax: c.nextAtMax,
+  };
+};
+
+// BUG-763/766 的扩展版：「调整上下文」模态画在**宿主页顶层**（独立 shadow host，不在查词
+// 弹窗容器内），不受弹窗表面尺寸/半透明约束——与 app 内改成原生顶层对话框是同一个决定。
+// 镜像 SentenceContextDialog：前文/当前句（高亮所查词）/后文 + 四个 ± + 取消（还原开窗时
+// 的快照）/ 确认制卡（回点该词条的制卡按钮 fushiPopupMineEntryByIndex，复用全部制卡逻辑）。
+let fushiCtxModalHost = null;
+function fushiCloseSentenceContextModal() {
+  if (fushiCtxModalHost) {
+    try { fushiCtxModalHost.remove(); } catch (_) {}
+    fushiCtxModalHost = null;
+  }
+}
+window.fushiOpenSentenceContextModal = function (args) {
+  const entryIndex = args && typeof args.entryIndex === 'number' ? args.entryIndex : 0;
+  const matched = args && typeof args.matched === 'string' ? args.matched : '';
+  const t = (window.i18nCtx && typeof window.i18nCtx === 'object') ? window.i18nCtx : FUSHI_CTX_I18N;
+  fushiCloseSentenceContextModal();
+  const snap = { prev: fushiSentenceCtx.prev, next: fushiSentenceCtx.next };
+  const dark = fushiResolveTheme() === 'dark';
+  const host = document.createElement('div');
+  host.id = 'fushi-ctx-modal-host';
+  host.style.cssText = 'position:fixed;inset:0;z-index:2147483647;';
+  const shadow = host.attachShadow({ mode: 'open' });
+  const style = document.createElement('style');
+  style.textContent =
+    ':host{all:initial}' +
+    '.bg{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;' +
+      'font:14px/1.5 "Hiragino Sans","Noto Sans CJK JP",sans-serif;}' +
+    '.card{background:' + (dark ? '#1f1f22' : '#fff') + ';color:' + (dark ? '#eee' : '#1c1c1e') + ';' +
+      'width:min(560px,92vw);max-height:88vh;overflow:auto;border-radius:14px;padding:18px 20px;' +
+      'box-shadow:0 12px 40px rgba(0,0,0,.45);box-sizing:border-box;}' +
+    '.eyebrow{font-size:12px;opacity:.65;letter-spacing:.04em}' +
+    '.title{font-size:18px;font-weight:600;margin:2px 0 4px}' +
+    '.count{font-size:12px;opacity:.7;margin-bottom:10px}' +
+    '.label{font-size:12px;opacity:.7;margin:10px 0 4px}' +
+    '.box{border:1px solid ' + (dark ? '#3a3a3f' : '#d9d9de') + ';border-radius:8px;padding:8px 10px;margin:4px 0;' +
+      'white-space:pre-wrap;word-break:break-word;background:' + (dark ? '#26262a' : '#fafafa') + '}' +
+    '.box.cur{border-color:#1a73e8;background:' + (dark ? '#1b2a44' : '#eef4ff') + '}' +
+    '.box.empty{opacity:.5;font-style:italic}' +
+    'mark{background:#ffe08a;color:#1c1c1e;border-radius:3px;padding:0 1px}' +
+    '.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}' +
+    'button{font:inherit;padding:6px 12px;border-radius:8px;border:1px solid ' + (dark ? '#4a4a50' : '#c8c8cf') + ';' +
+      'background:' + (dark ? '#2c2c31' : '#f4f4f6') + ';color:inherit;cursor:pointer}' +
+    'button:disabled{opacity:.4;cursor:default}' +
+    '.foot{display:flex;justify-content:flex-end;gap:10px;margin-top:16px}' +
+    '.primary{background:#1a73e8;border-color:#1a73e8;color:#fff}';
+  shadow.appendChild(style);
+  const bg = document.createElement('div');
+  bg.className = 'bg';
+  const card = document.createElement('div');
+  card.className = 'card';
+  bg.appendChild(card);
+  shadow.appendChild(bg);
+
+  function el(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+  function renderCurrent(box, text) {
+    box.textContent = '';
+    const i = matched ? text.indexOf(matched) : -1;
+    if (i < 0) { box.textContent = text; return; }
+    box.appendChild(document.createTextNode(text.slice(0, i)));
+    box.appendChild(el('mark', '', matched));
+    box.appendChild(document.createTextNode(text.slice(i + matched.length)));
+  }
+  let busy = false;
+  function render() {
+    card.textContent = '';
+    const p = window.fushiSentenceContextPreview({ matched: matched });
+    const prev = Array.isArray(p.prev) ? p.prev : [];
+    const next = Array.isArray(p.next) ? p.next : [];
+    card.appendChild(el('div', 'eyebrow', t.eyebrow));
+    card.appendChild(el('div', 'title', t.title));
+    card.appendChild(el('div', 'count', String(t.count).replace('%d', String(prev.length + next.length))));
+    card.appendChild(el('div', 'label', t.boxPrev));
+    if (!prev.length) card.appendChild(el('div', 'box empty', t.boxEmpty));
+    for (const s of prev) card.appendChild(el('div', 'box', s));
+    card.appendChild(el('div', 'label', t.boxCurrent));
+    const cur = el('div', 'box cur');
+    renderCurrent(cur, typeof p.current === 'string' ? p.current : '');
+    card.appendChild(cur);
+    card.appendChild(el('div', 'label', t.boxNext));
+    if (!next.length) card.appendChild(el('div', 'box empty', t.boxEmpty));
+    for (const s of next) card.appendChild(el('div', 'box', s));
+
+    const row = el('div', 'row');
+    const mk = function (label, disabled, dPrev, dNext) {
+      const b = el('button', '', label);
+      b.disabled = !!disabled || busy;
+      b.onclick = function () {
+        if (busy) return;
+        busy = true;
+        try {
+          window.fushiSetSentenceContext(
+            Math.max(0, fushiSentenceCtx.prev + dPrev), Math.max(0, fushiSentenceCtx.next + dNext));
+        } finally { busy = false; }
+        render();
+      };
+      return b;
+    };
+    row.appendChild(mk(t.prevPlus, p.prevAtMax === true, 1, 0));
+    row.appendChild(mk(t.prevMinus, prev.length <= 0, -1, 0));
+    row.appendChild(mk(t.nextPlus, p.nextAtMax === true, 0, 1));
+    row.appendChild(mk(t.nextMinus, next.length <= 0, 0, -1));
+    card.appendChild(row);
+
+    const foot = el('div', 'foot');
+    const cancel = el('button', '', t.cancel);
+    cancel.onclick = function () {
+      window.fushiSetSentenceContext(snap.prev, snap.next);
+      fushiCloseSentenceContextModal();
+    };
+    const confirm = el('button', 'primary', t.confirm);
+    confirm.onclick = function () {
+      fushiCloseSentenceContextModal();
+      if (typeof window.fushiPopupMineEntryByIndex === 'function') window.fushiPopupMineEntryByIndex(entryIndex);
+    };
+    foot.appendChild(cancel);
+    foot.appendChild(confirm);
+    card.appendChild(foot);
+  }
+  bg.addEventListener('click', function (e) { if (e.target === bg) { window.fushiSetSentenceContext(snap.prev, snap.next); fushiCloseSentenceContextModal(); } });
+  // 模态开着时按键不能漏给宿主页：Netflix/YouTube 把空格/方向键/数字键都绑成播放快捷键，
+  // 用户在模态里按 Esc/空格本意是操作模态，不是让视频跳进度。host 在 shadow 之外、
+  // document 之前的冒泡路径上，这里截住即可（宿主页 capture 阶段的监听截不住，接受）。
+  for (const type of ['keydown', 'keyup', 'keypress']) {
+    host.addEventListener(type, function (e) {
+      e.stopPropagation();
+      if (type === 'keydown' && e.key === 'Escape') {
+        window.fushiSetSentenceContext(snap.prev, snap.next);
+        fushiCloseSentenceContextModal();
+      }
+    });
+  }
+  host.tabIndex = -1;
+  render();
+  (document.fullscreenElement || document.body).appendChild(host);
+  fushiCtxModalHost = host;
+  try { host.focus(); } catch (_) {}
+};
+
 // 制卡上下文的**唯一**解析口：当前字幕行 + 制卡那一刻 + 可裁原始流的身份。
 //
 // 两个消费者共用这一份：「入队」（`fushiEnqueue`，回放/批量路）与「立即制卡」
@@ -478,6 +694,9 @@ window.fushiMineContext = function () {
       site === 'netflix' && typeof netflixDocumentTitle === 'function'
           ? netflixDocumentTitle()
           : '';
+  // 多句合一：草稿选了上下文且整轨能定位当前句 → 合成句（'\n' 连接）+ 时间窗并集。
+  // `window`（当前句）保持不变：cueStartMs / mineAtMs / {clip-timestamp} 仍指当前句。
+  const composed = fushiComposedContext();
   return {
     window: w,
     site: site,
@@ -486,6 +705,8 @@ window.fushiMineContext = function () {
     netflixId: clip && clip.kind === 'netflix' ? clip.id : null,
     mineAtV: mineAtV,
     documentTitle: documentTitle,
+    contextSentence: composed ? composed.sentence : null,
+    contextWindow: composed ? { startV: composed.startV, endV: composed.endV } : null,
   };
 };
 window.fushiEnqueue = function (fields, sentence) {
@@ -499,10 +720,13 @@ window.fushiEnqueue = function (fields, sentence) {
   const documentTitle = ctx.documentTitle;
   // 边距与「立即出卡」那条路同源（`fushiClipWindowWithMargin`）——两条路裁的是同一句话，
   // 边距不同步就会出现「B 站点一下的卡开头被切、YouTube 批量的卡不切」。
-  const clipWin = fushiClipWindowWithMargin(w.startV, w.endV);
+  // 多句合一：裁切窗取上下文并集（首句起→末句止），句子用合成句；与 app 内
+  // `_resolveVideoMiningRange` 同一对换法。
+  const clipBase = ctx.contextWindow || w;
+  const clipWin = fushiClipWindowWithMargin(clipBase.startV, clipBase.endV);
   const item = {
     id: Date.now() + '-' + Math.random().toString(36).slice(2),
-    fields: fields, sentence: sentence || w.text || '',
+    fields: fields, sentence: ctx.contextSentence || sentence || w.text || '',
     startV: clipWin.startMs, endV: clipWin.endMs,
     // BUG-1416：startV 带了录制头部提前量，不是真句首；静态帧「字幕开头」要的是真句首。
     // BUG-2080：cueEndV 与 cueStartV 成对存下——卡面 `{clip-timestamp}` 要显示的是**字幕窗**，
@@ -522,6 +746,8 @@ window.fushiEnqueue = function (fields, sentence) {
   }
   fushiQueue.push(item);
   fushiQueueSave();
+  // 一次性草稿：入队即归零（与 app 内制卡成功后 _miningDraft.clear() 同事件）。
+  fushiSentenceCtx = { prev: 0, next: 0 };
   return { ok: true, count: fushiQueue.length };
 };
 // 跨标签/重载同步：storage 变了就刷新内存镜像 + 计数。
@@ -692,6 +918,10 @@ async function fushiRunNetflixBatch(introGate) {
         const anchorAfterV = fushiVideoTimeMs(v);
         began = !!(beginResp && beginResp.ok);
         if (!began) { fail++; window.fushiToast('生成中… ' + (done + fail) + '/' + items.length, true); continue; }
+        // BUG-2192：录制那一刻可见视频画面占视口的比例矩形（null = 铺满/算不出 → 服务端不裁）。
+        // 必须在**这一刻**算：批量回放期间用户可能改窗口大小/进出全屏，片段是此刻的视口。
+        const clipCrop = (typeof fushiVideoCropFraction === 'function')
+          ? fushiVideoCropFraction(v, window.innerWidth, window.innerHeight) : null;
         const anchorV = (anchorBeforeV === null || anchorAfterV === null)
           ? null
           : Math.round((anchorBeforeV + anchorAfterV) / 2);
@@ -736,6 +966,8 @@ async function fushiRunNetflixBatch(introGate) {
             chrome.runtime.sendMessage(
               // BUG-676（TODO-1361 ③）：带上入队时抓的剧名；旧队列项无则录制时现抓（此刻正在目标集页）。
               { type: 'mineClip', fields: q.fields, sentence: q.sentence, clipBase64: clip.clipBase64, clipDurationMs: clip.clipDurationMs,
+                // BUG-2192：可见画面比例矩形，服务端据此裁掉播放器黑边。
+                clipCrop: clipCrop,
                 // BUG-1416：静态帧模式要「制卡那一刻」的帧，服务端据这三个视频时间换算片段内偏移。
                 clipAnchorMs: anchorV, clipAnchorUncertaintyMs: anchorUncertaintyMs,
                 cueStartMs: (typeof q.cueStartV === 'number' ? q.cueStartV : null),
@@ -2173,6 +2405,16 @@ function fushiRenderEntries(popupJson) {
   }
   window._noResultsMessage = 'No results';
   window.__fushiOnTapOutside = fushiRemoveContainer;
+  // BUG-2190：与 app 内 popup_settings_injection 同值——外字/词典插图登记进 fields.dictionaryMedia
+  // 并导出成 <img src="fushi_dict_N.ext">，服务端 /api/mine 落缓存后嵌进卡片。不设它时
+  // popup.js 只能把外字退化成 alt 文本（用户卡片上「［参考］」压正文的来源之一）。
+  window.embedMedia = true;
+  // 多句合一制卡：换词即新草稿（宿主计数 + popup.js 镜像同时归零，与 app 内换词注入同步）；
+  // 「调整上下文」按钮只在整轨能定位当前句时渲染（DOM 采样伪轨没有上一句/下一句）。
+  fushiSentenceCtx = { prev: 0, next: 0 };
+  if (typeof window.resetSentenceContextMirror === 'function') window.resetSentenceContextMirror();
+  window.sentenceContextPreviewEnabled = !!fushiCurrentCueLocation();
+  if (!window.i18nCtx) window.i18nCtx = FUSHI_CTX_I18N;
   fushiBindPopupPerfContext(fushiLookupPerfContext);
   if (typeof window.renderPopup === 'function') window.renderPopup();
   return true;
