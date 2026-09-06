@@ -4311,5 +4311,6 @@
   "backup_export_dictionaries_skipped": "导出完成，但有 $n 本词典被跳过：这台设备上找不到它们的文件（$names）",
   "popup_ctx_preview_audio": "试听",
   "popup_ctx_preview_stop": "停止",
-  "popup_ctx_preview_unavailable": "这句没有可试听的音频"
+  "popup_ctx_preview_unavailable": "这句没有可试听的音频",
+  "sync_compare_only_conflicts": "只看冲突"
 }

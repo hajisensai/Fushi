@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:fushi/src/epub/book_title_conflict.dart';
 import 'package:fushi/src/epub/epub_importer.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/position_converter.dart';
@@ -551,6 +553,15 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
   double? _progress;
   String? _progressLabel;
 
+  /// 「只看冲突」筛选（C3）：默认模式下用户可开关；冲突解决弹窗
+  /// （[SyncCompareDialog.conflictsOnly]）恒为只看冲突。参与渲染 / 计数 / Apply 的
+  /// 集合都跟着它走——渲染集 = 应用集，不给「看到的和应用的不一样」留口子。
+  bool _filterConflicts = false;
+  bool get _showOnlyConflicts => widget.conflictsOnly || _filterConflicts;
+
+  int get _conflictCount =>
+      _entries?.where((SyncCompareEntry e) => e.hasConflict).length ?? 0;
+
   @override
   void initState() {
     super.initState();
@@ -608,7 +619,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
   List<SyncCompareEntry> get _entriesInPlay {
     final entries = _entries;
     if (entries == null) return const <SyncCompareEntry>[];
-    if (!widget.conflictsOnly) return entries;
+    if (!_showOnlyConflicts) return entries;
     return entries.where((e) => e.hasConflict).toList();
   }
 
@@ -1024,37 +1035,54 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
           child: CircularProgressIndicator.adaptive(),
         ),
       );
-    } else if (widget.conflictsOnly
+    } else if (_showOnlyConflicts
         ? _entriesInPlay.isEmpty
         : (_entries!.isEmpty && (_dicts?.isEmpty ?? true))) {
-      // 空态判定按「参与项」：conflictsOnly 下基于冲突项，无冲突即「无可解冲突」。
+      // 空态判定按「参与项」：只看冲突时基于冲突项，无冲突即「无可解冲突」。
       body = Center(child: Text(t.sync_compare_empty));
     } else {
       final conflicts = _entriesInPlay.where((e) => e.hasConflict).toList();
-      // conflictsOnly 模式只渲染冲突分组：隐藏自动可解的书与全部词典分组。
-      final others = widget.conflictsOnly
+      // 只看冲突时只渲染冲突分组：隐藏自动可解的书与全部词典分组。
+      final others = _showOnlyConflicts
           ? const <SyncCompareEntry>[]
           : _entries!.where((e) => !e.hasConflict).toList();
-      final bool showDicts = !widget.conflictsOnly;
+      final bool showDicts = !_showOnlyConflicts;
+      final List<SyncDictEntry> dicts =
+          showDicts ? (_dicts ?? const <SyncDictEntry>[]) : const [];
 
-      body = ListView(
-        children: [
-          if (conflicts.isNotEmpty) ...[
-            _sectionHeader(t.sync_compare_conflicts, theme, isConflict: true),
-            for (final e in conflicts) _buildEntry(e, theme),
-            if (others.isNotEmpty ||
-                (showDicts && (_dicts?.isNotEmpty ?? false)))
-              const Divider(height: 16),
+      // C3：段头 pinned 在滚动容器顶上并带计数，长列表滚到哪都知道在看哪一段；
+      // 批量选择挪到冲突段头——它只作用于需要人工裁决的冲突项，放标题行是错位。
+      body = CustomScrollView(
+        slivers: <Widget>[
+          if (conflicts.isNotEmpty) ...<Widget>[
+            _stickyHeader(
+              t.sync_compare_conflicts,
+              theme,
+              count: conflicts.length,
+              isConflict: true,
+              trailing: _bulkChoiceMenu(conflicts),
+            ),
+            SliverList.list(
+              children: <Widget>[
+                for (final e in conflicts) _buildEntry(e, theme)
+              ],
+            ),
           ],
-          if (others.isNotEmpty) ...[
-            if (conflicts.isNotEmpty)
-              _sectionHeader(t.sync_compare_all_books, theme),
-            for (final e in others) _buildEntry(e, theme),
+          if (others.isNotEmpty) ...<Widget>[
+            _stickyHeader(t.sync_compare_all_books, theme,
+                count: others.length),
+            SliverList.list(
+              children: <Widget>[for (final e in others) _buildEntry(e, theme)],
+            ),
           ],
-          if (showDicts && _dicts != null && _dicts!.isNotEmpty) ...[
-            const Divider(height: 16),
-            _sectionHeader(t.sync_compare_dictionaries, theme),
-            for (final SyncDictEntry d in _dicts!) _buildDictEntry(d, theme),
+          if (dicts.isNotEmpty) ...<Widget>[
+            _stickyHeader(t.sync_compare_dictionaries, theme,
+                count: dicts.length),
+            SliverList.list(
+              children: <Widget>[
+                for (final SyncDictEntry d in dicts) _buildDictEntry(d, theme),
+              ],
+            ),
           ],
         ],
       );
@@ -1085,37 +1113,16 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
                   ),
                 ),
               ),
-              if (_entries != null && _entries!.isNotEmpty)
-                FushiOverflowMenu<SyncChoice>(
-                  iconWidget: const Icon(Icons.checklist, size: 20),
-                  tooltip: t.sync_compare_select_all,
-                  onSelected: (choice) {
-                    setState(() {
-                      for (final e in _entries!) {
-                        if (e.bookKey != null && e.needsManualChoice) {
-                          _choices[e.title] = choice;
-                        }
-                      }
-                    });
-                  },
-                  items: [
-                    FushiPopupMenuItem<SyncChoice>(
-                      label: t.sync_compare_all_local,
-                      icon: Icons.phone_android_outlined,
-                      value: SyncChoice.useLocal,
-                    ),
-                    FushiPopupMenuItem<SyncChoice>(
-                      label: t.sync_compare_all_remote,
-                      icon: Icons.cloud_outlined,
-                      value: SyncChoice.useRemote,
-                    ),
-                    FushiPopupMenuItem<SyncChoice>(
-                      label: t.sync_compare_all_skip,
-                      icon: Icons.block_outlined,
-                      value: SyncChoice.skip,
-                    ),
-                  ],
-                ),
+              // 冲突解决弹窗本就只有冲突，筛选无意义；默认模式下有冲突才给开关。
+              // `|| _filterConflicts`：一个开关不能在自己是 ON 的时候把自己的 OFF
+              // 入口删掉。可达路径：开着筛选时把最后一条冲突的远端副本删掉
+              // （冲突行本身就带删除菜单），_conflictCount 归零、chip 消失，而
+              // _filterConflicts 仍是 true —— 于是 _showOnlyConflicts 恒真、
+              // _entriesInPlay 为空，非冲突的书和词典段全部不可见也不可达，
+              // Apply 恒为 0，只能关掉对话框重开。
+              if (!widget.conflictsOnly &&
+                  (_conflictCount > 0 || _filterConflicts))
+                _conflictFilterChip(theme),
             ],
           ),
           SizedBox(height: tokens.spacing.card),
@@ -1166,26 +1173,119 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
     );
   }
 
-  Widget _sectionHeader(String text, ThemeData theme,
-      {bool isConflict = false}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-      child: Row(
-        children: [
-          if (isConflict) ...[
-            Icon(Icons.warning_amber_rounded,
-                size: 16, color: theme.colorScheme.error),
-            const SizedBox(width: 4),
-          ],
-          Text(
-            text,
-            style: theme.textTheme.labelLarge?.copyWith(
-              color: isConflict
-                  ? theme.colorScheme.error
-                  : theme.colorScheme.primary,
-            ),
+  /// 「只看冲突」筛选 chip。与 [FushiOverflowMenu] 同款接线：在焦点根下注册成方向
+  /// 导航目标，Activate（Enter / 手柄 A）即切换；否则裸 chip 对手柄不可达。
+  Widget _conflictFilterChip(ThemeData theme) {
+    final Widget chip = FilterChip(
+      label: Text('${t.sync_compare_only_conflicts} · $_conflictCount'),
+      selected: _filterConflicts,
+      onSelected: (bool value) => setState(() => _filterConflicts = value),
+    );
+    if (FushiFocusRoot.maybeControllerOf(context) == null) return chip;
+    return Actions(
+      actions: <Type, Action<Intent>>{
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (_) {
+            setState(() => _filterConflicts = !_filterConflicts);
+            return null;
+          },
+        ),
+      },
+      child: FushiFocusTarget(
+        id: const FushiFocusId('sync-compare-only-conflicts'),
+        child: chip,
+      ),
+    );
+  }
+
+  /// 批量裁决菜单：只作用于需要人工选择的冲突项，故挂在冲突段头上（C3）。
+  /// 批量裁决作用于 [targets]——**调用方段头下面渲染的那一批**，不是全集。
+  ///
+  /// 菜单挂在冲突段头上，语义就该是「把这个段头下面的都裁了」。原来写成遍历
+  /// `_entries!` 全集再靠 `needsManualChoice` 兜住，正确性押在「needsManualChoice
+  /// 恒等于 hasConflict」这条没人写下来的约定上（今天成立：前者就是后者的字面
+  /// 别名）。哪天有人把它放宽——比如把 remote-only 也算「需人工确认」——批量就会
+  /// 静默改写被筛选隐藏的行的裁决，而且没有任何测试会红。作用域交给调用方，
+  /// 这条约定就不必再存在。
+  Widget _bulkChoiceMenu(List<SyncCompareEntry> targets) {
+    return FushiOverflowMenu<SyncChoice>(
+      iconWidget: const Icon(Icons.checklist, size: 20),
+      tooltip: t.sync_compare_select_all,
+      onSelected: (choice) {
+        setState(() {
+          for (final e in targets) {
+            if (e.bookKey != null && e.needsManualChoice) {
+              _choices[e.title] = choice;
+            }
+          }
+        });
+      },
+      items: [
+        FushiPopupMenuItem<SyncChoice>(
+          label: t.sync_compare_all_local,
+          icon: Icons.phone_android_outlined,
+          value: SyncChoice.useLocal,
+        ),
+        FushiPopupMenuItem<SyncChoice>(
+          label: t.sync_compare_all_remote,
+          icon: Icons.cloud_outlined,
+          value: SyncChoice.useRemote,
+        ),
+        FushiPopupMenuItem<SyncChoice>(
+          label: t.sync_compare_all_skip,
+          icon: Icons.block_outlined,
+          value: SyncChoice.skip,
+        ),
+      ],
+    );
+  }
+
+  /// pinned 段头：标题 + 计数 chip（+ 可选行尾控件）。背景取对话框底色，滚动时
+  /// 内容从它下面穿过而不透出来。
+  Widget _stickyHeader(
+    String text,
+    ThemeData theme, {
+    required int count,
+    bool isConflict = false,
+    Widget? trailing,
+  }) {
+    final ColorScheme cs = theme.colorScheme;
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final Color accent = isConflict ? cs.error : cs.primary;
+    return SliverPersistentHeader(
+      pinned: true,
+      delegate: _CompareSectionHeaderDelegate(
+        height: 40,
+        child: Container(
+          // 与对话框同底色：先跟主题的 DialogTheme，否则回落到 token（M3 对话框
+          // 默认底色 surfaceContainerHigh 在 token 里就是 surfaces.search 那一档）。
+          color:
+              DialogTheme.of(context).backgroundColor ?? tokens.surfaces.search,
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          alignment: AlignmentDirectional.centerStart,
+          child: Row(
+            children: <Widget>[
+              if (isConflict) ...<Widget>[
+                Icon(Icons.warning_amber_rounded, size: 16, color: accent),
+                const SizedBox(width: 4),
+              ],
+              Text(
+                text,
+                style: theme.textTheme.labelLarge?.copyWith(color: accent),
+              ),
+              const SizedBox(width: 8),
+              FushiTag(
+                text: '$count',
+                backgroundColor:
+                    isConflict ? cs.errorContainer : cs.secondaryContainer,
+                foregroundColor:
+                    isConflict ? cs.onErrorContainer : cs.onSecondaryContainer,
+              ),
+              const Spacer(),
+              if (trailing != null) trailing,
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -1480,4 +1580,33 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
     if (h > 0) return '${h}h${_pad(m)}m';
     return '${m}m${_pad(s)}s';
   }
+}
+
+/// 固定高度的 pinned 段头（[CustomScrollView] 用）。
+class _CompareSectionHeaderDelegate extends SliverPersistentHeaderDelegate {
+  const _CompareSectionHeaderDelegate({
+    required this.child,
+    required this.height,
+  });
+
+  final Widget child;
+  final double height;
+
+  @override
+  double get minExtent => height;
+
+  @override
+  double get maxExtent => height;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) =>
+      child;
+
+  @override
+  bool shouldRebuild(_CompareSectionHeaderDelegate oldDelegate) =>
+      oldDelegate.child != child || oldDelegate.height != height;
 }

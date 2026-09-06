@@ -4311,5 +4311,6 @@
   "backup_export_dictionaries_skipped": "Exported, but $n dictionary(s) were skipped: their files are missing on this device ($names)",
   "popup_ctx_preview_audio": "Preview audio",
   "popup_ctx_preview_stop": "Stop",
-  "popup_ctx_preview_unavailable": "No audio for this sentence"
+  "popup_ctx_preview_unavailable": "No audio for this sentence",
+  "sync_compare_only_conflicts": "Only conflicts"
 }
