@@ -22,3 +22,4 @@
 - **备注**：历史数据不自愈（`reading_statistics.pages_read` 是累加标量，无明细可回溯）；
   `pagesRead` 不进 sync wire（纯本机维度），改计数不影响跨端契约。EPUB/视频的同型
   「到达即计」另案：EPUB 见 BUG-1762、视频见 BUG-1763。
+- **2026-09-06 被 ReadUnitLedger 取代**：漫画「读过」判据改为翻走即计 + 会话覆盖并集，无停留门（1.5s 到达停留裁定推翻）、无会话 Set、无存档预置，见 docs/plans/2026-09-06-read-unit-ledger.md；守卫 `manga_stats_dwell_guard_test.dart` 同步改为账本接线守卫。
