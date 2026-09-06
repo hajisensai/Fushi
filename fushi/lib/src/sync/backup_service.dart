@@ -431,6 +431,33 @@ class BackupContentSummary {
   bool has(BackupCategory c) => present.contains(c);
 }
 
+/// 一次导出里词典的**逐本**打包计划（BUG-2193）。
+///
+/// 存在的理由：以前判据是一个 bool（`_hasCompleteDictionaryResources`），语义是
+/// 「**每一行** dictionary_metadata 都在磁盘上有文件才打包」。这条不变式本身是对的
+/// （不能让恢复端造出查不了的幽灵词典），但把它实现成**全表 AND 门**意味着：
+/// 库里只要有一条幽灵行（profile 切换误删过目录、导入中断、`.pending_delete` 残留
+/// 都会造出来），**全部**词典就一本都不打包，还顺手把 DB 副本里的词典行整表清空，
+/// 而导出照样报成功。用户勾了「词典」，拿到手的 zip 里只有 backup_meta.json 和
+/// fushi.db。
+///
+/// 改法是把「全表 AND」换成「逐本分区」：有文件的照打，幽灵行只删它自己那一行。
+/// 不变式依然成立——出包里的每一行都有对应文件——但代价从「全部」降到「那一条」。
+class _DictionaryPackPlan {
+  const _DictionaryPackPlan({required this.packable, required this.ghosts});
+
+  const _DictionaryPackPlan.empty()
+      : packable = const <String>[],
+        ghosts = const <String>[];
+
+  /// 磁盘上确有文件、这次会被打进 zip 的词典名。
+  final List<String> packable;
+
+  /// 元数据在、磁盘资源缺失的词典名。它们的 DB 行会从导出副本里删掉，
+  /// **只删这些行**，其余词典不受牵连。
+  final List<String> ghosts;
+}
+
 class BackupService {
   BackupService({
     required FushiDatabase db,
@@ -923,7 +950,15 @@ class BackupService {
     final int books = (await _db.getAllEpubBooks()).length;
     final int audiobooks = (await _db.getAllAudiobooks()).length;
     final int videos = (await _db.allVideoBooks()).length;
-    final int dictionaries = (await _db.getAllDictionaryMetadata()).length;
+    // BUG-2193：**只数打得出来的那些**。旧实现数的是 dictionary_metadata 行数，
+    // 与打包判据不同源，于是勾选框显示「词典 (12)」、导出后一本都没有，用户完全
+    // 无从察觉。与下面字体那一条同一条纪律：预览计数 = 实际打包内容。
+    final int dictionaries =
+        (await _planDictionaryPack(_dictionaryResourceDirectory == null
+                ? null
+                : Directory(_dictionaryResourceDirectory)))
+            .packable
+            .length;
     // Count the fonts the USER manages (catalog entries whose file lives under
     // custom_fonts/), not every file in the tree: failed `_tmp_*` downloads and
     // replaced-but-unreferenced old files inflated the count (a user with 2
@@ -1066,6 +1101,7 @@ class BackupService {
     Set<String>? bookKeys,
     Set<String>? videoKeys,
     void Function(double progress)? onProgress,
+    void Function(List<String> names)? onDictionariesSkipped,
   }) async {
     bool wants(BackupCategory c) =>
         categories == null || categories.contains(c);
@@ -1111,8 +1147,14 @@ class BackupService {
       // Honor the category selection: when the user unticked Dictionaries,
       // exclude them entirely (and strip their DB rows below) even if the
       // resource files are present on disk.
-      final bool includeDictionary = wants(BackupCategory.dictionary) &&
-          await _hasCompleteDictionaryResources(dictionaryResourceRoot);
+      // BUG-2193：判据从「全表 AND 门」换成「逐本分区」。以前一条幽灵行就让全部
+      // 词典不打包（且静默），用户勾了词典却拿到一个只有 db 的 zip。
+      final bool wantsDictionary = wants(BackupCategory.dictionary);
+      final _DictionaryPackPlan dictionaryPlan = wantsDictionary
+          ? await _planDictionaryPack(dictionaryResourceRoot)
+          : const _DictionaryPackPlan.empty();
+      final bool includeDictionary =
+          wantsDictionary && dictionaryPlan.packable.isNotEmpty;
       // Whether the "book content" category is packed. When it is NOT, the
       // hoshi_books/ tree is skipped below AND the epub_books rows must be
       // stripped from the DB copy — otherwise a restore/merge would insert book
@@ -1121,8 +1163,22 @@ class BackupService {
       // packed never appears after import.
       final bool includeBooks = wants(BackupCategory.books);
       await _stripCredentials(tmpDir.path);
-      if (!includeDictionary) {
+      if (!wantsDictionary) {
+        // 用户没勾词典 → 整表清空（行为不变）。
         await _stripDictionaryState(tmpDir.path);
+      } else if (dictionaryPlan.packable.isEmpty) {
+        // 勾了，但一本都打不出来 → 与上同（避免恢复端造出全是幽灵的词典库）。
+        await _stripDictionaryState(tmpDir.path);
+      } else {
+        // 勾了且有得打 → **只**删缺文件的那几行，其余词典照常出包。
+        await _stripGhostDictionaryRows(tmpDir.path, dictionaryPlan.ghosts);
+      }
+      // 无论哪条分支，跳过的词典都必须让调用方知道——这正是本 bug 里
+      // 「导出报成功、包里没词典」的那半个真相。
+      if (wantsDictionary && dictionaryPlan.ghosts.isNotEmpty) {
+        onDictionariesSkipped?.call(
+          List<String>.unmodifiable(dictionaryPlan.ghosts),
+        );
       }
       // Which books' records survive in the exported DB copy:
       //  - book content unticked      → keep NONE (strip every epub_books row).
@@ -1303,8 +1359,8 @@ class BackupService {
       );
 
       if (includeDictionary) {
-        await _collectTreeFiles(
-            dictionaryResourceRoot!, _dictionaryResourcesPrefix, files);
+        await _collectDictionaryTrees(
+            dictionaryResourceRoot!, dictionaryPlan.packable, files);
       }
       if (_booksRootDirectory != null && includeBooks) {
         if (bookKeys == null) {
@@ -3601,18 +3657,75 @@ class BackupService {
     });
   }
 
-  Future<bool> _hasCompleteDictionaryResources(Directory? root) async {
-    if (root == null || !await root.exists()) return false;
+
+  /// 逐本盘点词典资源，产出 [_DictionaryPackPlan]（BUG-2193）。
+  ///
+  /// 资源根不存在 = 这台设备一本词典的文件都没有，所有行都是幽灵。
+  Future<_DictionaryPackPlan> _planDictionaryPack(Directory? root) async {
     final List<DictionaryMetaRow> dictionaries =
         await _db.getAllDictionaryMetadata();
-    if (dictionaries.isEmpty) return false;
+    if (root == null || !await root.exists()) {
+      return _DictionaryPackPlan(
+        packable: const <String>[],
+        ghosts: <String>[
+          for (final DictionaryMetaRow d in dictionaries) d.name,
+        ],
+      );
+    }
+    final List<String> packable = <String>[];
+    final List<String> ghosts = <String>[];
     for (final DictionaryMetaRow dictionary in dictionaries) {
       final Directory dictionaryDir = Directory(
         p.join(root.path, dictionary.name),
       );
-      if (!await _directoryHasFiles(dictionaryDir)) return false;
+      if (await _directoryHasFiles(dictionaryDir)) {
+        packable.add(dictionary.name);
+      } else {
+        ghosts.add(dictionary.name);
+      }
     }
-    return true;
+    return _DictionaryPackPlan(packable: packable, ghosts: ghosts);
+  }
+
+  /// 只把 [names] 这几本词典的目录打进 zip（BUG-2193）。
+  ///
+  /// 顺带修掉旧实现的一个副作用：`_collectTreeFiles` 会把整棵
+  /// `dictionaryResources/` 无差别打包，连 `download_temp` / `import_temp` /
+  /// `update_temp` / `.pending_delete` 这些运行期临时目录一起塞进备份包白白撑大。
+  /// 按词典名枚举天然把它们排除在外。
+  static Future<void> _collectDictionaryTrees(
+    Directory root,
+    List<String> names,
+    Map<String, String> into,
+  ) async {
+    for (final String name in names) {
+      await _collectTreeFiles(
+        Directory(p.join(root.path, name)),
+        p.posix.join(_dictionaryResourcesPrefix, name),
+        into,
+      );
+    }
+  }
+
+  /// 从导出副本里删掉 [names] 这几本词典的元数据行（BUG-2193）。
+  ///
+  /// 与 [_stripDictionaryState] 的区别是**不动词典查询历史、也不清空整表**：
+  /// 这里处理的是「个别行没有对应文件」，不是「这次不导出词典」。
+  static Future<void> _stripGhostDictionaryRows(
+    String dbDirectory,
+    List<String> names,
+  ) async {
+    if (names.isEmpty) return;
+    final db = FushiDatabase(dbDirectory);
+    try {
+      for (final String name in names) {
+        await db.deleteDictionaryMeta(name);
+      }
+      await db.customStatement('VACUUM');
+      await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+    } finally {
+      await db.close();
+    }
   }
 
   static Future<bool> _directoryHasFiles(Directory directory) async {

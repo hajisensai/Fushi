@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2039 条。点号进各自文件。
+> 共 2040 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2193](bugs/BUG-2193-backup-export-drops-all-dicts-on-one-ghost-row.md) | ✅ | ✅ | 本地备份导出：一条幽灵词典元数据行让全部词典静默不打包 |
 | [BUG-2188](bugs/BUG-2188-dict-download-failure-reason-swallowed.md) | ✅ | ✅ | 词典下载失败原因被吞：单行标题截断 + 摘要措辞错成导入失败 + 无镜像回退 |
 | [BUG-2165](bugs/BUG-2165-pack-download-no-visible-progress.md) | ✅ | ✅ | 推荐包后台下载没有任何看得见的地方，半截包重启后既看不见也续不上 |
 | [BUG-2164](bugs/BUG-2164-asr-pcm-mov-chapter-track-noise.md) | ✅ | ✅ | ASR PCM 抽取 mov 容器混入章节 text 轨，奇数字节标题的整章解成白噪声 |

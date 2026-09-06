@@ -4301,5 +4301,6 @@
   "dict_error_http_status": "$host returned HTTP $status",
   "dict_task_failed_download": "Download failed: $name ($reason)",
   "dict_task_failed_import": "Import failed: $name ($reason)",
-  "dict_task_failed_summary": "$n dictionary(s) failed"
+  "dict_task_failed_summary": "$n dictionary(s) failed",
+  "backup_export_dictionaries_skipped": "Exported, but $n dictionary(s) were skipped: their files are missing on this device ($names)"
 }

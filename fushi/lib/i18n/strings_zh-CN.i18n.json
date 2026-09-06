@@ -4301,5 +4301,6 @@
   "dict_error_http_status": "$host 返回 HTTP $status",
   "dict_task_failed_download": "下载失败：$name（$reason）",
   "dict_task_failed_import": "导入失败：$name（$reason）",
-  "dict_task_failed_summary": "$n 本词典处理失败"
+  "dict_task_failed_summary": "$n 本词典处理失败",
+  "backup_export_dictionaries_skipped": "导出完成，但有 $n 本词典被跳过：这台设备上找不到它们的文件（$names）"
 }
