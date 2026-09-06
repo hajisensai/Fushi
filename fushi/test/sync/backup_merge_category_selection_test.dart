@@ -77,7 +77,7 @@ void main() {
     // Every category EXCEPT statistics.
     final Set<BackupCategory> categories = BackupCategory.values.toSet()
       ..remove(BackupCategory.statistics);
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
       dbDirectory: curDbDir,
       zipPath: zip,
       categories: categories,
@@ -101,7 +101,7 @@ void main() {
 
     final Set<BackupCategory> categories = BackupCategory.values.toSet()
       ..remove(BackupCategory.books);
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
       dbDirectory: curDbDir,
       zipPath: zip,
       categories: categories,
@@ -132,7 +132,7 @@ void main() {
     final String curDbDir = p.join(curRoot.path, 'support');
     Directory(curDbDir).createSync(recursive: true);
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
       dbDirectory: curDbDir,
       zipPath: zip,
       booksRootDirectory: p.join(curRoot.path, 'documents', 'fushi_books'),

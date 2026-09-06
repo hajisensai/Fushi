@@ -2470,7 +2470,7 @@ class AppModel with ChangeNotifier {
       // 3) migrate the mutually-exclusive `backendType==fushiServer` interconnect
       //    selection to the independent interconnect toggle (interconnect and a
       //    cloud backup backend can now coexist).
-      await BackupService.recoverPendingImport(_databaseDirectory.path);
+      await BackupRestoreService.recoverPendingRestore(_databaseDirectory.path);
 
       // 沙箱重定位自愈：数据根被**平台**挪走后，把库里的绝对路径重基过去。
       //

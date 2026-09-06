@@ -19,7 +19,7 @@ import 'package:path/path.dart' as p;
 /// 「从 Hibiki 导入」页（改名迁移计划 P2-2/P2-3，Fushi 侧）。
 ///
 /// 扫描老包写下的中转目录 → 逐批校验（清单 sha256+size）→ 走
-/// [BackupService.mergeRestoreBackup] 逐批合并（关库一次、批间不重启）→
+/// [BackupRestoreService.mergeRestoreBackup] 逐批合并（关库一次、批间不重启）→
 /// 行数聚合校验 → 删除已导入批文件 → 重启。**任一批校验不符：保留文件、
 /// 提示回老包重传、绝不进入卸载流程**。
 ///
@@ -191,7 +191,7 @@ class _MigrationImportPageState extends State<MigrationImportPage>
           setState(() => _status =
               t.migration_import_running(batch: _batchLabel(batch.batch)));
         }
-        await BackupService.mergeRestoreBackup(
+        await BackupRestoreService.mergeRestoreBackup(
           dbDirectory: appModel.databaseDirectory.path,
           zipPath: batch.archivePath,
           dictionaryResourceDirectory:

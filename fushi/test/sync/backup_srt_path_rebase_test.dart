@@ -11,7 +11,7 @@ import 'temp_dir_cleanup.dart';
 /// BUG-1575：合并/覆盖导入必须把 `srt_books` 的四列路径 rebase 到本机根。
 ///
 /// 真实故障：用户把互联下载来的 6 本 SRT 有声书经 hibiki → fushi 改名迁移
-/// （`MigrationImporter` → `BackupService.mergeRestoreBackup`）带过来，合并引擎
+/// （`MigrationImporter` → `BackupRestoreService.mergeRestoreBackup`）带过来，合并引擎
 /// 逐列原样 INSERT `srt_books`，而 `_rebaseContentPaths` 只遍历 `epub_books` /
 /// `audiobooks` → srt 行带着**旧数据根**进了新库 = 有字幕没声音（cue 存在
 /// `audio_cues`，不带路径）。
@@ -86,7 +86,7 @@ void main() {
     final String dstAudio = p.join(dst.path, 'audiobooks');
     Directory(dstDbDir).createSync(recursive: true);
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
       dbDirectory: dstDbDir,
       zipPath: zipPath,
       booksRootDirectory: dstBooks,
@@ -124,7 +124,7 @@ void main() {
     final String dstAudio = p.join(dst.path, 'audiobooks');
     Directory(dstDbDir).createSync(recursive: true);
 
-    await BackupService.restoreBackup(
+    await BackupRestoreService.restoreBackup(
       dbDirectory: dstDbDir,
       zipPath: zipPath,
       booksRootDirectory: p.join(dst.path, 'fushi_books'),
@@ -159,7 +159,7 @@ void main() {
     final String dstAudio = p.join(dst.path, 'audiobooks');
     Directory(dstDbDir).createSync(recursive: true);
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
       dbDirectory: dstDbDir,
       zipPath: zipPath,
       booksRootDirectory: p.join(dst.path, 'fushi_books'),

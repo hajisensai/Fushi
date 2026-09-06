@@ -218,7 +218,7 @@ void main() {
 
       expect(meta.fontsRoot, srcFontsDir.path);
 
-      final result = await service.validateBackup(zipPath);
+      final result = await BackupRestoreService.validateBackup(zipPath);
       expect(result, isNotNull);
 
       final Directory dstDir =
@@ -230,7 +230,7 @@ void main() {
         if (dstFontsDir.existsSync()) await cleanupTempDir(dstFontsDir);
       });
 
-      await BackupService.restoreBackup(
+      await BackupRestoreService.restoreBackup(
         dbDirectory: dstDir.path,
         zipPath: zipPath,
         fontsRootDirectory: dstFontsDir.path,
@@ -347,7 +347,7 @@ void main() {
         if (dstFontsDir.existsSync()) await cleanupTempDir(dstFontsDir);
       });
 
-      await BackupService.restoreBackup(
+      await BackupRestoreService.restoreBackup(
         dbDirectory: dstDir.path,
         zipPath: zipPath,
         fontsRootDirectory: dstFontsDir.path,

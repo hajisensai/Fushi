@@ -66,7 +66,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
       dbDirectory: curDir.path,
       zipPath: zip,
     );
@@ -115,10 +115,10 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
     // Re-import the SAME backup again — must stay idempotent.
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = FushiDatabase(curDir.path);
@@ -169,10 +169,10 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
     // Re-import the SAME backup again — must stay idempotent.
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = FushiDatabase(curDir.path);
@@ -239,7 +239,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = FushiDatabase(curDir.path);
@@ -272,9 +272,9 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = FushiDatabase(curDir.path);
@@ -345,9 +345,9 @@ void main() {
     await src.close();
 
     // Import twice — must stay idempotent (MAX, never SUM).
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = FushiDatabase(curDir.path);
@@ -413,9 +413,9 @@ void main() {
     await src.close();
 
     // 导两遍——幂等（MAX，绝不 SUM）。
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = FushiDatabase(curDir.path);
@@ -498,9 +498,9 @@ void main() {
     await src.close();
 
     // 导两遍——幂等。
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = FushiDatabase(curDir.path);
@@ -553,7 +553,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = FushiDatabase(curDir.path);
@@ -587,7 +587,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = FushiDatabase(curDir.path);
@@ -643,7 +643,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = FushiDatabase(curDir.path);
@@ -722,7 +722,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = FushiDatabase(curDir.path);
@@ -792,9 +792,9 @@ void main() {
     await src.close();
 
     // 导两遍——幂等（dedupe-UNION，绝不翻倍）。
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = FushiDatabase(curDir.path);
@@ -857,7 +857,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = FushiDatabase(curDir.path);
@@ -904,7 +904,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = FushiDatabase(curDir.path);
@@ -929,7 +929,7 @@ void main() {
     final zip2 = p.join(zipDir.path, 'b2.zip');
     await _exportZip(src2, src2Dir.path, zip2);
     await src2.close();
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip2);
     final pos2 = await after.getReaderPosition(afterUid);
     expect(pos2!.sectionIndex, 9); // unchanged — older backup ignored
@@ -967,7 +967,7 @@ void main() {
     ).createBackup(zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
       dbDirectory: curDir.path,
       zipPath: zip,
       booksRootDirectory: booksRoot.path,
@@ -1011,7 +1011,7 @@ void main() {
     await src.close();
 
     // Must NOT throw (FK preserved) and must skip the ghost bookmark.
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = FushiDatabase(curDir.path);
@@ -1052,7 +1052,8 @@ void main() {
     await _zipDbWithMeta(corruptDb.path, zip);
 
     await expectLater(
-      BackupService.mergeRestoreBackup(dbDirectory: curDir.path, zipPath: zip),
+      BackupRestoreService.mergeRestoreBackup(
+          dbDirectory: curDir.path, zipPath: zip),
       throwsA(anything),
     );
 
@@ -1120,7 +1121,8 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.restoreBackup(dbDirectory: curDir.path, zipPath: zip);
+    await BackupRestoreService.restoreBackup(
+        dbDirectory: curDir.path, zipPath: zip);
 
     final after = FushiDatabase(curDir.path);
     addTearDown(after.close);
@@ -1154,7 +1156,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = FushiDatabase(curDir.path);
@@ -1211,7 +1213,7 @@ void main() {
     await src.close();
 
     // Preview runs against the STILL-OPEN live DB (attaches, counts, detaches).
-    final preview = await BackupService.previewMergeRestore(
+    final preview = await BackupRestoreService.previewMergeRestore(
       liveDb: cur,
       dbDirectory: curDir.path,
       zipPath: zip,
@@ -1245,7 +1247,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    final preview = await BackupService.previewMergeRestore(
+    final preview = await BackupRestoreService.previewMergeRestore(
       liveDb: cur,
       dbDirectory: curDir.path,
       zipPath: zip,
@@ -1304,7 +1306,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
       dbDirectory: curDir.path,
       zipPath: zip,
     );
@@ -1357,7 +1359,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
       dbDirectory: curDir.path,
       zipPath: zip,
     );
@@ -1407,9 +1409,9 @@ void main() {
     await src.close();
 
     // 连续合并两次同一备份：合集不翻倍、成员不重复。
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = FushiDatabase(curDir.path);
@@ -1464,7 +1466,7 @@ void main() {
     ).createBackup(zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
       dbDirectory: curDir.path,
       zipPath: zip,
       booksRootDirectory: booksRoot.path,
@@ -1518,7 +1520,7 @@ void main() {
     ).createBackup(zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
       dbDirectory: curDir.path,
       zipPath: zip,
       booksRootDirectory: booksRoot.path,
@@ -1556,7 +1558,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
       dbDirectory: curDir.path,
       zipPath: zip,
       adoptSourcePreferences: true,
@@ -1588,7 +1590,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = FushiDatabase(curDir.path);

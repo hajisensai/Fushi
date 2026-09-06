@@ -51,7 +51,7 @@ void main() {
     await seed.setPref('audio_source_configs', 'j:[]');
     await seed.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
       dbDirectory: curDbDir,
       zipPath: zip,
     );
@@ -105,7 +105,7 @@ void main() {
         'j:[{"kind":"localAudio","label":"DEVICE_OWN"}]');
     await seed.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
       dbDirectory: curDbDir,
       zipPath: zip,
     );

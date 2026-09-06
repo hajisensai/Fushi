@@ -85,7 +85,7 @@ void main() {
     await seed.deleteEpubBook('B1', tombstone: true);
     await seed.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
       dbDirectory: curDbDir,
       zipPath: zip,
     );
@@ -147,7 +147,7 @@ void main() {
     await seed.deleteEpubBook('Other', tombstone: true); // unrelated tombstone
     await seed.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
       dbDirectory: curDbDir,
       zipPath: zip,
     );
