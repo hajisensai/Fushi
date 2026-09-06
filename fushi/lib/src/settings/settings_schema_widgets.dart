@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_fields.dart';
 import 'package:fushi/src/settings/settings_search.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
@@ -116,6 +117,7 @@ class SettingsSchemaItem extends StatelessWidget {
       SettingsStepperItem stepper => _stepper(stepper),
       SettingsTextItem text => _text(text),
       SettingsNumberItem number => _number(number),
+      SettingsStatusItem status => _status(status),
       SettingsCustomItem custom => custom.builder(settingsContext),
     };
     // 设置搜索跳转落点：本项是待定位目标时消费一次性挂点，包上滚动定位 +
@@ -142,10 +144,39 @@ class SettingsSchemaItem extends StatelessWidget {
           await navigation.onTap!(settingsContext);
           return;
         }
+        final SettingsDestination Function()? child = navigation.child;
+        if (child != null) {
+          // 子 schema 页：与顶层分类同一套详情壳；取新鲜树靠闭包而非 id。
+          Navigator.of(context).push(routeBuilder(
+            context,
+            (_) => SettingsDetailPage.subPage(child),
+          ));
+          return;
+        }
         final WidgetBuilder? builder = navigation.builder;
         if (builder == null) return;
         Navigator.of(context).push(routeBuilder(context, builder));
       },
+    );
+  }
+
+  Widget _status(SettingsStatusItem status) {
+    final SettingsItemAction? onAction = status.onAction;
+    return AdaptiveSettingsRow(
+      // resolveTitle / resolveSubtitle：状态文本在渲染时求值（schema 树是缓存的常量树）。
+      title: status.resolveTitle(settingsContext),
+      subtitle: status.resolveSubtitle(settingsContext),
+      icon: status.icon,
+      showIcon: showIcons,
+      trailing: onAction == null
+          ? null
+          : FilledButton.tonal(
+              onPressed: () async {
+                await onAction(settingsContext);
+                settingsContext.refresh();
+              },
+              child: Text(status.actionLabel!),
+            ),
     );
   }
 

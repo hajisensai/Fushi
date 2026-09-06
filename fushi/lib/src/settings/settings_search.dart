@@ -26,15 +26,22 @@ class SettingsSearchEntry {
     required this.item,
     this.sectionTitle,
     this.isBodyEntry = false,
+    this.subPagePath = const <SettingsNavigationItem>[],
     String? resolvedTitle,
   }) : _resolvedTitle = resolvedTitle;
 
   /// 展平时就地求好的标题（带 [SettingsItem.titleBuilder] 的行才有意义）。
   final String? _resolvedTitle;
 
+  /// 所属**顶层**分类（子页里的行也指向其顶层分类——宽屏切换主从选中、窄屏
+  /// push 详情页都以它为起点）。
   final SettingsDestination destination;
   final String? sectionTitle;
   final SettingsItem item;
+
+  /// 从顶层分类走到 [item] 所在页要依次推入的子页（[SettingsNavigationItem.child]
+  /// 链）；空 = 行就在顶层分类里。
+  final List<SettingsNavigationItem> subPagePath;
 
   /// true = 由 [SettingsDestination.bodySearchEntries] 合成（body 逃生口正文
   /// 里的行）。命中后只跳转分类，不登记滚动定位挂点——body 行不是 schema item，
@@ -73,19 +80,14 @@ List<SettingsSearchEntry> flattenVisibleSettings(
   final List<SettingsSearchEntry> entries = <SettingsSearchEntry>[];
   for (final SettingsDestination destination in destinations) {
     if (!destination.isVisible(context)) continue;
-    for (final SettingsSection section
-        in destination.visibleSections(context)) {
-      for (final SettingsItem item in section.items) {
-        final String title = settingsItemSearchTitle(item, context);
-        if (title.isEmpty) continue;
-        entries.add(SettingsSearchEntry(
-          destination: destination,
-          sectionTitle: section.title,
-          item: item,
-          resolvedTitle: title,
-        ));
-      }
-    }
+    _flattenPageInto(
+      entries,
+      root: destination,
+      page: destination,
+      context: context,
+      subPagePath: const <SettingsNavigationItem>[],
+      pageTitle: null,
+    );
     // body 逃生口正文（如「制卡」的 AnkiSettingsBody）不走 sections，索引器
     // 看不见其中的行；把 destination 声明的 bodySearchEntries 合成为普通搜索
     // 条目（复用 custom 项的 searchTitle 通道），命中后跳转到该分类正文。
@@ -105,6 +107,53 @@ List<SettingsSearchEntry> flattenVisibleSettings(
     }
   }
   return entries;
+}
+
+/// 展平一页（顶层分类或子页）的可见行；遇到带 [SettingsNavigationItem.child] 的
+/// 导航行就递归进子页——子页的行也是 schema item，与顶层行同等进索引，面包屑
+/// 变成「分类 › 子页 › 分区」。
+void _flattenPageInto(
+  List<SettingsSearchEntry> entries, {
+  required SettingsDestination root,
+  required SettingsDestination page,
+  required SettingsContext context,
+  required List<SettingsNavigationItem> subPagePath,
+  required String? pageTitle,
+}) {
+  for (final SettingsSection section in page.visibleSections(context)) {
+    final String? sectionTitle = _joinBreadcrumb(pageTitle, section.title);
+    for (final SettingsItem item in section.items) {
+      final String title = settingsItemSearchTitle(item, context);
+      if (title.isNotEmpty) {
+        entries.add(SettingsSearchEntry(
+          destination: root,
+          sectionTitle: sectionTitle,
+          item: item,
+          resolvedTitle: title,
+          subPagePath: subPagePath,
+        ));
+      }
+      if (item is! SettingsNavigationItem) continue;
+      final SettingsDestination Function()? childBuilder = item.child;
+      if (childBuilder == null) continue;
+      final SettingsDestination child = childBuilder();
+      if (!child.isVisible(context)) continue;
+      _flattenPageInto(
+        entries,
+        root: root,
+        page: child,
+        context: context,
+        subPagePath: <SettingsNavigationItem>[...subPagePath, item],
+        pageTitle: _joinBreadcrumb(pageTitle, child.title),
+      );
+    }
+  }
+}
+
+String? _joinBreadcrumb(String? head, String? tail) {
+  if (head == null || head.isEmpty) return tail;
+  if (tail == null || tail.isEmpty) return head;
+  return '$head › $tail';
 }
 
 /// 纯过滤：大小写不敏感子串匹配，命中位置决定排序权重
