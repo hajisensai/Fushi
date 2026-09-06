@@ -1,7 +1,7 @@
 ## BUG-2202 · 内封 tx3g 字幕轨让导出的片段在 QQ 等 IM 里整个不可播
 - **报告**：2026-09-07（用户：wrds）
 - **真实性**：✅ 真 bug —— 根因 `fushi/lib/src/media/video/video_clip_exporter.dart:392`（`-c:s mov_text` 把字幕封成 tx3g 轨）
-- **[x] ① 已修复** — ① 不再封 tx3g（`resolveClipSubtitleCodec` 对 mp4 系返回 null），片段立刻到处能播；② 字幕改以**硬字幕**烧进画面（`overlay` 链 + `dart:ui` 渲染），代码链路已全部接通。**剩最后一步在 CI**：`ffmpeg-min` 要重编一版带 `overlay` 的二进制，在那之前能力探测恒判「不能烧」，行为 = 片段到处能播但没有字幕
+- **[x] ① 已修复** — ① 不再封 tx3g（`resolveClipSubtitleCodec` 对 mp4 系返回 null），片段到处能播；② 字幕改以**硬字幕**烧进画面（`overlay` 链 + `dart:ui` 渲染），代码链路接通，且带 `overlay` 的 `ffmpeg-min` 二进制已重编入库——桌面端烧录**已真正生效**（移动端 ffmpeg-kit 待同样重编）
 - **[x] ② 已加自动化测试** — `video_clip_subtitle_burn_test.dart`（24 条）+ `video_clip_subtitle_image_test.dart`（8 条）+ `video_clip_subtitle_test.dart` 的 cue 抽取组 + 导出链路的 `subtitle burn-in (BUG-2202)` 组（烧录参数形状、有/无 overlay 两条分支、烧失败降级、无渲染器不探测）；四个相关测试文件共 103 条全绿
 - **备注**：与 [BUG-2200](BUG-2200-clip-export-moov-at-tail-qq-cannot-play.md) 同一次用户报告拆出来的两条独立缺陷。2200（moov 在文件末尾）已修，但**不足以**让文件在 QQ 里播放。
 
@@ -64,8 +64,11 @@
 
 **完整烧录命令已用真实文件在真 ffmpeg 上跑通**（不是「看着对」）：产物只有 video+audio 两条流、`ftyp moov free mdat`（moov 前置）、96 帧逐帧解码干净。
 
-还缺（唯一一步，在 CI）：
-- 重编一版带 `overlay` 的 `ffmpeg-min` 二进制（Windows/macOS/Linux），移动端自编的 ffmpeg-kit 同理。在新二进制到位前 `ffmpegCanBurnClipSubtitles` 恒为 false，行为就是：片段到处能播，但没有字幕。二进制一到位，烧录**自动生效**，不需要再改任何代码。
+- **`ffmpeg-min` 二进制已重编入库**（workflow run 34052859042，三平台全绿）：Windows/macOS 的 `ffmpeg`/`ffprobe` 都换成了带 `overlay` 的版本，filter 数 28 → 29。macOS 侧保住了 git 可执行位（`100755`），否则拷进 `.app` 的是不可执行文件。
+  - 守卫 `ffmpeg_min_vendored_recipe_guard_test.dart` 会**静态比对配方与入库 exe 内嵌的 configure 串**，只改脚本不换二进制它必红（BUG-1058 的教训：那次让桌面片段导出静默丢字幕整整一个版本）。它**不在 51 条目录枚举守卫清单里**——改 `build-ffmpeg-min.sh` 时要记得单独跑。
+  - **端到端实测**：只用入库的这个 `ffmpeg-min`（不借系统完整版）跑完整烧录参数，产物只有 video+audio 两条流、1920×1080、96 帧逐帧解码干净。
+
+桌面端到此**烧录已真正生效**。移动端自编的 ffmpeg-kit 仍是最小变体，需要同样重编一次；在那之前移动端导出走能力探测的否定分支，行为 = 片段能播但没有字幕。
 
 ### 未动的一件事
 

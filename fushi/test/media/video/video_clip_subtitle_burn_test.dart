@@ -1,9 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_clip_subtitle_burn.dart';
 
-/// 随包 `ffmpeg-min`（n7.1.x，`--disable-everything` + 白名单）`-filters` 的真实开头。
-/// flag 列是 **3 位**（`T..` / `..C`），且**没有** overlay——这正是当前发行版烧不了
-/// 字幕的原因。表头那几行是图例，不能被当成 filter 解析出来。
+/// `ffmpeg-min`（n7.1.x，`--disable-everything` + 白名单）`-filters` 的真实开头，
+/// 取自**加 overlay 重编之前**入库的那版二进制（28 个 filter）。flag 列是 **3 位**
+/// （`T..` / `..C`），且没有 overlay——这正是 BUG-2202 的起点事实。表头那几行是
+/// 图例，不能被当成 filter 解析出来。
 const String _kFiltersMinReal = '''
 Filters:
   T.. = Timeline support
@@ -89,9 +90,11 @@ void main() {
   });
 
   group('ffmpegCanBurnClipSubtitles', () {
-    test('current bundled ffmpeg-min cannot burn (no overlay)', () {
-      // 这条断言是本次改动的**起点事实**：发行版里的 ffmpeg 没有 overlay，所以
-      // 烧录必须等构建脚本把它加进白名单、CI 重编一版二进制之后才会真正生效。
+    test('a whitelist build without overlay cannot burn', () {
+      // 语料是**重编之前**入库 ffmpeg-min 的真实输出（28 个 filter，没有 overlay）
+      // ——这正是 BUG-2202 的起点事实。二进制现已重编（29 个 filter，含 overlay），
+      // 但这条负向用例照旧有效：用户可以用 `FUSHI_FFMPEG` 指到自己的精简构建，
+      // 那时必须干净地判「不能烧」而不是拼一条注定失败的命令。
       final Set<String> names = parseFfmpegFilterNames(_kFiltersMinReal);
       expect(names, isNot(contains('overlay')));
       expect(ffmpegCanBurnClipSubtitles(names), isFalse);
