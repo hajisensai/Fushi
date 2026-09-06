@@ -438,6 +438,38 @@ void main() {
     }
   });
 
+  testWidgets('本地视频卡菜单含「打开文件位置」', (WidgetTester tester) async {
+    // 书架书卡早有这条动作，视频卡没有（用户实报）。flutter_test 宿主恒为桌面
+    // （Windows / Linux / macOS），[currentRevealHost] 必非 null，所以这里断言在场；
+    // 移动端那道门由 media_open_file_location_gate_guard_test 在源码层守。
+    await seedTaggedVideo();
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    await openCardMenu(tester, find.byType(FushiCard).first);
+
+    expect(find.text(t.media_file_location_open), findsOneWidget);
+  });
+
+  testWidgets('流媒体书卡菜单不出现「打开文件位置」', (WidgetTester tester) async {
+    // videoPath 是 URL 的行（粘贴 URL 导入 / 远端库）本机根本没有文件可定位，
+    // 画出来就是一个点了必然失败的按钮。这条用例是该门控的唯一行为级判据——
+    // 上一条只能证明「桌面上会出现」，证明不了「没有本地文件时不出现」。
+    await db.upsertVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/stream'),
+      title: Value('Stream Episode'),
+      videoPath: Value('https://example.com/live/ep1.m3u8'),
+    ));
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    await openCardMenu(tester, find.byType(FushiCard).first);
+
+    expect(find.byType(FushiDialogFrame), findsOneWidget,
+        reason: '菜单本身仍要弹出，缺的只是这一条动作');
+    expect(find.text(t.media_file_location_open), findsNothing);
+  });
+
   testWidgets('顶部标签可拖到视频卡并写入视频标签映射', (WidgetTester tester) async {
     final int tagId = await seedVideoAndLooseTag();
     await tester.pumpWidget(buildApp());

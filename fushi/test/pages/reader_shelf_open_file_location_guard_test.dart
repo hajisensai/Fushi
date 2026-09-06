@@ -19,7 +19,7 @@ void main() {
     expect(
       RegExp(
         r'currentRevealHost\(\)\s*!=\s*null\s*\)\s*DialogListAction\('
-        r'\s*label:\s*t\.book_file_location_open',
+        r'\s*label:\s*t\.media_file_location_open',
       ).hasMatch(source),
       isTrue,
       reason: '门控必须直接包住这条动作，移动端不得出现点了必失败的菜单项',

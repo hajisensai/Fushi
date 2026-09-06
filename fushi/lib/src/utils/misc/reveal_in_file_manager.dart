@@ -85,6 +85,25 @@ RevealCommand revealCommand({
   }
 }
 
+/// 按顺序试 [candidates]，第一条真被定位到的就停手；返回 false = 一条都打不开。
+///
+/// 「主产物 → 退回它所在的容器」是所有媒体身份共有的形状（视频行的 `videoPath` 之后
+/// 还有播放列表各集，游戏条目的 exe 之后还有工作目录），差别只在候选表怎么排。把
+/// 循环收在这里，调用方只负责按自己域的语义给出优先级，不必各写一遍
+/// 「试完这个再试那个」。空串与纯空白项直接跳过——它们不是候选，是缺失的字段。
+///
+/// [reveal] 只为测试注入。
+Future<bool> revealFirstOf(
+  Iterable<String> candidates, {
+  Future<bool> Function(String path) reveal = revealInFileManager,
+}) async {
+  for (final String path in candidates) {
+    if (path.trim().isEmpty) continue;
+    if (await reveal(path)) return true;
+  }
+  return false;
+}
+
 /// 在系统文件管理器里打开 [path]：支持选中的平台选中文件本身，目录则直接打开。
 ///
 /// 返回 false = 平台无文件管理器契约、路径已不存在，或启动失败——调用方据此提示，

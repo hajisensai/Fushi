@@ -3,7 +3,7 @@
 /// Locales: 17
 /// Strings: 72998 (4294 per locale)
 ///
-/// Built on 2026-09-06 at 14:42 UTC
+/// Built on 2026-09-06 at 15:52 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -5103,9 +5103,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Show this tab in the navigation bar; turn off to hide it';
   String get module_downloads_hidden_hint =>
       'The Downloads tab is hidden in Settings → Appearance → Feature modules; turn it back on to manage subscriptions.';
-  String get book_file_location_open => 'Open file location';
-  String get book_file_location_failed =>
-      'Could not open this book\'s file location.';
+  String get media_file_location_open => 'Open file location';
+  String get media_file_location_failed => 'Could not open the file location.';
   String storage_entry_database_snapshots_label({required Object n}) =>
       'Database backup snapshots (${n} files)';
   String get storage_entry_delete_database_snapshots_confirm_body =>
@@ -14607,9 +14606,9 @@ class _StringsAr extends _StringsEn {
   String get module_downloads_hidden_hint =>
       'تبويب التحميلات مخفي في الإعدادات → المظهر → وحدات الميزات؛ أعد تشغيله لإدارة الاشتراكات.';
   @override
-  String get book_file_location_open => 'فتح موقع الملف';
+  String get media_file_location_open => 'فتح موقع الملف';
   @override
-  String get book_file_location_failed => 'تعذّر فتح موقع ملف هذا الكتاب.';
+  String get media_file_location_failed => 'تعذّر فتح موقع الملف.';
   @override
   String storage_entry_database_snapshots_label({required Object n}) =>
       'لقطات النسخ الاحتياطي لقاعدة البيانات (${n} ملف)';
@@ -24846,10 +24845,10 @@ class _StringsDe extends _StringsEn {
   String get module_downloads_hidden_hint =>
       'Der Tab „Downloads“ ist unter Einstellungen → Erscheinungsbild → Funktionsmodule ausgeblendet; schalte ihn wieder ein, um Abos zu verwalten.';
   @override
-  String get book_file_location_open => 'Speicherort öffnen';
+  String get media_file_location_open => 'Speicherort öffnen';
   @override
-  String get book_file_location_failed =>
-      'Der Speicherort dieses Buchs konnte nicht geöffnet werden.';
+  String get media_file_location_failed =>
+      'Der Speicherort der Datei konnte nicht geöffnet werden.';
   @override
   String storage_entry_database_snapshots_label({required Object n}) =>
       'Datenbank-Backup-Snapshots (${n} Dateien)';
@@ -35160,10 +35159,10 @@ class _StringsEs extends _StringsEn {
   String get module_downloads_hidden_hint =>
       'La pestaña Descargas está oculta en Configuración → Apariencia → Módulos de funciones; vuelve a activarla para gestionar las suscripciones.';
   @override
-  String get book_file_location_open => 'Abrir ubicación del archivo';
+  String get media_file_location_open => 'Abrir ubicación del archivo';
   @override
-  String get book_file_location_failed =>
-      'No se pudo abrir la ubicación del archivo de este libro.';
+  String get media_file_location_failed =>
+      'No se pudo abrir la ubicación del archivo.';
   @override
   String storage_entry_database_snapshots_label({required Object n}) =>
       'Instantáneas de copia de seguridad de la base de datos (${n} archivos)';
@@ -45510,10 +45509,10 @@ class _StringsFr extends _StringsEn {
   String get module_downloads_hidden_hint =>
       'L\'onglet Téléchargements est masqué dans Paramètres → Apparence → Modules de fonctionnalités ; réactivez-le pour gérer les abonnements.';
   @override
-  String get book_file_location_open => 'Ouvrir l\'emplacement du fichier';
+  String get media_file_location_open => 'Ouvrir l\'emplacement du fichier';
   @override
-  String get book_file_location_failed =>
-      'Impossible d\'ouvrir l\'emplacement du fichier de ce livre.';
+  String get media_file_location_failed =>
+      'Impossible d\'ouvrir l\'emplacement du fichier.';
   @override
   String storage_entry_database_snapshots_label({required Object n}) =>
       'Instantanés de sauvegarde de la base de données (${n} fichiers)';
@@ -55700,10 +55699,9 @@ class _StringsId extends _StringsEn {
   String get module_downloads_hidden_hint =>
       'Tab Unduhan disembunyikan di Pengaturan → Tampilan → Modul fitur; nyalakan lagi untuk mengelola langganan.';
   @override
-  String get book_file_location_open => 'Buka lokasi berkas';
+  String get media_file_location_open => 'Buka lokasi berkas';
   @override
-  String get book_file_location_failed =>
-      'Tidak dapat membuka lokasi berkas buku ini.';
+  String get media_file_location_failed => 'Tidak dapat membuka lokasi berkas.';
   @override
   String storage_entry_database_snapshots_label({required Object n}) =>
       'Snapshot cadangan basis data (${n} berkas)';
@@ -65934,10 +65932,10 @@ class _StringsIt extends _StringsEn {
   String get module_downloads_hidden_hint =>
       'La scheda Download è nascosta in Impostazioni → Aspetto → Moduli funzionalità; riattivala per gestire le sottoscrizioni.';
   @override
-  String get book_file_location_open => 'Apri posizione del file';
+  String get media_file_location_open => 'Apri posizione del file';
   @override
-  String get book_file_location_failed =>
-      'Impossibile aprire la posizione del file di questo libro.';
+  String get media_file_location_failed =>
+      'Impossibile aprire la posizione del file.';
   @override
   String storage_entry_database_snapshots_label({required Object n}) =>
       'Snapshot di backup del database (${n} file)';
@@ -75637,9 +75635,9 @@ class _StringsJa extends _StringsEn {
   String get module_downloads_hidden_hint =>
       '「ダウンロード」タブは 設定 → 外観 → 機能モジュール で非表示になっています。購読を管理するには再度オンにしてください。';
   @override
-  String get book_file_location_open => 'ファイルの場所を開く';
+  String get media_file_location_open => 'ファイルの場所を開く';
   @override
-  String get book_file_location_failed => 'この本のファイルの場所を開けませんでした。';
+  String get media_file_location_failed => 'ファイルの場所を開けませんでした。';
   @override
   String storage_entry_database_snapshots_label({required Object n}) =>
       'データベースのバックアップスナップショット（${n} 個のファイル）';
@@ -85290,9 +85288,9 @@ class _StringsKo extends _StringsEn {
   String get module_downloads_hidden_hint =>
       '‘다운로드’ 탭이 설정 → 외관 → 기능 모듈에서 숨겨져 있어요. 구독을 관리하려면 다시 켜세요.';
   @override
-  String get book_file_location_open => '파일 위치 열기';
+  String get media_file_location_open => '파일 위치 열기';
   @override
-  String get book_file_location_failed => '이 책의 파일 위치를 열 수 없어요.';
+  String get media_file_location_failed => '파일 위치를 열 수 없어요.';
   @override
   String storage_entry_database_snapshots_label({required Object n}) =>
       '데이터베이스 백업 스냅샷(${n}개 파일)';
@@ -95427,10 +95425,10 @@ class _StringsNl extends _StringsEn {
   String get module_downloads_hidden_hint =>
       'Het tabblad Downloads is verborgen via Instellingen → Uiterlijk → Functiemodules; zet het weer aan om abonnementen te beheren.';
   @override
-  String get book_file_location_open => 'Bestandslocatie openen';
+  String get media_file_location_open => 'Bestandslocatie openen';
   @override
-  String get book_file_location_failed =>
-      'Kan de bestandslocatie van dit boek niet openen.';
+  String get media_file_location_failed =>
+      'Kan de bestandslocatie niet openen.';
   @override
   String storage_entry_database_snapshots_label({required Object n}) =>
       'Snapshots van databaseback-ups (${n} bestanden)';
@@ -105690,10 +105688,10 @@ class _StringsPtBr extends _StringsEn {
   String get module_downloads_hidden_hint =>
       'A aba Downloads está oculta em Configurações → Aparência → Módulos de funcionalidades; reative-a para gerenciar as assinaturas.';
   @override
-  String get book_file_location_open => 'Abrir local do arquivo';
+  String get media_file_location_open => 'Abrir local do arquivo';
   @override
-  String get book_file_location_failed =>
-      'Não foi possível abrir o local do arquivo deste livro.';
+  String get media_file_location_failed =>
+      'Não foi possível abrir o local do arquivo.';
   @override
   String storage_entry_database_snapshots_label({required Object n}) =>
       'Snapshots de backup do banco de dados (${n} arquivos)';
@@ -115923,10 +115921,10 @@ class _StringsRu extends _StringsEn {
   String get module_downloads_hidden_hint =>
       'Вкладка «Загрузки» скрыта в разделе Настройки → Внешний вид → Функциональные модули; включите её снова, чтобы управлять подписками.';
   @override
-  String get book_file_location_open => 'Открыть расположение файла';
+  String get media_file_location_open => 'Открыть расположение файла';
   @override
-  String get book_file_location_failed =>
-      'Не удалось открыть расположение файла этой книги.';
+  String get media_file_location_failed =>
+      'Не удалось открыть расположение файла.';
   @override
   String storage_entry_database_snapshots_label({required Object n}) =>
       'Снимки резервных копий базы данных (${n} файлов)';
@@ -125984,10 +125982,9 @@ class _StringsTh extends _StringsEn {
   String get module_downloads_hidden_hint =>
       'แท็บดาวน์โหลดถูกซ่อนไว้ใน การตั้งค่า → รูปลักษณ์ → โมดูลฟีเจอร์ ต้องเปิดกลับมาจึงจะจัดการรายการติดตามได้';
   @override
-  String get book_file_location_open => 'เปิดตำแหน่งไฟล์';
+  String get media_file_location_open => 'เปิดตำแหน่งไฟล์';
   @override
-  String get book_file_location_failed =>
-      'ไม่สามารถเปิดตำแหน่งไฟล์ของหนังสือเล่มนี้ได้';
+  String get media_file_location_failed => 'ไม่สามารถเปิดตำแหน่งไฟล์ได้';
   @override
   String storage_entry_database_snapshots_label({required Object n}) =>
       'สแนปช็อตสำรองฐานข้อมูล (${n} ไฟล์)';
@@ -136125,9 +136122,9 @@ class _StringsTr extends _StringsEn {
   String get module_downloads_hidden_hint =>
       'İndirmeler sekmesi Ayarlar → Görünüm → Özellik modülleri altında gizli; abonelikleri yönetmek için yeniden açın.';
   @override
-  String get book_file_location_open => 'Dosya konumunu aç';
+  String get media_file_location_open => 'Dosya konumunu aç';
   @override
-  String get book_file_location_failed => 'Bu kitabın dosya konumu açılamadı.';
+  String get media_file_location_failed => 'Dosya konumu açılamadı.';
   @override
   String storage_entry_database_snapshots_label({required Object n}) =>
       'Veritabanı yedek anlık görüntüleri (${n} dosya)';
@@ -146256,10 +146253,9 @@ class _StringsVi extends _StringsEn {
   String get module_downloads_hidden_hint =>
       'Tab Tải xuống đang bị ẩn trong Cài đặt → Giao diện → Mô-đun tính năng; bật lại để quản lý đăng ký.';
   @override
-  String get book_file_location_open => 'Mở vị trí tệp';
+  String get media_file_location_open => 'Mở vị trí tệp';
   @override
-  String get book_file_location_failed =>
-      'Không mở được vị trí tệp của sách này.';
+  String get media_file_location_failed => 'Không mở được vị trí tệp.';
   @override
   String storage_entry_database_snapshots_label({required Object n}) =>
       'Ảnh chụp sao lưu cơ sở dữ liệu (${n} tệp)';
@@ -155681,9 +155677,9 @@ class _StringsZhCn extends _StringsEn {
   String get module_downloads_hidden_hint =>
       '「下载」页已在 设置 → 外观 → 功能模块 中隐藏；重新打开它才能管理订阅。';
   @override
-  String get book_file_location_open => '打开文件位置';
+  String get media_file_location_open => '打开文件位置';
   @override
-  String get book_file_location_failed => '无法打开这本书的文件位置。';
+  String get media_file_location_failed => '无法打开文件位置。';
   @override
   String storage_entry_database_snapshots_label({required Object n}) =>
       '数据库备份快照（${n} 个文件）';
@@ -164993,9 +164989,9 @@ class _StringsZhHk extends _StringsEn {
   String get module_downloads_hidden_hint =>
       '「下載」頁已在 設定 → 外觀 → 功能模塊 中隱藏；重新開啟才能管理訂閱。';
   @override
-  String get book_file_location_open => '開啟檔案位置';
+  String get media_file_location_open => '開啟檔案位置';
   @override
-  String get book_file_location_failed => '無法開啟這本書的檔案位置。';
+  String get media_file_location_failed => '無法開啟檔案位置。';
   @override
   String storage_entry_database_snapshots_label({required Object n}) =>
       '資料庫備份快照（${n} 個檔案）';
@@ -173954,10 +173950,10 @@ extension on _StringsEn {
         return 'Show this tab in the navigation bar; turn off to hide it';
       case 'module_downloads_hidden_hint':
         return 'The Downloads tab is hidden in Settings → Appearance → Feature modules; turn it back on to manage subscriptions.';
-      case 'book_file_location_open':
+      case 'media_file_location_open':
         return 'Open file location';
-      case 'book_file_location_failed':
-        return 'Could not open this book\'s file location.';
+      case 'media_file_location_failed':
+        return 'Could not open the file location.';
       case 'storage_entry_database_snapshots_label':
         return ({required Object n}) =>
             'Database backup snapshots (${n} files)';
@@ -182774,10 +182770,10 @@ extension on _StringsAr {
         return 'إظهار هذا التبويب في شريط التنقل؛ أوقفه لإخفائه';
       case 'module_downloads_hidden_hint':
         return 'تبويب التحميلات مخفي في الإعدادات → المظهر → وحدات الميزات؛ أعد تشغيله لإدارة الاشتراكات.';
-      case 'book_file_location_open':
+      case 'media_file_location_open':
         return 'فتح موقع الملف';
-      case 'book_file_location_failed':
-        return 'تعذّر فتح موقع ملف هذا الكتاب.';
+      case 'media_file_location_failed':
+        return 'تعذّر فتح موقع الملف.';
       case 'storage_entry_database_snapshots_label':
         return ({required Object n}) =>
             'لقطات النسخ الاحتياطي لقاعدة البيانات (${n} ملف)';
@@ -191633,10 +191629,10 @@ extension on _StringsDe {
         return 'Diesen Tab in der Navigationsleiste anzeigen; ausschalten, um ihn auszublenden';
       case 'module_downloads_hidden_hint':
         return 'Der Tab „Downloads“ ist unter Einstellungen → Erscheinungsbild → Funktionsmodule ausgeblendet; schalte ihn wieder ein, um Abos zu verwalten.';
-      case 'book_file_location_open':
+      case 'media_file_location_open':
         return 'Speicherort öffnen';
-      case 'book_file_location_failed':
-        return 'Der Speicherort dieses Buchs konnte nicht geöffnet werden.';
+      case 'media_file_location_failed':
+        return 'Der Speicherort der Datei konnte nicht geöffnet werden.';
       case 'storage_entry_database_snapshots_label':
         return ({required Object n}) =>
             'Datenbank-Backup-Snapshots (${n} Dateien)';
@@ -200488,10 +200484,10 @@ extension on _StringsEs {
         return 'Mostrar esta pestaña en la barra de navegación; desactívalo para ocultarla';
       case 'module_downloads_hidden_hint':
         return 'La pestaña Descargas está oculta en Configuración → Apariencia → Módulos de funciones; vuelve a activarla para gestionar las suscripciones.';
-      case 'book_file_location_open':
+      case 'media_file_location_open':
         return 'Abrir ubicación del archivo';
-      case 'book_file_location_failed':
-        return 'No se pudo abrir la ubicación del archivo de este libro.';
+      case 'media_file_location_failed':
+        return 'No se pudo abrir la ubicación del archivo.';
       case 'storage_entry_database_snapshots_label':
         return ({required Object n}) =>
             'Instantáneas de copia de seguridad de la base de datos (${n} archivos)';
@@ -209350,10 +209346,10 @@ extension on _StringsFr {
         return 'Afficher cet onglet dans la barre de navigation ; désactiver pour le masquer';
       case 'module_downloads_hidden_hint':
         return 'L\'onglet Téléchargements est masqué dans Paramètres → Apparence → Modules de fonctionnalités ; réactivez-le pour gérer les abonnements.';
-      case 'book_file_location_open':
+      case 'media_file_location_open':
         return 'Ouvrir l\'emplacement du fichier';
-      case 'book_file_location_failed':
-        return 'Impossible d\'ouvrir l\'emplacement du fichier de ce livre.';
+      case 'media_file_location_failed':
+        return 'Impossible d\'ouvrir l\'emplacement du fichier.';
       case 'storage_entry_database_snapshots_label':
         return ({required Object n}) =>
             'Instantanés de sauvegarde de la base de données (${n} fichiers)';
@@ -218186,10 +218182,10 @@ extension on _StringsId {
         return 'Tampilkan tab ini di bilah navigasi; matikan untuk menyembunyikannya';
       case 'module_downloads_hidden_hint':
         return 'Tab Unduhan disembunyikan di Pengaturan → Tampilan → Modul fitur; nyalakan lagi untuk mengelola langganan.';
-      case 'book_file_location_open':
+      case 'media_file_location_open':
         return 'Buka lokasi berkas';
-      case 'book_file_location_failed':
-        return 'Tidak dapat membuka lokasi berkas buku ini.';
+      case 'media_file_location_failed':
+        return 'Tidak dapat membuka lokasi berkas.';
       case 'storage_entry_database_snapshots_label':
         return ({required Object n}) =>
             'Snapshot cadangan basis data (${n} berkas)';
@@ -227040,10 +227036,10 @@ extension on _StringsIt {
         return 'Mostra questa scheda nella barra di navigazione; disattiva per nasconderla';
       case 'module_downloads_hidden_hint':
         return 'La scheda Download è nascosta in Impostazioni → Aspetto → Moduli funzionalità; riattivala per gestire le sottoscrizioni.';
-      case 'book_file_location_open':
+      case 'media_file_location_open':
         return 'Apri posizione del file';
-      case 'book_file_location_failed':
-        return 'Impossibile aprire la posizione del file di questo libro.';
+      case 'media_file_location_failed':
+        return 'Impossibile aprire la posizione del file.';
       case 'storage_entry_database_snapshots_label':
         return ({required Object n}) =>
             'Snapshot di backup del database (${n} file)';
@@ -235832,10 +235828,10 @@ extension on _StringsJa {
         return 'このタブをナビゲーションバーに表示します。オフにすると非表示になります';
       case 'module_downloads_hidden_hint':
         return '「ダウンロード」タブは 設定 → 外観 → 機能モジュール で非表示になっています。購読を管理するには再度オンにしてください。';
-      case 'book_file_location_open':
+      case 'media_file_location_open':
         return 'ファイルの場所を開く';
-      case 'book_file_location_failed':
-        return 'この本のファイルの場所を開けませんでした。';
+      case 'media_file_location_failed':
+        return 'ファイルの場所を開けませんでした。';
       case 'storage_entry_database_snapshots_label':
         return ({required Object n}) => 'データベースのバックアップスナップショット（${n} 個のファイル）';
       case 'storage_entry_delete_database_snapshots_confirm_body':
@@ -244617,10 +244613,10 @@ extension on _StringsKo {
         return '이 탭을 내비게이션 바에 표시해요. 끄면 숨겨져요';
       case 'module_downloads_hidden_hint':
         return '‘다운로드’ 탭이 설정 → 외관 → 기능 모듈에서 숨겨져 있어요. 구독을 관리하려면 다시 켜세요.';
-      case 'book_file_location_open':
+      case 'media_file_location_open':
         return '파일 위치 열기';
-      case 'book_file_location_failed':
-        return '이 책의 파일 위치를 열 수 없어요.';
+      case 'media_file_location_failed':
+        return '파일 위치를 열 수 없어요.';
       case 'storage_entry_database_snapshots_label':
         return ({required Object n}) => '데이터베이스 백업 스냅샷(${n}개 파일)';
       case 'storage_entry_delete_database_snapshots_confirm_body':
@@ -253460,10 +253456,10 @@ extension on _StringsNl {
         return 'Dit tabblad in de navigatiebalk tonen; uitschakelen om het te verbergen';
       case 'module_downloads_hidden_hint':
         return 'Het tabblad Downloads is verborgen via Instellingen → Uiterlijk → Functiemodules; zet het weer aan om abonnementen te beheren.';
-      case 'book_file_location_open':
+      case 'media_file_location_open':
         return 'Bestandslocatie openen';
-      case 'book_file_location_failed':
-        return 'Kan de bestandslocatie van dit boek niet openen.';
+      case 'media_file_location_failed':
+        return 'Kan de bestandslocatie niet openen.';
       case 'storage_entry_database_snapshots_label':
         return ({required Object n}) =>
             'Snapshots van databaseback-ups (${n} bestanden)';
@@ -262304,10 +262300,10 @@ extension on _StringsPtBr {
         return 'Mostrar esta aba na barra de navegação; desative para ocultá-la';
       case 'module_downloads_hidden_hint':
         return 'A aba Downloads está oculta em Configurações → Aparência → Módulos de funcionalidades; reative-a para gerenciar as assinaturas.';
-      case 'book_file_location_open':
+      case 'media_file_location_open':
         return 'Abrir local do arquivo';
-      case 'book_file_location_failed':
-        return 'Não foi possível abrir o local do arquivo deste livro.';
+      case 'media_file_location_failed':
+        return 'Não foi possível abrir o local do arquivo.';
       case 'storage_entry_database_snapshots_label':
         return ({required Object n}) =>
             'Snapshots de backup do banco de dados (${n} arquivos)';
@@ -271155,10 +271151,10 @@ extension on _StringsRu {
         return 'Показывать эту вкладку в панели навигации; выключите, чтобы скрыть';
       case 'module_downloads_hidden_hint':
         return 'Вкладка «Загрузки» скрыта в разделе Настройки → Внешний вид → Функциональные модули; включите её снова, чтобы управлять подписками.';
-      case 'book_file_location_open':
+      case 'media_file_location_open':
         return 'Открыть расположение файла';
-      case 'book_file_location_failed':
-        return 'Не удалось открыть расположение файла этой книги.';
+      case 'media_file_location_failed':
+        return 'Не удалось открыть расположение файла.';
       case 'storage_entry_database_snapshots_label':
         return ({required Object n}) =>
             'Снимки резервных копий базы данных (${n} файлов)';
@@ -279980,10 +279976,10 @@ extension on _StringsTh {
         return 'แสดงแท็บนี้ในแถบนำทาง ปิดเพื่อซ่อน';
       case 'module_downloads_hidden_hint':
         return 'แท็บดาวน์โหลดถูกซ่อนไว้ใน การตั้งค่า → รูปลักษณ์ → โมดูลฟีเจอร์ ต้องเปิดกลับมาจึงจะจัดการรายการติดตามได้';
-      case 'book_file_location_open':
+      case 'media_file_location_open':
         return 'เปิดตำแหน่งไฟล์';
-      case 'book_file_location_failed':
-        return 'ไม่สามารถเปิดตำแหน่งไฟล์ของหนังสือเล่มนี้ได้';
+      case 'media_file_location_failed':
+        return 'ไม่สามารถเปิดตำแหน่งไฟล์ได้';
       case 'storage_entry_database_snapshots_label':
         return ({required Object n}) => 'สแนปช็อตสำรองฐานข้อมูล (${n} ไฟล์)';
       case 'storage_entry_delete_database_snapshots_confirm_body':
@@ -288818,10 +288814,10 @@ extension on _StringsTr {
         return 'Bu sekmeyi gezinme çubuğunda göster; gizlemek için kapatın';
       case 'module_downloads_hidden_hint':
         return 'İndirmeler sekmesi Ayarlar → Görünüm → Özellik modülleri altında gizli; abonelikleri yönetmek için yeniden açın.';
-      case 'book_file_location_open':
+      case 'media_file_location_open':
         return 'Dosya konumunu aç';
-      case 'book_file_location_failed':
-        return 'Bu kitabın dosya konumu açılamadı.';
+      case 'media_file_location_failed':
+        return 'Dosya konumu açılamadı.';
       case 'storage_entry_database_snapshots_label':
         return ({required Object n}) =>
             'Veritabanı yedek anlık görüntüleri (${n} dosya)';
@@ -297650,10 +297646,10 @@ extension on _StringsVi {
         return 'Hiện tab này trên thanh điều hướng; tắt để ẩn';
       case 'module_downloads_hidden_hint':
         return 'Tab Tải xuống đang bị ẩn trong Cài đặt → Giao diện → Mô-đun tính năng; bật lại để quản lý đăng ký.';
-      case 'book_file_location_open':
+      case 'media_file_location_open':
         return 'Mở vị trí tệp';
-      case 'book_file_location_failed':
-        return 'Không mở được vị trí tệp của sách này.';
+      case 'media_file_location_failed':
+        return 'Không mở được vị trí tệp.';
       case 'storage_entry_database_snapshots_label':
         return ({required Object n}) =>
             'Ảnh chụp sao lưu cơ sở dữ liệu (${n} tệp)';
@@ -306420,10 +306416,10 @@ extension on _StringsZhCn {
         return '在底栏/侧栏显示该页；关闭即隐藏';
       case 'module_downloads_hidden_hint':
         return '「下载」页已在 设置 → 外观 → 功能模块 中隐藏；重新打开它才能管理订阅。';
-      case 'book_file_location_open':
+      case 'media_file_location_open':
         return '打开文件位置';
-      case 'book_file_location_failed':
-        return '无法打开这本书的文件位置。';
+      case 'media_file_location_failed':
+        return '无法打开文件位置。';
       case 'storage_entry_database_snapshots_label':
         return ({required Object n}) => '数据库备份快照（${n} 个文件）';
       case 'storage_entry_delete_database_snapshots_confirm_body':
@@ -315177,10 +315173,10 @@ extension on _StringsZhHk {
         return '在導覽列顯示此頁；關閉即隱藏';
       case 'module_downloads_hidden_hint':
         return '「下載」頁已在 設定 → 外觀 → 功能模塊 中隱藏；重新開啟才能管理訂閱。';
-      case 'book_file_location_open':
+      case 'media_file_location_open':
         return '開啟檔案位置';
-      case 'book_file_location_failed':
-        return '無法開啟這本書的檔案位置。';
+      case 'media_file_location_failed':
+        return '無法開啟檔案位置。';
       case 'storage_entry_database_snapshots_label':
         return ({required Object n}) => '資料庫備份快照（${n} 個檔案）';
       case 'storage_entry_delete_database_snapshots_confirm_body':

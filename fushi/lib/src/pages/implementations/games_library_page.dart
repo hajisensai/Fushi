@@ -51,6 +51,8 @@ import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart'
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
 import 'package:fushi/src/pages/implementations/tag_picker_page.dart';
+import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart'
+    show currentRevealHost, revealFirstOf;
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 
@@ -844,6 +846,21 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     );
   }
 
+  /// 在系统文件管理器里定位这个游戏：先选中 exe 本身，exe 已被移走/改名再退回工作
+  /// 目录（游戏整包还在时这一步仍把用户带到正确的地方）。两个候选都打不开才提示，
+  /// 不静默——静默的「打开文件位置」和坏掉的按钮无法区分。
+  ///
+  /// 候选顺序与书架的「主产物 → 其容器」同形（[revealFirstOf]）。
+  Future<void> _openGameFileLocation(GalgameEntry game) async {
+    final bool revealed =
+        await revealFirstOf(<String>[game.exePath, game.workdir]);
+    if (revealed || !mounted) return;
+    FushiToast.show(
+      msg: t.media_file_location_failed,
+      severity: ToastSeverity.error,
+    );
+  }
+
   Future<void> _editJapaneseLocaleMode(GalgameEntry game) async {
     final GalJapaneseLocaleMode? picked = await pickGalJapaneseLocaleMode(
       context,
@@ -1322,6 +1339,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       onEditUpscaling: () => unawaited(_editUpscalingMode(game)),
       onEditJapaneseLocale: () => unawaited(_editJapaneseLocaleMode(game)),
       onEditLanguage: () => unawaited(_editGameLanguage(game)),
+      onOpenFileLocation: () => unawaited(_openGameFileLocation(game)),
     );
   }
 }
@@ -1596,6 +1614,7 @@ class _GameCard extends StatelessWidget {
     required this.onEditUpscaling,
     required this.onEditJapaneseLocale,
     required this.onEditLanguage,
+    required this.onOpenFileLocation,
     this.sortLabel,
   });
 
@@ -1624,6 +1643,9 @@ class _GameCard extends StatelessWidget {
   /// 打开该游戏的「内容语言」对话框。hook 出来的文本没有任何语言声明可读，
   /// 所以这是它唯一的语言真值来源（决定文本浮窗/查词卡用哪条字体链）。
   final VoidCallback onEditLanguage;
+
+  /// 在系统文件管理器里定位这个游戏的 exe（见 `_openGameFileLocation`）。
+  final VoidCallback onOpenFileLocation;
 
   /// 长按 / 右键的上下文菜单：与书卡/视频卡同款 [MediaItemDialogFrame]（封面块 +
   /// 快捷动作 chips + 底部危险区），替代旧手搓 SimpleDialog。菜单项与封面溢出菜单
@@ -1770,6 +1792,17 @@ class _GameCard extends StatelessWidget {
             icon: Icons.translate_outlined,
             danger: false,
           ),
+        // 「打开文件位置」：与书架书卡 / 视频卡同一条动作、同一份文案。桌面才有文件
+        // 管理器契约（[currentRevealHost] 移动端为 null）——整条隐藏，而不是画一个点了
+        // 必然失败的按钮。galgame 本就只做 Windows，这道门在这里等价于恒真，但判据仍
+        // 按平台契约写：它守的是「这条动作凭什么能点」，不是「galgame 在哪跑」。
+        if (currentRevealHost() != null)
+          (
+            action: 'file_location',
+            label: t.media_file_location_open,
+            icon: Icons.folder_open_outlined,
+            danger: false,
+          ),
         (
           action: 'remove',
           label: t.game_remove,
@@ -1802,6 +1835,8 @@ class _GameCard extends StatelessWidget {
         onEditJapaneseLocale();
       case 'language':
         onEditLanguage();
+      case 'file_location':
+        onOpenFileLocation();
       case 'remove':
         onRemove();
     }
