@@ -18,6 +18,7 @@
 library;
 
 import 'dart:async';
+import 'dart:collection';
 import 'dart:developer' as developer;
 
 import 'package:flutter/foundation.dart';
@@ -144,8 +145,12 @@ class AsrStaticEncoderPool {
       <AsrEncoderBucket, AsrStaticEncoderSession>{};
   final Map<AsrEncoderBucket, Future<AsrStaticEncoderSession?>> _pending =
       <AsrEncoderBucket, Future<AsrStaticEncoderSession?>>{};
-  final Map<AsrEncoderBucket, String> unavailableReasons =
+  final Map<AsrEncoderBucket, String> _unavailableReasons =
       <AsrEncoderBucket, String>{};
+
+  /// 建失败 / 运行期失败的桶及原因（只读；诊断与 UI 用）。
+  late final Map<AsrEncoderBucket, String> unavailableReasons =
+      UnmodifiableMapView<AsrEncoderBucket, String>(_unavailableReasons);
   bool _closed = false;
 
   /// 能装下 [frames] 帧的最小桶；超过最大桶返回 null（走动态会话）。
@@ -166,7 +171,7 @@ class AsrStaticEncoderPool {
     if (bucket == null) return null;
     final AsrStaticEncoderSession? ready = _sessions[bucket];
     if (ready != null) return ready;
-    if (unavailableReasons.containsKey(bucket)) return null;
+    if (_unavailableReasons.containsKey(bucket)) return null;
     return _pending.putIfAbsent(bucket, () => _create(bucket));
   }
 
@@ -196,7 +201,7 @@ class AsrStaticEncoderPool {
       );
       return created;
     } catch (error, stack) {
-      unavailableReasons[bucket] = '$error';
+      _unavailableReasons[bucket] = '$error';
       developer.log(
         'ASR static encoder $bucket unavailable; falling back to dynamic '
         'session for this bucket',
@@ -232,7 +237,7 @@ class AsrStaticEncoderPool {
     Object error,
     StackTrace stack,
   ) {
-    unavailableReasons[bucket] = '$error';
+    _unavailableReasons[bucket] = '$error';
     final AsrStaticEncoderSession? s = _sessions.remove(bucket);
     developer.log(
       'ASR static encoder $bucket failed at run time; disabled, falling back '

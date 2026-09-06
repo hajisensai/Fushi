@@ -65,11 +65,11 @@ class AsrDecodeStats {
     required Duration fbank,
     required Duration encoder,
     required Duration search,
-    bool static = false,
+    bool usedStaticBucket = false,
   }) {
     return AsrDecodeStats(
       batches: batches + 1,
-      staticBatches: staticBatches + (static ? 1 : 0),
+      staticBatches: staticBatches + (usedStaticBucket ? 1 : 0),
       segments: this.segments + segments,
       realFrames: this.realFrames + realFrames,
       paddedFrames: this.paddedFrames + paddedFrames,
@@ -363,7 +363,7 @@ class AsrTransducerDecoder
         fbank: encoded.fbankTime,
         encoder: encoded.encoderTime,
         search: clock.elapsed,
-        static: encoded.isStatic,
+        usedStaticBucket: encoded.isStatic,
       );
     }
 

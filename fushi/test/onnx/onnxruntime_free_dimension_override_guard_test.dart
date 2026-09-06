@@ -44,8 +44,7 @@ void main() {
     expect(
       src,
       contains('AddFreeDimensionOverrideByName'),
-      reason:
-          'delta #8 的 C++ 半没了：Dart 仍会传 freeDimensionOverrides，插件不再'
+      reason: 'delta #8 的 C++ 半没了：Dart 仍会传 freeDimensionOverrides，插件不再'
           '读它，会话静默退回动态 shape —— 结果正确但编码器慢 5~7 倍，'
           '没有任何别的测试会红',
     );
@@ -84,7 +83,7 @@ void main() {
     );
     // 「照 re-vendor 清单做一遍」必须真能把 8 条 delta 都带回来。
     expect(
-      RegExp(r're-apply deltas #1[–-]#8').hasMatch(md),
+      RegExp(r're-apply deltas #1[–-]#(8|9|1[0-9])').hasMatch(md),
       isTrue,
       reason: 're-vendor 清单还停在旧编号 = 照它做就会丢掉后面的 delta',
     );

@@ -353,8 +353,13 @@ void main() {
         preference: AsrAccelerationPreference.auto,
       );
       expect(onGpu.staticEncoders, isNotNull);
-      // 显存预算查不到（fake runtime）→ 默认桶表，装载时已全部预热。
-      expect(gpu.bucketSessions, hasLength(kAsrGpuEncoderBuckets.length));
+      // 显存预算查不到（fake runtime）→ 默认桶表；装载时只预热最小桶（P0-2），
+      // 大桶留给真出现长段时按需建。
+      expect(gpu.bucketSessions, hasLength(1));
+      expect(
+        gpu.bucketSessions.single.overrides['T'],
+        kAsrGpuEncoderBuckets.first.frames,
+      );
       for (final ({_FakeSession session, Map<String, int> overrides}) b
           in gpu.bucketSessions) {
         expect(b.session.providers, <OnnxExecutionProvider>[
