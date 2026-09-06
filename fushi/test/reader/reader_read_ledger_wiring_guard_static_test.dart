@@ -81,6 +81,14 @@ void main() {
         isTrue,
         reason: '字数与时长同一段（v92），停表期间由 StudyClock.addChars 丢弃',
       );
+      expect(
+        containsCodeLine(
+          corpus,
+          '_ensureStudyClock().retractChars(readUnitsLength(retracted)),',
+        ),
+        isTrue,
+        reason: '回翻撤回对称接到 retractChars（会话级夹 0 由 StudyClock 保证）',
+      );
     });
   });
 

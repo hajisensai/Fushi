@@ -74,6 +74,8 @@ void main() {
       ledger = ReadUnitLedger(
         onCredit: (List<(int, int)> fresh) =>
             credited += readUnitsLength(fresh),
+        onRetract: (List<(int, int)> retracted) =>
+            credited -= readUnitsLength(retracted),
       );
     });
 
@@ -102,19 +104,20 @@ void main() {
       expect(credited, 200);
     });
 
-    test('往回翻到上一章：并集已覆盖 → 0；越过此前最远处才计', () {
+    test('往回翻到上一章：撤回落点之后已计的；再前翻按并集恢复；越过最远处才新计', () {
       sample(0, 600, 1000);
       sample(1, 0, 400);
-      sample(1, 400, 800); // 已计 600..1400
+      sample(1, 400, 800); // 已计 [600,1400)
       expect(credited, 800);
-      sample(1, 0, 400); // 回翻：结算 [1400,1800)
-      expect(credited, 1200);
-      sample(0, 600, 1000); // 回到上一章末页：结算 [1000,1400) 已覆盖
-      expect(credited, 1200);
-      sample(1, 0, 400); // 再前翻：结算 [600,1000) 已覆盖
-      sample(1, 400, 800); // 结算 [1000,1400) 已覆盖
-      sample(1, 800, 1200); // 结算 [1400,1800) 已覆盖
-      expect(credited, 1200);
+      sample(1, 0, 400); // 回翻一页：[1400,1800) 并入并集，位置退到 1000
+      expect(credited, 400, reason: '[1000,1400) 撤回');
+      sample(0, 600, 1000); // 回到上一章末页：位置 600
+      expect(credited, 0, reason: '[600,1000) 也撤回');
+      sample(1, 0, 400); // 再前翻：并集恢复 [600,1000)
+      expect(credited, 400);
+      sample(1, 400, 800); // 恢复 [1000,1400)
+      sample(1, 800, 1200); // 恢复 [1400,1800)
+      expect(credited, 1200, reason: '翻过的按并集恢复，不用重读也不双计');
       sample(1, 1200, 1600); // 结算 [1800,2200)：新页
       expect(credited, 1600);
     });
@@ -138,14 +141,17 @@ void main() {
       expect(credited, 700);
     });
 
-    test('听书跳句回到上一句（后跳）：目标页已在并集 → 翻走时 0', () {
+    test('听书跳句回到上一句（后跳）：撤回落点之后的，再听回来按并集恢复', () {
       sample(0, 0, 400);
       sample(0, 400, 800);
       ledger.leave();
       expect(credited, 800);
-      sample(0, 0, 400);
+      sample(0, 0, 400); // 后跳落到首页：位置 0
+      expect(credited, 0, reason: '[0,800) 全部撤回');
       sample(0, 400, 800);
-      expect(credited, 800);
+      expect(credited, 400, reason: '[0,400) 恢复');
+      ledger.leave();
+      expect(credited, 800, reason: '重听重读不重复计，总额仍是 800');
     });
 
     test(
@@ -153,18 +159,19 @@ void main() {
       () {
         sample(0, 0, 400);
         ledger.leave(); // _beginNavigation
-        expect(credited, 400, reason: '同页提前结算（用户确实在这页）');
-        sample(0, 0, 520); // 缩字号后同页多露出的行
+        expect(credited, 400, reason: '离开时按单元终点入账（用户确实在这页）');
+        sample(0, 0, 520); // 恢复落回同一页（多露出几行）：位置回到 0
         expect(ledger.current, (0, 520));
+        expect(credited, 0, reason: '同页重新成为当前单元，翻走前不计（撤回）');
         sample(0, 520, 1000);
-        expect(credited, 520, reason: '并集去重：只补 [400,520)，与旧 rebase 口径总额一致');
+        expect(credited, 520, reason: '翻走时按并集入账 [0,520)，总额与旧口径一致');
       },
     );
 
-    test('改字号 CSS 热换（不经导航）：同页新边界 arrive 结算旧边界，总额同上', () {
+    test('改字号 CSS 热换（不经导航）：同页新边界 arrive 只并入不入账，翻走时总额同上', () {
       sample(0, 0, 400);
       sample(0, 0, 520);
-      expect(credited, 400);
+      expect(credited, 0, reason: '位置仍是 0，当前页翻走前不计');
       sample(0, 520, 1000);
       expect(credited, 520);
     });
@@ -239,11 +246,11 @@ void main() {
       expect(credited, 800, reason: '旧口径的并集不再有意义，新坐标下重新计');
     });
 
-    test('连续模式惯性滚动：每次落定采样一个单元，相邻重叠只计新露出', () {
+    test('连续模式惯性滚动：每次落定采样一个单元，入账随视口顶部推进', () {
       sample(0, 0, 500);
       sample(0, 300, 800);
       sample(0, 600, 1100); // end clamp 到 1000
-      expect(credited, 800);
+      expect(credited, 600, reason: '并集 [0,800)，位置 600 → 入账 [0,600)');
       sample(1, 0, 500);
       expect(credited, 1000);
     });
@@ -366,17 +373,17 @@ void main() {
         expect(credited, 500);
       });
 
-      test('拖回本会话已读过的位置：补刷 arrive 落在并集内 → 翻走时 0', () {
+      test('拖回本会话已读过的位置：撤回落点之后的，关书只计到落点页末', () {
         sample(0, 0, 400);
         sample(0, 400, 800);
         sample(0, 800, 1000);
         expect(credited, 800);
 
-        // 拖回开头，250ms 后补刷 arrive 到已读页；关书 leave 结算 → 并集已覆盖。
+        // 拖回开头，250ms 后补刷 arrive 到首页：位置退到 0，之前入账的全部撤回。
         sample(0, 0, 400);
-        expect(credited, 1000, reason: '[800,1000) 在 arrive 切换时结算');
+        expect(credited, 0, reason: '并集 [0,1000) 不减，但位置之后的不入账');
         ledger.leave();
-        expect(credited, 1000, reason: '重听重读不重复计');
+        expect(credited, 400, reason: '关书按落点页末入账 [0,400)');
       });
 
       test('与显式跳句（skipToCue）总额等价：leave 提前只改结算时刻，不改总额', () {
@@ -390,6 +397,8 @@ void main() {
         ledger = ReadUnitLedger(
           onCredit: (List<(int, int)> fresh) =>
               credited += readUnitsLength(fresh),
+          onRetract: (List<(int, int)> retracted) =>
+              credited -= readUnitsLength(retracted),
         );
 
         // B：点句跳转（skipToCue → onExplicitCueJump → leave）。

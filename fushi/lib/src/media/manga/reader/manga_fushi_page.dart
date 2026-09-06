@@ -938,6 +938,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 没有存档预置（重开这卷续读，存档页是当前单元，翻走时计一次）。
   late final ReadUnitLedger _readLedger = ReadUnitLedger(
     onCredit: _creditPages,
+    onRetract: _retractPages,
   );
 
   /// 位置落定：喂空闲门（翻页 / 页内滚动 = 用户输入）并把当前可见页交给账本。
@@ -3811,6 +3812,23 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // v92：字数 / 页数直接记进当前打开段（与时长同一 uid 同一行）。
     _studyClock?.addChars(added.chars);
     _studyClock?.addPages(added.pages);
+  }
+
+  /// [_readLedger] 的撤回回调（回翻）：[retracted] 是不再位于当前位置之前的页号
+  /// 子区间，按同一换算扣出时钟（会话级夹 0 由 `StudyClock` 保证）。
+  void _retractPages(List<(int, int)> retracted) {
+    final MokuroPayload? payload = _payload;
+    if (payload == null) return;
+    final List<int> pageIndices = <int>[
+      for (final (int start, int end) in retracted)
+        for (int page = start; page < end; page++) page,
+    ];
+    final ({int chars, int pages}) removed = mangaStatsForPages(
+      payload,
+      pageIndices,
+    );
+    _studyClock?.retractChars(removed.chars);
+    _studyClock?.retractPages(removed.pages);
   }
 
   /// v92：建好并启动本页唯一的阅读时钟（幂等）。空闲门 + 生命周期前台门只对

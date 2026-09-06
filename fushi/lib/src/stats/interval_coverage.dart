@@ -133,6 +133,40 @@ class IntervalCoverage {
   bool covers(int start, int end) =>
       end <= start || covered(start, end) == end - start;
 
+  /// 与 `(-∞, position)` 的交集（新对象）：`ReadUnitLedger` 用它取「当前位置之前
+  /// 翻过的部分」作为应入账集合。
+  IntervalCoverage clipBelow(int position) {
+    final IntervalCoverage out = IntervalCoverage();
+    for (final (int s, int e) in _ranges) {
+      if (s >= position) break;
+      out._ranges.add((s, e < position ? e : position));
+    }
+    return out;
+  }
+
+  /// 本并集减去 [other]：属于本并集、不属于 [other] 的子区间（升序、不相交）。
+  /// `ReadUnitLedger` 拿它算「应入账 − 已入账」（新增）与「已入账 − 应入账」（撤回）。
+  List<(int, int)> subtract(IntervalCoverage other) {
+    final List<(int, int)> out = <(int, int)>[];
+    final List<(int, int)> cut = other._ranges;
+    int j = 0;
+    for (final (int s, int e) in _ranges) {
+      int cursor = s;
+      while (j < cut.length && cut[j].$2 <= cursor) {
+        j++;
+      }
+      int k = j;
+      while (k < cut.length && cut[k].$1 < e) {
+        final (int cs, int ce) = cut[k];
+        if (cs > cursor) out.add((cursor, cs));
+        if (ce > cursor) cursor = ce;
+        k++;
+      }
+      if (cursor < e) out.add((cursor, e));
+    }
+    return out;
+  }
+
   /// 清空（坐标系整体变更时用，`ReadUnitLedger.reset`）。
   void clear() => _ranges.clear();
 

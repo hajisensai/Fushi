@@ -82,6 +82,8 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
   late final ReadUnitLedger _readLedger = ReadUnitLedger(
     onCredit: (List<(int, int)> fresh) =>
         _studyClock?.addPages(readUnitsLength(fresh)),
+    onRetract: (List<(int, int)> retracted) =>
+        _studyClock?.retractPages(readUnitsLength(retracted)),
   );
   Timer? _saveDebounce;
   bool _restoreDone = false;

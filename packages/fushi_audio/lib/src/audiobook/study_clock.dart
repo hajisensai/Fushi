@@ -108,6 +108,12 @@ class _OpenSegment {
 
   /// 有未落库的改动。写失败保持 true，下个 tick 用绝对值重写——重试不会翻倍。
   bool dirty = false;
+
+  /// 至少排队过一次落库：库里可能已有这行。之后即便被 [StudyClock.retractChars] /
+  /// [StudyClock.retractPages] 撤回到 0 字 0 页且不足 1s，也必须用绝对值重写成 0
+  /// ——[StudyClock._worthWriting] 只是「没写过的抖动段不值一行」的门槛，对已在库里
+  /// 的行不适用，否则库里会留着撤回前的旧值。
+  bool persisted = false;
 }
 
 /// 本次会话（一个 [StudyClock] 实例从建到销毁）的累计读数，供页面**只读展示**
@@ -141,7 +147,8 @@ typedef StudySessionTotals = ({int durationMs, int chars, bool active});
 ///  * 空闲：[idleTimeout]（阅读面 10 分钟无 [touch] 即不入账；视频不设）。
 ///
 /// 字数 / 页数经 [addChars] / [addPages] 记到当前打开段（没有就以 0 时长开一段），
-/// 与时长同一行、同一 uid、同一次写。
+/// 与时长同一行、同一 uid、同一次写；回翻经 [retractChars] / [retractPages] 从最新
+/// 的段往前扣回（会话级夹 0）。
 class StudyClock {
   StudyClock({
     required FushiDatabase database,
@@ -204,7 +211,8 @@ class StudyClock {
   /// ErrorLogService，页面把它接上让 DB 写异常线上可查（BUG-911 纪律）。
   void Function(Object error, StackTrace stack)? onWriteError;
 
-  /// 会话累计（见 [StudySessionTotals]）：只增不减，封段不清。
+  /// 会话累计（见 [StudySessionTotals]）：封段不清。时长只增不减；字数会被
+  /// [retractChars]（回翻）扣回，但不低于 0。
   int _sessionDurationMs = 0;
   int _sessionChars = 0;
 
@@ -213,6 +221,11 @@ class StudyClock {
   DateTime? _lastTouch;
   _OpenSegment? _open;
   String? _cachedDeviceId;
+
+  /// 本会话开过的全部段（含已封的），按打开顺序。封段只丢 [_open] 引用，对象留在
+  /// 这里给 [retractChars] / [retractPages] 从尾往前扣；封段时没有内容账的段摘掉
+  /// （无可撤回，也让表不随空闲门反复封段无限长）。
+  final List<_OpenSegment> _sessionSegments = <_OpenSegment>[];
 
   /// 写链：绝对值写按时间序串行落地，防止旧 tick 的写晚于新 tick 落地把值倒回去。
   Future<void> _writeChain = Future<void>.value();
@@ -288,7 +301,7 @@ class StudyClock {
     _tickStart = null;
     final _OpenSegment? seg = _open;
     _open = null;
-    if (seg != null && seg.dirty && _worthWriting(seg)) _enqueueWrite(seg);
+    if (seg != null && _needsWrite(seg)) _enqueueWrite(seg);
     await _writeChain;
   }
 
@@ -324,6 +337,62 @@ class StudyClock {
     _open!.dirty = true;
   }
 
+  /// 撤回本会话已记的字数（回翻）。阅读账本的入账额是「会话覆盖并集 ∩ [0, 当前
+  /// 位置)」（2026-09-06 裁定，对齐 Hoshi 的会话级负数扣减）：用户回翻时把之前记
+  /// 的字数扣回来，再前进时按并集恢复。
+  ///
+  /// 从最新的段往前扣：先扣当前打开段，不够再扣本会话之前封掉的段，每段夹 0；
+  /// 总额因此自然夹在「本会话已记字数」以内（会话级夹 0）。被扣的已封段重新排队
+  /// 落库（绝对值 upsert 重写，不删行——uid 可能已同步出去，删行留给墓碑体系）；
+  /// 打开段只改内存值，等下一 tick / [flushNow] 正常写。
+  ///
+  /// 撤回不是内容输入：不 [touch]、不开段、不结算待定窗口。停表期间与 [addChars]
+  /// 同律直接丢弃（BUG-2172）。返回实际扣掉的数。
+  int retractChars(int chars) {
+    if (chars <= 0 || !isRunning) return 0;
+    final int taken = _retract(
+      chars,
+      (_OpenSegment seg) => seg.chars,
+      (_OpenSegment seg, int value) => seg.chars = value,
+    );
+    _sessionChars -= taken;
+    return taken;
+  }
+
+  /// 撤回本会话已记的页数（漫画 / PDF 回翻），同 [retractChars]。页数没有会话
+  /// 累计器，只改段。
+  int retractPages(int pages) {
+    if (pages <= 0 || !isRunning) return 0;
+    return _retract(
+      pages,
+      (_OpenSegment seg) => seg.pages,
+      (_OpenSegment seg, int value) => seg.pages = value,
+    );
+  }
+
+  /// [retractChars] / [retractPages] 的共用扣减：从 [_sessionSegments] 尾往前，
+  /// 按 [read] / [write] 操作同一个内容账字段。返回实际扣掉的总数。
+  int _retract(
+    int amount,
+    int Function(_OpenSegment seg) read,
+    void Function(_OpenSegment seg, int value) write,
+  ) {
+    int remaining = amount;
+    for (int i = _sessionSegments.length - 1; i >= 0 && remaining > 0; i--) {
+      final _OpenSegment seg = _sessionSegments[i];
+      final int have = read(seg);
+      if (have <= 0) continue;
+      final int take = have < remaining ? have : remaining;
+      write(seg, have - take);
+      remaining -= take;
+      seg.dirty = true;
+      // 已封段没有下一个 tick 替它写，这里就得排队；它有过内容账就一定排队过落库
+      // （[_worthWriting] 见内容账即过），库里的旧值必须被绝对值覆盖。
+      if (!identical(seg, _open)) _enqueueWrite(seg);
+    }
+    return amount - remaining;
+  }
+
   /// 墙钟模式下记内容账（字数 / 页数）之前先把待定窗口 `[上次 tick, now]` 结算掉。
   ///
   /// BUG-2179：跨小时瞬间 [addChars] 若直接 [_ensureOpen]，会按新小时先开一段只装
@@ -354,7 +423,7 @@ class StudyClock {
   Future<void> flushNow() async {
     _accrue(_now());
     final _OpenSegment? seg = _open;
-    if (seg != null && seg.dirty && _worthWriting(seg)) _enqueueWrite(seg);
+    if (seg != null && _needsWrite(seg)) _enqueueWrite(seg);
     await _writeChain;
   }
 
@@ -362,7 +431,7 @@ class StudyClock {
     final DateTime now = _now();
     _accrue(now);
     final _OpenSegment? seg = _open;
-    if (seg != null && seg.dirty && _worthWriting(seg)) _enqueueWrite(seg);
+    if (seg != null && _needsWrite(seg)) _enqueueWrite(seg);
     onTick?.call(now);
     await _writeChain;
   }
@@ -440,15 +509,18 @@ class StudyClock {
       hour: hour,
     );
     _open = seg;
+    _sessionSegments.add(seg);
     return seg;
   }
 
-  /// 封当前段：有脏数据先排队落库，然后丢引用。
+  /// 封当前段：有脏数据先排队落库，然后丢引用。对象留在 [_sessionSegments]
+  /// 供撤回，除非它没有内容账（无可撤回）。
   void _seal() {
     final _OpenSegment? seg = _open;
     if (seg == null) return;
     _open = null;
-    if (seg.dirty && _worthWriting(seg)) _enqueueWrite(seg);
+    if (_needsWrite(seg)) _enqueueWrite(seg);
+    if (seg.chars == 0 && seg.pages == 0) _sessionSegments.remove(seg);
   }
 
   /// 落库门槛（与 v92 前各页面「<1s 且无内容账的段不记账」同一条判据）：不足 1 秒
@@ -459,8 +531,14 @@ class StudyClock {
   static bool _worthWriting(_OpenSegment seg) =>
       seg.durationMs >= 1000 || seg.chars > 0 || seg.pages > 0;
 
+  /// 本次是否要写：有脏改动，且（已在库里 或 过 [_worthWriting] 门槛）。前者覆盖
+  /// 「写过 300 字 0 时长 → 被撤回成 0 字」：不写穿，库里就留着 300。
+  static bool _needsWrite(_OpenSegment seg) =>
+      seg.dirty && (seg.persisted || _worthWriting(seg));
+
   void _enqueueWrite(_OpenSegment seg) {
     seg.dirty = false;
+    seg.persisted = true;
     final DateTime now = _now();
     _writeChain = _writeChain.then((_) => _write(seg, now)).catchError((
       Object e,

@@ -520,6 +520,196 @@ void main() {
     });
   });
 
+  group('撤回（回翻）：retractChars / retractPages 从最新的段往前扣，会话级夹 0', () {
+    /// 第 1 小时段记 [charsFirst] 字 / [pagesFirst] 页，跨整点后第 2 小时段记
+    /// [charsSecond] 字 / [pagesSecond] 页。返回两段 uid（第 1 段已封并落库）。
+    Future<(String, String)> twoHourSegments(
+      _Harness h, {
+      int charsFirst = 0,
+      int charsSecond = 0,
+      int pagesFirst = 0,
+      int pagesSecond = 0,
+    }) async {
+      h.clock.start();
+      if (charsFirst > 0) h.clock.addChars(charsFirst);
+      if (pagesFirst > 0) h.clock.addPages(pagesFirst);
+      final String first = h.clock.debugOpenUid!;
+      h.advance(const Duration(seconds: 60)); // 13:00:00，窗口整段落 12 点
+      await h.clock.flushNow();
+      expect(h.clock.debugOpenUid, first, reason: '恰到整点仍是 12 点段');
+      // 13:00:30 记内容账：BUG-2179 先结算待定窗口 → 封 12 点段、开 13 点段。
+      h.advance(const Duration(seconds: 30));
+      if (charsSecond > 0) h.clock.addChars(charsSecond);
+      if (pagesSecond > 0) h.clock.addPages(pagesSecond);
+      final String second = h.clock.debugOpenUid!;
+      expect(second, isNot(first));
+      await h.clock.flushNow();
+      return (first, second);
+    }
+
+    /// [uid] 在 sink 收到的最后一份绝对值。
+    StudySegmentsCompanion lastWriteOf(_Harness h, String uid) =>
+        h.sink.writes.lastWhere((w) => w.uid.value == uid);
+
+    test('打开段内撤回：只改内存，下次 flush 写绝对值；会话字数跟着降', () async {
+      final _Harness h = _Harness();
+      h.clock.start();
+      h.clock.addChars(300);
+      expect(h.clock.retractChars(100), 100);
+      expect(h.clock.debugOpenTotals!.chars, 200);
+      expect(h.clock.sessionTotals().chars, 200);
+      expect(h.sink.writes, isEmpty, reason: '打开段的撤回不立刻写库');
+      h.advance(const Duration(seconds: 10));
+      await h.clock.flushNow();
+      expect(h.sink.writes, hasLength(1));
+      expect(h.sink.last.chars.value, 200);
+      expect(h.sink.last.durationMs.value, 10000);
+    });
+
+    test('跨段撤回：先扣当前段、再扣本会话之前封掉的段，已封段重新写库', () async {
+      final _Harness h = _Harness(start: DateTime(2026, 8, 29, 12, 59, 0));
+      final (String first, String second) = await twoHourSegments(
+        h,
+        charsFirst: 200,
+        charsSecond: 50,
+      );
+      expect(lastWriteOf(h, first).chars.value, 200);
+      final int writesBefore = h.sink.writes.length;
+
+      expect(h.clock.retractChars(120), 120);
+      expect(h.clock.debugOpenTotals!.chars, 0, reason: '13 点段 50 先扣光');
+      expect(h.clock.sessionTotals().chars, 130);
+      await h.clock.flushNow();
+      expect(
+        lastWriteOf(h, first).chars.value,
+        130,
+        reason: '已封的 12 点段被扣后必须重新排队落库（绝对值 upsert）',
+      );
+      expect(
+        lastWriteOf(h, first).durationMs.value,
+        60000,
+        reason: '重写只改字数，时长原样',
+      );
+      expect(lastWriteOf(h, second).chars.value, 0);
+      expect(h.sink.writes.length, writesBefore + 2, reason: '两段各重写一次');
+      expect(h.sink.uids.toSet(), <String>{first, second}, reason: '不开新段');
+    });
+
+    test('会话级夹 0：撤回额超过本会话已记字数时只扣到 0，之后再记正常', () async {
+      final _Harness h = _Harness(start: DateTime(2026, 8, 29, 12, 59, 0));
+      final (String first, String second) = await twoHourSegments(
+        h,
+        charsFirst: 200,
+        charsSecond: 50,
+      );
+      expect(h.clock.retractChars(999), 250, reason: '总共只记了 250');
+      expect(h.clock.sessionTotals().chars, 0);
+      expect(h.clock.debugOpenTotals!.chars, 0);
+      await h.clock.flushNow();
+      expect(lastWriteOf(h, first).chars.value, 0);
+      expect(lastWriteOf(h, second).chars.value, 0);
+      expect(h.clock.retractChars(1), 0, reason: '已空，再撤回无可扣');
+
+      h.clock.addChars(10);
+      expect(h.clock.debugOpenUid, second, reason: '仍是同一打开段');
+      expect(h.clock.sessionTotals().chars, 10);
+      await h.clock.flushNow();
+      expect(lastWriteOf(h, second).chars.value, 10);
+    });
+
+    test('已落库的段被撤回到 0 字 0 时长仍重写为 0（_worthWriting 门槛不适用于已在库的行）', () async {
+      final _Harness h = _Harness();
+      h.clock.start();
+      h.clock.addChars(300);
+      await h.clock.flushNow();
+      expect(h.sink.last.chars.value, 300);
+      expect(h.sink.last.durationMs.value, 0);
+      expect(h.clock.retractChars(300), 300);
+      await h.clock.stop();
+      expect(h.sink.writes, hasLength(2), reason: '停表封段必须把 0 写穿，不能按抖动段丢弃');
+      expect(
+        h.sink.last.uid.value,
+        h.sink.writes.first.uid.value,
+        reason: '同 uid 重写，不删行',
+      );
+      expect(h.sink.last.chars.value, 0);
+      expect(h.sink.last.durationMs.value, 0);
+    });
+
+    test('停表期间 retractChars / retractPages 返回 0 且不改任何段（BUG-2172 对称）', () async {
+      final _Harness h = _Harness();
+      h.clock.start();
+      h.clock.addChars(100);
+      h.clock.addPages(2);
+      h.advance(const Duration(seconds: 5));
+      await h.clock.stop();
+      expect(h.sink.writes, hasLength(1));
+      expect(h.clock.retractChars(50), 0);
+      expect(h.clock.retractPages(1), 0);
+      expect(h.clock.sessionTotals().chars, 100);
+      await h.clock.flushNow();
+      expect(h.sink.writes, hasLength(1), reason: '没有任何段被改、没有新写');
+      expect(h.sink.last.chars.value, 100);
+      expect(h.sink.last.pages.value, 2);
+    });
+
+    test('非正数撤回额忽略', () async {
+      final _Harness h = _Harness();
+      h.clock.start();
+      h.clock.addChars(10);
+      expect(h.clock.retractChars(0), 0);
+      expect(h.clock.retractPages(-3), 0);
+      expect(h.clock.sessionTotals().chars, 10);
+    });
+
+    test('retractPages：打开段内与跨段同型，页数没有会话累计器只改段', () async {
+      final _Harness h = _Harness();
+      h.clock.start();
+      h.clock.addPages(5);
+      expect(h.clock.retractPages(2), 2);
+      expect(h.clock.debugOpenTotals!.pages, 3);
+      await h.clock.flushNow();
+      expect(h.sink.last.pages.value, 3);
+      await h.clock.stop();
+
+      final _Harness h2 = _Harness(start: DateTime(2026, 8, 29, 12, 59, 0));
+      final (String first, String second) = await twoHourSegments(
+        h2,
+        pagesFirst: 3,
+        pagesSecond: 1,
+      );
+      expect(h2.clock.retractPages(3), 3);
+      expect(h2.clock.debugOpenTotals!.pages, 0);
+      await h2.clock.flushNow();
+      expect(lastWriteOf(h2, first).pages.value, 1, reason: '已封段被扣 2 页并重写');
+      expect(lastWriteOf(h2, second).pages.value, 0);
+      expect(h2.clock.retractPages(5), 1, reason: '只剩 1 页可扣：会话级夹 0');
+    });
+
+    test('撤回不是输入：不续空闲门（对照 touch）', () async {
+      final _Harness h = _Harness(idleTimeout: const Duration(minutes: 10));
+      h.clock.start();
+      h.clock.addChars(100);
+      // 每分钟一个窗口推到 9:30：离空闲门到期还剩 30s。
+      for (int i = 0; i < 9; i++) {
+        h.advance(const Duration(minutes: 1));
+        await h.clock.flushNow();
+      }
+      h.advance(const Duration(seconds: 30));
+      expect(h.clock.sessionTotals().active, isTrue);
+      expect(h.clock.retractChars(30), 30);
+      h.advance(const Duration(minutes: 1)); // 10:30 > 10 分钟
+      expect(
+        h.clock.sessionTotals().active,
+        isFalse,
+        reason: '撤回不 touch，空闲基准仍是 addChars 那一刻，此刻已过门',
+      );
+      expect(h.clock.debugOpenUid, isNotNull, reason: '撤回不封段、不开段');
+      h.clock.touch();
+      expect(h.clock.sessionTotals().active, isTrue, reason: '对照：真输入才续命');
+    });
+  });
+
   group('真库 round-trip', () {
     test('默认 sink 写进 study_segments，重复 upsert 仍一行', () async {
       final FushiDatabase db = FushiDatabase.forTesting(

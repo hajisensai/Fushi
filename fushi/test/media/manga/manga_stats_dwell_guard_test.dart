@@ -42,6 +42,13 @@ void main() {
       reason: '结算回调必须接到 _creditPages',
     );
     expect(
+      src.contains('onRetract: _retractPages'),
+      isTrue,
+      reason: '回翻撤回必须接到 _retractPages（同一换算，扣出时钟）',
+    );
+    expect(src, contains('_studyClock?.retractChars(removed.chars);'));
+    expect(src, contains('_studyClock?.retractPages(removed.pages);'));
+    expect(
       '_readLedger.arrive('.allMatches(src).length,
       1,
       reason:

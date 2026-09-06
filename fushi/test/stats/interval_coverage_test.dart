@@ -95,6 +95,33 @@ void main() {
       expect(c.ranges, <(int, int)>[(50, 650)]);
     });
 
+    test('clipBelow：与 (-∞, position) 的交集，区间被截断、不改原件', () {
+      final IntervalCoverage c = IntervalCoverage()
+        ..add(0, 500)
+        ..add(1000, 2000);
+      expect(c.clipBelow(0).ranges, isEmpty);
+      expect(c.clipBelow(300).ranges, <(int, int)>[(0, 300)]);
+      expect(c.clipBelow(1000).ranges, <(int, int)>[(0, 500)]);
+      expect(c.clipBelow(1500).ranges, <(int, int)>[(0, 500), (1000, 1500)]);
+      expect(c.clipBelow(9999).ranges, <(int, int)>[(0, 500), (1000, 2000)]);
+      expect(c.ranges, <(int, int)>[(0, 500), (1000, 2000)]);
+    });
+
+    test('subtract：本并集减去另一并集，返回升序不相交子区间', () {
+      final IntervalCoverage a = IntervalCoverage()
+        ..add(0, 1000)
+        ..add(3000, 4000);
+      final IntervalCoverage b = IntervalCoverage()
+        ..add(200, 300)
+        ..add(900, 3200)
+        ..add(3900, 5000);
+      expect(a.subtract(b), <(int, int)>[(0, 200), (300, 900), (3200, 3900)]);
+      expect(b.subtract(a), <(int, int)>[(1000, 3000), (4000, 5000)]);
+      expect(a.subtract(IntervalCoverage()), a.ranges);
+      expect(IntervalCoverage().subtract(a), isEmpty);
+      expect(a.subtract(a), isEmpty);
+    });
+
     test('clear 清空并集', () {
       final IntervalCoverage c = IntervalCoverage()..add(0, 10);
       c.clear();

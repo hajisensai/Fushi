@@ -222,6 +222,11 @@ void main() {
       expect(body, contains('_studyClock?.touch();'));
       expect(body, contains('_readLedger.arrive(pageIndex, pageIndex + 1);'));
       expect(pdf, contains('addPages(readUnitsLength('));
+      expect(
+        pdf,
+        contains('retractPages(readUnitsLength('),
+        reason: '回翻撤回（onRetract）必须对称接到 retractPages',
+      );
       // 标量水位形态已废：跳 N 页只计跳走前那页，不再计 N 页。
       expect(pdf, isNot(contains('pdfPagesNewlyReached')));
       expect(pdf, isNot(contains('_sessionMaxPageIndex')));

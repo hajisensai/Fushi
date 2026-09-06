@@ -3,9 +3,10 @@ import 'package:fushi/src/stats/read_unit_ledger.dart';
 
 /// PDF 页数「读过」判据（2026-09-06 裁定，取代 BUG-2184 的标量水位
 /// `pdfPagesNewlyReached`）：页面把每次 `_onPageChanged` 的页号交给 `ReadUnitLedger`
-/// （单元 `[page, page+1)`），`onCredit` 把首次覆盖的页数 `addPages`。这里用账本模拟
-/// PDF 页面的接线，钉三条行为：顺翻每页翻走时计 1；回翻已读页计 0；跳 N 页只计
-/// 跳走前那页（跳过的从未成为当前单元）。页面接线本身由
+/// （单元 `[page, page+1)`），`onCredit` / `onRetract` 把页数 `addPages` / `retractPages`。
+/// 这里用账本模拟 PDF 页面的接线，钉三条行为：顺翻每页翻走时计 1；回翻撤回落点
+/// 之后已计的、再前翻按并集恢复；跳 N 页只计跳走前那页（跳过的从未成为当前单元）。
+/// 页面接线本身由
 /// `test/pages/reader_study_clock_gate_guard_static_test.dart` 源码守卫钉死。
 void main() {
   late int pagesCredited;
@@ -19,6 +20,8 @@ void main() {
     ledger = ReadUnitLedger(
       onCredit: (List<(int, int)> fresh) =>
           pagesCredited += readUnitsLength(fresh),
+      onRetract: (List<(int, int)> retracted) =>
+          pagesCredited -= readUnitsLength(retracted),
     );
   });
 
@@ -33,17 +36,18 @@ void main() {
     expect(pagesCredited, 3);
   });
 
-  test('回翻：回到已读页再翻走计 0；越过此前最远处的新页照常计', () {
+  test('回翻：撤回落点之后已计的页；再前翻按并集恢复；越过最远处的新页照常计', () {
     onPageChanged(0);
     onPageChanged(1);
     onPageChanged(2); // 已计 0、1
-    onPageChanged(1); // 离开 2 → 计 2
+    onPageChanged(1); // 回翻：2 并入并集，位置 1 → 撤回 1
+    expect(pagesCredited, 1);
+    onPageChanged(0); // 位置 0 → 撤回 0
+    expect(pagesCredited, 0);
+    onPageChanged(1); // 恢复 0
+    onPageChanged(2); // 恢复 1
+    onPageChanged(3); // 恢复 2（并集里有，不用重读）
     expect(pagesCredited, 3);
-    onPageChanged(0); // 离开 1：已覆盖 → 0
-    onPageChanged(1); // 离开 0：已覆盖 → 0
-    onPageChanged(2); // 离开 1：已覆盖 → 0
-    expect(pagesCredited, 3);
-    onPageChanged(3); // 离开 2：已覆盖 → 0
     onPageChanged(4); // 离开 3：新页 → 1
     expect(pagesCredited, 4);
   });

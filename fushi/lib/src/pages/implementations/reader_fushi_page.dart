@@ -1472,10 +1472,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   int? get _progressTotalChars => _progress.totalChars;
   set _progressTotalChars(int? v) => _progress.totalChars = v;
 
-  /// 「读过」判据的唯一账本（翻走即计 + 会话覆盖并集，用户 2026-09-06 裁定，见
-  /// `docs/plans/2026-09-06-read-unit-ledger.md`）：单元 = 当前可见区间的全书绝对字符
-  /// 偏移 `[start, end)`，由 [_refreshProgress] 每次采样 `arrive`；离开单元时把并集里此前
-  /// 未覆盖的部分按学习单位数记进当前打开段。替代旧的标量水位 + 速度封顶令牌桶
+  /// 「读过」判据的唯一账本（入账额 = 会话翻过的并集 ∩ [0, 当前位置)，用户 2026-09-06
+  /// 裁定，见 `docs/plans/2026-09-06-read-unit-ledger.md`）：单元 = 当前可见区间的全书
+  /// 绝对字符偏移 `[start, end)`，由 [_refreshProgress] 每次采样 `arrive`；每次落定按差分
+  /// 把新增 / 撤回的学习单位数记进（扣出）当前打开段。替代旧的标量水位 + 速度封顶令牌桶
   /// （`_sessionMaxAbsoluteChars` / `accumulateSessionCharsCapped`）——那套要在恢复完成 /
   /// 进度条拖动 / 搜索跳转 / cue 跳转 / 字数补算五处播种，漏一处就是幻象字数
   /// （BUG-1107 / BUG-2168）；账本只计翻走的单元，跳过的从未成为当前单元，结构上
@@ -1483,6 +1483,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   late final ReadUnitLedger _readLedger = ReadUnitLedger(
     onCredit: (List<(int, int)> fresh) =>
         _ensureStudyClock().addChars(readUnitsLength(fresh)),
+    onRetract: (List<(int, int)> retracted) =>
+        _ensureStudyClock().retractChars(readUnitsLength(retracted)),
   );
 
   /// 听书跟随 reveal 落定后的进度补刷（见 `_scheduleReanchorSettleProgressRefresh`）。
