@@ -4298,5 +4298,7 @@
   "video_library_scrape_pending_banner": "$count 部作品还没确认身份，资料和封面都没刮出来",
   "video_library_scrape_pending_banner_action": "去确认",
   "reading_stats_day_reset_hour": "「今日」从几点开始",
-  "reading_stats_day_reset_hour_hint": "这个整点之前的阅读算作前一天。影响统计里的「今日」与近 N 天；只有改设置之后写入的记录按新边界归日。"
+  "reading_stats_day_reset_hour_hint": "这个整点之前的阅读算作前一天。影响统计里的「今日」与近 N 天；只有改设置之后写入的记录按新边界归日。",
+  "video_home_subscription_updates": "已更新未看",
+  "video_home_subscription_unwatched_episode": "第 $n 集 · $count 集未看"
 }

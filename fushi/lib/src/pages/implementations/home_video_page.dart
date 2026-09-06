@@ -22,7 +22,10 @@ import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/video_scrape_actions.dart';
 import 'package:fushi/src/media/video/cover_ui/video_specs_badges.dart';
 import 'package:fushi/src/media/video/video_specs_service.dart';
+import 'package:fushi/src/media/torrent/anime_download_subscription.dart'
+    show AnimeDownloadSubscription, AnimeDownloadSubscriptionStore;
 import 'package:fushi/src/media/video/video_home_layout.dart';
+import 'package:fushi/src/media/video/video_subscription_updates.dart';
 import 'package:fushi/src/media/video/scraper/auto_scrape_service.dart';
 import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi/src/media/video/scraper/cover_scraper_service.dart';
@@ -351,6 +354,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   Map<String, int> _runtimeMinutesByBookUid = const <String, int>{};
   Set<String> _localExtraBookUids = const <String>{};
 
+  /// 「已更新未看」行：订阅（新 Drift 订阅 + 旧 AniList JSON 订阅）解析到的
+  /// 合集 id（[subscribedVideoCollectionIds]），与 [_loadLibraryMaps] 同批预取。
+  Set<int> _subscribedCollectionIds = const <int>{};
+
   /// [_loadLibraryMaps] 的 latest-request-wins 代次。全量清理会触发一轮新的空快照；
   /// 清理前已在途的慢查询不得晚到后把旧 AniDB 映射重新写回页面状态。
   int _libraryMapsRequestGeneration = 0;
@@ -401,6 +408,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   final ScrollController _continueRowController = ScrollController();
   final ScrollController _nextRowController = ScrollController();
   final ScrollController _recentRowController = ScrollController();
+  final ScrollController _subscriptionRowController = ScrollController();
+
+  /// 「已更新未看」行的订阅表变更流；旧 JSON 订阅 store 走 [revision] 通知。
+  StreamSubscription<void>? _downloadSubscriptionsSub;
+  AnimeDownloadSubscriptionStore? _legacySubscriptionStore;
 
   @override
   void initState() {
@@ -428,6 +440,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     _scrapePresentationSub = appModelNoUpdate.database
         .watchVideoScrapePresentationChanged()
         .listen(_onScrapePresentationChanged);
+    // 「已更新未看」行：订阅增删（订阅面板）后重解析订阅→合集映射。新订阅表走
+    // Drift 流；旧 AniList JSON 订阅 store 没有表，用它的 revision 通知。入库落
+    // 合集那一步已由上面的合集表流覆盖，这里只补「订阅本身变了」。
+    _downloadSubscriptionsSub = appModelNoUpdate.database
+        .watchVideoDownloadSubscriptions()
+        .listen(_onCollectionTablesChanged);
+    _legacySubscriptionStore = appModelNoUpdate.animeDownloadSubscriptionStore
+      ?..revision.addListener(_onLegacySubscriptionStoreChanged);
     widget.libraryRefreshSignal?.addListener(_onLibraryRefreshRequested);
     // BUG-1182：「显示远端条目」开关落在 prefsRepo（独立 ChangeNotifier），不经
     // AppModel 通知，本页不会因它重建 → 门控翻转后既不重取也不重渲染。显式订阅。
@@ -473,8 +493,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     _continueRowController.dispose();
     _nextRowController.dispose();
     _recentRowController.dispose();
+    _subscriptionRowController.dispose();
     _videoUidsSub?.cancel();
     _collectionTablesSub?.cancel();
+    _downloadSubscriptionsSub?.cancel();
+    _legacySubscriptionStore?.revision
+        .removeListener(_onLegacySubscriptionStoreChanged);
     _collectionsReloadDebounce?.cancel();
     _scrapePresentationSub?.cancel();
     _scrapePresentationReloadDebounce?.cancel();
@@ -521,6 +545,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       if (mounted) _loadLibraryMaps();
     });
   }
+
+  void _onLegacySubscriptionStoreChanged() => _onCollectionTablesChanged(null);
 
   void _onScrapePresentationChanged(void _) {
     _scrapePresentationReloadDebounce?.cancel();
@@ -749,6 +775,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       for (final VideoMetadataExtraRow extra in await metadataExtrasF)
         if (extra.bookUid != null) extra.bookUid!,
     };
+    final Set<int> subscribedCollectionIds =
+        await _loadSubscribedCollectionIds(db, appModel, collections);
     // v68 附加图组：一次全表查询按归属分桶（hero 背景/logo、续播行横卡）。
     final Map<int, List<MediaImageRow>> imagesByCollection =
         <int, List<MediaImageRow>>{};
@@ -781,9 +809,59 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       _metadataImagesByWork = metadataImagesByWork;
       _runtimeMinutesByBookUid = runtimeMinutesByBookUid;
       _localExtraBookUids = localExtraBookUids;
+      _subscribedCollectionIds = subscribedCollectionIds;
       _mediaImagesByCollection = imagesByCollection;
       _mediaImagesByBookUid = imagesByBookUid;
     });
+  }
+
+  /// 「已更新未看」行的订阅→合集解析输入（新 Drift 订阅：条目→任务、元数据身份→
+  /// 刮削作品；旧 AniList JSON 订阅：anilistId），纯逻辑在
+  /// [subscribedVideoCollectionIds]。订阅数量是个位数到几十，逐订阅查条目/作品
+  /// 身份的开销可忽略，不值得为它加全表 DAO。
+  Future<Set<int>> _loadSubscribedCollectionIds(
+    FushiDatabase db,
+    AppModel appModel,
+    List<MediaCollectionRow> collections,
+  ) async {
+    final List<VideoDownloadSubscriptionRow> subscriptions =
+        await db.getVideoDownloadSubscriptions();
+    final Map<String, List<VideoDownloadSubscriptionItemRow>>
+        itemsBySubscription = <String, List<VideoDownloadSubscriptionItemRow>>{};
+    final Map<String, int> collectionIdByProviderIdentity = <String, int>{};
+    for (final VideoDownloadSubscriptionRow sub in subscriptions) {
+      itemsBySubscription[sub.subscriptionId] =
+          await db.getVideoDownloadSubscriptionItems(sub.subscriptionId);
+      final String? provider = sub.metadataProvider;
+      final String? externalId = sub.externalId;
+      if (provider == null || externalId == null) continue;
+      final String key = providerIdentityKey(provider, externalId);
+      if (collectionIdByProviderIdentity.containsKey(key)) continue;
+      final VideoMetadataWorkRow? work =
+          await db.getVideoMetadataWorkByProviderIdentity(
+        provider: provider,
+        externalId: externalId,
+      );
+      if (work?.collectionId case final int cid) {
+        collectionIdByProviderIdentity[key] = cid;
+      }
+    }
+    final List<VideoDownloadJobRow> jobs = subscriptions.isEmpty
+        ? const <VideoDownloadJobRow>[]
+        : await db.getVideoDownloadJobs();
+    final List<AnimeDownloadSubscription> legacy =
+        await appModel.animeDownloadSubscriptionStore?.loadAll() ??
+            const <AnimeDownloadSubscription>[];
+    return subscribedVideoCollectionIds(
+      subscriptions: subscriptions,
+      itemsBySubscription: itemsBySubscription,
+      jobs: jobs,
+      collectionIdByProviderIdentity: collectionIdByProviderIdentity,
+      legacyAnilistIds: <int>[
+        for (final AnimeDownloadSubscription s in legacy) s.anilistId,
+      ],
+      collections: collections,
+    );
   }
 
   /// 附加图组里按种类偏好取首张可用图的 provider（文件悬空 = 视作没有）。
@@ -3015,9 +3093,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         _buildContinueRow(filtered, remoteVideos, coverHeight);
     final Widget? nextRow =
         _buildNextEpisodeRow(filtered, remoteVideos, coverHeight);
+    final Widget? subscriptionRow =
+        _buildSubscriptionUpdatesRow(filtered, remoteVideos, coverHeight);
     final Widget? recentRow =
         _buildRecentlyAddedRow(filtered, remoteVideos, coverHeight);
-    if (continueRow == null && nextRow == null && recentRow == null) {
+    if (continueRow == null &&
+        nextRow == null &&
+        subscriptionRow == null &&
+        recentRow == null) {
       return const SizedBox.shrink();
     }
     return Padding(
@@ -3032,6 +3115,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         children: <Widget>[
           if (continueRow != null) continueRow,
           if (nextRow != null) nextRow,
+          if (subscriptionRow != null) subscriptionRow,
           if (recentRow != null) recentRow,
         ],
       ),
@@ -3718,6 +3802,99 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     return _buildHorizontalCardRow(
       title: t.video_next_episode,
       controller: _nextRowController,
+      coverHeight: coverHeight,
+      items: items.take(15).toList(growable: false),
+    );
+  }
+
+  /// 「已更新未看」横滚行：**订阅过的作品**（[_subscribedCollectionIds]）里还有
+  /// 集数没看的合集，按未看成员最新入库时刻倒序取前 15；点卡片直接播第一集
+  /// 没看的（[selectVideoSubscriptionUpdate]，Next-Up 口径）。
+  ///
+  /// 用户视角：订阅的番剧「更新了就看，跟收菜一样」——不用逐个点进合集看哪部
+  /// 更新了。与「下一集」的区别：那一行要求有播放痕迹，新订阅一集没看过的
+  /// 作品进不去；与「最近添加」的区别：那一行 14 天后消失、看没看不管。成员
+  /// 序列与两行同口径（本地行 + 远端占位合成一条稳定集序）。
+  Widget? _buildSubscriptionUpdatesRow(
+    List<VideoBookRow> filtered,
+    List<RemoteVideoInfo> remoteVideos,
+    double coverHeight,
+  ) {
+    if (_subscribedCollectionIds.isEmpty) return null;
+    final Map<int, List<_VideoSlot>> grouped = <int, List<_VideoSlot>>{};
+    for (final VideoBookRow book in filtered) {
+      if (_localExtraBookUids.contains(book.bookUid)) continue;
+      final int? cid =
+          _primaryCollectionByEntry[MediaKind.video.compositeKey(book.bookUid)];
+      if (cid != null &&
+          _subscribedCollectionIds.contains(cid) &&
+          _collectionsById.containsKey(cid)) {
+        grouped
+            .putIfAbsent(cid, () => <_VideoSlot>[])
+            .add(_VideoSlot(local: book));
+      }
+    }
+    for (final RemoteVideoInfo video in remoteVideos) {
+      final int? cid = _remoteCollectionId(video);
+      if (cid == null || !_subscribedCollectionIds.contains(cid)) continue;
+      grouped
+          .putIfAbsent(cid, () => <_VideoSlot>[])
+          .add(_VideoSlot(remote: video));
+    }
+    final DateTime now = DateTime.now();
+    final List<_VideoRowItem> items = <_VideoRowItem>[];
+    grouped.forEach((int cid, List<_VideoSlot> members) {
+      members.sort(
+        (_VideoSlot a, _VideoSlot b) =>
+            _slotSortIndex(a).compareTo(_slotSortIndex(b)),
+      );
+      final VideoSubscriptionUpdate? update = selectVideoSubscriptionUpdate(
+        _slotPlaybackStates(members),
+        <int?>[for (final _VideoSlot m in members) _slotImportedAtMs(m)],
+      );
+      if (update == null) return;
+      final MediaCollectionRow collection = _collectionsById[cid]!;
+      final _VideoSlot target = members[update.targetIndex];
+      final int episodeNumber = update.targetIndex + 1;
+      items.add(
+        _VideoRowItem(
+          recentMs: update.latestUnwatchedImportedAtMs,
+          build: () => _buildRowMediaCard(
+            cardKey:
+                ValueKey<String>('home_video_subscription_collection_$cid'),
+            focusId: FushiFocusId('home-video-subscription-collection-$cid'),
+            cover: _collectionRowCoverProvider(
+                  collection,
+                  _localMembersOf(members),
+                ) ??
+                _slotCoverProvider(target),
+            title: _workTitle(collection),
+            coverHeight: coverHeight,
+            onTap: () => _openSlot(target, playlistCollectionId: cid),
+            onLongPress: () => _showCollectionContextMenu(collection),
+            tags: _collectionTagChips(cid),
+            episodeNumber: episodeNumber,
+            secondaryText: t.video_home_subscription_unwatched_episode(
+              n: episodeNumber,
+              count: update.unwatchedCount,
+            ),
+            // 「新」角标与「最近添加」同一时间窗：最新一集未看是 14 天内入库的。
+            newBadge: isVideoRecentlyAdded(
+              importedAt: update.latestUnwatchedImportedAtMs,
+              now: now,
+            ),
+            cloudBadge: target.local == null,
+          ),
+        ),
+      );
+    });
+    if (items.isEmpty) return null;
+    items.sort(
+      (_VideoRowItem a, _VideoRowItem b) => b.recentMs.compareTo(a.recentMs),
+    );
+    return _buildHorizontalCardRow(
+      title: t.video_home_subscription_updates,
+      controller: _subscriptionRowController,
       coverHeight: coverHeight,
       items: items.take(15).toList(growable: false),
     );
