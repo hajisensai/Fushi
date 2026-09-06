@@ -11,10 +11,15 @@ import 'package:fushi/src/sync/ttu_filename.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi/src/sync/ttu_models.dart';
 import 'package:fushi/src/sync/webdav_ops.dart';
+import 'package:fushi/src/sync/webdav_path_backend_mixin.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 class WebDavSyncBackend extends SyncBackend
-    with SyncFolderCache, SyncBackendFileTrioMixin, SyncAssetStoreDefaults {
+    with
+        SyncFolderCache,
+        SyncBackendFileTrioMixin,
+        SyncAssetStoreDefaults,
+        WebDavPathBackendMixin {
   WebDavSyncBackend._();
   static final WebDavSyncBackend instance = WebDavSyncBackend._();
 
@@ -112,68 +117,15 @@ class WebDavSyncBackend extends SyncBackend
     return path;
   }
 
+  // listBooks / ensureBookFolder / listSyncFiles 三件套由 WebDavPathBackendMixin
+  // 提供（与互联 client 逐字共享）；这里只交出会话原语与日志标签。
   @override
-  Future<List<SyncFileRef>> listBooks(String rootFolderId) async {
-    final entries = await _ops!.propfindChildren(rootFolderId);
-    return entries
-        .where((e) => e.isCollection && e.href != rootFolderId)
-        .map((e) => SyncFileRef(id: e.href, name: e.displayName))
-        .toList();
-  }
+  WebDavOps get davOps => _ops!;
 
   @override
-  Future<String> ensureBookFolder({
-    required String bookTitle,
-    required String rootFolderId,
-    SyncCoverDataProvider? readCoverData,
-  }) async {
-    final sanitized = requireBookFolderName(bookTitle);
-
-    if (folderIdCache.containsKey(sanitized)) {
-      // A cached id may have entered slash-less from a server PROPFIND href
-      // (some WebDAV servers omit the trailing slash on collection hrefs).
-      // Normalize on return so `folderId + fileName` never fuses the file into
-      // the root as `<title>audioBook_…` (BUG-845).
-      return ensureFolderIdTrailingSlash(folderIdCache[sanitized]!);
-    }
-
-    final path = '$rootFolderId${Uri.encodeComponent(sanitized)}/';
-    await _ops!.ensureCollection(path);
-    folderIdCache[sanitized] = path;
-
-    final Uint8List? coverData = await readCoverData?.call();
-    if (coverData != null) {
-      try {
-        final format = detectCoverFormat(coverData);
-        final coverPath = '${path}cover_1_6.${format.extension}';
-        final existing = await _ops!.headFile(coverPath);
-        if (!existing) {
-          await _ops!.putBytes(coverPath, coverData, format.mimeType);
-        }
-      } catch (e) {
-        debugPrint('[webdav] cover upload failed: $e');
-      }
-    }
-
-    return path;
-  }
+  String get davLogTag => '[webdav]';
 
   // ── Metadata sync ─────────────────────────────────────────────────
-
-  @override
-  Future<SyncFileTrio> listSyncFiles(String folderId) async {
-    final entries = await _ops!.propfindChildren(folderId);
-    final files = entries
-        .where((e) => !e.isCollection && e.href != folderId)
-        .map((e) => SyncFileRef(id: e.href, name: e.displayName))
-        .toList();
-
-    return SyncFileTrio(
-      progress: WebDavOps.findByPrefix(files, 'progress_'),
-      statistics: WebDavOps.findByPrefix(files, 'statistics_'),
-      audioBook: WebDavOps.findByPrefix(files, 'audioBook_'),
-    );
-  }
 
   // get{Progress,Stats,AudioBook}File 三件套由 SyncBackendFileTrioMixin 提供；
   // 这里只给出 WebDAV 的下载原语（size-capped GET + jsonDecode，见 WebDavOps）。
