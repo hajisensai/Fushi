@@ -16,6 +16,8 @@ import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/theme_notifier.dart'
+    show SurfaceRoles, ThemeNotifier, deriveSurfaceRolesFrom;
 import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -98,7 +100,6 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
-import 'package:fushi/src/utils/misc/fushi_color.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -312,7 +313,9 @@ typedef ReaderThemeColors = ({
 /// 页面统一用本结果，不再各自回落硬编码。
 ///
 /// 现在：
-/// - `custom-theme`：用用户自定义色（与旧行为一致）。
+/// - 自定义主题（`custom-theme` / `custom-theme:<id>`，BUG-2187）：先按 [scheme]
+///   派生一套基底，再把用户在 [customOverrides] 里**显式指定**的角色逐个盖上去；
+///   没指定的角色跟随主题（编辑页里显示为「跟随主题」）。
 /// - presetMap 命中（ecru/water/gray/dark/black）：用手调底色（向后兼容，零变化）。
 /// - 其余（light-theme / system-theme / 未来新增 key）：从真实 [scheme] 派生，
 ///   让阅读器背景/高亮/选区/链接真正跟随当前主题（强调色）。
@@ -320,14 +323,14 @@ ReaderThemeColors resolveReaderThemeColors({
   required String themeKey,
   required Map<String, ReaderThemeColors> presetMap,
   required ColorScheme scheme,
-  ReaderThemeColors? customColors,
+  ReaderThemeOverrides? customOverrides,
   Color? audioHighlightOverride,
 }) {
   final ReaderThemeColors base = _resolveBaseReaderThemeColors(
     themeKey: themeKey,
     presetMap: presetMap,
     scheme: scheme,
-    customColors: customColors,
+    customOverrides: customOverrides,
   );
   // TODO-977 根因修复：音频高亮（sasayaki 跟随高亮）颜色过去**只在 custom-theme**
   // 时可被用户改（其余主题恒用 primary/preset），所以非自定义主题下「一直用主色」。
@@ -350,25 +353,66 @@ ReaderThemeColors _resolveBaseReaderThemeColors({
   required String themeKey,
   required Map<String, ReaderThemeColors> presetMap,
   required ColorScheme scheme,
-  ReaderThemeColors? customColors,
+  ReaderThemeOverrides? customOverrides,
 }) {
-  if (themeKey == 'custom-theme' && customColors != null) {
-    return customColors;
-  }
   final ReaderThemeColors? preset = presetMap[themeKey];
   if (preset != null) {
     return preset;
   }
-  // light-theme / system-theme / 未覆盖的 key：跟随真实 ColorScheme。
+  // light-theme / system-theme / 自定义 / 未覆盖的 key：跟随真实 ColorScheme。
   final bool dark = scheme.brightness == Brightness.dark;
-  return (
+  final ReaderThemeColors fromScheme = (
     bg: scheme.surface,
     fg: scheme.onSurface,
-    sentenceAudioHighlight:
-        scheme.primary.withValues(alpha: dark ? 0.34 : 0.40),
+    sentenceAudioHighlight: scheme.primary.withValues(
+      alpha: dark ? 0.34 : 0.40,
+    ),
     // selection 用 tertiary：与 sasayaki(primary) 错开色相，查词高亮 ≠ 跟读高亮。
     selection: scheme.tertiary.withValues(alpha: dark ? 0.35 : 0.40),
     link: scheme.primary,
+    dark: dark,
+  );
+  if (customOverrides == null || !ThemeNotifier.isCustomThemeKey(themeKey)) {
+    return fromScheme;
+  }
+  return applyReaderThemeOverrides(fromScheme, customOverrides);
+}
+
+/// 自定义主题在阅读器四个角色上的**可选**覆盖：null = 跟随主题（BUG-2187）。
+///
+/// 旧的 `customColors: ReaderThemeColors` 要求五色齐全，于是 chrome 侧只能给没设
+/// 的角色硬编码白底/黑字兜底——深色模式下开自定义主题、只改了链接色，正文就变成
+/// 白底。现在未指定的角色与 system/light 主题走同一条 scheme 派生链。
+typedef ReaderThemeOverrides = ({
+  Color? bg,
+  Color? fg,
+  Color? selection,
+  Color? link,
+});
+
+/// 把 [overrides] 里非空的角色盖到 [base] 上。
+///
+/// 只指定了背景没指定字色时，字色按背景亮度取黑/白（而不是沿用 scheme.onSurface：
+/// 深色主题 + 用户选浅色纸底 → 白字白纸）；`dark` 同样跟随**最终**背景的亮度，
+/// 这样进度胶囊/词典弹窗等按 `dark` 分档的 chrome 与实际纸色一致。
+ReaderThemeColors applyReaderThemeOverrides(
+  ReaderThemeColors base,
+  ReaderThemeOverrides overrides,
+) {
+  final Color bg = overrides.bg ?? base.bg;
+  final bool dark = overrides.bg == null
+      ? base.dark
+      : ThemeData.estimateBrightnessForColor(bg) == Brightness.dark;
+  final Color fg = overrides.fg ??
+      (overrides.bg == null
+          ? base.fg
+          : (dark ? const Color(0xDEFFFFFF) : const Color(0xDE000000)));
+  return (
+    bg: bg,
+    fg: fg,
+    sentenceAudioHighlight: base.sentenceAudioHighlight,
+    selection: overrides.selection ?? base.selection,
+    link: overrides.link ?? base.link,
     dark: dark,
   );
 }
@@ -2930,142 +2974,143 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
               behavior: HitTestBehavior.translucent,
               onPointerDown: _handleReaderPointerDown,
               child: PopScope(
-              canPop: false,
-              onPopInvokedWithResult: (didPop, dynamic result) async {
-                if (didPop) return;
-                // BUG-782 加固：onWillPop 是异步长操作（落位置 flush + closeMedia
-                // 约百毫秒），窗口期内第二次退出触发（ESC/手柄 B 连按、退出按钮后
-                // 再 ESC）会并发再跑一条 onWillPop——首条完成 pop 掉阅读器后，第二
-                // 条的 nav.pop() 会把下面的书架也弹掉（连退两级 + closeMedia/自动
-                // 同步重复执行）。并发退出触发合并为一次。
-                if (_popInProgress) return;
-                _popInProgress = true;
-                try {
-                  final nav = Navigator.of(context);
-                  final bool allow = await onWillPop();
-                  if (allow && mounted) nav.pop();
-                } finally {
-                  // onWillPop 异常逃逸时复位，用户可重试退出而非永久困死。
-                  _popInProgress = false;
-                }
-              },
-              child: Scaffold(
-                backgroundColor: bgColor,
-                resizeToAvoidBottomInset: false,
-                body: Stack(
-                  fit: StackFit.expand,
-                  children: <Widget>[
-                    Positioned.fill(
-                      child: _buildBody(),
-                    ),
-                    if (!_readerContentReady ||
-                        _chapterTransitionSnapshot != null)
+                canPop: false,
+                onPopInvokedWithResult: (didPop, dynamic result) async {
+                  if (didPop) return;
+                  // BUG-782 加固：onWillPop 是异步长操作（落位置 flush + closeMedia
+                  // 约百毫秒），窗口期内第二次退出触发（ESC/手柄 B 连按、退出按钮后
+                  // 再 ESC）会并发再跑一条 onWillPop——首条完成 pop 掉阅读器后，第二
+                  // 条的 nav.pop() 会把下面的书架也弹掉（连退两级 + closeMedia/自动
+                  // 同步重复执行）。并发退出触发合并为一次。
+                  if (_popInProgress) return;
+                  _popInProgress = true;
+                  try {
+                    final nav = Navigator.of(context);
+                    final bool allow = await onWillPop();
+                    if (allow && mounted) nav.pop();
+                  } finally {
+                    // onWillPop 异常逃逸时复位，用户可重试退出而非永久困死。
+                    _popInProgress = false;
+                  }
+                },
+                child: Scaffold(
+                  backgroundColor: bgColor,
+                  resizeToAvoidBottomInset: false,
+                  body: Stack(
+                    fit: StackFit.expand,
+                    children: <Widget>[
                       Positioned.fill(
-                        child: _buildChapterTransitionOverlay(bgColor),
+                        child: _buildBody(),
                       ),
-                    if (_readerContentReady)
-                      const SizedBox.shrink(
-                          key: ValueKey<String>('fushi_content_ready')),
-                    if (!kReleaseMode && _lyricsMode && _lyricsPageReady)
-                      Positioned(
-                        left: 0,
-                        top: 0,
-                        width: 1,
-                        height: 1,
-                        child: IgnorePointer(
-                          child: Semantics(
-                            container: true,
-                            identifier: 'hibiki.reader.lyrics.ready',
-                            label: 'lyrics ready',
-                            child: const SizedBox(
-                              key: ValueKey<String>('fushi_lyrics_ready'),
-                              width: 1,
-                              height: 1,
+                      if (!_readerContentReady ||
+                          _chapterTransitionSnapshot != null)
+                        Positioned.fill(
+                          child: _buildChapterTransitionOverlay(bgColor),
+                        ),
+                      if (_readerContentReady)
+                        const SizedBox.shrink(
+                            key: ValueKey<String>('fushi_content_ready')),
+                      if (!kReleaseMode && _lyricsMode && _lyricsPageReady)
+                        Positioned(
+                          left: 0,
+                          top: 0,
+                          width: 1,
+                          height: 1,
+                          child: IgnorePointer(
+                            child: Semantics(
+                              container: true,
+                              identifier: 'hibiki.reader.lyrics.ready',
+                              label: 'lyrics ready',
+                              child: const SizedBox(
+                                key: ValueKey<String>('fushi_lyrics_ready'),
+                                width: 1,
+                                height: 1,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    // On-screen focus indicator for the "reading content" layer,
-                    // matching the app's standard focus ring (FushiFocusRing:
-                    // colorScheme.primary, 2.5px, 8px radius). Shown while the reader
-                    // content holds primary focus and no char cursor is active (the
-                    // cursor draws its own ring). Inset by the chrome insets so the
-                    // ring sits inside the reading viewport and the bottom bar never
-                    // occludes it — and so it is always on-screen (unlike the native
-                    // WebView focus outline, which drew off-screen at the scroll pos).
-                    if (_readerContentReady && !_lyricsMode)
-                      Positioned.fill(
-                        child: IgnorePointer(
-                          child: AnimatedBuilder(
-                            animation: _focusNode,
-                            builder: (context, _) {
-                              // Only in keyboard/gamepad highlight mode — matches the
-                              // app-wide FushiFocusRing convention (no focus ring in
-                              // touch mode). Rebuilt on highlight change via
-                              // _onHighlightModeChanged.
-                              final bool show = _focusNavEnabled &&
-                                  _focusNode.hasPrimaryFocus &&
-                                  _caretSurface == CaretSurface.none &&
-                                  FocusManager.instance.highlightMode ==
-                                      FocusHighlightMode.traditional;
-                              if (!show) return const SizedBox.shrink();
-                              // TODO-975：焦点环预留与喂 WebView 同源 _readerBottomReserve
-                              // （悬浮 0 / 挤压含底栏），保证环始终落在正文视口内。
-                              final double bottomInset = _readerBottomReserve;
-                              return Padding(
-                                padding: EdgeInsets.fromLTRB(
-                                    1.5, _readerTopOffset, 1.5, bottomInset),
-                                child: DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                      color:
-                                          Theme.of(context).colorScheme.primary,
-                                      width: 2.5,
+                      // On-screen focus indicator for the "reading content" layer,
+                      // matching the app's standard focus ring (FushiFocusRing:
+                      // colorScheme.primary, 2.5px, 8px radius). Shown while the reader
+                      // content holds primary focus and no char cursor is active (the
+                      // cursor draws its own ring). Inset by the chrome insets so the
+                      // ring sits inside the reading viewport and the bottom bar never
+                      // occludes it — and so it is always on-screen (unlike the native
+                      // WebView focus outline, which drew off-screen at the scroll pos).
+                      if (_readerContentReady && !_lyricsMode)
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            child: AnimatedBuilder(
+                              animation: _focusNode,
+                              builder: (context, _) {
+                                // Only in keyboard/gamepad highlight mode — matches the
+                                // app-wide FushiFocusRing convention (no focus ring in
+                                // touch mode). Rebuilt on highlight change via
+                                // _onHighlightModeChanged.
+                                final bool show = _focusNavEnabled &&
+                                    _focusNode.hasPrimaryFocus &&
+                                    _caretSurface == CaretSurface.none &&
+                                    FocusManager.instance.highlightMode ==
+                                        FocusHighlightMode.traditional;
+                                if (!show) return const SizedBox.shrink();
+                                // TODO-975：焦点环预留与喂 WebView 同源 _readerBottomReserve
+                                // （悬浮 0 / 挤压含底栏），保证环始终落在正文视口内。
+                                final double bottomInset = _readerBottomReserve;
+                                return Padding(
+                                  padding: EdgeInsets.fromLTRB(
+                                      1.5, _readerTopOffset, 1.5, bottomInset),
+                                  child: DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .primary,
+                                        width: 2.5,
+                                      ),
                                     ),
                                   ),
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                      ),
-                    // BUG-1744：全屏时窗口不可拖动、也没有交通灯要让位——这条
-                    // 不透明带在全屏下纯粹是一条顶部横带，必须整体不挂。
-                    if (Platform.isMacOS && !_macosFullscreen)
-                      Positioned(
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        height: kMacTitleBarHeight,
-                        // BUG-1692：本 Stack 里排在 WebView **之后**的每一块 Flutter
-                        // 内容都必须自带 RepaintBoundary，否则它们会合并进页面级
-                        // RepaintBoundary 那一张 cull rect = 整窗的 PictureLayer，
-                        // macOS engine 据此把整窗加进 FlutterMutatorView 的
-                        // _hitTestIgnoreRegion，WebView 整块收不到任何鼠标事件。
-                        child: RepaintBoundary(
-                          child: DragToMoveArea(
-                            child: ColoredBox(
-                              key: const ValueKey<String>(
-                                'fushi_reader_window_drag_area',
-                              ),
-                              color: bgColor,
+                                );
+                              },
                             ),
                           ),
                         ),
-                      ),
-                    _buildTopProgressBar(),
-                    buildDictionary(),
-                    // The bottom chrome returns a Positioned; it MUST stay a direct
-                    // child of this Stack. The chrome FocusScope is mounted INSIDE
-                    // the Positioned (see _buildAudiobookBar / _buildSettingsBar) so
-                    // it never detaches the Positioned's StackParentData (which would
-                    // drop the bar to the Stack's top-start alignment).
-                    _buildBottomChrome(),
-                  ],
+                      // BUG-1744：全屏时窗口不可拖动、也没有交通灯要让位——这条
+                      // 不透明带在全屏下纯粹是一条顶部横带，必须整体不挂。
+                      if (Platform.isMacOS && !_macosFullscreen)
+                        Positioned(
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          height: kMacTitleBarHeight,
+                          // BUG-1692：本 Stack 里排在 WebView **之后**的每一块 Flutter
+                          // 内容都必须自带 RepaintBoundary，否则它们会合并进页面级
+                          // RepaintBoundary 那一张 cull rect = 整窗的 PictureLayer，
+                          // macOS engine 据此把整窗加进 FlutterMutatorView 的
+                          // _hitTestIgnoreRegion，WebView 整块收不到任何鼠标事件。
+                          child: RepaintBoundary(
+                            child: DragToMoveArea(
+                              child: ColoredBox(
+                                key: const ValueKey<String>(
+                                  'fushi_reader_window_drag_area',
+                                ),
+                                color: bgColor,
+                              ),
+                            ),
+                          ),
+                        ),
+                      _buildTopProgressBar(),
+                      buildDictionary(),
+                      // The bottom chrome returns a Positioned; it MUST stay a direct
+                      // child of this Stack. The chrome FocusScope is mounted INSIDE
+                      // the Positioned (see _buildAudiobookBar / _buildSettingsBar) so
+                      // it never detaches the Positioned's StackParentData (which would
+                      // drop the bar to the Stack's top-start alignment).
+                      _buildBottomChrome(),
+                    ],
+                  ),
                 ),
               ),
-            ),
             ),
           ),
         );
@@ -3103,9 +3148,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   Widget _buildChapterTransitionOverlay(Color backgroundColor) {
     final MemoryImage? snapshot = _chapterTransitionSnapshot;
     if (snapshot == null) return ColoredBox(color: backgroundColor);
-    final Duration fadeDuration = appModel.einkMode
-        ? Duration.zero
-        : const Duration(milliseconds: 140);
+    final Duration fadeDuration =
+        appModel.einkMode ? Duration.zero : const Duration(milliseconds: 140);
     return IgnorePointer(
       child: ColoredBox(
         color: backgroundColor,
@@ -3323,8 +3367,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
         'withOffsets=$withOffsets');
     if (chapterFavs.isNotEmpty) {
       await HighlightBridge.applyHighlights(_controller!, chapterFavs,
-          backgroundHex: _readerBackgroundHex,
-          customHighlightCss: _customHighlightCss);
+          backgroundHex: _readerBackgroundHex);
       if (!mounted || _controller == null) return;
       await _controller!.evaluateJavascript(
         source:

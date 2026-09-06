@@ -275,6 +275,8 @@ ColorScheme buildFushiColorScheme({
   Color? secondary,
   Color? tertiary,
   Color? primaryContainer,
+  Color? surface,
+  bool neutralDerived = false,
 }) =>
     theme_notifier.buildFushiColorScheme(
       seedColor: seedColor,
@@ -284,6 +286,8 @@ ColorScheme buildFushiColorScheme({
       secondary: secondary,
       tertiary: tertiary,
       primaryContainer: primaryContainer,
+      surface: surface,
+      neutralDerived: neutralDerived,
     );
 
 /// 书架长按「悬浮字幕」启动后台听书的结果（供 UI 决定提示）。
@@ -3294,6 +3298,22 @@ class AppModel with ChangeNotifier {
   bool get customThemeDark => themeNotifier.customThemeDark;
   Future<void> setCustomThemeDark(bool v) =>
       themeNotifier.setCustomThemeDark(v);
+
+  // BUG-2187：阅读器等 ColorScheme 之外的消费者读「当前生效自定义主题」的角色色
+  // 必须走这几个 getter（条目优先、扁平偏好兜底、非自定义 key 恒 null），
+  // 不得再直接读下面的 legacy 扁平 getter。
+  Color? get activeCustomThemeFontColor =>
+      themeNotifier.activeCustomThemeFontColor;
+  Color? get activeCustomThemeBackgroundColor =>
+      themeNotifier.activeCustomThemeBackgroundColor;
+  Color? get activeCustomThemeSelectionColor =>
+      themeNotifier.activeCustomThemeSelectionColor;
+  Color? get activeCustomThemeLinkColor =>
+      themeNotifier.activeCustomThemeLinkColor;
+  Color? get activeCustomThemeSurfaceColor =>
+      themeNotifier.activeCustomThemeSurfaceColor;
+  bool get activeCustomThemeNeutralDerived =>
+      themeNotifier.activeCustomThemeNeutralDerived;
 
   Color? get customThemeFontColor => themeNotifier.customThemeFontColor;
   Future<void> setCustomThemeFontColor(Color? c) =>
