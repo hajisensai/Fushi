@@ -110,4 +110,69 @@ void main() {
     });
   });
 
+  /// 「主产物 → 退回它所在的容器」这条候选链是三个库页共用的形状：视频行是
+  /// `videoPath` + 播放列表各集，游戏条目是 exe + 工作目录。守住三条不变量：
+  /// 短路（第一条成功就不再骚扰文件管理器）、顺延（前面的没了继续试后面的）、
+  /// 空串不是候选（缺失字段不该白跑一次 reveal）。
+  group('revealFirstOf', () {
+    test('第一条成功就停手，不再试后面的候选', () async {
+      final List<String> tried = <String>[];
+      final bool revealed = await revealFirstOf(
+        <String>[r'D:\games\game.exe', r'D:\games'],
+        reveal: (String path) async {
+          tried.add(path);
+          return true;
+        },
+      );
+
+      expect(revealed, isTrue);
+      expect(tried, <String>[r'D:\games\game.exe']);
+    });
+
+    test('首选打不开时顺延到下一条候选', () async {
+      final List<String> tried = <String>[];
+      final bool revealed = await revealFirstOf(
+        <String>[r'D:\games\gone.exe', r'D:\games'],
+        reveal: (String path) async {
+          tried.add(path);
+          return path == r'D:\games';
+        },
+      );
+
+      expect(revealed, isTrue);
+      expect(tried, <String>[r'D:\games\gone.exe', r'D:\games']);
+    });
+
+    test('空串与纯空白不是候选，不会白跑一次 reveal', () async {
+      final List<String> tried = <String>[];
+      final bool revealed = await revealFirstOf(
+        <String>['', '   ', r'D:\games'],
+        reveal: (String path) async {
+          tried.add(path);
+          return true;
+        },
+      );
+
+      expect(revealed, isTrue);
+      expect(tried, <String>[r'D:\games']);
+    });
+
+    test('全都打不开返回 false，调用方据此提示', () async {
+      expect(
+        await revealFirstOf(
+          <String>[r'D:\games\gone.exe', r'D:\gone'],
+          reveal: (String _) async => false,
+        ),
+        isFalse,
+      );
+      expect(
+        await revealFirstOf(
+          const <String>[],
+          reveal: (String _) async => true,
+        ),
+        isFalse,
+        reason: '没有任何候选 = 定位不到，不能返回成功',
+      );
+    });
+  });
 }

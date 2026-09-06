@@ -14,6 +14,8 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/games_library_page.dart';
 import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart'
     show MediaItemDialogFrame;
+import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart'
+    show currentRevealHost;
 import 'package:fushi/utils.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -95,6 +97,10 @@ void main() {
         // 故紧邻它排在删除之前。未设过的游戏显示默认档 auto。
         if (Platform.isWindows)
           '${t.game_japanese_locale} · ${t.game_japanese_locale_auto}',
+        // 「打开文件位置」：与书架书卡 / 视频卡同一条动作、同一份文案。门控是
+        // 「有没有文件管理器契约」（桌面恒有，移动端恒无），不是 galgame 的 Windows
+        // 边界——flutter_test 宿主恒为桌面，故这里恒在场。
+        if (currentRevealHost() != null) t.media_file_location_open,
         t.game_remove,
       ];
 
