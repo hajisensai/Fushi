@@ -22,6 +22,7 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'active_profile_id',
   'app_locale',
   'app_ui_scale',
+  'asr_transcribe_language',
   'audio_source_configs',
   'audio_sources',
   'audiobook_background_play',

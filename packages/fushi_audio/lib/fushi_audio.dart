@@ -33,6 +33,7 @@ export 'src/audiobook/favorite_sentence_repository.dart';
 export 'src/matching/audio_text_normalizer.dart';
 export 'src/matching/epub_srt_matcher.dart';
 export 'src/matching/epub_cue_matcher.dart';
+export 'src/matching/anchor_gap_filler.dart';
 export 'src/matching/collection_audio_matcher.dart';
 export 'src/matching/cue_file_index_assigner.dart';
 export 'src/matching/subtitle_rematch_codec.dart';

@@ -7,3 +7,5 @@ tags:
     description: Golden image tests; only run on the reference platform.
   realdata:
     description: Tests that need real local fixtures; self-skip when absent.
+  ffmpeg:
+    description: Tests that spawn a real ffmpeg from PATH or the bundled ffmpeg-min; self-skip when absent.

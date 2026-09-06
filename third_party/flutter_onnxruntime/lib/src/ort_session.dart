@@ -100,8 +100,22 @@ class OrtSessionOptions {
   final bool? useArena;
   // set the device id for the session, default is 0
   final int? deviceId;
+  // Pin named free (symbolic) dimensions of the model inputs to fixed values
+  // (ORT `AddFreeDimensionOverrideByName`). With every input shape static the
+  // graph can be fused/compiled once at session creation instead of being
+  // re-planned on every run (DirectML: 5-7x encoder throughput on zipformer).
+  // Inputs must then be fed with exactly those dimensions. Only honoured on
+  // Windows (Hibiki fork); other platforms ignore the key.
+  final Map<String, int>? freeDimensionOverrides;
 
-  OrtSessionOptions({this.intraOpNumThreads, this.interOpNumThreads, this.providers, this.useArena, this.deviceId});
+  OrtSessionOptions({
+    this.intraOpNumThreads,
+    this.interOpNumThreads,
+    this.providers,
+    this.useArena,
+    this.deviceId,
+    this.freeDimensionOverrides,
+  });
 
   Map<String, dynamic> toMap() {
     return {
@@ -110,6 +124,8 @@ class OrtSessionOptions {
       if (providers != null && providers!.isNotEmpty) 'providers': providers!.map((p) => p.name).toList(),
       if (useArena != null) 'useArena': useArena,
       if (deviceId != null) 'deviceId': deviceId,
+      if (freeDimensionOverrides != null && freeDimensionOverrides!.isNotEmpty)
+        'freeDimensionOverrides': Map<String, int>.from(freeDimensionOverrides!),
     };
   }
 }
