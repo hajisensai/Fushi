@@ -287,15 +287,20 @@ class AsrTranscribeJob {
   final AsrSegmenter segmenter;
   final AsrBatchDecoder decoder;
 
-  /// 成批的**参考**段数：一批的音频预算 = [batchSize] × [kAsrBatchReferenceSeconds]
-  /// 秒。段短时一批可以装比它多得多的段（上限 [maxBatchSegments]），段都顶到
-  /// 20 s 时恰好是 [batchSize] 段。GPU 上越大越省往返；CPU 上受内存约束。
+  /// **动态 shape 路径**的成批参考段数：一批的音频预算 = [batchSize] ×
+  /// [kAsrBatchReferenceSeconds] 秒。段短时一批可以装比它多得多的段（上限
+  /// [maxBatchSegments]），段都顶到 20 s 时恰好是 [batchSize] 段。GPU 上越大越省
+  /// 往返；CPU 上受内存约束。
+  ///
+  /// 解码器实现了 [AsrBatchShaper]（GPU 静态 shape 桶）时**本参数与下面两项都不
+  /// 生效**：一批的行数由最长段所在桶的容量决定（`batchCapFor`），攒够就发——桶
+  /// 内每行成本相同，装满最划算，音频预算和 4 倍上限在那里没有意义。
   final int batchSize;
 
-  /// 一批最多装多少段（防止全是 1 s 短句时把一批撑到几百行）。
+  /// 动态路径：一批最多装多少段（防止全是 1 s 短句时把一批撑到几百行）。
   int get maxBatchSegments => batchSize * 4;
 
-  /// [batchSize] 对应的每段参考时长（= VAD 的 maxSegment 上限）。
+  /// 动态路径：[batchSize] 对应的每段参考时长（= VAD 的 maxSegment 默认上限）。
   static const int kAsrBatchReferenceSeconds = 20;
 
   /// 每块 PCM 的时长（秒）。也是检查点粒度上限。

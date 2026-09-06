@@ -135,6 +135,7 @@ class AsrTranscriptionService {
     this.segmenterKind = AsrSegmenterKind.energy,
     this.runInIsolate = true,
     this.usePipeline = true,
+    this.staticBucketsOverride,
   }) : _loader = loader ?? AsrEngineLoader(),
        _pcm = pcm ?? FfmpegAsrPcmSource(),
        _openStore = openStore ?? AsrModelStore.open,
@@ -145,8 +146,9 @@ class AsrTranscriptionService {
   final Future<AsrModelStore> Function(AsrLanguage language) _openStore;
   final Future<Directory> Function() _jobsRoot;
 
-  /// 一次 encoder 前向的段数；null 时按编码器实际落到的 EP 取
-  /// [defaultBatchSizeFor]。
+  /// 一次 encoder 前向的段数（动态 shape 路径）；null 时按编码器实际落到的 EP 取
+  /// [defaultBatchSizeFor]。GPU 静态桶路径下一批行数由桶决定，本值不生效
+  /// （见 [AsrTranscribeJob.batchSize]）。
   final int? batchSize;
   final int chunkSeconds;
   final AsrSegmenterKind segmenterKind;
@@ -158,6 +160,9 @@ class AsrTranscriptionService {
 
   /// 见 [AsrTranscribeJob.usePipeline]（基准对照用；生产恒 true）。
   final bool usePipeline;
+
+  /// 静态桶表覆盖（基准 / 调参用；生产为 null，按显存预算选表）。
+  final List<AsrEncoderBucket>? staticBucketsOverride;
 
   /// 默认批次：GPU 上 batch 越大越省逐帧 joiner 的往返（2026-09-05 真机分阶段计时
   /// 里逐帧循环是 ASR 阶段的大头，encoder 本身在 DirectML 上只占零头）；CPU 上
@@ -292,6 +297,18 @@ class AsrTranscriptionService {
     return File(p.join(p.dirname(path), AsrJobFiles.state)).existsSync();
   }
 
+  /// 全部音频的总时长（毫秒）；任一文件探不出就返回 null（策略按未知处理，
+  /// 不拿部分和冒充总长）。
+  Future<int?> _probeMaterialMs(List<String> audioPaths) async {
+    int total = 0;
+    for (final String path in audioPaths) {
+      final int? ms = await _pcm.probeDurationMs(path);
+      if (ms == null) return null;
+      total += ms;
+    }
+    return total;
+  }
+
   /// 丢弃该组音频在该语言下的全部转录进度与产物。
   Future<void> discard(List<String> audioPaths, AsrLanguage language) async {
     final Directory dir = await jobDirFor(audioPaths, language);
@@ -307,6 +324,8 @@ class AsrTranscriptionService {
   }) async {
     final AsrModelStore store = await _openStore(language);
     final Directory jobDir = await jobDirFor(audioPaths, language);
+    // 素材总时长（探测失败的文件按未知处理）：决定装载时预热几个静态桶。
+    final int? materialMs = await _probeMaterialMs(audioPaths);
     if (runInIsolate) {
       return AsrIsolateTranscription.spawn(
         AsrIsolateJobSpec(
@@ -320,6 +339,8 @@ class AsrTranscriptionService {
           segmenterKind: segmenterKind,
           batchSize: batchSize,
           usePipeline: usePipeline,
+          staticBucketsOverride: staticBucketsOverride,
+          materialMs: materialMs,
         ),
       );
     }
@@ -327,6 +348,8 @@ class AsrTranscriptionService {
       store: store,
       variant: variant,
       preference: preference,
+      staticBucketsOverride: staticBucketsOverride,
+      materialMs: materialMs,
     );
     try {
       final AsrTransducerDecoder decoder = AsrTransducerDecoder(

@@ -341,6 +341,30 @@ void main() {
       variant: variant,
     );
 
+    test('shouldPrewarmAllStaticBuckets：全桶表 + 预算已知 + 素材 ≥ 15 min 才全预热', () {
+      const int gib = 1024 * 1024 * 1024;
+      bool f({List<AsrEncoderBucket>? b, int? budget, int? ms}) =>
+          shouldPrewarmAllStaticBuckets(
+            buckets: b ?? kAsrGpuEncoderBuckets,
+            budgetBytes: budget,
+            materialMs: ms,
+          );
+      expect(f(budget: 12 * gib, ms: 9 * 3600 * 1000), isTrue);
+      expect(f(budget: 12 * gib, ms: kAsrPrewarmAllMinMaterialMs), isTrue);
+      expect(
+        f(budget: 12 * gib, ms: 5 * 60 * 1000),
+        isFalse,
+        reason: '短素材',
+      );
+      expect(f(budget: null, ms: 9 * 3600 * 1000), isFalse, reason: '预算未知');
+      expect(f(budget: 12 * gib, ms: null), isFalse, reason: '时长未知');
+      expect(
+        f(b: kAsrGpuEncoderBucketsSmall, budget: 8 * gib, ms: 9 * 3600 * 1000),
+        isFalse,
+        reason: '半桶表 = 预算吃紧',
+      );
+    });
+
     test('编码器落到 GPU EP 时建静态桶：只带 GPU provider + N/T 覆盖；CPU 不建', () async {
       final _FakeFactory gpu = _FakeFactory(
         available: const <OnnxExecutionProvider>{

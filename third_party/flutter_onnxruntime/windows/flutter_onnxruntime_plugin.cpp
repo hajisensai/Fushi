@@ -520,7 +520,8 @@ void FlutterOnnxruntimePlugin::HandleCreateSession(
         const auto &free_dims = std::get<flutter::EncodableMap>(free_dims_it->second);
         for (const auto &dim_pair : free_dims) {
           if (!std::holds_alternative<std::string>(dim_pair.first)) {
-            continue;
+            FailWith(result, "INVALID_ARG", "freeDimensionOverrides keys must be dimension names (strings)");
+            return;
           }
           int64_t dim_value = -1;
           if (std::holds_alternative<int32_t>(dim_pair.second)) {

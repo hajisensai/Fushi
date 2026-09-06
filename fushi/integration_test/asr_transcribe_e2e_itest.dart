@@ -28,6 +28,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/asr/asr_encoder_buckets.dart';
 import 'package:fushi/src/asr/asr_engine.dart';
 import 'package:fushi/src/asr/asr_model_manifest.dart';
 import 'package:fushi/src/asr/asr_model_store.dart';
@@ -51,6 +52,7 @@ String _param(String name, {String defaultValue = ''}) {
     'ASR_ONLY' => const String.fromEnvironment('ASR_ONLY'),
     'ASR_CHUNK_SECONDS' => const String.fromEnvironment('ASR_CHUNK_SECONDS'),
     'ASR_PIPELINE' => const String.fromEnvironment('ASR_PIPELINE'),
+    'ASR_BUCKETS' => const String.fromEnvironment('ASR_BUCKETS'),
     _ => '',
   };
   if (fromDefine.isNotEmpty) return fromDefine;
@@ -68,6 +70,17 @@ final String _kAudio = _param(
   defaultValue: 'test/asr/fixtures/ja_tts_16k.wav',
 );
 final String _kExpect = _param('ASR_EXPECT', defaultValue: '今日はいい天気ですね');
+
+List<AsrEncoderBucket>? _bucketsFromEnv(String spec) {
+  if (spec.isEmpty) return null;
+  return <AsrEncoderBucket>[
+    for (final String item in spec.split(','))
+      AsrEncoderBucket(
+        frames: int.parse(item.split('x')[0]),
+        batch: int.parse(item.split('x')[1]),
+      ),
+  ];
+}
 
 String _normalize(String s) =>
     s.toLowerCase().replaceAll(RegExp(r'[\s、。！？!?,.\x27"“”’]'), '');
@@ -94,6 +107,8 @@ _runOnce({
     chunkSeconds: int.tryParse(_param('ASR_CHUNK_SECONDS')) ?? 60,
     // ASR_PIPELINE=0：逐批串行解码（与三段式流水线做 A/B）。
     usePipeline: _param('ASR_PIPELINE') != '0',
+    // ASR_BUCKETS=560x32,1120x16：静态桶表覆盖（帧数x行数，按帧数递增）。
+    staticBucketsOverride: _bucketsFromEnv(_param('ASR_BUCKETS')),
   );
   await service.discard(<String>[audio], _kLang);
   final Stopwatch loadClock = Stopwatch()..start();

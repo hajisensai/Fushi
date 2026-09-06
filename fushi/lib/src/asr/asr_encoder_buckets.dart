@@ -69,6 +69,22 @@ const int kAsrStaticMaxSegmentMs = 10000;
 /// 的 8 成，而融合图会把全部中间张量一次分配、各桶池子常驻——桶越大、桶越多，
 /// VRAM 就越容易溢出到系统内存（三桶 64/32/16 × 550/1100/2100 曾把测试进程撑到
 /// 8 GB 被系统杀掉）。
+///
+/// **为什么不加更细的短桶**（2026-09-06 A/B，同机、桶预热后、`ASR_BUCKETS` 覆盖）：
+/// 段长分布确实偏短——英语 30 分钟 71% 的段 ≤ 5 s，日语 10 分钟 99% ≤ 5 s 且大头
+/// 在 1~3 s，560 帧桶被 1~3 s 的段填得很空（日语 padding 3.25x）。但加一档 280 帧：
+///
+/// | 桶表 | 英语 30 min wall / padding | 日语 10 min wall / padding | 峰值显存（含桌面基线） |
+/// |---|---|---|---|
+/// | 560×32 + 1120×16 | 6.4 s / 2.19x | 5.2 s / 3.25x | 10.2 / 11.4 GB |
+/// | 280×64 + 560×32 + 1120×16 | 11.8 s / 2.19x | 11.1 s / 2.53x | 11.9 / 11.6 GB |
+/// | 280×48 + 560×32 + 1120×16 | 6.6 s / 2.11x | 12.2 s / 2.53x | 10.0 / 11.6 GB |
+///
+/// 英语的 padding 几乎不动：成批按最长段选桶、从最长往下取，短段在到达 280 桶之前
+/// 就被 560 桶的批顺手带走了；日语 padding 有降，但第三份常驻权重 + 中间张量把
+/// 12 GB 卡顶到溢出，wall 翻倍（280 帧桶单会话吞吐本身正常：64×280 两个模型都
+/// 120k 帧/s 以上）。桌面基线本身占 4.5 GB，两桶时本进程约 5.7 GB（英语）/
+/// 6.9 GB（日语）；padding 剩下的空间只能靠更多显存换，本机没有。
 /// 哪些执行后端真的实现了 free-dimension override —— 也就是静态桶**唯一**能带来
 /// 收益的那批。白名单不是黑名单：`freeDimensionOverrides` 只有 vendored
 /// flutter_onnxruntime 的 Windows 插件读（`third_party/flutter_onnxruntime/
@@ -230,6 +246,16 @@ class AsrStaticEncoderPool {
     await sessionFor(buckets.first.frames);
   }
 
+  /// 把全部桶建起来并等建完。只在显存预算已知且够放整张桶表时用（见
+  /// `asr_engine.dart` 的预热策略）；建失败的桶各自记原因、不抛。
+  Future<void> prewarmAll() async {
+    await Future.wait<AsrStaticEncoderSession?>(
+      <Future<AsrStaticEncoderSession?>>[
+        for (final AsrEncoderBucket b in buckets) sessionFor(b.frames),
+      ],
+    );
+  }
+
   /// 运行期发现该桶不可用（建得起来、`run` 抛错）：关掉会话、记原因，之后
   /// [sessionFor] 对该桶恒返回 null。
   void markUnavailable(
@@ -252,14 +278,14 @@ class AsrStaticEncoderPool {
     }
   }
 
+  /// 关闭已建成的桶会话。**不等**还在建的桶：建一个桶 3~8 s，用户在转录刚开始
+  /// 点取消不该干等；[_create] 见到 `_closed` 会在建成的那一刻自己把会话关掉。
   Future<void> close() async {
     _closed = true;
-    for (final Future<AsrStaticEncoderSession?> p in _pending.values.toList()) {
-      await p;
-    }
-    for (final AsrStaticEncoderSession s in _sessions.values) {
+    final List<AsrStaticEncoderSession> ready = _sessions.values.toList();
+    _sessions.clear();
+    for (final AsrStaticEncoderSession s in ready) {
       await s.session.close();
     }
-    _sessions.clear();
   }
 }

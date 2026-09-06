@@ -98,6 +98,29 @@ List<OnnxExecutionProvider> selectAsrEncoderProviders({
   return cpuOnly;
 }
 
+/// 装载时要不要把全部静态桶建好（纯函数，可测）。
+///
+/// 三个条件同时成立才全预热：
+/// - [buckets] 是全桶表（[kAsrGpuEncoderBuckets]）——半桶表本来就是预算吃紧的信号；
+/// - [budgetBytes] 已知（≥ 10 GiB 才会拿到全桶表，两桶常驻峰值 6.6~7.6 GB 实测过）；
+/// - [materialMs] 已知且 ≥ [kAsrPrewarmAllMinMaterialMs]：每桶 3~8 s 的建桶只有在
+///   素材够长时才摊得平——5 分钟片段本身只转 2~3 s，为省几百毫秒 padding 先花
+///   8 s 建大桶是净亏。
+bool shouldPrewarmAllStaticBuckets({
+  required List<AsrEncoderBucket> buckets,
+  required int? budgetBytes,
+  required int? materialMs,
+}) {
+  if (!identical(buckets, kAsrGpuEncoderBuckets)) return false;
+  if (budgetBytes == null) return false;
+  if (materialMs == null) return false;
+  return materialMs >= kAsrPrewarmAllMinMaterialMs;
+}
+
+/// 全预热的素材时长门槛：15 分钟。RTX 4070 Ti 上 30 分钟英语按需建大桶要多付
+/// ~4 s（wall 6 s → 10 s），15 分钟约多付 2 s，与提前建桶的 3~8 s 打平。
+const int kAsrPrewarmAllMinMaterialMs = 15 * 60 * 1000;
+
 /// 推荐下载 / 加载哪个编码器变体：会选到 GPU EP 就 fp32，否则 int8。
 ///
 /// fp32 比 int8 大 437 MB，只有 GPU 能把这笔磁盘换成速度；CPU 上 int8 反而更快
@@ -197,6 +220,8 @@ class AsrEngineLoader {
     required AsrAccelerationPreference preference,
     bool useGreedyGraph = true,
     bool useStaticEncoderBuckets = true,
+    List<AsrEncoderBucket>? staticBucketsOverride,
+    int? materialMs,
     int? greedyIntraOpThreads = kAsrGreedyGraphIntraOpThreads,
   }) async {
     Set<OnnxExecutionProvider> available = const <OnnxExecutionProvider>{};
@@ -307,9 +332,9 @@ class AsrEngineLoader {
       if (useStaticEncoderBuckets &&
           kAsrStaticBucketProviders.contains(effective)) {
         final int? budget = await _factory.deviceMemoryBudgetBytes();
-        final List<AsrEncoderBucket> buckets = asrEncoderBucketsForBudget(
-          budget,
-        );
+        // 桶表：基准 / 调参用的显式覆盖优先，否则按显存预算选。
+        final List<AsrEncoderBucket> buckets =
+            staticBucketsOverride ?? asrEncoderBucketsForBudget(budget);
         developer.log(
           'ASR static encoder buckets for GPU budget '
           '${budget == null ? 'unknown' : '${budget ~/ (1024 * 1024)} MiB'}: '
@@ -324,12 +349,22 @@ class AsrEngineLoader {
             buckets: buckets,
             logName: kAsrLogName,
           );
-          // 只预热最小桶并等它建完：两个桶各驻一份 fp32 编码器权重 + 融合图一次性
-          // 分配的全部中间张量，实测 E2E 峰值 6.6~7.6 GB（12 GB 卡独占）。显存不够
-          // 时 DML **不抛异常**——它溢出到主机内存，表现是 RSS 暴涨到被系统杀掉，
-          // 回退机制照不到这条路径。大桶留给真正出现长段时按需建（`sessionFor`
-          // 本来就是惰性的）；等最小桶建完再开跑，进度 / ETA 才不会把建桶算进去。
-          await staticEncoders.prewarmSmallest();
+          // 预热策略（见 [shouldPrewarmAllStaticBuckets]）：素材够长且预算够放整张
+          // 桶表时全部预热并等建完——每桶 3~8 s，留到转录中途按需建会在 GPU 队列上
+          // 把编码停住同样久，且进度 / ETA 会把停顿算成转录速度；短素材或预算不足
+          // 时只预热最小桶，大桶按需建（`sessionFor` 本来就是惰性的）。显存不够时
+          // DML **不抛异常**——它溢出到主机内存、RSS 暴涨到被系统杀掉，回退机制照
+          // 不到这条路径，所以预算这道门必须在建桶之前。
+          if (staticBucketsOverride != null ||
+              shouldPrewarmAllStaticBuckets(
+                buckets: buckets,
+                budgetBytes: budget,
+                materialMs: materialMs,
+              )) {
+            await staticEncoders.prewarmAll();
+          } else {
+            await staticEncoders.prewarmSmallest();
+          }
         }
       }
       developer.log(

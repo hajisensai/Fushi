@@ -129,14 +129,13 @@ class _PlainDecoder implements AsrBatchDecoder {
   @override
   Future<List<AsrDecodedSegment>> decodeBatch(
     List<AsrSpeechSegment> segments,
-  ) async =>
-      <AsrDecodedSegment>[
-        for (final AsrSpeechSegment s in segments)
-          AsrDecodedSegment(
-            tokens: <String>['${s.startMs ~/ 1000}'],
-            tokenOffsetsMs: const <int>[0],
-          ),
-      ];
+  ) async => <AsrDecodedSegment>[
+    for (final AsrSpeechSegment s in segments)
+      AsrDecodedSegment(
+        tokens: <String>['${s.startMs ~/ 1000}'],
+        tokenOffsetsMs: const <int>[0],
+      ),
+  ];
 }
 
 void main() {
@@ -166,6 +165,32 @@ void main() {
     expect(events.last, isA<AsrTranscribeFinishedEvent>());
     return AsrTranscribeJob.loadSegments(job.jobDir);
   }
+
+  test('静态桶模式：一批恰好 cap 行（末批除外），batchSize / 音频预算不参与', () async {
+    // batchSize=1 在动态路径下意味着一批 ≤ 20 s 音频（每段 5/7 s ≈ 0.7 s，
+    // 也就是 4 段一批封顶）；有 shaper 时全按 cap=3 走。
+    final _PipeDecoder pipe = _PipeDecoder();
+    final AsrTranscribeJob job = AsrTranscribeJob(
+      jobDir: Directory(p.join(tmp.path, 'cap')),
+      audioPaths: const <String>['a.mp3'],
+      modelId: 'm',
+      pcm: _Pcm(chunks: 2),
+      segmenter: _Segmenter(perChunk: 7),
+      decoder: pipe,
+      batchSize: 1,
+      chunkSeconds: 5,
+      progressInterval: Duration.zero,
+    );
+    await job.run().toList();
+    final List<int> sizes = pipe.events
+        .where((String e) => e.startsWith('enc-start '))
+        .map((String e) => e.substring(10).split(',').length)
+        .toList();
+    // 每块 7 段：3 + 3 + 1；块末 drain(all) 把不足一批的也发掉。
+    expect(sizes, <int>[3, 3, 1, 3, 3, 1]);
+    expect(sizes.every((int n) => n <= _PipeDecoder.cap), isTrue);
+    expect(job.maxBatchSegments, 4, reason: '动态路径的上限在这里没被用到');
+  });
 
   test('流水线与串行解码产出相同的段落集合（按起点排序后逐条一致）', () async {
     final _PipeDecoder pipe = _PipeDecoder();
@@ -240,8 +265,7 @@ void main() {
         if (state.resumeSamples[0] >= 5 * kAsrSampleRate) {
           segmentsAtCheckpoint = (await AsrTranscribeJob.loadSegments(
             job.jobDir,
-          ))
-              .length;
+          )).length;
         }
       }
     }

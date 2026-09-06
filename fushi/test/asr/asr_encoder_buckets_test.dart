@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -134,10 +135,25 @@ class _FakeFactory implements OnnxSessionFactory {
   }
 }
 
+/// createSession 挂起直到 [release] 的 fake 工厂（模拟 3~8 s 的建桶）。
+class _SlowFactory implements OnnxSessionFactory {
+  final Completer<OnnxSession> _gate = Completer<OnnxSession>();
+
+  void release(OnnxSession session) => _gate.complete(session);
+
+  @override
+  Future<OnnxSession> createSession(
+    String modelPath, {
+    required List<OnnxExecutionProvider> providers,
+    int? intraOpNumThreads,
+    Map<String, int>? freeDimensionOverrides,
+  }) => _gate.future;
+}
+
 AsrSpeechSegment _segment(int ms) => AsrSpeechSegment(
-      startSample: 0,
-      samples: Float32List(ms * kAsrSampleRate ~/ 1000),
-    );
+  startSample: 0,
+  samples: Float32List(ms * kAsrSampleRate ~/ 1000),
+);
 
 const List<AsrEncoderBucket> _buckets = <AsrEncoderBucket>[
   AsrEncoderBucket(frames: 500, batch: 4),
@@ -191,6 +207,29 @@ void main() {
       await pool.close();
       expect(factory.created.single.closed, isTrue);
       expect(await pool.sessionFor(300), isNull, reason: '关闭后不再建');
+    });
+
+    test('close() 不等还在建的桶；那个桶建成后自己关掉', () async {
+      final _SlowFactory factory = _SlowFactory();
+      final AsrStaticEncoderPool pool = AsrStaticEncoderPool(
+        factory: factory,
+        modelPath: 'enc.onnx',
+        providers: const <OnnxExecutionProvider>[
+          OnnxExecutionProvider.directml,
+        ],
+        buckets: _buckets,
+      );
+      final Future<AsrStaticEncoderSession?> building = pool.sessionFor(300);
+      bool closed = false;
+      final Future<void> closing = pool.close().then((_) => closed = true);
+      await Future<void>.delayed(Duration.zero);
+      expect(closed, isTrue, reason: 'close() 不能等 3~8 s 的建桶');
+      // 建桶完成：会话被池子立刻关掉，调用方拿到 null。
+      final _RecordingEncoder late = _RecordingEncoder('late');
+      factory.release(late);
+      expect(await building, isNull);
+      expect(late.closed, isTrue);
+      await closing;
     });
 
     test('建失败的桶记原因、返回 null，不影响其它桶', () async {

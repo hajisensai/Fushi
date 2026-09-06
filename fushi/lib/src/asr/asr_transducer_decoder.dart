@@ -56,6 +56,9 @@ class AsrDecodeStats {
   final Duration encoder;
   final Duration search;
 
+  /// encoder 实际算过的帧数 / 真实帧数。两条路径口径一致：都是「喂给 encoder 的
+  /// 张量面积 ÷ 各段真实帧数之和」——动态路径的面积是 batch × 批内最长，静态路径
+  /// 是桶的 N × T（含哨兵行）。1.0 = 零浪费。
   double get paddingRatio => realFrames == 0 ? 1 : paddedFrames / realFrames;
 
   AsrDecodeStats add({

@@ -55,6 +55,8 @@ class AsrIsolateJobSpec {
     required this.segmenterKind,
     this.batchSize,
     this.usePipeline = true,
+    this.staticBucketsOverride,
+    this.materialMs,
   });
 
   final String storeDirPath;
@@ -67,6 +69,12 @@ class AsrIsolateJobSpec {
   final AsrSegmenterKind segmenterKind;
 
   final bool usePipeline;
+
+  /// 见 [AsrTranscriptionService.staticBucketsOverride]。
+  final List<AsrEncoderBucket>? staticBucketsOverride;
+
+  /// 素材总时长（毫秒；null = 未知），决定装载时的桶预热策略。
+  final int? materialMs;
 
   /// null = 按编码器实际落到的 EP 取 [AsrTranscriptionService.defaultBatchSizeFor]。
   final int? batchSize;
@@ -322,6 +330,8 @@ Future<void> _isolateMain(_IsolateArgs args) async {
       store: store,
       variant: spec.variant,
       preference: spec.preference,
+      staticBucketsOverride: spec.staticBucketsOverride,
+      materialMs: spec.materialMs,
     );
     args.events.send(
       _LoadedMessage(
