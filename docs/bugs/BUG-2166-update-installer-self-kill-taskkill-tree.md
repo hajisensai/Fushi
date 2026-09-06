@@ -95,6 +95,14 @@ marker 有两个写者：Dart 和 C++ `update_launcher.cpp`（`AppendMarkerField
    `test/utils/misc` 三个目录 1051 条绿；三条变异（加回 `/T`、加回 `contains('mutex')`、
    删掉 `~Gamepads()`）全部被守卫抓红。
 
+4. 全量套件：`FLUTTER TEST VERDICT: PASSED - 23074 tests ran, all tests passed`。
+   注意前两次全量是**环境红**，判据三条：失败的是**不同文件**（`galgame_path_match` →
+   `position_pref_keys_guard`）；错误都在传输层而非断言（`Connection closed before test
+   suite loaded` / `Unable to connect to flutter_tester process: WebSocketException:
+   Invalid WebSocket upgrade request`，全程无 `Expected:`）；两文件单跑 17 条全绿且与本
+   改动无交集。**把 `HTTP(S)_PROXY` 整个摘掉后一次就绿** —— 只设 `NO_PROXY` 含 `::1`
+   并不足以挡住劫持。
+
 - **备注**：**端到端的一次真实应用内更新没有跑**——本机运行编译出的安装器会执行
   `taskkill /F /IM fushi.exe`，那会关掉用户当前正开着的生产 Fushi。所以这一层留给下一次
   真实更新验证；上面 1 与 2 已把「/T 会不会连坐」和「脚本能不能编译」两个关键点各自钉死。
