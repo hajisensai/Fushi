@@ -2606,9 +2606,25 @@ $_sharedJs
       // started, keep the original page so a ±1-column repagination doesn't
       // visibly shift the reader; otherwise jump to the char's actual page.
       var origPage = Math.round(hintScroll / context.pageSize);
-      aligned = (Math.abs(charPage - origPage) <= 1)
-        ? origPage * context.pageSize
-        : charPage * context.pageSize;
+      if (Math.abs(charPage - origPage) <= 1) {
+        aligned = origPage * context.pageSize;
+        // BUG-2167：±1 保原页只该兜「页边界舍入抖动」（同一布局下锚字恰在页首、collapsed
+        // range 被算到上一列末）。缩字号 / 减边距 / 减行高 / 挤压态藏底栏这类**让每页
+        // 装更多字**的重排会把锚字真的推到前一页：仍保原页 = 新页首字越过锚字 = 用户
+        // 丢掉锚字到新页首这段正文（缩一步丢一页），且随后的进度刷新把这段当「新读到」
+        // 计进统计（分页 progress 按节点粒度、水位只升不降 → 单向棘轮，反复缩放每次多计
+        // 一页）。判据不用像素容差（横排末行 collapsed range 的 x 可落在整列任意处），
+        // 而是落页后**实测页首字**：原页页首字 > 锚字即锚已丢，改落锚字所在页。
+        // 放大字号（charPage > origPage）保原页只会让页首字 ≤ 锚字（多看到已读的几行），
+        // 不丢正文、不推进度，维持原行为。
+        if (charPage < origPage) {
+          this.setPagePosition(context, aligned);
+          var firstOnOrig = this.getFirstVisibleCharOffset();
+          if (firstOnOrig > charOffset) aligned = charPage * context.pageSize;
+        }
+      } else {
+        aligned = charPage * context.pageSize;
+      }
     } else {
       aligned = charPage * context.pageSize;
     }

@@ -24,6 +24,10 @@
 - 遇到 WebView renderer crash、资源 404、CacheStorage 或旧资源症状，要区分当前资源拦截、旧迁移资产和用户设备缓存；不要加 TTU dummy 文件或用清数据掩盖真实升级问题。
 - 调试 DOM/JS 用 Chrome DevTools Protocol 或 WebView inspection 读 DOM、console、JS 变量和布局尺寸；截图只能证明视觉现象，不能替代 DOM/边界数据。
 
+## Headless Chrome 探针（真渲染、本机跑）
+
+CI 跑不到真 WebView，分页 / 连续 shell 的落点、重锚、字号变化这类**真渲染**行为只能靠 `tool/reader_pitch_headless/*.mjs`（puppeteer-core + 本机 Chrome，`npm install` 一次装依赖，`CHROME_PATH` 可覆盖路径）。shell 自 2026-08 起是运行时工厂（`window.__fushiShells.<mode>(C)`），裸 shell 不能自举——探针必须吃 `reader_headless_shell_dump_test.dart` 写到 systemTemp 的**完整引擎产物** `fushi_engine_{paginated,continuous}.html`，在页面里按真实装配顺序 `window.__fushiInstallShell(C)` 安装（C 至少含 `vnMode / continuousMode / dartPageWidth / dartPageHeight / chromeTopInset / chromeBottomInset / initialCharOffset / initialProgress / initialFragment / sentenceAudioCues`），load 时自动 boot `initialize()`。范例：`font_shrink_reanchor_probe.mjs`（BUG-2167：改字号重锚后页首字不得越过锚字）。仍读旧 `fushi_shell_*.html` 的老探针需要按同样方式改造后才能跑。
+
 ## 平台特例
 
 - **Windows WebView2** 阅读器/字级焦点本身不坏；caret 测试失败常因书架里残留 lyrics-mode 旧书 → seed/打开一本全新分页书（`book_entry_fushi://book/<id>`）复测。
