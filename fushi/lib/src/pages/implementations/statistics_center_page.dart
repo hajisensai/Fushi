@@ -91,6 +91,7 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
   String? _error;
   List<StatFact> _daily = <StatFact>[];
   Map<String, String> _bookKeyByTitle = <String, String>{};
+  Set<String> _ambiguousBookTitles = <String>{};
   Map<String, String> _epubUidByBookKey = <String, String>{};
   Map<String, int> _primaryCollectionByEntry = <String, int>{};
   Map<int, String> _collectionNamesById = <int, String>{};
@@ -108,11 +109,11 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
       final FushiDatabase db = appModel.database;
       final StatFacts facts = await loadStatFacts(db, activityLimit: 0);
       _daily = facts.daily;
-      _bookKeyByTitle = <String, String>{
-        for (final EpubBookMeta r in facts.epubRows) r.title: r.bookKey,
-      };
+      // BUG-2178：同名 ≥2 本的 title 不进反查表（贴给任意一本都是错贴）。
+      _bookKeyByTitle = uniqueBookKeyByTitle(facts.epubRows);
+      _ambiguousBookTitles = ambiguousBookTitles(facts.epubRows);
       _epubUidByBookKey = <String, String>{
-        for (final EpubBookMeta r in facts.epubRows)
+        for (final EpubBookRow r in facts.epubRows)
           if (r.uid.isNotEmpty) r.bookKey: r.uid,
       };
       _collectionNamesById = <int, String>{
@@ -145,10 +146,7 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
     final StatWindow w = StatWindow(DateTime.now());
     return ListView(
       padding: EdgeInsets.only(bottom: tokens.spacing.card * 2),
-      children: <Widget>[
-        _buildGoalCard(tokens, w),
-        _buildSummaryCards(w),
-      ],
+      children: <Widget>[_buildGoalCard(tokens, w), _buildSummaryCards(w)],
     );
   }
 
@@ -196,15 +194,12 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
   /// 四张跨域时段卡：主值=学习总时长，副行=学习总字数；点卡 → 完整日面的时段
   /// 明细 sheet。
   Widget _buildSummaryCards(StatWindow w) {
-    return buildStatPeriodSummaryGrid(
-      context,
-      <StatPeriodSummary>[
-        _periodSummary(t.stat_today, w.isToday),
-        _periodSummary(t.stat_this_week, w.inWeek),
-        _periodSummary(t.stat_this_month, w.inMonth),
-        _periodSummary(t.stat_all_time, (String _) => true),
-      ],
-    );
+    return buildStatPeriodSummaryGrid(context, <StatPeriodSummary>[
+      _periodSummary(t.stat_today, w.isToday),
+      _periodSummary(t.stat_this_week, w.inWeek),
+      _periodSummary(t.stat_this_month, w.inMonth),
+      _periodSummary(t.stat_all_time, (String _) => true),
+    ]);
   }
 
   StatPeriodSummary _periodSummary(
@@ -222,9 +217,7 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
       label: label,
       primaryValue: formatStatTime(ms),
       onTap: () => unawaited(_showPeriodDetail(label, contains)),
-      lines: <StatSummaryLine>[
-        StatSummaryLine(value: formatStatChars(chars)),
-      ],
+      lines: <StatSummaryLine>[StatSummaryLine(value: formatStatChars(chars))],
     );
   }
 
@@ -242,7 +235,11 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
         titleOf: _entryTitle,
         collectionOf: _entryCollection,
         onEntryTap: _openEntry,
-        onEntryDelete: (StatPeriodEntryTarget t) => deleteStatPeriodEntry(db, t),
+        onEntryDelete: (StatPeriodEntryTarget t) =>
+            deleteStatPeriodEntry(db, t),
+        ambiguousTitlesOf: (String kind) => kind == kActivityMediaBook
+            ? _ambiguousBookTitles
+            : const <String>{},
       ),
     );
     if (deleted && mounted) await _load();
@@ -260,8 +257,9 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
       return name.isEmpty ? f.mediaKey : name;
     }
     if (f.isBook) {
-      final String? bookKey =
-          f.mediaKey.isNotEmpty ? f.mediaKey : _bookKeyByTitle[f.title];
+      final String? bookKey = f.mediaKey.isNotEmpty
+          ? f.mediaKey
+          : _bookKeyByTitle[f.title];
       if (bookKey == null) return f.title;
       return ReaderFushiSource.instance.overrideTitleForBookKey(bookKey) ??
           f.title;
@@ -272,8 +270,9 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
   /// 事实行 → 所属合集名（v83 键契约：epub 经 bookKey→uid 换算）。
   String? _entryCollection(StatFact f) {
     if (f.isBook) {
-      final String? bookKey =
-          f.mediaKey.isNotEmpty ? f.mediaKey : _bookKeyByTitle[f.title];
+      final String? bookKey = f.mediaKey.isNotEmpty
+          ? f.mediaKey
+          : _bookKeyByTitle[f.title];
       if (bookKey == null) return null;
       return statCollectionName(
         MediaKind.epub.compositeKey(_epubUidByBookKey[bookKey] ?? bookKey),
@@ -321,11 +320,11 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
     if (mediaKind == kActivityMediaBook) {
       final List<MediaItem> books =
           ref.read(fushiBooksProvider(JapaneseLanguage.instance)).valueOrNull ??
-              const <MediaItem>[];
+          const <MediaItem>[];
       for (final MediaItem item in books) {
         final String? key =
             ReaderFushiSource.parseBookKey(item.mediaIdentifier) ??
-                ReaderFushiSource.parseSrtBookUid(item.mediaIdentifier);
+            ReaderFushiSource.parseSrtBookUid(item.mediaIdentifier);
         if (key == mediaKey) {
           final MediaSource source = item.getMediaSource(appModel: appModel);
           await appModel.openMedia(ref: ref, mediaSource: source, item: item);

@@ -9,8 +9,8 @@
 ## 写入面
 
 - 只有一个时钟 `StudyClock`（`packages/fushi_audio/lib/src/audiobook/study_clock.dart`）：断档（120s）/ 活跃态（视频 = isPlaying）/ 空闲门（阅读面，默认 10 分钟，设置项 `reading.stats_idle_timeout_minutes`）三道守卫，段不跨小时边界，`stop()` 结构性幂等（清引用在首个 await 之前）。
-- 页面**不许**持有 `_sessionReadingMs` / `_sessionCharsRead` 之类会话累计器；字数 / 页数经 `clock.addChars` / `addPages` 记到当前段；用户输入经 `clock.touch()` 喂空闲门（EPUB `_refreshProgressFromScroll` / PDF `_onPageChanged` / 漫画 `_armPageDwellCount`）。
-- 阅读面切屏（`paused` / `inactive`）必须 `stop()`、`resumed` 必须 `start()`；视频面 `inactive` **不**停（用户拍板：切走仍在播照常计时）。
+- 页面**不许**持有 `_sessionReadingMs` / `_sessionCharsRead` 之类会话累计器；字数 / 页数经 `clock.addChars` / `addPages` 记到当前段（停表期间两者直接丢弃、不开段，BUG-2172）；用户输入经 `clock.touch()` 喂空闲门（EPUB `_refreshProgressFromScroll` / 听书播放态每次 cue 推进 `_onCueChanged`（BUG-2174，歌词模式唯一的输入源）/ PDF `_onPageChanged` / 漫画 `_armPageDwellCount`）。**查词不喂门**（走词典弹窗，不经 `touch()`）。`start()` 本身重锚空闲基准（BUG-2173）。
+- 阅读面切屏（`paused` / `inactive`）必须停表、`resumed` 续表；EPUB 面所有 start / stop 决策只经统一判据 `studyClockMayRun`（手动暂停 / 生命周期停表 / 面板·弹层·全页路由压住正文的 `modalDepth`，BUG-2170 / BUG-2171）+ `_syncStudyClockRunState()`，弹层入口用 `_withStudyClockPaused` 包（查词浮窗与 Anki 制卡对话框除外——那是阅读的一部分）；`idleTimeout` 每次 `_ensureStudyClock` / 面板关闭都从设置刷新（BUG-2175）。视频面 `inactive` **不**停（用户拍板：切走仍在播照常计时）。
 - **视频面口径 = 只计首次覆盖（BUG-2108，用户拍板「重听不要记录在内」）**：视频面时钟走 `StudyAccrual.explicit`（tick 不按墙钟计，只裁决段生命周期），时长由 `VideoWatchTracker` 推入——每秒 + 每次播放源通知采样位置，连续播放推进（`isContinuousPlaybackAdvance`）才把片内区间并入该视频的 `WatchCoverage`（`fushi/lib/src/media/video/watch_coverage.dart`，已看过的区间并集），只有**新增**部分按比例折成墙钟时间经 `clock.addActiveMs` 记账；回放上一句 / 拖回 / 向前 seek 跳过 / 次日重看一律不计，单部视频累计 ≤ 片长。并集按 `video_watch_coverage_<bookUid>` 偏好持久化（`videoWatchCoveragePrefKey`），删该视频统计 / 清空全部视频统计时连带清（= 当没看过）。本次会话前已整段看过的 cue 字幕字数同律不计。不要再给视频面传 `isActive`（构造期断言）。
 - `upsertStudySegment` 只有两个写入方：`StudyClock` 与 galgame hook 的 chars-only 段（`gal_hook_session_controller.dart`）。游玩时长只写 `galgame_sessions`。
 - legacy 表的 `set*` OVERWRITE 写入口只许 `lib/src/sync/**` 调（旧端 wire 家族落地）。`add*` 累加 DAO 已删，不得复活。
@@ -28,9 +28,13 @@
 ## 同步（wire v2）
 
 - `AggregateSnapshot` 版本仍是 1，`studySegments` / `studySegmentTombstones` 是 additive 字段（旧端忽略、缺失当空；bump 版本会让旧端整包降级为空）。
-- 段按 uid 并集、同 uid 取 `updatedAt` 大者（`AggregateMergeService.mergeStudySegments`）；墓碑 `deletedAt > updatedAt` 删除胜，有更新的段则墓碑退场（`arbitrateStudySegments`）。落地经 `upsertStudySegmentsIfNewer` / `applyStudySegmentTombstone`。备份 ATTACH 合并 `_mergeStudySegments` 同语义。
+- 段按 uid 并集、同 uid 取 `updatedAt` 大者（`AggregateMergeService.mergeStudySegments`）。
+- **墓碑语义（BUG-2176 / BUG-2182，2026-09-06 起）= 「压制 `startAt < deletedAt` 的段」，墓碑永不退场。** 一个段是不是「删除之前的学习」在它开始那一刻就定了，不随 tick 漂移；删除后新开的段 `startAt >= deletedAt` 天然存活，所以立碑不会毒化身份、也不需要清碑。同身份只保留 `deletedAt` 最大的一块碑（`mergeStudyTombstones`），碑戳只增不减（`upsertStudySegmentTombstone` 只在更大时覆盖）。旧口径「段 `updatedAt > deletedAt` 则碑出局」已废：删除时仍在跑的时钟下一 tick 就把整块碑判死、对端全部历史回灌，且两端墙钟直比让碑来回消失。
+- 落地顺序**先碑后段**（`_applyStudySegments`）：`applyStudySegmentTombstone` 删本地 `startAt < deletedAt` 的段，`upsertStudySegmentsIfNewer` / `upsertStudySegment` 都过墓碑门（被压制的行静默丢弃——删该媒体统计时该媒体的开放段不会写回）。备份 ATTACH 合并 `_mergeStudySegments` 同语义。
+- 「清空全部阅读 / 视频统计」对该种类**每个身份逐一立碑**再删行（`clearStudySegments`，BUG-2177）；此前不立碑，多端下一轮同步整批复活。legacy 家族仍不立 title 碑（旧口径）。
+- 游戏段 / 碑（`kActivityMediaGame`，galgame hook 字数段）**不出本机**（BUG-2183，`AggregateMergeService.isStudyKindSyncable`）：聚合导出、并集仲裁、落地、备份 ATTACH 四处同一判据，与 `galgame_sessions` 不跨端同律；旧端混进来的落地时再丢一次。
 - legacy 家族仍走 MAX-union / `setVideoWatchStatistic` 塌缩 / deficit-lift——那是旧数据的旧口径，**不要**把段接进去，也不要从段折叠回 legacy 字段（会双计）。
-- 已知取舍：新端 v92 之后的统计旧端看不到，互联两端须同升。
+- 已知取舍：新端 v92 之后的统计旧端看不到，互联两端须同升；墓碑语义变更同样要求两端同升（旧端仍按 `updatedAt` 仲裁，会让新端已删的段在旧端存活并回传，新端落地时按新语义再压制）。
 
 ## 改统计相关代码前
 
