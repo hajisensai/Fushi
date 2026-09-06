@@ -7,6 +7,8 @@ import 'package:fushi/src/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/sync/fushi_sync_server.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
+import 'fushi_sync_server_source_corpus.dart';
+
 /// BUG-908 LAN 同步服务器健壮性守卫。
 ///
 /// (a) 音频查词 token POST 侧无 prune 无 cap → 内存膨胀（行为单测）。
@@ -33,12 +35,9 @@ class _FloodLookupService implements FushiRemoteLookupService {
       null;
 }
 
-/// 读取被测源文件（从 fushi/ 包根运行）。
-String _readServerSource() {
-  final File f = File('lib/src/sync/fushi_sync_server.dart');
-  expect(f.existsSync(), isTrue, reason: 'run from the fushi/ package root');
-  return f.readAsStringSync();
-}
+/// 读取被测源文件（从 fushi/ 包根运行）。B3 拆分后是主库 + 全部 part 的合并语料
+/// （主库在前，各 part 按路径排序）。
+String _readServerSource() => readFushiSyncServerSource();
 
 /// 截取 [source] 中从 [startMarker] 到 [endMarker] 之间的方法体片段。
 String _sliceMethod(String source, String startMarker, String endMarker) {
@@ -156,7 +155,9 @@ void main() {
       final String body = _sliceMethod(
         src,
         'Future<T> _serializeDavWrite<T>(',
-        'Future<shelf.Response> _handlePair(',
+        // 切到同一 part（webdav.part.dart）里的下一个方法；_handlePair 已在
+        // pairing.part.dart，在语料里排在 webdav 之前。
+        'Future<shelf.Response> _handlePropfind(',
       );
       // 链式：取前驱 → 挂新链尾 → await 前驱 → 执行 → 收尾摘除。
       expect(body.contains('_davWriteChain[fsPath]'), isTrue);

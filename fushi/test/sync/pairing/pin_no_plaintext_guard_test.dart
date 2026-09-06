@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import '../../helpers/source_guard.dart';
+import '../fushi_sync_server_source_corpus.dart';
 
 /// TODO-961 M1 §3.6 源码守卫：PIN 绝不明文出现在响应 body / 日志。
 ///
@@ -20,8 +21,8 @@ String _stripComments(String src) => maskComments(src);
 
 void main() {
   test('pair/v2 响应体只含白名单字段，绝不含 PIN', () {
-    final String src = _stripComments(
-        File('lib/src/sync/fushi_sync_server.dart').readAsStringSync());
+    // B3 拆分后 _handlePairV2 / _handlePairConfirm 在 pairing.part.dart；读合并语料。
+    final String src = _stripComments(readFushiSyncServerSource());
     // 定位 _handlePairV2 的响应构造，断言它返回 sessionId/pinRequired/hostNonce，
     // 且整个 v2 响应 map 字面不含 "'pin'"（PIN 字段名）。
     // 定位方法定义（带签名）而非路由里的调用点——两处都出现符号名。

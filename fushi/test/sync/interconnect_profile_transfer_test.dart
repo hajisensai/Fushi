@@ -11,6 +11,8 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:http/http.dart' as http;
 
+import 'fushi_sync_server_source_corpus.dart';
+
 /// 互联「配置文件」（Profile）搬运的端点与门控测试。
 ///
 /// 三道门必须**同时**成立才允许：TLS 会话、已配对 peer token、host 侧用户开关。
@@ -164,7 +166,8 @@ void main() {
     late String src;
 
     setUpAll(() {
-      src = File('lib/src/sync/fushi_sync_server.dart').readAsStringSync();
+      // B3 拆分后 handler 在 sync_state.part.dart；读合并语料。
+      src = readFushiSyncServerSource();
     });
 
     test('handler 依次过 TLS → peer token → 能力探测 → 用户开关', () {
