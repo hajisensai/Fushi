@@ -18,21 +18,30 @@ on:
   # update-manifest 分支上的正式版清单被写入——那份 JSON 由上传完成的那个 job 写，
   # 也正是 fushi.moe 的 Worker 判定「这个版本有哪些下载」的权威。
   #
-  # 两个触发器都保留、判据统一（见 Require published manifest…那一步）：published
-  # 早到就跳过，清单写入后再来一次把它补齐；同一 tag 重跑是幂等的。
-  # paths 过滤是必需的：debug 通道每次 push 都写这个分支（一天几十次），
-  # 只有正式版清单变化才值得镜像。
+  # `release: published` 只说明 release 条目建好了，资产还在陆续上传（实测晚 30～100
+  # 分钟）。所以它这一趟大概率什么都不做，真正把镜像补齐的是**清单写入后的显式唤醒**：
+  # tool/publish_update_manifest.sh 推完正式版清单就 `gh workflow run` 本 workflow。
+  #
+  # 为什么唤醒不能靠一个指向 update-manifest 分支的 push 触发器（这条一度写在这里，
+  # 实测是死的）：
+  #   · GitHub 对 push 事件是从**被推送的那个 ref** 读 `.github/workflows/` 决定跑什么，
+  #     而 update-manifest 是只放 6 个 JSON 的孤儿分支，上面根本没有 workflow 文件；
+  #   · 清单是用 GITHUB_TOKEN 推的，而 GITHUB_TOKEN 的 push **不级联**新 run。
+  # 实测收口：该分支每天被推几十次，`actions/runs?branch=update-manifest` 的
+  # total_count 至今为 0 —— 历史上从没有任何 workflow 在它上面跑起来过。
+  # workflow_dispatch 是 GITHUB_TOKEN 无级联规则的明文例外，所以只能显式 dispatch。
   release:
     types: [published]
-  push:
-    branches: [update-manifest]
-    paths:
-      - latest-stable-fushi.json
   workflow_dispatch:
     inputs:
       tag:
         description: '要镜像的 release tag（留空 = 最新正式版）'
         required: false
+      assert_complete:
+        description: '按 update-manifest 正式版清单校验完整性（自动唤醒传 true）'
+        required: false
+        default: false
+        type: boolean
       force_prerelease:
         description: '允许镜像预发布版本（默认只镜像正式版）'
         required: false
@@ -69,10 +78,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          # update-manifest 是只放 JSON 的孤儿分支，没有 tool/ 下的计划脚本。
-          # push 触发时不显式钉住默认分支，checkout 出来的树里跑不了本 workflow。
-          ref: ${{ github.event.repository.default_branch }}
 
       - name: Check Cloudflare credentials
         id: guard
@@ -95,6 +100,7 @@ jobs:
           INPUT_TAG: ${{ github.event.inputs.tag }}
           EVENT_TAG: ${{ github.event.release.tag_name }}
           FORCE_PRERELEASE: ${{ github.event.inputs.force_prerelease }}
+          ASSERT_COMPLETE: ${{ github.event.inputs.assert_complete }}
         run: |
           set -euo pipefail
 
@@ -121,7 +127,13 @@ jobs:
 
           # 人工指定 tag 是补救路径：明确知道要镜像哪个版本（含清单里没有的预发布），
           # 不设下面的就位门，否则手动补镜像会被自己的门挡住。
-          if [ "$MANUAL" = "true" ]; then
+          #
+          # 但**自动唤醒也走 workflow_dispatch**（见文件头：GITHUB_TOKEN 的 push 不级联，
+          # dispatch 是唯一能自动接上的通道），它必须过门——否则下游那条完整性断言
+          # `if (fs.existsSync("expected-assets.txt"))` 永远拿不到输入，
+          # 「镜不全就红」在实际会发生的每一条路径上都不成立。
+          # 故用 assert_complete 区分：自动唤醒传 true 走门，人工补救留 false 绕过。
+          if [ "$MANUAL" = "true" ] && [ "${ASSERT_COMPLETE:-false}" != "true" ]; then
             echo "skip=false" >> "$GITHUB_OUTPUT"
             echo "::notice::人工指定 $TAG，跳过发布清单就位检查。"
             exit 0
@@ -160,9 +172,21 @@ jobs:
 
           if [ -f expected-assets.txt ]; then
             echo "发布清单已登记 $TAG 的资产（$VERDICT），开始镜像。"
-          else
-            echo "::notice::$TAG 的资产尚未就位（$VERDICT）。正式版清单写入时会再触发一次，本次不镜像。"
+            exit 0
           fi
+
+          # 到这里 = 清单还没登记这批资产。分两种：
+          #   · published 刚发生（正常）：各平台还在上传，等清单写完那一刻的显式唤醒；
+          #   · published 很久了还没就位：要么发布链路没写完清单，要么唤醒通道断了。
+          # 后者绝不能继续静默绿——「镜像三天只镜到 bridge 包却报 success」就是这么躺过来的。
+          # 正常节奏是 published 后 30～100 分钟内各平台写完（v2.2.4 实测 13:14 → 14:52）。
+          PUBLISHED_AT="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY"             --json publishedAt -q .publishedAt)"
+          AGE_H=$(( ( $(date -u +%s) - $(date -u -d "$PUBLISHED_AT" +%s) ) / 3600 ))
+          if [ "$AGE_H" -ge 6 ]; then
+            echo "::error title=Mirror readiness stalled::$TAG 已发布 ${AGE_H}h，正式版清单仍未登记它的资产（$VERDICT）。发布链路没写完清单，或清单写入后的镜像唤醒断了——两者都必须人查。"
+            exit 1
+          fi
+          echo "::notice::$TAG 的资产尚未就位（$VERDICT，published ${AGE_H}h 前）。清单写入时会显式唤醒本 workflow，本次不镜像。"
 
       - name: Download release assets
         id: download

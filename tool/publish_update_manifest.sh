@@ -325,6 +325,27 @@ while :; do
   git -C "$WORK_DIR" commit -q -m "chore(update-manifest): $PLATFORM_LABEL $CHANNEL $TAG (seq $RELEASE_SEQUENCE)"
   if git -C "$WORK_DIR" push -q origin update-manifest; then
     echo "Pushed $MANIFEST_FILE to update-manifest (attempt $attempt)."
+    # 清单落地 = 这一批资产已经上传完，正是唤醒 R2 镜像的时刻（BUG-2168）。
+    #
+    # 不能靠一个指向 update-manifest 分支的 push 触发器让镜像自己醒过来，两条独立原因任一
+    # 成立就够：① GitHub 对 push 事件是从被推送的那个 ref 读 .github/workflows/ 决定
+    # 跑什么，而 update-manifest 是只放 JSON 的孤儿分支，上面没有 workflow 文件；
+    # ② 这里用的是 GITHUB_TOKEN，它的 push 不级联新 run。实测该分支每天被推几十次而
+    # actions/runs?branch=update-manifest 的 total_count 至今为 0。
+    # workflow_dispatch 是 ② 的明文例外，所以只能显式 dispatch。
+    #
+    # 只在正式版通道唤醒：debug/beta 每次 push 都写这个分支（一天几十次），镜像它们
+    # 会迅速吃光 R2 免费额度。assert_complete=true 让镜像侧走就位门 + 完整性断言。
+    if [ "$CHANNEL" = "formal" ]; then
+      MIRROR_REF="$(GH_TOKEN="$GITHUB_TOKEN" gh api "repos/$REPO" -q .default_branch 2>/dev/null || echo main)"
+      if ! GH_TOKEN="$GITHUB_TOKEN" gh workflow run mirror-releases.yml \
+          --repo "$REPO" --ref "$MIRROR_REF" \
+          -f tag="$DOWNLOAD_TAG" -f assert_complete=true; then
+        # 不阻塞发布，但必须响：唤醒断了 = 这一版永远不会被镜像，而镜像 job 自己那条
+        # 「published 6h 仍未就位就报错」的兜底也醒不过来。
+        echo "::error title=Mirror wake-up failed::无法 dispatch mirror-releases.yml（$DOWNLOAD_TAG）。这一版不会被自动镜像，需人工跑一次。"
+      fi
+    fi
     break
   fi
 
