@@ -213,7 +213,7 @@ class EpubBook {
       if (ref.isNotEmpty) refs.add(ref);
     }
     for (final html_dom.Element image in doc.querySelectorAll('image')) {
-      final String? ref = _svgImageHref(image);
+      final String? ref = svgImageHref(image);
       if (ref != null && ref.isNotEmpty) refs.add(ref);
     }
     final StringBuffer css = StringBuffer();
@@ -224,7 +224,7 @@ class EpubBook {
       css.writeln(styleEl.text);
     }
     for (final Match match
-        in _backgroundImageUrlPattern.allMatches(css.toString())) {
+        in backgroundImageUrlPattern.allMatches(css.toString())) {
       final String ref = (match.group(1) ?? '').trim();
       if (ref.isNotEmpty) refs.add(ref);
     }
@@ -233,17 +233,20 @@ class EpubBook {
 
   /// Matches a CSS `background-image: url(...)` (or `background:` shorthand),
   /// capturing the reference with surrounding quotes/whitespace stripped.
-  static final RegExp _backgroundImageUrlPattern = RegExp(
+  /// Public because [IllustrationProgressIndex] classifies the same
+  /// references element by element — one pattern, not two drifting copies.
+  static final RegExp backgroundImageUrlPattern = RegExp(
     r'''background(?:-image)?\s*:[^;}]*url\(\s*['"]?([^'")]+?)['"]?\s*\)''',
     caseSensitive: false,
   );
 
-  /// Reads an SVG `<image>` reference. package:html stores a namespaced
+  /// Reads an SVG `<image>` reference (shared with
+  /// [IllustrationProgressIndex]). package:html stores a namespaced
   /// `xlink:href` under an `AttributeName` key (not the plain String
   /// `'xlink:href'`), so match on the attribute's *local* name `href` — this
   /// covers both `xlink:href` (legacy, still the norm in Japanese fixed-layout
   /// EPUB) and the un-prefixed SVG2 `href`.
-  static String? _svgImageHref(html_dom.Element image) {
+  static String? svgImageHref(html_dom.Element image) {
     for (final MapEntry<Object, String> attr in image.attributes.entries) {
       final String name = attr.key.toString();
       if (name == 'href' || name == 'xlink:href' || name.endsWith(':href')) {

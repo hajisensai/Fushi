@@ -2,8 +2,11 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' show ImageFilter;
 
+import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
+import 'package:fushi_audio/fushi_audio.dart'
+    show ReaderPosition, ReaderPositionRepository;
 import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
@@ -15,6 +18,7 @@ import 'package:fushi/src/media/collections/shelf_sort.dart'
 import 'package:fushi/src/media/media_extensions.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart'
     show ReaderFushiSource;
+import 'package:fushi/src/reader/illustration_progress_index.dart';
 import 'package:fushi/src/reader/image_reveal_key.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
@@ -74,9 +78,19 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
   /// live watch（避开 drift keyed watch 的 widget teardown 隐患）。
   final Set<String> _revealed = <String>{};
 
-  /// 防剧透遮罩总开关：与阅读器同一偏好（`ttu_blur_images`）。关闭时图片库始终原图。
+  /// 防剧透遮罩总开关：与阅读器同一偏好（`ttu_blur_images`）。开着时未揭开的图
+  /// 一律遮罩；**关着时仍按阅读进度遮「还没读到」的那些**（见 [_progressIndex]）。
   bool get _blurEnabled =>
       ReaderFushiSource.readerSettings?.blurImages ?? false;
+
+  /// 插图 → 书中位置的索引（后台 isolate 解析已解压目录建成）。`null` = 还没建好
+  /// 或目录不是合法 EPUB（解析失败）→ 不按进度遮罩，退回旧行为。
+  IllustrationProgressIndex? _progressIndex;
+
+  /// 本书当前阅读位置（与 `ReaderPosition` 同坐标）。没有位置行 = 一次没读过，
+  /// 按章首 (0, 0) 处理：除封面/开篇之外的插图都算「还没读到」。
+  int _readChapterIndex = 0;
+  int _readNormCharOffset = 0;
 
   @override
   void initState() {
@@ -85,6 +99,9 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
   }
 
   Future<void> _loadRevealedThenImages() async {
+    // 进度索引与图片抽取并行起跑：前者是后台 isolate 的整本解析，后者是逐张读盘，
+    // 互不依赖，串起来只会白等。
+    final Future<void> progressFuture = _loadReadProgress();
     if (widget.bookUid.isNotEmpty) {
       try {
         final Set<String> keys =
@@ -97,6 +114,32 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
       }
     }
     await _extractImages();
+    await progressFuture;
+  }
+
+  /// 载入「读到哪了」+「每张插图在哪」，两者构成按进度遮罩的判据。
+  ///
+  /// 无 uid（旧行无 uid 的书）没有阅读位置可查 → 不按进度遮罩。索引建好前网格按
+  /// 旧判据渲染，建好后 setState 补遮——不阻塞首屏。
+  Future<void> _loadReadProgress() async {
+    if (widget.bookUid.isEmpty) return;
+    try {
+      final ReaderPosition? position =
+          await ReaderPositionRepository(widget.database)
+              .findByBookUid(widget.bookUid);
+      final IllustrationProgressIndex index =
+          await compute(buildIllustrationProgressIndex, widget.extractDir);
+      if (!mounted) return;
+      setState(() {
+        _progressIndex = index;
+        _readChapterIndex = position?.sectionIndex ?? 0;
+        _readNormCharOffset = position?.normCharOffset ?? 0;
+      });
+    } catch (e, stack) {
+      // 目录不是合法 EPUB（FormatException）等：退回「不按进度遮罩」，不影响看图。
+      ErrorLogService.instance
+          .log('IllustrationsViewer.loadProgress', e, stack);
+    }
   }
 
   /// 某图当前是否应遮罩（共用判据，缩略图 / 全屏一致）。
@@ -104,7 +147,17 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
         blurEnabled: _blurEnabled,
         revealKey: im.revealKey,
         revealed: _revealed,
+        unreadAhead: _isUnread(im),
       );
+
+  /// 这张图是否还没读到（位置在当前阅读位置之后）。索引没建好 / 定位不到 → false。
+  bool _isUnread(_Illustration im) =>
+      _progressIndex?.isUnread(
+        revealKey: im.revealKey,
+        chapterIndex: _readChapterIndex,
+        normCharOffset: _readNormCharOffset,
+      ) ??
+      false;
 
   /// 揭开一张图（幂等）：登记内存集 + 持久化到 Drift（阅读器下次开书据此不遮罩）。
   Future<void> _revealImage(_Illustration im) async {
@@ -300,6 +353,7 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
           initialIndex: initialIndex,
           revealed: _revealed,
           blurEnabled: _blurEnabled,
+          isUnread: _isUnread,
           onReveal: _revealImage,
         ),
       ),
@@ -316,6 +370,7 @@ class _FullScreenGallery extends StatefulWidget {
     required this.initialIndex,
     required this.revealed,
     required this.blurEnabled,
+    required this.isUnread,
     required this.onReveal,
   });
 
@@ -325,6 +380,10 @@ class _FullScreenGallery extends StatefulWidget {
   /// 与网格页共享的已揭开集（同一 Set 引用，揭开双向可见，BUG-898）。
   final Set<String> revealed;
   final bool blurEnabled;
+
+  /// 「还没读到」判据（网格页持有索引与阅读位置，全屏页读同一份，见
+  /// `IllustrationProgressIndex`）。
+  final bool Function(_Illustration) isUnread;
 
   /// 揭开一张图（写共享集 + 持久化）；全屏点击遮罩时调。
   final Future<void> Function(_Illustration) onReveal;
@@ -404,6 +463,7 @@ class _FullScreenGalleryState extends State<_FullScreenGallery> {
         blurEnabled: widget.blurEnabled,
         revealKey: im.revealKey,
         revealed: widget.revealed,
+        unreadAhead: widget.isUnread(im),
       );
 
   /// 全屏点击遮罩 → 揭开（写共享集 + DB）后本地刷新为原图。
