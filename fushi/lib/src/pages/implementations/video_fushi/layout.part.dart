@@ -462,6 +462,10 @@ extension _VideoLayout on _VideoFushiPageState {
                             secondaryHidden:
                                 appModel.videoSecondarySubtitleObscureMode ==
                                     VideoSubtitleObscureMode.hide,
+                            // 遮蔽态「悬停 / 点击显形」总闸（默认开）：关掉后模糊 /
+                            // 隐藏不再被悬停或点击临时揭开，主 / 副字幕同时生效。
+                            obscureRevealOnInteraction:
+                                appModel.videoSubtitleObscureReveal,
                             // TODO-1199：字幕字号=用户基准 × 屏幕自适应因子。用户设置的
                             // fontSize 仍是基准（手动可调、不被改写），渲染时乘按视口短边
                             // 算出的 [subtitleScreenScaleFactor]，使字幕占屏比例在小屏手机 /

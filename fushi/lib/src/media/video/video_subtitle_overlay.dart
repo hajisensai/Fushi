@@ -460,6 +460,7 @@ class VideoSubtitleOverlay extends StatefulWidget {
     this.subtitleHidden = false,
     this.secondaryBlurEnabled = false,
     this.secondaryHidden = false,
+    this.obscureRevealOnInteraction = true,
     this.fontSize = 36,
     this.textColor,
     this.fontWeight = VideoSubtitleStyle.defaultFontWeight,
@@ -557,6 +558,19 @@ class VideoSubtitleOverlay extends StatefulWidget {
   /// 与主字幕同构：悬停 / 点击可临时显形，未显形时不登记查词命中。隐藏只针对副字幕
   /// overlay，不影响查词 / 字幕列表 / cue 同步等其它通道。
   final bool secondaryHidden;
+
+  /// 遮蔽态是否允许「悬停 / 点击临时显形」（默认 true = 历史行为）。
+  ///
+  /// 显形原本是遮蔽的内建行为、用户关不掉：听力沉浸时鼠标恰好停在字幕上、或移动端
+  /// 手指扫过盒面，一次误触就把这句的遮蔽废掉。本开关把「遮什么」（模糊 / 隐藏，
+  /// [blurEnabled] / [subtitleHidden]）与「能不能临时看一眼」拆成两个正交维度，关掉后
+  /// 遮蔽在整句期间恒定生效。
+  ///
+  /// 门控只落在**显形的两个来源**上：悬停（[MouseRegion] 的 onEnter/onExit）与点击
+  /// （遮蔽态热区的 onTap）。热区本身照常挂——它还负责拦掉落在盒面上的字符点击（隐藏
+  /// 态字符仍登记在查词表里，撤掉热区就成了「点不可见的字也能查词」）。主 / 副字幕共用
+  /// 本开关（用户诉求是「显形这个行为」的总闸，不是逐层设置）。
+  final bool obscureRevealOnInteraction;
 
   /// 字幕字号（外观设置）。
   final double fontSize;
@@ -1076,6 +1090,15 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       _tapRevealed = false;
     }
     if (!widget.secondaryBlurEnabled && !widget.secondaryHidden) {
+      _secondaryRevealed = false;
+      _secondaryTapRevealed = false;
+    }
+    // 用户刚把「交互显形」关掉：立刻收回当前显形态。不收的话，此刻正被悬停 / 刚点开的
+    // 那一层要等到活动集换轮才重新遮住——开关看起来「没生效」。
+    if (!widget.obscureRevealOnInteraction &&
+        oldWidget.obscureRevealOnInteraction) {
+      _revealed = false;
+      _tapRevealed = false;
       _secondaryRevealed = false;
       _secondaryTapRevealed = false;
     }
@@ -1854,8 +1877,12 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
             child: GestureDetector(
               key: const Key('video-subtitle-reveal'),
               behavior: HitTestBehavior.translucent,
-              onTap: () =>
-                  _setRevealed(true, isSecondary: isSecondary, byTap: true),
+              // 关掉「交互显形」时热区照挂、只是不显形：它的第二职责（拦掉落在盒面上的
+              // 字符点击）与显形无关，撤掉会让隐藏态的不可见字符重新可点查词。
+              onTap: () {
+                if (!widget.obscureRevealOnInteraction) return;
+                _setRevealed(true, isSecondary: isSecondary, byTap: true);
+              },
             ),
           ),
         ],
@@ -1871,21 +1898,24 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     final bool layerObscureEnabled =
         (isSecondary ? widget.secondaryBlurEnabled : widget.blurEnabled) ||
             (isSecondary ? widget.secondaryHidden : widget.subtitleHidden);
-    final bool needHover = layerObscureEnabled ||
+    // 「交互显形」总闸关掉后，悬停不再显形（②③ 两个用途仍各按自己的条件挂）。
+    final bool hoverRevealEnabled =
+        layerObscureEnabled && widget.obscureRevealOnInteraction;
+    final bool needHover = hoverRevealEnabled ||
         widget.onHoverChanged != null ||
         widget.onCharHover != null;
     if (!needHover) return content;
     return MouseRegion(
       opaque: false,
       onEnter: (_) {
-        if (layerObscureEnabled) {
+        if (hoverRevealEnabled) {
           _setRevealed(true, isSecondary: isSecondary, byTap: false);
         }
         widget.onHoverChanged?.call(true);
       },
       onHover: _handleShiftHover,
       onExit: (_) {
-        if (layerObscureEnabled) {
+        if (hoverRevealEnabled) {
           _setRevealed(false, isSecondary: isSecondary, byTap: false);
         }
         widget.onHoverChanged?.call(false);

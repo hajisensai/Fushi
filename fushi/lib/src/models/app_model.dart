@@ -3486,6 +3486,13 @@ class AppModel with ChangeNotifier {
   ) =>
       prefsRepo.setVideoSecondarySubtitleObscureMode(mode);
 
+  /// 遮蔽态「悬停 / 点击临时显形」总闸（默认开）：关掉后模糊 / 隐藏不再被悬停或点击
+  /// 临时揭开。见 [PreferencesRepository.videoSubtitleObscureReveal]。
+  bool get videoSubtitleObscureReveal => prefsRepo.videoSubtitleObscureReveal;
+
+  Future<void> setVideoSubtitleObscureReveal(bool value) =>
+      prefsRepo.setVideoSubtitleObscureReveal(value);
+
   /// 显式全局广播（= 本 model 的 `notifyListeners`，对外可调用）。
   ///
   /// 给「写入方**刻意**不广播、但某个调用点确实需要全局刷新」的路径用：遮蔽模式两个
