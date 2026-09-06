@@ -228,8 +228,9 @@ class _Fp16Converter {
 
   List<OnnxValueInfo> _convertValueInfos(List<OnnxValueInfo> infos) {
     for (final OnnxValueInfo v in infos) {
-      if (v.elemType == OnnxDataType.kFloat)
+      if (v.elemType == OnnxDataType.kFloat) {
         v.setElemType(OnnxDataType.kFloat16);
+      }
     }
     return infos;
   }
