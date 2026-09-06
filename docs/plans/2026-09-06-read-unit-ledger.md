@@ -75,6 +75,35 @@
 - Hoshi 的差分扣减模型（劣于并集）；按 dateKey 整条覆盖的合并（劣于 uid LWW）。
 - 候选功能：「今日」可配重置时刻；首次翻页才开始计时（autostart）；英文 5 字符一词展示。
 
+### 1.6 有声书 / Sasayaki：形态与数据
+
+| 口径 | Hoshi（iOS / Android 同构） | Hibiki |
+|---|---|---|
+| 形态 | 仅 Sasayaki：音频 + SubPlz 生成的 SRT + EPUB，cue = SRT 块（`SasayakiParser.swift:12-48` / `SasayakiParser.kt:6-27`） | 三种：EPUB + 字符对齐（smil / json / lrc）、EPUB + SRT/VTT/ASS 句级、纯 SrtBook（`audiobook_model.dart:8-59`、`tables.dart:72-118`） |
+| cue 数据 | `sasayaki_match.json`：`id / startTime / endTime（秒）/ text / chapterIndex / start / length`（章内字符起点 + 长度）+ `unmatched`（`Models/Sasayaki.swift:18-37`） | `audio_cues` 表：`bookKey / chapterHref / sentenceIndex / textFragmentId / text / startMs / endMs / audioFileIndex`；对齐命中编码 `fushi-cue://s=&ns=&ne=`（`subtitle_rematch_codec.dart:16-64`） |
+| 音频引用 | iOS security-scoped bookmark；Android `audioUri`（可复制进 `bookRoot/Sasayaki/`） | `audiobooks.audioRoot / audioPaths`；SrtBook `audioPathsJson` |
+| 播放位置 | `sasayaki_playback.json`：`lastPosition（秒）/ delay / rate / 音频引用`，每跨整秒写 | 偏好表 `audiobook_pos_<key>` + LWW 孪生键 `audiobook_pos_at_<key>`（`audiobook_repository.dart:211-238`） |
+| 阅读位置 | `bookmark.json`（章 / progress / characterCount / lastModified） | `reader_positions` 表（`sectionIndex / normCharOffset / charOffset`） |
+| 谁覆盖谁 | **单向**：音频位置 → cue → bookmark；阅读位置不回写音频 | 仅 `reveal == true`（播放跟随 / 显式 reveal）时 cue 覆盖阅读位置；被动高亮不覆盖（TODO-718，`audiobook.part.dart:690-699`） |
+| 同步 | Drive `audioBook_*` 只带 `playbackPosition + lastAudioBookModified`，方向跟随 bookmark 判定 | 偏好键随聚合同步 LWW |
+
+### 1.7 有声书 / Sasayaki：统计方式
+
+| 口径 | Hoshi | Hibiki |
+|---|---|---|
+| 独立「听」时长 | **没有**：`Statistics` 只有 `readingTime`，播放时间混入阅读时长 | **没有**：同一 `StudyClock`、同一段、`mediaKind='book' / format='epub'`；无播放态标记 |
+| 播放态 tick | 播放与统计完全解耦，1s tick 照跑（`SasayakiPlayer` 无统计调用） | 同一时钟 60s tick；播放态每次 cue 推进 `touch()` 喂空闲门（BUG-2174），否则 10 分钟停 |
+| 音频暂停 | 不影响统计 | 不停表，只是不再 `touch` |
+| 字数：播放跟随 | cue reveal 的 JS 回调走 `onPageTurn / onSaveBookmark → flushStats`，视口差分照计 | reveal 后按 `kReaderReanchorSettleMs` 补刷 `_refreshProgress → arrive`，翻走即计 |
+| 字数：同章跳句 / 拖进度条 | 跳过的段落按位置差**算读过** | 显式跳句 `leave()`：跳走前那页计、跳过不计；拖音频进度条无回调，靠下一次 `arrive` 结算 |
+| 字数：跨章跟随 | `flushStats` + `resetBaseline`，跨章那跳不计；Android 另有 media stop 页 `countStatistics=false` | 全书绝对坐标透明，末页在新章首页 `arrive` 时结算 |
+| 歌词模式 | 无此模式 | 时长照计、字数不计（`_refreshProgress` 首行早退） |
+| autostart | 播放推进算 `pageturn` 输入（iOS 分页 / 滚动都触发；Android 仅 `countStatistics=true` 分支） | 开书即计，不适用 |
+| 后台 / 锁屏播放 | 音频继续；tick 停、回前台重置基线 → **后台听的时长与字数都丢** | `paused / inactive` 都停表、`addChars` 丢弃；退出页面后台续播时 `StudyClock` 随页面 dispose，**完全没有统计写入方**。缺口与 Hoshi 相同 |
+| 面板 | Android：Sasayaki 面板停统计；iOS：任何面板都不停 | 有声书面板 / 导入 / 对齐 / ASR sheet 都停（`_withStudyClockPaused`）；底部播放条不停 |
+| 关书 | iOS 返回键 `stopTracking → flushStats`，swipe-dismiss 路径未见 flush；Android `closeReader` 先存位置再停播放 | `onSourcePagePop`：flush 位置 → `leave()` → `_flushReadingStats()`；进程退出同序 |
+| UI 展示 | 无听书项（Session / Today / All Time 三段） | 无听书项（会话 / 今日 / 累计 / 预计读完；统计中心 overview / reading / video / game） |
+
 ## 2. 边界条件（现状 → 新模型）
 
 | 场景 | 现状（水位 + 令牌桶） | 新模型（翻走即计 + 会话并集） |
