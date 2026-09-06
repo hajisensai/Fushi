@@ -3,8 +3,8 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
-import 'package:fushi/src/sync/desktop_oauth.dart';
 import 'package:fushi/src/sync/pkce_oauth.dart';
+import 'package:fushi/src/sync/pkce_oauth_backend_mixin.dart';
 import 'package:fushi/src/sync/sync_http.dart';
 import 'package:fushi/src/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
@@ -17,14 +17,17 @@ import 'package:fushi/src/sync/ttu_filename.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi/src/sync/ttu_models.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 /// Dropbox sync backend via Dropbox API v2.
 ///
-/// Auth: OAuth 2.0 PKCE flow.
+/// Auth: OAuth 2.0 PKCE flow（外壳在 [PkceOAuthBackendMixin]）.
 /// Folder IDs are path strings like `/fushi-data/BookTitle`.
 class DropboxSyncBackend extends SyncBackend
-    with SyncFolderCache, SyncBackendFileTrioMixin, SyncAssetStoreDefaults
+    with
+        SyncFolderCache,
+        SyncBackendFileTrioMixin,
+        SyncAssetStoreDefaults,
+        PkceOAuthBackendMixin
     implements RemoteListingCapable {
   DropboxSyncBackend._();
   static final DropboxSyncBackend instance = DropboxSyncBackend._();
@@ -42,10 +45,6 @@ class DropboxSyncBackend extends SyncBackend
   static const _contentBase = 'https://content.dropboxapi.com/2';
   static const _rootFolderPath = '/$kSyncRootFolderName';
 
-  String? _accessToken;
-  String? _refreshToken;
-  String? _email;
-
   /// Shared OAuth 2.0 PKCE token exchange (verifier/challenge + code/refresh).
   static final PkceOAuthFlow _oauth = PkceOAuthFlow(
     clientId: _clientId,
@@ -55,20 +54,22 @@ class DropboxSyncBackend extends SyncBackend
   // ── Auth ──────────────────────────────────────────────────────────
 
   @override
-  Future<bool> get isAuthenticated async => _accessToken != null;
+  PkceOAuthFlow get oauth => _oauth;
 
   @override
-  Future<String?> get currentEmail async => _email;
+  String get providerName => 'Dropbox';
 
-  String? _pendingVerifier;
-  SyncRepository? _pendingRepo;
+  @override
+  String get mobileRedirectUri => _redirectUri;
 
   /// Fixed loopback port for desktop OAuth. Dropbox requires an exact
   /// redirect-URI match, so this must be registered verbatim in the Dropbox
   /// app console as `http://localhost:9004`.
-  static const int _desktopLoopbackPort = 9004;
+  @override
+  int get desktopLoopbackPort => 9004;
 
-  Uri _buildAuthUrl(String challenge, String redirectUri) =>
+  @override
+  Uri buildAuthUrl(String challenge, String redirectUri) =>
       Uri.parse(_authorizeEndpoint).replace(queryParameters: {
         'client_id': _clientId,
         'response_type': 'code',
@@ -79,141 +80,33 @@ class DropboxSyncBackend extends SyncBackend
       });
 
   @override
-  Future<void> authenticate({required SyncRepository repo}) async {
-    if (_clientId.startsWith('YOUR_')) {
-      throw SyncAuthError('Dropbox integration not configured');
-    }
-    _pendingVerifier = null;
-    _pendingRepo = null;
+  Future<String?> readStoredToken(SyncRepository repo) =>
+      repo.getDropboxToken();
 
-    final verifier = PkceOAuthFlow.generateCodeVerifier();
-    final challenge = PkceOAuthFlow.codeChallenge(verifier);
-
-    // Desktop: loopback HTTP redirect (RFC 8252), exchange inline.
-    if (isDesktopOAuthPlatform) {
-      final result = await runDesktopOAuthLoopback(
-        buildAuthUrl: (redirectUri) => _buildAuthUrl(challenge, redirectUri),
-        port: _desktopLoopbackPort,
-      );
-      await _exchangeCode(
-        code: result.code,
-        verifier: verifier,
-        redirectUri: result.redirectUri,
-        repo: repo,
-      );
-      return;
-    }
-
-    // Mobile: custom-URI-scheme redirect handled later by [handleAuthCode].
-    final authUrl = _buildAuthUrl(challenge, _redirectUri);
-    if (!await launchUrl(authUrl, mode: LaunchMode.externalApplication)) {
-      throw SyncAuthError('Failed to launch browser for Dropbox auth');
-    }
-
-    _pendingVerifier = verifier;
-    _pendingRepo = repo;
-  }
-
-  /// Called when the app receives the redirect URI with an auth code (mobile
-  /// custom-scheme flow).
-  Future<void> handleAuthCode(String code) async {
-    final verifier = _pendingVerifier;
-    final repo = _pendingRepo;
-    if (verifier == null || repo == null) {
-      throw SyncAuthError('No pending auth flow');
-    }
-    _pendingVerifier = null;
-    _pendingRepo = null;
-
-    await _exchangeCode(
-      code: code,
-      verifier: verifier,
-      redirectUri: _redirectUri,
-      repo: repo,
-    );
-  }
-
-  /// Exchange an authorization code for tokens. [redirectUri] must match the
-  /// value sent in the authorization request (custom scheme on mobile, the
-  /// loopback URL on desktop).
-  Future<void> _exchangeCode({
-    required String code,
-    required String verifier,
-    required String redirectUri,
-    required SyncRepository repo,
-  }) async {
-    final tokens = await _oauth.exchangeCode(
-      code: code,
-      redirectUri: redirectUri,
-      verifier: verifier,
-    );
-    _accessToken = tokens.accessToken;
-    _refreshToken = tokens.refreshToken;
-
-    await _fetchUserEmail();
-    await repo.setDropboxToken(jsonEncode({'refresh_token': _refreshToken}));
-  }
+  @override
+  Future<void> writeStoredToken(SyncRepository repo, String? token) =>
+      repo.setDropboxToken(token);
 
   @override
   Future<void> signOut({required SyncRepository repo}) async {
     // Revoke the token.
-    if (_accessToken != null) {
+    if (accessToken != null) {
       try {
         await (await obtainSyncHttpClient()).post(
           Uri.parse('$_apiBase/auth/token/revoke'),
-          headers: {'Authorization': 'Bearer $_accessToken'},
+          headers: {'Authorization': 'Bearer $accessToken'},
         );
       } catch (_) {/* best-effort: failure is non-critical here */}
     }
-    _accessToken = null;
-    _refreshToken = null;
-    _email = null;
-    clearCache();
-    await repo.setDropboxToken(null);
+    await super.signOut(repo: repo);
   }
 
   @override
-  Future<bool> restoreAuth(SyncRepository repo) async {
-    final stored = await repo.getDropboxToken();
-    if (stored == null) return false;
-
-    try {
-      final json = jsonDecode(stored) as Map<String, dynamic>;
-      _refreshToken = json['refresh_token'] as String?;
-      if (_refreshToken == null) return false;
-
-      await refreshAuth();
-      await _fetchUserEmail();
-      return true;
-    } catch (_) {
-      // Refresh failed — drop the stale tokens so isAuthenticated reports
-      // false instead of letting sync proceed with an expired token and loop
-      // on non-retryable 401s (HBK-AUDIT-159).
-      _accessToken = null;
-      _refreshToken = null;
-      return false;
-    }
-  }
-
-  @override
-  Future<void> refreshAuth() async {
-    if (_refreshToken == null) {
-      throw SyncAuthError('No refresh token available');
-    }
-
-    final tokens = await _oauth.refreshTokens(refreshToken: _refreshToken!);
-    _accessToken = tokens.accessToken;
-    // Dropbox may or may not return a new refresh token.
-    if (tokens.refreshToken != null) {
-      _refreshToken = tokens.refreshToken;
-    }
-  }
-
-  Future<void> _fetchUserEmail() async {
+  Future<void> fetchUserEmail() async {
     try {
       final resp = await _apiPost('/users/get_current_account', null);
       final json = jsonDecode(resp.body) as Map<String, dynamic>;
-      _email = json['email'] as String?;
+      email = json['email'] as String?;
     } catch (_) {
       // Non-fatal.
     }
@@ -221,16 +114,11 @@ class DropboxSyncBackend extends SyncBackend
 
   // ── HTTP helpers ──────────────────────────────────────────────────
 
-  Map<String, String> get _authHeaders => {
-        'Authorization': 'Bearer $_accessToken',
-        'Content-Type': 'application/json',
-      };
-
   Future<http.Response> _apiPost(
       String endpoint, Map<String, dynamic>? body) async {
     final resp = await (await obtainSyncHttpClient()).post(
       Uri.parse('$_apiBase$endpoint'),
-      headers: _authHeaders,
+      headers: bearerJsonHeaders,
       body: body != null ? jsonEncode(body) : null,
     );
     _checkResponse(resp, 'POST $endpoint');
@@ -452,7 +340,7 @@ class DropboxSyncBackend extends SyncBackend
       'POST',
       Uri.parse('$_contentBase/files/upload'),
     );
-    request.headers['Authorization'] = 'Bearer $_accessToken';
+    request.headers['Authorization'] = 'Bearer $accessToken';
     request.headers['Content-Type'] = 'application/octet-stream';
     request.headers['Dropbox-API-Arg'] = apiArg;
     request.contentLength = fileLength;
@@ -475,7 +363,7 @@ class DropboxSyncBackend extends SyncBackend
       'POST',
       Uri.parse('$_contentBase/files/download'),
     );
-    request.headers['Authorization'] = 'Bearer $_accessToken';
+    request.headers['Authorization'] = 'Bearer $accessToken';
     request.headers['Dropbox-API-Arg'] = apiArg;
 
     final streamedResp = await (await obtainSyncHttpClient()).send(request);
@@ -647,7 +535,7 @@ class DropboxSyncBackend extends SyncBackend
     final resp = await (await obtainSyncHttpClient()).post(
       Uri.parse('$_contentBase/files/download'),
       headers: {
-        'Authorization': 'Bearer $_accessToken',
+        'Authorization': 'Bearer $accessToken',
         'Dropbox-API-Arg': apiArg,
       },
     );
@@ -683,7 +571,7 @@ class DropboxSyncBackend extends SyncBackend
     final resp = await (await obtainSyncHttpClient()).post(
       Uri.parse('$_contentBase/files/upload'),
       headers: {
-        'Authorization': 'Bearer $_accessToken',
+        'Authorization': 'Bearer $accessToken',
         'Dropbox-API-Arg': apiArg,
         'Content-Type': 'application/octet-stream',
       },

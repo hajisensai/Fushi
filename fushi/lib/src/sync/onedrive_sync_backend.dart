@@ -3,8 +3,8 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
-import 'package:fushi/src/sync/desktop_oauth.dart';
 import 'package:fushi/src/sync/pkce_oauth.dart';
+import 'package:fushi/src/sync/pkce_oauth_backend_mixin.dart';
 import 'package:fushi/src/sync/sync_http.dart';
 import 'package:fushi/src/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
@@ -16,14 +16,17 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/sync/ttu_filename.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi/src/sync/ttu_models.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 /// OneDrive sync backend via Microsoft Graph API.
 ///
-/// Auth: OAuth 2.0 PKCE flow.
+/// Auth: OAuth 2.0 PKCE flow（外壳在 [PkceOAuthBackendMixin]）.
 /// Redirect URI: `fushi://auth/onedrive`
 class OneDriveSyncBackend extends SyncBackend
-    with SyncFolderCache, SyncBackendFileTrioMixin, SyncAssetStoreDefaults {
+    with
+        SyncFolderCache,
+        SyncBackendFileTrioMixin,
+        SyncAssetStoreDefaults,
+        PkceOAuthBackendMixin {
   OneDriveSyncBackend._();
   static final OneDriveSyncBackend instance = OneDriveSyncBackend._();
 
@@ -42,10 +45,6 @@ class OneDriveSyncBackend extends SyncBackend
   static const _scopes = 'Files.ReadWrite.All User.Read offline_access';
   static const _rootFolderName = kSyncRootFolderName;
 
-  String? _accessToken;
-  String? _refreshToken;
-  String? _email;
-
   /// Shared OAuth 2.0 PKCE token exchange (verifier/challenge + code/refresh).
   /// OneDrive requires the `scope` param echoed on token refresh.
   static final PkceOAuthFlow _oauth = PkceOAuthFlow(
@@ -57,15 +56,16 @@ class OneDriveSyncBackend extends SyncBackend
   // ── Auth ──────────────────────────────────────────────────────────
 
   @override
-  Future<bool> get isAuthenticated async => _accessToken != null;
+  PkceOAuthFlow get oauth => _oauth;
 
   @override
-  Future<String?> get currentEmail async => _email;
+  String get providerName => 'OneDrive';
 
-  String? _pendingVerifier;
-  SyncRepository? _pendingRepo;
+  @override
+  String get mobileRedirectUri => _redirectUri;
 
-  Uri _buildAuthUrl(String challenge, String redirectUri) =>
+  @override
+  Uri buildAuthUrl(String challenge, String redirectUri) =>
       Uri.parse(_authorizeEndpoint).replace(queryParameters: {
         'client_id': _clientId,
         'response_type': 'code',
@@ -76,130 +76,19 @@ class OneDriveSyncBackend extends SyncBackend
       });
 
   @override
-  Future<void> authenticate({required SyncRepository repo}) async {
-    if (_clientId.startsWith('YOUR_')) {
-      throw SyncAuthError('OneDrive integration not configured');
-    }
-    _pendingVerifier = null;
-    _pendingRepo = null;
-
-    final verifier = PkceOAuthFlow.generateCodeVerifier();
-    final challenge = PkceOAuthFlow.codeChallenge(verifier);
-
-    // Desktop: loopback HTTP redirect (RFC 8252), exchange inline.
-    if (isDesktopOAuthPlatform) {
-      final result = await runDesktopOAuthLoopback(
-        buildAuthUrl: (redirectUri) => _buildAuthUrl(challenge, redirectUri),
-      );
-      await _exchangeCode(
-        code: result.code,
-        verifier: verifier,
-        redirectUri: result.redirectUri,
-        repo: repo,
-      );
-      return;
-    }
-
-    // Mobile: custom-URI-scheme redirect handled later by [handleAuthCode].
-    final authUrl = _buildAuthUrl(challenge, _redirectUri);
-    if (!await launchUrl(authUrl, mode: LaunchMode.externalApplication)) {
-      throw SyncAuthError('Failed to launch browser for OneDrive auth');
-    }
-
-    _pendingVerifier = verifier;
-    _pendingRepo = repo;
-  }
-
-  /// Called when the app receives the redirect URI with an auth code (mobile
-  /// custom-scheme flow).
-  Future<void> handleAuthCode(String code) async {
-    final verifier = _pendingVerifier;
-    final repo = _pendingRepo;
-    if (verifier == null || repo == null) {
-      throw SyncAuthError('No pending auth flow');
-    }
-    _pendingVerifier = null;
-    _pendingRepo = null;
-
-    await _exchangeCode(
-      code: code,
-      verifier: verifier,
-      redirectUri: _redirectUri,
-      repo: repo,
-    );
-  }
-
-  /// Exchange an authorization code for tokens. [redirectUri] must match the
-  /// value sent in the authorization request (custom scheme on mobile, the
-  /// loopback URL on desktop).
-  Future<void> _exchangeCode({
-    required String code,
-    required String verifier,
-    required String redirectUri,
-    required SyncRepository repo,
-  }) async {
-    final tokens = await _oauth.exchangeCode(
-      code: code,
-      redirectUri: redirectUri,
-      verifier: verifier,
-    );
-    _accessToken = tokens.accessToken;
-    _refreshToken = tokens.refreshToken;
-
-    await _fetchUserEmail();
-    await repo.setOneDriveToken(jsonEncode({'refresh_token': _refreshToken}));
-  }
+  Future<String?> readStoredToken(SyncRepository repo) =>
+      repo.getOneDriveToken();
 
   @override
-  Future<void> signOut({required SyncRepository repo}) async {
-    _accessToken = null;
-    _refreshToken = null;
-    _email = null;
-    clearCache();
-    await repo.setOneDriveToken(null);
-  }
+  Future<void> writeStoredToken(SyncRepository repo, String? token) =>
+      repo.setOneDriveToken(token);
 
   @override
-  Future<bool> restoreAuth(SyncRepository repo) async {
-    final stored = await repo.getOneDriveToken();
-    if (stored == null) return false;
-
-    try {
-      final json = jsonDecode(stored) as Map<String, dynamic>;
-      _refreshToken = json['refresh_token'] as String?;
-      if (_refreshToken == null) return false;
-
-      await refreshAuth();
-      await _fetchUserEmail();
-      return true;
-    } catch (_) {
-      // Refresh failed — drop the stale tokens so isAuthenticated reports
-      // false instead of letting sync proceed with an expired token and loop
-      // on non-retryable 401s (HBK-AUDIT-159).
-      _accessToken = null;
-      _refreshToken = null;
-      return false;
-    }
-  }
-
-  @override
-  Future<void> refreshAuth() async {
-    if (_refreshToken == null) {
-      throw SyncAuthError('No refresh token available');
-    }
-
-    final tokens = await _oauth.refreshTokens(refreshToken: _refreshToken!);
-    _accessToken = tokens.accessToken;
-    if (tokens.refreshToken != null) {
-      _refreshToken = tokens.refreshToken;
-    }
-  }
-
-  Future<void> _fetchUserEmail() async {
+  Future<void> fetchUserEmail() async {
     try {
       final resp = await _graphGet('/me');
       final json = jsonDecode(resp.body) as Map<String, dynamic>;
-      _email = json['mail'] as String? ?? json['userPrincipalName'] as String?;
+      email = json['mail'] as String? ?? json['userPrincipalName'] as String?;
     } catch (_) {
       // Non-fatal: email is optional for display.
     }
@@ -207,15 +96,10 @@ class OneDriveSyncBackend extends SyncBackend
 
   // ── HTTP helpers ──────────────────────────────────────────────────
 
-  Map<String, String> get _authHeaders => {
-        'Authorization': 'Bearer $_accessToken',
-        'Content-Type': 'application/json',
-      };
-
   Future<http.Response> _graphGet(String path) async {
     final resp = await (await obtainSyncHttpClient()).get(
       Uri.parse('$_apiBase$path'),
-      headers: _authHeaders,
+      headers: bearerJsonHeaders,
     );
     _checkResponse(resp, 'GET $path');
     return resp;
@@ -225,7 +109,7 @@ class OneDriveSyncBackend extends SyncBackend
       String path, Map<String, dynamic> body) async {
     final resp = await (await obtainSyncHttpClient()).post(
       Uri.parse('$_apiBase$path'),
-      headers: _authHeaders,
+      headers: bearerJsonHeaders,
       body: jsonEncode(body),
     );
     _checkResponse(resp, 'POST $path');
@@ -236,7 +120,7 @@ class OneDriveSyncBackend extends SyncBackend
       String path, Map<String, dynamic> body) async {
     final resp = await (await obtainSyncHttpClient()).patch(
       Uri.parse('$_apiBase$path'),
-      headers: _authHeaders,
+      headers: bearerJsonHeaders,
       body: jsonEncode(body),
     );
     _checkResponse(resp, 'PATCH $path');
@@ -248,7 +132,7 @@ class OneDriveSyncBackend extends SyncBackend
     final resp = await (await obtainSyncHttpClient()).put(
       Uri.parse('$_apiBase$path'),
       headers: {
-        'Authorization': 'Bearer $_accessToken',
+        'Authorization': 'Bearer $accessToken',
         'Content-Type': contentType,
       },
       body: bytes,
@@ -260,7 +144,7 @@ class OneDriveSyncBackend extends SyncBackend
   Future<http.Response> _graphDelete(String path) async {
     final resp = await (await obtainSyncHttpClient()).delete(
       Uri.parse('$_apiBase$path'),
-      headers: {'Authorization': 'Bearer $_accessToken'},
+      headers: {'Authorization': 'Bearer $accessToken'},
     );
     // 204 No Content is success for DELETE.
     if (resp.statusCode != 204 && resp.statusCode != 404) {
@@ -476,7 +360,7 @@ class OneDriveSyncBackend extends SyncBackend
       Uri.parse(
           '$_apiBase/me/drive/items/$folderId:/${Uri.encodeComponent(fileName)}:/content'),
     );
-    request.headers['Authorization'] = 'Bearer $_accessToken';
+    request.headers['Authorization'] = 'Bearer $accessToken';
     request.headers['Content-Type'] = _guessContentType(fileName);
     request.contentLength = fileLength;
 
@@ -601,7 +485,7 @@ class OneDriveSyncBackend extends SyncBackend
 
     while (url != null) {
       final resp = await (await obtainSyncHttpClient())
-          .get(Uri.parse(url), headers: _authHeaders);
+          .get(Uri.parse(url), headers: bearerJsonHeaders);
       _checkResponse(resp, 'GET $firstPath');
       final json = jsonDecode(resp.body) as Map<String, dynamic>;
       items.addAll((json['value'] as List).cast<Map<String, dynamic>>());
