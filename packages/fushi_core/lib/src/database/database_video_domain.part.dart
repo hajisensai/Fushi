@@ -1921,6 +1921,35 @@ mixin _FushiDbVideoDomain
             ]))
           .watch();
 
+  /// 订阅表「变了」的纯信号（不带行），给长驻页面「重算一次」用。
+  ///
+  /// 不要直接 listen [watchVideoDownloadSubscriptions]：那是 drift 的
+  /// QueryStream，取消订阅时 `StreamQueryStore.markAsClosed` 会排一个
+  /// `Timer.run`；widget 测试里页面 dispose 之后它仍 pending，直接撞
+  /// `!timersPending` 断言（BUG-834）。凡「initState 订阅 / dispose 取消」的
+  /// 场景一律走 tableUpdates + 手写 controller，与
+  /// [watchVideoScrapePresentationChanged] 同范式。
+  Stream<void> watchVideoDownloadSubscriptionsChanged() {
+    late final StreamController<void> controller;
+    StreamSubscription<void>? updatesSub;
+    controller = StreamController<void>(
+      onListen: () {
+        updatesSub = tableUpdates(
+          TableUpdateQuery
+              .onAllTables(<ResultSetImplementation<dynamic, dynamic>>[
+            videoDownloadSubscriptions,
+          ]),
+        ).listen((_) {
+          if (!controller.isClosed) controller.add(null);
+        });
+      },
+      onCancel: () async {
+        await updatesSub?.cancel();
+      },
+    );
+    return controller.stream;
+  }
+
   Future<int> updateVideoDownloadSubscription(
     String subscriptionId,
     VideoDownloadSubscriptionsCompanion patch,

@@ -443,8 +443,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 「已更新未看」行：订阅增删（订阅面板）后重解析订阅→合集映射。新订阅表走
     // Drift 流；旧 AniList JSON 订阅 store 没有表，用它的 revision 通知。入库落
     // 合集那一步已由上面的合集表流覆盖，这里只补「订阅本身变了」。
+    // 只要「订阅变了」这个信号，不要行——所以走 *Changed（tableUpdates + 手写
+    // controller）而不是裸 drift QueryStream：后者取消订阅时会排 Timer.run，
+    // 页面 dispose 后它仍 pending，撞 widget 测试的 !timersPending（BUG-834）。
     _downloadSubscriptionsSub = appModelNoUpdate.database
-        .watchVideoDownloadSubscriptions()
+        .watchVideoDownloadSubscriptionsChanged()
         .listen(_onCollectionTablesChanged);
     _legacySubscriptionStore = appModelNoUpdate.animeDownloadSubscriptionStore
       ?..revision.addListener(_onLegacySubscriptionStoreChanged);
