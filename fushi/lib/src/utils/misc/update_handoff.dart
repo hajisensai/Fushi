@@ -210,6 +210,7 @@ class WindowsUpdateHandoffRecord {
     this.parentProcessId,
     this.parentExitObserved,
     this.parentExitObservedAt,
+    this.launcherMutexReleased,
     this.installerLaunchSucceeded,
     this.installerLaunchedAt,
     this.installerPid,
@@ -224,6 +225,7 @@ class WindowsUpdateHandoffRecord {
     this.lastPromptedAppVersion,
     this.lastPromptedFailureFingerprint,
     this.lastPromptedAt,
+    this.extraFields = const <String, dynamic>{},
   });
 
   factory WindowsUpdateHandoffRecord.fromJson(Map<String, dynamic> json) {
@@ -269,6 +271,7 @@ class WindowsUpdateHandoffRecord {
       parentProcessId: _int(json['parentProcessId']),
       parentExitObserved: json['parentExitObserved'] as bool?,
       parentExitObservedAt: _dateTime(json['parentExitObservedAt']),
+      launcherMutexReleased: json['launcherMutexReleased'] as bool?,
       installerLaunchSucceeded: json['installerLaunchSucceeded'] as bool?,
       installerLaunchedAt: _dateTime(json['installerLaunchedAt']),
       installerPid: _int(json['installerPid']),
@@ -284,8 +287,64 @@ class WindowsUpdateHandoffRecord {
       lastPromptedFailureFingerprint:
           json['lastPromptedFailureFingerprint'] as String?,
       lastPromptedAt: _dateTime(json['lastPromptedAt']),
+      extraFields: <String, dynamic>{
+        for (final MapEntry<String, dynamic> entry in json.entries)
+          if (!_knownJsonKeys.contains(entry.key)) entry.key: entry.value,
+      },
     );
   }
+
+  /// 本模型自己认识（读得回、写得出）的 marker 键。
+  ///
+  /// BUG-2166：marker 文件有**两个**写者——Dart（本类）和 C++ 的
+  /// `fushi_update_launcher.exe`（`update_launcher.cpp` 的 `AppendMarkerFields`）。
+  /// launcher 在 app 已经退出之后才写下整条交接链上最关键的观测：父进程到底退没退、
+  /// 互斥量到底放没放、安装器结束后 app 有没有回来、是不是 launcher 把它拉回来的。
+  /// 而 app 下次启动读回 marker、补上失败诊断再写回时，走的是
+  /// `fromJson → copyWith → toJson` —— 旧实现里凡是本模型不认识的键**在这一步被静默
+  /// 丢掉**。现场就是这样：`parentExitTimedOut` / `launcherMutexReleased` /
+  /// `appAliveAfterInstaller` 全被抹掉，只剩一个 `parentExitObserved:false`，
+  /// 事后连「是 OpenProcess 失败还是真的等超时」都分不出来。
+  ///
+  /// 所以未识别的键一律进 [extraFields] 原样带回去：marker 是**证据**，
+  /// 不是本类的私有序列化格式，读者无权丢掉另一个写者的观测。
+  static const Set<String> _knownJsonKeys = <String>{
+    'targetVersion',
+    'installerPath',
+    'innoLogPath',
+    'startedAt',
+    'currentExecutablePath',
+    'currentInstallDir',
+    'targetInstallDir',
+    'detectedInstallLocations',
+    'runningFushiProcesses',
+    // 只读不写的旧键（见上面 W2-6 的注释）；同样不该落进 extraFields 再被写回。
+    'runningHibikiProcesses',
+    'libmpvModuleHolders',
+    'galHookModuleHolders',
+    'innoLogDeleteFileFailures',
+    'pathMismatchWarning',
+    'launcherStartedAt',
+    'launcherPid',
+    'parentProcessId',
+    'parentExitObserved',
+    'parentExitObservedAt',
+    'launcherMutexReleased',
+    'installerLaunchSucceeded',
+    'installerLaunchedAt',
+    'installerPid',
+    'innoLogExists',
+    'innoLogSizeBytes',
+    'innoLogModifiedAt',
+    'installerFailureType',
+    'installerFailureSummary',
+    'installerLaunchFailedAt',
+    'launchError',
+    'failureFingerprint',
+    'lastPromptedAppVersion',
+    'lastPromptedFailureFingerprint',
+    'lastPromptedAt',
+  };
 
   final String targetVersion;
   final String installerPath;
@@ -305,6 +364,14 @@ class WindowsUpdateHandoffRecord {
   final int? parentProcessId;
   final bool? parentExitObserved;
   final DateTime? parentExitObservedAt;
+
+  /// `fushi_update_launcher.exe` 在启动 Inno **之前**实测到的事实：
+  /// `FushiSingleInstanceMutex` 是否已经被释放（`WaitForMutexReleased()`）。
+  ///
+  /// 这是「Fushi 是不是还开着」唯一的**观测**来源。日志里出现 mutex 字样不是
+  /// （BUG-2166：Inno 会把 `[Code]` 段的 `OpenMutexW@kernel32.dll` 导入记进每一份
+  /// 日志，无论成败）。
+  final bool? launcherMutexReleased;
   final bool? installerLaunchSucceeded;
   final DateTime? installerLaunchedAt;
   final int? installerPid;
@@ -320,6 +387,10 @@ class WindowsUpdateHandoffRecord {
   final String? lastPromptedFailureFingerprint;
   final DateTime? lastPromptedAt;
 
+  /// marker 里本模型不认识的键（今天全部来自 C++ launcher）。原样带回磁盘，
+  /// 见 [_knownJsonKeys] 的注释。
+  final Map<String, dynamic> extraFields;
+
   WindowsInstallerDiagnostics get diagnostics => WindowsInstallerDiagnostics(
         currentExecutablePath: currentExecutablePath,
         currentInstallDir: currentInstallDir,
@@ -333,6 +404,9 @@ class WindowsUpdateHandoffRecord {
       );
 
   Map<String, dynamic> toJson() => <String, dynamic>{
+        // 先铺未识别键，本模型认识的键随后写入 —— 两边的键集互斥
+        // （[_knownJsonKeys] 过滤过），这里的顺序只决定 JSON 里的字段次序。
+        ...extraFields,
         'targetVersion': targetVersion,
         'installerPath': installerPath,
         'innoLogPath': innoLogPath,
@@ -373,6 +447,8 @@ class WindowsUpdateHandoffRecord {
         if (parentExitObservedAt != null)
           'parentExitObservedAt':
               parentExitObservedAt!.toUtc().toIso8601String(),
+        if (launcherMutexReleased != null)
+          'launcherMutexReleased': launcherMutexReleased,
         if (installerLaunchSucceeded != null)
           'installerLaunchSucceeded': installerLaunchSucceeded,
         if (installerLaunchedAt != null)
@@ -419,6 +495,7 @@ class WindowsUpdateHandoffRecord {
     int? parentProcessId,
     bool? parentExitObserved,
     DateTime? parentExitObservedAt,
+    bool? launcherMutexReleased,
     bool? installerLaunchSucceeded,
     DateTime? installerLaunchedAt,
     int? installerPid,
@@ -433,6 +510,7 @@ class WindowsUpdateHandoffRecord {
     String? lastPromptedAppVersion,
     String? lastPromptedFailureFingerprint,
     DateTime? lastPromptedAt,
+    Map<String, dynamic>? extraFields,
     bool clearLaunchFailure = false,
   }) {
     return WindowsUpdateHandoffRecord(
@@ -458,6 +536,8 @@ class WindowsUpdateHandoffRecord {
       parentProcessId: parentProcessId ?? this.parentProcessId,
       parentExitObserved: parentExitObserved ?? this.parentExitObserved,
       parentExitObservedAt: parentExitObservedAt ?? this.parentExitObservedAt,
+      launcherMutexReleased:
+          launcherMutexReleased ?? this.launcherMutexReleased,
       installerLaunchSucceeded:
           installerLaunchSucceeded ?? this.installerLaunchSucceeded,
       installerLaunchedAt: installerLaunchedAt ?? this.installerLaunchedAt,
@@ -478,6 +558,7 @@ class WindowsUpdateHandoffRecord {
       lastPromptedFailureFingerprint:
           lastPromptedFailureFingerprint ?? this.lastPromptedFailureFingerprint,
       lastPromptedAt: lastPromptedAt ?? this.lastPromptedAt,
+      extraFields: extraFields ?? this.extraFields,
     );
   }
 }
@@ -890,19 +971,52 @@ WindowsInstallerFailureSummary summarizeWindowsInstallerFailure({
   }
 
   final String lower = log.toLowerCase();
+
+  // BUG-2166：安装器根本没走出启动段。这是**日志形状**上的判据，不是措辞猜测：
+  // 从 `Log opened.` 到 `[Code]` 段外部函数导入之间的那几行是 Inno 每次启动都会写的
+  // 固定内容（且始终是英文，与安装器 UI 语言无关），之后一行都没有 —— 既没进复制阶段，
+  // 也没留下任何自行中止的记录。现场就是这个形状：安装器被自己的
+  // `taskkill /IM fushi.exe /T` 连同所在的祖先进程树一起杀掉（见 fushi.iss 的注释），
+  // 日志在启动后 67ms 戛然而止。
+  if (windowsInnoLogStoppedDuringStartup(log)) {
+    final StringBuffer message = StringBuffer(
+      'Inno Setup stopped during startup: the log ends inside the setup '
+      'preamble, with no file-copy phase and no record of Setup stopping on '
+      'its own. That is the shape of an externally terminated installer, not '
+      'of a cancelled one.',
+    );
+    if (record.launcherMutexReleased == false) {
+      message.write(
+        ' The update launcher also observed FushiSingleInstanceMutex still '
+        'held when it started the installer, so a Fushi process was alive at '
+        'that moment.',
+      );
+    }
+    return WindowsInstallerFailureSummary(
+      type: 'installer_stopped_at_startup',
+      message: message.toString(),
+    );
+  }
+
+  // 「Fushi 还开着」只认**观测**：launcher 在启动 Inno 之前实测互斥量仍被持有，
+  // 或者 Inno 自己在日志里写下了它检测到实例在跑。
+  //
+  // 这里**故意不再**匹配裸 `mutex` / `is running` 子串（BUG-2166 的误诊源头）：
+  // Inno 会把 `[Code]` 段的外部函数导入逐个记进日志，其中就有
+  // `Function and DLL name: OpenMutexW@kernel32.dll` —— 这一行**每一份**日志里都有，
+  // 无论安装成功还是失败。于是旧判据对任何一次失败都恒真，把真正的失败原因
+  // （安装器被杀、复制失败、用户取消）全部盖成同一条「Fushi 仍在运行」。
   final bool mentionsRunningApp = lower.contains('currently running') ||
-      lower.contains('is running') ||
       lower.contains('appmutex') ||
-      lower.contains('mutex') ||
       lower.contains('another instance');
   final bool hasEAbort = lower.contains('eabort');
   final bool looksCanceled = lower.contains('cancel') ||
       lower.contains('aborted') ||
       lower.contains('abort');
-  if (mentionsRunningApp) {
+  if (mentionsRunningApp || record.launcherMutexReleased == false) {
     return WindowsInstallerFailureSummary(
       type: 'app_mutex_running',
-      message: 'Inno Setup reported that Fushi was still running. The '
+      message: 'Fushi was still running when the installer started. The '
           'installer is guarded by FushiSingleInstanceMutex, so every active '
           'fushi.exe process must be closed before the silent installer can '
           'continue.',
@@ -922,6 +1036,49 @@ WindowsInstallerFailureSummary summarizeWindowsInstallerFailure({
     message: 'The installer ran, but Fushi restarted with the previous '
         'version. Check the installer log for the full Inno Setup details.',
   );
+}
+
+/// Inno 每次启动都会写、且**与安装器 UI 语言无关**（这段日志恒为英文）的固定行。
+///
+/// 用途见 [windowsInnoLogStoppedDuringStartup]。这里刻意只收「启动段」的行：
+/// 名单之外出现任何一行，就说明安装器已经走出启动段，判据即不成立。
+const List<String> _kInnoStartupLogMarkers = <String>[
+  'Log opened.',
+  'Setup version:',
+  'Original Setup EXE:',
+  'Setup command line:',
+  'Windows version:',
+  'Windows architecture:',
+  'Machine types supported by system:',
+  'User privileges:',
+  'Administrative install mode:',
+  'Install mode root key:',
+  '64-bit install mode:',
+  'RedirectionGuard status',
+  'Created temporary directory:',
+  '-- DLL function import --',
+  'Function and DLL name:',
+  'Importing the DLL function.',
+  'Successfully imported the DLL function.',
+];
+
+/// 日志是否停在 Inno 的启动段——即安装器**从未**走到复制文件的阶段，
+/// 也没有留下任何自行中止的记录（BUG-2166）。
+///
+/// 判据是「除启动段固定行之外一行都没有」，方向刻意保守：名单不全时只会**少报**
+/// （落回 `installer_incomplete`），不会像旧的子串判据那样把每一次失败都误报成
+/// 同一个原因。
+bool windowsInnoLogStoppedDuringStartup(String log) {
+  bool sawLogOpened = false;
+  bool sawAnyLine = false;
+  for (final String raw in const LineSplitter().convert(log)) {
+    final String line = raw.trim();
+    if (line.isEmpty) continue;
+    sawAnyLine = true;
+    if (line.contains('Log opened.')) sawLogOpened = true;
+    if (!_kInnoStartupLogMarkers.any(line.contains)) return false;
+  }
+  return sawAnyLine && sawLogOpened;
 }
 
 String windowsInstallerFailureFingerprint({

@@ -1290,4 +1290,204 @@ void main() {
       expect(record.lastPromptedAt, isNull);
     });
   });
+
+  group('BUG-2166 安装器停在启动段 / 诊断只认观测不认子串', () {
+    // 用户机上的**真实**日志（2026-09-06，fushi-2.2.4-debug.13582，逐行照抄，
+    // 只把路径与 /SL5 参数做了脱敏）。现场：09:35:03.752 launcher 启动安装器，
+    // 09:35:04.039 日志戛然而止 —— 安装器在 InitializeSetup 里被自己的
+    // `taskkill /IM fushi.exe /T` 连同所在的祖先进程树（fushi.exe →
+    // fushi_update_launcher.exe → setup.exe）一起杀掉，所以没有任何
+    // abort / exception / Deinitializing 行。
+    const String killedAtStartupLog =
+        r'''2026-09-06 09:35:03.972   Log opened. (Time zone: UTC+08:00)
+2026-09-06 09:35:03.972   Setup version: Inno Setup version 6.7.1
+2026-09-06 09:35:03.972   Original Setup EXE: C:\updates\fushi-setup.exe
+2026-09-06 09:35:03.973   Setup command line: /SL5="x,1,2,C:\setup.exe" /VERYSILENT /SP- /SUPPRESSMSGBOXES /NORESTART /DIR=D:\APP\Hibiki
+2026-09-06 09:35:03.973   Windows version: 10.0.26200
+2026-09-06 09:35:03.973   Windows architecture: x64 (64-bit)
+2026-09-06 09:35:03.973   Machine types supported by system: x86 x64
+2026-09-06 09:35:03.973   User privileges: None
+2026-09-06 09:35:04.037   Administrative install mode: No
+2026-09-06 09:35:04.037   Install mode root key: HKEY_CURRENT_USER
+2026-09-06 09:35:04.037   64-bit install mode: No
+2026-09-06 09:35:04.037   RedirectionGuard status for current process: Enabled in enforcing mode
+2026-09-06 09:35:04.038   Created temporary directory: C:\Temp\is-D5OX8W7L61.tmp
+2026-09-06 09:35:04.039   -- DLL function import --
+2026-09-06 09:35:04.039   Function and DLL name: OpenMutexW@kernel32.dll
+2026-09-06 09:35:04.039   Importing the DLL function. Dest DLL name: kernel32.dll
+2026-09-06 09:35:04.039   Successfully imported the DLL function. Delay loaded? No
+2026-09-06 09:35:04.039   -- DLL function import --
+2026-09-06 09:35:04.039   Function and DLL name: CloseHandle@kernel32.dll
+2026-09-06 09:35:04.039   Importing the DLL function. Dest DLL name: kernel32.dll
+2026-09-06 09:35:04.039   Successfully imported the DLL function. Delay loaded? No
+2026-09-06 09:35:04.039   -- DLL function import --
+2026-09-06 09:35:04.039   Function and DLL name: CreateFileW@kernel32.dll
+2026-09-06 09:35:04.039   Importing the DLL function. Dest DLL name: kernel32.dll
+2026-09-06 09:35:04.039   Successfully imported the DLL function. Delay loaded? No''';
+
+    WindowsUpdateHandoffRecord recordWith({bool? launcherMutexReleased}) {
+      return WindowsUpdateHandoffRecord(
+        targetVersion: '2.2.4-debug.13582',
+        installerPath: r'C:\tmp\setup.exe',
+        innoLogPath: r'C:\tmp\setup.install.log',
+        startedAt: DateTime.utc(2026, 9, 6, 1, 32, 53),
+        innoLogExists: true,
+        launcherMutexReleased: launcherMutexReleased,
+      );
+    }
+
+    test('真实现场日志判成「停在启动段」，不再误报 app_mutex_running', () {
+      final WindowsInstallerFailureSummary summary =
+          summarizeWindowsInstallerFailure(
+        record: recordWith(),
+        innoLogContents: killedAtStartupLog,
+      );
+
+      // 旧实现对这份日志**恒定**给出 app_mutex_running：它把下面这行
+      // `[Code]` 段外部函数导入当成了「Fushi 仍在运行」的证据，而这一行在
+      // 每一份 Inno 日志里都有。这条用例就是那次误诊的回归闸。
+      expect(killedAtStartupLog, contains('OpenMutexW@kernel32.dll'));
+      expect(summary.type, 'installer_stopped_at_startup');
+    });
+
+    test('只剩 OpenMutexW 导入行时，不构成「Fushi 仍在运行」的证据', () {
+      // 把日志拉出启动段（多一行复制阶段），结构判据不再成立；此时与 mutex
+      // 有关的仍只有那行 import —— 不得据此判 app_mutex_running。
+      final WindowsInstallerFailureSummary summary =
+          summarizeWindowsInstallerFailure(
+        record: recordWith(),
+        innoLogContents: '$killedAtStartupLog\n'
+            r'2026-09-06 09:35:05.000   Starting the installation process.',
+      );
+
+      expect(summary.type, 'installer_incomplete');
+    });
+
+    test('launcher 实测互斥量未释放，才判 app_mutex_running', () {
+      final WindowsInstallerFailureSummary summary =
+          summarizeWindowsInstallerFailure(
+        record: recordWith(launcherMutexReleased: false),
+        innoLogContents: '$killedAtStartupLog\n'
+            r'2026-09-06 09:35:05.000   Starting the installation process.',
+      );
+
+      expect(summary.type, 'app_mutex_running');
+    });
+
+    test('停在启动段 + 互斥量未释放：两条事实都要出现在消息里', () {
+      final WindowsInstallerFailureSummary summary =
+          summarizeWindowsInstallerFailure(
+        record: recordWith(launcherMutexReleased: false),
+        innoLogContents: killedAtStartupLog,
+      );
+
+      expect(summary.type, 'installer_stopped_at_startup');
+      expect(summary.message, contains('FushiSingleInstanceMutex'));
+    });
+
+    test('走出启动段的日志不算「停在启动段」，空日志不下结论', () {
+      expect(windowsInnoLogStoppedDuringStartup(killedAtStartupLog), isTrue);
+      expect(
+        windowsInnoLogStoppedDuringStartup(
+          '$killedAtStartupLog\n'
+          r'2026-09-06 09:35:05.000   -- File entry --',
+        ),
+        isFalse,
+      );
+      expect(windowsInnoLogStoppedDuringStartup(''), isFalse);
+    });
+
+    test('launcher 写进 marker 的未知键，经 Dart 读写一轮后仍在', () {
+      // C++ launcher（`update_launcher.cpp` 的 `AppendMarkerFields`）写下的观测。
+      // 旧实现在 fromJson → toJson 这一轮把它们全部静默丢掉，事后连「是
+      // OpenProcess 失败还是真的等超时」都分不出来。
+      final Map<String, dynamic> onDisk = <String, dynamic>{
+        'targetVersion': '2.2.4-debug.13582',
+        'installerPath': r'C:\tmp\setup.exe',
+        'innoLogPath': r'C:\tmp\setup.install.log',
+        'startedAt': '2026-09-06T01:32:53.434671Z',
+        'parentExitObserved': false,
+        'parentExitTimedOut': true,
+        'parentExitTimedOutAt': '2026-09-06T01:34:53.517Z',
+        'launcherMutexReleased': false,
+        'launcherMutexCheckedAt': '2026-09-06T01:35:03.752Z',
+        'appAliveAfterInstaller': false,
+        'appRelaunchedByLauncher': true,
+        'appRelaunchPath': r'D:\APP\Hibiki\fushi.exe',
+      };
+
+      final Map<String, dynamic> roundTripped =
+          WindowsUpdateHandoffRecord.fromJson(onDisk).toJson();
+
+      for (final String key in onDisk.keys) {
+        expect(roundTripped.containsKey(key), isTrue,
+            reason: 'marker 键 $key 在 Dart 读写一轮后丢失了');
+      }
+      expect(roundTripped['parentExitTimedOut'], isTrue);
+      expect(roundTripped['launcherMutexReleased'], isFalse);
+      expect(roundTripped['appRelaunchedByLauncher'], isTrue);
+    });
+
+    test('模型写出的每个键都被自己认识（extraFields 与已知键不重叠）', () {
+      // 新增 model 字段却忘了登记进 `_knownJsonKeys`，会让该键在下一轮读回时落进
+      // extraFields，随后被 toJson 重复写出。这条用例是那个疏漏的闸门。
+      final WindowsUpdateHandoffRecord full = WindowsUpdateHandoffRecord(
+        targetVersion: '1.2.3',
+        installerPath: r'C:\tmp\setup.exe',
+        innoLogPath: r'C:\tmp\setup.log',
+        startedAt: DateTime.utc(2026, 9, 6),
+        currentExecutablePath: r'D:\APP\Hibiki\fushi.exe',
+        currentInstallDir: r'D:\APP\Hibiki',
+        targetInstallDir: r'D:\APP\Hibiki',
+        detectedInstallLocations: const <WindowsDetectedInstallLocation>[
+          WindowsDetectedInstallLocation(
+            source: 'current',
+            path: r'D:\APP\Hibiki',
+          ),
+        ],
+        runningFushiProcesses: const <WindowsProcessInfo>[
+          WindowsProcessInfo(pid: 1, name: 'fushi.exe'),
+        ],
+        libmpvModuleHolders: const <WindowsProcessInfo>[
+          WindowsProcessInfo(pid: 2, name: 'mpv.exe'),
+        ],
+        galHookModuleHolders: const <WindowsProcessInfo>[
+          WindowsProcessInfo(pid: 3, name: 'game.exe'),
+        ],
+        innoLogDeleteFileFailures: const <WindowsInnoDeleteFileFailure>[
+          WindowsInnoDeleteFileFailure(path: r'D:\a.dll', code: 5),
+        ],
+        pathMismatchWarning: 'warn',
+        launcherStartedAt: DateTime.utc(2026, 9, 6, 0, 1),
+        launcherPid: 7028,
+        parentProcessId: 97348,
+        parentExitObserved: false,
+        parentExitObservedAt: DateTime.utc(2026, 9, 6, 0, 2),
+        launcherMutexReleased: false,
+        installerLaunchSucceeded: true,
+        installerLaunchedAt: DateTime.utc(2026, 9, 6, 0, 3),
+        installerPid: 12024,
+        innoLogExists: true,
+        innoLogSizeBytes: 2185,
+        innoLogModifiedAt: DateTime.utc(2026, 9, 6, 0, 4),
+        installerFailureType: 'installer_stopped_at_startup',
+        installerFailureSummary: 'summary',
+        installerLaunchFailedAt: DateTime.utc(2026, 9, 6, 0, 5),
+        launchError: 'err',
+        failureFingerprint: 'fp',
+        lastPromptedAppVersion: '1.2.2',
+        lastPromptedFailureFingerprint: 'fp2',
+        lastPromptedAt: DateTime.utc(2026, 9, 6, 0, 6),
+      );
+
+      final WindowsUpdateHandoffRecord reread =
+          WindowsUpdateHandoffRecord.fromJson(full.toJson());
+      expect(
+        reread.extraFields,
+        isEmpty,
+        reason: '这些键是模型自己写出去的，读回来必须被自己认识：'
+            '${reread.extraFields.keys.join(", ")}',
+      );
+    });
+  });
 }

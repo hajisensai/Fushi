@@ -233,27 +233,54 @@ begin
             NamedMutexExists(LegacyAppMutexName);
 end;
 
+{ BUG-2166：这两个过程**绝不能带 /T**。
+
+  应用内静默更新时，本安装器就是被更新的那个 fushi.exe 的**孙进程**：
+      fushi.exe → fushi_update_launcher.exe → <本 setup.exe>
+  （launcher 由 app 用 CreateProcess 拉起、setup 由 launcher 拉起；Windows 无条件
+  把创建者记为父进程，detached 也不例外）。而 taskkill 的 /T 是**递归**杀整条后代树
+  ——不是只杀直接子进程。实测（同机，三层 cmd 副本）：
+      taskkill /F /IM fk_parent.exe /T
+      → 成功: 已终止 PID 88128 (属于 PID 47184 子进程)   ← 孙进程也被带走
+  于是 InitializeSetup 里这一句会把 launcher 和**安装器自己**一起杀掉：安装器在
+  自我防卫时自杀。现场（2026-09-06，用户机）：09:35:03.752 启动安装器，
+  09:35:04.039 Inno 日志戛然而止在启动段的 DLL import 之后，**没有**任何 abort /
+  exception / Deinitializing 行 —— 这正是被外部强杀而非自行中止的形状；磁盘保持旧版。
+  更糟的是 launcher 一并没了，BUG-1708 那条「安装失败时把 app 拉回来」的兜底随之
+  失效，Fushi 从用户桌面上静默消失（用户只能自己去开始菜单重开）。
+
+  /T 原本是为了带走 WebView2 子进程，但它们的 image 名就是 msedgewebview2.exe，
+  InitializeSetup 下面已经按 image 名单独扫了一遍 —— /T 不提供任何额外覆盖，
+  只提供自杀能力。按 image 名杀就够了：fushi.exe / hibiki.exe 的每个实例都会被
+  /IM 命中（包括那个持有互斥量的父进程），而 setup.exe 与 launcher 不叫这个名字
+  （/IM 是整名匹配，fushi.exe 不会命中 fushi_update_launcher.exe），于是安装器
+  活到装完、launcher 活到能兜底。
+
+  本阶段只负责一件事：**让互斥量被释放**，而互斥量只有 fushi.exe 持有。其余
+  helper 子进程（ffmpeg.exe / fushi_voice_injector.exe 之类）不归这里管 —— 它们
+  是「文件锁」问题，由 PrepareToInstall 的 KillProcessesUnderDir 按**镜像路径**
+  在复制前统一清掉（BUG-1459）。所以去掉 /T 没有留下覆盖缺口，只是把两件事各自
+  还给了负责它的那一层。 }
+
 { Gentle close: taskkill WITHOUT /F sends WM_CLOSE so the app can save state
-  and release its mutex on its own. /T also targets child processes (the
-  WebView2 msedgewebview2.exe runs as a child). }
+  and release its mutex on its own. }
 procedure KillGracefully(const ExeName: String);
 var
   ResultCode: Integer;
 begin
   Exec(ExpandConstant('{sys}\taskkill.exe'),
-       '/IM ' + ExeName + ' /T',
+       '/IM ' + ExeName,
        '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
-{ Force kill: /F forces, /IM by image name, /T takes the whole child-process
-  tree (WebView2 included). ResultCode=128 means no matching process; that is
-  not an error -- the mutex poll is the source of truth. }
+{ Force kill: /F forces, /IM by image name. ResultCode=128 means no matching
+  process; that is not an error -- the mutex poll is the source of truth. }
 procedure KillImage(const ExeName: String);
 var
   ResultCode: Integer;
 begin
   Exec(ExpandConstant('{sys}\taskkill.exe'),
-       '/F /IM ' + ExeName + ' /T',
+       '/F /IM ' + ExeName,
        '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
@@ -688,8 +715,9 @@ begin
     Sleep(MutexReleasePollIntervalMs);
   end;
 
-  { Still alive: force-kill both exe trees (WebView2 with them), then sweep
-    any orphaned msedgewebview2.exe. }
+  { Still alive: force-kill both exe names, then sweep every msedgewebview2.exe.
+    按 image 名逐个杀，**不用进程树**（BUG-2166：安装器自己就在 fushi.exe 的后代树里）；
+    WebView2 的每一个子进程都叫 msedgewebview2.exe，第三行已经全数覆盖。 }
   KillImage('fushi.exe');
   KillImage('hibiki.exe');
   KillImage('msedgewebview2.exe');
