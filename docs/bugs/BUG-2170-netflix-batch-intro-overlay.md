@@ -20,7 +20,7 @@
   所以录制侧不能把 CSS 隐藏当保证，必须另有一道与选择器无关的门。
 
 - **[x] ① 已修复** —— `tools/browser-extension/content.js`（+ `fushi/assets/browser_extension/`
-  镜像，逐字节一致）三处，提交 `<pending>`：
+  镜像，逐字节一致）三处，提交 `6e2736c13a`：
   1. `:855` 新增提示窗常量 `kNfIntroOverlaySec = 8` 与 `:865`
      `fushiWaitPastNetflixIntroOverlay(v, maxMs)`：有界等待，让本集真正**向前播过**提示窗
      再返回。判据是「相对开始等待时的**播放推进量**」，不是墙钟（暂停干等不会让提示过期）、
