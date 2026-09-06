@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "version": "2.2.4-debug.13638",
-  "tag": "v2.2.4-debug.13638+50f50e2",
+  "version": "2.2.4-debug.13661",
+  "tag": "v2.2.4-debug.13661+505068d",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 13638,
-  "notes": "Automated release-signed debug-channel build from develop @ 50f50e2. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 13661,
+  "notes": "Automated desktop debug-channel build from main @ 505068d. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "fushi-2.2.4-debug.13635-ios.ipa",
@@ -26,15 +26,6 @@
       "sha256": "9b9ebc28b861b85b615fa6a811fbad2175c1baf4e42839074ba38b3562d00ad5"
     },
     {
-      "name": "fushi-2.2.4-debug.13635-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.4-debug.13635-windows-setup.exe",
-      "releaseSequence": 13635,
-      "tag": "v2.2.4-debug.13635+5f3d60b",
-      "version": "2.2.4-debug.13635",
-      "size": 264447791,
-      "sha256": "c165f76b88b15dee760427eb37f01b8471fc3200d2f9419926f932a6effefefc"
-    },
-    {
       "name": "fushi-2.2.4-debug.13638-50f50e2-debug.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.4-debug.13638-50f50e2-debug.apk",
       "releaseSequence": 13638,
@@ -42,6 +33,15 @@
       "version": "2.2.4-debug.13638",
       "size": 267890271,
       "sha256": "492c9a373be9fc2d487738a9a76fd2a6f1ccbc4119eeb622824b23d873b60a8c"
+    },
+    {
+      "name": "fushi-2.2.4-debug.13661-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.4-debug.13661-windows-setup.exe",
+      "releaseSequence": 13661,
+      "tag": "v2.2.4-debug.13661+505068d",
+      "version": "2.2.4-debug.13661",
+      "size": 261544671,
+      "sha256": "f329aac33fd20e121c698340e8ca8bb384d50576493051c50794e5188079a817"
     }
   ]
 }
