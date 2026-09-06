@@ -74,7 +74,9 @@ import 'package:fushi/src/reader/reader_selection_data.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi/src/reader/reader_chrome_floating.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
+import 'package:fushi/src/reader/reader_chrome_controller.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
+import 'package:fushi/src/reader/reader_gallery_page.dart';
 import 'package:fushi/src/reader/reader_statistics_dialog.dart';
 import 'package:fushi/src/reader/reader_status_footer.dart';
 import 'package:fushi/src/stats/stat_facts.dart';
@@ -1450,6 +1452,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     setState(fn);
   }
 
+  void _onChromeControllerChanged() => _rebuild(() {});
+
   /// 同 [_rebuild] 的理由：part 扩展不被视作 State 子类实例成员，直接读写
   /// `BaseSourcePageState` 的 @protected 弹窗栈成员会报 invalid_use_of_protected_member。
   /// 由本 State 子类持有的下面三个转发器统一承接（仅转发，零行为变化），供 caret
@@ -1762,7 +1766,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   bool _gamepadALongFired = false;
   // 重入守卫：「调整」面板从点击到 show 之间有 DB 读 await，快速连点会二次进入并
   // 弹出两个面板（BUG-026）。打开期间置 true、关闭后于 finally 复位。
-  bool _appearanceSheetOpen = false;
+  bool get _appearanceSheetOpen => _chrome.appearanceSheetOpen;
+  set _appearanceSheetOpen(bool value) => _chrome.appearanceSheetOpen = value;
 
   // BUG-969：设置实时预览的合并执行器。拖 slider 时 onSettingsChangedLive 每个
   // tick 触发一次，旧实现每次直接跑「CSS 注入 + 样式重锚 + tap-gate 同步 + 整页
@@ -1827,13 +1832,22 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 全屏切换的串行闸：native 往返期间再点按钮不重入。
   bool _windowFullscreenTransitioning = false;
 
-  bool _showChrome = true;
+  /// chrome 显隐状态机的唯一持有者（[ReaderChromeController]）；下面的
+  /// `_showChrome` / `_chromeTransientVisible` / `_appearanceSheetOpen` /
+  /// `_chromeAutoHideTimer` 只是同名转发，保持既有调用点与源码守卫不变。
+  final ReaderChromeController _chrome = ReaderChromeController();
+
+  bool get _showChrome => _chrome.showChrome;
+  set _showChrome(bool value) => _chrome.showChrome = value;
+
   // TODO-975: floating chrome (顶部进度 / 底栏) 的「被点击唤出、临时可见」态。挤压
   // 模式恒忽略此旗；悬浮模式下唤出置 true + 武装 _chromeAutoHideTimer，计时到 / 再点
   // 一下立即收起置 false。顶部与底栏共用同一旗与同一计时器（决策#1 时长共用、决策#2
   // 两栏唤出/收起联动）。改 _chromeTransientVisible 不改预留高 → 不需重锚。
-  bool _chromeTransientVisible = false;
-  Timer? _chromeAutoHideTimer;
+  bool get _chromeTransientVisible => _chrome.transientVisible;
+  set _chromeTransientVisible(bool value) =>
+      _chrome.transientVisible = value;
+  Timer? get _chromeAutoHideTimer => _chrome.autoHideTimer;
   double _lastSyncedWidth = 0;
   double _lastSyncedHeight = 0;
   // TODO-690 / BUG-399：桌面拖窗口边框 resize 的尾沿防抖。阅读器树内的透明
@@ -2020,9 +2034,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// macOS 原生全屏态。非 macOS 恒为 false。
   bool _macosFullscreen = false;
 
-  double get _readerTopOffset => _stableTopInset +
-      _macosWindowTitlebarInset +
-      _topProgressReserve +
+  double get _readerTopOffset =>
+      _stableTopInset + _macosWindowTitlebarInset + _topProgressReserve +
       _desktopHeaderReserve;
 
   double get _readerBottomReserve =>
@@ -2044,6 +2057,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   @override
   void initState() {
     super.initState();
+    // chrome 状态机的变更（含自动收起计时到点）统一经此重建。
+    _chrome.addListener(_onChromeControllerChanged);
     assert(() {
       ReaderFushiPage.debugOpenQuickSettings = () async {
         unawaited(_showAppearanceSheet());
@@ -2619,6 +2634,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     }
     _resizeRepaginateDebounce?.cancel();
     _chromeAutoHideTimer?.cancel();
+    _chrome.removeListener(_onChromeControllerChanged);
+    _chrome.dispose();
     _clearGamepadAHold();
     VolumeKeyChannel.instance.setHandlers();
     VolumeKeyChannel.instance.setInterceptEnabled(false);

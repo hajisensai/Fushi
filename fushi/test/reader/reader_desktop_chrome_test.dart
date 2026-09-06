@@ -79,19 +79,19 @@ void main() {
             title: '無職転生 20',
             textColor: Colors.white,
             backgroundColor: Colors.black,
-            leading: <Widget>[
-              ReaderDesktopHeaderButton(
+            leading: <ReaderHeaderAction>[
+              ReaderHeaderAction(
                 icon: Icons.arrow_back,
-                tooltip: 'back',
-                color: Colors.white,
+                label: 'back',
+                pinned: true,
                 onPressed: () {},
               ),
             ],
-            trailing: <Widget>[
-              ReaderDesktopHeaderButton(
+            trailing: <ReaderHeaderAction>[
+              ReaderHeaderAction(
                 icon: Icons.tune_outlined,
-                tooltip: 'settings',
-                color: Colors.white,
+                label: 'settings',
+                pinned: true,
                 onPressed: () {},
               ),
             ],
@@ -120,10 +120,16 @@ void main() {
       isTrue,
       reason: 'BUG-1692：排在 WebView 之后的 chrome 必须自带 RepaintBoundary',
     );
+    final String header = File(
+      'lib/src/reader/reader_desktop_chrome.dart',
+    ).readAsStringSync();
+    final int headerAt = header.indexOf('class ReaderDesktopHeader ');
+    expect(headerAt, greaterThan(-1));
     expect(
-      chrome.substring(at, at + 900).contains('ExcludeFocus('),
+      header.substring(headerAt).contains('return ExcludeFocus('),
       isTrue,
-      reason: '纯指针面，不进焦点遍历池（TODO-700 不变式）',
+      reason: '纯指针面，不进焦点遍历池（TODO-700 不变式）——ExcludeFocus 在组件内部，'
+          '让 chrome.part 里的 ExcludeFocus 仍唯一属于 _wrapBottomChromeBar',
     );
     expect(page.contains('_buildDesktopHeader(),'), isTrue);
     expect(

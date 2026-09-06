@@ -4301,5 +4301,6 @@
   "reader_stats_finish_book": "Book",
   "reader_audiobook_tab_files": "Audio files",
   "reader_audiobook_tab_chapters": "Chapters",
-  "reader_audiobook_current_chapter": "Current chapter"
+  "reader_audiobook_current_chapter": "Current chapter",
+  "reader_stats_this_book": "This book"
 }

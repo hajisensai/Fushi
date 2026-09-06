@@ -4301,5 +4301,6 @@
   "reader_stats_finish_book": "全书",
   "reader_audiobook_tab_files": "资源",
   "reader_audiobook_tab_chapters": "章节",
-  "reader_audiobook_current_chapter": "当前章节"
+  "reader_audiobook_current_chapter": "当前章节",
+  "reader_stats_this_book": "本书"
 }

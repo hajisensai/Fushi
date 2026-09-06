@@ -963,7 +963,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     Navigator.push(
       context,
       MaterialPageRoute<void>(
-        builder: (BuildContext routeContext) => _ReaderGalleryPage(
+        builder: (BuildContext routeContext) => ReaderGalleryPage(
           images: images,
           currentChapter: currentChapter,
           fileForRef: (EpubImageRef ref) =>
@@ -1107,20 +1107,12 @@ extension _ReaderChrome on _ReaderFushiPageState {
   // 唤出期间再点一下立即收起（决策#4：不续命）。改 _chromeTransientVisible 不改预留高
   // （悬浮恒 0），故纯显隐不重锚。挤压模式不调用这套（无 timer）。
 
-  void _cancelChromeAutoHide() {
-    _chromeAutoHideTimer?.cancel();
-    _chromeAutoHideTimer = null;
-  }
+  void _cancelChromeAutoHide() => _chrome.cancelAutoHide();
 
+  /// 武装自动收起：计时到点由 [ReaderChromeController] 收起临时可见态并通知重建。
   void _armChromeAutoHide() {
-    _cancelChromeAutoHide();
     final int millis = ReaderFushiSource.instance.autoHideChromeMillis;
-    _chromeAutoHideTimer = Timer(Duration(milliseconds: millis), () {
-      if (!mounted) return;
-      _rebuild(() {
-        _chromeTransientVisible = false;
-      });
-    });
+    _chrome.armAutoHide(Duration(milliseconds: millis));
   }
 
   /// VN 空白点推进时用的「保证悬浮 chrome 可见并重新计时」——与
@@ -1408,7 +1400,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
       key: key,
       left: 0,
       right: 0,
-      bottom: 0,
+      // 桌面端悬浮态：底栏（有声书播放条）坐在状态行之上，别盖住阅读追踪 / 进度
+      // 数字；挤压态状态行本来就排在底栏上方（bottom: _bottomChromeReserve），底栏
+      // 仍贴底。
+      bottom: _bottomBarFloating ? _statusFooterReserve : 0,
       // BUG-1692：底栏排在 WebView **之后**绘制。不自带 RepaintBoundary 就会并进
       // 页面级 RepaintBoundary 那张 cull rect = 整窗的 PictureLayer，macOS engine
       // 把整窗写进 FlutterMutatorView 的 _hitTestIgnoreRegion，整块 WebView 收不到
@@ -2042,50 +2037,49 @@ extension _ReaderChrome on _ReaderFushiPageState {
       top: _stableTopInset + _macosWindowTitlebarInset,
       left: 0,
       right: 0,
+      // 焦点排除在 ReaderDesktopHeader 内部（纯指针面，TODO-700 不变式）；底栏的
+      // ExcludeFocus 外壳仍唯一在 _wrapBottomChromeBar（守卫 reader_focus_chrome_excluded）。
       child: RepaintBoundary(
-        child: ExcludeFocus(
-          child: ReaderDesktopHeader(
+        child: ReaderDesktopHeader(
             key: const ValueKey<String>('fushi_desktop_header'),
             title: _book?.title ?? '',
             textColor: fg,
             backgroundColor: _themeBackgroundColor(),
-            leading: <Widget>[
-              ReaderDesktopHeaderButton(
+            // pinned = 窄窗紧凑形态仍保留的按钮；其余收进 ⋮ 溢出菜单。
+            leading: <ReaderHeaderAction>[
+              ReaderHeaderAction(
                 icon: Icons.arrow_back,
-                tooltip: t.back,
-                color: fg,
+                label: t.back,
+                pinned: true,
                 semanticsId: 'hibiki.reader.header.back',
                 // 与面板「退出」同一条路：maybePop 触发 PopScope → onWillPop
                 // （落位置 flush / closeMedia / 关书同步，BUG-782）。
                 onPressed: () => unawaited(Navigator.of(context).maybePop()),
               ),
-              ReaderDesktopHeaderButton(
+              ReaderHeaderAction(
                 icon: Icons.format_list_bulleted,
-                tooltip: t.section_navigation,
-                color: fg,
+                label: t.section_navigation,
+                pinned: true,
                 semanticsId: 'hibiki.reader.header.navigation',
                 onPressed: () =>
                     unawaited(_showAppearanceSheet(initialSubPage: 'location')),
               ),
-              ReaderDesktopHeaderButton(
+              ReaderHeaderAction(
                 icon: Icons.collections_outlined,
-                tooltip: t.reader_gallery_tooltip,
-                color: fg,
+                label: t.reader_gallery_tooltip,
                 onPressed: _openGallery,
               ),
-              ReaderDesktopHeaderButton(
+              ReaderHeaderAction(
                 icon: Icons.insights_outlined,
-                tooltip: t.reading_statistics,
-                color: fg,
+                label: t.reading_statistics,
                 semanticsId: 'hibiki.reader.header.statistics',
                 onPressed: _openReadingStatistics,
               ),
             ],
-            trailing: <Widget>[
-              ReaderDesktopHeaderButton(
+            trailing: <ReaderHeaderAction>[
+              ReaderHeaderAction(
                 icon: Icons.headphones_outlined,
-                tooltip: t.section_audiobook,
-                color: fg,
+                label: t.section_audiobook,
                 semanticsId: 'hibiki.reader.header.audiobook',
                 // 已挂有声书 → 居中面板；没有 → 直接进导入。
                 onPressed: _audiobookController != null
@@ -2094,26 +2088,24 @@ extension _ReaderChrome on _ReaderFushiPageState {
                     : _openAudioImportDialog,
               ),
               if (desktopWindowFullscreenSupported)
-                ReaderDesktopHeaderButton(
+                ReaderHeaderAction(
                   key: const ValueKey<String>('fushi_reader_fullscreen_button'),
                   icon: _isWindowFullscreen
                       ? Icons.fullscreen_exit_rounded
                       : Icons.fullscreen_rounded,
-                  tooltip: t.shortcut_action_global_toggle_fullscreen,
-                  color: fg,
+                  label: t.shortcut_action_global_toggle_fullscreen,
                   semanticsId: 'hibiki.reader.bottom.fullscreen',
                   onPressed: () => unawaited(_changeReaderWindowFullscreen()),
                 ),
-              ReaderDesktopHeaderButton(
+              ReaderHeaderAction(
                 key: const ValueKey<String>('fushi_reader_settings_button'),
                 icon: Icons.tune_outlined,
-                tooltip: t.reader_settings_section,
-                color: fg,
+                label: t.reader_settings_section,
+                pinned: true,
                 semanticsId: 'hibiki.reader.bottom.settings',
                 onPressed: () => unawaited(_showAppearanceSheet()),
               ),
             ],
-          ),
         ),
       ),
     );
@@ -2722,311 +2714,3 @@ extension _ReaderChrome on _ReaderFushiPageState {
 /// current chapter are marked ("Reading here") and scrolled into view on open.
 /// Decoupled from reader page state -- the page passes in a resolver
 /// ([fileForRef]) plus open/jump callbacks so this widget owns no reader logic.
-class _ReaderGalleryPage extends StatefulWidget {
-  const _ReaderGalleryPage({
-    required this.images,
-    required this.currentChapter,
-    required this.fileForRef,
-    required this.onOpenImage,
-    required this.onJumpTo,
-  });
-
-  final List<EpubImageRef> images;
-  final int currentChapter;
-  final File? Function(EpubImageRef ref) fileForRef;
-  final void Function(EpubImageRef ref) onOpenImage;
-  final void Function(EpubImageRef ref) onJumpTo;
-
-  @override
-  State<_ReaderGalleryPage> createState() => _ReaderGalleryPageState();
-}
-
-/// 插图画廊（ッツ / Hoshi Reader Gallery 形态）：顶栏「Gallery + 关闭」，中央一张大图，
-/// 左右圆形箭头切图，底部一条横向缩略图带（选中项描边）。左右方向键切图、Esc 关闭；
-/// 点大图进既有的缩放查看器（[onOpenImage]），顶栏「跳到此插图」回正文对应章
-/// （[onJumpTo]）。初始定位到当前章的第一张插图。
-class _ReaderGalleryPageState extends State<_ReaderGalleryPage> {
-  static const double _kThumbWidth = 56;
-  static const double _kThumbHeight = 72;
-  static const double _kThumbGap = 8;
-  static const double _kStripPadding = 12;
-
-  final ScrollController _thumbController = ScrollController();
-  final FocusNode _focusNode = FocusNode(debugLabel: 'reader-gallery');
-  late int _index = _initialIndex();
-
-  int _initialIndex() {
-    final int first = widget.images.indexWhere(
-        (EpubImageRef r) => r.chapterIndex == widget.currentChapter);
-    return first < 0 ? 0 : first;
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => _scrollThumbsTo(_index, animate: false),
-    );
-  }
-
-  @override
-  void dispose() {
-    _thumbController.dispose();
-    _focusNode.dispose();
-    super.dispose();
-  }
-
-  bool get _hasImages => widget.images.isNotEmpty;
-  EpubImageRef? get _current => _hasImages ? widget.images[_index] : null;
-
-  void _select(int index) {
-    if (!_hasImages) return;
-    final int next = index.clamp(0, widget.images.length - 1);
-    if (next == _index) return;
-    setState(() => _index = next);
-    _scrollThumbsTo(next, animate: true);
-  }
-
-  /// 把选中缩略图滚到缩略图带正中（两端夹到滚动范围内）。
-  void _scrollThumbsTo(int index, {required bool animate}) {
-    if (!_thumbController.hasClients) return;
-    final double viewport = _thumbController.position.viewportDimension;
-    final double target = (_kStripPadding +
-            index * (_kThumbWidth + _kThumbGap) -
-            (viewport - _kThumbWidth) / 2)
-        .clamp(0.0, _thumbController.position.maxScrollExtent);
-    if (animate) {
-      _thumbController.animateTo(
-        target,
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOutCubic,
-      );
-    } else {
-      _thumbController.jumpTo(target);
-    }
-  }
-
-  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
-    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
-      return KeyEventResult.ignored;
-    }
-    if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
-      _select(_index - 1);
-      return KeyEventResult.handled;
-    }
-    if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
-      _select(_index + 1);
-      return KeyEventResult.handled;
-    }
-    if (event.logicalKey == LogicalKeyboardKey.escape) {
-      Navigator.of(context).maybePop();
-      return KeyEventResult.handled;
-    }
-    return KeyEventResult.ignored;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return Scaffold(
-      backgroundColor: theme.colorScheme.surface,
-      body: Focus(
-        focusNode: _focusNode,
-        autofocus: true,
-        onKeyEvent: _onKey,
-        child: Column(
-          children: <Widget>[
-            _buildHeader(theme),
-            Expanded(
-              child: _hasImages
-                  ? _buildStage(theme)
-                  : Center(
-                      child: Text(
-                        t.reader_gallery_empty,
-                        style: theme.textTheme.bodyLarge,
-                      ),
-                    ),
-            ),
-            if (_hasImages) _buildThumbStrip(theme),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeader(ThemeData theme) {
-    final EpubImageRef? current = _current;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 8, 4),
-      child: Row(
-        children: <Widget>[
-          Text(
-            t.reader_gallery,
-            style: theme.textTheme.titleMedium,
-          ),
-          if (current != null) ...<Widget>[
-            const SizedBox(width: 12),
-            Text(
-              '${_index + 1} / ${widget.images.length}',
-              style: theme.textTheme.labelMedium
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-            ),
-            if (current.chapterIndex == widget.currentChapter) ...<Widget>[
-              const SizedBox(width: 12),
-              Text(
-                t.reader_gallery_current,
-                style: theme.textTheme.labelSmall
-                    ?.copyWith(color: theme.colorScheme.primary),
-              ),
-            ],
-          ],
-          const Spacer(),
-          if (current != null)
-            IconButton(
-              key: const ValueKey<String>('fushi_gallery_jump'),
-              tooltip: t.reader_gallery_jump,
-              icon: const Icon(Icons.my_location_outlined),
-              onPressed: () => widget.onJumpTo(current),
-            ),
-          IconButton(
-            key: const ValueKey<String>('fushi_gallery_close'),
-            tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
-            icon: const Icon(Icons.close),
-            onPressed: () => Navigator.of(context).maybePop(),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStage(ThemeData theme) {
-    final EpubImageRef current = _current!;
-    final File? file = widget.fileForRef(current);
-    final Widget image = file == null
-        ? Icon(
-            Icons.broken_image_outlined,
-            size: 64,
-            color: theme.colorScheme.onSurfaceVariant,
-          )
-        : Image.file(
-            file,
-            key: ValueKey<String>('fushi_gallery_stage_${current.src}'),
-            fit: BoxFit.contain,
-            gaplessPlayback: true,
-          );
-    return Stack(
-      children: <Widget>[
-        Positioned.fill(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 72, vertical: 8),
-            child: GestureDetector(
-              onTap: () => widget.onOpenImage(current),
-              child: Center(child: image),
-            ),
-          ),
-        ),
-        Positioned(
-          left: 16,
-          top: 0,
-          bottom: 0,
-          child: Center(
-            child: _arrowButton(
-              theme,
-              icon: Icons.chevron_left,
-              enabled: _index > 0,
-              onPressed: () => _select(_index - 1),
-            ),
-          ),
-        ),
-        Positioned(
-          right: 16,
-          top: 0,
-          bottom: 0,
-          child: Center(
-            child: _arrowButton(
-              theme,
-              icon: Icons.chevron_right,
-              enabled: _index < widget.images.length - 1,
-              onPressed: () => _select(_index + 1),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _arrowButton(
-    ThemeData theme, {
-    required IconData icon,
-    required bool enabled,
-    required VoidCallback onPressed,
-  }) {
-    return Material(
-      color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.8),
-      shape: const CircleBorder(),
-      child: IconButton(
-        icon: Icon(icon),
-        iconSize: 24,
-        color: theme.colorScheme.onSurface,
-        onPressed: enabled ? onPressed : null,
-      ),
-    );
-  }
-
-  Widget _buildThumbStrip(ThemeData theme) {
-    return SizedBox(
-      height: _kThumbHeight + _kStripPadding * 2,
-      child: ListView.separated(
-        controller: _thumbController,
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.all(_kStripPadding),
-        itemCount: widget.images.length,
-        separatorBuilder: (_, __) => const SizedBox(width: _kThumbGap),
-        itemBuilder: (BuildContext context, int index) =>
-            _buildThumb(theme, index),
-      ),
-    );
-  }
-
-  Widget _buildThumb(ThemeData theme, int index) {
-    final EpubImageRef ref = widget.images[index];
-    final bool selected = index == _index;
-    final File? file = widget.fileForRef(ref);
-    final Widget thumbnail = file == null
-        ? ColoredBox(
-            color: theme.colorScheme.surfaceContainerHighest,
-            child: Center(
-              child: Icon(
-                Icons.broken_image_outlined,
-                size: 18,
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          )
-        : Image.file(file, fit: BoxFit.cover);
-    return GestureDetector(
-      onTap: () => _select(index),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 120),
-        width: _kThumbWidth,
-        height: _kThumbHeight,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(4),
-          border: Border.all(
-            color: selected
-                ? theme.colorScheme.primary
-                : theme.colorScheme.outlineVariant,
-            width: selected ? 2 : 1,
-          ),
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(3),
-          child: Opacity(
-            opacity: selected ? 1 : 0.7,
-            child: thumbnail,
-          ),
-        ),
-      ),
-    );
-  }
-}

@@ -656,6 +656,83 @@ class AudiobookPlayerController extends ChangeNotifier {
     return base + cue.startMs;
   }
 
+  /// 全书时间轴上的 seek：把 [globalMs] 拆成（文件下标, 文件内偏移）。同文件走
+  /// [seekMs]；跨文件走与 [skipToCue] 同一条显式 seek 路径（`_player.seek(index:)`
+  /// + 抑制窗，位置落定后由 `_updateCurrentCue` 清旗）。文件时长未知（单文件 /
+  /// 未就绪）时退回 [seekMs]。有声书面板的整书进度条用它。
+  Future<void> seekGlobalMs(int globalMs) async {
+    await _loadReady.future;
+    if (_fileDurationsMs.isEmpty) {
+      await seekMs(globalMs);
+      return;
+    }
+    final ({int fileIndex, int offsetMs}) target = splitGlobalMs(
+      globalMs,
+      _fileDurationsMs,
+    );
+    final int currentIndex = _player.currentIndex ?? 0;
+    if (target.fileIndex == currentIndex) {
+      await seekMs(target.offsetMs);
+      return;
+    }
+    _clearExplicitSeekSuppression();
+    _beginExplicitSeek(target.fileIndex, target.offsetMs);
+    await _player.seek(
+      Duration(milliseconds: target.offsetMs),
+      index: target.fileIndex,
+    );
+    notifyListeners();
+  }
+
+  /// 把全书毫秒拆成（文件下标, 文件内偏移）：越界夹到末文件末尾。纯函数，供
+  /// [seekGlobalMs] 与测试共用。
+  static ({int fileIndex, int offsetMs}) splitGlobalMs(
+    int globalMs,
+    List<int> fileDurationsMs,
+  ) {
+    int remaining = globalMs < 0 ? 0 : globalMs;
+    int fileIndex = 0;
+    for (; fileIndex < fileDurationsMs.length - 1; fileIndex++) {
+      final int d = fileDurationsMs[fileIndex];
+      if (remaining < d) break;
+      remaining -= d;
+    }
+    final int last = fileDurationsMs.isEmpty ? 0 : fileDurationsMs[fileIndex];
+    if (remaining > last) remaining = last;
+    return (fileIndex: fileIndex, offsetMs: remaining);
+  }
+
+  // ── 章 → 首句 cue 缓存（面板章节时间戳 / 章节点击定位） ─────────────────
+  final Map<int, AudioCue?> _sectionFirstCueCache = <int, AudioCue?>{};
+
+  /// 某章（EPUB section 下标）在**全书** cue 里的首句；该章没有 cue → null。按章
+  /// 缓存，[setAllBookCues] / [load] 时失效。与 [sentenceAudioCuesForSection]
+  /// 不同——那个只看当前章 cue 列表。
+  AudioCue? sectionFirstCue(int sectionIndex) {
+    return _sectionFirstCueCache.putIfAbsent(sectionIndex, () {
+      AudioCue? best;
+      int bestMs = 0;
+      for (final AudioCue cue in _allBookCues) {
+        final SubtitleRematchFragment? frag = SubtitleRematchCodec.tryDecode(
+          cue.textFragmentId,
+        );
+        if (frag == null || frag.sectionIndex != sectionIndex) continue;
+        final int ms = globalMsOfCue(cue);
+        if (best == null || ms < bestMs) {
+          best = cue;
+          bestMs = ms;
+        }
+      }
+      return best;
+    });
+  }
+
+  /// 某章首句在全书时间轴上的起点（毫秒）；该章没有 cue → null。
+  int? sectionStartGlobalMs(int sectionIndex) {
+    final AudioCue? first = sectionFirstCue(sectionIndex);
+    return first == null ? null : globalMsOfCue(first);
+  }
+
   // ── 初始化 ─────────────────────────────────────────────────────────────────
 
   /// 加载有声书并配置音频会话。
@@ -877,6 +954,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   }
 
   void setAllBookCues(List<AudioCue> cues) {
+    _sectionFirstCueCache.clear();
     _allBookCues = List<AudioCue>.from(cues);
     final Map<int, int> idMap = <int, int>{};
     for (int i = 0; i < _allBookCues.length; i++) {
@@ -904,6 +982,7 @@ class AudiobookPlayerController extends ChangeNotifier {
       if (cue.endMs > durations[idx]) durations[idx] = cue.endMs;
     }
     _fileDurationsMs = durations;
+    _sectionFirstCueCache.clear();
   }
 
   // ── 播放控制 API ───────────────────────────────────────────────────────────

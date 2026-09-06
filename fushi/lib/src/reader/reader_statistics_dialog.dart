@@ -223,9 +223,13 @@ class _ReaderStatisticsDialogState extends State<ReaderStatisticsDialog> {
                   ],
                 ),
                 _StatCard(cells: _metricCells(session.chars, session.durationMs)),
-                ReaderSideSheetSectionLabel(t.stat_today),
+                ReaderSideSheetSectionLabel(
+                  '${t.stat_today} · ${t.reader_stats_this_book}',
+                ),
                 _StatCard(cells: _metricCells(book.todayChars, book.todayMs)),
-                ReaderSideSheetSectionLabel(t.stat_all_time),
+                ReaderSideSheetSectionLabel(
+                  '${t.stat_all_time} · ${t.reader_stats_this_book}',
+                ),
                 _StatCard(cells: _metricCells(book.allChars, book.allMs)),
                 ReaderSideSheetSectionLabel(t.reader_stats_time_to_finish),
                 _StatCard(

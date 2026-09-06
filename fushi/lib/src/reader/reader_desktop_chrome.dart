@@ -56,8 +56,51 @@ double readerSideSheetWidth(double windowWidth) {
   return kReaderSideSheetWidth;
 }
 
-/// 桌面端阅读器顶部工具栏：`[leading…]  书名  [trailing…]`，纯指针面（调用方包
+/// 顶部工具栏窄于此宽度（逻辑 px）时进入紧凑形态：只留 [ReaderHeaderAction.pinned]
+/// 的按钮，其余收进右端 ⋮ 溢出菜单（「常用固定 + 溢出菜单」，避免图标越加越挤）。
+const double kReaderDesktopHeaderCompactWidth = 760;
+
+bool readerHeaderCompact(double width) => width < kReaderDesktopHeaderCompactWidth;
+
+/// 顶部工具栏的一个动作：图标 + 文案（溢出菜单里显示）+ 回调。
+class ReaderHeaderAction {
+  const ReaderHeaderAction({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+    this.pinned = false,
+    this.key,
+    this.semanticsId,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback? onPressed;
+
+  /// 紧凑形态下仍保留为图标按钮（返回 / 导航 / 设置）；其余收进溢出菜单。
+  final bool pinned;
+  final Key? key;
+  final String? semanticsId;
+}
+
+/// 紧凑形态下收进溢出菜单的动作（保持 leading → trailing 顺序）。纯函数供测试。
+List<ReaderHeaderAction> readerHeaderOverflow({
+  required bool compact,
+  required List<ReaderHeaderAction> leading,
+  required List<ReaderHeaderAction> trailing,
+}) {
+  if (!compact) return const <ReaderHeaderAction>[];
+  return <ReaderHeaderAction>[
+    for (final ReaderHeaderAction a in leading)
+      if (!a.pinned) a,
+    for (final ReaderHeaderAction a in trailing)
+      if (!a.pinned) a,
+  ];
+}
+
+/// 桌面端阅读器顶部工具栏：`[leading…]  书名  [trailing…]`，纯指针面（自带
 /// ExcludeFocus，不进焦点遍历池——与底栏同一规则，见 focus-ownership.md）。
+/// 宽度不足时按 [readerHeaderCompact] 折叠成「固定按钮 + ⋮ 溢出菜单」。
 class ReaderDesktopHeader extends StatelessWidget {
   const ReaderDesktopHeader({
     super.key,
@@ -70,11 +113,20 @@ class ReaderDesktopHeader extends StatelessWidget {
   });
 
   final String title;
-  final List<Widget> leading;
-  final List<Widget> trailing;
+  final List<ReaderHeaderAction> leading;
+  final List<ReaderHeaderAction> trailing;
   final Color textColor;
   final Color backgroundColor;
   final double height;
+
+  Widget _button(ReaderHeaderAction a) => ReaderDesktopHeaderButton(
+        key: a.key,
+        icon: a.icon,
+        tooltip: a.label,
+        color: textColor,
+        semanticsId: a.semanticsId,
+        onPressed: a.onPressed,
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -84,29 +136,81 @@ class ReaderDesktopHeader extends StatelessWidget {
       color: textColor.withValues(alpha: 0.85),
       height: 1.0,
     );
-    return ColoredBox(
+    return ExcludeFocus(
+      child: ColoredBox(
       color: backgroundColor,
       child: SizedBox(
         height: height,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: Row(
-            children: <Widget>[
-              Row(mainAxisSize: MainAxisSize.min, children: leading),
-              Expanded(
-                child: Text(
-                  title,
-                  key: const ValueKey<String>('fushi_desktop_header_title'),
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: titleStyle,
-                ),
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            final bool compact = readerHeaderCompact(constraints.maxWidth);
+            final List<ReaderHeaderAction> overflow = readerHeaderOverflow(
+              compact: compact,
+              leading: leading,
+              trailing: trailing,
+            );
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Row(
+                children: <Widget>[
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      for (final ReaderHeaderAction a in leading)
+                        if (!compact || a.pinned) _button(a),
+                    ],
+                  ),
+                  Expanded(
+                    child: Text(
+                      title,
+                      key: const ValueKey<String>('fushi_desktop_header_title'),
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: titleStyle,
+                    ),
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      for (final ReaderHeaderAction a in trailing)
+                        if (!compact || a.pinned) _button(a),
+                      if (overflow.isNotEmpty)
+                        PopupMenuButton<ReaderHeaderAction>(
+                          key: const ValueKey<String>(
+                            'fushi_desktop_header_overflow',
+                          ),
+                          tooltip:
+                              MaterialLocalizations.of(context).moreButtonTooltip,
+                          icon: Icon(Icons.more_vert, color: textColor),
+                          iconSize: 22,
+                          onSelected: (ReaderHeaderAction a) =>
+                              a.onPressed?.call(),
+                          itemBuilder: (BuildContext context) => <
+                              PopupMenuEntry<ReaderHeaderAction>>[
+                            for (final ReaderHeaderAction a in overflow)
+                              PopupMenuItem<ReaderHeaderAction>(
+                                value: a,
+                                enabled: a.onPressed != null,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: <Widget>[
+                                    Icon(a.icon, size: 20),
+                                    const SizedBox(width: 12),
+                                    Text(a.label),
+                                  ],
+                                ),
+                              ),
+                          ],
+                        ),
+                    ],
+                  ),
+                ],
               ),
-              Row(mainAxisSize: MainAxisSize.min, children: trailing),
-            ],
-          ),
+            );
+          },
         ),
+      ),
       ),
     );
   }
