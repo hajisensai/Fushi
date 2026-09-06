@@ -124,10 +124,12 @@ class EpubBook {
   /// Whitespace-collapsed plain text of an already-parsed [body], with ruby
   /// annotations (`<rt>`/`<rp>`/`<rtc>`) stripped. Mutates [body] by removing the
   /// ruby nodes, so callers must pass a throwaway parsed document's body.
+  static final RegExp _whitespaceRun = RegExp(r'\s+');
+
   static String _chapterPlainTextFromBody(html_dom.Element? body) {
     _removeRubyAnnotations(body);
     final String raw = body?.text ?? '';
-    return raw.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return raw.replaceAll(_whitespaceRun, ' ').trim();
   }
 
   static void _removeRubyAnnotations(html_dom.Element? root) {

@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/epub/book_title_conflict.dart';
+import 'package:fushi/src/media/manga/import/image_size_probe.dart';
 import 'package:fushi/src/media/manga/manga_storage.dart';
 import 'package:fushi/src/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/ocr/manga_ocr_folder_job.dart';
@@ -119,22 +120,31 @@ class MangaImporter {
     }
     final List<MokuroImage> pages = <MokuroImage>[];
     for (final MangaOcrPageFile page in files) {
-      final img.Image? decoded = img.decodeImage(await page.file.readAsBytes());
-      if (decoded == null) {
-        throw MangaImportException(
-          'Could not decode manga page: ${page.relativeUrl}',
-        );
-      }
-      final img.Image oriented = img.bakeOrientation(decoded);
+      final Uint8List bytes = await page.file.readAsBytes();
       pages.add(
         MokuroImage(
           url: page.relativeUrl,
-          size: Size(oriented.width.toDouble(), oriented.height.toDouble()),
+          size: _pageSize(bytes, page.relativeUrl),
           blocks: const <MokuroBlock>[],
         ),
       );
     }
     return MokuroPayload(images: pages);
+  }
+
+  /// 页图宽高：先只读文件头（[probeOrientedImageSize]，零像素解码），认不出的
+  /// 格式才回退整张解码 + `bakeOrientation`（与从前逐字节同口径）。
+  static Size _pageSize(Uint8List bytes, String relativeUrl) {
+    final ({int width, int height})? probed = probeOrientedImageSize(bytes);
+    if (probed != null) {
+      return Size(probed.width.toDouble(), probed.height.toDouble());
+    }
+    final img.Image? decoded = img.decodeImage(bytes);
+    if (decoded == null) {
+      throw MangaImportException('Could not decode manga page: $relativeUrl');
+    }
+    final img.Image oriented = img.bakeOrientation(decoded);
+    return Size(oriented.width.toDouble(), oriented.height.toDouble());
   }
 
   /// 第一遍（纯校验，零副作用）：为 [payload] 的每页规划书目录内的 destRel
@@ -346,9 +356,9 @@ class MangaImporter {
     final List<String> destRels =
         planMangaDestRels(srcDir: srcDir, payload: payload);
 
-    final List<EpubBookRow> existingBooks = await db.getAllEpubBooks();
+    final List<EpubBookMeta> existingBooks = await db.getEpubBookMetas();
     final String storedTitle = await resolveDuplicateTitle(
-      existingTitles: existingBooks.map((EpubBookRow b) => b.title).toList(),
+      existingTitles: existingBooks.map((EpubBookMeta b) => b.title).toList(),
       proposedTitle: proposedTitle,
       policy: policy,
     );

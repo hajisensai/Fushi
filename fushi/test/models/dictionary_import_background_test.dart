@@ -87,9 +87,14 @@ void main() {
       expect(manager.contains('Isolate.run(() => packDirectoryToZip'), isTrue,
           reason: '打包函数必须经 Isolate.run 调用');
 
-      // ZipEncoder().encode 只能出现一次，且在 packDirectoryToZip 里。
-      final int encodeCount = 'ZipEncoder().encode'.allMatches(manager).length;
-      expect(encodeCount, 1, reason: '同步压缩只应剩 packDirectoryToZip 内一处');
+      // 打包已改为 ZipFileEncoder 逐文件流式 STORE（不再有整目录内存 Archive +
+      // ZipEncoder().encode 的第二份内存拷贝，也不再白 deflate 一遍给 native 立刻
+      // inflate）。同步整包 encode 不得回来。
+      expect('ZipEncoder().encode'.allMatches(manager).length, 0,
+          reason: '整目录读进内存再 encode 是 ~2× 目录大小的峰值，OOM 路径来源');
+      expect(manager.contains('ZipFileEncoder()'), isTrue);
+      expect(manager.contains('..compress = false'), isTrue,
+          reason: '临时 zip 只是 native 的输入容器，deflate 纯属白干');
     });
 
     test('packDirectoryToZip 暴露给测试且为纯静态函数', () {

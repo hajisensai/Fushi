@@ -15,6 +15,7 @@ import '../utils/video_book_uid.dart';
 import 'activity_event_types.dart';
 import 'book_format.dart';
 import 'collection_order.dart';
+import 'epub_book_meta.dart';
 import 'media_kind.dart';
 import 'media_kind_mappings.dart';
 import 'pref_codec.dart';

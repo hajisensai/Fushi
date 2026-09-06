@@ -74,10 +74,10 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
         fetch: client.listRemoteBooks,
       );
       // #6: 远端与本地是同一本书时（同 bookKey）不在混排网格重复展示（只显示本地卡）。
-      final List<EpubBookRow> localBooks =
-          await appModel.database.getAllEpubBooks();
+      final List<EpubBookMeta> localBooks =
+          await appModel.database.getEpubBookMetas();
       final Set<String> localKeys =
-          localBooks.map((EpubBookRow r) => r.bookKey).toSet();
+          localBooks.map((EpubBookMeta r) => r.bookKey).toSet();
       // 分架过滤（互联完整支持批次）：普通书架 = 可下载 EPUB（hasContent）；漫画
       // 书架 = 可下载漫画（format='manga' + hasMangaContent，漫画包通道）。两架互斥，
       // 同一条目绝不重复出现。

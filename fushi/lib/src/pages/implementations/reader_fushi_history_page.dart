@@ -202,14 +202,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     final repo = AudiobookRepository(appModel.database);
     final allAudiobooks = await repo.buildBookKeyMap();
     final result = <String, _AudiobookInfo>{};
-    final healthFutures = <String, Future<AudiobookHealth>>{};
-    for (final entry in allAudiobooks.entries) {
-      healthFutures[entry.key] = repo.resolveHealth(entry.value);
-    }
-    final healths = <String, AudiobookHealth>{};
-    await Future.wait(healthFutures.entries.map((e) async {
-      healths[e.key] = await e.value;
-    }));
+    // 一次前缀查询取完全部健康度覆盖，替代每本一条 getPref 的 N+1。
+    final Map<String, AudiobookHealth> healths =
+        await repo.resolveAllHealth(allAudiobooks);
     for (final entry in allAudiobooks.entries) {
       result[entry.key] = _AudiobookInfo(
         hasAudiobook: true,
@@ -821,15 +816,15 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       final String key = '${m.mediaType}|${m.entryKey}';
       if (primaryMap[key] == m.collectionId) memberSortIndex[key] = m.sortIndex;
     }
-    final List<EpubBookRow> epubRows =
-        await appModel.database.getAllEpubBooks();
+    final List<EpubBookMeta> epubRows =
+        await appModel.database.getEpubBookMetas();
     _epubImportedAtByKey = <String, int>{
-      for (final EpubBookRow r in epubRows) r.bookKey: r.importedAt,
+      for (final EpubBookMeta r in epubRows) r.bookKey: r.importedAt,
     };
     // v82：reader_positions 键 = uid；书架条目身份仍是 bookKey，查 recency 前
     // 经此表换算（同一批行零额外查询）。空 uid 行不进表（视同无阅读记录）。
     _epubUidByKey = <String, String>{
-      for (final EpubBookRow r in epubRows)
+      for (final EpubBookMeta r in epubRows)
         if (r.uid.isNotEmpty) r.bookKey: r.uid,
     };
     _completedBookKeys = await appModel.database.getCompletedEpubBookKeys();

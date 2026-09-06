@@ -6,7 +6,7 @@ import 'package:fushi/src/asr/asr_cue_builder.dart'
 import 'package:fushi/src/asr/asr_transcription_service.dart';
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
 import 'package:fushi/src/media/audiobook/audiobook_alignment_service.dart'
-    show epubSectionsFromExtractDir, parseCuesForFormat;
+    show loadEpubSectionsInBackground, parseCuesForFormat;
 import 'package:fushi/src/media/import/audiobook_health_summary.dart';
 import 'package:fushi/src/media/import/epub_backed_srt_book.dart';
 import 'package:fushi/src/media/import/import_dialog_frame.dart';
@@ -631,7 +631,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       return const <EpubSection>[];
     }
     try {
-      return epubSectionsFromExtractDir(widget.extractDir!);
+      return await loadEpubSectionsInBackground(widget.extractDir!);
     } catch (e, stack) {
       ErrorLogService.instance.log('AudiobookImport.loadSections', e, stack);
       debugPrint('[fushi-audiobook] probe loadSections failed: $e');
@@ -936,8 +936,13 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
     }
     try {
       reportProgress(0.2, t.import_step_reading_idb);
-      final List<EpubSection> sections =
-          epubSectionsFromExtractDir(widget.extractDir!);
+      // 自动匹配探测已经解析出章节的话直接复用，否则后台 isolate 解析。探测
+      // 失败时记忆的是空列表（`_loadSectionsForProbe` 吞异常回空），不能拿它
+      // 短路导入——那会把一次瞬时读失败变成「EPUB has 0 chapters」。
+      final List<EpubSection>? probed = _probedSections;
+      final List<EpubSection> sections = probed != null && probed.isNotEmpty
+          ? probed
+          : await loadEpubSectionsInBackground(widget.extractDir!);
       if (sections.isEmpty) {
         return AudiobookHealth.failed(
           reason: 'EPUB has 0 chapters',
