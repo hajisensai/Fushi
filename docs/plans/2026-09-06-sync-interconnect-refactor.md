@@ -183,3 +183,22 @@ PR7 B4 host service 改名   独立
 2. **A3 的 handler 可能已语义分叉**：先 diff 再合，分叉留钩子，不悄悄统一。
 3. **并发 agent 冲突**：`fushi_sync_server.dart` / `sync_orchestrator.dart` 是高频修改文件，part 拆分会与任何在途 PR 冲突。开工前 `gh pr list` 看有没有在途 PR 碰这两个文件；有就等它合完再拆。
 4. **`ForTest` 清理的 180 文件 grep 命中是全仓的**，实施时只改 orchestrator 那 10 个的调用方，其余不碰。
+
+## 落地记录（2026-09-06，11 条 draft PR）
+
+| PR | 分支 | 落地 | 与计划的偏差 |
+|---|---|---|---|
+| #1239 A1 | `refactor/sync-a1-oauth-mixin` | `PkceOAuthBackendMixin` + 4 条单测 | 无 |
+| #1240 A2 | `refactor/sync-a2-webdav-mixin` | `WebDavPathBackendMixin` | 非 Drive 后端瞬态零重试另立 BUG-2169，本批不修 |
+| #1241 A3 | `refactor/sync-a3-remote-routes` | `RemoteAudioTokenStore` + `RemoteLookupRoutes` | 无 |
+| #1242–#1245 C0–C3 | `refactor/sync-c*` | 设置子页框架 / 同步页 / 互联页 / 对比对话框 + golden 基线 | 中途加的 UI 重组，见 `2026-09-06-sync-ui-layout.md` |
+| #1247 B1 | `refactor/sync-b1-backup-split` | `BackupRestoreService` + `path_rebase` / `fs_retry` part | 无 |
+| #1249 B2 | `refactor/sync-b2-orchestrator-parts` | 8 个 extension part | ① `book_progress` 并进 `books.part`；② **`…ForTest` 纯转发清理作废**：库私有 extension 的成员对别的库不可见，公开入口和测试桥必须留在 class 本体，part 只放 `_syncXLive` 私有实现，10 个包装原样保留 |
+| #1250 B3 | `refactor/sync-b3-server-parts`（堆叠在 A3 上） | 7 个 extension part（auth / pairing / lookup / library / video / sync_state / webdav） | ① **没拆独立类**（`FushiServerAuthenticator` / `FushiPairingHandler` / `FushiDavHandler` / `VideoStreamTokenStore`）：为守住"零行为改动 + 当天可合"，全部用 part 逐字搬；独立类抽取留作可选第二步；② `_handleRequest` 的 if 链**未**改成两张表，逐字保留；③ private static 提到库顶层（extension 体内看不到宿主类 static） |
+| #1251 B4 | `refactor/sync-b4-host-service-parts` | 改名 `LocalLibraryHostService` + 6 个 **mixin** part | ① **单位是 mixin 不是 extension**：类 90% 方法是 7 个接口的 `@override`，extension 成员满足不了接口契约（第一版 88 条 `override_on_non_overriding_member`）。形状：`abstract class _LocalLibraryHostBase implements 7 接口 { 19 个抽象私有 getter }` + `mixin _X on _Base, _Shared` + 具体类 `extends _Base with …`；② collections / tombstones / aggregate / profile 并进 `sync_state.part`；③ 两个提交（第一个是误提交的裸 `git mv`，合并时 squash） |
+
+**拆分单位的选择规则（补进计划，供后续巨类参考）**：类没有 `implements` → extension part（reader_fushi / video_fushi / B2 / B3 惯例）；类 `implements` 接口且方法多为 `@override` → mixin part（B4）。两种都要把 private static 提到库顶层。
+
+**守卫**：三份新语料 helper（`sync_orchestrator_source_corpus.dart` / `fushi_sync_server_source_corpus.dart` / `local_library_host_service_source_corpus.dart`）复用 `helpers/part_corpus.dart` 磁盘枚举；`hardening_test` 里 `_serializeDavWrite` 切片终点换成同 part 的 `_handlePropfind(`（原终点 `_handlePair(` 已在别的 part、语料里排前面）；`remote_lookup_routes_test` 负向清单改按来源函数取语料。
+
+**验证状态**：每条 PR 各自 `flutter analyze` 全量零问题 + 定向套件绿（B2 2857 / B3 2882 / B4 2877）。**合入 develop 前**仍须：全量 `dart run tool/flutter_test_failures.dart --no-pub --output-dir <私有目录>` + 51 条目录枚举型守卫 + `dart run tool/bug.dart check`；B3 须先合 A3。
