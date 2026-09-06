@@ -1540,7 +1540,14 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
     // 到达分页末页 / 连续物理末端 / VN 末屏时把持久分子钳到 total，使自动完成和
     // 阅读统计都得到明确终态；中间页仍保留原字符级进度。
     var atEnd = typeof r.isAtEnd === 'function' && r.isAtEnd();
-    return (atEnd ? total : Math.round(p * total)) + ',' + total + ',' + off;
+    // 第四段 = 当前可见字符区间的终点 end（半开 [start, end)，与第三段同口径），供
+    // 统计「翻走即计 + 覆盖并集」逐次采样记区间；atEnd 时钳到 total。三种 shell 都实现
+    // getLastVisibleCharOffset（分页版接受已算好的 start 免二次 caret）；没有该函数的
+    // reader（旧 shell / 测试桩）不追加第四段，Dart 解析按缺省 -1 处理。
+    var hasEnd = typeof r.getLastVisibleCharOffset === 'function';
+    var end = atEnd ? total : (hasEnd ? r.getLastVisibleCharOffset(off) : -1);
+    return (atEnd ? total : Math.round(p * total)) + ',' + total + ',' + off
+        + (hasEnd ? ',' + end : '');
   };
   // BUG-213: 章内原生滚动（连续模式 window 滚动 / 分页模式触摸/trackpad/键盘箭头
   // 落 body 的原生滚动）没有进度回传通道，进度条要等 10s 轮询或翻章才更新。这里给

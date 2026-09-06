@@ -1153,10 +1153,18 @@ window.__fushiInstallShell = function(C) {
   // 跨视口首边时才逐字二分定位首个仍可见字符，O(log n) 不全量遍历。空/零尺寸矩形跳过
   // （图片/折叠盒），代理对用 codePointAt/fromCodePoint 迭代（与 buildSasayakiNormIndex
   // 的码元处理一致），createWalker 已排除 rt/rp 振假名（分子分母同套，不重复计数）。
-  countCharsBeforeViewport: function(node, vertical) {
+  //
+  // 可选 edge（viewport 量纲）：缺省 = 视口**首边**（横排 0 / 竖排 window.innerWidth），
+  // 逐字判据走 isTextOffsetBeforeViewport（TODO-773 守卫钉死其 window 量纲三件套，不加
+  // 参数）；显式传入时 = 任意边（连续 getLastVisibleCharOffset 传视口**末边**：横排
+  // window.innerHeight / 竖排 0），逐字判据走同算法的通用边版本 isTextOffsetBeforeViewportPaged
+  // （名字里的 Paged 是它 body-relative 的出身，语义就是「rect 是否已越过给定边」）。
+  countCharsBeforeViewport: function(node, vertical, edge) {
     var text = node.textContent || '';
     var totalChars = this.countChars(text);
     if (totalChars <= 0) return 0;
+    var atFirstEdge = edge === undefined;
+    if (atFirstEdge) edge = vertical ? window.innerWidth : 0;
     var range = document.createRange();
     range.selectNodeContents(node);
     var rects = range.getClientRects();
@@ -1172,11 +1180,11 @@ window.__fushiInstallShell = function(C) {
       maxEnd = Math.max(maxEnd, end);
     }
     if (vertical) {
-      if (minStart >= window.innerWidth) return totalChars;
-      if (maxEnd <= window.innerWidth || minStart === Infinity) return 0;
+      if (minStart >= edge) return totalChars;
+      if (maxEnd <= edge || minStart === Infinity) return 0;
     } else {
-      if (maxEnd <= 0) return totalChars;
-      if (minStart >= 0 || minStart === Infinity) return 0;
+      if (maxEnd <= edge) return totalChars;
+      if (minStart >= edge || minStart === Infinity) return 0;
     }
     var offsets = [];
     var prefixCounts = [0];
@@ -1195,7 +1203,10 @@ window.__fushiInstallShell = function(C) {
     var firstVisible = offsets.length;
     while (low <= high) {
       var mid = Math.floor((low + high) / 2);
-      if (this.isTextOffsetBeforeViewport(node, offsets[mid], text, vertical)) {
+      var passed = atFirstEdge
+        ? this.isTextOffsetBeforeViewport(node, offsets[mid], text, vertical)
+        : this.isTextOffsetBeforeViewportPaged(node, offsets[mid], text, vertical, edge);
+      if (passed) {
         low = mid + 1;
       } else {
         firstVisible = mid;
@@ -2315,25 +2326,35 @@ $_sharedJs
     this.paginationMetrics = metrics;
     return metrics;
   },
-  calculateProgress: function() {
+  // 可选 atScroll：按任意页位置求进度（默认当前页）。getLastVisibleCharOffset 的降级
+  // 路径传 `getPagePosition + pageSize`（下一页页首）得「下一页页首之前的累计字数」——
+  // 节点粒度、随 scroll 单调，无需临时 setPagePosition 探测（那会触发 snap 监听 /
+  // scroll 回传递归 / 闪屏）。
+  calculateProgress: function(atScroll) {
     var metrics = this.paginationMetrics || this.buildPaginationMetrics();
     if (metrics.totalChars <= 0) return 0;
-    var context = this.getScrollContext();
-    var currentScroll = this.getPagePosition(context);
+    return this.exploredCharsBeforeScroll(metrics, atScroll) / metrics.totalChars;
+  },
+  // progressStops 二分：起始边 <= scroll 的最后一个文本节点的累计字数（含该节点全部）。
+  // atScroll 缺省取当前页位置。
+  exploredCharsBeforeScroll: function(metrics, atScroll) {
+    var scroll = atScroll === undefined
+      ? this.getPagePosition(this.getScrollContext())
+      : atScroll;
     var stops = metrics.progressStops;
     var low = 0;
     var high = stops.length - 1;
     var exploredChars = 0;
     while (low <= high) {
       var mid = Math.floor((low + high) / 2);
-      if (stops[mid].scroll <= currentScroll) {
+      if (stops[mid].scroll <= scroll) {
         exploredChars = stops[mid].exploredChars;
         low = mid + 1;
       } else {
         high = mid - 1;
       }
     }
-    return exploredChars / metrics.totalChars;
+    return exploredChars;
   },
   // BUG-1241：最后一页的 progress 是「视口首字符 / 全章字符」，只要末页还能显示多行，
   // 它就天然停在 0.99 左右，不能拿来判断用户是否真的到达章末。末页判定必须读分页
@@ -2342,6 +2363,94 @@ $_sharedJs
     var metrics = this.paginationMetrics || this.buildPaginationMetrics();
     var context = this.getScrollContext();
     return this.getPagePosition(context) >= metrics.maxScroll - 1;
+  },
+  // 分页 caret 探点 → 章内学习单位偏移（与 getFirstVisibleCharOffset 同口径：
+  // nodeStartOffsets 基址 + 节点内 isUnitEnd 累加）。返回 { offset, node, index }
+  // （offset = caret 位置之前的单位数，node/index = caret 落点，供调用方判该字是否在页内），
+  // caret 失败 / 落点无文本节点 / 基址缺失返 null——调用方各自决定降级路径。
+  //
+  // getFirstVisibleCharOffset 未改走本函数：它的函数体被 TODO-773 守卫
+  // （paged_first_visible_scan_fallback_guard_test）钉成「三个失败出口各自回退
+  // firstVisibleCharOffsetByScanPaged」+ BUG-2058 口径守卫（study_char_caliber_guard_test）
+  // 要求其函数体内直接出现 fushiStudyUnits；两条守卫都要求逐出口内联，抽公共函数即红。
+  _charOffsetAtPoint: function(x, y) {
+    var range = document.caretRangeFromPoint(x, y);
+    if (!range || !range.startContainer) return null;
+    var target = range.startContainer;
+    if (target.nodeType !== Node.TEXT_NODE) {
+      var walker = this.createWalker(target);
+      target = walker.nextNode();
+      if (!target) return null;
+    }
+    var baseOffset = this.nodeStartOffsets.get(target);
+    if (baseOffset === undefined) {
+      this.buildNodeOffsets();
+      baseOffset = this.nodeStartOffsets.get(target);
+      if (baseOffset === undefined) return null;
+    }
+    var localChars = 0;
+    var text = target.textContent;
+    var limit = Math.min(range.startOffset, text.length);
+    for (var i = 0; i < limit; i++) {
+      var cp = text.codePointAt(i);
+      if (window.fushiStudyUnits.isUnitEnd(text, i)) localChars++;
+      if (cp > 0xFFFF) i++;
+    }
+    return { offset: baseOffset + localChars, node: target, index: limit };
+  },
+  // caret 落点处的那个字是否覆盖探点（沿行轴：横排 x 落在字的 [left,right]、竖排 y 落在
+  // [top,bottom]）。caretRangeFromPoint 在探点落于字左半时返「该字之前」、落于右半 / 行尾
+  // 空白时返「该字之后」；末字偏移只有前者需要 +1，后者 caret 之前的单位数已是半开区间 end。
+  _caretCharCoversPoint: function(caret, x, y, vertical) {
+    var text = caret.node.textContent;
+    if (caret.index >= text.length) return false;
+    var cp = text.codePointAt(caret.index);
+    var range = document.createRange();
+    range.setStart(caret.node, caret.index);
+    range.setEnd(caret.node, caret.index + (cp > 0xFFFF ? 2 : 1));
+    var rect = this.getRect(range);
+    if (!rect || rect.width <= 0 || rect.height <= 0) return false;
+    return vertical
+      ? (rect.top <= y && rect.bottom >= y)
+      : (rect.left <= x && rect.right >= x);
+  },
+  // 当前页可见字符区间的终点（半开 [start, end) 的 end，章内学习单位偏移）。统计口径
+  // 「翻走即计 + 覆盖并集」需要每次进度采样同时拿到可见区间两端；起点是
+  // getFirstVisibleCharOffset（页首角 caret），这里探页尾角：竖排（列自上而下堆叠、行自右
+  // 向左）末字在左下 (paddingLeft+2, clientHeight−paddingBottom−2)，横排末字在右下
+  // (clientWidth−paddingRight−2, clientHeight−paddingBottom−2)。探边量纲与
+  // getFirstVisibleCharOffset 同为 body-relative（分页 body 填满视口左上角）。
+  // 降级：caret 失败或算出 end <= start 时走 exploredCharsBeforeScroll(下一页页首)
+  // （节点粒度、单调，见 calculateProgress 注释）；isAtEnd 时 end = 章总字数。
+  // 不用 countCharsBeforeViewportPaged：它比较的轴（竖排 rect.left）与分页滚动轴（竖排 y）
+  // 不一致，算不出页尾；不用临时 setPagePosition 探测再滚回（snap 监听 / scroll 回传递归 /
+  // 闪屏）。startOffset 可选：调用方已算好 getFirstVisibleCharOffset 时传入免二次 caret。
+  getLastVisibleCharOffset: function(startOffset) {
+    var metrics = this.paginationMetrics || this.buildPaginationMetrics();
+    if (metrics.totalChars <= 0) return -1;
+    if (this.isAtEnd()) return metrics.totalChars;
+    var context = this.getScrollContext();
+    var start = (typeof startOffset === 'number' && startOffset >= 0)
+      ? startOffset
+      : this.getFirstVisibleCharOffset();
+    var cs = getComputedStyle(document.body);
+    var pl = parseFloat(cs.paddingLeft) || 0;
+    var pr = parseFloat(cs.paddingRight) || 0;
+    var pb = parseFloat(cs.paddingBottom) || 0;
+    var x = context.vertical ? (pl + 2) : (document.body.clientWidth - pr - 2);
+    var y = document.body.clientHeight - pb - 2;
+    var end = -1;
+    var caret = this._charOffsetAtPoint(x, y);
+    if (caret) {
+      end = caret.offset
+        + (this._caretCharCoversPoint(caret, x, y, context.vertical) ? 1 : 0);
+    }
+    if (end <= start) {
+      end = this.exploredCharsBeforeScroll(
+        metrics, this.getPagePosition(context) + context.pageSize);
+    }
+    if (end > metrics.totalChars) end = metrics.totalChars;
+    return end > start ? end : -1;
   },
   pageInfo: function() {
     // Page numbers only make sense once layout has settled. During a
@@ -3004,6 +3113,27 @@ $_sharedJs
     }
     var maxY = Math.max(0, root.scrollHeight - root.clientHeight);
     return root.scrollTop >= maxY - 1;
+  },
+  // 连续模式当前视口可见字符区间的终点（半开 end，章内学习单位偏移；口径与
+  // calculateProgress 分子同源）。一次 walk 用 countCharsBeforeViewport 传视口**末边**
+  // （横排 window.innerHeight / 竖排 0）累加「末边之前的字数」；物理到底（isAtEnd）时
+  // end = 章总字数。calculateProgress 行为不变。
+  getLastVisibleCharOffset: function() {
+    var vertical = this.isVertical();
+    var edge = vertical ? 0 : window.innerHeight;
+    var walker = this.createWalker();
+    var totalChars = 0;
+    var exploredChars = 0;
+    var node;
+    while (node = walker.nextNode()) {
+      var nodeLen = this.countChars(node.textContent);
+      totalChars += nodeLen;
+      if (nodeLen > 0) {
+        exploredChars += this.countCharsBeforeViewport(node, vertical, edge);
+      }
+    }
+    if (totalChars <= 0) return -1;
+    return this.isAtEnd() ? totalChars : exploredChars;
   },
   // 连续模式恢复落点 settle：等一帧让恢复滚动落定后通知 Dart。
   //

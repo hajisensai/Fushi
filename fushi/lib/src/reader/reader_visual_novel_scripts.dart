@@ -3096,6 +3096,14 @@ $sharedInitViewport
       return screen ? this.screenStartCharCount(screen) : -1;
     };
   }
+  // 当前屏可见字符区间终点（半开 end）。VN 的 progress 口径本就是屏尾，start / end 都
+  // 直接取屏表（screenStartCharCount / screenEndCharCount），不做几何探测。
+  if (typeof vn.getLastVisibleCharOffset !== 'function') {
+    vn.getLastVisibleCharOffset = function() {
+      var screen = this.screens && this.screens[this.currentScreenIndex];
+      return screen ? this.screenEndCharCount(screen) : -1;
+    };
+  }
   if (typeof vn.setChromeInsets !== 'function') {
     vn.setChromeInsets = function(topPx, bottomPx) {
       // BUG-1688：这里原来是 `return null` 的空壳，于是 Dart 侧
