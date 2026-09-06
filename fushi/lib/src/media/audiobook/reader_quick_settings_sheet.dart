@@ -86,6 +86,7 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
     this.onPickAlignment,
     this.onTranscribe,
     this.onOpenStatistics,
+    this.autofocusSearch = false,
     this.initialSideSheetTab = 'layout',
     this.onSideSheetTabChanged,
     this.expandedTocParents,
@@ -161,6 +162,9 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
 
   /// 有声书面板「资源」页：对当前音频做设备端转录生成字幕。null = 本机不支持。
   final VoidCallback? onTranscribe;
+
+  /// 导航抽屉打开即把焦点放进书内搜索框（Ctrl+F 的语义就是要搜）。
+  final bool autofocusSearch;
 
   /// 移动端 / 窄窗主页的「阅读统计」行（打开阅读器内统计浮层）；null 不显示。
   final VoidCallback? onOpenStatistics;
@@ -963,6 +967,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
             Expanded(
               child: FushiTextField(
                 controller: _searchController,
+                autofocus: widget.autofocusSearch,
                 hintText: t.book_search_hint,
                 contentPadding: EdgeInsets.symmetric(
                   horizontal: tokens.spacing.rowHorizontal,

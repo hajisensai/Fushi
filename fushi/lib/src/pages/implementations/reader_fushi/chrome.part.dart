@@ -1931,6 +1931,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
             },
       presentation: presentation,
       onOpenStatistics: _openReadingStatistics,
+      // 导航抽屉（Ctrl+F / 工具栏目录键）打开即聚焦书内搜索框。
+      autofocusSearch:
+          presentation == ReaderQuickSettingsPresentation.sideSheetNavigation,
       initialSideSheetTab: _chrome.lastSettingsTab,
       onSideSheetTabChanged: (String id) => _chrome.lastSettingsTab = id,
       expandedTocParents: _chrome.expandedTocParents,

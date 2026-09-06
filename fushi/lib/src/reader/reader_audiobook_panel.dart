@@ -461,6 +461,22 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
       color: theme.colorScheme.onSurfaceVariant,
       fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
     );
+    // 每章时长 = 下一有音频的章起点 − 本章起点；最后一章到全书末尾。
+    final int totalMs = ctrl?.totalDuration.inMilliseconds ?? 0;
+    final List<int?> starts = <int?>[
+      for (final TtuTocEntry e in widget.toc)
+        ctrl?.sectionStartGlobalMs(e.index),
+    ];
+    int? durationFor(int i) {
+      final int? start = starts[i];
+      if (start == null) return null;
+      for (int j = i + 1; j < starts.length; j++) {
+        final int? next = starts[j];
+        if (next != null && next > start) return next - start;
+      }
+      return totalMs > start ? totalMs - start : null;
+    }
+
     return AdaptiveSettingsSection(
       children: <Widget>[
         for (int i = 0; i < widget.toc.length; i++)
@@ -468,6 +484,7 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
             entry: widget.toc[i],
             ctrl: ctrl,
             isCurrent: i == currentEntry,
+            durationMs: durationFor(i),
             timeStyle: timeStyle,
           ),
       ],
@@ -478,14 +495,23 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
     required TtuTocEntry entry,
     required AudiobookPlayerController? ctrl,
     required bool isCurrent,
+    required int? durationMs,
     required TextStyle? timeStyle,
   }) {
     final int? startMs = ctrl?.sectionStartGlobalMs(entry.index);
-    final String time =
-        startMs == null ? '—' : _formatDuration(Duration(milliseconds: startMs));
+    final String time = startMs == null
+        ? '—'
+        : _formatDuration(Duration(milliseconds: startMs));
+    final String? duration = durationMs == null
+        ? null
+        : _formatDuration(Duration(milliseconds: durationMs));
+    final String? subtitle = <String>[
+      if (isCurrent) t.reader_audiobook_current_chapter,
+      if (duration != null) duration,
+    ].join(' · ').let((String s) => s.isEmpty ? null : s);
     return AdaptiveSettingsRow(
       title: entry.label,
-      subtitle: isCurrent ? t.reader_audiobook_current_chapter : null,
+      subtitle: subtitle,
       trailing: Text(time, style: timeStyle),
       onTap: () async {
         Navigator.of(context).pop();
@@ -520,4 +546,8 @@ class _ChapterTickPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _ChapterTickPainter old) =>
       old.color != color || old.fractions != fractions;
+}
+
+extension _Let<T> on T {
+  R let<R>(R Function(T) f) => f(this);
 }

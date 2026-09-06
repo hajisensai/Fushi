@@ -2,6 +2,7 @@
 /// 抽出成独立组件：页面只负责提供图片列表 / 文件解析 / 跳章回调。
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/gestures.dart';
@@ -54,9 +55,10 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => _scrollThumbsTo(_index, animate: false),
-    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollThumbsTo(_index, animate: false);
+      if (_hasImages) _precacheNeighbours(_index);
+    });
   }
 
   @override
@@ -75,6 +77,19 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
     if (next == _index) return;
     setState(() => _index = next);
     _scrollThumbsTo(next, animate: true);
+    _precacheNeighbours(next);
+  }
+
+  /// 预解码相邻两张（前 / 后），箭头 / 滚轮连续切图时舞台不闪白。
+  void _precacheNeighbours(int index) {
+    for (final int i in <int>[index - 1, index + 1]) {
+      if (i < 0 || i >= widget.images.length) continue;
+      final File? file = widget.fileForRef(widget.images[i]);
+      if (file == null) continue;
+      unawaited(
+        precacheImage(FileImage(file), context).catchError((Object _) {}),
+      );
+    }
   }
 
   /// 把选中缩略图滚到缩略图带正中（两端夹到滚动范围内）。
