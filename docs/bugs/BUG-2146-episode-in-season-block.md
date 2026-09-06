@@ -117,14 +117,46 @@ if (title.isEmpty) {
 本次不引入——它是新特性不是修复。当前行为是「不解析、也不污染已解出的 14」，已由
 两种块顺序的用例钉住。
 
-### 已知剩余缺口（另案）
+### 第二轮：消除重复引擎（真正的根因收口）
 
-`video_resource_version_groups.dart:21` 的 `_animeEpisodePattern` 右边界只认开括号与
-串尾，所以 `[4th - 14]` 这一族在**下载模式的资源版本聚类**里仍解不出集号（表现为版本卡
-的集号标签为空）。**刻意不在本 bug 里放宽**：这个函数用 `firstMatch`，放宽右边界会让
-更靠左的位置抢答——实测 `[Anime Time - 2] Show - 05` 解成 2、`[Vol.1 - 2] - 05` 解成 2、
-合集 `[01 - 12]` 从 null 变成 12、`（1979 - 2005）` 解成 2005，而错值会被填进版本卡集号
-标签和 `video_discovery_acquisition_dialogs.dart:744` 的「从第 N 集之后」订阅起点，比留空
-更糟。真修需要先用 `isLikelyBatchVideoRelease` 排掉区间形态、并约束命中位置不落在开头的
-发布组标签内，是独立改动。顺带记：`【组】作品 - 14 【1080P】` 这种中文字幕组最常见的
-全角方括号形态在那里也一直解不出，同一处一起补。
+上面那条 `_seasonEpisodeBlock` 只是把**这个**族补齐了，`filename_parser.dart` 内部的
+规则表本来就是这个形状（每条块判据都整块锚定），加一条不算越界。但 BUG 的根因描述里
+写的是「两条互不共享规则的通路」，而仓里其实还有**第三套**——
+`video_resource_version_groups.dart` 的 `episodeNumberFromReleaseTitle` 是一个独立的
+迷你集号解析器（`S\d+E\d+` + `(?:^|\s)-\s*(\d+)(?=\s*[\[\(]|$)` 两条正则），
+与刮削/导入/分组共用的 `FilenameParser` 并列。CLAUDE.md 自己写着「G10 第二步起
+FilenameParser 是仓内唯一的视频文件名规则引擎」——这条是漏网的。
+
+第一轮我只改/退了它的正则，那是在维护重复，不是消除重复。现在让它**委托**：
+
+```dart
+int? episodeNumberFromReleaseTitle(String title) =>
+    FilenameParser.parse(title).episode;   // + 记忆表，见下
+```
+
+22 条真实发布标题实测对拍（`OLD=` / `NEW=` 逐条对照），**旧实现有值的每一条新实现给出
+相同的值**，另外多解对 6 条：
+
+| 标题 | 旧 | 新 |
+|---|---|---|
+| `[晚街与灯][Re Zero…][4th - 14][总第80]…` | null | 14 |
+| `[G] Show [S4 - 14][1080P]` | null | 14 |
+| `【组】 作品 - 14 【1080P】` | null | 14 |
+| `[Nekomoe kissaten] Show [01][1080p]` | null | 1 |
+| `[Group] Show 第04话 [1080p]` | null | 4 |
+| `[Group] Show [13 END][1080p]` | null | 13 |
+
+而第一轮审查列出的那批「放宽旧正则就会解错」的反例，真引擎全部天然正确：
+`[Anime Time - 2] Show - 05` → 5（开头的块是发布组）、`[Vol.1 - 2] - 05` → 5、
+合集 `[01 - 12]` → null、`（1979 - 2005）` → null、`[第01-12话]` → null。
+**放宽正则修不好的东西，删掉重复引擎顺手就对了** —— 这就是根因修复与打补丁的差别。
+
+`_byEpisodeAsc` 是排序比较器、`episodes` getter 每个成员调两次，所以委托后加了一张
+按标题的记忆表（纯记忆，有上限防会话内无界增长）。原来那两条正则保留但改名为
+`_episodeMaskSeasonEpisode` / `_episodeMaskDash`，**只**服务
+`_unknownReleaseFamilyKey` 的模板遮罩——那是「标题里哪一段随集数变化」的**子串位置**
+问题，与「这个标题是第几集」不是同一件事，合并才是重新制造重复。
+
+守卫：`video_resource_version_groups_test.dart` 的
+`episodeNumberFromReleaseTitle 委托给唯一引擎（BUG-2146）` 三组
+（新解对的 / 不许回归的 / 必须仍是 null 的）。变异实测：把委托改回两条正则 → 第一组立刻红。

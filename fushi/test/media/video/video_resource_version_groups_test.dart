@@ -45,28 +45,63 @@ void main() {
     });
   });
 
-  group('episodeNumberFromReleaseTitle 的右边界刻意不放宽（BUG-2146）', () {
-    test('块内集号在这里解不出——这是有意的，放宽会让更靠左的位置抢答', () {
-      // 这个函数用 firstMatch。把右边界放宽到认闭括号，下面每一条都会解出错的值，
-      // 而错值比 null 更糟：它会被填进版本卡的集号标签和「从第 N 集之后」的订阅起点。
+  // 本函数已委托给 FilenameParser（BUG-2146）：仓内不再有第二套集号引擎。
+  // 下面三组分别钉住「新解对的」「不能回归的」「必须仍是 null 的」。
+  group('episodeNumberFromReleaseTitle 委托给唯一引擎（BUG-2146）', () {
+    test('原先解不出的形态现在都解得出', () {
+      // 旧实现只有 `\bS\d+E\d+\b` 和 `(?:^|\s)-\s*(\d+)(?=\s*[\[\(]|$)` 两条正则，
+      // 下面每一条都返回 null —— 版本卡的集号标签因此整片空着。
       expect(
-        episodeNumberFromReleaseTitle('[G] Show [4th - 14][1080P]'),
-        isNull,
-        reason: '要真修得先排掉区间形态并约束命中位置，见 BUG-2146 的已知剩余缺口',
+        episodeNumberFromReleaseTitle(
+          '[晚街与灯][Re Zero kara Hajimeru Isekai Seikatsu][4th - 14][总第80]'
+          '[WebRip][1080P_AVC_AAC][简日双语内嵌]',
+        ),
+        14,
       );
+      expect(episodeNumberFromReleaseTitle('[G] Show [S4 - 14][1080P]'), 14);
+      expect(episodeNumberFromReleaseTitle('【组】 作品 - 14 【1080P】'), 14,
+          reason: '全角方括号是中文字幕组最常见的形态，旧实现从来解不出');
+      expect(episodeNumberFromReleaseTitle('[Nekomoe kissaten] Show [01][1080p]'),
+          1);
+      expect(episodeNumberFromReleaseTitle('[Group] Show 第04话 [1080p]'), 4);
+      expect(episodeNumberFromReleaseTitle('[Group] Show [13 END][1080p]'), 13);
+    });
+
+    test('旧实现解得出的形态一个都不许变', () {
+      expect(episodeNumberFromReleaseTitle('[Group] Show - 03 [1080p]'), 3);
+      expect(episodeNumberFromReleaseTitle('Show S02E07 1080p'), 7);
+      expect(episodeNumberFromReleaseTitle('[G] Show - 12v2 [1080p]'), 12);
+      expect(
+        episodeNumberFromReleaseTitle(
+          '[SubsPlease] Show - 12 (1080p) [ABCD1234].mkv',
+        ),
+        12,
+      );
+      expect(
+        episodeNumberFromReleaseTitle(
+          'Hibike! Euphonium 2 - 01 (BD 1280x720 x264 AAC)',
+        ),
+        1,
+      );
+    });
+
+    test('不是集号的东西仍然是 null（这正是单独放宽旧正则会解错的那批）', () {
+      // 旧正则一旦放宽右边界，firstMatch 会被更靠左的位置抢答：
+      // `[Anime Time - 2]` -> 2、`[Vol.1 - 2]` -> 2、`[01 - 12]` -> 12、
+      // `（1979 - 2005）` -> 2005。真引擎按括号块分类，这些块根本不产出集号。
       expect(episodeNumberFromReleaseTitle('[Anime Time - 2] Show - 05'), 5,
-          reason: '放宽右边界会让发布组标签里的 2 抢答');
+          reason: '开头的块是发布组，不是集号');
       expect(episodeNumberFromReleaseTitle('[G] Show [Vol.1 - 2] - 05'), 5);
       expect(episodeNumberFromReleaseTitle('[G] Title [01 - 12] [1080p]'), isNull,
           reason: '合集区间不是集号');
       expect(episodeNumberFromReleaseTitle('[G] Doraemon （1979 - 2005） [BDRip]'),
           isNull,
           reason: '年份区间不是集号');
-    });
-
-    test('原有的块外形态照常', () {
-      expect(episodeNumberFromReleaseTitle('[Group] Show - 03 [1080p]'), 3);
-      expect(episodeNumberFromReleaseTitle('Show S02E07 1080p'), 7);
+      expect(
+        episodeNumberFromReleaseTitle('[桜都字幕组] 摇曳露营△ [第01-12话][1080p]'),
+        isNull,
+        reason: '整季合集包不是第 12 集',
+      );
       expect(episodeNumberFromReleaseTitle('[Group] Movie [1080p]'), isNull);
     });
   });

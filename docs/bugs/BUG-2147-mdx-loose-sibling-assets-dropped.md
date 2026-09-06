@@ -90,13 +90,34 @@ null → 404 → `<img>` 破图。`.i{display:inline-block}`（词典 CSS:51）�
 `.js` 不回归；没人引用的 `never-used.png` 不被扫进来；绝对路径与远程 url() 不产生 media key。
 载荷用真实 PNG/WOFF 魔数字节，顺带钉住读取是二进制安全的。
 
-### 已知剩余缺口（不在本次范围，另案）
+### 第二轮：让字节真的够得着（缺口已闭合）
 
-样式表内联进弹窗后，`url()` **在 popup 侧仍未被重写**（`dict-media.js:41-179` 的
-`constructDictCss` 对 `@font-face` 逐字原样吐出），所以即使字节已进 store，相对 url()
-仍相对**弹窗文档**解析（Android 是 `file:///android_asset/.../popup/`，Windows/iOS 是
-`initialData` 的 opaque origin），拿不到。字体还额外卡 CORS：`CustomSchemeResponse`
-（`dictionary_webview_media.dart:281-289`）带不了 header，词典自带字体要能用得接到
-`kDictionaryFontUrlPrefix`（`https://fushi.local/dictfonts/`）那条能带
-`Access-Control-Allow-Origin` 的通道上，且该通道只有 Android/Windows 有
-（`kInAppPopupFontUrlSupported`）。对本词典无影响（它只用 sound.png），故不在本次修。
+第一轮只把字节**收进 media store** 就收工了，但样式表里的相对 `url()` 在弹窗侧
+**从来没被重写过**（`constructDictCss` 对 `@font-face` 逐字原样吐出，全仓
+`fushidicts_src` 里 grep `url(` 零命中）。样式表被内联成 `<style>` 注入弹窗文档，
+相对 URL 于是相对**弹窗文档**解析（Android 是 `file:///android_asset/.../popup/`，
+Windows/iOS 是 `initialData` 的 opaque origin），与词典目录毫无关系。
+**字节在库里但取不到，等于没修。**
+
+按资源种类分流 —— 这不是为了省事，是两类资源的约束本来就不同：
+
+| 资源 | 处理 | 为什么不能反过来 |
+|---|---|---|
+| `@font-face` 的 url() | Dart 侧 `FushiDicts.inlineDictionaryFontFaceUrls` 内联成 `data:` | 字体是**强制 CORS 模式**的子资源，而 `image://` 走 `CustomSchemeResponse`、带不了 `Access-Control-Allow-Origin`；改成 URL 只是把「404」换成「被 CORS 静默拒绝」，更难查 |
+| 其余 url()（雪碧图/背景图） | popup 侧 `dict-media.js` 的 `rewriteDictCssUrls` 重写成 media URL | 图片不受 CORS 约束，保留 URL 形态才能共享 WebView 的 HTTP 缓存；内联成 data: 会随每个嵌套弹窗整份重发（BUG-1868 的形状） |
+
+字体那半放在 `_rebuildStylesCache()`——`dictionaryStyles` 的**唯一产出点**，所以
+in-app 弹窗 / 悬浮窗 / 浏览器扩展 / 样式预览四个表面一次覆盖，不用在每个宿主里各修一遍。
+内联有 `kMaxInlinedDictFontBytes` = 256 KB 上限：词典自带的**图标字体**是几十 KB
+（本词典的 `cdoicons.woff` 是 15 KB），而整套 CJK 字体内联进去就是把 BUG-1868
+（每次查词重传 33.7 MB 内联字体）换个入口放回来。
+
+两侧对同一个写法必须**解出同一个 media key**，两条都对齐了导入侧：
+剥 `?query` / `#fragment`（`extract_css_url_names` 按裸文件名入库），
+剥前导 `/`（MDict 里表示 .mdd 根，与 `<img src="/x.png">` 走的
+`normalizeDictMediaPath` 同解）。
+
+守卫：`fushi/test/dictionary/dict_font_face_inlining_test.dart`（7 条）+
+`fushi/test/pages/popup_dict_css_url_rewrite_test.{dart,js}`（node 真跑
+`constructDictCss` + 三镜像守卫，`sync-mirrors.mjs` 不覆盖 assets→vendor 这一向）。
+变异实测：关掉字体内联 / 关掉 url 重写，两组分别立刻红。

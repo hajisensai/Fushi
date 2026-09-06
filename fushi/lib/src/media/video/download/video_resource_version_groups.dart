@@ -7,32 +7,38 @@
 library;
 
 import 'package:fushi/src/media/torrent/video_resource_provider.dart';
+import 'package:fushi/src/media/video/scraper/filename_parser.dart';
 
-/// 从发布标题解析集号（`S01E05` / `Title - 05 [1080p]` 两种主流形态）。
-/// 认不出返回 null。纯函数（原居 acquisition dialogs，聚类需要后下沉到此，
-/// dialogs 侧 re-export 保源兼容）。
-final RegExp _seasonEpisodePattern = RegExp(
-  r'\bS(\d{1,3})[ ._-]*E(\d{1,4})(?:v\d+)?\b',
-  caseSensitive: false,
-);
-// 右边界只认开括号与串尾，所以集号写在块**内部**的 `[4th - 14][总第80]` 这一族
-// 在这里解不出集号（`14` 后面跟的是 `]`）。**刻意不在 BUG-2146 里放宽**：这个
-// 函数用 firstMatch，放宽右边界会让更靠左的位置抢答 ——
-// `[Anime Time - 2] Show - 05` 解成 2、`[Title [Vol.1 - 2] - 05]` 解成 2、
-// 合集 `[01 - 12]` 从 null 变成 12、`（1979 - 2005）` 解成 2005。后果是版本卡的
-// 集号标签与「从第 N 集之后」订阅起点被填错值（比原先的空更糟）。
-// 要真修得先用 isLikelyBatchVideoRelease 排掉区间形态、并约束命中位置不落在开头的
-// 发布组标签里，那是独立于本 bug 的改动。见 BUG-2146 的「已知剩余缺口」。
-final RegExp _animeEpisodePattern = RegExp(
-  r'(?:^|\s)-\s*(\d{1,4})(?:v\d+)?(?=\s*(?:\[|\(|$))',
-  caseSensitive: false,
-);
+/// [episodeNumberFromReleaseTitle] 的记忆表。该函数被排序比较器
+/// （[_byEpisodeAsc]）与 `episodes` getter 反复调用，同一个标题在一次搜索里会被解析
+/// 几十次，而 [FilenameParser.parse] 是整套规则引擎、不是两条正则。记忆是纯的
+/// （同输入同输出），上限只为防会话内无界增长——一次搜索的标题数是几十到几百，
+/// 命中率不受影响。
+const int _kEpisodeMemoLimit = 2048;
+final Map<String, int?> _episodeMemo = <String, int?>{};
 
+/// 从发布标题解析集号，认不出返回 null。
+///
+/// **委托给 [FilenameParser]，这里不再自带规则。** 本函数原先是一套独立的迷你
+/// 解析器（`\bS\d+E\d+\b` + `(?:^|\s)-\s*(\d+)(?=\s*[\[\(]|$)` 两条正则），
+/// 与刮削/导入/分组共用的 [FilenameParser] 并列——正是 G10 第二步要消灭的那种
+/// 「同一个文件名两套引擎解出不同集号」。它比真引擎少认一大批形态
+/// （`[4th - 14]`、`[S4 - 14]`、`【组】作品 - 14 【1080P】`、`[01]`、`第04话`、
+/// `[13 END]` 全部返回 null），而单独放宽它的正则会让 `firstMatch` 被更靠左的
+/// 位置抢答（`[Anime Time - 2] Show - 05` 解成 2、合集 `[01 - 12]` 解成 12、
+/// `（1979 - 2005）` 解成 2005）——错值会进版本卡的集号标签和「从第 N 集之后」的
+/// 订阅起点，比留空更糟。
+///
+/// 真引擎两边都对：它先按括号块分类（开头的块是发布组、`[01 - 12]` 与
+/// `（1979 - 2005）` 不产出集号），再在括号外文本上跑集号规则。22 条真实发布标题
+/// 实测对拍，旧实现有值的每一条新实现给出**相同**的值，另外多解对 6 条（BUG-2146）。
 int? episodeNumberFromReleaseTitle(String title) {
-  final RegExpMatch? seasonEpisode = _seasonEpisodePattern.firstMatch(title);
-  if (seasonEpisode != null) return int.tryParse(seasonEpisode.group(2)!);
-  final RegExpMatch? anime = _animeEpisodePattern.firstMatch(title);
-  return anime == null ? null : int.tryParse(anime.group(1)!);
+  final int? memo = _episodeMemo[title];
+  if (memo != null || _episodeMemo.containsKey(title)) return memo;
+  final int? episode = FilenameParser.parse(title).episode;
+  if (_episodeMemo.length >= _kEpisodeMemoLimit) _episodeMemo.clear();
+  _episodeMemo[title] = episode;
+  return episode;
 }
 
 /// 标题开头的发布组标签（`[SubsPlease] xxx` → `SubsPlease`）。
@@ -55,6 +61,20 @@ String? _releaseGroupOf(VideoResourceCandidate candidate) {
   return releaseGroupTagFromTitle(candidate.title);
 }
 
+// 下面两条正则**只用于「把集号那一段遮掉」**（下面的模板 key），不是集号解析器
+// ——解析是 [episodeNumberFromReleaseTitle] 的事，那里委托给 [FilenameParser]。
+// 两件事的判据本来就不同：解析要问「这个标题是第几集」，遮罩要问「标题里哪一段
+// 随集数变化」，后者必须是可替换的**子串位置**，所以只能是正则。别把它们合成
+// 一个：合起来就是 G10 第二步消灭掉的那种「同一文件名两套引擎」。
+final RegExp _episodeMaskSeasonEpisode = RegExp(
+  r'\bS(\d{1,3})[ ._-]*E(\d{1,4})(?:v\d+)?\b',
+  caseSensitive: false,
+);
+final RegExp _episodeMaskDash = RegExp(
+  r'(?:^|\s)-\s*(\d{1,4})(?:v\d+)?(?=\s*(?:\[|\(|$))',
+  caseSensitive: false,
+);
+
 /// 没有发布组字段时，用「只抹掉集号」的标题模板识别同一逐集发布系列。
 ///
 /// 不能退成统一空串：那会把不同季、不同编码版本全部混成一组；也不能全部拆成
@@ -63,11 +83,11 @@ String? _releaseGroupOf(VideoResourceCandidate candidate) {
 String _unknownReleaseFamilyKey(VideoResourceCandidate candidate) {
   String title = candidate.title.trim().toLowerCase();
   bool replacedEpisode = false;
-  title = title.replaceAllMapped(_seasonEpisodePattern, (Match match) {
+  title = title.replaceAllMapped(_episodeMaskSeasonEpisode, (Match match) {
     replacedEpisode = true;
     return 's${match.group(1)}e#';
   });
-  title = title.replaceAllMapped(_animeEpisodePattern, (Match match) {
+  title = title.replaceAllMapped(_episodeMaskDash, (Match match) {
     replacedEpisode = true;
     return ' - #';
   });

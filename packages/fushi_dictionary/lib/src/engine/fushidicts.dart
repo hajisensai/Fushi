@@ -1,4 +1,4 @@
-import 'dart:convert' show jsonDecode, utf8;
+import 'dart:convert' show base64Encode, jsonDecode, utf8;
 import 'dart:ffi';
 import 'dart:isolate';
 
@@ -638,8 +638,89 @@ class FushiDicts {
       return;
     }
     _stylesCache = {
-      for (final s in _instance!.getStyles()) s.dictName: s.styles,
+      for (final s in _instance!.getStyles())
+        s.dictName: inlineDictionaryFontFaceUrls(
+          s.styles,
+          s.dictName,
+          _instance!.getMediaFile,
+        ),
     };
+  }
+
+  /// 单个内联字体的大小上限。**不是随手定的**：内联字节会随
+  /// `window.dictionaryStyles` 注入每一个弹窗 WebView，而嵌套查词每点一次就新建一个
+  /// WebView、静态段整份重发——BUG-1868 就是「每次查词重传 33.7 MB 内联字体」，
+  /// 修法正是把用户字体从 data: 改成 URL。这里之所以还能内联，是因为词典自带的
+  /// **图标字体**是几十 KB 量级（剑桥发音词典的 cdoicons.woff 是 15 KB）。
+  /// 超过上限的（例如整套 CJK 字体）宁可不内联：留着 404 只是图标不显示，内联进去
+  /// 是把已修好的性能灾难换个入口放回来。
+  static const int kMaxInlinedDictFontBytes = 256 * 1024;
+
+  /// 把词典 CSS 里 `@font-face` 的相对 `url()` 内联成 `data:` URL。
+  ///
+  /// 词典包自带的样式表被**内联成 `<style>`** 注入弹窗文档，所以里面的相对 URL 是
+  /// 相对**弹窗文档**解析的（Android 是 `file:///android_asset/.../popup/`，
+  /// Windows/iOS 是 `initialData` 的 opaque origin），与词典目录毫无关系 —— 字节
+  /// 永远取不到（BUG-2147）。
+  ///
+  /// 字体这一半只能内联，不能换成 media URL：字体是**强制 CORS 模式**的子资源，
+  /// 而弹窗的 `image://` 通道走 `CustomSchemeResponse`，带不了
+  /// `Access-Control-Allow-Origin`，改成 URL 只会把「404」换成「被 CORS 静默拒绝」。
+  /// `data:` 不进 CORS，且对全部平台与全部弹窗表面（in-app / 悬浮窗 / 浏览器扩展 /
+  /// 样式预览）一致生效 —— 这也是为什么这一步放在 [dictionaryStyles] 的产出点，
+  /// 而不是某一个宿主里。
+  ///
+  /// 非字体资源（雪碧图/背景图）不在这里处理：它们不受 CORS 约束，由 popup 侧的
+  /// `dict-media.js` 重写成 media URL，那样能共享 WebView 的 HTTP 缓存。
+  ///
+  /// 取不到字节、超过 [kMaxInlinedDictFontBytes]、或是绝对/远程 URL 的一律原样保留。
+  @visibleForTesting
+  static String inlineDictionaryFontFaceUrls(
+    String css,
+    String dictName,
+    Uint8List? Function(String dictName, String mediaPath) readMedia,
+  ) {
+    if (css.isEmpty || !css.contains('@font-face')) return css;
+    return css.replaceAllMapped(_fontFaceBlock, (Match block) {
+      return block.group(0)!.replaceAllMapped(_cssUrl, (Match m) {
+        final String raw = m.group(2)!.trim();
+        // 带 scheme 的（`data:` / `https:`）与协议相对的 `//host/…`，原样保留。
+        if (raw.isEmpty || _absoluteUrl.hasMatch(raw)) return m.group(0)!;
+        // 媒体 key 不含 ?query / #fragment —— 与导入侧的 extract_css_url_names
+        // 剥法一致，否则 `cdoicons.woff?v=3` 会查不到已入库的 `cdoicons.woff`。
+        final int cut = raw.indexOf(RegExp(r'[?#]'));
+        String path = cut < 0 ? raw : raw.substring(0, cut);
+        // 前导 `/` 在 MDict 里表示「.mdd 根」，不是文件系统绝对路径。剥掉它与
+        // popup 侧 `normalizeDictMediaPath` 对 `<img src="/x.png">` 的处理一致——
+        // 两条通道对同一个写法必须解出同一个 media key。
+        path = path.replaceAll('\\', '/').replaceFirst(RegExp(r'^/+'), '');
+        if (path.isEmpty) return m.group(0)!;
+        final Uint8List? bytes = readMedia(dictName, path);
+        if (bytes == null ||
+            bytes.isEmpty ||
+            bytes.length > kMaxInlinedDictFontBytes) {
+          return m.group(0)!;
+        }
+        return 'url("data:${_fontMimeFor(path)};base64,${base64Encode(bytes)}")';
+      });
+    });
+  }
+
+  static final RegExp _fontFaceBlock =
+      RegExp(r'@font-face\s*\{[^}]*\}', caseSensitive: false);
+  static final RegExp _cssUrl =
+      RegExp(r'''url\(\s*(['"]?)([^'")]*)\1\s*\)''', caseSensitive: false);
+  static final RegExp _absoluteUrl =
+      RegExp(r'^(?:[a-z][a-z0-9+.-]*:|//|#)', caseSensitive: false);
+
+  static String _fontMimeFor(String path) {
+    final String p = path.toLowerCase();
+    if (p.endsWith('.woff2')) return 'font/woff2';
+    if (p.endsWith('.woff')) return 'font/woff';
+    if (p.endsWith('.otf')) return 'font/otf';
+    if (p.endsWith('.ttf')) return 'font/ttf';
+    if (p.endsWith('.eot')) return 'application/vnd.ms-fontobject';
+    return 'application/octet-stream';
   }
 
   void dispose() {

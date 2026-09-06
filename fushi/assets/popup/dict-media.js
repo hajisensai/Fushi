@@ -61,8 +61,36 @@ function constructDictCss(css, dictName, scopePrefix) {
     return out;
 }
 
+/* 词典 CSS 里的相对 url()（雪碧图、背景图、图标）指向词典自己的资源。样式表被内联成
+   <style> 注入弹窗文档，所以这些相对 URL 是相对**弹窗文档**解析的 —— Android 是
+   file:///android_asset/.../popup/，Windows/iOS 是 initialData 的 opaque origin ——
+   与词典目录毫无关系，字节永远取不到（BUG-2147）。重写到媒体通道，和 <img src> 同一条。
+
+   `@font-face` 里的 url() **不在这里处理**：字体是强制 CORS 模式的子资源，而媒体通道
+   走 CustomSchemeResponse、带不了 Access-Control-Allow-Origin，改成 URL 只会把「404」
+   换成「被 CORS 静默拒绝」。字体由 Dart 侧在产出 dictionaryStyles 时内联成 data:
+   （FushiDicts.inlineDictionaryFontFaceUrls），到这里已经是 data: 了，被下面的
+   rewriteDictionaryMediaPath 当绝对 URL 原样放过。
+
+   ?query / #fragment 要剥掉：导入侧收集资源名时按裸文件名入库
+   （extract_css_url_names），`sprite.png?version=5.0.287` 的媒体 key 是 `sprite.png`。 */
+function rewriteDictCssUrls(css, dictName) {
+    if (!dictName || css.indexOf('url(') === -1) return css;
+    return css.replace(/url\(\s*(['"]?)([^'")]*)\1\s*\)/gi, (match, quote, raw) => {
+        const trimmed = `${raw}`.trim();
+        if (!trimmed) return match;
+        const cut = trimmed.search(/[?#]/);
+        const path = cut < 0 ? trimmed : trimmed.slice(0, cut);
+        if (!path) return match;
+        const rewritten = rewriteDictionaryMediaPath(path, dictName);
+        if (rewritten === null) return match; // 绝对 URL / data: / 协议相对，原样留
+        return `url("${rewritten}")`;
+    });
+}
+
 function constructDictCssUncached(css, dictName, scopePrefix) {
     if (!css) return '';
+    css = rewriteDictCssUrls(css, dictName);
     const prefix = scopePrefix || `[data-dictionary="${dictName}"]`;
     const parts = [];
     let i = 0;
