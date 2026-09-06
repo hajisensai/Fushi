@@ -1,8 +1,8 @@
 ## BUG-2202 · 内封 tx3g 字幕轨让导出的片段在 QQ 等 IM 里整个不可播
 - **报告**：2026-09-07（用户：wrds）
 - **真实性**：✅ 真 bug —— 根因 `fushi/lib/src/media/video/video_clip_exporter.dart:392`（`-c:s mov_text` 把字幕封成 tx3g 轨）
-- **[ ] ① 未修复** — 骨架已落地（`video_clip_subtitle_burn.dart` + `ffmpeg-min` 白名单加 `overlay`）；还缺 Dart 侧 cue→PNG 渲染、导出链路接线、以及 CI 重编一版带 `overlay` 的 ffmpeg-min
-- **[x] ② 已加自动化测试** — `fushi/test/media/video/video_clip_subtitle_burn_test.dart`（24 条）
+- **[x] ① 已修复（不可播这一条）** — `resolveClipSubtitleCodec` 对 mp4 系返回 null，导出的片段不再带 tx3g 轨，到处能播。**字幕以硬字幕形式回来这一半还没接线**（见下「当前进度」），需要 CI 先重编一版带 `overlay` 的 ffmpeg-min
+- **[x] ② 已加自动化测试** — `video_clip_subtitle_burn_test.dart`（24 条）+ `video_clip_subtitle_image_test.dart`（8 条）+ 导出链路 `mp4 output gets no subtitle track at all`；四个相关测试文件共 90 条全绿
 - **备注**：与 [BUG-2200](BUG-2200-clip-export-moov-at-tail-qq-cannot-play.md) 同一次用户报告拆出来的两条独立缺陷。2200（moov 在文件末尾）已修，但**不足以**让文件在 QQ 里播放。
 
 ### 现象
@@ -55,12 +55,13 @@
 
 已落地：
 - `tool/ffmpeg-min/build-ffmpeg-min.sh`：`FILTERS` 加 `overlay`。
-- `fushi/lib/src/media/video/video_clip_subtitle_burn.dart`：能力探测（`ffmpeg -filters` 解析，两种 flag 列宽都吃）、画面尺寸解析、filter 图与输入段拼装、可烧性门控。全是纯函数 + 24 条测试。
+- `video_clip_subtitle_burn.dart`：能力探测（`ffmpeg -filters` 解析，两种 flag 列宽都吃）、画面尺寸解析、filter 图与输入段拼装、可烧性门控。全纯函数。
+- `video_clip_subtitle_image.dart`：`dart:ui` 把一条 cue 渲染成与视频同分辨率的全画幅透明 PNG，字号/底距/投影按 `画面高 / 屏幕视频区高` 换算，复用屏幕上那套 `VideoSubtitleStyle`——于是「字幕占画面的比例」在屏幕和导出件里一致。
+- `resolveClipSubtitleCodec` 对 mp4 系返回 null：**不再封 tx3g**，导出的片段立刻到处能播。这里没有加任何新分支——调用方早就有「容器封不下文本字幕 → 退回纯视频音频导出」的降级链，改返回值就够了。
 
 还缺（下一批）：
-- Dart 侧 `dart:ui` 把每条 cue 渲染成全画幅透明 PNG（复用 `VideoSubtitleStyle` 那套字号/描边/投影，与屏幕观感一致）。
-- 接进 `exportVideoClip`：能烧就烧、不能烧就**不封 tx3g**（宁可无字幕也不要播不了的文件），并去掉 `-c:s mov_text` 这条路。
-- CI 重编一版带 `overlay` 的 `ffmpeg-min` 二进制；在那之前 `ffmpegCanBurnClipSubtitles` 恒为 false，行为等价于「导出无字幕但到处能播的片段」。
+- 把渲染器接进 `exportVideoClip`：探到 `overlay` 就渲染 cue → 拼 `-filter_complex` → 走重编码路径烧录；探不到就维持现在的无字幕导出。这一步要把导出入口从「SRT 文本」换成「cue（带时间轴）」，会动到 `soft-subtitle muxing` 那组既有测试。
+- CI 重编一版带 `overlay` 的 `ffmpeg-min` 二进制（Windows/macOS/Linux），移动端自编的 ffmpeg-kit 同理。在新二进制到位前 `ffmpegCanBurnClipSubtitles` 恒为 false，行为就是现在这样：片段到处能播，但没有字幕。
 
 ### 未动的一件事
 

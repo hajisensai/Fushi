@@ -190,12 +190,19 @@ void main() {
   });
 
   group('resolveClipSubtitleCodec', () {
-    test('mp4 family needs 3GPP Timed Text', () {
+    test('mp4 family carries no soft subtitle track at all (BUG-2202)', () {
       // 片段导出输出恒 .mp4（BUG-917），所以这是实际生效的分支。
-      expect(resolveClipSubtitleCodec('/out/clip.mp4'), 'mov_text');
-      expect(resolveClipSubtitleCodec('/out/clip.MP4'), 'mov_text');
-      expect(resolveClipSubtitleCodec('/out/clip.m4v'), 'mov_text');
-      expect(resolveClipSubtitleCodec('/out/clip.mov'), 'mov_text');
+      //
+      // 这里曾经返回 'mov_text'（tx3g）。改掉是因为带 tx3g 轨的片段会被 QQ 这类
+      // IM 的内置播放器整个判为不可播——用户在真 QQ 上二分过：同一份源，只差字幕
+      // 轨的两个变体，带轨打不开、去轨能放；再把轨 tkhd 的 enabled 位清零、或把
+      // hdlr 从 sbtl 改成规范的 text，两种补丁都仍然打不开。而即便能播，QQ 也不
+      // 渲染 tx3g，所以内封在「导出→分享」里是纯负资产。字幕以硬字幕形式回来
+      // （video_clip_subtitle_burn.dart 的 overlay 烧录），走另一条路径。
+      expect(resolveClipSubtitleCodec('/out/clip.mp4'), isNull);
+      expect(resolveClipSubtitleCodec('/out/clip.MP4'), isNull);
+      expect(resolveClipSubtitleCodec('/out/clip.m4v'), isNull);
+      expect(resolveClipSubtitleCodec('/out/clip.mov'), isNull);
     });
 
     test('matroska/webm can copy SRT verbatim', () {

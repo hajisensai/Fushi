@@ -104,11 +104,21 @@ String? resolveClipSubtitleCodec(String outputPath) {
     case '.mka':
     case '.webm':
       return 'copy';
-    // ISO-BMFF 系只认 3GPP Timed Text。
+    // ISO-BMFF 系只认 3GPP Timed Text（`tx3g`），而 **tx3g 轨会让整个片段在 QQ
+    // 这类 IM 的内置播放器里判为不可播**（BUG-2202）。用户在真 QQ 上二分过：同一份
+    // 源，只差字幕轨的两个变体，带轨打不开、去轨能放；再把轨的 `tkhd` enabled 位
+    // 清零、把 `hdlr` 从 `sbtl` 改成规范的 `text`，两种补丁都仍然打不开。而即便它
+    // 能播，QQ 也不会渲染 tx3g——内封字幕在「导出→分享」这个主场景里是纯负资产：
+    // 既让文件播不了，播得了也看不见字。
+    //
+    // 所以 mp4 系一律返回 null（= 跳过字幕，只导视频音频）。**不加新分支**：调用方
+    // 早就有「容器封不下文本字幕 → 退回纯视频音频导出」这条降级链，这里改返回值就
+    // 够了。字幕会以**硬字幕**形式回来（`video_clip_subtitle_burn.dart` 的 `overlay`
+    // 烧录），届时它走的是完全不同的路径，与本函数无关。
     case '.mp4':
     case '.m4v':
     case '.mov':
-      return 'mov_text';
+      return null;
     // .ts / .avi / .flv / .wmv 等：无可靠的文本字幕封装，跳过。
     default:
       return null;

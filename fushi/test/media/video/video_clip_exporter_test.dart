@@ -569,7 +569,10 @@ void main() {
       addTearDown(() => dir.deleteSync(recursive: true));
       final File input = File('${dir.path}/source.mkv')
         ..writeAsBytesSync(<int>[1]);
-      final File output = File('${dir.path}/clip.mp4');
+      // 输出用 .mkv：mp4 系自 BUG-2202 起一条软字幕轨都不封（tx3g 会让片段在 QQ
+      // 里整个不可播），而这条测试守的是「SRT 落盘 → 喂给 ffmpeg → 清理」这套
+      // 机制本身，它对能封软字幕的容器依然真实。
+      final File output = File('${dir.path}/clip.mkv');
 
       final List<String> seenSubtitlePaths = <String>[];
       String? seenSubtitleContent;
@@ -617,7 +620,8 @@ void main() {
       addTearDown(() => dir.deleteSync(recursive: true));
       final File input = File('${dir.path}/source.mkv')
         ..writeAsBytesSync(<int>[1]);
-      final File output = File('${dir.path}/clip.mp4');
+      // 同上：mp4 系不再封软字幕，UTF-8 往返守在仍会落盘 SRT 的容器上。
+      final File output = File('${dir.path}/clip.mkv');
       const String srt = '1\n00:00:00,000 --> 00:00:01,000\n日本語の字幕\n\n';
 
       String? readBack;
@@ -653,7 +657,9 @@ void main() {
       addTearDown(() => dir.deleteSync(recursive: true));
       final File input = File('${dir.path}/source.mkv')
         ..writeAsBytesSync(<int>[1]);
-      final File output = File('${dir.path}/clip.mp4');
+      // 同上：守的是「带字幕两轮都失败 → 重跑无字幕轮」这条降级链，用仍会带
+      // -c:s 的容器（.mkv）才能触发它。
+      final File output = File('${dir.path}/clip.mkv');
 
       final _FakeFfmpegBackend backend = _FakeFfmpegBackend(
         onRun: (List<String> args) {
@@ -685,6 +691,49 @@ void main() {
       expect(backend.clipCalls[0].contains('-c:s'), isTrue);
       expect(backend.clipCalls[1].contains('-c:s'), isTrue);
       expect(backend.clipCalls[2].contains('-c:s'), isFalse);
+    });
+
+    test('mp4 output gets no subtitle track at all (BUG-2202)', () async {
+      // 这是**生产实际走的那条**：exportVideoClip 输出恒 .mp4（BUG-917）。
+      // 内封 tx3g 会让整个片段在 QQ 这类 IM 里判为不可播（用户在真 QQ 上二分过：
+      // 只差字幕轨的两个变体，带轨打不开、去轨能放），所以一条软字幕轨都不能有。
+      final Directory dir =
+          Directory.systemTemp.createTempSync('hibiki_clip_sub_mp4');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final File input = File('${dir.path}/source.mkv')
+        ..writeAsBytesSync(<int>[1]);
+      final File output = File('${dir.path}/clip.mp4');
+
+      final _FakeFfmpegBackend backend = _FakeFfmpegBackend(
+        onRun: (List<String> args) {
+          output.writeAsBytesSync(<int>[9]);
+          return const FfmpegRunResult(returnCode: 0, output: 'ok');
+        },
+      );
+
+      final VideoClipExportResult result = await exportVideoClipViaFfmpeg(
+        inputPath: input.path,
+        startMs: 0,
+        endMs: 2000,
+        outputPath: output.path,
+        backend: backend,
+        subtitleContents: <String>[
+          '1\n00:00:00,000 --> 00:00:01,000\n主字幕\n\n',
+          '1\n00:00:00,000 --> 00:00:01,000\nsecondary\n\n',
+        ],
+      );
+
+      // 导出照常成功，只是没有字幕——降级链已有，这里不该多出任何新分支。
+      expect(result.isSuccess, isTrue);
+      expect(result.subtitleTrackCount, 0);
+      for (final List<String> call in backend.clipCalls) {
+        expect(call.contains('-c:s'), isFalse, reason: '$call');
+        expect(call.contains('mov_text'), isFalse, reason: '$call');
+        expect(call.any((String a) => a.endsWith('.srt')), isFalse,
+            reason: '$call');
+        // 没有字幕输入时必须留着 -sn，否则源里的内嵌字幕轨会被带进片段。
+        expect(call.contains('-sn'), isTrue, reason: '$call');
+      }
     });
 
     test('skips subtitles entirely for containers that cannot carry them',
