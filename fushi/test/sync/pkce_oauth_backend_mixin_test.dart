@@ -137,19 +137,77 @@ void main() {
       'get _authHeaders',
     ];
 
+    // 类头锚点：`PkceOAuthBackendMixin` 只能在 with 列表里算数。两个文件的 dartdoc
+    // 里就写着 `[PkceOAuthBackendMixin]`，扫全文件是恒真的——把 with 列表里的 mixin
+    // 删掉，那种断言照样绿（真正会红的是编译器，不是这条守卫）。
+    const Map<String, String> declarations = <String, String>{
+      'lib/src/sync/dropbox_sync_backend.dart':
+          'class DropboxSyncBackend extends SyncBackend',
+      'lib/src/sync/onedrive_sync_backend.dart':
+          'class OneDriveSyncBackend extends SyncBackend',
+    };
+    // 抽 mixin 之后，每个后端**唯一**剩下的自有认证代码就是 readStoredToken /
+    // writeStoredToken 两个存储钩子。它们接错对家照样编译、照样跑绿所有行为测试，
+    // 后果却是两个后端共用一份凭据：登录 Dropbox 顶掉 OneDrive 的 token。
+    // 这是 mixin 抽取最典型的复制粘贴翻车点，只能靠字面量守。
+    const Map<String, String> ownProvider = <String, String>{
+      'lib/src/sync/dropbox_sync_backend.dart': 'Dropbox',
+      'lib/src/sync/onedrive_sync_backend.dart': 'OneDrive',
+    };
+
     for (final String path in backends) {
       test(path, () {
         final File f = File(path);
         expect(f.existsSync(), isTrue, reason: '$path 不存在（请从 fushi/ 包根跑测试）');
         final String src = f.readAsStringSync();
-        expect(src, contains('PkceOAuthBackendMixin'),
-            reason: '$path 必须混入 PkceOAuthBackendMixin');
+
+        final int classAt = src.indexOf(declarations[path]!);
+        expect(classAt, isNonNegative, reason: '$path 的类声明变了，守卫需更新');
+        final int braceAt = src.indexOf('{', classAt);
+        expect(braceAt, greaterThan(classAt), reason: '$path 扫不到类头结尾');
+        expect(src.substring(classAt, braceAt),
+            contains('PkceOAuthBackendMixin'),
+            reason: '$path 的 with 列表里必须有 PkceOAuthBackendMixin');
+
         for (final String needle in banned) {
           expect(src, isNot(contains(needle)),
               reason: '$path 里出现 `$needle`——认证外壳应只在 mixin 里有一份');
         }
+
+        final String own = ownProvider[path]!;
+        final String other = own == 'Dropbox' ? 'OneDrive' : 'Dropbox';
+        expect(src, contains('repo.get${own}Token()'),
+            reason: '$path 的 readStoredToken 必须读自己那把存储键');
+        expect(src, contains('repo.set${own}Token('),
+            reason: '$path 的 writeStoredToken 必须写自己那把存储键');
+        expect(src, isNot(contains('${other}Token')),
+            reason: '$path 碰了对家的凭据键：两个后端会共用一份 token，'
+                '登录一边顶掉另一边');
       });
     }
+
+    test('Dropbox 的 revoke 必须排在 super.signOut 之前', () {
+      // 抽 mixin 之前，撤销服务端 token 和清空本地凭据在同一个方法体里，顺序一眼
+      // 可见。现在清空搬进了 mixin，顺序变成跨文件的隐式约定：把
+      // `await super.signOut(repo: repo)` 挪到 revoke 前面，全套测试照样绿，
+      // 而线上会拿 `Bearer null` 去 revoke——请求静默失败，服务端 token 永不撤销。
+      const String path = 'lib/src/sync/dropbox_sync_backend.dart';
+      final String src = File(path).readAsStringSync();
+      const String anchor = 'Future<void> signOut({required SyncRepository repo';
+      final int at = src.indexOf(anchor);
+      expect(at, isNonNegative, reason: 'signOut 签名变了，守卫需更新');
+      final int end = src.indexOf('\n  }', at);
+      expect(end, greaterThan(at), reason: '扫不到 signOut 结尾，守卫需更新');
+      final String body = src.substring(at, end);
+
+      final int revokeAt = body.indexOf('/auth/token/revoke');
+      final int superAt = body.indexOf('super.signOut(');
+      expect(revokeAt, isNonNegative, reason: 'Dropbox 登出必须撤销服务端 token');
+      expect(superAt, isNonNegative, reason: '清空本地凭据必须复用 mixin 的 signOut');
+      expect(revokeAt, lessThan(superAt),
+          reason: 'super.signOut 会把 accessToken 置空；顺序反了就是拿 '
+              '`Bearer null` 去 revoke——静默失败，服务端 token 永不撤销');
+    });
   });
 }
 
