@@ -533,6 +533,32 @@ int sessionWatermarkAfterRestore(int currentWatermark, int restoreAbsolute) {
       : currentWatermark;
 }
 
+/// BUG-2168：恢复完成时是否要重置速度封顶令牌桶（`_lastWatermarkAdvanceAt` 归
+/// 现在、`_readChargeCreditMilliChars` 清零）。
+///
+/// 只有播种值**真正前跳**（`seeded > currentWatermark`）才是「起新 session / 跳转
+/// 播种」，带着满桶开局会让掠过被计入，必须清零。播种值 ≤ 水位的恢复（改字号 /
+/// 换主题重排、窗口宽变、分页↔连续切换、听书跨章回读）是**原位恢复**，用户没换
+/// 位置、也没停止阅读；旧实现在此无条件清零，一次重排就把攒下的额度砍光，紧随
+/// 其后的正常翻页只分到几毫秒的额度，整页被漏计。纯函数，供单测锁定判据。
+bool restoreSeedResetsReadCharge({
+  required int currentWatermark,
+  required int seeded,
+}) => seeded > currentWatermark;
+
+/// 阅读时钟「此刻可跑」的统一判据（BUG-2171 / BUG-2170）。
+///
+/// 三个正交旗：用户在统计浮层手动暂停（[manualPause]）、app 切后台 / 桌面失焦
+/// （[lifecycleStopped]）、阅读器面板 / 弹层 / 全页路由压在正文上（[modalDepth] > 0，
+/// 对齐 Hoshi Android 的 `modalPaused`）。任一为真都不算在读。页面里所有 start /
+/// stop 决策只经这一个判据——旧实现 `_ensureStudyClock` 只看手动暂停旗，后台听书
+/// 跟随每次翻章 / 进度刷新都经它把已被生命周期停掉的时钟重新起表。
+bool studyClockMayRun({
+  required bool manualPause,
+  required bool lifecycleStopped,
+  required int modalDepth,
+}) => !manualPause && !lifecycleStopped && modalDepth == 0;
+
 /// BUG-1107（断点 B·幻象字数）：恢复完成 / cue 跳转时，统计水位应落到的
 /// **绝对**字符位置（全书累计口径，与 `_absoluteCharPosition` 同基准）。
 ///
@@ -1873,6 +1899,15 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// （BUG-892）与之正交——账仍只在 [StudyClock] 一本。
   bool _studyClockManualPause = false;
 
+  /// app 切后台 / 桌面失焦期间为 true（`didChangeAppLifecycleState`）。BUG-2171：
+  /// 后台听书跟随会经 [_ensureStudyClock] 反复到达，必须有一枚生命周期旗让它知道
+  /// 「现在不许起表」，而不是只看手动暂停旗。
+  bool _studyClockLifecycleStopped = false;
+
+  /// 压在正文上的面板 / 弹层 / 全页路由计数（BUG-2170）。> 0 时时钟停表：调半小时
+  /// 外观参数、翻目录、搜书、看插图都不是阅读。经 [_withStudyClockPaused] 增减。
+  int _studyClockModalDepth = 0;
+
   // TODO-291 阶段2：audioHandler 控制流（play/seek/skip/悬浮字幕翻转）订阅已上移到
   // [AudiobookSession]（进程级），reader 不再持有这些订阅。
 
@@ -2899,7 +2934,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       // 熄屏、睡眠期间的墙钟时长会在恢复时被一次性计入（34h 的书 / 单小时 >1h / 凌晨
       // 幻影阅读）。这就是「切屏自动暂停」：stop() 先结算失焦瞬间的部分窗口（受
       // kMaxReadingGap 守卫）再封段落库，时长与字数在同一段里一起写穿。
-      unawaited(_studyClock?.stop());
+      // BUG-2171：置生命周期旗再经统一判据停表——后台听书跟随经 _ensureStudyClock
+      // 到达时看到旗子，不会把时钟重新起起来。
+      _studyClockLifecycleStopped = true;
+      _syncStudyClockRunState();
     } else if (state == AppLifecycleState.resumed) {
       // TODO-900: OS 层失焦（Alt+Tab 切窗）后 Flutter 不保证把 primaryFocus 归还到
       // 页级 [_focusNode]，导致切窗回来后页级 / 全局快捷键全死，且因是焦点状态而非可
@@ -2908,8 +2946,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       _focusOwnership.reclaim(FocusReclaimCause.appResumed);
       // BUG-892 / BUG-1052: 后台那段间隔靠「时钟停着」丢弃，而不是靠回前台重锚一个
       // 墙钟基准——后者会连同重锚前那段**真实前台阅读时长**一起抹掉。start() 只重锚
-      // tick 起点并开新段；不存在第二个可被重置的时钟。用户手动暂停时不自动续表。
-      if (!_studyClockManualPause) _studyClock?.start();
+      // tick 起点并开新段；不存在第二个可被重置的时钟。用户手动暂停 / 面板仍开着时
+      // 不自动续表（统一判据 studyClockMayRun）。
+      _studyClockLifecycleStopped = false;
+      _syncStudyClockRunState();
     }
   }
 

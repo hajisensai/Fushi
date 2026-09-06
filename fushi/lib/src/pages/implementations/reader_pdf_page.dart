@@ -21,6 +21,22 @@ import 'package:fushi/src/pdf/pdf_engine.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/utils.dart';
 
+/// BUG-2184：PDF 翻到 [pageIndex] 时本会话新读到的页数与新的会话最高页。
+///
+/// 只计**首次越过**会话最高页的部分（与漫画 `_sessionCountedPages` / EPUB 水位
+/// 「只升不降」同律）：往回翻、回到已读页都是 0；跳目录前跳 N 页计 N 页（到达即
+/// 计，PDF 无停留门）。[sessionMaxPageIndex] 初值：有存档 = 存档页（续读只计新推进
+/// 的页），无存档 = -1（首页正常入账）。纯函数，供单测锁定。
+({int newPages, int maxPageIndex}) pdfPagesNewlyReached({
+  required int pageIndex,
+  required int sessionMaxPageIndex,
+}) {
+  if (pageIndex <= sessionMaxPageIndex) {
+    return (newPages: 0, maxPageIndex: sessionMaxPageIndex);
+  }
+  return (newPages: pageIndex - sessionMaxPageIndex, maxPageIndex: pageIndex);
+}
+
 /// PDF 阅读器页面（Phase 1 渲染 / Phase 2 点选查词 / Phase 3 页码进度 / Phase 4 制卡）。
 ///
 /// 与 EPUB 的 [ReaderFushiPage] 平行：那边是 WebView + JS 选区 + 章内字符偏移，这边是
@@ -71,6 +87,11 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
   /// （与 `ReaderPositions.sectionIndex` 的 EPUB 章 index 口径一致）。
   int _currentPageIndex = 0;
   int _lastSavedPageIndex = -1;
+
+  /// BUG-2184：本会话读到过的最高页（0-based，-1 = 还没翻过）。翻页只在越过它时
+  /// `addPages`（[pdfPagesNewlyReached]），往回翻不计；此前 PDF 只 `touch()` 从不
+  /// `addPages`，页数统计恒 0。
+  int _sessionMaxPageIndex = -1;
   Timer? _saveDebounce;
   bool _restoreDone = false;
 
@@ -162,6 +183,8 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
       _restorePageIndex = saved.sectionIndex;
       _currentPageIndex = saved.sectionIndex;
       _lastSavedPageIndex = saved.sectionIndex;
+      // 续读：恢复到存档页不是读了 0..存档页，页数水位预置到存档页。
+      _sessionMaxPageIndex = saved.sectionIndex;
     }
 
     // v92：唯一时钟（同 EPUB 侧）；空闲门 + 生命周期前台门只对阅读面生效。
@@ -195,6 +218,13 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     if (pageIndex < 0) return;
     // v92 阅读空闲门：翻页 = 用户输入。
     _studyClock?.touch();
+    // BUG-2184：越过会话最高页的部分记页数（与时长同段同 uid）。
+    final ({int newPages, int maxPageIndex}) reached = pdfPagesNewlyReached(
+      pageIndex: pageIndex,
+      sessionMaxPageIndex: _sessionMaxPageIndex,
+    );
+    _sessionMaxPageIndex = reached.maxPageIndex;
+    if (reached.newPages > 0) _studyClock?.addPages(reached.newPages);
     _currentPageIndex = pageIndex;
     // 500ms debounce（与 EPUB 阅读器同口径）：连续翻页只落最后一次。
     if (pageIndex == _lastSavedPageIndex) return;

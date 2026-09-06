@@ -238,6 +238,35 @@ void main() {
       expect(h.sink.last.durationMs.value, 30000, reason: '重新有输入 → 新段');
     });
 
+    test('BUG-2173：挂机超时 → stop → start 后首个 tick 入账（start 重锚空闲基准）', () async {
+      final _Harness h = _Harness(idleTimeout: const Duration(minutes: 10));
+      h.clock.start();
+      h.advance(const Duration(seconds: 60));
+      await h.clock.flushNow();
+      expect(h.sink.last.durationMs.value, 60000);
+      // 挂机 11 分钟后切走（stop）。
+      h.advance(const Duration(minutes: 11));
+      await h.clock.stop();
+      final int writesBefore = h.sink.writes.length;
+      // 一小时后回前台：start 本身是用户输入，空闲基准必须重锚到此刻。
+      h.advance(const Duration(hours: 1));
+      h.clock.start();
+      h.advance(const Duration(seconds: 60));
+      await h.clock.flushNow();
+      expect(
+        h.sink.writes.length,
+        writesBefore + 1,
+        reason: '回前台后的首个 tick 必须入账（旧 `_lastTouch ??= now` 会按陈旧基准判空闲）',
+      );
+      expect(h.sink.last.durationMs.value, 60000);
+      h.advance(const Duration(seconds: 1));
+      expect(
+        h.clock.sessionTotals().active,
+        isTrue,
+        reason: '回前台后处于计时态（空闲基准 = start 时刻）',
+      );
+    });
+
     test('停表期间不产生任何增量（后台时长永不入账，BUG-892 不回归）', () async {
       final _Harness h = _Harness();
       h.clock.start();
@@ -367,8 +396,9 @@ void main() {
       ]);
     });
 
-    test('字数 / 页数记到当前段，与时长同一行；无段时以 0 时长开段', () async {
+    test('字数 / 页数记到当前段，与时长同一行；起表后无段时以 0 时长开段', () async {
       final _Harness h = _Harness();
+      h.clock.start();
       h.clock.addChars(120);
       h.clock.addPages(2);
       await h.clock.flushNow();
@@ -376,7 +406,6 @@ void main() {
       expect(h.sink.last.chars.value, 120);
       expect(h.sink.last.pages.value, 2);
       expect(h.sink.last.durationMs.value, 0);
-      h.clock.start();
       h.advance(const Duration(seconds: 10));
       h.clock.addChars(30);
       await h.clock.flushNow();
@@ -387,6 +416,70 @@ void main() {
       );
       expect(h.sink.last.chars.value, 150);
       expect(h.sink.last.durationMs.value, 10000);
+    });
+
+    test('BUG-2172：停表期间 addChars / addPages 不入账、不开段', () async {
+      final _Harness h = _Harness();
+      // 从未 start：翻页产生的字数没有「在学习」的时钟可归属，直接丢弃。
+      h.clock.addChars(50);
+      h.clock.addPages(1);
+      expect(h.clock.debugOpenUid, isNull, reason: '未起表不得以 0 时长开段');
+      await h.clock.flushNow();
+      expect(h.sink.writes, isEmpty);
+
+      h.clock.start();
+      h.advance(const Duration(seconds: 30));
+      await h.clock.stop();
+      expect(h.sink.writes, hasLength(1));
+      expect(h.sink.last.durationMs.value, 30000);
+      // 手动暂停 / 切屏后翻页：字数页数一并不计（停表 = 不在学习）。
+      h.advance(const Duration(seconds: 5));
+      h.clock.addChars(400);
+      h.clock.addPages(3);
+      expect(h.clock.debugOpenUid, isNull, reason: '停表期间不得开段');
+      await h.clock.flushNow();
+      expect(h.sink.writes, hasLength(1), reason: '没有新段落库');
+      expect(h.sink.last.chars.value, 0);
+      expect(h.sink.last.pages.value, 0);
+      expect(
+        h.clock.sessionTotals().chars,
+        0,
+        reason: '会话累计同样不计，UI 字/时不被 0 时长字数推高',
+      );
+    });
+
+    test('BUG-2179：跨小时瞬间 addChars 先结算待定窗口，不产出 0 时长字数段', () async {
+      final _Harness h = _Harness(start: DateTime(2026, 8, 29, 12, 59, 50));
+      h.clock.start();
+      h.advance(const Duration(seconds: 5));
+      await h.clock.flushNow();
+      expect(h.clock.debugOpenUid, isNotNull, reason: '12 点段已打开');
+      final String hour12 = h.clock.debugOpenUid!;
+      // 13:00:10 翻页：待定窗口 12:59:55..13:00:10 先按小时拆桶结算，字数落 13 点段。
+      h.advance(const Duration(seconds: 15));
+      h.clock.addChars(100);
+      expect(h.clock.debugOpenUid, isNot(hour12), reason: '字数落新小时段');
+      expect(h.clock.debugOpenTotals, (
+        durationMs: 10000,
+        chars: 100,
+        pages: 0,
+      ));
+      await h.clock.stop();
+      expect(
+        h.sink.writes.where((w) => w.durationMs.value == 0),
+        isEmpty,
+        reason: '不得出现 0 时长的纯字数段',
+      );
+      final Map<int, StudySegmentsCompanion> byHour =
+          <int, StudySegmentsCompanion>{
+            for (final StudySegmentsCompanion w in h.sink.writes)
+              w.hour.value: w,
+          };
+      expect(byHour[12]!.durationMs.value, 10000);
+      expect(byHour[12]!.chars.value, 0);
+      expect(byHour[13]!.durationMs.value, 10000);
+      expect(byHour[13]!.chars.value, 100);
+      expect(h.sink.uids.toSet(), hasLength(2), reason: '恰两段：旧小时段不被重开第二次');
     });
 
     test('不足 1 秒且无字数 / 页数的段不落库：stop 丢弃、flushNow 留到下次', () async {

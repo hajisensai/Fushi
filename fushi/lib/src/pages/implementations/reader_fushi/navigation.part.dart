@@ -170,20 +170,28 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     // `_refreshProgress` 把章内恢复点之前的整段前缀误计成新读字数。改经
     // [computeCharWatermark]：有效 `_initialCharOffset`（>=0）用「章首累计 + 锚」
     // 推导绝对水位，无锚才退回分数口径（行为同旧）。
+    final int seededWatermark = computeCharWatermark(
+      chapterCumulativeChars: _chapterCumulativeChars,
+      chapterCharCounts: _chapterCharCounts,
+      chapter: _currentChapter,
+      progress: _initialProgress,
+      charOffset: _initialCharOffset,
+    );
+    // BUG-2168：只有播种值真正前跳（首次进入 / 前进跨章 / 跳转）才是新 session，
+    // 令牌桶从这里重新起算并清零额度（带着满桶开局会让掠过被计入）。播种值 ≤ 水位
+    // 的原位恢复（改字号 / 换主题重排、宽变、分页↔连续切换、回读）保留额度——旧实现
+    // 无条件清零，一次重排就把攒下的额度砍光，紧随其后的正常翻页整页被漏计。
+    if (restoreSeedResetsReadCharge(
+      currentWatermark: _sessionMaxAbsoluteChars,
+      seeded: seededWatermark,
+    )) {
+      _lastWatermarkAdvanceAt = DateTime.now();
+      _readChargeCreditMilliChars = 0;
+    }
     _sessionMaxAbsoluteChars = sessionWatermarkAfterRestore(
       _sessionMaxAbsoluteChars,
-      computeCharWatermark(
-        chapterCumulativeChars: _chapterCumulativeChars,
-        chapterCharCounts: _chapterCharCounts,
-        chapter: _currentChapter,
-        progress: _initialProgress,
-        charOffset: _initialCharOffset,
-      ),
+      seededWatermark,
     );
-    // BUG-1762：恢复落定也是一次水位重锚——速度封顶的时间窗从这里重新起算。
-    _lastWatermarkAdvanceAt = DateTime.now();
-    // 起新 session / 跳转播种：额度一并清零，否则带着满桶开局会让掠过被计入。
-    _readChargeCreditMilliChars = 0;
 
     // TODO-718: 连续模式恢复完成后，进入 WebView 的 settle reflow 会把裸 window.scrollY
     // 瞬时归 0（无分页 snap/lock 保护），归零 scroll 经 _handleReaderScroll 落库 progress≈0
@@ -1038,7 +1046,12 @@ extension _ReaderNavigation on _ReaderFushiPageState {
   }
 
   Future<void> _refreshProgress() async {
-    if (_controller == null || _lyricsMode) return;
+    // BUG-2169：恢复在飞（含 _reloadWithCurrentSettings 的整章重载）期间不采样——
+    // 10s 轮询不受 readerScrollProgressRefreshAllowed 门控，重载中 JS 的瞬态 atEnd /
+    // 章末 progress 会把「旧位置 → 章末」整段计成本次读到的新字数。恢复完成
+    // （_onRestoreComplete）与失败（_failNavigation / reload catch）都清旗，之后的
+    // 首发刷新、onReanchorSettled 补刷都在清旗之后到达，不受这条门影响。
+    if (_controller == null || _lyricsMode || _restoreInFlight) return;
     final dynamic result;
     try {
       result = await _controller!.evaluateJavascript(
@@ -1510,13 +1523,51 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       mediaKey: widget.bookKey,
       title: _book?.title ?? widget.bookKey,
       format: BookFormat.epub.dbValue,
-      idleTimeout: appModel.readingIdleTimeout,
       onWriteError: (Object e, StackTrace st) =>
           ErrorLogService.instance.log('StudyClock.write(epub)', e, st),
     );
-    // 用户在统计浮层手动暂停时不自动起表（章导航 / 进度刷新都会经这里）。
-    if (!_studyClockManualPause) clock.start();
+    // BUG-2175：空闲门分钟数每次都从设置刷（字段本就可变）——旧实现只在建时钟时
+    // 快照一次，阅读中改设置要退出重开书才生效。
+    clock.idleTimeout = appModel.readingIdleTimeout;
+    // 手动暂停 / 切后台 / 面板打开时不自动起表（章导航 / 进度刷新都会经这里）：
+    // 统一判据，见 [studyClockMayRun]（BUG-2171：旧实现只看手动暂停旗，后台听书
+    // 跟随每次翻章都把生命周期已停掉的时钟重新起表）。
+    if (_studyClockMayRun) clock.start();
     return clock;
+  }
+
+  /// 时钟此刻可跑（[studyClockMayRun]）。
+  bool get _studyClockMayRun => studyClockMayRun(
+    manualPause: _studyClockManualPause,
+    lifecycleStopped: _studyClockLifecycleStopped,
+    modalDepth: _studyClockModalDepth,
+  );
+
+  /// 把时钟运行态对齐到判据：可跑 → `start()`（对已在跑的是 no-op），不可跑 →
+  /// `stop()`（结算部分窗口 + 封段落库；对已停的是 no-op）。三枚旗任一翻转后调用。
+  void _syncStudyClockRunState() {
+    final StudyClock? clock = _studyClock;
+    if (clock == null) return;
+    if (_studyClockMayRun) {
+      clock.start();
+    } else {
+      unawaited(clock.stop());
+    }
+  }
+
+  /// 在面板 / 弹层 / 全页路由压住正文期间停表（BUG-2170，对齐 Hoshi Android 的
+  /// `modalPaused`）：进入时 `stop()` 结算到此刻并封段落库，退出后按判据续表
+  /// （手动暂停 / 后台仍不续）。查词浮窗与 Anki 制卡对话框**不**经这里——那是阅读的
+  /// 一部分。计数而非 bool：面板里再开对话框（有声书面板 → 导入）嵌套时不会提前续表。
+  Future<T> _withStudyClockPaused<T>(Future<T> Function() body) async {
+    _studyClockModalDepth++;
+    _syncStudyClockRunState();
+    try {
+      return await body();
+    } finally {
+      _studyClockModalDepth--;
+      if (mounted) _syncStudyClockRunState();
+    }
   }
 
   /// 把「上一次 tick 到现在」的部分窗口结算并落库（不停表）。章导航 / 退出 /

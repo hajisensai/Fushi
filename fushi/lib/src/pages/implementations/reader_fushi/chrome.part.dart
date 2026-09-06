@@ -914,34 +914,41 @@ extension _ReaderChrome on _ReaderFushiPageState {
   void _openImageViewer(String imgUrl) {
     final File? file = _readerImageFileForUrl(imgUrl);
     if (file == null) return;
-    Navigator.push(
-      context,
-      PageRouteBuilder<void>(
-        opaque: false,
-        barrierColor:
-            Theme.of(context).colorScheme.scrim.withValues(alpha: 0.87),
-        barrierDismissible: true,
-        pageBuilder: (BuildContext routeContext, __, ___) => ContextMenuTrigger(
-          // 右键菜单改由绑定表决定唤出键（默认仍是右键）；右键被别的动作占用时自动让位。
-          onInvoke: isWindowsPlatform
-              ? (Offset position) => unawaited(
-                    _showReaderImageContextMenuAtGlobalPosition(
-                      imgUrl,
-                      position,
-                      menuContext: routeContext,
+    // BUG-2170：全屏看图期间停表（路由 pop 后按判据续表）。
+    unawaited(
+      _withStudyClockPaused(
+        () => Navigator.push(
+          context,
+          PageRouteBuilder<void>(
+            opaque: false,
+            barrierColor: Theme.of(
+              context,
+            ).colorScheme.scrim.withValues(alpha: 0.87),
+            barrierDismissible: true,
+            pageBuilder: (BuildContext routeContext, __, ___) =>
+                ContextMenuTrigger(
+                  // 右键菜单改由绑定表决定唤出键（默认仍是右键）；右键被别的动作占用时自动让位。
+                  onInvoke: isWindowsPlatform
+                      ? (Offset position) => unawaited(
+                          _showReaderImageContextMenuAtGlobalPosition(
+                            imgUrl,
+                            position,
+                            menuContext: routeContext,
+                          ),
+                        )
+                      : null,
+                  ladder: kReaderMouseLadder,
+                  child: GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: InteractiveViewer(
+                      minScale: 0.5,
+                      maxScale: 10,
+                      child: Center(
+                        child: Image.file(file, fit: BoxFit.contain),
+                      ),
                     ),
-                  )
-              : null,
-          ladder: kReaderMouseLadder,
-          child: GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: InteractiveViewer(
-              minScale: 0.5,
-              maxScale: 10,
-              child: Center(
-                child: Image.file(file, fit: BoxFit.contain),
-              ),
-            ),
+                  ),
+                ),
           ),
         ),
       ),
@@ -960,20 +967,25 @@ extension _ReaderChrome on _ReaderFushiPageState {
     if (book == null) return;
     final List<EpubImageRef> images = book.images;
     final int currentChapter = _currentChapter;
-    Navigator.push(
-      context,
-      MaterialPageRoute<void>(
-        builder: (BuildContext routeContext) => ReaderGalleryPage(
-          images: images,
-          currentChapter: currentChapter,
-          fileForRef: (EpubImageRef ref) =>
-              _readerImageFileForUrl(ReaderFushiSource.epubUrl(ref.src)),
-          onOpenImage: (EpubImageRef ref) =>
-              _openImageViewer(ReaderFushiSource.epubUrl(ref.src)),
-          onJumpTo: (EpubImageRef ref) {
-            Navigator.pop(routeContext);
-            unawaited(_navigateToChapter(ref.chapterIndex, manual: true));
-          },
+    // BUG-2170：插图画廊是从阅读器 push 出去的全页路由，压住期间停表。
+    unawaited(
+      _withStudyClockPaused(
+        () => Navigator.push(
+          context,
+          MaterialPageRoute<void>(
+            builder: (BuildContext routeContext) => ReaderGalleryPage(
+              images: images,
+              currentChapter: currentChapter,
+              fileForRef: (EpubImageRef ref) =>
+                  _readerImageFileForUrl(ReaderFushiSource.epubUrl(ref.src)),
+              onOpenImage: (EpubImageRef ref) =>
+                  _openImageViewer(ReaderFushiSource.epubUrl(ref.src)),
+              onJumpTo: (EpubImageRef ref) {
+                Navigator.pop(routeContext);
+                unawaited(_navigateToChapter(ref.chapterIndex, manual: true));
+              },
+            ),
+          ),
         ),
       ),
     );
@@ -1674,67 +1686,85 @@ extension _ReaderChrome on _ReaderFushiPageState {
         initialSubPage: initialSubPage,
       );
 
-      if (presentation == ReaderQuickSettingsPresentation.audiobookPanel &&
-          !useSideSheet) {
-        // 手机：全高 bottom sheet 承载面板（面板内部 Flexible 需要有界高度）。
-        await adaptiveModalSheet<void>(
-          context: context,
-          builder: (BuildContext ctx) => SizedBox(
-            height: MediaQuery.sizeOf(ctx).height * 0.9,
-            child: sheetContent,
-          ),
-        );
-      } else if (presentation ==
-          ReaderQuickSettingsPresentation.audiobookPanel) {
-        await showAppDialog<void>(
-          context: context,
-          builder: (_) => FushiDialogFrame(
-            maxWidth: 680,
-            maxHeightFactor: 0.88,
-            scrollable: false,
-            child: sheetContent,
-          ),
-        );
-      } else if (useSideSheet) {
-        // 抽屉开着期间顶部工具栏不自动收起（否则用户改设置时工具栏在背后消失，
-        // 关抽屉后点空白又要再唤一次）；关掉后若仍是悬浮可见态，重新武装计时。
-        _cancelChromeAutoHide();
-        await showReaderSideSheet<void>(
-          context: context,
-          // ッツ 形态：导航 / 章节贴左，外观设置贴右。
-          side: presentation ==
-                  ReaderQuickSettingsPresentation.sideSheetNavigation
-              ? ReaderSideSheetSide.left
-              : ReaderSideSheetSide.right,
-          builder: (_) => sheetContent,
-        );
-        if (mounted && _anyChromeFloating && _chromeTransientVisible) {
-          _armChromeAutoHide();
-        }
-      } else if (isDesktopPlatform) {
-        await showAppDialog(
-          context: context,
-          builder: (_) => FushiDialogFrame(
-            // master-detail（左父菜单 + 右详情）需要更宽画布；窄于 640 的窗口
-            // 由面板内部 LayoutBuilder 自动降级回单列 push。
-            maxWidth: kFushiSettingsDialogMaxWidth,
-            maxHeightFactor: 0.80,
-            scrollable: false,
-            child: sheetContent,
-          ),
-        );
-      } else {
-        await adaptiveModalSheet<void>(
-          context: context,
-          builder: (_) => sheetContent,
-        );
-      }
+      // BUG-2170：外观 / 导航 / 搜索 / 收藏 / 有声书面板压着正文期间停表。
+      await _withStudyClockPaused(
+        () => _presentQuickSettings(
+          sheetContent: sheetContent,
+          presentation: presentation,
+          useSideSheet: useSideSheet,
+        ),
+      );
 
       _syncDictionaryTheme();
+      // BUG-2175：面板里可能改了空闲门分钟数，关掉即生效（不必等下次 _ensureStudyClock）。
+      _studyClock?.idleTimeout = appModel.readingIdleTimeout;
     } finally {
       _appearanceSheetOpen = false;
       // 复位后重建把 blur 挂回 pill（dispose 后不能 setState，纯赋值已够）。
       if (mounted) _rebuild(() {});
+    }
+  }
+
+  /// [_showAppearanceSheet] 的呈现分派（居中对话框 / 移动端 sheet / 桌面端左右抽屉），
+  /// 返回的 Future 在面板关闭后完成。
+  Future<void> _presentQuickSettings({
+    required Widget sheetContent,
+    required ReaderQuickSettingsPresentation presentation,
+    required bool useSideSheet,
+  }) async {
+    if (presentation == ReaderQuickSettingsPresentation.audiobookPanel &&
+        !useSideSheet) {
+      // 手机：全高 bottom sheet 承载面板（面板内部 Flexible 需要有界高度）。
+      await adaptiveModalSheet<void>(
+        context: context,
+        builder: (BuildContext ctx) => SizedBox(
+          height: MediaQuery.sizeOf(ctx).height * 0.9,
+          child: sheetContent,
+        ),
+      );
+    } else if (presentation == ReaderQuickSettingsPresentation.audiobookPanel) {
+      await showAppDialog<void>(
+        context: context,
+        builder: (_) => FushiDialogFrame(
+          maxWidth: 680,
+          maxHeightFactor: 0.88,
+          scrollable: false,
+          child: sheetContent,
+        ),
+      );
+    } else if (useSideSheet) {
+      // 抽屉开着期间顶部工具栏不自动收起（否则用户改设置时工具栏在背后消失，
+      // 关抽屉后点空白又要再唤一次）；关掉后若仍是悬浮可见态，重新武装计时。
+      _cancelChromeAutoHide();
+      await showReaderSideSheet<void>(
+        context: context,
+        // ッツ 形态：导航 / 章节贴左，外观设置贴右。
+        side:
+            presentation == ReaderQuickSettingsPresentation.sideSheetNavigation
+            ? ReaderSideSheetSide.left
+            : ReaderSideSheetSide.right,
+        builder: (_) => sheetContent,
+      );
+      if (mounted && _anyChromeFloating && _chromeTransientVisible) {
+        _armChromeAutoHide();
+      }
+    } else if (isDesktopPlatform) {
+      await showAppDialog(
+        context: context,
+        builder: (_) => FushiDialogFrame(
+          // master-detail（左父菜单 + 右详情）需要更宽画布；窄于 640 的窗口
+          // 由面板内部 LayoutBuilder 自动降级回单列 push。
+          maxWidth: kFushiSettingsDialogMaxWidth,
+          maxHeightFactor: 0.80,
+          scrollable: false,
+          child: sheetContent,
+        ),
+      );
+    } else {
+      await adaptiveModalSheet<void>(
+        context: context,
+        builder: (_) => sheetContent,
+      );
     }
   }
 
@@ -2175,18 +2205,22 @@ extension _ReaderChrome on _ReaderFushiPageState {
     final int? remainingChapter =
         _progress.remainingChapterChars(_currentChapter);
     final int? remainingBook = _progress.remainingBookChars;
+    // BUG-2170：看统计浮层不是阅读，打开期间停表（浮层里的会话读数因此冻结在打开
+    // 那一刻，与「本次」语义一致）。
     unawaited(
-      showAppDialog<void>(
-        context: context,
-        builder: (_) => FushiDialogFrame(
-          maxWidth: 640,
-          child: ReaderStatisticsDialog(
-            sessionTotals: _readingSessionTotals,
-            loadBookTotals: _loadReaderBookStatTotals,
-            trackingPaused: () => _studyClockManualPause,
-            onToggleTracking: _toggleStudyClockManualPause,
-            remainingChapterChars: remainingChapter,
-            remainingBookChars: remainingBook,
+      _withStudyClockPaused(
+        () => showAppDialog<void>(
+          context: context,
+          builder: (_) => FushiDialogFrame(
+            maxWidth: 640,
+            child: ReaderStatisticsDialog(
+              sessionTotals: _readingSessionTotals,
+              loadBookTotals: _loadReaderBookStatTotals,
+              trackingPaused: () => _studyClockManualPause,
+              onToggleTracking: _toggleStudyClockManualPause,
+              remainingChapterChars: remainingChapter,
+              remainingBookChars: remainingBook,
+            ),
           ),
         ),
       ),
@@ -2197,14 +2231,12 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// `start()` 重锚 tick 起点开新段。旗标同时门住 [_ensureStudyClock] 与生命周期
   /// resumed 的自动起表。
   void _toggleStudyClockManualPause() {
-    final StudyClock clock = _ensureStudyClock();
+    _ensureStudyClock();
     final bool pause = !_studyClockManualPause;
     _rebuild(() => _studyClockManualPause = pause);
-    if (pause) {
-      unawaited(clock.stop());
-    } else {
-      clock.start();
-    }
+    // 统一判据（BUG-2171）：统计浮层本身是弹层（modalDepth > 0），「继续」在关掉浮层
+    // 后才真正起表；切后台期间点「继续」也只是清旗、回前台再起。
+    _syncStudyClockRunState();
   }
 
   /// 有声书面板「对齐文件」：打开导入对话框并预填当前音频（对话框内可选文件 /
@@ -2213,14 +2245,17 @@ extension _ReaderChrome on _ReaderFushiPageState {
       {String? initialAlignmentPath}) async {
     final Audiobook? audiobook = _audiobookController?.audiobook;
     final AudiobookRepository repo = AudiobookRepository(appModel.database);
-    await showAppDialog<void>(
-      context: context,
-      builder: (ctx) => AudiobookImportDialog(
-        bookKey: widget.bookKey,
-        repo: repo,
-        extractDir: _extractDir,
-        initialAudioPaths: audiobook?.audioPaths,
-        initialAlignmentPath: initialAlignmentPath,
+    // BUG-2170：导入 / 对齐对话框压着正文期间停表。
+    await _withStudyClockPaused(
+      () => showAppDialog<void>(
+        context: context,
+        builder: (ctx) => AudiobookImportDialog(
+          bookKey: widget.bookKey,
+          repo: repo,
+          extractDir: _extractDir,
+          initialAudioPaths: audiobook?.audioPaths,
+          initialAlignmentPath: initialAlignmentPath,
+        ),
       ),
     );
     try {
@@ -2250,10 +2285,12 @@ extension _ReaderChrome on _ReaderFushiPageState {
     final EpubBookRow? book =
         await appModel.database.getEpubBook(widget.bookKey);
     if (!mounted) return;
-    final String? srtPath = await showAsrTranscribeSheet(
-      context: context,
-      audioPaths: List<String>.of(audio),
-      languageHint: asrLanguageHintFromBookLanguage(book?.language),
+    final String? srtPath = await _withStudyClockPaused(
+      () => showAsrTranscribeSheet(
+        context: context,
+        audioPaths: List<String>.of(audio),
+        languageHint: asrLanguageHintFromBookLanguage(book?.language),
+      ),
     );
     if (srtPath == null || !mounted) return;
     await _openAlignmentImportDialog(initialAlignmentPath: srtPath);

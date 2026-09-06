@@ -120,15 +120,33 @@ void main() {
       final int resumed = src.indexOf('AppLifecycleState.resumed', i);
       // paused/inactive 分支（resumed 之前）里停时钟。
       final String pausedBranch = src.substring(i, resumed);
-      expect(pausedBranch.contains('_studyClock?.stop()'), isTrue,
-          reason: 'BUG-892 回归：后台不停计时 → 挂起时长被计入');
+      // BUG-2171：不再直接 `_studyClock?.stop()`，改置生命周期旗 + 统一判据同步
+      // （_ensureStudyClock 在后台到达时看到旗子不会把时钟重新起起来）。
+      expect(
+        pausedBranch.contains('_studyClockLifecycleStopped = true;'),
+        isTrue,
+        reason: 'BUG-892 / BUG-2171 回归：后台不置停表旗 → 挂起时长被计入 / 后台听书重启时钟',
+      );
+      expect(
+        pausedBranch.contains('_syncStudyClockRunState();'),
+        isTrue,
+        reason: 'BUG-892 回归：后台不停计时 → 挂起时长被计入',
+      );
     });
 
     test('恢复前台时重启时钟（后台段靠「时钟停着」丢弃，不靠重锚墙钟）', () {
       final int resumed = src.indexOf('AppLifecycleState.resumed');
       final String resumedBranch = src.substring(resumed, resumed + 900);
-      expect(resumedBranch.contains('_studyClock?.start()'), isTrue,
-          reason: 'BUG-892：不重启时钟 → 回前台后阅读时长不再记账');
+      expect(
+        resumedBranch.contains('_studyClockLifecycleStopped = false;'),
+        isTrue,
+        reason: 'BUG-892 / BUG-2171：不清停表旗 → 回前台后时钟永远起不来',
+      );
+      expect(
+        resumedBranch.contains('_syncStudyClockRunState();'),
+        isTrue,
+        reason: 'BUG-892：不重启时钟 → 回前台后阅读时长不再记账',
+      );
       // BUG-1052：这里曾经是 `_sessionStartTime = DateTime.now()`。那个重锚在丢弃
       // 后台段的同时，把**重锚前那段还没落库的前台阅读时长**一并抹掉（`_flushReadingStats`
       // 以 `_sessionCharsRead <= 0` 早退时根本不消费它）。查词频繁 = 失焦/回前台频繁

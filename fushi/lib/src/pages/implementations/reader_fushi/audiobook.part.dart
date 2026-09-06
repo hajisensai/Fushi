@@ -539,6 +539,11 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     if (!mounted || _controller == null) return;
     final AudiobookPlayerController? controller = _audiobookController;
     if (controller == null) return;
+    // BUG-2174：听书播放态是阅读输入——每次 cue 推进喂一次空闲门。歌词模式没有
+    // 滚动回传（不经 _refreshProgressFromScroll），听一小时只计到空闲门 10 分钟；
+    // 非歌词模式的跟随也顺带经过（无害，与滚动回传的 touch 幂等）。暂停态的被动
+    // 高亮（重开 / 手动跳句）不算播放，不喂。
+    if (controller.isPlaying) _studyClock?.touch();
 
     if (_lyricsMode) {
       // BUG-757: 消费 force-reveal 一次性旗（snapReaderToAudio 在 followAudio OFF→ON
@@ -1834,12 +1839,15 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     }
     final AudiobookRepository repo = AudiobookRepository(appModel.database);
 
-    await showAppDialog<void>(
-      context: context,
-      builder: (ctx) => AudiobookImportDialog(
-        bookKey: widget.bookKey,
-        repo: repo,
-        extractDir: _extractDir,
+    // BUG-2170：导入对话框压着正文期间停表。
+    await _withStudyClockPaused(
+      () => showAppDialog<void>(
+        context: context,
+        builder: (ctx) => AudiobookImportDialog(
+          bookKey: widget.bookKey,
+          repo: repo,
+          extractDir: _extractDir,
+        ),
       ),
     );
 
@@ -1863,13 +1871,14 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     final SrtBook? book = await repo.findByUid(_srtBookUid!);
     if (book == null || !mounted) return;
 
-    final SrtBookReimportOutcome? outcome =
-        await showAppDialog<SrtBookReimportOutcome>(
-      context: context,
-      builder: (_) => SrtBookReimportDialog(
-        book: book,
-        db: appModel.database,
-        repo: repo,
+    final SrtBookReimportOutcome? outcome = await _withStudyClockPaused(
+      () => showAppDialog<SrtBookReimportOutcome>(
+        context: context,
+        builder: (_) => SrtBookReimportDialog(
+          book: book,
+          db: appModel.database,
+          repo: repo,
+        ),
       ),
     );
 
