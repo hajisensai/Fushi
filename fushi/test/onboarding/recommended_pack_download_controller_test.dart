@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/onboarding/recommended_pack.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
+import 'package:fushi/src/utils/misc/segmented_downloader.dart';
 import 'package:fushi/src/utils/misc/toast_severity.dart';
 import 'package:path/path.dart' as p;
 
@@ -125,6 +126,60 @@ void main() {
     expect(controller.error.value, isNull);
     expect(outcomes, isEmpty);
     expect(controller.stage.value, RecommendedPackDownloadStage.idle);
+  });
+
+  // 上面那条抛的是 `DioError(type: cancel)` —— 那是**兜底单流路**的形状。
+  // 真实下载默认走分片路（清单能解出计划就 `_downloadSegmented`），取消抛的是
+  // `SegmentedDownloadCancelledException`，不是 DioError。只覆盖前者的话，
+  // 「用户取消不算失败」这条断言就跑在一个生产上根本走不到的分支上，恒绿。
+  test('分片路（默认路径）的取消同样不算失败', () async {
+    final List<String> outcomes = <String>[];
+    final RecommendedPackDownloadController controller = newController(
+      outcomes: outcomes,
+      runner:
+          ({
+            required Directory packDir,
+            required ValueNotifier<double> progress,
+            required ValueNotifier<int> receivedBytes,
+            required CancelToken cancelToken,
+          }) async {
+            throw const SegmentedDownloadCancelledException();
+          },
+    );
+    addTearDown(controller.dispose);
+
+    expect(await controller.start(), isNull);
+    expect(
+      controller.error.value,
+      isNull,
+      reason: '取消不是失败——本条 bug 把失败原因做成了常驻可见，'
+          '误判会让设置行/迷你条上写着一个 Dart 异常类名',
+    );
+    expect(outcomes, isEmpty);
+  });
+
+  // 第三种形态：下载体在两条已知路径之外响应取消（例如自己检查 token 后抛别的
+  // 东西）。token 自己的状态是最后一道判据。
+  test('token 已取消时，任何异常形态都不算失败', () async {
+    final List<String> outcomes = <String>[];
+    final RecommendedPackDownloadController controller = newController(
+      outcomes: outcomes,
+      runner:
+          ({
+            required Directory packDir,
+            required ValueNotifier<double> progress,
+            required ValueNotifier<int> receivedBytes,
+            required CancelToken cancelToken,
+          }) async {
+            cancelToken.cancel();
+            throw StateError('aborted by caller');
+          },
+    );
+    addTearDown(controller.dispose);
+
+    expect(await controller.start(), isNull);
+    expect(controller.error.value, isNull);
+    expect(outcomes, isEmpty);
   });
 
   test('真失败写 error 并提示，半截文件留着下次续传', () async {

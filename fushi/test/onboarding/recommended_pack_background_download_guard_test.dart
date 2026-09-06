@@ -106,12 +106,29 @@ void main() {
           '设置里那一行要三步才够得着、且不在任何必经路径上；'
           '「能看到进度」必须有一个用户不用去找的地方',
     );
+    // 光断言这两个串各自出现过是**恒真**的：`_bodyWithMiniBar` 在本条 bug 之前
+    // 就存在，把 `RecommendedPackDownloadMiniBar()` 挪进只有移动端那一支，两条
+    // 断言照样全绿。真正要钉的是「迷你条在那个共用点的函数体**里**」。
+    // 窗口取到函数体结束，不用「锚点 + 固定字符数」（注释一增删就够不到，本仓
+    // 刚在 PR#1230 上因此红过一次 CI）。
+    const String anchor = 'Widget _bodyWithMiniBar() {';
+    final int at = home.indexOf(anchor);
+    expect(at, greaterThan(0), reason: '共用点改名了，守卫需更新');
+    final int end = home.indexOf('\n  }', at);
+    expect(end, greaterThan(at), reason: '找不到 _bodyWithMiniBar 结尾，守卫需更新');
+    final String body = home.substring(at, end);
     expect(
-      home.contains('_bodyWithMiniBar'),
+      body.contains('RecommendedPackDownloadMiniBar('),
       isTrue,
       reason:
-          '必须挂在三套布局（移动底栏 / 桌面 rail / macOS）的共用点上，'
+          '迷你条必须挂在三套布局（移动底栏 / 桌面 rail / macOS）的共用点里，'
           '否则换个平台就看不见',
+    );
+    // 三处布局都得走这个共用点，否则「共用」本身是假的。
+    expect(
+      RegExp(r'_bodyWithMiniBar\(\)').allMatches(home).length,
+      greaterThanOrEqualTo(4),
+      reason: '一处定义 + 三套布局各一处调用；少一处就有平台看不见迷你条',
     );
   });
 

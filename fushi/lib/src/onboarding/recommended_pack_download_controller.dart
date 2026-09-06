@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/onboarding/recommended_pack.dart';
+import 'package:fushi/src/utils/misc/segmented_downloader.dart';
 import 'package:fushi/utils.dart';
 
 /// 推荐包（9.5 GB 的词典 + 发音库整包）下载任务所处的阶段。
@@ -210,21 +211,34 @@ class RecommendedPackDownloadController {
       miniBarDismissed.value = false;
       _showOutcome(t.onboarding_pack_download_finished, ToastSeverity.success);
       return file;
-    } on DioError catch (e) {
-      // 用户取消：半截文件保留，下次续传；非取消才示错。
-      // （仓库钉 dio 5.1，类型名还是 `DioError`，与其余下载路径一致。）
-      if (e.type != DioErrorType.cancel) {
-        _failWith(e.message ?? e.toString());
-      }
-      _settleStageFromDisk();
-      return null;
     } catch (e) {
-      _failWith(e.toString());
+      // 用户取消：半截文件保留，下次续传；非取消才示错。
+      //
+      // 取消的形态有**两种**，因为下载有两条路：清单能解出分片计划就走
+      // `_downloadSegmented`（这是默认路径），解不出才退单流。分片路取消抛的是
+      // [SegmentedDownloadCancelledException]（一个普通 Exception），单流路才抛
+      // `DioError(type: cancel)`。只认后者的话，用户在真实路径上点「取消」会被
+      // 判成失败——而本条 bug 恰恰把失败原因做成了常驻可见，于是设置行与迷你条
+      // 上会赫然写着「推荐包下载失败：SegmentedDownloadCancelledException」。
+      if (!_isCancellation(e, cancelToken)) {
+        _failWith(e is DioError ? (e.message ?? e.toString()) : e.toString());
+      }
       _settleStageFromDisk();
       return null;
     } finally {
       _cancelToken = null;
     }
+  }
+
+  /// 这个异常是不是「用户取消」。
+  ///
+  /// 三条判据缺一不可：分片路的专用异常、单流路的 `DioError(type: cancel)`、
+  /// 以及 token 自己的状态（下载体在两条路之外的地方响应取消时，抛出来的可能是
+  /// 别的形态，但 `cancelToken.isCancelled` 一定为真）。
+  static bool _isCancellation(Object error, CancelToken token) {
+    if (error is SegmentedDownloadCancelledException) return true;
+    if (error is DioError && error.type == DioErrorType.cancel) return true;
+    return token.isCancelled;
   }
 
   void _failWith(String message) {
