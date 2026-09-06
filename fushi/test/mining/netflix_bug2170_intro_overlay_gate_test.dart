@@ -40,12 +40,17 @@ void main() {
 
       test('切集到位后、开 tabCapture 之前先播过提示窗', () {
         final String src = file.readAsStringSync();
-        const String gate =
-            'if (fromLoad) await fushiWaitPastNetflixIntroOverlay(';
+        const String gate = 'await fushiWaitPastNetflixIntroOverlay(';
         final int gateAt = src.indexOf(gate);
         expect(gateAt, greaterThan(-1),
-            reason: '$root content.js 状态机必须在真实页面加载（切集）后等过提示窗；'
-                '只挂 fromLoad 是因为就地续跑时页面早已开播多时、提示不在');
+            reason: '$root content.js 状态机必须在真实页面加载（切集）后等过提示窗');
+        // 只挂 fromLoad：就地续跑时页面早已开播多时、提示不在，白等还会把用户的
+        // 播放位置往前推。三目而不是 if 是因为门的结果要传给批量当放弃名单的判据。
+        expect(src.contains('fromLoad'), isTrue,
+            reason: '$root content.js 这道门只能挂在真实页面加载上');
+        expect(src.contains('const introGate = fromLoad'), isTrue,
+            reason: '$root content.js 门必须由 fromLoad 门控，且它的结果要被接住'
+                '——放弃名单拿它当判据');
         final int captureAt = src.indexOf("type: 'nfEnsureCapture'");
         expect(captureAt, greaterThan(-1),
             reason: '$root content.js 找不到 nfEnsureCapture（接线已变，守卫需重写）');
@@ -54,36 +59,67 @@ void main() {
                 '顺序反了等于录制器仍在提示窗内开着，提示照样进卡片');
       });
 
+      // 下面两条**必须切到门自己的函数体里断言**。原来直接扫全文件，而
+      // `fushiWaitForPlaying` 里一字不差地有 `if (Date.now() >= deadline)
+      // { resolve(false); return; }`，`const base = v.currentTime;` 也被它的
+      // `const base = v.currentTime; // 开录基线…` 子串命中——把门里的 deadline
+      // 检查整行删掉（= 无限等，正是最危险的那一档），两条断言照样绿。
+      String gateBody(String src) {
+        const String anchor =
+            'function fushiWaitPastNetflixIntroOverlay(v, maxMs)';
+        final int at = src.indexOf(anchor);
+        expect(at, greaterThan(-1),
+            reason: '$root content.js 找不到门函数（签名变了，守卫需更新）');
+        final int end = src.indexOf('\n}', at);
+        expect(end, greaterThan(at),
+            reason: '$root content.js 找不到门函数体结尾，守卫需更新');
+        return src.substring(at, end);
+      }
+
       test('等待是有界的，推不动时放行而不是卡死整批', () {
-        final String src = file.readAsStringSync();
-        expect(
-            src.contains('function fushiWaitPastNetflixIntroOverlay(v, maxMs)'),
-            isTrue,
-            reason: '$root content.js 等待函数必须带 maxMs 上界参数');
-        expect(
-            src.contains(
-                'if (Date.now() >= deadline) { resolve(false); return; }'),
-            isTrue,
+        final String body = gateBody(file.readAsStringSync());
+        expect(body.contains('Date.now() >= deadline'), isTrue,
             reason: '$root content.js 等待必须有 deadline 逃生口'
-                '（DRM/弱网推不动时返回 false 让批量继续，绝不无限等）');
+                '（DRM/弱网推不动时让批量继续，绝不无限等）');
+        // 上界只能由 setTimeout 链决定。await v.play() 在媒体永不就绪时（DRM 授权
+        // 卡住 / 弱网 stall）返回的 promise 可以无限期 pending，一 await 就把 tick
+        // 链掐断、setTimeout 永不排期、外层 Promise 永不 settle —— 宣称的上界作废，
+        // 整批卡死且连 finally 都到不了。
+        expect(body.contains('await v.play()'), isFalse,
+            reason: '$root content.js 门里不得 await v.play()：'
+                'play() 的 promise 可以永不 settle，await 它就等于取消了上界');
       });
 
       test('判据是播放推进量而不是绝对位置（续播集不能直接放行）', () {
-        final String src = file.readAsStringSync();
-        expect(src.contains('const base = v.currentTime;'), isTrue,
+        final String body = gateBody(file.readAsStringSync());
+        expect(body.contains('const base = v ? v.currentTime : 0;'), isTrue,
             reason: '$root content.js 必须记录开始等待时的位置作基线');
         expect(
-            src.contains(
-                'if (v.currentTime - base >= kNfIntroOverlaySec) { resolve(true); return; }'),
+            body.contains('if (v.currentTime - base >= kNfIntroOverlaySec)'),
             isTrue,
             reason: '$root content.js 必须按「相对基线的推进量」判定；'
                 '改成绝对位置会让中途续播的集直接放行（提示照录）');
       });
 
+      test('放弃名单由门的实际结果驱动，不按绝对位置一刀切', () {
+        final String src = file.readAsStringSync();
+        // 门的模型是「提示绑开播、会话级」（注释原话：从中途续播时提示同样在开播
+        // 那几秒出现，只看绝对位置会让续播集直接放行）。按绝对位置 [0,8s) 砍与它
+        // 直接冲突：从 600s 续播时提示窗在 [600,608]，砍的却是 [0,8]，两个区间没有
+        // 交集——既没保护到什么，又确定性丢卡；而且它跑在 fromLoad=false 上（门明确
+        // 不挂那条路径），用户就地生成时会被反复放弃、永远生成不出来。
+        expect(src.contains('fushiSplitNetflixIntroOverlayItems(items, introGate)'),
+            isTrue,
+            reason: '$root content.js 放弃名单必须拿门的结果做判据');
+        expect(src.contains('if (!gate || !gate.ran || gate.ok)'), isTrue,
+            reason: '$root content.js 门没跑、或门确认已播过提示 —— 两种都不得放弃任何卡');
+      });
+
       test('片头窗内的队列项被放弃：不录、按失败计、且不出队', () {
         final String src = file.readAsStringSync();
         expect(
-            src.contains('fushiSplitNetflixIntroOverlayItems(items)'), isTrue,
+            src.contains('fushiSplitNetflixIntroOverlayItems(items, introGate)'),
+            isTrue,
             reason: '$root content.js 批量必须先把片头窗内的句分出来');
         expect(src.contains('for (const q of recordable) {'), isTrue,
             reason: '$root content.js 录制循环必须只跑 recordable');

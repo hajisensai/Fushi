@@ -590,7 +590,7 @@ let fushiNfBatchRunning = false;
 // 生成本剧集的项：逐句 seek 到句首 → 播放到字幕变化(=本句结束) → 停录 → 送服务端整段裁 [0,时长]
 // 转 GIF+音频。整场用注入 CSS 藏字幕轨(GIF 不烧字幕，且能扛 Netflix 换节点)+藏鼠标。不停录屏
 // （跨集续用，由 nfFinish 收尾）。只移除成功的本集项。
-async function fushiRunNetflixBatch() {
+async function fushiRunNetflixBatch(introGate) {
   const nfId = fushiNetflixId();
   // TODO-1217：按视频时间升序，逐句 seek 单调前进（乱序会往回跳，放大抖动）。filter 已产生新数组，
   // sort 不影响作为跨标签真相源的 fushiQueue。
@@ -599,7 +599,7 @@ async function fushiRunNetflixBatch() {
     .sort((a, b) => (a.startV || 0) - (b.startV || 0));
   if (!items.length) return;
   // BUG-2170：片头分级提示窗内的句直接放弃（理由见 fushiSplitNetflixIntroOverlayItems）。
-  const introSplit = fushiSplitNetflixIntroOverlayItems(items);
+  const introSplit = fushiSplitNetflixIntroOverlayItems(items, introGate);
   const recordable = introSplit.recordable;
   const introSkipped = introSplit.skipped.length;
   if (!recordable.length) { fushiToastNetflixIntroSkipped(introSkipped); return; }
@@ -864,14 +864,32 @@ const kNfIntroOverlaySec = 8;
 // 绝不无限等卡死批量。
 function fushiWaitPastNetflixIntroOverlay(v, maxMs) {
   return new Promise((resolve) => {
-    if (!v) { resolve(false); return; }
-    const base = v.currentTime;
+    const base = v ? v.currentTime : 0;
+    if (!v) { resolve({ ok: false, ran: false, base: base }); return; }
     const deadline = Date.now() + (maxMs || 20000);
-    const tick = async () => {
-      if (!v) { resolve(false); return; }
-      if (v.currentTime - base >= kNfIntroOverlaySec) { resolve(true); return; }
-      if (Date.now() >= deadline) { resolve(false); return; }
-      if (v.paused) { try { await v.play(); } catch (_) {} }
+    const tick = () => {
+      if (!v) { resolve({ ok: false, ran: true, base: base }); return; }
+      if (v.currentTime - base >= kNfIntroOverlaySec) {
+        resolve({ ok: true, ran: true, base: base });
+        return;
+      }
+      if (Date.now() >= deadline) {
+        resolve({ ok: false, ran: true, base: base });
+        return;
+      }
+      // 绝不对 play() 的返回值使用 await：媒体永远不就绪时（DRM 授权卡住、弱网 stall）它返回的
+      // promise 可以无限期 pending，既不 resolve 也不 reject。await 一挂，tick 链
+      // 就断了，setTimeout 永不排期，外层 Promise 永不 settle —— 上界形同虚设，
+      // 整批批量卡死在这里，fushiNfBatchRunning 连 finally 都到不了，此后任何图标
+      // 点击都被重入锁挡掉，只能刷页面。上界只能由 setTimeout 链决定。
+      if (v.paused) {
+        try {
+          const played = v.play();
+          if (played && typeof played.catch === 'function') {
+            played.catch(() => {});
+          }
+        } catch (_) {}
+      }
       setTimeout(tick, 120);
     };
     tick();
@@ -881,12 +899,34 @@ function fushiWaitPastNetflixIntroOverlay(v, maxMs) {
 // 落在提示窗内的队列项没有「先播过去再回来录」的余地——回跳就跳回窗内，提示照录。故按用户
 // 决策**放弃**这些句：不 seek、不录、也不从队列删（用户排的卡不静默丢，仍可手动制卡），
 // 结尾单独告知。纯函数，与 DOM / 录制无关，可直接单测。
-function fushiSplitNetflixIntroOverlayItems(items) {
+function fushiSplitNetflixIntroOverlayItems(items, gate) {
+  const all = items || [];
+  // 门没跑（fromLoad=false，页面早已开播多时、提示不在），或门确认已经把提示播过去
+  // 了 —— 两种情况都一张不放弃。
+  //
+  // 原实现无条件按**绝对位置** [0, 8s) 砍，与门自己的模型直接冲突：门等的是「相对
+  // 开始等待时的推进量」，理由写在门上方——「Netflix 从中途续播时提示同样在开播那
+  // 几秒出现，只看绝对位置会让续播集直接放行」。两个模型只可能对一个：
+  //   · 按门的模型（提示绑开播、会话级），门播过去之后提示已过期，一张都不该丢；
+  //   · 按绝对位置模型，从 600s 续播时提示窗在 [600,608]，而名单砍的是 [0,8]，
+  //     砍的区间和它没有任何交集——既没保护到什么，又确定性丢卡。
+  // 更糟的是原实现跑在 fromLoad=false 上（门明确不挂那条路径）：用户在片头 5 秒处
+  // 排了卡、看到一半点图标就地生成，那些卡会被反复放弃、永远生成不出来，而结尾还
+  // 告诉他「可再点生成重试」——一个永远兑现不了的承诺。
+  //
+  // 现在只保留唯一站得住的一档：门跑了、但到上界仍没把提示播过去（DRM/弱网推不动），
+  // 此时无法确认提示已消失，才按门实际观察到的窗口 [base, base+窗) 保守放弃。
+  if (!gate || !gate.ran || gate.ok) {
+    return { skipped: [], recordable: all.slice() };
+  }
   const introMs = kNfIntroOverlaySec * 1000;
+  const from = (gate.base || 0) * 1000;
+  const to = from + introMs;
   const skipped = [];
   const recordable = [];
-  for (const q of (items || [])) {
-    if (((q && q.startV) || 0) < introMs) skipped.push(q);
+  for (const q of all) {
+    const at = (q && q.startV) || 0;
+    if (at >= from && at < to) skipped.push(q);
     else recordable.push(q);
   }
   return { skipped: skipped, recordable: recordable };
@@ -953,9 +993,11 @@ async function fushiMaybeResumeNetflixBatch(fromLoad) {
     // （fromLoad=false，用户看到一半点生成）时页面早已开播多时、提示不在，白等还会把用户的
     // 播放位置往前推。故这道门只挂在 fromLoad 上，且必须排在 nfEnsureCapture **之前**：
     // 录制器根本不在提示窗内开着。
-    if (fromLoad) await fushiWaitPastNetflixIntroOverlay(document.querySelector('video'), 20000);
+    const introGate = fromLoad
+      ? await fushiWaitPastNetflixIntroOverlay(document.querySelector('video'), 20000)
+      : null;
     try { await chrome.runtime.sendMessage({ type: 'nfEnsureCapture' }); } catch (_) {}
-    await fushiRunNetflixBatch(); // v34 就地 API-seek 回放本集队列项（内部按当前 netflixId 过滤 + 移除成功）
+    await fushiRunNetflixBatch(introGate); // v34 就地 API-seek 回放本集队列项（内部按当前 netflixId 过滤 + 移除成功）
     try { await chrome.runtime.sendMessage({ type: 'nfStopCapture' }); } catch (_) {} // 跳集前必停录
     const next = st.idx + 1;
     if (next < st.episodes.length) {
