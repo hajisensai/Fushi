@@ -294,11 +294,18 @@ class AsrEngineLoader {
           );
         }
       }
-      // 静态 shape 桶只给 GPU EP：CPU 上动态 shape 没有 DML 那种每次 run 的
-      // 固定开销，而静态桶要多占一份权重内存。桶按需惰性建，这里只装池子。
+      // 静态 shape 桶只给**真的实现了 free-dimension override 的后端**。判据是
+      // 白名单不是黑名单（`!= cpu` 会在别处开新 EP 时自动把桶发给它）：
+      // `freeDimensionOverrides` 只有 vendored flutter_onnxruntime 的 Windows
+      // 插件读，别的平台插件收到这个 key 直接忽略（third_party/
+      // flutter_onnxruntime/PATCHES.md delta #8）。一旦按 BUG-1613 把 CoreML
+      // 打开，黑名单写法会让 Apple 端拿到一个「桶建得成、run 也不失败（动态
+      // shape 收得下静态形状）、零收益、且永远不触发回退」的池子：多占两份
+      // 编码器权重、x 白 pad 到桶的 T、VAD 还被砍到 10 s。
       final OnnxExecutionProvider effective = encoderResolution.effective;
       final AsrStaticEncoderPool? staticEncoders =
-          useStaticEncoderBuckets && effective != OnnxExecutionProvider.cpu
+          useStaticEncoderBuckets &&
+              kAsrStaticBucketProviders.contains(effective)
           ? AsrStaticEncoderPool(
               factory: _factory,
               modelPath: store.fileFor(encoderRole).path,
@@ -306,7 +313,11 @@ class AsrEngineLoader {
               logName: kAsrLogName,
             )
           : null;
-      staticEncoders?.prewarm();
+      // 只预热最小桶：两个桶各驻一份 fp32 编码器权重 + 融合图一次性分配的全部
+      // 中间张量，实测 E2E 峰值 6.6~7.6 GB（12 GB 卡独占）。显存不够时 DML **不
+      // 抛异常**——它溢出到主机内存，表现是 RSS 暴涨到被系统杀掉，回退机制照不到
+      // 这条路径。大桶留给真正出现长段时按需建（`sessionFor` 本来就是惰性的）。
+      staticEncoders?.prewarmSmallest();
       developer.log(
         'ASR engine loaded (${variant.name} encoder): $encoderResolution '
         'greedyGraph=${greedy != null} staticBuckets=${staticEncoders != null}',

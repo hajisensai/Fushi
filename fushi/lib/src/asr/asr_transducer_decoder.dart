@@ -228,30 +228,33 @@ class AsrTransducerDecoder implements AsrBatchDecoder, AsrBatchShaper {
       );
       xLens[i] = f == null ? cols : frameCounts[i];
     }
-    Map<String, OnnxTensor> encOut;
+    // run 与**输出契约校验**必须在同一个 try 里：融合图少给一个输出 key、或回来
+    // 的行数与 rows 对不上，同样是「这个静态桶跑不动」的表现形态，而且正是全新
+    // 代码路径最可能出问题的地方。留在 try 外的话，本该「标桶不可用 + 回退动态」
+    // 的情形会直接把整条转录任务抛异常终止 —— 与设计意图相反。
+    late final OnnxTensor encoderOutAll;
+    late final OnnxTensor encoderLens;
     try {
-      encOut = await (fixed?.session ?? _encoder).run(<String, OnnxTensor>{
-        AsrModelIo.encoderInputX: OnnxTensor.float32(x, <int>[
-          rows,
-          cols,
-          kAsrFeatureDim,
-        ]),
-        AsrModelIo.encoderInputXLens: OnnxTensor.int64(xLens, <int>[rows]),
-      });
+      final Map<String, OnnxTensor> encOut = await (fixed?.session ?? _encoder)
+          .run(<String, OnnxTensor>{
+            AsrModelIo.encoderInputX: OnnxTensor.float32(x, <int>[
+              rows,
+              cols,
+              kAsrFeatureDim,
+            ]),
+            AsrModelIo.encoderInputXLens: OnnxTensor.int64(xLens, <int>[rows]),
+          });
+      encoderOutAll = _require(encOut, AsrModelIo.encoderOutput);
+      encoderLens = _require(encOut, AsrModelIo.encoderOutputLens);
+      if (encoderOutAll.shape.length != 3 || encoderOutAll.shape[0] != rows) {
+        throw StateError('encoder_out 形状异常：${encoderOutAll.shape}（rows=$rows）');
+      }
     } catch (error, stack) {
       // 静态桶建得起来但跑不动（DML 对某些静态 shape 的算子实现有缺陷）：把
       // 这个桶标为不可用、本批回退动态会话，任务不中断；原因留在池子里。
       if (fixed == null || pool == null) rethrow;
       pool.markUnavailable(fixed.bucket, error, stack);
       return decodeBatch(segments);
-    }
-    final OnnxTensor encoderOutAll = _require(encOut, AsrModelIo.encoderOutput);
-    final OnnxTensor encoderLens = _require(
-      encOut,
-      AsrModelIo.encoderOutputLens,
-    );
-    if (encoderOutAll.shape.length != 3 || encoderOutAll.shape[0] != rows) {
-      throw StateError('encoder_out 形状异常：${encoderOutAll.shape}（rows=$rows）');
     }
     final Duration encoderTime = clock.elapsed - fbankTime;
     final int encFrames = encoderOutAll.shape[1];

@@ -68,6 +68,15 @@ const int kAsrStaticMaxSegmentMs = 10000;
 /// 的 8 成，而融合图会把全部中间张量一次分配、各桶池子常驻——桶越大、桶越多，
 /// VRAM 就越容易溢出到系统内存（三桶 64/32/16 × 550/1100/2100 曾把测试进程撑到
 /// 8 GB 被系统杀掉）。
+/// 哪些执行后端真的实现了 free-dimension override —— 也就是静态桶**唯一**能带来
+/// 收益的那批。白名单不是黑名单：`freeDimensionOverrides` 只有 vendored
+/// flutter_onnxruntime 的 Windows 插件读（`third_party/flutter_onnxruntime/
+/// PATCHES.md` delta #8），其它平台插件收到这个 key 直接忽略。写成「不是 CPU」
+/// 会让以后新开的任何 EP（BUG-1613 的 CoreML 就在路上）自动拿到一个
+/// 「桶建得成、run 也不失败、零收益、且永远不触发回退」的池子。
+const Set<OnnxExecutionProvider> kAsrStaticBucketProviders =
+    <OnnxExecutionProvider>{OnnxExecutionProvider.directml};
+
 const List<AsrEncoderBucket> kAsrGpuEncoderBuckets = <AsrEncoderBucket>[
   AsrEncoderBucket(frames: 560, batch: 32),
   AsrEncoderBucket(frames: 1120, batch: 16),
@@ -180,12 +189,18 @@ class AsrStaticEncoderPool {
     }
   }
 
-  /// 后台把全部桶建起来（不等待）：每个桶建会话 3~8 s，放到第一批需要时再建
+  /// 后台把**最小**桶建起来（不等待）：建一个会话 3~8 s，放到第一批需要时再建
   /// 会让转录卡在那里；装载完就开始建，第一批到时通常已经好了或正在建。
-  void prewarm() {
-    for (final AsrEncoderBucket b in buckets) {
-      unawaited(sessionFor(b.frames));
-    }
+  ///
+  /// 只预热最小的那个是有意的。每个桶常驻一份编码器权重 + 融合图一次性分配的
+  /// 全部中间张量（实测 E2E 峰值 6.6~7.6 GB），而显存不足时 DirectML **不抛
+  /// 异常**——它溢出到主机内存，表现是 RSS 暴涨直到进程被系统杀掉，
+  /// [markUnavailable] 这条回退路径根本照不到。全预热等于在任何机器上都先把
+  /// 两份都占上；按需建则是「真出现长段才多占一份」。
+  /// 短素材（段都不超过最小桶）因此只会建一个会话。
+  void prewarmSmallest() {
+    if (buckets.isEmpty) return;
+    unawaited(sessionFor(buckets.first.frames));
   }
 
   /// 运行期发现该桶不可用（建得起来、`run` 抛错）：关掉会话、记原因，之后
