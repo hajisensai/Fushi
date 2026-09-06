@@ -38,14 +38,46 @@ void main() {
         reason: '$bit 没在契约头里定义',
       );
     }
-    // v17：在 v16 之上纯尾部追加「本次注入所用 hook DLL 的 SHA-256」。
-    // 这个数字必须钉死：它是 wire identity，写错一位就是「旧 helper 静默绕过默认
-    // deny」。改它必须同时改契约头顶部的版本沿革说明。
-    // v22：SharedHeader 尾部在 v19 摘要之后纯追加了层原点双向面（12 个 32 位字，
-    // 共 48 字节）。**尺寸变了就必须升版**：hook 与 injector 都用 sizeof(SharedHeader)
-    // 现算 ring / region 基址，新旧混装会整体差 48 字节，而版本门本会放行——症状是
-    // 跨进程读到完全错位的数据，不报错。
-    expect(source, contains('constexpr uint32_t kSharedVersion = 22;'));
+    // 版本号的唯一真相源是契约头本身，本守卫核对**所有硬编码副本**与它一致。
+    //
+    // 这里原本也钉一个字面量（`= 22`）。两个毛病：
+    // 一是全仓就有三份同一个数字（本文件 + 下面两个 native 测试），升版的人找到
+    // 两份、漏掉第三份是迟早的事——BUG-2149 升 v23 时漏的正是本文件，CI 单测门
+    // 红在这一行；二是字面量只在「有人主动改这个数字」时才响，而那恰恰是改的人
+    // 已经知道的时刻，真正危险的「动了 SharedHeader 布局却不升版」它一次也拦不住
+    // （那条由 native 侧 adapter_report_guard_test.py 的结构体比对守）。
+    final RegExp versionRe =
+        RegExp(r'constexpr uint32_t kSharedVersion = (\d+);');
+    final Match? versionMatch = versionRe.firstMatch(source);
+    expect(versionMatch, isNotNull, reason: '契约头里扫不到 kSharedVersion —— 判红');
+    final String version = versionMatch!.group(1)!;
+
+    // 升版必须在契约头顶部的沿革块里留一条 `vN`。沿革是新旧混装排障时唯一能回答
+    // 「这版改了什么、混装会整体错位多少字节」的地方（v22 那条就是这么写的）。
+    expect(
+      RegExp('^//\\s*v$version\\b', multiLine: true).hasMatch(source),
+      isTrue,
+      reason: 'kSharedVersion 已经是 v$version，契约头顶部却没有 v$version 的沿革说明：'
+          '混装排障时没人答得出这版改了什么',
+    );
+
+    // native 两个测试各自硬编码这个数字，价值是「升版时 native 套件也得跟着改」，
+    // 但副本会漂——由本守卫把它们钉回真相源。
+    for (final String relative in <String>[
+      '../native/galgame_hook/tests/lookup_ipc_contract_test.cpp',
+      '../native/galgame_hook/tests/native_loopback_policy_test.cpp',
+    ]) {
+      final Match? pin = RegExp(
+        r'kSharedVersion == (\d+)',
+      ).firstMatch(File(relative).readAsStringSync());
+      expect(pin, isNotNull, reason: '$relative 里的版本 pin 没了');
+      expect(
+        pin!.group(1),
+        version,
+        reason: '$relative 钉的是 v${pin.group(1)}，契约头已经是 v$version：'
+            '升版漏改了它，native 套件会拿旧号给新布局放行',
+      );
+    }
     // v17 字段本身也钉死：驻留 hook 身份门的驻留侧摘要只能从这里取，字段没了
     // 就只剩「两边都读磁盘」那条恒真的假校验。
     expect(
