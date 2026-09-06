@@ -462,10 +462,39 @@ class YomitanApiServer {
     final Map<String, dynamic>? body = await _readJson(request);
     if (body == null) return shelf.Response(400, body: 'Invalid JSON');
     try {
-      return _json(await buildRemoteMineResponse(body, mining: mining));
+      return _json(await buildRemoteMineResponse(
+        body,
+        mining: mining,
+        wordAudio: _resolveMineWordAudio,
+      ));
     } on FormatException {
       return shelf.Response(400, body: 'Missing fields');
     }
+  }
+
+  /// BUG-2189：制卡时把 `fields.audio` 里本机签发的短命 token 换成自包含 `data:` URI
+  /// （见 [resolveRemoteMineWordAudio]）。token 仍活 → 直接取字节；已被 prune（批量
+  /// 队列几十分钟后才生成）→ 按 expression/reading 重走同一条 [_lookup.lookupAudio]。
+  /// 音频库没这个词 → null，调用方保留原引用让既有 404 诊断浮出。
+  Future<String?> _resolveMineWordAudio(
+    String tokenId, {
+    required String expression,
+    required String reading,
+  }) async {
+    _pruneAudioTokens();
+    final _YomitanAudioToken? token = _remoteAudioTokens[tokenId];
+    if (token != null) {
+      return remoteAudioLookupToDataUri(RemoteAudioLookup(
+        bytes: token.bytes,
+        contentType: token.contentType,
+      ));
+    }
+    if (expression.trim().isEmpty) return null;
+    final RemoteAudioLookup? lookup = await _lookup.lookupAudio(
+      expression: expression,
+      reading: reading,
+    );
+    return lookup == null ? null : remoteAudioLookupToDataUri(lookup);
   }
 
   /// 互联「制卡到服务端」端点（与 FushiSyncServer 共享契约 buildForwardedMineResponse）。

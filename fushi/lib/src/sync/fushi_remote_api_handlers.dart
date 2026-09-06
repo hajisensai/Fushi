@@ -179,16 +179,84 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
   };
 }
 
+/// BUG-2189：`/api/mine` 里单词音频引用的**可落卡化**。
+///
+/// 浏览器扩展查词时经 `/api/lookup/audio` 拿到的是本机 server 签发的 **5 分钟短命
+/// token URL**（`/api/lookup/audio/file?id=`），弹窗把它原样冻进 `fields.audio`。
+/// 「立即出卡」时 token 还新鲜；但 Netflix / YouTube **批量队列**是看完一集才统一生成
+/// ——几十分钟甚至跨会话之后 token 早被 prune → Anki 侧抓取 404 → 卡建好了、
+/// `[sound:]` 空（用户报「网飞制卡少了单词音频」）。
+///
+/// 解法不是把 token 续命（谁也不知道用户什么时候点生成），而是在制卡这一刻把它换成
+/// **自包含**引用：token 仍活 → 直接取字节；已过期 → 按 `expression + reading` 重走
+/// 同一条 `lookupAudio`；两者都编成 `data:<mime>;base64,…`——与 app 内本地音频库制卡
+/// 用的引用同形（`audioRefToWebViewUrl` / `AnkiAudioRef.dataUri`，BUG-1050），AnkiConnect
+/// 与 AnkiDroid 两个 repo 都认。取不到（音频库没这个词）返 null，调用方保留原引用，
+/// 让既有 404 → `audioWarning` 诊断照常浮出，不做静默吞。
+///
+/// 只处理本机 token 端点的引用（[remoteAudioTokenIdFromRef] 非 null）；其余（外部 http、
+/// data:、本地路径）不是短命的，原样透传。
+typedef RemoteMineWordAudioResolver = Future<String?> Function(
+  String tokenId, {
+  required String expression,
+  required String reading,
+});
+
+/// 若 [audioRef] 是本机 server 签发的单词音频 token URL（`/api/lookup/audio/file?id=…`），
+/// 返回其 token id；否则 null。只看路径与 `id` 查询参数，不看 host/port——扩展配的可能是
+/// `127.0.0.1` / `localhost` / 局域网地址，server 自己无从得知外部看到的是哪一个。
+String? remoteAudioTokenIdFromRef(String audioRef) {
+  if (audioRef.isEmpty) return null;
+  final Uri? uri = Uri.tryParse(audioRef);
+  if (uri == null || !uri.hasScheme) return null;
+  if (uri.path != '/api/lookup/audio/file') return null;
+  final String? id = uri.queryParameters['id'];
+  return (id == null || id.isEmpty) ? null : id;
+}
+
+/// 把一次单词音频查询结果编成自包含的 `data:` URI（制卡侧 `AnkiAudioRef.dataUri`）。
+String remoteAudioLookupToDataUri(RemoteAudioLookup lookup) =>
+    'data:${lookup.contentType};base64,${base64Encode(lookup.bytes)}';
+
+/// [buildRemoteMineResponse] 的前置步骤：把 `body.fields.audio` 里的本机短命 token 引用
+/// 换成 [wordAudio] 解析出的自包含引用。返回新的 body（不改入参）；无需改写时原样返回。
+/// 纯逻辑、可单测。
+Future<Map<String, dynamic>> resolveRemoteMineWordAudio(
+  Map<String, dynamic> body, {
+  required RemoteMineWordAudioResolver? wordAudio,
+}) async {
+  if (wordAudio == null) return body;
+  final Object? rawFields = body['fields'];
+  if (rawFields is! Map) return body;
+  final String audio = rawFields['audio']?.toString() ?? '';
+  final String? tokenId = remoteAudioTokenIdFromRef(audio);
+  if (tokenId == null) return body;
+  final String? durable = await wordAudio(
+    tokenId,
+    expression: rawFields['expression']?.toString() ?? '',
+    reading: rawFields['reading']?.toString() ?? '',
+  );
+  if (durable == null || durable.isEmpty) return body;
+  return <String, dynamic>{
+    ...body,
+    'fields': <String, dynamic>{...rawFields, 'audio': durable},
+  };
+}
+
 /// `POST /api/mine` 的响应体。[body] 是已解析的 JSON Map，必须含 `fields`（Map）。
 /// 带截图/时间戳/clip 的沉浸挖词走 [FushiRemoteMiningService.mineImmersion]（引擎在实现方，
 /// 这里只转发解析好的 payload）；纯 `{fields,sentence}` 走 [FushiRemoteMiningService.mineEntry]
 /// 回落（向后兼容浏览器扩展纯文本挖词 + 移动端）。
 /// fields 缺失/类型错时 [ImmersionMinePayload.fromJson] 抛 [FormatException]，由调用方转 400。
+/// [wordAudio]（BUG-2189）：单词音频短命 token → 自包含引用的解析器，见
+/// [resolveRemoteMineWordAudio]；null（未注入）时 fields 原样透传（旧行为）。
 Future<Map<String, dynamic>> buildRemoteMineResponse(
   Map<String, dynamic> body, {
   required FushiRemoteMiningService mining,
+  RemoteMineWordAudioResolver? wordAudio,
 }) async {
-  final ImmersionMinePayload payload = ImmersionMinePayload.fromJson(body);
+  final ImmersionMinePayload payload = ImmersionMinePayload.fromJson(
+      await resolveRemoteMineWordAudio(body, wordAudio: wordAudio));
   // TODO-1303：结果不再是裸字符串——摊开诊断（失败原因 / 音频落空警告）到响应体，
   // 让扩展 content.js 能 toast 显因、区分「真成功」与「卡建了但没音频」。返回类型仍是
   // Map（未改契约），只是多了可选 message/detail 字段（向后兼容：旧扩展忽略即可）。

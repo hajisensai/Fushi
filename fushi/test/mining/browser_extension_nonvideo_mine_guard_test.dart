@@ -70,8 +70,9 @@ void main() {
           isTrue,
           reason: '$root bridge-shim.js 例句未接当前字幕行（只认 Netflix DOM）',
         );
+        // 多句合一制卡在最前面多了一级（用户选的上下文合成句），字幕轨这一级仍在。
         expect(
-          src.contains('var sentence = cueText || trackText'),
+          src.contains('var sentence = ctxSentence || cueText || trackText'),
           isTrue,
           reason: '$root bridge-shim.js 例句优先级里缺少字幕轨这一级',
         );

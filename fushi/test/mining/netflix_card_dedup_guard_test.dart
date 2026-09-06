@@ -64,8 +64,11 @@ void main() {
         // PR#1172：头部提前量收成共享原语 `fushiClipWindowWithMargin`（入队批量剪辑与
         // 「立即出卡」两条路同源，此前后者发的是裸 cue 窗）。守卫跟着改成钉「走那个原语」
         // + 「原语的默认边距仍是 200ms」，而不是钉死字面算式——语义不变，位置换了。
+        // 多句合一制卡后裁切基准是「上下文并集 || 当前句窗」（clipBase），原语不变。
         expect(
-            src.contains('fushiClipWindowWithMargin(w.startV, w.endV)'), isTrue,
+            src.contains(
+                'fushiClipWindowWithMargin(clipBase.startV, clipBase.endV)'),
+            isTrue,
             reason: '$root content.js 入队窗不再走共享边距原语（Bug C 头部提前量丢失）');
         expect(
             File('$root/subtitle-providers.js')

@@ -170,3 +170,35 @@ test('track selection, offset and side-panel cue actions are routed through the 
   assert.strictEqual(response.ok, true);
   assert.ok(harness.sent.some((entry) => entry.mine && entry.mine.expression === '今日'));
 });
+
+
+// BUG-2194：按需加载的占位轨——面板侧：列出来（排在已加载轨之后、实时采集之前）、
+// 选中即请桥真取（同一 key 5 秒内不重复）、cue 到了自然变成普通轨。
+test('BUG-2194：占位轨列在已加载轨之后，选中触发 fushiRequestLazyTrack，5 秒内不重复请求', () => {
+  const store = {
+    'example.com/video/1|ja (auto)': [{ startMs: 1000, endMs: 2000, text: '一' }],
+    'example.com/video/1|en (auto)': [],
+    'example.com/video/1|live': [{ startMs: 0, endMs: 500, text: 'l' }],
+  };
+  const harness = loadController({ store });
+  harness.windowObject.fushiLazyTracks = { 'example.com/video/1|en (auto)': true };
+  const requested = [];
+  harness.windowObject.fushiRequestLazyTrack = (key) => { requested.push(key); return true; };
+  let state = harness.message({ type: 'fushiSubtitleSidePanelState' });
+  assert.strictEqual(JSON.stringify(state.tracks.map((t) => [t.lang, t.pending, t.length])),
+    JSON.stringify([['ja (auto)', false, 1], ['en (auto)', true, 0], ['live', false, 1]]));
+  assert.strictEqual(state.activeLang, 'ja (auto)', '已加载轨优先当活动轨，占位轨不抢');
+  assert.deepStrictEqual(requested, [], '没选中占位轨不请求');
+  state = harness.message({ type: 'fushiSubtitleSidePanelSelectTrack', lang: 'en (auto)' });
+  assert.strictEqual(state.activeLang, 'en (auto)');
+  assert.deepStrictEqual(requested, ['example.com/video/1|en (auto)'], '选中占位轨即请桥真取');
+  harness.message({ type: 'fushiSubtitleSidePanelState' });
+  assert.strictEqual(requested.length, 1, '5 秒内轮询不重复请求');
+  // cue 到了：占位标记清除，轨变普通轨。
+  store['example.com/video/1|en (auto)'] = [{ startMs: 0, endMs: 900, text: 'hi' }];
+  delete harness.windowObject.fushiLazyTracks['example.com/video/1|en (auto)'];
+  state = harness.message({ type: 'fushiSubtitleSidePanelState', includeCues: true });
+  const en = state.tracks.find((t) => t.lang === 'en (auto)');
+  assert.deepStrictEqual([en.pending, en.length], [false, 1]);
+  assert.strictEqual(state.cues.length, 1);
+});

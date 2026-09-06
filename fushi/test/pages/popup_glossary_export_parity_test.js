@@ -45,7 +45,13 @@ function makeElement(tag) {
     innerHTML: '',
     // Real CSSStyleDeclaration semantics that popup.js relies on: individual
     // property writes plus `cssText +=` accumulation.
-    style: { cssText: '' },
+    style: {
+      cssText: '',
+      // gaiji export branch writes width/margin via setProperty(..., 'important').
+      setProperty(name, value, priority) {
+        this.cssText += name + ':' + value + (priority ? ' !' + priority : '') + ';';
+      },
+    },
     dataset: {},
     children: [],
     attributes: [],
@@ -284,6 +290,44 @@ function containerOf(node) {
     sb.window.__test.structured(popupParent, { tag: 'table', content: 'x' }, false);
     assert.strictEqual(popupParent.children[0].style.cssText, '',
       'the popup path must stay CSS-driven, not inline-styled');
+  }
+
+  // BUG-2190: with no media file to embed (host without embedMedia — the browser
+  // extension before this fix, or an image the dictionary cannot serve), the
+  // gaiji falls back to its alt text. That text must flow as plain inline text:
+  // the image box (gaiji branch: width:auto!important / height:1.2em /
+  // line-height:0, plus the Anki-side width:1em!important) was measured on the
+  // user's real card to squeeze an 80px-wide ［参考］ into a 24px, zero-line-height
+  // inline-block, overflowing onto the following text.
+  {
+    const sb = loadPopup(entry);
+    sb.window.embedMedia = false;
+    sb.window.useAnkiConnect = false;
+    const gaiji = {
+      path: 'gaiji/参考1.svg',
+      data: { class: 'gaiji', alt: '［参考］' },
+    };
+    const node = sb.window.__test.image(gaiji, true);
+    assert.strictEqual(node.textContent, '［参考］',
+      'alt text must be the exported content when no media file is embedded');
+    assert.ok(node.classList.contains('gloss-image-alt'),
+      'alt fallback must be its own inline text node class; got ' +
+      [...node.classList._set].join(' '));
+    assert.ok(!node.classList.contains('gloss-image-link') &&
+      node.children.length === 0,
+      'alt fallback must not carry the image container geometry (BUG-2190)');
+    assert.strictEqual(node.style.cssText, '',
+      'alt fallback must not inherit line-height:0 / height:1.2em image styles; got ' +
+      node.style.cssText);
+
+    // With media embedded the gaiji still exports as an <img> inside the box.
+    const sbImg = loadPopup(entry);
+    const withMedia = sbImg.window.__test.image(gaiji, true);
+    assert.ok(withMedia.classList.contains('gloss-image-link'),
+      'embedded gaiji keeps the image link box');
+    const container = withMedia.children[0];
+    assert.ok(container.children.some(c => c.tagName === 'IMG'),
+      'embedded gaiji exports an <img>');
   }
 
   console.log('popup_glossary_export_parity_test.js: all assertions passed');

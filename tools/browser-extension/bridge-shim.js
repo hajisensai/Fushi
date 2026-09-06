@@ -25,7 +25,10 @@ window.flutter_inappwebview = {
           var cueText = (typeof extractNetflixCueText === 'function')
             ? extractNetflixCueText(netflixSubtitleContainer()) : '';
           var trackText = (ctx && ctx.window) ? (ctx.window.text || '') : '';
-          var sentence = cueText || trackText
+          // 多句合一（⓪，最高）：用户在「调整上下文」里选了上/下文 → 合成句（整轨
+          // 现算，'\n' 连接）压过所有单句来源；裁切窗同样换成上下文并集。
+          var ctxSentence = (ctx && ctx.contextSentence) ? ctx.contextSentence : '';
+          var sentence = ctxSentence || cueText || trackText
             || (args[0] && args[0].popupSelectionText) || '';
           // TODO-1271：判据是**能不能拿到可裁的原始媒体**，不是站点名（见 `fushiClipSource`）。
           // `mode:'queue'` = 必须先回放/逐条解析才拿得到媒体（Netflix 录制、YouTube 批量），
@@ -50,10 +53,11 @@ window.flutter_inappwebview = {
               // 裁切窗带边距，且与入队批量剪辑那条路同源——见
               // `subtitle-providers.js` 的 fushiClipWindowWithMargin：此前这条路发的是裸
               // cue 窗，叠上字幕轮询粒度会把句子开头切掉一点。
+              var clipBase = ctx.contextWindow || ctx.window;
               var clipWin = (typeof fushiClipWindowWithMargin === 'function')
-                ? fushiClipWindowWithMargin(ctx.window.startV, ctx.window.endV) : null;
-              msg.clipStartMs = clipWin ? clipWin.startMs : ctx.window.startV;
-              msg.clipEndMs = clipWin ? clipWin.endMs : ctx.window.endV;
+                ? fushiClipWindowWithMargin(clipBase.startV, clipBase.endV) : null;
+              msg.clipStartMs = clipWin ? clipWin.startMs : clipBase.startV;
+              msg.clipEndMs = clipWin ? clipWin.endMs : clipBase.endV;
               if (ctx.mineAtV !== null && ctx.mineAtV !== undefined) {
                 msg.mineAtMs = ctx.mineAtV;
               }
@@ -81,6 +85,10 @@ window.flutter_inappwebview = {
                 if (dup) toast('✓ 该词卡片已存在');
                 else if (ok) toast('✓ 已制卡');
                 else toast('✗ 制卡失败');
+                // 一次性草稿：出卡即清（与入队路 / app 内同事件）。
+                if ((ok || dup) && typeof window.fushiClearSentenceDraft === 'function') {
+                  window.fushiClearSentenceDraft();
+                }
                 resolve(ok || dup);
               });
             return;
@@ -110,6 +118,24 @@ window.flutter_inappwebview = {
             return false;
           }
         })();
+      // 多句合一制卡（与 app 内 dictionary_popup_webview 四个 handler 同名同契约；实现在
+      // content.js，宿主未装时按「不支持草稿」降级：计数 0 / 空预览 / 模态不弹）。
+      case 'setSentenceContext': {
+        var sc = args[0] || {};
+        return Promise.resolve(typeof window.fushiSetSentenceContext === 'function'
+          ? window.fushiSetSentenceContext(sc.prev, sc.next) : 0);
+      }
+      case 'clearSentenceDraft':
+        return Promise.resolve(typeof window.fushiClearSentenceDraft === 'function'
+          ? window.fushiClearSentenceDraft() : 0);
+      case 'sentenceContextPreview':
+        return Promise.resolve(typeof window.fushiSentenceContextPreview === 'function'
+          ? window.fushiSentenceContextPreview(args[0]) : {});
+      case 'openSentenceContextModal':
+        if (typeof window.fushiOpenSentenceContextModal === 'function') {
+          window.fushiOpenSentenceContextModal(args[0]);
+        }
+        return Promise.resolve(null);
       case 'onLinkClick':
         if (window.__fushiOnLinkClick) window.__fushiOnLinkClick(args[0]);
         return Promise.resolve(null);

@@ -1182,10 +1182,39 @@ class FushiSyncServer {
     if (body == null) return shelf.Response(400, body: 'Invalid JSON');
     // 契约与 YomitanApiServer 共享（BUG-530，单一真相源）。fields 缺失/类型错 → 400。
     try {
-      return _jsonResponse(await buildRemoteMineResponse(body, mining: svc));
+      return _jsonResponse(await buildRemoteMineResponse(
+        body,
+        mining: svc,
+        wordAudio: _resolveMineWordAudio,
+      ));
     } on FormatException {
       return shelf.Response(400, body: 'Missing fields');
     }
+  }
+
+  /// BUG-2189：与 YomitanApiServer 同款——制卡时把 `fields.audio` 里本机签发的短命 token
+  /// 换成自包含 `data:` URI（见 [resolveRemoteMineWordAudio]）。token 仍活 → 直接取字节；
+  /// 已过期 → 按 expression/reading 重走同一条 `lookupAudio`；取不到 → null（保留原引用）。
+  Future<String?> _resolveMineWordAudio(
+    String tokenId, {
+    required String expression,
+    required String reading,
+  }) async {
+    _pruneAudioTokens();
+    final _RemoteAudioToken? token = _remoteAudioTokens[tokenId];
+    if (token != null) {
+      return remoteAudioLookupToDataUri(RemoteAudioLookup(
+        bytes: token.bytes,
+        contentType: token.contentType,
+      ));
+    }
+    final FushiRemoteLookupService? service = _remoteLookupService;
+    if (service == null || expression.trim().isEmpty) return null;
+    final RemoteAudioLookup? lookup = await service.lookupAudio(
+      expression: expression,
+      reading: reading,
+    );
+    return lookup == null ? null : remoteAudioLookupToDataUri(lookup);
   }
 
   /// 互联「制卡到服务端」：客户端转发未渲染的制卡请求 + 全部媒体字节，本机用自己的 Anki

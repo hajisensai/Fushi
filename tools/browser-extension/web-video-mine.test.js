@@ -67,7 +67,7 @@ function load({
   vm.runInContext(SRC, ctx);
   return {
     call: windowObj.flutter_inappwebview.callHandler,
-    sent, enqueued, toasts,
+    sent, enqueued, toasts, windowObj,
   };
 }
 
@@ -287,4 +287,65 @@ test('服务端判重复时如实回报，不谎报成功', async () => {
   const ok = await call('mineEntry', FIELDS);
   assert.strictEqual(ok, true);
   assert.ok(toasts.some((t) => t.includes('已存在')), `实际 toast: ${toasts}`);
+});
+
+
+// 多句合一制卡（bridge-shim 侧）：宿主 fushiMineContext 给出 contextSentence/contextWindow 时，
+// 立即出卡路必须用合成句 + 并集裁切窗；cueStartMs / mineAtMs 仍指当前句。
+function contextualBilibili() {
+  const c = bilibiliContext();
+  c.contextSentence = '前一句\n正道ではなく邪道\n後の句';
+  c.contextWindow = { startV: 58000, endV: 68000 };
+  return c;
+}
+
+test('多句合一：合成句压过字幕 DOM/轨单句，裁切窗取并集，cueStartMs/mineAtMs 仍是当前句', async () => {
+  const { call, sent } = load({
+    mineContext: contextualBilibili(),
+    frame: null,
+    netflixCueText: '画面上那一行',
+  });
+  await call('mineEntry', FIELDS);
+  const msg = sent[0];
+  assert.strictEqual(msg.sentence, '前一句\n正道ではなく邪道\n後の句');
+  assert.strictEqual(msg.clipStartMs, 57800, '并集 startV - 200');
+  assert.strictEqual(msg.clipEndMs, 68200, '并集 endV + 200');
+  assert.strictEqual(msg.cueStartMs, 61000, '静态帧定位仍是当前句句首');
+  assert.strictEqual(msg.mineAtMs, 62200);
+});
+
+test('多句合一：出卡成功后清草稿（一次性）；失败不清', async () => {
+  let cleared = 0;
+  const world = load({ mineContext: contextualBilibili(), frame: null });
+  world.windowObj.fushiClearSentenceDraft = () => { cleared++; return 0; };
+  await world.call('mineEntry', FIELDS);
+  assert.strictEqual(cleared, 1);
+  const failWorld = load({
+    mineContext: contextualBilibili(), frame: null,
+    mineResult: { ok: true, data: { result: 'error' } },
+  });
+  failWorld.windowObj.fushiClearSentenceDraft = () => { cleared++; return 0; };
+  await failWorld.call('mineEntry', FIELDS);
+  assert.strictEqual(cleared, 1, '失败不清草稿，用户可重试同一上下文');
+});
+
+test('上下文四个 handler 转发到宿主；宿主缺席时按不支持降级', async () => {
+  const world = load({ mineContext: bilibiliContext(), frame: null });
+  const calls = [];
+  world.windowObj.fushiSetSentenceContext = (p, n) => { calls.push(['set', p, n]); return 3; };
+  world.windowObj.fushiClearSentenceDraft = () => { calls.push(['clear']); return 0; };
+  world.windowObj.fushiSentenceContextPreview = (a) => { calls.push(['preview', a]); return { total: 3 }; };
+  world.windowObj.fushiOpenSentenceContextModal = (a) => { calls.push(['modal', a]); };
+  assert.strictEqual(await world.call('setSentenceContext', { prev: 2, next: 1 }), 3);
+  assert.strictEqual(await world.call('clearSentenceDraft'), 0);
+  assert.deepStrictEqual(await world.call('sentenceContextPreview', { matched: 'x' }), { total: 3 });
+  assert.strictEqual(await world.call('openSentenceContextModal', { entryIndex: 1, matched: 'x' }), null);
+  assert.deepStrictEqual(calls, [
+    ['set', 2, 1], ['clear'], ['preview', { matched: 'x' }], ['modal', { entryIndex: 1, matched: 'x' }],
+  ]);
+  const bare = load({ mineContext: bilibiliContext(), frame: null });
+  assert.strictEqual(await bare.call('setSentenceContext', { prev: 2, next: 1 }), 0);
+  assert.strictEqual(await bare.call('clearSentenceDraft'), 0);
+  assert.strictEqual(Object.keys(await bare.call('sentenceContextPreview', {})).length, 0);
+  assert.strictEqual(await bare.call('openSentenceContextModal', {}), null);
 });

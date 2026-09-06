@@ -375,6 +375,147 @@ void main() {
       expect(mining.immersionPayload, isNull);
     });
 
+    // BUG-2189：扩展入队时冻进 fields.audio 的是本机签发的 5 分钟短命 token URL；Netflix /
+    // YouTube 批量队列几十分钟后才「生成全部」→ token 早被 prune → Anki 抓 404 → 卡建好但
+    // 单词音频空。制卡时必须把它换成自包含 data: URI。
+    group('BUG-2189 /api/mine 单词音频 token → 自包含 data URI', () {
+      test('token 已过期/未知 → 按 expression+reading 重解析成 data URI', () async {
+        await startServer(apiKey: 'k123');
+        lookup.audioResult = RemoteAudioLookup(
+          bytes: Uint8List.fromList(<int>[1, 2, 3]),
+          contentType: 'audio/mpeg',
+        );
+        final HttpClientResponse resp = await _post(
+          server.port,
+          '/api/mine',
+          <String, dynamic>{
+            'fields': <String, String>{
+              'expression': '鼠',
+              'reading': 'ねずみ',
+              'audio': 'http://127.0.0.1:${server.port}'
+                  '/api/lookup/audio/file?id=expired-token',
+            },
+            'sentence': '鼠が走る。',
+          },
+          auth: _basic('k123'),
+        );
+        expect(resp.statusCode, 200);
+        expect((await _json(resp))['result'], 'success');
+        expect(lookup.lastAudioExpression, '鼠');
+        expect(lookup.lastAudioReading, 'ねずみ');
+        expect(mining.plainFields!['audio'],
+            'data:audio/mpeg;base64,${base64Encode(<int>[1, 2, 3])}');
+        // 其余字段原样。
+        expect(mining.plainFields!['expression'], '鼠');
+      });
+
+      test('token 仍活 → 直接用 token 字节，不再打音频后端', () async {
+        await startServer(apiKey: 'k123');
+        lookup.audioResult = RemoteAudioLookup(
+          bytes: Uint8List.fromList(<int>[9, 8, 7]),
+          contentType: 'audio/ogg',
+        );
+        final HttpClientResponse issue = await _post(
+          server.port,
+          '/api/lookup/audio',
+          <String, dynamic>{'expression': '鼠', 'reading': 'ねずみ'},
+          auth: _basic('k123'),
+        );
+        final String url = (await _json(issue))['url'] as String;
+        lookup.lastAudioExpression = null;
+        lookup.audioResult = null; // 后端此刻若被打到会得 null → 断言能分辨
+        final HttpClientResponse resp = await _post(
+          server.port,
+          '/api/mine',
+          <String, dynamic>{
+            'fields': <String, String>{
+              'expression': '鼠',
+              'reading': 'ねずみ',
+              'audio': url,
+            },
+            'sentence': '鼠が走る。',
+          },
+          auth: _basic('k123'),
+        );
+        expect(resp.statusCode, 200);
+        expect(mining.plainFields!['audio'],
+            'data:audio/ogg;base64,${base64Encode(<int>[9, 8, 7])}');
+        expect(lookup.lastAudioExpression, isNull);
+      });
+
+      test('token 过期且音频库无此词 → 原引用保留（让 404 诊断照常浮出）', () async {
+        await startServer(apiKey: 'k123');
+        lookup.audioResult = null;
+        const String stale =
+            'http://127.0.0.1:1/api/lookup/audio/file?id=gone';
+        final HttpClientResponse resp = await _post(
+          server.port,
+          '/api/mine',
+          <String, dynamic>{
+            'fields': <String, String>{'expression': '鼠', 'audio': stale},
+            'sentence': '',
+          },
+          auth: _basic('k123'),
+        );
+        expect(resp.statusCode, 200);
+        expect(mining.plainFields!['audio'], stale);
+      });
+
+      test('非本机 token 的引用（外部 http / data:）原样透传', () async {
+        await startServer(apiKey: 'k123');
+        lookup.audioResult = RemoteAudioLookup(
+          bytes: Uint8List.fromList(<int>[1]),
+          contentType: 'audio/mpeg',
+        );
+        for (final String ref in <String>[
+          'https://example.com/forvo/鼠.mp3',
+          'data:audio/mpeg;base64,AQ==',
+        ]) {
+          final HttpClientResponse resp = await _post(
+            server.port,
+            '/api/mine',
+            <String, dynamic>{
+              'fields': <String, String>{'expression': '鼠', 'audio': ref},
+              'sentence': '',
+            },
+            auth: _basic('k123'),
+          );
+          expect(resp.statusCode, 200);
+          expect(mining.plainFields!['audio'], ref);
+          expect(lookup.lastAudioExpression, isNull);
+        }
+      });
+
+      test('沉浸制卡（clip 路径）同样改写 fields.audio', () async {
+        await startServer(apiKey: 'k123');
+        lookup.audioResult = RemoteAudioLookup(
+          bytes: Uint8List.fromList(<int>[4, 5]),
+          contentType: 'audio/mpeg',
+        );
+        final HttpClientResponse resp = await _post(
+          server.port,
+          '/api/mine',
+          <String, dynamic>{
+            'fields': <String, String>{
+              'expression': '鼠',
+              'reading': 'ねずみ',
+              'audio': 'http://localhost:19633'
+                  '/api/lookup/audio/file?id=expired',
+            },
+            'sentence': '鼠が走る。',
+            'youtubeVideoId': 'abc',
+            'clipStartMs': 1000,
+            'clipEndMs': 2500,
+          },
+          auth: _basic('k123'),
+        );
+        expect(resp.statusCode, 200);
+        expect(mining.immersionPayload, isNotNull);
+        expect(mining.immersionPayload!.fields['audio'],
+            'data:audio/mpeg;base64,${base64Encode(<int>[4, 5])}');
+      });
+    });
+
     test('wrong token → 401', () async {
       await startServer(apiKey: 'k123');
       final HttpClientResponse resp = await _post(

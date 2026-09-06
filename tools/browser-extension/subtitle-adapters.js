@@ -211,7 +211,57 @@ function parseWebVtt(text) {
   return out;
 }
 
+// BUG-2191：IMSC 1.1 的注音不是 HTML `<ruby>/<rt>`，而是带 `tts:ruby` 属性的 `<span>`：
+//   <span tts:ruby="container"><span tts:ruby="base">地下牢</span><span tts:ruby="text">ちかろう</span></span>
+// Netflix 日文轨（dfxp-ls-sdh / imsc1.1）就是这种。上游 `stripCueTags` 只认 `<rt>`，于是
+// 读音 span 只被剥掉标签、内容留下 → 「地下牢ちかろう」拼进 cue.text，查词/制卡句子/字幕匹配
+// 一起被污染（用户卡片 Sentence 字段实录「雛宮の地下牢ちかろう は…這は い回って」）。
+// 这里先把 IMSC 形态翻译成 HTML 形态（text → <rt>，delimiter 是给不支持 ruby 的渲染器
+// 看的回退括号 → <rp>，container → <ruby>，base 解包），后面 `stripCueTags` / `splitCueRuby` 就都按
+// 同一套规则吃。注音单元收尾后紧跟的行内空白一并吃掉：Netflix 在注音 span 之间用空格
+// 断词，那个空格属于注音排版，不是正文。
+const TTML_RUBY_OPEN = /^<span\b(?:[^<>/]|\/(?!>))*?\btts:ruby\s*=\s*"(container|base|text|delimiter)"(?:[^<>/]|\/(?!>))*>$/i;
+function ttmlRubyToHtml(body) {
+  const src = String(body || '');
+  if (src.indexOf('tts:ruby') < 0) return src;
+  // 按标签流线性扫描：遇到 tts:ruby span 记住角色，其匹配的 </span> 按角色收尾。嵌套
+  // （container 包 base/text）靠栈；普通 <span>（无 tts:ruby）原样保留给 stripInlineTags。
+  const tagRe = /<\/?span\b(?:[^<>/]|\/(?!>))*\/?>/gi;
+  const stack = [];
+  let out = '';
+  let cursor = 0;
+  let m;
+  while ((m = tagRe.exec(src)) !== null) {
+    out += src.slice(cursor, m.index);
+    cursor = m.index + m[0].length;
+    const tag = m[0];
+    if (tag[1] === '/') {
+      const role = stack.pop();
+      if (role === undefined) { out += tag; continue; }
+      if (role === 'text') out += '</rt>';
+      else if (role === 'delimiter') out += '</rp>';
+      else if (role === 'container') out += '</ruby>';
+      // 注音单元（text/delimiter/container）收尾后紧跟的行内空白属于注音排版（Netflix 用它
+      // 断词），不是正文；base 收尾后的空白留给后面的 text/delimiter 收尾时一并处理。
+      if (role !== null && role !== 'base') {
+        cursor += (src.slice(cursor).match(/^[ \t　]+/) || [''])[0].length;
+      }
+      continue;
+    }
+    if (/\/>$/.test(tag)) { out += tag; continue; } // 自闭合：无内容，原样
+    const open = tag.match(TTML_RUBY_OPEN);
+    if (!open) { stack.push(null); out += tag; continue; }
+    const role = open[1].toLowerCase();
+    stack.push(role);
+    if (role === 'text') out += '<rt>';
+    else if (role === 'delimiter') out += '<rp>';
+    else if (role === 'container') out += '<ruby>';
+  }
+  return out + src.slice(cursor);
+}
+
 // TTML（Netflix dfxp-ls-sdh / imsc1.1）→ cues。正则抽 <p begin end>…</p>，<br/> 转换行。
+// 带注音的行同时挂 `cue.ruby`（分段，同 textTracks 收割路径），面板/覆盖层能画真 <ruby>。
 function parseTtml(xml) {
   const out = [];
   if (!xml) return out;
@@ -228,11 +278,93 @@ function parseTtml(xml) {
     const startMs = parseSubtitleTimestamp(beginM[1], tickRate);
     const endMs = parseSubtitleTimestamp(endM[1], tickRate);
     if (startMs == null || endMs == null) continue;
-    const body = stripCueTags(m[2].replace(/<br\s*\/?>/gi, '\n')).trim();
+    const raw = ttmlRubyToHtml(m[2].replace(/<br\s*\/?>/gi, '\n'));
+    const body = stripCueTags(raw).trim();
     if (!body) continue;
-    out.push({ startMs, endMs, text: body });
+    const cue = { startMs, endMs, text: body };
+    if (raw.indexOf('<rt>') >= 0) {
+      // 分段拼接必须等于正文（同 fushiAttachCueRuby 的不变式），否则宁可不画振假名。
+      const segments = splitCueRuby(raw);
+      if (segments.some((seg) => seg.reading) &&
+          segments.map((seg) => seg.text).join('').trim() === body) {
+        cue.ruby = segments;
+      }
+    }
+    out.push(cue);
   }
   return out;
+}
+
+// 多句合一制卡的纯函数（与 app 内 `MiningSentenceDraft` 逐字对齐——
+// `joinMinedSentences`：逐句 trim、丢空、'\n' 连接；`mergeMiningAudioRanges`：min start /
+// max end）。cues 是整轨（按 startMs 升序），idx 是当前句下标，prevN/nextN 是用户要的前/后
+// 句数；越过轨首/轨尾按真句封顶（返回的 prev/next 长度就是实际拿到的）。
+// idx 越界 → null（没有当前句就没有上下文可言）。
+function fushiComposeCueContext(cues, idx, prevN, nextN) {
+  if (!Array.isArray(cues) || typeof idx !== 'number' || idx < 0 || idx >= cues.length) return null;
+  const p = Math.max(0, Math.floor(Number(prevN) || 0));
+  const n = Math.max(0, Math.floor(Number(nextN) || 0));
+  const from = Math.max(0, idx - p);
+  const to = Math.min(cues.length - 1, idx + n);
+  const prev = [];
+  for (let i = from; i < idx; i++) prev.push(String(cues[i].text || ''));
+  const next = [];
+  for (let i = idx + 1; i <= to; i++) next.push(String(cues[i].text || ''));
+  const current = String(cues[idx].text || '');
+  const sentence = [...prev, current, ...next]
+    .map((t) => t.trim())
+    .filter((t) => t.length)
+    .join('\n');
+  let startV = cues[idx].startMs;
+  let endV = cues[idx].endMs;
+  for (let i = from; i <= to; i++) {
+    if (cues[i].startMs < startV) startV = cues[i].startMs;
+    if (cues[i].endMs > endV) endV = cues[i].endMs;
+  }
+  return {
+    prev, current, next, sentence, startV, endV,
+    prevAtMax: from === 0,
+    nextAtMax: to === cues.length - 1,
+  };
+}
+
+// BUG-2192：网飞录屏制卡的动图/静帧四周带播放器黑边——tabCapture 录的是**整个标签页视口**，
+// 视频四周的播放器黑底一起进了片段。录制那一刻按 <video> 的几何算出「可见视频画面」占视口的
+// 比例矩形，随 mineClip 发给服务端在 ffmpeg 抽帧前先 crop。
+//  - `<video>` 默认 object-fit: contain：内容矩形 = 元素框内按原始宽高比缩放后居中的那块；
+//    videoWidth/videoHeight 拿不到（DRM 有时给 0）就退回整个元素框。
+//  - 与视口求交：元素可能伸出视口，捕获帧只有视口那部分。
+//  - 用比例不用像素：tabCapture 会把视口等比缩到 ≤1920×1080，两边只有比例是同一套坐标。
+//  - 画面已铺满视口（全屏正好 16:9）→ null，服务端不裁（老路径逐字不变）。
+function fushiVideoCropFraction(video, viewportW, viewportH) {
+  if (!video || typeof video.getBoundingClientRect !== 'function') return null;
+  const vw = Number(viewportW);
+  const vh = Number(viewportH);
+  if (!(vw > 0) || !(vh > 0)) return null;
+  const r = video.getBoundingClientRect();
+  if (!r || !(r.width > 0) || !(r.height > 0)) return null;
+  const iw = Number(video.videoWidth);
+  const ih = Number(video.videoHeight);
+  let x = r.left;
+  let y = r.top;
+  let w = r.width;
+  let h = r.height;
+  if (iw > 0 && ih > 0) {
+    const s = Math.min(r.width / iw, r.height / ih);
+    w = iw * s;
+    h = ih * s;
+    x = r.left + (r.width - w) / 2;
+    y = r.top + (r.height - h) / 2;
+  }
+  const x0 = Math.max(0, x);
+  const y0 = Math.max(0, y);
+  const x1 = Math.min(vw, x + w);
+  const y1 = Math.min(vh, y + h);
+  if (x1 - x0 < 16 || y1 - y0 < 16) return null;
+  const f = { x: x0 / vw, y: y0 / vh, w: (x1 - x0) / vw, h: (y1 - y0) / vh };
+  if (f.x <= 0.005 && f.y <= 0.005 && f.w >= 0.99 && f.h >= 0.99) return null;
+  const r4 = (n) => Math.round(n * 10000) / 10000;
+  return { x: r4(f.x), y: r4(f.y), w: r4(f.w), h: r4(f.h) };
 }
 
 // Bilibili.tv 字幕 JSON（asb 伪扩展名 bbjson）→ cues。形状：{body:[{from,to,content}]}，
@@ -320,6 +452,9 @@ if (typeof module !== 'undefined' && module.exports) {
     parseSubtitleTimestamp,
     stripCueTags,
     splitCueRuby,
+    ttmlRubyToHtml,
+    fushiComposeCueContext,
+    fushiVideoCropFraction,
     parseWebVtt,
     parseTtml,
     parseBilibiliJson,
