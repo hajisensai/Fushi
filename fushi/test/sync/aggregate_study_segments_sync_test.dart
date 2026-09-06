@@ -399,7 +399,7 @@ void main() {
         isNotEmpty,
       );
 
-      await BackupService.mergeRestoreBackup(
+      await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path,
         zipPath: zip,
       );

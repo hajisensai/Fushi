@@ -14,7 +14,7 @@ import 'temp_dir_cleanup.dart';
 /// TODO-1358: the export/import dialogs describe "what is inside" a backup and
 /// the overwrite import lets the user skip restoring individual sidecar file
 /// trees. This locks down (1) the pure archive manifest counter and (2) the
-/// per-category gating of [BackupService.restoreBackup].
+/// per-category gating of [BackupRestoreService.restoreBackup].
 void main() {
   group('summarizeBackupEntries (pure manifest)', () {
     test('counts distinct dirs / files per category, normalizing separators',
@@ -38,7 +38,7 @@ void main() {
         'localAudio/local_audio_2.db',
       ];
       final BackupContentSummary s =
-          BackupService.summarizeBackupEntries(names, null);
+          BackupRestoreService.summarizeBackupEntries(names, null);
       expect(s.countFor(BackupCategory.dictionary), 2);
       expect(s.countFor(BackupCategory.books), 2);
       expect(s.countFor(BackupCategory.audiobooks), 1);
@@ -70,7 +70,8 @@ void main() {
           '/src/c.mkv': 'uid2/1-c.mkv',
         },
       );
-      final BackupContentSummary s = BackupService.summarizeBackupEntries(
+      final BackupContentSummary s =
+          BackupRestoreService.summarizeBackupEntries(
         <String>['videos/uid1/1-a.mp4'],
         meta,
       );
@@ -79,7 +80,8 @@ void main() {
 
     test('db-only archive marks nothing present', () {
       final BackupContentSummary s =
-          BackupService.summarizeBackupEntries(<String>['hibiki.db'], null);
+          BackupRestoreService.summarizeBackupEntries(
+              <String>['hibiki.db'], null);
       expect(s.present, isEmpty);
       expect(s.countFor(BackupCategory.books), 0);
     });
@@ -99,21 +101,21 @@ void main() {
       final Archive archive = Archive()
         ..addFile(file('hibiki.db'))
         ..addFile(file('hoshi_books/BookA/f.html'));
-      expect(BackupService.archiveBooksPrefix(archive), 'hoshi_books');
+      expect(BackupRestoreService.archiveBooksPrefix(archive), 'hoshi_books');
     });
 
     test('archive with fushi_books/ entries uses the new prefix', () {
       final Archive archive = Archive()
         ..addFile(file('hibiki.db'))
         ..addFile(file('fushi_books/BookA/f.html'));
-      expect(BackupService.archiveBooksPrefix(archive), 'fushi_books');
+      expect(BackupRestoreService.archiveBooksPrefix(archive), 'fushi_books');
     });
 
     test(
         'archive without any books tree defaults to the legacy prefix '
         '(harmless: nothing to restore under either)', () {
       final Archive archive = Archive()..addFile(file('hibiki.db'));
-      expect(BackupService.archiveBooksPrefix(archive), 'hoshi_books');
+      expect(BackupRestoreService.archiveBooksPrefix(archive), 'hoshi_books');
     });
   });
 
@@ -187,7 +189,7 @@ void main() {
       final String dstVideos = p.join(dst.path, 'videos');
       Directory(dstDbDir).createSync(recursive: true);
 
-      await BackupService.restoreBackup(
+      await BackupRestoreService.restoreBackup(
         dbDirectory: dstDbDir,
         zipPath: zip,
         categories: <BackupCategory>{BackupCategory.books},
