@@ -40,6 +40,44 @@ class EpubParser {
     return parseFromExtracted(extractDir);
   }
 
+  /// 只读 OPF 元数据里的 `dc:language`，不解压、不解析 spine——给「导入前就要知道
+  /// 书是什么语言」的轻量场景（转录弹层的语言初值）。不是 EPUB / 缺 container.xml
+  /// / 缺 OPF / 没写语言一律返回 null；zip 或 XML 本身坏了照常抛，由调用方决定
+  /// 记日志还是忽略（不在这里吞）。
+  static String? readLanguageSync(String filePath) {
+    final Uint8List bytes = File(filePath).readAsBytesSync();
+    final Archive archive = ZipDecoder().decodeBytes(bytes, verify: true);
+    final ArchiveFile? container = _findArchiveFile(
+      archive,
+      p.posix.join('META-INF', 'container.xml'),
+    );
+    if (container == null) return null;
+    final XmlDocument containerXml =
+        XmlDocument.parse(decodeEpubText(container.content as List<int>));
+    final String? rootfilePath = _findRootfilePath(containerXml);
+    if (rootfilePath == null) return null;
+    final ArchiveFile? opf = _findArchiveFile(archive, rootfilePath);
+    if (opf == null) return null;
+    final XmlDocument opfXml =
+        XmlDocument.parse(decodeEpubText(opf.content as List<int>));
+    return _parseMetadata(opfXml, 'language');
+  }
+
+  /// 按 zip 内路径找条目：先精确匹配，再大小写不敏感（与 [_findContainerXml] 对
+  /// 磁盘目录的宽容一致——有些打包器把 `META-INF` 写成小写）。
+  static ArchiveFile? _findArchiveFile(Archive archive, String zipPath) {
+    final String wanted = zipPath.replaceAll('\\', '/');
+    final String wantedLower = wanted.toLowerCase();
+    ArchiveFile? loose;
+    for (final ArchiveFile file in archive.files) {
+      if (!file.isFile) continue;
+      final String name = file.name.replaceAll('\\', '/');
+      if (name == wanted) return file;
+      if (loose == null && name.toLowerCase() == wantedLower) loose = file;
+    }
+    return loose;
+  }
+
   /// Parse an already-extracted EPUB directory.
   static EpubBook parseFromExtracted(String extractDir) {
     final File? containerFile = _findContainerXml(extractDir);

@@ -29,11 +29,15 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2033 条。点号进各自文件。
+> 共 2039 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2168](bugs/BUG-2168-cf-download-redirects-to-github.md) | ✅ | ✅ | 下载页选 Cloudflare 镜像却被 302 到 GitHub |
+| [BUG-2165](bugs/BUG-2165-pack-download-no-visible-progress.md) | ✅ | ✅ | 推荐包后台下载没有任何看得见的地方，半截包重启后既看不见也续不上 |
+| [BUG-2164](bugs/BUG-2164-asr-pcm-mov-chapter-track-noise.md) | ✅ | ✅ | ASR PCM 抽取 mov 容器混入章节 text 轨，奇数字节标题的整章解成白噪声 |
+| [BUG-2163](bugs/BUG-2163-asr-match-start-anchor-colophon.md) | ✅ | ✅ | ASR 字幕匹配起点被片头出版社名钉到书尾版权页，整本匹配率 0% |
+| [BUG-2162](bugs/BUG-2162-schema-drift-v95-missing-columns.md) | ✅ | ✅ | 用户库 user_version=95 却缺 v52/v57/v87/v88 台阶产物，导入书撞 epub_books 无 language 列 |
 | [BUG-2161](bugs/BUG-2161-mdx-loose-asset-scan-and-size-limits.md) | 🚧 | 🚧 | MDX 松散资源两条上限缺口：img src 只扫前 50 条词条、zip 全取无总量上限 |
 | [BUG-2160](bugs/BUG-2160-mdx-import-oom-ios.md) | ✅ | ✅ | iOS 导入大 MDX 词典闪退：整本词典在内存里物化，jetsam 直接杀进程 |
 | [BUG-2159](bugs/BUG-2159-netflix-ext-mine-audible-playback.md) | ✅ | ✅ | 网飞扩展批量制卡期间扬声器出声 |
@@ -41,6 +45,8 @@
 | [BUG-2157](bugs/BUG-2157-plain-mode-inline-fs-overrides-user-font-size.md) | ✅ | ✅ | 关闭尊重字幕自带样式后行内 fs 仍覆盖用户字号，字号滑块整条失效 |
 | [BUG-2156](bugs/BUG-2156-video-subtitle-list-font-cap-too-low.md) | ✅ | ✅ | 字幕列表字号上限还是不够（BUG-878 抬到 2.0× 后的第二次反馈） |
 | [BUG-2155](bugs/BUG-2155-anki-pitch-tags-overflow-card-header.md) | ✅ | ✅ | 音标标签框撑爆卡头：60dvw 视口上限 + 单行不换行，窄卡上把封面顶出视口 |
+| [BUG-2154](bugs/BUG-2154-gal-lookup-verified-unreachable.md) | ✅ | ✅ | 内嵌查词对每个游戏都恒需手动「确认点击风险」：shield 的 Verified 状态在 hook 里无任何生产者、结构上不可达 |
+| [BUG-2153](bugs/BUG-2153-gal-exe-level-identity-gates.md) | ✅ | ✅ | galgame 引擎身份判据绑死单个 exe（文件名/SHA-256/硬编码 RVA），改名或换版本即整个 adapter 不被认领 |
 | [BUG-2152](bugs/BUG-2152-anki-mined-ipa-duplicated.md) | ✅ | ✅ | 英语制卡音标重复两遍 —— 同一 PitchEntry 的 transcriptions 数组内没有去重 |
 | [BUG-2151](bugs/BUG-2151-anki-pitch-tags-ol-markup.md) | ✅ | ✅ | Anki 卡片音标黑框巨大且无分隔符 —— popup.js 产出 `<ol>`，Lapis `#pitch-tags` 样式契约是 `ul` |
 | [BUG-2150](bugs/BUG-2150-ios-ankimobile-pasteboard-read-inactive.md) | ✅ | ✅ | iOS AnkiMobile 配置回传读不到剪贴板：URL 回调跑在 .inactive 阶段 |

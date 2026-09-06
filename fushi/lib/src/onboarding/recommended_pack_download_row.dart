@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
 import 'package:fushi/utils.dart';
@@ -8,8 +10,12 @@ import 'package:fushi/utils.dart';
 /// 引导不再取消它 —— 但「在后台跑」如果没有任何地方看得到，等于没跑。这一行就是
 /// 那个地方：下载中报进度并能取消，下完报「待导入」并能就地导入。
 ///
-/// 空闲（没在下、也没有下好待导入的包）时整行不渲染：设置页不该常驻一条恒为
-/// 「无任务」的死行。
+/// BUG-2165 补上第三态「已暂停」：取消、失败、上个进程被关掉，盘上都躺着一截可续
+/// 的半截包。它以前一律落回 idle（= 整行不渲染），于是那 3 GB 既看不到、也只能靠
+/// 重开新手引导才续得上。现在它在这里报「已下 3.2 GB · 继续下载」，失败原因（如果
+/// 有）就地显示——失败后没有重试按钮，等于让用户从 0 重下 9.5 GB。
+///
+/// 空闲（盘上什么都没有）时整行不渲染：设置页不该常驻一条恒为「无任务」的死行。
 class RecommendedPackDownloadRow extends StatelessWidget {
   const RecommendedPackDownloadRow({
     required this.controller,
@@ -30,6 +36,7 @@ class RecommendedPackDownloadRow extends StatelessWidget {
         controller.stage,
         controller.progress,
         controller.receivedBytes,
+        controller.error,
       ]),
       builder: (BuildContext context, _) {
         switch (controller.stage.value) {
@@ -61,6 +68,27 @@ class RecommendedPackDownloadRow extends StatelessWidget {
                     ),
                   ),
                 ],
+              ),
+            );
+          case RecommendedPackDownloadStage.paused:
+            final String? failure = controller.error.value;
+            return AdaptiveSettingsRow(
+              title: t.onboarding_pack_status_paused,
+              // 失败原因优先于通用说明：断在 8 GB 的人最需要知道断在什么上。
+              subtitle: failure == null
+                  ? '${recommendedPackProgressLabel(
+                      progress: controller.progress.value,
+                      receivedBytes: controller.receivedBytes.value,
+                    )} · ${t.onboarding_pack_paused_desc}'
+                  : '${recommendedPackProgressLabel(
+                      progress: controller.progress.value,
+                      receivedBytes: controller.receivedBytes.value,
+                    )} · ${t.onboarding_pack_download_failed(message: failure)}',
+              icon: Icons.pause_circle_outline,
+              showIcon: true,
+              trailing: FilledButton.tonal(
+                onPressed: () => unawaited(controller.start()),
+                child: Text(t.onboarding_pack_download_resume),
               ),
             );
           case RecommendedPackDownloadStage.downloaded:
