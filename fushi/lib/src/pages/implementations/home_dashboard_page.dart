@@ -630,11 +630,30 @@ class _HomeDashboardPageState
   Future<void> _loadDashboardDataUnsafe() async {
     final AppModel appModel = ref.read(appProvider);
     final FushiDatabase db = appModel.database;
-    final List<VideoBookRow> videos = await widget.videoRepo.listForShelf();
+    // 视频书架、统计事实面、合集/附加图四张表互不依赖：一次全部发出，让 Drift
+    // 后台执行器流水线化（首页首绘被这串 await 串行 gate）。
+    final Future<List<VideoBookRow>> videosF = widget.videoRepo.listForShelf();
     // v92：学习统计只经统一事实面读取（study_segments + 冻结的 legacy 投影表，
     // 游戏时长来自 galgame_sessions、游戏 hook 字数来自 legacy game 行 + 段），
     // 首页不再自己读六张表各自累加——与阅读/视频/游戏统计页同一份事实。
-    final StatFacts facts = await loadStatFacts(db);
+    final Future<StatFacts> factsF = loadStatFacts(db);
+    final Future<List<MediaCollectionRow>> collectionsF =
+        db.getAllMediaCollections();
+    final Future<Map<String, int>> primaryByEntryF =
+        db.getPrimaryCollectionIdByEntry();
+    final Future<List<MediaImageRow>> mediaImagesF = db.getAllMediaImages();
+    final Future<List<MediaCollectionItemRow>> collectionItemsF =
+        db.getAllCollectionItems();
+    await Future.wait<Object?>(<Future<Object?>>[
+      videosF,
+      factsF,
+      collectionsF,
+      primaryByEntryF,
+      mediaImagesF,
+      collectionItemsF,
+    ]);
+    final List<VideoBookRow> videos = await videosF;
+    final StatFacts facts = await factsF;
     final List<StatFact> reading = facts.dailyBooks.toList(growable: false);
     final List<StatFact> watch = facts.dailyVideos.toList(growable: false);
     final List<StatFact> game = facts.dailyGames.toList(growable: false);
@@ -650,17 +669,15 @@ class _HomeDashboardPageState
         galgameRepo.isLoaded ? galgameRepo.games : await galgameRepo.load();
     // 合集归属映射（统计页/书架同源）：显示名规则「非合集上下文拼合集名」用。
     final Map<int, String> collectionNamesById = <int, String>{
-      for (final MediaCollectionRow c in await db.getAllMediaCollections())
-        c.id: c.name,
+      for (final MediaCollectionRow c in await collectionsF) c.id: c.name,
     };
-    final Map<String, int> primaryByEntry =
-        await db.getPrimaryCollectionIdByEntry();
+    final Map<String, int> primaryByEntry = await primaryByEntryF;
     // v68 附加图组：一次全表查询按归属分桶（续播区视频横卡选图链）。
     final Map<int, List<MediaImageRow>> imagesByCollection =
         <int, List<MediaImageRow>>{};
     final Map<String, List<MediaImageRow>> imagesByBookUid =
         <String, List<MediaImageRow>>{};
-    for (final MediaImageRow imageRow in await db.getAllMediaImages()) {
+    for (final MediaImageRow imageRow in await mediaImagesF) {
       final int? cid = imageRow.collectionId;
       if (cid != null) {
         (imagesByCollection[cid] ??= <MediaImageRow>[]).add(imageRow);
@@ -671,7 +688,7 @@ class _HomeDashboardPageState
     // 组内序：条目在其主折叠合集里的 sortIndex（视频页/书架 _loadShelfMaps 同
     // 口径——一次 getAllCollectionItems 内存分组，只记归属主合集的行）。
     final Map<String, int> memberSortIndex = <String, int>{};
-    for (final MediaCollectionItemRow m in await db.getAllCollectionItems()) {
+    for (final MediaCollectionItemRow m in await collectionItemsF) {
       final String key = '${m.mediaType}|${m.entryKey}';
       if (primaryByEntry[key] == m.collectionId) {
         memberSortIndex[key] = m.sortIndex;
@@ -2025,7 +2042,8 @@ class _HomeDashboardPageState
         titleOf: _statEntryTitle,
         collectionOf: _statEntryCollection,
         onEntryTap: _openStatEntry,
-        onEntryDelete: (StatPeriodEntryTarget t) => deleteStatPeriodEntry(db, t),
+        onEntryDelete: (StatPeriodEntryTarget t) =>
+            deleteStatPeriodEntry(db, t),
       ),
     );
     // 删过就重拉首页数据：热力图 / 今日目标 / 时间轴都吃同一份事实面。

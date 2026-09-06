@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:flutter/services.dart' show FontLoader;
@@ -126,15 +127,24 @@ class AppFontLoader {
   static Future<List<String>> resolveAndLoadAll(
     List<Map<String, dynamic>> fonts,
   ) async {
+    // 各条目并发解析（读文件 + 解码 + 注册互不依赖），结果按用户顺序收集——
+    // 一条 CJK 字体十几二十 MB，三条链串行装是首帧前的可见等待。
+    final List<String?> resolved = await Future.wait<String?>(
+      fonts.map(_resolveEntry),
+    );
     final List<String> families = <String>[];
-    for (final Map<String, dynamic> font in fonts) {
-      final String? family = await _resolveEntry(font);
+    for (final String? family in resolved) {
       // 同名条目只保留一次：重复家族名在回退链里没有意义（引擎按名解析），
       // 只会让「第几个生效」变得无法推理。
       if (family != null && !families.contains(family)) families.add(family);
     }
     return families;
   }
+
+  /// 同一家族正在注册中的 future：并发解析时两条链里的同名条目只装一次，
+  /// 后来者等前者的结果（[FontLoader] 不能卸载，重复注册只是白读白解一遍）。
+  static final Map<String, Future<String?>> _inFlight =
+      <String, Future<String?>>{};
 
   /// Resolves one `{name, path, enabled}` entry to a registered family name, or
   /// null when the entry is unusable. Registration is idempotent per family.
@@ -167,15 +177,35 @@ class AppFontLoader {
     if (!file.existsSync()) return null;
 
     if (_loadedFamilies.contains(family)) return family;
+    final Future<String?>? pending = _inFlight[family];
+    if (pending != null) return pending;
+    final Future<String?> loading =
+        _loadFileFamily(file, family, isWoff: isWoff, isWoff2: isWoff2);
+    _inFlight[family] = loading;
+    try {
+      return await loading;
+    } finally {
+      _inFlight.remove(family);
+    }
+  }
 
+  static Future<String?> _loadFileFamily(
+    File file,
+    String family, {
+    required bool isWoff,
+    required bool isWoff2,
+  }) async {
     try {
       Uint8List bytes = await file.readAsBytes();
       if (isWoff || isWoff2) {
         // FontLoader only accepts raw sfnt, so unwrap the web-font
-        // container (WOFF2 first, then WOFF 1.0).
-        final Uint8List? sfnt = isWoff2
-            ? Woff2Decoder.toSfnt(bytes)
-            : FontDecoder.woffToSfnt(bytes);
+        // container (WOFF2 first, then WOFF 1.0). Brotli + glyf/loca 变换是
+        // 纯 CPU、几十毫秒到几百毫秒，放后台 isolate，别占首帧前的 UI isolate。
+        final Uint8List? sfnt = await Isolate.run(
+          () => isWoff2
+              ? Woff2Decoder.toSfnt(bytes)
+              : FontDecoder.woffToSfnt(bytes),
+        );
         if (sfnt == null) return null;
         bytes = sfnt;
       }

@@ -597,17 +597,54 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final FushiDatabase db = appModel.database;
     final ShelfSortMode sortMode =
         ShelfSortMode.fromName(appModel.prefsRepo.videoSortModeName);
-    final List<MediaCollectionRow> collections =
-        await db.getAllMediaCollections();
-    final Map<String, int> primaryMap =
-        await db.getPrimaryCollectionIdByEntry();
+    // 十三个全表查询互不依赖：一次全部发出去，让 Drift 的后台执行器流水线化，
+    // 而不是每个都等上一个的往返回来再发下一个（合集行要等最后一个落地才能画）。
+    // 先 Future.wait 挂上监听，某个查询失败时其余错误不会成为无人接的未处理异常。
+    final Future<List<MediaCollectionRow>> collectionsF =
+        db.getAllMediaCollections();
+    final Future<Map<String, int>> primaryMapF =
+        db.getPrimaryCollectionIdByEntry();
+    final Future<List<MediaCollectionItemRow>> collectionItemsF =
+        db.getAllCollectionItems();
+    final Future<List<VideoWatchStatisticRow>> watchRowsF =
+        db.getAllVideoWatchStatistics();
+    final Future<Map<String, int>> segmentEndAtByUidF =
+        db.getLatestStudyEndAtByMedia(kActivityMediaVideo);
+    final Future<List<VideoScrapeMetaRow>> scrapeRowsF =
+        db.getAllVideoScrapeMeta();
+    final Future<List<CollectionScrapeMetaRow>> collectionScrapeMetaF =
+        db.getAllCollectionScrapeMeta();
+    final Future<List<VideoMetadataWorkRow>> metadataWorksF =
+        db.getAllVideoMetadataWorks();
+    final Future<List<VideoMetadataImageRow>> metadataImagesF =
+        db.getAllVideoMetadataImages();
+    final Future<List<VideoMetadataEpisodeRow>> metadataEpisodesF =
+        db.getAllVideoMetadataEpisodes();
+    final Future<List<VideoMetadataExtraRow>> metadataExtrasF =
+        db.getAllVideoMetadataExtras();
+    final Future<List<MediaImageRow>> mediaImagesF = db.getAllMediaImages();
+    await Future.wait<Object?>(<Future<Object?>>[
+      collectionsF,
+      primaryMapF,
+      collectionItemsF,
+      watchRowsF,
+      segmentEndAtByUidF,
+      scrapeRowsF,
+      collectionScrapeMetaF,
+      metadataWorksF,
+      metadataImagesF,
+      metadataEpisodesF,
+      metadataExtrasF,
+      mediaImagesF,
+    ]);
+    final List<MediaCollectionRow> collections = await collectionsF;
+    final Map<String, int> primaryMap = await primaryMapF;
     // 层次 C：条目在其主折叠合集里的 sortIndex（只记归属合集的行——一条目属多
     // 合集时行内序跟随折叠归属，与 primaryMap 同口径）。一次 [getAllCollectionItems]
     // 查全部成员内存分组，替代逐合集 [getCollectionItems] 的 N+1（合集越多越慢，
     // 首屏合集行渲染被它 gate）。判据 `primaryMap[key] == m.collectionId` 与旧
     // 逐合集 `== c.id` 等价（旧循环里 members 的 collectionId 恒为 c.id）。
-    final List<MediaCollectionItemRow> collectionItems = await db
-        .getAllCollectionItems();
+    final List<MediaCollectionItemRow> collectionItems = await collectionItemsF;
     final Map<String, int> memberSortIndex = <String, int>{};
     for (final MediaCollectionItemRow m in collectionItems) {
       final String key = '${m.mediaType}|${m.entryKey}';
@@ -618,10 +655,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // v92 起 `video_watch_statistics` 冻结为 legacy 只读（历史数据还在），新的
     // 观看只写 `study_segments`：两处的 (uid, 时刻) 一起喂 latestWatchAtByKey，
     // 同 uid 取最大，任一来源缺席都不影响另一来源。
-    final List<VideoWatchStatisticRow> watchRows =
-        await db.getAllVideoWatchStatistics();
-    final Map<String, int> segmentEndAtByUid =
-        await db.getLatestStudyEndAtByMedia(kActivityMediaVideo);
+    final List<VideoWatchStatisticRow> watchRows = await watchRowsF;
+    final Map<String, int> segmentEndAtByUid = await segmentEndAtByUidF;
     // 无身份判定 NULL 与 '' 都算（review4-9/review2-10：与统计页展示、删除谓词
     // 同一判据）——'' 行进不了任何书架条目的 uid 匹配，落 title 回退才不会让该
     // 视频从「最近观看」消失。
@@ -643,8 +678,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
     // TODO-2486：刮削资料批量预取——条目 airDate 派生年份（年份筛选）、合集资料
     // （hero 轮播）。批量 DAO 全表一次拉，替代逐本/逐合集查询的 N+1。
-    final List<VideoScrapeMetaRow> scrapeRows =
-        await db.getAllVideoScrapeMeta();
+    final List<VideoScrapeMetaRow> scrapeRows = await scrapeRowsF;
     final Map<String, int> airYearByUid = <String, int>{
       for (final VideoScrapeMetaRow r in scrapeRows)
         if (videoAirYear(r.airDate) case final int year) r.bookUid: year,
@@ -655,12 +689,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     };
     final Map<int, CollectionScrapeMetaRow> collectionMetaById =
         <int, CollectionScrapeMetaRow>{
-          for (final CollectionScrapeMetaRow r
-              in await db.getAllCollectionScrapeMeta())
-            r.collectionId: r,
-        };
-    final List<VideoMetadataWorkRow> metadataWorks = await db
-        .getAllVideoMetadataWorks();
+      for (final CollectionScrapeMetaRow r in await collectionScrapeMetaF)
+        r.collectionId: r,
+    };
+    final List<VideoMetadataWorkRow> metadataWorks = await metadataWorksF;
     final Map<int, VideoMetadataWorkRow> metadataWorkByCollection =
         <int, VideoMetadataWorkRow>{
       for (final VideoMetadataWorkRow work in metadataWorks)
@@ -673,15 +705,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     };
     final Map<int, List<VideoMetadataImageRow>> metadataImagesByWork =
         <int, List<VideoMetadataImageRow>>{};
-    for (final VideoMetadataImageRow image
-        in await db.getAllVideoMetadataImages()) {
+    for (final VideoMetadataImageRow image in await metadataImagesF) {
       if (image.workId case final int workId) {
         (metadataImagesByWork[workId] ??= <VideoMetadataImageRow>[]).add(image);
       }
     }
     final Map<String, int> runtimeMinutesByBookUid = <String, int>{};
-    for (final VideoMetadataEpisodeRow episode
-        in await db.getAllVideoMetadataEpisodes()) {
+    for (final VideoMetadataEpisodeRow episode in await metadataEpisodesF) {
       if (episode.bookUid case final String uid) {
         if (episode.runtimeMinutes case final int minutes) {
           runtimeMinutesByBookUid[uid] = minutes;
@@ -689,8 +719,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       }
     }
     final Set<String> localExtraBookUids = <String>{
-      for (final VideoMetadataExtraRow extra
-          in await db.getAllVideoMetadataExtras())
+      for (final VideoMetadataExtraRow extra in await metadataExtrasF)
         if (extra.bookUid != null) extra.bookUid!,
     };
     // v68 附加图组：一次全表查询按归属分桶（hero 背景/logo、续播行横卡）。
@@ -698,7 +727,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         <int, List<MediaImageRow>>{};
     final Map<String, List<MediaImageRow>> imagesByBookUid =
         <String, List<MediaImageRow>>{};
-    for (final MediaImageRow row in await db.getAllMediaImages()) {
+    for (final MediaImageRow row in await mediaImagesF) {
       final int? cid = row.collectionId;
       if (cid != null) {
         (imagesByCollection[cid] ??= <MediaImageRow>[]).add(row);
@@ -808,6 +837,25 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 同名 `<uid>.jpg`，否则新帧或稍后的 coverPath 会被旧快照误清。
     if (lease == null) return;
     _backfillingCovers = true;
+    // 每抽成一张就 `setState(listForShelf)` = 每张封面一次全库重列 + 整页重建；
+    // 几百个待补的视频就是几百次。改为节流：最多每秒刷一次，循环结束再兜底刷
+    // 一次把最后几张带上。
+    bool shelfDirty = false;
+    DateTime? lastShelfRefreshAt;
+    void refreshShelfThrottled({bool force = false}) {
+      if (!mounted) return;
+      final DateTime now = DateTime.now();
+      if (!force &&
+          lastShelfRefreshAt != null &&
+          now.difference(lastShelfRefreshAt!) < _coverBackfillRefreshInterval) {
+        shelfDirty = true;
+        return;
+      }
+      lastShelfRefreshAt = now;
+      shelfDirty = false;
+      setState(() => _future = widget.repo.listForShelf());
+    }
+
     try {
       final List<VideoBookRow> rows = await widget.repo.listAll();
       for (final VideoBookRow row in rows) {
@@ -877,13 +925,17 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         }
         CoverBackfillLedger.instance.clear(path);
         if (!mounted) return;
-        setState(() => _future = widget.repo.listForShelf());
+        refreshShelfThrottled();
       }
+      if (shelfDirty) refreshShelfThrottled(force: true);
     } finally {
       _backfillingCovers = false;
       lease.release();
     }
   }
+
+  /// [_maybeBackfillCovers] 里书架重列的最小间隔。
+  static const Duration _coverBackfillRefreshInterval = Duration(seconds: 1);
 
   Future<RemoteVideoClient?> _resolveRemoteVideoClient() async {
     final Future<RemoteVideoClient?> Function()? injected =
@@ -2522,9 +2574,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       message: t.video_delete_confirm(title: book.title),
       db: appModel.database,
       // 远端流（互联直传 / WebDAV / Jellyfin）磁盘上没有文件，不摆勾选框。
-      localFilesSubtitle: videoBookHasLocalFiles(book)
-          ? t.delete_local_files_video_desc
-          : null,
+      localFilesSubtitle:
+          videoBookHasLocalFiles(book) ? t.delete_local_files_video_desc : null,
     );
     if (decision == null || !mounted) return;
     final VideoLibraryDeleteResult result = await deleteVideoBooksWithDecision(
@@ -4137,14 +4188,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     }
     final List<CollectionGroup<_VideoSlot>> groups =
         <CollectionGroup<_VideoSlot>>[
-          for (final CollectionGroup<_VideoSlot> group in _groupVideos(
-            books,
-            groupedRemoteVideos,
-            primaryByEntry,
-            memberSortIndex,
-          ))
-            group,
-        ];
+      for (final CollectionGroup<_VideoSlot> group in _groupVideos(
+        books,
+        groupedRemoteVideos,
+        primaryByEntry,
+        memberSortIndex,
+      ))
+        group,
+    ];
     // 合集标签过滤：含【全部】选中标签的合集 id（null = 无选中标签，不过滤）。
     // 合集卡（及其成员）按此显隐；散卡由 filteredVideoBookUidsProvider 另行过滤。
     final Set<int>? collectionFilter =
@@ -5805,8 +5856,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     EdgeInsetsGeometry padding,
     ({int columns, double cardWidth}) cardLayout,
   ) {
-    final double coverHeight =
-        cardLayout.cardWidth / kVideoLandscapeCardAspect;
+    final double coverHeight = cardLayout.cardWidth / kVideoLandscapeCardAspect;
     final double cellHeight = coverHeight + _videoCardTextBlock(context);
     return SliverPadding(
       padding: padding,
@@ -6320,8 +6370,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   /// 视频书的用户标签（BUG-1808）：墙卡与首页横滚卡共用同一口径，别再各处 inline
   /// 写一遍 watch——首页当初漏画标签层，正是因为标签只跟着墙卡那一处写法走。
-  List<_VideoTagChip> _videoBookTagChips(String bookUid) => _tagChipsOf(
-      ref.watch(videoBookTagMapProvider).valueOrNull?[bookUid]);
+  List<_VideoTagChip> _videoBookTagChips(String bookUid) =>
+      _tagChipsOf(ref.watch(videoBookTagMapProvider).valueOrNull?[bookUid]);
 
   /// 合集的用户标签（与 [_videoBookTagChips] 同形，键是 collectionId）。
   List<_VideoTagChip> _collectionTagChips(int collectionId) => _tagChipsOf(

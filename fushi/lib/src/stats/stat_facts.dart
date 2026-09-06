@@ -135,7 +135,45 @@ Future<StatFacts> loadStatFacts(
   FushiDatabase db, {
   int activityLimit = 200,
 }) async {
-  final List<EpubBookMeta> epubRows = await db.getEpubBookMetas();
+  // 九个全表读互不依赖：一次全部发出去让 Drift 后台执行器流水线化，而不是每个都
+  // 等上一个往返回来（首页与三个统计页每次打开都走这里）。先 Future.wait 挂上
+  // 监听，某个失败时其余错误不会成为无人接的未处理异常。
+  final Future<List<EpubBookMeta>> epubRowsF = db.getEpubBookMetas();
+  final Future<List<ReadingStatisticRow>> readingF =
+      db.getAllReadingStatistics();
+  final Future<List<VideoWatchStatisticRow>> watchF =
+      db.getAllVideoWatchStatistics();
+  final Future<List<ReadingHourlyLogRow>> readingHourlyF =
+      db.getAllReadingHourlyLogs();
+  final Future<List<VideoHourlyLogRow>> videoHourlyF =
+      db.getAllVideoHourlyLogs();
+  final Future<List<(String, String, int)>> gameDailyF =
+      db.getGalgameDailySecondsByGame();
+  final Future<List<ActivityEventRow>> activityF =
+      db.getRecentActivityEvents(limit: activityLimit);
+  final Future<List<ActivityEventRow>> gameActivityF =
+      db.getRecentActivityEvents(
+    limit: 1 << 31,
+    eventTypes: const <String>[kActivityGame],
+  );
+  final Future<List<StudySegmentRow>> segmentsF = db.getStudySegments();
+  final Future<List<GalgameSessionRow>> recentGameSessionsF = activityLimit <= 0
+      ? Future<List<GalgameSessionRow>>.value(const <GalgameSessionRow>[])
+      : db.getRecentGalgameSessions(limit: activityLimit);
+  await Future.wait<Object?>(<Future<Object?>>[
+    epubRowsF,
+    readingF,
+    watchF,
+    readingHourlyF,
+    videoHourlyF,
+    gameDailyF,
+    activityF,
+    gameActivityF,
+    segmentsF,
+    recentGameSessionsF,
+  ]);
+
+  final List<EpubBookMeta> epubRows = await epubRowsF;
   final Map<String, EpubBookMeta> bookByTitle = <String, EpubBookMeta>{
     for (final EpubBookMeta r in epubRows) r.title: r,
   };
@@ -144,7 +182,7 @@ Future<StatFacts> loadStatFacts(
 
   // legacy 日行：阅读按 title 反查库表补身份与 format（查不到 = 书已删，身份 ''、
   // format ''，按 title 分组、归普通书）；视频 v39 起自带 bookUid。
-  for (final ReadingStatisticRow r in await db.getAllReadingStatistics()) {
+  for (final ReadingStatisticRow r in await readingF) {
     final EpubBookMeta? book = bookByTitle[r.title];
     daily.add(
       StatFact(
@@ -161,8 +199,7 @@ Future<StatFacts> loadStatFacts(
       ),
     );
   }
-  for (final VideoWatchStatisticRow w
-      in await db.getAllVideoWatchStatistics()) {
+  for (final VideoWatchStatisticRow w in await watchF) {
     daily.add(
       StatFact(
         mediaKind: kActivityMediaVideo,
@@ -179,7 +216,7 @@ Future<StatFacts> loadStatFacts(
     );
   }
   // legacy 小时行（无身份、无 title）。
-  for (final ReadingHourlyLogRow h in await db.getAllReadingHourlyLogs()) {
+  for (final ReadingHourlyLogRow h in await readingHourlyF) {
     hourly.add(
       StatFact(
         mediaKind: kActivityMediaBook,
@@ -195,7 +232,7 @@ Future<StatFacts> loadStatFacts(
       ),
     );
   }
-  for (final VideoHourlyLogRow h in await db.getAllVideoHourlyLogs()) {
+  for (final VideoHourlyLogRow h in await videoHourlyF) {
     hourly.add(
       StatFact(
         mediaKind: kActivityMediaVideo,
@@ -212,8 +249,7 @@ Future<StatFacts> loadStatFacts(
     );
   }
   // 游戏时长真相源 galgame_sessions（v55 起就是事实表）：按 (game, day) 进日面。
-  for (final (String gameId, String dateKey, int seconds)
-      in await db.getGalgameDailySecondsByGame()) {
+  for (final (String gameId, String dateKey, int seconds) in await gameDailyF) {
     daily.add(
       StatFact(
         mediaKind: kActivityMediaGame,
@@ -232,13 +268,8 @@ Future<StatFacts> loadStatFacts(
   // legacy 活动行：v92 前的游戏 hook 字数只存在这里（chars-only game 行）；
   // read / watch 行的时长 / 字数已在日投影里，**只**取 game 的字数进日面，
   // 时长一律不取（时长真相源是 galgame_sessions，取了就双计）。
-  final List<ActivityEventRow> activity = await db.getRecentActivityEvents(
-    limit: activityLimit,
-  );
-  for (final ActivityEventRow e in await db.getRecentActivityEvents(
-    limit: 1 << 31,
-    eventTypes: const <String>[kActivityGame],
-  )) {
+  final List<ActivityEventRow> activity = await activityF;
+  for (final ActivityEventRow e in await gameActivityF) {
     final int chars = e.charsDelta ?? 0;
     if (chars <= 0) continue;
     daily.add(
@@ -257,7 +288,7 @@ Future<StatFacts> loadStatFacts(
     );
   }
   // v92 段：两面各一份。
-  final List<StudySegmentRow> segments = await db.getStudySegments();
+  final List<StudySegmentRow> segments = await segmentsF;
   for (final StudySegmentRow s in segments) {
     // **写零的段不进事实面**。`zeroStudySegmentsOnDays`（时段明细里长按删除走的那条）
     // 只把行写成零而不删行——必须删的是同步语义：真删行会被对端的旧数据按 LWW 复活，
@@ -287,9 +318,7 @@ Future<StatFacts> loadStatFacts(
     hourly.add(fact);
   }
   // 游玩会话（活动流合成「游玩」事件用；activityLimit 为 0 时不取）。
-  final List<GalgameSessionRow> recentGameSessions = activityLimit <= 0
-      ? const <GalgameSessionRow>[]
-      : await db.getRecentGalgameSessions(limit: activityLimit);
+  final List<GalgameSessionRow> recentGameSessions = await recentGameSessionsF;
   final Map<String, String> gameNamesById = recentGameSessions.isEmpty
       ? const <String, String>{}
       : <String, String>{

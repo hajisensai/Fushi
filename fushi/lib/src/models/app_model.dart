@@ -2691,15 +2691,22 @@ class AppModel with ChangeNotifier {
       // order — the chain feeds fontFamily + fontFamilyFallback) before first
       // paint so the global theme uses them without a flash. Reuses the
       // settings just loaded above to avoid a second prefs read.
-      _appFontFamilies =
-          await AppFontLoader.resolveAndLoadAll(readerSettings.appUiFonts);
+      // 三个字体目标互不依赖，并发解析（同名家族由 AppFontLoader 的在途表去重，
+      // 只装一次）；串行三条链 = 首帧前三段可见等待。
+      final Future<List<String>> appFontsF =
+          AppFontLoader.resolveAndLoadAll(readerSettings.appUiFonts);
       // TODO-864: 视频字幕字体同样在首帧前从 videoSubtitle 目标解析。
-      _subtitleFontFamily =
-          await AppFontLoader.resolveAndLoad(readerSettings.videoSubtitleFonts);
+      final Future<String?> subtitleFontF =
+          AppFontLoader.resolveAndLoad(readerSettings.videoSubtitleFonts);
       // 游戏文本字体链也在首帧前解析：否则 texthooker 页面首次打开会先用主题字体
       // 画一帧再跳变（refreshAppFont 要等到用户改设置才跑）。
-      _gameLookupFontFamilies =
-          await AppFontLoader.resolveAndLoadAll(readerSettings.gameLookupFonts);
+      final Future<List<String>> gameFontsF =
+          AppFontLoader.resolveAndLoadAll(readerSettings.gameLookupFonts);
+      await Future.wait<Object?>(
+          <Future<Object?>>[appFontsF, subtitleFontF, gameFontsF]);
+      _appFontFamilies = await appFontsF;
+      _subtitleFontFamily = await subtitleFontF;
+      _gameLookupFontFamilies = await gameFontsF;
       ReaderFushiSource.readerSettings = readerSettings;
 
       // Start polling physical controllers on platforms that need it (desktop);
