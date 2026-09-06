@@ -358,10 +358,55 @@ void main() {
           greaterThanOrEqualTo(r.matches[0].normCharEnd));
     });
 
-    test('起点检测：首条 cue 精确失败时从后续精确锚点开始', () {
+    test('起点检测：片头出版社名只在书尾版权页精确命中，不把游标钉到书尾（第 13 卷 0% 事故）', () {
+      // 真机复现（無職転生 13 卷，ASR 字幕 8221 条）：前 15 条 cue 里只有
+      // 「株式会社KADOKAWA」精确命中，位置在最后一节版权页；旧起点检测取「任一精确
+      // 命中的最小偏移」→ 游标 128600/128690，之后全部 miss、匹配率 0%。
+      // 正文句子与 ASR 听写有假名/汉字差（精确失败），只能靠全书模糊佐证 + 余量检查。
+      final String body = List<String>.generate(
+        40,
+        (int i) => '第$i段落は物語の本文であって聴き取りとほぼ同じである。',
+      ).join();
+      final List<EpubSection> sections = <EpubSection>[
+        mkSection(0, '無職転生　異世界行ったら本気だす　十三'),
+        mkSection(
+            1,
+            '目覚め。それは甘美なる匂いによってもたらされた。'
+            'まどろみの中でふわりと香る愛おしい匂いだ。'
+            '驚きに目を開くと目の前に神がいた。$body'),
+        mkSection(2, '発行　株式会社KADOKAWA　東京都千代田区富士見'),
+      ];
+      final List<AudioCue> cues = <AudioCue>[
+        mkCue(0, 'オーディブルがお届けする最高のライトノベル'),
+        mkCue(1, 'どうぞお楽しみください'),
+        mkCue(2, '理不尽な孫の手チョ'),
+        mkCue(3, '株式会社KADOKAW'), // 版权页精确命中（ASR 吞尾字也一样）
+        mkCue(4, 'それは甘美なるにおいによってもたらされた'), // 匂い→におい
+        mkCue(5, 'まどろみの中でふわりと香るいとおしい匂いだ'), // 愛おしい→いとおしい
+        mkCue(6, '驚きに目を開くと目の前に神がいた'),
+        for (int i = 0; i < 40; i++)
+          mkCue(7 + i, '第$i段落は物語の本文であって聴き取りとほぼ同じである'),
+      ];
+
+      final MatchResult r =
+          EpubSrtMatcher.match(sections: sections, cues: cues);
+
+      // 正文全部命中；版权页那条不许成为起点（余量检查淘汰，且没有同伙佐证）。
+      expect(r.matches[4].matched, isTrue);
+      expect(r.matches[5].matched, isTrue);
+      expect(r.matches[6].matched, isTrue);
+      expect(r.matches[6].sectionIndex, 1);
+      for (int i = 7; i < cues.length; i++) {
+        expect(r.matches[i].matched, isTrue, reason: 'cue #$i');
+      }
+      expect(r.matchRate, greaterThan(0.9));
+    });
+
+    test('起点检测：首条 cue 精确失败时仍从正文开头起步，首条靠窗口内模糊命中', () {
       // 真实现象：EPUB 首句 `<b>…</b>` 后原作者多加 1 字标点/送り仮名差异，
-      // SRT 听写与 EPUB 差 1 字 → exact 失败。当前 matcher 不回溯补首条，
-      // 直接从后续精确锚点开始，避免导入时做指数级补救。
+      // SRT 听写与 EPUB 差 1 字 → exact 失败。起点检测对精确失败的探测 cue 做全书
+      // 模糊（≥ 阈值）——首条本身就把起点定到 0，主循环再在窗口内模糊命中它；
+      // 旧实现只认精确，起点落到第二条、首条永远 miss。
       // 注：あ→ア 的差异已被片假名归一化吸收，改用汉字差异来测试。
       final List<EpubSection> sections = <EpubSection>[
         mkSection(0, '最初の文はここにある二番目の文で続く最後の文で終わる'),
@@ -375,7 +420,8 @@ void main() {
       final MatchResult r =
           EpubSrtMatcher.match(sections: sections, cues: cues);
 
-      expect(r.matches[0].matched, isFalse);
+      expect(r.matches[0].matched, isTrue);
+      expect(r.matches[0].normCharStart, 0);
       expect(r.matches[1].matched, isTrue);
       expect(r.matches[2].matched, isTrue);
       expect(r.matches[1].normCharStart, 10);

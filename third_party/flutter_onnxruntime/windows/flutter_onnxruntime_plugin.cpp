@@ -473,6 +473,31 @@ void FlutterOnnxruntimePlugin::HandleCreateSession(
         session_options.SetInterOpNumThreads(std::get<int32_t>(inter_threads_it->second));
       }
 
+      // Hibiki: pin named free dimensions (see OrtSessionOptions.freeDimensionOverrides).
+      auto free_dims_it = options_map.find(flutter::EncodableValue("freeDimensionOverrides"));
+      if (free_dims_it != options_map.end() && std::holds_alternative<flutter::EncodableMap>(free_dims_it->second)) {
+        const auto &free_dims = std::get<flutter::EncodableMap>(free_dims_it->second);
+        for (const auto &dim_pair : free_dims) {
+          if (!std::holds_alternative<std::string>(dim_pair.first)) {
+            continue;
+          }
+          int64_t dim_value = -1;
+          if (std::holds_alternative<int32_t>(dim_pair.second)) {
+            dim_value = std::get<int32_t>(dim_pair.second);
+          } else if (std::holds_alternative<int64_t>(dim_pair.second)) {
+            dim_value = std::get<int64_t>(dim_pair.second);
+          }
+          if (dim_value <= 0) {
+            FailWith(result, "INVALID_ARG", "freeDimensionOverrides values must be positive integers");
+            return;
+          }
+          // The C++ wrapper in this ORT build does not expose the override on
+          // Ort::SessionOptions; go through the C API.
+          Ort::ThrowOnError(Ort::GetApi().AddFreeDimensionOverrideByName(
+              session_options, std::get<std::string>(dim_pair.first).c_str(), dim_value));
+        }
+      }
+
       // Get the device ID, if not provided, set to 0
       int device_id = 0;
       auto device_id_it = options_map.find(flutter::EncodableValue("deviceId"));

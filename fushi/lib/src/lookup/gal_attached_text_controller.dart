@@ -345,25 +345,41 @@ class GalAttachedTextController extends ChangeNotifier {
   bool get isReady =>
       _status == GalAttachedTextStatus.activeAttached ||
       _status == GalAttachedTextStatus.activeNative;
+  /// 裸左击风险恒为已接受（BUG-2154，用户 2026-09-05 拍板去掉这道门）。
+  ///
+  /// 为什么是「恒定接受」而不是「删掉这个概念」：`riskAccepted` 不只是 UI，它作为
+  /// `allow_risk` 一路传到 hook 的遮罩层契约（`kLookupShieldStatusRiskAllowed`）。把它
+  /// 从这一侧删掉会让 IPC 两端对同一次事务的理解分叉；恒定为 true 则等价于「用户每次都
+  /// 点了那个按钮」，两侧契约不变，而用户看得见的那道门消失。
+  ///
+  /// 这道门原本是**恒成立**而不是偶尔成立：通用遮罩层的结论永远只能是 Partial
+  /// （`hook/generic_input_shield.inc:115-119` 写死 never Verified），而
+  /// `kLookupShieldStatusVerified` 在整个 hook 里没有任何生产者（全仓 status_flags 只有
+  /// Faulted / KnownUncovered / Partial 三个赋值点）。于是每一个游戏、每一次启动都要先去
+  /// texthooker 工具条上点一次「确认点击风险」，而游戏里没有任何提示指向它；同意还按
+  /// exe SHA-256 存，换个版本要重来一次。真机 フタマタ恋愛 上就卡在这里一整天。
+  ///
+  /// 持久化字段 `unsafeLeftClickAccepted` **保留不动**：存量 profile 里有它，
+  /// `GalLookupSurfaceProfileV1.fromMap` 缺字段会整条解析失败。
+  static const bool _unsafeLeftClickAlwaysAccepted = true;
+
   bool get isUnsafeInputActive =>
       (_status == GalAttachedTextStatus.activeAttached ||
           _status == GalAttachedTextStatus.activeNative) &&
       (_profile?.mode ?? GalLookupSurfaceMode.auto) !=
           GalLookupSurfaceMode.off &&
       _shieldStatus.conclusion != GalAttachedShieldConclusion.verified &&
-      (_profile?.unsafeLeftClickAccepted ?? false);
-  bool get needsUnsafeRiskAcceptance =>
-      _unsafeRiskAcceptanceRequestToken != null &&
-      (_status == GalAttachedTextStatus.needsRiskAcceptance ||
-          _status == GalAttachedTextStatus.suspended) &&
-      _target != null &&
-      _exePath != null &&
-      _exeSha256 != null &&
-      (_profile?.mode ?? GalLookupSurfaceMode.auto) !=
-          GalLookupSurfaceMode.off &&
-      !(_profile?.unsafeLeftClickAccepted ?? false) &&
-      _shieldStatus.conclusion != GalAttachedShieldConclusion.verified &&
-      _shieldStatus.conclusion != GalAttachedShieldConclusion.faulted;
+      _unsafeLeftClickAlwaysAccepted;
+
+  /// 「还需要向用户索要裸左击风险确认吗」——由 [_unsafeLeftClickAlwaysAccepted]
+  /// 这一个真相源决定，不写字面量 `false`。恒定接受时它恒 false，于是
+  /// [unsafeRiskAcceptanceRequest] 恒 null，工具条上那个按钮不再出现
+  /// （`GalAttachedLookupWorkbench` 只在 request 非 null 时渲染它）。
+  ///
+  /// 写成派生而不是硬编码 false 的理由：这条门将来若要按引擎/按遮罩层结论重新开
+  /// 一部分，只需要把那个 const 换成条件，索要确认、令牌校验、profile 回写整条链
+  /// 仍然是接好的；硬编码 false 会让「改一个常量」变成「先考古哪些分支已经死了」。
+  bool get needsUnsafeRiskAcceptance => !_unsafeLeftClickAlwaysAccepted;
   GalAttachedUnsafeRiskAcceptanceRequest? get unsafeRiskAcceptanceRequest {
     final int? token = _unsafeRiskAcceptanceRequestToken;
     final GalAttachedSurfaceTarget? target = _target;
@@ -458,7 +474,7 @@ class GalAttachedTextController extends ChangeNotifier {
     // 局，新正文到达时重新走一遍 `_evaluateAndActivate`，由它照常调 configure 把
     // riskAccepted 传下去；准入判据一字未改，没授权的局仍旧停在 needsRiskAcceptance
     // 等用户点按钮。
-    final bool riskAlreadyGranted = _profile?.unsafeLeftClickAccepted ?? false;
+    const bool riskAlreadyGranted = _unsafeLeftClickAlwaysAccepted;
     if (nextText.isNotEmpty &&
         (_status == GalAttachedTextStatus.waitingForBodyThread ||
             (riskAlreadyGranted &&
@@ -668,16 +684,10 @@ class GalAttachedTextController extends ChangeNotifier {
       );
       return;
     }
-    final bool riskAccepted = profile.unsafeLeftClickAccepted;
-    if (!riskAccepted &&
-        _shieldStatus.conclusion != GalAttachedShieldConclusion.verified) {
-      _setAttachedProviderClaim(false);
-      _setStatus(
-        GalAttachedTextStatus.needsRiskAcceptance,
-        reason: 'evaluate_profile_risk_not_accepted',
-      );
-      return;
-    }
+    // 风险恒定接受（见 _unsafeLeftClickAlwaysAccepted 的说明）：这里原本是
+    // `!riskAccepted && conclusion != verified` 的准入门，而 conclusion 永远不可能是
+    // verified，于是它对每个游戏恒成立、把面板整个挡在门外。
+    const bool riskAccepted = _unsafeLeftClickAlwaysAccepted;
     final GalLookupSurfaceVariantV1? variant = profile.bestVariantForClient(
       client,
     );
@@ -1151,15 +1161,6 @@ class GalAttachedTextController extends ChangeNotifier {
           _setStatus(
             GalAttachedTextStatus.needsCalibration,
             reason: 'state_event_no_variant_for_client',
-          );
-          break;
-        }
-        if (!profile.unsafeLeftClickAccepted &&
-            _shieldStatus.conclusion != GalAttachedShieldConclusion.verified) {
-          _surfaceVisible = false;
-          _setStatus(
-            GalAttachedTextStatus.needsRiskAcceptance,
-            reason: 'state_event_risk_not_accepted',
           );
           break;
         }
@@ -2070,9 +2071,8 @@ class GalAttachedTextController extends ChangeNotifier {
       _probeMiddleObservedIndex == probes.middleIndex &&
       _probeEndObservedIndex == probes.endIndex;
 
-  bool get _nativeRiskGateSatisfied =>
-      _shieldStatus.conclusion == GalAttachedShieldConclusion.verified ||
-      (_profile?.unsafeLeftClickAccepted ?? false);
+  /// 恒 true：风险已恒定接受（见 _unsafeLeftClickAlwaysAccepted）。
+  bool get _nativeRiskGateSatisfied => true;
 
   void _activateNativeOrRequestRisk({String? reason}) {
     _activeVariant = null;

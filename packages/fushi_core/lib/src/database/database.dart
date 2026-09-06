@@ -724,7 +724,78 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 96;
+  int get schemaVersion => 97;
+
+  /// v97：把 v52 / v57 / v87 / v88 四级台阶里「加列 / 改列名」的幂等语句重放一次，
+  /// 补齐漂移库（版本号先于这些台阶被写高的库）。每条都先查 `_columnExists`，
+  /// 正常库全部 no-op。语句与原台阶逐字相同，避免两处定义出现分叉。
+  Future<void> _replayColumnStepsForDriftedSchema(Migrator m) async {
+    // v52：合集级音轨 / 调轴记忆。
+    if (await _tableExists('media_collections')) {
+      if (!await _columnExists('media_collections', 'audio_track_id')) {
+        await m.addColumn(mediaCollections, mediaCollections.audioTrackId);
+      }
+      if (!await _columnExists('media_collections', 'subtitle_delay_ms')) {
+        await m.addColumn(mediaCollections, mediaCollections.subtitleDelayMs);
+      }
+    }
+    // v87 / v88：内容语言字体链的五个 language 列。
+    if (await _tableExists('dictionary_metadata') &&
+        !await _columnExists('dictionary_metadata', 'language_override')) {
+      await m.addColumn(
+          dictionaryMetadata, dictionaryMetadata.languageOverride);
+    }
+    if (await _tableExists('epub_books') &&
+        !await _columnExists('epub_books', 'language')) {
+      await m.addColumn(epubBooks, epubBooks.language);
+    }
+    if (await _tableExists('video_books') &&
+        !await _columnExists('video_books', 'language')) {
+      await m.addColumn(videoBooks, videoBooks.language);
+    }
+    if (await _tableExists('srt_books') &&
+        !await _columnExists('srt_books', 'language')) {
+      await m.addColumn(srtBooks, srtBooks.language);
+    }
+    if (await _tableExists('galgames') &&
+        !await _columnExists('galgames', 'language')) {
+      await m.addColumn(galgames, galgames.language);
+    }
+    // v57：墓碑表 removed_at → deleted_at（表重建，FK OFF/ON 夹住，与 v57 同款）。
+    final bool renameCollection =
+        await _tableExists('collection_member_tombstones') &&
+            await _columnExists('collection_member_tombstones', 'removed_at') &&
+            !await _columnExists('collection_member_tombstones', 'deleted_at');
+    final bool renameTag = await _tableExists(
+            'book_tag_membership_tombstones') &&
+        await _columnExists('book_tag_membership_tombstones', 'removed_at') &&
+        !await _columnExists('book_tag_membership_tombstones', 'deleted_at');
+    if (renameCollection || renameTag) {
+      await customStatement('PRAGMA foreign_keys = OFF');
+      try {
+        if (renameCollection) {
+          await m.alterTable(TableMigration(
+            collectionMemberTombstones,
+            columnTransformer: {
+              collectionMemberTombstones.deletedAt:
+                  const CustomExpression<int>('removed_at'),
+            },
+          ));
+        }
+        if (renameTag) {
+          await m.alterTable(TableMigration(
+            bookTagMembershipTombstones,
+            columnTransformer: {
+              bookTagMembershipTombstones.deletedAt:
+                  const CustomExpression<int>('removed_at'),
+            },
+          ));
+        }
+      } finally {
+        await customStatement('PRAGMA foreign_keys = ON');
+      }
+    }
+  }
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -2796,9 +2867,13 @@ class FushiDatabase extends _$FushiDatabase
                     row.read<String>('key'): row.read<String>('value'),
                 };
                 final String downloadProxy =
-                    (legacy['download_custom_proxy'] ?? 's:').substring(2).trim();
-                final bool globalEmpty =
-                    (legacy['update_custom_proxy'] ?? 's:').substring(2).trim().isEmpty;
+                    (legacy['download_custom_proxy'] ?? 's:')
+                        .substring(2)
+                        .trim();
+                final bool globalEmpty = (legacy['update_custom_proxy'] ?? 's:')
+                    .substring(2)
+                    .trim()
+                    .isEmpty;
                 if (legacy['download_network_proxy_mode'] == 's:custom' &&
                     downloadProxy.isNotEmpty &&
                     globalEmpty) {
@@ -2831,7 +2906,8 @@ class FushiDatabase extends _$FushiDatabase
             // 保留 v91 前行为（Never break userspace）；绝不回填 ja。守卫幂等
             // （fresh DB 已由 onCreate 建好，重复升级 _columnExists 短路 no-op）。
             if (await _tableExists('media_collections') &&
-                !await _columnExists('media_collections', 'subtitle_language')) {
+                !await _columnExists(
+                    'media_collections', 'subtitle_language')) {
               await m.addColumn(
                   mediaCollections, mediaCollections.subtitleLanguage);
             }
@@ -2877,7 +2953,8 @@ class FushiDatabase extends _$FushiDatabase
             // 旧行全 NULL = 走旧行为。守卫幂等（fresh DB 由 onCreate 建好）。
             if (await _tableExists('video_download_jobs') &&
                 !await _columnExists('video_download_jobs', 'identity_json')) {
-              await m.addColumn(videoDownloadJobs, videoDownloadJobs.identityJson);
+              await m.addColumn(
+                  videoDownloadJobs, videoDownloadJobs.identityJson);
             }
             if (await _tableExists('video_download_subscriptions') &&
                 !await _columnExists(
@@ -2916,6 +2993,20 @@ class FushiDatabase extends _$FushiDatabase
               await m.addColumn(dictionaryMetadata,
                   dictionaryMetadata.expandedLanguagesJson);
             }
+          }
+          if (from < 97) {
+            // v97（schema 漂移修补，BUG-2162）：真实用户库 user_version 已是 95，却缺
+            // v52 / v57 / v87 / v88 四级台阶的产物——epub_books / dictionary_metadata /
+            // video_books / srt_books / galgames 的 language 系列列、media_collections 的
+            // audio_track_id + subtitle_delay_ms、两张墓碑表的 removed_at 没改名
+            // deleted_at。这个库的版本号是在另一条并行迁移史上被写到那些数字之上的
+            // （本仓与上游的 schema 号曾重号），`from < N` 对它永远不会再进；表现是
+            // 导入书 INSERT epub_books(... language) 直接 no such column，整个导入失败。
+            // 已发布的版本号只读（v88 注释的规则），唯一修法是开新台阶把那几步**幂等
+            // 重放**一次：每条都有 _columnExists 守卫，正常升级路径上来的库全部短路
+            // no-op；漂移库补齐后与 fresh 库同形。多余列（漂移库里另一条史留下的
+            // video_download_jobs.episode 等）不动——SQLite 多一列无害，删列有丢数据风险。
+            await _replayColumnStepsForDriftedSchema(m);
           }
         },
         onCreate: (m) async {
