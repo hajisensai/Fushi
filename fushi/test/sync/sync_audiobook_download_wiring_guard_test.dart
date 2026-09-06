@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'sync_orchestrator_source_corpus.dart';
+
 /// BUG-406 守卫：互联下载有声书丢音频。
 ///
 /// 历史 bug = 互联下载（书架远端书卡 + 同步对比对话框）只下/导 EPUB，从不补下
@@ -74,7 +76,8 @@ void main() {
     test(
         'orchestrator _syncAudiobooksLive wires toPull download + import '
         '(not push-only)', () {
-      final String src = read('lib/src/sync/sync_orchestrator.dart');
+      final String src =
+          read('lib/src/sync/sync_orchestrator/audiobooks.part.dart');
 
       // 必须遍历 diff.toPull（历史 push-only 时根本不读 toPull）。
       expect(src, contains('diff.toPull'),
@@ -110,7 +113,12 @@ void main() {
     test(
         'orchestrator pull import binds bookKeyOverride to the local EPUB key '
         '(localBookKeys-filtered), not a recomputed sanitize', () {
-      final String src = read('lib/src/sync/sync_orchestrator.dart');
+      // 负向断言必须扫**整份合并语料**（主壳 + 全部 part）。B2 拆分后 audiobook
+      // 的 override 写入点仍有两处：audiobooks.part.dart:231（本用例的正向锚点）
+      // 与主壳 sync_orchestrator.dart 里 _downloadRemoteAudiobook 那一处。只读
+      // 那个 242 行的 part，主壳那处就掉出了下面 BUG-414 负向断言的视野——谁把它
+      // 改成 bookKeyOverride: sanitizeTtuFilename(info.title)，这条守卫不会红。
+      final String src = readSyncOrchestratorSource();
       // Pull import 的 override 绑定的是 toPull 循环变量 key（= 已被 localBookKeys
       // 筛过的本地 EPUB bookKey），而非任何 sanitizeTtuFilename(...title)。
       expect(src, contains('bookKeyOverride: key'),
@@ -124,12 +132,13 @@ void main() {
     });
 
     test(
-        'all three pull write sites import audiobooks WITHOUT '
+        'all four pull write sites import audiobooks WITHOUT '
         'sanitizeTtuFilename(...title) as the bound key', () {
       const List<String> sites = <String>[
         'lib/src/pages/implementations/reader_history/remote.part.dart',
         'lib/src/sync/sync_compare_dialog.dart',
         'lib/src/sync/sync_orchestrator.dart',
+        'lib/src/sync/sync_orchestrator/audiobooks.part.dart',
       ];
       for (final String site in sites) {
         final String src = read(site);
