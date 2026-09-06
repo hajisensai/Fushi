@@ -4290,5 +4290,6 @@
   "asr_models_delete_confirm_message": "Transcription in this language will need the model downloaded again.",
   "asr_models_delete_done_freed": "Deleted, freed $size",
   "asr_models_download_failed": "Download failed: $error",
-  "audiobook_transcribe_probe_failed": "GPU detection failed, planning for CPU: $reason"
+  "audiobook_transcribe_probe_failed": "GPU detection failed, planning for CPU: $reason",
+  "sync_compare_only_conflicts": "Only conflicts"
 }

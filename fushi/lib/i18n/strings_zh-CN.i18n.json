@@ -4290,5 +4290,6 @@
   "asr_models_delete_confirm_message": "再转录这种语言时需要重新下载模型。",
   "asr_models_delete_done_freed": "已删除，释放 $size",
   "asr_models_download_failed": "下载失败：$error",
-  "audiobook_transcribe_probe_failed": "GPU 探测失败，按 CPU 规划：$reason"
+  "audiobook_transcribe_probe_failed": "GPU 探测失败，按 CPU 规划：$reason",
+  "sync_compare_only_conflicts": "只看冲突"
 }
