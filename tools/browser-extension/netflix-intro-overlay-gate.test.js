@@ -202,7 +202,10 @@ test('①b 中途续播：判据是推进量而不是绝对位置（只看位置
     '必须相对开始等待时的位置再推进一整个提示窗，不能因绝对位置大就放行');
 });
 
-test('②  推不动时有上界返回 ok:false，不无限等卡死批量', async () => {
+// ② / ②b 测的就是「上界成立」，所以它们自己必须有 timeout：上界一旦失效（比如有人把
+// tick 改回 `await v.play()`），node:test 默认 timeout=Infinity 会让整个文件挂到 CI job
+// 超时，而不是一条干净的红。5s 对 400ms 的上界绰绰有余。
+test('②  推不动时有上界返回 ok:false，不无限等卡死批量', { timeout: 5000 }, async () => {
   const { sandbox } = loadContent();
   const v = makeVideo(0, 0); // rate=0：play() 了也不前进（DRM/弱网）
   const t0 = Date.now();
@@ -213,7 +216,7 @@ test('②  推不动时有上界返回 ok:false，不无限等卡死批量', asy
   assert.ok(v.playCalls > 0, '等待期间应反复补 play()');
 });
 
-test('②b play() 永不 settle 时上界仍然成立（await 它就是死锁）', async () => {
+test('②b play() 永不 settle 时上界仍然成立（await 它就是死锁）', { timeout: 5000 }, async () => {
   // 这是上一条测不到的那一档，也是整批唯一的串行关键路径上最致命的形状：
   // 媒体永远不就绪（DRM 授权卡住 / 弱网 stall）时 v.play() 返回的 promise 可以
   // 无限期 pending，既不 resolve 也不 reject。旧实现 `await v.play()` 一挂，
