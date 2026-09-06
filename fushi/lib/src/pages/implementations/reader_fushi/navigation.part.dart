@@ -128,6 +128,8 @@ extension _ReaderNavigation on _ReaderFushiPageState {
         _readerContentReady = true;
         _hasEverLoaded = true;
       });
+      _openTrace.mark('firstRestore');
+      _openTrace.report();
       // BUG-467：_hasEverLoaded 刚翻 true，底栏预留 _bottomChromeReserve 此刻才非 0。
       // 初始 WebView HTML 是在 _hasEverLoaded 尚为 false 时求值的（漏底栏高），这里补下一次
       // chrome insets，让正文列底沿避开底栏（竖排尤为明显，见辅助方法长注释）。
@@ -1512,7 +1514,8 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       onWriteError: (Object e, StackTrace st) =>
           ErrorLogService.instance.log('StudyClock.write(epub)', e, st),
     );
-    clock.start();
+    // 用户在统计浮层手动暂停时不自动起表（章导航 / 进度刷新都会经这里）。
+    if (!_studyClockManualPause) clock.start();
     return clock;
   }
 

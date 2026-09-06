@@ -14,6 +14,9 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/book_css_editor_page.dart';
+import 'package:fushi/src/reader/reader_audiobook_panel.dart';
+import 'package:fushi/src/reader/reader_desktop_chrome.dart'
+    show ReaderSideSheet, ReaderSideSheetSectionLabel;
 import 'package:fushi/src/settings/cupertino_settings_renderer.dart';
 import 'package:fushi/src/settings/master_detail_settings_sheet.dart';
 import 'package:fushi/src/settings/material_settings_renderer.dart';
@@ -23,6 +26,23 @@ import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_renderer.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
 import 'package:fushi/utils.dart';
+
+/// 面板的呈现形态。
+enum ReaderQuickSettingsPresentation {
+  /// 居中对话框（桌面）/ 底部 modal sheet（移动端）：主页 + 分类子页 / 宽窗 master-detail。
+  sheet,
+
+  /// 桌面端右侧抽屉「导航」：阅读进度 + 书内搜索 + 按字数跳转 + 章节列表 + 收藏。
+  sideSheetNavigation,
+
+  /// 桌面端右侧抽屉「设置」：布局显示 / 阅读操作 / 查词 三组分段切换，末尾歌词
+  /// 模式切换。有声书不在这里（见 [audiobookPanel]）。
+  sideSheetAppearance,
+
+  /// 桌面端居中「有声书」面板（Niratan Sasayaki 形态）：封面 + 书名 + 进度条 +
+  /// 播放控制，下接「资源 / 章节 / 设置」分段。
+  audiobookPanel,
+}
 
 class ReaderQuickSettingsSheet extends StatefulWidget {
   const ReaderQuickSettingsSheet({
@@ -63,7 +83,17 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
     this.onReloadChapter,
     this.onLyricsReload,
     this.onAudioImport,
+    this.onPickAlignment,
+    this.onTranscribe,
+    this.onOpenStatistics,
+    this.autofocusSearch = false,
+    this.initialSideSheetTab = 'layout',
+    this.onSideSheetTabChanged,
+    this.expandedTocParents,
     this.initialSubPage,
+    this.presentation = ReaderQuickSettingsPresentation.sheet,
+    this.onClose,
+    this.coverPath,
     super.key,
   });
 
@@ -127,10 +157,38 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
   final Future<void> Function()? onLyricsReload;
   final VoidCallback? onAudioImport;
 
+  /// 有声书面板「资源」页：选择 / 更换对齐文件（打开预填当前音频的导入对话框）。
+  final VoidCallback? onPickAlignment;
+
+  /// 有声书面板「资源」页：对当前音频做设备端转录生成字幕。null = 本机不支持。
+  final VoidCallback? onTranscribe;
+
+  /// 导航抽屉打开即把焦点放进书内搜索框（Ctrl+F 的语义就是要搜）。
+  final bool autofocusSearch;
+
+  /// 移动端 / 窄窗主页的「阅读统计」行（打开阅读器内统计浮层）；null 不显示。
+  final VoidCallback? onOpenStatistics;
+
+  /// 桌面端右侧设置抽屉初始分组（页面记忆上次打开的 tab）。
+  final String initialSideSheetTab;
+  final ValueChanged<String>? onSideSheetTabChanged;
+
+  /// 目录折叠状态的会话记忆（页面持有的可变集合；null 则本面板自持）。
+  final Set<String>? expandedTocParents;
+
   /// TODO-1309①：打开面板时直达的子页 id（如 'location' 导航子页）。null =
   /// 默认落主菜单（窄窗）/ 默认分类（宽窗）。仅用于初始化 [_subPage]，
   /// 之后由用户导航自行覆盖。
   final String? initialSubPage;
+
+  /// 呈现形态（桌面端右侧抽屉 vs 既有 sheet），见 [ReaderQuickSettingsPresentation]。
+  final ReaderQuickSettingsPresentation presentation;
+
+  /// 抽屉形态的关闭回调（标题行 ×）。sheet 形态不用（由外壳路由自行关闭）。
+  final VoidCallback? onClose;
+
+  /// 书籍封面文件路径（有声书面板左侧显示；null 不显示）。
+  final String? coverPath;
 
   @override
   State<ReaderQuickSettingsSheet> createState() =>
@@ -151,6 +209,17 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
   bool _exitScheduled = false;
 
   late String? _subPage = widget.initialSubPage;
+
+  /// 桌面端右侧「设置」抽屉当前展开的分组 id（初值来自页面记忆）。
+  late String _sideSheetTab = widget.initialSideSheetTab;
+
+  /// 导航抽屉里当前章那一行的 key：打开时滚到它。
+  final GlobalKey _currentTocRowKey = GlobalKey();
+
+  /// 目录里手动展开的父节（按父节 label）；深度 >= 2 的子节默认折叠，当前章所在的
+  /// 父节自动展开。
+  late final Set<String> _expandedTocParents =
+      widget.expandedTocParents ?? <String>{};
 
   /// 最近一次 LayoutBuilder 是否判定为宽窗。供 PopScope.canPop 读取：宽窗
   /// master-detail 下选中态非 null 也允许直接关闭（不会卡在「返回上一级」）。
@@ -263,6 +332,17 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     final ThemeData theme = Theme.of(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
+    switch (widget.presentation) {
+      case ReaderQuickSettingsPresentation.sideSheetNavigation:
+        return _buildNavigationSideSheet(context, theme);
+      case ReaderQuickSettingsPresentation.sideSheetAppearance:
+        return _buildAppearanceSideSheet(context, theme);
+      case ReaderQuickSettingsPresentation.audiobookPanel:
+        return _buildAudiobookPanel(context, theme);
+      case ReaderQuickSettingsPresentation.sheet:
+        break;
+    }
+
     return FushiMasterDetailSettingsSheet(
       // 宽窗 master-detail：选中态始终有值（默认 appearance），返回键应直接关
       // 弹窗而非退回「未选中」；窄窗 push 时保留原「先回主页」语义。
@@ -287,130 +367,142 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
             ? _buildSubPage(context, theme)
             : _buildMainPage(context, theme);
       },
-      // 宽窗左右 master-detail（左父菜单 + 右详情）——视频走顶部分类条，两边发散，
-      // 故 MaterialSupportingPaneLayout / SupportingPaneSide 等符号留在此回调里。
+      // 宽窗不再有 master-detail：平板宽窗在到达本面板之前就被路由到左右抽屉
+      // （readerUsesSideSheets），这里只保留外壳要求的回调，兜底铺同一份窄窗内容。
       wideBuilder: (BuildContext context, BoxConstraints constraints) {
-        // TODO-725：导航置首后宽窗默认选中改 'location'（不再默认 appearance）。
-        final String selectedId = _subPage ?? 'location';
-        final Color dividerColor = isCupertinoPlatform(context)
-            ? CupertinoColors.separator.resolveFrom(context)
-            : FushiDesignTokens.of(context).surfaces.outline;
-        // 左父菜单与右详情两个 pane 同一份 padding（此前两份逐字相同的
-        // EdgeInsets.fromLTRB，收敛为共享公式 paneInsets 的一次调用）。
-        final EdgeInsets widePanePadding =
-            FushiMasterDetailSettingsSheet.paneInsets(
-          context,
-          horizontal: tokens.spacing.page + tokens.spacing.gap / 2,
-          top: tokens.spacing.gap / 2,
-        );
-        // 用可用的有界高度撑满整张 master-detail（等价于主页设置把
-        // MaterialSupportingPaneLayout 放进 Expanded）：Row(stretch) 才能给
-        // 两个 pane 紧约束 → 各自的 SingleChildScrollView 独立滚动、左父菜
-        // 单固定不跟随右详情滚动。maxHeightFactor 保证 maxHeight 有界。
-        return SizedBox(
-          height: constraints.maxHeight,
-          child: MaterialSupportingPaneLayout(
-            minSplitWidth: kFushiSettingsWideThreshold,
-            supportingWidth: kFushiSettingsSupportingPaneWidth,
-            supportingSide: SupportingPaneSide.start,
-            dividerColor: dividerColor,
-            // 左父菜单项不多时垂直居中（progress/分类/动作整体居中），
-            // 不再让「阅读进度」死贴顶端；内容超过 pane 高度时
-            // ConstrainedBox 的 minHeight 被内容满足，照常滚动。
-            supporting: LayoutBuilder(
-              builder: (
-                BuildContext context,
-                BoxConstraints paneConstraints,
-              ) {
-                final double minContentHeight =
-                    paneConstraints.maxHeight > widePanePadding.vertical
-                        ? paneConstraints.maxHeight - widePanePadding.vertical
-                        : 0;
-                return SingleChildScrollView(
-                  padding: widePanePadding,
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      minHeight: minContentHeight,
-                    ),
-                    child: _buildWidePane(context, theme, selectedId),
-                  ),
-                );
-              },
-            ),
-            // KeyedSubtree：按选中 id 编码，切换时整棵右 pane 子树作废重
-            // 建，避免 Flutter 复用上一详情同位置 Element 触发 Switch 圆点
-            // / Segmented 滑动等复用副作用（同 settings_home_page）。
-            primary: KeyedSubtree(
-              key: ValueKey<String>(selectedId),
-              child: SingleChildScrollView(
-                padding: widePanePadding,
-                child: _buildWidePrimary(context, theme, selectedId),
-              ),
-            ),
+        return SingleChildScrollView(
+          key: ValueKey<String>(_subPage ?? 'main'),
+          padding: FushiMasterDetailSettingsSheet.paneInsets(
+            context,
+            horizontal: tokens.spacing.page + tokens.spacing.gap / 2,
+            top: tokens.spacing.gap / 2,
           ),
+          child: _subPage != null
+              ? _buildSubPage(context, theme)
+              : _buildMainPage(context, theme),
         );
       },
     );
   }
 
-  Widget _buildWidePane(
-    BuildContext context,
-    ThemeData theme,
-    String selectedId,
-  ) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final double sectionGap = tokens.spacing.gap + tokens.spacing.gap / 2;
-    // 左父菜单只留「分类导航 + 动作」，做矮以让更多窗口进宽窗（阅读进度已移到右侧
-    // 外观详情顶部，见 [_buildWidePrimary]）。项少时整体垂直居中、不贴顶。
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      mainAxisAlignment: MainAxisAlignment.center,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (final cat in _wideCategories())
-          FushiListItem(
-            selected: cat.id == selectedId,
-            selectedShape: FushiListItemSelectedShape.pill,
-            leading: Icon(cat.icon),
-            title: Text(cat.label),
-            // 左父菜单固定 208px，长标签（如「布局与显示」选中加粗后 ~80px）
-            // 会触发 ellipsis 截断成「布局与…」；允许换成两行而非省略。
-            titleMaxLines: 2,
-            onTap: () => setState(() => _subPage = cat.id),
-          ),
-        SizedBox(height: sectionGap),
-        _buildActionRow(context),
-      ],
-    );
-  }
+  VoidCallback _sideSheetClose(BuildContext context) =>
+      widget.onClose ?? () => Navigator.of(context).maybePop();
 
-  /// 宽窗右详情：默认分类（导航置首后为 'location'）顶部并入阅读进度（左父菜单不
-  /// 再单列进度，借此把左栏做矮、更多窗口能进宽窗）。其余分类只渲染各自详情。
-  Widget _buildWidePrimary(
-    BuildContext context,
-    ThemeData theme,
-    String selectedId,
-  ) {
-    if (selectedId != 'location') {
-      return _subPageContent(selectedId);
-    }
+  /// 桌面端右侧抽屉「导航」：进度 + 既有的导航子页内容（搜索 / 字数跳转 / 章节 / 收藏）。
+  Widget _buildNavigationSideSheet(BuildContext context, ThemeData theme) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double sectionGap = tokens.spacing.gap + tokens.spacing.gap / 2;
     final Widget progress = _buildProgressSection(theme);
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (progress is! SizedBox) ...[
-          progress,
-          SizedBox(height: sectionGap),
+    // 打开即滚到当前章那一行（首帧后；行不存在时 no-op）。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final BuildContext? rowContext = _currentTocRowKey.currentContext;
+      if (rowContext == null || !mounted) return;
+      unawaited(Scrollable.ensureVisible(
+        rowContext,
+        alignment: 0.3,
+        duration: const Duration(milliseconds: 160),
+      ));
+    });
+    return ReaderSideSheet(
+      title: t.section_navigation,
+      onClose: _sideSheetClose(context),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          if (progress is! SizedBox) ...[
+            progress,
+            SizedBox(height: sectionGap),
+          ],
+          _buildLocationSection(theme),
         ],
-        _subPageContent(selectedId),
-      ],
+      ),
     );
   }
 
-  /// 宽窗 master-detail 左 pane 的分类项（id 与 [_subPageContent] 的 case 对齐）。
+  /// 桌面端右侧抽屉「设置」：顶部分段条一次只展开一组（布局显示 / 阅读操作 / 查词），
+  /// 避免几十行全部纵向平铺；有声书不在这里——它有自己的居中面板
+  /// （[ReaderQuickSettingsPresentation.audiobookPanel]）。歌词模式切换挂在
+  /// 「布局显示」末尾（退出走顶部工具栏的返回键）。
+  Widget _buildAppearanceSideSheet(BuildContext context, ThemeData theme) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final List<({String id, IconData icon, String label})> cats =
+        _wideCategories()
+            .where((cat) => cat.id != 'location' && cat.id != 'audiobook')
+            .toList();
+    final String tab = cats.any((cat) => cat.id == _sideSheetTab)
+        ? _sideSheetTab
+        : cats.first.id;
+    final List<Widget> children = <Widget>[
+      FushiSegmentedStrip<String>(
+        segments: <ButtonSegment<String>>[
+          for (final cat in cats)
+            ButtonSegment<String>(value: cat.id, label: Text(cat.label)),
+        ],
+        selected: tab,
+        alignment: Alignment.center,
+        onChanged: (String id) {
+          setState(() => _sideSheetTab = id);
+          widget.onSideSheetTabChanged?.call(id);
+        },
+      ),
+      SizedBox(height: tokens.spacing.gap),
+      // KeyedSubtree：按 tab 编码，切换时整棵内容子树作废重建，避免 Switch /
+      // Segmented 复用上一组同位置 Element 的动画副作用（同宽窗 master-detail）。
+      KeyedSubtree(
+        key: ValueKey<String>('fushi_side_sheet_tab_$tab'),
+        child: _subPageContent(tab),
+      ),
+    ];
+    if (tab == 'layout' && widget.onToggleLyricsMode != null) {
+      children
+        ..add(ReaderSideSheetSectionLabel(t.lyrics_mode))
+        ..add(AdaptiveSettingsSection(children: <Widget>[
+          AdaptiveSettingsNavigationRow(
+            key: const ValueKey<String>('fushi_lyrics_mode_toggle'),
+            title: widget.lyricsMode ? t.book_mode : t.lyrics_mode,
+            icon: widget.lyricsMode
+                ? Icons.auto_stories_outlined
+                : Icons.lyrics_outlined,
+            onTap: () {
+              Navigator.of(context).pop();
+              widget.onToggleLyricsMode!();
+            },
+          ),
+        ]));
+    }
+    return ReaderSideSheet(
+      title: t.reader_settings_section,
+      onClose: _sideSheetClose(context),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: children,
+      ),
+    );
+  }
+
+  /// 桌面端居中「有声书」面板：外壳与三个 tab 在 [ReaderAudiobookPanel]；「设置」
+  /// tab 的内容仍由本 sheet 提供（音量 / 速度 / 延迟等行的写路径在这里）。
+  Widget _buildAudiobookPanel(BuildContext context, ThemeData theme) {
+    return ReaderAudiobookPanel(
+      controller: widget.controller,
+      toc: widget.toc,
+      currentSection: widget.readerProgress?.$1,
+      onJumpSection: widget.onJumpSection,
+      title: widget.epubBook?.title ?? '',
+      chapterLabel: widget.chapterLabel,
+      coverPath: widget.coverPath,
+      onAudioImport: widget.onAudioImport,
+      onPickAlignment: widget.onPickAlignment,
+      onTranscribe: widget.onTranscribe,
+      settingsBuilder: (BuildContext ctx) =>
+          _buildAudiobookSettingsSection(Theme.of(ctx)),
+    );
+  }
+
+  /// 面板分类项（id 与 [_subPageContent] 的 case 对齐）：设置抽屉分段条、有声书
+  /// 面板与窄窗主页共用同一份顺序。
   /// audiobook 仅在有 controller 时出现。
   List<({String id, IconData icon, String label})> _wideCategories() {
     // TODO-725 / TODO-802：导航置首（location → layout → behavior → lookup →
@@ -481,6 +573,21 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
           page: 'audiobook',
         ),
     ];
+
+    if (widget.onOpenStatistics != null) {
+      // 移动端 / 窄窗也能到阅读器内统计浮层（桌面端在顶部工具栏）。
+      navigationRows.add(
+        AdaptiveSettingsNavigationRow(
+          key: const ValueKey<String>('fushi_sheet_statistics_row'),
+          title: t.reading_statistics,
+          icon: Icons.insights_outlined,
+          onTap: () {
+            Navigator.of(context).pop();
+            widget.onOpenStatistics!();
+          },
+        ),
+      );
+    }
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -860,6 +967,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
             Expanded(
               child: FushiTextField(
                 controller: _searchController,
+                autofocus: widget.autofocusSearch,
                 hintText: t.book_search_hint,
                 contentPadding: EdgeInsets.symmetric(
                   horizontal: tokens.spacing.rowHorizontal,
@@ -1019,20 +1127,54 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
 
   Widget _buildTocSection(BuildContext context, ThemeData theme) {
     final int? currentIdx = widget.readerProgress?.$1;
+    final List<TtuTocEntry> toc = widget.toc;
+    // 折叠规则：深度 >= 2 的条目挂在其 parent 下，parent 未展开则不画；当前章所在链
+    // 上的父节自动视为展开。父节是否有可折叠子节：看下一条的深度是否更深且 >= 2。
+    final Set<String> autoExpanded = <String>{};
+    for (final TtuTocEntry e in toc) {
+      if (!e.isHeader && currentIdx == e.index && e.depth >= 2) {
+        final String? parent = e.parent;
+        if (parent != null) autoExpanded.add(parent);
+      }
+    }
+    bool hasFoldableChildren(int i) =>
+        i + 1 < toc.length &&
+        toc[i + 1].depth > toc[i].depth &&
+        toc[i + 1].depth >= 2;
+    bool isExpanded(TtuTocEntry parent) =>
+        _expandedTocParents.contains(parent.label) ||
+        autoExpanded.contains(parent.label);
     return AdaptiveSettingsSection(
-      title: t.toc_section(n: widget.toc.length),
+      title: t.toc_section(n: toc.length),
       children: [
-        for (final TtuTocEntry entry in widget.toc)
-          _InBookTocRow(
-            entry: entry,
-            selected: !entry.isHeader && currentIdx == entry.index,
-            onTap: entry.isHeader
-                ? null
-                : () async {
-                    Navigator.of(context).pop();
-                    await widget.onJumpSection(entry.index);
-                  },
-          ),
+        for (int i = 0; i < toc.length; i++)
+          if (toc[i].depth < 2 ||
+              (toc[i].parent != null &&
+                  (_expandedTocParents.contains(toc[i].parent!) ||
+                      autoExpanded.contains(toc[i].parent!))))
+            _InBookTocRow(
+              key: !toc[i].isHeader && currentIdx == toc[i].index
+                  ? _currentTocRowKey
+                  : null,
+              entry: toc[i],
+              selected: !toc[i].isHeader && currentIdx == toc[i].index,
+              foldable: hasFoldableChildren(i),
+              expanded: hasFoldableChildren(i) && isExpanded(toc[i]),
+              onToggleExpanded: hasFoldableChildren(i)
+                  ? () => setState(() {
+                        final String label = toc[i].label;
+                        if (!_expandedTocParents.remove(label)) {
+                          _expandedTocParents.add(label);
+                        }
+                      })
+                  : null,
+              onTap: toc[i].isHeader
+                  ? null
+                  : () async {
+                      Navigator.of(context).pop();
+                      await widget.onJumpSection(toc[i].index);
+                    },
+            ),
       ],
     );
   }
@@ -1665,14 +1807,23 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
 
 class _InBookTocRow extends StatelessWidget {
   const _InBookTocRow({
+    super.key,
     required this.entry,
     required this.selected,
     this.onTap,
+    this.foldable = false,
+    this.expanded = false,
+    this.onToggleExpanded,
   });
 
   final TtuTocEntry entry;
   final bool selected;
   final VoidCallback? onTap;
+
+  /// 有深度 >= 2 的子节可折叠时，行尾给一个展开 / 收起箭头。
+  final bool foldable;
+  final bool expanded;
+  final VoidCallback? onToggleExpanded;
 
   @override
   Widget build(BuildContext context) {
@@ -1713,18 +1864,31 @@ class _InBookTocRow extends StatelessWidget {
         // clamp clips them. Allow a few wrapped lines (still finite so pathological
         // titles can't blow up the row) before ellipsizing (TODO-1055).
         titleMaxLines: 4,
-        icon: entry.depth > 0
-            ? (cupertino ? CupertinoIcons.text_alignleft : Icons.notes_outlined)
-            : (cupertino ? CupertinoIcons.book : Icons.menu_book_outlined),
-        showIcon: true,
+        // 章节行不再带书本 / 小节图标：层级靠缩进（indent）表达即可。
+        showIcon: false,
         onTap: onTap,
-        trailing: selected
-            ? Icon(
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            if (selected)
+              Icon(
                 cupertino ? CupertinoIcons.check_mark : Icons.check,
                 size: 18,
                 color: selectedColor,
-              )
-            : null,
+              ),
+            if (foldable)
+              IconButton(
+                key: ValueKey<String>('fushi_toc_fold_${entry.label}'),
+                visualDensity: VisualDensity.compact,
+                iconSize: 20,
+                tooltip: expanded
+                    ? MaterialLocalizations.of(context).collapsedIconTapHint
+                    : MaterialLocalizations.of(context).expandedIconTapHint,
+                icon: Icon(expanded ? Icons.expand_less : Icons.expand_more),
+                onPressed: onToggleExpanded,
+              ),
+          ],
+        ),
       ),
     );
   }

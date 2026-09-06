@@ -313,6 +313,11 @@ enum ShortcutAction {
   // 不同 co-active 组、绝不同时激活，不构成冲突（no-shadow 守卫只扫同组）。执行体
   // = _showAppearanceSheet(initialSubPage: 'location')。
   readerOpenNavigation(ShortcutScope.reader, 'reader_open_navigation'),
+  // 桌面端 ッツ 形态工具栏的三个入口各给一键：插图画廊 G / 阅读统计 I / 有声书面板 B
+  // （reader+audiobook co-active 组内三键均未被占用；video 组的 I/B 属不同组）。
+  readerOpenGallery(ShortcutScope.reader, 'reader_open_gallery'),
+  readerOpenStatistics(ShortcutScope.reader, 'reader_open_statistics'),
+  readerOpenAudiobook(ShortcutScope.reader, 'reader_open_audiobook'),
 
   // Home
   homeTabBooks(ShortcutScope.home, 'home_tab_books'),

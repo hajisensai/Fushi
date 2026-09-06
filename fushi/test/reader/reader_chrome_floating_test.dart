@@ -202,10 +202,10 @@ void main() {
         reason: '顶部预留必须经派生 getter（关进度回收空白），并避开 macOS 拖拽区',
       );
       expect(
-        src.contains(
-            '_readerBottomReserve => _bottomChromeReserve + _stableBottomInset'),
+        src.contains('_readerBottomReserve =>\n'
+            '      _bottomChromeReserve + _statusFooterReserve + _stableBottomInset'),
         isTrue,
-        reason: '底栏预留必须经派生 getter（悬浮归零），单一真相源',
+        reason: '底栏预留必须经派生 getter（悬浮归零 + 桌面状态行挤压预留），单一真相源',
       );
     });
 

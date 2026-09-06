@@ -43,8 +43,10 @@ void main() {
         'Future<void> _jumpToFavoriteSentence(FavoriteSentence fav) async {');
     expect(start, greaterThanOrEqualTo(0),
         reason: 'chrome.part.dart 必须有 _jumpToFavoriteSentence 方法');
+    // 画廊已抽成独立文件 reader_gallery_page.dart；方法体右边界改用紧随其后的
+    // _favoritePositionLabel。
     final int end = chrome.indexOf(
-        'class _ReaderGalleryPage extends StatefulWidget {', start);
+        'String? _favoritePositionLabel(FavoriteSentence fav) {', start);
     expect(end, greaterThan(start));
     return chrome.substring(start, end);
   }

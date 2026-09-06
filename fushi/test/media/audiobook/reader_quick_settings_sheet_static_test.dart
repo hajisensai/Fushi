@@ -397,114 +397,37 @@ void main() {
     expect(desktopSource, isNot(contains('ConstrainedBox(')));
   });
 
-  test('reader quick settings widens into master-detail on wide windows', () {
+  test('reader quick settings no longer has a master-detail wide layout', () {
     final String source =
         File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
             .readAsStringSync();
+    final String chrome = File(
+      'lib/src/pages/implementations/reader_fushi/chrome.part.dart',
+    ).readAsStringSync();
 
-    // 宽窗用主页同款 supporting-pane（左父菜单 + 右详情），阈值走共享常量。
-    expect(source, contains('MaterialSupportingPaneLayout('));
-    expect(source, contains('SupportingPaneSide.start'));
-    expect(source, contains('minSplitWidth: kFushiSettingsWideThreshold'));
-    // 左父菜单收窄到共享常量（不再硬编码 248）。
-    expect(source,
-        contains('supportingWidth: kFushiSettingsSupportingPaneWidth'));
-    // 宽窗判定（constraints.maxWidth >= 阈值）已下沉到共享外壳；阅读器经
-    // isWide / onWideChanged 与外壳交互（见 master_detail_settings_sheet_test）。
-    expect(source, contains('isWide: _isWide'));
-    expect(source, contains('onWideChanged:'));
-    // 宽屏两 pane 逐字相同的内边距局部量已合并为单一 widePanePadding
-    //（数值走 FushiMasterDetailSettingsSheet.paneInsets 共享公式，清理 wave2）。
-    // 不变量不变：两个 pane 都用共享局部量、无内联 EdgeInsets。
-    expect(
-      'padding: widePanePadding'.allMatches(source).length,
-      greaterThanOrEqualTo(2),
-    );
-    expect(source, contains('FushiMasterDetailSettingsSheet.paneInsets('));
-    expect(source, contains('Widget _buildWidePane('));
+    // 桌面端与平板宽窗在到达本面板之前就被路由到左右抽屉；面板内的宽窗左右
+    // master-detail（左父菜单 + 右详情）已删除，共享外壳的 wideBuilder 只兜底铺窄窗内容。
+    expect(chrome, contains('readerUsesSideSheets('));
+    expect(source, contains('FushiMasterDetailSettingsSheet('));
+    expect(source, contains('wideBuilder:'));
+    expect(source, isNot(contains('MaterialSupportingPaneLayout(')));
+    expect(source, isNot(contains('Widget _buildWidePane(')));
+    expect(source, isNot(contains('Widget _buildWidePrimary(')));
+    expect(source, isNot(contains('SupportingPaneSide.start')));
+    // 分类顺序仍只有一份（设置抽屉分段条 / 有声书面板 / 窄窗主页共用）。
     expect(source, contains('_wideCategories()'));
-
-    // 左 pane 列出全部分类；导航置首后默认选中 'location'，右 pane 复用同一份子页
-    // 详情。TODO-802：外观分类已删，左 pane 不应再含它。
     expect(source, isNot(contains("id: 'appearance'")));
     expect(source, contains("id: 'location'"));
-    expect(source, contains("_subPage ?? 'location'"));
-    expect(source, contains('_subPageContent(selectedId)'));
-    // 左 pane 分类用带选中态的 MD3 列表项（pill 高亮，无 chevron 误导 push）。
-    expect(source, contains('FushiListItemSelectedShape.pill'));
-    // TODO-1143：左父菜单固定 208px，长分类标签（如「布局与显示」选中加粗）会被
-    // FushiListItem 默认 titleMaxLines:1 + ellipsis 截断成「布局与…」。守卫
-    // _buildWidePane 的分类项显式传 titleMaxLines: 2 让长标签换行而非省略。
-    final String widePaneSource = _between(
-      source,
-      '  Widget _buildWidePane(',
-      '  Widget _buildWidePrimary(',
-    );
-    final RegExpMatch? widePaneTitleMaxLines =
-        RegExp(r'titleMaxLines:\s*(\d+)').firstMatch(widePaneSource);
-    expect(widePaneTitleMaxLines, isNotNull,
-        reason: 'TODO-1143：宽窗左父菜单分类项必须显式传 titleMaxLines');
-    expect(int.parse(widePaneTitleMaxLines!.group(1)!), greaterThan(1),
-        reason: '长分类标签要能换行而非 ellipsis 截断，titleMaxLines 必须 > 1');
-    // 右 pane 详情按选中 id KeyedSubtree，防 Element 复用副作用。
-    expect(source, contains('KeyedSubtree('));
-    expect(source, contains('ValueKey<String>(selectedId)'));
 
-    // 窄窗（含手机 bottom sheet）保留原 push：< 640 仍走主页/子页。
+    // 窄窗（手机 bottom sheet）保留原 push：主页 / 子页。
     expect(source, contains('? _buildSubPage(context, theme)'));
     expect(source, contains(': _buildMainPage(context, theme)'));
-    // 宽窗下返回键直接关弹窗，不卡在「返回上一级」：canPop 逻辑下沉到共享外壳，
-    // 阅读器把 subPageActive / onPopToParent / isWide 喂给它。
     expect(source, contains('subPageActive: _subPage != null'));
     expect(source, contains('onPopToParent:'));
-  });
-
-  test('reader quick settings uses a deterministic width+height gate', () {
-    final String source =
-        File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
-            .readAsStringSync();
-
-    // 左父菜单用更窄的固定宽度（共享常量），不再吃硬编码 248。
-    expect(source,
-        contains('supportingWidth: kFushiSettingsSupportingPaneWidth'));
-
-    // 确定性几何判据（宽且高都 >= 共享阈值）已下沉到共享外壳
-    // FushiMasterDetailSettingsSheet（master_detail_settings_sheet_test 守它）；阅读器
-    // 经 isWide / onWideChanged 与外壳交互，本文件只锁阅读器仍用共享外壳 + 没退回
-    // 旧的 post-frame 测内容溢出回退判据。
-    expect(source, contains('FushiMasterDetailSettingsSheet('));
-    expect(source, contains('onWideChanged:'));
-
-    // 旧的「post-frame 测左父菜单内容溢出回退」已移除（会随内容高度发散 → 同设备
-    // 两种表现）。
+    // 旧的「post-frame 测左父菜单内容溢出回退」不得复活。
     expect(source, isNot(contains('_supportingOverflowsWide')));
     expect(source, isNot(contains('_supportingScrollController')));
     expect(source, isNot(contains('_wideProbeHeight')));
-  });
-
-  test(
-      'reader wide pane drops progress; it moves into the default detail '
-      '(TODO-725: location)', () {
-    final String source =
-        File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
-            .readAsStringSync();
-
-    // 左父菜单做矮：阅读进度从左 pane 移到右侧「默认选中分类」详情顶部
-    // （_buildWidePrimary）。导航置首后默认选中是 'location'，进度并入它的详情顶部，
-    // 左栏只留分类导航 + 动作，让更多窗口能进宽窗。
-    expect(source, contains('Widget _buildWidePrimary('));
-    expect(source, contains('_buildProgressSection(theme)'));
-    // 进度并入逻辑绑默认选中的 location，不再绑 appearance。
-    final String widePrimary = _between(
-      source,
-      '  Widget _buildWidePrimary(',
-      '  List<({String id, IconData icon, String label})> _wideCategories()',
-    );
-    expect(widePrimary, contains("selectedId != 'location'"));
-    expect(widePrimary, isNot(contains("selectedId != 'appearance'")));
-    // 右 pane 渲染走 _buildWidePrimary（默认分类顶部并入进度），不再直接铺
-    // _subPageContent。
-    expect(source, contains('_buildWidePrimary(context, theme, selectedId)'));
   });
 
   test(

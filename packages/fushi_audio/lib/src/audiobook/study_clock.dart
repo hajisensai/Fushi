@@ -108,6 +108,18 @@ class _OpenSegment {
   bool dirty = false;
 }
 
+/// 本次会话（一个 [StudyClock] 实例从建到销毁）的累计读数，供页面**只读展示**
+/// （阅读器底部状态行的「字/时 + 本次时长」）。
+///
+///  * [durationMs] / [chars]：已被守卫接受、记进段的累计，跨段（封段 / 小时边界）
+///    不清零——段是落库粒度，会话是展示粒度。
+///  * [active]：此刻是否在计时（时钟在跑且当前窗口按三道守卫此刻会被接受）。停表 /
+///    空闲 / 断档时为 false，UI 据此画「暂停」态。
+///
+/// 这是 v92「页面不持有会话累计器」纪律的**唯一合规出口**：账仍只有 [StudyClock] 一本，
+/// 页面只读它，不另起 `_sessionReadingMs` / `_sessionCharsRead` 那种会被重锚吃掉的副本。
+typedef StudySessionTotals = ({int durationMs, int chars, bool active});
+
 /// 学习时长 / 字数 / 页数的**唯一计时器**（v92 统计域重构）。
 ///
 /// 取代 `ReadingTimeTracker`（阅读小时桶）+ `VideoWatchTracker` 的计时部分 + 各页面
@@ -145,19 +157,20 @@ class StudyClock {
     Future<String> Function()? deviceId,
     DateTime Function()? now,
     String Function()? uidFactory,
-  }) : assert(
-         accrual == StudyAccrual.wallClock || (isActive == null && idleTimeout == null),
-         '显式记账模式下活跃态 / 空闲门无意义：时长全由 addActiveMs 决定',
-       ),
-       _mediaKind = mediaKind,
-       _mediaKey = mediaKey,
-       _title = title,
-       _format = format,
-       _tick = tick,
-       _sink = sink ?? database.upsertStudySegment,
-       _deviceId = deviceId ?? database.getOrCreateStudyDeviceId,
-       _now = now ?? DateTime.now,
-       _uidFactory = uidFactory ?? FushiDatabase.newStudySegmentUid;
+  })  : assert(
+          accrual == StudyAccrual.wallClock ||
+              (isActive == null && idleTimeout == null),
+          '显式记账模式下活跃态 / 空闲门无意义：时长全由 addActiveMs 决定',
+        ),
+        _mediaKind = mediaKind,
+        _mediaKey = mediaKey,
+        _title = title,
+        _format = format,
+        _tick = tick,
+        _sink = sink ?? database.upsertStudySegment,
+        _deviceId = deviceId ?? database.getOrCreateStudyDeviceId,
+        _now = now ?? DateTime.now,
+        _uidFactory = uidFactory ?? FushiDatabase.newStudySegmentUid;
 
   final String _mediaKind;
   final String _mediaKey;
@@ -189,6 +202,10 @@ class StudyClock {
   /// ErrorLogService，页面把它接上让 DB 写异常线上可查（BUG-911 纪律）。
   void Function(Object error, StackTrace stack)? onWriteError;
 
+  /// 会话累计（见 [StudySessionTotals]）：只增不减，封段不清。
+  int _sessionDurationMs = 0;
+  int _sessionChars = 0;
+
   Timer? _timer;
   DateTime? _tickStart;
   DateTime? _lastTouch;
@@ -200,6 +217,38 @@ class StudyClock {
 
   /// 计时中（已 [start] 且未 [stop]）。停表期间恒 false，后台时长永不入账。
   bool get isRunning => _timer != null;
+
+  /// 本次会话的实时累计（不改任何状态、不写库）。
+  ///
+  /// 已结算的累计 + 「上一次 tick 到现在」这段**尚未结算**的部分窗口——后者只在它此刻
+  /// 会被守卫接受时才计入（墙钟模式；显式记账模式的时长已由 [addActiveMs] 即时推入，
+  /// 无部分窗口）。这样 UI 每秒读一次得到的就是连续跳动的秒表，而不是 60s 一跳；
+  /// 而当窗口最终被守卫拒绝（空闲 / 断档）时，UI 读数会与落库口径一致地回落。
+  StudySessionTotals sessionTotals() {
+    final DateTime? start = _tickStart;
+    if (_timer == null || start == null) {
+      return (
+        durationMs: _sessionDurationMs,
+        chars: _sessionChars,
+        active: false
+      );
+    }
+    if (accrual == StudyAccrual.explicit) {
+      return (
+        durationMs: _sessionDurationMs,
+        chars: _sessionChars,
+        active: _creditedSinceTick,
+      );
+    }
+    final DateTime now = _now();
+    final bool accepted = _windowAccepted(start, now);
+    final int pending = accepted ? now.difference(start).inMilliseconds : 0;
+    return (
+      durationMs: _sessionDurationMs + (pending > 0 ? pending : 0),
+      chars: _sessionChars,
+      active: accepted,
+    );
+  }
 
   /// 当前打开段的 uid（测试 / 诊断）。
   @visibleForTesting
@@ -253,6 +302,7 @@ class StudyClock {
     touch();
     _ensureOpen(_now()).chars += chars;
     _open!.dirty = true;
+    _sessionChars += chars;
   }
 
   /// 记页数到当前打开段（漫画 / PDF 翻页）。
@@ -275,6 +325,7 @@ class StudyClock {
     seg.endAt = now;
     seg.dirty = true;
     _creditedSinceTick = true;
+    _sessionDurationMs += ms;
   }
 
   /// 立刻结算当前部分窗口并落库（不停表、不封段）。页面在章导航 / 生命周期节点调用，
@@ -310,10 +361,7 @@ class StudyClock {
       _creditedSinceTick = false;
       return;
     }
-    final bool accepted =
-        isContinuousReadingGap(start, now) &&
-        (isActive?.call() ?? true) &&
-        !_isIdle(now);
+    final bool accepted = _windowAccepted(start, now);
     if (!accepted) {
       // 整窗丢弃 + 封段：下一个被接受的窗口开新段（活动流按 30 分钟 gap 归并，
       // 封段不会把一次阅读拆成多条）。
@@ -333,9 +381,17 @@ class StudyClock {
       seg.durationMs += ms;
       seg.endAt = bucketStart.add(Duration(milliseconds: ms));
       seg.dirty = true;
+      _sessionDurationMs += ms;
       bucketStart = hourBoundaryAfter(start);
     }
   }
+
+  /// 三道守卫（断档 / 活跃态 / 空闲）对窗口 `[start, now]` 的裁决；[_accrue] 与
+  /// [sessionTotals] 共用，保证「实时读数」与「最终入账」判据同源。
+  bool _windowAccepted(DateTime start, DateTime now) =>
+      isContinuousReadingGap(start, now) &&
+      (isActive?.call() ?? true) &&
+      !_isIdle(now);
 
   bool _isIdle(DateTime now) {
     final Duration? timeout = idleTimeout;

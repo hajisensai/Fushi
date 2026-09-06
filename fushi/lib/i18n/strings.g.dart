@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 73032 (4296 per locale)
+/// Strings: 73219 (4307 per locale)
 ///
-/// Built on 2026-09-06 at 04:15 UTC
+/// Built on 2026-09-06 at 06:29 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -5923,6 +5923,19 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get onboarding_pack_paused_desc =>
       'Progress is kept on disk — resuming picks up where it stopped.';
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  String get reader_stats_session => 'This session';
+  String get reader_stats_time_to_finish => 'Time to finish';
+  String get reader_stats_finish_chapter => 'Chapter';
+  String get reader_stats_finish_book => 'Book';
+  String get reader_audiobook_tab_files => 'Audio files';
+  String get reader_audiobook_tab_chapters => 'Chapters';
+  String get reader_audiobook_current_chapter => 'Current chapter';
+  String get reader_stats_this_book => 'This book';
+  String get shortcut_action_reader_open_gallery =>
+      'Open illustrations gallery';
+  String get shortcut_action_reader_open_statistics =>
+      'Open reading statistics';
+  String get shortcut_action_reader_open_audiobook => 'Open audiobook panel';
 }
 
 // Path: <root>
@@ -15968,6 +15981,30 @@ class _StringsAr extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get reader_stats_session => 'This session';
+  @override
+  String get reader_stats_time_to_finish => 'Time to finish';
+  @override
+  String get reader_stats_finish_chapter => 'Chapter';
+  @override
+  String get reader_stats_finish_book => 'Book';
+  @override
+  String get reader_audiobook_tab_files => 'Audio files';
+  @override
+  String get reader_audiobook_tab_chapters => 'Chapters';
+  @override
+  String get reader_audiobook_current_chapter => 'Current chapter';
+  @override
+  String get reader_stats_this_book => 'This book';
+  @override
+  String get shortcut_action_reader_open_gallery =>
+      'Open illustrations gallery';
+  @override
+  String get shortcut_action_reader_open_statistics =>
+      'Open reading statistics';
+  @override
+  String get shortcut_action_reader_open_audiobook => 'Open audiobook panel';
 }
 
 // Path: <root>
@@ -26240,6 +26277,30 @@ class _StringsDe extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get reader_stats_session => 'This session';
+  @override
+  String get reader_stats_time_to_finish => 'Time to finish';
+  @override
+  String get reader_stats_finish_chapter => 'Chapter';
+  @override
+  String get reader_stats_finish_book => 'Book';
+  @override
+  String get reader_audiobook_tab_files => 'Audio files';
+  @override
+  String get reader_audiobook_tab_chapters => 'Chapters';
+  @override
+  String get reader_audiobook_current_chapter => 'Current chapter';
+  @override
+  String get reader_stats_this_book => 'This book';
+  @override
+  String get shortcut_action_reader_open_gallery =>
+      'Open illustrations gallery';
+  @override
+  String get shortcut_action_reader_open_statistics =>
+      'Open reading statistics';
+  @override
+  String get shortcut_action_reader_open_audiobook => 'Open audiobook panel';
 }
 
 // Path: <root>
@@ -36565,6 +36626,30 @@ class _StringsEs extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get reader_stats_session => 'This session';
+  @override
+  String get reader_stats_time_to_finish => 'Time to finish';
+  @override
+  String get reader_stats_finish_chapter => 'Chapter';
+  @override
+  String get reader_stats_finish_book => 'Book';
+  @override
+  String get reader_audiobook_tab_files => 'Audio files';
+  @override
+  String get reader_audiobook_tab_chapters => 'Chapters';
+  @override
+  String get reader_audiobook_current_chapter => 'Current chapter';
+  @override
+  String get reader_stats_this_book => 'This book';
+  @override
+  String get shortcut_action_reader_open_gallery =>
+      'Open illustrations gallery';
+  @override
+  String get shortcut_action_reader_open_statistics =>
+      'Open reading statistics';
+  @override
+  String get shortcut_action_reader_open_audiobook => 'Open audiobook panel';
 }
 
 // Path: <root>
@@ -46924,6 +47009,30 @@ class _StringsFr extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get reader_stats_session => 'This session';
+  @override
+  String get reader_stats_time_to_finish => 'Time to finish';
+  @override
+  String get reader_stats_finish_chapter => 'Chapter';
+  @override
+  String get reader_stats_finish_book => 'Book';
+  @override
+  String get reader_audiobook_tab_files => 'Audio files';
+  @override
+  String get reader_audiobook_tab_chapters => 'Chapters';
+  @override
+  String get reader_audiobook_current_chapter => 'Current chapter';
+  @override
+  String get reader_stats_this_book => 'This book';
+  @override
+  String get shortcut_action_reader_open_gallery =>
+      'Open illustrations gallery';
+  @override
+  String get shortcut_action_reader_open_statistics =>
+      'Open reading statistics';
+  @override
+  String get shortcut_action_reader_open_audiobook => 'Open audiobook panel';
 }
 
 // Path: <root>
@@ -57087,6 +57196,30 @@ class _StringsId extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get reader_stats_session => 'This session';
+  @override
+  String get reader_stats_time_to_finish => 'Time to finish';
+  @override
+  String get reader_stats_finish_chapter => 'Chapter';
+  @override
+  String get reader_stats_finish_book => 'Book';
+  @override
+  String get reader_audiobook_tab_files => 'Audio files';
+  @override
+  String get reader_audiobook_tab_chapters => 'Chapters';
+  @override
+  String get reader_audiobook_current_chapter => 'Current chapter';
+  @override
+  String get reader_stats_this_book => 'This book';
+  @override
+  String get shortcut_action_reader_open_gallery =>
+      'Open illustrations gallery';
+  @override
+  String get shortcut_action_reader_open_statistics =>
+      'Open reading statistics';
+  @override
+  String get shortcut_action_reader_open_audiobook => 'Open audiobook panel';
 }
 
 // Path: <root>
@@ -67342,6 +67475,30 @@ class _StringsIt extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get reader_stats_session => 'This session';
+  @override
+  String get reader_stats_time_to_finish => 'Time to finish';
+  @override
+  String get reader_stats_finish_chapter => 'Chapter';
+  @override
+  String get reader_stats_finish_book => 'Book';
+  @override
+  String get reader_audiobook_tab_files => 'Audio files';
+  @override
+  String get reader_audiobook_tab_chapters => 'Chapters';
+  @override
+  String get reader_audiobook_current_chapter => 'Current chapter';
+  @override
+  String get reader_stats_this_book => 'This book';
+  @override
+  String get shortcut_action_reader_open_gallery =>
+      'Open illustrations gallery';
+  @override
+  String get shortcut_action_reader_open_statistics =>
+      'Open reading statistics';
+  @override
+  String get shortcut_action_reader_open_audiobook => 'Open audiobook panel';
 }
 
 // Path: <root>
@@ -76984,6 +77141,30 @@ class _StringsJa extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get reader_stats_session => 'This session';
+  @override
+  String get reader_stats_time_to_finish => 'Time to finish';
+  @override
+  String get reader_stats_finish_chapter => 'Chapter';
+  @override
+  String get reader_stats_finish_book => 'Book';
+  @override
+  String get reader_audiobook_tab_files => 'Audio files';
+  @override
+  String get reader_audiobook_tab_chapters => 'Chapters';
+  @override
+  String get reader_audiobook_current_chapter => 'Current chapter';
+  @override
+  String get reader_stats_this_book => 'This book';
+  @override
+  String get shortcut_action_reader_open_gallery =>
+      'Open illustrations gallery';
+  @override
+  String get shortcut_action_reader_open_statistics =>
+      'Open reading statistics';
+  @override
+  String get shortcut_action_reader_open_audiobook => 'Open audiobook panel';
 }
 
 // Path: <root>
@@ -86636,6 +86817,30 @@ class _StringsKo extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get reader_stats_session => 'This session';
+  @override
+  String get reader_stats_time_to_finish => 'Time to finish';
+  @override
+  String get reader_stats_finish_chapter => 'Chapter';
+  @override
+  String get reader_stats_finish_book => 'Book';
+  @override
+  String get reader_audiobook_tab_files => 'Audio files';
+  @override
+  String get reader_audiobook_tab_chapters => 'Chapters';
+  @override
+  String get reader_audiobook_current_chapter => 'Current chapter';
+  @override
+  String get reader_stats_this_book => 'This book';
+  @override
+  String get shortcut_action_reader_open_gallery =>
+      'Open illustrations gallery';
+  @override
+  String get shortcut_action_reader_open_statistics =>
+      'Open reading statistics';
+  @override
+  String get shortcut_action_reader_open_audiobook => 'Open audiobook panel';
 }
 
 // Path: <root>
@@ -96846,6 +97051,30 @@ class _StringsNl extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get reader_stats_session => 'This session';
+  @override
+  String get reader_stats_time_to_finish => 'Time to finish';
+  @override
+  String get reader_stats_finish_chapter => 'Chapter';
+  @override
+  String get reader_stats_finish_book => 'Book';
+  @override
+  String get reader_audiobook_tab_files => 'Audio files';
+  @override
+  String get reader_audiobook_tab_chapters => 'Chapters';
+  @override
+  String get reader_audiobook_current_chapter => 'Current chapter';
+  @override
+  String get reader_stats_this_book => 'This book';
+  @override
+  String get shortcut_action_reader_open_gallery =>
+      'Open illustrations gallery';
+  @override
+  String get shortcut_action_reader_open_statistics =>
+      'Open reading statistics';
+  @override
+  String get shortcut_action_reader_open_audiobook => 'Open audiobook panel';
 }
 
 // Path: <root>
@@ -107110,6 +107339,30 @@ class _StringsPtBr extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get reader_stats_session => 'This session';
+  @override
+  String get reader_stats_time_to_finish => 'Time to finish';
+  @override
+  String get reader_stats_finish_chapter => 'Chapter';
+  @override
+  String get reader_stats_finish_book => 'Book';
+  @override
+  String get reader_audiobook_tab_files => 'Audio files';
+  @override
+  String get reader_audiobook_tab_chapters => 'Chapters';
+  @override
+  String get reader_audiobook_current_chapter => 'Current chapter';
+  @override
+  String get reader_stats_this_book => 'This book';
+  @override
+  String get shortcut_action_reader_open_gallery =>
+      'Open illustrations gallery';
+  @override
+  String get shortcut_action_reader_open_statistics =>
+      'Open reading statistics';
+  @override
+  String get shortcut_action_reader_open_audiobook => 'Open audiobook panel';
 }
 
 // Path: <root>
@@ -117352,6 +117605,30 @@ class _StringsRu extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get reader_stats_session => 'This session';
+  @override
+  String get reader_stats_time_to_finish => 'Time to finish';
+  @override
+  String get reader_stats_finish_chapter => 'Chapter';
+  @override
+  String get reader_stats_finish_book => 'Book';
+  @override
+  String get reader_audiobook_tab_files => 'Audio files';
+  @override
+  String get reader_audiobook_tab_chapters => 'Chapters';
+  @override
+  String get reader_audiobook_current_chapter => 'Current chapter';
+  @override
+  String get reader_stats_this_book => 'This book';
+  @override
+  String get shortcut_action_reader_open_gallery =>
+      'Open illustrations gallery';
+  @override
+  String get shortcut_action_reader_open_statistics =>
+      'Open reading statistics';
+  @override
+  String get shortcut_action_reader_open_audiobook => 'Open audiobook panel';
 }
 
 // Path: <root>
@@ -127393,6 +127670,30 @@ class _StringsTh extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get reader_stats_session => 'This session';
+  @override
+  String get reader_stats_time_to_finish => 'Time to finish';
+  @override
+  String get reader_stats_finish_chapter => 'Chapter';
+  @override
+  String get reader_stats_finish_book => 'Book';
+  @override
+  String get reader_audiobook_tab_files => 'Audio files';
+  @override
+  String get reader_audiobook_tab_chapters => 'Chapters';
+  @override
+  String get reader_audiobook_current_chapter => 'Current chapter';
+  @override
+  String get reader_stats_this_book => 'This book';
+  @override
+  String get shortcut_action_reader_open_gallery =>
+      'Open illustrations gallery';
+  @override
+  String get shortcut_action_reader_open_statistics =>
+      'Open reading statistics';
+  @override
+  String get shortcut_action_reader_open_audiobook => 'Open audiobook panel';
 }
 
 // Path: <root>
@@ -137551,6 +137852,30 @@ class _StringsTr extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get reader_stats_session => 'This session';
+  @override
+  String get reader_stats_time_to_finish => 'Time to finish';
+  @override
+  String get reader_stats_finish_chapter => 'Chapter';
+  @override
+  String get reader_stats_finish_book => 'Book';
+  @override
+  String get reader_audiobook_tab_files => 'Audio files';
+  @override
+  String get reader_audiobook_tab_chapters => 'Chapters';
+  @override
+  String get reader_audiobook_current_chapter => 'Current chapter';
+  @override
+  String get reader_stats_this_book => 'This book';
+  @override
+  String get shortcut_action_reader_open_gallery =>
+      'Open illustrations gallery';
+  @override
+  String get shortcut_action_reader_open_statistics =>
+      'Open reading statistics';
+  @override
+  String get shortcut_action_reader_open_audiobook => 'Open audiobook panel';
 }
 
 // Path: <root>
@@ -147680,6 +148005,30 @@ class _StringsVi extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get reader_stats_session => 'This session';
+  @override
+  String get reader_stats_time_to_finish => 'Time to finish';
+  @override
+  String get reader_stats_finish_chapter => 'Chapter';
+  @override
+  String get reader_stats_finish_book => 'Book';
+  @override
+  String get reader_audiobook_tab_files => 'Audio files';
+  @override
+  String get reader_audiobook_tab_chapters => 'Chapters';
+  @override
+  String get reader_audiobook_current_chapter => 'Current chapter';
+  @override
+  String get reader_stats_this_book => 'This book';
+  @override
+  String get shortcut_action_reader_open_gallery =>
+      'Open illustrations gallery';
+  @override
+  String get shortcut_action_reader_open_statistics =>
+      'Open reading statistics';
+  @override
+  String get shortcut_action_reader_open_audiobook => 'Open audiobook panel';
 }
 
 // Path: <root>
@@ -156990,6 +157339,28 @@ class _StringsZhCn extends _StringsEn {
   String get onboarding_pack_paused_desc => '进度留在磁盘上，继续下载会从中断处接着下。';
   @override
   String get onboarding_pack_mini_bar_hide => '收起';
+  @override
+  String get reader_stats_session => '本次会话';
+  @override
+  String get reader_stats_time_to_finish => '预计读完';
+  @override
+  String get reader_stats_finish_chapter => '本章';
+  @override
+  String get reader_stats_finish_book => '全书';
+  @override
+  String get reader_audiobook_tab_files => '资源';
+  @override
+  String get reader_audiobook_tab_chapters => '章节';
+  @override
+  String get reader_audiobook_current_chapter => '当前章节';
+  @override
+  String get reader_stats_this_book => '本书';
+  @override
+  String get shortcut_action_reader_open_gallery => '打开插图画廊';
+  @override
+  String get shortcut_action_reader_open_statistics => '打开阅读统计';
+  @override
+  String get shortcut_action_reader_open_audiobook => '打开有声书面板';
 }
 
 // Path: <root>
@@ -166325,6 +166696,30 @@ class _StringsZhHk extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String get reader_stats_session => 'This session';
+  @override
+  String get reader_stats_time_to_finish => 'Time to finish';
+  @override
+  String get reader_stats_finish_chapter => 'Chapter';
+  @override
+  String get reader_stats_finish_book => 'Book';
+  @override
+  String get reader_audiobook_tab_files => 'Audio files';
+  @override
+  String get reader_audiobook_tab_chapters => 'Chapters';
+  @override
+  String get reader_audiobook_current_chapter => 'Current chapter';
+  @override
+  String get reader_stats_this_book => 'This book';
+  @override
+  String get shortcut_action_reader_open_gallery =>
+      'Open illustrations gallery';
+  @override
+  String get shortcut_action_reader_open_statistics =>
+      'Open reading statistics';
+  @override
+  String get shortcut_action_reader_open_audiobook => 'Open audiobook panel';
 }
 
 /// Flat map(s) containing all translations.
@@ -175152,6 +175547,28 @@ extension on _StringsEn {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'reader_stats_session':
+        return 'This session';
+      case 'reader_stats_time_to_finish':
+        return 'Time to finish';
+      case 'reader_stats_finish_chapter':
+        return 'Chapter';
+      case 'reader_stats_finish_book':
+        return 'Book';
+      case 'reader_audiobook_tab_files':
+        return 'Audio files';
+      case 'reader_audiobook_tab_chapters':
+        return 'Chapters';
+      case 'reader_audiobook_current_chapter':
+        return 'Current chapter';
+      case 'reader_stats_this_book':
+        return 'This book';
+      case 'shortcut_action_reader_open_gallery':
+        return 'Open illustrations gallery';
+      case 'shortcut_action_reader_open_statistics':
+        return 'Open reading statistics';
+      case 'shortcut_action_reader_open_audiobook':
+        return 'Open audiobook panel';
       default:
         return null;
     }
@@ -183974,6 +184391,28 @@ extension on _StringsAr {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'reader_stats_session':
+        return 'This session';
+      case 'reader_stats_time_to_finish':
+        return 'Time to finish';
+      case 'reader_stats_finish_chapter':
+        return 'Chapter';
+      case 'reader_stats_finish_book':
+        return 'Book';
+      case 'reader_audiobook_tab_files':
+        return 'Audio files';
+      case 'reader_audiobook_tab_chapters':
+        return 'Chapters';
+      case 'reader_audiobook_current_chapter':
+        return 'Current chapter';
+      case 'reader_stats_this_book':
+        return 'This book';
+      case 'shortcut_action_reader_open_gallery':
+        return 'Open illustrations gallery';
+      case 'shortcut_action_reader_open_statistics':
+        return 'Open reading statistics';
+      case 'shortcut_action_reader_open_audiobook':
+        return 'Open audiobook panel';
       default:
         return null;
     }
@@ -192841,6 +193280,28 @@ extension on _StringsDe {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'reader_stats_session':
+        return 'This session';
+      case 'reader_stats_time_to_finish':
+        return 'Time to finish';
+      case 'reader_stats_finish_chapter':
+        return 'Chapter';
+      case 'reader_stats_finish_book':
+        return 'Book';
+      case 'reader_audiobook_tab_files':
+        return 'Audio files';
+      case 'reader_audiobook_tab_chapters':
+        return 'Chapters';
+      case 'reader_audiobook_current_chapter':
+        return 'Current chapter';
+      case 'reader_stats_this_book':
+        return 'This book';
+      case 'shortcut_action_reader_open_gallery':
+        return 'Open illustrations gallery';
+      case 'shortcut_action_reader_open_statistics':
+        return 'Open reading statistics';
+      case 'shortcut_action_reader_open_audiobook':
+        return 'Open audiobook panel';
       default:
         return null;
     }
@@ -201699,6 +202160,28 @@ extension on _StringsEs {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'reader_stats_session':
+        return 'This session';
+      case 'reader_stats_time_to_finish':
+        return 'Time to finish';
+      case 'reader_stats_finish_chapter':
+        return 'Chapter';
+      case 'reader_stats_finish_book':
+        return 'Book';
+      case 'reader_audiobook_tab_files':
+        return 'Audio files';
+      case 'reader_audiobook_tab_chapters':
+        return 'Chapters';
+      case 'reader_audiobook_current_chapter':
+        return 'Current chapter';
+      case 'reader_stats_this_book':
+        return 'This book';
+      case 'shortcut_action_reader_open_gallery':
+        return 'Open illustrations gallery';
+      case 'shortcut_action_reader_open_statistics':
+        return 'Open reading statistics';
+      case 'shortcut_action_reader_open_audiobook':
+        return 'Open audiobook panel';
       default:
         return null;
     }
@@ -210566,6 +211049,28 @@ extension on _StringsFr {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'reader_stats_session':
+        return 'This session';
+      case 'reader_stats_time_to_finish':
+        return 'Time to finish';
+      case 'reader_stats_finish_chapter':
+        return 'Chapter';
+      case 'reader_stats_finish_book':
+        return 'Book';
+      case 'reader_audiobook_tab_files':
+        return 'Audio files';
+      case 'reader_audiobook_tab_chapters':
+        return 'Chapters';
+      case 'reader_audiobook_current_chapter':
+        return 'Current chapter';
+      case 'reader_stats_this_book':
+        return 'This book';
+      case 'shortcut_action_reader_open_gallery':
+        return 'Open illustrations gallery';
+      case 'shortcut_action_reader_open_statistics':
+        return 'Open reading statistics';
+      case 'shortcut_action_reader_open_audiobook':
+        return 'Open audiobook panel';
       default:
         return null;
     }
@@ -219404,6 +219909,28 @@ extension on _StringsId {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'reader_stats_session':
+        return 'This session';
+      case 'reader_stats_time_to_finish':
+        return 'Time to finish';
+      case 'reader_stats_finish_chapter':
+        return 'Chapter';
+      case 'reader_stats_finish_book':
+        return 'Book';
+      case 'reader_audiobook_tab_files':
+        return 'Audio files';
+      case 'reader_audiobook_tab_chapters':
+        return 'Chapters';
+      case 'reader_audiobook_current_chapter':
+        return 'Current chapter';
+      case 'reader_stats_this_book':
+        return 'This book';
+      case 'shortcut_action_reader_open_gallery':
+        return 'Open illustrations gallery';
+      case 'shortcut_action_reader_open_statistics':
+        return 'Open reading statistics';
+      case 'shortcut_action_reader_open_audiobook':
+        return 'Open audiobook panel';
       default:
         return null;
     }
@@ -228264,6 +228791,28 @@ extension on _StringsIt {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'reader_stats_session':
+        return 'This session';
+      case 'reader_stats_time_to_finish':
+        return 'Time to finish';
+      case 'reader_stats_finish_chapter':
+        return 'Chapter';
+      case 'reader_stats_finish_book':
+        return 'Book';
+      case 'reader_audiobook_tab_files':
+        return 'Audio files';
+      case 'reader_audiobook_tab_chapters':
+        return 'Chapters';
+      case 'reader_audiobook_current_chapter':
+        return 'Current chapter';
+      case 'reader_stats_this_book':
+        return 'This book';
+      case 'shortcut_action_reader_open_gallery':
+        return 'Open illustrations gallery';
+      case 'shortcut_action_reader_open_statistics':
+        return 'Open reading statistics';
+      case 'shortcut_action_reader_open_audiobook':
+        return 'Open audiobook panel';
       default:
         return null;
     }
@@ -237051,6 +237600,28 @@ extension on _StringsJa {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'reader_stats_session':
+        return 'This session';
+      case 'reader_stats_time_to_finish':
+        return 'Time to finish';
+      case 'reader_stats_finish_chapter':
+        return 'Chapter';
+      case 'reader_stats_finish_book':
+        return 'Book';
+      case 'reader_audiobook_tab_files':
+        return 'Audio files';
+      case 'reader_audiobook_tab_chapters':
+        return 'Chapters';
+      case 'reader_audiobook_current_chapter':
+        return 'Current chapter';
+      case 'reader_stats_this_book':
+        return 'This book';
+      case 'shortcut_action_reader_open_gallery':
+        return 'Open illustrations gallery';
+      case 'shortcut_action_reader_open_statistics':
+        return 'Open reading statistics';
+      case 'shortcut_action_reader_open_audiobook':
+        return 'Open audiobook panel';
       default:
         return null;
     }
@@ -245842,6 +246413,28 @@ extension on _StringsKo {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'reader_stats_session':
+        return 'This session';
+      case 'reader_stats_time_to_finish':
+        return 'Time to finish';
+      case 'reader_stats_finish_chapter':
+        return 'Chapter';
+      case 'reader_stats_finish_book':
+        return 'Book';
+      case 'reader_audiobook_tab_files':
+        return 'Audio files';
+      case 'reader_audiobook_tab_chapters':
+        return 'Chapters';
+      case 'reader_audiobook_current_chapter':
+        return 'Current chapter';
+      case 'reader_stats_this_book':
+        return 'This book';
+      case 'shortcut_action_reader_open_gallery':
+        return 'Open illustrations gallery';
+      case 'shortcut_action_reader_open_statistics':
+        return 'Open reading statistics';
+      case 'shortcut_action_reader_open_audiobook':
+        return 'Open audiobook panel';
       default:
         return null;
     }
@@ -254695,6 +255288,28 @@ extension on _StringsNl {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'reader_stats_session':
+        return 'This session';
+      case 'reader_stats_time_to_finish':
+        return 'Time to finish';
+      case 'reader_stats_finish_chapter':
+        return 'Chapter';
+      case 'reader_stats_finish_book':
+        return 'Book';
+      case 'reader_audiobook_tab_files':
+        return 'Audio files';
+      case 'reader_audiobook_tab_chapters':
+        return 'Chapters';
+      case 'reader_audiobook_current_chapter':
+        return 'Current chapter';
+      case 'reader_stats_this_book':
+        return 'This book';
+      case 'shortcut_action_reader_open_gallery':
+        return 'Open illustrations gallery';
+      case 'shortcut_action_reader_open_statistics':
+        return 'Open reading statistics';
+      case 'shortcut_action_reader_open_audiobook':
+        return 'Open audiobook panel';
       default:
         return null;
     }
@@ -263543,6 +264158,28 @@ extension on _StringsPtBr {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'reader_stats_session':
+        return 'This session';
+      case 'reader_stats_time_to_finish':
+        return 'Time to finish';
+      case 'reader_stats_finish_chapter':
+        return 'Chapter';
+      case 'reader_stats_finish_book':
+        return 'Book';
+      case 'reader_audiobook_tab_files':
+        return 'Audio files';
+      case 'reader_audiobook_tab_chapters':
+        return 'Chapters';
+      case 'reader_audiobook_current_chapter':
+        return 'Current chapter';
+      case 'reader_stats_this_book':
+        return 'This book';
+      case 'shortcut_action_reader_open_gallery':
+        return 'Open illustrations gallery';
+      case 'shortcut_action_reader_open_statistics':
+        return 'Open reading statistics';
+      case 'shortcut_action_reader_open_audiobook':
+        return 'Open audiobook panel';
       default:
         return null;
     }
@@ -272398,6 +273035,28 @@ extension on _StringsRu {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'reader_stats_session':
+        return 'This session';
+      case 'reader_stats_time_to_finish':
+        return 'Time to finish';
+      case 'reader_stats_finish_chapter':
+        return 'Chapter';
+      case 'reader_stats_finish_book':
+        return 'Book';
+      case 'reader_audiobook_tab_files':
+        return 'Audio files';
+      case 'reader_audiobook_tab_chapters':
+        return 'Chapters';
+      case 'reader_audiobook_current_chapter':
+        return 'Current chapter';
+      case 'reader_stats_this_book':
+        return 'This book';
+      case 'shortcut_action_reader_open_gallery':
+        return 'Open illustrations gallery';
+      case 'shortcut_action_reader_open_statistics':
+        return 'Open reading statistics';
+      case 'shortcut_action_reader_open_audiobook':
+        return 'Open audiobook panel';
       default:
         return null;
     }
@@ -281225,6 +281884,28 @@ extension on _StringsTh {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'reader_stats_session':
+        return 'This session';
+      case 'reader_stats_time_to_finish':
+        return 'Time to finish';
+      case 'reader_stats_finish_chapter':
+        return 'Chapter';
+      case 'reader_stats_finish_book':
+        return 'Book';
+      case 'reader_audiobook_tab_files':
+        return 'Audio files';
+      case 'reader_audiobook_tab_chapters':
+        return 'Chapters';
+      case 'reader_audiobook_current_chapter':
+        return 'Current chapter';
+      case 'reader_stats_this_book':
+        return 'This book';
+      case 'shortcut_action_reader_open_gallery':
+        return 'Open illustrations gallery';
+      case 'shortcut_action_reader_open_statistics':
+        return 'Open reading statistics';
+      case 'shortcut_action_reader_open_audiobook':
+        return 'Open audiobook panel';
       default:
         return null;
     }
@@ -290067,6 +290748,28 @@ extension on _StringsTr {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'reader_stats_session':
+        return 'This session';
+      case 'reader_stats_time_to_finish':
+        return 'Time to finish';
+      case 'reader_stats_finish_chapter':
+        return 'Chapter';
+      case 'reader_stats_finish_book':
+        return 'Book';
+      case 'reader_audiobook_tab_files':
+        return 'Audio files';
+      case 'reader_audiobook_tab_chapters':
+        return 'Chapters';
+      case 'reader_audiobook_current_chapter':
+        return 'Current chapter';
+      case 'reader_stats_this_book':
+        return 'This book';
+      case 'shortcut_action_reader_open_gallery':
+        return 'Open illustrations gallery';
+      case 'shortcut_action_reader_open_statistics':
+        return 'Open reading statistics';
+      case 'shortcut_action_reader_open_audiobook':
+        return 'Open audiobook panel';
       default:
         return null;
     }
@@ -298903,6 +299606,28 @@ extension on _StringsVi {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'reader_stats_session':
+        return 'This session';
+      case 'reader_stats_time_to_finish':
+        return 'Time to finish';
+      case 'reader_stats_finish_chapter':
+        return 'Chapter';
+      case 'reader_stats_finish_book':
+        return 'Book';
+      case 'reader_audiobook_tab_files':
+        return 'Audio files';
+      case 'reader_audiobook_tab_chapters':
+        return 'Chapters';
+      case 'reader_audiobook_current_chapter':
+        return 'Current chapter';
+      case 'reader_stats_this_book':
+        return 'This book';
+      case 'shortcut_action_reader_open_gallery':
+        return 'Open illustrations gallery';
+      case 'shortcut_action_reader_open_statistics':
+        return 'Open reading statistics';
+      case 'shortcut_action_reader_open_audiobook':
+        return 'Open audiobook panel';
       default:
         return null;
     }
@@ -307663,6 +308388,28 @@ extension on _StringsZhCn {
         return '进度留在磁盘上，继续下载会从中断处接着下。';
       case 'onboarding_pack_mini_bar_hide':
         return '收起';
+      case 'reader_stats_session':
+        return '本次会话';
+      case 'reader_stats_time_to_finish':
+        return '预计读完';
+      case 'reader_stats_finish_chapter':
+        return '本章';
+      case 'reader_stats_finish_book':
+        return '全书';
+      case 'reader_audiobook_tab_files':
+        return '资源';
+      case 'reader_audiobook_tab_chapters':
+        return '章节';
+      case 'reader_audiobook_current_chapter':
+        return '当前章节';
+      case 'reader_stats_this_book':
+        return '本书';
+      case 'shortcut_action_reader_open_gallery':
+        return '打开插图画廊';
+      case 'shortcut_action_reader_open_statistics':
+        return '打开阅读统计';
+      case 'shortcut_action_reader_open_audiobook':
+        return '打开有声书面板';
       default:
         return null;
     }
@@ -316428,6 +317175,28 @@ extension on _StringsZhHk {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'reader_stats_session':
+        return 'This session';
+      case 'reader_stats_time_to_finish':
+        return 'Time to finish';
+      case 'reader_stats_finish_chapter':
+        return 'Chapter';
+      case 'reader_stats_finish_book':
+        return 'Book';
+      case 'reader_audiobook_tab_files':
+        return 'Audio files';
+      case 'reader_audiobook_tab_chapters':
+        return 'Chapters';
+      case 'reader_audiobook_current_chapter':
+        return 'Current chapter';
+      case 'reader_stats_this_book':
+        return 'This book';
+      case 'shortcut_action_reader_open_gallery':
+        return 'Open illustrations gallery';
+      case 'shortcut_action_reader_open_statistics':
+        return 'Open reading statistics';
+      case 'shortcut_action_reader_open_audiobook':
+        return 'Open audiobook panel';
       default:
         return null;
     }

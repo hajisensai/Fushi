@@ -341,7 +341,8 @@ $before = @(Get-FushiProcessSnapshot -CurrentRunId $RunId `
 Write-JsonFile $before (Join-Path $EvidenceDir "process-before.json") -AsArray
 Write-JsonFile $Paths (Join-Path $EvidenceDir "paths.json")
 
-$FlutterExe = Join-Path $env:FLUTTER_ROOT "bin\flutter.bat"
+# FLUTTER_ROOT 未设置时 Join-Path 会因 null 直接抛错（Strict 模式），先判空再拼。
+$FlutterExe = if ($env:FLUTTER_ROOT) { Join-Path $env:FLUTTER_ROOT "bin\flutter.bat" } else { "" }
 if (-not $env:FLUTTER_ROOT -or -not (Test-Path -LiteralPath $FlutterExe)) {
   $FlutterExe = "D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat"
 }

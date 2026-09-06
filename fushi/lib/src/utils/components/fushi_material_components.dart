@@ -3209,10 +3209,40 @@ class FushiPopupSurface extends StatelessWidget {
   /// 落在其中的点 `hitTest:` 直接 return nil，于是**整块 WebView 收不到任何鼠标事件**
   /// ——用户看到的就是「查词框点哪都没反应」。
   ///
-  /// 装平台视图的 surface 传 false，把描边挪到子节点之前绘制即可解除。透明背景的
-  /// WebView 仍能透出下面的描边，观感不变。纯 Flutter 子树无须改动（描边盖在不透明
-  /// 子节点上才需要 foreground）。
+  /// 装平台视图的 surface 传 false，把描边挪到子节点之前绘制即可解除。纯 Flutter
+  /// 子树无须改动（描边盖在不透明子节点上才需要 foreground）。
+  ///
+  /// BUG-2166：改成「之前绘制」的代价是**不透明的子节点会把描边整条盖掉**。查词浮层
+  /// 的 WebView 铺满顶栏以下的整块 surface 且文档背景不透明，于是四边描边只剩顶栏那
+  /// 一小段、以及圆角弧被 [clipBehavior] 裁出 WebView 的那几段还看得见——用户看到的
+  /// 就是「查词框没包边」。修法见 [_borderInsetChild]：为 false 时把子节点沿描边内缩
+  /// 一圈并按内圈半径再裁一次，描边环永远落在子节点之外，两个 bug 同时成立。
   final bool borderOnForeground;
+
+  /// [BorderSide] 的默认笔宽，也是 [borderOnForeground] 为 false 时子节点内缩的量。
+  static const double _borderWidth = 1;
+
+  /// BUG-2166：描边画在子节点之前（[borderOnForeground] = false）时，给子节点让出
+  /// 描边所占的那一圈——沿四边内缩 [_borderWidth]，再按**内圈**半径
+  /// （`cardRadius - _borderWidth`）裁一次。不这样做，铺满 surface 的不透明子节点
+  /// （查词浮层的 WebView）会把描边直边段整条盖住，只在圆角处漏出几段弧。
+  ///
+  /// 描边走 [BorderSide.strokeAlignInside]（[RoundedRectangleBorder] 的默认），
+  /// 占 shape 内侧 `[0, _borderWidth]`，因此内缩一个笔宽即可完全避让。
+  ///
+  /// 描边仍画在子节点**之前**，BUG-1692 的 macOS 命中测试修复不受影响。
+  Widget _borderInsetChild(FushiDesignTokens tokens, Widget content) {
+    if (!showBorder || borderOnForeground) return content;
+    return Padding(
+      padding: const EdgeInsets.all(_borderWidth),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(
+          math.max(0, tokens.radii.card - _borderWidth),
+        ),
+        child: content,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -3223,14 +3253,17 @@ class FushiPopupSurface extends StatelessWidget {
       shape: RoundedRectangleBorder(
         borderRadius: tokens.radii.cardRadius,
         side: showBorder
-            ? BorderSide(color: tokens.surfaces.outline)
+            ? BorderSide(color: tokens.surfaces.outline, width: _borderWidth)
             : BorderSide.none,
       ),
       clipBehavior: clipBehavior,
       borderOnForeground: borderOnForeground,
-      child: Padding(
-        padding: padding,
-        child: child,
+      child: _borderInsetChild(
+        tokens,
+        Padding(
+          padding: padding,
+          child: child,
+        ),
       ),
     );
   }
