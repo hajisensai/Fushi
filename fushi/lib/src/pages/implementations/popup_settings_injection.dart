@@ -608,6 +608,7 @@ class _PopupStaticSettingsMemo {
     required this.collapseDictionaries,
     required this.autoExpandRows,
     required this.collapsedNames,
+    required this.expandedNames,
     required this.hiddenNames,
     required this.stylesJson,
     required this.globalDictCSS,
@@ -632,6 +633,7 @@ class _PopupStaticSettingsMemo {
   final bool collapseDictionaries;
   final int autoExpandRows;
   final String collapsedNames;
+  final String expandedNames;
   final String hiddenNames;
   final String stylesJson;
   final String globalDictCSS;
@@ -745,6 +747,12 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
       cached.collapseDictionaries == appModel.collapseDictionaries &&
       cached.autoExpandRows == appModel.popupAutoExpandDictionaries &&
       cached.collapsedNames == collapsedNames &&
+      // BUG-2158 补修：命中判据必须是产物**全部输入**的廉价投影（本类文档写死的
+      // 契约）。漏掉它时「继承 → 显式展开」这一档转移不改 collapsedNames，命中判据
+      // 全等 → memo 命中 → 用户点『展开』毫无反应。今天没中招只是因为
+      // persistDictionary 顺带让 stylesJson 换了新实例（每次点击整个重载 native
+      // 词典引擎），一旦那条被优化掉就静默失效。
+      cached.expandedNames == expandedNames &&
       cached.hiddenNames == hiddenNames &&
       identical(cached.stylesJson, stylesJson) &&
       cached.globalDictCSS == globalDictCSS &&
@@ -867,6 +875,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     collapseDictionaries: appModel.collapseDictionaries,
     autoExpandRows: appModel.popupAutoExpandDictionaries,
     collapsedNames: collapsedNames,
+    expandedNames: expandedNames,
     hiddenNames: hiddenNames,
     stylesJson: stylesJson,
     globalDictCSS: globalDictCSS,

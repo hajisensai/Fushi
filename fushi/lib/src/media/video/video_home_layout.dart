@@ -45,10 +45,30 @@ double videoCardWidthForOrientation({
         ? kVideoLandscapeCardAspect
         : kVideoPortraitCardAspect);
 
-/// 库墙/横滚行的封面高：以「竖卡目标宽」换算（竖卡 2:3 → 高 = 宽 × 3/2），
+/// 库墙的封面高：以「竖卡目标宽」换算（竖卡 2:3 → 高 = 宽 × 3/2），
 /// 墙内竖卡与旧网格卡同宽感受、横卡只在宽度上伸展。
 double videoCoverHeightForPortraitWidth(double portraitCardWidth) =>
     portraitCardWidth * 3 / 2;
+
+/// 首页横滚行里横卡宽相对竖卡目标宽的上限倍数。
+const double kVideoRowLandscapeWidthFactor = 1.5;
+
+/// 首页横滚行（继续观看 / 下一集 / 最近添加）的统一封面高。
+///
+/// 行内竖横混排、封面底边靠**统一高度**对齐，所以高一变两种卡一起变；换句话说
+/// 「竖卡够大」与「横卡不过宽」在同一个高度上互斥，必须挑一边当基准。沿用库墙
+/// 口径 [videoCoverHeightForPortraitWidth] 是挑了竖卡：横卡宽随之等于竖卡目标宽
+/// × 3/2 × 16/9 = **8/3 倍**，桌面 ~235 的卡宽算出 626 宽的横卡，一屏只剩 3 张
+/// （用户实报「动画缩略图太大」）；手机上单张横卡甚至比屏幕还宽。
+///
+/// 横滚行是墙内容的快捷镜像、以扫读为主，这里改挑横卡当基准：横卡宽封顶在竖卡
+/// 目标宽的 [kVideoRowLandscapeWidthFactor] 倍，竖卡按同高换宽自然跟着收。倍数
+/// 随断点的卡宽等比缩放，不另立一把绝对像素尺子（[allVideoThumbnailTargetWidthForWidth]
+/// 是「全部视频」等宽网格的口径，那里没有竖卡要对齐）。库墙不受影响。
+double videoRowCoverHeightForPortraitWidth(double portraitCardWidth) =>
+    portraitCardWidth *
+    kVideoRowLandscapeWidthFactor /
+    kVideoLandscapeCardAspect;
 
 /// “全部视频”16:9 缩略图网格的目标卡宽。
 ///

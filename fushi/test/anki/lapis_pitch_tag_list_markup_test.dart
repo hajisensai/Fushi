@@ -105,7 +105,13 @@ void main() {
       return out;
     }
 
-    final List<List<String>> parsed = rules(maskCssComments(LapisNoteType.css));
+    // 断言目标必须是 `template.css`（= vendored `css` + `fushiCssOverride`），
+    // 不是裸的 `css`：Hibiki 的 delta 按 lapis_note_type.dart 文件头的规矩只能写在
+    // override 里（`css` 逐字节 vendored 自 donkuri/lapis 1.7.0，重新 vendor 会
+    // 把写进去的补丁静默冲掉，且会让原版 Lapis 用户被 lapis_styling 的 pristine
+    // 集合判成「手改过」）。而 `template.css` 才是真正推给 Anki 的那份。
+    final List<List<String>> parsed =
+        rules(maskCssComments(LapisNoteType.template.css));
 
     String declsOf(bool Function(List<String>) where, String what) {
       final Iterable<String> hits =

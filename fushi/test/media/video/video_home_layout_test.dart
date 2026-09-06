@@ -51,6 +51,63 @@ void main() {
     });
   });
 
+  group('videoRowCoverHeightForPortraitWidth', () {
+    test('横滚行横卡宽 = 竖卡目标宽 × 1.5，不再是库墙的 8/3 倍', () {
+      const double cardWidth = 240;
+      final double rowCoverHeight =
+          videoRowCoverHeightForPortraitWidth(cardWidth);
+      expect(
+        videoCardWidthForOrientation(
+          orientation: VideoCardOrientation.landscape,
+          coverHeight: rowCoverHeight,
+        ),
+        closeTo(cardWidth * kVideoRowLandscapeWidthFactor, 0.001),
+      );
+      // 库墙口径下同一卡宽的横卡宽（8/3 倍）——两者必须真的不同，否则本行的
+      // 「调小」等于没发生。
+      expect(
+        videoCardWidthForOrientation(
+          orientation: VideoCardOrientation.landscape,
+          coverHeight: videoCoverHeightForPortraitWidth(cardWidth),
+        ),
+        closeTo(cardWidth * 8 / 3, 0.001),
+      );
+    });
+
+    test('恒比库墙口径矮，且随卡宽线性缩放', () {
+      for (final double cardWidth in <double>[120, 168, 210, 235, 320]) {
+        expect(
+          videoRowCoverHeightForPortraitWidth(cardWidth),
+          lessThan(videoCoverHeightForPortraitWidth(cardWidth)),
+        );
+      }
+      expect(
+        videoRowCoverHeightForPortraitWidth(200),
+        closeTo(videoRowCoverHeightForPortraitWidth(100) * 2, 0.001),
+      );
+    });
+
+    test('手机窄屏下单张横卡不再宽过屏幕', () {
+      // 宽 380 的手机：可用墙宽约 348、两列 → 卡宽 168。
+      const double phoneCardWidth = 168;
+      const double phoneWidth = 380;
+      expect(
+        videoCardWidthForOrientation(
+          orientation: VideoCardOrientation.landscape,
+          coverHeight: videoCoverHeightForPortraitWidth(phoneCardWidth),
+        ),
+        greaterThan(phoneWidth),
+      );
+      expect(
+        videoCardWidthForOrientation(
+          orientation: VideoCardOrientation.landscape,
+          coverHeight: videoRowCoverHeightForPortraitWidth(phoneCardWidth),
+        ),
+        lessThan(phoneWidth),
+      );
+    });
+  });
+
   group('allVideoThumbnailTargetWidthForWidth', () {
     test('桌面宽屏使用更大的 16:9 缩略图目标宽', () {
       expect(allVideoThumbnailTargetWidthForWidth(1991), 320);
