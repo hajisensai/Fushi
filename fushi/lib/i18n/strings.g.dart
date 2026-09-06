@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 73032 (4296 per locale)
+/// Strings: 73049 (4297 per locale)
 ///
-/// Built on 2026-09-06 at 04:15 UTC
+/// Built on 2026-09-06 at 06:59 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -5923,6 +5923,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get onboarding_pack_paused_desc =>
       'Progress is kept on disk — resuming picks up where it stopped.';
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  String audiobook_transcribe_running_on_static({required Object provider}) =>
+      'Running on ${provider} · fused static graph';
 }
 
 // Path: <root>
@@ -15968,6 +15970,9 @@ class _StringsAr extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String audiobook_transcribe_running_on_static({required Object provider}) =>
+      'Running on ${provider} · fused static graph';
 }
 
 // Path: <root>
@@ -26240,6 +26245,9 @@ class _StringsDe extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String audiobook_transcribe_running_on_static({required Object provider}) =>
+      'Running on ${provider} · fused static graph';
 }
 
 // Path: <root>
@@ -36565,6 +36573,9 @@ class _StringsEs extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String audiobook_transcribe_running_on_static({required Object provider}) =>
+      'Running on ${provider} · fused static graph';
 }
 
 // Path: <root>
@@ -46924,6 +46935,9 @@ class _StringsFr extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String audiobook_transcribe_running_on_static({required Object provider}) =>
+      'Running on ${provider} · fused static graph';
 }
 
 // Path: <root>
@@ -57087,6 +57101,9 @@ class _StringsId extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String audiobook_transcribe_running_on_static({required Object provider}) =>
+      'Running on ${provider} · fused static graph';
 }
 
 // Path: <root>
@@ -67342,6 +67359,9 @@ class _StringsIt extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String audiobook_transcribe_running_on_static({required Object provider}) =>
+      'Running on ${provider} · fused static graph';
 }
 
 // Path: <root>
@@ -76984,6 +77004,9 @@ class _StringsJa extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String audiobook_transcribe_running_on_static({required Object provider}) =>
+      'Running on ${provider} · fused static graph';
 }
 
 // Path: <root>
@@ -86636,6 +86659,9 @@ class _StringsKo extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String audiobook_transcribe_running_on_static({required Object provider}) =>
+      'Running on ${provider} · fused static graph';
 }
 
 // Path: <root>
@@ -96846,6 +96872,9 @@ class _StringsNl extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String audiobook_transcribe_running_on_static({required Object provider}) =>
+      'Running on ${provider} · fused static graph';
 }
 
 // Path: <root>
@@ -107110,6 +107139,9 @@ class _StringsPtBr extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String audiobook_transcribe_running_on_static({required Object provider}) =>
+      'Running on ${provider} · fused static graph';
 }
 
 // Path: <root>
@@ -117352,6 +117384,9 @@ class _StringsRu extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String audiobook_transcribe_running_on_static({required Object provider}) =>
+      'Running on ${provider} · fused static graph';
 }
 
 // Path: <root>
@@ -127393,6 +127428,9 @@ class _StringsTh extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String audiobook_transcribe_running_on_static({required Object provider}) =>
+      'Running on ${provider} · fused static graph';
 }
 
 // Path: <root>
@@ -137551,6 +137589,9 @@ class _StringsTr extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String audiobook_transcribe_running_on_static({required Object provider}) =>
+      'Running on ${provider} · fused static graph';
 }
 
 // Path: <root>
@@ -147680,6 +147721,9 @@ class _StringsVi extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String audiobook_transcribe_running_on_static({required Object provider}) =>
+      'Running on ${provider} · fused static graph';
 }
 
 // Path: <root>
@@ -156990,6 +157034,9 @@ class _StringsZhCn extends _StringsEn {
   String get onboarding_pack_paused_desc => '进度留在磁盘上，继续下载会从中断处接着下。';
   @override
   String get onboarding_pack_mini_bar_hide => '收起';
+  @override
+  String audiobook_transcribe_running_on_static({required Object provider}) =>
+      '运行于 ${provider} · 静态融合图';
 }
 
 // Path: <root>
@@ -166325,6 +166372,9 @@ class _StringsZhHk extends _StringsEn {
       'Progress is kept on disk — resuming picks up where it stopped.';
   @override
   String get onboarding_pack_mini_bar_hide => 'Hide';
+  @override
+  String audiobook_transcribe_running_on_static({required Object provider}) =>
+      'Running on ${provider} · fused static graph';
 }
 
 /// Flat map(s) containing all translations.
@@ -175152,6 +175202,9 @@ extension on _StringsEn {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'audiobook_transcribe_running_on_static':
+        return ({required Object provider}) =>
+            'Running on ${provider} · fused static graph';
       default:
         return null;
     }
@@ -183974,6 +184027,9 @@ extension on _StringsAr {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'audiobook_transcribe_running_on_static':
+        return ({required Object provider}) =>
+            'Running on ${provider} · fused static graph';
       default:
         return null;
     }
@@ -192841,6 +192897,9 @@ extension on _StringsDe {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'audiobook_transcribe_running_on_static':
+        return ({required Object provider}) =>
+            'Running on ${provider} · fused static graph';
       default:
         return null;
     }
@@ -201699,6 +201758,9 @@ extension on _StringsEs {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'audiobook_transcribe_running_on_static':
+        return ({required Object provider}) =>
+            'Running on ${provider} · fused static graph';
       default:
         return null;
     }
@@ -210566,6 +210628,9 @@ extension on _StringsFr {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'audiobook_transcribe_running_on_static':
+        return ({required Object provider}) =>
+            'Running on ${provider} · fused static graph';
       default:
         return null;
     }
@@ -219404,6 +219469,9 @@ extension on _StringsId {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'audiobook_transcribe_running_on_static':
+        return ({required Object provider}) =>
+            'Running on ${provider} · fused static graph';
       default:
         return null;
     }
@@ -228264,6 +228332,9 @@ extension on _StringsIt {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'audiobook_transcribe_running_on_static':
+        return ({required Object provider}) =>
+            'Running on ${provider} · fused static graph';
       default:
         return null;
     }
@@ -237051,6 +237122,9 @@ extension on _StringsJa {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'audiobook_transcribe_running_on_static':
+        return ({required Object provider}) =>
+            'Running on ${provider} · fused static graph';
       default:
         return null;
     }
@@ -245842,6 +245916,9 @@ extension on _StringsKo {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'audiobook_transcribe_running_on_static':
+        return ({required Object provider}) =>
+            'Running on ${provider} · fused static graph';
       default:
         return null;
     }
@@ -254695,6 +254772,9 @@ extension on _StringsNl {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'audiobook_transcribe_running_on_static':
+        return ({required Object provider}) =>
+            'Running on ${provider} · fused static graph';
       default:
         return null;
     }
@@ -263543,6 +263623,9 @@ extension on _StringsPtBr {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'audiobook_transcribe_running_on_static':
+        return ({required Object provider}) =>
+            'Running on ${provider} · fused static graph';
       default:
         return null;
     }
@@ -272398,6 +272481,9 @@ extension on _StringsRu {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'audiobook_transcribe_running_on_static':
+        return ({required Object provider}) =>
+            'Running on ${provider} · fused static graph';
       default:
         return null;
     }
@@ -281225,6 +281311,9 @@ extension on _StringsTh {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'audiobook_transcribe_running_on_static':
+        return ({required Object provider}) =>
+            'Running on ${provider} · fused static graph';
       default:
         return null;
     }
@@ -290067,6 +290156,9 @@ extension on _StringsTr {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'audiobook_transcribe_running_on_static':
+        return ({required Object provider}) =>
+            'Running on ${provider} · fused static graph';
       default:
         return null;
     }
@@ -298903,6 +298995,9 @@ extension on _StringsVi {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'audiobook_transcribe_running_on_static':
+        return ({required Object provider}) =>
+            'Running on ${provider} · fused static graph';
       default:
         return null;
     }
@@ -307663,6 +307758,8 @@ extension on _StringsZhCn {
         return '进度留在磁盘上，继续下载会从中断处接着下。';
       case 'onboarding_pack_mini_bar_hide':
         return '收起';
+      case 'audiobook_transcribe_running_on_static':
+        return ({required Object provider}) => '运行于 ${provider} · 静态融合图';
       default:
         return null;
     }
@@ -316428,6 +316525,9 @@ extension on _StringsZhHk {
         return 'Progress is kept on disk — resuming picks up where it stopped.';
       case 'onboarding_pack_mini_bar_hide':
         return 'Hide';
+      case 'audiobook_transcribe_running_on_static':
+        return ({required Object provider}) =>
+            'Running on ${provider} · fused static graph';
       default:
         return null;
     }

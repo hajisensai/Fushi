@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -134,6 +135,21 @@ class _FakeFactory implements OnnxSessionFactory {
   }
 }
 
+/// createSession 挂起直到 [release] 的 fake 工厂（模拟 3~8 s 的建桶）。
+class _SlowFactory implements OnnxSessionFactory {
+  final Completer<OnnxSession> _gate = Completer<OnnxSession>();
+
+  void release(OnnxSession session) => _gate.complete(session);
+
+  @override
+  Future<OnnxSession> createSession(
+    String modelPath, {
+    required List<OnnxExecutionProvider> providers,
+    int? intraOpNumThreads,
+    Map<String, int>? freeDimensionOverrides,
+  }) => _gate.future;
+}
+
 AsrSpeechSegment _segment(int ms) => AsrSpeechSegment(
   startSample: 0,
   samples: Float32List(ms * kAsrSampleRate ~/ 1000),
@@ -193,6 +209,29 @@ void main() {
       expect(await pool.sessionFor(300), isNull, reason: '关闭后不再建');
     });
 
+    test('close() 不等还在建的桶；那个桶建成后自己关掉', () async {
+      final _SlowFactory factory = _SlowFactory();
+      final AsrStaticEncoderPool pool = AsrStaticEncoderPool(
+        factory: factory,
+        modelPath: 'enc.onnx',
+        providers: const <OnnxExecutionProvider>[
+          OnnxExecutionProvider.directml,
+        ],
+        buckets: _buckets,
+      );
+      final Future<AsrStaticEncoderSession?> building = pool.sessionFor(300);
+      bool closed = false;
+      final Future<void> closing = pool.close().then((_) => closed = true);
+      await Future<void>.delayed(Duration.zero);
+      expect(closed, isTrue, reason: 'close() 不能等 3~8 s 的建桶');
+      // 建桶完成：会话被池子立刻关掉，调用方拿到 null。
+      final _RecordingEncoder late = _RecordingEncoder('late');
+      factory.release(late);
+      expect(await building, isNull);
+      expect(late.closed, isTrue);
+      await closing;
+    });
+
     test('建失败的桶记原因、返回 null，不影响其它桶', () async {
       final _FakeFactory factory = _FakeFactory(failBatches: <int>{4});
       final AsrStaticEncoderPool pool = AsrStaticEncoderPool(
@@ -208,6 +247,27 @@ void main() {
       expect(pool.unavailableReasons.keys.single.batch, 4);
       expect(factory.overrides, hasLength(1), reason: '失败的桶不重试');
       expect((await pool.sessionFor(800))!.bucket.batch, 2);
+    });
+
+    test('按显存预算选桶表：≥10 GiB 全桶、6~10 GiB 半桶、<6 GiB 不用、未知按默认', () {
+      const int gib = 1024 * 1024 * 1024;
+      expect(asrEncoderBucketsForBudget(null), kAsrGpuEncoderBuckets);
+      expect(asrEncoderBucketsForBudget(12 * gib), kAsrGpuEncoderBuckets);
+      expect(asrEncoderBucketsForBudget(10 * gib), kAsrGpuEncoderBuckets);
+      expect(asrEncoderBucketsForBudget(8 * gib), kAsrGpuEncoderBucketsSmall);
+      expect(asrEncoderBucketsForBudget(6 * gib), kAsrGpuEncoderBucketsSmall);
+      expect(asrEncoderBucketsForBudget(4 * gib), isEmpty);
+      // 半桶的每档行数正好是全桶的一半，帧数一致。
+      for (int i = 0; i < kAsrGpuEncoderBuckets.length; i++) {
+        expect(
+          kAsrGpuEncoderBucketsSmall[i].frames,
+          kAsrGpuEncoderBuckets[i].frames,
+        );
+        expect(
+          kAsrGpuEncoderBucketsSmall[i].batch * 2,
+          kAsrGpuEncoderBuckets[i].batch,
+        );
+      }
     });
 
     test('桶表必须按 frames 递增', () {

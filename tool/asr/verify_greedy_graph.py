@@ -71,12 +71,13 @@ def _checked_program(name: str) -> str:
     return real
 
 
-def _checked_dir(label: str, path: str, *, create: bool = False) -> str:
+def _checked_dir(label: str, path: str) -> str:
+    """把目录参数解析成一个确实存在的绝对路径。不代为创建：脚本只往调用方给的、
+    已经存在的目录里写（--out-dir 不存在就先 mkdir 再来），避免拿命令行参数去
+    创建任意路径。"""
     real = os.path.realpath(os.path.expanduser(path))
-    if create:
-        os.makedirs(real, exist_ok=True)
     if not os.path.isdir(real):
-        raise SystemExit(f"{label} 不是目录：{path}")
+        raise SystemExit(f"{label} 不是已存在的目录：{path}")
     return real
 
 
@@ -356,7 +357,7 @@ def main() -> None:
     ap.add_argument("--models-dir", help="含 decoder/joiner(.int8).onnx、encoder-epoch-99-avg-1.int8.onnx、tokens.txt 的目录")
     ap.add_argument("--wav", default=os.path.join(FIXTURES, "ja_tts_16k.wav"))
     ap.add_argument("--dart", default=os.environ.get("DART", "dart"), help="dart 可执行文件（默认 $DART 或 PATH 里的 dart）")
-    ap.add_argument("--out-dir", help="生成图落盘目录（默认临时目录，结束后删除）")
+    ap.add_argument("--out-dir", help="生成图落盘目录，必须已存在（默认临时目录，结束后删除）")
     ap.add_argument("--repeat", type=int, default=3)
     ap.add_argument("--bench-shape", default="8,250", help="合成计时用例的 N,T（真实批次量级；空串跳过）")
     ap.add_argument("--strict-dart", action="store_true", help="int8 下也要求与 dart 批方式参考逐元素相等")
@@ -365,7 +366,7 @@ def main() -> None:
     args = ap.parse_args()
 
     dart_exe = _checked_program(args.dart)
-    out_dir = (_checked_dir("--out-dir", args.out_dir, create=True) if args.out_dir
+    out_dir = (_checked_dir("--out-dir", args.out_dir) if args.out_dir
                else tempfile.mkdtemp(prefix="fushi_greedy_"))
     all_ok = True
     try:

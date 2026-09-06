@@ -101,6 +101,20 @@ class OnnxRuntime {
   /// Get the available providers
   ///
   /// Returns a list of the available providers
+  /// Hibiki fork: DXGI video-memory budget of the adapter (Windows only; null
+  /// elsewhere or when DXGI cannot answer).
+  Future<OrtDeviceMemoryInfo?> getDeviceMemoryInfo({int deviceId = 0}) async {
+    final map = await FlutterOnnxruntimePlatform.instance.getDeviceMemoryInfo(deviceId: deviceId);
+    if (map == null) return null;
+    int asInt(Object? v) => v is int ? v : (v is num ? v.toInt() : 0);
+    return OrtDeviceMemoryInfo(
+      dedicatedVideoMemory: asInt(map['dedicatedVideoMemory']),
+      budget: asInt(map['budget']),
+      currentUsage: asInt(map['currentUsage']),
+      isSoftware: map['isSoftware'] == true,
+    );
+  }
+
   Future<List<OrtProvider>> getAvailableProviders() async {
     final providers = await FlutterOnnxruntimePlatform.instance.getAvailableProviders();
     return providers.map((p) {
@@ -111,4 +125,21 @@ class OnnxRuntime {
       return provider;
     }).toList();
   }
+}
+
+/// Hibiki fork: see [OnnxRuntime.getDeviceMemoryInfo].
+class OrtDeviceMemoryInfo {
+  const OrtDeviceMemoryInfo({
+    required this.dedicatedVideoMemory,
+    required this.budget,
+    required this.currentUsage,
+    required this.isSoftware,
+  });
+
+  final int dedicatedVideoMemory;
+
+  /// OS-provided budget for local video memory (bytes).
+  final int budget;
+  final int currentUsage;
+  final bool isSoftware;
 }

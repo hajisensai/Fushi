@@ -18,6 +18,7 @@
 #include <memory>
 #include <mutex>
 #include <numeric> // For std::accumulate
+#include <atomic>  // Lock-free id allocation across the worker threads
 #include <random>  // For random number generation
 #include <sstream> // For std::stringstream
 #include <stdexcept>

@@ -94,17 +94,53 @@ and macOS 13.4–14.0 for free, with no change to the ORT binary or the Dart API
    ignores it stays dynamic and accepts the static-shaped tensors anyway — it
    is 5-7x slower with no error anywhere.
 
-**The Dart API under `lib/` carries exactly one delta (#8, the
-`freeDimensionOverrides` option); everything else there is byte-for-byte
-upstream.** The Apple, Android and Linux native trees are untouched; the Windows
-tree carries deltas 6, 7 and 8 above — provider wiring, error-string encoding
-and free-dimension overrides. No ORT wrapper or inference logic changed
+9. `windows/src/async_dispatch.{h,cc}` (new) + `windows/src/session_manager.*` +
+   `windows/flutter_onnxruntime_plugin.cpp`: `runInference`, `createSession`
+   and `closeSession` no longer execute inside the method-call handler on the
+   platform (UI) thread. Argument parsing and input cloning still happen
+   there; the ORT work is posted to one of two `WorkQueue` worker threads —
+   sessions created with a GPU provider (DirectML / CUDA) share one queue,
+   CPU sessions the other — and the `MethodResult` is completed back on the
+   platform thread through `PlatformThreadDispatcher` (a message-only window
+   + `PostMessage`). `SessionInfo::session` became a `shared_ptr` so a run in
+   flight survives `closeSession`, and `SessionManager::runInference` holds
+   the map mutex only for the lookup, not for `Run` itself.
+
+   Two classes of work, one thread each, is deliberate: DirectML crashes when
+   two sessions issue `Run` concurrently from two threads in one process
+   (reproduced with the Python `onnxruntime-directml` build), while a GPU run
+   and a CPU run overlap fine. The audiobook ASR pipeline relies on exactly
+   that overlap (GPU encoder ‖ CPU greedy search): 30 min of English went
+   from 8.0–8.9 s to 6.1–6.6 s, and the UI thread stopped freezing for the
+   duration of every encoder run and every static-shape session build.
+   `FLUTTER_ONNXRUNTIME_SYNC=1` in the process environment restores the
+   upstream inline behaviour for A/B timing and for isolating threading bugs.
+
+10. `windows/src/dxgi_memory.{h,cc}` (new) + `windows/flutter_onnxruntime_plugin.cpp`
+    + `lib/src/onnxruntime.dart` / `flutter_onnxruntime_platform_interface.dart`
+    / `flutter_onnxruntime_method_channel.dart` / `lib/flutter_onnxruntime.dart`:
+    a `getDeviceMemoryInfo` method returning the DXGI local video-memory
+    budget of an adapter (`OrtDeviceMemoryInfo`; `null` on every other platform
+    and when DXGI cannot answer). Static-shape DirectML graphs allocate every
+    intermediate up front and keep the pool resident per session; a card whose
+    budget cannot hold them does not fail — it spills into system memory and
+    throughput collapses. The Dart consumer (`asrEncoderBucketsForBudget`)
+    sizes its encoder buckets from this number before building any session.
+
+**The Dart API under `lib/` carries two deltas (#8, the
+`freeDimensionOverrides` option, and #10, `getDeviceMemoryInfo`); everything
+else there is byte-for-byte upstream.** The Apple, Android and Linux native
+trees are untouched; the Windows tree carries deltas 6–10 above — provider
+wiring, error-string encoding, free-dimension overrides, worker-thread
+dispatch and the DXGI budget query. No ORT wrapper or inference logic changed
 anywhere.
 
 Guards: `fushi/test/ocr/onnxruntime_windows_error_encoding_guard_test.dart`
-keeps delta 7 in place, and
+keeps delta 7 in place,
 `fushi/test/onnx/onnxruntime_free_dimension_override_guard_test.dart` keeps
-delta 8 — a re-vendor that drops either half fails a guard. Delta 8 needs a
+delta 8, `fushi/test/onnx/onnxruntime_async_dispatch_guard_test.dart` keeps
+delta 9 and `fushi/test/onnx/onnxruntime_device_memory_guard_test.dart` keeps
+delta 10 — a re-vendor that drops either half of any of them fails a guard. Delta 8 needs a
 guard more than the others do because losing only its C++ half is **silent**:
 Dart keeps putting the key in the map, the plugin no longer reads it, the
 session falls back to dynamic shapes, and every result stays correct while the
@@ -126,7 +162,7 @@ path or drift the floors apart.
 
 ## Re-vendoring on upgrade
 
-Copy the new upstream version over this folder, then re-apply deltas #1–#8.
+Copy the new upstream version over this folder, then re-apply deltas #1–#10.
 Before bumping the `onnxruntime-objc` pin, check the new version's podspec
 platforms (`pod spec cat onnxruntime-objc --version=X.Y.Z`) — if the floor moved,
 the four project deployment targets and the guard test move with it.

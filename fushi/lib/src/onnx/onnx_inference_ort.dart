@@ -230,6 +230,23 @@ class OrtOnnxSessionFactory implements OnnxSessionFactory {
   /// 探测本身失败是一条真实的降级路径（有 N 卡也会退到 CPU），不允许调用方
   /// `catch (_)` 静默吞掉——所以这里不吞异常，由调用方捕获后记进可观测的降级
   /// 说明（BUG-1163）。
+  /// GPU 显存预算（字节；DXGI 本进程可分配上限）。非 Windows、无 GPU、查询失败
+  /// 都返回 null——调用方按「未知」处理，不当成 0。
+  Future<int?> deviceMemoryBudgetBytes() async {
+    try {
+      final OrtDeviceMemoryInfo? info = await _runtime.getDeviceMemoryInfo();
+      if (info == null || info.isSoftware || info.budget <= 0) return null;
+      return info.budget;
+    } catch (error) {
+      developer.log(
+        'ONNX device memory budget query failed; treating as unknown',
+        name: logName,
+        error: error,
+      );
+      return null;
+    }
+  }
+
   Future<Set<OnnxExecutionProvider>> availableAcceleratedProviders() async {
     final List<OrtProvider> providers = await _runtime.getAvailableProviders();
     return providers

@@ -40,6 +40,21 @@ class MethodChannelFlutterOnnxruntime extends FlutterOnnxruntimePlatform {
     return _convertMapToStringDynamic(result ?? {});
   }
 
+  @override
+  Future<Map<String, dynamic>?> getDeviceMemoryInfo({int deviceId = 0}) async {
+    try {
+      final result = await methodChannel.invokeMethod<Map<Object?, Object?>>('getDeviceMemoryInfo', {
+        'deviceId': deviceId,
+      });
+      return result == null ? null : _convertMapToStringDynamic(result);
+    } on MissingPluginException {
+      return null;
+    } on PlatformException catch (e) {
+      if (e.code == 'UNAVAILABLE') return null;
+      rethrow;
+    }
+  }
+
   /// Get the available providers
   @override
   Future<List<String>> getAvailableProviders() async {

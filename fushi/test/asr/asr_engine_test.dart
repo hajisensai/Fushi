@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_onnxruntime/flutter_onnxruntime.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/asr/asr_encoder_buckets.dart';
 import 'package:fushi/src/asr/asr_engine.dart';
 import 'package:fushi/src/asr/asr_model_manifest.dart';
 import 'package:fushi/src/asr/asr_model_store.dart';
@@ -50,6 +51,11 @@ class _FakeFactory extends OrtOnnxSessionFactory {
   final bool rejectAccelerated;
   final String? failOnPathSuffix;
   final Map<String, _FakeSession> sessions = <String, _FakeSession>{};
+
+  /// 静态 shape 桶会话（带 freeDimensionOverrides 建的）单独记，不覆盖同文件
+  /// 的动态会话记录。
+  final List<({_FakeSession session, Map<String, int> overrides})>
+  bucketSessions = <({_FakeSession session, Map<String, int> overrides})>[];
   int probeCalls = 0;
 
   @override
@@ -91,7 +97,11 @@ class _FakeFactory extends OrtOnnxSessionFactory {
             );
           },
         );
-    sessions[p.basename(modelPath)] = session;
+    if (freeDimensionOverrides != null) {
+      bucketSessions.add((session: session, overrides: freeDimensionOverrides));
+    } else {
+      sessions[p.basename(modelPath)] = session;
+    }
     return session;
   }
 }
@@ -330,6 +340,70 @@ void main() {
       preference: preference,
       variant: variant,
     );
+
+    test('shouldPrewarmAllStaticBuckets：全桶表 + 预算已知 + 素材 ≥ 15 min 才全预热', () {
+      const int gib = 1024 * 1024 * 1024;
+      bool f({List<AsrEncoderBucket>? b, int? budget, int? ms}) =>
+          shouldPrewarmAllStaticBuckets(
+            buckets: b ?? kAsrGpuEncoderBuckets,
+            budgetBytes: budget,
+            materialMs: ms,
+          );
+      expect(f(budget: 12 * gib, ms: 9 * 3600 * 1000), isTrue);
+      expect(f(budget: 12 * gib, ms: kAsrPrewarmAllMinMaterialMs), isTrue);
+      expect(
+        f(budget: 12 * gib, ms: 5 * 60 * 1000),
+        isFalse,
+        reason: '短素材',
+      );
+      expect(f(budget: null, ms: 9 * 3600 * 1000), isFalse, reason: '预算未知');
+      expect(f(budget: 12 * gib, ms: null), isFalse, reason: '时长未知');
+      expect(
+        f(b: kAsrGpuEncoderBucketsSmall, budget: 8 * gib, ms: 9 * 3600 * 1000),
+        isFalse,
+        reason: '半桶表 = 预算吃紧',
+      );
+    });
+
+    test('编码器落到 GPU EP 时建静态桶：只带 GPU provider + N/T 覆盖；CPU 不建', () async {
+      final _FakeFactory gpu = _FakeFactory(
+        available: const <OnnxExecutionProvider>{
+          OnnxExecutionProvider.directml,
+        },
+      );
+      final AsrEngineSessions onGpu = await AsrEngineLoader(factory: gpu).load(
+        store: store,
+        variant: AsrEncoderVariant.fp32,
+        preference: AsrAccelerationPreference.auto,
+      );
+      expect(onGpu.staticEncoders, isNotNull);
+      // 显存预算查不到（fake runtime）→ 默认桶表；装载时只预热最小桶（P0-2），
+      // 大桶留给真出现长段时按需建。
+      expect(gpu.bucketSessions, hasLength(1));
+      expect(
+        gpu.bucketSessions.single.overrides['T'],
+        kAsrGpuEncoderBuckets.first.frames,
+      );
+      for (final ({_FakeSession session, Map<String, int> overrides}) b
+          in gpu.bucketSessions) {
+        expect(b.session.providers, <OnnxExecutionProvider>[
+          OnnxExecutionProvider.directml,
+        ], reason: '静态桶不带 CPU 兜底');
+        expect(b.overrides.keys, containsAll(<String>['N', 'T']));
+      }
+      await onGpu.close();
+      expect(gpu.bucketSessions.every((b) => b.session.closed), isTrue);
+
+      final _FakeFactory cpu = _FakeFactory();
+      final AsrEngineSessions onCpu = await AsrEngineLoader(factory: cpu).load(
+        store: store,
+        variant: AsrEncoderVariant.int8,
+        preference: AsrAccelerationPreference.cpuOnly,
+      );
+      expect(onCpu.staticEncoders, isNull);
+      expect(cpu.bucketSessions, isEmpty);
+      await onCpu.close();
+    });
 
     test(
       'encoder 用策略选出的 providers，decoder/joiner/vad 恒 CPU，resolution 透传',
