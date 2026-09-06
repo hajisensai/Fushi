@@ -7,6 +7,32 @@ import 'package:fushi/src/media/video/video_clip_exporter.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 void main() {
+  group('buildClipFaststartArgs', () {
+    test('covers the ISO-BMFF containers and nothing else', () {
+      // mp4 muxer 默认 moov 在 mdat 之后（文件末尾）；只有 mov/mp4 系 muxer 认识
+      // `-movflags`，别的容器给了会硬失败（BUG-2200）。
+      for (final String path in <String>[
+        '/out/clip.mp4',
+        '/out/clip.M4V',
+        '/out/clip.mov',
+      ]) {
+        expect(
+          buildClipFaststartArgs(path),
+          <String>['-movflags', '+faststart'],
+          reason: path,
+        );
+      }
+      for (final String path in <String>[
+        '/out/clip.mkv',
+        '/out/clip.webm',
+        '/out/clip.ts',
+        '/out/clip',
+      ]) {
+        expect(buildClipFaststartArgs(path), isEmpty, reason: path);
+      }
+    });
+  });
+
   group('buildFfmpegVideoClipExportArgs', () {
     test(
         'maps video and the selected audio stream without subtitle/data streams',
@@ -409,6 +435,39 @@ void main() {
       );
     });
 
+    test('copy args put moov up front for mp4 output (BUG-2200)', () {
+      final List<String> args = buildFfmpegVideoClipExportArgs(
+        inputPath: '/video/source.mkv',
+        startMs: 0,
+        endMs: 5000,
+        outputPath: '/video/clip.mp4',
+      );
+
+      // 这是 copy 路径最常走的那条（无字幕、无显式音轨），以前整条命令里一个
+      // `-movflags` 都没有，导出的 mp4 moov 在文件末尾、QQ 等 IM 预览判不可播。
+      expect(args, containsAllInOrder(<String>['-movflags', '+faststart']));
+      // flag 必须落在输出文件名之前，否则 ffmpeg 会把它当下一个输出的选项。
+      expect(args.last, '/video/clip.mp4');
+      expect(
+        args.indexOf('-movflags'),
+        lessThan(args.length - 1),
+      );
+    });
+
+    test('copy args omit -movflags for non-mp4 containers', () {
+      // `-movflags` 是 mov/mp4 muxer 的私有选项，给 matroska 会硬失败
+      // （Option movflags not found）——门控必须按输出扩展名，不能无条件加。
+      final List<String> args = buildFfmpegVideoClipExportArgs(
+        inputPath: '/video/source.mkv',
+        startMs: 0,
+        endMs: 5000,
+        outputPath: '/video/clip.mkv',
+      );
+
+      expect(args, isNot(contains('-movflags')));
+      expect(args, isNot(contains('+faststart')));
+    });
+
     test('copy args add the subtitle input, its codec, and drop -sn', () {
       final List<String> args = buildFfmpegVideoClipExportArgs(
         inputPath: '/video/source.mkv',
@@ -451,6 +510,10 @@ void main() {
         '-c:s',
         'mov_text',
         // 视频 copy → 不给 `-avoid_negative_ts`，关键帧前导交给 edit list（BUG-2011）。
+        // moov 前置：输出是 mp4，copy 路径也必须给，否则索引落在文件末尾，IM 的
+        // 边下边播预览读不到头就判「无法播放」（BUG-2200）。
+        '-movflags',
+        '+faststart',
         '/video/clip.mp4',
       ]);
       // -sn 会把刚 map 进来的字幕流一起禁掉，带字幕时绝不能出现。

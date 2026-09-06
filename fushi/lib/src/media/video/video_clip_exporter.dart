@@ -333,6 +333,32 @@ List<String> buildClipStreamMapArgs({
   ];
 }
 
+/// 纯函数：拼 mp4 系容器的 `-movflags +faststart`，copy 与 reencode 两条裁剪路径
+/// 共用（唯一真相源）。
+///
+/// mp4 muxer 默认把 `moov`（索引/解码参数）写在 `mdat` **之后**，也就是文件末尾。
+/// 本地整文件播放的播放器（mpv / PotPlayer / ffmpeg 自己）读到尾巴才拿到索引，看不出
+/// 任何区别——但**边下边播 / 接收端预览**的场景是先读文件头：QQ、微信这类 IM 的内置
+/// 播放器拿到 moov 在尾的 mp4，读头拿不到轨道信息，直接判「无法播放」（BUG-2200）。
+///
+/// 重编码路径一直带着这个 flag，copy 路径漏了——而 copy 是绝大多数导出实际走的那条
+/// （h264/hevc + aac 源直接命中），于是「导出的片段发给别人播不了」成了常态。
+///
+/// `-movflags` 是 mov/mp4 muxer 的**私有选项**，给 matroska 之类的输出会硬失败
+/// （`Option movflags not found`），所以按输出扩展名门控。当前 [exportVideoClip] 输出
+/// 恒 `.mp4`，这层门控是留给纯函数被别的容器调用时的安全边界。
+@visibleForTesting
+List<String> buildClipFaststartArgs(String outputPath) {
+  switch (p.extension(outputPath).toLowerCase()) {
+    case '.mp4':
+    case '.m4v':
+    case '.mov':
+      return const <String>['-movflags', '+faststart'];
+    default:
+      return const <String>[];
+  }
+}
+
 /// 纯函数：拼「流复制」裁剪命令（`-c copy`，瞬时无损）。
 ///
 /// [subtitlePaths] 是已裁好、时间轴已平移到片段起点为 0 的 SRT 文件（主字幕、副字幕
@@ -396,6 +422,9 @@ List<String> buildFfmpegVideoClipExportArgs({
     //   的片段于是变成 10.8 秒、开头多出整整一个 GOP。
     // - 视频重编码时 accurate seek 精确切在请求点，没有前导可跳，归零无副作用。
     if (!codecPlan.copyVideo) ...<String>['-avoid_negative_ts', 'make_zero'],
+    // moov 前置：copy 路径以前不给这个 flag，导出的 mp4 索引落在文件末尾，IM 的
+    // 边下边播预览读不到头就判「无法播放」（BUG-2200）。
+    ...buildClipFaststartArgs(outputPath),
     outputPath,
   ];
 }
@@ -474,8 +503,7 @@ List<String> buildFfmpegVideoClipReencodeArgs({
     '192k',
     '-avoid_negative_ts',
     'make_zero',
-    '-movflags',
-    '+faststart',
+    ...buildClipFaststartArgs(outputPath),
     outputPath,
   ];
 }
