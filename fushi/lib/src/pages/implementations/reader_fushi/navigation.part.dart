@@ -1512,7 +1512,8 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       onWriteError: (Object e, StackTrace st) =>
           ErrorLogService.instance.log('StudyClock.write(epub)', e, st),
     );
-    clock.start();
+    // 用户在统计浮层手动暂停时不自动起表（章导航 / 进度刷新都会经这里）。
+    if (!_studyClockManualPause) clock.start();
     return clock;
   }
 

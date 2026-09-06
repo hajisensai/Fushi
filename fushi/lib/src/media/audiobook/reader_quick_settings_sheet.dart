@@ -84,6 +84,8 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
     this.onReloadChapter,
     this.onLyricsReload,
     this.onAudioImport,
+    this.onPickAlignment,
+    this.onTranscribe,
     this.initialSubPage,
     this.presentation = ReaderQuickSettingsPresentation.sheet,
     this.onClose,
@@ -150,6 +152,12 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
   /// writing-mode 改了只能重建文档（[_loadLyricsPage]），不能 live 改样式。
   final Future<void> Function()? onLyricsReload;
   final VoidCallback? onAudioImport;
+
+  /// 有声书面板「资源」页：选择 / 更换对齐文件（打开预填当前音频的导入对话框）。
+  final VoidCallback? onPickAlignment;
+
+  /// 有声书面板「资源」页：对当前音频做设备端转录生成字幕。null = 本机不支持。
+  final VoidCallback? onTranscribe;
 
   /// TODO-1309①：打开面板时直达的子页 id（如 'location' 导航子页）。null =
   /// 默认落主菜单（窄窗）/ 默认分类（宽窗）。仅用于初始化 [_subPage]，
@@ -733,31 +741,68 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     );
   }
 
-  /// 「资源」tab：按顺序列出音频文件，末尾一行导入 / 重新导入。
+  /// 「资源」tab：音频文件列表 + 对齐文件（当前文件名）+ 转录生成字幕 + 导入音频。
   Widget _buildAudiobookFilesTab(
     ThemeData theme,
     AudiobookPlayerController? ctrl,
   ) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final List<File> files = ctrl?.audioFiles ?? const <File>[];
-    return AdaptiveSettingsSection(
+    final String? alignmentPath = ctrl?.audiobook?.alignmentPath;
+    final String? alignmentName =
+        alignmentPath == null || alignmentPath.isEmpty
+            ? null
+            : p.basename(alignmentPath);
+    void closeThen(VoidCallback action) {
+      Navigator.of(context).pop();
+      action();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        for (int i = 0; i < files.length; i++)
-          AdaptiveSettingsRow(
-            title: p.basename(files[i].path),
-            subtitle: '${i + 1} / ${files.length}',
-            icon: Icons.audio_file_outlined,
-            showIcon: true,
+        if (files.isNotEmpty)
+          AdaptiveSettingsSection(
+            children: <Widget>[
+              for (int i = 0; i < files.length; i++)
+                AdaptiveSettingsRow(
+                  title: p.basename(files[i].path),
+                  subtitle: '${i + 1} / ${files.length}',
+                  icon: Icons.audio_file_outlined,
+                  showIcon: true,
+                ),
+            ],
           ),
-        if (widget.onAudioImport != null)
-          AdaptiveSettingsRow(
-            title: t.audio_import,
-            icon: Icons.headphones_outlined,
-            showIcon: true,
-            onTap: () {
-              Navigator.of(context).pop();
-              widget.onAudioImport!();
-            },
-          ),
+        if (files.isNotEmpty) SizedBox(height: tokens.spacing.gap),
+        AdaptiveSettingsSection(
+          children: <Widget>[
+            if (widget.onPickAlignment != null)
+              AdaptiveSettingsRow(
+                key: const ValueKey<String>('fushi_audiobook_panel_alignment'),
+                title: t.audiobook_pick_alignment,
+                subtitle: alignmentName,
+                icon: Icons.align_horizontal_left,
+                showIcon: true,
+                onTap: () => closeThen(widget.onPickAlignment!),
+              ),
+            if (widget.onTranscribe != null)
+              AdaptiveSettingsRow(
+                key: const ValueKey<String>('fushi_audiobook_panel_transcribe'),
+                title: t.audiobook_transcribe_action,
+                icon: Icons.record_voice_over_outlined,
+                showIcon: true,
+                onTap: () => closeThen(widget.onTranscribe!),
+              ),
+            if (widget.onAudioImport != null)
+              AdaptiveSettingsRow(
+                key: const ValueKey<String>('fushi_audiobook_panel_import'),
+                title: t.audio_import,
+                icon: Icons.headphones_outlined,
+                showIcon: true,
+                onTap: () => closeThen(widget.onAudioImport!),
+              ),
+          ],
+        ),
       ],
     );
   }
@@ -2173,10 +2218,8 @@ class _InBookTocRow extends StatelessWidget {
         // clamp clips them. Allow a few wrapped lines (still finite so pathological
         // titles can't blow up the row) before ellipsizing (TODO-1055).
         titleMaxLines: 4,
-        icon: entry.depth > 0
-            ? (cupertino ? CupertinoIcons.text_alignleft : Icons.notes_outlined)
-            : (cupertino ? CupertinoIcons.book : Icons.menu_book_outlined),
-        showIcon: true,
+        // 章节行不再带书本 / 小节图标：层级靠缩进（indent）表达即可。
+        showIcon: false,
         onTap: onTap,
         trailing: selected
             ? Icon(

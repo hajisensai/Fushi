@@ -101,6 +101,8 @@ class ReaderStatisticsDialog extends StatefulWidget {
     required this.loadBookTotals,
     required this.remainingChapterChars,
     required this.remainingBookChars,
+    required this.trackingPaused,
+    required this.onToggleTracking,
     this.tick = const Duration(seconds: 1),
   });
 
@@ -113,6 +115,12 @@ class ReaderStatisticsDialog extends StatefulWidget {
   final int? remainingChapterChars;
   final int? remainingBookChars;
   final Duration tick;
+
+  /// 会话计时是否被用户手动暂停（读口，每 tick 采样）。
+  final bool Function() trackingPaused;
+
+  /// 「本次会话」旁的 ▶/⏸：手动暂停 / 继续计时（切屏自动暂停之外的手动开关）。
+  final VoidCallback onToggleTracking;
 
   @override
   State<ReaderStatisticsDialog> createState() => _ReaderStatisticsDialogState();
@@ -144,6 +152,7 @@ class _ReaderStatisticsDialogState extends State<ReaderStatisticsDialog> {
     final ThemeData theme = Theme.of(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final StudySessionTotals session = widget.sessionTotals();
+    final bool paused = widget.trackingPaused();
     final ReaderBookStatTotals book = _book ?? kEmptyReaderBookStatTotals;
     final double? finishCph = readerFinishCph(session: session, book: book);
     final int? chapterMs = estimateFinishMs(
@@ -189,15 +198,26 @@ class _ReaderStatisticsDialogState extends State<ReaderStatisticsDialog> {
                 Row(
                   children: <Widget>[
                     ReaderSideSheetSectionLabel(t.reader_stats_session),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 4),
                     Padding(
                       padding: const EdgeInsets.only(top: 12),
-                      child: Icon(
-                        session.active
-                            ? Icons.play_arrow_rounded
-                            : Icons.pause_rounded,
-                        size: 16,
-                        color: theme.colorScheme.onSurfaceVariant,
+                      child: IconButton(
+                        key: const ValueKey<String>(
+                          'fushi_reader_stats_tracking_toggle',
+                        ),
+                        visualDensity: VisualDensity.compact,
+                        iconSize: 18,
+                        tooltip: paused ? t.play : t.pause,
+                        icon: Icon(
+                          paused ? Icons.play_arrow_rounded : Icons.pause_rounded,
+                          color: paused
+                              ? theme.colorScheme.primary
+                              : theme.colorScheme.onSurfaceVariant,
+                        ),
+                        onPressed: () {
+                          widget.onToggleTracking();
+                          setState(() {});
+                        },
                       ),
                     ),
                   ],

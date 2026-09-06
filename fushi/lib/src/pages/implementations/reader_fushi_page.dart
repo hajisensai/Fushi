@@ -33,6 +33,8 @@ import 'package:fushi/src/media/audiobook/floating_lyric_lookup_routing.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/audiobook/highlight_bridge.dart';
 import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart';
+import 'package:fushi/src/asr/asr_transcription_service.dart';
+import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
 import 'package:fushi/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:fushi/src/media/audiobook/srt_book_reimport_dialog.dart';
 import 'package:fushi/src/media/import/srt_book_reimport.dart';
@@ -1807,6 +1809,11 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// （BUG-1052 / BUG-1107 的形状）。页面不再持有任何可被重锚的会话计数字段。
   StudyClock? _studyClock;
 
+  /// 用户在阅读统计浮层里手动暂停了会话计时。为 true 时 [_ensureStudyClock] /
+  /// 生命周期 resumed 都不再 `start()`，直到用户再点一次继续；切屏自动暂停
+  /// （BUG-892）与之正交——账仍只在 [StudyClock] 一本。
+  bool _studyClockManualPause = false;
+
   // TODO-291 阶段2：audioHandler 控制流（play/seek/skip/悬浮字幕翻转）订阅已上移到
   // [AudiobookSession]（进程级），reader 不再持有这些订阅。
 
@@ -2795,8 +2802,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       _focusOwnership.reclaim(FocusReclaimCause.appResumed);
       // BUG-892 / BUG-1052: 后台那段间隔靠「时钟停着」丢弃，而不是靠回前台重锚一个
       // 墙钟基准——后者会连同重锚前那段**真实前台阅读时长**一起抹掉。start() 只重锚
-      // tick 起点并开新段；不存在第二个可被重置的时钟。
-      _studyClock?.start();
+      // tick 起点并开新段；不存在第二个可被重置的时钟。用户手动暂停时不自动续表。
+      if (!_studyClockManualPause) _studyClock?.start();
     }
   }
 

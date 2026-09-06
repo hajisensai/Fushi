@@ -1767,6 +1767,16 @@ extension _ReaderChrome on _ReaderFushiPageState {
       onReloadChapter: _reloadWithCurrentSettings,
       onLyricsReload: _loadLyricsPage,
       onAudioImport: _srtBookUid != null ? _openAudioImportDialog : null,
+      // 有声书面板「资源」页：对齐文件 / 转录只对 EPUB 有声书开放（standalone
+      // SRT 书走 _openSrtBookReimport 一条路）。
+      onPickAlignment: _srtBookUid == null && _audiobookController != null
+          ? () => unawaited(_openAlignmentImportDialog())
+          : null,
+      onTranscribe: _srtBookUid == null &&
+              _audiobookController != null &&
+              AsrTranscriptionService.isSupported
+          ? () => unawaited(_transcribeFromAudiobookPanel())
+          : null,
       lyricsMode: _lyricsMode,
       onToggleLyricsMode: _toggleLyricsMode,
       showFloatingLyric: appModel.showFloatingLyric,
@@ -2124,6 +2134,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
           child: ReaderStatisticsDialog(
             sessionTotals: _readingSessionTotals,
             loadBookTotals: _loadReaderBookStatTotals,
+            trackingPaused: () => _studyClockManualPause,
+            onToggleTracking: _toggleStudyClockManualPause,
             remainingChapterChars: chapterTotal != null && chapterCurrent != null
                 ? chapterTotal - chapterCurrent
                 : null,
@@ -2134,6 +2146,65 @@ extension _ReaderChrome on _ReaderFushiPageState {
         ),
       ),
     );
+  }
+
+  /// 统计浮层「本次会话」旁的手动开关：暂停 → `stop()` 结算并封段；继续 →
+  /// `start()` 重锚 tick 起点开新段。旗标同时门住 [_ensureStudyClock] 与生命周期
+  /// resumed 的自动起表。
+  void _toggleStudyClockManualPause() {
+    final StudyClock clock = _ensureStudyClock();
+    final bool pause = !_studyClockManualPause;
+    _rebuild(() => _studyClockManualPause = pause);
+    if (pause) {
+      unawaited(clock.stop());
+    } else {
+      clock.start();
+    }
+  }
+
+  /// 有声书面板「对齐文件」：打开导入对话框并预填当前音频（对话框内可选文件 /
+  /// 转录），关掉后按导入后的同一条路重载音频槽。
+  Future<void> _openAlignmentImportDialog({String? initialAlignmentPath}) async {
+    final Audiobook? audiobook = _audiobookController?.audiobook;
+    final AudiobookRepository repo = AudiobookRepository(appModel.database);
+    await showAppDialog<void>(
+      context: context,
+      builder: (ctx) => AudiobookImportDialog(
+        bookKey: widget.bookKey,
+        repo: repo,
+        extractDir: _extractDir,
+        initialAudioPaths: audiobook?.audioPaths,
+        initialAlignmentPath: initialAlignmentPath,
+      ),
+    );
+    try {
+      await _resolveAudioSlot(forceReload: true);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderFushi.openAlignmentImport', e, stack);
+    }
+    if (mounted) _rebuild(() {});
+  }
+
+  /// 有声书面板「转录生成字幕」：对当前音频跑设备端 ASR，产物 SRT 作为对齐文件
+  /// 预填进导入对话框由用户确认导入（与导入对话框里的转录入口同一条链路）。
+  Future<void> _transcribeFromAudiobookPanel() async {
+    final List<String>? audio = _audiobookController?.audiobook?.audioPaths;
+    if (audio == null || audio.isEmpty) {
+      FushiToast.show(
+        msg: t.audiobook_transcribe_needs_audio,
+        severity: ToastSeverity.warning,
+      );
+      return;
+    }
+    final EpubBookRow? book = await appModel.database.getEpubBook(widget.bookKey);
+    if (!mounted) return;
+    final String? srtPath = await showAsrTranscribeSheet(
+      context: context,
+      audioPaths: List<String>.of(audio),
+      languageHint: asrLanguageHintFromBookLanguage(book?.language),
+    );
+    if (srtPath == null || !mounted) return;
+    await _openAlignmentImportDialog(initialAlignmentPath: srtPath);
   }
 
   /// 本书今日 / 累计：只经统一事实面 `loadStatFacts`（统计域 v92 读取纪律）。
