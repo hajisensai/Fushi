@@ -23,7 +23,9 @@
 
 
 // Include our implementation headers
+#include "src/async_dispatch.h"
 #include "src/dml_provider.h"
+#include "src/dxgi_memory.h"
 #include "src/session_manager.h"
 #include "src/tensor_manager.h"
 #include "src/value_conversion.h"
@@ -51,6 +53,21 @@ void FailWith(const std::unique_ptr<flutter::MethodResult<flutter::EncodableValu
   result->Error(code, WindowsUtils::toUtf8Message(message), nullptr);
 }
 
+void FailWith(flutter::MethodResult<flutter::EncodableValue> &result, const std::string &code,
+              const std::string &message) {
+  result.Error(code, WindowsUtils::toUtf8Message(message), nullptr);
+}
+
+using SharedResult = std::shared_ptr<flutter::MethodResult<flutter::EncodableValue>>;
+
+// Outcome of a worker-thread task, carried back to the platform thread.
+struct TaskOutcome {
+  flutter::EncodableValue reply;
+  std::string error_code;
+  std::string error_message;
+  bool failed() const { return !error_code.empty(); }
+};
+
 } // namespace
 
 // Private implementation class to hold managers
@@ -62,6 +79,26 @@ public:
   // Manager instances
   std::unique_ptr<SessionManager> sessionManager_;
   std::unique_ptr<TensorManager> tensorManager_;
+
+  // Hibiki fork: replies are marshalled back here; heavy ORT work runs on the
+  // two worker queues (declared after the dispatcher so they are joined before
+  // the dispatcher window goes away).
+  PlatformThreadDispatcher dispatcher_;
+  WorkQueue gpuQueue_{"flutter_onnxruntime gpu"};
+  WorkQueue cpuQueue_{"flutter_onnxruntime cpu"};
+
+  WorkQueue &queueFor(bool is_gpu) { return is_gpu ? gpuQueue_ : cpuQueue_; }
+
+  // Complete [result] on the platform thread with [outcome].
+  void reply(const SharedResult &result, std::shared_ptr<TaskOutcome> outcome) {
+    dispatcher_.Post([result, outcome]() {
+      if (outcome->failed()) {
+        FailWith(*result, outcome->error_code, outcome->error_message);
+      } else {
+        result->Success(outcome->reply);
+      }
+    });
+  }
 };
 
 // static
@@ -118,6 +155,9 @@ void FlutterOnnxruntimePlugin::HandleMethodCall(
   // Session-related methods
   if (method_name == "createSession") {
     HandleCreateSession(method_call, std::move(result));
+    return;
+  } else if (method_name == "getDeviceMemoryInfo") {
+    HandleGetDeviceMemoryInfo(method_call, std::move(result));
     return;
   } else if (method_name == "getAvailableProviders") {
     HandleGetAvailableProviders(method_call, std::move(result));
@@ -454,6 +494,7 @@ void FlutterOnnxruntimePlugin::HandleCreateSession(
 
     // Create session options
     Ort::SessionOptions session_options;
+    bool is_gpu = false;
 
     // Configure session options if provided
     auto session_options_it = args->find(flutter::EncodableValue("sessionOptions"));
@@ -569,11 +610,13 @@ void FlutterOnnxruntimePlugin::HandleCreateSession(
 
             // Append CUDA execution provider to session options
             session_options.AppendExecutionProvider_CUDA_V2(*cuda_options_ptr);
+            is_gpu = true;
           } else if (provider == "DIRECT_ML") {
             // DirectML requires sequential execution. Memory patterns are
             // disabled because their allocations cannot be reused safely
             // across DML device resources.
             AppendDirectMLProvider(session_options, device_id);
+            is_gpu = true;
           } else if (provider == "TENSOR_RT") {
             // Use TensorRT if available
             // This is just a placeholder - actual implementation would depend on TensorRT availability
@@ -591,40 +634,50 @@ void FlutterOnnxruntimePlugin::HandleCreateSession(
       }
     }
 
-    // Create the session
-    std::string session_id = impl_->sessionManager_->createSession(model_path.c_str(), session_options);
-
-    if (session_id.empty()) {
-      FailWith(result, "SESSION_CREATION_ERROR", "Failed to create ONNX Runtime session");
-      return;
-    }
-
-    // Get input and output names
-    std::vector<std::string> input_names = impl_->sessionManager_->getInputNames(session_id);
-    std::vector<std::string> output_names = impl_->sessionManager_->getOutputNames(session_id);
-
-    // Prepare response
-    flutter::EncodableMap response;
-    response[flutter::EncodableValue("sessionId")] = flutter::EncodableValue(session_id);
-
-    // Convert input names to Flutter list
-    flutter::EncodableList input_names_list;
-    for (const auto &name : input_names) {
-      input_names_list.push_back(flutter::EncodableValue(name));
-    }
-    response[flutter::EncodableValue("inputNames")] = flutter::EncodableValue(input_names_list);
-
-    // Convert output names to Flutter list
-    flutter::EncodableList output_names_list;
-    for (const auto &name : output_names) {
-      output_names_list.push_back(flutter::EncodableValue(name));
-    }
-    response[flutter::EncodableValue("outputNames")] = flutter::EncodableValue(output_names_list);
-
-    // Add status for compatibility
-    response[flutter::EncodableValue("status")] = flutter::EncodableValue("success");
-
-    result->Success(flutter::EncodableValue(response));
+    // Create the session on the worker queue of its provider class: a
+    // static-shape DirectML graph takes seconds to build and must not freeze
+    // the platform thread. The reply is marshalled back via the dispatcher.
+    SharedResult shared_result(std::move(result));
+    auto options = std::make_shared<Ort::SessionOptions>(std::move(session_options));
+    SessionManager *session_manager = impl_->sessionManager_.get();
+    FlutterOnnxruntimePluginImpl *impl = impl_.get();
+    impl_->queueFor(is_gpu).Post([impl, session_manager, shared_result, options, model_path, is_gpu]() {
+      auto outcome = std::make_shared<TaskOutcome>();
+      try {
+        std::string session_id = session_manager->createSession(model_path.c_str(), *options, is_gpu);
+        if (session_id.empty()) {
+          outcome->error_code = "SESSION_CREATION_ERROR";
+          outcome->error_message = "Failed to create ONNX Runtime session";
+        } else {
+          std::vector<std::string> input_names = session_manager->getInputNames(session_id);
+          std::vector<std::string> output_names = session_manager->getOutputNames(session_id);
+          flutter::EncodableMap response;
+          response[flutter::EncodableValue("sessionId")] = flutter::EncodableValue(session_id);
+          flutter::EncodableList input_names_list;
+          for (const auto &name : input_names) {
+            input_names_list.push_back(flutter::EncodableValue(name));
+          }
+          response[flutter::EncodableValue("inputNames")] = flutter::EncodableValue(input_names_list);
+          flutter::EncodableList output_names_list;
+          for (const auto &name : output_names) {
+            output_names_list.push_back(flutter::EncodableValue(name));
+          }
+          response[flutter::EncodableValue("outputNames")] = flutter::EncodableValue(output_names_list);
+          response[flutter::EncodableValue("status")] = flutter::EncodableValue("success");
+          outcome->reply = flutter::EncodableValue(response);
+        }
+      } catch (const Ort::Exception &e) {
+        outcome->error_code = "ORT_ERROR";
+        outcome->error_message = e.what();
+      } catch (const std::exception &e) {
+        outcome->error_code = "PLUGIN_ERROR";
+        outcome->error_message = e.what();
+      } catch (...) {
+        outcome->error_code = "INTERNAL_ERROR";
+        outcome->error_message = "Unknown error occurred";
+      }
+      impl->reply(shared_result, outcome);
+    });
   } catch (const Ort::Exception &e) {
     FailWith(result, "ORT_ERROR", e.what());
   } catch (const std::exception &e) {
@@ -632,6 +685,32 @@ void FlutterOnnxruntimePlugin::HandleCreateSession(
   } catch (...) {
     FailWith(result, "INTERNAL_ERROR", "Unknown error occurred");
   }
+}
+
+// Hibiki: DXGI budget for adapter `deviceId` (default 0). Errors as
+// UNAVAILABLE so the Dart side can treat "unknown" distinctly from a number.
+void FlutterOnnxruntimePlugin::HandleGetDeviceMemoryInfo(
+    const flutter::MethodCall<flutter::EncodableValue> &method_call,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+  int device_id = 0;
+  const auto *args = std::get_if<flutter::EncodableMap>(method_call.arguments());
+  if (args != nullptr) {
+    auto it = args->find(flutter::EncodableValue("deviceId"));
+    if (it != args->end() && std::holds_alternative<int32_t>(it->second)) {
+      device_id = std::get<int32_t>(it->second);
+    }
+  }
+  DeviceMemoryInfo info;
+  if (!QueryDeviceMemoryInfo(device_id, &info)) {
+    FailWith(result, "UNAVAILABLE", "DXGI video memory info unavailable for this adapter");
+    return;
+  }
+  flutter::EncodableMap reply;
+  reply[flutter::EncodableValue("dedicatedVideoMemory")] = flutter::EncodableValue(info.dedicated_video_memory);
+  reply[flutter::EncodableValue("budget")] = flutter::EncodableValue(info.budget);
+  reply[flutter::EncodableValue("currentUsage")] = flutter::EncodableValue(info.current_usage);
+  reply[flutter::EncodableValue("isSoftware")] = flutter::EncodableValue(info.is_software);
+  result->Success(flutter::EncodableValue(reply));
 }
 
 void FlutterOnnxruntimePlugin::HandleGetAvailableProviders(
@@ -790,54 +869,63 @@ void FlutterOnnxruntimePlugin::HandleRunInference(
       }
     }
 
-    // Build a vector of Ort::Value references for Session::Run
-    std::vector<Ort::Value> input_tensors;
-    input_tensors.reserve(cloned_inputs.size());
-    for (auto &ci : cloned_inputs) {
-      input_tensors.push_back(std::move(ci.value));
-    }
-
-    // Run inference using SessionManager with input names
-    // Note: cloned_inputs (with backing buffers) stays alive through this scope
-    std::vector<Ort::Value> output_tensors;
-    if (!input_tensors.empty()) {
-      output_tensors = impl_->sessionManager_->runInference(session_id, input_tensors, input_names, &run_options);
-    }
-
-    // Process outputs
-    flutter::EncodableMap outputs_map;
-
-    // For each output tensor, store it using TensorManager
-    for (size_t i = 0; i < output_tensors.size(); i++) {
-      // Create a tensor ID
-      std::string value_id = impl_->tensorManager_->generateTensorId();
-
-      // Store the tensor - this transfers ownership
-      // TensorManager::storeTensor returns void (not bool)
-      impl_->tensorManager_->storeTensor(value_id, std::move(output_tensors[i]));
-
-      // Get the tensor type and shape
-      std::string tensor_type = impl_->tensorManager_->getTensorType(value_id);
-      std::vector<int64_t> shape = impl_->tensorManager_->getTensorShape(value_id);
-
-      // Add the value ID to the outputs map
-      flutter::EncodableList shape_list;
-      for (const auto &dim : shape) {
-        shape_list.push_back(static_cast<int64_t>(dim));
+    // Everything above (argument parsing, input cloning) ran on the platform
+    // thread; the actual Run and the output bookkeeping go to the worker queue
+    // of the session's provider class so GPU and CPU sessions overlap and the
+    // UI thread never blocks on inference.
+    const bool is_gpu = impl_->sessionManager_->isGpuSession(session_id);
+    SharedResult shared_result(std::move(result));
+    auto inputs = std::make_shared<std::vector<ClonedTensor>>(std::move(cloned_inputs));
+    auto names = std::make_shared<std::vector<std::string>>(std::move(input_names));
+    auto outputs_names = std::make_shared<std::vector<std::string>>(std::move(output_names));
+    auto run_opts = std::make_shared<Ort::RunOptions>(std::move(run_options));
+    SessionManager *session_manager = impl_->sessionManager_.get();
+    TensorManager *tensor_manager = impl_->tensorManager_.get();
+    FlutterOnnxruntimePluginImpl *impl = impl_.get();
+    impl_->queueFor(is_gpu).Post([impl, session_manager, tensor_manager, shared_result, inputs, names, outputs_names,
+                                  run_opts, session_id]() {
+      auto outcome = std::make_shared<TaskOutcome>();
+      try {
+        std::vector<Ort::Value> input_tensors;
+        input_tensors.reserve(inputs->size());
+        for (auto &ci : *inputs) {
+          input_tensors.push_back(std::move(ci.value));
+        }
+        std::vector<Ort::Value> output_tensors;
+        if (!input_tensors.empty()) {
+          output_tensors = session_manager->runInference(session_id, input_tensors, *names, run_opts.get());
+        }
+        flutter::EncodableMap outputs_map;
+        for (size_t i = 0; i < output_tensors.size(); i++) {
+          std::string value_id = tensor_manager->generateTensorId();
+          tensor_manager->storeTensor(value_id, std::move(output_tensors[i]));
+          std::string tensor_type = tensor_manager->getTensorType(value_id);
+          std::vector<int64_t> shape = tensor_manager->getTensorShape(value_id);
+          flutter::EncodableList shape_list;
+          for (const auto &dim : shape) {
+            shape_list.push_back(static_cast<int64_t>(dim));
+          }
+          flutter::EncodableList output_info;
+          output_info.push_back(flutter::EncodableValue(value_id));
+          output_info.push_back(flutter::EncodableValue(tensor_type));
+          output_info.push_back(flutter::EncodableValue(shape_list));
+          if (i < outputs_names->size()) {
+            outputs_map[flutter::EncodableValue((*outputs_names)[i])] = flutter::EncodableValue(output_info);
+          }
+        }
+        outcome->reply = flutter::EncodableValue(outputs_map);
+      } catch (const Ort::Exception &e) {
+        outcome->error_code = "INFERENCE_ERROR";
+        outcome->error_message = e.what();
+      } catch (const std::exception &e) {
+        outcome->error_code = "PLUGIN_ERROR";
+        outcome->error_message = e.what();
+      } catch (...) {
+        outcome->error_code = "INTERNAL_ERROR";
+        outcome->error_message = "Unknown error occurred";
       }
-
-      // Create output info (value_id, type, shape)
-      flutter::EncodableList output_info;
-      output_info.push_back(flutter::EncodableValue(value_id));
-      output_info.push_back(flutter::EncodableValue(tensor_type));
-      output_info.push_back(flutter::EncodableValue(shape_list));
-
-      if (i < output_names.size()) {
-        outputs_map[flutter::EncodableValue(output_names[i])] = flutter::EncodableValue(output_info);
-      }
-    }
-
-    result->Success(flutter::EncodableValue(outputs_map));
+      impl->reply(shared_result, outcome);
+    });
   } catch (const Ort::Exception &e) {
     FailWith(result, "INFERENCE_ERROR", e.what());
   } catch (const std::exception &e) {
@@ -868,11 +956,26 @@ void FlutterOnnxruntimePlugin::HandleCloseSession(
     }
     std::string session_id = std::get<std::string>(session_id_it->second);
 
-    // Close the session
-    impl_->sessionManager_->closeSession(session_id);
-
-    // Return null for success
-    result->Success(nullptr);
+    // Close on the session's own queue so it lands after any run still queued
+    // there (a run in flight also holds its own shared_ptr, see SessionInfo).
+    const bool is_gpu = impl_->sessionManager_->isGpuSession(session_id);
+    SharedResult shared_result(std::move(result));
+    SessionManager *session_manager = impl_->sessionManager_.get();
+    FlutterOnnxruntimePluginImpl *impl = impl_.get();
+    impl_->queueFor(is_gpu).Post([impl, session_manager, shared_result, session_id]() {
+      auto outcome = std::make_shared<TaskOutcome>();
+      try {
+        session_manager->closeSession(session_id);
+        outcome->reply = flutter::EncodableValue();
+      } catch (const Ort::Exception &e) {
+        outcome->error_code = "ORT_ERROR";
+        outcome->error_message = e.what();
+      } catch (const std::exception &e) {
+        outcome->error_code = "PLUGIN_ERROR";
+        outcome->error_message = e.what();
+      }
+      impl->reply(shared_result, outcome);
+    });
   } catch (const Ort::Exception &e) {
     FailWith(result, "ORT_ERROR", e.what());
   } catch (const std::exception &e) {

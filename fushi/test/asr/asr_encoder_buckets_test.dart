@@ -135,9 +135,9 @@ class _FakeFactory implements OnnxSessionFactory {
 }
 
 AsrSpeechSegment _segment(int ms) => AsrSpeechSegment(
-  startSample: 0,
-  samples: Float32List(ms * kAsrSampleRate ~/ 1000),
-);
+      startSample: 0,
+      samples: Float32List(ms * kAsrSampleRate ~/ 1000),
+    );
 
 const List<AsrEncoderBucket> _buckets = <AsrEncoderBucket>[
   AsrEncoderBucket(frames: 500, batch: 4),
@@ -208,6 +208,27 @@ void main() {
       expect(pool.unavailableReasons.keys.single.batch, 4);
       expect(factory.overrides, hasLength(1), reason: '失败的桶不重试');
       expect((await pool.sessionFor(800))!.bucket.batch, 2);
+    });
+
+    test('按显存预算选桶表：≥10 GiB 全桶、6~10 GiB 半桶、<6 GiB 不用、未知按默认', () {
+      const int gib = 1024 * 1024 * 1024;
+      expect(asrEncoderBucketsForBudget(null), kAsrGpuEncoderBuckets);
+      expect(asrEncoderBucketsForBudget(12 * gib), kAsrGpuEncoderBuckets);
+      expect(asrEncoderBucketsForBudget(10 * gib), kAsrGpuEncoderBuckets);
+      expect(asrEncoderBucketsForBudget(8 * gib), kAsrGpuEncoderBucketsSmall);
+      expect(asrEncoderBucketsForBudget(6 * gib), kAsrGpuEncoderBucketsSmall);
+      expect(asrEncoderBucketsForBudget(4 * gib), isEmpty);
+      // 半桶的每档行数正好是全桶的一半，帧数一致。
+      for (int i = 0; i < kAsrGpuEncoderBuckets.length; i++) {
+        expect(
+          kAsrGpuEncoderBucketsSmall[i].frames,
+          kAsrGpuEncoderBuckets[i].frames,
+        );
+        expect(
+          kAsrGpuEncoderBucketsSmall[i].batch * 2,
+          kAsrGpuEncoderBuckets[i].batch,
+        );
+      }
     });
 
     test('桶表必须按 frames 递增', () {

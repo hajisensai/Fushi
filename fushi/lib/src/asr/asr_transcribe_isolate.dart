@@ -54,6 +54,7 @@ class AsrIsolateJobSpec {
     required this.chunkSeconds,
     required this.segmenterKind,
     this.batchSize,
+    this.usePipeline = true,
   });
 
   final String storeDirPath;
@@ -64,6 +65,8 @@ class AsrIsolateJobSpec {
   final String jobDirPath;
   final int chunkSeconds;
   final AsrSegmenterKind segmenterKind;
+
+  final bool usePipeline;
 
   /// null = 按编码器实际落到的 EP 取 [AsrTranscriptionService.defaultBatchSizeFor]。
   final int? batchSize;
@@ -361,6 +364,8 @@ Future<void> _isolateMain(_IsolateArgs args) async {
             sessions.encoderResolution.effective,
           ),
       chunkSeconds: spec.chunkSeconds,
+      statsProvider: () => decoder.stats,
+      usePipeline: spec.usePipeline,
     );
     job = j;
     if (pauseBeforeStart) j.requestPause();

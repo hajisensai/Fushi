@@ -50,6 +50,7 @@ String _param(String name, {String defaultValue = ''}) {
     'ASR_OUT' => const String.fromEnvironment('ASR_OUT'),
     'ASR_ONLY' => const String.fromEnvironment('ASR_ONLY'),
     'ASR_CHUNK_SECONDS' => const String.fromEnvironment('ASR_CHUNK_SECONDS'),
+    'ASR_PIPELINE' => const String.fromEnvironment('ASR_PIPELINE'),
     _ => '',
   };
   if (fromDefine.isNotEmpty) return fromDefine;
@@ -91,6 +92,8 @@ _runOnce({
     jobsRoot: () async => jobsRoot,
     // 缺省 60 s 让检查点/续跑路径多走几次；ASR_CHUNK_SECONDS=300 对齐生产值拿速度数。
     chunkSeconds: int.tryParse(_param('ASR_CHUNK_SECONDS')) ?? 60,
+    // ASR_PIPELINE=0：逐批串行解码（与三段式流水线做 A/B）。
+    usePipeline: _param('ASR_PIPELINE') != '0',
   );
   await service.discard(<String>[audio], _kLang);
   final Stopwatch loadClock = Stopwatch()..start();

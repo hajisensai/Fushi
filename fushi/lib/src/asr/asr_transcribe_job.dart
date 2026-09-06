@@ -28,6 +28,8 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/asr/asr_cue_builder.dart';
+import 'package:fushi/src/asr/asr_transducer_decoder.dart'
+    show AsrBatchFeatures, AsrDecodeStats, AsrEncodedBatch;
 import 'package:fushi/src/asr/asr_types.dart';
 
 /// 流式 VAD 切段器（`AsrVadSegmenter` 实现之）。
@@ -43,6 +45,19 @@ abstract interface class AsrSegmenter {
 /// 批量解码器（`AsrTransducerDecoder` 实现之）。
 abstract interface class AsrBatchDecoder {
   Future<List<AsrDecodedSegment>> decodeBatch(List<AsrSpeechSegment> segments);
+}
+
+/// 三段式解码器（可选实现）：fbank（Dart 同步）→ encoder（GPU）→ 搜索（CPU）
+/// 拆开后任务可以把三者叠起来：GPU 编码第 i 批时 CPU 搜索第 i-1 批、Dart 算第
+/// i+1 批的 fbank（`asr_transcribe_job.dart` 的流水线）。三段串起来必须与
+/// [AsrBatchDecoder.decodeBatch] 逐字等价。
+abstract interface class AsrPipelinedDecoder implements AsrBatchDecoder {
+  AsrBatchFeatures computeFeatures(List<AsrSpeechSegment> segments);
+  Future<AsrEncodedBatch> encode(
+    List<AsrSpeechSegment> segments, {
+    AsrBatchFeatures? features,
+  });
+  Future<List<AsrDecodedSegment>> search(AsrEncodedBatch encoded);
 }
 
 /// 解码器对成批形状的约束（可选实现）：GPU 静态 shape 桶一批**恰好** N 行，
@@ -63,10 +78,15 @@ class AsrTranscribeProgress {
     required this.speechMs,
     required this.segmentsDone,
     required this.elapsed,
+    this.decodeStats,
   });
 
   /// 当前正在处理的文件下标（0 起）。
   final int fileIndex;
+
+  /// 解码器到此刻的分阶段统计（UI 据此显示是否在跑静态融合图等）；解码器不
+  /// 提供时 null。
+  final AsrDecodeStats? decodeStats;
   final int filesTotal;
 
   /// 已处理的音频时长（毫秒，跨文件累计）。
@@ -252,6 +272,8 @@ class AsrTranscribeJob {
     this.chunkSeconds = 300,
     this.cueBuilder = const AsrCueBuilder(),
     this.progressInterval = const Duration(milliseconds: 500),
+    this.statsProvider,
+    this.usePipeline = true,
   })  : assert(audioPaths.isNotEmpty),
         assert(batchSize > 0),
         assert(chunkSeconds > 0);
@@ -282,6 +304,12 @@ class AsrTranscribeJob {
 
   /// 进度事件的最小间隔（同一块内按批次发，防止刷屏）。
   final Duration progressInterval;
+
+  /// 取解码器当前统计的钩子（进度事件随带）；null = 进度不带统计。
+  final AsrDecodeStats Function()? statsProvider;
+
+  /// 解码器支持三段式时是否走流水线（false = 逐批 decodeBatch，基准对照用）。
+  final bool usePipeline;
 
   bool _pauseRequested = false;
   bool _started = false;
@@ -420,6 +448,7 @@ class AsrTranscribeJob {
         speechMs: speechMs,
         segmentsDone: segmentsDone,
         elapsed: clock.elapsed,
+        decodeStats: statsProvider?.call(),
       );
     }
 
@@ -455,6 +484,80 @@ class AsrTranscribeJob {
             pendingSamples() >= budgetSamples;
       }
 
+      final AsrPipelinedDecoder? pipe =
+          usePipeline && decoder is AsrPipelinedDecoder
+              ? decoder as AsrPipelinedDecoder
+              : null;
+      // 流水线状态（跨 drain 调用保留，块末 drain(all: true) 冲干净）。
+      Future<AsrEncodedBatch>? inFlight;
+      List<AsrSpeechSegment>? peeked;
+      AsrBatchFeatures? peekedFeatures;
+
+      Future<void> commit(
+        List<AsrSpeechSegment> batch,
+        List<AsrDecodedSegment> decoded,
+      ) async {
+        final List<AsrTranscribedSegment> out = <AsrTranscribedSegment>[];
+        for (int k = 0; k < batch.length; k++) {
+          if (decoded[k].isEmpty) continue;
+          out.add(
+            AsrTranscribedSegment.fromDecoded(
+              audioFileIndex: fileIndex,
+              speech: batch[k],
+              decoded: decoded[k],
+            ),
+          );
+          speechMs += batch[k].lengthMs;
+        }
+        segmentsDone += out.length;
+        await _appendSegments(out);
+      }
+
+      int nextTake() {
+        final int? cap = shaper?.batchCapFor(pending.first.samples.length);
+        // 静态桶：一批就是桶的行数（桶内每行成本相同，装满最划算）。
+        return cap != null
+            ? (pending.length < cap ? pending.length : cap)
+            : pickBatchSize(
+                pending,
+                budgetSamples: budgetSamples,
+                maxSegments: maxBatchSegments,
+              );
+      }
+
+      /// 取下一批：若上一轮已经窥视过（并提前算了 fbank）且 pending 头部没变，
+      /// 就复用同一个列表对象，让 encode 认出提前算好的特征。
+      List<AsrSpeechSegment> takeBatch() {
+        final int take = nextTake();
+        final List<AsrSpeechSegment>? p = peeked;
+        peeked = null;
+        if (p != null && p.length == take) {
+          bool same = true;
+          for (int k = 0; k < take; k++) {
+            if (!identical(p[k], pending[k])) {
+              same = false;
+              break;
+            }
+          }
+          if (same) {
+            pending.removeRange(0, take);
+            return p;
+          }
+        }
+        peekedFeatures = null;
+        final List<AsrSpeechSegment> batch = pending.sublist(0, take);
+        pending.removeRange(0, take);
+        return batch;
+      }
+
+      Future<void> flushInFlight() async {
+        final Future<AsrEncodedBatch>? f = inFlight;
+        if (f == null || pipe == null) return;
+        inFlight = null;
+        final AsrEncodedBatch enc = await f;
+        await commit(enc.segments, await pipe.search(enc));
+      }
+
       Future<void> drain({required bool all}) async {
         // 按段长降序、按音频预算成批：encoder 按批内最长 pad、Loop 图每一步都
         // 带着整批算，长短混批的 padding 全是白付（2026-09-06 实测：英语朗读段
@@ -465,36 +568,43 @@ class AsrTranscribeJob {
           (AsrSpeechSegment a, AsrSpeechSegment b) =>
               b.samples.length.compareTo(a.samples.length),
         );
+        // 排序可能让窥视过的批失效（takeBatch 会按元素身份复核）。
         while (pending.isNotEmpty && (all || enoughPending())) {
-          final int? cap = shaper?.batchCapFor(pending.first.samples.length);
-          // 静态桶：一批就是桶的行数（桶内每行成本相同，装满最划算）。
-          final int take = cap != null
-              ? (pending.length < cap ? pending.length : cap)
-              : pickBatchSize(
-                  pending,
-                  budgetSamples: budgetSamples,
-                  maxSegments: maxBatchSegments,
-                );
-          final List<AsrSpeechSegment> batch = pending.sublist(0, take);
-          pending.removeRange(0, take);
-          final List<AsrDecodedSegment> decoded = await decoder.decodeBatch(
-            batch,
-          );
-          final List<AsrTranscribedSegment> out = <AsrTranscribedSegment>[];
-          for (int k = 0; k < batch.length; k++) {
-            if (decoded[k].isEmpty) continue;
-            out.add(
-              AsrTranscribedSegment.fromDecoded(
-                audioFileIndex: fileIndex,
-                speech: batch[k],
-                decoded: decoded[k],
-              ),
-            );
-            speechMs += batch[k].lengthMs;
+          final List<AsrSpeechSegment> batch = takeBatch();
+          if (pipe == null) {
+            await commit(batch, await decoder.decodeBatch(batch));
+            continue;
           }
-          segmentsDone += out.length;
-          await _appendSegments(out);
+          // 三级流水线：GPU 编码第 i 批 ‖ CPU 搜索第 i-1 批 ‖ Dart 算第 i+1 批
+          // 的 fbank。插件把 GPU 会话与 CPU 会话放在两条工作线程上，三者才真能
+          // 同时跑（2026-09-06：串行时 fbank + 搜索 + ffmpeg 占 30 分钟英语
+          // 7.2 s 里的四成，GPU 那段时间全闲着）。
+          final AsrBatchFeatures? ready = peekedFeatures;
+          peekedFeatures = null;
+          final Future<AsrEncodedBatch> encoding = pipe.encode(
+            batch,
+            features: ready,
+          );
+          Future<List<AsrDecodedSegment>>? searching;
+          AsrEncodedBatch? previous;
+          final Future<AsrEncodedBatch>? prevFuture = inFlight;
+          inFlight = null;
+          if (prevFuture != null) {
+            previous = await prevFuture;
+            searching = pipe.search(previous);
+          }
+          // 趁 GPU / CPU 会话都在忙：窥视下一批并把它的 fbank 先算出来。
+          if (pending.isNotEmpty && (all || enoughPending())) {
+            final int take = nextTake();
+            peeked = pending.sublist(0, take);
+            peekedFeatures = pipe.computeFeatures(peeked!);
+          }
+          if (searching != null) {
+            await commit(previous!.segments, await searching);
+          }
+          inFlight = encoding;
         }
+        if (all) await flushInFlight();
       }
 
       // 预取：先向流要下一块，让 ffmpeg 与本块的 VAD/解码重叠。

@@ -22,9 +22,14 @@ class TensorManager;
 
 // Session information structure
 struct SessionInfo {
-  std::unique_ptr<Ort::Session> session;
+  // shared_ptr (Hibiki fork): a run in flight on a worker thread keeps the
+  // session alive even if closeSession() erases the map entry meanwhile.
+  std::shared_ptr<Ort::Session> session;
   std::vector<std::string> input_names;
   std::vector<std::string> output_names;
+  // Whether the session was created with a GPU provider (DirectML / CUDA);
+  // decides which worker queue its work is serialised on.
+  bool is_gpu = false;
 };
 
 // Model metadata structure
@@ -51,7 +56,10 @@ public:
   ~SessionManager();
 
   // Create a new session from a model file path
-  std::string createSession(const char *model_path, const Ort::SessionOptions &session_options);
+  std::string createSession(const char *model_path, const Ort::SessionOptions &session_options, bool is_gpu = false);
+
+  // Whether the session runs on a GPU provider (false for unknown sessions).
+  bool isGpuSession(const std::string &session_id);
 
   // Close and remove a session
   bool closeSession(const std::string &session_id);

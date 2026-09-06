@@ -303,21 +303,35 @@ class AsrEngineLoader {
       // shape 收得下静态形状）、零收益、且永远不触发回退」的池子：多占两份
       // 编码器权重、x 白 pad 到桶的 T、VAD 还被砍到 10 s。
       final OnnxExecutionProvider effective = encoderResolution.effective;
-      final AsrStaticEncoderPool? staticEncoders =
-          useStaticEncoderBuckets &&
-              kAsrStaticBucketProviders.contains(effective)
-          ? AsrStaticEncoderPool(
-              factory: _factory,
-              modelPath: store.fileFor(encoderRole).path,
-              providers: <OnnxExecutionProvider>[effective],
-              logName: kAsrLogName,
-            )
-          : null;
-      // 只预热最小桶：两个桶各驻一份 fp32 编码器权重 + 融合图一次性分配的全部
-      // 中间张量，实测 E2E 峰值 6.6~7.6 GB（12 GB 卡独占）。显存不够时 DML **不
-      // 抛异常**——它溢出到主机内存，表现是 RSS 暴涨到被系统杀掉，回退机制照不到
-      // 这条路径。大桶留给真正出现长段时按需建（`sessionFor` 本来就是惰性的）。
-      staticEncoders?.prewarmSmallest();
+      AsrStaticEncoderPool? staticEncoders;
+      if (useStaticEncoderBuckets &&
+          kAsrStaticBucketProviders.contains(effective)) {
+        final int? budget = await _factory.deviceMemoryBudgetBytes();
+        final List<AsrEncoderBucket> buckets = asrEncoderBucketsForBudget(
+          budget,
+        );
+        developer.log(
+          'ASR static encoder buckets for GPU budget '
+          '${budget == null ? 'unknown' : '${budget ~/ (1024 * 1024)} MiB'}: '
+          '$buckets',
+          name: kAsrLogName,
+        );
+        if (buckets.isNotEmpty) {
+          staticEncoders = AsrStaticEncoderPool(
+            factory: _factory,
+            modelPath: store.fileFor(encoderRole).path,
+            providers: <OnnxExecutionProvider>[effective],
+            buckets: buckets,
+            logName: kAsrLogName,
+          );
+          // 只预热最小桶并等它建完：两个桶各驻一份 fp32 编码器权重 + 融合图一次性
+          // 分配的全部中间张量，实测 E2E 峰值 6.6~7.6 GB（12 GB 卡独占）。显存不够
+          // 时 DML **不抛异常**——它溢出到主机内存，表现是 RSS 暴涨到被系统杀掉，
+          // 回退机制照不到这条路径。大桶留给真正出现长段时按需建（`sessionFor`
+          // 本来就是惰性的）；等最小桶建完再开跑，进度 / ETA 才不会把建桶算进去。
+          await staticEncoders.prewarmSmallest();
+        }
+      }
       developer.log(
         'ASR engine loaded (${variant.name} encoder): $encoderResolution '
         'greedyGraph=${greedy != null} staticBuckets=${staticEncoders != null}',

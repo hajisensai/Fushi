@@ -134,6 +134,7 @@ class AsrTranscriptionService {
     this.chunkSeconds = 300,
     this.segmenterKind = AsrSegmenterKind.energy,
     this.runInIsolate = true,
+    this.usePipeline = true,
   }) : _loader = loader ?? AsrEngineLoader(),
        _pcm = pcm ?? FfmpegAsrPcmSource(),
        _openStore = openStore ?? AsrModelStore.open,
@@ -154,6 +155,9 @@ class AsrTranscriptionService {
   /// [AsrEngineLoader] / [AsrPcmSource] 只在该路径生效——闭包与 fake 会话过不了
   /// isolate 边界。
   final bool runInIsolate;
+
+  /// 见 [AsrTranscribeJob.usePipeline]（基准对照用；生产恒 true）。
+  final bool usePipeline;
 
   /// 默认批次：GPU 上 batch 越大越省逐帧 joiner 的往返（2026-09-05 真机分阶段计时
   /// 里逐帧循环是 ASR 阶段的大头，encoder 本身在 DirectML 上只占零头）；CPU 上
@@ -315,6 +319,7 @@ class AsrTranscriptionService {
           chunkSeconds: chunkSeconds,
           segmenterKind: segmenterKind,
           batchSize: batchSize,
+          usePipeline: usePipeline,
         ),
       );
     }
@@ -356,6 +361,8 @@ class AsrTranscriptionService {
             batchSize ??
             defaultBatchSizeFor(sessions.encoderResolution.effective),
         chunkSeconds: chunkSeconds,
+        statsProvider: () => decoder.stats,
+        usePipeline: usePipeline,
       );
       return AsrInProcessTranscription(
         sessions: sessions,

@@ -93,7 +93,7 @@ set(flutter_onnxruntime_bundled_libraries "${ONNXRUNTIME_DLL}" "${ONNXRUNTIME_PR
 add_definitions(-DWIN32_LEAN_AND_MEAN -DNOMINMAX -DUNICODE -D_UNICODE)
 
 # Any new source files that you add to the plugin should be added here.
-list(APPEND PLUGIN_SOURCES "src/dml_provider.cc"
+list(APPEND PLUGIN_SOURCES "src/async_dispatch.cc" "src/dml_provider.cc" "src/dxgi_memory.cc"
   "src/session_manager.cc" "src/value_conversion.cc" "src/tensor_manager.cc"
      "src/windows_utils.cc")
 
@@ -157,7 +157,7 @@ target_link_libraries(${PLUGIN_NAME} PRIVATE flutter flutter_wrapper_plugin)
 target_link_libraries(${PLUGIN_NAME} PRIVATE ${ONNXRUNTIME_LIBRARIES})
 
 # Link against Windows Shell API library for PathRemoveFileSpecW
-target_link_libraries(${PLUGIN_NAME} PRIVATE Shlwapi)
+target_link_libraries(${PLUGIN_NAME} PRIVATE Shlwapi dxgi)
 
 # Copy the complete DirectML runtime next to the plugin for local runs. Flutter
 # also consumes flutter_onnxruntime_bundled_libraries when assembling the app.

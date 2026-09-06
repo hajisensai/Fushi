@@ -82,6 +82,27 @@ const List<AsrEncoderBucket> kAsrGpuEncoderBuckets = <AsrEncoderBucket>[
   AsrEncoderBucket(frames: 1120, batch: 16),
 ];
 
+/// 显存吃紧时的半桶（行数减半，融合图常驻的中间张量随之减半）。
+const List<AsrEncoderBucket> kAsrGpuEncoderBucketsSmall = <AsrEncoderBucket>[
+  AsrEncoderBucket(frames: 560, batch: 16),
+  AsrEncoderBucket(frames: 1120, batch: 8),
+];
+
+const int _kGiB = 1024 * 1024 * 1024;
+
+/// 按显存预算（字节，DXGI 本进程可分配上限；null = 查不到）选桶表：
+/// - ≥ 10 GiB：[kAsrGpuEncoderBuckets]（12 GB 卡上 E2E 峰值 6.6~7.6 GB，含动态
+///   会话与贪心图）；
+/// - 6~10 GiB：[kAsrGpuEncoderBucketsSmall]；
+/// - < 6 GiB：空表——静态图溢出到系统内存后比动态会话还慢，不如不建；
+/// - null：按默认表试，建失败自会回退（非 Windows 走不到 GPU 桶）。
+List<AsrEncoderBucket> asrEncoderBucketsForBudget(int? budgetBytes) {
+  if (budgetBytes == null) return kAsrGpuEncoderBuckets;
+  if (budgetBytes >= 10 * _kGiB) return kAsrGpuEncoderBuckets;
+  if (budgetBytes >= 6 * _kGiB) return kAsrGpuEncoderBucketsSmall;
+  return const <AsrEncoderBucket>[];
+}
+
 /// 一个已建好的静态桶会话。
 class AsrStaticEncoderSession {
   const AsrStaticEncoderSession({required this.bucket, required this.session});
@@ -189,18 +210,19 @@ class AsrStaticEncoderPool {
     }
   }
 
-  /// 后台把**最小**桶建起来（不等待）：建一个会话 3~8 s，放到第一批需要时再建
-  /// 会让转录卡在那里；装载完就开始建，第一批到时通常已经好了或正在建。
+  /// 把**最小**桶建起来并等它建完。建一个会话 3~8 s：放到第一批需要时再建会让
+  /// 转录卡在那里，而不等它建完就开跑，进度与 ETA 会把建桶的停顿算成转录速度
+  /// （2026-09-06 A/B：30 分钟样本 wall 多出 ~4 s，全是第一批在等桶）。
   ///
   /// 只预热最小的那个是有意的。每个桶常驻一份编码器权重 + 融合图一次性分配的
   /// 全部中间张量（实测 E2E 峰值 6.6~7.6 GB），而显存不足时 DirectML **不抛
   /// 异常**——它溢出到主机内存，表现是 RSS 暴涨直到进程被系统杀掉，
   /// [markUnavailable] 这条回退路径根本照不到。全预热等于在任何机器上都先把
   /// 两份都占上；按需建则是「真出现长段才多占一份」。
-  /// 短素材（段都不超过最小桶）因此只会建一个会话。
-  void prewarmSmallest() {
+  /// 短素材（段都不超过最小桶）因此只会建一个会话。建失败记原因、不抛。
+  Future<void> prewarmSmallest() async {
     if (buckets.isEmpty) return;
-    unawaited(sessionFor(buckets.first.frames));
+    await sessionFor(buckets.first.frames);
   }
 
   /// 运行期发现该桶不可用（建得起来、`run` 抛错）：关掉会话、记原因，之后
