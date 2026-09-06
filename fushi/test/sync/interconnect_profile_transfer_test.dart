@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/sync/app_model_library_host_service.dart';
+import 'package:fushi/src/sync/local_library_host_service.dart';
 import 'package:fushi/src/sync/fushi_sync_server.dart';
 import 'package:fushi/src/sync/interconnect_profile_transfer.dart';
 import 'package:fushi/src/sync/sync_asset_package_service.dart';
@@ -94,10 +94,10 @@ void main() {
     late FushiDatabase db;
     late Directory tempDir;
 
-    AppModelLibraryHostService buildHost({
+    LocalLibraryHostService buildHost({
       required bool wireProfileCallbacks,
     }) {
-      return AppModelLibraryHostService(
+      return LocalLibraryHostService(
         db: db,
         dictionaryResourceRoot: tempDir,
         packages: SyncAssetPackageService(db: db),
@@ -123,7 +123,7 @@ void main() {
     });
 
     test('默认关：接线了回调但用户没开，仍然不可用', () async {
-      final AppModelLibraryHostService host =
+      final LocalLibraryHostService host =
           buildHost(wireProfileCallbacks: true);
       expect(await host.isInterconnectProfileTransferEnabled(), isFalse,
           reason: '整份配置的读写必须是用户显式 opt-in（BUG-988 的规矩）');
@@ -131,14 +131,14 @@ void main() {
 
     test('用户开启后可用', () async {
       await SyncRepository(db).setInterconnectProfileTransferEnabled(true);
-      final AppModelLibraryHostService host =
+      final LocalLibraryHostService host =
           buildHost(wireProfileCallbacks: true);
       expect(await host.isInterconnectProfileTransferEnabled(), isTrue);
     });
 
     test('依赖未接线时即使开关为真也不可用（不会抛给对端 500）', () async {
       await SyncRepository(db).setInterconnectProfileTransferEnabled(true);
-      final AppModelLibraryHostService host =
+      final LocalLibraryHostService host =
           buildHost(wireProfileCallbacks: false);
       expect(await host.isInterconnectProfileTransferEnabled(), isFalse);
       // 端点在开关判据为假时就 403 了，永远走不到这两个方法；真被调到也要如实抛，

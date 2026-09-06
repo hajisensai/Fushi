@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/sync/app_model_library_host_service.dart';
+import 'package:fushi/src/sync/local_library_host_service.dart';
 import 'package:fushi/src/sync/backup_merge_engine.dart';
 import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/fushi_library_host_service.dart';
@@ -19,7 +19,7 @@ import 'temp_dir_cleanup.dart';
 /// strip 掉。本测试按「只搬显示名、绝不搬身份」这条契约锁住三条通道。
 ///
 /// 变异实测（2026-08-10，逐条破坏 lib 确认转红后**反向替换**还原，零 lib 残留）：
-///  - `app_model_library_host_service.dart` 的 `displayTitle: overrideTitles[r.bookKey]`
+///  - `local_library_host_service.dart` 的 `displayTitle: overrideTitles[r.bookKey]`
 ///    改回 `displayTitle: null` → 「host 清单下发用户改过的书名」转红
 ///    （expected `'我改的名字'`，actual `'原始书名'`）；
 ///  - `fushi_library_host_service.dart` 的 wire 键 `'displayTitle'` 改名成
@@ -56,8 +56,8 @@ void main() {
     return db;
   }
 
-  AppModelLibraryHostService buildHost(FushiDatabase db) =>
-      AppModelLibraryHostService(
+  LocalLibraryHostService buildHost(FushiDatabase db) =>
+      LocalLibraryHostService(
         db: db,
         dictionaryResourceRoot: Directory.systemTemp,
         packages: SyncAssetPackageService(db: db),

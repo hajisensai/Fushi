@@ -124,7 +124,7 @@ import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/media/tracking/media_tracking_repository.dart';
 import 'package:fushi/src/media/tracking/media_tracking_service.dart';
-import 'package:fushi/src/sync/app_model_library_host_service.dart';
+import 'package:fushi/src/sync/local_library_host_service.dart';
 import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/deletion_prompt.dart';
 import 'package:fushi/src/sync/deletion_propagation.dart';
@@ -529,7 +529,7 @@ class AppModel with ChangeNotifier {
     // manga_ocr_provider（唯一引用 MangaOcrServiceImpl 的文件）；不支持内置 OCR 的
     // 平台（移动端）也接线——capability 会如实报 supported=false，client 据此隐藏。
     mangaOcrServiceFactory: createMangaOcrService,
-    libraryServiceFactory: () => AppModelLibraryHostService(
+    libraryServiceFactory: () => LocalLibraryHostService(
       db: database,
       dictionaryResourceRoot: dictionaryResourceDirectory,
       packages: SyncAssetPackageService(db: database),

@@ -13,7 +13,7 @@ typedef OverrideTitleEntry = ({String title, int updatedAt});
 /// 全库「bookKey → 显示名 + 戳」的**唯一查询实现**。
 ///
 /// 互联的两个方向都要读它，各写一份必然漂：
-///  - host 下发书清单（`AppModelLibraryHostService.listBooks` 填
+///  - host 下发书清单（`LocalLibraryHostService.listBooks` 填
 ///    `RemoteBookInfo.displayTitle` / `displayTitleAt`，BUG-1488 + BUG-1502）；
 ///  - client 推书给 host（`SyncOrchestrator._syncBooksContentLive` 填
 ///    `putRemoteBook` 的两个 header，BUG-1503）。

@@ -45,7 +45,9 @@ void main() {
   });
 
   test('删除有声书时引用的外部 audioRoot 不被递归删除', () {
-    final String src = read('lib/src/sync/app_model_library_host_service.dart');
+    // B4 拆分后 deleteAudiobook / _deleteAudioRootIfPersisted 在 audiobooks.part.dart。
+    final String src =
+        read('lib/src/sync/local_library_host_service/audiobooks.part.dart');
     // audioRoot 删除前必须经引用判据守卫（引用导入的外部目录不删）。
     expect(
       src.contains('AudiobookStorage.isReferencedPath'),

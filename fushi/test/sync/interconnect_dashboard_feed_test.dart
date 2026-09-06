@@ -5,7 +5,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/activity_feed.dart';
-import 'package:fushi/src/sync/app_model_library_host_service.dart';
+import 'package:fushi/src/sync/local_library_host_service.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/fushi_sync_server.dart';
@@ -27,13 +27,13 @@ import 'package:path/path.dart' as p;
 ///    不写键、缺失/未知回落 epub），`RemoteContinueCandidate` 携带 [MediaKind]
 ///    而非 isVideo 二元降维（远端 SRT 书不再被抹成 epub、游戏等第三种媒体
 ///    结构上装得下）。
-AppModelLibraryHostService _makeService({
+LocalLibraryHostService _makeService({
   required FushiDatabase db,
   required Directory tmp,
 }) {
   final Directory dictRoot = Directory(p.join(tmp.path, 'dicts'))
     ..createSync(recursive: true);
-  return AppModelLibraryHostService(
+  return LocalLibraryHostService(
     db: db,
     dictionaryResourceRoot: dictRoot,
     packages: SyncAssetPackageService(db: db),

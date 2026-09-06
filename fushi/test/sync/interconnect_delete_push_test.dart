@@ -19,7 +19,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/sync/app_model_library_host_service.dart';
+import 'package:fushi/src/sync/local_library_host_service.dart';
 import 'package:fushi/src/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/fushi_sync_server.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
@@ -96,7 +96,7 @@ void main() {
       ..createSync(recursive: true);
     hostOwnVideo = File(p.join(work.path, 'my_own_movie.mp4'))
       ..writeAsBytesSync(<int>[9, 9, 9, 9]);
-    final AppModelLibraryHostService libSvc = AppModelLibraryHostService(
+    final LocalLibraryHostService libSvc = LocalLibraryHostService(
       db: hostDb,
       dictionaryResourceRoot: Directory(work.path),
       packages: SyncAssetPackageService(db: hostDb),

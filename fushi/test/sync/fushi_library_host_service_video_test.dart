@@ -5,14 +5,14 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/ffmpeg_backend.dart';
-import 'package:fushi/src/sync/app_model_library_host_service.dart';
+import 'package:fushi/src/sync/local_library_host_service.dart';
 import 'package:fushi/src/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/sync_asset_package_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
-/// 最小 AppModelLibraryHostService 实例（不需要词典/书籍功能）。
-AppModelLibraryHostService _makeService({
+/// 最小 LocalLibraryHostService 实例（不需要词典/书籍功能）。
+LocalLibraryHostService _makeService({
   required FushiDatabase db,
   required Directory tmp,
   String langCode = 'ja',
@@ -25,7 +25,7 @@ AppModelLibraryHostService _makeService({
     ..createSync(recursive: true);
   final Directory coversRoot = Directory(p.join(tmp.path, 'covers'))
     ..createSync(recursive: true);
-  return AppModelLibraryHostService(
+  return LocalLibraryHostService(
     db: db,
     dictionaryResourceRoot: dictRoot,
     packages: SyncAssetPackageService(db: db),
@@ -57,7 +57,7 @@ void main() {
 
   group('listVideos', () {
     test('空库返回空列表', () async {
-      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       final List<RemoteVideoInfo> list = await svc.listVideos();
       expect(list, isEmpty);
     });
@@ -73,7 +73,7 @@ void main() {
         videoPath: videoFile.path,
       ));
 
-      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       final List<RemoteVideoInfo> list = await svc.listVideos();
       expect(list.length, 1);
       expect(list[0].id, 'video/film');
@@ -96,7 +96,7 @@ void main() {
         coverPath: Value<String?>(coverFile.path),
       ));
 
-      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       final List<RemoteVideoInfo> list = await svc.listVideos();
 
       expect(list.single.toJson()['hasCover'], isTrue);
@@ -109,7 +109,7 @@ void main() {
         videoPath: p.join(tmp.path, 'nonexistent.mp4'),
       ));
 
-      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       final List<RemoteVideoInfo> list = await svc.listVideos();
       expect(list[0].sizeBytes, isNull);
     });
@@ -127,7 +127,7 @@ void main() {
         videoPath: videoPath,
       ));
 
-      final AppModelLibraryHostService svc =
+      final LocalLibraryHostService svc =
           _makeService(db: db, tmp: tmp, langCode: 'ja');
       final List<RemoteVideoInfo> list = await svc.listVideos();
       expect(list[0].hasSubtitle, isTrue);
@@ -146,7 +146,7 @@ void main() {
         videoPath: videoPath,
       ));
 
-      final AppModelLibraryHostService svc =
+      final LocalLibraryHostService svc =
           _makeService(db: db, tmp: tmp, langCode: 'ja');
       final List<RemoteVideoInfo> list = await svc.listVideos();
 
@@ -169,7 +169,7 @@ void main() {
         videoPath: videoPath,
       ));
 
-      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       final List<RemoteVideoInfo> list = await svc.listVideos();
 
       // 列表端点是纯 DB/stat 读：内嵌轨恒空、hasSubtitle 只反映外挂 sidecar（此处无）。
@@ -186,7 +186,7 @@ void main() {
         videoPath: '/tmp/delayed.mp4',
         delayMs: const Value(-1500),
       ));
-      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       final List<RemoteVideoInfo> list = await svc.listVideos();
       expect(list.single.delayMs, -1500,
           reason: 'host 的 VideoBooks.delayMs 必须下发给远端');
@@ -206,7 +206,7 @@ void main() {
         delayMs: const Value(-1500),
       ));
       // client 上报过带戳调轴（prefs 通道）→ 清单应下发 prefs 胜者而非旧行值。
-      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       await svc.putVideoPlayback('video/delayed2',
           const VideoPlaybackSyncState(delayMs: 2000, delayAt: 1700000000000));
       final List<RemoteVideoInfo> list = await svc.listVideos();
@@ -275,7 +275,7 @@ void main() {
 
     test('无带戳 prefs 时回退行/系列级基底（戳 0）；未知 id 返回默认', () async {
       await insertVideo(delayMs: -800);
-      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       final VideoPlaybackSyncState s = await svc.getVideoPlayback(uid);
       expect(s.delayMs, -800, reason: '旧数据（无 prefs）行为与此前直读 row 一致');
       expect(s.delayAt, 0);
@@ -287,7 +287,7 @@ void main() {
 
     test('putVideoPlayback 落键对 + 写穿 row；逐字段严格较新者胜', () async {
       await insertVideo();
-      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       await svc.putVideoPlayback(
           uid,
           const VideoPlaybackSyncState(
@@ -325,7 +325,7 @@ void main() {
     });
 
     test('putVideoPlayback 未知 id / 空状态 no-op（不写脏 prefs）', () async {
-      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       await svc.putVideoPlayback('video/ghost',
           const VideoPlaybackSyncState(delayMs: 1234, delayAt: 1700000000000));
       expect(
@@ -340,7 +340,7 @@ void main() {
 
     test('putVideoPlayback clamp ±600000；未来时间戳被上限截断', () async {
       await insertVideo();
-      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       final int farFuture =
           DateTime.now().millisecondsSinceEpoch + 10 * 24 * 3600 * 1000;
       await svc.putVideoPlayback(
@@ -378,7 +378,7 @@ void main() {
       await db.updateMediaCollectionSubtitleDelayMs(cid, -2000);
       await db.updateMediaCollectionAudioTrackId(cid, '3');
 
-      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       final RemoteVideoInfo info = (await svc.listVideos()).single;
       expect(info.delayMs, -2000,
           reason: 'host 在合集里调的轴（系列级）此前远端永远看不到——须优先于 row');
@@ -401,7 +401,7 @@ void main() {
       await db.upsertCollectionItemAt(cid, 'video', 'video/s2', 0);
       await db.updateMediaCollectionSubtitleDelayMs(cid, -2000);
 
-      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       final VideoPlaybackSyncState s = await svc.getVideoPlayback('video/s2');
       expect(s.delayMs, -2000, reason: '无带戳 prefs 时基底 = 系列级 ?? row');
       expect(s.delayAt, 0);
@@ -452,7 +452,7 @@ void main() {
         currentEpisode: const Value<int>(1),
       ));
 
-      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       final List<RemoteVideoInfo> list = await svc.listVideos();
       expect(list.single.episodes, hasLength(2));
       expect(list.single.episodes[0].index, 0);
@@ -479,7 +479,7 @@ void main() {
         title: 'Single',
         videoPath: f.path,
       ));
-      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       final List<RemoteVideoInfo> list = await svc.listVideos();
       expect(list.single.episodes, isEmpty);
       expect(list.single.toJson().containsKey('episodes'), isFalse,
@@ -543,7 +543,7 @@ void main() {
     test('resolveVideoFile(episodeIndex) looks up playlistJson[N].path',
         () async {
       await seedSeries();
-      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       final File? f0 =
           await svc.resolveVideoFile('video/series2', episodeIndex: 0);
       final File? f1 =
@@ -556,7 +556,7 @@ void main() {
 
     test('out-of-range episodeIndex returns null (safe reject)', () async {
       await seedSeries();
-      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       expect(
           await svc.resolveVideoFile('video/series2', episodeIndex: 9), isNull);
       expect(await svc.resolveVideoFile('video/series2', episodeIndex: -1),
@@ -565,7 +565,7 @@ void main() {
 
     test('resolveVideoSubtitle(episodeIndex) per-episode sidecar', () async {
       await seedSeries();
-      final AppModelLibraryHostService svc =
+      final LocalLibraryHostService svc =
           _makeService(db: db, tmp: tmp, langCode: 'ja');
       final File? sub1 =
           await svc.resolveVideoSubtitle('video/series2', episodeIndex: 1);
@@ -585,7 +585,7 @@ void main() {
         title: 'Plain',
         videoPath: f.path,
       ));
-      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       final File? r =
           await svc.resolveVideoFile('video/plain', episodeIndex: 0);
       expect(r, isNotNull);
@@ -598,7 +598,7 @@ void main() {
           videoRemotePositionEpisodePrefKey('video/series2', 1), 50000);
       await db.setPrefTyped<int>(
           videoRemotePositionEpisodeAtPrefKey('video/series2', 1), 9000);
-      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
 
       final ({int positionMs, int updatedAtMs}) ep1 =
           await svc.getVideoPosition('video/series2', episodeIndex: 1);
@@ -622,14 +622,14 @@ void main() {
         videoPath: videoFile.path,
       ));
 
-      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       final File? f = await svc.resolveVideoFile('video/clip');
       expect(f, isNotNull);
       expect(f!.path, videoFile.path);
     });
 
     test('未知 id → null', () async {
-      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       final File? f = await svc.resolveVideoFile('video/does_not_exist');
       expect(f, isNull);
     });
@@ -641,7 +641,7 @@ void main() {
         videoPath: p.join(tmp.path, 'vanished.mp4'), // 不创建文件
       ));
 
-      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       final File? f = await svc.resolveVideoFile('video/vanished');
       expect(f, isNull);
     });
@@ -651,7 +651,7 @@ void main() {
       final File sneaky = File(p.join(tmp.path, 'secret.mp4'))
         ..writeAsBytesSync(<int>[0xff]);
 
-      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       // 传的是文件路径而非 bookUid，DB 中查不到 → null
       final File? f = await svc.resolveVideoFile(sneaky.path);
       expect(f, isNull);
@@ -673,7 +673,7 @@ void main() {
         videoPath: videoPath,
       ));
 
-      final AppModelLibraryHostService svc =
+      final LocalLibraryHostService svc =
           _makeService(db: db, tmp: tmp, langCode: 'ja');
       final File? f =
           await svc.resolveVideoSubtitle('video/ep01', langCode: 'ja');
@@ -691,13 +691,13 @@ void main() {
         videoPath: videoPath,
       ));
 
-      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       final File? f = await svc.resolveVideoSubtitle('video/nosub');
       expect(f, isNull);
     });
 
     test('未知 id → null', () async {
-      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       final File? f = await svc.resolveVideoSubtitle('video/unknown');
       expect(f, isNull);
     });
@@ -713,7 +713,7 @@ void main() {
         videoPath: '/tmp/local.mp4',
         lastPositionMs: const Value(360000),
       ));
-      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
 
       final ({int positionMs, int updatedAtMs}) progress =
           await svc.getVideoPosition('video/local');
@@ -734,7 +734,7 @@ void main() {
         lastPositionMs: const Value(900746),
         importedAt: const Value(importedMs),
       ));
-      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
 
       final ({int positionMs, int updatedAtMs}) progress =
           await svc.getVideoPosition('video/legacy');
@@ -754,7 +754,7 @@ void main() {
           videoRemotePositionPrefKey('video/both'), 800000);
       await db.setPrefTyped<int>(
           videoRemotePositionAtPrefKey('video/both'), 7000);
-      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
 
       final ({int positionMs, int updatedAtMs}) progress =
           await svc.getVideoPosition('video/both');
@@ -763,7 +763,7 @@ void main() {
     });
 
     test('unknown id returns zero', () async {
-      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       final ({int positionMs, int updatedAtMs}) progress =
           await svc.getVideoPosition('video/missing');
       expect(progress.positionMs, 0);
@@ -790,7 +790,7 @@ void main() {
 
     test('子端上报较新进度：行 lastPositionMs/lastPlayedAt 前进，时刻=对端戳', () async {
       await seedRow('video/ep14');
-      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
 
       const int peerAt = importedMs + 86400000;
       await svc.putVideoPosition('video/ep14', 1200000, peerAt);
@@ -806,7 +806,7 @@ void main() {
       // host 本机曾播过一点（行级进度 + 本机时刻）。
       await db.updateVideoBookPosition('video/ep15', 300000,
           playedAt: importedMs + 1000);
-      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
 
       const int peerAt = importedMs + 7200000;
       await svc.putVideoPosition('video/ep15', 1400000, peerAt);
@@ -818,7 +818,7 @@ void main() {
 
     test('older 上报不回退行进度（LWW no-op 早退）', () async {
       await seedRow('video/ep16');
-      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
 
       const int newerAt = importedMs + 3600000;
       await svc.putVideoPosition('video/ep16', 1200000, newerAt);
@@ -832,7 +832,7 @@ void main() {
 
     test('episodeIndex>0（host-playlist 单行多集）不镜像行', () async {
       await seedRow('video/playlist-row');
-      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
 
       const int peerAt = importedMs + 60000;
       await svc.putVideoPosition('video/playlist-row', 700000, peerAt,
@@ -850,7 +850,7 @@ void main() {
     });
 
     test('无 VideoBooks 行（流式视频）不建行、prefs 照写', () async {
-      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
 
       await svc.putVideoPosition('video/stream-only', 800000, 7000);
 
@@ -868,7 +868,7 @@ void main() {
     test('上传视频落进 uploadedVideoRoot 并 upsert VideoBooks 行（保留扩展名）', () async {
       final Directory uploads = Directory(p.join(tmp.path, 'remote_videos'))
         ..createSync(recursive: true);
-      final AppModelLibraryHostService svc =
+      final LocalLibraryHostService svc =
           _makeService(db: db, tmp: tmp, uploadedVideoRoot: uploads);
 
       // client 上传的临时字节（模拟 server 落到临时目录的 body）。
@@ -900,7 +900,7 @@ void main() {
     test('重复上传同一 bookUid 幂等覆盖同一行（不产生重复条目）', () async {
       final Directory uploads = Directory(p.join(tmp.path, 'remote_videos'))
         ..createSync(recursive: true);
-      final AppModelLibraryHostService svc =
+      final LocalLibraryHostService svc =
           _makeService(db: db, tmp: tmp, uploadedVideoRoot: uploads);
 
       await svc.importVideo(
@@ -931,7 +931,7 @@ void main() {
         ..createSync(recursive: true);
       final File coverFile = File(p.join(tmp.path, 'cover.png'))
         ..writeAsBytesSync(<int>[1, 2, 3]);
-      final AppModelLibraryHostService svc = _makeService(
+      final LocalLibraryHostService svc = _makeService(
         db: db,
         tmp: tmp,
         uploadedVideoRoot: uploads,
@@ -953,7 +953,7 @@ void main() {
     });
 
     test('未注入 uploadedVideoRoot 时 importVideo 抛 UnsupportedError', () async {
-      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       expect(
         () => svc.importVideo(
           File(p.join(tmp.path, 'x.bin'))..writeAsBytesSync(<int>[0]),
@@ -965,7 +965,7 @@ void main() {
     });
 
     test('videoExists 拒路径穿越 id', () async {
-      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       expect(() => svc.videoExists('../escape'), throwsA(isA<ArgumentError>()));
     });
   });

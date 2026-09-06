@@ -1107,7 +1107,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
         p.join(dir.path, '${_safeRemoteBookKey(book.title)}.fushiaudio'));
   }
 
-  /// 本地有声书解包落盘根目录（与 [AppModelLibraryHostService] 同源
+  /// 本地有声书解包落盘根目录（与 [LocalLibraryHostService] 同源
   /// `<appDirectory>/audiobooks`，确保导入位置与 host 导入一致）。
   Directory _audiobookDatabaseRoot() =>
       Directory(p.join(appModel.appDirectory.path, 'audiobooks'));
