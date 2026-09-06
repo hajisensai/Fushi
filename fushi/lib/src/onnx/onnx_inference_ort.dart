@@ -303,6 +303,11 @@ class _OrtOnnxSession implements OnnxSession {
   @override
   Future<Map<String, OnnxTensor>> run(Map<String, OnnxTensor> inputs) async {
     final Map<String, OrtValue> ortInputs = <String, OrtValue>{};
+    final Stopwatch? trace = kOnnxTraceEnabled ? (Stopwatch()..start()) : null;
+    int tIn = 0;
+    int tRun = 0;
+    int tOut = 0;
+    int elems = 0;
     try {
       final OnnxSessionInputResolver? resolve = _resolveInputs;
       final Map<String, OnnxTensor> resolvedInputs =
@@ -328,12 +333,17 @@ class _OrtOnnxSession implements OnnxSession {
         }
       }
 
+      if (trace != null) tIn = trace.elapsedMilliseconds;
       final Map<String, OrtValue> ortOutputs = await _session.run(ortInputs);
+      if (trace != null) tRun = trace.elapsedMilliseconds - tIn;
       try {
         final Map<String, OnnxTensor> outputs = <String, OnnxTensor>{};
         for (final MapEntry<String, OrtValue> entry in ortOutputs.entries) {
-          outputs[entry.key] = await _readAsFloat32(entry.key, entry.value);
+          final OnnxTensor t = await _readAsFloat32(entry.key, entry.value);
+          elems += t.floatData?.length ?? 0;
+          outputs[entry.key] = t;
         }
+        if (trace != null) tOut = trace.elapsedMilliseconds - tIn - tRun;
         return outputs;
       } finally {
         for (final OrtValue value in ortOutputs.values) {
@@ -343,6 +353,14 @@ class _OrtOnnxSession implements OnnxSession {
     } finally {
       for (final OrtValue value in ortInputs.values) {
         await value.dispose();
+      }
+      if (trace != null) {
+        final int total = trace.elapsedMilliseconds;
+        onnxTrace(
+          '[onnx-trace] in=${tIn}ms run=${tRun}ms out=${tOut}ms '
+          'dispose=${total - tIn - tRun - tOut}ms total=${total}ms '
+          'outElems=$elems inputs=${ortInputs.keys.join(',')}',
+        );
       }
     }
   }

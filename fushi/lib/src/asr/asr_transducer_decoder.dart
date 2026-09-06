@@ -17,6 +17,8 @@
 /// （`log(1e-10) ≈ -23.0259`），`x_lens` 给真实帧数。
 library;
 
+import 'dart:async';
+import 'dart:developer' as developer;
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -203,6 +205,48 @@ class AsrTransducerDecoder
   /// 贪心搜索并行度（Loop 图会话数；逐帧路径为 0）。
   int get greedySessionCount => _greedySessions.length;
 
+  final Set<AsrEncoderBucket> _warmed = <AsrEncoderBucket>{};
+
+  /// 已发出 warm-up 的桶数（测试用）。
+  int get warmedBucketCount => _warmed.length;
+
+  @override
+  void warmUp() {
+    final AsrStaticEncoderPool? pool = _staticEncoders;
+    if (pool == null) return;
+    for (final AsrStaticEncoderSession s in pool.readySessions) {
+      if (!_warmed.add(s.bucket)) continue;
+      final int rows = s.bucket.batch;
+      final int cols = s.bucket.frames;
+      // 全是哨兵行：pad 值填满、x_lens = T_b，与真批的填充行形状完全一致。
+      final Float32List x = Float32List(rows * cols * kAsrFeatureDim)
+        ..fillRange(0, rows * cols * kAsrFeatureDim, kFeaturePadValue);
+      final Future<Map<String, OnnxTensor>> run = s.session.run(
+        <String, OnnxTensor>{
+          AsrModelIo.encoderInputX: OnnxTensor.float32(x, <int>[
+            rows,
+            cols,
+            kAsrFeatureDim,
+          ]),
+          AsrModelIo.encoderInputXLens: _indexTensor(
+            List<int>.filled(rows, cols),
+            <int>[rows],
+          ),
+        },
+      );
+      unawaited(
+        run.then<void>((_) {}).catchError((Object error, StackTrace stack) {
+          developer.log(
+            'ASR encoder warm-up on ${s.bucket} failed (ignored)',
+            name: kAsrLogName,
+            error: error,
+            stackTrace: stack,
+          );
+        }),
+      );
+    }
+  }
+
   /// 静态桶对一批的行数封顶（最长段决定桶）；没有静态桶时 null。
   @override
   int? batchCapFor(int longestSamples) =>
@@ -355,6 +399,12 @@ class AsrTransducerDecoder
         kFeaturePadValue,
       );
       xLens[i] = f == null ? cols : feats.frameCounts[i];
+    }
+    if (kOnnxTraceEnabled) {
+      onnxTrace(
+        '[asr-trace] encode rows=$rows cols=$cols batch=$batch '
+        'fill=${clock.elapsedMilliseconds}ms',
+      );
     }
     // run 与**输出契约校验**必须在同一个 try 里：融合图少给一个输出 key、或回来
     // 的行数与 rows 对不上，同样是「这个静态桶跑不动」的表现形态，而且正是全新

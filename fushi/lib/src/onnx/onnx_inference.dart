@@ -9,6 +9,7 @@
 /// 名字保留为 typedef 别名，OCR 调用方零改动。
 library;
 
+import 'dart:io';
 import 'dart:typed_data';
 
 /// 支持的张量元素类型：float32 / int64 给 OCR 与大多数 ASR 模型；int32 给把
@@ -125,4 +126,27 @@ class OnnxProviderResolution {
     return 'OnnxProviderResolution($from -> ${effective.name}: '
         '$fallbackReason)';
   }
+}
+
+/// `FUSHI_ASR_TRACE=<文件路径>`：每次 [OnnxSession.run] 追加一行分步耗时
+/// （建输入张量 / Run / 读回输出 / 释放），encode 也记张量填充耗时——Dart↔插件
+/// 往返有多贵只能这样量，`AsrDecodeStats` 的分段计时把等待都算在一起分不出来。
+/// 落文件而不是 stdout：转录跑在后台 isolate，那里的 `print` 进不了集成测试的
+/// command.log。诊断开关，生产不设。
+final String? kOnnxTraceFile = () {
+  final String? v = Platform.environment['FUSHI_ASR_TRACE'];
+  return v == null || v.isEmpty ? null : v;
+}();
+
+bool get kOnnxTraceEnabled => kOnnxTraceFile != null;
+
+/// 追加一行 trace（同步小写；只在 [kOnnxTraceEnabled] 时调）。
+void onnxTrace(String line) {
+  final String? path = kOnnxTraceFile;
+  if (path == null) return;
+  File(path).writeAsStringSync(
+    '${DateTime.now().toIso8601String()} $line\n',
+    mode: FileMode.append,
+    flush: true,
+  );
 }

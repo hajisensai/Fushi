@@ -146,6 +146,8 @@ class AsrTranscriptionService {
     this.usePipeline = true,
     this.useFp16Encoder = true,
     this.staticBucketsOverride,
+    this.greedySessions,
+    this.greedyIntraOpThreads,
   })  : _loader = loader ?? AsrEngineLoader(),
         _pcm = pcm ?? FfmpegAsrPcmSource(),
         _openStore = openStore ?? AsrModelStore.open,
@@ -176,6 +178,11 @@ class AsrTranscriptionService {
 
   /// 见 [AsrEngineLoader.load] 的 `useFp16Encoder`（基准对照用；生产恒 true）。
   final bool useFp16Encoder;
+
+  /// 贪心 Loop 图会话数 / 每会话 intra-op 线程数覆盖（基准扫描用；null 取
+  /// [defaultAsrGreedySessionCount] / [kAsrGreedyGraphIntraOpThreads]）。
+  final int? greedySessions;
+  final int? greedyIntraOpThreads;
 
   /// 默认批次：GPU 上 batch 越大越省逐帧 joiner 的往返（2026-09-05 真机分阶段计时
   /// 里逐帧循环是 ASR 阶段的大头，encoder 本身在 DirectML 上只占零头）；CPU 上
@@ -412,6 +419,8 @@ class AsrTranscriptionService {
           useFp16Encoder: useFp16Encoder,
           staticBucketsOverride: staticBucketsOverride,
           materialMs: materialMs,
+          greedySessions: greedySessions,
+          greedyIntraOpThreads: greedyIntraOpThreads,
         ),
       );
     }
@@ -422,9 +431,12 @@ class AsrTranscriptionService {
       useFp16Encoder: useFp16Encoder,
       staticBucketsOverride: staticBucketsOverride,
       materialMs: materialMs,
+      greedySessions: greedySessions,
+      greedyIntraOpThreads:
+          greedyIntraOpThreads ?? kAsrGreedyGraphIntraOpThreads,
     );
     try {
-      final AsrSegmentDecoder decoder = sessions.newDecoder();
+      final AsrSegmentDecoder decoder = sessions.newDecoder()..warmUp();
       final int maxSegmentMs = sessions.maxSegmentMs;
       final AsrTranscribeJob job = AsrTranscribeJob(
         jobDir: jobDir,

@@ -54,6 +54,11 @@ String _param(String name, {String defaultValue = ''}) {
     'ASR_PIPELINE' => const String.fromEnvironment('ASR_PIPELINE'),
     'ASR_BUCKETS' => const String.fromEnvironment('ASR_BUCKETS'),
     'ASR_FP16' => const String.fromEnvironment('ASR_FP16'),
+    'ASR_GREEDY_SESSIONS' => const String.fromEnvironment(
+        'ASR_GREEDY_SESSIONS',
+      ),
+    'ASR_GREEDY_THREADS' => const String.fromEnvironment('ASR_GREEDY_THREADS'),
+    'ASR_PCM_PARALLEL' => const String.fromEnvironment('ASR_PCM_PARALLEL'),
     _ => '',
   };
   if (fromDefine.isNotEmpty) return fromDefine;
@@ -116,6 +121,13 @@ Future<
     staticBucketsOverride: _bucketsFromEnv(_param('ASR_BUCKETS')),
     // ASR_FP16=0：GPU 上仍用 fp32 编码器（与 fp16 派生图做 A/B）。
     useFp16Encoder: _param('ASR_FP16') != '0',
+    // ASR_GREEDY_SESSIONS / ASR_GREEDY_THREADS：贪心 Loop 图会话数 / 每会话
+    // intra-op 线程数扫描；ASR_PCM_PARALLEL：同时在解的 ffmpeg 块数。
+    greedySessions: int.tryParse(_param('ASR_GREEDY_SESSIONS')),
+    greedyIntraOpThreads: int.tryParse(_param('ASR_GREEDY_THREADS')),
+    pcm: FfmpegAsrPcmSource(
+      parallelism: int.tryParse(_param('ASR_PCM_PARALLEL')),
+    ),
   );
   await service.discard(<String>[audio], _kLang);
   final Stopwatch loadClock = Stopwatch()..start();
@@ -140,6 +152,16 @@ Future<
     AsrTranscribeResult? result;
     await for (final AsrTranscribeEvent e in running.run()) {
       if (e is AsrTranscribeFinishedEvent) result = e.result;
+      if (e is AsrTranscribeProgressEvent) {
+        // 时间线：音频以什么速度穿过前端（ffmpeg → VAD → 攒批）、段何时落盘。
+        // ignore: avoid_print
+        print(
+          '[asr-e2e][progress] t=${sw.elapsedMilliseconds}ms '
+          'processedMs=${e.progress.processedMs} '
+          'segmentsDone=${e.progress.segmentsDone} '
+          'speechMs=${e.progress.speechMs}',
+        );
+      }
     }
     sw.stop();
     expect(result, isNotNull, reason: '任务没有以 finished 结束');

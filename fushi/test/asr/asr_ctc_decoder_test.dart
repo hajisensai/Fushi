@@ -192,6 +192,42 @@ void main() {
     expect(d.stats.realFrames, 5 * kAsrSampleRate ~/ _kFrameSamples);
   });
 
+  test('warmUp：每个已建桶发一次全零空跑（形状 = 桶形状），不等结果、不重复', () async {
+    final _Factory factory = _Factory(_abcPlan);
+    final AsrStaticEncoderPool pool = AsrStaticEncoderPool(
+      factory: factory,
+      modelPath: 'model.onnx',
+      providers: const <OnnxExecutionProvider>[OnnxExecutionProvider.directml],
+      buckets: kAsrCtcGpuBuckets,
+      batchDimName: kAsrCtcBatchDim,
+      timeDimName: kAsrCtcSamplesDim,
+    );
+    final AsrCtcDecoder d = AsrCtcDecoder(
+      model: _CtcSession(_abcPlan),
+      tokens: tokens,
+      staticSessions: pool,
+    );
+    d.warmUp();
+    expect(d.warmedBucketCount, 0, reason: '还没建桶，没得热');
+    await pool.prewarmAll();
+    d.warmUp();
+    expect(d.warmedBucketCount, kAsrCtcGpuBuckets.length);
+    await Future<void>.delayed(Duration.zero);
+    for (int i = 0; i < kAsrCtcGpuBuckets.length; i++) {
+      final AsrEncoderBucket b = kAsrCtcGpuBuckets[i];
+      final _CtcSession s = factory.created[i];
+      expect(s.shapes, <List<int>>[
+        <int>[b.batch, b.frames],
+      ]);
+      expect(s.inputs.single.every((double v) => v == 0), isTrue);
+    }
+    d.warmUp();
+    await Future<void>.delayed(Duration.zero);
+    expect(
+        factory.created.every((_CtcSession s) => s.shapes.length == 1), isTrue,
+        reason: '重复调用不重跑');
+  });
+
   test('空批抛 ArgumentError；超过桶容量的直接 encode 抛、decodeBatch 自动拆批', () async {
     final _Factory factory = _Factory(_abcPlan);
     final AsrStaticEncoderPool pool = AsrStaticEncoderPool(

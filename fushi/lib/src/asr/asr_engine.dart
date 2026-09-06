@@ -23,7 +23,7 @@ import 'package:fushi/src/onnx/onnx_inference_ort.dart';
 
 /// 本子系统的 `dart:developer` 日志通道名（整本转录跑在后台 isolate，理由同
 /// `kOnnxLogName`）。
-const String kAsrLogName = 'hibiki.asr';
+export 'package:fushi/src/asr/asr_types.dart' show kAsrLogName;
 
 /// 用户对加速的偏好：自动（按平台策略挑 GPU EP）或强制 CPU。
 enum AsrAccelerationPreference { auto, cpuOnly }

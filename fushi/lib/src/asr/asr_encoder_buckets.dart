@@ -229,6 +229,10 @@ class AsrStaticEncoderPool {
 
   final Map<AsrEncoderBucket, AsrStaticEncoderSession> _sessions =
       <AsrEncoderBucket, AsrStaticEncoderSession>{};
+
+  /// 此刻已建好的桶会话（快照；解码器据此做首跑 warm-up）。
+  List<AsrStaticEncoderSession> get readySessions =>
+      List<AsrStaticEncoderSession>.unmodifiable(_sessions.values);
   final Map<AsrEncoderBucket, Future<AsrStaticEncoderSession?>> _pending =
       <AsrEncoderBucket, Future<AsrStaticEncoderSession?>>{};
   final Map<AsrEncoderBucket, String> _unavailableReasons =

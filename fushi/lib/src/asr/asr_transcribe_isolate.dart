@@ -59,7 +59,13 @@ class AsrIsolateJobSpec {
     this.useFp16Encoder = true,
     this.staticBucketsOverride,
     this.materialMs,
+    this.greedySessions,
+    this.greedyIntraOpThreads,
   });
+
+  /// 见 [AsrTranscriptionService.greedySessions] / `greedyIntraOpThreads`。
+  final int? greedySessions;
+  final int? greedyIntraOpThreads;
 
   final String storeDirPath;
   final AsrLanguage language;
@@ -360,6 +366,9 @@ Future<void> _isolateMain(_IsolateArgs args) async {
       useFp16Encoder: spec.useFp16Encoder,
       staticBucketsOverride: spec.staticBucketsOverride,
       materialMs: spec.materialMs,
+      greedySessions: spec.greedySessions,
+      greedyIntraOpThreads:
+          spec.greedyIntraOpThreads ?? kAsrGreedyGraphIntraOpThreads,
     );
     args.events.send(
       _LoadedMessage(
@@ -369,7 +378,7 @@ Future<void> _isolateMain(_IsolateArgs args) async {
         encoderFp16: sessions.encoderFp16,
       ),
     );
-    final AsrSegmentDecoder decoder = sessions.newDecoder();
+    final AsrSegmentDecoder decoder = sessions.newDecoder()..warmUp();
     final int maxSegmentMs = sessions.maxSegmentMs;
     final AsrTranscribeJob j = AsrTranscribeJob(
       jobDir: Directory(spec.jobDirPath),

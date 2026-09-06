@@ -27,26 +27,42 @@ class _Scripted {
 /// 记录参数、按脚本逐次响应的 fake [FfmpegBackend]。脚本用尽后返回「exit 0、空文件」
 /// （= EOF）。
 class _FakeFfmpegBackend implements FfmpegBackend {
-  _FakeFfmpegBackend(this.script, {this.probeOutput = '', this.probeCode = 0});
+  _FakeFfmpegBackend(
+    this.script, {
+    this.probeOutput = '',
+    this.probeCode = 0,
+    this.delays = const <Duration>[],
+  });
 
   final List<_Scripted> script;
   final String probeOutput;
   final int? probeCode;
+
+  /// 第 i 次调用在写文件前先等 `delays[i]`（越界不等），模拟并行块乱序完成。
+  final List<Duration> delays;
   final List<List<String>> calls = <List<String>>[];
   final List<List<String>> probeCalls = <List<String>>[];
   final List<Duration> timeouts = <Duration>[];
+  int active = 0;
+  int maxActive = 0;
 
   @override
   Future<FfmpegRunResult> run(List<String> args, Duration timeout) async {
     calls.add(List<String>.of(args));
     timeouts.add(timeout);
-    final _Scripted step = calls.length <= script.length
-        ? script[calls.length - 1]
-        : const _Scripted();
+    final int callIndex = calls.length - 1;
+    active++;
+    if (active > maxActive) maxActive = active;
+    final _Scripted step =
+        callIndex < script.length ? script[callIndex] : const _Scripted();
+    if (callIndex < delays.length) {
+      await Future<void>.delayed(delays[callIndex]);
+    }
     final List<int>? bytes = step.bytes;
     if (bytes != null) {
       await File(args.last).writeAsBytes(bytes, flush: true);
     }
+    active--;
     return FfmpegRunResult(
       returnCode: step.returnCode,
       output: step.output,
@@ -465,6 +481,7 @@ void main() {
       final FfmpegAsrPcmSource source = FfmpegAsrPcmSource(
         backend: backend,
         tempDir: tempRoot,
+        parallelism: 1,
       );
 
       final List<AsrPcmChunk> chunks =
@@ -513,6 +530,7 @@ void main() {
       final FfmpegAsrPcmSource source = FfmpegAsrPcmSource(
         backend: backend,
         tempDir: tempRoot,
+        parallelism: 1,
       );
 
       final List<AsrPcmChunk> chunks = await source
@@ -555,6 +573,7 @@ void main() {
       final FfmpegAsrPcmSource source = FfmpegAsrPcmSource(
         backend: backend,
         tempDir: tempRoot,
+        parallelism: 1,
       );
 
       final List<AsrPcmChunk> chunks =
@@ -597,6 +616,7 @@ void main() {
       final FfmpegAsrPcmSource source = FfmpegAsrPcmSource(
         backend: backend,
         tempDir: tempRoot,
+        parallelism: 1,
       );
       await expectLater(
         source.decode(input.path, chunkSeconds: 1).toList(),
@@ -620,6 +640,7 @@ void main() {
       final FfmpegAsrPcmSource source = FfmpegAsrPcmSource(
         backend: backend,
         tempDir: tempRoot,
+        parallelism: 1,
       );
       await expectLater(
         source.decode(input.path).toList(),
@@ -656,6 +677,7 @@ void main() {
       final FfmpegAsrPcmSource source = FfmpegAsrPcmSource(
         backend: backend,
         tempDir: tempRoot,
+        parallelism: 1,
       );
       await expectLater(
         source.decode(input.path, chunkSeconds: 600).toList(),
@@ -677,6 +699,7 @@ void main() {
       final FfmpegAsrPcmSource source = FfmpegAsrPcmSource(
         backend: backend,
         tempDir: tempRoot,
+        parallelism: 1,
       );
       await expectLater(
         source.decode(input.path).toList(),
@@ -694,6 +717,7 @@ void main() {
       final FfmpegAsrPcmSource source = FfmpegAsrPcmSource(
         backend: _MissingFfmpegBackend(),
         tempDir: tempRoot,
+        parallelism: 1,
       );
       await expectLater(
         source.decode(input.path).toList(),
@@ -713,6 +737,7 @@ void main() {
       final FfmpegAsrPcmSource source = FfmpegAsrPcmSource(
         backend: _FakeFfmpegBackend(const <_Scripted>[]),
         tempDir: tempRoot,
+        parallelism: 1,
       );
       await expectLater(
         source.decode('${tempRoot.path}/missing.mp3').toList(),
@@ -725,6 +750,7 @@ void main() {
       final FfmpegAsrPcmSource source = FfmpegAsrPcmSource(
         backend: _FakeFfmpegBackend(const <_Scripted>[]),
         tempDir: tempRoot,
+        parallelism: 1,
       );
       expect(
         () => source.decode(input.path, startSample: -1).toList(),
@@ -745,6 +771,7 @@ void main() {
       final FfmpegAsrPcmSource source = FfmpegAsrPcmSource(
         backend: backend,
         tempDir: tempRoot,
+        parallelism: 1,
       );
       int seen = 0;
       await for (final AsrPcmChunk _ in source.decode(
@@ -759,6 +786,124 @@ void main() {
       expect(leftovers(), isEmpty);
     });
 
+    test('并行：最多 parallelism 块同时在解，块乱序完成也按块序出、样本一致', () async {
+      // 第 0 块最慢、第 2 块最快：若按完成顺序出就乱了。
+      final _FakeFfmpegBackend backend = _FakeFfmpegBackend(
+        <_Scripted>[
+          _Scripted(bytes: _s16le(List<int>.filled(16000, 1))),
+          _Scripted(bytes: _s16le(List<int>.filled(16000, 2))),
+          _Scripted(bytes: _s16le(List<int>.filled(16000, 3))),
+          _Scripted(bytes: _s16le(List<int>.filled(16000, 4))),
+          _Scripted(bytes: _s16le(List<int>.filled(4000, 5))),
+          const _Scripted(bytes: <int>[]), // EOF
+        ],
+        delays: const <Duration>[
+          Duration(milliseconds: 60),
+          Duration(milliseconds: 30),
+          Duration(milliseconds: 5),
+        ],
+      );
+      final FfmpegAsrPcmSource source = FfmpegAsrPcmSource(
+        backend: backend,
+        tempDir: tempRoot,
+        parallelism: 3,
+      );
+      final List<AsrPcmChunk> chunks =
+          await source.decode(input.path, chunkSeconds: 1).toList();
+      expect(chunks.map((AsrPcmChunk c) => c.startSample), <int>[
+        0,
+        16000,
+        32000,
+        48000,
+        64000,
+      ]);
+      expect(chunks.map((AsrPcmChunk c) => c.samples.length), <int>[
+        16000,
+        16000,
+        16000,
+        16000,
+        4000,
+      ]);
+      for (int i = 0; i < chunks.length; i++) {
+        expect(chunks[i].samples[0], closeTo((i + 1) / 32768, 1e-7));
+      }
+      expect(backend.maxActive, 3, reason: '3 块真的同时在跑');
+      // 每块的 -ss/-t 按块序算：第 i 块起点 i s（预滚 2 s：第 3 块输入端 -ss 1）。
+      final List<String> a3 = backend.calls[3];
+      final int i3 = a3.indexOf('-i');
+      expect(a3.sublist(i3 - 2, i3), <String>['-ss', '1.000']);
+      expect(a3.sublist(i3 + 2, i3 + 4), <String>['-ss', '2.000']);
+      // EOF 之后最多再多发 parallelism−1 块（都解出空），不会无限发。
+      expect(backend.calls.length, inInclusiveRange(6, 8));
+      expect(leftovers(), isEmpty, reason: '在飞的块结束后才删目录');
+    });
+
+    test('并行 + 中途取消：在飞的块跑完后目录才清理，不再新发块', () async {
+      final _FakeFfmpegBackend backend = _FakeFfmpegBackend(
+        List<_Scripted>.generate(
+          8,
+          (int i) => _Scripted(bytes: _s16le(List<int>.filled(16000, i + 1))),
+        ),
+        delays: List<Duration>.filled(8, const Duration(milliseconds: 20)),
+      );
+      final FfmpegAsrPcmSource source = FfmpegAsrPcmSource(
+        backend: backend,
+        tempDir: tempRoot,
+        parallelism: 3,
+      );
+      int seen = 0;
+      await for (final AsrPcmChunk _ in source.decode(
+        input.path,
+        chunkSeconds: 1,
+      )) {
+        seen++;
+        if (seen == 2) break;
+      }
+      expect(seen, 2);
+      // 拉了 2 块：最多发 2 + parallelism 块。
+      expect(backend.calls.length, lessThanOrEqualTo(5));
+      expect(backend.active, 0, reason: '取消时等在飞的块结束');
+      expect(leftovers(), isEmpty);
+    });
+
+    test('并行 + mov 回退：并行起跑的几块各自重跑一次，块序与样本不变', () async {
+      final _FakeFfmpegBackend backend = _FakeFfmpegBackend(<_Scripted>[
+        // 前两块并行、都按 s16le 起跑、都报缺 muxer。
+        const _Scripted(bytes: null, returnCode: 127, output: _kNoS16le),
+        const _Scripted(bytes: null, returnCode: 127, output: _kNoS16le),
+        // 各自切 mov 重跑（顺序：谁先失败谁先重跑，这里两块同步失败按块序）。
+        _Scripted(bytes: _mov(_s16le(List<int>.filled(16000, 7)))),
+        _Scripted(bytes: _mov(_s16le(List<int>.filled(16000, 8)))),
+        _Scripted(bytes: _mov(_s16le(List<int>.filled(16000, 9)))),
+        // EOF（mov 模式下空块也是合法 mov）；并行多发的那块也要有。
+        _Scripted(bytes: _mov(const <int>[])),
+        _Scripted(bytes: _mov(const <int>[])),
+      ]);
+      final FfmpegAsrPcmSource source = FfmpegAsrPcmSource(
+        backend: backend,
+        tempDir: tempRoot,
+        parallelism: 2,
+      );
+      final List<AsrPcmChunk> chunks =
+          await source.decode(input.path, chunkSeconds: 1).toList();
+      expect(chunks.map((AsrPcmChunk c) => c.startSample), <int>[
+        0,
+        16000,
+        32000,
+      ]);
+      expect(chunks[0].samples[0], closeTo(7 / 32768, 1e-7));
+      expect(chunks[1].samples[0], closeTo(8 / 32768, 1e-7));
+      expect(chunks[2].samples[0], closeTo(9 / 32768, 1e-7));
+      expect(source.resolvedContainer, AsrPcmContainer.mov);
+      // 前两次 s16le，之后全是 mov。
+      expect(backend.calls[0], containsAllInOrder(<String>['-f', 's16le']));
+      expect(backend.calls[1], containsAllInOrder(<String>['-f', 's16le']));
+      for (final List<String> args in backend.calls.skip(2)) {
+        expect(args, containsAllInOrder(<String>['-f', 'mov']));
+      }
+      expect(leftovers(), isEmpty);
+    });
+
     test('probeDurationMs 走 runProbe 并解析 JSON', () async {
       final _FakeFfmpegBackend backend = _FakeFfmpegBackend(
         const <_Scripted>[],
@@ -767,6 +912,7 @@ void main() {
       final FfmpegAsrPcmSource source = FfmpegAsrPcmSource(
         backend: backend,
         tempDir: tempRoot,
+        parallelism: 1,
       );
       expect(await source.probeDurationMs(input.path), 3723456);
       expect(backend.probeCalls.single, <String>[
@@ -785,6 +931,7 @@ void main() {
       final FfmpegAsrPcmSource source = FfmpegAsrPcmSource(
         backend: backend,
         tempDir: tempRoot,
+        parallelism: 1,
       );
       expect(await source.probeDurationMs(input.path), isNull);
       expect(await source.probeDurationMs('${tempRoot.path}/nope.m4b'), isNull);
@@ -855,6 +1002,7 @@ void main() {
       final FfmpegAsrPcmSource source = FfmpegAsrPcmSource(
         backend: _ExecutableFfmpegBackend(ffmpeg!, ffprobe!),
         tempDir: tempRoot,
+        parallelism: 1,
       );
       expect(await source.probeDurationMs(mp3Path), closeTo(30000, 60));
       expect(await source.probeDurationMs(m4bPath), closeTo(30000, 60));
@@ -915,6 +1063,7 @@ void main() {
       final FfmpegAsrPcmSource source = FfmpegAsrPcmSource(
         backend: _ExecutableFfmpegBackend(ffmpeg!, ffprobe!),
         tempDir: tempRoot,
+        parallelism: 1,
       );
       const int start = 16000 * 11 + 37; // 11 s + 37 样本（37 % 16 = 5）
       final Float32List ref = await _decodeWhole(ffmpeg, mp3Path);
@@ -943,6 +1092,7 @@ void main() {
       final FfmpegAsrPcmSource source = FfmpegAsrPcmSource(
         backend: _ExecutableFfmpegBackend(min, ffprobe!),
         tempDir: tempRoot,
+        parallelism: 1,
       );
       final Float32List ref = await _decodeWhole(ffmpeg!, coveredMp3Path);
       final Float32List got = await _collect(

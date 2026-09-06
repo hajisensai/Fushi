@@ -15,6 +15,8 @@
 /// 不写死——换模型不必改代码。
 library;
 
+import 'dart:async';
+import 'dart:developer' as developer;
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -102,6 +104,40 @@ class AsrCtcDecoder
       longest = math.max(longest, s.samples.length);
     }
     return pool.batchCapFor(longest);
+  }
+
+  final Set<AsrEncoderBucket> _warmed = <AsrEncoderBucket>{};
+
+  /// 已发出 warm-up 的桶数（测试用）。
+  int get warmedBucketCount => _warmed.length;
+
+  @override
+  void warmUp() {
+    final AsrStaticEncoderPool? pool = _static;
+    if (pool == null) return;
+    for (final AsrStaticEncoderSession s in pool.readySessions) {
+      if (!_warmed.add(s.bucket)) continue;
+      final int rows = s.bucket.batch;
+      final int cols = s.bucket.frames;
+      final Future<Map<String, OnnxTensor>> run = s.session.run(
+        <String, OnnxTensor>{
+          AsrModelIo.ctcInputX: OnnxTensor.float32(
+            Float32List(rows * cols),
+            <int>[rows, cols],
+          ),
+        },
+      );
+      unawaited(
+        run.then<void>((_) {}).catchError((Object error, StackTrace stack) {
+          developer.log(
+            'ASR CTC warm-up on ${s.bucket} failed (ignored)',
+            name: kAsrLogName,
+            error: error,
+            stackTrace: stack,
+          );
+        }),
+      );
+    }
   }
 
   /// 归一化只是一遍线性扫描（30 分钟约 30 ms），不值得过 isolate。

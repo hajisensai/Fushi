@@ -84,6 +84,13 @@ abstract interface class AsrBatchShaper {
 abstract interface class AsrSegmentDecoder
     implements AsrPipelinedDecoder, AsrBatchShaper {
   AsrDecodeStats get stats;
+
+  /// 给每个**已建好**的静态桶发一次空跑，**不等结果**。DirectML 对固定 shape
+  /// 的融合图在首次 Run 时才编译/初始化算子（2026-09-07 实测 1120 帧桶首跑
+  /// 778 ms、280 帧桶 333 ms，稳态 ~100 ms），这笔账躲不掉，但插件的 GPU 队列
+  /// 是 FIFO：装载完立刻发出去，就能和任务前端（ffmpeg + VAD 攒第一批）重叠，
+  /// 第一批只需排在剩余的 warm-up 后面。失败只记日志；重复调用不重跑。
+  void warmUp();
 }
 
 /// 任务进度快照。

@@ -28,6 +28,9 @@ const int kAsrSubsamplingFactor = 4;
 const int kAsrEncoderFrameMs = kAsrFrameShiftMs * kAsrSubsamplingFactor;
 
 /// fbank 维度。
+/// 本子系统的 `dart:developer` 日志通道名。
+const String kAsrLogName = 'hibiki.asr';
+
 const int kAsrFeatureDim = 80;
 
 /// silero-vad v4 每次前向消费的样本数（16 kHz 下 32 ms）。

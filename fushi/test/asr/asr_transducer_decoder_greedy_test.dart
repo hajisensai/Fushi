@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/asr/asr_encoder_buckets.dart';
 import 'package:fushi/src/asr/asr_greedy_graph.dart' show AsrGreedyGraphIo;
 import 'package:fushi/src/asr/asr_transducer_decoder.dart';
 import 'package:fushi/src/asr/asr_types.dart';
@@ -76,6 +77,45 @@ class _Greedy implements OnnxSession {
 
   @override
   Future<void> close() async {}
+}
+
+/// 只记录输入形状的编码器会话（warm-up 用）。
+class _Recording implements OnnxSession {
+  final List<Map<String, OnnxTensor>> calls = <Map<String, OnnxTensor>>[];
+
+  @override
+  Future<Map<String, OnnxTensor>> run(Map<String, OnnxTensor> inputs) async {
+    calls.add(inputs);
+    final int n = inputs[AsrModelIo.encoderInputX]!.shape[0];
+    return <String, OnnxTensor>{
+      AsrModelIo.encoderOutput: OnnxTensor.float32(
+        Float32List(n * _encDim),
+        <int>[n, 1, _encDim],
+      ),
+      AsrModelIo.encoderOutputLens: OnnxTensor.float32(Float32List(n), <int>[
+        n,
+      ]),
+    };
+  }
+
+  @override
+  Future<void> close() async {}
+}
+
+class _RecordingFactory implements OnnxSessionFactory {
+  final List<_Recording> created = <_Recording>[];
+
+  @override
+  Future<OnnxSession> createSession(
+    String modelPath, {
+    required List<OnnxExecutionProvider> providers,
+    int? intraOpNumThreads,
+    Map<String, int>? freeDimensionOverrides,
+  }) async {
+    final _Recording s = _Recording();
+    created.add(s);
+    return s;
+  }
 }
 
 AsrSpeechSegment _seg(int frames) => AsrSpeechSegment(
@@ -240,5 +280,54 @@ void main() {
     await oneRow.decodeBatch(<AsrSpeechSegment>[_seg(5)]);
     expect(a1.calls, 1);
     expect(b1.calls, 0);
+  });
+
+  test('warmUp：每个已建静态桶发一次哨兵行空跑（pad 值、x_lens=T_b），不等结果、不重复', () async {
+    final _RecordingFactory factory = _RecordingFactory();
+    final AsrStaticEncoderPool pool = AsrStaticEncoderPool(
+      factory: factory,
+      modelPath: 'enc.onnx',
+      providers: const <OnnxExecutionProvider>[OnnxExecutionProvider.directml],
+      buckets: const <AsrEncoderBucket>[
+        AsrEncoderBucket(frames: 5, batch: 2),
+        AsrEncoderBucket(frames: 9, batch: 3),
+      ],
+    );
+    final AsrTransducerDecoder d = AsrTransducerDecoder(
+      encoder: _Encoder(<int>[1]),
+      decoder: _Never(),
+      joiner: _Never(),
+      tokens: tokens,
+      staticEncoders: pool,
+    );
+    d.warmUp();
+    expect(d.warmedBucketCount, 0, reason: '还没建桶');
+    await pool.prewarmAll();
+    d.warmUp();
+    expect(d.warmedBucketCount, 2);
+    await Future<void>.delayed(Duration.zero);
+    expect(factory.created, hasLength(2));
+    final Map<String, OnnxTensor> call = factory.created.first.calls.single;
+    expect(call[AsrModelIo.encoderInputX]!.shape, <int>[2, 5, kAsrFeatureDim]);
+    // pad 值经 Float32List 落成 float32，比较也按 float32。
+    final double pad32 = (Float32List(1)
+      ..[0] = AsrTransducerDecoder.kFeaturePadValue)[0];
+    expect(
+      call[AsrModelIo.encoderInputX]!.floatData!.every(
+        (double v) => v == pad32,
+      ),
+      isTrue,
+    );
+    expect(call[AsrModelIo.encoderInputXLens]!.intData, <int>[5, 5]);
+    expect(
+      factory.created.last.calls.single[AsrModelIo.encoderInputX]!.shape,
+      <int>[3, 9, kAsrFeatureDim],
+    );
+    d.warmUp();
+    await Future<void>.delayed(Duration.zero);
+    expect(
+      factory.created.every((_Recording s) => s.calls.length == 1),
+      isTrue,
+    );
   });
 }
