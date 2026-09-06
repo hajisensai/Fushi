@@ -79,9 +79,9 @@ void main() {
 
       // Content-script version marker bumped so a stale cached extension is
       // visibly distinguishable.
-      expect(content.contains("data-fushi-cs', 'v46'"), isTrue,
-          reason: '$root content.js version marker must be bumped to v46 '
-              '(v44=seek gate, v45=BUG-688 shadow-DOM popup + TODO-1219/1363 subtitle list replay/universal providers, v46=TODO-1391 hide Netflix maturity-rating overlay)');
+      expect(content.contains("data-fushi-cs', 'v47'"), isTrue,
+          reason: '$root content.js version marker must be bumped to v47 '
+              '(v44=seek gate, v45=BUG-688 shadow-DOM popup + TODO-1219/1363 subtitle list replay/universal providers, v46=TODO-1391 hide Netflix maturity-rating overlay, v47=BUG-2170 play past that overlay before batch capture)');
 
       // Adjacent BUG-681 tail-pad fix must remain intact (no regression).
       expect(content.contains('kNfClipTailPadSec'), isTrue,

@@ -1,10 +1,10 @@
 // 取词扫描 + 弹窗注入。修饰键默认 Shift。普通 DOM（popup.js 依赖顶层 #entries-container）。
 // 样式经 content.css 注入，全部作用域到 #entries-container，不污染宿主页（TODO-1090）。
 // 版本标记：加载后在 Console 打一行，用户可据此确认加载的是**新版**扩展（排查缓存旧版）。
-console.log('[Fushi] content script v46 loaded (BUG-688: popup Shadow DOM isolation + theme single-sourced from app; TODO-1219/1363: subtitle cue replay + universal subtitle-list providers; TODO-1391: hide Netflix start-of-episode maturity/age-rating overlay)');
+console.log('[Fushi] content script v47 loaded (BUG-688: popup Shadow DOM isolation + theme single-sourced from app; TODO-1219/1363: subtitle cue replay + universal subtitle-list providers; TODO-1391: hide Netflix start-of-episode maturity/age-rating overlay; BUG-2170: play past that overlay before batch capture)');
 // 诊断标记：写进 <html> 的 data-*，页面 Console（主世界）可读，用来隔空排查划词为何不触发
 // （隔离世界的全局变量在页面 console 里看不到，故用 DOM 属性桥接）。
-try { document.documentElement.setAttribute('data-fushi-cs', 'v46'); } catch (_) {}
+try { document.documentElement.setAttribute('data-fushi-cs', 'v47'); } catch (_) {}
 // TODO-1190：网页源文里高亮被查的词。selection.js 默认走 CSS Custom Highlight API
 // （CSS.highlights.set('fushi-selection', …) + content.css 的 ::highlight(fushi-selection)）。
 // 但 content script 跑在**隔离世界**：在隔离世界注册的 highlight 不会被页面渲染引擎绘制
@@ -590,7 +590,7 @@ let fushiNfBatchRunning = false;
 // 生成本剧集的项：逐句 seek 到句首 → 播放到字幕变化(=本句结束) → 停录 → 送服务端整段裁 [0,时长]
 // 转 GIF+音频。整场用注入 CSS 藏字幕轨(GIF 不烧字幕，且能扛 Netflix 换节点)+藏鼠标。不停录屏
 // （跨集续用，由 nfFinish 收尾）。只移除成功的本集项。
-async function fushiRunNetflixBatch() {
+async function fushiRunNetflixBatch(introGate) {
   const nfId = fushiNetflixId();
   // TODO-1217：按视频时间升序，逐句 seek 单调前进（乱序会往回跳，放大抖动）。filter 已产生新数组，
   // sort 不影响作为跨标签真相源的 fushiQueue。
@@ -598,6 +598,11 @@ async function fushiRunNetflixBatch() {
     .filter((q) => q.site === 'netflix' && q.netflixId === nfId)
     .sort((a, b) => (a.startV || 0) - (b.startV || 0));
   if (!items.length) return;
+  // BUG-2170：片头分级提示窗内的句直接放弃（理由见 fushiSplitNetflixIntroOverlayItems）。
+  const introSplit = fushiSplitNetflixIntroOverlayItems(items, introGate);
+  const recordable = introSplit.recordable;
+  const introSkipped = introSplit.skipped.length;
+  if (!recordable.length) { fushiToastNetflixIntroSkipped(introSkipped); return; }
   const v = document.querySelector('video');
   if (!v) return;
   // TODO-1175：记录批量前的播放位置/态，批量结束（成功或异常）后都回到这里、恢复原播放/暂停态。
@@ -618,14 +623,21 @@ async function fushiRunNetflixBatch() {
     '.watch-video--back-container,[data-uia="control-back"],[data-uia="back-to-browse"],' +
     // 举报旗帜的真实容器 = .watch-video--flag-container（见本文件取词兜底覆盖层清单）。
     '.watch-video--flag-container,[data-uia="player-report-a-problem"],[data-uia="report-a-problem-link"],' +
-    '[data-uia="controls-standard"]{opacity:0!important;visibility:hidden!important}';
+    '[data-uia="controls-standard"]{opacity:0!important;visibility:hidden!important}' +
+    // BUG-2170：片头年龄分级/成熟度 overlay 也必须在**录制作用域**藏。常驻隐藏（TODO-1391）
+    // 受用户开关 netflixHideNextEpisode 门控——用户为了留住 Netflix 的「下一集」按钮把它关掉时，
+    // 分级提示就会照录进卡片。录制期无条件藏，用户可见作用域仍归那个开关管。与本 style 同策
+    // 用 visibility/opacity（不用 display:none，理由见本文件字幕隐藏那节）。
+    '[class*="watch-video--maturity-rating"],.watch-video [data-uia*="maturity"],' +
+    '.watch-video [class*="maturity-rating"]{opacity:0!important;visibility:hidden!important}';
   try { document.head.appendChild(hideStyle); } catch (_) {}
   // TODO-1219 P3：撤销字幕面板对播放器的推挤（video 恢复全宽），否则录制画面右侧带面板留出的
   // 黑边。面板此刻已被 hideStyle 隐藏；这里只还原播放器宽度。finally 里 hideStyle.remove() 后重挂。
   try { if (typeof window.fushiSubtitlePanelSuspendPush === 'function') window.fushiSubtitlePanelSuspendPush(); } catch (_) {}
   const prevCursor = document.body.style.cursor;
   document.body.style.cursor = 'none';
-  let done = 0, fail = 0, unconfigured = 0;
+  // 放弃的句按失败计入总账（BUG-675 的教训：跳过必须可见可清点，不能静默消失）。
+  let done = 0, fail = introSkipped, unconfigured = 0;
   const okIds = [];
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const seekTo = (sec) => new Promise((resolve) => {
@@ -647,7 +659,7 @@ async function fushiRunNetflixBatch() {
     setTimeout(finish, 5000); // 兜底：seeked / seekDone 都不来也继续
   });
   try {
-    for (const q of items) {
+    for (const q of recordable) {
       let began = false; // beginClip 是否成功（决定 finally 是否需要收口 recorder）
       let cls = 'retry';
       try {
@@ -768,6 +780,7 @@ async function fushiRunNetflixBatch() {
     }
   }
   await fushiRemoveQueued(okIds);
+  fushiToastNetflixIntroSkipped(introSkipped);
   if (unconfigured > 0 && typeof window.fushiToast === 'function') {
     window.fushiToast('部分未生成：Anki 未配置，请在 Fushi 中配置 Anki 后重试（保留 ' + fail + '）');
   }
@@ -827,6 +840,104 @@ function fushiWaitForPlaying(v, maxMs) {
   });
 }
 
+// ── BUG-2170：站点开头的年龄分级/成熟度提示窗 ────────────────────────────────
+// Netflix 每集开播时会在画面左上角显示数秒年龄分级 overlay（"RATED 13+ / 暴力, 自杀"）。
+// 批量制卡录的是 tabCapture 的**合成后标签页画面**，落在这一窗内的 clip 会把提示烧进卡片
+// （用户报「切集后的卡片图是分级提示」）。
+//
+// 第一道防线是常驻 CSS 隐藏（TODO-1391，style id fushi-nf-hide-next），但它 ① 受用户开关
+// netflixHideNextEpisode 门控——想留住 Netflix 的「下一集」按钮就会把分级 overlay 一起放出来；
+// ② 选择器按 Netflix 类名匹配，站点改哈希类名就整条静默失效。录制侧不能拿它当保证，故这里
+// 再加一道**与选择器无关**的时间门：不把这一窗播过去就不开录。
+//
+// kNfIntroOverlaySec 是本模块唯一的经验值（提示实测存活数秒，取整留余量）：调大更保守
+// （更多片头句被放弃），调小则提示可能又被录进卡片。
+const kNfIntroOverlaySec = 8;
+
+// 有界等：让本集真正**向前播过**分级提示窗再返回。两点讲究：
+//   · 判据是**播放推进量**而不是墙钟——提示随本集开播出现，只有真把这段播过去才过期，
+//     暂停干等不算；
+//   · 用「相对开始等待时的推进量」而不是绝对位置——Netflix 从中途续播时提示照样在开播那几秒
+//     出现，只看绝对位置会让续播集直接放行。
+// 期间反复补 play() 抵抗自动播放拦截 / 播放器状态机暂态回暂停（与 fushiWaitForPlaying 同策）。
+// 返回 true=已播过窗；false=到 maxMs 上界仍没播过（真 DRM/弱网推不动），调用方按旧行为继续，
+// 绝不无限等卡死批量。
+function fushiWaitPastNetflixIntroOverlay(v, maxMs) {
+  return new Promise((resolve) => {
+    const base = v ? v.currentTime : 0;
+    if (!v) { resolve({ ok: false, ran: false, base: base }); return; }
+    const deadline = Date.now() + (maxMs || 20000);
+    const tick = () => {
+      if (!v) { resolve({ ok: false, ran: true, base: base }); return; }
+      if (v.currentTime - base >= kNfIntroOverlaySec) {
+        resolve({ ok: true, ran: true, base: base });
+        return;
+      }
+      if (Date.now() >= deadline) {
+        resolve({ ok: false, ran: true, base: base });
+        return;
+      }
+      // 绝不对 play() 的返回值使用 await：媒体永远不就绪时（DRM 授权卡住、弱网 stall）它返回的
+      // promise 可以无限期 pending，既不 resolve 也不 reject。await 一挂，tick 链
+      // 就断了，setTimeout 永不排期，外层 Promise 永不 settle —— 上界形同虚设，
+      // 整批批量卡死在这里，fushiNfBatchRunning 连 finally 都到不了，此后任何图标
+      // 点击都被重入锁挡掉，只能刷页面。上界只能由 setTimeout 链决定。
+      if (v.paused) {
+        try {
+          const played = v.play();
+          if (played && typeof played.catch === 'function') {
+            played.catch(() => {});
+          }
+        } catch (_) {}
+      }
+      setTimeout(tick, 120);
+    };
+    tick();
+  });
+}
+
+// 落在提示窗内的队列项没有「先播过去再回来录」的余地——回跳就跳回窗内，提示照录。故按用户
+// 决策**放弃**这些句：不 seek、不录、也不从队列删（用户排的卡不静默丢，仍可手动制卡），
+// 结尾单独告知。纯函数，与 DOM / 录制无关，可直接单测。
+function fushiSplitNetflixIntroOverlayItems(items, gate) {
+  const all = items || [];
+  // 门没跑（fromLoad=false，页面早已开播多时、提示不在），或门确认已经把提示播过去
+  // 了 —— 两种情况都一张不放弃。
+  //
+  // 原实现无条件按**绝对位置** [0, 8s) 砍，与门自己的模型直接冲突：门等的是「相对
+  // 开始等待时的推进量」，理由写在门上方——「Netflix 从中途续播时提示同样在开播那
+  // 几秒出现，只看绝对位置会让续播集直接放行」。两个模型只可能对一个：
+  //   · 按门的模型（提示绑开播、会话级），门播过去之后提示已过期，一张都不该丢；
+  //   · 按绝对位置模型，从 600s 续播时提示窗在 [600,608]，而名单砍的是 [0,8]，
+  //     砍的区间和它没有任何交集——既没保护到什么，又确定性丢卡。
+  // 更糟的是原实现跑在 fromLoad=false 上（门明确不挂那条路径）：用户在片头 5 秒处
+  // 排了卡、看到一半点图标就地生成，那些卡会被反复放弃、永远生成不出来，而结尾还
+  // 告诉他「可再点生成重试」——一个永远兑现不了的承诺。
+  //
+  // 现在只保留唯一站得住的一档：门跑了、但到上界仍没把提示播过去（DRM/弱网推不动），
+  // 此时无法确认提示已消失，才按门实际观察到的窗口 [base, base+窗) 保守放弃。
+  if (!gate || !gate.ran || gate.ok) {
+    return { skipped: [], recordable: all.slice() };
+  }
+  const introMs = kNfIntroOverlaySec * 1000;
+  const from = (gate.base || 0) * 1000;
+  const to = from + introMs;
+  const skipped = [];
+  const recordable = [];
+  for (const q of all) {
+    const at = (q && q.startV) || 0;
+    if (at >= from && at < to) skipped.push(q);
+    else recordable.push(q);
+  }
+  return { skipped: skipped, recordable: recordable };
+}
+
+function fushiToastNetflixIntroSkipped(n) {
+  if (!n || typeof window.fushiToast !== 'function') return;
+  window.fushiToast('✗ ' + n + ' 张落在片头分级提示窗（前 ' + kNfIntroOverlaySec
+      + ' 秒）内，已放弃录制（仍留在队列，可手动制卡）');
+}
+
 // 等 Netflix 播放器就绪（切集后 video 需时间加载）。
 async function fushiWaitForPlayer(timeoutMs) {
   const deadline = Date.now() + (timeoutMs || 20000);
@@ -878,8 +989,15 @@ async function fushiMaybeResumeNetflixBatch(fromLoad) {
       return;
     }
     await sleep(800); // 给播放器/DRM 授权稳一下再开录
+    // BUG-2170：只有真实页面加载（切集 / 首次打开该集）才会撞上片头分级 overlay——就地续跑
+    // （fromLoad=false，用户看到一半点生成）时页面早已开播多时、提示不在，白等还会把用户的
+    // 播放位置往前推。故这道门只挂在 fromLoad 上，且必须排在 nfEnsureCapture **之前**：
+    // 录制器根本不在提示窗内开着。
+    const introGate = fromLoad
+      ? await fushiWaitPastNetflixIntroOverlay(document.querySelector('video'), 20000)
+      : null;
     try { await chrome.runtime.sendMessage({ type: 'nfEnsureCapture' }); } catch (_) {}
-    await fushiRunNetflixBatch(); // v34 就地 API-seek 回放本集队列项（内部按当前 netflixId 过滤 + 移除成功）
+    await fushiRunNetflixBatch(introGate); // v34 就地 API-seek 回放本集队列项（内部按当前 netflixId 过滤 + 移除成功）
     try { await chrome.runtime.sendMessage({ type: 'nfStopCapture' }); } catch (_) {} // 跳集前必停录
     const next = st.idx + 1;
     if (next < st.episodes.length) {
