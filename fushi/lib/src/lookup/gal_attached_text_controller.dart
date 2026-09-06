@@ -371,9 +371,15 @@ class GalAttachedTextController extends ChangeNotifier {
       _shieldStatus.conclusion != GalAttachedShieldConclusion.verified &&
       _unsafeLeftClickAlwaysAccepted;
 
-  /// 恒 false：风险已恒定接受，不再向用户索要确认，工具条上那个按钮因此不再出现
-  /// （`GalAttachedLookupWorkbench` 只在 `unsafeRiskAcceptanceRequest != null` 时渲染它）。
-  bool get needsUnsafeRiskAcceptance => false;
+  /// 「还需要向用户索要裸左击风险确认吗」——由 [_unsafeLeftClickAlwaysAccepted]
+  /// 这一个真相源决定，不写字面量 `false`。恒定接受时它恒 false，于是
+  /// [unsafeRiskAcceptanceRequest] 恒 null，工具条上那个按钮不再出现
+  /// （`GalAttachedLookupWorkbench` 只在 request 非 null 时渲染它）。
+  ///
+  /// 写成派生而不是硬编码 false 的理由：这条门将来若要按引擎/按遮罩层结论重新开
+  /// 一部分，只需要把那个 const 换成条件，索要确认、令牌校验、profile 回写整条链
+  /// 仍然是接好的；硬编码 false 会让「改一个常量」变成「先考古哪些分支已经死了」。
+  bool get needsUnsafeRiskAcceptance => !_unsafeLeftClickAlwaysAccepted;
   GalAttachedUnsafeRiskAcceptanceRequest? get unsafeRiskAcceptanceRequest {
     final int? token = _unsafeRiskAcceptanceRequestToken;
     final GalAttachedSurfaceTarget? target = _target;

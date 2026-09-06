@@ -92,12 +92,35 @@ registry 恒空 ⇒ `lookup.coord.v1 ... N=0` ⇒ 永远没有命中。**两道�
 第一道。第二道的判别实验（类级 `Layer.drawText` 计数 vs 类级 `MessageLayer.processCh`
 计数）所需的可读性已在 BUG-2153 的两条提交里补上。
 
-- **[ ] ① 未修复** — 待定方向，三选一或组合：
-  (a) 真正实现那个 per-build evidence gate，让长期无故障的覆盖能升到 Verified；
-  (b) 承认通用覆盖不可能 Verified，把「需要确认」的状态在**游戏窗口边上**显式呈现，
-      而不是埋在 texthooker 工具条里（当前用户完全无从得知为什么没反应）；
-  (c) 把同意的粒度从 exe SHA-256 改成引擎/游戏条目级，消掉换版本重来的问题。
-  先不动手：这三条是产品语义决策，需要确认取向再实现。
-- **[ ] ② 未加自动化测试** —
+- **[x] ① 已修复** — 取的是三个候选之外的第四条：**把这道门整个去掉**（用户
+  2026-09-05 拍板）。`GalAttachedTextController._unsafeLeftClickAlwaysAccepted`
+  恒 true，`needsUnsafeRiskAcceptance` 由它派生而非硬编码 false，于是
+  `unsafeRiskAcceptanceRequest` 恒 null、工具条上那个按钮不再出现。
+
+  为什么不是「删掉这个概念」：`riskAccepted` 不只是 UI，它作为 `allow_risk` 一路
+  传到 hook 的遮罩层契约（`kLookupShieldStatusRiskAllowed`）。恒定接受等价于
+  「用户每次都点了那个按钮」，IPC 两侧契约不变，而用户看得见的那道门消失。
+  持久化字段 `unsafeLeftClickAccepted` 保留不动（存量 profile 缺字段会整条解析失败）。
+
+  连带清掉一条随之不可达的分支：`gal_capture_setup_dialog.dart` 里「风险确认要来
+  了，捕获设置弹窗自动让位」那条 else-if —— 它的触发者恒为假，留着只会让「弹窗
+  会不会自己关」多一个永远不成立的答案。`yieldingToRiskConsent` 参数本身保留，
+  门若哪天按引擎重开，接回来只是一个 else-if。
+
+  三条原候选没有被否定，只是不再是这条 bug 的前置：(a) per-build evidence gate、
+  (b) 把状态呈现挪到游戏窗边、(c) 同意粒度改引擎级，都属于「风险提示要不要以别的
+  形态回来」，与「当前这道门把每个游戏每次启动都卡住」是两件事。
+
+- **[x] ② 已加自动化测试** —
+  `fushi/test/pages/gal_capture_setup_lookup_priority_test.dart`：原来三条守的是
+  「风险请求把捕获设置弹窗顶掉、并暴露确认按钮」，现在反向守新契约——会话活跃后
+  `needsUnsafeRiskAcceptance` 恒 false、request 恒 null、**用户打开的弹窗留在原地**、
+  确认按钮不出现。这两条正是用户实际抱怨的症状，反向之后就是那道门不许悄悄回来的锚。
+  另两条（排队的自动关闭不得弹掉下层工作台路由）改由**选中文本线程**触发同一条
+  路径，回归覆盖没有随门一起丢。
+  `fushi/test/pages/gal_capture_setup_dialog_lifecycle_guard_test.dart` 的源码守卫
+  同步反向：弹窗 build 里**不许**再引用 `needsUnsafeRiskAcceptance`，
+  `yieldingToRiskConsent: true` 的调用点数从 1 改成 0 —— 否则会出现「守卫还在、
+  被守的行为已经没了」。
 - **备注**：本条**不是** hook 坏了。hook 侧 `lookup_diag` 四位全亮，是 host 侧的准入
   语义把它挡在门外，而挡的理由（"等待一个不存在的 evidence gate"）已经不成立。
