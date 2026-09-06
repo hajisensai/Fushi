@@ -19,23 +19,8 @@ import 'package:fushi/src/pages/base_source_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/pdf/pdf_engine.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
+import 'package:fushi/src/stats/read_unit_ledger.dart';
 import 'package:fushi/utils.dart';
-
-/// BUG-2184：PDF 翻到 [pageIndex] 时本会话新读到的页数与新的会话最高页。
-///
-/// 只计**首次越过**会话最高页的部分（与漫画 `_sessionCountedPages` / EPUB 水位
-/// 「只升不降」同律）：往回翻、回到已读页都是 0；跳目录前跳 N 页计 N 页（到达即
-/// 计，PDF 无停留门）。[sessionMaxPageIndex] 初值：有存档 = 存档页（续读只计新推进
-/// 的页），无存档 = -1（首页正常入账）。纯函数，供单测锁定。
-({int newPages, int maxPageIndex}) pdfPagesNewlyReached({
-  required int pageIndex,
-  required int sessionMaxPageIndex,
-}) {
-  if (pageIndex <= sessionMaxPageIndex) {
-    return (newPages: 0, maxPageIndex: sessionMaxPageIndex);
-  }
-  return (newPages: pageIndex - sessionMaxPageIndex, maxPageIndex: pageIndex);
-}
 
 /// PDF 阅读器页面（Phase 1 渲染 / Phase 2 点选查词 / Phase 3 页码进度 / Phase 4 制卡）。
 ///
@@ -88,10 +73,16 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
   int _currentPageIndex = 0;
   int _lastSavedPageIndex = -1;
 
-  /// BUG-2184：本会话读到过的最高页（0-based，-1 = 还没翻过）。翻页只在越过它时
-  /// `addPages`（[pdfPagesNewlyReached]），往回翻不计；此前 PDF 只 `touch()` 从不
-  /// `addPages`，页数统计恒 0。
-  int _sessionMaxPageIndex = -1;
+  /// 「读过」判据的唯一账本（2026-09-06 裁定，三域共用，见
+  /// `docs/plans/2026-09-06-read-unit-ledger.md`）：**翻走即计 + 会话覆盖并集**。
+  /// 单元 = 页号半开区间 `[page, page+1)`；离开一页那一刻把它（若本会话未覆盖）
+  /// 记进时钟当前段的页数。跳 N 页只计跳走前那页、跳过的从未成为当前单元；往回翻 /
+  /// 回到已读页并集已覆盖 → 0；无存档预置（续读时存档页是当前单元，翻走计一次）。
+  /// 此前是标量水位 `_sessionMaxPageIndex`（BUG-2184：跳 N 页计 N 页），已废。
+  late final ReadUnitLedger _readLedger = ReadUnitLedger(
+    onCredit: (List<(int, int)> fresh) =>
+        _studyClock?.addPages(readUnitsLength(fresh)),
+  );
   Timer? _saveDebounce;
   bool _restoreDone = false;
 
@@ -130,6 +121,8 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     ExitFlushRegistry.instance.unregister(_flushPosition);
     WidgetsBinding.instance.removeObserver(this);
     _saveDebounce?.cancel();
+    // 离开当前页：账本结算最后一个单元（翻走即计），必须早于 flush / 时钟 dispose。
+    _readLedger.leave();
     // dispose 里只能 fire-and-forget（不能 await）；正常退出走 onSourcePagePop
     // 的 await 路径，这里是崩溃/异常拆栈时的兜底。
     unawaited(_flushPosition());
@@ -154,6 +147,8 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
 
   @override
   Future<void> onSourcePagePop() async {
+    // 离开当前页：账本结算最后一个单元（翻走即计），再落盘。
+    _readLedger.leave();
     // 返回书架的正常路径：await 落盘，保证书架 recency/进度立刻正确。
     await _flushPosition();
     await _studyClock?.stop();
@@ -183,8 +178,6 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
       _restorePageIndex = saved.sectionIndex;
       _currentPageIndex = saved.sectionIndex;
       _lastSavedPageIndex = saved.sectionIndex;
-      // 续读：恢复到存档页不是读了 0..存档页，页数水位预置到存档页。
-      _sessionMaxPageIndex = saved.sectionIndex;
     }
 
     // v92：唯一时钟（同 EPUB 侧）；空闲门 + 生命周期前台门只对阅读面生效。
@@ -218,13 +211,9 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     if (pageIndex < 0) return;
     // v92 阅读空闲门：翻页 = 用户输入。
     _studyClock?.touch();
-    // BUG-2184：越过会话最高页的部分记页数（与时长同段同 uid）。
-    final ({int newPages, int maxPageIndex}) reached = pdfPagesNewlyReached(
-      pageIndex: pageIndex,
-      sessionMaxPageIndex: _sessionMaxPageIndex,
-    );
-    _sessionMaxPageIndex = reached.maxPageIndex;
-    if (reached.newPages > 0) _studyClock?.addPages(reached.newPages);
+    // 翻走即计：到达新页 = 离开上一页，账本结算上一页（首次覆盖才 addPages，与时长
+    // 同段同 uid）；本页要等下次翻走才计。
+    _readLedger.arrive(pageIndex, pageIndex + 1);
     _currentPageIndex = pageIndex;
     // 500ms debounce（与 EPUB 阅读器同口径）：连续翻页只落最后一次。
     if (pageIndex == _lastSavedPageIndex) return;

@@ -8,7 +8,7 @@ import 'package:fushi/src/stats/study_char_count.dart';
 /// Dart ↔ JS 学习单位计数**对拍**。
 ///
 /// 为什么必须有这条：JS 侧算出的 `charOffset` 会写进 DB 的 `char_offset` 列，并在
-/// `computeCharWatermark`（`reader_fushi_page.dart`）与 `computeBookProgress`
+/// `absoluteCharOffsetOf`（`reader_fushi_page.dart`）与 `computeBookProgress`
 /// （`reader_fushi_source.dart`，注释原文「charOffset 与 characters **同单位**」）
 /// 里与 Dart 算出的每章 `characters` **直接相加**。此前两侧各有一份手写白名单，
 /// 只靠互相引用的注释维持「逐区间对齐」，**没有任何测试会在两者分叉时报红**——
@@ -139,7 +139,7 @@ void main() {
   //     不会回退章首，续读位置不丢；
   //   · 真正拿 Dart `characters` 与 JS `charOffset` 相加的是 `computeBookProgress`
   //     （`reader_fushi_source.dart`，`charOffset.clamp(0, sectionSize)`）与
-  //     `computeCharWatermark` —— 两者都 **clamp**，所以后果是「本章进度提前封顶 /
+  //     `absoluteCharOffsetOf` —— 两者都 **clamp**，所以后果是「本章进度提前封顶 /
   //     章尾若干单位不计字数」，量级 ≈ 该章词内切点数，不崩、不丢位置、换章自愈。
   //
   // 所以不改任一侧（改哪一侧都是动 restore 关键路径，且本轮无法真机验证），

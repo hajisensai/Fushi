@@ -5,8 +5,10 @@ import 'package:flutter_test/flutter_test.dart';
 import '../helpers/source_guard.dart';
 import 'reader_fushi_page_source_corpus.dart';
 
-/// 2026-09 阅读统计审计（BUG-2168 / 2169 / 2170 / 2171 / 2172 / 2173 / 2174 / 2175 /
-/// 2179 / 2184）的源码形态守卫。判据本身是纯函数（见
+/// 2026-09 阅读统计审计（BUG-2169 / 2170 / 2171 / 2172 / 2173 / 2174 / 2175 /
+/// 2179 / 2184）的源码形态守卫。（BUG-2168 的令牌桶清零门随标量水位一起拆除——
+/// 字数统计改走 `ReadUnitLedger`，接线守卫见
+/// `test/reader/reader_read_ledger_wiring_guard_static_test.dart`。）判据本身是纯函数（见
 /// `test/reader/reader_study_clock_policy_test.dart`、`study_clock_test.dart`），这里
 /// 钉的是**页面接线**：判据必须被用在正确的位置、旧的裸 start/stop / 无门轮询 /
 /// 无条件清零形态不得回归。
@@ -146,27 +148,6 @@ void main() {
     });
   });
 
-  group('BUG-2168：恢复播种只在真正前跳时清零令牌桶', () {
-    test('_onRestoreComplete 清零受 restoreSeedResetsReadCharge 门控', () {
-      final String body = _functionSource(
-        corpus,
-        '  void _onRestoreComplete() {',
-        '\n  }\n',
-      );
-      final int gate = body.indexOf('restoreSeedResetsReadCharge(');
-      expect(gate, isNonNegative);
-      expect(
-        body.indexOf('_readChargeCreditMilliChars = 0;'),
-        greaterThan(gate),
-      );
-      expect(
-        body,
-        isNot(contains('\n    _lastWatermarkAdvanceAt = DateTime.now();')),
-        reason: '4 空格缩进 = 无条件清零的旧形态（重排 / 宽变 / 模式切换也清）',
-      );
-    });
-  });
-
   group('BUG-2174：听书播放态每次 cue 推进喂空闲门', () {
     test('_onCueChanged 在歌词模式分支之前按 isPlaying touch', () {
       final String body = _functionSource(
@@ -231,15 +212,46 @@ void main() {
     });
   });
 
-  group('BUG-2184：PDF 翻页记页数', () {
-    test('_onPageChanged 经 pdfPagesNewlyReached 只计首次越过的页', () {
+  group('BUG-2184：PDF 翻页记页数（2026-09-06 起走 ReadUnitLedger 翻走即计）', () {
+    test('_onPageChanged 把页号单元交给账本，onCredit 按首次覆盖长度 addPages', () {
       final String body = _functionSource(
         pdf,
         '  void _onPageChanged(int? pageNumber) {',
         '\n  }\n',
       );
-      expect(body, contains('pdfPagesNewlyReached('));
-      expect(body, contains('addPages('));
+      expect(body, contains('_studyClock?.touch();'));
+      expect(body, contains('_readLedger.arrive(pageIndex, pageIndex + 1);'));
+      expect(pdf, contains('addPages(readUnitsLength('));
+      // 标量水位形态已废：跳 N 页只计跳走前那页，不再计 N 页。
+      expect(pdf, isNot(contains('pdfPagesNewlyReached')));
+      expect(pdf, isNot(contains('_sessionMaxPageIndex')));
+    });
+
+    test('dispose / onSourcePagePop 在 flush 前 leave()，结算停在的最后一页', () {
+      final String dispose = _functionSource(
+        pdf,
+        '  void dispose() {',
+        '\n  }\n',
+      );
+      expect(
+        dispose.indexOf('_readLedger.leave();'),
+        allOf(
+          greaterThanOrEqualTo(0),
+          lessThan(dispose.indexOf('unawaited(_flushPosition());')),
+        ),
+      );
+      final String pop = _functionSource(
+        pdf,
+        '  Future<void> onSourcePagePop() async {',
+        '\n  }\n',
+      );
+      expect(
+        pop.indexOf('_readLedger.leave();'),
+        allOf(
+          greaterThanOrEqualTo(0),
+          lessThan(pop.indexOf('await _flushPosition();')),
+        ),
+      );
     });
   });
 }

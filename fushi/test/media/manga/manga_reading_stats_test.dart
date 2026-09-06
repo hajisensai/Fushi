@@ -4,9 +4,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/manga_reading_stats.dart';
 import 'package:fushi/src/media/manga/mokuro_payload.dart';
 
-/// 守卫漫画的字数/页数记账（v60）：漫画此前 `charsRead` 恒 0，只记时长，统计页
+/// 守卫漫画的字数/页数换算（v60）：漫画此前 `charsRead` 恒 0，只记时长，统计页
 /// 永远显示 0 字。现在按已读页的 OCR 文本计字数、按已读页计页数，两个量纲各自
-/// 独立，且同一页在一次会话里只记一次。
+/// 独立。「哪些页算读过」的去重由 `ReadUnitLedger` 会话并集负责（2026-09-06），
+/// 本函数是无状态换算，不再持去重集合。
 MokuroImage _page(List<String> lines) => MokuroImage(
       url: 'p.jpg',
       size: const Size(800, 1200),
@@ -40,7 +41,7 @@ void main() {
     });
   });
 
-  group('mangaAccumulateReadingStats', () {
+  group('mangaStatsForPages', () {
     final MokuroPayload payload = MokuroPayload(
       images: <MokuroImage>[
         _page(<String>['あいう']), // 3
@@ -49,52 +50,32 @@ void main() {
       ],
     );
 
-    test('首次经过的页计字数与页数', () {
-      final Set<int> counted = <int>{};
-      final ({int chars, int pages}) r = mangaAccumulateReadingStats(
-        payload: payload,
-        pageIndices: <int>[0, 1],
-        counted: counted,
-      );
+    test('给定页的字数与页数：两个量纲独立', () {
+      final ({int chars, int pages}) r = mangaStatsForPages(payload, <int>[
+        0,
+        1,
+      ]);
       expect(r.chars, 7);
       expect(r.pages, 2);
-      expect(counted, <int>{0, 1});
     });
 
-    test('同一页翻回来不重复计（来回翻页刷不出数）', () {
-      final Set<int> counted = <int>{};
-      mangaAccumulateReadingStats(
-        payload: payload,
-        pageIndices: <int>[0, 1],
-        counted: counted,
-      );
-      final ({int chars, int pages}) again = mangaAccumulateReadingStats(
-        payload: payload,
-        pageIndices: <int>[1, 0],
-        counted: counted,
-      );
-      expect(again.chars, 0);
-      expect(again.pages, 0);
-
-      final ({int chars, int pages}) fresh = mangaAccumulateReadingStats(
-        payload: payload,
-        pageIndices: <int>[1, 2],
-        counted: counted,
-      );
-      expect(fresh.chars, 1, reason: '只有新页 2 计入');
-      expect(fresh.pages, 1);
+    test('无状态：同样的页再算一遍结果相同（去重在账本，不在这里）', () {
+      expect(mangaStatsForPages(payload, <int>[1, 2]).chars, 5);
+      expect(mangaStatsForPages(payload, <int>[1, 2]).chars, 5);
+      expect(mangaStatsForPages(payload, <int>[2]), (chars: 1, pages: 1));
     });
 
     test('越界页码忽略，不抛也不计', () {
-      final Set<int> counted = <int>{};
-      final ({int chars, int pages}) r = mangaAccumulateReadingStats(
-        payload: payload,
-        pageIndices: <int>[-1, 99],
-        counted: counted,
-      );
+      final ({int chars, int pages}) r = mangaStatsForPages(payload, <int>[
+        -1,
+        99,
+      ]);
       expect(r.chars, 0);
       expect(r.pages, 0);
-      expect(counted, isEmpty);
+    });
+
+    test('空页表 → 0 / 0', () {
+      expect(mangaStatsForPages(payload, const <int>[]), (chars: 0, pages: 0));
     });
   });
 }

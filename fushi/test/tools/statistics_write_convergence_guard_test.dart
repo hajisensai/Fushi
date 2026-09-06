@@ -272,10 +272,10 @@ void main() {
     expect(
       containsCodeLine(
         read('lib/src/pages/implementations/reader_fushi/navigation.part.dart'),
-        '_ensureStudyClock().addChars(delta.charsAdded)',
+        '_readLedger.arrive(',
       ),
       isTrue,
-      reason: 'EPUB 新读字数直接记进当前段',
+      reason: 'EPUB 新读字数经 ReadUnitLedger（翻走即计）记进当前段',
     );
     final String manga = read(
       'lib/src/media/manga/reader/manga_fushi_page.dart',

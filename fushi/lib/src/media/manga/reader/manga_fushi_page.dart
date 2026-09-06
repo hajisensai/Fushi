@@ -77,6 +77,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/reader/reader_selection_data.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
+import 'package:fushi/src/stats/read_unit_ledger.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
 import 'package:fushi/utils.dart';
 
@@ -147,7 +148,7 @@ enum _MangaReaderInputSource {
   nativeWebView,
   volumeKey,
   gamepad,
-  mouse
+  mouse,
 }
 
 /// 漫画页 **Flutter 侧**鼠标通道的解析阶梯：只有 manga 自己的 scope。
@@ -189,8 +190,9 @@ class MangaTurnQueue {
     required Future<void> Function(int step) applyStep,
   }) async {
     if (delta == 0 || maxMagnitude <= 0) return;
-    _pendingDelta =
-        (_pendingDelta + delta).clamp(-maxMagnitude, maxMagnitude).toInt();
+    _pendingDelta = (_pendingDelta + delta)
+        .clamp(-maxMagnitude, maxMagnitude)
+        .toInt();
     await drain(canApply: canApply, applyStep: applyStep);
   }
 
@@ -229,10 +231,10 @@ class MangaWindowGeneration {
   /// WebView 桥在不同平台上分别回 num / String，解析不出一律 null（fail-closed，
   /// 后续比较必然不等，回调被丢弃）。
   static int? parse(Object? raw) => switch (raw) {
-        final num value => value.round(),
-        final String value => int.tryParse(value),
-        _ => null,
-      };
+    final num value => value.round(),
+    final String value => int.tryParse(value),
+    _ => null,
+  };
 
   /// 回报值与 [current] 严格相等才放行。
   ///
@@ -260,15 +262,18 @@ Future<void> dispatchMangaSelection(
     String term,
     Rect selectionRect,
     bool verticalWriting,
-  ) search,
+  )
+  search,
 }) async {
   if (data.text.isEmpty) {
     return;
   }
   await selectPageForMining(data.mangaPageIndex);
   setSentence(data.sentence);
-  final Rect rect =
-      mangaSelectionRectFromPayload(data, fallbackScreen: fallbackScreen);
+  final Rect rect = mangaSelectionRectFromPayload(
+    data,
+    fallbackScreen: fallbackScreen,
+  );
   await search(data.text, rect, data.verticalWriting);
 }
 
@@ -289,14 +294,7 @@ Future<String> ensureMangaCoverPng(String sourcePath) async {
   return pngPath;
 }
 
-enum _MangaContextAction {
-  previous,
-  next,
-  jump,
-  direction,
-  zoomIn,
-  zoomOut,
-}
+enum _MangaContextAction { previous, next, jump, direction, zoomIn, zoomOut }
 
 Future<int?> showMangaPageJumpDialog(
   BuildContext context, {
@@ -318,10 +316,8 @@ Future<int?> showMangaPageJumpDialog(
         decoration: InputDecoration(
           labelText: t.manga_page_number_hint(total: total),
         ),
-        onFieldSubmitted: (String value) => Navigator.pop(
-          dialogContext,
-          int.tryParse(value),
-        ),
+        onFieldSubmitted: (String value) =>
+            Navigator.pop(dialogContext, int.tryParse(value)),
         onChanged: (String value) => input = value,
       ),
       actions: <Widget>[
@@ -330,10 +326,7 @@ Future<int?> showMangaPageJumpDialog(
           child: Text(t.dialog_cancel),
         ),
         FilledButton(
-          onPressed: () => Navigator.pop(
-            dialogContext,
-            int.tryParse(input),
-          ),
+          onPressed: () => Navigator.pop(dialogContext, int.tryParse(input)),
           child: Text(t.dialog_ok),
         ),
       ],
@@ -347,8 +340,8 @@ Future<int?> showMangaPageJumpDialog(
 /// 页图 + 透明 OCR 覆盖层在 WebView 里渲染（文档由 [mangaWindowDocument] 生成），
 /// 汇入同一批共享设施：[BaseSourcePageState.searchDictionaryResult]（查词弹窗）、
 /// [ReaderPositionRepository]（阅读位置，sectionIndex=0-based 页码）、
-/// [StudyClock]（时长 / OCR 字数 / 页数统计，见
-/// [mangaAccumulateReadingStats]）、[AnkiMiningContext]（制卡，
+/// [StudyClock]（时长 / OCR 字数 / 页数统计，「读过」判据见 [ReadUnitLedger]、
+/// 换算见 [mangaStatsForPages]）、[AnkiMiningContext]（制卡，
 /// 卡图=当前页图文件路径）。
 ///
 /// 身份统一 `hoshi://book/<bookKey>`（无漫画专属 scheme 特例），关书自动同步天然工作。
@@ -456,8 +449,9 @@ class MangaFushiPage extends BaseSourcePage {
   }
 
   static MangaReaderInputAction? wheelInputAction(Offset delta) {
-    final double dominant =
-        delta.dy.abs() >= delta.dx.abs() ? delta.dy : delta.dx;
+    final double dominant = delta.dy.abs() >= delta.dx.abs()
+        ? delta.dy
+        : delta.dx;
     if (dominant.abs() < 2) return null;
     return dominant > 0
         ? MangaReaderInputAction.next
@@ -476,13 +470,7 @@ class MangaFushiPage extends BaseSourcePage {
   @visibleForTesting
   static final String navigationKeyBridgeScript = webViewKeyBridgeScript(
     handlerName: 'onMangaNavigationKey',
-    keys: const <String>[
-      'ArrowLeft',
-      'ArrowRight',
-      'Escape',
-      'Esc',
-      'F11',
-    ],
+    keys: const <String>['ArrowLeft', 'ArrowRight', 'Escape', 'Esc', 'F11'],
     forwardRepeats: false,
     stopPropagation: true,
   );
@@ -525,11 +513,11 @@ class MangaFushiPage extends BaseSourcePage {
   /// 中键/右键各触发两次（翻页会翻两页）。
   @visibleForTesting
   static String mouseBridgeScript(List<int> buttons) => webViewKeyBridgeScript(
-        handlerName: 'onMangaMouseButton',
-        mouseButtons: buttons,
-        installMouseListeners: true,
-        stopPropagation: true,
-      );
+    handlerName: 'onMangaMouseButton',
+    mouseButtons: buttons,
+    installMouseListeners: true,
+    stopPropagation: true,
+  );
 
   /// 本页鼠标桥要拦截的按钮号：manga / universal / global 三段阶梯上**所有**已绑
   /// 按钮的并集（与 [_kMangaMouseLadder] 同源）。
@@ -541,8 +529,9 @@ class MangaFushiPage extends BaseSourcePage {
   static List<int> mouseBridgeButtons(FushiShortcutRegistry registry) {
     final List<int> buttons = <int>[];
     for (final ShortcutScope scope in _kMangaMouseLadder) {
-      for (final ShortcutAction action
-          in ShortcutAction.actionsForScope(scope)) {
+      for (final ShortcutAction action in ShortcutAction.actionsForScope(
+        scope,
+      )) {
         for (final MouseBinding binding
             in registry.bindingsFor(action).mouseBindings) {
           if (!buttons.contains(binding.button)) buttons.add(binding.button);
@@ -631,8 +620,10 @@ class MangaFushiPage extends BaseSourcePage {
     bool useCustomScheme = false,
   }) {
     final String normalized = mangaImageRelativePath(relativeUrl);
-    final String encoded =
-        normalized.split('/').map(Uri.encodeComponent).join('/');
+    final String encoded = normalized
+        .split('/')
+        .map(Uri.encodeComponent)
+        .join('/');
     final String scheme = useCustomScheme ? kMangaResourceScheme : 'https';
     return '$scheme://$kMangaHost/img/$encoded';
   }
@@ -652,7 +643,9 @@ class MangaFushiPage extends BaseSourcePage {
 
   /// 纯函数：[spreadIndex] 的首页页码（越界回 0）。
   static int firstPageOfSpread(
-      List<MangaSpreadEntry> spreads, int spreadIndex) {
+    List<MangaSpreadEntry> spreads,
+    int spreadIndex,
+  ) {
     if (spreadIndex < 0 || spreadIndex >= spreads.length) return 0;
     return spreads[spreadIndex].pageIndices.first;
   }
@@ -679,7 +672,9 @@ class MangaFushiPage extends BaseSourcePage {
 
   /// 纯函数：持久化页码 → 恢复的 spread 序号（clamp 越界存档）。
   static int restoreSpreadFromProgress(
-      List<MangaSpreadEntry> spreads, int lastPage) {
+    List<MangaSpreadEntry> spreads,
+    int lastPage,
+  ) {
     if (spreads.isEmpty) return 0;
     final int clamped = lastPage.clamp(0, _maxPage(spreads));
     return spreadIndexForPage(spreads, clamped);
@@ -932,56 +927,36 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   /// v92：本页唯一的阅读时钟兼累计器（时长 / OCR 字数 / 页数同一段同一 uid），同
   /// EPUB / PDF 侧。页面不再持有任何会话时长 / 字数 / 页数字段。（守卫
-  /// manga_stats_dwell_guard_test 钉死旧的会话累计器形态不得回潮。）
+  /// manga_stats_dwell_guard_test 钉死旧的会话累计器 / 停留门形态不得回潮。）
   StudyClock? _studyClock;
 
-  /// 已记账过的页（同一页只计一次，来回翻页刷不出数；恢复存档时把恢复位置之前的
-  /// 页也预置进来，见 [_seedCountedPagesFromRestore]）。字数口径与 EPUB 同源，见
-  /// [mangaAccumulateReadingStats]。
-  final Set<int> _sessionCountedPages = <int>{};
+  /// 「读过」判据的唯一账本（2026-09-06 裁定，三域共用，见
+  /// `docs/plans/2026-09-06-read-unit-ledger.md`）：**翻走即计 + 会话覆盖并集**。
+  /// 单元 = 页号半开区间——webtoon `[page, page+1)`、spread 模式按当前 entry 覆盖的
+  /// 页（单页 `[p, p+1)`、双页 `[p, p+2)`）。离开单元那一刻把其中本会话未覆盖的页
+  /// 交给 [_creditPages]；没有停留门（BUG-1761 的 1.5s 到达停留裁定已推翻）、
+  /// 没有存档预置（重开这卷续读，存档页是当前单元，翻走时计一次）。
+  late final ReadUnitLedger _readLedger = ReadUnitLedger(
+    onCredit: _creditPages,
+  );
 
-  /// BUG-1761 停留门：页面成为当前页并停留 ≥ [_kPageDwellThreshold] 才入账。
-  /// 「到达即计」会把快速翻过/扫过的页全部记成已读——来回翻一圈就是整卷虚增；
-  /// 停留是「真的在读」的最低判据。
-  Timer? _pageDwellTimer;
-  int _pageDwellKey = -1;
-
-  /// 取自跨域共享的 [kArrivalDwellMs]：与视频的 cue 停留门是同一条产品判据
-  /// （到达 ≠ 看过），只应有一个数。
-  static const Duration _kPageDwellThreshold =
-      Duration(milliseconds: kArrivalDwellMs);
-
-  /// 当前页（spread 模式按跨页、webtoon 按页）起一个 [_kPageDwellThreshold] 定时，
-  /// 到期才真正入账；到期前位置变了就换目标重计时（旧目标从未入账）。
-  /// webtoon 页内滚动会连续触发 [_recordProgress]：同一页**不重置**计时，否则
-  /// 慢速连续滚读永远攒不满停留门。
-  void _armPageDwellCount() {
-    // v92 阅读空闲门：翻页 / 页内滚动 = 用户输入。
+  /// 位置落定：喂空闲门（翻页 / 页内滚动 = 用户输入）并把当前可见页交给账本。
+  /// 与当前单元相同的重复落定（webtoon 页内滚动）在账本里是 no-op。
+  void _noteVisiblePages() {
     _studyClock?.touch();
-    final bool isWebtoon = _mode == MangaReadingMode.webtoon;
-    final int key = isWebtoon ? _currentPage : _currentSpread;
-    if (_pageDwellTimer != null && key == _pageDwellKey) return;
-    _pageDwellKey = key;
-    _pageDwellTimer?.cancel();
-    _pageDwellTimer = Timer(_kPageDwellThreshold, () {
-      _pageDwellTimer = null;
-      if (!mounted) return;
-      _countVisiblePages();
-    });
+    final (int start, int end) = _visiblePageRange();
+    _readLedger.arrive(start, end);
   }
 
-  /// BUG-1761：恢复存档时把 0..[restoredPage]（含）预置为「已计过」。
-  ///
-  /// [_sessionCountedPages] 只活在一次页面 State 里：每次重开这卷都是空集，恢复
-  /// 位置附近以及本次会话回翻经过的旧页全部重算一遍，而 DB 侧按 (title, dateKey)
-  /// 纯累加、没有上限——170 页的卷被记成读了 400 页。与 EPUB 的
-  /// `sessionWatermarkAfterRestore`（TODO-147/BUG-211）同款语义：续读只计新推进的
-  /// 页；全新打开（无存档）不预置，首页正常入账；故意从头重读不再计页/字——
-  /// 「每页只在第一次读到时计一次」正是页数统计的本意。
-  void _seedCountedPagesFromRestore(int restoredPage) {
-    for (int index = 0; index <= restoredPage; index++) {
-      _sessionCountedPages.add(index);
+  /// 当前可见页的页号半开区间：spread 模式取当前 entry 的页（升序、连续），
+  /// webtoon 只有真正成为「当前页」的那页。
+  (int, int) _visiblePageRange() {
+    final bool isWebtoon = _mode == MangaReadingMode.webtoon;
+    if (!isWebtoon && _currentSpread >= 0 && _currentSpread < _spreads.length) {
+      final List<int> pages = _spreads[_currentSpread].pageIndices;
+      return (pages.first, pages.last + 1);
     }
+    return (_currentPage, _currentPage + 1);
   }
 
   // 密集 OCR 命中层只保留当前 spread；图片页本身全部留在稳定的 lazy strip。
@@ -1056,7 +1031,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // 视频阅读器同范式：非致命、与开书链并行；漫画的 bookKey 就是 Profile 的
     // book 级 entryKey，见 book_format_convert.dart 的身份说明）。
     unawaited(
-      ref.read(profileViewModelProvider.notifier).autoApplyBinding(
+      ref
+          .read(profileViewModelProvider.notifier)
+          .autoApplyBinding(
             bookUid: widget.bookKey,
             mediaType: ProfileMediaKind.manga,
           ),
@@ -1080,7 +1057,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // 再从 unawaited 调用点抛出未捕获异步异常（BUG-1171）。
     _windowGate.abandon();
     _progressDebounce?.cancel();
-    _pageDwellTimer?.cancel();
     _onlineGeometryPersistDebounce?.cancel();
     final MangaZoomPreferenceDebouncer? zoomDebouncer =
         _zoomPreferenceDebouncer;
@@ -1094,6 +1070,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (pageSession != null) {
       unawaited(_closePageSession(pageSession));
     }
+    // 离开当前页：账本结算最后一个单元（翻走即计），必须早于 flush / 时钟 dispose。
+    _readLedger.leave();
     // dispose 里只能 fire-and-forget；正常退出走 onSourcePagePop 的 await 路径，
     // 这里是崩溃/异常拆栈时的兜底。
     unawaited(_flushPosition());
@@ -1115,7 +1093,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (!desktopWindowFullscreenSupported || _fullscreenTransitioning) return;
     _fullscreenTransitioning = true;
     try {
-      final bool fullscreen = requested ??
+      final bool fullscreen =
+          requested ??
           !((await readDesktopWindowFullscreen()) ?? _isWindowFullscreen);
       if (!mounted) return;
       // Claim ownership before the native transition starts. If the route is
@@ -1210,6 +1189,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (_ownsWindowFullscreen) {
       await _setMangaFullscreen(false);
     }
+    // 离开当前页：账本结算最后一个单元（翻走即计），再落盘。
+    _readLedger.leave();
     // 返回书架的正常路径：await 落盘，保证书架 recency/进度立刻正确。
     await _flushPosition();
     await _studyClock?.stop();
@@ -1237,9 +1218,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 以新布局重建 spread 序列：保持当前 spread 首页所在页，重挂窗口文档并
   /// 落一次进度（sectionIndex 仍是 spread 首页页码，语义不变）。
   Future<void> _rebuildSpreadsPreservingPage(MokuroPayload payload) async {
-    final int currentPage =
-        MangaFushiPage.firstPageOfSpread(_spreads, _currentSpread);
+    final int currentPage = MangaFushiPage.firstPageOfSpread(
+      _spreads,
+      _currentSpread,
+    );
     final List<MangaSpreadEntry> spreads = _buildSpreadsFor(payload, _mode);
+    // 同一页换单元边界（单页↔双页）不是翻页：下一次 arrive 只替换边界、不结算。
+    _readLedger.rebaseOnNextArrive();
     setState(() {
       _spreads = spreads;
       _currentSpread = MangaFushiPage.spreadIndexForPage(spreads, currentPage);
@@ -1272,10 +1257,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       final EpubBookRow? persisted = directOnlineChapter.persistProgress
           ? await db.getEpubBook(widget.bookKey)
           : null;
-      await _loadOnlineChapter(
-        directOnlineChapter,
-        persistedRow: persisted,
-      );
+      await _loadOnlineChapter(directOnlineChapter, persistedRow: persisted);
       return;
     }
     final EpubBookRow? row = await db.getEpubBook(widget.bookKey);
@@ -1304,18 +1286,23 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     final String imagesDir = p.join(p.dirname(mangaJsonPath), 'images');
 
     final String jsonStr = await jsonFile.readAsString();
-    final MokuroPayload payload =
-        await MangaFushiPage.parseMangaJsonOffUi(jsonStr);
+    final MokuroPayload payload = await MangaFushiPage.parseMangaJsonOffUi(
+      jsonStr,
+    );
     if (!mounted) return;
 
     _spreadPreference = MangaSpreadPreferenceKey.fromKey(
       appModel.mangaSpreadPreference,
     );
     _spreadDirection = appModel.mangaReadingDirection == 'ltr' ? 'ltr' : 'rtl';
-    _zoomPercent = appModel.mangaZoomPercent
-        .clamp(kMangaZoomMinPercent, kMangaZoomMaxPercent);
-    _zoomSensitivity = appModel.mangaZoomSensitivity
-        .clamp(kMangaZoomSensitivityMin, kMangaZoomSensitivityMax);
+    _zoomPercent = appModel.mangaZoomPercent.clamp(
+      kMangaZoomMinPercent,
+      kMangaZoomMaxPercent,
+    );
+    _zoomSensitivity = appModel.mangaZoomSensitivity.clamp(
+      kMangaZoomSensitivityMin,
+      kMangaZoomSensitivityMax,
+    );
     _pageAnimation = MangaPageAnimationKey.fromKey(appModel.mangaPageAnimation);
     _tapZonePaging = appModel.mangaTapZonePaging;
     _applyVolumeKeyPaging(appModel.mangaVolumeKeyPaging);
@@ -1323,7 +1310,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // 阅读模式：用户覆盖优先，null 走自动判定（页图长宽比中位数）。
     final MangaReadingMode mode =
         MangaFushiPage.modeOverrideFromDb(row.mangaReadingMode) ??
-            detectReadingMode(payload);
+        detectReadingMode(payload);
     final List<MangaSpreadEntry> spreads = _buildSpreadsFor(payload, mode);
     final List<String> relativePagePaths = payload.images
         .map(
@@ -1359,19 +1346,18 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         saved.sectionIndex < payload.images.length) {
       restoredPage = saved.sectionIndex;
       if (mode == MangaReadingMode.webtoon) {
-        restoredFraction =
-            MangaFushiPage.charOffsetToWebtoonFraction(saved.charOffset);
+        restoredFraction = MangaFushiPage.charOffsetToWebtoonFraction(
+          saved.charOffset,
+        );
       }
     }
 
     _ensureStudyClock(db);
-    // BUG-1761：续读不重复计——恢复位置之前（含恢复页）的页上个会话已入账。
-    if (saved != null) {
-      _seedCountedPagesFromRestore(restoredPage);
-    }
 
-    final int restoredSpread =
-        MangaFushiPage.restoreSpreadFromProgress(spreads, restoredPage);
+    final int restoredSpread = MangaFushiPage.restoreSpreadFromProgress(
+      spreads,
+      restoredPage,
+    );
     final MangaReaderSession? previousLocalPageSession = _pageSession;
     _pageSession = localPageSession;
     _localPageIndices = <String, int>{
@@ -1394,9 +1380,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _lastSavedFraction = saved != null ? restoredFraction : -1;
     });
     _pageNotifier.value = _currentPage;
-    // 首屏页也要走停留门：开书直接停在恢复位置时不会再有 _recordProgress，但
-    // 停够 [_kPageDwellThreshold] 同样应入账（存档续读时该页已被预置，计 0）。
-    _armPageDwellCount();
+    // 首屏页成为当前单元：开书直接停在恢复位置时不会再有 _recordProgress，
+    // 翻走时才入账（存档页不预置，续读也计一次）。
+    _noteVisiblePages();
     // A cancelled/background task intentionally does not replace manga.json,
     // but every atomic page cache is already safe to use. Restore those pages
     // after the first paint so opening a large book stays fast and both local
@@ -1409,8 +1395,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     OnlineMangaLibraryEntry entry,
   ) async {
     try {
-      final OnlineMangaLibraryService service =
-          appModel.onlineMangaLibraryService(entry.runtime);
+      final OnlineMangaLibraryService service = appModel
+          .onlineMangaLibraryService(entry.runtime);
       int chapterIndex = OnlineMangaLibraryService.initialChapterIndex(entry);
       if (chapterIndex < 0) {
         throw const OnlineMangaUnavailable(
@@ -1433,8 +1419,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         chapterIndex: chapterIndex,
       );
     } on Object catch (error, stack) {
-      ErrorLogService.instance
-          .log('MangaFushiPage.loadOnlineShelf', error, stack);
+      ErrorLogService.instance.log(
+        'MangaFushiPage.loadOnlineShelf',
+        error,
+        stack,
+      );
       if (mounted) {
         setState(() {
           _bookRow = row;
@@ -1465,11 +1454,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // 每章进度的真相源是 `manga_chapter_states`；书级那行只服务单章 / 本地条目。
     int initialPage = 0;
     if (row.uid.isNotEmpty) {
-      final MangaChapterStateRow? state =
-          await appModel.database.getMangaChapterState(
-        bookUid: row.uid,
-        chapterKey: chapter.key,
-      );
+      final MangaChapterStateRow? state = await appModel.database
+          .getMangaChapterState(bookUid: row.uid, chapterKey: chapter.key);
       // 读完的章重新打开时从头看，而不是停在最后一页——「重读」是明确意图。
       if (state != null && state.readAt == null && state.lastPage > 0) {
         initialPage = state.lastPage;
@@ -1493,14 +1479,18 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     required EpubBookRow? persistedRow,
   }) async {
     final Directory directory = input.managedDirectory;
-    final Directory imagesDirectory =
-        Directory(p.join(directory.path, 'images'));
+    final Directory imagesDirectory = Directory(
+      p.join(directory.path, 'images'),
+    );
     await imagesDirectory.create(recursive: true);
     final List<String> pageIdentities = input.pageIdentities;
-    final File identityFile =
-        File(p.join(directory.path, input.identityFileName));
-    final bool sameChapterPages =
-        await _onlineChapterIdentityMatches(identityFile, pageIdentities);
+    final File identityFile = File(
+      p.join(directory.path, input.identityFileName),
+    );
+    final bool sameChapterPages = await _onlineChapterIdentityMatches(
+      identityFile,
+      pageIdentities,
+    );
     if (!sameChapterPages) {
       await _invalidateOnlineChapterPayload(directory, imagesDirectory);
     }
@@ -1561,10 +1551,14 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       appModel.mangaSpreadPreference,
     );
     _spreadDirection = appModel.mangaReadingDirection == 'ltr' ? 'ltr' : 'rtl';
-    _zoomPercent = appModel.mangaZoomPercent
-        .clamp(kMangaZoomMinPercent, kMangaZoomMaxPercent);
-    _zoomSensitivity = appModel.mangaZoomSensitivity
-        .clamp(kMangaZoomSensitivityMin, kMangaZoomSensitivityMax);
+    _zoomPercent = appModel.mangaZoomPercent.clamp(
+      kMangaZoomMinPercent,
+      kMangaZoomMaxPercent,
+    );
+    _zoomSensitivity = appModel.mangaZoomSensitivity.clamp(
+      kMangaZoomSensitivityMin,
+      kMangaZoomSensitivityMax,
+    );
     _pageAnimation = MangaPageAnimationKey.fromKey(appModel.mangaPageAnimation);
     _tapZonePaging = appModel.mangaTapZonePaging;
     _applyVolumeKeyPaging(appModel.mangaVolumeKeyPaging);
@@ -1590,15 +1584,15 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           );
     final MangaReadingMode mode =
         MangaFushiPage.modeOverrideFromDb(row.mangaReadingMode) ??
-            detectReadingMode(payload);
+        detectReadingMode(payload);
     final List<MangaSpreadEntry> spreads = _buildSpreadsFor(payload, mode);
 
     // v82：持久位置键 = **持久化**行的 uid；内存兜底行的现造 uid 不参与位置
     // 读写（见 [_bookUid] doc）。
     final String? persistedUid =
         (persistedRow != null && persistedRow.uid.isNotEmpty)
-            ? persistedRow.uid
-            : null;
+        ? persistedRow.uid
+        : null;
     _bookUid = persistedUid;
     int restoredPage = input.initialPage ?? 0;
     double restoredFraction = 0;
@@ -1607,11 +1601,15 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         input.initialPage == null &&
         persistedUid != null) {
       try {
-        saved = await ReaderPositionRepository(appModel.database)
-            .findByBookUid(persistedUid);
+        saved = await ReaderPositionRepository(
+          appModel.database,
+        ).findByBookUid(persistedUid);
       } on Object catch (error, stack) {
-        ErrorLogService.instance
-            .log('MangaFushiPage.restoreOnline', error, stack);
+        ErrorLogService.instance.log(
+          'MangaFushiPage.restoreOnline',
+          error,
+          stack,
+        );
       }
       if (saved != null &&
           saved.sectionIndex >= 0 &&
@@ -1624,15 +1622,17 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         }
       }
     }
-    restoredPage =
-        restoredPage.clamp(0, math.max(0, payload.images.length - 1));
+    restoredPage = restoredPage.clamp(
+      0,
+      math.max(0, payload.images.length - 1),
+    );
 
     _ensureStudyClock(appModel.database);
-    // BUG-1761：只有存档续读预置已计页；initialPage 显式跳页不预置（是否读过未知，
-    // 宁可少算——反正跳过去的页没有 1.5s 停留也不会入账）。
-    if (saved != null) {
-      _seedCountedPagesFromRestore(restoredPage);
-    }
+    // 同一 State 内换章 = 页号坐标系重用（新章页号从 0 起）：先结算离开的旧章
+    // 末页（翻走即计），再清并集；首次打开两步都是 no-op。
+    _readLedger
+      ..leave()
+      ..reset();
     final MangaReaderSession? previousSession = _pageSession;
     _pageSession = pageSession;
     _localPageIndices = <String, int>{
@@ -1643,8 +1643,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _persistProgress = input.persistProgress;
     if (previousSession != null) unawaited(previousSession.close());
 
-    final int restoredSpread =
-        MangaFushiPage.restoreSpreadFromProgress(spreads, restoredPage);
+    final int restoredSpread = MangaFushiPage.restoreSpreadFromProgress(
+      spreads,
+      restoredPage,
+    );
     setState(() {
       _bookRow = row;
       _imagesDir = imagesDirectory.path;
@@ -1658,7 +1660,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _lastSavedFraction = saved != null ? restoredFraction : -1;
     });
     _pageNotifier.value = _currentPage;
-    _armPageDwellCount();
+    _noteVisiblePages();
     unawaited(_primeOnlinePages(restoredPage));
     unawaited(_recoverIncrementalOcrCache(directory.path, payload));
   }
@@ -1697,13 +1699,15 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     await runExclusiveOnMangaJson<void>(payload.path, () async {
       if (await payload.exists()) await payload.delete();
     });
-    final File materializedManifest =
-        File(p.join(imagesDirectory.path, '.mihon-pages.json'));
+    final File materializedManifest = File(
+      p.join(imagesDirectory.path, '.mihon-pages.json'),
+    );
     if (await materializedManifest.exists()) {
       await materializedManifest.delete();
     }
-    final Directory ocr =
-        Directory(p.join(imagesDirectory.path, kMangaOcrOutDirName));
+    final Directory ocr = Directory(
+      p.join(imagesDirectory.path, kMangaOcrOutDirName),
+    );
     if (await ocr.exists()) await ocr.delete(recursive: true);
     if (await imagesDirectory.exists()) {
       await for (final FileSystemEntity entity in imagesDirectory.list()) {
@@ -1721,10 +1725,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   ) async {
     final File temporary = File('${target.path}.tmp');
     await temporary.writeAsString(
-      jsonEncode(<String, Object?>{
-        'schema_version': 1,
-        'pages': identities,
-      }),
+      jsonEncode(<String, Object?>{'schema_version': 1, 'pages': identities}),
       flush: true,
     );
     if (await target.exists()) await target.delete();
@@ -1779,7 +1780,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       );
     }
     await _controller?.evaluateJavascript(
-      source: 'window.__mangaUpdatePageGeometry && '
+      source:
+          'window.__mangaUpdatePageGeometry && '
           'window.__mangaUpdatePageGeometry($pageIndex, $width, $height);',
     );
   }
@@ -1961,11 +1963,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           data: page.bytes,
         );
       } on Object catch (error, stackTrace) {
-        ErrorLogService.instance.log(
-          'MangaFushiPage.page',
-          error,
-          stackTrace,
-        );
+        ErrorLogService.instance.log('MangaFushiPage.page', error, stackTrace);
         return WebResourceResponse(
           contentType: 'text/plain',
           statusCode: 502,
@@ -1978,13 +1976,16 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (imagesDir == null) {
       return _notFound('imagesDir not ready: ${url.path}');
     }
-    final String? filePath =
-        MangaFushiPage.resolveMangaResource(imagesDir, relative);
+    final String? filePath = MangaFushiPage.resolveMangaResource(
+      imagesDir,
+      relative,
+    );
     if (filePath == null) {
       // 区分穿越（403）与缺文件（404）：规范化 join 后越界即穿越企图。
       final String canonicalRoot = p.canonicalize(imagesDir);
-      final String candidate =
-          p.canonicalize(p.join(canonicalRoot, Uri.decodeComponent(relative)));
+      final String candidate = p.canonicalize(
+        p.join(canonicalRoot, Uri.decodeComponent(relative)),
+      );
       if (!p.isWithin(canonicalRoot, candidate)) {
         return _forbidden('path traversal blocked: $relative');
       }
@@ -2079,9 +2080,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       );
       final int spreadIndex = MangaFushiPage.spreadIndexForPage(_spreads, page);
       pageSpreadIndices.add(spreadIndex);
-      pagesPerSpread.add(spreadIndex >= 0 && spreadIndex < _spreads.length
-          ? _spreads[spreadIndex].pageIndices.length
-          : 1);
+      pagesPerSpread.add(
+        spreadIndex >= 0 && spreadIndex < _spreads.length
+            ? _spreads[spreadIndex].pageIndices.length
+            : 1,
+      );
       // 真实整卷页码（data-page，补扫模式回传的 pageIndex 语义）。
       pageNumbers.add(page);
     }
@@ -2128,8 +2131,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       // old document can remain visible for another event-loop turn (or a
       // stale onLoadStop can arrive), so keep navigation locked until the
       // loaded document proves it owns this exact generation.
-      final MangaWindowLoadOutcome outcome =
-          await ticket.outcome.timeout(const Duration(seconds: 10));
+      final MangaWindowLoadOutcome outcome = await ticket.outcome.timeout(
+        const Duration(seconds: 10),
+      );
       if (outcome == MangaWindowLoadOutcome.abandoned) {
         // 页面已在加载途中销毁（dispose 显式收尾）：不再碰 State，也不把它当
         // 失败上抛——调用方全是 unawaited，抛出等于未捕获异步异常（BUG-1171）。
@@ -2141,7 +2145,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       // 拖不出框（回写后重载窗口是这条路径最常见的触发者）。
       if (_rescanModeActive) {
         await _controller!.evaluateJavascript(
-          source: 'window.__mangaSetRescanMode && '
+          source:
+              'window.__mangaSetRescanMode && '
               'window.__mangaSetRescanMode(true);',
         );
       }
@@ -2152,10 +2157,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _windowGate.finish(ticket);
       _navigating = false;
       if (mounted && _spreads.isNotEmpty) {
-        unawaited(_turnQueue.drain(
-          canApply: () => mounted && !_navigating,
-          applyStep: _applyMangaTurnStep,
-        ));
+        unawaited(
+          _turnQueue.drain(
+            canApply: () => mounted && !_navigating,
+            applyStep: _applyMangaTurnStep,
+          ),
+        );
       }
     }
   }
@@ -2180,8 +2187,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   }
 
   Future<void> _applyMangaTurnStep(int delta) async {
-    final int target =
-        (_currentSpread + delta).clamp(0, _spreads.length - 1).toInt();
+    final int target = (_currentSpread + delta)
+        .clamp(0, _spreads.length - 1)
+        .toInt();
     if (target == _currentSpread) {
       // 到头了。v88 前这里就是死钳位直接 return——于是在线漫画读完最后一页就
       // 走不动了，既不翻章也没有任何提示，配合「书架永远开同一章」构成了
@@ -2191,7 +2199,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
     _currentSpread = target;
     await _controller?.evaluateJavascript(
-      source: 'window.__mangaApplyTranslate && '
+      source:
+          'window.__mangaApplyTranslate && '
           'window.__mangaApplyTranslate($target);',
     );
     await _replaceSpreadOcr(target);
@@ -2282,8 +2291,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         FushiToast.show(msg: error.message, severity: ToastSeverity.error);
       }
     } on Object catch (error, stack) {
-      ErrorLogService.instance
-          .log('MangaFushiPage.switchChapter', error, stack);
+      ErrorLogService.instance.log(
+        'MangaFushiPage.switchChapter',
+        error,
+        stack,
+      );
       if (mounted) {
         FushiToast.show(msg: '$error', severity: ToastSeverity.error);
       }
@@ -2338,7 +2350,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           '$pageIndex': mangaOcrBoxesHtml(_payload!.images[pageIndex]),
     };
     await controller.evaluateJavascript(
-      source: '''
+      source:
+          '''
 (function(){
   var keep = new Set(${jsonEncode(pageIndices.toList())});
   var htmlByPage = ${jsonEncode(htmlByPage)};
@@ -2364,13 +2377,15 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   Future<void> _jumpToPageAnchor(String dir) async {
     if (_spreads.isEmpty || _navigating) return;
     final int delta = dir == 'next' ? 1 : -1;
-    final int target =
-        (_currentSpread + delta).clamp(0, _spreads.length - 1).toInt();
+    final int target = (_currentSpread + delta)
+        .clamp(0, _spreads.length - 1)
+        .toInt();
     if (target == _currentSpread) return;
     _currentSpread = target;
     _currentFraction = 0;
     await _controller?.evaluateJavascript(
-      source: 'window.__mangaScrollToSpread && '
+      source:
+          'window.__mangaScrollToSpread && '
           'window.__mangaScrollToSpread($target, 0);',
     );
     await _replaceSpreadOcr(target);
@@ -2402,10 +2417,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (repeat && _panStepFor(action) == null) {
       return KeyEventResult.ignored;
     }
-    _executeReaderInputAction(
-      action,
-      source: _MangaReaderInputSource.flutter,
-    );
+    _executeReaderInputAction(action, source: _MangaReaderInputSource.flutter);
     return KeyEventResult.handled;
   }
 
@@ -2468,11 +2480,14 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // 方向键连续挪画面是正常操作，而翻页去抖正是为了压掉连发）。
     final Offset? panStep = _panStepFor(action);
     if (panStep != null) {
-      unawaited(_controller?.evaluateJavascript(
-            source: 'window.__mangaPanBy && '
-                'window.__mangaPanBy(${panStep.dx}, ${panStep.dy});',
-          ) ??
-          Future<void>.value());
+      unawaited(
+        _controller?.evaluateJavascript(
+              source:
+                  'window.__mangaPanBy && '
+                  'window.__mangaPanBy(${panStep.dx}, ${panStep.dy});',
+            ) ??
+            Future<void>.value(),
+      );
       return;
     }
     // BUG-1888：切换界面与平移同理就地返回——它不翻页、不关词典，也不该被翻页的
@@ -2518,9 +2533,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       );
     }
     final String turn = action == MangaReaderInputAction.next ? 'next' : 'prev';
-    unawaited(_mode == MangaReadingMode.webtoon
-        ? _jumpToPageAnchor(turn)
-        : _onMangaTurn(turn));
+    unawaited(
+      _mode == MangaReadingMode.webtoon
+          ? _jumpToPageAnchor(turn)
+          : _onMangaTurn(turn),
+    );
   }
 
   @override
@@ -2577,7 +2594,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     Set<ModifierKey> modifiers,
   ) {
     final FushiShortcutRegistry registry = appModel.shortcutRegistry;
-    final ShortcutAction? bound = registry.resolveKeyboard(
+    final ShortcutAction? bound =
+        registry.resolveKeyboard(
           key,
           modifiers: modifiers,
           scope: ShortcutScope.manga,
@@ -2594,7 +2612,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           modifiers: modifiers,
           scope: ShortcutScope.global,
         );
-    final ShortcutAction? corrected = resolveMangaArrowPageTurn(
+    final ShortcutAction? corrected =
+        resolveMangaArrowPageTurn(
           key: key,
           modifiers: modifiers,
           rtl: _spreadDirection == 'rtl',
@@ -2603,7 +2622,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         bound;
     return MangaFushiPage.inputActionForShortcut(
       action: corrected,
-      crossPageStep: key == LogicalKeyboardKey.arrowLeft ||
+      crossPageStep:
+          key == LogicalKeyboardKey.arrowLeft ||
           key == LogicalKeyboardKey.arrowRight,
       dictionaryShown: isDictionaryShown,
       mode: _mode,
@@ -2622,19 +2642,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// webtoon 模式下也该用锚点跳页；弹窗可见时关弹窗并翻页。
   MangaReaderInputAction? _resolveMangaGamepadAction(GamepadButton button) {
     final FushiShortcutRegistry registry = appModel.shortcutRegistry;
-    final ShortcutAction? bound = registry.resolveGamepad(
-          button,
-          scope: ShortcutScope.manga,
-        ) ??
-        registry.resolveGamepad(
-          button,
-          scope: ShortcutScope.universal,
-        ) ??
-        registry.resolveGamepad(
-          button,
-          scope: ShortcutScope.global,
-        );
-    final ShortcutAction? corrected = resolveMangaDpadPageTurn(
+    final ShortcutAction? bound =
+        registry.resolveGamepad(button, scope: ShortcutScope.manga) ??
+        registry.resolveGamepad(button, scope: ShortcutScope.universal) ??
+        registry.resolveGamepad(button, scope: ShortcutScope.global);
+    final ShortcutAction? corrected =
+        resolveMangaDpadPageTurn(
           button: button,
           rtl: _spreadDirection == 'rtl',
           boundAction: bound,
@@ -2652,10 +2665,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   bool _handleGamepadButton(GamepadButton button) {
     final MangaReaderInputAction? action = _resolveMangaGamepadAction(button);
     if (action == null) return false;
-    _executeReaderInputAction(
-      action,
-      source: _MangaReaderInputSource.gamepad,
-    );
+    _executeReaderInputAction(action, source: _MangaReaderInputSource.gamepad);
     return true;
   }
 
@@ -2699,8 +2709,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (!hostOwnsWebViewPointerInput) return;
     final int? button = domMouseButtonFromPointerButtons(event.buttons);
     if (button == null) return;
-    final MangaReaderInputAction? action =
-        _resolveMangaMouseAction(button, _kMangaMouseLadder);
+    final MangaReaderInputAction? action = _resolveMangaMouseAction(
+      button,
+      _kMangaMouseLadder,
+    );
     if (action == null) return;
     dispatchClaimedMouseAction(event, () {
       _executeReaderInputAction(action, source: _MangaReaderInputSource.mouse);
@@ -2717,8 +2729,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // [resolveDictionaryPopupInputToken] 同一范式。
     final MouseBinding? mouse = MouseBinding.deserialize(key);
     if (mouse != null) {
-      final MangaReaderInputAction? mouseAction =
-          _resolveMangaMouseAction(mouse.button, _kMangaMouseLadder);
+      final MangaReaderInputAction? mouseAction = _resolveMangaMouseAction(
+        mouse.button,
+        _kMangaMouseLadder,
+      );
       if (mouseAction == null) return false;
       _executeReaderInputAction(
         mouseAction,
@@ -2750,14 +2764,17 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   @override
   void onDismissBarrierPointerSignal(PointerSignalEvent event) {
     if (event is! PointerScrollEvent) return;
-    final MangaReaderInputAction? action =
-        MangaFushiPage.wheelInputAction(event.scrollDelta);
+    final MangaReaderInputAction? action = MangaFushiPage.wheelInputAction(
+      event.scrollDelta,
+    );
     if (action == null) return;
     clearDictionaryResult();
     final String turn = action == MangaReaderInputAction.next ? 'next' : 'prev';
-    unawaited(_mode == MangaReadingMode.webtoon
-        ? _jumpToPageAnchor(turn)
-        : _onMangaTurn(turn));
+    unawaited(
+      _mode == MangaReadingMode.webtoon
+          ? _jumpToPageAnchor(turn)
+          : _onMangaTurn(turn),
+    );
   }
 
   /// webtoon 滚动报告：从 JS 量得的视口更新页内 fraction + 当前页/spread。
@@ -2815,17 +2832,16 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     try {
       final File? file = await session.localFile(page);
       if (!mounted ||
-          page !=
-              MangaFushiPage.firstPageOfSpread(
-                _spreads,
-                _currentSpread,
-              )) {
+          page != MangaFushiPage.firstPageOfSpread(_spreads, _currentSpread)) {
         return;
       }
       _currentPageImagePath = file?.path;
     } on Object catch (error, stack) {
-      ErrorLogService.instance
-          .log('MangaFushiPage.onlineCardImage', error, stack);
+      ErrorLogService.instance.log(
+        'MangaFushiPage.onlineCardImage',
+        error,
+        stack,
+      );
     }
   }
 
@@ -2850,8 +2866,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       final OnlineMangaReaderChapter? online = _onlineChapter;
       final MangaOcrBackgroundJob? job;
       if (online != null) {
-        final MangaOcrAutoStartResult result =
-            await _buildOnlineOcrJob(online);
+        final MangaOcrAutoStartResult result = await _buildOnlineOcrJob(online);
         if (!mounted) return;
         if (!result.started) {
           if (!result.cancelled) {
@@ -2980,8 +2995,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
       final OnlineMangaReaderChapter? online = _onlineChapter;
       if (online != null) {
-        final MangaOcrAutoStartResult result =
-            await _buildOnlineOcrJob(online);
+        final MangaOcrAutoStartResult result = await _buildOnlineOcrJob(online);
         if (!mounted) return;
         if (!result.started) {
           _pendingTapLookup = null;
@@ -3003,13 +3017,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       }
       final MangaOcrAutoStartResult result =
           await startMangaOcrWithPreferredEngine(
-        context: context,
-        db: appModel.database,
-        bookKey: widget.bookKey,
-        imageDirPath: row.extractDir,
-        startPage: _currentPage,
-        lensLanguage: appModel.mangaOcrLensLanguage,
-      );
+            context: context,
+            db: appModel.database,
+            bookKey: widget.bookKey,
+            imageDirPath: row.extractDir,
+            startPage: _currentPage,
+            lensLanguage: appModel.mangaOcrLensLanguage,
+          );
       if (!mounted) return;
       if (!result.started) {
         _pendingTapLookup = null;
@@ -3068,7 +3082,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (pending == null || pending.pageIndex != pageIndex) return;
     _pendingTapLookup = null;
     await _controller?.evaluateJavascript(
-      source: 'window.__mangaTapLookupAt && '
+      source:
+          'window.__mangaTapLookupAt && '
           'window.__mangaTapLookupAt(${pending.x}, ${pending.y});',
     );
   }
@@ -3082,10 +3097,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     final MangaReaderSession? session = _pageSession;
     final MokuroPayload? payload = _payload;
     if (session == null || payload == null) {
-      return MangaOcrAutoStartResult.unavailable(
-        t.manga_ocr_engine_none,
-        null,
-      );
+      return MangaOcrAutoStartResult.unavailable(t.manga_ocr_engine_none, null);
     }
     _onlineGeometryPersistDebounce?.cancel();
     await _persistOnlinePayloadGeometry();
@@ -3118,36 +3130,35 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _wholeVolumeOcrAcceleration = null;
       _wholeVolumeOcrDegradeNotified = false;
     });
-    _wholeVolumeOcrSubscription =
-        job.events.asyncMap(_handleWholeVolumeOcrEvent).listen(
-      (_) {},
-      onError: (Object error, StackTrace stack) {
-        ErrorLogService.instance.log(
-          'MangaFushiPage.wholeVolumeOcr',
-          error,
-          stack,
+    _wholeVolumeOcrSubscription = job.events
+        .asyncMap(_handleWholeVolumeOcrEvent)
+        .listen(
+          (_) {},
+          onError: (Object error, StackTrace stack) {
+            ErrorLogService.instance.log(
+              'MangaFushiPage.wholeVolumeOcr',
+              error,
+              stack,
+            );
+            if (!mounted) return;
+            setState(() => _wholeVolumeOcrRunning = false);
+            _pendingTapLookup = null;
+            FushiToast.show(
+              msg: '${t.manga_ocr_wizard_failed}: $error',
+              severity: ToastSeverity.error,
+            );
+          },
+          onDone: () {
+            _wholeVolumeOcrSubscription = null;
+            _pendingTapLookup = null;
+            if (mounted && _wholeVolumeOcrRunning) {
+              setState(() => _wholeVolumeOcrRunning = false);
+            }
+          },
         );
-        if (!mounted) return;
-        setState(() => _wholeVolumeOcrRunning = false);
-        _pendingTapLookup = null;
-        FushiToast.show(
-          msg: '${t.manga_ocr_wizard_failed}: $error',
-          severity: ToastSeverity.error,
-        );
-      },
-      onDone: () {
-        _wholeVolumeOcrSubscription = null;
-        _pendingTapLookup = null;
-        if (mounted && _wholeVolumeOcrRunning) {
-          setState(() => _wholeVolumeOcrRunning = false);
-        }
-      },
-    );
   }
 
-  Future<void> _handleWholeVolumeOcrEvent(
-    MangaOcrBackgroundEvent event,
-  ) async {
+  Future<void> _handleWholeVolumeOcrEvent(MangaOcrBackgroundEvent event) async {
     if (!mounted) return;
     _observeWholeVolumeOcrAcceleration(event.acceleration);
     if (event.finished) {
@@ -3182,9 +3193,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   ///
   /// BUG-1163：GPU EP 被插件拒绝时实现会静默重建 CPU 会话；不提示的话用户在
   /// 整卷 OCR 上只会觉得「怎么这么慢」，无从判断自己根本没在用 GPU。
-  void _observeWholeVolumeOcrAcceleration(
-    MangaOcrAcceleration? acceleration,
-  ) {
+  void _observeWholeVolumeOcrAcceleration(MangaOcrAcceleration? acceleration) {
     if (acceleration == null) return;
     if (identical(acceleration, _wholeVolumeOcrAcceleration)) return;
     setState(() => _wholeVolumeOcrAcceleration = acceleration);
@@ -3199,26 +3208,23 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     );
   }
 
-  Future<void> _replacePageOcrOverlay(
-    int pageIndex,
-    MokuroImage page,
-  ) async {
+  Future<void> _replacePageOcrOverlay(int pageIndex, MokuroImage page) async {
     final String boxes = mangaOcrBoxesHtml(page);
     await _controller?.evaluateJavascript(
-      source: 'window.__mangaReplaceOcr && '
+      source:
+          'window.__mangaReplaceOcr && '
           'window.__mangaReplaceOcr($pageIndex, ${jsonEncode(boxes)});',
     );
   }
 
-  Future<void> _finishWholeVolumeOcr(
-    MangaOcrBackgroundEvent event,
-  ) async {
+  Future<void> _finishWholeVolumeOcr(MangaOcrBackgroundEvent event) async {
     final EpubBookRow? row = _bookRow;
     final String? resultPath = event.resultPath;
     if (row == null || resultPath == null) return;
     final String source = await File(resultPath).readAsString();
-    final MokuroPayload payload =
-        event.external ? parseMokuro(source) : parseMangaJson(source);
+    final MokuroPayload payload = event.external
+        ? parseMokuro(source)
+        : parseMangaJson(source);
     if (payload.images.isEmpty) {
       throw StateError('OCR result has no pages');
     }
@@ -3285,14 +3291,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (!mounted) return;
     setState(() => _rescanModeActive = on);
     await _controller?.evaluateJavascript(
-      source: 'window.__mangaSetRescanMode && '
+      source:
+          'window.__mangaSetRescanMode && '
           'window.__mangaSetRescanMode(${on ? 'true' : 'false'});',
     );
     if (on) {
-      FushiToast.show(
-        msg: t.manga_rescan_hint,
-        severity: ToastSeverity.info,
-      );
+      FushiToast.show(msg: t.manga_rescan_hint, severity: ToastSeverity.info);
     }
   }
 
@@ -3467,8 +3471,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     required int pageIndex,
     required MokuroImage previousPage,
   }) {
-    final ScaffoldMessengerState? messenger =
-        ScaffoldMessenger.maybeOf(context);
+    final ScaffoldMessengerState? messenger = ScaffoldMessenger.maybeOf(
+      context,
+    );
     if (messenger == null) {
       FushiToast.show(
         msg: t.manga_rescan_region_updated,
@@ -3550,8 +3555,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         try {
           final Map<String, dynamic> payload =
               jsonDecode(args[0] as String) as Map<String, dynamic>;
-          final ReaderSelectionData data =
-              ReaderSelectionData.fromJson(payload);
+          final ReaderSelectionData data = ReaderSelectionData.fromJson(
+            payload,
+          );
           if (kDebugMode && mounted) {
             setState(() => _debugOcrSelectedText = data.text);
           }
@@ -3598,11 +3604,15 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     try {
       final File? file = await session.localFile(pageIndex);
       if (!mounted || generation != _miningPageGeneration) return;
-      _miningPageImagePath =
-          file != null && await file.exists() ? file.path : null;
+      _miningPageImagePath = file != null && await file.exists()
+          ? file.path
+          : null;
     } on Object catch (error, stack) {
-      ErrorLogService.instance
-          .log('MangaFushiPage.selectedCardImage', error, stack);
+      ErrorLogService.instance.log(
+        'MangaFushiPage.selectedCardImage',
+        error,
+        stack,
+      );
     }
   }
 
@@ -3619,18 +3629,16 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         // TODO-956 下限兜底：句子派生不出时退回词本身，绝不让收藏/制卡拿到空句。
         final String resolved =
             ReaderSelectionScripts.resolveCurrentSentenceText(
-                sentence, data.text);
+              sentence,
+              data.text,
+            );
         _lastSentence = resolved;
         _lastSentenceOffset = data.sentenceOffset;
         appModel.currentMediaSource?.setCurrentSentence(
           selection: FushiTextSelection(text: resolved),
         );
       },
-      search: (
-        String term,
-        Rect selectionRect,
-        bool verticalWriting,
-      ) async {
+      search: (String term, Rect selectionRect, bool verticalWriting) async {
         _popupVerticalWriting = verticalWriting;
         prunePopupStack(0);
         await searchDictionaryResult(
@@ -3651,8 +3659,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   Future<MinePopupResult> onMineFromPopup(Map<String, String> fields) async {
     final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
     try {
-      final String sentence =
-          _lastSentence.isNotEmpty ? _lastSentence : (fields['sentence'] ?? '');
+      final String sentence = _lastSentence.isNotEmpty
+          ? _lastSentence
+          : (fields['sentence'] ?? '');
 
       String? coverPath;
       final String? pageImage = _miningPageIndex == null
@@ -3723,20 +3732,26 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     final MokuroPayload? payload = _payload;
     if (_bookRow == null || payload == null) return;
     final MangaReadingMode next = MangaFushiPage.toggleMangaMode(_mode);
-    final int currentPage =
-        MangaFushiPage.firstPageOfSpread(_spreads, _currentSpread);
+    final int currentPage = MangaFushiPage.firstPageOfSpread(
+      _spreads,
+      _currentSpread,
+    );
     final FushiDatabase db = appModel.database;
     try {
-      await (db.update(db.epubBooks)
-            ..where(($EpubBooksTable t) => t.bookKey.equals(widget.bookKey)))
-          .write(EpubBooksCompanion(
-        mangaReadingMode: Value<String?>(MangaFushiPage.modeToDbString(next)),
-      ));
+      await (db.update(
+        db.epubBooks,
+      )..where(($EpubBooksTable t) => t.bookKey.equals(widget.bookKey))).write(
+        EpubBooksCompanion(
+          mangaReadingMode: Value<String?>(MangaFushiPage.modeToDbString(next)),
+        ),
+      );
     } catch (e, stack) {
       ErrorLogService.instance.log('MangaFushiPage.toggleMode', e, stack);
     }
     if (!mounted) return;
     final List<MangaSpreadEntry> spreads = _buildSpreadsFor(payload, next);
+    // 同一页换单元边界（spread↔webtoon）不是翻页：只替换当前单元边界、不结算。
+    _readLedger.rebaseOnNextArrive();
     setState(() {
       _mode = next;
       _spreads = spreads;
@@ -3745,6 +3760,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _currentFraction = 0;
     });
     _pageNotifier.value = _currentPage;
+    _noteVisiblePages();
     await _loadInitialWindow();
     // 布局变化会换掉当前 spread 背后的页（ERRATA C2）。
     _updateCurrentPageImagePath();
@@ -3771,7 +3787,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     );
     _currentPage = page;
     _pageNotifier.value = page;
-    _armPageDwellCount();
+    _noteVisiblePages();
     // 600ms debounce：连续翻页/滚动只落最后一次。
     _progressDebounce?.cancel();
     _progressDebounce = Timer(const Duration(milliseconds: 600), () {
@@ -3779,24 +3795,18 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     });
   }
 
-  /// 把当前可见页记进本会话的字数/页数账（每页只记一次）。
-  ///
-  /// 唯一调用方是 [_armPageDwellCount] 的停留定时器：页面停留 ≥
-  /// [_kPageDwellThreshold] 才走到这里，「到达即计」被停留门挡在外面（BUG-1761）。
-  /// spread 模式当前 entry 的两页都算看过；webtoon 整本单文档竖滚，只有真正成为
-  /// 「当前页」的那页算读过（快速滚过没停留的页不计，宁可少算不虚高）。
-  void _countVisiblePages() {
+  /// [_readLedger] 的结算回调：[fresh] 是刚离开的单元里本会话首次覆盖的页号子区间
+  /// （并集去重后），展开成页号按 OCR 文本计字数、按页计页数，记进时钟当前段。
+  void _creditPages(List<(int, int)> fresh) {
     final MokuroPayload? payload = _payload;
     if (payload == null) return;
-    final bool isWebtoon = _mode == MangaReadingMode.webtoon;
-    final List<int> pages =
-        !isWebtoon && _currentSpread >= 0 && _currentSpread < _spreads.length
-            ? _spreads[_currentSpread].pageIndices
-            : <int>[_currentPage];
-    final ({int chars, int pages}) added = mangaAccumulateReadingStats(
-      payload: payload,
-      pageIndices: pages,
-      counted: _sessionCountedPages,
+    final List<int> pageIndices = <int>[
+      for (final (int start, int end) in fresh)
+        for (int page = start; page < end; page++) page,
+    ];
+    final ({int chars, int pages}) added = mangaStatsForPages(
+      payload,
+      pageIndices,
     );
     // v92：字数 / 页数直接记进当前打开段（与时长同一 uid 同一行）。
     _studyClock?.addChars(added.chars);
@@ -3903,14 +3913,17 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   }
 
   Future<void> _setZoomPercent(int value) async {
-    final int normalized =
-        value.clamp(kMangaZoomMinPercent, kMangaZoomMaxPercent);
+    final int normalized = value.clamp(
+      kMangaZoomMinPercent,
+      kMangaZoomMaxPercent,
+    );
     if (_zoomPercent == normalized) return;
     setState(() => _zoomPercent = normalized);
     _zoomPreferenceDebouncer?.discard();
     await appModel.setMangaZoomPercent(normalized);
     await _controller?.evaluateJavascript(
-      source: 'window.__mangaSetZoom && '
+      source:
+          'window.__mangaSetZoom && '
           'window.__mangaSetZoom($normalized);',
     );
   }
@@ -3918,8 +3931,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   void _queueZoomPreferencePersist(int value) {
     (_zoomPreferenceDebouncer ??= MangaZoomPreferenceDebouncer(
       persist: appModel.setMangaZoomPercent,
-    ))
-        .queue(value);
+    )).queue(value);
   }
 
   Future<void> _jumpToPage(int oneBasedPage) async {
@@ -3931,13 +3943,15 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _currentFraction = 0;
     if (_mode == MangaReadingMode.webtoon) {
       await _controller?.evaluateJavascript(
-        source: 'window.__mangaScrollToSpread && '
+        source:
+            'window.__mangaScrollToSpread && '
             'window.__mangaScrollToSpread($target, 0);',
       );
       await _replaceSpreadOcr(target);
     } else {
       await _controller?.evaluateJavascript(
-        source: 'window.__mangaApplyTranslate && '
+        source:
+            'window.__mangaApplyTranslate && '
             'window.__mangaApplyTranslate($target);',
       );
       await _replaceSpreadOcr(target);
@@ -3971,8 +3985,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           unreadOnly: false,
           currentChapterKey: _shelfChapterKey,
           showHeader: false,
-          onChapterTap: (OnlineMangaChapter chapter) =>
-              Navigator.of(sheetContext).pop(entry.indexOfChapterKey(chapter.key)),
+          onChapterTap: (OnlineMangaChapter chapter) => Navigator.of(
+            sheetContext,
+          ).pop(entry.indexOfChapterKey(chapter.key)),
         ),
       ),
     );
@@ -4078,9 +4093,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         await _showPageJumpDialog();
         return;
       case _MangaContextAction.direction:
-        await _setSpreadDirection(
-          _spreadDirection == 'rtl' ? 'ltr' : 'rtl',
-        );
+        await _setSpreadDirection(_spreadDirection == 'rtl' ? 'ltr' : 'rtl');
         return;
       case _MangaContextAction.zoomIn:
         await _setZoomPercent(_zoomPercent + 10);
@@ -4149,70 +4162,74 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
               behavior: HitTestBehavior.translucent,
               onPointerDown: _handleMangaPointerDown,
               child: Stack(
-              fit: StackFit.expand,
-              children: <Widget>[
-                Positioned.fill(child: _buildBody()),
-                // 查词弹窗层：必须在同一个键盘 Focus 子树里，否则原生词典
-                // WebView 持焦后会吞掉翻页键。
-                Positioned.fill(
-                  key: const ValueKey<String>('manga_dictionary_host'),
-                  child: buildDictionary(),
-                ),
-                // 返回键是本页**唯一**的出口，它的可见性只能由用户意图
-                // （[_chromeVisible]）决定，绝不能再挂内容状态门控。
-                //
-                // 旧条件是 `_bookRow != null && !_loadFailed && _chromeVisible`：
-                // 加载失败或一直没就绪时，正文区只剩一行「找不到书籍文件」，而
-                // 这颗按钮**跟着一起消失**。漫画正文是原生 WebView、空白点击已被
-                // 翻页占用，页内没有第二条退出通道；iOS 又没有系统返回键，
-                // `PopScope(canPop: false)` 还顺手关掉了侧滑返回——三者叠加的结果
-                // 是用户只能杀进程。出口不是内容的一部分，不随内容存亡。
-                if (_chromeVisible)
-                  Positioned(
-                    top: 0,
-                    left: 0,
-                    child: SafeArea(
-                      child: IconButton(
-                        key: const ValueKey<String>('manga_reader_back_button'),
-                        tooltip:
-                            MaterialLocalizations.of(context).backButtonTooltip,
-                        color: Colors.white,
-                        icon: const Icon(Icons.arrow_back_ios_new),
-                        onPressed: () => Navigator.of(context).maybePop(),
-                      ),
-                    ),
+                fit: StackFit.expand,
+                children: <Widget>[
+                  Positioned.fill(child: _buildBody()),
+                  // 查词弹窗层：必须在同一个键盘 Focus 子树里，否则原生词典
+                  // WebView 持焦后会吞掉翻页键。
+                  Positioned.fill(
+                    key: const ValueKey<String>('manga_dictionary_host'),
+                    child: buildDictionary(),
                   ),
-                // 顶部 chrome：页码指示 + 阅读模式切换。
-                if (_bookRow != null && !_loadFailed && _chromeVisible)
-                  Positioned(
-                    top: 0,
-                    right: 0,
-                    child: SafeArea(child: _buildTopChrome()),
-                  ),
-                // BUG-1888：隐藏态唯一的唤回入口（理由见 [_chromeVisible]）。
-                // 与返回键同理不挂内容门控——否则「隐藏界面后内容加载失败」会把
-                // 唤回按钮一并抹掉，连带返回键再也叫不回来。
-                if (!_chromeVisible)
-                  Positioned(
-                    top: 0,
-                    right: 0,
-                    child: SafeArea(
-                      child: Opacity(
-                        opacity: 0.35,
+                  // 返回键是本页**唯一**的出口，它的可见性只能由用户意图
+                  // （[_chromeVisible]）决定，绝不能再挂内容状态门控。
+                  //
+                  // 旧条件是 `_bookRow != null && !_loadFailed && _chromeVisible`：
+                  // 加载失败或一直没就绪时，正文区只剩一行「找不到书籍文件」，而
+                  // 这颗按钮**跟着一起消失**。漫画正文是原生 WebView、空白点击已被
+                  // 翻页占用，页内没有第二条退出通道；iOS 又没有系统返回键，
+                  // `PopScope(canPop: false)` 还顺手关掉了侧滑返回——三者叠加的结果
+                  // 是用户只能杀进程。出口不是内容的一部分，不随内容存亡。
+                  if (_chromeVisible)
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      child: SafeArea(
                         child: IconButton(
                           key: const ValueKey<String>(
-                              'manga_chrome_show_button'),
-                          tooltip: t.manga_interface_show,
-                          iconSize: 20,
+                            'manga_reader_back_button',
+                          ),
+                          tooltip: MaterialLocalizations.of(
+                            context,
+                          ).backButtonTooltip,
                           color: Colors.white,
-                          icon: const Icon(Icons.visibility_outlined),
-                          onPressed: _toggleMangaChrome,
+                          icon: const Icon(Icons.arrow_back_ios_new),
+                          onPressed: () => Navigator.of(context).maybePop(),
                         ),
                       ),
                     ),
-                  ),
-              ],
-            ),
+                  // 顶部 chrome：页码指示 + 阅读模式切换。
+                  if (_bookRow != null && !_loadFailed && _chromeVisible)
+                    Positioned(
+                      top: 0,
+                      right: 0,
+                      child: SafeArea(child: _buildTopChrome()),
+                    ),
+                  // BUG-1888：隐藏态唯一的唤回入口（理由见 [_chromeVisible]）。
+                  // 与返回键同理不挂内容门控——否则「隐藏界面后内容加载失败」会把
+                  // 唤回按钮一并抹掉，连带返回键再也叫不回来。
+                  if (!_chromeVisible)
+                    Positioned(
+                      top: 0,
+                      right: 0,
+                      child: SafeArea(
+                        child: Opacity(
+                          opacity: 0.35,
+                          child: IconButton(
+                            key: const ValueKey<String>(
+                              'manga_chrome_show_button',
+                            ),
+                            tooltip: t.manga_interface_show,
+                            iconSize: 20,
+                            color: Colors.white,
+                            icon: const Icon(Icons.visibility_outlined),
+                            onPressed: _toggleMangaChrome,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
         ),
@@ -4238,8 +4255,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (!Platform.isAndroid && !Platform.isIOS) return;
     SystemChrome.setEnabledSystemUIMode(
       _chromeVisible ? SystemUiMode.edgeToEdge : SystemUiMode.immersiveSticky,
-      overlays:
-          _chromeVisible ? SystemUiOverlay.values : const <SystemUiOverlay>[],
+      overlays: _chromeVisible
+          ? SystemUiOverlay.values
+          : const <SystemUiOverlay>[],
     );
   }
 
@@ -4253,24 +4271,26 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             final int pageCount = _payload?.images.length ?? 0;
             if (pageCount <= 0) return const SizedBox.shrink();
             // 双页 spread 显示页码区间（如 3-4 / 40）；单页保持原样。
-            final int spreadIndex =
-                MangaFushiPage.spreadIndexForPage(_spreads, page);
+            final int spreadIndex = MangaFushiPage.spreadIndexForPage(
+              _spreads,
+              page,
+            );
             final MangaSpreadEntry? entry =
                 (spreadIndex >= 0 && spreadIndex < _spreads.length)
-                    ? _spreads[spreadIndex]
-                    : null;
+                ? _spreads[spreadIndex]
+                : null;
             final String label = (entry != null && entry.isSpread)
                 ? '${entry.pageIndices.first + 1}-'
-                    '${entry.pageIndices.last + 1} / $pageCount'
+                      '${entry.pageIndices.last + 1} / $pageCount'
                 : '${page + 1} / $pageCount';
             return TextButton(
               key: const ValueKey<String>('manga_page_jump_button'),
               onPressed: () => unawaited(_showPageJumpDialog()),
               child: Text(
                 label,
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      color: Colors.white70,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.labelLarge?.copyWith(color: Colors.white70),
               ),
             );
           },
@@ -4321,8 +4341,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             onPressed: _wholeVolumeOcrOpen
                 ? null
                 : _wholeVolumeOcrRunning
-                    ? _cancelWholeVolumeOcr
-                    : () => unawaited(_openWholeVolumeOcr()),
+                ? _cancelWholeVolumeOcr
+                : () => unawaited(_openWholeVolumeOcr()),
           ),
         ),
         if (_wholeVolumeOcrRunning && _wholeVolumeOcrTotal > 0)
@@ -4330,9 +4350,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             padding: const EdgeInsets.only(right: 4),
             child: Text(
               '$_wholeVolumeOcrDone/$_wholeVolumeOcrTotal',
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: Colors.white70,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.labelSmall?.copyWith(color: Colors.white70),
             ),
           ),
         // BUG-1163：当前真正生效的执行后端常驻显示，降级时标红。
@@ -4343,10 +4363,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
               _wholeVolumeOcrAcceleration!.label,
               key: const ValueKey<String>('manga_ocr_acceleration_label'),
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: _wholeVolumeOcrAcceleration!.degraded
-                        ? Colors.amberAccent
-                        : Colors.white70,
-                  ),
+                color: _wholeVolumeOcrAcceleration!.degraded
+                    ? Colors.amberAccent
+                    : Colors.white70,
+              ),
             ),
           ),
         if (kDebugMode && _debugOcrHitOrientation != null)
@@ -4364,9 +4384,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
               ' · ${_debugOcrHitCharacter ?? ''}'
               ' · ${_debugOcrSelectedText ?? ''}'
               ' · $_zoomPercent%',
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: Colors.lightGreenAccent,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.labelSmall?.copyWith(color: Colors.lightGreenAccent),
             ),
           ),
         // 章节列表：只有书架里的在线条目才有「章」。本地卷（一卷一条目、无章节）
@@ -4392,22 +4412,22 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                 unawaited(_setSpreadPreference(preference)),
             itemBuilder: (BuildContext context) =>
                 <PopupMenuEntry<MangaSpreadPreference>>[
-              CheckedPopupMenuItem<MangaSpreadPreference>(
-                value: MangaSpreadPreference.auto,
-                checked: _spreadPreference == MangaSpreadPreference.auto,
-                child: Text(t.spread_auto),
-              ),
-              CheckedPopupMenuItem<MangaSpreadPreference>(
-                value: MangaSpreadPreference.single,
-                checked: _spreadPreference == MangaSpreadPreference.single,
-                child: Text(t.spread_off),
-              ),
-              CheckedPopupMenuItem<MangaSpreadPreference>(
-                value: MangaSpreadPreference.double,
-                checked: _spreadPreference == MangaSpreadPreference.double,
-                child: Text(t.spread_on),
-              ),
-            ],
+                  CheckedPopupMenuItem<MangaSpreadPreference>(
+                    value: MangaSpreadPreference.auto,
+                    checked: _spreadPreference == MangaSpreadPreference.auto,
+                    child: Text(t.spread_auto),
+                  ),
+                  CheckedPopupMenuItem<MangaSpreadPreference>(
+                    value: MangaSpreadPreference.single,
+                    checked: _spreadPreference == MangaSpreadPreference.single,
+                    child: Text(t.spread_off),
+                  ),
+                  CheckedPopupMenuItem<MangaSpreadPreference>(
+                    value: MangaSpreadPreference.double,
+                    checked: _spreadPreference == MangaSpreadPreference.double,
+                    child: Text(t.spread_on),
+                  ),
+                ],
           ),
         Tooltip(
           message: t.manga_mode_toggle,
@@ -4426,8 +4446,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           message: t.manga_interface_hide,
           child: IconButton(
             key: const ValueKey<String>('manga_chrome_hide_button'),
-            icon: const Icon(Icons.visibility_off_outlined,
-                color: Colors.white),
+            icon: const Icon(
+              Icons.visibility_off_outlined,
+              color: Colors.white,
+            ),
             onPressed: _toggleMangaChrome,
           ),
         ),
@@ -4615,8 +4637,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
               _ => null,
             };
             if (value == null) return;
-            final int normalized =
-                value.clamp(kMangaZoomMinPercent, kMangaZoomMaxPercent);
+            final int normalized = value.clamp(
+              kMangaZoomMinPercent,
+              kMangaZoomMaxPercent,
+            );
             if (_zoomPercent == normalized) return;
             if (mounted) {
               setState(() => _zoomPercent = normalized);
@@ -4642,26 +4666,32 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       onLoadResourceWithCustomScheme:
           (InAppWebViewController controller, WebResourceRequest request) =>
               _loadMangaCustomScheme(request),
-      onReceivedError: (InAppWebViewController controller,
-          WebResourceRequest request, WebResourceError error) async {
-        if (!(request.isForMainFrame ?? false)) return;
-        // Windows WebView2 对未解析虚拟域的主帧导航报错，即使 shouldInterceptRequest
-        // 已提供文档。视作加载完成（镜像 reader_fushi 的同款处理）。
-        if (Platform.isWindows &&
-            request.url.host == MangaFushiPage.kMangaHost) {
-          unawaited(_markWindowReady(controller));
-        }
-      },
+      onReceivedError:
+          (
+            InAppWebViewController controller,
+            WebResourceRequest request,
+            WebResourceError error,
+          ) async {
+            if (!(request.isForMainFrame ?? false)) return;
+            // Windows WebView2 对未解析虚拟域的主帧导航报错，即使 shouldInterceptRequest
+            // 已提供文档。视作加载完成（镜像 reader_fushi 的同款处理）。
+            if (Platform.isWindows &&
+                request.url.host == MangaFushiPage.kMangaHost) {
+              unawaited(_markWindowReady(controller));
+            }
+          },
       onLoadStop: (InAppWebViewController controller, WebUri? url) async {
         await _markWindowReady(controller);
       },
       // 非 null 本身就是救命动作：Java 侧据此 `return true`，不再连坐杀 app。
       onRenderProcessGone:
           (InAppWebViewController _, RenderProcessGoneDetail detail) =>
-              unawaited(_webViewDeathGuard.handleDeath(
-        didCrash: detail.didCrash,
-        rendererPriorityAtExit: detail.rendererPriorityAtExit,
-      )),
+              unawaited(
+                _webViewDeathGuard.handleDeath(
+                  didCrash: detail.didCrash,
+                  rendererPriorityAtExit: detail.rendererPriorityAtExit,
+                ),
+              ),
     );
   }
 
@@ -4679,15 +4709,18 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
     // 入口闸门（BUG-1153）：这份文档必须自证就是当前 generation。
     if (!MangaWindowGeneration.isCurrent(
-        rawGeneration, _windowGate.generation)) {
+      rawGeneration,
+      _windowGate.generation,
+    )) {
       return;
     }
     // 但入口比一次远远不够（BUG-1170）：下面三个 await 期间窗口可能被换掉
     // （10s 超时放弃旧窗口 → 新一轮 begin() 递增 generation 并换新锁），迟到的旧
     // 回调会解开**新**窗口的锁，导航锁被错误解除，WebView 还在加载旧内容就被判定
     // 就绪。所以这里取本次加载的凭据，每个 await 之后再复问一次归属。
-    final MangaWindowLoadTicket? ticket =
-        _windowGate.ticketFor(MangaWindowGeneration.parse(rawGeneration));
+    final MangaWindowLoadTicket? ticket = _windowGate.ticketFor(
+      MangaWindowGeneration.parse(rawGeneration),
+    );
     if (ticket == null) {
       return;
     }
@@ -4718,12 +4751,14 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
     if (_mode == MangaReadingMode.webtoon) {
       await controller.evaluateJavascript(
-        source: 'window.__mangaScrollToSpread && '
+        source:
+            'window.__mangaScrollToSpread && '
             'window.__mangaScrollToSpread($_currentSpread, $_currentFraction);',
       );
     } else {
       await controller.evaluateJavascript(
-        source: 'window.__mangaApplyTranslate && '
+        source:
+            'window.__mangaApplyTranslate && '
             'window.__mangaApplyTranslate($_currentSpread);',
       );
     }

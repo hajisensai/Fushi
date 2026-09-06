@@ -806,7 +806,7 @@ String _expandSelfClosingRawTextTag(String tag) {
 ///
 /// 阅读器 WebView 侧有一份等价的 JS 实现（`reader_pagination_scripts.dart` 的
 /// `countChars`），两份必须同口径——JS 算出的 `charOffset` 会写进 DB 的 `char_offset`
-/// 列，并在 `computeCharWatermark` / `computeBookProgress` 里与本文件算出的每章
+/// 列，并在 `absoluteCharOffsetOf` / `computeBookProgress` 里与本文件算出的每章
 /// `characters` **直接相加**。对拍守卫见 `fushi/test/stats/study_char_count_parity_test.dart`。
 const int kChapterCharCountCaliber = 4;
 

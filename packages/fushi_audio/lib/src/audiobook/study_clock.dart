@@ -12,12 +12,13 @@ import 'package:fushi_core/fushi_core.dart';
 /// `kMaxWatchGap` 与本常量同值同义，v92 起统一只剩这一个。
 const Duration kMaxReadingGap = Duration(seconds: 120);
 
-/// 「到达即计」治理的统一停留门（BUG-1761 漫画 / BUG-1763 视频）。
+/// 视频 cue 字数的停留门（BUG-1763）：cue 要真实播放停留这么久才算「看过」其字幕字数。
 ///
-/// 产品裁定：到达 ≠ 读过 / 看过。三个域各自的机制不同（EPUB 按字数水位 + 速度封顶、
-/// 漫画按当前页停留、视频按 cue 的真实播放停留），但「多久才算停留过」是同一条产品
-/// 判据，只应有一个数。此前漫画的 `_kPageDwellThreshold` 与视频的 `kCueDwellMs` 是两
-/// 个互不相干的 1500 字面量——同值不同名，正是日后必漂的形状。
+/// 阅读三域（EPUB / 漫画 / PDF）**不用**停留门：2026-09-06 裁定「读过」= 翻走即计 +
+/// 会话覆盖并集（`fushi/lib/src/stats/read_unit_ledger.dart`，对齐 Hoshi Reader），
+/// 离开一个单元那一刻把其中未覆盖的部分全额计入，没有停留门、没有速率封顶（旧的
+/// EPUB 字数水位 + 速度封顶、漫画到达停留 1.5s 都已拆除）。本常量因此只剩视频 cue
+/// 一个消费者（`kCueDwellMs`）；仍保留为具名常量而不是回落成字面量。
 ///
 /// 用毫秒 int 而不是 Duration：`Duration.inMilliseconds` 是 getter、不能 const 求值，
 /// 而消费端两侧一个要 int、一个要 Duration，只有 int 能让两边都真正引用同一个数
