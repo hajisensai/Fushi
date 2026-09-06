@@ -80,10 +80,14 @@ class ClipSubtitleLayout {
 ///
 /// [style] 的 `shadowThickness` 为 null 时取 [VideoSubtitleStyle.defaultShadowThickness]
 /// （与屏幕上「跟随全局 UI 缩放、1.0 时用默认值」的语义一致）。
+/// [overridePadding] 用于副字幕层：它有自己的位置基线
+/// （[VideoSubtitleStyle.secondaryBottomPadding]，null = 跟随主层）。传入的是**逻辑
+/// 像素**，与 `style.bottomPadding` 同一坐标系，同样乘 scale 换算。
 ClipSubtitleLayout computeClipSubtitleLayout({
   required ClipFrameSize frame,
   required VideoSubtitleStyle style,
   required double viewportHeight,
+  double? overridePadding,
 }) {
   final double vh = viewportHeight > 0
       ? viewportHeight
@@ -94,7 +98,7 @@ ClipSubtitleLayout computeClipSubtitleLayout({
   return ClipSubtitleLayout(
     scale: scale,
     fontSize: style.fontSize * scale,
-    bottomPadding: style.bottomPadding * scale,
+    bottomPadding: (overridePadding ?? style.bottomPadding) * scale,
     maxWidth: frame.width * kClipSubtitleMaxWidthFraction,
     shadowThickness: thickness * scale,
   );
@@ -108,11 +112,16 @@ ClipSubtitleLayout computeClipSubtitleLayout({
 ///
 /// 渲染失败（引擎拒绝、内存不足）返回 null 而不是抛：烧不出来最多退成无字幕导出，
 /// 不该让整次导出跟着失败。
+/// [anchorTop] 为 true 时把文本锚到画面**顶部**（[ClipSubtitleLayout.bottomPadding]
+/// 此时是离顶距离）。副字幕层用得到：主副两层在屏幕上锚在对侧（主底 → 副顶，见
+/// [resolveLayerForcedAnchor]），两层都底锚会直接叠印。
 Future<Uint8List?> renderClipSubtitlePng({
   required String text,
   required ClipFrameSize frame,
   required VideoSubtitleStyle style,
   required double viewportHeight,
+  bool anchorTop = false,
+  double? overridePadding,
   String? fontFamily,
 }) async {
   if (text.trim().isEmpty) return null;
@@ -120,6 +129,7 @@ Future<Uint8List?> renderClipSubtitlePng({
     frame: frame,
     style: style,
     viewportHeight: viewportHeight,
+    overridePadding: overridePadding,
   );
 
   try {
@@ -148,9 +158,11 @@ Future<Uint8List?> renderClipSubtitlePng({
 
     final ui.PictureRecorder recorder = ui.PictureRecorder();
     final Canvas canvas = Canvas(recorder);
-    // 底部锚定：整块文本的下沿离画面底 bottomPadding。多行时 painter.height 已含
-    // 全部行高，所以直接减就对，不必逐行算。
-    final double dy = frame.height - layout.bottomPadding - painter.height;
+    // 锚定：底锚时整块文本的下沿离画面底 bottomPadding；顶锚（副字幕层）时上沿离
+    // 画面顶同样的距离。多行时 painter.height 已含全部行高，直接加减就对，不必逐行算。
+    final double dy = anchorTop
+        ? layout.bottomPadding
+        : frame.height - layout.bottomPadding - painter.height;
     final double dx = (frame.width - painter.width) / 2;
     painter.paint(canvas, Offset(dx, dy));
 

@@ -25,6 +25,18 @@ library;
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi/src/media/video/video_clip_subtitle.dart';
+
+/// 把一条 cue 画成与 [ClipFrameSize] 同分辨率的整帧透明 PNG，返回其字节；画不出来
+/// （文本为空、引擎拒绝）返回 null。
+///
+/// 为什么是回调而不是让导出层直接调渲染函数：导出层只懂 ffmpeg，**画成什么样是页面
+/// 层的事**——只有页面知道用户的字幕外观设置和屏幕上视频区有多高（决定字号换算）。
+/// 导出层负责探出画面尺寸并把它喂回来，两边各管各的。
+typedef ClipSubtitleFrameRenderer = Future<Uint8List?> Function(
+  ClipSubtitleCue cue,
+  ClipFrameSize frame,
+);
 
 /// 烧录需要、且 `ffmpeg-min` 的 `FILTERS` 白名单里必须有的 filter。
 ///

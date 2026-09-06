@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/media/video/ffmpeg_backend.dart';
 import 'package:fushi/src/media/video/video_clip_subtitle.dart';
+import 'package:fushi/src/media/video/video_clip_subtitle_burn.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:path/path.dart' as p;
 
@@ -282,7 +283,7 @@ List<String> buildClipCodecArgs({required ClipCodecPlan plan}) {
 ///
 /// 任何异常、解析不出、探测超时都退回 [ClipCodecPlan.fullCopy]：探测是优化判据，不是
 /// 导出的前置条件，它坏了不能让导出跟着坏。
-Future<ClipCodecPlan> _probeClipCodecPlan(
+Future<_ClipProbe> _probeClipCodecPlan(
   FfmpegBackend backend,
   String inputPath,
   Duration timeout,
@@ -292,10 +293,50 @@ Future<ClipCodecPlan> _probeClipCodecPlan(
       <String>['-hide_banner', '-i', inputPath],
       timeout,
     );
-    return resolveClipCodecPlan(parseClipSourceCodecs(probe.output));
+    // 同一份日志解两样东西，**不额外起进程**：编码（决定哪些流能 copy）和画面尺寸
+    // （决定字幕 PNG 渲染成多大，BUG-2202）。
+    return _ClipProbe(
+      resolveClipCodecPlan(parseClipSourceCodecs(probe.output)),
+      parseClipFrameSize(probe.output),
+    );
   } catch (e, stack) {
     ErrorLogService.instance.log('VideoClipExport', e, stack);
-    return ClipCodecPlan.fullCopy;
+    return const _ClipProbe(ClipCodecPlan.fullCopy, null);
+  }
+}
+
+/// 一次 `ffmpeg -i` 探测出来的两件事。
+class _ClipProbe {
+  const _ClipProbe(this.plan, this.frameSize);
+
+  final ClipCodecPlan plan;
+
+  /// 首条视频流的画面尺寸；解不出为 null，调用方据此**不烧**字幕（尺寸猜错会让
+  /// overlay 把字幕拉伸或裁掉，比没有字幕更糟）。
+  final ClipFrameSize? frameSize;
+}
+
+/// 探本机 ffmpeg 编进了哪些 filter，决定能不能烧硬字幕（BUG-2202）。
+///
+/// 为什么每次导出都探而不缓存：一次 `ffmpeg -filters` 只有几十毫秒，而导出本身是
+/// 秒级的用户操作；缓存换不来可感知的收益，却会引入「用户中途换了 `FUSHI_FFMPEG`
+/// 指向，缓存还是旧能力」的陈旧态。
+///
+/// 探测失败一律当**不能烧**（返回空集合）：烧不了顶多退成无字幕导出，而误判成能烧
+/// 会让整次导出失败。
+Future<Set<String>> _probeFfmpegFilters(
+  FfmpegBackend backend,
+  Duration timeout,
+) async {
+  try {
+    final FfmpegRunResult probe = await backend.run(
+      <String>['-hide_banner', '-filters'],
+      timeout,
+    );
+    return parseFfmpegFilterNames(probe.output);
+  } catch (e, stack) {
+    ErrorLogService.instance.log('VideoClipExport', e, stack);
+    return const <String>{};
   }
 }
 
@@ -508,6 +549,80 @@ List<String> buildFfmpegVideoClipReencodeArgs({
   ];
 }
 
+/// 纯函数：拼「烧硬字幕」的裁剪命令（BUG-2202）。
+///
+/// 与 [buildFfmpegVideoClipReencodeArgs] 是同一条重编码路径，只多了三样东西：
+/// 每条 cue 一个 PNG 输入、把它们叠上去的 `-filter_complex` 图、以及用图的输出标签
+/// 取代 `-map 0:v:0`。字幕**不再是流**，它已经是画面像素了，所以没有任何 `-c:s`。
+///
+/// 烧录必然重编码——画面变了，`-c copy` 在定义上就不可能。这是硬字幕的固有代价，
+/// 不是实现选择。
+///
+/// 两个不能省的细节：
+/// - **音频必须显式 `-map`**。`-filter_complex` 与任何 `-map` 一样会关掉 ffmpeg 的
+///   自动流选择；不显式 map 音频，输出就只有视频。轨号未知时用 `0:a?`（带 `?` 兜底，
+///   与 [buildClipStreamMapArgs] 同一约定，BUG-345）。
+/// - **`-sn`/`-dn` 照旧给**：源里的内嵌字幕/数据流一条都不该跟进片段——字幕已经烧
+///   在画面里了，再带一条 tx3g 轨就又回到 QQ 播不了的老路。
+List<String> buildFfmpegVideoClipBurnArgs({
+  required String inputPath,
+  required int startMs,
+  required int endMs,
+  required String outputPath,
+  required List<ClipBurnCue> burnCues,
+  int? audioStreamIndex,
+  int? audioStreamCount,
+}) {
+  final double startSeconds = startMs / 1000.0;
+  final double durationSeconds = (endMs - startMs) / 1000.0;
+  final int? explicitAudio = resolveAudioMapIndex(
+    audioStreamIndex: audioStreamIndex,
+    audioStreamCount: audioStreamCount,
+  );
+
+  return <String>[
+    '-hide_banner',
+    '-y',
+    // `-ss`/`-t` 只作用于紧随其后的源视频输入；字幕 PNG 是静止图，不带这两个选项。
+    '-ss',
+    startSeconds.toStringAsFixed(3),
+    '-t',
+    durationSeconds.toStringAsFixed(3),
+    '-i',
+    inputPath,
+    ...buildClipBurnInputArgs(burnCues),
+    '-filter_complex',
+    buildClipBurnFilterGraph(burnCues),
+    '-map',
+    kClipBurnOutputLabel,
+    '-map',
+    explicitAudio != null ? '0:a:$explicitAudio?' : '0:a?',
+    '-sn',
+    '-dn',
+    // 与另外两条路径同因：片段不继承源整集的章节表（BUG-2011）。
+    '-map_chapters',
+    '-1',
+    '-c:v',
+    'libx264',
+    '-preset',
+    'veryfast',
+    '-crf',
+    '20',
+    '-pix_fmt',
+    'yuv420p',
+    '-c:a',
+    'aac',
+    '-b:a',
+    '192k',
+    // 重编码时 accurate seek 精确切在请求点，没有关键帧前导可跳，归零无副作用
+    // （BUG-2011 ②：这个参数只在重编码时才安全）。
+    '-avoid_negative_ts',
+    'make_zero',
+    ...buildClipFaststartArgs(outputPath),
+    outputPath,
+  ];
+}
+
 /// 纯函数：把请求的 [audioStreamIndex] 归一成「实际拼进 `-map 0:a:N` 的下标」，
 /// 否则返回 null（不加 `-map`，用 ffmpeg 默认音频选择）。两条 ffmpeg 裁剪路径
 /// （视频片段导出 / 桌面音频裁剪）共用这套边界判定（BUG-345）。
@@ -554,6 +669,8 @@ Future<VideoClipExportResult> exportVideoClipViaFfmpeg({
   int? audioStreamIndex,
   int? audioStreamCount,
   List<String> subtitleContents = const <String>[],
+  List<ClipSubtitleCue> subtitleCues = const <ClipSubtitleCue>[],
+  ClipSubtitleFrameRenderer? subtitleRenderer,
   FfmpegBackend? backend,
   Duration timeout = const Duration(minutes: 10),
 }) async {
@@ -576,19 +693,69 @@ Future<VideoClipExportResult> exportVideoClipViaFfmpeg({
       .where((String s) => s.trim().isNotEmpty)
       .toList(growable: false);
   Directory? subtitleDir;
+  Directory? burnDir;
 
   try {
     output.parent.createSync(recursive: true);
     final FfmpegBackend resolved = backend ?? resolveFfmpegBackend();
     // 先探源编码，决定这一轮哪些流能 copy、哪些必须重编码（BUG-2011）。探测失败退回
     // 全 copy，也就是加这层门控之前的行为。
-    final ClipCodecPlan codecPlan = await _probeClipCodecPlan(
+    final _ClipProbe probe = await _probeClipCodecPlan(
       resolved,
       inputPath,
       _kClipProbeTimeout,
     );
+    final ClipCodecPlan codecPlan = probe.plan;
     bool produced(FfmpegRunResult r) =>
         r.isSuccess && output.existsSync() && output.lengthSync() > 0;
+
+    // 硬字幕烧录（BUG-2202）：能烧就先烧一轮，烧成功直接收工。
+    //
+    // 烧不了（本机 ffmpeg 没有 overlay filter / 画面尺寸解不出 / 渲染不出图）或者
+    // 烧失败，都**静默**落到下面既有的路径——对 mp4 就是一个无字幕但到处能播的
+    // 片段。与既有的字幕降级同一条纪律：「加字幕」这个增强绝不能把原本能成功的
+    // 导出变成失败。失败原因写进错误日志，排查时看那条。
+    if (subtitleCues.isNotEmpty && subtitleRenderer != null) {
+      final ClipFrameSize? frame = probe.frameSize;
+      final Set<String> filters =
+          await _probeFfmpegFilters(resolved, _kClipProbeTimeout);
+      if (frame != null && ffmpegCanBurnClipSubtitles(filters)) {
+        final _BurnFrames? frames = await _renderClipBurnFrames(
+          cues: subtitleCues,
+          frame: frame,
+          renderer: subtitleRenderer,
+        );
+        burnDir = frames?.dir;
+        final List<ClipBurnCue> burnCues =
+            frames?.cues ?? const <ClipBurnCue>[];
+        if (canBurnClipCues(burnCues)) {
+          final FfmpegRunResult burn = await resolved.run(
+            buildFfmpegVideoClipBurnArgs(
+              inputPath: inputPath,
+              startMs: startMs,
+              endMs: endMs,
+              outputPath: outputPath,
+              burnCues: burnCues,
+              audioStreamIndex: audioStreamIndex,
+              audioStreamCount: audioStreamCount,
+            ),
+            timeout,
+          );
+          if (produced(burn)) {
+            return VideoClipExportResult.success(
+              outputPath,
+              subtitleTrackCount: burnCues.length,
+            );
+          }
+          _deleteIfPresent(output);
+          ErrorLogService.instance.log(
+            'VideoClipExport',
+            'subtitle burn-in failed, falling back to a subtitle-less '
+                'export: ${burn.failureSummary}',
+          );
+        }
+      }
+    }
 
     List<String> subtitlePaths = const <String>[];
     if (wanted.isNotEmpty && subtitleCodec != null) {
@@ -723,6 +890,71 @@ Future<VideoClipExportResult> exportVideoClipViaFfmpeg({
         await subtitleDir.delete(recursive: true);
       } catch (_) {}
     }
+    // 同理，烧录用的字幕 PNG 也只在 ffmpeg 读取期间存在。它们比 SRT 大得多
+    // （每张都是整帧 RGBA），漏删一次就是几十 MB 的临时垃圾。
+    if (burnDir != null) {
+      try {
+        await burnDir.delete(recursive: true);
+      } catch (_) {}
+    }
+  }
+}
+
+/// 渲染好的字幕 PNG：所在临时目录 + 与之对应的烧录 cue（图路径 + 时间窗）。
+class _BurnFrames {
+  const _BurnFrames(this.dir, this.cues);
+
+  final Directory dir;
+  final List<ClipBurnCue> cues;
+}
+
+/// 把每条 cue 渲染成一张整帧透明 PNG，落进一个独占的临时目录。
+///
+/// 渲染交给调用方传进来的 [renderer]（实际实现是 `renderClipSubtitlePng`）：导出层
+/// 只管 ffmpeg，画成什么样是页面层的事——页面才知道用户的字幕外观设置和屏幕上视频
+/// 区有多高。
+///
+/// 任何一条渲染不出来（空文本、引擎拒绝）就**跳过那条**，不让整批作废：少一句字幕
+/// 远好过整个片段没有字幕。一条都没渲染出来、或者目录建不出来，返回 null。
+///
+/// 文件名用 `c<i>.png` 这种最短形式：每条 cue 的路径都要进 ffmpeg 命令行，而
+/// Windows 的命令行上限是 32767 字符（见 [kMaxClipBurnCues]）。
+Future<_BurnFrames?> _renderClipBurnFrames({
+  required List<ClipSubtitleCue> cues,
+  required ClipFrameSize frame,
+  required ClipSubtitleFrameRenderer renderer,
+}) async {
+  Directory? dir;
+  try {
+    dir = await Directory.systemTemp.createTemp('fushi_clip_burn');
+    final List<ClipBurnCue> out = <ClipBurnCue>[];
+    for (int i = 0; i < cues.length; i++) {
+      final ClipSubtitleCue cue = cues[i];
+      final Uint8List? png = await renderer(cue, frame);
+      if (png == null || png.isEmpty) continue;
+      final String path = p.join(dir.path, 'c$i.png');
+      await File(path).writeAsBytes(png, flush: true);
+      out.add(ClipBurnCue(
+        startMs: cue.startMs,
+        endMs: cue.endMs,
+        pngPath: path,
+      ));
+    }
+    if (out.isEmpty) {
+      try {
+        await dir.delete(recursive: true);
+      } catch (_) {}
+      return null;
+    }
+    return _BurnFrames(dir, List<ClipBurnCue>.unmodifiable(out));
+  } catch (e, stack) {
+    ErrorLogService.instance.log('VideoClipExport', e, stack);
+    if (dir != null) {
+      try {
+        await dir.delete(recursive: true);
+      } catch (_) {}
+    }
+    return null;
   }
 }
 

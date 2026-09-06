@@ -1,8 +1,8 @@
 ## BUG-2202 · 内封 tx3g 字幕轨让导出的片段在 QQ 等 IM 里整个不可播
 - **报告**：2026-09-07（用户：wrds）
 - **真实性**：✅ 真 bug —— 根因 `fushi/lib/src/media/video/video_clip_exporter.dart:392`（`-c:s mov_text` 把字幕封成 tx3g 轨）
-- **[x] ① 已修复（不可播这一条）** — `resolveClipSubtitleCodec` 对 mp4 系返回 null，导出的片段不再带 tx3g 轨，到处能播。**字幕以硬字幕形式回来这一半还没接线**（见下「当前进度」），需要 CI 先重编一版带 `overlay` 的 ffmpeg-min
-- **[x] ② 已加自动化测试** — `video_clip_subtitle_burn_test.dart`（24 条）+ `video_clip_subtitle_image_test.dart`（8 条）+ 导出链路 `mp4 output gets no subtitle track at all`；四个相关测试文件共 90 条全绿
+- **[x] ① 已修复** — ① 不再封 tx3g（`resolveClipSubtitleCodec` 对 mp4 系返回 null），片段立刻到处能播；② 字幕改以**硬字幕**烧进画面（`overlay` 链 + `dart:ui` 渲染），代码链路已全部接通。**剩最后一步在 CI**：`ffmpeg-min` 要重编一版带 `overlay` 的二进制，在那之前能力探测恒判「不能烧」，行为 = 片段到处能播但没有字幕
+- **[x] ② 已加自动化测试** — `video_clip_subtitle_burn_test.dart`（24 条）+ `video_clip_subtitle_image_test.dart`（8 条）+ `video_clip_subtitle_test.dart` 的 cue 抽取组 + 导出链路的 `subtitle burn-in (BUG-2202)` 组（烧录参数形状、有/无 overlay 两条分支、烧失败降级、无渲染器不探测）；四个相关测试文件共 103 条全绿
 - **备注**：与 [BUG-2200](BUG-2200-clip-export-moov-at-tail-qq-cannot-play.md) 同一次用户报告拆出来的两条独立缺陷。2200（moov 在文件末尾）已修，但**不足以**让文件在 QQ 里播放。
 
 ### 现象
@@ -59,9 +59,13 @@
 - `video_clip_subtitle_image.dart`：`dart:ui` 把一条 cue 渲染成与视频同分辨率的全画幅透明 PNG，字号/底距/投影按 `画面高 / 屏幕视频区高` 换算，复用屏幕上那套 `VideoSubtitleStyle`——于是「字幕占画面的比例」在屏幕和导出件里一致。
 - `resolveClipSubtitleCodec` 对 mp4 系返回 null：**不再封 tx3g**，导出的片段立刻到处能播。这里没有加任何新分支——调用方早就有「容器封不下文本字幕 → 退回纯视频音频导出」的降级链，改返回值就够了。
 
-还缺（下一批）：
-- 把渲染器接进 `exportVideoClip`：探到 `overlay` 就渲染 cue → 拼 `-filter_complex` → 走重编码路径烧录；探不到就维持现在的无字幕导出。这一步要把导出入口从「SRT 文本」换成「cue（带时间轴）」，会动到 `soft-subtitle muxing` 那组既有测试。
-- CI 重编一版带 `overlay` 的 `ffmpeg-min` 二进制（Windows/macOS/Linux），移动端自编的 ffmpeg-kit 同理。在新二进制到位前 `ffmpegCanBurnClipSubtitles` 恒为 false，行为就是现在这样：片段到处能播，但没有字幕。
+- `buildFfmpegVideoClipBurnArgs` + 导出链路接线：探到 `overlay` 且画面尺寸解得出，就渲染 cue → 拼 `-filter_complex` → 走重编码烧录；烧成功直接收工，烧不了或烧失败都**静默**落回既有路径（对 mp4 = 无字幕导出）。与既有的字幕降级同一条纪律：加字幕这个增强绝不能把原本能成功的导出变成失败。
+- `buildClipSubtitleCues`：把「挑哪些 cue、怎么裁」收敛成**唯一真相源**，`buildClipSrtContent` 现在建在它之上——烧出来的字幕和 SRT 里的逐条一致，不会两条路径各挑各的。副字幕带 `isSecondary` 标记，锚定复用 `resolveLayerForcedAnchor`（主底 → 副顶），否则两层会叠印。
+
+**完整烧录命令已用真实文件在真 ffmpeg 上跑通**（不是「看着对」）：产物只有 video+audio 两条流、`ftyp moov free mdat`（moov 前置）、96 帧逐帧解码干净。
+
+还缺（唯一一步，在 CI）：
+- 重编一版带 `overlay` 的 `ffmpeg-min` 二进制（Windows/macOS/Linux），移动端自编的 ffmpeg-kit 同理。在新二进制到位前 `ffmpegCanBurnClipSubtitles` 恒为 false，行为就是：片段到处能播，但没有字幕。二进制一到位，烧录**自动生效**，不需要再改任何代码。
 
 ### 未动的一件事
 

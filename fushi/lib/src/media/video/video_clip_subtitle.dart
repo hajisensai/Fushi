@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:path/path.dart' as p;
 
@@ -32,11 +33,91 @@ String? buildClipSrtContent({
   required int endMs,
   int delayMs = 0,
 }) {
-  if (cues.isEmpty || endMs <= startMs) return null;
-  final int durationMs = endMs - startMs;
+  final List<ClipSubtitleCue> picked = buildClipSubtitleCues(
+    cues: cues,
+    startMs: startMs,
+    endMs: endMs,
+    delayMs: delayMs,
+  );
+  if (picked.isEmpty) return null;
 
   final StringBuffer buffer = StringBuffer();
-  int index = 0;
+  for (int i = 0; i < picked.length; i++) {
+    final ClipSubtitleCue cue = picked[i];
+    buffer
+      ..writeln(i + 1)
+      ..writeln('${formatSrtTimestamp(cue.startMs)} --> '
+          '${formatSrtTimestamp(cue.endMs)}')
+      ..writeln(cue.text)
+      ..writeln();
+  }
+  return buffer.toString();
+}
+
+/// 片段区间内的一条字幕：时间轴**已平移到片段起点为 0**、已 clamp 到片段边界、
+/// 文本已清洗。软字幕（SRT）与硬字幕烧录（`video_clip_subtitle_burn.dart`）共用
+/// 同一份，两条路径不会因为各自挑 cue 而显示出不同的字幕。
+@immutable
+class ClipSubtitleCue {
+  const ClipSubtitleCue({
+    required this.startMs,
+    required this.endMs,
+    required this.text,
+    this.isSecondary = false,
+  });
+
+  /// 相对片段起点的出现时刻（毫秒）。
+  final int startMs;
+
+  /// 相对片段起点的消失时刻（毫秒）。恒 `> startMs`。
+  final int endMs;
+
+  /// 已清洗的文本（无空行，多行用单个 `\n` 连接）。恒非空。
+  final String text;
+
+  /// 这条 cue 属于副字幕层。
+  ///
+  /// 只有硬字幕烧录用得到：主副两层在屏幕上锚在画面的**对侧**（主底 → 副顶，见
+  /// [resolveLayerForcedAnchor]），扁平成一个列表后必须靠这个标记还原层归属，否则
+  /// 副字幕会和主字幕叠印在同一个位置。SRT 生成不看它（两条轨各生成各的）。
+  final bool isSecondary;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ClipSubtitleCue &&
+      other.startMs == startMs &&
+      other.endMs == endMs &&
+      other.text == text &&
+      other.isSecondary == isSecondary;
+
+  @override
+  int get hashCode => Object.hash(startMs, endMs, text, isSecondary);
+
+  @override
+  String toString() => 'ClipSubtitleCue($startMs..$endMs, "$text"'
+      '${isSecondary ? ', secondary' : ''})';
+}
+
+/// 纯函数：把播放器内存里的 cue 裁成片段区间的字幕列表（**选择与裁剪的唯一真相源**）。
+///
+/// 语义与 [buildClipSrtContent] 逐字相同（后者现在就建在它之上）：
+/// - `delayMs` 把 cue 轴换算到视频轴（cue 在视频轴上的真实时刻是 `cue + delay`）；
+/// - 与区间有交集的 cue 都保留，跨界部分 clamp 到片段边界（半句话被截断时宁可显示
+///   半句，也不整条丢掉）；
+/// - 文本清洗后为空的 cue 丢弃（纯样式/空行 cue）；
+/// - 零长或负长 cue 给 1ms 保底可见宽度——多数播放器对零长 cue 根本不显示，而
+///   `overlay` 的 `enable='between(t,a,b)'` 在 `a>=b` 时恒假，两边同病。
+List<ClipSubtitleCue> buildClipSubtitleCues({
+  required List<AudioCue> cues,
+  required int startMs,
+  required int endMs,
+  int delayMs = 0,
+  bool isSecondary = false,
+}) {
+  if (cues.isEmpty || endMs <= startMs) return const <ClipSubtitleCue>[];
+  final int durationMs = endMs - startMs;
+
+  final List<ClipSubtitleCue> out = <ClipSubtitleCue>[];
   for (final AudioCue cue in cues) {
     // cue 轴 → 视频轴。
     final int cueStart = cue.startMs + delayMs;
@@ -52,16 +133,14 @@ String? buildClipSrtContent({
     if (outEnd <= outStart) outEnd = (outStart + 1).clamp(0, durationMs);
     if (outEnd <= outStart) continue;
 
-    index++;
-    buffer
-      ..writeln(index)
-      ..writeln('${formatSrtTimestamp(outStart)} --> '
-          '${formatSrtTimestamp(outEnd)}')
-      ..writeln(text)
-      ..writeln();
+    out.add(ClipSubtitleCue(
+      startMs: outStart,
+      endMs: outEnd,
+      text: text,
+      isSecondary: isSecondary,
+    ));
   }
-
-  return index == 0 ? null : buffer.toString();
+  return List<ClipSubtitleCue>.unmodifiable(out);
 }
 
 /// SRT 时间戳：`HH:MM:SS,mmm`。负值 clamp 到 0（SRT 无负时间轴）。

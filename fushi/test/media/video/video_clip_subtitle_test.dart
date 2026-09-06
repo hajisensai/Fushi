@@ -189,6 +189,135 @@ void main() {
     });
   });
 
+  group('buildClipSubtitleCues (BUG-2202)', () {
+    test('shifts the timeline to the clip start and clamps to its edges', () {
+      final List<ClipSubtitleCue> out = buildClipSubtitleCues(
+        cues: <AudioCue>[
+          _cue(9000, 11000, '跨入'), // 跨左边界
+          _cue(11500, 12500, '整条在内'),
+          _cue(13000, 20000, '跨出'), // 跨右边界
+          _cue(30000, 31000, '完全在外'),
+        ],
+        startMs: 10000,
+        endMs: 14000,
+      );
+
+      expect(out.length, 3);
+      // 跨界的半句宁可显示半句，也不整条丢掉——与 SRT 路径同一约定。
+      expect(out[0].startMs, 0);
+      expect(out[0].endMs, 1000);
+      expect(out[1].startMs, 1500);
+      expect(out[1].endMs, 2500);
+      expect(out[2].startMs, 3000);
+      expect(out[2].endMs, 4000);
+    });
+
+    test('applies the subtitle delay before deciding what is in range', () {
+      // delay 把 cue 轴换算到视频轴；不加它的话用户调过轴的字幕会整体错位，
+      // 导出的字幕就不是他屏幕上看到的那条。
+      final List<ClipSubtitleCue> out = buildClipSubtitleCues(
+        cues: <AudioCue>[_cue(9000, 9500, '延后进区间')],
+        startMs: 10000,
+        endMs: 14000,
+        delayMs: 1500,
+      );
+
+      expect(out.length, 1);
+      expect(out.single.startMs, 500);
+      expect(out.single.endMs, 1000);
+    });
+
+    test('drops cues whose text washes out to nothing', () {
+      expect(
+        buildClipSubtitleCues(
+          cues: <AudioCue>[_cue(0, 1000, '   '), _cue(1000, 2000, '')],
+          startMs: 0,
+          endMs: 3000,
+        ),
+        isEmpty,
+      );
+    });
+
+    test('gives a zero-length cue a 1ms floor', () {
+      // overlay 的 enable='between(t,a,b)' 在 a>=b 时恒假，那条字幕永远不显示；
+      // SRT 侧同病（多数播放器也不显示零长 cue）。
+      final List<ClipSubtitleCue> out = buildClipSubtitleCues(
+        cues: <AudioCue>[_cue(1000, 1000, '瞬间')],
+        startMs: 0,
+        endMs: 3000,
+      );
+      expect(out.single.endMs, greaterThan(out.single.startMs));
+    });
+
+    test('marks the secondary layer so the two do not overprint', () {
+      // 主副两层在屏幕上锚在画面对侧（主底 → 副顶）。扁平成一个列表后靠这个标记
+      // 还原层归属，丢了它副字幕会盖在主字幕上。
+      expect(
+        buildClipSubtitleCues(
+          cues: <AudioCue>[_cue(0, 1000, 'x')],
+          startMs: 0,
+          endMs: 2000,
+        ).single.isSecondary,
+        isFalse,
+      );
+      expect(
+        buildClipSubtitleCues(
+          cues: <AudioCue>[_cue(0, 1000, 'x')],
+          startMs: 0,
+          endMs: 2000,
+          isSecondary: true,
+        ).single.isSecondary,
+        isTrue,
+      );
+    });
+
+    test('picks exactly the same cues the SRT path writes', () {
+      // 两条路径必须同源：烧出来的字幕和 SRT 里的逐条一致，不能因为各挑各的而
+      // 显示出两套内容。buildClipSrtContent 现在就建在本函数之上，这条守住它。
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(9000, 11000, '一'),
+        _cue(11500, 12500, '二'),
+        _cue(13000, 20000, '三'),
+        _cue(30000, 31000, '四'),
+      ];
+      final List<ClipSubtitleCue> picked = buildClipSubtitleCues(
+        cues: cues,
+        startMs: 10000,
+        endMs: 14000,
+      );
+      final String? srt = buildClipSrtContent(
+        cues: cues,
+        startMs: 10000,
+        endMs: 14000,
+      );
+
+      expect(srt, isNotNull);
+      for (final ClipSubtitleCue c in picked) {
+        expect(srt, contains(c.text));
+        expect(srt, contains(formatSrtTimestamp(c.startMs)));
+        expect(srt, contains(formatSrtTimestamp(c.endMs)));
+      }
+      // 条数也要对上：SRT 的序号从 1 连续递增到 picked.length。
+      expect(srt, contains('${picked.length}\n'));
+      expect(srt, isNot(contains('${picked.length + 1}\n')));
+    });
+
+    test('an empty cue list or an inverted range yields nothing', () {
+      expect(
+        buildClipSubtitleCues(cues: const <AudioCue>[], startMs: 0, endMs: 1000),
+        isEmpty,
+      );
+      expect(
+        buildClipSubtitleCues(
+          cues: <AudioCue>[_cue(0, 1000, 'x')],
+          startMs: 5000,
+          endMs: 1000,
+        ),
+        isEmpty,
+      );
+    });
+  });
+
   group('resolveClipSubtitleCodec', () {
     test('mp4 family carries no soft subtitle track at all (BUG-2202)', () {
       // 片段导出输出恒 .mp4（BUG-917），所以这是实际生效的分支。
