@@ -225,6 +225,24 @@ void main() {
       expect(
           await jsonResponse(<String, int>{'a': 1}).readAsString(), '{"a":1}');
     });
+
+    test('小写 content-type 同样不可覆盖（HTTP 头名大小写不敏感）', () async {
+      // 上一条只喂大写 'Content-Type'——那种情况下 Dart map 里是同一个键，靠后写
+      // 覆盖。传小写时 map 里是**两个**键，两条都进 shelf 的 CaseInsensitiveMap，
+      // 靠「显式那条排在展开之后」才赢。当前实现是对的（map 字面量迭代序 = 插入
+      // 序），但这条正确性完全押在写法顺序上：谁把 extraHeaders 挪到 Content-Type
+      // 后面展开、或者改成按精确键名 remove 再展开，小写这一路就会漏，而只喂大写
+      // 的上一条测不出来。这条就是补那个盲区的。
+      final shelf.Response r =
+          jsonRawResponse('{"a":1}', extraHeaders: <String, String>{
+        'content-type': 'text/plain',
+        'Server-Timing': 'lookup;dur=3',
+      });
+      expect(r.headers['content-type'], 'application/json; charset=utf-8',
+          reason: 'CJK 词典义项会被 client 按 latin1 解码成乱码（TODO-752a）');
+      expect(r.headers['server-timing'], 'lookup;dur=3',
+          reason: '剔除只能针对 content-type，别的透传头不能被误伤');
+    });
   });
 
   group('源码守卫：两台服务器不再各写一份 handler 壳 / 音频 token 模型', () {
@@ -250,23 +268,49 @@ void main() {
         '_handleAudioFile(',
         '_generateAudioToken(',
         '_pruneAudioTokens(',
-        'DateTime.now()',
+        'createdAt: DateTime.now()',
       ],
     };
+
+    // 正向断言必须是**调用点**。原来写的是 `contains('RemoteLookupRoutes')`，而两个
+    // 文件的注释里就写着这个类名——把六条分发全删光、只留注释，那条照样绿。
+    const List<String> callSites = <String>[
+      '_lookupRoutes.handleMine(',
+      '_lookupRoutes.handleMineForward(',
+      '_lookupRoutes.handleAnkiNoteType(',
+      '_lookupRoutes.handleDuplicate(',
+      '_lookupRoutes.handleAudioLookup(',
+      '_lookupRoutes.handleAudioFile(',
+    ];
 
     banned.forEach((String path, List<String> needles) {
       test(path, () {
         final File f = File(path);
         expect(f.existsSync(), isTrue, reason: '$path 不存在（请从 fushi/ 包根跑测试）');
         final String src = f.readAsStringSync();
-        expect(src, contains('RemoteLookupRoutes'),
-            reason: '$path 必须经 RemoteLookupRoutes 服务共享端点');
+        for (final String site in callSites) {
+          expect(src, contains(site),
+              reason: '$path 少了 `$site`——这条端点没走共享壳，'
+                  '要么被删了要么又被抄回本地一份');
+        }
         for (final String needle in needles) {
           expect(src, isNot(contains(needle)),
               reason:
                   '$path 里出现 `$needle`——共享壳应只在 remote_lookup_routes.dart 有一份');
         }
       });
+    });
+
+    test('音频 token 的 id 必须来自 Random.secure()', () {
+      // 这是整个 RemoteAudioTokenStore 唯一的安全属性：id 是能拿到任意查词音频的
+      // bearer。换成 Random()（时间种子、可预测）之后，长度断言、`isNot(b)`
+      // 断言、TTL 断言、上限断言**全部照绿**——没有任何别的测试会红。
+      final String src =
+          File('lib/src/sync/remote_lookup_routes.dart').readAsStringSync();
+      expect(src, contains('Random.secure()'),
+          reason: '音频 token id 是 bearer，必须用密码学随机源');
+      expect(src, isNot(contains('Random()')),
+          reason: '出现了可预测的 Random()：token 能被枚举出来');
     });
   });
 }

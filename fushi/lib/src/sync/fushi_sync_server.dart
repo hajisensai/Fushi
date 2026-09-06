@@ -405,7 +405,7 @@ class FushiSyncServer {
         // Remote lookup audio file URLs are handed to platform audio players,
         // which issue a bare GET without Authorization. The lookup endpoint
         // stays authenticated; the file endpoint is guarded by an opaque,
-        // short-lived in-memory id in _handleAudioFile.
+        // short-lived in-memory id in RemoteLookupRoutes.handleAudioFile.
         if (_isLookupAudioFilePath(request.url.path)) {
           return innerHandler(request);
         }
@@ -2238,7 +2238,7 @@ class FushiSyncServer {
   }
 
   /// BUG-1568：守住视频流 token 上限。TTL prune 之后仍达到 [_maxVideoStreamTokens]
-  /// 时，按 createdAt 淘汰最旧者直到回到上限内（对照 [_enforceAudioTokenCap]）。
+  /// 时，按 createdAt 淘汰最旧者直到回到上限内（对照 [RemoteAudioTokenStore]）。
   /// 签发前调用，使插入新 token 后总数 <= [_maxVideoStreamTokens]。
   void _enforceVideoTokenCap() {
     while (_videoStreamTokens.length >= _maxVideoStreamTokens) {
