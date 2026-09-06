@@ -11,8 +11,6 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import android.util.SparseArray;
 
-import com.ichi2.anki.api.AddContentApi;
-import com.ichi2.anki.api.NoteInfo;
 
 import java.util.ArrayList;
 import java.util.LinkedList;
@@ -27,25 +25,52 @@ public class AnkiDroidHelper {
     private static final String DECK_REF_DB = "com.ichi2.anki.api.decks";
     private static final String MODEL_REF_DB = "com.ichi2.anki.api.models";
 
-    private AddContentApi mApi;
+    private AnkiProvider mApi;
     private Context mContext;
 
     public AnkiDroidHelper(Context context) {
         mContext = context.getApplicationContext();
-        mApi = new AddContentApi(mContext);
+        // BUG-2195：主包仍是 AddContentApi（逐行委托、行为不变），并行版走自建的
+        // ContentResolver 实现。一个都没装时为 null——调用点在此之前都被
+        // isApiAvailable 挡住了。
+        mApi = AnkiProviders.forContext(mContext);
     }
 
-    public AddContentApi getApi() {
+    public AnkiProvider getApi() {
         return mApi;
     }
 
     /**
      * Whether or not the API is available to use.
      * The API could be unavailable if AnkiDroid is not installed or the user explicitly disabled the API
+     *
+     * <p>BUG-2195：判据从 {@code AddContentApi.getAnkiDroidPackageName}（只认写死的
+     * 主包 authority {@code com.ichi2.anki.flashcards}）换成 {@link AnkiDroidTarget}
+     * 的逐候选探测，否则装了并行版（{@code com.ichi2.anki.A} 等）的机器上这里恒
+     * false，权限框一次都不会弹。
+     *
      * @return true if the API is available to use
      */
     public static boolean isApiAvailable(Context context) {
-        return AddContentApi.getAnkiDroidPackageName(context) != null;
+        return AnkiDroidTarget.resolve(context) != null;
+    }
+
+    /**
+     * 本设备上实际装的那份 AnkiDroid；一个都没有则 null。
+     */
+    public static AnkiDroidTarget target(Context context) {
+        return AnkiDroidTarget.resolve(context);
+    }
+
+    /**
+     * 要申请的读写权限名。BUG-2195：并行版定义的是**它自己**那个带后缀的权限
+     * （{@code com.ichi2.anki.A.permission.READ_WRITE_DATABASE}），申请主包那个只会
+     * 静默判拒。没解析到安装时回退主包常量——此时 shouldRequestPermission 的结果无人
+     * 使用（isApiAvailable 已经先短路了）。
+     */
+    private String readWritePermission() {
+        final AnkiDroidTarget resolved = AnkiDroidTarget.resolve(mContext);
+        return resolved == null ? READ_WRITE_PERMISSION : resolved.permission;
     }
 
     /**
@@ -55,7 +80,7 @@ public class AnkiDroidHelper {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
             return false;
         }
-        return ContextCompat.checkSelfPermission(mContext, READ_WRITE_PERMISSION) != PackageManager.PERMISSION_GRANTED;
+        return ContextCompat.checkSelfPermission(mContext, readWritePermission()) != PackageManager.PERMISSION_GRANTED;
     }
 
     /**
@@ -64,7 +89,7 @@ public class AnkiDroidHelper {
      * @param callbackCode The callback code to be used in onRequestPermissionsResult()
      */
     public void requestPermission(Activity callbackActivity, int callbackCode) {
-        ActivityCompat.requestPermissions(callbackActivity, new String[]{READ_WRITE_PERMISSION}, callbackCode);
+        ActivityCompat.requestPermissions(callbackActivity, new String[]{readWritePermission()}, callbackCode);
     }
 
     /**
@@ -76,7 +101,7 @@ public class AnkiDroidHelper {
      */
     public boolean canAskPermissionAgain(Activity callbackActivity) {
         return ActivityCompat.shouldShowRequestPermissionRationale(
-                callbackActivity, READ_WRITE_PERMISSION);
+                callbackActivity, readWritePermission());
     }
 
 
@@ -102,13 +127,28 @@ public class AnkiDroidHelper {
      * @param tags List of tags to remove duplicates from
      * @param modelId ID of model to search for duplicates on
      */
+    private SparseArray<List<AnkiNote>> findDuplicateNotesByKeys(
+            long modelId, List<String> keys) {
+        // BUG-2195：AnkiProvider 只暴露单 key 查重（两个实现都能可靠支持），多 key
+        // 版在这里按 key 逐个查。本方法只服务下面那个从上游 sample 抄来的
+        // removeDuplicates —— 它全仓无调用，保留只为不删上游对照代码。
+        final SparseArray<List<AnkiNote>> result = new SparseArray<>();
+        for (int i = 0; i < keys.size(); i++) {
+            final List<AnkiNote> found = mApi.findDuplicateNotes(modelId, keys.get(i));
+            if (found != null && !found.isEmpty()) {
+                result.put(i, found);
+            }
+        }
+        return result;
+    }
+
     public void removeDuplicates(LinkedList<String []> fields, LinkedList<Set<String>> tags, long modelId) {
         // Build a list of the duplicate keys (first fields) and find all notes that have a match with each key
         List<String> keys = new ArrayList<>(fields.size());
         for (String[] f: fields) {
             keys.add(f[0]);
         }
-        SparseArray<List<NoteInfo>> duplicateNotes = getApi().findDuplicateNotes(modelId, keys);
+        SparseArray<List<AnkiNote>> duplicateNotes = findDuplicateNotesByKeys(modelId, keys);
         // Do some sanity checks
         if (tags.size() != fields.size()) {
             throw new IllegalStateException("List of tags must be the same length as the list of fields");
