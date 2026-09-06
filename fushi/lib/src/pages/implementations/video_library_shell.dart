@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/media/drag_drop/drop_surface_scope.dart';
 import 'package:fushi/src/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
+import 'package:fushi/src/media/video/metadata/video_library_scrape_sweep.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
@@ -30,6 +31,7 @@ class VideoLibraryShell extends StatefulWidget {
     required this.onVideoScanCompleted,
     required this.onOpenScrapeTasks,
     required this.onLibraryChanged,
+    this.loadPendingScrapeWorks,
     this.discoveryController,
     this.discoveryActions = const VideoDiscoveryActions(),
     this.localLibraryPageBuilder,
@@ -49,6 +51,10 @@ class VideoLibraryShell extends StatefulWidget {
   ) onVideoScanCompleted;
   final VoidCallback onOpenScrapeTasks;
   final VoidCallback onLibraryChanged;
+
+  /// 跑一轮库内自动补刮并回传当前待确认作品清单（见 [HomeVideoPage]）。
+  /// null = 不接线（宿主测试），视频页的待确认提醒条静默不显示。
+  final Future<List<VideoPendingScrapeWork>> Function()? loadPendingScrapeWorks;
 
   /// 在线发现的数据端口。生产环境由发现聚合服务注入；null 时页面呈现可重试的空态。
   final VideoDiscoveryController? discoveryController;
@@ -197,6 +203,7 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
                       libraryRefreshSignal: widget.libraryRefreshSignal,
                       onOpenScrapeTasks: widget.onOpenScrapeTasks,
                       scrapeTaskController: widget.scrapeTaskController,
+                      loadPendingScrapeWorks: widget.loadPendingScrapeWorks,
                       onOpenSources: () => _select(VideoLibrarySection.sources),
                     ),
               ),

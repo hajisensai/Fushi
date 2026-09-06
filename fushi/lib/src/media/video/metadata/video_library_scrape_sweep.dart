@@ -11,8 +11,10 @@
 /// 自动尝试——那类标题要么必失败、要么按目录候选把特典误绑成正片，只该人工
 /// 处理（BUG-2001）。
 ///
-/// 触发：进入视频 tab（每进程一次）。批次经 [VideoSourceScrapeTaskController]
-/// 走全应用统一互斥门；忙时直接放弃本轮，下次进程再试。
+/// 触发：进入视频 tab、切回视频 tab、以及视频库新增条目时（任意导入路径，含
+/// 内置下载管线）。批次经 [VideoSourceScrapeTaskController] 走全应用统一互斥门；
+/// 忙时直接放弃本轮，下次触发再试。幂等键是**作品**不是进程（BUG-2199），重复
+/// 触发廉价。
 library;
 
 import 'package:fushi/src/media/source_library/source_library_row.dart';
@@ -49,7 +51,19 @@ class VideoLibraryScrapeSweep {
   /// 「视频 → 媒体库」可关）。null = 不设闸（测试）。
   final bool Function()? _isEnabled;
 
-  bool _swept = false;
+  /// 本进程已自动尝试过的作品（[VideoSourceScrapeWork.stableKey]）。
+  ///
+  /// 幂等键是**作品**不是进程（BUG-2199）：旧实现用一个 `bool _swept` 编码「这
+  /// 一轮跑过了」，于是进视频 tab 那一刻库里有什么就永远只有什么——本次会话里
+  /// 下载入库的番（管线 import 落库比首轮 sweep 晚几秒）结构上再也进不来，必须
+  /// 重启 app 才被认领，正好废掉 BUG-2004 留下的「无 AniDB 身份的下载作品由自动
+  /// 补刮认领」承诺。改成按作品记账后重复触发是廉价的：新作品每次都能进来，而
+  /// 查无/歧义的老作品仍只自动试一次——它们永远满足待确认判据，没有这层记账就
+  /// 会被每一轮重刮，白占 AniDB 的进程级限流队列。
+  final Set<String> _attemptedWorkKeys = <String>{};
+
+  /// 防重入：一轮还在飞时再次触发直接返回（[pendingWorks] 要全量查库）。
+  bool _sweeping = false;
 
   /// 当前所有本地视频来源里「从未刮出规范身份」的作品——待确认队列的数据源。
   Future<List<VideoPendingScrapeWork>> pendingWorks() async {
@@ -69,27 +83,56 @@ class VideoLibraryScrapeSweep {
     return pending;
   }
 
-  /// 每进程一轮的自动补刮。幂等：跑过、总闸关、controller 忙都直接返回。
-  Future<void> sweepOnce() async {
-    if (_swept) return;
-    if (_isEnabled != null && !_isEnabled()) return;
-    // 不排队：已有批次在跑就放弃本轮，避免和手动刮削抢互斥门。
-    if (_controller.isBusy) return;
-    _swept = true;
+  /// 自动补刮一轮，并返回当前待确认作品清单。
+  ///
+  /// 一次查库两用：清单喂视频页的待确认提醒条，其中没自动试过的作品同时进补刮
+  /// 批次。总闸关、controller 忙、作品已试过都只是不发起批次，**清单照常返回**
+  /// ——「不自动刮」不等于「不告诉用户有东西待确认」。
+  Future<List<VideoPendingScrapeWork>> sweepAndListPending() async {
+    if (_sweeping) return _pendingWorksOrEmpty();
+    _sweeping = true;
     try {
+      final List<VideoPendingScrapeWork> pending = await _pendingWorksOrEmpty();
+      if (_isEnabled != null && !_isEnabled()) return pending;
+      // 不排队：已有批次在跑就放弃本轮，避免和手动刮削抢互斥门。
+      if (_controller.isBusy) return pending;
       final Map<SourceLibraryRow, List<VideoSourceScrapeWork>> subsets =
           <SourceLibraryRow, List<VideoSourceScrapeWork>>{};
-      for (final VideoPendingScrapeWork entry in await pendingWorks()) {
+      final List<String> claimed = <String>[];
+      for (final VideoPendingScrapeWork entry in pending) {
         if (!entry.work.hasIdentifiableTitle) continue;
+        if (_attemptedWorkKeys.contains(entry.work.stableKey)) continue;
+        claimed.add(entry.work.stableKey);
         subsets
             .putIfAbsent(entry.source, () => <VideoSourceScrapeWork>[])
             .add(entry.work);
       }
-      if (subsets.isEmpty) return;
-      if (_controller.isBusy) return;
-      await _controller.scrapeWorkSubsets(subsets);
+      if (subsets.isEmpty) return pending;
+      if (_controller.isBusy) return pending;
+      // 记账放在真正提交批次前一刻：中途被互斥门挡回的作品不算「已尝试」，
+      // 否则本进程再也不会自动碰它们。
+      _attemptedWorkKeys.addAll(claimed);
+      try {
+        await _controller.scrapeWorkSubsets(subsets);
+      } catch (_) {
+        // 后台静默批次：单轮失败不打扰页面。失败的作品已记账，不反复重试。
+      }
+      return pending;
+    } finally {
+      _sweeping = false;
+    }
+  }
+
+  /// 只补刮、不看清单的调用方入口。
+  Future<void> sweepOnce() async {
+    await sweepAndListPending();
+  }
+
+  Future<List<VideoPendingScrapeWork>> _pendingWorksOrEmpty() async {
+    try {
+      return await pendingWorks();
     } catch (_) {
-      // 后台静默批次：单轮失败不打扰页面，下次启动自然重试。
+      return const <VideoPendingScrapeWork>[];
     }
   }
 
