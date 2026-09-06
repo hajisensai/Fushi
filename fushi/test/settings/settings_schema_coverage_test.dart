@@ -958,6 +958,9 @@ void main() {
               readerSource: ReaderFushiSource.instance,
               refresh: () {},
             );
+            // 子 schema 页（SettingsNavigationItem.child）里的行也要进遍历：
+            // 顶层枚举不到它们，覆盖会静默缩水。展平走 [_withSubPages]（带深度
+            // 上限——child 是闭包、每次返回新实例，基于 identical 的环检测无效）。
             final List<SettingsDestination> all =
                 _withSubPages(buildSettingsSchema(sctx));
             destinations = all;

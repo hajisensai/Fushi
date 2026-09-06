@@ -428,11 +428,11 @@ void main() {
         enclosingCallOf(source, "id: 'sync.mode'").name, 'SettingsCustomItem');
     expect(enclosingCallOf(source, "id: 'sync.statistics'").name,
         'SettingsSwitchItem');
-    // 词典与本地音频源数据库不再是开关：各拆成一对显式的上传 / 下载动作行
-    // （`SettingsCustomItem` + `_AssetTransferWidget`），方向由用户点的那一下给出。
-    expect(enclosingCallOf(source, "id: 'sync.dictionary_upload'").name,
+    // 词典与本地音频源数据库不再是开关：一类一行的显式动作行
+    // （`SettingsCustomItem` + `_AssetTransferMenuRow`），方向在行尾菜单里选。
+    expect(enclosingCallOf(source, "id: 'sync.dictionary_transfer'").name,
         'SettingsCustomItem');
-    expect(enclosingCallOf(source, "id: 'sync.local_audio_download'").name,
+    expect(enclosingCallOf(source, "id: 'sync.local_audio_transfer'").name,
         'SettingsCustomItem');
     expect(source, isNot(contains("id: 'sync.dictionary'")));
     expect(source, isNot(contains("id: 'sync.local_audio'")));

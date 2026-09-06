@@ -4312,5 +4312,22 @@
   "popup_ctx_preview_audio": "试听",
   "popup_ctx_preview_stop": "停止",
   "popup_ctx_preview_unavailable": "这句没有可试听的音频",
-  "sync_compare_only_conflicts": "只看冲突"
+  "sync_compare_only_conflicts": "只看冲突",
+  "sync_server_settings": "服务器设置",
+  "sync_server_settings_hint": "当前同步方式的凭据与连接测试",
+  "sync_section_when": "何时同步",
+  "sync_section_assets": "词典与本地音频传输",
+  "sync_asset_dictionary": "词典",
+  "sync_asset_local_audio": "本地音频数据库",
+  "sync_asset_transfer_menu": "传输",
+  "sync_asset_transfer_hint": "上传本机独有的，或下载远端独有的",
+  "interconnect_devices_page": "配对与设备",
+  "interconnect_devices_hint": "对端地址、配对与 LAN 发现",
+  "interconnect_devices_paired_count": "已配对 $n 台",
+  "interconnect_host_page": "主机服务",
+  "interconnect_host_hint": "端口、TLS、访问令牌与已配对设备",
+  "interconnect_host_running": "运行中 · 端口 $port",
+  "interconnect_host_off": "未开启",
+  "interconnect_related_entry": "远端查词、音频源与远端条目",
+  "interconnect_related_entry_hint": "在「查词」与「同步」分类里设置"
 }

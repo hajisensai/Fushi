@@ -136,7 +136,9 @@ class SettingsSchemaItem extends StatelessWidget {
     return AdaptiveSettingsNavigationRow(
       // resolveTitle：诊断行的实时计数在这里求值（schema 树本身是缓存的常量树）。
       title: navigation.resolveTitle(settingsContext),
-      subtitle: navigation.subtitle,
+      // resolveSubtitle：子页入口行的实时摘要（已配对几台 / 主机跑在哪个端口）在
+      // 这里求值。
+      subtitle: navigation.resolveSubtitle(settingsContext),
       icon: navigation.icon,
       showIcon: showIcons || navigation.showIcon,
       onTap: () async {
