@@ -266,10 +266,63 @@ Future<ImmersionCaptureResult> transcodeClipToCapture(
   MiningAnimatedFormat format = MiningAnimatedFormat.gif,
   MiningStillFormat stillFormat = MiningStillFormat.jpg,
   ClipStillTarget? stillTarget,
+  ClipCropFraction? crop,
   GifExtractor gifExtractor = extractClipGifViaFfmpeg,
   AudioExtractor audioExtractor = extractAudioSegmentViaFfmpeg,
   ClipFrameExtractor frameExtractor = extractVideoFrameViaFfmpeg,
 }) async {
+  // BUG-2192：网飞录屏片段四周是播放器黑底——按扩展给的可见画面比例矩形先 crop 再
+  // 抽动图/静帧。只对默认的 ffmpeg 真身包一层（注入的测试假件签名不带 crop，原样不动），
+  // 不改两个 typedef——那会波及九个测试文件里的假件签名。
+  final String? cropFilter = crop?.ffmpegFilter;
+  final GifExtractor gifs =
+      cropFilter == null || gifExtractor != extractClipGifViaFfmpeg
+          ? gifExtractor
+          : ({
+              required String inputPath,
+              required int startMs,
+              required int endMs,
+              required String outputPath,
+              int fps = 8,
+              int width = 320,
+              MiningAnimatedFormat format = MiningAnimatedFormat.gif,
+              bool diagnosticOnly = false,
+              FfmpegFailureReporter? onFailure,
+              String? tlsPinSha256,
+            }) =>
+              extractClipGifViaFfmpeg(
+                inputPath: inputPath,
+                startMs: startMs,
+                endMs: endMs,
+                outputPath: outputPath,
+                fps: fps,
+                width: width,
+                format: format,
+                diagnosticOnly: diagnosticOnly,
+                onFailure: onFailure,
+                tlsPinSha256: tlsPinSha256,
+                cropFilter: cropFilter,
+              );
+  final ClipFrameExtractor frames =
+      cropFilter == null || frameExtractor != extractVideoFrameViaFfmpeg
+          ? frameExtractor
+          : ({
+              required String inputPath,
+              required String outputPath,
+              double atSeconds = 10.0,
+              bool decodeFromStart = false,
+              FfmpegFailureReporter? onFailure,
+              String? tlsPinSha256,
+            }) =>
+              extractVideoFrameViaFfmpeg(
+                inputPath: inputPath,
+                outputPath: outputPath,
+                atSeconds: atSeconds,
+                decodeFromStart: decodeFromStart,
+                onFailure: onFailure,
+                tlsPinSha256: tlsPinSha256,
+                cropFilter: cropFilter,
+              );
   final Directory dir = Directory('$tempDir/nf_clip_${clipBytes.length}');
   await dir.create(recursive: true);
   try {
@@ -285,7 +338,7 @@ Future<ImmersionCaptureResult> transcodeClipToCapture(
     MiningStillFormat producedStillFormat = MiningStillFormat.jpg;
     if (stillTarget != null) {
       for (final MiningStillFormat attempt in stillFormat.encodeAttempts) {
-        framePath = await frameExtractor(
+        framePath = await frames(
           inputPath: clip.path,
           outputPath: '${dir.path}/clip_frame.${attempt.fileExtension}',
           atSeconds: stillTarget.offsetMs / 1000.0,
@@ -307,7 +360,7 @@ Future<ImmersionCaptureResult> transcodeClipToCapture(
             endMs: endMs,
             outputPathStem: '${dir.path}/clip',
             compression: compression,
-            extractor: gifExtractor,
+            extractor: gifs,
           );
     final String? audioPath = await audioExtractor(
       inputPath: clip.path,

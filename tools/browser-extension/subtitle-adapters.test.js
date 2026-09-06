@@ -10,6 +10,7 @@ const {
   parseTtml,
   ttmlRubyToHtml,
   fushiComposeCueContext,
+  fushiVideoCropFraction,
   parseBilibiliJson,
   netflixDocumentTitle,
   findCueIndexAt,
@@ -321,4 +322,39 @@ test('pickPrimaryCueTrack 不串视频身份，空轨不算', () => {
   assert.strictEqual(pickPrimaryCueTrack(store, 'v1', 'live'), null, '空轨不算整轨；别的视频的轨不得串进来');
   assert.strictEqual(pickPrimaryCueTrack(null, 'v1', 'live'), null);
   assert.strictEqual(pickPrimaryCueTrack({}, '', 'live'), null);
+});
+
+
+// BUG-2192：网飞录屏片段裁黑边——可见视频画面占视口的比例矩形。
+function fakeVideo(rect, iw, ih) {
+  return { getBoundingClientRect: () => rect, videoWidth: iw, videoHeight: ih };
+}
+
+test('fushiVideoCropFraction：contain 几何——宽视口里 16:9 视频居中，左右黑边被裁掉', () => {
+  // 视口 2000×1000，元素铺满视口，视频 1920×1080 → 内容 1777.8×1000 居中。
+  const f = fushiVideoCropFraction(fakeVideo({ left: 0, top: 0, width: 2000, height: 1000 }, 1920, 1080), 2000, 1000);
+  assert.deepStrictEqual(f, { x: 0.0556, y: 0, w: 0.8889, h: 1 });
+});
+
+test('fushiVideoCropFraction：元素框未铺满视口（窗口播放）→ 裁到元素内的内容矩形', () => {
+  // 视口 1600×900；播放器 1200×600 放在 (100,100)，视频 16:9 → 内容 1066.7×600 居中于元素。
+  const f = fushiVideoCropFraction(fakeVideo({ left: 100, top: 100, width: 1200, height: 600 }, 1920, 1080), 1600, 900);
+  assert.deepStrictEqual(f, { x: 0.1042, y: 0.1111, w: 0.6667, h: 0.6667 });
+});
+
+test('fushiVideoCropFraction：拿不到 videoWidth/Height（DRM 给 0）→ 退回整个元素框', () => {
+  const f = fushiVideoCropFraction(fakeVideo({ left: 100, top: 50, width: 800, height: 400 }, 0, 0), 1000, 500);
+  assert.deepStrictEqual(f, { x: 0.1, y: 0.1, w: 0.8, h: 0.8 });
+});
+
+test('fushiVideoCropFraction：元素伸出视口 → 与视口求交', () => {
+  const f = fushiVideoCropFraction(fakeVideo({ left: -100, top: 0, width: 1200, height: 500 }, 0, 0), 1000, 500);
+  assert.strictEqual(f, null, '交集恰好铺满视口 → 不裁');
+});
+
+test('fushiVideoCropFraction：铺满视口（全屏 16:9）/ 无效输入 → null（服务端不裁）', () => {
+  assert.strictEqual(fushiVideoCropFraction(fakeVideo({ left: 0, top: 0, width: 1920, height: 1080 }, 1920, 1080), 1920, 1080), null);
+  assert.strictEqual(fushiVideoCropFraction(null, 1920, 1080), null);
+  assert.strictEqual(fushiVideoCropFraction(fakeVideo({ left: 0, top: 0, width: 0, height: 0 }, 0, 0), 1920, 1080), null);
+  assert.strictEqual(fushiVideoCropFraction(fakeVideo({ left: 0, top: 0, width: 100, height: 100 }, 0, 0), 0, 0), null);
 });

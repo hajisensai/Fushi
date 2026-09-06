@@ -8163,6 +8163,8 @@ class _AppModelRemoteLookupService
         // 实际产出格式经 ImmersionCaptureResult.stillFormat 回传给封面文件名。
         stillFormat: _appModel.videoMiningStillFormat,
         stillTarget: stillTarget,
+        // BUG-2192：裁掉录屏片段四周的播放器黑底（扩展按 <video> 几何给的比例矩形）。
+        crop: payload.clipCrop,
       );
     } else if (payload.netflixVideoId != null &&
         payload.clipStartMs != null &&

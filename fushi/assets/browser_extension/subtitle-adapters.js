@@ -328,6 +328,45 @@ function fushiComposeCueContext(cues, idx, prevN, nextN) {
   };
 }
 
+// BUG-2192：网飞录屏制卡的动图/静帧四周带播放器黑边——tabCapture 录的是**整个标签页视口**，
+// 视频四周的播放器黑底一起进了片段。录制那一刻按 <video> 的几何算出「可见视频画面」占视口的
+// 比例矩形，随 mineClip 发给服务端在 ffmpeg 抽帧前先 crop。
+//  - `<video>` 默认 object-fit: contain：内容矩形 = 元素框内按原始宽高比缩放后居中的那块；
+//    videoWidth/videoHeight 拿不到（DRM 有时给 0）就退回整个元素框。
+//  - 与视口求交：元素可能伸出视口，捕获帧只有视口那部分。
+//  - 用比例不用像素：tabCapture 会把视口等比缩到 ≤1920×1080，两边只有比例是同一套坐标。
+//  - 画面已铺满视口（全屏正好 16:9）→ null，服务端不裁（老路径逐字不变）。
+function fushiVideoCropFraction(video, viewportW, viewportH) {
+  if (!video || typeof video.getBoundingClientRect !== 'function') return null;
+  const vw = Number(viewportW);
+  const vh = Number(viewportH);
+  if (!(vw > 0) || !(vh > 0)) return null;
+  const r = video.getBoundingClientRect();
+  if (!r || !(r.width > 0) || !(r.height > 0)) return null;
+  const iw = Number(video.videoWidth);
+  const ih = Number(video.videoHeight);
+  let x = r.left;
+  let y = r.top;
+  let w = r.width;
+  let h = r.height;
+  if (iw > 0 && ih > 0) {
+    const s = Math.min(r.width / iw, r.height / ih);
+    w = iw * s;
+    h = ih * s;
+    x = r.left + (r.width - w) / 2;
+    y = r.top + (r.height - h) / 2;
+  }
+  const x0 = Math.max(0, x);
+  const y0 = Math.max(0, y);
+  const x1 = Math.min(vw, x + w);
+  const y1 = Math.min(vh, y + h);
+  if (x1 - x0 < 16 || y1 - y0 < 16) return null;
+  const f = { x: x0 / vw, y: y0 / vh, w: (x1 - x0) / vw, h: (y1 - y0) / vh };
+  if (f.x <= 0.005 && f.y <= 0.005 && f.w >= 0.99 && f.h >= 0.99) return null;
+  const r4 = (n) => Math.round(n * 10000) / 10000;
+  return { x: r4(f.x), y: r4(f.y), w: r4(f.w), h: r4(f.h) };
+}
+
 // Bilibili.tv 字幕 JSON（asb 伪扩展名 bbjson）→ cues。形状：{body:[{from,to,content}]}，
 // from/to 是秒（浮点）。与其它解析器同约：纯函数、坏输入回空数组。
 function parseBilibiliJson(text) {
@@ -415,6 +454,7 @@ if (typeof module !== 'undefined' && module.exports) {
     splitCueRuby,
     ttmlRubyToHtml,
     fushiComposeCueContext,
+    fushiVideoCropFraction,
     parseWebVtt,
     parseTtml,
     parseBilibiliJson,

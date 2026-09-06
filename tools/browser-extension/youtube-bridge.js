@@ -49,6 +49,45 @@
     return String(label).replace(/\|/g, '_');
   }
 
+  // BUG-2194：一条视频的 captionTracks 可能有几十条（自动配音视频每种配音语言各带一条
+  // ASR 轨），fetchAndPublish 为了不把整集轨 × N 全拉下来设了条数上限。此前按 YouTube 给的
+  // 原始顺序截前 12 条，**原语言**（用户在看的那条音轨的字幕，也就是学习语言）排在后面就被
+  // 截掉——用户列表里俄/孟/德/旁遮普…12 条齐全，唯独没有英语。上限之前先排优先级：
+  //   ① 当前音轨的默认字幕轨（defaultCaptionTrackIndex / isDefault）
+  //   ② 语言码与当前音轨语言一致的轨
+  //   ③ 人工轨（kind !== 'asr'）
+  //   ④ 其余按原顺序
+  var MAX_TRACKS = 20;
+  function prioritizeCaptionTracks(tracks, audioTrack) {
+    if (!Array.isArray(tracks)) return [];
+    var defIdx = audioTrack && typeof audioTrack.defaultCaptionTrackIndex === 'number'
+      ? audioTrack.defaultCaptionTrackIndex : -1;
+    var audioLang = '';
+    try {
+      var raw = audioTrack && (audioTrack.languageCode || audioTrack.language || '');
+      audioLang = String(raw || '').toLowerCase().split(/[-_]/)[0];
+    } catch (_) { audioLang = ''; }
+    function rank(track, i) {
+      if (!track) return 9;
+      if (i === defIdx || track.isDefault === true) return 0;
+      var lang = String(track.languageCode || '').toLowerCase().split(/[-_]/)[0];
+      if (audioLang && lang === audioLang) return 1;
+      if (track.kind !== 'asr') return 2;
+      return 3;
+    }
+    return tracks
+      .map(function (t, i) { return { t: t, i: i, r: rank(t, i) }; })
+      .sort(function (a, b) { return a.r - b.r || a.i - b.i; })
+      .map(function (e) { return e.t; });
+  }
+
+  function runtimeAudioTrack() {
+    try {
+      var player = document.querySelector('#movie_player');
+      return player && player.getAudioTrack ? player.getAudioTrack() : null;
+    } catch (_) { return null; }
+  }
+
   function runtimeTracks(id) {
     try {
       var player = document.querySelector('#movie_player');
@@ -164,10 +203,11 @@
     } catch (_) { return []; }
   }
 
-  async function fetchAndPublish(id, tracks) {
+  async function fetchAndPublish(id, rawTracks) {
+    var tracks = prioritizeCaptionTracks(rawTracks, runtimeAudioTrack());
     var unique = [];
     var seen = new Set();
-    for (var i = 0; i < tracks.length && unique.length < 12; i++) {
+    for (var i = 0; i < tracks.length && unique.length < MAX_TRACKS; i++) {
       var raw = tracks[i] && (tracks[i].url || tracks[i].baseUrl);
       if (!raw) continue;
       var identity = String(tracks[i].languageCode || '') + '|' + String(tracks[i].kind || '') + '|' + raw;

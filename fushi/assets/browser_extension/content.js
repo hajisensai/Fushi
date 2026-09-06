@@ -906,6 +906,10 @@ async function fushiRunNetflixBatch() {
         const anchorAfterV = fushiVideoTimeMs(v);
         began = !!(beginResp && beginResp.ok);
         if (!began) { fail++; window.fushiToast('生成中… ' + (done + fail) + '/' + items.length, true); continue; }
+        // BUG-2192：录制那一刻可见视频画面占视口的比例矩形（null = 铺满/算不出 → 服务端不裁）。
+        // 必须在**这一刻**算：批量回放期间用户可能改窗口大小/进出全屏，片段是此刻的视口。
+        const clipCrop = (typeof fushiVideoCropFraction === 'function')
+          ? fushiVideoCropFraction(v, window.innerWidth, window.innerHeight) : null;
         const anchorV = (anchorBeforeV === null || anchorAfterV === null)
           ? null
           : Math.round((anchorBeforeV + anchorAfterV) / 2);
@@ -950,6 +954,8 @@ async function fushiRunNetflixBatch() {
             chrome.runtime.sendMessage(
               // BUG-676（TODO-1361 ③）：带上入队时抓的剧名；旧队列项无则录制时现抓（此刻正在目标集页）。
               { type: 'mineClip', fields: q.fields, sentence: q.sentence, clipBase64: clip.clipBase64, clipDurationMs: clip.clipDurationMs,
+                // BUG-2192：可见画面比例矩形，服务端据此裁掉播放器黑边。
+                clipCrop: clipCrop,
                 // BUG-1416：静态帧模式要「制卡那一刻」的帧，服务端据这三个视频时间换算片段内偏移。
                 clipAnchorMs: anchorV, clipAnchorUncertaintyMs: anchorUncertaintyMs,
                 cueStartMs: (typeof q.cueStartV === 'number' ? q.cueStartV : null),

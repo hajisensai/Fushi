@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2041 条。点号进各自文件。
+> 共 2043 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2194](bugs/BUG-2194-youtube-caption-track-cap-drops-original.md) | ✅ | ✅ | 扩展 YouTube 轨枚举被 12 条上限截掉原语言英语轨 |
+| [BUG-2192](bugs/BUG-2192-netflix-clip-black-border.md) | ✅ | ✅ | 网飞录屏制卡的动图/静帧四周带播放器黑边 |
 | [BUG-2191](bugs/BUG-2191-netflix-ttml-ruby-reading-leaks-into-cue.md) | ✅ | ✅ | 网飞 TTML 振假名读音混进字幕正文与制卡句子 |
 | [BUG-2190](bugs/BUG-2190-anki-gaiji-alt-text-overlap.md) | ✅ | ✅ | 制卡释义外字退化 alt 文本沿用图片盒几何与正文重叠 |
 | [BUG-2189](bugs/BUG-2189-netflix-batch-mine-word-audio-token-expired.md) | ✅ | ✅ | 网飞批量制卡单词音频落空：入队冻结的短命 token URL 生成时已过期 |
