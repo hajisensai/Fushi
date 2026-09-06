@@ -6,6 +6,7 @@ import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_progress.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
+import 'sync_orchestrator_source_corpus.dart';
 import 'sync_settings_schema_source_corpus.dart';
 
 /// Unit + wiring guard for the manual-sync inline progress bar.
@@ -78,8 +79,8 @@ void main() {
   });
 
   test('source guard: manual sync threads progress end-to-end', () {
-    final orchestrator =
-        File('lib/src/sync/sync_orchestrator.dart').readAsStringSync();
+    // B2 拆分后 SyncPhase 发射点分散在主库 + sync_orchestrator/*.part.dart。
+    final String orchestrator = readSyncOrchestratorSource();
     // Orchestrator accepts and emits structured progress for every phase.
     expect(orchestrator.contains('SyncProgressCallback? onProgress'), isTrue);
     for (final String phase in <String>[

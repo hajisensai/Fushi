@@ -74,7 +74,8 @@ void main() {
     test(
         'orchestrator _syncAudiobooksLive wires toPull download + import '
         '(not push-only)', () {
-      final String src = read('lib/src/sync/sync_orchestrator.dart');
+      final String src =
+          read('lib/src/sync/sync_orchestrator/audiobooks.part.dart');
 
       // 必须遍历 diff.toPull（历史 push-only 时根本不读 toPull）。
       expect(src, contains('diff.toPull'),
@@ -110,7 +111,8 @@ void main() {
     test(
         'orchestrator pull import binds bookKeyOverride to the local EPUB key '
         '(localBookKeys-filtered), not a recomputed sanitize', () {
-      final String src = read('lib/src/sync/sync_orchestrator.dart');
+      final String src =
+          read('lib/src/sync/sync_orchestrator/audiobooks.part.dart');
       // Pull import 的 override 绑定的是 toPull 循环变量 key（= 已被 localBookKeys
       // 筛过的本地 EPUB bookKey），而非任何 sanitizeTtuFilename(...title)。
       expect(src, contains('bookKeyOverride: key'),
@@ -130,6 +132,7 @@ void main() {
         'lib/src/pages/implementations/reader_history/remote.part.dart',
         'lib/src/sync/sync_compare_dialog.dart',
         'lib/src/sync/sync_orchestrator.dart',
+        'lib/src/sync/sync_orchestrator/audiobooks.part.dart',
       ];
       for (final String site in sites) {
         final String src = read(site);
