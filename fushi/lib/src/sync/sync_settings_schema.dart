@@ -744,6 +744,17 @@ SettingsItem buildShowRemoteEntriesItem() {
 _SyncSettingsState? _activeSyncState;
 AppModel? _activeSyncOwner;
 
+/// 测试钩子：丢掉按 AppModel 缓存的同步设置内存态，并解除它挂在
+/// [SyncRepository.interconnectEnabledRevision] 上的全局监听。每个用例各建一份
+/// AppModel + 内存库时，上一份状态的监听会在下一个用例的 setInterconnectEnabled
+/// 广播里去读已关闭的库（生产里 AppModel 与库同寿命，不会触发）。
+@visibleForTesting
+void resetSyncSettingsStateForTest() {
+  _activeSyncState?.dispose();
+  _activeSyncState = null;
+  _activeSyncOwner = null;
+}
+
 /// Whether this device is actively HOSTING a Hibiki interconnect server — the
 /// only role with no outbound "sync now" / "compare" (BUG-084). Requires BOTH
 /// the persisted host flag AND interconnect being enabled: a stale serverEnabled
