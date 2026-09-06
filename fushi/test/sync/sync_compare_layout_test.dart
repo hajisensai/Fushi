@@ -121,6 +121,48 @@ void main() {
     expect(find.text(t.sync_compare_apply(count: 4)), findsOneWidget);
   });
 
+  testWidgets('筛选开着时冲突归零：chip 必须留下，否则再也退不出「只看冲突」',
+      (WidgetTester tester) async {
+    // 一个开关不能在自己是 ON 的时候把自己的 OFF 入口删掉。
+    // 这条路径全程走的是既有 UI：冲突行本身带删除菜单（真冲突两边都有远端副本，
+    // remoteFolderId 必非空），把最后一条冲突的远端删掉后 _conflictCount 归零。
+    // chip 的显示条件若只看 _conflictCount > 0，它就会连同自己的关闭入口一起消失，
+    // 而 _filterConflicts 仍是 true —— 非冲突的书和词典段全部不可见也不可达，
+    // Apply 恒为 0，用户只能关掉对话框重开。
+    final FushiDatabase db = _memDb();
+    addTearDown(db.close);
+    final FakeCompareBackend fake = await seedCompareScenario(db);
+    await pump(tester, db, fake);
+
+    await tester.tap(find.byType(FilterChip));
+    await tester.pumpAndSettle();
+    expect(find.text('Conflict A'), findsOneWidget);
+    expect(find.text('Conflict B'), findsOneWidget);
+
+    for (int i = 0; i < 2; i++) {
+      await tester.tap(find.byType(FushiOverflowMenu<String>).first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(t.sync_compare_delete_book).last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, t.dialog_delete));
+      await tester.pumpAndSettle();
+    }
+
+    expect(fake.deleted, hasLength(2), reason: '两条冲突的远端副本都删掉了');
+    expect(find.text('Conflict A'), findsNothing);
+    expect(find.text('Conflict B'), findsNothing);
+
+    final Finder chip = find.byType(FilterChip);
+    expect(chip, findsOneWidget,
+        reason: '筛选仍开着，chip 就必须留下——它是唯一的关闭入口');
+    expect(find.text('${t.sync_compare_only_conflicts} · 0'), findsOneWidget);
+
+    await tester.tap(chip);
+    await tester.pumpAndSettle();
+    expect(find.text('Local newer'), findsOneWidget,
+        reason: '关掉筛选后非冲突条目必须重新可见可应用');
+  });
+
   testWidgets('冲突解决弹窗（conflictsOnly）没有筛选 chip', (WidgetTester tester) async {
     final FushiDatabase db = _memDb();
     addTearDown(db.close);

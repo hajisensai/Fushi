@@ -1060,7 +1060,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
               theme,
               count: conflicts.length,
               isConflict: true,
-              trailing: _bulkChoiceMenu(),
+              trailing: _bulkChoiceMenu(conflicts),
             ),
             SliverList.list(
               children: <Widget>[
@@ -1114,7 +1114,14 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
                 ),
               ),
               // 冲突解决弹窗本就只有冲突，筛选无意义；默认模式下有冲突才给开关。
-              if (!widget.conflictsOnly && _conflictCount > 0)
+              // `|| _filterConflicts`：一个开关不能在自己是 ON 的时候把自己的 OFF
+              // 入口删掉。可达路径：开着筛选时把最后一条冲突的远端副本删掉
+              // （冲突行本身就带删除菜单），_conflictCount 归零、chip 消失，而
+              // _filterConflicts 仍是 true —— 于是 _showOnlyConflicts 恒真、
+              // _entriesInPlay 为空，非冲突的书和词典段全部不可见也不可达，
+              // Apply 恒为 0，只能关掉对话框重开。
+              if (!widget.conflictsOnly &&
+                  (_conflictCount > 0 || _filterConflicts))
                 _conflictFilterChip(theme),
             ],
           ),
@@ -1192,13 +1199,21 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
   }
 
   /// 批量裁决菜单：只作用于需要人工选择的冲突项，故挂在冲突段头上（C3）。
-  Widget _bulkChoiceMenu() {
+  /// 批量裁决作用于 [targets]——**调用方段头下面渲染的那一批**，不是全集。
+  ///
+  /// 菜单挂在冲突段头上，语义就该是「把这个段头下面的都裁了」。原来写成遍历
+  /// `_entries!` 全集再靠 `needsManualChoice` 兜住，正确性押在「needsManualChoice
+  /// 恒等于 hasConflict」这条没人写下来的约定上（今天成立：前者就是后者的字面
+  /// 别名）。哪天有人把它放宽——比如把 remote-only 也算「需人工确认」——批量就会
+  /// 静默改写被筛选隐藏的行的裁决，而且没有任何测试会红。作用域交给调用方，
+  /// 这条约定就不必再存在。
+  Widget _bulkChoiceMenu(List<SyncCompareEntry> targets) {
     return FushiOverflowMenu<SyncChoice>(
       iconWidget: const Icon(Icons.checklist, size: 20),
       tooltip: t.sync_compare_select_all,
       onSelected: (choice) {
         setState(() {
-          for (final e in _entries!) {
+          for (final e in targets) {
             if (e.bookKey != null && e.needsManualChoice) {
               _choices[e.title] = choice;
             }

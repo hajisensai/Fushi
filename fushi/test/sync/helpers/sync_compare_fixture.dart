@@ -108,6 +108,19 @@ class FakeCompareBackend implements SyncBackend {
   @override
   Map<String, String> get cachedFolderIds => _folders;
 
+  /// 删过的远端资产 id（顺序即删除顺序）。
+  final List<String> deleted = <String>[];
+
+  @override
+  Future<void> deleteAsset(String id, {bool isFolder = false}) async {
+    deleted.add(id);
+  }
+
+  @override
+  void evictFolderId(String folderId) {
+    _folders.removeWhere((String _, String v) => v == folderId);
+  }
+
   @override
   Future<bool> get isAuthenticated async => true;
 
