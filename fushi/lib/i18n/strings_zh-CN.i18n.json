@@ -4302,5 +4302,8 @@
   "dict_task_failed_download": "下载失败：$name（$reason）",
   "dict_task_failed_import": "导入失败：$name（$reason）",
   "dict_task_failed_summary": "$n 本词典处理失败",
-  "backup_export_dictionaries_skipped": "导出完成，但有 $n 本词典被跳过：这台设备上找不到它们的文件（$names）"
+  "backup_export_dictionaries_skipped": "导出完成，但有 $n 本词典被跳过：这台设备上找不到它们的文件（$names）",
+  "popup_ctx_preview_audio": "试听",
+  "popup_ctx_preview_stop": "停止",
+  "popup_ctx_preview_unavailable": "这句没有可试听的音频"
 }

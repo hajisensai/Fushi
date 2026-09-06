@@ -59,6 +59,16 @@ void main() {
     // `card_mined_no_sentence_captured` keys off exactly this).
     expect(stdout, contains('case4_whitespace_only :: {"sentence":""'),
         reason: 'only the whitespace-only container yields an empty sentence');
+    // BUG-2196：源码硬换行不再切句。这一条钉的是用户报的原句——修复前它会停在
+    // 逗号后的换行处，制卡拿到半截话、按句裁的音频也跟着漏词。
+    expect(
+      stdout,
+      contains('case11_before_wrap :: {"sentence":"And there were in the same '
+          'country shepherds abiding in the field,  keeping watch over their '
+          'flock by night."}'),
+      reason: 'a hard wrap inside one <p> must not end the sentence, and the '
+          'newline must be normalised to a space',
+    );
   });
 }
 

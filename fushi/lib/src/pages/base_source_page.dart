@@ -976,6 +976,10 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           matched: matched,
           fetchPreview: onSentenceContextPreviewFromDraft,
           setContext: onSetSentenceContextToDraft,
+          // BUG-2196 ②：只有真的能出声的表面才给试听按钮。
+          previewAudio: supportsSentenceAudioPreview ? onPreviewSentenceAudio : null,
+          stopAudioPreview:
+              supportsSentenceAudioPreview ? onStopSentenceAudioPreview : null,
           onConfirm: () =>
               webViewKey.currentState?.mineEntryByIndex(entryIndex),
         ),
@@ -1030,6 +1034,11 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   @protected
   bool get supportsSentenceDraft => false;
 
+  /// 这个表面能不能试听「将写进卡片的那段句子音频」（BUG-2196 ②）。
+  /// 默认 false；阅读器/有声书覆写为 true。
+  @protected
+  bool get supportsSentenceAudioPreview => false;
+
   /// TODO-270 F/G：弹窗「+句」追加当前正查句到本表面会话级制卡草稿，返回累积句数
   /// （含本句）。默认 no-op 返回 0（[supportsSentenceDraft] 为 false 时不会被调用）。
   /// reader 覆写：把当前句 + 句子音频区间推进草稿。
@@ -1057,6 +1066,23 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   @protected
   Future<Map<String, Object?>> onSentenceContextPreviewFromDraft() async =>
       const <String, Object?>{};
+
+  /// BUG-2196 ②：试听**这次制卡真正会写进卡片的那段音频**。
+  ///
+  /// 为什么值得单独一个钩子而不是「播当前句的 cue」：写进卡的区间是
+  /// `MiningSentenceDraft.composeAudioRange(当前句区间)` 的结果——它把用户在这个
+  /// 对话框里加减出来的上下文句一起合并了，并且带上首尾留白与 A/V 偏移。播 cue
+  /// 只能证明「这句有音频」，证明不了「裁出来的那段念全了」，而用户报的恰恰是
+  /// 后者（断句歪了 → 区间歪了 → 压出来的音频没念到目标词）。
+  ///
+  /// 返回 false = 这句没有可试听的音频（没挂有声书、跨音频文件、区间解不出来）。
+  /// 默认 false：不支持的表面（视频页等）对话框里就不显示试听按钮。
+  @protected
+  Future<bool> onPreviewSentenceAudio() async => false;
+
+  /// 停止 [onPreviewSentenceAudio] 起的试听，并让主播放恢复原状。
+  @protected
+  Future<void> onStopSentenceAudioPreview() async {}
 
   /// Called when a non-last popup layer is dismissed (the stack shrinks but a
   /// parent popup remains). Override (reader) to keep the char cursor following

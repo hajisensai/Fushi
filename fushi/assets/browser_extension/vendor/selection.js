@@ -18,7 +18,9 @@ window.fushiSelection = {
     selection: null,
     highlightWrappers: [],
     scanDelimiters: '。、！？…‥「」『』（）()【】〈〉《》〔〕｛｝{}［］[]・：；:;，,.─\n\r"\'“”‘’«»‹›',
-    sentenceDelimiters: '。！？.!?\n\r',
+    // BUG-2196：换行不是句子边界（HTML 里它只是空白）。与
+    // reader_selection_scripts.dart 的同名表保持一致。
+    sentenceDelimiters: '。！？.!?',
     trailingSentenceChars: '。、！？…‥」』）)】〉》〕｝}］]',
     brackets: {'「':'」', '『': '』', '（':'）', '(':')', '【':'】', '〈':'〉', '《':'》', '〔':'〕', '｛':'｝', '{':'}', '［':'］', '[':']'},
 

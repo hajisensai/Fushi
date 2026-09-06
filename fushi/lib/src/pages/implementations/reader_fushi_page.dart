@@ -3511,6 +3511,34 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     );
   }
 
+  /// BUG-2196 ②：试听「这次制卡真正会写进卡片的那段音频」。
+  ///
+  /// 区间取的是 `_miningDraft.composeAudioRange(_currentSentenceAudioRange())`
+  /// —— **和 `_prepareMiningContext` 里喂给 ffmpeg 的那一个是同一个表达式**，所以
+  /// 听到什么就会压出什么。刻意不播「当前句的 cue」：那只能证明这句有音频，
+  /// 证明不了裁出来的那段念全了，而用户报的正是后者。
+  ///
+  /// 每次调用都重新求一次区间：用户在对话框里加减上下文句的目的就是改变它。
+  @override
+  bool get supportsSentenceAudioPreview => true;
+
+  @override
+  Future<bool> onPreviewSentenceAudio() async {
+    final AudiobookPlayerController? controller = _audiobookController;
+    if (controller == null) return false;
+    final AudioPlaybackRange? clip =
+        _miningDraft.composeAudioRange(_currentSentenceAudioRange());
+    if (clip == null || clip.endMs <= clip.startMs) return false;
+    await controller.playRange(clip);
+    return true;
+  }
+
+  @override
+  Future<void> onStopSentenceAudioPreview() async {
+    // resumeMain: false —— 用户是在制卡对话框里点的试听，不该顺手把正文朗读接着放。
+    await _audiobookController?.stopClip(resumeMain: false);
+  }
+
   @override
   Future<MinePopupResult> onMineFromPopup(Map<String, String> fields) {
     // TODO-644 / BUG-357：经制卡串行队列执行，杜绝快速连制两张卡时两次 prepare→mine
