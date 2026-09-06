@@ -108,68 +108,36 @@ SettingsDestination buildSyncBackupDestination() {
             builder: (SettingsContext ctx) =>
                 _SyncAccountWidget(settingsContext: ctx),
           ),
-          SettingsCustomItem(
-            id: 'sync.webdav_config',
+          // WebDAV / FTP / SFTP 的凭据表单挪进子页「服务器设置」（C1）：主页只留
+          // 一行入口，不再随所选后端伸缩。三套表单本身（_CredentialConfigWidget）
+          // 不动，可见性谓词逐字搬进 _buildSyncServerSettingsPage。
+          SettingsNavigationItem(
+            id: 'sync.server_settings',
+            title: t.sync_server_settings,
+            subtitle: t.sync_server_settings_hint,
             icon: Icons.dns_outlined,
             visible: (SettingsContext ctx) =>
-                _syncSettings(ctx).backendType == SyncBackendType.webDav,
-            builder: (SettingsContext ctx) =>
-                _WebDavConfigWidget(settingsContext: ctx),
-          ),
-          SettingsCustomItem(
-            id: 'sync.ftp_config',
-            icon: Icons.dns_outlined,
-            visible: (SettingsContext ctx) =>
-                _syncSettings(ctx).backendType == SyncBackendType.ftp,
-            builder: (SettingsContext ctx) =>
-                _FtpConfigWidget(settingsContext: ctx),
-          ),
-          SettingsCustomItem(
-            id: 'sync.sftp_config',
-            icon: Icons.dns_outlined,
-            visible: (SettingsContext ctx) =>
-                _syncSettings(ctx).backendType == SyncBackendType.sftp,
-            builder: (SettingsContext ctx) =>
-                _SftpConfigWidget(settingsContext: ctx),
+                hasServerSettings(_syncSettings(ctx).backendType),
+            child: _buildSyncServerSettingsPage,
           ),
           // 互联被选为同步方式时的指引行（BUG-1088）：连接配置（URL/token/配对/
           // LAN 发现/host 开关）在独立的「Hibiki 互联」分类里，这里只指路不复制。
-          SettingsCustomItem(
+          SettingsStatusItem(
             id: 'sync.interconnect_config_note',
+            title: t.sync_backend_fushi_server,
+            subtitle: t.interconnect_moved_note,
             icon: Icons.devices_outlined,
             visible: (SettingsContext ctx) =>
                 _syncSettings(ctx).backendType == SyncBackendType.fushiServer,
-            builder: (SettingsContext ctx) => AdaptiveSettingsRow(
-              title: t.sync_backend_fushi_server,
-              subtitle: t.interconnect_moved_note,
-              icon: Icons.devices_outlined,
-            ),
           ),
         ],
       ),
-      // ── Group 3: What to sync — global, applies to every backend ──────
+      // ── Group 2: What to sync — five same-shaped switches, every backend ─
+      // 同形态的开关一组；动作行（资产传输）与时机（自动同步/立即同步）各自成节，
+      // 不再与开关混排（C1：「分组乱」的直接来源）。
       SettingsSection(
         title: t.sync_section_content,
         items: <SettingsItem>[
-          SettingsSwitchItem(
-            id: 'sync.auto_sync',
-            title: t.sync_auto_sync,
-            icon: Icons.sync_outlined,
-            // Auto-sync is an OUTBOUND switch: it triggers app-open/background/
-            // book-close pushes through the resolved backend. Outbound only
-            // vanishes when the selected sync method IS the interconnect and
-            // this device is the host (clients pull from / push to it, BUG-084).
-            // A cloud backend keeps its outbound regardless of hosting — hiding
-            // on host identity alone blanked Google Drive users' toggle
-            // (BUG-1088).
-            visible: (SettingsContext ctx) => !_cloudOutboundUnavailable(ctx),
-            value: (SettingsContext ctx) => _syncSettings(ctx).autoSync,
-            onChanged: (SettingsContext ctx, bool value) async {
-              _syncSettings(ctx).autoSync = value;
-              await SyncRepository(ctx.appModel.database)
-                  .setAutoSyncEnabled(value);
-            },
-          ),
           SettingsSwitchItem(
             id: 'sync.statistics',
             title: t.sync_statistics,
@@ -180,83 +148,6 @@ SettingsDestination buildSyncBackupDestination() {
               await SyncRepository(ctx.appModel.database)
                   .setSyncStatsEnabled(value);
             },
-          ),
-          // 词典与本地音频源数据库不再是「开关 + 自动双向同步」，而是两个显式动作行：
-          // 上传把本机独有的推上去，下载把远端独有的拉下来。开关表达不了「现在把这
-          // 台机器的词典推过去」这种一次性意图，而它一旦开着就会在每轮 sweep 里悄悄
-          // 搬几百 MB —— 方向该由用户在点的那一刻给出。
-          //
-          // 可见性与相邻三个「上传X文件」同因：这四行只在**云备份通道**上跑
-          // （见 runManualAssetTransfer），同步方式被选成互联时那条通道没有出站
-          // 语义，留着就是四个死按钮。互联对端的内容上传由互联页自己那组开关管。
-          // 一次性告知，排在四个传输动作之前：升级前开着那两个自动同步开关的存量
-          // 用户，升级后同步会静默停下（见 SyncRepository 里废弃键那段注释）。只对
-          // 读到遗留 true 的库占位，用户确认后彻底消失。可见性与下面四行同因——只有
-          // 云备份通道跑这四个动作，互联通道上说明也无处可指。
-          SettingsCustomItem(
-            id: 'sync.asset_legacy_notice',
-            searchTitle: t.sync_asset_legacy_notice_title,
-            visible: (SettingsContext ctx) =>
-                _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
-            icon: Icons.info_outline,
-            builder: (SettingsContext ctx) =>
-                _LegacyAssetSyncNotice(settingsContext: ctx),
-          ),
-          SettingsCustomItem(
-            id: 'sync.dictionary_upload',
-            searchTitle: t.sync_asset_dictionary_upload,
-            visible: (SettingsContext ctx) =>
-                _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
-            icon: Icons.menu_book_outlined,
-            builder: (SettingsContext ctx) => _AssetTransferWidget(
-              settingsContext: ctx,
-              kind: SyncAssetKind.dictionary,
-              direction: SyncAssetDirection.upload,
-              title: t.sync_asset_dictionary_upload,
-              icon: Icons.menu_book_outlined,
-            ),
-          ),
-          SettingsCustomItem(
-            id: 'sync.dictionary_download',
-            searchTitle: t.sync_asset_dictionary_download,
-            visible: (SettingsContext ctx) =>
-                _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
-            icon: Icons.menu_book_outlined,
-            builder: (SettingsContext ctx) => _AssetTransferWidget(
-              settingsContext: ctx,
-              kind: SyncAssetKind.dictionary,
-              direction: SyncAssetDirection.download,
-              title: t.sync_asset_dictionary_download,
-              icon: Icons.menu_book_outlined,
-            ),
-          ),
-          SettingsCustomItem(
-            id: 'sync.local_audio_upload',
-            searchTitle: t.sync_asset_local_audio_upload,
-            visible: (SettingsContext ctx) =>
-                _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
-            icon: Icons.graphic_eq_outlined,
-            builder: (SettingsContext ctx) => _AssetTransferWidget(
-              settingsContext: ctx,
-              kind: SyncAssetKind.localAudio,
-              direction: SyncAssetDirection.upload,
-              title: t.sync_asset_local_audio_upload,
-              icon: Icons.graphic_eq_outlined,
-            ),
-          ),
-          SettingsCustomItem(
-            id: 'sync.local_audio_download',
-            searchTitle: t.sync_asset_local_audio_download,
-            visible: (SettingsContext ctx) =>
-                _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
-            icon: Icons.graphic_eq_outlined,
-            builder: (SettingsContext ctx) => _AssetTransferWidget(
-              settingsContext: ctx,
-              kind: SyncAssetKind.localAudio,
-              direction: SyncAssetDirection.download,
-              title: t.sync_asset_local_audio_download,
-              icon: Icons.graphic_eq_outlined,
-            ),
           ),
           // 「上传X文件」三个开关都是 OUTBOUND：把本机资产推给**云备份**后端。BUG-988
           // 起互联通道不再复用这套共享开关——互联的内容上传由「上传到互联对端」分项开关
@@ -318,24 +209,40 @@ SettingsDestination buildSyncBackupDestination() {
           buildShowRemoteEntriesItem(),
         ],
       ),
-      // ── Group 4: Manual sync actions — global ────────────────────────
+      // ── Group 3: When to sync — auto-sync + manual actions ────────────
       SettingsSection(
-        title: t.sync_section_actions,
+        title: t.sync_section_when,
         items: <SettingsItem>[
+          SettingsSwitchItem(
+            id: 'sync.auto_sync',
+            title: t.sync_auto_sync,
+            icon: Icons.sync_outlined,
+            // Auto-sync is an OUTBOUND switch: it triggers app-open/background/
+            // book-close pushes through the resolved backend. Outbound only
+            // vanishes when the selected sync method IS the interconnect and
+            // this device is the host (clients pull from / push to it, BUG-084).
+            // A cloud backend keeps its outbound regardless of hosting — hiding
+            // on host identity alone blanked Google Drive users' toggle
+            // (BUG-1088).
+            visible: (SettingsContext ctx) => !_cloudOutboundUnavailable(ctx),
+            value: (SettingsContext ctx) => _syncSettings(ctx).autoSync,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).autoSync = value;
+              await SyncRepository(ctx.appModel.database)
+                  .setAutoSyncEnabled(value);
+            },
+          ),
           // Sync-method-is-interconnect + hosting has no OUTBOUND sync: the host
           // is a passive data source that connected clients pull from / push to,
           // so "sync now" / "compare" would misleadingly say "set up sync
           // first". Hide them for that combination only and explain instead
           // (BUG-084); a cloud backend keeps outbound while hosting (BUG-1088).
-          SettingsCustomItem(
+          SettingsStatusItem(
             id: 'sync.server_mode_note',
-            icon: Icons.router_outlined,
             visible: (SettingsContext ctx) => _cloudOutboundUnavailable(ctx),
-            builder: (SettingsContext ctx) => AdaptiveSettingsRow(
-              title: t.sync_server_mode_active,
-              subtitle: t.sync_server_mode_clients_drive,
-              icon: Icons.router_outlined,
-            ),
+            title: t.sync_server_mode_active,
+            subtitle: t.sync_server_mode_clients_drive,
+            icon: Icons.router_outlined,
           ),
           SettingsCustomItem(
             id: 'sync.sync_now',
@@ -357,6 +264,59 @@ SettingsDestination buildSyncBackupDestination() {
               audioDatabaseRoot: Directory(
                 p.join(ctx.appModel.appDirectory.path, 'audiobooks'),
               ),
+            ),
+          ),
+        ],
+      ),
+      // ── Group 4: Dictionaries & local audio transfer — explicit actions ─
+      // 词典与本地音频源数据库不再是「开关 + 自动双向同步」，而是显式动作：上传把
+      // 本机独有的推上去，下载把远端独有的拉下来。开关表达不了「现在把这台机器的
+      // 词典推过去」这种一次性意图，而它一旦开着就会在每轮 sweep 里悄悄搬几百 MB
+      // —— 方向该由用户在点的那一刻给出。一类资产一行，方向在行尾菜单里选（C1，
+      // 焦点模型见 _AssetTransferMenuRow）。
+      //
+      // 可见性与「上传X文件」三个开关同因：只在**云备份通道**上跑（见
+      // runManualAssetTransfer），同步方式被选成互联时那条通道没有出站语义，留着
+      // 就是死按钮。互联对端的内容上传由互联页自己那组开关管。
+      SettingsSection(
+        title: t.sync_section_assets,
+        items: <SettingsItem>[
+          // 一次性告知，排在传输动作之前：升级前开着那两个自动同步开关的存量用户，
+          // 升级后同步会静默停下（见 SyncRepository 里废弃键那段注释）。只对读到
+          // 遗留 true 的库占位，用户确认后彻底消失。
+          SettingsCustomItem(
+            id: 'sync.asset_legacy_notice',
+            searchTitle: t.sync_asset_legacy_notice_title,
+            visible: (SettingsContext ctx) =>
+                _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
+            icon: Icons.info_outline,
+            builder: (SettingsContext ctx) =>
+                _LegacyAssetSyncNotice(settingsContext: ctx),
+          ),
+          SettingsCustomItem(
+            id: 'sync.dictionary_transfer',
+            searchTitle: t.sync_asset_dictionary,
+            visible: (SettingsContext ctx) =>
+                _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
+            icon: Icons.menu_book_outlined,
+            builder: (SettingsContext ctx) => _AssetTransferMenuRow(
+              settingsContext: ctx,
+              kind: SyncAssetKind.dictionary,
+              title: t.sync_asset_dictionary,
+              icon: Icons.menu_book_outlined,
+            ),
+          ),
+          SettingsCustomItem(
+            id: 'sync.local_audio_transfer',
+            searchTitle: t.sync_asset_local_audio,
+            visible: (SettingsContext ctx) =>
+                _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
+            icon: Icons.graphic_eq_outlined,
+            builder: (SettingsContext ctx) => _AssetTransferMenuRow(
+              settingsContext: ctx,
+              kind: SyncAssetKind.localAudio,
+              title: t.sync_asset_local_audio,
+              icon: Icons.graphic_eq_outlined,
             ),
           ),
         ],
@@ -407,6 +367,56 @@ SettingsDestination buildSyncBackupDestination() {
                 );
               },
             ),
+        ],
+      ),
+    ],
+  );
+}
+
+/// 凭据式后端（WebDAV / FTP / SFTP）才有「服务器设置」子页；OAuth 后端在浏览器
+/// 里登录（账号行），互联的连接配置在自己的分类里。
+@visibleForTesting
+bool hasServerSettings(SyncBackendType type) =>
+    type == SyncBackendType.webDav ||
+    type == SyncBackendType.ftp ||
+    type == SyncBackendType.sftp;
+
+/// 「服务器设置」子页（C1）：所选后端的凭据表单 + 连接测试。三套表单及其可见性
+/// 谓词与原先在主页「同步方式」节里时逐字相同，只是搬了个地方。子页共用父分类的
+/// id、靠闭包取新鲜树（见 [SettingsNavigationItem.child]）；零参、构造期只读
+/// i18n 常量，与顶层分类同一条 schema 缓存纪律。
+SettingsDestination _buildSyncServerSettingsPage() {
+  return SettingsDestination(
+    id: SettingsDestinationId.syncBackup,
+    title: t.sync_server_settings,
+    icon: Icons.dns_outlined,
+    sections: <SettingsSection>[
+      SettingsSection(
+        items: <SettingsItem>[
+          SettingsCustomItem(
+            id: 'sync.webdav_config',
+            icon: Icons.dns_outlined,
+            visible: (SettingsContext ctx) =>
+                _syncSettings(ctx).backendType == SyncBackendType.webDav,
+            builder: (SettingsContext ctx) =>
+                _WebDavConfigWidget(settingsContext: ctx),
+          ),
+          SettingsCustomItem(
+            id: 'sync.ftp_config',
+            icon: Icons.dns_outlined,
+            visible: (SettingsContext ctx) =>
+                _syncSettings(ctx).backendType == SyncBackendType.ftp,
+            builder: (SettingsContext ctx) =>
+                _FtpConfigWidget(settingsContext: ctx),
+          ),
+          SettingsCustomItem(
+            id: 'sync.sftp_config',
+            icon: Icons.dns_outlined,
+            visible: (SettingsContext ctx) =>
+                _syncSettings(ctx).backendType == SyncBackendType.sftp,
+            builder: (SettingsContext ctx) =>
+                _SftpConfigWidget(settingsContext: ctx),
+          ),
         ],
       ),
     ],

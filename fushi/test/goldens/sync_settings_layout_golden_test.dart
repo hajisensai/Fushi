@@ -163,11 +163,13 @@ void main() {
     FocusManager.instance.highlightStrategy = FocusHighlightStrategy.automatic;
   });
 
-  for (final ({String name, double width}) size in <({String name, double width})>[
+  for (final ({String name, double width}) size
+      in <({String name, double width})>[
     (name: 'wide', width: 900),
     (name: 'narrow', width: 400),
   ]) {
-    testWidgets('sync & backup page · ${size.name}', (WidgetTester tester) async {
+    testWidgets('sync & backup page · ${size.name}',
+        (WidgetTester tester) async {
       await _pumpDetail(
         tester,
         destination: buildSyncBackupDestination,
@@ -176,11 +178,13 @@ void main() {
       );
       await expectLater(
         find.byType(MaterialApp),
-        matchesGoldenFile('golden_files/sync_settings_sync_backup_${size.name}.png'),
+        matchesGoldenFile(
+            'golden_files/sync_settings_sync_backup_${size.name}.png'),
       );
     }, tags: <String>['golden']);
 
-    testWidgets('interconnect page · ${size.name}', (WidgetTester tester) async {
+    testWidgets('interconnect page · ${size.name}',
+        (WidgetTester tester) async {
       await _pumpDetail(
         tester,
         destination: buildInterconnectDestination,
