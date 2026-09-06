@@ -45,7 +45,7 @@ void main() {
       );
       expect(
         src,
-        contains('StatWindow.untilNextLocalMidnight('),
+        contains('StatWindow.untilNextStatDayBoundary('),
         reason: 'BUG-2181：午夜时长只从 StatWindow 取',
       );
       final RegExp anyNow = RegExp(r'StatWindow\(DateTime\.now\(\)\)');

@@ -4,3 +4,4 @@
 - **[x] ① 已修复** — `scrollToCharOffset` hint 分支：`charPage < origPage` 时先落原页、实测 `getFirstVisibleCharOffset()`，> 锚字即锚已丢 → 改落锚字所在页（判据用实测页首字而非像素容差：横排末行 collapsed range 的 x 可落在整列任意处）。提交：`cf60bafee3`。
 - **[x] ② 已加自动化测试** — `fushi/test/reader/paged_hint_anchor_not_passed_guard_test.dart`（源码守卫：hint 分支必须带页首字复核、旧三目形态不得回潮）+ headless Chrome 探针 `tool/reader_pitch_headless/font_shrink_reanchor_probe.mjs`（真渲染：章中段 seed 后 22→14→26px 十四步重锚，断言每步页首字 ≤ 锚字且锚字在当页；`reader_headless_shell_dump_test.dart` 新增 dump 完整引擎产物 `fushi_engine_paginated.html`，探针按真实装配 `__fushiInstallShell(C)` 安装）。修前探针退出码 1（三步 `PAGE START PASSED ANCHOR (drift 315 chars)`），修后退出码 0。
 - **备注**：这同时是「缩字号丢一页正文」的位置 bug。真机（Windows WebView2）未复测，探针是 headless Chrome 同内核证据。
+- **2026-09-06 追记**：根因链里「按令牌桶计成新读到 / 水位棘轮」一段已随水位模型删除；JS 侧修复（保原页前复核页首字不越锚）不变，仍是位置正确性所需。

@@ -3,7 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/media/video/video_playback_source.dart';
-import 'package:fushi/src/media/video/watch_coverage.dart';
+import 'package:fushi/src/stats/interval_coverage.dart';
 import 'package:fushi/src/stats/study_char_count.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_audio/fushi_audio.dart';
@@ -28,7 +28,7 @@ const int kCueDwellMs = kArrivalDwellMs;
 const int kCueDwellWallClockSlackMs = 250;
 
 /// 观看时长采样间隔（BUG-2108）。位置推进按这个节奏采样成「片内区间」并入
-/// [WatchCoverage]；只有首次覆盖的部分计时。1s 足够细：一次 ≥ 1.5s 的 seek 在
+/// [IntervalCoverage]；只有首次覆盖的部分计时。1s 足够细：一次 ≥ 1.5s 的 seek 在
 /// 一个采样间隔里就会超过 [kPlaybackAdvanceSlackMs] 余量被判成跳变。
 const Duration kWatchSampleInterval = Duration(seconds: 1);
 
@@ -74,7 +74,7 @@ bool isContinuousPlaybackAdvance({
 ///
 /// 观看时长口径（用户拍板 2026-09-04）：**重听不计**。每 [kWatchSampleInterval] 采一次
 /// 位置，两次采样间若是连续播放（[isContinuousPlaybackAdvance]），把这段片内区间并入
-/// [WatchCoverage]，只有**此前未覆盖**的部分按比例折成墙钟时间经
+/// [IntervalCoverage]，只有**此前未覆盖**的部分按比例折成墙钟时间经
 /// [StudyClock.addActiveMs] 记账。回放上一句 / 拖回重听 / 次日重看：区间已在并集里，
 /// 推进为 0，不计。覆盖并集按视频身份持久化（[loadCoverage] / [saveCoverage]），
 /// 所以单部视频累计观看时长 ≤ 片长。
@@ -172,10 +172,10 @@ class VideoWatchTracker {
   // ── 观看时长：位置采样 → 首次覆盖区间 → 显式记账（BUG-2108）──────────────
 
   /// 本视频已看过的片内区间并集（attach 时从持久层加载，会话中增长）。
-  WatchCoverage _coverage = WatchCoverage();
+  IntervalCoverage _coverage = IntervalCoverage();
 
   /// 本次会话前的覆盖快照：字幕字数门用（已看过的句不再计字）。
-  WatchCoverage _coverageAtAttach = WatchCoverage();
+  IntervalCoverage _coverageAtAttach = IntervalCoverage();
   Future<void>? _coverageLoad;
   bool _coverageReady = false;
   bool _coverageDirty = false;
@@ -186,7 +186,7 @@ class VideoWatchTracker {
 
   /// 已覆盖并集（测试 / 诊断）。
   @visibleForTesting
-  WatchCoverage get debugCoverage => _coverage;
+  IntervalCoverage get debugCoverage => _coverage;
 
   /// 覆盖并集加载完成（测试等待用）。
   @visibleForTesting
@@ -200,7 +200,7 @@ class VideoWatchTracker {
       // fail-open：读不到就当没看过（宁可多计一次首看，不阻塞播放）。
       ErrorLogService.instance.log('VideoWatchTracker.loadCoverage', e, st);
     }
-    _coverage = WatchCoverage.fromJson(json);
+    _coverage = IntervalCoverage.fromJson(json);
     _coverageAtAttach = _coverage.copy();
     _coverageReady = true;
   }

@@ -4,3 +4,4 @@
 - **[x] ① 已修复** — 提交：`003149107a`；在 `StudyClock` 层修：`addChars` / `addPages` 在 `!isRunning` 时直接 return（停表 = 不在学习，字数页数一并不计；水位照常由页面推进，这些字之后也不会补计——有意）。漫画页同形变体由此一并解决，不改漫画页。原「无段时以 0 时长开段」用例改成 start 后测。
 - **[x] ② 已加自动化测试** — `fushi/test/media/audiobook/study_clock_test.dart`「BUG-2172：停表期间 addChars / addPages 不入账、不开段」+ `fushi/test/pages/reader_study_clock_gate_guard_static_test.dart`「addChars / addPages 停表即丢」。
 - **备注**：
+- **2026-09-06 追记**：新模型下停表期间翻走的单元同样进覆盖并集但 `addChars` 丢弃、之后不补计——契约不变，由 `StudyClock` 保持，账本不管。

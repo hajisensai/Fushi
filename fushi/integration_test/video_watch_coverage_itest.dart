@@ -9,7 +9,7 @@ import 'package:integration_test/integration_test.dart';
 
 import 'package:fushi/main.dart' as app;
 import 'package:fushi/src/media/video/video_book_repository.dart';
-import 'package:fushi/src/media/video/watch_coverage.dart';
+import 'package:fushi/src/stats/interval_coverage.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -131,14 +131,19 @@ void main() {
       mediaKind: kActivityMediaVideo,
       mediaKey: _kBookUid,
     );
-    final int credited =
-        segments.fold(0, (int sum, StudySegmentRow s) => sum + s.durationMs);
-    final String? coverageJson =
-        await db.getPref(videoWatchCoveragePrefKey(_kBookUid));
-    final WatchCoverage coverage = WatchCoverage.fromJson(coverageJson);
-    debugPrint('[watch-coverage] wallPlayed=${wallPlayedMs}ms '
-        'credited=${credited}ms segments=${segments.length} '
-        'coverage=$coverageJson');
+    final int credited = segments.fold(
+      0,
+      (int sum, StudySegmentRow s) => sum + s.durationMs,
+    );
+    final String? coverageJson = await db.getPref(
+      videoWatchCoveragePrefKey(_kBookUid),
+    );
+    final IntervalCoverage coverage = IntervalCoverage.fromJson(coverageJson);
+    debugPrint(
+      '[watch-coverage] wallPlayed=${wallPlayedMs}ms '
+      'credited=${credited}ms segments=${segments.length} '
+      'coverage=$coverageJson',
+    );
 
     // 首次覆盖 ≈ 9s：下限放宽给起播 / 采样节奏，上限卡在「重听那 3s 不计」之内。
     expect(credited, greaterThanOrEqualTo(_kSecondPassMs - 2500),
@@ -149,7 +154,7 @@ void main() {
         reason: '计时必须明显小于播放态墙钟 ${wallPlayedMs}ms（差 = 重听时长）');
     expect(coverageJson, isNotNull, reason: '覆盖并集须落偏好表');
     expect(coverage.ranges, hasLength(1), reason: '0..9s 连续一段');
-    expect(coverage.totalMs, greaterThanOrEqualTo(_kSecondPassMs - 1500));
-    expect(coverage.totalMs, lessThanOrEqualTo(_kSecondPassMs + 2000));
+    expect(coverage.total, greaterThanOrEqualTo(_kSecondPassMs - 1500));
+    expect(coverage.total, lessThanOrEqualTo(_kSecondPassMs + 2000));
   });
 }

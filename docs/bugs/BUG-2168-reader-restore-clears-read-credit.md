@@ -4,3 +4,4 @@
 - **[x] ① 已修复** — 提交：`003149107a`；判据抽成纯函数 `restoreSeedResetsReadCharge(currentWatermark, seeded)`（`seeded > currentWatermark`）：只有 `computeCharWatermark` 播种值**大于**当前水位（真正前跳：首次进入 / 前进跨章 / 跳转）才重置时间基准与清零额度；播种值 ≤ 水位的原位恢复保留额度。`navigation.part.dart` 进度条跳转与 `chrome.part.dart` 搜索跳转保持无条件清零（那是真跳转）。
 - **[x] ② 已加自动化测试** — `fushi/test/reader/reader_study_clock_policy_test.dart`「restoreSeedResetsReadCharge」组 + 守卫 `reader_study_clock_gate_guard_static_test.dart`「BUG-2168：_onRestoreComplete 清零受门控」（4 空格缩进的无条件清零形态不得回归）。
 - **备注**：
+- **2026-09-06 追记**：令牌桶已整体删除（`ReadUnitLedger` 无额度概念，原位恢复走 `rebaseOnNextArrive()`），本条语境消失；`restoreSeedResetsReadCharge` 与其测试随之删除。见 `docs/plans/2026-09-06-read-unit-ledger.md`。
