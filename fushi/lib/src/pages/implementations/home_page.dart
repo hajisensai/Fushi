@@ -16,6 +16,7 @@ import 'package:macos_ui/macos_ui.dart'
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:fushi_anki/fushi_anki.dart' show AnkiMediaDedupReport;
 import 'package:fushi/src/anki/anki_media_dedup_dialogs.dart';
+import 'package:fushi/src/onboarding/recommended_pack_download_mini_bar.dart';
 import 'package:fushi/src/utils/components/fushi_windows_title_bar.dart';
 import 'package:fushi/src/utils/components/nav_rail_brand_button.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
@@ -1273,11 +1274,19 @@ class _HomePageState extends BasePageState<HomePage>
     );
   }
 
-  /// 内容主体 + 底部「正在听书」迷你条（TODO-291 阶段2，无活动会话时收起）。
+  /// 内容主体 + 底部迷你条：推荐包下载（BUG-2165）在上、「正在听书」（TODO-291
+  /// 阶段2）在下，各自无任务时收起（[SizedBox.shrink]，不占布局）。
+  ///
+  /// 这里是三套布局（移动底栏 / 桌面 rail / macOS）**唯一**的共用点，也是 app 里
+  /// 唯一一处「跨全部 home tab 常驻」的挂载位。推荐包那条 9.5 GB 的下载在
+  /// BUG-2097 之后确实活过了向导，但可见入口只剩设置 → 系统里那一行 —— 新用户
+  /// 走完引导正好落在首页，屏幕上一个像素都不说明它还在下。挂在这里它才真的
+  /// 「有个地方看进度」。
   Widget _bodyWithMiniBar() {
     return Column(
       children: <Widget>[
         Expanded(child: buildBody()),
+        const RecommendedPackDownloadMiniBar(),
         const NowListeningMiniBar(),
       ],
     );

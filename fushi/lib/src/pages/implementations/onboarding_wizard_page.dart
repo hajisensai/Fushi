@@ -1176,16 +1176,27 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   /// 推荐包步骤的动作表。只有第一条是主线，其余四条都是「不想下整包」或「学别的
   /// 语言」时的替代路径——它们由 [OnboardingActionList] 收进「其他方式」。
   List<OnboardingAction> _packActions(bool hasDownloaded) {
+    // 盘上躺着半截包时这条主动作是「继续下载」而不是「下载 (9.5 GB)」（BUG-2165）：
+    // 旧文案把续传说成从头下，用户会以为前面下的那 3 GB 白费了。
+    final bool isPaused = _packController.isPaused;
+    final String partialLabel = recommendedPackProgressLabel(
+      progress: _packController.progress.value,
+      receivedBytes: _packController.receivedBytes.value,
+    );
     return <OnboardingAction>[
       OnboardingAction(
-        icon: Icons.download_outlined,
+        icon: isPaused ? Icons.play_arrow_outlined : Icons.download_outlined,
         label: hasDownloaded
             ? t.onboarding_step_pack_import_existing_action
-            : '${t.onboarding_step_pack_download_action}'
-                ' ($kRecommendedPackSizeLabel)',
+            : isPaused
+                ? '${t.onboarding_pack_download_resume} ($partialLabel)'
+                : '${t.onboarding_step_pack_download_action}'
+                    ' ($kRecommendedPackSizeLabel)',
         description: hasDownloaded
             ? t.onboarding_pack_action_import_existing_desc
-            : t.onboarding_pack_action_download_desc,
+            : isPaused
+                ? t.onboarding_pack_paused_desc
+                : t.onboarding_pack_action_download_desc,
         necessity: OnboardingActionNecessity.recommended,
         onPressed: () => unawaited(_downloadPackAndImport()),
       ),
