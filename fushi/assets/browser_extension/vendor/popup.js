@@ -1801,9 +1801,22 @@ function createDefinitionImage(data, dictionary, exporting = false) {
     } else {
         const alt = nodeData?.alt || title || '';
         const filename = (window.useAnkiConnect || window.embedMedia) ? getMediaFilename(dictionary, path) : null;
-        const image = document.createElement(filename ? 'img' : 'span');
+        if (!filename) {
+            // BUG-2190：没有媒体文件可嵌（宿主没开 embedMedia）时，外字退化成 alt 文本
+            // （［参考］［参照］、义项序号等）。以前把这段**文本**塞进上面为 <img> 量身
+            // 定做的图片盒（gaiji 分支 width:auto!important / height:1.2em / line-height:0，
+            // 再叠 Anki 侧 _ankiGaijiImageStyle 的 width:1em!important）——文本没有图片的
+            // 固有尺寸，80px 宽的墨迹挤在 24px 宽、0 行高的行内块里溢出，直接压住后面
+            // 的正文（用户截图「参考两字和其他文字重叠」）。文本就该按文本流：
+            // 直接一个行内 span，不套任何图片几何。
+            const altNode = document.createElement('span');
+            altNode.classList.add('gloss-image-alt');
+            altNode.textContent = alt;
+            return altNode;
+        }
+        const image = document.createElement('img');
         image.classList.add('gloss-image');
-        if (filename) {
+        {
             image.alt = alt;
             image.src = filename;
             if (naturalSizedExport) {
@@ -1819,8 +1832,6 @@ function createDefinitionImage(data, dictionary, exporting = false) {
                 image.height = image.width * invAspectRatio;
             }
             applyImageStyles(node, imageContainer, aspectRatioSizer, imageBackground, image, filename, appearance, naturalSizedExport);
-        } else {
-            image.textContent = alt;
         }
         imageContainer.appendChild(image);
     }

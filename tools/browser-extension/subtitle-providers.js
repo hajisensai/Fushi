@@ -467,14 +467,37 @@ function fushiHasFullEpisodeTrack(videoKey) {
  * @returns {{text:string,startV:number,endV:number}|null}
  */
 function fushiFullTrackWindowAt() {
+  const hit = fushiFullTrackCueAt();
+  if (!hit) return null;
+  const cue = hit.cues[hit.idx];
+  return { text: cue.text || '', startV: cue.startMs, endV: cue.endMs };
+}
+/**
+ * 当前播放时刻命中的整轨 cue：整轨 + 下标。多句合一制卡要的就是 cues[idx±n]，此前
+ * fushiFullTrackWindowAt 算过 idx 却只回一条窗、把整轨和下标丢了。
+ * @returns {{cues:Array<{startMs:number,endMs:number,text:string}>, idx:number}|null}
+ */
+function fushiFullTrackCueAt() {
   const cues = fushiActiveFullTrackCues();
   if (!cues) return null;
   const nowV = fushiVideoTimeMs();
   if (nowV === null) return null;
   const idx = findCueIndexAt(cues, nowV);
   if (idx < 0) return null;
-  const cue = cues[idx];
-  return { text: cue.text || '', startV: cue.startMs, endV: cue.endMs };
+  return { cues: cues, idx: idx };
+}
+/**
+ * 面板行查词带来的精确窗（{startMs,endMs}）在整轨里的位置——按起止时间精确匹配。
+ * 找不到（该行来自 live 伪轨/别的轨）→ null，上下文功能对这一句不可用。
+ * @returns {{cues:Array, idx:number}|null}
+ */
+function fushiFullTrackCueMatching(startMs, endMs) {
+  const cues = fushiActiveFullTrackCues();
+  if (!cues) return null;
+  for (let i = 0; i < cues.length; i++) {
+    if (cues[i].startMs === startMs && cues[i].endMs === endMs) return { cues: cues, idx: i };
+  }
+  return null;
 }
 function fushiOnFullEpisodeCues(msg) {
   try {

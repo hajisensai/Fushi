@@ -8,6 +8,8 @@ const {
   stripCueTags,
   parseWebVtt,
   parseTtml,
+  ttmlRubyToHtml,
+  fushiComposeCueContext,
   parseBilibiliJson,
   netflixDocumentTitle,
   findCueIndexAt,
@@ -134,6 +136,68 @@ test('parseTtml honours ttp:tickRate offset times', () => {
   assert.deepStrictEqual(cues[0], { startMs: 1000, endMs: 3000, text: 'tick' });
 });
 
+
+// BUG-2191：IMSC 1.1（Netflix 日文轨）的注音是 `tts:ruby="base|text"` span，不是 <rt>。
+// 旧解析只剥标签留内容 → 读音拼进正文（用户卡片 Sentence 实录「地下牢ちかろう は…這は い回って」）。
+test('parseTtml：tts:ruby 读音不进正文，注音单元后的断词空格一并吃掉，ruby 分段挂 cue.ruby', () => {
+  const xml =
+    '<tt xmlns="http://www.w3.org/ns/ttml" xmlns:tts="http://www.w3.org/ns/ttml#styling"><body><div>' +
+    '<p begin="00:00:01.000" end="00:00:03.000">雛宮の' +
+    '<span tts:ruby="container"><span tts:ruby="base">地下牢</span><span tts:ruby="text">ちかろう</span> </span><br/>' +
+    'はネズミや虫が<span tts:ruby="container"><span tts:ruby="base">這</span>' +
+    '<span tts:ruby="delimiter">(</span><span tts:ruby="text">は</span><span tts:ruby="delimiter">)</span></span> い回って</p>' +
+    '<p begin="00:00:04.000" end="00:00:05.000"><span style="x">plain</span> text</p>' +
+    '</div></body></tt>';
+  const cues = parseTtml(xml);
+  assert.strictEqual(cues.length, 2);
+  assert.strictEqual(cues[0].text, '雛宮の地下牢\nはネズミや虫が這い回って');
+  assert.deepStrictEqual(cues[0].ruby, [
+    { text: '雛宮の', reading: '' },
+    { text: '地下牢', reading: 'ちかろう' },
+    { text: '\nはネズミや虫が', reading: '' },
+    { text: '這', reading: 'は' },
+    { text: 'い回って', reading: '' },
+  ]);
+  // 普通 span（无 tts:ruby）内容照旧保留，空格照旧保留。
+  assert.strictEqual(cues[1].text, 'plain text');
+  assert.strictEqual('ruby' in cues[1], false, '没有注音的行不挂 ruby');
+});
+
+test('parseTtml：不带 container 的裸 base/text 对也能剥读音（宽松形态）', () => {
+  const xml = '<tt><body><div><p begin="00:00:01.000" end="00:00:02.000">' +
+    '<span tts:ruby="base">漢</span><span tts:ruby="text">かん</span>字</p></div></body></tt>';
+  assert.strictEqual(parseTtml(xml)[0].text, '漢字');
+});
+
+test('ttmlRubyToHtml：畸形/无 tts:ruby 输入原样返回，不吃正文', () => {
+  assert.strictEqual(ttmlRubyToHtml('a <span>b</span> c'), 'a <span>b</span> c');
+  assert.strictEqual(ttmlRubyToHtml(''), '');
+  // 缺闭合的 text span：宁可多留读音也不能吃掉后面的正文。
+  const out = ttmlRubyToHtml('<span tts:ruby="text">かん</span');
+  assert.ok(out.indexOf('かん') >= 0);
+});
+
+// 多句合一制卡的纯函数（扩展侧 = app 内 joinMinedSentences / mergeMiningAudioRanges）。
+test('fushiComposeCueContext：前后封顶、换行连接、时间窗并集、越界 null', () => {
+  const cues = [
+    { startMs: 0, endMs: 900, text: 'A' },
+    { startMs: 1000, endMs: 2000, text: ' B ' },
+    { startMs: 2100, endMs: 2900, text: '' },
+    { startMs: 3000, endMs: 4000, text: 'D' },
+  ];
+  const c = fushiComposeCueContext(cues, 1, 5, 1);
+  assert.deepStrictEqual(c.prev, ['A']);
+  assert.strictEqual(c.current, ' B ');
+  assert.deepStrictEqual(c.next, ['']);
+  assert.strictEqual(c.sentence, 'A\nB', '空句丢弃、逐句 trim');
+  assert.strictEqual(c.startV, 0);
+  assert.strictEqual(c.endV, 2900, '并集含空句的时间窗（它仍是被录进去的一段）');
+  assert.strictEqual(c.prevAtMax, true);
+  assert.strictEqual(c.nextAtMax, false);
+  assert.strictEqual(fushiComposeCueContext(cues, 4, 1, 1), null);
+  assert.strictEqual(fushiComposeCueContext([], 0, 1, 1), null);
+  assert.strictEqual(fushiComposeCueContext(cues, 3, 0, 0).sentence, 'D');
+});
 
 // ── BUG-676（TODO-1361 ③）：网飞剧名抽取（Anki {document-title} 视频名字段）──
 function nfDoc(videoTitleEl, title) {

@@ -206,10 +206,16 @@ void main() {
         // `fushiClipWindowWithMargin`（入队批量剪辑与「立即出卡」两条路同源，此前后者
         // 发的是裸 cue 窗），所以判据从字面算式改成「走那个原语」+「原语默认边距仍是
         // 200ms」——同一条不变式，锚点换了位置。
+        // 多句合一制卡后裁切基准是「上下文并集 || 当前句窗」（clipBase），原语不变。
         expect(
-            src.contains('fushiClipWindowWithMargin(w.startV, w.endV)'), isTrue,
+            src.contains(
+                'fushiClipWindowWithMargin(clipBase.startV, clipBase.endV)'),
+            isTrue,
             reason: '$root content.js must take its clip window from the '
                 'shared margin primitive');
+        expect(src.contains('const clipBase = ctx.contextWindow || w;'), isTrue,
+            reason: '$root content.js fushiEnqueue must clip the sentence-context '
+                'union when a draft is set, else the current cue window');
         expect(
             File('$root/subtitle-providers.js')
                 .readAsStringSync()

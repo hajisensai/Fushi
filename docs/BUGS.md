@@ -29,10 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2038 条。点号进各自文件。
+> 共 2041 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2191](bugs/BUG-2191-netflix-ttml-ruby-reading-leaks-into-cue.md) | ✅ | ✅ | 网飞 TTML 振假名读音混进字幕正文与制卡句子 |
+| [BUG-2190](bugs/BUG-2190-anki-gaiji-alt-text-overlap.md) | ✅ | ✅ | 制卡释义外字退化 alt 文本沿用图片盒几何与正文重叠 |
+| [BUG-2189](bugs/BUG-2189-netflix-batch-mine-word-audio-token-expired.md) | ✅ | ✅ | 网飞批量制卡单词音频落空：入队冻结的短命 token URL 生成时已过期 |
 | [BUG-2165](bugs/BUG-2165-pack-download-no-visible-progress.md) | ✅ | ✅ | 推荐包后台下载没有任何看得见的地方，半截包重启后既看不见也续不上 |
 | [BUG-2164](bugs/BUG-2164-asr-pcm-mov-chapter-track-noise.md) | ✅ | ✅ | ASR PCM 抽取 mov 容器混入章节 text 轨，奇数字节标题的整章解成白噪声 |
 | [BUG-2163](bugs/BUG-2163-asr-match-start-anchor-colophon.md) | ✅ | ✅ | ASR 字幕匹配起点被片头出版社名钉到书尾版权页，整本匹配率 0% |

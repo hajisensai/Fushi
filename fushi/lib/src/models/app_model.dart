@@ -38,6 +38,8 @@ import 'package:fushi/src/utils/misc/lookup_input_limits.dart';
 import 'package:fushi/src/media/drag_drop/desktop_drop_reinitializer.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
+import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart'
+    show writeDictionaryMediaCache;
 import 'package:fushi/src/pages/implementations/popup_dictionary_page.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
@@ -7733,6 +7735,11 @@ class _AppModelRemoteLookupService
     required Map<String, String> fields,
     required String sentence,
   }) async {
+    // BUG-2190：扩展弹窗与 app 内同一份 popup.js、同样把外字登记进 fields.dictionaryMedia
+    // 并渲染成 <img src="fushi_dict_N.ext">；app 内制卡入口（dictionary_popup_webview /
+    // overlay_bridge_handlers）制卡前都先把字节落进 Anki 媒体缓存，远程这条路此前漏了
+    // 这一步 → repo 读不到缓存 → 外字永远退化成 alt 文本。与本地入口同一步骤。
+    await writeDictionaryMediaCache(fields['dictionaryMedia'] ?? '');
     final BaseAnkiRepository repo =
         _appModel.platformServices.createAnkiRepository();
     final MineOutcome outcome = await repo.mineEntry(
@@ -7929,6 +7936,8 @@ class _AppModelRemoteLookupService
 
   @override
   Future<RemoteMineResult> mineImmersion(ImmersionMinePayload payload) async {
+    // BUG-2190：同 [mineEntry]——外字字节先落缓存，三条沉浸分支最终都走 repo 渲染。
+    await writeDictionaryMediaCache(payload.fields['dictionaryMedia'] ?? '');
     final BaseAnkiRepository repo =
         _appModel.platformServices.createAnkiRepository();
     // 远端制卡（浏览器扩展的 YouTube / Netflix）语义上就是视频制卡，读同一条动图格式
