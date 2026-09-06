@@ -3,8 +3,9 @@
 - **真实性**：✅ 真 bug（代码路径核实，未真机复现）。根因：
   - 重试层只有一处：`fushi/lib/src/sync/sync_manager.dart:181-203` 对 `SyncBackendError` 且 `isRetryable == true` 做一次清缓存重试。
   - Google Drive 走 `fushi/lib/src/sync/google_drive_handler.dart:136`（`retryTransientSync` 包裹 + 401 刷新重试，BUG-864 修的）。
-  - OneDrive / Dropbox / WebDAV / SFTP 的出站请求（`onedrive_sync_backend.dart:215-270` `_graph*`、`dropbox_sync_backend.dart` `_apiPost`/内容上传、`webdav_ops.dart:113` `_client().openUrl`、`sftp_sync_backend.dart` `_guarded`）不捕获 `SocketException` / `TimeoutException` / `HttpException`，原样穿透；`sync_manager.dart:181` 的 `on SyncBackendError` 接不住 → 该书本轮直接失败、零重试。只有 FTP 自己包成 `SyncBackendError(isRetryable: true)`（`ftp_sync_backend.dart:214` 等）。
-  - 另注：Dropbox / OneDrive 把 `isRetryable: true` 当「404 / not_found」标记用（`dropbox_sync_backend.dart:164,394`、`onedrive_sync_backend.dart:186,250`），与 `sync_manager` 对该 flag 的「瞬时错误可重试」语义相冲——不存在的路径也会触发一次清缓存重试。修复时要把「不存在」与「瞬时」拆成两个信号，不能只在后端外面再包一层 `retryTransientSync`（那会与 `sync_manager` 的重试叠成双重重试）。
+  - OneDrive / Dropbox / WebDAV 的出站请求（`onedrive_sync_backend.dart` `_graph*`、`dropbox_sync_backend.dart` `_apiPost`/内容上传、`webdav_ops.dart:113` `_client().openUrl`）不捕获 `SocketException` / `TimeoutException` / `HttpException`，原样穿透；`sync_manager.dart:181` 的 `on SyncBackendError` 接不住 → 该书本轮直接失败、零重试。
+  - **SFTP 与 FTP 已达标，不在本条范围内**（2026-09-06 复核）：`sftp_sync_backend.dart:540-559` 的 `_guarded` 有 catch-all，把 `SftpStatusError` 与一切传输/IO 异常都包成 `SyncBackendError(..., isRetryable: true)`，且该文件 16 个出站方法**全部**包在 `_guarded` 里；FTP 有 13 处 `isRetryable: true`。给它们再接一层 `isTransientSyncError` 就是本条「另注」自己警告的双重重试。
+  - 另注：Dropbox / OneDrive / **WebDAV** 都把 `isRetryable: true` 当「404 / not_found」标记用（`dropbox_sync_backend.dart:250`、`onedrive_sync_backend.dart:277`、`webdav_ops.dart:246,389`），与 `sync_manager` 对该 flag 的「瞬时错误可重试」语义相冲——不存在的路径也会触发一次清缓存重试。修复时要把「不存在」与「瞬时」拆成两个信号，不能只在后端外面再包一层 `retryTransientSync`（那会与 `sync_manager` 的重试叠成双重重试）。
 - **[ ] ① 未修复** — 行为变化，不混进 `docs/plans/2026-09-06-sync-interconnect-refactor.md` 的零行为变化重构系列；待独立任务。
-- **[ ] ② 未加自动化测试** — 落地时至少：`isTransientSyncError` 分类在四个后端出站路径上的接入测试 + 「404 不再走清缓存重试」的负向测试。
+- **[ ] ② 未加自动化测试** — 落地时至少：`isTransientSyncError` 分类在**三个**后端（OneDrive / Dropbox / WebDAV）出站路径上的接入测试，以及一条「SFTP / FTP 不得被再包一层」的负向测试 + 「404 不再走清缓存重试」的负向测试。
 - **备注**：2026-07-24 审查 §三-2 提的「四后端 mixin」与本条无关；本条是错误分类缺失，不是重复代码。

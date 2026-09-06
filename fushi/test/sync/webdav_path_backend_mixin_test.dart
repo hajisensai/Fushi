@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show DebugPrintCallback, debugPrint;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
@@ -106,12 +107,47 @@ void main() {
       expect(id, 'https://dav.example/fushi-data/Book%20A/');
       expect(backend.folderIdCache['Book A'], id);
     });
+
+    test('失败日志带后端自己的 davLogTag 前缀', () async {
+      // davLogTag 是这次抽 mixin **唯一**按后端参数化的东西（`[webdav]` /
+      // `[fushi-client]`）。把 `$davLogTag` 从消息里删掉、甚至让这个抽象成员
+      // 彻底没有读者，上面 8 条行为用例全绿——没有任何东西观测它。
+      // 两个后端共用一份日志前缀时，用户报「封面传不上去」就分不清是哪条链路。
+      ops.failPut = true;
+      final List<String> logs = <String>[];
+      final DebugPrintCallback original = debugPrint;
+      debugPrint = (String? message, {int? wrapWidth}) {
+        if (message != null) logs.add(message);
+      };
+      try {
+        await backend.ensureBookFolder(
+          bookTitle: 'Book A',
+          rootFolderId: 'https://dav.example/fushi-data/',
+          readCoverData: () async => png,
+        );
+      } finally {
+        debugPrint = original;
+      }
+
+      expect(logs, hasLength(1));
+      expect(logs.single, startsWith('[test] cover upload failed: '),
+          reason: '日志必须带调用方后端的 davLogTag，否则两条链路的失败无法区分');
+    });
   });
 
   group('listSyncFiles', () {
     test('按前缀挑出 progress/statistics/audioBook，剔除目录自身与子集合', () async {
       const String folder = 'https://dav.example/fushi-data/Book%20A/';
+      // 前两项是**对抗性**的，别删：原来被过滤掉的两项叫 'Book A' 和 'sub'，
+      // 名字都不带三个前缀，于是把 `!e.isCollection` 和 `e.href != folderId`
+      // 两个过滤子句**同时删掉**，这条用例照样绿——它守的是自己声称守的东西之外
+      // 的另一件事。所以这里各放一个带前缀、且排在真文件**前面**的诱饵：
+      //   · progress_shadow/  是集合 —— 只有 !isCollection 挡得住
+      //   · href == folderId 且被服务器误报成文件 —— 只有 href != folderId 挡得住
+      //     （服务器把 PROPFIND 的自身条目报成非集合是真实存在的实现差异）
       ops.children[folder] = <DavEntry>[
+        _entry('${folder}progress_shadow/', 'progress_shadow', true),
+        _entry(folder, 'audioBook_self.json', false),
         _entry(folder, 'Book A', true),
         _entry('${folder}progress_1_6_x.json', 'progress_1_6_x.json', false),
         _entry(
@@ -143,6 +179,14 @@ void main() {
       'lib/src/sync/webdav_sync_backend.dart',
       'lib/src/sync/interconnect_sync_backend.dart',
     ];
+    // 类头锚点：mixin 只有出现在 with 列表里才算数。扫全文件是恒真的——注释、
+    // dartdoc、import 提到这个名字都会命中，而把它从 with 列表删掉照样绿。
+    const Map<String, String> declarations = <String, String>{
+      'lib/src/sync/webdav_sync_backend.dart':
+          'class WebDavSyncBackend extends SyncBackend',
+      'lib/src/sync/interconnect_sync_backend.dart':
+          'class InterconnectSyncBackend extends SyncBackend',
+    };
     const List<String> banned = <String>[
       'Future<List<SyncFileRef>> listBooks(',
       'Future<String> ensureBookFolder(',
@@ -154,8 +198,13 @@ void main() {
         final File f = File(path);
         expect(f.existsSync(), isTrue, reason: '$path 不存在（请从 fushi/ 包根跑测试）');
         final String src = f.readAsStringSync();
-        expect(src, contains('WebDavPathBackendMixin'),
-            reason: '$path 必须混入 WebDavPathBackendMixin');
+        final int classAt = src.indexOf(declarations[path]!);
+        expect(classAt, isNonNegative, reason: '$path 的类声明变了，守卫需更新');
+        final int braceAt = src.indexOf('{', classAt);
+        expect(braceAt, greaterThan(classAt), reason: '$path 扫不到类头结尾');
+        expect(src.substring(classAt, braceAt),
+            contains('WebDavPathBackendMixin'),
+            reason: '$path 的 with 列表里必须有 WebDavPathBackendMixin');
         for (final String needle in banned) {
           expect(src, isNot(contains(needle)),
               reason: '$path 里出现 `$needle`——三件套应只在 mixin 里有一份');

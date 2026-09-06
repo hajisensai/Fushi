@@ -6,7 +6,6 @@ import 'dart:typed_data';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/tls/fushi_pinning_http.dart';
 import 'package:fushi/src/sync/sync_utils.dart';
-import 'package:fushi/src/sync/sync_file_ref.dart';
 
 /// 服务端在错误响应体里给出的拒绝原因（截断后的），读不出来就返回 null。
 ///
@@ -404,12 +403,6 @@ class WebDavOps {
   // MIME 猜测收敛到 sync_utils.guessSyncContentType；保留薄 shim 供既有调用方。
   static String guessContentType(String fileName) =>
       guessSyncContentType(fileName);
-
-  // HBK-AUDIT-085: delegate to the single canonical matcher in sync_utils so
-  // file-matching semantics live in one place. Kept as a thin shim only for the
-  // remaining external caller (webdav_sync_backend.dart).
-  static SyncFileRef? findByPrefix(List<SyncFileRef> files, String prefix) =>
-      findSyncFileByPrefix(files, prefix);
 
   static String normalizeUrl(String url) {
     var normalized = url.trim();
