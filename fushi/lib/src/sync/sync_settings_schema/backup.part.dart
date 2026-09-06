@@ -66,9 +66,9 @@ String backupCategoryDescription(BackupCategory category) {
 
 /// Every content category the user can individually skip on import (TODO-1358).
 /// Both modes now honour the full set: overwrite strips the unticked category's
-/// rows/files from the swapped-in DB ([BackupService.restoreBackup]); merge
+/// rows/files from the swapped-in DB ([BackupRestoreService.restoreBackup]); merge
 /// skips its per-category engine steps + content-tree copy
-/// ([BackupService.mergeRestoreBackup]). settings / profiles stay governed
+/// ([BackupRestoreService.mergeRestoreBackup]). settings / profiles stay governed
 /// by the separate "import settings and profiles" toggle (overwrite) / kept
 /// local (merge), so they are not listed here.
 const Set<BackupCategory> importSelectableCategories = <BackupCategory>{
@@ -791,7 +791,7 @@ class _BackupImportChoice {
 
   /// Categories to RESTORE on an overwrite import (TODO-1358): every
   /// always-restored category plus the selectable ones the user kept ticked.
-  /// Forwarded to [BackupService.restoreBackup]; ignored for merge.
+  /// Forwarded to [BackupRestoreService.restoreBackup]; ignored for merge.
   final Set<BackupCategory> categories;
 }
 
@@ -897,14 +897,10 @@ Future<void> runBackupImportFlowForFile({
   BackupMergePreview? mergePreview;
   BackupContentSummary? summary;
   try {
-    final service = BackupService(
-      db: appModel.database,
-      dbDirectory: appModel.databaseDirectory.path,
-      dictionaryResourceDirectory: appModel.dictionaryResourceDirectory.path,
-      appVersion: appModel.packageInfo.version,
-    );
-
-    final BackupMeta? validated = await service.validateBackup(filePath);
+    // 校验 / 读包摘要是恢复侧的静态操作（B1 分家）：不再为此构造一个导出用的
+    // BackupService 实例。
+    final BackupMeta? validated =
+        await BackupRestoreService.validateBackup(filePath);
     // 已取消/被新一轮校验取代 → 丢弃陈旧结果（遮罩已由 cancel 退出，无需再动）。
     if (!appModel.isBackupValidatingCurrent(validatingToken)) return;
     if (validated == null) {
@@ -922,7 +918,8 @@ Future<void> runBackupImportFlowForFile({
 
     // TODO-1195 part B: best-effort merge preview for the confirm dialog.
     // Runs against the still-open live DB; null on any failure → generic UI.
-    final BackupMergePreview? preview = await BackupService.previewMergeRestore(
+    final BackupMergePreview? preview =
+        await BackupRestoreService.previewMergeRestore(
       liveDb: appModel.database,
       dbDirectory: appModel.databaseDirectory.path,
       zipPath: filePath,
@@ -932,7 +929,7 @@ Future<void> runBackupImportFlowForFile({
     // dialog (per-category counts + the restore toggles). Cheap central-dir
     // read; an empty summary just hides the manifest.
     final BackupContentSummary contentSummary =
-        await service.summarizeBackupFile(filePath);
+        await BackupRestoreService.summarizeBackupFile(filePath);
     if (!appModel.isBackupValidatingCurrent(validatingToken)) return;
     meta = validated;
     mergePreview = preview;
@@ -1001,7 +998,7 @@ Future<void> runBackupImportFlowForFile({
       // TODO-888 merge: keep this device's library + settings, only ADD what
       // the backup carries (row-level upsert + copy-if-absent content trees).
       // Never overwrites/deletes existing data, so importSettings is moot.
-      await BackupService.mergeRestoreBackup(
+      await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: appModel.databaseDirectory.path,
         zipPath: filePath,
         // Per-category merge selection (merge mode now honours the dialog's
@@ -1016,7 +1013,7 @@ Future<void> runBackupImportFlowForFile({
         onProgress: appModel.reportBackupImportProgress,
       );
     } else {
-      await BackupService.restoreBackup(
+      await BackupRestoreService.restoreBackup(
         dbDirectory: appModel.databaseDirectory.path,
         zipPath: filePath,
         importSettings: choice.importSettings,

@@ -48,7 +48,7 @@ void main() {
     await src.close();
 
     // ── 合并导入 ──────────────────────────────────────────────────────────────
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
       dbDirectory: curDir.path,
       zipPath: zip,
     );

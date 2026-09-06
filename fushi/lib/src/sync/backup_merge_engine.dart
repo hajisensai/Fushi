@@ -1319,7 +1319,7 @@ class BackupMergeEngine {
   ///
   /// 平局（`>` 不成立）保留本机。旧备份的行经 merge 前的 schema 迁移拿到
   /// `updated_at = 0`（备份库先被开一次升到当前 schema，见
-  /// `BackupService.mergeRestoreBackup` 的第 2 步），于是与本机存量行平局 →
+  /// `BackupRestoreService.mergeRestoreBackup` 的第 2 步），于是与本机存量行平局 →
   /// 行为逐字等于本轮之前的 insert-if-absent，零回归；而任一侧真正改过一次名
   /// （戳 > 0）之后立刻胜出，母设备的第二次改名终于能并进来。
   Future<void> _mergeOverrideTitlePrefs() async {
@@ -1345,7 +1345,7 @@ class BackupMergeEngine {
 
   /// The audio-source registry prefs are CONTENT config, not device settings:
   /// the local-audio `.db` files they reference DO travel in the backup (packed
-  /// under `localAudio/` and copied by [BackupService.mergeRestoreBackup]),
+  /// under `localAudio/` and copied by [BackupRestoreService.mergeRestoreBackup]),
   /// so their config must travel too — otherwise the restored files are orphaned
   /// and "音频来源" is silently lost on a merge (the pref-non-merge default
   /// dropped them). Adopt the backup's value when the device has none/an empty

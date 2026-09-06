@@ -140,7 +140,7 @@ void main() {
 
     // 「不勾 settings 导出」= 按该谓词删掉 preferences 行。
     await db.customStatement(
-      'DELETE FROM preferences WHERE ${BackupService.settingsPrefPredicate}',
+      'DELETE FROM preferences WHERE $settingsPrefPredicate',
     );
 
     final Map<String, String> rest = await db.getAllPrefs();

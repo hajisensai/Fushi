@@ -85,10 +85,10 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
     // Re-import the SAME backup -> must stay idempotent (no duplicates).
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final FushiDatabase after = FushiDatabase(curDir.path);
@@ -140,7 +140,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final FushiDatabase after = FushiDatabase(curDir.path);

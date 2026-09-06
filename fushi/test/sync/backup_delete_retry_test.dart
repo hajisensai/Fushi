@@ -6,7 +6,7 @@ import 'package:fushi/src/sync/backup_service.dart';
 /// BUG-272 守卫：备份导出在 finally 里递归删临时目录时，Windows 上 sqlite/AV
 /// 句柄的瞬时占用会把 delete 打成 ERROR_DIR_NOT_EMPTY(145) /
 /// ERROR_SHARING_VIOLATION(32) / ERROR_ACCESS_DENIED(5)。
-/// [BackupService.deleteDirectoryWithRetry] 必须对这类瞬时错误有界重试（用尽后
+/// [deleteDirectoryWithRetry] 必须对这类瞬时错误有界重试（用尽后
 /// 抛出），且只在 Windows 触发、只对瞬时码触发；非 Windows / 非瞬时码直接抛。
 void main() {
   FileSystemException winError(int code) => FileSystemException(
@@ -15,11 +15,11 @@ void main() {
         OSError('目录不是空的。', code),
       );
 
-  group('BackupService.deleteDirectoryWithRetry', () {
+  group('deleteDirectoryWithRetry', () {
     test('happy path: 目录存在，删一次成功，不重试', () async {
       int deleteCalls = 0;
       int sleepCalls = 0;
-      await BackupService.deleteDirectoryWithRetry(
+      await deleteDirectoryWithRetry(
         exists: () async => true,
         delete: () async => deleteCalls++,
         sleep: (_) async => sleepCalls++,
@@ -31,7 +31,7 @@ void main() {
 
     test('目录已不存在：不调 delete（早已清理）', () async {
       int deleteCalls = 0;
-      await BackupService.deleteDirectoryWithRetry(
+      await deleteDirectoryWithRetry(
         exists: () async => false,
         delete: () async => deleteCalls++,
         sleep: (_) async {},
@@ -41,7 +41,7 @@ void main() {
     });
 
     test('PathNotFoundException：检查与删除之间消失，吞掉不抛', () async {
-      await BackupService.deleteDirectoryWithRetry(
+      await deleteDirectoryWithRetry(
         exists: () async => true,
         delete: () async => throw const PathNotFoundException(
           'gone',
@@ -56,7 +56,7 @@ void main() {
     test('Windows 瞬时 errno 145 两次后成功：重试后删成功救回', () async {
       int deleteCalls = 0;
       int sleepCalls = 0;
-      await BackupService.deleteDirectoryWithRetry(
+      await deleteDirectoryWithRetry(
         exists: () async => true,
         delete: () async {
           deleteCalls++;
@@ -71,7 +71,7 @@ void main() {
 
     test('Windows SHARING_VIOLATION errno 32 同样被当瞬时错误重试', () async {
       int deleteCalls = 0;
-      await BackupService.deleteDirectoryWithRetry(
+      await deleteDirectoryWithRetry(
         exists: () async => true,
         delete: () async {
           deleteCalls++;
@@ -85,7 +85,7 @@ void main() {
 
     test('Windows ACCESS_DENIED errno 5 也是瞬时错误，重试救回', () async {
       int deleteCalls = 0;
-      await BackupService.deleteDirectoryWithRetry(
+      await deleteDirectoryWithRetry(
         exists: () async => true,
         delete: () async {
           deleteCalls++;
@@ -100,7 +100,7 @@ void main() {
     test('Windows 持续 errno 145：重试用尽后抛出（不静默吞）', () async {
       int deleteCalls = 0;
       await expectLater(
-        BackupService.deleteDirectoryWithRetry(
+        deleteDirectoryWithRetry(
           exists: () async => true,
           delete: () async {
             deleteCalls++;
@@ -119,7 +119,7 @@ void main() {
       int deleteCalls = 0;
       int sleepCalls = 0;
       await expectLater(
-        BackupService.deleteDirectoryWithRetry(
+        deleteDirectoryWithRetry(
           exists: () async => true,
           delete: () async {
             deleteCalls++;
@@ -138,7 +138,7 @@ void main() {
       int deleteCalls = 0;
       int sleepCalls = 0;
       await expectLater(
-        BackupService.deleteDirectoryWithRetry(
+        deleteDirectoryWithRetry(
           exists: () async => true,
           delete: () async {
             deleteCalls++;

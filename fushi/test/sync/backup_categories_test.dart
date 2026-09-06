@@ -316,7 +316,7 @@ void main() {
     final String dstVideos = p.join(dst.path, 'videos');
     Directory(dstDbDir).createSync(recursive: true);
 
-    await BackupService.restoreBackup(
+    await BackupRestoreService.restoreBackup(
       dbDirectory: dstDbDir,
       zipPath: zip,
       videosRootDirectory: dstVideos,
@@ -356,7 +356,7 @@ void main() {
     Directory(dstDbDir).createSync(recursive: true);
     await writeFile(p.join(dstAudio, 'keep', 'kept.mp3'), 'KEEP');
 
-    await BackupService.restoreBackup(
+    await BackupRestoreService.restoreBackup(
       dbDirectory: dstDbDir,
       zipPath: zip,
       booksRootDirectory: dstBooks,
@@ -497,7 +497,7 @@ void main() {
     // be rebased and the files must land flat alongside the new fushi.db.
     final String dstDbDir = p.join(dst.path, 'db');
     Directory(dstDbDir).createSync(recursive: true);
-    await BackupService.restoreBackup(
+    await BackupRestoreService.restoreBackup(
       dbDirectory: dstDbDir,
       zipPath: zip,
     );
@@ -542,7 +542,7 @@ void main() {
     // Seed the device pref BEFORE the import overwrites the DB. The overwrite
     // import keeps the backup's preferences, so this exercises only the FILE
     // preservation (the file must not be deleted by the import).
-    await BackupService.restoreBackup(
+    await BackupRestoreService.restoreBackup(
       dbDirectory: dstDbDir,
       zipPath: zip,
       booksRootDirectory: dstBooks,
@@ -589,7 +589,7 @@ void main() {
     final String dstDbDir = p.join(dst.path, 'db');
     Directory(dstDbDir).createSync(recursive: true);
     // Fresh device with no books → the backup must not add any un-openable book.
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
       dbDirectory: dstDbDir,
       zipPath: zip,
     );
@@ -807,7 +807,7 @@ void main() {
         name: 'LocalProfile', createdAt: 9, updatedAt: 9));
     await local.close();
 
-    await BackupService.restoreBackup(
+    await BackupRestoreService.restoreBackup(
       dbDirectory: dstDbDir,
       zipPath: zip,
     );
@@ -842,7 +842,8 @@ void main() {
     await local.setPref('theme_mode', 'local_dark');
     await local.close();
 
-    await BackupService.restoreBackup(dbDirectory: dstDbDir, zipPath: zip);
+    await BackupRestoreService.restoreBackup(
+        dbDirectory: dstDbDir, zipPath: zip);
 
     final FushiDatabase restored = FushiDatabase(dstDbDir);
     try {

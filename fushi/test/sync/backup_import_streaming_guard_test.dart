@@ -21,7 +21,10 @@ void main() {
 
   group('TODO-1183 备份导入流式落盘 / failed 态守卫', () {
     test('backup_service：导入/合并路径不再把整个条目 materialize 后 writeAsBytes', () {
-      final String src = read('lib/src/sync/backup_service.dart');
+      // B1 分家：恢复 / 合并路径在 restore.part.dart；负向断言两边一起扫，正向
+      // 断言只认恢复侧。
+      final String src = read('lib/src/sync/backup_service/restore.part.dart') +
+          read('lib/src/sync/backup_service.dart');
       // 旧的整条目 materialize 直写必须消失（meta.content 仍可，因为它极小）。
       expect(src.contains('writeAsBytes(dbFile.content'), isFalse,
           reason: 'DB 覆盖必须流式，不得 writeAsBytes 整个 DB（OOM 根因）');
@@ -41,7 +44,7 @@ void main() {
     });
 
     test('backup_service：restoreBackup/mergeRestoreBackup 暴露 onProgress', () {
-      final String src = read('lib/src/sync/backup_service.dart');
+      final String src = read('lib/src/sync/backup_service/restore.part.dart');
       expect(src.contains('void Function(double progress)? onProgress'), isTrue,
           reason: '导入必须能把确定进度回报给遮罩');
     });
