@@ -36,13 +36,13 @@ void main() {
   RecommendedPackDownloadController newController() {
     return RecommendedPackDownloadController(
       packDirectory: () => packDir,
-      runner: ({
-        required Directory packDir,
-        required ValueNotifier<double> progress,
-        required ValueNotifier<int> receivedBytes,
-        required CancelToken cancelToken,
-      }) async =>
-          throw StateError('本用例不下载'),
+      runner:
+          ({
+            required Directory packDir,
+            required ValueNotifier<double> progress,
+            required ValueNotifier<int> receivedBytes,
+            required CancelToken cancelToken,
+          }) async => throw StateError('本用例不下载'),
       showOutcome: (String message, ToastSeverity severity) {},
     );
   }
@@ -72,6 +72,44 @@ void main() {
     // 取消入口存在且指向 controller（真下载时它会置位 CancelToken）。
     await tester.tap(find.text(t.dialog_cancel));
     await tester.pump();
+  });
+
+  // BUG-2165：取消 / 失败 / 上个进程被关掉之后，盘上那截半成品也得看得见、续得上。
+  testWidgets('已暂停时报已下字节并给出「继续下载」', (WidgetTester tester) async {
+    final RecommendedPackDownloadController controller = newController();
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(host(controller, () {}));
+    controller.stage.value = RecommendedPackDownloadStage.paused;
+    controller.receivedBytes.value = 3 * 1024 * 1024 * 1024;
+    await tester.pump();
+
+    expect(find.byType(AdaptiveSettingsRow), findsOneWidget);
+    expect(find.text(t.onboarding_pack_status_paused), findsOneWidget);
+    expect(
+      find.textContaining('3.0 GB'),
+      findsOneWidget,
+      reason: '不报已下多少，用户没法判断是续传还是从头下',
+    );
+    expect(find.text(t.onboarding_pack_download_resume), findsOneWidget);
+  });
+
+  testWidgets('失败原因就地显示，且仍有重试入口', (WidgetTester tester) async {
+    final RecommendedPackDownloadController controller = newController();
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(host(controller, () {}));
+    controller.stage.value = RecommendedPackDownloadStage.paused;
+    controller.receivedBytes.value = 8 * 1024 * 1024 * 1024;
+    controller.error.value = '连接断了';
+    await tester.pump();
+
+    expect(find.textContaining('连接断了'), findsOneWidget);
+    expect(
+      find.text(t.onboarding_pack_download_resume),
+      findsOneWidget,
+      reason: '失败后整行消失 = 只能从 0 重下 9.5 GB',
+    );
   });
 
   testWidgets('下完待导入时给出导入按钮', (WidgetTester tester) async {

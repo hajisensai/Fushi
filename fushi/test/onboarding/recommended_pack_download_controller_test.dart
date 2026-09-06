@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/onboarding/recommended_pack.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
+import 'package:fushi/src/utils/misc/segmented_downloader.dart';
 import 'package:fushi/src/utils/misc/toast_severity.dart';
 import 'package:path/path.dart' as p;
 
@@ -29,6 +30,31 @@ void main() {
     final File file = File(p.join(packDir.path, kRecommendedPackFileName));
     file.writeAsStringSync('pack');
     return file;
+  }
+
+  /// 单流续传的半截文件：`<包名>.part`，长度就是已下字节。
+  File partialPackFile(int bytes) {
+    final File file = File(
+      p.join(packDir.path, '$kRecommendedPackFileName.part'),
+    );
+    file.writeAsBytesSync(List<int>.filled(bytes, 0));
+    return file;
+  }
+
+  /// 分片路的半截：`.mpart` 是**预分配**到完整大小的，进度只在 `.mpart.json` 里。
+  void partialMultiPartFiles({
+    required int allocated,
+    required List<int> parts,
+  }) {
+    File(
+      p.join(packDir.path, '$kRecommendedPackFileName.mpart'),
+    ).writeAsBytesSync(List<int>.filled(allocated, 0));
+    final String entries = <String>[
+      for (int i = 0; i < parts.length; i += 1) '"$i":${parts[i]}',
+    ].join(',');
+    File(
+      p.join(packDir.path, '$kRecommendedPackFileName.mpart.json'),
+    ).writeAsStringSync('{"parts":{$entries}}');
   }
 
   RecommendedPackDownloadController newController({
@@ -100,6 +126,60 @@ void main() {
     expect(controller.error.value, isNull);
     expect(outcomes, isEmpty);
     expect(controller.stage.value, RecommendedPackDownloadStage.idle);
+  });
+
+  // 上面那条抛的是 `DioError(type: cancel)` —— 那是**兜底单流路**的形状。
+  // 真实下载默认走分片路（清单能解出计划就 `_downloadSegmented`），取消抛的是
+  // `SegmentedDownloadCancelledException`，不是 DioError。只覆盖前者的话，
+  // 「用户取消不算失败」这条断言就跑在一个生产上根本走不到的分支上，恒绿。
+  test('分片路（默认路径）的取消同样不算失败', () async {
+    final List<String> outcomes = <String>[];
+    final RecommendedPackDownloadController controller = newController(
+      outcomes: outcomes,
+      runner:
+          ({
+            required Directory packDir,
+            required ValueNotifier<double> progress,
+            required ValueNotifier<int> receivedBytes,
+            required CancelToken cancelToken,
+          }) async {
+            throw const SegmentedDownloadCancelledException();
+          },
+    );
+    addTearDown(controller.dispose);
+
+    expect(await controller.start(), isNull);
+    expect(
+      controller.error.value,
+      isNull,
+      reason: '取消不是失败——本条 bug 把失败原因做成了常驻可见，'
+          '误判会让设置行/迷你条上写着一个 Dart 异常类名',
+    );
+    expect(outcomes, isEmpty);
+  });
+
+  // 第三种形态：下载体在两条已知路径之外响应取消（例如自己检查 token 后抛别的
+  // 东西）。token 自己的状态是最后一道判据。
+  test('token 已取消时，任何异常形态都不算失败', () async {
+    final List<String> outcomes = <String>[];
+    final RecommendedPackDownloadController controller = newController(
+      outcomes: outcomes,
+      runner:
+          ({
+            required Directory packDir,
+            required ValueNotifier<double> progress,
+            required ValueNotifier<int> receivedBytes,
+            required CancelToken cancelToken,
+          }) async {
+            cancelToken.cancel();
+            throw StateError('aborted by caller');
+          },
+    );
+    addTearDown(controller.dispose);
+
+    expect(await controller.start(), isNull);
+    expect(controller.error.value, isNull);
+    expect(outcomes, isEmpty);
   });
 
   test('真失败写 error 并提示，半截文件留着下次续传', () async {
@@ -189,6 +269,138 @@ void main() {
       ),
       '3.0 MB (34%)',
     );
+  });
+  // ── BUG-2165：磁盘有四种状态，状态机就得有四个阶段 ──────────────────────
+  //
+  // 在 `paused` 存在之前，「盘上躺着 3 GB 半截」与「盘上什么都没有」在 UI 层是
+  // 同一个 `idle`：判据是 `isActive` 的可见入口全部不渲染，于是那 3 GB 既看不见
+  // 也续不上（唯一入口是重开新手引导，而那条按钮还写着「下载 9.5 GB」、点下去
+  // 进度从 0 起跳）。
+
+  test('进场对盘：单流半截 → paused，并把已下字节读成进度', () async {
+    partialPackFile(2048);
+    final RecommendedPackDownloadController controller = newController(
+      runner: _neverRuns,
+    );
+    addTearDown(controller.dispose);
+
+    await controller.prepareDiskState();
+
+    expect(controller.stage.value, RecommendedPackDownloadStage.paused);
+    expect(controller.isPaused, isTrue);
+    expect(controller.isActive, isTrue, reason: '可见入口的判据必须认得半截');
+    expect(controller.receivedBytes.value, 2048);
+  });
+
+  test('进场对盘：分片半截读进度文件求和，不把预分配长度当已下', () async {
+    // `.mpart` 预分配到 1 MB，实际只下了 300 字节。读文件长度会显示「已下 1 MB」。
+    partialMultiPartFiles(allocated: 1024 * 1024, parts: <int>[100, 200]);
+    final RecommendedPackDownloadController controller = newController(
+      runner: _neverRuns,
+    );
+    addTearDown(controller.dispose);
+
+    await controller.prepareDiskState();
+
+    expect(controller.stage.value, RecommendedPackDownloadStage.paused);
+    expect(controller.receivedBytes.value, 300);
+  });
+
+  test('进场对盘：盘上什么都没有才是 idle', () async {
+    final RecommendedPackDownloadController controller = newController(
+      runner: _neverRuns,
+    );
+    addTearDown(controller.dispose);
+
+    await controller.prepareDiskState();
+
+    expect(controller.stage.value, RecommendedPackDownloadStage.idle);
+    expect(controller.isActive, isFalse);
+  });
+
+  test('用户取消后落到 paused（半截还在），并收起首页迷你条', () async {
+    final RecommendedPackDownloadController controller = newController(
+      runner:
+          ({
+            required Directory packDir,
+            required ValueNotifier<double> progress,
+            required ValueNotifier<int> receivedBytes,
+            required CancelToken cancelToken,
+          }) async {
+            // 走真实形状：等令牌被置位，留下半截 `.part`，再按取消收场。
+            await cancelToken.whenCancel;
+            partialPackFile(4096);
+            throw DioError(
+              requestOptions: RequestOptions(path: '/pack'),
+              type: DioErrorType.cancel,
+            );
+          },
+    );
+    addTearDown(controller.dispose);
+
+    final Future<File?> pending = controller.start();
+    controller.requestCancel();
+    final File? file = await pending;
+
+    expect(file, isNull);
+    expect(controller.stage.value, RecommendedPackDownloadStage.paused);
+    expect(controller.error.value, isNull, reason: '用户取消不是失败');
+    expect(controller.receivedBytes.value, 4096);
+    expect(
+      controller.miniBarDismissed.value,
+      isTrue,
+      reason: '主动点取消 = 已经做过决定，那条常驻迷你条不该继续杵在每个页面底部',
+    );
+  });
+
+  test('下载失败但半截还在 → paused + 保留失败原因（失败后必须还能重试）', () async {
+    final RecommendedPackDownloadController controller = newController(
+      runner:
+          ({
+            required Directory packDir,
+            required ValueNotifier<double> progress,
+            required ValueNotifier<int> receivedBytes,
+            required CancelToken cancelToken,
+          }) async {
+            partialPackFile(8192);
+            throw StateError('连接断了');
+          },
+    );
+    addTearDown(controller.dispose);
+
+    await controller.start();
+
+    expect(controller.stage.value, RecommendedPackDownloadStage.paused);
+    expect(controller.error.value, contains('连接断了'));
+    expect(controller.isActive, isTrue, reason: '失败后整行消失 = 只能从 0 重下 9.5 GB');
+  });
+
+  test('续传从盘上已有的半截起跳，并重新放开迷你条', () async {
+    partialPackFile(4096);
+    final Completer<File> finish = Completer<File>();
+    final RecommendedPackDownloadController controller = newController(
+      runner:
+          ({
+            required Directory packDir,
+            required ValueNotifier<double> progress,
+            required ValueNotifier<int> receivedBytes,
+            required CancelToken cancelToken,
+          }) => finish.future,
+    );
+    addTearDown(controller.dispose);
+    controller.dismissMiniBar();
+
+    final Future<File?> pending = controller.start();
+
+    expect(
+      controller.receivedBytes.value,
+      4096,
+      reason: '归零会让刚点「继续下载」的用户看着 3.2 GB 变成 0 B',
+    );
+    expect(controller.miniBarDismissed.value, isFalse);
+
+    finish.complete(completedPackFile());
+    await pending;
   });
 }
 

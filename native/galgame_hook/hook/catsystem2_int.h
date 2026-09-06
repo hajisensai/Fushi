@@ -6,6 +6,11 @@
 
 namespace fushi_voice_hook::catsystem2 {
 
+// KIF 归档魔数，含结尾 NUL。身份判据（adapters/catsystem2_profile.h）和索引解析共用
+// 这一份，别再各写各的字面量。
+constexpr char kIntSignature[4] = {'K', 'I', 'F', '\0'};
+constexpr size_t kIntSignatureBytes = sizeof(kIntSignature);
+
 constexpr size_t kHeaderBytes = 8;
 constexpr size_t kEntryBytes = 72;
 constexpr size_t kNameBytes = 64;
@@ -26,7 +31,7 @@ struct Header {
 
 inline bool ParseHeader(const uint8_t* bytes, size_t size, Header* out) {
   if (bytes == nullptr || out == nullptr || size < kHeaderBytes ||
-      std::memcmp(bytes, "KIF\0", 4) != 0) {
+      std::memcmp(bytes, kIntSignature, kIntSignatureBytes) != 0) {
     return false;
   }
   const uint32_t count = ReadLe32(bytes + 4);
