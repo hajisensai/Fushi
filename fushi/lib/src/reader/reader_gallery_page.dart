@@ -4,6 +4,7 @@ library;
 
 import 'dart:io';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -107,11 +108,35 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
       _select(_index + 1);
       return KeyEventResult.handled;
     }
+    if (event.logicalKey == LogicalKeyboardKey.home) {
+      _select(0);
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.end) {
+      _select(widget.images.length - 1);
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.enter ||
+        event.logicalKey == LogicalKeyboardKey.numpadEnter) {
+      final EpubImageRef? current = _current;
+      if (current != null) widget.onOpenImage(current);
+      return KeyEventResult.handled;
+    }
     if (event.logicalKey == LogicalKeyboardKey.escape) {
       Navigator.of(context).maybePop();
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
+  }
+
+  /// 鼠标滚轮：向下 / 向右 = 下一张。
+  void _onPointerSignal(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent) return;
+    final double delta = event.scrollDelta.dy != 0
+        ? event.scrollDelta.dy
+        : event.scrollDelta.dx;
+    if (delta == 0) return;
+    _select(_index + (delta > 0 ? 1 : -1));
   }
 
   @override
@@ -209,11 +234,14 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
     return Stack(
       children: <Widget>[
         Positioned.fill(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 72, vertical: 8),
-            child: GestureDetector(
-              onTap: () => widget.onOpenImage(current),
-              child: Center(child: image),
+          child: Listener(
+            onPointerSignal: _onPointerSignal,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 72, vertical: 8),
+              child: GestureDetector(
+                onTap: () => widget.onOpenImage(current),
+                child: Center(child: image),
+              ),
             ),
           ),
         ),
@@ -268,14 +296,18 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
   Widget _buildThumbStrip(ThemeData theme) {
     return SizedBox(
       height: _kThumbHeight + _kStripPadding * 2,
-      child: ListView.separated(
+      child: Scrollbar(
         controller: _thumbController,
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.all(_kStripPadding),
-        itemCount: widget.images.length,
-        separatorBuilder: (_, __) => const SizedBox(width: _kThumbGap),
-        itemBuilder: (BuildContext context, int index) =>
-            _buildThumb(theme, index),
+        thumbVisibility: true,
+        child: ListView.separated(
+          controller: _thumbController,
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.all(_kStripPadding),
+          itemCount: widget.images.length,
+          separatorBuilder: (_, __) => const SizedBox(width: _kThumbGap),
+          itemBuilder: (BuildContext context, int index) =>
+              _buildThumb(theme, index),
+        ),
       ),
     );
   }

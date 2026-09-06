@@ -66,6 +66,25 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
   late String _tab = widget.initialTab;
   Timer? _ticker;
 
+  /// 拖动整书进度条期间 / 跨文件 seek 落定前本地保留的目标位置（毫秒），避免松手
+  /// 后拇指先跳回旧位置再追上。位置追上（±1.5s）或超过 2s 自动放手。
+  int? _scrubTargetMs;
+  DateTime? _scrubSetAt;
+
+  int? _effectiveScrubMs(Duration livePos) {
+    final int? target = _scrubTargetMs;
+    final DateTime? at = _scrubSetAt;
+    if (target == null || at == null) return null;
+    final bool stale = DateTime.now().difference(at).inMilliseconds > 2000;
+    final bool caughtUp = (livePos.inMilliseconds - target).abs() < 1500;
+    if (stale || caughtUp) {
+      _scrubTargetMs = null;
+      _scrubSetAt = null;
+      return null;
+    }
+    return target;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -245,11 +264,21 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
     return ListenableBuilder(
       listenable: ctrl,
       builder: (BuildContext context, _) {
-        final Duration pos = ctrl.globalPosition;
+        final Duration livePos = ctrl.globalPosition;
         final Duration dur = ctrl.totalDuration;
         final int durMs = dur.inMilliseconds;
+        final int? scrub = _effectiveScrubMs(livePos);
+        final Duration pos =
+            scrub == null ? livePos : Duration(milliseconds: scrub);
         final double value =
             durMs > 0 ? (pos.inMilliseconds / durMs).clamp(0.0, 1.0) : 0.0;
+        final List<double> ticks = <double>[
+          if (durMs > 0)
+            for (final TtuTocEntry e in widget.toc)
+              if (ctrl.sectionStartGlobalMs(e.index) case final int ms
+                  when ms > 0 && ms < durMs)
+                ms / durMs,
+        ];
         final TextStyle? timeStyle = theme.textTheme.bodySmall?.copyWith(
           color: theme.colorScheme.onSurfaceVariant,
         );
@@ -266,12 +295,48 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
               child: Slider(
                 key: const ValueKey<String>('fushi_audiobook_panel_slider'),
                 value: value,
+                // 拖动期间只更新本地目标（不发 seek），松手一次性 seek；落定前拇指
+                // 留在目标处（见 _effectiveScrubMs）。
+                onChangeStart: durMs > 0
+                    ? (double v) => setState(() {
+                          _scrubTargetMs = (v * durMs).round();
+                          _scrubSetAt = DateTime.now();
+                        })
+                    : null,
                 onChanged: durMs > 0
-                    ? (double v) =>
-                        unawaited(ctrl.seekGlobalMs((v * durMs).round()))
+                    ? (double v) => setState(() {
+                          _scrubTargetMs = (v * durMs).round();
+                          _scrubSetAt = DateTime.now();
+                        })
+                    : null,
+                onChangeEnd: durMs > 0
+                    ? (double v) {
+                        final int target = (v * durMs).round();
+                        setState(() {
+                          _scrubTargetMs = target;
+                          _scrubSetAt = DateTime.now();
+                        });
+                        unawaited(ctrl.seekGlobalMs(target));
+                      }
                     : null,
               ),
             ),
+            // 章节刻度：每章首句在全书时间轴上的位置（控制器按章缓存）。
+            if (ticks.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: SizedBox(
+                  height: 4,
+                  child: CustomPaint(
+                    key: const ValueKey<String>('fushi_audiobook_chapter_ticks'),
+                    painter: _ChapterTickPainter(
+                      fractions: ticks,
+                      color: theme.colorScheme.onSurfaceVariant
+                          .withValues(alpha: 0.6),
+                    ),
+                  ),
+                ),
+              ),
             Row(
               children: <Widget>[
                 Text(_formatDuration(pos), style: timeStyle),
@@ -432,4 +497,27 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
       },
     );
   }
+}
+
+/// 进度条下方的章节刻度（每章首句位置的竖线）。
+class _ChapterTickPainter extends CustomPainter {
+  const _ChapterTickPainter({required this.fractions, required this.color});
+
+  final List<double> fractions;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Paint paint = Paint()
+      ..color = color
+      ..strokeWidth = 1;
+    for (final double f in fractions) {
+      final double x = f * size.width;
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ChapterTickPainter old) =>
+      old.color != color || old.fractions != fractions;
 }

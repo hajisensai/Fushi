@@ -3168,7 +3168,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                         ),
                       ),
                     _buildTopProgressBar(),
-                    // 桌面端顶部工具栏（ッツ 形态）：与底栏同一显隐状态机，排在词典弹层之前。
+                    // 桌面端顶边悬停热区（收起时才存在）+ 顶部工具栏（ッツ 形态）：与底栏
+                    // 同一显隐状态机，排在词典弹层之前。
+                    _buildHoverRevealLayer(),
                     _buildDesktopHeader(),
                     // 桌面端底部状态行：排在词典弹层 / 底栏之前，让它们盖在其上。
                     _buildStatusFooter(),

@@ -208,6 +208,10 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
   /// 导航抽屉里当前章那一行的 key：打开时滚到它。
   final GlobalKey _currentTocRowKey = GlobalKey();
 
+  /// 目录里手动展开的父节（按父节 label）；深度 >= 2 的子节默认折叠，当前章所在的
+  /// 父节自动展开。
+  final Set<String> _expandedTocParents = <String>{};
+
   /// 最近一次 LayoutBuilder 是否判定为宽窗。供 PopScope.canPop 读取：宽窗
   /// master-detail 下选中态非 null 也允许直接关闭（不会卡在「返回上一级」）。
   /// 纯按窗口宽高确定性判定（>= 共享常量阈值），与视频设置同条件。
@@ -1217,23 +1221,52 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
 
   Widget _buildTocSection(BuildContext context, ThemeData theme) {
     final int? currentIdx = widget.readerProgress?.$1;
+    final List<TtuTocEntry> toc = widget.toc;
+    // 折叠规则：深度 >= 2 的条目挂在其 parent 下，parent 未展开则不画；当前章所在链
+    // 上的父节自动视为展开。父节是否有可折叠子节：看下一条的深度是否更深且 >= 2。
+    final Set<String> autoExpanded = <String>{};
+    for (final TtuTocEntry e in toc) {
+      if (!e.isHeader && currentIdx == e.index && e.depth >= 2) {
+        final String? parent = e.parent;
+        if (parent != null) autoExpanded.add(parent);
+      }
+    }
+    bool hasFoldableChildren(int i) =>
+        i + 1 < toc.length && toc[i + 1].depth > toc[i].depth && toc[i + 1].depth >= 2;
+    bool isExpanded(TtuTocEntry parent) =>
+        _expandedTocParents.contains(parent.label) ||
+        autoExpanded.contains(parent.label);
     return AdaptiveSettingsSection(
-      title: t.toc_section(n: widget.toc.length),
+      title: t.toc_section(n: toc.length),
       children: [
-        for (final TtuTocEntry entry in widget.toc)
-          _InBookTocRow(
-            key: !entry.isHeader && currentIdx == entry.index
-                ? _currentTocRowKey
-                : null,
-            entry: entry,
-            selected: !entry.isHeader && currentIdx == entry.index,
-            onTap: entry.isHeader
-                ? null
-                : () async {
-                    Navigator.of(context).pop();
-                    await widget.onJumpSection(entry.index);
-                  },
-          ),
+        for (int i = 0; i < toc.length; i++)
+          if (toc[i].depth < 2 ||
+              (toc[i].parent != null &&
+                  (_expandedTocParents.contains(toc[i].parent!) ||
+                      autoExpanded.contains(toc[i].parent!))))
+            _InBookTocRow(
+              key: !toc[i].isHeader && currentIdx == toc[i].index
+                  ? _currentTocRowKey
+                  : null,
+              entry: toc[i],
+              selected: !toc[i].isHeader && currentIdx == toc[i].index,
+              foldable: hasFoldableChildren(i),
+              expanded: hasFoldableChildren(i) && isExpanded(toc[i]),
+              onToggleExpanded: hasFoldableChildren(i)
+                  ? () => setState(() {
+                        final String label = toc[i].label;
+                        if (!_expandedTocParents.remove(label)) {
+                          _expandedTocParents.add(label);
+                        }
+                      })
+                  : null,
+              onTap: toc[i].isHeader
+                  ? null
+                  : () async {
+                      Navigator.of(context).pop();
+                      await widget.onJumpSection(toc[i].index);
+                    },
+            ),
       ],
     );
   }
@@ -1870,11 +1903,19 @@ class _InBookTocRow extends StatelessWidget {
     required this.entry,
     required this.selected,
     this.onTap,
+    this.foldable = false,
+    this.expanded = false,
+    this.onToggleExpanded,
   });
 
   final TtuTocEntry entry;
   final bool selected;
   final VoidCallback? onTap;
+
+  /// 有深度 >= 2 的子节可折叠时，行尾给一个展开 / 收起箭头。
+  final bool foldable;
+  final bool expanded;
+  final VoidCallback? onToggleExpanded;
 
   @override
   Widget build(BuildContext context) {
@@ -1918,13 +1959,28 @@ class _InBookTocRow extends StatelessWidget {
         // 章节行不再带书本 / 小节图标：层级靠缩进（indent）表达即可。
         showIcon: false,
         onTap: onTap,
-        trailing: selected
-            ? Icon(
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            if (selected)
+              Icon(
                 cupertino ? CupertinoIcons.check_mark : Icons.check,
                 size: 18,
                 color: selectedColor,
-              )
-            : null,
+              ),
+            if (foldable)
+              IconButton(
+                key: ValueKey<String>('fushi_toc_fold_${entry.label}'),
+                visualDensity: VisualDensity.compact,
+                iconSize: 20,
+                tooltip: expanded
+                    ? MaterialLocalizations.of(context).collapsedIconTapHint
+                    : MaterialLocalizations.of(context).expandedIconTapHint,
+                icon: Icon(expanded ? Icons.expand_less : Icons.expand_more),
+                onPressed: onToggleExpanded,
+              ),
+          ],
+        ),
       ),
     );
   }

@@ -1649,7 +1649,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
       if (!mounted) return;
 
       // 桌面端 ッツ 形态：「导航」→ 左抽屉；「有声书」→ 居中面板；其余 → 右侧设置抽屉。
-      final bool useSideSheet = isDesktopPlatform && _desktopChromeEnabled;
+      // 歌词模式在桌面端同样走抽屉（布局子页在歌词模式下给歌词专用显示项），
+      // 居中 master-detail 对话框只剩平板宽窗在用。
+      final bool useSideSheet = isDesktopPlatform;
       final ReaderQuickSettingsPresentation presentation = !useSideSheet
           ? ReaderQuickSettingsPresentation.sheet
           : switch (initialSubPage) {
@@ -2044,7 +2046,15 @@ extension _ReaderChrome on _ReaderFushiPageState {
       // 焦点排除在 ReaderDesktopHeader 内部（纯指针面，TODO-700 不变式）；底栏的
       // ExcludeFocus 外壳仍唯一在 _wrapBottomChromeBar（守卫 reader_focus_chrome_excluded）。
       child: RepaintBoundary(
-        child: ReaderDesktopHeader(
+        // 悬停在工具栏上不自动收起（取消计时），离开后重新武装。
+        child: MouseRegion(
+          onEnter: (_) => _chrome.cancelAutoHide(),
+          onExit: (_) {
+            if (_anyChromeFloating && _chromeTransientVisible) {
+              _armChromeAutoHide();
+            }
+          },
+          child: ReaderDesktopHeader(
             key: const ValueKey<String>('fushi_desktop_header'),
             title: _book?.title ?? '',
             textColor: fg,
@@ -2110,6 +2120,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
                 onPressed: () => unawaited(_showAppearanceSheet()),
               ),
             ],
+          ),
         ),
       ),
     );
@@ -2172,7 +2183,12 @@ extension _ReaderChrome on _ReaderFushiPageState {
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderFushi.openAlignmentImport', e, stack);
     }
-    if (mounted) _rebuild(() {});
+    if (!mounted) return;
+    _rebuild(() {});
+    // 导入 / 对齐完成后回到有声书面板，「资源」页立刻显示新的对齐文件名。
+    if (_audiobookController != null) {
+      unawaited(_showAppearanceSheet(initialSubPage: 'audiobook'));
+    }
   }
 
   /// 有声书面板「转录生成字幕」：对当前音频跑设备端 ASR，产物 SRT 作为对齐文件
@@ -2246,6 +2262,40 @@ extension _ReaderChrome on _ReaderFushiPageState {
           onTap: _anyChromeFloating
               ? () => _handleFloatingChromeReveal()
               : _toggleChrome,
+          // 左侧计时器 = 手动暂停 / 继续；右侧进度数字 = 打开统计浮层。
+          onTapTracker: _toggleStudyClockManualPause,
+          onTapProgress: _openReadingStatistics,
+        ),
+      ),
+    );
+  }
+
+  /// 桌面端顶边热区（ッツ 手感）：悬浮 chrome 收起时，鼠标移到窗口顶部
+  /// [kReaderHoverRevealStripHeight] 内即唤出工具栏；工具栏本体再挂 MouseRegion，
+  /// 悬停期间不自动收起、离开后按计时收起。只占顶部几像素的命中面，不影响正文。
+  Widget _buildHoverRevealLayer() {
+    if (!_desktopChromeEnabled ||
+        !_bottomBarFloating ||
+        !_hasEverLoaded ||
+        _chromeTransientVisible) {
+      return const SizedBox.shrink();
+    }
+    return Positioned(
+      top: _stableTopInset + _macosWindowTitlebarInset,
+      left: 0,
+      right: 0,
+      height: kReaderHoverRevealStripHeight,
+      child: RepaintBoundary(
+        child: MouseRegion(
+          key: const ValueKey<String>('fushi_hover_reveal_strip'),
+          opaque: true,
+          onEnter: (_) {
+            if (_chromeTransientVisible) return;
+            _chrome.reveal(Duration(
+              milliseconds: ReaderFushiSource.instance.autoHideChromeMillis,
+            ));
+          },
+          child: const SizedBox.expand(),
         ),
       ),
     );

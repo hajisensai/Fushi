@@ -17,7 +17,8 @@ import 'package:fushi/src/reader/reader_desktop_chrome.dart'
     show ReaderSideSheetSectionLabel;
 import 'package:fushi/src/reader/reader_status_footer.dart'
     show readingCharsPerHour;
-import 'package:fushi/src/stats/stat_facts.dart' show StatFact;
+import 'package:fushi/src/stats/stat_facts.dart'
+    show StatFact, statFactBelongsToBook;
 import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/utils.dart';
 
@@ -46,10 +47,7 @@ ReaderBookStatTotals summarizeReaderBookStats(
   int allChars = 0;
   int allMs = 0;
   for (final StatFact f in dailyBooks) {
-    final bool mine = f.mediaKey.isNotEmpty
-        ? f.mediaKey == bookKey
-        : (title != null && title.isNotEmpty && f.title == title);
-    if (!mine) continue;
+    if (!statFactBelongsToBook(f, bookKey: bookKey, title: title)) continue;
     allChars += f.chars;
     allMs += f.ms;
     if (window.isToday(f.dateKey)) {

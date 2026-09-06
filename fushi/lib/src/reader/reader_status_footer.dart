@@ -105,6 +105,8 @@ class ReaderStatusFooter extends StatefulWidget {
     this.height = kReaderStatusFooterHeight,
     this.tick = const Duration(seconds: 1),
     this.onTap,
+    this.onTapTracker,
+    this.onTapProgress,
   });
 
   /// 会话累计的**读口**（每个 [tick] 采样一次）。账本在 `StudyClock`，页面不持有
@@ -128,8 +130,14 @@ class ReaderStatusFooter extends StatefulWidget {
   /// 秒表刷新周期（测试可缩短）。
   final Duration tick;
 
-  /// 点状态行：与顶部进度 pill 同语义——唤出 / 收起控制栏。
+  /// 点状态行空白处：与顶部进度 pill 同语义——唤出 / 收起控制栏。
   final VoidCallback? onTap;
+
+  /// 点左侧「计时器 + 字/时 + 时长」：切换手动暂停计时（少进一次菜单）。
+  final VoidCallback? onTapTracker;
+
+  /// 点右侧进度数字：直接打开阅读统计浮层。
+  final VoidCallback? onTapProgress;
 
   @override
   State<ReaderStatusFooter> createState() => _ReaderStatusFooterState();
@@ -185,28 +193,41 @@ class _ReaderStatusFooterState extends State<ReaderStatusFooter> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               children: <Widget>[
-                Icon(
-                  totals.active
-                      ? Icons.timer_outlined
-                      : Icons.timer_off_outlined,
-                  key: ValueKey<bool>(totals.active),
-                  size: kReaderStatusFooterFontSize + 2,
-                  color: muted,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  readerTrackerLabel(totals),
-                  key: const ValueKey<String>('fushi_status_tracker'),
-                  style: style,
-                  maxLines: 1,
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: widget.onTapTracker,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Icon(
+                        totals.active
+                            ? Icons.timer_outlined
+                            : Icons.timer_off_outlined,
+                        key: ValueKey<bool>(totals.active),
+                        size: kReaderStatusFooterFontSize + 2,
+                        color: muted,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        readerTrackerLabel(totals),
+                        key: const ValueKey<String>('fushi_status_tracker'),
+                        style: style,
+                        maxLines: 1,
+                      ),
+                    ],
+                  ),
                 ),
                 const Spacer(),
                 if (progress != null)
-                  Text(
-                    progress,
-                    key: const ValueKey<String>('fushi_status_progress'),
-                    style: style,
-                    maxLines: 1,
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: widget.onTapProgress,
+                    child: Text(
+                      progress,
+                      key: const ValueKey<String>('fushi_status_progress'),
+                      style: style,
+                      maxLines: 1,
+                    ),
                   ),
               ],
             ),

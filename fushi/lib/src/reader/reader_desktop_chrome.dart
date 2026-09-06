@@ -20,6 +20,9 @@ import 'package:fushi/src/reader/reader_status_footer.dart'
 /// reader_chrome_floating.dart 文件头）。
 const double kReaderDesktopHeaderHeight = 48;
 
+/// 悬浮 chrome 收起时顶边悬停热区高度（逻辑 px）：鼠标移进即唤出工具栏。
+const double kReaderHoverRevealStripHeight = 6;
+
 /// 右侧抽屉宽度（逻辑 px）。窄窗口下由 [showReaderSideSheet] 收窄到留出 48px 空白。
 const double kReaderSideSheetWidth = 400;
 

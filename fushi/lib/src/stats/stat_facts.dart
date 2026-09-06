@@ -65,6 +65,17 @@ class StatFact {
 /// 同一个段在两面各出现一次；legacy 的日行与小时行是同一段时间的两个**不相交**投影
 /// （一个有 title 没 hour，一个有 hour 没 title），所以绝不能并进同一列表求和——
 /// 两面分列，读方按用途只挑一面，结构上杜绝双计。
+/// 某条阅读域事实是否属于这本书：有身份看 mediaKey，legacy 无身份行按 title 回退
+/// （与阅读统计页按书分组同一规则）。唯一判据，别在页面里再拼一遍。
+bool statFactBelongsToBook(
+  StatFact f, {
+  required String bookKey,
+  String? title,
+}) {
+  if (f.mediaKey.isNotEmpty) return f.mediaKey == bookKey;
+  return title != null && title.isNotEmpty && f.title == title;
+}
+
 class StatFacts {
   const StatFacts({
     required this.daily,
@@ -122,6 +133,13 @@ class StatFacts {
   final List<EpubBookRow> epubRows;
 
   Iterable<StatFact> get dailyBooks => daily.where((StatFact f) => f.isBook);
+
+  /// 阅读域日面里属于某本书的行（阅读器内统计浮层 / 按书切片共用）：身份优先
+  /// `mediaKey == bookKey`，legacy 无身份行按 title 回退——判据见 [statFactBelongsToBook]。
+  Iterable<StatFact> dailyBooksFor({required String bookKey, String? title}) =>
+      dailyBooks.where(
+        (StatFact f) => statFactBelongsToBook(f, bookKey: bookKey, title: title),
+      );
   Iterable<StatFact> get dailyVideos => daily.where((StatFact f) => f.isVideo);
   Iterable<StatFact> get dailyGames => daily.where((StatFact f) => f.isGame);
 }
