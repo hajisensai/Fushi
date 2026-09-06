@@ -86,11 +86,54 @@ mixin _FushiDbContentMisc
       (select(epubBooks)..orderBy([(t) => OrderingTerm.desc(t.importedAt)]))
           .get();
 
+  /// 全部书的瘦投影（[EpubBookMeta]，与 [getAllEpubBooks] 同序：importedAt 降序）。
+  ///
+  /// 只要 title / uid / importedAt / format 等小列的调用方（书架映射、统计事实面、
+  /// 导入重复检查、远端去重）走这里，不再把每本几十 KB 的 `chaptersJson` / `tocJson`
+  /// 整库拉一遍再丢掉。
+  Future<List<EpubBookMeta>> getEpubBookMetas() async {
+    final JoinedSelectStatement<HasResultSet, dynamic> query =
+        selectOnly(epubBooks)
+          ..addColumns(<Expression<Object>>[
+            epubBooks.bookKey,
+            epubBooks.uid,
+            epubBooks.title,
+            epubBooks.format,
+            epubBooks.importedAt,
+            epubBooks.extractDir,
+            epubBooks.completedAt,
+          ])
+          ..orderBy(<OrderingTerm>[OrderingTerm.desc(epubBooks.importedAt)]);
+    final List<TypedResult> rows = await query.get();
+    return rows
+        .map(
+          (TypedResult row) => EpubBookMeta(
+            bookKey: row.read(epubBooks.bookKey)!,
+            uid: row.read(epubBooks.uid)!,
+            title: row.read(epubBooks.title)!,
+            format: row.read(epubBooks.format)!,
+            importedAt: row.read(epubBooks.importedAt)!,
+            extractDir: row.read(epubBooks.extractDir)!,
+            completedAt: row.read(epubBooks.completedAt),
+          ),
+        )
+        .toList(growable: false);
+  }
+
   /// 监听 EPUB 书 bookKey 集合，供书架在任意导入路径落库后自动刷新（同
   /// [watchVideoBookUids]，BUG-793）。消费方按集合 `.distinct` 去重，改作者/封面等
   /// 纯列更新（集合不变）不触发重算。
-  Stream<List<String>> watchEpubBookKeys() =>
-      select(epubBooks).map((EpubBookRow row) => row.bookKey).watch();
+  ///
+  /// 只投影 bookKey 列：这条流在 `epub_books` 每次写入时都重跑，之前是全列
+  /// `select` 把整库 `chaptersJson` 拉出来只为取 key（批量导入 N 本 = N 次全库大列读）。
+  Stream<List<String>> watchEpubBookKeys() => (selectOnly(epubBooks)
+        ..addColumns(<Expression<Object>>[epubBooks.bookKey]))
+      .watch()
+      .map(
+        (List<TypedResult> rows) => rows
+            .map((TypedResult row) => row.read(epubBooks.bookKey)!)
+            .toList(growable: false),
+      );
 
   Future<EpubBookRow?> getEpubBook(String bookKey) =>
       (select(epubBooks)..where((t) => t.bookKey.equals(bookKey)))
@@ -138,13 +181,17 @@ mixin _FushiDbContentMisc
         (book.uid.present && book.uid.value.isNotEmpty)
             ? book
             : book.copyWith(uid: Value(generateEpubBookUid()));
-    await into(epubBooks).insert(withUid);
-    // Re-adding a book cancels any prior deletion tombstone so a later merge
-    // may bring its data again (TODO-1195 part B).
-    await clearBookTombstone(book.bookKey.value);
-    // 删除传播：重新导入同 bookKey 的书清除其 sync 删除墓碑（防「删了又加、墓碑还在」
-    // 被 compare 误判成待删）。
-    await clearSyncDeletionTombstone('book', book.bookKey.value);
+    // 三条语句一个事务：一次 fsync 而非三次，且 `watchEpubBookKeys` 之类的表级
+    // 监听只在提交时收到一次失效，而不是每条语句各触发一次书架重算。
+    await transaction(() async {
+      await into(epubBooks).insert(withUid);
+      // Re-adding a book cancels any prior deletion tombstone so a later merge
+      // may bring its data again (TODO-1195 part B).
+      await clearBookTombstone(book.bookKey.value);
+      // 删除传播：重新导入同 bookKey 的书清除其 sync 删除墓碑（防「删了又加、墓碑还在」
+      // 被 compare 误判成待删）。
+      await clearSyncDeletionTombstone('book', book.bookKey.value);
+    });
     return book.bookKey.value;
   }
 
@@ -282,8 +329,8 @@ mixin _FushiDbContentMisc
         switch (mediaKind) {
           case kActivityMediaBook:
             await (delete(readingStatistics)
-                  ..where((t) =>
-                      t.title.equals(title) & t.dateKey.isIn(dateKeys)))
+                  ..where(
+                      (t) => t.title.equals(title) & t.dateKey.isIn(dateKeys)))
                 .go();
           case kActivityMediaVideo:
             await (delete(videoWatchStatistics)
@@ -394,7 +441,8 @@ mixin _FushiDbContentMisc
           await deleteStudySegmentsForMedia(
               mediaKind: kActivityMediaVideo, mediaKey: bookUid);
           await (delete(preferences)
-                ..where((t) => t.key.equals(videoWatchCoveragePrefKey(bookUid))))
+                ..where(
+                    (t) => t.key.equals(videoWatchCoveragePrefKey(bookUid))))
               .go();
         }
         // 本 tile 自身的 title 恒立碑（被删行的防复活；同名幸存者被连带压制是

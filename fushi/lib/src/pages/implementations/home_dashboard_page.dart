@@ -680,17 +680,17 @@ class _HomeDashboardPageState
     // legacy 阅读事实行无身份时按 title 反查 bookKey（日明细拼合集前缀，阅读统计
     // 页 _collectionNameForBook 同范式）。书表由事实面加载时顺带取回，同批再取
     // importedAt 喂「最近添加」行（一次查询两用）。
-    final List<EpubBookRow> epubRows = facts.epubRows;
+    final List<EpubBookMeta> epubRows = facts.epubRows;
     final Map<String, String> bookKeyByTitle = <String, String>{
-      for (final EpubBookRow r in epubRows) r.title: r.bookKey,
+      for (final EpubBookMeta r in epubRows) r.title: r.bookKey,
     };
     final Map<String, int> epubImportedAtByKey = <String, int>{
-      for (final EpubBookRow r in epubRows) r.bookKey: r.importedAt,
+      for (final EpubBookMeta r in epubRows) r.bookKey: r.importedAt,
     };
     // v83：成员表 epub entryKey = uid，同批行顺带建 bookKey→uid 换算表（空 uid
     // 异常行不进表，查归属时按 bookKey 原样回退）。
     final Map<String, String> epubUidByBookKey = <String, String>{
-      for (final EpubBookRow r in epubRows)
+      for (final EpubBookMeta r in epubRows)
         if (r.uid.isNotEmpty) r.bookKey: r.uid,
     };
 

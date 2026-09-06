@@ -263,8 +263,7 @@ class DictionaryImportManager {
           hasReplaceTarget: false,
         );
         if (decision == UpdateDecision.alreadyUpToDate) {
-          progressNotifier.value = t.import_duplicate(name: name);
-          await Future.delayed(const Duration(seconds: 2));
+          _notifyAlreadyUpToDate(progressNotifier, name);
           if (tempOutputDir.existsSync()) {
             tempOutputDir.deleteSync(recursive: true);
           }
@@ -504,8 +503,7 @@ class DictionaryImportManager {
         hasReplaceTarget: replaceTarget != null,
       );
       if (decision == UpdateDecision.alreadyUpToDate) {
-        progressNotifier.value = t.import_duplicate(name: name);
-        await Future.delayed(const Duration(seconds: 2));
+        _notifyAlreadyUpToDate(progressNotifier, name);
         if (tempOutputDir.existsSync()) {
           tempOutputDir.deleteSync(recursive: true);
         }
@@ -933,6 +931,20 @@ class DictionaryImportManager {
   static bool _isMemoryError(Object e) {
     final msg = e.toString().toLowerCase();
     return e is OutOfMemoryError || msg.contains('out of memory');
+  }
+
+  /// 「已是最新、跳过」的提示：进度文字 + 一条 toast，**不阻塞**导入循环。
+  ///
+  /// 之前这里 `Future.delayed(2s)` 只为让进度文字停留两秒——批量重导一个已装
+  /// 目录时每本都白等 2 秒（30 本 = 60 秒纯睡眠）。toast 自带停留时间，循环
+  /// 立即进入下一本。
+  static void _notifyAlreadyUpToDate(
+    ValueNotifier<String> progressNotifier,
+    String name,
+  ) {
+    final String msg = t.import_duplicate(name: name);
+    progressNotifier.value = msg;
+    FushiToast.show(msg: msg, severity: ToastSeverity.info);
   }
 
   /// 批量导入结束后，把失败的词典名汇总成一条提示文案（单条/多条不同措辞）。

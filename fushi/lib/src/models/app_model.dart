@@ -686,7 +686,7 @@ class AppModel with ChangeNotifier {
     List<DeletionPropagationCandidate> candidates,
   ) async {
     final Map<String, String> bookTitles = <String, String>{
-      for (final EpubBookRow r in await database.getAllEpubBooks())
+      for (final EpubBookMeta r in await database.getEpubBookMetas())
         r.bookKey: r.title,
     };
     final Map<String, String> videoTitles = <String, String>{

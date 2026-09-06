@@ -109,10 +109,10 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
       final StatFacts facts = await loadStatFacts(db, activityLimit: 0);
       _daily = facts.daily;
       _bookKeyByTitle = <String, String>{
-        for (final EpubBookRow r in facts.epubRows) r.title: r.bookKey,
+        for (final EpubBookMeta r in facts.epubRows) r.title: r.bookKey,
       };
       _epubUidByBookKey = <String, String>{
-        for (final EpubBookRow r in facts.epubRows)
+        for (final EpubBookMeta r in facts.epubRows)
           if (r.uid.isNotEmpty) r.bookKey: r.uid,
       };
       _collectionNamesById = <int, String>{

@@ -51,7 +51,8 @@ class SourceFileEntry {
   /// 是否为目录。
   final bool isDirectory;
 
-  /// 文件字节大小；目录或不可知时为 null。
+  /// 文件字节大小；目录或不可知时为 null。本地传输恒为 null（列目录不逐文件
+  /// stat，见 [LocalSourceFileSystem.listFiles]）；远端传输由列目录响应顺带给出。
   final int? sizeBytes;
 }
 
@@ -111,17 +112,13 @@ class LocalSourceFileSystem implements SourceFileSystem {
     await for (final FileSystemEntity e
         in dir.list(recursive: recursive, followLinks: false)) {
       if (e is File) {
-        int? size;
-        try {
-          size = await e.length();
-        } catch (_) {
-          size = null;
-        }
+        // 本地传输不 stat 每个文件取大小：扫描链路上没有任何消费方读 sizeBytes
+        // （远端传输由列目录响应顺带给出，零成本），而递归枚举一棵几万文件的
+        // 漫画/视频树时每文件一次 `length()` 是几万次额外系统调用。
         entries.add(SourceFileEntry(
           name: p.basename(e.path),
           path: e.path,
           isDirectory: false,
-          sizeBytes: size,
         ));
       } else if (e is Directory && !recursive) {
         // 递归模式只回文件（供扫描器直接消费），非递归才单列子目录。
@@ -135,8 +132,8 @@ class LocalSourceFileSystem implements SourceFileSystem {
     // 文件系统枚举顺序不是稳定输入（NTFS 按名字、ext4 是目录哈希序），
     // 而这份清单一路流到 planScanFromFileList 的 books/videos/mangas 分类列表，
     // 再决定扫描导入的落库次序（用户可见）。在 IO 边界就定下来。
-    entries.sort((SourceFileEntry a, SourceFileEntry b) =>
-        a.path.compareTo(b.path));
+    entries.sort(
+        (SourceFileEntry a, SourceFileEntry b) => a.path.compareTo(b.path));
     return entries;
   }
 

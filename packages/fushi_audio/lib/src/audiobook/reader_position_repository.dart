@@ -15,6 +15,14 @@ class ReaderPositionRepository {
     return _rowToModel(row);
   }
 
+  /// 全部阅读位置按 bookUid 建表（书架列书一次取完，替代每本一查的 N+1）。
+  Future<Map<String, ReaderPosition>> findAllByBookUid() async {
+    final List<ReaderPositionRow> rows = await _db.getAllReaderPositions();
+    return <String, ReaderPosition>{
+      for (final ReaderPositionRow row in rows) row.bookUid: _rowToModel(row),
+    };
+  }
+
   Future<void> save({
     required String bookUid,
     required int sectionIndex,

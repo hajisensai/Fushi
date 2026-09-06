@@ -346,9 +346,9 @@ class MangaImporter {
     final List<String> destRels =
         planMangaDestRels(srcDir: srcDir, payload: payload);
 
-    final List<EpubBookRow> existingBooks = await db.getAllEpubBooks();
+    final List<EpubBookMeta> existingBooks = await db.getEpubBookMetas();
     final String storedTitle = await resolveDuplicateTitle(
-      existingTitles: existingBooks.map((EpubBookRow b) => b.title).toList(),
+      existingTitles: existingBooks.map((EpubBookMeta b) => b.title).toList(),
       proposedTitle: proposedTitle,
       policy: policy,
     );

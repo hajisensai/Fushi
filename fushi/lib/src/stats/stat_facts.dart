@@ -82,7 +82,7 @@ class StatFacts {
     hourly: <StatFact>[],
     segments: <StudySegmentRow>[],
     legacyActivity: <ActivityEventRow>[],
-    epubRows: <EpubBookRow>[],
+    epubRows: <EpubBookMeta>[],
   );
 
   /// 最近的游玩会话（v92 起游玩只写 galgame_sessions，活动流从这里合成）。
@@ -118,8 +118,9 @@ class StatFacts {
   /// `added` 导入事件）。活动流把它与 [segmentsAsActivityRows] 并集。
   final List<ActivityEventRow> legacyActivity;
 
-  /// 加载 legacy 阅读行身份时顺带取的书表（页面复用：title→bookKey / format）。
-  final List<EpubBookRow> epubRows;
+  /// 加载 legacy 阅读行身份时顺带取的书表瘦投影（页面复用：title→bookKey /
+  /// uid / importedAt / format），不带章节 JSON 大列。
+  final List<EpubBookMeta> epubRows;
 
   Iterable<StatFact> get dailyBooks => daily.where((StatFact f) => f.isBook);
   Iterable<StatFact> get dailyVideos => daily.where((StatFact f) => f.isVideo);
@@ -134,9 +135,9 @@ Future<StatFacts> loadStatFacts(
   FushiDatabase db, {
   int activityLimit = 200,
 }) async {
-  final List<EpubBookRow> epubRows = await db.getAllEpubBooks();
-  final Map<String, EpubBookRow> bookByTitle = <String, EpubBookRow>{
-    for (final EpubBookRow r in epubRows) r.title: r,
+  final List<EpubBookMeta> epubRows = await db.getEpubBookMetas();
+  final Map<String, EpubBookMeta> bookByTitle = <String, EpubBookMeta>{
+    for (final EpubBookMeta r in epubRows) r.title: r,
   };
   final List<StatFact> daily = <StatFact>[];
   final List<StatFact> hourly = <StatFact>[];
@@ -144,7 +145,7 @@ Future<StatFacts> loadStatFacts(
   // legacy 日行：阅读按 title 反查库表补身份与 format（查不到 = 书已删，身份 ''、
   // format ''，按 title 分组、归普通书）；视频 v39 起自带 bookUid。
   for (final ReadingStatisticRow r in await db.getAllReadingStatistics()) {
-    final EpubBookRow? book = bookByTitle[r.title];
+    final EpubBookMeta? book = bookByTitle[r.title];
     daily.add(
       StatFact(
         mediaKind: kActivityMediaBook,
