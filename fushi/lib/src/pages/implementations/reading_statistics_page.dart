@@ -168,7 +168,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       _computeAggregates();
       // 加载事实时顺带取的书表：下面的 title→bookKey（合集归属 / legacy 行回退）
       // 与 bookKey→uid 换算复用同一批行，不再单独查。
-      final List<EpubBookRow> epubRows = facts.epubRows;
+      final List<EpubBookMeta> epubRows = facts.epubRows;
       final DateTime now = DateTime.now();
       final List<FavoriteWordRow> favs =
           await db.getFavoriteWordsBySource(kStatSourceBook);
@@ -199,12 +199,12 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       };
       _primaryCollectionByEntry = await db.getPrimaryCollectionIdByEntry();
       _bookKeyByTitle = <String, String>{
-        for (final EpubBookRow r in epubRows) r.title: r.bookKey,
+        for (final EpubBookMeta r in epubRows) r.title: r.bookKey,
       };
       // v83：成员表 epub entryKey = uid，同批行顺带建换算表（空 uid 异常行不进
       // 表，查归属时按 bookKey 原样回退）。
       _epubUidByBookKey = <String, String>{
-        for (final EpubBookRow r in epubRows)
+        for (final EpubBookMeta r in epubRows)
           if (r.uid.isNotEmpty) r.bookKey: r.uid,
       };
       // 收藏语句按 source 分桶：非视频来源（书内 / 有声书 / 歌词）都归阅读统计。

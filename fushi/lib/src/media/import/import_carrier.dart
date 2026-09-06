@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/audiobook/text_to_epub.dart';
@@ -172,13 +174,36 @@ class ImportCarrierResolver {
   final bool Function(String path) directoryHasPageImages;
   final int Function(String path) directoryCarrierFileCount;
 
-  String? _cachedPath;
+  String? _cachedKey;
   ImportCarrier? _cachedCarrier;
 
-  /// 判定 [path] 的载体身份；同一个 [path] 连续问只算一次真判定。
+  /// 记忆键：路径 + 内容指纹（mtime + 字节数）。
+  ///
+  /// 只用路径当键是不够的——判定本身要**真开包读内容**（`isImageArchive` 要开 zip 看
+  /// 里面有没有页图，目录分支还要数文件），结论随内容变。可达的翻车路径全程在既有 UI 上：
+  /// 用户选了一个还在下载中、中央目录尚未落盘的 `.cbz` → 判成非漫画 → 弹一条
+  /// 「不支持的格式」toast 并 return（**对话框不关、resolver 不销毁**）→ 下载完成后
+  /// 在同一个对话框里重选同一路径 → 单槽命中，`isImageArchive` 根本不再被调用 →
+  /// 返回过期判定 → 继续被拒，只能关掉重开。反向同样成立（已判成漫画包的路径在外部
+  /// 被换成词典 zip，会按漫画收下）。
+  ///
+  /// stat 失败（文件不在了 / 无权限）时键退化成纯路径 + 一个哨兵，宁可多判一次。
+  String _memoKey(String path) {
+    try {
+      final FileStat stat = FileStat.statSync(path);
+      if (stat.type == FileSystemEntityType.notFound) return '$path ?';
+      return '$path ${stat.modified.microsecondsSinceEpoch} '
+          '${stat.size}';
+    } catch (_) {
+      return '$path ?';
+    }
+  }
+
+  /// 判定 [path] 的载体身份；同一个 [path] 且内容未变时连续问只算一次真判定。
   ImportCarrier resolve(String path) {
+    final String key = _memoKey(path);
     final ImportCarrier? cached = _cachedCarrier;
-    if (cached != null && _cachedPath == path) return cached;
+    if (cached != null && _cachedKey == key) return cached;
     final ImportCarrier carrier = classifyImportCarrier(
       path,
       isDirectory: isDirectory,
@@ -186,14 +211,15 @@ class ImportCarrierResolver {
       directoryHasPageImages: directoryHasPageImages,
       directoryCarrierFileCount: directoryCarrierFileCount,
     );
-    _cachedPath = path;
+    _cachedKey = key;
     _cachedCarrier = carrier;
     return carrier;
   }
 
-  /// 丢弃记忆。路径指向的文件可能在对话框开着时被换掉，需要重新定性时调用。
+  /// 丢弃记忆。键已经带内容指纹，正常不需要调它；留给「内容没变但判据本身变了」
+  /// 这种场景（例如用户在对话框里改了受理规则）。
   void invalidate() {
-    _cachedPath = null;
+    _cachedKey = null;
     _cachedCarrier = null;
   }
 }

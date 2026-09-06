@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:archive/archive_io.dart';
 import 'package:crypto/crypto.dart';
@@ -116,9 +117,16 @@ class MigrationManifest {
       MigrationManifest.fromJson(json.decode(text) as Map<String, Object?>);
 
   /// 流式计算文件 SHA-256（十六进制小写），不整块载入内存。
-  static Future<String> sha256OfFile(File file) async {
-    final Digest digest = await sha256.bind(file.openRead()).first;
-    return digest.toString();
+  ///
+  /// 在后台 isolate 里算：纯 Dart 的 SHA-256 对一份 11 GB 的库归档要跑好几分钟
+  /// （导入侧注释实测 ~7 分钟），留在 UI isolate 上就是整段时间界面无响应。
+  /// 路径与结果都是字符串，可跨 isolate 传。
+  static Future<String> sha256OfFile(File file) {
+    final String path = file.path;
+    return Isolate.run(() async {
+      final Digest digest = await sha256.bind(File(path).openRead()).first;
+      return digest.toString();
+    });
   }
 
   /// 对归档做完整性校验（size + sha256）；一致返回空列表，否则返回人类可读的

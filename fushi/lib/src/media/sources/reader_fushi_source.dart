@@ -81,9 +81,9 @@ final epubBookUidByKeyProvider =
     FutureProvider<Map<String, String>>((ref) async {
   ref.watch(_epubBookKeysProvider);
   final FushiDatabase db = ref.watch(appProvider).database;
-  final List<EpubBookRow> rows = await db.getAllEpubBooks();
+  final List<EpubBookMeta> rows = await db.getEpubBookMetas();
   return <String, String>{
-    for (final EpubBookRow r in rows)
+    for (final EpubBookMeta r in rows)
       if (r.uid.isNotEmpty) r.bookKey: r.uid,
   };
 });
@@ -524,17 +524,24 @@ class ReaderFushiSource extends ReaderMediaSource {
   }) async {
     final FushiDatabase db = appModel.database;
     final List<EpubBookRow> books = await db.getAllEpubBooks();
-    final ReaderPositionRepository posRepo = ReaderPositionRepository(db);
+    // 阅读位置一次整表取完（书 uid → 位置）。之前每本各查一次
+    // `findByBookUid`：Drift 在单连接上串行执行，`Future.wait` 只能重叠 await、
+    // 重叠不了 SQL，书架延迟仍随库大小线性增长（N 次往返 + N 次语句准备）。
+    final Map<String, ReaderPosition> positions =
+        await ReaderPositionRepository(db).findAllByBookUid();
 
     // HBK-AUDIT-128: previously this was a serial for-loop where every book
-    // awaited posRepo.findByTtuBookId(book.id) and up to four File.exists()
-    // cover probes one after another, so shelf latency scaled linearly with
-    // library size. Map each book to a Future and resolve them with
-    // Future.wait so the per-book DB query and cover probes overlap; Drift
-    // serialises the queries on its own connection, and Future.wait preserves
-    // input order so the shelf ordering is unchanged.
+    // awaited up to four File.exists() cover probes one after another, so
+    // shelf latency scaled linearly with library size. Map each book to a
+    // Future and resolve them with Future.wait so the cover probes overlap;
+    // Future.wait preserves input order so the shelf ordering is unchanged.
     return Future.wait<MediaItem>(
-      books.map((EpubBookRow book) => _bookToMediaItem(book, posRepo)),
+      books.map(
+        (EpubBookRow book) => _bookToMediaItem(
+          book,
+          book.uid.isEmpty ? null : positions[book.uid],
+        ),
+      ),
     );
   }
 
@@ -545,7 +552,11 @@ class ReaderFushiSource extends ReaderMediaSource {
     if (db == null) return null;
     final EpubBookRow? book = await db.getEpubBook(bookKey);
     if (book == null) return null;
-    return _bookToMediaItem(book, ReaderPositionRepository(db));
+    // v82：位置键 = 行 uid（空 uid 视同无阅读记录）。
+    final ReaderPosition? pos = book.uid.isEmpty
+        ? null
+        : await ReaderPositionRepository(db).findByBookUid(book.uid);
+    return _bookToMediaItem(book, pos);
   }
 
   /// 在线漫画的章级进度。
@@ -564,11 +575,12 @@ class ReaderFushiSource extends ReaderMediaSource {
     return (position: (total - selected).clamp(0, total), duration: total);
   }
 
-  /// Resolve a single [EpubBookRow] into a [MediaItem], reading its reader
-  /// position and cover concurrently with sibling books (HBK-AUDIT-128).
+  /// Resolve a single [EpubBookRow] into a [MediaItem], probing its cover
+  /// concurrently with sibling books (HBK-AUDIT-128). [pos] is the book's
+  /// reader position (already keyed by uid by the caller; null = never read).
   Future<MediaItem> _bookToMediaItem(
     EpubBookRow book,
-    ReaderPositionRepository posRepo,
+    ReaderPosition? pos,
   ) async {
     int position = 0;
     int duration = 1;
@@ -602,9 +614,6 @@ class ReaderFushiSource extends ReaderMediaSource {
 
     // TODO-1346：进度纳入当前章内 charOffset（与章字数同单位），并对老书无字数时
     // 回退章级粗粒度，避免书架恒显 0%。见 [computeBookProgress]。
-    // v82：位置键 = 行 uid（行在手直接取；空 uid 视同无阅读记录）。
-    final ReaderPosition? pos =
-        book.uid.isEmpty ? null : await posRepo.findByBookUid(book.uid);
     // 在线漫画的进度是**章级**的，不能走下面的页级分支。
     //
     // 那条分支算的是 `sectionIndex+1 ÷ chapterCount`，而在线条目里这两个量纲
@@ -618,26 +627,26 @@ class ReaderFushiSource extends ReaderMediaSource {
     final ({int position, int duration}) prog = onlineEntry != null
         ? _onlineMangaProgress(onlineEntry)
         : pageBased
-        // PDF Phase 3 / 漫画同款：进度单位是**页**（sectionIndex=当前页 0-based，
-        // chapterCount=总页数）。chaptersJson='[]' 无字数，走 computeBookProgress 会恒回
-        // (0,1)=0%。用 sectionIndex+1（1-based 页序）而非 0-based：停在第 1 页时
-        // position>0 才会被 `tallyShelfProgress` 计入「在读」并进「继续阅读」；读到最后
-        // 一页 position==duration 恰好等于「读完」判据，两端都自洽。
-        ? (
-            // 1-based 页序直接 clamp 到 [1, 总页数]，脏 sectionIndex 也不会让
-            // position 溢出 duration（>100%）。
-            position: ((pos?.sectionIndex ?? 0) + 1)
-                .clamp(1, book.chapterCount > 0 ? book.chapterCount : 1),
-            duration: book.chapterCount > 0 ? book.chapterCount : 1,
-          )
-        : computeBookProgress(
-            sectionChars: sectionChars,
-            sectionIndex: pos?.sectionIndex,
-            charOffset: pos?.charOffset ?? -1,
-            // BUG-728：听书时 charOffset 存 -1，章内进度只在 normCharOffset（0-10000）
-            // 里，传进去让 computeBookProgress 回退还原，否则书架进度停在章边界。
-            normCharOffset: pos?.normCharOffset ?? 0,
-          );
+            // PDF Phase 3 / 漫画同款：进度单位是**页**（sectionIndex=当前页 0-based，
+            // chapterCount=总页数）。chaptersJson='[]' 无字数，走 computeBookProgress 会恒回
+            // (0,1)=0%。用 sectionIndex+1（1-based 页序）而非 0-based：停在第 1 页时
+            // position>0 才会被 `tallyShelfProgress` 计入「在读」并进「继续阅读」；读到最后
+            // 一页 position==duration 恰好等于「读完」判据，两端都自洽。
+            ? (
+                // 1-based 页序直接 clamp 到 [1, 总页数]，脏 sectionIndex 也不会让
+                // position 溢出 duration（>100%）。
+                position: ((pos?.sectionIndex ?? 0) + 1)
+                    .clamp(1, book.chapterCount > 0 ? book.chapterCount : 1),
+                duration: book.chapterCount > 0 ? book.chapterCount : 1,
+              )
+            : computeBookProgress(
+                sectionChars: sectionChars,
+                sectionIndex: pos?.sectionIndex,
+                charOffset: pos?.charOffset ?? -1,
+                // BUG-728：听书时 charOffset 存 -1，章内进度只在 normCharOffset（0-10000）
+                // 里，传进去让 computeBookProgress 回退还原，否则书架进度停在章边界。
+                normCharOffset: pos?.normCharOffset ?? 0,
+              );
     position = prog.position;
     duration = prog.duration;
 

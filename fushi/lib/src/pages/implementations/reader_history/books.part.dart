@@ -724,12 +724,12 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     // bookKey 的真值在 `epub_books`（`fushiBooksProvider` 也是从这里取的）；
     // `getAllMediaItems()` 是另一张表、另一套 mediaIdentifier 语义，拿它做判据
     // 会把全部选中项误判成幽灵键而整批剔光。
-    final List<EpubBookRow> epubBooks = await db.getAllEpubBooks();
+    final List<EpubBookMeta> epubBooks = await db.getEpubBookMetas();
     // v83：合集成员表 epub entryKey = `epub_books.uid`，而选择键解码出的身份仍是
     // bookKey。批量组合/加合集都在本剪枝之后立即落库，借同一批行顺带刷新
     // bookKey→uid 换算表（[_loadShelfMaps] 同款口径），保证写库前换算不吃旧值。
     _epubUidByKey = <String, String>{
-      for (final EpubBookRow row in epubBooks)
+      for (final EpubBookMeta row in epubBooks)
         if (row.uid.isNotEmpty) row.bookKey: row.uid,
     };
     final List<SrtBook> srtBooks = await SrtBookRepository(db).listAll();
@@ -738,7 +738,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     if (!mounted) return false;
     final int dropped = _selection.retainExisting(
       loose: <String>{
-        for (final EpubBookRow row in epubBooks)
+        for (final EpubBookMeta row in epubBooks)
           ReaderFushiSource.mediaIdentifierFor(row.bookKey),
         for (final SrtBook book in srtBooks) 'srt_${book.uid}',
       },

@@ -430,17 +430,24 @@ class VideoBookRepository {
   Future<List<VideoBookRow>> _repairMovedCoverPaths(
     List<VideoBookRow> rows,
   ) async {
-    Directory? coversDir;
+    if (rows.isEmpty) return rows;
+    // 封面目录列一次成集合：绝大多数封面都在 coversDir 下（自动抽帧 / 刮削落地），
+    // 存在性查集合即可，不再对每一行 `existsSync`——这条读路径每次库页刷新、每次
+    // 回填成功都走，几千个视频就是几千次同步 stat 在 UI isolate 上。目录外的
+    // 手选封面仍逐个 stat（少数）。目录解析失败（无 path_provider 的测试宿主）
+    // 退回逐行 stat，行为与从前一字不差。
+    final _CoverDirSnapshot? snapshot = await _CoverDirSnapshot.take();
+    Directory? coversDir = snapshot?.dir;
     final List<VideoBookRow> out = <VideoBookRow>[];
     for (final VideoBookRow row in rows) {
       final String? cover = row.coverPath;
-      if (cover == null || cover.isEmpty || File(cover).existsSync()) {
+      if (cover == null || cover.isEmpty || _coverExists(cover, snapshot)) {
         out.add(row);
         continue;
       }
       coversDir ??= await VideoStorage.coversDir();
       final String candidate = p.join(coversDir.path, p.basename(cover));
-      if (candidate != cover && File(candidate).existsSync()) {
+      if (candidate != cover && _coverExists(candidate, snapshot)) {
         // 只有这一次指针回写需要与其他封面写入串行。锁内必须按 bookUid 重读当前
         // cover_path：这批 rows 是进锁前的快照，期间用户可能刚手选了封面，拿旧快照
         // 覆盖等于把手选结果抹掉（正是 gate 当初要防的那个竞态）。
@@ -803,17 +810,14 @@ class VideoBookRepository {
     required LocalVideoFileDeleteHooks? localFileHooks,
     required Future<void> Function()? afterDeleteBeforeReclaim,
   }) async {
-    final deleted =
-        <
-          ({
-            String bookUid,
-            String? coverPath,
-            String? subtitlePath,
-            String videoPath,
-            String? playlistJson,
-            List<String> imagePaths,
-          })
-        >[];
+    final deleted = <({
+      String bookUid,
+      String? coverPath,
+      String? subtitlePath,
+      String videoPath,
+      String? playlistJson,
+      List<String> imagePaths,
+    })>[];
     for (final String bookUid in bookUids.toSet()) {
       final VideoBookRow? book = await getByBookUid(bookUid);
       if (book == null) continue;
@@ -1080,3 +1084,51 @@ class VideoBookRepository {
         await _db.updateVideoBookSubtitleSource(bookUid, subtitleSource);
       });
 }
+
+/// [VideoStorage.coversDir] 的一次性快照：目录下的文件名集合。
+///
+/// 给 `_repairMovedCoverPaths` 判断封面存在性用——目录内的封面查集合、零系统
+/// 调用；目录解析失败（测试宿主没有 path_provider）时 [take] 返回 null，调用方退回
+/// 逐个 stat。
+class _CoverDirSnapshot {
+  const _CoverDirSnapshot(this.dir, this.names);
+
+  final Directory dir;
+  final Set<String> names;
+
+  static Future<_CoverDirSnapshot?> take() async {
+    final Directory dir;
+    try {
+      dir = await VideoStorage.coversDir();
+    } catch (_) {
+      return null;
+    }
+    final Set<String> names = <String>{};
+    try {
+      if (dir.existsSync()) {
+        // 必须是 listSync，不能是 `await for (… in dir.list())`。
+        // 异步目录流的完成事件走真实事件循环，而 widget 测试在 fake-async 里推进
+        // 时钟——那个事件永远送不到，`listForShelf()` 的 future 因此永不 resolve，
+        // 加载转圈一直排帧，`pumpAndSettle` 必然超时（home_video_page_menu_test
+        // 的 5 条用例就是这么红的）。
+        // 省掉「每行一次 existsSync」这个收益与同步/异步无关：一次目录列举 vs
+        // N 次 stat，listSync 照样是一次。
+        for (final FileSystemEntity entity in dir.listSync(followLinks: false)) {
+          if (entity is File) names.add(p.basename(entity.path));
+        }
+      }
+    } catch (_) {
+      return null;
+    }
+    return _CoverDirSnapshot(dir, names);
+  }
+
+  /// [path] 在本目录下时按集合判；否则 null（调用方 stat）。
+  bool? contains(String path) {
+    if (!p.equals(p.dirname(path), dir.path)) return null;
+    return names.contains(p.basename(path));
+  }
+}
+
+bool _coverExists(String path, _CoverDirSnapshot? snapshot) =>
+    snapshot?.contains(path) ?? File(path).existsSync();

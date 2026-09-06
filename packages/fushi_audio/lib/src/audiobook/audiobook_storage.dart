@@ -52,19 +52,40 @@ abstract final class AudiobookStorage {
   /// 导入时用这些边界给 cue 重新分配 [AudioCue.audioFileIndex]（见
   /// [reindexCuesByFileBoundaries]）。每个文件用一次性 [AudioPlayer]，探完即释放。
   static Future<List<int>> probeAudioDurationsMs(List<String> paths) async {
-    final List<int> out = <int>[];
-    for (final String path in paths) {
-      final AudioPlayer player = AudioPlayer();
-      try {
-        final Duration? dur = await player.setFilePath(path);
-        out.add(dur?.inMilliseconds ?? 0);
-      } catch (_) {
-        out.add(0);
-      } finally {
-        await player.dispose();
+    // 每个文件一次平台播放器 构造→探头→释放 往返（Android 上 100~500 ms）；
+    // 60 章的 m4b 串行就是半分钟卡在「保存中」。有界并行（同时 4 个），
+    // 结果按下标回填保持与 [paths] 对齐。
+    final List<int> out = List<int>.filled(paths.length, 0);
+    int next = 0;
+    Future<void> worker() async {
+      while (next < paths.length) {
+        final int i = next++;
+        out[i] = await _probeOneDurationMs(paths[i]);
       }
     }
+
+    final int workers = paths.length < probeDurationConcurrency
+        ? paths.length
+        : probeDurationConcurrency;
+    await Future.wait<void>(
+      List<Future<void>>.generate(workers, (_) => worker()),
+    );
     return out;
+  }
+
+  /// [probeAudioDurationsMs] 的并行度。
+  static const int probeDurationConcurrency = 4;
+
+  static Future<int> _probeOneDurationMs(String path) async {
+    final AudioPlayer player = AudioPlayer();
+    try {
+      final Duration? dur = await player.setFilePath(path);
+      return dur?.inMilliseconds ?? 0;
+    } catch (_) {
+      return 0;
+    } finally {
+      await player.dispose();
+    }
   }
 
   /// FNV-1a 32 位（UTF-8 逐字节），委托 hibiki_core 单一真相源；输出与历史手写

@@ -332,7 +332,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         if (b.bookKey.isNotEmpty) b.bookKey: b.uid,
     };
     final epubUidByBookKey = <String, String>{
-      for (final EpubBookRow r in await db.getAllEpubBooks())
+      for (final EpubBookMeta r in await db.getEpubBookMetas())
         if (r.uid.isNotEmpty) r.bookKey: r.uid,
     };
     final collectionNamesById = <int, String>{

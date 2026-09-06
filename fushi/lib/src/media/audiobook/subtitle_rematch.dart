@@ -4,7 +4,7 @@ import 'package:fushi/src/media/audiobook/audiobook_import_dialog.dart'
 
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/audiobook/audiobook_alignment_service.dart'
-    show epubSectionsFromExtractDir;
+    show loadEpubSectionsInBackground;
 import 'package:fushi/utils.dart';
 
 /// Sasayaki 重匹配入口，被 [AudiobookImportDialog]（已附加视图）和书架
@@ -255,7 +255,7 @@ class SubtitleRematch {
     required String extractDir,
   }) async {
     try {
-      return epubSectionsFromExtractDir(extractDir);
+      return await loadEpubSectionsInBackground(extractDir);
     } catch (e, stack) {
       ErrorLogService.instance.log('SubtitleRematch.loadSections', e, stack);
       debugPrint('[fushi-audiobook] loadSections failed: $e');
@@ -279,7 +279,8 @@ class SubtitleRematch {
         );
         return;
       }
-      final List<EpubSection> sections = epubSectionsFromExtractDir(extractDir);
+      final List<EpubSection> sections =
+          await loadEpubSectionsInBackground(extractDir);
       if (sections.isEmpty) {
         FushiToast.show(
           msg: t.audiobook_rematch_no_chapters,

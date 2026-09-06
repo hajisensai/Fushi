@@ -311,6 +311,24 @@ class AudiobookRepository {
 
   Future<AudiobookHealth?> readHealthOverlay(String bookKey) async {
     final raw = await _db.getPref('$_kHealthOverlayKeyPrefix$bookKey');
+    return _parseHealthOverlay(raw);
+  }
+
+  /// 全部健康度覆盖一次取完（bookKey → 覆盖）。书架列表页为每本有声书各查一次
+  /// [readHealthOverlay] 是 N+1（每次都是一条真 SELECT），这里一条前缀查询取完。
+  Future<Map<String, AudiobookHealth>> readAllHealthOverlays() async {
+    final Map<String, String> raw =
+        await _db.getPrefsByPrefix(_kHealthOverlayKeyPrefix);
+    final Map<String, AudiobookHealth> result = <String, AudiobookHealth>{};
+    for (final MapEntry<String, String> e in raw.entries) {
+      final AudiobookHealth? health = _parseHealthOverlay(e.value);
+      if (health == null) continue;
+      result[e.key.substring(_kHealthOverlayKeyPrefix.length)] = health;
+    }
+    return result;
+  }
+
+  static AudiobookHealth? _parseHealthOverlay(String? raw) {
     if (raw == null || raw.isEmpty) return null;
     try {
       final m = jsonDecode(raw) as Map<String, dynamic>;
@@ -354,6 +372,18 @@ class AudiobookRepository {
     final overlay = await readHealthOverlay(ab.bookKey);
     if (overlay != null) return overlay;
     return AudiobookHealth.fromAudiobook(ab);
+  }
+
+  /// [resolveHealth] 的批量口径（书架一次算完全部有声书）：覆盖一次前缀查询取完，
+  /// 判据与单本版逐字一致——有覆盖用覆盖，否则按行自身推导。
+  Future<Map<String, AudiobookHealth>> resolveAllHealth(
+    Map<String, Audiobook> byBookKey,
+  ) async {
+    final Map<String, AudiobookHealth> overlays = await readAllHealthOverlays();
+    return <String, AudiobookHealth>{
+      for (final MapEntry<String, Audiobook> e in byBookKey.entries)
+        e.key: overlays[e.key] ?? AudiobookHealth.fromAudiobook(e.value),
+    };
   }
 
   // ── conversions ─────────────────────────────────────────────────

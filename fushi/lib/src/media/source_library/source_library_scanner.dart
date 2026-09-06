@@ -884,9 +884,9 @@ class SourceLibraryScanner {
     SourceFileSystem fs,
   ) async {
     if (plan.mangas.isEmpty && plan.mangaArchives.isEmpty) return 0;
-    final List<EpubBookRow> existingBooks = await _db.getAllEpubBooks();
+    final List<EpubBookMeta> existingBooks = await _db.getEpubBookMetas();
     final Set<String> existingTitleKeys = existingBooks
-        .map((EpubBookRow b) => sanitizeTtuFilename(b.title))
+        .map((EpubBookMeta b) => sanitizeTtuFilename(b.title))
         .toSet();
     int count = 0;
     for (final ScanMangaItem item in plan.mangas) {
@@ -940,12 +940,11 @@ class SourceLibraryScanner {
         pageExists: remoteByRel.containsKey,
       );
       if (pageRoot == null) {
-        final String searched =
-            mokuroPageRootCandidates(volumeName: remoteVolumeName)
-                .map((List<String> candidate) => candidate.isEmpty
-                    ? parentDir
-                    : '$prefix${candidate.join('/')}')
-                .join(', ');
+        final String searched = mokuroPageRootCandidates(
+                volumeName: remoteVolumeName)
+            .map((List<String> candidate) =>
+                candidate.isEmpty ? parentDir : '$prefix${candidate.join('/')}')
+            .join(', ');
         throw MangaImportException(
           'Missing manga page image: ${payload.images.first.url} '
           '(searched: $searched)',
@@ -1132,18 +1131,18 @@ class SourceLibraryScanner {
         Future<void> persistVideo(String? coverPath) =>
             _videoRepo.saveVideoBook(
               VideoBooksCompanion(
-            bookUid: Value(bookUid),
-            title: Value(title),
-            videoPath: Value(item.videoPath),
-            coverPath: Value<String?>(coverPath),
-            subtitleSource: Value<String?>(subtitleSource),
-            subtitleFormat: Value<String?>(subtitleFormat),
-            streamSpecJson: Value<String?>(streamSpecJson),
-            embeddedSubtitleTrack: subtitleSource == null
-                ? const Value<int?>(0)
-                : const Value<int?>(null),
-            importedAt: Value(DateTime.now().millisecondsSinceEpoch),
-          ),
+                bookUid: Value(bookUid),
+                title: Value(title),
+                videoPath: Value(item.videoPath),
+                coverPath: Value<String?>(coverPath),
+                subtitleSource: Value<String?>(subtitleSource),
+                subtitleFormat: Value<String?>(subtitleFormat),
+                streamSpecJson: Value<String?>(streamSpecJson),
+                embeddedSubtitleTrack: subtitleSource == null
+                    ? const Value<int?>(0)
+                    : const Value<int?>(null),
+                importedAt: Value(DateTime.now().millisecondsSinceEpoch),
+              ),
               sourceId: sourceId,
             );
 
@@ -1171,8 +1170,8 @@ class SourceLibraryScanner {
             await persistVideo(coverPath);
             if (coverPath != null && autoFrameMetaStore != null) {
               try {
-                final bool committed = await autoFrameMetaStore
-                    .markAutoFrameAfterWrite(bookUid);
+                final bool committed =
+                    await autoFrameMetaStore.markAutoFrameAfterWrite(bookUid);
                 if (!committed) {
                   debugPrint(
                     'SourceLibraryScanner cover provenance changed during '

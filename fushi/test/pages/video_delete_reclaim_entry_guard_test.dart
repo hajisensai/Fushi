@@ -131,9 +131,15 @@ void main() {
           'if(!mounted||requestGeneration!=_libraryMapsRequestGeneration)return;';
       expect(body, contains(request));
       expect(body, contains(staleGuard));
+      // 锚点不带 `await`：预取链把十三个全表查询改成「先全部发出去、后统一
+      // Future.wait」，第一个快照因此是 `db.getAllMediaCollections()` 而不再是
+      // `await db.…`。不变式没变（代次仍必须在第一次碰库之前捕获），变的只是
+      // 那一行的写法——所以这里钉的是「发出查询」这个点，不是 await 那个点。
+      const String firstSnapshot = 'db.getAllMediaCollections()';
+      expect(body, contains(firstSnapshot), reason: '预取链不再碰这张表？守卫需更新');
       expect(
         body.indexOf(request),
-        lessThan(body.indexOf('awaitdb.getAllMediaCollections()')),
+        lessThan(body.indexOf(firstSnapshot)),
         reason: 'generation must be captured before the first library snapshot',
       );
       expect(

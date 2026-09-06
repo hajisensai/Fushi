@@ -302,9 +302,12 @@ class AssParser {
   /// 将 ASS 时间码 `H:MM:SS.x` 转换为毫秒。小数秒接受 1~3 位
   /// （厘秒/毫秒/十分之一秒可变精度），归一到毫秒的写法与 SRT/VTT
   /// 解析器同构（`padRight(3, '0')`），消除外挂 .ass 的孤立特例（TODO-870）。
+  static final RegExp _assTimeRe =
+      RegExp(r'^(\d+):(\d{2}):(\d{2})\.(\d{1,3})$');
+  static final RegExp _assColorRe = RegExp(r'&H([0-9a-fA-F]{1,8})&?$');
+
   static int? _parseAssTime(String timecode) {
-    final RegExpMatch? m =
-        RegExp(r'^(\d+):(\d{2}):(\d{2})\.(\d{1,3})$').firstMatch(timecode);
+    final RegExpMatch? m = _assTimeRe.firstMatch(timecode);
     if (m == null) {
       return null;
     }
@@ -340,7 +343,7 @@ class AssParser {
       final String? raw = cell(name);
       if (raw == null) return null;
       // ASS 颜色形如 &HAABBGGRR& 或 &HBBGGRR；取出十六进制主体交给 assColorToArgb。
-      final RegExpMatch? m = RegExp(r'&H([0-9a-fA-F]{1,8})&?$').firstMatch(raw);
+      final RegExpMatch? m = _assColorRe.firstMatch(raw);
       if (m == null) return null;
       return assColorToArgb(m.group(1)!);
     }

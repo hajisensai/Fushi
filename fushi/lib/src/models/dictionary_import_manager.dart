@@ -263,8 +263,7 @@ class DictionaryImportManager {
           hasReplaceTarget: false,
         );
         if (decision == UpdateDecision.alreadyUpToDate) {
-          progressNotifier.value = t.import_duplicate(name: name);
-          await Future.delayed(const Duration(seconds: 2));
+          _notifyAlreadyUpToDate(progressNotifier, name);
           if (tempOutputDir.existsSync()) {
             tempOutputDir.deleteSync(recursive: true);
           }
@@ -504,8 +503,7 @@ class DictionaryImportManager {
         hasReplaceTarget: replaceTarget != null,
       );
       if (decision == UpdateDecision.alreadyUpToDate) {
-        progressNotifier.value = t.import_duplicate(name: name);
-        await Future.delayed(const Duration(seconds: 2));
+        _notifyAlreadyUpToDate(progressNotifier, name);
         if (tempOutputDir.existsSync()) {
           tempOutputDir.deleteSync(recursive: true);
         }
@@ -719,16 +717,34 @@ class DictionaryImportManager {
   @visibleForTesting
   static void packDirectoryToZip(String srcDirPath, String zipPath) {
     final Directory directory = Directory(srcDirPath);
-    final Archive archive = Archive();
-    for (final FileSystemEntity entity in directory.listSync(recursive: true)) {
-      if (entity is File) {
-        final String relativePath =
-            path.relative(entity.path, from: directory.path);
-        archive.addFile(ArchiveFile(
-            relativePath, entity.lengthSync(), entity.readAsBytesSync()));
+    // STORE（不压缩）+ 逐文件流式写盘：这个 zip 只是给 native 导入器当输入的
+    // 临时容器，native 拿到后立刻 inflate——在 Dart 里 deflate 一遍纯属白干（几百
+    // MB 的 MDX/MDD 目录要压好几秒）。以前还把整个目录读进内存组 Archive、再
+    // encode 成第二份内存拷贝才落盘（~2× 目录大小的峰值，正是 OOM 路径的来源）；
+    // ZipFileEncoder 一次只持有一个文件。native 侧的压缩比守卫对 STORE 比 1:1
+    // 天然放行。
+    final ZipFileEncoder encoder = ZipFileEncoder();
+    encoder.create(zipPath, level: ZipFileEncoder.STORE);
+    try {
+      for (final FileSystemEntity entity
+          in directory.listSync(recursive: true)) {
+        if (entity is File) {
+          final String relativePath =
+              path.relative(entity.path, from: directory.path);
+          final InputFileStream fileStream = InputFileStream(entity.path);
+          try {
+            encoder.addArchiveFile(
+              ArchiveFile.stream(relativePath, entity.lengthSync(), fileStream)
+                ..compress = false,
+            );
+          } finally {
+            fileStream.closeSync();
+          }
+        }
       }
+    } finally {
+      encoder.closeSync();
     }
-    File(zipPath).writeAsBytesSync(ZipEncoder().encode(archive)!);
   }
 
   static void _copyDirectory(Directory source, Directory destination) {
@@ -933,6 +949,20 @@ class DictionaryImportManager {
   static bool _isMemoryError(Object e) {
     final msg = e.toString().toLowerCase();
     return e is OutOfMemoryError || msg.contains('out of memory');
+  }
+
+  /// 「已是最新、跳过」的提示：进度文字 + 一条 toast，**不阻塞**导入循环。
+  ///
+  /// 之前这里 `Future.delayed(2s)` 只为让进度文字停留两秒——批量重导一个已装
+  /// 目录时每本都白等 2 秒（30 本 = 60 秒纯睡眠）。toast 自带停留时间，循环
+  /// 立即进入下一本。
+  static void _notifyAlreadyUpToDate(
+    ValueNotifier<String> progressNotifier,
+    String name,
+  ) {
+    final String msg = t.import_duplicate(name: name);
+    progressNotifier.value = msg;
+    FushiToast.show(msg: msg, severity: ToastSeverity.info);
   }
 
   /// 批量导入结束后，把失败的词典名汇总成一条提示文案（单条/多条不同措辞）。

@@ -82,10 +82,33 @@ Future<void> addGamesFromPaths(
     msg: t.game_drop_imported(count: added.length),
     severity: ToastSeverity.success,
   );
-  for (final GalgameEntry entry in added) {
-    unawaited(_autoCoverSilently(repo, entry));
-  }
+  unawaited(_autoCoverAllSilently(repo, added));
   onImported?.call();
+}
+
+/// 批量补封面的并行度。每个 exe 图标抽取都是一个后台 isolate 把整个 exe 读进
+/// 内存（上限 128 MB）；拖 30 个游戏进来就是 30 个 isolate 同时各抱一个 exe。
+const int kGameCoverResolveConcurrency = 3;
+
+/// [_autoCoverSilently] 的有界并行版：同时最多 [kGameCoverResolveConcurrency] 个，
+/// 单条失败不影响其余（[_autoCoverSilently] 自身不抛）。
+Future<void> _autoCoverAllSilently(
+  GalgameRepository repo,
+  List<GalgameEntry> games,
+) async {
+  int next = 0;
+  Future<void> worker() async {
+    while (next < games.length) {
+      await _autoCoverSilently(repo, games[next++]);
+    }
+  }
+
+  final int workers = games.length < kGameCoverResolveConcurrency
+      ? games.length
+      : kGameCoverResolveConcurrency;
+  await Future.wait<void>(
+    List<Future<void>>.generate(workers, (_) => worker()),
+  );
 }
 
 /// 后台补封面（静默版）：目录封面图 → exe 内嵌图标；期间条目被删则空操作。

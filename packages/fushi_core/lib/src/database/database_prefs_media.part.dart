@@ -12,6 +12,25 @@ mixin _FushiDbPrefsMedia
     return row?.value;
   }
 
+  /// 一次取回全部以 [prefix] 开头的偏好（key → value）。
+  ///
+  /// 「每本一个键」的偏好族（有声书健康度覆盖等）在列表页要为每本各查一次
+  /// [getPref]，库越大 N+1 越重；这里一条 `LIKE 'prefix%'` 取完。[prefix] 里的
+  /// `%` / `_` 按字面转义，不当通配符。
+  Future<Map<String, String>> getPrefsByPrefix(String prefix) async {
+    final String escaped = prefix
+        .replaceAll(r'\', r'\\')
+        .replaceAll('%', r'\%')
+        .replaceAll('_', r'\_');
+    final SimpleSelectStatement<$PreferencesTable, PreferenceRow> q =
+        select(preferences)
+          ..where((t) => t.key.like('$escaped%', escapeChar: r'\'));
+    final List<PreferenceRow> rows = await q.get();
+    return <String, String>{
+      for (final PreferenceRow row in rows) row.key: row.value,
+    };
+  }
+
   Future<void> setPref(String key, String value) async {
     // BUG-906 (A): the business write and the version bump MUST land in one
     // transaction. Previously these were two independent awaits, so two

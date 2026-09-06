@@ -441,8 +441,10 @@ SubtitleClip? parseAssClip({
       divisor = 1 << (scale - 1) == 0 ? 1.0 : (1 << (scale - 1)).toDouble();
     }
   }
-  final List<String> tokens =
-      drawing.split(RegExp(r'\s+')).where((String t) => t.isNotEmpty).toList();
+  final List<String> tokens = drawing
+      .split(_reWhitespaceRun)
+      .where((String t) => t.isNotEmpty)
+      .toList();
   int i = 0;
   String mode = '';
   final List<double> nums = <double>[];
@@ -1013,6 +1015,54 @@ SubtitleMarkup parseSubtitleMarkup(String raw,
   );
 }
 
+// ── 覆盖标签正则（编译一次） ───────────────────────────────────────────────
+//
+// 以前每个 `RegExp(r'…')` 都写在 [_applyOverrideBlock] 的循环体里：每条 cue 的每个
+// `\tag` 都要把下面这三十来个正则**顺序**重新编译直到命中——一份几千条 cue 的 ASS
+// 解析绝大部分时间花在编译正则而不是匹配上。
+final RegExp _reTagTransition = RegExp(r'\\t\(([^)]*)\)');
+final RegExp _reTagAn = RegExp(r'^an?([1-9])$');
+final RegExp _reTagPos =
+    RegExp(r'^pos\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)$');
+final RegExp _reTagToggle = RegExp(r'^([ibus])(\d+)$');
+final RegExp _reTagFs = RegExp(r'^fs(\d+(?:\.\d+)?)$');
+final RegExp _reTagColor1 = RegExp(r'^1?c&H([0-9a-fA-F]{1,8})&?$');
+final RegExp _reTagColor3 = RegExp(r'^3c&H([0-9a-fA-F]{1,8})&?$');
+final RegExp _reTagColor4 = RegExp(r'^4c&H([0-9a-fA-F]{1,8})&?$');
+final RegExp _reTagBord = RegExp(r'^bord(\d+(?:\.\d+)?)$');
+final RegExp _reTagShad = RegExp(r'^shad(\d+(?:\.\d+)?)$');
+final RegExp _reTagDrawing = RegExp(r'^p(\d+)$');
+final RegExp _reTagBlur = RegExp(r'^(?:blur|be)(\d+(?:\.\d+)?)$');
+final RegExp _reTagFad = RegExp(r'^fad\(\s*(\d+)\s*,\s*(\d+)\s*\)$');
+final RegExp _reTagFade = RegExp(
+    r'^fade\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$');
+final RegExp _reTagReset = RegExp(r'^r[A-Za-z0-9_ \-]+$');
+final RegExp _reTagFrz = RegExp(r'^frz?(-?\d+(?:\.\d+)?)$');
+final RegExp _reTagFscx = RegExp(r'^fscx(\d+(?:\.\d+)?)$');
+final RegExp _reTagFscy = RegExp(r'^fscy(\d+(?:\.\d+)?)$');
+final RegExp _reTagMove = RegExp(
+    r'^move\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*(?:,\s*(\d+)\s*,\s*(\d+)\s*)?\)$');
+final RegExp _reTagAlpha = RegExp(r'^(?:1a|alpha)&?H?([0-9A-Fa-f]{1,2})&?$');
+final RegExp _reTagClip = RegExp(r'^(i?)clip\((.*)\)$');
+final RegExp _reTagFsp = RegExp(r'^fsp(-?\d+(?:\.\d+)?)$');
+final RegExp _reTagFrx = RegExp(r'^frx(-?\d+(?:\.\d+)?)$');
+final RegExp _reTagFry = RegExp(r'^fry(-?\d+(?:\.\d+)?)$');
+final RegExp _reTagFax = RegExp(r'^fax(-?\d+(?:\.\d+)?)$');
+final RegExp _reTagFay = RegExp(r'^fay(-?\d+(?:\.\d+)?)$');
+final RegExp _reTagKaraoke = RegExp(r'^(k|K|kf|ko)(\d+(?:\.\d+)?)$');
+// `\t(...)` 内部子标签。
+final RegExp _reTrTimes =
+    RegExp(r'^\s*(-?\d+)\s*,\s*(-?\d+)\s*(?:,\s*(-?\d+(?:\.\d+)?)\s*)?,');
+final RegExp _reTrAccelOnly = RegExp(r'^\s*(-?\d+(?:\.\d+)?)\s*,');
+final RegExp _reTrFscx = RegExp(r'\\fscx(\d+(?:\.\d+)?)');
+final RegExp _reTrFscy = RegExp(r'\\fscy(\d+(?:\.\d+)?)');
+final RegExp _reTrAlpha = RegExp(r'\\(?:1a|alpha)&?H?([0-9A-Fa-f]{1,2})&?');
+final RegExp _reTrColor = RegExp(r'\\1?c&H([0-9A-Fa-f]{1,8})&?');
+final RegExp _reTrBlur = RegExp(r'\\(?:blur|be)(\d+(?:\.\d+)?)');
+final RegExp _reTrBord = RegExp(r'\\bord(\d+(?:\.\d+)?)');
+final RegExp _reTrFrz = RegExp(r'\\frz?(-?\d+(?:\.\d+)?)');
+final RegExp _reWhitespaceRun = RegExp(r'\s+');
+
 /// 解析单个 `{...}` 块内的 `\tag` 序列，更新样式/锚点/位置/淡变。未知标签忽略。
 void _applyOverrideBlock(
   String block,
@@ -1028,8 +1078,7 @@ void _applyOverrideBlock(
   // \t(...) 动画：内含 \fscy 等带反斜杠的子标签，会被下面 split('\\') 打碎，故先整体抽出
   // 记录目标，再从 block 里剔除（TODO-1374）。目标缩放的「起点」用后续静态 \fscx\fscy 累积值
   // （在下方循环里设），故此处只记 (t1,t2) 与目标倍数，实际 from 在扫描结束时归一。
-  final String working =
-      block.replaceAllMapped(RegExp(r'\\t\(([^)]*)\)'), (Match m) {
+  final String working = block.replaceAllMapped(_reTagTransition, (Match m) {
     _parseTransition(m.group(1) ?? '', xf);
     return '';
   });
@@ -1041,7 +1090,7 @@ void _applyOverrideBlock(
     if (tag.isEmpty) continue;
 
     // \an<d> / \a<d>（旧式）
-    final RegExpMatch? an = RegExp(r'^an?([1-9])$').firstMatch(tag);
+    final RegExpMatch? an = _reTagAn.firstMatch(tag);
     if (an != null) {
       final SubtitleAnchor? a =
           SubtitleAnchor.fromAnCode(int.parse(an.group(1)!));
@@ -1050,9 +1099,7 @@ void _applyOverrideBlock(
     }
 
     // \pos(x,y)
-    final RegExpMatch? p =
-        RegExp(r'^pos\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)$')
-            .firstMatch(tag);
+    final RegExpMatch? p = _reTagPos.firstMatch(tag);
     if (p != null &&
         playResX != null &&
         playResY != null &&
@@ -1065,7 +1112,7 @@ void _applyOverrideBlock(
     }
 
     // \i1 \i0 \b1 \b0 \u1 \u0 \s1 \s0（\b 接粗细数值时 >0 视为粗体）
-    final RegExpMatch? toggle = RegExp(r'^([ibus])(\d+)$').firstMatch(tag);
+    final RegExpMatch? toggle = _reTagToggle.firstMatch(tag);
     if (toggle != null) {
       final bool on = int.parse(toggle.group(2)!) > 0;
       switch (toggle.group(1)!) {
@@ -1082,31 +1129,28 @@ void _applyOverrideBlock(
     }
 
     // \fs<n>
-    final RegExpMatch? fs = RegExp(r'^fs(\d+(?:\.\d+)?)$').firstMatch(tag);
+    final RegExpMatch? fs = _reTagFs.firstMatch(tag);
     if (fs != null) {
       style.fontSizePx = double.parse(fs.group(1)!);
       continue;
     }
 
     // \c&H..& / \1c&H..&（主色，BGR）
-    final RegExpMatch? col =
-        RegExp(r'^1?c&H([0-9a-fA-F]{1,8})&?$').firstMatch(tag);
+    final RegExpMatch? col = _reTagColor1.firstMatch(tag);
     if (col != null) {
       style.colorArgb = assColorToArgb(col.group(1)!);
       continue;
     }
 
     // \3c&H..&（描边色，BGR，TODO-1105）
-    final RegExpMatch? col3 =
-        RegExp(r'^3c&H([0-9a-fA-F]{1,8})&?$').firstMatch(tag);
+    final RegExpMatch? col3 = _reTagColor3.firstMatch(tag);
     if (col3 != null) {
       style.outlineColorArgb = assColorToArgb(col3.group(1)!);
       continue;
     }
 
     // \4c&H..&（阴影色，BGR，TODO-1105）
-    final RegExpMatch? col4 =
-        RegExp(r'^4c&H([0-9a-fA-F]{1,8})&?$').firstMatch(tag);
+    final RegExpMatch? col4 = _reTagColor4.firstMatch(tag);
     if (col4 != null) {
       style.shadowColorArgb = assColorToArgb(col4.group(1)!);
       continue;
@@ -1120,21 +1164,21 @@ void _applyOverrideBlock(
     }
 
     // \bord<n> 描边宽（px，TODO-1105）
-    final RegExpMatch? bord = RegExp(r'^bord(\d+(?:\.\d+)?)$').firstMatch(tag);
+    final RegExpMatch? bord = _reTagBord.firstMatch(tag);
     if (bord != null) {
       style.outlineWidthPx = double.parse(bord.group(1)!);
       continue;
     }
 
     // \shad<n> 阴影深度（px，TODO-1105）
-    final RegExpMatch? shad = RegExp(r'^shad(\d+(?:\.\d+)?)$').firstMatch(tag);
+    final RegExpMatch? shad = _reTagShad.firstMatch(tag);
     if (shad != null) {
       style.shadowDepthPx = double.parse(shad.group(1)!);
       continue;
     }
 
     // \p<n>：绘图模式开关。n>0 进入，n=0 退出；作用域持续到本条 cue 结束。
-    final RegExpMatch? p1 = RegExp(r'^p(\d+)$').firstMatch(tag);
+    final RegExpMatch? p1 = _reTagDrawing.firstMatch(tag);
     if (p1 != null) {
       setDrawing(int.parse(p1.group(1)!) > 0);
       continue;
@@ -1142,8 +1186,7 @@ void _applyOverrideBlock(
 
     // \blur<n> / \be<n>：辉光边缘模糊（TODO-1373）。两者都软化字形边缘成辉光，归一到
     // 同一 `blur` 强度字段（span 级，随文本作用域），消除按标签特判。value<=0 视为无。
-    final RegExpMatch? blur =
-        RegExp(r'^(?:blur|be)(\d+(?:\.\d+)?)$').firstMatch(tag);
+    final RegExpMatch? blur = _reTagBlur.firstMatch(tag);
     if (blur != null) {
       final double v = double.parse(blur.group(1)!);
       style.blur = v > 0 ? v : null;
@@ -1151,8 +1194,7 @@ void _applyOverrideBlock(
     }
 
     // \fad(t1,t2)：行级淡入 t1ms / 淡出 t2ms（收尾依赖 cue 时长，渲染时解析，TODO-1373）。
-    final RegExpMatch? fad =
-        RegExp(r'^fad\(\s*(\d+)\s*,\s*(\d+)\s*\)$').firstMatch(tag);
+    final RegExpMatch? fad = _reTagFad.firstMatch(tag);
     if (fad != null) {
       setFade(SubtitleFade.simple(
         int.parse(fad.group(1)!),
@@ -1163,9 +1205,7 @@ void _applyOverrideBlock(
 
     // \fade(a1,a2,a3,t1,t2,t3,t4)：行级七参淡变。alpha 0..255（0=不透明）→
     // 不透明度 op=1-alpha/255；时间为绝对毫秒（TODO-1373）。
-    final RegExpMatch? fade = RegExp(
-            r'^fade\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$')
-        .firstMatch(tag);
+    final RegExpMatch? fade = _reTagFade.firstMatch(tag);
     if (fade != null) {
       double toOp(String a) => 1.0 - (int.parse(a).clamp(0, 255) / 255.0);
       setFade(SubtitleFade.full(
@@ -1190,7 +1230,7 @@ void _applyOverrideBlock(
     // test is safe. Named-style `\r<StyleName>` switching needs the
     // [V4+ Styles] map (not held here); a baseline reset is a safe approximation
     // that at least stops stale overrides from leaking.
-    if (tag == 'r' || RegExp(r'^r[A-Za-z0-9_ \-]+$').hasMatch(tag)) {
+    if (tag == 'r' || _reTagReset.hasMatch(tag)) {
       style.reset();
       continue;
     }
@@ -1198,7 +1238,7 @@ void _applyOverrideBlock(
     // \frz<deg> / \fr<deg>（旧式 \fr 即 \frz，Z 轴旋转；ASS 逆时针为正，TODO-1374）。
     // \frx / \fry（3D 旋转）不支持——`frz?` 的 z 可选但后面必须紧跟数字，`frx10` 的 x
     // 非数字故不误命中。
-    final RegExpMatch? frz = RegExp(r'^frz?(-?\d+(?:\.\d+)?)$').firstMatch(tag);
+    final RegExpMatch? frz = _reTagFrz.firstMatch(tag);
     if (frz != null) {
       xf.rotationDeg = double.parse(frz.group(1)!);
       continue;
@@ -1207,7 +1247,7 @@ void _applyOverrideBlock(
     // \fscx<pct> / \fscy<pct> 横 / 纵缩放（百分比）。**span 级语义**：写进段样式
     // （渲染层逐段缩放，BUG：行级「最后值生效」把 `…{\fscx50}。` 整行压扁）；同时
     // 记入 xf 供 `\t` 缩放动画取 from 基线（TODO-1374 招牌弹入不回归）。
-    final RegExpMatch? fscx = RegExp(r'^fscx(\d+(?:\.\d+)?)$').firstMatch(tag);
+    final RegExpMatch? fscx = _reTagFscx.firstMatch(tag);
     if (fscx != null) {
       final double v = double.parse(fscx.group(1)!) / 100.0;
       style.scaleX = v == 1.0 ? null : v;
@@ -1215,7 +1255,7 @@ void _applyOverrideBlock(
       xf.scaleSet = true;
       continue;
     }
-    final RegExpMatch? fscy = RegExp(r'^fscy(\d+(?:\.\d+)?)$').firstMatch(tag);
+    final RegExpMatch? fscy = _reTagFscy.firstMatch(tag);
     if (fscy != null) {
       final double v = double.parse(fscy.group(1)!) / 100.0;
       style.scaleY = v == 1.0 ? null : v;
@@ -1225,9 +1265,7 @@ void _applyOverrideBlock(
     }
 
     // \move(x1,y1,x2,y2[,t1,t2])：行级运动（TODO-1374）。坐标按 PlayRes 归一化（同 \pos）。
-    final RegExpMatch? mv = RegExp(
-            r'^move\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*(?:,\s*(\d+)\s*,\s*(\d+)\s*)?\)$')
-        .firstMatch(tag);
+    final RegExpMatch? mv = _reTagMove.firstMatch(tag);
     if (mv != null &&
         playResX != null &&
         playResY != null &&
@@ -1246,8 +1284,7 @@ void _applyOverrideBlock(
     // \1a&HXX& / \alpha&HXX&：主填充透明度（ASS alpha 00=不透明 FF=全透明）→
     // op=1-a/255。\alpha 一次设四通道，按主填充近似（描边/阴影 alpha 不单独建模，
     // 多层卡拉 OK 光晕层 `\1a&HFF&` 抹透明填充、留模糊描边成辉光）；\2a/\3a/\4a 忽略。
-    final RegExpMatch? a1 =
-        RegExp(r'^(?:1a|alpha)&?H?([0-9A-Fa-f]{1,2})&?$').firstMatch(tag);
+    final RegExpMatch? a1 = _reTagAlpha.firstMatch(tag);
     if (a1 != null) {
       style.fillOpacity =
           (1.0 - int.parse(a1.group(1)!, radix: 16) / 255.0).clamp(0.0, 1.0);
@@ -1256,7 +1293,7 @@ void _applyOverrideBlock(
 
     // \clip(...) / \iclip(...)：静态矢量/矩形裁剪 → [SubtitleClip]（归一化分数坐标）。
     // 支持矩形四参形式与 m/l/b 绘图形式（含 scale 变体）；解析失败按无裁剪。
-    final RegExpMatch? clipM = RegExp(r'^(i?)clip\((.*)\)$').firstMatch(tag);
+    final RegExpMatch? clipM = _reTagClip.firstMatch(tag);
     if (clipM != null) {
       final SubtitleClip? parsed = parseAssClip(
         inverse: clipM.group(1) == 'i',
@@ -1269,31 +1306,31 @@ void _applyOverrideBlock(
     }
 
     // \fsp<px>：字间距（可负/小数）。
-    final RegExpMatch? fsp = RegExp(r'^fsp(-?\d+(?:\.\d+)?)$').firstMatch(tag);
+    final RegExpMatch? fsp = _reTagFsp.firstMatch(tag);
     if (fsp != null) {
       style.letterSpacingPx = double.parse(fsp.group(1)!);
       continue;
     }
 
     // \frx / \fry：3D 旋转（度）。\frz 已在上方处理（frz? 的 z 可选不会误吞 x/y）。
-    final RegExpMatch? frx = RegExp(r'^frx(-?\d+(?:\.\d+)?)$').firstMatch(tag);
+    final RegExpMatch? frx = _reTagFrx.firstMatch(tag);
     if (frx != null) {
       xf.frxDeg = double.parse(frx.group(1)!);
       continue;
     }
-    final RegExpMatch? fry = RegExp(r'^fry(-?\d+(?:\.\d+)?)$').firstMatch(tag);
+    final RegExpMatch? fry = _reTagFry.firstMatch(tag);
     if (fry != null) {
       xf.fryDeg = double.parse(fry.group(1)!);
       continue;
     }
 
     // \fax / \fay：切变因子。
-    final RegExpMatch? fax = RegExp(r'^fax(-?\d+(?:\.\d+)?)$').firstMatch(tag);
+    final RegExpMatch? fax = _reTagFax.firstMatch(tag);
     if (fax != null) {
       xf.faxShear = double.parse(fax.group(1)!);
       continue;
     }
-    final RegExpMatch? fay = RegExp(r'^fay(-?\d+(?:\.\d+)?)$').firstMatch(tag);
+    final RegExpMatch? fay = _reTagFay.firstMatch(tag);
     if (fay != null) {
       xf.fayShear = double.parse(fay.group(1)!);
       continue;
@@ -1301,8 +1338,7 @@ void _applyOverrideBlock(
 
     // \k / \K / \kf / \ko<cs>：卡拉 OK 音节计时（厘秒）。本块起的文字段=一个音节：
     // 起点=之前音节时长累计，点亮方式 k=瞬切 / K=kf=渐变扫填近似 / ko=点亮前无描边。
-    final RegExpMatch? kar =
-        RegExp(r'^(k|K|kf|ko)(\d+(?:\.\d+)?)$').firstMatch(tag);
+    final RegExpMatch? kar = _reTagKaraoke.firstMatch(tag);
     if (kar != null) {
       final String mode = switch (kar.group(1)!) {
         'K' || 'kf' => 'kf',
@@ -1332,9 +1368,7 @@ void _parseTransition(String inner, _Transform xf) {
   int? t2;
   double accel = 1.0;
   String rest = inner;
-  final RegExpMatch? times =
-      RegExp(r'^\s*(-?\d+)\s*,\s*(-?\d+)\s*(?:,\s*(-?\d+(?:\.\d+)?)\s*)?,')
-          .firstMatch(inner);
+  final RegExpMatch? times = _reTrTimes.firstMatch(inner);
   if (times != null) {
     t1 = int.parse(times.group(1)!);
     t2 = int.parse(times.group(2)!);
@@ -1342,8 +1376,7 @@ void _parseTransition(String inner, _Transform xf) {
     rest = inner.substring(times.end);
   } else {
     // 纯加速度形式：`accel,<子标签>`。
-    final RegExpMatch? onlyAccel =
-        RegExp(r'^\s*(-?\d+(?:\.\d+)?)\s*,').firstMatch(inner);
+    final RegExpMatch? onlyAccel = _reTrAccelOnly.firstMatch(inner);
     if (onlyAccel != null) {
       accel = double.parse(onlyAccel.group(1)!);
       rest = inner.substring(onlyAccel.end);
@@ -1354,9 +1387,9 @@ void _parseTransition(String inner, _Transform xf) {
     xf.tStartMs = t1;
     xf.tEndMs = t2;
   }
-  final RegExpMatch? tx = RegExp(r'\\fscx(\d+(?:\.\d+)?)').firstMatch(rest);
+  final RegExpMatch? tx = _reTrFscx.firstMatch(rest);
   if (tx != null) xf.tScaleX = double.parse(tx.group(1)!) / 100.0;
-  final RegExpMatch? ty = RegExp(r'\\fscy(\d+(?:\.\d+)?)').firstMatch(rest);
+  final RegExpMatch? ty = _reTrFscy.firstMatch(rest);
   if (ty != null) xf.tScaleY = double.parse(ty.group(1)!) / 100.0;
 
   // 通用动画维度。
@@ -1365,21 +1398,18 @@ void _parseTransition(String inner, _Transform xf) {
   double? blurTo;
   double? bordTo;
   double? frzTo;
-  final RegExpMatch? ta =
-      RegExp(r'\\(?:1a|alpha)&?H?([0-9A-Fa-f]{1,2})&?').firstMatch(rest);
+  final RegExpMatch? ta = _reTrAlpha.firstMatch(rest);
   if (ta != null) {
     alphaTo =
         (1.0 - int.parse(ta.group(1)!, radix: 16) / 255.0).clamp(0.0, 1.0);
   }
-  final RegExpMatch? tc =
-      RegExp(r'\\1?c&H([0-9A-Fa-f]{1,8})&?').firstMatch(rest);
+  final RegExpMatch? tc = _reTrColor.firstMatch(rest);
   if (tc != null) colorTo = assColorToArgb(tc.group(1)!);
-  final RegExpMatch? tb =
-      RegExp(r'\\(?:blur|be)(\d+(?:\.\d+)?)').firstMatch(rest);
+  final RegExpMatch? tb = _reTrBlur.firstMatch(rest);
   if (tb != null) blurTo = double.parse(tb.group(1)!);
-  final RegExpMatch? tbo = RegExp(r'\\bord(\d+(?:\.\d+)?)').firstMatch(rest);
+  final RegExpMatch? tbo = _reTrBord.firstMatch(rest);
   if (tbo != null) bordTo = double.parse(tbo.group(1)!);
-  final RegExpMatch? tfrz = RegExp(r'\\frz?(-?\d+(?:\.\d+)?)').firstMatch(rest);
+  final RegExpMatch? tfrz = _reTrFrz.firstMatch(rest);
   if (tfrz != null) frzTo = double.parse(tfrz.group(1)!);
 
   final SubtitleTransition tr = SubtitleTransition(

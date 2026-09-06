@@ -264,11 +264,11 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
   }
 
   Future<void> _loadExistingBooks() async {
-    final List<EpubBookRow> rows = await widget.db.getAllEpubBooks();
+    final List<EpubBookMeta> rows = await widget.db.getEpubBookMetas();
     if (!mounted) return;
     setState(() {
       _existingBookKeys
-          .addAll(rows.map((EpubBookRow r) => sanitizeTtuFilename(r.title)));
+          .addAll(rows.map((EpubBookMeta r) => sanitizeTtuFilename(r.title)));
     });
   }
 

@@ -220,14 +220,17 @@ class EpubParser {
     }
 
     final String canonicalBase = p.canonicalize(extractDir);
+    // 每个条目的安全落盘路径只算一次（`_safeArchivePath` 内含两次 canonicalize，
+    // 以前目录集合与写盘循环各算一遍：一本几千页的漫画 EPUB 白做上万次）。
+    final List<(ArchiveFile, String)> entries = <(ArchiveFile, String)>[
+      for (final ArchiveFile file in archive)
+        if (_safeArchivePath(extractDir, canonicalBase, file.name)
+            case final String filePath)
+          (file, filePath),
+    ];
     final Set<String> archiveDirectories =
-        _archiveDirectoryPaths(archive, extractDir, canonicalBase);
-    for (final ArchiveFile file in archive) {
-      final String? filePath =
-          _safeArchivePath(extractDir, canonicalBase, file.name);
-      if (filePath == null) {
-        continue;
-      }
+        _archiveDirectoryPaths(entries, canonicalBase);
+    for (final (ArchiveFile file, String filePath) in entries) {
       if (file.isFile && !archiveDirectories.contains(filePath)) {
         final File outFile = File(filePath);
         outFile.parent.createSync(recursive: true);
@@ -254,17 +257,11 @@ class EpubParser {
   // valid archive. Treating implied parents as directories is therefore
   // correct and is kept.
   static Set<String> _archiveDirectoryPaths(
-    Archive archive,
-    String extractDir,
+    List<(ArchiveFile, String)> entries,
     String canonicalBase,
   ) {
     final Set<String> directories = <String>{};
-    for (final ArchiveFile file in archive) {
-      final String? filePath =
-          _safeArchivePath(extractDir, canonicalBase, file.name);
-      if (filePath == null) {
-        continue;
-      }
+    for (final (ArchiveFile file, String filePath) in entries) {
       if (!file.isFile) {
         directories.add(filePath);
       }

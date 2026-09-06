@@ -436,17 +436,21 @@ void main([List<String> args = const <String>[]]) {
 
     /// Initialise error log service.
     await ErrorLogService.instance.init();
-    await DebugLogService.instance.init();
-    // TODO-1232 A3：读一次 native 持久化的渲染后端选择（关 Impeller 实验开关），
-    // 供设置项同步渲染。非 Android 静默降级为不支持。
-    await RenderBackendService.instance.init();
-    // BUG-209 / TODO-398：把上次运行残留的 Windows WGC 帧捕获生命周期日志
-    // 折进错误日志（仅 Windows），纳入现有上传链路，为 GraphicsCapture 延迟
-    // UAF 崩溃提供可读的崩前生命周期证据。
-    await WgcCaptureLog.foldIntoErrorLog();
-    // BUG-772：把上次运行 present 楔死取证（首帧从未 rasterize）折进错误日志（仅
-    // Windows），纳入上传链路，为 raster/present 管线死锁提供可读崩前证据。
-    await PresentStallLog.foldIntoErrorLog();
+    // 下面四步都只依赖错误日志已就绪、彼此独立（各自读写自己的文件 / 通道），
+    // 并发跑；串行 await 四段小 IO 是启动到 LoadingPage 之前的纯等待。
+    await Future.wait<void>(<Future<void>>[
+      DebugLogService.instance.init(),
+      // TODO-1232 A3：读一次 native 持久化的渲染后端选择（关 Impeller 实验开关），
+      // 供设置项同步渲染。非 Android 静默降级为不支持。
+      RenderBackendService.instance.init(),
+      // BUG-209 / TODO-398：把上次运行残留的 Windows WGC 帧捕获生命周期日志
+      // 折进错误日志（仅 Windows），纳入现有上传链路，为 GraphicsCapture 延迟
+      // UAF 崩溃提供可读的崩前生命周期证据。
+      WgcCaptureLog.foldIntoErrorLog(),
+      // BUG-772：把上次运行 present 楔死取证（首帧从未 rasterize）折进错误日志（仅
+      // Windows），纳入上传链路，为 raster/present 管线死锁提供可读崩前证据。
+      PresentStallLog.foldIntoErrorLog(),
+    ]);
 
     /// Initialise local file-based logging (mobile only).
     if (Platform.isAndroid || Platform.isIOS) {
@@ -944,7 +948,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
           '${watch.elapsedMilliseconds}ms: $e');
       return;
     }
-    debugPrint('[Fushi] exit step "$label" took ${watch.elapsedMilliseconds}ms');
+    debugPrint(
+        '[Fushi] exit step "$label" took ${watch.elapsedMilliseconds}ms');
   }
 
   /// Android 退后台不是退出：只做保留式 flush，页面回前台后仍继续持有回调。
@@ -1228,13 +1233,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
           // ② 去重：同一物理文件若已库内导入（`video/<basename>` 身份），复用其旧
           // bookUid，不再派生 `video/ext/<sha1>` 第二身份插第二行。按 videoPath 命中
           // 走仓库单一真相源 findByVideoPath（与 isDuplicateVideoPath 同比对语义）。
-          final VideoBookRow? sameFile =
-              await repo.findByVideoPath(videoPath);
+          final VideoBookRow? sameFile = await repo.findByVideoPath(videoPath);
           if (sameFile != null) return sameFile.bookUid;
 
           final String candidateUid = externalVideoBookUid(videoPath);
-          final VideoBookRow? existing =
-              await repo.getByBookUid(candidateUid);
+          final VideoBookRow? existing = await repo.getByBookUid(candidateUid);
           if (existing != null) return candidateUid;
 
           CoverMetaStore? coverMetaStore;

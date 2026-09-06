@@ -366,7 +366,7 @@ class MediaTrackingRepository {
           in await _db.getAllReaderPositions())
         position.bookUid: position,
     };
-    for (final EpubBookRow book in await _db.getAllEpubBooks()) {
+    for (final EpubBookMeta book in await _db.getEpubBookMetas()) {
       final ReaderPositionRow? position =
           book.uid.isEmpty ? null : positions[book.uid];
       final DateTime? completedAt = book.completedAt;

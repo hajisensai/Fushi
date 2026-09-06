@@ -67,9 +67,9 @@ class PdfImporter {
     }
 
     // 解析标题冲突 → bookKey（与 EpubImporter 同口径：净化标题即主键，保证本地唯一）。
-    final List<EpubBookRow> existingBooks = await db.getAllEpubBooks();
+    final List<EpubBookMeta> existingBooks = await db.getEpubBookMetas();
     final String storedTitle = await resolveDuplicateTitle(
-      existingTitles: existingBooks.map((EpubBookRow b) => b.title).toList(),
+      existingTitles: existingBooks.map((EpubBookMeta b) => b.title).toList(),
       proposedTitle: title,
       policy: policy,
     );
