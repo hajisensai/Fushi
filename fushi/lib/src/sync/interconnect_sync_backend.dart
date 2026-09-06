@@ -23,6 +23,7 @@ import 'package:fushi/src/sync/ttu_filename.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi/src/sync/ttu_models.dart';
 import 'package:fushi/src/sync/webdav_ops.dart';
+import 'package:fushi/src/sync/webdav_path_backend_mixin.dart';
 
 /// Probes whether a single Hibiki server URL is reachable with [token].
 /// Returns true if reachable, false on connectivity failure/timeout, and
@@ -136,7 +137,11 @@ Future<bool> _defaultFushiProbe(String url, String token) async {
 /// credentials in dedicated keys to avoid collision with the user's
 /// standalone WebDAV config.
 class InterconnectSyncBackend extends SyncBackend
-    with SyncFolderCache, SyncBackendFileTrioMixin, SyncAssetStoreDefaults
+    with
+        SyncFolderCache,
+        SyncBackendFileTrioMixin,
+        SyncAssetStoreDefaults,
+        WebDavPathBackendMixin
     implements
         RemoteBookClient,
         RemoteVideoClient,
@@ -452,66 +457,16 @@ class InterconnectSyncBackend extends SyncBackend
     return path;
   }
 
+  // listBooks / ensureBookFolder / listSyncFiles 三件套由 WebDavPathBackendMixin
+  // 提供（与 WebDAV 后端逐字共享）。这三处原本就不经 _ensureResolved（沿用原实现，
+  // 直接用 _ops!），mixin 里也不加——时序逐点保留。
   @override
-  Future<List<SyncFileRef>> listBooks(String rootFolderId) async {
-    final entries = await _ops!.propfindChildren(rootFolderId);
-    return entries
-        .where((e) => e.isCollection && e.href != rootFolderId)
-        .map((e) => SyncFileRef(id: e.href, name: e.displayName))
-        .toList();
-  }
+  WebDavOps get davOps => _ops!;
 
   @override
-  Future<String> ensureBookFolder({
-    required String bookTitle,
-    required String rootFolderId,
-    SyncCoverDataProvider? readCoverData,
-  }) async {
-    final sanitized = requireBookFolderName(bookTitle);
-
-    if (folderIdCache.containsKey(sanitized)) {
-      // Normalize a possibly slash-less cached href on return (BUG-845).
-      return ensureFolderIdTrailingSlash(folderIdCache[sanitized]!);
-    }
-
-    final path = '$rootFolderId${Uri.encodeComponent(sanitized)}/';
-    await _ops!.ensureCollection(path);
-    folderIdCache[sanitized] = path;
-
-    final Uint8List? coverData = await readCoverData?.call();
-    if (coverData != null) {
-      try {
-        final format = detectCoverFormat(coverData);
-        final coverPath = '${path}cover_1_6.${format.extension}';
-        final existing = await _ops!.headFile(coverPath);
-        if (!existing) {
-          await _ops!.putBytes(coverPath, coverData, format.mimeType);
-        }
-      } catch (e) {
-        debugPrint('[fushi-client] cover upload failed: $e');
-      }
-    }
-
-    return path;
-  }
+  String get davLogTag => '[fushi-client]';
 
   // ── Metadata sync ─────────────────────────────────────────────────
-
-  @override
-  Future<SyncFileTrio> listSyncFiles(String folderId) async {
-    final entries = await _ops!.propfindChildren(folderId);
-    final files = entries
-        .where((e) => !e.isCollection && e.href != folderId)
-        .map((e) => SyncFileRef(id: e.href, name: e.displayName))
-        .toList();
-
-    // HBK-AUDIT-085: route through the single canonical matcher in sync_utils.
-    return SyncFileTrio(
-      progress: findSyncFileByPrefix(files, 'progress_'),
-      statistics: findSyncFileByPrefix(files, 'statistics_'),
-      audioBook: findSyncFileByPrefix(files, 'audioBook_'),
-    );
-  }
 
   // get{Progress,Stats,AudioBook}File 三件套由 SyncBackendFileTrioMixin 提供；
   // 这里只给出 hibiki client 的下载原语（size-capped GET + jsonDecode，见
