@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/fushi_server_controller.dart';
 import 'package:fushi_core/fushi_core.dart';
 
+import 'sync_orchestrator_source_corpus.dart';
 import 'sync_settings_schema_source_corpus.dart';
 
 FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
@@ -124,8 +125,8 @@ void main() {
     });
 
     test('orchestrator 互联分支分流：本地音频经 syncLocalAudioSources，有声书仍在 run()', () {
-      final String src =
-          File('lib/src/sync/sync_orchestrator.dart').readAsStringSync();
+      // B2 拆分后 _sync*Live 定义在 sync_orchestrator/*.part.dart，调用点在主库。
+      final String src = readSyncOrchestratorSource();
       expect(src.contains('_syncLocalAudioLive('), isTrue,
           reason: 'orchestrator 必须有 _syncLocalAudioLive live 分流方法');
       expect(src.contains('_syncAudiobooksLive('), isTrue,
