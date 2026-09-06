@@ -166,4 +166,79 @@ void main() {
     );
     expect(d.usesGreedyGraph, isFalse);
   });
+
+  test('两个 Loop 图会话：一批的行按连续切片对半并行搜，结果按行拼回，与单会话等价', () async {
+    final List<List<int>> emitted = <List<int>>[
+      <int>[-1, 1, -1, 2, -1],
+      <int>[3, -1, -1, -1, -1],
+      <int>[-1, -1, 2, -1, -1],
+      <int>[1, 1, -1, -1, -1],
+      <int>[-1, 3, -1, -1, -1],
+    ];
+    final List<int> lens = <int>[5, 2, 4, 3, 5];
+    final _Greedy single = _Greedy(emitted);
+    final AsrTransducerDecoder one = AsrTransducerDecoder(
+      encoder: _Encoder(lens),
+      decoder: _Never(),
+      joiner: _Never(),
+      tokens: tokens,
+      greedy: single,
+    );
+    final List<AsrSpeechSegment> segs = lens.map(_seg).toList();
+    final List<AsrDecodedSegment> want = await one.decodeBatch(segs);
+
+    // 5 行对半：会话 A 拿 [0,1]（5*1~/2=2），会话 B 拿 [2,3,4]。
+    final _Greedy a = _Greedy(emitted.sublist(0, 2));
+    final _Greedy b = _Greedy(emitted.sublist(2));
+    final AsrTransducerDecoder two = AsrTransducerDecoder(
+      encoder: _Encoder(lens),
+      decoder: _Never(),
+      joiner: _Never(),
+      tokens: tokens,
+      greedy: a,
+      greedyPool: <OnnxSession>[b],
+    );
+    expect(two.greedySessionCount, 2);
+    final List<AsrDecodedSegment> got = await two.decodeBatch(segs);
+    expect(a.calls, 1);
+    expect(b.calls, 1);
+    expect(a.lastInputs![AsrGreedyGraphIo.encoderOut]!.shape, <int>[
+      2,
+      5,
+      _encDim,
+    ]);
+    expect(a.lastInputs![AsrGreedyGraphIo.encoderOutLens]!.intData, <int>[
+      5,
+      2,
+    ]);
+    expect(b.lastInputs![AsrGreedyGraphIo.encoderOut]!.shape, <int>[
+      3,
+      5,
+      _encDim,
+    ]);
+    expect(b.lastInputs![AsrGreedyGraphIo.encoderOutLens]!.intData, <int>[
+      4,
+      3,
+      5,
+    ]);
+    expect(got.length, want.length);
+    for (int i = 0; i < want.length; i++) {
+      expect(got[i].tokens, want[i].tokens, reason: '第 $i 行');
+      expect(got[i].tokenOffsetsMs, want[i].tokenOffsetsMs, reason: '第 $i 行');
+    }
+    // 只有一行时不切片：只用第一个会话。
+    final _Greedy a1 = _Greedy(<List<int>>[emitted[0]]);
+    final _Greedy b1 = _Greedy(<List<int>>[emitted[0]]);
+    final AsrTransducerDecoder oneRow = AsrTransducerDecoder(
+      encoder: _Encoder(<int>[5]),
+      decoder: _Never(),
+      joiner: _Never(),
+      tokens: tokens,
+      greedy: a1,
+      greedyPool: <OnnxSession>[b1],
+    );
+    await oneRow.decodeBatch(<AsrSpeechSegment>[_seg(5)]);
+    expect(a1.calls, 1);
+    expect(b1.calls, 0);
+  });
 }

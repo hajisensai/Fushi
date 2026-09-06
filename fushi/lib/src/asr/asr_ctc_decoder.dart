@@ -104,6 +104,13 @@ class AsrCtcDecoder
     return pool.batchCapFor(longest);
   }
 
+  /// 归一化只是一遍线性扫描（30 分钟约 30 ms），不值得过 isolate。
+  @override
+  Future<AsrBatchFeatures> computeFeaturesAsync(
+    List<AsrSpeechSegment> segments,
+  ) =>
+      Future<AsrBatchFeatures>.value(computeFeatures(segments));
+
   /// 逐段零均值单位方差归一化（double 累加，float32 输出）。
   @override
   AsrBatchFeatures computeFeatures(List<AsrSpeechSegment> segments) {

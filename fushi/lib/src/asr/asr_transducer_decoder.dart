@@ -17,10 +17,13 @@
 /// （`log(1e-10) ≈ -23.0259`），`x_lens` 给真实帧数。
 library;
 
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 
 import 'package:fushi/src/asr/asr_encoder_buckets.dart';
 import 'package:fushi/src/asr/asr_fbank.dart';
+import 'package:fushi/src/asr/asr_fbank_workers.dart';
 import 'package:fushi/src/asr/asr_greedy_graph.dart' show AsrGreedyGraphIo;
 import 'package:fushi/src/asr/asr_model_manifest.dart' show AsrIndexType;
 import 'package:fushi/src/asr/asr_types.dart';
@@ -108,14 +111,20 @@ class AsrTransducerDecoder
     this.contextSize = kAsrDecoderContextSize,
     this.indexType = AsrIndexType.int64,
     OnnxSession? greedy,
+    List<OnnxSession> greedyPool = const <OnnxSession>[],
     AsrStaticEncoderPool? staticEncoders,
+    AsrFbankWorkers? fbankWorkers,
   }) : _encoder = encoder,
        _decoder = decoder,
        _joiner = joiner,
-       _greedy = greedy,
+       _greedySessions = List<OnnxSession>.unmodifiable(<OnnxSession>[
+         if (greedy != null) greedy,
+         ...greedyPool,
+       ]),
        _staticEncoders = staticEncoders,
        _tokens = tokens,
-       _fbank = fbank {
+       _fbank = fbank,
+       _fbankWorkers = fbankWorkers ?? AsrFbankWorkers(fbank: fbank) {
     if (tokens.blankId < 0) {
       throw ArgumentError.value(tokens, 'tokens', '词表缺少 <blk>');
     }
@@ -169,10 +178,15 @@ class AsrTransducerDecoder
   final OnnxSession _decoder;
   final OnnxSession _joiner;
 
-  /// 派生的贪心 Loop 图（`asr_greedy_graph.dart`）：给了就整批一次调用完成
-  /// 逐帧贪心，decoder/joiner 会话不再被调用；null 走 Dart 逐帧循环。两条路径
+  /// 派生的贪心 Loop 图（`asr_greedy_graph.dart`）的会话：非空就整批一次调用
+  /// 完成逐帧贪心，decoder/joiner 会话不再被调用；空走 Dart 逐帧循环。两条路径
   /// 语义逐字等价（等价性由 `tool/asr/verify_greedy_graph.py` 真模型对拍钉住）。
-  final OnnxSession? _greedy;
+  ///
+  /// 多于一个会话时一批的行被均分给各会话**并行**搜（同一张图、行与行独立，
+  /// 结果按行拼回原顺序，与单会话逐字等价）。Loop 图逐帧串行、每步只是 N×512
+  /// 的小矩阵，单会话 4 线程就到顶，CPU 其余核心闲着；插件给每个 CPU 会话
+  /// 各一条工作线程（vendored delta #11），两个会话才真能同时跑。
+  final List<OnnxSession> _greedySessions;
 
   /// GPU 静态 shape 编码器桶（`asr_encoder_buckets.dart`）；null 或桶建失败时
   /// 用动态会话 [_encoder]。
@@ -180,8 +194,14 @@ class AsrTransducerDecoder
   final AsrTokenTable _tokens;
   final AsrFbank _fbank;
 
+  /// [computeFeaturesAsync] 用的 isolate 池（`asr_fbank_workers.dart`）。
+  final AsrFbankWorkers _fbankWorkers;
+
   /// 当前是否走 Loop 图路径。
-  bool get usesGreedyGraph => _greedy != null;
+  bool get usesGreedyGraph => _greedySessions.isNotEmpty;
+
+  /// 贪心搜索并行度（Loop 图会话数；逐帧路径为 0）。
+  int get greedySessionCount => _greedySessions.length;
 
   /// 静态桶对一批的行数封顶（最长段决定桶）；没有静态桶时 null。
   @override
@@ -234,19 +254,41 @@ class AsrTransducerDecoder
     return pool.batchCapFor(AsrFbank.frameCount(longest));
   }
 
-  /// 第一段：fbank（纯 Dart，同步）。流水线里趁 GPU / CPU 会话都在忙时算下一批。
+  /// 第一段：fbank（纯 Dart，同步，阻塞调用方 isolate）。[encode] 没拿到特征
+  /// 时的兜底；流水线用 [computeFeaturesAsync]。
   @override
   AsrBatchFeatures computeFeatures(List<AsrSpeechSegment> segments) {
     final Stopwatch clock = Stopwatch()..start();
+    final List<Float32List> features = <Float32List>[
+      for (final AsrSpeechSegment s in segments) _fbank.compute(s.samples),
+    ];
+    return _featuresOf(segments, features, clock.elapsed);
+  }
+
+  /// 第一段的 isolate 池版本：与 [computeFeatures] 逐元素相同，但转录 isolate
+  /// 的事件循环不被占住——GPU 那批的完成回调随时能进来。
+  @override
+  Future<AsrBatchFeatures> computeFeaturesAsync(
+    List<AsrSpeechSegment> segments,
+  ) async {
+    final Stopwatch clock = Stopwatch()..start();
+    final List<Float32List> features = await _fbankWorkers.computeAll(
+      segments.map((AsrSpeechSegment s) => s.samples).toList(growable: false),
+    );
+    return _featuresOf(segments, features, clock.elapsed);
+  }
+
+  static AsrBatchFeatures _featuresOf(
+    List<AsrSpeechSegment> segments,
+    List<Float32List> features,
+    Duration fbankTime,
+  ) {
     final int batch = segments.length;
-    final List<Float32List> features = <Float32List>[];
     final Int64List frameCounts = Int64List(batch);
     int maxFrames = 0;
     int realFrames = 0;
     for (int i = 0; i < batch; i++) {
-      final Float32List f = _fbank.compute(segments[i].samples);
-      features.add(f);
-      final int frames = f.length ~/ kAsrFeatureDim;
+      final int frames = features[i].length ~/ kAsrFeatureDim;
       frameCounts[i] = frames;
       realFrames += frames;
       if (frames > maxFrames) maxFrames = frames;
@@ -257,7 +299,7 @@ class AsrTransducerDecoder
       frameCounts: frameCounts,
       maxFrames: maxFrames,
       realFrames: realFrames,
-      fbankTime: clock.elapsed,
+      fbankTime: fbankTime,
     );
   }
 
@@ -410,10 +452,8 @@ class AsrTransducerDecoder
       );
     }
 
-    final OnnxSession? greedy = _greedy;
-    if (greedy != null) {
-      final List<AsrDecodedSegment> out = await _decodeWithGreedyGraph(
-        greedy: greedy,
+    if (_greedySessions.isNotEmpty) {
+      final List<AsrDecodedSegment> out = await _searchWithGreedyGraphs(
         encData: encData,
         encFrames: encFrames,
         encDim: encDim,
@@ -545,6 +585,51 @@ class AsrTransducerDecoder
 
   /// Loop 图路径：把 encoder 输出原样喂进派生图，读回 `emitted[N,T]`（每帧发射的
   /// token id，-1 = 无），按帧还原 token 与时间。
+  /// 把一批的行按连续切片均分给各 Loop 图会话并行搜，按行拼回。切片是
+  /// `encData` 上的视图（不拷贝）；一个会话或一行时直接走单会话。
+  Future<List<AsrDecodedSegment>> _searchWithGreedyGraphs({
+    required Float32List encData,
+    required int encFrames,
+    required int encDim,
+    required List<int> encLens,
+    required int batch,
+  }) async {
+    final int parts = math.min(_greedySessions.length, batch);
+    if (parts <= 1) {
+      return _decodeWithGreedyGraph(
+        greedy: _greedySessions.first,
+        encData: encData,
+        encFrames: encFrames,
+        encDim: encDim,
+        encLens: encLens,
+        batch: batch,
+      );
+    }
+    final int rowSize = encFrames * encDim;
+    final List<Future<List<AsrDecodedSegment>>> slices =
+        <Future<List<AsrDecodedSegment>>>[];
+    for (int p = 0; p < parts; p++) {
+      final int start = batch * p ~/ parts;
+      final int end = batch * (p + 1) ~/ parts;
+      slices.add(
+        _decodeWithGreedyGraph(
+          greedy: _greedySessions[p],
+          encData: Float32List.sublistView(
+            encData,
+            start * rowSize,
+            end * rowSize,
+          ),
+          encFrames: encFrames,
+          encDim: encDim,
+          encLens: encLens.sublist(start, end),
+          batch: end - start,
+        ),
+      );
+    }
+    final List<List<AsrDecodedSegment>> parts0 = await Future.wait(slices);
+    return <AsrDecodedSegment>[for (final List<AsrDecodedSegment> s in parts0) ...s];
+  }
+
   Future<List<AsrDecodedSegment>> _decodeWithGreedyGraph({
     required OnnxSession greedy,
     required Float32List encData,

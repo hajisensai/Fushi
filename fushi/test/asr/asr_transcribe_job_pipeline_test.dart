@@ -88,6 +88,16 @@ class _PipeDecoder implements AsrPipelinedDecoder, AsrBatchShaper {
   }
 
   @override
+  Future<AsrBatchFeatures> computeFeaturesAsync(
+    List<AsrSpeechSegment> segments,
+  ) async {
+    events.add('fbank-start ${_label(segments)}');
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    events.add('fbank-done ${_label(segments)}');
+    return computeFeatures(segments);
+  }
+
+  @override
   Future<AsrEncodedBatch> encode(
     List<AsrSpeechSegment> segments, {
     AsrBatchFeatures? features,
@@ -256,15 +266,12 @@ void main() {
       chunkSeconds: 5,
       progressInterval: Duration.zero,
     );
-    // 每块 5 段、长度随段序递减。第一块：A=[0,1,2] 发出去、[3,4] 不够 cap 留下；
-    // 块末 A 仍在飞，检查点 = 0 s（在飞批的起点也算「未落盘」）。第二块进来
-    // [5..9]：发 B=[5,6,7] 时 A 落盘，发 C=[3,8,4] 时 B 落盘，[9] 留下；第二块
-    // 块末 C 在飞、不等它——检查点 = min(C 起点 3 s, 9 s) = 3 s，已落盘的是 A∪B。
-    // 每块结束有两条同 processedMs 的进度（块内节流 / 块末），块末那条紧跟
-    // 检查点之后——看第二块的后者（resume 已从 0 变成 3 s）。
+    // 每块 5 段、长度随段序递减。第一块：A=[0,1,2] 提交流水线、[3,4] 不够 cap
+    // 留下；块末 A 还没落盘（特征都还没算完），检查点 = 0 s（未落盘批的起点也
+    // 算「未落盘」），块末不等它。之后每个检查点都必须满足不变式：**起点早于
+    // 恢复点的段全部已落盘**（恢复时它们之后的会重跑，之前的不会丢）。
     int? resumeAtChunk1;
-    int? resumeAtChunk2;
-    List<int> persistedAtChunk2 = <int>[];
+    int checkpoints = 0;
     await for (final AsrTranscribeEvent e in job.run()) {
       if (e is! AsrTranscribeProgressEvent) continue;
       final AsrJobState state = await AsrTranscribeJob.loadState(
@@ -272,25 +279,25 @@ void main() {
         const <String>['a.mp3'],
         modelId: 'm',
       );
-      if (e.progress.processedMs == 5000) {
-        resumeAtChunk1 = state.resumeSamples[0];
-      } else if (e.progress.processedMs == 10000 && resumeAtChunk2 == null) {
-        if (state.resumeSamples[0] > 0) {
-          resumeAtChunk2 = state.resumeSamples[0];
-          persistedAtChunk2 = (await AsrTranscribeJob.loadSegments(job.jobDir))
-              .map((AsrTranscribedSegment s) => s.startMs)
-              .toList()
-            ..sort();
+      final int resume = state.resumeSamples[0];
+      if (e.progress.processedMs == 5000) resumeAtChunk1 ??= resume;
+      if (resume < 0) continue;
+      checkpoints++;
+      final Set<int> persisted = (await AsrTranscribeJob.loadSegments(
+        job.jobDir,
+      )).map((AsrTranscribedSegment s) => s.startMs).toSet();
+      for (int startMs = 0; startMs < 15000; startMs += 1000) {
+        if (startMs * kAsrSampleRate ~/ 1000 < resume) {
+          expect(
+            persisted,
+            contains(startMs),
+            reason: '恢复点 $resume 之前的段 $startMs ms 还没落盘：续跑会漏段',
+          );
         }
       }
     }
-    expect(resumeAtChunk1, 0, reason: '第一块末 A 在飞、未落盘，恢复点必须含它');
-    expect(resumeAtChunk2, 3 * kAsrSampleRate);
-    expect(
-      persistedAtChunk2,
-      <int>[0, 1000, 2000, 5000, 6000, 7000],
-      reason: '起点早于恢复点的段全部已落盘；在飞的 C=[3,8,4] 不等',
-    );
+    expect(resumeAtChunk1, 0, reason: '第一块末 A 未落盘，恢复点必须含它');
+    expect(checkpoints, greaterThan(0));
     // 跑完后 15 段一个不少、无重复。
     final List<int> all = (await AsrTranscribeJob.loadSegments(job.jobDir))
         .map((AsrTranscribedSegment s) => s.startMs)

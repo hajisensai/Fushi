@@ -202,6 +202,7 @@ class AsrEngineSessions {
     this.decoder,
     this.joiner,
     this.greedy,
+    this.greedyPool = const <OnnxSession>[],
     this.greedyUnavailableReason,
     this.staticEncoders,
     this.decoderContextSize = kAsrDecoderContextSize,
@@ -240,6 +241,7 @@ class AsrEngineSessions {
       joiner: joiner!,
       tokens: tokens,
       greedy: greedy,
+      greedyPool: greedyPool,
       staticEncoders: staticEncoders,
       contextSize: decoderContextSize,
       indexType: indexType,
@@ -264,6 +266,11 @@ class AsrEngineSessions {
   final OnnxSession? greedy;
   final String? greedyUnavailableReason;
 
+  /// 同一张贪心 Loop 图的**额外**会话：解码器把一批的行均分给
+  /// `[greedy, ...greedyPool]` 并行搜（`AsrTransducerDecoder`）。每个会话在
+  /// 插件里各占一条 CPU 工作线程，intra-op 各 [kAsrGreedyGraphIntraOpThreads]。
+  final List<OnnxSession> greedyPool;
+
   /// 编码器实际落到的 EP 与（若有）降级原因——降级必须可观测（BUG-1163）。
   final OnnxProviderResolution encoderResolution;
 
@@ -283,8 +290,15 @@ class AsrEngineSessions {
     await joiner?.close();
     await vad.close();
     await greedy?.close();
+    for (final OnnxSession s in greedyPool) {
+      await s.close();
+    }
   }
 }
+
+/// 贪心 Loop 图会话数：≥ 8 逻辑核开两个（各 [kAsrGreedyGraphIntraOpThreads]
+/// 线程），一批的行对半并行搜；核少时一个。
+int defaultAsrGreedySessionCount() => Platform.numberOfProcessors >= 8 ? 2 : 1;
 
 /// 贪心 Loop 图会话的 intra-op 线程数默认值。图里每帧都是 N×512 级别的小矩阵，
 /// ORT 默认把全部核心都拉起来做线程同步反而拖慢（Python 侧 int8 N8T250：默认
@@ -328,6 +342,7 @@ class AsrEngineLoader {
     List<AsrEncoderBucket>? staticBucketsOverride,
     int? materialMs,
     int? greedyIntraOpThreads = kAsrGreedyGraphIntraOpThreads,
+    int? greedySessions,
   }) async {
     Set<OnnxExecutionProvider> available = const <OnnxExecutionProvider>{};
     Object? probeError;
@@ -409,6 +424,7 @@ class AsrEngineLoader {
       // 贪心 Loop 图：拼装或建会话失败都不致命——逐帧路径永远在，但要把原因
       // 留下来（速度差一个量级，用户看到慢要能知道为什么）。
       OnnxSession? greedy;
+      final List<OnnxSession> greedyPool = <OnnxSession>[];
       String? greedyUnavailableReason;
       if (useGreedyGraph) {
         try {
@@ -424,6 +440,16 @@ class AsrEngineLoader {
             intraOpNumThreads: greedyIntraOpThreads,
           );
           opened.add(greedy);
+          final int sessions = greedySessions ?? defaultAsrGreedySessionCount();
+          for (int i = 1; i < sessions; i++) {
+            final OnnxSession extra = await _factory.createSession(
+              graphFile.path,
+              providers: cpu,
+              intraOpNumThreads: greedyIntraOpThreads,
+            );
+            opened.add(extra);
+            greedyPool.add(extra);
+          }
         } catch (error, stack) {
           greedyUnavailableReason = '$error';
           developer.log(
@@ -487,12 +513,15 @@ class AsrEngineLoader {
       developer.log(
         'ASR engine loaded (${variant.name} encoder'
         '${openedEncoder.fp16 ? ', fp16' : ''}): $encoderResolution '
-        'greedyGraph=${greedy != null} staticBuckets=${staticEncoders != null}',
+        'greedyGraph=${greedy != null}'
+        '${greedy != null ? ' x${1 + greedyPool.length}' : ''} '
+        'staticBuckets=${staticEncoders != null}',
         name: kAsrLogName,
       );
       return AsrEngineSessions(
         encoderFp16: openedEncoder.fp16,
         greedy: greedy,
+        greedyPool: greedyPool,
         greedyUnavailableReason: greedyUnavailableReason,
         staticEncoders: staticEncoders,
         encoder: encoder,
