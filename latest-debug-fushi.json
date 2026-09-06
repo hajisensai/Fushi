@@ -8,24 +8,6 @@
   "notes": "Automated desktop debug-channel build from main @ 505068d. Push releases are always prerelease and never Latest.",
   "assets": [
     {
-      "name": "fushi-2.2.4-debug.13635-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.4-debug.13635-ios.ipa",
-      "releaseSequence": 13635,
-      "tag": "v2.2.4-debug.13635+5f3d60b",
-      "version": "2.2.4-debug.13635",
-      "size": 70348230,
-      "sha256": "5c585b5e141b399826844a5d264269666cd26608a2572f01828d6c0228b9bb93"
-    },
-    {
-      "name": "fushi-2.2.4-debug.13635-macos.zip",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.4-debug.13635-macos.zip",
-      "releaseSequence": 13635,
-      "tag": "v2.2.4-debug.13635+5f3d60b",
-      "version": "2.2.4-debug.13635",
-      "size": 336374166,
-      "sha256": "9b9ebc28b861b85b615fa6a811fbad2175c1baf4e42839074ba38b3562d00ad5"
-    },
-    {
       "name": "fushi-2.2.4-debug.13638-50f50e2-debug.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.4-debug.13638-50f50e2-debug.apk",
       "releaseSequence": 13638,
@@ -33,6 +15,24 @@
       "version": "2.2.4-debug.13638",
       "size": 267890271,
       "sha256": "492c9a373be9fc2d487738a9a76fd2a6f1ccbc4119eeb622824b23d873b60a8c"
+    },
+    {
+      "name": "fushi-2.2.4-debug.13661-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.4-debug.13661-ios.ipa",
+      "releaseSequence": 13661,
+      "tag": "v2.2.4-debug.13661+505068d",
+      "version": "2.2.4-debug.13661",
+      "size": 67854324,
+      "sha256": "655f044500dbd6d86e0bdcecb397a440619c546dce8897ee01c80758e949e360"
+    },
+    {
+      "name": "fushi-2.2.4-debug.13661-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.4-debug.13661-macos.zip",
+      "releaseSequence": 13661,
+      "tag": "v2.2.4-debug.13661+505068d",
+      "version": "2.2.4-debug.13661",
+      "size": 333903143,
+      "sha256": "f931c2c6d980b49ed23bb553be0140715ac009dddfbc6d17fadd5f7a4c675d55"
     },
     {
       "name": "fushi-2.2.4-debug.13661-windows-setup.exe",
