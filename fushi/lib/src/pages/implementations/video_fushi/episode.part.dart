@@ -107,7 +107,17 @@ extension _VideoEpisode on _VideoFushiPageState {
     if (_isRemote) {
       final int? curPos = _controller?.positionMs;
       if (curPos != null) {
-        await _persistRemotePosition(widget.bookUid, curPos);
+        // BUG-2119：与本地分支同律，远端换集也不等落库。
+        // `_persistRemotePosition` 里两次 `setPref` 加一次 `updatePosition` 走同一条
+        // 连接，任一次事务 COMMIT 抛错，异常就从这里逃逸——`_loadRemoteEpisode` 永不
+        // 执行、`_currentEpisode` 不推进，互联 / Jellyfin / 流媒体书的换集按钮、剧集
+        // 列表、连播全部失灵，与本地分支此前那条同形。
+        persistInBackground(
+          persist: () => _persistRemotePosition(widget.bookUid, curPos),
+          onPersistError: (Object error, StackTrace stack) => ErrorLogService
+              .instance
+              .log('VideoFushiPage.switchRemoteEpisodePersist', error, stack),
+        );
       }
       _watchTracker?.onEpisodeChanged();
       await _loadRemoteEpisode(index, startIntent: intent);
@@ -149,7 +159,15 @@ extension _VideoEpisode on _VideoFushiPageState {
     );
     final int? curPos = _controller?.positionMs;
     if (curPos != null) {
-      await _persistPosition(widget.bookUid, curPos);
+      // BUG-2119：换集不等落库（同退出汇聚点 [_handleBackOrExit]）。此前 `await`
+      // 在这里——连接被毒化时 `setPref` 事务 COMMIT 抛错 / 挂死，换集按钮、剧集列表、
+      // 连播全部卡死。drift 请求已同步排进队列，新页读该集行排在它之后。
+      persistInBackground(
+        persist: () => _persistPosition(widget.bookUid, curPos),
+        onPersistError: (Object error, StackTrace stack) => ErrorLogService
+            .instance
+            .log('VideoFushiPage.switchEpisodePersist', error, stack),
+      );
     }
     // BUG-823：本地换集用 pushReplacement，Flutter 语义下旧路由要等新页入场过渡动画
     // 结束才被移除并 dispose（旧页 dispose 里才 _controller?.dispose() 停播）。过渡窗口

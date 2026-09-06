@@ -345,25 +345,41 @@ class GalAttachedTextController extends ChangeNotifier {
   bool get isReady =>
       _status == GalAttachedTextStatus.activeAttached ||
       _status == GalAttachedTextStatus.activeNative;
+  /// 裸左击风险恒为已接受（BUG-2154，用户 2026-09-05 拍板去掉这道门）。
+  ///
+  /// 为什么是「恒定接受」而不是「删掉这个概念」：`riskAccepted` 不只是 UI，它作为
+  /// `allow_risk` 一路传到 hook 的遮罩层契约（`kLookupShieldStatusRiskAllowed`）。把它
+  /// 从这一侧删掉会让 IPC 两端对同一次事务的理解分叉；恒定为 true 则等价于「用户每次都
+  /// 点了那个按钮」，两侧契约不变，而用户看得见的那道门消失。
+  ///
+  /// 这道门原本是**恒成立**而不是偶尔成立：通用遮罩层的结论永远只能是 Partial
+  /// （`hook/generic_input_shield.inc:115-119` 写死 never Verified），而
+  /// `kLookupShieldStatusVerified` 在整个 hook 里没有任何生产者（全仓 status_flags 只有
+  /// Faulted / KnownUncovered / Partial 三个赋值点）。于是每一个游戏、每一次启动都要先去
+  /// texthooker 工具条上点一次「确认点击风险」，而游戏里没有任何提示指向它；同意还按
+  /// exe SHA-256 存，换个版本要重来一次。真机 フタマタ恋愛 上就卡在这里一整天。
+  ///
+  /// 持久化字段 `unsafeLeftClickAccepted` **保留不动**：存量 profile 里有它，
+  /// `GalLookupSurfaceProfileV1.fromMap` 缺字段会整条解析失败。
+  static const bool _unsafeLeftClickAlwaysAccepted = true;
+
   bool get isUnsafeInputActive =>
       (_status == GalAttachedTextStatus.activeAttached ||
           _status == GalAttachedTextStatus.activeNative) &&
       (_profile?.mode ?? GalLookupSurfaceMode.auto) !=
           GalLookupSurfaceMode.off &&
       _shieldStatus.conclusion != GalAttachedShieldConclusion.verified &&
-      (_profile?.unsafeLeftClickAccepted ?? false);
-  bool get needsUnsafeRiskAcceptance =>
-      _unsafeRiskAcceptanceRequestToken != null &&
-      (_status == GalAttachedTextStatus.needsRiskAcceptance ||
-          _status == GalAttachedTextStatus.suspended) &&
-      _target != null &&
-      _exePath != null &&
-      _exeSha256 != null &&
-      (_profile?.mode ?? GalLookupSurfaceMode.auto) !=
-          GalLookupSurfaceMode.off &&
-      !(_profile?.unsafeLeftClickAccepted ?? false) &&
-      _shieldStatus.conclusion != GalAttachedShieldConclusion.verified &&
-      _shieldStatus.conclusion != GalAttachedShieldConclusion.faulted;
+      _unsafeLeftClickAlwaysAccepted;
+
+  /// 「还需要向用户索要裸左击风险确认吗」——由 [_unsafeLeftClickAlwaysAccepted]
+  /// 这一个真相源决定，不写字面量 `false`。恒定接受时它恒 false，于是
+  /// [unsafeRiskAcceptanceRequest] 恒 null，工具条上那个按钮不再出现
+  /// （`GalAttachedLookupWorkbench` 只在 request 非 null 时渲染它）。
+  ///
+  /// 写成派生而不是硬编码 false 的理由：这条门将来若要按引擎/按遮罩层结论重新开
+  /// 一部分，只需要把那个 const 换成条件，索要确认、令牌校验、profile 回写整条链
+  /// 仍然是接好的；硬编码 false 会让「改一个常量」变成「先考古哪些分支已经死了」。
+  bool get needsUnsafeRiskAcceptance => !_unsafeLeftClickAlwaysAccepted;
   GalAttachedUnsafeRiskAcceptanceRequest? get unsafeRiskAcceptanceRequest {
     final int? token = _unsafeRiskAcceptanceRequestToken;
     final GalAttachedSurfaceTarget? target = _target;
@@ -431,7 +447,6 @@ class GalAttachedTextController extends ChangeNotifier {
       );
       return;
     }
-    final bool bodyArrived = _latestSourceText.isEmpty && nextText.isNotEmpty;
     _latestSourceText = nextText;
     if (_activationDeferred) {
       if (inspectOnly) return;
@@ -443,7 +458,27 @@ class GalAttachedTextController extends ChangeNotifier {
       );
       return;
     }
-    if (bodyArrived && _status == GalAttachedTextStatus.waitingForBodyThread) {
+    // BUG-2139：`waitingForBodyThread` 的恢复原本只挂在「正文从无到有」这一个边沿上。
+    // 但该状态还有第二个来源——子面在正文真正落地前回 `noGlyphClusters`，那时
+    // `_latestSourceText` 早已非空，`bodyArrived` 这个边沿**再也不会出现**，于是状态
+    // 永久停在「等正文」，尽管正文每一行都在到。判据改成「还在等正文 && 手上确实有
+    // 正文」：`bodyArrived` 是它的真子集，只放宽恢复时机，不放宽任何准入。
+    // BUG-2141：`needsRiskAcceptance` 在「profile 里风险已经接受」时是一个**死局**：
+    //   · 状态由注入侧 SyncToTarget 的 `riskAcceptanceRequired` 钉住（它在 Configure
+    //     把 risk_accepted_ 置真之前就会跑，且不带 reason）；
+    //   · 而 `needsUnsafeRiskAcceptance` 要求 `!unsafeLeftClickAccepted`，profile 里
+    //     已是 true ⇒ 永远不生成 request ⇒ 工作台那颗「接受风险」按钮**永远不渲染**；
+    //   · 从这个状态又没有任何重新评估的触发点。
+    // 三者叠起来：风险明明已授权，用户既回不去也没有按钮可点，游戏内查词永久不可达。
+    // 真机（用户自己的 Fushi + WoH）上就停在这里。这里只补**恢复时机**：已经授权过的
+    // 局，新正文到达时重新走一遍 `_evaluateAndActivate`，由它照常调 configure 把
+    // riskAccepted 传下去；准入判据一字未改，没授权的局仍旧停在 needsRiskAcceptance
+    // 等用户点按钮。
+    const bool riskAlreadyGranted = _unsafeLeftClickAlwaysAccepted;
+    if (nextText.isNotEmpty &&
+        (_status == GalAttachedTextStatus.waitingForBodyThread ||
+            (riskAlreadyGranted &&
+                _status == GalAttachedTextStatus.needsRiskAcceptance))) {
       if (inspectOnly) {
         _activationDeferred = true;
         return;
@@ -457,7 +492,10 @@ class GalAttachedTextController extends ChangeNotifier {
     }
     if (nextText.isEmpty && _status == GalAttachedTextStatus.activeAttached) {
       await _pushText('');
-      _setStatus(GalAttachedTextStatus.waitingForBodyThread);
+      _setStatus(
+        GalAttachedTextStatus.waitingForBodyThread,
+        reason: 'target_detached_waiting_body_thread',
+      );
       return;
     }
     await _pushLatestTextIfActive();
@@ -515,6 +553,30 @@ class GalAttachedTextController extends ChangeNotifier {
     await _evaluateAndActivate(operation, target, stillCurrent: stillCurrent);
   }
 
+  /// 读回磁盘上这个 exe 的 profile；解析失败 / 路径不符一律当没有。
+  ///
+  /// `acceptUnsafeRiskAndRetry` 用它当底稿，避免用新建的空壳覆盖可解析的存量校准。
+  GalLookupSurfaceProfileV1? _readPersistedProfile(
+    String preferenceKey,
+    String exePath,
+  ) {
+    final Object? stored = _preferenceReader(preferenceKey);
+    if (stored == null || stored == '') return null;
+    try {
+      final Object? decoded = stored is String ? jsonDecode(stored) : stored;
+      final GalLookupSurfaceProfileV1? loaded =
+          GalLookupSurfaceProfileV1.tryFromJson(decoded);
+      if (loaded == null ||
+          GalLookupSurfaceProfileV1.normalizeExePath(loaded.exePath) !=
+              exePath) {
+        return null;
+      }
+      return loaded;
+    } catch (_) {
+      return null;
+    }
+  }
+
   void _loadProfile() {
     _profile = null;
     final String? exePath = _exePath;
@@ -562,7 +624,10 @@ class GalAttachedTextController extends ChangeNotifier {
     final GalLookupReferenceClientV1? client = _currentClient;
     if (client == null) {
       _setAttachedProviderClaim(false);
-      _setStatus(GalAttachedTextStatus.needsCalibration);
+      _setStatus(
+        GalAttachedTextStatus.needsCalibration,
+        reason: 'profile_load_failed',
+      );
       return;
     }
     if (mode == GalLookupSurfaceMode.off) {
@@ -598,34 +663,40 @@ class GalAttachedTextController extends ChangeNotifier {
       _surfaceVisible = false;
       _setStatus(
         GalAttachedTextStatus.suspended,
-        reason: 'native_provider_unavailable',
+        reason: 'evaluate_native_only_provider_unavailable',
       );
       return;
     }
     if (_latestSourceText.isEmpty) {
       if (_sentSourceText.isEmpty) _setAttachedProviderClaim(false);
       _activeVariant = profile?.bestVariantForClient(client);
-      _setStatus(GalAttachedTextStatus.waitingForBodyThread);
+      _setStatus(
+        GalAttachedTextStatus.waitingForBodyThread,
+        reason: 'evaluate_no_source_text',
+      );
       return;
     }
     if (profile == null) {
       _setAttachedProviderClaim(false);
-      _setStatus(GalAttachedTextStatus.needsCalibration);
+      _setStatus(
+        GalAttachedTextStatus.needsCalibration,
+        reason: 'evaluate_profile_missing',
+      );
       return;
     }
-    final bool riskAccepted = profile.unsafeLeftClickAccepted;
-    if (!riskAccepted &&
-        _shieldStatus.conclusion != GalAttachedShieldConclusion.verified) {
-      _setAttachedProviderClaim(false);
-      _setStatus(GalAttachedTextStatus.needsRiskAcceptance);
-      return;
-    }
+    // 风险恒定接受（见 _unsafeLeftClickAlwaysAccepted 的说明）：这里原本是
+    // `!riskAccepted && conclusion != verified` 的准入门，而 conclusion 永远不可能是
+    // verified，于是它对每个游戏恒成立、把面板整个挡在门外。
+    const bool riskAccepted = _unsafeLeftClickAlwaysAccepted;
     final GalLookupSurfaceVariantV1? variant = profile.bestVariantForClient(
       client,
     );
     if (variant == null) {
       _setAttachedProviderClaim(false);
-      _setStatus(GalAttachedTextStatus.needsCalibration);
+      _setStatus(
+        GalAttachedTextStatus.needsCalibration,
+        reason: 'evaluate_no_variant_for_client',
+      );
       return;
     }
     if (!await _claimAttachedProvider(
@@ -653,7 +724,10 @@ class GalAttachedTextController extends ChangeNotifier {
     }
     if (!result.ok || result.status == 'riskAcceptanceRequired') {
       if (result.status == 'riskAcceptanceRequired') {
-        _setStatus(GalAttachedTextStatus.needsRiskAcceptance);
+        _setStatus(
+          GalAttachedTextStatus.needsRiskAcceptance,
+          reason: result.reason ?? 'configure_risk_acceptance_required',
+        );
       } else {
         _activationFailure(result.reason ?? result.error);
       }
@@ -668,7 +742,10 @@ class GalAttachedTextController extends ChangeNotifier {
       if (!_nativeRiskGateSatisfied) {
         _activeVariant = null;
         _surfaceVisible = false;
-        _setStatus(GalAttachedTextStatus.needsRiskAcceptance);
+        _setStatus(
+          GalAttachedTextStatus.needsRiskAcceptance,
+          reason: 'native_provider_risk_gate_unsatisfied',
+        );
         return;
       }
       _activeVariant = null;
@@ -730,10 +807,14 @@ class GalAttachedTextController extends ChangeNotifier {
     await _pushLatestTextIfActive();
   }
 
-  void _activationFailure(String? reason) {
+  /// [withdrawClaim] = false 用于「本轮渲染不出内容，但 attached 通路本身没坏」的
+  /// 情形。`_attachedProviderClaimed` 是**跨轮次共享**、发布给注入侧 registry 的单一
+  /// 状态，撤回它等于告诉 registry「attached 永远不 ready」，而宿主又在等 registry 把
+  /// kind=4/id=11 判成 ready —— 两边互等成活锁（BUG-2142 / BUG-2137）。
+  void _activationFailure(String? reason, {bool withdrawClaim = true}) {
     final GalLookupSurfaceMode mode =
         _profile?.mode ?? GalLookupSurfaceMode.auto;
-    _setAttachedProviderClaim(false);
+    if (withdrawClaim) _setAttachedProviderClaim(false);
     _surfaceVisible = false;
     _setStatus(
       mode == GalLookupSurfaceMode.auto
@@ -753,7 +834,10 @@ class GalAttachedTextController extends ChangeNotifier {
       return false;
     }
     if (!acceptUnsafeLeftClick) {
-      _setStatus(GalAttachedTextStatus.needsRiskAcceptance);
+      _setStatus(
+        GalAttachedTextStatus.needsRiskAcceptance,
+        reason: 'calibration_risk_not_accepted',
+      );
       return false;
     }
     final GalLookupSurfaceVariantV1? seed = _profile?.nearestVariantForClient(
@@ -1033,7 +1117,7 @@ class GalAttachedTextController extends ChangeNotifier {
           _surfaceVisible = false;
           _setStatus(
             GalAttachedTextStatus.suspended,
-            reason: 'native_provider_unavailable',
+            reason: 'state_event_native_only_provider_unavailable',
           );
           break;
         }
@@ -1063,7 +1147,10 @@ class GalAttachedTextController extends ChangeNotifier {
         final GalLookupReferenceClientV1? client = _currentClient;
         if (profile == null || client == null) {
           _surfaceVisible = false;
-          _setStatus(GalAttachedTextStatus.needsCalibration);
+          _setStatus(
+            GalAttachedTextStatus.needsCalibration,
+            reason: 'state_event_profile_missing',
+          );
           break;
         }
         final GalLookupSurfaceVariantV1? variant = profile.bestVariantForClient(
@@ -1071,19 +1158,19 @@ class GalAttachedTextController extends ChangeNotifier {
         );
         if (variant == null) {
           _surfaceVisible = false;
-          _setStatus(GalAttachedTextStatus.needsCalibration);
-          break;
-        }
-        if (!profile.unsafeLeftClickAccepted &&
-            _shieldStatus.conclusion != GalAttachedShieldConclusion.verified) {
-          _surfaceVisible = false;
-          _setStatus(GalAttachedTextStatus.needsRiskAcceptance);
+          _setStatus(
+            GalAttachedTextStatus.needsCalibration,
+            reason: 'state_event_no_variant_for_client',
+          );
           break;
         }
         if (_latestSourceText.isEmpty) {
           _surfaceVisible = false;
           _activeVariant = variant;
-          _setStatus(GalAttachedTextStatus.waitingForBodyThread);
+          _setStatus(
+            GalAttachedTextStatus.waitingForBodyThread,
+            reason: 'state_event_no_source_text',
+          );
           break;
         }
         _activeVariant = variant;
@@ -1091,7 +1178,42 @@ class GalAttachedTextController extends ChangeNotifier {
         unawaited(_pushLatestTextIfActive());
         break;
       case 'noGlyphClusters':
-        _activationFailure(event.reason ?? event.status);
+        // BUG-2137：建不出字形簇要 fail-closed 地藏面（下面照旧不可见、状态照旧
+        // fallback/suspended），但**不得**撤回 `_attachedProviderClaimed`。那是跨轮次
+        // 共享、发布给注入侧 registry 的单一状态；撤掉之后 registry 永远不把
+        // kind=4/id=11 判成 ready，而宿主又在等这个 ready 才肯进 activeAttached ——
+        // 两边互等成活锁，此后**每一行**都救不回来。与 BUG-2142 是同一个活锁，只是
+        // 换了这道门进来：真机 WoH 上稳定复现为「认领 8ms 后被 noGlyphClusters 撤回，
+        // 随后永久停在 suspended/geometryProviderPending」。
+        // 认领的释放仍由当前轮次的 detach / 真失败分支负责。
+        if (_sentSourceText.isEmpty) {
+          // 还一个字都没推给子面时「建不出簇」是**必然**，不是失败。若在这里降级成
+          // `fallback`，状态就再也回不来了：`syncSession` 只在 `waitingForBodyThread`
+          // 上因新正文触发重新评估，`_pushLatestTextIfActive` 又只在激活态推送——
+          // 于是后面每一行都停在 fallback/noGlyphClusters。真机 WoH 实测正是如此。
+          _surfaceVisible = false;
+          _setStatus(
+            GalAttachedTextStatus.waitingForBodyThread,
+            reason: 'state_event_no_glyph_clusters_before_text',
+          );
+          if (_latestSourceText.isNotEmpty) {
+            unawaited(
+              _pushText(_latestSourceText, stageWhileProviderPending: true),
+            );
+          }
+          break;
+        }
+        if (_status == GalAttachedTextStatus.suspended &&
+            _statusReason == 'geometryProviderPending') {
+          // registry 交接还没完成时，正文只是被 staged（`stageWhileProviderPending`），
+          // 子面本来就还没渲染——这条 `noGlyphClusters` 是**预期**而不是失败。旧实现
+          // 在这里降级成 `fallback` 并 `HideSurface`，交接于是永远完不成，后面每一行
+          // 都停在 fallback/noGlyphClusters。保持 suspended/geometryProviderPending，
+          // 等注入侧把 kind=4/id=11 判成 ready 再往下走。
+          _surfaceVisible = false;
+          break;
+        }
+        _activationFailure(event.reason ?? event.status, withdrawClaim: false);
         break;
       case 'emptyText':
         _setStatus(
@@ -1110,17 +1232,26 @@ class GalAttachedTextController extends ChangeNotifier {
       case 'targetBackground':
       case 'hitSnapshotUnavailable':
         _surfaceVisible = false;
-        _setStatus(GalAttachedTextStatus.suspended, reason: event.reason);
+        _setStatus(
+          GalAttachedTextStatus.suspended,
+          reason: _stateEventReason(event),
+        );
         break;
       case 'detached':
-        _setStatus(GalAttachedTextStatus.suspended, reason: event.reason);
+        _setStatus(
+          GalAttachedTextStatus.suspended,
+          reason: _stateEventReason(event),
+        );
         break;
       default:
         if (event.state == 'error' || event.state == 'unavailable') {
-          _activationFailure(event.reason ?? event.status);
+          _activationFailure(_stateEventReason(event));
         } else if (event.state == 'suspended') {
           _surfaceVisible = false;
-          _setStatus(GalAttachedTextStatus.suspended, reason: event.reason);
+          _setStatus(
+            GalAttachedTextStatus.suspended,
+            reason: _stateEventReason(event),
+          );
         } else {
           notifyListeners();
         }
@@ -1130,6 +1261,19 @@ class GalAttachedTextController extends ChangeNotifier {
     // or style changes. Notify even when [_setStatus] sees no enum change so
     // the workbench adopts the newest native draft before commit.
     notifyListeners();
+  }
+
+  /// 状态事件必须留下**可读的**原因（BUG-2143）。
+  ///
+  /// 运行器对 `targetBackground` / `hitSnapshotUnavailable` 这一族状态并不总是填
+  /// `reason`，而这些分支过去把它原样转发，于是宿主侧出现「status=suspended、
+  /// reason=null」——真机上这正是 attached 兜底停住却查不出是哪条分支的原因：
+  /// 状态名本身（`status`）明明带着答案，却被丢掉了。空原因一律回落到状态名。
+  static String? _stateEventReason(GalAttachedSurfaceStateEvent event) {
+    final String? reason = event.reason;
+    if (reason != null && reason.trim().isNotEmpty) return reason;
+    final String status = event.status.trim();
+    return status.isEmpty ? null : status;
   }
 
   Future<void> handleLookupText(GalAttachedLookupHitV19 hit) async {
@@ -1154,8 +1298,16 @@ class GalAttachedTextController extends ChangeNotifier {
     final String? exePath = _exePath;
     final String? exeSha256 = _exeSha256;
     if (target == null || exePath == null || exeSha256 == null) return false;
+    final String preferenceKey =
+        GalLookupSurfaceProfileV1.preferenceKeyForExePath(exePath);
+    // 加固（非已复现 bug）：`_profile` 为 null 时旧实现直接新建一份 `variants: []` 的
+    // profile 落盘。正常路径下 `_loadProfile()` 已经把磁盘那份读进来了，所以 null 通常
+    // 意味着磁盘本来就空；但只要磁盘上存在一份**能解析**的 profile，就不该被这里新建的
+    // 空壳覆盖。先读盘当底稿，读不到才新建。（本轮真机上看到的 `variants: []` 已查明是
+    // 集成测试宿主每个 RunId 换一个隔离根导致的，与本分支无关，故不记 bug。）
     final GalLookupSurfaceProfileV1 profile =
         _profile ??
+        _readPersistedProfile(preferenceKey, exePath) ??
         GalLookupSurfaceProfileV1(
           exePath: exePath,
           exeSha256: exeSha256,
@@ -1167,8 +1319,6 @@ class GalAttachedTextController extends ChangeNotifier {
       exeSha256: exeSha256,
       unsafeLeftClickAccepted: true,
     );
-    final String preferenceKey =
-        GalLookupSurfaceProfileV1.preferenceKeyForExePath(exePath);
     final Object? previousPreferenceValue = _preferenceReader(preferenceKey);
     _unsafeRiskAcceptanceCommitToken = request.token;
     final int acceptanceRevision = ++_unsafeRiskAcceptanceLifecycleRevision;
@@ -1281,7 +1431,10 @@ class GalAttachedTextController extends ChangeNotifier {
     _activeVariant = null;
     _setAttachedProviderClaim(false);
     _surfaceVisible = false;
-    _setStatus(GalAttachedTextStatus.needsCalibration);
+    _setStatus(
+      GalAttachedTextStatus.needsCalibration,
+      reason: 'profile_cleared',
+    );
     final Future<void> persistence = _writePreference(
       GalLookupSurfaceProfileV1.preferenceKeyForExePath(exePath),
       '',
@@ -1440,10 +1593,10 @@ class GalAttachedTextController extends ChangeNotifier {
               : await _detachCaptureFailClosed(
                   current,
                   lease,
-                  reason: 'capture_restore_text_stage_failed',
+                  reason: 'capture_restore_text_push_threw',
                 );
           throw StateError(
-            'capture_restore_text_stage_failed: $error'
+            'capture_restore_text_push_threw: $error'
             '${detachError == null ? '' : '; fail_closed_detach_failed: $detachError'}',
           );
         }
@@ -1462,10 +1615,10 @@ class GalAttachedTextController extends ChangeNotifier {
               : await _detachCaptureFailClosed(
                   current,
                   lease,
-                  reason: 'capture_restore_text_stage_failed',
+                  reason: 'capture_restore_text_layout_rejected',
                 );
           throw StateError(
-            'capture_restore_text_stage_failed'
+            'capture_restore_text_layout_rejected'
             '${detachError == null ? '' : '; fail_closed_detach_failed: $detachError'}',
           );
         }
@@ -1779,15 +1932,22 @@ class GalAttachedTextController extends ChangeNotifier {
       try {
         await callback(profileMode, forceAttached: forceAttached);
       } catch (_) {
-        _setAttachedProviderClaim(false);
+        // BUG-2142：只有仍然当前的这一轮才有权撤回认领。被抢占的旧轮次去撤，撤掉的是
+        // **新轮次刚发出的**那份认领。
         if (_isCurrent(operation, target)) {
+          _setAttachedProviderClaim(false);
           _activationFailure('provider_handoff_failed');
         }
         return false;
       }
     }
     if (stillCurrent != null && !stillCurrent()) {
-      _setAttachedProviderClaim(false);
+      // BUG-2142：被抢占时**不得**撤回认领。`_attachedProviderClaimed` 是跨轮次共享的
+      // 单一状态，新一轮已经（或即将）自己认领；旧轮次在这里撤一次，注入侧 registry
+      // 下一拍看到的就是 attachedReady=false，于是永远不会把 kind=4/id=11 判成 ready，
+      // 而宿主又在等这个 ready 才进 activeAttached —— 两边互等成活锁，状态永久停在
+      // geometryProviderPending。真机 WoH 上复现为「认领 40ms 后被撤回」。
+      // 认领的释放由当前轮次的 detach / 失败分支负责，不由旧轮次代劳。
       return false;
     }
     return _isCurrent(operation, target);
@@ -1911,15 +2071,18 @@ class GalAttachedTextController extends ChangeNotifier {
       _probeMiddleObservedIndex == probes.middleIndex &&
       _probeEndObservedIndex == probes.endIndex;
 
-  bool get _nativeRiskGateSatisfied =>
-      _shieldStatus.conclusion == GalAttachedShieldConclusion.verified ||
-      (_profile?.unsafeLeftClickAccepted ?? false);
+  /// 恒 true：风险已恒定接受（见 _unsafeLeftClickAlwaysAccepted）。
+  bool get _nativeRiskGateSatisfied => true;
 
   void _activateNativeOrRequestRisk({String? reason}) {
     _activeVariant = null;
     _surfaceVisible = false;
     if (!_nativeRiskGateSatisfied) {
-      _setStatus(GalAttachedTextStatus.needsRiskAcceptance, reason: reason);
+      // BUG-2143：这里的 reason 是可选入参，之前调用方不传就报 null。
+      _setStatus(
+        GalAttachedTextStatus.needsRiskAcceptance,
+        reason: reason ?? 'native_activation_risk_gate_unsatisfied',
+      );
       return;
     }
     _setStatus(GalAttachedTextStatus.activeNative, reason: reason);

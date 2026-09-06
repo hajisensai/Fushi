@@ -155,6 +155,59 @@ void TestNoContentMatchFailsClosed() {
         "a selected Luna lane is not enough without exact raw content");
 }
 
+// BUG-2133：同一个 kNoExactRawLine 必须能被候选计数分成两种根因。
+// 真机 WoH 上失败码恒为 6，但「车道里一条候选都没有」与「有候选但字节不等」的处置
+// 完全相反：前者查车道选择/fence 窗口，后者查文本同源性（ruby 标记、行首全角空格、
+// 换行分段）。计数器是唯一能分开它们的东西，因此必须被断言钉住。
+void TestNoExactRawLineIsClassifiableByCandidateCounts() {
+  // ① 选定车道里确实有一条合格候选，只是字节不等 → stable_selected_events == 1。
+  {
+    FakeMapping mapping;
+    WriteLine(mapping.header(), kFutureRaw);
+    const auto result = fushi_voice_hook::ReadHunexGgeSelectedLunaText(
+        RequestFor(mapping.header()));
+    Check(result.failure == HunexGgeSelectedTextFailure::kNoExactRawLine &&
+              result.stable_selected_events == 1u &&
+              result.invalid_selected_events == 0u,
+          "bytes differ: exactly one stable candidate must be counted");
+  }
+  // ② fence 窗口把唯一那条候选排除在外 → 计数全 0，失败码相同但根因不同。
+  //    上界必须仍然可见（否则报的是 kRequestShape 而非本用例要钉的 6），所以用另一条
+  //    车道的事件把全局 text_write_count 推上去——这正是真机上「延迟读窗口空转」的形状。
+  {
+    FakeMapping mapping;
+    const uint64_t target_seq = WriteLine(mapping.header(), kFutureRaw);
+    LineOptions other_lane;
+    other_lane.thread_id = kSelectedThread + 1u;
+    WriteLine(mapping.header(), L"別の車道の行", other_lane);
+    auto request = RequestFor(mapping.header());
+    request.window_after_seq = target_seq;
+    request.window_through_seq =
+        fushi_voice_hook::AtomicLoadPreview64(
+            &mapping.header()->text_write_count);
+    const auto result =
+        fushi_voice_hook::ReadHunexGgeSelectedLunaText(request);
+    Check(result.failure == HunexGgeSelectedTextFailure::kNoExactRawLine &&
+              result.stable_selected_events == 0u &&
+              result.invalid_selected_events == 0u,
+          "empty fence window must report zero candidates, not a byte mismatch");
+  }
+  // ③ 真机形态：Luna 发布带 ruby 标记的行，renderer 交来的是已去标记的显示行。
+  //    两者长度就不同，memcmp 永不相等——但候选是存在的，必须计为 stable。
+  {
+    FakeMapping mapping;
+    WriteLine(mapping.header(), L"「あれ、鍵<rし>閉</r>まったまま？");
+    const wchar_t* detagged = L"「あれ、鍵閉まったまま？";
+    const auto result = fushi_voice_hook::ReadHunexGgeSelectedLunaText(
+        RequestFor(mapping.header(), detagged,
+                   static_cast<uint32_t>(wcslen(detagged))));
+    Check(result.failure == HunexGgeSelectedTextFailure::kNoExactRawLine &&
+              result.stable_selected_events == 1u,
+          "ruby-tagged lane vs de-tagged renderer line is a byte mismatch, "
+          "not an empty lane");
+  }
+}
+
 void TestSameFaceSiblingNeverFallsBack() {
   FakeMapping mapping;
   WriteLine(mapping.header(), kFutureRaw);
@@ -453,6 +506,7 @@ void TestRequestAndHeaderMustBeSane() {
 int main() {
   TestExactRawLineWinsOverNewerPrefetch();
   TestNoContentMatchFailsClosed();
+  TestNoExactRawLineIsClassifiableByCandidateCounts();
   TestSameFaceSiblingNeverFallsBack();
   TestProcessSourceIdentityAndAddressAreExact();
   TestTruncatedAndMalformedPayloadsAreRejected();

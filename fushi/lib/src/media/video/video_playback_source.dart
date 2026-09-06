@@ -19,4 +19,8 @@ abstract interface class VideoPlaybackSource implements Listenable {
 
   /// 媒体总时长（毫秒）；未 load / 未解析媒体头时为 null 或 0。
   int? get durationMs;
+
+  /// 播放倍速（1.0 = 原速）。tracker 用它判「位置推进是连续播放还是 seek 跳变」：
+  /// 一个采样间隔里媒体时间最多前进 墙钟 × 倍速（+ 余量），超出即跳变、不算看过。
+  double get speed;
 }

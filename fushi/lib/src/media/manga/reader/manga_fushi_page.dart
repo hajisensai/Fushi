@@ -46,6 +46,8 @@ import 'package:fushi/src/media/manga/ocr/manga_region_rescan.dart';
 import 'package:fushi/src/media/manga/reader/manga_volume_key_paging_controller.dart';
 import 'package:fushi/src/media/manga/reader/manga_zoom_preference_debouncer.dart';
 import 'package:fushi/src/focus/page_focus_ownership.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart'
+    show contextMenuButtonNumberMatches;
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
 import 'package:fushi/src/shortcuts/global_navigation.dart'
@@ -4156,7 +4158,16 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                   key: const ValueKey<String>('manga_dictionary_host'),
                   child: buildDictionary(),
                 ),
-                if (_bookRow != null && !_loadFailed && _chromeVisible)
+                // 返回键是本页**唯一**的出口，它的可见性只能由用户意图
+                // （[_chromeVisible]）决定，绝不能再挂内容状态门控。
+                //
+                // 旧条件是 `_bookRow != null && !_loadFailed && _chromeVisible`：
+                // 加载失败或一直没就绪时，正文区只剩一行「找不到书籍文件」，而
+                // 这颗按钮**跟着一起消失**。漫画正文是原生 WebView、空白点击已被
+                // 翻页占用，页内没有第二条退出通道；iOS 又没有系统返回键，
+                // `PopScope(canPop: false)` 还顺手关掉了侧滑返回——三者叠加的结果
+                // 是用户只能杀进程。出口不是内容的一部分，不随内容存亡。
+                if (_chromeVisible)
                   Positioned(
                     top: 0,
                     left: 0,
@@ -4179,7 +4190,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                     child: SafeArea(child: _buildTopChrome()),
                   ),
                 // BUG-1888：隐藏态唯一的唤回入口（理由见 [_chromeVisible]）。
-                if (_bookRow != null && !_loadFailed && !_chromeVisible)
+                // 与返回键同理不挂内容门控——否则「隐藏界面后内容加载失败」会把
+                // 唤回按钮一并抹掉，连带返回键再也叫不回来。
+                if (!_chromeVisible)
                   Positioned(
                     top: 0,
                     right: 0,
@@ -4571,6 +4584,17 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           handlerName: 'onMangaContextMenu',
           callback: (List<dynamic> args) {
             if (args.isEmpty || args[0] is! String) return;
+            // BUG-2111：页内 JS 那一路仍然硬判 `e.button === 2`，因为漫画的右键还兼着
+            // 「缩放态下按住拖拽平移」（rightDrag），换键会牵连那半边。所以归属判据补在
+            // 这里：右键若已经被别的漫画动作占用，菜单让位——否则一次右键既翻页又弹菜单，
+            // 正是本 bug 在漫画页的形态。判据与 Flutter 那二十余处入口是同一个函数。
+            if (!contextMenuButtonNumberMatches(
+              registry: appModel.shortcutRegistry,
+              button: 2,
+              ladder: _kMangaMouseLadder,
+            )) {
+              return;
+            }
             unawaited(_showReaderContextMenu(args[0] as String));
           },
         );

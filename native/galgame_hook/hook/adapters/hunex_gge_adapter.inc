@@ -147,6 +147,10 @@ struct HunexGgeRuntimeAnchors {
   uintptr_t surface_compose_second_return = 0;
   uintptr_t surface_compose_final_first_return = 0;
   uintptr_t surface_compose_final_second_return = 0;
+  // BUG-2135：WoH 正文没有 compose 层，draw 直接调 compositor。这是 draw 函数体内
+  // 那唯一一处对 compositor 的调用的返回地址，结构化推导、不写死 RVA。
+  uintptr_t body_compositor_return = 0;
+  uintptr_t body_compositor_return_alt = 0;
   uintptr_t viewport_rect = 0;
   uintptr_t scale_x = 0;
   uintptr_t scale_y = 0;
@@ -251,13 +255,102 @@ thread_local HunexGgeGlyphEvidence g_hunex_gge_recent_glyph;
 thread_local HunexGgeBodyTraversalFence g_hunex_gge_body_traversal_fence;
 thread_local HunexGgeSurfaceComposeContext g_hunex_gge_surface_compose_context;
 thread_local HunexGgePendingStoryCompose g_hunex_gge_pending_story_compose;
+
+// BUG-2135：待定正文行的**进程内**发布副本。
+//
+// 上面那份是 `thread_local`，而 WoH 的渲染各段（compositor / 纹理上传 / quad / sprite）
+// 并不都跑在封存字形的那条线程上——实测 quad 段 `seen:0`、上传段某些会话 caller_tid 与
+// story_tid 不同。任何跨段相关都因此不可能成立。这里用与 PublishHunexGgeProjectionEvidence
+// 相同的 seqlock 范式发布一份进程内可见的副本；**不改变任何既有判据**，thread_local 那份
+// 仍是原有逻辑的唯一依据，本副本目前只用于诊断与跨段观测。
+struct HunexGgePublishedStoryCompose {
+  std::atomic<uint32_t> sequence{0u};
+  std::atomic<uint32_t> active{0u};
+  std::atomic<uint64_t> story_thread_address{0u};
+  std::atomic<uint64_t> raw_text_hash{0u};
+  std::atomic<uint32_t> render_thread_id{0u};
+  std::atomic<int32_t> rect_x{0};
+  std::atomic<int32_t> rect_y{0};
+  std::atomic<int32_t> rect_w{0};
+  std::atomic<int32_t> rect_h{0};
+  std::atomic<uint32_t> surface_words[8]{};
+  std::atomic<unsigned long long> sealed_tick{0ull};
+};
+HunexGgePublishedStoryCompose g_hunex_gge_published_story_compose;
+
+void PublishHunexGgeStoryCompose(const HunexGgePendingStoryCompose& story) {
+  auto& target = g_hunex_gge_published_story_compose;
+  uint32_t sequence = target.sequence.load(std::memory_order_acquire);
+  if ((sequence & 1u) != 0u ||
+      !target.sequence.compare_exchange_strong(
+          sequence, sequence + 1u, std::memory_order_acq_rel,
+          std::memory_order_acquire)) {
+    return;
+  }
+  target.active.store(story.active ? 1u : 0u, std::memory_order_relaxed);
+  target.story_thread_address.store(story.story_thread_address,
+                                    std::memory_order_relaxed);
+  target.raw_text_hash.store(story.raw_text_hash, std::memory_order_relaxed);
+  target.render_thread_id.store(story.render_thread_id,
+                                std::memory_order_relaxed);
+  target.rect_x.store(story.final_glyph_rect.x, std::memory_order_relaxed);
+  target.rect_y.store(story.final_glyph_rect.y, std::memory_order_relaxed);
+  target.rect_w.store(story.final_glyph_rect.width, std::memory_order_relaxed);
+  target.rect_h.store(story.final_glyph_rect.height,
+                      std::memory_order_relaxed);
+  for (size_t index = 0u; index < 8u; ++index) {
+    target.surface_words[index].store(story.final_glyph_surface.words[index],
+                                      std::memory_order_relaxed);
+  }
+  target.sealed_tick.store(story.sealed_tick, std::memory_order_relaxed);
+  target.sequence.store(sequence + 2u, std::memory_order_release);
+  if (story.active) {
+    InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+        &FushiHunexGgeTraceV3.story_sealed_published));
+  }
+}
+
+// 读一份稳定快照；序号奇数或前后不一致即判失败（与证据读取同纪律）。
+bool ReadHunexGgePublishedStoryCompose(HunexGgePendingStoryCompose* out) {
+  if (out == nullptr) return false;
+  const auto& source = g_hunex_gge_published_story_compose;
+  for (int attempt = 0; attempt < 8; ++attempt) {
+    const uint32_t before = source.sequence.load(std::memory_order_acquire);
+    if ((before & 1u) != 0u) continue;
+    HunexGgePendingStoryCompose candidate;
+    candidate.active = source.active.load(std::memory_order_relaxed) != 0u;
+    candidate.story_thread_address =
+        source.story_thread_address.load(std::memory_order_relaxed);
+    candidate.raw_text_hash =
+        source.raw_text_hash.load(std::memory_order_relaxed);
+    candidate.render_thread_id =
+        source.render_thread_id.load(std::memory_order_relaxed);
+    candidate.final_glyph_rect.x = source.rect_x.load(std::memory_order_relaxed);
+    candidate.final_glyph_rect.y = source.rect_y.load(std::memory_order_relaxed);
+    candidate.final_glyph_rect.width =
+        source.rect_w.load(std::memory_order_relaxed);
+    candidate.final_glyph_rect.height =
+        source.rect_h.load(std::memory_order_relaxed);
+    for (size_t index = 0u; index < 8u; ++index) {
+      candidate.final_glyph_surface.words[index] =
+          source.surface_words[index].load(std::memory_order_relaxed);
+    }
+    candidate.sealed_tick = source.sealed_tick.load(std::memory_order_relaxed);
+    std::atomic_thread_fence(std::memory_order_acquire);
+    if (source.sequence.load(std::memory_order_acquire) != before) continue;
+    *out = candidate;
+    return true;
+  }
+  return false;
+}
 thread_local HunexGgePendingSurfaceChain g_hunex_gge_pending_surface_chain;
 thread_local HunexGgePendingQuad g_hunex_gge_pending_quad;
 
 struct HunexGgeProjectionDiagnosticDedup {
   uint64_t story_thread_address = 0u;
   uint64_t raw_text_hash = 0u;
-  std::array<uint64_t, 4u> emitted_failures = {};
+  // 5 段：wrapper / compositor / texture / sprite / worker（BUG-2134）。
+  std::array<uint64_t, 5u> emitted_failures = {};
 };
 
 thread_local HunexGgeProjectionDiagnosticDedup
@@ -323,13 +416,23 @@ enum HunexGgeLookupWorkerTraceState : LONG {
 volatile LONG g_hunex_gge_lookup_worker_trace_state =
     kHunexGgeLookupWorkerIdle;
 volatile LONG g_hunex_gge_lookup_worker_selected_failure = 0;
+volatile LONG g_hunex_gge_lookup_worker_stable_events = 0;
+volatile LONG g_hunex_gge_lookup_worker_invalid_events = 0;
 
 void SetHunexGgeLookupWorkerTraceState(
     HunexGgeLookupWorkerTraceState state,
     fushi_voice_hook::HunexGgeSelectedTextFailure selected_failure =
-        fushi_voice_hook::HunexGgeSelectedTextFailure::kNone) {
+        fushi_voice_hook::HunexGgeSelectedTextFailure::kNone,
+    uint32_t stable_events = 0u, uint32_t invalid_events = 0u) {
   InterlockedExchange(&g_hunex_gge_lookup_worker_selected_failure,
                       static_cast<LONG>(selected_failure));
+  // BUG-2133：候选计数与失败码同源发布。没有它们，同一个 kNoExactRawLine 无法区分
+  // 「窗口内一条候选都没有」与「有候选但字节不等」——前者要查车道/fence，后者要查
+  // 文本同源性（ruby 标记、行首全角空格、换行分段），处置完全不同。
+  InterlockedExchange(&g_hunex_gge_lookup_worker_stable_events,
+                      static_cast<LONG>(stable_events));
+  InterlockedExchange(&g_hunex_gge_lookup_worker_invalid_events,
+                      static_cast<LONG>(invalid_events));
   InterlockedExchange(&g_hunex_gge_lookup_worker_trace_state,
                       static_cast<LONG>(state));
 }
@@ -441,6 +544,172 @@ void PublishHunexGgeTrace(fushi_voice_hook::HunexGgeTraceEvent event) {
   InterlockedExchange(&g_hunex_gge_trace_writer, 0);
 }
 
+// BUG-2134 ③：记录 compositor 的真实调用者 RVA（最多 4 个互异值）。
+//
+// 真机计数证明 compose / compose_wrapper 两个锚点零调用而 compositor 被调用上千次，
+// 即 compositor 的调用者不是扫描器认定的那两个函数。把这些返回地址导出来，就能直接
+// 定位 WoH 正文真正的合成入口，不必再靠模式猜。只写一次、无锁、绝不阻塞渲染线程。
+// 前置声明：定义在下方投影段，本记录器需要它做新鲜度闸门。
+bool IsFreshHunexGgeProjectionTick(ULONGLONG then, ULONGLONG now);
+
+// BUG-2135：记录待定正文行期间上传纹理的互异尺寸（最多 6 组）。只观测。
+// 前置声明：两者定义在下方投影段，本扫描需要它们。
+bool IsSaneHunexGgeCpuSurface(const HunexGgeCpuSurfaceIdentity& surface);
+bool ReadHunexGgeCpuSurfaceIdentity(const void* descriptor,
+                                    HunexGgeCpuSurfaceIdentity* out);
+
+// BUG-2135：在上传 wrapper 对象前 0x200 字节里找出「指向 sane CPU 表面」的指针槽。
+// 纯观测，SEH 兜底，命中即记录偏移与尺寸；最多记 4 个。
+void ScanHunexGgeUploadDescriptorOffsets(void* wrapper) {
+  auto* trace = &FushiHunexGgeTraceV3;
+  const auto* bytes = static_cast<const uint8_t*>(wrapper);
+  for (uint32_t offset = 0u; offset + sizeof(void*) <= 0x200u;
+       offset += sizeof(void*)) {
+    const void* candidate = nullptr;
+    __try {
+      candidate = *reinterpret_cast<const void* const*>(bytes + offset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+      continue;
+    }
+    if (candidate == nullptr) continue;
+    HunexGgeCpuSurfaceIdentity identity;
+    if (!ReadHunexGgeCpuSurfaceIdentity(candidate, &identity)) continue;
+    if (!IsSaneHunexGgeCpuSurface(identity)) continue;
+    const uint32_t slot = static_cast<uint32_t>(InterlockedCompareExchange(
+        reinterpret_cast<volatile LONG*>(&trace->upload_desc_offset_count),
+        0, 0));
+    if (slot >= 4u) return;
+    bool duplicate = false;
+    for (uint32_t i = 0u; i < slot; ++i) {
+      if (trace->upload_desc_offsets[i] == offset) duplicate = true;
+    }
+    if (duplicate) continue;
+    InterlockedExchange(reinterpret_cast<volatile LONG*>(
+                            &trace->upload_desc_offsets[slot]),
+                        static_cast<LONG>(offset));
+    InterlockedExchange(reinterpret_cast<volatile LONG*>(
+                            &trace->upload_desc_dims[slot * 2u]),
+                        static_cast<LONG>(identity.words[1]));
+    InterlockedExchange(reinterpret_cast<volatile LONG*>(
+                            &trace->upload_desc_dims[slot * 2u + 1u]),
+                        static_cast<LONG>(identity.words[2]));
+    InterlockedIncrement(reinterpret_cast<volatile LONG*>(
+        &trace->upload_desc_offset_count));
+  }
+}
+
+// 前置声明：定义在下方。
+struct HunexGgePendingQuad;
+
+// BUG-2135：待定正文行活着时记录 quad 的纹理尺寸与顶点包围盒（最多 4 条）。只观测。
+void RecordHunexGgeStoryQuad(const HunexGgePendingQuad& quad) {
+  InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+      &FushiHunexGgeTraceV3.quad_reached_record));
+  // 读**进程内发布副本**而不是 thread_local：quad 段不在封存字形的那条线程上。
+  HunexGgePendingStoryCompose story;
+  if (!ReadHunexGgePublishedStoryCompose(&story) || !story.active ||
+      !IsFreshHunexGgeProjectionTick(story.sealed_tick, GetTickCount64())) {
+    return;
+  }
+  auto* trace = &FushiHunexGgeTraceV3;
+  InterlockedIncrement64(
+      reinterpret_cast<volatile LONG64*>(&trace->story_quad_seen));
+  const uint32_t slot = static_cast<uint32_t>(InterlockedCompareExchange(
+      reinterpret_cast<volatile LONG*>(&trace->story_quad_count), 0, 0));
+  if (slot >= 4u) return;
+  float min_x = quad.xy[0], max_x = quad.xy[0];
+  float min_y = quad.xy[1], max_y = quad.xy[1];
+  for (size_t i = 1u; i < 4u; ++i) {
+    const float x = quad.xy[i * 2u];
+    const float y = quad.xy[i * 2u + 1u];
+    if (x < min_x) min_x = x;
+    if (x > max_x) max_x = x;
+    if (y < min_y) min_y = y;
+    if (y > max_y) max_y = y;
+  }
+  // 只留「很扁很宽」的候选：宽 > 高 * 3 且宽 >= 120px，正文行条带的形状特征。
+  const float width = max_x - min_x;
+  const float height = max_y - min_y;
+  if (!(width >= 120.0f && height > 0.0f && width > height * 3.0f)) return;
+  uint32_t* row = &trace->story_quads[slot * 6u];
+  InterlockedExchange(reinterpret_cast<volatile LONG*>(&row[0]),
+                      static_cast<LONG>(quad.texture_width));
+  InterlockedExchange(reinterpret_cast<volatile LONG*>(&row[1]),
+                      static_cast<LONG>(quad.texture_height));
+  InterlockedExchange(reinterpret_cast<volatile LONG*>(&row[2]),
+                      static_cast<LONG>(static_cast<int32_t>(min_x)));
+  InterlockedExchange(reinterpret_cast<volatile LONG*>(&row[3]),
+                      static_cast<LONG>(static_cast<int32_t>(min_y)));
+  InterlockedExchange(reinterpret_cast<volatile LONG*>(&row[4]),
+                      static_cast<LONG>(static_cast<int32_t>(max_x)));
+  InterlockedExchange(reinterpret_cast<volatile LONG*>(&row[5]),
+                      static_cast<LONG>(static_cast<int32_t>(max_y)));
+  InterlockedIncrement(
+      reinterpret_cast<volatile LONG*>(&trace->story_quad_count));
+}
+
+void RecordHunexGgePendingUploadDim(uint32_t width, uint32_t height) {
+  if (width == 0u || height == 0u) return;
+  auto* trace = &FushiHunexGgeTraceV3;
+  for (uint32_t index = 0u; index < 6u; ++index) {
+    auto* w = reinterpret_cast<volatile LONG*>(
+        &trace->pending_upload_dims[index * 2u]);
+    auto* h = reinterpret_cast<volatile LONG*>(
+        &trace->pending_upload_dims[index * 2u + 1u]);
+    const LONG existing_w = InterlockedCompareExchange(w, 0, 0);
+    if (existing_w == static_cast<LONG>(width) &&
+        InterlockedCompareExchange(h, 0, 0) == static_cast<LONG>(height)) {
+      return;
+    }
+    if (existing_w == 0) {
+      if (InterlockedCompareExchange(w, static_cast<LONG>(width), 0) == 0) {
+        InterlockedExchange(h, static_cast<LONG>(height));
+        InterlockedIncrement(reinterpret_cast<volatile LONG*>(
+            &trace->pending_upload_dim_count));
+        return;
+      }
+    }
+  }
+  InterlockedIncrement(reinterpret_cast<volatile LONG*>(
+      &trace->pending_upload_dim_overflow));
+}
+
+void RecordHunexGgeCompositorCallerRva(uintptr_t return_address) {
+  // 只在**本线程刚封存过一条正文行且仍新鲜**时记录。compositor 是通用 blit，全量记录
+  // 时 1776 次调用里有 1691 次来自与正文无关的调用点（首轮实测），4 个槽位毫无意义。
+  // 用待定正文行做闸门后，留下的就是正文合成路径上的调用者。
+  const HunexGgePendingStoryCompose& pending = g_hunex_gge_pending_story_compose;
+  if (!pending.active ||
+      pending.render_thread_id != GetCurrentThreadId() ||
+      !IsFreshHunexGgeProjectionTick(pending.sealed_tick, GetTickCount64())) {
+    return;
+  }
+  const uintptr_t module = g_hunex_gge_anchors.module;
+  if (module == 0u || return_address < module) return;
+  const uintptr_t offset = return_address - module;
+  if (offset > 0xFFFFFFFFull) return;
+  const uint32_t rva = static_cast<uint32_t>(offset);
+  auto* trace = &FushiHunexGgeTraceV3;
+  for (uint32_t index = 0u; index < 4u; ++index) {
+    auto* slot = reinterpret_cast<volatile LONG*>(&trace->compositor_caller_rvas[index]);
+    const LONG existing = InterlockedCompareExchange(slot, 0, 0);
+    if (existing == static_cast<LONG>(rva)) return;
+    if (existing == 0) {
+      if (InterlockedCompareExchange(slot, static_cast<LONG>(rva), 0) == 0) {
+        InterlockedIncrement(reinterpret_cast<volatile LONG*>(
+            &trace->compositor_caller_rva_count));
+        return;
+      }
+      // 竞争失败：重读同一槽，可能正是同一个 rva。
+      if (InterlockedCompareExchange(slot, 0, 0) == static_cast<LONG>(rva)) {
+        return;
+      }
+    }
+  }
+  InterlockedIncrement(
+      reinterpret_cast<volatile LONG*>(&trace->compositor_caller_rva_overflow));
+}
+
 void PublishHunexGgeProjectionDiagnostic(
     fushi_voice_hook::HunexGgeTraceEvent event,
     fushi_voice_hook::HunexGgeProjectionTraceStage stage,
@@ -448,7 +717,7 @@ void PublishHunexGgeProjectionDiagnostic(
   const uint32_t stage_value = static_cast<uint32_t>(stage);
   const int32_t failure_value = static_cast<int32_t>(failure);
   if (event.story_line_base == 0u || event.story_line_hash == 0u ||
-      stage_value == 0u || stage_value > 4u || failure_value < 0 ||
+      stage_value == 0u || stage_value > 5u || failure_value < 0 ||
       failure_value >= 64) {
     return;
   }
@@ -986,6 +1255,77 @@ bool SolveHunexGgeAffineProjection(const HunexGgeProjectionEvidence& evidence,
   return true;
 }
 
+// BUG-2136：设计分辨率由引擎自己的 viewport/scale 全局反解，不写死。
+// 真机 WoH：viewport={0,0,1788,1006}，scale=0.93125/0.931481 → 1788/0.93125=1920,
+// 1006/0.931481=1080。
+bool ReadHunexGgeDesignSize(uint32_t* design_w, uint32_t* design_h) {
+  if (design_w == nullptr || design_h == nullptr) return false;
+  fushi_voice_hook::HunexGgeTraceEvent probe;
+  if (!CaptureHunexGgeViewportTransform(&probe)) return false;
+  const double width = static_cast<double>(probe.viewport_right) -
+                       static_cast<double>(probe.viewport_left);
+  const double height = static_cast<double>(probe.viewport_bottom) -
+                        static_cast<double>(probe.viewport_top);
+  float scale_x_value = 0.0f, scale_y_value = 0.0f;
+  std::memcpy(&scale_x_value, &probe.scale_x_bits, sizeof(scale_x_value));
+  std::memcpy(&scale_y_value, &probe.scale_y_bits, sizeof(scale_y_value));
+  const double scale_x = static_cast<double>(scale_x_value);
+  const double scale_y = static_cast<double>(scale_y_value);
+  if (!(width > 0.0) || !(height > 0.0) || !(scale_x > 0.01) ||
+      !(scale_y > 0.01)) {
+    return false;
+  }
+  const double w = width / scale_x;
+  const double h = height / scale_y;
+  if (!(w >= 320.0) || !(w <= 8192.0) || !(h >= 240.0) || !(h <= 8192.0)) {
+    return false;
+  }
+  *design_w = static_cast<uint32_t>(w + 0.5);
+  *design_h = static_cast<uint32_t>(h + 0.5);
+  return true;
+}
+
+// BUG-2136：宿主解出层原点后的确定性投影。
+// client = (layer + origin) * client / design —— 该式已在两种窗口尺寸 × 三条行上实测成立。
+// 不依赖 sprite draw 那条证据链（真机已证明它在 WoH 正文上五段全灭）。
+bool TransformHunexGgeProjectionByLayerOrigin(
+    fushi_voice_hook::hunex_lookup_core::RubyTextProjection* projection,
+    int32_t origin_x, int32_t origin_y, uint32_t design_w, uint32_t design_h,
+    int32_t client_width, int32_t client_height) {
+  namespace core = fushi_voice_hook::hunex_lookup_core;
+  if (projection == nullptr || projection->glyph_count == 0u ||
+      design_w == 0u || design_h == 0u || client_width <= 0 ||
+      client_height <= 0) {
+    return false;
+  }
+  const double sx = static_cast<double>(client_width) /
+                    static_cast<double>(design_w);
+  const double sy = static_cast<double>(client_height) /
+                    static_cast<double>(design_h);
+  for (uint16_t index = 0u; index < projection->glyph_count; ++index) {
+    core::Rect& bounds = projection->glyphs[index].logical_bounds;
+    const double left = (static_cast<double>(bounds.x) + origin_x) * sx;
+    const double top = (static_cast<double>(bounds.y) + origin_y) * sy;
+    const double right =
+        (static_cast<double>(bounds.x) + bounds.width + origin_x) * sx;
+    const double bottom =
+        (static_cast<double>(bounds.y) + bounds.height + origin_y) * sy;
+    // 落在客户区之外的行不发布：原点解错时必须失败，而不是给出一片错位热区。
+    if (!(left >= -8.0) || !(top >= -8.0) ||
+        !(right <= static_cast<double>(client_width) + 8.0) ||
+        !(bottom <= static_cast<double>(client_height) + 8.0) ||
+        !(right > left) || !(bottom > top)) {
+      return false;
+    }
+    bounds.x = static_cast<int32_t>(left + 0.5);
+    bounds.y = static_cast<int32_t>(top + 0.5);
+    bounds.width = static_cast<int32_t>(right + 0.5) - bounds.x;
+    bounds.height = static_cast<int32_t>(bottom + 0.5) - bounds.y;
+    if (bounds.width <= 0 || bounds.height <= 0) return false;
+  }
+  return true;
+}
+
 bool TransformHunexGgeProjectionToClient(
     const HunexGgeProjectionEvidence& evidence,
     const HunexGgeAffineProjection& transform,
@@ -1098,11 +1438,30 @@ bool BuildHunexGgeClientProjection(
     fushi_voice_hook::hunex_lookup_core::RubyTextProjection* projection) {
   namespace bridge = fushi_voice_hook::hunex_capture_bridge;
   namespace core = fushi_voice_hook::hunex_lookup_core;
+  // BUG-2134：本函数每个拒绝点原本都是裸 return false，worker 侧整段无诊断。这里补一个
+  // 只负责报点的闭包：身份取自 snapshot（发布器要求 story_line_base/hash 非 0），
+  // 判据与控制流一字未动。
+  const auto reject =
+      [&](fushi_voice_hook::HunexGgeProjectionTraceFailure failure) {
+        fushi_voice_hook::HunexGgeTraceEvent event;
+        event.story_line_base = snapshot.story_thread_address;
+        event.story_line_hash = snapshot.raw_text_hash;
+        event.draw_sequence = snapshot.epoch;
+        event.render_x = client_width;
+        event.render_y = client_height;
+        event.glyph_ordinal = snapshot.glyph_count;
+        event.draw_arg13 = snapshot.raw_text_units;
+        PublishHunexGgeProjectionDiagnostic(
+            event, fushi_voice_hook::HunexGgeProjectionTraceStage::kWorker,
+            failure);
+        return false;
+      };
   if (projection == nullptr || snapshot.raw_text_units == 0u ||
       snapshot.raw_text_units > core::kTextCapacity ||
       snapshot.glyph_count == 0u ||
       snapshot.glyph_count > core::kGlyphCapacity) {
-    return false;
+    return reject(fushi_voice_hook::HunexGgeProjectionTraceFailure::
+                      kWorkerInputShapeRejected);
   }
   std::array<char16_t, core::kTextCapacity> raw_text = {};
   std::array<core::RawGlyph, core::kGlyphCapacity> raw_glyphs = {};
@@ -1123,24 +1482,128 @@ bool BuildHunexGgeClientProjection(
   if (!core::ProjectRubyText(raw_text.data(), snapshot.raw_text_units,
                              raw_glyphs.data(), snapshot.glyph_count,
                              projection)) {
-    return false;
+    return reject(fushi_voice_hook::HunexGgeProjectionTraceFailure::
+                      kWorkerRubyProjectionRejected);
   }
+  // 九个子条件拆开报点：它们指向的排障方向完全不同——没有证据说明 sprite draw 那一段
+  // 从未成功发布过；身份不符说明证据属于另一条语义行/另一个渲染线程；尺寸不符说明窗口
+  // 在两次采样之间变了；过期说明 2s 新鲜窗没赶上。
+  // BUG-2136：层原点直连路径。把本行在**层空间**的包围盒发布给宿主（它抓一帧画面、
+  // 量出墨迹框、二维平移求解 origin 再回传）；拿到 origin 就用确定性公式投影，整条
+  // sprite draw 证据链不参与——真机已证明它在 WoH 正文上 compose/texture/quad/sprite
+  // 五段全灭。没拿到 origin 就照旧走下面的证据链（fail-closed，不假装几何可用）。
+  uint32_t design_w = 0u, design_h = 0u;
+  if (ReadHunexGgeDesignSize(&design_w, &design_h)) {
+    // 发布的必须是**单独一行**的包围盒，不能是整句的并集。
+    // 一句台词经常折成两三行，各行缩进还不一样（行首常有一个全角空格）；整句并集的
+    // left 来自缩进最小的那一行，而宿主在屏幕上匹配到的只是**其中一条**墨迹带——两边
+    // 比的不是同一个东西，缩进差多少原点就偏多少，一个全角空格正好偏一格。真机上
+    // 表现为「要往右一个字符才点得中想要的字」。
+    // 按层空间的 y 把字形分行，取**出墨字形最多**的那一行：它最宽、在屏幕上最好认，
+    // 与宿主「挑宽度最接近的墨迹带」是同一个目标。
+    struct LayerRow {
+      int32_t top = 0, bottom = 0, left = 0, right = 0;
+      uint32_t inked = 0u;
+    };
+    LayerRow rows[16] = {};
+    uint32_t row_count = 0u;
+    for (uint16_t index = 0u; index < projection->glyph_count; ++index) {
+      // 只统计**会出墨**的字形：空格占格却不画像素，算进去同样会让原点整体右偏。
+      const uint32_t scalar = projection->glyphs[index].scalar;
+      if (scalar == 0x20u || scalar == 0x09u || scalar == 0x3000u) continue;
+      const auto& bounds = projection->glyphs[index].logical_bounds;
+      if (bounds.width <= 0 || bounds.height <= 0) continue;
+      const int32_t right = bounds.x + bounds.width;
+      const int32_t bottom = bounds.y + bounds.height;
+      // 同一行的判据：纵向区间重叠过半。字号在一行内是一致的，这个判据足够稳。
+      uint32_t slot = row_count;
+      for (uint32_t r = 0u; r < row_count; ++r) {
+        const int32_t overlap = (std::min)(bottom, rows[r].bottom) -
+                                (std::max)(bounds.y, rows[r].top);
+        if (overlap * 2 >= bounds.height) { slot = r; break; }
+      }
+      if (slot == row_count) {
+        if (row_count >= 16u) continue;
+        rows[slot].top = bounds.y; rows[slot].bottom = bottom;
+        rows[slot].left = bounds.x; rows[slot].right = right;
+        rows[slot].inked = 1u;
+        ++row_count;
+        continue;
+      }
+      LayerRow& row = rows[slot];
+      if (bounds.y < row.top) row.top = bounds.y;
+      if (bottom > row.bottom) row.bottom = bottom;
+      if (bounds.x < row.left) row.left = bounds.x;
+      if (right > row.right) row.right = right;
+      ++row.inked;
+    }
+    int32_t line_left = 0, line_top = 0, line_right = 0, line_bottom = 0;
+    bool has_bounds = false;
+    uint32_t best_inked = 0u;
+    for (uint32_t r = 0u; r < row_count; ++r) {
+      if (rows[r].inked <= best_inked) continue;
+      best_inked = rows[r].inked;
+      line_left = rows[r].left; line_top = rows[r].top;
+      line_right = rows[r].right; line_bottom = rows[r].bottom;
+      has_bounds = true;
+    }
+    // 单字成行的没有分辨力（任何一小块高光都能凑出同样的宽度），不拿去求解。
+    if (best_inked < 4u) has_bounds = false;
+    if (has_bounds) {
+      fushi_voice_hook::PublishLookupLayerLine(
+          g_header, design_w, design_h, projection->glyph_count, line_left,
+          line_top, line_right, line_bottom);
+    }
+    int32_t origin_x = 0, origin_y = 0;
+    if (has_bounds &&
+        fushi_voice_hook::ReadLookupLayerOrigin(g_header, &origin_x,
+                                                &origin_y)) {
+      if (TransformHunexGgeProjectionByLayerOrigin(
+              projection, origin_x, origin_y, design_w, design_h,
+              client_width, client_height)) {
+        return true;
+      }
+      return reject(fushi_voice_hook::HunexGgeProjectionTraceFailure::
+                        kWorkerClientTransformRejected);
+    }
+  }
+
   HunexGgeProjectionEvidence evidence;
   if (!ReadHunexGgeProjectionEvidence(&evidence) ||
       evidence.generation == 0u || evidence.draw_sequence == 0u ||
-      evidence.texture == 0u ||
-      evidence.story_thread_address != snapshot.story_thread_address ||
-      evidence.raw_text_hash != snapshot.raw_text_hash ||
-      evidence.render_thread_id != snapshot.render_thread_id ||
-      evidence.client_width != client_width ||
-      evidence.client_height != client_height ||
-      !IsFreshHunexGgeProjectionTick(evidence.published_tick,
+      evidence.texture == 0u) {
+    return reject(fushi_voice_hook::HunexGgeProjectionTraceFailure::
+                      kWorkerEvidenceUnavailable);
+  }
+  if (evidence.story_thread_address != snapshot.story_thread_address ||
+      evidence.raw_text_hash != snapshot.raw_text_hash) {
+    return reject(fushi_voice_hook::HunexGgeProjectionTraceFailure::
+                      kWorkerEvidenceStoryMismatch);
+  }
+  if (evidence.render_thread_id != snapshot.render_thread_id) {
+    return reject(fushi_voice_hook::HunexGgeProjectionTraceFailure::
+                      kWorkerEvidenceThreadMismatch);
+  }
+  if (evidence.client_width != client_width ||
+      evidence.client_height != client_height) {
+    return reject(fushi_voice_hook::HunexGgeProjectionTraceFailure::
+                      kWorkerEvidenceClientMismatch);
+  }
+  if (!IsFreshHunexGgeProjectionTick(evidence.published_tick,
                                      GetTickCount64())) {
-    return false;
+    return reject(
+        fushi_voice_hook::HunexGgeProjectionTraceFailure::kWorkerEvidenceStale);
   }
   HunexGgeAffineProjection transform;
-  return SolveHunexGgeAffineProjection(evidence, &transform) &&
-         TransformHunexGgeProjectionToClient(evidence, transform, projection);
+  if (!SolveHunexGgeAffineProjection(evidence, &transform)) {
+    return reject(
+        fushi_voice_hook::HunexGgeProjectionTraceFailure::kWorkerAffineRejected);
+  }
+  if (!TransformHunexGgeProjectionToClient(evidence, transform, projection)) {
+    return reject(fushi_voice_hook::HunexGgeProjectionTraceFailure::
+                      kWorkerClientTransformRejected);
+  }
+  return true;
 }
 
 bool HasFreshHunexGgeProjectionEvidenceForRetain() {
@@ -1538,6 +2001,29 @@ void* Detour_HunexGgeRenderItem(void* arg1, void* arg2, void* arg3,
           event.story_line_base = static_cast<uint64_t>(frame.line_base);
           event.evidence_flags |= fushi_voice_hook::
               kHunexGgeTraceEvidenceStoryFrameSlotsRead;
+          // BUG-2136：正文文本层原点探针。字形 render x/y 是文本层局部坐标
+          // （1920x1080 逻辑单位），客户区映射 client = (render + origin) * client/(1920,1080)
+          // 已在两种窗口尺寸 × 三条行上实测成立，唯一缺的就是 origin。字形 item 前 0x70
+          // 字节与 render_item 另三个参数都已 dump 过、无候选；本轮改抄 body_submit 的
+          // **调用帧窗口**（0x000..0x180，已知 0x78/0x7c/0x88/0xdc 四个槽都在其中，说明
+          // 正文绘制状态就摊在这里）。只读、只抄一次、不参与任何几何判据。
+          if (FushiHunexGgeTraceV3.body_arg_captured == 0u) {
+            uint32_t window[3][32] = {};
+            bool copied = false;
+            __try {
+              std::memcpy(window, wrapper_return_slot, sizeof(window));
+              copied = true;
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+            }
+            if (copied &&
+                InterlockedCompareExchange(
+                    reinterpret_cast<volatile LONG*>(
+                        &FushiHunexGgeTraceV3.body_arg_captured),
+                    1, 0) == 0) {
+              std::memcpy(FushiHunexGgeTraceV3.body_arg_words, window,
+                          sizeof(window));
+            }
+          }
           if (capture_admitted_at_entry && CaptureHunexGgeStoryLine(
                   frame.line_base, body_raw_text.data(),
                   body_raw_text.size(), &body_raw_text_units,
@@ -1710,8 +2196,14 @@ void* Detour_HunexGgeRenderItem(void* arg1, void* arg2, void* arg3,
             pending.raw_text_hash != 0u &&
             IsSaneHunexGgeCpuSurface(pending.final_glyph_surface)) {
           g_hunex_gge_pending_story_compose = pending;
+          PublishHunexGgeStoryCompose(pending);
+          InterlockedExchange(
+              reinterpret_cast<volatile LONG*>(
+                  &FushiHunexGgeTraceV3.pending_upload_story_tid),
+              static_cast<LONG>(pending.render_thread_id));
         } else {
           g_hunex_gge_pending_story_compose = {};
+          PublishHunexGgeStoryCompose({});
         }
       }
       if (capture_outcome.quarantined) {
@@ -1735,6 +2227,18 @@ void* Detour_HunexGgeRenderItem(void* arg1, void* arg2, void* arg3,
           &g_hunex_gge_lookup_worker_trace_state, 0, 0);
       event.draw_arg13 = static_cast<uint32_t>(InterlockedCompareExchange(
           &g_hunex_gge_lookup_worker_selected_failure, 0, 0));
+      // BUG-2133：body-submit 事件的 draw_arg12_bits 恒为 0（真机 trace 可证），
+      // 借这个空槽把选定车道的候选计数带出来，不改导出 ABI：低 32 位 = 稳定事件数、
+      // 高 32 位 = 非法事件数。两者同为 0 且失败码是 kNoExactRawLine ⇒「窗口内一条
+      // 候选都没有」（查车道/fence）；稳定数非 0 ⇒「有候选但字节不等」（查文本同源性）。
+      event.draw_arg12_bits =
+          static_cast<uint64_t>(static_cast<uint32_t>(
+              InterlockedCompareExchange(
+                  &g_hunex_gge_lookup_worker_stable_events, 0, 0))) |
+          (static_cast<uint64_t>(static_cast<uint32_t>(
+               InterlockedCompareExchange(
+                   &g_hunex_gge_lookup_worker_invalid_events, 0, 0)))
+           << 32);
       StampHunexGgeBodySubmitLookupDiagnostics(&event);
     }
     PublishHunexGgeTrace(event);
@@ -1746,6 +2250,10 @@ uint32_t Detour_HunexGgeSurfaceComposeWrapper(
     void* line_this, void* destination, int32_t y_base, uint32_t blend,
     const int32_t* x_offsets, uint32_t layout_selector,
     uint32_t node_filter) {
+  // BUG-2134：无条件调用计数。诊断事件只在能归属到语义行时才发，靠「零事件」
+  // 无法分辨「从没被调用」与「调用了但当时没有待定故事行」。
+  InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+      &FushiHunexGgeTraceV3.surface_compose_wrapper_calls));
   const HunexGgeSurfaceComposeContext previous =
       g_hunex_gge_surface_compose_context;
   HunexGgeSurfaceComposeContext current;
@@ -1778,6 +2286,9 @@ uint32_t Detour_HunexGgeSurfaceCompose(
     void* line_this, void* destination_b, void* destination_a,
     int32_t y_base, uint32_t blend, const int32_t* x_offsets,
     uint32_t layout_selector, uint32_t node_filter) {
+  // BUG-2134：无条件调用计数（同 wrapper）。
+  InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+      &FushiHunexGgeTraceV3.surface_compose_calls));
   const HunexGgeSurfaceComposeContext previous =
       g_hunex_gge_surface_compose_context;
   // The admitted wrapper's non-zero path is the one legitimate nested entry:
@@ -1823,8 +2334,115 @@ uint32_t Detour_HunexGgeSurfaceCompose(
 uint32_t Detour_HunexGgeSurfaceCompositor(
     void* destination, int32_t destination_x, int32_t destination_y,
     const void* source, uint32_t mode, uint32_t alpha) {
+  // BUG-2134：无条件调用计数（同 wrapper）。
+  InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+      &FushiHunexGgeTraceV3.surface_compositor_calls));
   const uintptr_t return_address =
       reinterpret_cast<uintptr_t>(_ReturnAddress());
+  RecordHunexGgeCompositorCallerRva(return_address);
+  // BUG-2135：WoH 正文的直连合成路径。真机证明该引擎的正文是
+  // draw → render_item(逐字形) → compositor，**没有** compose / compose-wrapper 层，
+  // 因此 wrapper_scope 恒假、下面那套 ordinal/candidate/final-link 相关性一次都不成立。
+  // 这里按同样严格的身份判据另开一条直连相关：调用点必须是结构化推导出的
+  // draw→compositor 唯一调用返回地址；本线程必须刚封存过一条正文行且仍新鲜；源表面
+  // 必须与该行末字形位图逐字节相同；目标落点必须正好等于末字形矩形。四者全中才把目标
+  // 表面登记为该行的合成表面。任一不成立即什么都不做，保持 fail-closed。
+  const bool body_compositor_callsite =
+      (g_hunex_gge_anchors.body_compositor_return != 0u &&
+       return_address == g_hunex_gge_anchors.body_compositor_return) ||
+      (g_hunex_gge_anchors.body_compositor_return_alt != 0u &&
+       return_address == g_hunex_gge_anchors.body_compositor_return_alt);
+  if (body_compositor_callsite && destination != nullptr &&
+      source != nullptr) {
+    const HunexGgePendingStoryCompose& story =
+        g_hunex_gge_pending_story_compose;
+    const ULONGLONG now = GetTickCount64();
+    if (story.active && story.render_thread_id == GetCurrentThreadId() &&
+        IsFreshHunexGgeProjectionTick(story.sealed_tick, now)) {
+      InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+          &FushiHunexGgeTraceV3.body_compose_attempts));
+      HunexGgeCpuSurfaceIdentity destination_identity;
+      HunexGgeCpuSurfaceIdentity source_identity;
+      const bool descriptors_ok =
+          ReadHunexGgeCpuSurfaceIdentity(destination, &destination_identity) &&
+          ReadHunexGgeCpuSurfaceIdentity(source, &source_identity);
+      const bool source_ok =
+          descriptors_ok &&
+          SameHunexGgeCpuSurface(source_identity, story.final_glyph_surface);
+      const bool destination_ok =
+          source_ok && destination_x == story.final_glyph_rect.x &&
+          destination_y == story.final_glyph_rect.y;
+      const bool surface_ok =
+          destination_ok && IsSaneHunexGgeCpuSurface(destination_identity);
+      if (source_ok) {
+        InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+            &FushiHunexGgeTraceV3.body_compose_source_matches));
+      }
+      if (surface_ok) {
+        InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+            &FushiHunexGgeTraceV3.body_compose_published));
+        HunexGgePendingSurfaceChain pending;
+        pending.active = true;
+        pending.generation = static_cast<uint64_t>(InterlockedIncrement64(
+            reinterpret_cast<volatile LONG64*>(
+                &FushiHunexGgeTraceV3.next_sequence)));
+        pending.story_thread_address = story.story_thread_address;
+        pending.raw_text_hash = story.raw_text_hash;
+        pending.render_thread_id = story.render_thread_id;
+        pending.surface = destination_identity;
+        pending.updated_tick = now;
+        g_hunex_gge_pending_surface_chain = pending;
+      } else {
+        fushi_voice_hook::HunexGgeTraceEvent reject;
+        reject.story_line_base = story.story_thread_address;
+        reject.story_line_hash = story.raw_text_hash;
+        // 目标落点与该行末字形矩形一并带出，「差多少」一眼可见。
+        reject.render_x = destination_x;
+        reject.render_y = destination_y;
+        reject.draw_arg12_bits =
+            (static_cast<uint64_t>(
+                 static_cast<uint32_t>(story.final_glyph_rect.x)) &
+             0xFFFFFFFFull) |
+            (static_cast<uint64_t>(
+                 static_cast<uint32_t>(story.final_glyph_rect.y))
+             << 32);
+        if (descriptors_ok) {
+          std::memcpy(reject.descriptor_words, source_identity.words,
+                      sizeof(reject.descriptor_words));
+          // 借 probe 一定会打印的两组字段，把「源表面尺寸」与「该行末字形位图尺寸」
+          // 直接摆出来对比：output_words[21]/[22] 会以 glyph_metrics.bitmap_w/h 打印，
+          // render_item_words[6]/[7] 会以 item_offsets 打印。
+          reject.output_words[21] = source_identity.words[1];
+          reject.output_words[22] = source_identity.words[2];
+          reject.render_item_words[6] =
+              story.final_glyph_surface.words[1];
+          reject.render_item_words[7] =
+              story.final_glyph_surface.words[2];
+          reject.viewport_left =
+              static_cast<int32_t>(source_identity.words[0]);
+          reject.viewport_right = static_cast<int32_t>(
+              story.final_glyph_surface.words[0]);
+        }
+        PublishHunexGgeProjectionDiagnostic(
+            reject,
+            fushi_voice_hook::HunexGgeProjectionTraceStage::kCompositor,
+            !descriptors_ok
+                ? fushi_voice_hook::HunexGgeProjectionTraceFailure::
+                      kBodyComposeDescriptorUnreadable
+                : !source_ok
+                      ? fushi_voice_hook::HunexGgeProjectionTraceFailure::
+                            kBodyComposeSourceMismatch
+                      : !destination_ok
+                            ? fushi_voice_hook::
+                                  HunexGgeProjectionTraceFailure::
+                                      kBodyComposeDestinationMismatch
+                            : fushi_voice_hook::
+                                  HunexGgeProjectionTraceFailure::
+                                      kBodyComposeSurfaceInsane);
+      }
+    }
+  }
+
   auto& context = g_hunex_gge_surface_compose_context;
   uint32_t ordinal = 0u;
   bool zero_mode = false;
@@ -1932,6 +2550,10 @@ uint32_t Detour_HunexGgeSurfaceCompositor(
 }
 
 uint32_t Detour_HunexGgeTextureUpload(void* wrapper, uint32_t flags) {
+  // BUG-2134：无条件调用计数。诊断事件只在能归属到语义行时才发，靠「零事件」
+  // 无法分辨「从没被调用」与「调用了但当时没有待定故事行」。
+  InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+      &FushiHunexGgeTraceV3.texture_upload_calls));
   HunexGgeCpuSurfaceIdentity upload_surface;
   const void* descriptor = nullptr;
   bool descriptor_read = false;
@@ -1946,6 +2568,64 @@ uint32_t Detour_HunexGgeTextureUpload(void* wrapper, uint32_t flags) {
   }
   descriptor_read =
       ReadHunexGgeCpuSurfaceIdentity(descriptor, &upload_surface);
+  // BUG-2135：无条件记录上传线程，与字形封存线程对照。pending story 是 thread_local，
+  // 若两者不同，则上传侧永远看不到它——整条链的单线程连续性假设不成立。
+  InterlockedExchange(reinterpret_cast<volatile LONG*>(
+                          &FushiHunexGgeTraceV3.pending_upload_caller_tid),
+                      static_cast<LONG>(GetCurrentThreadId()));
+  // 描述符可读性与「待定正文行是否活着」都必须在描述符门**之外**计数，否则读不出
+  // 描述符时会被误读成「没有上传发生在待定期」（BUG-2135）。
+  InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+      descriptor_read ? &FushiHunexGgeTraceV3.upload_descriptor_ok
+                      : &FushiHunexGgeTraceV3.upload_descriptor_fail));
+  {
+    const HunexGgePendingStoryCompose& probe_story =
+        g_hunex_gge_pending_story_compose;
+    if (probe_story.active &&
+        IsFreshHunexGgeProjectionTick(probe_story.sealed_tick,
+                                      GetTickCount64())) {
+      InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+          &FushiHunexGgeTraceV3.upload_with_active_story));
+      // 只在待定正文行活着时扫一次，避免热路径开销；找出真正承载 CPU 表面的槽位。
+      if (!descriptor_read && wrapper != nullptr &&
+          InterlockedCompareExchange(
+              reinterpret_cast<volatile LONG*>(
+                  &FushiHunexGgeTraceV3.upload_desc_offset_count),
+              0, 0) < 4) {
+        ScanHunexGgeUploadDescriptorOffsets(wrapper);
+      }
+    }
+  }
+  // BUG-2135：逐字形贴图假设的检验点。只观测、不改变任何行为。
+  if (descriptor_read) {
+    const HunexGgePendingStoryCompose& story =
+        g_hunex_gge_pending_story_compose;
+    // 先按「不问线程」记一次：这条与下面带线程判据的那条相减，就能证明上传是否发生
+    // 在另一条线程上（BUG-2135）。
+    if (story.active &&
+        IsFreshHunexGgeProjectionTick(story.sealed_tick, GetTickCount64())) {
+      InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+          &FushiHunexGgeTraceV3.pending_upload_any_thread));
+      InterlockedExchange(reinterpret_cast<volatile LONG*>(
+                              &FushiHunexGgeTraceV3.pending_upload_story_tid),
+                          static_cast<LONG>(story.render_thread_id));
+      InterlockedExchange(reinterpret_cast<volatile LONG*>(
+                              &FushiHunexGgeTraceV3.pending_upload_caller_tid),
+                          static_cast<LONG>(GetCurrentThreadId()));
+      RecordHunexGgePendingUploadDim(upload_surface.words[1],
+                                     upload_surface.words[2]);
+    }
+    if (story.active && story.render_thread_id == GetCurrentThreadId() &&
+        IsFreshHunexGgeProjectionTick(story.sealed_tick, GetTickCount64())) {
+      InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+          &FushiHunexGgeTraceV3.glyph_texture_upload_attempts));
+      if (SameHunexGgeCpuSurface(upload_surface,
+                                 story.final_glyph_surface)) {
+        InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+            &FushiHunexGgeTraceV3.glyph_texture_upload_matches));
+      }
+    }
+  }
   const uint32_t result = g_orig_hunex_gge_texture_upload(wrapper, flags);
 
   auto& pending = g_hunex_gge_pending_surface_chain;
@@ -1956,6 +2636,27 @@ uint32_t Detour_HunexGgeTextureUpload(void* wrapper, uint32_t flags) {
       IsFreshHunexGgeProjectionTick(pending.updated_tick, now) &&
       SameHunexGgeCpuSurface(upload_surface, pending.surface);
   if (!exact_surface) {
+    // BUG-2132：这里原本是哑口——段 2 成功后若纹理上传对不上，trace 里只表现为
+    // 「compositor 之后没有下文」，无法分辨是没走到这一段还是走到了被拒。只在**能归属
+    // 到某条语义行**（chain 仍 active 且同线程新鲜）时补一条诊断，避免与「本次上传根本
+    // 不属于正文链」混为一谈；判据与控制流一字未动。
+    if (pending.active &&
+        pending.render_thread_id == GetCurrentThreadId() &&
+        IsFreshHunexGgeProjectionTick(pending.updated_tick, now)) {
+      fushi_voice_hook::HunexGgeTraceEvent event;
+      event.draw_sequence = pending.generation;
+      event.text_hash = reinterpret_cast<uintptr_t>(wrapper);
+      event.story_line_base = pending.story_thread_address;
+      event.story_line_hash = pending.raw_text_hash;
+      event.render_x = static_cast<int32_t>(pending.surface.words[1]);
+      event.render_y = static_cast<int32_t>(pending.surface.words[2]);
+      event.glyph_ordinal = flags;
+      event.draw_arg13 = result;
+      PublishHunexGgeProjectionDiagnostic(
+          event, fushi_voice_hook::HunexGgeProjectionTraceStage::kTexture,
+          fushi_voice_hook::HunexGgeProjectionTraceFailure::
+              kTextureSurfaceMismatch);
+    }
     return result;
   }
   const auto publish_texture_failure =
@@ -2034,6 +2735,9 @@ uint32_t Detour_HunexGgeTextureUpload(void* wrapper, uint32_t flags) {
 uint32_t Detour_HunexGgeQuadVertex(void* manager, const float* xy,
                                   const float* uv_pixels,
                                   const int32_t* texture_dimensions) {
+  // BUG-2134：无条件调用计数（同上）。
+  InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+      &FushiHunexGgeTraceV3.quad_vertex_calls));
   float input_xy[8] = {};
   float input_uv[8] = {};
   int32_t dimensions[2] = {};
@@ -2059,10 +2763,36 @@ uint32_t Detour_HunexGgeQuadVertex(void* manager, const float* xy,
   }
   const uint32_t result = g_orig_hunex_gge_quad_vertex(
       manager, xy, uv_pixels, texture_dimensions);
+  // BUG-2132：段 4 的三条拒绝路径原本全是哑口，真机 trace 上无法与「本次调用根本不属于
+  // 正文链」区分。只在 surface chain 仍 active 且同线程新鲜（= 能归属到某条语义行）时补
+  // 诊断；不改任何判据与控制流。
+  const auto publish_quad_failure =
+      [&](fushi_voice_hook::HunexGgeProjectionTraceFailure failure) {
+        const auto& chain = g_hunex_gge_pending_surface_chain;
+        if (!chain.active ||
+            chain.render_thread_id != GetCurrentThreadId() ||
+            !IsFreshHunexGgeProjectionTick(chain.updated_tick,
+                                           GetTickCount64())) {
+          return;
+        }
+        fushi_voice_hook::HunexGgeTraceEvent event;
+        event.draw_sequence = chain.generation;
+        event.text_hash = reinterpret_cast<uintptr_t>(manager);
+        event.story_line_base = chain.story_thread_address;
+        event.story_line_hash = chain.raw_text_hash;
+        event.render_x = dimensions[0];
+        event.render_y = dimensions[1];
+        event.draw_arg13 = result;
+        PublishHunexGgeProjectionDiagnostic(
+            event, fushi_voice_hook::HunexGgeProjectionTraceStage::kSprite,
+            failure);
+      };
   if (result != 4u || !inputs_read || mode != 1 || dimensions[0] <= 0 ||
       dimensions[0] > 32768 || dimensions[1] <= 0 ||
       dimensions[1] > 32768 || !std::isfinite(offset_x) ||
       !std::isfinite(offset_y)) {
+    publish_quad_failure(
+        fushi_voice_hook::HunexGgeProjectionTraceFailure::kQuadShapeRejected);
     g_hunex_gge_pending_quad = {};
     return result;
   }
@@ -2083,6 +2813,8 @@ uint32_t Detour_HunexGgeQuadVertex(void* manager, const float* xy,
     vertex_buffer = 0u;
   }
   if (vertex_buffer == 0u) {
+    publish_quad_failure(fushi_voice_hook::HunexGgeProjectionTraceFailure::
+                             kQuadVertexBufferMissing);
     g_hunex_gge_pending_quad = {};
     return result;
   }
@@ -2101,6 +2833,8 @@ uint32_t Detour_HunexGgeQuadVertex(void* manager, const float* xy,
     const float normalized_v = input_uv[index * 2u + 1u] / dimensions[1];
     if (!std::isfinite(final_x) || !std::isfinite(final_y) ||
         !std::isfinite(normalized_u) || !std::isfinite(normalized_v)) {
+      publish_quad_failure(fushi_voice_hook::HunexGgeProjectionTraceFailure::
+                               kQuadProjectionNotFinite);
       g_hunex_gge_pending_quad = {};
       return result;
     }
@@ -2110,6 +2844,7 @@ uint32_t Detour_HunexGgeQuadVertex(void* manager, const float* xy,
     pending.uv[index * 2u + 1u] = normalized_v;
   }
   g_hunex_gge_pending_quad = pending;
+  RecordHunexGgeStoryQuad(pending);
   return result;
 }
 
@@ -2214,6 +2949,9 @@ bool CaptureHunexGgeD3DProjectionSizes(
 
 uint32_t Detour_HunexGgeSpriteDraw(void* renderer, void* texture,
                                    void* vertex_buffer, uint32_t mode) {
+  // BUG-2134：无条件调用计数（同上）。
+  InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(
+      &FushiHunexGgeTraceV3.sprite_draw_calls));
   const uint64_t draw_sequence =
       g_hunex_gge_sprite_draw_sequence.fetch_add(
           1u, std::memory_order_relaxed) +
@@ -3000,6 +3738,13 @@ bool ScanHunexGgeRuntimeAnchors() {
   const bool body_submit_graph_valid =
       body_submit_graph_matches == 1u && body_submit != nullptr;
   trace->render_item_call_match_count = render_item_call.count;
+  // BUG-2135：draw → compositor 的直连调用点。真机计数证明 WoH 正文不经过 compose/
+  // compose-wrapper（两者零调用），compositor 却被调用；把记录闸门在待定正文行上后，
+  // 唯一调用者落在 draw 函数体内。这里按同一条既有范式结构化推导它，要求**恰好一处**，
+  // 多解或零解一律留 0（下游按 0 判定为不可用，保持 fail-closed）。
+  uintptr_t body_compositor_return = 0u;
+  uintptr_t body_compositor_return_alt = 0u;
+  uint32_t body_compositor_call_count = 0u;
 
   const uint8_t* surface_compose_span = nullptr;
   size_t surface_compose_bytes = 0u;
@@ -3417,6 +4162,33 @@ bool ScanHunexGgeRuntimeAnchors() {
     g_hunex_gge_anchors.surface_compose =
         reinterpret_cast<uintptr_t>(surface_compose);
     g_hunex_gge_anchors.surface_compositor = surface_compositor_target;
+    // draw 跨度内对 compositor 的唯一调用（BUG-2135）。surface_compose_graph_valid
+    // 已保证 surface_compositor_target 可信；这里只多问一句「draw 是否也直接调它」。
+    if (draw_span != nullptr && draw_bytes != 0u) {
+      uintptr_t direct_return = 0u;
+      uintptr_t direct_return_alt = 0u;
+      body_compositor_call_count =
+          fushi_voice_hook::hunex_lookup::FindRel32CallReturnsToTarget(
+              draw_span, draw_bytes, surface_compositor_target,
+              &direct_return, &direct_return_alt);
+      // 实测 WoH 的 draw 里对 compositor 恰有**两处** rel32 调用，运行期只有其中一处
+      // 在正文合成时触发。两处都收进锚点：返回地址只负责把范围**收紧到 draw 函数内**，
+      // 真正的判据是下游逐行的表面身份（源位图 == 该行末字形位图、落点 == 末字形矩形），
+      // 那一关一个字节都不放松。上界仍是 2，出现第三处即判为多解并整体留 0。
+      if (body_compositor_call_count == 1u ||
+          body_compositor_call_count == 2u) {
+        body_compositor_return = direct_return;
+        body_compositor_return_alt =
+            body_compositor_call_count == 2u ? direct_return_alt : 0u;
+      }
+    }
+    g_hunex_gge_anchors.body_compositor_return = body_compositor_return;
+    g_hunex_gge_anchors.body_compositor_return_alt =
+        body_compositor_return_alt;
+    trace->body_compositor_return_rva = HunexGgeRva(body_compositor_return);
+    trace->body_compositor_return_alt_rva =
+        HunexGgeRva(body_compositor_return_alt);
+    trace->body_compositor_call_count = body_compositor_call_count;
     g_hunex_gge_anchors.surface_compose_zero_first_return =
         surface_compose_zero_first_return;
     g_hunex_gge_anchors.surface_compose_zero_second_return =
@@ -4177,6 +4949,11 @@ struct HunexGgeSnapshotSelection {
   uint64_t latest_strict_selected_line_seq = 0u;
   fushi_voice_hook::HunexGgeSelectedTextFailure failure =
       fushi_voice_hook::HunexGgeSelectedTextFailure::kNone;
+  // BUG-2133：把候选计数带出来。只有它们能把同一个 kNoExactRawLine 分成两种完全不同
+  // 的根因——「选定车道在窗口内根本没有事件」与「有事件但字节不等」。此前两个计数
+  // 在这里被整个丢掉，真机上只剩两 bit 信息，分型无从谈起。
+  uint32_t selected_stable_events = 0u;
+  uint32_t selected_invalid_events = 0u;
 };
 
 HunexGgeSnapshotSelection MatchHunexGgeSnapshotToSelectedText(
@@ -4201,6 +4978,12 @@ HunexGgeSnapshotSelection MatchHunexGgeSnapshotToSelectedText(
 
   fushi_voice_hook::HunexGgeSelectedTextResult selected = {};
   bool selected_read_attempted = false;
+  // BUG-2133：留住第一次读的结果。下面那次延迟读的窗口是 (seal_seq, now]，而 now 由
+  // **任意车道**的任意文本事件推进（含 thread-discovered）；选定车道在那一小段里通常
+  // 一条新行都没有，于是延迟读必然产出「窗口内空无一物」的 kNoExactRawLine，把第一次
+  // 读真正有意义的失败码整体盖掉——真机 WoH 上读到的永远是 6、从不是 8，正是这条噪声。
+  fushi_voice_hook::HunexGgeSelectedTextResult first_read = {};
+  bool first_read_attempted = false;
   if (selected_thread_id != 0u &&
       snapshot.text_window_through_seq >
           g_hunex_gge_lookup_last_selected_text_seq) {
@@ -4210,6 +4993,8 @@ HunexGgeSnapshotSelection MatchHunexGgeSnapshotToSelectedText(
     outcome.latest_strict_selected_line_seq =
         selected.latest_strict_selected_line_seq;
     selected_read_attempted = true;
+    first_read = selected;
+    first_read_attempted = true;
   }
 
   // WoH seals the renderer traversal before Luna publishes the same line.
@@ -4236,7 +5021,23 @@ HunexGgeSnapshotSelection MatchHunexGgeSnapshotToSelectedText(
   }
 
   if (selected_read_attempted) {
-    outcome.failure = selected.failure;
+    // 只有当延迟读**真的看到了候选**（稳定或非法事件非零）时，它的失败码才比第一次读
+    // 更有信息量；否则保留第一次读的失败码，别让一个空窗口把真相盖掉（BUG-2133）。
+    const bool deferred_saw_candidates =
+        selected.stable_selected_events != 0u ||
+        selected.invalid_selected_events != 0u;
+    const bool prefer_first_read =
+        first_read_attempted && !deferred_saw_candidates &&
+        (first_read.stable_selected_events != 0u ||
+         first_read.invalid_selected_events != 0u);
+    outcome.failure =
+        prefer_first_read ? first_read.failure : selected.failure;
+    outcome.selected_stable_events =
+        (std::max)(first_read.stable_selected_events,
+                   selected.stable_selected_events);
+    outcome.selected_invalid_events =
+        (std::max)(first_read.invalid_selected_events,
+                   selected.invalid_selected_events);
     if (selected.disposition ==
             fushi_voice_hook::HunexGgeSelectedTextDisposition::
                 kUseExactMatch &&
@@ -4395,6 +5196,9 @@ void ProcessHunexGgeLookupTick() {
   uint32_t newest_rejected_epoch = 0u;
   fushi_voice_hook::HunexGgeSelectedTextFailure newest_failure =
       fushi_voice_hook::HunexGgeSelectedTextFailure::kNone;
+  // 与 newest_failure 同源保留：失败码离开候选计数就无法分型（BUG-2133）。
+  uint32_t newest_stable_events = 0u;
+  uint32_t newest_invalid_events = 0u;
   uint64_t newest_selected_line_seq = 0u;
   for (uint32_t slot_index = 0u;
        slot_index <
@@ -4424,6 +5228,8 @@ void ProcessHunexGgeLookupTick() {
     } else if (candidate.epoch >= newest_rejected_epoch) {
       newest_rejected_epoch = candidate.epoch;
       newest_failure = candidate_selection.failure;
+      newest_stable_events = candidate_selection.selected_stable_events;
+      newest_invalid_events = candidate_selection.selected_invalid_events;
     }
   }
 
@@ -4431,7 +5237,7 @@ void ProcessHunexGgeLookupTick() {
     SetHunexGgeLookupWorkerTraceState(
         any_snapshot ? kHunexGgeLookupWorkerSelectedTextRejected
                      : kHunexGgeLookupWorkerNoSnapshot,
-        newest_failure);
+        newest_failure, newest_stable_events, newest_invalid_events);
     // Unrelated toolbar/body surfaces must not revoke an already exact-bound
     // story model. The model is retained only while the selected Luna lane is
     // unchanged; a newly exact-matched story snapshot replaces it below.

@@ -98,8 +98,8 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
   }
 
   Future<void> _import() async {
-    final FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
+    final FilePickerResult? result = await pickFilesByExtensions(
+      context: context,
       allowedExtensions: const <String>['glsl', 'hook'],
       allowMultiple: true,
     );

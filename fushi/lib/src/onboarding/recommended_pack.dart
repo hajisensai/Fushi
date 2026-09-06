@@ -5,6 +5,7 @@ import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/utils/misc/download_plan.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/resumable_downloader.dart';
 import 'package:fushi/src/utils/misc/segmented_downloader.dart';
 import 'package:fushi/src/utils/net/app_http.dart';
@@ -306,8 +307,13 @@ Future<RecommendedPackManifest?> fetchRecommendedPackManifest() async {
 ///
 /// 导入推荐包会走备份导入流程并**重启进程**，没有机会在导入成功后删包——所以
 /// [markImportStarted] 在启动导入前落一个 flag 文件，重启回来后由
-/// [cleanupIfImported]（新手引导页 initState 调）把整个包目录删掉，不让 9.5 GB
-/// 的 zip 静默常驻磁盘。
+/// [cleanupIfImported]（**AppModel 初始化调**，即启动必经路径）把整个包目录删掉，
+/// 不让 9.5 GB 的 zip 静默常驻磁盘。
+///
+/// BUG-2109：这个收尾一度挂在新手引导页的 initState 上，而导入恰恰会把
+/// `preferences` 表整层换成备份里的那份、`onboarding_completed` 变 true，重启后
+/// 首页不再自动弹引导页——清理入口结构上永远等不到执行。判据（flag）没错，错的
+/// 是把它挂在了一个「导入成功就不会再出现」的页面上。
 class RecommendedPackDownloader {
   RecommendedPackDownloader({
     required Directory packDir,
@@ -373,15 +379,20 @@ class RecommendedPackDownloader {
   File get packFile => packFileIn(_packDir);
 
   /// 单流续传的半截文件。
-  File get _partFile => File(p.join(_packDir.path, '$_fileName.part'));
+  static File _partFileIn(Directory packDir) =>
+      File(p.join(packDir.path, '$_fileName.part'));
+
+  File get _partFile => _partFileIn(_packDir);
 
   /// 分片下载的半截文件（预分配到完整大小）。与单流的 `.part` **分开命名**：两条
   /// 路的半截文件语义不同（一个是「已下这么多字节」，一个是「预分配好、按片填」），
   /// 共用一个名字会让另一条路把对方的半截当成自己的断点。
   File get _multiPartFile => File(p.join(_packDir.path, '$_fileName.mpart'));
 
-  File get _multiPartProgressFile =>
-      File(p.join(_packDir.path, '$_fileName.mpart.json'));
+  static File _multiPartProgressFileIn(Directory packDir) =>
+      File(p.join(packDir.path, '$_fileName.mpart.json'));
+
+  File get _multiPartProgressFile => _multiPartProgressFileIn(_packDir);
 
   static File _importedFlagFileIn(Directory packDir) =>
       File(p.join(packDir.path, 'imported.flag'));
@@ -417,21 +428,28 @@ class RecommendedPackDownloader {
 
   /// 已下字节（两条路合一）。分片路的 `.mpart` 是**预分配**的完整大小，长度不代表
   /// 进度，必须读进度文件——否则 UI 一进来就显示「已下 9.5 GB」。
-  int get partialBytes {
+  ///
+  /// **目录级**（与 [packFileIn] / [hasCompletedFileIn] 同纪律）：「盘上躺着多少
+  /// 半截」是磁盘事实，与走哪条线路无关。UI 要判「有没有可续的半截」时不该、也
+  /// 不需要先挑出一个线路实例来问——挑实例要先解析清单，而清单要联网。
+  static int partialBytesIn(Directory packDir) {
     try {
-      if (_multiPartProgressFile.existsSync()) {
-        return _receivedFromProgressFile();
+      final File progressFile = _multiPartProgressFileIn(packDir);
+      if (progressFile.existsSync()) {
+        return _receivedFromProgressFile(progressFile);
       }
-      return _partFile.existsSync() ? _partFile.lengthSync() : 0;
+      final File partFile = _partFileIn(packDir);
+      return partFile.existsSync() ? partFile.lengthSync() : 0;
     } on FileSystemException {
       return 0;
     }
   }
 
-  int _receivedFromProgressFile() {
+  int get partialBytes => partialBytesIn(_packDir);
+
+  static int _receivedFromProgressFile(File progressFile) {
     try {
-      final Object? decoded =
-          json.decode(_multiPartProgressFile.readAsStringSync());
+      final Object? decoded = json.decode(progressFile.readAsStringSync());
       if (decoded is! Map<String, dynamic>) return 0;
       final Object? parts = decoded['parts'];
       if (parts is! Map<String, dynamic>) return 0;
@@ -455,12 +473,18 @@ class RecommendedPackDownloader {
   }
 
   /// 若曾进入导入（flag 在），删除整个包目录（best-effort）。
+  /// 一律走**异步** FS 调用：`packDir` 派生自数据根，而数据根可能是掉线的外置
+  /// 盘 / 网络盘。同步 `existsSync()` 会把 isolate 整个阻住，调用方叠的超时护栏
+  /// （TODO-1260）连触发的机会都没有 —— 那正是这条护栏要防的 hang。
   static Future<void> cleanupIfImported(Directory packDir) async {
-    if (!_importedFlagFileIn(packDir).existsSync()) return;
     try {
-      if (packDir.existsSync()) await packDir.delete(recursive: true);
-    } on FileSystemException {
-      // 占用/权限问题不阻断引导；下次进入再试。
+      if (!await _importedFlagFileIn(packDir).exists()) return;
+      if (await packDir.exists()) await packDir.delete(recursive: true);
+    } on FileSystemException catch (e, s) {
+      // 占用/权限问题不阻断启动；下次启动再试。但**要留痕**：删不掉的
+      // 9.5 GB 是用户直接感知的（存储页数字不降），静默吞掉等于没修。
+      ErrorLogService.instance
+          .log('RecommendedPackDownloader.cleanupIfImported', e, s);
     }
   }
 

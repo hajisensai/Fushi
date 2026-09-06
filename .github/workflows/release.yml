@@ -198,6 +198,17 @@ jobs:
             ;;
           release)
             CHANNEL=github-release
+            # BUG-2104：本分支曾是**唯一**没显式关掉 debug APK 的分支。
+            # `BUILD_DEBUG_APK` 的初值是 true（见本步骤开头），push / dispatch 的
+            # debug|beta|formal 四条分支各自设了 false，只有这里漏了 ⇒ 留在默认 true；
+            # 而下面的上传 glob 是 `fushi-*.apk`，顺手把 `fushi-<ver>-<sha>-debug.apk`
+            # 扫进正式 release 的资产表和已发布的 latest-stable-fushi.json。
+            # 后果不致命（两批已出货客户端都按名字把 `-debug.apk` 排除在 stable/beta 之外，
+            # 见 fushi/test/utils/misc/formal_asset_naming_legacy_contract_test.dart 与
+            # platform_updater.dart 的 _isDebugApkAsset），但正式版页面上多一个 debug 构建
+            # 可供手动下载、白烧一次构建、清单里多一条无用条目。
+            # **手动发 GitHub Release 正是本仓文档里正式版的一等路径**，所以这条必然复发。
+            BUILD_DEBUG_APK=false
             # 手动发 GitHub Release：正文就是当场写的公告，优先用它；留空（先建空
             # Release 再补正文）时回落到仓库里的公告文件。
             BODY="${RELEASE_BODY:-}"

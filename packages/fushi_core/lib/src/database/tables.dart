@@ -314,6 +314,26 @@ class DictionaryMetadata extends Table {
   TextColumn get collapsedLanguagesJson =>
       text().withDefault(const Constant('[]'))();
 
+  /// v96：用户**显式展开**这本词典的语言列表（BCP-47，与 [collapsedLanguagesJson]
+  /// 同形）。BUG-2158。
+  ///
+  /// 为什么必须是独立的第二列而不是把 collapsed 当布尔用：折叠有**三**个态，
+  /// 一个列表只装得下两个。
+  ///   * 在 collapsed 名单里 → 显式折叠；
+  ///   * 在本名单里 → 显式展开；
+  ///   * 两个名单都不在 → **继承**（自动展开窗口 + 全局 `collapse_dictionaries`）。
+  /// 修复前只有 collapsed 一个名单，「不在名单里」被 UI 当成「展开」呈现（那个
+  /// unfold_more / unfold_less 双态按钮），实际却是「继承」——而全局默认是折叠，
+  /// 于是用户给自动展开窗口之外的词典点「展开」，视觉上毫无反应。UI 在撒谎。
+  ///
+  /// 两个名单**互斥**，由唯一写入点 `DictionaryRepository.setDictionaryCollapseState`
+  /// 维持；读取侧（[Dictionary.isCollapsed]）仍把「显式展开」排在「显式折叠」之前，
+  /// 所以即使外部写入弄出重叠，行为也是确定的而不是未定义。
+  ///
+  /// 存量数据零迁移：旧库升级后本列为 `[]` = 全部继承 = 逐字节保持 v96 前的行为。
+  TextColumn get expandedLanguagesJson =>
+      text().withDefault(const Constant('[]'))();
+
   /// v87：用户**手动指定**的词典内容语言（BCP-47，如 `ja` / `zh-Hant`）。
   ///
   /// null = 未指定，按自动来源推断（yomitan `index.json` 的 `sourceLanguage`，
@@ -2728,4 +2748,84 @@ class MangaChapterStates extends Table {
 
   @override
   Set<Column> get primaryKey => {bookUid, chapterKey};
+}
+
+// ── video_file_specs ──────────────────────────────────────────────────
+/// 本地视频文件的技术规格探测缓存（schema v95）。
+///
+/// 库页卡片与作品详情页要标注清晰度 / HDR / 编码 / 音轨，而这些事实此前**在库里一个
+/// 字节都没有**——`VideoBooks` 连 duration 列都没有，规格只在播放时活在 mpv 的内存里
+/// （`video_hdr_output.dart` 的 HDR 判据），播完即丢。列表要显示就必须能在**不播放**的
+/// 前提下拿到，于是有了这张表。
+///
+/// **身份键是文件路径，不是 bookUid**，这是本表唯一重要的设计决定：一个 `VideoBooks`
+/// 行可能是多集播放列表（`playlist_json` 里若干条路径），各集的分辨率/音轨完全可以不同。
+/// 把规格挂到 book 上，多集就只剩一份规格，必然是错的；挂到文件上，单文件与多集走同一
+/// 条路径，不需要为「这本书是不是播放列表」写任何分支。
+///
+/// **纯缓存，可随时重建**：所有列都能由 ffprobe 从文件本身重新探出来。因此
+/// - 探测失败不写行（宁可下次重试，不缓存一个空壳）；
+/// - 文件大小或修改时刻变了就重探（用户换了个片源、补了音轨）；
+/// - [probeVersion] 变了也重探（探测器扩了字段集，旧行的新字段是空的）。
+///
+/// 设备本地：路径与探测结果都只对本机有意义，不进备份/同步（与 `video_download_jobs`
+/// 同列于 backup 的 device-local 清单）。
+@DataClassName('VideoFileSpecRow')
+class VideoFileSpecs extends Table {
+  /// 视频文件绝对路径 = 身份。与 `VideoBooks.videoPath` 同语义（数据根内副本 / 用户
+  /// 原位外部文件两态；流 URL 不入本表——探的是本地文件）。
+  TextColumn get filePath => text()();
+
+  /// 探测当时的文件大小（字节）。失效判据之一。
+  IntColumn get fileSizeBytes => integer()();
+
+  /// 探测当时的文件修改时刻（毫秒）。失效判据之一。
+  IntColumn get fileModifiedAt => integer()();
+
+  /// 本行写入时刻（毫秒）。
+  IntColumn get probedAt => integer()();
+
+  /// 探测器字段集版本（`kVideoProbeFieldSetVersion`）。失效判据之一。
+  IntColumn get probeVersion => integer()();
+
+  /// 容器时长（毫秒）。探不到为 NULL。
+  IntColumn get durationMs => integer().nullable()();
+
+  /// 容器平均码率（bit/s）。展示码率通常只能用它——mkv 不给流级码率。
+  IntColumn get containerBitrate => integer().nullable()();
+
+  /// ffprobe `codec_name`，如 `h264` / `hevc` / `av1`。
+  TextColumn get videoCodec => text().nullable()();
+
+  IntColumn get width => integer().nullable()();
+  IntColumn get height => integer().nullable()();
+
+  /// 如 `yuv420p10le`。色深主要由它推出（10-bit HEVC 不给 bits_per_raw_sample）。
+  TextColumn get pixelFormat => text().nullable()();
+
+  /// 每分量位深（8 / 10 / 12）。
+  IntColumn get bitDepth => integer().nullable()();
+
+  /// 帧率 ×1000（23.976fps → 23976）。整数存储避免浮点比较误差。
+  IntColumn get frameRateMilli => integer().nullable()();
+
+  /// 视频流码率（bit/s）。mkv 通常没有，见 [containerBitrate]。
+  IntColumn get videoBitrate => integer().nullable()();
+
+  /// ffprobe 原样的色彩标签。**不存归一后的「是不是 HDR」**：那是派生值，
+  /// 判据收口在 `video_dynamic_range.dart`，存派生值等于把同一事实放两处，
+  /// 判据一改这里就成了过期副本。
+  TextColumn get colorPrimaries => text().nullable()();
+  TextColumn get colorTransfer => text().nullable()();
+  TextColumn get colorSpace => text().nullable()();
+
+  /// 音轨数组 JSON（编码/声道/语言/标题/default·forced·comment 标志）。
+  TextColumn get audioTracksJson => text().withDefault(const Constant('[]'))();
+
+  /// 内封字幕轨数组 JSON。
+  TextColumn get subtitleTracksJson =>
+      text().withDefault(const Constant('[]'))();
+
+  @override
+  Set<Column> get primaryKey => {filePath};
 }

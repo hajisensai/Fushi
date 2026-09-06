@@ -54,7 +54,14 @@ class _RecordingNavigatorObserver extends NavigatorObserver {
 }
 
 void main() {
-  testWidgets('lookup risk request dismisses an open capture setup dialog', (
+  // BUG-2154 之前：会话一活跃就要求逐 exe 确认「裸左击风险」，捕获设置弹窗为此
+  // 自动让位、工具条上冒出确认按钮。那道门已经整个去掉（风险恒定接受），所以本
+  // 用例反过来守新契约——**弹窗不再被顶掉、确认按钮不再出现**。
+  //
+  // 保留而不是删掉的理由：这两条正是用户实际抱怨的症状（每个游戏每次启动都被顶
+  // 一次、而游戏里没有任何提示指向那个按钮）。断言反向之后它就是那道门不许悄悄
+  // 回来的锚。
+  testWidgets('lookup session no longer demands per-exe risk consent', (
     WidgetTester tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1400, 900));
@@ -121,28 +128,31 @@ void main() {
       targetHwnd: 3,
       sourceText: '本文です',
     );
-    expect(attachedText.needsUnsafeRiskAcceptance, isTrue);
+    expect(
+      attachedText.needsUnsafeRiskAcceptance,
+      isFalse,
+      reason: '风险恒定接受：不再向用户索要逐 exe 确认',
+    );
+    expect(attachedText.unsafeRiskAcceptanceRequest, isNull);
     await tester.pumpAndSettle();
 
-    expect(find.byType(GalCaptureSetupDialog), findsNothing);
+    expect(
+      find.byType(GalCaptureSetupDialog),
+      findsOneWidget,
+      reason: '没有风险确认要让位了，用户打开的捕获设置弹窗必须留在原地',
+    );
     expect(
       find.byKey(const ValueKey<String>('game-attached-lookup-accept-risk')),
-      findsOneWidget,
-      reason: '捕获设置让位后必须暴露真实的逐 exe 风险确认入口',
-    );
-    await tester.tap(
-      find.byKey(const ValueKey<String>('game-attached-lookup-accept-risk')),
-    );
-    await tester.pumpAndSettle();
-    expect(
-      find.byKey(const ValueKey<String>('game-attached-lookup-risk-confirm')),
-      findsOneWidget,
-      reason: '透明模态 barrier 不能再拦截工作台点击',
+      findsNothing,
+      reason: '那个按钮是这道门的唯一 UI 出口，门没了它就不该再出现',
     );
   });
 
   for (final bool dismissWithBack in <bool>[false, true]) {
-    testWidgets('risk auto-close does not pop workbench after '
+    // 原来由「风险请求」触发这条排队的自动关闭；那道门去掉后，还活着的触发者是
+    // 「用户选中了文本线程」。守的东西没变：**已经被关掉的弹窗留下的自动关闭，
+    // 不得把它下面那层工作台路由也弹掉**。
+    testWidgets('queued auto-close does not pop workbench after '
         '${dismissWithBack ? 'back' : 'barrier'} dismissal', (
       WidgetTester tester,
     ) async {
@@ -224,14 +234,18 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(GalCaptureSetupDialog), findsOneWidget);
 
-      await attachedText.syncSession(
-        active: true,
-        sessionEpoch: 1,
-        targetPid: 2,
-        targetHwnd: 3,
-        sourceText: '本文です',
+      // 让弹窗排上一次自动关闭：用户选中线程是这条路径现存的唯一触发者。
+      // 线程必须真的在目录里，`selectedTextThreadKey` 的 getter 会按
+      // `textThreads` 过滤掉不存在的 key。
+      textService.appendLine(
+        '台詞です',
+        textThreadKey: 'luna:pick',
+        textThreadLabel: 'Sample 0x1000',
+        textHookCode: 'HS932@1000',
+        nativeTextThreadId: 0x1000,
       );
-      expect(attachedText.needsUnsafeRiskAcceptance, isTrue);
+      await session.selectTextThread(0x1000, threadKey: 'luna:pick');
+      expect(session.selectedTextThreadKey, 'luna:pick');
 
       // Dismiss the DialogRoute before the dirty ListenableBuilder gets its
       // next frame. Its queued auto-close must not pop the page underneath.

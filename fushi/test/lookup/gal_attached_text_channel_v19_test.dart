@@ -244,6 +244,42 @@ void main() {
       expect(received!.sourceLength, 2);
       expect(received!.hasConsistentSourceLength, isTrue);
       expect(received!.wordRect, const Rect.fromLTWH(320, 700, 28, 36));
+      expect(received!.hover, isFalse, reason: '无 hover 字段（老 runner）= 点击');
+    },
+  );
+
+  test(
+    'attached Shift+hover hit is typed and takes the same handler',
+    () async {
+      GalAttachedLookupHitV19? received;
+      GalHookTextOverlayChannel.setEventHandlers(
+        onAttachedLookupText: (GalAttachedLookupHitV19 hit) => received = hit,
+      );
+      await invokeFromNative('lookupText', <String, Object?>{
+        'surface': 'attached',
+        ..._target.toMap(),
+        'sourceText': 'これは本文です',
+        'textGeneration': 9,
+        'charIndex': 3,
+        'sourceLength': 2,
+        'hover': true,
+      });
+      expect(received, isNotNull);
+      expect(received!.hover, isTrue);
+      expect(received!.charIndex, 3);
+
+      received = null;
+      await invokeFromNative('lookupText', <String, Object?>{
+        'surface': 'attached',
+        ..._target.toMap(),
+        'sourceText': 'これは本文です',
+        'textGeneration': 9,
+        'charIndex': 3,
+        'sourceLength': 2,
+        'hover': 'yes',
+      });
+      expect(received, isNotNull);
+      expect(received!.hover, isFalse, reason: '只认布尔 true，其它值一律当点击');
     },
   );
 

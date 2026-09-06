@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../helpers/source_guard.dart';
+
 /// 源码守卫：视频退出 flush 的「时序不变式」——无法用纯单测覆盖（需真实 libmpv
 /// player），故在源码层钉死结构：
 ///
@@ -138,20 +140,25 @@ void main() {
           reason: 'onPop 必须委托给退出汇聚点 _handleBackOrExit');
     });
 
-    test('_handleBackOrExit awaits flushPosition() before manually popping',
+    test('_handleBackOrExit starts flushPosition() via exitAfterPersist, no await',
         () {
+      // BUG-2119：旧契约「pop 前 await flushPosition()」把退出押在一次落库成功上，
+      // 连接被毒化时四条退出通道一起失灵。新契约：经 exitAfterPersist 同步发起
+      // 落库、无条件 pop，方法体里不得再有任何 await。
       final RegExpMatch? body = RegExp(
         r'Future<void> _handleBackOrExit\(\) async \{(.*?)\n  \}',
         dotAll: true,
       ).firstMatch(page);
       expect(body, isNotNull, reason: '找不到 _handleBackOrExit 方法体');
       final String b = body!.group(1)!;
-      final int flushAt = b.indexOf('await _controller?.flushPosition()');
-      final int popAt = b.indexOf('nav.pop()');
-      expect(flushAt, greaterThanOrEqualTo(0),
-          reason: '退出前必须 await _controller.flushPosition()（可靠落库）');
-      expect(popAt, greaterThan(flushAt),
-          reason: '手动 pop 必须在 await flush 之后（否则 State 销毁后写不完）');
+      expect(b, contains('exitAfterPersist('),
+          reason: '退出必须走 exitAfterPersist 原语');
+      expect(b, contains('flushPosition()'),
+          reason: '退出前仍必须发起 flushPosition()（进度落库不能丢）');
+      expect(b, contains('exit: nav.pop'),
+          reason: 'pop 由 exitAfterPersist 无条件执行');
+      expect(b, isNot(contains('await ')),
+          reason: '退出路径不得 await 任何东西（BUG-2119）');
     });
 
     test('background lifecycle flushes the playback position (hard-kill cover)',
@@ -415,14 +422,75 @@ void main() {
           reason: 'landscape lock must not re-allow portrait');
     });
 
-    test('dispose restores the orientation on leaving the page', () {
+    test('initState claims display ownership before the three (BUG-2105)', () {
+      final RegExpMatch? body = RegExp(
+        r'void initState\(\) \{(.*?)\n  \}',
+        dotAll: true,
+      ).firstMatch(maskComments(page));
+      expect(body, isNotNull, reason: 'initState method body not found');
+      final String b = body!.group(1)!;
+      final int claim = b.indexOf('VideoDisplayClaim.claim(this)');
+      expect(claim, greaterThanOrEqualTo(0),
+          reason: 'initState 必须经 VideoDisplayClaim.claim 登记本页持有进程级显示态');
+      // 登记必须早于设置动作：先登记再设，换集期间新旧两页同时在册，旧页释放时才
+      // 看得到「还有人持有」。
+      for (final String action in <String>[
+        '_lockLandscapeForVideo()',
+        'setMacOSTrafficLightsHidden(true)',
+        '_registerSystemBarsVisibilityCallback()',
+      ]) {
+        final int at = b.indexOf(action);
+        expect(at, greaterThanOrEqualTo(0), reason: 'initState 应仍认领 $action');
+        expect(claim, lessThan(at),
+            reason: 'VideoDisplayClaim.claim 必须排在 $action 之前');
+      }
+    });
+
+    test('dispose restores nothing unconditionally (BUG-2105)', () {
       final RegExpMatch? body = RegExp(
         r'void dispose\(\) \{(.*?)\n  \}',
         dotAll: true,
-      ).firstMatch(page);
+      ).firstMatch(maskComments(page));
       expect(body, isNotNull, reason: 'dispose method body not found');
-      expect(body!.group(1), contains('_restoreOrientationOnExit()'),
-          reason: 'dispose must restore orientation on leaving the page');
+      final String b = body!.group(1)!;
+      expect(b, contains('_releaseVideoDisplayClaim()'),
+          reason: 'dispose 必须经 _releaseVideoDisplayClaim 释放进程级显示态');
+      // BUG-2105：换集的窗口模式分支用 pushReplacement，旧页 dispose 晚于新页
+      // initState。dispose 里任何**无条件**还原都会掀掉新页刚设好的显示态（方向集被
+      // 放宽成含竖屏 → 旋转锁定下当即翻竖屏 = 掉出全屏；系统栏回调被置空）。
+      for (final String unconditional in <String>[
+        '_restoreOrientationOnExit()',
+        'setSystemUIChangeCallback(null)',
+        'setMacOSTrafficLightsHidden(false)',
+      ]) {
+        expect(b.contains(unconditional), isFalse,
+            reason: 'dispose 不得直接调 $unconditional（须经 VideoDisplayClaim 记账门控）');
+      }
+    });
+
+    test('_releaseVideoDisplayClaim restores only for the last owner (BUG-2105)',
+        () {
+      final RegExpMatch? body = RegExp(
+        r'void _releaseVideoDisplayClaim\(\) \{(.*?)\n  \}',
+        dotAll: true,
+      ).firstMatch(maskComments(page));
+      expect(body, isNotNull,
+          reason: '_releaseVideoDisplayClaim method body not found');
+      final String b = body!.group(1)!;
+      final int gate =
+          b.indexOf('if (!VideoDisplayClaim.release(this)) return;');
+      expect(gate, greaterThanOrEqualTo(0),
+          reason: '还原前必须先过 VideoDisplayClaim.release(this) 的记账门（早退即不还原）');
+      for (final String restore in <String>[
+        'setSystemUIChangeCallback(null)',
+        '_restoreOrientationOnExit()',
+        'setMacOSTrafficLightsHidden(false)',
+      ]) {
+        final int at = b.indexOf(restore);
+        expect(at, greaterThanOrEqualTo(0),
+            reason: '最后一个持有者离开时必须还原 $restore');
+        expect(gate, lessThan(at), reason: '$restore 必须在记账门之后');
+      }
     });
 
     test('the restore method is mobile-gated and re-allows portrait', () {

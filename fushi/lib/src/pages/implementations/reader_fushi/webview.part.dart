@@ -2610,13 +2610,13 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
     final Widget keyed = KeyedSubtree(key: _webViewKey, child: webView);
     // TODO-954：Windows 文字选区右键。`HitTestBehavior.translucent` 让左键框选 / 滚动 /
     // 查词点击照常落进 WebView（与 dictionary_popup_webview 的 BUG-261 范式同），只额外
-    // 截右键（onSecondaryTapDown）弹出 Flutter 菜单——后者随界面大小缩放。
+    // 截菜单键弹出 Flutter 菜单——后者随界面大小缩放。BUG-2111 之后「菜单键」由绑定表决定
+    // （默认右键），阅读器阶梯里 reader / audiobook 先解析，故右键改绑翻页等动作时菜单让位。
     if (!isWindowsPlatform) return keyed;
-    return GestureDetector(
-      behavior: HitTestBehavior.translucent,
-      onSecondaryTapDown: (TapDownDetails details) {
-        _showReaderTextContextMenu(details.globalPosition);
-      },
+    return ContextMenuTrigger(
+      // 右键菜单改由绑定表决定唤出键（默认仍是右键）；右键被别的动作占用时自动让位。
+      onInvoke: (Offset position) => _showReaderTextContextMenu(position),
+      ladder: kReaderMouseLadder,
       child: keyed,
     );
   }

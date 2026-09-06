@@ -22,6 +22,8 @@ import 'package:fushi/src/media/video/anilist_client.dart' show AniListMedia;
 import 'package:fushi/src/media/video/cover_ui/episode_rename_confirm_dialog.dart';
 import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
+import 'package:fushi/src/media/video/cover_ui/video_specs_panel.dart';
+import 'package:fushi/src/media/video/video_specs_service.dart';
 import 'package:fushi/src/media/video/metadata/video_country_display.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_credit_repository.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
@@ -58,6 +60,7 @@ import 'package:fushi_core/fushi_core.dart';
 class MediaCollectionDetailPage extends StatefulWidget {
   const MediaCollectionDetailPage({
     required this.database,
+    this.videoSpecs,
     required this.collection,
     required this.loadEpisodes,
     required this.onOpenEpisode,
@@ -68,6 +71,11 @@ class MediaCollectionDetailPage extends StatefulWidget {
   });
 
   final FushiDatabase database;
+
+  /// 视频规格服务（v95）。**构造注入而不是从 riverpod 取**：本页是普通
+  /// StatefulWidget，它的既有 widget 测试没有也不需要 `ProviderScope`，在页内塞
+  /// ConsumerWidget 会让那些测试全部抛。null = 不显示规格（测试默认如此）。
+  final VideoSpecsService? videoSpecs;
   final MediaCollectionRow collection;
 
   /// 解析本合集**有序**成员槽（调用方持 repo + collectionId；见
@@ -2206,6 +2214,20 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                                 ),
                               ),
                             ],
+                            // v95：该集的规格摘要（`1080p · HDR10 · HEVC`）。
+                            // 挤进状态行右端而不是新起一行——卡高 _kEpisodeCardHeight
+                            // 是钳死的，两行标题+两行简介已经把 Spacer 余量吃满，
+                            // 多一行会把简介顶掉。Flexible + 内部单行 ellipsis 保证
+                            // 长文件名的规格串不会撑爆这一行。
+                            Flexible(
+                              child: Align(
+                                alignment: Alignment.centerRight,
+                                child: VideoSpecsInlineLine(
+                                  service: widget.videoSpecs,
+                                  filePath: episode.local?.videoPath,
+                                ),
+                              ),
+                            ),
                           ],
                         ),
                       ],
@@ -2275,6 +2297,19 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             ],
           ),
         ),
+        // v95：完整技术规格（音轨/字幕轨在集卡上放不下，只能进弹窗）。
+        // 仅本地文件有——远端占位集探不了。
+        if (episode.local != null && widget.videoSpecs != null)
+          PopupMenuItem<_EpisodeMenuAction>(
+            value: _EpisodeMenuAction.mediaInfo,
+            child: Row(
+              children: <Widget>[
+                const Icon(Icons.info_outline, size: 20),
+                const SizedBox(width: 12),
+                Text(t.video_specs_title),
+              ],
+            ),
+          ),
         PopupMenuItem<_EpisodeMenuAction>(
           value: _EpisodeMenuAction.removeFromCollection,
           child: Row(
@@ -2291,11 +2326,41 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     switch (action) {
       case _EpisodeMenuAction.download:
         _openDownloadDialog(episodeNumber: _episodeNumberOf(episode));
+      case _EpisodeMenuAction.mediaInfo:
+        await _showEpisodeMediaInfo(episode);
       case _EpisodeMenuAction.removeFromCollection:
         await _removeEpisode(episode);
       case null:
         break;
     }
+  }
+
+  /// 某一集的完整技术规格弹窗。
+  ///
+  /// 规格是**文件级**事实，所以入口挂在集上而不是作品上——同一合集里各集的分辨率、
+  /// 音轨完全可以不同，作品级摆一份规格是在骗人。
+  Future<void> _showEpisodeMediaInfo(CollectionEpisodeSlot episode) async {
+    final String? path = episode.local?.videoPath;
+    if (path == null || path.isEmpty) return;
+    await showDialog<void>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: Text(_episodeDisplayTitle(episode)),
+        content: SingleChildScrollView(
+          child: VideoSpecsPanel(
+            service: widget.videoSpecs,
+            filePath: path,
+            showTitle: false,
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(t.dialog_close),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _handleManageAction(_CollectionManageAction action) async {
@@ -2488,6 +2553,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 /// 集卡上下文菜单动作。
 enum _EpisodeMenuAction {
   download,
+  mediaInfo,
   removeFromCollection,
 }
 

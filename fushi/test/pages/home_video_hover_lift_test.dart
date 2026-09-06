@@ -127,18 +127,33 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  /// 最近的 [AnimatedScale] 祖先——即包着这张卡的 [FushiHoverLift] 动画层。
-  AnimatedScale liftScaleOf(WidgetTester tester, String cardKey) {
-    final Finder scales = find.ancestor(
+  /// 包着这张卡的 [FushiHoverLift] 缩放层当前**渲染**出的倍数。
+  ///
+  /// BUG-2124 起缩放走显式 `AnimationController` + [Transform]（不再是
+  /// `AnimatedScale`，隐式动画落值晚两三帧、压不住滚动），所以这里读渲染矩阵。
+  double liftScaleOf(WidgetTester tester, String cardKey) {
+    final Finder lift = find.ancestor(
       of: find.byKey(ValueKey<String>(cardKey)),
-      matching: find.byType(AnimatedScale),
+      matching: find.byType(FushiHoverLift),
     );
     expect(
-      scales,
+      lift,
       findsWidgets,
-      reason: '卡 $cardKey 外面必须包着 FushiHoverLift 的 AnimatedScale（BUG-2002）',
+      reason: '卡 $cardKey 外面必须包着 FushiHoverLift（BUG-2002）',
     );
-    return tester.widget<AnimatedScale>(scales.first);
+    final Finder transforms = find.descendant(
+      of: lift.first,
+      matching: find.byType(Transform),
+    );
+    expect(
+      transforms,
+      findsWidgets,
+      reason: '卡 $cardKey 的悬停壳必须建出缩放层（BUG-2002）',
+    );
+    return tester
+        .widget<Transform>(transforms.first)
+        .transform
+        .getMaxScaleOnAxis();
   }
 
   Future<TestGesture> hoverOnto(WidgetTester tester, String cardKey) async {
@@ -154,16 +169,16 @@ void main() {
   }
 
   Future<void> expectHoverLifts(WidgetTester tester, String cardKey) async {
-    expect(liftScaleOf(tester, cardKey).scale, 1.0);
+    expect(liftScaleOf(tester, cardKey), closeTo(1.0, 1e-6));
     final TestGesture mouse = await hoverOnto(tester, cardKey);
     expect(
-      liftScaleOf(tester, cardKey).scale,
-      kFushiHoverLiftScale,
+      liftScaleOf(tester, cardKey),
+      closeTo(kFushiHoverLiftScale, 1e-6),
       reason: '鼠标悬停必须放大到 kFushiHoverLiftScale',
     );
     await mouse.moveTo(const Offset(5, 5));
     await tester.pumpAndSettle();
-    expect(liftScaleOf(tester, cardKey).scale, 1.0, reason: '鼠标移出必须复位');
+    expect(liftScaleOf(tester, cardKey), closeTo(1.0, 1e-6), reason: '鼠标移出必须复位');
   }
 
   Future<void> seedInProgress(String uid, String title) => db.upsertVideoBook(

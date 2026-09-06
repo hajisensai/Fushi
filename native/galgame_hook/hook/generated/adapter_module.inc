@@ -9,3 +9,6 @@
         sgre_.onModuleLoaded(entry.szModule);
         leaf_aquaplus_.onModuleLoaded(entry.szModule);
         hunex_gge_.onModuleLoaded(entry.szModule);
+        cmvs_.onModuleLoaded(entry.szModule);
+        unreal_iostore_.onModuleLoaded(entry.szModule);
+        aos_sfa_.onModuleLoaded(entry.szModule);

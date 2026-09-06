@@ -2350,7 +2350,85 @@ mixin _FushiDbVideoDomain
         // TODO-616：同事务清 shelf_entry（mediaType='video'、entryKey=bookUid）。
         await deleteShelfEntry(MediaKind.video, bookUid);
         await deleteTagAssignmentsForHost(TagHostKind.video, bookUid);
+        // v95：同事务清该书涉及的规格缓存。缓存以**文件路径**为键、与 book 无 FK，
+        // 不在这里清就永远不会被清——`video_file_specs` 会随「每个曾经扫描过的文件」
+        // 单调增长，删片子也不缩。取主视频 + 播放列表里的每一集。
+        final VideoBookRow? row = await (select(videoBooks)
+              ..where((t) => t.bookUid.equals(bookUid)))
+            .getSingleOrNull();
+        if (row != null) {
+          for (final String path in videoBookFilePaths(row)) {
+            await deleteVideoFileSpec(path);
+          }
+        }
         await (delete(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
             .go();
       });
+
+  // ── video_file_specs（v95 规格探测缓存）────────────────────────────
+
+  /// 读一个文件的规格；没探过返回 null。
+  Future<VideoFileSpecRow?> videoFileSpec(String filePath) =>
+      (select(videoFileSpecs)..where((t) => t.filePath.equals(filePath)))
+          .getSingleOrNull();
+
+  /// 批量读一屏卡片的规格。
+  ///
+  /// 库页一次要渲染几十张卡，逐张 `videoFileSpec` 会打出几十条查询；这里一条
+  /// `IN` 拿全。返回 **map 而不是 list**：调用方要按路径查，返回 list 会逼每个
+  /// 调用方自己再 build 一次 map（还容易写成 O(n²) 的 firstWhere）。
+  Future<Map<String, VideoFileSpecRow>> videoFileSpecsByPath(
+    Iterable<String> filePaths,
+  ) async {
+    final List<String> paths = filePaths.toSet().toList();
+    if (paths.isEmpty) return const <String, VideoFileSpecRow>{};
+    final List<VideoFileSpecRow> rows =
+        await (select(videoFileSpecs)..where((t) => t.filePath.isIn(paths)))
+            .get();
+    return <String, VideoFileSpecRow>{
+      for (final VideoFileSpecRow row in rows) row.filePath: row,
+    };
+  }
+
+  /// 写入/覆盖一个文件的规格。
+  ///
+  /// 整行覆盖（`InsertMode.insertOrReplace`）是**有意**的：一次 ffprobe 产出的是
+  /// 该文件的完整事实快照，没有「只更新其中几列」的场景；用 upsert-merge 反而会让
+  /// 上次探到、这次探不到的列留下过期值（比如换了个没有内封字幕的同名文件，旧的
+  /// 字幕轨 JSON 会赖着不走）。
+  Future<void> upsertVideoFileSpec(VideoFileSpecsCompanion spec) =>
+      into(videoFileSpecs).insert(spec, mode: InsertMode.insertOrReplace);
+
+  /// 删一个文件的规格缓存（文件被删/被移出库时）。
+  Future<void> deleteVideoFileSpec(String filePath) =>
+      (delete(videoFileSpecs)..where((t) => t.filePath.equals(filePath))).go();
+}
+
+/// 一本视频书涉及的全部本地文件路径：主视频 + 播放列表里的每一集。
+///
+/// 规格缓存以**文件路径**为键、与 `video_books` 之间没有外键（键的粒度本就比 book 细，
+/// 见 `video_file_specs` 表注释），所以删书时必须由调用方按这份清单去清，否则那些行
+/// 永远没人回收。
+///
+/// `playlistJson` 是 `[{title, path}]` 数组，其中 `path` 与 `videoPath` 同语义。
+/// **坏 JSON 只当作「没有播放列表」**：删书事务绝不能因为一条脏缓存键而整个回滚。
+List<String> videoBookFilePaths(VideoBookRow row) {
+  final Set<String> out = <String>{};
+  if (row.videoPath.isNotEmpty) out.add(row.videoPath);
+  final String? playlist = row.playlistJson;
+  if (playlist != null && playlist.isNotEmpty) {
+    try {
+      final Object? decoded = jsonDecode(playlist);
+      if (decoded is List) {
+        for (final Object? item in decoded) {
+          if (item is! Map) continue;
+          final Object? path = item['path'];
+          if (path is String && path.isNotEmpty) out.add(path);
+        }
+      }
+    } catch (_) {
+      // 见上：只清主视频，不抛。
+    }
+  }
+  return List<String>.unmodifiable(out);
 }

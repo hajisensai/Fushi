@@ -151,7 +151,23 @@ class _AnkiCreateLapisRowState extends State<AnkiCreateLapisRow> {
       case LapisSetupOutcome.failed:
         message = t.anki_create_lapis_failed(error: result.message ?? '');
     }
-    messenger.showSnackBar(SnackBar(content: Text(message)));
+    // BUG-2098：权限被永久拒绝时系统不再弹授权框，光给一句提示等于把用户堵死；
+    // 唯一出路是应用设置页里的权限项，所以直接把它做成 snackbar 上的一个按钮。
+    final bool needsSettings =
+        result.code == AnkiErrorCode.permissionPermanentlyDenied;
+    messenger.showSnackBar(SnackBar(
+      content: Text(message),
+      duration: needsSettings
+          ? const Duration(seconds: 10)
+          : const Duration(seconds: 4),
+      action: needsSettings
+          ? SnackBarAction(
+              label: t.anki_action_open_settings,
+              onPressed: () =>
+                  unawaited(AnkiRepository.openPermissionSettings()),
+            )
+          : null,
+    ));
   }
 
   @override

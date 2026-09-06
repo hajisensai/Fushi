@@ -259,6 +259,64 @@ void main() {
         reason: 'debug 通道不应挂正式版 changelog');
   });
 
+  // BUG-2104：`BUILD_DEBUG_APK` 的初值是 true，每条终端通道分支都必须**显式**设它。
+  // `release)`（= 手动发 GitHub Release，本仓文档里正式版的一等路径）曾是唯一漏设的
+  // 那条，于是留在默认 true，上传 glob `fushi-*.apk` 把 `fushi-<ver>-<sha>-debug.apk`
+  // 扫进了正式 release 的资产表和已发布的 latest-stable-fushi.json（v2.2.4 实测中招）。
+  //
+  // 判据钉「每条分支都显式赋值」而不是「release) 里有 false」：后者只堵住这一条腿，
+  // 下一个新增的通道分支照样会继承默认值。
+  test('BUG-2104：每条通道分支都显式设 BUILD_DEBUG_APK，不许继承默认值', () {
+    final String workflow = readReleaseWorkflow();
+    final List<String> lines = const LineSplitter().convert(workflow);
+
+    final int caseAt =
+        lines.indexWhere((String l) => l.contains(r'case "$EVENT" in'));
+    expect(caseAt, greaterThan(-1), reason: '找不到通道 case 块，判据锚点已失效');
+    // 外层 case 的 `esac` 必须**按缩进**配对：`workflow_dispatch)` 里还有一个嵌套
+    // `case "$CHANNEL" in`，取「第一个 esac」会命中内层那个，把 release) 排除在
+    // 窗口之外（第一版就是这么错的，报「release) 不见了」）。
+    final String caseIndent =
+        lines[caseAt].substring(0, lines[caseAt].indexOf('case'));
+    final int esacAt = lines.indexWhere(
+        (String l) => l == '${caseIndent}esac', caseAt + 1);
+    expect(esacAt, greaterThan(caseAt), reason: '外层通道 case 块没有收口');
+
+    // 终端分支 = 真正决定一个通道的那些 `<label>)`；嵌套的 workflow_dispatch 只是
+    // 分派器，它自己不设 BUILD_DEBUG_APK，由内层 debug|beta|formal 三条设。
+    const List<String> terminal = <String>[
+      'push)',
+      'debug)',
+      'beta)',
+      'formal)',
+      'release)',
+    ];
+    for (final String label in terminal) {
+      final int at = lines.indexWhere(
+          (String l) => l.trim() == label, caseAt);
+      expect(at, allOf(greaterThan(caseAt), lessThan(esacAt)),
+          reason: '通道分支 $label 不见了，判据已失效');
+      // 分支体到下一个同缩进 `;;` 为止。
+      final String pad = lines[at].substring(0, lines[at].indexOf(label));
+      // 同理，`;;` 也要按缩进配对——内层分支的 `;;` 缩进更深，裸 trim 比较会把
+      // workflow_dispatch) 的分支体在内层第一个 `;;` 处提前截断。
+      int end = esacAt;
+      for (int i = at + 1; i < esacAt; i++) {
+        if (lines[i] == '$pad  ;;') {
+          end = i;
+          break;
+        }
+      }
+      final String body = lines.sublist(at, end).join('\n');
+      // 自校验：切出来的分支体不是空壳（否则下面的断言在空串上恒假、报错也是错的）。
+      expect(body.length, greaterThan(label.length + 10),
+          reason: '$label 的分支体窗口异常小（at=$at end=$end），判据已失效');
+      expect(body, contains('BUILD_DEBUG_APK='),
+          reason: '$label 没有显式设 BUILD_DEBUG_APK —— 会继承初值 true，'
+              '正式版资产表里会多出一个 debug APK（BUG-2104）');
+    }
+  });
+
   test('build-multiplatform gates iOS and macOS on normal PRs', () {
     final String workflow = readBuildMultiplatformWorkflow();
     final String macosJob = workflowJob(workflow, 'macos');

@@ -1320,6 +1320,47 @@ class AnkiErrorCode {
   /// «Permission not granted for: CardContentProvider.query /decks» 直接塞进 toast。
   static const String permissionDenied = 'ANKI_PERMISSION_DENIED';
 
+  /// BUG-2098：权限被**永久拒绝**（系统不再弹框）。
+  ///
+  /// 与 [permissionDenied] 分开是因为下一步动作完全不同：那个还能靠再点一次按钮
+  /// 弹出系统对话框，这个再怎么点都不会弹——唯一出路是应用设置页里手动授予。
+  /// 沿用同一条「刚弹出的对话框里允许」文案会把用户直接送进死路。
+  static const String permissionPermanentlyDenied =
+      'ANKI_PERMISSION_PERMANENTLY_DENIED';
+
+  /// BUG-2098：AnkiDroid 未安装（或其 API 被禁用）。
+  ///
+  /// `READ_WRITE_DATABASE` 是 AnkiDroid 自己定义的权限：没装 AnkiDroid 时它在系统里
+  /// 根本不存在，请求必然静默失败，设置页里也找不到这一项。此时提示「去设置授权」
+  /// 是误导，正确的话是「先装 AnkiDroid，或改用 AnkiConnect」。
+  static const String ankiDroidUnavailable = 'ANKI_DROID_UNAVAILABLE';
+
+  /// BUG-2150：iOS AnkiMobile 后端的稳定分类码。
+  ///
+  /// AnkiMobile 没有 API，只有 URL scheme + 系统剪贴板，所以它的失败形态与
+  /// AnkiDroid/AnkiConnect 完全不同，必须单列——而且此前这几种情形全是硬编码英文，
+  /// 在非英文 UI 里原样显示。
+  ///
+  /// `ankiMobileOpened`：**不是失败**，是「已跳转 AnkiMobile，等用户在那边点同意」
+  ///   的中间态（`fetchConfiguration` 只能这样表达：真正的结果随后经
+  ///   `fushi://ankiFetch` 回调送达）。
+  /// `ankiMobilePasteboardEmpty`：剪贴板上没有 AnkiMobile 的数据——通常是用户没在
+  ///   AnkiMobile 里同意那次请求。
+  /// `ankiMobilePasteboardDenied`：数据在，但 iOS 不让读（「允许粘贴」被拒/弹不出）。
+  /// `ankiMobileNotActive`：app 一直没回到前台，剪贴板压根没被读过（等待超时）。
+  ///   与 denied 必须分开：非 active 时读出来的三态恒为 denied，合并会把「没回
+  ///   前台」谎报成「权限被拒」，把用户支去改一个没出问题的权限。
+  /// `ankiMobileNoDecks`：AnkiMobile 回传了 JSON，但里面没有牌组或笔记类型。
+  /// `ankiMobileUnavailable`：`anki://` 打不开——没装 AnkiMobile。
+  static const String ankiMobileOpened = 'ANKI_MOBILE_OPENED';
+  static const String ankiMobilePasteboardEmpty =
+      'ANKI_MOBILE_PASTEBOARD_EMPTY';
+  static const String ankiMobilePasteboardDenied =
+      'ANKI_MOBILE_PASTEBOARD_DENIED';
+  static const String ankiMobileNotActive = 'ANKI_MOBILE_NOT_ACTIVE';
+  static const String ankiMobileNoDecks = 'ANKI_MOBILE_NO_DECKS';
+  static const String ankiMobileUnavailable = 'ANKI_MOBILE_UNAVAILABLE';
+
   /// TODO-752a：AnkiConnect 网络错误的稳定分类码。给用户看的 toast 文案必须由
   /// 主 app 按这些**与 locale 无关、永不乱码**的码映射本地化文案，而不是透传
   /// `SocketException`/`http.ClientException` 的 `toString()`——后者既是英文，又会在

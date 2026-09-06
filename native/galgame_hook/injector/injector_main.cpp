@@ -29,6 +29,7 @@
 #include "kirikiri_launch_profile.h"
 #include "launcher_layout.h"
 #include "siglus_launch.h"
+#include "unreal_launch.h"
 #include "steam_launch.h"
 #include "luna_bridge.h"
 #include "luna_hook_config.h"
@@ -1879,11 +1880,25 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
                 &header->native_loopback_state),
             fushi_voice_hook::AtomicLoadShared32(
                 &header->native_loopback_applied_seq));
-    revoke_loopback_before_failure();
-    CloseHandle(ready);
-    UnmapViewOfFile(header);
-    CloseHandle(mapping);
-    return FailWith(reason_out, LaunchFailureReason::kReadyTimeout, 2);
+    // deny 是隐私边界，拿不到 stopped 的确认必须判失败；allow 只是一项能力，
+    // 超时不得连带把「注入器负责安装的 LunaHook 文本 hook」一起毙掉——那个安装点
+    // 就在下面几十行，旧实现在这里 return 等于让这一局永远没有台词（BUG-2131）。
+    if (fushi_voice_hook::NativeLoopbackAckTimeoutAbortsInjection(
+            native_loopback_requested == kNativeLoopbackAllow)) {
+      revoke_loopback_before_failure();
+      CloseHandle(ready);
+      UnmapViewOfFile(header);
+      CloseHandle(mapping);
+      return FailWith(reason_out,
+                      LaunchFailureReason::kNativeLoopbackAckTimeout, 2);
+    }
+    fushi_voice_hook::AtomicOrShared32(
+        &header->loopback_diag,
+        fushi_voice_hook::kLoopbackDiagPolicyAckTimeout);
+    fprintf(stderr,
+            "[loopback] allow 的策略确认未在 %lums 内到达；按「能力未就绪」降级"
+            "继续，文本 hook 照常安装（worker 可稍后自行 ack 成 running）\n",
+            loopback_wait_ms);
   }
 
   // CREATE_SUSPENDED launch 必须等游戏内 DLL 完成首次 XAudio2/DirectSound 导出 hook，
@@ -2219,13 +2234,16 @@ bool LooksLikeRenpyRuntime(const std::wstring& exe) {
          FileExists(JoinPath(dir, L"pythonw.exe"));
 }
 
-// 目录是否带引擎数据签名。目前只有 Siglus 一家有可靠的纯目录签名（Gameexe.dat +
-// Scene.pck）；再加引擎时在这里多写一个 || 即可，判据本身不用动。
+// 目录是否带引擎数据签名。Siglus（Gameexe.dat + Scene.pck）与 UE IoStore
+// （Content\Paks\*.utoc 的 16 字节 TOC 魔数）各出一条；再加引擎时在这里多写一个 ||
+// 即可，判据本身不用动。两条都要求数据文件真实存在/魔数成立，不认裸目录名。
 bool DirectoryHasEngineSignature(const std::wstring& dir) {
   return fushi_voice_hook::DirectoryLooksLikeSiglus(
-      dir, [](const std::wstring& d, const wchar_t* name) {
-        return FileExists(JoinPath(d, name));
-      });
+             dir,
+             [](const std::wstring& d, const wchar_t* name) {
+               return FileExists(JoinPath(d, name));
+             }) ||
+         fushi_voice_hook::DirectoryLooksLikeUnrealIostore(dir);
 }
 
 // 直接子目录全路径。不跟 reparse point：符号链接/联接点能把搜索绕成环。
@@ -2469,6 +2487,17 @@ bool LooksLikeUnityRuntime(const std::wstring& exe) {
   return il2cpp || mono;
 }
 
+// Unreal（IoStore 打包形态）：判据本体在 include/unreal_launch.h，与 hook 侧的引擎身份
+// 共用同一份。UE 是 C++ 引擎，台词在进程内、没有 Mono/TJS 那样的脚本宿主可挂，只能靠
+// LunaHook 的通用 PC hooks 取文本——与 Unity 同理，所以这里也自动开。
+// 真机对照（昨日魔女今日的梦 1.0 汉化版，同一份 helper、同一段标题画面）：不开 PC hooks
+// 的一局 text_events 停在 11，开了的一局 29。
+bool LooksLikeUnrealRuntime(const std::wstring& exe) {
+  const std::wstring dir = ExecutableDirectory(exe);
+  if (dir.empty()) return false;
+  return fushi_voice_hook::MatchesUnrealIostoreLayout(dir);
+}
+
 // Siglus 游戏（含改名 exe）：exe 名严格匹配，或 exe 同目录具备 Siglus 文件夹签名。用于把 launch
 // 的早注入改为延迟附着，绕过 Enigma 保护壳拒绝挂起态注入导致的 launch_or_inject_failed。
 bool LooksLikeSiglusRuntime(const std::wstring& exe) {
@@ -2489,7 +2518,8 @@ bool ShouldAutoUseLunaPcHooks(const std::wstring& exe) {
       _wcsicmp(base.c_str(), L"SiglusEngine.exe") == 0) {
     return true;
   }
-  return LooksLikeUnityRuntime(exe) || LooksLikeSiglusRuntime(exe);
+  return LooksLikeUnityRuntime(exe) || LooksLikeSiglusRuntime(exe) ||
+         LooksLikeUnrealRuntime(exe);
 }
 
 struct ReadyWindowSearch {
@@ -2736,7 +2766,8 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
   if (!effective_luna.pc_hooks && ShouldAutoUseLunaPcHooks(exe)) {
     effective_luna.pc_hooks = true;
     fprintf(stderr,
-            "[luna] auto-enabled PC hooks for Unity/Mono-style target: %ls\n",
+            "[luna] auto-enabled PC hooks for scripted-host-less target "
+            "(Unity/Mono/Unreal): %ls\n",
             ExecutableBaseName(exe).c_str());
   }
 
@@ -2934,6 +2965,17 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
     }
   }
 
+  // 跟随子进程后目标换人了：自动 PC hooks 的判据必须按**真实游戏镜像**重算。启动器那层
+  // 没有引擎布局，只在 exe 上判一次等于对启动器型游戏永不开启——UE 样本的原始启动入口
+  // 正是外层 stub，判据锚在 `<Game>\Binaries\Win64` 上，在 stub 那层恒为假。
+  if (!effective_luna.pc_hooks && !target_exe.empty() && target_exe != exe &&
+      ShouldAutoUseLunaPcHooks(target_exe)) {
+    effective_luna.pc_hooks = true;
+    fprintf(stderr,
+            "[luna] auto-enabled PC hooks after following game child: %ls\n",
+            ExecutableBaseName(target_exe).c_str());
+  }
+
   ApplyLunaProfiles(target_exe, target_pid, effective_luna.profile_path,
                     &effective_luna);
 
@@ -2987,9 +3029,15 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
         disposition =
             fushi_voice_hook::LaunchedProcessDisposition::kTerminate;
       } else {
+        // 别再说「without hooks」：注入编排失败时 hook DLL 往往**已经在进程里**且
+        // 游戏内自装的音频 hook 已经就绪（真机 WoH 上 26 条音轨、game_resource 全好），
+        // 真正缺的通常只是注入器负责安装的 LunaHook 文本 hook。旧文案把「编排中止」
+        // 说成「一个 hook 都没装」，直接误导了整轮排障（BUG-2131）。
         fprintf(stderr,
-                "[launch] hook failed; game resumed without hooks so it still "
-                "starts\n");
+                "[launch] injection orchestration aborted (reason=%s); game "
+                "resumed. Hooks already installed in-process stay active; "
+                "anything the injector had not installed yet is missing\n",
+                fushi_voice_hook::LaunchFailureToken(reason));
       }
     }
     if (disposition ==

@@ -762,7 +762,16 @@ class VideoDownloadLeaseGuard {
     bool renewed = false;
     try {
       renewed = await _renew();
-    } on Object {
+    } on Object catch (error, stack) {
+      // 语义不变：续期异常照旧按「租约丢失」处理。但必须记账——BUG-2119 里一条
+      // 续期 UPDATE 拿到 SQLITE_BUSY 后就是在这里被静默吞掉的，那条挂起的写语句
+      // 随后毒化了整条数据库连接（每次 COMMIT 都抛「SQL statements in progress」），
+      // 错误日志里却看不到第一现场。
+      ErrorLogService.instance.log(
+        'VideoDownloadLeaseGuard.renew',
+        error,
+        stack,
+      );
       renewed = false;
     }
     if (!renewed && !_released && !_stopped) markLost();

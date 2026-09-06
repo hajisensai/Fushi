@@ -86,7 +86,20 @@ void main() {
       final int start = appModel.indexOf(
           'Future<void> quiesceBackgroundDatabaseWriters({');
       expect(start, isNot(-1));
-      final String body = appModel.substring(start, start + 600);
+      // 取**完整方法体**。原先是 `substring(start, start + 600)`：函数体本身已占
+      // ~500 字符，往里加任何一个新的写手（v95 的规格探测服务就是）都会把
+      // `_disposeVideoDownloadPipelineRuntime(` 挤出窗口，守卫报红的却是「没覆盖
+      // 流水线」——与真实缺陷无关的假信号。固定字符窗口是会随无关改动漂移的锚点。
+      //
+      // 结束锚点必须**先跳过命名参数表**再找 `\n  }`：本方法的签名是多行的
+      // （`({\n    Duration? pipelineDrainTimeout,\n  }) async {`），直接找 `\n  }`
+      // 会命中参数表的收尾，body 只剩签名、每条 contains 都恒假。上面 closeDatabase
+      // 那条能直接找是因为它的签名写在一行里。
+      final int bodyStart = appModel.indexOf(') async {', start);
+      expect(bodyStart, greaterThan(start));
+      final int end = appModel.indexOf('\n  }', bodyStart);
+      expect(end, greaterThan(bodyStart));
+      final String body = appModel.substring(bodyStart, end);
       expect(body, contains('_animeDownloadService?.stop()'));
       expect(body, contains('_animeDownloadSubscriptionService?.stop()'));
       expect(body, contains('_disposeVideoDownloadPipelineRuntime('),

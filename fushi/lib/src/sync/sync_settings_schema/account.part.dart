@@ -139,12 +139,27 @@ class _SyncAccountWidgetState extends State<_SyncAccountWidget> {
 
   Future<void> _signIn() async {
     setState(() => _isLoading = true);
+    // BUG-2120：桌面 loopback 授权一旦拉起浏览器，就把链接句柄交给等待对话框（复制 /
+    // 重开 / 取消）。对话框的生命周期钉在这一次登录上：流程怎么收场它都随之关闭。
+    final Completer<void> flowDone = Completer<void>();
     try {
       final backend = await _resolveBackend();
       final repo = SyncRepository(widget.settingsContext.appModel.database);
-      await backend.authenticate(repo: repo);
+      await DesktopOAuthLaunchObserver.observe(
+        (DesktopOAuthLaunch launch) {
+          if (!mounted) return;
+          showDesktopOAuthWaitDialog(
+            context: context,
+            launch: launch,
+            done: flowDone.future,
+          );
+        },
+        () => backend.authenticate(repo: repo),
+      );
       await _checkAuth();
     } on SyncAuthError catch (e, st) {
+      // 用户自己点的取消：不是错误，不提示、不记日志。
+      if (e.kind == SyncAuthFailureKind.cancelled) return;
       // Persist the full diagnostic (e.g. invalid_client 401 from a CI build
       // shipping the placeholder secret) to the error log so the real cause is
       // recoverable later — the snackbar only shows the friendly summary
@@ -160,6 +175,7 @@ class _SyncAccountWidgetState extends State<_SyncAccountWidget> {
         _showSnackBar(context, friendlySyncError(e));
       }
     } finally {
+      flowDone.complete();
       if (mounted) setState(() => _isLoading = false);
     }
   }

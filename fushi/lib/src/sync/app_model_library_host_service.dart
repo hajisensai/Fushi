@@ -35,6 +35,7 @@ import 'package:fushi/src/sync/collection_manifest.dart';
 import 'package:fushi/src/sync/collection_sync_engine.dart';
 import 'package:fushi/src/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/interconnect_service_config.dart';
+import 'package:fushi/src/sync/interconnect_profile_transfer.dart';
 import 'package:fushi/src/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/sync_asset_package_service.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -75,7 +76,8 @@ class AppModelLibraryHostService
         VideoDeletionHost,
         VideoPlaybackSyncHost,
         AudiobookDelayHost,
-        InterconnectServiceConfigHost {
+        InterconnectServiceConfigHost,
+        InterconnectProfileHost {
   AppModelLibraryHostService({
     required FushiDatabase db,
     required Directory dictionaryResourceRoot,
@@ -89,36 +91,92 @@ class AppModelLibraryHostService
     Future<void> Function(LocalAudioPackageContents)? onLocalAudioImported,
     Directory? audioDatabaseRoot,
     Future<void> Function(String displayName)? removeLocalAudioEntry,
+    Future<bool> Function()? isProfileTransferEnabled,
+    Future<String> Function()? exportActiveProfileJson,
+    Future<String> Function(String json)? importProfileJson,
     String videoSubtitleLangCode = 'ja',
     Directory? uploadedVideoRoot,
     Directory? videoCoversDirectory,
     Future<String?> Function({
       required String videoPath,
       required String bookUid,
-    })?
-    extractVideoCover,
-  }) : _db = db,
-       _dictionaryResourceRoot = dictionaryResourceRoot,
-       _packages = packages,
-       _refreshDictionaryCache = refreshDictionaryCache,
-       _runExclusive = runExclusive,
-       _importBookFromFile = importBookFromFile,
-       _cleanupBookOnDisk = cleanupBookOnDisk,
-       _localAudioEntries = localAudioEntries,
-       _localAudioStagingDir = localAudioStagingDir,
-       _onLocalAudioImported = onLocalAudioImported,
-       _audioDatabaseRoot = audioDatabaseRoot,
-       _removeLocalAudioEntry = removeLocalAudioEntry,
-       _videoSubtitleLangCode = videoSubtitleLangCode,
-       _uploadedVideoRoot = uploadedVideoRoot,
-       _videoCoversDirectory = videoCoversDirectory,
-       _extractVideoCover = extractVideoCover;
+    })? extractVideoCover,
+  })  : _db = db,
+        _dictionaryResourceRoot = dictionaryResourceRoot,
+        _packages = packages,
+        _refreshDictionaryCache = refreshDictionaryCache,
+        _runExclusive = runExclusive,
+        _importBookFromFile = importBookFromFile,
+        _cleanupBookOnDisk = cleanupBookOnDisk,
+        _localAudioEntries = localAudioEntries,
+        _localAudioStagingDir = localAudioStagingDir,
+        _onLocalAudioImported = onLocalAudioImported,
+        _audioDatabaseRoot = audioDatabaseRoot,
+        _removeLocalAudioEntry = removeLocalAudioEntry,
+        _isProfileTransferEnabled = isProfileTransferEnabled,
+        _exportActiveProfileJson = exportActiveProfileJson,
+        _importProfileJson = importProfileJson,
+        _videoSubtitleLangCode = videoSubtitleLangCode,
+        _uploadedVideoRoot = uploadedVideoRoot,
+        _videoCoversDirectory = videoCoversDirectory,
+        _extractVideoCover = extractVideoCover;
 
   final FushiDatabase _db;
   final Directory _dictionaryResourceRoot;
   final SyncAssetPackageService _packages;
   final Future<void> Function() _refreshDictionaryCache;
   final Future<void> Function(Future<void> Function() body) _runExclusive;
+
+  /// 互联「配置文件」（Profile）搬运的三个可选依赖（与本类其余可选能力同范式：
+  /// 注入回调而不是把 ProfileRepository 的构造依赖整条拖进来）。生产由 AppModel
+  /// 传入；未注入时开关判据恒为 false，端点对外表现为「host 关着」。
+  final Future<bool> Function()? _isProfileTransferEnabled;
+  final Future<String> Function()? _exportActiveProfileJson;
+  final Future<String> Function(String json)? _importProfileJson;
+
+  @override
+  Future<bool> isInterconnectProfileTransferEnabled() async {
+    // 三者缺一即视为不可用：没有导出/导入回调时开着开关也无从服务。
+    final Future<bool> Function()? enabled = _isProfileTransferEnabled;
+    if (enabled == null) return false;
+    if (_exportActiveProfileJson == null || _importProfileJson == null) {
+      return false;
+    }
+    return enabled();
+  }
+
+  /// 导出**也**要串行：激活 Profile 的导出会先 `snapshotCurrentSettings()`，
+  /// 那是一次写库 —— 一个远端 GET 就能和正在跑的备份恢复 / 集合同步交错。
+  @override
+  Future<String> exportInterconnectProfile() async {
+    final Future<String> Function()? export = _exportActiveProfileJson;
+    if (export == null) {
+      throw UnsupportedError('profile export not wired on this host');
+    }
+    late final String json;
+    await _runExclusive(() async {
+      json = await export();
+    });
+    return json;
+  }
+
+  /// 导入必须串行：底下的 `importProfileFromJson` 是跨三个 await 的
+  /// check-then-act（算唯一名 → 建 Profile → 写设置）。两个并发对端（或一个对端
+  /// 重试）会算出**同一个名字**，而且在建行与写设置之间存在一个「有名字、零设置」
+  /// 的半成品 Profile 对本机 UI 可见。client 侧的 `_busy` 只挡本机重复点击，挡不
+  /// 住并发对端 —— 串行锁得由 host 侧兜。
+  @override
+  Future<String> importInterconnectProfile(String json) async {
+    final Future<String> Function(String json)? import = _importProfileJson;
+    if (import == null) {
+      throw UnsupportedError('profile import not wired on this host');
+    }
+    late final String name;
+    await _runExclusive(() async {
+      name = await import(json);
+    });
+    return name;
+  }
 
   @override
   Future<InterconnectServiceConfigSnapshot>
@@ -1717,12 +1775,12 @@ class AppModelLibraryHostService
         () => VideoCoverMutationGate.runExclusive(() async {
           final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
           if (row == null) return; // 幂等：不存在则静默跳过
-          final bool deleted = await VideoBookRepository(_db)
-              .deleteVideoBookAndReclaimAssets(
-                id,
-                scope: DeleteScope.syncEverywhere,
-                compactDatabase: false,
-              );
+          final bool deleted =
+              await VideoBookRepository(_db).deleteVideoBookAndReclaimAssets(
+            id,
+            scope: DeleteScope.syncEverywhere,
+            compactDatabase: false,
+          );
           if (!deleted) return;
           await _deleteUploadedVideoCopy(row);
         }),

@@ -530,7 +530,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// 只有磁盘上真有档案的外挂源（[SubtitleSource.external]：视频同目录 sidecar /
   /// 导入副本 / Jimaku 下载）才挂手势；内嵌轨（`embedded:<n>`）没有任何可删除的
   /// 东西，原样返回——「不给菜单」比「给一个禁用的删除项」少一个特殊状态。
-  /// 桌面右键 [GestureDetector.onSecondaryTapDown]、触屏长按
+  /// 桌面右键（[ContextMenuTrigger]，按绑定表决定唤出键，默认右键）、触屏长按
   /// [GestureDetector.onLongPressStart] 都落到 [_showSubtitleFileMenu]；
   /// [ListTile.onTap] 的单击选轨路径不动。
   Widget _withSubtitleFileMenu(
@@ -540,15 +540,19 @@ extension _VideoSubtitle on _VideoFushiPageState {
     Widget row,
   ) {
     if (source.isEmbedded) return row;
-    return GestureDetector(
-      behavior: HitTestBehavior.translucent,
-      onLongPressStart: (LongPressStartDetails d) => unawaited(
-        _showSubtitleFileMenu(context, controller, source, d.globalPosition),
+    return ContextMenuTrigger(
+      // 右键菜单改由绑定表决定唤出键（默认仍是右键）；右键被别的动作占用时自动让位。
+      onInvoke: (Offset position) => unawaited(
+        _showSubtitleFileMenu(context, controller, source, position),
       ),
-      onSecondaryTapDown: (TapDownDetails d) => unawaited(
-        _showSubtitleFileMenu(context, controller, source, d.globalPosition),
+      ladder: _VideoFushiPageState.kVideoMouseLadder,
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onLongPressStart: (LongPressStartDetails d) => unawaited(
+          _showSubtitleFileMenu(context, controller, source, d.globalPosition),
+        ),
+        child: row,
       ),
-      child: row,
     );
   }
 
@@ -787,6 +791,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
         videoPath: videoPath,
         currentSubtitleSource: _currentSubtitleSource,
         currentCues: controller.cues,
+        currentSecondarySubtitleSource: _currentSecondarySubtitleSource,
+        currentSecondaryCues: controller.secondaryCues,
       );
     } catch (_) {
       enumerated = null;
@@ -1184,13 +1190,11 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// 弹系统文件选择器挑一个字幕文件（srt/ass/ssa/vtt）→ 经 [_importExternalSubtitle]
   /// 落盘并应用。FilePicker 会夺走视频键盘焦点，关闭后 [_focusOwnership] 归还。
   Future<void> _pickAndImportSubtitle(VideoPlayerController controller) async {
-    final FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const <String>['srt', 'vtt', 'ass', 'ssa'],
-      allowMultiple: false,
+    final String? path = await pickSystemFilePath(
+      context: context,
+      allowedExtensions: const <String>{'srt', 'vtt', 'ass', 'ssa'},
     );
     _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
-    final String? path = result?.files.single.path;
     if (path == null) return;
     await _importExternalSubtitle(controller, path);
   }
@@ -1199,13 +1203,11 @@ extension _VideoSubtitle on _VideoFushiPageState {
   Future<void> _pickAndImportRemoteSubtitle(
     VideoPlayerController controller,
   ) async {
-    final FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const <String>['srt', 'vtt', 'ass', 'ssa'],
-      allowMultiple: false,
+    final String? path = await pickSystemFilePath(
+      context: context,
+      allowedExtensions: const <String>{'srt', 'vtt', 'ass', 'ssa'},
     );
     _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
-    final String? path = result?.files.single.path;
     if (path == null) return;
     if (subtitleFormatForPath(path) == null) {
       _showOsd(
@@ -1446,13 +1448,11 @@ extension _VideoSubtitle on _VideoFushiPageState {
   Future<void> _pickAndImportRemoteSecondarySubtitle(
     VideoPlayerController controller,
   ) async {
-    final FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const <String>['srt', 'vtt', 'ass', 'ssa'],
-      allowMultiple: false,
+    final String? path = await pickSystemFilePath(
+      context: context,
+      allowedExtensions: const <String>{'srt', 'vtt', 'ass', 'ssa'},
     );
     _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
-    final String? path = result?.files.single.path;
     if (path == null) return;
     if (subtitleFormatForPath(path) == null) {
       _showOsd(

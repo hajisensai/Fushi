@@ -13,8 +13,14 @@ import 'package:path_provider/path_provider.dart';
 /// TODO-1087：解压时把当前 yomitan-api server 的 host/port/token 写进扩展的
 /// `fushi-defaults.js`，于是「加载已解压扩展」后无需用户手填连接信息（自动配置）。
 
-/// 目标浏览器（决定扩展管理页 URL）。
-enum BrowserKind { chrome, edge }
+/// 目标浏览器（决定扩展管理页 URL）。**只收 Chromium 系**：内置扩展是 MV3
+/// （`background.service_worker` + `sidePanel` / `offscreen` / `tabCapture` 权限 +
+/// `world: MAIN` 内容脚本），Firefox / Safari 装不上，把它们的调试页列进引导等于
+/// 指一条走不通的路。
+///
+/// 新增浏览器只需在此加一个值并补 [browserExtensionsPageUrl] 的 case——switch 是
+/// 穷尽的，漏写编译期就报错；引导 UI 按 [BrowserKind.values] 遍历渲染，不必跟着改。
+enum BrowserKind { chrome, edge, brave, vivaldi, opera }
 
 /// 纯函数：浏览器扩展管理页 URL。用于引导用户打开对应页面（外部窗无法直接导航，
 /// 复制给用户粘贴到地址栏）。
@@ -24,6 +30,12 @@ String browserExtensionsPageUrl(BrowserKind kind) {
       return 'chrome://extensions';
     case BrowserKind.edge:
       return 'edge://extensions';
+    case BrowserKind.brave:
+      return 'brave://extensions';
+    case BrowserKind.vivaldi:
+      return 'vivaldi://extensions';
+    case BrowserKind.opera:
+      return 'opera://extensions';
   }
 }
 

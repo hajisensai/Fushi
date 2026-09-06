@@ -44,7 +44,8 @@ void main() {
   test('illustration gallery wires right-click (win) and long-press (mobile)',
       () {
     expect(source, contains('isWindowsPlatform'));
-    expect(source, contains('onSecondaryTapDown'));
+    expect(source, contains('ContextMenuTrigger('));
+    expect(source, contains('_showImageContextMenu(position)'));
     expect(source, contains('onLongPress'));
     // 顶栏也提供可发现入口（复制 / 分享按钮）。
     expect(source, contains('Icons.copy_outlined'));

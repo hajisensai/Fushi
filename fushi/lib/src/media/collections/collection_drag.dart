@@ -88,7 +88,8 @@ Future<CollectionAddOutcome> addMediaRefToCollection({
 /// - 桌面（Windows / Linux / macOS，鼠标为主）→ [Draggable]（按下即拖）。与卡片
 ///   既有交互零冲突：`ImmediateMultiDragGestureRecognizer` 要指针移动超过
 ///   `kTouchSlop` 才在手势竞技场胜出，所以点击（按下即抬）仍归 `InkWell.onTap`
-///   开书、按住不动仍归 `onLongPress` 弹菜单、右键仍归 `onSecondaryTap`。
+///   开书、按住不动仍归 `onLongPress` 弹菜单、右键仍归卡片外层的
+///   [ContextMenuTrigger]（BUG-2111 后按绑定表判定，默认右键）。
 ///
 ///   ⚠️ **与横向合集行的鼠标拖动滚动（`HorizontalDragScrollable`）如何分流，未在
 ///   真机验证。** 别把它当成「横拖=滚动、纵拖=拖卡」的自然分工——按识别器的判据

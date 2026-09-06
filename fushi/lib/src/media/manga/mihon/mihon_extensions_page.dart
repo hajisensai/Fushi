@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -15,6 +14,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/misc/error_details_dialog.dart';
 import 'package:fushi/src/utils/net/url_input_normalizer.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 
 /// Mihon 扩展仓库与安装管理。
 ///
@@ -217,13 +217,10 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
       false;
 
   Future<void> _importApk() async {
-    final FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const <String>['apk'],
-      allowMultiple: false,
-      withData: false,
+    final String? path = await pickSystemFilePath(
+      context: context,
+      allowedExtensions: const <String>{'apk'},
     );
-    final String? path = result?.files.single.path;
     if (!mounted || path == null) return;
     try {
       final MihonInstallProposal proposal =

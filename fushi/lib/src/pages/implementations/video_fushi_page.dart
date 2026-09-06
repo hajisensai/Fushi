@@ -17,6 +17,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:share_plus/share_plus.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/utils/misc/collection_exporter.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:window_manager/window_manager.dart';
@@ -43,7 +44,9 @@ import 'package:fushi/src/media/video/danmaku_manual_match_panel.dart';
 import 'package:fushi/src/media/source_library/source_stream_headers.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
 import 'package:fushi/src/media/video/subtitle_embedded_fonts.dart';
+import 'package:fushi/src/media/video/video_display_claim.dart';
 import 'package:fushi/src/media/video/video_episode_start_policy.dart';
+import 'package:fushi/src/media/video/video_exit_flush.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
 import 'package:fushi/src/media/video/video_top_bar_slots.dart';
 import 'package:fushi/src/media/video/m3u8_playlist.dart';
@@ -176,6 +179,7 @@ import 'package:fushi/src/platform/windows_ime_space_dispatch.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/utils/overlay_entry_lifecycle.dart';
+import 'package:fushi/src/utils/components/copy_feedback.dart';
 import 'package:fushi/src/utils/components/fading_chrome_gate.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_destructive_confirm_dialog.dart';
@@ -367,9 +371,21 @@ final RegExp _kLatinWordCharRegExp =
 /// （native/fushidicts/fushidicts_src/scan/word_scan.cpp），候选恒是
 /// `listen to music` / `listen to` / `listen`，单词自己仍在候选里，不会被短语挤掉。
 /// 网页播放器页（web_video_fushi_page.dart）与本页共用同一取词规则，故为公开顶层函数。
-String subtitleLookupTerm(String sentence, int graphemeIndex) {
+String subtitleLookupTerm(String sentence, int graphemeIndex) =>
+    subtitleLookupSpan(sentence, graphemeIndex).term;
+
+/// [subtitleLookupTerm] 的结构化形态：查询串 + 它在句中的 grapheme **起点**。
+///
+/// 起点是字幕高亮（BUG-2091）的锚：拉丁词回退到词首后，高亮必须从词首起算而不是
+/// 从被点字母起算，否则点 "hello" 的 'o' 只会亮出 "o"。越界返回 `(start: -1, term: '')`。
+({int start, String term}) subtitleLookupSpan(
+  String sentence,
+  int graphemeIndex,
+) {
   final List<String> graphemes = sentence.characters.toList();
-  if (graphemeIndex < 0 || graphemeIndex >= graphemes.length) return '';
+  if (graphemeIndex < 0 || graphemeIndex >= graphemes.length) {
+    return (start: -1, term: '');
+  }
   int start = graphemeIndex;
   // 拉丁单词字符：只把起点回退到词首。其余脚本起点即命中字位。
   if (_isLatinWordGrapheme(graphemes[graphemeIndex])) {
@@ -377,7 +393,32 @@ String subtitleLookupTerm(String sentence, int graphemeIndex) {
       start--;
     }
   }
-  return graphemes.skip(start).join();
+  // **起点必须跳过前导空白**：查询串在 `pushNestedPopup` 里先 `trim()` 再送引擎，
+  // 而引擎回报的匹配长度（matchedRunes）是相对 **trim 后**那个串数的。起点若停在
+  // 空白上，[lookupHighlightGraphemeCount] 就把这个长度套回带前导空白的串——高亮
+  // 整体左移一格、尾部少一个字符。
+  //
+  // 点中空格是常态而非边角：英文字幕逐字命中、`hoverAutoLookup` 扫过词间空隙都会
+  // 落在空格上（`_isLatinWordGrapheme(' ')` 为假，起点不回退）。日文同理，
+  // `String.trim()` 连 U+3000 全角空格一起吃。
+  //
+  // 弹窗查的词一字不变（引擎拿到的本来就是 trim 后的串），变的只有高亮锚点。
+  while (start < graphemes.length && graphemes[start].trim().isEmpty) {
+    start++;
+  }
+  // 整段都是空白：没有可查的词。此前会带着一串空格去查（引擎 trim 成空、返回 0），
+  // 副作用是白暂停一次视频、弹一个空浮层。
+  if (start >= graphemes.length) return (start: -1, term: '');
+  return (start: start, term: graphemes.skip(start).join());
+}
+
+/// 引擎回报的匹配长度是**码点**数（`bestLength` / [lookupHighlightCharCount]），
+/// 字幕逐字登记按 **grapheme**；把查询串 [term] 的前 [matchedRunes] 个码点折算成
+/// grapheme 数，供 [SubtitleLookupHighlight.graphemeCount]。拉丁/假名两者相等，
+/// 带组合字符 / emoji 时不会把一个 grapheme 切成半个。非正数返回 0。
+int lookupHighlightGraphemeCount(String term, int matchedRunes) {
+  if (matchedRunes <= 0 || term.isEmpty) return 0;
+  return String.fromCharCodes(term.runes.take(matchedRunes)).characters.length;
 }
 
 @visibleForTesting
@@ -692,6 +733,10 @@ abstract class VideoFushiTestHooks {
 
   /// 开始真实播放（驱动 libmpv），让位置自然前进。
   Future<void> debugPlay();
+
+  /// 暂停 / 绝对 seek（BUG-2108 首次覆盖计时 E2E：拖回重听不计时）。
+  Future<void> debugPause();
+  Future<void> debugSeekMs(int positionMs);
 }
 
 // TODO-314：字幕跳转列表不再走 overlay 面板系统，改 push-aside（[_subtitleListVisible]
@@ -1005,6 +1050,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   @override
   Future<void> debugPlay() async => _controller?.play();
+
+  @override
+  Future<void> debugPause() async => _controller?.pause();
+
+  @override
+  Future<void> debugSeekMs(int positionMs) async =>
+      _controller?.seekMs(positionMs);
 
   VideoPlayerController? _controller;
 
@@ -1523,6 +1575,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 变化；GIF / sasayaki 音频必须仍然导出点词那句，而不是制卡瞬间的 currentCue。
   AudioCue? _lastLookupCue;
 
+  /// 最近一次字幕查词命中的词在字幕上的范围（BUG-2091），由 [_lookupAt] 按引擎回报的
+  /// 匹配长度写入；查无结果写 null。**不**在关栈路径复位——overlay 拿到的是
+  /// [_activeSubtitleLookupHighlight] 这个派生值：弹窗栈全关即 null，任何关闭路径都
+  /// 自动正确，不存在只在成功路径复位的布尔镜像。
+  SubtitleLookupHighlight? _subtitleLookupHighlight;
+
+  /// 传给 [VideoSubtitleOverlay] 的高亮：仅弹窗栈还有可见层时才亮。
+  SubtitleLookupHighlight? get _activeSubtitleLookupHighlight =>
+      _hasVisiblePopup ? _subtitleLookupHighlight : null;
+
   /// TODO-270 E「查词窗口多句合一制卡」(乙方案·视频车道)：会话级制卡草稿缓冲。弹窗点
   /// 「+句」把当前正查字幕句（[_lastLookupSentence]）+ 其 cue 的画面/音频时间窗推进
   /// 这里，连续查多句累积；制卡（[onMineEntry] / [onUpdateEntry]）时把草稿全部句 +
@@ -1939,6 +2001,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // TODO-057: 进入视频即快照系统屏幕亮度（移动端），供亮度手势初值与退出还原；
     // 桌面 no-op。
     unawaited(_ensureEnterBrightness());
+    // BUG-2105：先登记「本页持有进程级显示态」（横屏锁 / 系统栏回调 / macOS 交通灯），
+    // 再去设这三件。换集的窗口模式分支用 `pushReplacement`，旧页 dispose 晚于本页
+    // initState —— 登记表让旧页释放时看到「还有人持有」而不还原，否则新页刚设好的
+    // 横屏锁被放宽成含竖屏（旋转锁定下当即翻竖屏 = 掉出全屏）、刚注册的系统栏回调被
+    // 置空。见 [VideoDisplayClaim] 与 [_releaseVideoDisplayClaim]。
+    VideoDisplayClaim.claim(this);
     // TODO-099: 进入视频页强制横屏（移动端），退出 [dispose] 还原；桌面 no-op。
     unawaited(_lockLandscapeForVideo());
     // BUG-973: 进入视频页隐藏 macOS 系统交通灯（左上角三个圆点），退出 [dispose] 恢复。
@@ -3088,10 +3156,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   }
 
   /// 字幕菜单来源：保留当前视频枚举结果，再只补入「当前视频已持久化」的导入字幕。
+  ///
+  /// BUG-2094：主字幕与副字幕**两条**持久化指针都要补——只被选作副字幕的导入档否则
+  /// 在重开视频后从列表里消失（画面还在显示它）。
   Future<List<SubtitleSource>> _subtitleSourcesForMenu({
     required String videoPath,
     required String? currentSubtitleSource,
     required List<AudioCue> currentCues,
+    required String? currentSecondarySubtitleSource,
+    required List<AudioCue> currentSecondaryCues,
   }) async {
     final List<SubtitleSource> sources = await listAllSubtitleSources(
       videoPath,
@@ -3103,6 +3176,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       bookUid: widget.bookUid,
       currentSubtitleSource: currentSubtitleSource,
       currentCues: currentCues,
+      currentSecondarySubtitleSource: currentSecondarySubtitleSource,
+      currentSecondaryCues: currentSecondaryCues,
     );
   }
 
@@ -3425,8 +3500,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       final FushiDatabase db = appModel.database;
       _watchTracker = VideoWatchTracker(
         bookUid: widget.bookUid,
-        // v92：观看时长 + 字幕字数走唯一时钟 StudyClock（活跃态 = 正在播放，由
-        // tracker 挂上；视频面刻意不设空闲门 / 前台门——切走仍在播就照常计时）。
+        // v92：观看时长 + 字幕字数走唯一时钟 StudyClock。BUG-2108：视频面时钟是
+        // 显式记账——时长由 tracker 按「位置推进到首次覆盖的片内区间」推入，回放 /
+        // 拖回 / 重看不计；切走仍在播就照常计时（不设前台门）。
         // 按视频稳定身份键控（v39：同名不同视频统计不再互串）。本地视频每集独立
         // 页面（pushReplacement 换集）→ widget.bookUid 恒为当前集。
         clock: StudyClock(
@@ -3434,9 +3510,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           mediaKind: kActivityMediaVideo,
           mediaKey: widget.bookUid,
           title: title,
+          accrual: StudyAccrual.explicit,
           onWriteError: (Object e, StackTrace st) =>
               ErrorLogService.instance.log('StudyClock.write(video)', e, st),
         ),
+        // 已看过的片内区间并集按视频身份持久化：次日重看同样不计（BUG-2108）。
+        loadCoverage: () =>
+            db.getPref(videoWatchCoveragePrefKey(widget.bookUid)),
+        saveCoverage: (String json) =>
+            db.setPref(videoWatchCoveragePrefKey(widget.bookUid), json),
         markCompleted: (String uid) =>
             db.markVideoCompleted(uid, DateTime.now()),
         onEpisodeCompleted: () async {
@@ -3752,10 +3834,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       );
     }
     WidgetsBinding.instance.removeObserver(this);
-    // TODO-658/BUG-383: 摘除系统栏可见性回调（全局单例，避免退页后仍回调已释放 State）。
-    if (isMobilePlatform) {
-      unawaited(SystemChrome.setSystemUIChangeCallback(null));
-    }
+    // BUG-2105：进程级显示态（系统栏回调 / 横屏锁 / macOS 交通灯）统一在
+    // [_releaseVideoDisplayClaim] 里按所有者记账还原——本页不是最后一个持有者
+    // （换集期间新页已认领）就不得还原，否则会把新页刚设好的显示态掰掉。
+    _releaseVideoDisplayClaim();
     final ExitFlushCallback? exitFlush = _exitFlushCallback;
     if (exitFlush != null) {
       ExitFlushRegistry.instance.unregister(exitFlush);
@@ -3787,11 +3869,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // TODO-057: 退出播放器还原屏幕亮度——把进页快照写回（iOS 系统级亮度），未
     // 取过快照时 Android 侧设回「跟随系统」(-1)。防止把用户系统亮度永久留在拖动后值。
     unawaited(_brightness.restore(previous: _enterBrightness));
-    // TODO-099: 退出视频页还原屏幕方向允许态（移动端），不把其他页锁死在横屏；桌面 no-op。
-    unawaited(_restoreOrientationOnExit());
-    // BUG-973: 退出视频页恢复 macOS 系统交通灯（与 initState 的隐藏对称）；桌面非
-    // macOS / 移动端 no-op。
-    unawaited(setMacOSTrafficLightsHidden(false));
+    // TODO-099 / BUG-973 / BUG-2105：方向允许态与 macOS 交通灯的还原已并入
+    // [_releaseVideoDisplayClaim]（dispose 开头调用，按所有者记账），此处不再各自还原。
     _clearClipExportState();
     // TODO-669：销毁缩略图预览（作废在途取帧 + 销毁离屏 Player + 释放末帧）。
     _disposeThumbnailPreview();
@@ -4115,12 +4194,23 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                 enabled: hasCue,
                 onTap: _jumpToLookupCue,
               ),
-              FushiIconButton(
-                key: const Key('video_popup_copy_sentence_button'),
-                tooltip: t.copy,
-                icon: Icons.content_copy_outlined,
-                size: 20,
-                onTap: _copyLookupSentence,
+              // 复制后按钮就地切成 ✓ / 「已复制」——OSD 画在视频区，弹窗里看不见。
+              CopyFeedback(
+                builder: (
+                  BuildContext _,
+                  bool copied,
+                  VoidCallback markCopied,
+                ) {
+                  return FushiIconButton(
+                    key: const Key('video_popup_copy_sentence_button'),
+                    tooltip: copied ? t.copied : t.copy,
+                    icon: copied ? Icons.check : Icons.content_copy_outlined,
+                    size: 20,
+                    onTap: () {
+                      if (_copyLookupSentence()) markCopied();
+                    },
+                  );
+                },
               ),
               FushiIconButton(
                 key: const Key('video_favorite_sentence_button'),
@@ -4579,10 +4669,17 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   ) =>
       _onUpdateEntryImpl(noteId, fields);
 
-  /// 退出/返回汇聚点：前台浮层还开着就先关一层（逐级退出），一层都没开才 await
-  /// 落库后真正 pop 路由。[PopScope]、Escape 快捷键、手柄 B、以及**屏幕上的返回箭头
+  /// 退出/返回汇聚点：前台浮层还开着就先关一层（逐级退出），一层都没开才发起落库
+  /// 并 pop 路由。[PopScope]、Escape 快捷键、手柄 B、以及**屏幕上的返回箭头
   /// 按钮**（[_activateVideoControlItem] 的 [VideoControlItem.back]）共用同一份层级表
   /// [_dismissTopForegroundLayer]，四条通道行为一致。
+  ///
+  /// BUG-2119：落库与 pop 之间**不再有 await**。此前是 `await flushPosition()` 再
+  /// `nav.pop()`，等于把「能不能离开视频页」押在一次数据库写入成功上——写入抛错
+  /// 或永不完成（连接被一条 `SQLITE_BUSY` 后未 reset 的写语句毒化，之后每次 COMMIT
+  /// 都抛「SQL statements in progress」）时，四条退出通道一起失灵，用户被锁在页里。
+  /// 现在走 [exitAfterPersist]：同步发起落库（drift 请求已排进队列，后续页面读同一
+  /// 行排在它之后），随即无条件 pop，落库失败只记 [ErrorLogService]。
   ///
   /// 「返回箭头也逐级退一层」是 BUG-1862 的**有意**取舍，不是顺带的副作用：收敛的意义
   /// 就是「返回上一级」只有一份语义，不为屏幕按钮再开第二套。用户可见变化：push-aside
@@ -4602,8 +4699,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   Future<void> _handleBackOrExit() async {
     if (_dismissTopForegroundLayer()) return;
     final NavigatorState nav = Navigator.of(context);
-    await _controller?.flushPosition();
-    if (mounted) nav.pop();
+    final VideoPlayerController? controller = _controller;
+    exitAfterPersist(
+      persist: () => controller?.flushPosition() ?? Future<void>.value(),
+      exit: nav.pop,
+      onPersistError: (Object error, StackTrace stack) => ErrorLogService
+          .instance
+          .log('VideoFushiPage.exitFlushPosition', error, stack),
+    );
   }
 
   /// 逐级退出的**唯一**层级表（BUG-1862）：从最前台到最后台关掉一层并返回 true；一层
@@ -5135,6 +5238,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   static const List<ShortcutScope> kVideoMouseLadder = <ShortcutScope>[
     ShortcutScope.video,
     ShortcutScope.universal,
+    // global 是 reader / manga / home 三条阶梯早就有的尾段，video 此前是唯一缺口。
+    // 补上它才能让 [ShortcutAction.globalContextMenu]（住在 global）在视频页解析得到
+    // ——否则视频画面上的右键菜单会整个消失。对既有动作零影响：视频页的执行体表
+    // （videoActionCallbacks）里没有任何 global 动作，解析到也返回 false 不认领，
+    // app 根的兜底照常有机会派发同一次按下。
+    ShortcutScope.global,
   ];
 
   /// 视频页的**鼠标绑定通道**（BUG-1995）：页面根 [Listener] 的 `onPointerDown` 入口。
@@ -5361,18 +5470,31 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     required bool desktop,
     required bool roomyBottomBar,
   }) {
-    final List<VideoControlItem> rawItems = _controlLayout.itemsIn(slot);
+    // **一次遍历**，按用户在槽内摆的真实顺序出控件。
+    //
+    // 旧写法是「先画完所有 chip，再把 volume 追加到槽尾」：`itemsIn(slot)` 里
+    // volume 的真实下标被整个丢掉，用户在底栏槽内怎么拖音量都零视觉变化。默认
+    // 布局出厂就已经分叉——bottomRight 是 `[volume, fullscreen, speed, …]`，
+    // 编辑器按真实下标画、音量排**第一**，播放器却把它画在**最后**。
+    //
+    // 音量与其它按钮的差别只在**用哪个 widget 画**（它有浮层、要按槽位做几何避让），
+    // 不在**画在第几位**。位置逻辑因此不该为它分叉：分派在循环体内做，顺序由
+    // 唯一真相源 `itemsIn(slot)` 决定。
+    //
+    // volume 不经 [_shouldRenderControlItem]：与旧行为一致（旧写法问的是未经过滤
+    // 的原始槽列表「在不在」），本次只改顺序、不改「画不画」。
     return <Widget>[
-      for (final VideoControlItem item in _slotChipItems(slot))
-        _buildBottomSlotButton(
-          item,
-          controller,
-          desktop: desktop,
-          slot: slot,
-          roomyBottomBar: roomyBottomBar,
-        ),
-      if (rawItems.contains(VideoControlItem.volume))
-        _buildVolumeButton(controller, desktop: desktop, slot: slot),
+      for (final VideoControlItem item in _controlLayout.itemsIn(slot))
+        if (item == VideoControlItem.volume)
+          _buildVolumeButton(controller, desktop: desktop, slot: slot)
+        else if (item.isChipRenderable && _shouldRenderControlItem(item))
+          _buildBottomSlotButton(
+            item,
+            controller,
+            desktop: desktop,
+            slot: slot,
+            roomyBottomBar: roomyBottomBar,
+          ),
     ];
   }
 
@@ -6612,6 +6734,32 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     ]);
   }
 
+  /// BUG-2105：释放本页对**进程级显示态**的所有权，并**仅在本页是最后一个持有者时**
+  /// 还原它们（系统栏可见性回调 / 屏幕方向允许态 / macOS 交通灯）。
+  ///
+  /// 三件都是进程唯一的全局单槽，谁最后设谁生效。换集的窗口模式分支
+  /// （[_VideoEpisode._switchEpisode]）用 `pushReplacement`，Flutter 语义下旧路由要等
+  /// 新页入场动画结束才被移除并 `dispose` —— 于是真实顺序是「新页 initState 认领并设好
+  /// 三件 → 旧页 dispose」。旧实现在 dispose 里无条件还原，等于把新页刚设的显示态掀掉：
+  /// 方向集被放宽成含 `portraitUp`（移动端开着自动旋转锁定时会退回用户锁定的竖屏，
+  /// 观感就是「换集后掉出全屏播放」）、系统栏可见性回调被置空（此后
+  /// [_systemBarsVisible] 再不更新，进度条 / 字幕避让几何回到 BUG-383 的错态）。
+  ///
+  /// 判据交给 [VideoDisplayClaim.release]（纯 Dart 登记表，真值可单测），这里只消费
+  /// 布尔结论，不在页面里手写「还有没有别人持有」。释放幂等：`release` 对没认领过的
+  /// owner 返回 false。
+  void _releaseVideoDisplayClaim() {
+    if (!VideoDisplayClaim.release(this)) return;
+    // TODO-658/BUG-383: 摘除系统栏可见性回调（全局单例，避免退页后仍回调已释放 State）。
+    if (isMobilePlatform) {
+      unawaited(SystemChrome.setSystemUIChangeCallback(null));
+    }
+    // TODO-099: 还原屏幕方向允许态（移动端），不把其他页锁死在横屏；桌面 no-op。
+    unawaited(_restoreOrientationOnExit());
+    // BUG-973: 恢复 macOS 系统交通灯（与 initState 的隐藏对称）；非 macOS 恒 no-op。
+    unawaited(setMacOSTrafficLightsHidden(false));
+  }
+
   Future<void> _setLockWindowAspectRatio(bool value) async {
     if (_lockWindowAspectRatio == value) return;
     _lockWindowAspectRatio = value;
@@ -7274,10 +7422,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         PopScope(
           // 始终 `canPop: false` 自管退出：① 浮层栈非空时 back 先关栈（一层一层退），
           // 浮层在根 Overlay 退出视频路由不会自动清它，必须在 pop 前拦截；② 栈空真退出
-          // 时，**先 await `flushPosition()` 把退出瞬间位置可靠落库再手动 pop**——否则只剩
-          // controller.dispose() 里 fire-and-forget 的 `_forceSavePositionSync()`，drift
-          // 写库 Future 与 Navigator 同步销毁 State 竞争、常写不完，导致「退出再进没回到
-          // 上次位置」（对齐阅读器 `onWillPop` 先 await 落库再 pop 的做法）。
+          // 时，先**同步发起** `flushPosition()` 把退出瞬间位置排进 drift 队列，再手动
+          // pop（BUG-2119：不 await——退出不能被落库成败绑架；写请求一旦发出就在后台
+          // 完成，不随 State 销毁消失，后续页面对同一行的读排在它之后）。
           canPop: false,
           onPopInvokedWithResult: (bool didPop, Object? _) async {
             if (didPop) return;

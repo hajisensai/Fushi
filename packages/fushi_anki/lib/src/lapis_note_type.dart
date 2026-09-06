@@ -1951,6 +1951,78 @@ html.mobile .sentence, html:not(.mobile) .sentence-alt,
 .def-info {
   margin-top: 0.6em;
 }
+
+/* BUG-2155：`.tags` 给 `#pitch-tags` 的是 `max-width: 60dvw` —— 一个**视口**相对
+   的上限，塞进 `max-width: 820px` 的 .def-header 里毫无意义：宽屏上 60dvw 比整个
+   卡头还宽，标签框于是想多宽有多宽。改成相对容器，框永远待在词头这一列里。
+   `white-space` 同理：`.tags` 的 nowrap 是给「一个短标签」设计的，音标词典一个词
+   能给十几条，挤成一行只能靠 text-overflow 截掉大半。同特异性、后置胜出。 */
+#pitch-tags {
+  max-width: 100%;
+  white-space: normal;
+}
+
+/* BUG-2151：`ol` 与 `ul` 一起归一。Lapis 自己的 handlePitches 只在字段里能解析出
+   数字/假名声调时才重建 `#pitch-tags`（英语 IPA 两者都没有 → 提前 return），此时
+   框里留的是制卡侧原样写入的列表 HTML。存量卡片的字段里存的是 `<ol>`（BUG-2151
+   之前 popup.js 的产出），漏掉 `ol` 就等于让这批已经躺在用户 Anki 里、改不了的卡
+   继续吃浏览器默认的 `padding-inline-start: 40px` + `margin-block: 1em`：黑框超
+   高、左边一大块空白、条目之间还没有分隔符。上游只写了 `ul`，这里补 `ol` 的对偶
+   （全新选择器，不与上游冲突）。 */
+.pitch ol {
+  list-style: none;
+  display: inline;
+  margin: 0;
+  padding: 0;
+}
+
+.pitch ol > li {
+  display: inline;
+}
+
+.pitch ol > li:not(:last-child)::after {
+  content: "・";
+  color: var(--fg-color);
+}
+
+/* BUG-2155：标签框里的列表是 wrap 的 flex 容器，不是 inline 流。
+   为什么非得是 flex：制卡侧产出的是 `<li>…</li><li>…</li>`，**元素之间一个空白都
+   没有**，而行内流的换行点来自空白 —— 没有空白就没有换行机会，十几条音标只能挤成
+   一条撑爆卡头的长行。flex 容器的换行点在 item 边界，不依赖空白，于是既能换行、
+   又不会从某条音标中间断开。
+   日语那档（1~3 个短标签）一行放得下，wrap 不触发，渲染与原来的 inline 流一致。
+   与上游 `#pitch-tags ul{display:inline}` 同特异性、后置胜出。 */
+#pitch-tags ul,
+#pitch-tags ol {
+  list-style: none;
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+}
+
+/* flex item 内部仍然不许断行：一条音标是一个整体，断成 `[/fɜː` + `st/]` 比换行更糟。 */
+#pitch-tags li {
+  display: inline;
+  white-space: nowrap;
+}
+
+#pitch-tags ol > li:not(:last-child)::after {
+  content: "・";
+  color: var(--bg-color);
+  font-size: 0.8em;
+}
+
+/* BUG-2155：flex item 的 min-width 默认是 auto，也就是「不小于内容的最小尺寸」。
+   音标标签框（#pitch-tags）是个 inline-block，宽度就是它的内容宽，词典给出十几条
+   音标时轻松超过整个卡头 —— 于是这一列的最小宽度顶穿 .def-header，右边的
+   .dh-image 被压成 0，封面图整个消失。min-width: 0 解开这条约束：本列该让位就让位，
+   超出的部分交给 #pitch-tags 自己处理（换行 / 裁切）。
+   短音标（日语 [1]・[3]）本来就不顶宽，这行对它们是 no-op。 */
+.dh-vocab {
+  min-width: 0;
+}
 ''';
 
   static const AnkiNoteTypeTemplate template = AnkiNoteTypeTemplate(
