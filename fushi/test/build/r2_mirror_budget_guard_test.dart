@@ -149,6 +149,84 @@ void main() {
       reason: '超单文件上限的资产要落盘并进 summary，别隐身在日志里',
     );
   });
+
+  test('调用 publish_update_manifest.sh 的发布 job 必须有 actions: write', () {
+    // 唤醒镜像走 `gh workflow run`，GitHub 要 token 带 actions: write。发布 job 都是
+    // job 级显式 `permissions:`，没列出的 scope 一律置 none——只写 contents: write
+    // 的话 dispatch 必 403，而脚本对 dispatch 失败只打 ::error 不阻塞发布，
+    // 净效果就是「全程绿灯、永不镜像」，和 BUG-2168 的翻车形态同形。
+    const List<String> workflows = <String>[
+      '../.github/workflows/release.yml',
+      '../.github/workflows/release-desktop.yml',
+    ];
+    int callers = 0;
+    for (final String path in workflows) {
+      for (final MapEntry<String, String> job in _jobs(
+        File(path).readAsStringSync(),
+      ).entries) {
+        if (!job.value.contains('tool/publish_update_manifest.sh')) continue;
+        callers++;
+        final String permissions = _permissions(job.value);
+        expect(
+          permissions,
+          isNotEmpty,
+          reason: '$path job ${job.key} 调用发布脚本，必须显式声明 permissions',
+        );
+        // 按「键: 值」整行匹配，注释里提到 actions: write 不算数。
+        expect(
+          RegExp(
+            r'^\s+actions:\s*write\s*$',
+            multiLine: true,
+          ).hasMatch(permissions),
+          isTrue,
+          reason:
+              '$path job ${job.key} 要 gh workflow run 唤醒镜像，'
+              '缺 actions: write 则 dispatch 403',
+        );
+      }
+    }
+    expect(
+      callers,
+      greaterThan(0),
+      reason:
+          '两条发布 workflow 里至少要有一个 job 调用 publish_update_manifest.sh，'
+          '否则这条守卫在真空里恒真',
+    );
+  });
+}
+
+/// 把 workflow 的 `jobs:` 段按 job 名切成 {job 名: job 正文}。
+Map<String, String> _jobs(String workflow) {
+  const String marker = '\njobs:\n';
+  final int jobsStart = workflow.indexOf(marker);
+  expect(jobsStart, greaterThan(-1), reason: 'workflow 里必须有 jobs: 段');
+  final String body = workflow.substring(jobsStart + marker.length);
+  final RegExp header = RegExp(r'^  ([A-Za-z0-9_-]+):\s*$', multiLine: true);
+  final List<RegExpMatch> heads = header.allMatches(body).toList();
+  expect(heads, isNotEmpty, reason: 'jobs: 段里至少要有一个 job');
+  return <String, String>{
+    for (int i = 0; i < heads.length; i++)
+      heads[i].group(1)!: body.substring(
+        heads[i].end,
+        i + 1 < heads.length ? heads[i + 1].start : body.length,
+      ),
+  };
+}
+
+/// 切出一个 job 正文里 job 级 `permissions:` 块（到下一个同级键为止）；没有则空串。
+String _permissions(String job) {
+  const String marker = '\n    permissions:\n';
+  final int start = job.indexOf(marker);
+  if (start == -1) return '';
+  final int bodyStart = start + marker.length;
+  final RegExpMatch? next = RegExp(
+    r'^    [A-Za-z0-9_-]+:',
+    multiLine: true,
+  ).firstMatch(job.substring(bodyStart));
+  return job.substring(
+    bodyStart,
+    next == null ? job.length : bodyStart + next.start,
+  );
 }
 
 /// 切出 workflow 里名为 [name] 的一个 step（从它的 `- name:` 到下一个 `- name:`）。

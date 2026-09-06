@@ -337,7 +337,9 @@ while :; do
     # 只在正式版通道唤醒：debug/beta 每次 push 都写这个分支（一天几十次），镜像它们
     # 会迅速吃光 R2 免费额度。assert_complete=true 让镜像侧走就位门 + 完整性断言。
     if [ "$CHANNEL" = "formal" ]; then
-      MIRROR_REF="$(GH_TOKEN="$GITHUB_TOKEN" gh api "repos/$REPO" -q .default_branch 2>/dev/null || echo main)"
+      # 用本次发布跑在哪个 ref 就 dispatch 哪个 ref：镜像 workflow 与它引用的 tool/ 脚本天然同版。
+      # 钉 default_branch 会在 main 落后时 422（main 上的 workflow 还没有 assert_complete 输入）。
+      MIRROR_REF="${GITHUB_REF_NAME:-$(GH_TOKEN="$GITHUB_TOKEN" gh api "repos/$REPO" -q .default_branch 2>/dev/null || echo main)}"
       if ! GH_TOKEN="$GITHUB_TOKEN" gh workflow run mirror-releases.yml \
           --repo "$REPO" --ref "$MIRROR_REF" \
           -f tag="$DOWNLOAD_TAG" -f assert_complete=true; then
