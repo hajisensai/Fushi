@@ -592,10 +592,17 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
         final StringBuffer sb = StringBuffer();
         final OnnxProviderResolution? r = _resolution;
         if (r != null) {
+          // 静态融合图（GPU 桶）真在跑时告诉用户——它是「为什么这么快 / 为什么
+          // 显存涨了」的答案；桶建失败回退动态会话时这里自然不显示。
+          final bool staticGraph = (p?.decodeStats?.staticBatches ?? 0) > 0;
           sb.writeln(
-            t.audiobook_transcribe_running_on(
-              provider: _providerLabel(r.effective),
-            ),
+            staticGraph
+                ? t.audiobook_transcribe_running_on_static(
+                    provider: _providerLabel(r.effective),
+                  )
+                : t.audiobook_transcribe_running_on(
+                    provider: _providerLabel(r.effective),
+                  ),
           );
           if (r.didFallBack) {
             sb.writeln(

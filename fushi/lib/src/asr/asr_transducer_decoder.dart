@@ -24,7 +24,7 @@ import 'package:fushi/src/asr/asr_fbank.dart';
 import 'package:fushi/src/asr/asr_greedy_graph.dart' show AsrGreedyGraphIo;
 import 'package:fushi/src/asr/asr_types.dart';
 import 'package:fushi/src/asr/asr_transcribe_job.dart'
-    show AsrBatchDecoder, AsrBatchShaper;
+    show AsrBatchDecoder, AsrBatchShaper, AsrPipelinedDecoder;
 import 'package:fushi/src/onnx/onnx_inference.dart';
 
 /// 解码器累计的分阶段耗时与帧数（诊断用，进度 UI / 集成测试打印）。
@@ -56,6 +56,9 @@ class AsrDecodeStats {
   final Duration encoder;
   final Duration search;
 
+  /// encoder 实际算过的帧数 / 真实帧数。两条路径口径一致：都是「喂给 encoder 的
+  /// 张量面积 ÷ 各段真实帧数之和」——动态路径的面积是 batch × 批内最长，静态路径
+  /// 是桶的 N × T（含哨兵行）。1.0 = 零浪费。
   double get paddingRatio => realFrames == 0 ? 1 : paddedFrames / realFrames;
 
   AsrDecodeStats add({
@@ -65,11 +68,11 @@ class AsrDecodeStats {
     required Duration fbank,
     required Duration encoder,
     required Duration search,
-    bool static = false,
+    bool usedStaticBucket = false,
   }) {
     return AsrDecodeStats(
       batches: batches + 1,
-      staticBatches: staticBatches + (static ? 1 : 0),
+      staticBatches: staticBatches + (usedStaticBucket ? 1 : 0),
       segments: this.segments + segments,
       realFrames: this.realFrames + realFrames,
       paddedFrames: this.paddedFrames + paddedFrames,
@@ -88,7 +91,8 @@ class AsrDecodeStats {
       'search=${search.inMilliseconds}ms)';
 }
 
-class AsrTransducerDecoder implements AsrBatchDecoder, AsrBatchShaper {
+class AsrTransducerDecoder
+    implements AsrBatchDecoder, AsrBatchShaper, AsrPipelinedDecoder {
   AsrTransducerDecoder({
     required OnnxSession encoder,
     required OnnxSession decoder,
@@ -159,6 +163,10 @@ class AsrTransducerDecoder implements AsrBatchDecoder, AsrBatchShaper {
   AsrDecodeStats get stats => _stats;
 
   /// 一次 encoder 前向 + 整批逐帧贪心解码；返回与 [segments] 等长、同序的结果。
+  ///
+  /// 等价于 `search(await encode(segments))`；行数超过静态桶容量时拆成多批。
+  /// 要把 GPU 编码、CPU 搜索与 Dart fbank 叠起来跑，用 [computeFeatures] /
+  /// [encode] / [search] 三段（`asr_transcribe_job.dart` 的流水线）。
   @override
   Future<List<AsrDecodedSegment>> decodeBatch(
     List<AsrSpeechSegment> segments,
@@ -166,48 +174,88 @@ class AsrTransducerDecoder implements AsrBatchDecoder, AsrBatchShaper {
     if (segments.isEmpty) return <AsrDecodedSegment>[];
     // 静态桶的行数封顶：超过就拆成多批（任务侧已按 batchCapFor 封顶，这里只是
     // 兜底，保证直接调用者也不会把 64 行塞进 N=32 的桶）。
-    final AsrStaticEncoderPool? pool = _staticEncoders;
-    if (pool != null && segments.length > 1) {
-      int longest = 0;
-      for (final AsrSpeechSegment s in segments) {
-        if (s.samples.length > longest) longest = s.samples.length;
+    final int? cap = _capFor(segments);
+    if (cap != null && segments.length > cap) {
+      final List<AsrDecodedSegment> out = <AsrDecodedSegment>[];
+      for (int i = 0; i < segments.length; i += cap) {
+        final int end = i + cap > segments.length ? segments.length : i + cap;
+        out.addAll(await decodeBatch(segments.sublist(i, end)));
       }
-      final int? cap = pool.batchCapFor(AsrFbank.frameCount(longest));
-      if (cap != null && segments.length > cap) {
-        final List<AsrDecodedSegment> out = <AsrDecodedSegment>[];
-        for (int i = 0; i < segments.length; i += cap) {
-          final int end = i + cap > segments.length ? segments.length : i + cap;
-          out.addAll(await decodeBatch(segments.sublist(i, end)));
-        }
-        return out;
-      }
+      return out;
     }
-    final int batch = segments.length;
-    final Stopwatch clock = Stopwatch()..start();
+    return search(await encode(segments));
+  }
 
-    // 1. fbank + pad。
+  int? _capFor(List<AsrSpeechSegment> segments) {
+    final AsrStaticEncoderPool? pool = _staticEncoders;
+    if (pool == null || segments.length <= 1) return null;
+    int longest = 0;
+    for (final AsrSpeechSegment s in segments) {
+      if (s.samples.length > longest) longest = s.samples.length;
+    }
+    return pool.batchCapFor(AsrFbank.frameCount(longest));
+  }
+
+  /// 第一段：fbank（纯 Dart，同步）。流水线里趁 GPU / CPU 会话都在忙时算下一批。
+  @override
+  AsrBatchFeatures computeFeatures(List<AsrSpeechSegment> segments) {
+    final Stopwatch clock = Stopwatch()..start();
+    final int batch = segments.length;
     final List<Float32List> features = <Float32List>[];
     final Int64List frameCounts = Int64List(batch);
     int maxFrames = 0;
+    int realFrames = 0;
     for (int i = 0; i < batch; i++) {
       final Float32List f = _fbank.compute(segments[i].samples);
       features.add(f);
       final int frames = f.length ~/ kAsrFeatureDim;
       frameCounts[i] = frames;
+      realFrames += frames;
       if (frames > maxFrames) maxFrames = frames;
     }
-    if (maxFrames == 0) {
-      return List<AsrDecodedSegment>.filled(batch, AsrDecodedSegment.empty);
-    }
-    final Duration fbankTime = clock.elapsed;
-    int realFrames = 0;
-    for (int i = 0; i < batch; i++) {
-      realFrames += frameCounts[i];
-    }
+    return AsrBatchFeatures._(
+      segments: segments,
+      features: features,
+      frameCounts: frameCounts,
+      maxFrames: maxFrames,
+      realFrames: realFrames,
+      fbankTime: clock.elapsed,
+    );
+  }
 
-    // 2. encoder：有静态桶就填成桶的 [N_b, T_b, 80]——多出的行喂 pad 值、
-    //    x_lens = T_b（哨兵行，让 x_lens.max() 恒等于 T_b，见
-    //    `asr_encoder_buckets.dart` 文件头），否则按批内最长 pad 走动态会话。
+  /// 第二段：encoder 前向（GPU 会话；静态桶或动态会话）。[features] 缺省现算。
+  /// 返回后 encoder 输出已读回主机，可立刻发起下一批的 encoder 而不等搜索。
+  @override
+  Future<AsrEncodedBatch> encode(
+    List<AsrSpeechSegment> segments, {
+    AsrBatchFeatures? features,
+  }) async {
+    if (segments.isEmpty) {
+      throw ArgumentError.value(segments, 'segments', '空批');
+    }
+    final int? cap = _capFor(segments);
+    if (cap != null && segments.length > cap) {
+      throw ArgumentError.value(
+        segments.length,
+        'segments',
+        '超过静态桶容量 $cap（调用方按 batchCapFor 封顶，或用 decodeBatch）',
+      );
+    }
+    final AsrBatchFeatures feats =
+        features != null && identical(features.segments, segments)
+        ? features
+        : computeFeatures(segments);
+    final int batch = segments.length;
+    final int maxFrames = feats.maxFrames;
+    if (maxFrames == 0) {
+      return AsrEncodedBatch._empty(segments, feats.fbankTime);
+    }
+    final Stopwatch clock = Stopwatch()..start();
+
+    // encoder：有静态桶就填成桶的 [N_b, T_b, 80]——多出的行喂 pad 值、
+    // x_lens = T_b（哨兵行，让 x_lens.max() 恒等于 T_b，见
+    // `asr_encoder_buckets.dart` 文件头），否则按批内最长 pad 走动态会话。
+    final AsrStaticEncoderPool? pool = _staticEncoders;
     final AsrStaticEncoderSession? fixed = pool == null
         ? null
         : await pool.sessionFor(maxFrames);
@@ -219,14 +267,14 @@ class AsrTransducerDecoder implements AsrBatchDecoder, AsrBatchShaper {
     final Int64List xLens = Int64List(rows);
     for (int i = 0; i < rows; i++) {
       final int base = i * cols * kAsrFeatureDim;
-      final Float32List? f = i < batch ? features[i] : null;
+      final Float32List? f = i < batch ? feats.features[i] : null;
       if (f != null) x.setRange(base, base + f.length, f);
       x.fillRange(
         base + (f?.length ?? 0),
         base + cols * kAsrFeatureDim,
         kFeaturePadValue,
       );
-      xLens[i] = f == null ? cols : frameCounts[i];
+      xLens[i] = f == null ? cols : feats.frameCounts[i];
     }
     // run 与**输出契约校验**必须在同一个 try 里：融合图少给一个输出 key、或回来
     // 的行数与 rows 对不上，同样是「这个静态桶跑不动」的表现形态，而且正是全新
@@ -254,9 +302,8 @@ class AsrTransducerDecoder implements AsrBatchDecoder, AsrBatchShaper {
       // 这个桶标为不可用、本批回退动态会话，任务不中断；原因留在池子里。
       if (fixed == null || pool == null) rethrow;
       pool.markUnavailable(fixed.bucket, error, stack);
-      return decodeBatch(segments);
+      return encode(segments, features: feats);
     }
-    final Duration encoderTime = clock.elapsed - fbankTime;
     final int encFrames = encoderOutAll.shape[1];
     final int encDim = encoderOutAll.shape[2];
     // 只保留真实行（填充行排在后面，是连续前缀）。
@@ -267,11 +314,6 @@ class AsrTransducerDecoder implements AsrBatchDecoder, AsrBatchShaper {
             0,
             batch * encFrames * encDim,
           );
-    final OnnxTensor encoderOut = OnnxTensor.float32(encData, <int>[
-      batch,
-      encFrames,
-      encDim,
-    ]);
     final List<int> encLens = List<int>.generate(batch, (int i) {
       final int len = _lengthAt(encoderLens, i);
       if (len < 0 || len > encFrames) {
@@ -281,17 +323,50 @@ class AsrTransducerDecoder implements AsrBatchDecoder, AsrBatchShaper {
       }
       return len;
     });
-    final int paddedFrames = rows * cols;
+    return AsrEncodedBatch._(
+      segments: segments,
+      encData: encData,
+      encFrames: encFrames,
+      encDim: encDim,
+      encLens: encLens,
+      realFrames: feats.realFrames,
+      paddedFrames: rows * cols,
+      fbankTime: feats.fbankTime,
+      encoderTime: clock.elapsed,
+      isStatic: fixed != null,
+    );
+  }
+
+  /// 第三段：逐帧贪心搜索（CPU 会话：Loop 图或 decoder/joiner 逐帧）。
+  @override
+  Future<List<AsrDecodedSegment>> search(AsrEncodedBatch encoded) async {
+    final int batch = encoded.segments.length;
+    if (encoded.isEmpty) {
+      _stats = _stats.add(
+        segments: batch,
+        realFrames: 0,
+        paddedFrames: 0,
+        fbank: encoded.fbankTime,
+        encoder: Duration.zero,
+        search: Duration.zero,
+      );
+      return List<AsrDecodedSegment>.filled(batch, AsrDecodedSegment.empty);
+    }
+    final Stopwatch clock = Stopwatch()..start();
+    final Float32List encData = encoded.encData;
+    final int encFrames = encoded.encFrames;
+    final int encDim = encoded.encDim;
+    final List<int> encLens = encoded.encLens;
 
     void account() {
       _stats = _stats.add(
         segments: batch,
-        realFrames: realFrames,
-        paddedFrames: paddedFrames,
-        fbank: fbankTime,
-        encoder: encoderTime,
-        search: clock.elapsed - fbankTime - encoderTime,
-        static: fixed != null,
+        realFrames: encoded.realFrames,
+        paddedFrames: encoded.paddedFrames,
+        fbank: encoded.fbankTime,
+        encoder: encoded.encoderTime,
+        search: clock.elapsed,
+        usedStaticBucket: encoded.isStatic,
       );
     }
 
@@ -299,10 +374,9 @@ class AsrTransducerDecoder implements AsrBatchDecoder, AsrBatchShaper {
     if (greedy != null) {
       final List<AsrDecodedSegment> out = await _decodeWithGreedyGraph(
         greedy: greedy,
-        encoderOut: encoderOut,
-        encoderLens: encoderLens,
         encData: encData,
         encFrames: encFrames,
+        encDim: encDim,
         encLens: encLens,
         batch: batch,
       );
@@ -433,19 +507,19 @@ class AsrTransducerDecoder implements AsrBatchDecoder, AsrBatchShaper {
   /// token id，-1 = 无），按帧还原 token 与时间。
   Future<List<AsrDecodedSegment>> _decodeWithGreedyGraph({
     required OnnxSession greedy,
-    required OnnxTensor encoderOut,
-    required OnnxTensor encoderLens,
     required Float32List encData,
     required int encFrames,
+    required int encDim,
     required List<int> encLens,
     required int batch,
   }) async {
     final Int64List lens = Int64List.fromList(encLens);
     final Map<String, OnnxTensor> out = await greedy.run(<String, OnnxTensor>{
-      AsrGreedyGraphIo.encoderOut: OnnxTensor.float32(
-        encData,
-        List<int>.from(encoderOut.shape),
-      ),
+      AsrGreedyGraphIo.encoderOut: OnnxTensor.float32(encData, <int>[
+        batch,
+        encFrames,
+        encDim,
+      ]),
       AsrGreedyGraphIo.encoderOutLens: OnnxTensor.int64(lens, <int>[batch]),
     });
     final OnnxTensor emitted = _require(out, AsrGreedyGraphIo.emitted);
@@ -539,4 +613,84 @@ class AsrTransducerDecoder implements AsrBatchDecoder, AsrBatchShaper {
     }
     return best;
   }
+}
+
+/// [AsrTransducerDecoder.computeFeatures] 的产物：一批段的 fbank 特征。
+class AsrBatchFeatures {
+  const AsrBatchFeatures._({
+    required this.segments,
+    required this.features,
+    required this.frameCounts,
+    required this.maxFrames,
+    required this.realFrames,
+    required this.fbankTime,
+  });
+
+  /// 测试用：不算特征的占位（fake 解码器只关心段与身份）。
+  @visibleForTesting
+  factory AsrBatchFeatures.forTest(List<AsrSpeechSegment> segments) =>
+      AsrBatchFeatures._(
+        segments: segments,
+        features: const <Float32List>[],
+        frameCounts: Int64List(0),
+        maxFrames: 0,
+        realFrames: 0,
+        fbankTime: Duration.zero,
+      );
+
+  final List<AsrSpeechSegment> segments;
+  final List<Float32List> features;
+  final Int64List frameCounts;
+  final int maxFrames;
+  final int realFrames;
+  final Duration fbankTime;
+}
+
+/// [AsrTransducerDecoder.encode] 的产物：已读回主机的 encoder 输出（只含真实行）。
+class AsrEncodedBatch {
+  const AsrEncodedBatch._({
+    required this.segments,
+    required this.encData,
+    required this.encFrames,
+    required this.encDim,
+    required this.encLens,
+    required this.realFrames,
+    required this.paddedFrames,
+    required this.fbankTime,
+    required this.encoderTime,
+    required this.isStatic,
+  });
+
+  /// 测试用：只带段列表的占位。
+  @visibleForTesting
+  factory AsrEncodedBatch.forTest(List<AsrSpeechSegment> segments) =>
+      AsrEncodedBatch._empty(segments, Duration.zero);
+
+  /// 全部段都没有一帧特征（极短静音）：搜索直接返回空结果。
+  AsrEncodedBatch._empty(List<AsrSpeechSegment> segments, Duration fbankTime)
+    : this._(
+        segments: segments,
+        encData: Float32List(0),
+        encFrames: 0,
+        encDim: 0,
+        encLens: const <int>[],
+        realFrames: 0,
+        paddedFrames: 0,
+        fbankTime: fbankTime,
+        encoderTime: Duration.zero,
+        isStatic: false,
+      );
+
+  final List<AsrSpeechSegment> segments;
+  final Float32List encData;
+  final int encFrames;
+  final int encDim;
+  final List<int> encLens;
+  final int realFrames;
+  final int paddedFrames;
+  final Duration fbankTime;
+  final Duration encoderTime;
+  final bool isStatic;
+
+  bool get isEmpty => encFrames == 0;
 }

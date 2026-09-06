@@ -4357,5 +4357,6 @@
   "reader_stats_this_book": "本书",
   "shortcut_action_reader_open_gallery": "打开插图画廊",
   "shortcut_action_reader_open_statistics": "打开阅读统计",
-  "shortcut_action_reader_open_audiobook": "打开有声书面板"
+  "shortcut_action_reader_open_audiobook": "打开有声书面板",
+  "audiobook_transcribe_running_on_static": "运行于 $provider · 静态融合图"
 }

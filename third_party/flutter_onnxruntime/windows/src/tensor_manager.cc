@@ -21,18 +21,12 @@ TensorManager::~TensorManager() {
 }
 
 std::string TensorManager::generateTensorId() {
-  // Create a random tensor ID
-  static std::random_device rd;
-  static std::mt19937 gen(rd());
-  static std::uniform_int_distribution<> dis(0, 15);
-
-  std::stringstream ss;
-  ss << "tensor_";
-  for (int i = 0; i < 16; i++) {
-    ss << std::hex << dis(gen);
-  }
-
-  return ss.str();
+  // See next_tensor_id_ in the header for why this must not use a shared
+  // unsynchronised RNG: this is called concurrently from the GPU and CPU
+  // worker threads, and duplicate ids corrupt the tensor tables.
+  // The id is not a security token -- it never leaves the process and is not
+  // guessable-by-attacker territory -- so a monotonic counter is enough.
+  return "tensor_" + std::to_string(next_tensor_id_.fetch_add(1, std::memory_order_relaxed));
 }
 
 std::string TensorManager::createFloat32Tensor(const std::vector<float> &data, const std::vector<int64_t> &shape) {
