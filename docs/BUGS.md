@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2034 条。点号进各自文件。
+> 共 2035 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -37,6 +37,7 @@
 | [BUG-2163](bugs/BUG-2163-asr-match-start-anchor-colophon.md) | ✅ | ✅ | ASR 字幕匹配起点被片头出版社名钉到书尾版权页，整本匹配率 0% |
 | [BUG-2162](bugs/BUG-2162-schema-drift-v95-missing-columns.md) | ✅ | ✅ | 用户库 user_version=95 却缺 v52/v57/v87/v88 台阶产物，导入书撞 epub_books 无 language 列 |
 | [BUG-2161](bugs/BUG-2161-mdx-loose-asset-scan-and-size-limits.md) | 🚧 | 🚧 | MDX 松散资源两条上限缺口：img src 只扫前 50 条词条、zip 全取无总量上限 |
+| [BUG-2160](bugs/BUG-2160-mdx-import-oom-ios.md) | ✅ | ✅ | iOS 导入大 MDX 词典闪退：整本词典在内存里物化，jetsam 直接杀进程 |
 | [BUG-2159](bugs/BUG-2159-netflix-ext-mine-audible-playback.md) | ✅ | ✅ | 网飞扩展批量制卡期间扬声器出声 |
 | [BUG-2158](bugs/BUG-2158-dict-collapse-missing-explicit-expand-state.md) | ✅ | ✅ | 词典折叠只有两个态：点「展开」对自动展开窗口外的词典毫无反应 |
 | [BUG-2157](bugs/BUG-2157-plain-mode-inline-fs-overrides-user-font-size.md) | ✅ | ✅ | 关闭尊重字幕自带样式后行内 fs 仍覆盖用户字号，字号滑块整条失效 |

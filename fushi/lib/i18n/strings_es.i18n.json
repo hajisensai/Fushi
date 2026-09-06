@@ -4243,6 +4243,8 @@
   "anki_error_ankimobile_no_decks": "AnkiMobile returned no decks or note types.",
   "anki_error_ankimobile_unavailable": "Could not open AnkiMobile. Install AnkiMobile and try again.",
   "dictionary_collapse_follow_global": "Follow global setting",
+  "anki_ankimobile_imported": "AnkiMobile configuration imported.",
+  "anki_error_ankimobile_not_active": "Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.",
   "audiobook_transcribe_action": "Generate subtitles on device",
   "audiobook_transcribe_title": "On-device transcription",
   "audiobook_transcribe_model_download_needed": "Model download required: $size",

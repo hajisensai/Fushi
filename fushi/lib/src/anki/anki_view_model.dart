@@ -83,6 +83,18 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
     );
   }
 
+  /// 回调带回的是**失败**时的对偶动作（BUG-2150 补修）：中间态「已跳转 AnkiMobile，
+  /// 去那边点同意」是 [fetchConfiguration] 写进 [AnkiUiState.errorMessage] 的，
+  /// 此前只有成功侧清了它。失败侧只弹一条几秒即逝的 toast，设置页那行红字仍旧说
+  /// 「去 AnkiMobile 点同意」——用户于是反复回 AnkiMobile 同意，永远看不到真正
+  /// 卡住的原因（例如系统「允许粘贴」被拒）。真结果必须覆盖中间态。
+  void applyFetchedFailure(String message, String? code) {
+    state = state.copyWith(
+      isFetching: false,
+      errorMessage: localizeAnkiFetchError(message, code),
+    );
+  }
+
   Future<void> fetchConfiguration() async {
     state = state.copyWith(isFetching: true, clearError: true);
     final result = await _repository.fetchConfiguration();
@@ -119,6 +131,8 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
         return t.anki_error_ankimobile_pasteboard_empty;
       case AnkiErrorCode.ankiMobilePasteboardDenied:
         return t.anki_error_ankimobile_pasteboard_denied;
+      case AnkiErrorCode.ankiMobileNotActive:
+        return t.anki_error_ankimobile_not_active;
       case AnkiErrorCode.ankiMobileNoDecks:
         return t.anki_error_ankimobile_no_decks;
     }

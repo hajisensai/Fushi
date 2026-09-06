@@ -4243,6 +4243,8 @@
   "anki_error_ankimobile_no_decks": "AnkiMobile 没有回传任何牌组或笔记类型。",
   "anki_error_ankimobile_unavailable": "无法打开 AnkiMobile。请先安装 AnkiMobile 再试。",
   "dictionary_collapse_follow_global": "跟随全局设置",
+  "anki_ankimobile_imported": "已导入 AnkiMobile 配置。",
+  "anki_error_ankimobile_not_active": "Fushi 没能及时回到前台，剪贴板还没被读取。回到 Fushi 后重试即可。",
   "audiobook_transcribe_action": "设备端转录生成字幕",
   "audiobook_transcribe_title": "设备端语音转录",
   "audiobook_transcribe_model_download_needed": "需要下载模型：$size",
