@@ -15,6 +15,8 @@ import 'package:flutter/material.dart';
 
 import 'package:fushi/src/reader/reader_status_footer.dart'
     show readerStatusFooterEnabled;
+import 'package:fushi/src/utils/misc/platform_utils.dart'
+    show kFushiSettingsWideMinHeight, kFushiSettingsWideThreshold;
 
 /// 顶部工具栏视觉高度 == 挤压态预留高（chrome 铁律：同一真相源，见
 /// reader_chrome_floating.dart 文件头）。
@@ -32,6 +34,14 @@ bool readerDesktopChromeEnabled({
   required bool desktop,
   required bool lyricsMode,
 }) => readerStatusFooterEnabled(desktop: desktop, lyricsMode: lyricsMode);
+
+/// 设置 / 导航是否走左右抽屉：桌面端恒走；平板等宽窗（宽高都过共享阈值）也走——
+/// 这样居中 master-detail 对话框在阅读器里没有剩余用途，可以删掉。手机窄窗仍走
+/// bottom sheet 的主页 / 子页 push。
+bool readerUsesSideSheets({required bool desktop, required Size window}) =>
+    desktop ||
+    (window.width >= kFushiSettingsWideThreshold &&
+        window.height >= kFushiSettingsWideMinHeight);
 
 /// 顶部工具栏的顶部预留高。
 ///

@@ -88,6 +88,7 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
     this.onOpenStatistics,
     this.initialSideSheetTab = 'layout',
     this.onSideSheetTabChanged,
+    this.expandedTocParents,
     this.initialSubPage,
     this.presentation = ReaderQuickSettingsPresentation.sheet,
     this.onClose,
@@ -168,6 +169,9 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
   final String initialSideSheetTab;
   final ValueChanged<String>? onSideSheetTabChanged;
 
+  /// 目录折叠状态的会话记忆（页面持有的可变集合；null 则本面板自持）。
+  final Set<String>? expandedTocParents;
+
   /// TODO-1309①：打开面板时直达的子页 id（如 'location' 导航子页）。null =
   /// 默认落主菜单（窄窗）/ 默认分类（宽窗）。仅用于初始化 [_subPage]，
   /// 之后由用户导航自行覆盖。
@@ -210,7 +214,8 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
 
   /// 目录里手动展开的父节（按父节 label）；深度 >= 2 的子节默认折叠，当前章所在的
   /// 父节自动展开。
-  final Set<String> _expandedTocParents = <String>{};
+  late final Set<String> _expandedTocParents =
+      widget.expandedTocParents ?? <String>{};
 
   /// 最近一次 LayoutBuilder 是否判定为宽窗。供 PopScope.canPop 读取：宽窗
   /// master-detail 下选中态非 null 也允许直接关闭（不会卡在「返回上一级」）。
@@ -358,67 +363,19 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
             ? _buildSubPage(context, theme)
             : _buildMainPage(context, theme);
       },
-      // 宽窗左右 master-detail（左父菜单 + 右详情）——视频走顶部分类条，两边发散，
-      // 故 MaterialSupportingPaneLayout / SupportingPaneSide 等符号留在此回调里。
+      // 宽窗不再有 master-detail：平板宽窗在到达本面板之前就被路由到左右抽屉
+      // （readerUsesSideSheets），这里只保留外壳要求的回调，兜底铺同一份窄窗内容。
       wideBuilder: (BuildContext context, BoxConstraints constraints) {
-        // TODO-725：导航置首后宽窗默认选中改 'location'（不再默认 appearance）。
-        final String selectedId = _subPage ?? 'location';
-        final Color dividerColor = isCupertinoPlatform(context)
-            ? CupertinoColors.separator.resolveFrom(context)
-            : FushiDesignTokens.of(context).surfaces.outline;
-        // 左父菜单与右详情两个 pane 同一份 padding（此前两份逐字相同的
-        // EdgeInsets.fromLTRB，收敛为共享公式 paneInsets 的一次调用）。
-        final EdgeInsets widePanePadding =
-            FushiMasterDetailSettingsSheet.paneInsets(
-          context,
-          horizontal: tokens.spacing.page + tokens.spacing.gap / 2,
-          top: tokens.spacing.gap / 2,
-        );
-        // 用可用的有界高度撑满整张 master-detail（等价于主页设置把
-        // MaterialSupportingPaneLayout 放进 Expanded）：Row(stretch) 才能给
-        // 两个 pane 紧约束 → 各自的 SingleChildScrollView 独立滚动、左父菜
-        // 单固定不跟随右详情滚动。maxHeightFactor 保证 maxHeight 有界。
-        return SizedBox(
-          height: constraints.maxHeight,
-          child: MaterialSupportingPaneLayout(
-            minSplitWidth: kFushiSettingsWideThreshold,
-            supportingWidth: kFushiSettingsSupportingPaneWidth,
-            supportingSide: SupportingPaneSide.start,
-            dividerColor: dividerColor,
-            // 左父菜单项不多时垂直居中（progress/分类/动作整体居中），
-            // 不再让「阅读进度」死贴顶端；内容超过 pane 高度时
-            // ConstrainedBox 的 minHeight 被内容满足，照常滚动。
-            supporting: LayoutBuilder(
-              builder: (
-                BuildContext context,
-                BoxConstraints paneConstraints,
-              ) {
-                final double minContentHeight =
-                    paneConstraints.maxHeight > widePanePadding.vertical
-                        ? paneConstraints.maxHeight - widePanePadding.vertical
-                        : 0;
-                return SingleChildScrollView(
-                  padding: widePanePadding,
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      minHeight: minContentHeight,
-                    ),
-                    child: _buildWidePane(context, theme, selectedId),
-                  ),
-                );
-              },
-            ),
-            // KeyedSubtree：按选中 id 编码，切换时整棵右 pane 子树作废重
-            // 建，避免 Flutter 复用上一详情同位置 Element 触发 Switch 圆点
-            // / Segmented 滑动等复用副作用（同 settings_home_page）。
-            primary: KeyedSubtree(
-              key: ValueKey<String>(selectedId),
-              child: SingleChildScrollView(
-                padding: widePanePadding,
-                child: _buildWidePrimary(context, theme, selectedId),
-              ),
-            ),
+        return SingleChildScrollView(
+          key: ValueKey<String>(_subPage ?? 'main'),
+          padding: FushiMasterDetailSettingsSheet.paneInsets(
+            context,
+            horizontal: tokens.spacing.page + tokens.spacing.gap / 2,
+            top: tokens.spacing.gap / 2,
           ),
+          child: _subPage != null
+              ? _buildSubPage(context, theme)
+              : _buildMainPage(context, theme),
         );
       },
     );
@@ -540,64 +497,8 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     );
   }
 
-  Widget _buildWidePane(
-    BuildContext context,
-    ThemeData theme,
-    String selectedId,
-  ) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final double sectionGap = tokens.spacing.gap + tokens.spacing.gap / 2;
-    // 左父菜单只留「分类导航 + 动作」，做矮以让更多窗口进宽窗（阅读进度已移到右侧
-    // 外观详情顶部，见 [_buildWidePrimary]）。项少时整体垂直居中、不贴顶。
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      mainAxisAlignment: MainAxisAlignment.center,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (final cat in _wideCategories())
-          FushiListItem(
-            selected: cat.id == selectedId,
-            selectedShape: FushiListItemSelectedShape.pill,
-            leading: Icon(cat.icon),
-            title: Text(cat.label),
-            // 左父菜单固定 208px，长标签（如「布局与显示」选中加粗后 ~80px）
-            // 会触发 ellipsis 截断成「布局与…」；允许换成两行而非省略。
-            titleMaxLines: 2,
-            onTap: () => setState(() => _subPage = cat.id),
-          ),
-        SizedBox(height: sectionGap),
-        _buildActionRow(context),
-      ],
-    );
-  }
-
-  /// 宽窗右详情：默认分类（导航置首后为 'location'）顶部并入阅读进度（左父菜单不
-  /// 再单列进度，借此把左栏做矮、更多窗口能进宽窗）。其余分类只渲染各自详情。
-  Widget _buildWidePrimary(
-    BuildContext context,
-    ThemeData theme,
-    String selectedId,
-  ) {
-    if (selectedId != 'location') {
-      return _subPageContent(selectedId);
-    }
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final double sectionGap = tokens.spacing.gap + tokens.spacing.gap / 2;
-    final Widget progress = _buildProgressSection(theme);
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (progress is! SizedBox) ...[
-          progress,
-          SizedBox(height: sectionGap),
-        ],
-        _subPageContent(selectedId),
-      ],
-    );
-  }
-
-  /// 宽窗 master-detail 左 pane 的分类项（id 与 [_subPageContent] 的 case 对齐）。
+  /// 面板分类项（id 与 [_subPageContent] 的 case 对齐）：设置抽屉分段条、有声书
+  /// 面板与窄窗主页共用同一份顺序。
   /// audiobook 仅在有 controller 时出现。
   List<({String id, IconData icon, String label})> _wideCategories() {
     // TODO-725 / TODO-802：导航置首（location → layout → behavior → lookup →

@@ -1476,8 +1476,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
             invertSkip: ReaderFushiSource.instance.invertAudiobookSkipDirection,
             // TODO-728: per-reader toggle for the current-sentence cue.
             showCue: ReaderFushiSource.instance.showBottomBarCue,
-            // 桌面端：播放条唤出时覆盖状态行，阅读追踪 / 进度并进条右端。
+            // 桌面端：播放条唤出时覆盖状态行，阅读追踪 / 进度并进条右端；传输键与
+            // 有声书面板同一套（-10s / 上一句 / 播放 / 下一句 / +10s）。
             trailing: _desktopChromeEnabled ? _buildBarStatusText() : null,
+            showSeekButtons: _desktopChromeEnabled,
           ),
         );
       },
@@ -1649,16 +1651,22 @@ extension _ReaderChrome on _ReaderFushiPageState {
       if (!mounted) return;
 
       // 桌面端 ッツ 形态：「导航」→ 左抽屉；「有声书」→ 居中面板；其余 → 右侧设置抽屉。
-      // 歌词模式在桌面端同样走抽屉（布局子页在歌词模式下给歌词专用显示项），
-      // 居中 master-detail 对话框只剩平板宽窗在用。
-      final bool useSideSheet = isDesktopPlatform;
-      final ReaderQuickSettingsPresentation presentation = !useSideSheet
-          ? ReaderQuickSettingsPresentation.sheet
-          : switch (initialSubPage) {
-              'location' => ReaderQuickSettingsPresentation.sideSheetNavigation,
-              'audiobook' => ReaderQuickSettingsPresentation.audiobookPanel,
-              _ => ReaderQuickSettingsPresentation.sideSheetAppearance,
-            };
+      // 桌面端与平板宽窗都走左右抽屉（歌词模式同样；布局子页在歌词模式下给歌词专用
+      // 显示项）；手机窄窗走 bottom sheet 的主页 / 子页。有声书面板任何形态都是独立
+      // 面板：宽窗居中对话框、手机全高 bottom sheet。
+      final bool useSideSheet = readerUsesSideSheets(
+        desktop: isDesktopPlatform,
+        window: MediaQuery.sizeOf(context),
+      );
+      final bool audiobookPanel =
+          initialSubPage == 'audiobook' && _audiobookController != null;
+      final ReaderQuickSettingsPresentation presentation = audiobookPanel
+          ? ReaderQuickSettingsPresentation.audiobookPanel
+          : !useSideSheet
+              ? ReaderQuickSettingsPresentation.sheet
+              : initialSubPage == 'location'
+                  ? ReaderQuickSettingsPresentation.sideSheetNavigation
+                  : ReaderQuickSettingsPresentation.sideSheetAppearance;
       final Widget sheetContent = _buildQuickSettingsSheet(
         favorites: favorites,
         favRepo: favRepo,
@@ -1666,7 +1674,18 @@ extension _ReaderChrome on _ReaderFushiPageState {
         initialSubPage: initialSubPage,
       );
 
-      if (presentation == ReaderQuickSettingsPresentation.audiobookPanel) {
+      if (presentation == ReaderQuickSettingsPresentation.audiobookPanel &&
+          !useSideSheet) {
+        // 手机：全高 bottom sheet 承载面板（面板内部 Flexible 需要有界高度）。
+        await adaptiveModalSheet<void>(
+          context: context,
+          builder: (BuildContext ctx) => SizedBox(
+            height: MediaQuery.sizeOf(ctx).height * 0.9,
+            child: sheetContent,
+          ),
+        );
+      } else if (presentation ==
+          ReaderQuickSettingsPresentation.audiobookPanel) {
         await showAppDialog<void>(
           context: context,
           builder: (_) => FushiDialogFrame(
@@ -1914,6 +1933,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       onOpenStatistics: _openReadingStatistics,
       initialSideSheetTab: _chrome.lastSettingsTab,
       onSideSheetTabChanged: (String id) => _chrome.lastSettingsTab = id,
+      expandedTocParents: _chrome.expandedTocParents,
     );
   }
 
@@ -2034,6 +2054,14 @@ extension _ReaderChrome on _ReaderFushiPageState {
   ///
   /// 纯指针面：包 ExcludeFocus，不进焦点遍历池（与 [_wrapBottomChromeBar] 同一规则，
   /// TODO-700 不变式）。BUG-1692：排在 WebView 之后绘制，必须自带 RepaintBoundary。
+  /// 动作文案后缀绑定键（`插图画廊 · G`），让快捷键在工具栏 tooltip 里可见。
+  String _labelWithShortcut(String label, ShortcutAction action) {
+    final List<InputBinding> keys =
+        appModel.shortcutRegistry.bindingsFor(action).keyboardBindings;
+    if (keys.isEmpty) return label;
+    return '$label · ${keys.first.displayLabel}';
+  }
+
   Widget _buildDesktopHeader() {
     if (!_desktopChromeEnabled || !_bottomBarShouldPaint) {
       return const SizedBox.shrink();
@@ -2072,7 +2100,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
               ),
               ReaderHeaderAction(
                 icon: Icons.format_list_bulleted,
-                label: t.section_navigation,
+                label: _labelWithShortcut(
+                  t.section_navigation,
+                  ShortcutAction.readerOpenNavigation,
+                ),
                 pinned: true,
                 semanticsId: 'hibiki.reader.header.navigation',
                 onPressed: () =>
@@ -2080,12 +2111,18 @@ extension _ReaderChrome on _ReaderFushiPageState {
               ),
               ReaderHeaderAction(
                 icon: Icons.collections_outlined,
-                label: t.reader_gallery_tooltip,
+                label: _labelWithShortcut(
+                  t.reader_gallery_tooltip,
+                  ShortcutAction.readerOpenGallery,
+                ),
                 onPressed: _openGallery,
               ),
               ReaderHeaderAction(
                 icon: Icons.insights_outlined,
-                label: t.reading_statistics,
+                label: _labelWithShortcut(
+                  t.reading_statistics,
+                  ShortcutAction.readerOpenStatistics,
+                ),
                 semanticsId: 'hibiki.reader.header.statistics',
                 onPressed: _openReadingStatistics,
               ),
@@ -2093,7 +2130,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
             trailing: <ReaderHeaderAction>[
               ReaderHeaderAction(
                 icon: Icons.headphones_outlined,
-                label: t.section_audiobook,
+                label: _labelWithShortcut(
+                  t.section_audiobook,
+                  ShortcutAction.readerOpenAudiobook,
+                ),
                 semanticsId: 'hibiki.reader.header.audiobook',
                 // 已挂有声书 → 居中面板；没有 → 直接进导入。
                 onPressed: _audiobookController != null
@@ -2114,7 +2154,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
               ReaderHeaderAction(
                 key: const ValueKey<String>('fushi_reader_settings_button'),
                 icon: Icons.tune_outlined,
-                label: t.reader_settings_section,
+                label: _labelWithShortcut(
+                  t.reader_settings_section,
+                  ShortcutAction.readerOpenMenu,
+                ),
                 pinned: true,
                 semanticsId: 'hibiki.reader.bottom.settings',
                 onPressed: () => unawaited(_showAppearanceSheet()),

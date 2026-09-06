@@ -22,6 +22,7 @@ class AudiobookPlayBar extends StatelessWidget {
     this.invertSkip = false,
     this.showCue = true,
     this.trailing,
+    this.showSeekButtons = false,
     super.key,
   });
 
@@ -65,6 +66,10 @@ class AudiobookPlayBar extends StatelessWidget {
 
   /// 跟随键之前的可选尾部内容（桌面端把状态行文字并进播放条右端）。
   final Widget? trailing;
+
+  /// 在「上一句 / 播放 / 下一句」两侧再给 -10s / +10s（与有声书面板同一套传输键）。
+  /// 只在 [skipActionSeconds] == 0（按句跳）时有意义；按秒跳时左右键已是快退快进。
+  final bool showSeekButtons;
 
   @override
   Widget build(BuildContext context) {
@@ -137,9 +142,19 @@ class AudiobookPlayBar extends StatelessWidget {
     // 右键（屏幕右侧，id=audiobook_next）：invertSkip 开时变后退键。
     final ({IconData icon, String tooltip, VoidCallback onPressed}) rightKey =
         invertSkip ? backwardKey : forwardKey;
+    final bool seekButtons = showSeekButtons && skipActionSeconds == 0;
     final Widget playbackControls = Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
+        if (seekButtons)
+          _FocusableBarButton(
+            id: const FushiFocusId('audiobook_back10'),
+            icon: const Icon(Icons.replay_10_outlined),
+            iconSize: 20,
+            style: flatStyle,
+            tooltip: '-10s',
+            onPressed: () => controller.seekRelative(-10),
+          ),
         _FocusableBarButton(
           id: const FushiFocusId('audiobook_prev'),
           icon: Icon(leftKey.icon),
@@ -169,6 +184,15 @@ class AudiobookPlayBar extends StatelessWidget {
           tooltip: rightKey.tooltip,
           onPressed: rightKey.onPressed,
         ),
+        if (seekButtons)
+          _FocusableBarButton(
+            id: const FushiFocusId('audiobook_fwd10'),
+            icon: const Icon(Icons.forward_10_outlined),
+            iconSize: 20,
+            style: flatStyle,
+            tooltip: '+10s',
+            onPressed: () => controller.seekRelative(10),
+          ),
       ],
     );
     final List<Widget> barItems = <Widget>[
