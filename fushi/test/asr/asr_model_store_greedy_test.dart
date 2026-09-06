@@ -31,6 +31,7 @@ void main() {
       required Uint8List joinerOnnx,
       required int blankId,
       required int unkId,
+      int contextSize = 2,
     }) {
       builds++;
       expect(decoderOnnx, hasLength(10));
@@ -74,6 +75,7 @@ void main() {
       required Uint8List joinerOnnx,
       required int blankId,
       required int unkId,
+      int contextSize = 2,
     }) {
       builds++;
       return Uint8List.fromList(<int>[builds]);
@@ -118,6 +120,7 @@ void main() {
       required Uint8List joinerOnnx,
       required int blankId,
       required int unkId,
+      int contextSize = 2,
     }) => throw const FormatException('decoder 缺 y 输入');
 
     await expectLater(
@@ -148,6 +151,7 @@ void main() {
       required Uint8List joinerOnnx,
       required int blankId,
       required int unkId,
+      int contextSize = 2,
     }) => Uint8List.fromList(<int>[decoderOnnx.length]);
 
     final File a = await store.ensureGreedyGraph(

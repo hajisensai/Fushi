@@ -114,9 +114,13 @@ Uint8List buildAsrGreedyGraph({
     ],
     outputs: <String>[AsrGreedyGraphIo.sourceJoinerOutput],
   );
-  decoder.requireTensorIo(
+  // decoder 的 `y` 允许 int32（X-ASR 导出）：图内 loop-carried `ctx` 恒为 int64，
+  // 重算分支里先 Cast 再喂 decoder；主图 IO 契约（`encoder_out_lens` / `emitted`）
+  // 不随源模型变。
+  final int yElemType = decoder.requireTensorIo(
     AsrGreedyGraphIo.sourceDecoderInput,
     elemType: OnnxDataType.kInt64,
+    alternativeElemTypes: const <int>{OnnxDataType.kInt32},
     rank: 2,
     staticDims: <int, int>{1: contextSize},
   );
@@ -187,11 +191,13 @@ Uint8List buildAsrGreedyGraph({
   const String dec = '${p}dec';
   const String logit = '${AsrGreedyGraphIo.joinerPrefix}logit';
 
+  const String bodyCtxI32 = '${p}ctx_i32';
+  final bool castCtx = yElemType == OnnxDataType.kInt32;
   final _InlinedGraph decoderInlined = _inline(
     decoder,
     prefix: AsrGreedyGraphIo.decoderPrefix,
     bindings: <String, String>{
-      AsrGreedyGraphIo.sourceDecoderInput: bodyCtx,
+      AsrGreedyGraphIo.sourceDecoderInput: castCtx ? bodyCtxI32 : bodyCtx,
       AsrGreedyGraphIo.sourceDecoderOutput: decOut,
     },
   );
@@ -214,7 +220,19 @@ Uint8List buildAsrGreedyGraph({
   final List<Object> decShape = <Object>['N', decoderDim];
   final OnnxGraph thenBranch = OnnxGraph.create(
     name: '${p}dec_recompute',
-    nodes: decoderInlined.nodes,
+    nodes: <OnnxNode>[
+      if (castCtx)
+        OnnxNode.create(
+          opType: 'Cast',
+          name: '${p}ctx_to_i32',
+          inputs: <String>[bodyCtx],
+          outputs: <String>[bodyCtxI32],
+          attributes: <OnnxAttribute>[
+            OnnxAttribute.int('to', OnnxDataType.kInt32),
+          ],
+        ),
+      ...decoderInlined.nodes,
+    ],
     inputs: const <OnnxValueInfo>[],
     outputs: <OnnxValueInfo>[
       OnnxValueInfo.tensor(decOut, OnnxDataType.kFloat, decShape),
@@ -614,15 +632,19 @@ class _SourceModel {
     throw FormatException('$label 没有 IO "$name"');
   }
 
-  void requireTensorIo(
+  /// 校验 IO 的元素类型 / 秩 / 静态维，返回实际元素类型（[elemType] 或
+  /// [alternativeElemTypes] 之一）。
+  int requireTensorIo(
     String name, {
     required int elemType,
     required int rank,
+    Set<int> alternativeElemTypes = const <int>{},
     Map<int, int> staticDims = const <int, int>{},
   }) {
     final OnnxValueInfo v = _io(name);
     final int? actualType = v.elemType;
-    if (actualType != elemType) {
+    if (actualType == null ||
+        (actualType != elemType && !alternativeElemTypes.contains(actualType))) {
       throw FormatException('$label "$name" 元素类型应为 $elemType，实际 $actualType');
     }
     final List<Object>? dims = v.dims;
@@ -635,6 +657,7 @@ class _SourceModel {
         throw FormatException('$label "$name" 第 ${e.key} 维应为 ${e.value}，实际 $d');
       }
     }
+    return actualType;
   }
 
   /// IO 某一维的静态值；符号维返回 null。

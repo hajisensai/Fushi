@@ -12,7 +12,7 @@
 ///   --dart-define=ASR_LANG=ja|en         模型包语言（决定文件名与词表形态）；缺省 ja
 ///   --dart-define=ASR_AUDIO=<wav/mp3>    音频；缺省用 test/asr/fixtures/ja_tts_16k.wav
 ///                                        （相对 fushi/，仅桌面可读）
-///   --dart-define=ASR_EXPECT=<text>      期望文本子串（比较前去空白/标点并小写）；
+///   --dart-define=ASR_EXPECT=<text>      期望文本子串（比较前去空白/标点并小写；`ANY` = 不断言，只看输出）；
 ///                                        缺省「今日はいい天気ですね」
 ///
 /// 跑法（Windows，从 fushi/）：
@@ -70,6 +70,12 @@ final String _kAudio = _param(
   defaultValue: 'test/asr/fixtures/ja_tts_16k.wav',
 );
 final String _kExpect = _param('ASR_EXPECT', defaultValue: '今日はいい天気ですね');
+
+/// ASR_EXPECT=ANY：不断言文本（探索性跑一个还没有参考文本的语言包，只看输出）。
+void _expectTranscript(String actual) {
+  if (_kExpect == 'ANY') return;
+  expect(_normalize(actual), contains(_normalize(_kExpect)));
+}
 
 List<AsrEncoderBucket>? _bucketsFromEnv(String spec) {
   if (spec.isEmpty) return null;
@@ -224,11 +230,11 @@ void main() {
       'resolution=${r.resolution}',
     );
     expect(r.resolution.effective, OnnxExecutionProvider.cpu);
-    expect(_normalize(r.text), contains(_normalize(_kExpect)));
+    _expectTranscript(r.text);
     expect(r.result.cueCount, greaterThan(0));
     final String srt = File(r.result.srtPath).readAsStringSync();
     expect(srt, contains('-->'));
-    expect(_normalize(srt), contains(_normalize(_kExpect)));
+    _expectTranscript(srt);
   }, timeout: const Timeout(Duration(minutes: 10)));
 
   testWidgets('GPU fp32（auto）：真加速 EP 跑通且文本一致', (WidgetTester tester) async {
@@ -258,7 +264,7 @@ void main() {
       'rtf=${(r.wall.inMilliseconds / r.result.totalMs).toStringAsFixed(3)} '
       'resolution=${r.resolution}',
     );
-    expect(_normalize(r.text), contains(_normalize(_kExpect)));
+    _expectTranscript(r.text);
     if (available.isNotEmpty) {
       // 有加速 EP 编译在运行时里：必须真落到它上，不允许静默退 CPU。
       expect(
@@ -338,14 +344,7 @@ Future<void> _phaseBenchmark({
     }
     segments.addAll(await vad.flush());
     vadClock.stop();
-    final AsrTransducerDecoder decoder = AsrTransducerDecoder(
-      encoder: sessions.encoder,
-      decoder: sessions.decoder,
-      joiner: sessions.joiner,
-      tokens: sessions.tokens,
-      greedy: sessions.greedy,
-      staticEncoders: sessions.staticEncoders,
-    );
+    final AsrTransducerDecoder decoder = sessions.newDecoder();
     // ignore: avoid_print
     print(
       '[asr-e2e][bench][$label] greedyGraph=${decoder.usesGreedyGraph} '

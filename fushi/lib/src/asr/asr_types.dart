@@ -173,13 +173,41 @@ class AsrTokenTable {
       }
       flushBytes();
       final String raw = tokenAt(id);
-      outTokens.add(
-        isSentencePiece ? raw.replaceAll(sentencePieceSpace, ' ') : raw,
-      );
+      outTokens.add(isSentencePiece ? _materializeSentencePiece(raw) : raw);
       outTimes.add(timesMs[i]);
     }
     flushBytes();
     return (tokens: outTokens, timesMs: outTimes);
+  }
+
+  /// 标点类 token（`▁,` / `▁。` / `.` 等：去掉 `▁` 后没有字母数字、也不是 CJK
+  /// 文字）。X-ASR 中文词表把标点导成带 `▁` 的独立 token，照搬成空格会得到
+  /// `你好 ，世界`；英语 BPE 里标点本来就不带 `▁`，此规则对它无影响。
+  static final RegExp _punctuationOnly = RegExp(
+    r'^[^\p{L}\p{N}\p{M}]+$',
+    unicode: true,
+  );
+
+  /// 不用空格分词的文字：汉字（含扩展区与兼容区）、假名、泰文。X-ASR 中文词表
+  /// 每个汉字都是独立的 `▁昨` / `▁天` token，照 SentencePiece 惯例还原会得到
+  /// `昨 天 是`。韩文用空格分词，不在此列。
+  static final RegExp _startsWithScriptWithoutSpaces = RegExp(
+    r'^[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}]',
+    unicode: true,
+  );
+
+  /// `▁` → 空格；但**标点 token 前、不用空格的文字前不留空格**。
+  static String _materializeSentencePiece(String raw) {
+    if (!raw.startsWith(sentencePieceSpace)) {
+      return raw.replaceAll(sentencePieceSpace, ' ');
+    }
+    final String body = raw
+        .substring(sentencePieceSpace.length)
+        .replaceAll(sentencePieceSpace, ' ');
+    if (body.isEmpty) return ' ';
+    if (_punctuationOnly.hasMatch(body)) return body;
+    if (_startsWithScriptWithoutSpaces.hasMatch(body)) return body;
+    return ' $body';
   }
 }
 

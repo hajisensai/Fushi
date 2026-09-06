@@ -22,6 +22,7 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi/src/asr/asr_encoder_buckets.dart';
 import 'package:fushi/src/asr/asr_fbank.dart';
 import 'package:fushi/src/asr/asr_greedy_graph.dart' show AsrGreedyGraphIo;
+import 'package:fushi/src/asr/asr_model_manifest.dart' show AsrIndexType;
 import 'package:fushi/src/asr/asr_types.dart';
 import 'package:fushi/src/asr/asr_transcribe_job.dart'
     show AsrBatchDecoder, AsrBatchShaper, AsrPipelinedDecoder;
@@ -100,6 +101,8 @@ class AsrTransducerDecoder
     required AsrTokenTable tokens,
     AsrFbank fbank = const AsrFbank(),
     this.lookaheadFrames = kDefaultLookaheadFrames,
+    this.contextSize = kAsrDecoderContextSize,
+    this.indexType = AsrIndexType.int64,
     OnnxSession? greedy,
     AsrStaticEncoderPool? staticEncoders,
   }) : _encoder = encoder,
@@ -115,7 +118,31 @@ class AsrTransducerDecoder
     if (lookaheadFrames < 1) {
       throw ArgumentError.value(lookaheadFrames, 'lookaheadFrames', '至少 1');
     }
+    if (contextSize < 1) {
+      throw ArgumentError.value(contextSize, 'contextSize', '至少 1');
+    }
   }
+
+  /// decoder 输入 `y[N, ctx]` 的上下文长度（模型包契约
+  /// `AsrModelPack.decoderContextSize`：ReazonSpeech / LibriHeavy 等为 2，MDCC
+  /// 粤语为 1）。
+  final int contextSize;
+
+  /// `x_lens` / `y` 的整型宽度（`AsrModelPack.indexType`）。
+  final AsrIndexType indexType;
+
+  /// 按 [indexType] 造索引张量（值域都在 int32 内：帧数与 token id）。
+  OnnxTensor _indexTensor(List<int> values, List<int> shape) =>
+      switch (indexType) {
+        AsrIndexType.int64 => OnnxTensor.int64(
+          Int64List.fromList(values),
+          shape,
+        ),
+        AsrIndexType.int32 => OnnxTensor.int32(
+          Int32List.fromList(values),
+          shape,
+        ),
+      };
 
   /// sherpa-onnx `PadSequence` 的填充值：`log(1e-10)`。
   static const double kFeaturePadValue = -23.025850929940457;
@@ -290,7 +317,7 @@ class AsrTransducerDecoder
               cols,
               kAsrFeatureDim,
             ]),
-            AsrModelIo.encoderInputXLens: OnnxTensor.int64(xLens, <int>[rows]),
+            AsrModelIo.encoderInputXLens: _indexTensor(xLens, <int>[rows]),
           });
       encoderOutAll = _require(encOut, AsrModelIo.encoderOutput);
       encoderLens = _require(encOut, AsrModelIo.encoderOutputLens);
@@ -389,7 +416,7 @@ class AsrTransducerDecoder
     final int unk = _tokens.unkId;
     final List<List<int>> hyps = List<List<int>>.generate(
       batch,
-      (_) => <int>[blank, blank],
+      (_) => List<int>.filled(contextSize, blank, growable: true),
     );
     final List<List<int>> frames = List<List<int>>.generate(
       batch,
@@ -497,7 +524,7 @@ class AsrTransducerDecoder
     return List<AsrDecodedSegment>.generate(batch, (int i) {
       return AsrDecodedSegment.fromTokenIds(
         table: _tokens,
-        ids: hyps[i].sublist(kAsrDecoderContextSize),
+        ids: hyps[i].sublist(contextSize),
         offsetsMs: <int>[for (final int f in frames[i]) f * kAsrEncoderFrameMs],
       );
     });
@@ -547,26 +574,22 @@ class AsrTransducerDecoder
     });
   }
 
-  /// 对 [indices] 里的每条假设取最后 [kAsrDecoderContextSize] 个 token 作为 `y`，
+  /// 对 [indices] 里的每条假设取最后 [contextSize] 个 token 作为 `y`，
   /// 一次 decoder 前向；返回扁平 `[rows, decoder_dim]`。
   Future<Float32List> _runDecoder(
     List<int> indices,
     List<List<int>> hyps,
   ) async {
     final int rows = indices.length;
-    final Int64List y = Int64List(rows * kAsrDecoderContextSize);
+    final List<int> y = List<int>.filled(rows * contextSize, 0);
     for (int r = 0; r < rows; r++) {
       final List<int> hyp = hyps[indices[r]];
-      for (int k = 0; k < kAsrDecoderContextSize; k++) {
-        y[r * kAsrDecoderContextSize + k] =
-            hyp[hyp.length - kAsrDecoderContextSize + k];
+      for (int k = 0; k < contextSize; k++) {
+        y[r * contextSize + k] = hyp[hyp.length - contextSize + k];
       }
     }
     final Map<String, OnnxTensor> out = await _decoder.run(<String, OnnxTensor>{
-      AsrModelIo.decoderInputY: OnnxTensor.int64(y, <int>[
-        rows,
-        kAsrDecoderContextSize,
-      ]),
+      AsrModelIo.decoderInputY: _indexTensor(y, <int>[rows, contextSize]),
     });
     final OnnxTensor decoderOut = _require(out, AsrModelIo.decoderOutput);
     if (decoderOut.shape.length != 2 || decoderOut.shape[0] != rows) {
@@ -596,6 +619,8 @@ class AsrTransducerDecoder
     switch (lens.type) {
       case OnnxTensorType.int64:
         return lens.intData![i];
+      case OnnxTensorType.int32:
+        return lens.int32Data![i];
       case OnnxTensorType.float32:
         return lens.floatData![i].round();
     }

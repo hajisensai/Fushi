@@ -60,16 +60,31 @@ void main() {
   group('每个包的清单构成', () {
     for (final AsrModelPack pack in kAsrModelPacks) {
       group(pack.id, () {
-        test('八个角色各一、文件名唯一，且每个角色都能按角色取到', () {
+        test('八个角色各一、每个变体内文件名唯一，且每个角色都能按角色取到', () {
           expect(pack.files, hasLength(AsrModelRole.values.length));
           expect(
             pack.files.map((AsrModelFile f) => f.role).toSet(),
             AsrModelRole.values.toSet(),
           );
-          expect(
-            pack.files.map((AsrModelFile f) => f.fileName).toSet(),
-            hasLength(pack.files.length),
-          );
+          // 上游没给 int8 decoder 的包两变体共用同一个 decoder 文件，所以只要求
+          // 「每个变体内」文件名唯一（同名条目必须指向同一 URL、同一字节数）。
+          for (final AsrEncoderVariant variant in AsrEncoderVariant.values) {
+            final List<AsrModelFile> files = pack.filesFor(variant);
+            expect(
+              files.map((AsrModelFile f) => f.fileName).toSet(),
+              hasLength(files.length),
+              reason: variant.name,
+            );
+          }
+          final Map<String, AsrModelFile> byName = <String, AsrModelFile>{};
+          for (final AsrModelFile f in pack.files) {
+            final AsrModelFile? seen = byName[f.fileName];
+            if (seen != null) {
+              expect(f.url, seen.url, reason: f.fileName);
+              expect(f.expectedBytes, seen.expectedBytes, reason: f.fileName);
+            }
+            byName[f.fileName] = f;
+          }
           for (final AsrModelRole role in AsrModelRole.values) {
             expect(pack.fileForRole(role).role, role);
           }

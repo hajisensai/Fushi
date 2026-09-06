@@ -320,6 +320,11 @@ class _OrtOnnxSession implements OnnxSession {
               tensor.intData!,
               tensor.shape,
             );
+          case OnnxTensorType.int32:
+            ortInputs[entry.key] = await OrtValue.fromList(
+              tensor.int32Data!,
+              tensor.shape,
+            );
         }
       }
 

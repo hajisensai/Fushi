@@ -197,6 +197,19 @@ class _FakeService extends AsrTranscriptionService {
   }
 }
 
+/// 在语言下拉里选 [language]：先点开下拉（触发器显示当前语言），再点菜单里的
+/// 母语名条目（触发器与条目可能同文，取最后一个即菜单项）。
+Future<void> pickLanguage(WidgetTester tester, AsrLanguage language) async {
+  await tester.tap(find.byKey(const ValueKey<String>('asr-transcribe-language')));
+  await tester.pumpAndSettle();
+  final Finder entry = find.text(language.nativeName).last;
+  // 菜单有最大高度、可滚动；条目可能在视口外。
+  await tester.ensureVisible(entry);
+  await tester.pumpAndSettle();
+  await tester.tap(entry);
+  await tester.pumpAndSettle();
+}
+
 void main() {
   late Directory tmp;
 
@@ -279,8 +292,7 @@ void main() {
     // 初值来自偏好（ja），模型就绪行标出日语包名。
     expect(service.planLanguages, <AsrLanguage>[AsrLanguage.japanese]);
 
-    await tester.tap(find.text(t.audiobook_transcribe_language_en));
-    await tester.pumpAndSettle();
+    await pickLanguage(tester, AsrLanguage.english);
     expect(service.planLanguages.last, AsrLanguage.english);
     expect(savedLanguage, 'en');
 
@@ -459,8 +471,17 @@ void main() {
     expect(asrLanguageHintFromBookLanguage('en_GB'), AsrLanguage.english);
     expect(asrLanguageHintFromBookLanguage('EN'), AsrLanguage.english);
     expect(asrLanguageHintFromBookLanguage(' en-US '), AsrLanguage.english);
-    expect(asrLanguageHintFromBookLanguage('zh'), isNull);
-    expect(asrLanguageHintFromBookLanguage('zh-Hans-CN'), isNull);
+    // 中文按口语分流：`zh` / `zh-CN` / `zh-Hant-TW` 是普通话，`HK` / `MO` 子标签与
+    // `yue` 主子标签是粤语。
+    expect(asrLanguageHintFromBookLanguage('zh'), AsrLanguage.mandarin);
+    expect(asrLanguageHintFromBookLanguage('zh-CN'), AsrLanguage.mandarin);
+    expect(asrLanguageHintFromBookLanguage('zh-Hant-TW'), AsrLanguage.mandarin);
+    expect(asrLanguageHintFromBookLanguage('zh-HK'), AsrLanguage.cantonese);
+    expect(asrLanguageHintFromBookLanguage('zh-Hant-HK'), AsrLanguage.cantonese);
+    expect(asrLanguageHintFromBookLanguage('yue'), AsrLanguage.cantonese);
+    expect(asrLanguageHintFromBookLanguage('ko-KR'), AsrLanguage.korean);
+    expect(asrLanguageHintFromBookLanguage('de'), isNull);
+    expect(asrLanguageHintFromBookLanguage('zh-Hans-CN'), AsrLanguage.mandarin);
     expect(asrLanguageHintFromBookLanguage(null), isNull);
     expect(asrLanguageHintFromBookLanguage(''), isNull);
     expect(asrLanguageHintFromBookLanguage('   '), isNull);
@@ -484,8 +505,7 @@ void main() {
     expect(savedLanguage, 'ja', reason: 'hint 只作初值，不写回偏好');
 
     // 用户手动切回日语才写回。
-    await tester.tap(find.text(t.audiobook_transcribe_language_ja));
-    await tester.pumpAndSettle();
+    await pickLanguage(tester, AsrLanguage.japanese);
     expect(service.planLanguages.last, AsrLanguage.japanese);
     expect(savedLanguage, 'ja');
   });

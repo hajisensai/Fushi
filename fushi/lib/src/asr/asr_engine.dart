@@ -12,6 +12,7 @@ import 'package:fushi/src/asr/asr_encoder_buckets.dart';
 import 'package:fushi/src/asr/asr_greedy_graph.dart';
 import 'package:fushi/src/asr/asr_model_manifest.dart';
 import 'package:fushi/src/asr/asr_model_store.dart';
+import 'package:fushi/src/asr/asr_transducer_decoder.dart';
 import 'package:fushi/src/asr/asr_types.dart';
 import 'package:fushi/src/onnx/onnx_inference.dart';
 import 'package:fushi/src/onnx/onnx_inference_ort.dart';
@@ -154,6 +155,8 @@ class AsrEngineSessions {
     this.greedy,
     this.greedyUnavailableReason,
     this.staticEncoders,
+    this.decoderContextSize = kAsrDecoderContextSize,
+    this.indexType = AsrIndexType.int64,
   });
 
   final OnnxSession encoder;
@@ -162,6 +165,24 @@ class AsrEngineSessions {
   final OnnxSession vad;
   final AsrTokenTable tokens;
   final AsrEncoderVariant variant;
+
+  /// 模型包契约（`AsrModelPack.decoderContextSize` / `indexType`），随会话一起
+  /// 交给解码器。
+  final int decoderContextSize;
+  final AsrIndexType indexType;
+
+  /// 用本套会话构造批量解码器。in-process 与 isolate 两条装配路径都从这里拿，
+  /// 包契约参数只在此处传递一次。
+  AsrTransducerDecoder newDecoder() => AsrTransducerDecoder(
+    encoder: encoder,
+    decoder: decoder,
+    joiner: joiner,
+    tokens: tokens,
+    greedy: greedy,
+    staticEncoders: staticEncoders,
+    contextSize: decoderContextSize,
+    indexType: indexType,
+  );
 
   /// 派生的贪心 Loop 图会话（CPU）；null 表示拼装/建会话失败，解码器回退到
   /// Dart 逐帧循环（结果等价，只是慢）。回退不静默：原因在
@@ -383,6 +404,8 @@ class AsrEngineLoader {
         tokens: tokens,
         variant: variant,
         encoderResolution: encoderResolution,
+        decoderContextSize: store.pack.decoderContextSize,
+        indexType: store.pack.indexType,
       );
     } catch (_) {
       await closeOpened();

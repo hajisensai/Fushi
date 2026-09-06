@@ -285,6 +285,71 @@ void main() {
     expect(() => build(contextSize: 0), throwsArgumentError);
   });
 
+  test('decoder y 是 int32 时：then 分支先 Cast 再喂 decoder，主图 IO 仍是 int64', () {
+    // X-ASR 中文导出把 y 导成 int32（asr_model_manifest.dart 文件头表格）。
+    final OnnxModel m = OnnxModel.decode(decoder);
+    final OnnxGraph g = m.graph!;
+    g.inputs = <OnnxValueInfo>[
+      OnnxValueInfo.tensor('y', OnnxDataType.kInt32, <Object>['N', 2]),
+    ];
+    m.graph = g;
+    final OnnxGraph out = OnnxModel.decode(build(dec: m.encode())).graph!;
+    // 主图契约不变：encoder_out_lens int64 进、emitted int64 出。
+    expect(out.inputs[1].elemType, OnnxDataType.kInt64);
+    expect(out.outputs.single.elemType, OnnxDataType.kInt64);
+    final OnnxGraph body = out.nodes
+        .singleWhere((OnnxNode n) => n.opType == 'Loop')
+        .attributes
+        .single
+        .g!;
+    // loop-carried ctx 仍是 int64。
+    expect(body.inputs[2].elemType, OnnxDataType.kInt64);
+    final OnnxNode gate = body.nodes.singleWhere(
+      (OnnxNode n) => n.opType == 'If',
+    );
+    final OnnxGraph thenBranch = gate.attributes
+        .singleWhere((OnnxAttribute a) => a.name == 'then_branch')
+        .g!;
+    final OnnxNode cast = thenBranch.nodes.first;
+    expect(cast.opType, 'Cast');
+    expect(cast.inputs, <String>['${AsrGreedyGraphIo.prefix}ctx']);
+    expect(
+      cast.attributes.single.i,
+      OnnxDataType.kInt32,
+      reason: 'Cast to=int32',
+    );
+    // decoder 的 Gather 读的是 Cast 之后的张量，而不是 int64 的 ctx。
+    final OnnxNode gather = thenBranch.nodes.singleWhere(
+      (OnnxNode n) => n.opType == 'Gather',
+    );
+    expect(gather.inputs, contains(cast.outputs.single));
+    expect(gather.inputs, isNot(contains('${AsrGreedyGraphIo.prefix}ctx')));
+    // int64 源模型不插 Cast。
+    final OnnxGraph plainThen = OnnxModel.decode(build())
+        .graph!
+        .nodes
+        .singleWhere((OnnxNode n) => n.opType == 'Loop')
+        .attributes
+        .single
+        .g!
+        .nodes
+        .singleWhere((OnnxNode n) => n.opType == 'If')
+        .attributes
+        .singleWhere((OnnxAttribute a) => a.name == 'then_branch')
+        .g!;
+    expect(plainThen.nodes.where((OnnxNode n) => n.opType == 'Cast'), isEmpty);
+  });
+
+  test('decoder y 是 float 等其它类型时抛 FormatException', () {
+    final OnnxModel m = OnnxModel.decode(decoder);
+    final OnnxGraph g = m.graph!;
+    g.inputs = <OnnxValueInfo>[
+      OnnxValueInfo.tensor('y', OnnxDataType.kFloat, <Object>['N', 2]),
+    ];
+    m.graph = g;
+    expect(() => build(dec: m.encode()), throwsFormatException);
+  });
+
   test('decoder_out 第二维是符号维时抛 FormatException', () {
     final OnnxModel m = OnnxModel.decode(decoder);
     final OnnxGraph g = m.graph!;

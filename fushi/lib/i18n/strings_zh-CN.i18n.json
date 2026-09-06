@@ -4277,8 +4277,6 @@
   "audiobook_subtitle_source_transcribe_hint": "用设备端语音模型从已选音频生成",
   "audiobook_transcribe_intro": "在本机用所选语言的语音模型转录音频并生成用于对齐的字幕，不会上传任何内容。",
   "audiobook_transcribe_language_label": "语音语言",
-  "audiobook_transcribe_language_ja": "日语",
-  "audiobook_transcribe_language_en": "英语",
   "asr_models_section": "语音识别模型",
   "asr_models_section_summary": "有声书设备端转录用的模型，只下载你需要的语言。",
   "asr_models_status_ready": "已下载 · 占用 $size",

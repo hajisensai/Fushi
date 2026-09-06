@@ -1,45 +1,48 @@
 /// 有声书 ASR 模型清单：按**语言**分成模型包，每包列出文件名、下载直链、
-/// 预期字节数、角色。
+/// 预期字节数、角色，以及该包与通用解码路径的两个契约参数（decoder 上下文长度、
+/// 索引张量整型）。
 ///
-/// 两个包都是 sherpa-onnx 导出的非流式 zipformer2 RNN-T，IO 名称/形状完全同构
-/// （见 `asr_types.dart` 文件头），只有词表不同：
+/// 全部包都是 sherpa-onnx / icefall 导出的非流式 zipformer2 RNN-T，IO **名称**
+/// 完全同构（见 `asr_types.dart` 文件头），差异只在词表与两个契约参数——每个包
+/// 的 IO 都已用 `onnx` 逐文件核实（2026-09-06，`inspect_models.py`）：
 ///
-/// - **日语** ReazonSpeech k2-v2（字符级，5224 token，Apache-2.0，
-///   `reazon-research/reazonspeech-k2-v2`）。
-/// - **英语** LibriHeavy zipformer（BPE 756 token、带标点与大小写、byte-fallback，
-///   Apache-2.0，`csukuangfj/sherpa-onnx-zipformer-en-libriheavy-20230830-large-punct-case`）。
-///   选它而不是 GigaSpeech / LibriSpeech 导出：LibriHeavy 本身就是 5 万小时**有声书**
-///   语料，且输出**带标点大小写**——切句（`asr_cue_builder.dart` 按句末标点切）与
-///   正文匹配都直接受益；GigaSpeech 版只吐全大写无标点。2026-09-05 用 int8 对
+/// | 语言 | 模型 | 词表 | ctx | 索引整型 | 备注 |
+/// |---|---|---|---|---|---|
+/// | ja | ReazonSpeech k2-v2 | 字符级 5224 | 2 | int64 | Apache-2.0 |
+/// | en | LibriHeavy zipformer large punct-case | BPE 756、byte-fallback | 2 | int64 | 5 万小时**有声书**语料、输出带标点大小写 |
+/// | zh | X-ASR zipformer zh-en punct（2026-06-03） | BPE 5000，含中英标点 token | 2 | **int32** | 词表无 `<unk>`；官方 `icefall-asr-zipformer-wenetspeech` 不带标点故不选 |
+/// | yue | MDCC zipformer（2024-03-11） | 字符级 4852 | **1** | int64 | icefall `mdcc` recipe，只此一个非流式粤语 transducer |
+/// | ko | zipformer-korean-2024-06-24 | BPE 5000，含 `.`/`?`/`,` | 2 | int64 | |
+/// | ru | zipformer-ru-2025-04-20 | BPE 500 小写 | 2 | int64 | int8 仓库不含 int8 decoder，两变体共用 fp32 decoder |
+/// | vi | zipformer-vi-2025-04-20 | BPE 2000 全大写 | 2 | int64 | 同上 |
+/// | th | GigaSpeech 2 泰语 zipformer（2024-06-20） | BPE 2000 | 2 | int64 | icefall 仓库 `exp/` 里的导出 |
+///
+/// - **英语**选 LibriHeavy 而不是 GigaSpeech / LibriSpeech 导出：LibriHeavy 本身就是
+///   有声书语料，且输出**带标点大小写**——切句（`asr_cue_builder.dart` 按句末标点切）
+///   与正文匹配都直接受益；GigaSpeech 版只吐全大写无标点。2026-09-05 用 int8 对
 ///   《Harry Potter and the Philosopher's Stone》前 90 s 实测：
 ///   `Mr. and Mrs. Dursley, of No. 4 Privet Drive, were proud to say that they
 ///   were perfectly normal thank you very. "Much.`——大写字母/数字大量走 byte-fallback
 ///   token（`<0x50>` = P），解码时必须把连续字节 token 合成 UTF-8（`AsrTokenTable`）。
+/// - **上下文长度**（[AsrModelPack.decoderContextSize]）决定 decoder 输入 `y[N,ctx]`
+///   与 Loop 图里 loop-carried `ctx` 的宽度；写错 ORT 建会话就报形状不符，不会静默
+///   出错字。
+/// - **索引整型**（[AsrModelPack.indexType]）决定 `x_lens` / `y` / `encoder_out_lens`
+///   是 int64 还是 int32：X-ASR 的导出脚本把全部索引张量导成 int32，喂 int64 会被
+///   ORT 直接拒绝。
 ///
 /// VAD 是 k2-fsa 在 sherpa-onnx release 里重新导出的 silero-vad v4（Apache-2.0，
 /// 仅 16 kHz 分支），每个包各带一份（643 KB，与「一个包一个目录、删包即清空」的
 /// 磁盘语义一致，不值得为它引入跨包共享目录）。
 ///
-/// 字节数**精确值**已核实（HF API `?blobs=true` 与 GitHub release 资产大小）：
-///
-/// | 包 | 文件 | 字节 |
-/// |---|---|---|
-/// | ja | `encoder-epoch-99-avg-1.onnx` | 592,347,848 |
-/// | ja | `encoder-epoch-99-avg-1.int8.onnx` | 154,670,139 |
-/// | ja | `decoder-epoch-99-avg-1.onnx` / `.int8.onnx` | 11,767,836 / 2,959,337 |
-/// | ja | `joiner-epoch-99-avg-1.onnx` / `.int8.onnx` | 10,720,115 / 2,696,970 |
-/// | ja | `tokens.txt` | 45,754（5224 行） |
-/// | en | `encoder-epoch-16-avg-2.onnx` | 259,807,148 |
-/// | en | `encoder-epoch-16-avg-2.int8.onnx` | 68,780,141 |
-/// | en | `decoder-epoch-16-avg-2.onnx` / `.int8.onnx` | 2,616,855 / 670,318 |
-/// | en | `joiner-epoch-16-avg-2.onnx` / `.int8.onnx` | 1,551,717 / 391,431 |
-/// | en | `tokens.txt` | 7,368（756 行） |
-/// | 共 | `silero_vad.onnx` | 643,854 |
+/// 字节数**精确值**已核实（HF API `?blobs=true` 与 GitHub release 资产大小），
+/// 每个 [AsrModelFile.expectedBytes] 旁不再重复列表。
 ///
 /// decoder / joiner 也分精度：它们恒在 CPU 上逐帧跑，2026-09-05 真机对拍
 /// （无職転生 01 前 10 分钟、185 段）：编码器走 DirectML 时 fp32 decoder/joiner 的
 /// ASR 阶段 6.18 s、int8 8.66 s（小批次动态量化开销大于收益）；编码器走 CPU int8 时
-/// 两者持平。故 fp32 变体全套 fp32、int8 变体全套 int8。
+/// 两者持平。故 fp32 变体全套 fp32、int8 变体全套 int8（上游没给 int8 decoder 的包
+/// 两变体共用 fp32 decoder——它只有几 MB，且 int8 decoder 本来就不省时间）。
 ///
 /// 日语镜像：`DeL-TaiseiOzaki/sherpa-onnx-zipformer-ja-reazonspeech-2024-08-01`
 /// 只托管了 int8 编码器、fp32 decoder/joiner 与 `tokens.txt`，作为第二源；
@@ -53,16 +56,28 @@ import 'dart:io';
 
 import 'package:fushi/src/onnx/model_file_downloader.dart';
 
-/// 转录语言（= 模型包）。持久化用 [AsrLanguage.tag]（BCP-47 主子标签），不要存
-/// 枚举下标。
+/// 转录语言。持久化用 [AsrLanguage.tag]（BCP-47 主子标签；粤语用 ISO 639-3
+/// `yue` 与普通话 `zh` 区分——它们是两种口语，不是两种书写），不要存枚举下标。
+///
+/// [nativeName] 是该语言母语者认得的名字，转录弹层下拉与设置页模型行直接显示它
+/// （与界面语言选择器同一惯例，`FushiLocalisations.localeNames`），不走 i18n。
 enum AsrLanguage {
-  japanese('ja'),
-  english('en');
+  japanese('ja', '日本語'),
+  english('en', 'English'),
+  mandarin('zh', '中文（普通话）'),
+  cantonese('yue', '粵語'),
+  korean('ko', '한국어'),
+  russian('ru', 'Русский'),
+  vietnamese('vi', 'Tiếng Việt'),
+  thai('th', 'ไทย');
 
-  const AsrLanguage(this.tag);
+  const AsrLanguage(this.tag, this.nativeName);
 
-  /// BCP-47 主子标签（`ja` / `en`），偏好与任务目录用它。
+  /// 语言标签（`ja` / `en` / `zh` / `yue` …），偏好与任务目录用它。
   final String tag;
+
+  /// 母语写法的语言名。
+  final String nativeName;
 
   /// 由标签反查；不认识的标签返回 null（调用方自己定兜底）。
   static AsrLanguage? fromTag(String? tag) {
@@ -71,10 +86,37 @@ enum AsrLanguage {
     }
     return null;
   }
+
+  /// 由书的语言标签（EPUB `dc:language`，如 `ja-JP` / `en_GB` / `EN` / `zh-Hant-HK`）
+  /// 推转录语言：先看整串是否指向粤语（`yue` 主子标签、或 `zh` 带 `HK` / `MO` /
+  /// `yue` 子标签），否则取主子标签查 [fromTag]。空 / 空白 / 没有对应语音模型的
+  /// 语言返回 null，调用方回退到「上次选择」偏好。
+  static AsrLanguage? fromBookLanguage(String? bookLanguage) {
+    if (bookLanguage == null) return null;
+    final String trimmed = bookLanguage.trim();
+    if (trimmed.isEmpty) return null;
+    final List<String> parts = trimmed
+        .split(RegExp(r'[-_]'))
+        .map((String s) => s.toLowerCase())
+        .toList();
+    final String primary = parts.first;
+    if (primary == 'yue') return cantonese;
+    if (primary == 'zh' || primary == 'cmn') {
+      const Set<String> cantoneseSubtags = <String>{'hk', 'mo', 'yue'};
+      final bool isCantonese = parts
+          .skip(1)
+          .any((String s) => cantoneseSubtags.contains(s));
+      return isCantonese ? cantonese : mandarin;
+    }
+    return fromTag(primary);
+  }
 }
 
 /// 编码器变体：fp32 给 GPU EP，int8 给 CPU（选择策略见 `asr_engine.dart`）。
 enum AsrEncoderVariant { fp32, int8 }
+
+/// 模型索引张量（`x_lens` / `y` / `encoder_out_lens`）的整型宽度。
+enum AsrIndexType { int64, int32 }
 
 /// 模型文件角色。
 enum AsrModelRole {
@@ -124,6 +166,8 @@ class AsrModelPack {
     required this.displayName,
     required this.sourceUrl,
     required this.files,
+    this.decoderContextSize = 2,
+    this.indexType = AsrIndexType.int64,
   });
 
   final AsrLanguage language;
@@ -138,8 +182,15 @@ class AsrModelPack {
   /// 模型主页（设置页「来源」链接）。
   final String sourceUrl;
 
-  /// 全部已知文件，按角色唯一。
+  /// 全部已知文件。角色互不相同；上游没给 int8 decoder 的包，int8 角色与 fp32
+  /// 角色可以指向**同一个**文件名（[filesFor] 每个变体内文件名仍唯一）。
   final List<AsrModelFile> files;
+
+  /// decoder 输入 `y[N, ctx]` 的上下文长度（模型元数据 `context_size`）。
+  final int decoderContextSize;
+
+  /// 索引张量整型宽度（文件头表格按模型核实）。
+  final AsrIndexType indexType;
 
   /// 按角色取清单条目。
   AsrModelFile fileForRole(AsrModelRole role) =>
@@ -173,6 +224,8 @@ const AsrModelFile kAsrVadFile = AsrModelFile(
   expectedBytes: 643854,
   role: AsrModelRole.vad,
 );
+
+const String _kHf = 'https://huggingface.co/';
 
 // ── 日语：ReazonSpeech k2-v2 ────────────────────────────────────────────────
 
@@ -298,10 +351,376 @@ const AsrModelPack kAsrEnglishPack = AsrModelPack(
   ],
 );
 
+// ── 普通话：X-ASR zipformer zh-en punct（2026-06-03） ───────────────────────
+//
+// 全部索引张量是 int32（`y` / `x_lens` / `encoder_out_lens`）；词表无 `<unk>`，
+// 标点是带 `▁` 的独立 token（`▁，` / `▁。` / `▁,`），`AsrTokenTable.materialize`
+// 不会在标点前留空格。
+
+const String _kZhRepo =
+    'csukuangfj2/sherpa-onnx-x-asr-zipformer-transducer-zh-en-punct-2026-06-03';
+const String _kZhInt8Repo =
+    'csukuangfj2/'
+    'sherpa-onnx-x-asr-zipformer-transducer-zh-en-punct-int8-2026-06-03';
+const String _kZhBase = '$_kHf$_kZhRepo/resolve/main/';
+const String _kZhInt8Base = '$_kHf$_kZhInt8Repo/resolve/main/';
+
+const AsrModelPack kAsrMandarinPack = AsrModelPack(
+  language: AsrLanguage.mandarin,
+  id: 'x-asr-zipformer-zh-en-punct-2026-06-03',
+  displayName: 'X-ASR zipformer zh-en (punct)',
+  sourceUrl: '$_kHf$_kZhRepo',
+  indexType: AsrIndexType.int32,
+  files: <AsrModelFile>[
+    AsrModelFile(
+      fileName: 'encoder-epoch-99-avg-1.onnx',
+      url: '${_kZhBase}encoder-epoch-99-avg-1.onnx',
+      expectedBytes: 599081672,
+      role: AsrModelRole.encoderFp32,
+    ),
+    AsrModelFile(
+      fileName: 'encoder-epoch-99-avg-1.int8.onnx',
+      url: '${_kZhInt8Base}encoder-epoch-99-avg-1.int8.onnx',
+      expectedBytes: 161744450,
+      role: AsrModelRole.encoderInt8,
+    ),
+    AsrModelFile(
+      fileName: 'decoder-epoch-99-avg-1.onnx',
+      url: '${_kZhBase}decoder-epoch-99-avg-1.onnx',
+      expectedBytes: 11309084,
+      role: AsrModelRole.decoderFp32,
+    ),
+    // 上游 int8 仓库没有 int8 decoder：两变体共用 fp32 decoder。
+    AsrModelFile(
+      fileName: 'decoder-epoch-99-avg-1.onnx',
+      url: '${_kZhBase}decoder-epoch-99-avg-1.onnx',
+      expectedBytes: 11309084,
+      role: AsrModelRole.decoderInt8,
+    ),
+    AsrModelFile(
+      fileName: 'joiner-epoch-99-avg-1.onnx',
+      url: '${_kZhBase}joiner-epoch-99-avg-1.onnx',
+      expectedBytes: 10260467,
+      role: AsrModelRole.joinerFp32,
+    ),
+    AsrModelFile(
+      fileName: 'joiner-epoch-99-avg-1.int8.onnx',
+      url: '${_kZhInt8Base}joiner-epoch-99-avg-1.int8.onnx',
+      expectedBytes: 2581422,
+      role: AsrModelRole.joinerInt8,
+    ),
+    AsrModelFile(
+      fileName: 'tokens.txt',
+      url: '${_kZhBase}tokens.txt',
+      expectedBytes: 58806,
+      role: AsrModelRole.tokens,
+    ),
+    kAsrVadFile,
+  ],
+);
+
+// ── 粤语：MDCC zipformer（2024-03-11，icefall mdcc recipe） ─────────────────
+//
+// decoder `context_size=1`（`y[N,1]`）；导出在 icefall 仓库的 `exp/` 目录下。
+
+const String _kYueRepo = 'zrjin/icefall-asr-mdcc-zipformer-2024-03-11';
+const String _kYueBase = '$_kHf$_kYueRepo/resolve/main/';
+
+const AsrModelPack kAsrCantonesePack = AsrModelPack(
+  language: AsrLanguage.cantonese,
+  id: 'zipformer-cantonese-mdcc-2024-03-11',
+  displayName: 'MDCC zipformer (Cantonese)',
+  sourceUrl: '$_kHf$_kYueRepo',
+  decoderContextSize: 1,
+  files: <AsrModelFile>[
+    AsrModelFile(
+      fileName: 'encoder-epoch-45-avg-35.onnx',
+      url: '${_kYueBase}exp/encoder-epoch-45-avg-35.onnx',
+      expectedBytes: 260000054,
+      role: AsrModelRole.encoderFp32,
+    ),
+    AsrModelFile(
+      fileName: 'encoder-epoch-45-avg-35.int8.onnx',
+      url: '${_kYueBase}exp/encoder-epoch-45-avg-35.int8.onnx',
+      expectedBytes: 69285978,
+      role: AsrModelRole.encoderInt8,
+    ),
+    AsrModelFile(
+      fileName: 'decoder-epoch-45-avg-35.onnx',
+      url: '${_kYueBase}exp/decoder-epoch-45-avg-35.onnx',
+      expectedBytes: 10989238,
+      role: AsrModelRole.decoderFp32,
+    ),
+    AsrModelFile(
+      fileName: 'decoder-epoch-45-avg-35.int8.onnx',
+      url: '${_kYueBase}exp/decoder-epoch-45-avg-35.int8.onnx',
+      expectedBytes: 2751632,
+      role: AsrModelRole.decoderInt8,
+    ),
+    AsrModelFile(
+      fileName: 'joiner-epoch-45-avg-35.onnx',
+      url: '${_kYueBase}exp/joiner-epoch-45-avg-35.onnx',
+      expectedBytes: 9956760,
+      role: AsrModelRole.joinerFp32,
+    ),
+    AsrModelFile(
+      fileName: 'joiner-epoch-45-avg-35.int8.onnx',
+      url: '${_kYueBase}exp/joiner-epoch-45-avg-35.int8.onnx',
+      expectedBytes: 2504924,
+      role: AsrModelRole.joinerInt8,
+    ),
+    AsrModelFile(
+      fileName: 'tokens.txt',
+      url: '${_kYueBase}data/lang_char/tokens.txt',
+      expectedBytes: 42525,
+      role: AsrModelRole.tokens,
+    ),
+    kAsrVadFile,
+  ],
+);
+
+// ── 韩语：zipformer-korean-2024-06-24 ────────────────────────────────────────
+
+const String _kKoRepo = 'k2-fsa/sherpa-onnx-zipformer-korean-2024-06-24';
+const String _kKoBase = '$_kHf$_kKoRepo/resolve/main/';
+
+const AsrModelPack kAsrKoreanPack = AsrModelPack(
+  language: AsrLanguage.korean,
+  id: 'zipformer-korean-2024-06-24',
+  displayName: 'Zipformer (Korean, 2024-06-24)',
+  sourceUrl: '$_kHf$_kKoRepo',
+  files: <AsrModelFile>[
+    AsrModelFile(
+      fileName: 'encoder-epoch-99-avg-1.onnx',
+      url: '${_kKoBase}encoder-epoch-99-avg-1.onnx',
+      expectedBytes: 260990607,
+      role: AsrModelRole.encoderFp32,
+    ),
+    AsrModelFile(
+      fileName: 'encoder-epoch-99-avg-1.int8.onnx',
+      url: '${_kKoBase}encoder-epoch-99-avg-1.int8.onnx',
+      expectedBytes: 70784728,
+      role: AsrModelRole.encoderInt8,
+    ),
+    AsrModelFile(
+      fileName: 'decoder-epoch-99-avg-1.onnx',
+      url: '${_kKoBase}decoder-epoch-99-avg-1.onnx',
+      expectedBytes: 11309084,
+      role: AsrModelRole.decoderFp32,
+    ),
+    AsrModelFile(
+      fileName: 'decoder-epoch-99-avg-1.int8.onnx',
+      url: '${_kKoBase}decoder-epoch-99-avg-1.int8.onnx',
+      expectedBytes: 2844692,
+      role: AsrModelRole.decoderInt8,
+    ),
+    AsrModelFile(
+      fileName: 'joiner-epoch-99-avg-1.onnx',
+      url: '${_kKoBase}joiner-epoch-99-avg-1.onnx',
+      expectedBytes: 10260467,
+      role: AsrModelRole.joinerFp32,
+    ),
+    AsrModelFile(
+      fileName: 'joiner-epoch-99-avg-1.int8.onnx',
+      url: '${_kKoBase}joiner-epoch-99-avg-1.int8.onnx',
+      expectedBytes: 2581421,
+      role: AsrModelRole.joinerInt8,
+    ),
+    AsrModelFile(
+      fileName: 'tokens.txt',
+      url: '${_kKoBase}tokens.txt',
+      expectedBytes: 60246,
+      role: AsrModelRole.tokens,
+    ),
+    kAsrVadFile,
+  ],
+);
+
+// ── 俄语：zipformer-ru-2025-04-20 ────────────────────────────────────────────
+
+const String _kRuRepo = 'csukuangfj/sherpa-onnx-zipformer-ru-2025-04-20';
+const String _kRuInt8Repo = 'csukuangfj/sherpa-onnx-zipformer-ru-int8-2025-04-20';
+const String _kRuBase = '$_kHf$_kRuRepo/resolve/main/';
+const String _kRuInt8Base = '$_kHf$_kRuInt8Repo/resolve/main/';
+
+const AsrModelPack kAsrRussianPack = AsrModelPack(
+  language: AsrLanguage.russian,
+  id: 'zipformer-ru-2025-04-20',
+  displayName: 'Zipformer (Russian, 2025-04-20)',
+  sourceUrl: '$_kHf$_kRuRepo',
+  files: <AsrModelFile>[
+    AsrModelFile(
+      fileName: 'encoder.onnx',
+      url: '${_kRuBase}encoder.onnx',
+      expectedBytes: 261058126,
+      role: AsrModelRole.encoderFp32,
+    ),
+    AsrModelFile(
+      fileName: 'encoder.int8.onnx',
+      url: '${_kRuInt8Base}encoder.int8.onnx',
+      expectedBytes: 70876638,
+      role: AsrModelRole.encoderInt8,
+    ),
+    AsrModelFile(
+      fileName: 'decoder.onnx',
+      url: '${_kRuBase}decoder.onnx',
+      expectedBytes: 2093080,
+      role: AsrModelRole.decoderFp32,
+    ),
+    AsrModelFile(
+      fileName: 'decoder.onnx',
+      url: '${_kRuBase}decoder.onnx',
+      expectedBytes: 2093080,
+      role: AsrModelRole.decoderInt8,
+    ),
+    AsrModelFile(
+      fileName: 'joiner.onnx',
+      url: '${_kRuBase}joiner.onnx',
+      expectedBytes: 1026462,
+      role: AsrModelRole.joinerFp32,
+    ),
+    AsrModelFile(
+      fileName: 'joiner.int8.onnx',
+      url: '${_kRuInt8Base}joiner.int8.onnx',
+      expectedBytes: 259417,
+      role: AsrModelRole.joinerInt8,
+    ),
+    AsrModelFile(
+      fileName: 'tokens.txt',
+      url: '${_kRuBase}tokens.txt',
+      expectedBytes: 6388,
+      role: AsrModelRole.tokens,
+    ),
+    kAsrVadFile,
+  ],
+);
+
+// ── 越南语：zipformer-vi-2025-04-20 ──────────────────────────────────────────
+
+const String _kViRepo = 'csukuangfj/sherpa-onnx-zipformer-vi-2025-04-20';
+const String _kViInt8Repo = 'csukuangfj/sherpa-onnx-zipformer-vi-int8-2025-04-20';
+const String _kViBase = '$_kHf$_kViRepo/resolve/main/';
+const String _kViInt8Base = '$_kHf$_kViInt8Repo/resolve/main/';
+
+const AsrModelPack kAsrVietnamesePack = AsrModelPack(
+  language: AsrLanguage.vietnamese,
+  id: 'zipformer-vi-2025-04-20',
+  displayName: 'Zipformer (Vietnamese, 2025-04-20)',
+  sourceUrl: '$_kHf$_kViRepo',
+  files: <AsrModelFile>[
+    AsrModelFile(
+      fileName: 'encoder-epoch-12-avg-8.onnx',
+      url: '${_kViBase}encoder-epoch-12-avg-8.onnx',
+      expectedBytes: 261057692,
+      role: AsrModelRole.encoderFp32,
+    ),
+    AsrModelFile(
+      fileName: 'encoder-epoch-12-avg-8.int8.onnx',
+      url: '${_kViInt8Base}encoder-epoch-12-avg-8.int8.onnx',
+      expectedBytes: 70876129,
+      role: AsrModelRole.encoderInt8,
+    ),
+    AsrModelFile(
+      fileName: 'decoder-epoch-12-avg-8.onnx',
+      url: '${_kViBase}decoder-epoch-12-avg-8.onnx',
+      expectedBytes: 5165084,
+      role: AsrModelRole.decoderFp32,
+    ),
+    AsrModelFile(
+      fileName: 'decoder-epoch-12-avg-8.onnx',
+      url: '${_kViBase}decoder-epoch-12-avg-8.onnx',
+      expectedBytes: 5165084,
+      role: AsrModelRole.decoderInt8,
+    ),
+    AsrModelFile(
+      fileName: 'joiner-epoch-12-avg-8.onnx',
+      url: '${_kViBase}joiner-epoch-12-avg-8.onnx',
+      expectedBytes: 4104465,
+      role: AsrModelRole.joinerFp32,
+    ),
+    AsrModelFile(
+      fileName: 'joiner-epoch-12-avg-8.int8.onnx',
+      url: '${_kViInt8Base}joiner-epoch-12-avg-8.int8.onnx',
+      expectedBytes: 1033417,
+      role: AsrModelRole.joinerInt8,
+    ),
+    AsrModelFile(
+      fileName: 'tokens.txt',
+      url: '${_kViBase}tokens.txt',
+      expectedBytes: 25847,
+      role: AsrModelRole.tokens,
+    ),
+    kAsrVadFile,
+  ],
+);
+
+// ── 泰语：GigaSpeech 2 zipformer（2024-06-20，icefall 仓库 exp/ 导出） ────────
+
+const String _kThRepo = 'yfyeung/icefall-asr-gigaspeech2-th-zipformer-2024-06-20';
+const String _kThBase = '$_kHf$_kThRepo/resolve/main/';
+
+const AsrModelPack kAsrThaiPack = AsrModelPack(
+  language: AsrLanguage.thai,
+  id: 'zipformer-th-gigaspeech2-2024-06-20',
+  displayName: 'GigaSpeech 2 zipformer (Thai)',
+  sourceUrl: '$_kHf$_kThRepo',
+  files: <AsrModelFile>[
+    AsrModelFile(
+      fileName: 'encoder-epoch-12-avg-5.onnx',
+      url: '${_kThBase}exp/encoder-epoch-12-avg-5.onnx',
+      expectedBytes: 592348221,
+      role: AsrModelRole.encoderFp32,
+    ),
+    AsrModelFile(
+      fileName: 'encoder-epoch-12-avg-5.int8.onnx',
+      url: '${_kThBase}exp/encoder-epoch-12-avg-5.int8.onnx',
+      expectedBytes: 154671320,
+      role: AsrModelRole.encoderInt8,
+    ),
+    AsrModelFile(
+      fileName: 'decoder-epoch-12-avg-5.onnx',
+      url: '${_kThBase}exp/decoder-epoch-12-avg-5.onnx',
+      expectedBytes: 5165084,
+      role: AsrModelRole.decoderFp32,
+    ),
+    AsrModelFile(
+      fileName: 'decoder-epoch-12-avg-5.int8.onnx',
+      url: '${_kThBase}exp/decoder-epoch-12-avg-5.int8.onnx',
+      expectedBytes: 1308690,
+      role: AsrModelRole.decoderInt8,
+    ),
+    AsrModelFile(
+      fileName: 'joiner-epoch-12-avg-5.onnx',
+      url: '${_kThBase}exp/joiner-epoch-12-avg-5.onnx',
+      expectedBytes: 4104465,
+      role: AsrModelRole.joinerFp32,
+    ),
+    AsrModelFile(
+      fileName: 'joiner-epoch-12-avg-5.int8.onnx',
+      url: '${_kThBase}exp/joiner-epoch-12-avg-5.int8.onnx',
+      expectedBytes: 1033417,
+      role: AsrModelRole.joinerInt8,
+    ),
+    AsrModelFile(
+      fileName: 'tokens.txt',
+      url: '${_kThBase}data/lang_bpe_2000/tokens.txt',
+      expectedBytes: 39142,
+      role: AsrModelRole.tokens,
+    ),
+    kAsrVadFile,
+  ],
+);
+
 /// 全部模型包，与 [AsrLanguage.values] 同序。
 const List<AsrModelPack> kAsrModelPacks = <AsrModelPack>[
   kAsrJapanesePack,
   kAsrEnglishPack,
+  kAsrMandarinPack,
+  kAsrCantonesePack,
+  kAsrKoreanPack,
+  kAsrRussianPack,
+  kAsrVietnamesePack,
+  kAsrThaiPack,
 ];
 
 /// 某语言的模型包。

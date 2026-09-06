@@ -11,22 +11,33 @@ library;
 
 import 'dart:typed_data';
 
-/// 支持的张量元素类型（两个子系统只需要 float32 与 int64）。
-enum OnnxTensorType { float32, int64 }
+/// 支持的张量元素类型：float32 / int64 给 OCR 与大多数 ASR 模型；int32 给把
+/// 索引张量导成 int32 的 ASR 导出（X-ASR zipformer，`asr_model_manifest.dart`）。
+enum OnnxTensorType { float32, int64, int32 }
 
 /// 不可变张量：扁平数据 + 形状。
 class OnnxTensor {
   OnnxTensor.float32(Float32List data, this.shape)
       : type = OnnxTensorType.float32,
         floatData = data,
-        intData = null {
+        intData = null,
+        int32Data = null {
     _checkLength(data.length);
   }
 
   OnnxTensor.int64(Int64List data, this.shape)
       : type = OnnxTensorType.int64,
         floatData = null,
-        intData = data {
+        intData = data,
+        int32Data = null {
+    _checkLength(data.length);
+  }
+
+  OnnxTensor.int32(Int32List data, this.shape)
+      : type = OnnxTensorType.int32,
+        floatData = null,
+        intData = null,
+        int32Data = data {
     _checkLength(data.length);
   }
 
@@ -34,6 +45,7 @@ class OnnxTensor {
   final List<int> shape;
   final Float32List? floatData;
   final Int64List? intData;
+  final Int32List? int32Data;
 
   int get elementCount => shape.fold<int>(1, (int acc, int dim) => acc * dim);
 

@@ -22,6 +22,7 @@ typedef AsrGreedyGraphBuilder =
       required Uint8List joinerOnnx,
       required int blankId,
       required int unkId,
+      int contextSize,
     });
 
 /// 派生图的格式版本：拼装逻辑（IO 名、语义）变了就 +1，旧缓存自动重建。
@@ -156,6 +157,7 @@ class AsrModelStore {
       'joinerBytes': joiner.lengthSync(),
       'blankId': blankId,
       'unkId': unkId,
+      'contextSize': pack.decoderContextSize,
     };
     if (graph.existsSync() && graph.lengthSync() > 0 && meta.existsSync()) {
       try {
@@ -170,6 +172,7 @@ class AsrModelStore {
       joinerOnnx: await joiner.readAsBytes(),
       blankId: blankId,
       unkId: unkId,
+      contextSize: pack.decoderContextSize,
     );
     // 先写临时名再 rename：崩溃不留半个 onnx 被下次当成品加载。
     final File tmp = File('${graph.path}.part');

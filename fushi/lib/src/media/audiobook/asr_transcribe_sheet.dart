@@ -82,23 +82,15 @@ Future<String?> showAsrTranscribeSheet({
   );
 }
 
-/// 语音语言的用户可见名（转录弹层分段按钮与设置页模型行共用）。
-String asrLanguageLabel(AsrLanguage language) => switch (language) {
-      AsrLanguage.japanese => t.audiobook_transcribe_language_ja,
-      AsrLanguage.english => t.audiobook_transcribe_language_en,
-    };
+/// 语音语言的用户可见名（转录弹层下拉与设置页模型行共用）：母语写法，与界面
+/// 语言选择器同一惯例（`FushiLocalisations.localeNames`），不走 i18n。
+String asrLanguageLabel(AsrLanguage language) => language.nativeName;
 
-/// 纯函数：由书的语言标签（EPUB `dc:language`，如 `ja-JP` / `en_GB` / `EN`）推
-/// 转录弹层的语言初值——取 BCP-47 主子标签（`-` / `_` 前那段，大小写不敏感）再
-/// [AsrLanguage.fromTag]；空 / 空白 / 没有对应语音模型的语言（如 `zh`）返回 null，
-/// 调用方回退到「上次选择」偏好。
-AsrLanguage? asrLanguageHintFromBookLanguage(String? bookLanguage) {
-  if (bookLanguage == null) return null;
-  final String trimmed = bookLanguage.trim();
-  if (trimmed.isEmpty) return null;
-  final String primary = trimmed.split(RegExp(r'[-_]')).first.toLowerCase();
-  return AsrLanguage.fromTag(primary);
-}
+/// 纯函数：由书的语言标签（EPUB `dc:language`，如 `ja-JP` / `en_GB` / `EN` /
+/// `zh-HK`）推转录弹层的语言初值，规则见 [AsrLanguage.fromBookLanguage]；空 /
+/// 空白 / 没有对应语音模型的语言返回 null，调用方回退到「上次选择」偏好。
+AsrLanguage? asrLanguageHintFromBookLanguage(String? bookLanguage) =>
+    AsrLanguage.fromBookLanguage(bookLanguage);
 
 /// 字幕 / 对齐文件行被点击时的来源选择。
 enum SubtitleSourceChoice {
@@ -719,19 +711,18 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
             style: tokens.type.listTitle,
           ),
           SizedBox(height: tokens.spacing.gap),
-          adaptiveSegmentedButton<AsrLanguage>(
-            context: context,
-            segments: <ButtonSegment<AsrLanguage>>[
+          // 语言多到分段按钮放不下（8 种起步），改下拉；每项副标题是该语言的模型名。
+          GamepadMenuDropdown<AsrLanguage>(
+            key: const ValueKey<String>('asr-transcribe-language'),
+            entries: <GamepadDropdownEntry<AsrLanguage>>[
               for (final AsrLanguage language in AsrLanguage.values)
-                ButtonSegment<AsrLanguage>(
-                  value: language,
-                  label: Text(asrLanguageLabel(language)),
-                ),
+                (value: language, label: asrLanguageLabel(language)),
             ],
-            selected: <AsrLanguage>{_language},
-            onSelectionChanged: !_canChangePreference
-                ? (Set<AsrLanguage> _) {}
-                : (Set<AsrLanguage> s) => _changeLanguage(s.first),
+            selected: _language,
+            enabled: _canChangePreference,
+            entrySubtitle: (AsrLanguage language) =>
+                asrModelPackFor(language).displayName,
+            onChanged: _changeLanguage,
           ),
           SizedBox(height: tokens.spacing.rowVertical),
           Text(

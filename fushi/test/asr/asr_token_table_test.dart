@@ -91,6 +91,32 @@ void main() {
       expect(m.timesMs, <int>[10, 20, 30, 40]);
     });
 
+    test('带 ▁ 的标点 / 汉字 / 假名 / 泰文 token 前不留空格（X-ASR 中文词表每字一个 ▁ token）', () {
+      final AsrTokenTable zh = AsrTokenTable.parse(
+        '<blk>\t0\n<sos/eos>\t1\n▁,\t2\n▁。\t3\n▁!?\t4\n▁hello\t5\n▁你\t6\n▁好\t7\n'
+        '▁\t8\n▁あ\t9\n▁ที่\t10\n▁그\t11\n',
+      );
+      expect(zh.isSentencePiece, isTrue);
+      final ({List<String> tokens, List<int> timesMs}) m = zh.materialize(
+        <int>[6, 7, 2, 5, 3, 4, 8, 9, 10, 11],
+        <int>[1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+      );
+      expect(m.tokens, <String>[
+        '你',
+        '好',
+        ',',
+        ' hello',
+        '。',
+        '!?',
+        ' ',
+        'あ',
+        'ที่',
+        // 韩文用空格分词，照 SentencePiece 惯例保留。
+        ' 그',
+      ]);
+      expect(m.timesMs, <int>[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    });
+
     test('连续 ASCII byte token 合成一段，时间取首字节', () {
       // <0x50><0x4F> + ter + . → 'PO' 'ter' '.'
       final ({List<String> tokens, List<int> timesMs}) m = table.materialize(

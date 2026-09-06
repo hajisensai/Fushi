@@ -340,14 +340,7 @@ Future<void> _isolateMain(_IsolateArgs args) async {
         greedyUnavailableReason: sessions.greedyUnavailableReason,
       ),
     );
-    final AsrTransducerDecoder decoder = AsrTransducerDecoder(
-      encoder: sessions.encoder,
-      decoder: sessions.decoder,
-      joiner: sessions.joiner,
-      tokens: sessions.tokens,
-      greedy: sessions.greedy,
-      staticEncoders: sessions.staticEncoders,
-    );
+    final AsrTransducerDecoder decoder = sessions.newDecoder();
     // 静态桶模式段切短到 10 s（见 kAsrStaticMaxSegmentMs），否则保持 VAD 默认。
     final int maxSegmentMs = sessions.staticEncoders != null
         ? kAsrStaticMaxSegmentMs
