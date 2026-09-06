@@ -22,6 +22,7 @@ import 'package:fushi/src/sync/interconnect_device_name.dart';
 import 'package:fushi/src/sync/fushi_remote_api_handlers.dart';
 import 'package:fushi/src/sync/pairing/fushi_pairing_protocol.dart';
 import 'package:fushi/src/sync/fushi_remote_lookup_service.dart';
+import 'package:fushi/src/sync/remote_lookup_routes.dart';
 import 'package:fushi_core/fushi_core.dart' show mimeTypeForFilePath;
 import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
@@ -198,14 +199,16 @@ class FushiSyncServer {
   final Uint8List? Function(String dictionary, String path)?
       _dictionaryMediaProvider;
   final DateTime Function() _now;
-  final Map<String, _RemoteAudioToken> _remoteAudioTokens =
-      <String, _RemoteAudioToken>{};
 
-  /// BUG-908(a)：音频查词 token 的数量上限。POST 侧签发前先按 TTL prune、再淘汰最旧
-  /// 者收束到上限内（对照 [_maxPairSessions]）。只 POST /api/lookup/audio 却从不 GET
-  /// 取文件的调用者会让 [_remoteAudioTokens] 无界堆积（内存膨胀 DoS）——GET 侧的
-  /// [_pruneAudioTokens] 永远等不到，故上限必须在 POST 侧强制。
-  static const int _maxAudioTokens = 128;
+  /// 单词音频 token（TTL 5 分钟 + BUG-908(a) 上限 128）与查词/制卡端点的 handler
+  /// 正文都收在 [RemoteLookupRoutes]，与 YomitanApiServer 共用一份。
+  late final RemoteAudioTokenStore _audioTokens =
+      RemoteAudioTokenStore(now: _now);
+  late final RemoteLookupRoutes _lookupRoutes = RemoteLookupRoutes(
+    audioTokens: _audioTokens,
+    lookup: _remoteLookupService,
+    mining: _miningService,
+  );
 
   final Map<String, _VideoStreamToken> _videoStreamTokens =
       <String, _VideoStreamToken>{};
@@ -402,7 +405,7 @@ class FushiSyncServer {
         // Remote lookup audio file URLs are handed to platform audio players,
         // which issue a bare GET without Authorization. The lookup endpoint
         // stays authenticated; the file endpoint is guarded by an opaque,
-        // short-lived in-memory id in _handleAudioFile.
+        // short-lived in-memory id in RemoteLookupRoutes.handleAudioFile.
         if (_isLookupAudioFilePath(request.url.path)) {
           return innerHandler(request);
         }
@@ -544,15 +547,15 @@ class FushiSyncServer {
     }
     if (reqPath == '/api/mine') {
       if (method != 'POST') return shelf.Response(405);
-      return _handleMine(request);
+      return _lookupRoutes.handleMine(request);
     }
     if (reqPath == '/api/mine/forward') {
       if (method != 'POST') return shelf.Response(405);
-      return _handleMineForward(request);
+      return _lookupRoutes.handleMineForward(request);
     }
     if (reqPath.startsWith('/api/anki/note-type/')) {
       if (method != 'POST') return shelf.Response(405);
-      return _handleAnkiNoteType(request, reqPath);
+      return _lookupRoutes.handleAnkiNoteType(request, reqPath);
     }
     if (reqPath.startsWith('/api/anki/media/dedup/')) {
       if (method != 'POST') return shelf.Response(405);
@@ -564,11 +567,11 @@ class FushiSyncServer {
     }
     if (reqPath == '/api/duplicate') {
       if (method != 'POST') return shelf.Response(405);
-      return _handleDuplicate(request);
+      return _lookupRoutes.handleDuplicate(request);
     }
     if (reqPath == '/api/extension/status') {
       if (method != 'POST') return shelf.Response(405);
-      return _jsonResponse(<String, dynamic>{
+      return jsonResponse(<String, dynamic>{
         'app': 'fushi',
         'ready': true,
         'port': port,
@@ -715,7 +718,7 @@ class FushiSyncServer {
     );
     if (v1PinRequired) return _pairDenied('upgrade_required');
     String? name;
-    final Map<String, dynamic>? body = await _readJsonObject(request);
+    final Map<String, dynamic>? body = await readJsonObjectBody(request);
     final String? reported = body?['name']?.toString().trim();
     // Reject a "localhost"/loopback advertisement so it is never stored as this
     // peer's device name — the paired-devices list would otherwise show
@@ -730,7 +733,7 @@ class FushiSyncServer {
       remoteAddress: pairRemote,
     ));
     if (!approved) return _pairDenied('declined');
-    return _jsonResponse(<String, dynamic>{'token': _token});
+    return jsonResponse(<String, dynamic>{'token': _token});
   }
 
   /// A 403 carrying a machine-readable [reason] ('declined' | 'unavailable' |
@@ -753,7 +756,7 @@ class FushiSyncServer {
     if (request.method.toUpperCase() != 'POST') return shelf.Response(405);
     // No approval UI wired → never start a pairing handshake unattended.
     if (onPairRequest == null) return _pairDenied('unavailable');
-    final Map<String, dynamic>? body = await _readJsonObject(request);
+    final Map<String, dynamic>? body = await readJsonObjectBody(request);
     final String? clientNonce = body?['clientNonce']?.toString();
     if (clientNonce == null || clientNonce.trim().isEmpty) {
       return shelf.Response(400, body: 'Missing clientNonce');
@@ -845,7 +848,7 @@ class FushiSyncServer {
     _pairSessions[sessionId] = stored;
 
     // 响应只含 sessionId / pinRequired / hostNonce —— 绝不含 PIN 明文。
-    return _jsonResponse(<String, dynamic>{
+    return jsonResponse(<String, dynamic>{
       'sessionId': sessionId,
       'pinRequired': pinRequired,
       'hostNonce': hostNonce,
@@ -859,7 +862,7 @@ class FushiSyncServer {
     if (request.method.toUpperCase() != 'POST') return shelf.Response(405);
     final Future<bool> Function(FushiPairRequest)? approve = onPairRequest;
     if (approve == null) return _pairDenied('unavailable');
-    final Map<String, dynamic>? body = await _readJsonObject(request);
+    final Map<String, dynamic>? body = await readJsonObjectBody(request);
     final String? sessionId = body?['sessionId']?.toString();
     if (sessionId == null || sessionId.trim().isEmpty) {
       return shelf.Response(400, body: 'Missing sessionId');
@@ -959,7 +962,7 @@ class FushiSyncServer {
     // client。任一缺失（纯协议单测无 DB / 旧 client 不上报 deviceId）则回退共享
     // [_token]——既有行为零变化、老设备继续可配对（Never break userspace）。
     final String issuedToken = await _issuePeerTokenOrFallback(session);
-    return _jsonResponse(<String, dynamic>{
+    return jsonResponse(<String, dynamic>{
       'token': issuedToken,
       if (_securityContext != null && _hostFingerprint != null)
         'hostFingerprint': _hostFingerprint,
@@ -1035,11 +1038,11 @@ class FushiSyncServer {
     }
     if (reqPath == '/api/lookup/audio') {
       if (method != 'POST') return shelf.Response(405);
-      return _handleAudioLookup(request);
+      return _lookupRoutes.handleAudioLookup(request);
     }
     if (reqPath == '/api/lookup/audio/file') {
       if (method != 'GET' && method != 'HEAD') return shelf.Response(405);
-      return _handleAudioFile(request, method == 'HEAD');
+      return _lookupRoutes.handleAudioFile(request, headOnly: method == 'HEAD');
     }
     return shelf.Response.notFound('Not found');
   }
@@ -1047,76 +1050,15 @@ class FushiSyncServer {
   Future<shelf.Response> _handleDictionaryLookup(shelf.Request request) async {
     final FushiRemoteLookupService? service = _remoteLookupService;
     if (service == null) return shelf.Response.notFound('Remote lookup off');
-    final Map<String, dynamic>? body = await _readJsonObject(request);
+    final Map<String, dynamic>? body = await readJsonObjectBody(request);
     if (body == null) return shelf.Response(400, body: 'Invalid JSON');
     // 契约与 YomitanApiServer 共享（BUG-530，单一真相源）。
-    return _jsonResponse(await buildRemoteDictionaryLookupResponse(
+    return jsonResponse(await buildRemoteDictionaryLookupResponse(
       body,
       lookup: service,
       history: _historyService,
     ));
   }
-
-  Future<shelf.Response> _handleAudioLookup(shelf.Request request) async {
-    final FushiRemoteLookupService? service = _remoteLookupService;
-    if (service == null) return shelf.Response.notFound('Remote lookup off');
-    final Map<String, dynamic>? body = await _readJsonObject(request);
-    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
-
-    final String expression = body['expression']?.toString() ?? '';
-    final String reading = body['reading']?.toString() ?? '';
-    if (expression.trim().isEmpty) return _audioMissResponse();
-
-    final RemoteAudioLookup? lookup = await service.lookupAudio(
-      expression: expression,
-      reading: reading,
-    );
-    if (lookup == null) return _audioMissResponse();
-
-    // BUG-908(a)：签发前先按 TTL 清过期，再把数量收束到 [_maxAudioTokens] 内（淘汰
-    // 最旧者）。否则只 POST 不 GET 的调用者会让 [_remoteAudioTokens] 无界膨胀——GET
-    // 侧的 [_pruneAudioTokens] 永远不会被触发。
-    _pruneAudioTokens();
-    _enforceAudioTokenCap();
-    final String id = _generateAudioToken();
-    _remoteAudioTokens[id] = _RemoteAudioToken(
-      bytes: lookup.bytes,
-      contentType: lookup.contentType,
-      createdAt: _now(),
-    );
-    final Uri url = request.requestedUri.replace(
-      path: '/api/lookup/audio/file',
-      queryParameters: <String, String>{'id': id},
-    );
-    return _jsonResponse(<String, dynamic>{
-      'type': 'audioResult',
-      'url': url.toString(),
-      'contentType': lookup.contentType,
-    });
-  }
-
-  shelf.Response _handleAudioFile(shelf.Request request, bool headOnly) {
-    _pruneAudioTokens();
-    final String? id = request.url.queryParameters['id'];
-    final _RemoteAudioToken? token = id == null ? null : _remoteAudioTokens[id];
-    if (token == null) return shelf.Response.notFound('Not found');
-    // TODO-766: 命中即续期。重置该 token 的时间戳，使其 5 分钟窗口从「最近一次被
-    // 访问」起算，正在使用中的音频不会中途被 [_pruneAudioTokens] 清掉。
-    token.createdAt = _now();
-    return shelf.Response.ok(
-      headOnly ? null : token.bytes,
-      headers: <String, String>{
-        'Content-Type': token.contentType,
-        'Content-Length': '${token.bytes.length}',
-      },
-    );
-  }
-
-  shelf.Response _audioMissResponse() => _jsonResponse(<String, dynamic>{
-        'type': 'audioResult',
-        'url': null,
-        'contentType': null,
-      });
 
   static bool _isDictionaryMediaPath(String urlPath) =>
       urlPath == 'api/media/dictionary';
@@ -1175,65 +1117,9 @@ class FushiSyncServer {
     );
   }
 
-  Future<shelf.Response> _handleMine(shelf.Request request) async {
-    final FushiRemoteMiningService? svc = _miningService;
-    if (svc == null) return shelf.Response.notFound('Mining off');
-    final Map<String, dynamic>? body = await _readJsonObject(request);
-    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
-    // 契约与 YomitanApiServer 共享（BUG-530，单一真相源）。fields 缺失/类型错 → 400。
-    try {
-      return _jsonResponse(await buildRemoteMineResponse(body, mining: svc));
-    } on FormatException {
-      return shelf.Response(400, body: 'Missing fields');
-    }
-  }
-
-  /// 互联「制卡到服务端」：客户端转发未渲染的制卡请求 + 全部媒体字节，本机用自己的 Anki
-  /// 配置落卡。契约与 YomitanApiServer 共享（buildForwardedMineResponse，单一真相源）。
-  /// rawPayloadJson 缺失/类型错 → 400；未注入挖词 service → 404。
-  Future<shelf.Response> _handleMineForward(shelf.Request request) async {
-    final FushiRemoteMiningService? svc = _miningService;
-    if (svc == null) return shelf.Response.notFound('Mining off');
-    final Map<String, dynamic>? body = await _readJsonObject(request);
-    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
-    try {
-      return _jsonResponse(await buildForwardedMineResponse(body, mining: svc));
-    } on FormatException {
-      return shelf.Response(400, body: 'Missing rawPayloadJson');
-    }
-  }
-
-  /// 互联 Lapis 客制化：客户端（手机 AnkiDroid 等无模板 API 的平台）经互联读写本机
-  /// Anki 的 note type（读定义 / 写 styling / 写卡模板）。契约与 YomitanApiServer 共享
-  /// （buildAnkiNoteType*Response，单一真相源）。未注入挖词 service → 404（旧版客户端
-  /// 不会打这些端点，旧版主机对新客户端返回 404 → 客户端按「后端不支持」降级）；
-  /// modelName/css/templates 缺失或类型错 → 400。
-  Future<shelf.Response> _handleAnkiNoteType(
-    shelf.Request request,
-    String path,
-  ) async {
-    final FushiRemoteMiningService? svc = _miningService;
-    if (svc == null) return shelf.Response.notFound('Mining off');
-    final Map<String, dynamic>? body = await _readJsonObject(request);
-    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
-    try {
-      switch (path) {
-        case '/api/anki/note-type/read':
-          return _jsonResponse(
-              await buildAnkiNoteTypeReadResponse(body, mining: svc));
-        case '/api/anki/note-type/styling':
-          return _jsonResponse(
-              await buildAnkiNoteTypeStylingResponse(body, mining: svc));
-        case '/api/anki/note-type/templates':
-          return _jsonResponse(
-              await buildAnkiNoteTypeTemplatesResponse(body, mining: svc));
-        default:
-          return shelf.Response.notFound('Unknown endpoint');
-      }
-    } on FormatException catch (e) {
-      return shelf.Response(400, body: e.message);
-    }
-  }
+  // /api/mine、/api/mine/forward、/api/anki/note-type/*、/api/duplicate、
+  // /api/lookup/audio[/file] 的 handler 正文在 [RemoteLookupRoutes]（与
+  // YomitanApiServer 共用）；本文件只留互联独有的端点。
 
   /// 互联媒体存储优化：客户端（手机）经互联对**主机端** collection.media 做字节级
   /// 去重——卡片落在主机的 Anki 上，重复媒体也堆在主机，客户端本机根本没有那个
@@ -1245,15 +1131,15 @@ class FushiSyncServer {
   ) async {
     final FushiRemoteMiningService? svc = _miningService;
     if (svc == null) return shelf.Response.notFound('Mining off');
-    final Map<String, dynamic>? body = await _readJsonObject(request);
+    final Map<String, dynamic>? body = await readJsonObjectBody(request);
     if (body == null) return shelf.Response(400, body: 'Invalid JSON');
     try {
       switch (path) {
         case '/api/anki/media/dedup/probe':
-          return _jsonResponse(
+          return jsonResponse(
               await buildAnkiMediaDedupProbeResponse(mining: svc));
         case '/api/anki/media/dedup/run':
-          return _jsonResponse(
+          return jsonResponse(
               await buildAnkiMediaDedupRunResponse(body, mining: svc));
         default:
           return shelf.Response.notFound('Unknown endpoint');
@@ -1263,24 +1149,11 @@ class FushiSyncServer {
     }
   }
 
-  /// TODO-1176：浏览器扩展查词弹窗制卡按钮真查重（`+`→`✓`）。契约与 YomitanApiServer
-  /// 共享（单一真相源）。未注入挖词 service 时返回 `{duplicate:false}`（弹窗降级为「+」，
-  /// 绝不阻断查词）。
-  Future<shelf.Response> _handleDuplicate(shelf.Request request) async {
-    final FushiRemoteMiningService? svc = _miningService;
-    final Map<String, dynamic>? body = await _readJsonObject(request);
-    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
-    if (svc == null) {
-      return _jsonResponse(<String, dynamic>{'duplicate': false});
-    }
-    return _jsonResponse(await buildRemoteDuplicateResponse(body, mining: svc));
-  }
-
   /// TODO-963 M2: 无鉴权轻量探测。手动输入 IP 的 client 在「填 IP → 探测 → 配对」流程
   /// 里用它确认地址可达、读 host 展示名 + 是否支持 v2 配对 + （TLS 开时）host 证书指纹
   /// 供 TOFU 钉扎。只读、不含任何数据/凭据。绝不回传 token。
   shelf.Response _handlePing() {
-    return _jsonResponse(<String, dynamic>{
+    return jsonResponse(<String, dynamic>{
       // 互联 wire 服务字段：与 client 侧 probeFushiPing 的 app == 'fushi'
       // 同版本对切（R11 已接受跨版本配对探测互不识别）。
       'app': 'fushi',
@@ -1299,7 +1172,7 @@ class FushiSyncServer {
     // 漫画 P3 能力协商：仅接线了 OCR 任务管理器的 host 带 `mangaOcr` 字段；老
     // host 响应里没有该字段 → client 隐藏「已配对主机」OCR 选项（零破坏）。
     final Map<String, Object?>? mangaOcr = await _mangaOcrJobs?.capability();
-    return _jsonResponse(<String, dynamic>{
+    return jsonResponse(<String, dynamic>{
       if (mangaOcr != null) 'mangaOcr': mangaOcr,
       'liveLibrary': <String, dynamic>{
         'dictionaries': lib,
@@ -1724,7 +1597,7 @@ class FushiSyncServer {
         case 'GET':
           final ({int delayMs, int updatedAtMs}) d =
               await delayHost.getAudiobookDelay(delayIdentity);
-          return _jsonResponse(<String, dynamic>{
+          return jsonResponse(<String, dynamic>{
             'delayMs': d.delayMs,
             'delayUpdatedAtMs': d.updatedAtMs,
           });
@@ -1923,7 +1796,7 @@ class FushiSyncServer {
         streamUrlId,
         episodeIndex,
       );
-      return _jsonResponse(<String, dynamic>{
+      return jsonResponse(<String, dynamic>{
         'url': streamUri.toString(),
         'subtitleUrl': subtitleUri?.toString(),
         if (sub != null) 'subtitleFileName': p.basename(sub.path),
@@ -2035,7 +1908,7 @@ class FushiSyncServer {
         case 'GET':
           final ({int positionMs, int updatedAtMs}) p = await svc
               .getVideoPosition(positionId, episodeIndex: episodeIndex);
-          return _jsonResponse(<String, dynamic>{
+          return jsonResponse(<String, dynamic>{
             'positionMs': p.positionMs,
             'positionUpdatedAtMs': p.updatedAtMs,
           });
@@ -2080,7 +1953,7 @@ class FushiSyncServer {
         case 'GET':
           final VideoPlaybackSyncState s =
               await playbackHost.getVideoPlayback(playbackId);
-          return _jsonResponse(s.toJson());
+          return jsonResponse(s.toJson());
         case 'PUT':
           final String body = await request.readAsString();
           Map<String, dynamic> json;
@@ -2365,7 +2238,7 @@ class FushiSyncServer {
   }
 
   /// BUG-1568：守住视频流 token 上限。TTL prune 之后仍达到 [_maxVideoStreamTokens]
-  /// 时，按 createdAt 淘汰最旧者直到回到上限内（对照 [_enforceAudioTokenCap]）。
+  /// 时，按 createdAt 淘汰最旧者直到回到上限内（对照 [RemoteAudioTokenStore]）。
   /// 签发前调用，使插入新 token 后总数 <= [_maxVideoStreamTokens]。
   void _enforceVideoTokenCap() {
     while (_videoStreamTokens.length >= _maxVideoStreamTokens) {
@@ -2416,7 +2289,7 @@ class FushiSyncServer {
           },
         );
       case 'PUT':
-        final Map<String, dynamic>? json = await _readJsonObject(request);
+        final Map<String, dynamic>? json = await readJsonObjectBody(request);
         if (json == null) return shelf.Response(400, body: 'Invalid JSON');
         // fromJson 容错：未知高版本 / 缺字段 / 坏行降级为空或跳过，绝不抛。
         final AggregateSnapshot snapshot = AggregateSnapshot.fromJson(json);
@@ -2459,7 +2332,7 @@ class FushiSyncServer {
           },
         );
       case 'POST':
-        final Map<String, dynamic>? json = await _readJsonObject(request);
+        final Map<String, dynamic>? json = await readJsonObjectBody(request);
         if (json == null) return shelf.Response(400, body: 'Invalid JSON');
         CollectionManifest incoming;
         try {
@@ -2564,7 +2437,7 @@ class FushiSyncServer {
     }
     try {
       final String name = await host.importInterconnectProfile(body);
-      return _jsonResponse(<String, dynamic>{'name': name});
+      return jsonResponse(<String, dynamic>{'name': name});
     } on FormatException catch (e) {
       // 载荷不是合法的 Profile 导出（魔数/版本/结构不对）：400，且 host 侧 DB 零改动
       // （解析在写库之前，见 ProfileRepository.parseProfileExport）。
@@ -2607,67 +2480,12 @@ class FushiSyncServer {
     );
   }
 
-  Future<Map<String, dynamic>?> _readJsonObject(shelf.Request request) async {
-    try {
-      final String body = await request.readAsString();
-      final dynamic decoded = jsonDecode(body);
-      if (decoded is Map<String, dynamic>) return decoded;
-      if (decoded is Map) return Map<String, dynamic>.from(decoded);
-    } catch (_) {
-      return null;
-    }
-    return null;
-  }
-
-  shelf.Response _jsonResponse(Map<String, dynamic> body) {
-    return shelf.Response.ok(
-      jsonEncode(body),
-      // TODO-752a：必须带 charset=utf-8。否则远程查词 client 用 package:http 的
-      // `.body` 读取时按 latin1 默认解码，CJK 词典义项/书名直接乱码。
-      headers: <String, String>{
-        'Content-Type': 'application/json; charset=utf-8'
-      },
-    );
-  }
-
-  String _generateAudioToken() {
-    final Random random = Random.secure();
-    final List<int> bytes = List<int>.generate(18, (_) => random.nextInt(256));
-    return base64UrlEncode(bytes);
-  }
-
-  void _pruneAudioTokens() {
-    final DateTime cutoff = _now().subtract(const Duration(minutes: 5));
-    _remoteAudioTokens.removeWhere(
-      (String _, _RemoteAudioToken token) => token.createdAt.isBefore(cutoff),
-    );
-  }
-
-  /// BUG-908(a)：守住音频 token 上限。TTL prune 之后仍达到 [_maxAudioTokens] 时，按
-  /// createdAt 淘汰最旧者直到回到上限内（对照 [_enforcePairSessionCap]）。签发前调用，
-  /// 使插入新 token 后总数 <= [_maxAudioTokens]。只 POST 不 GET 的膨胀攻击的兜底。
-  void _enforceAudioTokenCap() {
-    while (_remoteAudioTokens.length >= _maxAudioTokens) {
-      String? oldestKey;
-      DateTime? oldestAt;
-      for (final MapEntry<String, _RemoteAudioToken> e
-          in _remoteAudioTokens.entries) {
-        if (oldestAt == null || e.value.createdAt.isBefore(oldestAt)) {
-          oldestAt = e.value.createdAt;
-          oldestKey = e.key;
-        }
-      }
-      if (oldestKey == null) break;
-      _remoteAudioTokens.remove(oldestKey);
-    }
-  }
-
   /// BUG-908(a) 测试钩子：当前驻留的音频 token 数（验证 cap 逐出行为）。
   @visibleForTesting
-  int get remoteAudioTokenCount => _remoteAudioTokens.length;
+  int get remoteAudioTokenCount => _audioTokens.count;
 
   /// TODO-961 M1：清掉 [_pairSessionTtl] 之前创建的配对会话。对照
-  /// [_pruneAudioTokens] / [_pruneVideoTokens]：按 createdAt + 注入的 [_now] 判定，
+  /// [RemoteAudioTokenStore.prune] / [_pruneVideoTokens]：按 createdAt + 注入的 [_now] 判定，
   /// 可单测。在 pair/v2 创建与 confirm 两处调用，使过期会话既不堆积也不可被 confirm。
   void _prunePairSessions() {
     final DateTime cutoff = _now().subtract(_pairSessionTtl);
@@ -3157,21 +2975,6 @@ class _DavEntry {
   final bool isCollection;
   final String displayName;
   final int contentLength;
-}
-
-class _RemoteAudioToken {
-  _RemoteAudioToken({
-    required this.bytes,
-    required this.contentType,
-    required this.createdAt,
-  });
-
-  final Uint8List bytes;
-  final String contentType;
-
-  /// TODO-766: 不是 final——每次被 [_handleAudioFile] 命中都刷新，重置 5 分钟
-  /// 过期窗口，使「正在被访问」的音频 token 不会在使用途中过期（惠及播放与制卡）。
-  DateTime createdAt;
 }
 
 /// 视频流短时 token（P4-2）。
