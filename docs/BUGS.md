@@ -29,13 +29,32 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2041 条。点号进各自文件。
+> 共 2061 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2203](bugs/BUG-2203-update-installer-self-kill-taskkill-tree.md) | ✅ | ✅ | 应用内更新静默失败：安装器被自己的 taskkill /T 连同祖先树一起杀掉，且被误诊为 app_mutex_running |
 | [BUG-2202](bugs/BUG-2202-clip-export-tx3g-unplayable-in-im.md) | ✅ | ✅ | 内封 tx3g 字幕轨让导出的片段在 QQ 等 IM 里整个不可播 |
+| [BUG-2201](bugs/BUG-2201-video-pending-scrape-has-no-visible-surface.md) | ✅ | ✅ | 待确认身份的作品在视频页零提示用户无从知道要去确认 |
 | [BUG-2200](bugs/BUG-2200-clip-export-moov-at-tail-qq-cannot-play.md) | ✅ | ✅ | 导出的视频片段 moov 在文件末尾，QQ 等 IM 判无法播放 |
+| [BUG-2199](bugs/BUG-2199-scrape-sweep-process-once-misses-new-imports.md) | ✅ | ✅ | 自动补刮以进程为幂等键致本会话新入库作品永不补刮 |
 | [BUG-2198](bugs/BUG-2198-subtitle-hide-pause-reveal.md) | ✅ | ✅ | 隐藏字幕在暂停/查词时不恢复显示 |
+| [BUG-2197](bugs/BUG-2197-asr-isolate-android-ffmpeg-kit-event-channel.md) | ✅ | ✅ | Android 上 ASR 后台 isolate 因 ffmpeg_kit 订阅 EventChannel 崩溃 |
+| [BUG-2196](bugs/BUG-2196-reader-newline-splits-sentence.md) | ✅ | ✅ | 阅读器把源码换行当句子分隔符，制卡拿到半截句、音频漏词 |
+| [BUG-2195](bugs/BUG-2195-ankidroid-parallel-build-invisible.md) | ✅ | ✅ | AnkiDroid 并行版（com.ichi2.anki.A）不被识别、权限框从不弹出 |
+| [BUG-2194](bugs/BUG-2194-youtube-caption-track-cap-drops-original.md) | ✅ | ✅ | 扩展 YouTube 轨枚举被 12 条上限截掉原语言英语轨 |
+| [BUG-2193](bugs/BUG-2193-backup-export-drops-all-dicts-on-one-ghost-row.md) | ✅ | ✅ | 本地备份导出：一条幽灵词典元数据行让全部词典静默不打包 |
+| [BUG-2192](bugs/BUG-2192-netflix-clip-black-border.md) | ✅ | ✅ | 网飞录屏制卡的动图/静帧四周带播放器黑边 |
+| [BUG-2191](bugs/BUG-2191-netflix-ttml-ruby-reading-leaks-into-cue.md) | ✅ | ✅ | 网飞 TTML 振假名读音混进字幕正文与制卡句子 |
+| [BUG-2190](bugs/BUG-2190-anki-gaiji-alt-text-overlap.md) | ✅ | ✅ | 制卡释义外字退化 alt 文本沿用图片盒几何与正文重叠 |
+| [BUG-2189](bugs/BUG-2189-netflix-batch-mine-word-audio-token-expired.md) | ✅ | ✅ | 网飞批量制卡单词音频落空：入队冻结的短命 token URL 生成时已过期 |
+| [BUG-2188](bugs/BUG-2188-dict-download-failure-reason-swallowed.md) | ✅ | ✅ | 词典下载失败原因被吞：单行标题截断 + 摘要措辞错成导入失败 + 无镜像回退 |
+| [BUG-2187](bugs/BUG-2187-custom-theme-reader-colors-dead.md) | ✅ | ✅ | 自定义主题的正文/背景/选区/链接色在阅读器里永远不生效（key 严格等值 + 读已停写的旧扁平偏好） |
+| [BUG-2170](bugs/BUG-2170-netflix-batch-intro-overlay.md) | ✅ | ✅ | Netflix 批量自动制卡切集后把片头年龄分级 overlay 录进卡片 |
+| [BUG-2169](bugs/BUG-2169-sync-non-drive-transient-no-retry.md) | 🚧 | 🚧 | 非 Google Drive 云后端瞬时网络错误零重试 |
+| [BUG-2168](bugs/BUG-2168-cf-download-redirects-to-github.md) | ✅ | ✅ | 下载页选 Cloudflare 镜像却被 302 到 GitHub |
+| [BUG-2167](bugs/BUG-2167-windows-exit-abort-gamepads-static-thread.md) | ✅ | ✅ | Windows 每次退出 fail-fast 崩溃 0xc0000409：gamepads 全局对象析构 joinable std::thread |
+| [BUG-2166](bugs/BUG-2166-lookup-popup-border-hidden-by-webview.md) | ✅ | ✅ | 查词浮层四边描边被 WebView 盖住（只剩顶栏和圆角弧可见） |
 | [BUG-2165](bugs/BUG-2165-pack-download-no-visible-progress.md) | ✅ | ✅ | 推荐包后台下载没有任何看得见的地方，半截包重启后既看不见也续不上 |
 | [BUG-2164](bugs/BUG-2164-asr-pcm-mov-chapter-track-noise.md) | ✅ | ✅ | ASR PCM 抽取 mov 容器混入章节 text 轨，奇数字节标题的整章解成白噪声 |
 | [BUG-2163](bugs/BUG-2163-asr-match-start-anchor-colophon.md) | ✅ | ✅ | ASR 字幕匹配起点被片头出版社名钉到书尾版权页，整本匹配率 0% |
@@ -52,6 +71,7 @@
 | [BUG-2152](bugs/BUG-2152-anki-mined-ipa-duplicated.md) | ✅ | ✅ | 英语制卡音标重复两遍 —— 同一 PitchEntry 的 transcriptions 数组内没有去重 |
 | [BUG-2151](bugs/BUG-2151-anki-pitch-tags-ol-markup.md) | ✅ | ✅ | Anki 卡片音标黑框巨大且无分隔符 —— popup.js 产出 `<ol>`，Lapis `#pitch-tags` 样式契约是 `ul` |
 | [BUG-2150](bugs/BUG-2150-ios-ankimobile-pasteboard-read-inactive.md) | ✅ | ✅ | iOS AnkiMobile 配置回传读不到剪贴板：URL 回调跑在 .inactive 阶段 |
+| [BUG-2149](bugs/BUG-2149-gal-adapter-diagnostics-write-only.md) | ✅ | ✅ | AdapterDiagnostics 是只写接口：运行期没有消费方，任何引擎都读不出 adapter 是否命中并安装 |
 | [BUG-2148](bugs/BUG-2148-korean-deinflection-never-fires.md) | ✅ | ✅ | 韩语词形还原一条都点不着火：ko.json 用兼容字母而引擎不拆谚文，划词只剩 1 个音节 |
 | [BUG-2147](bugs/BUG-2147-mdx-loose-sibling-assets-dropped.md) | ✅ | ✅ | MDX 松散兄弟资源（sound.png / 图标字体）从不进 media store，发音按钮渲染成 0x0 破图 |
 | [BUG-2146](bugs/BUG-2146-episode-in-season-block.md) | ✅ | ✅ | 括号块内「季 - 集」形态解不出集数，下载任务报 unable to determine episode number |

@@ -1,4 +1,4 @@
-## BUG-2166 · 应用内更新静默失败：安装器被自己的 taskkill /T 连同祖先树一起杀掉，且被误诊为 app_mutex_running
+## BUG-2203 · 应用内更新静默失败：安装器被自己的 taskkill /T 连同祖先树一起杀掉，且被误诊为 app_mutex_running
 - **报告**：2026-09-06（用户：应用内更新后仍是旧版，Fushi 报「Inno Setup reported that Fushi was still running」）
 - **真实性**：✅ 真 bug。两处根因：
   - `fushi/windows/installer/fushi.iss:239` / `:251`（修复前的 `KillGracefully` / `KillImage`）—— `taskkill /IM <exe> /T`

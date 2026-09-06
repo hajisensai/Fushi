@@ -1,5 +1,5 @@
 ## BUG-2167 · Windows 每次退出 fail-fast 崩溃 0xc0000409：gamepads 全局对象析构 joinable std::thread
-- **报告**：2026-09-06（排查 BUG-2166 时从 Windows 事件日志与崩溃转储中发现）
+- **报告**：2026-09-06（排查 BUG-2203 时从 Windows 事件日志与崩溃转储中发现）
 - **真实性**：✅ 真 bug。根因 `packages/gamepads_windows/windows/gamepad.cpp:14`
   （`Gamepads gamepads;` 静态存储期全局对象）+ `packages/gamepads_windows/windows/gamepad.h`
   的 `std::thread reaper_thread;` 成员，且修复前 `Gamepads` **没有析构函数**。
@@ -49,7 +49,7 @@ joinable** 的线程直接 `std::terminate()` → `abort()`。
 崩溃进程被 WER 冻住数分钟不死（进程对象还在、句柄还开着），`FushiSingleInstanceMutex`
 随之一直被持有。应用内更新链上 `fushi_update_launcher.exe` 的「等父进程退出」（120s）与
 「等互斥量释放」（10s）因此双双超时（marker 实录 `parentExitObserved:false`，时间戳恰好是
-startedAt + 120.001s），再叠加 BUG-2166 的安装器自杀，整次更新落空。
+startedAt + 120.001s），再叠加 BUG-2203 的安装器自杀，整次更新落空。
 
 - **[x] ① 已修复** — 给 `Gamepads` 加析构函数（`gamepad.h` 声明 / `gamepad.cpp` 实现）：
   置 `reaper_stop` + `notify_all`，用 `WaitForSingleObject(native_handle(), 1000)` 做**有界**
