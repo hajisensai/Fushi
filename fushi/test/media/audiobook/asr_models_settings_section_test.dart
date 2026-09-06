@@ -114,12 +114,12 @@ void main() {
       ),
       findsNothing,
     );
-    // 英语未下载：副标题报需要多少，给下载。
+    // 日语之外的包都未下载：副标题各报需要多少，给下载。
     expect(
       find.textContaining(
         t.asr_models_status_missing(size: FushiByteFormat.bytes(4096)),
       ),
-      findsOneWidget,
+      findsNWidgets(kAsrModelPacks.length - 1),
     );
     expect(
       find.byKey(ValueKey<String>('asr-models-download-${kAsrEnglishPack.id}')),

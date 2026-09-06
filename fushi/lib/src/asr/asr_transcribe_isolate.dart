@@ -34,10 +34,11 @@ import 'package:fushi/src/asr/asr_encoder_buckets.dart';
 import 'package:fushi/src/asr/asr_engine.dart';
 import 'package:fushi/src/asr/asr_model_manifest.dart';
 import 'package:fushi/src/asr/asr_model_store.dart';
-import 'package:fushi/src/asr/asr_pcm_source.dart';
+import 'package:fushi/src/asr/asr_pcm_bridge.dart';
 import 'package:fushi/src/asr/asr_transcribe_job.dart';
 import 'package:fushi/src/asr/asr_transcription_service.dart';
 import 'package:fushi/src/asr/asr_transducer_decoder.dart';
+import 'package:fushi/src/asr/asr_types.dart';
 import 'package:fushi/src/asr/asr_vad.dart';
 import 'package:fushi/src/onnx/onnx_inference.dart';
 
@@ -55,9 +56,16 @@ class AsrIsolateJobSpec {
     required this.segmenterKind,
     this.batchSize,
     this.usePipeline = true,
+    this.useFp16Encoder = true,
     this.staticBucketsOverride,
     this.materialMs,
+    this.greedySessions,
+    this.greedyIntraOpThreads,
   });
+
+  /// 见 [AsrTranscriptionService.greedySessions] / `greedyIntraOpThreads`。
+  final int? greedySessions;
+  final int? greedyIntraOpThreads;
 
   final String storeDirPath;
   final AsrLanguage language;
@@ -69,6 +77,9 @@ class AsrIsolateJobSpec {
   final AsrSegmenterKind segmenterKind;
 
   final bool usePipeline;
+
+  /// 见 [AsrTranscriptionService.useFp16Encoder]。
+  final bool useFp16Encoder;
 
   /// 见 [AsrTranscriptionService.staticBucketsOverride]。
   final List<AsrEncoderBucket>? staticBucketsOverride;
@@ -85,11 +96,16 @@ class _IsolateArgs {
     required this.events,
     required this.rootIsolateToken,
     required this.spec,
+    required this.pcmPort,
   });
 
   final SendPort events;
   final RootIsolateToken? rootIsolateToken;
   final AsrIsolateJobSpec spec;
+
+  /// 根 isolate 的 [AsrPcmBridgeHost] 请求端口：PCM 解码留在根 isolate
+  /// （BUG-2197，`asr_pcm_bridge.dart` 文件头）。
+  final SendPort pcmPort;
 }
 
 class _ControlPortMessage {
@@ -102,11 +118,13 @@ class _LoadedMessage {
     required this.resolution,
     required this.greedyGraphAvailable,
     required this.greedyUnavailableReason,
+    required this.encoderFp16,
   });
 
   final OnnxProviderResolution resolution;
   final bool greedyGraphAvailable;
   final String? greedyUnavailableReason;
+  final bool encoderFp16;
 }
 
 class _StatsMessage {
@@ -136,9 +154,13 @@ class AsrIsolateTranscription implements AsrRunningTranscription {
   );
 
   /// 起 isolate、装载引擎；引擎装好（或装载失败）才返回，与进程内路径的
-  /// `start()` 契约一致。
-  static Future<AsrIsolateTranscription> spawn(AsrIsolateJobSpec spec) async {
+  /// `start()` 契约一致。[pcm] 留在根 isolate 服务转录 isolate 的解码请求。
+  static Future<AsrIsolateTranscription> spawn(
+    AsrIsolateJobSpec spec, {
+    required AsrPcmSource pcm,
+  }) async {
     final ReceivePort events = ReceivePort();
+    final AsrPcmBridgeHost pcmHost = AsrPcmBridgeHost(pcm);
     final Completer<SendPort> control = Completer<SendPort>();
     final Completer<_LoadedMessage> loaded = Completer<_LoadedMessage>();
     final Completer<void> exited = Completer<void>();
@@ -166,6 +188,7 @@ class AsrIsolateTranscription implements AsrRunningTranscription {
         if (!exited.isCompleted) exited.complete();
         running._onExited();
         events.close();
+        unawaited(pcmHost.close());
         return;
       }
       if (message is List<Object?> && message.length == 2) {
@@ -179,6 +202,7 @@ class AsrIsolateTranscription implements AsrRunningTranscription {
         if (!exited.isCompleted) exited.complete();
         running._onExited();
         events.close();
+        unawaited(pcmHost.close());
         return;
       }
       if (message is _StatsMessage) {
@@ -202,6 +226,7 @@ class AsrIsolateTranscription implements AsrRunningTranscription {
           events: events.sendPort,
           rootIsolateToken: RootIsolateToken.instance,
           spec: spec,
+          pcmPort: pcmHost.port,
         ),
         onError: events.sendPort,
         debugName: 'asr_transcribe_job',
@@ -210,9 +235,11 @@ class AsrIsolateTranscription implements AsrRunningTranscription {
       running._resolution = m.resolution;
       running._greedyGraphAvailable = m.greedyGraphAvailable;
       running._greedyUnavailableReason = m.greedyUnavailableReason;
+      running._encoderFp16 = m.encoderFp16;
       return running;
     } catch (_) {
       events.close();
+      await pcmHost.close();
       rethrow;
     }
   }
@@ -226,6 +253,7 @@ class AsrIsolateTranscription implements AsrRunningTranscription {
   late OnnxProviderResolution _resolution;
   bool _greedyGraphAvailable = false;
   String? _greedyUnavailableReason;
+  bool _encoderFp16 = false;
   AsrDecodeStats? _stats;
   StreamController<AsrTranscribeEvent>? _stream;
   bool _isolateExited = false;
@@ -239,6 +267,9 @@ class AsrIsolateTranscription implements AsrRunningTranscription {
 
   @override
   String? get greedyUnavailableReason => _greedyUnavailableReason;
+
+  @override
+  bool get encoderFp16 => _encoderFp16;
 
   @override
   AsrDecodeStats? get decodeStats => _stats;
@@ -320,6 +351,8 @@ Future<void> _isolateMain(_IsolateArgs args) async {
   }
 
   final AsrIsolateJobSpec spec = args.spec;
+  // PCM 解码在根 isolate（ffmpeg_kit 的 EventChannel 只能在那边订阅，BUG-2197）。
+  final RemoteAsrPcmSource pcm = RemoteAsrPcmSource(args.pcmPort);
   AsrEngineSessions? sessions;
   try {
     final AsrModelStore store = AsrModelStore(
@@ -330,33 +363,28 @@ Future<void> _isolateMain(_IsolateArgs args) async {
       store: store,
       variant: spec.variant,
       preference: spec.preference,
+      useFp16Encoder: spec.useFp16Encoder,
       staticBucketsOverride: spec.staticBucketsOverride,
       materialMs: spec.materialMs,
+      greedySessions: spec.greedySessions,
+      greedyIntraOpThreads:
+          spec.greedyIntraOpThreads ?? kAsrGreedyGraphIntraOpThreads,
     );
     args.events.send(
       _LoadedMessage(
         resolution: sessions.encoderResolution,
         greedyGraphAvailable: sessions.greedy != null,
         greedyUnavailableReason: sessions.greedyUnavailableReason,
+        encoderFp16: sessions.encoderFp16,
       ),
     );
-    final AsrTransducerDecoder decoder = AsrTransducerDecoder(
-      encoder: sessions.encoder,
-      decoder: sessions.decoder,
-      joiner: sessions.joiner,
-      tokens: sessions.tokens,
-      greedy: sessions.greedy,
-      staticEncoders: sessions.staticEncoders,
-    );
-    // 静态桶模式段切短到 10 s（见 kAsrStaticMaxSegmentMs），否则保持 VAD 默认。
-    final int maxSegmentMs = sessions.staticEncoders != null
-        ? kAsrStaticMaxSegmentMs
-        : kAsrDefaultMaxSegmentMs;
+    final AsrSegmentDecoder decoder = sessions.newDecoder()..warmUp();
+    final int maxSegmentMs = sessions.maxSegmentMs;
     final AsrTranscribeJob j = AsrTranscribeJob(
       jobDir: Directory(spec.jobDirPath),
       audioPaths: spec.audioPaths,
       modelId: store.pack.id,
-      pcm: FfmpegAsrPcmSource(),
+      pcm: pcm,
       segmenter: switch (spec.segmenterKind) {
         AsrSegmenterKind.energy => AsrVadSegmenter(
           scorer: EnergyVadScorer(),
@@ -394,6 +422,7 @@ Future<void> _isolateMain(_IsolateArgs args) async {
     } catch (_) {
       // 关会话失败没有可做的补救；退出本 isolate 即可。
     }
+    pcm.close();
     args.events.send(const _ExitedMessage());
     control.close();
   }

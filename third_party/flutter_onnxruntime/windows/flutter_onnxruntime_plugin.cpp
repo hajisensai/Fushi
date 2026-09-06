@@ -17,6 +17,7 @@
 #include <flutter/plugin_registrar_windows.h>
 #include <flutter/standard_method_codec.h>
 
+#include <map>
 #include <memory>
 #include <sstream>
 #include <stdexcept>
@@ -86,8 +87,31 @@ public:
   PlatformThreadDispatcher dispatcher_;
   WorkQueue gpuQueue_{"flutter_onnxruntime gpu"};
   WorkQueue cpuQueue_{"flutter_onnxruntime cpu"};
+  // Hibiki delta #11: every CPU session gets its own worker thread (created on
+  // first use, dropped after close) so independent CPU sessions run
+  // concurrently — e.g. two greedy-search graphs each taking half of a batch.
+  // ORT sessions are safe to Run from different threads; only GPU (DirectML)
+  // sessions must stay serialised on gpuQueue_. Platform-thread only.
+  std::map<std::string, std::unique_ptr<WorkQueue>> cpuSessionQueues_;
 
+  // Queue for work that has no session yet (session creation).
   WorkQueue &queueFor(bool is_gpu) { return is_gpu ? gpuQueue_ : cpuQueue_; }
+
+  // Queue for work on an existing session: the shared GPU queue, or the
+  // session's own CPU worker.
+  WorkQueue &queueFor(bool is_gpu, const std::string &session_id) {
+    if (is_gpu) {
+      return gpuQueue_;
+    }
+    auto it = cpuSessionQueues_.find(session_id);
+    if (it == cpuSessionQueues_.end()) {
+      it = cpuSessionQueues_.emplace(session_id, std::make_unique<WorkQueue>("flutter_onnxruntime cpu session")).first;
+    }
+    return *it->second;
+  }
+
+  // Drop a closed session's worker (joins its thread; it is idle by then).
+  void dropSessionQueue(const std::string &session_id) { cpuSessionQueues_.erase(session_id); }
 
   // Complete [result] on the platform thread with [outcome].
   void reply(const SharedResult &result, std::shared_ptr<TaskOutcome> outcome) {
@@ -883,8 +907,8 @@ void FlutterOnnxruntimePlugin::HandleRunInference(
     SessionManager *session_manager = impl_->sessionManager_.get();
     TensorManager *tensor_manager = impl_->tensorManager_.get();
     FlutterOnnxruntimePluginImpl *impl = impl_.get();
-    impl_->queueFor(is_gpu).Post([impl, session_manager, tensor_manager, shared_result, inputs, names, outputs_names,
-                                  run_opts, session_id]() {
+    impl_->queueFor(is_gpu, session_id).Post([impl, session_manager, tensor_manager, shared_result, inputs, names,
+                                              outputs_names, run_opts, session_id]() {
       auto outcome = std::make_shared<TaskOutcome>();
       try {
         std::vector<Ort::Value> input_tensors;
@@ -963,7 +987,7 @@ void FlutterOnnxruntimePlugin::HandleCloseSession(
     SharedResult shared_result(std::move(result));
     SessionManager *session_manager = impl_->sessionManager_.get();
     FlutterOnnxruntimePluginImpl *impl = impl_.get();
-    impl_->queueFor(is_gpu).Post([impl, session_manager, shared_result, session_id]() {
+    impl_->queueFor(is_gpu, session_id).Post([impl, session_manager, shared_result, session_id]() {
       auto outcome = std::make_shared<TaskOutcome>();
       try {
         session_manager->closeSession(session_id);
@@ -976,6 +1000,9 @@ void FlutterOnnxruntimePlugin::HandleCloseSession(
         outcome->error_message = e.what();
       }
       impl->reply(shared_result, outcome);
+      // The session's CPU worker is idle once this task returns; retire it on
+      // the platform thread (the only thread touching the queue map).
+      impl->dispatcher_.Post([impl, session_id]() { impl->dropSessionQueue(session_id); });
     });
   } catch (const Ort::Exception &e) {
     FailWith(result, "ORT_ERROR", e.what());

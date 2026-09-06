@@ -188,7 +188,10 @@ class _AsrModelsSettingsSectionState extends State<AsrModelsSettingsSection> {
 
   /// 副标题：语言 + 状态（三态都给真实字节数）。
   String _subtitle(_PackRow row) {
-    final String language = asrLanguageLabel(row.pack.language);
+    // 多语言包（Omnilingual）把它服务的语言全列出来。
+    final String language = row.pack.languages
+        .map(asrLanguageLabel)
+        .join(' · ');
     final AsrModelStatus? status = row.plan?.modelStatus;
     if (status == null) return language;
     final String state = status.ready

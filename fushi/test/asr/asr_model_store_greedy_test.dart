@@ -31,6 +31,7 @@ void main() {
       required Uint8List joinerOnnx,
       required int blankId,
       required int unkId,
+      int contextSize = 2,
     }) {
       builds++;
       expect(decoderOnnx, hasLength(10));
@@ -74,6 +75,7 @@ void main() {
       required Uint8List joinerOnnx,
       required int blankId,
       required int unkId,
+      int contextSize = 2,
     }) {
       builds++;
       return Uint8List.fromList(<int>[builds]);
@@ -118,6 +120,7 @@ void main() {
       required Uint8List joinerOnnx,
       required int blankId,
       required int unkId,
+      int contextSize = 2,
     }) => throw const FormatException('decoder 缺 y 输入');
 
     await expectLater(
@@ -148,6 +151,7 @@ void main() {
       required Uint8List joinerOnnx,
       required int blankId,
       required int unkId,
+      int contextSize = 2,
     }) => Uint8List.fromList(<int>[decoderOnnx.length]);
 
     final File a = await store.ensureGreedyGraph(
@@ -165,5 +169,61 @@ void main() {
     expect(a.path, isNot(b.path));
     expect(a.readAsBytesSync(), <int>[10]);
     expect(b.readAsBytesSync(), <int>[30]);
+  });
+
+  group('ensureFp16Encoder', () {
+    test('首次转换落盘 + sidecar；源文件不变不重建；字节数变了 / sidecar 坏了重建', () async {
+      final File source = store.fileFor(AsrModelRole.encoderFp32);
+      source.writeAsBytesSync(List<int>.filled(40, 3));
+      int converts = 0;
+      Uint8List convert(Uint8List bytes) {
+        converts++;
+        expect(bytes, hasLength(source.lengthSync()));
+        return Uint8List.fromList(<int>[7, 7]);
+      }
+
+      final File out = await store.ensureFp16Encoder(
+        AsrModelRole.encoderFp32,
+        convert: convert,
+      );
+      expect(out.path, endsWith('.fp16.onnx'));
+      expect(out.parent.path, tmp.path);
+      expect(out.readAsBytesSync(), <int>[7, 7]);
+      final Map<String, Object?> meta =
+          jsonDecode(File('${out.path}.meta.json').readAsStringSync())
+              as Map<String, Object?>;
+      expect(meta['version'], kAsrFp16EncoderFormatVersion);
+      expect(meta['sourceBytes'], 40);
+      expect(converts, 1);
+      expect(File('${out.path}.part').existsSync(), isFalse);
+
+      await store.ensureFp16Encoder(AsrModelRole.encoderFp32, convert: convert);
+      expect(converts, 1, reason: '源文件没变，不该重建');
+
+      source.writeAsBytesSync(List<int>.filled(41, 3));
+      await store.ensureFp16Encoder(AsrModelRole.encoderFp32, convert: convert);
+      expect(converts, 2, reason: '源文件字节数变了');
+
+      File('${out.path}.meta.json').writeAsStringSync('{broken');
+      await store.ensureFp16Encoder(AsrModelRole.encoderFp32, convert: convert);
+      expect(converts, 3, reason: 'sidecar 坏了');
+    });
+
+    test('转换抛 FormatException 原样透出，不留半个产物', () async {
+      store
+          .fileFor(AsrModelRole.encoderFp32)
+          .writeAsBytesSync(List<int>.filled(8, 1));
+      await expectLater(
+        store.ensureFp16Encoder(
+          AsrModelRole.encoderFp32,
+          convert: (Uint8List _) => throw const FormatException('外置权重'),
+        ),
+        throwsFormatException,
+      );
+      expect(
+        tmp.listSync().where((FileSystemEntity e) => e.path.contains('fp16')),
+        isEmpty,
+      );
+    });
   });
 }

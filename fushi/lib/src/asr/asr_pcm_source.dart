@@ -53,6 +53,12 @@ const int kAsrPcmSamplesPerMs = kAsrSampleRate ~/ 1000;
 /// 每块 ffmpeg 的超时下限（秒）。
 const int kAsrPcmChunkTimeoutFloorSeconds = 60;
 
+/// 同时在跑的 ffmpeg 块数默认值：每 4 个逻辑核一块，1~4。ffmpeg 解一块 300 s
+/// 的 mp3 约 170 ms 单线程，4 块并行把 30 分钟的解码从 940 ms 压到 240 ms
+/// （2026-09-07 实测）；再多进程只是多占内存（每块 float32 ≈ 19 MB）。
+int defaultAsrPcmParallelism() =>
+    (Platform.numberOfProcessors ~/ 4).clamp(1, 4);
+
 /// 抛 [AsrPcmDecodeException] 时附带的 ffmpeg 日志尾部长度（真因在日志末尾，见
 /// `extractFfmpegFailureReason` 的说明）。
 const int kAsrPcmLogTailChars = 500;
@@ -315,14 +321,23 @@ class FfmpegAsrPcmSource implements AsrPcmSource {
     FfmpegBackend? backend,
     Directory? tempDir,
     this.preRollSeconds = kAsrPcmSeekPreRollSeconds,
+    int? parallelism,
   })  : _backend = backend,
-        _tempDir = tempDir ?? Directory.systemTemp;
+        _tempDir = tempDir ?? Directory.systemTemp,
+        parallelism = parallelism ?? defaultAsrPcmParallelism() {
+    if (this.parallelism < 1) {
+      throw ArgumentError.value(parallelism, 'parallelism', '至少 1');
+    }
+  }
 
   final FfmpegBackend? _backend;
   final Directory _tempDir;
 
   /// 输入端预滚秒数（见 [kAsrPcmSeekPreRollSeconds]）。
   final int preRollSeconds;
+
+  /// 同时在跑的 ffmpeg 块数（见 [defaultAsrPcmParallelism]）。
+  final int parallelism;
 
   /// 已探明可用的输出容器；null 表示还没试过（首块按 s16le 试探）。
   AsrPcmContainer? _container;
@@ -381,30 +396,54 @@ class FfmpegAsrPcmSource implements AsrPcmSource {
       // 块长是整秒（16 的倍数），所以每块的余数相同。
       final int dropLeading = startSample % kAsrPcmSamplesPerMs;
       final int durationMs = chunkSeconds * 1000 + (dropLeading > 0 ? 1 : 0);
-      int blockStart = startSample;
-      int index = 0;
-      while (true) {
-        final Float32List raw = await _decodeBlock(
+      // 并行：最多 [parallelism] 块同时在解（每块一个 ffmpeg 进程），按块序出。
+      // ffmpeg 解 mp3/aac 是单线程的，30 分钟 6 块串行 940 ms、并行 240 ms
+      // （2026-09-07 实测）；消费方每拉一块这里就再补一块，块只在被拉时才前进，
+      // 内存最多 parallelism 块。EOF 后多发出的块解出空样本、进程立刻退出。
+      final List<Future<Float32List>> inFlight = <Future<Float32List>>[];
+      int spawned = 0;
+      Future<Float32List> spawn() {
+        final int index = spawned++;
+        return _decodeBlock(
           audioPath: audioPath,
           workDir: work,
           index: index,
-          startMs: blockStart ~/ kAsrPcmSamplesPerMs,
+          startMs: (startSample + index * chunkSamples) ~/ kAsrPcmSamplesPerMs,
           durationMs: durationMs,
         );
-        Float32List samples = raw;
-        if (dropLeading > 0) {
-          samples = raw.length > dropLeading
-              ? Float32List.sublistView(raw, dropLeading)
-              : Float32List(0);
+      }
+
+      int blockStart = startSample;
+      try {
+        while (true) {
+          while (inFlight.length < parallelism) {
+            inFlight.add(spawn());
+          }
+          final Float32List raw = await inFlight.removeAt(0);
+          Float32List samples = raw;
+          if (dropLeading > 0) {
+            samples = raw.length > dropLeading
+                ? Float32List.sublistView(raw, dropLeading)
+                : Float32List(0);
+          }
+          if (samples.length > chunkSamples) {
+            samples = Float32List.sublistView(samples, 0, chunkSamples);
+          }
+          // 契约：某块 0 样本即文件末尾（超出 EOF 的 -ss 让 ffmpeg 正常退出、输出为空）。
+          if (samples.isEmpty) break;
+          yield AsrPcmChunk(startSample: blockStart, samples: samples);
+          blockStart += chunkSamples;
         }
-        if (samples.length > chunkSamples) {
-          samples = Float32List.sublistView(samples, 0, chunkSamples);
+      } finally {
+        // 还在跑的块等它们结束再删目录；它们的结果（EOF 之后的空块 / 取消后的
+        // 多余块）不要，错误也不算（本流已经结束或已抛过）。
+        for (final Future<Float32List> f in inFlight) {
+          try {
+            await f;
+          } catch (_) {
+            // 见上。
+          }
         }
-        // 契约：某块 0 样本即文件末尾（超出 EOF 的 -ss 让 ffmpeg 正常退出、输出为空）。
-        if (samples.isEmpty) break;
-        yield AsrPcmChunk(startSample: blockStart, samples: samples);
-        blockStart += chunkSamples;
-        index++;
       }
     } finally {
       // 取消 / 异常 / 正常结束都走这里：块文件读完即删，目录整体兜底清理。
@@ -457,11 +496,12 @@ class FfmpegAsrPcmSource implements AsrPcmSource {
         );
       }
       if (result.returnCode != 0) {
-        if (_container == null &&
-            container == AsrPcmContainer.s16le &&
+        if (container == AsrPcmContainer.s16le &&
+            _container != AsrPcmContainer.s16le &&
             isMissingS16leMuxerFailure(result)) {
           // 临时兼容层（见文件头）：捆绑 ffmpeg-min 没有 s16le muxer → 切 mov 重跑本块。
-          // 只在「还没探明」时切一次；探明后缓存在实例上。
+          // 探明后缓存在实例上；并行时前几块都是按 s16le 起跑的，每块各自重跑一次
+          // （`_container` 已被别的块切成 mov 也照样重跑，别把它当成本块的失败）。
           _container = AsrPcmContainer.mov;
           debugPrint(
             '[asr-pcm] ffmpeg has no s16le muxer '

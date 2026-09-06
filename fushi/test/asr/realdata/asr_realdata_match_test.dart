@@ -4,8 +4,11 @@ library;
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/asr/asr_cue_builder.dart' show parseAsrCueTokens;
 import 'package:fushi/src/epub/epub_book.dart';
 import 'package:fushi/src/epub/epub_parser.dart';
+import 'package:fushi/src/media/audiobook/audiobook_alignment_service.dart'
+    show epubSectionsFromBook;
 import 'package:fushi_audio/fushi_audio.dart';
 
 /// 真实数据对照（不入 CI，缺环境变量自动 skip）：
@@ -44,20 +47,28 @@ void main() {
           epubPath,
           extract.path,
         );
-        final List<EpubSection> sections = List<EpubSection>.generate(
-          book.chapters.length,
-          (int i) => EpubSection(
-            index: i,
-            href: book.chapters[i].href,
-            text: book.chapterPlainText(i),
-          ),
+        // 与导入链路同一入口：纯文本 + ruby 读音旁路（读音轨）。
+        // ASR_REALDATA_NO_RUBY=1 只用基底轨，对照读音轨的增益。
+        final bool noRuby = Platform.environment['ASR_REALDATA_NO_RUBY'] == '1';
+        final List<EpubSection> sections = <EpubSection>[
+          for (final EpubSection s in epubSectionsFromBook(book))
+            noRuby
+                ? EpubSection(index: s.index, href: s.href, text: s.text)
+                : s,
+        ];
+        final int rubyCount = sections.fold<int>(
+          0,
+          (int a, EpubSection s) => a + s.rubies.length,
         );
         final int bookChars = sections.fold<int>(
           0,
           (int a, EpubSection s) => a + s.text.length,
         );
         // ignore: avoid_print
-        print('[realdata] epub sections=${sections.length} chars=$bookChars');
+        print(
+          '[realdata] epub sections=${sections.length} chars=$bookChars '
+          'rubies=$rubyCount',
+        );
 
         Future<List<AudioCue>> load(String path) async {
           final List<AudioCue> cues = await SrtParser.parse(
@@ -317,6 +328,87 @@ void main() {
         print(
           '[realdata] ours first cues: ${ours.take(8).map((AudioCue c) => '${c.startMs}-${c.endMs} ${c.text}').join(' | ')}',
         );
+        // 逐 token 时间 sidecar（`<ours>.tokens.jsonl`，由 e2e 的 ASR_OUT 一并拷出）：
+        // 挂上后按正文句界重切，对照 cue 数 / 多句 cue 数 / 词中边界数 / |Δ|。
+        final File tokensFile = File(
+          oursPath.replaceAll(RegExp(r'\.srt$'), '.tokens.jsonl'),
+        );
+        if (tokensFile.existsSync()) {
+          final List<({List<String> tokens, List<int> offsetsMs})>? rows =
+              parseAsrCueTokens(await tokensFile.readAsString());
+          expect(rows, isNotNull);
+          expect(rows!.length, ours.length, reason: 'sidecar 行数 ≠ cue 数');
+          for (int i = 0; i < ours.length; i++) {
+            ours[i].tokenTiming = CueTokenTiming(
+              tokens: rows[i].tokens,
+              offsetsMs: rows[i].offsetsMs,
+            );
+          }
+          int multiSentence(List<AudioCue> cues, MatchResult r) {
+            int n = 0;
+            for (int i = 0; i < cues.length; i++) {
+              final CueMatch m = r.matches[i];
+              if (!m.matched) continue;
+              final NormalizedTextWithOffsets norm =
+                  AudioTextNormalizer.normalizeWithOffsets(
+                sections[m.sectionIndex].text,
+              );
+              final String slice = norm.originalSlice(
+                sections[m.sectionIndex].text,
+                m.normCharStart,
+                m.normCharEnd,
+              );
+              // 内部（去掉末尾标点后）还含句末标点 = 一条 cue 盖了多句。
+              final String inner =
+                  slice.replaceAll(RegExp(r'[。！？!?…‥．.」』）\s]+\$'), '');
+              if (RegExp('[。！？!?…‥．]').hasMatch(inner)) n++;
+            }
+            return n;
+          }
+
+          final CueResegmentResult reseg =
+              const CueSentenceResegmenter().resegment(
+            sections: sections,
+            cues: ours,
+            result: oursResult,
+          );
+          // ignore: avoid_print
+          print(
+            '[realdata] resegment: ${reseg.stats} '
+            'multiSentenceCues ${multiSentence(ours, oursResult)} → '
+            '${multiSentence(reseg.cues, reseg.result)} '
+            'matched ${oursResult.matchedCues}/${oursResult.totalCues} → '
+            '${reseg.result.matchedCues}/${reseg.result.totalCues}',
+          );
+          final List<int> after = <int>[];
+          for (final AudioCue c in hasRef ? reseg.cues : const <AudioCue>[]) {
+            int best = 1 << 30;
+            for (final int r in refStarts) {
+              final int d = (r - c.startMs).abs();
+              if (d < best) best = d;
+            }
+            after.add(best);
+          }
+          after.sort();
+          if (after.isNotEmpty) {
+            int pct(int p) => after[(after.length - 1) * p ~/ 100];
+            // ignore: avoid_print
+            print(
+              '[realdata] resegment start-time |Δ| vs SubPlz: p50=${pct(50)}ms '
+              'p80=${pct(80)}ms p95=${pct(95)}ms max=${after.last}ms (n=${after.length})',
+            );
+          }
+          final List<AudioCue> replaced2 = List<AudioCue>.of(reseg.cues);
+          replaceMatchedCueTextWithBookText(
+            sections: sections,
+            cues: replaced2,
+            result: reseg.result,
+          );
+          // ignore: avoid_print
+          print(
+            '[realdata] resegment text→book (first 16): ${replaced2.skip(9).take(16).map((AudioCue c) => '${c.startMs ~/ 100 / 10}s ${c.text}').join(' | ')}',
+          );
+        }
         expect(oursResult.totalCues, greaterThan(0));
       } finally {
         if (extract.existsSync()) await extract.delete(recursive: true);

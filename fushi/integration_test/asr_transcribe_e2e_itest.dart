@@ -12,7 +12,7 @@
 ///   --dart-define=ASR_LANG=ja|en         模型包语言（决定文件名与词表形态）；缺省 ja
 ///   --dart-define=ASR_AUDIO=<wav/mp3>    音频；缺省用 test/asr/fixtures/ja_tts_16k.wav
 ///                                        （相对 fushi/，仅桌面可读）
-///   --dart-define=ASR_EXPECT=<text>      期望文本子串（比较前去空白/标点并小写）；
+///   --dart-define=ASR_EXPECT=<text>      期望文本子串（比较前去空白/标点并小写；`ANY` = 不断言，只看输出）；
 ///                                        缺省「今日はいい天気ですね」
 ///
 /// 跑法（Windows，从 fushi/）：
@@ -53,6 +53,12 @@ String _param(String name, {String defaultValue = ''}) {
     'ASR_CHUNK_SECONDS' => const String.fromEnvironment('ASR_CHUNK_SECONDS'),
     'ASR_PIPELINE' => const String.fromEnvironment('ASR_PIPELINE'),
     'ASR_BUCKETS' => const String.fromEnvironment('ASR_BUCKETS'),
+    'ASR_FP16' => const String.fromEnvironment('ASR_FP16'),
+    'ASR_GREEDY_SESSIONS' => const String.fromEnvironment(
+        'ASR_GREEDY_SESSIONS',
+      ),
+    'ASR_GREEDY_THREADS' => const String.fromEnvironment('ASR_GREEDY_THREADS'),
+    'ASR_PCM_PARALLEL' => const String.fromEnvironment('ASR_PCM_PARALLEL'),
     _ => '',
   };
   if (fromDefine.isNotEmpty) return fromDefine;
@@ -64,12 +70,18 @@ String _param(String name, {String defaultValue = ''}) {
 final String _kSeed = _param('ASR_MODEL_SEED');
 final AsrLanguage _kLang =
     AsrLanguage.fromTag(_param('ASR_LANG', defaultValue: 'ja')) ??
-    AsrLanguage.japanese;
+        AsrLanguage.japanese;
 final String _kAudio = _param(
   'ASR_AUDIO',
   defaultValue: 'test/asr/fixtures/ja_tts_16k.wav',
 );
 final String _kExpect = _param('ASR_EXPECT', defaultValue: '今日はいい天気ですね');
+
+/// ASR_EXPECT=ANY：不断言文本（探索性跑一个还没有参考文本的语言包，只看输出）。
+void _expectTranscript(String actual) {
+  if (_kExpect == 'ANY') return;
+  expect(_normalize(actual), contains(_normalize(_kExpect)));
+}
 
 List<AsrEncoderBucket>? _bucketsFromEnv(String spec) {
   if (spec.isEmpty) return null;
@@ -86,14 +98,12 @@ String _normalize(String s) =>
     s.toLowerCase().replaceAll(RegExp(r'[\s、。！？!?,.\x27"“”’]'), '');
 
 Future<
-  ({
-    String text,
-    AsrTranscribeResult result,
-    OnnxProviderResolution resolution,
-    Duration wall,
-  })
->
-_runOnce({
+    ({
+      String text,
+      AsrTranscribeResult result,
+      OnnxProviderResolution resolution,
+      Duration wall,
+    })> _runOnce({
   required AsrModelStore store,
   required Directory jobsRoot,
   required String audio,
@@ -109,6 +119,15 @@ _runOnce({
     usePipeline: _param('ASR_PIPELINE') != '0',
     // ASR_BUCKETS=560x32,1120x16：静态桶表覆盖（帧数x行数，按帧数递增）。
     staticBucketsOverride: _bucketsFromEnv(_param('ASR_BUCKETS')),
+    // ASR_FP16=0：GPU 上仍用 fp32 编码器（与 fp16 派生图做 A/B）。
+    useFp16Encoder: _param('ASR_FP16') != '0',
+    // ASR_GREEDY_SESSIONS / ASR_GREEDY_THREADS：贪心 Loop 图会话数 / 每会话
+    // intra-op 线程数扫描；ASR_PCM_PARALLEL：同时在解的 ffmpeg 块数。
+    greedySessions: int.tryParse(_param('ASR_GREEDY_SESSIONS')),
+    greedyIntraOpThreads: int.tryParse(_param('ASR_GREEDY_THREADS')),
+    pcm: FfmpegAsrPcmSource(
+      parallelism: int.tryParse(_param('ASR_PCM_PARALLEL')),
+    ),
   );
   await service.discard(<String>[audio], _kLang);
   final Stopwatch loadClock = Stopwatch()..start();
@@ -124,6 +143,7 @@ _runOnce({
     '[asr-e2e][load] variant=${variant.name} preference=${preference.name} '
     'engineLoad=${loadClock.elapsedMilliseconds}ms '
     'resolution=${running.encoderResolution} '
+    'fp16=${running.encoderFp16} '
     'greedyGraph=${running.greedyGraphAvailable}'
     '${running.greedyUnavailableReason == null ? '' : ' (unavailable: ${running.greedyUnavailableReason})'}',
   );
@@ -132,6 +152,16 @@ _runOnce({
     AsrTranscribeResult? result;
     await for (final AsrTranscribeEvent e in running.run()) {
       if (e is AsrTranscribeFinishedEvent) result = e.result;
+      if (e is AsrTranscribeProgressEvent) {
+        // 时间线：音频以什么速度穿过前端（ffmpeg → VAD → 攒批）、段何时落盘。
+        // ignore: avoid_print
+        print(
+          '[asr-e2e][progress] t=${sw.elapsedMilliseconds}ms '
+          'processedMs=${e.progress.processedMs} '
+          'segmentsDone=${e.progress.segmentsDone} '
+          'speechMs=${e.progress.speechMs}',
+        );
+      }
     }
     sw.stop();
     expect(result, isNotNull, reason: '任务没有以 finished 结束');
@@ -144,16 +174,24 @@ _runOnce({
       await Directory(outDir).create(recursive: true);
       final String dst = p.join(outDir, 'transcript_${variant.name}.srt');
       await File(result!.srtPath).copy(dst);
+      // 逐 token 时间 sidecar 一起拷（realdata 测试据此做正文句界重切对照）。
+      final File tokens = File(
+        p.join(p.dirname(result.srtPath), AsrJobFiles.cueTokens),
+      );
+      if (tokens.existsSync()) {
+        await tokens.copy(
+          p.join(outDir, 'transcript_${variant.name}.tokens.jsonl'),
+        );
+      }
       // ignore: avoid_print
       print('[asr-e2e][out] $dst');
     }
     final List<AsrTranscribedSegment> segments =
         await AsrTranscribeJob.loadSegments(
-          await service.jobDirFor(<String>[audio], _kLang),
-        );
-    final String text = segments
-        .map((AsrTranscribedSegment s) => s.text)
-        .join();
+      await service.jobDirFor(<String>[audio], _kLang),
+    );
+    final String text =
+        segments.map((AsrTranscribedSegment s) => s.text).join();
     return (
       text: text,
       result: result!,
@@ -196,8 +234,11 @@ void main() {
     if (jobsRoot.existsSync()) await jobsRoot.delete(recursive: true);
   });
 
-  /// ASR_ONLY=gpu 时跳过 CPU 与分阶段计时用例（整本 7 小时的音频只跑 GPU）。
+  /// ASR_ONLY=gpu 时跳过 CPU 与分阶段计时用例（整本 7 小时的音频只跑 GPU）；
+  /// ASR_ONLY=cpu 只跑 CPU int8 用例（量 CPU 侧成批 / padding，不跑 200 s 的
+  /// silero 分阶段计时）。
   final bool onlyGpu = _param('ASR_ONLY') == 'gpu';
+  final bool onlyCpu = _param('ASR_ONLY') == 'cpu';
 
   testWidgets('CPU int8：真模型把话读出来并生成 SRT', (WidgetTester tester) async {
     if (onlyGpu) return;
@@ -224,14 +265,15 @@ void main() {
       'resolution=${r.resolution}',
     );
     expect(r.resolution.effective, OnnxExecutionProvider.cpu);
-    expect(_normalize(r.text), contains(_normalize(_kExpect)));
+    _expectTranscript(r.text);
     expect(r.result.cueCount, greaterThan(0));
     final String srt = File(r.result.srtPath).readAsStringSync();
     expect(srt, contains('-->'));
-    expect(_normalize(srt), contains(_normalize(_kExpect)));
+    _expectTranscript(srt);
   }, timeout: const Timeout(Duration(minutes: 10)));
 
   testWidgets('GPU fp32（auto）：真加速 EP 跑通且文本一致', (WidgetTester tester) async {
+    if (onlyCpu) return;
     if (!store.isReady(AsrEncoderVariant.fp32)) {
       // ignore: avoid_print
       print(
@@ -239,8 +281,8 @@ void main() {
       );
       return;
     }
-    final Set<OnnxExecutionProvider> available = await AsrEngineLoader()
-        .availableAcceleratedProviders();
+    final Set<OnnxExecutionProvider> available =
+        await AsrEngineLoader().availableAcceleratedProviders();
     // ignore: avoid_print
     print('[asr-e2e][gpu-fp32] available accelerated EPs: $available');
     final r = await _runOnce(
@@ -258,7 +300,7 @@ void main() {
       'rtf=${(r.wall.inMilliseconds / r.result.totalMs).toStringAsFixed(3)} '
       'resolution=${r.resolution}',
     );
-    expect(_normalize(r.text), contains(_normalize(_kExpect)));
+    _expectTranscript(r.text);
     if (available.isNotEmpty) {
       // 有加速 EP 编译在运行时里：必须真落到它上，不允许静默退 CPU。
       expect(
@@ -273,7 +315,7 @@ void main() {
   testWidgets(
     '分阶段计时：ffmpeg / VAD / ASR（CPU int8 与 GPU fp32）',
     (WidgetTester tester) async {
-      if (onlyGpu) return;
+      if (onlyGpu || onlyCpu) return;
       if (store.isReady(AsrEncoderVariant.int8)) {
         await _phaseBenchmark(
           store: store,
@@ -313,9 +355,8 @@ Future<void> _phaseBenchmark({
   try {
     final FfmpegAsrPcmSource pcm = FfmpegAsrPcmSource();
     final Stopwatch decodeClock = Stopwatch()..start();
-    final List<AsrPcmChunk> chunks = await pcm
-        .decode(audio, chunkSeconds: 600)
-        .toList();
+    final List<AsrPcmChunk> chunks =
+        await pcm.decode(audio, chunkSeconds: 600).toList();
     decodeClock.stop();
     final int samples = chunks.fold<int>(
       0,
@@ -338,17 +379,10 @@ Future<void> _phaseBenchmark({
     }
     segments.addAll(await vad.flush());
     vadClock.stop();
-    final AsrTransducerDecoder decoder = AsrTransducerDecoder(
-      encoder: sessions.encoder,
-      decoder: sessions.decoder,
-      joiner: sessions.joiner,
-      tokens: sessions.tokens,
-      greedy: sessions.greedy,
-      staticEncoders: sessions.staticEncoders,
-    );
+    final AsrSegmentDecoder decoder = sessions.newDecoder();
     // ignore: avoid_print
     print(
-      '[asr-e2e][bench][$label] greedyGraph=${decoder.usesGreedyGraph} '
+      '[asr-e2e][bench][$label] greedyGraph=${decoder is AsrTransducerDecoder && decoder.usesGreedyGraph} '
       '${sessions.greedyUnavailableReason ?? ''}',
     );
     // 预热一次（DirectML 首次前向含着色器编译，不算进稳态）。

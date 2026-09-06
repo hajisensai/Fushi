@@ -4250,8 +4250,6 @@
   "audiobook_subtitle_source_transcribe_hint": "Generate from the selected audio with the on-device speech model",
   "audiobook_transcribe_intro": "Transcribes the audio locally with an on-device speech model for the selected language and generates subtitles for alignment. Nothing is uploaded.",
   "audiobook_transcribe_language_label": "Speech language",
-  "audiobook_transcribe_language_ja": "Japanese",
-  "audiobook_transcribe_language_en": "English",
   "asr_models_section": "Speech recognition models",
   "asr_models_section_summary": "Models for on-device audiobook transcription. Download only the languages you need.",
   "asr_models_status_ready": "Downloaded · $size on disk",

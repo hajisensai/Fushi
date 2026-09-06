@@ -461,6 +461,7 @@ abstract final class OnnxDataType {
   static const int kInt32 = 6;
   static const int kInt64 = 7;
   static const int kBool = 9;
+  static const int kFloat16 = 10;
 }
 
 /// `AttributeProto.AttributeType`（枚举值，注意与 AttributeProto 的字段号不同）。
@@ -790,9 +791,21 @@ class OnnxTensorProto extends OnnxMessageView {
 
   static const int _fDims = 1;
   static const int _fDataType = 2;
+  static const int _fFloatData = 4;
   static const int _fInt64Data = 7;
   static const int _fName = 8;
   static const int _fRawData = 9;
+  static const int _fExternalData = 13;
+  static const int _fDataLocation = 14;
+
+  /// 任意元素类型的张量，数据以小端 `raw_data` 给出（调用方保证字节数与
+  /// [dataType] × 元素数一致；fp16 等本文件没有类型化工厂的类型走这里）。
+  factory OnnxTensorProto.raw(
+    String name,
+    int dataType,
+    List<int> dims,
+    Uint8List rawData,
+  ) => _raw(name, dataType, dims, rawData);
 
   static OnnxTensorProto _raw(
     String name,
@@ -853,6 +866,14 @@ class OnnxTensorProto extends OnnxMessageView {
   int? get dataType => message.varint(_fDataType);
   Uint8List? get rawData => message.bytes(_fRawData);
   List<int> get int64Data => message.varintList(_fInt64Data);
+
+  /// `float_data`（packed 或非 packed）；只在没有 `raw_data` 的老导出里出现。
+  List<double> get floatData => message.floatList(_fFloatData);
+
+  /// 数据不在本文件里（`data_location = EXTERNAL` 或带 `external_data` 项）。
+  bool get hasExternalData =>
+      message.has(_fExternalData) ||
+      (message.varint(_fDataLocation) ?? 0) != 0;
 
   /// 把 int64 标量/向量读成 Dart 列表（`raw_data` 或 `int64_data` 二者之一）。
   List<int> readInt64Values() {
@@ -927,6 +948,22 @@ class OnnxValueInfo extends OnnxMessageView {
 
   /// 元素类型；非张量类型（sequence/map/optional）返回 null。
   int? get elemType => _tensorType?.varint(_fTensorElemType);
+
+  /// 只改元素类型，形状与其它字段原样保留；非张量类型抛 [FormatException]。
+  void setElemType(int value) {
+    final Uint8List? type = message.bytes(_fType);
+    final Uint8List? tensor = type == null
+        ? null
+        : ProtoMessage.decode(type).bytes(_fTypeTensorType);
+    if (type == null || tensor == null) {
+      throw FormatException('ValueInfoProto "$name" 不是张量类型');
+    }
+    final ProtoMessage typeMsg = ProtoMessage.decode(type);
+    final ProtoMessage tensorMsg = ProtoMessage.decode(tensor)
+      ..setVarint(_fTensorElemType, value);
+    typeMsg.setBytes(_fTypeTensorType, tensorMsg.encode());
+    message.setBytes(_fType, typeMsg.encode());
+  }
 
   /// 形状：每项 `int`（静态）或 `String`（符号，未命名符号维给空串）；
   /// 没有 shape 字段（rank 未知）返回 null。

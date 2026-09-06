@@ -254,6 +254,11 @@ void main() {
       expect(asrEncoderBucketsForBudget(null), kAsrGpuEncoderBuckets);
       expect(asrEncoderBucketsForBudget(12 * gib), kAsrGpuEncoderBuckets);
       expect(asrEncoderBucketsForBudget(10 * gib), kAsrGpuEncoderBuckets);
+      // ≥ 16 GiB：多一档 280 帧桶（按桶分组成批后短段才真能落进去）。
+      expect(asrEncoderBucketsForBudget(16 * gib), kAsrGpuEncoderBucketsLarge);
+      expect(asrEncoderBucketsForBudget(32 * gib), kAsrGpuEncoderBucketsLarge);
+      expect(kAsrGpuEncoderBucketsLarge.first.frames, 280);
+      expect(kAsrGpuEncoderBucketsLarge.sublist(1), kAsrGpuEncoderBuckets);
       expect(asrEncoderBucketsForBudget(8 * gib), kAsrGpuEncoderBucketsSmall);
       expect(asrEncoderBucketsForBudget(6 * gib), kAsrGpuEncoderBucketsSmall);
       expect(asrEncoderBucketsForBudget(4 * gib), isEmpty);
@@ -268,6 +273,28 @@ void main() {
           kAsrGpuEncoderBuckets[i].batch,
         );
       }
+    });
+
+    test('fp16：同一档桶表每桶行数翻倍、帧数与哨兵不变、显存档位判定不变', () {
+      const int gib = 1024 * 1024 * 1024;
+      for (final int? budget in <int?>[null, 6 * gib, 12 * gib, 32 * gib]) {
+        final List<AsrEncoderBucket> fp32 = asrEncoderBucketsForBudget(budget);
+        final List<AsrEncoderBucket> fp16 = asrEncoderBucketsForBudget(
+          budget,
+          fp16: true,
+        );
+        expect(fp16.length, fp32.length, reason: 'budget=$budget');
+        for (int i = 0; i < fp32.length; i++) {
+          expect(fp16[i].frames, fp32[i].frames);
+          expect(fp16[i].batch, fp32[i].batch * kAsrFp16BucketRowFactor);
+          expect(fp16[i].sentinel, fp32[i].sentinel);
+        }
+      }
+      expect(asrEncoderBucketsForBudget(4 * gib, fp16: true), isEmpty);
+      expect(
+        const AsrEncoderBucket(frames: 560, batch: 32).scaledRows(2),
+        const AsrEncoderBucket(frames: 560, batch: 64),
+      );
     });
 
     test('桶表必须按 frames 递增', () {

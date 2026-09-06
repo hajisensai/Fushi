@@ -461,12 +461,12 @@ void main() {
       );
     });
 
-    test('比批内最长段短一半以上的段留给下一批（padding 不翻倍）', () {
+    test('短于批内最长段 0.8 倍的段留给下一批（padding 最坏 1.25×）', () {
       final List<AsrSpeechSegment> sorted = <AsrSpeechSegment>[
         seg(20),
         seg(18),
-        seg(11),
-        seg(9),
+        seg(16),
+        seg(15),
         seg(3),
       ];
       expect(
@@ -476,6 +476,7 @@ void main() {
           maxSegments: 128,
         ),
         3,
+        reason: '16 = 20 × 0.8 刚好够，15 不够',
       );
     });
 

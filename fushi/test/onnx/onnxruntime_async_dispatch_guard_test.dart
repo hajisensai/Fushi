@@ -75,6 +75,49 @@ void main() {
     expect(src, contains('WorkQueue cpuQueue_'));
   });
 
+  test('delta #11：每个 CPU 会话各一条工作线程（Run / Close 按会话取队列，关会话后回收）', () {
+    // 丢掉它同样是静默回退：所有 CPU 会话又挤回一条 FIFO，两个贪心 Loop 图会话
+    // 只能串行，ASR 搜索并行度归一，结果照旧正确、没有别的测试会红。
+    final String src = maskComments(
+      File('$vendored/windows/flutter_onnxruntime_plugin.cpp')
+          .readAsStringSync(),
+    );
+    expect(
+      src,
+      contains(
+          'std::map<std::string, std::unique_ptr<WorkQueue>> cpuSessionQueues_'),
+    );
+    expect(
+        src, contains('queueFor(bool is_gpu, const std::string &session_id)'));
+    for (final String handler in <String>[
+      'HandleRunInference',
+      'HandleCloseSession',
+    ]) {
+      final int at = src.indexOf('void FlutterOnnxruntimePlugin::$handler(');
+      expect(at, greaterThan(0), reason: '$handler 不在了，守卫需更新');
+      final int end = src.indexOf('\nvoid FlutterOnnxruntimePlugin::', at + 10);
+      final String body = src.substring(at, end < 0 ? src.length : end);
+      expect(
+        body,
+        contains('queueFor(is_gpu, session_id)'),
+        reason: '$handler 必须按会话取队列，否则 CPU 会话又全挤在 cpuQueue_ 上串行',
+      );
+    }
+    final int closeAt =
+        src.indexOf('void FlutterOnnxruntimePlugin::HandleCloseSession(');
+    final String closeBody = src.substring(closeAt);
+    expect(
+      closeBody,
+      contains('impl->dropSessionQueue(session_id)'),
+      reason: '关会话后必须回收它的工作线程，否则每开关一个 CPU 会话漏一条线程',
+    );
+    expect(
+      closeBody.indexOf('impl->dispatcher_.Post('),
+      greaterThan(closeBody.indexOf('impl->reply(shared_result, outcome)')),
+      reason: '回收必须在回复之后、经 dispatcher 回到平台线程做（队列表只在平台线程碰）',
+    );
+  });
+
   test('SessionManager 的会话是 shared_ptr，Run 期间不持 map 锁', () {
     final String header = maskComments(
       File('$vendored/windows/src/session_manager.h').readAsStringSync(),

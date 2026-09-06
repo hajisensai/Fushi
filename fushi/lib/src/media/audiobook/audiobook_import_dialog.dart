@@ -6,7 +6,10 @@ import 'package:fushi/src/asr/asr_cue_builder.dart'
 import 'package:fushi/src/asr/asr_transcription_service.dart';
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
 import 'package:fushi/src/media/audiobook/audiobook_alignment_service.dart'
-    show loadEpubSectionsInBackground, parseCuesForFormat;
+    show
+        loadEpubSectionsInBackground,
+        parseCuesForFormat,
+        resegmentCuesBySentence;
 import 'package:fushi/src/media/import/audiobook_health_summary.dart';
 import 'package:fushi/src/media/import/epub_backed_srt_book.dart';
 import 'package:fushi/src/media/import/import_dialog_frame.dart';
@@ -950,13 +953,28 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       }
       reportProgress(0.3, t.import_step_matching);
       // 匹配器放 isolate 跑，主线程不能被大书的 bigram 扫描挤出 ANR。
-      final MatchResult result = await EpubCueMatcher.matchInIsolate(
+      final String? alignment = _alignmentPath;
+      final bool hasTokenTiming = alignment != null &&
+          await AsrTranscriptionService.attachCueTokenTiming(cues, alignment);
+      MatchResult result = await EpubCueMatcher.matchInIsolate(
         sections: sections,
         cues: cues,
         searchWindow: _searchWindow,
         similarityThreshold: _similarityThreshold,
       );
-      final String? alignment = _alignmentPath;
+      if (hasTokenTiming) {
+        // 与 alignAndPersistAudiobook 同一规则：命中 cue 按正文句界重切，
+        // 就地换掉调用方持有的列表内容。
+        final CueResegmentResult resegmented = resegmentCuesBySentence(
+          sections: sections,
+          cues: cues,
+          result: result,
+        );
+        cues
+          ..clear()
+          ..addAll(resegmented.cues);
+        result = resegmented.result;
+      }
       if (alignment != null &&
           AsrTranscriptionService.isAsrGeneratedSubtitlePath(alignment)) {
         // 设备端转录产物：命中 cue 的听写文本换成正文（与 alignAndPersistAudiobook

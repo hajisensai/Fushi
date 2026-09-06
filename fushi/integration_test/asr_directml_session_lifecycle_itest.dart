@@ -69,10 +69,11 @@ Future<void> _round({
     '${sessions.greedyUnavailableReason == null ? '' : ' (unavailable: ${sessions.greedyUnavailableReason})'}',
   );
   try {
+    // 本 itest 只量 transducer 包（decoder / joiner 必在）。
     final AsrTransducerDecoder decoder = AsrTransducerDecoder(
       encoder: sessions.encoder,
-      decoder: sessions.decoder,
-      joiner: sessions.joiner,
+      decoder: sessions.decoder!,
+      joiner: sessions.joiner!,
       tokens: sessions.tokens,
       lookaheadFrames: lookaheadFrames,
       greedy: useGreedyGraph ? sessions.greedy : null,

@@ -28,6 +28,9 @@ const int kAsrSubsamplingFactor = 4;
 const int kAsrEncoderFrameMs = kAsrFrameShiftMs * kAsrSubsamplingFactor;
 
 /// fbank 维度。
+/// 本子系统的 `dart:developer` 日志通道名。
+const String kAsrLogName = 'hibiki.asr';
+
 const int kAsrFeatureDim = 80;
 
 /// silero-vad v4 每次前向消费的样本数（16 kHz 下 32 ms）。
@@ -53,6 +56,10 @@ abstract final class AsrModelIo {
   static const String vadOutputProb = 'prob';
   static const String vadOutputH = 'new_h';
   static const String vadOutputC = 'new_c';
+
+  /// CTC（Omnilingual）：`x[N, num_samples]` f32 → `logits[N, num_frames, V]`。
+  static const String ctcInputX = 'x';
+  static const String ctcOutputLogits = 'logits';
 }
 
 /// 词表（`tokens.txt`）。
@@ -73,6 +80,7 @@ class AsrTokenTable {
     this.blankId,
     this.unkId,
     this.eosId,
+    this.padId,
     this.isSentencePiece,
   );
 
@@ -84,7 +92,10 @@ class AsrTokenTable {
   /// 解析 sherpa-onnx 的 `tokens.txt`（`<token>\t<id>` 每行，id 从 0 起）。
   /// 以最后一个制表符（没有则最后一个空格）切分，token 本体不裁剪——
   /// 空格本身可能是 token。
-  factory AsrTokenTable.parse(String text) {
+  /// [blankToken]：blank 的记号名（sherpa-onnx 导出 `<blk>`；Omnilingual 是
+  /// `<s>`，见 `AsrModelPack.blankToken`）。eos 认 `<sos/eos>` 或 `</s>`，
+  /// `<pad>`（fairseq2 词表）也算特殊符号。
+  factory AsrTokenTable.parse(String text, {String blankToken = '<blk>'}) {
     final Map<int, String> byId = <int, String>{};
     for (final String raw in text.split('\n')) {
       final String line =
@@ -106,9 +117,10 @@ class AsrTokenTable {
     int find(String name) => tokens.indexOf(name);
     return AsrTokenTable._(
       tokens,
-      find('<blk>'),
+      find(blankToken),
       find('<unk>'),
-      find('<sos/eos>'),
+      find('<sos/eos>') >= 0 ? find('<sos/eos>') : find('</s>'),
+      find('<pad>'),
       tokens.any((String t) => t.startsWith(sentencePieceSpace)),
     );
   }
@@ -120,6 +132,9 @@ class AsrTokenTable {
   final int unkId;
   final int eosId;
 
+  /// `<pad>`（fairseq2 词表；sherpa-onnx 导出没有，为 -1）。
+  final int padId;
+
   /// 词表是否是 SentencePiece 形态（任一 token 以 `▁` 开头）。
   final bool isSentencePiece;
 
@@ -129,7 +144,8 @@ class AsrTokenTable {
   String tokenAt(int id) => id >= 0 && id < _tokens.length ? _tokens[id] : '';
 
   /// 该 id 是否是不该进入文本的特殊符号（blank / unk / eos）。
-  bool isSpecial(int id) => id == blankId || id == unkId || id == eosId;
+  bool isSpecial(int id) =>
+      id == blankId || id == unkId || id == eosId || id == padId;
 
   /// 若 [id] 是 byte-fallback token（`<0xNN>`）返回该字节值，否则 -1。
   int byteValueOf(int id) {
@@ -173,13 +189,41 @@ class AsrTokenTable {
       }
       flushBytes();
       final String raw = tokenAt(id);
-      outTokens.add(
-        isSentencePiece ? raw.replaceAll(sentencePieceSpace, ' ') : raw,
-      );
+      outTokens.add(isSentencePiece ? _materializeSentencePiece(raw) : raw);
       outTimes.add(timesMs[i]);
     }
     flushBytes();
     return (tokens: outTokens, timesMs: outTimes);
+  }
+
+  /// 标点类 token（`▁,` / `▁。` / `.` 等：去掉 `▁` 后没有字母数字、也不是 CJK
+  /// 文字）。X-ASR 中文词表把标点导成带 `▁` 的独立 token，照搬成空格会得到
+  /// `你好 ，世界`；英语 BPE 里标点本来就不带 `▁`，此规则对它无影响。
+  static final RegExp _punctuationOnly = RegExp(
+    r'^[^\p{L}\p{N}\p{M}]+$',
+    unicode: true,
+  );
+
+  /// 不用空格分词的文字：汉字（含扩展区与兼容区）、假名、泰文。X-ASR 中文词表
+  /// 每个汉字都是独立的 `▁昨` / `▁天` token，照 SentencePiece 惯例还原会得到
+  /// `昨 天 是`。韩文用空格分词，不在此列。
+  static final RegExp _startsWithScriptWithoutSpaces = RegExp(
+    r'^[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}]',
+    unicode: true,
+  );
+
+  /// `▁` → 空格；但**标点 token 前、不用空格的文字前不留空格**。
+  static String _materializeSentencePiece(String raw) {
+    if (!raw.startsWith(sentencePieceSpace)) {
+      return raw.replaceAll(sentencePieceSpace, ' ');
+    }
+    final String body = raw
+        .substring(sentencePieceSpace.length)
+        .replaceAll(sentencePieceSpace, ' ');
+    if (body.isEmpty) return ' ';
+    if (_punctuationOnly.hasMatch(body)) return body;
+    if (_startsWithScriptWithoutSpaces.hasMatch(body)) return body;
+    return ' $body';
   }
 }
 

@@ -47,12 +47,18 @@ abstract interface class AsrBatchDecoder {
   Future<List<AsrDecodedSegment>> decodeBatch(List<AsrSpeechSegment> segments);
 }
 
-/// 三段式解码器（可选实现）：fbank（Dart 同步）→ encoder（GPU）→ 搜索（CPU）
-/// 拆开后任务可以把三者叠起来：GPU 编码第 i 批时 CPU 搜索第 i-1 批、Dart 算第
-/// i+1 批的 fbank（`asr_transcribe_job.dart` 的流水线）。三段串起来必须与
+/// 三段式解码器（可选实现）：fbank（isolate 池）→ encoder（GPU）→ 搜索（CPU）
+/// 拆开后任务把三者叠起来（[AsrBatchPipeline]）。三段串起来必须与
 /// [AsrBatchDecoder.decodeBatch] 逐字等价。
 abstract interface class AsrPipelinedDecoder implements AsrBatchDecoder {
+  /// 同步算特征（阻塞调用方 isolate）：[encode] 没拿到特征时的兜底。
   AsrBatchFeatures computeFeatures(List<AsrSpeechSegment> segments);
+
+  /// 不占调用方事件循环地算特征（真实现走 isolate 池）；结果与
+  /// [computeFeatures] 逐元素相同。
+  Future<AsrBatchFeatures> computeFeaturesAsync(
+    List<AsrSpeechSegment> segments,
+  );
   Future<AsrEncodedBatch> encode(
     List<AsrSpeechSegment> segments, {
     AsrBatchFeatures? features,
@@ -65,6 +71,26 @@ abstract interface class AsrPipelinedDecoder implements AsrBatchDecoder {
 abstract interface class AsrBatchShaper {
   /// 最长段为 [longestSamples] 样本时一批最多几行；null = 无约束。
   int? batchCapFor(int longestSamples);
+
+  /// [longestSamples] 样本的段落到哪个桶（桶的稳定标识，如帧数）；null = 无约束。
+  /// 任务侧**按桶分组成批**：同一批只装同一个桶的段，短段不再被更大的桶顺手
+  /// 带走（2026-09-06 实测那正是 280 帧桶「加了也没用」的原因）。
+  int? bucketKeyFor(int longestSamples);
+}
+
+/// 一套引擎会话对应的完整解码器（三段式 + 成批约束 + 统计）：transducer
+/// （`AsrTransducerDecoder`）与 CTC（`AsrCtcDecoder`）都实现它，任务侧与
+/// isolate / 服务只认这个接口。
+abstract interface class AsrSegmentDecoder
+    implements AsrPipelinedDecoder, AsrBatchShaper {
+  AsrDecodeStats get stats;
+
+  /// 给每个**已建好**的静态桶发一次空跑，**不等结果**。DirectML 对固定 shape
+  /// 的融合图在首次 Run 时才编译/初始化算子（2026-09-07 实测 1120 帧桶首跑
+  /// 778 ms、280 帧桶 333 ms，稳态 ~100 ms），这笔账躲不掉，但插件的 GPU 队列
+  /// 是 FIFO：装载完立刻发出去，就能和任务前端（ffmpeg + VAD 攒第一批）重叠，
+  /// 第一批只需排在剩余的 warm-up 后面。失败只记日志；重复调用不重跑。
+  void warmUp();
 }
 
 /// 任务进度快照。
@@ -257,6 +283,9 @@ abstract final class AsrJobFiles {
   static const String state = 'state.json';
   static const String segments = 'segments.jsonl';
   static const String srt = 'transcript.srt';
+
+  /// 与 [srt] 同一份 cue 的逐 token 时间 sidecar（`serializeAsrCueTokens`）。
+  static const String cueTokens = 'transcript.tokens.jsonl';
 }
 
 /// 整本转录任务。一个实例只跑一次 [run]；暂停后再跑请新建实例（读同一 jobDir）。
@@ -327,6 +356,7 @@ class AsrTranscribeJob {
   File get _stateFile => File(p.join(jobDir.path, AsrJobFiles.state));
   File get _segmentsFile => File(p.join(jobDir.path, AsrJobFiles.segments));
   File get _srtFile => File(p.join(jobDir.path, AsrJobFiles.srt));
+  File get _cueTokensFile => File(p.join(jobDir.path, AsrJobFiles.cueTokens));
 
   /// 读取（或初始化）任务状态。路径列表 / 模型包与磁盘状态不一致、文件缺失或
   /// 损坏时视为新任务（`fresh == true`，调用方据此清空旧产物）。
@@ -410,6 +440,7 @@ class AsrTranscribeJob {
       // 新任务（或状态文件缺失/损坏/路径不符）：清掉残留的旧产物。
       if (_segmentsFile.existsSync()) await _segmentsFile.delete();
       if (_srtFile.existsSync()) await _srtFile.delete();
+      if (_cueTokensFile.existsSync()) await _cueTokensFile.delete();
       await _writeState(state);
     }
 
@@ -481,10 +512,41 @@ class AsrTranscribeJob {
             (int acc, AsrSpeechSegment s) =>
                 s.samples.length > acc ? s.samples.length : acc,
           );
+
+      /// 静态桶模式：下一批该取哪些段（不从 pending 移除）。pending 已按段长降序，
+      /// 同桶的段连续；优先取**第一个攒满的桶**（整批 cap 行、零空行），[all] 时
+      /// 退而取最长段所在桶的残批。null = 没有可发的批。
+      List<AsrSpeechSegment>? selectBucketBatch({required bool all}) {
+        final AsrBatchShaper s = shaper!;
+        int start = 0;
+        List<AsrSpeechSegment>? firstGroup;
+        while (start < pending.length) {
+          final int longest = pending[start].samples.length;
+          final int? key = s.bucketKeyFor(longest);
+          // 超出最大桶的段（静态模式下 VAD 已切到 10 s，正常到不了）按动态上限成批。
+          final int cap = s.batchCapFor(longest) ?? maxBatchSegments;
+          int end = start + 1;
+          while (end < pending.length &&
+              s.bucketKeyFor(pending[end].samples.length) == key) {
+            end++;
+          }
+          final int take = end - start < cap ? end - start : cap;
+          final List<AsrSpeechSegment> group = pending.sublist(
+            start,
+            start + take,
+          );
+          if (take >= cap) return group;
+          firstGroup ??= group;
+          start = end;
+        }
+        return all ? firstGroup : null;
+      }
+
       bool enoughPending() {
         if (pending.isEmpty) return false;
-        final int? cap = shaper?.batchCapFor(longestPending());
-        if (cap != null) return pending.length >= cap;
+        if (shaper?.batchCapFor(longestPending()) != null) {
+          return selectBucketBatch(all: false) != null;
+        }
         return pending.length >= maxBatchSegments ||
             pendingSamples() >= budgetSamples;
       }
@@ -493,11 +555,6 @@ class AsrTranscribeJob {
           usePipeline && decoder is AsrPipelinedDecoder
               ? decoder as AsrPipelinedDecoder
               : null;
-      // 流水线状态（跨 drain 调用保留，块末 drain(all: true) 冲干净）。
-      Future<AsrEncodedBatch>? inFlight;
-      List<AsrSpeechSegment>? peeked;
-      AsrBatchFeatures? peekedFeatures;
-
       Future<void> commit(
         List<AsrSpeechSegment> batch,
         List<AsrDecodedSegment> decoded,
@@ -518,50 +575,32 @@ class AsrTranscribeJob {
         await _appendSegments(out);
       }
 
-      int nextTake() {
-        final int? cap = shaper?.batchCapFor(pending.first.samples.length);
-        // 静态桶：一批就是桶的行数（桶内每行成本相同，装满最划算）。
-        return cap != null
-            ? (pending.length < cap ? pending.length : cap)
-            : pickBatchSize(
-                pending,
-                budgetSamples: budgetSamples,
-                maxSegments: maxBatchSegments,
-              );
+      /// 下一批该取哪些段（不移除）：静态桶按桶分组（见 [selectBucketBatch]），
+      /// 动态路径从最长段起按音频预算取（[pickBatchSize]）。
+      List<AsrSpeechSegment> selectBatch({required bool all}) {
+        if (shaper?.batchCapFor(pending.first.samples.length) != null) {
+          return selectBucketBatch(all: all) ?? const <AsrSpeechSegment>[];
+        }
+        final int take = pickBatchSize(
+          pending,
+          budgetSamples: budgetSamples,
+          maxSegments: maxBatchSegments,
+        );
+        return pending.sublist(0, take);
       }
 
-      /// 取下一批：若上一轮已经窥视过（并提前算了 fbank）且 pending 头部没变，
-      /// 就复用同一个列表对象，让 encode 认出提前算好的特征。
-      List<AsrSpeechSegment> takeBatch() {
-        final int take = nextTake();
-        final List<AsrSpeechSegment>? p = peeked;
-        peeked = null;
-        if (p != null && p.length == take) {
-          bool same = true;
-          for (int k = 0; k < take; k++) {
-            if (!identical(p[k], pending[k])) {
-              same = false;
-              break;
-            }
-          }
-          if (same) {
-            pending.removeRange(0, take);
-            return p;
-          }
-        }
-        peekedFeatures = null;
-        final List<AsrSpeechSegment> batch = pending.sublist(0, take);
-        pending.removeRange(0, take);
+      /// 取下一批（从 pending 移除）。
+      List<AsrSpeechSegment> takeBatch({required bool all}) {
+        final List<AsrSpeechSegment> batch = selectBatch(all: all);
+        final Set<AsrSpeechSegment> taken = Set<AsrSpeechSegment>.identity()
+          ..addAll(batch);
+        pending.removeWhere(taken.contains);
         return batch;
       }
 
-      Future<void> flushInFlight() async {
-        final Future<AsrEncodedBatch>? f = inFlight;
-        if (f == null || pipe == null) return;
-        inFlight = null;
-        final AsrEncodedBatch enc = await f;
-        await commit(enc.segments, await pipe.search(enc));
-      }
+      // 流水线（跨 drain 调用保留；drain(all: true) 冲干净）。
+      final AsrBatchPipeline? pipeline =
+          pipe == null ? null : AsrBatchPipeline(pipe: pipe, commit: commit);
 
       Future<void> drain({required bool all}) async {
         // 按段长降序、按音频预算成批：encoder 按批内最长 pad、Loop 图每一步都
@@ -573,43 +612,32 @@ class AsrTranscribeJob {
           (AsrSpeechSegment a, AsrSpeechSegment b) =>
               b.samples.length.compareTo(a.samples.length),
         );
-        // 排序可能让窥视过的批失效（takeBatch 会按元素身份复核）。
         while (pending.isNotEmpty && (all || enoughPending())) {
-          final List<AsrSpeechSegment> batch = takeBatch();
-          if (pipe == null) {
+          final List<AsrSpeechSegment> batch = takeBatch(all: all);
+          if (pipeline == null) {
             await commit(batch, await decoder.decodeBatch(batch));
             continue;
           }
-          // 三级流水线：GPU 编码第 i 批 ‖ CPU 搜索第 i-1 批 ‖ Dart 算第 i+1 批
-          // 的 fbank。插件把 GPU 会话与 CPU 会话放在两条工作线程上，三者才真能
-          // 同时跑（2026-09-06：串行时 fbank + 搜索 + ffmpeg 占 30 分钟英语
-          // 7.2 s 里的四成，GPU 那段时间全闲着）。
-          final AsrBatchFeatures? ready = peekedFeatures;
-          peekedFeatures = null;
-          final Future<AsrEncodedBatch> encoding = pipe.encode(
-            batch,
-            features: ready,
-          );
-          Future<List<AsrDecodedSegment>>? searching;
-          AsrEncodedBatch? previous;
-          final Future<AsrEncodedBatch>? prevFuture = inFlight;
-          inFlight = null;
-          if (prevFuture != null) {
-            previous = await prevFuture;
-            searching = pipe.search(previous);
-          }
-          // 趁 GPU / CPU 会话都在忙：窥视下一批并把它的 fbank 先算出来。
-          if (pending.isNotEmpty && (all || enoughPending())) {
-            final int take = nextTake();
-            peeked = pending.sublist(0, take);
-            peekedFeatures = pipe.computeFeatures(peeked!);
-          }
-          if (searching != null) {
-            await commit(previous!.segments, await searching);
-          }
-          inFlight = encoding;
+          await pipeline.submit(batch);
         }
-        if (all) await flushInFlight();
+        if (all) await pipeline?.flush();
+      }
+
+      /// 检查点：最早一个**还没落盘**的段（攒批中 / 已提交流水线但未落盘的批）
+      /// 的起点；没有则 [fallback]。恢复时从它重喂，被裁掉的已落盘段重跑一遍，
+      /// 绝不漏段。
+      int checkpointSample(int fallback) {
+        int earliest = fallback;
+        for (final AsrSpeechSegment s in pending) {
+          if (s.startSample < earliest) earliest = s.startSample;
+        }
+        for (final List<AsrSpeechSegment> batch
+            in pipeline?.uncommitted ?? const <List<AsrSpeechSegment>>[]) {
+          for (final AsrSpeechSegment s in batch) {
+            if (s.startSample < earliest) earliest = s.startSample;
+          }
+        }
+        return earliest;
       }
 
       // 预取：先向流要下一块，让 ffmpeg 与本块的 VAD/解码重叠。
@@ -636,16 +664,37 @@ class AsrTranscribeJob {
               );
             }
           }
-          // 块结束：全部解码后落检查点。
-          await drain(all: true);
-          final int checkpoint =
-              segmenter.inProgressSpeechStartSample ?? chunk.endSample;
-          state = _withResume(state, fileIndex, checkpoint);
+          // 块结束：只发攒满的批，半批留到下一块继续攒——静态桶一批固定 N 行，
+          // 块末硬冲半批的空行是 2026-09-06 基线里 padding 2~3x 的最大来源
+          // （30 分钟英语 331 段 / 18 批，平均 18 行占 32 行）。检查点取最早一个
+          // 未落盘段的起点，恢复时从它重喂（见 [checkpointSample]）。
+          await drain(all: false);
+          // 已提交流水线的批**不**在这里等它落盘：等 = 每块一个气泡（GPU 空转
+          // + 下一块首批的特征没提前算；30 分钟 6 块 ≈ 0.5 s，7 小时 84 块
+          // ≈ 8 s）。检查点由 [checkpointSample] 把未落盘批的起点也算进去，只是
+          // 恢复点最多落后 [AsrBatchPipeline.maxUncommitted] 批（每批 ≤ 桶行数
+          // × 10 s 音频，崩溃后重跑几批 ≈ 零点几秒 GPU），换整条流水线跨块不断。
+          state = _withResume(
+            state,
+            fileIndex,
+            checkpointSample(
+              segmenter.inProgressSpeechStartSample ?? chunk.endSample,
+            ),
+          );
           await _writeState(state);
           yield AsrTranscribeProgressEvent(
             snapshot(fileIndex, _samplesToMs(chunk.endSample)),
           );
           if (_pauseRequested) {
+            // 暂停：把半批也冲干净再落检查点，恢复点 = 进行中语音起点，与暂停前
+            // 落盘的段一一对应，续跑不重复解码。
+            await drain(all: true);
+            state = _withResume(
+              state,
+              fileIndex,
+              segmenter.inProgressSpeechStartSample ?? chunk.endSample,
+            );
+            await _writeState(state);
             yield AsrTranscribePausedEvent(
               snapshot(fileIndex, _samplesToMs(chunk.endSample)),
             );
@@ -680,6 +729,10 @@ class AsrTranscribeJob {
       fileOffsetsMs: asrFileOffsetsFromDurations(fileDurationsMs),
     );
     await _srtFile.writeAsString(serializeAsrCuesToSrt(cues), flush: true);
+    await _cueTokensFile.writeAsString(
+      serializeAsrCueTokens(cues),
+      flush: true,
+    );
     state = state.copyWith(finished: true);
     await _writeState(state);
     yield AsrTranscribeFinishedEvent(
@@ -714,11 +767,24 @@ class AsrTranscribeJob {
     int n = 1;
     while (n < sorted.length && n < maxSegments) {
       if ((n + 1) * longest > budgetSamples) break;
-      if (sorted[n].samples.length * 2 < longest) break;
+      if (sorted[n].samples.length * kDynamicBatchMinLengthRatioDen <
+          longest * kDynamicBatchMinLengthRatioNum) {
+        break;
+      }
       n++;
     }
     return n;
   }
+
+  /// 动态路径一批里最短段 / 最长段的下限（4/5 = 0.8）。
+  ///
+  /// CPU 上 padding 直接等于算力：encoder 与 Loop 图搜索都按批内最长段算满，
+  /// 比它短的行全是白付。旧规则 1/2 让 padding 最坏 2×（2026-09-06 实测 CPU int8
+  /// 30 分钟英语 1.4~2.2×）；0.8 把最坏值压到 1.25×，代价是批变小、ORT 往返变多
+  /// ——CPU 动态 shape 每次 run 的规划开销只有几毫秒，远小于多算几成帧。
+  /// 整数分子 / 分母写法避免浮点比较。
+  static const int kDynamicBatchMinLengthRatioNum = 4;
+  static const int kDynamicBatchMinLengthRatioDen = 5;
 
   static int _maxEndMs(List<AsrTranscribedSegment> all, int fileIndex) {
     int m = 0;
@@ -764,5 +830,136 @@ class AsrTranscribeJob {
         ..write('\n');
     }
     await _segmentsFile.writeAsString(sb.toString(), flush: true);
+  }
+}
+
+/// GPU 上同时在飞的编码批数上限（[AsrBatchPipeline.encodeDepth] 默认）。
+/// 2 = 一批在算、一批已排队，GPU 算完一批立刻有下一批；再多只是多占
+/// 输入/输出缓冲（每批 fp16 桶 ≈ 11 MB 入 + 18 MB 出）。
+const int kAsrEncodeDepth = 2;
+
+/// 三段流水线的调度：fbank（isolate 池）→ encoder（GPU，≤ [encodeDepth] 批
+/// 在飞）→ 搜索（CPU）→ 按提交顺序落盘。
+///
+/// 2026-09-07 nvidia-smi 实测老流水线编码阶段 GPU 只忙约 15%：它的深度只有 1
+/// ——发第 k 批后先同步算第 k+1 批 fbank（阻塞事件循环 ~130 ms），再等第 k−1
+/// 批搜索（~180 ms）落盘，才发第 k+1 批；GPU 每批 ~60 ms 算完就闲着。这里三段
+/// 各自独立推进：[submit] 只把批交出去就返回，特征在 isolate 池里算，Run 一有
+/// 特征就发（受 [encodeDepth] 门限），搜索一有编码结果就发，落盘按提交顺序串成
+/// 一条链。背压：未落盘的批达到 [maxUncommitted] 时 [submit] 等到有批落盘再
+/// 返回，内存与检查点滞后都有界。
+///
+/// 任一段出错，错误沿链传到下一次 [submit] / [flush] 抛出，任务照旧终止（已落
+/// 盘的进度不丢）。
+class AsrBatchPipeline {
+  AsrBatchPipeline({
+    required this.pipe,
+    required this.commit,
+    this.encodeDepth = kAsrEncodeDepth,
+    int? maxUncommitted,
+  }) : maxUncommitted = maxUncommitted ?? encodeDepth + 2 {
+    if (encodeDepth < 1) {
+      throw ArgumentError.value(encodeDepth, 'encodeDepth', '至少 1');
+    }
+    if (this.maxUncommitted < encodeDepth) {
+      throw ArgumentError.value(
+        maxUncommitted,
+        'maxUncommitted',
+        '不能小于 encodeDepth',
+      );
+    }
+  }
+
+  final AsrPipelinedDecoder pipe;
+
+  /// 一批搜索完成后的落盘回调（按提交顺序串行调用）。
+  final Future<void> Function(
+    List<AsrSpeechSegment> batch,
+    List<AsrDecodedSegment> decoded,
+  ) commit;
+
+  /// GPU 上同时在飞的编码批数上限。
+  final int encodeDepth;
+
+  /// 已提交未落盘的批数上限（背压）。
+  final int maxUncommitted;
+
+  /// 已提交、还没落盘的批（按提交顺序）；检查点要把它们的起点算进去。
+  final List<List<AsrSpeechSegment>> uncommitted = <List<AsrSpeechSegment>>[];
+
+  /// 最近 [encodeDepth] 个编码 future（深度门）；更早的不再持有，让编码结果
+  /// 随落盘释放。
+  final List<Future<AsrEncodedBatch>> _recentEncodes =
+      <Future<AsrEncodedBatch>>[];
+  Future<void> _tail = Future<void>.value();
+  Completer<void> _committed = Completer<void>();
+  Object? _error;
+  StackTrace? _errorStack;
+
+  /// 提交一批：特征 → 编码 → 搜索 → 落盘全部异步推进；未落盘批到上限时等。
+  Future<void> submit(List<AsrSpeechSegment> batch) async {
+    while (uncommitted.length >= maxUncommitted) {
+      _throwIfFailed();
+      await _committed.future;
+    }
+    _throwIfFailed();
+    uncommitted.add(batch);
+    final Future<AsrBatchFeatures> features = pipe.computeFeaturesAsync(batch);
+    // 深度门：第 i 批的 Run 等第 i−depth 批的 Run 回来才发。
+    final Future<AsrEncodedBatch>? gate = _recentEncodes.length >= encodeDepth
+        ? _recentEncodes[_recentEncodes.length - encodeDepth]
+        : null;
+    final Future<AsrEncodedBatch> encoded = _encode(batch, features, gate);
+    _recentEncodes.add(encoded);
+    if (_recentEncodes.length > encodeDepth) _recentEncodes.removeAt(0);
+    final Future<List<AsrDecodedSegment>> searched = encoded.then(
+      (AsrEncodedBatch e) => pipe.search(e),
+    );
+    // Future.wait 立刻监听 searched：搜索/编码若在前一批落盘之前就出错，错误
+    // 已有人接（.then 的回调要等前一批完成才注册，那之前它是未处理异常）。
+    _tail = Future.wait<Object?>(<Future<Object?>>[_tail, searched]).then((
+      List<Object?> results,
+    ) async {
+      await commit(batch, results[1]! as List<AsrDecodedSegment>);
+      assert(identical(uncommitted.first, batch), '落盘顺序与提交顺序不一致');
+      uncommitted.removeAt(0);
+      _wake();
+    });
+    // 链上的错误在这里被捕获记下（否则没人监听时是未处理异常）；_tail 本身仍
+    // 带着错误，flush / 下一次 submit 会重新抛出。
+    unawaited(
+      _tail.catchError((Object error, StackTrace stack) {
+        _error ??= error;
+        _errorStack ??= stack;
+        _wake();
+      }),
+    );
+  }
+
+  Future<AsrEncodedBatch> _encode(
+    List<AsrSpeechSegment> batch,
+    Future<AsrBatchFeatures> features,
+    Future<AsrEncodedBatch>? gate,
+  ) async {
+    final AsrBatchFeatures f = await features;
+    if (gate != null) await gate;
+    return pipe.encode(batch, features: f);
+  }
+
+  /// 等所有已提交的批落盘；链上有错就抛。
+  Future<void> flush() async {
+    await _tail;
+    _throwIfFailed();
+  }
+
+  void _wake() {
+    final Completer<void> c = _committed;
+    _committed = Completer<void>();
+    if (!c.isCompleted) c.complete();
+  }
+
+  void _throwIfFailed() {
+    final Object? error = _error;
+    if (error != null) Error.throwWithStackTrace(error, _errorStack!);
   }
 }

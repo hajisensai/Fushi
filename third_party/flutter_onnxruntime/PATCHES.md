@@ -127,20 +127,43 @@ and macOS 13.4–14.0 for free, with no change to the ORT binary or the Dart API
     throughput collapses. The Dart consumer (`asrEncoderBucketsForBudget`)
     sizes its encoder buckets from this number before building any session.
 
+11. `windows/flutter_onnxruntime_plugin.cpp`: CPU sessions no longer share
+    the single `cpuQueue_` worker for `runInference` / `closeSession`. Each
+    CPU session gets its own `WorkQueue` (created on first use, kept in
+    `cpuSessionQueues_`, retired on the platform thread right after the
+    close reply), so independent CPU sessions run concurrently while every
+    session's own calls stay FIFO. `cpuQueue_` remains for session creation
+    (no id yet). GPU sessions still share `gpuQueue_`. The consumer is the
+    ASR greedy search: two sessions of the same Loop graph each take half of
+    a batch's rows (the Loop graph is frame-sequential and tops out at ~4
+    intra-op threads, so one session leaves most cores idle).
+
+    A note on delta #9's "DirectML crashes with two sessions on two threads"
+    rationale: that was reproduced with the *Python* `onnxruntime-directml`
+    build, whose DML provider factory (`python_api=true` in
+    `dml_provider_factory.cc`) deliberately shares one `Dml::ExecutionContext`
+    (and thus one command queue) across every session in the process. The
+    native C API path this plugin uses creates a separate D3D12 command queue
+    and execution context per session, so that reproduction does not carry
+    over — concurrent DML sessions are *untested* here, not excluded. It also
+    does not matter yet: the 2026-09-07 nvidia-smi measurement showed the
+    encoder GPU idle ~85% of the time for lack of queued work, which is what
+    the Dart-side pipeline rewrite (`AsrBatchPipeline`) addresses.
+
 **The Dart API under `lib/` carries two deltas (#8, the
 `freeDimensionOverrides` option, and #10, `getDeviceMemoryInfo`); everything
 else there is byte-for-byte upstream.** The Apple, Android and Linux native
-trees are untouched; the Windows tree carries deltas 6–10 above — provider
+trees are untouched; the Windows tree carries deltas 6–11 above — provider
 wiring, error-string encoding, free-dimension overrides, worker-thread
-dispatch and the DXGI budget query. No ORT wrapper or inference logic changed
-anywhere.
+dispatch, the DXGI budget query and per-session CPU workers. No ORT wrapper
+or inference logic changed anywhere.
 
 Guards: `fushi/test/ocr/onnxruntime_windows_error_encoding_guard_test.dart`
 keeps delta 7 in place,
 `fushi/test/onnx/onnxruntime_free_dimension_override_guard_test.dart` keeps
 delta 8, `fushi/test/onnx/onnxruntime_async_dispatch_guard_test.dart` keeps
-delta 9 and `fushi/test/onnx/onnxruntime_device_memory_guard_test.dart` keeps
-delta 10 — a re-vendor that drops either half of any of them fails a guard. Delta 8 needs a
+deltas 9 and 11 and `fushi/test/onnx/onnxruntime_device_memory_guard_test.dart`
+keeps delta 10 — a re-vendor that drops either half of any of them fails a guard. Delta 8 needs a
 guard more than the others do because losing only its C++ half is **silent**:
 Dart keeps putting the key in the map, the plugin no longer reads it, the
 session falls back to dynamic shapes, and every result stays correct while the
@@ -162,7 +185,7 @@ path or drift the floors apart.
 
 ## Re-vendoring on upgrade
 
-Copy the new upstream version over this folder, then re-apply deltas #1–#10.
+Copy the new upstream version over this folder, then re-apply deltas #1–#11.
 Before bumping the `onnxruntime-objc` pin, check the new version's podspec
 platforms (`pod spec cat onnxruntime-objc --version=X.Y.Z`) — if the floor moved,
 the four project deployment targets and the guard test move with it.

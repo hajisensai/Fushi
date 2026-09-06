@@ -14,6 +14,9 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_audio/fushi_audio.dart' show AudioCue, CueTokenTiming;
+
+import 'package:fushi/src/asr/asr_cue_builder.dart' show parseAsrCueTokens;
 import 'package:fushi/src/asr/asr_encoder_buckets.dart';
 import 'package:fushi/src/asr/asr_engine.dart';
 import 'package:fushi/src/asr/asr_model_manifest.dart';
@@ -78,6 +81,9 @@ abstract interface class AsrRunningTranscription {
   bool get greedyGraphAvailable;
   String? get greedyUnavailableReason;
 
+  /// 编码器是否跑在设备端派生的 fp16 图上（见 `AsrEngineSessions.encoderFp16`）。
+  bool get encoderFp16;
+
   /// 任务结束后的分阶段耗时（isolate 路径在 finished / paused 之后才有）。
   AsrDecodeStats? get decodeStats;
 
@@ -94,12 +100,12 @@ class AsrInProcessTranscription implements AsrRunningTranscription {
   AsrInProcessTranscription({
     required this.sessions,
     required this.job,
-    AsrTransducerDecoder? decoder,
+    AsrSegmentDecoder? decoder,
   }) : _decoder = decoder;
 
   final AsrEngineSessions sessions;
   final AsrTranscribeJob job;
-  final AsrTransducerDecoder? _decoder;
+  final AsrSegmentDecoder? _decoder;
 
   @override
   OnnxProviderResolution get encoderResolution => sessions.encoderResolution;
@@ -109,6 +115,9 @@ class AsrInProcessTranscription implements AsrRunningTranscription {
 
   @override
   String? get greedyUnavailableReason => sessions.greedyUnavailableReason;
+
+  @override
+  bool get encoderFp16 => sessions.encoderFp16;
 
   @override
   AsrDecodeStats? get decodeStats => _decoder?.stats;
@@ -135,11 +144,14 @@ class AsrTranscriptionService {
     this.segmenterKind = AsrSegmenterKind.energy,
     this.runInIsolate = true,
     this.usePipeline = true,
+    this.useFp16Encoder = true,
     this.staticBucketsOverride,
-  }) : _loader = loader ?? AsrEngineLoader(),
-       _pcm = pcm ?? FfmpegAsrPcmSource(),
-       _openStore = openStore ?? AsrModelStore.open,
-       _jobsRoot = jobsRoot ?? _defaultJobsRoot;
+    this.greedySessions,
+    this.greedyIntraOpThreads,
+  })  : _loader = loader ?? AsrEngineLoader(),
+        _pcm = pcm ?? FfmpegAsrPcmSource(),
+        _openStore = openStore ?? AsrModelStore.open,
+        _jobsRoot = jobsRoot ?? _defaultJobsRoot;
 
   final AsrEngineLoader _loader;
   final AsrPcmSource _pcm;
@@ -163,6 +175,14 @@ class AsrTranscriptionService {
 
   /// 静态桶表覆盖（基准 / 调参用；生产为 null，按显存预算选表）。
   final List<AsrEncoderBucket>? staticBucketsOverride;
+
+  /// 见 [AsrEngineLoader.load] 的 `useFp16Encoder`（基准对照用；生产恒 true）。
+  final bool useFp16Encoder;
+
+  /// 贪心 Loop 图会话数 / 每会话 intra-op 线程数覆盖（基准扫描用；null 取
+  /// [defaultAsrGreedySessionCount] / [kAsrGreedyGraphIntraOpThreads]）。
+  final int? greedySessions;
+  final int? greedyIntraOpThreads;
 
   /// 默认批次：GPU 上 batch 越大越省逐帧 joiner 的往返（2026-09-05 真机分阶段计时
   /// 里逐帧循环是 ASR 阶段的大头，encoder 本身在 DirectML 上只占零头）；CPU 上
@@ -204,10 +224,26 @@ class AsrTranscriptionService {
       }
     }
     final AsrPlatform platform = currentAsrPlatform();
+    final AsrModelPack pack = asrModelPackFor(language);
+    // 有显存门槛的包（Omnilingual 1B）才去查预算；查失败按未知处理 → int8。
+    int? budgetBytes;
+    if (pack.fp32GpuMinBudgetBytes != null && available.isNotEmpty) {
+      try {
+        budgetBytes = await _loader.deviceMemoryBudgetBytes();
+      } catch (error) {
+        developer.log(
+          'ASR device memory budget probe failed; assuming unknown',
+          name: kAsrLogName,
+          error: error,
+        );
+      }
+    }
     final AsrEncoderVariant variant = recommendAsrEncoderVariant(
       platform: platform,
       available: available,
       preference: preference,
+      fp32GpuMinBudgetBytes: pack.fp32GpuMinBudgetBytes,
+      budgetBytes: budgetBytes,
     );
     final OnnxExecutionProvider expected = selectAsrEncoderProviders(
       platform: platform,
@@ -270,10 +306,10 @@ class AsrTranscriptionService {
     if (!File(p.join(dir.path, AsrJobFiles.state)).existsSync()) return null;
     final ({AsrJobState state, bool fresh}) loaded =
         await AsrTranscribeJob.loadStateDetailed(
-          dir,
-          audioPaths,
-          modelId: asrModelPackFor(language).id,
-        );
+      dir,
+      audioPaths,
+      modelId: asrModelPackFor(language).id,
+    );
     return loaded.fresh ? null : loaded.state;
   }
 
@@ -295,6 +331,46 @@ class AsrTranscriptionService {
   static bool isAsrGeneratedSubtitlePath(String path) {
     if (p.basename(path) != AsrJobFiles.srt) return false;
     return File(p.join(p.dirname(path), AsrJobFiles.state)).existsSync();
+  }
+
+  /// 把转录产物旁边的逐 token 时间 sidecar（[AsrJobFiles.cueTokens]）按行号挂到
+  /// 从同一份 SRT 解析出来的 [cues] 上（`AudioCue.tokenTiming`），供匹配后按正文
+  /// 句界重切 cue。不是转录产物、sidecar 缺失/损坏、行数与 cue 数不符时一个都
+  /// 不挂并返回 false（行号错位比没有更糟）。
+  static Future<bool> attachCueTokenTiming(
+    List<AudioCue> cues,
+    String subtitlePath,
+  ) async {
+    if (!isAsrGeneratedSubtitlePath(subtitlePath)) return false;
+    final File sidecar = File(
+      p.join(p.dirname(subtitlePath), AsrJobFiles.cueTokens),
+    );
+    if (!sidecar.existsSync()) return false;
+    final List<({List<String> tokens, List<int> offsetsMs})>? rows;
+    try {
+      rows = parseAsrCueTokens(await sidecar.readAsString());
+    } on FileSystemException catch (error) {
+      developer.log(
+        'ASR cue token sidecar unreadable: ${sidecar.path}',
+        name: kAsrLogName,
+        error: error,
+      );
+      return false;
+    }
+    if (rows == null || rows.length != cues.length) {
+      developer.log(
+        'ASR cue token sidecar ignored: rows=${rows?.length} cues=${cues.length}',
+        name: kAsrLogName,
+      );
+      return false;
+    }
+    for (int i = 0; i < cues.length; i++) {
+      cues[i].tokenTiming = CueTokenTiming(
+        tokens: rows[i].tokens,
+        offsetsMs: rows[i].offsetsMs,
+      );
+    }
+    return true;
   }
 
   /// 全部音频的总时长（毫秒）；任一文件探不出就返回 null（策略按未知处理，
@@ -328,6 +404,7 @@ class AsrTranscriptionService {
     final int? materialMs = await _probeMaterialMs(audioPaths);
     if (runInIsolate) {
       return AsrIsolateTranscription.spawn(
+        pcm: _pcm,
         AsrIsolateJobSpec(
           storeDirPath: store.dir.path,
           language: language,
@@ -339,8 +416,11 @@ class AsrTranscriptionService {
           segmenterKind: segmenterKind,
           batchSize: batchSize,
           usePipeline: usePipeline,
+          useFp16Encoder: useFp16Encoder,
           staticBucketsOverride: staticBucketsOverride,
           materialMs: materialMs,
+          greedySessions: greedySessions,
+          greedyIntraOpThreads: greedyIntraOpThreads,
         ),
       );
     }
@@ -348,22 +428,16 @@ class AsrTranscriptionService {
       store: store,
       variant: variant,
       preference: preference,
+      useFp16Encoder: useFp16Encoder,
       staticBucketsOverride: staticBucketsOverride,
       materialMs: materialMs,
+      greedySessions: greedySessions,
+      greedyIntraOpThreads:
+          greedyIntraOpThreads ?? kAsrGreedyGraphIntraOpThreads,
     );
     try {
-      final AsrTransducerDecoder decoder = AsrTransducerDecoder(
-        encoder: sessions.encoder,
-        decoder: sessions.decoder,
-        joiner: sessions.joiner,
-        tokens: sessions.tokens,
-        greedy: sessions.greedy,
-        staticEncoders: sessions.staticEncoders,
-      );
-      // 静态桶模式段切短到 10 s（见 kAsrStaticMaxSegmentMs），否则保持 VAD 默认。
-      final int maxSegmentMs = sessions.staticEncoders != null
-          ? kAsrStaticMaxSegmentMs
-          : kAsrDefaultMaxSegmentMs;
+      final AsrSegmentDecoder decoder = sessions.newDecoder()..warmUp();
+      final int maxSegmentMs = sessions.maxSegmentMs;
       final AsrTranscribeJob job = AsrTranscribeJob(
         jobDir: jobDir,
         audioPaths: audioPaths,
@@ -371,17 +445,16 @@ class AsrTranscriptionService {
         pcm: _pcm,
         segmenter: switch (segmenterKind) {
           AsrSegmenterKind.energy => AsrVadSegmenter(
-            scorer: EnergyVadScorer(),
-            maxSegmentMs: maxSegmentMs,
-          ),
+              scorer: EnergyVadScorer(),
+              maxSegmentMs: maxSegmentMs,
+            ),
           AsrSegmenterKind.silero => AsrVadSegmenter(
-            session: sessions.vad,
-            maxSegmentMs: maxSegmentMs,
-          ),
+              session: sessions.vad,
+              maxSegmentMs: maxSegmentMs,
+            ),
         },
         decoder: decoder,
-        batchSize:
-            batchSize ??
+        batchSize: batchSize ??
             defaultBatchSizeFor(sessions.encoderResolution.effective),
         chunkSeconds: chunkSeconds,
         statsProvider: () => decoder.stats,

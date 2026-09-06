@@ -33,14 +33,37 @@ const String kAsrEncoderTimeDim = 'T';
 /// 真实行最多 [realRows]（末尾至少一行哨兵，见文件头）。
 @immutable
 class AsrEncoderBucket {
-  const AsrEncoderBucket({required this.frames, required this.batch})
-    : assert(frames > 0),
-      assert(batch > 1);
+  const AsrEncoderBucket({
+    required this.frames,
+    required this.batch,
+    this.sentinel = true,
+  }) : assert(frames > 0),
+       assert(batch > (sentinel ? 1 : 0));
 
+  /// 时间轴长度：zipformer 桶是 fbank 帧数，CTC（原始波形）桶是样本数。
   final int frames;
   final int batch;
 
-  int get realRows => batch - 1;
+  /// 是否留一行哨兵填充行（zipformer 的 `x_lens.max()` 掩码需要，见文件头）；
+  /// 没有长度输入的 CTC 模型不需要，整批都是真实行。
+  final bool sentinel;
+
+  int get realRows => sentinel ? batch - 1 : batch;
+
+  /// 行数乘 [factor] 的同帧数桶（fp16 桶表由 fp32 表按 2 倍派生，见
+  /// [asrEncoderBucketsForBudget]）。
+  AsrEncoderBucket scaledRows(int factor) =>
+      AsrEncoderBucket(frames: frames, batch: batch * factor, sentinel: sentinel);
+
+  @override
+  bool operator ==(Object other) =>
+      other is AsrEncoderBucket &&
+      other.frames == frames &&
+      other.batch == batch &&
+      other.sentinel == sentinel;
+
+  @override
+  int get hashCode => Object.hash(frames, batch, sentinel);
 
   @override
   String toString() => 'Bucket(N=$batch, T=$frames)';
@@ -99,6 +122,16 @@ const List<AsrEncoderBucket> kAsrGpuEncoderBuckets = <AsrEncoderBucket>[
   AsrEncoderBucket(frames: 1120, batch: 16),
 ];
 
+/// 显存宽裕（≥ 16 GiB 预算）时多一档 280 帧桶。上面 A/B 里 280 桶「加了也没用」
+/// 有两个前提在 2026-09-06 之后都变了：任务侧改成**按桶分组成批**（短段不再被
+/// 560 桶的批顺手带走）、并**跨块攒批**（块末不再冲半批）；剩下的代价只有第三份
+/// 常驻权重 + 中间张量，12 GB 卡上会溢出，所以只给 16 GiB 以上的卡。
+const List<AsrEncoderBucket> kAsrGpuEncoderBucketsLarge = <AsrEncoderBucket>[
+  AsrEncoderBucket(frames: 280, batch: 64),
+  AsrEncoderBucket(frames: 560, batch: 32),
+  AsrEncoderBucket(frames: 1120, batch: 16),
+];
+
 /// 显存吃紧时的半桶（行数减半，融合图常驻的中间张量随之减半）。
 const List<AsrEncoderBucket> kAsrGpuEncoderBucketsSmall = <AsrEncoderBucket>[
   AsrEncoderBucket(frames: 560, batch: 16),
@@ -107,17 +140,47 @@ const List<AsrEncoderBucket> kAsrGpuEncoderBucketsSmall = <AsrEncoderBucket>[
 
 const int _kGiB = 1024 * 1024 * 1024;
 
+/// fp16 编码器（`asr_fp16_graph.dart`）下每桶行数相对 fp32 表的倍数。
+///
+/// 一个静态桶的显存 ≈ 权重 + 融合图一次分配的全部中间张量，后者 ∝ N × T 且与元素
+/// 字节数成正比：2026-09-07 RTX 5090 实测 fp16 下 560×64 / 1120×32 / 280×128
+/// 三种同批面积的桶各占 3.0~3.2 GB，正好是 fp32 同帧数桶的一半——所以同一档
+/// 显存预算下 fp16 可以把每桶行数翻倍而占用不变。而吞吐随 N 近乎线性涨到 N=128
+/// （560 帧桶：N=32 40 万帧/s → N=64 58 万 → N=128 72 万），fp16 的收益主要靠
+/// 这一倍行数拿到（单换精度不换桶只有 1.1×，见 `asr_fp16_graph.dart`）。
+const int kAsrFp16BucketRowFactor = 2;
+
 /// 按显存预算（字节，DXGI 本进程可分配上限；null = 查不到）选桶表：
+/// - ≥ 16 GiB：[kAsrGpuEncoderBucketsLarge]（多一档 280 帧桶）；
 /// - ≥ 10 GiB：[kAsrGpuEncoderBuckets]（12 GB 卡上 E2E 峰值 6.6~7.6 GB，含动态
 ///   会话与贪心图）；
 /// - 6~10 GiB：[kAsrGpuEncoderBucketsSmall]；
 /// - < 6 GiB：空表——静态图溢出到系统内存后比动态会话还慢，不如不建；
 /// - null：按默认表试，建失败自会回退（非 Windows 走不到 GPU 桶）。
-List<AsrEncoderBucket> asrEncoderBucketsForBudget(int? budgetBytes) {
-  if (budgetBytes == null) return kAsrGpuEncoderBuckets;
-  if (budgetBytes >= 10 * _kGiB) return kAsrGpuEncoderBuckets;
-  if (budgetBytes >= 6 * _kGiB) return kAsrGpuEncoderBucketsSmall;
-  return const <AsrEncoderBucket>[];
+///
+/// [fp16] 时每桶行数乘 [kAsrFp16BucketRowFactor]，各档显存占用不变。
+List<AsrEncoderBucket> asrEncoderBucketsForBudget(
+  int? budgetBytes, {
+  bool fp16 = false,
+}) {
+  final List<AsrEncoderBucket> fp32Table;
+  if (budgetBytes == null) {
+    fp32Table = kAsrGpuEncoderBuckets;
+  } else if (budgetBytes >= 16 * _kGiB) {
+    fp32Table = kAsrGpuEncoderBucketsLarge;
+  } else if (budgetBytes >= 10 * _kGiB) {
+    fp32Table = kAsrGpuEncoderBuckets;
+  } else if (budgetBytes >= 6 * _kGiB) {
+    fp32Table = kAsrGpuEncoderBucketsSmall;
+  } else {
+    return const <AsrEncoderBucket>[];
+  }
+  if (!fp16) return fp32Table;
+  return List<AsrEncoderBucket>.unmodifiable(
+    fp32Table.map(
+      (AsrEncoderBucket b) => b.scaledRows(kAsrFp16BucketRowFactor),
+    ),
+  );
 }
 
 /// 一个已建好的静态桶会话。
@@ -136,6 +199,8 @@ class AsrStaticEncoderPool {
     required this.modelPath,
     required this.providers,
     this.buckets = kAsrGpuEncoderBuckets,
+    this.batchDimName = kAsrEncoderBatchDim,
+    this.timeDimName = kAsrEncoderTimeDim,
     this.logName = 'hibiki.asr',
   }) : _factory = factory {
     if (buckets.isEmpty) {
@@ -155,10 +220,19 @@ class AsrStaticEncoderPool {
   /// 来就该回退到已有的动态会话，而不是在 CPU 上再建一份静态图。
   final List<OnnxExecutionProvider> providers;
   final List<AsrEncoderBucket> buckets;
+
+  /// 模型输入上要钉死的两个符号维名（zipformer `N` / `T`，Omnilingual
+  /// `N` / `num_samples`）。
+  final String batchDimName;
+  final String timeDimName;
   final String logName;
 
   final Map<AsrEncoderBucket, AsrStaticEncoderSession> _sessions =
       <AsrEncoderBucket, AsrStaticEncoderSession>{};
+
+  /// 此刻已建好的桶会话（快照；解码器据此做首跑 warm-up）。
+  List<AsrStaticEncoderSession> get readySessions =>
+      List<AsrStaticEncoderSession>.unmodifiable(_sessions.values);
   final Map<AsrEncoderBucket, Future<AsrStaticEncoderSession?>> _pending =
       <AsrEncoderBucket, Future<AsrStaticEncoderSession?>>{};
   final Map<AsrEncoderBucket, String> _unavailableReasons =
@@ -198,8 +272,8 @@ class AsrStaticEncoderPool {
         modelPath,
         providers: providers,
         freeDimensionOverrides: <String, int>{
-          kAsrEncoderBatchDim: bucket.batch,
-          kAsrEncoderTimeDim: bucket.frames,
+          batchDimName: bucket.batch,
+          timeDimName: bucket.frames,
         },
       );
       if (_closed) {

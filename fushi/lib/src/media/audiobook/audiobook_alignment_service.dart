@@ -6,6 +6,7 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/asr/asr_transcription_service.dart';
 import 'package:fushi/src/epub/epub_book.dart';
 import 'package:fushi/src/epub/epub_parser.dart';
 import 'package:fushi/src/media/audiobook/subtitle_rematch.dart';
@@ -69,16 +70,42 @@ class AudiobookAlignmentMessages {
 /// 从 EPUB 提取目录构建 matcher 用的章节列表。本 service、导入对话框
 /// （probe / matcher）与 [SasayakiRematch]（弹窗 probe / 重跑）五个调用点共用；
 /// 解析异常由各调用方按自身语义 try/catch，此处不吞。
+/// 转录产物的命中 cue 按正文句界重切（见 `CueSentenceResegmenter`）；三个
+/// 匹配入口共用这一处，统计打进日志便于真机对照。
+CueResegmentResult resegmentCuesBySentence({
+  required List<EpubSection> sections,
+  required List<AudioCue> cues,
+  required MatchResult result,
+}) {
+  final CueResegmentResult out = const CueSentenceResegmenter().resegment(
+    sections: sections,
+    cues: cues,
+    result: result,
+  );
+  debugPrint('[fushi-import] resegment: ${out.stats}');
+  return out;
+}
+
 List<EpubSection> epubSectionsFromExtractDir(String extractDir) {
   final EpubBook epubBook = EpubParser.parseFromExtracted(extractDir);
-  return List<EpubSection>.generate(
-    epubBook.chapters.length,
-    (int i) => EpubSection(
+  return epubSectionsFromBook(epubBook);
+}
+
+/// 每章纯文本（与 `chapterPlainText` 逐码元相同）+ ruby 读音旁路（匹配器的
+/// 读音轨，见 `EpubSection.rubies`）。
+List<EpubSection> epubSectionsFromBook(EpubBook epubBook) {
+  return List<EpubSection>.generate(epubBook.chapters.length, (int i) {
+    final EpubPlainTextWithRuby chapter = epubBook.chapterPlainTextWithRuby(i);
+    return EpubSection(
       index: i,
       href: epubBook.chapters[i].href,
-      text: epubBook.chapterPlainText(i),
-    ),
-  );
+      text: chapter.text,
+      rubies: <EpubRubySpan>[
+        for (final EpubRubyAnnotation r in chapter.rubies)
+          EpubRubySpan(start: r.start, end: r.end, reading: r.reading),
+      ],
+    );
+  });
 }
 
 /// [epubSectionsFromExtractDir] 的后台 isolate 版——生产路径一律走这里。
@@ -163,10 +190,16 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
   }
   report(0.45, messages.parsing);
   final String ext = subtitlePath.split('.').last.toLowerCase();
-  final List<AudioCue> cues = await parseCuesForFormat(
+  List<AudioCue> cues = await parseCuesForFormat(
     File(subtitlePath),
     bookKey,
     0,
+  );
+  // 转录产物：把 sidecar 里的逐 token 时间挂上（非产物 / 缺失时 false）。
+  final bool hasTokenTiming =
+      await AsrTranscriptionService.attachCueTokenTiming(
+    cues,
+    subtitlePath,
   );
   AudiobookHealth health;
   final bool runMatcher = SubtitleRematch.supportedFormats.contains(ext);
@@ -191,6 +224,17 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
       searchWindow: chosenWindow,
       similarityThreshold: similarityThreshold,
     );
+    if (hasTokenTiming) {
+      // 命中 cue 按正文句界重切（词中切开的合并、一条盖两句的拆开），边界时间
+      // 取 token 发射时间；cue 列表与匹配结果一起换新。
+      final CueResegmentResult resegmented = resegmentCuesBySentence(
+        sections: sections,
+        cues: cues,
+        result: matchResult,
+      );
+      cues = resegmented.cues;
+      matchResult = resegmented.result;
+    }
     if (replaceCueTextWithBookText) {
       // ASR 听写文本 → 正文原文：阅读器按 cue 文本在 DOM 里重定位，听写差会让
       // 高亮漂移；换成正文后逐字精确（未命中的保留听写文本）。
