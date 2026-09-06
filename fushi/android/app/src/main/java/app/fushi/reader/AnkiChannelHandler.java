@@ -17,8 +17,6 @@ import androidx.annotation.Nullable;
 import androidx.core.content.FileProvider;
 
 import com.ichi2.anki.FlashCardsContract;
-import com.ichi2.anki.api.AddContentApi;
-import com.ichi2.anki.api.NoteInfo;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -103,7 +101,7 @@ public class AnkiChannelHandler {
                 final String filename = call.argument("filename");
                 final String preferredName = call.argument("preferredName");
                 final String mimeType = call.argument("mimeType");
-                final AddContentApi api = new AddContentApi(context);
+                final AnkiProvider api = AnkiProviders.forContext(context);
                 final ArrayList<String> noteTypeFields = call.argument("noteTypeFields");
                 final String noteTypeName = call.argument("noteTypeName");
                 final String cardName = call.argument("cardName");
@@ -194,7 +192,7 @@ public class AnkiChannelHandler {
                         // TODO-1007/1008：按内容（第一字段 = key，可选 reading 过滤）反查
                         // 所有同词卡的 note id + 一行预览，使 AnkiDroid 与桌面 AnkiConnect
                         // 一样能发现「别处/上次会话建的卡」。经 ContentProvider
-                        // findDuplicateNotes(mid, key) -> NoteInfo.getId()，不依赖 bool-only
+                        // findDuplicateNotes(mid, key) -> AnkiNote.getId()，不依赖 bool-only
                         // 的 checkForDuplicates。
                         if (models == null || key == null) {
                             result.error("MISSING_ARG",
@@ -261,7 +259,7 @@ public class AnkiChannelHandler {
                     case "getModelList":
                         if (requirePermission(result)) {
                             try {
-                                result.success(api.getModelList());
+                                result.success(api.getModelList(0));
                             } catch (Exception e) {
                                 result.error(providerErrorCode(e),
                                     e.getMessage(), null);
@@ -398,7 +396,16 @@ public class AnkiChannelHandler {
                         // 制卡断裂。
                         Uri fileUri = FileProvider.getUriForFile(
                             context, BuildConfig.APPLICATION_ID + ".provider", file);
-                        context.grantUriPermission("com.ichi2.anki", fileUri,
+                        // BUG-2195：授给实际安装的那个包。写死主包时，并行版拿不到
+                        // 这个 URI 的读权限，媒体插入必失败。
+                        final AnkiDroidTarget mediaTarget =
+                            AnkiDroidTarget.resolve(context);
+                        if (mediaTarget == null) {
+                            result.error("ANKI_NOT_INSTALLED",
+                                "AnkiDroid is not installed", null);
+                            return;
+                        }
+                        context.grantUriPermission(mediaTarget.packageName, fileUri,
                             Intent.FLAG_GRANT_READ_URI_PERMISSION);
                         ContentValues contentValues = new ContentValues();
                         contentValues.put(FlashCardsContract.AnkiMedia.FILE_URI,
@@ -407,7 +414,9 @@ public class AnkiChannelHandler {
                             preferredName);
                         ContentResolver contentResolver = context.getContentResolver();
                         Uri returnUri = contentResolver.insert(
-                            FlashCardsContract.AnkiMedia.CONTENT_URI, contentValues);
+                            mediaTarget.rebase(
+                                FlashCardsContract.AnkiMedia.CONTENT_URI),
+                            contentValues);
                         if (returnUri == null || returnUri.getPath() == null) {
                             result.error("MEDIA_INSERT_FAILED",
                                 "AnkiDroid media insert returned null", null);
@@ -423,7 +432,7 @@ public class AnkiChannelHandler {
     }
 
     /**
-     * TODO-292: classify an exception thrown by AnkiDroid's {@link AddContentApi}
+     * TODO-292: classify an exception thrown by AnkiDroid's {@link AnkiProvider}
      * ContentProvider client. When the collection database cannot be opened
      * (collection in use / mid-sync / corrupt, AnkiDroid never opened once, API
      * disabled, background process killed) AnkiDroid throws with the literal
@@ -544,7 +553,7 @@ public class AnkiChannelHandler {
     }
 
     /**
-     * Adds a note via {@link AddContentApi#addNote} and returns the new note id.
+     * Adds a note via {@link AnkiProvider#addNote} and returns the new note id.
      *
      * <p>TODO-270 B: AnkiDroid addNote returns the {@code Long} id of the newly
      * created note (or {@code null} if it refused to create one - e.g. a
@@ -556,7 +565,7 @@ public class AnkiChannelHandler {
      */
     private Long addNote(String model, String deck,
                          ArrayList<String> fields, ArrayList<String> tags) {
-        final AddContentApi api = new AddContentApi(context);
+        final AnkiProvider api = AnkiProviders.forContext(context);
 
         long deckId;
         Long existingDeck = ankiDroid.findDeckIdByName(deck);
@@ -588,17 +597,17 @@ public class AnkiChannelHandler {
      * TODO-270 C2: reads an existing note's fields as a {@code name -> value}
      * map (symmetric with the AnkiConnect notesInfo contract).
      *
-     * <p>AnkiDroid is positional: {@link NoteInfo#getFields()} is an array in the
+     * <p>AnkiDroid is positional: {@link AnkiNote#getFields()} is an array in the
      * note's model field order, with no field names attached. We resolve the
      * note's model id (via the {@code Note.MID} column) and zip its field-name
-     * list ({@link AddContentApi#getFieldList}) with the positional values.
+     * list ({@link AnkiProvider#getFieldList}) with the positional values.
      *
      * @return {@code name -> value} (insertion-ordered by field order), or
      *         {@code null} if the note no longer exists / its model is gone.
      */
     private Map<String, String> notesInfo(long noteId) {
-        final AddContentApi api = new AddContentApi(context);
-        NoteInfo note = api.getNote(noteId);
+        final AnkiProvider api = AnkiProviders.forContext(context);
+        AnkiNote note = api.getNote(noteId);
         if (note == null) {
             return null;
         }
@@ -619,7 +628,7 @@ public class AnkiChannelHandler {
      * preserving every field the caller did not name (symmetric with the
      * AnkiConnect updateNoteFields contract).
      *
-     * <p>{@link AddContentApi#updateNoteFields} takes a positional
+     * <p>{@link AnkiProvider#updateNoteFields} takes a positional
      * {@code String[]} keyed by the model's field order. We start from the note's
      * current values and overwrite only the named ones, so unspecified fields are
      * not cleared.
@@ -628,8 +637,8 @@ public class AnkiChannelHandler {
      *         note / its model cannot be found or AnkiDroid refused the update.
      */
     private String updateNoteFields(long noteId, Map<String, String> fieldValues) {
-        final AddContentApi api = new AddContentApi(context);
-        NoteInfo note = api.getNote(noteId);
+        final AnkiProvider api = AnkiProviders.forContext(context);
+        AnkiNote note = api.getNote(noteId);
         if (note == null) {
             return "Note not found: " + noteId;
         }
@@ -657,14 +666,14 @@ public class AnkiChannelHandler {
 
     /**
      * Resolves the field-name list (in field order) for the model that owns
-     * noteId. {@link NoteInfo} carries no model id, so we read the note's
+     * noteId. {@link AnkiNote} carries no model id, so we read the note's
      * {@code Note.MID} column from the ContentProvider, then ask
-     * {@link AddContentApi#getFieldList} for that model's field names.
+     * {@link AnkiProvider#getFieldList} for that model's field names.
      *
      * @return the field names in order, or {@code null} if the note / model is
      *         not resolvable.
      */
-    private String[] fieldNamesForNote(AddContentApi api, long noteId) {
+    private String[] fieldNamesForNote(AnkiProvider api, long noteId) {
         Long modelId = modelIdForNote(noteId);
         if (modelId == null) {
             return null;
@@ -699,18 +708,18 @@ public class AnkiChannelHandler {
     private boolean checkForDuplicates(ArrayList<String> models, String key,
                                        String reading,
                                        ArrayList<Integer> readingFieldIndices) {
-        final AddContentApi api = new AddContentApi(context);
+        final AnkiProvider api = AnkiProviders.forContext(context);
         for (int i = 0; i < models.size(); i++) {
             String model = models.get(i);
             Long mid = ankiDroid.findModelIdByName(model, 1);
             if (mid == null) continue;
-            List<NoteInfo> notes = api.findDuplicateNotes(mid, key);
+            List<AnkiNote> notes = api.findDuplicateNotes(mid, key);
             if (notes.isEmpty()) continue;
             if (reading == null || reading.isEmpty()) return true;
             int readingIdx = (readingFieldIndices != null && i < readingFieldIndices.size())
                     ? readingFieldIndices.get(i) : -1;
             if (readingIdx < 0) return true;
-            for (NoteInfo note : notes) {
+            for (AnkiNote note : notes) {
                 String[] noteFields = note.getFields();
                 if (readingIdx < noteFields.length && reading.equals(noteFields[readingIdx])) {
                     return true;
@@ -728,9 +737,9 @@ public class AnkiChannelHandler {
      *
      * <p>This is the AnkiDroid analogue of the AnkiConnect findNotes + notesInfo
      * path: it discovers cards created anywhere (other apps, previous sessions),
-     * not just the current popup session. {@link AddContentApi#findDuplicateNotes}
-     * gives the matching {@link NoteInfo}s; {@link NoteInfo#getId()} is the note
-     * id and {@link NoteInfo#getFields()}[0] (HTML-stripped on the Dart side) is
+     * not just the current popup session. {@link AnkiProvider#findDuplicateNotes}
+     * gives the matching {@link AnkiNote}s; {@link AnkiNote#getId()} is the note
+     * id and {@link AnkiNote#getFields()}[0] (HTML-stripped on the Dart side) is
      * the preview.
      *
      * @return a list of {@code LinkedHashMap{noteId:Long, preview:String}},
@@ -739,7 +748,7 @@ public class AnkiChannelHandler {
     private List<Map<String, Object>> findNotesByContent(
             ArrayList<String> models, String key, String reading,
             ArrayList<Integer> readingFieldIndices) {
-        final AddContentApi api = new AddContentApi(context);
+        final AnkiProvider api = AnkiProviders.forContext(context);
         // De-dup by note id across models (a card matches at most one model, but
         // guard anyway), then sort newest-first.
         final LinkedHashMap<Long, String> byId = new LinkedHashMap<>();
@@ -747,11 +756,11 @@ public class AnkiChannelHandler {
             String model = models.get(i);
             Long mid = ankiDroid.findModelIdByName(model, 1);
             if (mid == null) continue;
-            List<NoteInfo> notes = api.findDuplicateNotes(mid, key);
+            List<AnkiNote> notes = api.findDuplicateNotes(mid, key);
             if (notes == null || notes.isEmpty()) continue;
             int readingIdx = (readingFieldIndices != null && i < readingFieldIndices.size())
                     ? readingFieldIndices.get(i) : -1;
-            for (NoteInfo note : notes) {
+            for (AnkiNote note : notes) {
                 String[] noteFields = note.getFields();
                 // When a reading is supplied and the model has a reading field,
                 // keep only notes whose reading also matches (mirrors the dupe
@@ -813,7 +822,7 @@ public class AnkiChannelHandler {
     private void createNoteType(String name, ArrayList<String> fields,
                                 String cardName, String front, String back,
                                 String css) {
-        final AddContentApi api = new AddContentApi(context);
+        final AnkiProvider api = AnkiProviders.forContext(context);
         // Idempotent: a model with this name + field count already exists.
         if (ankiDroid.findModelIdByName(name, fields.size()) != null) return;
         api.addNewCustomModel(

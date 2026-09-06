@@ -4300,5 +4300,16 @@
   "reading_stats_day_reset_hour": "「今日」从几点开始",
   "reading_stats_day_reset_hour_hint": "这个整点之前的阅读算作前一天。影响统计里的「今日」与近 N 天；只有改设置之后写入的记录按新边界归日。",
   "video_home_subscription_updates": "已更新未看",
-  "video_home_subscription_unwatched_episode": "第 $n 集 · $count 集未看"
+  "video_home_subscription_unwatched_episode": "第 $n 集 · $count 集未看",
+  "dict_error_connect_timeout": "连接 $host 超时，当前网络可能访问不了这个站点",
+  "dict_error_stall_timeout": "$host 传输中断，长时间没有收到数据",
+  "dict_error_connection": "无法连接 $host",
+  "dict_error_http_status": "$host 返回 HTTP $status",
+  "dict_task_failed_download": "下载失败：$name（$reason）",
+  "dict_task_failed_import": "导入失败：$name（$reason）",
+  "dict_task_failed_summary": "$n 本词典处理失败",
+  "backup_export_dictionaries_skipped": "导出完成，但有 $n 本词典被跳过：这台设备上找不到它们的文件（$names）",
+  "popup_ctx_preview_audio": "试听",
+  "popup_ctx_preview_stop": "停止",
+  "popup_ctx_preview_unavailable": "这句没有可试听的音频"
 }

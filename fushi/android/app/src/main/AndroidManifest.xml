@@ -266,10 +266,31 @@
             android:name="flutterEmbedding"
             android:value="2" />
     </application>
-    <!-- Used for AnkiDroid API -->
+    <!-- Used for AnkiDroid API.
+         BUG-2195：AnkiDroid 的并行版（parallel builds）由上游 gradle 的 customSuffix
+         经 applicationIdSuffix 生成，包名 / provider authority / 读写权限名**三者都带
+         后缀**（上游 AndroidManifest 里 provider 是 ${applicationId}.flashcards、
+         permission 是 ${applicationId}.permission.READ_WRITE_DATABASE）。
+         权限名不同 = 必须逐个声明：只声明主包那一个时，即便包可见，
+         requestPermissions 对并行版也会静默判拒且不弹框。
+         这份清单必须与 AnkiDroidTarget.CANDIDATE_PACKAGES 逐条对应（有守卫钉）。 -->
     <uses-permission android:name="com.ichi2.anki.permission.READ_WRITE_DATABASE"/>
+    <uses-permission android:name="com.ichi2.anki.A.permission.READ_WRITE_DATABASE"/>
+    <uses-permission android:name="com.ichi2.anki.B.permission.READ_WRITE_DATABASE"/>
+    <uses-permission android:name="com.ichi2.anki.C.permission.READ_WRITE_DATABASE"/>
+    <uses-permission android:name="com.ichi2.anki.D.permission.READ_WRITE_DATABASE"/>
+    <uses-permission android:name="com.ichi2.anki.E.permission.READ_WRITE_DATABASE"/>
+    <uses-permission android:name="com.ichi2.anki.debug.permission.READ_WRITE_DATABASE"/>
     <queries>
+        <!-- Android 11+ 包可见性。没有这些声明时 resolveContentProvider 查不到并行版，
+             isApiAvailable 恒 false，权限框一次都不会弹（BUG-2195 的直接根因）。 -->
         <package android:name="com.ichi2.anki" />
+        <package android:name="com.ichi2.anki.A" />
+        <package android:name="com.ichi2.anki.B" />
+        <package android:name="com.ichi2.anki.C" />
+        <package android:name="com.ichi2.anki.D" />
+        <package android:name="com.ichi2.anki.E" />
+        <package android:name="com.ichi2.anki.debug" />
         <!-- Hibiki→Fushi 迁移：Android 11+ 包可见性，不声明则 getPackageInfo 查不到新包 -->
         <package android:name="app.hibiki.reader" />
     </queries>

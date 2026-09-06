@@ -129,10 +129,41 @@ void main() {
           reason: 'could not locate sentenceDelimiters in reader scripts');
       expect(readerTrailing, isNotNull,
           reason: 'could not locate trailingSentenceChars in reader scripts');
-      expect(readerSentence, kSentenceDelimiters,
-          reason: 'sentence_extraction.dart kSentenceDelimiters drifted from '
-              'the reader; re-sync so app-external capture matches in-app '
-              'sentence boundaries');
+      // BUG-2196：两侧**刻意**只差换行这一处，逐字节相等的老判据是过约束。
+      //
+      // 输入模型不同才是根据：reader 走的是 DOM 文本节点（有块级边界，源码里的
+      // 硬换行只是排版空白），扁平那条走的是 Windows UIA 抓来的裸串（galgame /
+      // 聊天窗里一行就是一句，行间常常没有句末标点）。所以换行在 reader 侧必须
+      // 不是分隔符、在扁平侧必须是。
+      //
+      // 判据写成「差集恰好是 \n\r，且方向固定」——既挡住真漂移（任何别的字符
+      // 不一致立刻红），又不会因为这处有意的差异而假红。
+      const String newlineOnly = '\n\r';
+      expect(
+        readerSentence,
+        isNot(contains('\n')),
+        reason: 'BUG-2196：换行在 HTML 里只是空白，reader 侧不得把它当句子边界',
+      );
+      expect(
+        kSentenceDelimiters,
+        contains('\n'),
+        reason: 'Windows UIA 抓到的是没有块级结构的裸串，换行在那条路上是唯一的'
+            '句子边界，不能跟着 reader 一起删',
+      );
+      expect(
+        kSentenceDelimiters.split('').toSet().difference(
+              readerSentence!.split('').toSet(),
+            ),
+        newlineOnly.split('').toSet(),
+        reason: '两侧只允许差换行；出现别的差异说明有人改了一边忘了另一边',
+      );
+      expect(
+        readerSentence.split('').toSet().difference(
+              kSentenceDelimiters.split('').toSet(),
+            ),
+        isEmpty,
+        reason: 'reader 侧不得有扁平侧没有的分隔符',
+      );
       expect(readerTrailing, kTrailingSentenceChars,
           reason: 'sentence_extraction.dart kTrailingSentenceChars drifted '
               'from the reader; re-sync the trailing-closer table');

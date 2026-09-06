@@ -386,7 +386,15 @@ window.fushiSelection = {
   highlightWrappers: [],
   selectionRubyElements: [],
   scanDelimiters: '。、！？…‥「」『』（）()【】〈〉《》〔〕｛｝{}［］[]・：；:;，,.─\n\r"\'“”‘’«»‹›',
-  sentenceDelimiters: '。！？.!?\n\r',
+  // BUG-2196：**换行不是句子边界**。在 HTML 语义里 \n / \r 只是空白，
+  // 而 EPUB 的 XHTML 正文普遍在源码里硬换行；把它们算作分隔符，
+  // `shepherds abiding in the field,\n keeping watch...` 就会被切在逗号后的换行处，
+  // 制卡拿到半截句、按句区间裁出的音频也跟着漏词（用户报的「制卡压没念」）。
+  // 同仓库先例：视觉小说模式（reader_visual_novel_scripts.dart）本来就不含 \n\r；
+  // PDF 路径（reader_pdf_page.dart）则是先把 \n/\r 等长换成空格再分句。
+  // **扁平文本那条路（lookup/sentence_extraction.dart）刻意保留换行**：Windows UIA
+  // 抓到的是没有块级结构的裸串，galgame / 聊天窗里一行就是一句。
+  sentenceDelimiters: '。！？.!?',
   trailingSentenceChars: '。、！？…‥」』）)】〉》〕｝}］]',
   brackets: {'「':'」', '『': '』', '（':'）', '(':')', '【':'】', '〈':'〉', '《':'》', '〔':'〕', '｛':'｝', '{':'}', '［':'］', '[':']'},
   isCodePointJapanese: function(codePoint) {
@@ -749,7 +757,12 @@ window.fushiSelection = {
       start = 0;
     }
     var beforeText = partsBefore.reverse().join('');
-    var rawSentence = beforeText + partsAfter.join('');
+    // BUG-2196：换行在 HTML 里等价于空格。**等长**替换（1 字符换 1 字符），
+    // 因此 beforeText.length / sentenceOffset / sStartOffset / sEndOffset 与
+    // getNormalizedOffset 的下标全部保持不变——用 \s+ 折叠会把偏移打乱，
+    // 进而毁掉喂给 miningSentenceAudioRange 的 normOffset/normLength。
+    var rawSentence = (beforeText + partsAfter.join(''))
+        .replace(/[\n\r]/g, ' ');
     var trimmedSentence = rawSentence.trim();
     var leadingTrim = rawSentence.length - rawSentence.trimStart().length;
     var sentenceOffset = Math.max(0, beforeText.length - leadingTrim);

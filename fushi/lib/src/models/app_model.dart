@@ -34,6 +34,7 @@ import 'package:fushi/src/storage/export_directory.dart';
 import 'package:fushi/src/storage/installer_data_root_bootstrap.dart';
 import 'package:fushi/src/storage/sandbox_relocation.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
+import 'package:fushi/src/utils/misc/error_details_dialog.dart';
 import 'package:fushi/src/utils/misc/lookup_input_limits.dart';
 import 'package:fushi/src/media/drag_drop/desktop_drop_reinitializer.dart';
 import 'package:fushi_audio/fushi_audio.dart';
@@ -979,8 +980,30 @@ class AppModel with ChangeNotifier {
   /// 词典页的 State 上，任务因此不随进度对话框的开关而生死——用户可以把进度框收起来
   /// 回去用 app，下载照跑；也因此它能成为「手动下载」与「启动静默自动更新」两条流程
   /// 的**唯一互斥点**（两条流程的导入共用同一个 `import_temp` 暂存目录，并发会互删）。
-  final DictionaryDownloadController dictionaryDownloadController =
-      DictionaryDownloadController();
+  ///
+  /// BUG-2188：结果展示注入成 [_presentDictionaryOutcome]——带全文诊断的失败改走
+  /// 「错误详情」框（可滚动、可选中、一键复制），不再只发一条被系统截成两行且不可
+  /// 复制的原生 toast。
+  late final DictionaryDownloadController dictionaryDownloadController =
+      DictionaryDownloadController(showOutcome: _presentDictionaryOutcome);
+
+  /// 词典任务结果的展示。有 `details` 且拿得到全局上下文时弹「错误详情」框，
+  /// 否则退回 toast（启动早期 / 无 Navigator 时仍必须送达，不能静默丢弃）。
+  void _presentDictionaryOutcome(DictionaryDownloadOutcome outcome) {
+    final String? details = outcome.details;
+    final BuildContext? context = _ctx;
+    if (details != null && context != null) {
+      unawaited(
+        showErrorDetails(context, title: outcome.message, error: details),
+      );
+      return;
+    }
+    FushiToast.show(
+      msg: outcome.message,
+      severity: outcome.severity,
+      toastLength: outcome.toastLength,
+    );
+  }
 
   /// BUG-2097：新手引导推荐包（9.5 GB 整包）下载任务的所有权持有者。同样挂在
   /// [AppModel] 上：此前它活在向导页的 State 里，向导 `dispose()` 直接 cancel，
@@ -2545,6 +2568,10 @@ class AppModel with ChangeNotifier {
       // 死」。fushi_dictionary 是下游包，反向 import 不了 applyAppProxy，故在这里把它
       // 接进包内的进程级钩子。未接线时钩子是 no-op，行为与接线前逐字等价。
       installDictionaryDioFactory();
+      // BUG-2188：同一个装配方向，把「一个地址 → 原址 + GitHub 公共镜像」的候选展开
+      // 也接进包内钩子。镜像清单的唯一真相源在 utils/net/github_mirrors.dart，
+      // fushi_dictionary 反向 import 不了它。
+      installDictionaryUrlCandidatesResolver();
       // BUG-1498：把「平台 GUI 系统代理探测」这一步异步工作提前做掉并缓存，之后
       // `createAppHttpIoClient()` / `createAppDio()` 就能在构造函数初始化列表里**同步**
       // 装配出口——那正是全仓 40+ 条裸出站接不上代理层的结构性原因（初始化列表不能

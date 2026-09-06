@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
 import 'package:fushi/utils.dart';
@@ -24,6 +26,8 @@ class SentenceContextDialog extends StatefulWidget {
     required this.fetchPreview,
     required this.setContext,
     required this.onConfirm,
+    this.previewAudio,
+    this.stopAudioPreview,
   });
 
   /// 查到的词表现形，用于在「当前句」里高亮（失配回退 indexOf，再失配无高亮）。
@@ -38,12 +42,23 @@ class SentenceContextDialog extends StatefulWidget {
   /// 确认制卡（回该词条 WebView 制卡按钮）。
   final VoidCallback onConfirm;
 
+  /// BUG-2196 ②：试听**这次制卡真正会写进卡片的那段音频**（不是「当前句的 cue」——
+  /// 写进卡的区间还合并了在这个对话框里加减出来的上下文句，并带首尾留白与 A/V
+  /// 偏移）。返回 false = 这句没有可试听的音频。null = 该表面不支持，不渲染按钮。
+  final Future<bool> Function()? previewAudio;
+
+  /// 停止试听。与 [previewAudio] 同时为 null 或同时非 null。
+  final Future<void> Function()? stopAudioPreview;
+
   @override
   State<SentenceContextDialog> createState() => _SentenceContextDialogState();
 }
 
 class _SentenceContextDialogState extends State<SentenceContextDialog>
     with FushiPagePlaceholders<SentenceContextDialog> {
+  /// 试听是否正在播。只驱动按钮外观；真正的播放状态在宿主控制器里。
+  bool _previewing = false;
+
   List<String> _prev = const <String>[];
   List<String> _next = const <String>[];
   String _current = '';
@@ -121,6 +136,8 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
   }
 
   Future<void> _cancel() async {
+    // 关窗前先停试听：对话框没了但音频还在放，用户没有任何入口能停下来。
+    await _stopPreview();
     // 还原到打开时的上下文。setContext 失败尽力而为，仍关窗。
     try {
       await widget.setContext(_snapPrev, _snapNext);
@@ -129,8 +146,50 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
   }
 
   void _confirm() {
+    // 同上：制卡走了，试听不该继续响。不 await——制卡不等它。
+    unawaited(_stopPreview());
     Navigator.of(context).pop();
     widget.onConfirm();
+  }
+
+  /// BUG-2196 ②：试听/停止的开关。
+  ///
+  /// 每次都重新问宿主要一次区间（而不是打开对话框时缓存一份）：用户在这里加减
+  /// 上下文句的**目的**就是改变那段区间，缓存会让试听放的是上一次的范围。
+  Future<void> _togglePreview() async {
+    final Future<bool> Function()? play = widget.previewAudio;
+    if (play == null) return;
+    if (_previewing) {
+      await _stopPreview();
+      return;
+    }
+    setState(() => _previewing = true);
+    bool ok = false;
+    try {
+      ok = await play();
+    } catch (_) {
+      ok = false;
+    }
+    if (!mounted) return;
+    if (!ok) {
+      // 没有可试听的音频：如实说一声，不要留一个「像在放但没声音」的按钮。
+      setState(() => _previewing = false);
+      FushiToast.show(
+        msg: t.popup_ctx_preview_unavailable,
+        severity: ToastSeverity.info,
+      );
+    }
+  }
+
+  Future<void> _stopPreview() async {
+    if (!_previewing) return;
+    final Future<void> Function()? stop = widget.stopAudioPreview;
+    if (stop != null) {
+      try {
+        await stop();
+      } catch (_) {}
+    }
+    if (mounted) setState(() => _previewing = false);
   }
 
   /// 当前句里把查到的词高亮：offset 命中优先（offset 处正好是 matched），失配回退
@@ -402,6 +461,18 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
       ),
       // 底部动作对齐 Niratan footer：右下角 Cancel + Confirm Mining（主按钮）。
       actions: <Widget>[
+        // BUG-2196 ②：试听放最左，与「取消 / 确认制卡」同一行。只有宿主真的能出声
+        // 的表面才有这个按钮（previewAudio == null 时整颗不渲染）。
+        if (widget.previewAudio != null)
+          TextButton.icon(
+            onPressed: _busy ? null : _togglePreview,
+            icon: Icon(
+              _previewing ? Icons.stop_rounded : Icons.play_arrow_rounded,
+            ),
+            label: Text(
+              _previewing ? t.popup_ctx_preview_stop : t.popup_ctx_preview_audio,
+            ),
+          ),
         TextButton(
           onPressed: _busy ? null : _cancel,
           child: Text(t.popup_ctx_cancel),

@@ -717,6 +717,9 @@ Future<void> runBackupExportFlow({
   appModel.beginBackupExport();
   String? failure;
   bool cancelled = false;
+  // BUG-2193：打包时被跳过的词典（元数据在、磁盘资源缺失）。以前这种情况让**全部**
+  // 词典都不进包，而导出照样报「成功」——用户下次在新设备恢复才会发现词典全没了。
+  List<String> skippedDictionaries = const <String>[];
   try {
     final Directory tmpDir = await getTemporaryDirectory();
     await _sweepStaleBackupArchives(tmpDir);
@@ -729,6 +732,8 @@ Future<void> runBackupExportFlow({
       bookKeys: bookKeys,
       videoKeys: videoKeys,
       onProgress: appModel.reportBackupExportProgress,
+      onDictionariesSkipped: (List<String> names) =>
+          skippedDictionaries = names,
     );
     if (Platform.isAndroid || Platform.isIOS) {
       await FushiShare.shareFiles(
@@ -766,7 +771,12 @@ Future<void> runBackupExportFlow({
   _showSnackBar(
     rootCtx,
     failure == null
-        ? t.backup_export_success
+        ? (skippedDictionaries.isEmpty
+            ? t.backup_export_success
+            : t.backup_export_dictionaries_skipped(
+                n: skippedDictionaries.length,
+                names: skippedDictionaries.join('、'),
+              ))
         : t.backup_export_failed(message: failure),
   );
 }

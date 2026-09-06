@@ -4300,5 +4300,16 @@
   "reading_stats_day_reset_hour": "Day starts at",
   "reading_stats_day_reset_hour_hint": "Reading before this hour counts toward the previous day. Affects today and the last N days in statistics; only records written after the change use the new boundary.",
   "video_home_subscription_updates": "已更新未看",
-  "video_home_subscription_unwatched_episode": "第 $n 集 · $count 集未看"
+  "video_home_subscription_unwatched_episode": "第 $n 集 · $count 集未看",
+  "dict_error_connect_timeout": "Could not reach $host (connection timed out)",
+  "dict_error_stall_timeout": "$host stopped sending data",
+  "dict_error_connection": "Could not connect to $host",
+  "dict_error_http_status": "$host returned HTTP $status",
+  "dict_task_failed_download": "Download failed: $name ($reason)",
+  "dict_task_failed_import": "Import failed: $name ($reason)",
+  "dict_task_failed_summary": "$n dictionary(s) failed",
+  "backup_export_dictionaries_skipped": "Exported, but $n dictionary(s) were skipped: their files are missing on this device ($names)",
+  "popup_ctx_preview_audio": "Preview audio",
+  "popup_ctx_preview_stop": "Stop",
+  "popup_ctx_preview_unavailable": "No audio for this sentence"
 }
