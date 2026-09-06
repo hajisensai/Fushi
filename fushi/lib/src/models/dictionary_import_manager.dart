@@ -717,16 +717,34 @@ class DictionaryImportManager {
   @visibleForTesting
   static void packDirectoryToZip(String srcDirPath, String zipPath) {
     final Directory directory = Directory(srcDirPath);
-    final Archive archive = Archive();
-    for (final FileSystemEntity entity in directory.listSync(recursive: true)) {
-      if (entity is File) {
-        final String relativePath =
-            path.relative(entity.path, from: directory.path);
-        archive.addFile(ArchiveFile(
-            relativePath, entity.lengthSync(), entity.readAsBytesSync()));
+    // STORE（不压缩）+ 逐文件流式写盘：这个 zip 只是给 native 导入器当输入的
+    // 临时容器，native 拿到后立刻 inflate——在 Dart 里 deflate 一遍纯属白干（几百
+    // MB 的 MDX/MDD 目录要压好几秒）。以前还把整个目录读进内存组 Archive、再
+    // encode 成第二份内存拷贝才落盘（~2× 目录大小的峰值，正是 OOM 路径的来源）；
+    // ZipFileEncoder 一次只持有一个文件。native 侧的压缩比守卫对 STORE 比 1:1
+    // 天然放行。
+    final ZipFileEncoder encoder = ZipFileEncoder();
+    encoder.create(zipPath, level: ZipFileEncoder.STORE);
+    try {
+      for (final FileSystemEntity entity
+          in directory.listSync(recursive: true)) {
+        if (entity is File) {
+          final String relativePath =
+              path.relative(entity.path, from: directory.path);
+          final InputFileStream fileStream = InputFileStream(entity.path);
+          try {
+            encoder.addArchiveFile(
+              ArchiveFile.stream(relativePath, entity.lengthSync(), fileStream)
+                ..compress = false,
+            );
+          } finally {
+            fileStream.closeSync();
+          }
+        }
       }
+    } finally {
+      encoder.closeSync();
     }
-    File(zipPath).writeAsBytesSync(ZipEncoder().encode(archive)!);
   }
 
   static void _copyDirectory(Directory source, Directory destination) {

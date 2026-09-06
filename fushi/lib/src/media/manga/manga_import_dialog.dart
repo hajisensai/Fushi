@@ -77,6 +77,17 @@ class _MangaImportDialogState extends State<MangaImportDialog>
 
   bool _pickerActive = false;
 
+  /// 走 [ImportCarrierResolver] 而不是每次裸调 `classifyImportCarrier`（与书籍框
+  /// 同款，守卫 `manga_import_carrier_memo_guard_test.dart`）：`.zip` / `.epub`
+  /// 的定性要真开包，而同一路径在一次导入里会被问到不止一次——预填 / 拖入循环 /
+  /// 收下路径，每问一次就开一次包。
+  late final ImportCarrierResolver _carrierResolver = ImportCarrierResolver(
+    isDirectory: (String pth) => Directory(pth).existsSync(),
+    isImageArchive: MangaModule.isImageArchive,
+    directoryHasPageImages: MangaModule.directoryHasPageImages,
+    directoryCarrierFileCount: MangaModule.directoryCarrierFileCount,
+  );
+
   @override
   void initState() {
     super.initState();
@@ -103,13 +114,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
     super.dispose();
   }
 
-  ImportCarrier _classify(String path) => classifyImportCarrier(
-        path,
-        isDirectory: (String pth) => Directory(pth).existsSync(),
-        isImageArchive: MangaModule.isImageArchive,
-        directoryHasPageImages: MangaModule.directoryHasPageImages,
-        directoryCarrierFileCount: MangaModule.directoryCarrierFileCount,
-      );
+  ImportCarrier _classify(String path) => _carrierResolver.resolve(path);
 
   /// 目录取目录名，文件取去扩展名的文件名。
   String _deriveTitle(String path) {

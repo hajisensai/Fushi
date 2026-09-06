@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:archive/archive.dart';
+import 'package:archive/archive_io.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_core/fushi_core.dart';
@@ -52,6 +52,39 @@ class _ArchivePageSet {
   final int score;
 }
 
+/// 流式打开的 zip：[archive] 的条目内容惰性读自 [input]，所以 [input] 必须活到
+/// 最后一次 `.content` 之后；[close] 关句柄并释放缓冲。
+class _OpenedArchive {
+  _OpenedArchive(this.archive, this.input);
+
+  final Archive archive;
+  final InputFileStream input;
+
+  void close() {
+    archive.clearSync();
+    input.closeSync();
+  }
+}
+
+/// 归一化名 → 条目的索引（大小写敏感 / 折叠两张表各建一次）。
+///
+/// mokuro 页匹配之前对每个候选根、每一页都线性扫全部图片条目，且在最内层循环里
+/// 反复 `_normalizeArchiveName`（normalizeMangaUrl + 两个 RegExp + Uri.decode）：
+/// 约 12·N² 次归一化，2000 页的卷是几千万次。这里每个条目只归一化一次。
+class _ArchiveImageIndex {
+  _ArchiveImageIndex(List<ArchiveFile> images) {
+    for (final ArchiveFile image in images) {
+      final String normalized =
+          MangaArchiveImporter._normalizeArchiveName(image.name);
+      (exact[normalized] ??= <ArchiveFile>[]).add(image);
+      (folded[normalized.toLowerCase()] ??= <ArchiveFile>[]).add(image);
+    }
+  }
+
+  final Map<String, List<ArchiveFile>> exact = <String, List<ArchiveFile>>{};
+  final Map<String, List<ArchiveFile>> folded = <String, List<ArchiveFile>>{};
+}
+
 const Set<String> _kSevenZipMangaArchiveExtensions = <String>{
   '.rar',
   '.cbr',
@@ -86,11 +119,11 @@ class MangaSevenZipExtractor {
   MangaSevenZipExtractor({
     DiscoveryProcessRunner? runProcess,
     String? sevenZipOverride,
-  }) : _runProcess = runProcess ?? Process.run,
-       _locator = DiscoveryArchiveExtractor(
-         runProcess: runProcess,
-         sevenZipOverride: sevenZipOverride,
-       );
+  })  : _runProcess = runProcess ?? Process.run,
+        _locator = DiscoveryArchiveExtractor(
+          runProcess: runProcess,
+          sevenZipOverride: sevenZipOverride,
+        );
 
   final DiscoveryProcessRunner _runProcess;
   final DiscoveryArchiveExtractor _locator;
@@ -167,9 +200,8 @@ class MangaSevenZipExtractor {
       }
       final String attributes = fields['Attributes'] ?? '';
       if (attributes.toUpperCase().contains('D')) continue;
-      final String extension = p.posix
-          .extension(entryPath.replaceAll('\\', '/'))
-          .toLowerCase();
+      final String extension =
+          p.posix.extension(entryPath.replaceAll('\\', '/')).toLowerCase();
       if (!kMangaImageExtensions.contains(extension)) continue;
       final int? size = int.tryParse(fields['Size'] ?? '');
       if (size == null || size < 0) {
@@ -241,8 +273,10 @@ abstract final class MangaArchiveImporter {
     if (extension == '.epub') {
       return _looksLikeImageEpub(archivePath);
     }
+    _OpenedArchive? opened;
     try {
-      final Archive archive = _decode(archivePath);
+      opened = _open(archivePath);
+      final Archive archive = opened.archive;
       bool hasImage = false;
       bool hasDictionaryIndex = false;
       bool hasDictionaryBank = false;
@@ -296,6 +330,8 @@ abstract final class MangaArchiveImporter {
       return hasImage && (hasMokuro || !hasMarkup);
     } catch (_) {
       return false;
+    } finally {
+      opened?.close();
     }
   }
 
@@ -309,7 +345,7 @@ abstract final class MangaArchiveImporter {
     MangaSevenZipExtractor? sevenZipExtractor,
   }) async {
     final String extension = p.extension(archivePath).toLowerCase();
-    Archive? archive;
+    _OpenedArchive? opened;
     final Directory staging = await Directory.systemTemp.createTemp(
       'hibiki_manga_archive_',
     );
@@ -321,7 +357,8 @@ abstract final class MangaArchiveImporter {
           staging: staging,
         );
       } else {
-        archive = _decode(archivePath);
+        opened = _open(archivePath);
+        final Archive archive = opened.archive;
         int expandedBytes = 0;
         for (final ArchiveFile entry in archive) {
           _validateEntry(entry);
@@ -404,7 +441,7 @@ abstract final class MangaArchiveImporter {
         sourceId: sourceId,
       );
     } finally {
-      archive?.clearSync();
+      opened?.close();
       if (staging.existsSync()) {
         await staging.delete(recursive: true);
       }
@@ -624,9 +661,10 @@ abstract final class MangaArchiveImporter {
     }
 
     final List<_ArchivePageSet> matches = <_ArchivePageSet>[];
+    final _ArchiveImageIndex index = _ArchiveImageIndex(images);
     uniqueRoots.forEach((String root, int rootScore) {
       final List<ArchiveFile>? exact = _pagesAtRoot(
-        images,
+        index,
         root: root,
         pageUrls: pageUrls,
         caseSensitive: true,
@@ -636,7 +674,7 @@ abstract final class MangaArchiveImporter {
         return;
       }
       final List<ArchiveFile>? folded = _pagesAtRoot(
-        images,
+        index,
         root: root,
         pageUrls: pageUrls,
         caseSensitive: false,
@@ -656,7 +694,7 @@ abstract final class MangaArchiveImporter {
   }
 
   static List<ArchiveFile>? _pagesAtRoot(
-    List<ArchiveFile> images, {
+    _ArchiveImageIndex index, {
     required String root,
     required List<String> pageUrls,
     required bool caseSensitive,
@@ -665,14 +703,9 @@ abstract final class MangaArchiveImporter {
     final Set<ArchiveFile> used = <ArchiveFile>{};
     for (final String pageUrl in pageUrls) {
       final String expected = root.isEmpty ? pageUrl : '$root/$pageUrl';
-      final List<ArchiveFile> found = <ArchiveFile>[
-        for (final ArchiveFile image in images)
-          if (caseSensitive
-              ? _normalizeArchiveName(image.name) == expected
-              : _normalizeArchiveName(image.name).toLowerCase() ==
-                    expected.toLowerCase())
-            image,
-      ];
+      final List<ArchiveFile> found = caseSensitive
+          ? index.exact[expected] ?? const <ArchiveFile>[]
+          : index.folded[expected.toLowerCase()] ?? const <ArchiveFile>[];
       if (found.length != 1 || !used.add(found.single)) return null;
       matches.add(found.single);
     }
@@ -734,9 +767,10 @@ abstract final class MangaArchiveImporter {
 
   static bool _looksLikeImageEpub(String archivePath) {
     Directory? extraction;
-    Archive? archive;
+    _OpenedArchive? opened;
     try {
-      archive = _decode(archivePath);
+      opened = _open(archivePath);
+      final Archive archive = opened.archive;
       int expandedBytes = 0;
       int imageCount = 0;
       for (final ArchiveFile entry in archive) {
@@ -755,6 +789,9 @@ abstract final class MangaArchiveImporter {
       if (imageCount == 0) {
         return false;
       }
+      // 中央目录看完就关：下面的整包解析自己再开一次文件。
+      opened.close();
+      opened = null;
       extraction = Directory.systemTemp.createTempSync(
         'hibiki_manga_epub_probe_',
       );
@@ -766,7 +803,7 @@ abstract final class MangaArchiveImporter {
     } catch (_) {
       return false;
     } finally {
-      archive?.clearSync();
+      opened?.close();
       final Directory? dir = extraction;
       if (dir != null && dir.existsSync()) {
         dir.deleteSync(recursive: true);
@@ -831,15 +868,26 @@ abstract final class MangaArchiveImporter {
     }
   }
 
-  static Archive _decode(String archivePath) {
+  /// 以文件流打开 zip：只读中央目录，条目内容在首次访问 `.content` 时才按需
+  /// 解压。用完必须 [_OpenedArchive.close]（关文件句柄 + 释放已解压缓冲）。
+  ///
+  /// 之前是 `readAsBytesSync` + `Uint8List.fromList` 再拷一份 + `decodeBytes(verify:
+  /// true)`：整包读进内存两份、再对每个条目 inflate + CRC 一遍——而三个调用方里两个
+  /// （[looksLikeImageArchive] / [_looksLikeImageEpub]）只看条目名，且它们在
+  /// 对话框里被同步调用、每次选中/拖入都跑；一本 500 MB 的 CBZ 要在 UI isolate
+  /// 上白白解压两三次。
+  static _OpenedArchive _open(String archivePath) {
     final File file = File(archivePath);
     if (!file.existsSync()) {
       throw MangaImportException('Manga archive not found: $archivePath');
     }
-    return ZipDecoder().decodeBytes(
-      Uint8List.fromList(file.readAsBytesSync()),
-      verify: true,
-    );
+    final InputFileStream input = InputFileStream(archivePath);
+    try {
+      return _OpenedArchive(ZipDecoder().decodeBuffer(input), input);
+    } catch (_) {
+      input.closeSync();
+      rethrow;
+    }
   }
 
   static void _validateEntry(ArchiveFile entry) {

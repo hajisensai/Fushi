@@ -165,9 +165,9 @@ class VttParser {
     }
     // 位置指令（如 `align:left`）以空白分隔在时间戳后，取第一个 token
     final int? start =
-        _parseTimecodeToMs(parts[0].trim().split(RegExp(r'\s+')).first);
+        _parseTimecodeToMs(parts[0].trim().split(_whitespaceRe).first);
     final int? end =
-        _parseTimecodeToMs(parts[1].trim().split(RegExp(r'\s+')).first);
+        _parseTimecodeToMs(parts[1].trim().split(_whitespaceRe).first);
     if (start == null || end == null) {
       return null;
     }
@@ -177,12 +177,17 @@ class VttParser {
   /// 将 VTT 时间码转换为毫秒。
   ///
   /// 支持 `HH:MM:SS.mmm`（含小时）和 `MM:SS.mmm`（不含小时）。
+  // 每条 cue 都要跑的正则只编译一次（以前逐次 `RegExp(...)`，每 cue 起止各两三次）。
+  static final RegExp _whitespaceRe = RegExp(r'\s+');
+  static final RegExp _fullTimecodeRe =
+      RegExp(r'^(\d+):(\d{2}):(\d{2})\.(\d{1,3})$');
+  static final RegExp _shortTimecodeRe = RegExp(r'^(\d+):(\d{2})\.(\d{1,3})$');
+
   static int? _parseTimecodeToMs(String timecode) {
     final String normalized = timecode.replaceAll(',', '.');
 
     // HH:MM:SS.mmm
-    final RegExpMatch? full =
-        RegExp(r'^(\d+):(\d{2}):(\d{2})\.(\d{1,3})$').firstMatch(normalized);
+    final RegExpMatch? full = _fullTimecodeRe.firstMatch(normalized);
     if (full != null) {
       final int fh = int.parse(full.group(1)!);
       final int fm = int.parse(full.group(2)!);
@@ -195,8 +200,7 @@ class VttParser {
     }
 
     // MM:SS.mmm（无小时）
-    final RegExpMatch? short =
-        RegExp(r'^(\d+):(\d{2})\.(\d{1,3})$').firstMatch(normalized);
+    final RegExpMatch? short = _shortTimecodeRe.firstMatch(normalized);
     if (short != null) {
       final int sm = int.parse(short.group(1)!);
       final int ss = int.parse(short.group(2)!);

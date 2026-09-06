@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi_audio/fushi_audio.dart';
@@ -80,6 +81,15 @@ List<EpubSection> epubSectionsFromExtractDir(String extractDir) {
   );
 }
 
+/// [epubSectionsFromExtractDir] 的后台 isolate 版——生产路径一律走这里。
+///
+/// 每章都要读文件 + 整个 HTML5 DOM 解析 + 剥 ruby，一本几百章的轻小说是几百 MB
+/// 的瞬时 DOM 和数秒的 CPU；匹配器早就放 isolate 了（[EpubCueMatcher.matchInIsolate]），
+/// 这一步是整条对齐链上唯一还留在 UI isolate 的重活。[EpubSection] 是纯数据
+/// （index / href / text），可直接跨 isolate 传回。
+Future<List<EpubSection>> loadEpubSectionsInBackground(String extractDir) =>
+    Isolate.run(() => epubSectionsFromExtractDir(extractDir));
+
 /// 按字幕扩展名分派解析器（原两个导入对话框各持等价副本，已收敛到此单一真相源）。
 Future<List<AudioCue>> parseCuesForFormat(
   File file,
@@ -141,7 +151,7 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
   try {
     final EpubBookRow? bookRow = await db.getEpubBook(bookKey);
     final String extractDir = bookRow?.extractDir ?? '';
-    sections = epubSectionsFromExtractDir(extractDir);
+    sections = await loadEpubSectionsInBackground(extractDir);
   } catch (e, stack) {
     ErrorLogService.instance
         .log('AudiobookAlignmentService.parseEpub', e, stack);
