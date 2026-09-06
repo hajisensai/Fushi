@@ -3,22 +3,22 @@ import 'dart:io';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/sync/app_model_library_host_service.dart';
+import 'package:fushi/src/sync/local_library_host_service.dart';
 import 'package:fushi/src/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/sync_asset_package_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
-/// [AppModelLibraryHostService.videoCoverPath] / [bookCoverPath] 单行直查行为
+/// [LocalLibraryHostService.videoCoverPath] / [bookCoverPath] 单行直查行为
 /// （BUG-937 封面 O(N²) 根修的服务层）：结果必须与 listVideos()/listBooks()
 /// 清单里对应条目的 coverPath 一致，但只做单行 DB 查询 + stat。
-AppModelLibraryHostService _makeService({
+LocalLibraryHostService _makeService({
   required FushiDatabase db,
   required Directory tmp,
 }) {
   final Directory dictRoot = Directory(p.join(tmp.path, 'dicts'))
     ..createSync(recursive: true);
-  return AppModelLibraryHostService(
+  return LocalLibraryHostService(
     db: db,
     dictionaryResourceRoot: dictRoot,
     packages: SyncAssetPackageService(db: db),
@@ -52,7 +52,7 @@ void main() {
         videoPath: p.join(tmp.path, 'a.mp4'),
         coverPath: Value(cover.path),
       ));
-      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       expect(await svc.videoCoverPath('video/a'), cover.path);
       final RemoteVideoInfo listed = (await svc.listVideos())
           .singleWhere((RemoteVideoInfo v) => v.id == 'video/a');
@@ -66,7 +66,7 @@ void main() {
         videoPath: p.join(tmp.path, 'g.mp4'),
         coverPath: Value(p.join(tmp.path, 'missing.jpg')),
       ));
-      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       expect(await svc.videoCoverPath('video/gone'), isNull);
       expect(await svc.videoCoverPath('video/unknown'), isNull);
     });
@@ -86,7 +86,7 @@ void main() {
         chaptersJson: '["ch1"]',
         importedAt: DateTime.now().millisecondsSinceEpoch,
       ));
-      final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       final String expected = p.join(extract.path, 'cover.jpg');
       expect(await svc.bookCoverPath('book-key-1'), expected);
       expect(await svc.bookCoverPath('Book Title'), expected,

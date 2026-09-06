@@ -1659,7 +1659,7 @@ List<RemoteVideoInfo> dedupeRemoteVideos({
 
 /// host 侧「库感知」服务：把 host 的实时库即时 export/import/delete/list。
 /// 抽象不依赖 AppModel，便于测试用 fake 注入。所有实现里的库变动必须串行
-/// （经 runExclusiveWithSync）——见 AppModelLibraryHostService（后续任务实现）。
+/// （经 runExclusiveWithSync）——见 LocalLibraryHostService（后续任务实现）。
 abstract class FushiLibraryHostService {
   /// host 当前实时词典清单（从 DictionaryMeta 表读，不是从任何暂存目录）。
   Future<List<RemoteDictionaryInfo>> listDictionaries();
@@ -1933,7 +1933,7 @@ abstract class FushiLibraryHostService {
 /// host 端「列删除墓碑」的**可选**能力（显式确认式删除传播，host→client 消费方向）。
 /// 与 [FushiLibraryHostService] 分开：不是每个 host 实现（尤其测试 fake）都需要它，
 /// 塞进主接口会强制全部实现者补方法（Never break userspace）。真实 host
-/// （[AppModelLibraryHostService]）额外 implements 本接口；server 用 `is` 探测——不实现
+/// （[LocalLibraryHostService]）额外 implements 本接口；server 用 `is` 探测——不实现
 /// 就 GET `/api/tombstones` → 404，client 侧 [getRemoteDeletionTombstones] 已优雅降级。
 abstract interface class DeletionTombstoneHost {
   /// 列出 host 当前全部删除墓碑（`sync_deletion_tombstones`）为 JSON 数组，供 client

@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/sync/app_model_library_host_service.dart';
+import 'package:fushi/src/sync/local_library_host_service.dart';
 import 'package:fushi/src/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/sync_asset_package_service.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -41,7 +41,7 @@ void main() {
     });
   });
 
-  group('AppModelLibraryHostService dictionaries', () {
+  group('LocalLibraryHostService dictionaries', () {
     late Directory tmp;
     late FushiDatabase db;
     late Directory dictRoot;
@@ -71,7 +71,7 @@ void main() {
       File(p.join(dictRoot.path, 'JMdict', 'blobs.bin'))
           .writeAsBytesSync(<int>[1, 2, 3]);
 
-      final AppModelLibraryHostService svc = AppModelLibraryHostService(
+      final LocalLibraryHostService svc = LocalLibraryHostService(
         db: db,
         dictionaryResourceRoot: dictRoot,
         packages: SyncAssetPackageService(db: db),
@@ -98,7 +98,7 @@ void main() {
     });
 
     test('exportDictionary throws StateError for unknown name', () async {
-      final AppModelLibraryHostService svc = AppModelLibraryHostService(
+      final LocalLibraryHostService svc = LocalLibraryHostService(
         db: db,
         dictionaryResourceRoot: dictRoot,
         packages: SyncAssetPackageService(db: db),
@@ -113,7 +113,7 @@ void main() {
 
     test('exportDictionary rejects path-traversal names with ArgumentError',
         () async {
-      final AppModelLibraryHostService svc = AppModelLibraryHostService(
+      final LocalLibraryHostService svc = LocalLibraryHostService(
         db: db,
         dictionaryResourceRoot: dictRoot,
         packages: SyncAssetPackageService(db: db),
@@ -144,7 +144,7 @@ void main() {
 
     test('deleteDictionary rejects path-traversal names with ArgumentError',
         () async {
-      final AppModelLibraryHostService svc = AppModelLibraryHostService(
+      final LocalLibraryHostService svc = LocalLibraryHostService(
         db: db,
         dictionaryResourceRoot: dictRoot,
         packages: SyncAssetPackageService(db: db),

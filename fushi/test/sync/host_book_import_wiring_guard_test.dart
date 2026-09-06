@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// BUG-714 守卫：互联 live 书籍推送（client→host）全部 HTTP 500。
 ///
-/// 历史 bug = `AppModelLibraryHostService` 的 `importBookFromFile` 回调是可选的
+/// 历史 bug = `LocalLibraryHostService` 的 `importBookFromFile` 回调是可选的
 /// （null 时 `importBook` 抛 `UnsupportedError`），而 `AppModel` 里唯一的生产
 /// 构造点（`libraryServiceFactory`）忘了接线它。于是 host 收到对端 client 的
 /// `PUT /api/library/books/<title>` 时，`importBook` 抛 `UnsupportedError`，被
@@ -29,8 +29,8 @@ void main() {
       final String src = read('lib/src/models/app_model.dart');
 
       // 生产工厂里确实构造了 host service。
-      expect(src, contains('AppModelLibraryHostService('),
-          reason: 'app_model 必须构造 AppModelLibraryHostService 作为互联 host 服务');
+      expect(src, contains('LocalLibraryHostService('),
+          reason: 'app_model 必须构造 LocalLibraryHostService 作为互联 host 服务');
 
       // 关键接线：importBookFromFile 必须被显式传入（缺则 importBook 抛
       // UnsupportedError → PUT 书籍 500）。

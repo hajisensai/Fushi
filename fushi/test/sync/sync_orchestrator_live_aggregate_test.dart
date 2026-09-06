@@ -1,6 +1,6 @@
 /// TODO-1056 phase C: 互联（LAN server）聚合（统计 + 收藏）live 双向合并端到端测试。
 ///
-/// 真 server（FushiSyncServer + AppModelLibraryHostService + host DB）+ 真 client
+/// 真 server（FushiSyncServer + LocalLibraryHostService + host DB）+ 真 client
 /// backend（client DB）+ orchestrator，验证：
 ///   1. GET/PUT round-trip：client materialize → GET host → 并集折叠 → 写回本地 →
 ///      PUT 回 host，两端收敛到并集（统计 MAX、收藏词并集）。
@@ -14,7 +14,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/sync/app_model_library_host_service.dart';
+import 'package:fushi/src/sync/local_library_host_service.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/fushi_sync_server.dart';
 import 'package:fushi/src/sync/sync_asset_package_service.dart';
@@ -88,9 +88,9 @@ void main() {
   /// 起一台带/不带 libraryService 的 server（不带 → aggregate 端点 404，模拟老 host）。
   Future<void> startServer({required bool withLibraryService}) async {
     hostDb = _memDb();
-    AppModelLibraryHostService? libSvc;
+    LocalLibraryHostService? libSvc;
     if (withLibraryService) {
-      libSvc = AppModelLibraryHostService(
+      libSvc = LocalLibraryHostService(
         db: hostDb,
         dictionaryResourceRoot: Directory(work.path),
         packages: SyncAssetPackageService(db: hostDb),

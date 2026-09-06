@@ -15,7 +15,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/sync/app_model_library_host_service.dart';
+import 'package:fushi/src/sync/local_library_host_service.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/fushi_sync_server.dart';
 import 'package:fushi/src/sync/sync_asset_package_service.dart';
@@ -244,13 +244,13 @@ void main() {
     const String token = 'orch-live-token';
 
     setUp(() async {
-      // host 侧：真实 DB + 资源目录 + AppModelLibraryHostService
+      // host 侧：真实 DB + 资源目录 + LocalLibraryHostService
       hostDb = _memDb();
       hostDictRoot = Directory(p.join(work.path, 'host_dicts'))..createSync();
       // 在 host 上植入词典「明镜」（CJK 真实词典名，覆盖 server URI 解码路径）
       await _seedDictionary(hostDb, hostDictRoot, '明镜');
 
-      final AppModelLibraryHostService libSvc = AppModelLibraryHostService(
+      final LocalLibraryHostService libSvc = LocalLibraryHostService(
         db: hostDb,
         dictionaryResourceRoot: hostDictRoot,
         packages: SyncAssetPackageService(db: hostDb),

@@ -92,7 +92,7 @@ class VideoBookRepository {
   /// （anime_download_importer，BUG-1417：整本 1 条、title=系列名、mediaKey=首集 uid；幂等看
   /// createdEpisodeUids，崩溃重放复用既有条目时一条都不记）——刻意**不放进
   /// [saveVideoBook]**，让散装文件批量扫描、远端打开（home_video_page，打开≠导入）、
-  /// 云同步（app_model_library_host_service）等路径天然不 emit，避免刷屏或语义错误
+  /// 云同步（local_library_host_service）等路径天然不 emit，避免刷屏或语义错误
   /// （对齐 EpubImporter 只在用户导入管线 emit 的做法）。timestamp/dateKey 用调用
   /// 时刻。best-effort：记账失败只 log，不影响视频已导入。
   Future<void> recordVideoImportActivity({

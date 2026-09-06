@@ -10,7 +10,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/sync/app_model_library_host_service.dart';
+import 'package:fushi/src/sync/local_library_host_service.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/fushi_sync_server.dart';
@@ -79,7 +79,7 @@ Future<void> _seedHostVideo(
 }
 
 /// 在 host DB 种一本可经 live-sync 列出的有声书：Audiobooks 行 + SrtBooks 行齐备
-/// （host listAudiobooks 要求两表同源，缺一不列出，见 AppModelLibraryHostService）。
+/// （host listAudiobooks 要求两表同源，缺一不列出，见 LocalLibraryHostService）。
 Future<void> _seedHostAudiobook(FushiDatabase db, String bookKey) async {
   await db.upsertAudiobook(AudiobooksCompanion.insert(
     bookKey: bookKey,
@@ -140,7 +140,7 @@ void main() {
   setUp(() async {
     work = await Directory.systemTemp.createTemp('orch_live_progress_');
     hostDb = _memDb();
-    final AppModelLibraryHostService libSvc = AppModelLibraryHostService(
+    final LocalLibraryHostService libSvc = LocalLibraryHostService(
       db: hostDb,
       dictionaryResourceRoot: Directory(work.path),
       packages: SyncAssetPackageService(db: hostDb),
