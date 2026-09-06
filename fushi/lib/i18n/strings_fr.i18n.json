@@ -4292,5 +4292,7 @@
   "onboarding_pack_status_paused": "Recommended pack download paused",
   "onboarding_pack_download_resume": "Resume download",
   "onboarding_pack_paused_desc": "Progress is kept on disk — resuming picks up where it stopped.",
-  "onboarding_pack_mini_bar_hide": "Hide"
+  "onboarding_pack_mini_bar_hide": "Hide",
+  "video_library_scrape_pending_banner": "$count works still need identity confirmation",
+  "video_library_scrape_pending_banner_action": "Confirm"
 }

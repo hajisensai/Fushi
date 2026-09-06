@@ -230,7 +230,7 @@ void main() {
     });
   });
 
-  test('每进程只跑一轮', () async {
+  test('同一作品每进程只自动尝试一次', () async {
     final int sourceId = await addSource('D:/A');
     await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
         title: 'Unscraped Movie');
@@ -238,6 +238,49 @@ void main() {
     final VideoLibraryScrapeSweep service = sweep();
     await service.sweepOnce();
     await service.sweepOnce();
+    // 查无/歧义的作品永远满足「无规范身份」判据：没有按作品的记账，它们会被
+    // 每一轮 sweep 重新塞进批次，白占 AniDB 的进程级限流队列。
     expect(runner.sourceIds, hasLength(1));
+    expect(runner.plannedTitles.single, <String>['Unscraped Movie']);
+  });
+
+  test('同一进程内新入库的作品会被后续 sweep 认领（BUG-2199）', () async {
+    final int sourceId = await addSource('D:/A');
+    await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
+        title: 'Unscraped Movie');
+
+    final VideoLibraryScrapeSweep service = sweep();
+    await service.sweepOnce();
+    expect(runner.plannedTitles.single, <String>['Unscraped Movie']);
+
+    // 下载管线的 import 落库必然晚于进页面那一轮 sweep（实测差 6 秒）。旧实现拿
+    // 一个进程级 bool 当幂等键，于是这一条结构上永远刮不到，必须重启 app——正好
+    // 废掉 BUG-2004 留下的「无 AniDB 身份的下载作品由自动补刮认领」承诺。
+    await addVideo('movie-b', 'D:/A/Fresh Download (2023).mkv', sourceId,
+        title: 'Fresh Download');
+    await service.sweepOnce();
+
+    expect(runner.sourceIds, hasLength(2));
+    // 第二轮只带新作品：老作品已经自动试过，不重复打 AniDB。
+    expect(runner.plannedTitles.last, <String>['Fresh Download']);
+  });
+
+  test('sweepAndListPending 回传待确认清单，总闸关时也照常回传', () async {
+    final int sourceId = await addSource('D:/A');
+    await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
+        title: 'Unscraped Movie');
+    await addVideo('movie-b', 'D:/A/Scraped Movie (2021).mkv', sourceId,
+        title: 'Scraped Movie');
+    await seedIdentityForBook('movie-b');
+
+    final List<VideoPendingScrapeWork> pending =
+        await sweep(isEnabled: () => false).sweepAndListPending();
+
+    // 「不自动刮」不等于「不告诉用户有东西待确认」：提醒条的数字来自这份清单。
+    expect(runner.sourceIds, isEmpty);
+    expect(
+      pending.map((VideoPendingScrapeWork e) => e.work.title),
+      <String>['Unscraped Movie'],
+    );
   });
 }
