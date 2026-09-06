@@ -2798,6 +2798,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
       return;
     }
     if (!mounted || _controller == null) return;
+    // BUG-2188：同章收藏跳转不经 _beginNavigation，离开当前页在此结算（by-text
+    // 回退路径只滚动、不 notifyRestoreComplete，旧页在落点首个 arrive 时照常结算，
+    // 但同样属于「跳走」，一并在此 leave 保持同一语义）。
+    _readLedger.leave();
     if (useOffset) {
       await _controller!.evaluateJavascript(
         source: 'window.fushiReader && window.fushiReader'

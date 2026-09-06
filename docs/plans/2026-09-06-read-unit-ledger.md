@@ -24,7 +24,7 @@
 | 跨会话重读 | 再计 | 再计 | 再计 | 再计 |
 | 跳转（目录 / 进度条 / 搜索 / 收藏） | `flushStats` 后 `resetTrackingBaseline`：跳走前那页不计（视口之前才算）、跳过的不计 | 同 | 播种水位到落点：跳过不计、跳走前那页看进度是否越过水位、落点页要等额度 | 跳走前那页计（你在那页）；跳过不计；落点页翻走时计 |
 | 换章 | 相邻章 `nextChapter` 不换基线，差分正常；非相邻走跳转 | 同 | 恢复完成播种 + 令牌桶清零 → 新章首页按 40 字/秒慢补；末页因 `isAtEnd→1.0` 到达即整页计 | 坐标是全书绝对偏移，章边界透明；末页在新章首页 arrive 时结算 |
-| 改字号 / 主题 / 竖横排重排 | WKWebView 换 key 重建 + `restoreProgress`，统计无处理，靠字符比例锚隐式不变 | `prepareReloadAtDisplayedPosition`，统计无处理，页边界漂移记成 ± diff | 水位取 max + 原位恢复保留额度（BUG-2168）；缩字号前漂已修（BUG-2167） | `rebaseOnNextArrive`：同页换边界不结算 |
+| 改字号 / 主题 / 竖横排重排 | WKWebView 换 key 重建 + `restoreProgress`，统计无处理，靠字符比例锚隐式不变 | `prepareReloadAtDisplayedPosition`，统计无处理，页边界漂移记成 ± diff | 水位取 max + 原位恢复保留额度（BUG-2168）；缩字号前漂已修（BUG-2167） | 同页新边界 arrive 结算旧边界，并集只补多露出的行（BUG-2188 后 EPUB 不再 rebase） |
 | 速率封顶 | 无 | 无 | 40 字/秒（`kMaxReadCharsPerSecond`） | 无 |
 | 停留门 | 无 | 无 | EPUB 无；漫画到达 1.5s；视频 cue 1.5s | EPUB / 漫画 / PDF 无；视频 cue 保留 1.5s（`kArrivalDwellMs` 唯一消费者） |
 | 字符口径 | ttu 正则：字母 / 假名 / 汉字（`reader.js:26-36`） | 同 | `countStudyChars`：剔 `rt/rp/rtc`、空白标点（`epub_book.dart:641-663`）；JS `fushiStudyUnits` 同口径 | 不变 |
@@ -113,12 +113,12 @@
 | 目录 / 进度条 / 搜索 / 收藏句跳转 | 播种水位到落点、清桶 → 落点页要等额度 | 跳走时结算跳走前那页；跳过的从未成为当前单元 → 不计；落点页翻走时计 |
 | 听书显式跳句 | `onExplicitCueJump` 抬水位、不清桶 | `leave()`：结算当前页；跳过段落不计 |
 | 听书自动跟随跨章 | 同顺序翻页；reveal 后 250ms 内 scroll 回传被 B-3 窗吃掉，新页靠 10s 轮询 | 同顺序翻页；reveal 落定补一次 `_refreshProgress` |
-| 改字号 / 主题 / 行距（CSS 热换重锚） | 水位 max、额度保留（BUG-2168）；缩字号前漂已修（BUG-2167） | `rebaseOnNextArrive()`：同页换边界不结算；缩字号多露出的行属新单元，翻走时计 |
+| 改字号 / 主题 / 行距（CSS 热换重锚） | 水位 max、额度保留（BUG-2168）；缩字号前漂已修（BUG-2167） | 同页提前结算、新边界只补多露出的行，总额不变（BUG-2188 起不再 rebase：原位判据把同章跳转恒判原位） |
 | 旋屏 / 拖窗 / 分页↔连续 / 竖横排（整章重载） | 同上 | 同上（`_onRestoreComplete` 判原位恢复） |
 | 分页节点粒度 / 跨页长段落 | 起始边越过页首即整段计 | 起点 / 终点 caret 精确；降级节点粒度、单调 |
 | 首次开书 / 恢复到存档页 | 播种到恢复锚；存档页按额度慢计 | 存档页是当前单元，翻走时计一次（不预置，与 Hoshi 同） |
 | 纯图片章 / 封面 | `snapshot == null` 只更新 UI | 同，不 arrive |
-| 内容就绪兜底超时 / 导航失败 | 不播种 | `discard()` |
+| 内容就绪兜底超时 / 导航失败 | 不播种 | `_beginNavigation` 已 `leave()` 结算上一页，`discard()` 只丢新页空状态（BUG-2189） |
 | 章字数后台补算落定 | 水位重置到当前位置 | `reset()`：并集清空、当前丢弃 |
 | 停表期间翻走（手动暂停 / 后台 / 面板） | 水位推进但 `addChars` 丢弃，之后不补 | 并集照常标已覆盖，`addChars` 丢弃，之后不补（契约不变） |
 | 歌词模式 | 不计字 | 不计字（不 arrive） |

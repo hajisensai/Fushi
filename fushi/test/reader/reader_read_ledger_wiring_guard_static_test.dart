@@ -11,13 +11,18 @@ import '../pages/reader_fushi_page_source_corpus.dart';
 ///  * `_refreshProgress`：每次采样把当前可见区间 `[start, end)`（经 `absoluteCharOffsetOf`
 ///    换成全书绝对偏移，起 / 止都 >= 0 且 end > start）交给 `arrive`——这是**唯一**的
 ///    记字入口；
-///  * `_onRestoreComplete`：不播种，只在 `restoreIsInPlace` 时 `rebaseOnNextArrive`；
+///  * 离开当前单元只有一种动作 `leave`，且在**离开那一刻**：`_beginNavigation`（所有
+///    导航的必经点）与同章跳转入口（进度条 `restoreProgress` / 收藏句 `restoreToCharOffset`
+///    / 脚注内链 `jumpToFragment`）；`_onRestoreComplete` 不碰账本（BUG-2188 / 2189：
+///    旧的 `restoreIsInPlace → rebaseOnNextArrive` 把同章跳转恒判原位、跳走前那页不结算）；
 ///  * `_failNavigation`（含内容就绪兜底超时）：`discard`；
 ///  * `_recomputeCharCountsInBackground` 落定：`reset`；
 ///  * 显式跳句 `_handleExplicitCueJump`：`leave`；
 ///  * dispose / `onSourcePagePop` / 进程退出 flush：`leave` 在 `_flushReadingStats` 之前；
-///  * 听书 reveal 落定后补刷一次 `_refreshProgress`（B-3 窗吃掉 scroll 回传）；
-///  * 进度条拖动 / 搜索跳转不再对账本做任何动作（旧标量水位在此播种）。
+///  * 听书 reveal 落定后与 B-3 窗内丢弃 scroll 回传后各补刷一次 `_refreshProgress`
+///    （同一个 Timer；BUG-2190：窗内丢掉的可能是用户真实落点，只等 10s 轮询会让关书
+///    结算旧页）；
+///  * 跳转不播种（旧标量水位在此播种），跨章的离开结算由 `_beginNavigation` 统一做。
 void main() {
   final String corpus = readReaderPageSource();
   final String masked = maskComments(corpus);
@@ -47,18 +52,6 @@ void main() {
       );
       expect(gate, isNonNegative, reason: 'JS 拿不到起 / 止点时不 arrive（宁可不计）');
       expect(arrive, greaterThan(gate));
-    });
-
-    test('采样时记下实时锚 _readLedgerLiveAnchor（给原位恢复判据）', () {
-      final int anchor = body.indexOf(
-        '_readLedgerLiveAnchor = (_currentChapter, charOffset);',
-      );
-      expect(anchor, isNonNegative);
-      expect(
-        anchor,
-        lessThan(body.indexOf('_readLedger.arrive(')),
-        reason: '锚与 arrive 描述同一次采样',
-      );
     });
 
     test('分数口径的 _absoluteCharPosition 只留给进度 UI，不再进统计', () {
@@ -91,52 +84,81 @@ void main() {
     });
   });
 
-  group('rebase：恢复完成不播种，只在原位恢复时换坐标', () {
-    final String body = methodBody(corpus, 'void _onRestoreComplete()');
-
-    test('restoreIsInPlace 门控 rebaseOnNextArrive', () {
-      final int gate = body.indexOf('if (restoreIsInPlace(');
-      final int rebase = body.indexOf('_readLedger.rebaseOnNextArrive();');
-      expect(gate, isNonNegative);
-      expect(rebase, greaterThan(gate));
+  group('leave：离开当前单元只在离开那一刻（BUG-2188 / BUG-2189）', () {
+    test('_beginNavigation 先 leave 再置恢复在飞（所有导航的必经点）', () {
+      final String body = methodBody(corpus, 'void _beginNavigation(');
+      final int leave = body.indexOf('_readLedger.leave();');
+      final int inFlight = body.indexOf('_restoreInFlight = true;');
+      expect(leave, isNonNegative, reason: '跳走前那页在离开那一刻结算');
+      expect(leave, lessThan(inFlight));
       expect(
-        containsCodeLine(body, 'restoredCharOffset: _initialCharOffset,'),
-        isTrue,
-        reason: '恢复锚必须是真实恢复锚（BUG-1107 断点 B 的同源要求）',
+        leave,
+        lessThan(body.indexOf('_preciseLocateQueue.clear();')),
+        reason: '在 loadUrl 之前：装载失败 / 兜底超时 discard 时当前单元已空（BUG-2189）',
       );
     });
 
-    test('判据的「上一次实时进度」来自 _readLedgerLiveAnchor，不是被导航镜像的 _lastProgress*', () {
-      expect(containsCodeLine(body, 'lastChapter: liveAnchor?.\$1,'), isTrue);
+    test('_onRestoreComplete 不碰账本（不播种、不 rebase、不结算）', () {
+      final String body = methodBody(corpus, 'void _onRestoreComplete()');
       expect(
-        containsCodeLine(body, 'lastCharOffset: liveAnchor?.\$2,'),
-        isTrue,
-      );
-      expect(
-        containsIdentifier(body, '_lastProgressCharOffset'),
+        containsIdentifier(body, '_readLedger'),
         isFalse,
         reason:
-            '_navigateToChapter / _reloadWithCurrentSettings 把 _lastProgressCharOffset '
-            '镜像成 _initialCharOffset，拿它比对恒等 → 收藏句跨章跳转被误判成原位',
+            'BUG-2188：旧 restoreIsInPlace 拿「恢复锚 vs 上次采样」比对，同章跳转不经 '
+            '_beginNavigation、恢复锚就是上次采样 → 恒判原位 → 跳走前那页被 rebase 掉',
       );
     });
 
-    test('恢复完成不结算、不丢弃、不清并集', () {
-      for (final String verb in <String>[
-        '_readLedger.arrive(',
-        '_readLedger.leave(',
-        '_readLedger.discard(',
-        '_readLedger.reset(',
-      ]) {
-        expect(containsCodeLine(body, verb), isFalse, reason: verb);
-      }
-    });
-
-    test('全语料只有 _onRestoreComplete 调 rebaseOnNextArrive', () {
+    test('同章进度条跳转（restoreProgress）在 JS 之前 leave', () {
+      final String body = methodBody(
+        corpus,
+        'Future<void> _jumpToGlobalCharOffset(int globalOffset) async',
+      );
+      final int navigate = body.indexOf('_navigateToChapterAndWait(');
+      final int leave = body.indexOf('_readLedger.leave();');
+      final int js = body.indexOf('restoreProgress(');
+      expect(navigate, isNonNegative);
       expect(
-        '_readLedger.rebaseOnNextArrive('.allMatches(masked),
-        hasLength(1),
+        leave,
+        greaterThan(navigate),
+        reason: '只在同章分支（跨章由 _beginNavigation）',
       );
+      expect(js, greaterThan(leave));
+      expect(containsIdentifier(body, '_sessionMaxAbsoluteChars'), isFalse);
+    });
+
+    test('同章收藏跳转（restoreToCharOffset）在 JS 之前 leave', () {
+      final String body = methodBody(
+        corpus,
+        'Future<void> _jumpToFavoriteSentence(FavoriteSentence fav) async',
+      );
+      final int navigate = body.indexOf('_navigateToChapterAndWait(');
+      final int leave = body.indexOf('_readLedger.leave();');
+      final int js = body.indexOf('.restoreToCharOffset(');
+      expect(navigate, isNonNegative);
+      expect(leave, greaterThan(navigate));
+      expect(js, greaterThan(leave));
+    });
+
+    test('同章脚注内链（jumpToFragment）在 JS 之前 leave', () {
+      final String body = methodBody(
+        corpus,
+        'Future<void> _jumpToFragmentInPlace(String fragment) async',
+      );
+      final int leave = body.indexOf('_readLedger.leave();');
+      final int js = body.indexOf('jumpToFragment(');
+      expect(leave, isNonNegative);
+      expect(js, greaterThan(leave));
+    });
+
+    test('原位恢复判据与实时锚已删（EPUB 不再用 rebaseOnNextArrive）', () {
+      for (final String stale in <String>[
+        'restoreIsInPlace',
+        '_readLedgerLiveAnchor',
+        '_readLedger.rebaseOnNextArrive(',
+      ]) {
+        expect(containsIdentifier(masked, stale), isFalse, reason: stale);
+      }
     });
   });
 
@@ -239,21 +261,15 @@ void main() {
       expect(containsCodeLine(body, 'await _studyClock?.flushNow();'), isTrue);
     });
 
-    test('leave 恰在跳句 + dispose + onSourcePagePop + 进程退出四处', () {
-      expect('_readLedger.leave('.allMatches(masked), hasLength(4));
-    });
+    test(
+      'leave 恰八处：跳句 + dispose + onSourcePagePop + 进程退出 + _beginNavigation + 三个同章跳转入口',
+      () {
+        expect('_readLedger.leave('.allMatches(masked), hasLength(8));
+      },
+    );
   });
 
-  group('跳转不对账本做动作（旧标量水位在此播种）', () {
-    test('_jumpToGlobalCharOffset 无账本动作', () {
-      final String body = methodBody(
-        corpus,
-        'Future<void> _jumpToGlobalCharOffset(int globalOffset) async',
-      );
-      expect(containsIdentifier(body, '_readLedger'), isFalse);
-      expect(containsIdentifier(body, '_sessionMaxAbsoluteChars'), isFalse);
-    });
-
+  group('搜索跳转不对账本做动作（只滚动、不 notifyRestoreComplete，落点首个 arrive 结算旧页）', () {
     test('onSearchJump 无账本动作', () {
       final int start = masked.indexOf(
         'onSearchJump: (BookSearchResult result, String query) async {',
@@ -273,7 +289,7 @@ void main() {
       final int stamp = body.indexOf('_reanchorClearedAt = DateTime.now();');
       final int highlight = body.indexOf('AudiobookBridge.highlight(', stamp);
       final int schedule = body.indexOf(
-        'if (reveal) _scheduleRevealProgressRefresh();',
+        'if (reveal) _scheduleReanchorSettleProgressRefresh();',
       );
       expect(stamp, isNonNegative);
       expect(highlight, greaterThan(stamp));
@@ -283,7 +299,7 @@ void main() {
     test('补刷排在 B-3 窗（kReaderReanchorSettleMs）关闭之后，单 Timer 复位', () {
       final String body = methodBody(
         corpus,
-        'void _scheduleRevealProgressRefresh()',
+        'void _scheduleReanchorSettleProgressRefresh()',
       );
       expect(
         containsCodeLine(body, '_revealProgressRefreshTimer?.cancel();'),
@@ -299,6 +315,28 @@ void main() {
       );
       expect(containsCodeLine(body, 'unawaited(_refreshProgress());'), isTrue);
       expect(containsCodeLine(body, 'if (!mounted) return;'), isTrue);
+    });
+
+    test('B-3 窗内丢弃 scroll 回传时也排同一个补刷（BUG-2190）', () {
+      final String body = methodBody(corpus, 'void _handleReaderScroll()');
+      final int gate = body.indexOf('if (readerScrollWithinReanchorSettle(');
+      final int schedule = body.indexOf(
+        '_scheduleReanchorSettleProgressRefresh();',
+        gate,
+      );
+      final int ret = body.indexOf('return;', gate);
+      expect(gate, isNonNegative);
+      expect(schedule, greaterThan(gate));
+      expect(
+        ret,
+        greaterThan(schedule),
+        reason: '丢弃不变，但窗关后必须补刷一次，落点页不能只靠 10s 轮询',
+      );
+      expect(
+        '_scheduleReanchorSettleProgressRefresh('.allMatches(masked),
+        hasLength(3),
+        reason: '定义 + 听书 reveal + B-3 丢弃，共用一个单 Timer',
+      );
     });
   });
 

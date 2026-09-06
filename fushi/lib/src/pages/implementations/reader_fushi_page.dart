@@ -411,25 +411,6 @@ int absoluteCharOffsetOf({
   return chapterCumulativeChars[chapter] + clamped;
 }
 
-/// 恢复完成是否是**原位恢复**（改字号 / 主题 / 行距重排、旋屏 / 拖窗宽变、分页↔连续、
-/// 竖横排整章重载）：恢复锚有效（[restoredCharOffset] >= 0）、与上一次实时采样
-/// （`_refreshProgress`）同章、章内偏移相差 ≤ 1（重排后 caret 仍在同一个字附近）。
-/// 原位恢复不是翻页：`ReadUnitLedger.rebaseOnNextArrive` 让新坐标只替换当前单元边界、
-/// 不结算。跨章 / 无锚 / 偏移不同的恢复照常在下一次 `arrive` 结算旧单元。没有过实时
-/// 采样（[lastChapter] == null）时不算原位。
-bool restoreIsInPlace({
-  required int restoredChapter,
-  required int restoredCharOffset,
-  required int? lastChapter,
-  required int? lastCharOffset,
-}) {
-  if (restoredCharOffset < 0 || lastChapter == null || lastCharOffset == null) {
-    return false;
-  }
-  if (lastCharOffset < 0 || restoredChapter != lastChapter) return false;
-  return (restoredCharOffset - lastCharOffset).abs() <= 1;
-}
-
 /// 阅读时钟「此刻可跑」的统一判据（BUG-2171 / BUG-2170）。
 ///
 /// 三个正交旗：用户在统计浮层手动暂停（[manualPause]）、app 切后台 / 桌面失焦
@@ -867,7 +848,7 @@ bool readerStyleReanchorAllowed({
 
 /// B-3 settle 窗（毫秒）：重锚 commit / 听书跟随滚动打点 `_reanchorClearedAt` 后，这么久
 /// 之内的 scroll 回传一律不落库（[readerScrollWithinReanchorSettle]）。听书 reveal 的补刷
-/// （`_scheduleRevealProgressRefresh`）也按它排在窗关之后。
+/// （`_scheduleReanchorSettleProgressRefresh`）也按它排在窗关之后。
 const int kReaderReanchorSettleMs = 250;
 
 /// TODO-736 B-3: 样式重锚 settle 尾沿去抖纯函数。
@@ -1504,15 +1485,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
         _ensureStudyClock().addChars(readUnitsLength(fresh)),
   );
 
-  /// [_refreshProgress] 最近一次实时采样的 (章, 章内偏移)，只给 [_onRestoreComplete]
-  /// 判原位恢复（[restoreIsInPlace]）。不能拿 `_lastProgressSection` /
-  /// `_lastProgressCharOffset` 当「上一次实时进度」：那两个字段被 [_beginNavigation] /
-  /// [_navigateToChapter] / [_reloadWithCurrentSettings] 镜像成**恢复锚**，恢复完成时与
-  /// `_initialCharOffset` 恒等，带字符锚的跨章跳转（收藏句）会被误判成原位而漏结算
-  /// 跳走前那页。
-  (int chapter, int charOffset)? _readLedgerLiveAnchor;
-
-  /// 听书跟随 reveal 落定后的进度补刷（见 `_scheduleRevealProgressRefresh`）。
+  /// 听书跟随 reveal 落定后的进度补刷（见 `_scheduleReanchorSettleProgressRefresh`）。
   Timer? _revealProgressRefreshTimer;
 
   List<int> get _chapterCharCounts => _progress.chapterCharCounts;

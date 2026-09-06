@@ -686,7 +686,7 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       pauseEnabled: pauseEnabled,
     );
     // reveal 落定后的进度补刷（B-3 窗吃掉了跟随滚动的 scroll 回传，见方法注释）。
-    if (reveal) _scheduleRevealProgressRefresh();
+    if (reveal) _scheduleReanchorSettleProgressRefresh();
     // TODO-718（真机铁证·2026-06-25）：只有 cue 权威驱动视图时（reveal=播放跟随 / 显式
     // reveal / forceReveal）才用 cue 位置覆盖落库的阅读位置。**被动高亮**——重开 / 暂停态把
     // 当前 cue 高亮上去（reveal=false）——绝不覆盖用户的滚动阅读位置：否则恢复后的位置被
@@ -868,8 +868,9 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
   /// 晚结算上一页（且期间若关书 / 跳句，新页整页漏计）。这里按同一个窗常量
   /// [kReaderReanchorSettleMs] 排在窗关之后补刷一次：瞬时 reveal 此刻早已落定；smooth
   /// 动画若还没停，窗关后的尾沿 scroll 回传本就会照常再刷（同单元重复采样是 no-op）。
-  /// 单 Timer 复位：连续 cue 推进只保留最后一次。
-  void _scheduleRevealProgressRefresh() {
+  /// 单 Timer 复位：连续 cue 推进只保留最后一次。BUG-2190 起 `_handleReaderScroll`
+  /// 在 B-3 窗内丢弃 scroll 回传时也排这一个 Timer（同一个窗、同一个补刷语义）。
+  void _scheduleReanchorSettleProgressRefresh() {
     _revealProgressRefreshTimer?.cancel();
     _revealProgressRefreshTimer = Timer(
       const Duration(milliseconds: kReaderReanchorSettleMs),

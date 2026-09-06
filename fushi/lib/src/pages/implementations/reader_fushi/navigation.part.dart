@@ -163,22 +163,14 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     // 抹掉。[_ensureStudyClock] 的 start() 对已在跑的时钟是 no-op，重排版
     // 不打断计时。
     _ensureStudyClock();
-    // 字数账本（ReadUnitLedger）在恢复完成时**不播种**：只计翻走的单元，跳过的从未
-    // 成为当前单元（旧标量水位要在这里播种，漏一处就是幻象字数，BUG-1107 / 2168）。
-    // 唯一要区分的是**原位恢复**（改字号 / 主题 / 行距重排、旋屏 / 拖窗宽变、分页↔
-    // 连续、竖横排整章重载）：同一页换了坐标不是翻页，下一次 arrive 只替换当前单元
-    // 边界、不结算。判据 [restoreIsInPlace] 拿真实恢复锚对最近一次实时采样
-    // （`_readLedgerLiveAnchor`，不是被导航镜像过的 `_lastProgress*`）。跨章 / 无锚
-    // 的恢复不进这条：旧单元在下一次 arrive 照常结算（跳走前那页计，跳过的不计）。
-    final (int, int)? liveAnchor = _readLedgerLiveAnchor;
-    if (restoreIsInPlace(
-      restoredChapter: _currentChapter,
-      restoredCharOffset: _initialCharOffset,
-      lastChapter: liveAnchor?.$1,
-      lastCharOffset: liveAnchor?.$2,
-    )) {
-      _readLedger.rebaseOnNextArrive();
-    }
+    // 字数账本（ReadUnitLedger）在恢复完成时**不碰**：不播种（旧标量水位要在这里
+    // 播种，漏一处就是幻象字数，BUG-1107 / 2168），也不再判「原位恢复」——离开当前
+    // 单元的结算已经在**离开那一刻**做掉（[_beginNavigation] 与同章跳转入口统一
+    // `leave()`，BUG-2188 / 2189）；这里之后的首个 arrive 只是让落点页成为当前单元。
+    // 旧判据 `restoreIsInPlace` 拿「恢复锚 vs 上次实时采样」比对：同章跳转
+    // （进度条 / 收藏句 / 脚注内链 / VN）不经 `_beginNavigation`、恢复锚就是上次采样，
+    // 恒判原位 → 跳走前那页被 rebase 掉不结算（BUG-2188）。重排 / 宽变 / 模式切换
+    // 同页换坐标提前结算不改总额（并集去重，同页新边界只补多露出的部分）。
 
     // TODO-718: 连续模式恢复完成后，进入 WebView 的 settle reflow 会把裸 window.scrollY
     // 瞬时归 0（无分页 snap/lock 保护），归零 scroll 经 _handleReaderScroll 落库 progress≈0
@@ -316,6 +308,11 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       reanchorClearedAt: _reanchorClearedAt,
       now: DateTime.now(),
     )) {
+      // BUG-2190：窗内丢掉的可能不只是瞬态归零，也可能是用户紧接着的真实滚动 /
+      // 翻页落点。丢弃本身不变（治 reflow 归零落库），但按同一个窗常量排一次窗关后的
+      // 补刷，让落点页及时成为账本当前单元——否则只能等 10s 轮询，期间关书 / 跳转
+      // 结算的是上一次采样的旧页，最后一屏漏计。与听书 reveal 共用同一个单 Timer。
+      _scheduleReanchorSettleProgressRefresh();
       return;
     }
     final bool allowed = readerScrollProgressRefreshAllowed(
@@ -416,6 +413,13 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     String? preciseLocateJs,
   }) {
     _restoreExpectedGeneration = ++_navigateGeneration;
+    // BUG-2188 / BUG-2189：所有导航都经过这里，所以这也是「离开当前单元」的唯一
+    // 采样点——翻走即计：此刻把用户正读的那页结算进账本，跳过的区间从未成为当前
+    // 单元、不计。放在 loadUrl 之前：装载失败 / 兜底超时走 [_failNavigation] 的
+    // `discard()` 时当前单元已是空的，不会再把真读过的上一页整页丢掉（BUG-2189）。
+    // 同章重恢复（宽变 / 分页↔连续 / 竖横排）也会提前结算同一页——并集去重，之后
+    // 同页新边界只补多露出的部分，总额不变。
+    _readLedger.leave();
     // BUG-1231 / TODO-1309：新导航先作废上一代的章内精确定位，再把本次定位绑定到
     // 已递增的导航代际。绑定必须与导航状态初始化同处、且发生在 loadUrl 之前：
     // InAppWebViewController.loadUrl 的 Future 在部分平台会等到页面生命周期已推进后才返回，
@@ -470,7 +474,9 @@ extension _ReaderNavigation on _ReaderFushiPageState {
   void _failNavigation() {
     ReaderChapterPerfTrace.abort();
     // 导航中止 / 内容就绪兜底超时：WebView 里现在是什么不可知，当前单元丢弃不结算
-    // （宁可不计）。dispose 在调本方法之前已 `leave()` 结算过关书那页。
+    // （宁可不计）。跳走前那页已在 [_beginNavigation] `leave()` 结算（BUG-2189：此前
+    // 这里 discard 掉的正是用户真读过的上一页），dispose 也在调本方法之前 `leave()`；
+    // 所以这里通常是 no-op，只兜「导航发起后新页曾短暂 arrive」的情形。
     _readLedger.discard();
     _isNavigatingToChapter = false;
     _restoreInFlight = false;
@@ -717,6 +723,8 @@ extension _ReaderNavigation on _ReaderFushiPageState {
   // Used when an internal link resolves to the chapter already on screen.
   Future<void> _jumpToFragmentInPlace(String fragment) async {
     if (_controller == null || !_readerContentReady) return;
+    // BUG-2188：同章内链跳转不经 _beginNavigation，离开当前页在此结算。
+    _readLedger.leave();
     // jsonEncode produces a valid, escaped JS string literal for the fragment.
     final String literal = jsonEncode(fragment);
     try {
@@ -1135,7 +1143,6 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     // 翻走即计 + 会话并集去重（ReadUnitLedger，裁定见 docs/plans/2026-09-06）。起 / 止
     // 任一拿不到（旧 shell 三段协议 / caret 探测失败 / 章计数未就绪）或 end <= start
     // 都不 arrive——宁可不计。同一单元重复采样在账本里是 no-op。
-    _readLedgerLiveAnchor = (_currentChapter, charOffset);
     final int unitStart = absoluteCharOffsetOf(
       chapterCumulativeChars: _chapterCumulativeChars,
       chapterCharCounts: _chapterCharCounts,
@@ -1524,8 +1531,10 @@ extension _ReaderNavigation on _ReaderFushiPageState {
   Future<void> _jumpToGlobalCharOffset(int globalOffset) async {
     if (_chapterCumulativeChars.isEmpty || _controller == null) return;
 
-    // 进度条拖动是跳转不是阅读：账本不需要任何动作——跳走前那页在落点的首个
-    // arrive 时结算，跳过的区间从未成为当前单元、不计（旧标量水位要在此播种）。
+    // 进度条拖动是跳转不是阅读：不播种（旧标量水位要在此播种）。跨章走
+    // [_beginNavigation] 的 `leave()`；同章 `restoreProgress` 不经导航，得在这里自己
+    // `leave()`——否则 JS `notifyRestoreComplete` 抢在 scroll 回传之前时，跳走前那页
+    // 会被当成「原位恢复」不结算（BUG-2188；VN 无 scroll 事件，必现）。
     final ChapterProgressTarget target = resolveChapterProgressForGlobalOffset(
       _chapterCumulativeChars,
       _chapterCharCounts,
@@ -1542,6 +1551,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
         progress: target.progress,
       );
     } else {
+      _readLedger.leave();
       await _controller!.evaluateJavascript(
         source:
             'window.fushiReader && window.fushiReader.restoreProgress(${target.progress});',

@@ -123,8 +123,8 @@ void main() {
       }
       expect(
         body,
-        contains('_readLedger.rebaseOnNextArrive();'),
-        reason: '原位恢复（重排 / 宽变 / 模式切换）只换坐标不结算',
+        isNot(contains('_readLedger.')),
+        reason: '恢复完成不碰账本：离开在 _beginNavigation / 同章跳转入口 leave（BUG-2188）',
       );
     });
 
