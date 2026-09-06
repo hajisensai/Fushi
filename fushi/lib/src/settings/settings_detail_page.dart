@@ -36,11 +36,20 @@ Widget buildSettingsDetailShell({
 
 class SettingsDetailPage extends BasePage {
   const SettingsDetailPage({
-    required this.destination,
+    required SettingsDestination this.destination,
     super.key,
-  });
+  }) : subPageBuilder = null;
 
-  final SettingsDestination destination;
+  /// 子 schema 页（[SettingsNavigationItem.child]）：与顶层分类同一套详情壳，但
+  /// 新鲜树来自 [subPageBuilder] 而不是按 id 到顶层 schema 里找——子页共用父分类的
+  /// id，按 id 找会把父页渲染出来。
+  const SettingsDetailPage.subPage(
+    SettingsDestination Function() this.subPageBuilder, {
+    super.key,
+  }) : destination = null;
+
+  final SettingsDestination? destination;
+  final SettingsDestination Function()? subPageBuilder;
 
   @override
   BasePageState<SettingsDetailPage> createState() => _SettingsDetailPageState();
@@ -97,10 +106,13 @@ class _SettingsDetailPageState extends BasePageState<SettingsDetailPage>
   }
 
   SettingsDestination _freshDestination(SettingsContext settingsContext) {
+    final SettingsDestination Function()? subPage = widget.subPageBuilder;
+    if (subPage != null) return subPage();
+    final SettingsDestination top = widget.destination!;
     for (final SettingsDestination destination
         in buildSettingsSchema(settingsContext)) {
-      if (destination.id == widget.destination.id) return destination;
+      if (destination.id == top.id) return destination;
     }
-    return widget.destination;
+    return top;
   }
 }

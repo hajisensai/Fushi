@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_fields.dart';
 import 'package:fushi/src/settings/settings_search.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
@@ -116,6 +117,7 @@ class SettingsSchemaItem extends StatelessWidget {
       SettingsStepperItem stepper => _stepper(stepper),
       SettingsTextItem text => _text(text),
       SettingsNumberItem number => _number(number),
+      SettingsStatusItem status => _status(status),
       SettingsCustomItem custom => custom.builder(settingsContext),
     };
     // 设置搜索跳转落点：本项是待定位目标时消费一次性挂点，包上滚动定位 +
@@ -142,10 +144,52 @@ class SettingsSchemaItem extends StatelessWidget {
           await navigation.onTap!(settingsContext);
           return;
         }
+        final SettingsDestination Function()? child = navigation.child;
+        if (child != null) {
+          // 子 schema 页：与顶层分类同一套详情壳；取新鲜树靠闭包而非 id。
+          Navigator.of(context).push(routeBuilder(
+            context,
+            (_) => SettingsDetailPage.subPage(child),
+          ));
+          return;
+        }
         final WidgetBuilder? builder = navigation.builder;
         if (builder == null) return;
         Navigator.of(context).push(routeBuilder(context, builder));
       },
+    );
+  }
+
+  Widget _status(SettingsStatusItem status) {
+    final SettingsItemAction? onAction = status.onAction;
+    // 行级 onTap 让本行注册成 FushiFocusTarget，方向导航 / 手柄 A 才到得了
+    // （BUG-016）。`AdaptiveSettingsRow` 里 `if (onTap == null) return content;`
+    // ——没有 onTap 的行根本不包 _SettingsRowFocusTarget、不进 FushiFocusController
+    // 的注册表，而方向导航只走已注册目标。带行尾按钮却不给行级 onTap，键盘/手柄
+    // 用户从上一行按 Down 会**整行被跳过**，本面板下方再无目标时焦点还会跨 pane
+    // 落到左侧导航栏——BUG-016 实报的原症状。
+    //
+    // 纯状态行（onAction == null）**故意**不给 onTap：它没有可执行的动作，不该
+    // 成为焦点停靠点。
+    Future<void> runAction() async {
+      await onAction!(settingsContext);
+      settingsContext.refresh();
+    }
+
+    return AdaptiveSettingsRow(
+      // resolveTitle / resolveSubtitle：状态文本在渲染时求值（schema 树是缓存的常量树）。
+      title: status.resolveTitle(settingsContext),
+      subtitle: status.resolveSubtitle(settingsContext),
+      icon: status.icon,
+      showIcon: showIcons,
+      controlBelow: onAction != null,
+      onTap: onAction == null ? null : runAction,
+      trailing: onAction == null
+          ? null
+          : FilledButton.tonal(
+              onPressed: runAction,
+              child: Text(status.actionLabel!),
+            ),
     );
   }
 

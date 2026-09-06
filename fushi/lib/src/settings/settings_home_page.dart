@@ -236,10 +236,20 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
       _searchQuery = '';
       if (wide) _selectedDestinationId = entry.destination.id;
     });
+    final NavigatorState navigator = Navigator.of(context);
     if (!wide) {
-      Navigator.of(context).push(
+      navigator.push(
         MaterialPageRoute<void>(
           builder: (_) => SettingsDetailPage(destination: entry.destination),
+        ),
+      );
+    }
+    // 子 schema 页里的命中：父页之上再逐级推子页，挂点由最里层页面的目标行消费。
+    for (final SettingsNavigationItem hop in entry.subPagePath) {
+      final SettingsDestination Function() child = hop.child!;
+      navigator.push(
+        MaterialPageRoute<void>(
+          builder: (_) => SettingsDetailPage.subPage(child),
         ),
       );
     }

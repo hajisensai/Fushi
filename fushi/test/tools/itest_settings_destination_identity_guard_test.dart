@@ -45,10 +45,24 @@ void main() {
     final String code = maskComments(itest.readAsStringSync());
 
     // ① 身份判据必须在场。
+    //
+    // C0 起 SettingsDetailPage 多了一个 `.subPage` 构造器：子页共用父分类的
+    // destination id，所以**子页的 destination 恒为 null**，「这是哪个顶层目的地」
+    // 只有顶层页答得上来。`?.` 正是这个语义——子页上 `null == id` 恒假，顶层页照旧
+    // 命中；反向也不会恒假（顶层构造器 required non-null）。
     expect(
       code,
-      contains('widget is SettingsDetailPage && widget.destination.id == id'),
-      reason: '窄屏必须按推栈详情页自带的 destination.id 判身份',
+      contains('widget is SettingsDetailPage && widget.destination?.id == id'),
+      reason: '窄屏必须按推栈详情页自带的 destination.id 判身份；'
+          '子页 destination 为 null，所以只能用 `?.`',
+    );
+    // 用 `!` 把空断掉会有两种坏结局：子页一进来就运行期崩，或者有人为了不崩
+    // 改成「子页也填父 destination」——那样谓词对子页恒真，requireTransition 的
+    // 前置条件（「现在还没到那个目的地」）整条失效，导航证据退化成恒真。
+    expect(
+      code,
+      isNot(contains('widget.destination!.id')),
+      reason: '不得用 ! 断掉子页的 null destination',
     );
     expect(
       code,

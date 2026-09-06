@@ -356,7 +356,9 @@ bool _settingsDestinationShown(SettingsDestinationId id) {
   final bool pushedDetail = find
       .byWidgetPredicate(
         (Widget widget) =>
-            widget is SettingsDetailPage && widget.destination.id == id,
+            // 子 schema 页（SettingsDetailPage.subPage）destination 为 null：
+            // 它不是某个顶层分类的详情，按身份判就不算。
+            widget is SettingsDetailPage && widget.destination?.id == id,
       )
       .evaluate()
       .isNotEmpty;

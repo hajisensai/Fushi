@@ -295,17 +295,55 @@ class SettingsNavigationItem extends SettingsItem {
     super.titleBuilder,
     this.builder,
     this.onTap,
+    this.child,
     this.showIcon = false,
     super.subtitle,
     super.icon,
     super.visible,
     super.reader,
     super.video,
-  }) : assert(builder != null || onTap != null);
+  }) : assert(builder != null || onTap != null || child != null);
 
   final WidgetBuilder? builder;
   final SettingsItemAction? onTap;
+
+  /// 子 schema 页：点本行推一个与顶层分类同一套详情壳的 [SettingsDestination]
+  /// （`SettingsDetailPage.subPage`）。与 [builder] / [SettingsDestination.body]
+  /// 逃生口的区别：子页的行是真正的 schema item——进设置搜索索引（命中后先进父页
+  /// 再推子页定位）、进焦点覆盖遍历，不需要 `bodySearchEntries` 手工登记。
+  ///
+  /// 子页共用父分类的 [SettingsDestination.id]（枚举不为子页扩容）；它靠本闭包而非
+  /// id 取新鲜树，所以闭包必须是零参、构造期只读 i18n 常量（与顶层分类同一条
+  /// `settings_schema_cache_test` 纪律）。
+  final SettingsDestination Function()? child;
   final bool showIcon;
+}
+
+/// 只读状态行：图标 + 标题 + 状态文本 + 可选一个行尾动作按钮。
+///
+/// 存在的理由：设置页里「当前账号 / 服务在跑在哪个端口 / 此项已挪到别处」这类
+/// 指路与状态行此前只能用 [SettingsCustomItem] 手拼 `AdaptiveSettingsRow`——四处
+/// 各写一份、且默认进不了搜索。收成一等 item 后渲染、搜索、焦点遍历都走框架。
+/// 状态文本随运行期变化时用 [subtitleBuilder]；无动作时整行不可点。
+class SettingsStatusItem extends SettingsItem {
+  const SettingsStatusItem({
+    required super.id,
+    required super.title,
+    super.titleBuilder,
+    super.subtitle,
+    super.subtitleBuilder,
+    super.icon,
+    super.visible,
+    super.reader,
+    super.video,
+    this.actionLabel,
+    this.onAction,
+  }) : assert((actionLabel == null) == (onAction == null),
+            'actionLabel 与 onAction 必须同时给或同时不给');
+
+  /// 行尾动作按钮文案；null = 无按钮。
+  final String? actionLabel;
+  final SettingsItemAction? onAction;
 }
 
 class SettingsActionItem extends SettingsItem {
