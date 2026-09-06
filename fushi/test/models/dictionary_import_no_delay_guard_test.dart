@@ -35,8 +35,10 @@ void main() {
 
   group('dictionary_dialog_page.dart batch loop', () {
     test('collects failed names and shows one summary', () {
-      expect(dialog.contains('failedNames'), isTrue,
-          reason: 'the multi-file import loop must collect failures');
+      // BUG-2188：同上，收集必须带着异常本体。
+      expect(dialog.contains('DictionaryTaskFailure('), isTrue,
+          reason: 'the multi-file import loop must collect failures with their '
+              'error attached');
       expect(dialog.contains('formatImportFailureSummary'), isTrue,
           reason: 'and present them via the shared summary formatter');
     });

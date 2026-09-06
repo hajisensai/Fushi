@@ -57,8 +57,17 @@ void main() {
 
     test('failures are collected and surfaced via a persistent summary toast',
         () {
-      expect(body.contains('failedNames'), isTrue,
-          reason: 'per-dictionary failures must be collected, not dropped');
+      // BUG-2188：判据从「有没有收集」升级成「收集的时候有没有把异常一起带上」。
+      // 旧实现收的是 `List<String>`——原因在收集那一刻就永久丢了，后面无论怎么改
+      // 渲染都救不回来，而按变量名 `failedNames` 断言恰好对这个缺陷完全不敏感。
+      expect(body.contains('DictionaryTaskFailure('), isTrue,
+          reason: 'per-dictionary failures must be collected with their error, '
+              'not reduced to a bare name');
+      expect(body.contains('error: e,'), isTrue,
+          reason: 'the caught exception itself must reach the failure record');
+      expect(body.contains('DictionaryTaskStage.download'), isTrue,
+          reason: 'a download-stage failure must not be reported as an import '
+              'failure (the two used to share one wording)');
       expect(
           body.contains('DictionaryImportManager.formatImportFailureSummary'),
           isTrue,

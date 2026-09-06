@@ -39,11 +39,17 @@ class DictionaryDownloadOutcome {
     required this.message,
     this.severity = ToastSeverity.info,
     this.toastLength = Toast.LENGTH_SHORT,
+    this.details,
   });
 
   final String message;
   final ToastSeverity severity;
   final Toast toastLength;
+
+  /// 可复制的全文诊断（BUG-2188）。非 null 时 [message] 只是标题，真正的原因由
+  /// 「错误详情」框全文展示——移动端原生 toast 会把长文案截成两行且不可复制，
+  /// 诊断信息恰好全在被截掉的那一半。
+  final String? details;
 }
 
 /// 交给任务体（`body`）用的句柄：写进度、读取消、切阶段。
@@ -55,8 +61,14 @@ class DictionaryDownloadJob {
 
   final DictionaryDownloadController _controller;
 
-  /// 进度文案（对话框标题 / 页面状态行都读它）。
+  /// 进度文案（对话框标题 / 页面状态行都读它）。**必须短**——它渲染在单行标题里。
   ValueNotifier<String> get message => _controller.message;
+
+  /// 附加说明（BUG-2188）：失败原因这类**必须完整读到**的文案走这里，渲染在进度框
+  /// 正文里、可多行。以前它和阶段文案挤在同一个 [message] 上，于是被
+  /// `FushiModalSheetFrame` 的 `maxLines: 1 + ellipsis` 截成
+  /// `DioError [connection ...`。
+  ValueNotifier<String> get detail => _controller.detail;
 
   /// 0..1 的下载比例；0 表示「无法估算」（进度条退化为不定态）。
   ValueNotifier<double> get progress => _controller.progress;
@@ -119,8 +131,11 @@ class DictionaryDownloadController {
   final ValueNotifier<DictionaryDownloadPhase> phase =
       ValueNotifier<DictionaryDownloadPhase>(DictionaryDownloadPhase.idle);
 
-  /// 当前进度文案。
+  /// 当前进度文案（单行标题，必须短）。
   final ValueNotifier<String> message = ValueNotifier<String>('');
+
+  /// 当前附加说明（多行正文，可为空）。见 [DictionaryDownloadJob.detail]。
+  final ValueNotifier<String> detail = ValueNotifier<String>('');
 
   /// 当前下载比例（0..1）；0 = 不定态。
   final ValueNotifier<double> progress = ValueNotifier<double>(0);
@@ -177,6 +192,7 @@ class DictionaryDownloadController {
     _cancelToken = CancelToken();
     progress.value = 0;
     message.value = initialMessage;
+    detail.value = '';
     _setPhase(DictionaryDownloadPhase.downloading);
 
     DictionaryDownloadOutcome? outcome;
@@ -186,6 +202,7 @@ class DictionaryDownloadController {
       _setPhase(DictionaryDownloadPhase.idle);
       progress.value = 0;
       message.value = '';
+      detail.value = '';
     }
     if (outcome != null) _showOutcome(outcome);
     return true;
@@ -206,6 +223,7 @@ class DictionaryDownloadController {
   void dispose() {
     phase.dispose();
     message.dispose();
+    detail.dispose();
     progress.dispose();
     cancellable.dispose();
   }

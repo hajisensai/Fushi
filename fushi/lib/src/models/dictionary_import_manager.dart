@@ -160,7 +160,8 @@ class DictionaryImportManager {
       }
 
       totalNotifier.value = zipFiles.length;
-      final List<String> failedNames = [];
+      final List<DictionaryTaskFailure> failedNames =
+          <DictionaryTaskFailure>[];
       for (int i = 0; i < zipFiles.length; i++) {
         countNotifier.value = i + 1;
         try {
@@ -175,7 +176,13 @@ class DictionaryImportManager {
           );
         } catch (e, stack) {
           ErrorLogService.instance.log('DictImport.importZip', e, stack);
-          failedNames.add(path.basenameWithoutExtension(zipFiles[i].path));
+          failedNames.add(
+            DictionaryTaskFailure(
+              name: path.basenameWithoutExtension(zipFiles[i].path),
+              stage: DictionaryTaskStage.import,
+              error: e,
+            ),
+          );
         }
       }
       if (failedNames.isNotEmpty) {
@@ -367,7 +374,8 @@ class DictionaryImportManager {
       }).toList()
             ..sort((File a, File b) => a.path.compareTo(b.path));
 
-      final List<String> failedNames = <String>[];
+      final List<DictionaryTaskFailure> failedNames =
+          <DictionaryTaskFailure>[];
       for (int i = 0; i < dictionaries.length; i++) {
         final File dictionary = dictionaries[i];
         final List<File> cssFiles = Directory(path.dirname(dictionary.path))
@@ -386,7 +394,13 @@ class DictionaryImportManager {
           );
         } catch (e, stack) {
           ErrorLogService.instance.log('DictImport.multiArchive', e, stack);
-          failedNames.add(path.basenameWithoutExtension(dictionary.path));
+          failedNames.add(
+            DictionaryTaskFailure(
+              name: path.basenameWithoutExtension(dictionary.path),
+              stage: DictionaryTaskStage.import,
+              error: e,
+            ),
+          );
         }
       }
 
@@ -935,15 +949,105 @@ class DictionaryImportManager {
     return e is OutOfMemoryError || msg.contains('out of memory');
   }
 
-  /// 批量导入结束后，把失败的词典名汇总成一条提示文案（单条/多条不同措辞）。
-  /// 供文件批量与目录批量两条路径复用，统一在循环结束后一次性展示（BUG-082）。
-  static String formatImportFailureSummary(List<String> failedNames) {
-    if (failedNames.length == 1) {
-      return '${t.srt_import_error}: ${failedNames.first}';
-    }
-    return '${t.dict_import_failed_summary(n: failedNames.length)}\n'
-        '${failedNames.join(', ')}';
+  /// 批量任务结束后，把失败项汇总成一条提示文案（单条/多条不同措辞）。
+  /// 供在线下载、文件批量与目录批量三条路径复用，统一在循环结束后一次性展示
+  /// （BUG-082）。
+  ///
+  /// BUG-2188：入参从 `List<String>`（只有名字）换成 [DictionaryTaskFailure]
+  /// （名字 + 阶段 + 异常）。旧签名把异常在收集那一刻就降维成了一个名字，于是
+  /// **无论怎么改渲染，原因都已经不在数据里了**；而且措辞恒为「导入失败」，下载阶段
+  /// 失败也照报导入，制造了「下载失败之后又导入失败」的假象。
+  static String formatImportFailureSummary(
+    List<DictionaryTaskFailure> failures,
+  ) {
+    if (failures.length == 1) return failures.first.headline;
+    return '${t.dict_task_failed_summary(n: failures.length)}\n'
+        '${failures.map((DictionaryTaskFailure f) => f.line).join('\n')}';
   }
+
+  /// 把一批失败拼成可复制的全文诊断（BUG-2188），供「错误详情」框展示。
+  static String formatFailureDetails(List<DictionaryTaskFailure> failures) =>
+      failures.map((DictionaryTaskFailure f) => f.details).join('\n\n');
+}
+
+/// 词典批量任务里一项失败发生在哪个阶段（BUG-2188）。措辞按它选，不再一律叫
+/// 「导入失败」。
+enum DictionaryTaskStage { download, import }
+
+/// 词典批量任务里的一条失败：名字 + 阶段 + **原始异常**（BUG-2188）。
+///
+/// 存在的理由：以前失败只以名字进汇总，异常在 `catch` 里就被丢掉，用户拿到的提示
+/// 天生带不出原因。这个结构把异常一路带到渲染层，[reason] 给一行人话、[details]
+/// 给可复制的全文诊断。
+class DictionaryTaskFailure {
+  const DictionaryTaskFailure({
+    required this.name,
+    required this.stage,
+    required this.error,
+    this.url,
+  });
+
+  /// 词典显示名。
+  final String name;
+
+  final DictionaryTaskStage stage;
+
+  /// 原始异常，不做任何降维。
+  final Object error;
+
+  /// 下载阶段的原始地址（catalog 条目）；文件导入路径为 null。
+  final String? url;
+
+  /// 一行人话原因，进 toast / 汇总。
+  String get reason => describeDictionaryFailure(error);
+
+  /// 「下载失败：名字（原因）」——单条失败时的完整提示。
+  String get headline => switch (stage) {
+        DictionaryTaskStage.download =>
+          t.dict_task_failed_download(name: name, reason: reason),
+        DictionaryTaskStage.import =>
+          t.dict_task_failed_import(name: name, reason: reason),
+      };
+
+  /// 多条汇总里的一行。
+  String get line => '$name: $reason';
+
+  /// 可复制的全文诊断，进「错误详情」框。**不本地化**：它是给开发者/日志看的。
+  String get details {
+    final StringBuffer buffer = StringBuffer()..writeln(headline);
+    final String? source = url;
+    if (source != null) buffer.writeln('url: $source');
+    buffer.write(error.toString());
+    return buffer.toString();
+  }
+}
+
+/// 把词典链路的异常翻成一行人话（BUG-2188）。
+///
+/// 传输层失败按 [DictionaryDownloadFailureKind] 给出「连不上谁」——用户截图里那句被
+/// 截断的 `DioError [connection ...` 就是这一类。其余异常回退到 `toString()`：它可能
+/// 很长，但汇总里只占一行，全文另有「错误详情」可看，不会再被静默截掉。
+String describeDictionaryFailure(Object error) {
+  if (error is DictionaryDownloadException) {
+    final String host = error.host;
+    switch (error.kind) {
+      case DictionaryDownloadFailureKind.connectTimeout:
+        return t.dict_error_connect_timeout(host: host);
+      case DictionaryDownloadFailureKind.stallTimeout:
+        return t.dict_error_stall_timeout(host: host);
+      case DictionaryDownloadFailureKind.connectionError:
+        return t.dict_error_connection(host: host);
+      case DictionaryDownloadFailureKind.badResponse:
+        return t.dict_error_http_status(
+          host: host,
+          status: '${error.statusCode ?? '?'}',
+        );
+      case DictionaryDownloadFailureKind.cancelled:
+      case DictionaryDownloadFailureKind.other:
+        return error.cause.toString();
+    }
+  }
+  return error.toString();
 }
 
 /// TODO-609：导入时对「同名/同 base 名词典已存在」的决策。

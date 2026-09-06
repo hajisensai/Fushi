@@ -25,10 +25,31 @@ import 'package:dio/io.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import 'package:fushi/src/utils/net/app_proxy.dart';
+import 'package:fushi/src/utils/net/github_mirrors.dart';
 
 /// 把词典链路的 Dio 工厂接到全应用的代理解析层。幂等，可重复调用。
 void installDictionaryDioFactory() {
   dictionaryDioFactory = createProxiedDictionaryDio;
+}
+
+/// BUG-2188：把词典下载的候选地址解析接到全仓唯一的 GitHub 镜像清单
+/// （[gitHubMirrorCandidates]）。幂等，可重复调用。
+///
+/// 覆盖面**只有 GitHub 托管的 catalog 条目**（jitendex / MarvNC / Kuuuube）。
+/// wty（Wiktionary）系列托管在 `huggingface.co`，实测公共 GitHub 镜像对它一律 403、
+/// `hf-mirror.com` 对 `/datasets/.../resolve/...` 是 308 跳回原站——没有任何现成公共
+/// 镜像能代理它，故这里对它只返回原址，由 UI 如实报「连不上 huggingface.co」。
+void installDictionaryUrlCandidatesResolver() {
+  dictionaryUrlCandidatesResolver = dictionaryDownloadUrlCandidates;
+}
+
+/// **纯函数**：词典下载地址 → 候选序列（首位恒为原址）。
+List<String> dictionaryDownloadUrlCandidates(String url) {
+  final Uri? parsed = Uri.tryParse(url);
+  if (parsed == null) return <String>[url];
+  return gitHubMirrorCandidates(parsed)
+      .map((Uri candidate) => candidate.toString())
+      .toList(growable: false);
 }
 
 /// 建一个走应用代理的 [Dio]。超时由 `createDictionaryDio` 统一兜底钉死，这里只管代理。

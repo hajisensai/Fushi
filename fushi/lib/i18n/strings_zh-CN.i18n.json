@@ -4294,5 +4294,12 @@
   "onboarding_pack_status_paused": "推荐包下载已暂停",
   "onboarding_pack_download_resume": "继续下载",
   "onboarding_pack_paused_desc": "进度留在磁盘上，继续下载会从中断处接着下。",
-  "onboarding_pack_mini_bar_hide": "收起"
+  "onboarding_pack_mini_bar_hide": "收起",
+  "dict_error_connect_timeout": "连接 $host 超时，当前网络可能访问不了这个站点",
+  "dict_error_stall_timeout": "$host 传输中断，长时间没有收到数据",
+  "dict_error_connection": "无法连接 $host",
+  "dict_error_http_status": "$host 返回 HTTP $status",
+  "dict_task_failed_download": "下载失败：$name（$reason）",
+  "dict_task_failed_import": "导入失败：$name（$reason）",
+  "dict_task_failed_summary": "$n 本词典处理失败"
 }

@@ -4294,5 +4294,12 @@
   "onboarding_pack_status_paused": "Recommended pack download paused",
   "onboarding_pack_download_resume": "Resume download",
   "onboarding_pack_paused_desc": "Progress is kept on disk — resuming picks up where it stopped.",
-  "onboarding_pack_mini_bar_hide": "Hide"
+  "onboarding_pack_mini_bar_hide": "Hide",
+  "dict_error_connect_timeout": "Could not reach $host (connection timed out)",
+  "dict_error_stall_timeout": "$host stopped sending data",
+  "dict_error_connection": "Could not connect to $host",
+  "dict_error_http_status": "$host returned HTTP $status",
+  "dict_task_failed_download": "Download failed: $name ($reason)",
+  "dict_task_failed_import": "Import failed: $name ($reason)",
+  "dict_task_failed_summary": "$n dictionary(s) failed"
 }
