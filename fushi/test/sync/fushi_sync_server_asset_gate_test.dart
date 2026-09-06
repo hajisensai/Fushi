@@ -1,6 +1,6 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
+
+import 'fushi_sync_server_source_corpus.dart';
 
 /// HBK-AUDIT-012 路径穿越闸门 + 资产包端点骨架的收敛守卫（TODO-2120）。
 ///
@@ -14,8 +14,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// audiobooks 两域的 GET/DELETE `%2e%2e%2fevil`）端到端覆盖。本文件锁的是**结构**：
 /// 闸门只有一处实现、四个域都真的走它、视频域按设计不接入。
 void main() {
-  final String src =
-      File('lib/src/sync/fushi_sync_server.dart').readAsStringSync();
+  // B3 拆分后闸门与四域 handler 在 library.part.dart、视频域在 video.part.dart：
+  // 「只有一处实现」这类计数断言必须扫主库 + 全部 part 的合并语料。
+  final String src = readFushiSyncServerSource();
 
   test('路径穿越闸门只有一处实现', () {
     expect(

@@ -8,6 +8,8 @@ import 'package:fushi/src/sync/remote_lookup_routes.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:shelf/shelf.dart' as shelf;
 
+import 'fushi_sync_server_source_corpus.dart';
+
 /// [FushiSyncServer] 与 [YomitanApiServer] 共用的查词/制卡 handler 壳与音频 token
 /// 存储。抽出前两边各一份，且只有互联侧修了 BUG-908(a) 的上限——合成一份后扩展侧
 /// 也有了上限（本文件把这条行为钉死）。两台服务器各自的 HTTP 级用例
@@ -228,6 +230,13 @@ void main() {
   });
 
   group('源码守卫：两台服务器不再各写一份 handler 壳 / 音频 token 模型', () {
+    // B3 拆分后 fushi_sync_server 是主库 + fushi_sync_server/*.part.dart：负向断言
+    // 必须扫合并语料，只扫主库会让搬进 part 的重复壳真空通过。
+    final Map<String, String Function()> sources = <String, String Function()>{
+      'lib/src/sync/fushi_sync_server.dart': readFushiSyncServerSource,
+      'lib/src/sync/yomitan_api_server.dart': () =>
+          File('lib/src/sync/yomitan_api_server.dart').readAsStringSync(),
+    };
     const Map<String, List<String>> banned = <String, List<String>>{
       'lib/src/sync/fushi_sync_server.dart': <String>[
         'class _RemoteAudioToken',
@@ -256,9 +265,9 @@ void main() {
 
     banned.forEach((String path, List<String> needles) {
       test(path, () {
-        final File f = File(path);
-        expect(f.existsSync(), isTrue, reason: '$path 不存在（请从 fushi/ 包根跑测试）');
-        final String src = f.readAsStringSync();
+        expect(File(path).existsSync(), isTrue,
+            reason: '$path 不存在（请从 fushi/ 包根跑测试）');
+        final String src = sources[path]!();
         expect(src, contains('RemoteLookupRoutes'),
             reason: '$path 必须经 RemoteLookupRoutes 服务共享端点');
         for (final String needle in needles) {
