@@ -35,7 +35,7 @@ import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_library_delete.dart';
 import 'package:fushi/src/sync/local_file_delete_feedback.dart';
 import 'package:fushi/src/media/video/video_local_files.dart'
-    show videoBookHasLocalFiles;
+    show localVideoFileCandidates, videoBookHasLocalFiles;
 import 'package:fushi/src/media/video/video_subtitle_attach.dart';
 import 'package:fushi/src/media/video/video_subtitle_attach_messages.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
@@ -96,6 +96,8 @@ import 'package:fushi/src/utils/components/batch_tag_dialog_frame.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/pages/implementations/collection_name_dialog.dart';
 import 'package:fushi/src/media/video/video_filename_parser.dart';
+import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart'
+    show currentRevealHost, revealFirstOf;
 import 'package:fushi/src/utils/misc/shelf_ordering.dart';
 import 'package:fushi/src/media/source_library/add_local_folder_source.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
@@ -2345,6 +2347,20 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
               _pickVideoLanguage(book);
             },
           ),
+          // 「打开文件位置」：与书架书卡同一条动作、同一份文案。两道门都是必要条件，
+          // 少一道就会画出点了必然失败的按钮——桌面才有文件管理器契约
+          // （[currentRevealHost] 移动端为 null），而流媒体书 / 远端库的 `videoPath`
+          // 是 URL，本机根本没有文件可定位（[videoBookHasLocalFiles] 是纯函数判据，
+          // 不吃 IO，放在 build 里安全）。
+          if (currentRevealHost() != null && videoBookHasLocalFiles(book))
+            DialogQuickAction(
+              label: t.media_file_location_open,
+              icon: Icons.folder_open_outlined,
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                unawaited(_openVideoFileLocation(book));
+              },
+            ),
         ],
         dangerActions: <DialogDangerAction>[
           DialogDangerAction(
@@ -2356,6 +2372,24 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           ),
         ],
       ),
+    );
+  }
+
+  /// 在系统文件管理器里定位这一行视频的原始文件。
+  ///
+  /// 候选表直接借 [localVideoFileCandidates]——「这一行在本机拥有哪些原始文件」已经
+  /// 是删除路径的真相源（`videoPath` 在前、播放列表各集在后，且已按 platformPathKey
+  /// 去重），定位与删除问的是同一个问题，不该再拼第二份。首选被外部删掉时顺延到下
+  /// 一条，全都打不开才提示——静默的「打开文件位置」和坏掉的按钮无法区分。
+  Future<void> _openVideoFileLocation(VideoBookRow book) async {
+    final bool revealed = await revealFirstOf(localVideoFileCandidates(
+      videoPath: book.videoPath,
+      playlistJson: book.playlistJson,
+    ));
+    if (revealed || !mounted) return;
+    FushiToast.show(
+      msg: t.media_file_location_failed,
+      severity: ToastSeverity.error,
     );
   }
 

@@ -2217,7 +2217,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       // 里的 manga.json 选中，省掉「书在哪个 bookKey 目录」这层猜。
       if (currentRevealHost() != null)
         DialogListAction(
-          label: t.book_file_location_open,
+          label: t.media_file_location_open,
           icon: Icons.folder_open_outlined,
           onPressed: () => _openBookFileLocation(bookKey),
         ),
@@ -2526,7 +2526,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     final bool revealed = row != null && await revealBookLocation(row);
     if (revealed || !mounted) return;
     FushiToast.show(
-      msg: t.book_file_location_failed,
+      msg: t.media_file_location_failed,
       severity: ToastSeverity.error,
     );
   }
