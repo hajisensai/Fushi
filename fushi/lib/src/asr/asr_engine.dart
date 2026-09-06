@@ -102,7 +102,8 @@ List<OnnxExecutionProvider> selectAsrEncoderProviders({
 /// 装载时要不要把全部静态桶建好（纯函数，可测）。
 ///
 /// 三个条件同时成立才全预热：
-/// - [buckets] 是全桶表（[kAsrGpuEncoderBuckets]）——半桶表本来就是预算吃紧的信号；
+/// - [buckets] 是全桶表（[kAsrGpuEncoderBuckets] / [kAsrGpuEncoderBucketsLarge]）
+///   ——半桶表本来就是预算吃紧的信号；
 /// - [budgetBytes] 已知（≥ 10 GiB 才会拿到全桶表，两桶常驻峰值 6.6~7.6 GB 实测过）；
 /// - [materialMs] 已知且 ≥ [kAsrPrewarmAllMinMaterialMs]：每桶 3~8 s 的建桶只有在
 ///   素材够长时才摊得平——5 分钟片段本身只转 2~3 s，为省几百毫秒 padding 先花
@@ -112,7 +113,10 @@ bool shouldPrewarmAllStaticBuckets({
   required int? budgetBytes,
   required int? materialMs,
 }) {
-  if (!identical(buckets, kAsrGpuEncoderBuckets)) return false;
+  if (!identical(buckets, kAsrGpuEncoderBuckets) &&
+      !identical(buckets, kAsrGpuEncoderBucketsLarge)) {
+    return false;
+  }
   if (budgetBytes == null) return false;
   if (materialMs == null) return false;
   return materialMs >= kAsrPrewarmAllMinMaterialMs;

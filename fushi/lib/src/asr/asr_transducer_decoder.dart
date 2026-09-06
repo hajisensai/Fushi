@@ -184,6 +184,12 @@ class AsrTransducerDecoder
   int? batchCapFor(int longestSamples) =>
       _staticEncoders?.batchCapFor(AsrFbank.frameCount(longestSamples));
 
+  /// 桶标识 = 桶的帧数（桶表按帧数递增、互不相同）。
+  @override
+  int? bucketKeyFor(int longestSamples) => _staticEncoders
+      ?.bucketFor(AsrFbank.frameCount(longestSamples))
+      ?.frames;
+
   AsrDecodeStats _stats = const AsrDecodeStats();
 
   /// 自构造起累计的分阶段耗时与帧数。

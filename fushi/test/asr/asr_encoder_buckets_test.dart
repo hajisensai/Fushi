@@ -254,6 +254,11 @@ void main() {
       expect(asrEncoderBucketsForBudget(null), kAsrGpuEncoderBuckets);
       expect(asrEncoderBucketsForBudget(12 * gib), kAsrGpuEncoderBuckets);
       expect(asrEncoderBucketsForBudget(10 * gib), kAsrGpuEncoderBuckets);
+      // ≥ 16 GiB：多一档 280 帧桶（按桶分组成批后短段才真能落进去）。
+      expect(asrEncoderBucketsForBudget(16 * gib), kAsrGpuEncoderBucketsLarge);
+      expect(asrEncoderBucketsForBudget(32 * gib), kAsrGpuEncoderBucketsLarge);
+      expect(kAsrGpuEncoderBucketsLarge.first.frames, 280);
+      expect(kAsrGpuEncoderBucketsLarge.sublist(1), kAsrGpuEncoderBuckets);
       expect(asrEncoderBucketsForBudget(8 * gib), kAsrGpuEncoderBucketsSmall);
       expect(asrEncoderBucketsForBudget(6 * gib), kAsrGpuEncoderBucketsSmall);
       expect(asrEncoderBucketsForBudget(4 * gib), isEmpty);

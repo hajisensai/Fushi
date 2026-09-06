@@ -77,6 +77,10 @@ class _PipeDecoder implements AsrPipelinedDecoder, AsrBatchShaper {
   @override
   int? batchCapFor(int longestSamples) => cap;
 
+  /// 单桶：全部段同一个桶。
+  @override
+  int? bucketKeyFor(int longestSamples) => 1;
+
   @override
   AsrBatchFeatures computeFeatures(List<AsrSpeechSegment> segments) {
     featureCalls++;
@@ -186,8 +190,8 @@ void main() {
         .where((String e) => e.startsWith('enc-start '))
         .map((String e) => e.substring(10).split(',').length)
         .toList();
-    // 每块 7 段：3 + 3 + 1；块末 drain(all) 把不足一批的也发掉。
-    expect(sizes, <int>[3, 3, 1, 3, 3, 1]);
+    // 两块共 14 段：块末不再冲半批（留到下一块继续攒），只有文件末批不足 cap。
+    expect(sizes, <int>[3, 3, 3, 3, 2]);
     expect(sizes.every((int n) => n <= _PipeDecoder.cap), isTrue);
     expect(job.maxBatchSegments, 4, reason: '动态路径的上限在这里没被用到');
   });
@@ -239,7 +243,7 @@ void main() {
     );
   });
 
-  test('块末检查点之前在飞的批已全部落盘', () async {
+  test('块末检查点 = 最早一个未落盘段的起点：在飞的批已落盘，攒批中的半批留到下一块', () async {
     final _PipeDecoder pipe = _PipeDecoder();
     final AsrTranscribeJob job = AsrTranscribeJob(
       jobDir: Directory(p.join(tmp.path, 'ckpt')),
@@ -252,23 +256,143 @@ void main() {
       chunkSeconds: 5,
       progressInterval: Duration.zero,
     );
-    // 第一块结束时有两条 processedMs=5000 的进度：块内节流那条在检查点之前
-    // （在飞的批可以还没落盘），块末那条紧跟检查点之后——看后者。
-    int segmentsAtCheckpoint = -1;
+    // 第一块 5 段起点 0..4 s、按长度降序前三段（0/1/2 s）攒满一批先发，3/4 s
+    // 两段不够 cap、留到第二块。块末检查点 = 3 s；起点在它之前的段全部已落盘。
+    // 第一块结束时有两条 processedMs=5000 的进度：块内节流那条在检查点之前，
+    // 块末那条紧跟检查点之后（resume 已从 0 变成 3 s）——看后者。
+    int? resumeAtCheckpoint;
+    List<int> persistedStarts = <int>[];
     await for (final AsrTranscribeEvent e in job.run()) {
-      if (e is AsrTranscribeProgressEvent && e.progress.processedMs == 5000) {
+      if (e is AsrTranscribeProgressEvent &&
+          e.progress.processedMs == 5000 &&
+          resumeAtCheckpoint == null) {
         final AsrJobState state = await AsrTranscribeJob.loadState(
           job.jobDir,
           const <String>['a.mp3'],
           modelId: 'm',
         );
-        if (state.resumeSamples[0] >= 5 * kAsrSampleRate) {
-          segmentsAtCheckpoint = (await AsrTranscribeJob.loadSegments(
-            job.jobDir,
-          )).length;
+        if (state.resumeSamples[0] > 0) {
+          resumeAtCheckpoint = state.resumeSamples[0];
+          persistedStarts = (await AsrTranscribeJob.loadSegments(job.jobDir))
+              .map((AsrTranscribedSegment s) => s.startMs)
+              .toList()
+            ..sort();
         }
       }
     }
-    expect(segmentsAtCheckpoint, 5, reason: '第一块 5 段在检查点前全部落盘');
+    expect(resumeAtCheckpoint, 3 * kAsrSampleRate);
+    expect(persistedStarts, <int>[0, 1000, 2000], reason: '起点早于恢复点的段全部已落盘');
+    // 跑完后 10 段一个不少、无重复。
+    final List<int> all = (await AsrTranscribeJob.loadSegments(job.jobDir))
+        .map((AsrTranscribedSegment s) => s.startMs)
+        .toList()
+      ..sort();
+    expect(all, List<int>.generate(10, (int i) => i * 1000));
   });
+
+  test('两个桶：同一批只装同一个桶的段，短段不被长段的桶带走；攒满的桶先发', () async {
+    final _TwoBucketDecoder pipe = _TwoBucketDecoder();
+    final AsrTranscribeJob job = AsrTranscribeJob(
+      jobDir: Directory(p.join(tmp.path, 'two-buckets')),
+      audioPaths: const <String>['a.mp3'],
+      modelId: 'm',
+      pcm: _Pcm(chunks: 2),
+      // 每块 2 长段 + 5 短段。
+      segmenter: _MixedSegmenter(longPerChunk: 2, shortPerChunk: 5),
+      decoder: pipe,
+      batchSize: 1,
+      chunkSeconds: 5,
+      progressInterval: Duration.zero,
+    );
+    await job.run().toList();
+    final List<List<int>> batches = pipe.batches;
+    // 每批只有一种桶。
+    for (final List<int> b in batches) {
+      expect(b.toSet(), hasLength(1), reason: '混桶批：$b');
+    }
+    // 长段桶 cap 2：4 段 → 2 + 2；短段桶 cap 4：10 段 → 4 + 4 + 2（末批残批）。
+    final List<int> longSizes = batches
+        .where((List<int> b) => b.first == _TwoBucketDecoder.longKey)
+        .map((List<int> b) => b.length)
+        .toList();
+    final List<int> shortSizes = batches
+        .where((List<int> b) => b.first == _TwoBucketDecoder.shortKey)
+        .map((List<int> b) => b.length)
+        .toList();
+    expect(longSizes, <int>[2, 2]);
+    expect(shortSizes, <int>[4, 4, 2]);
+    // 第一块只有 2 长 + 5 短：长段桶攒满先发，短段桶攒满 4 行也发，剩 1 短段留到
+    // 第二块——块末没有任何半批。
+    expect(batches.take(2).map((List<int> b) => b.length), <int>[2, 4]);
+    final int total = (await AsrTranscribeJob.loadSegments(job.jobDir)).length;
+    expect(total, 14);
+  });
+}
+
+/// 两个桶：段 ≥ 1 s 进长段桶（cap 2），否则短段桶（cap 4）；记录每批的桶键序列。
+class _TwoBucketDecoder extends _PipeDecoder {
+  static const int longKey = 2;
+  static const int shortKey = 1;
+  final List<List<int>> batches = <List<int>>[];
+
+  static bool _isLong(int samples) => samples >= kAsrSampleRate;
+
+  @override
+  int? batchCapFor(int longestSamples) => _isLong(longestSamples) ? 2 : 4;
+
+  @override
+  int? bucketKeyFor(int longestSamples) =>
+      _isLong(longestSamples) ? longKey : shortKey;
+
+  @override
+  Future<AsrEncodedBatch> encode(
+    List<AsrSpeechSegment> segments, {
+    AsrBatchFeatures? features,
+  }) {
+    batches.add(<int>[
+      for (final AsrSpeechSegment s in segments) bucketKeyFor(s.samples.length)!,
+    ]);
+    return super.encode(segments, features: features);
+  }
+}
+
+/// 每块先 [longPerChunk] 个 2 s 长段、再 [shortPerChunk] 个 0.5 s 短段。
+class _MixedSegmenter implements AsrSegmenter {
+  _MixedSegmenter({required this.longPerChunk, required this.shortPerChunk});
+  final int longPerChunk;
+  final int shortPerChunk;
+
+  @override
+  Future<List<AsrSpeechSegment>> feed(AsrPcmChunk chunk) async {
+    final List<AsrSpeechSegment> out = <AsrSpeechSegment>[];
+    int cursor = chunk.startSample;
+    for (int i = 0; i < longPerChunk; i++) {
+      out.add(
+        AsrSpeechSegment(
+          startSample: cursor,
+          samples: Float32List(2 * kAsrSampleRate - i * 160),
+        ),
+      );
+      cursor += 2 * kAsrSampleRate;
+    }
+    for (int i = 0; i < shortPerChunk; i++) {
+      out.add(
+        AsrSpeechSegment(
+          startSample: cursor,
+          samples: Float32List(kAsrSampleRate ~/ 2 - i * 160),
+        ),
+      );
+      cursor += kAsrSampleRate ~/ 2;
+    }
+    return out;
+  }
+
+  @override
+  Future<List<AsrSpeechSegment>> flush() async => <AsrSpeechSegment>[];
+
+  @override
+  void reset() {}
+
+  @override
+  int? get inProgressSpeechStartSample => null;
 }

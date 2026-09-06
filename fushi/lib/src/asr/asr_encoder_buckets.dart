@@ -99,6 +99,16 @@ const List<AsrEncoderBucket> kAsrGpuEncoderBuckets = <AsrEncoderBucket>[
   AsrEncoderBucket(frames: 1120, batch: 16),
 ];
 
+/// 显存宽裕（≥ 16 GiB 预算）时多一档 280 帧桶。上面 A/B 里 280 桶「加了也没用」
+/// 有两个前提在 2026-09-06 之后都变了：任务侧改成**按桶分组成批**（短段不再被
+/// 560 桶的批顺手带走）、并**跨块攒批**（块末不再冲半批）；剩下的代价只有第三份
+/// 常驻权重 + 中间张量，12 GB 卡上会溢出，所以只给 16 GiB 以上的卡。
+const List<AsrEncoderBucket> kAsrGpuEncoderBucketsLarge = <AsrEncoderBucket>[
+  AsrEncoderBucket(frames: 280, batch: 64),
+  AsrEncoderBucket(frames: 560, batch: 32),
+  AsrEncoderBucket(frames: 1120, batch: 16),
+];
+
 /// 显存吃紧时的半桶（行数减半，融合图常驻的中间张量随之减半）。
 const List<AsrEncoderBucket> kAsrGpuEncoderBucketsSmall = <AsrEncoderBucket>[
   AsrEncoderBucket(frames: 560, batch: 16),
@@ -115,6 +125,7 @@ const int _kGiB = 1024 * 1024 * 1024;
 /// - null：按默认表试，建失败自会回退（非 Windows 走不到 GPU 桶）。
 List<AsrEncoderBucket> asrEncoderBucketsForBudget(int? budgetBytes) {
   if (budgetBytes == null) return kAsrGpuEncoderBuckets;
+  if (budgetBytes >= 16 * _kGiB) return kAsrGpuEncoderBucketsLarge;
   if (budgetBytes >= 10 * _kGiB) return kAsrGpuEncoderBuckets;
   if (budgetBytes >= 6 * _kGiB) return kAsrGpuEncoderBucketsSmall;
   return const <AsrEncoderBucket>[];
