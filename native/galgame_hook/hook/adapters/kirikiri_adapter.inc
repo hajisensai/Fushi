@@ -1,4 +1,4 @@
-// P1 zero-behaviour-change split: included inside dll_main.cpp anonymous namespace.
+﻿// P1 zero-behaviour-change split: included inside dll_main.cpp anonymous namespace.
 // ══ C.2c KiriKiri 解码器捕获链（引擎级干净人声）══════════════════════════════════
 // XAudio2/DirectSound 抓的是**输出**（混音后各源），KiriKiriZ 的人声不走这两条（实测输出源全
 // 是 BGM/SE）。人声在**解码环节**：KiriKiriZ 给每个正在播放的声音建一个独立解码器实例，语音是
@@ -893,6 +893,8 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			global.fushiLookupProbeDrawText = 0;
 			global.fushiLookupProbeProcessCh = 0;
 			global.fushiLookupProbeError = "";
+			global.fushiLookupProbeCaretCount = 0;
+			global.fushiLookupProbeVisCount = 0;
 			global.fushiLookupCardPath = "__FUSHI_CARD_PATH__";
 			global.fushiLookupCardSeq = 0;
 			// 制卡截图的临时视觉抑制。它与永久 dismiss 分开：不动 submit/Esc fence，
@@ -1622,6 +1624,60 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					slot.line == "" || entry.line == "" || slot.line != entry.line ||
 					slot.line != entry.logicalLine || slot.activeEntry !== entry) return -1;
 				return 1;
+			};
+
+			// 只读探针助手：把一条父链上每一级的 visible / opacity 逐级摊出来。
+			// fushiLookupVisible 只返回 bool，真机上"某一级说不可见"和"某次读取抛了被外层
+			// catch 吞成 false"完全同形——这正是要分开的两件事。逐级各自 try/catch，
+			// **绝不整体枚举成员**（那会抛 TJS catch 拦不住的 native 异常，见 BUG-2116）。
+			// 只读探针助手：按名取 kag 上的关键消息层引用。KAG3 把「当前正在打字的消息层」
+			// 放在 kag.current，fore/back 两页各有 messages 数组——真机上要弄清"我们采到几何的
+			// 那个层"和"屏幕上真正可见的那个层"是不是同一个对象。
+			global.fushiLookupProbeKagField = function(which)
+			{
+				try
+				{
+					if(which == "current") return global.kag.current;
+					if(which == "fore0") return global.kag.fore.messages[0];
+					if(which == "back0") return global.kag.back.messages[0];
+				}
+				catch(e) {}
+				return void;
+			};
+
+			global.fushiLookupProbeSame = function(layer, which)
+			{
+				try
+				{
+					var other = global.fushiLookupProbeKagField(which);
+					if(other === void) return "void";
+					return layer === other ? "1" : "0";
+				}
+				catch(e) { return "<threw>"; }
+			};
+
+			global.fushiLookupProbeVisChain = function(layer)
+			{
+				var out = "";
+				var current = layer;
+				var depth = 0;
+				while(current !== void && current !== null && depth < 8)
+				{
+					var ok = 0;
+					try { if(isvalid current) ok = 1; } catch(e) { out += depth + ":<isvalid-threw>;"; break; }
+					if(!ok) { out += depth + ":<invalid>;"; break; }
+					var v = "?";
+					try { v = "" + current.visible; } catch(e) { v = "<threw>"; }
+					var o = "?";
+					try { o = "" + current.opacity; } catch(e) { o = "<threw>"; }
+					out += depth + ":vis=" + v + ",op=" + o + ";";
+					var parent = void;
+					try { parent = current.parent; } catch(e) { out += depth + ":<parent-threw>;"; break; }
+					current = parent;
+					depth++;
+				}
+				if(out == "") out = "<empty>";
+				return out;
 			};
 
 			global.fushiLookupVisible = function(layer)
@@ -2898,8 +2954,41 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					// KiriKiri 允许负 height 表示"按像素而非 pt"，几何要的是绝对值。
 					var h = font.height;
 					if(h < 0) h = -h;
+					// KAG3 的 MessageLayer 把该消息层实际字号放在 fontSize 上，而 layer.font
+					// 未必是该行正在用的字体：真机 フタマタ恋愛 Ver1.00 实测 fontSize=33 而
+					// font.height 只有 12——照 font.height 建出来的字形盒只有 12px 高，
+					// 整行包围盒 b=400,106,1600,118，鼠标必须落进那条 12px 窄带才可能命中。
+					// fontSize 存在且更大时以它为准；取 max 而不是直接替换，避免某些定制 KAG
+					// 把 fontSize 置小反而把盒子缩了。
+					var declared = global.fushiLookupNumOr(layer, "fontSize");
+					if(declared !== void && declared > h) h = declared;
 					if(h <= 0) return;
 					var entry = global.fushiLookupEntryFor(layer);
+					// 后台页采集时补上前台同位层当可见性宿主（见
+					// fushiLookupClassicVisibleHost 的说明）。失效后重算，不缓存死。
+					var host = entry.visibleHost;
+					var hostOk = false;
+					try { hostOk = host !== void && host !== null && isvalid host; }
+					catch(e) { hostOk = false; }
+					if(!hostOk)
+						entry.visibleHost = global.fushiLookupClassicVisibleHost(layer);
+					// 只读探针（默认关）：采集到几何却命中不了时，要能分清是"整行包围盒
+					// 没包住光标"还是"包住了但可见性判定否决"。这里必然跑到，且能拿到
+					// 真正在画字的那个层——比在命中路径上打点可靠。
+					// 每 32 次采集报一条。不能只报前几次：fushiLookupNoteError 是单槽，
+					// 开头几毫秒内的几条会互相覆盖，DLL 一条都读不到（真机实测）。
+					// 低频重复输出保证每次回读都能拿到最近一条。
+					if(global.fushiLookupProbeMode &&
+						(global.fushiLookupProbeVisCount++ % 32) == 0)
+					{
+						global.fushiLookupNoteError("probe.vis",
+							%[message: "cap|" + global.fushiLookupProbeVisChain(layer) +
+								"|cur=" + global.fushiLookupProbeSame(layer, "current") +
+								",curChain|" + global.fushiLookupProbeVisChain(global.fushiLookupProbeKagField("current")) +
+								",fore0=" + global.fushiLookupProbeSame(layer, "fore0") +
+								",back0=" + global.fushiLookupProbeSame(layer, "back0") +
+								",fore0Chain|" + global.fushiLookupProbeVisChain(global.fushiLookupProbeKagField("fore0"))]);
+					}
 					var glyphs = entry.glyphs;
 					// 影/边重绘去重：KAG3 一个字可能连画多次（先影后本体、或描边的多个偏移），
 					// 同一字在上一字形 ±4px 内再来一次就是同一个字，不是下一个字——放进
@@ -2939,6 +3028,24 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 							global.fushiLookupDismiss();
 						else if(global.fushiLookupHitEntry === entry)
 							global.fushiLookupClearHover();
+					}
+					// 用引擎自己的光标差订正**上一个**字形的宽度。
+					//
+					// 为什么不能只信 font.getTextWidth：经典 KAG3 走 processCh 采集时，
+					// layer.font 未必是该行实际使用的字体。真机 フタマタ恋愛 Ver1.00 实测
+					// fontSize=33，而 getTextWidth("後") 只给 12，真实步进约 27——字形盒因此
+					// 窄一半多，鼠标落在字与字的缝里就命中不了（真机现象：hover 进到字形区
+					// z=G 但 g=-1）。
+					//
+					// 引擎自己的光标是唯一可信的步进来源：本字的落笔 x 减去上一字的落笔 x
+					// 就是上一字的真实宽度。只在逐字符（单字）且同一行、且差值落在合理区间时
+					// 订正——多字 drawText 那条路的内部累加不受影响。
+					if(text.length == 1 && glyphs.count > 0)
+					{
+						var tail = glyphs[glyphs.count - 1];
+						var advance = x - tail.x;
+						if(tail.y == y && advance > 0 && advance <= h * 4)
+							tail.w = advance;
 					}
 					// glyphs 与 line 必须逐字符 1:1——host 拿 charIndex 去 line 里切词。
 					var cursor = x;
@@ -2986,12 +3093,111 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			// 把字符位置放在自己的行对象里，字段名各游戏改得千差万别，没有真机确认之前编造
 			// 字段名只会造出一条看起来在跑、实际全是 void 的假采集面。先用真机判「字到底走不
 			// 走这里」，再按实测到的结构补几何。
+			// 单个成员的**安全**读取。两道防护缺一不可：
+			//   1. 先 typeof——成员不存在时它返回 "undefined" 而不抛；
+			//   2. 再各自 try/catch——成员存在但 getter 会抛的情况（真机 フタマタ恋愛
+			//      Ver1.00 上 `enabled` 就是这种）。
+			// **绝不能**用 Dictionary.assign 整体枚举：它绕过 typeof 直接读源对象**所有**
+			// 成员，踩到会抛的那个就抛出 native 侧异常，TJS 的 try/catch 拦不住，游戏当场
+			// 弹全局脚本异常框并丢窗口。2026-09-05 真机上就是这么崩的（BUG-2116）。
+			// 安全读一个数值成员，读不到返回 void。两道防护与 fushiLookupProbeReadNum 同源：
+			// 先 typeof（成员不存在时返回 "undefined" 而不抛），再 try/catch（成员存在但
+			// getter 会抛，真机上 `enabled` 就是这种）。**绝不能**用 Dictionary.assign 整体
+			// 枚举——那会绕过 typeof 直接读所有成员，抛的是 TJS catch 拦不住的 native 异常，
+			// 游戏当场弹全局脚本异常框（BUG-2116 踩坑记录）。
+			global.fushiLookupNumOr = function(obj, name)
+			{
+				try
+				{
+					var t = typeof obj[name];
+					if(t != "Integer" && t != "Real") return void;
+					return obj[name];
+				}
+				catch(e) { return void; }
+			};
+
+			global.fushiLookupProbeReadNum = function(obj, name)
+			{
+				try
+				{
+					var t = typeof obj[name];
+					if(t != "Integer" && t != "Real") return "";
+					return name + "=" + obj[name] + ";";
+				}
+				catch(e) { return ""; }
+			};
+
+			// 候选名单。KAG3 各游戏把字符位置放在自己的行对象里、字段名千差万别，所以这里
+			// 不断言任何一个存在——只把**存在且是数**的都记下来，让真机数据自己指认：连续
+			// 几个字符之间恰好按 font.getTextWidth(ch) 递增的那个成员就是 x 光标。
+			global.fushiLookupCaretCandidates = [
+				"x", "y", "width", "height", "left", "top",
+				"marginL", "marginR", "marginT", "marginB",
+				"lineSpacing", "defaultLineSpacing", "linesize", "defaultLinesize",
+				"pitch", "defaultPitch", "vertical",
+				"currentX", "currentY", "curX", "curY", "cx", "cy",
+				"numLines", "lineCount", "textWidth", "textHeight",
+				"fontSize", "defaultFontSize", "lastCh", "chWidth"
+			];
+
+)TJS" LR"TJS(
+
+			// 经典 KAG3 的可见性配对（BUG-2116 真机定案）。
+			//
+			// フタマタ恋愛 Ver1.00 实测：游戏把字**打进 kag.back.messages[0]**，而屏幕上
+			// 显示的是 kag.fore 的对应层。采集时那个 back 层自己 visible=1，但它的父层
+			// visible=0（后台页整页不可见）——于是 fushiLookupVisible 沿父链必然否决，
+			// 命中被判 hover_hidden，几何明明是对的却永远出不来卡片。
+			//
+			// fushiLookupEntryVisible 本来就有 visibleHost 回退，只是经典路从没给它赋值。
+			// 这里按**下标配对**取另一页的同位层：两页的 messages 数组按下标一一对应，
+			// 后台页那一行转场后就是前台页显示的同一行，所以前台同位层的可见性正是
+			// "这段文字在不在屏幕上"的正确判据。
+			global.fushiLookupClassicVisibleHost = function(layer)
+			{
+				try
+				{
+					for(var page = 1; page <= 2; page++)
+					{
+						var here = global.fushiLookupMessagesForPage(page);
+						if(here === void || here === null) continue;
+						var count = 0;
+						try { count = here.count; } catch(e) { continue; }
+						for(var i = 0; i < count; i++)
+						{
+							if(here[i] !== layer) continue;
+							var other = global.fushiLookupMessagesForPage(page == 1 ? 2 : 1);
+							if(other === void || other === null) return void;
+							var n = 0;
+							try { n = other.count; } catch(e) { return void; }
+							if(i >= n) return void;
+							return other[i];
+						}
+					}
+				}
+				catch(e) {}
+				return void;
+			};
+
 			global.fushiLookupCaptureProcessCh = function(layer, ch)
 			{
 				try
 				{
 					if(typeof ch != "String" || ch == "") return;
 					global.fushiLookupClassicSource = global.fushiLookupClassicSource | 4;
+					// 只读探针，默认关。前 8 个字符各记一行；差值里等于字宽的成员即光标。
+					if(!global.fushiLookupProbeMode) return;
+					if(global.fushiLookupProbeCaretCount >= 8) return;
+					global.fushiLookupProbeCaretCount++;
+					var w = -1;
+					try { w = layer.font.getTextWidth(ch); } catch(e) {}
+					var out = "";
+					var names = global.fushiLookupCaretCandidates;
+					for(var i = 0; i < names.count; i++)
+						out += global.fushiLookupProbeReadNum(layer, names[i]);
+					global.fushiLookupNoteError("probe.caret",
+						%[message: "n=" + global.fushiLookupProbeCaretCount +
+							",ch=" + ch + ",w=" + w + "|" + out]);
 				}
 				catch(e) {}
 			};
@@ -3030,9 +3236,54 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					layer.fushiLookupOriginalProcessCh = layer.processCh;
 					layer.processCh = function(ch, steptime)
 					{
+						// 经典 KAG3 的几何来源（BUG-2116 真机定案）。
+						//
+						// 对白正文由引擎 native 层逐字形光栅化（フタマタ恋愛 Ver1.00 的 exe
+						// 静态导入 gdi32!GetGlyphOutlineW），而 Layer.drawText 是 native
+						// 成员——TJS 层给类或给实例赋的包装都不在它的内部调用路径上。真机
+						// 实测：一整段 15 条 LunaHook 文本事件的对白里，实例级与类级
+						// drawText 包装**零触发**，而同一实例的 processCh 每字符都触发。
+						// 所以这类游戏的几何只能从 processCh 取。
+						//
+						// 缺的那两个数就在实例自己身上：KAG3 的 MessageLayer 把**当前文字
+						// 绘制位置**放在 x / y（图层自身位置是 left / top，两者独立）。
+						// 真机采样：marginL=400 起笔、8 个字之后 x=616，同时 left=0 /
+						// top=790 不变。取值必须在调原始实现**之前**——之后 x 已经推过这个字。
+						var px = global.fushiLookupNumOr(this, "x");
+						var py = global.fushiLookupNumOr(this, "y");
+						// 光标 y 指向**行盒顶部**，字形画在 y + lineSpacing 处。
+						// 真机 フタマタ恋愛 Ver1.00 像素实测（客户区坐标）：正文墨迹占
+						// y 904..936 共 33 行（= fontSize），而未订正的高亮落在 896..928，
+						// **正好差 8px**，与该图层的 lineSpacing=8 相等；marginT=106 说明这
+						// 还是首行，所以这段间距是加在字形**上方**而不是行间。
+						// 用图层自己报的 lineSpacing 而不是写死 8：它是每个消息层各自的属性。
+						if(py !== void)
+						{
+							var gap = global.fushiLookupNumOr(this, "lineSpacing");
+							if(gap !== void && gap > 0) py += gap;
+						}
 						var result = (this.fushiLookupOriginalProcessCh incontextof this)(...);
+						// 与 drawText 路共用同一条采集：它本来就按 text.length == 1 处理
+						// 单字（影/边重绘去重那条判据），逐字符喂正合它的形状。
+						if(px !== void && py !== void)
+							global.fushiLookupCaptureDrawText(this, px, py, ch);
 						global.fushiLookupCaptureProcessCh(this, ch);
 						return result;
+					} incontextof layer;
+				}
+				// 悬停接缝。点击能收到而悬停收不到，是因为两者在 KiriKiri 里走**不同的
+				// 派发路径**：KAG3 的点击推进是窗口级的（kag 的 leftClick 接缝拿得到），
+				// 而鼠标移动到一个可命中的图层上时，事件派给**该图层**的 onMouseMove，
+				// 窗口那道就不再触发。查词要的恰恰是"指针在字上"，所以必须在消息层实例
+				// 自己身上再挂一道（真机 フタマタ恋愛 Ver1.00：点击有高亮、悬停没有）。
+				if(typeof layer.onMouseMove == "Object")
+				{
+					layer.fushiLookupOriginalOnMouseMove = layer.onMouseMove;
+					layer.onMouseMove = function(x, y, shift)
+					{
+						// 异常一律不影响原逻辑：悬停高亮坏掉是小事，把鼠标移动吞掉是大事。
+						try { global.fushiLookupMouseMoveHook(); } catch(e) {}
+						return (this.fushiLookupOriginalOnMouseMove incontextof this)(...);
 					} incontextof layer;
 				}
 				return true;
@@ -3043,9 +3294,59 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			// KAG stable 边沿重扫——numMessageLayers 变化新建的层就在那之后出现。
 			// 位 3 = 至少挂上过一个实例（与位 0「分支跑到」分开：分支跑到但一个层都没挂上
 			// 说明 kag.fore.messages 结构不是标准 KAG3，真机上要能一眼分出这两种失败）。
+			// 悬停：不靠"谁收到鼠标移动事件"，改为在引擎的连续回调里轮询光标位置。
+			//
+			// 真机 フタマタ恋愛 Ver1.00 实测：同一坐标**点击**能出高亮（KAG3 的点击推进是
+			// 窗口级的，kag 的 leftClick 接缝拿得到），**悬停**完全没有。逐个试过三道接缝
+			// 都不触发——kag 的 onMouseMove、消息层实例的 onMouseMove、primaryLayer 的
+			// onMouseMove——这个定制 KAG（19 个插件，含 extNagano/hutamata.tpm）把移动事件
+			// 消费在了别处。继续找"到底谁收到"是没有尽头的猜谜。
+			//
+			// 而引擎自己一直暴露着光标位置：primary.cursorX / cursorY（本文件的
+			// fushiLookupMouseWheelHook 早就在用它算卡内局部坐标）。所以换成轮询：连续
+			// 回调里比对上一帧的光标，动了才跑一次悬停判定。这不依赖任何一个可能被定制
+			// 掉的事件派发路径，对所有 KAG 变体都成立。
+			//
+			// 代价可控：只在光标真的移动时才走 registry，而 fushiLookupReport 对"命中字符
+			// 没变"本来就直接 return（同一个字连续悬停不会重绘也不惊动 host）。
+			global.fushiLookupHoverPollInstalled = false;
+			global.fushiLookupHoverPollX = -99999;
+			global.fushiLookupHoverPollY = -99999;
+
+)TJS" LR"TJS(
+
+			global.fushiLookupHoverPoll = function()
+			{
+				try
+				{
+					var primary = global.kag.primaryLayer;
+					if(primary === void || primary === null || !isvalid primary) return;
+					var cx = primary.cursorX;
+					var cy = primary.cursorY;
+					if(cx == global.fushiLookupHoverPollX &&
+						cy == global.fushiLookupHoverPollY) return;
+					global.fushiLookupHoverPollX = cx;
+					global.fushiLookupHoverPollY = cy;
+					global.fushiLookupMouseMoveHook();
+				}
+				catch(e) {}
+			};
+
+			global.fushiLookupInstallHoverPoll = function()
+			{
+				if(global.fushiLookupHoverPollInstalled) return;
+				try
+				{
+					System.addContinuousHandler(global.fushiLookupHoverPoll);
+					global.fushiLookupHoverPollInstalled = true;
+				}
+				catch(e) { global.fushiLookupFault(); }
+			};
+
 			global.fushiLookupSweepClassicLayers = function()
 			{
 				if((global.fushiLookupClassicSource & 1) == 0) return 0;
+				global.fushiLookupInstallHoverPoll();
 				var patched = 0;
 				for(var page = 1; page <= 2; page++)
 				{
@@ -3358,6 +3659,8 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				global.fushiLookupPaintHighlight(entry, paintX, paintY, index, 1);
 			};
 
+)TJS" LR"TJS(
+
 			global.fushiLookupProbe = function(submit)
 			{
 				// Mouse/key hooks are transaction-external leaves. Complete any queued
@@ -3467,6 +3770,18 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 							trace += global.fushiLookupCoordEntry(i, entry, offsetOk, rx, ry,
 								"V", -1);
 							traced++;
+						}
+						// 只读探针（默认关）：可见性否决在真机上是"整条链上某一级说不可见"，
+						// 而 fushiLookupVisible 只返回 bool，分不出是哪一级、还是某次读取
+						// 抛了被外层 catch 吞成 false。把整条链逐级打出来。
+						if(global.fushiLookupProbeMode &&
+							global.fushiLookupProbeVisCount < 4)
+						{
+							global.fushiLookupProbeVisCount++;
+							global.fushiLookupNoteError("probe.vis",
+								%[message: "i=" + i + ",state=" + activeSentenceState +
+									",layer|" + global.fushiLookupProbeVisChain(entry.layer) +
+									",host|" + global.fushiLookupProbeVisChain(entry.visibleHost)]);
 						}
 						global.fushiLookupMark(4);
 						continue;
@@ -4650,22 +4965,88 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			{
 				try
 				{
+					// 计数必须能被读出来，否则这个分支等于不存在：原实现只自增两个
+					// 全局整数，DLL 侧一处都没读过（BUG-2153 同族）。走
+					// fushiLookupNoteError 落 %TEMP%\fushi_galhook.log——它自带
+					// ++notify，DLL 会在下一次回读时把这行搬进日志。
+					global.fushiLookupProbeReport = function()
+					{
+						try
+						{
+							global.fushiLookupNoteError("probe.counts",
+								%[message:
+									"classDrawText=" + global.fushiLookupProbeDrawText +
+									",classProcessCh=" + global.fushiLookupProbeProcessCh +
+									",kagSeams=" + global.fushiLookupKagSeams +
+									",classicSource=" + global.fushiLookupClassicSource]);
+						}
+						catch(e) {}
+					};
+					// 按 2 的幂报告（1,2,4,8,…）。固定间隔（每 256 次）在这里是错的：
+					// drawText 可能按**整串**调用而不是逐字符，一段剧情只有几十次，
+					// 永远到不了报告点，于是「这条路根本没被走」和「走了但次数少」
+					// 在日志上同形——正是本次要判别的那个歧义。2 的幂在低位有分辨率、
+					// 在高位自动稀疏，不会拖垮逐字符路径。
+					global.fushiLookupProbeShouldReport = function(count)
+					{
+						if(count <= 0) return false;
+						return (count & (count - 1)) == 0;
+					};
 					global.fushiLookupProbeOriginalDrawText = global.Layer.drawText;
 					global.Layer.drawText = function(x, y, text, color, opacity, antialiased)
 					{
 						global.fushiLookupProbeDrawText++;
+						// 前 8 次连内容一起带出来：判别的核心问题是「对白正文到底走不走
+						// 这条路」，而这只有看见画的是什么字才答得上来。同时报这个图层
+						// 有没有我们的实例补丁——没有就说明我们扫的层集合漏了它。
+						if(global.fushiLookupProbeDrawText <= 8)
+						{
+							try
+							{
+								var patched = 0;
+								try { if(this.fushiLookupClassicPatched) patched = 1; }
+								catch(e) { patched = -1; }
+								// 只用确定可用的操作：字符串拼接和 .length。不用 substr /
+								// (int) 强制转换——那些在 TJS2 里的可用性我没验证过，一个
+								// 语法错会让整段 bootstrap 编不过，而这是要靠重启游戏才能
+								// 发现的代价。对白行本来就短，整串带出来没问题。
+								global.fushiLookupNoteError("probe.drawText",
+									%[message: "n=" + global.fushiLookupProbeDrawText +
+										",patched=" + patched +
+										",len=" + ("" + text).length +
+										",x=" + x + ",y=" + y +
+										",s=" + text]);
+							}
+							catch(e2) {}
+						}
+						if(global.fushiLookupProbeShouldReport(global.fushiLookupProbeDrawText))
+							global.fushiLookupProbeReport();
 						return (global.fushiLookupProbeOriginalDrawText incontextof this)(...);
 					};
 					global.fushiLookupProbeOriginalProcessCh = global.MessageLayer.processCh;
 					global.MessageLayer.processCh = function(ch, steptime)
 					{
 						global.fushiLookupProbeProcessCh++;
+						if(global.fushiLookupProbeShouldReport(global.fushiLookupProbeProcessCh))
+							global.fushiLookupProbeReport();
 						return (global.fushiLookupProbeOriginalProcessCh incontextof this)(...);
 					} incontextof global.MessageLayer;
+					// 装成功也要留一行。没有它的话，"类级补丁装上了但游戏从不调用"和
+					// "补丁压根没装上"在日志里完全同形——而这两者指向完全相反的修法。
+					global.fushiLookupNoteError("probe.install",
+						%[message: "classPatched=1,drawText=" +
+							(typeof global.Layer.drawText) + ",processCh=" +
+							(typeof global.MessageLayer.processCh)]);
 				}
 				catch(error)
 				{
 					global.fushiLookupProbeError = error.message;
+					// 同上：探针自己装失败必须喊出来，否则它和"探针没发现任何东西"同形。
+					try
+					{
+						global.fushiLookupNoteError("probe.install", error);
+					}
+					catch(e2) {}
 				}
 			}
 
@@ -5997,6 +6378,11 @@ void ReplaceLookupPlaceholder(std::wstring& script, const wchar_t* placeholder,
 
 std::wstring BuildKirikiriLookupBootstrapScript() {
   std::wstring script = kKirikiriLookupBootstrapScript;
+  // 开关**必须**保持编译期常量且默认 false：探测分支会在 global.Layer.drawText /
+  // global.MessageLayer.processCh 上打**类级**补丁，一旦能被运行期条件（环境变量之类）
+  // 打开，用户机器上一个残留变量就会让全局补丁常驻在每一个 KiriKiri 游戏里。
+  // 守卫：tests/kirikiri_lookup_source_guard_test.py::find_default_on_probe_switches。
+  // 要诊断新引擎就改这个常量重编译一份 helper——那是刻意的高门槛，不是疏漏。
   ReplaceLookupPlaceholder(script, L"__FUSHI_PROBE_MODE__",
                            kKirikiriLookupProbePaths ? L"1" : L"0");
   ReplaceLookupPlaceholder(script, L"__FUSHI_CARD_PATH__", g_lookup_card_path);

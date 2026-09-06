@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2035 条。点号进各自文件。
+> 共 2037 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -43,6 +43,8 @@
 | [BUG-2157](bugs/BUG-2157-plain-mode-inline-fs-overrides-user-font-size.md) | ✅ | ✅ | 关闭尊重字幕自带样式后行内 fs 仍覆盖用户字号，字号滑块整条失效 |
 | [BUG-2156](bugs/BUG-2156-video-subtitle-list-font-cap-too-low.md) | ✅ | ✅ | 字幕列表字号上限还是不够（BUG-878 抬到 2.0× 后的第二次反馈） |
 | [BUG-2155](bugs/BUG-2155-anki-pitch-tags-overflow-card-header.md) | ✅ | ✅ | 音标标签框撑爆卡头：60dvw 视口上限 + 单行不换行，窄卡上把封面顶出视口 |
+| [BUG-2154](bugs/BUG-2154-gal-lookup-verified-unreachable.md) | ✅ | ✅ | 内嵌查词对每个游戏都恒需手动「确认点击风险」：shield 的 Verified 状态在 hook 里无任何生产者、结构上不可达 |
+| [BUG-2153](bugs/BUG-2153-gal-exe-level-identity-gates.md) | ✅ | ✅ | galgame 引擎身份判据绑死单个 exe（文件名/SHA-256/硬编码 RVA），改名或换版本即整个 adapter 不被认领 |
 | [BUG-2152](bugs/BUG-2152-anki-mined-ipa-duplicated.md) | ✅ | ✅ | 英语制卡音标重复两遍 —— 同一 PitchEntry 的 transcriptions 数组内没有去重 |
 | [BUG-2151](bugs/BUG-2151-anki-pitch-tags-ol-markup.md) | ✅ | ✅ | Anki 卡片音标黑框巨大且无分隔符 —— popup.js 产出 `<ol>`，Lapis `#pitch-tags` 样式契约是 `ul` |
 | [BUG-2150](bugs/BUG-2150-ios-ankimobile-pasteboard-read-inactive.md) | ✅ | ✅ | iOS AnkiMobile 配置回传读不到剪贴板：URL 回调跑在 .inactive 阶段 |

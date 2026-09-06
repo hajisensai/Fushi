@@ -38,6 +38,8 @@ GenericGetRawInputBufferFn g_generic_get_raw_input_buffer_original = nullptr;
 GenericDirectInput8CreateFn g_generic_direct_input8_create_original = nullptr;
 GenericDirectInputCreateFn g_generic_direct_input_create_a_original = nullptr;
 GenericDirectInputCreateFn g_generic_direct_input_create_w_original = nullptr;
+// DirectInputCreateEx 的签名与 DirectInput8Create 同形（带 REFIID），与 A/W 那两个不同。
+GenericDirectInput8CreateFn g_generic_direct_input_create_ex_original = nullptr;
 
 fushi_voice_hook::HookOriginalRegistry<16>
     g_generic_direct_input_create_device_originals;
@@ -64,6 +66,7 @@ std::atomic<uint32_t> g_generic_key_observed_coverage{0};
 std::atomic<bool> g_generic_dinput8_factory_hooked{false};
 std::atomic<bool> g_generic_dinput_factory_a_hooked{false};
 std::atomic<bool> g_generic_dinput_factory_w_hooked{false};
+std::atomic<bool> g_generic_dinput_factory_ex_hooked{false};
 
 SRWLOCK g_generic_shield_state_lock = SRWLOCK_INIT;
 fushi_voice_hook::LeftButtonShieldLatch g_generic_get_key_state_latch;
@@ -679,6 +682,25 @@ HRESULT WINAPI Detour_GenericDirectInputCreateW(HINSTANCE instance,
   return result;
 }
 
+// dinput.dll 的第三个工厂入口。DirectInputCreateA/W 在 dinput.dll 内部只是它的包装，
+// 所以只钩 A/W 时，直接调 DirectInputCreateEx 的游戏会完全绕过遮罩层——设备建出来了、
+// 我们一无所知，左键照样穿到游戏里推进对话。真机 フタマタ恋愛 Ver1.00 就加载了
+// dinput.dll 而 ready 的 DirectInput 两位始终不亮（BUG-2154 的附带发现）。
+// 签名与 DirectInput8Create 同形（带 REFIID），不是 A/W 那个四参数形状。
+HRESULT WINAPI Detour_GenericDirectInputCreateEx(HINSTANCE instance,
+                                                 DWORD version, REFIID iid,
+                                                 LPVOID *out,
+                                                 LPUNKNOWN outer) {
+  const auto original = g_generic_direct_input_create_ex_original;
+  if (original == nullptr)
+    return DIERR_GENERIC;
+  const HRESULT result = original(instance, version, iid, out, outer);
+  if (SUCCEEDED(result) && out != nullptr && *out != nullptr) {
+    HookGenericDirectInputInterface(*out);
+  }
+  return result;
+}
+
 bool HookGenericExport(void *target, void *detour, void **original,
                        uint32_t surface) {
   if (target == nullptr)
@@ -839,6 +861,17 @@ void TryInstallGenericDirectInputFactories() {
         fushi_voice_hook::kLookupShieldSurfaceDirectInputImmediate |
             fushi_voice_hook::kLookupShieldSurfaceDirectInputBuffered);
     g_generic_dinput_factory_w_hooked.store(ready, std::memory_order_relaxed);
+  }
+  if (!g_generic_dinput_factory_ex_hooked.load(std::memory_order_relaxed)) {
+    // A/W 在 dinput.dll 内部只是 Ex 的包装，但游戏可以直接 GetProcAddress("DirectInputCreateEx")
+    // 绕过它们。不钩这一个，遮罩层就有一条静默的漏路。
+    const bool ready = HookGenericExport(
+        reinterpret_cast<void *>(GetProcAddress(dinput, "DirectInputCreateEx")),
+        reinterpret_cast<void *>(&Detour_GenericDirectInputCreateEx),
+        reinterpret_cast<void **>(&g_generic_direct_input_create_ex_original),
+        fushi_voice_hook::kLookupShieldSurfaceDirectInputImmediate |
+            fushi_voice_hook::kLookupShieldSurfaceDirectInputBuffered);
+    g_generic_dinput_factory_ex_hooked.store(ready, std::memory_order_relaxed);
   }
 }
 

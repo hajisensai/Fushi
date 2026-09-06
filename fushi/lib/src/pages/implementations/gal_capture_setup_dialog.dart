@@ -165,14 +165,17 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
             widget.attachedText,
           ]),
           builder: (BuildContext context, Widget? child) {
-            // The game HWND can cover this dialog while its modal barrier still
-            // blocks the workbench. Yield as soon as per-exe consent is needed.
-            // 选中线程是用户自己的动作，标记该留；风险让位不是，标记必须回滚。
-            // 两者同时成立时以用户动作为准。
+            // 选中线程是用户自己的动作，弹窗该让位并且**不**回滚「本会话已提示
+            // 过」的标记。
+            //
+            // 这里原本还有第二条腿：`needsUnsafeRiskAcceptance` 为真时也自动关，
+            // 好让游戏窗盖住本弹窗时用户仍能够到工具条上的「确认点击风险」。
+            // BUG-2154 把那道门整个去掉之后（风险恒定接受），它恒为假、这条腿
+            // 恒不可达 —— 留着只会让「弹窗会不会自己关」多一个永远不成立的答案。
+            // `yieldingToRiskConsent` 参数本身保留：它是 _scheduleAutoClose 的
+            // 回滚语义，门若哪天按引擎重开，接回来只是一个 else-if。
             if (widget.session.selectedTextThreadKey != null) {
               _scheduleAutoClose(yieldingToRiskConsent: false);
-            } else if (widget.attachedText.needsUnsafeRiskAcceptance) {
-              _scheduleAutoClose(yieldingToRiskConsent: true);
             }
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
