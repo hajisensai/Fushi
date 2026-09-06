@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2032 条。点号进各自文件。
+> 共 2033 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2169](bugs/BUG-2169-sync-non-drive-transient-no-retry.md) | 🚧 | 🚧 | 非 Google Drive 云后端瞬时网络错误零重试 |
 | [BUG-2161](bugs/BUG-2161-mdx-loose-asset-scan-and-size-limits.md) | 🚧 | 🚧 | MDX 松散资源两条上限缺口：img src 只扫前 50 条词条、zip 全取无总量上限 |
 | [BUG-2160](bugs/BUG-2160-mdx-import-oom-ios.md) | ✅ | ✅ | iOS 导入大 MDX 词典闪退：整本词典在内存里物化，jetsam 直接杀进程 |
 | [BUG-2159](bugs/BUG-2159-netflix-ext-mine-audible-playback.md) | ✅ | ✅ | 网飞扩展批量制卡期间扬声器出声 |
