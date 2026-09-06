@@ -707,9 +707,11 @@ class AsrTranscribeJob {
           // （30 分钟英语 331 段 / 18 批，平均 18 行占 32 行）。检查点取最早一个
           // 未落盘段的起点，恢复时从它重喂（见 [checkpointSample]）。
           await drain(all: false);
-          // 在飞的整批冲到落盘（只是少叠一次，不是冲半批），检查点才不会被它
-          // 拖回上一块。
-          await flushInFlight();
+          // 在飞的批**不**在这里等它落盘：等 = 搜索它的那 ~50 ms 里 GPU 空转 +
+          // 下一块首批的 fbank 没被提前算，每块一个气泡（30 分钟 6 块 ≈ 0.5 s，
+          // 7 小时 84 块 ≈ 8 s）。检查点由 [checkpointSample] 把在飞批的起点也
+          // 算进去，只是恢复点最多落后一批（≤ 桶行数 × 10 s 音频，崩溃后重跑
+          // 一批 ≈ 零点几秒 GPU），换整条流水线跨块不断。
           state = _withResume(
             state,
             fileIndex,
@@ -799,11 +801,24 @@ class AsrTranscribeJob {
     int n = 1;
     while (n < sorted.length && n < maxSegments) {
       if ((n + 1) * longest > budgetSamples) break;
-      if (sorted[n].samples.length * 2 < longest) break;
+      if (sorted[n].samples.length * kDynamicBatchMinLengthRatioDen <
+          longest * kDynamicBatchMinLengthRatioNum) {
+        break;
+      }
       n++;
     }
     return n;
   }
+
+  /// 动态路径一批里最短段 / 最长段的下限（4/5 = 0.8）。
+  ///
+  /// CPU 上 padding 直接等于算力：encoder 与 Loop 图搜索都按批内最长段算满，
+  /// 比它短的行全是白付。旧规则 1/2 让 padding 最坏 2×（2026-09-06 实测 CPU int8
+  /// 30 分钟英语 1.4~2.2×）；0.8 把最坏值压到 1.25×，代价是批变小、ORT 往返变多
+  /// ——CPU 动态 shape 每次 run 的规划开销只有几毫秒，远小于多算几成帧。
+  /// 整数分子 / 分母写法避免浮点比较。
+  static const int kDynamicBatchMinLengthRatioNum = 4;
+  static const int kDynamicBatchMinLengthRatioDen = 5;
 
   static int _maxEndMs(List<AsrTranscribedSegment> all, int fileIndex) {
     int m = 0;

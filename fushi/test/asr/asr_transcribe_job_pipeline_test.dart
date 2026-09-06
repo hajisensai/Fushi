@@ -243,51 +243,60 @@ void main() {
     );
   });
 
-  test('块末检查点 = 最早一个未落盘段的起点：在飞的批已落盘，攒批中的半批留到下一块', () async {
+  test('块末检查点 = 最早一个未落盘段的起点：在飞的批不等落盘（流水线跨块不断），攒批中的半批留到下一块', () async {
     final _PipeDecoder pipe = _PipeDecoder();
     final AsrTranscribeJob job = AsrTranscribeJob(
       jobDir: Directory(p.join(tmp.path, 'ckpt')),
       audioPaths: const <String>['a.mp3'],
       modelId: 'm',
-      pcm: _Pcm(chunks: 2),
+      pcm: _Pcm(chunks: 3),
       segmenter: _Segmenter(perChunk: 5),
       decoder: pipe,
       batchSize: 3,
       chunkSeconds: 5,
       progressInterval: Duration.zero,
     );
-    // 第一块 5 段起点 0..4 s、按长度降序前三段（0/1/2 s）攒满一批先发，3/4 s
-    // 两段不够 cap、留到第二块。块末检查点 = 3 s；起点在它之前的段全部已落盘。
-    // 第一块结束时有两条 processedMs=5000 的进度：块内节流那条在检查点之前，
-    // 块末那条紧跟检查点之后（resume 已从 0 变成 3 s）——看后者。
-    int? resumeAtCheckpoint;
-    List<int> persistedStarts = <int>[];
+    // 每块 5 段、长度随段序递减。第一块：A=[0,1,2] 发出去、[3,4] 不够 cap 留下；
+    // 块末 A 仍在飞，检查点 = 0 s（在飞批的起点也算「未落盘」）。第二块进来
+    // [5..9]：发 B=[5,6,7] 时 A 落盘，发 C=[3,8,4] 时 B 落盘，[9] 留下；第二块
+    // 块末 C 在飞、不等它——检查点 = min(C 起点 3 s, 9 s) = 3 s，已落盘的是 A∪B。
+    // 每块结束有两条同 processedMs 的进度（块内节流 / 块末），块末那条紧跟
+    // 检查点之后——看第二块的后者（resume 已从 0 变成 3 s）。
+    int? resumeAtChunk1;
+    int? resumeAtChunk2;
+    List<int> persistedAtChunk2 = <int>[];
     await for (final AsrTranscribeEvent e in job.run()) {
-      if (e is AsrTranscribeProgressEvent &&
-          e.progress.processedMs == 5000 &&
-          resumeAtCheckpoint == null) {
-        final AsrJobState state = await AsrTranscribeJob.loadState(
-          job.jobDir,
-          const <String>['a.mp3'],
-          modelId: 'm',
-        );
+      if (e is! AsrTranscribeProgressEvent) continue;
+      final AsrJobState state = await AsrTranscribeJob.loadState(
+        job.jobDir,
+        const <String>['a.mp3'],
+        modelId: 'm',
+      );
+      if (e.progress.processedMs == 5000) {
+        resumeAtChunk1 = state.resumeSamples[0];
+      } else if (e.progress.processedMs == 10000 && resumeAtChunk2 == null) {
         if (state.resumeSamples[0] > 0) {
-          resumeAtCheckpoint = state.resumeSamples[0];
-          persistedStarts = (await AsrTranscribeJob.loadSegments(job.jobDir))
+          resumeAtChunk2 = state.resumeSamples[0];
+          persistedAtChunk2 = (await AsrTranscribeJob.loadSegments(job.jobDir))
               .map((AsrTranscribedSegment s) => s.startMs)
               .toList()
             ..sort();
         }
       }
     }
-    expect(resumeAtCheckpoint, 3 * kAsrSampleRate);
-    expect(persistedStarts, <int>[0, 1000, 2000], reason: '起点早于恢复点的段全部已落盘');
-    // 跑完后 10 段一个不少、无重复。
+    expect(resumeAtChunk1, 0, reason: '第一块末 A 在飞、未落盘，恢复点必须含它');
+    expect(resumeAtChunk2, 3 * kAsrSampleRate);
+    expect(
+      persistedAtChunk2,
+      <int>[0, 1000, 2000, 5000, 6000, 7000],
+      reason: '起点早于恢复点的段全部已落盘；在飞的 C=[3,8,4] 不等',
+    );
+    // 跑完后 15 段一个不少、无重复。
     final List<int> all = (await AsrTranscribeJob.loadSegments(job.jobDir))
         .map((AsrTranscribedSegment s) => s.startMs)
         .toList()
       ..sort();
-    expect(all, List<int>.generate(10, (int i) => i * 1000));
+    expect(all, List<int>.generate(15, (int i) => i * 1000));
   });
 
   test('两个桶：同一批只装同一个桶的段，短段不被长段的桶带走；攒满的桶先发', () async {
