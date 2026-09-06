@@ -548,12 +548,51 @@ function fushiOnStreamCues(msg) {
     const lang = String(msg.lang || 'und').replace(/\|/g, '_');
     const key = vidKey + '|' + lang;
     fushiEpisodeCues[key] = cues;
+    delete fushiLazyTracks[key]; // 占位轨拿到真 cue 就不再是「待加载」
     fushiNotifyPanel(key);
   } catch (_) {}
 }
+// BUG-2194：按需加载的**占位轨**。主世界桥（youtube-bridge.js）先发整份轨清单
+// {__fushiStream:'tracks'}，这里按 key 登记成空 cue 的占位（面板据 fushiLazyTracks 把它列
+// 出来标「未加载」），用户选中时 fushiRequestLazyTrack 发 {__fushiStream:'fetchTrack'} 让桥
+// 真取。pickPrimaryCueTrack / fushiHasFullEpisodeTrack 都跳过空轨，占位永远不会当主路径。
+const fushiLazyTracks = Object.create(null); // key → true
+window.fushiLazyTracks = fushiLazyTracks;
+function fushiOnStreamTracks(msg) {
+  try {
+    if (!Array.isArray(msg.tracks)) return;
+    const vidKey = String(msg.videoKey ||
+      (location.hostname + (msg.path || location.pathname))).replace(/\|/g, '_');
+    for (const t of msg.tracks) {
+      const lang = String((t && t.lang) || '').replace(/\|/g, '_');
+      if (!lang) continue;
+      const key = vidKey + '|' + lang;
+      if (fushiEpisodeCues[key] && fushiEpisodeCues[key].length) continue; // 已有真 cue
+      if (fushiLazyTracks[key]) continue; // 已登记
+      fushiEpisodeCues[key] = [];
+      fushiLazyTracks[key] = true;
+      fushiNotifyPanel(key);
+    }
+  } catch (_) {}
+}
+/**
+ * 请求桥真取一条占位轨。非占位（已有 cue / 未登记）→ false。
+ * @param {string} key `${videoKey}|${lang}`
+ * @returns {boolean}
+ */
+window.fushiRequestLazyTrack = function (key) {
+  if (!fushiLazyTracks[key]) return false;
+  const sep = key.indexOf('|');
+  if (sep < 0) return false;
+  try {
+    window.postMessage({ __fushiStream: 'fetchTrack', videoKey: key.slice(0, sep), lang: key.slice(sep + 1) }, '/');
+  } catch (_) { return false; }
+  return true;
+};
 window.addEventListener('message', (e) => {
-  if (e.source !== window || !e.data || e.data.__fushiStream !== 'cues') return;
-  fushiOnStreamCues(e.data);
+  if (e.source !== window || !e.data) return;
+  if (e.data.__fushiStream === 'cues') fushiOnStreamCues(e.data);
+  else if (e.data.__fushiStream === 'tracks') fushiOnStreamTracks(e.data);
 });
 try { window.postMessage({ __fushiStream: 'replayCues' }, '/'); } catch (_) {}
 // ── TODO-1363：通用字幕轨 provider（所有站点） ──

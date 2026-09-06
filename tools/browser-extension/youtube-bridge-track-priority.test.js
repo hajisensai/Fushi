@@ -1,12 +1,13 @@
-// BUG-2194：YouTube 轨枚举上限截掉原语言轨。
+// BUG-2194：YouTube 轨枚举上限截掉原语言轨 → 改按需加载。
 //
 // 用户截图：自动配音视频的字幕列表里俄/孟/德/旁遮普/日/法/波/荷/葡/阿/韩/马拉雅拉姆 12 条
 // 齐全，唯独没有英语——YouTube 原生菜单里明明有「英语（自动生成）」。根因：fetchAndPublish
-// 按 YouTube 原始顺序截前 12 条，原语言排在后面就被截掉。现在上限之前先按「当前音轨默认
-// 字幕轨 → 同语言 → 人工轨 → 其余」排优先级，上限提到 20。
+// 按 YouTube 原始顺序截前 12 条，原语言排在后面就被截掉。现在：整份清单（只有标签）立刻
+// 发 {__fushiStream:'tracks'}；只急取排优先级后的头一条（当前音轨默认字幕轨）；其余等隔离
+// 世界发 {__fushiStream:'fetchTrack'} 再取，取过的直接重放缓存。
 //
-// 在受控 vm 里真加载 youtube-bridge.js：#movie_player 假件给出 25 条 captionTracks，其中
-// 英语 ASR 轨排在第 14 位并被 getAudioTrack() 标为默认；断言它一定被抓、且排第一。
+// 在受控 vm 里真加载 youtube-bridge.js：#movie_player 假件给出 25 条 captionTracks，英语 ASR
+// 轨排在第 14 位并被 getAudioTrack() 标为默认。
 const { test } = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
@@ -18,9 +19,10 @@ const SOURCE = fs.readFileSync(path.join(__dirname, 'youtube-bridge.js'), 'utf8'
 function loadBridge(captionTracks, audioTrack) {
   const fetches = [];
   const posted = [];
+  const winListeners = {};
   const windowObject = {
     ytcfg: { get() { return 'x'; } },
-    addEventListener() {},
+    addEventListener(type, fn) { (winListeners[type] = winListeners[type] || []).push(fn); },
     postMessage(msg) { posted.push(msg); },
   };
   const player = {
@@ -57,7 +59,14 @@ function loadBridge(captionTracks, audioTrack) {
   };
   vm.runInNewContext(SOURCE, sandbox, { filename: 'youtube-bridge.js' });
   const flush = async () => { for (let i = 0; i < 8; i++) await new Promise((r) => setImmediate(r)); };
-  return { fetches, posted, flush };
+  return {
+    fetches, posted, flush,
+    // 隔离世界 → 主世界的 postMessage（同一 window，source === window）。
+    async send(data) {
+      for (const fn of winListeners.message || []) fn({ source: windowObject, data });
+      await flush();
+    },
+  };
 }
 
 function tracks25() {
@@ -69,29 +78,58 @@ function tracks25() {
   }));
 }
 
-test('BUG-2194：原语言轨排在第 14 位也必须被抓到，且排第一', async () => {
+test('BUG-2194：整份清单立刻到（25 条全在，含英语）；只急取默认那一条', async () => {
   const h = loadBridge(tracks25(), { defaultCaptionTrackIndex: 13, languageCode: 'en' });
   await h.flush();
-  const langs = h.posted.map((m) => m.lang);
-  assert.ok(langs.includes('en (auto)'), '英语轨被上限截掉了：' + langs.join(','));
-  assert.strictEqual(h.fetches.length, 20, '上限 20 条');
-  assert.ok(/lang=en&/.test(h.fetches[0]), '默认字幕轨最先抓');
+  const list = h.posted.find((m) => m.__fushiStream === 'tracks');
+  assert.ok(list, '必须先发轨清单');
+  assert.strictEqual(list.videoKey, 'yt-vid1');
+  assert.strictEqual(list.tracks.length, 25, '清单不设上限');
+  assert.ok(list.tracks.some((t) => t.lang === 'en (auto)'), '英语在清单里');
+  assert.strictEqual(list.tracks[0].lang, 'en (auto)', '默认轨排第一');
+  assert.strictEqual(h.fetches.length, 1, '只急取一条');
+  assert.ok(/lang=en&/.test(h.fetches[0]), '急取的是默认字幕轨');
+  const cues = h.posted.filter((m) => m.__fushiStream === 'cues');
+  assert.strictEqual(cues.length, 1);
+  assert.strictEqual(cues[0].lang, 'en (auto)');
 });
 
-test('BUG-2194：没有默认索引时按音轨语言码匹配；人工轨优先于 ASR 轨', async () => {
+test('BUG-2194：fetchTrack 按需取一条；重复请求重放缓存不再下载；未知轨忽略', async () => {
+  const h = loadBridge(tracks25(), { defaultCaptionTrackIndex: 13, languageCode: 'en' });
+  await h.flush();
+  await h.send({ __fushiStream: 'fetchTrack', videoKey: 'yt-vid1', lang: 'ta (auto)' });
+  assert.strictEqual(h.fetches.length, 2);
+  assert.ok(/lang=ta&/.test(h.fetches[1]));
+  const ta = h.posted.filter((m) => m.__fushiStream === 'cues' && m.lang === 'ta (auto)');
+  assert.strictEqual(ta.length, 1);
+  assert.strictEqual(ta[0].cues[0].text, 'ta');
+  await h.send({ __fushiStream: 'fetchTrack', videoKey: 'yt-vid1', lang: 'ta (auto)' });
+  assert.strictEqual(h.fetches.length, 2, '已取过的不再下载');
+  assert.strictEqual(h.posted.filter((m) => m.__fushiStream === 'cues' && m.lang === 'ta (auto)').length, 2, '重放缓存');
+  await h.send({ __fushiStream: 'fetchTrack', videoKey: 'yt-vid1', lang: 'nope' });
+  await h.send({ __fushiStream: 'fetchTrack', videoKey: 'yt-other', lang: 'ta (auto)' });
+  assert.strictEqual(h.fetches.length, 2, '未知轨 / 别的视频不取');
+});
+
+test('BUG-2194：replayCues 把清单和已取的轨一起重放（隔离世界晚到也拿得到清单）', async () => {
+  const h = loadBridge(tracks25(), { defaultCaptionTrackIndex: 13, languageCode: 'en' });
+  await h.flush();
+  const before = h.posted.length;
+  await h.send({ __fushiStream: 'replayCues' });
+  const replayed = h.posted.slice(before);
+  assert.ok(replayed.some((m) => m.__fushiStream === 'tracks' && m.tracks.length === 25), '清单被重放');
+  assert.ok(replayed.some((m) => m.__fushiStream === 'cues' && m.lang === 'en (auto)'), '已取轨被重放');
+});
+
+test('BUG-2194：没有默认索引时按音轨语言码匹配急取；人工轨在清单里排在 ASR 轨前', async () => {
   const list = tracks25();
   list.push({ languageCode: 'zh-Hans', kind: '', name: { simpleText: '中文（简体）' },
     baseUrl: 'https://www.youtube.com/api/timedtext?v=vid1&lang=zh-Hans' });
   const h = loadBridge(list, { languageCode: 'en-US' });
   await h.flush();
-  assert.ok(/lang=en&/.test(h.fetches[0]), '同语言（en-US ~ en）轨最先');
-  assert.ok(/lang=zh-Hans/.test(h.fetches[1]), '人工轨紧随其后');
-  assert.strictEqual(h.fetches.length, 20);
-});
-
-test('BUG-2194：无任何提示信息时保持原顺序（前 20 条）', async () => {
-  const h = loadBridge(tracks25(), null);
-  await h.flush();
-  assert.ok(/lang=ru&/.test(h.fetches[0]));
-  assert.strictEqual(h.fetches.length, 20);
+  assert.strictEqual(h.fetches.length, 1);
+  assert.ok(/lang=en&/.test(h.fetches[0]), '同语言（en-US ~ en）轨急取');
+  const tracks = h.posted.find((m) => m.__fushiStream === 'tracks').tracks.map((t) => t.lang);
+  assert.strictEqual(tracks[0], 'en (auto)');
+  assert.strictEqual(tracks[1], '中文（简体）', '人工轨紧随其后');
 });
