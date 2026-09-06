@@ -11,15 +11,16 @@
   "events": [
     {"kind": "text", "id": "unity-mono-line", "timestamp_ms": 9000, "thread": 5, "text": "synthetic unity mono dialogue line"},
     {"kind": "text", "id": "unity-mono-ui-thread", "timestamp_ms": 9001, "thread": 11, "text": "synthetic unity mono ui thread"},
-    {"kind": "pcm", "id": "unity-mono-source-pcm", "timestamp_ms": 9015, "format": "s16le"},
-    {"kind": "loopback", "id": "unity-mono-loopback", "timestamp_ms": 9019, "format": "s16le"},
+    {"kind": "loopback", "id": "unity-mono-loopback", "timestamp_ms": 9002, "format": "s16le"},
+    {"kind": "pcm", "id": "unity-mono-source-pcm", "timestamp_ms": 9014, "format": "s16le"},
+    {"kind": "text", "id": "unity-mono-line-repeat", "timestamp_ms": 9300, "thread": 5, "text": "synthetic unity mono dialogue line"},
     {"kind": "session_end", "timestamp_ms": 9600}
   ],
   "expected": {
     "cards": [
       {"text_id": "unity-mono-line", "audio_backend": "pcm", "audio_id": "unity-mono-source-pcm"}
     ],
-    "duplicate_text_events": 0,
+    "duplicate_text_events": 1,
     "thread_filtered_events": 1,
     "session_clean": true
   }
