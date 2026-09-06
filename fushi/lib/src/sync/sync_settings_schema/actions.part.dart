@@ -11,16 +11,6 @@ part of '../sync_settings_schema.dart';
 
 // ── Backup export widget ─────────────────────────────────────────────
 
-/// 一条资产的一个方向 —— 设置页「上传词典 / 下载词典 / 上传本地音频数据库 /
-/// 下载本地音频数据库」四行共用这一个 widget。
-///
-/// **一行一个动作**，而不是一行两个按钮：方向导航（手柄 / 键盘）在这个代码库里是
-/// 按「行 = 一个 [FushiFocusTarget]」注册的（见 [_SyncNowWidget] 里 BUG-016 的注释），
-/// 一行塞两个动作就得给焦点系统开左右键绑定的特例，而用户还猜不到那个绑定存在。
-/// 拆成两行零特例，标题本身就说清了这一下会往哪边搬。
-///
-/// 跑与反馈全在 [runAssetTransferWithFeedback]（与「立即同步」共用同一个外壳）；
-/// 这里只负责渲染行、显示在飞进度、并挡住重复触发。
 /// 一次性告知：升级前开着词典 / 本地音频自动同步的存量用户，升级后同步会**静默**
 /// 停下——「立即同步」照常报「完成 N 项」，而新导入的词典再也不上云，用户没有任何
 /// 信号知道备份里已经没有词典了。这不是数据丢失，是「我以为还在备份」的静默失效。
@@ -79,44 +69,75 @@ class _LegacyAssetSyncNoticeState extends State<_LegacyAssetSyncNotice> {
   }
 }
 
-class _AssetTransferWidget extends StatefulWidget {
-  const _AssetTransferWidget({
+/// 一类资产一行 —— 设置页「词典 / 本地音频数据库」两行共用这一个 widget，方向
+/// （上传把本机独有的推上去 / 下载把远端独有的拉下来）在行尾的「传输 ▾」菜单里选。
+///
+/// **一行一个焦点目标**：方向导航（手柄 / 键盘）在这个代码库里是按「行 = 一个
+/// [FushiFocusTarget]」注册的（见 [_SyncNowWidget] 里 BUG-016 的注释）。这里那个
+/// 目标就是菜单本身——[FushiOverflowMenu] 在焦点树里自注册，Activate 即弹菜单，
+/// 鼠标点也是同一条路径；行**不**再另挂 onTap，否则一行两个目标。此前是「一行一个
+/// 方向」四行，用户拍板合并（2026-09-06）；「一行两个按钮」被否——那要给焦点系统开
+/// 左右键特例，用户还猜不到那个绑定存在。
+///
+/// 跑与反馈全在 [runAssetTransferWithFeedback]（与「立即同步」共用同一个外壳）；
+/// 这里只负责渲染行、显示在飞进度、并挡住重复触发。
+class _AssetTransferMenuRow extends StatelessWidget {
+  const _AssetTransferMenuRow({
     required this.settingsContext,
     required this.kind,
-    required this.direction,
     required this.title,
     required this.icon,
   });
 
   final SettingsContext settingsContext;
   final SyncAssetKind kind;
-  final SyncAssetDirection direction;
   final String title;
   final IconData icon;
 
-  @override
-  State<_AssetTransferWidget> createState() => _AssetTransferWidgetState();
-}
-
-class _AssetTransferWidgetState extends State<_AssetTransferWidget> {
-  Future<void> _run() async {
-    await runAssetTransferWithFeedback(
+  Future<void> _run(BuildContext context, SyncAssetDirection direction) {
+    return runAssetTransferWithFeedback(
       context: context,
-      appModel: widget.settingsContext.appModel,
-      kind: widget.kind,
-      direction: widget.direction,
+      appModel: settingsContext.appModel,
+      kind: kind,
+      direction: direction,
     );
   }
 
-  /// 说明文字讲的是**方向的语义**（并集的哪一半），与资产类别无关 —— 两类资产的
-  /// 传输规则逐字相同，各写一份只会让它们日后漂移。
-  String get _subtitle => switch (widget.direction) {
-        SyncAssetDirection.upload => t.sync_asset_upload_hint,
-        SyncAssetDirection.download => t.sync_asset_download_hint,
-        // 这一行只由 upload / download 两个方向构造；[SyncAssetDirection.both] 是
-        // 自动同步路径的方向，不会出现在设置页上。
-        SyncAssetDirection.both => t.sync_asset_upload_hint,
-      };
+  Widget _menu(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return FushiOverflowMenu<SyncAssetDirection>(
+      tooltip: t.sync_asset_transfer_menu,
+      items: <PopupMenuEntry<SyncAssetDirection>>[
+        FushiPopupMenuItem<SyncAssetDirection>(
+          label: t.sync_asset_upload_action,
+          value: SyncAssetDirection.upload,
+          icon: Icons.upload_outlined,
+        ),
+        FushiPopupMenuItem<SyncAssetDirection>(
+          label: t.sync_asset_download_action,
+          value: SyncAssetDirection.download,
+          icon: Icons.download_outlined,
+        ),
+      ],
+      onSelected: (SyncAssetDirection direction) => _run(context, direction),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(
+              t.sync_asset_transfer_menu,
+              style: TextStyle(
+                color: scheme.primary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            Icon(Icons.arrow_drop_down, color: scheme.primary),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -129,27 +150,19 @@ class _AssetTransferWidgetState extends State<_AssetTransferWidget> {
           valueListenable: syncProgress,
           builder: (BuildContext context, SyncProgress? p, __) {
             final AdaptiveSettingsRow row = AdaptiveSettingsRow(
-              title: widget.title,
-              subtitle: syncing && p != null ? syncProgressLine(p) : _subtitle,
-              icon: widget.icon,
+              title: title,
+              subtitle: syncing && p != null
+                  ? syncProgressLine(p)
+                  : t.sync_asset_transfer_hint,
+              icon: icon,
               controlBelow: true,
-              // 行级 onTap 才让本行注册成 [FushiFocusTarget]，方向导航与手柄 A 因此
-              // 能到达并触发它（BUG-016，与「立即同步」同因）。
-              onTap: _run,
               trailing: syncing
                   ? const SizedBox(
                       width: 20,
                       height: 20,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : FilledButton.tonal(
-                      onPressed: _run,
-                      child: Text(
-                        widget.direction == SyncAssetDirection.download
-                            ? t.sync_asset_download_action
-                            : t.sync_asset_upload_action,
-                      ),
-                    ),
+                  : _menu(context),
             );
             if (!syncing) return row;
             return Column(

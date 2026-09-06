@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 72182 (4246 per locale)
+/// Strings: 72318 (4254 per locale)
 ///
-/// Built on 2026-09-05 at 17:12 UTC
+/// Built on 2026-09-06 at 03:22 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -5837,6 +5837,16 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get anki_ankimobile_imported => 'AnkiMobile configuration imported.';
   String get anki_error_ankimobile_not_active =>
       'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+  String get sync_server_settings => 'Server settings';
+  String get sync_server_settings_hint =>
+      'Credentials and connection test for the selected sync method';
+  String get sync_section_when => 'When to sync';
+  String get sync_section_assets => 'Dictionaries & local audio transfer';
+  String get sync_asset_dictionary => 'Dictionaries';
+  String get sync_asset_local_audio => 'Local audio databases';
+  String get sync_asset_transfer_menu => 'Transfer';
+  String get sync_asset_transfer_hint =>
+      'Upload what only this device has, or download what only the remote has';
 }
 
 // Path: <root>
@@ -15746,6 +15756,24 @@ class _StringsAr extends _StringsEn {
   @override
   String get anki_error_ankimobile_not_active =>
       'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+  @override
+  String get sync_server_settings => 'Server settings';
+  @override
+  String get sync_server_settings_hint =>
+      'Credentials and connection test for the selected sync method';
+  @override
+  String get sync_section_when => 'When to sync';
+  @override
+  String get sync_section_assets => 'Dictionaries & local audio transfer';
+  @override
+  String get sync_asset_dictionary => 'Dictionaries';
+  @override
+  String get sync_asset_local_audio => 'Local audio databases';
+  @override
+  String get sync_asset_transfer_menu => 'Transfer';
+  @override
+  String get sync_asset_transfer_hint =>
+      'Upload what only this device has, or download what only the remote has';
 }
 
 // Path: <root>
@@ -25882,6 +25910,24 @@ class _StringsDe extends _StringsEn {
   @override
   String get anki_error_ankimobile_not_active =>
       'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+  @override
+  String get sync_server_settings => 'Server settings';
+  @override
+  String get sync_server_settings_hint =>
+      'Credentials and connection test for the selected sync method';
+  @override
+  String get sync_section_when => 'When to sync';
+  @override
+  String get sync_section_assets => 'Dictionaries & local audio transfer';
+  @override
+  String get sync_asset_dictionary => 'Dictionaries';
+  @override
+  String get sync_asset_local_audio => 'Local audio databases';
+  @override
+  String get sync_asset_transfer_menu => 'Transfer';
+  @override
+  String get sync_asset_transfer_hint =>
+      'Upload what only this device has, or download what only the remote has';
 }
 
 // Path: <root>
@@ -36071,6 +36117,24 @@ class _StringsEs extends _StringsEn {
   @override
   String get anki_error_ankimobile_not_active =>
       'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+  @override
+  String get sync_server_settings => 'Server settings';
+  @override
+  String get sync_server_settings_hint =>
+      'Credentials and connection test for the selected sync method';
+  @override
+  String get sync_section_when => 'When to sync';
+  @override
+  String get sync_section_assets => 'Dictionaries & local audio transfer';
+  @override
+  String get sync_asset_dictionary => 'Dictionaries';
+  @override
+  String get sync_asset_local_audio => 'Local audio databases';
+  @override
+  String get sync_asset_transfer_menu => 'Transfer';
+  @override
+  String get sync_asset_transfer_hint =>
+      'Upload what only this device has, or download what only the remote has';
 }
 
 // Path: <root>
@@ -46294,6 +46358,24 @@ class _StringsFr extends _StringsEn {
   @override
   String get anki_error_ankimobile_not_active =>
       'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+  @override
+  String get sync_server_settings => 'Server settings';
+  @override
+  String get sync_server_settings_hint =>
+      'Credentials and connection test for the selected sync method';
+  @override
+  String get sync_section_when => 'When to sync';
+  @override
+  String get sync_section_assets => 'Dictionaries & local audio transfer';
+  @override
+  String get sync_asset_dictionary => 'Dictionaries';
+  @override
+  String get sync_asset_local_audio => 'Local audio databases';
+  @override
+  String get sync_asset_transfer_menu => 'Transfer';
+  @override
+  String get sync_asset_transfer_hint =>
+      'Upload what only this device has, or download what only the remote has';
 }
 
 // Path: <root>
@@ -56321,6 +56403,24 @@ class _StringsId extends _StringsEn {
   @override
   String get anki_error_ankimobile_not_active =>
       'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+  @override
+  String get sync_server_settings => 'Server settings';
+  @override
+  String get sync_server_settings_hint =>
+      'Credentials and connection test for the selected sync method';
+  @override
+  String get sync_section_when => 'When to sync';
+  @override
+  String get sync_section_assets => 'Dictionaries & local audio transfer';
+  @override
+  String get sync_asset_dictionary => 'Dictionaries';
+  @override
+  String get sync_asset_local_audio => 'Local audio databases';
+  @override
+  String get sync_asset_transfer_menu => 'Transfer';
+  @override
+  String get sync_asset_transfer_hint =>
+      'Upload what only this device has, or download what only the remote has';
 }
 
 // Path: <root>
@@ -66440,6 +66540,24 @@ class _StringsIt extends _StringsEn {
   @override
   String get anki_error_ankimobile_not_active =>
       'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+  @override
+  String get sync_server_settings => 'Server settings';
+  @override
+  String get sync_server_settings_hint =>
+      'Credentials and connection test for the selected sync method';
+  @override
+  String get sync_section_when => 'When to sync';
+  @override
+  String get sync_section_assets => 'Dictionaries & local audio transfer';
+  @override
+  String get sync_asset_dictionary => 'Dictionaries';
+  @override
+  String get sync_asset_local_audio => 'Local audio databases';
+  @override
+  String get sync_asset_transfer_menu => 'Transfer';
+  @override
+  String get sync_asset_transfer_hint =>
+      'Upload what only this device has, or download what only the remote has';
 }
 
 // Path: <root>
@@ -75946,6 +76064,24 @@ class _StringsJa extends _StringsEn {
   @override
   String get anki_error_ankimobile_not_active =>
       'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+  @override
+  String get sync_server_settings => 'Server settings';
+  @override
+  String get sync_server_settings_hint =>
+      'Credentials and connection test for the selected sync method';
+  @override
+  String get sync_section_when => 'When to sync';
+  @override
+  String get sync_section_assets => 'Dictionaries & local audio transfer';
+  @override
+  String get sync_asset_dictionary => 'Dictionaries';
+  @override
+  String get sync_asset_local_audio => 'Local audio databases';
+  @override
+  String get sync_asset_transfer_menu => 'Transfer';
+  @override
+  String get sync_asset_transfer_hint =>
+      'Upload what only this device has, or download what only the remote has';
 }
 
 // Path: <root>
@@ -85462,6 +85598,24 @@ class _StringsKo extends _StringsEn {
   @override
   String get anki_error_ankimobile_not_active =>
       'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+  @override
+  String get sync_server_settings => 'Server settings';
+  @override
+  String get sync_server_settings_hint =>
+      'Credentials and connection test for the selected sync method';
+  @override
+  String get sync_section_when => 'When to sync';
+  @override
+  String get sync_section_assets => 'Dictionaries & local audio transfer';
+  @override
+  String get sync_asset_dictionary => 'Dictionaries';
+  @override
+  String get sync_asset_local_audio => 'Local audio databases';
+  @override
+  String get sync_asset_transfer_menu => 'Transfer';
+  @override
+  String get sync_asset_transfer_hint =>
+      'Upload what only this device has, or download what only the remote has';
 }
 
 // Path: <root>
@@ -95536,6 +95690,24 @@ class _StringsNl extends _StringsEn {
   @override
   String get anki_error_ankimobile_not_active =>
       'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+  @override
+  String get sync_server_settings => 'Server settings';
+  @override
+  String get sync_server_settings_hint =>
+      'Credentials and connection test for the selected sync method';
+  @override
+  String get sync_section_when => 'When to sync';
+  @override
+  String get sync_section_assets => 'Dictionaries & local audio transfer';
+  @override
+  String get sync_asset_dictionary => 'Dictionaries';
+  @override
+  String get sync_asset_local_audio => 'Local audio databases';
+  @override
+  String get sync_asset_transfer_menu => 'Transfer';
+  @override
+  String get sync_asset_transfer_hint =>
+      'Upload what only this device has, or download what only the remote has';
 }
 
 // Path: <root>
@@ -105664,6 +105836,24 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get anki_error_ankimobile_not_active =>
       'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+  @override
+  String get sync_server_settings => 'Server settings';
+  @override
+  String get sync_server_settings_hint =>
+      'Credentials and connection test for the selected sync method';
+  @override
+  String get sync_section_when => 'When to sync';
+  @override
+  String get sync_section_assets => 'Dictionaries & local audio transfer';
+  @override
+  String get sync_asset_dictionary => 'Dictionaries';
+  @override
+  String get sync_asset_local_audio => 'Local audio databases';
+  @override
+  String get sync_asset_transfer_menu => 'Transfer';
+  @override
+  String get sync_asset_transfer_hint =>
+      'Upload what only this device has, or download what only the remote has';
 }
 
 // Path: <root>
@@ -115770,6 +115960,24 @@ class _StringsRu extends _StringsEn {
   @override
   String get anki_error_ankimobile_not_active =>
       'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+  @override
+  String get sync_server_settings => 'Server settings';
+  @override
+  String get sync_server_settings_hint =>
+      'Credentials and connection test for the selected sync method';
+  @override
+  String get sync_section_when => 'When to sync';
+  @override
+  String get sync_section_assets => 'Dictionaries & local audio transfer';
+  @override
+  String get sync_asset_dictionary => 'Dictionaries';
+  @override
+  String get sync_asset_local_audio => 'Local audio databases';
+  @override
+  String get sync_asset_transfer_menu => 'Transfer';
+  @override
+  String get sync_asset_transfer_hint =>
+      'Upload what only this device has, or download what only the remote has';
 }
 
 // Path: <root>
@@ -125675,6 +125883,24 @@ class _StringsTh extends _StringsEn {
   @override
   String get anki_error_ankimobile_not_active =>
       'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+  @override
+  String get sync_server_settings => 'Server settings';
+  @override
+  String get sync_server_settings_hint =>
+      'Credentials and connection test for the selected sync method';
+  @override
+  String get sync_section_when => 'When to sync';
+  @override
+  String get sync_section_assets => 'Dictionaries & local audio transfer';
+  @override
+  String get sync_asset_dictionary => 'Dictionaries';
+  @override
+  String get sync_asset_local_audio => 'Local audio databases';
+  @override
+  String get sync_asset_transfer_menu => 'Transfer';
+  @override
+  String get sync_asset_transfer_hint =>
+      'Upload what only this device has, or download what only the remote has';
 }
 
 // Path: <root>
@@ -135697,6 +135923,24 @@ class _StringsTr extends _StringsEn {
   @override
   String get anki_error_ankimobile_not_active =>
       'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+  @override
+  String get sync_server_settings => 'Server settings';
+  @override
+  String get sync_server_settings_hint =>
+      'Credentials and connection test for the selected sync method';
+  @override
+  String get sync_section_when => 'When to sync';
+  @override
+  String get sync_section_assets => 'Dictionaries & local audio transfer';
+  @override
+  String get sync_asset_dictionary => 'Dictionaries';
+  @override
+  String get sync_asset_local_audio => 'Local audio databases';
+  @override
+  String get sync_asset_transfer_menu => 'Transfer';
+  @override
+  String get sync_asset_transfer_hint =>
+      'Upload what only this device has, or download what only the remote has';
 }
 
 // Path: <root>
@@ -145690,6 +145934,24 @@ class _StringsVi extends _StringsEn {
   @override
   String get anki_error_ankimobile_not_active =>
       'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+  @override
+  String get sync_server_settings => 'Server settings';
+  @override
+  String get sync_server_settings_hint =>
+      'Credentials and connection test for the selected sync method';
+  @override
+  String get sync_section_when => 'When to sync';
+  @override
+  String get sync_section_assets => 'Dictionaries & local audio transfer';
+  @override
+  String get sync_asset_dictionary => 'Dictionaries';
+  @override
+  String get sync_asset_local_audio => 'Local audio databases';
+  @override
+  String get sync_asset_transfer_menu => 'Transfer';
+  @override
+  String get sync_asset_transfer_hint =>
+      'Upload what only this device has, or download what only the remote has';
 }
 
 // Path: <root>
@@ -154874,6 +155136,22 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get anki_error_ankimobile_not_active =>
       'Fushi 没能及时回到前台，剪贴板还没被读取。回到 Fushi 后重试即可。';
+  @override
+  String get sync_server_settings => '服务器设置';
+  @override
+  String get sync_server_settings_hint => '当前同步方式的凭据与连接测试';
+  @override
+  String get sync_section_when => '何时同步';
+  @override
+  String get sync_section_assets => '词典与本地音频传输';
+  @override
+  String get sync_asset_dictionary => '词典';
+  @override
+  String get sync_asset_local_audio => '本地音频数据库';
+  @override
+  String get sync_asset_transfer_menu => '传输';
+  @override
+  String get sync_asset_transfer_hint => '上传本机独有的，或下载远端独有的';
 }
 
 // Path: <root>
@@ -164073,6 +164351,24 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get anki_error_ankimobile_not_active =>
       'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+  @override
+  String get sync_server_settings => 'Server settings';
+  @override
+  String get sync_server_settings_hint =>
+      'Credentials and connection test for the selected sync method';
+  @override
+  String get sync_section_when => 'When to sync';
+  @override
+  String get sync_section_assets => 'Dictionaries & local audio transfer';
+  @override
+  String get sync_asset_dictionary => 'Dictionaries';
+  @override
+  String get sync_asset_local_audio => 'Local audio databases';
+  @override
+  String get sync_asset_transfer_menu => 'Transfer';
+  @override
+  String get sync_asset_transfer_hint =>
+      'Upload what only this device has, or download what only the remote has';
 }
 
 /// Flat map(s) containing all translations.
@@ -172783,6 +173079,22 @@ extension on _StringsEn {
         return 'AnkiMobile configuration imported.';
       case 'anki_error_ankimobile_not_active':
         return 'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+      case 'sync_server_settings':
+        return 'Server settings';
+      case 'sync_server_settings_hint':
+        return 'Credentials and connection test for the selected sync method';
+      case 'sync_section_when':
+        return 'When to sync';
+      case 'sync_section_assets':
+        return 'Dictionaries & local audio transfer';
+      case 'sync_asset_dictionary':
+        return 'Dictionaries';
+      case 'sync_asset_local_audio':
+        return 'Local audio databases';
+      case 'sync_asset_transfer_menu':
+        return 'Transfer';
+      case 'sync_asset_transfer_hint':
+        return 'Upload what only this device has, or download what only the remote has';
       default:
         return null;
     }
@@ -181488,6 +181800,22 @@ extension on _StringsAr {
         return 'AnkiMobile configuration imported.';
       case 'anki_error_ankimobile_not_active':
         return 'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+      case 'sync_server_settings':
+        return 'Server settings';
+      case 'sync_server_settings_hint':
+        return 'Credentials and connection test for the selected sync method';
+      case 'sync_section_when':
+        return 'When to sync';
+      case 'sync_section_assets':
+        return 'Dictionaries & local audio transfer';
+      case 'sync_asset_dictionary':
+        return 'Dictionaries';
+      case 'sync_asset_local_audio':
+        return 'Local audio databases';
+      case 'sync_asset_transfer_menu':
+        return 'Transfer';
+      case 'sync_asset_transfer_hint':
+        return 'Upload what only this device has, or download what only the remote has';
       default:
         return null;
     }
@@ -190238,6 +190566,22 @@ extension on _StringsDe {
         return 'AnkiMobile configuration imported.';
       case 'anki_error_ankimobile_not_active':
         return 'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+      case 'sync_server_settings':
+        return 'Server settings';
+      case 'sync_server_settings_hint':
+        return 'Credentials and connection test for the selected sync method';
+      case 'sync_section_when':
+        return 'When to sync';
+      case 'sync_section_assets':
+        return 'Dictionaries & local audio transfer';
+      case 'sync_asset_dictionary':
+        return 'Dictionaries';
+      case 'sync_asset_local_audio':
+        return 'Local audio databases';
+      case 'sync_asset_transfer_menu':
+        return 'Transfer';
+      case 'sync_asset_transfer_hint':
+        return 'Upload what only this device has, or download what only the remote has';
       default:
         return null;
     }
@@ -198979,6 +199323,22 @@ extension on _StringsEs {
         return 'AnkiMobile configuration imported.';
       case 'anki_error_ankimobile_not_active':
         return 'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+      case 'sync_server_settings':
+        return 'Server settings';
+      case 'sync_server_settings_hint':
+        return 'Credentials and connection test for the selected sync method';
+      case 'sync_section_when':
+        return 'When to sync';
+      case 'sync_section_assets':
+        return 'Dictionaries & local audio transfer';
+      case 'sync_asset_dictionary':
+        return 'Dictionaries';
+      case 'sync_asset_local_audio':
+        return 'Local audio databases';
+      case 'sync_asset_transfer_menu':
+        return 'Transfer';
+      case 'sync_asset_transfer_hint':
+        return 'Upload what only this device has, or download what only the remote has';
       default:
         return null;
     }
@@ -207729,6 +208089,22 @@ extension on _StringsFr {
         return 'AnkiMobile configuration imported.';
       case 'anki_error_ankimobile_not_active':
         return 'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+      case 'sync_server_settings':
+        return 'Server settings';
+      case 'sync_server_settings_hint':
+        return 'Credentials and connection test for the selected sync method';
+      case 'sync_section_when':
+        return 'When to sync';
+      case 'sync_section_assets':
+        return 'Dictionaries & local audio transfer';
+      case 'sync_asset_dictionary':
+        return 'Dictionaries';
+      case 'sync_asset_local_audio':
+        return 'Local audio databases';
+      case 'sync_asset_transfer_menu':
+        return 'Transfer';
+      case 'sync_asset_transfer_hint':
+        return 'Upload what only this device has, or download what only the remote has';
       default:
         return null;
     }
@@ -216450,6 +216826,22 @@ extension on _StringsId {
         return 'AnkiMobile configuration imported.';
       case 'anki_error_ankimobile_not_active':
         return 'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+      case 'sync_server_settings':
+        return 'Server settings';
+      case 'sync_server_settings_hint':
+        return 'Credentials and connection test for the selected sync method';
+      case 'sync_section_when':
+        return 'When to sync';
+      case 'sync_section_assets':
+        return 'Dictionaries & local audio transfer';
+      case 'sync_asset_dictionary':
+        return 'Dictionaries';
+      case 'sync_asset_local_audio':
+        return 'Local audio databases';
+      case 'sync_asset_transfer_menu':
+        return 'Transfer';
+      case 'sync_asset_transfer_hint':
+        return 'Upload what only this device has, or download what only the remote has';
       default:
         return null;
     }
@@ -225193,6 +225585,22 @@ extension on _StringsIt {
         return 'AnkiMobile configuration imported.';
       case 'anki_error_ankimobile_not_active':
         return 'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+      case 'sync_server_settings':
+        return 'Server settings';
+      case 'sync_server_settings_hint':
+        return 'Credentials and connection test for the selected sync method';
+      case 'sync_section_when':
+        return 'When to sync';
+      case 'sync_section_assets':
+        return 'Dictionaries & local audio transfer';
+      case 'sync_asset_dictionary':
+        return 'Dictionaries';
+      case 'sync_asset_local_audio':
+        return 'Local audio databases';
+      case 'sync_asset_transfer_menu':
+        return 'Transfer';
+      case 'sync_asset_transfer_hint':
+        return 'Upload what only this device has, or download what only the remote has';
       default:
         return null;
     }
@@ -233863,6 +234271,22 @@ extension on _StringsJa {
         return 'AnkiMobile configuration imported.';
       case 'anki_error_ankimobile_not_active':
         return 'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+      case 'sync_server_settings':
+        return 'Server settings';
+      case 'sync_server_settings_hint':
+        return 'Credentials and connection test for the selected sync method';
+      case 'sync_section_when':
+        return 'When to sync';
+      case 'sync_section_assets':
+        return 'Dictionaries & local audio transfer';
+      case 'sync_asset_dictionary':
+        return 'Dictionaries';
+      case 'sync_asset_local_audio':
+        return 'Local audio databases';
+      case 'sync_asset_transfer_menu':
+        return 'Transfer';
+      case 'sync_asset_transfer_hint':
+        return 'Upload what only this device has, or download what only the remote has';
       default:
         return null;
     }
@@ -242537,6 +242961,22 @@ extension on _StringsKo {
         return 'AnkiMobile configuration imported.';
       case 'anki_error_ankimobile_not_active':
         return 'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+      case 'sync_server_settings':
+        return 'Server settings';
+      case 'sync_server_settings_hint':
+        return 'Credentials and connection test for the selected sync method';
+      case 'sync_section_when':
+        return 'When to sync';
+      case 'sync_section_assets':
+        return 'Dictionaries & local audio transfer';
+      case 'sync_asset_dictionary':
+        return 'Dictionaries';
+      case 'sync_asset_local_audio':
+        return 'Local audio databases';
+      case 'sync_asset_transfer_menu':
+        return 'Transfer';
+      case 'sync_asset_transfer_hint':
+        return 'Upload what only this device has, or download what only the remote has';
       default:
         return null;
     }
@@ -251273,6 +251713,22 @@ extension on _StringsNl {
         return 'AnkiMobile configuration imported.';
       case 'anki_error_ankimobile_not_active':
         return 'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+      case 'sync_server_settings':
+        return 'Server settings';
+      case 'sync_server_settings_hint':
+        return 'Credentials and connection test for the selected sync method';
+      case 'sync_section_when':
+        return 'When to sync';
+      case 'sync_section_assets':
+        return 'Dictionaries & local audio transfer';
+      case 'sync_asset_dictionary':
+        return 'Dictionaries';
+      case 'sync_asset_local_audio':
+        return 'Local audio databases';
+      case 'sync_asset_transfer_menu':
+        return 'Transfer';
+      case 'sync_asset_transfer_hint':
+        return 'Upload what only this device has, or download what only the remote has';
       default:
         return null;
     }
@@ -260004,6 +260460,22 @@ extension on _StringsPtBr {
         return 'AnkiMobile configuration imported.';
       case 'anki_error_ankimobile_not_active':
         return 'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+      case 'sync_server_settings':
+        return 'Server settings';
+      case 'sync_server_settings_hint':
+        return 'Credentials and connection test for the selected sync method';
+      case 'sync_section_when':
+        return 'When to sync';
+      case 'sync_section_assets':
+        return 'Dictionaries & local audio transfer';
+      case 'sync_asset_dictionary':
+        return 'Dictionaries';
+      case 'sync_asset_local_audio':
+        return 'Local audio databases';
+      case 'sync_asset_transfer_menu':
+        return 'Transfer';
+      case 'sync_asset_transfer_hint':
+        return 'Upload what only this device has, or download what only the remote has';
       default:
         return null;
     }
@@ -268742,6 +269214,22 @@ extension on _StringsRu {
         return 'AnkiMobile configuration imported.';
       case 'anki_error_ankimobile_not_active':
         return 'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+      case 'sync_server_settings':
+        return 'Server settings';
+      case 'sync_server_settings_hint':
+        return 'Credentials and connection test for the selected sync method';
+      case 'sync_section_when':
+        return 'When to sync';
+      case 'sync_section_assets':
+        return 'Dictionaries & local audio transfer';
+      case 'sync_asset_dictionary':
+        return 'Dictionaries';
+      case 'sync_asset_local_audio':
+        return 'Local audio databases';
+      case 'sync_asset_transfer_menu':
+        return 'Transfer';
+      case 'sync_asset_transfer_hint':
+        return 'Upload what only this device has, or download what only the remote has';
       default:
         return null;
     }
@@ -277452,6 +277940,22 @@ extension on _StringsTh {
         return 'AnkiMobile configuration imported.';
       case 'anki_error_ankimobile_not_active':
         return 'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+      case 'sync_server_settings':
+        return 'Server settings';
+      case 'sync_server_settings_hint':
+        return 'Credentials and connection test for the selected sync method';
+      case 'sync_section_when':
+        return 'When to sync';
+      case 'sync_section_assets':
+        return 'Dictionaries & local audio transfer';
+      case 'sync_asset_dictionary':
+        return 'Dictionaries';
+      case 'sync_asset_local_audio':
+        return 'Local audio databases';
+      case 'sync_asset_transfer_menu':
+        return 'Transfer';
+      case 'sync_asset_transfer_hint':
+        return 'Upload what only this device has, or download what only the remote has';
       default:
         return null;
     }
@@ -286177,6 +286681,22 @@ extension on _StringsTr {
         return 'AnkiMobile configuration imported.';
       case 'anki_error_ankimobile_not_active':
         return 'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+      case 'sync_server_settings':
+        return 'Server settings';
+      case 'sync_server_settings_hint':
+        return 'Credentials and connection test for the selected sync method';
+      case 'sync_section_when':
+        return 'When to sync';
+      case 'sync_section_assets':
+        return 'Dictionaries & local audio transfer';
+      case 'sync_asset_dictionary':
+        return 'Dictionaries';
+      case 'sync_asset_local_audio':
+        return 'Local audio databases';
+      case 'sync_asset_transfer_menu':
+        return 'Transfer';
+      case 'sync_asset_transfer_hint':
+        return 'Upload what only this device has, or download what only the remote has';
       default:
         return null;
     }
@@ -294896,6 +295416,22 @@ extension on _StringsVi {
         return 'AnkiMobile configuration imported.';
       case 'anki_error_ankimobile_not_active':
         return 'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+      case 'sync_server_settings':
+        return 'Server settings';
+      case 'sync_server_settings_hint':
+        return 'Credentials and connection test for the selected sync method';
+      case 'sync_section_when':
+        return 'When to sync';
+      case 'sync_section_assets':
+        return 'Dictionaries & local audio transfer';
+      case 'sync_asset_dictionary':
+        return 'Dictionaries';
+      case 'sync_asset_local_audio':
+        return 'Local audio databases';
+      case 'sync_asset_transfer_menu':
+        return 'Transfer';
+      case 'sync_asset_transfer_hint':
+        return 'Upload what only this device has, or download what only the remote has';
       default:
         return null;
     }
@@ -303541,6 +304077,22 @@ extension on _StringsZhCn {
         return '已导入 AnkiMobile 配置。';
       case 'anki_error_ankimobile_not_active':
         return 'Fushi 没能及时回到前台，剪贴板还没被读取。回到 Fushi 后重试即可。';
+      case 'sync_server_settings':
+        return '服务器设置';
+      case 'sync_server_settings_hint':
+        return '当前同步方式的凭据与连接测试';
+      case 'sync_section_when':
+        return '何时同步';
+      case 'sync_section_assets':
+        return '词典与本地音频传输';
+      case 'sync_asset_dictionary':
+        return '词典';
+      case 'sync_asset_local_audio':
+        return '本地音频数据库';
+      case 'sync_asset_transfer_menu':
+        return '传输';
+      case 'sync_asset_transfer_hint':
+        return '上传本机独有的，或下载远端独有的';
       default:
         return null;
     }
@@ -312189,6 +312741,22 @@ extension on _StringsZhHk {
         return 'AnkiMobile configuration imported.';
       case 'anki_error_ankimobile_not_active':
         return 'Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.';
+      case 'sync_server_settings':
+        return 'Server settings';
+      case 'sync_server_settings_hint':
+        return 'Credentials and connection test for the selected sync method';
+      case 'sync_section_when':
+        return 'When to sync';
+      case 'sync_section_assets':
+        return 'Dictionaries & local audio transfer';
+      case 'sync_asset_dictionary':
+        return 'Dictionaries';
+      case 'sync_asset_local_audio':
+        return 'Local audio databases';
+      case 'sync_asset_transfer_menu':
+        return 'Transfer';
+      case 'sync_asset_transfer_hint':
+        return 'Upload what only this device has, or download what only the remote has';
       default:
         return null;
     }

@@ -942,7 +942,12 @@ void main() {
               refresh: () {},
             );
             final List<SettingsDestination> all = buildSettingsSchema(sctx);
-            destinations = all;
+            // 子 schema 页（SettingsNavigationItem.child）里的行也要进遍历：
+            // 顶层枚举不到它们，覆盖会静默缩水。
+            destinations = <SettingsDestination>[
+              ...all,
+              for (final SettingsDestination d in all) ..._childPagesOf(d),
+            ];
             return ValueListenableBuilder<SettingsDestination?>(
               valueListenable: destNotifier,
               builder: (_, SettingsDestination? dest, __) {
@@ -1165,6 +1170,23 @@ _FocusedRow? _focusedSettingsRow() {
     return true;
   });
   return found;
+}
+
+/// 递归收集 [page] 里所有 `SettingsNavigationItem.child` 子页（含子页的子页）。
+List<SettingsDestination> _childPagesOf(SettingsDestination page) {
+  final List<SettingsDestination> out = <SettingsDestination>[];
+  for (final SettingsSection section in page.sections) {
+    for (final SettingsItem item in section.items) {
+      if (item is! SettingsNavigationItem) continue;
+      final SettingsDestination Function()? child = item.child;
+      if (child == null) continue;
+      final SettingsDestination sub = child();
+      out
+        ..add(sub)
+        ..addAll(_childPagesOf(sub));
+    }
+  }
+  return out;
 }
 
 Future<ItemVerdict> _verifyFocusedNode({
