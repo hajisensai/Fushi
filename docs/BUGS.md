@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2039 条。点号进各自文件。
+> 共 2041 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2201](bugs/BUG-2201-video-pending-scrape-has-no-visible-surface.md) | ✅ | ✅ | 待确认身份的作品在视频页零提示用户无从知道要去确认 |
+| [BUG-2199](bugs/BUG-2199-scrape-sweep-process-once-misses-new-imports.md) | ✅ | ✅ | 自动补刮以进程为幂等键致本会话新入库作品永不补刮 |
 | [BUG-2198](bugs/BUG-2198-subtitle-hide-pause-reveal.md) | ✅ | ✅ | 隐藏字幕在暂停/查词时不恢复显示 |
 | [BUG-2165](bugs/BUG-2165-pack-download-no-visible-progress.md) | ✅ | ✅ | 推荐包后台下载没有任何看得见的地方，半截包重启后既看不见也续不上 |
 | [BUG-2164](bugs/BUG-2164-asr-pcm-mov-chapter-track-noise.md) | ✅ | ✅ | ASR PCM 抽取 mov 容器混入章节 text 轨，奇数字节标题的整章解成白噪声 |

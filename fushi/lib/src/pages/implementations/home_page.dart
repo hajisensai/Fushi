@@ -430,11 +430,6 @@ class _HomePageState extends BasePageState<HomePage>
         .addListener(_onHomeDictionaryTabRequested);
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      // 启动即落在视频 tab（用户配置的初始 tab）时也要触发一次自动补刮，
-      // 与 _selectTab 的进页触发同一入口、同样幂等。
-      if (mounted && _currentTab == HomeTab.video) {
-        unawaited(_videoLibraryScrapeSweep.sweepOnce());
-      }
       if (appModel.isFirstTimeSetup) {
         appModel.setLastSelectedDictionaryFormat(
             JapaneseLanguage.instance.standardFormat);
@@ -910,12 +905,6 @@ class _HomePageState extends BasePageState<HomePage>
       }
       _currentTab = tab;
     });
-    // 进视频页触发一次库内自动补刮（每进程一次；sweepOnce 自身幂等且受
-    // videoLibraryAutoBackfillScrape 总闸与刮削互斥门约束，见
-    // VideoLibraryScrapeSweep）。
-    if (tab == HomeTab.video) {
-      unawaited(_videoLibraryScrapeSweep.sweepOnce());
-    }
     // Reflect the selection into the shared notifier so the macOS root sidebar
     // (built outside HomePage) stays in sync. Guarded by value-equality inside
     // ValueNotifier, so this never re-enters _onShellTabRequested pointlessly.
@@ -2513,6 +2502,11 @@ class _HomePageState extends BasePageState<HomePage>
           onVideoScanCompleted: _onVideoSourceScanCompleted,
           onOpenScrapeTasks: () => unawaited(_openVideoSourceScrapeTasks()),
           onLibraryChanged: _notifyVideoLibraryChanged,
+          // 补刮的触发点收口在视频页：首次进入 / 切回 / 库里多出条目时各调一次
+          // （BUG-2199）。旧实现把它挂在 HomePage 的进 tab 时机上并以进程为幂等
+          // 键，于是本次会话下载入库的作品永远赶不上那唯一一轮。
+          loadPendingScrapeWorks: () =>
+              _videoLibraryScrapeSweep.sweepAndListPending(),
           discoveryController: _productionVideoDiscoveryController,
           discoveryActions: _productionVideoDiscoveryActions,
         ),

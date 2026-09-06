@@ -4294,5 +4294,7 @@
   "onboarding_pack_paused_desc": "进度留在磁盘上，继续下载会从中断处接着下。",
   "onboarding_pack_mini_bar_hide": "收起",
   "video_setting_subtitle_obscure_reveal": "悬停或点击显形",
-  "video_setting_subtitle_obscure_reveal_hint": "字幕处于模糊或隐藏时，桌面悬停、移动端点击可临时显形；关掉后遮蔽始终保持，不会被误触揭开。"
+  "video_setting_subtitle_obscure_reveal_hint": "字幕处于模糊或隐藏时，桌面悬停、移动端点击可临时显形；关掉后遮蔽始终保持，不会被误触揭开。",
+  "video_library_scrape_pending_banner": "$count 部作品还没确认身份，资料和封面都没刮出来",
+  "video_library_scrape_pending_banner_action": "去确认"
 }

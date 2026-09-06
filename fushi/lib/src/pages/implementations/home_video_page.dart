@@ -42,6 +42,7 @@ import 'package:fushi/src/media/video/video_import_dialog.dart';
 import 'package:fushi/src/media/video/video_library_overview.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
+import 'package:fushi/src/media/video/metadata/video_library_scrape_sweep.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
 import 'package:fushi/src/media/video/video_storage.dart';
@@ -151,6 +152,7 @@ class HomeVideoPage extends BaseModuleTabPage {
     this.libraryRefreshSignal,
     this.onOpenScrapeTasks,
     this.scrapeTaskController,
+    this.loadPendingScrapeWorks,
     this.onOpenSources,
     this.remoteVideoClientLoader,
     this.cloudRemoteVideoClientLoader,
@@ -172,6 +174,13 @@ class HomeVideoPage extends BaseModuleTabPage {
   final Listenable? libraryRefreshSignal;
   final VoidCallback? onOpenScrapeTasks;
   final VideoSourceScrapeTaskController? scrapeTaskController;
+
+  /// 跑一轮库内自动补刮，并回传当前**仍待人工确认身份**的作品清单。
+  ///
+  /// 一个端口两件事是有意的：这两件事读的是同一份「哪些作品还没刮出规范身份」，
+  /// 拆成两个端口就会查两遍全库。null = 未接线（宿主/独立测试），提醒条不显示。
+  final Future<List<VideoPendingScrapeWork>> Function()? loadPendingScrapeWorks;
+
   final VoidCallback? onOpenSources;
   final Future<RemoteVideoClient?> Function()? remoteVideoClientLoader;
 
@@ -196,6 +205,10 @@ class HomeVideoPage extends BaseModuleTabPage {
 class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   Future<List<VideoBookRow>>? _future;
   Future<_RemoteVideoState?>? _remoteFuture;
+
+  /// 待人工确认身份的作品数（0 = 不显示提醒条）。
+  int _pendingScrapeCount = 0;
+  bool _pendingScrapeInFlight = false;
   _AllVideosLayout _allVideosLayout = _AllVideosLayout.grid;
 
   /// 当前远端视频来源：互联 host live 库 或 云盘目录，**至多一个**（TODO-2119）。
@@ -399,6 +412,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     _maybeBackfillCovers();
     // 条目自动刮削：进页面补刮还没有资料的本地视频（取代旧页头「批量匹配海报」按钮）。
     unawaited(_maybeAutoScrape());
+    // 在线补刮 + 待确认提醒（BUG-2199/BUG-2201）。视频 tab 访问过才挂载
+    // （HomePage `_visitedKeepAliveTabs`），所以这里就是「首次进入视频页」。
+    unawaited(_refreshPendingScrape());
     // BUG-793：订阅 videoBooks 表，任意导入路径落库后自动刷新库页。
     _videoUidsSub =
         widget.repo.watchVideoBookUids().listen(_onVideoUidsChanged);
@@ -435,6 +451,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     setState(() {
       _remoteFuture = _loadRemoteVideos();
     });
+    // 每次切回视频页都重算一次待确认数：期间下载完成的作品要立刻能被看见，
+    // 顺带把它们送进自动补刮（BUG-2199）。
+    unawaited(_refreshPendingScrape());
   }
 
   @override
@@ -483,6 +502,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 不是 _refresh 里，因为 _refresh 还被改标签/删除/播放返回等触发，那些不带来
     // 需要刮削的新书。
     unawaited(_maybeAutoScrape());
+    // 同一个信号也喂在线补刮：内置下载管线 import 落库走的就是这条 uid 流，
+    // 用户停在视频页不动也能等到资料补上，不必切走再切回或重启（BUG-2199）。
+    unawaited(_refreshPendingScrape());
   }
 
   void _onLibraryRefreshRequested() {
@@ -503,7 +525,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     _scrapePresentationReloadDebounce = Timer(
       const Duration(milliseconds: 300),
       () {
-        if (mounted) _refresh();
+        if (!mounted) return;
+        _refresh();
+        // 刚确认完一个作品的身份，提醒条上的数字要跟着掉下去。
+        unawaited(_refreshPendingScrape());
       },
     );
   }
@@ -2480,6 +2505,64 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     }
   }
 
+  /// 跑一轮库内在线补刮，并把「仍待人工确认身份」的数量刷进顶部提醒条。
+  ///
+  /// 端口自身幂等（同一作品每进程只自动尝试一次、批次忙时直接让路），所以进页面、
+  /// 切回页面、库里多出条目、刮削结果落库后都可以无脑调用，重复调用只多一次查库。
+  Future<void> _refreshPendingScrape() async {
+    final Future<List<VideoPendingScrapeWork>> Function()? load =
+        widget.loadPendingScrapeWorks;
+    if (load == null || _pendingScrapeInFlight) return;
+    _pendingScrapeInFlight = true;
+    try {
+      final List<VideoPendingScrapeWork> pending = await load();
+      if (!mounted || pending.length == _pendingScrapeCount) return;
+      setState(() => _pendingScrapeCount = pending.length);
+    } catch (_) {
+      // 提醒条是附加信息：取不到就保留上一次的数字，不打扰页面。
+    } finally {
+      _pendingScrapeInFlight = false;
+    }
+  }
+
+  /// 待确认身份提醒条。
+  ///
+  /// 这些作品刮不出资料**没有任何其他可见症状**——封面照样有（抽帧兜底的那张），
+  /// 卡片照样进库，用户只会觉得「封面怎么是视频截图」而不知道有个确认队列在等他
+  /// （BUG-2201）。数量为 0 时零高度，与相邻的 [SyncProgressBanner] 一致。
+  Widget _buildPendingScrapeBanner() {
+    if (_pendingScrapeCount <= 0) return const SizedBox.shrink();
+    final VoidCallback? open = widget.onOpenScrapeTasks;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: FushiCard(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            children: <Widget>[
+              const Icon(Icons.rule_folder_outlined, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  t.video_library_scrape_pending_banner(
+                    count: _pendingScrapeCount,
+                  ),
+                ),
+              ),
+              if (open != null) ...<Widget>[
+                const SizedBox(width: 8),
+                FilledButton.tonal(
+                  onPressed: open,
+                  child: Text(t.video_library_scrape_pending_banner_action),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   /// 重命名视频/播放列表（C 需求③）：弹输入框预填当前标题 → 落库 → 刷新列表。
   /// 空白标题不提交（保持原名）。
   Future<void> _renameVideo(VideoBookRow book) async {
@@ -2587,6 +2670,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                   _buildTagFilterBar(allTags),
                 // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时零高度。
                 const SyncProgressBanner(),
+                // 有作品刮不出身份时的常驻提醒（BUG-2201）。放在这里而不是正文
+                // sliver 里：正文按分区分三套 sliver，且会随列表滚走。
+                _buildPendingScrapeBanner(),
                 Expanded(
                   // 多选态才接管长按：长按落在卡上 = 起手扫选，不抬手滑动即刷出
                   // 一段区间。非多选态原样透传（长按仍归卡片自身的菜单）。
