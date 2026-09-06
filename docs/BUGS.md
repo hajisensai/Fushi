@@ -33,7 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-2202](bugs/BUG-2202-clip-export-tx3g-unplayable-in-im.md) | 🚧 | ✅ | 内封 tx3g 字幕轨让导出的片段在 QQ 等 IM 里整个不可播 |
+| [BUG-2202](bugs/BUG-2202-clip-export-tx3g-unplayable-in-im.md) | ✅ | ✅ | 内封 tx3g 字幕轨让导出的片段在 QQ 等 IM 里整个不可播 |
 | [BUG-2200](bugs/BUG-2200-clip-export-moov-at-tail-qq-cannot-play.md) | ✅ | ✅ | 导出的视频片段 moov 在文件末尾，QQ 等 IM 判无法播放 |
 | [BUG-2165](bugs/BUG-2165-pack-download-no-visible-progress.md) | ✅ | ✅ | 推荐包后台下载没有任何看得见的地方，半截包重启后既看不见也续不上 |
 | [BUG-2164](bugs/BUG-2164-asr-pcm-mov-chapter-track-noise.md) | ✅ | ✅ | ASR PCM 抽取 mov 容器混入章节 text 轨，奇数字节标题的整章解成白噪声 |
