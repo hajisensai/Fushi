@@ -1862,6 +1862,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # publish_update_manifest.sh 推完正式版清单要 `gh workflow run` 唤醒 R2 镜像；
+      # job 级 permissions 会把没列出的 scope 置 none，缺 actions: write 则 dispatch 403。
+      actions: write
     steps:
       - uses: actions/checkout@v6
         with:
