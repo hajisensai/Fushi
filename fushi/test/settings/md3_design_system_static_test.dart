@@ -847,6 +847,18 @@ void main() {
               'fontSize: is rendered media content (auto-scaled to fit the clip '
               'image), not ordinary page chrome — same reviewed exception class '
               'as the video subtitle overlay caption.',
+      // BUG-2202：与上面 audiobook_clip_text_render 逐字同型——片段导出把字幕画成
+      // 一张离屏位图烧进画面（内封 tx3g 轨会让整个片段在 QQ 这类 IM 里判为不可播）。
+      // 这里的 fontSize: 是**导出画面的像素尺寸**（由用户字幕外观设置按
+      // 画面高/屏幕视频区高换算而来），从不渲染进 app 的任何界面。下面
+      // 「clip subtitle image layer stays off-screen media rendering」把
+      // 「不是页面 chrome」这句话钉成可证伪的断言，防止豁免退化成整文件免检。
+      'lib/src/media/video/video_clip_subtitle_image.dart':
+          'BUG-2202 clip export renders each subtitle cue into an off-screen '
+              'full-frame PNG that ffmpeg burns into the picture; the '
+              'fontSize: is rendered media content sized in video pixels, '
+              'never app UI — same reviewed exception class as '
+              'audiobook_clip_text_render.',
       'lib/src/media/video/video_subtitle_jump_panel.dart':
           'Subtitle jump list (asbplayer-style transcript panel) renders cue '
               'text + timestamp rows as video-subsystem content; row/timestamp '
@@ -1170,6 +1182,9 @@ void main() {
         'surfaceContainerHighest'
       },
       'lib/src/media/manga/ocr/manga_region_ocr.dart': <String>{'fontSize:'},
+      'lib/src/media/video/video_clip_subtitle_image.dart': <String>{
+        'fontSize:'
+      },
       'lib/src/media/manga/mokuro_payload.dart': <String>{'fontSize:'},
       'lib/src/media/manga/ocr/google_lens_ocr_service.dart': <String>{
         'fontSize:'
@@ -1607,6 +1622,46 @@ void main() {
       expect(code, isNot(contains(chrome)),
           reason: 'the reviewed exemption must not start covering page chrome');
     }
+  });
+
+  test('clip subtitle image layer stays off-screen media rendering', () {
+    // 与 manga_json_writeback / system_ocr_manga_service 同款纪律：豁免的是
+    // 「烧进导出画面的位图字号」，不是这份文件。BUG-2202。
+    final String source = File(
+      'lib/src/media/video/video_clip_subtitle_image.dart',
+    ).readAsStringSync();
+    final String code = maskComments(source);
+
+    // 它渲染到 PictureRecorder，不进 widget 树。出现任何 Widget/build 就说明它
+    // 变成了界面代码，豁免理由随之作废。
+    for (final String ui in const <String>[
+      'extends StatelessWidget',
+      'extends StatefulWidget',
+      'Widget build(',
+      'package:flutter/material.dart',
+    ]) {
+      expect(code, isNot(contains(ui)),
+          reason: 'video_clip_subtitle_image.dart is allowlisted as off-screen '
+              'media rendering; "$ui" invalidates that reason');
+    }
+    expect(code, contains('PictureRecorder'),
+        reason: 'the allowlisted hit must stay an off-screen raster path');
+
+    // 命中的 fontSize: 恰好两处，都是**按画面尺寸换算出来的像素值**：一处算出来
+    // （屏幕逻辑字号 × 画面高/屏幕视频区高），一处喂给 TextStyle。写死数值、或多出
+    // 第三处，就不再是「导出画面像素」，豁免理由随之作废。
+    final List<String> hits = code
+        .split('\n')
+        .where((String line) => line.contains('fontSize:'))
+        .map((String line) => line.trim())
+        .toList(growable: false);
+    expect(
+        hits,
+        <String>[
+          'fontSize: style.fontSize * scale,',
+          'fontSize: layout.fontSize,',
+        ],
+        reason: 'the allowlisted hits must stay computed video-pixel sizes');
   });
 
   test('manga region re-OCR layer stays a pure data layer', () {

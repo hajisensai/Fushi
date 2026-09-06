@@ -130,6 +130,8 @@ import 'package:fushi/src/media/video/subtitle_waveform_align_panel.dart';
 import 'package:fushi/src/media/video/video_chapter_markers.dart';
 import 'package:fushi/src/media/video/video_clip_exporter.dart';
 import 'package:fushi/src/media/video/video_clip_subtitle.dart';
+import 'package:fushi/src/media/video/video_clip_subtitle_burn.dart';
+import 'package:fushi/src/media/video/video_clip_subtitle_image.dart';
 import 'package:fushi/src/media/video/video_episode_panel.dart';
 import 'package:fushi/src/media/video/video_side_panel.dart';
 import 'package:fushi/src/media/video/video_subtitle_style.dart';

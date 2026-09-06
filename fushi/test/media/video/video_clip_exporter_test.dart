@@ -1,12 +1,41 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/ffmpeg_backend.dart';
 import 'package:fushi/src/media/video/video_clip_exporter.dart';
+import 'package:fushi/src/media/video/video_clip_subtitle.dart';
+import 'package:fushi/src/media/video/video_clip_subtitle_burn.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 void main() {
+  group('buildClipFaststartArgs', () {
+    test('covers the ISO-BMFF containers and nothing else', () {
+      // mp4 muxer 默认 moov 在 mdat 之后（文件末尾）；只有 mov/mp4 系 muxer 认识
+      // `-movflags`，别的容器给了会硬失败（BUG-2200）。
+      for (final String path in <String>[
+        '/out/clip.mp4',
+        '/out/clip.M4V',
+        '/out/clip.mov',
+      ]) {
+        expect(
+          buildClipFaststartArgs(path),
+          <String>['-movflags', '+faststart'],
+          reason: path,
+        );
+      }
+      for (final String path in <String>[
+        '/out/clip.mkv',
+        '/out/clip.webm',
+        '/out/clip.ts',
+        '/out/clip',
+      ]) {
+        expect(buildClipFaststartArgs(path), isEmpty, reason: path);
+      }
+    });
+  });
+
   group('buildFfmpegVideoClipExportArgs', () {
     test(
         'maps video and the selected audio stream without subtitle/data streams',
@@ -409,6 +438,39 @@ void main() {
       );
     });
 
+    test('copy args put moov up front for mp4 output (BUG-2200)', () {
+      final List<String> args = buildFfmpegVideoClipExportArgs(
+        inputPath: '/video/source.mkv',
+        startMs: 0,
+        endMs: 5000,
+        outputPath: '/video/clip.mp4',
+      );
+
+      // 这是 copy 路径最常走的那条（无字幕、无显式音轨），以前整条命令里一个
+      // `-movflags` 都没有，导出的 mp4 moov 在文件末尾、QQ 等 IM 预览判不可播。
+      expect(args, containsAllInOrder(<String>['-movflags', '+faststart']));
+      // flag 必须落在输出文件名之前，否则 ffmpeg 会把它当下一个输出的选项。
+      expect(args.last, '/video/clip.mp4');
+      expect(
+        args.indexOf('-movflags'),
+        lessThan(args.length - 1),
+      );
+    });
+
+    test('copy args omit -movflags for non-mp4 containers', () {
+      // `-movflags` 是 mov/mp4 muxer 的私有选项，给 matroska 会硬失败
+      // （Option movflags not found）——门控必须按输出扩展名，不能无条件加。
+      final List<String> args = buildFfmpegVideoClipExportArgs(
+        inputPath: '/video/source.mkv',
+        startMs: 0,
+        endMs: 5000,
+        outputPath: '/video/clip.mkv',
+      );
+
+      expect(args, isNot(contains('-movflags')));
+      expect(args, isNot(contains('+faststart')));
+    });
+
     test('copy args add the subtitle input, its codec, and drop -sn', () {
       final List<String> args = buildFfmpegVideoClipExportArgs(
         inputPath: '/video/source.mkv',
@@ -451,6 +513,10 @@ void main() {
         '-c:s',
         'mov_text',
         // 视频 copy → 不给 `-avoid_negative_ts`，关键帧前导交给 edit list（BUG-2011）。
+        // moov 前置：输出是 mp4，copy 路径也必须给，否则索引落在文件末尾，IM 的
+        // 边下边播预览读不到头就判「无法播放」（BUG-2200）。
+        '-movflags',
+        '+faststart',
         '/video/clip.mp4',
       ]);
       // -sn 会把刚 map 进来的字幕流一起禁掉，带字幕时绝不能出现。
@@ -506,7 +572,10 @@ void main() {
       addTearDown(() => dir.deleteSync(recursive: true));
       final File input = File('${dir.path}/source.mkv')
         ..writeAsBytesSync(<int>[1]);
-      final File output = File('${dir.path}/clip.mp4');
+      // 输出用 .mkv：mp4 系自 BUG-2202 起一条软字幕轨都不封（tx3g 会让片段在 QQ
+      // 里整个不可播），而这条测试守的是「SRT 落盘 → 喂给 ffmpeg → 清理」这套
+      // 机制本身，它对能封软字幕的容器依然真实。
+      final File output = File('${dir.path}/clip.mkv');
 
       final List<String> seenSubtitlePaths = <String>[];
       String? seenSubtitleContent;
@@ -554,7 +623,8 @@ void main() {
       addTearDown(() => dir.deleteSync(recursive: true));
       final File input = File('${dir.path}/source.mkv')
         ..writeAsBytesSync(<int>[1]);
-      final File output = File('${dir.path}/clip.mp4');
+      // 同上：mp4 系不再封软字幕，UTF-8 往返守在仍会落盘 SRT 的容器上。
+      final File output = File('${dir.path}/clip.mkv');
       const String srt = '1\n00:00:00,000 --> 00:00:01,000\n日本語の字幕\n\n';
 
       String? readBack;
@@ -590,7 +660,9 @@ void main() {
       addTearDown(() => dir.deleteSync(recursive: true));
       final File input = File('${dir.path}/source.mkv')
         ..writeAsBytesSync(<int>[1]);
-      final File output = File('${dir.path}/clip.mp4');
+      // 同上：守的是「带字幕两轮都失败 → 重跑无字幕轮」这条降级链，用仍会带
+      // -c:s 的容器（.mkv）才能触发它。
+      final File output = File('${dir.path}/clip.mkv');
 
       final _FakeFfmpegBackend backend = _FakeFfmpegBackend(
         onRun: (List<String> args) {
@@ -622,6 +694,49 @@ void main() {
       expect(backend.clipCalls[0].contains('-c:s'), isTrue);
       expect(backend.clipCalls[1].contains('-c:s'), isTrue);
       expect(backend.clipCalls[2].contains('-c:s'), isFalse);
+    });
+
+    test('mp4 output gets no subtitle track at all (BUG-2202)', () async {
+      // 这是**生产实际走的那条**：exportVideoClip 输出恒 .mp4（BUG-917）。
+      // 内封 tx3g 会让整个片段在 QQ 这类 IM 里判为不可播（用户在真 QQ 上二分过：
+      // 只差字幕轨的两个变体，带轨打不开、去轨能放），所以一条软字幕轨都不能有。
+      final Directory dir =
+          Directory.systemTemp.createTempSync('hibiki_clip_sub_mp4');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final File input = File('${dir.path}/source.mkv')
+        ..writeAsBytesSync(<int>[1]);
+      final File output = File('${dir.path}/clip.mp4');
+
+      final _FakeFfmpegBackend backend = _FakeFfmpegBackend(
+        onRun: (List<String> args) {
+          output.writeAsBytesSync(<int>[9]);
+          return const FfmpegRunResult(returnCode: 0, output: 'ok');
+        },
+      );
+
+      final VideoClipExportResult result = await exportVideoClipViaFfmpeg(
+        inputPath: input.path,
+        startMs: 0,
+        endMs: 2000,
+        outputPath: output.path,
+        backend: backend,
+        subtitleContents: <String>[
+          '1\n00:00:00,000 --> 00:00:01,000\n主字幕\n\n',
+          '1\n00:00:00,000 --> 00:00:01,000\nsecondary\n\n',
+        ],
+      );
+
+      // 导出照常成功，只是没有字幕——降级链已有，这里不该多出任何新分支。
+      expect(result.isSuccess, isTrue);
+      expect(result.subtitleTrackCount, 0);
+      for (final List<String> call in backend.clipCalls) {
+        expect(call.contains('-c:s'), isFalse, reason: '$call');
+        expect(call.contains('mov_text'), isFalse, reason: '$call');
+        expect(call.any((String a) => a.endsWith('.srt')), isFalse,
+            reason: '$call');
+        // 没有字幕输入时必须留着 -sn，否则源里的内嵌字幕轨会被带进片段。
+        expect(call.contains('-sn'), isTrue, reason: '$call');
+      }
     });
 
     test('skips subtitles entirely for containers that cannot carry them',
@@ -683,6 +798,245 @@ void main() {
       expect(result.isSuccess, isTrue);
       expect(result.subtitleTrackCount, 0);
       expect(backend.clipCalls.single.contains('-c:s'), isFalse);
+    });
+  });
+
+  group('subtitle burn-in (BUG-2202)', () {
+    // 探测日志带画面尺寸——烧录要靠它决定字幕 PNG 渲染成多大。
+    const String probeWithSize = '''
+Input #0, matroska,webm, from 'source.mkv':
+  Duration: 00:24:00.00, start: 0.000000, bitrate: 3000 kb/s
+  Stream #0:0: Video: h264 (High), yuv420p(tv, bt709), 1280x720 [SAR 1:1 DAR 16:9], 23.98 fps
+  Stream #0:1: Audio: aac (LC), 48000 Hz, stereo, fltp, 192 kb/s
+''';
+    const String filtersWithOverlay = '''
+Filters:
+  T.. = Timeline support
+  V = Video input/output
+ TS overlay           VV->V      Overlay a video source on top of the input.
+ ..C scale            V->V       (null)
+''';
+    const String filtersWithoutOverlay = '''
+Filters:
+  T.. = Timeline support
+ ..C scale            V->V       (null)
+ ... format           V->V       (null)
+''';
+
+    const List<ClipSubtitleCue> cues = <ClipSubtitleCue>[
+      ClipSubtitleCue(startMs: 83, endMs: 1447, text: 'え… き 気持ちわりぃって…'),
+      ClipSubtitleCue(startMs: 1547, endMs: 3867, text: 'おーい みんな'),
+    ];
+
+    Future<Uint8List?> renderStub(ClipSubtitleCue c, ClipFrameSize f) async =>
+        Uint8List.fromList(<int>[0x89, 0x50, 0x4E, 0x47]);
+
+    _FakeFfmpegBackend backendFor(File output, {required String filters}) {
+      return _FakeFfmpegBackend(
+        onRun: (List<String> args) {
+          if (args.contains('-filters')) {
+            return FfmpegRunResult(returnCode: 0, output: filters);
+          }
+          if (!args.contains('-ss')) {
+            // 源编码/尺寸探测那一次（`-hide_banner -i <input>`）。
+            return const FfmpegRunResult(returnCode: 1, output: probeWithSize);
+          }
+          output.writeAsBytesSync(<int>[9]);
+          return const FfmpegRunResult(returnCode: 0, output: 'ok');
+        },
+      );
+    }
+
+    test('burn args carry the overlay graph and map its output, not 0:v', () {
+      final List<String> args = buildFfmpegVideoClipBurnArgs(
+        inputPath: '/video/source.mkv',
+        startMs: 1000,
+        endMs: 5000,
+        outputPath: '/out/clip.mp4',
+        burnCues: const <ClipBurnCue>[
+          ClipBurnCue(startMs: 0, endMs: 1000, pngPath: '/tmp/c0.png'),
+        ],
+        audioStreamIndex: 1,
+        audioStreamCount: 3,
+      );
+
+      expect(args, containsAllInOrder(<String>['-i', '/video/source.mkv']));
+      expect(args, containsAllInOrder(<String>['-i', '/tmp/c0.png']));
+      expect(args, contains('-filter_complex'));
+      // 视频必须取自图的输出标签；留着 `-map 0:v:0` 会导出**没烧字幕的原画面**，
+      // 而 ffmpeg 不会报任何错——一个静默产出错东西的失败形态。
+      expect(args, containsAllInOrder(<String>['-map', '[vout]']));
+      expect(args.contains('0:v:0'), isFalse);
+      // filter_complex 同样会关掉自动流选择，音频不显式 map 就整条丢掉。
+      expect(args, containsAllInOrder(<String>['-map', '0:a:1?']));
+      // 字幕已经是画面像素了，绝不能再封一条轨（那就又回到 QQ 播不了的老路）。
+      expect(args.contains('-c:s'), isFalse);
+      expect(args.contains('mov_text'), isFalse);
+      expect(args, contains('-sn'));
+      expect(args, containsAllInOrder(<String>['-map_chapters', '-1']));
+      expect(args, containsAllInOrder(<String>['-movflags', '+faststart']));
+      expect(args.last, '/out/clip.mp4');
+    });
+
+    test('falls back to the default audio map when the index is unknown', () {
+      final List<String> args = buildFfmpegVideoClipBurnArgs(
+        inputPath: '/video/source.mkv',
+        startMs: 0,
+        endMs: 1000,
+        outputPath: '/out/clip.mp4',
+        burnCues: const <ClipBurnCue>[
+          ClipBurnCue(startMs: 0, endMs: 500, pngPath: '/tmp/c0.png'),
+        ],
+      );
+      // 不能干脆不给 `-map`：filter_complex 已经关掉自动选择了。
+      expect(args, containsAllInOrder(<String>['-map', '0:a?']));
+    });
+
+    test('burns the cues when the ffmpeg at hand has overlay', () async {
+      final Directory dir =
+          Directory.systemTemp.createTempSync('hibiki_clip_burn_ok');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final File input = File('${dir.path}/source.mkv')
+        ..writeAsBytesSync(<int>[1]);
+      final File output = File('${dir.path}/clip.mp4');
+      final _FakeFfmpegBackend backend =
+          backendFor(output, filters: filtersWithOverlay);
+
+      final VideoClipExportResult result = await exportVideoClipViaFfmpeg(
+        inputPath: input.path,
+        startMs: 0,
+        endMs: 4000,
+        outputPath: output.path,
+        backend: backend,
+        subtitleCues: cues,
+        subtitleRenderer: renderStub,
+      );
+
+      expect(result.isSuccess, isTrue);
+      expect(result.subtitleTrackCount, cues.length);
+      // 只跑了烧录那一条命令——烧成功就该直接收工，不再跑 copy 轮。
+      expect(backend.clipCalls.length, 1);
+      final List<String> burn = backend.clipCalls.single;
+      expect(burn, contains('-filter_complex'));
+      expect(burn, containsAllInOrder(<String>['-map', '[vout]']));
+      expect(
+        burn.where((String a) => a.endsWith('.png')).length,
+        cues.length,
+        reason: '每条 cue 一张图',
+      );
+      // 时间窗必须进 enable 表达式，否则整段片子从头到尾挂着同一句字幕。
+      final int at = burn.indexOf('-filter_complex');
+      expect(burn[at + 1], contains('between(t,0.083,1.447)'));
+      expect(burn[at + 1], contains('between(t,1.547,3.867)'));
+    });
+
+    test('skips burning entirely when the ffmpeg has no overlay filter',
+        () async {
+      // 这是**当前发行版**的状态：随包 ffmpeg-min 还没重编，没有 overlay。
+      // 此时必须安静地退回无字幕导出，而不是拼一条注定失败的命令。
+      final Directory dir =
+          Directory.systemTemp.createTempSync('hibiki_clip_burn_none');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final File input = File('${dir.path}/source.mkv')
+        ..writeAsBytesSync(<int>[1]);
+      final File output = File('${dir.path}/clip.mp4');
+      final _FakeFfmpegBackend backend =
+          backendFor(output, filters: filtersWithoutOverlay);
+
+      final VideoClipExportResult result = await exportVideoClipViaFfmpeg(
+        inputPath: input.path,
+        startMs: 0,
+        endMs: 4000,
+        outputPath: output.path,
+        backend: backend,
+        subtitleCues: cues,
+        subtitleRenderer: renderStub,
+      );
+
+      expect(result.isSuccess, isTrue);
+      expect(result.subtitleTrackCount, 0);
+      for (final List<String> call in backend.clipCalls) {
+        expect(call.contains('-filter_complex'), isFalse);
+        expect(call.any((String a) => a.endsWith('.png')), isFalse);
+      }
+    });
+
+    test('a failed burn degrades to a subtitle-less export, never to failure',
+        () async {
+      // 与既有的字幕降级同一条纪律：「加字幕」这个增强绝不能把原本能成功的导出
+      // 变成失败。
+      final Directory dir =
+          Directory.systemTemp.createTempSync('hibiki_clip_burn_fail');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final File input = File('${dir.path}/source.mkv')
+        ..writeAsBytesSync(<int>[1]);
+      final File output = File('${dir.path}/clip.mp4');
+
+      final _FakeFfmpegBackend backend = _FakeFfmpegBackend(
+        onRun: (List<String> args) {
+          if (args.contains('-filters')) {
+            return const FfmpegRunResult(
+                returnCode: 0, output: filtersWithOverlay);
+          }
+          if (!args.contains('-ss')) {
+            return const FfmpegRunResult(returnCode: 1, output: probeWithSize);
+          }
+          if (args.contains('-filter_complex')) {
+            return const FfmpegRunResult(
+              returnCode: 1,
+              output: 'Error reinitializing filters!',
+            );
+          }
+          output.writeAsBytesSync(<int>[9]);
+          return const FfmpegRunResult(returnCode: 0, output: 'ok');
+        },
+      );
+
+      final VideoClipExportResult result = await exportVideoClipViaFfmpeg(
+        inputPath: input.path,
+        startMs: 0,
+        endMs: 4000,
+        outputPath: output.path,
+        backend: backend,
+        subtitleCues: cues,
+        subtitleRenderer: renderStub,
+      );
+
+      expect(result.isSuccess, isTrue);
+      expect(result.subtitleTrackCount, 0, reason: '降级后不能谎称带了字幕');
+      expect(output.existsSync(), isTrue);
+      // 烧录轮失败后必须真的重跑一轮不带图的命令。
+      expect(backend.clipCalls.length, greaterThanOrEqualTo(2));
+      expect(backend.clipCalls.first.contains('-filter_complex'), isTrue);
+      expect(backend.clipCalls.last.contains('-filter_complex'), isFalse);
+    });
+
+    test('no renderer means no burn attempt and no -filters probe', () async {
+      // 没有渲染回调时连能力探测都不该跑——白起一个进程。
+      final Directory dir =
+          Directory.systemTemp.createTempSync('hibiki_clip_burn_norender');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final File input = File('${dir.path}/source.mkv')
+        ..writeAsBytesSync(<int>[1]);
+      final File output = File('${dir.path}/clip.mp4');
+      final _FakeFfmpegBackend backend =
+          backendFor(output, filters: filtersWithOverlay);
+
+      final VideoClipExportResult result = await exportVideoClipViaFfmpeg(
+        inputPath: input.path,
+        startMs: 0,
+        endMs: 4000,
+        outputPath: output.path,
+        backend: backend,
+        subtitleCues: cues,
+      );
+
+      expect(result.isSuccess, isTrue);
+      expect(result.subtitleTrackCount, 0);
+      expect(
+        backend.calls.any((List<String> a) => a.contains('-filters')),
+        isFalse,
+      );
     });
   });
 
