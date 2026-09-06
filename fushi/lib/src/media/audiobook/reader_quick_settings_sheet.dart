@@ -1138,7 +1138,9 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
       }
     }
     bool hasFoldableChildren(int i) =>
-        i + 1 < toc.length && toc[i + 1].depth > toc[i].depth && toc[i + 1].depth >= 2;
+        i + 1 < toc.length &&
+        toc[i + 1].depth > toc[i].depth &&
+        toc[i + 1].depth >= 2;
     bool isExpanded(TtuTocEntry parent) =>
         _expandedTocParents.contains(parent.label) ||
         autoExpanded.contains(parent.label);

@@ -328,7 +328,8 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
                 child: SizedBox(
                   height: 4,
                   child: CustomPaint(
-                    key: const ValueKey<String>('fushi_audiobook_chapter_ticks'),
+                    key:
+                        const ValueKey<String>('fushi_audiobook_chapter_ticks'),
                     painter: _ChapterTickPainter(
                       fractions: ticks,
                       color: theme.colorScheme.onSurfaceVariant
@@ -391,10 +392,9 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final List<File> files = ctrl?.audioFiles ?? const <File>[];
     final String? alignmentPath = ctrl?.audiobook?.alignmentPath;
-    final String? alignmentName =
-        alignmentPath == null || alignmentPath.isEmpty
-            ? null
-            : p.basename(alignmentPath);
+    final String? alignmentName = alignmentPath == null || alignmentPath.isEmpty
+        ? null
+        : p.basename(alignmentPath);
     void closeThen(VoidCallback action) {
       Navigator.of(context).pop();
       action();

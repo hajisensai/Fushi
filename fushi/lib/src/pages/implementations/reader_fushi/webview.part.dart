@@ -2289,7 +2289,9 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
             // 无键盘调用，故无条件过闸门。
             if (_chapterTurnCoolingDown()) return;
             if (!await _prepareContinuousChapterTransition()) return;
-            if (!mounted || _paginationInFlight || !_hasChapterTurnTarget(dir)) {
+            if (!mounted ||
+                _paginationInFlight ||
+                !_hasChapterTurnTarget(dir)) {
               _discardIdleChapterTransitionSnapshot();
               return;
             }
@@ -2493,9 +2495,8 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           handlerName: 'onLyricsReady',
           callback: (args) {
             final dynamic raw = args.isEmpty ? null : args.first;
-            final int? generation = raw is num
-                ? raw.toInt()
-                : int.tryParse(raw?.toString() ?? '');
+            final int? generation =
+                raw is num ? raw.toInt() : int.tryParse(raw?.toString() ?? '');
             if (generation == null) return false;
             return _finalizeLyricsDocumentIfReady(
               controller,
@@ -2628,7 +2629,8 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
   }) async {
     try {
       final dynamic result = await controller.evaluateJavascript(
-        source: '''Boolean(window.__lyricsSetCue && document.getElementById('lc') && window.__fushiLyricsLoadGeneration === $generation)''',
+        source:
+            '''Boolean(window.__lyricsSetCue && document.getElementById('lc') && window.__fushiLyricsLoadGeneration === $generation)''',
       );
       return result == true || result == 'true' || result == 1 || result == '1';
     } catch (e, stack) {
@@ -2642,9 +2644,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
     InAppWebViewController controller, {
     required int generation,
   }) async {
-    if (!mounted ||
-        !_lyricsMode ||
-        generation != _lyricsLoadGeneration) {
+    if (!mounted || !_lyricsMode || generation != _lyricsLoadGeneration) {
       return false;
     }
     if (_lyricsPageReady) return true;
@@ -2657,9 +2657,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
       )) {
         return false;
       }
-      if (!mounted ||
-          !_lyricsMode ||
-          generation != _lyricsLoadGeneration) {
+      if (!mounted || !_lyricsMode || generation != _lyricsLoadGeneration) {
         return false;
       }
       if (!_lyricsPageReady) {
@@ -2668,9 +2666,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           lyricsGeneration: generation,
         );
       }
-      if (!mounted ||
-          !_lyricsMode ||
-          generation != _lyricsLoadGeneration) {
+      if (!mounted || !_lyricsMode || generation != _lyricsLoadGeneration) {
         return false;
       }
       if (_lyricsDocumentLoadGeneration == generation) {
@@ -2732,7 +2728,8 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
       return;
     }
     if (_lyricsMode) {
-      bool currentLyricsLoad() => mounted &&
+      bool currentLyricsLoad() =>
+          mounted &&
           _lyricsMode &&
           lyricsGeneration != null &&
           lyricsGeneration == _lyricsLoadGeneration;

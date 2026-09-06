@@ -22,7 +22,8 @@ void main() {
       onOpenImage: (_) {},
       onJumpTo: (_) {},
     )));
-    expect(find.byKey(const ValueKey<String>('fushi_gallery_jump')), findsNothing);
+    expect(
+        find.byKey(const ValueKey<String>('fushi_gallery_jump')), findsNothing);
     expect(find.byType(ListView), findsNothing);
   });
 

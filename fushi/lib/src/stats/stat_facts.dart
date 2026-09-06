@@ -138,7 +138,8 @@ class StatFacts {
   /// `mediaKey == bookKey`，legacy 无身份行按 title 回退——判据见 [statFactBelongsToBook]。
   Iterable<StatFact> dailyBooksFor({required String bookKey, String? title}) =>
       dailyBooks.where(
-        (StatFact f) => statFactBelongsToBook(f, bookKey: bookKey, title: title),
+        (StatFact f) =>
+            statFactBelongsToBook(f, bookKey: bookKey, title: title),
       );
   Iterable<StatFact> get dailyVideos => daily.where((StatFact f) => f.isVideo);
   Iterable<StatFact> get dailyGames => daily.where((StatFact f) => f.isGame);

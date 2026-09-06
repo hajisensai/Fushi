@@ -17,8 +17,7 @@ import 'test_helpers.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  Future<void> pumpFor(WidgetTester tester, int ticks,
-      {int ms = 250}) async {
+  Future<void> pumpFor(WidgetTester tester, int ticks, {int ms = 250}) async {
     for (int i = 0; i < ticks; i++) {
       await tester.pump(Duration(milliseconds: ms));
     }
@@ -43,12 +42,14 @@ void main() {
 
   testWidgets(
       'desktop reader chrome: G gallery / I statistics / Ctrl+F left drawer / '
-      'T right drawer open and close via keyboard', (WidgetTester tester) async {
+      'T right drawer open and close via keyboard',
+      (WidgetTester tester) async {
     final List<FlutterErrorDetails> errors = <FlutterErrorDetails>[];
     final FlutterExceptionHandler? oldHandler = FlutterError.onError;
     FlutterError.onError = (FlutterErrorDetails details) {
       errors.add(details);
-      debugPrint('[desktop-chrome] FlutterError: ${details.exceptionAsString()}');
+      debugPrint(
+          '[desktop-chrome] FlutterError: ${details.exceptionAsString()}');
     };
     try {
       await launchFushiTestApp();
@@ -59,7 +60,8 @@ void main() {
       await openBookViaProductionPath(tester, bookKey);
 
       // 首屏恢复完成后底部状态行才出现（桌面端 ッツ 形态的可见证据）。
-      final Finder footer = find.byKey(const ValueKey<String>('fushi_status_footer'));
+      final Finder footer =
+          find.byKey(const ValueKey<String>('fushi_status_footer'));
       expect(await waitFor(tester, footer, maxTicks: 120), isTrue,
           reason: 'reader status footer must appear after first restore');
 
@@ -80,7 +82,8 @@ void main() {
       expect(await waitFor(tester, statsClose), isTrue,
           reason: 'I must open the statistics dialog');
       expect(
-        find.byKey(const ValueKey<String>('fushi_reader_stats_tracking_toggle')),
+        find.byKey(
+            const ValueKey<String>('fushi_reader_stats_tracking_toggle')),
         findsOneWidget,
       );
       await key(tester, LogicalKeyboardKey.escape);

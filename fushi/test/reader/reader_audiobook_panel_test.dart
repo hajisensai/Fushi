@@ -15,8 +15,7 @@ void main() {
     LocaleSettings.setLocale(AppLocale.zhCn);
   });
 
-  testWidgets('无控制器：信息卡给导入按钮；资源页只有可用入口；章节页列目录并标当前章',
-      (tester) async {
+  testWidgets('无控制器：信息卡给导入按钮；资源页只有可用入口；章节页列目录并标当前章', (tester) async {
     int imports = 0;
     int jumped = -1;
     await tester.pumpWidget(_host(ReaderAudiobookPanel(
@@ -106,7 +105,8 @@ void main() {
       ),
     ];
     expect(
-      readerHeaderOverflow(compact: false, leading: leading, trailing: trailing),
+      readerHeaderOverflow(
+          compact: false, leading: leading, trailing: trailing),
       isEmpty,
     );
     expect(

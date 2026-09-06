@@ -650,7 +650,9 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 同一套累加口径。
   int globalMsOfCue(AudioCue cue) {
     int base = 0;
-    for (int i = 0; i < cue.audioFileIndex && i < _fileDurationsMs.length; i++) {
+    for (int i = 0;
+        i < cue.audioFileIndex && i < _fileDurationsMs.length;
+        i++) {
       base += _fileDurationsMs[i];
     }
     return base + cue.startMs;

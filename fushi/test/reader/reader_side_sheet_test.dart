@@ -59,7 +59,8 @@ void main() {
     ));
     expect(find.text('导航'), findsOneWidget);
     expect(find.text('BODY'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey<String>('fushi_side_sheet_close')));
+    await tester
+        .tap(find.byKey(const ValueKey<String>('fushi_side_sheet_close')));
     expect(closed, 1);
   });
 }

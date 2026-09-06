@@ -33,7 +33,8 @@ const double kReaderSideSheetWidth = 400;
 bool readerDesktopChromeEnabled({
   required bool desktop,
   required bool lyricsMode,
-}) => readerStatusFooterEnabled(desktop: desktop, lyricsMode: lyricsMode);
+}) =>
+    readerStatusFooterEnabled(desktop: desktop, lyricsMode: lyricsMode);
 
 /// 设置 / 导航是否走左右抽屉：桌面端恒走；平板等宽窗（宽高都过共享阈值）也走——
 /// 这样居中 master-detail 对话框在阅读器里没有剩余用途，可以删掉。手机窄窗仍走
@@ -73,7 +74,8 @@ double readerSideSheetWidth(double windowWidth) {
 /// 的按钮，其余收进右端 ⋮ 溢出菜单（「常用固定 + 溢出菜单」，避免图标越加越挤）。
 const double kReaderDesktopHeaderCompactWidth = 760;
 
-bool readerHeaderCompact(double width) => width < kReaderDesktopHeaderCompactWidth;
+bool readerHeaderCompact(double width) =>
+    width < kReaderDesktopHeaderCompactWidth;
 
 /// 顶部工具栏的一个动作：图标 + 文案（溢出菜单里显示）+ 回调。
 class ReaderHeaderAction {
@@ -151,79 +153,80 @@ class ReaderDesktopHeader extends StatelessWidget {
     );
     return ExcludeFocus(
       child: ColoredBox(
-      color: backgroundColor,
-      child: SizedBox(
-        height: height,
-        child: LayoutBuilder(
-          builder: (BuildContext context, BoxConstraints constraints) {
-            final bool compact = readerHeaderCompact(constraints.maxWidth);
-            final List<ReaderHeaderAction> overflow = readerHeaderOverflow(
-              compact: compact,
-              leading: leading,
-              trailing: trailing,
-            );
-            return Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Row(
-                children: <Widget>[
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      for (final ReaderHeaderAction a in leading)
-                        if (!compact || a.pinned) _button(a),
-                    ],
-                  ),
-                  Expanded(
-                    child: Text(
-                      title,
-                      key: const ValueKey<String>('fushi_desktop_header_title'),
-                      textAlign: TextAlign.center,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: titleStyle,
+        color: backgroundColor,
+        child: SizedBox(
+          height: height,
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              final bool compact = readerHeaderCompact(constraints.maxWidth);
+              final List<ReaderHeaderAction> overflow = readerHeaderOverflow(
+                compact: compact,
+                leading: leading,
+                trailing: trailing,
+              );
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Row(
+                  children: <Widget>[
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        for (final ReaderHeaderAction a in leading)
+                          if (!compact || a.pinned) _button(a),
+                      ],
                     ),
-                  ),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      for (final ReaderHeaderAction a in trailing)
-                        if (!compact || a.pinned) _button(a),
-                      if (overflow.isNotEmpty)
-                        PopupMenuButton<ReaderHeaderAction>(
-                          key: const ValueKey<String>(
-                            'fushi_desktop_header_overflow',
-                          ),
-                          tooltip:
-                              MaterialLocalizations.of(context).moreButtonTooltip,
-                          icon: Icon(Icons.more_vert, color: textColor),
-                          iconSize: 22,
-                          onSelected: (ReaderHeaderAction a) =>
-                              a.onPressed?.call(),
-                          itemBuilder: (BuildContext context) => <
-                              PopupMenuEntry<ReaderHeaderAction>>[
-                            for (final ReaderHeaderAction a in overflow)
-                              PopupMenuItem<ReaderHeaderAction>(
-                                value: a,
-                                enabled: a.onPressed != null,
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: <Widget>[
-                                    Icon(a.icon, size: 20),
-                                    const SizedBox(width: 12),
-                                    Text(a.label),
-                                  ],
+                    Expanded(
+                      child: Text(
+                        title,
+                        key: const ValueKey<String>(
+                            'fushi_desktop_header_title'),
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: titleStyle,
+                      ),
+                    ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        for (final ReaderHeaderAction a in trailing)
+                          if (!compact || a.pinned) _button(a),
+                        if (overflow.isNotEmpty)
+                          PopupMenuButton<ReaderHeaderAction>(
+                            key: const ValueKey<String>(
+                              'fushi_desktop_header_overflow',
+                            ),
+                            tooltip: MaterialLocalizations.of(context)
+                                .moreButtonTooltip,
+                            icon: Icon(Icons.more_vert, color: textColor),
+                            iconSize: 22,
+                            onSelected: (ReaderHeaderAction a) =>
+                                a.onPressed?.call(),
+                            itemBuilder: (BuildContext context) =>
+                                <PopupMenuEntry<ReaderHeaderAction>>[
+                              for (final ReaderHeaderAction a in overflow)
+                                PopupMenuItem<ReaderHeaderAction>(
+                                  value: a,
+                                  enabled: a.onPressed != null,
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: <Widget>[
+                                      Icon(a.icon, size: 20),
+                                      const SizedBox(width: 12),
+                                      Text(a.label),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                          ],
-                        ),
-                    ],
-                  ),
-                ],
-              ),
-            );
-          },
+                            ],
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
         ),
-      ),
       ),
     );
   }
@@ -371,21 +374,19 @@ Future<T?> showReaderSideSheet<T>({
         ),
       );
     },
-    transitionBuilder:
-        (
-          BuildContext ctx,
-          Animation<double> animation,
-          Animation<double> secondary,
-          Widget child,
-        ) {
-          final Animation<Offset> slide =
-              Tween<Offset>(
-                begin: Offset(left ? -1 : 1, 0),
-                end: Offset.zero,
-              ).animate(
-                CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
-              );
-          return SlideTransition(position: slide, child: child);
-        },
+    transitionBuilder: (
+      BuildContext ctx,
+      Animation<double> animation,
+      Animation<double> secondary,
+      Widget child,
+    ) {
+      final Animation<Offset> slide = Tween<Offset>(
+        begin: Offset(left ? -1 : 1, 0),
+        end: Offset.zero,
+      ).animate(
+        CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+      );
+      return SlideTransition(position: slide, child: child);
+    },
   );
 }

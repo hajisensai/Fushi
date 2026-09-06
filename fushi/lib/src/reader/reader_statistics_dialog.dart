@@ -218,7 +218,9 @@ class _ReaderStatisticsDialogState extends State<ReaderStatisticsDialog> {
                         iconSize: 18,
                         tooltip: paused ? t.play : t.pause,
                         icon: Icon(
-                          paused ? Icons.play_arrow_rounded : Icons.pause_rounded,
+                          paused
+                              ? Icons.play_arrow_rounded
+                              : Icons.pause_rounded,
                           color: paused
                               ? theme.colorScheme.primary
                               : theme.colorScheme.onSurfaceVariant,
@@ -231,7 +233,8 @@ class _ReaderStatisticsDialogState extends State<ReaderStatisticsDialog> {
                     ),
                   ],
                 ),
-                _StatCard(cells: _metricCells(session.chars, session.durationMs)),
+                _StatCard(
+                    cells: _metricCells(session.chars, session.durationMs)),
                 ReaderSideSheetSectionLabel(
                   '${t.stat_today} · ${t.reader_stats_this_book}',
                 ),
@@ -245,7 +248,8 @@ class _ReaderStatisticsDialogState extends State<ReaderStatisticsDialog> {
                   cells: <_StatCell>[
                     _StatCell(
                       label: t.reader_stats_finish_chapter,
-                      value: chapterMs == null ? '—' : formatStatClock(chapterMs),
+                      value:
+                          chapterMs == null ? '—' : formatStatClock(chapterMs),
                     ),
                     _StatCell(
                       label: t.reader_stats_finish_book,

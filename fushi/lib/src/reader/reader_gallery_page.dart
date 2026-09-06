@@ -147,9 +147,8 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
   /// 鼠标滚轮：向下 / 向右 = 下一张。
   void _onPointerSignal(PointerSignalEvent event) {
     if (event is! PointerScrollEvent) return;
-    final double delta = event.scrollDelta.dy != 0
-        ? event.scrollDelta.dy
-        : event.scrollDelta.dx;
+    final double delta =
+        event.scrollDelta.dy != 0 ? event.scrollDelta.dy : event.scrollDelta.dx;
     if (delta == 0) return;
     _select(_index + (delta > 0 ? 1 : -1));
   }

@@ -1801,8 +1801,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       floatingLyricFontSize: appModel.floatingLyricFontSize,
       onFloatingLyricFontSizeChanged: (v) async {
         await appModel.setFloatingLyricFontSize(v);
-        final FloatingLyricStyle style =
-            _readerFloatingLyricStyle(fontSize: v);
+        final FloatingLyricStyle style = _readerFloatingLyricStyle(fontSize: v);
         await FloatingLyricChannel.updateStyle(
           fontSize: style.fontSize,
           textColor: style.textColor,
@@ -1820,10 +1819,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
       },
       showMediaNotification: appModel.showMediaNotification,
       onToggleMediaNotification: _toggleMediaNotification,
-      charProgress:
-          _progressCurrentChars != null && _progressTotalChars != null
-              ? (_progressCurrentChars!, _progressTotalChars!)
-              : null,
+      charProgress: _progressCurrentChars != null && _progressTotalChars != null
+          ? (_progressCurrentChars!, _progressTotalChars!)
+          : null,
       onJumpToCharOffset: (globalOffset) async {
         _jumpToGlobalCharOffset(globalOffset);
       },
@@ -1894,8 +1892,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
         await favRepo.removeById(fav.id);
         _invalidateFavoriteSentenceCache();
         if (fav.sectionIndex == _currentChapter || _lyricsMode) {
-          await _refreshSectionHighlights(
-              fav.sectionIndex ?? _currentChapter);
+          await _refreshSectionHighlights(fav.sectionIndex ?? _currentChapter);
         }
       },
       onJumpToFavorite: _jumpToFavoriteSentence,
@@ -2140,8 +2137,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
                 semanticsId: 'hibiki.reader.header.audiobook',
                 // 已挂有声书 → 居中面板；没有 → 直接进导入。
                 onPressed: _audiobookController != null
-                    ? () =>
-                        unawaited(_showAppearanceSheet(initialSubPage: 'audiobook'))
+                    ? () => unawaited(
+                        _showAppearanceSheet(initialSubPage: 'audiobook'))
                     : _openAudioImportDialog,
               ),
               if (desktopWindowFullscreenSupported)
@@ -2175,7 +2172,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// 顶部工具栏「统计」：阅读器内浮层（ッツ Statistics 形态）——本次会话实时秒表 /
   /// 今日 / 累计（本书，统一事实面切片）/ 预计读完本章 · 全书。不跳统计中心。
   void _openReadingStatistics() {
-    final int? remainingChapter = _progress.remainingChapterChars(_currentChapter);
+    final int? remainingChapter =
+        _progress.remainingChapterChars(_currentChapter);
     final int? remainingBook = _progress.remainingBookChars;
     unawaited(
       showAppDialog<void>(
@@ -2211,7 +2209,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
 
   /// 有声书面板「对齐文件」：打开导入对话框并预填当前音频（对话框内可选文件 /
   /// 转录），关掉后按导入后的同一条路重载音频槽。
-  Future<void> _openAlignmentImportDialog({String? initialAlignmentPath}) async {
+  Future<void> _openAlignmentImportDialog(
+      {String? initialAlignmentPath}) async {
     final Audiobook? audiobook = _audiobookController?.audiobook;
     final AudiobookRepository repo = AudiobookRepository(appModel.database);
     await showAppDialog<void>(
@@ -2248,7 +2247,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
       );
       return;
     }
-    final EpubBookRow? book = await appModel.database.getEpubBook(widget.bookKey);
+    final EpubBookRow? book =
+        await appModel.database.getEpubBook(widget.bookKey);
     if (!mounted) return;
     final String? srtPath = await showAsrTranscribeSheet(
       context: context,

@@ -33,8 +33,8 @@ class ReaderProgressState {
   /// 某章总字数；下标越界 / 未落定时 null。
   int? chapterTotal(int section) =>
       section >= 0 && section < chapterCharCounts.length
-      ? chapterCharCounts[section]
-      : null;
+          ? chapterCharCounts[section]
+          : null;
 
   /// 某章已读字数 = 全书已读 − 该章前累计，夹到 [0, 本章总数]；未知时 null。
   int? chapterCurrent(int section) {
