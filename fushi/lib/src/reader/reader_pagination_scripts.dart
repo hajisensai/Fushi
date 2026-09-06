@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart';
@@ -90,65 +91,113 @@ class ReaderPaginationScripts {
   /// 重复句（BUG-060 用户担心的「来回跳动」）。
   static const int kSentenceAudioSearchWindow = 256;
 
+  /// BUG-2204：允许回吃前一条命中尾巴的字数（与 JS `OVERLAP`、matcher
+  /// `EpubSrtMatcher.cueTailOverlap` 同值）。
+  static const int kSentenceAudioTailOverlap = 4;
+
+  /// BUG-2204：「延续」判定的前向容差（与 JS `ADJACENT` 同值）：紧接前一条命中
+  /// 处这么多字以内的命中优先于离 hint 最近者。
+  static const int kSentenceAudioAdjacent = 2;
+
   /// 把 cue 的归一化偏移（提示）+ 原文，映射成在 [fullNorm]（实时 DOM 的
   /// 归一化文本）里的解析起点。这是 JS `collectSasayakiCueRanges` 搜索逻辑的
-  /// 纯 Dart 影子，供单测验证「漂移自愈 / 不跳远处重复 / 未命中回落提示」三
-  /// 不变量；JS 侧实现同一算法（见同文件脚本字符串 + 源码守卫测试）。
+  /// 纯 Dart 影子，供单测验证「漂移自愈 / 不跳远处重复 / 未命中回落提示 / 尾巴
+  /// 回吃」不变量；JS 侧实现同一算法（见同文件脚本字符串 + 源码守卫测试）。
   ///
-  /// 规则：单调游标 `cursor` 只增不减；每条 cue 在 `[max(cursor, hint-window),
-  /// hint+window]` 内取**离 hint 最近**的整句出现位置（对齐既有
-  /// scrollToSearchMatch 的就近策略）；窗口内无命中则回落到裁剪后的 hint。
+  /// 规则：游标 `cursor` 单调（BUG-2204 起允许回到前一条命中的尾巴 [kSentenceAudioTailOverlap]
+  /// 字以内、不越过其起点）；每条 cue 先看紧接前一条命中处
+  /// `[cursor-OVERLAP, cursor+ADJACENT]` 有没有「延续」命中——有则优先（ASR 切句边界
+  /// 漂移 / 旧数据 hint 指向远处同前缀句时仍锚定真实位置）；否则在
+  /// `[max(floor, hint-window), hint+window]` 内取**离 hint 最近**者；窗口内无命中则
+  /// 回落到裁剪后的 hint、不推进游标（BUG-282）。回吃了前一条尾巴时把前一条 span
+  /// 的长度裁到本条起点。返回每条 (start, length)。
+  @visibleForTesting
+  static List<(int, int)> resolveCueNormSpansForTesting({
+    required String fullNorm,
+    required List<SentenceAudioCueHint> cues,
+    int window = kSentenceAudioSearchWindow,
+  }) {
+    final List<(int, int)> spans = <(int, int)>[];
+    int cursor = 0;
+    int lastHit = -1;
+    int lastHitStart = -1;
+    for (final SentenceAudioCueHint c in cues) {
+      final String needle = c.needle;
+      final int hint = c.hint;
+      int resolved = -1;
+      if (needle.isNotEmpty) {
+        final int floor = lastHit >= 0
+            ? math.max(lastHitStart + 1, cursor - kSentenceAudioTailOverlap)
+            : cursor;
+        final int lo = floor > (hint - window) ? floor : (hint - window);
+        final int start = lo < 0 ? 0 : lo;
+        final int hi = math.max(hint + window, cursor + kSentenceAudioAdjacent);
+        int best = -1;
+        int bestDist = 1 << 30;
+        int adjacent = -1;
+        int adjacentDist = 1 << 30;
+        if (start <= fullNorm.length) {
+          int from = start;
+          while (true) {
+            final int i = fullNorm.indexOf(needle, from);
+            if (i < 0 || i > hi) {
+              break;
+            }
+            if (lastHit >= 0 &&
+                i >= cursor - kSentenceAudioTailOverlap &&
+                i <= cursor + kSentenceAudioAdjacent) {
+              final int da = (i - cursor).abs();
+              if (da < adjacentDist) {
+                adjacentDist = da;
+                adjacent = i;
+              }
+            }
+            if (i <= hint + window) {
+              final int d = (i - hint).abs();
+              if (d < bestDist) {
+                bestDist = d;
+                best = i;
+              }
+            }
+            from = i + 1;
+          }
+        }
+        if (adjacent >= 0) best = adjacent;
+        if (best >= 0) {
+          resolved = best;
+          if (best < cursor && lastHit >= 0) {
+            final (int ps, int _) = spans[lastHit];
+            spans[lastHit] = (ps, best - ps);
+          }
+          cursor = best + needle.length;
+          lastHit = spans.length;
+          lastHitStart = best;
+        }
+      }
+      if (resolved >= 0) {
+        spans.add((resolved, needle.length));
+      } else {
+        // BUG-282：未命中 / 空 needle 只给回落位置，绝不推进单调游标。
+        spans.add((_clampInt(hint, cursor, fullNorm.length), c.length));
+      }
+    }
+    return spans;
+  }
+
+  /// [resolveCueNormSpansForTesting] 的起点视图（既有测试口径）。
   @visibleForTesting
   static List<int> resolveCueNormStartsForTesting({
     required String fullNorm,
     required List<SentenceAudioCueHint> cues,
     int window = kSentenceAudioSearchWindow,
-  }) {
-    final List<int> out = <int>[];
-    int cursor = 0;
-    for (final SentenceAudioCueHint c in cues) {
-      final String needle = c.needle;
-      final int hint = c.hint;
-      int resolved;
-      if (needle.isNotEmpty) {
-        final int lo = cursor > (hint - window) ? cursor : (hint - window);
-        final int start = lo < 0 ? 0 : lo;
-        int best = -1;
-        int bestDist = 1 << 30;
-        if (start <= fullNorm.length) {
-          int from = start;
-          while (true) {
-            final int i = fullNorm.indexOf(needle, from);
-            if (i < 0 || i > hint + window) {
-              break;
-            }
-            final int d = (i - hint).abs();
-            if (d < bestDist) {
-              bestDist = d;
-              best = i;
-            }
-            from = i + 1;
-          }
-        }
-        if (best >= 0) {
-          resolved = best;
-          cursor = best + needle.length;
-        } else {
-          // BUG-282：未命中只为这一条 cue 选一个尽力而为的回落位置，**绝不推进
-          // 单调游标**。游标只在「DOM 真命中」时前进；若让回落按未经核实的 hint
-          // 猜测推进 cursor，就可能越过后面真正能命中的 cue 的真实位置，使其搜索
-          // 窗口下界 max(cursor, hint-window) 把真实位置排除掉 → 整本逐句累积漂移
-          // （BUG-060 想消除的正是累积漂移，这里是它的回落漏洞）。
-          resolved = _clampInt(hint, cursor, fullNorm.length);
-        }
-      } else {
-        // 空 needle 同理：只给回落位置，不污染游标。
-        resolved = _clampInt(hint, cursor, fullNorm.length);
-      }
-      out.add(resolved);
-    }
-    return out;
-  }
+  }) => <int>[
+    for (final (int start, int _) in resolveCueNormSpansForTesting(
+      fullNorm: fullNorm,
+      cues: cues,
+      window: window,
+    ))
+      start,
+  ];
 
   /// JS `window.fushiReader.paginate` 的纯 Dart 影子，供单测验证「错位不跳页」
   /// 不变量（BUG-169）。两侧同算法：
@@ -185,20 +234,26 @@ class ReaderPaginationScripts {
     final int nearestPage = rawPageCoordinate.round();
     final double pageCoordinate =
         (rawPageCoordinate - nearestPage).abs() * columnPitch <= 1
-            ? nearestPage.toDouble()
-            : rawPageCoordinate;
+        ? nearestPage.toDouble()
+        : rawPageCoordinate;
     final double target;
     if (direction == ReaderNavigationDirection.forward) {
       final int basePage = pageCoordinate.floor();
       target = _clampDouble(
-          (basePage + 1) * columnPitch, minAlignedScroll, maxAlignedScroll);
+        (basePage + 1) * columnPitch,
+        minAlignedScroll,
+        maxAlignedScroll,
+      );
       // 已对齐在末页时 target == currentScroll（差值 <=1px 视为同页）→ 无下一页。
       final bool scrolled = target > stepScroll + 1;
       return ReaderPageStep(scrolled: scrolled, targetScroll: target);
     } else {
       final int basePage = pageCoordinate.ceil();
       target = _clampDouble(
-          (basePage - 1) * columnPitch, minAlignedScroll, maxAlignedScroll);
+        (basePage - 1) * columnPitch,
+        minAlignedScroll,
+        maxAlignedScroll,
+      );
       final bool scrolled = target < stepScroll - 1;
       return ReaderPageStep(scrolled: scrolled, targetScroll: target);
     }
@@ -306,11 +361,12 @@ class ReaderPaginationScripts {
     final double lastContentScroll = lastContentEdge <= 0
         ? 0
         : (((lastContentEdge - 1) < 0 ? 0 : (lastContentEdge - 1)) / pageStep)
-                .floorToDouble() *
-            pageStep;
+                  .floorToDouble() *
+              pageStep;
     final double physicalMax = physicalMaxScroll < 0 ? 0 : physicalMaxScroll;
-    double maxScroll =
-        maxAligned < lastContentScroll ? maxAligned : lastContentScroll;
+    double maxScroll = maxAligned < lastContentScroll
+        ? maxAligned
+        : lastContentScroll;
     // The CSS page pitch can be smaller than the scrolling element's client
     // extent after chrome insets. In that case the final full grid line may be
     // unreachable while the browser still exposes a useful partial terminal
@@ -320,11 +376,13 @@ class ReaderPaginationScripts {
       maxScroll = physicalMax;
     }
     if (lastContentScroll > maxScroll + 1 && physicalMax > maxScroll + 1) {
-      maxScroll =
-          lastContentScroll < physicalMax ? lastContentScroll : physicalMax;
+      maxScroll = lastContentScroll < physicalMax
+          ? lastContentScroll
+          : physicalMax;
     }
-    final double minScroll =
-        maxScroll < startAligned ? maxScroll : startAligned;
+    final double minScroll = maxScroll < startAligned
+        ? maxScroll
+        : startAligned;
     return (minScroll: minScroll, maxScroll: maxScroll);
   }
 
@@ -550,8 +608,10 @@ class ReaderPaginationScripts {
   ///
   /// [deltaY]/[deltaX] = wheel 事件的滚动增量。主轴取绝对值更大的那个，>0 = forward。
   @visibleForTesting
-  static String? wheelPaginateDir(
-      {required double deltaY, required double deltaX}) {
+  static String? wheelPaginateDir({
+    required double deltaY,
+    required double deltaX,
+  }) {
     final double delta = deltaY.abs() >= deltaX.abs() ? deltaY : deltaX;
     if (delta == 0) return null;
     return delta > 0
@@ -721,7 +781,8 @@ class ReaderPaginationScripts {
       '? window.fushiReader.scrollToSearchMatch('
       '${_jsStringLiteral(query)}, $hintOffset) : null';
 
-  static String clearSearchHighlightInvocation() => '(window.fushiReader && '
+  static String clearSearchHighlightInvocation() =>
+      '(window.fushiReader && '
       'typeof window.fushiReader.clearSearchHighlight === "function") '
       '? window.fushiReader.clearSearchHighlight() : null';
 
@@ -740,13 +801,15 @@ class ReaderPaginationScripts {
   /// 的字符偏移；-1 = 无可用锚 / 已有重锚在飞 → 调用方跳过提交阶段。
   /// `beginUiScaleReanchor` 只存在于连续模式的 `window.fushiReader`，分页模式缺席，
   /// `typeof` 守卫使分页模式整体 no-op（分页有 snap/lock 保护，无需此重锚）。
-  static String beginUiScaleReanchorInvocation() => '(window.fushiReader && '
+  static String beginUiScaleReanchorInvocation() =>
+      '(window.fushiReader && '
       "typeof window.fushiReader.beginUiScaleReanchor === 'function') "
       '? window.fushiReader.beginUiScaleReanchor() : -1';
 
   /// TODO-693: 第二阶段——过渡帧 settle 后把暂存锚滚回视口首边并清 `_reanchorPending`。
   /// 仅当第一阶段成功暂存了有效锚时才生效，否则 no-op（绝不误清别处的重锚旗）。
-  static String commitUiScaleReanchorInvocation() => '(window.fushiReader && '
+  static String commitUiScaleReanchorInvocation() =>
+      '(window.fushiReader && '
       "typeof window.fushiReader.commitUiScaleReanchor === 'function') "
       '? window.fushiReader.commitUiScaleReanchor() : false';
 
@@ -766,7 +829,8 @@ class ReaderPaginationScripts {
 
   /// TODO-736 B-1：第二阶段——过渡帧 settle 后把暂存锚滚回视口首边并清 `_reanchorPending`。
   /// 仅当第一阶段成功暂存了有效锚时才生效，否则 no-op（绝不误清别处的重锚旗）。
-  static String commitStyleReanchorInvocation() => '(window.fushiReader && '
+  static String commitStyleReanchorInvocation() =>
+      '(window.fushiReader && '
       "typeof window.fushiReader.commitStyleReanchor === 'function') "
       '? window.fushiReader.commitStyleReanchor() : false';
 
@@ -1383,17 +1447,29 @@ window.__fushiInstallShell = function(C) {
     // BUG-060：高亮坐标由实时 DOM 权威定位。匹配时算出的 start/length 仅作
     // 「提示」，运行时用 cue 原文 text 在实时 DOM 的归一化全文里就近、单调地
     // 重新定位 —— 摆脱 package:html(匹配坐标系) 与浏览器 DOM(渲染坐标系) 逐字
-    // 不一致导致的累积偏移。不变量：① 游标 cursor 单调不回退；② 搜索窗口有界
-    // (整句 needle + 半径 WINDOW)，不跳远处重复句；③ 窗口内取离 hint 最近者；
-    // ④ 未命中回落提示偏移，绝不空高亮。与 Dart 影子
-    // ReaderPaginationScripts.resolveCueNormStartsForTesting 同算法。
+    // 不一致导致的累积偏移。不变量：① 游标 cursor 单调不回退（BUG-2204 起允许
+    // 回吃前一条命中的尾巴 OVERLAP 字，但不越过其起点）；② 搜索窗口有界
+    // (整句 needle + 半径 WINDOW)，不跳远处重复句；③ 紧接前一条命中处
+    // （cursor-OVERLAP..cursor+ADJACENT）的「延续」优先，否则窗口内取离 hint
+    // 最近者；④ 未命中回落提示偏移，绝不空高亮。与 Dart 影子
+    // ReaderPaginationScripts.resolveCueNormSpansForTesting 同算法。
+    //
+    // BUG-2204：ASR 字幕前句多带下一句首字（「…高い所。と」+「とはいえ、」）时，
+    // 前句命中后游标已越过后句真实起点；只按 hint 就近会撞上远处同前缀句（旧数据
+    // 的 hint 本身就指着那里），视口跳到下一页、中间十几句无高亮。延续优先 +
+    // 回吃尾巴让后句仍在真实位置命中，并把前句的 span 裁到后句起点。
     var out = [];
     if (!cues.length) return out;
     var idx = this.buildSentenceAudioNormIndex();
     var full = idx.full;
     var map = idx.map;
     var WINDOW = 256;
+    var OVERLAP = 4;
+    var ADJACENT = 2;
     var cursor = 0;
+    var lastHit = -1;
+    var lastHitStart = -1;
+    var spans = [];
     for (var ci = 0; ci < cues.length; ci++) {
       var cue = cues[ci];
       // TODO-630/BUG-366：needle 用 foldNormalize（剥+折叠），与 full(已折叠)、
@@ -1404,20 +1480,37 @@ window.__fushiInstallShell = function(C) {
       var normLen = needle.length;
       var resolved = -1;
       if (normLen > 0) {
-        var lo = cursor > (hint - WINDOW) ? cursor : (hint - WINDOW);
+        var floor = lastHit >= 0 ? Math.max(lastHitStart + 1, cursor - OVERLAP) : cursor;
+        var lo = floor > (hint - WINDOW) ? floor : (hint - WINDOW);
         var startAt = lo < 0 ? 0 : lo;
+        var hi = Math.max(hint + WINDOW, cursor + ADJACENT);
         var best = -1, bestDist = 1 << 30;
+        var adjacent = -1, adjacentDist = 1 << 30;
         if (startAt <= full.length) {
           var from = startAt;
           while (true) {
             var p = full.indexOf(needle, from);
-            if (p < 0 || p > hint + WINDOW) break;
-            var d = Math.abs(p - hint);
-            if (d < bestDist) { bestDist = d; best = p; }
+            if (p < 0 || p > hi) break;
+            if (lastHit >= 0 && p >= cursor - OVERLAP && p <= cursor + ADJACENT) {
+              var da = Math.abs(p - cursor);
+              if (da < adjacentDist) { adjacentDist = da; adjacent = p; }
+            }
+            if (p <= hint + WINDOW) {
+              var d = Math.abs(p - hint);
+              if (d < bestDist) { bestDist = d; best = p; }
+            }
             from = p + 1;
           }
         }
-        if (best >= 0) { resolved = best; cursor = best + normLen; }
+        if (adjacent >= 0) best = adjacent;
+        if (best >= 0) {
+          resolved = best;
+          // 回吃了前一条的尾巴：把它的 span 裁到本条起点，range 不重叠。
+          if (best < cursor && lastHit >= 0) spans[lastHit].len = best - spans[lastHit].start;
+          cursor = best + normLen;
+          lastHit = spans.length;
+          lastHitStart = best;
+        }
       }
       var spanStart, spanLen;
       if (resolved >= 0) {
@@ -1426,11 +1519,14 @@ window.__fushiInstallShell = function(C) {
         // BUG-282：未命中只给这一条 cue 一个尽力而为的回落区间，**不推进单调
         // 游标 cursor**。游标只在 DOM 真命中时前进；让回落按未核实的 hint 猜测
         // 推进游标会越过后面真正能命中 cue 的真实位置，把其搜索窗口下界顶过去
-        // → 整本逐句累积漂移（与 Dart 影子 resolveCueNormStartsForTesting 同改）。
+        // → 整本逐句累积漂移（与 Dart 影子 resolveCueNormSpansForTesting 同改）。
         spanStart = hint < cursor ? cursor : (hint > map.length ? map.length : hint);
         spanLen = len;
       }
-      out.push({ id: cue.id, ranges: this.rangesForNormSpan(map, spanStart, spanLen) });
+      spans.push({ id: cue.id, start: spanStart, len: spanLen });
+    }
+    for (var si = 0; si < spans.length; si++) {
+      out.push({ id: spans[si].id, ranges: this.rangesForNormSpan(map, spans[si].start, spans[si].len) });
     }
     // TODO-630/BUG-366 observability：full 长度 + 多少 cue 算出空 range（全空=路径/折叠未命中）。
     var emptyRanges = 0;

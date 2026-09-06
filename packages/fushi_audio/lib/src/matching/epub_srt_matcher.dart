@@ -132,6 +132,14 @@ class EpubSrtMatcher {
   static const int shortCueMaxLen = 2;
   static const int shortCueMaxAdvance = 16;
 
+  /// 前一条 cue 的尾巴允许被下一条「吃回去」的最大字数（BUG-2204）。ASR 字幕的
+  /// 切句边界会漂：前句文本多带了下一句的首字（无職転生 21：「…高い所。と」+
+  /// 「とはいえ、」），命中后游标已越过下一句的真实起点，下一句在游标后找不到就
+  /// 撞上远处的同前缀句（155 字外的第二个「とはいえ、」），夹在中间的十几句全部
+  /// miss、播放时视口跳到下一页。搜索起点因此允许回退到 `cursor - 本值`（但不越过
+  /// 前一条命中的起点），命中在游标之前时把前一条的终点裁到本条起点。
+  static const int cueTailOverlap = 4;
+
   static Future<MatchResult> matchInIsolate({
     required List<EpubSection> sections,
     required List<AudioCue> cues,
@@ -270,8 +278,9 @@ class EpubSrtMatcher {
     );
     for (int si = 0; si < sections.length; si++) {
       final int s0 = idx.sectionNormStarts[si];
-      final int s1 =
-          (si + 1 < sections.length) ? idx.sectionNormStarts[si + 1] : totalLen;
+      final int s1 = (si + 1 < sections.length)
+          ? idx.sectionNormStarts[si + 1]
+          : totalLen;
       debugPrint(
         '[sentenceAudioHighlight] matcher.section[$si] href="${sections[si].href}" '
         'normStart=$s0 normLen=${s1 - s0}',
@@ -282,6 +291,26 @@ class EpubSrtMatcher {
     int cursor = start;
     int matched = 0;
     int consecutiveMisses = 0;
+    // 最近一次命中：results 下标与全书绝对起点（尾巴回吃 / 裁剪用，BUG-2204）。
+    int lastHitResult = -1;
+    int lastHitAbsStart = -1;
+
+    /// 本条在游标之前 [found] 处命中：把前一条的终点裁到 [found]（它多吃的尾巴
+    /// 还给本条），高亮 range 才不重叠。
+    void trimPreviousTo(int found) {
+      if (lastHitResult < 0 || found >= cursor) return;
+      final CueMatch prev = results[lastHitResult];
+      final int prevSectionStart = idx.sectionNormStarts[prev.sectionIndex];
+      final int newEnd = found - prevSectionStart;
+      if (newEnd <= prev.normCharStart) return;
+      results[lastHitResult] = CueMatch(
+        cueSentenceIndex: prev.cueSentenceIndex,
+        sectionIndex: prev.sectionIndex,
+        normCharStart: prev.normCharStart,
+        normCharEnd: newEnd,
+        score: prev.score,
+      );
+    }
 
     for (int ci = 0; ci < cues.length; ci++) {
       final AudioCue cue = cues[ci];
@@ -311,10 +340,18 @@ class EpubSrtMatcher {
       final int windowEnd = (cursor + searchWindow).clamp(0, totalLen);
       // 读音轨只给 ≥ [defaultProbeMinLen] 的 cue 用：全假名的读音轨里三四个字
       // 的串随处可撞（与模糊通道限长同一理由，TODO-906）。
-      final _ReadingTrack? reading =
-          nc.length >= defaultProbeMinLen ? idx.reading : null;
-      if (windowEnd - cursor >= nc.length) {
-        int found = big.indexOf(nc, cursor);
+      final _ReadingTrack? reading = nc.length >= defaultProbeMinLen
+          ? idx.reading
+          : null;
+      // BUG-2204：搜索起点允许回到游标前 [cueTailOverlap] 字（不越过前一条命中的
+      // 起点），让被前一条多吃掉首字的本句仍能在真实位置命中。
+      final int searchFrom = lastHitResult >= 0
+          ? (cursor - cueTailOverlap > lastHitAbsStart + 1
+                ? cursor - cueTailOverlap
+                : lastHitAbsStart + 1)
+          : cursor;
+      if (windowEnd - searchFrom >= nc.length) {
+        int found = big.indexOf(nc, searchFrom);
         int matchEnd = found + nc.length;
         // 超短 cue（≤ [shortCueMaxLen] 字）的精确命中只认紧邻游标的位置：一两个
         // 字在 200 字窗口里几乎必然能撞上（「一」「え」「ああ」），撞上就把游标
@@ -326,7 +363,10 @@ class EpubSrtMatcher {
         bool hit = found >= 0 && matchEnd <= windowEnd && !tooFarForShortCue;
         if (!hit && reading != null) {
           // 基底轨没有精确命中：同一窗口在读音轨再找一次，命中换算回基底偏移。
-          final int rFound = reading.text.indexOf(nc, reading.fromBase[cursor]);
+          final int rFound = reading.text.indexOf(
+            nc,
+            reading.fromBase[searchFrom],
+          );
           if (rFound >= 0 &&
               rFound + nc.length <= reading.fromBase[windowEnd]) {
             found = reading.toBaseStart[rFound];
@@ -336,6 +376,9 @@ class EpubSrtMatcher {
         }
         if (hit) {
           final int secIdx = _sectionForOffset(idx.sectionNormStarts, found);
+          trimPreviousTo(found);
+          lastHitResult = results.length;
+          lastHitAbsStart = found;
           results.add(
             CueMatch(
               cueSentenceIndex: cue.sentenceIndex,
@@ -379,7 +422,7 @@ class EpubSrtMatcher {
         final _SlidingDiceResult r = _slidingDice(
           needle: nc,
           haystack: big,
-          start: cursor,
+          start: searchFrom,
           end: windowEnd,
         );
         if (r.score > bestSim) {
@@ -390,7 +433,7 @@ class EpubSrtMatcher {
         // 基底轨够不到阈值时在读音轨同一窗口再扫一遍，取更高分者；区间换算回
         // 基底轨（整个 ruby 为原子）。
         if (bestSim < similarityThreshold && reading != null) {
-          final int rStart = reading.fromBase[cursor];
+          final int rStart = reading.fromBase[searchFrom];
           final int rEnd = reading.fromBase[windowEnd];
           if (rEnd - rStart >= nc.length) {
             final _SlidingDiceResult rr = _slidingDice(
@@ -415,6 +458,9 @@ class EpubSrtMatcher {
       if (bestSim >= similarityThreshold && bestPos >= 0) {
         final int matchEnd = bestPos + bestLen;
         final int secIdx = _sectionForOffset(idx.sectionNormStarts, bestPos);
+        trimPreviousTo(bestPos);
+        lastHitResult = results.length;
+        lastHitAbsStart = bestPos;
         results.add(
           CueMatch(
             cueSentenceIndex: cue.sentenceIndex,
@@ -575,7 +621,7 @@ class EpubSrtMatcher {
         final int outKey = tn == 1
             ? haystack.codeUnitAt(outIdx)
             : (haystack.codeUnitAt(outIdx) << 16) |
-                haystack.codeUnitAt(outIdx + 1);
+                  haystack.codeUnitAt(outIdx + 1);
         final int outOldCount = cGrams[outKey]!;
         final int outNCount = effectiveNGrams[outKey] ?? 0;
         // If this gram was contributing to matches, check if removing reduces it.
@@ -593,7 +639,7 @@ class EpubSrtMatcher {
         final int inKey = tn == 1
             ? haystack.codeUnitAt(inIdx)
             : (haystack.codeUnitAt(inIdx) << 16) |
-                haystack.codeUnitAt(inIdx + 1);
+                  haystack.codeUnitAt(inIdx + 1);
         final int inOldCount = cGrams[inKey] ?? 0;
         final int inNCount = effectiveNGrams[inKey] ?? 0;
         // If adding this gram brings the candidate count to within needle range.
@@ -635,8 +681,9 @@ class EpubSrtMatcher {
     double similarityThreshold, [
     List<String>? preNormCueTexts,
   ]) {
-    final int limit =
-        cues.length < defaultProbeCount ? cues.length : defaultProbeCount;
+    final int limit = cues.length < defaultProbeCount
+        ? cues.length
+        : defaultProbeCount;
     // 每条 cue 的候选起点（去重）。
     final List<List<int>> perCue = <List<int>>[];
     int totalCueLen = 0;
