@@ -640,9 +640,18 @@ window.fushiOpenSentenceContextModal = function (args) {
     card.appendChild(foot);
   }
   bg.addEventListener('click', function (e) { if (e.target === bg) { window.fushiSetSentenceContext(snap.prev, snap.next); fushiCloseSentenceContextModal(); } });
-  host.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape') { e.stopPropagation(); window.fushiSetSentenceContext(snap.prev, snap.next); fushiCloseSentenceContextModal(); }
-  });
+  // 模态开着时按键不能漏给宿主页：Netflix/YouTube 把空格/方向键/数字键都绑成播放快捷键，
+  // 用户在模态里按 Esc/空格本意是操作模态，不是让视频跳进度。host 在 shadow 之外、
+  // document 之前的冒泡路径上，这里截住即可（宿主页 capture 阶段的监听截不住，接受）。
+  for (const type of ['keydown', 'keyup', 'keypress']) {
+    host.addEventListener(type, function (e) {
+      e.stopPropagation();
+      if (type === 'keydown' && e.key === 'Escape') {
+        window.fushiSetSentenceContext(snap.prev, snap.next);
+        fushiCloseSentenceContextModal();
+      }
+    });
+  }
   host.tabIndex = -1;
   render();
   (document.fullscreenElement || document.body).appendChild(host);

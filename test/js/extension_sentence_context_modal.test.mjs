@@ -135,6 +135,18 @@ test("取消 / 背景点击 / Esc：关窗并还原到开窗时的草稿快照",
   assert.deepStrictEqual([p.prev.length, p.next.length], [1, 0]);
 });
 
+test("模态开着时按键不漏给宿主页（网飞空格=播放/暂停）", () => {
+  const win = createWorld();
+  let leaked = 0;
+  win.document.addEventListener("keydown", () => { leaked++; });
+  win.fushiOpenSentenceContextModal({ entryIndex: 0, matched: "" });
+  const m = modal(win);
+  m.root.querySelector("button").dispatchEvent(
+    new win.KeyboardEvent("keydown", { key: " ", bubbles: true, composed: true }));
+  assert.strictEqual(leaked, 0, "空格在模态里按下不得冒泡到 document");
+  assert.ok(win.document.getElementById("fushi-ctx-modal-host"), "非 Esc 键不关窗");
+});
+
 test("重复打开：只保留一个模态实例", () => {
   const win = createWorld();
   win.fushiOpenSentenceContextModal({ entryIndex: 0, matched: "" });
