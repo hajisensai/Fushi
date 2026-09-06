@@ -742,7 +742,7 @@ class _BookImportDialogState extends State<BookImportDialog>
       tmpDir.path,
       'audio_cover_${DateTime.now().millisecondsSinceEpoch}.jpg',
     );
-    for (final String audioPath in _audioPaths.take(kAudioTagProbeLimit)) {
+    for (final String audioPath in _audioPaths) {
       final String? result = await TtsChannel.instance.extractEmbeddedCover(
         audioPath: audioPath,
         outputPath: outputPath,
@@ -753,13 +753,6 @@ class _BookImportDialogState extends State<BookImportDialog>
       }
     }
   }
-
-  /// 封面 / 元数据探测最多看前几个音频文件。
-  ///
-  /// 每次探测都是一个 ffmpeg / ffprobe 子进程；有声书的容器 tag 与内嵌封面要么
-  /// 每个文件都有、要么都没有，一本 100 段、什么都没嵌的有声书以前要串行起
-  /// 200 个进程，用户还在对话框里打字时后台就在一个个 spawn。
-  static const int kAudioTagProbeLimit = 3;
 
   /// TODO-1045：从第一个含 tag 的音频容器（M4B/M4A/MP3…）读标题/作者，**仅当对应
   /// 输入框为空时**回填（复用 sidecar 的「填空不覆盖」闸门，绝不覆盖用户手打的值）。
@@ -776,7 +769,7 @@ class _BookImportDialogState extends State<BookImportDialog>
     if (_audioPaths.isEmpty) return;
     // 两框都已填就无事可做（避免无谓 ffprobe 进程）。
     if (_titleCtrl.text.isNotEmpty && _authorCtrl.text.isNotEmpty) return;
-    for (final String audioPath in _audioPaths.take(kAudioTagProbeLimit)) {
+    for (final String audioPath in _audioPaths) {
       final AudioMetadata? meta =
           await TtsChannel.instance.extractAudioMetadata(audioPath: audioPath);
       if (meta == null) continue;

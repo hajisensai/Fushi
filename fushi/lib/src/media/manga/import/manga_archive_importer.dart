@@ -471,13 +471,7 @@ abstract final class MangaArchiveImporter {
           .toList();
       final File output = File(p.joinAll(<String>[staging.path, ...segments]));
       await output.parent.create(recursive: true);
-      final Object? content = entry.content;
-      if (content is! List<int>) {
-        throw MangaImportException(
-          'Could not extract manga page: ${entry.name}',
-        );
-      }
-      await output.writeAsBytes(content, flush: true);
+      await output.writeAsBytes(_verifiedContent(entry), flush: true);
       imageCount += 1;
     }
     if (imageCount == 0) {
@@ -499,6 +493,9 @@ abstract final class MangaArchiveImporter {
       final Object? content = entry.content;
       if (content is! List<int>) continue;
       if (content.length > _maximumMokuroBytes) continue;
+      // 清单 JSON 也做 CRC：坏清单会让页匹配整体失败，早点当「不是候选」跳过。
+      final int? expectedCrc = entry.crc32;
+      if (expectedCrc != null && getCrc32(content) != expectedCrc) continue;
       final String normalizedName = _normalizeArchiveName(entry.name);
       final List<String> nameSegments = normalizedName.split('/');
       if (nameSegments.any(
@@ -733,14 +730,30 @@ abstract final class MangaArchiveImporter {
       }
       final File output = MangaImporter.mokuroPageFile(staging.path, page.url);
       await output.parent.create(recursive: true);
-      final Object? content = entry.content;
-      if (content is! List<int>) {
-        throw MangaImportException(
-          'Could not extract Mokuro manga page: ${entry.name}',
-        );
-      }
-      await output.writeAsBytes(content, flush: true);
+      await output.writeAsBytes(_verifiedContent(entry), flush: true);
     }
+  }
+
+  /// 条目内容 + CRC32 校验。
+  ///
+  /// 流式打开（[_open]）只读中央目录、不 `verify`，整包 CRC 校验随之消失；这里在
+  /// 真正要写盘的条目上补回来——字节已经在内存里，CRC 是零额外 IO 的纯计算，而
+  /// 探测路径（只看条目名）仍然不用为一个坏包白解压整包。CRC 不符 = 传输截断 /
+  /// 位翻转的坏页，宁可整次导入失败也不把垃圾页写进书。
+  static List<int> _verifiedContent(ArchiveFile entry) {
+    final Object? content = entry.content;
+    if (content is! List<int>) {
+      throw MangaImportException(
+        'Could not extract manga page: ${entry.name}',
+      );
+    }
+    final int? expected = entry.crc32;
+    if (expected != null && getCrc32(content) != expected) {
+      throw MangaImportException(
+        'Corrupt manga archive entry (CRC mismatch): ${entry.name}',
+      );
+    }
+    return content;
   }
 
   /// `img_path` 是否含 `..` 段（与 [MangaStorage.sanitizeRelSegments] 同判据，

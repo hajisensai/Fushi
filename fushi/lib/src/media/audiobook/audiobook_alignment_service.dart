@@ -87,6 +87,10 @@ List<EpubSection> epubSectionsFromExtractDir(String extractDir) {
 /// 的瞬时 DOM 和数秒的 CPU；匹配器早就放 isolate 了（[EpubCueMatcher.matchInIsolate]），
 /// 这一步是整条对齐链上唯一还留在 UI isolate 的重活。[EpubSection] 是纯数据
 /// （index / href / text），可直接跨 isolate 传回。
+///
+/// 已知权衡：`EpubParser` 内部对坏 nav/ncx 的 `ErrorLogService.log` 落在工作
+/// isolate 的临时实例上，不进主 isolate 的错误日志（与 `EpubImporter` 的导入
+/// isolate 同款）；解析整体失败仍会抛回调用方并由其记日志。
 Future<List<EpubSection>> loadEpubSectionsInBackground(String extractDir) =>
     Isolate.run(() => epubSectionsFromExtractDir(extractDir));
 

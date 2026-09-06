@@ -112,9 +112,10 @@ class LocalSourceFileSystem implements SourceFileSystem {
     await for (final FileSystemEntity e
         in dir.list(recursive: recursive, followLinks: false)) {
       if (e is File) {
-        // 本地传输不 stat 每个文件取大小：扫描链路上没有任何消费方读 sizeBytes
-        // （远端传输由列目录响应顺带给出，零成本），而递归枚举一棵几万文件的
-        // 漫画/视频树时每文件一次 `length()` 是几万次额外系统调用。
+        // 本地传输不 stat 每个文件取大小：扫描链路（扫描器 / 规划器）不读
+        // sizeBytes，远端传输由列目录响应顺带给出零成本；而递归枚举一棵几万
+        // 文件的漫画/视频树时每文件一次 `length()` 是几万次额外系统调用。唯一
+        // 要大小的消费方是低频的刮削诊断导出器，它自己按需 stat。
         entries.add(SourceFileEntry(
           name: p.basename(e.path),
           path: e.path,

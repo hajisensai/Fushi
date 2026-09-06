@@ -936,9 +936,13 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
     }
     try {
       reportProgress(0.2, t.import_step_reading_idb);
-      // 自动匹配探测已经解析过的话直接复用，否则后台 isolate 解析。
-      final List<EpubSection> sections = _probedSections ??
-          await loadEpubSectionsInBackground(widget.extractDir!);
+      // 自动匹配探测已经解析出章节的话直接复用，否则后台 isolate 解析。探测
+      // 失败时记忆的是空列表（`_loadSectionsForProbe` 吞异常回空），不能拿它
+      // 短路导入——那会把一次瞬时读失败变成「EPUB has 0 chapters」。
+      final List<EpubSection>? probed = _probedSections;
+      final List<EpubSection> sections = probed != null && probed.isNotEmpty
+          ? probed
+          : await loadEpubSectionsInBackground(widget.extractDir!);
       if (sections.isEmpty) {
         return AudiobookHealth.failed(
           reason: 'EPUB has 0 chapters',

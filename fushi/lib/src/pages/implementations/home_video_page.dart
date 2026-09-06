@@ -927,8 +927,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         if (!mounted) return;
         refreshShelfThrottled();
       }
-      if (shelfDirty) refreshShelfThrottled(force: true);
     } finally {
+      // 兜底刷新放 finally：循环中途抛异常 / 提前 return 时，已落库落盘的封面
+      // 不能停留在「书架看不见」的状态。
+      if (shelfDirty) refreshShelfThrottled(force: true);
       _backfillingCovers = false;
       lease.release();
     }
