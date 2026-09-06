@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/utils/components/stat_contribution_heatmap.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 贡献热力图纯模型 [buildStatHeatmap] 的单测：窗口/周对齐、等级分桶、未来日占位，
 /// 以及翻页偏移 [maxHeatmapPageOffset]、格子命中 [hitStatHeatmapCell]。
@@ -48,6 +49,24 @@ void main() {
       expect(lastCol[2].dateKey, isNotNull); // 周三=今天
       expect(lastCol[3].dateKey, isNull); // 周四=未来
       expect(lastCol[6].dateKey, isNull); // 周日=未来
+    });
+
+    test('「今日」重置时刻 = 4：凌晨 2 点的今日格是日历昨日，格子 key 仍是日历日', () {
+      FushiDatabase.statDayResetHour = 4;
+      addTearDown(() => FushiDatabase.statDayResetHour = 0);
+      // 2026-07-16（周四）02:00 → 统计今日 = 07-15（周三）。
+      final StatHeatmapModel m = buildStatHeatmap(
+        valueByDateKey: <String, int>{'2026-07-15': 7, '2026-07-13': 3},
+        now: DateTime(2026, 7, 16, 2),
+        weeks: 3,
+      );
+      final List<StatHeatmapCell> lastCol = m.weeks.last;
+      expect(lastCol[2].dateKey, '2026-07-15', reason: '周三 = 统计今日');
+      expect(lastCol[2].value, 7);
+      expect(lastCol[3].dateKey, isNull, reason: '日历周四还没到统计今日，是未来占位');
+      // 周一格的 key 必须是日历日 07-13：若误过 statDateKey，00:00 会被前移成 07-12。
+      expect(lastCol[0].dateKey, '2026-07-13');
+      expect(lastCol[0].value, 3);
     });
 
     test('今天的值落进末列对应行并计入 maxValue', () {

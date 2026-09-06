@@ -4294,5 +4294,7 @@
   "onboarding_pack_status_paused": "Recommended pack download paused",
   "onboarding_pack_download_resume": "Resume download",
   "onboarding_pack_paused_desc": "Progress is kept on disk — resuming picks up where it stopped.",
-  "onboarding_pack_mini_bar_hide": "Hide"
+  "onboarding_pack_mini_bar_hide": "Hide",
+  "reading_stats_day_reset_hour": "Day starts at",
+  "reading_stats_day_reset_hour_hint": "Reading before this hour counts toward the previous day. Affects today and the last N days in statistics; only records written after the change use the new boundary."
 }

@@ -8,6 +8,11 @@ import 'package:fushi_core/fushi_core.dart';
 /// 还互相不一致）。这里只有一个定义：`days(n)` = 含今日在内的 **恰 n 个自然日**。
 ///
 /// dateKey 是零填充的 `yyyy-MM-dd`，字典序即时间序，比较全走字符串。
+///
+/// 「今日」的边界不是本地午夜而是 [FushiDatabase.statDayResetHour]（用户可配的
+/// 整点，默认 0）：`todayKey` 与所有「N 天前」都从 [FushiDatabase.statDateKeyOf]
+/// 派生再做 key 算术，不得再用 `DateTime(y, m, d)` 合成本地午夜当今日——
+/// 重置时刻 = 4 点时凌晨 2 点仍属「昨日」，合成午夜会把它错切到日历今日。
 class StatWindow {
   StatWindow(DateTime now)
     : todayKey = FushiDatabase.statDateKeyOf(now),
@@ -47,8 +52,17 @@ class StatWindow {
     for (int i = n - 1; i >= 0; i--) _keyDaysAgo(_now, i),
   ];
 
+  /// 到下一个统计日边界（[FushiDatabase.statDayResetHour] 整点）的时长（恒 > 0）。
+  /// 统计页 / 首页用它排一次性 Timer：跨边界后整页重聚合，让加载时的窗口与卡片
+  /// 谓词永远是同一个 [StatWindow]（BUG-2181：此前聚合用加载时刻、卡片谓词在点击
+  /// 时现算，跨午夜后「今日」卡的数和明细对不上）。按日历取下一个边界时刻
+  /// （DST 切换日不是恰 24h）。
+  static Duration untilNextStatDayBoundary(DateTime now) =>
+      FushiDatabase.untilNextStatDayBoundary(now);
+
   static String _keyDaysAgo(DateTime now, int days) =>
-      FushiDatabase.statDateKeyOf(
-        DateTime(now.year, now.month, now.day - days),
+      FushiDatabase.statDateKeyPlusDays(
+        FushiDatabase.statDateKeyOf(now),
+        -days,
       );
 }
