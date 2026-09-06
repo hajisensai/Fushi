@@ -4292,5 +4292,7 @@
   "onboarding_pack_status_paused": "Recommended pack download paused",
   "onboarding_pack_download_resume": "Resume download",
   "onboarding_pack_paused_desc": "Progress is kept on disk — resuming picks up where it stopped.",
-  "onboarding_pack_mini_bar_hide": "Hide"
+  "onboarding_pack_mini_bar_hide": "Hide",
+  "video_setting_subtitle_obscure_reveal": "懸停或點擊顯形",
+  "video_setting_subtitle_obscure_reveal_hint": "字幕處於模糊或隱藏時，桌面懸停、流動裝置點擊可臨時顯形；關掉後遮蔽始終保持，不會被誤觸揭開。"
 }

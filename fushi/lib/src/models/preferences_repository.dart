@@ -962,6 +962,22 @@ class PreferencesRepository extends ChangeNotifier {
     });
   }
 
+  /// 遮蔽态「悬停 / 点击临时显形」总闸；**默认 true**（历史行为：显形是遮蔽的内建
+  /// 行为、关不掉）。关掉后模糊 / 隐藏在整句期间恒定生效——听力沉浸时鼠标恰好停在
+  /// 字幕上或手指扫过盒面不再破功。主 / 副字幕共用一个开关（用户诉求是「显形这个
+  /// 行为」的总闸，不是逐层设置）。
+  ///
+  /// 与遮蔽模式两个 setter 不同，本 setter **照常广播**：它是设置页 / 面板里的低频
+  /// 开关（没有快捷键路径），一次全局重建换来所有读取方（overlay、面板回显）无条件
+  /// 同步，不必各自补刷新。
+  bool get videoSubtitleObscureReveal =>
+      getPref('video_subtitle_obscure_reveal', defaultValue: true) as bool;
+
+  Future<void> setVideoSubtitleObscureReveal(bool value) async {
+    await setPref('video_subtitle_obscure_reveal', value);
+    notifyListeners();
+  }
+
   /// 视频字幕列表「自动滚动到当前播放句」开关（TODO-613）：默认开启，与
   /// [VideoSubtitleJumpPanel] 头部自动滚动按钮一一对应。旧版本这是面板的纯内存状态、
   /// 每次打开都重置成开；现在落 Drift `preferences`，用户关掉后跨开关 / 跨重启都记住。

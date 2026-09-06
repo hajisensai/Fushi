@@ -246,6 +246,21 @@ Future<void> setVideoSecondarySubtitleObscureModeDual(
   }
 }
 
+/// 遮蔽态「悬停 / 点击临时显形」总闸的双通道写入（同构于
+/// [setVideoRespectAssStyleDual]）：播放中经 host 落盘 + 重建 overlay，全局设置页
+/// 直接写 [AppModel]（其 setter 照常广播，无需显式补 notify）。
+Future<void> setVideoSubtitleObscureRevealDual(
+  SettingsContext context,
+  bool value,
+) async {
+  final VideoQuickSettingsHost? host = videoQuickSettingsHostOf(context);
+  if (host?.onSubtitleObscureRevealChanged != null) {
+    await host!.onSubtitleObscureRevealChanged!(value);
+  } else {
+    await context.appModel.setVideoSubtitleObscureReveal(value);
+  }
+}
+
 Future<void> setVideoRespectAssStyleDual(
   SettingsContext context,
   bool value,
