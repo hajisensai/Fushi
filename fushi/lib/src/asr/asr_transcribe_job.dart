@@ -270,6 +270,9 @@ abstract final class AsrJobFiles {
   static const String state = 'state.json';
   static const String segments = 'segments.jsonl';
   static const String srt = 'transcript.srt';
+
+  /// 与 [srt] 同一份 cue 的逐 token 时间 sidecar（`serializeAsrCueTokens`）。
+  static const String cueTokens = 'transcript.tokens.jsonl';
 }
 
 /// 整本转录任务。一个实例只跑一次 [run]；暂停后再跑请新建实例（读同一 jobDir）。
@@ -340,6 +343,7 @@ class AsrTranscribeJob {
   File get _stateFile => File(p.join(jobDir.path, AsrJobFiles.state));
   File get _segmentsFile => File(p.join(jobDir.path, AsrJobFiles.segments));
   File get _srtFile => File(p.join(jobDir.path, AsrJobFiles.srt));
+  File get _cueTokensFile => File(p.join(jobDir.path, AsrJobFiles.cueTokens));
 
   /// 读取（或初始化）任务状态。路径列表 / 模型包与磁盘状态不一致、文件缺失或
   /// 损坏时视为新任务（`fresh == true`，调用方据此清空旧产物）。
@@ -423,6 +427,7 @@ class AsrTranscribeJob {
       // 新任务（或状态文件缺失/损坏/路径不符）：清掉残留的旧产物。
       if (_segmentsFile.existsSync()) await _segmentsFile.delete();
       if (_srtFile.existsSync()) await _srtFile.delete();
+      if (_cueTokensFile.existsSync()) await _cueTokensFile.delete();
       await _writeState(state);
     }
 
@@ -767,6 +772,10 @@ class AsrTranscribeJob {
       fileOffsetsMs: asrFileOffsetsFromDurations(fileDurationsMs),
     );
     await _srtFile.writeAsString(serializeAsrCuesToSrt(cues), flush: true);
+    await _cueTokensFile.writeAsString(
+      serializeAsrCueTokens(cues),
+      flush: true,
+    );
     state = state.copyWith(finished: true);
     await _writeState(state);
     yield AsrTranscribeFinishedEvent(

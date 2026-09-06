@@ -94,6 +94,22 @@ class EpubBook {
     return _chapterPlainTextFromBody(doc.body);
   }
 
+  /// [chapterPlainText] 的同一份纯文本，外加每处 ruby 的基底区间与读音
+  /// （有声书匹配的「读音轨」：听写かな对正文漢字零重叠，出版社标好的振假名是
+  /// 唯一零推断误差的读音来源）。
+  ///
+  /// `text` 与 [chapterPlainText] **逐码元相同**（同一 DOM、同一空白折叠、同一
+  /// trim；守卫测试 `test/epub/epub_ruby_plain_text_test.dart`）——`fushi-cue://`
+  /// 偏移、阅读位置、统计水位全部建立在这份文本上，读音只能作旁路。
+  EpubPlainTextWithRuby chapterPlainTextWithRuby(int index) {
+    if (index < 0 || index >= chapters.length) {
+      return const EpubPlainTextWithRuby(
+          text: '', rubies: <EpubRubyAnnotation>[]);
+    }
+    final html_dom.Document doc = parseChapterHtml(chapters[index].html);
+    return _RubyPlainTextWalker.walk(doc.body);
+  }
+
   /// BUG-2017：章节 XHTML 的**唯一** DOM 解析入口。
   ///
   /// EPUB 章节是 XML（`application/xhtml+xml`），WebView 按该 MIME 走 XML 解析，
@@ -412,6 +428,136 @@ class EpubImageRef {
   final int chapterIndex;
   final int orderInBook;
   final String src;
+}
+
+/// [EpubBook.chapterPlainTextWithRuby] 的产物。
+class EpubPlainTextWithRuby {
+  const EpubPlainTextWithRuby({required this.text, required this.rubies});
+
+  /// 与 [EpubBook.chapterPlainText] 逐码元相同的纯文本。
+  final String text;
+
+  /// 按出现顺序、互不重叠的 ruby 基底区间（[text] 的 UTF-16 码元）与读音。
+  final List<EpubRubyAnnotation> rubies;
+}
+
+/// 一处 ruby：基底在纯文本里的区间 `[start, end)` 与 `<rt>` 读音（多段 `<rt>`
+/// 拼接；mono-ruby `<ruby>漢<rt>かん</rt>字<rt>じ</rt></ruby>` 记成一处
+/// `漢字`/`かんじ`——匹配只需整词读音）。
+class EpubRubyAnnotation {
+  const EpubRubyAnnotation({
+    required this.start,
+    required this.end,
+    required this.reading,
+  });
+
+  final int start;
+  final int end;
+  final String reading;
+}
+
+/// 与 [EpubBook._chapterPlainTextFromBody] 等价的一次 DOM 遍历，顺手记下 ruby。
+///
+/// 等价性怎么保证：`Element.text` 就是按文档序拼接全部后代文本节点；这里同样按
+/// 文档序拼接、跳过 `rt`/`rp`/`rtc` 子树（对应 `_removeRubyAnnotations`），再做
+/// `\s+` → 一个空格的折叠——折叠用同一个 `RegExp(r'\s')` 逐码元判定——最后
+/// [String.trim]（与原实现同一调用），trim 掉的前导码元数从各区间里减掉。
+class _RubyPlainTextWalker {
+  _RubyPlainTextWalker._();
+
+  static final RegExp _whitespace = RegExp(r'\s');
+
+  final StringBuffer _out = StringBuffer();
+  final List<EpubRubyAnnotation> _rubies = <EpubRubyAnnotation>[];
+  bool _pendingSpace = false;
+
+  /// 当前所在 ruby 的基底起点（还没输出任何基底字符时为 -1）；不嵌套。
+  int _rubyStart = -2;
+  StringBuffer? _reading;
+
+  static EpubPlainTextWithRuby walk(html_dom.Element? body) {
+    final _RubyPlainTextWalker w = _RubyPlainTextWalker._();
+    if (body != null) w._visit(body);
+    final String raw = w._out.toString();
+    final String text = raw.trim();
+    final int shift = raw.length - raw.trimLeft().length;
+    final List<EpubRubyAnnotation> rubies = <EpubRubyAnnotation>[
+      for (final EpubRubyAnnotation r in w._rubies)
+        if (r.end - shift <= text.length && r.start - shift >= 0)
+          EpubRubyAnnotation(
+            start: r.start - shift,
+            end: r.end - shift,
+            reading: r.reading,
+          ),
+    ];
+    return EpubPlainTextWithRuby(text: text, rubies: rubies);
+  }
+
+  void _visit(html_dom.Node node) {
+    if (node is html_dom.Text) {
+      _append(node.data);
+      return;
+    }
+    if (node is! html_dom.Element) {
+      for (final html_dom.Node child in node.nodes) {
+        _visit(child);
+      }
+      return;
+    }
+    final String tag = node.localName ?? '';
+    if (tag == 'rt' || tag == 'rp' || tag == 'rtc') {
+      // `<rtc>` 是读音容器（里面还是 `<rt>`），三者内容都不进正文。
+      if (_reading != null && tag != 'rp') {
+        for (final html_dom.Element rt in tag == 'rt'
+            ? <html_dom.Element>[node]
+            : node.querySelectorAll('rt')) {
+          _reading!.write(rt.text);
+        }
+      }
+      return;
+    }
+    final bool isRuby = tag == 'ruby' && _rubyStart == -2;
+    if (isRuby) {
+      _rubyStart = -1;
+      _reading = StringBuffer();
+    }
+    for (final html_dom.Node child in node.nodes) {
+      _visit(child);
+    }
+    if (isRuby) {
+      final String reading =
+          _reading!.toString().replaceAll(_whitespaceRun, '').trim();
+      if (_rubyStart >= 0 && reading.isNotEmpty) {
+        _rubies.add(
+          EpubRubyAnnotation(
+            start: _rubyStart,
+            end: _out.length,
+            reading: reading,
+          ),
+        );
+      }
+      _rubyStart = -2;
+      _reading = null;
+    }
+  }
+
+  static final RegExp _whitespaceRun = RegExp(r'\s+');
+
+  void _append(String data) {
+    for (int i = 0; i < data.length; i++) {
+      final String ch = data[i];
+      if (_whitespace.hasMatch(ch)) {
+        _pendingSpace = true;
+        continue;
+      }
+      if (_pendingSpace) {
+        if (_out.isNotEmpty) _out.write(' ');
+        _pendingSpace = false;
+      }
+      if (_rubyStart == -1) _rubyStart = _out.length;
+      _out.write(ch);
+    }
+  }
 }
 
 class EpubChapter {

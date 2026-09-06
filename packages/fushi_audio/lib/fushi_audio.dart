@@ -36,6 +36,7 @@ export 'src/matching/epub_cue_matcher.dart';
 export 'src/matching/anchor_gap_filler.dart';
 export 'src/matching/collection_audio_matcher.dart';
 export 'src/matching/cue_file_index_assigner.dart';
+export 'src/matching/cue_sentence_resegmenter.dart';
 export 'src/matching/subtitle_rematch_codec.dart';
 export 'src/matching/cues_to_epub.dart';
 export 'src/matching/epub_builder.dart';

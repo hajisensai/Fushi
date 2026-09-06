@@ -229,6 +229,38 @@ class AsrCtcDecoder
     );
   }
 
+  /// 一段波形一次 run（动态会话、精确长度），返回完整的原始 `logits[T, V]`
+  /// 与每帧样本数——强制对齐（`asr_ctc_align.dart`）要整张矩阵做 Viterbi，
+  /// 不能像转录那样当场 argmax。20 s 段 ≈ 1000 帧 × 10288 × 4 B ≈ 41 MB，
+  /// 调用方逐段拿、用完即弃。
+  Future<AsrCtcLogits> runLogits(Float32List samples) async {
+    if (samples.isEmpty) {
+      throw ArgumentError.value(samples, 'samples', '空段');
+    }
+    final Float32List x = normalizeWaveform(samples);
+    final Map<String, OnnxTensor> out = await _model.run(<String, OnnxTensor>{
+      AsrModelIo.ctcInputX: OnnxTensor.float32(x, <int>[1, x.length]),
+    });
+    final OnnxTensor? logits = out[AsrModelIo.ctcOutputLogits];
+    if (logits == null) {
+      throw StateError('模型没有输出 ${AsrModelIo.ctcOutputLogits}：${out.keys}');
+    }
+    if (logits.shape.length != 3 || logits.shape[0] != 1) {
+      throw StateError('logits 形状异常：${logits.shape}');
+    }
+    final Float32List? data = logits.floatData;
+    if (data == null) {
+      throw StateError('logits 不是 float32：${logits.type}');
+    }
+    final int frames = logits.shape[1];
+    return AsrCtcLogits(
+      logits: data,
+      frames: frames,
+      vocab: logits.shape[2],
+      frameSamples: frames == 0 ? 1 : math.max(1, x.length ~/ frames),
+    );
+  }
+
   /// 跑一次模型并对前 [realRows] 行逐帧 argmax。
   Future<List<Int32List>> _runArgmax(
     OnnxSession session,
@@ -317,6 +349,25 @@ class AsrCtcDecoder
     );
     return out;
   }
+}
+
+/// [AsrCtcDecoder.runLogits] 的产物：一段的原始 `logits[frames × vocab]`
+/// （行主序、未 softmax）与每帧样本数（Omnilingual 320 = 20 ms）。
+class AsrCtcLogits {
+  const AsrCtcLogits({
+    required this.logits,
+    required this.frames,
+    required this.vocab,
+    required this.frameSamples,
+  });
+
+  final Float32List logits;
+  final int frames;
+  final int vocab;
+  final int frameSamples;
+
+  /// 一帧的毫秒数。
+  double get frameMs => frameSamples * 1000 / kAsrSampleRate;
 }
 
 /// [AsrCtcDecoder.encode] 的产物：每段逐帧 argmax 后的 id 与每帧样本数。

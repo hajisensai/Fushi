@@ -217,4 +217,22 @@ void main() {
     expect(out, hasLength(9));
     expect(factory.created.single.shapes, hasLength(2), reason: '8 + 1 两批');
   });
+
+  test('runLogits：一段一次 run、归一化后喂入、返回完整原始 logits 与帧长', () async {
+    final _CtcSession session = _CtcSession(_abcPlan);
+    final AsrCtcDecoder d = AsrCtcDecoder(model: session, tokens: tokens);
+    final AsrCtcLogits lg = await d.runLogits(_segment(seconds: 3).samples);
+    expect(session.shapes, <List<int>>[
+      <int>[1, 3 * kAsrSampleRate],
+    ]);
+    expect(lg.frames, 3 * kAsrSampleRate ~/ _kFrameSamples);
+    expect(lg.vocab, _kVocab);
+    expect(lg.frameSamples, _kFrameSamples);
+    expect(lg.frameMs, 20);
+    expect(lg.logits, hasLength(lg.frames * lg.vocab));
+    // 帧 0 的目标是 a(5)：该列最大；帧 3 是 blank。
+    expect(lg.logits[5], 3);
+    expect(lg.logits[3 * _kVocab + 0], 3);
+    expect(() => d.runLogits(Float32List(0)), throwsArgumentError);
+  });
 }

@@ -12,11 +12,32 @@ class EpubSection {
     required this.index,
     required this.href,
     required this.text,
+    this.rubies = const <EpubRubySpan>[],
   });
 
   final int index;
   final String href;
   final String text;
+
+  /// [text] 里每处 ruby 的基底区间与读音（按出现顺序、互不重叠）。匹配器据此
+  /// 另建一条**读音轨**：听写かな（うらやましい）对正文漢字（羨ましい）在
+  /// 基底轨上零重叠，在读音轨上却是精确子串。没有 ruby 的书为空，行为与
+  /// 只有基底轨时逐字节相同。
+  final List<EpubRubySpan> rubies;
+}
+
+/// 一处 ruby：基底在 [EpubSection.text] 里的 UTF-16 码元区间 `[start, end)`
+/// 与读音（原文，匹配前再归一化）。
+class EpubRubySpan {
+  const EpubRubySpan({
+    required this.start,
+    required this.end,
+    required this.reading,
+  });
+
+  final int start;
+  final int end;
+  final String reading;
 }
 
 /// 单条 cue 在 EPUB 里的匹配结果。
@@ -288,8 +309,13 @@ class EpubSrtMatcher {
 
       // --- 快速通道：精确 indexOf ---
       final int windowEnd = (cursor + searchWindow).clamp(0, totalLen);
+      // 读音轨只给 ≥ [defaultProbeMinLen] 的 cue 用：全假名的读音轨里三四个字
+      // 的串随处可撞（与模糊通道限长同一理由，TODO-906）。
+      final _ReadingTrack? reading =
+          nc.length >= defaultProbeMinLen ? idx.reading : null;
       if (windowEnd - cursor >= nc.length) {
-        final int found = big.indexOf(nc, cursor);
+        int found = big.indexOf(nc, cursor);
+        int matchEnd = found + nc.length;
         // 超短 cue（≤ [shortCueMaxLen] 字）的精确命中只认紧邻游标的位置：一两个
         // 字在 200 字窗口里几乎必然能撞上（「一」「え」「ああ」），撞上就把游标
         // 拽走，后面整段正文全 miss。2026-09-05 无職転生 01 真机对照：ASR 字幕的
@@ -297,10 +323,18 @@ class EpubSrtMatcher {
         // 连锁错过（SubPlz 那份写作「＊1」，规范化后是数字 1 才侥幸没撞）。
         final bool tooFarForShortCue =
             nc.length <= shortCueMaxLen && found > cursor + shortCueMaxAdvance;
-        if (found >= 0 &&
-            found + nc.length <= windowEnd &&
-            !tooFarForShortCue) {
-          final int matchEnd = found + nc.length;
+        bool hit = found >= 0 && matchEnd <= windowEnd && !tooFarForShortCue;
+        if (!hit && reading != null) {
+          // 基底轨没有精确命中：同一窗口在读音轨再找一次，命中换算回基底偏移。
+          final int rFound = reading.text.indexOf(nc, reading.fromBase[cursor]);
+          if (rFound >= 0 &&
+              rFound + nc.length <= reading.fromBase[windowEnd]) {
+            found = reading.toBaseStart[rFound];
+            matchEnd = reading.toBaseEnd[rFound + nc.length];
+            hit = matchEnd > found;
+          }
+        }
+        if (hit) {
           final int secIdx = _sectionForOffset(idx.sectionNormStarts, found);
           results.add(
             CueMatch(
@@ -352,6 +386,29 @@ class EpubSrtMatcher {
           bestSim = r.score;
           bestPos = r.pos;
           bestLen = r.len;
+        }
+        // 基底轨够不到阈值时在读音轨同一窗口再扫一遍，取更高分者；区间换算回
+        // 基底轨（整个 ruby 为原子）。
+        if (bestSim < similarityThreshold && reading != null) {
+          final int rStart = reading.fromBase[cursor];
+          final int rEnd = reading.fromBase[windowEnd];
+          if (rEnd - rStart >= nc.length) {
+            final _SlidingDiceResult rr = _slidingDice(
+              needle: nc,
+              haystack: reading.text,
+              start: rStart,
+              end: rEnd,
+            );
+            if (rr.score > bestSim && rr.pos >= 0) {
+              final int b0 = reading.toBaseStart[rr.pos];
+              final int b1 = reading.toBaseEnd[rr.pos + rr.len];
+              if (b1 > b0) {
+                bestSim = rr.score;
+                bestPos = b0;
+                bestLen = b1 - b0;
+              }
+            }
+          }
         }
       }
 
@@ -658,7 +715,13 @@ class EpubSrtMatcher {
       normStarts.add(buf.length);
       AudioTextNormalizer.appendNormalized(buf, s.text);
     }
-    return _Index(buf.toString(), normStarts);
+    final String big = buf.toString();
+    final bool anyRuby = sections.any((EpubSection s) => s.rubies.isNotEmpty);
+    return _Index(
+      big,
+      normStarts,
+      anyRuby ? _ReadingTrack.build(sections, normStarts, big.length) : null,
+    );
   }
 
   static int _sectionForOffset(List<int> starts, int offset) {
@@ -687,10 +750,128 @@ class _SlidingDiceResult {
 }
 
 class _Index {
-  const _Index(this.normText, this.sectionNormStarts);
+  const _Index(this.normText, this.sectionNormStarts, this.reading);
 
   final String normText;
   final List<int> sectionNormStarts;
+
+  /// 读音轨（任一章节带 ruby 时才有）。
+  final _ReadingTrack? reading;
+}
+
+/// 读音轨：基底轨归一化文本里每处 ruby 的基底区间换成归一化读音后的全书串，
+/// 以及两轨之间的偏移映射。命中永远换算回**基底轨**偏移再产出 [CueMatch]——
+/// `fushi-cue://`、阅读器高亮、阅读位置、统计水位全建立在基底轨上，读音轨只
+/// 用于判定命中。
+///
+/// 映射粒度是整个 ruby 区间：命中落在某处读音中间时，起点取该 ruby 基底起点、
+/// 终点取其基底终点（一个词只有整词读音，不能按字符线性插值）。
+class _ReadingTrack {
+  const _ReadingTrack({
+    required this.text,
+    required this.toBaseStart,
+    required this.toBaseEnd,
+    required this.fromBase,
+  });
+
+  /// 读音轨归一化全书串。
+  final String text;
+
+  /// 读音轨位置 `p`（0..length）作为**起点**时对应的基底轨位置。
+  final Int32List toBaseStart;
+
+  /// 读音轨位置 `p`（0..length）作为**终点**时对应的基底轨位置。
+  final Int32List toBaseEnd;
+
+  /// 基底轨位置 `b`（0..baseLength）对应的读音轨位置（落在 ruby 基底中间的
+  /// 位置映到该 ruby 读音起点，游标只会偏早不会跳过）。
+  final Int32List fromBase;
+
+  static _ReadingTrack build(
+    List<EpubSection> sections,
+    List<int> sectionNormStarts,
+    int baseLength,
+  ) {
+    final StringBuffer buf = StringBuffer();
+    final List<int> toStart = <int>[];
+    final List<int> toEnd = <int>[];
+    final Int32List fromBase = Int32List(baseLength + 1);
+    for (int si = 0; si < sections.length; si++) {
+      final EpubSection s = sections[si];
+      final int baseOffset = sectionNormStarts[si];
+      final NormalizedTextWithOffsets norm =
+          AudioTextNormalizer.normalizeWithOffsets(s.text);
+      // ruby 基底 → 基底轨归一化区间 [i, j)；基底里没有保留字符或读音归一化后
+      // 为空的跳过。
+      final List<int> spanStart = <int>[];
+      final List<int> spanEnd = <int>[];
+      final List<String> spanReading = <String>[];
+      for (final EpubRubySpan r in s.rubies) {
+        final String reading = AudioTextNormalizer.normalize(r.reading);
+        if (reading.isEmpty || r.end <= r.start) continue;
+        final int i = _lowerBound(norm.starts, r.start);
+        int j = i;
+        while (j < norm.ends.length && norm.ends[j] <= r.end) {
+          j++;
+        }
+        if (j <= i) continue;
+        if (spanStart.isNotEmpty && i < spanEnd.last) continue; // 重叠丢弃
+        spanStart.add(i);
+        spanEnd.add(j);
+        spanReading.add(reading);
+      }
+      int b = 0;
+      int k = 0;
+      while (b < norm.text.length) {
+        if (k < spanStart.length && b == spanStart[k]) {
+          final int b0 = baseOffset + spanStart[k];
+          final int b1 = baseOffset + spanEnd[k];
+          final String reading = spanReading[k];
+          final int r0 = buf.length;
+          for (int q = 0; q < reading.length; q++) {
+            toStart.add(b0);
+            toEnd.add(q == 0 ? b0 : b1);
+          }
+          buf.write(reading);
+          for (int bb = spanStart[k]; bb < spanEnd[k]; bb++) {
+            fromBase[baseOffset + bb] = r0;
+          }
+          b = spanEnd[k];
+          k++;
+          continue;
+        }
+        toStart.add(baseOffset + b);
+        toEnd.add(baseOffset + b);
+        fromBase[baseOffset + b] = buf.length;
+        buf.writeCharCode(norm.text.codeUnitAt(b));
+        b++;
+      }
+    }
+    toStart.add(baseLength);
+    toEnd.add(baseLength);
+    fromBase[baseLength] = buf.length;
+    return _ReadingTrack(
+      text: buf.toString(),
+      toBaseStart: Int32List.fromList(toStart),
+      toBaseEnd: Int32List.fromList(toEnd),
+      fromBase: fromBase,
+    );
+  }
+
+  /// 第一个 `>= value` 的下标（[sorted] 单调不减）。
+  static int _lowerBound(List<int> sorted, int value) {
+    int lo = 0;
+    int hi = sorted.length;
+    while (lo < hi) {
+      final int mid = (lo + hi) >> 1;
+      if (sorted[mid] < value) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    return lo;
+  }
 }
 
 class _MatchRequest {

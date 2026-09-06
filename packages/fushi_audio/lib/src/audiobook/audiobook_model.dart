@@ -58,6 +58,20 @@ class Audiobook {
   bool? followAudio;
 }
 
+/// 一条 cue 的逐 token 发射时间：[tokens] 拼接即 cue 的听写文本，
+/// [offsetsMs] 是各 token 相对 **cue 起点** 的发射时刻（RNN-T 发射偏晚，
+/// 首 token 可能略晚于 cue 起点；cue 起点被前一条挤后时可为负）。
+class CueTokenTiming {
+  CueTokenTiming({required this.tokens, required this.offsetsMs})
+      : assert(tokens.length == offsetsMs.length);
+
+  final List<String> tokens;
+  final List<int> offsetsMs;
+
+  int get length => tokens.length;
+  bool get isEmpty => tokens.isEmpty;
+}
+
 /// 单条对齐片段，粒度为句子级别。
 ///
 /// 解析对齐文件后批量写入；运行时按 (bookUid, chapterHref) 查询并缓存。
@@ -92,6 +106,11 @@ class AudioCue {
   /// 解析时附带的行内样式 markup（仅视频字幕渲染用，瞬态、不持久化）。
   /// 由各文本字幕 parser 在 [parseSubtitleMarkup] 后填充；DB 往返不携带。
   SubtitleMarkup? markup;
+
+  /// 设备端转录产物附带的逐 token 发射时间（瞬态、不持久化）。导入链路从
+  /// 转录任务目录的 sidecar 挂上来，供匹配后按正文句界重切 cue
+  /// （`cue_sentence_resegmenter.dart`）；DB 往返不携带。
+  CueTokenTiming? tokenTiming;
 
   File? resolveAudioFile(List<File> audioFiles) {
     if (audioFileIndex < 0 || audioFileIndex >= audioFiles.length) {

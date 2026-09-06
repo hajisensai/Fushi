@@ -17,6 +17,8 @@
 ///   延迟），且不早于上一句末 token 时间 + 最小时长。
 library;
 
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 
 import 'package:fushi/src/asr/asr_types.dart';
@@ -37,6 +39,8 @@ class AsrCue {
     required this.endMs,
     required this.text,
     required this.audioFileIndex,
+    this.tokens = const <String>[],
+    this.tokenOffsetsMs = const <int>[],
   });
 
   final int startMs;
@@ -45,6 +49,13 @@ class AsrCue {
 
   /// 来源音频文件下标（仅诊断用；SRT 里时间已按累积偏移折成单时间轴）。
   final int audioFileIndex;
+
+  /// 本条 cue 的 token（拼接即 [text] 去首尾空白前的原样）与各 token 相对
+  /// [startMs] 的发射时刻，两者等长（const 构造不能对列表取 length 做断言，
+  /// 由 [AsrCueBuilder] 按同一下标列表构造保证）。SRT 装不下它们，随 SRT 写进
+  /// sidecar（[serializeAsrCueTokens]），导入链路据此按正文句界重切 cue。
+  final List<String> tokens;
+  final List<int> tokenOffsetsMs;
 
   int get durationMs => endMs - startMs;
 }
@@ -130,7 +141,8 @@ class AsrCueBuilder {
   }
 
   /// token（去掉 BPE 前导空格后）是否是闭合符号。
-  static bool isClosingMark(String token) => closingMarks.contains(token.trim());
+  static bool isClosingMark(String token) =>
+      closingMarks.contains(token.trim());
 
   /// 本句到目前为止以 `.` 收尾时，这个点是不是缩写点（不该切句）：
   /// 最后一个词是 [dotAbbreviations] 之一，或单个大写字母（人名首字母）。
@@ -141,7 +153,9 @@ class AsrCueBuilder {
     final int cut = body.lastIndexOf(RegExp(r'\s'));
     final String word = (cut < 0 ? body : body.substring(cut + 1)).trim();
     if (word.isEmpty) return false;
-    if (word.length == 1 && word.toUpperCase() == word && word != word.toLowerCase()) {
+    if (word.length == 1 &&
+        word.toUpperCase() == word &&
+        word != word.toLowerCase()) {
       return true;
     }
     return dotAbbreviations.contains(word.toLowerCase());
@@ -178,6 +192,8 @@ class AsrCueBuilder {
           endMs: cur.startMs > prev.startMs ? cur.startMs : prev.endMs,
           text: prev.text,
           audioFileIndex: prev.audioFileIndex,
+          tokens: prev.tokens,
+          tokenOffsetsMs: prev.tokenOffsetsMs,
         );
       }
     }
@@ -220,6 +236,12 @@ class AsrCueBuilder {
           endMs: end + offsetMs,
           text: text,
           audioFileIndex: seg.audioFileIndex,
+          tokens: List<String>.unmodifiable(
+            idx.map((int i) => seg.tokens[i]),
+          ),
+          tokenOffsetsMs: List<int>.unmodifiable(
+            idx.map((int i) => seg.tokenTimesMs[i] - start),
+          ),
         ),
       );
     }
@@ -328,6 +350,51 @@ String serializeAsrCuesToSrt(List<AsrCue> cues) {
     index++;
   }
   return sb.toString();
+}
+
+/// 与 [serializeAsrCuesToSrt] **同一份 cue 列表**的逐 token 时间 sidecar：
+/// JSON Lines，第 n 行对应 SRT 第 n 条（同样跳过空文本 cue），
+/// `{"t":[token...],"o":[相对 cue 起点的毫秒...]}`。SRT 是给通用解析器的出境
+/// 格式，token 时间装不进去；导入链路认出转录产物后按行号配回
+/// （`AsrTranscriptionService.attachCueTokenTiming`）。
+String serializeAsrCueTokens(List<AsrCue> cues) {
+  final StringBuffer sb = StringBuffer();
+  for (final AsrCue cue in cues) {
+    if (cue.text.isEmpty) continue;
+    sb
+      ..write(
+        jsonEncode(<String, Object?>{'t': cue.tokens, 'o': cue.tokenOffsetsMs}),
+      )
+      ..write('\n');
+  }
+  return sb.toString();
+}
+
+/// 解析 [serializeAsrCueTokens] 的产物。坏行（半行/非 JSON/长度不等）整体判
+/// 无效返回 null——sidecar 与 SRT 按行号配对，缺一行就全错位，宁可不挂。
+List<({List<String> tokens, List<int> offsetsMs})>? parseAsrCueTokens(
+  String text,
+) {
+  final List<({List<String> tokens, List<int> offsetsMs})> out =
+      <({List<String> tokens, List<int> offsetsMs})>[];
+  for (final String raw in const LineSplitter().convert(text)) {
+    final String line = raw.trim();
+    if (line.isEmpty) continue;
+    try {
+      final Object? decoded = jsonDecode(line);
+      if (decoded is! Map<String, Object?>) return null;
+      final List<String> tokens =
+          (decoded['t'] as List<Object?>).cast<String>();
+      final List<int> offsets = (decoded['o'] as List<Object?>)
+          .map((Object? v) => (v as num).toInt())
+          .toList(growable: false);
+      if (tokens.length != offsets.length) return null;
+      out.add((tokens: tokens, offsetsMs: offsets));
+    } on Object {
+      return null;
+    }
+  }
+  return out;
 }
 
 String _srtTimestamp(int ms) {

@@ -65,7 +65,7 @@ String _param(String name, {String defaultValue = ''}) {
 final String _kSeed = _param('ASR_MODEL_SEED');
 final AsrLanguage _kLang =
     AsrLanguage.fromTag(_param('ASR_LANG', defaultValue: 'ja')) ??
-    AsrLanguage.japanese;
+        AsrLanguage.japanese;
 final String _kAudio = _param(
   'ASR_AUDIO',
   defaultValue: 'test/asr/fixtures/ja_tts_16k.wav',
@@ -93,14 +93,12 @@ String _normalize(String s) =>
     s.toLowerCase().replaceAll(RegExp(r'[\s、。！？!?,.\x27"“”’]'), '');
 
 Future<
-  ({
-    String text,
-    AsrTranscribeResult result,
-    OnnxProviderResolution resolution,
-    Duration wall,
-  })
->
-_runOnce({
+    ({
+      String text,
+      AsrTranscribeResult result,
+      OnnxProviderResolution resolution,
+      Duration wall,
+    })> _runOnce({
   required AsrModelStore store,
   required Directory jobsRoot,
   required String audio,
@@ -154,16 +152,24 @@ _runOnce({
       await Directory(outDir).create(recursive: true);
       final String dst = p.join(outDir, 'transcript_${variant.name}.srt');
       await File(result!.srtPath).copy(dst);
+      // 逐 token 时间 sidecar 一起拷（realdata 测试据此做正文句界重切对照）。
+      final File tokens = File(
+        p.join(p.dirname(result.srtPath), AsrJobFiles.cueTokens),
+      );
+      if (tokens.existsSync()) {
+        await tokens.copy(
+          p.join(outDir, 'transcript_${variant.name}.tokens.jsonl'),
+        );
+      }
       // ignore: avoid_print
       print('[asr-e2e][out] $dst');
     }
     final List<AsrTranscribedSegment> segments =
         await AsrTranscribeJob.loadSegments(
-          await service.jobDirFor(<String>[audio], _kLang),
-        );
-    final String text = segments
-        .map((AsrTranscribedSegment s) => s.text)
-        .join();
+      await service.jobDirFor(<String>[audio], _kLang),
+    );
+    final String text =
+        segments.map((AsrTranscribedSegment s) => s.text).join();
     return (
       text: text,
       result: result!,
@@ -253,8 +259,8 @@ void main() {
       );
       return;
     }
-    final Set<OnnxExecutionProvider> available = await AsrEngineLoader()
-        .availableAcceleratedProviders();
+    final Set<OnnxExecutionProvider> available =
+        await AsrEngineLoader().availableAcceleratedProviders();
     // ignore: avoid_print
     print('[asr-e2e][gpu-fp32] available accelerated EPs: $available');
     final r = await _runOnce(
@@ -327,9 +333,8 @@ Future<void> _phaseBenchmark({
   try {
     final FfmpegAsrPcmSource pcm = FfmpegAsrPcmSource();
     final Stopwatch decodeClock = Stopwatch()..start();
-    final List<AsrPcmChunk> chunks = await pcm
-        .decode(audio, chunkSeconds: 600)
-        .toList();
+    final List<AsrPcmChunk> chunks =
+        await pcm.decode(audio, chunkSeconds: 600).toList();
     decodeClock.stop();
     final int samples = chunks.fold<int>(
       0,
