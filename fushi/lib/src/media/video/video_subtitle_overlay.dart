@@ -546,6 +546,9 @@ class VideoSubtitleOverlay extends StatefulWidget {
   /// 共用同一套显形通道（桌面 [MouseRegion] 悬停 / 移动端点击热区），移开即复原。
   /// 未显形时不登记查词命中（看不见的字不可点选），仍不影响查词浮层 / 字幕列表 /
   /// cue 同步等其它文本通道。
+  ///
+  /// BUG-2198：与 [blurEnabled] 一样只在**播放中**遮蔽——暂停（含查词自动暂停）时
+  /// 字幕照常显示、字符也照常可点选查词，恢复播放即自动遮回去。
   final bool subtitleHidden;
 
   /// 副字幕「模糊」（TODO-1382，镜像 [blurEnabled]）：为 true 时**副字幕层**默认高斯模糊，
@@ -555,7 +558,8 @@ class VideoSubtitleOverlay extends StatefulWidget {
   /// 副字幕「隐藏」（TODO-1382，镜像 [subtitleHidden]）：为 true 时副字幕层布局照常但
   /// 不绘制（[Opacity] 为 0），与 [secondaryBlurEnabled] 正交且优先级更高。默认 false。
   /// 与主字幕同构：悬停 / 点击可临时显形，未显形时不登记查词命中。隐藏只针对副字幕
-  /// overlay，不影响查词 / 字幕列表 / cue 同步等其它通道。
+  /// overlay，不影响查词 / 字幕列表 / cue 同步等其它通道。BUG-2198：同样只在播放中
+  /// 遮蔽（暂停 / 查词时显示），与 [subtitleHidden] 一条门。
   final bool secondaryHidden;
 
   /// 字幕字号（外观设置）。
@@ -1233,20 +1237,27 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     List<AudioCue> cues, {
     required bool isSecondary,
   }) {
-    // 听力沉浸模糊只在播放中生效（暂停 / 查词时清晰，BUG-199）。TODO-1382：主/副字幕
-    // 各按自己的 obscure 开关与独立 reveal 态决定是否模糊（副字幕不再无条件清晰）。
+    // 遮蔽只在播放中生效（暂停 / 查词时清晰，BUG-199 / BUG-2198）：模糊与隐藏共用
+    // **同一条**门——该层开着遮蔽、当前未显形、且正在播放。历史上隐藏单独绕过
+    // isPlaying（「暂停时自己冒出来才是惊吓」），实测这条特例正是用户报的两个症状：
+    // ① 查词必先 `controller.pause()`（`lookup_favorite.part.dart`），暂停不解遮蔽
+    //    就等于「查词时字幕仍然看不见」，而 registerHits 又按 [hidden] 关掉了字符命中
+    //    登记——看不见也点不到，查词页面上无从对照原句；
+    // ② 用户主动暂停想读一眼当前句时字幕也不回来。
+    // 两症状同一根因，故删掉不对称、不再为隐藏留特例：暂停 = 用户已停下来看，遮蔽
+    // （无论哪种视觉）都让位；恢复播放即自动遮回去（下一帧重算，无需复位显形态）。
     final bool obscureBlurEnabled =
         isSecondary ? widget.secondaryBlurEnabled : widget.blurEnabled;
     final bool revealed = _revealedFor(isSecondary: isSecondary);
-    final bool blurred =
-        obscureBlurEnabled && !revealed && widget.controller.isPlaying;
-    // 隐藏态（该层开着「隐藏」且当前未显形）。与 [blurred] 互斥（两者来自互斥的
+    // 该层此刻是否应遮蔽（与具体视觉无关的共同门）：模糊与隐藏只在这一处分叉成两种
+    // 视觉，判据本身不再有第二份。
+    final bool obscureActive = !revealed && widget.controller.isPlaying;
+    final bool blurred = obscureBlurEnabled && obscureActive;
+    // 隐藏态（该层开着「隐藏」且该遮蔽）。与 [blurred] 互斥（两者来自互斥的
     // VideoSubtitleObscureMode），但共用同一个显形态：悬停 / 点击即显形。
-    // **不**吃 isPlaying 门（模糊有 BUG-199 的「暂停时清晰」，隐藏没有）：隐藏的语义是
-    // 「我不想看见它」，暂停时自己冒出来才是惊吓；历史上隐藏态暂停也不显示，保持不变。
     final bool hidden =
         (isSecondary ? widget.secondaryHidden : widget.subtitleHidden) &&
-            !revealed;
+            obscureActive;
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
