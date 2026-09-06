@@ -64,6 +64,8 @@ void main() {
       c.setCues(<AudioCue>[_cue('主', 0, 6000)]);
       c.setSecondaryCues(<AudioCue>[_cue('副', 0, 6000)]);
       c.debugUpdateCueForPosition(1000);
+      // BUG-2198：遮蔽只在播放中生效，不起播就是在测暂停态（断言会恒假）。
+      c.debugSetIsPlayingForTesting(true);
 
       await _pumpOverlay(tester, c, secondaryHidden: true);
 
@@ -91,6 +93,28 @@ void main() {
       expect(find.text('副'), findsWidgets, reason: '默认不隐藏，副字幕照常渲染');
       expect(_opaqueZero(tester, find.text('副')), isFalse,
           reason: '不隐藏时不得有 Opacity(0) 遮蔽层');
+    });
+
+    // BUG-2198：副字幕隐藏与主字幕同一条门——暂停（含查词自动暂停）让位、播放遮回去。
+    testWidgets('暂停时副字幕隐藏让位、恢复播放再遮回去（与主字幕同一条门）',
+        (tester) async {
+      final VideoPlayerController c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.setCues(<AudioCue>[_cue('主', 0, 6000)]);
+      c.setSecondaryCues(<AudioCue>[_cue('副', 0, 6000)]);
+      c.debugUpdateCueForPosition(1000);
+      c.debugSetIsPlayingForTesting(false);
+
+      await _pumpOverlay(tester, c, secondaryHidden: true);
+
+      expect(_opaqueZero(tester, find.text('副')), isFalse,
+          reason: '暂停时副字幕也该显示（查词对照原句走同一条路径）');
+
+      c.debugSetIsPlayingForTesting(true);
+      await tester.pump();
+
+      expect(_opaqueZero(tester, find.text('副')), isTrue,
+          reason: '继续播放就该遮回去，否则一暂停等于永久解除隐藏');
     });
   });
 

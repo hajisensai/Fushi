@@ -246,6 +246,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_subtitle_list_font_scale_index',
   'video_subtitle_list_width',
   'video_subtitle_obscure_hide',
+  // bool（默认 true）：遮蔽（模糊 / 隐藏）态是否允许悬停 / 点击临时显形。关掉后
+  // 遮蔽在整句期间恒定生效，不被误触破功。
+  'video_subtitle_obscure_reveal',
   'video_subtitle_opensubtitles_config',
   'video_subtitle_style',
   'video_youtube_quality_height',

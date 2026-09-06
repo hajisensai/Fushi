@@ -44,6 +44,9 @@ bool _obscured(WidgetTester tester, Finder of) => tester
         find.ancestor(of: of.first, matching: find.byType(Opacity)))
     .any((Opacity o) => o.opacity == 0);
 
+/// BUG-2198：两种遮蔽都只在**播放中**生效（暂停 / 查词时字幕让位），故本文件的
+/// 「该遮蔽」用例一律起播——不起播就等于在测暂停态，遮蔽断言会恒假。暂停语义本身由
+/// ① 组的专门用例覆盖（那条显式设 false）。
 VideoPlayerController _controller(WidgetTester tester,
     {String main = '主', String? secondary}) {
   final VideoPlayerController c = VideoPlayerController();
@@ -53,6 +56,7 @@ VideoPlayerController _controller(WidgetTester tester,
     c.setSecondaryCues(<AudioCue>[_cue(secondary, 0, 6000)]);
   }
   c.debugUpdateCueForPosition(1000);
+  c.debugSetIsPlayingForTesting(true);
   return c;
 }
 
@@ -72,6 +76,7 @@ Future<void> _pump(
   bool secondaryBlurEnabled = false,
   bool dragAdjustEnabled = false,
   bool hoverAutoLookupEnabled = false,
+  bool obscureRevealOnInteraction = true,
   VideoSubtitleHitTester? hitTester,
   void Function(
           String sentence, int graphemeIndex, Rect charRect, AudioCue cue)?
@@ -87,6 +92,7 @@ Future<void> _pump(
         secondaryBlurEnabled: secondaryBlurEnabled,
         dragAdjustEnabled: dragAdjustEnabled,
         hoverAutoLookupEnabled: hoverAutoLookupEnabled,
+        obscureRevealOnInteraction: obscureRevealOnInteraction,
         hitTester: hitTester,
         onCharTap: onCharTap,
       ),
@@ -133,15 +139,41 @@ void main() {
           reason: '不遮蔽时不得平白多出透明层');
     });
 
-    testWidgets('暂停时隐藏依然生效（不吃 isPlaying 门，与模糊不同）', (tester) async {
+    // BUG-2198（用户报「查词的时候隐藏字幕也会隐藏，而且暂停的时候隐藏字幕不会恢复」）：
+    // 隐藏原本单独绕过 isPlaying 门。查词必先 `controller.pause()`，于是「暂停不解遮蔽」
+    // 直接等于「查词时看不见原句」；用户主动暂停想读一眼也回不来。改为与模糊同一条门。
+    testWidgets('暂停时隐藏让位、字幕显示（与模糊对称，查词同此路径）', (tester) async {
       final VideoPlayerController c = _controller(tester);
-      expect(c.isPlaying, isFalse, reason: '前置：本用例未起播');
+      c.debugSetIsPlayingForTesting(false);
 
       await _pump(tester, c, subtitleHidden: true);
 
-      // 模糊有 BUG-199 的「暂停时清晰」，隐藏没有——否则一暂停字幕就自己冒出来。
+      expect(find.text('主'), findsWidgets);
+      expect(_obscured(tester, find.text('主')), isFalse,
+          reason: '暂停 = 用户停下来看，隐藏必须让位（查词自动暂停走的也是这条）');
+    });
+
+    testWidgets('恢复播放 → 重新隐藏（让位只针对暂停，不是把隐藏关掉）', (tester) async {
+      final VideoPlayerController c = _controller(tester);
+      c.debugSetIsPlayingForTesting(false);
+      await _pump(tester, c, subtitleHidden: true);
+      expect(_obscured(tester, find.text('主')), isFalse, reason: '前置：暂停已让位');
+
+      c.debugSetIsPlayingForTesting(true);
+      await tester.pump();
+
       expect(_obscured(tester, find.text('主')), isTrue,
-          reason: '暂停不该让隐藏的字幕自己显形');
+          reason: '继续播放就该遮回去，否则等于一暂停就永久解除隐藏');
+    });
+
+    testWidgets('暂停时模糊也让位（对称基准，防单边改坏）', (tester) async {
+      final VideoPlayerController c = _controller(tester);
+      c.debugSetIsPlayingForTesting(false);
+
+      await _pump(tester, c, blurEnabled: true);
+
+      expect(_blurredVisual(tester, find.text('主')), isFalse,
+          reason: 'BUG-199 既有契约：暂停时模糊清晰');
     });
   });
 
@@ -360,6 +392,23 @@ void main() {
       expect(ht.hitTest(tester.getCenter(find.text('主').first))?.sentence, '主');
       expect(ht.caretAnchorEntry(), greaterThanOrEqualTo(0));
     });
+
+    // BUG-2198 的另一半：查词第一步就是 `controller.pause()`（video_fushi 的
+    // lookup_favorite.part.dart）。暂停若不解遮蔽，registerHits 会一直关着——字幕既
+    // 看不见、字也点不到，用户「查词时对照原句」这条路整个断掉。看得见就必须点得到。
+    testWidgets('暂停时隐藏让位 → 字符同时恢复可查词（看得见就点得到）', (tester) async {
+      final VideoPlayerController c = _controller(tester);
+      final VideoSubtitleHitTester ht = VideoSubtitleHitTester();
+      c.debugSetIsPlayingForTesting(false);
+
+      await _pump(tester, c, subtitleHidden: true, hitTester: ht);
+
+      expect(_obscured(tester, find.text('主')), isFalse, reason: '前置：暂停已让位');
+      expect(ht.hitTest(tester.getCenter(find.text('主').first))?.sentence, '主',
+          reason: '暂停时看得见的字必须能查词，否则查词浮层里对不上原句');
+      expect(ht.caretEntryCount(), greaterThan(0));
+      expect(ht.caretAnchorEntry(), greaterThanOrEqualTo(0));
+    });
   });
 
   group('⑨ 点击显形只豁免当前这句（触摸端的撤销手段）', () {
@@ -373,6 +422,7 @@ void main() {
       // A[0,2000) 紧接 B[2000,4000)：中间没有任何空档。
       c.setCues(<AudioCue>[_cue('甲', 0, 2000), _cue('乙', 2000, 4000)]);
       c.debugUpdateCueForPosition(1000);
+      c.debugSetIsPlayingForTesting(true); // BUG-2198：遮蔽只在播放中生效
       await _pump(tester, c, subtitleHidden: true);
 
       await tester.tap(find.text('甲').first, warnIfMissed: false);
@@ -392,6 +442,7 @@ void main() {
       addTearDown(c.dispose);
       c.setCues(<AudioCue>[_cue('甲', 0, 2000), _cue('乙', 2000, 4000)]);
       c.debugUpdateCueForPosition(1000);
+      c.debugSetIsPlayingForTesting(true); // BUG-2198：遮蔽只在播放中生效
       await _pump(tester, c, subtitleHidden: true);
 
       await _hoverOver(tester, find.text('甲'));
@@ -402,6 +453,111 @@ void main() {
 
       expect(_obscured(tester, find.text('乙')), isFalse,
           reason: '鼠标还停在字幕上，换句不该把它变回看不见（悬停有自己的 onExit）');
+    });
+  });
+
+  /// ⑩ 「悬停 / 点击显形」总闸（[VideoSubtitleOverlay.obscureRevealOnInteraction]）。
+  ///
+  /// 显形原本是遮蔽的内建行为、用户关不掉：听力沉浸时鼠标恰好停在字幕上、或手指扫过
+  /// 盒面，一次误触就把这句的遮蔽废掉。总闸把「遮什么」（模糊 / 隐藏）与「能不能临时
+  /// 看一眼」拆成两个正交维度，关掉后遮蔽在整句期间恒定生效。
+  ///
+  /// 门控只落在显形的两个来源上（悬停 / 点击），热区本身照常挂——它还负责拦掉落在盒面
+  /// 上的字符点击，撤掉就成了「点不可见的字也能查词」。
+  group('⑩ 交互显形总闸关掉后遮蔽恒定生效', () {
+    testWidgets('关闭 + 隐藏：悬停不再揭开', (tester) async {
+      final VideoPlayerController c = _controller(tester);
+
+      await _pump(tester, c,
+          subtitleHidden: true, obscureRevealOnInteraction: false);
+      await _hoverOver(tester, find.text('主'));
+
+      expect(_obscured(tester, find.text('主')), isTrue,
+          reason: '总闸关掉后悬停不该把隐藏的字幕唤出来');
+    });
+
+    testWidgets('关闭 + 模糊：悬停不再揭开', (tester) async {
+      final VideoPlayerController c = _controller(tester);
+      // 模糊只在播放中生效（BUG-199：暂停 / 查词时清晰），不置播放态的话本条恒绿。
+      c.debugSetIsPlayingForTesting(true);
+
+      await _pump(tester, c,
+          blurEnabled: true, obscureRevealOnInteraction: false);
+      await _hoverOver(tester, find.text('主'));
+
+      expect(_blurredVisual(tester, find.text('主')), isTrue,
+          reason: '总闸关掉后悬停不该解糊（听力沉浸不被路过的鼠标破功）');
+    });
+
+    testWidgets('开着 + 模糊：悬停照常解糊（模糊侧的防恒真基准）', (tester) async {
+      final VideoPlayerController c = _controller(tester);
+      c.debugSetIsPlayingForTesting(true);
+
+      await _pump(tester, c,
+          blurEnabled: true, obscureRevealOnInteraction: true);
+      await _hoverOver(tester, find.text('主'));
+
+      expect(_blurredVisual(tester, find.text('主')), isFalse,
+          reason: '总闸开着=历史行为，悬停仍解糊（上一条不是恒真）');
+    });
+
+    testWidgets('关闭 + 隐藏：点击热区不再揭开', (tester) async {
+      final VideoPlayerController c = _controller(tester);
+
+      await _pump(tester, c,
+          subtitleHidden: true, obscureRevealOnInteraction: false);
+      await tester.tap(find.text('主').first, warnIfMissed: false);
+      await tester.pump();
+
+      expect(_obscured(tester, find.text('主')), isTrue,
+          reason: '总闸关掉后点击也不显形（移动端唯一通道同样受闸）');
+    });
+
+    testWidgets('默认开（显式 true）：悬停 / 点击照常显形（防恒真）', (tester) async {
+      final VideoPlayerController c = _controller(tester);
+
+      await _pump(tester, c,
+          subtitleHidden: true, obscureRevealOnInteraction: true);
+      final TestGesture gesture = await _hoverOver(tester, find.text('主'));
+      expect(_obscured(tester, find.text('主')), isFalse,
+          reason: '总闸开着=历史行为，悬停仍显形（上面三条不是恒真）');
+
+      await gesture.moveTo(Offset.zero);
+      await tester.pump();
+      expect(_obscured(tester, find.text('主')), isTrue, reason: '移开复原');
+
+      await tester.tap(find.text('主').first, warnIfMissed: false);
+      await tester.pump();
+      expect(_obscured(tester, find.text('主')), isFalse,
+          reason: '总闸开着时点击热区仍显形');
+    });
+
+    testWidgets('关闭后热区仍在：盒面上的字符点击照样被拦掉（不可查词）', (tester) async {
+      final VideoPlayerController c = _controller(tester);
+      final List<String> tapped = <String>[];
+
+      await _pump(tester, c,
+          subtitleHidden: true,
+          obscureRevealOnInteraction: false,
+          onCharTap: (String s, int i, Rect r, AudioCue cue) => tapped.add(s));
+      await tester.tap(find.text('主').first, warnIfMissed: false);
+      await tester.pump();
+
+      expect(tapped, isEmpty, reason: '门控只关显形、不撤热区；撤掉热区就成了「点不可见的字也能查词」');
+    });
+
+    testWidgets('播放中关掉总闸：已显形的那句立刻遮回', (tester) async {
+      final VideoPlayerController c = _controller(tester);
+
+      await _pump(tester, c, subtitleHidden: true);
+      await _hoverOver(tester, find.text('主'));
+      expect(_obscured(tester, find.text('主')), isFalse, reason: '前置：悬停显形');
+
+      await _pump(tester, c,
+          subtitleHidden: true, obscureRevealOnInteraction: false);
+
+      expect(_obscured(tester, find.text('主')), isTrue,
+          reason: '关掉总闸要立刻收回显形态，否则这句要等换轮才遮回、开关像没生效');
     });
   });
 }

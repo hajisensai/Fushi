@@ -29,12 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2040 条。点号进各自文件。
+> 共 2041 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2202](bugs/BUG-2202-clip-export-tx3g-unplayable-in-im.md) | ✅ | ✅ | 内封 tx3g 字幕轨让导出的片段在 QQ 等 IM 里整个不可播 |
 | [BUG-2200](bugs/BUG-2200-clip-export-moov-at-tail-qq-cannot-play.md) | ✅ | ✅ | 导出的视频片段 moov 在文件末尾，QQ 等 IM 判无法播放 |
+| [BUG-2198](bugs/BUG-2198-subtitle-hide-pause-reveal.md) | ✅ | ✅ | 隐藏字幕在暂停/查词时不恢复显示 |
 | [BUG-2165](bugs/BUG-2165-pack-download-no-visible-progress.md) | ✅ | ✅ | 推荐包后台下载没有任何看得见的地方，半截包重启后既看不见也续不上 |
 | [BUG-2164](bugs/BUG-2164-asr-pcm-mov-chapter-track-noise.md) | ✅ | ✅ | ASR PCM 抽取 mov 容器混入章节 text 轨，奇数字节标题的整章解成白噪声 |
 | [BUG-2163](bugs/BUG-2163-asr-match-start-anchor-colophon.md) | ✅ | ✅ | ASR 字幕匹配起点被片头出版社名钉到书尾版权页，整本匹配率 0% |

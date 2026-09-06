@@ -6886,6 +6886,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// 持久化字幕外观并刷新 overlay（纯 Flutter overlay，不碰 mpv）。
   /// TODO-1105：持久化「尊重 .ass 自带样式」开关并重建，使字幕 overlay 即时按新开关渲染。
+  /// 遮蔽态「悬停 / 点击显形」总闸（设置面板 / 全局设置页共用）：落盘后重建本页，
+  /// overlay 立刻按新值决定悬停 / 点击是否还能揭开遮蔽。
+  Future<void> _setVideoSubtitleObscureReveal(bool value) async {
+    await appModel.setVideoSubtitleObscureReveal(value);
+    if (!mounted) return;
+    _rebuild(() {});
+  }
+
   Future<void> _setVideoRespectAssStyle(bool value) async {
     await appModel.setVideoRespectAssStyle(value);
     if (!mounted) return;
@@ -7209,6 +7217,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // TODO-2838：进入「拖拽调整字幕位置」模式（关设置侧栏 + 开拖拽，见 layout.part）。
       onEnterSubtitleDragAdjust: _enterSubtitleDragAdjust,
       // TODO-1105：尊重 .ass 自带样式切换回调（持久化 + 重建让 overlay 即时生效）。
+      onSubtitleObscureRevealChanged: _setVideoSubtitleObscureReveal,
       onRespectAssStyleChanged: _setVideoRespectAssStyle,
       // 着色器/mpv 配置面板内嵌（不弹独立对话框）：着色器勾选 → 持久化启用集 +
       // 解析绝对路径 + 实时应用；mpv 配置即改即生效。
