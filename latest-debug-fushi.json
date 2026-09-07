@@ -1,21 +1,12 @@
 {
   "schemaVersion": 1,
-  "version": "2.3.0-debug.13870",
-  "tag": "v2.3.0-debug.13870+96b4cc1",
+  "version": "2.3.0-debug.13886",
+  "tag": "v2.3.0-debug.13886+a6e42b3",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 13870,
-  "notes": "Automated release-signed debug-channel build from develop @ 96b4cc1. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 13886,
+  "notes": "Automated desktop debug-channel build from develop @ a6e42b3. Push releases are always prerelease and never Latest.",
   "assets": [
-    {
-      "name": "fushi-2.2.4-debug.13842-macos.zip",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.2.4-debug.13842-macos.zip",
-      "releaseSequence": 13842,
-      "tag": "v2.2.4-debug.13842+18d7fa7",
-      "version": "2.2.4-debug.13842",
-      "size": 334761839,
-      "sha256": "6214d6330b62221e0383dba2e4f0014fef8606097ddf81659e5f19fc402573d7"
-    },
     {
       "name": "fushi-2.3.0-debug.13868-ios.ipa",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.3.0-debug.13868-ios.ipa",
@@ -26,15 +17,6 @@
       "sha256": "52959cc7d73e000b656097708fc7469e2fc93fad3db5771aaeaa97b29f93e8f4"
     },
     {
-      "name": "fushi-2.3.0-debug.13868-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.3.0-debug.13868-windows-setup.exe",
-      "releaseSequence": 13868,
-      "tag": "v2.3.0-debug.13868+b2f82db",
-      "version": "2.3.0-debug.13868",
-      "size": 261873942,
-      "sha256": "0db66c968f8b59fbdff9c899b9aeba009f866274c019fc79599ab1bde830738f"
-    },
-    {
       "name": "fushi-2.3.0-debug.13870-96b4cc1-debug.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.3.0-debug.13870-96b4cc1-debug.apk",
       "releaseSequence": 13870,
@@ -42,6 +24,15 @@
       "version": "2.3.0-debug.13870",
       "size": 268830582,
       "sha256": "76b7e6eab32f2b1b4156149e7631c50e1f037c8557127f05106515650989938e"
+    },
+    {
+      "name": "fushi-2.3.0-debug.13886-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.3.0-debug.13886-windows-setup.exe",
+      "releaseSequence": 13886,
+      "tag": "v2.3.0-debug.13886+a6e42b3",
+      "version": "2.3.0-debug.13886",
+      "size": 261873529,
+      "sha256": "3ad544cec2a9c2192979deedaf34bbf1c114b7a1143f398cee36f7a1e8600b63"
     }
   ]
 }
