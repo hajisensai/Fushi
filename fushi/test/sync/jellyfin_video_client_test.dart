@@ -257,13 +257,26 @@ void main() {
           expect(req.url.path, '/Users/u1/Items');
           expect(req.url.queryParameters['ParentId'], 'lib-tv');
           expect(req.url.queryParameters['Recursive'], 'true');
-          expect(req.url.queryParameters['IncludeItemTypes'], 'Movie,Episode');
+          // BUG-2252：飞牛不认逗号多值，Movie/Episode 拆成两轮单值查询。
+          expect(
+            req.url.queryParameters['IncludeItemTypes'],
+            isIn(<String>['Movie', 'Episode']),
+          );
+          if (req.url.queryParameters['IncludeItemTypes'] == 'Episode') {
+            return http.Response(
+              jsonEncode(<String, Object?>{
+                'Items': <Object?>[
+                  _episodeJson(positionTicks: 60000 * kTicksPerMs),
+                ],
+                'TotalRecordCount': 1,
+              }),
+              200,
+            );
+          }
           return http.Response(
             jsonEncode(<String, Object?>{
-              'Items': <Object?>[
-                _episodeJson(positionTicks: 60000 * kTicksPerMs),
-              ],
-              'TotalRecordCount': 1,
+              'Items': <Object?>[],
+              'TotalRecordCount': 0,
             }),
             200,
           );

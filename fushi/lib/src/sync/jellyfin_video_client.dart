@@ -463,6 +463,12 @@ class JellyfinApi {
 
   /// 递归列出 [parentId]（缺省全库）下所有可播视频叶子（电影 + 单集）。
   ///
+  /// **类型过滤按单值拆成 Movie / Episode 两轮**（BUG-2252）：飞牛影视的
+  /// `/Items` 不认 `IncludeItemTypes` 逗号多值——`Movie,Episode` 静默返回
+  /// 0 条（单值 Movie / Episode 均正常），整台服务器在库页表现为「空库」。
+  /// 原版 Jellyfin / Emby 对单值与多值语义一致，拆开发不留行为差异。两轮
+  /// 各自独立分页，Movie 轮在前（集合名排序下 Episode 轮的分页窗口互不干扰）。
+  ///
   /// **真分页**：单发一次 + 硬上限的旧写法在 100 部番 x 12 集就到顶，第 2001 条
   /// 起永久不可见且无任何提示；TotalRecordCount 解出来却被丢弃、StartIndex 根本
   /// 没传。这里按 [pageSize] 逐页取到 StartIndex >= totalCount（或某页返空）为止，
@@ -487,34 +493,40 @@ class JellyfinApi {
     Duration pageInterval = kPageInterval,
   }) async {
     final List<JellyfinItem> all = <JellyfinItem>[];
-    int start = 0;
     int total = 0;
     bool truncated = false;
-    while (true) {
-      if (start >= kMaxRecursiveItems) {
-        truncated = true;
-        break;
+    // 飞牛不认逗号多值（BUG-2252），按单值各跑一轮完整分页；消费端按 id 去重
+    // （listRemoteVideos 的 seen 集合），同一叶子在两轮都命中也不会重复。
+    for (final String type in const <String>['Movie', 'Episode']) {
+      int start = 0;
+      while (true) {
+        if (start >= kMaxRecursiveItems) {
+          truncated = true;
+          break;
+        }
+        if (start > 0 && pageInterval > Duration.zero) {
+          await Future<void>.delayed(pageInterval);
+        }
+        final Map<String, Object?> json =
+            await _getJson('/Users/$userId/Items', <String, String>{
+              if (parentId != null) 'ParentId': parentId,
+              'Recursive': 'true',
+              'IncludeItemTypes': type,
+              'StartIndex': '$start',
+              'Limit': '$pageSize',
+              'Fields': 'ProductionYear',
+              'SortBy': 'SortName',
+              'SortOrder': 'Ascending',
+            });
+        final JellyfinItemsPage page = parseItemsPage(json);
+        all.addAll(page.items);
+        total += page.totalCount;
+        if (page.items.isEmpty) break;
+        start += page.items.length;
+        if (start >= page.totalCount) break;
       }
-      if (start > 0 && pageInterval > Duration.zero) {
-        await Future<void>.delayed(pageInterval);
-      }
-      final Map<String, Object?> json =
-          await _getJson('/Users/$userId/Items', <String, String>{
-            if (parentId != null) 'ParentId': parentId,
-            'Recursive': 'true',
-            'IncludeItemTypes': 'Movie,Episode',
-            'StartIndex': '$start',
-            'Limit': '$pageSize',
-            'Fields': 'ProductionYear',
-            'SortBy': 'SortName',
-            'SortOrder': 'Ascending',
-          });
-      final JellyfinItemsPage page = parseItemsPage(json);
-      all.addAll(page.items);
-      total = page.totalCount;
-      if (page.items.isEmpty) break;
-      start += page.items.length;
-      if (start >= page.totalCount) break;
+      // 刻意不在轮间因 truncated 收工：Movie 轮熔断后 Episode 轮仍要跑完
+      // （否则 >2 万电影的服务器上剧集整体消失）；上限按轮独立生效。
     }
     return JellyfinRecursiveResult(
       items: all,
