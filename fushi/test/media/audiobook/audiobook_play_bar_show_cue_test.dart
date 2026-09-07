@@ -3,9 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart';
 
-/// TODO-728②守卫：[AudiobookPlayBar.showCue] 控制底栏「当前句子」cue 文本的显隐。
-/// 默认 true = 现状（始终显示）；false = 隐藏文本但**保留 Expanded 占位**，使
-/// 其余控件（播放三联键 / follow / 设置齿轮）位置不跳。
+/// 播放条只呈现控制按钮，不再重复正文中的当前句。
 class _CueController extends AudiobookPlayerController {
   _CueController(this._cueText);
 
@@ -28,7 +26,6 @@ class _CueController extends AudiobookPlayerController {
 
 Future<void> _pumpBar(
   WidgetTester tester, {
-  required bool showCue,
   required AudiobookPlayerController controller,
 }) async {
   await tester.pumpWidget(
@@ -41,7 +38,6 @@ Future<void> _pumpBar(
             child: AudiobookPlayBar(
               controller: controller,
               onOpenSettings: () {},
-              showCue: showCue,
             ),
           ),
         ),
@@ -51,37 +47,52 @@ Future<void> _pumpBar(
 }
 
 void main() {
-  testWidgets('showCue:true renders the current-sentence text', (tester) async {
+  testWidgets(
+      '320 wide shared header leaves six playback targets within bounds',
+      (WidgetTester tester) async {
     final _CueController controller = _CueController('現在の文');
     addTearDown(controller.dispose);
-    await _pumpBar(tester, showCue: true, controller: controller);
-
-    expect(find.text('現在の文'), findsOneWidget);
+    await tester.binding.setSurfaceSize(const Size(320, 640));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: AudiobookPlayBar(
+      controller: controller,
+      onOpenSettings: () {},
+      showSeekButtons: true,
+      showSettingsButton: false,
+    ))));
+    expect(tester.takeException(), isNull);
+    expect(find.byIcon(Icons.tune_outlined), findsNothing);
+    final Rect bar = tester.getRect(find.byType(AudiobookPlayBar));
+    for (final Element button in find.byType(IconButton).evaluate()) {
+      final Rect rect = tester.getRect(find.byWidget(button.widget));
+      expect(bar.contains(rect.topLeft), isTrue);
+      expect(bar.contains(rect.bottomRight), isTrue);
+    }
+    expect(find.byType(IconButton), findsNWidgets(6));
   });
 
-  testWidgets('showCue:false hides the cue text but keeps controls in place',
-      (tester) async {
-    // 同一控制器、同一布局：先量 showCue:true 的控件位置，再量 showCue:false。
-    final _CueController shown = _CueController('現在の文');
-    addTearDown(shown.dispose);
-    await _pumpBar(tester, showCue: true, controller: shown);
-    final double playShown =
-        tester.getCenter(find.byIcon(Icons.play_arrow_outlined)).dx;
-    final double tuneShown =
-        tester.getCenter(find.byIcon(Icons.tune_outlined)).dx;
-
-    final _CueController hidden = _CueController('現在の文');
-    addTearDown(hidden.dispose);
-    await _pumpBar(tester, showCue: false, controller: hidden);
-
-    // 文本不再渲染。
+  testWidgets('current sentence stays absent as the cue changes', (
+    WidgetTester tester,
+  ) async {
+    final _CueController first = _CueController('現在の文');
+    addTearDown(first.dispose);
+    await _pumpBar(tester, controller: first);
     expect(find.text('現在の文'), findsNothing);
-    // 但播放键 / 设置齿轮位置不变（Expanded 占位保留，布局不跳）。
-    final double playHidden =
-        tester.getCenter(find.byIcon(Icons.play_arrow_outlined)).dx;
-    final double tuneHidden =
-        tester.getCenter(find.byIcon(Icons.tune_outlined)).dx;
-    expect(playHidden, playShown);
-    expect(tuneHidden, tuneShown);
+    final Offset playPosition = tester.getCenter(
+      find.byIcon(Icons.play_arrow_outlined),
+    );
+    final _CueController next = _CueController('次の文');
+    addTearDown(next.dispose);
+    await _pumpBar(tester, controller: next);
+    expect(find.text('次の文'), findsNothing);
+    expect(
+      tester.getCenter(find.byIcon(Icons.play_arrow_outlined)),
+      playPosition,
+    );
+    expect(find.byIcon(Icons.skip_previous_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.skip_next_outlined), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }

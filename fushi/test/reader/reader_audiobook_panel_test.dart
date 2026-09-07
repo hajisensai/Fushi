@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart'
     show TtuTocEntry;
 import 'package:fushi/src/reader/reader_audiobook_panel.dart';
@@ -80,6 +81,101 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('SETTINGS_TAB'), findsOneWidget);
   });
+
+  testWidgets('切换 tab 从顶部显示，不继承章节滚动位置', (tester) async {
+    await tester.pumpWidget(
+      _host(
+        ReaderAudiobookPanel(
+          controller: null,
+          toc: List<TtuTocEntry>.generate(
+            40,
+            (int i) => TtuTocEntry(index: i, label: 'Chapter $i'),
+          ),
+          currentSection: 0,
+          onJumpSection: (_) async {},
+          title: 'Book',
+          chapterLabel: null,
+          coverPath: null,
+          settingsBuilder: (_) => Column(
+            children: List<Widget>.generate(
+              30,
+              (int i) => SizedBox(height: 80, child: Text('Setting $i')),
+            ),
+          ),
+        ),
+      ),
+    );
+    final Finder scrollable = find.descendant(
+      of: find.byKey(const ValueKey<String>('fushi_audiobook_scroll_chapters')),
+      matching: find.byType(Scrollable),
+    );
+    await tester.drag(scrollable, const Offset(0, -400));
+    await tester.pumpAndSettle();
+    expect(
+      tester.state<ScrollableState>(scrollable).position.pixels,
+      greaterThan(0),
+    );
+    await tester.tap(find.text(t.settings));
+    await tester.pumpAndSettle();
+    final Finder settingsScroll = find.descendant(
+      of: find.byKey(const ValueKey<String>('fushi_audiobook_scroll_settings')),
+      matching: find.byType(Scrollable),
+    );
+    expect(tester.state<ScrollableState>(settingsScroll).position.pixels, 0);
+    expect(find.text('Setting 0').hitTestable(), findsOneWidget);
+  });
+
+  for (final double width in <double>[320, 360, 560, 900]) {
+    testWidgets('有封面时宽度 $width 的五个播放按钮均留在面板内', (tester) async {
+      await tester.binding.setSurfaceSize(Size(width, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final AudiobookPlayerController controller = AudiobookPlayerController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        _host(
+          ReaderAudiobookPanel(
+            controller: controller,
+            toc: const <TtuTocEntry>[],
+            currentSection: 0,
+            onJumpSection: (_) async {},
+            title: '安達としまむら3',
+            chapterLabel: '一章「私に相応しいチョコを決めてください」',
+            coverPath: 'missing-test-cover.png',
+            settingsBuilder: (_) => const Text('Settings'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      final Rect panel = tester.getRect(find.byType(ReaderAudiobookPanel));
+      for (final IconData icon in <IconData>[
+        Icons.replay_10_outlined,
+        Icons.skip_previous_outlined,
+        Icons.play_arrow_outlined,
+        Icons.skip_next_outlined,
+        Icons.forward_10_outlined,
+      ]) {
+        final Finder button = find.ancestor(
+          of: find.byIcon(icon),
+          matching: find.byType(IconButton),
+        );
+        final Rect rect = tester.getRect(button);
+        expect(panel.contains(rect.topLeft), isTrue);
+        expect(panel.contains(rect.bottomRight), isTrue);
+      }
+      final Rect cover = tester.getRect(
+        find.byKey(const ValueKey<String>('fushi_audiobook_cover')),
+      );
+      final Rect play = tester.getRect(
+        find.byKey(const ValueKey<String>('fushi_audiobook_panel_play')),
+      );
+      if (width <= 360) {
+        expect(play.top, greaterThanOrEqualTo(cover.bottom));
+      } else {
+        expect(play.left, greaterThan(cover.right));
+      }
+    });
+  }
 
   testWidgets('顶部工具栏紧凑形态：非 pinned 动作收进 ⋮ 溢出菜单', (tester) async {
     int gallery = 0;

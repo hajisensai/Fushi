@@ -29,10 +29,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2071 条。点号进各自文件。
+> 共 2075 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2250](bugs/BUG-2250-reader-brightness-selector.md) | ✅ | ✅ | 阅读器主题卡遗漏日间跟随系统夜间选择器 |
+| [BUG-2249](bugs/BUG-2249-reader-gallery-blur.md) | ✅ | ✅ | 插图画廊未同步正文图片模糊设置 |
+| [BUG-2248](bugs/BUG-2248-audiobook-narrow-transport.md) | ✅ | ✅ | 有声书窄屏封面挤压播放按钮导致越界 |
+| [BUG-2247](bugs/BUG-2247-audiobook-tab-scroll.md) | ✅ | ✅ | 有声书切换设置标签沿用章节滚动位置 |
 | [BUG-2246](bugs/BUG-2246-discovery-anime-resource-category.md) | ✅ | ✅ | 发现资源搜索把TMDB动画当普通剧集且不能手动切换类型 |
 | [BUG-2240](bugs/BUG-2240-grammar-label-locale.md) | ✅ | ✅ | 词形变化标签未本地化且部分日语标签缺少说明 |
 | [BUG-2239](bugs/BUG-2239-pack-failed-import-cleanup.md) | ✅ | ✅ | 推荐包导入失败后仍被启动清理删除 |
