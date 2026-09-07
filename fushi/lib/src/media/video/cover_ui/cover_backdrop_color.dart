@@ -100,17 +100,26 @@ int _sampleStep(int pixelCount) {
 /// 在一排卡片里互相打架。所以只留**色相**，饱和度收进上限、亮度按主题钉死：
 /// 卡片背景该是安静的有色底，不是色块。
 Color harmonizeBackdrop(Color seed, Brightness brightness) {
+  final bool dark = brightness == Brightness.dark;
   final HSLColor hsl = HSLColor.fromColor(seed);
   return hsl
-      .withSaturation(hsl.saturation.clamp(0.0, kBackdropMaxSaturation))
-      .withLightness(brightness == Brightness.dark
-          ? kBackdropDarkLightness
-          : kBackdropLightLightness)
+      .withSaturation(hsl.saturation.clamp(0.0, backdropMaxSaturation(brightness)))
+      .withLightness(dark ? kBackdropDarkLightness : kBackdropLightLightness)
       .toColor();
 }
 
-/// 饱和度上限（只留色相倾向，不铺色块）。
-const double kBackdropMaxSaturation = 0.42;
+/// 饱和度上限：暗色主题收得更紧。低亮度下的暖色（尤其黄）人眼会读成脏的橄榄褐，
+/// 实测柚子社那张全黄 logo 在 0.42 下就是这个毛病；亮色主题没有这个问题。
+double backdropMaxSaturation(Brightness brightness) =>
+    brightness == Brightness.dark
+        ? kBackdropMaxSaturationDark
+        : kBackdropMaxSaturationLight;
+
+/// 亮色主题的饱和度上限（只留色相倾向，不铺色块）。
+const double kBackdropMaxSaturationLight = 0.42;
+
+/// 暗色主题的饱和度上限。
+const double kBackdropMaxSaturationDark = 0.26;
 
 /// 暗色主题下的背景亮度。
 const double kBackdropDarkLightness = 0.22;

@@ -76,10 +76,18 @@ void main() {
       final Color tuned = harmonizeBackdrop(vivid, Brightness.dark);
       final HSLColor tunedHsl = HSLColor.fromColor(tuned);
 
-      expect(tunedHsl.hue, closeTo(seedHsl.hue, 1.0),
+      // 容差 2°：调制要经 HSL→8bit RGB 往返，饱和度压得越低量化误差越大
+      // （实测暗色档 0.26 下偏 1.15°）。这个量级肉眼不可辨，色相仍是留住的。
+      expect(tunedHsl.hue, closeTo(seedHsl.hue, 2.0),
           reason: '色相是与前景协调的依据，必须留住');
+      expect(tunedHsl.saturation,
+          lessThanOrEqualTo(kBackdropMaxSaturationDark + 0.01));
+      // 暗色收得更紧：同一颗种子在亮色主题下允许更高的饱和度。
       expect(
-          tunedHsl.saturation, lessThanOrEqualTo(kBackdropMaxSaturation + 0.01));
+        HSLColor.fromColor(harmonizeBackdrop(vivid, Brightness.light))
+            .saturation,
+        greaterThan(tunedHsl.saturation),
+      );
       expect(tunedHsl.lightness, closeTo(kBackdropDarkLightness, 0.02));
     });
 
