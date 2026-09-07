@@ -124,8 +124,12 @@ void main() {
 
   test('auto 转区拉起的进程立刻死亡 → 退回不转区重拉一次，会话以第二次为准', () async {
     final GalHookSessionController controller = build();
-    final GalHookLaunchResult result =
-        await controller.launchGame(r'D:\game\game.exe');
+    final GalHookLaunchResult result = await controller.launchGame(
+      r'D:\game\game.exe',
+      // 显式 auto：本例测的正是 auto 档下「转区拉起的进程秒死 → 自动退回 off
+      // 重拉一次」。缺省档已是 off，靠缺省值这条回退路径根本不会发生。
+      japaneseLocaleMode: GalJapaneseLocaleMode.auto,
+    );
     expect(result.launched, isTrue);
     expect(
       requestedModes,
@@ -164,7 +168,10 @@ void main() {
   test('转区拉起的进程还活着（只是注入没就绪）→ 不重拉，走既有降级', () async {
     alivePids = <int>{1111, 2222};
     final GalHookSessionController controller = build();
-    await controller.launchGame(r'D:\game\game.exe');
+    await controller.launchGame(
+      r'D:\game\game.exe',
+      japaneseLocaleMode: GalJapaneseLocaleMode.auto,
+    );
     expect(requestedModes, <GalJapaneseLocaleMode>[GalJapaneseLocaleMode.auto]);
     final List<String> codes =
         controller.events.map((GalHookEvent e) => e.code).toList();
