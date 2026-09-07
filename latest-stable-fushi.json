@@ -26,6 +26,15 @@
       "sha256": "9b073dd902eca2208843a7ac6ae588581af1f699ab68a4063c85cc81af9f8f8b"
     },
     {
+      "name": "fushi-2.3.0-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.3.0/fushi-2.3.0-windows-setup.exe",
+      "releaseSequence": 13889,
+      "tag": "v2.3.0",
+      "version": "2.3.0",
+      "size": 261889124,
+      "sha256": "a7ed0f09561699d3591a389e8b249ac626f94ea7fc081e17ddcb6e337b61f935"
+    },
+    {
       "name": "fushi-2.3.0-x86_64.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.3.0/fushi-2.3.0-x86_64.apk",
       "releaseSequence": 13889,
