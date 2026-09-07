@@ -17,6 +17,8 @@ import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:fushi_anki/fushi_anki.dart' show AnkiMediaDedupReport;
 import 'package:fushi/src/anki/anki_media_dedup_dialogs.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_mini_bar.dart';
+import 'package:fushi/src/onboarding/recommended_pack_tutorial_prompt.dart';
+import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
 import 'package:fushi/src/utils/components/fushi_windows_title_bar.dart';
 import 'package:fushi/src/utils/components/nav_rail_brand_button.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
@@ -430,7 +432,33 @@ class _HomePageState extends BasePageState<HomePage>
         .addListener(_onHomeDictionaryTabRequested);
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (appModel.isFirstTimeSetup) {
+      if (!mounted) return;
+      final RecommendedPackTutorialState tutorialState =
+          RecommendedPackTutorialState(appModelNoUpdate.appDirectory);
+      if (await tutorialState.shouldPrompt) {
+        // Persist before the prompt can consume its receipt or open a tutorial.
+        // Killing the app in the tutorial must not replay the setup wizard.
+        appModelNoUpdate.setFirstTimeSetupFlag();
+        await appModelNoUpdate.setOnboardingCompleted(value: true);
+      }
+      if (!mounted) return;
+      // Serialize follow-up with ordinary onboarding and update dialogs.
+      final bool tutorialOffered = await showRecommendedPackTutorialPrompt(
+        context: context,
+        state: tutorialState,
+        onStart: () async {
+          await Navigator.of(context).push(
+            adaptivePageRoute<void>(
+              context: context,
+              builder: (_) => const OnboardingWizardPage(tutorialOnly: true),
+              fullscreenDialog: true,
+            ),
+          );
+        },
+      );
+      if (!mounted) return;
+
+      if (!tutorialOffered && appModel.isFirstTimeSetup) {
         appModel.setLastSelectedDictionaryFormat(
             JapaneseLanguage.instance.standardFormat);
         appModel.setFirstTimeSetupFlag();
@@ -442,7 +470,7 @@ class _HomePageState extends BasePageState<HomePage>
 
       // 新手引导在更新弹窗之前弹（避免两个模态抢同一帧）；向导关闭（完成/
       // 跳过/返回）后统一标记完成，之后可从「设置 → 系统」随时重新打开。
-      if (mounted && !appModel.onboardingCompleted) {
+      if (mounted && !tutorialOffered && !appModel.onboardingCompleted) {
         await Navigator.of(context).push(
           adaptivePageRoute<void>(
             context: context,

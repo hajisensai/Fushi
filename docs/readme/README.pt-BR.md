@@ -102,6 +102,8 @@ A sincronização na nuvem (Google Drive / OneDrive / Dropbox) usa credenciais O
 
 O Fushi baseia-se nos seguintes projetos e ecossistema:
 
+### Ferramentas de aprendizado e referências anteriores
+
 | Projeto | Descrição |
 |---|---|
 | [jidoujisho](https://github.com/arianneorpilla/jidoujisho) | Ferramenta de aprendizado imersivo de japonês |
@@ -116,6 +118,48 @@ O Fushi baseia-se nos seguintes projetos e ecossistema:
 | [ッツ Ebook Reader](https://github.com/ttu-ttu/ebook-reader) | Referência de compatibilidade de leitor, estatísticas e sincronização |
 | [media_kit](https://github.com/media-kit/media-kit) | Framework de reprodução de vídeo do Flutter (núcleo libmpv) |
 | [Niratan](https://github.com/W1ght/Niratan) | Suíte de aprendizado imersivo de idiomas para macOS |
+
+### Motores e componentes nativos
+
+| Projeto | Descrição |
+|---|---|
+| [LunaHook](https://github.com/HIllya51/LunaTranslator) | Motor de hooking de texto para galgames (DLLs incluídas, carregadas pelo injetor) |
+| [MinHook](https://github.com/TsudaKageyu/minhook) | Biblioteca de inline hooking usada pelo injetor de galgames |
+| [libtorrent](https://github.com/arvidn/libtorrent) | Motor de download torrent integrado |
+| [mpv](https://github.com/mpv-player/mpv) | Núcleo de reprodução libmpv por trás do media_kit |
+| [FFmpeg](https://ffmpeg.org) | Análise de mídia, recorte e extração de áudio |
+| [libplacebo](https://github.com/haasn/libplacebo) | Shaders de vídeo por GPU e mapeamento de tons HDR |
+| [flutter_inappwebview](https://github.com/pichillilorenzo/flutter_inappwebview) | Motor WebView que renderiza o leitor EPUB |
+| [ONNX Runtime](https://github.com/microsoft/onnxruntime) | Inferência no dispositivo para reconhecimento de fala e OCR |
+| [zstd](https://github.com/facebook/zstd) · [xxHash](https://github.com/Cyan4973/xxHash) · [libdeflate](https://github.com/ebiggers/libdeflate) · [glaze](https://github.com/stephenberry/glaze) · [unordered_dense](https://github.com/martinus/unordered_dense) · [utf8proc](https://github.com/JuliaStrings/utf8proc) · [utfcpp](https://github.com/nemtrif/utfcpp) | Dependências do motor de dicionários |
+
+### Modelos no dispositivo
+
+| Projeto | Descrição |
+|---|---|
+| [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) | Pacotes de modelos Zipformer de reconhecimento de fala e builds de VAD |
+| [ReazonSpeech k2-v2](https://huggingface.co/reazon-research/reazonspeech-k2-v2) | Modelo de reconhecimento de fala em japonês |
+| [Omnilingual ASR](https://github.com/facebookresearch/omnilingual-asr) | Modelo multilíngue de reconhecimento de fala CTC |
+| [Silero VAD](https://github.com/snakers4/silero-vad) | Modelo de detecção de atividade de voz |
+| [manga-ocr](https://github.com/kha-white/manga-ocr) / [manga-ocr-onnx](https://huggingface.co/mayocream/manga-ocr-onnx) | Modelo de OCR para mangá |
+| [comic-text-and-bubble-detector](https://huggingface.co/ogkalu/comic-text-and-bubble-detector) | Modelo de detecção de texto e balões de fala em mangá |
+
+### Fontes de conteúdo e integrações
+
+| Projeto | Descrição |
+|---|---|
+| [Mihon](https://github.com/mihonapp/mihon) | Ecossistema de extensões de fontes de mangá |
+| [M-Extension-Server](https://github.com/kodjodevf/M-Extension-Server) | Runtime de extensões de mangá para desktop |
+| [aidoku-rs](https://github.com/Aidoku/aidoku-rs) | ABI do runtime de fontes de mangá |
+| [asbplayer](https://github.com/asbplayer/asbplayer) | Referência da ponte de legendas de streaming para a extensão de navegador |
+| [Shoko Server](https://github.com/ShokoAnime/ShokoServer) | Referência de arquitetura para identificação e scraping de anime |
+| [ReinaManager](https://github.com/huoshen80/ReinaManager) | Referência de arquitetura de informação da biblioteca de galgames |
+| [AniDB](https://anidb.net) | Identidade de anime, episódios e arquivos |
+| [TMDB](https://www.themoviedb.org) | Metadados e imagens complementares |
+| [Jimaku](https://jimaku.cc) | Fonte de legendas em japonês |
+| [OpenSubtitles](https://www.opensubtitles.com) | Fonte de legendas |
+
+> Este aplicativo usa o TMDB e as APIs do TMDB, mas não é endossado, certificado ou aprovado pelo TMDB.
 
 ## Licença
 

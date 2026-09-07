@@ -9,14 +9,14 @@
 library;
 
 import 'dart:developer' as developer;
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_onnxruntime/flutter_onnxruntime.dart';
 import 'package:flutter/services.dart';
 
-import 'package:fushi/src/onnx/onnx_inference.dart';
-
+// `kOnnxLogName` 两边都有：本仓这份是 'hibiki.onnx' 日志通道，明确 hide 掉
+// 包里那份，别靠「本地声明遮蔽 import」这条隐式规则。
+import 'package:asr_core/asr_core.dart' hide kOnnxLogName;
 /// 共享层默认的 `dart:developer` 日志通道名。子系统可经 [logName] 参数换成自己
 /// 的通道（OCR 用 `hibiki.ocr`），日志读者按通道过滤即可分清是谁在建会话。
 ///
@@ -24,28 +24,6 @@ import 'package:fushi/src/onnx/onnx_inference.dart';
 /// `Isolate.spawn` 出来的后台 isolate 里，那里没有 Flutter binding，`debugPrint`
 /// 的节流实现依赖 binding 的 Timer 调度；`developer.log` 在任何 isolate 都可直接用。
 const String kOnnxLogName = 'hibiki.onnx';
-
-/// 本平台是否内置 ONNX Runtime native 库（本地推理是否可用）。
-///
-/// **当前 Fushi 出包的五端全部为真**。曾经排除 Apple，是因为 vendored fork 把
-/// `ios`/`macos` 从 `flutter.plugin.platforms` 删了——那不是 ORT 不支持 Apple，
-/// 而是上游随 podspec 附带的 `Package.swift` 会经 SwiftPM 拉进
-/// `onnxruntime-swift-package-manager`（清单写死 `.macOS(.v14)`），把整个 app 拖到
-/// macOS 14。fork 改成删掉那两个 `Package.swift` 走 CocoaPods 后，真实下限只剩
-/// `onnxruntime-objc` 1.23.0 自己的 iOS 15.1 / macOS 13.4，项目部署目标已对齐
-/// （见 `third_party/flutter_onnxruntime/PATCHES.md`）。
-///
-/// 保留这个具名闸门而不是直接写 `true`：它是「本地推理可不可用」的唯一判定点，
-/// 将来任一端的 native 再被摘掉（换 ORT 版本、平台下限回退），只改这里，
-/// 调用方（`MangaOcrServiceImpl` 的整卷 / 点击 / 框选区域三个入口——框选区域自 PR
-/// #1000 起复用同一条引擎链，不再有独立的单框 OCR 服务；以及有声书 ASR）无须改动。
-/// OCR 层的 `ocr_inference_ort.dart` 保留同名 getter 转发到这里。
-bool get isLocalOnnxRuntimeAvailable =>
-    Platform.isWindows ||
-    Platform.isLinux ||
-    Platform.isAndroid ||
-    Platform.isMacOS ||
-    Platform.isIOS;
 
 OrtProvider _toOrtProvider(OnnxExecutionProvider provider) {
   switch (provider) {
@@ -71,123 +49,6 @@ const Map<OrtProvider, OnnxExecutionProvider> _acceleratedProviders =
   OrtProvider.CORE_ML: OnnxExecutionProvider.coreml,
 };
 
-/// 用配置的加速 EP 创建会话；首选 EP 建不起来时，按 [providers] 中已有的 CPU
-/// 后备重试一次。
-///
-/// 判据是**「首选 EP 没建成会话」**，不是某一个错误码。加速 EP 失败的形态本来
-/// 就不止一种：插件不认识这个 provider 会在建 session 之前抛
-/// `PlatformException(INVALID_PROVIDER, ...)`；而 ORT 自己初始化 EP 失败是在
-/// 建 session 之中抛 `ORT_ERROR`——本机实测 DirectML 初始化 int8 检测器时抛
-/// `E_INVALIDARG (80070057)`，走的正是后一条路。按错误码枚举「哪种失败才算 EP
-/// 问题」注定漏，而漏掉的代价是整条 OCR 直接不可用：列表尾部那个 CPU 后备明明
-/// 在，却一次都轮不到（BUG-2034）。
-///
-/// 「模型损坏也会被多试一次 CPU」是这么换来的，而且这笔交易划算：那种输入下
-/// CPU 同样建不成，最终照样抛错，只是多花一次失败的时间；反过来，为了省这一次
-/// 而维护一张错误码白名单，换来的是真·EP 故障时功能整个躺平。
-///
-/// CPU 重试也失败时抛出的是**CPU 那次**的异常（类型与内容都不变，调用方原有的
-/// `on PlatformException` 之类照旧成立），首选 EP 的失败则落进日志——两次失败
-/// 都得留痕，回退不能变成「把第一个错误吃掉」。
-///
-/// [onResolved] 在会话建成后**必定**被调用一次，回报本次真正生效的 provider
-/// 与降级原因（BUG-1163）：降级不允许静默发生，调用层据此写日志并把状态送到
-/// UI。回调本身抛出的异常不影响会话创建结果，只落日志。
-///
-/// [logName] 是日志通道名（默认 [kOnnxLogName]；OCR 传 `hibiki.ocr`）。
-Future<T> createOnnxSessionWithProviderFallback<T>({
-  required List<OnnxExecutionProvider> providers,
-  required Future<T> Function(List<OnnxExecutionProvider> providers) create,
-  void Function(OnnxProviderResolution resolution)? onResolved,
-  String logName = kOnnxLogName,
-}) async {
-  final OnnxExecutionProvider preferred =
-      providers.isEmpty ? OnnxExecutionProvider.cpu : providers.first;
-  try {
-    final T session = await create(providers);
-    _notifyResolved(
-      onResolved,
-      OnnxProviderResolution(requested: providers, effective: preferred),
-      logName,
-    );
-    return session;
-  } on Exception catch (error) {
-    final bool canRetryOnCpu = preferred != OnnxExecutionProvider.cpu &&
-        providers.contains(OnnxExecutionProvider.cpu);
-    if (!canRetryOnCpu) rethrow;
-    developer.log(
-      'ONNX session on ${preferred.name} failed; retrying on CPU',
-      name: logName,
-      error: error,
-    );
-    final T session;
-    try {
-      session = await create(const <OnnxExecutionProvider>[
-        OnnxExecutionProvider.cpu,
-      ]);
-    } on Exception catch (cpuError) {
-      developer.log(
-        'ONNX session fell back to CPU and failed there too; '
-        '${preferred.name} had failed with: $error',
-        name: logName,
-        error: cpuError,
-      );
-      rethrow;
-    }
-    _notifyResolved(
-      onResolved,
-      OnnxProviderResolution(
-        requested: providers,
-        effective: OnnxExecutionProvider.cpu,
-        fallbackReason: _describeProviderFailure(error),
-      ),
-      logName,
-    );
-    return session;
-  }
-}
-
-/// 降级原因的可读形态。
-///
-/// `PlatformException` 保留 `code: message` 的老格式（UI 与日志都按它读）；其余
-/// 异常直接用 `toString`——比如 native 把非 UTF-8 字节送过 channel 时 Dart 侧抛的
-/// `FormatException`，那串偏移量本身就是排查线索，不该被抹成一句“未知错误”。
-String _describeProviderFailure(Object error) {
-  if (error is PlatformException) {
-    return '${error.code}: ${error.message ?? 'provider rejected by plugin'}';
-  }
-  return '$error';
-}
-
-void _notifyResolved(
-  void Function(OnnxProviderResolution resolution)? onResolved,
-  OnnxProviderResolution resolution,
-  String logName,
-) {
-  if (resolution.didFallBack) {
-    developer.log(
-      'ONNX execution provider fell back: $resolution',
-      name: logName,
-    );
-  } else {
-    developer.log(
-      'ONNX execution provider resolved: $resolution',
-      name: logName,
-    );
-  }
-  if (onResolved == null) return;
-  try {
-    onResolved(resolution);
-  } catch (error, stack) {
-    developer.log(
-      'ONNX provider resolution callback threw',
-      name: logName,
-      error: error,
-      stackTrace: stack,
-    );
-  }
-}
-
 /// 把算法层的语义输入名对齐到会话元数据里真实输入名的钩子。
 ///
 /// 不传时输入名**精确匹配**（ASR：sherpa-onnx 导出的 IO 名已在
@@ -199,6 +60,28 @@ typedef OnnxSessionInputResolver = Map<String, OnnxTensor> Function(
   List<String> sessionInputNames,
 );
 
+/// 把插件后端的 `PlatformException` 拆成 `code: message` 装进
+/// [OnnxProviderResolution.fallbackReason]。
+///
+/// asr_core 的回退策略是后端无关的，默认只会 `toString()`。本仓的 UI 与日志按
+/// `code: message` 这个老格式读（`PlatformException.toString()` 会带上 details 与
+/// stacktrace，读起来完全是另一回事），所以在这里把描述器换回来。
+///
+/// 其余异常仍走 `toString`——比如 native 把非 UTF-8 字节送过 channel 时 Dart 侧抛的
+/// `FormatException`，那串偏移量本身就是排查线索，不该被抹成一句「未知错误」。
+void _installFushiProviderFailureDescriber() {
+  if (_describerInstalled) return;
+  _describerInstalled = true;
+  onnxProviderFailureDescriber = (Object error) {
+    if (error is PlatformException) {
+      return '${error.code}: ${error.message ?? 'provider rejected by plugin'}';
+    }
+    return '$error';
+  };
+}
+
+bool _describerInstalled = false;
+
 /// flutter_onnxruntime 会话工厂。
 class OrtOnnxSessionFactory implements OnnxSessionFactory {
   OrtOnnxSessionFactory({
@@ -206,7 +89,9 @@ class OrtOnnxSessionFactory implements OnnxSessionFactory {
     OnnxSessionInputResolver? resolveInputs,
     this.logName = kOnnxLogName,
   })  : _runtime = runtime ?? OnnxRuntime(),
-        _resolveInputs = resolveInputs;
+        _resolveInputs = resolveInputs {
+    _installFushiProviderFailureDescriber();
+  }
 
   final OnnxRuntime _runtime;
   final OnnxSessionInputResolver? _resolveInputs;
@@ -232,6 +117,7 @@ class OrtOnnxSessionFactory implements OnnxSessionFactory {
   /// 说明（BUG-1163）。
   /// GPU 显存预算（字节；DXGI 本进程可分配上限）。非 Windows、无 GPU、查询失败
   /// 都返回 null——调用方按「未知」处理，不当成 0。
+  @override
   Future<int?> deviceMemoryBudgetBytes() async {
     try {
       final OrtDeviceMemoryInfo? info = await _runtime.getDeviceMemoryInfo();
@@ -247,6 +133,7 @@ class OrtOnnxSessionFactory implements OnnxSessionFactory {
     }
   }
 
+  @override
   Future<Set<OnnxExecutionProvider>> availableAcceleratedProviders() async {
     final List<OrtProvider> providers = await _runtime.getAvailableProviders();
     return providers

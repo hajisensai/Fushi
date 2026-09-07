@@ -2,6 +2,8 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
+import 'package:fushi/src/media/video/cover_ui/cover_backdrop_color.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 
 /// 槽向自适应封面（Kazumi 式，用户拍板 2026-07-24 统一竖版；BUG-1299 推广为
 /// 横竖槽通用）。
@@ -11,8 +13,8 @@ import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
 /// 竖版、无海报横版」的混排特例**：
 ///
 /// * 图片朝向与槽位一致（竖槽竖图 / 横槽横图）→ 直接 `BoxFit.cover` 铺满；
-/// * 朝向不一致（竖槽里的 16:9 截帧 / 横槽里的 2:3 海报）→ 同图两层：底层
-///   `cover` 放大 + 高斯模糊 + 半透明压暗垫底，前景 `contain` 居中完整显示；
+/// * 朝向不一致（竖槽里的 16:9 截帧 / 横槽里的 2:3 海报）→ 同图分层：主色底 +
+///   `cover` 放大高斯模糊（自身压暗）+ 前景 `contain` 居中完整显示；
 /// * 尺寸未知（首帧解码前）先按 `cover` 渲染，[ImageStream] 拿到尺寸后再切换，
 ///   避免先占位后闪换；
 /// * 加载/解码失败 → [errorBuilder]（通常是调用方的占位封面）。
@@ -62,6 +64,14 @@ class _PortraitCoverImageState extends State<PortraitCoverImage>
   @override
   ImageProvider probedImageOf(PortraitCoverImage widget) => widget.image;
 
+  /// 朝向是否不合槽 —— build 的渲染分支与主色采样开关共用的唯一判据。
+  bool _mismatch(double aspect) => widget.landscapeSlot
+      ? aspect < PortraitCoverImage.landscapeAspectThreshold
+      : aspect > PortraitCoverImage.portraitAspectThreshold;
+
+  @override
+  bool needsBackdropSeed(double aspect) => _mismatch(aspect);
+
   @override
   Widget build(BuildContext context) {
     if (coverFailed) {
@@ -69,10 +79,7 @@ class _PortraitCoverImageState extends State<PortraitCoverImage>
     }
     final double? aspect = coverAspect;
     // 朝向不合槽 = 垫底 + contain；首帧前（aspect 未知）按合槽 cover 渲染。
-    final bool mismatch = aspect != null &&
-        (widget.landscapeSlot
-            ? aspect < PortraitCoverImage.landscapeAspectThreshold
-            : aspect > PortraitCoverImage.portraitAspectThreshold);
+    final bool mismatch = aspect != null && _mismatch(aspect);
     final Widget foreground = Image(
       key: widget.imageKey,
       image: widget.image,
@@ -88,23 +95,59 @@ class _PortraitCoverImageState extends State<PortraitCoverImage>
       child: Stack(
         fit: StackFit.expand,
         children: <Widget>[
-          // 垫底：同图放大模糊（blur 溢出由外层 ClipRect 收口）。
-          ImageFiltered(
-            imageFilter: ImageFilter.blur(
-              sigmaX: PortraitCoverImage.backdropBlurSigma,
-              sigmaY: PortraitCoverImage.backdropBlurSigma,
-            ),
-            child: Image(
-              image: widget.image,
-              fit: BoxFit.cover,
-              // 垫底解码失败不接管整卡（前景/流监听兜底），静默留空。
-              errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-            ),
-          ),
-          // 半透明压暗垫底，突出前景。
-          const ColoredBox(color: kCoverBackdropDimColor),
+          ..._backdropLayers(context),
           foreground,
         ],
+      ),
+    );
+  }
+
+  /// 前景之下的垫底层序（底 → 上）：主色底 → 模糊图（自身压暗）。
+  ///
+  /// **压暗只作用于模糊图自身**（[BlendMode.srcATop] 保留源 alpha），这是与旧
+  /// 实现的关键差别：旧实现把压暗铺成一整层 `ColoredBox`，图片带透明区时那层就
+  /// 直接涂在空白上——galgame 封面链末端的 exe 内嵌图标正是四周整片透明的立绘，
+  /// 模糊之后仍然透明，于是卡片只剩压暗色涂出来的一圈死灰。图片不透明时两种写法
+  /// 等价，所以这个缺陷一直藏着。
+  List<Widget> _backdropLayers(BuildContext context) {
+    return <Widget>[
+      if (_backdropDecoration(context) case final BoxDecoration decoration)
+        DecoratedBox(decoration: decoration),
+      // 压暗在内、模糊在外：压暗作用于**原图的 alpha**，透明区因此原样透出下面
+      // 的主色底；随后整体模糊，边缘羽化也跟着自然衰减。反过来嵌套（先模糊再压暗）
+      // 视觉几乎等价，但会把 ImageFiltered 从 Stack 的直接子节点上挪走，hero 的
+      // 层序守卫按类型认这一层（collection_hero_cover_orientation_test）。
+      ImageFiltered(
+        imageFilter: ImageFilter.blur(
+          sigmaX: PortraitCoverImage.backdropBlurSigma,
+          sigmaY: PortraitCoverImage.backdropBlurSigma,
+        ),
+        child: ColorFiltered(
+          colorFilter: const ColorFilter.mode(
+            kCoverBackdropDimColor,
+            BlendMode.srcATop,
+          ),
+          child: Image(
+            image: widget.image,
+            fit: BoxFit.cover,
+            // 垫底解码失败不接管整卡（前景/流监听兜底），静默留空。
+            errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+          ),
+        ),
+      ),
+    ];
+  }
+
+  /// 主色底装饰；采样未完成 / 图片几乎不透明（不需要底色）时返回 null。
+  ///
+  /// 墨水屏不上色：屏幕本就是灰阶，有色底只会把立绘背景压成中灰、削掉对比。
+  BoxDecoration? _backdropDecoration(BuildContext context) {
+    if (isEinkTheme(context)) return null;
+    final Color? seed = coverBackdropSeed;
+    if (seed == null) return null;
+    return BoxDecoration(
+      gradient: coverBackdropGradient(
+        harmonizeBackdrop(seed, Theme.of(context).brightness),
       ),
     );
   }

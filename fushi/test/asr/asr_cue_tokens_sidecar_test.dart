@@ -1,10 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/asr/asr_cue_builder.dart';
-import 'package:fushi/src/asr/asr_transcribe_job.dart';
-import 'package:fushi/src/asr/asr_transcription_service.dart';
-import 'package:fushi/src/asr/asr_types.dart';
+import 'package:asr_core/asr_core.dart';
+import 'package:fushi/src/media/audiobook/audiobook_alignment_service.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:path/path.dart' as p;
 
@@ -74,7 +72,7 @@ void main() {
     });
   });
 
-  group('attachCueTokenTiming', () {
+  group('attachAsrCueTokenTiming', () {
     late Directory tmp;
     setUp(() {
       tmp = Directory.systemTemp.createTempSync('asr_cue_tokens_');
@@ -119,7 +117,7 @@ void main() {
       );
       final List<AudioCue> cues = cuesOf(2);
       expect(
-        await AsrTranscriptionService.attachCueTokenTiming(cues, srt.path),
+        await attachAsrCueTokenTiming(cues, srt.path),
         isTrue,
       );
       expect(cues[0].tokenTiming!.tokens, <String>['a']);
@@ -129,7 +127,7 @@ void main() {
     test('行数不符 / sidecar 缺失 / 不是转录产物 → 一个都不挂', () async {
       final List<AudioCue> cues = cuesOf(2);
       expect(
-        await AsrTranscriptionService.attachCueTokenTiming(
+        await attachAsrCueTokenTiming(
           cues,
           job(state: true, sidecar: '{"t":["a"],"o":[10]}\n').path,
         ),
@@ -137,14 +135,14 @@ void main() {
       );
       expect(cues.every((AudioCue c) => c.tokenTiming == null), isTrue);
       expect(
-        await AsrTranscriptionService.attachCueTokenTiming(
+        await attachAsrCueTokenTiming(
           cues,
           job(state: true).path,
         ),
         isFalse,
       );
       expect(
-        await AsrTranscriptionService.attachCueTokenTiming(
+        await attachAsrCueTokenTiming(
           cues,
           job(state: false, sidecar: '{"t":["a"],"o":[10]}\n' * 2).path,
         ),

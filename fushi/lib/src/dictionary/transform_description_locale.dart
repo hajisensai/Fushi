@@ -7,7 +7,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 /// 词形变化语法说明译文资产的目录（`assets/transforms/i18n/<localeTag>.json`）。
 ///
 /// 每个文件是一张扁平的「英文原文 → 译文」表，键就是 `assets/transforms/<lang>.json`
-/// 里 `description` 字段的原文（逐字，含换行）。为什么按原文作键见
+/// 里 `name` / `description` 字段的原文（逐字，含换行）。为什么按原文作键见
 /// [TransformDescriptionCatalog] 的类注释。
 const String kTransformDescriptionI18nDir = 'assets/transforms/i18n';
 

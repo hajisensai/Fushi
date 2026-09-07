@@ -1796,7 +1796,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
           : null,
       onTranscribe: _srtBookUid == null &&
               _audiobookController != null &&
-              AsrTranscriptionService.isSupported
+              isAsrSupported
           ? () => unawaited(_transcribeFromAudiobookPanel())
           : null,
       lyricsMode: _lyricsMode,

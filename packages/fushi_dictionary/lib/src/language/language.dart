@@ -454,7 +454,7 @@ List<Map<String, String>> deinflectionTagsToJson(List<DeinflectionTag> tags) {
   ];
 }
 
-/// 变形标签的语法说明 → 当前界面语言（[TransformDescriptionCatalog]，BUG-2038）。
+/// 变形标签的名称和语法说明 → 当前界面语言（[TransformDescriptionCatalog]）。
 ///
 /// **只在显示边界调用**，不要下沉进 [buildDeinflectionTags]：后者同时喂着
 /// [buildLookupEntryExtra] 这条**持久化**路径，那份 extra 会被缓存复用，写进译文就
@@ -463,7 +463,7 @@ List<DeinflectionTag> localizeDeinflectionTags(List<DeinflectionTag> tags) {
   return <DeinflectionTag>[
     for (final DeinflectionTag t in tags)
       (
-        name: t.name,
+        name: TransformDescriptionCatalog.localize(t.name),
         description: TransformDescriptionCatalog.localize(t.description),
       ),
   ];

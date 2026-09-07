@@ -13,10 +13,8 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/drag_drop/import_dialog_drop.dart';
-import 'package:fushi/src/asr/asr_cue_builder.dart'
-    show kAsrSuggestedSimilarityThreshold;
-import 'package:fushi/src/asr/asr_model_manifest.dart';
-import 'package:fushi/src/asr/asr_transcription_service.dart';
+import 'package:asr_core/asr_core.dart';
+import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
 import 'package:fushi/src/media/audiobook/audiobook_alignment_service.dart';
 import 'package:fushi/src/media/audiobook/subtitle_rematch.dart';
@@ -437,7 +435,7 @@ class _BookImportDialogState extends State<BookImportDialog>
           isWideTapArea: true,
           onTap: _pickSubtitle,
         ),
-        if (AsrTranscriptionService.isSupported)
+        if (isAsrSupported)
           FushiIconButton(
             icon: Icons.record_voice_over_outlined,
             tooltip: t.audiobook_transcribe_action,
@@ -453,7 +451,7 @@ class _BookImportDialogState extends State<BookImportDialog>
   Future<void> _onSubtitleRowTap() async {
     if (importing) return;
     if (!shouldOfferSubtitleSourceChooser(
-      asrSupported: AsrTranscriptionService.isSupported,
+      asrSupported: isAsrSupported,
       hasAudio: _audioPaths.isNotEmpty,
     )) {
       await _pickSubtitle();

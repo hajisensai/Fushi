@@ -5,15 +5,8 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/asr/asr_engine.dart';
-import 'package:fushi/src/asr/asr_model_manifest.dart';
-import 'package:fushi/src/asr/asr_model_store.dart';
-import 'package:fushi/src/asr/asr_transcribe_job.dart';
-import 'package:fushi/src/asr/asr_transcription_service.dart';
-import 'package:fushi/src/asr/asr_types.dart';
+import 'package:asr_core/asr_core.dart';
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
-import 'package:fushi/src/onnx/model_file_downloader.dart';
-import 'package:fushi/src/onnx/onnx_inference.dart';
 import 'package:fushi/utils.dart';
 import 'package:path/path.dart' as p;
 
@@ -85,6 +78,10 @@ class _FakeService extends AsrTranscriptionService {
     this.existingSrt,
     this.probeError,
   }) : super(
+        backend: const AsrIsolateBackend(
+          buildFactory: _unusedOnnxFactory,
+        ),
+
           pcm: _FakePcm(),
           openStore: (AsrLanguage l) async =>
               AsrModelStore(jobsDir, asrModelPackFor(l)),
@@ -209,6 +206,11 @@ Future<void> pickLanguage(WidgetTester tester, AsrLanguage language) async {
   await tester.tap(entry);
   await tester.pumpAndSettle();
 }
+
+/// 这几组用例都走进程内路径（`runInIsolate: false`）或只碰 UI，不会真起后台
+/// isolate。真被调到说明用例走错了路径，直接炸比默默建个真后端好。
+OnnxSessionFactory _unusedOnnxFactory() =>
+    throw UnimplementedError('本用例不该在 isolate 里建 ONNX 后端');
 
 void main() {
   late Directory tmp;
