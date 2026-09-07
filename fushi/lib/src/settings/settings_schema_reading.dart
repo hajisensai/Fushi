@@ -434,25 +434,6 @@ SettingsDestination buildReadingDestination() {
           ),
           // TODO-975 决策#2：顶部进度悬浮开关（点击唤出 + 自动收起 + 不占正文位置）。
           // 仅当进度本身开启时显示。切换改变预留高 → 走重锚通道。
-          SettingsSwitchItem(
-            id: 'reading_controls.top_progress_floating',
-            title: t.reader_top_progress_floating,
-            icon: Icons.flip_to_front_outlined,
-            // 桌面端底部状态行取代顶部进度 pill，「悬浮 / 位置」两项在桌面端没有
-            // 对应的可见面，不展示（持久化 key 不动，移动端照旧）。
-            visible: (SettingsContext c) =>
-                c.readerSource.showTopProgressBar && !isDesktopPlatform,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.behavior,
-              order: 17,
-            ),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.readerSource.topProgressFloating,
-            onChanged: (SettingsContext settingsContext, bool value) {
-              settingsContext.readerSource.toggleTopProgressFloating();
-              notifyReaderChromeReanchored(settingsContext);
-            },
-          ),
           // TODO-1029：「悬浮控制栏」开关（原「点击空白处隐藏控制栏」）紧挨「悬浮阅读
           // 进度」分到一起——两个悬浮类开关相邻。持久化 key（tap_empty_hide_chrome）、
           // 运行时行为（TODO-975 决策#3：同时把底栏切到悬浮模式）不变，仅改显示名 +
@@ -474,42 +455,6 @@ SettingsDestination buildReadingDestination() {
               notifyReaderChromeReanchored(settingsContext);
             },
           ),
-          // TODO-728: where the top reading-progress text sits. Only shown when
-          // the progress bar itself is enabled. behavior group order 15.
-          SettingsSegmentedItem<String>(
-            id: 'reading_controls.top_progress_position',
-            title: t.top_progress_position,
-            icon: Icons.align_horizontal_center,
-            controlBelow: true,
-            visible: (SettingsContext c) =>
-                c.readerSource.showTopProgressBar && !isDesktopPlatform,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.behavior,
-              order: 15,
-            ),
-            options: <SettingsSegmentOption<String>>[
-              SettingsSegmentOption<String>(
-                value: 'left',
-                label: t.top_progress_pos_left,
-                tooltip: t.top_progress_pos_left,
-              ),
-              SettingsSegmentOption<String>(
-                value: 'center',
-                label: t.top_progress_pos_center,
-                tooltip: t.top_progress_pos_center,
-              ),
-              SettingsSegmentOption<String>(
-                value: 'right',
-                label: t.top_progress_pos_right,
-                tooltip: t.top_progress_pos_right,
-              ),
-            ],
-            selected: (SettingsContext c) => c.readerSource.topProgressPosition,
-            onChanged: (SettingsContext c, String v) {
-              c.readerSource.setTopProgressPosition(v);
-              notifyReaderChromeChanged(c);
-            },
-          ),
           // TODO-975 决策#1：悬浮 chrome 唤出后自动收起的时长（秒，顶部/底栏共用）。
           // 仅当存在任一悬浮 chrome（顶部进度悬浮 或 点空白隐藏=底栏悬浮）时显示。
           // 纯时长不改预留高 → 走 settings 刷新即可，无需重锚。
@@ -521,9 +466,7 @@ SettingsDestination buildReadingDestination() {
             min: 1,
             max: 10,
             divisions: 9,
-            visible: (SettingsContext c) =>
-                (c.readerSource.topProgressFloating && !isDesktopPlatform) ||
-                c.readerSource.tapEmptyToHideChrome,
+            visible: (SettingsContext c) => c.readerSource.tapEmptyToHideChrome,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
               order: 19,

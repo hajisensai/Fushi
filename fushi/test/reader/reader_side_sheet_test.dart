@@ -7,6 +7,58 @@ Widget _app(Widget Function(BuildContext) body) => MaterialApp(
     );
 
 void main() {
+  for (final double width in <double>[320, 360]) {
+    testWidgets('手机 $width 抽屉避开安全区和键盘，关闭键始终可用', (tester) async {
+      tester.view.physicalSize = Size(width, 720);
+      tester.view.devicePixelRatio = 1;
+      tester.view.padding = const FakeViewPadding(top: 24, bottom: 20);
+      tester.view.viewPadding = const FakeViewPadding(top: 24, bottom: 20);
+      addTearDown(tester.view.reset);
+
+      late BuildContext context;
+      await tester.pumpWidget(_app((BuildContext ctx) {
+        context = ctx;
+        return const SizedBox.expand();
+      }));
+      showReaderSideSheet<void>(
+        context: context,
+        builder: (BuildContext ctx) => ReaderSideSheet(
+          title: '导航',
+          onClose: () => Navigator.of(ctx).pop(),
+          child: const TextField(
+            key: ValueKey<String>('mobile_search'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final Finder content = find.byType(ReaderSideSheet);
+      final Finder close = find.byKey(
+        const ValueKey<String>('fushi_side_sheet_close'),
+      );
+      expect(tester.getRect(content).top, 24);
+      expect(tester.getRect(content).bottom, 700);
+      expect(tester.getRect(content).width, width - 48);
+
+      await tester.tap(find.byKey(const ValueKey<String>('mobile_search')));
+      tester.view.viewInsets = const FakeViewPadding(bottom: 280);
+      tester.view.padding = const FakeViewPadding(top: 24);
+      await tester.pumpAndSettle();
+
+      final Rect available = Rect.fromLTRB(48, 24, width, 440);
+      expect(tester.getRect(content), available);
+      expect(available.contains(tester.getCenter(close)), isTrue);
+      expect(
+        tester.getRect(find.byType(SingleChildScrollView)).bottom,
+        lessThanOrEqualTo(available.bottom),
+      );
+      expect(tester.takeException(), isNull);
+      await tester.tap(close);
+      await tester.pumpAndSettle();
+      expect(content, findsNothing);
+    });
+  }
+
   testWidgets('showReaderSideSheet：右抽屉贴右、左抽屉贴左，点外面关闭', (tester) async {
     tester.view.physicalSize = const Size(1600, 900);
     tester.view.devicePixelRatio = 1;

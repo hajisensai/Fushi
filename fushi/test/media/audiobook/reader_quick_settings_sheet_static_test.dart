@@ -374,27 +374,21 @@ void main() {
     expect(readerSource, contains('chapterLabel: _currentChapterLabel()'));
   });
 
-  test('reader page uses shared MD3 dialog frame for desktop quick settings',
+  test('all platforms share side sheets while audiobook adapts its container',
       () {
-    final String readerSource = readReaderPageSource();
-
-    final int desktopBranch = readerSource.indexOf('if (isDesktopPlatform)');
-    final int mobileBranch =
-        readerSource.indexOf('await adaptiveModalSheet<void>', desktopBranch);
-    expect(desktopBranch, isNonNegative);
-    expect(mobileBranch, greaterThan(desktopBranch));
-
-    final String desktopSource =
-        readerSource.substring(desktopBranch, mobileBranch);
-    expect(desktopSource, contains('FushiDialogFrame('));
-    // master-detail 需要更宽画布（左父菜单 + 右详情）；520 太窄进不了分栏。
-    // TODO-1142：魔法数 900 抽成共享 kFushiSettingsDialogMaxWidth（全屏 push 的
-    // 书籍 CSS 编辑页也引用它约束正文宽度，与限宽弹窗兄弟页同宽）。
-    expect(desktopSource, contains('maxWidth: kFushiSettingsDialogMaxWidth'));
-    expect(desktopSource, isNot(contains('maxWidth: 900')));
-    expect(desktopSource, contains('maxHeightFactor: 0.80'));
-    expect(desktopSource, isNot(contains('=> Dialog(')));
-    expect(desktopSource, isNot(contains('ConstrainedBox(')));
+    final String source = readReaderPageSource();
+    final String route = _between(
+      source,
+      '  Future<void> _showAppearanceSheet(',
+      '  Widget _buildQuickSettingsSheet(',
+    );
+    expect(route, contains('readerAudiobookUsesDialog('));
+    expect(route, contains('showReaderSideSheet<void>('));
+    expect(route, contains('ReaderSideSheetSide.left'));
+    expect(route, contains('ReaderSideSheetSide.right'));
+    expect(route, isNot(contains('ReaderQuickSettingsPresentation.sheet')));
+    expect(route, contains('FushiDialogFrame('));
+    expect(route, contains('adaptiveModalSheet<void>'));
   });
 
   test('reader quick settings no longer has a master-detail wide layout', () {
@@ -407,7 +401,7 @@ void main() {
 
     // 桌面端与平板宽窗在到达本面板之前就被路由到左右抽屉；面板内的宽窗左右
     // master-detail（左父菜单 + 右详情）已删除，共享外壳的 wideBuilder 只兜底铺窄窗内容。
-    expect(chrome, contains('readerUsesSideSheets('));
+    expect(chrome, contains('readerAudiobookUsesDialog('));
     expect(source, contains('FushiMasterDetailSettingsSheet('));
     expect(source, contains('wideBuilder:'));
     expect(source, isNot(contains('MaterialSupportingPaneLayout(')));

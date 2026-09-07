@@ -21,6 +21,7 @@ class AudiobookPlayBar extends StatelessWidget {
     this.invertSkip = false,
     this.trailing,
     this.showSeekButtons = false,
+    this.showSettingsButton = true,
     super.key,
   });
 
@@ -62,6 +63,10 @@ class AudiobookPlayBar extends StatelessWidget {
   /// 在「上一句 / 播放 / 下一句」两侧再给 -10s / +10s（与有声书面板同一套传输键）。
   /// 只在 [skipActionSeconds] == 0（按句跳）时有意义；按秒跳时左右键已是快退快进。
   final bool showSeekButtons;
+
+  /// Shared reader header already exposes settings, so its playback bar can omit
+  /// the duplicate button and leave room for full-size transport touch targets.
+  final bool showSettingsButton;
 
   @override
   Widget build(BuildContext context) {
@@ -193,16 +198,17 @@ class AudiobookPlayBar extends StatelessWidget {
         SizedBox(width: tokens.spacing.gap),
       ],
       AudiobookFollowAudioButton(controller: controller, foregroundColor: fg),
-      _FocusableBarButton(
-        id: const FushiFocusId('audiobook_settings'),
-        key: const ValueKey<String>('fushi_reader_audiobook_settings_button'),
-        semanticsIdentifier: 'hibiki.reader.audiobook.settings',
-        icon: const Icon(Icons.tune_outlined),
-        iconSize: 20,
-        style: flatStyle,
-        onPressed: onOpenSettings,
-        tooltip: t.reader_settings_section,
-      ),
+      if (showSettingsButton)
+        _FocusableBarButton(
+          id: const FushiFocusId('audiobook_settings'),
+          key: const ValueKey<String>('fushi_reader_audiobook_settings_button'),
+          semanticsIdentifier: 'hibiki.reader.audiobook.settings',
+          icon: const Icon(Icons.tune_outlined),
+          iconSize: 20,
+          style: flatStyle,
+          onPressed: onOpenSettings,
+          tooltip: t.reader_settings_section,
+        ),
     ];
     return ColoredBox(
       color: backgroundColor ?? Theme.of(context).colorScheme.surface,

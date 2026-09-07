@@ -47,6 +47,32 @@ Future<void> _pumpBar(
 }
 
 void main() {
+  testWidgets(
+      '320 wide shared header leaves six playback targets within bounds',
+      (WidgetTester tester) async {
+    final _CueController controller = _CueController('現在の文');
+    addTearDown(controller.dispose);
+    await tester.binding.setSurfaceSize(const Size(320, 640));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: AudiobookPlayBar(
+      controller: controller,
+      onOpenSettings: () {},
+      showSeekButtons: true,
+      showSettingsButton: false,
+    ))));
+    expect(tester.takeException(), isNull);
+    expect(find.byIcon(Icons.tune_outlined), findsNothing);
+    final Rect bar = tester.getRect(find.byType(AudiobookPlayBar));
+    for (final Element button in find.byType(IconButton).evaluate()) {
+      final Rect rect = tester.getRect(find.byWidget(button.widget));
+      expect(bar.contains(rect.topLeft), isTrue);
+      expect(bar.contains(rect.bottomRight), isTrue);
+    }
+    expect(find.byType(IconButton), findsNWidgets(6));
+  });
+
   testWidgets('current sentence stays absent as the cue changes', (
     WidgetTester tester,
   ) async {

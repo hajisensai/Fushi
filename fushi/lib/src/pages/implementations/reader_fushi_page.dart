@@ -1987,8 +1987,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       _progressTotalChars! > 0 &&
       ReaderFushiSource.instance.showTopProgressBar;
 
-  /// 桌面端底部状态行（ッツ Reader 风格：左阅读追踪 / 右字数进度）是否启用。
-  /// 单一真相源 [readerStatusFooterEnabled]：桌面且非歌词模式。
+  /// 各平台底部状态行（左阅读追踪 / 右字数进度）是否启用。
+  /// 单一真相源 [readerStatusFooterEnabled]：非歌词模式。
   bool get _statusFooterEnabled => readerStatusFooterEnabled(
         desktop: isDesktopPlatform,
         lyricsMode: _lyricsMode,
@@ -2003,7 +2003,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       );
 
   /// 桌面端 ッツ 形态 chrome（顶部工具栏 + 右侧抽屉）是否启用：与状态行同判据
-  /// （桌面且非歌词模式），单一真相源 [readerDesktopChromeEnabled]。
+  /// （各平台非歌词模式），单一真相源 [readerDesktopChromeEnabled]。
   bool get _desktopChromeEnabled => readerDesktopChromeEnabled(
         desktop: isDesktopPlatform,
         lyricsMode: _lyricsMode,
@@ -2047,8 +2047,25 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   double get _bottomChromeReserve => bottomChromeReserve(
         barOccupiesLayout: _hasEverLoaded && _showChrome,
         floating: _bottomBarFloating,
-        chromeHeight: _readerChromeHeight,
+        chromeHeight: _desktopChromeEnabled && _audiobookController == null
+            ? 0
+            : _readerChromeHeight,
       );
+
+  /// 宽屏把阅读状态并入播放条；窄屏保留独立状态行，避免文本挤占触控按钮。
+  double get _readerControlsWidth =>
+      (MediaQuery.sizeOf(context).width -
+          MediaQuery.viewPaddingOf(context).horizontal) /
+      _readerChromeScale;
+
+  bool get _playbackStatusInline =>
+      _desktopChromeEnabled && !readerHeaderCompact(_readerControlsWidth);
+
+  bool get _separatePlaybackStatus =>
+      _desktopChromeEnabled && !_playbackStatusInline;
+
+  double get _statusFooterBottomOffset =>
+      _stableBottomInset + (_separatePlaybackStatus ? 0 : _bottomChromeReserve);
 
   /// TODO-975：顶部进度此刻是否绘制。悬浮态额外受 [_chromeTransientVisible]（点击
   /// 唤出、计时自动收起）门控；挤压态恒随 [_showTopProgress]。
