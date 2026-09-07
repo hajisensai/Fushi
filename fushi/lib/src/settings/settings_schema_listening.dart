@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:fushi/src/asr/asr_transcription_service.dart';
+import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/media/audiobook/asr_models_settings_section.dart';
 import 'package:fushi/src/media/audiobook/audiobook_material_library_dialog.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
@@ -87,13 +87,13 @@ SettingsDestination buildListeningDestination() {
         title: t.asr_models_section,
         footer: t.asr_models_section_summary,
         collapsedByDefault: true,
-        visible: (_) => AsrTranscriptionService.isSupported,
+        visible: (_) => isAsrSupported,
         items: <SettingsItem>[
           SettingsCustomItem(
             id: 'listening.asr_models',
             searchTitle: t.asr_models_section,
             builder: (SettingsContext _) =>
-                AsrModelsSettingsSection(service: AsrTranscriptionService()),
+                AsrModelsSettingsSection(service: createAsrTranscriptionService()),
           ),
         ],
       ),

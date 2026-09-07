@@ -22,24 +22,14 @@
 ///   两种传法都行）
 library;
 
+import 'package:fushi/src/asr_host/asr_host.dart';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:fushi/src/asr/asr_encoder_buckets.dart';
-import 'package:fushi/src/asr/asr_engine.dart';
-import 'package:fushi/src/asr/asr_model_manifest.dart';
-import 'package:fushi/src/asr/asr_model_store.dart';
-import 'package:fushi/src/asr/asr_pcm_source.dart';
-import 'package:fushi/src/asr/asr_transcribe_job.dart';
-import 'package:fushi/src/asr/asr_transcription_service.dart';
-import 'package:fushi/src/asr/asr_transducer_decoder.dart';
-import 'package:fushi/src/asr/asr_types.dart';
-import 'package:fushi/src/asr/asr_vad.dart';
-import 'package:fushi/src/onnx/onnx_inference.dart';
-
+import 'package:asr_core/asr_core.dart';
 /// `--dart-define` 优先；没有就读同名进程环境变量——`tool/run_windows_itest.ps1`
 /// 不透传自定义 dart-define，但会把父进程环境原样传给运行器。
 String _param(String name, {String defaultValue = ''}) {
@@ -111,6 +101,7 @@ Future<
   required AsrEncoderVariant variant,
 }) async {
   final AsrTranscriptionService service = AsrTranscriptionService(
+    backend: fushiAsrBackend(),
     openStore: (AsrLanguage _) async => store,
     jobsRoot: () async => jobsRoot,
     // 缺省 60 s 让检查点/续跑路径多走几次；ASR_CHUNK_SECONDS=300 对齐生产值拿速度数。
@@ -282,7 +273,7 @@ void main() {
       return;
     }
     final Set<OnnxExecutionProvider> available =
-        await AsrEngineLoader().availableAcceleratedProviders();
+        await AsrEngineLoader(factory: buildFushiOnnxFactory()).availableAcceleratedProviders();
     // ignore: avoid_print
     print('[asr-e2e][gpu-fp32] available accelerated EPs: $available');
     final r = await _runOnce(
@@ -347,7 +338,7 @@ Future<void> _phaseBenchmark({
   required AsrEncoderVariant variant,
   required String label,
 }) async {
-  final AsrEngineSessions sessions = await AsrEngineLoader().load(
+  final AsrEngineSessions sessions = await AsrEngineLoader(factory: buildFushiOnnxFactory()).load(
     store: store,
     variant: variant,
     preference: preference,

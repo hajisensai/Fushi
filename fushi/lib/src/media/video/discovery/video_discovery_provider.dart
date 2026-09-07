@@ -58,6 +58,28 @@ class VideoMediaReference {
   final int? bangumiId;
   final Map<String, String> externalIds;
 
+  /// 只调整资源/订阅使用的内容分类，保留原作品身份及 movie/tv 命名空间。
+  VideoMediaReference withDiscoveryCategory(VideoDiscoveryCategory category) =>
+      VideoMediaReference(
+        providerId: providerId,
+        mediaId: mediaId,
+        mediaKind: mediaKind,
+        discoveryCategory: category,
+        title: title,
+        originalTitle: originalTitle,
+        aliases: aliases,
+        year: year,
+        season: season,
+        episode: episode,
+        tmdbId: tmdbId,
+        imdbId: imdbId,
+        tvdbId: tvdbId,
+        anidbId: anidbId,
+        anilistId: anilistId,
+        bangumiId: bangumiId,
+        externalIds: externalIds,
+      );
+
   /// All strong identity keys, ordered from cross-provider to provider-local.
   Set<String> get identityKeys {
     final Set<String> keys = <String>{};

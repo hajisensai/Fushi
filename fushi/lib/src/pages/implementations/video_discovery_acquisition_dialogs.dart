@@ -660,6 +660,7 @@ class _VideoResourceSearchSurfaceState
   void initState() {
     super.initState();
     final VideoMediaReference? reference = widget.initialItem?.reference;
+    if (reference != null) _manualCategory = reference.discoveryCategory;
     final List<String> preferredQueries = reference == null
         ? const <String>[]
         : preferredNyaaSearchQueries(
@@ -687,7 +688,9 @@ class _VideoResourceSearchSurfaceState
 
   VideoMediaReference? get _media {
     final VideoDiscoveryItem? item = widget.initialItem;
-    if (item != null) return item.reference;
+    if (item != null) {
+      return item.reference.withDiscoveryCategory(_manualCategory);
+    }
     return buildManualVideoMediaReference(
       providerId: _manualProvider,
       mediaId: _manualIdController.text,
@@ -708,11 +711,53 @@ class _VideoResourceSearchSurfaceState
 
   void _invalidateManualSearch() {
     setState(() {
+      ++_generation;
+      _loading = false;
       _result = null;
       _selected = null;
       _strictConfirmed = false;
     });
   }
+
+  void _changeCategory(VideoDiscoveryCategory? value) {
+    if (value == null || value == _manualCategory || _submitting) return;
+    setState(() {
+      _manualCategory = value;
+      if (widget.initialItem == null) {
+        if (value == VideoDiscoveryCategory.movie) {
+          _manualMediaKind = VideoMetadataMediaKind.movie;
+        } else if (value == VideoDiscoveryCategory.tv) {
+          _manualMediaKind = VideoMetadataMediaKind.tv;
+        }
+        _manualProvider =
+            value == VideoDiscoveryCategory.anime ? 'anidb' : 'tmdb';
+      }
+    });
+    _invalidateManualSearch();
+    if (widget.initialItem != null) unawaited(_search());
+  }
+
+  Widget _buildCategorySelector() =>
+      DropdownButtonFormField<VideoDiscoveryCategory>(
+        key: const ValueKey<String>('video-resource-category'),
+        initialValue: _manualCategory,
+        decoration: InputDecoration(labelText: t.media_tracking_kind),
+        items: <DropdownMenuItem<VideoDiscoveryCategory>>[
+          DropdownMenuItem<VideoDiscoveryCategory>(
+            value: VideoDiscoveryCategory.anime,
+            child: Text(t.media_tracking_anime),
+          ),
+          DropdownMenuItem<VideoDiscoveryCategory>(
+            value: VideoDiscoveryCategory.movie,
+            child: Text(t.collection_relation_movie),
+          ),
+          DropdownMenuItem<VideoDiscoveryCategory>(
+            value: VideoDiscoveryCategory.tv,
+            child: Text(t.series),
+          ),
+        ],
+        onChanged: _submitting ? null : _changeCategory,
+      );
 
   Future<void> _search() async {
     final VideoMediaReference? media = _media;
@@ -870,6 +915,10 @@ class _VideoResourceSearchSurfaceState
             ),
             SizedBox(height: tokens.spacing.card),
           ],
+          if (!manual && !widget.pageMode) ...<Widget>[
+            _buildCategorySelector(),
+            SizedBox(height: tokens.spacing.gap),
+          ],
           if (!manual && widget.pageMode) ...<Widget>[
             Row(
               children: <Widget>[
@@ -893,16 +942,15 @@ class _VideoResourceSearchSurfaceState
                 ),
               ],
             ),
-            if (widget.initialItem!.reference.discoveryCategory ==
-                VideoDiscoveryCategory.anime) ...<Widget>[
+            SizedBox(height: tokens.spacing.gap),
+            _buildCategorySelector(),
+            if (_manualCategory == VideoDiscoveryCategory.anime) ...<Widget>[
               SizedBox(height: tokens.spacing.gap),
               Wrap(
                 spacing: tokens.spacing.gap,
                 runSpacing: tokens.spacing.gap,
                 children: preferredNyaaSearchQueries(
-                  VideoResourceSearchRequest(
-                    media: widget.initialItem!.reference,
-                  ),
+                  VideoResourceSearchRequest(media: _media),
                 )
                     .map(
                       (String query) => ActionChip(
@@ -934,41 +982,7 @@ class _VideoResourceSearchSurfaceState
                   onChanged: (_) => _invalidateManualSearch(),
                   onSubmitted: (_) => unawaited(_search()),
                 );
-                final Widget category =
-                    DropdownButtonFormField<VideoDiscoveryCategory>(
-                  key: const ValueKey<String>('video-resource-category'),
-                  initialValue: _manualCategory,
-                  items: <DropdownMenuItem<VideoDiscoveryCategory>>[
-                    DropdownMenuItem<VideoDiscoveryCategory>(
-                      value: VideoDiscoveryCategory.anime,
-                      child: Text(t.media_tracking_anime),
-                    ),
-                    DropdownMenuItem<VideoDiscoveryCategory>(
-                      value: VideoDiscoveryCategory.movie,
-                      child: Text(t.collection_relation_movie),
-                    ),
-                    DropdownMenuItem<VideoDiscoveryCategory>(
-                      value: VideoDiscoveryCategory.tv,
-                      child: Text(t.series),
-                    ),
-                  ],
-                  onChanged: (VideoDiscoveryCategory? value) {
-                    if (value == null) return;
-                    setState(() {
-                      _manualCategory = value;
-                      if (value == VideoDiscoveryCategory.movie) {
-                        _manualMediaKind = VideoMetadataMediaKind.movie;
-                      } else if (value == VideoDiscoveryCategory.tv) {
-                        _manualMediaKind = VideoMetadataMediaKind.tv;
-                      }
-                      _manualProvider = value == VideoDiscoveryCategory.anime
-                          ? 'anidb'
-                          : 'tmdb';
-                      _result = null;
-                      _selected = null;
-                    });
-                  },
-                );
+                final Widget category = _buildCategorySelector();
                 if (constraints.maxWidth < 520) {
                   return Column(
                     children: <Widget>[

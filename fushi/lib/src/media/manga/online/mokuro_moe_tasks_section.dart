@@ -4,40 +4,53 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_download_queue.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_progress_labels.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/media/downloads/download_task_entry.dart';
+import 'package:fushi/src/media/downloads/download_task_card.dart';
 import 'package:fushi/utils.dart';
 
 /// 「下载」页任务 tab 的漫画目录下载区：渲染 [MokuroMoeDownloadQueue] 的任务
-/// 列表（与 torrent 任务并列，统一下载中心）。队列为空时不占位。
+/// 列表（与 torrent 任务并列，统一下载中心）。独立使用时空队列不占位；[tasksBuilder] 将任务接入统一列表。
 ///
 /// 行内可取消排队/执行中的任务；已结束任务经「清除已完成」批量清掉。任务
 /// 数据与「在线目录」对话框内联面板同源（同一队列实例 + 同一进度换算）。
 class MokuroMoeTasksSection extends ConsumerWidget {
-  const MokuroMoeTasksSection({super.key, this.queueOverride});
+  const MokuroMoeTasksSection({
+    super.key,
+    this.queueOverride,
+    this.tasksBuilder,
+  });
+
+  /// Parent owns unified filtering, sorting and grouping, including empty queues.
+  final DownloadTasksBuilder? tasksBuilder;
 
   /// 测试注入队列（null = 取 [AppModel.mokuroMoeDownloadQueue]）。
   final MokuroMoeDownloadQueue? queueOverride;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final AppModel appModel = ref.read(appProvider);
-    // DownloadsPage is also rendered by lightweight widget-test/AppModel seams
-    // before the database is opened. Do not make an empty optional task section
-    // force-create its database-backed queue during that pre-init window.
-    if (queueOverride == null && !appModel.isDatabaseReady) {
-      return const SizedBox.shrink();
+    final MokuroMoeDownloadQueue? queue = queueOverride ?? _appQueue(ref);
+    if (queue == null) {
+      return tasksBuilder?.call(context, const <DownloadTaskEntry>[]) ??
+          const SizedBox.shrink();
     }
-    final MokuroMoeDownloadQueue queue =
-        queueOverride ?? appModel.mokuroMoeDownloadQueue;
     return ListenableBuilder(
       listenable: queue,
       builder: (BuildContext context, Widget? _) {
         final List<MokuroMoeDownloadTask> tasks = queue.tasks;
+        if (tasksBuilder != null) {
+          return tasksBuilder!(context, <DownloadTaskEntry>[
+            for (final MokuroMoeDownloadTask task in tasks)
+              _buildEntry(queue, task),
+          ]);
+        }
         if (tasks.isEmpty) return const SizedBox.shrink();
         final ThemeData theme = Theme.of(context);
-        final bool hasFinished =
-            tasks.any((MokuroMoeDownloadTask t) => t.isFinished);
-        final bool hasRetryable =
-            tasks.any((MokuroMoeDownloadTask t) => _canRetry(t));
+        final bool hasFinished = tasks.any(
+          (MokuroMoeDownloadTask t) => t.isFinished,
+        );
+        final bool hasRetryable = tasks.any(
+          (MokuroMoeDownloadTask t) => _canRetry(t),
+        );
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
@@ -94,6 +107,53 @@ class MokuroMoeTasksSection extends ConsumerWidget {
     );
   }
 
+  /// Do not initialize the database-backed app queue when a queue is injected.
+  static MokuroMoeDownloadQueue? _appQueue(WidgetRef ref) {
+    final AppModel appModel = ref.read(appProvider);
+    return appModel.isDatabaseReady ? appModel.mokuroMoeDownloadQueue : null;
+  }
+
+  DownloadTaskEntry _buildEntry(
+    MokuroMoeDownloadQueue queue,
+    MokuroMoeDownloadTask task,
+  ) {
+    final String id = 'mokuro:${task.taskId}';
+    final double? progress = task.status == MokuroMoeTaskStatus.done
+        ? 1
+        : mokuroMoeProgressValue(task.lastEvent);
+    return DownloadTaskEntry(
+      id: id,
+      title: task.title,
+      createdAt: task.createdAt,
+      onRetry: _canRetry(task) ? () => queue.retry(task) : null,
+      onClear: task.isFinished ? () => queue.removeFinished(task) : null,
+      kind: DownloadTaskKind.manga,
+      status: switch (task.status) {
+        MokuroMoeTaskStatus.queued => DownloadTaskStatus.queued,
+        MokuroMoeTaskStatus.running => DownloadTaskStatus.active,
+        MokuroMoeTaskStatus.waitingRetry => DownloadTaskStatus.queued,
+        MokuroMoeTaskStatus.done => DownloadTaskStatus.completed,
+        MokuroMoeTaskStatus.failed => DownloadTaskStatus.attention,
+        MokuroMoeTaskStatus.cancelled => DownloadTaskStatus.cancelled,
+      },
+      progress: progress,
+      collectionKey: task.seriesName.isEmpty
+          ? null
+          : 'mokuro:${task.seriesName}',
+      collectionTitle: task.seriesName.isEmpty ? null : task.seriesName,
+      searchTerms: <String>[task.seriesName, task.volumeName],
+      builder: (BuildContext context) => DownloadTaskCard(
+        key: ValueKey<String>(id),
+        taskId: id,
+        title: task.title,
+        status: _statusLabel(task, queue.maxAutoRetries),
+        subtitle: task.seriesName,
+        progress: progress,
+        details: _buildTaskRow(context, Theme.of(context), queue, task),
+      ),
+    );
+  }
+
   Widget _buildTaskRow(
     BuildContext context,
     ThemeData theme,
@@ -128,18 +188,7 @@ class MokuroMoeTasksSection extends ConsumerWidget {
               ),
             ),
     };
-    final String subtitle = switch (task.status) {
-      MokuroMoeTaskStatus.queued => t.download_status_queued,
-      MokuroMoeTaskStatus.running => mokuroMoeStageLabel(task.lastEvent),
-      MokuroMoeTaskStatus.done => t.manga_online_downloaded,
-      MokuroMoeTaskStatus.cancelled => t.download_status_cancelled,
-      MokuroMoeTaskStatus.failed =>
-        '${t.manga_online_failed}: ${task.error ?? ''}',
-      MokuroMoeTaskStatus.waitingRetry => '${t.manga_online_retry_waiting(
-          attempt: task.autoRetries,
-          total: queue.maxAutoRetries,
-        )}: ${task.error ?? ''}',
-    };
+    final String subtitle = _statusLabel(task, queue.maxAutoRetries);
     final bool errorTone = task.status == MokuroMoeTaskStatus.failed ||
         task.status == MokuroMoeTaskStatus.waitingRetry;
     return FushiListItem(
@@ -184,6 +233,20 @@ class MokuroMoeTasksSection extends ConsumerWidget {
       },
     );
   }
+
+  static String _statusLabel(
+    MokuroMoeDownloadTask task,
+    int maxAutoRetries,
+  ) => switch (task.status) {
+    MokuroMoeTaskStatus.queued => t.download_status_queued,
+    MokuroMoeTaskStatus.running => mokuroMoeStageLabel(task.lastEvent),
+    MokuroMoeTaskStatus.done => t.manga_online_downloaded,
+    MokuroMoeTaskStatus.cancelled => t.download_status_cancelled,
+    MokuroMoeTaskStatus.failed =>
+      '${t.manga_online_failed}: ${task.error ?? ''}',
+    MokuroMoeTaskStatus.waitingRetry =>
+      '${t.manga_online_retry_waiting(attempt: task.autoRetries, total: maxAutoRetries)}: ${task.error ?? ''}',
+  };
 
   /// 手动重试可用的任务（与 [MokuroMoeDownloadQueue.retry] 的受理条件同口径）。
   static bool _canRetry(MokuroMoeDownloadTask task) =>

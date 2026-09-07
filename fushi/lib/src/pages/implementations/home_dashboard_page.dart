@@ -1250,8 +1250,14 @@ class _HomeDashboardPageState
     List<_ContinueEntry> entries, {
     bool videoLandscape = false,
   }) {
+    // BUG-2002 同款几何：悬停放大是纯绘制变换（以卡中心放大），行视口高度恰等于
+    // 卡高时，溢出的上下各 (scale-1)/2 会被 ListView 视口裁成平边——横滚行每张卡
+    // 都贴着视口上下沿，不像墙格只有视口边缘才裁。行高留出余量、卡片自身尺寸不变；
+    // 不能改用 Clip.none：懒加载 cacheExtent 里已构建的卡会画到行外。
+    final double rowHeight = _continueRowHeight(context, tokens);
+    final double liftHeadroom = rowHeight * (kFushiHoverLiftScale - 1) / 2;
     return SizedBox(
-      height: _continueRowHeight(context, tokens),
+      height: rowHeight + liftHeadroom * 2,
       // 桌面默认 MaterialScrollBehavior 的 dragDevices 不含鼠标——横排行
       // 用鼠标左右拖会毫无反应。共享件统一放开 mouse/trackpad/stylus 拖动
       // （与合集行 CollectionShelfRow 同款）；触屏行为不变。
@@ -1457,11 +1463,32 @@ class _HomeDashboardPageState
   /// 灰副标题一行。显示名规则（非合集上下文拼合集名）：合集成员标题=合集名、
   /// 副标题=「条目名 · 状态」；散卡标题=条目名、副标题=状态。状态：书=「阅读 ·
   /// x%」/ 视频=「观看」，远端条目再缀设备名。
+  ///
+  /// 悬停抬升与视频库 / 书架 / 游戏库同一个壳 [FushiHoverLift]（内含墨水屏与
+  /// 「减弱动态效果」两处降级，以及 BUG-2124 的滚动压制）。首页这一行原先只有
+  /// InkWell 水波纹，鼠标悬停毫无反馈，与其余库页不一致。
   Widget _buildContinueCard(
     FushiDesignTokens tokens,
     AppModel appModel,
     _ContinueEntry entry, {
     bool videoLandscape = false,
+  }) {
+    return FushiHoverLift(
+      builder: (BuildContext _, bool __) => _buildContinueCardForOrientation(
+        tokens,
+        appModel,
+        entry,
+        videoLandscape: videoLandscape,
+      ),
+    );
+  }
+
+  /// 朝向探测 + 卡体（[_buildContinueCard] 的内层，悬停壳之下）。
+  Widget _buildContinueCardForOrientation(
+    FushiDesignTokens tokens,
+    AppModel appModel,
+    _ContinueEntry entry, {
+    required bool videoLandscape,
   }) {
     // 首页横滑行的视频卡：单行允许横竖混排（用户拍板「继续观看只有一行，混排
     // 不破排版；书架里不可以」）——朝向随**选图链选中的那张图**探测：titleCard /

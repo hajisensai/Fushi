@@ -166,6 +166,8 @@ class _StandaloneVideoWorkDetailState
     try {
       await _load();
     } catch (e, st) {
+      // 同 web_video：给了用户归宿就不能把诊断扔了（release 版 debugPrint 落空）。
+      ErrorLogService.instance.log('video_work_detail', 'load failed: $e', st);
       debugPrint('VideoWorkDetailPage load failed: $e\n$st');
       if (!mounted) return;
       setState(() => _loading = false);

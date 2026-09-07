@@ -1,4 +1,8 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
+
+import 'package:fushi/src/media/video/cover_ui/cover_backdrop_color.dart';
 
 /// 槽向自适应封面组件的**共享内核**（TODO-2426）。
 ///
@@ -17,10 +21,23 @@ mixin CoverAspectProbe<T extends StatefulWidget> on State<T> {
   /// 同一 [ImageStream]，宽高比探测因此是零额外解码成本。
   ImageProvider probedImageOf(T widget);
 
+  /// 宽高比为 [aspect] 的图会走「模糊垫底」吗？
+  ///
+  /// **只有走垫底的图才需要主色底**，所以这也是采样的开关：取主色要 `toByteData`
+  /// 把整图 RGBA 拉出来（一张 400×600 就是近 1MB），视频库墙格几十上百张卡全采
+  /// 一遍纯属白烧。合槽直接 `cover` 铺满的图压根看不到底色。
+  ///
+  /// 判据就是子类 build 里那条 mismatch 分支，两处必须同源——各写一份迟早漂移。
+  bool needsBackdropSeed(double aspect);
+
   ImageStream? _stream;
   ImageStreamListener? _listener;
   double? _aspect;
   bool _failed = false;
+  Color? _backdropSeed;
+
+  /// 每次换图自增：异步主色采样回来时对不上号就丢弃（图片已经换了）。
+  int _sampleGeneration = 0;
 
   /// 图片固有宽高比（宽 / 高）；null = 首帧解码前尺寸未知。
   ///
@@ -30,6 +47,10 @@ mixin CoverAspectProbe<T extends StatefulWidget> on State<T> {
 
   /// 加载 / 解码是否已失败（调用方据此走 errorBuilder）。
   bool get coverFailed => _failed;
+
+  /// 垫底底色种子（图片非透明像素的加权平均色），null = 尚未采样完成，或整图
+  /// 几乎不透明、压根不需要底色。语义与调制手法见 [sampleCoverBackdropSeed]。
+  Color? get coverBackdropSeed => _backdropSeed;
 
   @override
   void didChangeDependencies() {
@@ -43,6 +64,8 @@ mixin CoverAspectProbe<T extends StatefulWidget> on State<T> {
     if (probedImageOf(widget) != probedImageOf(oldWidget)) {
       _aspect = null;
       _failed = false;
+      _backdropSeed = null;
+      _sampleGeneration++;
       _resolveProbedImage();
     }
   }
@@ -74,12 +97,33 @@ mixin CoverAspectProbe<T extends StatefulWidget> on State<T> {
 
   void _onImage(ImageInfo info, bool syncCall) {
     final double aspect = info.image.width / info.image.height;
+    // 主色采样要读像素（异步），而 info.dispose() 之后底层 image 就不能再用了。
+    // clone 拿一份自己的句柄，采样完在 [_sampleBackdrop] 里各自释放。
+    final ui.Image sample = info.image.clone();
     info.dispose();
+    if (needsBackdropSeed(aspect)) {
+      _sampleBackdrop(sample, _sampleGeneration);
+    } else {
+      sample.dispose();
+    }
     if (!mounted || _aspect == aspect) return;
     setState(() {
       _aspect = aspect;
       _failed = false;
     });
+  }
+
+  /// 异步取垫底底色。[generation] 用来丢弃过期结果：采样期间 widget 可能已经换图。
+  Future<void> _sampleBackdrop(ui.Image image, int generation) async {
+    try {
+      final CoverBackdropSeed? seed = await sampleCoverBackdropSeed(image);
+      if (!mounted || generation != _sampleGeneration) return;
+      final Color? color = seed?.color;
+      if (_backdropSeed == color) return;
+      setState(() => _backdropSeed = color);
+    } finally {
+      image.dispose();
+    }
   }
 
   void _onError(Object exception, StackTrace? stackTrace) {

@@ -102,6 +102,8 @@ Fushi хранит импортированные книги, словари, ш
 
 Fushi опирается на следующие проекты и экосистему:
 
+### Инструменты изучения и предшественники
+
 | Проект | Описание |
 |---|---|
 | [jidoujisho](https://github.com/arianneorpilla/jidoujisho) | Инструмент иммерсивного изучения японского |
@@ -116,6 +118,48 @@ Fushi опирается на следующие проекты и экосис�
 | [ッツ Ebook Reader](https://github.com/ttu-ttu/ebook-reader) | Референс совместимости читалки, статистики и синхронизации |
 | [media_kit](https://github.com/media-kit/media-kit) | Фреймворк воспроизведения видео для Flutter (ядро libmpv) |
 | [Niratan](https://github.com/W1ght/Niratan) | Набор для иммерсивного изучения языков для macOS |
+
+### Движки и нативные компоненты
+
+| Проект | Описание |
+|---|---|
+| [LunaHook](https://github.com/HIllya51/LunaTranslator) | Движок перехвата текста в galgame (поставляемые DLL, загружаются инжектором) |
+| [MinHook](https://github.com/TsudaKageyu/minhook) | Библиотека inline-перехвата, используемая инжектором galgame |
+| [libtorrent](https://github.com/arvidn/libtorrent) | Встроенный движок torrent-загрузок |
+| [mpv](https://github.com/mpv-player/mpv) | Ядро воспроизведения libmpv в основе media_kit |
+| [FFmpeg](https://ffmpeg.org) | Анализ медиа, нарезка и извлечение аудио |
+| [libplacebo](https://github.com/haasn/libplacebo) | Видеошейдеры на GPU и тональная компрессия HDR |
+| [flutter_inappwebview](https://github.com/pichillilorenzo/flutter_inappwebview) | Движок WebView, отрисовывающий читалку EPUB |
+| [ONNX Runtime](https://github.com/microsoft/onnxruntime) | Локальный вывод для распознавания речи и OCR |
+| [zstd](https://github.com/facebook/zstd) · [xxHash](https://github.com/Cyan4973/xxHash) · [libdeflate](https://github.com/ebiggers/libdeflate) · [glaze](https://github.com/stephenberry/glaze) · [unordered_dense](https://github.com/martinus/unordered_dense) · [utf8proc](https://github.com/JuliaStrings/utf8proc) · [utfcpp](https://github.com/nemtrif/utfcpp) | Зависимости словарного движка |
+
+### Модели на устройстве
+
+| Проект | Описание |
+|---|---|
+| [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) | Пакеты моделей распознавания речи Zipformer и сборки VAD |
+| [ReazonSpeech k2-v2](https://huggingface.co/reazon-research/reazonspeech-k2-v2) | Модель распознавания японской речи |
+| [Omnilingual ASR](https://github.com/facebookresearch/omnilingual-asr) | Многоязычная CTC-модель распознавания речи |
+| [Silero VAD](https://github.com/snakers4/silero-vad) | Модель детекции речевой активности |
+| [manga-ocr](https://github.com/kha-white/manga-ocr) / [manga-ocr-onnx](https://huggingface.co/mayocream/manga-ocr-onnx) | Модель OCR для манги |
+| [comic-text-and-bubble-detector](https://huggingface.co/ogkalu/comic-text-and-bubble-detector) | Модель детекции текста и «облачков» в манге |
+
+### Источники контента и интеграции
+
+| Проект | Описание |
+|---|---|
+| [Mihon](https://github.com/mihonapp/mihon) | Экосистема расширений источников манги |
+| [M-Extension-Server](https://github.com/kodjodevf/M-Extension-Server) | Среда выполнения расширений манги для десктопа |
+| [aidoku-rs](https://github.com/Aidoku/aidoku-rs) | ABI среды выполнения источников манги |
+| [asbplayer](https://github.com/asbplayer/asbplayer) | Референс моста субтитров стриминга для расширения браузера |
+| [Shoko Server](https://github.com/ShokoAnime/ShokoServer) | Референс архитектуры идентификации и скрейпинга аниме |
+| [ReinaManager](https://github.com/huoshen80/ReinaManager) | Референс информационной архитектуры библиотеки galgame |
+| [AniDB](https://anidb.net) | Идентификация аниме, эпизодов и файлов |
+| [TMDB](https://www.themoviedb.org) | Дополнительные метаданные и изображения |
+| [Jimaku](https://jimaku.cc) | Источник японских субтитров |
+| [OpenSubtitles](https://www.opensubtitles.com) | Источник субтитров |
+
+> Это приложение использует TMDB и API TMDB, но не одобрено, не сертифицировано и никак не поддержано TMDB.
 
 ## Лицензия
 

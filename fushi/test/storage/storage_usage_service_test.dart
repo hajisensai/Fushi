@@ -97,6 +97,29 @@ void main() {
   });
 
   group('scanCategories', () {
+    test('tutorial receipts are counted once as read-only internal data',
+        () async {
+      writeFile(p.join(docs.path, 'onboarding_tutorial', 'pending.flag'), 1);
+      writeFile(p.join(docs.path, 'onboarding_tutorial', 'dismissed.flag'), 1);
+      final List<StorageCategoryUsage> categories =
+          await service().scanCategories(
+        books: const <StorageBookRef>[],
+        dictionaryNames: const <String>[],
+      ).toList();
+      final StorageCategoryUsage internal = categories.singleWhere(
+          (StorageCategoryUsage usage) =>
+              usage.id == StorageCategoryId.database);
+      expect(internal.bytes, 2);
+      expect(internal.entries, hasLength(2));
+      expect(
+          internal.entries.every((StorageEntryUsage entry) =>
+              entry.kind == StorageEntryKind.readOnly),
+          isTrue);
+      expect(
+          categories.fold<int>(
+              0, (int sum, StorageCategoryUsage usage) => sum + usage.bytes),
+          2);
+    });
     test('书籍类目：总量按目录整树，明细含真实原语落盘的配对音频，按字节降序', () async {
       // 两本书 + 一个孤儿目录（不在 DB 里）。
       final String bookA = p.join(docs.path, 'fushi_books', 'keyA');
@@ -319,8 +342,8 @@ void main() {
       expect(dicts.entries[1].bytes, 200);
       // BUG-2096：DB 只认识 `dictionaryResources/<名>`，导入工作目录的残留同样
       // 占盘，必须自己冒出来。
-      expect(dicts.entries[2].label,
-          'dictionaryImportWorkingDirectory/tmp.bin');
+      expect(
+          dicts.entries[2].label, 'dictionaryImportWorkingDirectory/tmp.bin');
       expect(dicts.entries[2].bytes, 5);
       expect(
           dicts.entries
@@ -328,8 +351,7 @@ void main() {
           dicts.bytes);
     });
 
-    test('BUG-2096：推荐包暂存的整包 zip 出现在词典明细里，而不是只体现为差额',
-        () async {
+    test('BUG-2096：推荐包暂存的整包 zip 出现在词典明细里，而不是只体现为差额', () async {
       // 用户实测：词典类目 11.3 GB，展开只有 583 MB 的词典条目——差的 10.7 GB
       // 是新手引导下载的推荐包（`recommended_pack/` 与 `dictionaryResources/`
       // 同属词典类目），旧实现下既看不见也删不掉。
@@ -356,8 +378,7 @@ void main() {
           dicts.bytes);
     });
 
-    test('BUG-2096：认领判据按「类目根的直接子项」收敛，不与已知条目重复计数',
-        () async {
+    test('BUG-2096：认领判据按「类目根的直接子项」收敛，不与已知条目重复计数', () async {
       // 书的 extractDir 深于直接子项时（音频落在 `fushi_books/<key>/audio/`），
       // 直接子项 `fushi_books/<key>` 整个已被那本书认领——若按路径全等去重，它会
       // 被当成没人认领而再计一遍，类目总量凭空翻倍。
@@ -657,8 +678,8 @@ void main() {
       expect(backups.entries.single.paths, hasLength(2));
       expect(cached.bytes, 700, reason: '总计必须每个字节只算一次');
       expect(
-        cached.entries.any((StorageEntryUsage e) =>
-            e.paths.any((String path) => isBackupArchiveName(p.basename(path)))),
+        cached.entries.any((StorageEntryUsage e) => e.paths
+            .any((String path) => isBackupArchiveName(p.basename(path)))),
         isFalse,
       );
     });
