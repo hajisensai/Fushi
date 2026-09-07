@@ -143,6 +143,14 @@ LUNARiA 从原版 Start.exe 33116 经 StartMenu 7460 进入游戏 59820，宿主
 
 本轮补充离线门：两生成器退出 0；manifest 22/22、结构 43/43、workflow 6/6、evidence 16/16。SOP Python replay 的 9 事件通过，但它是独立模型；另直接调用生产 `GalHookSessionController` 的 RealLive 合成 replay 单项 1/1 通过，仍不证明 Siglus 实机音频身份。vendor 校验首次因 Windows PowerShell 环境缺少 Get-FileHash 退出 1，保留该失败；本机 pwsh 7 下四个 DLL 哈希校验退出 0。本机 `identity-offline-gates/metadata.json` SHA-256 为 `fbd6f790a7cc38f633eb5c4155db9a8990b1ac9efd3249d1bd31a738aa6087f4`。
 
+身份修正构建的补充原路径观察：LOOPERS PLUS PID 10836、helper 27980、宿主 59356 实际使用 `7312ef...` DLL。18:19:51 的有效 hit 引用真实 TextSlot seq 1，而 geometry_generation 为 22，两个身份已分离；18:20 新明解词典可见。首次窗外输入被辅助窗口遮挡而未发送，不能记为关闭通过。用户暂停后恢复时已到另一台词；截至 18:34:53 的独立 UI 序列重新打开新明解，窗外点击只关闭并保留原句，下一次同处点击推进。本机台账保留两段各自限制；后一段未采集新的 seq，不用于声称该台词音频配对或制卡成功。
+
+### 消息与语音来源的接线
+
+`641f55d0a1` 的消息/正文裸入口 observer 冻结同次 owner 和调用帧票据，worker 写入实际 seq；`afa45073e2` 将该 TextSlot 实际提交时间传给 typed 音频，避免排队延迟被宿主的 1500 ms 检查拒绝。`6c61fad5a0` 独立验证语音 key 的归档/成员运算及 OggOpen 参数调用链：SPRB、LUNARiA、終のステラ、LOOPERS 原版、月の彼方で逢いましょう五个原版结构通过，另四个样本拒绝。该静态证明不直接打开音频配对。
+
+`e866ec70a8` 的来源 observer 校验实际 OggOpen 调用帧、reader/vtable、两份 key、路径、offset 与 length，并只向有界队列复制元数据。worker 核验规范文件、索引全域成员唯一性、文件身份及 SHA-256 索引摘要，再以实际 seq 输出。`e2b144fc3f` 在真实 writer/export/binding 路径验证文件名和字节、错误来源、无声、读取/写入/关闭故障以及独立摘要冲突。首轮完整分发 x86/x64 CTest 各 79/79、退出 0，但审查发现相对路径延迟解析的 CWD 竞态，因此该轮没有安装到宿主或游戏。`4c4d80b4b3` 随后拒绝相对、盘符相对、根相对和不完整 UNC，并以真实 A/B 同名文件切换 CWD 测试验证；原版若仅提供相对路径，音频来源门仍会拒绝。
+
 ## Not proved
 
 - `6f18f9...` v24 DLL 在 LOOPERS PLUS、LOOPERS 原版和終のステラ有有限查词交互证据；LUNARiA、SPRB 和 Anemoi 的旧 v23 证据不能互换为该构建验收；更不能将任何旧会话替换成最新 `7312ef...` 身份修正构建的验收。

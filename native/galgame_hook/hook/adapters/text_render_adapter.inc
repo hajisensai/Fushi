@@ -43,7 +43,9 @@ uint64_t WriteTextRingEntryLocked(const wchar_t* text, int char_len,
                               uint64_t thread_id, uint64_t thread_address,
                               uint64_t thread_context, uint32_t source_kind,
                               const char* hook_name,
-                              const wchar_t* hook_code) {
+                              const wchar_t* hook_code,
+                              uint64_t* committed_tick_ms = nullptr) {
+  if (committed_tick_ms != nullptr) *committed_tick_ms = 0;
   if (g_text_base == nullptr || g_header == nullptr || char_len <= 0) {
     return 0;
   }
@@ -70,7 +72,7 @@ uint64_t WriteTextRingEntryLocked(const wchar_t* text, int char_len,
   write.hook_code = hook_code;
   return fushi_voice_hook::WriteTextLaneEvent(
       g_header, fushi_voice_hook::kNativeThreadPreviewStart,
-      fushi_voice_hook::kTextLaneCount, write);
+      fushi_voice_hook::kTextLaneCount, write, committed_tick_ms);
 }
 
 void WriteTextRingLocked(const wchar_t* text, int char_len) {
@@ -135,6 +137,9 @@ void ObserveSiglusLookupExactText(const wchar_t* text, uint32_t text_units,
 bool IsSiglusLookupProfileMatched();
 bool IsSiglusLookupIdentityUndecided();
 const fushi_voice_hook::SiglusLookupProfile* ActiveSiglusLookupProfile();
+bool TryHookSiglusMessageText();
+bool IsSiglusMessageTextInstalled();
+bool IsSiglusMessageTextOwnershipBlocked();
 
 // Siglus 3 使用与 32 位 MSVC std::wstring 相同的 24-byte 小字符串布局。当前 Luna 的
 // EmbedSiglus2 也从该函数入口的 ECX 读取此对象；在引擎逻辑层拿整句可彻底避开 GDI
@@ -156,7 +161,8 @@ bool g_siglus_exact_text_installed = false;
 uintptr_t g_siglus_text_function_rva = 0;
 
 bool IsSiglusExactTextInstalled() {
-  return g_siglus_exact_text_installed && g_orig_SiglusExactText != nullptr;
+  return (g_siglus_exact_text_installed && g_orig_SiglusExactText != nullptr) ||
+      IsSiglusMessageTextInstalled();
 }
 
 bool IsReadableSpan(const void* pointer, size_t bytes) {
@@ -267,6 +273,13 @@ bool TryHookSiglusExactText() {
   if (resolved) {
     const auto* profile = ActiveSiglusLookupProfile();
     if (profile == nullptr) return false;
+    if (profile->text_feed ==
+        fushi_voice_hook::SiglusLookupTextFeed::kLunaScenarioLane) {
+      // Resolve the full message/owner/frame contract before claiming this
+      // scenario entry. A rejected family remains available to Luna.
+      TryHookSiglusMessageText();
+      return true;
+    }
     if (profile->text_feed !=
         fushi_voice_hook::SiglusLookupTextFeed::kNativeEcxTextUnion) return true;
     // Capture and lookup must use the same structurally admitted entry.

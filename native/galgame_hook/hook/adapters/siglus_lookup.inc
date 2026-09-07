@@ -710,6 +710,11 @@ void ObserveSiglusLookupExactText(const wchar_t *text, uint32_t text_units,
 }
 
 void ConsumeSiglusLookupLunaScenarioText() {
+  // The profile describes the scenario ABI. Its immutable admission is shared
+  // by Luna fallback and the native message observer; only its actual owner
+  // may publish text snapshots for the current occurrence.
+  if (IsSiglusMessageTextInstalled() || IsSiglusMessageTextOwnershipBlocked())
+    return;
   const auto *profile = ActiveSiglusLookupProfile();
   if (!g_siglus_lookup_capture_enabled.load(std::memory_order_acquire) ||
       profile == nullptr ||

@@ -55,6 +55,7 @@ add_library(fushi_voice_hook SHARED
   "hook/malie_lib.h"
   "hook/qlie_pack.h"
   "hook/visual_arts_ovk.h"
+  "hook/voice_resource_writer.inc"
   "hook/adapter_registry.inc"
   "hook/adapters/unity_adapter.inc"
   "hook/adapters/windows_audio_adapter.inc"
@@ -67,6 +68,15 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/siglus_native_autoprofile.h"
   "hook/adapters/siglus_native_viewport.h"
   "hook/adapters/siglus_lookup.inc"
+  "hook/siglus_voice_binding.h"
+  "hook/adapters/siglus_message_profile.h"
+  "hook/adapters/siglus_resource_mapping.h"
+  "hook/adapters/siglus_voice_source.h"
+  "hook/adapters/siglus_voice_source.inc"
+  "hook/adapters/siglus_message_capture.h"
+  "hook/adapters/siglus_message_capture.inc"
+  "hook/adapters/siglus_message_voice.inc"
+  "hook/adapters/siglus_voice_export.inc"
   "hook/adapters/bgi_ethornell_adapter.inc"
   "hook/adapters/bgi_ethornell_profile.h"
   "hook/adapters/artemis_adapter.inc"
@@ -137,6 +147,35 @@ add_executable(fushi_siglus_ovk_test
 target_include_directories(fushi_siglus_ovk_test PRIVATE "hook")
 add_test(NAME fushi_siglus_ovk_test COMMAND fushi_siglus_ovk_test)
 
+add_executable(fushi_siglus_voice_binding_test "tests/siglus_voice_binding_test.cpp")
+target_include_directories(fushi_siglus_voice_binding_test PRIVATE "hook")
+add_test(NAME fushi_siglus_voice_binding_test COMMAND fushi_siglus_voice_binding_test)
+
+add_executable(fushi_siglus_message_voice_test "tests/siglus_message_voice_test.cpp")
+target_include_directories(fushi_siglus_message_voice_test PRIVATE "hook")
+target_link_libraries(fushi_siglus_message_voice_test PRIVATE bcrypt)
+add_test(NAME fushi_siglus_message_voice_test COMMAND fushi_siglus_message_voice_test)
+add_executable(fushi_siglus_voice_export_test "tests/siglus_voice_export_test.cpp")
+target_include_directories(fushi_siglus_voice_export_test PRIVATE "hook" "include")
+target_link_libraries(fushi_siglus_voice_export_test PRIVATE bcrypt)
+if(MSVC)
+  target_compile_options(fushi_siglus_voice_export_test PRIVATE /O2 /W4 /WX)
+endif()
+add_test(NAME fushi_siglus_voice_export_test COMMAND fushi_siglus_voice_export_test)
+add_executable(fushi_siglus_voice_source_test "tests/siglus_voice_source_test.cpp")
+target_include_directories(fushi_siglus_voice_source_test PRIVATE "hook/adapters")
+if(MSVC)
+  target_compile_options(fushi_siglus_voice_source_test PRIVATE /O2 /W4 /WX)
+endif()
+add_test(NAME fushi_siglus_voice_source_test COMMAND fushi_siglus_voice_source_test)
+
+add_executable(fushi_siglus_message_capture_test "tests/siglus_message_capture_test.cpp")
+target_include_directories(fushi_siglus_message_capture_test PRIVATE "hook/adapters" "include")
+if(MSVC)
+  target_compile_options(fushi_siglus_message_capture_test PRIVATE /O2 /W4 /WX)
+endif()
+add_test(NAME fushi_siglus_message_capture_test COMMAND fushi_siglus_message_capture_test)
+
 # HUNEX story renderer callback-to-worker hand-off. The focused test exercises
 # only synthetic glyph/index/rectangle values and contains no game payload.
 add_executable(fushi_hunex_gge_capture_bridge_test
@@ -186,6 +225,12 @@ if(MSVC)
   target_compile_options(fushi_siglus_message_profile_test PRIVATE /W4 /WX)
 endif()
 add_test(NAME fushi_siglus_message_profile_test COMMAND fushi_siglus_message_profile_test)
+add_executable(fushi_siglus_resource_mapping_test "tests/siglus_resource_mapping_test.cpp")
+target_include_directories(fushi_siglus_resource_mapping_test PRIVATE "hook/adapters")
+if(MSVC)
+  target_compile_options(fushi_siglus_resource_mapping_test PRIVATE /W4 /WX)
+endif()
+add_test(NAME fushi_siglus_resource_mapping_test COMMAND fushi_siglus_resource_mapping_test)
 add_executable(fushi_siglus_viewport_test "tests/siglus_viewport_test.cpp")
 target_include_directories(fushi_siglus_viewport_test PRIVATE "hook/adapters")
 add_test(NAME fushi_siglus_viewport_test COMMAND fushi_siglus_viewport_test)

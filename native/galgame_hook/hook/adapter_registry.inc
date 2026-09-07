@@ -71,6 +71,10 @@ class SiglusAdapter final : public fushi_voice_hook::EngineAdapter {
       return;
     }
     const bool complete = TryHookSiglusExactText();
+    if (IsSiglusMessageTextInstalled()) TryHookSiglusVoiceSource();
+    if (IsSiglusMessageTextOwnershipBlocked())
+      fushi_voice_hook::PublishSiglusTextOwner(
+          g_header, fushi_voice_hook::SiglusTextOwner::kUnavailable);
     fushi_voice_hook::CompleteSiglusTextOwner(
         g_header, IsSiglusExactTextInstalled(),
         !complete && IsSiglusLookupIdentityUndecided());
@@ -80,6 +84,9 @@ class SiglusAdapter final : public fushi_voice_hook::EngineAdapter {
   }
   void FailTextStartup() {
     text_pending_ = false;
+    if (IsSiglusMessageTextOwnershipBlocked())
+      fushi_voice_hook::PublishSiglusTextOwner(
+          g_header, fushi_voice_hook::SiglusTextOwner::kUnavailable);
     fushi_voice_hook::CompleteSiglusTextOwner(
         g_header, IsSiglusExactTextInstalled(), false);
   }
@@ -88,7 +95,10 @@ class SiglusAdapter final : public fushi_voice_hook::EngineAdapter {
     // the worker even when lookup is disabled; its resolver owns the bounded
     // scan interval. Success or final rejection gets one text-install attempt.
     if (text_pending_) InstallText();
+    ProcessSiglusVoiceSourceTasks();
     ProcessSiglusVoiceTasks();
+    ProcessSiglusMessageTextTasks();
+    ProcessSiglusMessageVoiceBindings();
     ProcessSiglusLookupTick();
   }
   bool audio_ready() const { return audio_ready_; }
@@ -106,6 +116,9 @@ class SiglusAdapter final : public fushi_voice_hook::EngineAdapter {
   }
   void shutdown() override {
     FailTextStartup();
+    ShutdownSiglusVoiceSource();
+    ShutdownSiglusMessageText();
+    ShutdownSiglusMessageVoice();
     ShutdownSiglusLookup();
     installed_ = false;
     audio_ready_ = false;

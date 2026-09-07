@@ -58,6 +58,7 @@ int main() {
   // Reattach preserves the DLL's terminal decision. Initializing another
   // helper/gate cannot reset ownership or manufacture a second native install.
   for (const auto owner : {SiglusTextOwner::kNativeOwned,
+                           SiglusTextOwner::kUnavailable,
                            SiglusTextOwner::kLunaAllowed,
                            SiglusTextOwner::kNotApplicable}) {
     SharedHeader h{};
@@ -69,7 +70,8 @@ int main() {
     assert(ReadSiglusTextOwner(&h) == owner);
     SiglusLunaStartupGate reattached;
     assert(reattached.ShouldAttempt(ReadSiglusTextOwner(&h)) ==
-           (owner != SiglusTextOwner::kNativeOwned));
+           (owner == SiglusTextOwner::kNotApplicable ||
+            owner == SiglusTextOwner::kLunaAllowed));
   }
   {
     SharedHeader other_engine{};
@@ -77,6 +79,17 @@ int main() {
     SiglusLunaStartupGate gate;
     assert(gate.ShouldAttempt(ReadSiglusTextOwner(&other_engine)));
     assert(ReadSiglusTextOwner(&other_engine) == SiglusTextOwner::kNotApplicable);
+  }
+  // Failed rollback must terminate pending without inviting a second patcher
+  // or pretending the incomplete native sensor is ready. Reattach cannot retry.
+  {
+    SharedHeader failed{};
+    assert(PublishSiglusTextOwner(&failed, SiglusTextOwner::kUnavailable));
+    CompleteSiglusTextOwner(&failed, false, false);
+    SiglusLunaStartupGate gate;
+    assert(!gate.ShouldAttempt(ReadSiglusTextOwner(&failed)));
+    assert(ReadSiglusTextOwner(&failed) == SiglusTextOwner::kUnavailable);
+    assert(!gate.ShouldAttempt(SiglusTextOwner::kLunaAllowed));
   }
   {
     SharedHeader h{};

@@ -1393,13 +1393,13 @@ class AdapterStructureTest(unittest.TestCase):
 
     def test_siglus_ovk_capture_requires_successful_export(self) -> None:
         # BUG-2235: source validation cannot stand in for successful disk IO.
-        source = (ROOT / "hook" / "adapters" / "siglus_adapter.inc").read_text(
+        source = (ROOT / "hook" / "adapters" / "siglus_voice_export.inc").read_text(
             encoding="utf-8"
         )
         worker = self._function_body(source, "void ProcessSiglusVoiceTask(")
         committed = self._function_body(
             worker,
-            "if (WriteVoiceOggAt(ogg, entry.byte_len, storage.c_str(), task->tick_ms))",
+            "if (WriteVoiceOggAt(ogg, entry.byte_len, storage.c_str(), task->tick_ms,",
         )
         for flag in ("kDiagSiglusVoiceDumped", "kDiagVisualArtsOvkCaptured"):
             self.assertEqual(worker.count(flag), 1)
@@ -1413,12 +1413,39 @@ class AdapterStructureTest(unittest.TestCase):
 
     def test_siglus_ovk_export_uses_archive_member_identity(self) -> None:
         source = self._strip_comments(
-            (ROOT / "hook" / "adapters" / "siglus_adapter.inc").read_text(
+            (ROOT / "hook" / "adapters" / "siglus_voice_export.inc").read_text(
                 encoding="utf-8"))
         worker = self._function_body(source, "void ProcessSiglusVoiceTask(")
         self.assertIn("BuildOvkVoiceStorageName(base, entry)", worker)
         self.assertIn("storage.c_str()", worker)
         self.assertNotIn("entry.sample_count", worker)
+
+    def test_siglus_message_audio_requires_proved_source_and_committed_identity(self) -> None:
+        adapters = ROOT / "hook" / "adapters"
+        export = self._strip_comments((adapters / "siglus_voice_export.inc").read_text(encoding="utf-8"))
+        worker = self._function_body(export, "void ProcessSiglusVoiceTask(")
+        self.assertLess(worker.index("IsSiglusMessageTextInstalled()"), worker.index("g_orig_CreateFileW("))
+        for required in ("task->proved_source", "entry.byte_len == task->source_length",
+                         "SameSiglusArchiveFile(identity_before, identity_after)",
+                         "ValidateSiglusMessageVoiceTask(*task, revision, entry)",
+                         "task->text_event_id))", "task->exported = true"):
+            self.assertIn(required, worker)
+        source = self._strip_comments((adapters / "siglus_message_voice.inc").read_text(encoding="utf-8"))
+        resource = self._function_body(source, "uint64_t ObserveSiglusMessageResource(")
+        for required in ("GetFinalPathNameByHandleW", "component != expected_key / 100000u",
+                         "entry.member_id != expected_key % 100000u",
+                         "ValidateUniqueVoiceMemberIndex", "HashSiglusMemberIndex",
+                         "archive->index_digest != digest", "archive->invalid = true"):
+            self.assertIn(required, resource)
+        capture = self._strip_comments((adapters / "siglus_message_capture.inc").read_text(encoding="utf-8"))
+        publish = self._function_body(capture, "void ProcessSiglusMessageTextTasks()")
+        self.assertIn("&committed_tick_ms", publish)
+        self.assertIn("IsSiglusMessageVoiceMappingProved()", publish)
+        self.assertIn("QueueSiglusMessageVoice(event_id, task.voice_key, committed_tick_ms)", publish)
+        for name in ("ObserveSiglusMessageEntry(", "ObserveSiglusMessageScenario("):
+            callback = self._function_body(capture, name)
+            for forbidden in ("WriteTextRingEntryLocked", "WriteVoiceOggAt", "EnterCriticalSection", "CreateFile", "malloc("):
+                self.assertNotIn(forbidden, callback)
 
     def test_reallive_shared_ovk_path_does_not_claim_engine_identity(self) -> None:
         adapter = (ROOT / "hook" / "adapters" / "reallive_adapter.inc").read_text(

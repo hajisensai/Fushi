@@ -144,6 +144,10 @@ enum class SiglusTextOwner : uint32_t {
   kNotApplicable = 1,
   kNativeOwned = 2,
   kLunaAllowed = 3,
+  // Terminal failure: a partial native installation could not be disabled.
+  // This additive value preserves the v24 layout; older gates reject unknown
+  // values too. Neither native readiness nor Luna permission is implied.
+  kUnavailable = 4,
 };
 constexpr uint32_t kStableIpcVersion = 1;
 
@@ -2270,7 +2274,9 @@ struct TextLaneWrite {
 // 前面的数据写对 reader 先于 lane_seq 可见）。
 inline uint64_t WriteTextLaneEvent(SharedHeader* header, uint32_t lane_begin,
                                    uint32_t lane_end,
-                                   const TextLaneWrite& write) {
+                                   const TextLaneWrite& write,
+                                   uint64_t* committed_tick_ms = nullptr) {
+  if (committed_tick_ms != nullptr) *committed_tick_ms = 0;
   if (header == nullptr || write.thread_id == 0) return 0;
   TextLane* lanes = TextLanesOf(header);
   if (lanes == nullptr || header->text_lane_count == 0) return 0;
@@ -2359,6 +2365,7 @@ inline uint64_t WriteTextLaneEvent(SharedHeader* header, uint32_t lane_begin,
   // 且 64 位不可撕裂（x86 上普通写会被拆成两次 32 位写）。与预览槽 seq 同一套纪律。
   AtomicStorePreview64(&ts->lane_seq, lane_seq);
   if (header->text_hooked == 0) header->text_hooked = 1;
+  if (committed_tick_ms != nullptr) *committed_tick_ms = ts->timestamp_ms;
   return global_seq;
 }
 

@@ -14,7 +14,7 @@ inline SiglusTextOwner ReadSiglusTextOwner(const SharedHeader* header) {
 inline bool PublishSiglusTextOwner(SharedHeader* header, SiglusTextOwner owner) {
   if (header == nullptr || owner == SiglusTextOwner::kPending ||
       static_cast<uint32_t>(owner) >
-          static_cast<uint32_t>(SiglusTextOwner::kLunaAllowed)) return false;
+          static_cast<uint32_t>(SiglusTextOwner::kUnavailable)) return false;
   return InterlockedCompareExchange(
       reinterpret_cast<volatile LONG*>(&header->siglus_text_owner),
       static_cast<LONG>(owner),
@@ -50,6 +50,7 @@ class SiglusLunaStartupGate {
         finished_ = true;
         return true;
       case SiglusTextOwner::kNativeOwned:
+      case SiglusTextOwner::kUnavailable:
         finished_ = true;
         return false;
       case SiglusTextOwner::kPending:

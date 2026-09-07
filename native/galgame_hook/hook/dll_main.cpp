@@ -66,6 +66,7 @@
 #include "tracked_handle_table.h"
 #include "hunex_hfa.h"
 #include "siglus_ovk.h"
+#include "siglus_voice_binding.h"
 #include "siglus_launch.h"
 #include "adapters/siglus_lookup.h"
 #include "adapters/siglus_image.h"
@@ -73,6 +74,10 @@
 #include "adapters/siglus_viewport.h"
 #include "adapters/siglus_native_autoprofile.h"
 #include "adapters/siglus_native_viewport.h"
+#include "adapters/siglus_message_profile.h"
+#include "adapters/siglus_message_capture.h"
+#include "adapters/siglus_resource_mapping.h"
+#include "adapters/siglus_voice_source.h"
 #include "adapters/hunex_gge_lookup.h"
 #include "adapters/hunex_gge_capture_bridge.h"
 #include "adapters/hunex_gge_lookup_core.h"
@@ -241,35 +246,7 @@ std::wstring VoiceBaseName(const wchar_t* storagename, const uint8_t* data,
   return base;
 }
 
-bool WriteVoiceOggAt(const uint8_t* data, uint32_t len,
-                     const wchar_t* storagename, uint64_t tick_ms,
-                     uint64_t text_event_id = 0) {
-  if (data == nullptr || len == 0) return false;
-  wchar_t temp[MAX_PATH] = {0};
-  const DWORD n = GetTempPathW(MAX_PATH, temp);
-  if (n == 0 || n >= MAX_PATH) return false;
-  std::wstring dir = std::wstring(temp) + L"fushi_gal_voice";
-  if (!CreateDirectoryW(dir.c_str(), nullptr) &&
-      GetLastError() != ERROR_ALREADY_EXISTS) {
-    return false;
-  }
-  std::wstring file =
-      dir + L"\\" + fushi_voice_hook::BuildVoiceResourceFileName(
-                          tick_ms, VoiceBaseName(storagename, data, len),
-                          text_event_id);
-  HANDLE f = CreateFileW(file.c_str(), GENERIC_WRITE, 0, nullptr,
-                         CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-  if (f == INVALID_HANDLE_VALUE) return false;
-  DWORD written = 0;
-  const bool write_ok = WriteFile(f, data, len, &written, nullptr) != FALSE &&
-      written == len;
-  const bool close_ok = CloseHandle(f) != FALSE;
-  if (!write_ok || !close_ok) {
-    DeleteFileW(file.c_str());
-    return false;
-  }
-  return true;
-}
+#include "voice_resource_writer.inc"
 
 // 首次拿到语音格式的写入闩：多路 CreateSourceVoice 只让第一个写 header 格式字段。
 volatile LONG g_format_set = 0;
@@ -606,6 +583,9 @@ bool SignalReady(DWORD pid, bool legacy_hibiki_ipc) {
 #include "adapters/renpy_adapter.inc"
 #include "adapters/text_render_adapter.inc"
 #include "adapters/siglus_lookup.inc"
+#include "adapters/siglus_message_capture.inc"
+#include "adapters/siglus_voice_source.inc"
+#include "adapters/siglus_message_voice.inc"
 #include "adapters/loopback_adapter.inc"
 #include "generated/adapter_includes.inc"
 

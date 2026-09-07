@@ -23,8 +23,24 @@ struct SiglusVoiceTask {
   volatile LONG state = 0;  // 0=空，1=生产中，2=待消费，3=消费中
   uint64_t tick_ms = 0;
   uint64_t offset = 0;
+  uint64_t text_event_id = 0;
+  uint64_t archive_revision = 0;
+  uint32_t voice_key = UINT32_MAX;
+  uint32_t source_length = 0;
+  bool proved_source = false;
+  bool exported = false;
   wchar_t path[kSiglusPathChars] = {0};
 };
+
+bool IsSiglusMessageVoiceMappingProved();
+bool IsSiglusMessageTextInstalled();
+bool SameSiglusArchiveFile(const BY_HANDLE_FILE_INFORMATION& a,
+                           const BY_HANDLE_FILE_INFORMATION& b);
+uint64_t ObserveSiglusMessageResource(HANDLE file, const uint8_t* index,
+    size_t index_bytes, uint64_t file_bytes,
+    const fushi_voice_hook::siglus::OvkEntry& entry, uint32_t expected_key);
+bool ValidateSiglusMessageVoiceTask(const SiglusVoiceTask& task,
+    uint64_t revision, const fushi_voice_hook::siglus::OvkEntry& entry);
 
 SiglusOvkHandle g_siglus_handles[kSiglusHandleSlots];
 SiglusVoiceTask g_siglus_tasks[kSiglusTaskSlots];
@@ -241,7 +257,7 @@ LPVOID WINAPI Detour_MapViewOfFile(HANDLE mapping, DWORD desired_access,
 }
 
 void QueueSiglusVoice(const wchar_t* path, uint64_t offset) {
-  if (path == nullptr) return;
+  if (path == nullptr || IsSiglusMessageTextInstalled()) return;
   const uint64_t now = GetTickCount64();
   for (int i = 0; i < kSiglusTaskSlots; ++i) {
     if (InterlockedCompareExchange(&g_siglus_tasks[i].state, 1, 0) != 0) {
@@ -249,6 +265,12 @@ void QueueSiglusVoice(const wchar_t* path, uint64_t offset) {
     }
     g_siglus_tasks[i].tick_ms = now;
     g_siglus_tasks[i].offset = offset;
+    g_siglus_tasks[i].text_event_id = 0;
+    g_siglus_tasks[i].archive_revision = 0;
+    g_siglus_tasks[i].voice_key = UINT32_MAX;
+    g_siglus_tasks[i].source_length = 0;
+    g_siglus_tasks[i].proved_source = false;
+    g_siglus_tasks[i].exported = false;
     wcsncpy_s(g_siglus_tasks[i].path, path, _TRUNCATE);
     InterlockedExchange(&g_siglus_tasks[i].state, 2);
     if (g_header != nullptr) g_header->reserved_luna |= kDiagSiglusVoiceQueued;
@@ -337,72 +359,7 @@ bool ReadExact(HANDLE file, void* buffer, uint32_t bytes) {
   return true;
 }
 
-void ProcessSiglusVoiceTask(SiglusVoiceTask* task) {
-  HANDLE file = g_orig_CreateFileW(
-      task->path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE |
-                                       FILE_SHARE_DELETE,
-      nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-  if (file == INVALID_HANDLE_VALUE) return;
-
-  LARGE_INTEGER size = {};
-  uint32_t count = 0;
-  uint8_t* index = nullptr;
-  uint8_t* ogg = nullptr;
-  fushi_voice_hook::siglus::OvkEntry entry;
-  bool valid = GetFileSizeEx(file, &size) && size.QuadPart > 0 &&
-               ReadExact(file, &count, sizeof(count)) && count > 0 &&
-               count <= fushi_voice_hook::siglus::kMaxEntryCount;
-  if (valid) {
-    const uint64_t index_bytes64 = sizeof(uint32_t) +
-        static_cast<uint64_t>(count) * fushi_voice_hook::siglus::kOvkEntryBytes;
-    valid = index_bytes64 <= static_cast<uint64_t>(size.QuadPart) &&
-            index_bytes64 <= SIZE_MAX;
-    if (valid) {
-      const size_t index_bytes = static_cast<size_t>(index_bytes64);
-      index = static_cast<uint8_t*>(malloc(index_bytes));
-      valid = index != nullptr;
-      if (valid) {
-        memcpy(index, &count, sizeof(count));
-        valid = ReadExact(file, index + sizeof(count),
-                          static_cast<uint32_t>(index_bytes - sizeof(count)));
-      }
-      if (valid) {
-        valid = fushi_voice_hook::siglus::FindEntryAtOffset(
-            index, index_bytes, static_cast<uint64_t>(size.QuadPart),
-            task->offset, &entry);
-      }
-    }
-  }
-  if (valid) {
-    LARGE_INTEGER at = {};
-    at.QuadPart = entry.offset;
-    valid = SetFilePointerEx(file, at, nullptr, FILE_BEGIN) != FALSE;
-  }
-  if (valid) {
-    ogg = static_cast<uint8_t*>(malloc(entry.byte_len));
-    valid = ogg != nullptr && ReadExact(file, ogg, entry.byte_len) &&
-            fushi_voice_hook::siglus::CompleteOggBytes(ogg, entry.byte_len) ==
-                entry.byte_len;
-  }
-  if (valid) {
-    const wchar_t* slash = wcsrchr(task->path, L'\\');
-    const wchar_t* base = slash != nullptr ? slash + 1 : task->path;
-    const std::wstring storage =
-        fushi_voice_hook::siglus::BuildOvkVoiceStorageName(base, entry);
-    // BUG-2235: an intact source entry is not a successfully exported resource.
-    // Publish capture only after the writer has completed write and close.
-    if (WriteVoiceOggAt(ogg, entry.byte_len, storage.c_str(), task->tick_ms)) {
-      if (g_header != nullptr) {
-        g_header->reserved_luna |= kDiagSiglusVoiceDumped;
-        g_header->hook_diagnostics |=
-            fushi_voice_hook::kDiagVisualArtsOvkCaptured;
-      }
-    }
-  }
-  free(ogg);
-  free(index);
-  g_orig_CloseHandle(file);
-}
+#include "siglus_voice_export.inc"
 
 void ProcessSiglusVoiceTasks() {
   for (int i = 0; i < kSiglusTaskSlots; ++i) {

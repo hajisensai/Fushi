@@ -35,7 +35,7 @@
 |---|:--:|:--:|---|
 | [BUG-2239](bugs/BUG-2239-flutter-child-at-index-null.md) | 🚧 | 🚧 | Windows Flutter ChildAtIndex 枚举空子节点时访问冲突 |
 | [BUG-2238](bugs/BUG-2238-siglus-ovk-member-identity.md) | ✅ | ✅ | Siglus OVK将采样数误当成员ID导致资源命名不唯一 |
-| [BUG-2237](bugs/BUG-2237-siglus-voice-resource-without-dialogue-event.md) | 🚧 | 🚧 | Siglus 语音资源缺少正文事件身份，配对依赖时间窗 |
+| [BUG-2237](bugs/BUG-2237-siglus-voice-resource-without-dialogue-event.md) | 🚧 | ✅ | Siglus 语音资源缺少正文事件身份，配对依赖时间窗 |
 | [BUG-2236](bugs/BUG-2236-siglus-lookup-layout-generation-as-text-event.md) | ✅ | ✅ | Siglus查词用几何代数冒充字幕事件ID导致制卡行与音频身份错误 |
 | [BUG-2235](bugs/BUG-2235-siglus-ovk-export-failure-reported-captured.md) | ✅ | ✅ | Siglus OVK 导出失败仍报告已捕获 |
 | [BUG-2234](bugs/BUG-2234-siglus-partial-redraw-retires-popup.md) | ✅ | ✅ | Siglus同句分批重绘错误撤销已打开词典 |
