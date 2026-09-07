@@ -77,6 +77,7 @@ Future<void> _pump(
   bool dragAdjustEnabled = false,
   bool hoverAutoLookupEnabled = false,
   bool obscureRevealOnInteraction = true,
+  bool lookupPopupVisible = false,
   VideoSubtitleHitTester? hitTester,
   void Function(
           String sentence, int graphemeIndex, Rect charRect, AudioCue cue)?
@@ -93,6 +94,7 @@ Future<void> _pump(
         dragAdjustEnabled: dragAdjustEnabled,
         hoverAutoLookupEnabled: hoverAutoLookupEnabled,
         obscureRevealOnInteraction: obscureRevealOnInteraction,
+        lookupPopupVisible: lookupPopupVisible,
         hitTester: hitTester,
         onCharTap: onCharTap,
       ),
@@ -558,6 +560,75 @@ void main() {
 
       expect(_obscured(tester, find.text('主')), isTrue,
           reason: '关掉总闸要立刻收回显形态，否则这句要等换轮才遮回、开关像没生效');
+    });
+  });
+
+  /// ⑪ BUG-2254：**自动显形**（暂停 / 查词浮层）与悬停 / 点击同属一个总闸。
+  ///
+  /// 用户诉求原话：「我明明隐藏字幕了，暂停的时候字幕还是会出现」——他已经把
+  /// 「悬停或点击显形」关掉了。修前 `userIsReading`（BUG-2198 / BUG-2235 的暂停 +
+  /// 查词浮层让位）完全不看总闸，于是开关只堵住悬停 / 点击两条路，暂停这条最常走的
+  /// 路照旧揭开：听力沉浸里一暂停字幕就冒出来，开关等于半失效。
+  ///
+  /// 修法：显形的**全部**来源归同一个闸。关掉后遮蔽恒定生效（暂停 / 查词也不揭开），
+  /// 开着时 BUG-2198 / BUG-2235 的行为原样保留（下面每条都配了防恒真基准）。
+  group('⑪ 自动显形（暂停 / 查词浮层）同受总闸', () {
+    testWidgets('关闭 + 隐藏 + 暂停：字幕仍不露出来', (tester) async {
+      final VideoPlayerController c = _controller(tester);
+      c.debugSetIsPlayingForTesting(false);
+
+      await _pump(tester, c,
+          subtitleHidden: true, obscureRevealOnInteraction: false);
+
+      expect(_obscured(tester, find.text('主')), isTrue,
+          reason: '总闸关掉后暂停也不该揭开（用户报的原始症状）');
+    });
+
+    testWidgets('开着 + 隐藏 + 暂停：照常让位（BUG-2198 防恒真基准）', (tester) async {
+      final VideoPlayerController c = _controller(tester);
+      c.debugSetIsPlayingForTesting(false);
+
+      await _pump(tester, c,
+          subtitleHidden: true, obscureRevealOnInteraction: true);
+
+      expect(_obscured(tester, find.text('主')), isFalse,
+          reason: '总闸开着=历史行为，暂停仍让位（上一条不是恒真）');
+    });
+
+    testWidgets('关闭 + 模糊 + 暂停：仍然糊着', (tester) async {
+      final VideoPlayerController c = _controller(tester);
+      c.debugSetIsPlayingForTesting(false);
+
+      await _pump(tester, c,
+          blurEnabled: true, obscureRevealOnInteraction: false);
+
+      expect(_blurredVisual(tester, find.text('主')), isTrue,
+          reason: '两种遮蔽共用同一条门，模糊侧也不该被暂停解掉');
+    });
+
+    testWidgets('关闭 + 隐藏 + 播放中查词浮层开着：仍不露出来', (tester) async {
+      final VideoPlayerController c = _controller(tester);
+
+      await _pump(tester, c,
+          subtitleHidden: true,
+          obscureRevealOnInteraction: false,
+          lookupPopupVisible: true);
+
+      expect(_obscured(tester, find.text('主')), isTrue,
+          reason: '查词浮层是自动显形的第二个来源，同样受闸');
+    });
+
+    testWidgets('开着 + 隐藏 + 播放中查词浮层开着：照常让位（BUG-2235 防恒真基准）',
+        (tester) async {
+      final VideoPlayerController c = _controller(tester);
+
+      await _pump(tester, c,
+          subtitleHidden: true,
+          obscureRevealOnInteraction: true,
+          lookupPopupVisible: true);
+
+      expect(_obscured(tester, find.text('主')), isFalse,
+          reason: '总闸开着时浮层期间字幕恒定让位（重播本句不把它遮回去）');
     });
   });
 }
