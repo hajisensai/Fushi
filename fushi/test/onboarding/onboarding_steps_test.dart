@@ -201,6 +201,7 @@ void main() {
           OnboardingStepId.recommendedPack,
           OnboardingStepId.manualResources,
           OnboardingStepId.anki,
+          OnboardingStepId.onlineServices,
           OnboardingStepId.backup,
           OnboardingStepId.interconnect,
           OnboardingStepId.browserExtension,

@@ -8,6 +8,7 @@ library;
 
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/media/video/metadata/anidb_udp_file_client.dart';
+import 'package:fushi/src/media/video/metadata/anidb_app_client.dart';
 
 const String kVideoMetadataAniDbClientNamePref =
     'video_metadata_anidb_client_name';
@@ -58,17 +59,22 @@ class VideoSourceScrapeGlobalConfig {
   factory VideoSourceScrapeGlobalConfig.fromPreferences(
     PreferencesRepository preferences, {
     required String resolvedTmdbApiKey,
+    AniDbAppClientIdentity bundledAniDbClient = kBundledAniDbClient,
   }) {
     String read(String key, [String fallback = '']) =>
         (preferences.getPref(key, defaultValue: fallback) as String).trim();
     final String locale = read(kVideoMetadataLocalePref, 'zh-CN');
-    final String anidbClientName = read(kVideoMetadataAniDbClientNamePref);
-    return VideoSourceScrapeGlobalConfig(
-      tmdbApiKey: resolvedTmdbApiKey.trim(),
-      anidbClientName: anidbClientName,
-      anidbClientVersion: parseAniDbClientVersion(
+    final AniDbAppClientIdentity client = resolveAniDbAppClient(
+      customName: read(kVideoMetadataAniDbClientNamePref),
+      customVersion: parseAniDbClientVersion(
         read(kVideoMetadataAniDbClientVersionPref),
       ),
+      bundled: bundledAniDbClient,
+    );
+    return VideoSourceScrapeGlobalConfig(
+      tmdbApiKey: resolvedTmdbApiKey.trim(),
+      anidbClientName: client.name,
+      anidbClientVersion: client.version,
       hashEnabled: preferences.getPref(kVideoAniDbHashEnabledPref,
           defaultValue: false) as bool,
       anidbUsername: read(kVideoAniDbUsernamePref),

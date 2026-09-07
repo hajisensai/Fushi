@@ -25,6 +25,10 @@ import 'package:fushi/src/media/video/video_specs_service.dart';
 import 'package:fushi/src/media/torrent/anime_download_subscription.dart'
     show AnimeDownloadSubscription, AnimeDownloadSubscriptionStore;
 import 'package:fushi/src/media/video/video_home_layout.dart';
+import 'package:fushi/src/media/video/video_online_services_banner.dart';
+import 'package:fushi/src/settings/settings_detail_page.dart';
+import 'package:fushi/src/settings/settings_schema_services.dart';
+import 'package:fushi/src/onboarding/online_services_onboarding_view.dart';
 import 'package:fushi/src/media/video/video_subscription_updates.dart';
 import 'package:fushi/src/media/video/scraper/auto_scrape_service.dart';
 import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
@@ -842,7 +846,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final List<VideoDownloadSubscriptionRow> subscriptions =
         await db.getVideoDownloadSubscriptions();
     final Map<String, List<VideoDownloadSubscriptionItemRow>>
-        itemsBySubscription = <String, List<VideoDownloadSubscriptionItemRow>>{};
+        itemsBySubscription =
+        <String, List<VideoDownloadSubscriptionItemRow>>{};
     final Map<String, int> collectionIdByProviderIdentity = <String, int>{};
     for (final VideoDownloadSubscriptionRow sub in subscriptions) {
       itemsBySubscription[sub.subscriptionId] =
@@ -2850,6 +2855,25 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                   _buildTagFilterBar(allTags),
                 // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时零高度。
                 const SyncProgressBanner(),
+                VideoOnlineServicesBanner(
+                  preferences: ref.read(appProvider).prefsRepo,
+                  onRegister: () async {
+                    await Navigator.of(context).push<void>(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const OnlineServicesOnboardingPage(),
+                      ),
+                    );
+                  },
+                  onOpenSettings: () async {
+                    await Navigator.of(context).push<void>(
+                      MaterialPageRoute<void>(
+                        builder: (_) => SettingsDetailPage(
+                          destination: buildServicesDestination(),
+                        ),
+                      ),
+                    );
+                  },
+                ),
                 // 有作品刮不出身份时的常驻提醒（BUG-2201）。放在这里而不是正文
                 // sliver 里：正文按分区分三套 sliver，且会随列表滚走。
                 _buildPendingScrapeBanner(),

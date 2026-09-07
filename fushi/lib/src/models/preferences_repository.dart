@@ -83,6 +83,17 @@ BoxFit videoFitModeToBoxFit(VideoFitMode mode) {
 class PreferencesRepository extends ChangeNotifier {
   PreferencesRepository(this._db);
 
+  static const String videoOnlineServicesSetupDismissedKey =
+      'video_online_services_setup_dismissed';
+
+  bool get videoOnlineServicesSetupDismissed =>
+      getPref(videoOnlineServicesSetupDismissedKey, defaultValue: false) as bool;
+
+  Future<void> dismissVideoOnlineServicesSetup() async {
+    await setPref(videoOnlineServicesSetupDismissedKey, true);
+    notifyListeners();
+  }
+
   static const String videoAnime4kPromptShownKey = 'video_anime4k_prompt_shown';
 
   /// TODO-855: persisted monotonic counter, the cross-process change signal the
