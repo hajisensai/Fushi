@@ -102,6 +102,8 @@ Cloud-synchronisatie (Google Drive / OneDrive / Dropbox) gebruikt door de gebrui
 
 Fushi bouwt voort op de volgende projecten en het volgende ecosysteem:
 
+### Leermiddelen en voorlopers
+
 | Project | Beschrijving |
 |---|---|
 | [jidoujisho](https://github.com/arianneorpilla/jidoujisho) | Japanse immersieve leertool |
@@ -116,6 +118,48 @@ Fushi bouwt voort op de volgende projecten en het volgende ecosysteem:
 | [ッツ Ebook Reader](https://github.com/ttu-ttu/ebook-reader) | Referentie voor lezer, statistieken en sync-compatibiliteit |
 | [media_kit](https://github.com/media-kit/media-kit) | Flutter-videoweergaveframework (libmpv-kern) |
 | [Niratan](https://github.com/W1ght/Niratan) | Immersieve taalleersuite voor macOS |
+
+### Engines en native componenten
+
+| Project | Beschrijving |
+|---|---|
+| [LunaHook](https://github.com/HIllya51/LunaTranslator) | Tekst-hookengine voor galgames (meegeleverde DLL's, geladen door de injector) |
+| [MinHook](https://github.com/TsudaKageyu/minhook) | Inline-hookbibliotheek die de galgame-injector gebruikt |
+| [libtorrent](https://github.com/arvidn/libtorrent) | Ingebouwde torrent-downloadengine |
+| [mpv](https://github.com/mpv-player/mpv) | libmpv-afspeelkern achter media_kit |
+| [FFmpeg](https://ffmpeg.org) | Media-analyse, knippen en audio-extractie |
+| [libplacebo](https://github.com/haasn/libplacebo) | GPU-videoshaders en HDR-tonemapping |
+| [flutter_inappwebview](https://github.com/pichillilorenzo/flutter_inappwebview) | WebView-engine die de EPUB-lezer rendert |
+| [ONNX Runtime](https://github.com/microsoft/onnxruntime) | Inferentie op het apparaat voor spraakherkenning en OCR |
+| [zstd](https://github.com/facebook/zstd) · [xxHash](https://github.com/Cyan4973/xxHash) · [libdeflate](https://github.com/ebiggers/libdeflate) · [glaze](https://github.com/stephenberry/glaze) · [unordered_dense](https://github.com/martinus/unordered_dense) · [utf8proc](https://github.com/JuliaStrings/utf8proc) · [utfcpp](https://github.com/nemtrif/utfcpp) | Afhankelijkheden van de woordenboekengine |
+
+### Modellen op het apparaat
+
+| Project | Beschrijving |
+|---|---|
+| [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) | Zipformer-spraakherkenningsmodelpakketten en VAD-builds |
+| [ReazonSpeech k2-v2](https://huggingface.co/reazon-research/reazonspeech-k2-v2) | Japans spraakherkenningsmodel |
+| [Omnilingual ASR](https://github.com/facebookresearch/omnilingual-asr) | Meertalig CTC-spraakherkenningsmodel |
+| [Silero VAD](https://github.com/snakers4/silero-vad) | Model voor detectie van spraakactiviteit |
+| [manga-ocr](https://github.com/kha-white/manga-ocr) / [manga-ocr-onnx](https://huggingface.co/mayocream/manga-ocr-onnx) | Manga-OCR-model |
+| [comic-text-and-bubble-detector](https://huggingface.co/ogkalu/comic-text-and-bubble-detector) | Model voor detectie van manga-tekst en tekstballonnen |
+
+### Contentbronnen en integraties
+
+| Project | Beschrijving |
+|---|---|
+| [Mihon](https://github.com/mihonapp/mihon) | Ecosysteem van manga-bronextensies |
+| [M-Extension-Server](https://github.com/kodjodevf/M-Extension-Server) | Manga-extensieruntime voor desktop |
+| [aidoku-rs](https://github.com/Aidoku/aidoku-rs) | ABI van de manga-bronruntime |
+| [asbplayer](https://github.com/asbplayer/asbplayer) | Referentie voor de streaming-ondertitelbrug van de browserextensie |
+| [Shoko Server](https://github.com/ShokoAnime/ShokoServer) | Architectuurreferentie voor anime-identificatie en -scraping |
+| [ReinaManager](https://github.com/huoshen80/ReinaManager) | Referentie voor de informatiearchitectuur van de galgamebibliotheek |
+| [AniDB](https://anidb.net) | Identiteit van anime, afleveringen en bestanden |
+| [TMDB](https://www.themoviedb.org) | Aanvullende metadata en beeldmateriaal |
+| [Jimaku](https://jimaku.cc) | Bron voor Japanse ondertitels |
+| [OpenSubtitles](https://www.opensubtitles.com) | Ondertitelbron |
+
+> Deze applicatie maakt gebruik van TMDB en de TMDB API's maar is niet goedgekeurd, gecertificeerd of anderszins geautoriseerd door TMDB.
 
 ## Licentie
 

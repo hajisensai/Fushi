@@ -15,8 +15,7 @@ library;
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:fushi/src/asr/asr_greedy_graph.dart';
-
+import 'package:asr_core/asr_core.dart';
 void main(List<String> args) {
   final Map<String, String> opts = _parseArgs(args);
   final String decoderPath = _require(opts, 'decoder');

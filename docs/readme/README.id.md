@@ -102,6 +102,8 @@ Sinkronisasi awan (Google Drive / OneDrive / Dropbox) menggunakan kredensial OAu
 
 Fushi dibangun di atas proyek dan ekosistem berikut:
 
+### Alat belajar dan rujukan terdahulu
+
 | Proyek | Deskripsi |
 |---|---|
 | [jidoujisho](https://github.com/arianneorpilla/jidoujisho) | Alat belajar imersif bahasa Jepang |
@@ -116,6 +118,48 @@ Fushi dibangun di atas proyek dan ekosistem berikut:
 | [ッツ Ebook Reader](https://github.com/ttu-ttu/ebook-reader) | Referensi pembaca, statistik, dan kompatibilitas sinkronisasi |
 | [media_kit](https://github.com/media-kit/media-kit) | Kerangka pemutaran video Flutter (inti libmpv) |
 | [Niratan](https://github.com/W1ght/Niratan) | Rangkaian belajar bahasa imersif untuk macOS |
+
+### Mesin dan komponen native
+
+| Proyek | Deskripsi |
+|---|---|
+| [LunaHook](https://github.com/HIllya51/LunaTranslator) | Mesin hook teks galgame (DLL bawaan, dimuat oleh injector) |
+| [MinHook](https://github.com/TsudaKageyu/minhook) | Pustaka inline hook yang dipakai injector galgame |
+| [libtorrent](https://github.com/arvidn/libtorrent) | Mesin unduhan torrent bawaan |
+| [mpv](https://github.com/mpv-player/mpv) | Inti pemutaran libmpv di balik media_kit |
+| [FFmpeg](https://ffmpeg.org) | Pemeriksaan media, pemotongan, dan ekstraksi audio |
+| [libplacebo](https://github.com/haasn/libplacebo) | Shader video GPU dan tone mapping HDR |
+| [flutter_inappwebview](https://github.com/pichillilorenzo/flutter_inappwebview) | Mesin WebView yang merender pembaca EPUB |
+| [ONNX Runtime](https://github.com/microsoft/onnxruntime) | Inferensi di perangkat untuk pengenalan suara dan OCR |
+| [zstd](https://github.com/facebook/zstd) · [xxHash](https://github.com/Cyan4973/xxHash) · [libdeflate](https://github.com/ebiggers/libdeflate) · [glaze](https://github.com/stephenberry/glaze) · [unordered_dense](https://github.com/martinus/unordered_dense) · [utf8proc](https://github.com/JuliaStrings/utf8proc) · [utfcpp](https://github.com/nemtrif/utfcpp) | Dependensi mesin kamus |
+
+### Model di perangkat
+
+| Proyek | Deskripsi |
+|---|---|
+| [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) | Paket model pengenalan suara Zipformer dan build VAD |
+| [ReazonSpeech k2-v2](https://huggingface.co/reazon-research/reazonspeech-k2-v2) | Model pengenalan suara bahasa Jepang |
+| [Omnilingual ASR](https://github.com/facebookresearch/omnilingual-asr) | Model pengenalan suara CTC multibahasa |
+| [Silero VAD](https://github.com/snakers4/silero-vad) | Model deteksi aktivitas suara |
+| [manga-ocr](https://github.com/kha-white/manga-ocr) / [manga-ocr-onnx](https://huggingface.co/mayocream/manga-ocr-onnx) | Model OCR manga |
+| [comic-text-and-bubble-detector](https://huggingface.co/ogkalu/comic-text-and-bubble-detector) | Model deteksi teks dan balon percakapan manga |
+
+### Sumber konten dan integrasi
+
+| Proyek | Deskripsi |
+|---|---|
+| [Mihon](https://github.com/mihonapp/mihon) | Ekosistem ekstensi sumber manga |
+| [M-Extension-Server](https://github.com/kodjodevf/M-Extension-Server) | Runtime ekstensi manga untuk desktop |
+| [aidoku-rs](https://github.com/Aidoku/aidoku-rs) | ABI runtime sumber manga |
+| [asbplayer](https://github.com/asbplayer/asbplayer) | Rujukan jembatan subtitle streaming untuk ekstensi peramban |
+| [Shoko Server](https://github.com/ShokoAnime/ShokoServer) | Rujukan arsitektur identifikasi dan scraping anime |
+| [ReinaManager](https://github.com/huoshen80/ReinaManager) | Rujukan arsitektur informasi pustaka galgame |
+| [AniDB](https://anidb.net) | Identitas anime, episode, dan berkas |
+| [TMDB](https://www.themoviedb.org) | Metadata dan gambar pelengkap |
+| [Jimaku](https://jimaku.cc) | Sumber subtitle bahasa Jepang |
+| [OpenSubtitles](https://www.opensubtitles.com) | Sumber subtitle |
+
+> Aplikasi ini menggunakan TMDB dan API TMDB tetapi tidak didukung, disertifikasi, atau disetujui oleh TMDB.
 
 ## Lisensi
 

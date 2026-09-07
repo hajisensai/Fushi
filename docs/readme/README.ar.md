@@ -102,6 +102,8 @@ Fushi/                      # Repository root (Melos workspace: fushi_workspace)
 
 يُبنى Fushi على المشاريع والمنظومة التالية:
 
+### أدوات التعلم والمشاريع المرجعية
+
 | المشروع | الوصف |
 |---|---|
 | [jidoujisho](https://github.com/arianneorpilla/jidoujisho) | أداة تعلّم اللغة اليابانية بأسلوب الانغماس |
@@ -116,6 +118,48 @@ Fushi/                      # Repository root (Melos workspace: fushi_workspace)
 | [ッツ Ebook Reader](https://github.com/ttu-ttu/ebook-reader) | مرجع القارئ والإحصاءات وتوافق المزامنة |
 | [media_kit](https://github.com/media-kit/media-kit) | إطار تشغيل الفيديو في Flutter (نواة libmpv) |
 | [Niratan](https://github.com/W1ght/Niratan) | مجموعة تعلّم اللغات بأسلوب الانغماس لنظام macOS |
+
+### المحركات والمكونات الأصلية
+
+| المشروع | الوصف |
+|---|---|
+| [LunaHook](https://github.com/HIllya51/LunaTranslator) | محرك اعتراض نصوص الـ galgame (ملفات DLL مرفقة يحمّلها الحاقن) |
+| [MinHook](https://github.com/TsudaKageyu/minhook) | مكتبة اعتراض inline يستخدمها حاقن الـ galgame |
+| [libtorrent](https://github.com/arvidn/libtorrent) | محرك تنزيل التورنت المدمج |
+| [mpv](https://github.com/mpv-player/mpv) | نواة التشغيل libmpv خلف media_kit |
+| [FFmpeg](https://ffmpeg.org) | فحص الوسائط والاقتصاص واستخراج الصوت |
+| [libplacebo](https://github.com/haasn/libplacebo) | مظللات الفيديو على الـ GPU وتعيين ألوان HDR |
+| [flutter_inappwebview](https://github.com/pichillilorenzo/flutter_inappwebview) | محرك WebView الذي يعرض قارئ EPUB |
+| [ONNX Runtime](https://github.com/microsoft/onnxruntime) | الاستدلال على الجهاز للتعرف على الكلام و OCR |
+| [zstd](https://github.com/facebook/zstd) · [xxHash](https://github.com/Cyan4973/xxHash) · [libdeflate](https://github.com/ebiggers/libdeflate) · [glaze](https://github.com/stephenberry/glaze) · [unordered_dense](https://github.com/martinus/unordered_dense) · [utf8proc](https://github.com/JuliaStrings/utf8proc) · [utfcpp](https://github.com/nemtrif/utfcpp) | اعتماديات محرك القواميس |
+
+### النماذج على الجهاز
+
+| المشروع | الوصف |
+|---|---|
+| [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) | حزم نماذج التعرف على الكلام Zipformer وبنى VAD |
+| [ReazonSpeech k2-v2](https://huggingface.co/reazon-research/reazonspeech-k2-v2) | نموذج التعرف على الكلام الياباني |
+| [Omnilingual ASR](https://github.com/facebookresearch/omnilingual-asr) | نموذج تعرف على الكلام متعدد اللغات بتقنية CTC |
+| [Silero VAD](https://github.com/snakers4/silero-vad) | نموذج كشف نشاط الصوت |
+| [manga-ocr](https://github.com/kha-white/manga-ocr) / [manga-ocr-onnx](https://huggingface.co/mayocream/manga-ocr-onnx) | نموذج OCR للمانغا |
+| [comic-text-and-bubble-detector](https://huggingface.co/ogkalu/comic-text-and-bubble-detector) | نموذج كشف نصوص وفقاعات حوار المانغا |
+
+### مصادر المحتوى والتكاملات
+
+| المشروع | الوصف |
+|---|---|
+| [Mihon](https://github.com/mihonapp/mihon) | منظومة إضافات مصادر المانغا |
+| [M-Extension-Server](https://github.com/kodjodevf/M-Extension-Server) | بيئة تشغيل إضافات المانغا لسطح المكتب |
+| [aidoku-rs](https://github.com/Aidoku/aidoku-rs) | واجهة ABI لبيئة تشغيل مصادر المانغا |
+| [asbplayer](https://github.com/asbplayer/asbplayer) | مرجع جسر ترجمات البث لإضافة المتصفح |
+| [Shoko Server](https://github.com/ShokoAnime/ShokoServer) | مرجع معماري لتعريف الأنمي وجمع بياناته |
+| [ReinaManager](https://github.com/huoshen80/ReinaManager) | مرجع معمارية معلومات مكتبة الـ galgame |
+| [AniDB](https://anidb.net) | هوية الأنمي والحلقات والملفات |
+| [TMDB](https://www.themoviedb.org) | بيانات وصفية وصور تكميلية |
+| [Jimaku](https://jimaku.cc) | مصدر ترجمات يابانية |
+| [OpenSubtitles](https://www.opensubtitles.com) | مصدر ترجمات |
+
+> يستخدم هذا التطبيق TMDB وواجهات TMDB البرمجية لكنه غير معتمد أو مُصدّق أو موافق عليه من TMDB.
 
 ## الترخيص
 

@@ -102,6 +102,8 @@ Cloud-Sync (Google Drive / OneDrive / Dropbox) verwendet vom Benutzer konfigurie
 
 Fushi baut auf den folgenden Projekten und dem folgenden Ökosystem auf:
 
+### Lernwerkzeuge und Vorbilder
+
 | Projekt | Beschreibung |
 |---|---|
 | [jidoujisho](https://github.com/arianneorpilla/jidoujisho) | Japanisches immersives Lernwerkzeug |
@@ -116,6 +118,48 @@ Fushi baut auf den folgenden Projekten und dem folgenden Ökosystem auf:
 | [ッツ Ebook Reader](https://github.com/ttu-ttu/ebook-reader) | Referenz für Reader, Statistiken und Sync-Kompatibilität |
 | [media_kit](https://github.com/media-kit/media-kit) | Flutter-Videowiedergabe-Framework (libmpv-Kern) |
 | [Niratan](https://github.com/W1ght/Niratan) | Immersive Sprachlern-Suite für macOS |
+
+### Engines und native Komponenten
+
+| Projekt | Beschreibung |
+|---|---|
+| [LunaHook](https://github.com/HIllya51/LunaTranslator) | Text-Hooking-Engine für Galgames (mitgelieferte DLLs, vom Injector geladen) |
+| [MinHook](https://github.com/TsudaKageyu/minhook) | Inline-Hooking-Bibliothek des Galgame-Injectors |
+| [libtorrent](https://github.com/arvidn/libtorrent) | Integrierte Torrent-Download-Engine |
+| [mpv](https://github.com/mpv-player/mpv) | libmpv-Wiedergabekern hinter media_kit |
+| [FFmpeg](https://ffmpeg.org) | Medienanalyse, Zuschnitt und Audioextraktion |
+| [libplacebo](https://github.com/haasn/libplacebo) | GPU-Video-Shader und HDR-Tone-Mapping |
+| [flutter_inappwebview](https://github.com/pichillilorenzo/flutter_inappwebview) | WebView-Engine, die den EPUB-Reader rendert |
+| [ONNX Runtime](https://github.com/microsoft/onnxruntime) | Inferenz auf dem Gerät für Spracherkennung und OCR |
+| [zstd](https://github.com/facebook/zstd) · [xxHash](https://github.com/Cyan4973/xxHash) · [libdeflate](https://github.com/ebiggers/libdeflate) · [glaze](https://github.com/stephenberry/glaze) · [unordered_dense](https://github.com/martinus/unordered_dense) · [utf8proc](https://github.com/JuliaStrings/utf8proc) · [utfcpp](https://github.com/nemtrif/utfcpp) | Abhängigkeiten der Wörterbuch-Engine |
+
+### Modelle auf dem Gerät
+
+| Projekt | Beschreibung |
+|---|---|
+| [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) | Zipformer-Spracherkennungsmodellpakete und VAD-Builds |
+| [ReazonSpeech k2-v2](https://huggingface.co/reazon-research/reazonspeech-k2-v2) | Japanisches Spracherkennungsmodell |
+| [Omnilingual ASR](https://github.com/facebookresearch/omnilingual-asr) | Mehrsprachiges CTC-Spracherkennungsmodell |
+| [Silero VAD](https://github.com/snakers4/silero-vad) | Modell zur Sprachaktivitätserkennung |
+| [manga-ocr](https://github.com/kha-white/manga-ocr) / [manga-ocr-onnx](https://huggingface.co/mayocream/manga-ocr-onnx) | Manga-OCR-Modell |
+| [comic-text-and-bubble-detector](https://huggingface.co/ogkalu/comic-text-and-bubble-detector) | Modell zur Erkennung von Manga-Text und Sprechblasen |
+
+### Inhaltsquellen und Integrationen
+
+| Projekt | Beschreibung |
+|---|---|
+| [Mihon](https://github.com/mihonapp/mihon) | Ökosystem der Manga-Quellen-Erweiterungen |
+| [M-Extension-Server](https://github.com/kodjodevf/M-Extension-Server) | Manga-Erweiterungs-Runtime für den Desktop |
+| [aidoku-rs](https://github.com/Aidoku/aidoku-rs) | ABI der Manga-Quellen-Runtime |
+| [asbplayer](https://github.com/asbplayer/asbplayer) | Referenz für die Streaming-Untertitelbrücke der Browser-Erweiterung |
+| [Shoko Server](https://github.com/ShokoAnime/ShokoServer) | Architekturreferenz für Anime-Identifikation und -Scraping |
+| [ReinaManager](https://github.com/huoshen80/ReinaManager) | Referenz für die Informationsarchitektur der Galgame-Bibliothek |
+| [AniDB](https://anidb.net) | Identität von Anime, Episoden und Dateien |
+| [TMDB](https://www.themoviedb.org) | Ergänzende Metadaten und Bilder |
+| [Jimaku](https://jimaku.cc) | Japanische Untertitelquelle |
+| [OpenSubtitles](https://www.opensubtitles.com) | Untertitelquelle |
+
+> Diese Anwendung verwendet TMDB und die TMDB-APIs, ist jedoch nicht von TMDB unterstützt, zertifiziert oder anderweitig genehmigt.
 
 ## Lizenz
 
