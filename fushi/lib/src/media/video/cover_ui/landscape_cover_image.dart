@@ -2,6 +2,8 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
+import 'package:fushi/src/media/video/cover_ui/cover_backdrop_color.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 
 /// 宽幅（约 2.7:1）封面槽的填充组件 —— [PortraitCoverImage] 的镜像。
 ///
@@ -13,8 +15,8 @@ import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
 ///
 /// * 横图（宽高比 ≥ [landscapeAspectThreshold]，抽帧 16:9≈1.78）→ 直接
 ///   `BoxFit.cover` 铺满，[overlays] 压在其上。**与本组件引入前逐像素相同。**
-/// * 竖图（刮削海报 2:3≈0.71）→ 同图两层：底层 `cover` 放大 + 高斯模糊 + 半透明
-///   压暗垫底，前景 `contain` 完整显示、按 [foregroundAlignment] 靠边避让 hero
+/// * 竖图（刮削海报 2:3≈0.71）→ 同图分层：主色底 + `cover` 放大高斯模糊（自身
+///   压暗），前景 `contain` 完整显示、按 [foregroundAlignment] 靠边避让 hero
 ///   文字。直接 `cover` 一张 2:3 海报进 2.7:1 槽要放大 4.5 倍、只剩中间 26% 的
 ///   高度带（人脸糊满屏、头顶被切），正是 BUG-1298 的现象。
 /// * 尺寸未知（首帧解码前）先按 `cover` 渲染，[ImageStream] 拿到尺寸后再切换，
@@ -80,6 +82,11 @@ class _LandscapeCoverImageState extends State<LandscapeCoverImage>
   @override
   ImageProvider probedImageOf(LandscapeCoverImage widget) => widget.image;
 
+  /// 竖图落进宽幅槽 —— build 的渲染分支与主色采样开关共用的唯一判据。
+  @override
+  bool needsBackdropSeed(double aspect) =>
+      aspect < LandscapeCoverImage.landscapeAspectThreshold;
+
   @override
   Widget build(BuildContext context) {
     if (coverFailed) {
@@ -87,8 +94,7 @@ class _LandscapeCoverImageState extends State<LandscapeCoverImage>
     }
     final double? aspect = coverAspect;
     // 首帧前 aspect 未知 → 按横图走（= 引入本组件前的行为），拿到尺寸再切。
-    final bool portrait =
-        aspect != null && aspect < LandscapeCoverImage.landscapeAspectThreshold;
+    final bool portrait = aspect != null && needsBackdropSeed(aspect);
 
     if (!portrait) {
       return ClipRect(
@@ -114,20 +120,7 @@ class _LandscapeCoverImageState extends State<LandscapeCoverImage>
       child: Stack(
         fit: StackFit.expand,
         children: <Widget>[
-          // 垫底：同图放大模糊（blur 溢出由外层 ClipRect 收口）。
-          ImageFiltered(
-            imageFilter: ImageFilter.blur(
-              sigmaX: LandscapeCoverImage.backdropBlurSigma,
-              sigmaY: LandscapeCoverImage.backdropBlurSigma,
-            ),
-            child: Image(
-              image: widget.image,
-              fit: BoxFit.cover,
-              // 垫底解码失败不接管整块（前景/流监听兜底），静默留空。
-              errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-            ),
-          ),
-          const ColoredBox(color: LandscapeCoverImage.backdropDimColor),
+          ..._backdropLayers(context),
           // 遮罩压在模糊垫底上（保证文字可读），但压不到下面的清晰海报。
           ...widget.overlays,
           Padding(
@@ -144,6 +137,53 @@ class _LandscapeCoverImageState extends State<LandscapeCoverImage>
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// 前景之下的垫底层序（底 → 上）：主色底 → 模糊图（自身压暗）。
+  ///
+  /// 与 [PortraitCoverImage] 同一处修正：**压暗只作用于模糊图自身**
+  /// （[BlendMode.srcATop] 保留源 alpha）。旧实现把压暗铺成一整层 `ColoredBox`，
+  /// 图源带透明区时那层直接涂在空白上，卡片只剩一圈死灰；不透明图两种写法等价。
+  List<Widget> _backdropLayers(BuildContext context) {
+    return <Widget>[
+      if (_backdropDecoration(context) case final BoxDecoration decoration)
+        DecoratedBox(decoration: decoration),
+      // 压暗在内、模糊在外：压暗作用于**原图的 alpha**，透明区因此原样透出下面
+      // 的主色底；随后整体模糊，边缘羽化也跟着自然衰减。反过来嵌套（先模糊再压暗）
+      // 视觉几乎等价，但会把 ImageFiltered 从 Stack 的直接子节点上挪走，hero 的
+      // 层序守卫按类型认这一层（collection_hero_cover_orientation_test）。
+      ImageFiltered(
+        imageFilter: ImageFilter.blur(
+          sigmaX: LandscapeCoverImage.backdropBlurSigma,
+          sigmaY: LandscapeCoverImage.backdropBlurSigma,
+        ),
+        child: ColorFiltered(
+          colorFilter: const ColorFilter.mode(
+            LandscapeCoverImage.backdropDimColor,
+            BlendMode.srcATop,
+          ),
+          child: Image(
+            image: widget.image,
+            fit: BoxFit.cover,
+            // 垫底解码失败不接管整块（前景/流监听兜底），静默留空。
+            errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+          ),
+        ),
+      ),
+    ];
+  }
+
+  /// 主色底装饰；采样未完成 / 图源几乎不透明（不需要底色）时返回 null。
+  /// 墨水屏不上色（灰阶屏上有色底只会削对比）。
+  BoxDecoration? _backdropDecoration(BuildContext context) {
+    if (isEinkTheme(context)) return null;
+    final Color? seed = coverBackdropSeed;
+    if (seed == null) return null;
+    return BoxDecoration(
+      gradient: coverBackdropGradient(
+        harmonizeBackdrop(seed, Theme.of(context).brightness),
       ),
     );
   }

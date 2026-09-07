@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
 /// 计划里一条已暂存的字幕（选种那一刻从 Jimaku 下载并落地到暂存目录）。
@@ -396,6 +397,11 @@ class AnimeDownloadPlanStore {
 
   final Directory baseDir;
 
+  final ValueNotifier<int> _revision = ValueNotifier<int>(0);
+
+  /// Changes only after a durable write/delete, including background imports.
+  ValueListenable<int> get revision => _revision;
+
   Directory get _plansDir => Directory(p.join(baseDir.path, 'plans'));
 
   /// 计划 [planId] 的字幕暂存目录（约定布局，不保证已创建）。
@@ -445,6 +451,7 @@ class AnimeDownloadPlanStore {
       );
       await tmp.writeAsString(jsonEncode(encodeAnimeDownloadPlan(plan)));
       await tmp.rename(target.path);
+      _revision.value++;
       return true;
     } catch (_) {
       return false;
@@ -455,7 +462,10 @@ class AnimeDownloadPlanStore {
   Future<void> delete(String id) async {
     try {
       final File file = _planFile(id);
-      if (await file.exists()) await file.delete();
+      if (await file.exists()) {
+        await file.delete();
+        _revision.value++;
+      }
     } catch (_) {}
     try {
       final Directory subs = subsDirFor(id);

@@ -3,7 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/src/media/discovery/discovery_download_queue.dart';
 import 'package:fushi/src/media/discovery/discovery_labels.dart';
+import 'package:fushi/src/media/discovery/discovery_models.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/media/downloads/download_task_entry.dart';
+import 'package:fushi/src/media/downloads/download_task_card.dart';
 import 'package:fushi/src/pages/implementations/video_download_jobs_panel.dart'
     show showDownloadTaskDeleteConfirm;
 import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart';
@@ -11,7 +14,7 @@ import 'package:fushi/utils.dart';
 
 /// 「下载」页任务 tab 的发现页直链下载区：渲染 [DiscoveryDownloadQueue] 的任务
 /// 列表（游戏 / 小说 / 有声书等 HTTP 直链，与 torrent 任务、漫画目录队列并列，
-/// 统一下载中心）。队列为空时不占位。
+/// 统一下载中心）。独立使用时空队列不占位；[tasksBuilder] 将任务接入统一列表。
 ///
 /// BUG-1936：发现页点「下载」后 toast 说「已加入下载」，但这条队列此前在整个
 /// app 里只有游戏库的占位卡在读，下载页任务 tab 根本没接——用户看到的就是
@@ -24,9 +27,13 @@ class DiscoveryDownloadTasksSection extends ConsumerWidget {
   const DiscoveryDownloadTasksSection({
     super.key,
     this.queueOverride,
+    this.tasksBuilder,
     this.pathRevealer,
     this.revealHostProbe,
   });
+
+  /// Parent owns unified filtering, sorting and grouping, including empty queues.
+  final DownloadTasksBuilder? tasksBuilder;
 
   /// 测试注入队列（null = 取 [AppModel.discoveryDownloadQueue]）。
   final DiscoveryDownloadQueue? queueOverride;
@@ -41,11 +48,20 @@ class DiscoveryDownloadTasksSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final DiscoveryDownloadQueue? queue = queueOverride ?? _appQueue(ref);
-    if (queue == null) return const SizedBox.shrink();
+    if (queue == null) {
+      return tasksBuilder?.call(context, const <DownloadTaskEntry>[]) ??
+          const SizedBox.shrink();
+    }
     return ListenableBuilder(
       listenable: queue,
       builder: (BuildContext context, Widget? _) {
         final List<DiscoveryDownloadTask> tasks = queue.tasks;
+        if (tasksBuilder != null) {
+          return tasksBuilder!(context, <DownloadTaskEntry>[
+            for (final DiscoveryDownloadTask task in tasks)
+              _buildEntry(queue, task),
+          ]);
+        }
         if (tasks.isEmpty) return const SizedBox.shrink();
         final ThemeData theme = Theme.of(context);
         final bool hasFinished = tasks.any(
@@ -110,6 +126,49 @@ class DiscoveryDownloadTasksSection extends ConsumerWidget {
           ],
         );
       },
+    );
+  }
+
+  DownloadTaskEntry _buildEntry(
+    DiscoveryDownloadQueue queue,
+    DiscoveryDownloadTask task,
+  ) {
+    final String id = 'direct:${task.taskId}';
+    final double? progress = task.status == DiscoveryDownloadStatus.done
+        ? 1
+        : discoveryDownloadProgress(task);
+    return DownloadTaskEntry(
+      id: id,
+      title: task.item.title,
+      createdAt: task.createdAt,
+      onRetry: _canRetry(task) ? () => queue.retry(task) : null,
+      onClear: task.isFinished ? () => queue.remove(task) : null,
+      kind: switch (task.item.kind) {
+        DiscoveryMediaKind.novel => DownloadTaskKind.novel,
+        DiscoveryMediaKind.audiobook => DownloadTaskKind.audiobook,
+        DiscoveryMediaKind.game => DownloadTaskKind.game,
+        DiscoveryMediaKind.manga => DownloadTaskKind.manga,
+      },
+      status: switch (task.status) {
+        DiscoveryDownloadStatus.queued => DownloadTaskStatus.queued,
+        DiscoveryDownloadStatus.running => DownloadTaskStatus.active,
+        DiscoveryDownloadStatus.waitingRetry => DownloadTaskStatus.queued,
+        DiscoveryDownloadStatus.done => DownloadTaskStatus.completed,
+        DiscoveryDownloadStatus.failed => DownloadTaskStatus.attention,
+        DiscoveryDownloadStatus.cancelled => DownloadTaskStatus.cancelled,
+      },
+      progress: progress,
+      // No collection identity in direct resources: never infer it from titles.
+      searchTerms: <String>[task.item.sourceId],
+      builder: (BuildContext context) => DownloadTaskCard(
+        key: ValueKey<String>(id),
+        taskId: id,
+        title: task.item.title,
+        status: discoveryDownloadStatusLabel(task, queue.maxAutoRetries),
+        subtitle: discoveryMediaKindLabel(task.item.kind),
+        progress: progress,
+        details: _buildTaskRow(context, Theme.of(context), queue, task),
+      ),
     );
   }
 

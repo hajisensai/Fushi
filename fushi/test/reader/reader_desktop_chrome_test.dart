@@ -5,8 +5,72 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 
 void main() {
+  test('compact playback leaves footer and system inset outside its surface',
+      () {
+    final String chrome =
+        File('lib/src/pages/implementations/reader_fushi/chrome.part.dart')
+            .readAsStringSync();
+    final String page =
+        File('lib/src/pages/implementations/reader_fushi_page.dart')
+            .readAsStringSync();
+    expect(chrome, contains('? _statusFooterReserve + _stableBottomInset'));
+    expect(chrome,
+        contains('height: _separatePlaybackStatus ? 0 : _stableBottomInset'));
+    expect(
+        page,
+        contains(
+            'chromeHeight: _desktopChromeEnabled && _audiobookController == null'));
+  });
+
+  testWidgets('320 wide header keeps navigation and folds secondary actions',
+      (WidgetTester tester) async {
+    await tester.binding.setSurfaceSize(const Size(320, 640));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    int galleryOpened = 0;
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: ReaderDesktopHeader(
+      title: '安達としまむら3 Long book title',
+      textColor: Colors.black,
+      backgroundColor: Colors.white,
+      leading: <ReaderHeaderAction>[
+        ReaderHeaderAction(
+            icon: Icons.arrow_back,
+            label: 'Back',
+            pinned: true,
+            onPressed: () {}),
+        ReaderHeaderAction(
+            icon: Icons.list,
+            label: 'Contents',
+            pinned: true,
+            onPressed: () {}),
+        ReaderHeaderAction(
+            icon: Icons.collections,
+            label: 'Gallery',
+            onPressed: () => galleryOpened++),
+      ],
+      trailing: <ReaderHeaderAction>[
+        ReaderHeaderAction(
+            icon: Icons.tune,
+            label: 'Settings',
+            pinned: true,
+            onPressed: () {}),
+      ],
+    ))));
+    expect(tester.takeException(), isNull);
+    expect(find.byIcon(Icons.list), findsOneWidget);
+    expect(find.byIcon(Icons.collections), findsNothing);
+    await tester.tap(
+        find.byKey(const ValueKey<String>('fushi_desktop_header_overflow')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Gallery'));
+    await tester.pumpAndSettle();
+    expect(galleryOpened, 1);
+    expect(tester.takeException(), isNull);
+  });
+
   group('readerDesktopChromeEnabled', () {
-    test('桌面且非歌词模式才启用', () {
+    test('各平台非歌词模式均启用', () {
       expect(
         readerDesktopChromeEnabled(desktop: true, lyricsMode: false),
         isTrue,
@@ -17,7 +81,7 @@ void main() {
       );
       expect(
         readerDesktopChromeEnabled(desktop: false, lyricsMode: false),
-        isFalse,
+        isTrue,
       );
     });
   });

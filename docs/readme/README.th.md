@@ -102,6 +102,8 @@ Fushi จัดเก็บหนังสือ พจนานุกรม แ
 
 Fushi ต่อยอดจากโปรเจกต์และระบบนิเวศต่อไปนี้:
 
+### เครื่องมือการเรียนรู้และงานอ้างอิง
+
 | โปรเจกต์ | คำอธิบาย |
 |---|---|
 | [jidoujisho](https://github.com/arianneorpilla/jidoujisho) | เครื่องมือเรียนภาษาญี่ปุ่นแบบ immersive |
@@ -116,6 +118,48 @@ Fushi ต่อยอดจากโปรเจกต์และระบบ�
 | [ッツ Ebook Reader](https://github.com/ttu-ttu/ebook-reader) | แหล่งอ้างอิงโปรแกรมอ่าน สถิติ และความเข้ากันได้ของการซิงก์ |
 | [media_kit](https://github.com/media-kit/media-kit) | เฟรมเวิร์กการเล่นวิดีโอของ Flutter (แกนหลัก libmpv) |
 | [Niratan](https://github.com/W1ght/Niratan) | ชุดเครื่องมือเรียนภาษาแบบ immersive สำหรับ macOS |
+
+### เอนจินและคอมโพเนนต์เนทีฟ
+
+| โปรเจกต์ | คำอธิบาย |
+|---|---|
+| [LunaHook](https://github.com/HIllya51/LunaTranslator) | เอนจิน hook ข้อความสำหรับ galgame (DLL ที่รวมมา โหลดโดยตัว injector) |
+| [MinHook](https://github.com/TsudaKageyu/minhook) | ไลบรารี inline hook ที่ injector ของ galgame ใช้ |
+| [libtorrent](https://github.com/arvidn/libtorrent) | เอนจินดาวน์โหลด torrent ในตัว |
+| [mpv](https://github.com/mpv-player/mpv) | แกนเล่นสื่อ libmpv ที่อยู่เบื้องหลัง media_kit |
+| [FFmpeg](https://ffmpeg.org) | ตรวจสอบสื่อ ตัดคลิป และแยกเสียง |
+| [libplacebo](https://github.com/haasn/libplacebo) | เชเดอร์วิดีโอบน GPU และการทำ HDR tone mapping |
+| [flutter_inappwebview](https://github.com/pichillilorenzo/flutter_inappwebview) | เอนจิน WebView ที่เรนเดอร์โปรแกรมอ่าน EPUB |
+| [ONNX Runtime](https://github.com/microsoft/onnxruntime) | การประมวลผลบนอุปกรณ์สำหรับรู้จำเสียงพูดและ OCR |
+| [zstd](https://github.com/facebook/zstd) · [xxHash](https://github.com/Cyan4973/xxHash) · [libdeflate](https://github.com/ebiggers/libdeflate) · [glaze](https://github.com/stephenberry/glaze) · [unordered_dense](https://github.com/martinus/unordered_dense) · [utf8proc](https://github.com/JuliaStrings/utf8proc) · [utfcpp](https://github.com/nemtrif/utfcpp) | ไลบรารีที่เอนจินพจนานุกรมใช้ |
+
+### โมเดลบนอุปกรณ์
+
+| โปรเจกต์ | คำอธิบาย |
+|---|---|
+| [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) | ชุดโมเดลรู้จำเสียงพูด Zipformer และบิลด์ VAD |
+| [ReazonSpeech k2-v2](https://huggingface.co/reazon-research/reazonspeech-k2-v2) | โมเดลรู้จำเสียงพูดภาษาญี่ปุ่น |
+| [Omnilingual ASR](https://github.com/facebookresearch/omnilingual-asr) | โมเดลรู้จำเสียงพูด CTC หลายภาษา |
+| [Silero VAD](https://github.com/snakers4/silero-vad) | โมเดลตรวจจับช่วงที่มีเสียงพูด |
+| [manga-ocr](https://github.com/kha-white/manga-ocr) / [manga-ocr-onnx](https://huggingface.co/mayocream/manga-ocr-onnx) | โมเดล OCR สำหรับมังงะ |
+| [comic-text-and-bubble-detector](https://huggingface.co/ogkalu/comic-text-and-bubble-detector) | โมเดลตรวจจับข้อความและช่องคำพูดในมังงะ |
+
+### แหล่งเนื้อหาและการเชื่อมต่อ
+
+| โปรเจกต์ | คำอธิบาย |
+|---|---|
+| [Mihon](https://github.com/mihonapp/mihon) | ระบบนิเวศส่วนขยายแหล่งมังงะ |
+| [M-Extension-Server](https://github.com/kodjodevf/M-Extension-Server) | รันไทม์ส่วนขยายมังงะสำหรับเดสก์ท็อป |
+| [aidoku-rs](https://github.com/Aidoku/aidoku-rs) | ABI ของรันไทม์แหล่งมังงะ |
+| [asbplayer](https://github.com/asbplayer/asbplayer) | ต้นแบบสะพานเชื่อมซับไตเติลสตรีมมิงสำหรับส่วนขยายเบราว์เซอร์ |
+| [Shoko Server](https://github.com/ShokoAnime/ShokoServer) | ต้นแบบสถาปัตยกรรมการระบุและดึงข้อมูลอนิเมะ |
+| [ReinaManager](https://github.com/huoshen80/ReinaManager) | ต้นแบบสถาปัตยกรรมข้อมูลคลัง galgame |
+| [AniDB](https://anidb.net) | การระบุตัวตนของอนิเมะ ตอน และไฟล์ |
+| [TMDB](https://www.themoviedb.org) | ข้อมูลเมตาและภาพประกอบเพิ่มเติม |
+| [Jimaku](https://jimaku.cc) | แหล่งซับไตเติลภาษาญี่ปุ่น |
+| [OpenSubtitles](https://www.opensubtitles.com) | แหล่งซับไตเติล |
+
+> แอปพลิเคชันนี้ใช้ TMDB และ TMDB API แต่ไม่ได้รับการรับรอง การรับรอง หรือการอนุมัติจาก TMDB
 
 ## สัญญาอนุญาต
 

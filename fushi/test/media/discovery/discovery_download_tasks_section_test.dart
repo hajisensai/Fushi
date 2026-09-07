@@ -93,8 +93,8 @@ void main() {
       reason: '找不到 downloads_page.dart（路径变了要同步本守卫）',
     );
     final String code = maskCommentsAndScriptLines(f.readAsStringSync());
-    final int mokuro = code.indexOf('const MokuroMoeTasksSection(),');
-    final int direct = code.indexOf('const DiscoveryDownloadTasksSection(),');
+    final int mokuro = code.indexOf('MokuroMoeTasksSection(');
+    final int direct = code.indexOf('DiscoveryDownloadTasksSection(');
     expect(
       direct,
       greaterThan(-1),
@@ -103,7 +103,10 @@ void main() {
           '「已加入下载」之后用户就是来这里找任务的',
     );
     expect(mokuro, greaterThan(-1));
-    expect(direct, greaterThan(mokuro), reason: '与漫画目录队列区并列、紧随其后（同屏任务视图的固定次序）');
+    expect(code, contains('tasksBuilder:'));
+    expect(code, contains('additionalTasks:'));
+    expect(code, contains('unified: true'));
+    expect(code, isNot(contains('legacyHeight')));
   });
 
   testWidgets('队列为空不占位', (WidgetTester tester) async {

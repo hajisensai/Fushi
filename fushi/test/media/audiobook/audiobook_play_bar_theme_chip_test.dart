@@ -8,11 +8,13 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
 import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart';
 import 'package:fushi/src/media/audiobook/reader_quick_settings_sheet.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart'
-    show readerUsesSideSheets;
+    show readerAudiobookUsesDialog;
+import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -23,10 +25,11 @@ class _FakeInAppWebViewController implements InAppWebViewController {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-AppModel _testAppModel() {
-  final FushiDatabase db = FushiDatabase.forTesting(
-    DatabaseConnection(NativeDatabase.memory()),
-  );
+AppModel _testAppModel({FushiDatabase? database}) {
+  final FushiDatabase db = database ??
+      FushiDatabase.forTesting(
+        DatabaseConnection(NativeDatabase.memory()),
+      );
   final ThemeNotifier themeNotifier = ThemeNotifier(db, () => const TextTheme())
     ..loadFromPrefsSnapshot(<String, String>{
       'design_system': PrefCodec.encode('material'),
@@ -44,6 +47,169 @@ AppModel _testAppModel() {
 }
 
 void main() {
+  for (final bool lyricsMode in <bool>[false, true]) {
+    testWidgets('320 宽${lyricsMode ? '歌词' : '正文'}设置主题下可切换日间、跟随系统和夜间',
+        (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(320, 720));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final FushiDatabase db = FushiDatabase.forTesting(
+        DatabaseConnection(NativeDatabase.memory()),
+      );
+      final AppModel model = _testAppModel(database: db);
+      final ReaderSettings? previousSettings = ReaderFushiSource.readerSettings;
+      final VoidCallback? previousLive =
+          ReaderFushiSource.onSettingsChangedLive;
+      ReaderFushiSource.readerSettings = ReaderSettings(db)
+        ..applyPrefsSnapshot(const <String, String>{});
+      int liveChanges = 0;
+      int styleChanges = 0;
+      int themeChanges = 0;
+      ReaderFushiSource.onSettingsChangedLive = () => liveChanges++;
+      addTearDown(() {
+        ReaderFushiSource.readerSettings = previousSettings;
+        ReaderFushiSource.onSettingsChangedLive = previousLive;
+      });
+
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            theme: ThemeData(useMaterial3: true),
+            home: Scaffold(
+              body: Align(
+                alignment: Alignment.centerRight,
+                child: SizedBox(
+                  width: 272,
+                  child: Consumer(
+                    builder: (context, ref, _) => ReaderQuickSettingsSheet(
+                      controller: null,
+                      toc: const [],
+                      readerProgress: const (1, 3),
+                      onJumpSection: (_) async {},
+                      onExitReader: () {},
+                      webViewController: _FakeInAppWebViewController(),
+                      appModel: model,
+                      ref: ref,
+                      isFushiReader: true,
+                      lyricsMode: lyricsMode,
+                      presentation:
+                          ReaderQuickSettingsPresentation.sideSheetAppearance,
+                      onStyleChanged: () async => styleChanges++,
+                      onThemeChanged: () async => themeChanges++,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final Finder brightnessRow = find.byWidgetPredicate(
+        (Widget widget) =>
+            widget is AdaptiveSettingsSegmentedRow<String> &&
+            widget.title == t.dark_mode,
+      );
+      expect(brightnessRow, findsOneWidget);
+      expect(tester.getTopLeft(brightnessRow).dy,
+          greaterThan(tester.getTopLeft(find.text(t.reader_theme)).dy));
+      for (final IconData icon in <IconData>[
+        Icons.light_mode_outlined,
+        Icons.brightness_auto_outlined,
+        Icons.dark_mode_outlined,
+      ]) {
+        final Finder segment = find.descendant(
+          of: brightnessRow,
+          matching: find.byIcon(icon),
+        );
+        expect(segment.hitTestable(), findsOneWidget);
+        expect(tester.getRect(segment).left, greaterThanOrEqualTo(48));
+        expect(tester.getRect(segment).right, lessThanOrEqualTo(320));
+      }
+
+      for (final (String, IconData) choice in <(String, IconData)>[
+        ('dark', Icons.dark_mode_outlined),
+        ('light', Icons.light_mode_outlined),
+        ('system', Icons.brightness_auto_outlined),
+      ]) {
+        final int liveBefore = liveChanges;
+        final int styleBefore = styleChanges;
+        final int themeBefore = themeChanges;
+        await tester.tap(find.descendant(
+          of: brightnessRow,
+          matching: find.byIcon(choice.$2),
+        ));
+        await tester.pumpAndSettle();
+
+        expect(model.themeNotifier.brightnessMode, choice.$1);
+        expect(
+            await db.getPref('brightness_mode'), PrefCodec.encode(choice.$1));
+        expect(
+          tester
+              .widget<AdaptiveSettingsSegmentedRow<String>>(brightnessRow)
+              .selected,
+          choice.$1,
+        );
+        expect(ReaderFushiSource.instance.readerTheme, model.appThemeKey);
+        expect(liveChanges, greaterThan(liveBefore));
+        expect(styleChanges, styleBefore + 1);
+        expect(themeChanges, themeBefore + 1);
+        expect(tester.takeException(), isNull);
+      }
+    });
+  }
+
+  testWidgets('手机 320 宽设置抽屉复用布局显示内容且无溢出', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(320, 720));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final AppModel model = _testAppModel();
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          theme: ThemeData(useMaterial3: true),
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.centerRight,
+              // 与真实路由一致，320 宽窗口保留 48px 的点外关闭区域。
+              child: SizedBox(
+                width: 272,
+                child: Consumer(
+                  builder: (context, ref, _) => ReaderQuickSettingsSheet(
+                    controller: null,
+                    toc: const [],
+                    readerProgress: const (1, 3),
+                    onJumpSection: (_) async {},
+                    onExitReader: () {},
+                    webViewController: _FakeInAppWebViewController(),
+                    appModel: model,
+                    ref: ref,
+                    isFushiReader: true,
+                    presentation:
+                        ReaderQuickSettingsPresentation.sideSheetAppearance,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.text(t.reader_theme), findsOneWidget);
+    expect(find.byType(FushiSegmentedStrip<String>), findsOneWidget);
+    final Finder close = find.byKey(
+      const ValueKey<String>('fushi_side_sheet_close'),
+    );
+    expect(tester.getRect(close).right, lessThanOrEqualTo(320));
+
+    await tester.ensureVisible(find.text(t.settings_destination_lookup));
+    await tester.tap(find.text(t.settings_destination_lookup));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.text(t.auto_read_on_lookup), findsOneWidget);
+  });
+
   testWidgets('audiobook play bar keeps lyrics mode out of bottom bar',
       (tester) async {
     final controller = AudiobookPlayerController();
@@ -141,7 +307,7 @@ void main() {
   });
 
   // BUG-2166 批：桌面 ッツ 形态把书内设置从「宽窗 master-detail」改成了左右
-  // 抽屉。路由真相源是 readerUsesSideSheets（reader_desktop_chrome.dart），它
+  // 抽屉。路由真相源是 readerAudiobookUsesDialog（reader_desktop_chrome.dart），它
   // 与 master-detail 外壳判宽用的是**同一对阈值** 560×440 —— 所以窗口一旦够宽
   // 就走抽屉，sheet 形态永远到不了宽窗分支（代码注释里也写明「宽窗不再有
   // master-detail」）。原来这两条测试是直接 pump ReaderQuickSettingsSheet
@@ -151,19 +317,23 @@ void main() {
   // 并加一条纯函数断言把路由真相源钉住。BUG-096 的「固定头 + 可滚内容」原
   // 不变式另有 master_detail_settings_sheet_test 与
   // video_player_settings_master_detail_guard_test 两处仍在守。
-  test('书内设置的宽窗形态由 readerUsesSideSheets 决定（路由真相源）', () {
-    // 够宽够高 → 抽屉；窄窗 → sheet。与 master-detail 外壳同阈值。
-    expect(readerUsesSideSheets(desktop: false, window: const Size(1000, 800)),
+  test('有声书面板容器独立于各平台共用的设置抽屉', () {
+    // 有声书宽窗 → dialog；窄窗 → sheet，保持手机的空间利用。
+    expect(
+        readerAudiobookUsesDialog(
+            desktop: false, window: const Size(1000, 800)),
         isTrue);
-    expect(readerUsesSideSheets(desktop: false, window: const Size(420, 1600)),
+    expect(
+        readerAudiobookUsesDialog(
+            desktop: false, window: const Size(420, 1600)),
         isFalse);
-    // 桌面端恒走抽屉，与窗口大小无关。
-    expect(readerUsesSideSheets(desktop: true, window: const Size(420, 400)),
+    // 桌面端有声书恒走 dialog。
+    expect(
+        readerAudiobookUsesDialog(desktop: true, window: const Size(420, 400)),
         isTrue);
   });
 
-  testWidgets('桌面「设置」抽屉：三组分段同屏、无 push 返回箭头',
-      (tester) async {
+  testWidgets('桌面「设置」抽屉：三组分段同屏、无 push 返回箭头', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
@@ -257,8 +427,7 @@ void main() {
     expect(exitCount, 1);
   });
 
-  testWidgets('桌面「导航」抽屉：标题栏固定，章节内容独立滚动（BUG-096 语义）',
-      (tester) async {
+  testWidgets('桌面「导航」抽屉：标题栏固定，章节内容独立滚动（BUG-096 语义）', (tester) async {
     // 原用例锁的是宽窗 master-detail 的「左父菜单不跟着右详情滚」。BUG-2166 批
     // 把那个形态删了（宽窗一律走抽屉），BUG-096 的外壳级不变式仍由
     // master_detail_settings_sheet_test / video_player_settings_master_detail

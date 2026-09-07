@@ -4,12 +4,14 @@ library;
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:fushi/src/epub/epub_book.dart' show EpubImageRef;
+import 'package:fushi/src/reader/image_reveal_key.dart';
 import 'package:fushi/utils.dart';
 
 class ReaderGalleryPage extends StatefulWidget {
@@ -20,6 +22,9 @@ class ReaderGalleryPage extends StatefulWidget {
     required this.fileForRef,
     required this.onOpenImage,
     required this.onJumpTo,
+    this.blurImages = false,
+    this.revealedImageKeys = const <String>{},
+    this.onRevealImage,
   });
 
   final List<EpubImageRef> images;
@@ -27,6 +32,9 @@ class ReaderGalleryPage extends StatefulWidget {
   final File? Function(EpubImageRef ref) fileForRef;
   final void Function(EpubImageRef ref) onOpenImage;
   final void Function(EpubImageRef ref) onJumpTo;
+  final bool blurImages;
+  final Set<String> revealedImageKeys;
+  final void Function(String key)? onRevealImage;
 
   @override
   State<ReaderGalleryPage> createState() => _ReaderGalleryPageState();
@@ -45,6 +53,36 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
   final ScrollController _thumbController = ScrollController();
   final FocusNode _focusNode = FocusNode(debugLabel: 'reader-gallery');
   late int _index = _initialIndex();
+  final Set<String> _revealedHere = <String>{};
+
+  bool _isBlurred(EpubImageRef ref) => ImageRevealKey.shouldBlur(
+        blurEnabled: widget.blurImages,
+        revealKey: ImageRevealKey.normalize(ref.src),
+        revealed: <String>{...widget.revealedImageKeys, ..._revealedHere},
+      );
+
+  void _activateImage(EpubImageRef ref) {
+    if (_isBlurred(ref)) {
+      final String key = ImageRevealKey.normalize(ref.src)!;
+      setState(() => _revealedHere.add(key));
+      widget.onRevealImage?.call(key);
+      return;
+    }
+    widget.onOpenImage(ref);
+  }
+
+  Widget _blurImage(Widget image, {required bool stage}) => ClipRect(
+        child: Stack(
+          alignment: Alignment.center,
+          children: <Widget>[
+            ImageFiltered(
+              imageFilter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+              child: image,
+            ),
+            Icon(Icons.visibility_off_outlined, size: stage ? 40 : 18),
+          ],
+        ),
+      );
 
   int _initialIndex() {
     final int first = widget.images.indexWhere(
@@ -134,7 +172,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
     if (event.logicalKey == LogicalKeyboardKey.enter ||
         event.logicalKey == LogicalKeyboardKey.numpadEnter) {
       final EpubImageRef? current = _current;
-      if (current != null) widget.onOpenImage(current);
+      if (current != null) _activateImage(current);
       return KeyEventResult.handled;
     }
     if (event.logicalKey == LogicalKeyboardKey.escape) {
@@ -253,8 +291,12 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 72, vertical: 8),
               child: GestureDetector(
-                onTap: () => widget.onOpenImage(current),
-                child: Center(child: image),
+                onTap: () => _activateImage(current),
+                child: Center(
+                  child: _isBlurred(current)
+                      ? _blurImage(image, stage: true)
+                      : image,
+                ),
               ),
             ),
           ),
@@ -366,7 +408,9 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
           borderRadius: BorderRadius.circular(3),
           child: Opacity(
             opacity: selected ? 1 : 0.7,
-            child: thumbnail,
+            child: _isBlurred(ref)
+                ? _blurImage(thumbnail, stage: false)
+                : thumbnail,
           ),
         ),
       ),

@@ -736,7 +736,10 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     // 外 Padding）即可与配置行、以及同面板 bespoke 的「导航 / 有声书」子页左右等宽、
     // 同为宽版（BUG-545/546 的等宽仍成立，只是统一到更宽的外层 padding 宽度，TODO-1321）。
     return AdaptiveSettingsSection(
-      children: <Widget>[buildThemeSelector(_themeSettingsContext())],
+      children: <Widget>[
+        buildThemeSelector(_themeSettingsContext()),
+        buildBrightnessSelector(_themeSettingsContext()),
+      ],
     );
   }
 

@@ -172,3 +172,37 @@ List<OnboardingStepId> onboardingStepSequence({
     OnboardingStepId.finish,
   ];
 }
+
+/// Imported resources need only the operation tutorials, never setup preferences.
+List<OnboardingStepId> onboardingTutorialStepSequence({
+  required bool globalLookupAvailable,
+}) =>
+    <OnboardingStepId>[
+      OnboardingStepId.clickLookup,
+      if (globalLookupAvailable) OnboardingStepId.globalLookup,
+      OnboardingStepId.finish,
+    ];
+
+/// Records explicit Next actions, not merely visiting a page or leaving via Skip.
+class OnboardingTutorialProgress {
+  final Set<OnboardingStepId> _completed = <OnboardingStepId>{};
+
+  void completeStep(OnboardingStepId step) {
+    if (_isTutorial(step)) _completed.add(step);
+  }
+
+  bool shouldMarkCompleted({
+    required List<OnboardingStepId> steps,
+    required bool finished,
+  }) {
+    final List<OnboardingStepId> tutorials = steps.where(_isTutorial).toList();
+    return finished &&
+        tutorials.isNotEmpty &&
+        tutorials.every(_completed.contains);
+  }
+
+  static bool _isTutorial(OnboardingStepId step) =>
+      step == OnboardingStepId.clickLookup ||
+      step == OnboardingStepId.globalLookup ||
+      step == OnboardingStepId.firstAnkiCard;
+}

@@ -2,12 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_onnxruntime/flutter_onnxruntime.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/asr/asr_engine.dart';
-import 'package:fushi/src/asr/asr_model_manifest.dart';
-import 'package:fushi/src/asr/asr_model_store.dart';
-import 'package:fushi/src/asr/asr_transcribe_job.dart';
-import 'package:fushi/src/asr/asr_transcription_service.dart';
-import 'package:fushi/src/onnx/onnx_inference.dart';
+import 'package:asr_core/asr_core.dart';
 import 'package:fushi/src/onnx/onnx_inference_ort.dart';
 import 'package:path/path.dart' as p;
 
@@ -34,6 +29,11 @@ class _ProbeFactory extends OrtOnnxSessionFactory {
   }
 }
 
+/// 这几组用例都走进程内路径（`runInIsolate: false`）或只碰 UI，不会真起后台
+/// isolate。真被调到说明用例走错了路径，直接炸比默默建个真后端好。
+OnnxSessionFactory _unusedOnnxFactory() =>
+    throw UnimplementedError('本用例不该在 isolate 里建 ONNX 后端');
+
 void main() {
   late Directory tmp;
 
@@ -46,6 +46,9 @@ void main() {
 
   AsrTranscriptionService service(_ProbeFactory factory) =>
       AsrTranscriptionService(
+        backend: const AsrIsolateBackend(
+          buildFactory: _unusedOnnxFactory,
+        ),
         loader: AsrEngineLoader(factory: factory),
         openStore: (AsrLanguage l) async =>
             AsrModelStore(tmp, asrModelPackFor(l)),

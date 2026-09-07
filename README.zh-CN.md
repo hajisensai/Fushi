@@ -139,6 +139,8 @@ Fushi 将导入的书籍、词典、字体、有声书数据、视频、阅读�
 
 Fushi 基于以下项目与生态：
 
+### 学习工具与前作参考
+
 | 项目 | 说明 |
 |---|---|
 | [jidoujisho](https://github.com/arianneorpilla/jidoujisho) | 日语沉浸式学习工具 |
@@ -153,6 +155,48 @@ Fushi 基于以下项目与生态：
 | [ッツ Ebook Reader](https://github.com/ttu-ttu/ebook-reader) | 阅读器、统计与同步兼容性参考 |
 | [media_kit](https://github.com/media-kit/media-kit) | Flutter 视频播放框架（libmpv 内核） |
 | [Niratan](https://github.com/W1ght/Niratan) | macOS 沉浸式语言学习套件 |
+
+### 引擎与原生组件
+
+| 项目 | 说明 |
+|---|---|
+| [LunaHook](https://github.com/HIllya51/LunaTranslator) | galgame 文本 hook 引擎（vendored DLL，由注入器加载） |
+| [MinHook](https://github.com/TsudaKageyu/minhook) | galgame 注入器使用的 inline hook 库 |
+| [libtorrent](https://github.com/arvidn/libtorrent) | 内置 torrent 下载引擎 |
+| [mpv](https://github.com/mpv-player/mpv) | media_kit 背后的 libmpv 播放内核 |
+| [FFmpeg](https://ffmpeg.org) | 媒体探测、切片与音频抽取 |
+| [libplacebo](https://github.com/haasn/libplacebo) | GPU 视频着色器与 HDR 色调映射 |
+| [flutter_inappwebview](https://github.com/pichillilorenzo/flutter_inappwebview) | 渲染 EPUB 阅读器的 WebView 引擎 |
+| [ONNX Runtime](https://github.com/microsoft/onnxruntime) | 语音识别与 OCR 的端上推理 |
+| [zstd](https://github.com/facebook/zstd) · [xxHash](https://github.com/Cyan4973/xxHash) · [libdeflate](https://github.com/ebiggers/libdeflate) · [glaze](https://github.com/stephenberry/glaze) · [unordered_dense](https://github.com/martinus/unordered_dense) · [utf8proc](https://github.com/JuliaStrings/utf8proc) · [utfcpp](https://github.com/nemtrif/utfcpp) | 词典引擎依赖 |
+
+### 端上模型
+
+| 项目 | 说明 |
+|---|---|
+| [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) | Zipformer 语音识别模型包与 VAD 构建 |
+| [ReazonSpeech k2-v2](https://huggingface.co/reazon-research/reazonspeech-k2-v2) | 日语语音识别模型 |
+| [Omnilingual ASR](https://github.com/facebookresearch/omnilingual-asr) | 多语言 CTC 语音识别模型 |
+| [Silero VAD](https://github.com/snakers4/silero-vad) | 人声活动检测模型 |
+| [manga-ocr](https://github.com/kha-white/manga-ocr) / [manga-ocr-onnx](https://huggingface.co/mayocream/manga-ocr-onnx) | 漫画 OCR 模型 |
+| [comic-text-and-bubble-detector](https://huggingface.co/ogkalu/comic-text-and-bubble-detector) | 漫画文本与对话气泡检测模型 |
+
+### 内容源与集成
+
+| 项目 | 说明 |
+|---|---|
+| [Mihon](https://github.com/mihonapp/mihon) | 漫画源扩展生态 |
+| [M-Extension-Server](https://github.com/kodjodevf/M-Extension-Server) | 桌面端漫画扩展运行时 |
+| [aidoku-rs](https://github.com/Aidoku/aidoku-rs) | 漫画源运行时 ABI |
+| [asbplayer](https://github.com/asbplayer/asbplayer) | 浏览器扩展流媒体字幕桥接参考 |
+| [Shoko Server](https://github.com/ShokoAnime/ShokoServer) | 动画识别与刮削架构参考 |
+| [ReinaManager](https://github.com/huoshen80/ReinaManager) | galgame 库信息架构参考 |
+| [AniDB](https://anidb.net) | 动画、分集与文件身份 |
+| [TMDB](https://www.themoviedb.org) | 补充元数据与图片 |
+| [Jimaku](https://jimaku.cc) | 日语字幕源 |
+| [OpenSubtitles](https://www.opensubtitles.com) | 字幕源 |
+
+> 本应用使用 TMDB 及 TMDB API，但未获得 TMDB 的认可、认证或以其他方式批准。
 
 ## 许可证
 

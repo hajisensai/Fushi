@@ -1,6 +1,6 @@
-/// 桌面端阅读器 chrome（ッツ / Hoshi Reader 形态）的纯函数与外壳组件。
+/// 跨平台阅读器 chrome（ッツ / Hoshi Reader 形态）的纯函数与外壳组件。
 ///
-/// 桌面端（Windows / macOS / Linux，非歌词模式）阅读器的控制面由三块组成：
+/// 非歌词模式下各平台阅读器的控制面由三块组成：
 ///  * **顶部工具栏** [ReaderDesktopHeader]：左「← 返回 / 目录 / 插图 / 统计」，居中书名，
 ///    右「有声书导入 / 全屏 / 外观设置」。它取代桌面端的底部设置栏，显隐与底栏同一
 ///    台状态机（点空白唤出、自动收起 / 挤压常驻）。
@@ -8,7 +8,7 @@
 ///    一条纵向面板（[showReaderSideSheet]），点面板外空白即关。
 ///  * **底部状态行**（reader_status_footer.dart）：常驻挤压式。
 ///
-/// 移动端形态不变；歌词模式仍走旧底栏（独立文档，正文 chrome 不适用）。
+/// 窄屏折叠次要操作，导航和设置共用侧栏；歌词模式仍走旧底栏（独立文档，正文 chrome 不适用）。
 library;
 
 import 'package:flutter/material.dart';
@@ -35,25 +35,24 @@ const double kReaderDesktopHeaderTitleFontSize = 14;
 /// 右侧抽屉宽度（逻辑 px）。窄窗口下由 [showReaderSideSheet] 收窄到留出 48px 空白。
 const double kReaderSideSheetWidth = 400;
 
-/// 桌面端 chrome（顶部工具栏 + 右侧抽屉）是否启用：与底部状态行同一判据——桌面且非
-/// 歌词模式。单一真相源，页面的 `_desktopChromeEnabled` 委托到这里。
+/// 共用 chrome（顶部工具栏 + 右侧抽屉）是否启用：与底部状态行同一判据——非
+/// 歌词模式。沿用既有符号名，页面的 `_desktopChromeEnabled` 委托到这里。
 bool readerDesktopChromeEnabled({
   required bool desktop,
   required bool lyricsMode,
 }) =>
     readerStatusFooterEnabled(desktop: desktop, lyricsMode: lyricsMode);
 
-/// 设置 / 导航是否走左右抽屉：桌面端恒走；平板等宽窗（宽高都过共享阈值）也走——
-/// 这样居中 master-detail 对话框在阅读器里没有剩余用途，可以删掉。手机窄窗仍走
-/// bottom sheet 的主页 / 子页 push。
-bool readerUsesSideSheets({required bool desktop, required Size window}) =>
+/// 有声书面板的容器按可用空间选择：桌面/宽窗居中，手机保留全高底部面板。
+/// 此判断独立于导航和设置，两者在所有平台均使用侧栏。
+bool readerAudiobookUsesDialog({required bool desktop, required Size window}) =>
     desktop ||
     (window.width >= kFushiSettingsWideThreshold &&
         window.height >= kFushiSettingsWideMinHeight);
 
 /// 顶部工具栏的顶部预留高。
 ///
-///  * 未启用（移动端 / 歌词模式）→ 0；
+///  * 未启用（歌词模式）→ 0；
 ///  * 悬浮态（默认：点空白唤出、自动收起）→ 0，工具栏盖在正文之上；
 ///  * 挤压态且底栏占位（`_hasEverLoaded && _showChrome`）→ [headerHeight]。
 ///
@@ -220,7 +219,9 @@ class ReaderDesktopHeader extends StatelessWidget {
                                     children: <Widget>[
                                       Icon(a.icon, size: 20),
                                       const SizedBox(width: 12),
-                                      Text(a.label),
+                                      Flexible(
+                                        child: Text(a.label),
+                                      ),
                                     ],
                                   ),
                                 ),
@@ -376,7 +377,11 @@ Future<T?> showReaderSideSheet<T>({
             key: const ValueKey<String>('fushi_reader_side_sheet'),
             color: Theme.of(ctx).colorScheme.surface,
             elevation: 8,
-            child: Builder(builder: builder),
+            child: Padding(
+              padding:
+                  EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
+              child: SafeArea(child: Builder(builder: builder)),
+            ),
           ),
         ),
       );

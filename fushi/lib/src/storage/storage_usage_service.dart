@@ -404,7 +404,7 @@ const Map<StorageCategoryId, List<String>> kStorageCategoryDocumentsChildren =
     // 同上：旧名存量目录走迁移常量。
     kLegacyExportDirectoryName,
   ],
-  StorageCategoryId.database: <String>[],
+  StorageCategoryId.database: <String>['onboarding_tutorial'],
   StorageCategoryId.ocrModels: <String>[],
 };
 
@@ -543,7 +543,7 @@ class StorageUsageService {
         case StorageCategoryId.dictionaries:
           yield await _scanDictionaries(docs, dictionaryNames);
         case StorageCategoryId.database:
-          yield await _scanDatabase(support);
+          yield await _scanDatabase(support, docs);
         case StorageCategoryId.ocrModels:
           yield await _scanGeneric(id, <String>[
             p.join(support.path, kOcrModelsSupportChild),
@@ -694,7 +694,8 @@ class StorageUsageService {
   /// 快照聚合条目的域内主键（UI 用它做忙碌态/去重）。
   static const String kDatabaseSnapshotsEntryId = 'database-snapshots';
 
-  Future<StorageCategoryUsage> _scanDatabase(final Directory support) async {
+  Future<StorageCategoryUsage> _scanDatabase(
+      final Directory support, final Directory docs) async {
     // support 根的直接子项，减去 OCR 模型子目录（后者单列一类）。明细里因此
     // 能看到主库 `fushi.db`、本地发音库副本 `local_audio_*.db` 等具体大件。
     //
@@ -719,7 +720,16 @@ class StorageUsageService {
     final List<String> snapshotPaths = <String>[
       for (final Map<String, Object> e in snapshots) e['path'] as String,
     ];
+    final StorageCategoryUsage localState = await _scanGeneric(
+      StorageCategoryId.database,
+      <String>[
+        for (final String child
+            in kStorageCategoryDocumentsChildren[StorageCategoryId.database]!)
+          p.join(docs.path, child),
+      ],
+    );
     final List<StorageEntryUsage> entries = <StorageEntryUsage>[
+      ...localState.entries,
       ..._childEntries(raw, excludePaths: <String>{
         p.join(support.path, kOcrModelsSupportChild),
         ...snapshotPaths,
@@ -838,8 +848,7 @@ class StorageUsageService {
           entry,
     ];
     final List<String> paths = <String>[
-      for (final Map<String, Object> entry in backups)
-        entry['path'] as String,
+      for (final Map<String, Object> entry in backups) entry['path'] as String,
     ];
     final int bytes = backups.fold<int>(0,
         (int sum, Map<String, Object> entry) => sum + (entry['bytes'] as int));
