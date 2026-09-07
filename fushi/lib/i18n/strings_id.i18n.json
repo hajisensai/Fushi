@@ -4433,5 +4433,8 @@
   "video_online_services_setup_settings": "Buka pengaturan",
   "video_online_services_setup_dismiss": "Jangan tampilkan lagi",
   "onboarding_online_services_opensubtitles_embedded": "Kunci API aplikasi sudah disertakan. Anda dapat memilih untuk masuk ke akun OpenSubtitles sendiri guna memakai kuota unduhan pribadi, atau menggunakan kunci API sendiri.",
-  "video_opensubtitles_app_key_hint": "Biarkan kosong untuk menggunakan kunci API bawaan aplikasi."
+  "video_opensubtitles_app_key_hint": "Biarkan kosong untuk menggunakan kunci API bawaan aplikasi.",
+  "video_anilist_error_api_disabled": "AniList has temporarily disabled its public API because of server-side stability problems. This is not a problem with your network or proxy - the request reached AniList and was refused. Please try again later.",
+  "video_anilist_error_rate_limited": "AniList is rate-limiting this app right now. Wait a moment and retry.",
+  "video_anilist_error_unreachable": "Cannot reach AniList (graphql.anilist.co). Check your network connection, or configure a proxy in download settings."
 }

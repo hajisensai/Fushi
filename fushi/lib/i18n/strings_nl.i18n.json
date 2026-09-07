@@ -4433,5 +4433,8 @@
   "video_online_services_setup_settings": "Instellingen openen",
   "video_online_services_setup_dismiss": "Nooit meer tonen",
   "onboarding_online_services_opensubtitles_embedded": "De API-sleutel van de app is inbegrepen. Je kunt je desgewenst aanmelden bij je OpenSubtitles-account voor je eigen downloadquotum, of je eigen API-sleutel gebruiken.",
-  "video_opensubtitles_app_key_hint": "Laat leeg om de meegeleverde API-sleutel van de app te gebruiken."
+  "video_opensubtitles_app_key_hint": "Laat leeg om de meegeleverde API-sleutel van de app te gebruiken.",
+  "video_anilist_error_api_disabled": "AniList has temporarily disabled its public API because of server-side stability problems. This is not a problem with your network or proxy - the request reached AniList and was refused. Please try again later.",
+  "video_anilist_error_rate_limited": "AniList is rate-limiting this app right now. Wait a moment and retry.",
+  "video_anilist_error_unreachable": "Cannot reach AniList (graphql.anilist.co). Check your network connection, or configure a proxy in download settings."
 }

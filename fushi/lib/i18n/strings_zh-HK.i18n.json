@@ -4433,5 +4433,8 @@
   "video_online_services_setup_settings": "前往設定",
   "video_online_services_setup_dismiss": "不再顯示提示",
   "onboarding_online_services_opensubtitles_embedded": "應用程式已內置 API 金鑰。可選擇登入自己的 OpenSubtitles 帳戶使用個人下載配額，亦可填寫自己的 API 金鑰。",
-  "video_opensubtitles_app_key_hint": "留空以使用應用程式內置的 API 金鑰。"
+  "video_opensubtitles_app_key_hint": "留空以使用應用程式內置的 API 金鑰。",
+  "video_anilist_error_api_disabled": "AniList 官方因伺服器穩定性問題暫時停用了公開 API。這不是你的網絡或代理的問題——請求已經打到 AniList 並被它當面拒絕了。請稍後再試。",
+  "video_anilist_error_rate_limited": "AniList 正在對本應用限流。稍等一會兒再重試。",
+  "video_anilist_error_unreachable": "連不上 AniList（graphql.anilist.co）。請檢查網絡連接，或在下載設定中配置代理。"
 }

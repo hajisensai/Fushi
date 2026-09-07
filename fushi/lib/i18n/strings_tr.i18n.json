@@ -4433,5 +4433,8 @@
   "video_online_services_setup_settings": "Ayarları aç",
   "video_online_services_setup_dismiss": "Bir daha gösterme",
   "onboarding_online_services_opensubtitles_embedded": "Uygulamanın API anahtarı dahildir. İsterseniz kişisel indirme kotanız için OpenSubtitles hesabınıza giriş yapabilir veya kendi API anahtarınızı kullanabilirsiniz.",
-  "video_opensubtitles_app_key_hint": "Uygulamayla gelen API anahtarını kullanmak için boş bırakın."
+  "video_opensubtitles_app_key_hint": "Uygulamayla gelen API anahtarını kullanmak için boş bırakın.",
+  "video_anilist_error_api_disabled": "AniList has temporarily disabled its public API because of server-side stability problems. This is not a problem with your network or proxy - the request reached AniList and was refused. Please try again later.",
+  "video_anilist_error_rate_limited": "AniList is rate-limiting this app right now. Wait a moment and retry.",
+  "video_anilist_error_unreachable": "Cannot reach AniList (graphql.anilist.co). Check your network connection, or configure a proxy in download settings."
 }

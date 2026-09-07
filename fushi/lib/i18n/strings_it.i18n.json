@@ -4433,5 +4433,8 @@
   "video_online_services_setup_settings": "Apri impostazioni",
   "video_online_services_setup_dismiss": "Non mostrare più",
   "onboarding_online_services_opensubtitles_embedded": "La chiave API dell’app è inclusa. Puoi accedere facoltativamente al tuo account OpenSubtitles per usare la tua quota di download, oppure usare una tua chiave API.",
-  "video_opensubtitles_app_key_hint": "Lascia vuoto per usare la chiave API inclusa nell’app."
+  "video_opensubtitles_app_key_hint": "Lascia vuoto per usare la chiave API inclusa nell’app.",
+  "video_anilist_error_api_disabled": "AniList has temporarily disabled its public API because of server-side stability problems. This is not a problem with your network or proxy - the request reached AniList and was refused. Please try again later.",
+  "video_anilist_error_rate_limited": "AniList is rate-limiting this app right now. Wait a moment and retry.",
+  "video_anilist_error_unreachable": "Cannot reach AniList (graphql.anilist.co). Check your network connection, or configure a proxy in download settings."
 }

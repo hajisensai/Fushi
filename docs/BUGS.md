@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2083 条。点号进各自文件。
+> 共 2084 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -52,6 +52,7 @@
 | [BUG-2234](bugs/BUG-2234-download-task-unified-list.md) | ✅ | ✅ | 下载任务按来源分裂导致筛选排序遗漏且不能按合集折叠 |
 | [BUG-2233](bugs/BUG-2233-video-manual-scrape-queue.md) | ✅ | ✅ | 手动重刮遇后台任务时全屏禁用且无法查看或撤回排队作品 |
 | [BUG-2232](bugs/BUG-2232-nyaa-explicit-query.md) | ✅ | ✅ | Nyaa资源搜索会用隐藏别名替换或扩展明确查询词 |
+| [BUG-2231](bugs/BUG-2231-anilist-api-disabled-mistaken-for-network-failure.md) | ✅ | ✅ | AniList 官方停用公开 API 时被显示成「连不上」并诱导用户去配代理 |
 | [BUG-2230](bugs/BUG-2230-video-web-and-work-detail-loading-no-exit.md) | ✅ | ✅ | 网页流媒体页与作品详情页的加载态没有返回入口，且 init 异常无归宿 |
 | [BUG-2229](bugs/BUG-2229-video-missing-resource-no-back.md) | ✅ | ✅ | 视频资源缺失态没有返回入口，进入后无法退出 |
 | [BUG-2204](bugs/BUG-2204-srt-cue-tail-overlap-jumps-to-later-sentence.md) | ✅ | ✅ | 听书 ASR 字幕前句多吃下一句首字，后句跳到远处同前缀句、中间十几句全未匹配 |

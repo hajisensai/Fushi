@@ -16,6 +16,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/external_provider.dart';
 import 'package:fushi/src/media/video/anilist_client.dart';
+import 'package:fushi/src/media/video/anilist_failure_notice.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi/src/media/video/jimaku_client.dart'
@@ -190,6 +191,9 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
   List<AniListMedia> _seriesMatches = const <AniListMedia>[];
   int? _selectedSeriesId;
   bool _seriesLookupFailed = false;
+
+  /// 降级原因类别，见 [jimakuSeriesLookupNotice]。
+  AniListFailureKind? _seriesLookupKind;
   int _generation = 0;
 
   List<SubtitleCollectionSource> _sources = const <SubtitleCollectionSource>[];
@@ -418,6 +422,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
       _resolving = true;
       _seriesMatches = const <AniListMedia>[];
       _seriesLookupFailed = false;
+      _seriesLookupKind = null;
       _notice = null;
     });
     AniListClient? anilist;
@@ -435,6 +440,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
       setState(() {
         _seriesMatches = outcome.media;
         _seriesLookupFailed = outcome.degraded;
+        _seriesLookupKind = outcome.kind;
       });
       if (outcome.media.isNotEmpty) {
         // **只搜不绑**：模糊搜索的首条命中是猜测，不是用户的选择。
@@ -916,7 +922,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  notice ?? t.video_jimaku_series_lookup_degraded,
+                  notice ?? jimakuSeriesLookupNotice(_seriesLookupKind),
                   style: theme.textTheme.bodySmall?.copyWith(color: fg),
                 ),
               ),
