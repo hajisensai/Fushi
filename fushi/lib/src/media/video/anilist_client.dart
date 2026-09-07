@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
 import 'package:fushi/src/utils/net/app_http.dart';
@@ -175,6 +177,81 @@ class AniListAiringPage {
   final bool hasNextPage;
 }
 
+/// AniList 链路失败的**类别**——决定 UI 该跟用户说哪句话。
+///
+/// 为什么需要它：此前所有失败都被折成一句「加载失败」+ 一段英文异常串，UI 一律
+/// 附赠「站点无法直连时，可在下载设置中配置网络代理」。可 AniList 最常见的挂法
+/// 恰恰**不是**连不上：官方在站点过载时会主动停用公开 API，返回
+/// `403 {"errors":[{"message":"The AniList API has been temporarily disabled
+/// due to severe stability issues."}]}`。那种时候让用户去配代理是把人往沟里带
+/// ——请求明明已经打到 AniList 并被它当面拒绝了。
+///
+/// 所以「连不上」必须与「上游自己关了」「被限流」分开表述。分类只做一次，
+/// 在本文件里；UI 层只按类别选文案，不再各自正则匹配错误串。
+enum AniListFailureKind {
+  /// AniList 官方主动停用了公开 API（403 + 明示文案）。用户侧无解，只能等恢复；
+  /// **不要**提示配代理。
+  apiDisabled,
+
+  /// 被 AniList 限流（429）。稍后重试即可。
+  rateLimited,
+
+  /// 根本没打到 AniList：DNS / TCP / TLS / 超时。这才是代理提示该出现的场合。
+  unreachable,
+
+  /// 打到了但对方给了别的错（5xx、意外状态码、解析失败等）。
+  other,
+}
+
+/// AniList 停用公开 API 时响应体里的固定标记（官方文案原文的稳定子串）。
+///
+/// 只匹配这一段而不匹配整句：官方历史上微调过尾巴（有时附「check our Discord」
+/// 之类），但「temporarily disabled」这个动词短语一直在。配合 403 一起判，避免
+/// 把别的 403（真被 WAF 拦）也误报成「官方停服」。
+const String kAniListApiDisabledMarker = 'temporarily disabled';
+
+/// 按 HTTP 状态码 + 响应体判定失败类别。纯函数，供 UI 与测试共用。
+AniListFailureKind classifyAniListHttpFailure(int statusCode, String body) {
+  if (statusCode == 429) return AniListFailureKind.rateLimited;
+  if (statusCode == 403 &&
+      body.toLowerCase().contains(kAniListApiDisabledMarker)) {
+    return AniListFailureKind.apiDisabled;
+  }
+  return AniListFailureKind.other;
+}
+
+/// 把任意一个 AniList 链路上抛出来的错误（或 [AniListSearchOutcome.failure]
+/// 描述串）归类。
+///
+/// 接受 `Object` 而不是具体异常类型，是因为这条链上的失败有三种形态：
+/// [AniListRequestException]（HTTP 层）、`dart:io` / `package:http` 的传输层异常、
+/// 以及搜索路径折出来的描述字符串。UI 只想问一句「这算哪种挂法」，不该为形态分叉。
+AniListFailureKind classifyAniListError(Object error) {
+  if (error is AniListRequestException) return error.kind;
+  if (error is SocketException ||
+      error is TimeoutException ||
+      error is HandshakeException ||
+      error is HttpException ||
+      error is http.ClientException) {
+    return AniListFailureKind.unreachable;
+  }
+  // 描述串兜底：searchAnime 把逐次失败折成人类可读串（`HTTP 403: …` /
+  // 异常 toString），停服判据必须在这条路径上同样成立。
+  final String text = error.toString();
+  final String lower = text.toLowerCase();
+  if (text.contains('403') && lower.contains(kAniListApiDisabledMarker)) {
+    return AniListFailureKind.apiDisabled;
+  }
+  if (text.contains('429')) return AniListFailureKind.rateLimited;
+  if (lower.contains('socketexception') ||
+      lower.contains('timeoutexception') ||
+      lower.contains('handshakeexception') ||
+      lower.contains('clientexception')) {
+    return AniListFailureKind.unreachable;
+  }
+  return AniListFailureKind.other;
+}
+
 /// AniList HTTP 层失败（非 200，含 429 rate limit）。放送日历要求错误如实
 /// 上抛展示（与 [AniListClient.searchAnime] 的吞错语义**有意不同**：搜索是
 /// 尽力而为的辅助路径，日历页必须让用户看到失败原因并可重试）。
@@ -182,7 +259,14 @@ class AniListRequestException implements Exception {
   const AniListRequestException(this.statusCode, this.message);
 
   final int statusCode;
+
+  /// 响应体片段（已截断），[kind] 的判据来源——不能只留状态码，否则
+  /// 「官方停服的 403」与「被 WAF 拦的 403」在下游就分不开了。
   final String message;
+
+  /// 这次失败属于哪一类（UI 据此选文案）。
+  AniListFailureKind get kind =>
+      classifyAniListHttpFailure(statusCode, message);
 
   @override
   String toString() => 'AniList HTTP $statusCode: $message';
@@ -197,15 +281,21 @@ class AniListRequestException implements Exception {
 /// 怎么坏了」「起了怪了，现在又行了，不知如何触发」。把失败**带出来**是这条链能被诊断的
 /// 前提，也是 UI 能如实告诉用户「结果不可靠」而不是假装一切正常的前提。
 class AniListSearchOutcome {
-  const AniListSearchOutcome.ok(this.media) : failure = null;
+  const AniListSearchOutcome.ok(this.media)
+      : failure = null,
+        kind = null;
 
-  const AniListSearchOutcome.failed(String this.failure)
+  const AniListSearchOutcome.failed(String this.failure, this.kind)
       : media = const <AniListMedia>[];
 
   final List<AniListMedia> media;
 
   /// 非 null = 搜索链路发生过失败，此时 [media] 为空**不代表**查无此番。
   final String? failure;
+
+  /// 失败类别（[failure] 非 null 时必非 null）。UI 按它选「官方停服 / 被限流 /
+  /// 连不上」的文案——只有 [AniListFailureKind.unreachable] 才该提示配代理。
+  final AniListFailureKind? kind;
 
   /// 搜索没能给出可信答案（调用方据此决定要不要把降级说给用户听）。
   bool get degraded => failure != null;
@@ -301,6 +391,7 @@ query ($search: String) {
   /// 配额被它烧掉时字幕搜索这边此前是静默降级的。
   Future<AniListSearchOutcome> searchAnime(String title) async {
     String? lastFailure;
+    AniListFailureKind? lastKind;
     bool anySuccess = false;
     for (final String query in aniListSearchQueries(title)) {
       try {
@@ -316,7 +407,13 @@ query ($search: String) {
           }),
         );
         if (res.statusCode != 200) {
-          lastFailure = 'HTTP ${res.statusCode}';
+          // 保留响应体片段：AniList 官方停服与被 WAF 拦都是 403，只有正文能分开
+          // 这两件事，折成裸 'HTTP 403' 就等于把用户能看懂的那半截扔了。
+          final String body = utf8.decode(res.bodyBytes, allowMalformed: true);
+          final String snippet =
+              body.length > 200 ? '${body.substring(0, 200)}…' : body;
+          lastFailure = 'HTTP ${res.statusCode}: $snippet';
+          lastKind = classifyAniListHttpFailure(res.statusCode, body);
           continue;
         }
         // 显式 UTF-8 解码（res.body 无 charset 时按 latin1 → 日文/罗马音乱码）。
@@ -329,10 +426,12 @@ query ($search: String) {
         // 查询词。只要有过这么一次，就说明链路是通的，末尾不再报降级。
       } catch (e) {
         lastFailure = e.toString();
+        lastKind = classifyAniListError(e);
       }
     }
     if (!anySuccess && lastFailure != null) {
-      return AniListSearchOutcome.failed(lastFailure);
+      return AniListSearchOutcome.failed(
+          lastFailure, lastKind ?? AniListFailureKind.other);
     }
     return const AniListSearchOutcome.ok(<AniListMedia>[]);
   }

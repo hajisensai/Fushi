@@ -4378,5 +4378,8 @@
   "download_task_sort_direction": "切换升降序",
   "download_task_status_attention": "需要处理",
   "download_task_status_active": "进行中",
-  "download_task_status_filter": "任务状态"
+  "download_task_status_filter": "任务状态",
+  "video_anilist_error_api_disabled": "AniList 官方因服务器稳定性问题暂时停用了公开 API。这不是你的网络或代理的问题——请求已经打到 AniList 并被它当面拒绝了。请稍后再试。",
+  "video_anilist_error_rate_limited": "AniList 正在对本应用限流。稍等一会儿再重试。",
+  "video_anilist_error_unreachable": "连不上 AniList（graphql.anilist.co）。请检查网络连接，或在下载设置中配置代理。"
 }

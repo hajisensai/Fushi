@@ -19,6 +19,7 @@ import 'package:fushi/src/media/torrent/nyaa_client.dart';
 import 'package:fushi/src/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/media/torrent/torrent_task_display.dart';
 import 'package:fushi/src/media/video/anilist_client.dart';
+import 'package:fushi/src/media/video/anilist_failure_notice.dart';
 import 'package:fushi/src/media/video/jimaku_client.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -276,6 +277,9 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
 
   /// 搜番失败的真实错误串（异常 toString），错误态原样展示帮助定位网络问题。
   String? _animeSearchErrorDetail;
+
+  /// 搜番失败的类别：决定说哪句话，也决定要不要提代理（见 [_buildErrorRetry]）。
+  AniListFailureKind? _animeSearchErrorKind;
   List<AniListMedia> _animeMatches = const <AniListMedia>[];
   AniListMedia? _selectedMedia;
 
@@ -421,6 +425,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       _searchedAnime = false;
       _animeSearchError = false;
       _animeSearchErrorDetail = null;
+      _animeSearchErrorKind = null;
       _animeMatches = const <AniListMedia>[];
     });
     AniListClient? anilist;
@@ -437,6 +442,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         setState(() {
           _animeSearchError = true;
           _animeSearchErrorDetail = outcome.failure;
+          _animeSearchErrorKind = outcome.kind;
         });
         return;
       }
@@ -450,6 +456,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         setState(() {
           _animeSearchError = true;
           _animeSearchErrorDetail = error.toString();
+          _animeSearchErrorKind = classifyAniListError(error);
         });
       }
     } finally {
@@ -1542,6 +1549,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     VoidCallback onRetry, {
     String? detail,
     bool offerSettings = false,
+    String? anilistNotice,
   }) {
     return Center(
       child: Column(
@@ -1554,6 +1562,13 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
           ),
           const SizedBox(height: 8),
           Text(message, textAlign: TextAlign.center),
+          if (anilistNotice != null) ...<Widget>[
+            const SizedBox(height: 4),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: Text(anilistNotice, textAlign: TextAlign.center),
+            ),
+          ],
           if (detail != null && detail.isNotEmpty) ...<Widget>[
             const SizedBox(height: 4),
             ConstrainedBox(
@@ -1648,12 +1663,19 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       return buildLoading();
     }
     if (_animeSearchError) {
+      final AniListFailureKind? kind = _animeSearchErrorKind;
       return _buildErrorRetry(
         theme,
         t.anime_download_search_failed,
         _searchAnime,
         detail: _animeSearchErrorDetail,
-        offerSettings: true,
+        // 只有真·连不上才谈代理。AniList 官方停服 / 限流时请求已经打到对方并被
+        // 明确拒绝，此时提示「配置代理」是把用户往错误方向支使（他配到天亮也
+        // 好不了）——所以按类别决定，而不是无脑 true。
+        offerSettings: kind == null ||
+            kind == AniListFailureKind.unreachable ||
+            kind == AniListFailureKind.other,
+        anilistNotice: anilistFailureNotice(kind),
       );
     }
     if (_searchedAnime && _animeMatches.isEmpty) {
