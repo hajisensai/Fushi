@@ -215,6 +215,12 @@ add_executable(fushi_siglus_lookup_test
 target_include_directories(fushi_siglus_lookup_test PRIVATE "hook")
 add_test(NAME fushi_siglus_lookup_test COMMAND fushi_siglus_lookup_test)
 
+add_executable(fushi_siglus_lookup_snapshot_test "tests/siglus_lookup_snapshot_test.cpp")
+if(MSVC)
+  target_compile_options(fushi_siglus_lookup_snapshot_test PRIVATE /W4 /WX)
+endif()
+add_test(NAME fushi_siglus_lookup_snapshot_test COMMAND fushi_siglus_lookup_snapshot_test)
+
 add_executable(fushi_siglus_autoprofile_test "tests/siglus_autoprofile_test.cpp")
 target_include_directories(fushi_siglus_autoprofile_test PRIVATE "hook/adapters")
 add_test(NAME fushi_siglus_autoprofile_test COMMAND fushi_siglus_autoprofile_test)

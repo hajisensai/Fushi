@@ -381,6 +381,23 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn("InvalidateSiglusLookupCurrentLayout", identity)
         self.assertIn("InvalidateSiglusLookupClickTarget", identity)
 
+    def test_siglus_unsupported_new_text_retires_previous_lookup(self) -> None:
+        adapters = ROOT / "hook" / "adapters"
+        siglus = self._strip_comments(
+            (adapters / "siglus_lookup.inc").read_text(encoding="utf-8"))
+        self.assertIn('#include "siglus_lookup_text_snapshot.inc"', siglus)
+        capture = self._function_body(siglus, "void ConsumeSiglusLookupCaptures()")
+        self.assertIn("ReadLatestSiglusLookupText(&text_snapshot, &text_seq)", capture)
+        self.assertIn("text_snapshot.text_units != 0", capture)
+        changed = self._function_body(capture, "if (!same)")
+        self.assertIn("g_siglus_lookup_active_line_units = text_snapshot.text_units", changed)
+        self.assertIn("ResetSiglusLookupLayout", changed)
+        self.assertIn("InvalidateSiglusLookupClickTarget", changed)
+        self.assertIn("g_geometry_provider_registry.Retire", changed)
+        tick = self._function_body(siglus, "void ProcessSiglusLookupTick()")
+        self.assertLess(tick.index("ConsumeSiglusLookupCaptures()"),
+                        tick.index("ReadLatestSiglusLookupClickSubmit("))
+
     def test_exact_engine_signatures_are_portable_unique_and_fail_closed(
         self,
     ) -> None:

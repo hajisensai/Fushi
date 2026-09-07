@@ -13,6 +13,7 @@ namespace fushi_voice_hook {
 
 inline constexpr uint16_t kSiglusLookupPeMachineI386 = 0x014cu;
 inline constexpr size_t kSiglusLookupCaptureCapacity = 512u;
+inline constexpr size_t kSiglusLookupTextCapacity = 512u;
 inline constexpr size_t kSiglusLookupMaxGlyphs = 256u;
 inline constexpr uint16_t kSiglusLookupNoGlyph =
     std::numeric_limits<uint16_t>::max();
@@ -23,6 +24,14 @@ inline constexpr uint16_t kSiglusLookupNoGlyph =
 struct SiglusLookupTextIdentity {
   uint64_t event_id = 0;
   uint64_t thread_id = 0;
+};
+
+// Windows UTF-16 payload; seq is the snapshot commit marker, not TextSlot.seq.
+struct SiglusLookupTextSnapshot {
+  SiglusLookupTextIdentity identity;
+  volatile int64_t seq = 0;
+  uint32_t text_units = 0;
+  wchar_t text[kSiglusLookupTextCapacity] = {};
 };
 
 inline bool IsSiglusLookupTextIdentityCurrent(

@@ -12,7 +12,8 @@ static_assert(sizeof(wchar_t) == sizeof(char16_t),
 constexpr size_t kSiglusLookupGlyphEventSlots = 512;
 constexpr size_t kSiglusLookupTextSlots = 4;
 constexpr size_t kSiglusLookupClickEventSlots = 4;
-constexpr size_t kSiglusLookupMaxTextUnits = 512;
+constexpr size_t kSiglusLookupMaxTextUnits =
+    fushi_voice_hook::kSiglusLookupTextCapacity;
 constexpr ULONGLONG kSiglusLookupClickTargetMaxAgeMs = 64;
 constexpr ULONGLONG kSiglusLookupDuplicateHitWindowMs = 250;
 
@@ -25,12 +26,7 @@ struct SiglusLookupGlyphEvent {
   int32_t extent = 0;
 };
 
-struct SiglusLookupTextSnapshot {
-  fushi_voice_hook::SiglusLookupTextIdentity identity;
-  volatile LONG64 seq = 0;
-  uint32_t text_units = 0;
-  wchar_t text[kSiglusLookupMaxTextUnits] = {};
-};
+using SiglusLookupTextSnapshot = fushi_voice_hook::SiglusLookupTextSnapshot;
 
 struct SiglusLookupPayload {
   fushi_voice_hook::SiglusLookupTextIdentity text_identity;
@@ -674,24 +670,7 @@ uint8_t __fastcall Detour_SiglusGlyphLayout(void *self, void *, uintptr_t arg1,
   return result;
 }
 
-void PublishSiglusLookupTextSnapshot(const wchar_t *text,
-                                     uint32_t text_units,
-                                     fushi_voice_hook::SiglusLookupTextIdentity identity) {
-  if (text == nullptr || text_units == 0 ||
-      text_units > kSiglusLookupMaxTextUnits) {
-    return;
-  }
-  const uint64_t next = static_cast<uint64_t>(
-      InterlockedIncrement64(&g_siglus_lookup_text_count));
-  SiglusLookupTextSnapshot *snapshot =
-      &g_siglus_lookup_text_snapshots[next % kSiglusLookupTextSlots];
-  InterlockedExchange64(&snapshot->seq, 0);
-  snapshot->identity = identity;
-  snapshot->text_units = text_units;
-  memcpy(snapshot->text, text,
-         static_cast<size_t>(text_units) * sizeof(wchar_t));
-  InterlockedExchange64(&snapshot->seq, static_cast<LONG64>(next));
-}
+#include "siglus_lookup_text_snapshot.inc"
 
 void ObserveSiglusLookupExactText(const wchar_t *text, uint32_t text_units,
                                   uint64_t callsite_rva,
@@ -797,30 +776,6 @@ bool ReadSiglusLookupGlyphEvent(uint64_t seq, SiglusLookupGlyphEvent *copy) {
   return after == before && after != 0;
 }
 
-bool ReadLatestSiglusLookupText(SiglusLookupTextSnapshot *copy, uint64_t *seq) {
-  if (copy == nullptr || seq == nullptr)
-    return false;
-  const uint64_t latest = static_cast<uint64_t>(
-      InterlockedCompareExchange64(&g_siglus_lookup_text_count, 0, 0));
-  if (latest == 0 || latest == g_siglus_lookup_text_processed_seq) {
-    return false;
-  }
-  SiglusLookupTextSnapshot *source =
-      &g_siglus_lookup_text_snapshots[latest % kSiglusLookupTextSlots];
-  const uint64_t before =
-      static_cast<uint64_t>(InterlockedCompareExchange64(&source->seq, 0, 0));
-  if (before != latest)
-    return false;
-  memcpy(copy, source, sizeof(*copy));
-  const uint64_t after =
-      static_cast<uint64_t>(InterlockedCompareExchange64(&source->seq, 0, 0));
-  if (after != before || after == 0 ||
-      copy->text_units > kSiglusLookupMaxTextUnits) {
-    return false;
-  }
-  *seq = latest;
-  return true;
-}
 
 void InvalidateSiglusLookupClickTarget() {
   const uint64_t next = static_cast<uint64_t>(
