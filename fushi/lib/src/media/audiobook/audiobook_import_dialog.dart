@@ -1,12 +1,12 @@
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi/src/asr/asr_cue_builder.dart'
-    show kAsrSuggestedSimilarityThreshold;
-import 'package:fushi/src/asr/asr_transcription_service.dart';
+import 'package:asr_core/asr_core.dart';
+import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
 import 'package:fushi/src/media/audiobook/audiobook_alignment_service.dart'
     show
+        attachAsrCueTokenTiming,
         loadEpubSectionsInBackground,
         parseCuesForFormat,
         resegmentCuesBySentence;
@@ -473,7 +473,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
           isWideTapArea: true,
           onTap: _pickAlignment,
         ),
-        if (AsrTranscriptionService.isSupported)
+        if (isAsrSupported)
           FushiIconButton(
             icon: Icons.record_voice_over_outlined,
             tooltip: t.audiobook_transcribe_action,
@@ -488,7 +488,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
   Future<void> _onAlignmentRowTap() async {
     if (importing) return;
     if (!shouldOfferSubtitleSourceChooser(
-      asrSupported: AsrTranscriptionService.isSupported,
+      asrSupported: isAsrSupported,
       hasAudio: _audioPaths?.isNotEmpty ?? false,
     )) {
       await _pickAlignment();
@@ -955,7 +955,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       // 匹配器放 isolate 跑，主线程不能被大书的 bigram 扫描挤出 ANR。
       final String? alignment = _alignmentPath;
       final bool hasTokenTiming = alignment != null &&
-          await AsrTranscriptionService.attachCueTokenTiming(cues, alignment);
+          await attachAsrCueTokenTiming(cues, alignment);
       MatchResult result = await EpubCueMatcher.matchInIsolate(
         sections: sections,
         cues: cues,

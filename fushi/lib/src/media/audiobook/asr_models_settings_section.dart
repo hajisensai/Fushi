@@ -2,12 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import 'package:fushi/src/asr/asr_engine.dart';
-import 'package:fushi/src/asr/asr_model_manifest.dart';
-import 'package:fushi/src/asr/asr_model_store.dart';
-import 'package:fushi/src/asr/asr_transcription_service.dart';
+import 'package:asr_core/asr_core.dart';
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
-import 'package:fushi/src/onnx/model_file_downloader.dart';
 import 'package:fushi/utils.dart';
 
 /// 设置区「语音识别模型」组的正文（隶属**听**设置分类）。

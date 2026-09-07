@@ -6,7 +6,7 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:fushi/src/asr/asr_transcription_service.dart';
+import 'package:asr_core/asr_core.dart';
 import 'package:fushi/src/epub/epub_book.dart';
 import 'package:fushi/src/epub/epub_parser.dart';
 import 'package:fushi/src/media/audiobook/subtitle_rematch.dart';
@@ -70,6 +70,38 @@ class AudiobookAlignmentMessages {
 /// 从 EPUB 提取目录构建 matcher 用的章节列表。本 service、导入对话框
 /// （probe / matcher）与 [SasayakiRematch]（弹窗 probe / 重跑）五个调用点共用；
 /// 解析异常由各调用方按自身语义 try/catch，此处不吞。
+/// 把转录产物旁边的逐 token 时间 sidecar 挂到从同一份 SRT 解析出来的 [cues] 上，
+/// 供匹配后按正文句界重切（[resegmentCuesBySentence]）。
+///
+/// 一条都没挂上时返回 false。**四种情况都算没挂**：不是转录产物、sidecar 缺失、
+/// sidecar 读不动、**行数与 cue 数不符**。
+///
+/// 最后那条最重要，也最容易在重构里丢：行数不等时哪怕只挂上前面对得上的几条，
+/// 后面全部错位，而下游照样跑完、照样落库、UI 完全正常，只是跳播位置全偏——没有
+/// 任何断言会红。**行号错位比没有更糟**，所以宁可一条都不挂。
+///
+/// 抽包之后 `asr_core` 只负责「读 sidecar 并回读到的行」（`readCueTokenTimings`），
+/// 挂到哪种 cue 类型上是宿主的事，长度校验也就落在这里。
+Future<bool> attachAsrCueTokenTiming(
+  List<AudioCue> cues,
+  String subtitlePath,
+) async {
+  final List<AsrCueTokenTiming>? rows =
+      await AsrTranscriptionService.readCueTokenTimings(
+    subtitlePath,
+    expectedCount: cues.length,
+  );
+  if (rows == null) return false;
+  if (rows.length != cues.length) return false;
+  for (int i = 0; i < cues.length; i++) {
+    cues[i].tokenTiming = CueTokenTiming(
+      tokens: rows[i].tokens,
+      offsetsMs: rows[i].offsetsMs,
+    );
+  }
+  return true;
+}
+
 /// 转录产物的命中 cue 按正文句界重切（见 `CueSentenceResegmenter`）；三个
 /// 匹配入口共用这一处，统计打进日志便于真机对照。
 CueResegmentResult resegmentCuesBySentence({
@@ -197,7 +229,7 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
   );
   // 转录产物：把 sidecar 里的逐 token 时间挂上（非产物 / 缺失时 false）。
   final bool hasTokenTiming =
-      await AsrTranscriptionService.attachCueTokenTiming(
+      await attachAsrCueTokenTiming(
     cues,
     subtitlePath,
   );

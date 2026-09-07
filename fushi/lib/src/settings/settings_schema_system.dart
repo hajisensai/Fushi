@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/onboarding/recommended_pack_discard.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_row.dart';
 import 'package:fushi/src/onboarding/recommended_pack_import.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
@@ -71,8 +72,9 @@ SettingsDestination buildSystemDestination() {
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.startupDefaultDictionaryTab,
             onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel
-                  .setStartupDefaultDictionaryTab(value);
+              await settingsContext.appModel.setStartupDefaultDictionaryTab(
+                value,
+              );
               settingsContext.refresh();
             },
           ),
@@ -99,7 +101,9 @@ SettingsDestination buildSystemDestination() {
             searchTitle: t.onboarding_step_pack_title,
             subtitle: t.onboarding_pack_intro,
             visible: (SettingsContext settingsContext) => settingsContext
-                .appModel.recommendedPackDownloadController.isActive,
+                .appModel
+                .recommendedPackDownloadController
+                .isActive,
             builder: _buildRecommendedPackDownloadRow,
           ),
           SettingsSwitchItem(
@@ -495,8 +499,9 @@ Future<void> _checkUpdateNow(SettingsContext settingsContext) async {
   // 原「正在检查…」提示。
   // BUG-1836：同 home_page，半更新态下 exe 版本资源谎报新版本，
   // 据它比较会永判「已是最新」，用户困在旧代码里没有出路。
-  final String currentVersion =
-      resolveCurrentAppVersion(settingsContext.appModel.packageInfo.version);
+  final String currentVersion = resolveCurrentAppVersion(
+    settingsContext.appModel.packageInfo.version,
+  );
   final String currentBuildNumber =
       settingsContext.appModel.packageInfo.buildNumber;
   final UpdateChannel channel = _channelFromSettings(settingsContext);
@@ -513,8 +518,11 @@ Future<void> _checkUpdateNow(SettingsContext settingsContext) async {
   );
   if (cached != null) {
     final bool newer = updateTagIsNewerThanCurrent(
-        cached.latestTag, currentVersion, channel,
-        localSeq: currentReleaseSeq);
+      cached.latestTag,
+      currentVersion,
+      channel,
+      localSeq: currentReleaseSeq,
+    );
     FushiToast.show(
       msg: newer
           ? t.update_cached_newer(version: cached.latestTag)
@@ -522,10 +530,7 @@ Future<void> _checkUpdateNow(SettingsContext settingsContext) async {
       severity: ToastSeverity.info,
     );
   } else {
-    FushiToast.show(
-      msg: t.update_checking_now,
-      severity: ToastSeverity.info,
-    );
+    FushiToast.show(msg: t.update_checking_now, severity: ToastSeverity.info);
   }
   try {
     await UpdateChecker.scheduleCheck(
@@ -640,6 +645,14 @@ Widget _buildRecommendedPackDownloadRow(SettingsContext settingsContext) {
     // 导入编排是库级共享的（[importDownloadedRecommendedPack]）：设置这一行、
     // 新手引导那一步、首页迷你条三个发起点同一个真相源。
     onImport: () => unawaited(importDownloadedRecommendedPack(appModel)),
+    // 放弃编排同样库级共享（[confirmAndDiscardRecommendedPack]）：确认框漏在任何
+    // 一个发起点上，那一处就成了不带确认直接删几 GB 的按钮。
+    onDiscard: () => unawaited(
+      confirmAndDiscardRecommendedPack(
+        settingsContext.context,
+        appModel.recommendedPackDownloadController,
+      ),
+    ),
   );
 }
 

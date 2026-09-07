@@ -18,6 +18,7 @@ import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/fake_anki_repository.dart';
+import '../helpers/source_guard.dart';
 import '../helpers/test_platform_services.dart';
 
 /// TODO-897 widget 行为守卫：本地视频文件缺失（被移动/删除/盘未挂载）时，页面进入
@@ -171,9 +172,12 @@ void main() {
   });
 
   // BUG-2229：缺失态是**没有视频内顶栏**的（没有 controller ⇒ media_kit controls
-  // 根本没挂载），本页又有意不挂 AppBar（BUG-102）。所以正文里的「返回」按钮是唯一
-  // 退出入口；桌面端没有系统返回键，少了它用户进来就出不去。这条守卫盯的是「按钮
-  // 存在且真的退得出去」，不是「文案长什么样」。
+  // 根本没挂载），本页又有意不挂 AppBar（BUG-102）。所以正文里的「返回」按钮是缺失态
+  // 唯一**可见可点**的出口——鼠标用户在屏幕上找不到别的地方可按。
+  // 它不是唯一的退出**路径**：PopScope 在 _buildScaffold 之外（系统返回键一直通），
+  // globalBack 也被刻意分流在 controller == null 那道门之前（Esc / 手柄 B 一直通）。
+  // 下面第二条用例把后者钉住，免得有人把那条分流当成多余删掉。
+  // 这条守卫盯的是「按钮存在且真的退得出去」，不是「文案长什么样」。
   testWidgets('missing state offers a working back button (BUG-2229)',
       (WidgetTester tester) async {
     const String missing = r'D:\does\not\exist\gone.mp4';
@@ -198,7 +202,7 @@ void main() {
     await tester.tap(find.text(t.dialog_cancel));
     await drive(tester);
 
-    // 正文里必须有返回入口——缺失态此时没有任何其它出口。
+    // 正文里必须有返回入口——鼠标用户在缺失态看得到的只有这一个。
     final Finder backButton = find.widgetWithText(TextButton, t.back);
     expect(backButton, findsOneWidget);
 
@@ -210,5 +214,34 @@ void main() {
     expect(find.text('shelf-placeholder'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  // 缺失态下 Esc 也必须退得出去 —— 这里用源码守卫，不是行为用例。
+  //
+  // 不变式本身成立：本页键盘主通道把 globalBack **刻意**分流在 `controller == null`
+  // 那道门之前（加载态 / 缺失态下 controller 恒为 null，跟着整表被挡住就等于 Esc
+  // 不再走本页阶梯）。但在 BUG-2229 之前没有任何测试钉它，而本 PR 的初稿注释还把它
+  // 说成「不存在」——下一个人照注释办事，很可能把那条分流当多余删掉，删完全绿。
+  //
+  // 为什么不写成 widget 行为用例：本文件的 harness 是最小 MaterialApp，没有 app 根部
+  // 的全局快捷键层，页面自身的 Focus 又是 canRequestFocus:false / skipTraversal，
+  // 按键在这里根本没有接收者（实测：发 Esc 后页面仍在）。硬凑一个能收键的壳，测的
+  // 就是那个壳而不是真接线。源码守卫是这条不变式在单测层最强的可落地形式。
+  test('globalBack 必须分流在 controller == null 之前（缺失态/加载态的键盘出口）', () {
+    final File f = File('lib/src/pages/implementations/video_fushi_page.dart');
+    expect(f.existsSync(), isTrue, reason: '守卫目标文件不在了');
+    final String src = maskComments(f.readAsStringSync());
+
+    const String branch = 'if (action == ShortcutAction.globalBack) {';
+    const String gate = 'if (controller == null) return false;';
+    final int branchAt = src.indexOf(branch);
+    final int gateAt = src.indexOf(gate);
+    expect(branchAt, greaterThan(-1),
+        reason: 'globalBack 的分流没了：缺失态/加载态下 Esc 会跟着整表被 controller '
+            '门挡住，键盘和手柄都退不出去');
+    expect(gateAt, greaterThan(-1), reason: 'controller 门改写了，守卫需更新');
+    expect(branchAt, lessThan(gateAt),
+        reason: 'globalBack 必须排在 controller == null 之前——它的执行体是本页的'
+            '逐级退出阶梯，整条不碰播放器，没有理由被播放器就绪与否挡住');
   });
 }
