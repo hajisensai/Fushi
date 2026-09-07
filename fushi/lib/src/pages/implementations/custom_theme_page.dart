@@ -1137,7 +1137,10 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
                   ),
                   decoration: BoxDecoration(
                     color: cs.primary,
-                    borderRadius: BorderRadius.circular(20),
+                    // 预览里的「按钮」要长得跟 app 真按钮一样，所以走共享控件
+                    // 同一枚半径 token（FushiButton 用的也是 controlRadius）。
+                    // 写死 20 会让预览展示一个 app 里并不存在的形状。
+                    borderRadius: tokens.radii.controlRadius,
                   ),
                   child: Text(
                     t.theme_preview_button,
@@ -1331,7 +1334,8 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
       duration: fushiMd3StateDuration,
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(8),
+        // 选中环走共享半径 token（此前写死 8，不在 app 的半径尺度上）。
+        borderRadius: FushiBorderRadius.group,
         border: Border.all(
           width: 2,
           color: on ? appCs.inverseSurface : Colors.transparent,

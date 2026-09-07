@@ -1142,6 +1142,39 @@ void main() {
               'reliably available there, so it uses raw fontSize + ColorScheme '
               'roles, the same reviewed startup-chrome exception class as the '
               'data-root migration overlay and the main.dart splash branches.',
+      // BUG-2166 批：桌面端阅读器 chrome 改 ッツ 形态时，原本长在
+      // reader_fushi/chrome.part.dart 里的那几块（工具栏 / 状态行 / 画廊 /
+      // 统计浮层 / 有声书面板）被拆成 lib/src/reader/ 下的独立文件。豁免随搬运
+      // 延伸过去，与父条目 chrome.part.dart 同一个「reader content / 阅读器
+      // chrome」类：这些面活在阅读面自己的尺度上（字号与顶部进度胶囊
+      // kTopProgressFontSize 成一族），不跟随 app 全局 MD3 排版。
+      'lib/src/reader/reader_desktop_chrome.dart':
+          'Reader toolbar typography lives on the reading surface scale '
+              '(kReaderDesktopHeaderTitleFontSize, a named sibling of '
+              'kTopProgressFontSize), not the app type roles — same reviewed '
+              'exception class as reader_fushi/chrome.part.dart.',
+      'lib/src/reader/reader_status_footer.dart':
+          'Status strip font size is kReaderStatusFooterFontSize == '
+              'kTopProgressFontSize: the footer must match the top progress '
+              'pill exactly — same reviewed exception class as '
+              'reader_fushi/chrome.part.dart.',
+      'lib/src/reader/reader_gallery_page.dart':
+          'Thumbnail grid is image content: the placeholder surface and the '
+              'thumbnail corner radii size to the image cells, not to page '
+              'chrome — same reviewed exception class as '
+              'reader_fushi/chrome.part.dart.',
+      'lib/src/reader/reader_audiobook_panel.dart':
+          'Audiobook cue list is dense reader content (tonal cue track + cue '
+              'row corners) — same reviewed exception class as '
+              'reader_fushi/chrome.part.dart.',
+      'lib/src/reader/reader_statistics_dialog.dart':
+          'Reading-session metric bars are chart content (progress-track '
+              'surface + compact chart controls) — same reviewed exception '
+              'class as reading_statistics_page / video_statistics_page.',
+      'lib/src/media/audiobook/reader_quick_settings_sheet.dart':
+          'In-book quick settings sheet packs reader controls at reader '
+              'density — same reviewed exception class as '
+              'reader_fushi/chrome.part.dart.',
     };
 
     // TODO-2715 ①：豁免的**粒度**从「整份文件」收到「这份文件里被审过的那几个 token」。
@@ -1261,8 +1294,12 @@ void main() {
         'Card(',
         'ListTile('
       },
+      // BUG-2187 重设计后预览区改用的 token：SegmentedButton 的紧凑密度与
+      // 预览进度条的 tonal 轨道底色，都是「预览studio 展示的样例控件」而非页面
+      // chrome（原先的 surfaceContainerLow 已不复存在，留着会变死豁免）。
       'lib/src/pages/implementations/custom_theme_page.dart': <String>{
-        'surfaceContainerLow'
+        'VisualDensity.compact',
+        'surfaceContainerHighest'
       },
       'lib/src/pages/implementations/dictionary_popup_native.dart': <String>{
         'surfaceContainerHighest'
@@ -1303,10 +1340,32 @@ void main() {
       },
       'lib/src/pages/implementations/reader_fushi/chrome.part.dart': <String>{
         'BorderRadius.circular(',
-        'VisualDensity.compact',
+        // VisualDensity.compact 已随 BUG-2166 批的 chrome 拆分搬到
+        // lib/src/reader/reader_statistics_dialog.dart，本文件已无此 token，
+        // 留着就是死豁免（会给它无声开着回来的门）。
         'surfaceContainerHigh',
         'surfaceContainerHighest',
+        // BUG-2166 批：桌面 chrome 的抽屉/状态行底色用到低阶 tonal 面。
+        'surfaceContainerLow',
+        'surfaceContainerLowest',
         'fontSize:'
+      },
+      'lib/src/reader/reader_desktop_chrome.dart': <String>{'fontSize:'},
+      'lib/src/reader/reader_status_footer.dart': <String>{'fontSize:'},
+      'lib/src/reader/reader_gallery_page.dart': <String>{
+        'BorderRadius.circular(',
+        'surfaceContainerHighest'
+      },
+      'lib/src/reader/reader_audiobook_panel.dart': <String>{
+        'BorderRadius.circular(',
+        'surfaceContainerHighest'
+      },
+      'lib/src/reader/reader_statistics_dialog.dart': <String>{
+        'VisualDensity.compact',
+        'surfaceContainerHighest'
+      },
+      'lib/src/media/audiobook/reader_quick_settings_sheet.dart': <String>{
+        'VisualDensity.compact'
       },
       'lib/src/pages/implementations/reader_fushi/lyrics.part.dart': <String>{
         'fontSize:'
@@ -2733,10 +2792,13 @@ void main() {
     final String source = File(
       'lib/src/pages/implementations/custom_theme_page.dart',
     ).readAsStringSync();
+    // 锚点随 BUG-2187 的自定义主题重设计更新：预览卡不再收 ColorScheme 参数
+    // （改从 _scheme 取），后继函数由 _swatch 变成 _buildReaderPreview。
+    // 守的不变式没变：预览卡走共享 FushiCard 壳，不得自开裸 Card。
     final String previewCard = _functionSource(
       source,
-      'Widget _buildPreviewCard(ColorScheme cs)',
-      'Widget _swatch(',
+      'Widget _buildPreviewCard()',
+      'Widget _buildReaderPreview(',
     );
     expect(previewCard, contains('FushiCard('));
     final String normalized = _withoutSharedComponentNames(previewCard);
@@ -2785,10 +2847,13 @@ void main() {
     final String source = File(
       'lib/src/pages/implementations/custom_theme_page.dart',
     ).readAsStringSync();
+    // 结束锚点随 BUG-2187 重设计更新：_importTheme 之后紧接的已不是
+    // _buildPreviewCard 而是 build()。守的不变式没变：导入弹窗走共享
+    // FushiDialogFrame + FushiModalSheetFrame，不得回退到 adaptiveAlertDialog。
     final String importDialog = _functionSource(
       source,
       'Future<void> _importTheme()',
-      '  Widget _buildPreviewCard(ColorScheme cs)',
+      '  Widget build(BuildContext context)',
     );
 
     expect(importDialog, contains('FushiDialogFrame('));

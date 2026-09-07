@@ -226,9 +226,10 @@ void main() {
       expect(build.contains('Focus(') || build.contains('canRequestFocus'),
           isFalse,
           reason: '纯指针面，不进焦点遍历池（TODO-700 不变式）');
+      // 钉「两行相邻且顺序对」，不钉缩进宽度：Stack 外面多包一层 formatter 就会
+      // 把绝对缩进从 20 改成 22，而绘制顺序这个不变式一点没变。
       expect(
-        src.contains('_buildStatusFooter(),\n'
-            '                    buildDictionary(),'),
+        RegExp(r'_buildStatusFooter\(\),\n *buildDictionary\(\),').hasMatch(src),
         isTrue,
         reason: '状态行必须排在词典弹层 / 底栏之前，让它们盖在其上',
       );

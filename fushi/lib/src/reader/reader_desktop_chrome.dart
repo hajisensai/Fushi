@@ -25,6 +25,13 @@ const double kReaderDesktopHeaderHeight = 48;
 /// 悬浮 chrome 收起时顶边悬停热区高度（逻辑 px）：鼠标移进即唤出工具栏。
 const double kReaderHoverRevealStripHeight = 6;
 
+/// 工具栏书名字号（逻辑 px）。阅读器 chrome 的排版活在**阅读面自己的尺度**上，
+/// 不跟随 app 全局 MD3 排版令牌——它要和顶部进度胶囊
+/// （[kTopProgressFontSize] = 12）、底部状态行（[kReaderStatusFooterFontSize]）
+/// 成一族，比正文小一档而比进度胶囊大一档。具名而不写死数字，是为了让
+/// md3_design_system_static_test 的豁免有个可指的真相源。
+const double kReaderDesktopHeaderTitleFontSize = 14;
+
 /// 右侧抽屉宽度（逻辑 px）。窄窗口下由 [showReaderSideSheet] 收窄到留出 48px 空白。
 const double kReaderSideSheetWidth = 400;
 
@@ -146,7 +153,7 @@ class ReaderDesktopHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final TextStyle titleStyle = TextStyle(
-      fontSize: 14,
+      fontSize: kReaderDesktopHeaderTitleFontSize,
       fontWeight: FontWeight.w600,
       color: textColor.withValues(alpha: 0.85),
       height: 1.0,

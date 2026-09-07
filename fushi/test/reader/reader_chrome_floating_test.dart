@@ -195,12 +195,24 @@ void main() {
     final String src = readReaderPageSource();
 
     test('reserve truth source: _readerTopOffset uses _topProgressReserve', () {
-      expect(
-        src.contains(
-            '_stableTopInset + _macosWindowTitlebarInset + _topProgressReserve'),
-        isTrue,
-        reason: '顶部预留必须经派生 getter（关进度回收空白），并避开 macOS 拖拽区',
+      // 按项断言而不是钉整行字面串：BUG-2166 批给桌面 ッツ 顶栏加了
+      // _desktopHeaderReserve，四项相加后 formatter 折了行，单行串就永远对不上。
+      // 顺手把新项也纳入守卫——否则谁把它从 _readerTopOffset 里删掉都没人管。
+      final String topOffset = _slice(
+        src,
+        '  double get _readerTopOffset =>',
+        '  double get _readerBottomReserve =>',
       );
+      for (final String term in <String>[
+        '_stableTopInset',
+        '_macosWindowTitlebarInset',
+        '_topProgressReserve',
+        '_desktopHeaderReserve',
+      ]) {
+        expect(topOffset.contains(term), isTrue,
+            reason: '顶部预留必须经派生 getter（关进度回收空白 / 桌面顶栏挤压），'
+                '并避开 macOS 拖拽区：缺 $term');
+      }
       expect(
         src.contains('_readerBottomReserve =>\n'
             '      _bottomChromeReserve + _statusFooterReserve + _stableBottomInset'),
