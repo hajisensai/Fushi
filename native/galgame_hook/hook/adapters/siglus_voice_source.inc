@@ -151,7 +151,7 @@ bool TryHookSiglusVoiceSource() {
     g_siglus_voice_source_native_ecx = true;
     g_siglus_native_source_layout = {
         static_cast<uint32_t>(base + profile.payload_return_rva),
-        static_cast<uint32_t>(base + profile.ogg_vtable_rva)};
+        static_cast<uint32_t>(base + profile.ogg_vtable_rva), profile.frame};
     g_siglus_voice_source_target = reinterpret_cast<void*>(base + profile.ogg_open_rva);
     return InstallSiglusVoiceSourceHook();
   }

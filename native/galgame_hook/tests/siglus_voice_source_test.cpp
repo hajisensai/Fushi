@@ -336,7 +336,7 @@ void TestProductionNakedSource() {
   while (g_siglus_voice_source_tasks.TryPop(&task)) {}
 }
 
-void TestProductionNativeSource() {
+void TestProductionNativeSource(SiglusNativeResourceFrame resource_frame) {
   alignas(8) uint32_t frame[128] = {};
   uint32_t reader[4] = {0x7000};
   fake_frame = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&frame[100]));
@@ -346,13 +346,18 @@ void TestProductionNativeSource() {
   fake_path = fake_frame - 0xc8;
   fake_offset = 0x100; fake_length = 0x40;
   frame[96] = fake_ebx;
-  frame[104] = frame[36] = 100100297;
-  frame[29] = fake_reader;
-  frame[67] = fake_offset; frame[34] = fake_length;
+  const bool compact = resource_frame == SiglusNativeResourceFrame::kStack118;
+  const uint32_t key_copy_word = compact ? 35u : 36u;
+  const uint32_t reader_word = compact ? 30u : 29u;
+  const uint32_t offset_word = compact ? 79u : 67u;
+  const uint32_t length_word = compact ? 61u : 34u;
+  frame[104] = frame[key_copy_word] = 100100297;
+  frame[reader_word] = fake_reader;
+  frame[offset_word] = fake_offset; frame[length_word] = fake_length;
   auto* text = reinterpret_cast<wchar_t*>(&frame[50]);
   wcscpy_s(text, 8, L"D:\\x"); frame[54] = 4; frame[55] = 7;
   g_siglus_voice_source_native_ecx = true;
-  g_siglus_native_source_layout = {0, 0x7000};
+  g_siglus_native_source_layout = {0, 0x7000, resource_frame};
   g_orig_SiglusVoiceSource = reinterpret_cast<void*>(&OriginalSource);
   g_siglus_voice_source_enabled.store(true);
   SiglusVoiceSourceTask task;
@@ -365,12 +370,22 @@ void TestProductionNativeSource() {
   Check(original_esi == fake_esi && original_ebx == fake_ebx);
   Check(before_esp == after_esp && (original_flags & 0x401) == 0x401);
   Check(last_error == 43);
-  const uint32_t checked_words[] = {96, 104, 36, 29, 67, 34};
+  const uint32_t checked_words[] = {
+      96, 104, key_copy_word, reader_word, offset_word, length_word};
   for (const uint32_t index : checked_words) {
     ++frame[index]; InvokeSource();
     Check(!g_siglus_voice_source_tasks.TryPop(&task));
     --frame[index];
   }
+  // A valid call from one compiler frame must not enter through the other's
+  // admitted layout, even though its reader ABI and original stack are equal.
+  g_siglus_native_source_layout.frame = compact
+      ? SiglusNativeResourceFrame::kStack120
+      : SiglusNativeResourceFrame::kStack118;
+  InvokeSource(); Check(!g_siglus_voice_source_tasks.TryPop(&task));
+  g_siglus_native_source_layout.frame = static_cast<SiglusNativeResourceFrame>(255);
+  InvokeSource(); Check(!g_siglus_voice_source_tasks.TryPop(&task));
+  g_siglus_native_source_layout.frame = resource_frame;
   ++fake_ebx; InvokeSource();
   Check(!g_siglus_voice_source_tasks.TryPop(&task)); --fake_ebx;
   reader[0] = 0; InvokeSource();
@@ -430,7 +445,10 @@ int main() {
   TestPureSource();
   TestStablePaths(); TestCwdChange();
 #if defined(_M_IX86)
-  TestProductionNakedSource(); TestProductionNativeSource(); TestInstallation();
+  TestProductionNakedSource();
+  TestProductionNativeSource(SiglusNativeResourceFrame::kStack120);
+  TestProductionNativeSource(SiglusNativeResourceFrame::kStack118);
+  TestInstallation();
 #else
   Check(!TryHookSiglusVoiceSource()); Check(!IsSiglusVoiceSourceInstalled());
   ProcessSiglusVoiceSourceTasks(); ShutdownSiglusVoiceSource();
