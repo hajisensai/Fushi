@@ -461,6 +461,11 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     try {
       await _init();
     } catch (e, st) {
+      // release 版 Windows 上 stdout 无人接收，debugPrint 等于丢弃——而 BUG-2230
+      // 的立论就是「异常无归宿」。给了用户归宿（失败终态）就不能把诊断也扔了：
+      // WebViewEnvironment.create 失败 / 资源缺失 / cookie 拷贝 IO 错这三类根因
+      // 只有落进 error_log 才区分得出来。
+      ErrorLogService.instance.log('web_video', 'init failed: $e', st);
       debugPrint('WebVideoFushiPage init failed: $e\n$st');
       if (!mounted) return;
       setState(() => _failReason = t.video_load_failed_generic);
