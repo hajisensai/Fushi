@@ -57,16 +57,23 @@ inputs:
 runs:
   using: composite
   steps:
+    # opensubtitles_default_key.dart 入库的是**空占位**（key = ''）且**不在**
+    # fushi/analysis_options.yaml 的 analyzer.exclude 里，所以写进去的必须是
+    # **单引号** Dart 字面量：json.dumps 那种双引号会触发 prefer_single_quotes
+    # （info），而 CI 的 analyze 门把 info 也当失败（exit 1）——本地
+    # `flutter analyze` 看到的是入库的单引号占位，所以本地恒绿、只有 CI 红。
+    # 下面几步的 google_oauth_secret.dart / log_upload_secret.dart 能用双引号，
+    # 只因为那两个文件在 exclude 列表里；别把它们的写法照抄到不在 exclude 的
+    # 文件上。转义（\ ' 与 $ 三者，$ 在单引号串里仍是插值符）交给独立脚本，
+    # 免去 YAML→bash→sed 三层转义。守卫：
+    # fushi/test/tools/baked_secret_stub_quotes_guard_test.dart
     - name: Provide OpenSubtitles API key stub
       shell: bash
       env:
         OPENSUBTITLES_API_KEY: ${{ inputs.opensubtitles-api-key }}
       run: |
         dst=fushi/lib/src/media/video/subtitle/opensubtitles_default_key.dart
-        if [ -n "$OPENSUBTITLES_API_KEY" ]; then
-          key_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["OPENSUBTITLES_API_KEY"]).replace("$", "\\$"))')"
-          printf 'const String kBuiltinOpenSubtitlesApiKey = %s;\n' "$key_literal" > "$dst"
-        fi
+        python3 "$GITHUB_ACTION_PATH/write_opensubtitles_key.py" "$dst"
     # google_oauth_secret.dart 是 gitignored 的（真值只存在于仓库 secret 与本机），
     # 所以这里连占位都可能不存在，缺文件时才从 .example.dart 复制。
     - name: Provide gitignored Google OAuth secret stub
