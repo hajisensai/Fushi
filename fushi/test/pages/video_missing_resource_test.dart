@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
@@ -90,6 +91,24 @@ void main() {
     ));
   }
 
+  final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
+
+  /// BUG-2229 用：把视频页 **push 在一个占位根路由之上**，这样 `Navigator.pop`
+  /// 有东西可退——只有可退的路由栈才能验「返回按钮真的退得出去」。
+  Widget wrapPushable() => ProviderScope(
+        overrides: <Override>[
+          platformServicesProvider.overrideWithValue(platformServices),
+          ankiRepositoryProvider.overrideWithValue(ankiRepository),
+          appProvider.overrideWith((ref) => appModel),
+        ],
+        child: TranslationProvider(
+          child: MaterialApp(
+            navigatorKey: navKey,
+            home: const Scaffold(body: Text('shelf-placeholder')),
+          ),
+        ),
+      );
+
   Widget wrap(String bookUid) => ProviderScope(
         overrides: <Override>[
           platformServicesProvider.overrideWithValue(platformServices),
@@ -148,6 +167,48 @@ void main() {
 
     // 卸载页面让其 dispose 干净跑完（appModel / prefs 由 GC 回收，不显式 dispose——
     // 页面生命周期已 dispose 关联监听，显式再 dispose 会触发 used-after-dispose）。
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  // BUG-2229：缺失态是**没有视频内顶栏**的（没有 controller ⇒ media_kit controls
+  // 根本没挂载），本页又有意不挂 AppBar（BUG-102）。所以正文里的「返回」按钮是唯一
+  // 退出入口；桌面端没有系统返回键，少了它用户进来就出不去。这条守卫盯的是「按钮
+  // 存在且真的退得出去」，不是「文案长什么样」。
+  testWidgets('missing state offers a working back button (BUG-2229)',
+      (WidgetTester tester) async {
+    const String missing = r'D:\does\not\exist\gone.mp4';
+    await insertVideoBook(bookUid: 'video/missing-back', videoPath: missing);
+
+    await tester.pumpWidget(wrapPushable());
+    await tester.pump();
+    unawaited(navKey.currentState!.push<void>(MaterialPageRoute<void>(
+      builder: (BuildContext _) => VideoFushiPage(
+        bookUid: 'video/missing-back',
+        repo: VideoBookRepository(db),
+      ),
+    )));
+    await tester.pump();
+    await drive(tester);
+
+    expect(find.byType(VideoFushiPage), findsOneWidget);
+
+    // 首帧的缺失提示对话框盖在正文之上，先按它的「取消」落到缺失态正文
+    // （对话框的 cancel 分支就是「停在缺失态」）。
+    expect(find.text(t.dialog_cancel), findsOneWidget);
+    await tester.tap(find.text(t.dialog_cancel));
+    await drive(tester);
+
+    // 正文里必须有返回入口——缺失态此时没有任何其它出口。
+    final Finder backButton = find.widgetWithText(TextButton, t.back);
+    expect(backButton, findsOneWidget);
+
+    // 点它必须真的退出视频页，回到占位根路由。
+    await tester.tap(backButton);
+    await drive(tester);
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byType(VideoFushiPage), findsNothing);
+    expect(find.text('shelf-placeholder'), findsOneWidget);
+
     await tester.pumpWidget(const SizedBox.shrink());
   });
 }

@@ -447,7 +447,24 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       WebVideoFushiPage.debugSelectShaderTier = _selectShaderTier;
       return true;
     }());
-    unawaited(_init());
+    // BUG-2230：`_init` 的异常必须有归宿。它是 fire-and-forget，内部又有几处**真会抛**
+    // 的 await（`rootBundle.loadString` 资源缺失、`WebViewEnvironment.create` 在 WebView2
+    // Runtime 缺失 / 用户数据目录被占用时直接抛、`_copyLoginCookiesFromBuiltin` 的 IO）。
+    // 从前抛出后 `_failReason` 恒 null、`_row` 恒 null ⇒ 页面永久停在**无 AppBar 的转圈**
+    // 分支上，桌面端没有系统返回键 ⇒ 用户进来就出不去（与 BUG-2229 同构）。
+    unawaited(_initGuarded());
+  }
+
+  /// [_init] 的异常边界：任何未预期失败都落进已有的**带 AppBar** 失败态，
+  /// 而不是把用户锁在无出口的加载态里。
+  Future<void> _initGuarded() async {
+    try {
+      await _init();
+    } catch (e, st) {
+      debugPrint('WebVideoFushiPage init failed: $e\n$st');
+      if (!mounted) return;
+      setState(() => _failReason = t.video_load_failed_generic);
+    }
   }
 
   @override
@@ -1576,7 +1593,14 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     final VideoBookRow? row = _row;
     final UnmodifiableListView<UserScript>? scripts = _userScripts;
     if (row == null || scripts == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      // BUG-2230：加载态也必须带 AppBar（= 返回键）。出口不是内容的一部分、不随内容
+      // 存亡（漫画页 manga_fushi_page 早已是这个口径）：本页的正常退出入口在
+      // [_buildAppBar]，而那只挂在下面的**就绪**分支上；WebView2 环境创建 / 资源加载
+      // 慢或悬挂时，桌面端没有系统返回键，用户就被钉在这个转圈上。
+      return Scaffold(
+        appBar: AppBar(),
+        body: const Center(child: CircularProgressIndicator()),
+      );
     }
     // 网页流媒体页属于视频模块，同样是**窗口全屏的合法宿主**（见
     // [WindowFullscreenHosts]）。上面两条早退分支（加载失败 / 尚未就绪）故意不声明：
