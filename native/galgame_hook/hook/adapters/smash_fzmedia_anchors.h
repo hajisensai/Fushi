@@ -564,11 +564,13 @@ inline constexpr char kGlyphComponentMeshTypeNamePrefix[] =
 inline constexpr uint32_t kMinimumConstructorCallsInMeshBuild = 5u;
 inline constexpr uint32_t kMaxLayerFieldOffset = 0x1000u;
 
-// lea rax,[rip+rel32] ; mov [rsi],rax
-inline constexpr uint8_t kCtorVtableStoreBytes[] = {0x48, 0x8D, 0x05, 0x00, 0x00,
-                                                    0x00, 0x00, 0x48, 0x89, 0x06};
-inline constexpr uint8_t kCtorVtableStoreMask[] = {0xff, 0xff, 0xff, 0x00, 0x00,
-                                                   0x00, 0x00, 0xff, 0xff, 0xff};
+// lea rax,[rip+rel32]  (vtable 载入；构造函数里 lea 与 mov [this],rax 存储之间常隔着
+// 别的 mov——真实 GlyphComponentMesh ctor 两者相距 18 字节——所以只按 lea 命中函数，
+// 存储由 FunctionStoresRaxToThis 另行校验，不再要求两条指令相邻。)
+inline constexpr uint8_t kCtorVtableLeaBytes[] = {0x48, 0x8D, 0x05,
+                                                  0x00, 0x00, 0x00, 0x00};
+inline constexpr uint8_t kCtorVtableLeaMask[] = {0xff, 0xff, 0xff,
+                                                 0x00, 0x00, 0x00, 0x00};
 // mov rax,[rdx+d8] ; movzx r10d,word [rax+r8*2]
 inline constexpr uint8_t kLayoutTextIndexBytes[] = {0x48, 0x8B, 0x42, 0x00, 0x46,
                                                     0x0F, 0xB7, 0x14, 0x40};
@@ -600,8 +602,8 @@ inline constexpr uint8_t kLayoutScaleLoadBytes[] = {0xF3, 0x0F, 0x10, 0x47, 0x00
 inline constexpr uint8_t kLayoutScaleMulBytes[] = {0xF3, 0x0F, 0x59, 0x47, 0x00};
 inline constexpr uint8_t kLayoutScaleMask[] = {0xff, 0xff, 0xff, 0xff, 0x00};
 
-inline constexpr Pattern kCtorVtableStorePattern = {
-    kCtorVtableStoreBytes, kCtorVtableStoreMask, sizeof(kCtorVtableStoreBytes)};
+inline constexpr Pattern kCtorVtableLeaPattern = {
+    kCtorVtableLeaBytes, kCtorVtableLeaMask, sizeof(kCtorVtableLeaBytes)};
 inline constexpr Pattern kLayoutTextIndexPattern = {
     kLayoutTextIndexBytes, kLayoutTextIndexMask, sizeof(kLayoutTextIndexBytes)};
 inline constexpr Pattern kLayoutTextLengthPattern = {
@@ -750,20 +752,47 @@ inline uint32_t FindUniqueVtable(const ImageView& image, uint32_t col_rva) {
   return found;
 }
 
-// 唯一含 `lea rax,[rip+vtable]; mov [rsi],rax` 的函数。
+// 函数体（含 chained 片段）内是否有 `mov [reg], rax` 把 rax 存到 this(+0)：
+// REX.W(0x48) 0x89 modrm，modrm = 00 000 bbb（mod=0 无 disp、reg 字段=rax、
+// bbb=基址寄存器，排除 4=SIB / 5=RIP-disp32）。这是 MSVC ctor 装 vtable 的形状，
+// 真实 ctor 用 [rsi]（bbb=6），但不同类可能用 [rcx]/[rdi] 等，故按寄存器集合判。
+inline bool FunctionStoresRaxToThis(const ImageView& image,
+                                    uint32_t root_begin) {
+  bool found = false;
+  ForEachFunctionFragment(
+      image, root_begin, [&](uint32_t begin, uint32_t end) {
+        for (uint32_t rva = begin; rva + 3u <= end; ++rva) {
+          const uint8_t* b = image.base + rva;
+          if (b[0] != 0x48u || b[1] != 0x89u) continue;
+          const uint8_t modrm = b[2];
+          const uint8_t mod = static_cast<uint8_t>(modrm >> 6u);
+          const uint8_t reg = static_cast<uint8_t>((modrm >> 3u) & 0x7u);
+          const uint8_t rm = static_cast<uint8_t>(modrm & 0x7u);
+          if (mod == 0u && reg == 0u && rm != 4u && rm != 5u) {
+            found = true;
+            return false;
+          }
+        }
+        return true;
+      });
+  return found;
+}
+
+// 唯一「含 `lea rax,[rip+vtable]`（任意距离）且把 rax 存回 this(+0)」的函数。
+// 不要求 lea 与存储相邻：真实构造函数里两者之间还夹着别的成员初始化。
 inline uint32_t FindUniqueConstructor(const ImageView& image,
                                       uint32_t vtable_rva) {
   FunctionTally tally;
   for (size_t s = 0u; s < image.section_count; ++s) {
     const ImageSection& section = image.sections[s];
     if (!ImageView::IsExecutableSection(&section) ||
-        section.size < kCtorVtableStorePattern.size) {
+        section.size < kCtorVtableLeaPattern.size) {
       continue;
     }
     const uint8_t* bytes = image.base + section.rva;
-    for (uint32_t off = 0u; off + kCtorVtableStorePattern.size <= section.size;
+    for (uint32_t off = 0u; off + kCtorVtableLeaPattern.size <= section.size;
          ++off) {
-      if (!MatchesAt(bytes + off, kCtorVtableStorePattern)) continue;
+      if (!MatchesAt(bytes + off, kCtorVtableLeaPattern)) continue;
       int32_t rel = 0;
       std::memcpy(&rel, bytes + off + 3u, sizeof(rel));
       const int64_t target = static_cast<int64_t>(section.rva + off) + 7 + rel;
@@ -771,6 +800,7 @@ inline uint32_t FindUniqueConstructor(const ImageView& image,
       const uint32_t function =
           FindContainingFunctionBegin(image, section.rva + off);
       if (function == 0u) return 0u;
+      if (!FunctionStoresRaxToThis(image, function)) continue;
       tally.Add(function);
     }
   }
