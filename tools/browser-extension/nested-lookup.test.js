@@ -4,25 +4,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-// BUG-1279 回归守卫：浏览器扩展里的「嵌套查词」（在查词弹窗内点释义里的词 / 词典交叉引用
-// a[href] → popup.js handleGlossaryAnchorClick → callHandler('onLinkClick') → bridge-shim →
-// content.js __fushiOnLinkClick → 重发 lookup → 原地重渲染同一个弹窗）。
-//
-// 根因（修复前）：__fushiOnLinkClick 调 fushiRender(json, termLen, theme) 时**不传 anchorRect**，
-// 而 fushiRender 是「首次查词」的完整渲染路径——它每次都会
-//   ① 用**新词长度** termLen 去截**宿主页原文的旧选区**（fushiSelectionRects），把原文高亮
-//      覆盖层重画成一段与原文词无关的错误范围；
-//   ② 拿这段错误几何当锚点重新 place 弹窗，把弹窗从用户眼下的位置搬回原文旁边；
-//   ③ 把 host.opacity 压 0 再淡入。
-// 三者叠加 = 用户报的「嵌套查词把旧弹窗关掉了」+「弹窗跳位置」+「原文高亮乱变」。
-//
-// 正确语义（与 yomitan 单弹窗内导航、与本实现「咱们没有前进后退·咱们是嵌套查词」的既定设计
-// 一致）：嵌套查词只换弹窗**内容**，弹窗位置、尺寸夹取、入场淡入、原文高亮一律**原样保持**——
-// 原文里被查的词根本没变，没有任何理由重算它的几何。
-//
-// 本测试在受控 vm 里按 manifest 顺序真加载 vendor/popup.js + content.js，用带 shadow /
-// composedPath / closest 语义的 DOM shim 驱动真实的 fushiSendLookup / __fushiOnLinkClick /
-// popup.js document click 派发，断言上述契约。
+// 父层保留契约：真实加载共享 renderer、桥与子层宿主，打开独立子 iframe。
+// 父层 DOM、滚动、几何和原文高亮均不能因压栈被重建；过期回复不能复活关掉的层。
 
 const POPUP = path.join(__dirname, 'vendor', 'popup.js');
 const CONTENT = path.join(__dirname, 'content.js');
@@ -77,6 +60,7 @@ function makeEl(tag, doc) {
     parentElement: null,
     shadowRoot: null,
     listeners,
+    contentWindow: { postMessage() {} },
     rect: { left: 0, top: 0, right: 0, bottom: 0, width: 100, height: 20 },
     scrollByCalls: [],
     get className() { return Array.from(el.classes).join(' '); },
@@ -286,6 +270,7 @@ function loadWorld(opts) {
   // 提供的顶层纯函数（parseWebVtt / findCueIndexAt / pickPrimaryCueTrack…）。沙箱漏装它就与
   // 真实运行环境不符，真代码没问题也会假红。
   vm.runInContext(fs.readFileSync(ADAPTERS, 'utf8'), sandbox, { filename: 'subtitle-adapters.js' });
+  vm.runInContext(fs.readFileSync(path.join(__dirname, 'nested-popup-host.js'), 'utf8'), sandbox);
   vm.runInContext(fs.readFileSync(CONTENT, 'utf8'), sandbox, { filename: 'content.js' });
 
   const flushRaf = () => { while (rafQueue.length) rafQueue.shift()(); };
@@ -386,7 +371,9 @@ test('嵌套查词不得关掉弹窗：__fushiOnLinkClick 后 host 仍在文档�
   assert.strictEqual(before.host.removed, undefined,
       '嵌套查词绝不能移除弹窗 host（用户报「把旧弹窗关掉」）');
   assert.strictEqual(world.windowObj.__fushiRoot, before.host.shadowRoot,
-      '嵌套查词必须复用同一个 shadow root（原地重渲染，不重建弹窗）');
+      '父层必须保留自己的 shadow root');
+  assert.strictEqual(world.body.children.filter(c => c.tagName === 'IFRAME').length, 1,
+      '子词必须在独立 iframe 展示，不能替换父层');
   // 「旧弹窗被关掉」的直接视觉来源：重新走一遍入场淡入（opacity 压 0 再翻 1）。内容原地
   // 替换绝不该让弹窗先消失一次。
   const opacity = world.writesOn(before.host, ['opacity']).map((w) => w.v);
@@ -400,7 +387,7 @@ test('嵌套查词不得关掉弹窗：__fushiOnLinkClick 后 host 仍在文档�
       '嵌套查词不得把弹窗内容藏起来重新量尺寸，实际写入：' + JSON.stringify(vis));
 });
 
-test('嵌套查词必须原地：弹窗落点不得被重算搬回原文旁边', () => {
+test('打开子层时父弹窗落点不得被重算', () => {
   const world = loadWorld({ respond: lookupResponder(ENTRIES) });
   const src = makeSourceTextNode('日本語を勉強する', { left: 300, top: 400 });
   const before = openPopup(world, '日本語', src);
@@ -414,7 +401,7 @@ test('嵌套查词必须原地：弹窗落点不得被重算搬回原文旁边',
   // 重新定位（换个原文位置/换个内容高度就会真的跳走），假绿必须堵死。
   const moved = world.writesOn(before.host, ['left', 'top', 'maxHeight']);
   assert.deepStrictEqual(moved, [],
-      '嵌套查词不得重新定位弹窗（应原地换内容），实际写入：'
+      '嵌套查词不得重新定位父弹窗，实际写入：'
       + JSON.stringify(moved.map((w) => w.k + '=' + w.v)));
   assert.strictEqual(before.host.style.left, before.left, '弹窗横向落点必须原样保持');
   assert.strictEqual(before.host.style.top, before.top, '弹窗纵向落点必须原样保持');
@@ -437,7 +424,7 @@ test('嵌套查词不得重画原文高亮：原文词没变，高亮范围就�
       '嵌套查词不得把原文高亮按子词长度重截（3 字词被截成 2 字）');
 });
 
-test('嵌套查词后 hover 回父词仍能重查：去重状态跟着弹窗内容走', () => {
+test('嵌套后父层词条与去重身份保持，不被子词替换', () => {
   const world = loadWorld({ respond: lookupResponder(ENTRIES) });
   const src = makeSourceTextNode('日本語を勉強する', { left: 300, top: 400 });
   openPopup(world, '日本語', src);
@@ -451,8 +438,7 @@ test('嵌套查词后 hover 回父词仍能重查：去重状态跟着弹窗内�
   world.sent.length = 0;
   shiftHover(world, '日本語', src, 420, 410);
 
-  assert.ok(world.sent.some((m) => m.type === 'lookup' && m.term === '日本語'),
-      '弹窗内容已是子词时，Shift 悬停回父词必须能重查（同词去重状态必须随嵌套更新）');
+  assert.strictEqual(world.windowObj.lookupEntries[0].expression, '日本語');
 });
 
 test('请求在途时用户关掉了弹窗：嵌套结果丢弃，不得凭空弹回一个没落点的弹窗', () => {

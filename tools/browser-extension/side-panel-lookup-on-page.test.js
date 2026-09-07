@@ -42,6 +42,7 @@ function makeEl(tag) {
     value: '',
     dataset: {},
     children: [],
+    contentWindow: { postMessage() {} },
     parentNode: null,
     handlers: Object.create(null),
     style: { cssText: '', setProperty() {}, removeProperty() {}, getPropertyValue: () => '' },
@@ -202,6 +203,8 @@ function loadContent(lookupExtras, respondOverride) {
   vm.createContext(sandbox);
   vm.runInContext(DICT_MEDIA, sandbox, { filename: 'vendor/dict-media.js' });
   vm.runInContext(AUTO_READ, sandbox, { filename: 'auto-read.js' });
+  vm.runInContext(POPUP_SIZE, sandbox, { filename: 'popup-size.js' });
+  vm.runInContext(fs.readFileSync(path.join(__dirname, 'nested-popup-host.js'), 'utf8'), sandbox);
   vm.runInContext(CONTENT, sandbox, { filename: 'content.js' });
   return {
     sandbox, docListeners, sent, body, selection, rafs, bridgeCalls, played,
@@ -244,7 +247,7 @@ test('页面弹窗建立时绑定 ShadowRoot 交互，点击不泄漏给站点�
   assert.strictEqual(findById(h.body, 'hibiki-popup-host'), host);
 });
 
-test('正文 textSelected 经真实桥重查只替换内容，保留字幕来源与弹窗几何', async () => {
+test('正文 textSelected 经真实桥打开子层，保留父层字幕来源与弹窗几何', async () => {
   const h = loadContent();
   h.sandbox.window.fushiShowLookupFromSidePanel('世界', { startMs: 1000, endMs: 2000, text: '世界です' });
   const host = h.runPlacement(400, 300);
@@ -255,6 +258,7 @@ test('正文 textSelected 经真实桥重查只替换内容，保留字幕来源
   assert.strictEqual(h.sent.filter((m) => m.type === 'lookup').at(-1).term, '計画');
   assert.strictEqual(findById(h.body, 'hibiki-popup-host'), host);
   assert.strictEqual(h.sandbox.window.__fushiRoot, root);
+  assert.strictEqual(h.body.children.filter(node => node.tagName === 'IFRAME').length, 1);
   assert.strictEqual(host.style.left, left);
   assert.strictEqual(host.style.top, top);
   assert.strictEqual(vm.runInContext('fushiPendingCueWindow.text', h.sandbox), '世界です');

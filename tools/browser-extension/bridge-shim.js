@@ -139,7 +139,7 @@ window.flutter_inappwebview = {
         return Promise.resolve(null);
       case 'textSelected':
       case 'onLinkClick':
-        if (window.__fushiOnLinkClick) window.__fushiOnLinkClick(args[0]);
+        if (window.__fushiOnLinkClick) window.__fushiOnLinkClick(args[0], args[1], name === 'textSelected');
         return Promise.resolve(null);
       case 'tapOutside':
         if (window.__fushiOnTapOutside) window.__fushiOnTapOutside();
