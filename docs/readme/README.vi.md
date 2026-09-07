@@ -102,6 +102,8 @@ Fushi lưu trữ sách, từ điển, phông chữ, dữ liệu sách nói, vide
 
 Fushi được xây dựng dựa trên các dự án và hệ sinh thái sau:
 
+### Công cụ học tập và các dự án tham khảo
+
 | Dự án | Mô tả |
 |---|---|
 | [jidoujisho](https://github.com/arianneorpilla/jidoujisho) | Công cụ học tiếng Nhật chuyên sâu |
@@ -116,6 +118,48 @@ Fushi được xây dựng dựa trên các dự án và hệ sinh thái sau:
 | [ッツ Ebook Reader](https://github.com/ttu-ttu/ebook-reader) | Tham chiếu khả năng tương thích trình đọc, thống kê và đồng bộ |
 | [media_kit](https://github.com/media-kit/media-kit) | Framework phát video cho Flutter (lõi libmpv) |
 | [Niratan](https://github.com/W1ght/Niratan) | Bộ công cụ học ngôn ngữ chuyên sâu cho macOS |
+
+### Engine và thành phần native
+
+| Dự án | Mô tả |
+|---|---|
+| [LunaHook](https://github.com/HIllya51/LunaTranslator) | Engine hook văn bản galgame (DLL đi kèm, do injector nạp) |
+| [MinHook](https://github.com/TsudaKageyu/minhook) | Thư viện inline hook mà injector galgame sử dụng |
+| [libtorrent](https://github.com/arvidn/libtorrent) | Engine tải torrent tích hợp |
+| [mpv](https://github.com/mpv-player/mpv) | Lõi phát libmpv phía sau media_kit |
+| [FFmpeg](https://ffmpeg.org) | Phân tích media, cắt đoạn và trích xuất âm thanh |
+| [libplacebo](https://github.com/haasn/libplacebo) | Shader video GPU và tone mapping HDR |
+| [flutter_inappwebview](https://github.com/pichillilorenzo/flutter_inappwebview) | Engine WebView dựng trình đọc EPUB |
+| [ONNX Runtime](https://github.com/microsoft/onnxruntime) | Suy luận trên thiết bị cho nhận dạng giọng nói và OCR |
+| [zstd](https://github.com/facebook/zstd) · [xxHash](https://github.com/Cyan4973/xxHash) · [libdeflate](https://github.com/ebiggers/libdeflate) · [glaze](https://github.com/stephenberry/glaze) · [unordered_dense](https://github.com/martinus/unordered_dense) · [utf8proc](https://github.com/JuliaStrings/utf8proc) · [utfcpp](https://github.com/nemtrif/utfcpp) | Phụ thuộc của engine từ điển |
+
+### Mô hình chạy trên thiết bị
+
+| Dự án | Mô tả |
+|---|---|
+| [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) | Gói mô hình nhận dạng giọng nói Zipformer và bản dựng VAD |
+| [ReazonSpeech k2-v2](https://huggingface.co/reazon-research/reazonspeech-k2-v2) | Mô hình nhận dạng giọng nói tiếng Nhật |
+| [Omnilingual ASR](https://github.com/facebookresearch/omnilingual-asr) | Mô hình nhận dạng giọng nói CTC đa ngôn ngữ |
+| [Silero VAD](https://github.com/snakers4/silero-vad) | Mô hình phát hiện hoạt động giọng nói |
+| [manga-ocr](https://github.com/kha-white/manga-ocr) / [manga-ocr-onnx](https://huggingface.co/mayocream/manga-ocr-onnx) | Mô hình OCR cho manga |
+| [comic-text-and-bubble-detector](https://huggingface.co/ogkalu/comic-text-and-bubble-detector) | Mô hình phát hiện văn bản và bong bóng thoại trong manga |
+
+### Nguồn nội dung và tích hợp
+
+| Dự án | Mô tả |
+|---|---|
+| [Mihon](https://github.com/mihonapp/mihon) | Hệ sinh thái tiện ích nguồn manga |
+| [M-Extension-Server](https://github.com/kodjodevf/M-Extension-Server) | Runtime tiện ích mở rộng manga cho máy tính |
+| [aidoku-rs](https://github.com/Aidoku/aidoku-rs) | ABI runtime nguồn manga |
+| [asbplayer](https://github.com/asbplayer/asbplayer) | Tham khảo cầu nối phụ đề streaming cho tiện ích trình duyệt |
+| [Shoko Server](https://github.com/ShokoAnime/ShokoServer) | Tham khảo kiến trúc nhận dạng và thu thập dữ liệu anime |
+| [ReinaManager](https://github.com/huoshen80/ReinaManager) | Tham khảo kiến trúc thông tin thư viện galgame |
+| [AniDB](https://anidb.net) | Định danh anime, tập phim và tệp |
+| [TMDB](https://www.themoviedb.org) | Siêu dữ liệu và hình ảnh bổ sung |
+| [Jimaku](https://jimaku.cc) | Nguồn phụ đề tiếng Nhật |
+| [OpenSubtitles](https://www.opensubtitles.com) | Nguồn phụ đề |
+
+> Ứng dụng này sử dụng TMDB và các API của TMDB nhưng không được xác nhận, chứng nhận hay phê duyệt bởi TMDB.
 
 ## Giấy phép
 
