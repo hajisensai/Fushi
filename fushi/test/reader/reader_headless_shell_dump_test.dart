@@ -24,7 +24,7 @@ void main() {
     File('$tmp/fushi_shell_continuous.html').writeAsStringSync(continuous);
     File('$tmp/fushi_shell_fwd.html').writeAsStringSync(paginated);
     File('$tmp/fushi_shell_bwd.html').writeAsStringSync(paginated);
-    // BUG-2167：shell 已改成运行时工厂（`window.__fushiShells.<mode>(C)`），裸 shell 无法
+    // BUG-2205：shell 已改成运行时工厂（`window.__fushiShells.<mode>(C)`），裸 shell 无法
     // 自举；另写完整引擎产物（含学习单位 JS + `__fushiInstallShell`），探针按真实装配
     // 顺序 `__fushiInstallShell(C)` 安装后自动 boot initialize。
     File('$tmp/fushi_engine_paginated.html').writeAsStringSync(

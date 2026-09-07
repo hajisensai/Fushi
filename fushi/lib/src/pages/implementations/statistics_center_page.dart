@@ -109,7 +109,7 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
       final FushiDatabase db = appModel.database;
       final StatFacts facts = await loadStatFacts(db, activityLimit: 0);
       _daily = facts.daily;
-      // BUG-2178：同名 ≥2 本的 title 不进反查表（贴给任意一本都是错贴）。
+      // BUG-2216：同名 ≥2 本的 title 不进反查表（贴给任意一本都是错贴）。
       _bookKeyByTitle = uniqueBookKeyByTitle(facts.epubRows);
       _ambiguousBookTitles = ambiguousBookTitles(facts.epubRows);
       _epubUidByBookKey = <String, String>{

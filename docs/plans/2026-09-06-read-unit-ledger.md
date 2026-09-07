@@ -12,7 +12,7 @@
 
 ## 1. 与 Hoshi 的全部统计口径对照
 
-「现状」= 本文件写下时的 develop（含当日上午合入的 BUG-2167~2186 修复）；「新」= 本计划落地后。
+「现状」= 本文件写下时的 develop（含当日上午合入的 BUG-2205~2186 修复）；「新」= 本计划落地后。
 
 ### 1.1 字数
 
@@ -25,7 +25,7 @@
 | 跨会话重读 | 再计 | 再计 | 再计 | 再计 |
 | 跳转（目录 / 进度条 / 搜索 / 收藏） | `flushStats` 后 `resetTrackingBaseline`：跳走前那页不计（视口之前才算）、跳过的不计 | 同 | 播种水位到落点：跳过不计、跳走前那页看进度是否越过水位、落点页要等额度 | 跳走前那页计（你在那页）；跳过不计；落点页翻走时计 |
 | 换章 | 相邻章 `nextChapter` 不换基线，差分正常；非相邻走跳转 | 同 | 恢复完成播种 + 令牌桶清零 → 新章首页按 40 字/秒慢补；末页因 `isAtEnd→1.0` 到达即整页计 | 坐标是全书绝对偏移，章边界透明；末页在新章首页 arrive 时结算 |
-| 改字号 / 主题 / 竖横排重排 | WKWebView 换 key 重建 + `restoreProgress`，统计无处理，靠字符比例锚隐式不变 | `prepareReloadAtDisplayedPosition`，统计无处理，页边界漂移记成 ± diff | 水位取 max + 原位恢复保留额度（BUG-2168）；缩字号前漂已修（BUG-2167） | 同页新边界 arrive 结算旧边界，并集只补多露出的行（BUG-2188 后 EPUB 不再 rebase） |
+| 改字号 / 主题 / 竖横排重排 | WKWebView 换 key 重建 + `restoreProgress`，统计无处理，靠字符比例锚隐式不变 | `prepareReloadAtDisplayedPosition`，统计无处理，页边界漂移记成 ± diff | 水位取 max + 原位恢复保留额度（BUG-2206）；缩字号前漂已修（BUG-2205） | 同页新边界 arrive 结算旧边界，并集只补多露出的行（BUG-2225 后 EPUB 不再 rebase） |
 | 速率封顶 | 无 | 无 | 40 字/秒（`kMaxReadCharsPerSecond`） | 无 |
 | 停留门 | 无 | 无 | EPUB 无；漫画到达 1.5s；视频 cue 1.5s | EPUB / 漫画 / PDF 无；视频 cue 保留 1.5s（`kArrivalDwellMs` 唯一消费者） |
 | 字符口径 | ttu 正则：字母 / 假名 / 汉字（`reader.js:26-36`） | 同 | `countStudyChars`：剔 `rt/rp/rtc`、空白标点（`epub_book.dart:641-663`）；JS `fushiStudyUnits` 同口径 | 不变 |
@@ -42,11 +42,11 @@
 | 什么算输入 | 只用于自动开始（`pageturn`） | 同 | 翻页 / 滚动回传 / 听书播放态 cue 推进（查词、10s 轮询不算） |
 | 自动开始 | `off / pageturn / on`，**默认 off**（不手动开不统计） | 同，`pageturn` 基线取翻页前位置 | 开书即计 |
 | 后台 / 失焦 | `willResignActive` 直接丢基线（后台前最后 tick 之后的秒数也丢） | `ON_PAUSE` 先 update 再停 | `stop()` 结算到失焦瞬间再封段；`resumed` 续表 |
-| 弹层 | 不停 | 外观 / goto / sasayaki / 统计 / 全屏图停 | 同 Android 集合 + 目录 / 搜索 / 书签 / 有声书导入 / 画廊；查词与 Anki 制卡不停（BUG-2170） |
+| 弹层 | 不停 | 外观 / goto / sasayaki / 统计 / 全屏图停 | 同 Android 集合 + 目录 / 搜索 / 书签 / 有声书导入 / 画廊；查词与 Anki 制卡不停（BUG-2208） |
 | 手动暂停 | 有 | 有 | 有 |
 | 断档 / 睡眠补发 | 无过滤，系统时间跳变直接进 diff | 同 | 120s 断档整窗丢弃；时钟回跳不计 |
 | 最小会话门槛 | 无 | 无 | <1s 且无内容账的段不落库 |
-| 停表期间的字数 | 不产生（tick 停） | 同 | `addChars` 丢弃（BUG-2172） |
+| 停表期间的字数 | 不产生（tick 停） | 同 | `addChars` 丢弃（BUG-2210） |
 
 ### 1.3 数据结构 / 持久化 / 同步
 
@@ -55,18 +55,18 @@
 | 存储 | 一书一个 `statistics.json`，按天一条：`charactersRead / readingTime(秒) / min·alt·last·max 速度 / lastStatisticModified` | `study_segments` 段表：一段一行、不跨小时、uid 键控、绝对值 upsert；legacy 四表冻结只读 |
 | 跨书聚合 | iOS 无统计页；Android 逐书读 JSON 聚合 | `loadStatFacts` 统一事实面（日面 / 小时面） |
 | 同步 | Drive ttu 文件：Merge = 按 dateKey `lastStatisticModified` 大者整条覆盖；Replace = 远端全覆盖（同书同天两端各读必丢一端） | uid LWW 并集 + 按身份墓碑（压制 `startAt < deletedAt` 的段，碑永不退场） |
-| 清空 / 删除 | 覆盖文件 | 逐身份立碑（BUG-2177）；删单本立碑 |
-| 「今日」边界 | Android 可配重置时刻（`statisticsResetMinutes`），写入时定 dateKey | 本地 0 点固定，跨午夜整页重聚合（BUG-2181）。**可配重置时刻：未做，候选** |
+| 清空 / 删除 | 覆盖文件 | 逐身份立碑（BUG-2215）；删单本立碑 |
+| 「今日」边界 | Android 可配重置时刻（`statisticsResetMinutes`），写入时定 dateKey | 本地 0 点固定，跨午夜整页重聚合（BUG-2219）。**可配重置时刻：未做，候选** |
 
 ### 1.4 展示
 
 | 口径 | Hoshi | Hibiki |
 |---|---|---|
 | 会话速度 | `charactersRead / readingTime × 3600` 累计均速 | `readingCharsPerHour` 会话秒表，开局即显 0 |
-| 今日 / 累计速度 | 同上，无门槛 | `computeCph`，样本 < 60s 显示「—」（BUG-2180） |
+| 今日 / 累计速度 | 同上，无门槛 | `computeCph`，样本 < 60s 显示「—」（BUG-2218） |
 | 剩余时间 | session 均速 | 会话速度优先，无会话数据回退全书均速（`readerFinishCph`） |
 | 目标 / streak | Android：日目标（字数或时长）+ 周目标天数 + 日 / 周 streak | 日 / 周字数目标 + 日 streak（`computeReadingStreak`） |
-| 热力图 | Android 8 级按秩 | 4 级按秩（BUG-2185） |
+| 热力图 | Android 8 级按秩 | 4 级按秩（BUG-2223） |
 | 时段（小时）分布 | 无 | 有（小时面） |
 | 英文字数 | Android 5 字符 ≈ 1 词显示 | 无（候选） |
 | 异常值过滤 | 无 | 写入侧无（新）；展示侧 60s 门槛 + 环比封顶 |
@@ -93,7 +93,7 @@
 | 口径 | Hoshi | Hibiki |
 |---|---|---|
 | 独立「听」时长 | **没有**：`Statistics` 只有 `readingTime`，播放时间混入阅读时长 | **没有**：同一 `StudyClock`、同一段、`mediaKind='book' / format='epub'`；无播放态标记 |
-| 播放态 tick | 播放与统计完全解耦，1s tick 照跑（`SasayakiPlayer` 无统计调用） | 同一时钟 60s tick；播放态每次 cue 推进 `touch()` 喂空闲门（BUG-2174），否则 10 分钟停 |
+| 播放态 tick | 播放与统计完全解耦，1s tick 照跑（`SasayakiPlayer` 无统计调用） | 同一时钟 60s tick；播放态每次 cue 推进 `touch()` 喂空闲门（BUG-2212），否则 10 分钟停 |
 | 音频暂停 | 不影响统计 | 不停表，只是不再 `touch` |
 | 字数：播放跟随 | cue reveal 的 JS 回调走 `onPageTurn / onSaveBookmark → flushStats`，视口差分照计 | reveal 后按 `kReaderReanchorSettleMs` 补刷 `_refreshProgress → arrive`，翻走即计 |
 | 字数：同章跳句 / 拖进度条 | 跳过的段落按位置差**算读过** | 显式跳句 `leave()`：跳走前那页计、跳过不计；拖音频进度条无回调，靠下一次 `arrive` 结算 |
@@ -114,12 +114,12 @@
 | 目录 / 进度条 / 搜索 / 收藏句跳转 | 播种水位到落点、清桶 → 落点页要等额度 | 跳走时结算跳走前那页；跳过的从未成为当前单元 → 不计；落点页翻走时计 |
 | 听书显式跳句 | `onExplicitCueJump` 抬水位、不清桶 | `leave()`：结算当前页；跳过段落不计 |
 | 听书自动跟随跨章 | 同顺序翻页；reveal 后 250ms 内 scroll 回传被 B-3 窗吃掉，新页靠 10s 轮询 | 同顺序翻页；reveal 落定补一次 `_refreshProgress` |
-| 改字号 / 主题 / 行距（CSS 热换重锚） | 水位 max、额度保留（BUG-2168）；缩字号前漂已修（BUG-2167） | 同页提前结算、新边界只补多露出的行，总额不变（BUG-2188 起不再 rebase：原位判据把同章跳转恒判原位） |
+| 改字号 / 主题 / 行距（CSS 热换重锚） | 水位 max、额度保留（BUG-2206）；缩字号前漂已修（BUG-2205） | 同页提前结算、新边界只补多露出的行，总额不变（BUG-2225 起不再 rebase：原位判据把同章跳转恒判原位） |
 | 旋屏 / 拖窗 / 分页↔连续 / 竖横排（整章重载） | 同上 | 同上（`_onRestoreComplete` 判原位恢复） |
 | 分页节点粒度 / 跨页长段落 | 起始边越过页首即整段计 | 起点 / 终点 caret 精确；降级节点粒度、单调 |
 | 首次开书 / 恢复到存档页 | 播种到恢复锚；存档页按额度慢计 | 存档页是当前单元，翻走时计一次（不预置，与 Hoshi 同） |
 | 纯图片章 / 封面 | `snapshot == null` 只更新 UI | 同，不 arrive |
-| 内容就绪兜底超时 / 导航失败 | 不播种 | `_beginNavigation` 已 `leave()` 结算上一页，`discard()` 只丢新页空状态（BUG-2189） |
+| 内容就绪兜底超时 / 导航失败 | 不播种 | `_beginNavigation` 已 `leave()` 结算上一页，`discard()` 只丢新页空状态（BUG-2226） |
 | 章字数后台补算落定 | 水位重置到当前位置 | `reset()`：并集清空、当前丢弃 |
 | 停表期间翻走（手动暂停 / 后台 / 面板） | 水位推进但 `addChars` 丢弃，之后不补 | 并集照常标已覆盖，`addChars` 丢弃，之后不补（契约不变） |
 | 歌词模式 | 不计字 | 不计字（不 arrive） |

@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/stats/read_unit_ledger.dart';
 
-/// PDF 页数「读过」判据（2026-09-06 裁定，取代 BUG-2184 的标量水位
+/// PDF 页数「读过」判据（2026-09-06 裁定，取代 BUG-2222 的标量水位
 /// `pdfPagesNewlyReached`）：页面把每次 `_onPageChanged` 的页号交给 `ReadUnitLedger`
 /// （单元 `[page, page+1)`），`onCredit` / `onRetract` 把页数 `addPages` / `retractPages`。
 /// 这里用账本模拟 PDF 页面的接线，钉三条行为：顺翻每页翻走时计 1；回翻撤回落点
@@ -52,7 +52,7 @@ void main() {
     expect(pagesCredited, 4);
   });
 
-  test('跳页：目录前跳 N 页只计跳走前那页，跳过的页不计（BUG-2184 的水位会计 N 页）', () {
+  test('跳页：目录前跳 N 页只计跳走前那页，跳过的页不计（BUG-2222 的水位会计 N 页）', () {
     onPageChanged(0);
     onPageChanged(1); // 计 0
     onPageChanged(41); // 离开 1 → 计 1；2..40 从未成为当前单元

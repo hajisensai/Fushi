@@ -78,7 +78,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
   /// 单元 = 页号半开区间 `[page, page+1)`；离开一页那一刻把它（若本会话未覆盖）
   /// 记进时钟当前段的页数。跳 N 页只计跳走前那页、跳过的从未成为当前单元；往回翻 /
   /// 回到已读页并集已覆盖 → 0；无存档预置（续读时存档页是当前单元，翻走计一次）。
-  /// 此前是标量水位 `_sessionMaxPageIndex`（BUG-2184：跳 N 页计 N 页），已废。
+  /// 此前是标量水位 `_sessionMaxPageIndex`（BUG-2222：跳 N 页计 N 页），已废。
   late final ReadUnitLedger _readLedger = ReadUnitLedger(
     onCredit: (List<(int, int)> fresh) =>
         _studyClock?.addPages(readUnitsLength(fresh)),

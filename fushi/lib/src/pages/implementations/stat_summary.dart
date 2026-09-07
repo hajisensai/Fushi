@@ -77,7 +77,7 @@ double? computeWeekOverWeekPercent(int thisWeek, int lastWeek) {
 }
 
 /// 环比展示上限（百分比）。上周 1 字、本周 1 万字的「↑999900%」没有信息量
-/// （BUG-2186），≥ 此值一律显示 `↑>999%`。
+/// （BUG-2224），≥ 此值一律显示 `↑>999%`。
 const int kWeekOverWeekPercentCap = 999;
 
 /// 纯函数：KPI 条的环比文案。基期为 0 → `—`（无基线，不是「涨 ∞%」）；

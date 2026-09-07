@@ -88,7 +88,7 @@ double? readerFinishCph({
   return (allCph != null && allCph > 0) ? allCph : null;
 }
 
-/// 今日 / 累计卡的速度文案（BUG-2180）：与统计页同一口径 [computeCph]（最小样本
+/// 今日 / 累计卡的速度文案（BUG-2218）：与统计页同一口径 [computeCph]（最小样本
 /// [kMinCphSampleMs]），样本不足显示与统计页一致的 `—`，不再把几十秒的脏样本外推成
 /// 爆表数字。会话卡是实时秒表，仍走 [readingCharsPerHour] 开局即显 `0 / h`。
 String readerBookSpeedLabel(int chars, int ms) {
@@ -295,7 +295,7 @@ class _ReaderStatisticsDialogState extends State<ReaderStatisticsDialog> {
   }
 
   /// [live] = 本次会话秒表（开局即显 0，不套样本门槛）；今日 / 累计走统计口径
-  /// [readerBookSpeedLabel]（BUG-2180）。
+  /// [readerBookSpeedLabel]（BUG-2218）。
   List<_StatCell> _metricCells(int chars, int ms, {required bool live}) {
     final String speed = live
         ? '${readingCharsPerHour(chars: chars, durationMs: ms)}'

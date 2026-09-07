@@ -275,7 +275,7 @@ mixin _FushiDbStatistics
   /// **唯一写入口**：按 [uid] 绝对值 upsert。同 uid 重复写同值 = no-op；
   /// 写入方持有段累计器，绝不在这里做 `+=`。
   ///
-  /// BUG-2176 / BUG-2182：墓碑语义 = 「删除 `startAt < deletedAt` 的段」。同身份
+  /// BUG-2214 / BUG-2220：墓碑语义 = 「删除 `startAt < deletedAt` 的段」。同身份
   /// 若有墓碑且本行 `startAt < deletedAt`，本次写**静默丢弃**（返回不抛）：用户删
   /// 该媒体统计时仍在跑的时钟，其开放段（startAt 在删除之前）的后续 tick 不得把已
   /// 删的段写回；时钟下一次开新段（`startAt >= deletedAt`）天然存活，墓碑不需要、
@@ -357,7 +357,7 @@ mixin _FushiDbStatistics
   /// 同步 / 备份落地用：写入一条对端墓碑（只在 deletedAt 严格更新时覆盖，碑戳只增
   /// 不减），并删掉本地该身份下 `startAt < deletedAt` 的段（删除跨端传播；删除之后
   /// 开始的段不动）。判据用段的 `startAt` 而不是 `updatedAt`：后者随 tick 前进，
-  /// 一个跨越删除时刻仍在跑的段会靠它「复活」整块历史（BUG-2176）。
+  /// 一个跨越删除时刻仍在跑的段会靠它「复活」整块历史（BUG-2214）。
   Future<void> applyStudySegmentTombstone({
     required String mediaKind,
     required String mediaKey,

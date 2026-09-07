@@ -36,7 +36,7 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
   GameStatsAggregate _aggregate = GameStatsAggregate();
 
   /// **本轮加载时**的统计窗口：聚合（[computeGameStats]）与时段卡谓词同一个
-  /// （BUG-2181）；跨午夜由 [_midnightReload] 整页重聚合。
+  /// （BUG-2219）；跨午夜由 [_midnightReload] 整页重聚合。
   StatWindow _window = StatWindow(DateTime.now());
   Timer? _midnightReload;
 
@@ -185,7 +185,7 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
   }
 
   Widget _buildSummaryCards() {
-    // 时段谓词与聚合同一个窗口（BUG-2181），跨午夜靠 [_midnightReload] 重聚合。
+    // 时段谓词与聚合同一个窗口（BUG-2219），跨午夜靠 [_midnightReload] 重聚合。
     final StatWindow w = _window;
     return buildStatPeriodSummaryGrid(context, <StatPeriodSummary>[
       _periodSummary(

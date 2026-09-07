@@ -29,10 +29,34 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2061 条。点号进各自文件。
+> 共 2085 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2228](bugs/BUG-2228-reader-ledger-audiobook-reveal-turn-uncounted.md) | 🚧 | 🚧 | 听书自动翻页未计入读过字数（未复现） |
+| [BUG-2227](bugs/BUG-2227-reader-ledger-close-settles-stale-unit.md) | ✅ | ✅ | 关书结算的是上次采样单元而非此刻可见页 |
+| [BUG-2226](bugs/BUG-2226-reader-ledger-fail-navigation-discards-read-page.md) | ✅ | ✅ | 导航失败/兜底超时 discard 丢掉用户真读过的上一页 |
+| [BUG-2225](bugs/BUG-2225-reader-ledger-same-chapter-jump-rebase.md) | ✅ | ✅ | 同章跳转被误判原位恢复，跳走前那页不结算 |
+| [BUG-2224](bugs/BUG-2224-stat-summary-ratio-unbounded.md) | ✅ | ✅ | 统计环比无上限显示 ↑9999900% |
+| [BUG-2223](bugs/BUG-2223-stat-heatmap-absolute-levels.md) | ✅ | ✅ | 热力图档位按窗口最大值线性分级，单日爆量后其余全落最浅档 |
+| [BUG-2222](bugs/BUG-2222-pdf-reader-never-add-pages.md) | ✅ | ✅ | PDF 阅读器从不 addPages，页数统计恒 0 |
+| [BUG-2221](bugs/BUG-2221-aggregate-sync-leaks-game-segments.md) | ✅ | ✅ | 聚合同步/备份不按 mediaKind 过滤，游戏段跨端外流 |
+| [BUG-2220](bugs/BUG-2220-study-tombstone-clock-skew.md) | ✅ | ✅ | 统计墓碑用本机墙钟直比对端 updatedAt 且本机碑只进不出 |
+| [BUG-2219](bugs/BUG-2219-stat-pages-stale-window-across-midnight.md) | ✅ | ✅ | 统计页跨午夜后聚合窗口与卡片谓词不一致 |
+| [BUG-2218](bugs/BUG-2218-reader-stats-dialog-cph-threshold.md) | ✅ | ✅ | 阅读器统计浮层今日/累计速度不套最小样本门槛 |
+| [BUG-2217](bugs/BUG-2217-study-clock-cross-hour-addchars-zero-segment.md) | ✅ | ✅ | 跨小时瞬间 addChars 产出 0 时长字数段 |
+| [BUG-2216](bugs/BUG-2216-reading-stats-book-identity-split.md) | ✅ | ✅ | 删书/同名书时按书统计分裂成两条同名条目 |
+| [BUG-2215](bugs/BUG-2215-clear-study-segments-no-tombstone.md) | ✅ | ✅ | 清空全部统计不立墓碑，多端同步整批复活 |
+| [BUG-2214](bugs/BUG-2214-study-segment-upsert-ignores-tombstone.md) | ✅ | ✅ | 删该媒体统计时仍在跑的时钟回写段使整块墓碑出局 |
+| [BUG-2213](bugs/BUG-2213-reader-idle-timeout-snapshot.md) | ✅ | ✅ | 阅读空闲门分钟数在建时钟时快照，阅读中改设置不生效 |
+| [BUG-2212](bugs/BUG-2212-reader-lyrics-mode-no-touch.md) | ✅ | ✅ | 歌词模式听书播放态不喂空闲门，听一小时只计 10 分钟 |
+| [BUG-2211](bugs/BUG-2211-study-clock-start-stale-idle.md) | ✅ | ✅ | StudyClock.start 不重置空闲基准，回前台后首页阅读被空闲门拒绝 |
+| [BUG-2210](bugs/BUG-2210-reader-paused-clock-still-counts-chars.md) | ✅ | ✅ | 手动暂停计时期间翻页仍 addChars 产出 0 时长字数段 |
+| [BUG-2209](bugs/BUG-2209-reader-ensure-clock-restarts-after-lifecycle-stop.md) | ✅ | ✅ | 后台听书跟随经 _ensureStudyClock 重启已停表时钟 |
+| [BUG-2208](bugs/BUG-2208-reader-modal-open-keeps-clock.md) | ✅ | ✅ | 阅读器外观/目录/搜索等面板打开期间阅读时钟照跑 |
+| [BUG-2207](bugs/BUG-2207-reader-reload-poll-unguarded.md) | ✅ | ✅ | 重载在飞时 10s 进度轮询不门控，瞬态 atEnd 可把本章剩余计入 |
+| [BUG-2206](bugs/BUG-2206-reader-restore-clears-read-credit.md) | ✅ | ✅ | 重排/宽变/模式切换恢复完成无条件清零令牌桶额度致漏计 |
+| [BUG-2205](bugs/BUG-2205-reader-paged-style-reanchor-page-drift.md) | ✅ | ✅ | 分页模式缩字号/减边距后 ±1 页 hint 保原页，位置前漂一页并被计入字数 |
 | [BUG-2203](bugs/BUG-2203-update-installer-self-kill-taskkill-tree.md) | ✅ | ✅ | 应用内更新静默失败：安装器被自己的 taskkill /T 连同祖先树一起杀掉，且被误诊为 app_mutex_running |
 | [BUG-2202](bugs/BUG-2202-clip-export-tx3g-unplayable-in-im.md) | ✅ | ✅ | 内封 tx3g 字幕轨让导出的片段在 QQ 等 IM 里整个不可播 |
 | [BUG-2201](bugs/BUG-2201-video-pending-scrape-has-no-visible-surface.md) | ✅ | ✅ | 待确认身份的作品在视频页零提示用户无从知道要去确认 |

@@ -546,13 +546,13 @@ class _HomeDashboardPageState
   StreamSubscription<void>? _dataChangeSub;
   Timer? _reloadDebounce;
 
-  /// **本轮加载时**的统计窗口（今日目标 / 近 7 日日均都用它，BUG-2181：此前目标
+  /// **本轮加载时**的统计窗口（今日目标 / 近 7 日日均都用它，BUG-2219：此前目标
   /// 卡在 build 时现算 todayKey，跨午夜后分子对着新的一天、热力图等仍是旧聚合）。
   /// 跨午夜由 [_midnightReload] 触发一次 [_scheduleReload] 整页重拉。
   StatWindow _statWindow = StatWindow(DateTime.now());
   Timer? _midnightReload;
 
-  /// 库里同名 ≥2 本的 title（BUG-2178：日明细 sheet 身份分组的吸收否决）。
+  /// 库里同名 ≥2 本的 title（BUG-2216：日明细 sheet 身份分组的吸收否决）。
   Set<String> _ambiguousBookTitles = const <String>{};
 
   @override
@@ -705,7 +705,7 @@ class _HomeDashboardPageState
     // 页 _collectionNameForBook 同范式）。书表由事实面加载时顺带取回，同批再取
     // importedAt 喂「最近添加」行（一次查询两用）。
     final List<EpubBookRow> epubRows = facts.epubRows;
-    // BUG-2178：同名 ≥2 本的 title 不进反查表（贴给任意一本都是错贴）。
+    // BUG-2216：同名 ≥2 本的 title 不进反查表（贴给任意一本都是错贴）。
     final Map<String, String> bookKeyByTitle = uniqueBookKeyByTitle(epubRows);
     final Set<String> ambiguousTitles = ambiguousBookTitles(epubRows);
     final Map<String, int> epubImportedAtByKey = <String, int>{
@@ -2014,7 +2014,7 @@ class _HomeDashboardPageState
         ),
       );
     }
-    // BUG-2181：与本轮加载的聚合同一个窗口（跨午夜由 [_midnightReload] 重拉）。
+    // BUG-2219：与本轮加载的聚合同一个窗口（跨午夜由 [_midnightReload] 重拉）。
     final String todayKey = _statWindow.todayKey;
     final int todayChars = studyGoalCharsForDay(_dailyRows, todayKey);
     final double fraction = (todayChars / goal).clamp(0.0, 1.0);

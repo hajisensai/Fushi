@@ -238,7 +238,7 @@ void main() {
       expect(h.sink.last.durationMs.value, 30000, reason: '重新有输入 → 新段');
     });
 
-    test('BUG-2173：挂机超时 → stop → start 后首个 tick 入账（start 重锚空闲基准）', () async {
+    test('BUG-2211：挂机超时 → stop → start 后首个 tick 入账（start 重锚空闲基准）', () async {
       final _Harness h = _Harness(idleTimeout: const Duration(minutes: 10));
       h.clock.start();
       h.advance(const Duration(seconds: 60));
@@ -418,7 +418,7 @@ void main() {
       expect(h.sink.last.durationMs.value, 10000);
     });
 
-    test('BUG-2172：停表期间 addChars / addPages 不入账、不开段', () async {
+    test('BUG-2210：停表期间 addChars / addPages 不入账、不开段', () async {
       final _Harness h = _Harness();
       // 从未 start：翻页产生的字数没有「在学习」的时钟可归属，直接丢弃。
       h.clock.addChars(50);
@@ -448,7 +448,7 @@ void main() {
       );
     });
 
-    test('BUG-2179：跨小时瞬间 addChars 先结算待定窗口，不产出 0 时长字数段', () async {
+    test('BUG-2217：跨小时瞬间 addChars 先结算待定窗口，不产出 0 时长字数段', () async {
       final _Harness h = _Harness(start: DateTime(2026, 8, 29, 12, 59, 50));
       h.clock.start();
       h.advance(const Duration(seconds: 5));
@@ -537,7 +537,7 @@ void main() {
       h.advance(const Duration(seconds: 60)); // 13:00:00，窗口整段落 12 点
       await h.clock.flushNow();
       expect(h.clock.debugOpenUid, first, reason: '恰到整点仍是 12 点段');
-      // 13:00:30 记内容账：BUG-2179 先结算待定窗口 → 封 12 点段、开 13 点段。
+      // 13:00:30 记内容账：BUG-2217 先结算待定窗口 → 封 12 点段、开 13 点段。
       h.advance(const Duration(seconds: 30));
       if (charsSecond > 0) h.clock.addChars(charsSecond);
       if (pagesSecond > 0) h.clock.addPages(pagesSecond);
@@ -636,7 +636,7 @@ void main() {
       expect(h.sink.last.durationMs.value, 0);
     });
 
-    test('停表期间 retractChars / retractPages 返回 0 且不改任何段（BUG-2172 对称）', () async {
+    test('停表期间 retractChars / retractPages 返回 0 且不改任何段（BUG-2210 对称）', () async {
       final _Harness h = _Harness();
       h.clock.start();
       h.clock.addChars(100);

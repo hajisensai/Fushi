@@ -914,7 +914,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
   void _openImageViewer(String imgUrl) {
     final File? file = _readerImageFileForUrl(imgUrl);
     if (file == null) return;
-    // BUG-2170：全屏看图期间停表（路由 pop 后按判据续表）。
+    // BUG-2208：全屏看图期间停表（路由 pop 后按判据续表）。
     unawaited(
       _withStudyClockPaused(
         () => Navigator.push(
@@ -967,7 +967,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     if (book == null) return;
     final List<EpubImageRef> images = book.images;
     final int currentChapter = _currentChapter;
-    // BUG-2170：插图画廊是从阅读器 push 出去的全页路由，压住期间停表。
+    // BUG-2208：插图画廊是从阅读器 push 出去的全页路由，压住期间停表。
     unawaited(
       _withStudyClockPaused(
         () => Navigator.push(
@@ -1686,7 +1686,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
         initialSubPage: initialSubPage,
       );
 
-      // BUG-2170：外观 / 导航 / 搜索 / 收藏 / 有声书面板压着正文期间停表。
+      // BUG-2208：外观 / 导航 / 搜索 / 收藏 / 有声书面板压着正文期间停表。
       await _withStudyClockPaused(
         () => _presentQuickSettings(
           sheetContent: sheetContent,
@@ -1696,7 +1696,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       );
 
       _syncDictionaryTheme();
-      // BUG-2175：面板里可能改了空闲门分钟数，关掉即生效（不必等下次 _ensureStudyClock）。
+      // BUG-2213：面板里可能改了空闲门分钟数，关掉即生效（不必等下次 _ensureStudyClock）。
       _studyClock?.idleTimeout = appModel.readingIdleTimeout;
     } finally {
       _appearanceSheetOpen = false;
@@ -2190,7 +2190,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     final int? remainingChapter =
         _progress.remainingChapterChars(_currentChapter);
     final int? remainingBook = _progress.remainingBookChars;
-    // BUG-2170：看统计浮层不是阅读，打开期间停表（浮层里的会话读数因此冻结在打开
+    // BUG-2208：看统计浮层不是阅读，打开期间停表（浮层里的会话读数因此冻结在打开
     // 那一刻，与「本次」语义一致）。
     unawaited(
       _withStudyClockPaused(
@@ -2219,7 +2219,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     _ensureStudyClock();
     final bool pause = !_studyClockManualPause;
     _rebuild(() => _studyClockManualPause = pause);
-    // 统一判据（BUG-2171）：统计浮层本身是弹层（modalDepth > 0），「继续」在关掉浮层
+    // 统一判据（BUG-2209）：统计浮层本身是弹层（modalDepth > 0），「继续」在关掉浮层
     // 后才真正起表；切后台期间点「继续」也只是清旗、回前台再起。
     _syncStudyClockRunState();
   }
@@ -2230,7 +2230,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       {String? initialAlignmentPath}) async {
     final Audiobook? audiobook = _audiobookController?.audiobook;
     final AudiobookRepository repo = AudiobookRepository(appModel.database);
-    // BUG-2170：导入 / 对齐对话框压着正文期间停表。
+    // BUG-2208：导入 / 对齐对话框压着正文期间停表。
     await _withStudyClockPaused(
       () => showAppDialog<void>(
         context: context,
@@ -2798,7 +2798,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       return;
     }
     if (!mounted || _controller == null) return;
-    // BUG-2188：同章收藏跳转不经 _beginNavigation，离开当前页在此结算（by-text
+    // BUG-2225：同章收藏跳转不经 _beginNavigation，离开当前页在此结算（by-text
     // 回退路径只滚动、不 notifyRestoreComplete，旧页在落点首个 arrive 时照常结算，
     // 但同样属于「跳走」，一并在此 leave 保持同一语义）。
     _readLedger.leave();

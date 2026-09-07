@@ -166,10 +166,10 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     // 字数账本（ReadUnitLedger）在恢复完成时**不碰**：不播种（旧标量水位要在这里
     // 播种，漏一处就是幻象字数，BUG-1107 / 2168），也不再判「原位恢复」——离开当前
     // 单元的结算已经在**离开那一刻**做掉（[_beginNavigation] 与同章跳转入口统一
-    // `leave()`，BUG-2188 / 2189）；这里之后的首个 arrive 只是让落点页成为当前单元。
+    // `leave()`，BUG-2225 / 2189）；这里之后的首个 arrive 只是让落点页成为当前单元。
     // 旧判据 `restoreIsInPlace` 拿「恢复锚 vs 上次实时采样」比对：同章跳转
     // （进度条 / 收藏句 / 脚注内链 / VN）不经 `_beginNavigation`、恢复锚就是上次采样，
-    // 恒判原位 → 跳走前那页被 rebase 掉不结算（BUG-2188）。重排 / 宽变 / 模式切换
+    // 恒判原位 → 跳走前那页被 rebase 掉不结算（BUG-2225）。重排 / 宽变 / 模式切换
     // 同页换坐标提前结算不改总额（并集去重，同页新边界只补多露出的部分）。
 
     // TODO-718: 连续模式恢复完成后，进入 WebView 的 settle reflow 会把裸 window.scrollY
@@ -308,7 +308,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       reanchorClearedAt: _reanchorClearedAt,
       now: DateTime.now(),
     )) {
-      // BUG-2190：窗内丢掉的可能不只是瞬态归零，也可能是用户紧接着的真实滚动 /
+      // BUG-2227：窗内丢掉的可能不只是瞬态归零，也可能是用户紧接着的真实滚动 /
       // 翻页落点。丢弃本身不变（治 reflow 归零落库），但按同一个窗常量排一次窗关后的
       // 补刷，让落点页及时成为账本当前单元——否则只能等 10s 轮询，期间关书 / 跳转
       // 结算的是上一次采样的旧页，最后一屏漏计。与听书 reveal 共用同一个单 Timer。
@@ -413,10 +413,10 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     String? preciseLocateJs,
   }) {
     _restoreExpectedGeneration = ++_navigateGeneration;
-    // BUG-2188 / BUG-2189：所有导航都经过这里，所以这也是「离开当前单元」的唯一
+    // BUG-2225 / BUG-2226：所有导航都经过这里，所以这也是「离开当前单元」的唯一
     // 采样点——翻走即计：此刻把用户正读的那页结算进账本，跳过的区间从未成为当前
     // 单元、不计。放在 loadUrl 之前：装载失败 / 兜底超时走 [_failNavigation] 的
-    // `discard()` 时当前单元已是空的，不会再把真读过的上一页整页丢掉（BUG-2189）。
+    // `discard()` 时当前单元已是空的，不会再把真读过的上一页整页丢掉（BUG-2226）。
     // 同章重恢复（宽变 / 分页↔连续 / 竖横排）也会提前结算同一页——并集去重，之后
     // 同页新边界只补多露出的部分，总额不变。
     _readLedger.leave();
@@ -474,7 +474,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
   void _failNavigation() {
     ReaderChapterPerfTrace.abort();
     // 导航中止 / 内容就绪兜底超时：WebView 里现在是什么不可知，当前单元丢弃不结算
-    // （宁可不计）。跳走前那页已在 [_beginNavigation] `leave()` 结算（BUG-2189：此前
+    // （宁可不计）。跳走前那页已在 [_beginNavigation] `leave()` 结算（BUG-2226：此前
     // 这里 discard 掉的正是用户真读过的上一页），dispose 也在调本方法之前 `leave()`；
     // 所以这里通常是 no-op，只兜「导航发起后新页曾短暂 arrive」的情形。
     _readLedger.discard();
@@ -723,7 +723,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
   // Used when an internal link resolves to the chapter already on screen.
   Future<void> _jumpToFragmentInPlace(String fragment) async {
     if (_controller == null || !_readerContentReady) return;
-    // BUG-2188：同章内链跳转不经 _beginNavigation，离开当前页在此结算。
+    // BUG-2225：同章内链跳转不经 _beginNavigation，离开当前页在此结算。
     _readLedger.leave();
     // jsonEncode produces a valid, escaped JS string literal for the fragment.
     final String literal = jsonEncode(fragment);
@@ -1072,7 +1072,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
   }
 
   Future<void> _refreshProgress() async {
-    // BUG-2169：恢复在飞（含 _reloadWithCurrentSettings 的整章重载）期间不采样——
+    // BUG-2207：恢复在飞（含 _reloadWithCurrentSettings 的整章重载）期间不采样——
     // 10s 轮询不受 readerScrollProgressRefreshAllowed 门控，重载中 JS 的瞬态 atEnd /
     // 章末 progress 会把「旧位置 → 章末」整段计成本次读到的新字数。恢复完成
     // （_onRestoreComplete）与失败（_failNavigation / reload catch）都清旗，之后的
@@ -1534,7 +1534,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     // 进度条拖动是跳转不是阅读：不播种（旧标量水位要在此播种）。跨章走
     // [_beginNavigation] 的 `leave()`；同章 `restoreProgress` 不经导航，得在这里自己
     // `leave()`——否则 JS `notifyRestoreComplete` 抢在 scroll 回传之前时，跳走前那页
-    // 会被当成「原位恢复」不结算（BUG-2188；VN 无 scroll 事件，必现）。
+    // 会被当成「原位恢复」不结算（BUG-2225；VN 无 scroll 事件，必现）。
     final ChapterProgressTarget target = resolveChapterProgressForGlobalOffset(
       _chapterCumulativeChars,
       _chapterCharCounts,
@@ -1580,11 +1580,11 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       onWriteError: (Object e, StackTrace st) =>
           ErrorLogService.instance.log('StudyClock.write(epub)', e, st),
     );
-    // BUG-2175：空闲门分钟数每次都从设置刷（字段本就可变）——旧实现只在建时钟时
+    // BUG-2213：空闲门分钟数每次都从设置刷（字段本就可变）——旧实现只在建时钟时
     // 快照一次，阅读中改设置要退出重开书才生效。
     clock.idleTimeout = appModel.readingIdleTimeout;
     // 手动暂停 / 切后台 / 面板打开时不自动起表（章导航 / 进度刷新都会经这里）：
-    // 统一判据，见 [studyClockMayRun]（BUG-2171：旧实现只看手动暂停旗，后台听书
+    // 统一判据，见 [studyClockMayRun]（BUG-2209：旧实现只看手动暂停旗，后台听书
     // 跟随每次翻章都把生命周期已停掉的时钟重新起表）。
     if (_studyClockMayRun) clock.start();
     return clock;
@@ -1609,7 +1609,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     }
   }
 
-  /// 在面板 / 弹层 / 全页路由压住正文期间停表（BUG-2170，对齐 Hoshi Android 的
+  /// 在面板 / 弹层 / 全页路由压住正文期间停表（BUG-2208，对齐 Hoshi Android 的
   /// `modalPaused`）：进入时 `stop()` 结算到此刻并封段落库，退出后按判据续表
   /// （手动暂停 / 后台仍不续）。查词浮窗与 Anki 制卡对话框**不**经这里——那是阅读的
   /// 一部分。计数而非 bool：面板里再开对话框（有声书面板 → 导入）嵌套时不会提前续表。

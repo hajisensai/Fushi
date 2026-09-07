@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-2181：统计页 / 首页在一轮加载里只许用**一个** `StatWindow`。
+/// BUG-2219：统计页 / 首页在一轮加载里只许用**一个** `StatWindow`。
 ///
 /// 此前聚合用加载时刻的窗口、时段卡谓词在点击时 `StatWindow(DateTime.now())` 现算
 /// （首页反向：目标卡 build 时现取 todayKey、分子仍是旧聚合），跨午夜后「今日」卡有
@@ -31,29 +31,29 @@ void main() {
       expect(
         cardsBody,
         isNot(contains('StatWindow(DateTime.now())')),
-        reason: 'BUG-2181：时段卡谓词不得在点击时现算窗口',
+        reason: 'BUG-2219：时段卡谓词不得在点击时现算窗口',
       );
       expect(
         cardsBody,
         contains('final StatWindow w = _window;'),
-        reason: 'BUG-2181：时段卡必须吃本轮加载时的 _window',
+        reason: 'BUG-2219：时段卡必须吃本轮加载时的 _window',
       );
       expect(
         src,
         contains('_midnightReload = Timer('),
-        reason: 'BUG-2181：必须到下一个本地午夜整页重聚合',
+        reason: 'BUG-2219：必须到下一个本地午夜整页重聚合',
       );
       expect(
         src,
         contains('StatWindow.untilNextStatDayBoundary('),
-        reason: 'BUG-2181：午夜时长只从 StatWindow 取',
+        reason: 'BUG-2219：午夜时长只从 StatWindow 取',
       );
       final RegExp anyNow = RegExp(r'StatWindow\(DateTime\.now\(\)\)');
       // 只许字段初值一处（`StatWindow _window = StatWindow(DateTime.now());`）。
       expect(
         anyNow.allMatches(src).length,
         1,
-        reason: 'BUG-2181：${e.key} 里 StatWindow(DateTime.now()) 只许出现在字段初值',
+        reason: 'BUG-2219：${e.key} 里 StatWindow(DateTime.now()) 只许出现在字段初值',
       );
     });
   }
@@ -68,7 +68,7 @@ void main() {
     expect(
       RegExp(r'StatWindow\(DateTime\.now\(\)\)').allMatches(src).length,
       1,
-      reason: 'BUG-2181：首页里 StatWindow(DateTime.now()) 只许出现在字段初值',
+      reason: 'BUG-2219：首页里 StatWindow(DateTime.now()) 只许出现在字段初值',
     );
   });
 }

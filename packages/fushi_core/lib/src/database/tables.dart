@@ -2590,7 +2590,7 @@ class StudySegments extends Table {
 /// v92：按**媒体身份**的统计删除墓碑，取代按 (title, sourceType) 的
 /// [StatisticsTombstones]（那张只为 legacy 表的 title 粒度 wire 服务，冻结）。
 ///
-/// 删某媒体统计 = 删其全部 [StudySegments] + 立本碑。仲裁（BUG-2176 / BUG-2182）：
+/// 删某媒体统计 = 删其全部 [StudySegments] + 立本碑。仲裁（BUG-2214 / BUG-2220）：
 /// 段 `startAt < deletedAt` → 被压制（同步 / 备份里的旧段不复活）；`startAt >= deletedAt`
 /// 的段（删后又读）照常存活。**碑永不退场**、时间戳只增不减——旧口径「段
 /// `updatedAt > deletedAt` 则段胜」已废：同步回写会刷新 `updatedAt`，让删掉的旧段

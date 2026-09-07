@@ -933,8 +933,8 @@ class BackupMergeEngine {
   ///  ② 段按 uid：目标没有 → 插；两边都有且 src.updated_at 严格更新 → 整行覆盖
   ///     （LWW，同值重放 no-op）；
   ///  ③ 删掉目标里被（合并后）墓碑压制的段（`start_at < deleted_at`，
-  ///     BUG-2176 / BUG-2182：删除之前开始的段出局，之后开始的存活）。
-  /// 游戏段 / 碑（BUG-2183）不从备份搬入——与 galgame_sessions 同律，src 的
+  ///     BUG-2214 / BUG-2220：删除之前开始的段出局，之后开始的存活）。
+  /// 游戏段 / 碑（BUG-2221）不从备份搬入——与 galgame_sessions 同律，src 的
   /// game_id 在目标库没有宿主。
   /// 旧备份（v92 前）没有这两张表：ATTACH 前已迁到当前 schema，两侧必有表。
   Future<void> _mergeStudySegments() async {

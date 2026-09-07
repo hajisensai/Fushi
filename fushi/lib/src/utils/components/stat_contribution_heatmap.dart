@@ -156,7 +156,7 @@ StatHeatmapModel buildStatHeatmap({
     raw.add(col);
   }
 
-  // BUG-2185：档位按活跃日数值的秩（分位数），不按占最大值的比例——后者一天爆量
+  // BUG-2223：档位按活跃日数值的秩（分位数），不按占最大值的比例——后者一天爆量
   // 就把其余所有活跃日压成最浅档，整张图只剩一个深格。
   final List<int> sortedActive = <int>[
     for (final List<({String? dateKey, int value, DateTime day})> col in raw)
@@ -179,7 +179,7 @@ StatHeatmapModel buildStatHeatmap({
   return StatHeatmapModel(weeks: cols, maxValue: maxValue);
 }
 
-/// 纯函数：热力图档位按**秩**分级（BUG-2185，对齐 Hoshi Android 的分位数着色）。
+/// 纯函数：热力图档位按**秩**分级（BUG-2223，对齐 Hoshi Android 的分位数着色）。
 ///
 /// [sortedActive] 是窗口内活跃日（value > 0）的数值升序表；[value] ≤ 0 或表空 → 0。
 /// 否则取 [value] 的上秩 r = 表中 ≤ value 的个数，level = ⌈r / n × levels⌉ ∈

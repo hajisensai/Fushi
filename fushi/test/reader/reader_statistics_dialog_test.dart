@@ -97,7 +97,7 @@ void main() {
     });
   });
 
-  group('readerBookSpeedLabel（BUG-2180：今日 / 累计速度套最小样本门槛）', () {
+  group('readerBookSpeedLabel（BUG-2218：今日 / 累计速度套最小样本门槛）', () {
     test('样本不足 1 分钟显示 —，与统计页 computeCph 同口径', () {
       expect(readerBookSpeedLabel(11000, 30000), '—', reason: '30 秒 1.1 万字不外推');
       expect(readerBookSpeedLabel(0, 0), '—');

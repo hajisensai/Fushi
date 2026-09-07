@@ -13,14 +13,14 @@ import '../pages/reader_fushi_page_source_corpus.dart';
 ///    记字入口；
 ///  * 离开当前单元只有一种动作 `leave`，且在**离开那一刻**：`_beginNavigation`（所有
 ///    导航的必经点）与同章跳转入口（进度条 `restoreProgress` / 收藏句 `restoreToCharOffset`
-///    / 脚注内链 `jumpToFragment`）；`_onRestoreComplete` 不碰账本（BUG-2188 / 2189：
+///    / 脚注内链 `jumpToFragment`）；`_onRestoreComplete` 不碰账本（BUG-2225 / 2189：
 ///    旧的 `restoreIsInPlace → rebaseOnNextArrive` 把同章跳转恒判原位、跳走前那页不结算）；
 ///  * `_failNavigation`（含内容就绪兜底超时）：`discard`；
 ///  * `_recomputeCharCountsInBackground` 落定：`reset`；
 ///  * 显式跳句 `_handleExplicitCueJump`：`leave`；
 ///  * dispose / `onSourcePagePop` / 进程退出 flush：`leave` 在 `_flushReadingStats` 之前；
 ///  * 听书 reveal 落定后与 B-3 窗内丢弃 scroll 回传后各补刷一次 `_refreshProgress`
-///    （同一个 Timer；BUG-2190：窗内丢掉的可能是用户真实落点，只等 10s 轮询会让关书
+///    （同一个 Timer；BUG-2227：窗内丢掉的可能是用户真实落点，只等 10s 轮询会让关书
 ///    结算旧页）；
 ///  * 跳转不播种（旧标量水位在此播种），跨章的离开结算由 `_beginNavigation` 统一做。
 void main() {
@@ -92,7 +92,7 @@ void main() {
     });
   });
 
-  group('leave：离开当前单元只在离开那一刻（BUG-2188 / BUG-2189）', () {
+  group('leave：离开当前单元只在离开那一刻（BUG-2225 / BUG-2226）', () {
     test('_beginNavigation 先 leave 再置恢复在飞（所有导航的必经点）', () {
       final String body = methodBody(corpus, 'void _beginNavigation(');
       final int leave = body.indexOf('_readLedger.leave();');
@@ -102,7 +102,7 @@ void main() {
       expect(
         leave,
         lessThan(body.indexOf('_preciseLocateQueue.clear();')),
-        reason: '在 loadUrl 之前：装载失败 / 兜底超时 discard 时当前单元已空（BUG-2189）',
+        reason: '在 loadUrl 之前：装载失败 / 兜底超时 discard 时当前单元已空（BUG-2226）',
       );
     });
 
@@ -112,7 +112,7 @@ void main() {
         containsIdentifier(body, '_readLedger'),
         isFalse,
         reason:
-            'BUG-2188：旧 restoreIsInPlace 拿「恢复锚 vs 上次采样」比对，同章跳转不经 '
+            'BUG-2225：旧 restoreIsInPlace 拿「恢复锚 vs 上次采样」比对，同章跳转不经 '
             '_beginNavigation、恢复锚就是上次采样 → 恒判原位 → 跳走前那页被 rebase 掉',
       );
     });
@@ -325,7 +325,7 @@ void main() {
       expect(containsCodeLine(body, 'if (!mounted) return;'), isTrue);
     });
 
-    test('B-3 窗内丢弃 scroll 回传时也排同一个补刷（BUG-2190）', () {
+    test('B-3 窗内丢弃 scroll 回传时也排同一个补刷（BUG-2227）', () {
       final String body = methodBody(corpus, 'void _handleReaderScroll()');
       final int gate = body.indexOf('if (readerScrollWithinReanchorSettle(');
       final int schedule = body.indexOf(

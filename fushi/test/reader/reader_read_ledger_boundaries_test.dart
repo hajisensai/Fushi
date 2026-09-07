@@ -176,7 +176,7 @@ void main() {
       expect(credited, 520);
     });
 
-    test('BUG-2188 同章进度条跳转：JS notifyRestoreComplete 抢先也不丢跳走前那页', () {
+    test('BUG-2225 同章进度条跳转：JS notifyRestoreComplete 抢先也不丢跳走前那页', () {
       // 旧实现：_onRestoreComplete 判原位 → rebaseOnNextArrive → 落点 arrive 不结算
       // [0,400)。新实现：跳转入口先 leave。
       sample(0, 0, 400);
@@ -188,7 +188,7 @@ void main() {
       expect(credited, 600);
     });
 
-    test('BUG-2188 VN 同章拖动（无 scroll 事件）：同上，旧屏不再被 rebase 掉', () {
+    test('BUG-2225 VN 同章拖动（无 scroll 事件）：同上，旧屏不再被 rebase 掉', () {
       sample(0, 0, 100);
       ledger.leave();
       sample(0, 500, 600);
@@ -196,7 +196,7 @@ void main() {
     });
 
     test(
-      'BUG-2189 跨章导航装载失败 / 兜底超时：_beginNavigation 已 leave，discard 不再丢上一页',
+      'BUG-2226 跨章导航装载失败 / 兜底超时：_beginNavigation 已 leave，discard 不再丢上一页',
       () {
         sample(0, 600, 1000);
         ledger.leave(); // _beginNavigation

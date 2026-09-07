@@ -93,7 +93,7 @@ void main() {
     });
   });
 
-  group('formatWeekOverWeekDelta（BUG-2186：环比封顶）', () {
+  group('formatWeekOverWeekDelta（BUG-2224：环比封顶）', () {
     test('普通涨跌带箭头、四舍五入到整数', () {
       expect(formatWeekOverWeekDelta(1200, 1000), '↑20%');
       expect(formatWeekOverWeekDelta(800, 1000), '↓20%');

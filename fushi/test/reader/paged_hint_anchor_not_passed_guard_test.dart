@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 
-/// BUG-2167：分页 `scrollToCharOffset` 的 ±1 page-stable hint 在锚字被缩字号 / 减边距 /
+/// BUG-2205：分页 `scrollToCharOffset` 的 ±1 page-stable hint 在锚字被缩字号 / 减边距 /
 /// 减行高推到前一页时仍保原页 → 新页首字越过锚字 → 用户丢一页正文，且随后的进度刷新把
 /// 「锚字 → 新页首」当新读到计入统计（分页 progress 节点粒度 + 水位只升不降 = 单向棘轮）。
 ///
@@ -40,7 +40,7 @@ void main() {
     expect(
       fn,
       isNot(contains('aligned = (Math.abs(charPage - origPage) <= 1)')),
-      reason: '旧 ±1 无条件保原页的形态不得回潮（BUG-2167）',
+      reason: '旧 ±1 无条件保原页的形态不得回潮（BUG-2205）',
     );
   });
 }

@@ -26,7 +26,7 @@ const Duration kMaxReadingGap = Duration(seconds: 120);
 const int kArrivalDwellMs = 1500;
 
 /// 阅读空闲门默认值：这么久没有任何输入（翻页 / 滚动 / 听书播放态的 cue 推进）就
-/// 视为没在读，之后的 tick 不入账。查词**不**喂门（BUG-2174：它走词典弹窗，不经
+/// 视为没在读，之后的 tick 不入账。查词**不**喂门（BUG-2212：它走词典弹窗，不经
 /// [StudyClock.touch]）。用户可在设置里改（偏好键见 [kStudyIdleTimeoutPrefKey]）。
 /// 只对阅读面生效；视频面以播放态为准（切走仍在播就照常计时，用户拍板）。
 const Duration kDefaultReadingIdleTimeout = Duration(minutes: 10);
@@ -278,7 +278,7 @@ class StudyClock {
   }
 
   /// 起表。start 本身由用户动作触发（回前台 / 手动继续 / 关掉面板），就是一次
-  /// 输入：空闲基准无条件重锚到 now（BUG-2173——旧 `_lastTouch ??= now` 只在首次
+  /// 输入：空闲基准无条件重锚到 now（BUG-2211——旧 `_lastTouch ??= now` 只在首次
   /// 起表时置，挂机超时 → 切走 → 回前台后首个 tick 仍按陈旧基准被空闲门拒掉）。
   void start() {
     if (_timer != null) return;
@@ -316,7 +316,7 @@ class StudyClock {
 
   /// 记字数到当前打开段（没有就开一段）。字数本身就是一次输入，顺带 [touch]。
   ///
-  /// 停表期间（手动暂停 / 切屏 / 面板打开）直接丢弃（BUG-2172）：停表 = 不在学习，
+  /// 停表期间（手动暂停 / 切屏 / 面板打开）直接丢弃（BUG-2210）：停表 = 不在学习，
   /// 字数与时长一并不计；水位照常由页面推进，所以这些字之后也不会补计——这是有意的，
   /// 否则会产出「0 时长却有字数」的段，把字/时推向无穷。
   void addChars(int chars) {
@@ -347,7 +347,7 @@ class StudyClock {
   /// 打开段只改内存值，等下一 tick / [flushNow] 正常写。
   ///
   /// 撤回不是内容输入：不 [touch]、不开段、不结算待定窗口。停表期间与 [addChars]
-  /// 同律直接丢弃（BUG-2172）。返回实际扣掉的数。
+  /// 同律直接丢弃（BUG-2210）。返回实际扣掉的数。
   int retractChars(int chars) {
     if (chars <= 0 || !isRunning) return 0;
     final int taken = _retract(
@@ -395,7 +395,7 @@ class StudyClock {
 
   /// 墙钟模式下记内容账（字数 / 页数）之前先把待定窗口 `[上次 tick, now]` 结算掉。
   ///
-  /// BUG-2179：跨小时瞬间 [addChars] 若直接 [_ensureOpen]，会按新小时先开一段只装
+  /// BUG-2217：跨小时瞬间 [addChars] 若直接 [_ensureOpen]，会按新小时先开一段只装
   /// 字数，随后 tick 的 [_accrue] 按旧小时拆桶时发现打开段小时不符 → 把它封成
   /// 「0 时长纯字数段」再另开旧小时段。先结算，旧小时的时长就先落旧段、新段同时
   /// 承接新小时的时长与字数。显式记账模式（视频）的窗口裁决只在 tick 做，不在这里。

@@ -58,7 +58,7 @@ class StatFact {
   String get identityKey => mediaKey.isNotEmpty ? mediaKey : title;
 }
 
-/// 库表按 title 分桶（BUG-2178：legacy 阅读行只有 title，反查库表补身份时同名
+/// 库表按 title 分桶（BUG-2216：legacy 阅读行只有 title，反查库表补身份时同名
 /// ≥2 本不能贴给任意一本——宁可留成无身份组也不错贴）。
 Map<String, List<EpubBookRow>> _booksByTitle(Iterable<EpubBookRow> rows) {
   final Map<String, List<EpubBookRow>> out = <String, List<EpubBookRow>>{};
@@ -185,7 +185,7 @@ Future<StatFacts> loadStatFacts(
   int activityLimit = 200,
 }) async {
   final List<EpubBookRow> epubRows = await db.getAllEpubBooks();
-  // BUG-2178：同名 ≥2 本时不反查（后者覆盖前者 = 把一本书的历史错贴给另一本）。
+  // BUG-2216：同名 ≥2 本时不反查（后者覆盖前者 = 把一本书的历史错贴给另一本）。
   final Map<String, EpubBookRow> bookByTitle = <String, EpubBookRow>{
     for (final MapEntry<String, List<EpubBookRow>> e in _booksByTitle(
       epubRows,

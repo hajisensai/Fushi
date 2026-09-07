@@ -204,7 +204,7 @@ mixin _FushiDbContentMisc
       );
 
   /// 写入 / 抬高一条按身份墓碑：同键只在 [deletedAt] 严格更大时覆盖（碑戳只增
-  /// 不减，BUG-2182）。本机删除与同步 / 备份落地都经这里。
+  /// 不减，BUG-2220）。本机删除与同步 / 备份落地都经这里。
   Future<void> upsertStudySegmentTombstone({
     required String mediaKind,
     required String mediaKey,
@@ -226,7 +226,7 @@ mixin _FushiDbContentMisc
   );
 
   /// v92：删某媒体的 `study_segments` 事实 + 立按身份的墓碑（同一事务）。墓碑
-  /// 语义（BUG-2176 / BUG-2182）：压制 `startAt < deletedAt` 的段——删除之后开始的
+  /// 语义（BUG-2214 / BUG-2220）：压制 `startAt < deletedAt` 的段——删除之后开始的
   /// 新段（时钟下一次开段）自然存活，墓碑不需要清、也永不退场；碑戳只增不减
   /// （重复删只抬高、绝不倒退）。
   Future<int> deleteStudySegmentsForMedia({
@@ -247,7 +247,7 @@ mixin _FushiDbContentMisc
     return removed;
   });
 
-  /// v92：清空某媒体种类的全部段（统计页「清空全部」）。BUG-2177：清空前对该种类
+  /// v92：清空某媒体种类的全部段（统计页「清空全部」）。BUG-2215：清空前对该种类
   /// **每个身份**逐一立碑（`deletedAt = now`）再删行——否则互联 / 云同步下次聚合把
   /// 对端持有的全部历史整批回灌。新墓碑语义只压制 `startAt < deletedAt` 的段，立碑
   /// 不再「毒化身份空间」：之后再读同一本书开的新段照常存活。返回删掉的段数。
@@ -561,7 +561,7 @@ mixin _FushiDbContentMisc
   /// 墓碑是定向删除的防同步复活机制，全量重置若逐 title 立碑会永久毒化标题命名空间、
   /// 阻断以后重新导入这些书的统计；legacy 行云同步下次聚合仍可能从云端 MAX-union 回灌
   /// （旧数据的旧口径，已知边界）。v92 段则**逐身份立碑**（[clearStudySegments]，
-  /// BUG-2177）：新墓碑语义只压制清空之前开始的段，之后再读照常计。
+  /// BUG-2215）：新墓碑语义只压制清空之前开始的段，之后再读照常计。
   Future<void> clearAllReadingStatistics() => transaction(() async {
     await clearStudySegments(kActivityMediaBook);
     await delete(readingStatistics).go();
@@ -578,7 +578,7 @@ mixin _FushiDbContentMisc
   /// (video_watch_statistics)、按小时时段日志 (video_hourly_logs)、per-video 查词 / 制卡
   /// 计数 (lookup_mining_counters 的 video 行) 与全局按日制卡计数 (mining_statistics 的
   /// video 行)。与 [clearAllReadingStatistics] 对称，同样不动收藏 / 制卡历史 / 视频本体；
-  /// legacy 家族不写 title 墓碑，v92 段逐身份立碑（[clearStudySegments]，BUG-2177）。
+  /// legacy 家族不写 title 墓碑，v92 段逐身份立碑（[clearStudySegments]，BUG-2215）。
   Future<void> clearAllVideoStatistics() => transaction(() async {
     await clearStudySegments(kActivityMediaVideo);
     // BUG-2108：清统计 = 全部当没看过，覆盖并集一并清。

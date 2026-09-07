@@ -555,7 +555,7 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     if (!mounted || _controller == null) return;
     final AudiobookPlayerController? controller = _audiobookController;
     if (controller == null) return;
-    // BUG-2174：听书播放态是阅读输入——每次 cue 推进喂一次空闲门。歌词模式没有
+    // BUG-2212：听书播放态是阅读输入——每次 cue 推进喂一次空闲门。歌词模式没有
     // 滚动回传（不经 _refreshProgressFromScroll），听一小时只计到空闲门 10 分钟；
     // 非歌词模式的跟随也顺带经过（无害，与滚动回传的 touch 幂等）。暂停态的被动
     // 高亮（重开 / 手动跳句）不算播放，不喂。
@@ -868,7 +868,7 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
   /// 晚结算上一页（且期间若关书 / 跳句，新页整页漏计）。这里按同一个窗常量
   /// [kReaderReanchorSettleMs] 排在窗关之后补刷一次：瞬时 reveal 此刻早已落定；smooth
   /// 动画若还没停，窗关后的尾沿 scroll 回传本就会照常再刷（同单元重复采样是 no-op）。
-  /// 单 Timer 复位：连续 cue 推进只保留最后一次。BUG-2190 起 `_handleReaderScroll`
+  /// 单 Timer 复位：连续 cue 推进只保留最后一次。BUG-2227 起 `_handleReaderScroll`
   /// 在 B-3 窗内丢弃 scroll 回传时也排这一个 Timer（同一个窗、同一个补刷语义）。
   void _scheduleReanchorSettleProgressRefresh() {
     _revealProgressRefreshTimer?.cancel();
@@ -1861,7 +1861,7 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     }
     final AudiobookRepository repo = AudiobookRepository(appModel.database);
 
-    // BUG-2170：导入对话框压着正文期间停表。
+    // BUG-2208：导入对话框压着正文期间停表。
     await _withStudyClockPaused(
       () => showAppDialog<void>(
         context: context,

@@ -113,13 +113,13 @@ class AggregateMergeService {
     return out;
   }
 
-  /// BUG-2183：游戏（galgame hook 字数段）是本机局域身份（`galgames.id` 不跨端
+  /// BUG-2221：游戏（galgame hook 字数段）是本机局域身份（`galgames.id` 不跨端
   /// 搬运，见 tables.dart 的 GalgameTagMappings 注释），段与墓碑都**不进**聚合同步 /
   /// 备份合并——导出、并集仲裁、落地、备份 ATTACH 四处同一判据。
   static bool isStudyKindSyncable(String mediaKind) =>
       mediaKind != kActivityMediaGame;
 
-  /// 「删除 vs 重新学习」仲裁（纯函数）。BUG-2176 / BUG-2182 口径：
+  /// 「删除 vs 重新学习」仲裁（纯函数）。BUG-2214 / BUG-2220 口径：
   /// - 段存活 iff 可同步种类（[isStudyKindSyncable]）且无同身份墓碑或
   ///   `startAt >= deletedAt`（删除**之后开始**的段）；
   /// - 墓碑**永不退场**：live = 全部合并后的碑（同身份只有 deletedAt 最大的一块，

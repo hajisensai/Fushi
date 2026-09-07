@@ -34,7 +34,7 @@ class StatPeriodDetailResolvers {
   /// 事实行 → 展示标题（**不带**合集前缀——合集名已是组头，不重复拼）。
   final String Function(StatFact fact) titleOf;
 
-  /// 某媒体种类下库表判为多身份的 title 集合（BUG-2178 身份分组的吸收否决，
+  /// 某媒体种类下库表判为多身份的 title 集合（BUG-2216 身份分组的吸收否决，
   /// 与 [groupStatFactsByIdentity] 的 `ambiguousTitles` 同义）。null = 不否决。
   final Set<String> Function(String mediaKind)? ambiguousTitlesOf;
 
@@ -122,7 +122,7 @@ Future<bool> showStatPeriodDetailSheet(
   required Iterable<StatFact> facts,
   required StatPeriodDetailResolvers resolvers,
 }) async {
-  // 按 mediaKind 切片后走统一身份分组（BUG-2178：legacy 无身份行 unique-title
+  // 按 mediaKind 切片后走统一身份分组（BUG-2216：legacy 无身份行 unique-title
   // 吸收进唯一身份组，与阅读统计页「按书」/ 视频域同一契约）；插入序 = 种类首见序
   // × 组序，展示前再排序。
   final Map<String, List<StatFact>> byKind = <String, List<StatFact>>{};

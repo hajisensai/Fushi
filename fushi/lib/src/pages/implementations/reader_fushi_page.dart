@@ -411,7 +411,7 @@ int absoluteCharOffsetOf({
   return chapterCumulativeChars[chapter] + clamped;
 }
 
-/// 阅读时钟「此刻可跑」的统一判据（BUG-2171 / BUG-2170）。
+/// 阅读时钟「此刻可跑」的统一判据（BUG-2209 / BUG-2208）。
 ///
 /// 三个正交旗：用户在统计浮层手动暂停（[manualPause]）、app 切后台 / 桌面失焦
 /// （[lifecycleStopped]）、阅读器面板 / 弹层 / 全页路由压在正文上（[modalDepth] > 0，
@@ -1478,7 +1478,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 把新增 / 撤回的学习单位数记进（扣出）当前打开段。替代旧的标量水位 + 速度封顶令牌桶
   /// （`_sessionMaxAbsoluteChars` / `accumulateSessionCharsCapped`）——那套要在恢复完成 /
   /// 进度条拖动 / 搜索跳转 / cue 跳转 / 字数补算五处播种，漏一处就是幻象字数
-  /// （BUG-1107 / BUG-2168）；账本只计翻走的单元，跳过的从未成为当前单元，结构上
+  /// （BUG-1107 / BUG-2206）；账本只计翻走的单元，跳过的从未成为当前单元，结构上
   /// 不需要播种。
   late final ReadUnitLedger _readLedger = ReadUnitLedger(
     onCredit: (List<(int, int)> fresh) =>
@@ -1749,12 +1749,12 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// （BUG-892）与之正交——账仍只在 [StudyClock] 一本。
   bool _studyClockManualPause = false;
 
-  /// app 切后台 / 桌面失焦期间为 true（`didChangeAppLifecycleState`）。BUG-2171：
+  /// app 切后台 / 桌面失焦期间为 true（`didChangeAppLifecycleState`）。BUG-2209：
   /// 后台听书跟随会经 [_ensureStudyClock] 反复到达，必须有一枚生命周期旗让它知道
   /// 「现在不许起表」，而不是只看手动暂停旗。
   bool _studyClockLifecycleStopped = false;
 
-  /// 压在正文上的面板 / 弹层 / 全页路由计数（BUG-2170）。> 0 时时钟停表：调半小时
+  /// 压在正文上的面板 / 弹层 / 全页路由计数（BUG-2208）。> 0 时时钟停表：调半小时
   /// 外观参数、翻目录、搜书、看插图都不是阅读。经 [_withStudyClockPaused] 增减。
   int _studyClockModalDepth = 0;
 
@@ -2844,7 +2844,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       // 熄屏、睡眠期间的墙钟时长会在恢复时被一次性计入（34h 的书 / 单小时 >1h / 凌晨
       // 幻影阅读）。这就是「切屏自动暂停」：stop() 先结算失焦瞬间的部分窗口（受
       // kMaxReadingGap 守卫）再封段落库，时长与字数在同一段里一起写穿。
-      // BUG-2171：置生命周期旗再经统一判据停表——后台听书跟随经 _ensureStudyClock
+      // BUG-2209：置生命周期旗再经统一判据停表——后台听书跟随经 _ensureStudyClock
       // 到达时看到旗子，不会把时钟重新起起来。
       _studyClockLifecycleStopped = true;
       _syncStudyClockRunState();

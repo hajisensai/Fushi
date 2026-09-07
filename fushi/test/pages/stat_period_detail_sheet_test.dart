@@ -95,7 +95,7 @@ void main() {
     expect(watchY, lessThan(gameY));
   });
 
-  testWidgets('BUG-2178：legacy 无身份行 unique-title 吸收进唯一身份组；同名双身份不合并', (
+  testWidgets('BUG-2216：legacy 无身份行 unique-title 吸收进唯一身份组；同名双身份不合并', (
     WidgetTester tester,
   ) async {
     await _open(
@@ -134,7 +134,7 @@ void main() {
     expect(find.text('Dup'), findsNWidgets(3), reason: '两个身份 + 一个无身份组');
   });
 
-  testWidgets('BUG-2178：库表判同名歧义时，unique-title 也不许吸收', (
+  testWidgets('BUG-2216：库表判同名歧义时，unique-title 也不许吸收', (
     WidgetTester tester,
   ) async {
     late BuildContext hostContext;

@@ -124,7 +124,7 @@ void main() {
       expect(
         body,
         isNot(contains('_readLedger.')),
-        reason: '恢复完成不碰账本：离开在 _beginNavigation / 同章跳转入口 leave（BUG-2188）',
+        reason: '恢复完成不碰账本：离开在 _beginNavigation / 同章跳转入口 leave（BUG-2225）',
       );
     });
 
@@ -140,7 +140,7 @@ void main() {
         expect(
           masked,
           isNot(contains(stale)),
-          reason: '$stale 属于已拆除的标量水位 + 令牌桶（BUG-1107 / BUG-2168 的结构性根因）',
+          reason: '$stale 属于已拆除的标量水位 + 令牌桶（BUG-1107 / BUG-2206 的结构性根因）',
         );
       }
     });

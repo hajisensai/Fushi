@@ -21,14 +21,14 @@ import 'package:fushi/src/stats/interval_coverage.dart';
 ///
 /// 没有「播种 / 预置」API：跳转、换章、恢复都不需要告诉账本「这段跳过了」。此前 EPUB 的
 /// 标量水位需要在恢复完成 / 进度条拖动 / 搜索跳转 / cue 跳转 / 字数补算五处播种，漏一处
-/// 就是幻象字数（BUG-1107 / BUG-2168）；账本把这个类别的 bug 结构性消掉。
+/// 就是幻象字数（BUG-1107 / BUG-2206）；账本把这个类别的 bug 结构性消掉。
 ///
 /// 其它契约：
 ///  * 同一页换了坐标（漫画单页↔双页 / spread↔webtoon）不是翻页：[rebaseOnNextArrive]
-///    让下一次 [arrive] 只替换当前单元边界、不并入。EPUB 已不用它（BUG-2188）。
+///    让下一次 [arrive] 只替换当前单元边界、不并入。EPUB 已不用它（BUG-2225）。
 ///  * 坐标系整体变更（章字数后台补算）：[reset] 清并集 + 丢当前；此前已入账的**沉没**
 ///    （不撤回——那是坐标精化，不是重读），之后按新坐标从零起。
-///  * 停表期间的丢弃（BUG-2172）由 `StudyClock.addChars/addPages` 与 `retractChars/retractPages`
+///  * 停表期间的丢弃（BUG-2210）由 `StudyClock.addChars/addPages` 与 `retractChars/retractPages`
 ///    对称地保持，账本不管。
 class ReadUnitLedger {
   ReadUnitLedger({required this.onCredit, required this.onRetract});

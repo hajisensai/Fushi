@@ -3,7 +3,7 @@ import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi/src/stats/stat_facts.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-/// BUG-2178：阅读域「按书」分组与视频域同一套 unique-title 吸收
+/// BUG-2216：阅读域「按书」分组与视频域同一套 unique-title 吸收
 /// （[groupStatFactsByIdentity] → [groupStatRowsByIdentity]）。此前阅读统计页裸按
 /// `identityKey` 分组：删书后 legacy 日行（title 反查失败 → mediaKey ''）与 v92 段
 /// （带 bookKey）各成一组，同名两条；库里同名两本时 title→bookKey 反查后者覆盖前者。

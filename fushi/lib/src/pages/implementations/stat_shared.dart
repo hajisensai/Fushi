@@ -308,7 +308,7 @@ List<StatIdentityGroup<T>> groupStatRowsByIdentity<T>(
   ];
 }
 
-/// 统一事实面行的按身份分组（BUG-2178）：阅读统计页「按书」与时段明细 sheet 都走
+/// 统一事实面行的按身份分组（BUG-2216）：阅读统计页「按书」与时段明细 sheet 都走
 /// 这一个入口，与视频域 `computeVideoStats` 同一套 [groupStatRowsByIdentity] 契约——
 /// 有 mediaKey 按身份分组；legacy 无身份行（书已删 / 库表同名歧义）在行宇宙里恰好
 /// 一个身份组占用该 title 且不在 [ambiguousTitles] 时并入，否则独立成无身份组。

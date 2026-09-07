@@ -6,7 +6,7 @@ import 'package:fushi_core/fushi_core.dart';
 
 // v92 统计域重构：study_segments 是学习统计的唯一事实表。本测试锁定 DAO 契约：
 // 按 uid 幂等 upsert（绝对值覆盖，永不 +=）、窗口查询、按身份删除 + 墓碑、按种类清空。
-// BUG-2176 / BUG-2182 / BUG-2177：墓碑语义 = 「删除 startAt < deletedAt 的段」，碑戳只增
+// BUG-2214 / BUG-2220 / BUG-2215：墓碑语义 = 「删除 startAt < deletedAt 的段」，碑戳只增
 // 不减、永不因后来的段退场；清空也逐身份立碑。
 Future<FushiDatabase> _openDb() async {
   final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
@@ -246,7 +246,7 @@ void main() {
     expect(tombs.single.mediaKind, kActivityMediaBook);
   });
 
-  test('clearStudySegments 只清该种类，并对该种类每个身份立碑（BUG-2177）', () async {
+  test('clearStudySegments 只清该种类，并对该种类每个身份立碑（BUG-2215）', () async {
     final FushiDatabase db = await _openDb();
     await db.upsertStudySegment(_seg('a', kind: kActivityMediaBook, key: 'b1'));
     await db.upsertStudySegment(
@@ -279,7 +279,7 @@ void main() {
     expect((await db.getStudySegmentTombstones()).length, 2, reason: '碑仍在');
   });
 
-  group('墓碑语义：删除 startAt < deletedAt 的段（BUG-2176 / BUG-2182）', () {
+  group('墓碑语义：删除 startAt < deletedAt 的段（BUG-2214 / BUG-2220）', () {
     test('删该媒体统计后，仍在跑的时钟对开放段（startAt 在删除前）的回写被静默丢弃', () async {
       final FushiDatabase db = await _openDb();
       // 时钟在 t=1000 开段并 tick 到 5000。
@@ -425,7 +425,7 @@ void main() {
     });
   });
 
-  group('legacy 阅读行反查库表身份（BUG-2178）', () {
+  group('legacy 阅读行反查库表身份（BUG-2216）', () {
     EpubBooksCompanion book(String key, String title) =>
         EpubBooksCompanion.insert(
           bookKey: key,

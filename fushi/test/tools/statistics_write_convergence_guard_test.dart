@@ -89,7 +89,7 @@ const List<String> kStatPages = <String>[
   'lib/src/pages/implementations/stat_activity.dart',
   'lib/src/pages/implementations/stat_source_totals.dart',
   'lib/src/pages/implementations/activity_feed.dart',
-  // 阅读器内统计浮层：今日 / 累计卡按 StatWindow.isToday 切片（BUG-2180 起走统计口径）。
+  // 阅读器内统计浮层：今日 / 累计卡按 StatWindow.isToday 切片（BUG-2218 起走统计口径）。
   'lib/src/reader/reader_statistics_dialog.dart',
 ];
 
@@ -306,7 +306,7 @@ void main() {
       expect(resumed, greaterThan(inactive), reason: path);
       final String bg = body.substring(inactive, resumed);
       final String fg = body.substring(resumed);
-      // EPUB 面（BUG-2171）：start / stop 决策收敛到统一判据 studyClockMayRun——生命
+      // EPUB 面（BUG-2209）：start / stop 决策收敛到统一判据 studyClockMayRun——生命
       // 周期分支只置旗再 _syncStudyClockRunState()（后台听书跟随经 _ensureStudyClock
       // 到达时看到旗子不会重新起表）。PDF / 漫画仍是直接 stop / start。
       final bool unifiedGate = path.endsWith('reader_fushi_page.dart');

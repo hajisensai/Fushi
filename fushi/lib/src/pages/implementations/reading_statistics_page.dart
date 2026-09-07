@@ -74,12 +74,12 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   Map<String, String> _bookKeyByTitle = <String, String>{};
   Map<String, String> _epubUidByBookKey = <String, String>{};
 
-  /// 库里同名 ≥2 本的 title（BUG-2178：按书分组的吸收否决，legacy 无身份行不许
+  /// 库里同名 ≥2 本的 title（BUG-2216：按书分组的吸收否决，legacy 无身份行不许
   /// 吸进任何一本）。
   Set<String> _ambiguousBookTitles = <String>{};
 
   /// **本轮加载时**的统计窗口：聚合、「各来源」谓词、时段卡谓词全部用这一个
-  /// （BUG-2181：此前聚合用加载时刻、卡片谓词点击时现算，跨午夜后「今日」卡的数
+  /// （BUG-2219：此前聚合用加载时刻、卡片谓词点击时现算，跨午夜后「今日」卡的数
   /// 与明细对不上）。跨午夜由 [_midnightReload] 触发整页重聚合。
   StatWindow _window = StatWindow(DateTime.now());
   Timer? _midnightReload;
@@ -226,7 +226,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
           c.id: c.name,
       };
       _primaryCollectionByEntry = await db.getPrimaryCollectionIdByEntry();
-      // BUG-2178：同名 ≥2 本的 title 不进反查表（贴给任意一本都是错贴）。
+      // BUG-2216：同名 ≥2 本的 title 不进反查表（贴给任意一本都是错贴）。
       _bookKeyByTitle = uniqueBookKeyByTitle(epubRows);
       // v83：成员表 epub entryKey = uid，同批行顺带建换算表（空 uid 异常行不进
       // 表，查归属时按 bookKey 原样回退）。
@@ -279,7 +279,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   void _computeAggregates() {
     // 窗口阈值只从 StatWindow 取（近 7 天恰 7 天、上周 [now-13d, now-6d) 恰 7 天
     // 且与本周不重叠、近 30 天恰 30 天），本页不再自己算日期；且只用本轮加载时的
-    // 那一个窗口（BUG-2181）。
+    // 那一个窗口（BUG-2219）。
     final StatWindow w = _window;
     final DateTime now = w.now;
 
@@ -338,7 +338,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       if (w.inWeek(f.dateKey)) _weekStudyChars += f.chars;
     }
 
-    // 按书：与视频域同一套身份分组（BUG-2178，[groupStatFactsByIdentity]）——有
+    // 按书：与视频域同一套身份分组（BUG-2216，[groupStatFactsByIdentity]）——有
     // bookKey 按身份；legacy 无身份行（书已删 / 同名歧义反查失败）unique-title 吸收
     // 进唯一身份组，同一本书的 legacy 日行与 v92 段合成一个 tile；歧义独立成无身份
     // tile。title 取组首见快照作展示 / 计数键。
@@ -639,7 +639,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       _weekChars,
       _prevWeekChars,
     );
-    // BUG-2186：环比封顶（≥ 999% 显示 `↑>999%`，无基线显示 `—`）。
+    // BUG-2224：环比封顶（≥ 999% 显示 `↑>999%`，无基线显示 `—`）。
     final String weekDelta = formatWeekOverWeekDelta(
       _weekChars,
       _prevWeekChars,
@@ -801,7 +801,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   }
 
   Widget _buildSummaryCards() {
-    // 时段谓词与聚合同一个窗口（BUG-2181）：跨午夜后由 [_midnightReload] 整页重聚合，
+    // 时段谓词与聚合同一个窗口（BUG-2219）：跨午夜后由 [_midnightReload] 整页重聚合，
     // 卡上的数和点开的明细永远出自同一窗口。
     final StatWindow w = _window;
     return buildStatPeriodSummaryGrid(context, <StatPeriodSummary>[

@@ -15,13 +15,13 @@ import 'fake_asset_store.dart';
 import 'temp_dir_cleanup.dart';
 
 // v92 统计域 wire v2：学习事实段（study_segments）与按身份墓碑随聚合快照上行，
-// 按 uid LWW 并集、墓碑按「删除 startAt < deletedAt 的段」仲裁（BUG-2176 /
-// BUG-2182：碑永不因后来的段退场）。本测试锁定：
+// 按 uid LWW 并集、墓碑按「删除 startAt < deletedAt 的段」仲裁（BUG-2214 /
+// BUG-2220：碑永不因后来的段退场）。本测试锁定：
 //  * 快照 round-trip 与旧 payload（无新 key）兼容；
 //  * 纯函数并集 / 仲裁的四条不变量；
 //  * 双设备云同步：并集无重复、无塌缩、幂等，删除跨端传播，删除后开的新段存活；
-//    删除时仍在跑的开放段回写被拒；两端 skew 下碑不消失；清空全部不复活（BUG-2177）；
-//  * 游戏段 / 碑不出本机、不落地、不从备份搬入（BUG-2183）；
+//    删除时仍在跑的开放段回写被拒；两端 skew 下碑不消失；清空全部不复活（BUG-2215）；
+//  * 游戏段 / 碑不出本机、不落地、不从备份搬入（BUG-2221）；
 //  * 备份 ATTACH 合并与在线同步同语义。
 // 这一套取代了 legacy 家族的 MAX-union / setVideoWatchStatistic 塌缩 / deficit-lift
 // （BUG-1947：wire 键 (title, dateKey) 让分集裸集号跨作品相加再 MAX 固化）。
@@ -232,7 +232,7 @@ void main() {
           _rec('new', key: 'v1', startAt: 150, updatedAt: 151), // 与碑同刻 → 存活
           _rec('v2seg', key: 'v2', startAt: 50, updatedAt: 500), // 被 100 压制
           _rec('other', key: 'v3', startAt: 1, updatedAt: 1),
-          _rec('game', kind: 'game', key: 'g1', startAt: 9999), // BUG-2183
+          _rec('game', kind: 'game', key: 'g1', startAt: 9999), // BUG-2221
         ],
         tombstones: tombs,
       );
@@ -346,7 +346,7 @@ void main() {
       expect((await dbB.getStudySegmentTombstones()).single.mediaKey, 'v1');
     });
 
-    test('删除时仍在跑的时钟：开放段回写被拒，对端也不复活（BUG-2176）', () async {
+    test('删除时仍在跑的时钟：开放段回写被拒，对端也不复活（BUG-2214）', () async {
       final FakeAssetStore store = FakeAssetStore();
       final FushiDatabase dbA = await _freshDb('seg_open_a_');
       final FushiDatabase dbB = await _freshDb('seg_open_b_');
@@ -391,7 +391,7 @@ void main() {
       );
     });
 
-    test('两端墙钟 skew：对端时钟超前的段 updatedAt 再大也压不掉碑（BUG-2182）', () async {
+    test('两端墙钟 skew：对端时钟超前的段 updatedAt 再大也压不掉碑（BUG-2220）', () async {
       final FakeAssetStore store = FakeAssetStore();
       final FushiDatabase dbA = await _freshDb('seg_skew_a_');
       final FushiDatabase dbB = await _freshDb('seg_skew_b_');
@@ -435,7 +435,7 @@ void main() {
       );
     });
 
-    test('清空全部统计后同步合并不复活（BUG-2177）', () async {
+    test('清空全部统计后同步合并不复活（BUG-2215）', () async {
       final FakeAssetStore store = FakeAssetStore();
       final FushiDatabase dbA = await _freshDb('seg_clear_a_');
       final FushiDatabase dbB = await _freshDb('seg_clear_b_');
@@ -469,7 +469,7 @@ void main() {
       expect((await dbA.getStudySegments()).single.uid, 'fresh');
     });
 
-    test('游戏段 / 碑不出本机、旧端直落的游戏段也不落地（BUG-2183）', () async {
+    test('游戏段 / 碑不出本机、旧端直落的游戏段也不落地（BUG-2221）', () async {
       final FakeAssetStore store = FakeAssetStore();
       final FushiDatabase dbA = await _freshDb('seg_game_a_');
       final FushiDatabase dbB = await _freshDb('seg_game_b_');
@@ -614,7 +614,7 @@ void main() {
         'shared',
         'local',
         'backup',
-      }, reason: 'doomed 被备份里的墓碑压制；备份里的游戏段不搬入（BUG-2183）');
+      }, reason: 'doomed 被备份里的墓碑压制；备份里的游戏段不搬入（BUG-2221）');
       expect(byUid['shared']!.durationMs, 900, reason: 'LWW 取备份里更新的值');
       expect(
         (await merged.getStudySegmentTombstones()).single.mediaKey,

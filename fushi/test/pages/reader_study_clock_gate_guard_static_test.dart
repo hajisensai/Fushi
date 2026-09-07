@@ -5,8 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import '../helpers/source_guard.dart';
 import 'reader_fushi_page_source_corpus.dart';
 
-/// 2026-09 阅读统计审计（BUG-2169 / 2170 / 2171 / 2172 / 2173 / 2174 / 2175 /
-/// 2179 / 2184）的源码形态守卫。（BUG-2168 的令牌桶清零门随标量水位一起拆除——
+/// 2026-09 阅读统计审计（BUG-2207 / 2170 / 2171 / 2172 / 2173 / 2174 / 2175 /
+/// 2179 / 2184）的源码形态守卫。（BUG-2206 的令牌桶清零门随标量水位一起拆除——
 /// 字数统计改走 `ReadUnitLedger`，接线守卫见
 /// `test/reader/reader_read_ledger_wiring_guard_static_test.dart`。）判据本身是纯函数（见
 /// `test/reader/reader_study_clock_policy_test.dart`、`study_clock_test.dart`），这里
@@ -25,7 +25,7 @@ void main() {
     ).readAsStringSync().replaceAll('\r\n', '\n'),
   );
 
-  group('BUG-2171：所有 start / stop 决策只经统一判据 studyClockMayRun', () {
+  group('BUG-2209：所有 start / stop 决策只经统一判据 studyClockMayRun', () {
     test('_ensureStudyClock 按 _studyClockMayRun 起表，不再只看手动暂停旗', () {
       final String body = _functionSource(
         corpus,
@@ -80,7 +80,7 @@ void main() {
     });
   });
 
-  group('BUG-2170：面板 / 弹层 / 全页路由压住正文期间停表', () {
+  group('BUG-2208：面板 / 弹层 / 全页路由压住正文期间停表', () {
     test('_withStudyClockPaused 计数进出并 sync（finally 保证减计数）', () {
       final String body = _functionSource(
         corpus,
@@ -129,7 +129,7 @@ void main() {
     });
   });
 
-  group('BUG-2169：恢复在飞期间 10s 轮询不采样', () {
+  group('BUG-2207：恢复在飞期间 10s 轮询不采样', () {
     test('_refreshProgress 首条门含 _restoreInFlight', () {
       final String body = _functionSource(
         corpus,
@@ -148,7 +148,7 @@ void main() {
     });
   });
 
-  group('BUG-2174：听书播放态每次 cue 推进喂空闲门', () {
+  group('BUG-2212：听书播放态每次 cue 推进喂空闲门', () {
     test('_onCueChanged 在歌词模式分支之前按 isPlaying touch', () {
       final String body = _functionSource(
         corpus,
@@ -162,7 +162,7 @@ void main() {
     });
   });
 
-  group('BUG-2175：空闲门分钟数不在建时钟时快照', () {
+  group('BUG-2213：空闲门分钟数不在建时钟时快照', () {
     test('_ensureStudyClock 每次刷新 idleTimeout，构造期不传', () {
       final String body = _functionSource(
         corpus,
@@ -189,7 +189,7 @@ void main() {
     });
   });
 
-  group('BUG-2172 / BUG-2173 / BUG-2179：StudyClock 内容账与起表形态', () {
+  group('BUG-2210 / BUG-2211 / BUG-2217：StudyClock 内容账与起表形态', () {
     test('addChars / addPages 停表即丢、记账前先结算待定窗口', () {
       for (final String start in <String>[
         '  void addChars(int chars) {',
@@ -212,7 +212,7 @@ void main() {
     });
   });
 
-  group('BUG-2184：PDF 翻页记页数（2026-09-06 起走 ReadUnitLedger 翻走即计）', () {
+  group('BUG-2222：PDF 翻页记页数（2026-09-06 起走 ReadUnitLedger 翻走即计）', () {
     test('_onPageChanged 把页号单元交给账本，onCredit 按首次覆盖长度 addPages', () {
       final String body = _functionSource(
         pdf,

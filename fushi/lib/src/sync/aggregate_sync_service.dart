@@ -282,7 +282,7 @@ class AggregateSyncService {
           .getSyncDeletionTombstonesOfType(kFavoriteSentenceTombstoneType))
         row.itemKey: row.deletedAt,
     };
-    // v92：本地段墓碑压制的段（`startAt < deletedAt`，BUG-2176）不上行（merged 是
+    // v92：本地段墓碑压制的段（`startAt < deletedAt`，BUG-2214）不上行（merged 是
     // local ∪ peer，peer 那份仍带本机已删媒体的旧段——与 BUG-1572 的 legacy 同病）；
     // 墓碑本身透传，删除才能传到对端。
     final Map<String, int> segmentTombstoned = <String, int>{
@@ -385,8 +385,8 @@ class AggregateSyncService {
       createdAtOf: (FavoriteSentence s) => s.createdAt.millisecondsSinceEpoch,
     );
     // v92 wire v2：段按 uid LWW 并集，墓碑按身份取 max，再仲裁「删除之前开始的段
-    // 出局、墓碑永不退场」（BUG-2176 / BUG-2182）；游戏段 / 碑在仲裁里被过滤
-    // （BUG-2183：旧端混进来的也不再随 merged 上行）。
+    // 出局、墓碑永不退场」（BUG-2214 / BUG-2220）；游戏段 / 碑在仲裁里被过滤
+    // （BUG-2221：旧端混进来的也不再随 merged 上行）。
     final ({
       List<StudySegmentRecord> segments,
       List<StudyTombstoneRecord> tombstones
@@ -802,7 +802,7 @@ class AggregateSyncService {
     final List<FavoriteWordRow> favWords = await _db.getAllFavoriteWords();
     final List<FavoriteSentence> favSentences = await _readFavoriteSentences();
     // v92 wire v2：事实段与按身份墓碑全量上行（uid 幂等，对端按 LWW 并集）。
-    // BUG-2183：游戏段 / 碑不出本机（[AggregateMergeService.isStudyKindSyncable]）。
+    // BUG-2221：游戏段 / 碑不出本机（[AggregateMergeService.isStudyKindSyncable]）。
     final List<StudySegmentRow> segments = await _db.getStudySegments();
     final List<StudySegmentTombstoneRow> segmentTombstones =
         await _db.getStudySegmentTombstones();
@@ -935,7 +935,7 @@ class AggregateSyncService {
   /// v92 wire v2 落地：**先落墓碑**（碑戳只增不减，并删本地 `startAt < deletedAt`
   /// 的段），**再**按 uid LWW upsert 段——顺序不可反：段先落、碑后到会让 DAO 的
   /// 墓碑门（`upsertStudySegmentsIfNewer` 跳过 `startAt < deletedAt`）看不到新碑。
-  /// merge 侧已仲裁掉被压制的段与游戏段（BUG-2183：旧端快照直落时这里再丢一次）。
+  /// merge 侧已仲裁掉被压制的段与游戏段（BUG-2221：旧端快照直落时这里再丢一次）。
   /// 幂等：同一快照重放，墓碑不变、段同值不覆盖。
   Future<void> _applyStudySegments(AggregateSnapshot snapshot) async {
     for (final StudyTombstoneRecord t in snapshot.studySegmentTombstones) {
