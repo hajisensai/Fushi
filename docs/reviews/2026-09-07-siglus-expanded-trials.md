@@ -215,9 +215,43 @@ LOOPERS PLUS 原版由 Start.exe34172（19:42:32.505292）经 StartMenu40196 进
 
 21:28:02.368点击正文显示新明解词条，hit引用seq1、字符2、长度1、geometry7。21:28:39.752–40.918窗外点击关闭弹窗，UI和IPC均保持seq1；21:28:52.809下一点才产生seq2/tick959899921、46字节。没有风险确认、手工校准或调试器。这证明新结构在生产严格Capture下的正文及内嵌查词，尚未证明Anemoi原始音频。当前source严格拒绝与LP不同的Resource/Builder结构，资源捕获、逐句配对和真卡仍待补齐，系统回录不计作原音通过。
 
+## 四部收尾范围与原始语音补证（22:36）
+
+用户将本轮范围收敛为 Anemoi、SPRB、終のステラ和原版 LOOPERS。其他游戏和引擎暂停，不再推进 Locale 或新样本工作；已有 LUNARiA、LOOPERS PLUS 证据保留历史，不能替代原版 LOOPERS。
+
+Anemoi 的第二种 Resource/Builder 完整结构及 `kStack118` 已经接线（`2765697906`、`d8de5d431e`），与 `kStack120` 分开校验、禁止交叉拼接。用户原始路径的新进程24032（父25292，21:49:47.131671）实际加载 `4d457ff73c94efbfb0bae17350d99663a738464c92b40b2dbe4c79a26f6c82c1` DLL，helper63940、runtime `275439a5ddcb949b/x86`，仍为IPC24/NativeOwned。21:54:01.923默认附着、21:54:39.791原生Continue、21:55:43.340选择原生消息线程。最初seq1/2及seq2重播未观察到导出；不能仅凭这一缺失推断资源ABI失败。
+
+22:03游戏在代理输入之外推进到seq21，观察到seq3/5/7/10/13/18六个带真实事件编号的原始语音导出；独立读取原版z0001.ovk索引，每个member唯一且源entry与导出字节完全一致。seq18/tick961984781对应member105、offset268283、17228字节、48110采样；SHA-256为 `410c6f7f572c9fa52de8a93bcdce3ff7f48d148c2e59bafae2798c3a1c4b5f15`，Vorbis44100Hz单声道、1.090930秒。该观察不归因为代理动作或未观察到的设置修改。当前seq21没有对应导出，不能借seq18制卡；本机台账为 `anemoi24032-resource-verification.json`。
+
+SPRB原版30476的seq2/tick960340296在21:38:06.261原生Voice重播后产生原资源；z0002.ovk的member179唯一、offset105743、27483字节、109036采样，源与导出SHA-256 `13c99915ee75cd019b6ffbccd538b4a621fa6c310f57afe5bfb3625012654563`，Vorbis48000Hz单声道。普通首次播放未导出的具体动态分支尚未确认；静态资源函数存在找到成员后直接成功返回并跳过OggOpen的条件路径，不将它推断为用户某项设置。
+
+同一SPRB旧DLL会话21:42:54.108的正文点击没有显示弹窗。后续只读私有元数据证明点击seq1已入队并消费，payload确实引用当时正文seq2，而非点击未命中。`2d06b70d98` 修复 [BUG-2244](../bugs/BUG-2244-siglus-lookup-capture-frontier.md)：未消费的同句重绘只使该有界点击事务等待消费前沿推进，不提前确认；新正文事件、布局epoch或窗口失效则终止，glyph环丢失也使旧epoch失效。实际worker回归15场景在x86/x64通过，结构48/48。独立代理因额度限制未完成最后提交，由主代理接管复核、补文档并整合；不声称额外独立审查已经完成。临时相邻测试脚本缺少hook include路径，产生C1083却返回0，未计为通过；随后完整CMake分发编译和CTest各84/84、退出0，包含该registry测试。
+
+`6d73378c82` 同时修复 [BUG-2243](../bugs/BUG-2243-galgame-folded-typed-audio-ownership.md) 的折叠行旧音频继承、旧pending回写与typed WAV时间回退。九份消费端定向测试179/179，14项focused analyze退出0。新Windows主程序首次安装因默认dist陈旧而失败；将刚完成的分发包放入默认构建目录后重建退出0、70.6秒。新AOT为 `447641ae2dbaf464f88134e9ff7e78f3b405a6f3029f5e6cbcd70ead7677cadf`；x86 DLL `ecab5f5bc0ab673314b2127464e45ab86ee4bac8e229ab804feebe576cb7ce71`，x64 DLL `0273318bf8bac5910f77a49d6239c918c5ecb82b1c91bb17e2213f1e6bff5b15`。x86/x64 ZIP分别为 `72260e5d9c508a057b76a54fe1b3701d27680084ab386a1f2dbaa76cb8e15c39` / `41578d8911e8b45cf2675c67e510b4e2a543a9470b133de70768e92ed5223fde`。两生成器、manifest22/22、workflow6/6通过。
+
+終のステラ官方体验版由Start73684→StartMenu73416→游戏48700（22:26:09）进入，用户在窗口工具故障期间完成进入剧情。重建控制会话后恢复正常，不修改游戏或安全设置。新版宿主6772（22:27:55）于22:29:00.234默认附着，helper73988（22:29:00.717208），实际新DLL位于 `abb69c406f16a035/x86`；游戏1.1.137/x86、EXE SHA-256 `b3d0bc77fd043c93e5ea469cf05341a541de425ea76afc295c5f5d85984526c5`。原生线程8423289862878541在22:29:54.208选定。正文seq1的22:30:16.077点击显示新明解，hit使用真实seq1/geometry21；22:30:40.608窗外点击保持seq1，22:30:54.941下一点推进seq2。没有风险确认或手工校准。
+
+同会话seq2/tick963624125原音对应z0002.ovk唯一member41、offset138600、54855字节、76368采样；源与导出SHA-256 `fab792e35ba5fa6b75b5364ce6e9c54843fe5e2e4e67836aee30eed459db6c7a`，Vorbis44100Hz单声道、1.731701秒。22:31:33.546同句查词显示词条。制卡前再次观察时游戏已在代理输入之外推进至seq5，故没有拿seq2资源给后句写卡；继续寻找当前有声句，真卡尚未完成。
+
+## 四部原始路径验收收尾（23:18）
+
+用户最终确认「sprb看着也没问题了」「制卡没问题」「anemoi也算通过了」。本轮限定的四部至此收尾，不再推进其他游戏、Locale 或新引擎。下面区分代理操作、用户操作和独立字节核验；不以人工反馈替代可取得的实际卡片证据。
+
+終のステラ48700的当前有声seq20/tick964151078完成真卡：22:40:13.966正文查词，22:40:27.929点制卡，Anki note/card `1788792029014`。句子UTF-16 SHA-256 `b401bf191be7805884f1e016a038125ece49d209e327181c342c65efeba85626`与IPC一致。z0002.ovk唯一member63、offset193455、40314字节、52560采样，原资源及导出SHA-256 `9eaba5d9eff1bd7d6075916efad2edcc1289331d6add02d8ba5f699d21c32c73`，44100Hz单声道1.191837秒。卡片AAC20167字节，SHA-256 `e7987cc4e93ff83d16994092569694a431edf356010acefb77d4d97c08953141`，与整段原资源按生产参数编码完全相同；配图76314字节、SHA-256 `b6315f61e250221e11594bf5cef013fe572dd9c7ac4198310c16039a55db4238`，已查看为同句画面且无弹窗。22:44正常退出。台账：`siglus48700-seq20-card-verification.json`。
+
+原版LOOPERS官方体验版（非PLUS）从Start30588→StartMenu14736→游戏40020（22:46:52.142567）正常启动；EXE `7fd6e190b5ed01901f70654264df6a029296f90438fbd587b9f876b198e22dfb`、1.1.137/x86。22:48:08.377附着，helper36272，实际DLL为上述ECAB构建，runtime `abb69c406f16a035/x86`，没有Luna模块。seq1的原资源已逐字节通过，但第一张真卡暴露 [BUG-2245](../bugs/BUG-2245-gal-voice-companion-session-boundary.md)：制卡伴音只按会话内编号拼接，误加入早12842625ms的旧seq1。失败卡136053字节恰好等于当前70162字节AAC加旧65891字节AAC。保留失败元数据，未通过清理旧资源掩盖问题。
+
+`378eb36ef5`恢复伴音追加的原文本时刻校验，保留同句多角色与冻结主资源。回归先红1条、修复后相关98条通过，退出0；初次Dart analyze因本机Dart/perf重解析点在server.shutdown时报errno1920，未计通过。仅为分析进程隔离LOCALAPPDATA后focused Flutter analyze退出0、No issues found。Windows release重建退出0、129.5秒；宿主EXE仍为 `4729c2e4d786ecb48564a27e638b3755f58c15bfded062ebb0f546ca56ad8375`，新AOT `ba33bb453f5cb30e03190413d6a3bd7eb8a7176019efd9e214ffec58e477fa01`。native无新增变动，沿用已通过双架构各84/84的ECAB/027331构建。所有后续卡片使用宿主74344（23:06:22）及该AOT；x86 helper SHA-256 `4939c27ce31fbc782d302d6d3bf866ec521b2fef2b081ac860c575f9e03451d3`。
+
+新版宿主23:07:44重新附着同一LOOPERS40020，helper70680；23:08:07选择原生线程8423289862878541，恢复seq1/2及其原资源。seq2/tick964834375查词后写入note/card `1788793732796`。文本只经过生产服务既有首尾空白trim，与该事件去掉6个前导空白的UTF-16 SHA-256 `471d3805e024253a24f160003d8e7656454186c059d437a8a85ec851963e9b1d`一致。原z0001.ovk唯一member39、offset48086、87986字节、341476采样，源/导出SHA-256 `294c38053d5e0c86296f66dd942ea89a97e8bd897b681d55dd05d294865dccb8`，44100Hz单声道7.743220秒。真卡AAC135925字节、SHA-256 `57a1af8d29e93a0ad83b3c006aa4c969041cc8e1d8ac7e55f94a8272d61875ae`，精确等于当前整段原音编码；配图92690字节、SHA-256 `b8f626ddb0bcd9080c73f538f2c79d43d9b9e2a131e1e260691c1e6e32b08ec2`，已查看同句无弹窗。第一次窗外点击保持seq2，第二次推进seq3/tick965974750；正常退出后运行SPRB。台账：`siglus40020-seq2-card-verification.json`。失败测试note `1788792623010`仅替换SentenceAudio为已独立核实的本句原音编码，其他字段逐项保持不变；该本地修复不冒充新的产品E2E。
+
+SPRB从用户原路径正常启动22384（23:10:33，父6852），EXE/版本同前；23:11:36由helper36820附着，实际ECAB DLL base6c7b0000。Continue恢复剧情，用户随后选择线程、推进、查词并制卡。代理期间多次被用户输入打断，没有把这些推进或点击记为代理动作。新会话确实产生普通剧情资源导出，并非只使用前轮重播导出。用户制作note `1788794063138`、card `1788794063139`后确认无问题；代理独立核验其句子与seq194/tick966227625完全一致，UTF-16 SHA-256 `c540d492c7411b150e660a083a704ec613c562faf20506052dea7b9d5e2ff08d`。z0002.ovk唯一member652、offset1153915、41023字节、184228采样，源/导出SHA-256 `93823880d9045e3c07b41887a230a774646e9af0a49c0e635d567f8b881b1bc4`，48000Hz单声道3.838083秒。卡片AAC66064字节，SHA-256 `bc46ef6a6a72c879692db2d2e653c4e3b4b50c6922cf63d1c3397ce0111777a9`，与当前完整原音编码一致；配图71805字节、SHA-256 `0269e7d14f71ecfed80f3d9abdf1ac0f3a792feb663c4c0adc3bc3be0d9ab9bc`，已查看同句人物/房间且无弹窗。台账：`siglus22384-seq194-card-verification.json`。早期首句未导出分支未独立定因，不将本次成功倒写成其根因已经证明。
+
+用户随后关闭SPRB并从原路径启动Anemoi38352（父11480，23:15:38），helper10380于23:16:16附着；该进程在完整取证前退出，不据模块枚举WinError299推断崩溃或保护触发。最终用户通过应用启动并捕获：helper73704（父74344）→Anemoi22000，23:16:39；EXE/版本同前，实际ECAB DLL base6c420000，原生线程10635026222130768。用户制作note/card `1788794222186`并确认通过。代理独立核验seq12/tick966385781的20字节文本，UTF-16 SHA-256 `7fb83de32e9a851542b8937ace18645fd9c9a66843a720dfa9a189d94272729f`，与卡片一致。z0001.ovk唯一member174、offset602284、23524字节、59748采样；源/导出SHA-256 `ecdbf97cfdb480537da6989a2f1d01d82201be651e77e9c48871a19b3b7bb9a1`，44100Hz单声道1.354830秒。卡片AAC23112字节、SHA-256 `7661d6daa08847b519d0a62f51496292e1feec15fd7975d8198cab8487901e33`，等于该整段原音生产编码；配图51705字节、SHA-256 `71abb18305b4fe22f0378d8a0ba9a6806d9bb916db61f85395888647103540e1`，已查看为同句人物/夜间帐篷画面且无弹窗。台账：`siglus22000-seq12-card-verification.json`。
+
 ## Not proved
 
-- `6f18f9...` v24 DLL 在 LOOPERS PLUS、LOOPERS 原版和終のステラ有有限查词交互证据；LUNARiA、SPRB 和 Anemoi 的旧 v23 证据不能互换为该构建验收；更不能将任何旧会话替换成最新 `7312ef...` 身份修正构建的验收。
+- 四部收尾的能力只对应上文明确记录的构建和会话。旧v23/v24会话、LUNARiA及LOOPERS PLUS证据不能互换；四部真卡也不代表任意Siglus版本或布局全部通过。
 - Rewrite 与 Angel Beats! 的原路径启动停在日语 Windows / Locale Emulator 边界，尚无正常正文会话。LE 相关源码修补尚未 runtime 验证；不能通过修改游戏二进制、清 mutex 或绕过启动条件制造成功。
 - 月の彼方で逢いましょう的原路径重跑停在日语 Windows 环境检测，静态通过不能升级为正常正文会话。
 - LUNARiA的seq11和LOOPERS PLUS上述seq2分别在各自明确的DLL会话形成正文、对应原始资源、当前画面与真卡关联；其他样本及编译family不因此升级。Loopback、音频纯净性与跨版本兼容性仍分开记录。
@@ -225,4 +259,4 @@ LOOPERS PLUS 原版由 Start.exe34172（19:42:32.505292）经 StartMenu40196 进
 
 ## Next gate
 
-Anemoi的首个未通过边界已推进到独立资源来源：补齐已定位的Resource/Builder完整结构与对应栈布局，再从原始入口验证实际source事件、唯一归档成员和同句配对。整段文本聚合及有声多片段未证明，不凭同owner/key/栈地址拼接。LUNARiA的重复句/读档/重播及旧样本启动门仍未验证；独立LE源码修补不能替代原始游戏会话。
+用户要求的四部现场验收已完成并停手，无继续适配任务。正式release支持声明仍由 `engine-support.yaml` 控制：本轮未把现场元数据包装成release-eligible台账，也未运行1000次输入事务门，因此不升级geometry/shield状态，不发布或合并。本分支保留供后续审查；其他游戏和引擎不再推进。
