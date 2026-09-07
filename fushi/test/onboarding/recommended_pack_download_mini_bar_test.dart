@@ -24,8 +24,9 @@ void main() {
 
   Widget host(
     RecommendedPackDownloadController controller,
-    VoidCallback onImport,
-  ) {
+    VoidCallback onImport, {
+    VoidCallback? onDiscard,
+  }) {
     return MaterialApp(
       home: Scaffold(
         body: Column(
@@ -34,6 +35,7 @@ void main() {
             RecommendedPackDownloadMiniBarView(
               controller: controller,
               onImport: onImport,
+              onDiscard: onDiscard ?? () {},
             ),
           ],
         ),
@@ -99,6 +101,41 @@ void main() {
       findsNothing,
       reason: '没在下就不该画一条不动的进度条',
     );
+  });
+
+  // 收起（×）只活一个会话，阶段却按磁盘现状推：半截文件在，「已暂停」每次启动都
+  // 回来。所以暂停态必须有一条真出口，而不是只能永远收起。
+  testWidgets('已暂停：「放弃下载」回调宿主（弹确认框的那一层）', (WidgetTester tester) async {
+    final RecommendedPackDownloadController controller = newController();
+    addTearDown(controller.dispose);
+    int discards = 0;
+
+    await tester.pumpWidget(
+      host(controller, () {}, onDiscard: () => discards += 1),
+    );
+    controller.stage.value = RecommendedPackDownloadStage.paused;
+    controller.receivedBytes.value = 3 * 1024 * 1024 * 1024;
+    await tester.pump();
+
+    await tester.tap(find.text(t.onboarding_pack_download_discard));
+    await tester.pump();
+    expect(discards, 1, reason: '放弃必须经宿主的确认框，controller 的原语不能被按钮直连');
+    expect(
+      controller.stage.value,
+      RecommendedPackDownloadStage.paused,
+      reason: '光点按钮不确认，磁盘上的半截包不许动',
+    );
+  });
+
+  testWidgets('下载中不给放弃入口（写文件的那只手还在）', (WidgetTester tester) async {
+    final RecommendedPackDownloadController controller = newController();
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(host(controller, () {}));
+    controller.stage.value = RecommendedPackDownloadStage.downloading;
+    await tester.pump();
+
+    expect(find.text(t.onboarding_pack_download_discard), findsNothing);
   });
 
   testWidgets('下完待导入：导入按钮回调宿主', (WidgetTester tester) async {

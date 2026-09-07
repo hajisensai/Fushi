@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/onboarding/recommended_pack_discard.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
 import 'package:fushi/src/onboarding/recommended_pack_import.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
@@ -30,9 +31,13 @@ class RecommendedPackDownloadMiniBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final AppModel appModel = ref.watch(appProvider);
+    final RecommendedPackDownloadController controller =
+        appModel.recommendedPackDownloadController;
     return RecommendedPackDownloadMiniBarView(
-      controller: appModel.recommendedPackDownloadController,
+      controller: controller,
       onImport: () => unawaited(importDownloadedRecommendedPack(appModel)),
+      onDiscard: () =>
+          unawaited(confirmAndDiscardRecommendedPack(context, controller)),
     );
   }
 }
@@ -44,6 +49,7 @@ class RecommendedPackDownloadMiniBarView extends StatelessWidget {
   const RecommendedPackDownloadMiniBarView({
     required this.controller,
     required this.onImport,
+    required this.onDiscard,
     super.key,
   });
 
@@ -51,6 +57,10 @@ class RecommendedPackDownloadMiniBarView extends StatelessWidget {
 
   /// 导入已下好的整包。导入要用户确认覆盖/合并并重启进程，controller 不自己发起。
   final VoidCallback onImport;
+
+  /// 放弃已暂停的下载（确认后删半截包）。与 [onImport] 同一条纪律：删几 GB 要用户
+  /// 在确认框里按，controller 只提供原语。
+  final VoidCallback onDiscard;
 
   @override
   Widget build(BuildContext context) {
@@ -86,8 +96,10 @@ class RecommendedPackDownloadMiniBarView extends StatelessWidget {
                       : null,
                 ),
               Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 child: Row(
                   children: <Widget>[
                     Icon(_icon, color: tokens.surfaces.onVariant),
@@ -188,7 +200,13 @@ class RecommendedPackDownloadMiniBarView extends StatelessWidget {
           ),
         ];
       case RecommendedPackDownloadStage.paused:
+        // 「放弃」排在「继续」前面：右手边那颗是主动作，误触代价（重下几 GB）落在
+        // 放弃这颗上，所以它不能是主按钮、也不能挨着 ×。
         return <Widget>[
+          TextButton(
+            onPressed: onDiscard,
+            child: Text(t.onboarding_pack_download_discard),
+          ),
           FilledButton.tonal(
             onPressed: () => unawaited(controller.start()),
             child: Text(t.onboarding_pack_download_resume),

@@ -4356,5 +4356,7 @@
   "shortcut_action_reader_open_gallery": "Open illustrations gallery",
   "shortcut_action_reader_open_statistics": "Open reading statistics",
   "shortcut_action_reader_open_audiobook": "Open audiobook panel",
-  "audiobook_transcribe_running_on_static": "Running on $provider · fused static graph"
+  "audiobook_transcribe_running_on_static": "Running on $provider · fused static graph",
+  "onboarding_pack_download_discard": "Discard download",
+  "onboarding_pack_discard_confirm": "The partial download on disk will be deleted. Downloading again later starts from zero."
 }
