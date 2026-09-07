@@ -966,6 +966,31 @@ extension _ReaderChrome on _ReaderFushiPageState {
         builder: (BuildContext routeContext) => ReaderGalleryPage(
           images: images,
           currentChapter: currentChapter,
+          blurImages: _settings?.blurImages ?? false,
+          revealedImageKeys: _revealedImageKeys,
+          onRevealImage: (String key) {
+            if (!_revealedImageKeys.add(key)) return;
+            final String? bookUid = _bookUid;
+            if (bookUid != null) {
+              unawaited(appModel.database.markImageRevealed(
+                bookUid,
+                key,
+                DateTime.now().millisecondsSinceEpoch,
+              ));
+            }
+            unawaited(_controller?.evaluateJavascript(source: '''
+              (function() {
+                var key = ${jsonEncode(key)};
+                if (window.__fushiMarkImageRevealed) {
+                  window.__fushiMarkImageRevealed(key);
+                }
+                if (!window.__fushiImageRevealKey) return;
+                document.querySelectorAll('img.blurred, svg.blurred').forEach(function(el) {
+                  if (window.__fushiImageRevealKey(el) === key) el.classList.remove('blurred');
+                });
+              })();
+            '''));
+          },
           fileForRef: (EpubImageRef ref) =>
               _readerImageFileForUrl(ReaderFushiSource.epubUrl(ref.src)),
           onOpenImage: (EpubImageRef ref) =>
@@ -1474,8 +1499,6 @@ extension _ReaderChrome on _ReaderFushiPageState {
             // TODO-830: per-reader 功能反转（getter 内部走 readerSettings?
             // 分层，否则退化全局）；与 reversed 的位置镜像维度正交。
             invertSkip: ReaderFushiSource.instance.invertAudiobookSkipDirection,
-            // TODO-728: per-reader toggle for the current-sentence cue.
-            showCue: ReaderFushiSource.instance.showBottomBarCue,
             // 桌面端：播放条唤出时覆盖状态行，阅读追踪 / 进度并进条右端；传输键与
             // 有声书面板同一套（-10s / 上一句 / 播放 / 下一句 / +10s）。
             trailing: _desktopChromeEnabled ? _buildBarStatusText() : null,
