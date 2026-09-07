@@ -34,6 +34,9 @@ struct Sites {
   uintptr_t normal_groups = 0;
   uintptr_t config_slot = 0;
   uintptr_t manager_slot = 0;
+  // The group renderer skips dialogue when *(slot)+0x1fb is nonzero.
+  // Its UI meaning is intentionally unnamed; this is a necessary reject gate.
+  uintptr_t render_block_slot = 0;
 };
 
 // Call with independently resolved glyph/input sites. Static scopes and the
@@ -73,7 +76,8 @@ inline bool Resolve(const exact_lookup::LoadedPeImage& image,
     if ((slot & 3u) || !input::Span(image, slot, 4, IMAGE_SCN_MEM_READ | IMAGE_SCN_MEM_WRITE,
                      IMAGE_SCN_MEM_EXECUTE)) return false;
   }
-  *out = {render, group, normal, inputs.config_slot, inputs.owner_slot};
+  *out = {render, group, normal, inputs.config_slot, inputs.owner_slot,
+          input::Slot(image, group + 207)};
   return true;
 }
 

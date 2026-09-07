@@ -58,19 +58,19 @@ struct Code {
     assert(own::Resolve(image, glyphs, inputs, &sites));
     assert(sites.render_entry == render && sites.group_entry == group &&
            sites.normal_groups == normal && sites.manager_slot == inputs.owner_slot &&
-           sites.config_slot == inputs.config_slot);
+           sites.config_slot == inputs.config_slot && sites.render_block_slot == 0x7110);
   }
   void Reject() {
-    own::Sites sites{1, 2, 3, 4, 5};
+    own::Sites sites{1, 2, 3, 4, 5, 6};
     assert(!own::Resolve(image, glyphs, inputs, &sites));
     assert(!sites.render_entry && !sites.group_entry && !sites.normal_groups &&
-           !sites.config_slot && !sites.manager_slot);
+           !sites.config_slot && !sites.manager_slot && !sites.render_block_slot);
   }
 };
 
 void TestStructure() {
   Code{}.Check(); Code{0x75, 0x65000000}.Check();
-  for (unsigned n = 0; n < 14; ++n) {
+  for (unsigned n = 0; n < 16; ++n) {
     Code c;
     switch (n) {
       case 0: c.Call(c.group + 353, 0x6000); break;
@@ -87,6 +87,8 @@ void TestStructure() {
       case 11: c.image.base = nullptr; break;
       case 12: c.image.section_count = c.image.sections.size() + 1; break;
       case 13: c.inputs.owner_slot++; break;
+      case 14: c.Address(c.group + 207, 0x7111); break;
+      case 15: c.Address(c.group + 207, 0x9000); break;
     }
     c.Reject();
   }
