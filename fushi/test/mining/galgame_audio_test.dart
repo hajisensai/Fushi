@@ -653,7 +653,9 @@ void main() {
           );
           scheduleMicrotask(() {
             process.stdoutController.add(
-              'OK hooked pid=4321 mode=launch\n'.codeUnits,
+              ('LAUNCH pid=1111 arch=x86 role=launcher locale=1\n'
+                      'LAUNCH pid=4321 arch=x86 role=game locale=1\n'
+                      'OK hooked pid=4321 mode=launch\n').codeUnits,
             );
           });
           return process;
@@ -680,6 +682,8 @@ void main() {
       try {
         expect(await source.start(), isNull);
         expect(source.gamePid, 4321);
+        expect(source.launchedPid, 4321);
+        expect(source.localeGameLaunchConfirmed, isTrue);
         process.stdoutController.add('post-ready\n'.codeUnits);
         final List<int> stderrChunk = List<int>.filled(4096, 0x78);
         for (var i = 0; i < 128; i++) {
@@ -1336,6 +1340,34 @@ void main() {
   });
 
   group('parseInjectorLaunchedPid', () {
+    test('native producer reports launcher/game role and actual locale result', () {
+      final String producer = File(
+        '../native/galgame_hook/injector/injector_main.cpp',
+      ).readAsStringSync();
+      expect(producer, contains('role=%s locale=%d\\n'));
+      expect(producer, contains(
+        'follow_children ? "launcher" : "game", locale_launched ? 1 : 0'));
+      expect(producer, contains('role=game locale=%d\\n'));
+      expect(producer, contains(
+        'sizeof(void*) == 8 ? "x64" : "x86", locale_launched ? 1 : 0'));
+    });
+    test('latest complete record replaces launcher; partial chunks do not', () {
+      const String first = 'LAUNCH pid=1111 arch=x86 role=launcher locale=1\n';
+      const String child = 'LAUNCH pid=2222 arch=x86 role=game locale=1\n';
+      for (int i = 0; i < child.length; i++) {
+        final GalHookLaunchObservation launch = parseInjectorLaunchObservation(
+          first + child.substring(0, i),
+        )!;
+        expect(launch.pid, 1111);
+        expect(launch.gameTarget, isFalse);
+      }
+      final GalHookLaunchObservation launch = parseInjectorLaunchObservation(
+        first + child,
+      )!;
+      expect(launch.pid, 2222);
+      expect(launch.gameTarget, isTrue);
+      expect(launch.localeLaunch, isTrue);
+    });
     test('注入结果之前就能拿到已创建的游戏 PID', () {
       expect(parseInjectorLaunchedPid('LAUNCH pid=20096 arch=x64\n'), 20096);
     });

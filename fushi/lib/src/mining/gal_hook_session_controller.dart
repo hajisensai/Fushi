@@ -1607,9 +1607,12 @@ class GalHookSessionController extends ChangeNotifier {
       // 改为保留会话、降级到 Loopback，并按退避表重试附着。
       final int? runningPid = engine.launchedPid;
       final bool localeLaunchDied = engine.japaneseLocaleApplied &&
+          engine.localeGameLaunchConfirmed &&
           runningPid != null &&
           _targetImagePathProbe(runningPid) == null;
       await _stopEngine(engine);
+      // BUG-2249: a launcher may exit normally while StartMenu remains live.
+      // Only an explicitly identified game target can authorize this fallback.
       // BUG-2126：Locale Emulator 拉起的进程在 LoaderDll 装载阶段就 APPCRASH（与注入
       // 无关，本机对每一款 x86 游戏都复现）。injector 已回报 `LAUNCH pid=`，但那个进程
       // 已经不在了——按「游戏在跑、降级 loopback、稍后重试附着」处理只会得到一串
@@ -1636,6 +1639,7 @@ class GalHookSessionController extends ChangeNotifier {
           gameId: gameId,
           gameTitle: gameTitle,
           japaneseLocaleMode: GalJapaneseLocaleMode.off,
+          contentLanguage: contentLanguage,
         );
       }
       if (runningPid != null) {

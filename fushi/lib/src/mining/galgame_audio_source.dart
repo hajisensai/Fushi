@@ -194,17 +194,42 @@ int? parseInjectorHookedPid(String stdout) {
   return (pid != null && pid > 0) ? pid : null;
 }
 
-/// 从 injector stdout 解析 `LAUNCH pid=<N>`：injector 在 `CreateProcess` 成功后立刻回报的
-/// 游戏 PID，**先于**注入结果。旧 helper 不打印这行（返回 null），新 helper 打印后，
-/// 即使随后注入失败，Hibiki 也知道「游戏其实已经起来了」，可以改走附着重试而不是把
-/// 一个正在运行的游戏报成「启动失败」。纯函数，可单测。
+/// 最后一条完整 `LAUNCH pid=<N>` 的已创建进程身份，先于注入结果。
+/// 初始 PID 可能只是启动器；后续经 helper 验证的子进程会替换它。
+/// 没有角色字段的旧协议仍保留 PID，但不能据此授权自动重新启动。
 int? parseInjectorLaunchedPid(String stdout) {
-  final RegExpMatch? m = RegExp(r'LAUNCH pid=(\d+)').firstMatch(stdout);
-  if (m == null) {
-    return null;
+  return parseInjectorLaunchObservation(stdout)?.pid;
+}
+
+/// A completed helper record. A launcher exiting is not a game crash, and old
+/// helpers without a role cannot authorize an automatic second process launch.
+class GalHookLaunchObservation {
+  const GalHookLaunchObservation({
+    required this.pid,
+    required this.gameTarget,
+    required this.localeLaunch,
+  });
+  final int pid;
+  final bool gameTarget;
+  final bool localeLaunch;
+}
+
+GalHookLaunchObservation? parseInjectorLaunchObservation(String stdout) {
+  GalHookLaunchObservation? result;
+  for (final RegExpMatch match in RegExp(
+    r'^LAUNCH pid=(\d+)([^\r\n]*)\r?\n',
+    multiLine: true,
+  ).allMatches(stdout)) {
+    final int? pid = int.tryParse(match.group(1)!);
+    if (pid == null || pid <= 0) continue;
+    final List<String> fields = match.group(2)!.trim().split(RegExp(r'\s+'));
+    result = GalHookLaunchObservation(
+      pid: pid,
+      gameTarget: fields.contains('role=game'),
+      localeLaunch: fields.contains('locale=1'),
+    );
   }
-  final int? pid = int.tryParse(m.group(1)!);
-  return (pid != null && pid > 0) ? pid : null;
+  return result;
 }
 
 /// injector 启动/附着失败的结构化原因。
@@ -1407,10 +1432,16 @@ class EngineHookGalAudioSource implements GalAudioSource {
   }
 
   int _launchedPid = 0;
+  GalHookLaunchObservation? _launchObservation;
 
-  /// launch 模式下 injector 回报的**已创建**游戏 PID（`LAUNCH pid=`）。注入是否成功
-  /// 与此无关：拿到它就说明游戏进程真的起来了，调用方据此改走附着重试，而不是把
-  /// 正在运行的游戏报成启动失败。旧 helper 不回报时为 null。
+  /// Only a helper-confirmed game target from a locale launch may use the
+  /// existing crash fallback. Unknown roles and pending launchers fail closed.
+  bool get localeGameLaunchConfirmed =>
+      _launchObservation?.gameTarget == true &&
+      _launchObservation?.localeLaunch == true;
+
+  /// 最后一个完整 LAUNCH 记录的已创建 PID；可能是尚未转交给游戏的启动器。
+  /// 旧 helper 不回报时为 null。PID 本身不证明注入成功或进程角色。
   int? get launchedPid => _launchedPid > 0 ? _launchedPid : null;
 
   /// 实际注入命中的游戏 PID：attach=`targetPid`；launch=从 injector stdout 解析出的子进程 PID。
@@ -1683,6 +1714,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
     _rawVoiceReady = false;
     _readyFormat = null;
     _launchedPid = 0;
+    _launchObservation = null;
     _japaneseLocaleApplied = false;
     _japaneseLocaleVerdict = null;
     _japaneseLocaleSkipReason = null;
@@ -1964,10 +1996,12 @@ class EngineHookGalAudioSource implements GalAudioSource {
               stdoutBuffer.write(chunk);
               // `LAUNCH pid=` 先于注入结果到达，且在 hooked 之后仍要保留：注入失败时
               // 它是「游戏已经起来了」的唯一证据，不能因为 pidCompleter 已完成就不解析。
-              final int? launched = parseInjectorLaunchedPid(
-                stdoutBuffer.toString(),
-              );
-              if (launched != null) _launchedPid = launched;
+              final GalHookLaunchObservation? launched =
+                  parseInjectorLaunchObservation(stdoutBuffer.toString());
+              if (launched != null) {
+                _launchedPid = launched.pid;
+                _launchObservation = launched;
+              }
               if (pidCompleter.isCompleted) return;
               final int? pid = parseInjectorHookedPid(stdoutBuffer.toString());
               if (pid != null) pidCompleter.complete(pid);

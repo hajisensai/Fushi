@@ -3000,8 +3000,9 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
 
   // 游戏进程**已经存在**这件事必须先于注入结果回报：注入之后再失败时，host 才知道
   // 「游戏其实在跑」，可以改走附着重试，而不是把一个有窗口的游戏报成「启动失败」。
-  printf("LAUNCH pid=%lu arch=%s\n", pi.dwProcessId,
-         sizeof(void*) == 8 ? "x64" : "x86");
+  printf("LAUNCH pid=%lu arch=%s role=%s locale=%d\n", pi.dwProcessId,
+         sizeof(void*) == 8 ? "x64" : "x86",
+         follow_children ? "launcher" : "game", locale_launched ? 1 : 0);
   fflush(stdout);
 
   // 进程当前是否处于挂起态，是一个**事实**，只有一个来源：普通路径看 creation_flags；
@@ -3072,8 +3073,8 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
         fprintf(stderr, "[process] following child pid=%lu image=%ls\n",
                 child_pid, target_exe.c_str());
         // 真正承载游戏的是子进程：更新回报，host 的附着重试必须瞄准它而不是启动器。
-        printf("LAUNCH pid=%lu arch=%s\n", child_pid,
-               sizeof(void*) == 8 ? "x64" : "x86");
+        printf("LAUNCH pid=%lu arch=%s role=game locale=%d\n", child_pid,
+               sizeof(void*) == 8 ? "x64" : "x86", locale_launched ? 1 : 0);
         fflush(stdout);
       }
     }

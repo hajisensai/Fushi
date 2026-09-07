@@ -29,11 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2082 条。点号进各自文件。
+> 共 2083 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2250](bugs/BUG-2250-siglus-legacy-keyboard-hook-owner.md) | ✅ | ✅ | 旧版Siglus键盘状态接口被通用输入盾抢占 |
+| [BUG-2249](bugs/BUG-2249-launcher-exit-locale-relaunch.md) | ✅ | ✅ | 启动器正常退出被误判转区崩溃并重复启动 |
 | [BUG-2248](bugs/BUG-2248-launcher-lineage.md) | ✅ | ✅ | 启动器退出后丢失已确认的游戏进程谱系 |
 | [BUG-2247](bugs/BUG-2247-locale-timezone-display-name.md) | ✅ | ✅ | 日语转区将时区ID误作本地化时区名称 |
 | [BUG-2246](bugs/BUG-2246-siglus-system-version-locale.md) | ✅ | ✅ | Siglus旧版读取系统版本资源时日语转区仍被判定失败 |
