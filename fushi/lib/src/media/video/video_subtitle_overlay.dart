@@ -461,6 +461,7 @@ class VideoSubtitleOverlay extends StatefulWidget {
     this.secondaryBlurEnabled = false,
     this.secondaryHidden = false,
     this.obscureRevealOnInteraction = true,
+    this.lookupPopupVisible = false,
     this.fontSize = 36,
     this.textColor,
     this.fontWeight = VideoSubtitleStyle.defaultFontWeight,
@@ -548,8 +549,9 @@ class VideoSubtitleOverlay extends StatefulWidget {
   /// 未显形时不登记查词命中（看不见的字不可点选），仍不影响查词浮层 / 字幕列表 /
   /// cue 同步等其它文本通道。
   ///
-  /// BUG-2198：与 [blurEnabled] 一样只在**播放中**遮蔽——暂停（含查词自动暂停）时
-  /// 字幕照常显示、字符也照常可点选查词，恢复播放即自动遮回去。
+  /// BUG-2198：与 [blurEnabled] 一样只在**用户没在看**时遮蔽——暂停（含查词自动暂停）
+  /// 时字幕照常显示、字符也照常可点选查词，恢复播放即自动遮回去。BUG-2235：查词浮层
+  /// 开着（[lookupPopupVisible]）也算「在看」，浮层里「重播本句」起播不再遮回去。
   final bool subtitleHidden;
 
   /// 副字幕「模糊」（TODO-1382，镜像 [blurEnabled]）：为 true 时**副字幕层**默认高斯模糊，
@@ -560,7 +562,7 @@ class VideoSubtitleOverlay extends StatefulWidget {
   /// 不绘制（[Opacity] 为 0），与 [secondaryBlurEnabled] 正交且优先级更高。默认 false。
   /// 与主字幕同构：悬停 / 点击可临时显形，未显形时不登记查词命中。隐藏只针对副字幕
   /// overlay，不影响查词 / 字幕列表 / cue 同步等其它通道。BUG-2198：同样只在播放中
-  /// 遮蔽（暂停 / 查词时显示），与 [subtitleHidden] 一条门。
+  /// 遮蔽（暂停 / 查词浮层开着时显示），与 [subtitleHidden] 一条门。
   final bool secondaryHidden;
 
   /// 遮蔽态是否允许「悬停 / 点击临时显形」（默认 true = 历史行为）。
@@ -575,6 +577,16 @@ class VideoSubtitleOverlay extends StatefulWidget {
   /// 态字符仍登记在查词表里，撤掉热区就成了「点不可见的字也能查词」）。主 / 副字幕共用
   /// 本开关（用户诉求是「显形这个行为」的总闸，不是逐层设置）。
   final bool obscureRevealOnInteraction;
+
+  /// 查词浮层栈此刻是否还有可见层（BUG-2235，页面侧 `_hasVisiblePopup` 的派生值）。
+  ///
+  /// 遮蔽让位的真值是「用户已经停下来在看这句」，[VideoPlayerController.isPlaying]
+  /// 只是它的**近似**：查词浮层顶栏的「重播本句」（`_replayLookupCue`）会把播放拉起来，
+  /// 于是 BUG-2198 刚让位的字幕在重播那几秒里又被遮回去——用户正对着浮层核对原句，
+  /// 字幕却当场消失，同一条门还连带把字符命中登记（`registerHits`）关掉、点都点不到。
+  /// 查词会话期间字幕恒定让位，关栈下一帧自动遮回去。
+  /// false（有声书 / 测试 / 无查词浮层的宿主）= 只由播放状态决定，行为与历史一致。
+  final bool lookupPopupVisible;
 
   /// 字幕字号（外观设置）。
   final double fontSize;
@@ -1260,8 +1272,8 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     List<AudioCue> cues, {
     required bool isSecondary,
   }) {
-    // 遮蔽只在播放中生效（暂停 / 查词时清晰，BUG-199 / BUG-2198）：模糊与隐藏共用
-    // **同一条**门——该层开着遮蔽、当前未显形、且正在播放。历史上隐藏单独绕过
+    // 遮蔽只在「用户没在看」时生效（暂停 / 查词时清晰，BUG-199 / BUG-2198 / BUG-2235）：
+    // 模糊与隐藏共用**同一条**门——该层开着遮蔽、当前未显形、且用户没在看。历史上隐藏单独绕过
     // isPlaying（「暂停时自己冒出来才是惊吓」），实测这条特例正是用户报的两个症状：
     // ① 查词必先 `controller.pause()`（`lookup_favorite.part.dart`），暂停不解遮蔽
     //    就等于「查词时字幕仍然看不见」，而 registerHits 又按 [hidden] 关掉了字符命中
@@ -1274,7 +1286,11 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     final bool revealed = _revealedFor(isSecondary: isSecondary);
     // 该层此刻是否应遮蔽（与具体视觉无关的共同门）：模糊与隐藏只在这一处分叉成两种
     // 视觉，判据本身不再有第二份。
-    final bool obscureActive = !revealed && widget.controller.isPlaying;
+    // 「用户在看」= 暂停（含查词自动暂停）**或**查词浮层还开着（BUG-2235：浮层里点
+    // 「重播本句」会起播，只看 isPlaying 会在重播期间把字幕遮回去）。
+    final bool userIsReading =
+        !widget.controller.isPlaying || widget.lookupPopupVisible;
+    final bool obscureActive = !revealed && !userIsReading;
     final bool blurred = obscureBlurEnabled && obscureActive;
     // 隐藏态（该层开着「隐藏」且该遮蔽）。与 [blurred] 互斥（两者来自互斥的
     // VideoSubtitleObscureMode），但共用同一个显形态：悬停 / 点击即显形。
