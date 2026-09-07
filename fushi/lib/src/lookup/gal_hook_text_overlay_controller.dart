@@ -8,6 +8,7 @@ import 'package:fushi_anki/fushi_anki.dart';
 
 import 'package:fushi/src/lookup/gal_attached_text_controller.dart';
 import 'package:fushi/src/lookup/gal_ingame_lookup_controller.dart';
+import 'package:fushi/src/lookup/gal_ingame_mining_binding.dart';
 import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
 import 'package:fushi/src/lookup/global_lookup_channel.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
@@ -1915,16 +1916,30 @@ class GalHookTextOverlayController extends ChangeNotifier {
   }) {
     final DateTime? sessionStartedAt = _session.state.sessionStartedAt;
     final int? targetHwnd = _session.state.boundWindow?.hwnd;
+    final GalIngameMiningBinding? occurrence = textGeneration == null
+        ? null
+        : GalIngameMiningBinding(
+            textEventId: textGeneration,
+            sessionStartedAt: sessionStartedAt,
+            targetHwnd: targetHwnd,
+            selectedLines: _session.selectedSessionLines,
+          );
     return ({required Map<String, String> fields, int? updateNoteId}) async {
-      // resolver 在 popup 构造时被保存，而文本线程可能稍后才发布当前行。到真正点「制卡」
-      // 时重新解析，既覆盖这段时序差，也会重新套用当前 thread 的筛选；但 session/HWND
-      // 必须仍是命中时那一对，不能让迟到的 popup 借用下一局的同 seq 或同文行。
-      final String? resolved = _resolveIngameMiningLineId(
-        line,
-        textGeneration: textGeneration,
-        sessionStartedAt: sessionStartedAt,
-        targetHwnd: targetHwnd,
-      );
+      // Windows native hits bind once at popup construction. A whitespace-only
+      // redraw may fold a new seq into that same row while the popup survives;
+      // preserve its occurrence, then recheck current session/HWND/selection.
+      final String? resolved = occurrence != null
+          ? occurrence.resolve(
+              currentSessionStartedAt: _session.state.sessionStartedAt,
+              currentTargetHwnd: _session.state.boundWindow?.hwnd,
+              selectedLines: _session.selectedSessionLines,
+            )
+          : _resolveIngameMiningLineId(
+              line,
+              textGeneration: textGeneration,
+              sessionStartedAt: sessionStartedAt,
+              targetHwnd: targetHwnd,
+            );
       if (resolved == null) {
         // BUG-1734：这里过去是**纯静默返回**——不 toast、不记录、不打日志。popup 侧收到
         // ankiConnect:false 同样什么都不做（assets/popup/popup.js 的 mine 分支只在

@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
+import 'package:fushi/src/lookup/gal_ingame_mining_binding.dart';
 import 'package:fushi/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_window_gif.dart'
@@ -133,6 +134,80 @@ void main() {
                 ),
         createTempDirectory: tempFactory,
       );
+
+  test(
+    'Windows popup keeps host occurrence through real whitespace fold and mining',
+    () async {
+      final TexthookerLineEntry original = service.appendLine(
+        'ABC DEF',
+        source: TexthookerLineSource.engineHook,
+        sourceLabel: 'Siglus',
+        textThreadKey: 'body',
+        sourceSequence: 1,
+      )!;
+      final GalIngameMiningBinding popup = GalIngameMiningBinding(
+        textEventId: 1,
+        sessionStartedAt: activeState.sessionStartedAt,
+        targetHwnd: activeState.boundWindow!.hwnd,
+        selectedLines: service.entries,
+      );
+      final TexthookerLineEntry folded = service.appendLine(
+        'ABC\nDEF',
+        source: TexthookerLineSource.engineHook,
+        sourceLabel: 'Siglus',
+        textThreadKey: 'body',
+        sourceSequence: 2,
+      )!;
+      expect(folded.id, original.id);
+      expect(folded.sourceSequence, 2);
+      expect(service.entries.where((e) => e.sourceSequence == 1), isEmpty);
+      final String? lineId = popup.resolve(
+        currentSessionStartedAt: activeState.sessionStartedAt,
+        currentTargetHwnd: activeState.boundWindow!.hwnd,
+        selectedLines: service.entries,
+      );
+      expect(lineId, original.id);
+      final List<String> audioLineIds = <String>[];
+      final List<int> capturedWindows = <int>[];
+      final _RecordingRepo repo = _RecordingRepo();
+      final GalHookMiningResult result =
+          await coordinator(
+            validator: (entry) => entry.id == original.id,
+            audio:
+                ({
+                  required String lineId,
+                  required String sentence,
+                  required String outputExtension,
+                }) async {
+                  audioLineIds.add(lineId);
+                  return Uint8List.fromList(<int>[7, 8, 9]);
+                },
+            gif:
+                ({
+                  required int hwnd,
+                  MiningAnimatedFormat format = MiningAnimatedFormat.gif,
+                }) async {
+                  capturedWindows.add(hwnd);
+                  return (
+                    bytes: Uint8List.fromList(<int>[71, 73, 70]),
+                    format: format,
+                  );
+                },
+            tempFactory: () async => testRoot,
+          ).mineLine(
+            lineId: lineId!,
+            fields: const <String, String>{'expression': 'ABC'},
+            sentenceOverride: original.text,
+            compression: MiningMediaCompression.compressed,
+            repo: repo,
+          );
+      expect(result.success, isTrue);
+      expect(audioLineIds, <String>[original.id]);
+      expect(capturedWindows, <int>[901]);
+      expect(repo.contexts.single.sentence, original.text);
+      expect(service.entryById(original.id)!.mined, isTrue);
+    },
+  );
 
   test('exact duplicate lines keep distinct scene and audio context', () async {
     final DateTime now = DateTime(2026, 7, 20, 12, 0, 1);
