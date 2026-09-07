@@ -1,4 +1,4 @@
-## BUG-2254 · 关掉「悬停或点击显形」后，暂停仍会揭开被隐藏的字幕
+## BUG-2256 · 关掉「悬停或点击显形」后，暂停仍会揭开被隐藏的字幕
 - **报告**：2026-09-07（用户：咕星总督）「我明明隐藏字幕了，暂停的时候字幕还是会出现」「我关掉了（那个开关），暂停时还是会显示字幕」
 - **真实性**：✅ 真 bug。根因 `fushi/lib/src/media/video/video_subtitle_overlay.dart:1291`（修前）——遮蔽让位判据
   `userIsReading = !controller.isPlaying || lookupPopupVisible` 是**无条件**的，完全不看

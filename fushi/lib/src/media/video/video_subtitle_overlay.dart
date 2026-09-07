@@ -572,7 +572,7 @@ class VideoSubtitleOverlay extends StatefulWidget {
   /// [blurEnabled] / [subtitleHidden]）与「能不能临时看一眼」拆成两个正交维度，关掉后
   /// 遮蔽在整句期间恒定生效。
   ///
-  /// 门控落在**显形的全部来源**上（BUG-2254）：悬停（[MouseRegion] 的 onEnter/onExit）、
+  /// 门控落在**显形的全部来源**上（BUG-2256）：悬停（[MouseRegion] 的 onEnter/onExit）、
   /// 点击（遮蔽态热区的 onTap），以及自动显形的暂停 / 查词浮层（`userIsReading`，见
   /// [_buildSubtitleLayer]）。只堵前两者会让开关半失效——用户关掉后照旧「一暂停字幕
   /// 就冒出来」。热区本身照常挂——它还负责拦掉落在盒面上的字符点击（隐藏
@@ -1291,7 +1291,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     // 「用户在看」= 暂停（含查词自动暂停）**或**查词浮层还开着（BUG-2235：浮层里点
     // 「重播本句」会起播，只看 isPlaying 会在重播期间把字幕遮回去）。
     //
-    // BUG-2254：这条自动显形与悬停 / 点击显形是**同一种行为**（遮蔽让位给「用户想看
+    // BUG-2256：这条自动显形与悬停 / 点击显形是**同一种行为**（遮蔽让位给「用户想看
     // 一眼」），因此归同一个总闸 [obscureRevealOnInteraction] 管。关掉总闸后遮蔽恒定
     // 生效：暂停、查词浮层、悬停、点击都不再揭开——用户关它就是要「遮蔽始终保持」，
     // 只堵住悬停 / 点击而漏掉暂停等于开关半失效（用户报：隐藏了字幕，一暂停就冒出来）。
