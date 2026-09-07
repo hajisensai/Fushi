@@ -69,6 +69,13 @@ workflow 6 和显式生产 replay 全部退出 0。额外 +1FB 拒绝门另做�
 隔离运行时，从原始 Start.exe 经 Fushi 转区启动，不能复用仍有诊断 trampoline
 的旧游戏进程。
 
+整合提交 `f396a85f7f` 的 x86 Hook SHA-256 为
+`661BE2717B47519CAB7C49F50B693F5FDFB2BD89A5505BCF494F6D0CC7AE319C`；
+已替换本地私有测试 bundle 的 DLL，旧 DLL 单独保留。测试 Fushi 57108 于
+02:44:33 从同一私有 bundle 启动，helper 与 LE v5 摘要保持上述值。
+Windows 防火墙权限弹窗阻挡界面，已请用户手动处理，未操作系统安全控件。
+新候选的原始游戏启动和内嵌点击尚未执行，不能视作 runtime 通过。
+
 ## Not proved
 
 原始启动、自动跟随、注入和选定正文线程已经通过。此前原验收 bundle 附着私有 DLL 正确返回 residentHookMismatch；统一组件后从原始入口重启已消除该测试配置问题，没有绕过身份检查。原生内嵌几何未匹配，resource/pcm_ready、paired、e2e_verified 尚未通过；clip/PCM 为零，已有 loopback 不能当作原音捕获。Angel Beats! 与月彼本轮尚未运行。未升级 engine-support.yaml，未更新既有 PR 或正式随包运行库。
