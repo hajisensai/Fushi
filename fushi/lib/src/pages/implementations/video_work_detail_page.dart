@@ -66,7 +66,10 @@ class VideoWorkDetailPage extends StatelessWidget {
             AsyncSnapshot<MediaCollectionRow?> snapshot) {
           final MediaCollectionRow? collection = snapshot.data;
           if (snapshot.connectionState != ConnectionState.done) {
+            // BUG-2230：同上 —— 加载态与它下面的 `collection == null` 终态口径一致，
+            // 都带 AppBar。future 悬挂时这里就是用户能看到的全部界面。
             return Scaffold(
+              appBar: AppBar(),
               body: Center(child: adaptiveIndicator(context: context)),
             );
           }
@@ -152,7 +155,21 @@ class _StandaloneVideoWorkDetailState
   @override
   void initState() {
     super.initState();
-    unawaited(_load());
+    // BUG-2230：`_load` 是 fire-and-forget 的，异常必须有归宿 —— 它连着 6 次 DB 读，
+    // 任意一次抛出（并发下 sqlite BUSY 等）从前都会让 `_loading` 永远为 true，
+    // 页面卡在转圈上。现在落到 `book == null` 的终态（带 AppBar，可退出）。
+    unawaited(_loadGuarded());
+  }
+
+  /// [_load] 的异常边界：失败时收敛到「未找到」终态，而不是永久加载态。
+  Future<void> _loadGuarded() async {
+    try {
+      await _load();
+    } catch (e, st) {
+      debugPrint('VideoWorkDetailPage load failed: $e\n$st');
+      if (!mounted) return;
+      setState(() => _loading = false);
+    }
   }
 
   Future<void> _load() async {
@@ -199,7 +216,11 @@ class _StandaloneVideoWorkDetailState
   @override
   Widget build(BuildContext context) {
     if (_loading) {
+      // BUG-2230：加载态与它的兄弟终态（下面 `book == null` 分支）口径必须一致 ——
+      // 都带 AppBar（= 返回键）。桌面端没有系统返回键，`_load` 若久久不返回，
+      // 无顶栏的转圈就是一个没有出口的页面。
       return Scaffold(
+        appBar: AppBar(),
         body: Center(child: adaptiveIndicator(context: context)),
       );
     }

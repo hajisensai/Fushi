@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2062 条。点号进各自文件。
+> 共 2063 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2230](bugs/BUG-2230-video-web-and-work-detail-loading-no-exit.md) | ✅ | ✅ | 网页流媒体页与作品详情页的加载态没有返回入口，且 init 异常无归宿 |
 | [BUG-2229](bugs/BUG-2229-video-missing-resource-no-back.md) | ✅ | ✅ | 视频资源缺失态没有返回入口，进入后无法退出 |
 | [BUG-2203](bugs/BUG-2203-update-installer-self-kill-taskkill-tree.md) | ✅ | ✅ | 应用内更新静默失败：安装器被自己的 taskkill /T 连同祖先树一起杀掉，且被误诊为 app_mutex_running |
 | [BUG-2202](bugs/BUG-2202-clip-export-tx3g-unplayable-in-im.md) | ✅ | ✅ | 内封 tx3g 字幕轨让导出的片段在 QQ 等 IM 里整个不可播 |
