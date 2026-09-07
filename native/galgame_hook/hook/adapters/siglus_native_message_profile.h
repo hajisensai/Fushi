@@ -39,6 +39,15 @@ inline constexpr Signature kSurface{
 inline constexpr size_t kRendererCall = 104;
 inline constexpr Signature kRendererEntry{
     "53 8B DC 83 EC 08 83 E4 F8 83 C4 04 55 8B 6B 04 89 6C 24 04 8B EC 6A FF 68 ?? ?? ?? ?? 64 A1 00 00 00 00 50 53 81 EC C0 04 00 00 A1 ?? ?? ?? ?? 33 C5 89 45 EC 56 57 50 8D 45 F4 64 A3 00 00 00 00 8B C1 89 85 AC FB FF FF 8B 53 08 8B 4B 0C"};
+// Independent second compiler pair: divide an exact vector byte span by 0x1c0
+// using SAR 6 followed by the modular inverse of 7. Index is EDX, begin is ECX;
+// the renderer saves self at -0x450. Do not mix either half with the first pair.
+// Both retain the same outer stack, owner layout and TextUnion argument ABI.
+inline constexpr Signature kCompactSurface{
+    "8B 97 E0 01 00 00 85 D2 78 71 8B 87 2C 02 00 00 8B 8F 28 02 00 00 2B C1 C1 F8 06 69 C0 B7 6D DB B6 3B C2 7E 56 69 F2 C0 01 00 00 03 F1 80 BE A4 01 00 00 00 75 12 83 BE 7C 01 00 00 01 75 09 8B 46 50 01 86 E4 00 00 00 8D 45 D4 8B CE 50 8D 43 10 50 E8 ?? ?? ?? ?? 80 BE A4 01 00 00 00 75 11 C7 86 7C 01 00 00 00 00 00 00 C6 86 A4 01 00 00 01"};
+inline constexpr size_t kCompactRendererCall = 82;
+inline constexpr Signature kCompactRendererEntry{
+    "53 8B DC 83 EC 08 83 E4 F8 83 C4 04 55 8B 6B 04 89 6C 24 04 8B EC 6A FF 68 ?? ?? ?? ?? 64 A1 00 00 00 00 50 53 81 EC C0 04 00 00 A1 ?? ?? ?? ?? 33 C5 89 45 EC 56 57 50 8D 45 F4 64 A3 00 00 00 00 8B C1 89 85 B0 FB FF FF 8B 53 08 8B 4B 0C"};
 inline constexpr Signature kVoiceEntry{
     "55 8B EC 83 EC 0C 89 4D F8 53 8B DA 56 57 85 C9"};
 inline constexpr Signature kVoicePrefix{
@@ -49,6 +58,7 @@ static_assert(kTextBridge.bytes[kTextCall] == 0xe8);
 static_assert(kTextBridge.bytes[kBridgeFirstPrepareCall] == 0xe8);
 static_assert(kTextBridge.bytes[kBridgeSecondPrepareCall] == 0xe8);
 static_assert(kSurface.bytes[kRendererCall] == 0xe8);
+static_assert(kCompactSurface.bytes[kCompactRendererCall] == 0xe8);
 static_assert(kVoicePrefix.bytes[24] == 0xe8);
 static_assert(kVoicePrefix.bytes[29] == 0xe8);
 
@@ -95,10 +105,29 @@ inline bool ResolveSiglusNativeMessageProfile(
     return false;
   uintptr_t entry = 0, bridge = 0, surface = 0, renderer = 0, voice = 0;
   uintptr_t prefix = 0, write = 0, cleanup = 0, voice_exit = 0;
+  const auto full_surface = exact_lookup::FindUniquePatternInExecutableSections(
+      image, kSurface.pattern());
+  const auto compact_surface = exact_lookup::FindUniquePatternInExecutableSections(
+      image, kCompactSurface.pattern());
+  const auto full_renderer = exact_lookup::FindUniquePatternInExecutableSections(
+      image, kRendererEntry.pattern());
+  const auto compact_renderer = exact_lookup::FindUniquePatternInExecutableSections(
+      image, kCompactRendererEntry.pattern());
+  if (full_surface.count + compact_surface.count != 1 ||
+      full_renderer.count + compact_renderer.count != 1 ||
+      full_surface.count != full_renderer.count) return false;
+  const bool compact = compact_surface.count == 1;
+  const auto& surface_match = compact ? compact_surface : full_surface;
+  const auto& renderer_match = compact ? compact_renderer : full_renderer;
+  if (surface_match.address == nullptr || renderer_match.address == nullptr)
+    return false;
+  surface = static_cast<uintptr_t>(surface_match.address - image.base);
+  renderer = static_cast<uintptr_t>(renderer_match.address - image.base);
+  const size_t surface_bytes = compact ? kCompactSurface.bytes.size()
+                                       : kSurface.bytes.size();
+  const size_t renderer_call = compact ? kCompactRendererCall : kRendererCall;
   if (!Unique(image, kEntry.pattern(), &entry) ||
       !Unique(image, kTextBridge.pattern(), &bridge) ||
-      !Unique(image, kSurface.pattern(), &surface) ||
-      !Unique(image, kRendererEntry.pattern(), &renderer) ||
       !Unique(image, kVoiceEntry.pattern(), &voice) ||
       !Unique(image, kVoicePrefix.pattern(), &prefix) ||
       !Unique(image, kVoiceWrite.pattern(), &write) ||
@@ -106,7 +135,7 @@ inline bool ResolveSiglusNativeMessageProfile(
       !siglus_message::MatchAt(image, cleanup, kCleanup.pattern()) ||
       bridge != entry + kEntry.bytes.size() + 6 ||
       surface != bridge + kTextBridge.bytes.size() ||
-      surface >= cleanup || kSurface.bytes.size() > cleanup - surface ||
+      surface >= cleanup || surface_bytes > cleanup - surface ||
       !siglus_message::NullExit(image, voice + kVoiceEntry.bytes.size(), voice,
                                &voice_exit) ||
       !siglus_message::MatchAt(image, voice_exit, siglus_message::kVoiceReturn.pattern()) ||
@@ -128,7 +157,7 @@ inline bool ResolveSiglusNativeMessageProfile(
       bridge + kTextCall + 5 != admitted_native.exact_text_return_rva ||
       siglus_message::CountDirectCalls(image, entry, cleanup, text) != 1 ||
       !exact_lookup::MatchesRel32CallEndingAt(
-          image, surface + kRendererCall + 5, renderer) ||
+          image, surface + renderer_call + 5, renderer) ||
       siglus_message::CountDirectCalls(image, entry, cleanup, renderer) != 1)
     return false;
   const uint32_t global = Word(image, bridge + kBridgeGlobal);
