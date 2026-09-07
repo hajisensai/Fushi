@@ -5075,10 +5075,22 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
 // min(用户设置, 装得下的列数)，写 --dict-columns-effective 供 grid 消费；
 // resize 只改 CSS 变量（grid 自动 reflow，零重渲）。in-app 弹窗同规则受益。
 const DICT_COLUMN_MIN_WIDTH = 170;
+// 触屏设备（手机/平板，主指针 coarse）一律单列：移动端弹窗本就窄，多词典并排每列被
+// 挤到贴地板，义项互相压缩完全没法读——竖着堆叠才是手机上的正确形态。桌面触屏二合一
+// 主指针是 mouse（fine），不受牵连。CSS grid 与 JS masonry 都经本函数取列数，一处收口。
+function isCoarsePointerType() {
+    try {
+        return !!(window.matchMedia
+            && window.matchMedia('(pointer: coarse)').matches);
+    } catch (e) {
+        return false;
+    }
+}
 // 视口感知的有效列数（单一真值来源）：min(用户设置 --dict-columns, 每列 ≥DICT_COLUMN_MIN_WIDTH
 // px 装得下的列数)。CSS grid 经 --dict-columns-effective 消费、masonry 经 dictColumns() 消费，
 // 两者都走此函数——绝不再分叉（历史上 masonry 漏了视口收敛，自动调整对方框布局不生效）。
 function effectiveDictColumns() {
+    if (isCoarsePointerType()) return 1;
     let configured = 1;
     try {
         configured = parseInt(

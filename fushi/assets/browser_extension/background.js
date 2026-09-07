@@ -516,6 +516,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   // 另外：open() 必须是拿到激活后的第一句——原实现先 `await setOptions(...)`，其 resolve 落在
   // 新的宏任务里，激活早已过期，等于自己把仅有的机会也丢掉了。setOptions 不需要激活，挪到
   // open() 之后补（manifest 的 side_panel.default_path 已足以让 open() 用对页面）。
+  // 字幕抽屉（mobile-drawer.js）：iframe 里的扩展页拿不到宿主标签身份，content script
+  // 又没有 chrome.tabs 可用——由 SW 如实回报发信标签 id，抽屉拼进
+  // side-panel.html?fushiEmbed=1&fushiTabId=N（嵌入模式下绑死这一页，见 side-panel.js）。
+  if (msg && msg.type === 'drawerSelfTab') {
+    sendResponse({
+      ok: true,
+      tabId: _sender && _sender.tab && Number.isInteger(_sender.tab.id) ? _sender.tab.id : null,
+    });
+    return true;
+  }
   if (msg && msg.type === 'openSubtitleSidePanel') {
     const tabId = Number.isInteger(msg.tabId)
       ? msg.tabId

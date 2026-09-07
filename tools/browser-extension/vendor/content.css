@@ -2128,7 +2128,8 @@
 #fushi-subtitle-overlay {
     position: fixed;
     z-index: 2147483637;
-    transform: translate(-50%, -50%);
+    /* top 给的是底边锚点（JS 写 88% 处）：-100% 让文字向上长，短视频不溢出视频下缘。 */
+    transform: translate(-50%, -100%);
     padding: 6px 12px 7px;
     border-radius: 8px;
     color: #f7f8f2;
@@ -2177,3 +2178,150 @@
     letter-spacing: 0.04em;
     pointer-events: none;
 }
+
+/* ── 移动端字幕列表抽屉（mobile-drawer.js）：贴边面板 + 边缘细条拉手 ──
+   横屏定宽右挂（.is-land），竖屏定高底挂（.is-port）；宽高与 translate 全由 JS 写，
+   这里只管外观与动画。z 压在字幕覆盖层(2147483637)之上、查词弹窗(2147483647)之下：
+   面板里点词要浮在抽屉上。根容器必须**全透明**——收起态整条边只许露出 12px 细条,
+   底和影都挂在 iframe/拉手上，不然透明也白透。 */
+#fushi-drawer {
+    position: fixed;
+    z-index: 2147483640;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: row;
+    max-width: calc(100vw - 16px);
+    background: transparent;
+    /* 收起态（只剩细条）：根容器整条 12px×全高不许当隐形挡板——透明就得真透明，
+       点/滑全还给背后的视频和控件。可交互的部分自己把事件捡回来（见下三处 auto）。 */
+    pointer-events: none;
+}
+
+/* 开态：拉手槽涂成面板同色（cream），与 iframe 无缝拼成一块面板边——
+   旧的 #1e1b18 根底会在面板左缘留一条黑缝，收起态阴影渗边也是黑边元凶，一并禁掉。 */
+#fushi-drawer.is-open .fushi-drawer-strip {
+    background: #fff9f4;
+}
+
+#fushi-drawer.is-port {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    max-width: none;
+    max-height: calc(100vh - 16px);
+    flex-direction: column;
+}
+
+/* 拖拽期（.is-dragging）关补间跟手；松手后的开/关吸附走 220ms 缓出。 */
+#fushi-drawer:not(.is-dragging) {
+    transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* 拉手：**隐形边缘手势区**——细条本体不再画任何东西（视觉零占位），
+   ::before 把命中往画面侧探 14px（合计 26px）：贴边任何位置起拖即开合/调宽（监听边缘）。 */
+.fushi-drawer-strip {
+    flex: 0 0 auto;
+    position: relative;
+    z-index: 1; /* 按钮探进面板侧的那半要画在 iframe 之上 */
+    width: 12px;
+    display: grid;
+    place-items: center;
+    background: transparent;
+    cursor: pointer;
+    touch-action: none;
+    pointer-events: auto; /* 根 none 之下，手势区自己把事件捡回来 */
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.fushi-drawer-strip::before {
+    content: '';
+    position: absolute;
+    top: -14px;
+    bottom: -14px;
+    left: -14px;
+    right: 0;
+}
+
+#fushi-drawer.is-port .fushi-drawer-strip {
+    width: auto;
+    height: 12px;
+}
+
+#fushi-drawer.is-port .fushi-drawer-strip::before {
+    top: -14px;
+    bottom: 0;
+    left: -14px;
+    right: -14px;
+}
+
+/* 开合按钮：骑在屏幕/抽屉边缘的小圆钮，一眼可见、一点开合；按住它同样可以拖。 */
+.fushi-drawer-btn {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font: 700 15px/1 system-ui, sans-serif;
+    color: #f0e6da;
+    background: rgba(40, 32, 26, 0.88);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+    cursor: pointer;
+    touch-action: none;
+    pointer-events: auto;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+#fushi-drawer.is-port .fushi-drawer-btn {
+    top: 50%;
+    left: 50%;
+}
+
+/* 全屏时开合钮挪右上角（用户指定）：横屏在右缘顶端，竖屏在抽屉顶缘右角。
+   safe-area 兜刘海/挖孔，不跟播放器自己的右上控件重叠太多再报我调坐标。 */
+#fushi-drawer.is-fs.is-land .fushi-drawer-btn {
+    top: max(14px, env(safe-area-inset-top));
+    transform: translateX(-50%);
+}
+
+#fushi-drawer.is-fs.is-port .fushi-drawer-btn {
+    top: 50%;
+    left: auto;
+    right: max(18px, env(safe-area-inset-right));
+    transform: none;
+}
+
+#fushi-drawer iframe {
+    flex: 1 1 auto;
+    display: block;
+    min-width: 0;
+    min-height: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: #fff9f4;
+    pointer-events: auto;
+}
+
+/* 投影只在开态存在：收起时 iframe 整块在屏外，它的 -6px 投影会渗到屏边上糊一道黑雾。 */
+#fushi-drawer.is-open iframe {
+    box-shadow: -6px 0 24px rgba(0, 0, 0, 0.45);
+}
+
+#fushi-drawer.is-open.is-port iframe {
+    box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.45);
+}
+
+/* 视频让位（开抽屉时压 fullscreenElement/<html>）不走这里：mobile-drawer.js 直接对
+   目标元素写 inline !important（站点后到样式/内联尺寸都压得住），关抽屉精确还原。 */

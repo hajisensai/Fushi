@@ -28,6 +28,51 @@
   window.__fushiRoot = lookupShadow;
   installDictMediaPlaceholderResolver(lookupShadow); // BUG-1718：兑现词条内图片/样式表占位
   var currentTabId = null;
+  // 抽屉嵌入模式（mobile-drawer.js 的 iframe 打开，?fushiEmbed=1）：
+  //   · 绑定来源页 tabId——网页内扩展 iframe 里 tabs.query 的 currentWindow 解析不可靠，
+  //     以 background drawerSelfTab 如实回报的 sender.tab.id 为准（缺参数仍走 queryActiveTab）；
+  //   · 不挂 tabs.onActivated：抽屉只服务这一页，「跟着切的标签页走」语义在这里不存在；
+  //   · 抽屉收起时宿主 postMessage pause → 暂停 300ms 轮询（省电），拉开立刻补一次；
+  //   · html 根挂 .fushi-embed 类，side-panel.css 按触屏规格放大控件、补安全区。
+  // typeof 守卫：vm 行为测试沙箱里没有全局 location，扩展页里永远有——两不耽误。
+  var EMBED_SEARCH = typeof location === 'undefined' ? '' : String(location.search || '');
+  var EMBED = /[?&]fushiEmbed=1/.test(EMBED_SEARCH);
+  var EMBED_TAB_ID = (function () {
+    var m = /[?&]fushiTabId=(\d+)/.exec(EMBED_SEARCH);
+    return m ? Number(m[1]) : null;
+  })();
+  var embedPaused = false;
+  if (EMBED) document.documentElement.classList.add('fushi-embed');
+  // 嵌入（手机抽屉）模式头部原本叠了标题+工具排+选轨+时轴偏移三四行，把列表挤得没法看。
+  // 加一个折叠钮：折叠后只留工具排（＋J A− A＋ AS ⚙），列表近乎占满；再点恢复。
+  if (EMBED) {
+    var foldTitleRow = document.querySelector('.title-row');
+    if (foldTitleRow) {
+      var foldBtn = document.createElement('button');
+      foldBtn.type = 'button';
+      foldBtn.className = 'hdr-fold';
+      foldBtn.textContent = '▾';
+      foldBtn.title = '折叠/展开工具区';
+      foldBtn.setAttribute('aria-label', '折叠或展开头部工具区');
+      var applyFold = function (folded) {
+        document.body.classList.toggle('hdr-folded', folded);
+        foldBtn.textContent = folded ? '▸' : '▾';
+      };
+      foldBtn.addEventListener('click', function () {
+        var folded = !document.body.classList.contains('hdr-folded');
+        applyFold(folded);
+        // 折叠状态跨会话记忆：抽屉每次重开都摊着四行工具区是反体验。此键只有 embed
+        // 读写（desktop 无此守卫、CSS 全挂 html.fushi-embed），不污染侧板。
+        try { localStorage.setItem('fushiHdrFolded', folded ? '1' : '0'); } catch (_) {}
+      });
+      // 新会话默认折叠（尽量省空间）：只有用户显式展开过（存 '0'）才记住展开；
+      // 无存档=首次，直接收成一行工具排。
+      var savedFold = null;
+      try { savedFold = localStorage.getItem('fushiHdrFolded'); } catch (_) {}
+      if (savedFold !== '0') applyFold(true);
+      foldTitleRow.insertBefore(foldBtn, foldTitleRow.firstChild);
+    }
+  }
   var currentState = null;
   var cues = [];
   var rows = [];
@@ -661,6 +706,7 @@
   }
 
   function queryActiveTab() {
+    if (EMBED && EMBED_TAB_ID != null) return Promise.resolve({ id: EMBED_TAB_ID });
     return new Promise(function (resolve) {
       chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
         try { if (chrome.runtime.lastError) return resolve(null); } catch (_) { return resolve(null); }
@@ -709,18 +755,28 @@
     ].join('::');
   }
 
+  var trackSig = '~';
   function renderTracks(state) {
     var tracks = Array.isArray(state.tracks) ? state.tracks : [];
-    trackEl.textContent = '';
-    tracks.forEach(function (track) {
-      var option = document.createElement('option');
-      option.value = track.lang;
-      option.textContent = track.label + '（' + track.length + '）';
-      trackEl.appendChild(option);
-    });
-    trackEl.hidden = tracks.length === 0;
-    trackEl.value = state.activeLang || '';
-    offsetEl.hidden = tracks.length === 0;
+    // 每 300ms 刷新都清空重建 option，会把展开中的系统级下拉一次一次销毁——
+    // 安卓抽屉里「选轨窗口一直闪烁」就是这么来的（桌面同理）。无变化 = DOM 一律不碰；
+    // 指纹含 activeLang，所以切轨后选中值照样落得下去。偏移读数是纯文本，放闸外常刷。
+    var sig = (state.activeLang || '') + '\u0003' + tracks.map(function (t) {
+      return [t.lang, t.label, t.length, t.signature].join('\u0001');
+    }).join('\u0002');
+    if (sig !== trackSig) {
+      trackSig = sig;
+      trackEl.textContent = '';
+      tracks.forEach(function (track) {
+        var option = document.createElement('option');
+        option.value = track.lang;
+        option.textContent = track.label + '（' + track.length + '）';
+        trackEl.appendChild(option);
+      });
+      trackEl.hidden = tracks.length === 0;
+      trackEl.value = state.activeLang || '';
+      offsetEl.hidden = tracks.length === 0;
+    }
     offsetValueEl.textContent = ((Number(state.offsetMs) || 0) >= 0 ? '+' : '') +
       ((Number(state.offsetMs) || 0) / 1000).toFixed(1) + 's';
   }
@@ -838,6 +894,7 @@
   }
 
   async function refresh(forceCues) {
+    if (embedPaused) return; // 抽屉收起：不空转消息，resume 时立即补一次全量
     if (refreshBusy) return;
     refreshBusy = true;
     try {
@@ -1157,11 +1214,28 @@
 
 
   try {
-    chrome.tabs.onActivated.addListener(function () { refresh(true); });
+    if (!EMBED) chrome.tabs.onActivated.addListener(function () { refresh(true); });
     chrome.tabs.onUpdated.addListener(function (tabId, changeInfo) {
       if (tabId === currentTabId && changeInfo.status === 'complete') refresh(true);
     });
   } catch (_) {}
+
+  // 抽屉宿主（mobile-drawer.js）的可见性协议：收起=暂停轮询，拉开=立刻全量刷新。
+  if (EMBED) {
+    // S5691：宿主 origin 由 mobile-drawer 经 iframe URL 显式声明，收消息先验来源。
+    // 缺参数时 EMBED_HOST_ORIGIN='' 永远匹配不上任何真实 origin——天然 fail-closed。
+    var EMBED_HOST_ORIGIN = (function () {
+      var m = /[?&]fushiHostOrigin=([^&]*)/.exec(EMBED_SEARCH);
+      try { return m ? decodeURIComponent(m[1]) : ''; } catch (_) { return ''; }
+    })();
+    window.addEventListener('message', function (ev) {
+      if (ev.origin !== EMBED_HOST_ORIGIN) return;
+      var d = ev && ev.data;
+      if (!d || d.source !== 'fushi-drawer') return;
+      if (d.type === 'pause') embedPaused = true;
+      else if (d.type === 'resume') { embedPaused = false; refresh(true); }
+    });
+  }
 
   refresh(true);
   setInterval(function () { refresh(false); }, 300);

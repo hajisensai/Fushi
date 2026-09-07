@@ -109,17 +109,22 @@ function parseSubtitleTimestamp(raw, tickRate) {
 const RUBY_ANNOTATION = '<(?:rt|rp|rtc)\\b(?:[^<>/]|/(?!>))*>' +
   '(?:(?!</?(?:ruby|rt|rp|rtc)\\b)[\\s\\S])*(?:</(?:rt|rp|rtc)\\s*>)?';
 
-// 方向/零宽控制字符与最小实体解码（不碰标签）。
+// 方向/零宽控制字符与最小实体解码（不碰标签）。分号可选：YouTube 等的字幕流大量输出
+// 无分号形态（&#39 而非 &#39;），HTML 规范里文本上下文的字符引用本就允许省分号——
+// 只认带分号就是用户报的「字幕里出现 &#39」。十进制/十六进制/命名都补齐。
 function decodeCueEntities(text) {
   return String(text || '')
     .replace(/[‎‏]/g, '')
-    .replace(/&lrm;|&rlm;/g, '')
-    .replace(/&#(\d+);/g, (_, d) => String.fromCharCode(parseInt(d, 10)))
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&amp;/g, '&');
+    .replace(/&#(\d+);?/g, (_, d) => String.fromCharCode(parseInt(d, 10)))
+    .replace(/&#x([0-9a-f]+);?/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
+    // 命名实体：要么带分号整口吃掉，要么无分号但后不跟字母/数字/分号（HTML5 同款
+    // 边界判据；漏了这条会吐 "&lt;b&gt;"→"<;b>"、"&amphibian" 被咬这类反向事故）。
+    .replace(/&(?:lrm|rlm)(?:;|(?![0-9A-Za-z;]))/gi, '')
+    .replace(/&nbsp(?:;|(?![0-9A-Za-z;]))/gi, ' ')
+    .replace(/&lt(?:;|(?![0-9A-Za-z;]))/gi, '<')
+    .replace(/&gt(?:;|(?![0-9A-Za-z;]))/gi, '>')
+    .replace(/&quot(?:;|(?![0-9A-Za-z;]))/gi, '"')
+    .replace(/&amp(?:;|(?![0-9A-Za-z;]))/gi, '&');
 }
 
 // 去掉行内标签（<c>、<i>、<b.bg_transparent> …）并解码实体；注音内容已在上游剔除。
