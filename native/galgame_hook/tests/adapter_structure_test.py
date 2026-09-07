@@ -1360,6 +1360,26 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn("WaitForGameChildProcess", injector)
         self.assertIn('a == L"--follow-child-processes"', injector)
 
+    def test_siglus_ovk_capture_requires_successful_export(self) -> None:
+        # BUG-2235: source validation cannot stand in for successful disk IO.
+        source = (ROOT / "hook" / "adapters" / "siglus_adapter.inc").read_text(
+            encoding="utf-8"
+        )
+        worker = self._function_body(source, "void ProcessSiglusVoiceTask(")
+        committed = self._function_body(
+            worker,
+            "if (WriteVoiceOggAt(ogg, entry.byte_len, storage, task->tick_ms))",
+        )
+        for flag in ("kDiagSiglusVoiceDumped", "kDiagVisualArtsOvkCaptured"):
+            self.assertEqual(worker.count(flag), 1)
+            self.assertIn(flag, committed)
+        # Failed export still releases source bytes and the archive handle.
+        self.assertNotIn("return", committed)
+        for cleanup in ("free(ogg);", "free(index);", "g_orig_CloseHandle(file);"):
+            self.assertIn(cleanup, worker)
+            self.assertNotIn(cleanup, committed)
+            self.assertGreater(worker.index(cleanup), worker.index(committed))
+
     def test_reallive_shared_ovk_path_does_not_claim_engine_identity(self) -> None:
         adapter = (ROOT / "hook" / "adapters" / "reallive_adapter.inc").read_text(
             encoding="utf-8"

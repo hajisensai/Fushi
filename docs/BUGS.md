@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2066 条。点号进各自文件。
+> 共 2067 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2235](bugs/BUG-2235-siglus-ovk-export-failure-reported-captured.md) | ✅ | ✅ | Siglus OVK 导出失败仍报告已捕获 |
 | [BUG-2234](bugs/BUG-2234-siglus-partial-redraw-retires-popup.md) | ✅ | ✅ | Siglus同句分批重绘错误撤销已打开词典 |
 | [BUG-2233](bugs/BUG-2233-siglus-text-hook-ownership-race.md) | ✅ | ✅ | Siglus原生文本适配与Luna自动扫描争抢入口 |
 | [BUG-2231](bugs/BUG-2231-windows-uia-flutter-host-crash.md) | 🚧 | 🚧 | Windows宿主在UIAutomation回调进入Flutter时访问冲突退出 |
