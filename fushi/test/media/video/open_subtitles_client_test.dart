@@ -12,6 +12,74 @@ import 'package:fushi/src/media/video/subtitle/open_subtitles_client.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart';
 
 void main() {
+  late String originalEmbeddedKey;
+  setUp(() {
+    originalEmbeddedKey = OpenSubtitlesConfig.embeddedApiKey;
+    OpenSubtitlesConfig.embeddedApiKey = '';
+  });
+  tearDown(() {
+    OpenSubtitlesConfig.embeddedApiKey = originalEmbeddedKey;
+  });
+
+  test('embedded application key stays out of configuration exports', () {
+    OpenSubtitlesConfig.embeddedApiKey = 'app-test-key';
+    final OpenSubtitlesConfig config = OpenSubtitlesConfig(apiKey: '');
+    expect(config.effectiveApiKey, 'app-test-key');
+    expect(config.toJson()['apiKey'], '');
+    expect(config.toJson().toString(), isNot(contains('app-test-key')));
+    expect(
+        OpenSubtitlesConfig(apiKey: ' user-key ').effectiveApiKey, 'user-key');
+    expect(OpenSubtitlesConfig.fromJson(config.toJson()).apiKey, '');
+    expect(OpenSubtitlesConfig(apiKey: '', userAgent: 'Hibiki v1').userAgent,
+        'FushiPlayer v1');
+    expect(OpenSubtitlesConfig(apiKey: '', userAgent: 'Custom v2').userAgent,
+        'Custom v2');
+  });
+
+  test('enabled client sends app key but disabled client sends no requests',
+      () async {
+    OpenSubtitlesConfig.embeddedApiKey = 'app-test-key';
+    int requests = 0;
+    final MockClient transport = MockClient((http.Request request) async {
+      requests++;
+      expect(request.headers['api-key'], 'app-test-key');
+      expect(request.headers['user-agent'], 'FushiPlayer v1');
+      return http.Response('{"data":[]}', 200);
+    });
+    final OpenSubtitlesClient enabled = OpenSubtitlesClient(
+        config: OpenSubtitlesConfig(apiKey: ''), client: transport);
+    await enabled.search(VideoSubtitleSearchRequest(query: 'Test'));
+    expect(requests, greaterThan(0));
+    final int beforeDisabled = requests;
+    final OpenSubtitlesClient disabled = OpenSubtitlesClient(
+        config: OpenSubtitlesConfig(apiKey: '', enabled: false),
+        client: transport);
+    await disabled.search(VideoSubtitleSearchRequest(query: 'Test'));
+    expect(requests, beforeDisabled);
+  });
+
+  test('bundled application key never goes to a custom API endpoint', () async {
+    OpenSubtitlesConfig.embeddedApiKey = 'app-test-key';
+    int requests = 0;
+    final OpenSubtitlesConfig config = OpenSubtitlesConfig(
+        apiKey: '', baseUrl: Uri.parse('https://custom.example/api/v1'));
+    final OpenSubtitlesClient client = OpenSubtitlesClient(
+        config: config,
+        client: MockClient((request) async {
+          requests++;
+          return http.Response('{"data":[]}', 200);
+        }));
+    expect(config.effectiveApiKey, isEmpty);
+    await client.search(VideoSubtitleSearchRequest(query: 'Test'));
+    expect(requests, 0);
+    expect(
+        OpenSubtitlesConfig(
+                apiKey: 'custom-key',
+                baseUrl: Uri.parse('https://custom.example/api/v1'))
+            .effectiveApiKey,
+        'custom-key');
+  });
+
   test('config codec persists credentials but toString redacts them', () {
     final OpenSubtitlesConfig config = OpenSubtitlesConfig.fromJson(
       <String, Object?>{

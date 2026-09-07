@@ -786,6 +786,96 @@ function buildEntryCardDom(context) {
   return {entry, glossary, cardGap};
 }
 
+function testExtensionPopupHandlesNestedLookupBeforeHostPageBubbling() {
+  const context = loadPopup((value) => {
+    value.chrome = { runtime: { id: 'extension-test' } };
+  });
+  assert.equal(context.__listeners.click, undefined,
+    'extension lookup must not wait for document bubbling behind player listeners');
+  const root = new FakeElement('shadow-root');
+  root.host = new FakeElement('div');
+  context.window.__fushiRoot = root;
+  context.window.__fushiBindPopupInteractions(root);
+  context.window.__fushiBindPopupInteractions(root);
+  assert.equal(root.listeners.click.length, 1, 'rebinding must not duplicate lookups');
+  const {glossary} = buildEntryCardDom(context);
+  root.appendChild(glossary);
+  const selected = [];
+  const bridgeCalls = [];
+  context.window.fushiSelection = { selectText: (...args) => selected.push(args) };
+  context.window.flutter_inappwebview.callHandler = (...args) => {
+    bridgeCalls.push(args);
+    return Promise.resolve(null);
+  };
+  let hostPlayerClicks = 0;
+  context.document.addEventListener('click', () => { hostPlayerClicks++; });
+  function bubble(type, target, extra = {}) {
+    const event = {
+      target, clientX: 50, clientY: 50, ...extra,
+      composedPath: () => [target, glossary, root, root.host, context.document],
+      stopPropagation() { this.stopped = true; },
+      preventDefault() { this.prevented = true; },
+    };
+    for (const handler of root.listeners[type]) handler(event);
+    if (!event.stopped) {
+      for (const handler of context.__listeners[type] || []) handler(event);
+    }
+    return event;
+  }
+  bubble('mousedown', glossary);
+  bubble('click', glossary);
+  assert.deepEqual(selected, [[50, 50, 20]], 'definition click still selects a nested word');
+  bubble('mousemove', glossary, { shiftKey: true });
+  assert.equal(selected.length, 2, 'Shift lookup must also remain inside the popup');
+  const anchor = new FakeElement('a');
+  anchor.setAttribute('href', 'entry://計画');
+  anchor.textContent = '計画';
+  anchor.closest = function(selector) {
+    if (selector === 'a[href]') return this;
+    return FakeElement.prototype.closest.call(this, selector);
+  };
+  glossary.appendChild(anchor);
+  const linkEvent = bubble('click', anchor);
+  assert.ok(linkEvent.prevented, 'dictionary reference must not navigate the page');
+  assert.equal(bridgeCalls[0][0], 'onLinkClick');
+  assert.equal(bridgeCalls[0][1], '計画');
+  assert.equal(hostPlayerClicks, 0, 'nested lookup must not resume the host player');
+  assert.ok(!bridgeCalls.some(([name]) => name === 'tapOutside'),
+    'nested text and cross-reference clicks must not dismiss the popup');
+  const reopened = new FakeElement('shadow-root');
+  reopened.host = new FakeElement('div');
+  context.window.__fushiRoot = reopened;
+  context.window.__fushiBindPopupInteractions(reopened);
+  assert.equal(reopened.listeners.click.length, 1,
+    'a recreated popup root must receive fresh delegated handlers');
+  let stopped = false;
+  reopened.listeners.click[0]({
+    target: glossary, clientX: 50, clientY: 50,
+    composedPath: () => [glossary, reopened, reopened.host, context.document],
+    stopPropagation() { stopped = true; },
+  });
+  assert.ok(stopped);
+  assert.equal(selected.length, 3, 'nested selection still works after reopening');
+}
+
+testExtensionPopupHandlesNestedLookupBeforeHostPageBubbling();
+
+function testExtensionBindsRootCreatedBeforePopupScript() {
+  const root = new FakeElement('shadow-root');
+  root.host = new FakeElement('div');
+  const context = loadPopup((value) => {
+    value.chrome = { runtime: { id: 'extension-test' } };
+    value.window.__fushiRoot = root;
+  });
+  assert.equal(root.listeners.click.length, 1,
+    'side panel creates its root before loading the shared popup script');
+  assert.equal(context.__listeners.click, undefined);
+  context.window.__fushiBindPopupInteractions(root);
+  assert.equal(root.listeners.click.length, 1);
+}
+
+testExtensionBindsRootCreatedBeforePopupScript();
+
 // (1) Tapping the definition TEXT body still routes to word selection.
 function testTapOnGlossaryTextSelectsWord() {
   const context = loadPopup();
@@ -2876,3 +2966,60 @@ testBridgeRejectionIsNeverSilent().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
+
+async function testQueuedMineStateTracksQueueWithoutAnkiRefresh() {
+  const context = loadPopup();
+  let queued = false;
+  let mines = 0;
+  let duplicates = 0;
+  context.window.fushiIsEntryQueued = () => queued;
+  context.window.flutter_inappwebview.callHandler = (name) => {
+    if (name === 'duplicateCheck') { duplicates++; return Promise.resolve(false); }
+    if (name === 'mineEntry') {
+      mines++;
+      queued = true;
+      return Promise.resolve({ queued: true, ankiConnect: false });
+    }
+    return Promise.resolve(null);
+  };
+  const button = buildMineHeaderFor(context, '猫');
+  await flush();
+  const before = duplicates;
+  await button.onclick();
+  await flush();
+  assert.equal(button.dataset.queued, '1');
+  assert.equal(button.textContent, '✓');
+  assert.ok(button.classList.contains('duplicate'), 'queued mark must hide the CSS plus');
+  assert.notEqual(button.dataset.mined, '1', 'queued is not an Anki card');
+  assert.equal(button.title, '已加入制卡队列');
+  assert.equal(duplicates, before, 'queue success must not probe Anki');
+  await button.onclick();
+  assert.equal(mines, 1, 'repeated click must not enqueue again');
+  const reopened = buildMineHeaderFor(context, '猫');
+  await flush();
+  assert.equal(reopened.dataset.queued, '1', 'reopened popup reads the real queue');
+  queued = false;
+  await button.onclick();
+  assert.equal(mines, 2, 'removing the item permits a new enqueue');
+}
+
+async function testQueueFailureKeepsPlusAndAllowsRetry() {
+  const context = loadPopup();
+  let calls = 0;
+  context.window.flutter_inappwebview.callHandler = (name) => {
+    if (name === 'mineEntry') { calls++; return Promise.resolve({ queued: false, ankiConnect: false }); }
+    return Promise.resolve(false);
+  };
+  const button = buildMineHeaderFor(context, '猫');
+  await flush();
+  await button.onclick();
+  assert.equal(button.textContent, '+');
+  assert.notEqual(button.dataset.queued, '1');
+  await button.onclick();
+  assert.equal(calls, 2);
+}
+
+Promise.all([
+  testQueuedMineStateTracksQueueWithoutAnkiRefresh(),
+  testQueueFailureKeepsPlusAndAllowsRetry(),
+]).catch((error) => { console.error(error); process.exitCode = 1; });

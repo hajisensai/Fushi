@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:fushi_anki/fushi_anki.dart';
 
 import 'package:fushi/src/media/override_title_key.dart';
+import 'package:fushi/src/media/video/video_online_services_preferences.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/sync/pref_redaction_policy.dart';
 
@@ -37,6 +38,7 @@ class ProfileKeys {
     'first_time_setup',
     // 新手引导完成标志与 first_time_setup 同族：描述本安装的状态，不随 Profile 切换。
     'onboarding_completed',
+    kVideoOnlineServicesSetupDismissedPref,
     'current_home_tab_index',
     'startup_default_dictionary_tab',
     'app_ui_scale',

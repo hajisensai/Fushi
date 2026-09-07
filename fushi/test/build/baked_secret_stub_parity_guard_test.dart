@@ -37,6 +37,8 @@ void main() {
         'fushi/lib/src/media/video/dandanplay_secret.dart',
     'Provide gitignored TMDB API key stub':
         'fushi/lib/src/media/video/scraper/tmdb_default_key.dart',
+    'Provide OpenSubtitles API key stub':
+        'fushi/lib/src/media/video/subtitle/opensubtitles_default_key.dart',
   };
 
   const String actionRef = './.github/actions/provide-baked-secrets';
@@ -76,11 +78,24 @@ void main() {
       'dandanplay-app-id': 'DANDANPLAY_APP_ID',
       'dandanplay-app-secret': 'DANDANPLAY_APP_SECRET',
       'tmdb-api-key': 'TMDB_API_KEY',
+      'opensubtitles-api-key': 'OPENSUBTITLES_API_KEY',
     };
     final List<String> offenders = <String>[];
     wiring.forEach((String input, String secret) {
       if (!actionText.contains('$input:')) {
         offenders.add('  action 没有声明输入 $input');
+      }
+      for (final File workflow in workflowsDir.listSync().whereType<File>()) {
+        if (!workflow.path.endsWith('.yml') &&
+            !workflow.path.endsWith('.yaml')) {
+          continue;
+        }
+        final String text = workflow.readAsStringSync();
+        final int calls = 'uses: $actionRef'.allMatches(text).length;
+        final String expected = '$input: \u0024{{ secrets.$secret }}';
+        if (expected.allMatches(text).length != calls) {
+          offenders.add('  ${workflow.path}: $input 未传入全部 $calls 个调用');
+        }
       }
     });
     expect(offenders, isEmpty, reason: offenders.join('\n'));

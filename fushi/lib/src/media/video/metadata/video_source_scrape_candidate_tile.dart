@@ -4,6 +4,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_task.dart';
+import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/utils.dart';
 
 class VideoSourceScrapeCandidateTile extends StatelessWidget {
@@ -21,7 +22,12 @@ class VideoSourceScrapeCandidateTile extends StatelessWidget {
   static String describe(VideoSourceScrapeConfirmationCandidate candidate) {
     final String? original = candidate.work.originalTitle;
     return <String>[
-      candidate.lookup.provider.name.toUpperCase(),
+      if (candidate.lookup.provider == VideoMetadataProviderKind.tmdb)
+        candidate.lookup.mediaKind == VideoMetadataMediaKind.movie
+            ? t.video_source_scrape_manual_tmdb_movie
+            : t.video_source_scrape_manual_tmdb_tv
+      else
+        candidate.lookup.provider.name.toUpperCase(),
       candidate.lookup.externalId,
       if (candidate.work.year != null) '${candidate.work.year}',
       if (original != null && original != candidate.work.title) original,
@@ -32,7 +38,7 @@ class VideoSourceScrapeCandidateTile extends StatelessWidget {
   Widget build(BuildContext context) => FushiListItem(
         key: ValueKey<String>(
           'video-source-candidate-${candidate.lookup.provider.name}-'
-          '${candidate.lookup.externalId}',
+          '${candidate.lookup.mediaKind.name}-${candidate.lookup.externalId}',
         ),
         padding: EdgeInsets.zero,
         title: Text(candidate.work.title),

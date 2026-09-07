@@ -636,14 +636,19 @@ class SourceLibraryScanner {
           ).groupPaths(
             videoPaths: <String>[
               for (final ScanVideoItem item in plan.videos)
-                if (classifyLocalVideoExtra(item.videoPath) == null)
+                if (source.videoGroupingMode == 'folder' ||
+                    classifyLocalVideoExtra(item.videoPath) == null)
                   item.videoPath,
             ],
             createdVideoPaths: createdVideoPaths,
             sourceId: source.id,
+            groupingMode: source.videoGroupingMode,
+            sourceRoot: source.rootPath,
           );
           mediaCount += await _importPlaylists(plan, source.id, files);
-          await VideoSourceMetadataIndexer(_db).index(source);
+          if (source.videoGroupingMode != 'folder') {
+            await VideoSourceMetadataIndexer(_db).index(source);
+          }
         case SourceLibraryKind.manga:
           mediaCount = await _importManga(plan, source.id, files);
       }

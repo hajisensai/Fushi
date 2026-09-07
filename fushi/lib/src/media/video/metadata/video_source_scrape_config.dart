@@ -7,16 +7,21 @@
 library;
 
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/media/video/metadata/anidb_udp_file_client.dart';
+import 'package:fushi/src/media/video/metadata/anidb_app_client.dart';
 
 const String kVideoMetadataAniDbClientNamePref =
     'video_metadata_anidb_client_name';
 const String kVideoMetadataAniDbClientVersionPref =
     'video_metadata_anidb_client_version';
 const String kVideoMetadataLocalePref = 'video_metadata_locale';
+const String kVideoAniDbHashEnabledPref = 'video_anidb_hash_enabled';
+const String kVideoAniDbUsernamePref = 'video_anidb_username';
+const String kVideoAniDbPasswordPref = 'video_anidb_password';
 
 /// AniDB HTTP API 要求注册过的正整数 client version。
 ///
-/// 无效值保留为 `null`，provider 因而只使用离线 title catalog，不会发 HTTP 请求。
+/// 无效值保留为 `null`，需要已注册客户端的 AniDB 文件识别不会发请求。
 int? parseAniDbClientVersion(String? value) {
   final int? parsed = int.tryParse(value?.trim() ?? '');
   return parsed != null && parsed > 0 ? parsed : null;
@@ -29,6 +34,9 @@ class VideoSourceScrapeGlobalConfig {
     this.tmdbApiKey = '',
     this.anidbClientName = '',
     this.anidbClientVersion,
+    this.hashEnabled = false,
+    this.anidbUsername = '',
+    this.anidbPassword = '',
     this.locale = 'zh-CN',
     this.imageLanguages = const <String>['zh', 'en', ''],
   });
@@ -36,23 +44,43 @@ class VideoSourceScrapeGlobalConfig {
   final String tmdbApiKey;
   final String anidbClientName;
   final int? anidbClientVersion;
+  final bool hashEnabled;
+  final String anidbUsername;
+  final String anidbPassword;
+  AnidbUdpConfig get anidbUdpConfig => AnidbUdpConfig(
+        username: anidbUsername,
+        password: anidbPassword,
+        clientName: anidbClientName,
+        clientVersion: anidbClientVersion ?? 0,
+      );
   final String locale;
   final List<String> imageLanguages;
 
   factory VideoSourceScrapeGlobalConfig.fromPreferences(
     PreferencesRepository preferences, {
     required String resolvedTmdbApiKey,
+    AniDbAppClientIdentity bundledAniDbClient = kBundledAniDbClient,
   }) {
     String read(String key, [String fallback = '']) =>
         (preferences.getPref(key, defaultValue: fallback) as String).trim();
     final String locale = read(kVideoMetadataLocalePref, 'zh-CN');
-    final String anidbClientName = read(kVideoMetadataAniDbClientNamePref);
-    return VideoSourceScrapeGlobalConfig(
-      tmdbApiKey: resolvedTmdbApiKey.trim(),
-      anidbClientName: anidbClientName,
-      anidbClientVersion: parseAniDbClientVersion(
+    final AniDbAppClientIdentity client = resolveAniDbAppClient(
+      customName: read(kVideoMetadataAniDbClientNamePref),
+      customVersion: parseAniDbClientVersion(
         read(kVideoMetadataAniDbClientVersionPref),
       ),
+      bundled: bundledAniDbClient,
+    );
+    return VideoSourceScrapeGlobalConfig(
+      tmdbApiKey: resolvedTmdbApiKey.trim(),
+      anidbClientName: client.name,
+      anidbClientVersion: client.version,
+      hashEnabled: preferences.getPref(kVideoAniDbHashEnabledPref,
+          defaultValue: false) as bool,
+      anidbUsername: read(kVideoAniDbUsernamePref),
+      // Password whitespace is significant; do not apply the display-string trimmer.
+      anidbPassword: preferences.getPref(kVideoAniDbPasswordPref,
+          defaultValue: '') as String,
       locale: locale.isEmpty ? 'zh-CN' : locale,
     );
   }

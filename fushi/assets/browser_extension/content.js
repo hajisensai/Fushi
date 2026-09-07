@@ -521,17 +521,22 @@ window.fushiSentenceContextPreview = function (args) {
 // 镜像 SentenceContextDialog：前文/当前句（高亮所查词）/后文 + 四个 ± + 取消（还原开窗时
 // 的快照）/ 确认制卡（回点该词条的制卡按钮 fushiPopupMineEntryByIndex，复用全部制卡逻辑）。
 let fushiCtxModalHost = null;
+let fushiCtxModalOnClose = null;
 function fushiCloseSentenceContextModal() {
   if (fushiCtxModalHost) {
     try { fushiCtxModalHost.remove(); } catch (_) {}
     fushiCtxModalHost = null;
   }
+  const onClose = fushiCtxModalOnClose;
+  fushiCtxModalOnClose = null;
+  if (onClose) onClose();
 }
 window.fushiOpenSentenceContextModal = function (args) {
   const entryIndex = args && typeof args.entryIndex === 'number' ? args.entryIndex : 0;
   const matched = args && typeof args.matched === 'string' ? args.matched : '';
   const t = (window.i18nCtx && typeof window.i18nCtx === 'object') ? window.i18nCtx : FUSHI_CTX_I18N;
   fushiCloseSentenceContextModal();
+  fushiCtxModalOnClose = args && typeof args.onClose === 'function' ? args.onClose : null;
   const snap = { prev: fushiSentenceCtx.prev, next: fushiSentenceCtx.next };
   const dark = fushiResolveTheme() === 'dark';
   const host = document.createElement('div');
@@ -569,6 +574,11 @@ window.fushiOpenSentenceContextModal = function (args) {
   bg.appendChild(card);
   shadow.appendChild(bg);
 
+  // 上下文弹层属于查词会话；按钮/遮罩的点击只交给弹层处理，不能冒泡成站点的播放切换。
+  for (const type of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click', 'dblclick', 'touchstart', 'touchend']) {
+    host.addEventListener(type, function (e) { e.stopPropagation(); });
+  }
+
   function el(tag, cls, text) {
     const e = document.createElement(tag);
     if (cls) e.className = cls;
@@ -584,60 +594,71 @@ window.fushiOpenSentenceContextModal = function (args) {
     box.appendChild(document.createTextNode(text.slice(i + matched.length)));
   }
   let busy = false;
+  // 保留弹层骨架和操作按钮：加减只更新预览，不能清空 card 后重建焦点所在按钮。
+  card.appendChild(el('div', 'eyebrow', t.eyebrow));
+  card.appendChild(el('div', 'title', t.title));
+  const count = el('div', 'count');
+  card.appendChild(count);
+  card.appendChild(el('div', 'label', t.boxPrev));
+  const prevBox = el('div', 'box');
+  card.appendChild(prevBox);
+  card.appendChild(el('div', 'label', t.boxCurrent));
+  const cur = el('div', 'box cur');
+  card.appendChild(cur);
+  card.appendChild(el('div', 'label', t.boxNext));
+  const nextBox = el('div', 'box');
+  card.appendChild(nextBox);
+  const row = el('div', 'row');
+  const mk = function (label, dPrev, dNext) {
+    const b = el('button', '', label);
+    b.onclick = function () {
+      if (busy) return;
+      busy = true;
+      try {
+        window.fushiSetSentenceContext(
+          Math.max(0, fushiSentenceCtx.prev + dPrev), Math.max(0, fushiSentenceCtx.next + dNext));
+      } finally { busy = false; }
+      render();
+    };
+    row.appendChild(b);
+    return b;
+  };
+  const prevPlus = mk(t.prevPlus, 1, 0);
+  const prevMinus = mk(t.prevMinus, -1, 0);
+  const nextPlus = mk(t.nextPlus, 0, 1);
+  const nextMinus = mk(t.nextMinus, 0, -1);
+  card.appendChild(row);
+
+  const foot = el('div', 'foot');
+  const cancel = el('button', '', t.cancel);
+  cancel.onclick = function () {
+    window.fushiSetSentenceContext(snap.prev, snap.next);
+    fushiCloseSentenceContextModal();
+  };
+  const confirm = el('button', 'primary', t.confirm);
+  confirm.onclick = function () {
+    fushiCloseSentenceContextModal();
+    if (args && typeof args.onConfirm === 'function') args.onConfirm(entryIndex);
+    else if (typeof window.fushiPopupMineEntryByIndex === 'function') window.fushiPopupMineEntryByIndex(entryIndex);
+  };
+  foot.appendChild(cancel);
+  foot.appendChild(confirm);
+  card.appendChild(foot);
+
   function render() {
-    card.textContent = '';
     const p = window.fushiSentenceContextPreview({ matched: matched });
     const prev = Array.isArray(p.prev) ? p.prev : [];
     const next = Array.isArray(p.next) ? p.next : [];
-    card.appendChild(el('div', 'eyebrow', t.eyebrow));
-    card.appendChild(el('div', 'title', t.title));
-    card.appendChild(el('div', 'count', String(t.count).replace('%d', String(prev.length + next.length))));
-    card.appendChild(el('div', 'label', t.boxPrev));
-    if (!prev.length) card.appendChild(el('div', 'box empty', t.boxEmpty));
-    for (const s of prev) card.appendChild(el('div', 'box', s));
-    card.appendChild(el('div', 'label', t.boxCurrent));
-    const cur = el('div', 'box cur');
+    count.textContent = String(t.count).replace('%d', String(prev.length + next.length));
+    prevBox.className = prev.length ? 'box' : 'box empty';
+    prevBox.textContent = prev.length ? prev.join('\n') : t.boxEmpty;
     renderCurrent(cur, typeof p.current === 'string' ? p.current : '');
-    card.appendChild(cur);
-    card.appendChild(el('div', 'label', t.boxNext));
-    if (!next.length) card.appendChild(el('div', 'box empty', t.boxEmpty));
-    for (const s of next) card.appendChild(el('div', 'box', s));
-
-    const row = el('div', 'row');
-    const mk = function (label, disabled, dPrev, dNext) {
-      const b = el('button', '', label);
-      b.disabled = !!disabled || busy;
-      b.onclick = function () {
-        if (busy) return;
-        busy = true;
-        try {
-          window.fushiSetSentenceContext(
-            Math.max(0, fushiSentenceCtx.prev + dPrev), Math.max(0, fushiSentenceCtx.next + dNext));
-        } finally { busy = false; }
-        render();
-      };
-      return b;
-    };
-    row.appendChild(mk(t.prevPlus, p.prevAtMax === true, 1, 0));
-    row.appendChild(mk(t.prevMinus, prev.length <= 0, -1, 0));
-    row.appendChild(mk(t.nextPlus, p.nextAtMax === true, 0, 1));
-    row.appendChild(mk(t.nextMinus, next.length <= 0, 0, -1));
-    card.appendChild(row);
-
-    const foot = el('div', 'foot');
-    const cancel = el('button', '', t.cancel);
-    cancel.onclick = function () {
-      window.fushiSetSentenceContext(snap.prev, snap.next);
-      fushiCloseSentenceContextModal();
-    };
-    const confirm = el('button', 'primary', t.confirm);
-    confirm.onclick = function () {
-      fushiCloseSentenceContextModal();
-      if (typeof window.fushiPopupMineEntryByIndex === 'function') window.fushiPopupMineEntryByIndex(entryIndex);
-    };
-    foot.appendChild(cancel);
-    foot.appendChild(confirm);
-    card.appendChild(foot);
+    nextBox.className = next.length ? 'box' : 'box empty';
+    nextBox.textContent = next.length ? next.join('\n') : t.boxEmpty;
+    prevPlus.disabled = p.prevAtMax === true;
+    prevMinus.disabled = prev.length <= 0;
+    nextPlus.disabled = p.nextAtMax === true;
+    nextMinus.disabled = next.length <= 0;
   }
   bg.addEventListener('click', function (e) { if (e.target === bg) { window.fushiSetSentenceContext(snap.prev, snap.next); fushiCloseSentenceContextModal(); } });
   // 模态开着时按键不能漏给宿主页：Netflix/YouTube 把空格/方向键/数字键都绑成播放快捷键，
@@ -708,6 +729,20 @@ window.fushiMineContext = function () {
     contextSentence: composed ? composed.sentence : null,
     contextWindow: composed ? { startV: composed.startV, endV: composed.endV } : null,
   };
+};
+// 上下文草稿入队即清空，按钮状态按当前句身份查询真实队列，不能再用草稿合成句回查。
+window.fushiIsEntryQueued = function (fields) {
+  if (!fushiQueue.length) return false;
+  const ctx = window.fushiMineContext();
+  if (!ctx.window) return false;
+  const word = fields && (fields.expression || fields.word || fields.term) || '';
+  return fushiQueue.some(function (item) {
+    const queuedWord = item.fields && (item.fields.expression || item.fields.word || item.fields.term) || '';
+    return String(queuedWord) === String(word) && item.site === ctx.site &&
+      (item.youtubeId || null) === (ctx.youtubeId || null) &&
+      (item.netflixId || null) === (ctx.netflixId || null) &&
+      item.cueStartV === ctx.window.startV;
+  });
 };
 window.fushiEnqueue = function (fields, sentence) {
   const ctx = window.fushiMineContext();
@@ -1543,6 +1578,15 @@ function fushiEnsureContainer() {
     shadow.appendChild(c);
     fushiContainer = c;
     window.__fushiRoot = shadow; // popup.js 的 DOM 查询/浮层/选区都相对它解析
+    // 先在 ShadowRoot 消费共享查词交互，再截住向站点冒泡的事件。document 委托太晚：
+    // 播放器可能先把正文点击当成播放，再由 play 监听关闭整个查词会话。
+    if (typeof window.__fushiBindPopupInteractions === 'function') {
+      window.__fushiBindPopupInteractions(shadow);
+    }
+    for (const type of ['mousedown', 'mouseup', 'click', 'dblclick', 'mousemove',
+      'pointerdown', 'pointerup', 'touchstart', 'touchend']) {
+      fushiHost.addEventListener(type, function (e) { e.stopPropagation(); });
+    }
     // BUG-1718：词条 HTML 里的图片/样式表在扩展环境下被 rewriteDictLinks 降级成占位属性
     // （不把 sync token 写进宿主页 DOM），这里装上兑现方——否则 mdx 词典的插图恒为裂图。
     installDictMediaPlaceholderResolver(shadow);
@@ -1687,6 +1731,9 @@ function fushiDrawHighlightOverlay(rects) {
 }
 
 function fushiRemoveContainer() {
+  if (window.fushiNestedPopups) window.fushiNestedPopups.clear();
+  // 上层草稿依赖底层词条，底层真正关闭时同步撤掉，不能留下失去制卡目标的弹层。
+  fushiCloseSentenceContextModal();
   // BUG-688：移除 shadow 宿主即连带整个 shadow root（弹窗内容）；清 __fushiRoot 让 popup.js
   // 的 helper 回落到 document（下次开窗 fushiEnsureContainer 会重建）。host 引用即刻置空，
   // 让并发 re-lookup 重建新 host；旧节点与高亮/选区都立即撤掉。
@@ -1705,7 +1752,7 @@ function fushiRemoveContainer() {
   // 关窗即作废在途的自动朗读：弹窗都没了还响一声是纯噪音。
   if (typeof window.fushiCancelAutoRead === 'function') window.fushiCancelAutoRead();
   // 「查词时暂停」的恢复侧：关窗即恢复（实现与不变式见 fushiResumePausedForLookup）。
-  // 嵌套查词只换弹窗内容、不经此处，天然不会提前恢复——与 app「整栈关空才恢复」同语义。
+  // 子层退出只裁子栈，不经此处；只有根层关掉才恢复播放。
   fushiResumePausedForLookup();
   // TODO-1150（yomitan 式）：关窗即撤 selection 状态与任何 DOM 包裹高亮（嵌套查词用）。fushiSelection 未加载/无选区时是 no-op。
   // 例外：当前原生选区/caret 落在宿主可编辑区时不清——那是用户点进输入框准备输入/粘贴放的
@@ -1874,6 +1921,7 @@ function fushiShowConnectionFailure(resp) {
 // fushiPausedForLookup；关闭查词弹窗时自动恢复（fushiRemoveContainer）。关闭该设置时
 // 任何站点都不因查词被暂停。
 function fushiSendLookup(term, anchorRect, cueWindow, fromSidePanel) {
+  if (window.fushiNestedPopups) window.fushiNestedPopups.clear();
   // TODO-1219 P3：每次查词刷新精确窗——面板行查词传 cueWindow（该行精确 [startMs,endMs]），
   // mousemove 划词不传则清空，使后续制卡回落 DOM 采样窗（live 视频 hover 取当前句）。
   fushiPendingCueWindow = cueWindow || null;
@@ -2101,87 +2149,9 @@ window.fushiResetAutoLookupDedupe = function () {
   fushiLastAutoLookupKey = '';
 };
 
-// TODO-1185：嵌套查词——点释义里的词（词典交叉引用 a[href]）。popup.js 的 a.onclick →
-// callHandler('onLinkClick', query) → bridge-shim → 这里。用该词**重发一次 lookup**，在同一
-// #entries-container 重渲染（yomitan 式单弹窗内导航），对齐 app 的「点释义里的词继续查」。
-// BUG-1279：走 fushiRenderNested（只换内容），不再走 fushiRender 的完整首查词路径——弹窗
-// 的位置、尺寸、原文高亮与可见状态全部原样保持。子词的匹配长度（result.bestLength）在这里
-// 没有任何用处：它是「原文里命中了几个字」的量，而嵌套查的词根本不在原文里，拿它去截原文
-// 选区正是修复前把原文高亮和弹窗落点一起算错的原因。
-window.__fushiOnLinkClick = function (query) {
-  const term = (query || '').trim();
-  if (!term) return;
-  if (!fushiExtAlive()) return;
-  const clientStartedAt = performance.now();
-  const clientSentEpochMs = performance.timeOrigin + clientStartedAt;
-  try {
-    chrome.runtime.sendMessage({ type: 'lookup', term, clientSentEpochMs }, (resp) => {
-      const responseAt = performance.now();
-      const responseEpochMs = performance.timeOrigin + responseAt;
-      try { if (chrome.runtime.lastError) return; } catch (_) { return; }
-      if (!resp || !resp.ok) {
-        const failedPerf = resp && resp.lookupPerf || {};
-        fushiReportLookupPerf({
-          id: failedPerf.id || 'nested-error-' + Date.now().toString(36) + '-' + (++fushiLookupPerfSequence).toString(36),
-          surface: 'page-popup',
-          stage: 'client-error',
-          term,
-          maximumTerms: failedPerf.maximumTerms || 10,
-          nested: true,
-          messageRoundTripMs: Number((responseAt - clientStartedAt).toFixed(1)),
-          ...(typeof failedPerf.responseReadyEpochMs === 'number' ? {
-            deliveryAfterReadyMs: Number(
-              Math.max(0, responseEpochMs - failedPerf.responseReadyEpochMs).toFixed(1)),
-          } : {}),
-          error: String(resp && resp.error || 'empty lookup response'),
-        });
-        fushiShowConnectionFailure(resp);
-        return;
-      }
-      if (!resp.data || typeof resp.data.popupJson !== 'string') {
-        fushiReportLookupPerf({
-          id: resp.lookupPerf && resp.lookupPerf.id || 'nested-empty-' + Date.now().toString(36),
-          surface: 'page-popup',
-          stage: 'client-error',
-          term,
-          nested: true,
-          error: 'missing popupJson',
-        });
-        return;
-      }
-      const servicePerf = resp.lookupPerf || {};
-      fushiLookupPerfContext = {
-        id: servicePerf.id || 'nested-' + Date.now().toString(36) + '-' + (++fushiLookupPerfSequence).toString(36),
-        term,
-        maximumTerms: servicePerf.maximumTerms || 10,
-        clientStartedAt,
-        visibleReported: false,
-        visibleReportScheduled: false,
-      };
-      fushiReportLookupPerf({
-        id: fushiLookupPerfContext.id,
-        surface: 'page-popup',
-        stage: 'client-response',
-        term,
-        maximumTerms: fushiLookupPerfContext.maximumTerms,
-        nested: true,
-        messageRoundTripMs: Number((responseAt - clientStartedAt).toFixed(1)),
-        ...(typeof servicePerf.responseReadyEpochMs === 'number' ? {
-          deliveryAfterReadyMs: Number(
-            Math.max(0, responseEpochMs - servicePerf.responseReadyEpochMs).toFixed(1)),
-        } : {}),
-        responseChars: servicePerf.responseChars || resp.data.popupJson.length,
-      });
-      window.audioSources = Array.isArray(resp.data.audioSources) ? resp.data.audioSources : [];
-      window.needsAudio = true;
-      applyFushiPopupCss(resp.data); // BUG-1718：嵌套查词同样要带上词典自带 CSS
-      // 同词去重状态跟着**弹窗当前显示的词**走：弹窗里已经是子词了，鼠标再回到原文那个父词
-      // 上就是一次真正的换词，必须能重查。不更新的话 fushiLastTerm 还停在父词，mousemove
-      // 的同词去重会把它当「还在同一个词上」直接 return，用户从嵌套查词回不到原词。
-      fushiLastTerm = term;
-      fushiRenderNested(resp.data.popupJson, resp.data.theme);
-    });
-  } catch (_) { /* 扩展上下文失效：静默 */ }
+// 嵌套查词保留父层，由独立子 realm 承接结果；每层拥有自己的选区和制卡状态。
+window.__fushiOnLinkClick = function (query, anchor, highlight) {
+  if (window.fushiNestedPopups) window.fushiNestedPopups.open(query, anchor, highlight);
 };
 
 // BUG-767：计算查词弹窗落点，保证**永不覆盖被查词**。纯函数（不碰 DOM），便于单测。
@@ -2373,9 +2343,7 @@ function fushiEnsureResizeGrip() {
   if (fushiResizeGrip.parentNode !== parent) parent.appendChild(fushiResizeGrip);
 }
 
-// BUG-1279：把「换弹窗内容」从「建立弹窗几何」里拆出来。首次查词两件事都要做；嵌套查词
-// （弹窗内点释义里的词）只该换内容——原文里被查的词一个字都没变，重算它的高亮与落点纯属
-// 无中生有。三个入口共用这一份内容渲染，行为不再各写一遍。
+// 根层内容渲染；嵌套查词由 nested-popup-host 创建独立 realm，不重渲染父层。
 function fushiRenderEntries(popupJson) {
   const parseStartedAt = performance.now();
   let parseError = null;
@@ -2404,7 +2372,9 @@ function fushiRenderEntries(popupJson) {
     return false;
   }
   window._noResultsMessage = 'No results';
-  window.__fushiOnTapOutside = fushiRemoveContainer;
+  window.__fushiOnTapOutside = function () {
+    if (window.fushiNestedPopups) window.fushiNestedPopups.dismissChildren();
+  };
   // BUG-2190：与 app 内 popup_settings_injection 同值——外字/词典插图登记进 fields.dictionaryMedia
   // 并导出成 <img src="fushi_dict_N.ext">，服务端 /api/mine 落缓存后嵌进卡片。不设它时
   // popup.js 只能把外字退化成 alt 文本（用户卡片上「［参考］」压正文的来源之一）。
@@ -2435,8 +2405,7 @@ function fushiMirrorPopupSize(width, height) {
 }
 
 // 把查词响应下发的主题变量套到弹窗上。applyBox=false 时只套颜色/行为类变量，**不碰 host 的
-// 尺寸盒**（width/maxWidth/maxHeight/zoom）——嵌套查词是原地换内容，弹窗尺寸以及 place() 按
-// 「不遮被查词」夹出来的 maxHeight 必须原样保持；重写尺寸盒会把那次夹取悄悄丢掉。
+// 尺寸盒**（width/maxWidth/maxHeight/zoom），保留当前落点计算出来的 maxHeight。
 function fushiApplyTheme(c, theme, applyBox) {
   if (!theme || typeof theme !== 'object') return;
   for (const k in theme) {
@@ -2490,22 +2459,6 @@ function fushiApplyTheme(c, theme, applyBox) {
     fushiHost.style.maxHeight = fushiHostBaseMaxHeight;
     fushiHost.style.zoom = String(box.zoom);
   }
-}
-
-// BUG-1279：嵌套查词的渲染入口——**只换内容**。不重算原文高亮、不重新 place、不重写
-// 尺寸盒。语义与 yomitan 的单弹窗内导航一致（本实现的既定设计也是「没有前进
-// 后退，就是嵌套查词」）：用户视线停在弹窗上，弹窗就不该动；原文里被查的词没变，它的高亮
-// 就不该变。修复前这里走的是下面 fushiRender 的完整路径，代价是弹窗归零到屏
-// 幕左上角、再按**子词长度**截原文选区算出的锚点搬回原文旁边——用户看到的就是
-// 「点了释义里的词，旧弹窗被关掉了」。
-function fushiRenderNested(popupJson, theme) {
-  // 请求在途期间弹窗已被关掉（点完链接又点了页面别处 / 滑动关窗 / 进出全屏重建失败）：直接
-  // 丢弃这次嵌套结果。**不能**走 fushiEnsureContainer 凭空重建——嵌套渲染不 place，重建出来
-  // 的弹窗会没有落点地钉在屏幕左上角；而且用户已经明确关掉了弹窗，它就不该再弹回来。
-  if (!fushiHost || !fushiContainer) return;
-  fushiApplyTheme(fushiContainer, theme, false);
-  fushiRenderEntries(popupJson);
-  fushiReportVisibleAfterPaint(fushiLookupPerfContext, fushiContainer);
 }
 
 function fushiRender(popupJson, termLen, theme, anchorRect) {
@@ -2670,6 +2623,9 @@ function fushiSwallowClosingClick() {
 }
 
 document.addEventListener('mousedown', (e) => {
+  // 独立 ShadowRoot 的上下文弹层也是查词会话的一部分。capture 阶段必须先认领，
+  // 否则按钮尚未收到点击，底层已被当作外部点击关闭并恢复视频、吞掉随后的 click。
+  if (fushiCtxModalHost && fushiCtxModalHost.contains(e.target)) return;
   // BUG-688：shadow 内点击 e.target 被 retarget 成 fushiHost，故 contains 判定天然把
   // 「点弹窗内部」算作命中（不关窗）；只有点 host 之外才关。
   // Phase D：拖拽把手是 host 之外的顶层兄弟节点（避开 host 的 zoom 包含块），点它属正常操作
@@ -2694,8 +2650,10 @@ document.addEventListener('mousedown', (e) => {
 // 注意：视频处于 Fullscreen API 全屏时，Esc 退出全屏是浏览器保留行为，网页脚本拦不住——
 // 这里能保证的是「弹窗一定被关掉」，退全屏仍会发生。
 document.addEventListener('keydown', (e) => {
+  // Esc 先交给上层取消草稿；不能在 capture 阶段关掉底层并恢复播放。
+  if (fushiCtxModalHost) return;
   if (!fushiHost || e.key !== 'Escape' || e.defaultPrevented) return;
-  fushiRemoveContainer();
+  if (!(window.fushiNestedPopups && window.fushiNestedPopups.pop())) fushiRemoveContainer();
   e.stopPropagation();
   e.stopImmediatePropagation();
 }, true);

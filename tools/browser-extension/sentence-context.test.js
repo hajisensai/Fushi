@@ -159,6 +159,26 @@ test('未选上下文时入队与旧行为逐字节一致（单句、当前句�
   assert.strictEqual(item.endV, 5200);
 });
 
+test('已入队按词和当前句身份回读：草稿清空仍命中，不串词/句/视频，移除即复位', () => {
+  const h = loadContent({ currentTime: 4.2 });
+  withTrack(h);
+  const fields = { expression: '当前' };
+  assert.strictEqual(h.windowObj.fushiIsEntryQueued(fields), false);
+  h.windowObj.fushiSetSentenceContext(1, 2);
+  h.windowObj.fushiEnqueue(fields, '');
+  assert.strictEqual(h.windowObj.fushiIsEntryQueued(fields), true);
+  assert.strictEqual(h.windowObj.fushiIsEntryQueued({ expression: '别的词' }), false);
+  h.video.currentTime = 5.7;
+  assert.strictEqual(h.windowObj.fushiIsEntryQueued(fields), false);
+  h.video.currentTime = 4.2;
+  const mineContext = h.windowObj.fushiMineContext;
+  h.windowObj.fushiMineContext = () => ({ ...mineContext(), netflixId: 'another-video' });
+  assert.strictEqual(h.windowObj.fushiIsEntryQueued(fields), false);
+  h.windowObj.fushiMineContext = mineContext;
+  vm.runInContext('fushiQueue = []', h.ctx);
+  assert.strictEqual(h.windowObj.fushiIsEntryQueued(fields), false);
+});
+
 test('面板行精确窗（fushiPendingCueWindow）也能定位整轨位置取上下文', () => {
   const h = loadContent({ currentTime: 0 }); // 播放头不在该句上
   withTrack(h);

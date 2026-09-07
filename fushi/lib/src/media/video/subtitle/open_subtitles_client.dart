@@ -8,6 +8,7 @@ import 'package:fushi/src/media/external_provider.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart';
+import 'package:fushi/src/media/video/subtitle/opensubtitles_default_key.dart';
 import 'package:fushi/src/utils/net/app_http.dart';
 import 'package:fushi/src/utils/net/app_user_agent.dart';
 
@@ -106,13 +107,31 @@ class OpenSubtitlesConfig {
   /// 光改构造默认值改不动已落盘的 `Hibiki v1`——那条 UA 会一直发出去。
   static String _resolveUserAgent(String? raw) {
     final String trimmed = raw?.trim() ?? '';
-    if (trimmed.isEmpty || trimmed == kLegacyOpenSubtitlesUserAgent) {
-      return fushiUserAgent('opensubtitles');
+    if (trimmed.isEmpty ||
+        trimmed == kLegacyOpenSubtitlesUserAgent ||
+        trimmed == fushiUserAgent('opensubtitles')) {
+      return 'FushiPlayer v1';
     }
     return raw!;
   }
 
   final String apiKey;
+
+  /// CI-provided application identity; mutable for isolated client tests.
+  static String embeddedApiKey = kBuiltinOpenSubtitlesApiKey;
+
+  /// Keep [apiKey] as the user's override so exports never copy the app key.
+  String get effectiveApiKey {
+    if (apiKey.trim().isNotEmpty) return apiKey.trim();
+    // The bundled credential belongs to OpenSubtitles, not arbitrary mirrors
+    // or user-supplied servers. Custom endpoints need their own explicit key.
+    final bool officialApi = baseUrl.scheme == 'https' &&
+        baseUrl.host == 'api.opensubtitles.com' &&
+        baseUrl.port == 443 &&
+        baseUrl.path.replaceFirst(RegExp(r'/$'), '') == '/api/v1';
+    return officialApi ? embeddedApiKey.trim() : '';
+  }
+
   final String? username;
   final String? password;
   final String userAgent;
@@ -313,7 +332,7 @@ class OpenSubtitlesClient implements VideoSubtitleProvider {
         ),
       );
     }
-    if (config.apiKey.trim().isEmpty) {
+    if (config.effectiveApiKey.isEmpty) {
       return ProviderBatchResult<VideoSubtitleCandidate>.failure(
         const ExternalProviderFailure(
           providerId: 'opensubtitles',
@@ -370,7 +389,7 @@ class OpenSubtitlesClient implements VideoSubtitleProvider {
   Future<VideoSubtitleDownload> download(
     VideoSubtitleCandidate candidate,
   ) async {
-    if (!config.enabled || config.apiKey.trim().isEmpty) {
+    if (!config.enabled || config.effectiveApiKey.isEmpty) {
       throw const ExternalProviderFailure(
         providerId: 'opensubtitles',
         operation: 'download',
@@ -634,7 +653,7 @@ class OpenSubtitlesClient implements VideoSubtitleProvider {
     bool jsonBody = false,
   }) =>
       <String, String>{
-        'Api-Key': config.apiKey,
+        'Api-Key': config.effectiveApiKey,
         'User-Agent': config.userAgent,
         'Accept': 'application/json',
         if (jsonBody) 'Content-Type': 'application/json',

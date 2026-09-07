@@ -1,6 +1,6 @@
-/// 词形变化语法说明的界面语言本地化（BUG-2038）。
+/// 词形变化名称和语法说明的界面语言本地化。
 ///
-/// 说明原文来自 `assets/transforms/<lang>.json` 的 `description`——上游 Yomitan 的
+/// 原文来自 `assets/transforms/<lang>.json` 的 `name` / `description`——上游 Yomitan 的
 /// 英文文案，经引擎随变形链一路走到弹窗标签上。这里既不改那份资产、也不碰引擎：
 /// 只在**显示边界**把英文原文整段换成译文，查表的键就是英文原文本身。
 ///

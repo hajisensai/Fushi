@@ -6,7 +6,7 @@ import 'package:fushi/utils.dart';
 
 /// 有声书播放控制条（紧凑型，固定于阅读器底部）。
 ///
-/// Row 只放最常用的实时控件：⏮ ⏯ ⏭、当前 cue、Follow 磁铁、设置齿轮。
+/// Row 只放最常用的实时控件：⏮ ⏯ ⏭、Follow 磁铁、设置齿轮。
 /// 倍速 / 音画同步 / 阅读进度 / 章节列表 / 添加书签 / 全屏 / 退出 放进
 /// [onOpenSettings] 回调展开的底部设置面板 —— ttu 原生顶部工具栏被隐藏
 /// 后这些功能的统一入口。
@@ -19,9 +19,9 @@ class AudiobookPlayBar extends StatelessWidget {
     this.foregroundColor,
     this.reversed = false,
     this.invertSkip = false,
-    this.showCue = true,
     this.trailing,
     this.showSeekButtons = false,
+    this.showSettingsButton = true,
     super.key,
   });
 
@@ -53,12 +53,6 @@ class AudiobookPlayBar extends StatelessWidget {
   /// 不碰位置。两维度互不连带（BUG-021 契约的延伸）。
   final bool invertSkip;
 
-  /// TODO-728: whether to render the current-sentence ([currentCue]) text in the
-  /// bar. Default true = current behavior. When false the text is replaced by an
-  /// empty placeholder that still occupies the same Expanded flex slot, so the
-  /// other controls keep their positions (no layout jump).
-  final bool showCue;
-
   /// 用户点 ⚙ 设置按钮后触发。由 reader 页面侧注入，因为设置面板要
   /// 访问 WebView controller 才能 probe ttu 当前章节 / TOC、触发书签。
   final VoidCallback onOpenSettings;
@@ -69,6 +63,10 @@ class AudiobookPlayBar extends StatelessWidget {
   /// 在「上一句 / 播放 / 下一句」两侧再给 -10s / +10s（与有声书面板同一套传输键）。
   /// 只在 [skipActionSeconds] == 0（按句跳）时有意义；按秒跳时左右键已是快退快进。
   final bool showSeekButtons;
+
+  /// Shared reader header already exposes settings, so its playback bar can omit
+  /// the duplicate button and leave room for full-size transport touch targets.
+  final bool showSettingsButton;
 
   @override
   Widget build(BuildContext context) {
@@ -89,9 +87,6 @@ class AudiobookPlayBar extends StatelessWidget {
     // 前景色经 [IconButton.styleFrom] 的 foregroundColor 注入。
     final ButtonStyle? flatStyle =
         fg != null ? IconButton.styleFrom(foregroundColor: fg) : null;
-    final TextStyle? cueStyle = fg != null
-        ? Theme.of(context).textTheme.bodySmall?.copyWith(color: fg)
-        : Theme.of(context).textTheme.bodySmall;
     // ⏮⏯⏭ 是一个原子组：reversed 镜像整条 bar 时这组只换边、内部方向不动，
     // 否则快退/快进会左右颠倒（BUG-021）。用 min-size Row 包住三键。
     //
@@ -197,36 +192,23 @@ class AudiobookPlayBar extends StatelessWidget {
     final List<Widget> barItems = <Widget>[
       playbackControls,
       SizedBox(width: tokens.spacing.gap / 2),
-      // TODO-728: keep the Expanded slot whether or not the cue is shown so the
-      // surrounding controls do not shift when the user toggles it off.
-      Expanded(
-        child: showCue
-            ? Text(
-                controller.currentCue?.text ?? '',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: cueStyle,
-              )
-            : const SizedBox.shrink(),
-      ),
+      const Spacer(),
       if (trailing != null) ...<Widget>[
         trailing!,
         SizedBox(width: tokens.spacing.gap),
       ],
-      AudiobookFollowAudioButton(
-        controller: controller,
-        foregroundColor: fg,
-      ),
-      _FocusableBarButton(
-        id: const FushiFocusId('audiobook_settings'),
-        key: const ValueKey<String>('fushi_reader_audiobook_settings_button'),
-        semanticsIdentifier: 'hibiki.reader.audiobook.settings',
-        icon: const Icon(Icons.tune_outlined),
-        iconSize: 20,
-        style: flatStyle,
-        onPressed: onOpenSettings,
-        tooltip: t.reader_settings_section,
-      ),
+      AudiobookFollowAudioButton(controller: controller, foregroundColor: fg),
+      if (showSettingsButton)
+        _FocusableBarButton(
+          id: const FushiFocusId('audiobook_settings'),
+          key: const ValueKey<String>('fushi_reader_audiobook_settings_button'),
+          semanticsIdentifier: 'hibiki.reader.audiobook.settings',
+          icon: const Icon(Icons.tune_outlined),
+          iconSize: 20,
+          style: flatStyle,
+          onPressed: onOpenSettings,
+          tooltip: t.reader_settings_section,
+        ),
     ];
     return ColoredBox(
       color: backgroundColor ?? Theme.of(context).colorScheme.surface,
@@ -358,10 +340,7 @@ class _FocusableBarButton extends StatelessWidget {
             onPressed: onPressed,
           );
     if (semanticsIdentifier != null) {
-      button = Semantics(
-        identifier: semanticsIdentifier,
-        child: button,
-      );
+      button = Semantics(identifier: semanticsIdentifier, child: button);
     }
     return Actions(
       actions: <Type, Action<Intent>>{

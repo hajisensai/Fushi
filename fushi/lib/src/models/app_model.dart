@@ -4406,7 +4406,7 @@ class AppModel with ChangeNotifier {
         prefsRepo.videoSubtitleOpenSubtitlesConfig;
     if (openSubtitles != null &&
         openSubtitles.enabled &&
-        openSubtitles.apiKey.trim().isNotEmpty) {
+        openSubtitles.effectiveApiKey.isNotEmpty) {
       final http.Client openSubtitlesHttpClient =
           await createDownloadHttpClient();
       subtitleProviders.add(OpenSubtitlesClient(

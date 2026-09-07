@@ -706,7 +706,7 @@ void main() {
       expect(tmdb.searchCalls, 0);
     });
 
-    test('一个源都没配时仍报 providerUnavailable，且不再指名某一个源', () async {
+    test('单源不可用时报告具体来源', () async {
       final VideoMetadataResolution result = await VideoMetadataResolver(
         registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
           _FakeProvider(
@@ -723,7 +723,8 @@ void main() {
       );
 
       expect(result.status, VideoMetadataResolutionStatus.providerUnavailable);
-      expect(result.reason, isNot(contains('tmdb is not configured')));
+      expect(result.reason, contains('tmdb is not configured'));
+      expect(result.providerKind, VideoMetadataProviderKind.tmdb);
     });
   });
 
