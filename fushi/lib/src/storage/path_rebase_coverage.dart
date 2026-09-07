@@ -295,6 +295,9 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
       PathRebaseKind.notAPath, '统计桶枚举值，不是路径。'),
 
   // ── media_sources（来源库扫描根）────────────────────────────────────
+  PathRebaseColumn('MediaCollections', 'sourceFolderPath',
+      PathRebaseKind.externalUserPath,
+      '目录自动合集的用户外部目录身份，与 media_sources.rootPath 同源，不随数据根搬迁。'),
   PathRebaseColumn(
       'MediaSources',
       'rootPath',

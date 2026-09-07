@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/video/metadata/anidb_video_metadata_provider.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi/src/media/video/metadata/video_metadata_database_store.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_asset_downloader.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_resolver.dart';
@@ -30,6 +31,70 @@ void main() {
   tearDown(() async {
     await db.close();
     if (await root.exists()) await root.delete(recursive: true);
+  });
+
+  test('manual binding targets stable identity and rejects ambiguous titles',
+      () async {
+    final int sourceId =
+        await db.insertMediaSource(MediaSourcesCompanion.insert(
+      label: 'Same titles',
+      mediaKind: 'video',
+      rootPath: root.path,
+      createdAt: 1,
+    ));
+    for (final String uid in <String>['first', 'second']) {
+      final File video = File(p.join(root.path, '$uid.mkv'));
+      await video.writeAsBytes(const <int>[0]);
+      await db.upsertVideoBook(VideoBooksCompanion(
+        bookUid: Value<String>(uid),
+        title: const Value<String>('Same title'),
+        videoPath: Value<String>(video.path),
+        sourceId: Value<int?>(sourceId),
+      ));
+    }
+    final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+    final VideoSourceScrapeCoordinator coordinator =
+        VideoSourceScrapeCoordinator(
+      database: db,
+      config: const VideoSourceScrapeGlobalConfig(),
+      registry: VideoMetadataProviderRegistry(
+          <VideoMetadataProvider>[_ExactMovieProvider()]),
+    );
+    const VideoMetadataLookup lookup = VideoMetadataLookup(
+      provider: VideoMetadataProviderKind.anidb,
+      externalId: '4242',
+      mediaKind: VideoMetadataMediaKind.movie,
+    );
+    await expectLater(
+        coordinator.rescrapeWorkWithLookup(
+          source: source,
+          workTitle: 'Same title',
+          lookup: lookup,
+          cancellationToken: VideoSourceScrapeCancellationToken(),
+          onProgress: (_) {},
+        ),
+        throwsA(isA<VideoSourceScrapeWorkNotFound>()));
+    final SourceScrapeReport report = await coordinator.rescrapeWorkWithLookup(
+      source: source,
+      workTitle: 'Old display title',
+      workStableKey: 'book:second',
+      lookup: lookup,
+      cancellationToken: VideoSourceScrapeCancellationToken(),
+      onProgress: (_) {},
+    );
+    expect(report.succeededWorks, 1);
+    expect(await File(p.join(root.path, 'second.nfo')).exists(), isTrue);
+    expect(await File(p.join(root.path, 'first.nfo')).exists(), isFalse);
+    await expectLater(
+        coordinator.rescrapeWorkWithLookup(
+          source: source,
+          workTitle: 'Same title',
+          workStableKey: 'book:missing',
+          lookup: lookup,
+          cancellationToken: VideoSourceScrapeCancellationToken(),
+          onProgress: (_) {},
+        ),
+        throwsA(isA<VideoSourceScrapeWorkNotFound>()));
   });
 
   test('手动搜索：作品不在当前计划时不抛异常，双形态搜索按身份合并（BUG-1998）', () async {
@@ -64,6 +129,53 @@ void main() {
     expect(candidates, hasLength(1));
     expect(candidates.single.lookup.externalId, '42');
     expect(provider.searchCount, 2, reason: '计划缺席时按 tv+movie 双形态各搜一次');
+  });
+
+  test('manual explicit AniDB ID previews without title search', () async {
+    final int sourceId =
+        await db.insertMediaSource(MediaSourcesCompanion.insert(
+      label: 'Manual',
+      mediaKind: 'video',
+      rootPath: root.path,
+      createdAt: 1,
+    ));
+    final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+    final _FakeAniDbProvider provider = _FakeAniDbProvider();
+    final VideoSourceScrapeCoordinator coordinator =
+        VideoSourceScrapeCoordinator(
+      database: db,
+      config: const VideoSourceScrapeGlobalConfig(),
+      registry:
+          VideoMetadataProviderRegistry(<VideoMetadataProvider>[provider]),
+    );
+    for (final String query in <String>[
+      'anidb=42',
+      'https://anidb.net/anime/42'
+    ]) {
+      final List<VideoSourceScrapeConfirmationCandidate> results =
+          await coordinator.searchManualCandidates(
+        source: source,
+        workTitle: 'Local work',
+        query: query,
+      );
+      expect(results.single.lookup.externalId, '42');
+      expect(provider.searchCount, 0);
+    }
+    for (final String query in <String>[
+      'anidb=0',
+      'anidb=bad',
+      'tmdb=42',
+      'https://fakeanidb.net/anime/42'
+    ]) {
+      await expectLater(
+          coordinator.searchManualCandidates(
+              source: source, workTitle: 'Local work', query: query),
+          throwsFormatException);
+    }
+    await coordinator.searchManualCandidates(
+        source: source, workTitle: '86', query: '86');
+    expect(provider.searchCount, 2,
+        reason: 'Numeric titles remain title searches');
   });
 
   test('按作品抓取一次并写规范表、兼容投影和安全 TV NFO', () async {
@@ -331,6 +443,72 @@ void main() {
     expect(lookup.externalId, '99');
     expect(lookup.mediaKind, VideoMetadataMediaKind.movie);
     expect(lookup.episodeGroupId, 'persisted-group');
+  });
+
+  test('changing confirmed AniDB identity discards old TMDB binding', () async {
+    final SourceLibraryRow source = await _createMovieSource(db, root,
+        provider: VideoMetadataProviderKind.anidb);
+    final VideoSourceScrapeCoordinator first = VideoSourceScrapeCoordinator(
+      database: db,
+      config: const VideoSourceScrapeGlobalConfig(),
+      registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+        _PersistedCrossrefAniDbProvider(includeTmdbCrossref: true),
+        _RecordingCrossrefTmdbProvider(),
+      ]),
+    );
+    await first.scrapeSource(source,
+        cancellationToken: VideoSourceScrapeCancellationToken(),
+        onProgress: (_) {});
+    final File externalNfo = File(p.join(root.path, 'Movie (2024).nfo'));
+    const String externalText =
+        '<movie><title>Old external work</title><uniqueid type="anidb" default="true">17617</uniqueid><uniqueid type="tmdb">99</uniqueid></movie>';
+    await externalNfo.writeAsString(externalText);
+    final _RecordingCrossrefTmdbProvider tmdb =
+        _RecordingCrossrefTmdbProvider();
+    final VideoSourceScrapeCoordinator second = VideoSourceScrapeCoordinator(
+      database: db,
+      config: const VideoSourceScrapeGlobalConfig(),
+      registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+        _PersistedCrossrefAniDbProvider(includeTmdbCrossref: false),
+        tmdb,
+      ]),
+    );
+    final VideoSourceScrapeWork work =
+        (await VideoSourceWorkPlanner(db).plan(source)).single;
+    final SourceScrapeReport report = await second.rescrapeWorkWithLookup(
+      source: source,
+      workTitle: work.title,
+      lookup: const VideoMetadataLookup(
+          provider: VideoMetadataProviderKind.anidb,
+          externalId: '999',
+          mediaKind: VideoMetadataMediaKind.movie),
+      cancellationToken: VideoSourceScrapeCancellationToken(),
+      onProgress: (_) {},
+    );
+    expect(report.succeededWorks, 1, reason: '${report.errors}');
+    expect(await externalNfo.readAsString(), externalText);
+    expect(
+        report.warnings.any(
+            (SourceScrapeIssue warning) => warning.message.contains('NFO')),
+        isTrue);
+    expect(tmdb.searchTitles.toSet(), <String>{'AniDB Movie'});
+    expect(tmdb.fetchedLookups.map((VideoMetadataLookup id) => id.externalId),
+        <String>['unexpected-search'],
+        reason:
+            'Only the fresh search candidate is hydrated; old TMDB 99 is not reused');
+    final List<VideoMetadataLookup> saved =
+        await VideoMetadataDatabaseStore(db).lookupsForWork(work);
+    expect(
+        saved
+            .where((VideoMetadataLookup id) =>
+                id.provider == VideoMetadataProviderKind.anidb)
+            .single
+            .externalId,
+        '999');
+    expect(
+        saved.where((VideoMetadataLookup id) =>
+            id.provider == VideoMetadataProviderKind.tmdb),
+        isEmpty);
   });
 
   test('二次 TMDB 直取失败仍保留持久 crossref 与 episode group', () async {
@@ -1864,9 +2042,9 @@ class _PersistedCrossrefAniDbProvider implements VideoMetadataProvider {
       year: 2024,
       episodeGroupId: includeTmdbCrossref ? 'persisted-group' : null,
       ids: <VideoMetadataId>[
-        const VideoMetadataId(
+        VideoMetadataId(
           type: 'anidb',
-          value: '17617',
+          value: lookup.externalId,
           isDefault: true,
         ),
         if (includeTmdbCrossref)
@@ -1894,6 +2072,7 @@ class _PersistedCrossrefAniDbProvider implements VideoMetadataProvider {
 
 class _RecordingCrossrefTmdbProvider implements VideoMetadataProvider {
   int searchCount = 0;
+  final List<String> searchTitles = <String>[];
   int fetchCount = 0;
   final List<VideoMetadataLookup> fetchedLookups = <VideoMetadataLookup>[];
 
@@ -1908,6 +2087,7 @@ class _RecordingCrossrefTmdbProvider implements VideoMetadataProvider {
     VideoMetadataSearchRequest request,
   ) async {
     searchCount++;
+    searchTitles.add(request.title);
     return <VideoMetadataWork>[
       VideoMetadataWork(
         provider: providerKind,

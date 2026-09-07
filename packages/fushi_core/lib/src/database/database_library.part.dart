@@ -36,8 +36,18 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
 
   /// 删除来源：依赖 FK onDelete:setNull，归属本来源的 video_books / epub_books
   /// 自动把 source_id 归 NULL（条目保留，不连坐删）。返回删除行数。
-  Future<int> deleteMediaSource(int id) =>
-      (delete(mediaSources)..where((t) => t.id.equals(id))).go();
+  Future<int> deleteMediaSource(int id) => transaction(() async {
+        final MediaSourceRow? source = await getMediaSourceById(id);
+        if (source != null && source.mediaKind == 'video') {
+          // 来源设置可能刚改过还没重扫；FK 清空 sourceId 前保留最终组织选择。
+          await (update(videoBooks)..where((t) => t.sourceId.equals(id))).write(
+            VideoBooksCompanion(
+              videoGroupingMode: Value(source.videoGroupingMode),
+            ),
+          );
+        }
+        return (delete(mediaSources)..where((t) => t.id.equals(id))).go();
+      });
 
   /// 回写一次扫描结果（媒体数 / 时间 / 失败原因）。
   Future<void> updateMediaSourceScanResult({

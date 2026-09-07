@@ -21,6 +21,7 @@ Future<AddLocalFolderResult> addLocalFolderAsSource({
   required FushiDatabase db,
   required String mediaKind,
   required String path,
+  String videoGroupingMode = 'series',
 }) async {
   final String norm = normalizeSourceRootPath(path, transport: 'local');
   final List<MediaSourceRow> existing =
@@ -44,6 +45,7 @@ Future<AddLocalFolderResult> addLocalFolderAsSource({
       transport: const Value('local'),
       rootPath: Value(norm),
       recursive: const Value(true),
+      videoGroupingMode: Value(videoGroupingMode),
       sortOrder: Value(sortOrder),
       createdAt: Value(DateTime.now().millisecondsSinceEpoch),
     ),

@@ -1054,8 +1054,8 @@ class _SubscriptionFilter {
 VideoMediaReference _mediaReference(
   VideoDownloadSubscriptionRow subscription,
 ) {
-  // v94（BUG-2003）：优先入队快照——订阅轮询从此拿得到日文原名与罗马字别名，
-  // nyaa 的多名字搜索兜底不再退化成「只有 searchQuery 这一个词」。订阅列
+  // v94（BUG-2003）：优先入队快照，保留日文原名、罗马字别名和外部身份。
+  // Nyaa 轮询使用持久化的 searchQuery，别名仅供未指定查询时选默认词。订阅列
   // （title/year/season/kind）仍是流程真值。旧行（NULL 快照）走修前重建。
   final VideoMediaReference? stored =
       decodeVideoMediaReference(subscription.identityJson);

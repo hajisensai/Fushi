@@ -725,7 +725,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 97;
+  int get schemaVersion => 98;
 
   /// v97：把 v52 / v57 / v87 / v88 四级台阶里「加列 / 改列名」的幂等语句重放一次，
   /// 补齐漂移库（版本号先于这些台阶被写高的库）。每条都先查 `_columnExists`，
@@ -3008,6 +3008,22 @@ class FushiDatabase extends _$FushiDatabase
             // no-op；漂移库补齐后与 fresh 库同形。多余列（漂移库里另一条史留下的
             // video_download_jobs.episode 等）不动——SQLite 多一列无害，删列有丢数据风险。
             await _replayColumnStepsForDriftedSchema(m);
+          }
+          if (from < 98) {
+            if (await _tableExists('video_books') &&
+                !await _columnExists('video_books', 'video_grouping_mode')) {
+              await m.addColumn(videoBooks, videoBooks.videoGroupingMode);
+            }
+            // 来源分组偏好独立于网络配置；已有来源继续按作品识别。
+            if (await _tableExists('media_sources') &&
+                !await _columnExists('media_sources', 'video_grouping_mode')) {
+              await m.addColumn(mediaSources, mediaSources.videoGroupingMode);
+            }
+            if (await _tableExists('media_collections') &&
+                !await _columnExists('media_collections', 'source_folder_path')) {
+              await m.addColumn(
+                  mediaCollections, mediaCollections.sourceFolderPath);
+            }
           }
         },
         onCreate: (m) async {

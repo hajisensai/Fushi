@@ -109,6 +109,7 @@ class VideoSourceScrapeCoordinator
   Future<List<VideoSourceScrapeConfirmationCandidate>> searchManualCandidates({
     required SourceLibraryRow source,
     required String workTitle,
+    String? workStableKey,
     required String query,
   }) async {
     final String trimmed = query.trim();
@@ -118,12 +119,45 @@ class VideoSourceScrapeCoordinator
     // 作品可能已不在当前计划里（文件改名/移动/删除后标题漂移，BUG-1998）。
     // 搜索只需要「电影还是剧集」这一个参数：拿不到就双形态各搜一次再按身份
     // 去重合并，绝不让只读的候选搜索因为计划回查失败而整个抛异常。
-    final VideoSourceScrapeWork? work =
-        await _plannedWorkOrNull(source, workTitle);
+    final VideoSourceScrapeWork? work = await _plannedWorkOrNull(
+        source, workTitle,
+        workStableKey: workStableKey);
     final VideoMetadataProvider? provider =
         _manualSearchProvider(await _sourceProvider(source));
     if (provider == null) {
       return const <VideoSourceScrapeConfirmationCandidate>[];
+    }
+    final List<VideoMetadataLookup> explicit = parseExplicitVideoMetadataIds(
+      <String>[trimmed],
+      fallbackMediaKind:
+          work == null ? VideoMetadataMediaKind.tv : _manualMediaKind(work),
+    );
+    final bool identityInput = explicit.isNotEmpty ||
+        trimmed.contains('://') ||
+        RegExp(r'^(?:anidb|aid)\s*[:=]', caseSensitive: false)
+            .hasMatch(trimmed);
+    if (identityInput) {
+      final VideoMetadataLookup? lookup =
+          explicit.length == 1 ? explicit.single : null;
+      if (lookup == null ||
+          lookup.provider != VideoMetadataProviderKind.anidb ||
+          !RegExp(r'^[0-9]+$').hasMatch(lookup.externalId) ||
+          (int.tryParse(lookup.externalId) ?? 0) <= 0) {
+        throw const FormatException('Invalid AniDB work ID');
+      }
+      if (trimmed.contains('://')) {
+        final Uri? uri = Uri.tryParse(trimmed);
+        if (uri == null ||
+            (uri.host != 'anidb.net' && uri.host != 'www.anidb.net') ||
+            (uri.scheme != 'http' && uri.scheme != 'https')) {
+          throw const FormatException('Invalid AniDB work URL');
+        }
+      }
+      final VideoMetadataWork? result = await provider.fetchWork(lookup);
+      return <VideoSourceScrapeConfirmationCandidate>[
+        if (result != null)
+          VideoSourceScrapeConfirmationCandidate(lookup: lookup, work: result),
+      ];
     }
     final List<VideoMetadataMediaKind> kinds = work == null
         ? const <VideoMetadataMediaKind>[
@@ -159,11 +193,13 @@ class VideoSourceScrapeCoordinator
   Future<SourceScrapeReport> rescrapeWorkWithLookup({
     required SourceLibraryRow source,
     required String workTitle,
+    String? workStableKey,
     required VideoMetadataLookup lookup,
     required VideoSourceScrapeCancellationToken cancellationToken,
     required VideoSourceScrapeProgressCallback onProgress,
   }) async {
-    final VideoSourceScrapeWork work = await _plannedWork(source, workTitle);
+    final VideoSourceScrapeWork work =
+        await _plannedWork(source, workTitle, workStableKey: workStableKey);
     // 手动指定与下载导入后的身份受控刮削走同一入口；仅 AniDB lookup 可直接
     // 确认主身份，跨源 lookup 由下游降为提示。落库、sidecar、run 审计全复用。
     return scrapeSource(
@@ -178,21 +214,32 @@ class VideoSourceScrapeCoordinator
 
   Future<VideoSourceScrapeWork> _plannedWork(
     SourceLibraryRow source,
-    String workTitle,
-  ) async =>
-      await _plannedWorkOrNull(source, workTitle) ??
+    String workTitle, {
+    String? workStableKey,
+  }) async =>
+      await _plannedWorkOrNull(source, workTitle,
+          workStableKey: workStableKey) ??
       (throw VideoSourceScrapeWorkNotFound(workTitle));
 
   Future<VideoSourceScrapeWork?> _plannedWorkOrNull(
     SourceLibraryRow source,
-    String workTitle,
-  ) async {
+    String workTitle, {
+    String? workStableKey,
+  }) async {
     final List<VideoSourceScrapeWork> works =
         await VideoSourceWorkPlanner(database).plan(source);
-    for (final VideoSourceScrapeWork work in works) {
-      if (work.title == workTitle) return work;
+    final List<VideoSourceScrapeWork> matching = works
+        .where(
+          (VideoSourceScrapeWork work) => workStableKey != null
+              ? work.stableKey == workStableKey
+              : work.title == workTitle,
+        )
+        .toList();
+    // 历史记录只有标题，遇同名作品必须拒绝绑定，不能默选第一个。
+    if (matching.length > 1) {
+      throw VideoSourceScrapeWorkAmbiguous(workTitle);
     }
-    return null;
+    return matching.singleOrNull;
   }
 
   Future<VideoMetadataProviderKind> _sourceProvider(
@@ -613,7 +660,7 @@ class VideoSourceScrapeCoordinator
         localWork.isEpisodic || parsed.episode != null
             ? VideoMetadataMediaKind.tv
             : VideoMetadataMediaKind.movie;
-    final VideoMetadataWork? nfo = await VideoNfoReader(
+    VideoMetadataWork? nfo = await VideoNfoReader(
       generatedArtifactChecker:
           DatabaseSidecarGeneratedArtifactChecker(database),
     ).readForPaths(
@@ -623,15 +670,42 @@ class VideoSourceScrapeCoordinator
         for (final VideoBookRow member in localWork.members) member.videoPath,
       ],
     );
+    final List<VideoMetadataLookup> storedLookups =
+        await _store.lookupsForWork(localWork);
+    final VideoMetadataLookup? storedAniDb = _lookupForProvider(
+      storedLookups,
+      VideoMetadataProviderKind.anidb,
+    );
+    final VideoMetadataLookup? nfoAniDb = _lookupForProvider(
+      _lookupsForNfo(nfo),
+      VideoMetadataProviderKind.anidb,
+    );
+    final bool confirmedAniDb =
+        confirmedLookup?.provider == VideoMetadataProviderKind.anidb;
+    final bool changedIdentity = confirmedAniDb &&
+        storedAniDb != null &&
+        confirmedLookup!.externalId != storedAniDb.externalId;
+    final bool conflictingNfo = nfo != null &&
+        confirmedAniDb &&
+        (nfoAniDb != null
+            ? nfoAniDb.externalId != confirmedLookup!.externalId
+            : changedIdentity);
+    if (conflictingNfo) {
+      warnings.add(SourceScrapeIssue(
+        workTitle: localWork.title,
+        message: '本地 NFO 与本次确认的 AniDB 作品身份不一致，未应用其中的资料；原文件仍按已有写入保护策略保留。',
+      ));
+      nfo = null;
+    }
+    final List<VideoMetadataLookup> reusableLookups =
+        changedIdentity ? const <VideoMetadataLookup>[] : storedLookups;
     final List<String> candidates = <String>[
       if (nfo != null) nfo.title,
       ..._titleCandidates(localWork, parsed),
     ];
-    final List<VideoMetadataLookup> storedLookups =
-        await _store.lookupsForWork(localWork);
     final List<VideoMetadataLookup> identityHints = <VideoMetadataLookup>[
       if (confirmedLookup != null) confirmedLookup,
-      ...storedLookups,
+      ...reusableLookups,
       ..._lookupsForNfo(nfo),
     ];
     final VideoMetadataLookup? canonicalLookup = _lookupForProvider(
@@ -742,7 +816,9 @@ class VideoSourceScrapeCoordinator
       );
       final _TmdbSupplementResult tmdb = await _tmdbSupplement(
         metadata,
-        candidates,
+        changedIdentity || conflictingNfo
+            ? <String>[metadata.title, ...metadata.aliases]
+            : candidates,
         seasonNumber,
         warnings,
         localWork.title,
@@ -753,7 +829,7 @@ class VideoSourceScrapeCoordinator
     metadata = _preserveHistoricalIdentities(
       metadata,
       <VideoMetadataLookup>[
-        ...storedLookups,
+        ...reusableLookups,
         if (confirmedLookup != null) confirmedLookup,
       ],
     );

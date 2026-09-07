@@ -34,6 +34,7 @@ import 'package:fushi/src/media/video/cover_backfill_ledger.dart';
 import 'package:fushi/src/media/video/video_cover_extractor.dart'
     show isLocalFrameExtractableVideoSource;
 import 'package:fushi/src/media/video/m3u8_playlist.dart';
+import 'package:fushi/src/media/video/video_folder_collection_policy.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_library_delete.dart';
 import 'package:fushi/src/sync/local_file_delete_feedback.dart';
@@ -658,6 +659,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 先 Future.wait 挂上监听，某个查询失败时其余错误不会成为无人接的未处理异常。
     final Future<List<MediaCollectionRow>> collectionsF =
         db.getAllMediaCollections();
+    final Future<List<VideoBookRow>> folderBooksF = db.allVideoBooks();
+    final Future<List<MediaSourceRow>> folderSourcesF =
+        db.getMediaSourcesByKind('video');
     final Future<Map<String, int>> primaryMapF =
         db.getPrimaryCollectionIdByEntry();
     final Future<List<MediaCollectionItemRow>> collectionItemsF =
@@ -681,6 +685,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final Future<List<MediaImageRow>> mediaImagesF = db.getAllMediaImages();
     await Future.wait<Object?>(<Future<Object?>>[
       collectionsF,
+      folderBooksF,
+      folderSourcesF,
       primaryMapF,
       collectionItemsF,
       watchRowsF,
@@ -694,7 +700,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       mediaImagesF,
     ]);
     final List<MediaCollectionRow> collections = await collectionsF;
-    final Map<String, int> primaryMap = await primaryMapF;
+    final Map<String, int> primaryMap = applyVideoFolderCollectionPolicy(
+      primary: await primaryMapF,
+      collections: collections,
+      items: await collectionItemsF,
+      books: await folderBooksF,
+      sources: await folderSourcesF,
+    );
     // 层次 C：条目在其主折叠合集里的 sortIndex（只记归属合集的行——一条目属多
     // 合集时行内序跟随折叠归属，与 primaryMap 同口径）。一次 [getAllCollectionItems]
     // 查全部成员内存分组，替代逐合集 [getCollectionItems] 的 N+1（合集越多越慢，

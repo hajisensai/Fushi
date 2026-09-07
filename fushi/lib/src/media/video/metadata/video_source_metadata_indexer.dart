@@ -24,7 +24,8 @@ class VideoSourceMetadataIndexer {
   final FushiDatabase database;
 
   Future<void> index(SourceLibraryRow source) {
-    if (source.mediaKind != 'video' || source.transport != 'local') {
+    if (source.mediaKind != 'video' || source.transport != 'local' ||
+        source.videoGroupingMode == 'folder') {
       return Future<void>.value();
     }
     final VideoScrapeOperationLease? lease =
