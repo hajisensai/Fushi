@@ -220,6 +220,15 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
           'test/media/video/metadata/anidb_app_client_test.dart（默认关）+ '
           'test/media/video/anidb_hash_identity_service_test.dart'
           '（disabled 直接 skip file hashing）',
+  // 字幕遮蔽的「暂停 / 悬停时显形」开关（BUG-2256「暂停 / 查词的自动显形并入
+  // 显形总闸」新增）。写 prefsRepo（changed=true），生效点在
+  // VideoSubtitleOverlay 的显形门：关掉之后**所有**显形来源都不再揭开被遮蔽的
+  // 字幕——悬停（MouseRegion 的 onEnter/onExit）、点击、以及暂停 / 查词浮层触发的
+  // 自动显形。harness 里没有真播放器、没有指针悬停、也没有查词浮层，无适用探针；
+  // 由专项 widget 测试咬住四条显形来源与总闸的关系。
+  'video/Reveal when paused or hovered':
+      'test/media/video/video_subtitle_hide_hover_reveal_test.dart'
+          '（悬停 / 点击 / 暂停 / 查词四条显形来源同属一个总闸）',
   // 视频条目自动刮削总闸。写 prefsRepo（changed=true），生效点在
   // VideoScrapeAutoService.sweep 的进场门（关=零网络请求、零资料落库），不是
   // reader CSS / 主题树，无适用探针；由专项服务测试咬住（关=不发请求、关→开

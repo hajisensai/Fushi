@@ -40,7 +40,10 @@ void main() {
     // progress + charOffset 必须透传给 _navigateToChapter（否则烘进导航失效、退回章首）。
     // TODO-1308 问题②：转发调用升级为多参（progress/charOffset/charOffsetEnd），
     // 收藏跳转靠 charOffset 走精确字符锚，书签/字符跳转仍可走 progress。
-    expect(body, contains('_navigateToChapter(index,'),
+    // 格式无关：dart format tall style 会把这条实参表折成多行
+    // （`_navigateToChapter(` + 换行 + `index,`），判据只钉
+    // 「index 作为第一个位置实参转发出去」。
+    expect(body, matches(RegExp(r'_navigateToChapter\(\s*index,')),
         reason:
             'progress/charOffset 必须转发给 _navigateToChapter → _beginNavigation');
     expect(body, contains('charOffset: charOffset,'),

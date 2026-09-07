@@ -124,9 +124,12 @@ void main() {
       );
       final String src =
           navFile.readAsStringSync().replaceAll(RegExp(r'\s+'), ' ');
+      // 格式无关：src 已折叠空白，但 tall style 折行会补出尾逗号
+      // （`...direction, )`），判据只钉「预热实参是 当前章 + 方向」。
       expect(
-          src.contains(
-              '_prefetchAdjacentChapterImages( _currentChapter + _chapterAdvanceDirection)'),
+          RegExp(r'_prefetchAdjacentChapterImages\( ?_currentChapter \+ '
+                  r'_chapterAdvanceDirection ?,? ?\)')
+              .hasMatch(src),
           isTrue,
           reason: '倒着读时必须预热上一章，而不是刚离开的那一章');
       expect(

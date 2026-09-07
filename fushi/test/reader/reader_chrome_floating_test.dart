@@ -296,8 +296,11 @@ void main() {
         reason: '拖 slider 每 tick 直跑「CSS 注入+重锚+整页 setState」会一次拖动上百趟 '
             'WebView 往返（BUG-969 根因），必须经合并执行器收敛',
       );
+      // 格式无关：tall style 会把 `CoalescedAsyncRunner(() async {` 折成
+      // `CoalescedAsyncRunner(` + 换行 + `() async {`，判据只钉
+      // 「runner 直接持有异步动作闭包」。
       expect(
-        src.contains('CoalescedAsyncRunner(() async {'),
+        RegExp(r'CoalescedAsyncRunner\(\s*\(\)\s*async\s*\{').hasMatch(src),
         isTrue,
         reason: '合并动作本体（错误处理/tap-gate/setState）必须收在 runner 内',
       );

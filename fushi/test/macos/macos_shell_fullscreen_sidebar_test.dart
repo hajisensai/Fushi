@@ -218,10 +218,20 @@ void main() {
         reason: '全屏翻转后必须把新 inset 回喂 WebView，否则 CSS 侧仍留 28px 空白');
     expect(containsCodeLine(onChange, 'setState'), isTrue);
     // 监听器必须摘掉，否则页面走了还在被全局 notifier 持有。
+    // 判据钉「dispose 里确实把这个回调摘掉了」，不钉排版：dart format 的 tall
+    // style 会把 `.removeListener(_onMacosFullscreenChanged)` 拆行并补尾逗号，
+    // 裸 contains 于是凭空变红（行为分毫未变）。改成结构判据——取回调标识符所在
+    // 的**最内层调用**，问它是不是 removeListener；顺带把窗口收进 dispose 体内，
+    // 比原来的全文件 contains 更严（写在别处的 removeListener 不再算数）。
+    final String disposeBody = methodBody(reader, '  void dispose() {');
+    final int callbackAt =
+        maskComments(disposeBody).indexOf('_onMacosFullscreenChanged');
+    expect(callbackAt, isNonNegative,
+        reason: 'dispose 未摘监听 = 泄漏 + 已 dispose 的 State 上 setState');
     expect(
-      reader,
-      contains('removeListener(_onMacosFullscreenChanged)'),
-      reason: 'dispose 未摘监听 = 泄漏 + 已 dispose 的 State 上 setState',
+      enclosingCall(disposeBody, callbackAt).name,
+      endsWith('removeListener'),
+      reason: '回调必须是 removeListener 的实参，不能只是被顺手提到',
     );
   });
 }

@@ -94,9 +94,12 @@ void main() {
         t.book_language_action,
         if (Platform.isWindows) '${t.game_upscaling} · ${t.game_upscaling_off}',
         // BUG-1477：每游戏「日语区域（转区）」档，与超分同为「启动期配置」，
-        // 故紧邻它排在删除之前。未设过的游戏显示默认档 auto。
+        // 故紧邻它排在删除之前。未设过的游戏显示默认档——BUG-2253 起默认档是
+        // `off` 而不再是 `auto`（判错的代价不对称：该转没转只是乱码、用户看得见
+        // 且能来这个菜单改；不该转却转了会让汉化版直接闪退），于是这一行与紧邻的
+        // 超分行同形，两个「启动期配置」默认都不替用户动游戏的启动方式。
         if (Platform.isWindows)
-          '${t.game_japanese_locale} · ${t.game_japanese_locale_auto}',
+          '${t.game_japanese_locale} · ${t.game_japanese_locale_off}',
         // 「打开文件位置」：与书架书卡 / 视频卡同一条动作、同一份文案。门控是
         // 「有没有文件管理器契约」（桌面恒有，移动端恒无），不是 galgame 的 Windows
         // 边界——flutter_test 宿主恒为桌面，故这里恒在场。
