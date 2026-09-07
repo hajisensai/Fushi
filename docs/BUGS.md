@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2078 条。点号进各自文件。
+> 共 2083 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -38,6 +38,11 @@
 | [BUG-2248](bugs/BUG-2248-audiobook-narrow-transport.md) | ✅ | ✅ | 有声书窄屏封面挤压播放按钮导致越界 |
 | [BUG-2247](bugs/BUG-2247-audiobook-tab-scroll.md) | ✅ | ✅ | 有声书切换设置标签沿用章节滚动位置 |
 | [BUG-2246](bugs/BUG-2246-discovery-anime-resource-category.md) | ✅ | ✅ | 发现资源搜索把TMDB动画当普通剧集且不能手动切换类型 |
+| [BUG-2245](bugs/BUG-2245-browser-nested-popup-stack.md) | ✅ | ✅ | 浏览器嵌套查词没有按App保留父子弹窗层级 |
+| [BUG-2244](bugs/BUG-2244-browser-nested-lookup-dismissal.md) | ✅ | ✅ | 浏览器嵌套查词点击泄漏给播放器导致查词窗关闭 |
+| [BUG-2243](bugs/BUG-2243-browser-subtitle-open-position.md) | ✅ | ✅ | 浏览器字幕列表打开落在顶部而非当前时间附近 |
+| [BUG-2242](bugs/BUG-2242-browser-queued-mine-state.md) | ✅ | ✅ | 浏览器制卡入队后加号恢复且缺少队列状态 |
+| [BUG-2241](bugs/BUG-2241-browser-sentence-context-dismissal.md) | ✅ | ✅ | 浏览器调整上下文误关查词框并恢复播放 |
 | [BUG-2240](bugs/BUG-2240-grammar-label-locale.md) | ✅ | ✅ | 词形变化标签未本地化且部分日语标签缺少说明 |
 | [BUG-2239](bugs/BUG-2239-pack-failed-import-cleanup.md) | ✅ | ✅ | 推荐包导入失败后仍被启动清理删除 |
 | [BUG-2238](bugs/BUG-2238-pack-delete-orphan-hidden.md) | ✅ | ✅ | 推荐包部分删除失败后残包入口消失 |

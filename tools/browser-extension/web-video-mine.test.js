@@ -137,7 +137,8 @@ test('queue 档（Netflix/YouTube）行为不变：仍然入队，不发 mine �
     netflixCueText: 'ネトフリの字幕',
   });
   const ok = await call('mineEntry', FIELDS);
-  assert.strictEqual(ok, true);
+  assert.strictEqual(ok.queued, true);
+  assert.strictEqual(ok.ankiConnect, false);
   assert.strictEqual(sent.length, 0, 'queue 档不得走立即出卡');
   assert.strictEqual(enqueued.length, 1);
   assert.strictEqual(enqueued[0].sentence, 'ネトフリの字幕');
@@ -348,4 +349,14 @@ test('上下文四个 handler 转发到宿主；宿主缺席时按不支持降�
   assert.strictEqual(await bare.call('clearSentenceDraft'), 0);
   assert.strictEqual(Object.keys(await bare.call('sentenceContextPreview', {})).length, 0);
   assert.strictEqual(await bare.call('openSentenceContextModal', {}), null);
+});
+
+test('入队失败不会冒充 Anki 成功或队列成功', async () => {
+  const { call } = load({
+    mineContext: { clip: { mode: 'queue' } },
+    enqueueResult: { ok: false, reason: 'no-cue' },
+  });
+  const result = await call('mineEntry', FIELDS);
+  assert.strictEqual(result.queued, false);
+  assert.strictEqual(result.ankiConnect, false);
 });

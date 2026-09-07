@@ -100,7 +100,10 @@ test('lookup connection config is cached and invalidated only when settings chan
 
 test('shared popup mouse listeners ignore events outside the dictionary shadow root', () => {
   assert.match(POPUP, /function __fushiEventInsidePopup\(e\)/);
-  assert.match(POPUP, /document\.addEventListener\('click',[\s\S]*?if \(!__fushiEventInsidePopup\(e\)\) return;/);
+  for (const handler of ['MouseDown', 'Click', 'MouseMove']) {
+    assert.ok(POPUP.includes('function __fushiPopup' + handler + '(e) {\n    if (!__fushiEventInsidePopup(e)) return;') ||
+      POPUP.includes('function __fushiPopup' + handler + '(e) {\r\n    if (!__fushiEventInsidePopup(e)) return;'));
+  }
 });
 
 test('shared popup yields between remaining dictionary entries', () => {
