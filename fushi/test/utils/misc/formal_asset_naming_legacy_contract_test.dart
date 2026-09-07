@@ -1,10 +1,9 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/misc/platform_updater.dart';
-import 'package:path/path.dart' as p;
 
-/// **发 2.0 正式版的硬门**：formal release 的资产表必须让**已出货的 Hibiki v1.2.0**
+/// 资产命名对两批**改不动的外部二进制**的影响。
+///
+/// 历史上这里是「发 2.0 正式版的硬门」：formal release 的资产表必须让**已出货的 Hibiki v1.2.0**
 /// 命中迁移桥包，同时**一个字节都不改变在野 Fushi 客户端的选择**。
 ///
 /// 守的不是本仓代码的行为，而是**改不了的两批外部二进制的行为**：
@@ -105,58 +104,17 @@ void main() {
     });
   });
 
-  group('CI 必须在发本体之前拦住「桥包缺席的正式版」', () {
-    late String workflow;
-
-    setUpAll(() {
-      // 测试 cwd 是 `fushi/`，仓库根是上一级。
-      final Directory repoRoot = Directory.current.parent;
-      final File f =
-          File(p.join(repoRoot.path, '.github', 'workflows', 'release.yml'));
-      expect(f.existsSync(), isTrue,
-          reason: 'repo root 解析错误: ${repoRoot.path}');
-      workflow = f.readAsStringSync();
-    });
-
-    test('formal 通道有桥包存在性硬门，且排在**两条**上传本体资产的路径之前', () {
-      const String guard =
-          '- name: Require migration bridge assets on the formal tag';
-      // 本体 APK 有两条上传路径，都必须被这道门挡在后面：
-      //  * 手动发 GitHub Release（`release` 事件）走 `Upload APKs to GitHub Release
-      //    event` —— 正式版按发布通道硬规则恰恰常走这条，而托管发布那步此时是跳过的；
-      //  * workflow_dispatch 走 `Publish Android channel release`。
-      // 只挡住后者曾经是个真漏洞：门排在第 639 行、手动上传在第 510 行，手动发布路径
-      // 上资产早就传上去了，门再报错也拦不住。
-      const List<String> uploads = <String>[
-        '- name: Upload APKs to GitHub Release event',
-        '- name: Publish Android channel release',
-      ];
-      expect(workflow.contains(guard), isTrue,
-          reason: '删掉这道门 = 桥包晚到的窗口期里老 Hibiki 用户会丢数据');
-      for (final String upload in uploads) {
-        expect(workflow.contains(upload), isTrue,
-            reason: '上传步骤改名了？守卫的先后断言会失效，必须同步更新');
-        expect(workflow.indexOf(guard) < workflow.indexOf(upload), isTrue,
-            reason: '门必须排在「$upload」之前，事后报错拦不住已经上线的资产');
-      }
-      expect(
-        workflow
-            .contains("if: steps.channel.outputs.manifest_channel == 'formal'"),
-        isTrue,
-      );
-    });
-
-    test('三个 ABI 逐个校验，且认的是 bridge- 前缀', () {
-      for (final String abi in kAndroidReleaseAbis) {
-        expect(
-          workflow.contains('for abi in arm64-v8a armeabi-v7a x86_64;') &&
-              workflow.contains(r'"^bridge-.*-${abi}\.apk$"'),
-          isTrue,
-          reason: '缺 $abi 的桥包校验',
-        );
-      }
-    });
-  });
+  // 2026-09-08：**CI 桥包硬门已按用户决定移除**（原本这里有一组用例钉住
+  // release.yml 里的 `Require migration bridge assets on the formal tag` 步骤，
+  // 要求正式版 tag 上必须先挂三个 ABI 的 `bridge-*.apk`）。判断依据是老 Hibiki
+  // v1.2.0 用户已完成迁移，不再需要每次正式版都随包发桥。
+  //
+  // 下面几组用例**保留为历史契约的可执行文档**：它们描述的是「如果资产表里同时有
+  // 桥包和本体，两批改不动的旧二进制会各自挑到什么」，是纯函数模拟，不强制发布流程
+  // 必须挂桥包。真正仍然生效、且必须继续守住的是最后两组——本体资产名必须含 ABI
+  // 全名，否则在野 Fushi 客户端会退化到 fallback 拿错架构包。
+  //
+  // 若日后要恢复随包发桥，把门加回 release.yml 并把这段注释换回原来那组断言。
 
   group('已出货 Hibiki v1.2.0 面对 2.0 正式版资产表', () {
     for (final MapEntry<String, List<String>> device in deviceAbis.entries) {

@@ -113,19 +113,26 @@ void main() {
             '单调，传上去不可回收，而 build_only 的语义是「还没决定要不要发」');
   });
 
-  test('正式版桥包硬门仍然由 formal 发布触发', () {
+  test('build_only 不影响两条上传本体资产的路径本身存在', () {
+    // 2026-09-08：正式版桥包硬门已按用户决定移除（老 Hibiki v1.2.0 用户已迁完），
+    // 所以这里不再断言那道门。改为守住一件仍然要紧的事：build_only 只该摁掉
+    // **发布**，不该顺手把上传步骤删了——否则 run 页面上连产物都拿不到，
+    // 「出包给人测」这个用途本身就没了。
     final String release = _releaseYaml().readAsStringSync();
-    final int at = release.indexOf('Require migration bridge assets on the formal tag');
-    expect(at, greaterThan(-1), reason: '桥包硬门不见了——它防的是「已出货的老客户端'
-        '按文件名挑包、桥包缺席时装成并存的第二个空 app、用户卸掉旧版即永久丢数据」');
 
-    final String block = release.substring(at, at + 600);
-    expect(block, contains("steps.channel.outputs.manifest_channel == 'formal'"),
-        reason: '桥包门的 formal 判据不得被削弱');
-    expect(block, contains("steps.channel.outputs.publish_manifest == 'true'"),
-        reason: 'build_only 不发布任何东西时这道门没有保护对象，所以加了 '
-            'publish_manifest 门；但真发 formal 时 publish_manifest 仍为 true，'
-            '门必须原样生效。去掉这个条件不会红，去掉 formal 条件才会——'
-            '两个条件都在，才是「只在真发布时拦」');
+    expect(release, contains('- name: Upload APK artifacts to workflow run'),
+        reason: 'run 级 artifact 上传是 build_only 唯一的取包出口，删了这步 '
+            'build_only 就退化成「跑一遍什么都拿不到」');
+    final int at = release.indexOf('- name: Upload APK artifacts to workflow run');
+    expect(release.substring(at, at + 300), contains('if: always()'),
+        reason: '这步必须无条件跑：它的价值恰恰在于「publish 失败/跳过时仍然拿得到包」');
+
+    for (final String upload in <String>[
+      '- name: Upload APKs to GitHub Release event',
+      '- name: Publish Android channel release',
+    ]) {
+      expect(release, contains(upload),
+          reason: '上传路径「$upload」不见了；build_only 只改开关，不该动上传步骤');
+    }
   });
 }
