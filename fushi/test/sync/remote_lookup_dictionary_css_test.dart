@@ -171,10 +171,21 @@ void main() {
             reason: '[$name] background.js 没把 CSS 尾段并进缓存并回填给页面');
 
         final String content = File('$root/content.js').readAsStringSync();
-        // 两处：首次查词渲染 + 嵌套查词渲染。只数「有没有」会被另一处顶着，删掉其中一处
-        // 照样绿（实测：删首次查词那处，contains 仍命中嵌套那处）——所以必须数够 2 次。
-        expect('applyFushiPopupCss(resp.data)'.allMatches(content).length, 2,
-            reason: '[$name] content.js 的首次查词 / 嵌套查词两条渲染路径都必须落 CSS 尾段');
+        // 仍然是两条渲染路径都必须落 CSS 尾段，但它们不再同住 content.js：
+        // 嵌套查词自 BUG-2245 起搬进了独立 iframe（nested-popup.js），content.js
+        // 里只剩首次查词那一处。所以改成**逐文件精确计数**，而不是在 content.js
+        // 里数 2 次。
+        //
+        // 为什么坚持数个数而不是 contains：只问「有没有」时，两处里删掉任一处
+        // 都还能被另一处顶着照样绿（原注释记的就是这次实测）。拆成两个文件后
+        // 这个风险还在——各自都必须恰好命中一次。
+        expect('applyFushiPopupCss(resp.data)'.allMatches(content).length, 1,
+            reason: '[$name] content.js 的首次查词渲染路径必须落 CSS 尾段');
+        final String nestedPopup =
+            File('$root/nested-popup.js').readAsStringSync();
+        expect('applyFushiPopupCss('.allMatches(nestedPopup).length, 1,
+            reason: '[$name] nested-popup.js 的嵌套查词渲染路径必须落 CSS 尾段'
+                '（嵌套结果在独立 iframe 里渲染，拿不到父层的 CSS 尾段就会裸样式）');
         expect(content, contains('installDictMediaPlaceholderResolver(shadow)'),
             reason: '[$name] content.js 没在弹窗 shadow 上装占位兑现器');
 
