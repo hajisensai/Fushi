@@ -102,6 +102,8 @@ Bulut eşitleme (Google Drive / OneDrive / Dropbox), kullanıcı tarafından yap
 
 Fushi aşağıdaki projeler ve ekosistem üzerine kuruludur:
 
+### Öğrenme araçları ve önceki projeler
+
 | Proje | Açıklama |
 |---|---|
 | [jidoujisho](https://github.com/arianneorpilla/jidoujisho) | Japonca sürükleyici öğrenme aracı |
@@ -116,6 +118,48 @@ Fushi aşağıdaki projeler ve ekosistem üzerine kuruludur:
 | [ッツ Ebook Reader](https://github.com/ttu-ttu/ebook-reader) | Okuyucu, istatistik ve eşitleme uyumluluğu referansı |
 | [media_kit](https://github.com/media-kit/media-kit) | Flutter video oynatma çerçevesi (libmpv çekirdeği) |
 | [Niratan](https://github.com/W1ght/Niratan) | macOS için sürükleyici dil öğrenme paketi |
+
+### Motorlar ve yerel bileşenler
+
+| Proje | Açıklama |
+|---|---|
+| [LunaHook](https://github.com/HIllya51/LunaTranslator) | Galgame metin hook motoru (paketlenmiş DLL'ler, injector tarafından yüklenir) |
+| [MinHook](https://github.com/TsudaKageyu/minhook) | Galgame injector'ının kullandığı inline hook kütüphanesi |
+| [libtorrent](https://github.com/arvidn/libtorrent) | Dahili torrent indirme motoru |
+| [mpv](https://github.com/mpv-player/mpv) | media_kit'in arkasındaki libmpv oynatma çekirdeği |
+| [FFmpeg](https://ffmpeg.org) | Medya inceleme, kırpma ve ses çıkarma |
+| [libplacebo](https://github.com/haasn/libplacebo) | GPU video gölgelendiricileri ve HDR ton eşleme |
+| [flutter_inappwebview](https://github.com/pichillilorenzo/flutter_inappwebview) | EPUB okuyucuyu çizen WebView motoru |
+| [ONNX Runtime](https://github.com/microsoft/onnxruntime) | Konuşma tanıma ve OCR için cihaz üstü çıkarım |
+| [zstd](https://github.com/facebook/zstd) · [xxHash](https://github.com/Cyan4973/xxHash) · [libdeflate](https://github.com/ebiggers/libdeflate) · [glaze](https://github.com/stephenberry/glaze) · [unordered_dense](https://github.com/martinus/unordered_dense) · [utf8proc](https://github.com/JuliaStrings/utf8proc) · [utfcpp](https://github.com/nemtrif/utfcpp) | Sözlük motoru bağımlılıkları |
+
+### Cihaz üstü modeller
+
+| Proje | Açıklama |
+|---|---|
+| [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) | Zipformer konuşma tanıma model paketleri ve VAD derlemeleri |
+| [ReazonSpeech k2-v2](https://huggingface.co/reazon-research/reazonspeech-k2-v2) | Japonca konuşma tanıma modeli |
+| [Omnilingual ASR](https://github.com/facebookresearch/omnilingual-asr) | Çok dilli CTC konuşma tanıma modeli |
+| [Silero VAD](https://github.com/snakers4/silero-vad) | Ses etkinliği algılama modeli |
+| [manga-ocr](https://github.com/kha-white/manga-ocr) / [manga-ocr-onnx](https://huggingface.co/mayocream/manga-ocr-onnx) | Manga OCR modeli |
+| [comic-text-and-bubble-detector](https://huggingface.co/ogkalu/comic-text-and-bubble-detector) | Manga metni ve konuşma balonu algılama modeli |
+
+### İçerik kaynakları ve entegrasyonlar
+
+| Proje | Açıklama |
+|---|---|
+| [Mihon](https://github.com/mihonapp/mihon) | Manga kaynak eklentisi ekosistemi |
+| [M-Extension-Server](https://github.com/kodjodevf/M-Extension-Server) | Masaüstü için manga eklenti çalışma zamanı |
+| [aidoku-rs](https://github.com/Aidoku/aidoku-rs) | Manga kaynak çalışma zamanı ABI'si |
+| [asbplayer](https://github.com/asbplayer/asbplayer) | Tarayıcı eklentisi için akış altyazı köprüsü referansı |
+| [Shoko Server](https://github.com/ShokoAnime/ShokoServer) | Anime tanımlama ve kazıma mimarisi referansı |
+| [ReinaManager](https://github.com/huoshen80/ReinaManager) | Galgame kitaplığı bilgi mimarisi referansı |
+| [AniDB](https://anidb.net) | Anime, bölüm ve dosya kimliği |
+| [TMDB](https://www.themoviedb.org) | Tamamlayıcı meta veriler ve görseller |
+| [Jimaku](https://jimaku.cc) | Japonca altyazı kaynağı |
+| [OpenSubtitles](https://www.opensubtitles.com) | Altyazı kaynağı |
+
+> Bu uygulama TMDB ve TMDB API'lerini kullanır ancak TMDB tarafından onaylanmamış, sertifikalandırılmamış veya başka şekilde desteklenmemiştir.
 
 ## Lisans
 

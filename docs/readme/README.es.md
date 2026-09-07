@@ -102,6 +102,8 @@ La sincronización en la nube (Google Drive / OneDrive / Dropbox) utiliza creden
 
 Fushi se apoya en los siguientes proyectos y ecosistema:
 
+### Herramientas de aprendizaje y referencias previas
+
 | Proyecto | Descripción |
 |---|---|
 | [jidoujisho](https://github.com/arianneorpilla/jidoujisho) | Herramienta de aprendizaje inmersivo de japonés |
@@ -116,6 +118,48 @@ Fushi se apoya en los siguientes proyectos y ecosistema:
 | [ッツ Ebook Reader](https://github.com/ttu-ttu/ebook-reader) | Referencia de compatibilidad de lector, estadísticas y sincronización |
 | [media_kit](https://github.com/media-kit/media-kit) | Framework de reproducción de vídeo de Flutter (núcleo libmpv) |
 | [Niratan](https://github.com/W1ght/Niratan) | Suite de aprendizaje inmersivo de idiomas para macOS |
+
+### Motores y componentes nativos
+
+| Proyecto | Descripción |
+|---|---|
+| [LunaHook](https://github.com/HIllya51/LunaTranslator) | Motor de hooking de texto para galgames (DLL incluidas, cargadas por el inyector) |
+| [MinHook](https://github.com/TsudaKageyu/minhook) | Biblioteca de inline hooking usada por el inyector de galgames |
+| [libtorrent](https://github.com/arvidn/libtorrent) | Motor de descargas torrent integrado |
+| [mpv](https://github.com/mpv-player/mpv) | Núcleo de reproducción libmpv detrás de media_kit |
+| [FFmpeg](https://ffmpeg.org) | Análisis de medios, recortes y extracción de audio |
+| [libplacebo](https://github.com/haasn/libplacebo) | Shaders de vídeo por GPU y mapeo de tonos HDR |
+| [flutter_inappwebview](https://github.com/pichillilorenzo/flutter_inappwebview) | Motor WebView que renderiza el lector EPUB |
+| [ONNX Runtime](https://github.com/microsoft/onnxruntime) | Inferencia en el dispositivo para reconocimiento de voz y OCR |
+| [zstd](https://github.com/facebook/zstd) · [xxHash](https://github.com/Cyan4973/xxHash) · [libdeflate](https://github.com/ebiggers/libdeflate) · [glaze](https://github.com/stephenberry/glaze) · [unordered_dense](https://github.com/martinus/unordered_dense) · [utf8proc](https://github.com/JuliaStrings/utf8proc) · [utfcpp](https://github.com/nemtrif/utfcpp) | Dependencias del motor de diccionarios |
+
+### Modelos en el dispositivo
+
+| Proyecto | Descripción |
+|---|---|
+| [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) | Paquetes de modelos Zipformer de reconocimiento de voz y compilaciones de VAD |
+| [ReazonSpeech k2-v2](https://huggingface.co/reazon-research/reazonspeech-k2-v2) | Modelo de reconocimiento de voz en japonés |
+| [Omnilingual ASR](https://github.com/facebookresearch/omnilingual-asr) | Modelo multilingüe de reconocimiento de voz CTC |
+| [Silero VAD](https://github.com/snakers4/silero-vad) | Modelo de detección de actividad de voz |
+| [manga-ocr](https://github.com/kha-white/manga-ocr) / [manga-ocr-onnx](https://huggingface.co/mayocream/manga-ocr-onnx) | Modelo de OCR para manga |
+| [comic-text-and-bubble-detector](https://huggingface.co/ogkalu/comic-text-and-bubble-detector) | Modelo de detección de texto y bocadillos en manga |
+
+### Fuentes de contenido e integraciones
+
+| Proyecto | Descripción |
+|---|---|
+| [Mihon](https://github.com/mihonapp/mihon) | Ecosistema de extensiones de fuentes de manga |
+| [M-Extension-Server](https://github.com/kodjodevf/M-Extension-Server) | Runtime de extensiones de manga para escritorio |
+| [aidoku-rs](https://github.com/Aidoku/aidoku-rs) | ABI del runtime de fuentes de manga |
+| [asbplayer](https://github.com/asbplayer/asbplayer) | Referencia del puente de subtítulos en streaming para la extensión de navegador |
+| [Shoko Server](https://github.com/ShokoAnime/ShokoServer) | Referencia de arquitectura para identificación y scraping de anime |
+| [ReinaManager](https://github.com/huoshen80/ReinaManager) | Referencia de arquitectura de información de la biblioteca de galgames |
+| [AniDB](https://anidb.net) | Identidad de anime, episodios y archivos |
+| [TMDB](https://www.themoviedb.org) | Metadatos e imágenes complementarios |
+| [Jimaku](https://jimaku.cc) | Fuente de subtítulos en japonés |
+| [OpenSubtitles](https://www.opensubtitles.com) | Fuente de subtítulos |
+
+> Esta aplicación utiliza TMDB y las APIs de TMDB pero no está respaldada, certificada ni aprobada por TMDB.
 
 ## Licencia
 
