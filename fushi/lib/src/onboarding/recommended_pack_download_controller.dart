@@ -35,12 +35,13 @@ enum RecommendedPackDownloadStage {
 
 /// 真正干活的下载体。默认实现是 [RecommendedPackDownloadController] 自己的
 /// 清单解析 + 分片并发下载；测试注入替身，不碰真网络。
-typedef RecommendedPackDownloadRunner = Future<File> Function({
-  required Directory packDir,
-  required ValueNotifier<double> progress,
-  required ValueNotifier<int> receivedBytes,
-  required CancelToken cancelToken,
-});
+typedef RecommendedPackDownloadRunner =
+    Future<File> Function({
+      required Directory packDir,
+      required ValueNotifier<double> progress,
+      required ValueNotifier<int> receivedBytes,
+      required CancelToken cancelToken,
+    });
 
 /// 推荐包下载任务的**所有权持有者**（挂在 `AppModel` 上，生命周期与 app 一致）。
 ///
@@ -64,9 +65,9 @@ class RecommendedPackDownloadController {
     required Directory Function() packDirectory,
     RecommendedPackDownloadRunner? runner,
     void Function(String message, ToastSeverity severity)? showOutcome,
-  })  : _packDirectory = packDirectory,
-        _runner = runner,
-        _showOutcome = showOutcome ?? _defaultShowOutcome;
+  }) : _packDirectory = packDirectory,
+       _runner = runner,
+       _showOutcome = showOutcome ?? _defaultShowOutcome;
 
   static void _defaultShowOutcome(String message, ToastSeverity severity) {
     FushiToast.show(
@@ -92,8 +93,8 @@ class RecommendedPackDownloadController {
   /// 当前阶段。向导步骤与设置那一行都订阅它决定显示什么。
   final ValueNotifier<RecommendedPackDownloadStage> stage =
       ValueNotifier<RecommendedPackDownloadStage>(
-    RecommendedPackDownloadStage.idle,
-  );
+        RecommendedPackDownloadStage.idle,
+      );
 
   /// 0..1 的下载比例；0 = 总大小未知（进度条退化为不定态）。
   final ValueNotifier<double> progress = ValueNotifier<double>(0);
@@ -262,6 +263,34 @@ class RecommendedPackDownloadController {
   /// 收起首页那条迷你条（本次会话内）。
   void dismissMiniBar() => miniBarDismissed.value = true;
 
+  /// 放弃这次下载：删掉盘上的半截包，阶段随之落回
+  /// [RecommendedPackDownloadStage.idle]（两个可见入口一起消失）。
+  ///
+  /// 「收起」（[dismissMiniBar]）与「放弃」是两件不同的事，缺了后者就没有任何出口：
+  /// 收起只活一个会话，而阶段是按磁盘现状推的（[_settleStageFromDisk]），只要半截
+  /// 文件还在，「已暂停」就每次启动都回来 —— 不想要这个包的用户被钉死在一条永远
+  /// 关不掉的横幅上，还得自己去文件管理器里翻数据根。
+  ///
+  /// 只在 [RecommendedPackDownloadStage.paused] 下有效：下载中要先 [requestCancel]
+  /// （写文件的那只手还在，边写边删配得出半截 `.mpart` 配完整进度 json 的坏状态），
+  /// 下完待导入的整包归导入流程处置，不从这里删。
+  ///
+  /// 返回是否真的删掉了。删不掉（占用/权限）时阶段照旧留在 paused —— 那是磁盘的
+  /// 事实，UI 不该因为用户点了按钮就宣布包已经没了。
+  Future<bool> discardPartialDownload() async {
+    if (!isPaused || _disposed) return false;
+    final bool deleted = await RecommendedPackDownloader.deletePackDirectory(
+      packDir,
+      reason: 'discardPartialDownload',
+    );
+    if (_disposed) return deleted;
+    if (deleted) error.value = null;
+    // 无条件对盘：删失败时它把阶段留在 paused（半截还在），删成功时落回 idle 并把
+    // 进度归零。判据始终是磁盘，不是这次点击。
+    _settleStageFromDisk();
+    return deleted;
+  }
+
   /// 导入即将真正开始时给包目录落「已导入」flag：导入会重启进程，重启回来由
   /// [prepareDiskState] 删掉这 9.5 GB。
   Future<void> markImportStarted() =>
@@ -285,7 +314,8 @@ class RecommendedPackDownloadController {
         );
       }
     }
-    final RecommendedPackDownloader downloader = _manifestDownloader ??
+    final RecommendedPackDownloader downloader =
+        _manifestDownloader ??
         RecommendedPackDownloader(
           packDir: packDir,
           url: kRecommendedPackGoogleDriveDirectUrl,

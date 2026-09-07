@@ -152,7 +152,8 @@ void main() {
     expect(
       controller.error.value,
       isNull,
-      reason: '取消不是失败——本条 bug 把失败原因做成了常驻可见，'
+      reason:
+          '取消不是失败——本条 bug 把失败原因做成了常驻可见，'
           '误判会让设置行/迷你条上写着一个 Dart 异常类名',
     );
     expect(outcomes, isEmpty);
@@ -401,6 +402,83 @@ void main() {
 
     finish.complete(completedPackFile());
     await pending;
+  });
+
+  // 放弃下载：没有它，「已暂停」就是一条永远关不掉的横幅——收起只活一个会话，而
+  // 阶段是按磁盘现状推的，半截文件在就每次启动都回来。
+  test('放弃下载：删掉半截包，阶段回 idle，进度归零', () async {
+    partialPackFile(4096);
+    final RecommendedPackDownloadController controller = newController(
+      runner: _neverRuns,
+    );
+    addTearDown(controller.dispose);
+    await controller.prepareDiskState();
+    expect(controller.stage.value, RecommendedPackDownloadStage.paused);
+
+    final bool discarded = await controller.discardPartialDownload();
+
+    expect(discarded, isTrue);
+    expect(controller.stage.value, RecommendedPackDownloadStage.idle);
+    expect(controller.receivedBytes.value, 0);
+    expect(controller.progress.value, 0);
+    expect(
+      packDir.existsSync(),
+      isFalse,
+      reason: '阶段回了 idle 而那几 GB 还在盘上 = 只是把横幅藏了',
+    );
+  });
+
+  test('放弃下载：分片路的半截（.mpart + 进度 json）一起删干净', () async {
+    partialMultiPartFiles(allocated: 8192, parts: <int>[2048]);
+    final RecommendedPackDownloadController controller = newController(
+      runner: _neverRuns,
+    );
+    addTearDown(controller.dispose);
+    await controller.prepareDiskState();
+    expect(controller.stage.value, RecommendedPackDownloadStage.paused);
+
+    expect(await controller.discardPartialDownload(), isTrue);
+    expect(controller.stage.value, RecommendedPackDownloadStage.idle);
+    expect(packDir.existsSync(), isFalse);
+  });
+
+  test('放弃下载：下载中不受理（写文件的那只手还在）', () async {
+    final Completer<File> finish = Completer<File>();
+    final RecommendedPackDownloadController controller = newController(
+      runner:
+          ({
+            required Directory packDir,
+            required ValueNotifier<double> progress,
+            required ValueNotifier<int> receivedBytes,
+            required CancelToken cancelToken,
+          }) => finish.future,
+    );
+    addTearDown(controller.dispose);
+    final File partial = partialPackFile(4096);
+
+    final Future<File?> pending = controller.start();
+    expect(controller.stage.value, RecommendedPackDownloadStage.downloading);
+
+    expect(await controller.discardPartialDownload(), isFalse);
+    expect(controller.stage.value, RecommendedPackDownloadStage.downloading);
+    expect(partial.existsSync(), isTrue, reason: '边写边删配得出「半截没了但进度文件说下满了」的坏状态');
+
+    finish.complete(completedPackFile());
+    await pending;
+  });
+
+  test('放弃下载：下完待导入的整包不从这里删（归导入流程处置）', () async {
+    completedPackFile();
+    final RecommendedPackDownloadController controller = newController(
+      runner: _neverRuns,
+    );
+    addTearDown(controller.dispose);
+    await controller.prepareDiskState();
+    expect(controller.stage.value, RecommendedPackDownloadStage.downloaded);
+
+    expect(await controller.discardPartialDownload(), isFalse);
+    expect(controller.stage.value, RecommendedPackDownloadStage.downloaded);
+    expect(packDir.existsSync(), isTrue);
   });
 }
 
