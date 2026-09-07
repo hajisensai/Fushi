@@ -3,6 +3,19 @@ import 'package:fushi/src/reader/reader_selection_data.dart';
 
 void main() {
   group('ReaderSelectionData.fromJson', () {
+    test(
+      'preserves synthetic cue identity independent of normalized offset',
+      () {
+        final ReaderSelectionData data =
+            ReaderSelectionData.fromJson(<String, dynamic>{
+              'text': '次',
+              'normalizedOffset': 4,
+              'audioCuePayload': '{"type":"sid","id":"12"}',
+            });
+        expect(data.audioCuePayload, '{"type":"sid","id":"12"}');
+        expect(data.normalizedOffset, 4);
+      },
+    );
     test('parses full JSON with all fields', () {
       final json = <String, dynamic>{
         'text': '猫',
@@ -15,6 +28,7 @@ void main() {
         'mangaPageIndex': 2,
         'sentenceNormalizedOffset': 10,
         'sentenceNormalizedLength': 8,
+        'audioCuePayload': '{"type":"frag","id":"cue-2"}',
       };
 
       final data = ReaderSelectionData.fromJson(json);
@@ -33,6 +47,7 @@ void main() {
       expect(data.mangaPageIndex, 2);
       expect(data.sentenceNormalizedOffset, 10);
       expect(data.sentenceNormalizedLength, 8);
+      expect(data.audioCuePayload, '{"type":"frag","id":"cue-2"}');
     });
 
     test('missing optional fields default correctly', () {
@@ -53,6 +68,7 @@ void main() {
       expect(data.mangaPageIndex, isNull);
       expect(data.sentenceNormalizedOffset, isNull);
       expect(data.sentenceNormalizedLength, isNull);
+      expect(data.audioCuePayload, isNull);
     });
 
     test('empty JSON defaults text and sentence to empty strings', () {

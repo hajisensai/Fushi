@@ -892,25 +892,6 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     return _currentChapter;
   }
 
-  AudioCue? _findCueForOffset(int normalizedOffset) {
-    final AudiobookPlayerController? ctrl = _audiobookController;
-    if (ctrl == null) return null;
-    final List<AudioCue> cues = ctrl.sentenceAudioCuesForSection(
-      _currentChapter,
-    );
-    for (final AudioCue cue in cues) {
-      final SubtitleRematchFragment? frag = SubtitleRematchCodec.tryDecode(
-        cue.textFragmentId,
-      );
-      if (frag == null) continue;
-      if (frag.normCharStart <= normalizedOffset &&
-          frag.normCharEnd > normalizedOffset) {
-        return cue;
-      }
-    }
-    return null;
-  }
-
   AudioCue? _findCueForSentence(String sentence) {
     if (_srtBookUid == null) return null;
     final List<AudioCue>? allCues = _cachedAllCues;
