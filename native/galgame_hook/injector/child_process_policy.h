@@ -6,6 +6,76 @@
 
 namespace fushi_voice_hook {
 
+struct ProcessIdentity {
+  uint32_t pid = 0;
+  uint64_t created_at = 0;
+};
+
+// A launch session retains identity and lifetime evidence, not snapshots of PID
+// links. An exited relay remains usable only for children born during its life.
+class ChildProcessLineage {
+ public:
+  static constexpr size_t kMaxProcesses = 256;
+  static constexpr int kMaxDepth = 16;
+  struct Node {
+    ProcessIdentity identity;
+    uint64_t alive_through = 0;
+    uint64_t exited_at = 0;
+    int depth = 0;
+    uint32_t parent_pid = 0;
+  };
+
+  explicit ChildProcessLineage(ProcessIdentity root) {
+    if (root.pid != 0 && root.created_at != 0) {
+      nodes_.push_back({root, root.created_at, 0, 0});
+    }
+  }
+  const Node* Find(uint32_t pid) const {
+    for (const auto& node : nodes_) {
+      if (node.identity.pid == pid) return &node;
+    }
+    return nullptr;
+  }
+  bool UpdateLifetime(ProcessIdentity identity, uint64_t observed_at,
+                      uint64_t exited_at) {
+    for (auto& node : nodes_) {
+      if (node.identity.pid != identity.pid) continue;
+      if (node.identity.created_at != identity.created_at ||
+          observed_at < identity.created_at ||
+          (exited_at != 0 && (exited_at < identity.created_at ||
+                              exited_at > observed_at)) ||
+          (node.exited_at != 0 && node.exited_at != exited_at)) return false;
+      if (observed_at > node.alive_through) node.alive_through = observed_at;
+      node.exited_at = exited_at;
+      return true;
+    }
+    return false;
+  }
+  bool Observe(ProcessIdentity identity, uint32_t parent_pid) {
+    if (identity.pid == 0 || identity.created_at == 0 ||
+        identity.pid == parent_pid) return false;
+    if (const auto* existing = Find(identity.pid)) {
+      return existing->identity.created_at == identity.created_at &&
+             existing->depth > 0 && existing->parent_pid == parent_pid;
+    }
+    const auto* parent = Find(parent_pid);
+    if (parent == nullptr || parent->depth >= kMaxDepth ||
+        nodes_.size() >= kMaxProcesses ||
+        identity.created_at <= parent->identity.created_at ||
+        identity.created_at > (parent->exited_at != 0 ? parent->exited_at
+                                                     : parent->alive_through)) {
+      return false;
+    }
+    const int depth = parent->depth + 1;
+    nodes_.push_back({identity, identity.created_at, 0, depth, parent_pid});
+    return true;
+  }
+  size_t size() const { return nodes_.size(); }
+
+ private:
+  std::vector<Node> nodes_;
+};
+
 struct ChildProcessCandidate {
   uint32_t pid = 0;
   uint32_t parent_pid = 0;

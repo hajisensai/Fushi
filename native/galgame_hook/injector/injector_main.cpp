@@ -2329,9 +2329,89 @@ void InspectFfmpegModules(DWORD pid,
   CloseHandle(snapshot);
 }
 
-DWORD FindGameChildProcess(DWORD root_pid) {
+uint64_t ProcessTimeValue(const FILETIME& time) {
+  return (static_cast<uint64_t>(time.dwHighDateTime) << 32) |
+         time.dwLowDateTime;
+}
+
+bool ReadProcessLifetime(HANDLE process, DWORD pid,
+                         fushi_voice_hook::ChildProcessLineage::Node* node) {
+  FILETIME observed, created, exited, kernel, user;
+  GetSystemTimeAsFileTime(&observed);
+  if (!GetProcessTimes(process, &created, &exited, &kernel, &user)) return false;
+  node->identity = {pid, ProcessTimeValue(created)};
+  node->exited_at = ProcessTimeValue(exited);
+  node->alive_through = (std::max)(ProcessTimeValue(observed), node->exited_at);
+  return node->identity.created_at != 0;
+}
+
+// Retaining query handles preserves each observed relay's lifetime after exit.
+// No process is admitted using its name or directory as ancestry evidence.
+class LaunchProcessLineage {
+ public:
+  LaunchProcessLineage(HANDLE root, DWORD root_pid)
+      : lineage_(RootIdentity(root, root_pid)) {
+    HANDLE retained = nullptr;
+    if (DuplicateHandle(GetCurrentProcess(), root, GetCurrentProcess(),
+                        &retained, 0, FALSE, DUPLICATE_SAME_ACCESS)) {
+      handles_[root_pid] = retained;
+    }
+  }
+  ~LaunchProcessLineage() {
+    for (const auto& item : handles_) CloseHandle(item.second);
+  }
+  LaunchProcessLineage(const LaunchProcessLineage&) = delete;
+  LaunchProcessLineage& operator=(const LaunchProcessLineage&) = delete;
+
+  void Refresh() {
+    for (const auto& item : handles_) {
+      fushi_voice_hook::ChildProcessLineage::Node node;
+      if (ReadProcessLifetime(item.second, item.first, &node)) {
+        lineage_.UpdateLifetime(node.identity, node.alive_through,
+                                node.exited_at);
+      }
+    }
+  }
+  bool Observe(DWORD pid, DWORD parent_pid) {
+    if (lineage_.Find(pid) != nullptr || lineage_.Find(parent_pid) == nullptr ||
+        lineage_.size() >= fushi_voice_hook::ChildProcessLineage::kMaxProcesses) {
+      return false;
+    }
+    HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE,
+                                 FALSE, pid);
+    if (process == nullptr) return false;
+    fushi_voice_hook::ChildProcessLineage::Node node;
+    if (!ReadProcessLifetime(process, pid, &node) ||
+        !lineage_.Observe(node.identity, parent_pid)) {
+      CloseHandle(process);
+      return false;
+    }
+    lineage_.UpdateLifetime(node.identity, node.alive_through, node.exited_at);
+    handles_[pid] = process;
+    return true;
+  }
+  const fushi_voice_hook::ChildProcessLineage::Node* LiveNode(DWORD pid) const {
+    const auto handle = handles_.find(pid);
+    if (handle == handles_.end() ||
+        WaitForSingleObject(handle->second, 0) != WAIT_TIMEOUT) return nullptr;
+    return lineage_.Find(pid);
+  }
+
+ private:
+  static fushi_voice_hook::ProcessIdentity RootIdentity(HANDLE root, DWORD pid) {
+    fushi_voice_hook::ChildProcessLineage::Node node;
+    return ReadProcessLifetime(root, pid, &node)
+               ? node.identity : fushi_voice_hook::ProcessIdentity{};
+  }
+  fushi_voice_hook::ChildProcessLineage lineage_;
+  std::map<DWORD, HANDLE> handles_;
+};
+
+fushi_voice_hook::ProcessIdentity FindGameChildProcess(
+    DWORD root_pid, LaunchProcessLineage* lineage) {
+  lineage->Refresh();
   HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-  if (snapshot == INVALID_HANDLE_VALUE) return 0;
+  if (snapshot == INVALID_HANDLE_VALUE) return {};
   struct OwnedCandidate {
     fushi_voice_hook::ChildProcessCandidate value;
     std::wstring name;
@@ -2351,42 +2431,56 @@ DWORD FindGameChildProcess(DWORD root_pid) {
     } while (Process32NextW(snapshot, &process));
   }
   CloseHandle(snapshot);
-  std::vector<fushi_voice_hook::ChildProcessCandidate> candidates;
-  candidates.reserve(owned.size());
-  for (OwnedCandidate& item : owned) {
-    item.value.executable_name = item.name.c_str();
-    candidates.push_back(item.value);
+  // Toolhelp order is unspecified. Each bounded pass admits another generation.
+  for (int depth = 0; depth < fushi_voice_hook::ChildProcessLineage::kMaxDepth;
+       ++depth) {
+    bool added = false;
+    for (const auto& item : owned) {
+      added = lineage->Observe(item.value.pid, item.value.parent_pid) || added;
+    }
+    if (!added) break;
   }
-  // First select descendants without module inspection, then enrich every descendant. This keeps
-  // Toolhelp module snapshots scoped to the launcher's process tree.
-  for (size_t i = 0; i < candidates.size(); ++i) {
-    if (fushi_voice_hook::DescendantDepth(root_pid, i, candidates) > 0) {
-      InspectFfmpegModules(candidates[i].pid, &candidates[i]);
-      InspectEngineSignature(candidates[i].pid, &candidates[i]);
+  fushi_voice_hook::ProcessIdentity best;
+  int best_score = 0;
+  for (auto& item : owned) {
+    const auto* node = lineage->LiveNode(item.value.pid);
+    if (node == nullptr || node->depth <= 0) continue;
+    item.value.executable_name = item.name.c_str();
+    InspectFfmpegModules(item.value.pid, &item.value);
+    InspectEngineSignature(item.value.pid, &item.value);
+    const int score = fushi_voice_hook::ChildProcessScore(item.value, node->depth);
+    if (score > best_score ||
+        (score == best_score && score > 0 && item.value.pid < best.pid)) {
+      best_score = score;
+      best = node->identity;
     }
   }
-  return fushi_voice_hook::SelectGameChildProcess(root_pid, candidates);
+  return best;
 }
 
-DWORD WaitForGameChildProcess(DWORD root_pid, DWORD wait_ms) {
+fushi_voice_hook::ProcessIdentity WaitForGameChildProcess(
+    HANDLE root_process, DWORD root_pid, DWORD wait_ms) {
+  LaunchProcessLineage lineage(root_process, root_pid);
   const uint64_t started = GetTickCount64();
   const uint64_t deadline = GetTickCount64() + wait_ms;
-  DWORD last_candidate = 0;
+  fushi_voice_hook::ProcessIdentity last_candidate;
   int stable_observations = 0;
   while (GetTickCount64() < deadline) {
-    const DWORD candidate = FindGameChildProcess(root_pid);
-    if (candidate != 0 && candidate == last_candidate) {
+    const auto candidate = FindGameChildProcess(root_pid, &lineage);
+    if (candidate.pid != 0 && candidate.pid == last_candidate.pid &&
+        candidate.created_at == last_candidate.created_at) {
       ++stable_observations;
       if (stable_observations >= 2) return candidate;
     } else {
       last_candidate = candidate;
-      stable_observations = candidate == 0 ? 0 : 1;
+      stable_observations = candidate.pid == 0 ? 0 : 1;
     }
-    if (candidate == 0 && GetTickCount64() - started >= 1000) {
+    if (candidate.pid == 0 && GetTickCount64() - started >= 1000 &&
+        lineage.LiveNode(root_pid) != nullptr) {
       fushi_voice_hook::ChildProcessCandidate launcher;
       launcher.pid = root_pid;
       InspectFfmpegModules(root_pid, &launcher);
-      if (launcher.has_avcodec && launcher.has_avformat) return 0;
+      if (launcher.has_avcodec && launcher.has_avformat) return {};
     }
     Sleep(100);
   }
@@ -2955,13 +3049,22 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
   if (follow_children) {
     const DWORD child_wait_ms =
         wait_ms > static_cast<DWORD>(15000) ? wait_ms : static_cast<DWORD>(15000);
-    const DWORD child_pid =
-        WaitForGameChildProcess(pi.dwProcessId, child_wait_ms);
+    const auto child_identity =
+        WaitForGameChildProcess(pi.hProcess, pi.dwProcessId, child_wait_ms);
+    const DWORD child_pid = child_identity.pid;
     if (child_pid != 0) {
       child_process = OpenProcess(
           PROCESS_CREATE_THREAD | PROCESS_VM_OPERATION | PROCESS_VM_WRITE |
               PROCESS_VM_READ | PROCESS_QUERY_INFORMATION | SYNCHRONIZE,
           FALSE, child_pid);
+      fushi_voice_hook::ChildProcessLineage::Node child_lifetime;
+      if (child_process != nullptr &&
+          (!ReadProcessLifetime(child_process, child_pid, &child_lifetime) ||
+           child_lifetime.identity.created_at != child_identity.created_at ||
+           WaitForSingleObject(child_process, 0) != WAIT_TIMEOUT)) {
+        CloseHandle(child_process);
+        child_process = nullptr;
+      }
       if (child_process != nullptr) {
         target_process = child_process;
         target_pid = child_pid;
