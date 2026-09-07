@@ -29,11 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2079 条。点号进各自文件。
+> 共 2081 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2248](bugs/BUG-2248-launcher-lineage.md) | ✅ | ✅ | 启动器退出后丢失已确认的游戏进程谱系 |
+| [BUG-2247](bugs/BUG-2247-locale-timezone-display-name.md) | ✅ | ✅ | 日语转区将时区ID误作本地化时区名称 |
+| [BUG-2246](bugs/BUG-2246-siglus-system-version-locale.md) | ✅ | ✅ | Siglus旧版读取系统版本资源时日语转区仍被判定失败 |
 | [BUG-2245](bugs/BUG-2245-gal-voice-companion-session-boundary.md) | ✅ | ✅ | 制卡伴音按重复事件编号混入旧会话语音 |
 | [BUG-2244](bugs/BUG-2244-siglus-lookup-capture-frontier.md) | ✅ | ✅ | Siglus同句重绘前沿未消费时永久丢弃已入队查词点击 |
 | [BUG-2243](bugs/BUG-2243-galgame-folded-typed-audio-ownership.md) | ✅ | ✅ | 折叠正文事件继承旧语音与带事件资源退回时间匹配 |
@@ -47,7 +49,7 @@
 | [BUG-2235](bugs/BUG-2235-siglus-ovk-export-failure-reported-captured.md) | ✅ | ✅ | Siglus OVK 导出失败仍报告已捕获 |
 | [BUG-2234](bugs/BUG-2234-siglus-partial-redraw-retires-popup.md) | ✅ | ✅ | Siglus同句分批重绘错误撤销已打开词典 |
 | [BUG-2233](bugs/BUG-2233-siglus-text-hook-ownership-race.md) | ✅ | ✅ | Siglus原生文本适配与Luna自动扫描争抢入口 |
-| [BUG-2232](bugs/BUG-2232-locale-emulator-loader-list-sentinel.md) | 🚧 | ✅ | Locale Emulator在早期模块初始化链表头上解引用导致Rewrite启动崩溃 |
+| [BUG-2232](bugs/BUG-2232-locale-emulator-loader-list-sentinel.md) | ✅ | ✅ | Locale Emulator在早期模块初始化链表头上解引用导致Rewrite启动崩溃 |
 | [BUG-2231](bugs/BUG-2231-windows-uia-flutter-host-crash.md) | 🚧 | 🚧 | Windows宿主在UIAutomation回调进入Flutter时访问冲突退出 |
 | [BUG-2230](bugs/BUG-2230-geometry-snapshot-conflict-as-none.md) | ✅ | ✅ | Windows宿主将快照读取冲突误报为没有原生查词provider |
 | [BUG-2229](bugs/BUG-2229-dictionary-expanded-column-version-collision.md) | ✅ | ✅ | 同版本数据库缺词典显式展开列导致启动空值崩溃 |

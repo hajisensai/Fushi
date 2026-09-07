@@ -778,3 +778,31 @@ target_include_directories(fushi_siglus_text_owner_test PRIVATE "include")
 target_compile_definitions(fushi_siglus_text_owner_test PRIVATE
   UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME fushi_siglus_text_owner_test COMMAND fushi_siglus_text_owner_test)
+
+# Locale Emulator is an x86-only runtime. Keep its actual loader-list ABI
+# regression in the standard Windows test gate, without implying x64 support.
+if(CMAKE_SIZEOF_VOID_P EQUAL 4)
+  add_executable(fushi_locale_emulator_module_list_test
+    "tests/locale_emulator_module_list_test.cpp")
+  if(MSVC)
+    target_compile_options(fushi_locale_emulator_module_list_test PRIVATE /W4 /WX)
+  endif()
+  add_test(NAME fushi_locale_emulator_module_list_test
+    COMMAND fushi_locale_emulator_module_list_test)
+endif()
+
+add_executable(fushi_locale_emulator_version_resource_test
+  "tests/locale_emulator_version_resource_test.cpp")
+if(MSVC)
+  target_compile_options(fushi_locale_emulator_version_resource_test PRIVATE /W4 /WX)
+endif()
+add_test(NAME fushi_locale_emulator_version_resource_test
+  COMMAND fushi_locale_emulator_version_resource_test)
+
+add_executable(fushi_locale_emulator_version_hooks_test
+  "tests/locale_emulator_version_hooks_test.cpp")
+if(MSVC)
+  target_compile_options(fushi_locale_emulator_version_hooks_test PRIVATE /W4 /WX)
+endif()
+add_test(NAME fushi_locale_emulator_version_hooks_test
+  COMMAND fushi_locale_emulator_version_hooks_test)

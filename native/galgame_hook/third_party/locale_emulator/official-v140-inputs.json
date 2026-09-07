@@ -1,0 +1,92 @@
+[
+  {
+    "id": "Microsoft.VisualC.140.Tools.Base.X86.Msi",
+    "version": "14.0.24247",
+    "payloads": [
+      {
+        "fileName": "VC_Tools.X86.Base.msi",
+        "sha256": "7fd2d8e1a0ae024e8922e36982ecf5d62040b4940f400c28cb9df1c3f569bb31",
+        "size": 176128,
+        "url": "https://download.visualstudio.microsoft.com/download/pr/f201226a-54ad-4c5b-b665-49d12a86a848/7fd2d8e1a0ae024e8922e36982ecf5d62040b4940f400c28cb9df1c3f569bb31/VC_Tools.X86.Base.msi"
+      },
+      {
+        "fileName": "cab1.cab",
+        "sha256": "fe4e5d77b5a2ac668932a6ed7183a814f2e60b1a37715ec2c5c78014fb2af996",
+        "size": 4336841,
+        "url": "https://download.visualstudio.microsoft.com/download/pr/f201226a-54ad-4c5b-b665-49d12a86a848/fe4e5d77b5a2ac668932a6ed7183a814f2e60b1a37715ec2c5c78014fb2af996/cab1.cab"
+      }
+    ]
+  },
+  {
+    "id": "Microsoft.VisualC.140.Tools.Core.Msi",
+    "version": "14.0.24247",
+    "payloads": [
+      {
+        "fileName": "VC_Tools.Core.msi",
+        "sha256": "4699b866b78d217ae3fae60f94ac166eb1dc84f697b36d9c741fd1f6996f56f7",
+        "size": 135168,
+        "url": "https://download.visualstudio.microsoft.com/download/pr/f201226a-54ad-4c5b-b665-49d12a86a848/4699b866b78d217ae3fae60f94ac166eb1dc84f697b36d9c741fd1f6996f56f7/VC_Tools.Core.msi"
+      },
+      {
+        "fileName": "cab1.cab",
+        "sha256": "deb6bfa3d923d73b2a7583854fb7807e55aaccbdf88666fd83f67f68cf968b04",
+        "size": 162371,
+        "url": "https://download.visualstudio.microsoft.com/download/pr/f201226a-54ad-4c5b-b665-49d12a86a848/deb6bfa3d923d73b2a7583854fb7807e55aaccbdf88666fd83f67f68cf968b04/cab1.cab"
+      }
+    ]
+  },
+  {
+    "id": "Microsoft.VisualC.140.Tools.HostX86.TargetX86.Msi",
+    "version": "14.0.24247",
+    "payloads": [
+      {
+        "fileName": "VC_Tools.X86.Nat.msi",
+        "sha256": "1257a8729872a42561e1d0c57744c90840587be69c7ff55e6507b22c19b27b40",
+        "size": 131072,
+        "url": "https://download.visualstudio.microsoft.com/download/pr/f201226a-54ad-4c5b-b665-49d12a86a848/1257a8729872a42561e1d0c57744c90840587be69c7ff55e6507b22c19b27b40/VC_Tools.X86.Nat.msi"
+      },
+      {
+        "fileName": "cab1.cab",
+        "sha256": "48fdadfc59d1517a7934b5f941ed7524aed2a4cfa1f9dae7b2f2d67d7ef52707",
+        "size": 6780877,
+        "url": "https://download.visualstudio.microsoft.com/download/pr/f201226a-54ad-4c5b-b665-49d12a86a848/48fdadfc59d1517a7934b5f941ed7524aed2a4cfa1f9dae7b2f2d67d7ef52707/cab1.cab"
+      }
+    ]
+  },
+  {
+    "id": "Microsoft.VisualC.140.Tools.Base.X86.Msi.Resources",
+    "version": "14.0.24247",
+    "payloads": [
+      {
+        "fileName": "VC_Tools.X86.Base.Res.msi",
+        "sha256": "c65acd914380cb98324601001f1b17767a3cd1bb4733ec1f6807cc45e12a8d5a",
+        "size": 126976,
+        "url": "https://download.visualstudio.microsoft.com/download/pr/f201226a-54ad-4c5b-b665-49d12a86a848/c65acd914380cb98324601001f1b17767a3cd1bb4733ec1f6807cc45e12a8d5a/VC_Tools.X86.Base.Res.msi"
+      },
+      {
+        "fileName": "cab1.cab",
+        "sha256": "d7e87bdcc39c909d870ee40b28f3ff3c4e73f2bc14d86cc1577d054d9a0c743c",
+        "size": 59687,
+        "url": "https://download.visualstudio.microsoft.com/download/pr/f201226a-54ad-4c5b-b665-49d12a86a848/d7e87bdcc39c909d870ee40b28f3ff3c4e73f2bc14d86cc1577d054d9a0c743c/cab1.cab"
+      }
+    ]
+  },
+  {
+    "id": "Microsoft.VisualC.140.Tools.HostX86.TargetX86.Msi.Resources",
+    "version": "14.0.24247",
+    "payloads": [
+      {
+        "fileName": "VC_Tools.X86.Nat.Res.msi",
+        "sha256": "a71b6ec05a9a612b23168e023ab209f9eb40d1a67b4738a688a6b9d4684688a0",
+        "size": 135168,
+        "url": "https://download.visualstudio.microsoft.com/download/pr/f201226a-54ad-4c5b-b665-49d12a86a848/a71b6ec05a9a612b23168e023ab209f9eb40d1a67b4738a688a6b9d4684688a0/VC_Tools.X86.Nat.Res.msi"
+      },
+      {
+        "fileName": "cab1.cab",
+        "sha256": "499ba689fa9e2200e2635bbe51f76c3414eeb83edc8048bc3ff5964285f8cd92",
+        "size": 130698,
+        "url": "https://download.visualstudio.microsoft.com/download/pr/f201226a-54ad-4c5b-b665-49d12a86a848/499ba689fa9e2200e2635bbe51f76c3414eeb83edc8048bc3ff5964285f8cd92/cab1.cab"
+      }
+    ]
+  }
+]

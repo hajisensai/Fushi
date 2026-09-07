@@ -1,9 +1,9 @@
 ## BUG-2232 · Locale Emulator在早期模块初始化链表头上解引用导致Rewrite启动崩溃
 - **报告**：2026-09-07，扩展 Siglus 官方试用版验证时，在原始 Rewrite 启动路径复现。
 - **真实性**：✅ 真 bug。上游固定提交 `ae7160dc5deb97947396abcd784f9b98b6ee38b3` 的 `LocaleEmulator/ml.h:22173`，`GetKernel32Ldr()` 遍历循环未排除 `InInitializationOrderModuleList` 链表头，将其当作 `LDR_MODULE` 解引用。真实调用为 `LocaleEmulator/LocaleEmulator.cpp:628` 的早期初始化；此时 kernel32 可以尚未初始化。仓库 `native/galgame_hook/tools/build_distribution.ps1:155` 仍分发含该循环的 2.5.0.1 DLL。
-- **[ ] ① 未修复** — 已保存最小 LGPL 源码补丁和共享 header，但尚未构建新运行库、接入分发或完成原始启动路径回测。不能将源码修复视为实际用户故障已解决。
+- **[x] ① 根因修复并完成本地回测** — 最小 LGPL 源码补丁和共享 header 已提交 `779ebdcf0e`；正式 v140/LLVM 工具链重建运行库，2026-09-08 从原始 Start.exe 进入游戏并完成自动注入。正式分发尚未接入，已安装旧运行库仍有此问题。
 - **[x] ② 已加自动化测试** — `native/galgame_hook/tests/locale_emulator_module_list_test.cpp`，通过同目录第三方工具 `third_party/locale_emulator/test_module_list.ps1` 使用正式 MSVC x86 `/W4 /WX /O2` 执行，4 组通过。测试调用补丁所用的真实 helper，覆盖空链表、ntdll-only、存在 kernel32、缺席与短/空名称；x86 偏移由静态断言锁定。源码准备脚本成功应用精确补丁，并拒绝二次应用修改已存在的源码。
-- **备注**：目前首个未通过边界为可维护的 Windows x86 LE core 源码构建。没有修改游戏、全局系统区域、随包 DLL、注入器调用约定或子进程发现策略；没有新增盲重试。
+- **备注**：构建脚本、工具哈希及 PE 验证位于 `native/galgame_hook/third_party/locale_emulator/`。后续版本语言、时区名称和启动器谱系分别记录 BUG-2246、BUG-2247、BUG-2248；没有修改游戏或全局系统区域。
 
 ### Proved
 
@@ -24,8 +24,8 @@
 
 ### Not proved
 
-原始和补丁后源码都未能用本机 MSVC `14.44.35207` / SDK `10.0.22621.0` 编译：上游 intrinsic 与 `RtlRaiseException` 声明冲突，随后缺少 `ntnls.h`；原项目另指定私有导入库。未运行上游自带的 modified VS2015 编译器，未用另一套运行库替代 LE。当前 4 组源码测试不等于旧 DLL 已改变，不证明 Rewrite 转区启动、提字、几何查词、语音或制卡成功。
+现代 MSVC 无法直接消费旧 /GL 依赖；现已使用哈希固定的微软正式 v140 和 LLVM 完成本地重建，未执行上游 modified VS2015 编译器。最终候选 SHA-256 `8DF7A41BE6AE8C6920CB06C05C60DAEFDA9D330A0212A1CC036DE9B877CA9079` 在原始启动链 71692 → 64428 → 46800 进入正文。MyLib 仍为上游预编译依赖，完整对应源码及正式分发条件尚未解决；本地启动回测不证明内嵌查词、语音或制卡通过。
 
 ### Next gate
 
-先在正式 Windows x86 工具链上完成固定上游 LE core 的最小可维护构建，连同完整对应源码和许可接入构建/分发；之后唯一运行时推进门仍是原始 `Start.exe` 启动链稳定进入游戏。当前停止在源码构建边界，原路径回测为 `not_run`。
+启动崩溃边界已通过。游戏适配下一门见 `docs/reviews/2026-09-07-siglus-legacy-adapter.md`；正式分发仍须完成对应源码与依赖条件，不能把本地实验 DLL 当作已随包发布。
