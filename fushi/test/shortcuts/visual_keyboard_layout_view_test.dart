@@ -6,6 +6,7 @@ import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/shortcuts/visual/keyboard_layout_view.dart';
+import 'package:fushi/src/shortcuts/visual/reverse_binding_index.dart';
 
 void main() {
   setUp(() {
@@ -123,7 +124,13 @@ void main() {
     // audiobookSeekToClickedSentence ships a MouseBinding(1) (middle-click seek)
     // and NO keyboard default. Give it a keyboard binding so its keycap shows up
     // as bound and is tappable; the mouse binding must survive the edit.
-    const InputBinding seed = InputBinding(key: LogicalKeyboardKey.keyG);
+    // 种子键必须在 audiobook 视图（含 co-active 的 reader）里**只**映射到本
+    // action：页面点已绑键帽时编辑的是 boundActions.first，键帽若被两个 action
+    // 共用，编辑就落到别人身上。原来用的 G 在 BUG-2166 批被 readerOpenGallery
+    // 占走（co-active 展开时 reader 在前），于是 F10 加到了那个 action 上，
+    // 本用例表现成莫名其妙的「F10 没进去」。换成全表未用的 Q，并把「键帽独占」
+    // 这个前置条件显式断言出来。
+    const InputBinding seed = InputBinding(key: LogicalKeyboardKey.keyQ);
     registry.updateBinding(
       ShortcutAction.audiobookSeekToClickedSentence,
       const ShortcutBindingSet(
@@ -131,12 +138,18 @@ void main() {
         mouseBindings: <MouseBinding>[MouseBinding(1)],
       ),
     );
+    expect(
+      ReverseBindingIndex.fromRegistry(registry, ShortcutScope.audiobook)
+          .keyboard[LogicalKeyboardKey.keyQ],
+      <ShortcutAction>[ShortcutAction.audiobookSeekToClickedSentence],
+      reason: 'KeyQ 键帽被别的 action 也占了：boundActions.first 会编辑到它身上',
+    );
 
     const InputBinding added = InputBinding(key: LogicalKeyboardKey.f10);
     await pumpView(tester, registry, ShortcutScope.audiobook, addKey: added);
 
     await tester.tap(
-      find.byKey(Key('keycap_${LogicalKeyboardKey.keyG.keyId}')),
+      find.byKey(Key('keycap_${LogicalKeyboardKey.keyQ.keyId}')),
     );
     await tester.pumpAndSettle();
 

@@ -313,14 +313,19 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
       child: Scrollbar(
         controller: _thumbController,
         thumbVisibility: true,
-        child: ListView.separated(
-          controller: _thumbController,
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.all(_kStripPadding),
-          itemCount: widget.images.length,
-          separatorBuilder: (_, __) => const SizedBox(width: _kThumbGap),
-          itemBuilder: (BuildContext context, int index) =>
-              _buildThumb(theme, index),
+        // 桌面端默认 dragDevices 不含 mouse：不包这一层，鼠标左键横拖缩略图条
+        // 毫无反应（缩略图只有 onTap，没有竞争性横拖手势，所以不存在豁免理由）。
+        // 与 collection_shelf_row 的横向卡片行同构。
+        child: HorizontalDragScrollable(
+          child: ListView.separated(
+            controller: _thumbController,
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.all(_kStripPadding),
+            itemCount: widget.images.length,
+            separatorBuilder: (_, __) => const SizedBox(width: _kThumbGap),
+            itemBuilder: (BuildContext context, int index) =>
+                _buildThumb(theme, index),
+          ),
         ),
       ),
     );

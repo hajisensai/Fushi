@@ -158,9 +158,12 @@ void main() {
     // 0-10000 分数），跨章烘进 _navigateToChapterAndWait(charOffset:)、同章直接
     // restoreToCharOffset。原子链（单次恢复、跨章分支不滞后抢发）语义不变，只是
     // 恢复目标由分数换成精确字符锚。闭包已抽成 _jumpToFavoriteSentence 方法。
+    // 结束锚点原来是 _ReaderGalleryPage，BUG-2166 批把它抽去了
+    // lib/src/reader/reader_gallery_page.dart（不在本语料里），锚点永久失效。
+    // 换成语料内紧随其后的下一个方法，切片反而更紧、负向断言只会更严。
     final String fav = slice(
         'Future<void> _jumpToFavoriteSentence(FavoriteSentence fav) async {',
-        'class _ReaderGalleryPage extends StatefulWidget {');
+        'String? _favoritePositionLabel(FavoriteSentence fav) {');
     expect(fav, contains('_navigateToChapterAndWait('),
         reason: '收藏跨章走 navigate-with-baked-charOffset（原子恢复链）');
     expect(fav, contains('charOffset: useOffset ? normCharOffset :'),

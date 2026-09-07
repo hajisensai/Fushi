@@ -89,6 +89,8 @@ const List<String> kStatPages = <String>[
   'lib/src/pages/implementations/stat_activity.dart',
   'lib/src/pages/implementations/stat_source_totals.dart',
   'lib/src/pages/implementations/activity_feed.dart',
+  // BUG-2166 批新增的阅读器统计浮层（桌面 chrome 里的「统计」入口）。
+  'lib/src/reader/reader_statistics_dialog.dart',
 ];
 
 void main() {

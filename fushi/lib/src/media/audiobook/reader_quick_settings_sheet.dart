@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:fushi/src/epub/epub_book.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
@@ -397,11 +398,11 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final BuildContext? rowContext = _currentTocRowKey.currentContext;
       if (rowContext == null || !mounted) return;
-      unawaited(Scrollable.ensureVisible(
+      FushiFocusScroll.ensureVisible(
         rowContext,
         alignment: 0.3,
         duration: const Duration(milliseconds: 160),
-      ));
+      );
     });
     return ReaderSideSheet(
       title: t.section_navigation,

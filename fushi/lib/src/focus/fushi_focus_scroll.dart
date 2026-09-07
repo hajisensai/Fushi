@@ -4,16 +4,21 @@ import 'package:fushi/src/focus/focus_geometry.dart';
 class FushiFocusScroll {
   const FushiFocusScroll._();
 
+  /// [alignment] 默认居中（0.5）。目录/章节这类「打开即定位」的场景常要偏上
+  /// 一点（0.3），让当前行下面还能看见后续几行——给个参数，免得调用方为这一个
+  /// 旋钮自己去写裸 `Scrollable.ensureVisible`（守卫
+  /// focus_architecture_static_test 要求焦点驱动滚动只有这一个实现者）。
   static void ensureVisible(
     BuildContext context, {
     Duration duration = const Duration(milliseconds: 120),
+    double alignment = 0.5,
   }) {
     if (!context.mounted) return;
     final ScrollableState? scrollable = Scrollable.maybeOf(context);
     if (scrollable == null) return;
     Scrollable.ensureVisible(
       context,
-      alignment: 0.5,
+      alignment: alignment,
       duration: duration,
       curve: Curves.easeOutCubic,
     );

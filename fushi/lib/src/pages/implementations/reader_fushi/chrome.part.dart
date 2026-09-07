@@ -2803,9 +2803,3 @@ extension _ReaderChrome on _ReaderFushiPageState {
     return '${(fraction * 100).toStringAsFixed(1)}%';
   }
 }
-
-/// TODO-723: full-screen illustration gallery for the reader. Shows every
-/// [EpubImageRef] in reading order as a thumbnail grid; the image(s) in the
-/// current chapter are marked ("Reading here") and scrolled into view on open.
-/// Decoupled from reader page state -- the page passes in a resolver
-/// ([fileForRef]) plus open/jump callbacks so this widget owns no reader logic.
