@@ -70,6 +70,7 @@ class RecommendedPackDownloadMiniBarView extends StatelessWidget {
         controller.progress,
         controller.receivedBytes,
         controller.error,
+        controller.isDeleting,
         controller.miniBarDismissed,
       ]),
       builder: (BuildContext context, _) {
@@ -146,7 +147,8 @@ class RecommendedPackDownloadMiniBarView extends StatelessWidget {
     );
   }
 
-  String? get _failure => controller.isPaused ? controller.error.value : null;
+  String? get _failure =>
+      controller.isPaused ? controller.failureMessage : null;
 
   IconData get _icon {
     switch (controller.stage.value) {
@@ -161,6 +163,7 @@ class RecommendedPackDownloadMiniBarView extends StatelessWidget {
   }
 
   String get _title {
+    if (controller.isDeleting.value) return t.onboarding_pack_discard_running;
     switch (controller.stage.value) {
       case RecommendedPackDownloadStage.downloading:
         return t.onboarding_pack_status_downloading;
@@ -175,7 +178,7 @@ class RecommendedPackDownloadMiniBarView extends StatelessWidget {
   String get _subtitle {
     final String? failure = _failure;
     if (failure != null) {
-      return t.onboarding_pack_download_failed(message: failure);
+      return failure;
     }
     switch (controller.stage.value) {
       case RecommendedPackDownloadStage.downloading:
@@ -186,7 +189,7 @@ class RecommendedPackDownloadMiniBarView extends StatelessWidget {
         );
       case RecommendedPackDownloadStage.downloaded:
       case RecommendedPackDownloadStage.idle:
-        return t.onboarding_pack_action_import_existing_desc;
+        return t.onboarding_pack_download_ready_hint;
     }
   }
 
@@ -204,18 +207,20 @@ class RecommendedPackDownloadMiniBarView extends StatelessWidget {
         // 放弃这颗上，所以它不能是主按钮、也不能挨着 ×。
         return <Widget>[
           TextButton(
-            onPressed: onDiscard,
+            onPressed: controller.isDeleting.value ? null : onDiscard,
             child: Text(t.onboarding_pack_download_discard),
           ),
           FilledButton.tonal(
-            onPressed: () => unawaited(controller.start()),
+            onPressed: controller.isDeleting.value
+                ? null
+                : () => unawaited(controller.start()),
             child: Text(t.onboarding_pack_download_resume),
           ),
         ];
       case RecommendedPackDownloadStage.downloaded:
         return <Widget>[
           FilledButton(
-            onPressed: onImport,
+            onPressed: controller.isDeleting.value ? null : onImport,
             child: Text(t.onboarding_pack_import_now),
           ),
         ];

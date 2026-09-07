@@ -665,7 +665,6 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
       },
     );
   }
-
 }
 
 /// 清掉临时目录里**上一次导出遗留的**备份包（识别口径见
@@ -875,13 +874,12 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
 /// 确认对话框（覆盖/合并 + 分类勾选）→ running 遮罩 → 导入 → 自动重启。设置页
 /// 「导入备份」与新手引导「导入推荐包」共用（单一真相源）。校验失败/用户取消时
 /// 正常返回（进程不重启）；导入成功或失败都会走 appModel 的遮罩收口并重启进程。
-/// [onImportConfirmed] 在用户于确认对话框点了确定、导入即将真正开始时回调（新手
-/// 引导用它给下载的推荐包落「已导入」flag，重启后收尾删包）；校验失败或用户取消
-/// 不会触发。
+/// [onImportSucceeded] 仅在恢复成功后、重启前回调。推荐包用它记录待办教程和
+/// 成功清理凭据；校验失败、取消或恢复失败均不会触发。
 Future<void> runBackupImportFlowForFile({
   required AppModel appModel,
   required String filePath,
-  Future<void> Function()? onImportConfirmed,
+  Future<void> Function()? onImportSucceeded,
 }) async {
   // appModel 驱动全程遮罩，此后不依赖任何页面 `mounted`/context；确认对话框由全局
   // [AppModel.navigatorKey] 宿主弹出。
@@ -983,7 +981,6 @@ Future<void> runBackupImportFlowForFile({
     // 用户取消确认 → 彻底退出遮罩态，回到调用方页面（validating 遮罩已退出）。
     return;
   }
-  await onImportConfirmed?.call();
 
   final String booksRoot = p.join(appModel.appDirectory.path, 'fushi_books');
   final String audiobooksRoot =
@@ -1047,6 +1044,13 @@ Future<void> runBackupImportFlowForFile({
     // 自动重启，不再手动重开」）。与旧「500ms 后突然 exit」的关键区别：backupImportRestart
     // 走 restartApp 真拉新进程重启（app 会自己回来），不是纯退出「凭空消失」；延时让「导入
     // 成功」先可见一瞬，避免误判失败。「立即重启」按钮保留为手动兜底（可提前点，走同一函数）。
+    // Only successful restores may schedule source cleanup or onboarding.
+    // A receipt failure must not misreport an already restored database.
+    try {
+      await onImportSucceeded?.call();
+    } catch (e, s) {
+      ErrorLogService.instance.log('backupImport.successReceipt', e, s);
+    }
     appModel.completeBackupImport(t.backup_import_success);
     await Future<void>.delayed(const Duration(seconds: 1));
     // restartApp 成功会拉新进程并退出本进程；backupImportRestart 内部已吞掉重启失败并退回

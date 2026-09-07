@@ -311,7 +311,7 @@ Future<RecommendedPackManifest?> fetchRecommendedPackManifest() async {
 /// 不因为新增并发而丢掉任何一种能下成的场景。
 ///
 /// 导入推荐包会走备份导入流程并**重启进程**，没有机会在导入成功后删包——所以
-/// [markImportStarted] 在启动导入前落一个 flag 文件，重启回来后由
+/// [markImportSucceeded] 在导入成功后落一个 flag 文件，重启回来后由
 /// [cleanupIfImported]（**AppModel 初始化调**，即启动必经路径）把整个包目录删掉，
 /// 不让 9.5 GB 的 zip 静默常驻磁盘。
 ///
@@ -449,6 +449,25 @@ class RecommendedPackDownloader {
     }
   }
 
+  /// 文件存在性与已收字节分开：预分配 .mpart 的长度不是下载进度，
+  /// 删除失败留下的孤儿文件或元数据仍必须提供清理入口。
+  static bool hasArtifactsIn(Directory packDir) {
+    for (final String name in <String>[_fileName, 'download']) {
+      for (final String suffix in <String>[
+        '',
+        '.part',
+        '.part.etag',
+        '.mpart',
+        '.mpart.json',
+      ]) {
+        if (File(p.join(packDir.path, '$name$suffix')).existsSync()) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   int get partialBytes => partialBytesIn(_packDir);
 
   static int _receivedFromProgressFile(File progressFile) {
@@ -467,21 +486,27 @@ class RecommendedPackDownloader {
     }
   }
 
-  /// 启动备份导入前打标；导入完成后进程重启，由 [cleanupIfImported] 收尾删包。
+  /// 备份导入成功后打标；进程重启后由 [cleanupIfImported] 收尾删包。
   ///
   /// 目录级（和 [cleanupIfImported] 一样）：打标写的是 `<包目录>/imported.flag`，
   /// 与包是从哪条线路下来的无关。
-  static Future<void> markImportStarted(Directory packDir) async {
+  static Future<void> markImportSucceeded(Directory packDir) async {
     packDir.createSync(recursive: true);
-    await _importedFlagFileIn(packDir).writeAsString('1');
+    await _importedFlagFileIn(packDir).writeAsString('completed', flush: true);
   }
 
-  /// 若曾进入导入（flag 在），删除整个包目录（best-effort）。
+  /// 仅成功标记 completed 允许删包；旧值 1 只证明启动过导入，必须保留。
   /// 一律走**异步** FS 调用：`packDir` 派生自数据根，而数据根可能是掉线的外置
   /// 盘 / 网络盘。同步 `existsSync()` 会把 isolate 整个阻住，调用方叠的超时护栏
   /// （TODO-1260）连触发的机会都没有 —— 那正是这条护栏要防的 hang。
   static Future<void> cleanupIfImported(Directory packDir) async {
-    if (!await _importedFlagFileIn(packDir).exists()) return;
+    final File marker = _importedFlagFileIn(packDir);
+    try {
+      if (await marker.readAsString() != 'completed') return;
+    } on FileSystemException {
+      // 不存在或无法确认成功时保留包，避免导入失败后失去重试源。
+      return;
+    }
     await deletePackDirectory(packDir, reason: 'cleanupIfImported');
   }
 

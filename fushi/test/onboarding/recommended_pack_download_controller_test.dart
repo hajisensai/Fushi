@@ -246,7 +246,7 @@ void main() {
     addTearDown(controller.dispose);
 
     completedPackFile();
-    await controller.markImportStarted();
+    await controller.markImportSucceeded();
     await controller.prepareDiskState();
 
     expect(controller.stage.value, RecommendedPackDownloadStage.idle);

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show ByteData, rootBundle;
 import 'package:fushi/pages.dart';
+import 'package:fushi/models.dart' show AppModel;
 import 'package:fushi/src/anki/anki_config_controls.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/ankiconnect_addon_installer.dart';
@@ -11,6 +12,7 @@ import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/onboarding/onboarding_sample_text.dart';
 import 'package:fushi/src/onboarding/onboarding_steps.dart';
+import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
 import 'package:fushi/src/onboarding/recommended_pack.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
 import 'package:fushi/src/settings/settings_actions.dart'
@@ -96,7 +98,9 @@ const double _kOnboardingTwoColumnMinWidth = 560;
 /// [OnboardingStepHero]（图标 + 标题 + 一句话）开头；动作走 [OnboardingActionList]
 /// ——必做/推荐的动作直接摊开，可选动作收进「其他方式」折叠组，避免一屏五个入口。
 class OnboardingWizardPage extends BasePage {
-  const OnboardingWizardPage({super.key});
+  const OnboardingWizardPage({this.tutorialOnly = false, super.key});
+
+  final bool tutorialOnly;
 
   @override
   BasePageState<OnboardingWizardPage> createState() =>
@@ -115,6 +119,9 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   };
 
   int _stepIndex = 0;
+  final OnboardingTutorialProgress _tutorialProgress =
+      OnboardingTutorialProgress();
+  bool _completing = false;
 
   // ── 推荐包下载 ────────────────────────────────────────────────────
   /// 下载任务的所有权在 [AppModel] 上的 controller 里，本页只是它的一个视图：
@@ -161,16 +168,20 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     );
   }
 
-  List<OnboardingStepId> get _steps => onboardingStepSequence(
-        selected: _selected,
-        browserExtensionAvailable: _browserExtensionAvailable,
-        globalLookupAvailable: _globalLookupAvailable,
-        ankiReady: _ankiReadyForFirstCard,
-      );
+  List<OnboardingStepId> get _steps => widget.tutorialOnly
+      ? onboardingTutorialStepSequence(
+          globalLookupAvailable: _globalLookupAvailable)
+      : onboardingStepSequence(
+          selected: _selected,
+          browserExtensionAvailable: _browserExtensionAvailable,
+          globalLookupAvailable: _globalLookupAvailable,
+          ankiReady: _ankiReadyForFirstCard,
+        );
 
   @override
   void initState() {
     super.initState();
+    if (widget.tutorialOnly) return;
     if (appModelNoUpdate.moduleBooksEnabled) {
       _selected.add(OnboardingFeature.books);
     }
@@ -196,8 +207,21 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   // `_packCancelToken?.cancel()`，于是走完向导 = 9.5 GB 的下载被静默掐断。
   // 进度/取消/导入现在都由 [RecommendedPackDownloadController] 持有。
 
-  Future<void> _complete() async {
-    await appModel.setOnboardingCompleted(value: true);
+  Future<void> _complete({bool finished = false}) async {
+    if (_completing) return;
+    _completing = true;
+    try {
+      if (_tutorialProgress.shouldMarkCompleted(
+          steps: _steps, finished: finished)) {
+        await RecommendedPackTutorialState(appModelNoUpdate.appDirectory)
+            .markCompleted();
+      }
+      if (!widget.tutorialOnly) {
+        await appModelNoUpdate.setOnboardingCompleted(value: true);
+      }
+    } finally {
+      _completing = false;
+    }
     if (!mounted) return;
     await Navigator.of(context).maybePop();
   }
@@ -236,9 +260,10 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
       unawaited(_applyModuleSelection());
     }
     if (_stepIndex >= steps.length - 1) {
-      unawaited(_complete());
+      unawaited(_complete(finished: true));
       return;
     }
+    _tutorialProgress.completeStep(steps[_stepIndex]);
     setState(() => _stepIndex += 1);
   }
 
@@ -311,15 +336,16 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
 
   // ── 推荐包 ────────────────────────────────────────────────────────
 
-  /// 下载 → 下完就地导入。下载本身在 controller 里跑完（取消/失败提示也在那边），
-  /// 本页只负责「我还在的话，顺手把导入接上」：向导已经关了就停在「已下载待导入」，
-  /// 由设置 → 系统里那一行接手（BUG-2097）。
+  /// Download completion uses the controller's common notification. Importing an
+  /// existing archive is an explicit action and must not replay a download toast.
   Future<void> _downloadPackAndImport() async {
-    // 上一次「选文件」的失败文案不该压住这次下载的状态。
     if (_packPickError != null) setState(() => _packPickError = null);
-    final File? file = await _packController.start();
-    if (file == null || !mounted) return;
-    await _importPackFile(file.path, deleteAfterImport: true);
+    if (_packController.hasPendingImport) {
+      await _importPackFile(_packController.packFile.path,
+          deleteAfterImport: true);
+      return;
+    }
+    await _packController.start();
   }
 
   /// 选一个已经下载好的包文件（备份 zip）并导入。
@@ -368,18 +394,24 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     }
   }
 
-  /// 走备份导入共享编排。导入真正开始（用户已确认）后进程会重启；
-  /// [deleteAfterImport] 时在确认点落 flag，重启回来由 initState 删包。
+  /// Only successful imports enable the follow-up, including user-picked packs.
+  /// Downloaded archives additionally enter the controller's cleanup lifecycle.
   Future<void> _importPackFile(
     String path, {
     required bool deleteAfterImport,
   }) async {
+    // Restore replaces the root and disposes this State before success fires.
+    final AppModel model = appModelNoUpdate;
+    final RecommendedPackDownloadController controller = _packController;
+    final RecommendedPackTutorialState tutorialState =
+        RecommendedPackTutorialState(model.appDirectory);
     await runBackupImportFlowForFile(
-      appModel: appModel,
+      appModel: model,
       filePath: path,
-      // 打标是包目录级操作（写 `<包目录>/imported.flag`），与走哪条线路无关。
-      onImportConfirmed:
-          deleteAfterImport ? _packController.markImportStarted : null,
+      onImportSucceeded: () async {
+        await tutorialState.markImportSucceeded();
+        if (deleteAfterImport) await controller.markImportSucceeded();
+      },
     );
   }
 
@@ -1336,23 +1368,24 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
           title: t.onboarding_finish_title,
           body: t.onboarding_finish_body,
         ),
-        SizedBox(height: tokens.spacing.card),
-        FushiCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              OnboardingSummaryRow(
-                label: t.onboarding_finish_summary_modules,
-                items: modules,
-              ),
-              SizedBox(height: tokens.spacing.card),
-              OnboardingSummaryRow(
-                label: t.onboarding_finish_summary_setup,
-                items: setup,
-              ),
-            ],
+        if (!widget.tutorialOnly) SizedBox(height: tokens.spacing.card),
+        if (!widget.tutorialOnly)
+          FushiCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                OnboardingSummaryRow(
+                  label: t.onboarding_finish_summary_modules,
+                  items: modules,
+                ),
+                SizedBox(height: tokens.spacing.card),
+                OnboardingSummaryRow(
+                  label: t.onboarding_finish_summary_setup,
+                  items: setup,
+                ),
+              ],
+            ),
           ),
-        ),
       ],
     );
   }
