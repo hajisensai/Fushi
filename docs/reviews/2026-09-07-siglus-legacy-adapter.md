@@ -26,6 +26,18 @@ Rewrite 原始 Start.exe SHA-256 24B396B22A177F6573C787161099D2B378F5F02FDEAFE2B
 
 构建脚本审查修复 PowerShell location 与 .NET cwd 不同导致相对输出检查错位；统一 FileSystem 路径解析后检查及写入。直接执行生产 AST 函数的 8 条测试通过，含相对/绝对、现存拒绝、括号字面量及非文件系统拒绝，已登记守卫入口。
 
+## 2026-09-08 旧版字形边界
+
+同一 Rewrite 64432 会话的私有有界探针确认 glyph RVA D5290 为栈上 self 加 15 个 DWORD、AL 返回、ret 0x40；正文 caller D6287 的对象步长 0x1E0，坐标 +0x34/+0x38，24 字正文的设计坐标从 (240,560) 到 (930,560)。带姓名的新句区分出 D8042 姓名 caller。字符 +4 的五字样本高 16 位均为零；生产解码仍拒绝非零高位，不把下游截断当作许可。
+
+已整合独立结构 resolver `0ad6b55afe`：唯一代码锚点、调用关系、字符串赋值与向量布局关联，不用固定 RVA/hash 准入。私有 hydrated image 实际解析结果与上述站点一致。它仅输出结构站点，尚未装配完整运行时 profile。
+
+生产 glyph callback 提取为可直接测试的 include，分别声明现代 ECX 加 10 参数与旧版栈 16 参数 ABI；记录解码按 ABI 使用各自字段，浮点先取整和验证范围再转换整数。x86 实际间接调用测试运行 8192 次，检查参数位模式、AL、栈清理以及错误 caller/ABI、关闭采集和无效指针的拒绝。独立复核优化汇编为现代 ret 40、旧版 ret 64（十进制）。新旧记录解码双架构测试通过。
+
+可见性反例已在原路径实测：01:55:22 至 01:55:59 稳定 Save 菜单期间，D6287 计数 470883→481993，后台仍布局正文。Close 隐藏对白后布局计数停止。Log 历史界面则使用同一 D6287 渲染其他位置的历史文字。因此 glyph caller、active 字段和文本匹配均不能独自证明当前正文可点击。只读状态对照及真实输入读写路径分别定位 Save 的 modal+AC、Close 的 hidden+2、Log 的 manager+3C35C；正在将这些状态与输入/viewport 的同一对象关系纳入独立证明。
+
+此阶段完整 Windows native 构建及 CTest x86 90/90、x64 88/88 通过；全套 source-of-truth guards 与显式生产 workflow replay 退出 0。旧版 callback 尚未接入运行时安装，不由这些离线通过升级支持状态。
+
 ## Not proved
 
 原始启动、自动跟随、注入和选定正文线程已经通过。此前原验收 bundle 附着私有 DLL 正确返回 residentHookMismatch；统一组件后从原始入口重启已消除该测试配置问题，没有绕过身份检查。原生内嵌几何未匹配，resource/pcm_ready、paired、e2e_verified 尚未通过；clip/PCM 为零，已有 loopback 不能当作原音捕获。Angel Beats! 与月彼本轮尚未运行。未升级 engine-support.yaml，未更新既有 PR 或正式随包运行库。
@@ -34,4 +46,4 @@ Rewrite 原始 Start.exe SHA-256 24B396B22A177F6573C787161099D2B378F5F02FDEAFE2B
 
 ## Next gate
 
-验证旧版 glyph 的栈参数调用约定、当前对白调用来源及坐标字段，再接入内嵌查词。后续逐句原音与真卡仍须逐门实测。
+完成旧版输入、菜单拒绝及 viewport 的关联证明，装配完整 profile 后从原始入口重启验证内嵌点击。后续逐句原音与真卡仍须逐门实测。

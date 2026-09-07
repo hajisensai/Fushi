@@ -11,14 +11,12 @@ static_assert(sizeof(wchar_t) == sizeof(char16_t),
 
 #include "siglus_lookup_worker_types.inc"
 
-using SiglusGlyphLayoutFn = uint8_t(__thiscall *)(void *, uintptr_t, uintptr_t,
-                                                  uintptr_t, uintptr_t,
-                                                  uintptr_t, uintptr_t,
-                                                  uintptr_t, uintptr_t,
-                                                  uintptr_t, uintptr_t);
+using fushi_voice_hook::SiglusGlyphLayoutFn;
+using fushi_voice_hook::SiglusLegacyGlyphLayoutFn;
 using SiglusInputMessageFn = void(__stdcall *)(UINT, WPARAM, LPARAM);
 
 SiglusGlyphLayoutFn g_orig_SiglusGlyphLayout = nullptr;
+SiglusLegacyGlyphLayoutFn g_orig_SiglusLegacyGlyphLayout = nullptr;
 decltype(&GetKeyState) g_orig_SiglusGetKeyState = nullptr;
 SiglusInputMessageFn g_orig_SiglusInputMessage = nullptr;
 std::atomic<bool> g_siglus_lookup_capture_enabled{false};
@@ -354,7 +352,7 @@ bool ResolveSiglusLiveFamily(HMODULE module,
 
 bool SameSiglusMeasuredAnchors(const fushi_voice_hook::SiglusLookupProfile& lhs,
                                 const fushi_voice_hook::SiglusLookupProfile& rhs) {
-  return lhs.text_feed == rhs.text_feed &&
+  return lhs.text_feed == rhs.text_feed && lhs.glyph_abi == rhs.glyph_abi &&
       lhs.glyph_layout_rva == rhs.glyph_layout_rva &&
       lhs.dialogue_glyph_return_rva == rhs.dialogue_glyph_return_rva &&
       lhs.exact_text_rva == rhs.exact_text_rva &&
@@ -569,52 +567,7 @@ void PublishSiglusLookupGlyphEvent(uint16_t code_unit, int32_t design_x,
   SetSiglusLookupDiag(fushi_voice_hook::kLookupDiagSiglusGlyphObserved);
 }
 
-uint8_t __fastcall Detour_SiglusGlyphLayout(void *self, void *, uintptr_t arg1,
-                                            uintptr_t arg2, uintptr_t arg3,
-                                            uintptr_t arg4, uintptr_t arg5,
-                                            uintptr_t arg6, uintptr_t arg7,
-                                            uintptr_t arg8, uintptr_t arg9,
-                                            uintptr_t arg10) {
-  const uintptr_t return_address =
-      reinterpret_cast<uintptr_t>(_ReturnAddress());
-  const SiglusGlyphLayoutFn original = g_orig_SiglusGlyphLayout;
-  if (original == nullptr)
-    return 0;
-  const uint8_t result = original(self, arg1, arg2, arg3, arg4, arg5, arg6,
-                                  arg7, arg8, arg9, arg10);
-  if (result == 0 || self == nullptr ||
-      !g_siglus_lookup_capture_enabled.load(std::memory_order_acquire)) {
-    return result;
-  }
-  const uintptr_t module =
-      reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
-  const auto *profile = ActiveSiglusLookupProfile();
-  if (return_address < module ||
-      profile == nullptr ||
-      return_address - module != profile->dialogue_glyph_return_rva) {
-    return result;
-  }
-  __try {
-    const auto *bytes = static_cast<const uint8_t *>(self);
-    const uint32_t character =
-        *reinterpret_cast<const uint32_t *>(bytes + 0x04);
-    const int32_t extent = *reinterpret_cast<const int32_t *>(bytes + 0x08);
-    const float design_x = *reinterpret_cast<const float *>(bytes + 0x40);
-    const float design_y = *reinterpret_cast<const float *>(bytes + 0x44);
-    if (character != 0 && character <= 0xFFFFu && extent > 0 && extent <= 256 &&
-        std::isfinite(design_x) && std::isfinite(design_y)) {
-      const int32_t x = static_cast<int32_t>(std::lround(design_x));
-      const int32_t y = static_cast<int32_t>(std::lround(design_y));
-      if (x >= 0 && x < profile->viewport_width && y >= 0 &&
-          y < profile->viewport_height) {
-        PublishSiglusLookupGlyphEvent(static_cast<uint16_t>(character), x, y,
-                                      extent);
-      }
-    }
-  } __except (EXCEPTION_EXECUTE_HANDLER) {
-  }
-  return result;
-}
+#include "siglus_lookup_glyph.inc"
 
 #include "siglus_lookup_text_snapshot.inc"
 

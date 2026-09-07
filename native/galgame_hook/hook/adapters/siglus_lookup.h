@@ -8,6 +8,8 @@
 #include <limits>
 
 #include "exact_lookup_signature.h"
+#include "siglus_glyph_record.h"
+#include "siglus_glyph_abi.h"
 
 namespace fushi_voice_hook {
 
@@ -78,6 +80,7 @@ struct SiglusLookupProfile {
   // Nonzero only for a structurally resolved family profile. The design
   // dimensions come from this runtime Gameexe-config pointer, not a title.
   uintptr_t viewport_config_rva = 0;
+  SiglusGlyphLayoutAbi glyph_abi = SiglusGlyphLayoutAbi::kEcxTenArguments;
 };
 
 inline constexpr SiglusLookupProfile kAnemoiSiglusLookupProfile = {
@@ -163,6 +166,7 @@ inline bool MatchesSiglusLookupProfile(const SiglusLookupProfile &profile,
       !valid_text_feed || profile.get_key_state_return_rva == 0 ||
       profile.input_message_rva == 0 ||
       profile.main_input_message_return_rva == 0 ||
+      profile.glyph_abi != SiglusGlyphLayoutAbi::kEcxTenArguments ||
       profile.viewport_width <= 0 || profile.viewport_height <= 0) {
     return false;
   }
