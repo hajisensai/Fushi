@@ -613,6 +613,24 @@ final class GalVoiceDumpIndex {
   bool _isCurrent(int epoch) => _started && epoch == _sessionEpoch;
 
   /// O(log N + K) pairing over the incrementally maintained filename index.
+  /// Historical recovery must not guess an unmarked resource from its time.
+  List<String> findEventOwnedResourceNames({
+    required int textTsMs,
+    required int textEventId,
+  }) {
+    if (!_started || textTsMs <= 0 || textEventId <= 0) {
+      return const <String>[];
+    }
+    final List<String> wav = _rankedEventHits(
+      _wavByEvent[textEventId],
+      textTsMs,
+    );
+    return wav.isNotEmpty
+        ? wav
+        : _rankedEventHits(_oggByEvent[textEventId], textTsMs);
+  }
+
+  /// O(log N + K) pairing over the incrementally maintained filename index.
   /// This is the 80 ms poll path; it does not enumerate, stat, or parse the
   /// whole dump directory as a session grows.
   List<String> findPairedResourceNames({

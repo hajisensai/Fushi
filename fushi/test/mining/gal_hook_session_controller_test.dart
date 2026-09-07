@@ -10,6 +10,7 @@ import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
+import 'package:fushi/src/mining/gal_voice_dump_index.dart';
 import 'package:fushi/src/mining/galgame_play_tracker.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
@@ -24,6 +25,150 @@ void main() {
   // listAudioTracks——必须先初始化 binding，让调用以 MissingPluginException 收敛为
   // 空列表而不是在无 binding 下直接抛错。
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  for (final String scenario in <String>[
+    'already exported',
+    'late export',
+    'different event',
+    'unmarked',
+    'silent',
+    'same event stale tick',
+  ]) {
+    test(
+      'BUG-2240 recovered history pairs only owned resource: $scenario',
+      () async {
+        const int tick = 951860281;
+        const String ownedName = '${tick}_fushi_textseq1_z0101.ovk_125.ogg';
+        final List<GalVoiceDumpEntry> files = <GalVoiceDumpEntry>[];
+        GalVoiceDumpEntry resource(String name) => GalVoiceDumpEntry(
+              name: name,
+              path:
+                  '${Directory.systemTemp.path}${Platform.pathSeparator}$name',
+              // Selection takes place a minute later; wall-clock age is not ownership.
+              modified: DateTime.now().subtract(const Duration(minutes: 1)),
+              kind: GalVoiceDumpKind.oggLike,
+            );
+        if (scenario == 'already exported') files.add(resource(ownedName));
+        if (scenario == 'different event') {
+          files.add(resource('${tick}_fushi_textseq2_z0101.ovk_125.ogg'));
+        }
+        if (scenario == 'unmarked') {
+          files.add(resource('${tick}_z0101.ovk_125.ogg'));
+        }
+        if (scenario == 'same event stale tick') {
+          files.add(
+            resource('${tick - 10000}_fushi_textseq1_z0101.ovk_125.ogg'),
+          );
+        }
+        final GalVoiceDumpIndex index = GalVoiceDumpIndex(
+          directory: Directory.systemTemp,
+          loader: (_) async => List<GalVoiceDumpEntry>.of(files),
+          watcher: (_) => const Stream<FileSystemEvent>.empty(),
+        );
+        await index.startSession();
+        final TexthookerService service = TexthookerService.test();
+        final ChangeNotifier endpoints = ChangeNotifier();
+        final _FakeEngineSource engine = _FakeEngineSource(
+          pairedBytes: Uint8List(0),
+          rawReady: true,
+          voiceDumpIndex: index,
+          replayBufferedLines: true,
+          polledLines: const <GalHookedLine>[
+            GalHookedLine(
+              seq: 1,
+              timestampMs: tick,
+              text: 'synthetic history line',
+              threadId: 5,
+              hookName: 'TestScenario',
+            ),
+          ],
+        );
+        final GalHookSessionController controller = GalHookSessionController(
+          textService: service,
+          isWindows: true,
+          targetWow64Probe: (_) async => true,
+          injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+          engineSourceFactory: ({
+            required int targetPid,
+            required String? launchExe,
+            required String injectorPath,
+            required bool lunaPcHooks,
+            int? lunaCodepage,
+            List<String> launchArguments = const <String>[],
+            String launchWorkdir = '',
+            GalJapaneseLocaleMode japaneseLocaleMode =
+                kGalDefaultJapaneseLocaleMode,
+            String? contentLanguage,
+          }) =>
+              engine,
+          loopbackSourceFactory: _FakeLoopbackSource.new,
+          textPollInterval: const Duration(milliseconds: 5),
+          endpointListenable: endpoints,
+          endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+        );
+        addTearDown(() async {
+          await controller.close();
+          await index.stopSession();
+          endpoints.dispose();
+        });
+        await controller.startAttachedCapture(
+          const ExternalWindowInfo(hwnd: 9, pid: 4242, title: 'synthetic game'),
+        );
+        for (int i = 0; i < 100 && !engine.pollCursors.contains(1); i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+        }
+        expect(engine.pollCursors, contains(1));
+        expect(
+          service.entries,
+          isEmpty,
+          reason: 'Unselected native events only populate the thread directory',
+        );
+        expect(await controller.selectTextThread(5), isTrue);
+        expect(
+          controller.events.map((e) => e.code),
+          contains('text.thread_history_recovered'),
+        );
+        expect(service.entries.single.sourceSequence, 1);
+        expect(service.entries.single.hookTimestampMs, tick);
+        final String rowId = service.entries.single.id;
+        if (scenario == 'late export') {
+          expect(service.entries.single.audioResourceId, isNull);
+          files.add(resource(ownedName));
+          index.invalidate();
+          await index.synchronize();
+          for (int i = 0;
+              i < 100 && service.entries.single.audioResourceId == null;
+              i++) {
+            await Future<void>.delayed(const Duration(milliseconds: 5));
+          }
+        }
+        final bool shouldMatch =
+            scenario == 'already exported' || scenario == 'late export';
+        expect(service.entries.single.id, rowId);
+        expect(
+          service.entries.single.audioResourceId,
+          shouldMatch ? ownedName : isNull,
+        );
+        expect(
+          service.entries.single.audioStatus,
+          shouldMatch
+              ? TexthookerLineAudioStatus.matched
+              : TexthookerLineAudioStatus.unavailable,
+        );
+        expect(
+          engine.findEventIds,
+          isEmpty,
+          reason: 'History must never call the permissive matching API',
+        );
+        expect(
+          engine.utteranceTimestamps,
+          isEmpty,
+          reason: 'History must not recapture old PCM',
+        );
+      },
+      skip: !Platform.isWindows,
+    );
+  }
 
   test('window binding is app-level state and stop keeps binding by default',
       () async {
@@ -3479,7 +3624,10 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
     this.failure = const GalHookInjectorDiagnostics(),
     this.launched,
     this.startGate,
-  }) : super(targetPid: 0, launchExe: 'fake.exe', injectorPath: 'fake.exe');
+    GalVoiceDumpIndex? voiceDumpIndex,
+    this.replayBufferedLines = false,
+  }) : super(targetPid: 0, launchExe: 'fake.exe', injectorPath: 'fake.exe',
+             voiceDumpIndex: voiceDumpIndex);
 
   final Uint8List pairedBytes;
   final PcmFormat? audioFormat;
@@ -3489,6 +3637,8 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
   final bool pairedCandidate;
   final int pairedReadyAfterCalls;
   final List<GalHookedLine> polledLines;
+  final bool replayBufferedLines;
+  final List<int> pollCursors = <int>[];
   final GalAudioSlice? utteranceSlice;
 
   /// 本次 start 失败时 native 侧的结构化诊断（成功路径为 [GalHookInjectorFailure.none]）。
@@ -3605,9 +3755,12 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
   @override
   Future<GalTextPoll?> pollText(int sinceSeq) async {
     _pollCalls++;
+    pollCursors.add(sinceSeq);
     return GalTextPoll(
       count: polledLines.length,
-      lines: _pollCalls == 1 ? polledLines : const <GalHookedLine>[],
+      lines: replayBufferedLines
+          ? polledLines.where((line) => line.seq > sinceSeq).toList()
+          : _pollCalls == 1 ? polledLines : const <GalHookedLine>[],
     );
   }
 

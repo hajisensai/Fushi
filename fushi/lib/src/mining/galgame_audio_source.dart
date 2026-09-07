@@ -2422,6 +2422,21 @@ class EngineHookGalAudioSource implements GalAudioSource {
     return file == null ? null : _fileBaseName(file.path);
   }
 
+  /// Windows history recovery uses only resources carrying this native event.
+  /// The timestamp validates that ownership; it cannot substitute for the ID.
+  String? findEventOwnedVoiceResourceId(
+    int textTsMs, {
+    required int textEventId,
+  }) {
+    if (!Platform.isWindows) return null;
+    _voiceDumpIndex.requestFreshness();
+    final List<String> names = _voiceDumpIndex.findEventOwnedResourceNames(
+      textTsMs: textTsMs,
+      textEventId: textEventId,
+    );
+    return names.isEmpty ? null : names.first;
+  }
+
   File? _voiceFileForResourceId(String resourceId) {
     if (!Platform.isWindows ||
         resourceId.isEmpty ||

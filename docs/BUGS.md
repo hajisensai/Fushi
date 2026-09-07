@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2071 条。点号进各自文件。
+> 共 2072 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2240](bugs/BUG-2240-selected-thread-history-resource-pairing.md) | ✅ | ✅ | Windows线程历史回捞跳过已导出的精确事件语音配对 |
 | [BUG-2239](bugs/BUG-2239-flutter-child-at-index-null.md) | 🚧 | 🚧 | Windows Flutter ChildAtIndex 枚举空子节点时访问冲突 |
 | [BUG-2238](bugs/BUG-2238-siglus-ovk-member-identity.md) | ✅ | ✅ | Siglus OVK将采样数误当成员ID导致资源命名不唯一 |
 | [BUG-2237](bugs/BUG-2237-siglus-voice-resource-without-dialogue-event.md) | 🚧 | ✅ | Siglus 语音资源缺少正文事件身份，配对依赖时间窗 |
