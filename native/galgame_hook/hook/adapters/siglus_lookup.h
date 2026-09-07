@@ -17,7 +17,11 @@ inline constexpr size_t kSiglusLookupMaxGlyphs = 256u;
 inline constexpr uint16_t kSiglusLookupNoGlyph =
     std::numeric_limits<uint16_t>::max();
 
-// Keep the text source and its ABI in the exact executable profile. A native
+inline bool IsSiglusLookupResolutionPending(long state) {
+  return state == 0 || state == 2;
+}
+
+// Keep the text source and its ABI in the admitted profile. A native
 // TextUnion callback and a Luna Scenario lane have different ownership and
 // caller-validation contracts even when the surrounding renderer is Siglus.
 enum class SiglusLookupTextFeed : uint8_t {
@@ -25,15 +29,14 @@ enum class SiglusLookupTextFeed : uint8_t {
   kLunaScenarioLane = 2,
 };
 
-// Each profile admits one measured executable only. The RVAs describe the
-// Siglus per-visible-glyph layout boundary and the return address immediately
-// after the engine's GetKeyState(VK_LBUTTON) call. They are unrelated to the
-// SGRE renderer and DirectInput ABI.
+// A profile is either a measured executable or a structurally resolved ABI
+// family. The RVAs describe the visible-glyph layout boundary and the engine's
+// key sampler. They are unrelated to the SGRE renderer and DirectInput ABI.
 struct SiglusLookupProfile {
   std::array<uint8_t, 32> executable_sha256 = {};
-  // The shipped launcher virtualizes self-reads back to its same-size .org
-  // image. Keep that exact runtime view in the same low-degree profile rather
-  // than weakening admission to an engine-family or signature-only match.
+  // Anemoi's launcher virtualizes self-reads back to its same-size .org image.
+  // The measured reference retains both identities for consistency checks.
+  // Structurally resolved profiles for either ABI leave digest fields empty.
   std::array<uint8_t, 32> runtime_view_sha256 = {};
   uint16_t pe_machine = 0;
   uint8_t pointer_bits = 0;
@@ -47,6 +50,9 @@ struct SiglusLookupProfile {
   uintptr_t main_input_message_return_rva = 0;
   int32_t viewport_width = 0;
   int32_t viewport_height = 0;
+  // Nonzero only for a structurally resolved family profile. The design
+  // dimensions come from this runtime Gameexe-config pointer, not a title.
+  uintptr_t viewport_config_rva = 0;
 };
 
 inline constexpr SiglusLookupProfile kAnemoiSiglusLookupProfile = {
@@ -208,14 +214,10 @@ inline constexpr exact_lookup::MaskedPattern kSprbInputMessageEntryPattern = {
 
 inline const exact_lookup::MaskedPattern* InputMessagePatternForProfile(
     const SiglusLookupProfile& profile) {
-  if (profile.input_message_rva ==
-          kAnemoiSiglusLookupProfile.input_message_rva &&
-      profile.text_feed == SiglusLookupTextFeed::kNativeEcxTextUnion) {
+  if (profile.text_feed == SiglusLookupTextFeed::kNativeEcxTextUnion) {
     return &kAnemoiInputMessageEntryPattern;
   }
-  if (profile.input_message_rva ==
-          kSummerPocketsReflectionBlueSiglusLookupProfile.input_message_rva &&
-      profile.text_feed == SiglusLookupTextFeed::kLunaScenarioLane) {
+  if (profile.text_feed == SiglusLookupTextFeed::kLunaScenarioLane) {
     return &kSprbInputMessageEntryPattern;
   }
   return nullptr;

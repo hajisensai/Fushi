@@ -1,4 +1,4 @@
-// Exact-profile SiglusEngine in-game lookup sensor.
+// Structurally admitted SiglusEngine in-game lookup sensor.
 //
 // This file is included after text_render_adapter.inc inside dll_main.cpp's
 // anonymous namespace. Keep it header-free. The pure data transforms live in
@@ -80,6 +80,12 @@ std::atomic<uint32_t> g_siglus_lookup_click_epoch{1};
 std::atomic<const fushi_voice_hook::SiglusLookupProfile *>
     g_siglus_lookup_profile{nullptr};
 volatile LONG g_siglus_lookup_profile_state = 0; // 0 unknown, 1 match, -1 miss
+// 2 is a scan in progress; only the owner can publish the immutable profile.
+fushi_voice_hook::SiglusLookupProfile g_siglus_family_profile;
+ULONGLONG g_siglus_family_first_scan = 0;
+ULONGLONG g_siglus_family_last_scan = 0;
+bool g_siglus_digest_attempted = false;
+const fushi_voice_hook::SiglusLookupProfile* g_siglus_measured_profile = nullptr;
 volatile LONG g_siglus_exact_binary_structure_state =
     0; // 0 unknown, 1 hydrated structure match, -1 reject
 // v19 准入上报用。不复用 lookup_diag 的 kLookupDiagSensorInstalled：那位是**粘滞**的，
@@ -345,14 +351,87 @@ bool Sha256FileForSiglusLookup(const wchar_t *path,
 // 见 leaf_aquaplus_adapter.inc 里同名函数的说明：不可逆的抢占决策必须问三态，
 // 不能拿「压成 bool 的 false」当「确定不是这个引擎」。
 bool IsSiglusLookupIdentityUndecided() {
-  return InterlockedCompareExchange(&g_siglus_lookup_profile_state, 0, 0) == 0;
+  const LONG state = InterlockedCompareExchange(&g_siglus_lookup_profile_state, 0, 0);
+  return fushi_voice_hook::IsSiglusLookupResolutionPending(state);
+}
+
+bool ReadSiglusDesignSize(HMODULE module, uintptr_t config_rva,
+                          int32_t* width, int32_t* height) {
+  if (module == nullptr || config_rva == 0 || width == nullptr || height == nullptr)
+    return false;
+  __try {
+    const auto slot = reinterpret_cast<uintptr_t>(module) + config_rva;
+    if (!fushi_voice_hook::exact_lookup::IsReadableSpan(
+            reinterpret_cast<const void*>(slot), sizeof(uint32_t))) return false;
+    const uintptr_t config = *reinterpret_cast<const uint32_t*>(slot);
+    if (config == 0 || (config & 3u) != 0 ||
+        !fushi_voice_hook::exact_lookup::IsReadableSpan(
+            reinterpret_cast<const void*>(config), 0x84)) return false;
+    *width = *reinterpret_cast<const int32_t*>(config + 0x7c);
+    *height = *reinterpret_cast<const int32_t*>(config + 0x80);
+    return fushi_voice_hook::siglus_viewport::ValidDesignSize(*width, *height);
+  } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+}
+
+bool ResolveSiglusLiveFamily(HMODULE module,
+                             fushi_voice_hook::SiglusLookupProfile* profile) {
+  __try {
+    fushi_voice_hook::exact_lookup::LoadedPeImage image;
+    if (!fushi_voice_hook::OpenSiglusLoadedImage(module, &image))
+      return false;
+    const HMODULE user32 = GetModuleHandleW(L"user32.dll");
+    const auto key_state = user32 == nullptr ? nullptr :
+        GetProcAddress(user32, "GetKeyState");
+    const uintptr_t key_iat =
+        fushi_voice_hook::siglus_viewport::FindGetKeyStateImport(
+            image, reinterpret_cast<uintptr_t>(key_state));
+    fushi_voice_hook::SiglusLookupProfile luna_profile, native_profile;
+    const bool luna_matched = key_iat != 0 &&
+        fushi_voice_hook::ResolveSiglusFamilyProfile(image, key_iat, &luna_profile);
+    const bool native_matched = key_state != nullptr &&
+        fushi_voice_hook::ResolveSiglusNativeFamilyProfile(
+            image, reinterpret_cast<uintptr_t>(key_state), &native_profile);
+    // Two complete ABI proofs are ambiguous. Neither a hash nor scan order
+    // chooses a winner, and incomplete families cannot borrow each other's sites.
+    if (luna_matched == native_matched) return false;
+    *profile = luna_matched ? luna_profile : native_profile;
+    const uintptr_t config = luna_matched
+        ? fushi_voice_hook::siglus_viewport::ResolveConfigSlot(image)
+        : fushi_voice_hook::siglus_native_viewport::ResolveNativeConfigSlot(image);
+    if (config == 0) return false;
+    profile->viewport_config_rva = config;
+    return ReadSiglusDesignSize(module, config, &profile->viewport_width,
+                                &profile->viewport_height);
+  } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+}
+
+bool SameSiglusMeasuredAnchors(const fushi_voice_hook::SiglusLookupProfile& lhs,
+                                const fushi_voice_hook::SiglusLookupProfile& rhs) {
+  return lhs.text_feed == rhs.text_feed &&
+      lhs.glyph_layout_rva == rhs.glyph_layout_rva &&
+      lhs.dialogue_glyph_return_rva == rhs.dialogue_glyph_return_rva &&
+      lhs.exact_text_rva == rhs.exact_text_rva &&
+      lhs.exact_text_return_rva == rhs.exact_text_return_rva &&
+      lhs.get_key_state_return_rva == rhs.get_key_state_return_rva &&
+      lhs.input_message_rva == rhs.input_message_rva &&
+      lhs.main_input_message_return_rva == rhs.main_input_message_return_rva;
 }
 
 bool IsSiglusLookupProfileMatched() {
   const LONG cached =
       InterlockedCompareExchange(&g_siglus_lookup_profile_state, 0, 0);
-  if (cached != 0)
-    return cached > 0;
+  if (cached != 0) return cached == 1;
+  if (InterlockedCompareExchange(&g_siglus_lookup_profile_state, 2, 0) != 0)
+    return false;
+  const ULONGLONG now = GetTickCount64();
+  if (g_siglus_family_first_scan == 0) g_siglus_family_first_scan = now;
+  // Protected launches expose the real code only after startup. Scans are
+  // bounded and rate-limited; no hook is installed until the full proof exists.
+  if (g_siglus_family_last_scan != 0 && now-g_siglus_family_last_scan < 500) {
+    InterlockedExchange(&g_siglus_lookup_profile_state, 0);
+    return false;
+  }
+  g_siglus_family_last_scan = now;
   wchar_t executable[32768] = {};
   const DWORD chars = GetModuleFileNameW(
       nullptr, executable,
@@ -370,7 +449,7 @@ bool IsSiglusLookupProfileMatched() {
       }
     }
   }
-  const bool executable_read =
+  const bool executable_read = !g_siglus_digest_attempted &&
       chars != 0 && chars < sizeof(executable) / sizeof(executable[0]) &&
       Sha256FileForSiglusLookup(executable, &digest);
   bool hash_matched = false;
@@ -406,13 +485,29 @@ bool IsSiglusLookupProfileMatched() {
     // 自己的摘要。共享槽服务的是另一档——谁都没认领时的收敛（见 host_executable_digest.h）。
     fushi_voice_hook::PublishHostExecutableSha256(digest.data(), digest.size());
   }
-  const auto *profile =
-      executable_read ? fushi_voice_hook::FindSiglusLookupProfile(
-                            digest.data(), digest.size(), machine)
-                      : nullptr;
+  if (executable_read) {
+    g_siglus_digest_attempted = true;
+    g_siglus_measured_profile = fushi_voice_hook::FindSiglusLookupProfile(
+        digest.data(), digest.size(), machine);
+  }
+  const fushi_voice_hook::SiglusLookupProfile* profile = nullptr;
+  // Digests corroborate previously measured sites; neither ABI is admitted
+  // by its title/hash. Every active profile comes from the live structural proof.
+  if (machine == IMAGE_FILE_MACHINE_I386 && IsSiglusEngine() &&
+             ResolveSiglusLiveFamily(module, &g_siglus_family_profile) &&
+             (g_siglus_measured_profile == nullptr ||
+              SameSiglusMeasuredAnchors(g_siglus_family_profile,
+                                        *g_siglus_measured_profile))) {
+    profile = &g_siglus_family_profile;
+    InterlockedExchange(&g_siglus_exact_binary_structure_state, 1);
+  }
   const bool matched = profile != nullptr;
   g_siglus_lookup_profile.store(profile, std::memory_order_release);
-  InterlockedExchange(&g_siglus_lookup_profile_state, matched ? 1 : -1);
+  const bool finished = machine != IMAGE_FILE_MACHINE_I386 ||
+      !IsSiglusEngine() ||
+      now-g_siglus_family_first_scan >= 120000;
+  InterlockedExchange(&g_siglus_lookup_profile_state,
+                       matched ? 1 : (finished ? -1 : 0));
   if (matched) {
     SetSiglusLookupDiag(fushi_voice_hook::kLookupDiagSiglusProfileMatched);
   }
@@ -1106,6 +1201,15 @@ bool InstallSiglusLookupSensor() {
   if (profile == nullptr)
     return false;
   HMODULE module = GetModuleHandleW(nullptr);
+  if (profile->viewport_config_rva != 0) {
+    int32_t width = 0, height = 0;
+    if (!ReadSiglusDesignSize(module, profile->viewport_config_rva, &width, &height) ||
+        width != profile->viewport_width || height != profile->viewport_height) {
+      g_siglus_lookup_sensor_installed.store(false, std::memory_order_release);
+      RevokeSiglusSampledInputShieldReady(g_siglus_sampled_input_property_window);
+      return false;
+    }
+  }
   if (module == nullptr ||
       !IsSiglusExactBinaryStructureMatched(profile, module))
     return false;
@@ -1179,12 +1283,14 @@ bool InstallSiglusLookupSensor() {
   return true;
 }
 
-// v19 准入查询。纯读缓存：profile 判定与摘要都在 IsSiglusLookupProfileMatched() 里
-// 一次性算好并缓存，这里不触发任何 IO 或 hook 安装——registry 每轮 Poll 都会调它。
+// v19 admission queries share the serialized family resolver. Only the first
+// successful proof is published; pending initialization remains undecided.
 fushi_voice_hook::LookupAdmissionReport SiglusLookupAdmission() {
   fushi_voice_hook::LookupAdmissionReport report;
   if (!IsSiglusLookupProfileMatched()) {
-    report.state = fushi_voice_hook::kLookupAdmissionIdentityRejected;
+    report.state = IsSiglusLookupIdentityUndecided()
+        ? fushi_voice_hook::kLookupAdmissionUnknown
+        : fushi_voice_hook::kLookupAdmissionIdentityRejected;
     std::memcpy(report.executable_sha256, g_siglus_lookup_executable_sha256,
                 sizeof(report.executable_sha256));
     return report;

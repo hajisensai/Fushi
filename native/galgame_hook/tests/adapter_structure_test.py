@@ -414,6 +414,49 @@ class AdapterStructureTest(unittest.TestCase):
             self.assertNotIn("D:\\", source)
             self.assertNotIn("C:\\", source)
 
+    def test_siglus_family_admission_owns_text_entry_and_runtime_dimensions(self) -> None:
+        adapters = ROOT / "hook" / "adapters"
+        source = self._strip_comments(
+            (adapters / "siglus_lookup.inc").read_text(encoding="utf-8")
+        )
+        resolver = self._function_body(source, "bool ResolveSiglusLiveFamily(")
+        for required in (
+            "OpenSiglusLoadedImage",
+            "ResolveSiglusFamilyProfile", "ResolveSiglusNativeFamilyProfile",
+            "luna_matched == native_matched", "ResolveConfigSlot",
+            "ResolveNativeConfigSlot", "ReadSiglusDesignSize",
+            'GetProcAddress(user32, "GetKeyState")',
+        ):
+            self.assertIn(required, resolver)
+        admission = self._function_body(source, "bool IsSiglusLookupProfileMatched()")
+        self.assertIn("ResolveSiglusLiveFamily", admission)
+        self.assertIn("SameSiglusMeasuredAnchors", admission)
+        self.assertNotIn("profile = g_siglus_measured_profile", admission)
+        install = self._function_body(source, "bool InstallSiglusLookupSensor()")
+        self.assertIn("width != profile->viewport_width", install)
+        self.assertIn("height != profile->viewport_height", install)
+        self.assertIn("RevokeSiglusSampledInputShieldReady", install)
+        text = self._strip_comments(
+            (adapters / "text_render_adapter.inc").read_text(encoding="utf-8")
+        )
+        text_install = self._function_body(text, "bool TryHookSiglusExactText()")
+        self.assertIn("!resolved && IsSiglusLookupIdentityUndecided()", text_install)
+        self.assertIn("profile->exact_text_rva", text_install)
+        self.assertLess(text_install.index("profile->exact_text_rva"),
+                        text_install.index("FindExactTextFunctionOffset"))
+        registry = self._strip_comments(
+            (ROOT / "hook" / "adapter_registry.inc").read_text(encoding="utf-8")
+        )
+        siglus_adapter = registry.split("class SiglusAdapter final", 1)[1].split(
+            "class UnityIl2CppAdapter final", 1
+        )[0]
+        install_text = self._member_body(siglus_adapter, "void InstallText()")
+        self.assertIn("text_pending_ = !complete && IsSiglusLookupIdentityUndecided()",
+                      install_text)
+        pending = self._member_body(siglus_adapter, "void ProcessPendingEvents()")
+        self.assertIn("if (text_pending_) InstallText();", pending)
+        self.assertNotIn("lookup_enabled", pending)
+
     def test_hunex_lookup_exact_provider_stays_fail_closed_and_registry_owned(
         self,
     ) -> None:
@@ -1782,7 +1825,19 @@ class AdapterStructureTest(unittest.TestCase):
             )
             undecided = self._function_body(adapter_source, name)
             self.assertIn(state, undecided)
-            self.assertIn("== 0", undecided)
+            if "leaf" in adapter:
+                self.assertIn("== 0", undecided)
+            else:
+                self.assertIn("IsSiglusLookupResolutionPending(state)", undecided)
+                header = self._strip_comments(
+                    (ROOT / "hook" / "adapters" / "siglus_lookup.h").read_text(
+                        encoding="utf-8"
+                    )
+                )
+                pending = self._function_body(
+                    header, "inline bool IsSiglusLookupResolutionPending("
+                )
+                self.assertIn("state == 0 || state == 2", pending)
 
     def test_leaf_structure_gate_reads_the_pristine_file_not_process_memory(
         self,

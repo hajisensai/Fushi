@@ -23,6 +23,11 @@ void Push(char16_t code_unit, int32_t x, int32_t y,
 int main() {
   using namespace fushi_voice_hook;
 
+  assert(IsSiglusLookupResolutionPending(0));
+  assert(IsSiglusLookupResolutionPending(2));
+  assert(!IsSiglusLookupResolutionPending(1));
+  assert(!IsSiglusLookupResolutionPending(-1));
+
   const auto &profile = kAnemoiSiglusLookupProfile;
   assert(profile.pe_machine == kSiglusLookupPeMachineI386);
   assert(profile.text_feed == SiglusLookupTextFeed::kNativeEcxTextUnion);

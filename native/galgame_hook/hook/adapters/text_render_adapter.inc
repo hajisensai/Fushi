@@ -132,6 +132,7 @@ void ObserveSiglusLookupExactText(const wchar_t* text, uint32_t text_units,
                                   uint64_t callsite_rva,
                                   uintptr_t function_rva);
 bool IsSiglusLookupProfileMatched();
+bool IsSiglusLookupIdentityUndecided();
 const fushi_voice_hook::SiglusLookupProfile* ActiveSiglusLookupProfile();
 
 // Siglus 3 使用与 32 位 MSVC std::wstring 相同的 24-byte 小字符串布局。当前 Luna 的
@@ -228,22 +229,41 @@ uintptr_t __fastcall Detour_SiglusExactText(SiglusTextUnionW* self, void*) {
   return g_orig_SiglusExactText(self);
 }
 
+bool InstallSiglusExactTextAt(void* target, uintptr_t rva) {
+  g_siglus_text_function_rva = rva;
+  if (!HookFn(target, reinterpret_cast<void*>(&Detour_SiglusExactText),
+              reinterpret_cast<void**>(&g_orig_SiglusExactText))) {
+    g_siglus_text_function_rva = 0;
+    return false;
+  }
+  if (g_header != nullptr) {
+    g_header->text_hooked = 1;
+    g_header->hook_diagnostics |= kDiagSiglusExactTextHookReady;
+  }
+  return true;
+}
+
 bool TryHookSiglusExactText() {
   if (!IsSiglusEngine()) return true;
   if (g_orig_SiglusExactText != nullptr) return true;
-  // Some admitted Siglus builds expose scenario text through Luna with a
-  // different function ABI. Do not install the native ECX/TextUnion detour on
-  // those builds; the lookup sensor consumes their exact Luna lane instead.
-  if (IsSiglusLookupProfileMatched()) {
-    const auto* profile = ActiveSiglusLookupProfile();
-    if (profile != nullptr &&
-        profile->text_feed !=
-            fushi_voice_hook::SiglusLookupTextFeed::kNativeEcxTextUnion) {
-      return true;
-    }
-  }
+  const bool resolved = IsSiglusLookupProfileMatched();
+  // Do not let the historical first-match text locator patch an entry while
+  // the lookup resolver is still checking whole-image uniqueness and its ABI.
+  if (!resolved && IsSiglusLookupIdentityUndecided()) return false;
   HMODULE module = GetModuleHandleW(nullptr);
   if (module == nullptr) return false;
+  if (resolved) {
+    const auto* profile = ActiveSiglusLookupProfile();
+    if (profile == nullptr) return false;
+    if (profile->text_feed !=
+        fushi_voice_hook::SiglusLookupTextFeed::kNativeEcxTextUnion) return true;
+    // Capture and lookup must use the same structurally admitted entry.
+    return InstallSiglusExactTextAt(
+        reinterpret_cast<uint8_t*>(module) + profile->exact_text_rva,
+        profile->exact_text_rva);
+  }
+  // Preserve the existing text-only fallback after lookup is conclusively
+  // unavailable. It cannot publish a geometry profile or enable lookup input.
   const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(module);
   if (dos->e_magic != IMAGE_DOS_SIGNATURE) return false;
   const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(
@@ -263,18 +283,8 @@ bool TryHookSiglusExactText() {
       continue;
     }
     void* target = const_cast<uint8_t*>(section_base + offset);
-    g_siglus_text_function_rva =
-        static_cast<uintptr_t>(section[i].VirtualAddress) + offset;
-    if (!HookFn(target, reinterpret_cast<void*>(&Detour_SiglusExactText),
-                reinterpret_cast<void**>(&g_orig_SiglusExactText))) {
-      g_siglus_text_function_rva = 0;
-      return false;
-    }
-    if (g_header != nullptr) {
-      g_header->text_hooked = 1;
-      g_header->hook_diagnostics |= kDiagSiglusExactTextHookReady;
-    }
-    return true;
+    return InstallSiglusExactTextAt(target,
+        static_cast<uintptr_t>(section[i].VirtualAddress) + offset);
   }
   return false;
 }

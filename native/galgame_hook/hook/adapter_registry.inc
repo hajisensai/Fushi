@@ -65,10 +65,15 @@ class SiglusAdapter final : public fushi_voice_hook::EngineAdapter {
     return audio_ready_;
   }
   void InstallText() {
-    TryHookSiglusExactText();
+    const bool complete = TryHookSiglusExactText();
+    text_pending_ = !complete && IsSiglusLookupIdentityUndecided();
     installed_ = installed_ || probe();
   }
   void ProcessPendingEvents() {
+    // Hydration can finish after startup. Advance the pending admission on
+    // the worker even when lookup is disabled; its resolver owns the bounded
+    // scan interval. Success or final rejection gets one text-install attempt.
+    if (text_pending_) InstallText();
     ProcessSiglusVoiceTasks();
     ProcessSiglusLookupTick();
   }
@@ -89,6 +94,7 @@ class SiglusAdapter final : public fushi_voice_hook::EngineAdapter {
     ShutdownSiglusLookup();
     installed_ = false;
     audio_ready_ = false;
+    text_pending_ = false;
   }
   fushi_voice_hook::AdapterDiagnostics diagnostics() const override {
     return {id(), probe(), installed_,
@@ -98,6 +104,7 @@ class SiglusAdapter final : public fushi_voice_hook::EngineAdapter {
  private:
   bool installed_ = false;
   bool audio_ready_ = false;
+  bool text_pending_ = false;
 };
 
 class UnityIl2CppAdapter final : public fushi_voice_hook::EngineAdapter {

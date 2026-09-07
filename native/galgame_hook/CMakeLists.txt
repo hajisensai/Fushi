@@ -61,6 +61,11 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/siglus_adapter.inc"
   "hook/adapters/exact_lookup_signature.h"
   "hook/adapters/siglus_lookup.h"
+  "hook/adapters/siglus_image.h"
+  "hook/adapters/siglus_autoprofile.h"
+  "hook/adapters/siglus_viewport.h"
+  "hook/adapters/siglus_native_autoprofile.h"
+  "hook/adapters/siglus_native_viewport.h"
   "hook/adapters/siglus_lookup.inc"
   "hook/adapters/bgi_ethornell_adapter.inc"
   "hook/adapters/bgi_ethornell_profile.h"
@@ -170,6 +175,22 @@ add_executable(fushi_siglus_lookup_test
 )
 target_include_directories(fushi_siglus_lookup_test PRIVATE "hook")
 add_test(NAME fushi_siglus_lookup_test COMMAND fushi_siglus_lookup_test)
+
+add_executable(fushi_siglus_autoprofile_test "tests/siglus_autoprofile_test.cpp")
+target_include_directories(fushi_siglus_autoprofile_test PRIVATE "hook/adapters")
+add_test(NAME fushi_siglus_autoprofile_test COMMAND fushi_siglus_autoprofile_test)
+add_executable(fushi_siglus_viewport_test "tests/siglus_viewport_test.cpp")
+target_include_directories(fushi_siglus_viewport_test PRIVATE "hook/adapters")
+add_test(NAME fushi_siglus_viewport_test COMMAND fushi_siglus_viewport_test)
+add_executable(fushi_siglus_native_autoprofile_test "tests/siglus_native_autoprofile_test.cpp")
+target_include_directories(fushi_siglus_native_autoprofile_test PRIVATE "hook/adapters")
+add_test(NAME fushi_siglus_native_autoprofile_test COMMAND fushi_siglus_native_autoprofile_test)
+add_executable(fushi_siglus_native_viewport_test "tests/siglus_native_viewport_test.cpp")
+target_include_directories(fushi_siglus_native_viewport_test PRIVATE "hook/adapters")
+add_test(NAME fushi_siglus_native_viewport_test COMMAND fushi_siglus_native_viewport_test)
+add_executable(fushi_siglus_loaded_image_test "tests/siglus_loaded_image_test.cpp")
+target_include_directories(fushi_siglus_loaded_image_test PRIVATE "hook/adapters")
+add_test(NAME fushi_siglus_loaded_image_test COMMAND fushi_siglus_loaded_image_test)
 
 add_executable(fushi_leaf_aquaplus_adapter_test
   "tests/leaf_aquaplus_adapter_test.cpp"
