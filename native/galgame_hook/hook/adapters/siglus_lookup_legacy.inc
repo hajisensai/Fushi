@@ -76,12 +76,10 @@ bool RefreshSiglusLegacyGlyphOwners() {
       static_cast<uint32_t>(base + g_siglus_legacy_owner_sites.config_slot),
       static_cast<uint32_t>(base + g_siglus_legacy_owner_sites.manager_slot),
       read, &next);
-  // Neither rendering callbacks nor worker wait for this metadata exchange.
-  // A missed worker publication cannot make a stale vector pass live checks.
-  if (!TryAcquireSRWLockExclusive(&g_siglus_legacy_owner_lock)) return false;
-  g_siglus_legacy_owner_snapshot = next;
-  ReleaseSRWLockExclusive(&g_siglus_legacy_owner_lock);
-  return valid;
+  return siglus_legacy_owner::PublishSnapshot(
+      next, valid, &g_siglus_legacy_owner_snapshot,
+      [] { return TryAcquireSRWLockExclusive(&g_siglus_legacy_owner_lock) != 0; },
+      [] { ReleaseSRWLockExclusive(&g_siglus_legacy_owner_lock); });
 }
 
 bool IsSiglusLookupGlyphOwned(void* self) {

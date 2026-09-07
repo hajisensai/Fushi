@@ -113,6 +113,36 @@ struct Snapshot {
   size_t count = 0;
 };
 
+inline bool Same(const Snapshot& a, const Snapshot& b) {
+  if (!a.count || a.count > kMaxPaths || a.count != b.count ||
+      a.config_slot != b.config_slot || a.manager_slot != b.manager_slot ||
+      a.config != b.config || a.manager != b.manager || !Same(a.groups, b.groups))
+    return false;
+  for (size_t i = 0; i < a.count; ++i) {
+    const auto& x = a.paths[i];
+    const auto& y = b.paths[i];
+    if (x.group != y.group || x.owner != y.owner || x.entry != y.entry ||
+        !Same(x.owners, y.owners) || !Same(x.entries, y.entries) ||
+        !Same(x.glyphs, y.glyphs)) return false;
+  }
+  return true;
+}
+
+// The worker is the sole writer; callbacks only read under a shared lock.
+// A fresh, identical live snapshot needs no write lock. Contention with a
+// rendering callback must not retire a provider whose metadata did not change.
+// Changed/invalid snapshots still fail closed when publication is unavailable.
+template <typename TryLock, typename Unlock>
+inline bool PublishSnapshot(const Snapshot& next, bool valid, Snapshot* published,
+                            TryLock try_lock, Unlock unlock) {
+  if (!published) return false;
+  if (valid && Same(next, *published)) return true;
+  if (!try_lock()) return false;
+  *published = valid ? next : Snapshot{};
+  unlock();
+  return valid;
+}
+
 template <typename Reader, typename T>
 inline bool Read(Reader& reader, uint32_t base, uint32_t offset, T* out) {
   const uint64_t address = uint64_t{base} + offset;

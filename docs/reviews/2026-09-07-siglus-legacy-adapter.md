@@ -76,12 +76,46 @@ workflow 6 和显式生产 replay 全部退出 0。额外 +1FB 拒绝门另做�
 Windows 防火墙权限弹窗阻挡界面，已请用户手动处理，未操作系统安全控件。
 新候选的原始游戏启动和内嵌点击尚未执行，不能视作 runtime 通过。
 
+## 2026-09-08 正文点击和弹窗生命周期
+
+BUG-2250 已由 `b7ff46a75c` 修复：Siglus 身份探测期间为旧版专用键盘采样
+保留 GetKeyboardState 安装位，避免提前安装的通用 Hook 被误认作引擎专用
+sensor。生产安装函数的直接测试为 `6415fdff1b`。新会话已观察 required/ready
+均为 E4，实际正文点击被隔离且没有推进台词。
+
+用户随后报告点击后词典瞬间关闭。旧 PID 51284 的消费日志确认 showAt 后
+约 112 ms 被 provider 失效关闭；独立读取显示对象和视图完全稳定。BUG-2251
+根因为 worker 对相同元数据重复申请独占锁，被渲染共享锁挡住后误撤销 provider。
+修正仅省去 fresh 且相同快照的写入，改变或无效的快照继续失败关闭。
+
+新 Hook SHA-256 `C38766F11E53DABB35D53A2489112108F5307B3D97A1A98B5017A7C2B0CFAFFB`。
+03:35:59 helper 74712 经原始 Start.exe/官方 StartMenu 59936 启动游戏 48540
+（03:36:21）；实际 DLL 位于自有 runtime/e2465ea69e98ba8c/x86，加载摘要一致。
+Fushi 69880 在游戏出现前于 03:36:00 崩溃，属于 BUG-2231 无障碍字符串属性
+读取的新复现。恢复 Fushi 57060（03:38:33），经正常 UI 附着当前游戏，
+选中 SiglusEngine VA 482130 线程后进行本轮点击验证。不能把恢复附着流程
+描述成启动全程无中断通过。
+
+原始正文中的两个词连续查询均有稳定词典且未推进台词。独立 1000 次读取
+（15.312 秒）owner/view 全部有效、无变化，provider 2/3 status 2 保持稳定，
+变化次数 0，hitseq 1 未被清除。Save 菜单、Log 历史和 Close 隐藏对白均使
+geometry 归零；Save 返回后第三次点击恢复词典，仍是同一句、generation
+239/20→239/21。Close 后点击原正文位置只恢复对白，没有误提交旧 hit。
+
+真实 SRW 争用测试 `473a766403` 已纳入 CTest；完整 Windows native 构建及
+CTest x86 96/96、x64 92/92 通过，结构 49/49、manifest/profile 检查、
+生产 workflow replay 退出 0。独立审查确认相同快照比较覆盖全部身份字段，
+唯一 worker 写入及回调 live 校验保持不变。
+
+BUG-2249 启动记录角色/转区回退修复已整合为 `8fa25b18a2`，定向测试 86/86
+及定向分析通过；当前运行 Fushi/helper 尚未部署该修复，不能算运行时验收。
+
 ## Not proved
 
-原始启动、自动跟随、注入和选定正文线程已经通过。此前原验收 bundle 附着私有 DLL 正确返回 residentHookMismatch；统一组件后从原始入口重启已消除该测试配置问题，没有绕过身份检查。原生内嵌几何未匹配，resource/pcm_ready、paired、e2e_verified 尚未通过；clip/PCM 为零，已有 loopback 不能当作原音捕获。Angel Beats! 与月彼本轮尚未运行。未升级 engine-support.yaml，未更新既有 PR 或正式随包运行库。
+原始启动、自动跟随、注入和选定正文线程已有运行证据；当前候选恢复附着后的正文几何、查词停留和菜单拒绝已通过上述范围。完整无中断重启、新尺寸 viewport、更多对象变化仍需验证。resource/pcm_ready、paired、e2e_verified 尚未通过；旧版原音 adapter 尚未实现，已有 loopback 不能当作原音捕获。Angel Beats! 与月彼本轮尚未运行。未升级 engine-support.yaml，未更新既有 PR 或正式随包运行库。
 
 源码准备及正式工具构建脚本已维护，最终候选重建与 PE 契约自动校验均通过。上游仍含预编译 MyLib；当前源码补丁和依赖说明不宣称其完整对应源码，也不宣称已满足修改 DLL 的正式分发条件。
 
 ## Next gate
 
-从原始入口重启，验证完整旧版候选的正文点击、菜单拒绝和 viewport 映射。后续逐句原音与真卡仍须逐门实测。
+继续旧版正文边界的换句、对象变化及 viewport 映射回归，再从原始入口复验完整启动链；后续逐句原音与真卡仍须逐门实测。
