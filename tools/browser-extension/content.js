@@ -569,6 +569,11 @@ window.fushiOpenSentenceContextModal = function (args) {
   bg.appendChild(card);
   shadow.appendChild(bg);
 
+  // 上下文弹层属于查词会话；按钮/遮罩的点击只交给弹层处理，不能冒泡成站点的播放切换。
+  for (const type of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click', 'dblclick', 'touchstart', 'touchend']) {
+    host.addEventListener(type, function (e) { e.stopPropagation(); });
+  }
+
   function el(tag, cls, text) {
     const e = document.createElement(tag);
     if (cls) e.className = cls;
@@ -1687,6 +1692,8 @@ function fushiDrawHighlightOverlay(rects) {
 }
 
 function fushiRemoveContainer() {
+  // 上层草稿依赖底层词条，底层真正关闭时同步撤掉，不能留下失去制卡目标的弹层。
+  fushiCloseSentenceContextModal();
   // BUG-688：移除 shadow 宿主即连带整个 shadow root（弹窗内容）；清 __fushiRoot 让 popup.js
   // 的 helper 回落到 document（下次开窗 fushiEnsureContainer 会重建）。host 引用即刻置空，
   // 让并发 re-lookup 重建新 host；旧节点与高亮/选区都立即撤掉。
@@ -2670,6 +2677,9 @@ function fushiSwallowClosingClick() {
 }
 
 document.addEventListener('mousedown', (e) => {
+  // 独立 ShadowRoot 的上下文弹层也是查词会话的一部分。capture 阶段必须先认领，
+  // 否则按钮尚未收到点击，底层已被当作外部点击关闭并恢复视频、吞掉随后的 click。
+  if (fushiCtxModalHost && fushiCtxModalHost.contains(e.target)) return;
   // BUG-688：shadow 内点击 e.target 被 retarget 成 fushiHost，故 contains 判定天然把
   // 「点弹窗内部」算作命中（不关窗）；只有点 host 之外才关。
   // Phase D：拖拽把手是 host 之外的顶层兄弟节点（避开 host 的 zoom 包含块），点它属正常操作
@@ -2694,6 +2704,8 @@ document.addEventListener('mousedown', (e) => {
 // 注意：视频处于 Fullscreen API 全屏时，Esc 退出全屏是浏览器保留行为，网页脚本拦不住——
 // 这里能保证的是「弹窗一定被关掉」，退全屏仍会发生。
 document.addEventListener('keydown', (e) => {
+  // Esc 先交给上层取消草稿；不能在 capture 阶段关掉底层并恢复播放。
+  if (fushiCtxModalHost) return;
   if (!fushiHost || e.key !== 'Escape' || e.defaultPrevented) return;
   fushiRemoveContainer();
   e.stopPropagation();

@@ -1,0 +1,6 @@
+## BUG-2241 · 浏览器调整上下文误关查词框并恢复播放
+- **报告**：2026-09-07（用户：浏览器选择上下句会打断暂停，过程中可能消失）
+- **真实性**：✅ 真 bug。`tools/browser-extension/content.js:530` 的调整上下文弹层使用独立 ShadowRoot 宿主；`:2679` 的 document capture mousedown 原来只认查词框和拖拽把手，把弹层按钮当成外部点击，调用 `fushiRemoveContainer` 恢复视频并吞掉随后 click。`:2706` 的 Escape capture 同样抢先关闭底层。
+- **[x] ① 已修复** — 上下文宿主点击归属查词会话；鼠标/触摸事件不冒泡给站点；Escape 先取消上层；真正关闭底层时同步销毁上层。同步 Flutter 内置扩展镜像。提交见本文件所在修复提交。
+- **[x] ② 已加自动化测试** — `tools/browser-extension/sentence-context-modal.test.js` 加载真实 content.js，模拟 Shadow DOM 重定向及 capture/target/bubble：四个加减按钮保留查词与暂停、Escape 仅取消上层并还原草稿、关闭底层清理上层且只恢复一次、鼠标/指针/触摸不冒泡到站点。4 项通过（退出码 0）。
+- **备注**：另有现有浏览器扩展 Node 测试 462 项通过（退出码 0），镜像一致性与 JS 语法检查通过。未在用户实际视频网站/浏览器安装上复测，不能据单测宣称设备验收完成。
