@@ -3376,7 +3376,6 @@
   "video_setting_youtube_quality": "คุณภาพ YouTube",
   "video_setting_youtube_quality_hint": "เริ่มสตรีมที่ระดับสูงสุดไม่เกินเป้าหมายนี้ อัตโนมัติจะเน้นการเล่นที่ราบรื่น (codec ที่เป็นมิตรกับฮาร์ดแวร์ สูงสุด 1080p)",
   "library_view_discover": "ค้นพบ",
-  "manga_discovery_section_trending": "กำลังมาแรง",
   "manga_discovery_section_popular": "ยอดนิยม",
   "manga_discovery_section_top_rated": "คะแนนสูงสุด",
   "manga_discovery_section_latest_finished": "จบล่าสุด",
@@ -4436,5 +4435,6 @@
   "video_opensubtitles_app_key_hint": "เว้นว่างไว้เพื่อใช้คีย์ API ที่มีอยู่ในแอป",
   "video_anilist_error_api_disabled": "AniList has temporarily disabled its public API because of server-side stability problems. This is not a problem with your network or proxy - the request reached AniList and was refused. Please try again later.",
   "video_anilist_error_rate_limited": "AniList is rate-limiting this app right now. Wait a moment and retry.",
-  "video_anilist_error_unreachable": "Cannot reach AniList (graphql.anilist.co). Check your network connection, or configure a proxy in download settings."
+  "video_anilist_error_unreachable": "Cannot reach AniList (graphql.anilist.co). Check your network connection, or configure a proxy in download settings.",
+  "manga_discovery_section_publishing": "Popular publishing manga"
 }

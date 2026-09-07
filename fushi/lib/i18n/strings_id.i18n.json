@@ -3376,7 +3376,6 @@
   "video_setting_youtube_quality": "Kualitas YouTube",
   "video_setting_youtube_quality_hint": "Mulai streaming pada tier tertinggi hingga target ini; Otomatis mengutamakan pemutaran lancar (codec ramah perangkat keras, hingga 1080p)",
   "library_view_discover": "Jelajahi",
-  "manga_discovery_section_trending": "Trending",
   "manga_discovery_section_popular": "Populer",
   "manga_discovery_section_top_rated": "Rating tertinggi",
   "manga_discovery_section_latest_finished": "Baru selesai",
@@ -4436,5 +4435,6 @@
   "video_opensubtitles_app_key_hint": "Biarkan kosong untuk menggunakan kunci API bawaan aplikasi.",
   "video_anilist_error_api_disabled": "AniList has temporarily disabled its public API because of server-side stability problems. This is not a problem with your network or proxy - the request reached AniList and was refused. Please try again later.",
   "video_anilist_error_rate_limited": "AniList is rate-limiting this app right now. Wait a moment and retry.",
-  "video_anilist_error_unreachable": "Cannot reach AniList (graphql.anilist.co). Check your network connection, or configure a proxy in download settings."
+  "video_anilist_error_unreachable": "Cannot reach AniList (graphql.anilist.co). Check your network connection, or configure a proxy in download settings.",
+  "manga_discovery_section_publishing": "Popular publishing manga"
 }

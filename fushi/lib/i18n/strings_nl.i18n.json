@@ -3376,7 +3376,6 @@
   "video_setting_youtube_quality": "YouTube-kwaliteit",
   "video_setting_youtube_quality_hint": "Start streams op de hoogste laag tot dit doel; Automatisch geeft voorkeur aan vloeiende weergave (hardwarevriendelijke codec, tot 1080p)",
   "library_view_discover": "Ontdekken",
-  "manga_discovery_section_trending": "Trending",
   "manga_discovery_section_popular": "Populair",
   "manga_discovery_section_top_rated": "Hoogst beoordeeld",
   "manga_discovery_section_latest_finished": "Recent voltooid",
@@ -4436,5 +4435,6 @@
   "video_opensubtitles_app_key_hint": "Laat leeg om de meegeleverde API-sleutel van de app te gebruiken.",
   "video_anilist_error_api_disabled": "AniList has temporarily disabled its public API because of server-side stability problems. This is not a problem with your network or proxy - the request reached AniList and was refused. Please try again later.",
   "video_anilist_error_rate_limited": "AniList is rate-limiting this app right now. Wait a moment and retry.",
-  "video_anilist_error_unreachable": "Cannot reach AniList (graphql.anilist.co). Check your network connection, or configure a proxy in download settings."
+  "video_anilist_error_unreachable": "Cannot reach AniList (graphql.anilist.co). Check your network connection, or configure a proxy in download settings.",
+  "manga_discovery_section_publishing": "Popular publishing manga"
 }

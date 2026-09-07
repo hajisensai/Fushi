@@ -3376,7 +3376,6 @@
   "video_setting_youtube_quality": "YouTube 화질",
   "video_setting_youtube_quality_hint": "이 목표까지의 최고 등급으로 스트림을 시작합니다. 자동은 원활한 재생을 선호합니다 (하드웨어 친화적 코덱, 최대 1080p)",
   "library_view_discover": "발견",
-  "manga_discovery_section_trending": "트렌딩",
   "manga_discovery_section_popular": "인기",
   "manga_discovery_section_top_rated": "최고 평점",
   "manga_discovery_section_latest_finished": "최근 완결",
@@ -4436,5 +4435,6 @@
   "video_opensubtitles_app_key_hint": "비워 두면 앱에 내장된 API 키를 사용합니다.",
   "video_anilist_error_api_disabled": "AniList has temporarily disabled its public API because of server-side stability problems. This is not a problem with your network or proxy - the request reached AniList and was refused. Please try again later.",
   "video_anilist_error_rate_limited": "AniList is rate-limiting this app right now. Wait a moment and retry.",
-  "video_anilist_error_unreachable": "Cannot reach AniList (graphql.anilist.co). Check your network connection, or configure a proxy in download settings."
+  "video_anilist_error_unreachable": "Cannot reach AniList (graphql.anilist.co). Check your network connection, or configure a proxy in download settings.",
+  "manga_discovery_section_publishing": "Popular publishing manga"
 }

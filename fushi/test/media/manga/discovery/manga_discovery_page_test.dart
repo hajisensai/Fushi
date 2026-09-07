@@ -13,7 +13,7 @@ import 'package:fushi/src/media/manga/discovery/manga_source_catalog_section.dar
 /// 失败态给重试按钮且重试真的重新拉取。
 ///
 /// BUG-1710 合并后追加：头部的来源筛选下拉 + 搜索框、正文末尾的「浏览来源」节
-/// （原「浏览」tab 的全部内容），以及选中具体来源后 AniList 行整体收起。
+/// （原「浏览」tab 的全部内容），以及选中具体来源后 MAL 行整体收起。
 class _FakeProvider implements MangaDiscoveryProvider {
   _FakeProvider(this._results);
 
@@ -35,7 +35,7 @@ class _FakeProvider implements MangaDiscoveryProvider {
 
 MangaDiscoveryEntry _entry(int id, String title, {double? score}) =>
     MangaDiscoveryEntry(
-      anilistId: id,
+      malId: id,
       titleNative: title,
       averageScore: score,
     );
@@ -53,7 +53,7 @@ void main() {
     final _FakeProvider provider = _FakeProvider(<Object>[
       MangaDiscoverySnapshot(
         feeds: <MangaDiscoveryFeed, List<MangaDiscoveryEntry>>{
-          MangaDiscoveryFeed.trending: <MangaDiscoveryEntry>[
+          MangaDiscoveryFeed.publishing: <MangaDiscoveryEntry>[
             _entry(1, '趋势作品', score: 8.9),
           ],
           MangaDiscoveryFeed.popular: <MangaDiscoveryEntry>[
@@ -70,7 +70,7 @@ void main() {
     )));
     await tester.pumpAndSettle();
 
-    expect(find.text(t.manga_discovery_section_trending), findsOneWidget);
+    expect(find.text(t.manga_discovery_section_publishing), findsOneWidget);
     expect(find.text(t.manga_discovery_section_popular), findsOneWidget);
     expect(find.text('趋势作品'), findsOneWidget);
     expect(find.text('热门作品'), findsOneWidget);
@@ -87,7 +87,7 @@ void main() {
       Exception('network down'),
       MangaDiscoverySnapshot(
         feeds: <MangaDiscoveryFeed, List<MangaDiscoveryEntry>>{
-          MangaDiscoveryFeed.trending: <MangaDiscoveryEntry>[
+          MangaDiscoveryFeed.publishing: <MangaDiscoveryEntry>[
             _entry(1, '重试后出现'),
           ],
         },
@@ -109,7 +109,7 @@ void main() {
 
   testWidgets('P2 来源热门行：有货的行渲染、可点开，失败的行整行收起', (WidgetTester tester) async {
     int opened = 0;
-    // AniList 快照给空：源热门行顶到视口最上方，tap 不受上方行高影响。
+    // MAL 快照给空：源热门行顶到视口最上方，tap 不受上方行高影响。
     final _FakeProvider provider = _FakeProvider(<Object>[
       const MangaDiscoverySnapshot(
         feeds: <MangaDiscoveryFeed, List<MangaDiscoveryEntry>>{},
@@ -255,11 +255,11 @@ void main() {
     );
   });
 
-  testWidgets('选中具体来源后 AniList 行整体收起，只留该来源的内容', (WidgetTester tester) async {
+  testWidgets('选中具体来源后 MAL 行整体收起，只留该来源的内容', (WidgetTester tester) async {
     final _FakeProvider provider = _FakeProvider(<Object>[
       MangaDiscoverySnapshot(
         feeds: <MangaDiscoveryFeed, List<MangaDiscoveryEntry>>{
-          MangaDiscoveryFeed.trending: <MangaDiscoveryEntry>[
+          MangaDiscoveryFeed.publishing: <MangaDiscoveryEntry>[
             _entry(1, '趋势作品'),
           ],
         },
@@ -286,7 +286,7 @@ void main() {
     )));
     await tester.pumpAndSettle();
 
-    expect(find.text(t.manga_discovery_section_trending), findsOneWidget);
+    expect(find.text(t.manga_discovery_section_publishing), findsOneWidget);
     expect(
       find.text(t.manga_discovery_source_popular(source: '某在线源')),
       findsOneWidget,
@@ -303,9 +303,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.text(t.manga_discovery_section_trending),
+      find.text(t.manga_discovery_section_publishing),
       findsNothing,
-      reason: 'AniList 是跨来源元数据，按单个来源筛选时整体收起',
+      reason: 'MAL 是跨来源元数据，按单个来源筛选时整体收起',
     );
     expect(
       find.text(t.manga_discovery_source_popular(source: '某在线源')),

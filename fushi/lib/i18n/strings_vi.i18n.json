@@ -3376,7 +3376,6 @@
   "video_setting_youtube_quality": "Chất lượng YouTube",
   "video_setting_youtube_quality_hint": "Bắt đầu stream ở mức cao nhất đến mục tiêu này; Tự động ưu tiên phát mượt (codec thân thiện phần cứng, tối đa 1080p)",
   "library_view_discover": "Khám phá",
-  "manga_discovery_section_trending": "Thịnh hành",
   "manga_discovery_section_popular": "Phổ biến",
   "manga_discovery_section_top_rated": "Đánh giá cao nhất",
   "manga_discovery_section_latest_finished": "Hoàn thành gần đây",
@@ -4436,5 +4435,6 @@
   "video_opensubtitles_app_key_hint": "Để trống để dùng khóa API tích hợp trong ứng dụng.",
   "video_anilist_error_api_disabled": "AniList has temporarily disabled its public API because of server-side stability problems. This is not a problem with your network or proxy - the request reached AniList and was refused. Please try again later.",
   "video_anilist_error_rate_limited": "AniList is rate-limiting this app right now. Wait a moment and retry.",
-  "video_anilist_error_unreachable": "Cannot reach AniList (graphql.anilist.co). Check your network connection, or configure a proxy in download settings."
+  "video_anilist_error_unreachable": "Cannot reach AniList (graphql.anilist.co). Check your network connection, or configure a proxy in download settings.",
+  "manga_discovery_section_publishing": "Popular publishing manga"
 }

@@ -11,7 +11,7 @@ import 'package:fushi/src/media/discovery/sources/opds_discovery_source.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_source_browse_page.dart';
-import 'package:fushi/src/media/manga/discovery/anilist_manga_discovery_provider.dart';
+import 'package:fushi/src/media/manga/discovery/mal_manga_discovery_provider.dart';
 import 'package:fushi/src/media/manga/discovery/manga_discovery_detail_page.dart';
 import 'package:fushi/src/media/manga/discovery/manga_discovery_models.dart';
 import 'package:fushi/src/media/manga/discovery/manga_discovery_source_feeds.dart';
@@ -34,7 +34,7 @@ import 'package:fushi/utils.dart';
 /// 页头下面一行是与书 / galgame 发现页同形的 [DiscoveryHeaderControls]（来源筛选
 /// 下拉 + 搜索框），正文自上而下是：
 ///
-/// 1. AniList 元数据的趋势 / 热门 / 高分 / 最新完结四条横滑行（仅「全部来源」时）；
+/// 1. MAL 元数据的趋势 / 热门 / 高分 / 最新完结四条横滑行（仅「全部来源」时）；
 /// 2. 每个已启用来源的「热门」横滑行（[MangaDiscoverySourceRow]）；
 /// 3. 「浏览来源」一节（[MangaSourceCatalogSection]）：内置 mokuro.moe 目录 +
 ///    已启用 Aidoku 包 + 已启用 Mihon 在线源，点进各自的目录页。
@@ -48,8 +48,8 @@ import 'package:fushi/utils.dart';
 /// 结构对齐 hayase 化后的视频首页决策（用户拍板）：**不做自动播轮播**，趋势行
 /// 用更大的卡片充当页首视觉锚点，其余行标准卡片，全部是可拖动的横滑行。
 ///
-/// AniList 条目是元数据不是来源条目；点开进 [MangaDiscoveryDetailPage]，由它在
-/// 已启用来源里自动匹配可读条目。本页因此在**五个平台都可用**（AniList 公开查询
+/// MAL 条目是元数据不是来源条目；点开进 [MangaDiscoveryDetailPage]，由它在
+/// 已启用来源里自动匹配可读条目。本页因此在**五个平台都可用**（MAL 公开查询
 /// 与扩展宿主无关），与库页「视图列表无条件常量」的纪律一致。注意
 /// `AppModel.mihonManager` 在不支持的平台上会抛 [UnsupportedError]，所以任何读它
 /// 的路径都必须先过 [MihonRuntimeFactory.isSupported] 这道门。
@@ -73,7 +73,7 @@ class MangaDiscoveryPage extends ConsumerStatefulWidget {
   /// 漫画来源筛选、搜索与结果，避免再画一行「发现」。
   final bool embedded;
 
-  /// 数据源。为空时创建 AniList provider；测试注入假实现。
+  /// 数据源。为空时创建 MAL provider；测试注入假实现。
   final MangaDiscoveryProvider? provider;
 
   /// 测试注入：给定时跳过平台来源发现，直接渲染这些来源热门行。
@@ -87,7 +87,7 @@ class MangaDiscoveryPage extends ConsumerStatefulWidget {
 }
 
 class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
-  AniListMangaDiscoveryProvider? _ownedProvider;
+  MalMangaDiscoveryProvider? _ownedProvider;
   MangaDiscoverySnapshot? _snapshot;
   Object? _error;
   bool _loading = false;
@@ -108,7 +108,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
   String _selectedSourceId = kDiscoveryAllSourcesId;
 
   MangaDiscoveryProvider get _provider =>
-      widget.provider ?? (_ownedProvider ??= AniListMangaDiscoveryProvider());
+      widget.provider ?? (_ownedProvider ??= MalMangaDiscoveryProvider());
 
   /// 测试注入模式：**任一** override 给定就整条平台发现路径都不走。
   ///
@@ -405,11 +405,11 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
     );
   }
 
-  /// 正文。选中具体来源时收窄：AniList 行整体隐藏（它是跨来源的元数据，按来源筛
+  /// 正文。选中具体来源时收窄：MAL 行整体隐藏（它是跨来源的元数据，按来源筛
   /// 选没有意义），只留该来源的热门行和它那张浏览卡片。
   ///
-  /// AniList 的加载/失败态是**列表里的一项**，不再顶替整页：它挂了不该把「浏览
-  /// 来源」一起带走——那是本页合并进来的、与 AniList 完全无关的能力。
+  /// MAL 的加载/失败态是**列表里的一项**，不再顶替整页：它挂了不该把「浏览
+  /// 来源」一起带走——那是本页合并进来的、与 MAL 完全无关的能力。
   Widget _buildBody(MangaSourceCatalog catalog, String selected) {
     final bool allSources = selected == kDiscoveryAllSourcesId;
     final MangaDiscoverySnapshot? snapshot = _snapshot;
@@ -429,8 +429,8 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
           if (snapshot == null && !_loading) _buildError(),
           if (snapshot != null) ...<Widget>[
             _buildSection(
-              title: t.manga_discovery_section_trending,
-              entries: snapshot[MangaDiscoveryFeed.trending],
+              title: t.manga_discovery_section_publishing,
+              entries: snapshot[MangaDiscoveryFeed.publishing],
               cardWidth: 165,
               stripHeight: 265,
             ),
@@ -448,7 +448,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
             ),
           ],
         ],
-        // P2：AniList 行之后接「来源热门」行——条目直接来自已启用来源，点开即
+        // P2：MAL 行之后接「来源热门」行——条目直接来自已启用来源，点开即
         // 可读，不经过标题匹配。空/失败的行整行隐藏（补充内容，不立错误牌坊）。
         for (final MangaDiscoverySourceFeed feed in feeds)
           MangaDiscoverySourceRow(
@@ -715,7 +715,7 @@ class _MangaDiscoverySourceRowState extends State<MangaDiscoverySourceRow> {
   }
 }
 
-/// AniList 封面（公开 CDN，普通 `Image.network` 即可）；空/失败给占位图标。
+/// MAL 封面（公开 CDN，普通 `Image.network` 即可）；空/失败给占位图标。
 class MangaDiscoveryCover extends StatelessWidget {
   const MangaDiscoveryCover({required this.url, super.key});
 

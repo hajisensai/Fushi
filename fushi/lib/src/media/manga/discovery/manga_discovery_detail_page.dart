@@ -19,7 +19,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_source_browse_page.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/utils.dart';
 
-/// 发现条目详情页：AniList 元数据 + **全自动来源匹配**（用户决策 B）。
+/// 发现条目详情页：MAL 元数据 + **全自动来源匹配**（用户决策 B）。
 ///
 /// 打开即在全部已启用来源（Mihon 在线源 + Aidoku 包）里按标题模糊匹配，命中
 /// 列表按分数排序展示；点一条直接进对应来源的漫画详情页（章节可读）。没有任何
