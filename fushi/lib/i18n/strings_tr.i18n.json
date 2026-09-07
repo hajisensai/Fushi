@@ -4366,5 +4366,17 @@
   "onboarding_pack_tutorial_start": "Start lookup tutorial",
   "onboarding_pack_tutorial_skip": "Not now",
   "onboarding_pack_download_ready_hint": "Import the pack to use its dictionaries and pronunciation resources. You can do this later.",
-  "onboarding_pack_download_ready_notice": "Recommended pack downloaded. Choose Import now in the bottom bar when you are ready."
+  "onboarding_pack_download_ready_notice": "Recommended pack downloaded. Choose Import now in the bottom bar when you are ready.",
+  "download_task_group_by": "Group by",
+  "download_task_group_none": "No grouping",
+  "download_task_group_collection": "Collection / series",
+  "download_task_group_kind": "Media type",
+  "download_task_group_status": "Status",
+  "download_task_collection_unassigned": "No collection",
+  "download_task_groups_collapse": "Collapse all groups",
+  "download_task_groups_expand": "Expand all groups",
+  "download_task_sort_direction": "Reverse sort order",
+  "download_task_status_attention": "Needs attention",
+  "download_task_status_active": "In progress",
+  "download_task_status_filter": "Task status"
 }

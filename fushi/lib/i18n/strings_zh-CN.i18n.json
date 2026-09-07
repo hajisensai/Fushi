@@ -4366,5 +4366,17 @@
   "onboarding_pack_tutorial_start": "开始查词教程",
   "onboarding_pack_tutorial_skip": "暂时跳过",
   "onboarding_pack_download_ready_hint": "导入后即可使用词典和发音资源，也可以稍后再导入。",
-  "onboarding_pack_download_ready_notice": "推荐包已下载。准备好后，点击底部的「现在导入」。"
+  "onboarding_pack_download_ready_notice": "推荐包已下载。准备好后，点击底部的「现在导入」。",
+  "download_task_group_by": "分组",
+  "download_task_group_none": "不分组",
+  "download_task_group_collection": "合集／作品",
+  "download_task_group_kind": "媒体类型",
+  "download_task_group_status": "状态",
+  "download_task_collection_unassigned": "未归属合集",
+  "download_task_groups_collapse": "收起所有分组",
+  "download_task_groups_expand": "展开所有分组",
+  "download_task_sort_direction": "切换升降序",
+  "download_task_status_attention": "需要处理",
+  "download_task_status_active": "进行中",
+  "download_task_status_filter": "任务状态"
 }
