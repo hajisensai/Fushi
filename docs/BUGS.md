@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2061 条。点号进各自文件。
+> 共 2062 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2204](bugs/BUG-2204-srt-cue-tail-overlap-jumps-to-later-sentence.md) | ✅ | ✅ | 听书 ASR 字幕前句多吃下一句首字，后句跳到远处同前缀句、中间十几句全未匹配 |
 | [BUG-2203](bugs/BUG-2203-update-installer-self-kill-taskkill-tree.md) | ✅ | ✅ | 应用内更新静默失败：安装器被自己的 taskkill /T 连同祖先树一起杀掉，且被误诊为 app_mutex_running |
 | [BUG-2202](bugs/BUG-2202-clip-export-tx3g-unplayable-in-im.md) | ✅ | ✅ | 内封 tx3g 字幕轨让导出的片段在 QQ 等 IM 里整个不可播 |
 | [BUG-2201](bugs/BUG-2201-video-pending-scrape-has-no-visible-surface.md) | ✅ | ✅ | 待确认身份的作品在视频页零提示用户无从知道要去确认 |
