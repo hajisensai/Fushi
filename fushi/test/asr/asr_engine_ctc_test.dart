@@ -126,7 +126,10 @@ void main() {
     final _FakeFactory f = _FakeFactory(
       available: const <OnnxExecutionProvider>{OnnxExecutionProvider.directml},
     );
-    final AsrEngineSessions s = await AsrEngineLoader(factory: f).load(
+    final AsrEngineSessions s = await AsrEngineLoader(
+      factory: f,
+      platform: AsrPlatform.windows,
+    ).load(
       store: store,
       variant: AsrEncoderVariant.fp32,
       preference: AsrAccelerationPreference.auto,
@@ -156,7 +159,10 @@ void main() {
       available: const <OnnxExecutionProvider>{OnnxExecutionProvider.directml},
       budget: 32 * 1024 * 1024 * 1024,
     );
-    final AsrEngineSessions s = await AsrEngineLoader(factory: f).load(
+    final AsrEngineSessions s = await AsrEngineLoader(
+      factory: f,
+      platform: AsrPlatform.windows,
+    ).load(
       store: store,
       variant: AsrEncoderVariant.fp32,
       preference: AsrAccelerationPreference.auto,

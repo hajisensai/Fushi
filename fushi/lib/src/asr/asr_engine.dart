@@ -308,10 +308,18 @@ const int kAsrGreedyGraphIntraOpThreads = 4;
 
 /// 从 [AsrModelStore] 装载四个会话 + 词表。
 class AsrEngineLoader {
-  AsrEngineLoader({OrtOnnxSessionFactory? factory})
-    : _factory = factory ?? OrtOnnxSessionFactory(logName: kAsrLogName);
+  /// [platform] 只为可测性存在：EP 选择策略是按平台分档的
+  /// （[selectAsrEncoderProviders]），而「注入了 available EP 却仍按宿主平台
+  /// 判档」会让「DirectML 该被选中」这类用例在 Windows 上绿、在 Linux CI 上红
+  /// —— 判据里混进了一个测试无法控制的量。生产路径不传，取宿主真值。
+  AsrEngineLoader({OrtOnnxSessionFactory? factory, AsrPlatform? platform})
+    : _factory = factory ?? OrtOnnxSessionFactory(logName: kAsrLogName),
+      _platform = platform;
 
   final OrtOnnxSessionFactory _factory;
+  final AsrPlatform? _platform;
+
+  AsrPlatform get _resolvedPlatform => _platform ?? currentAsrPlatform();
 
   /// 本机 ORT 运行时编译进来的加速 EP（语义边界见
   /// [OrtOnnxSessionFactory.availableAcceleratedProviders]；不吞异常）。
@@ -360,7 +368,7 @@ class AsrEngineLoader {
     }
     final List<OnnxExecutionProvider> encoderProviders =
         selectAsrEncoderProviders(
-          platform: currentAsrPlatform(),
+          platform: _resolvedPlatform,
           available: available,
           preference: preference,
           variant: variant,

@@ -371,7 +371,10 @@ void main() {
           OnnxExecutionProvider.directml,
         },
       );
-      final AsrEngineSessions onGpu = await AsrEngineLoader(factory: gpu).load(
+      final AsrEngineSessions onGpu = await AsrEngineLoader(
+        factory: gpu,
+        platform: AsrPlatform.windows,
+      ).load(
         store: store,
         variant: AsrEncoderVariant.fp32,
         preference: AsrAccelerationPreference.auto,
