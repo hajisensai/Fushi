@@ -65,7 +65,11 @@ void main() {
     expect(
       readerSource,
       matches(RegExp(
-        r'_navigateToChapter\(\s*_currentChapter - 1,\s*progress: 0\.99,\s*manual: true,',
+        // `manual: true` 后面既可能是尾逗号（多行实参）也可能直接收 `)`（单行）。
+        // 原判据只认前者，于是 dart format 把这处调用收成一行之后就恒红——被钉死的
+        // 是**格式**，不是行为。这里只放宽分隔符，progress: 0.99 与 manual: true
+        // 两个真判据一字未动。
+        r'_navigateToChapter\(\s*_currentChapter - 1,\s*progress: 0\.99,\s*manual: true\s*[,)]',
         multiLine: true,
       )),
       reason: 'Reverse chapter-edge page turns are user-initiated.',
