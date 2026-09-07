@@ -8,6 +8,8 @@
 #include <vector>
 #include "siglus_message_capture.h"
 #include "siglus_message_profile.h"
+#include "siglus_native_message_profile.h"
+#include "siglus_native_message_capture.h"
 #include "siglus_image.h"
 // Exercise the production clock write deterministically, without sleeping or
 // substituting a second implementation of TextLaneEvent publication.
@@ -200,7 +202,8 @@ const wchar_t* ReadSiglusText(const SiglusTextUnionW* value, uint32_t* length) {
 }
 bool IsSiglusEngine() { return true; }
 const SiglusLookupProfile* ActiveSiglusLookupProfile() { return nullptr; }
-enum MH_STATUS { MH_OK, MH_ERROR_DISABLED, MH_ERROR_ENABLED, MH_ERROR_NOT_CREATED };
+enum MH_STATUS { MH_OK, MH_ERROR_DISABLED, MH_ERROR_ENABLED,
+                 MH_ERROR_NOT_CREATED, MH_ERROR_ALREADY_CREATED };
 bool mock_disable_failure = false;
 int mock_removed = 0;
 int mock_created = 0, mock_enabled = 0;
@@ -520,6 +523,73 @@ void TestProductionObservers() {
   Check(!g_siglus_message_ticket.armed && !g_siglus_message_tasks.TryPop(&task));
 }
 
+void TestNativeProductionObservers() {
+  uint32_t owner[160] = {};
+  uint32_t surfaces[224] = {};
+  __declspec(align(8)) uint32_t frames[256] = {};
+  const auto address = [](const void* value) {
+    return static_cast<uint32_t>(reinterpret_cast<uintptr_t>(value));
+  };
+  const uint32_t outer = address(&frames[180]);
+  const uint32_t ebp = (outer - 12) & ~7u;
+  const uint32_t inner = ebp - 0x60;
+  auto* text = reinterpret_cast<SiglusTextUnionW*>(outer + 12);
+  text->size = 2; text->capacity = 7;
+  text->storage.chars[0] = L'A'; text->storage.chars[1] = L'B';
+  owner[0x1f8 / 4] = 321;
+  owner[0x1e0 / 4] = 0;
+  owner[0x228 / 4] = address(surfaces);
+  owner[0x22c / 4] = address(surfaces) + sizeof(surfaces);
+  *reinterpret_cast<uint32_t*>(outer) = 0x8000;
+  *reinterpret_cast<uint32_t*>(ebp + 4) = 0x8000;
+  *reinterpret_cast<uint32_t*>(ebp - 0x10) = outer - 4;
+  *reinterpret_cast<uint32_t*>(inner) = 0x7003;
+  g_siglus_native_message_layout = {Layout(), 0x7003};
+  SiglusNativeMessageSavedRegisters entry{};
+  entry.saved_esp = outer - 4; entry.ecx = address(owner);
+  SiglusNativeMessageSavedRegisters call{};
+  call.saved_esp = inner - 4; call.ebx = outer - 4;
+  call.ecx = outer + 12; call.edi = address(owner); call.ebp = ebp;
+  g_siglus_message_capture_enabled.store(true);
+  g_capture_enabled = true;
+  SiglusMessageTextTask task;
+  while (g_siglus_message_tasks.TryPop(&task)) {}
+  ObserveSiglusNativeMessageEntry(&entry);
+  std::thread unrelated([&] { ObserveSiglusNativeMessageText(&call); });
+  unrelated.join();
+  Check(!g_siglus_message_tasks.TryPop(&task));
+  ObserveSiglusNativeMessageText(&call);
+  Check(g_siglus_message_tasks.TryPop(&task));
+  Check(task.voice_key == 321 && task.text_units == 2 && task.text[1] == L'B');
+  ObserveSiglusNativeMessageText(&call);
+  Check(!g_siglus_message_tasks.TryPop(&task));
+  // A new silent fragment reusing the exact stack is still a new occurrence.
+  owner[0x1f8 / 4] = UINT32_MAX;
+  for (int fragment = 0; fragment < 2; ++fragment) {
+    ObserveSiglusNativeMessageEntry(&entry);
+    ObserveSiglusNativeMessageText(&call);
+    Check(g_siglus_message_tasks.TryPop(&task));
+    Check(task.voice_key == UINT32_MAX && task.text_units == 2);
+  }
+  ObserveSiglusNativeMessageEntry(&entry);
+  call.edi = 0;
+  ObserveSiglusNativeMessageText(&call);
+  call.edi = address(owner);
+  ObserveSiglusNativeMessageText(&call);
+  Check(!g_siglus_native_message_ticket.armed &&
+        !g_siglus_message_tasks.TryPop(&task));
+  ObserveSiglusNativeMessageEntry(&entry);
+  text->capacity = 8; text->storage.text = reinterpret_cast<const wchar_t*>(1);
+  ObserveSiglusNativeMessageText(&call);
+  Check(!g_siglus_native_message_ticket.armed &&
+        !g_siglus_message_tasks.TryPop(&task));
+  ObserveSiglusNativeMessageEntry(&entry);
+  g_siglus_message_capture_enabled.store(false);
+  ObserveSiglusNativeMessageText(&call);
+  Check(!g_siglus_native_message_ticket.armed &&
+        !g_siglus_message_tasks.TryPop(&task));
+}
+
 void TestInstallationFailures() {
   InitializeCriticalSection(&g_cs);
   const auto reset = [] {
@@ -527,6 +597,7 @@ void TestInstallationFailures() {
     mock_null_original = -1; mock_disable_failure = false;
     g_siglus_message_capture_enabled.store(false);
     g_siglus_message_install_state.store(0);
+    g_siglus_message_native_ecx = false;
     g_orig_SiglusMessageEntry = g_orig_SiglusMessageScenario = nullptr;
     for (int i = 0; i < 2; ++i) {
       mock_create_status[i] = mock_enable_status[i] = MH_OK;
@@ -555,6 +626,21 @@ void TestInstallationFailures() {
   Check(!InstallSiglusMessageHookGroup());
   Check(IsSiglusMessageTextOwnershipBlocked() && !IsSiglusMessageTextInstalled());
   Check(mock_removed == 0 && g_orig_SiglusMessageScenario != nullptr);
+  // Native fallback uses the same MinHook registry. A disabled but retained
+  // inner record must not be handed to the plain HookFn path for re-enabling.
+  reset(); g_siglus_message_native_ecx = true;
+  mock_enable_status[1] = MH_ERROR_NOT_CREATED;
+  Check(!InstallSiglusMessageHookGroup());
+  Check(IsSiglusMessageTextOwnershipBlocked());
+  Check(g_siglus_message_created[1] && g_orig_SiglusMessageScenario != nullptr);
+  Check(!g_siglus_message_capture_enabled.load());
+  // A pre-existing inner record belongs to another owner. Even though this
+  // group never created it, the fallback must not re-enable or borrow it.
+  reset(); g_siglus_message_native_ecx = true;
+  mock_create_status[1] = MH_ERROR_ALREADY_CREATED;
+  Check(!InstallSiglusMessageHookGroup());
+  Check(IsSiglusMessageTextOwnershipBlocked());
+  Check(!g_siglus_message_created[1] && mock_enabled == 0);
   reset();
   Check(InstallSiglusMessageHookGroup());
   Check(IsSiglusMessageTextInstalled() && g_siglus_message_capture_enabled.load());
@@ -573,6 +659,7 @@ int main() {
 #if defined(_M_IX86)
   TestNakedAbi(); TestProductionObservers(); TestProductionWorkerAndRollback();
   TestDelayedWorkerUsesCommittedTimestamp();
+  TestNativeProductionObservers();
   TestInstallationFailures();
 #else
   Check(!TryHookSiglusMessageText());

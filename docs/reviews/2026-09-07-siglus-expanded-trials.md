@@ -181,6 +181,16 @@ LOOPERS PLUS 原版由 Start.exe34172（19:42:32.505292）经 StartMenu40196 进
 
 四批本机台账分别为`lp41020-native-message-runtime.json`（SHA-256 `45260f0459d372b21c77b29b1170ba7c3dcc23cd00eace8384f65d13eb36f5a7`）、`lp41020-native-message-batch2-runtime.json`（`b755e6b726acafd521a375bfde3636c613a92031b901fa2e5602fa8669d87484`）、`lp41020-native-message-batch3-runtime.json`（`3cf5863089c68ab80f50e99b91cf29b6a7f12779f46fc386453217bab6f99727`）及`lp41020-native-message-batch4-runtime.json`（`e8213da8589e1d89643f145f6abe3e1019b81da04acd1d885e63052e80fe7d98`）。首次清理耗时130.623秒，超过120秒目标，事实保留；后三批分别89.685、28.924、79.113秒，均在90秒以内。调试器退出码1没有被写成命令通过；每批均另行确认Detached、没有调试器附着且原入口字节恢复。
 
+### NativeEcx 消息生产接线与原路径回归
+
+`3bc00e6a2f` 引入独立严格消息profile与一次性调用票据。生产observer用裸入口保存原寄存器、TLS票据和SEH隔离，将有界正文复制到既有worker队列，沿实际TextSlot提交seq/tick发布查词身份。Anemoi的surface/renderer结构不同，严格拒绝该新增路径并保留原NativeExact文本fallback；没有扩大为两个游戏都已具备新版语音。
+
+整合审查发现 [BUG-2242](../bugs/BUG-2242-siglus-native-rollback-reenables-retained-hook.md)：内层已启而外层失败时，保留trampoline的入口不能交给普通HookFn再次启用；内层被他人预先创建也必须阻止回退。生产安装故障测试修复前失败，修复后通过。首轮两架构82/82通过的分发因这项审查发现没有安装；修复后重新完整构建，两架构仍各82/82，结构守卫47/47。最终x86 ZIP SHA-256 `4aa4555ee0a5f879deb361431e19f026638e919fc7bd1579c106e0801045b22e`，x64 ZIP `079c9049127042e881dd3c9c4140480769f6700bef2edeef506fa4264f6cbc63`；实际x86 DLL `139ee7e19e25dab3233474824d1b4bcf2c83927a8d83cbc0746e7d933a8ff220`。生产安装脚本退出0，Dart AOT不变。
+
+原版LOOPERS PLUS在空白一号槽保存当前进度后正常退出41020；从Start.exe49952、原启动菜单进入新游戏32232（父72132，20:31:08.951001）。中间启动菜单的创建时间未采集，不补造。宿主73120于20:33:02.297发起默认附着，helper54796（20:33:02.818636）和实际DLL使用新runtime `e9de04f59549e4ef/x86`，IPC24/NativeOwned，无Luna模块。20:35:09.312读取原版存档后，实际原生message线程`10752811405284080`产生正文seq2/tick956677859。
+
+20:36:46.068点击正文显示真实新明解词条，hit引用真实seq2而geometry generation为16。20:37:34.304窗外点击只关闭词典、原句保留；20:37:49.443下一次点击才推进到seq3/tick956836562。未要求风险确认或校准。此时新版source模块尚未接线，不把这一条文本/查词回归写成逐句音频或真卡通过。本机元数据为`native-message32232-runtime.json`；宿主线程目录显示的历史计数129没有作为IPC计数证据，实际推进前全局text_count为2。
+
 ## Not proved
 
 - `6f18f9...` v24 DLL 在 LOOPERS PLUS、LOOPERS 原版和終のステラ有有限查词交互证据；LUNARiA、SPRB 和 Anemoi 的旧 v23 证据不能互换为该构建验收；更不能将任何旧会话替换成最新 `7312ef...` 身份修正构建的验收。

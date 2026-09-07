@@ -282,6 +282,9 @@ bool TryHookSiglusExactText() {
     }
     if (profile->text_feed !=
         fushi_voice_hook::SiglusLookupTextFeed::kNativeEcxTextUnion) return true;
+    TryHookSiglusMessageText();
+    if (IsSiglusMessageTextInstalled() || IsSiglusMessageTextOwnershipBlocked())
+      return true;
     // Capture and lookup must use the same structurally admitted entry.
     return InstallSiglusExactTextAt(
         reinterpret_cast<uint8_t*>(module) + profile->exact_text_rva,

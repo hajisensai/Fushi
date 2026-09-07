@@ -22,6 +22,9 @@ std::atomic<int> g_siglus_message_install_state{0};
 std::atomic<bool> g_siglus_message_capture_enabled{false};
 fushi_voice_hook::SiglusMessageProfile g_siglus_message_profile;
 fushi_voice_hook::SiglusMessageLayout g_siglus_message_layout;
+bool g_siglus_message_native_ecx = false;
+fushi_voice_hook::SiglusNativeMessageProfile g_siglus_native_message_profile;
+fushi_voice_hook::SiglusNativeMessageLayout g_siglus_native_message_layout;
 uintptr_t g_siglus_message_scenario_rva = 0;
 void* g_orig_SiglusMessageEntry = nullptr;
 void* g_orig_SiglusMessageScenario = nullptr;
@@ -30,6 +33,8 @@ bool g_siglus_message_created[2] = {};
 bool g_siglus_message_ever_enabled[2] = {};
 __declspec(thread) fushi_voice_hook::SiglusMessageTicket
     g_siglus_message_ticket = {};
+__declspec(thread) fushi_voice_hook::SiglusNativeMessageTicket
+    g_siglus_native_message_ticket = {};
 fushi_voice_hook::SiglusMessageQueue<SiglusMessageTextTask,
                                    kSiglusMessageTaskSlots>
     g_siglus_message_tasks;
@@ -54,6 +59,30 @@ void __stdcall ObserveSiglusMessageEntry(uint32_t owner, uint32_t entry_esp,
       g_siglus_message_layout, owner, entry_esp, read, &g_siglus_message_ticket);
 }
 
+// Both admitted message ABIs hand off a validated occurrence here. Its bounded
+// copy owns the bytes before the engine returns; publication remains on worker.
+void QueueSiglusMessageText(uint32_t text_union, uint32_t frozen_voice_key) {
+  // ReadSiglusText validates the engine string union and its terminator. SEH
+  // contains page lifetime changes between validation and the bounded copy.
+  __try {
+    uint32_t units = 0;
+    const wchar_t* text = ReadSiglusText(
+        reinterpret_cast<const SiglusTextUnionW*>(text_union), &units);
+    if (text == nullptr || units == 0 || units > kSiglusMessageMaxTextUnits)
+      return;
+    SiglusMessageTextTask task;
+    task.tick_ms = GetTickCount64();
+    task.voice_key = frozen_voice_key;
+    task.text_units = units;
+    memcpy(task.text, text, units * sizeof(wchar_t));
+    task.text[units] = L'\0';
+    if (g_siglus_message_capture_enabled.load(std::memory_order_acquire))
+      (void)g_siglus_message_tasks.TryPush(task);
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    // This occurrence is already consumed; a bad string cannot pair later.
+  }
+}
+
 void __stdcall ObserveSiglusMessageScenario(uint32_t surface,
                                            uint32_t entry_esp,
                                            uint32_t wrapper_ebp) {
@@ -71,25 +100,7 @@ void __stdcall ObserveSiglusMessageScenario(uint32_t surface,
   if (!fushi_voice_hook::SiglusMessageCheckedAddress(entry_esp, 4,
                                                    &argument_address) ||
       !read(argument_address, &text_union)) return;
-  // ReadSiglusText validates the engine string union and its terminator. SEH
-  // contains page lifetime changes between validation and the bounded copy.
-  __try {
-    uint32_t units = 0;
-    const wchar_t* text = ReadSiglusText(
-        reinterpret_cast<const SiglusTextUnionW*>(text_union), &units);
-    if (text == nullptr || units == 0 || units > kSiglusMessageMaxTextUnits)
-      return;
-    SiglusMessageTextTask task;
-    task.tick_ms = GetTickCount64();
-    task.voice_key = frozen.voice_key;
-    task.text_units = units;
-    memcpy(task.text, text, units * sizeof(wchar_t));
-    task.text[units] = L'\0';
-    if (g_siglus_message_capture_enabled.load(std::memory_order_acquire))
-      (void)g_siglus_message_tasks.TryPush(task);
-  } __except (EXCEPTION_EXECUTE_HANDLER) {
-    // This occurrence is already consumed; a bad string cannot pair later.
-  }
+  QueueSiglusMessageText(text_union, frozen.voice_key);
 }
 
 FUSHI_SIGLUS_MESSAGE_THUNK(Detour_SiglusMessageEntry,
@@ -97,6 +108,47 @@ FUSHI_SIGLUS_MESSAGE_THUNK(Detour_SiglusMessageEntry,
 FUSHI_SIGLUS_MESSAGE_THUNK(Detour_SiglusMessageScenario,
                          ObserveSiglusMessageScenario,
                          g_orig_SiglusMessageScenario)
+
+void __stdcall ObserveSiglusNativeMessageEntry(
+    const fushi_voice_hook::SiglusNativeMessageSavedRegisters* registers) {
+  g_siglus_native_message_ticket = {};
+  if (registers == nullptr ||
+      !g_siglus_message_capture_enabled.load(std::memory_order_acquire) ||
+      !g_capture_enabled) return;
+  __try {
+    auto read = ReadSiglusMessageWord;
+    fushi_voice_hook::ArmSiglusNativeMessageTicket(
+        g_siglus_native_message_layout, *registers, read,
+        &g_siglus_native_message_ticket);
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    g_siglus_native_message_ticket = {};
+  }
+}
+
+void __stdcall ObserveSiglusNativeMessageText(
+    const fushi_voice_hook::SiglusNativeMessageSavedRegisters* registers) {
+  if (registers == nullptr ||
+      !g_siglus_message_capture_enabled.load(std::memory_order_acquire) ||
+      !g_capture_enabled) {
+    g_siglus_native_message_ticket = {};
+    return;
+  }
+  __try {
+    auto read = ReadSiglusMessageWord;
+    fushi_voice_hook::SiglusMessageOwnerSnapshot frozen;
+    if (!fushi_voice_hook::ConsumeSiglusNativeMessageTicket(
+            g_siglus_native_message_layout, *registers, read,
+            &g_siglus_native_message_ticket, &frozen)) return;
+    QueueSiglusMessageText(registers->ecx, frozen.voice_key);
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    g_siglus_native_message_ticket = {};
+  }
+}
+
+FUSHI_SIGLUS_NATIVE_MESSAGE_THUNK(Detour_SiglusNativeMessageEntry,
+    ObserveSiglusNativeMessageEntry, g_orig_SiglusMessageEntry)
+FUSHI_SIGLUS_NATIVE_MESSAGE_THUNK(Detour_SiglusNativeMessageText,
+    ObserveSiglusNativeMessageText, g_orig_SiglusMessageScenario)
 
 bool IsSiglusMessageTextInstalled() {
   return g_siglus_message_install_state.load(std::memory_order_acquire) == 1;
@@ -153,17 +205,37 @@ bool ResolveLiveSiglusMessage(HMODULE module,
   }
 }
 
+bool ResolveLiveSiglusNativeMessage(HMODULE module,
+    const fushi_voice_hook::SiglusLookupProfile& lane,
+    fushi_voice_hook::SiglusNativeMessageProfile* profile) {
+  __try {
+    fushi_voice_hook::exact_lookup::LoadedPeImage image;
+    return fushi_voice_hook::OpenSiglusLoadedImage(module, &image) &&
+        fushi_voice_hook::ResolveSiglusNativeMessageProfile(image, lane, profile) &&
+        image.base[lane.exact_text_rva] == 0x53 &&
+        image.base[profile->message_entry_rva] == 0x53;
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    return false;
+  }
+}
+
 // Called only after immutable full-profile admission in TryHook below. Kept as
 // a separate unit so fault-injected MinHook outcomes exercise production rollback.
 bool InstallSiglusMessageHookGroup() {
   void* detours[] = {reinterpret_cast<void*>(&Detour_SiglusMessageEntry),
                     reinterpret_cast<void*>(&Detour_SiglusMessageScenario)};
+  if (g_siglus_message_native_ecx) {
+    detours[0] = reinterpret_cast<void*>(&Detour_SiglusNativeMessageEntry);
+    detours[1] = reinterpret_cast<void*>(&Detour_SiglusNativeMessageText);
+  }
   void** originals[] = {&g_orig_SiglusMessageEntry, &g_orig_SiglusMessageScenario};
   bool complete = true;
+  bool text_entry_conflict = false;
   EnterCriticalSection(&g_cs);
   for (size_t i = 0; i < 2; ++i) {
     const MH_STATUS status = MH_CreateHook(g_siglus_message_targets[i],
                                           detours[i], originals[i]);
+    if (i == 1 && status == MH_ERROR_ALREADY_CREATED) text_entry_conflict = true;
     // Already-created is not ownership. Never borrow another hook's trampoline.
     if (status == MH_OK) g_siglus_message_created[i] = true;
     if (status != MH_OK || *originals[i] == nullptr) {
@@ -188,7 +260,13 @@ bool InstallSiglusMessageHookGroup() {
     g_siglus_message_capture_enabled.store(true, std::memory_order_release);
   } else {
     const bool clean = RollbackSiglusMessageHooks();
-    g_siglus_message_install_state.store(clean ? -1 : -2,
+    // BUG-2242: NativeEcx's plain fallback targets this same MinHook registry.
+    // It must not re-enable a retained observer or somebody else's inner entry.
+    // Previously enabled trampolines cannot be freed while callbacks may use
+    // them, so cleanly disabling one still does not transfer its ownership.
+    const bool native_entry_reserved = g_siglus_message_native_ecx &&
+        (g_siglus_message_created[1] || text_entry_conflict);
+    g_siglus_message_install_state.store(clean && !native_entry_reserved ? -1 : -2,
                                           std::memory_order_release);
   }
   LeaveCriticalSection(&g_cs);
@@ -201,15 +279,39 @@ bool TryHookSiglusMessageText() {
       !g_cs_ready || !IsSiglusEngine()) return false;
   const auto* lane = ActiveSiglusLookupProfile();
   HMODULE module = GetModuleHandleW(nullptr);
-  if (lane == nullptr || module == nullptr ||
-      lane->text_feed != fushi_voice_hook::SiglusLookupTextFeed::kLunaScenarioLane)
-    return false;
+  if (lane == nullptr || module == nullptr) return false;
+  const uintptr_t base = reinterpret_cast<uintptr_t>(module);
+  if (lane->text_feed ==
+      fushi_voice_hook::SiglusLookupTextFeed::kNativeEcxTextUnion) {
+    if (!ResolveLiveSiglusNativeMessage(module, *lane,
+                                        &g_siglus_native_message_profile)) {
+      g_siglus_message_install_state.store(-1, std::memory_order_release);
+      return false;
+    }
+    const auto& profile = g_siglus_native_message_profile;
+    g_siglus_message_native_ecx = true;
+    g_siglus_native_message_layout = {
+        {profile.owner_voice_key_offset, profile.owner_surface_index_offset,
+         profile.owner_surface_begin_offset, profile.owner_surface_end_offset,
+         profile.surface_stride, 0, 0},
+        static_cast<uint32_t>(base + profile.native_text_return_rva)};
+    // The common worker publishes one committed event per admitted fragment.
+    // No resource mapping is inferred from this independent message profile.
+    g_siglus_message_scenario_rva = lane->exact_text_rva;
+    g_siglus_message_profile.scenario_return_rva = profile.native_text_return_rva;
+    g_siglus_message_targets[0] =
+        reinterpret_cast<void*>(base + profile.message_entry_rva);
+    g_siglus_message_targets[1] =
+        reinterpret_cast<void*>(base + lane->exact_text_rva);
+    return InstallSiglusMessageHookGroup();
+  }
+  if (lane->text_feed !=
+      fushi_voice_hook::SiglusLookupTextFeed::kLunaScenarioLane) return false;
   if (!ResolveLiveSiglusMessage(module, *lane, &g_siglus_message_profile)) {
     g_siglus_message_install_state.store(-1, std::memory_order_release);
     return false;
   }
   const auto& profile = g_siglus_message_profile;
-  const uintptr_t base = reinterpret_cast<uintptr_t>(module);
   g_siglus_message_layout = {
       profile.owner_voice_key_offset, profile.owner_surface_index_offset,
       profile.owner_surface_begin_offset, profile.owner_surface_end_offset,
@@ -258,6 +360,7 @@ void ProcessSiglusMessageTextTasks() {
 void ShutdownSiglusMessageText() {
   g_siglus_message_capture_enabled.store(false, std::memory_order_release);
   g_siglus_message_ticket = {};
+  g_siglus_native_message_ticket = {};
   if (!g_cs_ready) return;
   EnterCriticalSection(&g_cs);
   const bool clean = RollbackSiglusMessageHooks();

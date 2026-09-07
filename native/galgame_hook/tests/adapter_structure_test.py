@@ -1464,6 +1464,28 @@ class AdapterStructureTest(unittest.TestCase):
             for forbidden in ("WriteTextRingEntryLocked", "WriteVoiceOggAt", "EnterCriticalSection", "CreateFile", "malloc("):
                 self.assertNotIn(forbidden, callback)
 
+    def test_siglus_native_message_ownership_precedes_plain_fallback(self) -> None:
+        adapters = ROOT / "hook" / "adapters"
+        render = self._strip_comments(
+            (adapters / "text_render_adapter.inc").read_text(encoding="utf-8"))
+        install = self._function_body(render, "bool TryHookSiglusExactText()")
+        native = install[install.index("kNativeEcxTextUnion"):]
+        attempt = native.index("TryHookSiglusMessageText();")
+        blocked = native.index("IsSiglusMessageTextOwnershipBlocked()")
+        stop = native.index("return true;", blocked)
+        fallback = native.index("InstallSiglusExactTextAt(")
+        self.assertLess(attempt, blocked)
+        self.assertLess(blocked, stop)
+        self.assertLess(stop, fallback)
+        capture = self._strip_comments(
+            (adapters / "siglus_message_capture.inc").read_text(encoding="utf-8"))
+        for name in ("ObserveSiglusNativeMessageEntry(",
+                     "ObserveSiglusNativeMessageText(", "QueueSiglusMessageText("):
+            callback = self._function_body(capture, name)
+            for forbidden in ("WriteTextRingEntryLocked", "EnterCriticalSection",
+                              "WriteVoiceOggAt", "CreateFile", "malloc("):
+                self.assertNotIn(forbidden, callback)
+
     def test_reallive_shared_ovk_path_does_not_claim_engine_identity(self) -> None:
         adapter = (ROOT / "hook" / "adapters" / "reallive_adapter.inc").read_text(
             encoding="utf-8"
