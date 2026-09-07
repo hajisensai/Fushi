@@ -29,10 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2065 条。点号进各自文件。
+> 共 2068 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2239](bugs/BUG-2239-pack-failed-import-cleanup.md) | ✅ | ✅ | 推荐包导入失败后仍被启动清理删除 |
+| [BUG-2238](bugs/BUG-2238-pack-delete-orphan-hidden.md) | ✅ | ✅ | 推荐包部分删除失败后残包入口消失 |
+| [BUG-2237](bugs/BUG-2237-pack-delete-download-race.md) | ✅ | ✅ | 推荐包清理与续传缺少互斥 |
 | [BUG-2235](bugs/BUG-2235-subtitle-hide-lookup-replay-reobscures.md) | ✅ | ✅ | 隐藏字幕在查词浮层重播时又被遮回去 |
 | [BUG-2230](bugs/BUG-2230-video-web-and-work-detail-loading-no-exit.md) | ✅ | ✅ | 网页流媒体页与作品详情页的加载态没有返回入口，且 init 异常无归宿 |
 | [BUG-2229](bugs/BUG-2229-video-missing-resource-no-back.md) | ✅ | ✅ | 视频资源缺失态没有返回入口，进入后无法退出 |

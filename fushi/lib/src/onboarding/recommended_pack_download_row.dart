@@ -42,6 +42,7 @@ class RecommendedPackDownloadRow extends StatelessWidget {
         controller.progress,
         controller.receivedBytes,
         controller.error,
+        controller.isDeleting,
       ]),
       builder: (BuildContext context, _) {
         switch (controller.stage.value) {
@@ -76,13 +77,15 @@ class RecommendedPackDownloadRow extends StatelessWidget {
               ),
             );
           case RecommendedPackDownloadStage.paused:
-            final String? failure = controller.error.value;
+            final String? failure = controller.failureMessage;
             return AdaptiveSettingsRow(
-              title: t.onboarding_pack_status_paused,
+              title: controller.isDeleting.value
+                  ? t.onboarding_pack_discard_running
+                  : t.onboarding_pack_status_paused,
               // 失败原因优先于通用说明：断在 8 GB 的人最需要知道断在什么上。
               subtitle: failure == null
                   ? '${recommendedPackProgressLabel(progress: controller.progress.value, receivedBytes: controller.receivedBytes.value)} · ${t.onboarding_pack_paused_desc}'
-                  : '${recommendedPackProgressLabel(progress: controller.progress.value, receivedBytes: controller.receivedBytes.value)} · ${t.onboarding_pack_download_failed(message: failure)}',
+                  : '${recommendedPackProgressLabel(progress: controller.progress.value, receivedBytes: controller.receivedBytes.value)} · $failure',
               icon: Icons.pause_circle_outline,
               showIcon: true,
               // 「放弃」在左、「继续」在右：主动作靠右，误触代价（重下几 GB）落在
@@ -93,12 +96,14 @@ class RecommendedPackDownloadRow extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: <Widget>[
                   TextButton(
-                    onPressed: onDiscard,
+                    onPressed: controller.isDeleting.value ? null : onDiscard,
                     child: Text(t.onboarding_pack_download_discard),
                   ),
                   const SizedBox(width: 8),
                   FilledButton.tonal(
-                    onPressed: () => unawaited(controller.start()),
+                    onPressed: controller.isDeleting.value
+                        ? null
+                        : () => unawaited(controller.start()),
                     child: Text(t.onboarding_pack_download_resume),
                   ),
                 ],
@@ -111,7 +116,7 @@ class RecommendedPackDownloadRow extends StatelessWidget {
               icon: Icons.inventory_2_outlined,
               showIcon: true,
               trailing: FilledButton(
-                onPressed: onImport,
+                onPressed: controller.isDeleting.value ? null : onImport,
                 child: Text(t.onboarding_pack_import_now),
               ),
             );

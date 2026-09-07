@@ -18,6 +18,7 @@ Future<void> confirmAndDiscardRecommendedPack(
   BuildContext context,
   RecommendedPackDownloadController controller,
 ) async {
+  if (!controller.isPaused || controller.isDeleting.value) return;
   final FushiDestructiveConfirmResult? confirmed =
       await showAppDialog<FushiDestructiveConfirmResult>(
         context: context,
