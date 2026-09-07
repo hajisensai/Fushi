@@ -15,13 +15,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
 
-import 'package:fushi/src/asr/asr_engine.dart';
-import 'package:fushi/src/asr/asr_model_manifest.dart';
-import 'package:fushi/src/asr/asr_transcribe_job.dart';
-import 'package:fushi/src/asr/asr_transcription_service.dart';
+import 'package:asr_core/asr_core.dart';
+import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/onnx/model_file_downloader.dart';
-import 'package:fushi/src/onnx/onnx_inference.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/utils.dart';
 
@@ -46,7 +42,7 @@ Future<String?> showAsrTranscribeSheet({
   Future<void> Function(String tag)? languageSetter,
 }) {
   final AsrTranscriptionService effective =
-      service ?? AsrTranscriptionService();
+      service ?? createAsrTranscriptionService();
   String Function() getter = languageGetter ?? () => '';
   Future<void> Function(String) setter = languageSetter ?? (String _) async {};
   if (languageGetter == null || languageSetter == null) {
