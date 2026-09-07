@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/ffmpeg_backend.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
+import 'package:fushi/src/mining/gal_voice_dump_index.dart';
 
 class _RecordingFfmpegBackend implements FfmpegBackend {
   final List<List<String>> calls = <List<String>>[];
@@ -17,10 +18,7 @@ class _RecordingFfmpegBackend implements FfmpegBackend {
   }
 
   @override
-  Future<FfmpegRunResult> runProbe(
-    List<String> args,
-    Duration timeout,
-  ) async =>
+  Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) async =>
       const FfmpegRunResult(returnCode: 1, output: 'unused');
 }
 
@@ -30,6 +28,57 @@ class _RecordingFfmpegBackend implements FfmpegBackend {
 /// 但「全取」不是无条件的：只有被证明属于同一句的资源才允许全取，纯时间邻近仍旧单取。
 /// 这条界线是本文件的主要断言面——放宽它会把上一句尾音、旁白、系统音一起塞进卡。
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('BUG-2245：真实资源制卡沿文本时刻过滤伴音，保留同句多角色', () async {
+    final Directory root = await Directory.systemTemp.createTemp(
+      'gal_companions_',
+    );
+    final GalVoiceDumpIndex index = GalVoiceDumpIndex(directory: root);
+    final _RecordingFfmpegBackend backend = _RecordingFfmpegBackend();
+    const String primary = '201000_fushi_textseq1_primary.ogg';
+    const String partner = '198500_fushi_textseq1_partner.ogg';
+    final List<String> names = <String>[
+      primary,
+      partner,
+      '100000_fushi_textseq1_old.ogg',
+      '201501_fushi_textseq1_outside_text_window.ogg',
+      '200000_fushi_textseq2_other.ogg',
+    ];
+    try {
+      for (final String name in names) {
+        await File('${root.path}/$name').writeAsBytes(<int>[1, 2, 3]);
+      }
+      await index.startSession();
+      setFfmpegBackendForTesting(backend);
+      final EngineHookGalAudioSource source = EngineHookGalAudioSource(
+        injectorPath: '',
+        voiceDumpIndex: index,
+      );
+      final Uint8List? bytes = await source.grabPairedVoiceBytes(
+        200000,
+        outputExtension: 'aac',
+        textEventId: 1,
+        resourceId: primary,
+        allowLatestSessionFallback: false,
+      );
+      expect(bytes, <int>[0xff, 0xf1, 0x50, 0x80, 0xff, 0xf1, 0x50, 0x80]);
+      expect(backend.calls, hasLength(2));
+      expect(
+        backend.calls[0],
+        contains('${root.path}${Platform.pathSeparator}$primary'),
+      );
+      expect(
+        backend.calls[1],
+        contains('${root.path}${Platform.pathSeparator}$partner'),
+      );
+    } finally {
+      setFfmpegBackendForTesting(null);
+      await index.stopSession();
+      await root.delete(recursive: true);
+    }
+  }, skip: !Platform.isWindows);
+
   group('pickPairedVoiceOggs（事件 ID 层全取）', () {
     test('同一事件 ID 的多个资源全部返回，按与文本时间戳的距离排序', () {
       final List<String> picked = pickPairedVoiceOggs(
@@ -156,10 +205,7 @@ void main() {
 
     test('无事件 ID 时仍旧只取时间窗内最近的一个', () {
       final List<String> picked = pickPairedUnityVoiceWavs(
-        wavFileNames: const <String>[
-          '32147100_onna.wav',
-          '32147190_otoko.wav',
-        ],
+        wavFileNames: const <String>['32147100_onna.wav', '32147190_otoko.wav'],
         textTsMs: 32147200,
       );
       expect(picked, <String>['32147190_otoko.wav']);
@@ -230,6 +276,21 @@ void main() {
   });
 
   group('companionVoiceResourceNames', () {
+    test('BUG-2245：旧会话重复编号不进入已冻结主资源的制卡伴音', () {
+      expect(
+        companionVoiceResourceNames(
+          primaryName: '200000_fushi_textseq1_current.ogg',
+          candidateNames: const <String>[
+            '100000_fushi_textseq1_old.ogg',
+            '300000_fushi_textseq1_later.ogg',
+            '199963_fushi_textseq1_partner.ogg',
+            '200000_fushi_textseq2_other.ogg',
+          ],
+        ),
+        <String>['199963_fushi_textseq1_partner.ogg'],
+      );
+    });
+
     test('主资源带事件 ID：收同一事件 ID 的其余资源，不含自己', () {
       expect(
         companionVoiceResourceNames(
@@ -355,8 +416,9 @@ void main() {
     });
 
     test('单个 xWMA 也经 ffmpeg 转成 AAC，不把原始字节写进卡片', () async {
-      final Directory root =
-          await Directory.systemTemp.createTemp('gal_xwma_transcode_');
+      final Directory root = await Directory.systemTemp.createTemp(
+        'gal_xwma_transcode_',
+      );
       final File xwma = File('${root.path}/voice.xwma');
       final Uint8List original = Uint8List.fromList(<int>[
         0x52,
@@ -387,12 +449,7 @@ void main() {
         expect(backend.calls, hasLength(1));
         expect(
           backend.calls.single,
-          containsAllInOrder(<String>[
-            '-i',
-            xwma.path,
-            '-c:a',
-            'aac',
-          ]),
+          containsAllInOrder(<String>['-i', xwma.path, '-c:a', 'aac']),
         );
         expect(backend.calls.single.last, endsWith('voice.aac'));
       } finally {
