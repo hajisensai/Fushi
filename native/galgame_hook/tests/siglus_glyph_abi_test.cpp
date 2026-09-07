@@ -22,11 +22,13 @@ SiglusLookupProfile test_profile;
 SiglusGlyphRecord published;
 size_t publications = 0, original_calls = 0;
 uint8_t original_result = 0xa5;
+bool glyph_owned = true;
 void* expected_self = nullptr;
 constexpr uintptr_t args[] = {0x12345678u, 0x80000001u, 0x3f800000u,
     0xdeadbeefu, 5u, 6u, 7u, 8u, 9u, 10u, 11u, 12u, 13u, 14u, 0xffffffffu};
 
 const SiglusLookupProfile* ActiveSiglusLookupProfile() { return &test_profile; }
+bool IsSiglusLookupGlyphOwned(void*) { return glyph_owned; }
 void PublishSiglusLookupGlyphEvent(uint16_t code_unit, int32_t x, int32_t y,
                                    int32_t extent) {
   published = {code_unit, extent, x, y};
@@ -108,6 +110,10 @@ int main() {
   test_profile.glyph_abi = SiglusGlyphLayoutAbi::kStackSixteenArguments;
   CaptureSiglusLookupGlyph(record, 1, caller, test_profile.glyph_abi);
   assert(publications == 2 && published.x == 240 && published.y == 560);
+  glyph_owned = false;
+  CaptureSiglusLookupGlyph(record, 1, caller, test_profile.glyph_abi);
+  assert(publications == 2);
+  glyph_owned = true;
   CaptureSiglusLookupGlyph(record, 0, caller, test_profile.glyph_abi);
   CaptureSiglusLookupGlyph(record, 1, caller + 1, test_profile.glyph_abi);
   CaptureSiglusLookupGlyph(record, 1, 0, test_profile.glyph_abi);

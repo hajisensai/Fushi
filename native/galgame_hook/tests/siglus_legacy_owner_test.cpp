@@ -118,6 +118,33 @@ struct Memory {
     memcpy(out, it->second.data(), size); return true;
   }
 };
+void TestRenderGate() {
+  Memory memory;
+  constexpr uint32_t slot = 0x10000, object = 0x20000;
+  memory.Put(slot, object);
+  memory.Put(object + 0x1fb, uint8_t{0});
+  assert(own::RenderAllowed(slot, memory) && memory.reads == 3);
+  for (const uint8_t flag : {uint8_t{1}, uint8_t{2}, uint8_t{0xff}}) {
+    memory.Put(object + 0x1fb, flag);
+    assert(!own::RenderAllowed(slot, memory));
+  }
+  memory.Put(object + 0x1fb, uint8_t{0});
+  for (uint32_t pointer : {0u, 1u, object + 1, 0xffffff00u}) {
+    memory.Put(slot, pointer);
+    assert(!own::RenderAllowed(slot, memory));
+  }
+  memory.Put(slot, object);
+  memory.fault = object + 0x1fb;
+  assert(!own::RenderAllowed(slot, memory));
+  memory.fault = 0;
+  size_t calls = 0;
+  auto drift = [&](uint32_t at, void* out, size_t size) {
+    if (++calls == 3) memory.Put(slot, object + 4);
+    return memory(at, out, size);
+  };
+  assert(!own::RenderAllowed(slot, drift));
+  assert(!own::RenderAllowed(slot + 1, memory));
+}
 struct Tree {
   Memory memory;
   static constexpr uint32_t config_slot = 0x10000, manager_slot = 0x10004;
@@ -219,5 +246,6 @@ void TestBudgetsAndInvalidVectors() {
 int main() {
   TestStructure(); TestLiveMembership(); TestStalePathsAndFaults();
   TestBudgetsAndInvalidVectors();
+  TestRenderGate();
   std::puts("Legacy Siglus ownership: structural bridge, bounded traversal and live path checks passed");
 }

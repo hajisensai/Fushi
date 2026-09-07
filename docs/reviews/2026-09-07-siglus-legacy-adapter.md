@@ -38,6 +38,37 @@ Rewrite 原始 Start.exe SHA-256 24B396B22A177F6573C787161099D2B378F5F02FDEAFE2B
 
 此阶段完整 Windows native 构建及 CTest x86 90/90、x64 88/88 通过；全套 source-of-truth guards 与显式生产 workflow replay 退出 0。旧版 callback 尚未接入运行时安装，不由这些离线通过升级支持状态。
 
+## 2026-09-08 旧版输入和正文对象整合
+
+独立输入/viewport 结构证明、运行时快照、正文对象关系分别整合为
+`3835d7ef6e`、`36a1de2cd0`、`a23e89c589`。正常链为
+manager +3C2CC → group +1CC → render owner +154 → entry +100 → glyph；
+另一 manager 向量不准入。当前真实内存只读验证通过，正文 14 字范围发生变化后，
+旧范围不再冒充当前对象。worker 最多枚举 128 节点、64 路径，回调只对命中路径
+作有界活体验证；通过非阻塞 SRW 锁交换元数据，不在回调中扫描整棵对象树。
+
+完整候选将现代两类与旧版三者唯一匹配后才发布不可变 profile。旧版保持
+GetKeyboardState 的 BOOL、其余 255 键及左键低位，复用既有按下/保持/抬起事务；
+消息保持 ECX=lparam、EDX=wparam、栈 message 的 fastcall ABI。具名 user32
+IAT 必须与独立解析的实时导出地址相等，不能仅因导入名称存在就安装。
+
+实时视图双读验证 config→manager、window/input/modal/hidden 别名、窗口所属进程、
+主消息 vtable、设计尺寸及引擎实际 viewport。按下、抬起和 worker 提交均复核
+owner/viewport。Save、Close、Log、auxiliary 的必要拒绝条件接入，独立审查另发现
+渲染循环的对象 +1FB 禁止位，结构输出补丁 `2769bf9239` 后也纳入拒绝门。
+未把这些必要条件写成对所有 IME/script 状态的完整语义证明。
+
+新增实际输入 ABI、API 调用次数、低位保持、视口偏移/拉伸/裁剪/溢出、
+待提交期间视图失效及 owner 更换测试。整合阶段完整 Windows 构建、
+CTest x86 94/94、x64 91/91、manifest/profile 检查、结构 48、manifest 22、
+workflow 6 和显式生产 replay 全部退出 0。额外 +1FB 拒绝门另做双架构重建
+与定向复验。尚未以这批离线结果升级支持状态。
+
+02:34 原 Rewrite 会话保存至此前空白的 004；诊断探针确认 state=stopped，
+随后经游戏菜单正常退出，旧 Fushi 捕获停止并正常关闭。下一会话必须加载新
+隔离运行时，从原始 Start.exe 经 Fushi 转区启动，不能复用仍有诊断 trampoline
+的旧游戏进程。
+
 ## Not proved
 
 原始启动、自动跟随、注入和选定正文线程已经通过。此前原验收 bundle 附着私有 DLL 正确返回 residentHookMismatch；统一组件后从原始入口重启已消除该测试配置问题，没有绕过身份检查。原生内嵌几何未匹配，resource/pcm_ready、paired、e2e_verified 尚未通过；clip/PCM 为零，已有 loopback 不能当作原音捕获。Angel Beats! 与月彼本轮尚未运行。未升级 engine-support.yaml，未更新既有 PR 或正式随包运行库。
@@ -46,4 +77,4 @@ Rewrite 原始 Start.exe SHA-256 24B396B22A177F6573C787161099D2B378F5F02FDEAFE2B
 
 ## Next gate
 
-完成旧版输入、菜单拒绝及 viewport 的关联证明，装配完整 profile 后从原始入口重启验证内嵌点击。后续逐句原音与真卡仍须逐门实测。
+从原始入口重启，验证完整旧版候选的正文点击、菜单拒绝和 viewport 映射。后续逐句原音与真卡仍须逐门实测。

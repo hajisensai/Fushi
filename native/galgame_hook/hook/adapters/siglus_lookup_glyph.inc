@@ -11,6 +11,8 @@ void CaptureSiglusLookupGlyph(void* self, uint8_t result,
   if (profile == nullptr || profile->glyph_abi != abi ||
       return_address < module ||
       return_address - module != profile->dialogue_glyph_return_rva) return;
+  if (abi == fushi_voice_hook::SiglusGlyphLayoutAbi::kStackSixteenArguments &&
+      !IsSiglusLookupGlyphOwned(self)) return;
   const size_t size = fushi_voice_hook::SiglusGlyphRecordBytes(abi);
   if (size == 0 || size > 0x48u) return;
   __try {

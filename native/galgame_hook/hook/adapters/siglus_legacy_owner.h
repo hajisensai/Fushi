@@ -120,6 +120,16 @@ inline bool Read(Reader& reader, uint32_t base, uint32_t offset, T* out) {
       reader(static_cast<uint32_t>(address), out, sizeof(T));
 }
 template <typename Reader>
+inline bool RenderAllowed(uint32_t slot, Reader& reader) {
+  uint32_t object = 0, after = 0;
+  uint8_t blocked = 0;
+  return slot != 0 && (slot & 3u) == 0 &&
+      Read(reader, slot, 0, &object) && object >= 0x10000 && (object & 3u) == 0 &&
+      Read(reader, object, 0x1fb, &blocked) && blocked == 0 &&
+      Read(reader, slot, 0, &after) && object == after;
+}
+
+template <typename Reader>
 inline bool RootCurrent(const Snapshot& snapshot, Reader& reader) {
   uint32_t config = 0, manager = 0;
   return Read(reader, snapshot.config_slot, 0, &config) &&

@@ -280,6 +280,10 @@ bool TryHookSiglusMessageText() {
   const auto* lane = ActiveSiglusLookupProfile();
   HMODULE module = GetModuleHandleW(nullptr);
   if (lane == nullptr || module == nullptr) return false;
+  // Legacy iterator-proxy strings are a different contract. Luna retains
+  // ownership until an independent original-message/audio proof is admitted.
+  if (lane->glyph_abi !=
+      fushi_voice_hook::SiglusGlyphLayoutAbi::kEcxTenArguments) return false;
   const uintptr_t base = reinterpret_cast<uintptr_t>(module);
   if (lane->text_feed ==
       fushi_voice_hook::SiglusLookupTextFeed::kNativeEcxTextUnion) {

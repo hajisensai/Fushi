@@ -56,6 +56,11 @@ enum class SiglusLookupTextFeed : uint8_t {
   kLunaScenarioLane = 2,
 };
 
+inline bool HasUniqueSiglusLookupFamily(bool luna, bool native, bool legacy) {
+  return static_cast<int>(luna) + static_cast<int>(native) +
+             static_cast<int>(legacy) == 1;
+}
+
 // A profile is either a measured executable or a structurally resolved ABI
 // family. The RVAs describe the visible-glyph layout boundary and the engine's
 // key sampler. They are unrelated to the SGRE renderer and DirectInput ABI.
@@ -81,6 +86,7 @@ struct SiglusLookupProfile {
   // dimensions come from this runtime Gameexe-config pointer, not a title.
   uintptr_t viewport_config_rva = 0;
   SiglusGlyphLayoutAbi glyph_abi = SiglusGlyphLayoutAbi::kEcxTenArguments;
+  uintptr_t get_keyboard_state_return_rva = 0;
 };
 
 inline constexpr SiglusLookupProfile kAnemoiSiglusLookupProfile = {
@@ -716,6 +722,65 @@ inline bool ScaleSiglusLookupRectToClient(const SiglusLookupProfile &profile,
   return client_rect->x < client_width && client_rect->y < client_height &&
          client_rect->x + client_rect->width > 0 &&
          client_rect->y + client_rect->height > 0;
+}
+
+// A live legacy viewport is an engine rectangle, including stretch and
+// non-centred layouts. Identity is carried through the physical transaction.
+struct SiglusLookupEngineView {
+  uintptr_t owner = 0;
+  SiglusLookupRect viewport;
+};
+
+inline bool SameSiglusLookupEngineView(const SiglusLookupEngineView& lhs,
+                                      const SiglusLookupEngineView& rhs) {
+  return lhs.owner == rhs.owner && lhs.viewport.x == rhs.viewport.x &&
+      lhs.viewport.y == rhs.viewport.y && lhs.viewport.width == rhs.viewport.width &&
+      lhs.viewport.height == rhs.viewport.height;
+}
+
+inline bool ProjectSiglusLookupRect(const SiglusLookupProfile& profile,
+                                    const SiglusLookupEngineView& view,
+                                    const SiglusLookupRect design,
+                                    int32_t client_width, int32_t client_height,
+                                    SiglusLookupRect* output) {
+  if (output == nullptr) return false;
+  *output = {};
+  if (profile.glyph_abi == SiglusGlyphLayoutAbi::kEcxTenArguments) {
+    return view.owner == 0 && ScaleSiglusLookupRectToClient(
+        profile, design, client_width, client_height, output);
+  }
+  if (profile.glyph_abi != SiglusGlyphLayoutAbi::kStackSixteenArguments ||
+      view.owner == 0 || profile.viewport_width <= 0 || profile.viewport_height <= 0 ||
+      client_width <= 0 || client_height <= 0 || view.viewport.width <= 0 ||
+      view.viewport.height <= 0 || design.x < 0 || design.y < 0 ||
+      design.width <= 0 || design.height <= 0 ||
+      static_cast<int64_t>(design.x) + design.width > profile.viewport_width ||
+      static_cast<int64_t>(design.y) + design.height > profile.viewport_height)
+    return false;
+  const auto project = [](int32_t origin, int64_t value, int32_t extent,
+                          int32_t design_extent) -> int64_t {
+    return static_cast<int64_t>(origin) +
+        (value * extent + design_extent / 2) / design_extent;
+  };
+  const int64_t left = project(view.viewport.x, design.x, view.viewport.width,
+                               profile.viewport_width);
+  const int64_t top = project(view.viewport.y, design.y, view.viewport.height,
+                              profile.viewport_height);
+  const int64_t right = project(view.viewport.x,
+      static_cast<int64_t>(design.x) + design.width, view.viewport.width,
+      profile.viewport_width);
+  const int64_t bottom = project(view.viewport.y,
+      static_cast<int64_t>(design.y) + design.height, view.viewport.height,
+      profile.viewport_height);
+  // Clip to the real client before narrowing, including negative engine offsets.
+  const int64_t x = std::max<int64_t>(0, left);
+  const int64_t y = std::max<int64_t>(0, top);
+  const int64_t r = std::min<int64_t>(client_width, right);
+  const int64_t b = std::min<int64_t>(client_height, bottom);
+  if (r <= x || b <= y) return false;
+  *output = {static_cast<int32_t>(x), static_cast<int32_t>(y),
+             static_cast<int32_t>(r-x), static_cast<int32_t>(b-y)};
+  return true;
 }
 
 inline int FindSiglusLookupGlyph(const SiglusLookupGeometry &geometry,

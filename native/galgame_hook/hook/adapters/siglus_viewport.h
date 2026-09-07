@@ -74,9 +74,10 @@ inline bool NameEquals(const exact_lookup::LoadedPeImage& image,uint64_t rva,
   }
   return true;
 }
-inline uintptr_t FindGetKeyStateImport(const exact_lookup::LoadedPeImage& image,
-                                      uintptr_t bound_get_key_state = 0) {
-  if (image.machine != IMAGE_FILE_MACHINE_I386 || image.pointer_bits != 32u)
+inline uintptr_t FindUser32Import(const exact_lookup::LoadedPeImage& image,
+                                  const char* symbol, uintptr_t bound_export) {
+  if (symbol == nullptr || *symbol == '\0' ||
+      image.machine != IMAGE_FILE_MACHINE_I386 || image.pointer_bits != 32u)
     return 0;
   const auto* dos_bytes = At(image,0,sizeof(IMAGE_DOS_HEADER));
   if (dos_bytes == nullptr) return 0;
@@ -106,7 +107,7 @@ inline uintptr_t FindGetKeyStateImport(const exact_lookup::LoadedPeImage& image,
     // export can identify the slot. Never interpret live pointers as names.
     const bool bound = desc.OriginalFirstThunk == 0;
     if (desc.FirstThunk == 0 || (bound &&
-        (bound_get_key_state == 0 || bound_get_key_state > UINT32_MAX))) return 0;
+        (bound_export == 0 || bound_export > UINT32_MAX))) return 0;
     const uint32_t table = bound ? desc.FirstThunk : desc.OriginalFirstThunk;
     bool terminated = false;
     for (uint64_t index = 0; index < image.size/sizeof(uint32_t); ++index) {
@@ -116,10 +117,10 @@ inline uintptr_t FindGetKeyStateImport(const exact_lookup::LoadedPeImage& image,
       uint32_t name = 0;
       std::memcpy(&name,lookup,sizeof(name));
       if (name == 0) { terminated = true; break; }
-      const bool is_key_state = bound ? name == bound_get_key_state :
+      const bool is_symbol = bound ? name == bound_export :
           (name & IMAGE_ORDINAL_FLAG32) == 0 &&
-          NameEquals(image,static_cast<uint64_t>(name)+2,"GetKeyState",false);
-      if (!is_key_state)
+          NameEquals(image,static_cast<uint64_t>(name)+2,symbol,false);
+      if (!is_symbol)
         continue;
       const uint64_t thunk = static_cast<uint64_t>(desc.FirstThunk)+index*4;
       if (match != 0 || (thunk & 3u) != 0 ||
@@ -131,6 +132,26 @@ inline uintptr_t FindGetKeyStateImport(const exact_lookup::LoadedPeImage& image,
     if (!terminated) return 0;
   }
   return 0;
+}
+
+inline uintptr_t FindGetKeyStateImport(const exact_lookup::LoadedPeImage& image,
+                                      uintptr_t bound_get_key_state = 0) {
+  return FindUser32Import(image, "GetKeyState", bound_get_key_state);
+}
+
+// Legacy input resolves several imports. A name alone is insufficient: its
+// live thunk must still equal the independently obtained user32 export.
+inline uintptr_t FindVerifiedUser32Import(
+    const exact_lookup::LoadedPeImage& image, const char* symbol,
+    uintptr_t expected_export) {
+  if (expected_export == 0 || expected_export > UINT32_MAX) return 0;
+  const uintptr_t slot = FindUser32Import(image, symbol, expected_export);
+  const auto* bytes = slot == 0 ? nullptr : At(image, slot, sizeof(uint32_t));
+  if (bytes == nullptr || !exact_lookup::IsReadableSpan(bytes, sizeof(uint32_t)))
+    return 0;
+  uint32_t observed = 0;
+  std::memcpy(&observed, bytes, sizeof(observed));
+  return observed == expected_export ? slot : 0;
 }
 
 }  // namespace fushi_voice_hook::siglus_viewport

@@ -19,6 +19,7 @@ struct SiglusLookupGlyphEvent {
 using SiglusLookupTextSnapshot = fushi_voice_hook::SiglusLookupTextSnapshot;
 
 struct SiglusLookupPayload {
+  fushi_voice_hook::SiglusLookupEngineView engine_view;
   fushi_voice_hook::SiglusLookupTextIdentity text_identity;
   uint64_t geometry_generation = 0;
   uint64_t snapshot_epoch = 0;
@@ -34,6 +35,7 @@ struct SiglusLookupPayload {
 };
 
 struct SiglusLookupClickTarget {
+  fushi_voice_hook::SiglusLookupEngineView engine_view;
   fushi_voice_hook::SiglusLookupTextIdentity text_identity;
   volatile LONG64 seq = 0;
   uint32_t valid = 0;

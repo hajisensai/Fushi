@@ -310,8 +310,11 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn("payload.logical_generation", sgre_publish)
         self.assertNotIn("payload.capture_seq", sgre_publish)
 
-        siglus_up = self._function_body(siglus, "Detour_SiglusGetKeyState(")
+        siglus_up = self._function_body(siglus, "FilterSiglusLookupLeftButtonSample(")
         self.assertIn("SiglusLookupPayloadMatchesPublishedTarget", siglus_up)
+        wrappers = (ROOT / "hook" / "adapters" / "siglus_lookup_input.inc").read_text(encoding="utf-8")
+        for name in ("Detour_SiglusGetKeyState(", "Detour_SiglusGetKeyboardState("):
+            self.assertIn("FilterSiglusLookupLeftButtonSample", self._function_body(wrappers, name))
         siglus_publish = self._function_body(
             siglus, "SiglusLookupSubmissionResult TryPublishSiglusLookupPayload("
         )
@@ -535,7 +538,10 @@ class AdapterStructureTest(unittest.TestCase):
         for required in (
             "OpenSiglusLoadedImage",
             "ResolveSiglusFamilyProfile", "ResolveSiglusNativeFamilyProfile",
-            "luna_matched == native_matched", "ResolveConfigSlot",
+            "HasUniqueSiglusLookupFamily", "luna_matched, native_matched, legacy_matched",
+            "ResolveSiglusLegacyGlyphSites", "siglus_legacy_input::Resolve",
+            "siglus_legacy_live::ReadSnapshot", "ResolveConfigSlot",
+            "siglus_legacy_owner::Resolve",
             "ResolveNativeConfigSlot", "ReadSiglusDesignSize",
             'GetProcAddress(user32, "GetKeyState")',
         ):

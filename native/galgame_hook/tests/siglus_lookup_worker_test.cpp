@@ -37,13 +37,20 @@ HWND foreground = kWindow;
 bool window_valid = true;
 ULONGLONG tick = 1000;
 void (*before_second_validation)() = nullptr;
+SiglusLookupProfile active_profile = kAnemoiSiglusLookupProfile;
+SiglusLookupEngineView active_view;
+bool view_valid = true;
 
 const SiglusLookupProfile* ActiveSiglusLookupProfile() {
-  return &kAnemoiSiglusLookupProfile;
+  return &active_profile;
 }
 void ConsumeSiglusLookupLunaScenarioText() {}
 void InvalidateSiglusLookupClickTarget() {}
 void SetSiglusLookupDiag(uint32_t value) { g_header->lookup_diag |= value; }
+bool ReadSiglusLookupEngineView(HWND, SiglusLookupEngineView* view) {
+  *view = active_view;
+  return view_valid;
+}
 SiglusLookupClientSnapshot SiglusLookupPayloadClientSnapshot(
     const SiglusLookupPayload& payload) {
   return {payload.game_window, payload.client_screen_x, payload.client_screen_y,
@@ -61,6 +68,9 @@ ULONGLONG TestGetTickCount64() {
   if (before_second_validation != nullptr) {
     const auto callback = before_second_validation;
     before_second_validation = nullptr;
+    active_profile = kAnemoiSiglusLookupProfile;
+    active_view = {};
+    view_valid = true;
     callback();
   }
   return tick;
@@ -155,6 +165,9 @@ SiglusLookupPayload Press(uint32_t character = 0) {
   payload.text_units = 3;
   payload.char_index = character;
   payload.rect = g_siglus_lookup_layout.geometry.glyphs[character].rect;
+  payload.engine_view = active_view;
+  assert(ProjectSiglusLookupRect(active_profile, active_view, payload.rect,
+                                1920, 1080, &payload.rect));
   payload.game_window = reinterpret_cast<uintptr_t>(kWindow);
   payload.client_width = 1920;
   payload.client_height = 1080;
@@ -392,6 +405,37 @@ void TestWindowInvalidationIsTerminal() {
   assert(!ProcessSiglusLookupClickSubmissions());
   assert(g_siglus_lookup_click_processed_seq == 1);
 }
+void TestLegacyViewAndVisibilityRecheckedBeforePublish() {
+  for (int changed = 0; changed < 7; ++changed) {
+    Fixture fixture;
+    active_profile.glyph_abi = SiglusGlyphLayoutAbi::kStackSixteenArguments;
+    active_view = {0x123400, {20, 10, 1600, 900}};
+    Begin();
+    const auto payload = Press();
+    assert(IsSiglusLookupPayloadEligible(payload));
+    QueueSiglusLookupClickSubmit(payload);
+    switch (changed) {
+      case 0: view_valid = false; break; // menu, dead alias or invalid HWND
+      case 1: ++active_view.owner; break;
+      case 2: ++active_view.viewport.x; break;
+      case 3: ++active_view.viewport.y; break;
+      case 4: ++active_view.viewport.width; break;
+      case 5: ++active_view.viewport.height; break;
+      case 6: before_second_validation = [] { view_valid = false; }; break;
+    }
+    assert(!ProcessSiglusLookupClickSubmissions());
+    assert(g_header->lookup_hit_count == 0 && g_siglus_lookup_click_processed_seq == 1);
+    active_view = payload.engine_view;
+    view_valid = true;
+    assert(!ProcessSiglusLookupClickSubmissions()); // old release stays retired
+  }
+  Fixture fixture;
+  active_profile.glyph_abi = SiglusGlyphLayoutAbi::kStackSixteenArguments;
+  active_view = {0x123400, {20, 10, 1600, 900}};
+  Begin();
+  QueueSiglusLookupClickSubmit(Press());
+  assert(ProcessSiglusLookupClickSubmissions() && g_header->lookup_hit_count == 1);
+}
 }  // namespace
 
 int main() {
@@ -410,5 +454,6 @@ int main() {
   TestReservedClickSlotCannotSkipToNewerEvent();
   TestRegistryRejectionIsTerminal();
   TestWindowInvalidationIsTerminal();
-  std::puts("siglus_lookup_worker_test: 15 scenarios passed");
+  TestLegacyViewAndVisibilityRecheckedBeforePublish();
+  std::puts("siglus_lookup_worker_test: 16 scenarios passed");
 }

@@ -370,6 +370,34 @@ void BoundImportBoundsAndAmbiguity() {
   }
 }
 
+void VerifiedUser32Imports() {
+  constexpr uintptr_t target = 0x76543210u;
+  for (const char* symbol : {"GetKeyboardState", "GetCursorPos",
+                            "GetActiveWindow", "ScreenToClient"}) {
+    TestImage test;
+    test.WriteName(TestImage::kName + sizeof(WORD), symbol);
+    assert(viewport::FindVerifiedUser32Import(test.image, symbol, target) ==
+           TestImage::kIat);
+    assert(viewport::FindGetKeyStateImport(test.image) == 0);
+    assert(viewport::FindVerifiedUser32Import(test.image, symbol, 0) == 0);
+    assert(viewport::FindVerifiedUser32Import(test.image, symbol, target + 4) == 0);
+    assert(viewport::FindVerifiedUser32Import(test.image, "DifferentExport", target) == 0);
+    test.Write(TestImage::kIat, uint32_t{0x12345678u});
+    assert(viewport::FindVerifiedUser32Import(test.image, symbol, target) == 0);
+    test.descriptor.OriginalFirstThunk = 0;
+    test.Write(TestImage::kImports, test.descriptor);
+    assert(viewport::FindVerifiedUser32Import(test.image, symbol, target) == 0);
+    test.Write(TestImage::kIat, static_cast<uint32_t>(target));
+    assert(viewport::FindVerifiedUser32Import(test.image, symbol, target) == TestImage::kIat);
+    // Duplicate live bindings are ambiguous even when names have been stripped.
+    test.Write(TestImage::kIat + 4, static_cast<uint32_t>(target));
+    assert(viewport::FindVerifiedUser32Import(test.image, symbol, target) == 0);
+  }
+  TestImage test;
+  assert(viewport::FindVerifiedUser32Import(test.image, nullptr, target) == 0);
+  assert(viewport::FindVerifiedUser32Import(test.image, "", target) == 0);
+}
+
 }  // namespace
 
 int main() {
@@ -380,5 +408,6 @@ int main() {
   ImportBoundsAndAmbiguity();
   BoundImportIdentity();
   BoundImportBoundsAndAmbiguity();
+  VerifiedUser32Imports();
   return 0;
 }

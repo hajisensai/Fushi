@@ -628,5 +628,37 @@ int main() {
   assert(!MatchesSiglusLookupGenerationAndClient(7, stable_client, 8,
                                                  stable_client));
 
+  SiglusLookupProfile legacy = kAnemoiSiglusLookupProfile;
+  for (unsigned families = 0; families < 8; ++families) {
+    assert(HasUniqueSiglusLookupFamily((families & 1) != 0, (families & 2) != 0,
+                                      (families & 4) != 0) ==
+           (families == 1 || families == 2 || families == 4));
+  }
+  legacy.glyph_abi = SiglusGlyphLayoutAbi::kStackSixteenArguments;
+  legacy.viewport_width = 1280;
+  legacy.viewport_height = 720;
+  SiglusLookupEngineView actual_view{0x123400, {10, 20, 2560, 720}};
+  SiglusLookupRect projected;
+  assert(ProjectSiglusLookupRect(legacy, actual_view, {240, 560, 30, 30},
+                                3000, 1000, &projected));
+  assert(projected.x == 490 && projected.y == 580 &&
+         projected.width == 60 && projected.height == 30);
+  actual_view.viewport = {-250, -570, 1280, 720};
+  assert(ProjectSiglusLookupRect(legacy, actual_view, {240, 560, 30, 30},
+                                3000, 1000, &projected));
+  assert(projected.x == 0 && projected.y == 0 &&
+         projected.width == 20 && projected.height == 20);
+  actual_view.viewport = {INT32_MAX, 0, INT32_MAX, INT32_MAX};
+  assert(!ProjectSiglusLookupRect(legacy, actual_view, {240, 560, 30, 30},
+                                 3000, 1000, &projected));
+  assert(projected.width == 0);
+  actual_view.viewport = {0, 0, 1280, 720};
+  assert(!ProjectSiglusLookupRect(legacy, actual_view, {1279, 0, 30, 30},
+                                 3000, 1000, &projected));
+  assert(!ProjectSiglusLookupRect(legacy, {}, {240, 560, 30, 30},
+                                 3000, 1000, &projected));
+  assert(!ProjectSiglusLookupRect(kAnemoiSiglusLookupProfile, actual_view,
+                                 {240, 560, 30, 30}, 3000, 1000, &projected));
+
   return 0;
 }

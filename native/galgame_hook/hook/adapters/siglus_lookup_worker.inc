@@ -235,6 +235,10 @@ bool IsSiglusLookupPayloadEligible(const SiglusLookupPayload &payload) {
   }
 
   const HWND game = reinterpret_cast<HWND>(payload.game_window);
+  fushi_voice_hook::SiglusLookupEngineView engine_view;
+  if (!ReadSiglusLookupEngineView(game, &engine_view) ||
+      !fushi_voice_hook::SameSiglusLookupEngineView(engine_view, payload.engine_view))
+    return false;
   RECT client = {};
   POINT origin = {0, 0};
   if (game == nullptr || !IsWindow(game) || GetForegroundWindow() != game ||
@@ -259,8 +263,8 @@ bool IsSiglusLookupPayloadEligible(const SiglusLookupPayload &payload) {
     if (glyph.char_index != payload.char_index)
       continue;
     fushi_voice_hook::SiglusLookupRect expected;
-    if (!fushi_voice_hook::ScaleSiglusLookupRectToClient(
-            *profile, glyph.rect, active_client.width, active_client.height,
+    if (!fushi_voice_hook::ProjectSiglusLookupRect(
+            *profile, engine_view, glyph.rect, active_client.width, active_client.height,
             &expected)) {
       return false;
     }
