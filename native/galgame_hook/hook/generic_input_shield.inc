@@ -736,6 +736,10 @@ void TryInstallGenericKeyAndRawInputShield() {
   // 代价不对称时，站在可逆的那一边。
   const bool reserve_get_key_state =
       IsSiglusLookupProfileMatched() || IsSiglusLookupIdentityUndecided();
+  // Legacy Siglus samples the entire key table. Reserve that export while
+  // resolving its family; modern Siglus and rejected identities release it.
+  const bool reserve_get_keyboard_state =
+      ShouldReserveSiglusKeyboardState();
   const bool hunex_exact_owner = IsHunexGgeProfileMatched();
   const bool reserve_get_async_key_state =
       IsLeafAquaplusProfileMatched() || IsLeafAquaplusIdentityUndecided() ||
@@ -780,13 +784,18 @@ void TryInstallGenericKeyAndRawInputShield() {
 
   void *get_keyboard_state =
       reinterpret_cast<void *>(GetProcAddress(user32, "GetKeyboardState"));
-  if ((coverage & kGenericKeyCoverageGetKeyboardState) == 0 &&
-      HookGenericExport(
+  if ((coverage & kGenericKeyCoverageGetKeyboardState) == 0) {
+    if (IsHookTargetTrackedByThisDll(get_keyboard_state)) {
+      // The exact adapter owns the trampoline and publishes EnginePrivate
+      // readiness. A duplicate HookFn call cannot supply a second trampoline.
+      coverage |= kGenericKeyCoverageGetKeyboardState;
+    } else if (!reserve_get_keyboard_state && HookGenericExport(
           get_keyboard_state,
           reinterpret_cast<void *>(&Detour_GenericGetKeyboardState),
           reinterpret_cast<void **>(&g_generic_get_keyboard_state_original),
           fushi_voice_hook::kLookupShieldSurfaceKeyState)) {
-    coverage |= kGenericKeyCoverageGetKeyboardState;
+      coverage |= kGenericKeyCoverageGetKeyboardState;
+    }
   }
   g_generic_key_coverage.store(coverage, std::memory_order_relaxed);
   if (fushi_voice_hook::IsCompleteGenericKeyStateCoverage(

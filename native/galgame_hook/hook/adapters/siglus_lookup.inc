@@ -306,6 +306,12 @@ bool IsSiglusLookupIdentityUndecided() {
 
 #include "siglus_lookup_legacy.inc"
 
+bool ShouldReserveSiglusKeyboardState() {
+  const auto* profile = ActiveSiglusLookupProfile();
+  return IsSiglusLookupIdentityUndecided() ||
+      (profile != nullptr && IsLegacySiglusLookup(*profile));
+}
+
 bool ReadSiglusDesignSize(HMODULE module, uintptr_t config_rva,
                           int32_t* width, int32_t* height, bool legacy = false) {
   if (module == nullptr || config_rva == 0 || width == nullptr || height == nullptr)
@@ -1388,6 +1394,7 @@ void ShutdownSiglusLookup() {
 
 bool IsSiglusLookupProfileMatched() { return false; }
 bool IsSiglusLookupIdentityUndecided() { return false; }
+bool ShouldReserveSiglusKeyboardState() { return false; }
 void ProcessSiglusLookupTick() {}
 void ShutdownSiglusLookup() {}
 

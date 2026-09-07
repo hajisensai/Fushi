@@ -2070,6 +2070,29 @@ class AdapterStructureTest(unittest.TestCase):
                 )
                 self.assertIn("state == 0 || state == 2", pending)
 
+    def test_legacy_siglus_reserves_keyboard_table_before_generic_install(self) -> None:
+        source = self._strip_comments(
+            (ROOT / "hook" / "generic_input_shield.inc").read_text(encoding="utf-8")
+        )
+        body = self._function_body(source, "void TryInstallGenericKeyAndRawInputShield(")
+        reserve = body[body.index("const bool reserve_get_keyboard_state ="):]
+        reserve = reserve[:reserve.index(";")]
+        self.assertIn("ShouldReserveSiglusKeyboardState()", reserve)
+        policy = self._function_body(self._siglus_source(), "bool ShouldReserveSiglusKeyboardState(")
+        self.assertIn("IsSiglusLookupIdentityUndecided()", policy)
+        self.assertIn("profile != nullptr && IsLegacySiglusLookup(*profile)", policy)
+        # Modern families must leave the generic key-table path available.
+        self.assertNotIn("IsSiglusLookupProfileMatched()", reserve)
+        keyboard = body[body.index("void *get_keyboard_state ="):]
+        keyboard = keyboard[:keyboard.index("g_generic_key_coverage.store")]
+        tracked = self._function_body(keyboard, "if (IsHookTargetTrackedByThisDll(")
+        self.assertIn("coverage |= kGenericKeyCoverageGetKeyboardState", tracked)
+        self.assertNotIn("HookGenericExport", tracked)
+        self.assertIn("else if (!reserve_get_keyboard_state && HookGenericExport(", keyboard)
+        self.assertEqual(keyboard.count("HookGenericExport("), 1)
+        self.assertLess(body.index("const bool reserve_get_keyboard_state ="),
+                        body.index("void *get_keyboard_state ="))
+
     def test_leaf_structure_gate_reads_the_pristine_file_not_process_memory(
         self,
     ) -> None:

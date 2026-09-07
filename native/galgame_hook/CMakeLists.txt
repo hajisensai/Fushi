@@ -845,3 +845,5 @@ if(MSVC)
 endif()
 add_test(NAME fushi_locale_emulator_version_hooks_test
   COMMAND fushi_locale_emulator_version_hooks_test)
+
+include(tests/generic_input_shield_install_test.cmake)
