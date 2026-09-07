@@ -1,0 +1,291 @@
+#undef NDEBUG
+#include <windows.h>
+#include <cassert>
+#include <cstdio>
+#include <cstring>
+#include <map>
+#include "siglus_voice_source.h"
+#include "siglus_message_profile.h"
+#include "siglus_resource_mapping.h"
+#include "siglus_image.h"
+
+namespace {
+using namespace fushi_voice_hook;
+int checks = 0;
+void Check(bool value) { ++checks; assert(value); }
+struct Memory {
+  std::map<uint32_t, uint8_t> bytes;
+  bool operator()(uint32_t address, void* out, size_t length) {
+    auto* destination = static_cast<uint8_t*>(out);
+    for (size_t i = 0; i < length; ++i) {
+      const auto found = bytes.find(address + static_cast<uint32_t>(i));
+      if (found == bytes.end()) return false;
+      destination[i] = found->second;
+    }
+    return true;
+  }
+  void Put(uint32_t address, const void* value, size_t length) {
+    const auto* source = static_cast<const uint8_t*>(value);
+    for (size_t i = 0; i < length; ++i)
+      bytes[address + static_cast<uint32_t>(i)] = source[i];
+  }
+  void Word(uint32_t address, uint32_t value) { Put(address, &value, 4); }
+};
+SiglusVoiceSourceLayout Layout() {
+  return {0x8000, 0x7000, 8, -0x128, -0xb8, -0x30, 4, 8, 12};
+}
+struct Fixture {
+  Memory memory;
+  SiglusVoiceSourceCall call{0x3000, 0x1800, 0x2000, 0x100, 0x40};
+  Fixture() {
+    memory.Word(0x1800, 0x8000);
+    memory.Word(0x1804, 0x1f48);
+    memory.Word(0x1808, 0x100);
+    memory.Word(0x180c, 0x40);
+    memory.Word(0x2008, 123456);
+    memory.Word(0x1ed8, 123456);
+    memory.Word(0x1fd0, 0x3000);
+    memory.Word(0x3000, 0x7000);
+    const uint32_t empty[6] = {};
+    memory.Put(0x1f48, empty, sizeof(empty));
+    const wchar_t path[] = L"x.ovk";
+    memory.Put(0x1f48, path, sizeof(path));
+    memory.Word(0x1f58, 5);
+    memory.Word(0x1f5c, 7);
+  }
+};
+void TestPureSource() {
+  Fixture fixture;
+  SiglusVoiceSourceTask result;
+  Check(CaptureSiglusVoiceSource(Layout(), fixture.call, fixture.memory, &result));
+  Check(result.key == 123456 && result.offset == 0x100 && result.length == 0x40);
+  Check(std::wcscmp(result.path, L"x.ovk") == 0);
+  const uint32_t changed_words[] = {0x1800, 0x1804, 0x1808, 0x180c,
+      0x2008, 0x1ed8, 0x1fd0, 0x3000};
+  for (auto address : changed_words) {
+    Fixture changed;
+    uint32_t word = 0;
+    Check(changed.memory(address, &word, 4));
+    changed.memory.Word(address, word + 1);
+    result.key = 99;
+    Check(!CaptureSiglusVoiceSource(Layout(), changed.call, changed.memory, &result));
+    Check(result.key == 99);
+  }
+  fixture.call.original_esi = 0;
+  Check(!CaptureSiglusVoiceSource(Layout(), fixture.call, fixture.memory, &result));
+  fixture = Fixture(); fixture.call.original_ebx = 0;
+  Check(!CaptureSiglusVoiceSource(Layout(), fixture.call, fixture.memory, &result));
+  fixture = Fixture(); fixture.call.caller_ebp = UINT32_MAX;
+  Check(!CaptureSiglusVoiceSource(Layout(), fixture.call, fixture.memory, &result));
+  fixture = Fixture(); fixture.memory.Word(0x2008, UINT32_MAX);
+  fixture.memory.Word(0x1ed8, UINT32_MAX);
+  Check(!CaptureSiglusVoiceSource(Layout(), fixture.call, fixture.memory, &result));
+  fixture = Fixture(); fixture.call.original_esi = UINT32_MAX - 10;
+  fixture.memory.Word(0x1808, fixture.call.original_esi);
+  Check(!CaptureSiglusVoiceSource(Layout(), fixture.call, fixture.memory, &result));
+  fixture = Fixture(); fixture.memory.Word(0x1f58, 520);
+  fixture.memory.Word(0x1f5c, 520);
+  Check(!CaptureSiglusVoiceSource(Layout(), fixture.call, fixture.memory, &result));
+  fixture = Fixture(); fixture.memory.Word(0x1f5c, 4);
+  Check(!CaptureSiglusVoiceSource(Layout(), fixture.call, fixture.memory, &result));
+  fixture = Fixture(); fixture.memory.Word(0x1f58, 0);
+  Check(!CaptureSiglusVoiceSource(Layout(), fixture.call, fixture.memory, &result));
+  fixture = Fixture(); fixture.memory.bytes.erase(0x1f48);
+  Check(!CaptureSiglusVoiceSource(Layout(), fixture.call, fixture.memory, &result));
+  fixture = Fixture(); fixture.memory.bytes[0x1f48 + 5 * 2] = 'X';
+  Check(!CaptureSiglusVoiceSource(Layout(), fixture.call, fixture.memory, &result));
+  fixture = Fixture(); fixture.memory.bytes[0x1f48] = 0;
+  Check(!CaptureSiglusVoiceSource(Layout(), fixture.call, fixture.memory, &result));
+  fixture = Fixture();
+  wchar_t longest[520];
+  for (int i = 0; i < 519; ++i) longest[i] = L'x';
+  longest[519] = 0;
+  fixture.memory.Word(0x1f48, 0x4000);
+  fixture.memory.Word(0x1f58, 519); fixture.memory.Word(0x1f5c, 519);
+  fixture.memory.Put(0x4000, longest, sizeof(longest));
+  Check(CaptureSiglusVoiceSource(Layout(), fixture.call, fixture.memory, &result));
+  Check(result.path[518] == L'x' && result.path[519] == 0);
+  fixture.memory.bytes.erase(0x4000 + 400);
+  Check(!CaptureSiglusVoiceSource(Layout(), fixture.call, fixture.memory, &result));
+}
+
+#if defined(_M_IX86)
+bool g_capture_enabled = true, g_cs_ready = true;
+CRITICAL_SECTION g_cs;
+SiglusMessageProfile g_siglus_message_profile;
+bool message_installed = true;
+bool IsSiglusMessageTextInstalled() { return message_installed; }
+const SiglusLookupProfile* ActiveSiglusLookupProfile() { return nullptr; }
+enum MH_STATUS { MH_OK, MH_ERROR_DISABLED, MH_ERROR_ENABLED, MH_ERROR_NOT_CREATED };
+MH_STATUS create_status = MH_OK, enable_status = MH_OK, disable_status = MH_OK;
+bool null_original = false;
+int removed = 0;
+MH_STATUS MH_CreateHook(void*, void*, void** original) {
+  if (create_status == MH_OK && !null_original)
+    *original = reinterpret_cast<void*>(0x1234);
+  return create_status;
+}
+MH_STATUS MH_EnableHook(void*) { return enable_status; }
+MH_STATUS MH_DisableHook(void*) { return disable_status; }
+MH_STATUS MH_RemoveHook(void*) { ++removed; return MH_OK; }
+int published = 0;
+SiglusVoiceSourceTask published_task;
+void QueueProvedSiglusVoiceResource(uint32_t key, const wchar_t* path,
+                                    uint32_t offset, uint32_t length) {
+  ++published;
+  published_task.key = key; published_task.offset = offset;
+  published_task.length = length;
+  wcscpy_s(published_task.path, kSiglusVoiceSourcePathUnits, path);
+}
+#endif
+
+#include "siglus_voice_source.inc"
+
+#if defined(_M_IX86)
+uint32_t fake_frame = 0, fake_reader = 0, fake_path = 0;
+uint32_t fake_offset = 0x100, fake_length = 0x40;
+uint32_t fake_esi = 0x100, fake_ebx = 0x40;
+uint32_t expected_return = 0, original_flags = 0;
+uint32_t before_esp = 0, after_esp = 0, original_esi = 0, original_ebx = 0;
+uint32_t original_ecx = 0, original_ebp = 0;
+__declspec(naked) void OriginalSource() {
+  __asm {
+    mov original_ecx, ecx
+    mov original_ebp, ebp
+    mov original_esi, esi
+    mov original_ebx, ebx
+    pushfd
+    pop original_flags
+    ret 12
+  }
+}
+__declspec(naked) void InvokeSource() {
+  __asm {
+    pushfd
+    pushad
+    mov before_esp, esp
+    push fake_length
+    push fake_offset
+    push fake_path
+    mov ecx, fake_reader
+    mov ebp, fake_frame
+    mov esi, fake_esi
+    mov ebx, fake_ebx
+    mov eax, offset returned
+    mov expected_return, eax
+    // The production caller gate is a runtime-relocated return address.
+    mov g_siglus_voice_source_layout.payload_return, eax
+    std
+    stc
+    call Detour_SiglusVoiceSource
+  returned:
+    cld
+    mov after_esp, esp
+    popad
+    popfd
+    ret
+  }
+}
+void TestProductionNakedSource() {
+  uint32_t frame[128] = {};
+  uint32_t reader[4] = {};
+  fake_frame = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&frame[100]));
+  fake_reader = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(reader));
+  fake_path = fake_frame - 0xb8;
+  reader[0] = 0x7000;
+  frame[102] = frame[26] = 123456;
+  frame[88] = fake_reader;
+  auto* text = reinterpret_cast<wchar_t*>(&frame[54]);
+  wcscpy_s(text, 8, L"x.ovk");
+  frame[58] = 5; frame[59] = 7;
+  g_siglus_voice_source_layout = Layout();
+  g_orig_SiglusVoiceSource = reinterpret_cast<void*>(&OriginalSource);
+  g_siglus_voice_source_enabled.store(true);
+  SiglusVoiceSourceTask task;
+  SetLastError(42);
+  InvokeSource();
+  const DWORD last_error = GetLastError();
+  Check(g_siglus_voice_source_tasks.TryPop(&task));
+  Check(task.key == 123456 && task.offset == 0x100 && task.length == 0x40);
+  Check(std::wcscmp(task.path, L"x.ovk") == 0);
+  Check(original_ecx == fake_reader && original_ebp == fake_frame);
+  Check(original_esi == fake_esi && original_ebx == fake_ebx);
+  Check(before_esp == after_esp && (original_flags & 0x401) == 0x401);
+  Check(last_error == 42);
+  fake_esi = 0x101; InvokeSource();
+  Check(!g_siglus_voice_source_tasks.TryPop(&task));
+  fake_esi = 0x100; fake_ebx = 0x41; InvokeSource();
+  Check(!g_siglus_voice_source_tasks.TryPop(&task));
+  fake_ebx = 0x40; frame[26] = 1; InvokeSource();
+  Check(!g_siglus_voice_source_tasks.TryPop(&task));
+  frame[26] = 123456; frame[88] = 0; InvokeSource();
+  Check(!g_siglus_voice_source_tasks.TryPop(&task));
+  frame[88] = fake_reader; ++fake_path; InvokeSource();
+  Check(!g_siglus_voice_source_tasks.TryPop(&task));
+  --fake_path; reader[0] = 0; InvokeSource();
+  Check(!g_siglus_voice_source_tasks.TryPop(&task));
+  reader[0] = 0x7000;
+  frame[58] = 10; frame[59] = 15; frame[54] = 1; InvokeSource();
+  Check(!g_siglus_voice_source_tasks.TryPop(&task)); // SEH contains bad heap path
+  wcscpy_s(text, 8, L"x.ovk"); frame[58] = 5; frame[59] = 7;
+  for (uint32_t i = 0; i < kSiglusVoiceSourceTaskSlots; ++i) InvokeSource();
+  InvokeSource();
+  uint32_t count = 0;
+  while (g_siglus_voice_source_tasks.TryPop(&task)) ++count;
+  Check(count == kSiglusVoiceSourceTaskSlots);
+  InvokeSource(); ProcessSiglusVoiceSourceTasks();
+  Check(published == 1 && published_task.key == 123456);
+  g_siglus_voice_source_enabled.store(false); InvokeSource();
+  Check(!g_siglus_voice_source_tasks.TryPop(&task));
+  Check(g_siglus_voice_source_tasks.TryPush(published_task));
+  ProcessSiglusVoiceSourceTasks(); Check(published == 1);
+  while (g_siglus_voice_source_tasks.TryPop(&task)) {}
+}
+
+void TestInstallation() {
+  InitializeCriticalSection(&g_cs);
+  const auto reset = [] {
+    create_status = enable_status = disable_status = MH_OK;
+    null_original = false; removed = 0;
+    g_siglus_voice_source_state.store(0);
+    g_siglus_voice_source_enabled.store(false);
+    g_siglus_voice_source_created = g_siglus_voice_source_ever_enabled = false;
+    g_orig_SiglusVoiceSource = nullptr;
+    g_siglus_voice_source_target = reinterpret_cast<void*>(0x5000);
+  };
+  reset(); Check(!TryHookSiglusVoiceSource()); // absent admitted lane
+  reset(); create_status = MH_ERROR_NOT_CREATED;
+  Check(!InstallSiglusVoiceSourceHook() && removed == 0);
+  Check(!IsSiglusVoiceSourceInstalled() && message_installed);
+  reset(); null_original = true;
+  Check(!InstallSiglusVoiceSourceHook() && removed == 1);
+  reset(); enable_status = MH_ERROR_NOT_CREATED;
+  Check(!InstallSiglusVoiceSourceHook() && removed == 1);
+  reset(); enable_status = MH_ERROR_ENABLED; disable_status = MH_ERROR_NOT_CREATED;
+  Check(!InstallSiglusVoiceSourceHook());
+  Check(!IsSiglusVoiceSourceInstalled() && !g_siglus_voice_source_enabled.load());
+  Check(message_installed && removed == 0 && g_orig_SiglusVoiceSource != nullptr);
+  reset(); Check(InstallSiglusVoiceSourceHook());
+  Check(IsSiglusVoiceSourceInstalled());
+  disable_status = MH_ERROR_NOT_CREATED;
+  ShutdownSiglusVoiceSource();
+  Check(!IsSiglusVoiceSourceInstalled() && !g_siglus_voice_source_enabled.load());
+  Check(message_installed && removed == 0);
+  disable_status = MH_OK; ShutdownSiglusVoiceSource();
+  Check(removed == 0 && g_orig_SiglusVoiceSource != nullptr);
+  DeleteCriticalSection(&g_cs);
+}
+#endif
+}  // namespace
+
+int main() {
+  TestPureSource();
+#if defined(_M_IX86)
+  TestProductionNakedSource(); TestInstallation();
+#else
+  Check(!TryHookSiglusVoiceSource()); Check(!IsSiglusVoiceSourceInstalled());
+  ProcessSiglusVoiceSourceTasks(); ShutdownSiglusVoiceSource();
+#endif
+  std::printf("siglus_voice_source_test: PASS (%d checks)\n", checks);
+  return 0;
+}
