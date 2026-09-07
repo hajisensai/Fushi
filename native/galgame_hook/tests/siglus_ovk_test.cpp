@@ -45,19 +45,34 @@ int main() {
   PutLe32(archive, 0, 2);
   PutLe32(archive, 4, 1234);
   PutLe32(archive, 8, 36);
-  PutLe32(archive, 12, 80);
-  PutLe32(archive, 16, 9001);
+  PutLe32(archive, 12, 9001);
+  PutLe32(archive, 16, 48000);
   PutLe32(archive, 20, 4321);
   PutLe32(archive, 24, 1270);
-  PutLe32(archive, 28, 120);
-  PutLe32(archive, 32, 9002);
+  PutLe32(archive, 28, 9002);
+  PutLe32(archive, 32, 48000);
 
   fushi_voice_hook::siglus::OvkEntry entry;
   ok &= Expect(fushi_voice_hook::siglus::FindEntryAtOffset(
                    archive.data(), archive.size(), 6000, 36, &entry),
                "valid OVK entry should be found");
-  ok &= Expect(entry.byte_len == 1234 && entry.id == 9001,
-               "OVK fields should decode as little endian");
+  ok &= Expect(entry.byte_len == 1234 && entry.offset == 36 &&
+                   entry.member_id == 9001 && entry.sample_count == 48000,
+                "OVK fields must preserve member ID separately from sample count");
+  const std::wstring first_name =
+      fushi_voice_hook::siglus::BuildOvkVoiceStorageName(L"z0001.ovk", entry);
+  fushi_voice_hook::siglus::OvkEntry second;
+  ok &= Expect(fushi_voice_hook::siglus::FindEntryAtOffset(
+                   archive.data(), archive.size(), 6000, 1270, &second),
+                "second equal-duration member should be found");
+  const std::wstring second_name =
+      fushi_voice_hook::siglus::BuildOvkVoiceStorageName(L"z0001.ovk", second);
+  ok &= Expect(second.member_id == 9002 &&
+                   second.sample_count == entry.sample_count &&
+                   first_name == L"z0001.ovk_9001.ogg" &&
+                   second_name == L"z0001.ovk_9002.ogg" &&
+                   first_name != second_name,
+                "different members with equal sample counts must not share an export name");
   ok &= Expect(!fushi_voice_hook::siglus::FindEntryAtOffset(
                    archive.data(), archive.size(), 6000, 37, &entry),
                "non-entry offset must be rejected");

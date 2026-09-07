@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <string>
 
 namespace fushi_voice_hook::siglus {
 
@@ -13,9 +14,17 @@ constexpr uint32_t kMaxEntryCount = 1u << 20;
 struct OvkEntry {
   uint32_t byte_len = 0;
   uint32_t offset = 0;
-  uint32_t duration = 0;
-  uint32_t id = 0;
+  uint32_t member_id = 0;
+  uint32_t sample_count = 0;
 };
+
+// The member key is archive-local. Equal-length voices may have the same
+// sample count, so that count must never identify an exported resource.
+inline std::wstring BuildOvkVoiceStorageName(const wchar_t* archive_basename,
+                                            const OvkEntry& entry) {
+  return std::wstring(archive_basename) + L"_" +
+         std::to_wstring(entry.member_id) + L".ogg";
+}
 
 inline uint32_t ReadLe32(const uint8_t* data) {
   uint32_t value = 0;
@@ -24,8 +33,9 @@ inline uint32_t ReadLe32(const uint8_t* data) {
 }
 
 // Siglus 的 koe/*.ovk：u32 count，随后 count 个 16-byte 索引项；每项前两列分别是
-// OGG 字节数与绝对文件偏移。只接受索引内精确命中的 Ogg 起点，避免把 BGM/SE 或随机数据
-// 当作角色语音导出。
+// Ogg 字节数、绝对文件偏移、归档内成员 ID、PCM sample count。成员 ID 是引擎查找
+// 的键；sample count 对应 Vorbis EOS granule，不是 ID 或毫秒时长。精确起点与边界
+// 校验只证明资源结构，不证明声道角色、播放事件或正文归属。
 inline bool FindEntryAtOffset(const uint8_t* index, size_t index_bytes,
                               uint64_t file_bytes, uint64_t wanted_offset,
                               OvkEntry* out) {
@@ -47,8 +57,8 @@ inline bool FindEntryAtOffset(const uint8_t* index, size_t index_bytes,
     OvkEntry entry;
     entry.byte_len = ReadLe32(row);
     entry.offset = ReadLe32(row + 4);
-    entry.duration = ReadLe32(row + 8);
-    entry.id = ReadLe32(row + 12);
+    entry.member_id = ReadLe32(row + 8);
+    entry.sample_count = ReadLe32(row + 12);
     if (entry.offset != wanted_offset) {
       continue;
     }

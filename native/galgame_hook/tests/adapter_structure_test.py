@@ -1399,7 +1399,7 @@ class AdapterStructureTest(unittest.TestCase):
         worker = self._function_body(source, "void ProcessSiglusVoiceTask(")
         committed = self._function_body(
             worker,
-            "if (WriteVoiceOggAt(ogg, entry.byte_len, storage, task->tick_ms))",
+            "if (WriteVoiceOggAt(ogg, entry.byte_len, storage.c_str(), task->tick_ms))",
         )
         for flag in ("kDiagSiglusVoiceDumped", "kDiagVisualArtsOvkCaptured"):
             self.assertEqual(worker.count(flag), 1)
@@ -1410,6 +1410,15 @@ class AdapterStructureTest(unittest.TestCase):
             self.assertIn(cleanup, worker)
             self.assertNotIn(cleanup, committed)
             self.assertGreater(worker.index(cleanup), worker.index(committed))
+
+    def test_siglus_ovk_export_uses_archive_member_identity(self) -> None:
+        source = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "siglus_adapter.inc").read_text(
+                encoding="utf-8"))
+        worker = self._function_body(source, "void ProcessSiglusVoiceTask(")
+        self.assertIn("BuildOvkVoiceStorageName(base, entry)", worker)
+        self.assertIn("storage.c_str()", worker)
+        self.assertNotIn("entry.sample_count", worker)
 
     def test_reallive_shared_ovk_path_does_not_claim_engine_identity(self) -> None:
         adapter = (ROOT / "hook" / "adapters" / "reallive_adapter.inc").read_text(

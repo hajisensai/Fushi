@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2069 条。点号进各自文件。
+> 共 2070 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2238](bugs/BUG-2238-siglus-ovk-member-identity.md) | ✅ | ✅ | Siglus OVK将采样数误当成员ID导致资源命名不唯一 |
 | [BUG-2237](bugs/BUG-2237-siglus-voice-resource-without-dialogue-event.md) | 🚧 | 🚧 | Siglus 语音资源缺少正文事件身份，配对依赖时间窗 |
 | [BUG-2236](bugs/BUG-2236-siglus-lookup-layout-generation-as-text-event.md) | ✅ | ✅ | Siglus查词用几何代数冒充字幕事件ID导致制卡行与音频身份错误 |
 | [BUG-2235](bugs/BUG-2235-siglus-ovk-export-failure-reported-captured.md) | ✅ | ✅ | Siglus OVK 导出失败仍报告已捕获 |

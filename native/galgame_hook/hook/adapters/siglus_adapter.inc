@@ -387,11 +387,11 @@ void ProcessSiglusVoiceTask(SiglusVoiceTask* task) {
   if (valid) {
     const wchar_t* slash = wcsrchr(task->path, L'\\');
     const wchar_t* base = slash != nullptr ? slash + 1 : task->path;
-    wchar_t storage[260] = {0};
-    swprintf_s(storage, L"%s_%u.ogg", base, entry.id);
+    const std::wstring storage =
+        fushi_voice_hook::siglus::BuildOvkVoiceStorageName(base, entry);
     // BUG-2235: an intact source entry is not a successfully exported resource.
     // Publish capture only after the writer has completed write and close.
-    if (WriteVoiceOggAt(ogg, entry.byte_len, storage, task->tick_ms)) {
+    if (WriteVoiceOggAt(ogg, entry.byte_len, storage.c_str(), task->tick_ms)) {
       if (g_header != nullptr) {
         g_header->reserved_luna |= kDiagSiglusVoiceDumped;
         g_header->hook_diagnostics |=

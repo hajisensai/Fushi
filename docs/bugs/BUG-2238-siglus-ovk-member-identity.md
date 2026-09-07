@@ -1,0 +1,7 @@
+## BUG-2238 · Siglus OVK将采样数误当成员ID导致资源命名不唯一
+- **报告**：2026-09-07（用户要求 Siglus 引擎级音频适配；沿原版 VOICE 重放路径核实）
+- **真实性**：✅ 真 bug。`native/galgame_hook/hook/siglus_ovk.h` 将 16-byte OVK row 的第三列读成 `duration`、第四列读成 `id`；`hook/adapters/siglus_adapter.inc::ProcessSiglusVoiceTask` 随后用第四列命名导出。LUNARiA 原版重放调用用复合 key 的归档内部分比较第三列，再读取前两列给出的 offset/length。九份原版共 1005 个归档、101430 条索引中，第三列在各归档内唯一，而第四列存在重复；采样数相同的不同成员因而会生成相同资源 basename，同 tick 导出还会覆盖同一路径。
+- **[x] ① 已修复** — 字段纠正为 `member_id`（row+8）和 `sample_count`（row+12），worker 经同一纯函数用 archive basename 与 member ID 命名。只改内部资源契约，不改 IPC、配对规则、时间窗或已有文件；宿主继续把 basename 当不透明资源名，旧 sample-count 文件名仍可读取。
+- **[x] ② 自动化测试通过** — `siglus_ovk_test.cpp` 覆盖四字段解码及相同 sample_count、不同 member_id 的两个条目生成不同导出名；`reallive_adapter_test.cpp` 验证共享 VisualArt's parser alias。两项均经 MSVC `/W4 /WX /DNDEBUG` 独立编译并在 Windows x86、x64 运行，退出码均为 0。`adapter_structure_test.py` 校验 worker 接入该命名函数，43/43 通过；`galgame_paired_voice_test.dart` 覆盖旧新文件名继续可读，17/17 通过。完整分发构建和新 DLL 真机验证交由集成任务执行，不计入本次定向结果。
+- **本机证据**：`ovk-nine-sample-schema-metadata.json` 保存九份 exe hash、索引统计与每样本四条音频的容器元数据；共 36 条 Vorbis 流的第四列均等于 EOS granule。`ovk-member-search-static-metadata.json` 在 Angel Beats、月の彼方、LUNARiA、Stella、原版 LOOPERS、SPRB 找到同一第三列比较循环；Rewrite、LOOPERS PLUS、Anemoi 未匹配这一种编译形状，不据此否定其容器布局。`debugger/lunaria59820-voice-structure-metadata.json` 留存原版重放调用与重定位后代码一致性。仅本机元数据，无游戏载荷入库。
+- **未证明**：这次字段/命名修复不证明声道角色、脚本事件与正文配对、原版新 DLL 实机导出或制卡 E2E；第四列的采样数语义由上述有界 Vorbis 样本 corroborate，不声称覆盖任意 VisualArt's 容器。源索引边界和 Ogg 完整性检查维持原契约，不新增猜测 Hook。
