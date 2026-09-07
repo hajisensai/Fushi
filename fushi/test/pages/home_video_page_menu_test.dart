@@ -243,6 +243,17 @@ void main() {
     return db.createTag('Anime', 0xFF2196F3);
   }
 
+  /// 定位某一行视频的库页卡片。
+  ///
+  /// 不能用 `find.byType(FushiCard).first`：页面正文之上还挂着若干横幅
+  /// （`VideoOnlineServicesBanner` 的「配置可选在线服务」、待确认身份提醒条…），
+  /// 它们同样是 [FushiCard]、且排在墙卡之前，`.first` 会落到一张没有任何手势
+  /// 回调的横幅上——长按/右键于是什么都不弹，断言只会说「面板没出现」，看不出
+  /// 是找错了卡。卡片 key 是 `home_video_<bookUid>`（`_buildVideoCard`），按它
+  /// 定位与横幅数量无关。
+  Finder videoCard(String bookUid) =>
+      find.byKey(ValueKey<String>('home_video_$bookUid'));
+
   Widget buildApp({
     bool captureToasts = false,
     VideoBookRepository? repo,
@@ -302,7 +313,7 @@ void main() {
     // 筛选条里的同名标签冲突。
     expect(
       find.descendant(
-        of: find.byType(FushiCard),
+        of: videoCard('video/1'),
         matching: find.widgetWithText(FushiTagChip, 'Anime'),
       ),
       findsOneWidget,
@@ -320,7 +331,7 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    await openCardMenu(tester, find.byType(FushiCard).first);
+    await openCardMenu(tester, videoCard('video/1'));
 
     expect(find.text(t.batch_selected_count(n: 1)), findsNothing,
         reason: '触屏必须先点明确的「选择」入口，长按不能暗中进入多选');
@@ -346,7 +357,7 @@ void main() {
       await tester.pumpWidget(buildApp());
       await tester.pumpAndSettle();
 
-      await openCardMenu(tester, find.byType(FushiCard).first);
+      await openCardMenu(tester, videoCard('video/1'));
 
       expect(find.text(t.batch_selected_count(n: 1)), findsNothing);
       expect(find.byType(FushiDialogFrame), findsOneWidget);
@@ -364,7 +375,7 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byType(FushiCard).first, buttons: kSecondaryButton);
+    await tester.tap(videoCard('video/1'), buttons: kSecondaryButton);
     await tester.pumpAndSettle();
 
     // 右键与长按同链路（都走 _showVideoMenu）：应弹出同一封面背景动作面板。
@@ -446,7 +457,7 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    await openCardMenu(tester, find.byType(FushiCard).first);
+    await openCardMenu(tester, videoCard('video/1'));
 
     expect(find.text(t.media_file_location_open), findsOneWidget);
   });
@@ -463,7 +474,7 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    await openCardMenu(tester, find.byType(FushiCard).first);
+    await openCardMenu(tester, videoCard('video/stream'));
 
     expect(find.byType(FushiDialogFrame), findsOneWidget,
         reason: '菜单本身仍要弹出，缺的只是这一条动作');

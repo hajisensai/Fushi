@@ -207,6 +207,19 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'game/Window corner radius':
       'test/build/gal_overlay_appearance_guard_test.dart + '
           'DEVICE: native hook overlay corner radius',
+  // AniDB ED2K 文件哈希识别总闸（commit 9e7c1e322d「MAL 主源 + TMDB 兜底 + AniDB
+  // ED2K」新增，落在新的 services destination·「元数据刮削」分区）。写 prefsRepo
+  // kVideoAniDbHashEnabledPref（changed=true），生效点是
+  // VideoSourceScrapeGlobalConfig.hashEnabled → AnidbHashIdentityService.identifyFile
+  // 开头的进场门（关=不算 ED2K、不发一个 AniDB UDP 包），既不在 reader CSS 也不在
+  // 主题树，harness 里没有待识别文件也没有 UDP 对端，无适用探针。由两层专项测试咬住：
+  // ① 偏好 → runtime 快照（含默认 false、密码字节不被 trim）；② 服务层负向守卫
+  // 「disabled and unconfigured skip file hashing」——关着时直接回 disabled、不哈希。
+  'services/Identify files with AniDB ED2K':
+      'test/media/video/metadata/anidb_hash_config_test.dart + '
+          'test/media/video/metadata/anidb_app_client_test.dart（默认关）+ '
+          'test/media/video/anidb_hash_identity_service_test.dart'
+          '（disabled 直接 skip file hashing）',
   // 视频条目自动刮削总闸。写 prefsRepo（changed=true），生效点在
   // VideoScrapeAutoService.sweep 的进场门（关=零网络请求、零资料落库），不是
   // reader CSS / 主题树，无适用探针；由专项服务测试咬住（关=不发请求、关→开
