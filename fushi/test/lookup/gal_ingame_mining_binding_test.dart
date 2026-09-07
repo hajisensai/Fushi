@@ -44,6 +44,8 @@ void main() {
       expect(folded.sourceSequence, 2);
       expect(service.entries.where((e) => e.sourceSequence == 1), isEmpty);
       expect(resolve(popup), original.id);
+      expect(identical(popup.boundOccurrence, original), isTrue);
+      expect(popup.boundOccurrence!.sourceSequence, 1);
 
       // Identical strings are distinct occurrences, not a whitespace fold.
       final TexthookerLineEntry repeated = append('ABC\nDEF', 3);

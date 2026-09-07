@@ -825,8 +825,8 @@ List<String> pickPairedUnityVoiceWavs({
         distance <= eventIdToleranceMs) {
       eventHits.add(_VoiceCandidate(name, distance));
     }
-    // 注意这里**没有** OGG 层那句「带标资源不再降级成时间窗」：Unity 层一直是纯时间窗
-    // 判定，把带标资源排除出兜底会让现有配对凭空失败。事件层只做加法。
+    // Explicit ownership cannot be weakened into a time-only candidate.
+    if (parsed.textEventId != null) continue;
     if (parsed.tick < textTsMs - beforeMs || parsed.tick > textTsMs + afterMs) {
       continue;
     }
@@ -863,7 +863,7 @@ String? pickPairedGameResource({
 /// [pickPairedGameResource] 的全量版本（BUG-1605）：一句台词同时有多个角色配音时，
 /// 引擎会为同一条文本读入多个语音资源，全部都属于这句话。
 ///
-/// 容器层优先级不变（先 Unity WAV，再 Siglus/KiriKiri OGG）；层内是否允许全取由证据
+/// 先跨容器匹配精确事件，再走未标记资源的既有 WAV / OGG 时间合同；层内是否允许全取由证据
 /// 等级决定，见 [pickPairedVoiceOggs] / [pickPairedUnityVoiceWavs]。返回列表的**首元素
 /// 就是单值版会选中的那一个**（主语音），后续元素是同句的其余配音。
 List<String> pickPairedGameResources({
@@ -877,6 +877,25 @@ List<String> pickPairedGameResources({
     return latestSessionVoiceName == null
         ? const <String>[]
         : <String>[latestSessionVoiceName];
+  }
+  if (textEventId != null && textEventId > 0) {
+    List<String> owned(List<String> names) => names
+        .where(
+          (name) => parseGalVoiceResourceName(name)?.textEventId == textEventId,
+        )
+        .toList();
+    final List<String> wav = pickPairedUnityVoiceWavs(
+      wavFileNames: owned(wavFileNames),
+      textTsMs: textTsMs,
+      textEventId: textEventId,
+    );
+    if (wav.isNotEmpty) return wav;
+    final List<String> ogg = pickPairedVoiceOggs(
+      oggFileNames: owned(oggFileNames),
+      textTsMs: textTsMs,
+      textEventId: textEventId,
+    );
+    if (ogg.isNotEmpty) return ogg;
   }
   final List<String> wavs = pickPairedUnityVoiceWavs(
     wavFileNames: wavFileNames,
@@ -2755,6 +2774,11 @@ class GalHookedLine {
   final int eventFlags;
   final String hookName;
   final String hookCode;
+
+  /// Fixed native producer tag, not a game title or engine-name heuristic.
+  /// This writer commits a seq before publishing its frozen voice binding.
+  bool get eventOwnedVoice =>
+      sourceKind == 4 && hookName == 'SiglusEngine message';
 
   bool get requiresExactThreadContext =>
       (eventFlags & flagExactThreadContext) != 0;

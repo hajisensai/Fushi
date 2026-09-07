@@ -1960,6 +1960,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
       }
       return _mineFromLookup(
         lineId: resolved,
+        occurrence: occurrence,
         fields: fields,
         updateNoteId: updateNoteId,
         sentenceOverride: line,
@@ -1973,6 +1974,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
     required Map<String, String> fields,
     required int? updateNoteId,
     String? sentenceOverride,
+    GalIngameMiningBinding? occurrence,
     GalHookCaptureLeaseFactory? captureLeaseFactory,
   }) async {
     final AppModel? model = _appModel;
@@ -1989,6 +1991,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
       lineId: lineId,
       fields: fields,
       sentenceOverride: sentenceOverride,
+      occurrence: occurrence,
       compression: MiningMediaCompression.resolve(
         imageTier: model.miningImageQuality,
         audioTier: model.miningAudioQuality,

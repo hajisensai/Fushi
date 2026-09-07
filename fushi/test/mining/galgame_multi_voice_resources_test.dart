@@ -165,15 +165,13 @@ void main() {
       expect(picked, <String>['32147190_otoko.wav']);
     });
 
-    test('带标 WAV 在事件 ID 对不上时照旧参与时间窗兜底（Unity 层既有行为不变）', () {
-      // 与 OGG 层不同：Unity 层一直是纯时间窗判定，把带标资源排除出兜底会让现有配对
-      // 凭空失败。这条是防回归的负向断言。
+    test('BUG-2243 带标 WAV 事件 ID 不匹配必须拒绝，不能退回时间窗', () {
       final List<String> picked = pickPairedUnityVoiceWavs(
         wavFileNames: const <String>['32147190_fushi_textseq99_otoko.wav'],
         textTsMs: 32147200,
         textEventId: 7,
       );
-      expect(picked, <String>['32147190_fushi_textseq99_otoko.wav']);
+      expect(picked, isEmpty);
     });
   });
 

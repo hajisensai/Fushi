@@ -23,6 +23,7 @@ import 'package:fushi/src/mining/magpie_upscaling_service.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
+import 'package:fushi/src/lookup/gal_ingame_mining_binding.dart';
 import 'package:fushi/src/sync/texthooker_ws_client.dart';
 import 'package:fushi/src/sync/texthooker_ws_client_manager.dart';
 import 'package:fushi/src/utils/misc/fushi_time_format.dart';
@@ -2494,6 +2495,7 @@ class GalHookSessionController extends ChangeNotifier {
         sourceLabel: 'engine_hook',
         sourceSequence: line.seq,
         hookTimestampMs: line.timestampMs,
+        eventOwnedVoice: line.eventOwnedVoice,
         textThreadKey: line.textThreadKey,
         textThreadLabel: line.textThreadLabel,
         textHookCode: line.hookCode.isEmpty ? null : line.hookCode,
@@ -3050,6 +3052,76 @@ class GalHookSessionController extends ChangeNotifier {
     return (timestamp == null || timestamp <= 0) ? null : timestamp;
   }
 
+  /// A Windows in-game popup retains its original event even when the display
+  /// row folds a later event. Never read the row's replacement resource or PCM.
+  Future<Uint8List?> captureAudioForOccurrence({
+    required GalIngameMiningBinding occurrence,
+    required String outputExtension,
+  }) async {
+    bool current() =>
+        occurrence.resolve(
+          currentSessionStartedAt: _state.sessionStartedAt,
+          currentTargetHwnd: _state.boundWindow?.hwnd,
+          selectedLines: selectedSessionLines,
+        ) !=
+        null;
+    if (!_isWindows || !current()) return null;
+    final TexthookerLineEntry? original = occurrence.boundOccurrence;
+    final int? seq = original?.sourceSequence;
+    final int? tick = original?.hookTimestampMs;
+    if (original == null ||
+        seq == null ||
+        tick == null ||
+        seq <= 0 ||
+        tick <= 0) {
+      return null;
+    }
+    final TexthookerLineEntry? row = _textService.entryById(original.id);
+    if (row?.sourceSequence == seq) {
+      final Uint8List? bytes = await captureAudioBytes(
+        lineId: original.id,
+        sentence: row!.text,
+        outputExtension: outputExtension,
+      );
+      if (!current()) return null;
+      if (_textService.entryById(original.id)?.sourceSequence == seq) {
+        return bytes;
+      }
+      // A fold during capture cannot change the popup's event. Discard the
+      // mutable row result and resolve only the original event below.
+    }
+    final EngineHookGalAudioSource? engine = _engineSource;
+    if (engine == null) return null;
+    final Stopwatch elapsed = Stopwatch()..start();
+    while (current() && identical(engine, _engineSource)) {
+      final String? resource = engine.findEventOwnedVoiceResourceId(
+        tick,
+        textEventId: seq,
+      );
+      if (resource != null) {
+        final Uint8List? bytes = await engine.grabPairedVoiceBytes(
+          tick,
+          textEventId: seq,
+          resourceId: resource,
+          outputExtension: outputExtension,
+          allowLatestSessionFallback: false,
+        );
+        return current() && identical(engine, _engineSource) ? bytes : null;
+      }
+      if (!engine.rawVoiceReady || elapsed.elapsed >= _resourceAudioWait) {
+        return null;
+      }
+      final Duration remaining = _resourceAudioWait - elapsed.elapsed;
+      await Future<void>.delayed(
+        _resourceAudioPollInterval > Duration.zero &&
+                _resourceAudioPollInterval < remaining
+            ? _resourceAudioPollInterval
+            : remaining,
+      );
+    }
+    return null;
+  }
+
   Future<Uint8List?> captureAudioBytes({
     required String lineId,
     required String sentence,
@@ -3391,15 +3463,23 @@ class GalHookSessionController extends ChangeNotifier {
     final int waitUs = _resourceAudioWait.inMicroseconds;
     final int pollUs = _resourceAudioPollInterval.inMicroseconds;
     while (true) {
+      final bool eventOnly =
+          _textService.entryById(lineId)?.eventOwnedVoice == true ||
+              _pendingResourceMatches[lineId]?.eventOwnedOnly == true;
       String? resourceId = _resourceIdForLine(lineId);
       // BUG-955：mine 阶段解析具体某行，绝不走「最新语音」兜底——历史行时间戳被淘汰后 timestamp=0，
       // 借最新语音会把当前语音错配给旧台词。晚附着 live 行的资源已在捕获期固化到 _resourceIdForLine，
       // 这里只按精确 resourceId / 正时间戳窗口取，取不到就交给下游 PCM/loopback 或明确 missing。
-      resourceId ??= engine.findPairedVoiceResourceId(
-        timestamp,
-        textEventId: _lineTextEventIdCache[lineId],
-        allowLatestSessionFallback: false,
-      );
+      resourceId ??= eventOnly
+          ? engine.findEventOwnedVoiceResourceId(
+              timestamp,
+              textEventId: _lineTextEventIdCache[lineId] ?? 0,
+            )
+          : engine.findPairedVoiceResourceId(
+              timestamp,
+              textEventId: _lineTextEventIdCache[lineId],
+              allowLatestSessionFallback: false,
+            );
       if (resourceId != null && _resourceIdForLine(lineId) == null) {
         _textService.updateLineAudio(
           lineId,
@@ -3408,13 +3488,15 @@ class GalHookSessionController extends ChangeNotifier {
           resourceId: resourceId,
         );
       }
-      final Uint8List? bytes = await engine.grabPairedVoiceBytes(
-        timestamp,
-        outputExtension: outputExtension,
-        textEventId: _lineTextEventIdCache[lineId],
-        resourceId: resourceId,
-        allowLatestSessionFallback: false,
-      );
+      final Uint8List? bytes = eventOnly && resourceId == null
+          ? null
+          : await engine.grabPairedVoiceBytes(
+              timestamp,
+              outputExtension: outputExtension,
+              textEventId: _lineTextEventIdCache[lineId],
+              resourceId: resourceId,
+              allowLatestSessionFallback: false,
+            );
       if (bytes != null && bytes.isNotEmpty) return bytes;
       if (!engine.rawVoiceReady ||
           waitUs <= 0 ||
@@ -4740,6 +4822,7 @@ class GalHookSessionController extends ChangeNotifier {
           sourceLabel: 'engine_hook',
           sourceSequence: line.seq,
           hookTimestampMs: line.timestampMs,
+          eventOwnedVoice: line.eventOwnedVoice,
           textThreadKey: line.textThreadKey,
           textThreadLabel: line.textThreadLabel,
           textHookCode: line.hookCode.isEmpty ? null : line.hookCode,
@@ -4754,6 +4837,9 @@ class GalHookSessionController extends ChangeNotifier {
         // 折叠吞掉的那几条行的 id 在下面这一整批 map/timer 里还是活键，必须**先**
         // 迁走再写本次事件（本次的时间戳 / seq 会覆盖掉搬来的旧值，那正是想要的）。
         _redirectFoldedLines(_textService.lastFoldedLineIds, entry.id);
+        // A folded row has a new event owner, even when its next resource is
+        // already available. Retire the preceding event's pending request.
+        _pendingResourceMatches.remove(entry.id);
         // 字数按 appendLine 报出来的**新增量**计，不按 entry.text 计：同一句台词被
         // 引擎分多次重绘时会折成一条，按整条计会让这句话每重绘一次就再算一遍
         // （增量为空 = 这次重绘没带来新字，不算新活动）。
@@ -4764,10 +4850,15 @@ class GalHookSessionController extends ChangeNotifier {
         _trimCache(_lineTextEventIdCache);
         final bool resourceReady = engine.rawVoiceReady;
         final String? resourceId = resourceReady
-            ? engine.findPairedVoiceResourceId(
-                line.timestampMs,
-                textEventId: line.seq,
-              )
+            ? line.eventOwnedVoice
+                ? engine.findEventOwnedVoiceResourceId(
+                    line.timestampMs,
+                    textEventId: line.seq,
+                  )
+                : engine.findPairedVoiceResourceId(
+                    line.timestampMs,
+                    textEventId: line.seq,
+                  )
             : null;
         final bool resourceMatched = resourceId != null;
         if (resourceMatched) {
@@ -4788,7 +4879,7 @@ class GalHookSessionController extends ChangeNotifier {
           _pendingResourceMatches[entry.id] = (
             timestampMs: line.timestampMs,
             textEventId: line.seq,
-            eventOwnedOnly: false,
+            eventOwnedOnly: line.eventOwnedVoice,
           );
           _trimCache(_pendingResourceMatches);
           _textService.updateLineAudio(
@@ -5370,7 +5461,8 @@ class GalHookSessionController extends ChangeNotifier {
         () => (
           timestampMs: line.value,
           textEventId: textEventId,
-          eventOwnedOnly: false,
+          eventOwnedOnly:
+              _textService.entryById(line.key)?.eventOwnedVoice ?? false,
         ),
       );
     }
@@ -5405,6 +5497,14 @@ class GalHookSessionController extends ChangeNotifier {
     for (final MapEntry<String,
             ({int timestampMs, int textEventId, bool eventOwnedOnly})> pending
         in _pendingResourceMatches.entries) {
+      final TexthookerLineEntry? row = _textService.entryById(pending.key);
+      if (row?.sourceSequence != pending.value.textEventId ||
+          row?.hookTimestampMs != pending.value.timestampMs ||
+          _lineTextEventIdCache[pending.key] != pending.value.textEventId ||
+          _lineTimestampCache[pending.key] != pending.value.timestampMs) {
+        matched.add(pending.key);
+        continue;
+      }
       if (_isUserAdjudicated(pending.key)) {
         matched.add(pending.key); // 用户已裁决：撤出待匹配集合，不再自动改写。
         continue;

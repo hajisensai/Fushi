@@ -11,6 +11,7 @@ import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
 import 'package:fushi/src/mining/gal_voice_dump_index.dart';
+import 'package:fushi/src/lookup/gal_ingame_mining_binding.dart';
 import 'package:fushi/src/mining/galgame_play_tracker.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
@@ -33,6 +34,8 @@ void main() {
     'unmarked',
     'silent',
     'same event stale tick',
+    'folded new silent event',
+    'folded pending predecessor',
   ]) {
     test(
       'BUG-2240 recovered history pairs only owned resource: $scenario',
@@ -48,7 +51,10 @@ void main() {
               modified: DateTime.now().subtract(const Duration(minutes: 1)),
               kind: GalVoiceDumpKind.oggLike,
             );
-        if (scenario == 'already exported') files.add(resource(ownedName));
+        if (scenario == 'already exported' ||
+            scenario == 'folded new silent event') {
+          files.add(resource(ownedName));
+        }
         if (scenario == 'different event') {
           files.add(resource('${tick}_fushi_textseq2_z0101.ovk_125.ogg'));
         }
@@ -69,17 +75,20 @@ void main() {
         final TexthookerService service = TexthookerService.test();
         final ChangeNotifier endpoints = ChangeNotifier();
         final _FakeEngineSource engine = _FakeEngineSource(
-          pairedBytes: Uint8List(0),
+          pairedBytes: Uint8List.fromList(<int>[1, 2, 3]),
           rawReady: true,
           voiceDumpIndex: index,
           replayBufferedLines: true,
-          polledLines: const <GalHookedLine>[
+          polledLines: <GalHookedLine>[
             GalHookedLine(
               seq: 1,
               timestampMs: tick,
               text: 'synthetic history line',
               threadId: 5,
-              hookName: 'TestScenario',
+              sourceKind: scenario.startsWith('folded') ? 4 : 0,
+              hookName: scenario.startsWith('folded')
+                  ? 'SiglusEngine message'
+                  : 'TestScenario',
             ),
           ],
         );
@@ -103,6 +112,7 @@ void main() {
               engine,
           loopbackSourceFactory: _FakeLoopbackSource.new,
           textPollInterval: const Duration(milliseconds: 5),
+          resourceAudioWait: Duration.zero,
           endpointListenable: endpoints,
           endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
         );
@@ -123,7 +133,8 @@ void main() {
           isEmpty,
           reason: 'Unselected native events only populate the thread directory',
         );
-        expect(await controller.selectTextThread(5), isTrue);
+        expect(await controller.selectTextThread(5,
+                threadKey: engine.polledLines.first.textThreadKey), isTrue);
         expect(
           controller.events.map((e) => e.code),
           contains('text.thread_history_recovered'),
@@ -143,7 +154,8 @@ void main() {
           }
         }
         final bool shouldMatch =
-            scenario == 'already exported' || scenario == 'late export';
+            scenario == 'already exported' || scenario == 'late export' ||
+            scenario == 'folded new silent event';
         expect(service.entries.single.id, rowId);
         expect(
           service.entries.single.audioResourceId,
@@ -165,6 +177,149 @@ void main() {
           isEmpty,
           reason: 'History must not recapture old PCM',
         );
+        if (scenario == 'folded pending predecessor') {
+          const String nextName = '${tick + 2000}_fushi_textseq2_voice.ogg';
+          // Publish both files inside the next poll, after the prior pending
+          // request exists and before seq 2 immediately matches its own file.
+          engine.beforePoll = () async {
+            files.addAll(<GalVoiceDumpEntry>[
+              resource(ownedName),
+              resource(nextName),
+            ]);
+            index.invalidate();
+            await index.synchronize();
+            engine.polledLines.add(const GalHookedLine(
+              seq: 2,
+              timestampMs: tick + 2000,
+              text: 'synthetic\nhistory line',
+              threadId: 5,
+              sourceKind: 4,
+              hookName: 'SiglusEngine message',
+            ));
+          };
+          for (int i = 0;
+              i < 100 && service.entries.single.sourceSequence != 2;
+              i++) {
+            await Future<void>.delayed(const Duration(milliseconds: 5));
+          }
+          expect(service.entries.single.sourceSequence, 2);
+          expect(service.entries.single.audioResourceId, nextName,
+              reason:
+                  'Old pending request cannot overwrite a new matched event');
+        }
+        if (scenario == 'folded new silent event') {
+          // Neither an unmarked time-near WAV nor another event's WAV may
+          // satisfy the strict native message request for seq 2.
+          for (final String name in <String>[
+            '${tick + 2000}_voice.wav',
+            '${tick + 2000}_fushi_textseq99_voice.wav',
+          ]) {
+            files.add(GalVoiceDumpEntry(
+              name: name,
+              path:
+                  '${Directory.systemTemp.path}${Platform.pathSeparator}$name',
+              modified: DateTime.now(),
+              kind: GalVoiceDumpKind.wav,
+            ));
+          }
+          index.invalidate();
+          await index.synchronize();
+          final GalIngameMiningBinding popup = GalIngameMiningBinding(
+            textEventId: 1,
+            sessionStartedAt: controller.state.sessionStartedAt,
+            targetHwnd: 9,
+            selectedLines: controller.selectedSessionLines,
+          );
+          engine.polledLines.add(
+            const GalHookedLine(
+              seq: 2,
+              timestampMs: tick + 2000,
+              text: 'synthetic\nhistory line',
+              threadId: 5,
+              sourceKind: 4,
+              hookName: 'SiglusEngine message',
+            ),
+          );
+          for (int i = 0;
+              i < 100 && service.entries.single.sourceSequence != 2;
+              i++) {
+            await Future<void>.delayed(const Duration(milliseconds: 5));
+          }
+          expect(service.entries.single.id, rowId);
+          expect(service.entries.single.sourceSequence, 2);
+          expect(
+            service.entries.single.audioResourceId,
+            isNull,
+            reason: 'New native event must not inherit old typed audio',
+          );
+          expect(
+            popup.resolve(
+              currentSessionStartedAt: controller.state.sessionStartedAt,
+              currentTargetHwnd: 9,
+              selectedLines: controller.selectedSessionLines,
+            ),
+            rowId,
+            reason: 'Existing popup keeps its original occurrence binding',
+          );
+          final GalIngameMiningBinding nextPopup = GalIngameMiningBinding(
+            textEventId: 2,
+            sessionStartedAt: controller.state.sessionStartedAt,
+            targetHwnd: 9,
+            selectedLines: controller.selectedSessionLines,
+          );
+          expect(
+            await controller.captureAudioForOccurrence(
+              occurrence: nextPopup,
+              outputExtension: 'aac',
+            ),
+            isNull,
+          );
+          expect(
+            await controller.captureAudioForOccurrence(
+              occurrence: popup,
+              outputExtension: 'aac',
+            ),
+            <int>[1, 2, 3],
+          );
+          expect(engine.pairedResourceIds.last, ownedName);
+          expect(engine.pairedEventIds.last, 1);
+          expect(
+            service.entries.single.audioResourceId,
+            isNull,
+            reason: 'Mining the old popup cannot rewrite the new row audio',
+          );
+          const String nextName =
+              '${tick + 2000}_fushi_textseq2_z0101.ovk_126.ogg';
+          files.add(resource(nextName));
+          index.invalidate();
+          await index.synchronize();
+          for (int i = 0;
+              i < 100 && service.entries.single.audioResourceId == null;
+              i++) {
+            await Future<void>.delayed(const Duration(milliseconds: 5));
+          }
+          expect(service.entries.single.audioResourceId, nextName);
+          expect(
+            await controller.captureAudioForOccurrence(
+              occurrence: nextPopup,
+              outputExtension: 'aac',
+            ),
+            <int>[1, 2, 3],
+          );
+          expect(engine.pairedResourceIds.last, nextName);
+          expect(engine.pairedEventIds.last, 2);
+          await controller.captureAudioForOccurrence(
+            occurrence: popup,
+            outputExtension: 'aac',
+          );
+          expect(engine.pairedResourceIds.last, ownedName);
+          expect(
+            engine.findEventIds,
+            isEmpty,
+            reason:
+                'Strict Native message live events must use event-only pairing',
+          );
+        }
       },
       skip: !Platform.isWindows,
     );
@@ -3638,6 +3793,7 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
   final int pairedReadyAfterCalls;
   final List<GalHookedLine> polledLines;
   final bool replayBufferedLines;
+  Future<void> Function()? beforePoll;
   final List<int> pollCursors = <int>[];
   final GalAudioSlice? utteranceSlice;
 
@@ -3754,6 +3910,9 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
 
   @override
   Future<GalTextPoll?> pollText(int sinceSeq) async {
+    final Future<void> Function()? callback = beforePoll;
+    beforePoll = null;
+    if (callback != null) await callback();
     _pollCalls++;
     pollCursors.add(sinceSeq);
     return GalTextPoll(

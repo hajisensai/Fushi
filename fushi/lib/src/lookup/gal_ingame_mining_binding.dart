@@ -19,6 +19,10 @@ class GalIngameMiningBinding {
   final int? targetHwnd;
   TexthookerLineEntry? _boundOccurrence;
 
+  /// Immutable source identity captured by the first exact seq resolution.
+  /// Consumers must still call resolve against the current session and row.
+  TexthookerLineEntry? get boundOccurrence => _boundOccurrence;
+
   void _bindExactEvent(Iterable<TexthookerLineEntry> selectedLines) {
     if (_boundOccurrence != null || textEventId <= 0) return;
     final List<TexthookerLineEntry> matches = selectedLines
