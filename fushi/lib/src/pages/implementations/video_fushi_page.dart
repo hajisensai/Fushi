@@ -7525,9 +7525,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 对话框被取消，用户仍能从这里再次触发。「重新导入」走 [_reimportMissingResource]
   /// 真动作（BUG-805 前是空操作 pop）。
   ///
-  /// 「返回」是**唯一退出入口**，不可省（BUG-2229）：本页有意不挂 AppBar（BUG-102，
-  /// 退出/标题/剧集导航全并进 media_kit controls 的视频内顶栏），而缺失态根本没有
-  /// controller ⇒ 内顶栏不存在；桌面端又没有系统返回键，少了这颗按钮用户进来就出不去。
+  /// 「返回」是缺失态**唯一可见、可点**的出口，不可省（BUG-2229）：本页有意不挂
+  /// AppBar（BUG-102，退出/标题/剧集导航全并进 media_kit controls 的视频内顶栏），
+  /// 而缺失态根本没有 controller ⇒ 内顶栏不存在。于是鼠标用户在屏幕上找不到任何
+  /// 退出入口——这正是用户报上来的那张截图。
+  ///
+  /// **但它不是唯一的退出路径**，别据此以为别的路在缺失态是断的（照那样理解会去
+  /// 删掉真正在起作用的东西）：`PopScope` 挂在 [_buildScaffold] **之外**，所以
+  /// Android 系统返回键一直通；键盘/手柄主通道里 `globalBack` 被**刻意**分流在
+  /// `controller == null` 那道门之前（见本文件里那段注释），所以 Esc / Alt+← /
+  /// 手柄 B 也一直通。这颗按钮补的是**可发现性**，不是可达性。
   /// 与失败态 [_buildFailedBody]、加载态 [_buildLoadingBody] 的退出走同一条
   /// [_handleBackOrExit]（同样会 flush 播放位置、清浮层栈）。
   Widget _buildMissingResourceBody(ColorScheme cs) {

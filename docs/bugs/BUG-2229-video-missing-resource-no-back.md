@@ -5,13 +5,13 @@
   而资源缺失态在 `controller.load` 之前就短路了 —— `_controller` 恒为 null ⇒ 视频内顶栏根本没挂载。
   同一 `_buildScaffold` 的另外两个非播放态都记得自带出口：加载态 `_buildLoadingBody` 给了 `VideoLoadingOverlay.onBack`，
   失败态 `_buildFailedBody` 给了「返回」按钮；唯独缺失态只给了「重新导入 / 删除」两个**修复动作**，没有退出动作。
-  桌面端又没有系统返回键（`PopScope` 拦的是系统 back），于是 Windows 上进入即死路。
+  这里要把范围说准（初稿写成「Windows 上进入即死路」，复审时按代码核实后修正）：**退出路径本身一直是通的**——`PopScope` 挂在 `_buildScaffold` **之外**，缺失态照样挂载，Android 系统返回键从来没被吃掉；键盘/手柄主通道里 `globalBack` 又被**刻意**分流在 `controller == null` 那道门之前（源码注释写明了理由），所以桌面端 Esc / Alt+← / 手柄 B 在缺失态一直退得出去。真实缺口是**鼠标用户没有可见出口**（可发现性），而不是可达性。把它写成「唯一退出入口」会让下一个人以为那条分流多余而把它删掉。
   `_promptMissingResource` 的注释里写的「可重连磁盘后**退页重进**」，实际上没有可退的入口。
   截图那一例还更糟：条目 `canDelete == false`（播放列表/远端），连「删除」都不显示，整页只剩一个按钮。
 - **[x] ① 已修复** — `_buildMissingResourceBody` 的按钮组补一颗「返回」`TextButton`，走与失败态/加载态同一条
   `_handleBackOrExit()`（同样 flush 播放位置、先清浮层栈再 pop）。文案复用既有通用 key `t.back`（17 语言齐全，
   不新增 key、不产生翻译欠账）。
-- **[x] ② 已加自动化测试** — `fushi/test/pages/video_missing_resource_test.dart`
+- **[x] ② 已加自动化测试** — `fushi/test/pages/video_missing_resource_test.dart`（另补一条源码守卫钉住「globalBack 必须分流在 `controller == null` 之前」——那条不变式之前零守卫，而初稿文档还把它说成不存在；不写成行为用例是因为本文件的最小 harness 没有 app 根部的全局快捷键层，实测发 Esc 没有接收者，硬凑一个壳测的就是那个壳）
   新增 `missing state offers a working back button (BUG-2229)`：把视频页 push 在占位根路由之上（这样 pop 有东西可退），
   驱动真实缺失链落到缺失态，关掉首帧提示对话框，断言正文里有「返回」按钮，**并点击它验证真的退回了占位路由**。
   变异实测：删掉那颗按钮后该用例红在 `backButton` 断言（`FLUTTER TEST VERDICT: FAILED`），恢复后
