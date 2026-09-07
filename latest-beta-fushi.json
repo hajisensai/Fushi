@@ -26,6 +26,24 @@
       "sha256": "4e5bb59d11e3cbffb76aee67bee95ff55e5034ebd07e2ed163876489bc7b186c"
     },
     {
+      "name": "fushi-2.3.0-beta.1248-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.3.0-beta.1248/fushi-2.3.0-beta.1248-ios.ipa",
+      "releaseSequence": 13886,
+      "tag": "v2.3.0-beta.1248",
+      "version": "2.3.0-beta.1248",
+      "size": 68266344,
+      "sha256": "453b2c06b578593a245166f65f0d0e0996fe9dd154a93a8fc0e464784be112f7"
+    },
+    {
+      "name": "fushi-2.3.0-beta.1248-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.3.0-beta.1248/fushi-2.3.0-beta.1248-macos.zip",
+      "releaseSequence": 13886,
+      "tag": "v2.3.0-beta.1248",
+      "version": "2.3.0-beta.1248",
+      "size": 334763478,
+      "sha256": "c552f07aa50490c1142d958abb9c46c0a62418cb9117923b736255049e01093a"
+    },
+    {
       "name": "fushi-2.3.0-beta.1248-windows-setup.exe",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.3.0-beta.1248/fushi-2.3.0-beta.1248-windows-setup.exe",
       "releaseSequence": 13886,
