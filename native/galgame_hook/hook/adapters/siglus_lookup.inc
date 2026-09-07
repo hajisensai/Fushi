@@ -9,61 +9,7 @@
 static_assert(sizeof(wchar_t) == sizeof(char16_t),
               "Siglus lookup requires Windows UTF-16 wchar_t");
 
-constexpr size_t kSiglusLookupGlyphEventSlots = 512;
-constexpr size_t kSiglusLookupTextSlots = 4;
-constexpr size_t kSiglusLookupClickEventSlots = 4;
-constexpr size_t kSiglusLookupMaxTextUnits =
-    fushi_voice_hook::kSiglusLookupTextCapacity;
-constexpr ULONGLONG kSiglusLookupClickTargetMaxAgeMs = 64;
-constexpr ULONGLONG kSiglusLookupDuplicateHitWindowMs = 250;
-
-struct SiglusLookupGlyphEvent {
-  volatile LONG64 seq = 0;
-  uint16_t code_unit = 0;
-  uint16_t reserved = 0;
-  int32_t design_x = 0;
-  int32_t design_y = 0;
-  int32_t extent = 0;
-};
-
-using SiglusLookupTextSnapshot = fushi_voice_hook::SiglusLookupTextSnapshot;
-
-struct SiglusLookupPayload {
-  fushi_voice_hook::SiglusLookupTextIdentity text_identity;
-  uint64_t geometry_generation = 0;
-  uint64_t snapshot_epoch = 0;
-  uint32_t text_units = 0;
-  uint32_t char_index = 0;
-  fushi_voice_hook::SiglusLookupRect rect;
-  uintptr_t game_window = 0;
-  int32_t client_screen_x = 0;
-  int32_t client_screen_y = 0;
-  int32_t client_width = 0;
-  int32_t client_height = 0;
-  wchar_t text[kSiglusLookupMaxTextUnits] = {};
-};
-
-struct SiglusLookupClickTarget {
-  fushi_voice_hook::SiglusLookupTextIdentity text_identity;
-  volatile LONG64 seq = 0;
-  uint32_t valid = 0;
-  ULONGLONG published_tick = 0;
-  uintptr_t game_window = 0;
-  int32_t client_screen_x = 0;
-  int32_t client_screen_y = 0;
-  int32_t client_width = 0;
-  int32_t client_height = 0;
-  uint64_t geometry_generation = 0;
-  uint32_t text_units = 0;
-  wchar_t text[kSiglusLookupMaxTextUnits] = {};
-  fushi_voice_hook::SiglusLookupGeometry geometry;
-  uint64_t snapshot_epoch = 0;
-};
-
-struct SiglusLookupClickEvent {
-  volatile LONG64 seq = 0;
-  SiglusLookupPayload payload;
-};
+#include "siglus_lookup_worker_types.inc"
 
 using SiglusGlyphLayoutFn = uint8_t(__thiscall *)(void *, uintptr_t, uintptr_t,
                                                   uintptr_t, uintptr_t,
@@ -761,20 +707,6 @@ void ConsumeSiglusLookupLunaScenarioText() {
     PublishSiglusLookupTextSnapshot(newest.text, newest.text_units, newest.identity);
 }
 
-bool ReadSiglusLookupGlyphEvent(uint64_t seq, SiglusLookupGlyphEvent *copy) {
-  if (seq == 0 || copy == nullptr)
-    return false;
-  SiglusLookupGlyphEvent *source =
-      &g_siglus_lookup_glyph_events[seq % kSiglusLookupGlyphEventSlots];
-  const uint64_t before =
-      static_cast<uint64_t>(InterlockedCompareExchange64(&source->seq, 0, 0));
-  if (before != seq)
-    return false;
-  memcpy(copy, source, sizeof(*copy));
-  const uint64_t after =
-      static_cast<uint64_t>(InterlockedCompareExchange64(&source->seq, 0, 0));
-  return after == before && after != 0;
-}
 
 
 void InvalidateSiglusLookupClickTarget() {
@@ -948,44 +880,7 @@ bool SiglusLookupPayloadMatchesPublishedTarget(
              SiglusLookupTargetClientSnapshot(target));
 }
 
-void QueueSiglusLookupClickSubmit(const SiglusLookupPayload &payload) {
-  if (payload.text_units == 0 ||
-      payload.text_units > kSiglusLookupMaxTextUnits ||
-      payload.char_index >= payload.text_units) {
-    return;
-  }
-  const uint64_t next = static_cast<uint64_t>(
-      InterlockedIncrement64(&g_siglus_lookup_click_event_count));
-  SiglusLookupClickEvent *event =
-      &g_siglus_lookup_click_events[next % kSiglusLookupClickEventSlots];
-  InterlockedExchange64(&event->seq, 0);
-  event->payload = payload;
-  InterlockedExchange64(&event->seq, static_cast<LONG64>(next));
-}
-
-bool ReadLatestSiglusLookupClickSubmit(SiglusLookupClickEvent *copy,
-                                       uint64_t *seq) {
-  if (copy == nullptr || seq == nullptr)
-    return false;
-  const uint64_t latest = static_cast<uint64_t>(
-      InterlockedCompareExchange64(&g_siglus_lookup_click_event_count, 0, 0));
-  if (latest == 0 || latest == g_siglus_lookup_click_processed_seq) {
-    return false;
-  }
-  SiglusLookupClickEvent *source =
-      &g_siglus_lookup_click_events[latest % kSiglusLookupClickEventSlots];
-  const uint64_t before =
-      static_cast<uint64_t>(InterlockedCompareExchange64(&source->seq, 0, 0));
-  if (before != latest)
-    return false;
-  memcpy(copy, source, sizeof(*copy));
-  const uint64_t after =
-      static_cast<uint64_t>(InterlockedCompareExchange64(&source->seq, 0, 0));
-  if (after != before || after == 0)
-    return false;
-  *seq = latest;
-  return true;
-}
+#include "siglus_lookup_worker.inc"
 
 SHORT WINAPI Detour_SiglusGetKeyState(int virtual_key) {
   const uintptr_t return_address =
@@ -1308,229 +1203,6 @@ void SetSiglusLookupRuntimeEnabled(bool enabled) {
   }
 }
 
-void ResetSiglusLookupRuntimeLayout() {
-  // The bound text event remains the same committed occurrence. Fresh glyphs
-  // are required after reset; preserving its ID does not revive old geometry.
-  fushi_voice_hook::ResetSiglusLookupLayout(&g_siglus_lookup_layout);
-  fushi_voice_hook::ClearSiglusLookupGlyphCapture(&g_siglus_lookup_glyph_captures);
-  g_siglus_lookup_glyph_processed_seq = static_cast<uint64_t>(
-      InterlockedCompareExchange64(&g_siglus_lookup_glyph_event_count, 0, 0));
-  g_siglus_lookup_layout_window = nullptr;
-  InvalidateSiglusLookupClickTarget();
-}
-
-void ConsumeSiglusLookupCaptures() {
-  ConsumeSiglusLookupLunaScenarioText();
-  bool changed = false;
-  SiglusLookupTextSnapshot text_snapshot;
-  uint64_t text_seq = 0;
-  if (ReadLatestSiglusLookupText(&text_snapshot, &text_seq)) {
-    g_siglus_lookup_text_processed_seq = text_seq;
-    const bool identity_changed =
-        !fushi_voice_hook::IsSiglusLookupTextIdentityCurrent(
-            text_snapshot.identity, g_siglus_lookup_text_identity);
-    if (identity_changed) {
-      fushi_voice_hook::InvalidateSiglusLookupCurrentLayout(&g_siglus_lookup_layout);
-      InvalidateSiglusLookupClickTarget();
-      g_siglus_lookup_text_identity = text_snapshot.identity;
-      changed = true;
-    }
-    const bool same =
-        text_snapshot.text_units == g_siglus_lookup_active_line_units &&
-        text_snapshot.text_units != 0 &&
-        memcmp(text_snapshot.text, g_siglus_lookup_active_line,
-               static_cast<size_t>(text_snapshot.text_units) *
-                   sizeof(wchar_t)) == 0;
-    if (!same) {
-      g_siglus_lookup_active_line_units = text_snapshot.text_units;
-      memcpy(g_siglus_lookup_active_line, text_snapshot.text,
-             static_cast<size_t>(text_snapshot.text_units) * sizeof(wchar_t));
-      fushi_voice_hook::ResetSiglusLookupLayout(&g_siglus_lookup_layout);
-      InvalidateSiglusLookupClickTarget();
-      fushi_voice_hook::g_geometry_provider_registry.Retire(
-          g_header, fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
-          fushi_voice_hook::kLookupGeometryProviderIdSiglus);
-      changed = true;
-    }
-  }
-
-  const uint64_t latest = static_cast<uint64_t>(
-      InterlockedCompareExchange64(&g_siglus_lookup_glyph_event_count, 0, 0));
-  if (latest != g_siglus_lookup_glyph_processed_seq) {
-    uint64_t first = g_siglus_lookup_glyph_processed_seq + 1;
-    if (latest >= kSiglusLookupGlyphEventSlots &&
-        first <= latest - kSiglusLookupGlyphEventSlots) {
-      first = latest - kSiglusLookupGlyphEventSlots + 1;
-      fushi_voice_hook::ClearSiglusLookupGlyphCapture(
-          &g_siglus_lookup_glyph_captures);
-    }
-    uint64_t processed_through = first - 1u;
-    for (uint64_t seq = first; seq <= latest; ++seq) {
-      SiglusLookupGlyphEvent event;
-      // The producer reserves its sequence before publishing the slot. Stop
-      // at the first not-yet-published event so the next tick retries it;
-      // advancing straight to `latest` would permanently drop a tail glyph.
-      if (!ReadSiglusLookupGlyphEvent(seq, &event))
-        break;
-      fushi_voice_hook::AppendSiglusLookupGlyphCapture(
-          static_cast<char16_t>(event.code_unit), event.design_x,
-          event.design_y, event.extent, &g_siglus_lookup_glyph_captures);
-      processed_through = seq;
-      changed = true;
-    }
-    g_siglus_lookup_glyph_processed_seq = processed_through;
-  }
-
-  if (g_siglus_lookup_glyph_processed_seq != latest) {
-    // A reserved but unpublished glyph is an incomplete snapshot too. Do not
-    // republish the old click target merely because this tick appended none.
-    fushi_voice_hook::InvalidateSiglusLookupCurrentLayout(&g_siglus_lookup_layout);
-    InvalidateSiglusLookupClickTarget();
-    return;
-  }
-  if (!changed || g_siglus_lookup_active_line_units == 0)
-    return;
-  const auto *profile = ActiveSiglusLookupProfile();
-  if (profile == nullptr)
-    return;
-  if (fushi_voice_hook::UpdateSiglusLookupLayout(
-          *profile, g_siglus_lookup_glyph_captures,
-          reinterpret_cast<const char16_t *>(g_siglus_lookup_active_line),
-          g_siglus_lookup_active_line_units, &g_siglus_lookup_layout)) {
-    SetSiglusLookupDiag(fushi_voice_hook::kLookupDiagGeometryObserved);
-  } else {
-    // A committed same-line provider/popup survives a split redraw, but no
-    // older click target or press may be used while the capture is incomplete.
-    InvalidateSiglusLookupClickTarget();
-  }
-}
-
-bool PublishSiglusLookupHit(const SiglusLookupPayload &payload) {
-  if (g_header == nullptr || payload.text_units == 0 ||
-      payload.text_units > kSiglusLookupMaxTextUnits ||
-      payload.char_index >= payload.text_units) {
-    return false;
-  }
-  char utf8[fushi_voice_hook::kLookupLineBytes] = {};
-  const int bytes = WideCharToMultiByte(
-      CP_UTF8, 0, payload.text, static_cast<int>(payload.text_units), utf8,
-      static_cast<int>(sizeof(utf8)), nullptr, nullptr);
-  if (bytes <= 0 || payload.geometry_generation == 0)
-    return false;
-  fushi_voice_hook::LookupGeometryHitPublication publication;
-  publication.provider_kind =
-      fushi_voice_hook::kLookupGeometryProviderEngineExactLayout;
-  publication.provider_id =
-      fushi_voice_hook::kLookupGeometryProviderIdSiglus;
-  publication.char_index = payload.char_index;
-  publication.source_length = fushi_voice_hook::LookupUtf16SourceLength(
-      payload.text, payload.text_units, payload.char_index);
-  publication.char_count = payload.text_units;
-  publication.coordinate_space =
-      fushi_voice_hook::kLookupCoordinateSpaceClientPhysicalPixels;
-  publication.writing_mode = fushi_voice_hook::kLookupWritingModeHorizontal;
-  publication.text_generation = payload.text_identity.event_id;
-  publication.geometry_generation = payload.geometry_generation;
-  publication.glyph_x = payload.rect.x;
-  publication.glyph_y = payload.rect.y;
-  publication.glyph_w = payload.rect.width;
-  publication.glyph_h = payload.rect.height;
-  publication.view_w = payload.client_width;
-  publication.view_h = payload.client_height;
-  publication.flags = fushi_voice_hook::kLookupHitFlagSubmit;
-  publication.line_utf8 = reinterpret_cast<const uint8_t *>(utf8);
-  publication.line_bytes = static_cast<uint32_t>(bytes);
-  return fushi_voice_hook::g_geometry_provider_registry.PublishHit(g_header, publication);
-}
-
-bool IsSiglusLookupPayloadCurrent(const SiglusLookupPayload &payload) {
-  const auto *profile = ActiveSiglusLookupProfile();
-  const uint64_t latest_text = static_cast<uint64_t>(
-      InterlockedCompareExchange64(&g_siglus_lookup_text_count, 0, 0));
-  const uint64_t latest_glyph = static_cast<uint64_t>(
-      InterlockedCompareExchange64(&g_siglus_lookup_glyph_event_count, 0, 0));
-  if (profile == nullptr ||
-      !fushi_voice_hook::IsSiglusLookupTextIdentityCurrent(
-          payload.text_identity, g_siglus_lookup_text_identity) ||
-      !fushi_voice_hook::IsSiglusLookupLayoutSubmissionCurrent(
-          g_siglus_lookup_layout, payload.geometry_generation,
-          payload.snapshot_epoch) || payload.text_units == 0 ||
-      latest_text != g_siglus_lookup_text_processed_seq ||
-      latest_glyph != g_siglus_lookup_glyph_processed_seq ||
-      payload.text_units != g_siglus_lookup_active_line_units ||
-      payload.char_index >= payload.text_units ||
-      memcmp(payload.text, g_siglus_lookup_active_line,
-             static_cast<size_t>(payload.text_units) * sizeof(wchar_t)) != 0) {
-    return false;
-  }
-
-  const HWND game = reinterpret_cast<HWND>(payload.game_window);
-  RECT client = {};
-  POINT origin = {0, 0};
-  if (game == nullptr || !IsWindow(game) || GetForegroundWindow() != game ||
-      g_siglus_sampled_input_game_window.load(std::memory_order_acquire) !=
-          game ||
-      !GetClientRect(game, &client) || !ClientToScreen(game, &origin)) {
-    return false;
-  }
-  const fushi_voice_hook::SiglusLookupClientSnapshot active_client = {
-      reinterpret_cast<uintptr_t>(game), origin.x, origin.y,
-      client.right - client.left, client.bottom - client.top};
-  if (!fushi_voice_hook::MatchesSiglusLookupGenerationAndClient(
-          payload.geometry_generation,
-          SiglusLookupPayloadClientSnapshot(payload),
-          g_siglus_lookup_layout.generation, active_client)) {
-    return false;
-  }
-
-  for (size_t index = 0;
-       index < g_siglus_lookup_layout.geometry.glyph_count; ++index) {
-    const auto &glyph = g_siglus_lookup_layout.geometry.glyphs[index];
-    if (glyph.char_index != payload.char_index)
-      continue;
-    fushi_voice_hook::SiglusLookupRect expected;
-    if (!fushi_voice_hook::ScaleSiglusLookupRectToClient(
-            *profile, glyph.rect, active_client.width, active_client.height,
-            &expected)) {
-      return false;
-    }
-    return payload.rect.x == expected.x && payload.rect.y == expected.y &&
-           payload.rect.width == expected.width &&
-           payload.rect.height == expected.height;
-  }
-  return false;
-}
-
-bool PublishSiglusLookupPayload(const SiglusLookupPayload &payload) {
-  if (!IsSiglusLookupPayloadCurrent(payload))
-    return false;
-  const ULONGLONG now = GetTickCount64();
-  uint64_t identity = 1469598103934665603ull;
-  const auto hash_value = [&identity](uint64_t value) {
-    identity ^= value;
-    identity *= 1099511628211ull;
-  };
-  hash_value(payload.text_units);
-  for (uint32_t index = 0; index < payload.text_units; ++index) {
-    hash_value(static_cast<uint32_t>(payload.text[index]));
-  }
-  hash_value(payload.char_index);
-  hash_value(static_cast<uint32_t>(payload.rect.x));
-  hash_value(static_cast<uint32_t>(payload.rect.y));
-  if (identity == g_siglus_lookup_last_hit_identity &&
-      now >= g_siglus_lookup_last_hit_tick &&
-      now - g_siglus_lookup_last_hit_tick <=
-          kSiglusLookupDuplicateHitWindowMs) {
-    return false;
-  }
-  if (!IsSiglusLookupPayloadCurrent(payload) ||
-      !PublishSiglusLookupHit(payload)) {
-    return false;
-  }
-  g_siglus_lookup_last_hit_identity = identity;
-  g_siglus_lookup_last_hit_tick = now;
-  return true;
-}
 
 void ProcessSiglusLookupTick() {
   if (g_stop || g_header == nullptr ||
@@ -1595,13 +1267,7 @@ void ProcessSiglusLookupTick() {
         fushi_voice_hook::kLookupGeometryProviderIdSiglus);
   }
 
-  SiglusLookupClickEvent click_event;
-  uint64_t click_seq = 0;
-  bool click_submitted = false;
-  if (ReadLatestSiglusLookupClickSubmit(&click_event, &click_seq)) {
-    g_siglus_lookup_click_processed_seq = click_seq;
-    click_submitted = PublishSiglusLookupPayload(click_event.payload);
-  }
+  const bool click_submitted = ProcessSiglusLookupClickSubmissions();
 
   const uint16_t shift_state =
       static_cast<uint16_t>(GetAsyncKeyState(VK_SHIFT));

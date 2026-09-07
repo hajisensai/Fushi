@@ -12,6 +12,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class AdapterStructureTest(unittest.TestCase):
     @staticmethod
+    def _siglus_source() -> str:
+        adapters = ROOT / "hook" / "adapters"
+        source = (adapters / "siglus_lookup.inc").read_text(encoding="utf-8")
+        marker = '#include "siglus_lookup_worker.inc"'
+        if source.count(marker) != 1:
+            raise AssertionError("Siglus production worker must be included once")
+        return source.replace(marker, (adapters / "siglus_lookup_worker.inc").read_text(encoding="utf-8"))
+
+    @staticmethod
     def _strip_comments(source: str) -> str:
         """剥掉 `//` 行注释与 `/* */` 块注释。
 
@@ -117,6 +126,10 @@ class AdapterStructureTest(unittest.TestCase):
                     encoding="utf-8"
                 )
                 self.assertIn('#include "hunex_gge_lookup_runtime.inc"', owner)
+                lifecycle_source += owner
+            if path.name == "siglus_lookup_worker.inc":
+                owner = (adapter_root / "siglus_lookup.inc").read_text(encoding="utf-8")
+                self.assertIn('#include "siglus_lookup_worker.inc"', owner)
                 lifecycle_source += owner
             self.assertIn(
                 "g_geometry_provider_registry.OfferReady", lifecycle_source
@@ -273,9 +286,7 @@ class AdapterStructureTest(unittest.TestCase):
         sgre = (
             ROOT / "hook" / "adapters" / "sgre_lookup.inc"
         ).read_text(encoding="utf-8")
-        siglus = (
-            ROOT / "hook" / "adapters" / "siglus_lookup.inc"
-        ).read_text(encoding="utf-8")
+        siglus = self._siglus_source()
 
         sgre_up = self._function_body(sgre, "SgreGetDeviceStateDetour(")
         self.assertIn("SgreLookupPayloadMatchesPublishedTarget", sgre_up)
@@ -302,9 +313,9 @@ class AdapterStructureTest(unittest.TestCase):
         siglus_up = self._function_body(siglus, "Detour_SiglusGetKeyState(")
         self.assertIn("SiglusLookupPayloadMatchesPublishedTarget", siglus_up)
         siglus_publish = self._function_body(
-            siglus, "bool PublishSiglusLookupPayload("
+            siglus, "SiglusLookupSubmissionResult TryPublishSiglusLookupPayload("
         )
-        self.assertIn("IsSiglusLookupPayloadCurrent(payload)", siglus_publish)
+        self.assertEqual(siglus_publish.count("CheckSiglusLookupSubmission(payload, awaiting_glyph_seq)"), 2)
         siglus_capture = self._function_body(
             siglus, "void ConsumeSiglusLookupCaptures()"
         )
@@ -317,10 +328,31 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn("NextSiglusLookupLogicalGeneration", layout)
         self.assertIn("matched_end != captures.count", layout)
 
+    def test_siglus_click_acknowledgement_waits_for_capture_frontier(self) -> None:
+        source = self._strip_comments(self._siglus_source())
+        tick = self._function_body(source, "void ProcessSiglusLookupTick()")
+        self.assertLess(tick.index("ConsumeSiglusLookupCaptures();"),
+                        tick.index("ProcessSiglusLookupClickSubmissions();"))
+        submit = self._function_body(source, "bool ProcessSiglusLookupClickSubmissions() {")
+        self.assertIn("ReadNextSiglusLookupClickSubmit", submit)
+        self.assertIn("g_siglus_lookup_glyph_processed_seq < g_siglus_lookup_waiting_glyph_seq", submit)
+        self.assertLess(submit.index("TryPublishSiglusLookupPayload("),
+                        submit.index("g_siglus_lookup_click_processed_seq = click_seq"))
+        waiting = self._function_body(submit, "if (result == SiglusLookupSubmissionResult::kAwaitingCapture)")
+        self.assertNotIn("g_siglus_lookup_click_processed_seq =", waiting)
+        check = self._function_body(source, "SiglusLookupSubmissionResult CheckSiglusLookupSubmission(")
+        self.assertIn("IsSiglusLookupPayloadEligible(payload)", check)
+        self.assertIn("latest_glyph != g_siglus_lookup_glyph_processed_seq", check)
+        eligible = self._function_body(source, "bool IsSiglusLookupPayloadEligible(")
+        self.assertIn("IsSiglusLookupLayoutSubmissionCurrent", eligible)
+        self.assertIn("latest_text != g_siglus_lookup_text_processed_seq", eligible)
+        test = (ROOT / "tests" / "siglus_lookup_worker_test.cpp").read_text(encoding="utf-8")
+        self.assertIn('#include "../hook/adapters/siglus_lookup_worker.inc"', test)
+        self.assertIn('#include "../hook/adapters/siglus_lookup_text_snapshot.inc"', test)
+
     def test_siglus_split_redraw_preserves_only_committed_lifetime(self) -> None:
         siglus = self._strip_comments(
-            (ROOT / "hook" / "adapters" / "siglus_lookup.inc").read_text(
-                encoding="utf-8")
+            self._siglus_source()
         )
         tick = self._function_body(siglus, "void ProcessSiglusLookupTick()")
         self.assertIn("if (g_siglus_lookup_layout.line_has_complete_layout &&", tick)
@@ -347,7 +379,7 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn("ResetSiglusLookupLayout", reset)
         pending = self._function_body(siglus, "bool SiglusLookupPayloadMatchesPublishedTarget(")
         self.assertIn("payload.snapshot_epoch == target.snapshot_epoch", pending)
-        current = self._function_body(siglus, "bool IsSiglusLookupPayloadCurrent(")
+        current = self._function_body(siglus, "bool IsSiglusLookupPayloadEligible(")
         self.assertIn("IsSiglusLookupLayoutSubmissionCurrent", current)
 
     def test_siglus_lookup_preserves_committed_text_event_identity(self) -> None:
@@ -362,8 +394,7 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn("g_siglus_text_function_rva, text_event_id,", native)
         self.assertNotIn("text_write_count", native)
         siglus = self._strip_comments(
-            (ROOT / "hook" / "adapters" / "siglus_lookup.inc").read_text(
-                encoding="utf-8"))
+            self._siglus_source())
         luna = self._function_body(siglus, "void ConsumeSiglusLookupLunaScenarioText()")
         self.assertIn("candidate.identity = {global_seq, slot->thread_id}", luna)
         self.assertIn("newest.text_units, newest.identity", luna)
@@ -372,7 +403,7 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn("publication.text_generation = payload.text_identity.event_id", hit)
         self.assertIn("publication.geometry_generation = payload.geometry_generation", hit)
         self.assertNotIn("publication.text_generation = payload.geometry_generation", hit)
-        current = self._function_body(siglus, "bool IsSiglusLookupPayloadCurrent(")
+        current = self._function_body(siglus, "bool IsSiglusLookupPayloadEligible(")
         self.assertIn("payload.text_identity, g_siglus_lookup_text_identity", current)
         pending = self._function_body(siglus, "bool SiglusLookupPayloadMatchesPublishedTarget(")
         self.assertIn("payload.text_identity, target.text_identity", pending)
@@ -384,7 +415,7 @@ class AdapterStructureTest(unittest.TestCase):
     def test_siglus_unsupported_new_text_retires_previous_lookup(self) -> None:
         adapters = ROOT / "hook" / "adapters"
         siglus = self._strip_comments(
-            (adapters / "siglus_lookup.inc").read_text(encoding="utf-8"))
+            self._siglus_source())
         self.assertIn('#include "siglus_lookup_text_snapshot.inc"', siglus)
         capture = self._function_body(siglus, "void ConsumeSiglusLookupCaptures()")
         self.assertIn("ReadLatestSiglusLookupText(&text_snapshot, &text_seq)", capture)
@@ -396,7 +427,7 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn("g_geometry_provider_registry.Retire", changed)
         tick = self._function_body(siglus, "void ProcessSiglusLookupTick()")
         self.assertLess(tick.index("ConsumeSiglusLookupCaptures()"),
-                        tick.index("ReadLatestSiglusLookupClickSubmit("))
+                        tick.index("ProcessSiglusLookupClickSubmissions("))
 
     def test_exact_engine_signatures_are_portable_unique_and_fail_closed(
         self,
@@ -418,9 +449,7 @@ class AdapterStructureTest(unittest.TestCase):
         leaf_profile = (adapter_root / "leaf_aquaplus_profile.h").read_text(
             encoding="utf-8"
         )
-        siglus = (adapter_root / "siglus_lookup.inc").read_text(
-            encoding="utf-8"
-        )
+        siglus = self._siglus_source()
         siglus_header = (adapter_root / "siglus_lookup.h").read_text(
             encoding="utf-8"
         )
@@ -500,7 +529,7 @@ class AdapterStructureTest(unittest.TestCase):
     def test_siglus_family_admission_owns_text_entry_and_runtime_dimensions(self) -> None:
         adapters = ROOT / "hook" / "adapters"
         source = self._strip_comments(
-            (adapters / "siglus_lookup.inc").read_text(encoding="utf-8")
+            self._siglus_source()
         )
         resolver = self._function_body(source, "bool ResolveSiglusLiveFamily(")
         for required in (
@@ -1170,9 +1199,7 @@ class AdapterStructureTest(unittest.TestCase):
         )
         self.assertNotIn("kLookupAdmissionIdentityRejected", admission)
 
-        siglus = (
-            ROOT / "hook" / "adapters" / "siglus_lookup.inc"
-        ).read_text(encoding="utf-8")
+        siglus = self._siglus_source()
         siglus_admission = self._strip_comments(
             self._member_body(
                 siglus,

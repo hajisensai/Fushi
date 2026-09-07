@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2075 条。点号进各自文件。
+> 共 2076 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2244](bugs/BUG-2244-siglus-lookup-capture-frontier.md) | ✅ | ✅ | Siglus同句重绘前沿未消费时永久丢弃已入队查词点击 |
 | [BUG-2243](bugs/BUG-2243-galgame-folded-typed-audio-ownership.md) | ✅ | ✅ | 折叠正文事件继承旧语音与带事件资源退回时间匹配 |
 | [BUG-2242](bugs/BUG-2242-siglus-native-rollback-reenables-retained-hook.md) | ✅ | ✅ | Siglus NativeEcx 安装回滚后回退重启残留 Hook |
 | [BUG-2241](bugs/BUG-2241-siglus-lookup-oversized-text-retains-old-target.md) | ✅ | ✅ | Siglus超容量新正文未撤销旧查词事件与点击目标 |
