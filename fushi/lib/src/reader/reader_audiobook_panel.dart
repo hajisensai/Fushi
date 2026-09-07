@@ -161,6 +161,8 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
           SizedBox(height: tokens.spacing.gap),
           Flexible(
             child: SingleChildScrollView(
+              key: ValueKey<String>('fushi_audiobook_scroll_$_tab'),
+              primary: false,
               child: KeyedSubtree(
                 key: ValueKey<String>('fushi_audiobook_tab_$_tab'),
                 child: tabContent,
@@ -187,6 +189,43 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
     final String title = widget.title.trim();
     final String chapter = widget.chapterLabel?.trim() ?? '';
     final String? coverPath = widget.coverPath;
+    final Widget details = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        if (title.isNotEmpty)
+          Text(
+            title,
+            style: theme.textTheme.titleSmall,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        if (chapter.isNotEmpty)
+          Text(
+            chapter,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+      ],
+    );
+    final Widget? transport = ctrl != null
+        ? _buildTransport(theme, ctrl)
+        : widget.onAudioImport != null
+            ? Align(
+                alignment: Alignment.centerLeft,
+                child: FilledButton.tonalIcon(
+                  icon: const Icon(Icons.headphones_outlined),
+                  label: Text(t.audio_import),
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    widget.onAudioImport!();
+                  },
+                ),
+              )
+            : null;
     return DecoratedBox(
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
@@ -194,64 +233,56 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
       ),
       child: Padding(
         padding: EdgeInsets.all(tokens.spacing.gap * 1.5),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            if (coverPath != null) ...<Widget>[
-              ClipRRect(
-                borderRadius: BorderRadius.circular(6),
-                child: Image.file(
-                  File(coverPath),
-                  key: const ValueKey<String>('fushi_audiobook_cover'),
-                  width: 96,
-                  height: 136,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) =>
-                      const SizedBox(width: 96, height: 136),
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            // Five transport buttons need their full touch targets. Move them
+            // below the cover when the adjacent column cannot accommodate them.
+            final bool stacked = coverPath != null &&
+                constraints.maxWidth < 96 + tokens.spacing.gap * 1.5 + 248;
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    if (coverPath != null) ...<Widget>[
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: Image.file(
+                          File(coverPath),
+                          key: const ValueKey<String>('fushi_audiobook_cover'),
+                          width: 96,
+                          height: 136,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) =>
+                              const SizedBox(width: 96, height: 136),
+                        ),
+                      ),
+                      SizedBox(width: tokens.spacing.gap * 1.5),
+                    ],
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          details,
+                          if (!stacked && transport != null) ...<Widget>[
+                            SizedBox(height: tokens.spacing.gap),
+                            transport,
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              SizedBox(width: tokens.spacing.gap * 1.5),
-            ],
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  if (title.isNotEmpty)
-                    Text(
-                      title,
-                      style: theme.textTheme.titleSmall,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  if (chapter.isNotEmpty)
-                    Text(
-                      chapter,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                if (stacked && transport != null) ...<Widget>[
                   SizedBox(height: tokens.spacing.gap),
-                  if (ctrl != null)
-                    _buildTransport(theme, ctrl)
-                  else if (widget.onAudioImport != null)
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: FilledButton.tonalIcon(
-                        icon: const Icon(Icons.headphones_outlined),
-                        label: Text(t.audio_import),
-                        onPressed: () {
-                          Navigator.of(context).pop();
-                          widget.onAudioImport!();
-                        },
-                      ),
-                    ),
+                  transport,
                 ],
-              ),
-            ),
-          ],
+              ],
+            );
+          },
         ),
       ),
     );
@@ -328,12 +359,14 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
                 child: SizedBox(
                   height: 4,
                   child: CustomPaint(
-                    key:
-                        const ValueKey<String>('fushi_audiobook_chapter_ticks'),
+                    key: const ValueKey<String>(
+                      'fushi_audiobook_chapter_ticks',
+                    ),
                     painter: _ChapterTickPainter(
                       fractions: ticks,
-                      color: theme.colorScheme.onSurfaceVariant
-                          .withValues(alpha: 0.6),
+                      color: theme.colorScheme.onSurfaceVariant.withValues(
+                        alpha: 0.6,
+                      ),
                     ),
                   ),
                 ),
@@ -345,8 +378,9 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
                 Text(_formatDuration(dur), style: timeStyle),
               ],
             ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+            Wrap(
+              alignment: WrapAlignment.center,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: <Widget>[
                 IconButton(
                   tooltip: '-10s',

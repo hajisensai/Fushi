@@ -24,6 +24,13 @@
 - 遇到 WebView renderer crash、资源 404、CacheStorage 或旧资源症状，要区分当前资源拦截、旧迁移资产和用户设备缓存；不要加 TTU dummy 文件或用清数据掩盖真实升级问题。
 - 调试 DOM/JS 用 Chrome DevTools Protocol 或 WebView inspection 读 DOM、console、JS 变量和布局尺寸；截图只能证明视觉现象，不能替代 DOM/边界数据。
 
+## 跨平台阅读控制界面
+
+- 正文模式各平台共用顶部工具栏、左侧导航、右侧设置和底部阅读状态行。`readerDesktopChromeEnabled` 保留原符号名，但不再以操作系统限制启用；歌词模式继续使用独立文档控制界面。
+- 顶部工具栏按可用宽度折叠次要动作。导航/设置侧栏避开系统安全区和键盘，有声书容器另由 `readerAudiobookUsesDialog` 决定：宽窗居中，手机全高底部面板。
+- 窄屏将播放条与阅读状态分行，避免数字挤占播放按钮；无音频时不再预留旧底部设置栏高度。检查视觉高度、正文预留与安全区三者必须一致。
+- `desktop_reader_chrome_shortcuts_itest.dart` 覆盖真实 Windows 宽/窄窗快捷键开关侧栏；它不能替代 Android/iOS 的系统安全区、软键盘和 WebView 真机验收。
+
 ## 平台特例
 
 - **Windows WebView2** 阅读器/字级焦点本身不坏；caret 测试失败常因书架里残留 lyrics-mode 旧书 → seed/打开一本全新分页书（`book_entry_fushi://book/<id>`）复测。

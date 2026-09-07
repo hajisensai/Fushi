@@ -7,21 +7,22 @@ import 'package:fushi_audio/fushi_audio.dart';
 
 import '../pages/reader_fushi_page_source_corpus.dart';
 
-/// 桌面端阅读器底部状态行（ッツ Reader 风格）：
+/// 各平台共用的阅读器底部状态行：
 ///  ① 纯函数——启用判据 / 预留高 / 字时 / 秒表格式 / 两侧文案；
 ///  ② 组件行为——秒表随 tick 跳动、暂停态换图标、进度开关、点击语义；
-///  ③ 源码扫描守卫——状态行的预留进 `_readerBottomReserve` 单一真相源、桌面端顶部
-///     进度 pill 让位、悬浮判定不再把桌面端顶部进度算进去、BUG-1692 RepaintBoundary、
-///     设置页在桌面端隐藏顶部进度的「悬浮 / 位置」两项。
+///  ③ 源码扫描守卫——状态行预留、顶部进度 pill 让位、BUG-1692 RepaintBoundary、
+///     设置页删除顶部进度的「悬浮 / 位置」两项。
 void main() {
   group('pure helpers', () {
-    test('enabled: desktop && !lyrics', () {
+    test('enabled on every platform outside lyrics mode', () {
       expect(
           readerStatusFooterEnabled(desktop: true, lyricsMode: false), isTrue);
       expect(
           readerStatusFooterEnabled(desktop: true, lyricsMode: true), isFalse);
-      expect(readerStatusFooterEnabled(desktop: false, lyricsMode: false),
-          isFalse);
+      expect(
+          readerStatusFooterEnabled(desktop: false, lyricsMode: false), isTrue);
+      expect(
+          readerStatusFooterEnabled(desktop: false, lyricsMode: true), isFalse);
     });
 
     test('reserve: enabled -> footerHeight, else 0', () {
@@ -79,8 +80,12 @@ void main() {
       required StudySessionTotals Function() totals,
       int? current = 64988,
       int? total = 123962,
+      int? chapterCurrent,
+      int? chapterTotal,
       bool showProgress = true,
       VoidCallback? onTap,
+      VoidCallback? onTapTracker,
+      VoidCallback? onTapProgress,
     }) {
       return MaterialApp(
         home: Scaffold(
@@ -90,11 +95,15 @@ void main() {
               sessionTotals: totals,
               currentChars: current,
               totalChars: total,
+              chapterCurrentChars: chapterCurrent,
+              chapterTotalChars: chapterTotal,
               showProgress: showProgress,
               textColor: Colors.white,
               backgroundColor: Colors.black,
               tick: const Duration(milliseconds: 100),
               onTap: onTap,
+              onTapTracker: onTapTracker,
+              onTapProgress: onTapProgress,
             ),
           ),
         ),
@@ -163,6 +172,41 @@ void main() {
       expect(rect.height, kReaderStatusFooterHeight,
           reason: '视觉高度 == 预留高度（同一常量）');
     });
+
+    testWidgets('320px footer keeps long counts inside and actions accessible',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(320, 640);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      int trackerTaps = 0;
+      int progressTaps = 0;
+      await tester.pumpWidget(host(
+        totals: () => (durationMs: 360000000, chars: 999999999, active: true),
+        current: 123456789,
+        total: 999999999,
+        chapterCurrent: 12345678,
+        chapterTotal: 99999999,
+        onTapTracker: () => trackerTaps++,
+        onTapProgress: () => progressTaps++,
+      ));
+
+      expect(tester.takeException(), isNull);
+      final Rect footer = tester.getRect(find.byType(ReaderStatusFooter));
+      final Finder tracker =
+          find.byKey(const ValueKey<String>('fushi_status_tracker'));
+      final Finder progress =
+          find.byKey(const ValueKey<String>('fushi_status_progress'));
+      expect(tester.getRect(tracker).left, greaterThanOrEqualTo(footer.left));
+      expect(tester.getRect(progress).right, lessThanOrEqualTo(footer.right));
+      expect(tester.getRect(tracker).right,
+          lessThan(tester.getRect(progress).left));
+      expect(footer.height, kReaderStatusFooterHeight);
+      await tester.tap(tracker);
+      await tester.tap(progress);
+      expect(trackerTaps, 1);
+      expect(progressTaps, 1);
+    });
   });
 
   group('source-scan guards', () {
@@ -185,14 +229,14 @@ void main() {
       );
     });
 
-    test('desktop: footer replaces the top progress pill', () {
+    test('footer replaces the top progress pill on every platform', () {
       final String showTop = _slice(
         src,
         '  bool get _showTopProgress =>',
         '  bool get _statusFooterEnabled',
       );
       expect(showTop.contains('!_statusFooterEnabled &&'), isTrue,
-          reason: '桌面端顶部不再有 chrome：进度数字挪到右下角');
+          reason: '各平台进度数字统一挪到右下角');
       final String anyFloating = _slice(
         src,
         '  bool get _anyChromeFloating =>',
@@ -201,7 +245,7 @@ void main() {
       expect(
         anyFloating.contains('(_topProgressFloating && !_statusFooterEnabled)'),
         isTrue,
-        reason: '桌面端顶部进度没有可见面，其悬浮开关不得再驱动「点空白唤出」状态机',
+        reason: '顶部进度没有可见面，其悬浮开关不得再驱动「点空白唤出」状态机',
       );
     });
 
@@ -219,7 +263,7 @@ void main() {
           reason: '绘制门控与底栏同源用 set-once _hasEverLoaded（切章不闪烁）');
       expect(build.contains('_readerContentReady'), isFalse);
       expect(
-        build.contains('bottom: _bottomChromeReserve + _stableBottomInset'),
+        build.contains('bottom: _statusFooterBottomOffset'),
         isTrue,
         reason: '底栏挤压时状态行坐在底栏之上；悬浮时贴底',
       );
@@ -229,7 +273,8 @@ void main() {
       // 钉「两行相邻且顺序对」，不钉缩进宽度：Stack 外面多包一层 formatter 就会
       // 把绝对缩进从 20 改成 22，而绘制顺序这个不变式一点没变。
       expect(
-        RegExp(r'_buildStatusFooter\(\),\n *buildDictionary\(\),').hasMatch(src),
+        RegExp(r'_buildStatusFooter\(\),\n *buildDictionary\(\),')
+            .hasMatch(src),
         isTrue,
         reason: '状态行必须排在词典弹层 / 底栏之前，让它们盖在其上',
       );
@@ -245,23 +290,24 @@ void main() {
           reason: 'v92 纪律：账只在 StudyClock 一本，页面只读');
     });
 
-    test('settings: top-progress floating / position hidden on desktop', () {
+    test('settings: obsolete top-progress placement controls removed', () {
       final String schema =
           File('lib/src/settings/settings_schema_reading.dart')
               .readAsStringSync()
               .replaceAll('\r\n', '\n');
       expect(
-        RegExp(r'showTopProgressBar && !isDesktopPlatform')
-            .allMatches(schema)
-            .length,
-        2,
-        reason: '「悬浮阅读进度」与「进度位置」两项在桌面端没有可见面',
+        schema.contains("id: 'reading_controls.top_progress_floating'"),
+        isFalse,
+        reason: '各平台统一用底部进度，不再展示悬浮阅读进度开关',
       );
       expect(
-        schema.contains(
-            '(c.readerSource.topProgressFloating && !isDesktopPlatform) ||'),
-        isTrue,
-        reason: '自动收起时长的可见条件同样不再把桌面端顶部悬浮算进去',
+        schema.contains("id: 'reading_controls.top_progress_position'"),
+        isFalse,
+      );
+      expect(
+        schema.contains('c.readerSource.topProgressFloating'),
+        isFalse,
+        reason: '自动收起时长的可见条件不再读取已移除的顶部进度悬浮开关',
       );
     });
   });
