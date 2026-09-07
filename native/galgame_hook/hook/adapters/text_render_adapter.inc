@@ -39,20 +39,20 @@ int g_last_flushed_len = 0;
 // 原子写者交错时会互相覆盖计数、丢行或读到半写槽）。写序：原子占号 → 填文本字节 + 字段 →
 // **最后**写 seq=占到的号作完成标记（reader 校验 slot.seq==text_write_count 才取该槽；x86/x64
 // store 有序 TSO，前面的数据写对 reader 先于 seq 可见）。首次 flush 置 text_hooked=1。
-void WriteTextRingEntryLocked(const wchar_t* text, int char_len,
+uint64_t WriteTextRingEntryLocked(const wchar_t* text, int char_len,
                               uint64_t thread_id, uint64_t thread_address,
                               uint64_t thread_context, uint32_t source_kind,
                               const char* hook_name,
                               const wchar_t* hook_code) {
   if (g_text_base == nullptr || g_header == nullptr || char_len <= 0) {
-    return;
+    return 0;
   }
   // LunaHook（引擎精确、干净）一旦活跃，GDI 文本 hook 让位，不再写文本环——否则游戏为粗体/描边
   // 每字重画会让 GetGlyphOutlineW 累加出「ここのの」式伪影，与 LunaHook 干净行混在一起污染卡片。
   // GDI 仅在 LunaHook 覆盖不到的引擎（luna_active==0）时作兜底文本源。音频 hook 不看此标志。
   if (source_kind == fushi_voice_hook::kTextSourceGdi &&
       g_header->luna_active != 0) {
-    return;
+    return 0;
   }
   // v13：写进本线程自己那条道（游戏内 writer 用高段下标，与 injector 里的 LunaHook 互斥）。
   // 调用方已持 g_text_cs，认领与道内占号因此在本进程内串行；跨进程隔离靠区段划分。
@@ -68,7 +68,7 @@ void WriteTextRingEntryLocked(const wchar_t* text, int char_len,
                    static_cast<uint32_t>(sizeof(wchar_t));
   write.hook_name = hook_name;
   write.hook_code = hook_code;
-  fushi_voice_hook::WriteTextLaneEvent(
+  return fushi_voice_hook::WriteTextLaneEvent(
       g_header, fushi_voice_hook::kNativeThreadPreviewStart,
       fushi_voice_hook::kTextLaneCount, write);
 }
@@ -130,7 +130,8 @@ void FlushGlyphAccumLocked() {
 
 void ObserveSiglusLookupExactText(const wchar_t* text, uint32_t text_units,
                                   uint64_t callsite_rva,
-                                  uintptr_t function_rva);
+                                  uintptr_t function_rva,
+                                  uint64_t text_event_id, uint64_t thread_id);
 bool IsSiglusLookupProfileMatched();
 bool IsSiglusLookupIdentityUndecided();
 const fushi_voice_hook::SiglusLookupProfile* ActiveSiglusLookupProfile();
@@ -217,14 +218,16 @@ uintptr_t __fastcall Detour_SiglusExactText(SiglusTextUnionW* self, void*) {
                  L"EXBWX0@%llX:SiglusEngine.exe",
                  static_cast<unsigned long long>(g_siglus_text_function_rva));
 
-    ObserveSiglusLookupExactText(text, length, callsite_rva,
-                                 g_siglus_text_function_rva);
-
     EnterCriticalSection(&g_text_cs);
-    WriteTextRingEntryLocked(
+    const uint64_t text_event_id = WriteTextRingEntryLocked(
         text, static_cast<int>(length), thread_id,
         g_siglus_text_function_rva, callsite_rva,
         fushi_voice_hook::kTextSourceSiglus, "SiglusEngine exact", hook_code);
+    // Carry the committed event identity from this exact write. The global
+    // counter may already belong to a concurrent Luna writer, so never reread it.
+    ObserveSiglusLookupExactText(text, length, callsite_rva,
+                                 g_siglus_text_function_rva, text_event_id,
+                                 thread_id);
     LeaveCriticalSection(&g_text_cs);
     if (g_header != nullptr) {
       g_header->luna_active = 1;  // 精确引擎文本已实锤，GDI 兜底从此让位。

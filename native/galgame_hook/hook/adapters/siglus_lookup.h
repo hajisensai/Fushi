@@ -17,6 +17,22 @@ inline constexpr size_t kSiglusLookupMaxGlyphs = 256u;
 inline constexpr uint16_t kSiglusLookupNoGlyph =
     std::numeric_limits<uint16_t>::max();
 
+// Identity belongs to the committed text event, never to a renderer counter.
+// Native writers use WriteTextLaneEvent's return value; Luna readers preserve
+// the stable slot's seq and thread_id together with its text.
+struct SiglusLookupTextIdentity {
+  uint64_t event_id = 0;
+  uint64_t thread_id = 0;
+};
+
+inline bool IsSiglusLookupTextIdentityCurrent(
+    const SiglusLookupTextIdentity& captured,
+    const SiglusLookupTextIdentity& current) {
+  return captured.event_id != 0 && captured.thread_id != 0 &&
+         captured.event_id == current.event_id &&
+         captured.thread_id == current.thread_id;
+}
+
 inline bool IsSiglusLookupResolutionPending(long state) {
   return state == 0 || state == 2;
 }

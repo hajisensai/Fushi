@@ -26,12 +26,14 @@ struct SiglusLookupGlyphEvent {
 };
 
 struct SiglusLookupTextSnapshot {
+  fushi_voice_hook::SiglusLookupTextIdentity identity;
   volatile LONG64 seq = 0;
   uint32_t text_units = 0;
   wchar_t text[kSiglusLookupMaxTextUnits] = {};
 };
 
 struct SiglusLookupPayload {
+  fushi_voice_hook::SiglusLookupTextIdentity text_identity;
   uint64_t geometry_generation = 0;
   uint64_t snapshot_epoch = 0;
   uint32_t text_units = 0;
@@ -46,6 +48,7 @@ struct SiglusLookupPayload {
 };
 
 struct SiglusLookupClickTarget {
+  fushi_voice_hook::SiglusLookupTextIdentity text_identity;
   volatile LONG64 seq = 0;
   uint32_t valid = 0;
   ULONGLONG published_tick = 0;
@@ -111,6 +114,7 @@ uint64_t g_siglus_lookup_luna_text_processed_seq = 0;
 
 wchar_t g_siglus_lookup_active_line[kSiglusLookupMaxTextUnits] = {};
 uint32_t g_siglus_lookup_active_line_units = 0;
+fushi_voice_hook::SiglusLookupTextIdentity g_siglus_lookup_text_identity;
 fushi_voice_hook::SiglusLookupLayoutState g_siglus_lookup_layout;
 HWND g_siglus_lookup_layout_window = nullptr;
 bool g_siglus_lookup_last_shift_down = false;
@@ -671,7 +675,8 @@ uint8_t __fastcall Detour_SiglusGlyphLayout(void *self, void *, uintptr_t arg1,
 }
 
 void PublishSiglusLookupTextSnapshot(const wchar_t *text,
-                                     uint32_t text_units) {
+                                     uint32_t text_units,
+                                     fushi_voice_hook::SiglusLookupTextIdentity identity) {
   if (text == nullptr || text_units == 0 ||
       text_units > kSiglusLookupMaxTextUnits) {
     return;
@@ -681,6 +686,7 @@ void PublishSiglusLookupTextSnapshot(const wchar_t *text,
   SiglusLookupTextSnapshot *snapshot =
       &g_siglus_lookup_text_snapshots[next % kSiglusLookupTextSlots];
   InterlockedExchange64(&snapshot->seq, 0);
+  snapshot->identity = identity;
   snapshot->text_units = text_units;
   memcpy(snapshot->text, text,
          static_cast<size_t>(text_units) * sizeof(wchar_t));
@@ -689,7 +695,8 @@ void PublishSiglusLookupTextSnapshot(const wchar_t *text,
 
 void ObserveSiglusLookupExactText(const wchar_t *text, uint32_t text_units,
                                   uint64_t callsite_rva,
-                                  uintptr_t function_rva) {
+                                  uintptr_t function_rva,
+                                  uint64_t text_event_id, uint64_t thread_id) {
   const auto *profile = ActiveSiglusLookupProfile();
   if (!g_siglus_lookup_capture_enabled.load(std::memory_order_acquire) ||
       profile == nullptr ||
@@ -699,7 +706,7 @@ void ObserveSiglusLookupExactText(const wchar_t *text, uint32_t text_units,
       function_rva != profile->exact_text_rva) {
     return;
   }
-  PublishSiglusLookupTextSnapshot(text, text_units);
+  PublishSiglusLookupTextSnapshot(text, text_units, {text_event_id, thread_id});
 }
 
 void ConsumeSiglusLookupLunaScenarioText() {
@@ -749,6 +756,7 @@ void ConsumeSiglusLookupLunaScenarioText() {
         byte_len / sizeof(wchar_t) <= kSiglusLookupMaxTextUnits;
     SiglusLookupTextSnapshot candidate = {};
     if (target) {
+      candidate.identity = {global_seq, slot->thread_id};
       candidate.text_units = byte_len / sizeof(wchar_t);
       const auto *payload = reinterpret_cast<const uint8_t *>(slot) +
                             sizeof(fushi_voice_hook::TextSlot);
@@ -766,7 +774,7 @@ void ConsumeSiglusLookupLunaScenarioText() {
   }
   g_siglus_lookup_luna_text_processed_seq = processed_through;
   if (newest_seq != 0)
-    PublishSiglusLookupTextSnapshot(newest.text, newest.text_units);
+    PublishSiglusLookupTextSnapshot(newest.text, newest.text_units, newest.identity);
 }
 
 bool ReadSiglusLookupGlyphEvent(uint64_t seq, SiglusLookupGlyphEvent *copy) {
@@ -821,6 +829,7 @@ void InvalidateSiglusLookupClickTarget() {
   g_siglus_lookup_click_target.client_width = 0;
   g_siglus_lookup_click_target.client_height = 0;
   g_siglus_lookup_click_target.geometry_generation = 0;
+  g_siglus_lookup_click_target.text_identity = {};
   g_siglus_lookup_click_target.snapshot_epoch = 0;
   g_siglus_lookup_click_target.text_units = 0;
   g_siglus_lookup_click_target.geometry = {};
@@ -832,6 +841,8 @@ void PublishSiglusLookupClickTarget(HWND game, const POINT &client_origin,
                                     int32_t client_width,
                                     int32_t client_height) {
   if (!g_siglus_lookup_layout.current_valid ||
+      g_siglus_lookup_text_identity.event_id == 0 ||
+      g_siglus_lookup_text_identity.thread_id == 0 ||
       g_siglus_lookup_layout.generation == 0 || game == nullptr ||
       client_width <= 0 || client_height <= 0 ||
       g_siglus_lookup_active_line_units == 0) {
@@ -842,6 +853,7 @@ void PublishSiglusLookupClickTarget(HWND game, const POINT &client_origin,
       InterlockedIncrement64(&g_siglus_lookup_click_target_count));
   InterlockedExchange64(&g_siglus_lookup_click_target.seq, 0);
   g_siglus_lookup_click_target.valid = 1;
+  g_siglus_lookup_click_target.text_identity = g_siglus_lookup_text_identity;
   g_siglus_lookup_click_target.published_tick = GetTickCount64();
   g_siglus_lookup_click_target.game_window = reinterpret_cast<uintptr_t>(game);
   g_siglus_lookup_click_target.client_screen_x = client_origin.x;
@@ -872,6 +884,7 @@ bool ReadSiglusLookupClickTarget(SiglusLookupClickTarget *copy) {
       InterlockedCompareExchange64(&g_siglus_lookup_click_target.seq, 0, 0));
   const ULONGLONG now = GetTickCount64();
   return after == before && after != 0 && copy->valid == 1 &&
+         copy->text_identity.event_id != 0 && copy->text_identity.thread_id != 0 &&
          copy->text_units != 0 &&
          copy->text_units <= kSiglusLookupMaxTextUnits &&
          copy->geometry.glyph_count != 0 &&
@@ -927,6 +940,7 @@ bool BuildSiglusLookupPayloadAtPress(const SiglusLookupClickTarget &target,
       continue;
     }
     *payload = {};
+    payload->text_identity = target.text_identity;
     payload->geometry_generation = target.geometry_generation;
     payload->snapshot_epoch = target.snapshot_epoch;
     payload->text_units = target.text_units;
@@ -963,6 +977,8 @@ bool SiglusLookupPayloadMatchesPublishedTarget(
     const SiglusLookupPayload &payload) {
   SiglusLookupClickTarget target;
   return ReadSiglusLookupClickTarget(&target) &&
+         fushi_voice_hook::IsSiglusLookupTextIdentityCurrent(
+             payload.text_identity, target.text_identity) &&
          payload.snapshot_epoch != 0 &&
          payload.snapshot_epoch == target.snapshot_epoch &&
          fushi_voice_hook::MatchesSiglusLookupGenerationAndClient(
@@ -1333,6 +1349,8 @@ void SetSiglusLookupRuntimeEnabled(bool enabled) {
 }
 
 void ResetSiglusLookupRuntimeLayout() {
+  // The bound text event remains the same committed occurrence. Fresh glyphs
+  // are required after reset; preserving its ID does not revive old geometry.
   fushi_voice_hook::ResetSiglusLookupLayout(&g_siglus_lookup_layout);
   fushi_voice_hook::ClearSiglusLookupGlyphCapture(&g_siglus_lookup_glyph_captures);
   g_siglus_lookup_glyph_processed_seq = static_cast<uint64_t>(
@@ -1348,6 +1366,15 @@ void ConsumeSiglusLookupCaptures() {
   uint64_t text_seq = 0;
   if (ReadLatestSiglusLookupText(&text_snapshot, &text_seq)) {
     g_siglus_lookup_text_processed_seq = text_seq;
+    const bool identity_changed =
+        !fushi_voice_hook::IsSiglusLookupTextIdentityCurrent(
+            text_snapshot.identity, g_siglus_lookup_text_identity);
+    if (identity_changed) {
+      fushi_voice_hook::InvalidateSiglusLookupCurrentLayout(&g_siglus_lookup_layout);
+      InvalidateSiglusLookupClickTarget();
+      g_siglus_lookup_text_identity = text_snapshot.identity;
+      changed = true;
+    }
     const bool same =
         text_snapshot.text_units == g_siglus_lookup_active_line_units &&
         text_snapshot.text_units != 0 &&
@@ -1442,7 +1469,7 @@ bool PublishSiglusLookupHit(const SiglusLookupPayload &payload) {
   publication.coordinate_space =
       fushi_voice_hook::kLookupCoordinateSpaceClientPhysicalPixels;
   publication.writing_mode = fushi_voice_hook::kLookupWritingModeHorizontal;
-  publication.text_generation = payload.geometry_generation;
+  publication.text_generation = payload.text_identity.event_id;
   publication.geometry_generation = payload.geometry_generation;
   publication.glyph_x = payload.rect.x;
   publication.glyph_y = payload.rect.y;
@@ -1463,6 +1490,8 @@ bool IsSiglusLookupPayloadCurrent(const SiglusLookupPayload &payload) {
   const uint64_t latest_glyph = static_cast<uint64_t>(
       InterlockedCompareExchange64(&g_siglus_lookup_glyph_event_count, 0, 0));
   if (profile == nullptr ||
+      !fushi_voice_hook::IsSiglusLookupTextIdentityCurrent(
+          payload.text_identity, g_siglus_lookup_text_identity) ||
       !fushi_voice_hook::IsSiglusLookupLayoutSubmissionCurrent(
           g_siglus_lookup_layout, payload.geometry_generation,
           payload.snapshot_epoch) || payload.text_units == 0 ||
@@ -1592,7 +1621,9 @@ void ProcessSiglusLookupTick() {
   g_siglus_lookup_layout_window = game;
   ConsumeSiglusLookupCaptures();
 
-  if (g_siglus_lookup_layout.line_has_complete_layout) {
+  if (g_siglus_lookup_layout.line_has_complete_layout &&
+      g_siglus_lookup_text_identity.event_id != 0 &&
+      g_siglus_lookup_text_identity.thread_id != 0) {
     fushi_voice_hook::g_geometry_provider_registry.OfferReady(
         g_header,
         fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,

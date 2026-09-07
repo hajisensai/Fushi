@@ -3,10 +3,12 @@
 #endif
 
 #include "../hook/adapters/siglus_lookup.h"
+#include "../include/voice_hook_ipc.h"
 
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 namespace {
 
@@ -111,11 +113,90 @@ void TestSplitRedrawLifetime() {
   assert(!state.line_has_complete_layout);
 }
 
+void TestCommittedTextIdentityAcrossWriters() {
+  using namespace fushi_voice_hook;
+  const uint64_t region_bytes = TextRegionBytes(kTextLaneCount, kTextLaneSlotCount);
+  std::vector<uint8_t> mapping(
+      static_cast<size_t>(sizeof(SharedHeader) + region_bytes), 0);
+  auto* header = reinterpret_cast<SharedHeader*>(mapping.data());
+  header->magic = kSharedMagic;
+  header->version = kSharedVersion;
+  header->text_region_offset = sizeof(SharedHeader);
+  header->text_lane_count = kTextLaneCount;
+  header->text_lane_slot_count = kTextLaneSlotCount;
+  const auto write = [header](uint64_t thread, uint32_t source,
+                              uint32_t begin, uint32_t end) {
+    TextLaneWrite entry;
+    entry.thread_id = thread;
+    entry.source_kind = source;
+    entry.event_kind = kTextEventLine;
+    entry.text = L"ABC";
+    entry.byte_len = 3 * sizeof(wchar_t);
+    return WriteTextLaneEvent(header, begin, end, entry);
+  };
+  const uint64_t native_seq = write(101, kTextSourceSiglus,
+                                    kNativeThreadPreviewStart, kTextLaneCount);
+  const SiglusLookupTextIdentity native{native_seq, 101};
+  assert(native_seq == 1);
+  // A concurrent writer advances the shared counter before lookup publishes.
+  const uint64_t luna_seq = write(202, kTextSourceLuna,
+                                  0, kNativeThreadPreviewStart);
+  const SiglusLookupTextIdentity luna{luna_seq, 202};
+  assert(luna_seq == 2 && header->text_write_count == luna_seq);
+  assert(IsSiglusLookupTextIdentityCurrent(native, {native_seq, 101}));
+  assert(!IsSiglusLookupTextIdentityCurrent(native,
+                                            {header->text_write_count, 101}));
+  assert(!IsSiglusLookupTextIdentityCurrent(native, luna));
+  assert(!IsSiglusLookupTextIdentityCurrent(native, {native_seq, 202}));
+  assert(!IsSiglusLookupTextIdentityCurrent({0, 101}, {0, 101}));
+  assert(!IsSiglusLookupTextIdentityCurrent({native_seq, 0}, {native_seq, 0}));
+  assert(WriteTextLaneEvent(nullptr, 0, kTextLaneCount, TextLaneWrite{}) == 0);
+
+  // Luna lookup carries the already committed stable slot, not a private
+  // sequence and not an event with the same string from another thread.
+  const TextSlot* slots[kTextSlotCount] = {};
+  const uint32_t found = CollectTextSlotsBySeq(header, slots, kTextSlotCount, 0);
+  bool luna_found = false;
+  for (uint32_t i = 0; i < found; ++i) {
+    if (slots[i]->source_kind == kTextSourceLuna) {
+      luna_found = true;
+      const SiglusLookupTextIdentity captured{slots[i]->seq, slots[i]->thread_id};
+      assert(IsSiglusLookupTextIdentityCurrent(captured, luna));
+      assert(!IsSiglusLookupTextIdentityCurrent(captured, native));
+    }
+  }
+  assert(luna_found);
+
+  // The real LOOPERS PLUS failure: layout 20, only committed text event 1.
+  SiglusLookupGlyphCaptureBuffer captures;
+  Push(u'A', 100, 200, &captures);
+  Push(u'B', 140, 200, &captures);
+  Push(u'C', 180, 200, &captures);
+  SiglusLookupLayoutState layout;
+  layout.generation = 19;
+  assert(UpdateSiglusLookupLayout(kAnemoiSiglusLookupProfile, captures,
+                                   u"ABC", 3, &layout));
+  assert(layout.generation == 20 && native.event_id == 1);
+  assert(!IsSiglusLookupTextIdentityCurrent({layout.generation, 101}, native));
+  const uint64_t repeated_seq = write(101, kTextSourceSiglus,
+                                      kNativeThreadPreviewStart, kTextLaneCount);
+  assert(repeated_seq > luna_seq);
+  const SiglusLookupTextIdentity repeated{repeated_seq, 101};
+  assert(!IsSiglusLookupTextIdentityCurrent(native, repeated));
+  assert(IsSiglusLookupTextIdentityCurrent(repeated, repeated));
+  // Identical text/layout never makes a different occurrence interchangeable.
+  assert(UpdateSiglusLookupLayout(kAnemoiSiglusLookupProfile, captures,
+                                   u"ABC", 3, &layout));
+  assert(layout.generation == 20);
+  assert(!IsSiglusLookupTextIdentityCurrent(native, repeated));
+}
+
 } // namespace
 
 int main() {
   using namespace fushi_voice_hook;
   TestSplitRedrawLifetime();
+  TestCommittedTextIdentityAcrossWriters();
 
   assert(IsSiglusLookupResolutionPending(0));
   assert(IsSiglusLookupResolutionPending(2));

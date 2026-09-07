@@ -323,7 +323,7 @@ class AdapterStructureTest(unittest.TestCase):
                 encoding="utf-8")
         )
         tick = self._function_body(siglus, "void ProcessSiglusLookupTick()")
-        self.assertIn("if (g_siglus_lookup_layout.line_has_complete_layout)", tick)
+        self.assertIn("if (g_siglus_lookup_layout.line_has_complete_layout &&", tick)
         self.assertLess(tick.index("GetClientRect(game, &client)"),
                         tick.index("if (!g_siglus_lookup_layout.current_valid)"))
         self.assertIn("client.right <= client.left", tick)
@@ -349,6 +349,37 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn("payload.snapshot_epoch == target.snapshot_epoch", pending)
         current = self._function_body(siglus, "bool IsSiglusLookupPayloadCurrent(")
         self.assertIn("IsSiglusLookupLayoutSubmissionCurrent", current)
+
+    def test_siglus_lookup_preserves_committed_text_event_identity(self) -> None:
+        text = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "text_render_adapter.inc").read_text(
+                encoding="utf-8"))
+        writer = self._function_body(text, "uint64_t WriteTextRingEntryLocked(")
+        self.assertIn("return fushi_voice_hook::WriteTextLaneEvent(", writer)
+        native = self._function_body(text, "uintptr_t __fastcall Detour_SiglusExactText(")
+        self.assertLess(native.index("text_event_id = WriteTextRingEntryLocked("),
+                        native.index("ObserveSiglusLookupExactText("))
+        self.assertIn("g_siglus_text_function_rva, text_event_id,", native)
+        self.assertNotIn("text_write_count", native)
+        siglus = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "siglus_lookup.inc").read_text(
+                encoding="utf-8"))
+        luna = self._function_body(siglus, "void ConsumeSiglusLookupLunaScenarioText()")
+        self.assertIn("candidate.identity = {global_seq, slot->thread_id}", luna)
+        self.assertIn("newest.text_units, newest.identity", luna)
+        self.assertNotIn("text_write_count", luna)
+        hit = self._function_body(siglus, "bool PublishSiglusLookupHit(")
+        self.assertIn("publication.text_generation = payload.text_identity.event_id", hit)
+        self.assertIn("publication.geometry_generation = payload.geometry_generation", hit)
+        self.assertNotIn("publication.text_generation = payload.geometry_generation", hit)
+        current = self._function_body(siglus, "bool IsSiglusLookupPayloadCurrent(")
+        self.assertIn("payload.text_identity, g_siglus_lookup_text_identity", current)
+        pending = self._function_body(siglus, "bool SiglusLookupPayloadMatchesPublishedTarget(")
+        self.assertIn("payload.text_identity, target.text_identity", pending)
+        capture = self._function_body(siglus, "void ConsumeSiglusLookupCaptures()")
+        identity = self._function_body(capture, "if (identity_changed)")
+        self.assertIn("InvalidateSiglusLookupCurrentLayout", identity)
+        self.assertIn("InvalidateSiglusLookupClickTarget", identity)
 
     def test_exact_engine_signatures_are_portable_unique_and_fail_closed(
         self,
