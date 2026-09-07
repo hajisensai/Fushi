@@ -1571,6 +1571,15 @@ function fushiEnsureContainer() {
     shadow.appendChild(c);
     fushiContainer = c;
     window.__fushiRoot = shadow; // popup.js 的 DOM 查询/浮层/选区都相对它解析
+    // 先在 ShadowRoot 消费共享查词交互，再截住向站点冒泡的事件。document 委托太晚：
+    // 播放器可能先把正文点击当成播放，再由 play 监听关闭整个查词会话。
+    if (typeof window.__fushiBindPopupInteractions === 'function') {
+      window.__fushiBindPopupInteractions(shadow);
+    }
+    for (const type of ['mousedown', 'mouseup', 'click', 'dblclick', 'mousemove',
+      'pointerdown', 'pointerup', 'touchstart', 'touchend']) {
+      fushiHost.addEventListener(type, function (e) { e.stopPropagation(); });
+    }
     // BUG-1718：词条 HTML 里的图片/样式表在扩展环境下被 rewriteDictLinks 降级成占位属性
     // （不把 sync token 写进宿主页 DOM），这里装上兑现方——否则 mdx 词典的插图恒为裂图。
     installDictMediaPlaceholderResolver(shadow);

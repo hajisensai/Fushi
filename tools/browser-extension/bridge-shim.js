@@ -137,6 +137,7 @@ window.flutter_inappwebview = {
           window.fushiOpenSentenceContextModal(args[0]);
         }
         return Promise.resolve(null);
+      case 'textSelected':
       case 'onLinkClick':
         if (window.__fushiOnLinkClick) window.__fushiOnLinkClick(args[0]);
         return Promise.resolve(null);

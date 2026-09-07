@@ -500,14 +500,20 @@ test('点释义里的交叉引用 a[href]：popup.js 必须走 onLinkClick，不
   world.windowObj.__fushiOnTapOutside = () => { tapOutside = true; if (realHandler) realHandler(); };
 
   let defaultPrevented = false;
+  let propagationStopped = false;
   const evt = {
     clientX: 320, clientY: 410,
     target: retargetFor(anchor, world.documentObj),
     composedPath: () => composedPathOf(anchor, world.documentObj),
     preventDefault() { defaultPrevented = true; },
+    stopPropagation() { propagationStopped = true; },
   };
-  for (const r of (world.docListeners.click || [])) r.handler(evt);
+  for (const r of (shadow.listeners.click || [])) r.fn(evt);
+  if (!propagationStopped) {
+    for (const r of (world.docListeners.click || [])) r.handler(evt);
+  }
 
+  assert.strictEqual(propagationStopped, true, '嵌套点击不得继续传给站点 document');
   assert.strictEqual(defaultPrevented, true,
       '交叉引用必须 preventDefault（否则结果框架被导航走）');
   assert.strictEqual(tapOutside, false,

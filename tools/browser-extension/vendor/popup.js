@@ -5771,10 +5771,10 @@ if (typeof chrome !== 'undefined' && !!(chrome.runtime && chrome.runtime.id)) {
 
 
 let _popupMouseDownPos = null;
-document.addEventListener('mousedown', (e) => {
+function __fushiPopupMouseDown(e) {
     if (!__fushiEventInsidePopup(e)) return;
     _popupMouseDownPos = { x: e.clientX, y: e.clientY };
-});
+}
 
 // BUG-767：MDX 词典条目里的交叉引用（類義語 等）是原始 HTML
 // `<a href="entry://词（読み）">词</a>`，经 innerHTML 注入到 .glossary-content
@@ -5821,7 +5821,7 @@ function handleGlossaryAnchorClick(event, anchor) {
     });
 }
 
-document.addEventListener('click', (e) => {
+function __fushiPopupClick(e) {
     if (!__fushiEventInsidePopup(e)) return;
     if (_popupMouseDownPos) {
         const dx = e.clientX - _popupMouseDownPos.x;
@@ -5904,10 +5904,10 @@ document.addEventListener('click', (e) => {
         return;
     }
     window.flutter_inappwebview.callHandler('tapOutside');
-});
+}
 
 var _popupShiftLastX = -1, _popupShiftLastY = -1;
-document.addEventListener('mousemove', function(e) {
+function __fushiPopupMouseMove(e) {
     if (!__fushiEventInsidePopup(e)) return;
     if (!e.shiftKey) { _popupShiftLastX = -1; _popupShiftLastY = -1; return; }
     var dx = e.clientX - _popupShiftLastX, dy = e.clientY - _popupShiftLastY;
@@ -5916,7 +5916,32 @@ document.addEventListener('mousemove', function(e) {
     if (window.fushiSelection) {
         window.fushiSelection.selectText(e.clientX, e.clientY, 20);
     }
-}, {passive: true});
+}
+
+// 扩展与播放器共享 document，必须在 ShadowRoot 内完成正文取词和交叉引用处理，
+// 再截住冒泡；到 document 才拦截时，站点监听可能已把视频恢复播放并关闭查词窗。
+// App WebView 仍由 document 委托；每个新建的扩展 ShadowRoot 单独绑定一次。
+var __fushiPopupInteractionRoots = new WeakSet();
+window.__fushiBindPopupInteractions = function(root) {
+    if (!root || __fushiPopupInteractionRoots.has(root)) return;
+    __fushiPopupInteractionRoots.add(root);
+    const handlers = {
+        mousedown: __fushiPopupMouseDown,
+        click: __fushiPopupClick,
+        mousemove: __fushiPopupMouseMove,
+    };
+    Object.keys(handlers).forEach(function(type) {
+        root.addEventListener(type, function(event) {
+            if (root !== document) event.stopPropagation();
+            handlers[type](event);
+        }, type === 'mousemove' ? { passive: true } : false);
+    });
+};
+if (!(typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id)) {
+    window.__fushiBindPopupInteractions(document);
+} else if (window.__fushiRoot) {
+    window.__fushiBindPopupInteractions(window.__fushiRoot);
+}
 
 // Niratan 对齐（2026-08-23）— 滚动条静止隐形、滚动时浮现。popup.css 的
 // ::-webkit-scrollbar-thumb 静止透明，靠 :hover 或 .popup-scroll-active 显形；
