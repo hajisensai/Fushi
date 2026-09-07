@@ -4356,5 +4356,17 @@
   "shortcut_action_reader_open_gallery": "打开插图画廊",
   "shortcut_action_reader_open_statistics": "打开阅读统计",
   "shortcut_action_reader_open_audiobook": "打开有声书面板",
-  "audiobook_transcribe_running_on_static": "运行于 $provider · 静态融合图"
+  "audiobook_transcribe_running_on_static": "运行于 $provider · 静态融合图",
+  "download_task_group_by": "分组",
+  "download_task_group_none": "不分组",
+  "download_task_group_collection": "合集／作品",
+  "download_task_group_kind": "媒体类型",
+  "download_task_group_status": "状态",
+  "download_task_collection_unassigned": "未归属合集",
+  "download_task_groups_collapse": "收起所有分组",
+  "download_task_groups_expand": "展开所有分组",
+  "download_task_sort_direction": "切换升降序",
+  "download_task_status_attention": "需要处理",
+  "download_task_status_active": "进行中",
+  "download_task_status_filter": "任务状态"
 }

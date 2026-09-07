@@ -4356,5 +4356,17 @@
   "shortcut_action_reader_open_gallery": "Open illustrations gallery",
   "shortcut_action_reader_open_statistics": "Open reading statistics",
   "shortcut_action_reader_open_audiobook": "Open audiobook panel",
-  "audiobook_transcribe_running_on_static": "Running on $provider · fused static graph"
+  "audiobook_transcribe_running_on_static": "Running on $provider · fused static graph",
+  "download_task_group_by": "Group by",
+  "download_task_group_none": "No grouping",
+  "download_task_group_collection": "Collection / series",
+  "download_task_group_kind": "Media type",
+  "download_task_group_status": "Status",
+  "download_task_collection_unassigned": "No collection",
+  "download_task_groups_collapse": "Collapse all groups",
+  "download_task_groups_expand": "Expand all groups",
+  "download_task_sort_direction": "Reverse sort order",
+  "download_task_status_attention": "Needs attention",
+  "download_task_status_active": "In progress",
+  "download_task_status_filter": "Task status"
 }

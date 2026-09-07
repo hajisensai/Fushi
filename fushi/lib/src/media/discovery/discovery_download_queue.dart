@@ -74,7 +74,16 @@ enum DiscoveryDownloadStatus {
 
 /// 队列中的一个下载任务（可变快照；变更经队列 notifyListeners 广播）。
 class DiscoveryDownloadTask {
-  DiscoveryDownloadTask._({required this.item, required this.destinationDir});
+  DiscoveryDownloadTask._({required this.item, required this.destinationDir})
+      : createdAt = DateTime.now().millisecondsSinceEpoch;
+
+  static int _nextTaskId = 0;
+
+  /// Unique queue entry identity, including repeated downloads of one resource.
+  final int taskId = _nextTaskId++;
+
+  /// Initial enqueue time; retries keep the same task and timestamp.
+  final int createdAt;
 
   /// BUG-1911：测试种子。队列的真实任务只能由 [DiscoveryDownloadQueue.enqueue] 造出来
   /// （它会立刻开始跑网络），而游戏库页的「下载中占位」只关心任务的**快照形状**
