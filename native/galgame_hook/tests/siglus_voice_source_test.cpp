@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstring>
 #include <map>
+#include <string>
 #include "siglus_voice_source.h"
 #include "siglus_message_profile.h"
 #include "siglus_resource_mapping.h"
@@ -46,12 +47,16 @@ struct Fixture {
     memory.Word(0x1ed8, 123456);
     memory.Word(0x1fd0, 0x3000);
     memory.Word(0x3000, 0x7000);
+    SetPath(L"C:\\x.ovk");
+  }
+  void SetPath(const wchar_t* path) {
+    const uint32_t units = static_cast<uint32_t>(std::wcslen(path));
     const uint32_t empty[6] = {};
     memory.Put(0x1f48, empty, sizeof(empty));
-    const wchar_t path[] = L"x.ovk";
-    memory.Put(0x1f48, path, sizeof(path));
-    memory.Word(0x1f58, 5);
-    memory.Word(0x1f5c, 7);
+    if (units >= 8) memory.Word(0x1f48, 0x4000);
+    memory.Put(units < 8 ? 0x1f48 : 0x4000, path, (units + 1) * sizeof(wchar_t));
+    memory.Word(0x1f58, units);
+    memory.Word(0x1f5c, units < 8 ? 7 : units);
   }
 };
 void TestPureSource() {
@@ -59,7 +64,7 @@ void TestPureSource() {
   SiglusVoiceSourceTask result;
   Check(CaptureSiglusVoiceSource(Layout(), fixture.call, fixture.memory, &result));
   Check(result.key == 123456 && result.offset == 0x100 && result.length == 0x40);
-  Check(std::wcscmp(result.path, L"x.ovk") == 0);
+  Check(std::wcscmp(result.path, L"C:\\x.ovk") == 0);
   const uint32_t changed_words[] = {0x1800, 0x1804, 0x1808, 0x180c,
       0x2008, 0x1ed8, 0x1fd0, 0x3000};
   for (auto address : changed_words) {
@@ -92,13 +97,14 @@ void TestPureSource() {
   Check(!CaptureSiglusVoiceSource(Layout(), fixture.call, fixture.memory, &result));
   fixture = Fixture(); fixture.memory.bytes.erase(0x1f48);
   Check(!CaptureSiglusVoiceSource(Layout(), fixture.call, fixture.memory, &result));
-  fixture = Fixture(); fixture.memory.bytes[0x1f48 + 5 * 2] = 'X';
+  fixture = Fixture(); fixture.memory.bytes[0x4000 + 8 * 2] = 'X';
   Check(!CaptureSiglusVoiceSource(Layout(), fixture.call, fixture.memory, &result));
-  fixture = Fixture(); fixture.memory.bytes[0x1f48] = 0;
+  fixture = Fixture(); fixture.memory.bytes[0x4000] = 0;
   Check(!CaptureSiglusVoiceSource(Layout(), fixture.call, fixture.memory, &result));
   fixture = Fixture();
   wchar_t longest[520];
   for (int i = 0; i < 519; ++i) longest[i] = L'x';
+  longest[0] = L'C'; longest[1] = L':'; longest[2] = L'\\';
   longest[519] = 0;
   fixture.memory.Word(0x1f48, 0x4000);
   fixture.memory.Word(0x1f58, 519); fixture.memory.Word(0x1f5c, 519);
@@ -107,6 +113,85 @@ void TestPureSource() {
   Check(result.path[518] == L'x' && result.path[519] == 0);
   fixture.memory.bytes.erase(0x4000 + 400);
   Check(!CaptureSiglusVoiceSource(Layout(), fixture.call, fixture.memory, &result));
+}
+
+void TestStablePaths() {
+  const wchar_t* rejected[] = {
+    L"x.ovk", L".\\x.ovk", L"..\\x.ovk", L"C:x.ovk", L"C:",
+    L"\\x.ovk", L"/x.ovk", L"1:\\x.ovk", L"C:\\", L"C:/",
+    L"\\\\server", L"\\\\server\\", L"\\\\server\\share",
+    L"\\\\server\\share\\", L"\\\\\\share\\x.ovk",
+    L"\\\\server\\\\x.ovk", L"\\\\.\\share\\x.ovk",
+    L"\\\\?\\C:\\x.ovk", L"\\\\server\\..\\x.ovk",
+    L"\\\\server\\share\\\\x.ovk", L"//server/share/x.ovk"
+  };
+  for (const wchar_t* path : rejected) {
+    Fixture fixture; fixture.SetPath(path);
+    SiglusVoiceSourceTask result; result.key = 99;
+    Check(!CaptureSiglusVoiceSource(Layout(), fixture.call, fixture.memory, &result));
+    Check(result.key == 99);
+  }
+  const wchar_t* accepted[] = {L"C:\\x", L"z:/dir/x.ovk",
+    L"C:\\dir name\\x.ovk", L"\\\\server\\share\\x.ovk",
+    L"\\\\server\\share\\dir\\x.ovk", L"\\\\server\\share name\\x.ovk"};
+  for (const wchar_t* path : accepted) {
+    Fixture fixture; fixture.SetPath(path);
+    SiglusVoiceSourceTask result;
+    Check(CaptureSiglusVoiceSource(Layout(), fixture.call, fixture.memory, &result));
+    Check(std::wcscmp(result.path, path) == 0);
+  }
+}
+
+void TestCwdChange() {
+  // Real same-named synthetic files establish why a deferred relative open is
+  // wrong; no game archive or resource payload is used by this regression.
+  wchar_t previous[32768] = {}, temp[MAX_PATH] = {}, root[MAX_PATH] = {};
+  const DWORD previous_units = GetCurrentDirectoryW(32768, previous);
+  Check(previous_units > 0 && previous_units < 32768);
+  Check(GetTempPathW(MAX_PATH, temp) > 0);
+  Check(GetTempFileNameW(temp, L"sgv", 0, root) != 0);
+  Check(DeleteFileW(root) != 0 && CreateDirectoryW(root, nullptr) != 0);
+  const std::wstring a = std::wstring(root) + L"\\A";
+  const std::wstring b = std::wstring(root) + L"\\B";
+  Check(CreateDirectoryW(a.c_str(), nullptr) != 0);
+  Check(CreateDirectoryW(b.c_str(), nullptr) != 0);
+  const std::wstring a_file = a + L"\\voice.ovk", b_file = b + L"\\voice.ovk";
+  const auto write_marker = [](const wchar_t* path, char value) {
+    HANDLE file = CreateFileW(path, GENERIC_WRITE, 0, nullptr, CREATE_NEW, 0, nullptr);
+    Check(file != INVALID_HANDLE_VALUE);
+    DWORD written = 0;
+    Check(WriteFile(file, &value, 1, &written, nullptr) != 0 && written == 1);
+    Check(CloseHandle(file) != 0);
+  };
+  const auto read_marker = [](const wchar_t* path) {
+    HANDLE file = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, nullptr,
+                              OPEN_EXISTING, 0, nullptr);
+    Check(file != INVALID_HANDLE_VALUE);
+    char value = 0; DWORD count = 0;
+    Check(ReadFile(file, &value, 1, &count, nullptr) != 0 && count == 1);
+    Check(CloseHandle(file) != 0);
+    return value;
+  };
+  write_marker(a_file.c_str(), 'A'); write_marker(b_file.c_str(), 'B');
+  Check(SetCurrentDirectoryW(a.c_str()) != 0);
+  Fixture fixture; fixture.SetPath(L"voice.ovk");
+  SiglusVoiceSourceTask task;
+  Check(!CaptureSiglusVoiceSource(Layout(), fixture.call, fixture.memory, &task));
+  Check(read_marker(L"voice.ovk") == 'A');
+  fixture.SetPath(a_file.c_str());
+  Check(CaptureSiglusVoiceSource(Layout(), fixture.call, fixture.memory, &task));
+  SiglusMessageQueue<SiglusVoiceSourceTask, 2> queue;
+  Check(queue.TryPush(task));
+  Check(SetCurrentDirectoryW(b.c_str()) != 0);
+  Check(read_marker(L"voice.ovk") == 'B');
+  Check(queue.TryPop(&task));
+  Check(read_marker(task.path) == 'A');
+  fixture.SetPath(L"voice.ovk");
+  Check(!CaptureSiglusVoiceSource(Layout(), fixture.call, fixture.memory, &task));
+  Check(SetCurrentDirectoryW(previous) != 0);
+  Check(DeleteFileW(a_file.c_str()) != 0 && DeleteFileW(b_file.c_str()) != 0);
+  Check(RemoveDirectoryW(a.c_str()) != 0 && RemoveDirectoryW(b.c_str()) != 0);
+  Check(RemoveDirectoryW(root) != 0);
 }
 
 #if defined(_M_IX86)
@@ -196,8 +281,8 @@ void TestProductionNakedSource() {
   frame[102] = frame[26] = 123456;
   frame[88] = fake_reader;
   auto* text = reinterpret_cast<wchar_t*>(&frame[54]);
-  wcscpy_s(text, 8, L"x.ovk");
-  frame[58] = 5; frame[59] = 7;
+  wcscpy_s(text, 8, L"C:\\x");
+  frame[58] = 4; frame[59] = 7;
   g_siglus_voice_source_layout = Layout();
   g_orig_SiglusVoiceSource = reinterpret_cast<void*>(&OriginalSource);
   g_siglus_voice_source_enabled.store(true);
@@ -207,7 +292,7 @@ void TestProductionNakedSource() {
   const DWORD last_error = GetLastError();
   Check(g_siglus_voice_source_tasks.TryPop(&task));
   Check(task.key == 123456 && task.offset == 0x100 && task.length == 0x40);
-  Check(std::wcscmp(task.path, L"x.ovk") == 0);
+  Check(std::wcscmp(task.path, L"C:\\x") == 0);
   Check(original_ecx == fake_reader && original_ebp == fake_frame);
   Check(original_esi == fake_esi && original_ebx == fake_ebx);
   Check(before_esp == after_esp && (original_flags & 0x401) == 0x401);
@@ -228,6 +313,9 @@ void TestProductionNakedSource() {
   frame[58] = 10; frame[59] = 15; frame[54] = 1; InvokeSource();
   Check(!g_siglus_voice_source_tasks.TryPop(&task)); // SEH contains bad heap path
   wcscpy_s(text, 8, L"x.ovk"); frame[58] = 5; frame[59] = 7;
+  InvokeSource();
+  Check(!g_siglus_voice_source_tasks.TryPop(&task));
+  wcscpy_s(text, 8, L"C:\\x"); frame[58] = 4; frame[59] = 7;
   for (uint32_t i = 0; i < kSiglusVoiceSourceTaskSlots; ++i) InvokeSource();
   InvokeSource();
   uint32_t count = 0;
@@ -280,6 +368,7 @@ void TestInstallation() {
 
 int main() {
   TestPureSource();
+  TestStablePaths(); TestCwdChange();
 #if defined(_M_IX86)
   TestProductionNakedSource(); TestInstallation();
 #else

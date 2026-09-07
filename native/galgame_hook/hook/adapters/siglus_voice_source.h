@@ -36,6 +36,36 @@ struct SiglusVoiceSourceCall {
   uint32_t original_ebx = 0;
 };
 
+// The worker opens this path after the callback has returned. Relative paths,
+// including drive-relative and root-relative paths, could then name another
+// archive if the game's CWD changes. Do not resolve them in the callback.
+inline bool IsStableSiglusVoiceSourcePath(const wchar_t* path, uint32_t units) {
+  if (path == nullptr || units < 4 || units >= kSiglusVoiceSourcePathUnits)
+    return false;
+  const auto separator = [](wchar_t c) { return c == L'\\' || c == L'/'; };
+  if (separator(path[units - 1])) return false;
+  const bool drive_letter = (path[0] >= L'A' && path[0] <= L'Z') ||
+                            (path[0] >= L'a' && path[0] <= L'z');
+  if (drive_letter && path[1] == L':' && separator(path[2])) return true;
+  // Only ordinary UNC roots are admitted, not device/extended namespaces.
+  if (path[0] != L'\\' || path[1] != L'\\') return false;
+  uint32_t component = 2;
+  for (uint32_t root_part = 0; root_part < 2; ++root_part) {
+    uint32_t end = component;
+    while (end < units && !separator(path[end])) {
+      const wchar_t c = path[end];
+      if (c < L' ' || c == L':' || c == L'*' || c == L'?' || c == L'"' ||
+          c == L'<' || c == L'>' || c == L'|') return false;
+      ++end;
+    }
+    if (end == component || end == units || path[end - 1] == L'.' ||
+        path[end - 1] == L' ')
+      return false;
+    component = end + 1;
+  }
+  return component < units && !separator(path[component]);
+}
+
 inline bool SiglusVoiceSourceAddress(uint32_t base, int32_t displacement,
                                      uint32_t* out) {
   const int64_t address = static_cast<int64_t>(base) + displacement;
@@ -107,6 +137,7 @@ bool CaptureSiglusVoiceSource(const SiglusVoiceSourceLayout& layout,
   for (uint32_t i = 0; i < units; ++i) {
     if (task.path[i] == L'\0') return false;
   }
+  if (!IsStableSiglusVoiceSourcePath(task.path, units)) return false;
   uint32_t final_union[6] = {};
   if (!read(path, final_union, sizeof(final_union)) ||
       std::memcmp(text_union, final_union, sizeof(text_union)) != 0)
