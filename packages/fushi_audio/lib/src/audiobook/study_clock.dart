@@ -74,6 +74,14 @@ DateTime hourBoundaryAfter(DateTime t) =>
 /// 一个口进 `study_segments`；抽成 typedef 是给纯单测注入 fake。
 typedef StudySegmentSink = Future<void> Function(StudySegmentsCompanion row);
 
+/// 把一笔「没有任何人能 await 的写」交给进程退出的统一 await 点。
+///
+/// 唯一消费者是 [StudyClock.detach]：页面 `State.dispose()` 是同步的，在那里发起的
+/// DB 事务没有 future 持有者，与随后的 `db.close()` 互等（widget 测试的 FakeAsync
+/// 下 100% 挂死，生产退出路径是同一形状的竞态）。app 层传
+/// `ExitFlushRegistry.instance.defer`；null = 直接丢弃，纯单测默认零 IO。
+typedef DeferredStudyWrite = void Function(Future<void> Function() write);
+
 /// [StudyClock] 的时长来源。
 enum StudyAccrual {
   /// 墙钟窗口：每个 tick 把 `[上次 tick, now]` 整窗计入（经断档 / 活跃态 / 空闲三道
@@ -161,6 +169,7 @@ class StudyClock {
     this.idleTimeout,
     this.onTick,
     this.onWriteError,
+    this.deferWrite,
     Duration tick = const Duration(seconds: 60),
     StudySegmentSink? sink,
     Future<String> Function()? deviceId,
@@ -211,6 +220,9 @@ class StudyClock {
   /// ErrorLogService，页面把它接上让 DB 写异常线上可查（BUG-911 纪律）。
   void Function(Object error, StackTrace stack)? onWriteError;
 
+  /// [detach] 结算出来的最后一笔写的去处（见 [DeferredStudyWrite]）。
+  final DeferredStudyWrite? deferWrite;
+
   /// 会话累计（见 [StudySessionTotals]）：封段不清。时长只增不减；字数会被
   /// [retractChars]（回翻）扣回，但不低于 0。
   int _sessionDurationMs = 0;
@@ -229,6 +241,12 @@ class StudyClock {
 
   /// 写链：绝对值写按时间序串行落地，防止旧 tick 的写晚于新 tick 落地把值倒回去。
   Future<void> _writeChain = Future<void>.value();
+
+  /// [detach] 期间：所有 [_enqueueWrite] 不立即发起事务，改为攒进 [_deferredSegments]。
+  bool _deferring = false;
+
+  /// [detach] 攒下的待写段（绝对值重写，顺序即入队序）。
+  final List<_OpenSegment> _deferredSegments = <_OpenSegment>[];
 
   /// 计时中（已 [start] 且未 [stop]）。停表期间恒 false，后台时长永不入账。
   bool get isRunning => _timer != null;
@@ -305,8 +323,35 @@ class StudyClock {
     await _writeChain;
   }
 
-  void dispose() {
-    unawaited(stop());
+  /// 与页面解绑（`State.dispose`）：**零 DB IO 的最终结算**。
+  ///
+  /// 没有 `dispose()`——那个入口只能写成 `unawaited(stop())`，而 dispose 是同步的，
+  /// 起出来的事务没有任何人持有它的 future：widget 测试里 teardown 的 `db.close()`
+  /// 与它互等（FakeAsync 在测试体结束后不再推进，事务续体永远不跑），生产退出路径
+  /// 是同一形状的竞态。入口删掉，只剩这一个原语。
+  ///
+  /// [settle] 在解绑**前**跑，做纯内存的最后结算（阅读账本 `leave()` → 字数 / 页数
+  /// 入账或撤回）——放在这里而不是让调用方自己排顺序，是因为它必须发生在时钟停表
+  /// 之前（[addChars] / [addPages] 停表即丢，BUG-2210），顺序错了就静默少记一页。
+  ///
+  /// 期间攒下的写交给 [deferWrite]（进程退出统一 await）；没接就丢弃。正常退出走
+  /// [stop]（调用方 await 到底），本方法只是异常拆栈时的兜底。
+  void detach([void Function()? settle]) {
+    _deferring = true;
+    settle?.call();
+    final Timer? timer = _timer;
+    _timer = null;
+    timer?.cancel();
+    _accrue(_now());
+    _tickStart = null;
+    final _OpenSegment? seg = _open;
+    _open = null;
+    if (seg != null && _needsWrite(seg)) _enqueueWrite(seg);
+    if (_deferredSegments.isEmpty) return;
+    final List<_OpenSegment> pending = List<_OpenSegment>.of(_deferredSegments);
+    _deferredSegments.clear();
+    final DateTime now = _now();
+    deferWrite?.call(() => _flushDetached(pending, now));
   }
 
   /// 用户输入（翻页 / 滚动 / 听书播放态的 cue 推进）：喂空闲门。查词不经这里。
@@ -526,8 +571,10 @@ class StudyClock {
   /// 落库门槛（与 v92 前各页面「<1s 且无内容账的段不记账」同一条判据）：不足 1 秒
   /// 又没有字数 / 页数的段是生命周期抖动（开书秒关、失焦回焦），不值一行；
   /// [flushNow] 下段仍开着、保持 dirty 留到下次，[stop] / 封段则直接丢弃。
-  /// 这也让「打开页面立刻 dispose」的路径零 DB 写——测试 harness 的 FakeAsync 在
-  /// teardown 后不再推进，dispose 里起的事务会把 `db.close()` 挂死。
+  ///
+  /// 注意这道门**挡不住**「无人 await 的写」：只要有一页内容账（`pages > 0`）就照常
+  /// 过门，而页面 dispose 里的账本 `leave()` 正是在记页数。零 IO 由 [detach] 结构性
+  /// 保证，不靠这道阈值——早先靠它的说法是错的。
   static bool _worthWriting(_OpenSegment seg) =>
       seg.durationMs >= 1000 || seg.chars > 0 || seg.pages > 0;
 
@@ -539,6 +586,14 @@ class StudyClock {
   void _enqueueWrite(_OpenSegment seg) {
     seg.dirty = false;
     seg.persisted = true;
+    if (_deferring) {
+      // 解绑中：一笔都不许现在发起（[detach]），攒起来交给退出汇合点。撤回
+      // （[_retract]）也走这里，所以 dispose 里的 leave() 触发回翻同样零 IO。
+      if (!_deferredSegments.any((_OpenSegment s) => identical(s, seg))) {
+        _deferredSegments.add(seg);
+      }
+      return;
+    }
     final DateTime now = _now();
     _writeChain = _writeChain.then((_) => _write(seg, now)).catchError((
       Object e,
@@ -549,6 +604,20 @@ class StudyClock {
       debugPrint('[study-clock] write error: $e\n$stack');
       onWriteError?.call(e, stack);
     });
+  }
+
+  /// [detach] 攒下的段在退出路径上串行落地。先等在飞的 tick 写（[_writeChain]），
+  /// 保证绝对值不被旧值倒回；逐笔 fail-open，一段写崩不影响其余。
+  Future<void> _flushDetached(List<_OpenSegment> segments, DateTime now) async {
+    await _writeChain;
+    for (final _OpenSegment seg in segments) {
+      try {
+        await _write(seg, now);
+      } catch (e, stack) {
+        debugPrint('[study-clock] detached write error: $e\n$stack');
+        onWriteError?.call(e, stack);
+      }
+    }
   }
 
   Future<void> _write(_OpenSegment seg, DateTime now) async {

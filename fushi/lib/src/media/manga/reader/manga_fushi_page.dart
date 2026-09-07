@@ -1025,8 +1025,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (desktopWindowFullscreenSupported) {
       unawaited(_readInitialFullscreenState());
     }
-    // 进程退出兜底：把未落盘的页码 flush 掉（与 EPUB/PDF 阅读器同纪律）。
-    ExitFlushRegistry.instance.register(_flushPosition);
+    // 进程退出兜底：把未落盘的页码 + 学习段 flush 掉（与 EPUB/PDF 阅读器同纪律）。
+    ExitFlushRegistry.instance.register(_flushForExit);
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadBook());
     // TODO-2936：应用「漫画」媒体类型 / 本书 book 级的 Profile 绑定（与 EPUB/
     // 视频阅读器同范式：非致命、与开书链并行；漫画的 bookKey 就是 Profile 的
@@ -1052,7 +1052,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
     // 交还音量键所有权：必须早于其它拆栈，且无条件执行。
     _volumeKeyPagingController.dispose();
-    ExitFlushRegistry.instance.unregister(_flushPosition);
+    ExitFlushRegistry.instance.unregister(_flushForExit);
     WidgetsBinding.instance.removeObserver(this);
     // 加载中的窗口必须以明确状态收尾：否则 _loadInitialWindow 会挂满 10s 超时，
     // 再从 unawaited 调用点抛出未捕获异步异常（BUG-1171）。
@@ -1071,12 +1071,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (pageSession != null) {
       unawaited(_closePageSession(pageSession));
     }
-    // 离开当前页：账本结算最后一个单元（翻走即计），必须早于 flush / 时钟 dispose。
-    _readLedger.leave();
-    // dispose 里只能 fire-and-forget；正常退出走 onSourcePagePop 的 await 路径，
-    // 这里是崩溃/异常拆栈时的兜底。
-    unawaited(_flushPosition());
-    _studyClock?.dispose();
+    // 崩溃 / 异常拆栈的兜底（正常退出走 onSourcePagePop 的 await 路径）：dispose
+    // 是同步的，这里**一笔 DB 写都不许发起**——无人 await 的事务与随后的
+    // `db.close()` 互等。账本结算（leave → 页数入账）由 detach 在停表前跑完，攒下
+    // 的写和最后的位置一起交给退出汇合点统一 await。
+    // 时钟为空 = 本页从没开始计时，账本结算没有消费者，整段跳过。
+    _studyClock?.detach(_readLedger.leave);
+    ExitFlushRegistry.instance.defer(_flushPosition);
     _pageNotifier.dispose();
     _focusNode.dispose();
     super.dispose();
@@ -3843,6 +3844,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       idleTimeout: appModel.readingIdleTimeout,
       onWriteError: (Object e, StackTrace st) =>
           ErrorLogService.instance.log('StudyClock.write(manga)', e, st),
+      deferWrite: ExitFlushRegistry.instance.defer,
     );
     _studyClock!.start();
   }
@@ -3900,6 +3902,15 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     } catch (e, stack) {
       ErrorLogService.instance.log('MangaFushiPage.saveChapterState', e, stack);
     }
+  }
+
+  /// 进程退出 / 退后台的统一 flush（[ExitFlushRegistry]）：先把当前页结算进账本
+  /// （退出也是「翻走」；此前登记的是裸 `_flushPosition`，桌面点 X 时最后一页的
+  /// 字 / 页直接丢——账本从没被结算过），
+  /// 再落位置 + 学习段。用 [ReadUnitLedger.settle] 而非 `leave()`，理由见其文档。
+  Future<void> _flushForExit() async {
+    _readLedger.settle();
+    await _flushPosition();
   }
 
   Future<void> _flushPosition() async {

@@ -89,6 +89,22 @@ class ReadUnitLedger {
     _reconcile(cur.$2);
   }
 
+  /// 结算当前单元但**不离开**：并入并集、按单元终点重算，当前单元原样保留。
+  ///
+  /// 退出 flush 用（`ExitFlushRegistry`）。那条路径**不保证进程真的死**——Android
+  /// 退后台用同一组回调 flush 后页面继续活着——而 [leave] 会清空当前单元，下一次
+  /// 落到同一页的 [arrive] 便把位置从单元终点退回起点，把刚记的这页撤回去。重复
+  /// 调用幂等（并集去重 + [_reconcile] 只发差分）。
+  ///
+  /// [rebaseOnNextArrive] 待生效时整体跳过：那说明当前单元的边界即将被重述
+  /// （单页↔双页），按旧边界并入会把没读的页也算进并集。
+  void settle() {
+    final (int, int)? cur = _current;
+    if (cur == null || _rebasePending) return;
+    _coverage.add(cur.$1, cur.$2);
+    _reconcile(cur.$2);
+  }
+
   /// 同一页即将换单元边界（漫画单页↔双页 / spread↔webtoon）：下一次 [arrive] 只替换
   /// 当前单元边界、不并入。没有当前单元时 no-op。
   void rebaseOnNextArrive() {

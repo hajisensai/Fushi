@@ -16,6 +16,8 @@ import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/theme_notifier.dart'
+    show SurfaceRoles, ThemeNotifier, deriveSurfaceRolesFrom;
 import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -109,7 +111,6 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
-import 'package:fushi/src/utils/misc/fushi_color.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -324,7 +325,9 @@ typedef ReaderThemeColors = ({
 /// 页面统一用本结果，不再各自回落硬编码。
 ///
 /// 现在：
-/// - `custom-theme`：用用户自定义色（与旧行为一致）。
+/// - 自定义主题（`custom-theme` / `custom-theme:<id>`，BUG-2187）：先按 [scheme]
+///   派生一套基底，再把用户在 [customOverrides] 里**显式指定**的角色逐个盖上去；
+///   没指定的角色跟随主题（编辑页里显示为「跟随主题」）。
 /// - presetMap 命中（ecru/water/gray/dark/black）：用手调底色（向后兼容，零变化）。
 /// - 其余（light-theme / system-theme / 未来新增 key）：从真实 [scheme] 派生，
 ///   让阅读器背景/高亮/选区/链接真正跟随当前主题（强调色）。
@@ -332,14 +335,14 @@ ReaderThemeColors resolveReaderThemeColors({
   required String themeKey,
   required Map<String, ReaderThemeColors> presetMap,
   required ColorScheme scheme,
-  ReaderThemeColors? customColors,
+  ReaderThemeOverrides? customOverrides,
   Color? audioHighlightOverride,
 }) {
   final ReaderThemeColors base = _resolveBaseReaderThemeColors(
     themeKey: themeKey,
     presetMap: presetMap,
     scheme: scheme,
-    customColors: customColors,
+    customOverrides: customOverrides,
   );
   // TODO-977 根因修复：音频高亮（sasayaki 跟随高亮）颜色过去**只在 custom-theme**
   // 时可被用户改（其余主题恒用 primary/preset），所以非自定义主题下「一直用主色」。
@@ -362,18 +365,15 @@ ReaderThemeColors _resolveBaseReaderThemeColors({
   required String themeKey,
   required Map<String, ReaderThemeColors> presetMap,
   required ColorScheme scheme,
-  ReaderThemeColors? customColors,
+  ReaderThemeOverrides? customOverrides,
 }) {
-  if (themeKey == 'custom-theme' && customColors != null) {
-    return customColors;
-  }
   final ReaderThemeColors? preset = presetMap[themeKey];
   if (preset != null) {
     return preset;
   }
-  // light-theme / system-theme / 未覆盖的 key：跟随真实 ColorScheme。
+  // light-theme / system-theme / 自定义 / 未覆盖的 key：跟随真实 ColorScheme。
   final bool dark = scheme.brightness == Brightness.dark;
-  return (
+  final ReaderThemeColors fromScheme = (
     bg: scheme.surface,
     fg: scheme.onSurface,
     sentenceAudioHighlight: scheme.primary.withValues(
@@ -382,6 +382,49 @@ ReaderThemeColors _resolveBaseReaderThemeColors({
     // selection 用 tertiary：与 sasayaki(primary) 错开色相，查词高亮 ≠ 跟读高亮。
     selection: scheme.tertiary.withValues(alpha: dark ? 0.35 : 0.40),
     link: scheme.primary,
+    dark: dark,
+  );
+  if (customOverrides == null || !ThemeNotifier.isCustomThemeKey(themeKey)) {
+    return fromScheme;
+  }
+  return applyReaderThemeOverrides(fromScheme, customOverrides);
+}
+
+/// 自定义主题在阅读器四个角色上的**可选**覆盖：null = 跟随主题（BUG-2187）。
+///
+/// 旧的 `customColors: ReaderThemeColors` 要求五色齐全，于是 chrome 侧只能给没设
+/// 的角色硬编码白底/黑字兜底——深色模式下开自定义主题、只改了链接色，正文就变成
+/// 白底。现在未指定的角色与 system/light 主题走同一条 scheme 派生链。
+typedef ReaderThemeOverrides = ({
+  Color? bg,
+  Color? fg,
+  Color? selection,
+  Color? link,
+});
+
+/// 把 [overrides] 里非空的角色盖到 [base] 上。
+///
+/// 只指定了背景没指定字色时，字色按背景亮度取黑/白（而不是沿用 scheme.onSurface：
+/// 深色主题 + 用户选浅色纸底 → 白字白纸）；`dark` 同样跟随**最终**背景的亮度，
+/// 这样进度胶囊/词典弹窗等按 `dark` 分档的 chrome 与实际纸色一致。
+ReaderThemeColors applyReaderThemeOverrides(
+  ReaderThemeColors base,
+  ReaderThemeOverrides overrides,
+) {
+  final Color bg = overrides.bg ?? base.bg;
+  final bool dark = overrides.bg == null
+      ? base.dark
+      : ThemeData.estimateBrightnessForColor(bg) == Brightness.dark;
+  final Color fg = overrides.fg ??
+      (overrides.bg == null
+          ? base.fg
+          : (dark ? const Color(0xDEFFFFFF) : const Color(0xDE000000)));
+  return (
+    bg: bg,
+    fg: fg,
+    sentenceAudioHighlight: base.sentenceAudioHighlight,
+    selection: overrides.selection ?? base.selection,
+    link: overrides.link ?? base.link,
     dark: dark,
   );
 }
@@ -2612,10 +2655,16 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   @override
   void dispose() {
-    // 关书 = 离开当前单元：先把它结算进时钟（翻走即计），再走下面的 flush。必须在
-    // [_failNavigation] 之前——那里会 `_readLedger.discard()`（导航中止路径不计），
-    // 而关书那页是用户真读到的。
-    _readLedger.leave();
+    // 关书 = 离开当前单元：先把它结算进时钟（翻走即计）。必须在 [_failNavigation]
+    // 之前——那里会 `_readLedger.discard()`（导航中止路径不计），而关书那页是用户
+    // 真读到的。
+    //
+    // 全程零 DB IO：dispose 是同步的，在这里发起的事务没有任何人持有它的 future，
+    // 与随后的 `db.close()` 互等。[StudyClock.detach] 把结算攒下的写交给
+    // [ExitFlushRegistry] 的退出汇合点统一 await。时钟为空 = 本页从没开始计时，
+    // 整段跳过：入账回调（[_ensureStudyClock]）会现造一个时钟并起表，在 dispose
+    // 里造时钟是净负。
+    _studyClock?.detach(_readLedger.leave);
     // Search navigation can still be awaiting restore while the route closes.
     // Complete it as failed now (and clear its precise-locate request) instead
     // of leaving the callback alive until the 10-second timeout.
@@ -2670,11 +2719,13 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     VolumeKeyChannel.instance.setInterceptEnabled(false);
     appModel.setOverrideDictionaryTheme(null);
     appModel.setOverrideDictionaryColor(null);
-    // HBK-AUDIT-122: shared sync-then-flush (also used by lifecycle handler).
-    // 必须在 detachReader 之前：flush 读的是 _audiobookController（= session 控制器），
-    // detach 不 dispose 控制器，但这里先把退出那一刻的位置写穿（BUG-203/032）。
-    _syncAndFlushPosition();
-    _flushReadingStats();
+    // 退出那一刻的位置（BUG-203/032）交给退出汇合点，dispose 里不发起（同上：无人
+    // await 的事务会与 `db.close()` 互等）。这里落的是 debounce 已算好的缓存锚
+    // （[_flushPosition]），不再走 [_syncAndFlushPosition] 的 WebView 探针——正常
+    // 退出的 `onSourcePagePop` 仍然探针 + await，异常拆栈时 WebView 本就在拆，
+    // 探不到实时锚是 [ExitFlushRegistry] 一贯认下的降级（至多丢最后一窗滚动）。
+    // 学习段不用在这里再 flush：上面的 detach 已把它攒进同一个汇合点。
+    ExitFlushRegistry.instance.defer(_flushPosition);
     // TODO-702：有声书退出即停（默认）/ 后台续播（可选）。
     // 两种情况都先 detachReader——卸下本 reader 的 WebView 侧回调（跨章/边界跳句
     // 退化为安全无操作），不 dispose 控制器；上面的 [_syncAndFlushPosition] 已把
@@ -2702,7 +2753,6 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
         }),
       );
     }
-    _studyClock?.dispose();
     _focusNode.dispose();
     _chromeFocusScope.dispose();
     _popupHeaderScope.dispose();
@@ -3464,7 +3514,6 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
         _controller!,
         chapterFavs,
         backgroundHex: _readerBackgroundHex,
-        customHighlightCss: _customHighlightCss,
       );
       if (!mounted || _controller == null) return;
       await _controller!.evaluateJavascript(

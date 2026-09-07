@@ -100,7 +100,7 @@ void main() {
     const List<String> entries = <String>[
       '  Future<void> _showAppearanceSheet({String? initialSubPage}) async {',
       '  void _openReadingStatistics() {',
-      '  Future<void> _openAlignmentImportDialog({',
+      '  Future<void> _openAlignmentImportDialog(',
       '  Future<void> _openAudioImportDialog() async {',
       '  Future<void> _openSrtBookReimport() async {',
       '  void _openImageViewer(String imgUrl) {',
@@ -232,18 +232,47 @@ void main() {
       expect(pdf, isNot(contains('_sessionMaxPageIndex')));
     });
 
-    test('dispose / onSourcePagePop 在 flush 前 leave()，结算停在的最后一页', () {
+    test('dispose 交给 detach（零 DB IO）/ onSourcePagePop 在 flush 前 leave()，结算停在的最后一页', () {
       final String dispose = _functionSource(
         pdf,
         '  void dispose() {',
         '\n  }\n',
       );
       expect(
-        dispose.indexOf('_readLedger.leave();'),
+        dispose,
+        contains('_studyClock?.detach(_readLedger.leave);'),
+        reason: 'dispose 是同步的：结算（leave → addPages）必须作为回调交给 detach，'
+            '由它在停表前跑完并把攒下的写交给 ExitFlushRegistry.defer；'
+            '在 dispose 里直接落库 = 无人 await 的事务，与随后的 db.close() 互等',
+      );
+      for (final String forbidden in <String>[
+        'unawaited(_flushPosition());',
+        '_studyClock?.dispose();',
+      ]) {
+        expect(
+          dispose.contains(forbidden),
+          isFalse,
+          reason: 'dispose 不得发起无人 await 的 DB 写：$forbidden',
+        );
+      }
+      expect(
+        dispose,
+        contains('ExitFlushRegistry.instance.defer(_flushPosition);'),
+      );
+      // 进程退出登记 _flushForExit（先 settle 再落盘）：桌面点 X 不触发 dispose。
+      expect(pdf, contains('ExitFlushRegistry.instance.register(_flushForExit);'));
+      final String forExit = _functionSource(
+        pdf,
+        '  Future<void> _flushForExit() async {',
+        '\n  }\n',
+      );
+      expect(
+        forExit.indexOf('_readLedger.settle();'),
         allOf(
           greaterThanOrEqualTo(0),
-          lessThan(dispose.indexOf('unawaited(_flushPosition());')),
+          lessThan(forExit.indexOf('await _flushPosition();')),
         ),
+        reason: '退出 flush 用 settle 不用 leave（这条路径不保证进程真死）',
       );
       final String pop = _functionSource(
         pdf,

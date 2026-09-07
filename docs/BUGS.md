@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2085 条。点号进各自文件。
+> 共 2086 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2251](bugs/BUG-2251-video-tracker-dispose-unawaited-write.md) | 🚧 | 🚧 | VideoWatchTracker.dispose 在 dispose 里发起无人 await 的 DB 写 |
 | [BUG-2228](bugs/BUG-2228-reader-ledger-audiobook-reveal-turn-uncounted.md) | 🚧 | 🚧 | 听书自动翻页未计入读过字数（未复现） |
 | [BUG-2227](bugs/BUG-2227-reader-ledger-close-settles-stale-unit.md) | ✅ | ✅ | 关书结算的是上次采样单元而非此刻可见页 |
 | [BUG-2226](bugs/BUG-2226-reader-ledger-fail-navigation-discards-read-page.md) | ✅ | ✅ | 导航失败/兜底超时 discard 丢掉用户真读过的上一页 |

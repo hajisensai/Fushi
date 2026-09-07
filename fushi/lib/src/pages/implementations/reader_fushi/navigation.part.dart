@@ -1502,7 +1502,10 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       _syncPositionFromCurrentCue();
     }
     await _flushPosition();
-    _readLedger.leave();
+    // settle 而非 leave：这条路径不保证进程真的死（Android 退后台用同一组回调
+    // flush 后页面继续活着），清空当前单元会让下一次落回同一页的 arrive 把位置退
+    // 回单元起点、把刚记的字数撤回去。
+    _readLedger.settle();
     await _flushReadingStats();
     await _audiobookController?.flushPosition();
   }
@@ -1579,6 +1582,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       format: BookFormat.epub.dbValue,
       onWriteError: (Object e, StackTrace st) =>
           ErrorLogService.instance.log('StudyClock.write(epub)', e, st),
+      deferWrite: ExitFlushRegistry.instance.defer,
     );
     // BUG-2213：空闲门分钟数每次都从设置刷（字段本就可变）——旧实现只在建时钟时
     // 快照一次，阅读中改设置要退出重开书才生效。

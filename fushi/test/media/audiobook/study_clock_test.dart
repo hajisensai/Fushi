@@ -34,7 +34,13 @@ class _Harness {
     bool Function()? isActive,
     DateTime? start,
     StudyAccrual accrual = StudyAccrual.wallClock,
+    bool collectDeferred = false,
   }) : now = start ?? DateTime(2026, 8, 29, 12, 0, 0) {
+    // 退出汇合点的替身：app 侧接 ExitFlushRegistry.instance.defer。
+    // collectDeferred=false 时保持 null——纯单测的默认就是「detach 零 IO 且丢弃」。
+    if (collectDeferred) {
+      deferred = <Future<void> Function()>[];
+    }
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     clock = StudyClock(
@@ -50,6 +56,7 @@ class _Harness {
       deviceId: () async => 'dev-A',
       now: () => now,
       uidFactory: () => 'u${++_uidSeq}',
+      deferWrite: deferred?.add,
     );
     addTearDown(() => clock.stop());
   }
@@ -58,6 +65,17 @@ class _Harness {
   late final StudyClock clock;
   final _Sink sink = _Sink();
   DateTime now;
+
+  /// 见构造参数 `collectDeferred`：null = 没接退出汇合点。
+  List<Future<void> Function()>? deferred;
+
+  /// 跑一遍退出路径攒下的写（进程退出时 ExitFlushRegistry 做的事）。
+  Future<void> runDeferred() async {
+    for (final Future<void> Function() write in deferred ?? const []) {
+      await write();
+    }
+    deferred?.clear();
+  }
   int _uidSeq = 0;
 
   void advance(Duration d) => now = now.add(d);
@@ -737,6 +755,72 @@ void main() {
       // Companion 的 Value 语义：未 present 的列不覆盖——这里全列 present。
       expect(rows.single.chars, 0);
       expect(const Value<int>(0).present, isTrue);
+    });
+  });
+
+  group('detach：页面 dispose 的零 DB IO 收尾（无人 await 的事务会与 db.close() 互等）', () {
+    test('结算回调在停表前跑：leave 记的页数进段，不因停表被丢弃', () async {
+      final _Harness h = _Harness(collectDeferred: true);
+      h.clock.start();
+      h.advance(const Duration(seconds: 30));
+      // settle 回调里记页数——若 detach 先停表再跑它，addPages 会被 isRunning 挡掉。
+      h.clock.detach(() => h.clock.addPages(3));
+      expect(h.sink.writes, isEmpty, reason: 'detach 期间一笔都不许现在写');
+      expect(h.deferred, hasLength(1), reason: '攒下的写交给退出汇合点');
+
+      await h.runDeferred();
+      expect(h.sink.writes, hasLength(1));
+      expect(h.sink.last.pages.value, 3, reason: '结算必须发生在停表之前');
+      expect(h.sink.last.durationMs.value, 30000);
+    });
+
+    test('没接退出汇合点（deferWrite=null）：零 IO、不抛——纯单测的默认', () async {
+      final _Harness h = _Harness();
+      h.clock.start();
+      h.advance(const Duration(seconds: 30));
+      h.clock.detach(() => h.clock.addPages(2));
+      expect(h.sink.writes, isEmpty);
+      expect(h.clock.isRunning, isFalse, reason: '定时器必须停掉，否则页面走了还在写');
+    });
+
+    test('detach 里的回翻撤回同样不落库（_retract 也走 _enqueueWrite）', () async {
+      final _Harness h = _Harness(collectDeferred: true);
+      h.clock.start();
+      h.clock.addChars(100);
+      h.advance(const Duration(seconds: 60));
+      await h.clock.flushNow();
+      final int writesBefore = h.sink.writes.length;
+      expect(writesBefore, greaterThan(0));
+
+      h.clock.detach(() => h.clock.retractChars(40));
+      expect(
+        h.sink.writes,
+        hasLength(writesBefore),
+        reason: 'detach 期间的撤回也必须攒着，不许现在开事务',
+      );
+      await h.runDeferred();
+      expect(h.sink.last.chars.value, 60, reason: '绝对值重写：100 - 40');
+    });
+
+    test('detach 后 stop() 幂等：不再产生第二笔写', () async {
+      final _Harness h = _Harness(collectDeferred: true);
+      h.clock.start();
+      h.advance(const Duration(seconds: 30));
+      h.clock.detach(() => h.clock.addPages(1));
+      await h.runDeferred();
+      final int after = h.sink.writes.length;
+      await h.clock.stop();
+      expect(h.sink.writes, hasLength(after));
+    });
+
+    test('没有任何账的 detach 不产生待写（开页秒关：零 DB 写）', () async {
+      final _Harness h = _Harness(collectDeferred: true);
+      h.clock.start();
+      h.advance(const Duration(milliseconds: 200));
+      h.clock.detach();
+      expect(h.deferred, isEmpty);
+      await h.runDeferred();
+      expect(h.sink.writes, isEmpty);
     });
   });
 }

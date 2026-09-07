@@ -14,8 +14,10 @@ import '../../helpers/source_guard.dart';
 /// 1. **唯一账本**：位置落定只经 `_noteVisiblePages()`（`touch()` + `arrive`），
 ///    `_readLedger.arrive(` 只出现在这一处；四个位置变化入口（本地开书 / 在线开章 /
 ///    `_recordProgress` / spread↔webtoon 切换）都走它。
-/// 2. **离开结算**：dispose 与 `onSourcePagePop` 在 flush / 时钟 dispose 之前
-///    `_readLedger.leave()`；换章（同 State 内页号坐标系重用）`leave()` + `reset()`。
+/// 2. **离开结算**：`onSourcePagePop` 在 flush 之前 `_readLedger.leave()`；dispose 把
+///    leave 作为回调交给 `StudyClock.detach`（在停表前跑完、全程零 DB IO——dispose 是
+///    同步的，在那里起的事务没人 await，与随后的 `db.close()` 互等）；进程退出登记
+///    `_flushForExit`（`settle()` 而非 `leave()`）；换章 `leave()` + `reset()`。
 /// 3. **停留门 / Set / 预置形态不得回潮**：`_sessionCountedPages` / `_pageDwellTimer` /
 ///    `_kPageDwellThreshold` / `kArrivalDwellMs` / `_seedCountedPagesFromRestore` 一律
 ///    不许出现（`kArrivalDwellMs` 的唯一消费者是视频 cue 停留门）。
@@ -70,18 +72,53 @@ void main() {
     );
   });
 
-  test('离开结算：dispose / onSourcePagePop 在 flush 前 leave()，换章 leave + reset', () {
+  test('离开结算：dispose 交给 detach（零 DB IO），onSourcePagePop 在 flush 前 leave()，换章 leave + reset', () {
     final String dispose = _functionSource(
       src,
       '  void dispose() {',
       '\n  }\n',
     );
-    final int leaveAt = dispose.indexOf('_readLedger.leave();');
-    final int flushAt = dispose.indexOf('unawaited(_flushPosition());');
-    final int clockAt = dispose.indexOf('_studyClock?.dispose();');
-    expect(leaveAt, greaterThanOrEqualTo(0), reason: 'dispose 必须 leave()');
-    expect(leaveAt, lessThan(flushAt), reason: 'leave 必须早于最后一次 flush');
-    expect(leaveAt, lessThan(clockAt), reason: 'leave 必须早于时钟 dispose，否则最后一页丢');
+    expect(
+      dispose,
+      contains('_studyClock?.detach(_readLedger.leave);'),
+      reason: 'dispose 是同步的：结算（leave → addPages）必须作为回调交给 detach，'
+          '由它在停表前跑完并把攒下的写交给 ExitFlushRegistry.defer。'
+          '在 dispose 里直接落库 = 一笔无人 await 的事务，与随后的 db.close() 互等',
+    );
+    // dispose 里一笔 DB 写都不许发起（FakeAsync 下必挂死，生产退出是同一形状竞态）。
+    for (final String forbidden in <String>[
+      'unawaited(_flushPosition());',
+      '_studyClock?.dispose();',
+      'unawaited(_studyClock?.stop());',
+    ]) {
+      expect(
+        dispose.contains(forbidden),
+        isFalse,
+        reason: 'dispose 不得发起无人 await 的 DB 写：$forbidden',
+      );
+    }
+    expect(
+      dispose,
+      contains('ExitFlushRegistry.instance.defer(_flushPosition);'),
+      reason: '最后一次位置落盘改为登记到退出汇合点，由退出路径统一 await',
+    );
+    // 进程退出登记的是 _flushForExit（先 settle 再落盘），不是裸 _flushPosition：
+    // 桌面点 X 不触发 dispose，账本不结算就丢最后一页的字 / 页。
+    expect(src, contains('ExitFlushRegistry.instance.register(_flushForExit);'));
+    final String forExit = _functionSource(
+      src,
+      '  Future<void> _flushForExit() async {',
+      '\n  }\n',
+    );
+    expect(
+      forExit.indexOf('_readLedger.settle();'),
+      allOf(
+        greaterThanOrEqualTo(0),
+        lessThan(forExit.indexOf('await _flushPosition();')),
+      ),
+      reason: '退出 flush 用 settle 不用 leave：这条路径不保证进程真死，'
+          '清空当前单元会让下一次落回同一页的 arrive 把刚记的页数撤回',
+    );
 
     final String pop = _functionSource(
       src,
@@ -98,8 +135,10 @@ void main() {
     );
     expect(
       '_readLedger.leave();'.allMatches(src).length,
-      2,
-      reason: '生命周期 paused 不 leave（停表期间 addPages 会被丢弃，且恢复后当前页要继续算）',
+      1,
+      reason: '只剩 onSourcePagePop 一处直接调用（dispose 改为把 leave 作为回调交给 '
+          'detach，退出 flush 走 settle）；生命周期 paused 仍不 leave——停表期间 '
+          'addPages 会被丢弃，且恢复后当前页要继续算',
     );
     // 换章：同一 State 内页号坐标系重用，先结算旧章末页再清并集。
     final String online = _functionSource(

@@ -220,18 +220,41 @@ void main() {
       );
     });
 
-    test('dispose：leave 在 _failNavigation（discard）与 _flushReadingStats 之前', () {
+    test('dispose：结算交给 detach（零 DB IO），且在 _failNavigation（discard）之前', () {
       final String body = methodBody(corpus, 'void dispose()');
-      final int leave = body.indexOf('_readLedger.leave();');
+      final int detach = body.indexOf('_studyClock?.detach(_readLedger.leave);');
       final int fail = body.indexOf('_failNavigation();');
-      final int flush = body.indexOf('_flushReadingStats();');
-      expect(leave, isNonNegative);
       expect(
-        leave,
+        detach,
+        isNonNegative,
+        reason: 'dispose 是同步的：结算 + 停表必须走 detach（内部零 IO，'
+            '攒下的写交给 ExitFlushRegistry.defer），不许自己起事务',
+      );
+      expect(
+        detach,
         lessThan(fail),
         reason: '_failNavigation 会 discard，关书那页必须先结算',
       );
-      expect(leave, lessThan(flush));
+      // dispose 里一笔 DB 写都不许发起：无人 await 的事务与随后的 db.close() 互等
+      // （widget 测试的 FakeAsync 下必挂，生产退出是同一形状的竞态）。
+      for (final String forbidden in <String>[
+        '_syncAndFlushPosition();',
+        '_flushReadingStats();',
+        'unawaited(_flushPosition());',
+        '_studyClock?.dispose();',
+        'unawaited(_studyClock?.stop());',
+      ]) {
+        expect(
+          body.contains(forbidden),
+          isFalse,
+          reason: 'dispose 不得发起无人 await 的 DB 写：$forbidden',
+        );
+      }
+      expect(
+        containsCodeLine(body, 'ExitFlushRegistry.instance.defer(_flushPosition);'),
+        isTrue,
+        reason: '退出那一刻的位置改为登记到退出汇合点，由退出路径统一 await',
+      );
       expect(
         containsCodeLine(body, '_revealProgressRefreshTimer?.cancel();'),
         isTrue,
@@ -249,15 +272,26 @@ void main() {
       expect(leave, lessThan(flush));
     });
 
-    test('进程退出 flush：leave 在 await _flushReadingStats 之前', () {
+    test('进程退出 flush：settle（非 leave）在 await _flushReadingStats 之前', () {
       final String body = methodBody(
         corpus,
         'Future<void> _flushAllForProcessExit() async',
       );
-      final int leave = body.indexOf('_readLedger.leave();');
+      final int settle = body.indexOf('_readLedger.settle();');
       final int flush = body.indexOf('await _flushReadingStats();');
-      expect(leave, isNonNegative);
-      expect(leave, lessThan(flush));
+      expect(
+        settle,
+        isNonNegative,
+        reason: '退出 flush 用 settle 不用 leave：这条路径不保证进程真死'
+            '（Android 退后台用同一组回调 flush 后页面继续活着），清空当前单元会让'
+            '下一次落回同一页的 arrive 把位置退回单元起点、把刚记的字数撤回',
+      );
+      expect(settle, lessThan(flush));
+      expect(
+        body.contains('_readLedger.leave();'),
+        isFalse,
+        reason: '见上：这条路径不许 leave',
+      );
     });
 
     test('_flushReadingStats 体保持只委托 flushNow（不碰账本）', () {
@@ -270,9 +304,18 @@ void main() {
     });
 
     test(
-      'leave 恰八处：跳句 + dispose + onSourcePagePop + 进程退出 + _beginNavigation + 三个同章跳转入口',
+      'leave 恰六处：跳句 + onSourcePagePop + _beginNavigation + 三个同章跳转入口；'
+      'dispose 走 detach 交棒、进程退出走 settle',
       () {
-        expect('_readLedger.leave('.allMatches(masked), hasLength(8));
+        expect('_readLedger.leave('.allMatches(masked), hasLength(6));
+        // dispose 把 leave 作为**回调**交给 detach（在停表前跑、零 IO），不是自己调；
+        // 退出 flush 用 settle（不清当前单元）。两者都不带括号 / 换了名字，因此不计入
+        // 上面的调用点计数——各自单列一条，少一处就是那条路上的最后一页丢账。
+        expect(
+          '_studyClock?.detach(_readLedger.leave);'.allMatches(masked),
+          hasLength(1),
+        );
+        expect('_readLedger.settle();'.allMatches(masked), hasLength(1));
       },
     );
   });
