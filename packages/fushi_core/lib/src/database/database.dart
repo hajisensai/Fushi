@@ -2099,8 +2099,10 @@ class FushiDatabase extends _$FushiDatabase
             // launch_args 同型：都是「用户为该游戏设的启动期配置」。
             //
             // 无损迁移：列带 DEFAULT ''，SQLite ADD COLUMN 把既有全部行回填空串。
-            // 注意空串在解析层回落的是 **auto** 而不是 off——转区是用户明确要过的
-            // 功能（BUG-1038），加了开关就把老用户默默关掉才是破坏用户空间。
+            // 空串在解析层回落 **off**（2026-09-07 起；v75 落地当时是 auto）——
+            // 用户要求撤掉「没选过就自动转区」，见 galgame_japanese_locale.dart 的
+            // kGalDefaultJapaneseLocaleMode。本迁移代码不变（仍回填空串），变的是
+            // 空串的解析语义，所以不需要新迁移阶梯。
             // 守卫幂等（fresh DB 已由 onCreate 的 createAll 建好，重复升级
             // _columnExists 短路 no-op）。
             if (await _tableExists('galgames') &&

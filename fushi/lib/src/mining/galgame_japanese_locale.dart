@@ -32,7 +32,10 @@ int? readSystemAnsiCodePage() {
 }
 
 enum GalJapaneseLocaleMode {
-  /// 自动判定（默认）。判据见 [resolveJapaneseLocale]。
+  /// 自动判定。判据见 [resolveJapaneseLocale]。
+  ///
+  /// **不再是默认档**（见 [kGalDefaultJapaneseLocaleMode]）：这一档要用户到游戏
+  /// 右键菜单里主动选，选了才会在启动时探测证据并自行决定要不要套 CP932。
   auto,
 
   /// 始终转区（launch 模式下）。不看位数——将来 Locale Emulator 有 x64 版时自然生效。
@@ -44,8 +47,22 @@ enum GalJapaneseLocaleMode {
   off,
 }
 
+/// 没有为这个游戏设过档位时的兜底档。
+///
+/// 🔴 **必须是 `off`**：转区是**每个游戏各自**的开关，存在 galgame 库那一行上，
+/// 缺省是空串。空串、认不出的旧值、以及压根没进过库的游戏全部落到这里——转区会
+/// 用 Locale Emulator 以 CP932 重新拉起用户的游戏进程，那是替用户改变游戏的启动
+/// 方式，不能在他没选过的时候自己发生（与 `magpie_upscaling.dart` 的
+/// [kMagpieDefaultUpscalingMode] 同纪律）。
+///
+/// 判错的代价是不对称的：该转没转只是显示乱码，用户看得见、去右键菜单里改
+/// 「日文转区」即可；不该转却转了会让汉化版 `MultiByteToWideChar(CP_ACP, ...)`
+/// 解出非法序列、字表越界**直接闪退**，而用户完全不知道是 Fushi 干的。
+///
+/// 历史：本常量原为 [GalJapaneseLocaleMode.auto]，启动游戏即自动探测并自行决定
+/// 转区。用户 2026-09-07 要求撤掉这个自动行为、改为显式选择。
 const GalJapaneseLocaleMode kGalDefaultJapaneseLocaleMode =
-    GalJapaneseLocaleMode.auto;
+    GalJapaneseLocaleMode.off;
 
 /// 持久化 key ⇄ 枚举。**不用 `enum.name` / `enum.index`**：那会让重命名或调整顺序
 /// 悄悄改变已落库的值（与 `magpie_upscaling.dart` 同纪律）。
@@ -60,8 +77,11 @@ String galJapaneseLocaleModeToKey(GalJapaneseLocaleMode mode) {
   }
 }
 
-/// 空串 / 未知值一律回落 [kGalDefaultJapaneseLocaleMode]——老数据行是空串，
-/// 必须映射成「和以前一样自动」，而不是莫名关掉一个用户一直在用的功能。
+/// 空串 / 未知值一律回落 [kGalDefaultJapaneseLocaleMode]（`off`）。
+///
+/// 空串的语义是「**用户从没为这个游戏选过**」，不是「用户选了自动」——主动选了
+/// 自动的行落的是字面量 `'auto'`，那条路径不受本次改动影响，仍然自动判定。
+/// 所以把兜底从 auto 改成 off 只影响「没选过」的游戏：它们不再被替着转区。
 GalJapaneseLocaleMode galJapaneseLocaleModeFromKey(String? key) {
   switch (key) {
     case 'on':

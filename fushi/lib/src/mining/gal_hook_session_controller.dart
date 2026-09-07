@@ -1442,7 +1442,11 @@ class GalHookSessionController extends ChangeNotifier {
     String? gameId,
     String? gameTitle,
 
-    /// 该游戏的日语区域（转区）档位（BUG-1477）。缺省 auto = 与旧行为等价。
+    /// 该游戏的日语区域（转区）档位（BUG-1477）。
+    ///
+    /// 缺省是 [kGalDefaultJapaneseLocaleMode]（`off`）：调用方没显式给档位就
+    /// 不转区。真实调用方（games_library_page / galgame_home_page / texthooker）
+    /// 都是从库里那一行读出来传进来的，走不到这个缺省。
     GalJapaneseLocaleMode japaneseLocaleMode = kGalDefaultJapaneseLocaleMode,
 
     /// 该游戏声明的内容语言（BUG-2047）；null = 未声明，`auto` 只靠自动证据。

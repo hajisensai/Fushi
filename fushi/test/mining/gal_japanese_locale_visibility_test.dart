@@ -107,7 +107,13 @@ void main() {
     final GalHookSessionController controller = harness.build();
 
     expect(
-      (await controller.launchGame(r'D:\game\tenshi.exe')).launched,
+      (await controller.launchGame(
+        r'D:\game\tenshi.exe',
+        // 本例测的是 auto 档的判定链路，所以显式给档位：缺省档已经是 off
+        // （没选过就不转区），靠缺省值根本走不到 auto 分支。
+        japaneseLocaleMode: GalJapaneseLocaleMode.auto,
+      ))
+          .launched,
       isTrue,
     );
 
@@ -321,7 +327,9 @@ void main() {
       isNull,
     );
     expect(
-      skipped.copyWith(clearJapaneseLocaleVerdict: true).japaneseLocaleSkipReason,
+      skipped
+          .copyWith(clearJapaneseLocaleVerdict: true)
+          .japaneseLocaleSkipReason,
       isNull,
     );
     expect(
