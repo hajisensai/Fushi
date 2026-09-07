@@ -361,8 +361,21 @@ void TestProductionNativeSource(SiglusNativeResourceFrame resource_frame) {
   g_orig_SiglusVoiceSource = reinterpret_cast<void*>(&OriginalSource);
   g_siglus_voice_source_enabled.store(true);
   SiglusVoiceSourceTask task;
+  auto& observations = g_siglus_voice_source_observations;
+  const uint32_t entered_before = observations.entered.load();
+  const uint32_t enabled_before = observations.enabled.load();
+  const uint32_t admitted_before = observations.admitted_caller.load();
+  const uint32_t captured_before = observations.captured.load();
+  const uint32_t queued_before = observations.queued.load();
   SetLastError(43); InvokeSource();
   const DWORD last_error = GetLastError();
+  Check(observations.entered.load() == entered_before + 1);
+  Check(observations.enabled.load() == enabled_before + 1);
+  Check(observations.admitted_caller.load() == admitted_before + 1);
+  Check(observations.captured.load() == captured_before + 1);
+  Check(observations.queued.load() == queued_before + 1);
+  Check(observations.last_return.load() ==
+        g_siglus_native_source_layout.payload_return);
   Check(g_siglus_voice_source_tasks.TryPop(&task));
   Check(task.key == 100100297 && task.offset == 0x100 && task.length == 0x40);
   Check(std::wcscmp(task.path, L"D:\\x") == 0);
@@ -373,8 +386,10 @@ void TestProductionNativeSource(SiglusNativeResourceFrame resource_frame) {
   const uint32_t checked_words[] = {
       96, 104, key_copy_word, reader_word, offset_word, length_word};
   for (const uint32_t index : checked_words) {
+    const uint32_t captured = observations.captured.load();
     ++frame[index]; InvokeSource();
     Check(!g_siglus_voice_source_tasks.TryPop(&task));
+    Check(observations.captured.load() == captured);
     --frame[index];
   }
   // A valid call from one compiler frame must not enter through the other's
@@ -396,12 +411,16 @@ void TestProductionNativeSource(SiglusNativeResourceFrame resource_frame) {
   Check(!g_siglus_voice_source_tasks.TryPop(&task));
   wcscpy_s(text, 8, L"D:\\x"); frame[54] = 4; frame[55] = 7;
   const int before = published;
+  const uint32_t processed = observations.processed.load();
   InvokeSource(); ProcessSiglusVoiceSourceTasks();
   Check(published == before + 1 && published_task.key == 100100297);
+  Check(observations.processed.load() == processed + 1);
   g_capture_enabled = false; InvokeSource();
   Check(!g_siglus_voice_source_tasks.TryPop(&task)); g_capture_enabled = true;
+  const uint32_t enabled = observations.enabled.load();
   g_siglus_voice_source_enabled.store(false); InvokeSource();
   Check(!g_siglus_voice_source_tasks.TryPop(&task));
+  Check(observations.enabled.load() == enabled);
   g_siglus_voice_source_native_ecx = false;
 }
 

@@ -20,6 +20,19 @@ void* g_orig_SiglusVoiceSource = nullptr;
 bool g_siglus_voice_source_created = false;
 bool g_siglus_voice_source_ever_enabled = false;
 
+// Private, payload-free diagnostic counters. They identify the first failed
+// source boundary without changing hook admission or doing IO in the callback.
+struct SiglusVoiceSourceObservations {
+  std::atomic<uint32_t> entered{0};
+  std::atomic<uint32_t> enabled{0};
+  std::atomic<uint32_t> admitted_caller{0};
+  std::atomic<uint32_t> captured{0};
+  std::atomic<uint32_t> queued{0};
+  std::atomic<uint32_t> processed{0};
+  std::atomic<uint32_t> last_return{0};
+};
+SiglusVoiceSourceObservations g_siglus_voice_source_observations;
+
 bool ReadSiglusVoiceSourceMemory(uint32_t address, void* output, size_t bytes) {
   if (address == 0 || output == nullptr || bytes == 0 ||
       bytes > fushi_voice_hook::kSiglusVoiceSourcePathUnits * sizeof(wchar_t) ||
@@ -34,8 +47,20 @@ bool ReadSiglusVoiceSourceMemory(uint32_t address, void* output, size_t bytes) {
 
 void __stdcall ObserveSiglusVoiceSource(uint32_t reader, uint32_t entry_esp,
                                        uint32_t caller_ebp) {
+  auto& observations = g_siglus_voice_source_observations;
+  observations.entered.fetch_add(1, std::memory_order_relaxed);
   if (!g_siglus_voice_source_enabled.load(std::memory_order_acquire) ||
       !g_capture_enabled || entry_esp < 36) return;
+  observations.enabled.fetch_add(1, std::memory_order_relaxed);
+  uint32_t return_address = 0;
+  if (ReadSiglusVoiceSourceMemory(entry_esp, &return_address, 4)) {
+    observations.last_return.store(return_address, std::memory_order_relaxed);
+    const uint32_t admitted_return = g_siglus_voice_source_native_ecx
+        ? g_siglus_native_source_layout.payload_return
+        : g_siglus_voice_source_layout.payload_return;
+    if (return_address == admitted_return)
+      observations.admitted_caller.fetch_add(1, std::memory_order_relaxed);
+  }
   fushi_voice_hook::SiglusVoiceSourceCall call;
   call.reader = reader; call.entry_esp = entry_esp; call.caller_ebp = caller_ebp;
   // These are OUR pushad slots, not guessed engine stack locals. The shared
@@ -50,9 +75,12 @@ void __stdcall ObserveSiglusVoiceSource(uint32_t reader, uint32_t entry_esp,
             {reader, entry_esp, caller_ebp, call.original_ebx}, read, &task)
       : fushi_voice_hook::CaptureSiglusVoiceSource(
             g_siglus_voice_source_layout, call, read, &task);
-  if (captured &&
-      g_siglus_voice_source_enabled.load(std::memory_order_acquire))
-    (void)g_siglus_voice_source_tasks.TryPush(task);
+  if (captured) {
+    observations.captured.fetch_add(1, std::memory_order_relaxed);
+    if (g_siglus_voice_source_enabled.load(std::memory_order_acquire) &&
+        g_siglus_voice_source_tasks.TryPush(task))
+      observations.queued.fetch_add(1, std::memory_order_relaxed);
+  }
 }
 
 FUSHI_SIGLUS_MESSAGE_THUNK(Detour_SiglusVoiceSource, ObserveSiglusVoiceSource,
@@ -183,6 +211,8 @@ void ProcessSiglusVoiceSourceTasks() {
   fushi_voice_hook::SiglusVoiceSourceTask task;
   for (uint32_t count = 0; count < kSiglusVoiceSourceTaskSlots; ++count) {
     if (!g_siglus_voice_source_tasks.TryPop(&task)) break;
+    g_siglus_voice_source_observations.processed.fetch_add(
+        1, std::memory_order_relaxed);
     QueueProvedSiglusVoiceResource(task.key, task.path, task.offset, task.length);
   }
 }
