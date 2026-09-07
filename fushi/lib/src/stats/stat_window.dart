@@ -23,6 +23,11 @@ class StatWindow {
 
   final DateTime _now;
 
+  /// 本窗口的锚时刻（构造时传入的 now）。消费方按同一个窗口做「小时/分钟级」判据
+  /// （近 7 天曲线的当日切片、活动流分组）时必须用它，不许现调 `DateTime.now()`
+  /// ——那会让聚合与谓词落在两个时刻上，跨午夜时「今日」卡与明细对不上（BUG-2219）。
+  DateTime get now => _now;
+
   /// 今日。
   final String todayKey;
 

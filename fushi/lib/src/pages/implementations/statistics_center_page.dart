@@ -113,7 +113,7 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
       _bookKeyByTitle = uniqueBookKeyByTitle(facts.epubRows);
       _ambiguousBookTitles = ambiguousBookTitles(facts.epubRows);
       _epubUidByBookKey = <String, String>{
-        for (final EpubBookRow r in facts.epubRows)
+        for (final EpubBookMeta r in facts.epubRows)
           if (r.uid.isNotEmpty) r.bookKey: r.uid,
       };
       _collectionNamesById = <int, String>{

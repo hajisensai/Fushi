@@ -660,7 +660,7 @@ void main() {
       ).createBackup(zip);
       await src.close();
 
-      await BackupService.mergeRestoreBackup(
+      await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path,
         zipPath: zip,
       );
