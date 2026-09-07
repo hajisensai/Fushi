@@ -4,6 +4,7 @@
 // 外挂字幕优先 / 断点读写）。
 
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -341,9 +342,11 @@ void main() {
         }),
       );
       final RemoteVideoStreamUrls urls = await c.remoteVideoStreamUrls('ep1');
+      // BUG-2252 ③：MediaSourceId 必带（飞牛缺它 400；条目 id 不能充数）。
       expect(
         urls.streamUrl,
-        'http://nas:8096/Videos/ep1/stream?static=true&api_key=tok',
+        'http://nas:8096/Videos/ep1/stream?static=true&MediaSourceId=src1'
+        '&api_key=tok',
       );
       expect(
         urls.subtitleUrl,
@@ -357,6 +360,56 @@ void main() {
         reason: '图形字幕（pgssub）不进文本轨选择器',
       );
       expect(urls.miningVideoHasAudio, isTrue);
+    });
+
+    test(
+      'downloadRemoteVideo：先取详情拿 MediaSourceId 再拼下载 URL（BUG-2252 ③）',
+      () async {
+        final List<http.Request> seen = <http.Request>[];
+        final JellyfinVideoClient c = clientWith(
+          MockClient((http.Request req) async {
+            seen.add(req);
+            if (req.url.path == '/Users/u1/Items/ep1') {
+              return http.Response(jsonEncode(_episodeJson()), 200);
+            }
+            return http.Response('bytes', 200);
+          }),
+        );
+        final Directory dir = Directory.systemTemp.createTempSync('jf_dl_test');
+        addTearDown(() => dir.deleteSync(recursive: true));
+        final File dest = File('${dir.path}/out.mp4');
+
+        await c.downloadRemoteVideo('ep1', dest);
+
+        expect(dest.readAsStringSync(), 'bytes');
+        expect(seen.map((http.Request r) => r.url.path).toList(), <String>[
+          '/Users/u1/Items/ep1',
+          '/Videos/ep1/stream',
+        ]);
+        expect(
+          seen.last.url.queryParameters['MediaSourceId'],
+          'src1',
+          reason: '飞牛对缺 MediaSourceId 的 stream 端点一律 400',
+        );
+        expect(seen.last.url.queryParameters['static'], 'true');
+      },
+    );
+
+    test('streamUrl：不带 mediaSourceId 时省略参数（原版回退语义）', () {
+      final JellyfinApi api = JellyfinApi(
+        serverUrl: 'http://nas:8096',
+        accessToken: 'tok',
+      );
+      expect(
+        api.streamUrl('ep1'),
+        'http://nas:8096/Videos/ep1/stream?static=true&api_key=tok',
+      );
+      expect(
+        api.streamUrl('ep1', mediaSourceId: 'ms1'),
+        'http://nas:8096/Videos/ep1/stream?static=true&MediaSourceId=ms1'
+        '&api_key=tok',
+      );
+      api.close();
     });
 
     test('remoteVideoPosition 读 UserData；put 走 reportProgress', () async {

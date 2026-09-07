@@ -599,14 +599,29 @@ class JellyfinApi {
 
   /// 直连播放流 URL（static=true 原文件直出，内嵌字幕/音轨全保留；`api_key`
   /// 查询参数自带认证——[RemoteVideoStreamUrls] 没有 HTTP 头通道）。
-  String streamUrl(String itemId) =>
-      '$serverUrl/Videos/$itemId/stream?static=true&api_key=${accessToken ?? ''}';
+  ///
+  /// `MediaSourceId` 必带（BUG-2252 ③）：飞牛影视对缺它的 `/Videos/{id}/stream`
+  /// 一律 400，且**不能拿条目 id 充数**——MediaSource id 是与条目 id 互相独立的
+  /// GUID（MediaSources[0].Id）。原版 Jellyfin / Emby 缺省时按条目 id 解析，显式
+  /// 带上对三家都正确。播放器（mpv/media_kit）发请求没有头通道，令牌仍走
+  /// `api_key`（飞牛在流/字幕端点对该参数实测有效——唯一带参传令牌的例外）。
+  String streamUrl(String itemId, {String? mediaSourceId}) =>
+      '$serverUrl/Videos/$itemId/stream?static=true'
+      '${mediaSourceId == null ? '' : '&MediaSourceId=$mediaSourceId'}'
+      '&api_key=${accessToken ?? ''}';
 
   /// 封面 URL（Primary 图；无图的条目由调用方按 hasPrimaryImage 过滤）。
+  ///
+  /// 已知缺口（BUG-2252 备注）：飞牛影视的 `/Items/{id}/Images/Primary` 带任何
+  /// 认证都 404（其图片接口路径不同），封面在飞牛上暂缺；原版 Jellyfin / Emby 正常。
   String imageUrl(String itemId) =>
       '$serverUrl/Items/$itemId/Images/Primary?api_key=${accessToken ?? ''}';
 
   /// 字幕流下载 URL（外挂或可提取文本内嵌轨都走这个端点）。
+  ///
+  /// 已知缺口（BUG-2252 备注）：飞牛影视对该端点任何认证都回 SPA index.html
+  /// （Content-Type text/html），外挂字幕在飞牛上下载不到；mkv 内嵌文本轨不受
+  /// 影响（mpv 直读）。原版 Jellyfin / Emby 正常。
   String subtitleUrl({
     required String itemId,
     required String mediaSourceId,
@@ -984,7 +999,17 @@ class JellyfinVideoClient
     String id,
     File dest, {
     void Function(double progress)? onProgress,
-  }) => api.downloadToFile(api.streamUrl(id), dest, onProgress: onProgress);
+  }) async {
+    // 飞牛要求 stream 端点带 MediaSourceId（BUG-2252 ③），而下载入参只有条目
+    // id：先打一次 /Items/{id} 拿 MediaSources[0].Id。原版 Jellyfin/Emby 上省这发
+    // 也可（stream 缺省按条目 id 解析），取一次是为了三家走同一条正确路径。
+    final JellyfinItem item = await api.itemDetail(userId: userId, itemId: id);
+    await api.downloadToFile(
+      api.streamUrl(id, mediaSourceId: item.mediaSourceId),
+      dest,
+      onProgress: onProgress,
+    );
+  }
 
   @override
   Future<RemoteVideoStreamUrls> remoteVideoStreamUrls(
@@ -1021,7 +1046,9 @@ class JellyfinVideoClient
     }
 
     return RemoteVideoStreamUrls(
-      streamUrl: api.streamUrl(id),
+      // 飞牛要求带 MediaSourceId（BUG-2252 ③）；服务器没给流表（null）时省略，
+      // 回落原版语义（stream 端点按条目 id 解析）。
+      streamUrl: api.streamUrl(id, mediaSourceId: mediaSourceId),
       subtitleUrl: external == null || mediaSourceId == null
           ? null
           : api.subtitleUrl(
