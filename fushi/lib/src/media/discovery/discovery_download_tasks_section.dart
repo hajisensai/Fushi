@@ -4,6 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/media/discovery/discovery_download_queue.dart';
 import 'package:fushi/src/media/discovery/discovery_labels.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/video_download_jobs_panel.dart'
+    show showDownloadTaskDeleteConfirm;
+import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart';
 import 'package:fushi/utils.dart';
 
 /// 「下载」页任务 tab 的发现页直链下载区：渲染 [DiscoveryDownloadQueue] 的任务
@@ -18,10 +21,22 @@ import 'package:fushi/utils.dart';
 /// 行内可取消排队/执行中的任务、重试失败/取消的任务；已结束任务经「清除已完成」
 /// 批量清掉。范式与 `MokuroMoeTasksSection` 相同。
 class DiscoveryDownloadTasksSection extends ConsumerWidget {
-  const DiscoveryDownloadTasksSection({super.key, this.queueOverride});
+  const DiscoveryDownloadTasksSection({
+    super.key,
+    this.queueOverride,
+    this.pathRevealer,
+    this.revealHostProbe,
+  });
 
   /// 测试注入队列（null = 取 [AppModel.discoveryDownloadQueue]）。
   final DiscoveryDownloadQueue? queueOverride;
+
+  /// 测试注入文件管理器调用（null = [revealInFileManager]）。
+  final Future<bool> Function(String path)? pathRevealer;
+
+  /// 测试注入平台探针（null = [currentRevealHost]）。移动端返回 null → 整条
+  /// 「打开文件位置」入口隐藏，不画点了没反应的按钮。
+  final RevealHost? Function()? revealHostProbe;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -153,10 +168,32 @@ class DiscoveryDownloadTasksSection extends ConsumerWidget {
     final bool errorTone =
         task.status == DiscoveryDownloadStatus.failed ||
         task.status == DiscoveryDownloadStatus.waitingRetry;
-    return FushiListItem(
-      key: ValueKey<String>(
-        'discovery-download-${task.item.sourceId}-${task.item.id}',
+    final String rowKey =
+        'discovery-download-${task.item.sourceId}-${task.item.id}';
+    // 状态相关的那一个动作（重试 / 取消）；done 没有。
+    final Widget? statusAction = switch (task.status) {
+      DiscoveryDownloadStatus.failed ||
+      DiscoveryDownloadStatus.cancelled => FushiIconButton(
+        tooltip: t.retry,
+        icon: Icons.refresh,
+        size: 20,
+        onTap: () => queue.retry(task),
       ),
+      DiscoveryDownloadStatus.done => null,
+      DiscoveryDownloadStatus.queued ||
+      DiscoveryDownloadStatus.running ||
+      DiscoveryDownloadStatus.waitingRetry => FushiIconButton(
+        tooltip: t.dialog_cancel,
+        icon: Icons.close,
+        size: 20,
+        onTap: () => queue.cancel(task),
+      ),
+    };
+    final String? path = discoveryDownloadRevealTarget(task);
+    final String? revealTarget =
+        (revealHostProbe ?? currentRevealHost)() == null ? null : path;
+    return FushiListItem(
+      key: ValueKey<String>(rowKey),
       density: FushiListDensity.compact,
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
       subtitleMaxLines: 2,
@@ -171,25 +208,61 @@ class DiscoveryDownloadTasksSection extends ConsumerWidget {
           color: errorTone ? scheme.error : null,
         ),
       ),
-      trailing: switch (task.status) {
-        DiscoveryDownloadStatus.failed ||
-        DiscoveryDownloadStatus.cancelled => FushiIconButton(
-          tooltip: t.retry,
-          icon: Icons.refresh,
-          size: 20,
-          onTap: () => queue.retry(task),
-        ),
-        DiscoveryDownloadStatus.done => null,
-        DiscoveryDownloadStatus.queued ||
-        DiscoveryDownloadStatus.running ||
-        DiscoveryDownloadStatus.waitingRetry => FushiIconButton(
-          tooltip: t.dialog_cancel,
-          icon: Icons.close,
-          size: 20,
-          onTap: () => queue.cancel(task),
-        ),
-      },
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          if (revealTarget != null)
+            FushiIconButton(
+              key: ValueKey<String>('$rowKey-location'),
+              tooltip: t.download_task_open_location,
+              icon: Icons.folder_open_outlined,
+              size: 20,
+              onTap: () => _openLocation(context, revealTarget),
+            ),
+          if (statusAction != null) statusAction,
+          FushiIconButton(
+            key: ValueKey<String>('$rowKey-delete'),
+            tooltip: t.download_task_delete,
+            icon: Icons.delete_outline,
+            size: 20,
+            enabledColor: scheme.error,
+            onTap: () => _confirmDelete(context, queue, task),
+          ),
+        ],
+      ),
     );
+  }
+
+  /// 在系统文件管理器里定位这条任务的落盘物。
+  ///
+  /// 失败（路径已不在 / 启动失败）必须出声——与视频下载任务面板同一口径，
+  /// 不能让按钮点了什么都不发生。
+  Future<void> _openLocation(BuildContext context, String path) async {
+    final bool revealed = await (pathRevealer ?? revealInFileManager)(path);
+    if (revealed || !context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(t.download_task_location_open_failed)),
+    );
+  }
+
+  /// 行内「删除任务」：确认后把这行从队列摘掉（文件不动）。
+  ///
+  /// 复用下载中心的删除确认框以保持两处口径一致，但 `offerDeleteFiles: false`
+  /// ——直链任务完成后文件已经入库，一个列表操作不该连库里的文件一起删；
+  /// 未完成任务删掉的只是任务，`.part` 留着下次续传。
+  Future<void> _confirmDelete(
+    BuildContext context,
+    DiscoveryDownloadQueue queue,
+    DiscoveryDownloadTask task,
+  ) async {
+    final bool? confirmed = await showDownloadTaskDeleteConfirm(
+      context,
+      title: task.item.title,
+      keySuffix: 'discovery-${task.item.sourceId}-${task.item.id}',
+      offerDeleteFiles: false,
+    );
+    if (confirmed == null) return;
+    queue.remove(task);
   }
 
   /// 生产队列。与漫画目录区同一道门：DownloadsPage 会在数据库打开前被轻量
@@ -203,6 +276,17 @@ class DiscoveryDownloadTasksSection extends ConsumerWidget {
   static bool _canRetry(DiscoveryDownloadTask task) =>
       task.status == DiscoveryDownloadStatus.failed ||
       task.status == DiscoveryDownloadStatus.cancelled;
+}
+
+/// 「打开文件位置」的目标路径（纯函数，供测试直接断言）。
+///
+/// 已下完的取落盘文件本身（文件管理器会选中它），否则退回目标目录；两者都没有
+/// （目录未定 / 测试桩）返回 null —— 调用方据此整条隐藏按钮，不画点了没反应的入口。
+String? discoveryDownloadRevealTarget(DiscoveryDownloadTask task) {
+  final String file = task.filePath?.trim() ?? '';
+  if (file.isNotEmpty) return file;
+  final String dir = task.destinationDir.trim();
+  return dir.isEmpty ? null : dir;
 }
 
 /// 任务进度 0..1；总大小未知（服务端没给 Content-Length）返回 null → 不定进度。

@@ -86,6 +86,7 @@ class DiscoveryDownloadTask {
     DiscoveryDownloadStatus status = DiscoveryDownloadStatus.queued,
     int receivedBytes = 0,
     int? totalBytes,
+    String? filePath,
   }) {
     return DiscoveryDownloadTask._(
       item: item,
@@ -93,7 +94,8 @@ class DiscoveryDownloadTask {
     )
       ..status = status
       ..receivedBytes = receivedBytes
-      ..totalBytes = totalBytes;
+      ..totalBytes = totalBytes
+      ..filePath = filePath;
   }
 
   final DiscoveryResourceItem item;
@@ -229,6 +231,23 @@ class DiscoveryDownloadQueue extends ChangeNotifier {
       return;
     }
     _tasks.remove(task);
+    notifyListeners();
+  }
+
+  /// 从队列里彻底移除一条任务（下载页行内「删除任务」）。
+  ///
+  /// 与 [cancel] 的差别只在终态：cancel 是「中止这次下载」，对已结束任务 no-op
+  /// （终态行留给「清除已完成」批量清）；remove 是「这行消失」，任何状态都受理。
+  /// 执行中的任务先掐断连接再摘行，`.part` 与已落盘文件都不动（与 cancel 同口径
+  /// ——重新入队即续传，已入库的文件更不该被一个列表操作删掉）；收尾 `_finish`
+  /// 仍以 `_running` 身份认领这次执行并放行下一个任务。
+  void remove(DiscoveryDownloadTask task) {
+    _retryTimers.remove(task)?.cancel();
+    if (identical(task, _running)) {
+      task._cancelRequested = true;
+      task._client?.close(force: true);
+    }
+    if (!_tasks.remove(task)) return;
     notifyListeners();
   }
 
