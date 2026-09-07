@@ -8,11 +8,13 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
 import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart';
 import 'package:fushi/src/media/audiobook/reader_quick_settings_sheet.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart'
     show readerAudiobookUsesDialog;
+import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -23,10 +25,11 @@ class _FakeInAppWebViewController implements InAppWebViewController {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-AppModel _testAppModel() {
-  final FushiDatabase db = FushiDatabase.forTesting(
-    DatabaseConnection(NativeDatabase.memory()),
-  );
+AppModel _testAppModel({FushiDatabase? database}) {
+  final FushiDatabase db = database ??
+      FushiDatabase.forTesting(
+        DatabaseConnection(NativeDatabase.memory()),
+      );
   final ThemeNotifier themeNotifier = ThemeNotifier(db, () => const TextTheme())
     ..loadFromPrefsSnapshot(<String, String>{
       'design_system': PrefCodec.encode('material'),
@@ -44,6 +47,118 @@ AppModel _testAppModel() {
 }
 
 void main() {
+  for (final bool lyricsMode in <bool>[false, true]) {
+    testWidgets('320 宽${lyricsMode ? '歌词' : '正文'}设置主题下可切换日间、跟随系统和夜间',
+        (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(320, 720));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final FushiDatabase db = FushiDatabase.forTesting(
+        DatabaseConnection(NativeDatabase.memory()),
+      );
+      final AppModel model = _testAppModel(database: db);
+      final ReaderSettings? previousSettings = ReaderFushiSource.readerSettings;
+      final VoidCallback? previousLive =
+          ReaderFushiSource.onSettingsChangedLive;
+      ReaderFushiSource.readerSettings = ReaderSettings(db)
+        ..applyPrefsSnapshot(const <String, String>{});
+      int liveChanges = 0;
+      int styleChanges = 0;
+      int themeChanges = 0;
+      ReaderFushiSource.onSettingsChangedLive = () => liveChanges++;
+      addTearDown(() {
+        ReaderFushiSource.readerSettings = previousSettings;
+        ReaderFushiSource.onSettingsChangedLive = previousLive;
+      });
+
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            theme: ThemeData(useMaterial3: true),
+            home: Scaffold(
+              body: Align(
+                alignment: Alignment.centerRight,
+                child: SizedBox(
+                  width: 272,
+                  child: Consumer(
+                    builder: (context, ref, _) => ReaderQuickSettingsSheet(
+                      controller: null,
+                      toc: const [],
+                      readerProgress: const (1, 3),
+                      onJumpSection: (_) async {},
+                      onExitReader: () {},
+                      webViewController: _FakeInAppWebViewController(),
+                      appModel: model,
+                      ref: ref,
+                      isFushiReader: true,
+                      lyricsMode: lyricsMode,
+                      presentation:
+                          ReaderQuickSettingsPresentation.sideSheetAppearance,
+                      onStyleChanged: () async => styleChanges++,
+                      onThemeChanged: () async => themeChanges++,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final Finder brightnessRow = find.byWidgetPredicate(
+        (Widget widget) =>
+            widget is AdaptiveSettingsSegmentedRow<String> &&
+            widget.title == t.dark_mode,
+      );
+      expect(brightnessRow, findsOneWidget);
+      expect(tester.getTopLeft(brightnessRow).dy,
+          greaterThan(tester.getTopLeft(find.text(t.reader_theme)).dy));
+      for (final IconData icon in <IconData>[
+        Icons.light_mode_outlined,
+        Icons.brightness_auto_outlined,
+        Icons.dark_mode_outlined,
+      ]) {
+        final Finder segment = find.descendant(
+          of: brightnessRow,
+          matching: find.byIcon(icon),
+        );
+        expect(segment.hitTestable(), findsOneWidget);
+        expect(tester.getRect(segment).left, greaterThanOrEqualTo(48));
+        expect(tester.getRect(segment).right, lessThanOrEqualTo(320));
+      }
+
+      for (final (String, IconData) choice in <(String, IconData)>[
+        ('dark', Icons.dark_mode_outlined),
+        ('light', Icons.light_mode_outlined),
+        ('system', Icons.brightness_auto_outlined),
+      ]) {
+        final int liveBefore = liveChanges;
+        final int styleBefore = styleChanges;
+        final int themeBefore = themeChanges;
+        await tester.tap(find.descendant(
+          of: brightnessRow,
+          matching: find.byIcon(choice.$2),
+        ));
+        await tester.pumpAndSettle();
+
+        expect(model.themeNotifier.brightnessMode, choice.$1);
+        expect(
+            await db.getPref('brightness_mode'), PrefCodec.encode(choice.$1));
+        expect(
+          tester
+              .widget<AdaptiveSettingsSegmentedRow<String>>(brightnessRow)
+              .selected,
+          choice.$1,
+        );
+        expect(ReaderFushiSource.instance.readerTheme, model.appThemeKey);
+        expect(liveChanges, greaterThan(liveBefore));
+        expect(styleChanges, styleBefore + 1);
+        expect(themeChanges, themeBefore + 1);
+        expect(tester.takeException(), isNull);
+      }
+    });
+  }
+
   testWidgets('手机 320 宽设置抽屉复用布局显示内容且无溢出', (tester) async {
     await tester.binding.setSurfaceSize(const Size(320, 720));
     addTearDown(() => tester.binding.setSurfaceSize(null));

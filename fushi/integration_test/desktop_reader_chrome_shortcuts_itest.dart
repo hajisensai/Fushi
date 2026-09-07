@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:window_manager/window_manager.dart';
 import 'helpers/observe_capture.dart';
+import 'helpers/focus_driver.dart';
+import 'package:fushi/utils.dart';
 
 import 'helpers/library_fixture.dart';
 import 'support/test_app_launcher.dart';
@@ -130,6 +132,26 @@ void main() {
             tester.getSize(find.byType(MaterialApp).first);
         expect(narrowScreen.width, lessThan(400));
         expect(tester.getRect(sheet).right, narrowScreen.width);
+        final model = await enableFocusNavigation(tester);
+        final String previousBrightness = model.brightnessMode;
+        final Finder brightnessRow = find.byWidgetPredicate(
+          (Widget widget) =>
+              widget is AdaptiveSettingsSegmentedRow<String> &&
+              widget.title == t.dark_mode,
+        );
+        final FocusDriver focus = FocusDriver(tester);
+        expect(await focus.focusWidget(brightnessRow), isTrue);
+        try {
+          await focus.adjust(steps: -2);
+          expect(model.brightnessMode, 'light');
+          await focus.adjust(steps: 2);
+          expect(model.brightnessMode, 'dark');
+          await captureFlutterFrame(tester, 'observe-reader-night-selector');
+          await focus.adjust(steps: -1);
+          expect(model.brightnessMode, 'system');
+        } finally {
+          await model.setBrightnessMode(previousBrightness);
+        }
         final ObserveShot settingsShot =
             await captureFlutterFrame(tester, 'observe-reader-narrow-settings');
         expect(settingsShot.saved, isTrue);
