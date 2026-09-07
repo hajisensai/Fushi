@@ -213,6 +213,22 @@ inline constexpr wchar_t kHunexGgeSampledInputShieldTailAckProperty[] =
     L"Fushi.HunexGge.SampledInputShield.TailAck";
 inline constexpr uintptr_t kHunexGgeSampledInputShieldReadyValue = 1u;
 inline constexpr uintptr_t kHunexGgeSampledInputShieldRequiredValue = 1u;
+
+// smash/fzmedia (TYPE-MOON smash framework, GLFW30 window) consumes clicks in
+// a GWLP_WNDPROC subclass of the game window rather than in a sampled-state
+// detour, but it declares the same Required/Ready/Window contract so the host
+// keeps one publication lifetime: Required = the runtime is installed and
+// expects the host to wait for Ready; Ready = the subclass is live and
+// swallowing client-area left down/up while a card is published in Window.
+// No tail handshake: message consumption has no sampled low bit to drain.
+inline constexpr wchar_t kSmashFzmediaSampledInputShieldReadyProperty[] =
+    L"Fushi.SmashFzmedia.SampledInputShield.Ready";
+inline constexpr wchar_t kSmashFzmediaSampledInputShieldRequiredProperty[] =
+    L"Fushi.SmashFzmedia.SampledInputShield.Required";
+inline constexpr wchar_t kSmashFzmediaSampledInputShieldWindowProperty[] =
+    L"Fushi.SmashFzmedia.SampledInputShield.Window";
+inline constexpr uintptr_t kSmashFzmediaSampledInputShieldReadyValue = 1u;
+inline constexpr uintptr_t kSmashFzmediaSampledInputShieldRequiredValue = 1u;
 inline constexpr uint32_t kLeafAquaplusSampledInputLeftButton = 0x1u;
 inline constexpr uint32_t kLeafAquaplusSampledInputRightButton = 0x2u;
 inline constexpr uint32_t kLeafAquaplusSampledInputMiddleButton = 0x4u;
@@ -287,6 +303,9 @@ constexpr uint32_t kTextSourceLuna = 2;
 constexpr uint32_t kTextSourceUnityTmp = 3;
 constexpr uint32_t kTextSourceSiglus = 4;
 constexpr uint32_t kTextSourceSgre = 5;
+// smash/fzmedia (TYPE-MOON "smash" framework: Fate/stay night REMASTERED family)
+// exact text published by the native KAG text-layer layout hook.
+constexpr uint32_t kTextSourceSmashFzmedia = 6;
 constexpr uint32_t kTextEventLine = 0;
 constexpr uint32_t kTextEventThreadDiscovered = 1;
 // Some Luna engine hooks expose scenario text and system controls from the
@@ -807,6 +826,8 @@ constexpr uint32_t kLookupGeometryProviderIdTypewriterDiffExperimental = 13u;
 // runtime trace remains observation-only; assigning a stable wire id does not
 // promote it to a production publisher or change engine-support evidence.
 constexpr uint32_t kLookupGeometryProviderIdHunexGge = 14u;
+// smash/fzmedia KAG text-layer exact layout provider (append-only id).
+constexpr uint32_t kLookupGeometryProviderIdSmashFzmedia = 15u;
 
 constexpr uint32_t kLookupGeometryStatusUnavailable = 0u;
 constexpr uint32_t kLookupGeometryStatusReady = 1u;

@@ -123,8 +123,9 @@ class AdapterStructureTest(unittest.TestCase):
             )
             self.assertIn("g_geometry_provider_registry.Retire", lifecycle_source)
 
-        self.assertEqual(6, len(publishers), publishers)
+        self.assertEqual(7, len(publishers), publishers)
         self.assertIn("hunex_gge_lookup_runtime.inc", publishers)
+        self.assertIn("smash_fzmedia_lookup.inc", publishers)
 
         leaf = (ROOT / "hook" / "adapters" / "leaf_aquaplus_adapter.inc").read_text(
             encoding="utf-8"
@@ -179,7 +180,7 @@ class AdapterStructureTest(unittest.TestCase):
             )
             seen[name] = spaces[0]
 
-        self.assertEqual(6, len(seen), seen)
+        self.assertEqual(7, len(seen), seen)
         # PrimaryLayer 是唯一需要 host 做画布→客户区缩放的域；它多一个成员就意味着
         # 多一个引擎走那条缩放路径，必须连同 host 的映射与其单测一起复核。
         primary = sorted(

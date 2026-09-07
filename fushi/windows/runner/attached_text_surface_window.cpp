@@ -2588,7 +2588,8 @@ bool AttachedTextSurfaceWindow::NativeProviderPreferred() const {
     return provider_status_.provider_id == 3u ||
            provider_status_.provider_id == 4u ||
            provider_status_.provider_id == 5u ||
-           provider_status_.provider_id == 14u;
+           provider_status_.provider_id == 14u ||
+           provider_status_.provider_id == 15u;
   case kGeometryProviderPositionedTextApi:
     return provider_status_.provider_id == 9u ||
            provider_status_.provider_id == 10u;

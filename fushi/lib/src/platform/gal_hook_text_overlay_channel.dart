@@ -66,7 +66,7 @@ bool isGalLookupProductionProviderPair(int kind, int id) {
     case 1: // runtime_layout
       return id == 1 || id == 2 || id == 6 || id == 7 || id == 8;
     case 2: // engine_exact_layout
-      return id == 3 || id == 4 || id == 5 || id == 14;
+      return id == 3 || id == 4 || id == 5 || id == 14 || id == 15;
     case 3: // positioned_text_api
       return id == 9 || id == 10;
     default:

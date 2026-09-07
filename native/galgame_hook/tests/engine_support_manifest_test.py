@@ -657,6 +657,31 @@ class EngineSupportManifestTest(unittest.TestCase):
         ):
             GENERATOR.validate_manifest(self.manifest, ROOT)
 
+    def test_smash_fzmedia_exact_provider_is_bound_to_lookup_matrix(self) -> None:
+        # 16-engine lookup matrix: smash/fzmedia joins with the exact provider
+        # id 15 bound to engine_exact_layout, and nothing else may claim it.
+        self.assertEqual(16, len(GENERATOR.LOOKUP_ACCEPTANCE_ENGINE_IDS))
+        self.assertIn("smash_fzmedia", GENERATOR.LOOKUP_ACCEPTANCE_ENGINE_IDS)
+        smash_pair = (
+            "kLookupGeometryProviderEngineExactLayout",
+            "kLookupGeometryProviderIdSmashFzmedia",
+        )
+        self.assertEqual(
+            ("smash_fzmedia", "engine_exact_layout"),
+            GENERATOR.LOOKUP_NATIVE_PROVIDER_MANIFEST_BINDINGS[smash_pair],
+        )
+        self.assertIn(
+            smash_pair, GENERATOR.discover_production_lookup_provider_pairs(ROOT)
+        )
+        smash = next(
+            record
+            for record in self.manifest["lookup_support"]["engines"]
+            if record["engine_id"] == "smash_fzmedia"
+        )
+        self.assertIn("engine_exact_layout", smash["geometry"]["providers"])
+        for area in GENERATOR.LOOKUP_EVIDENCE_AREAS:
+            self.assertEqual("implemented_unverified", smash[area]["status"])
+
     def test_lookup_claim_cannot_be_promoted_without_real_build_gates(self) -> None:
         siglus = next(
             record

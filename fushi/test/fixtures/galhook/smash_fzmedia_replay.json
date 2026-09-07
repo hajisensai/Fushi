@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "engine_id": "smash_fzmedia",
+  "status": "implemented_unverified",
+  "events": [],
+  "expected": {
+    "cards": [],
+    "session_clean": true
+  }
+}

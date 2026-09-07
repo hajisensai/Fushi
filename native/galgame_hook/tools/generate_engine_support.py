@@ -48,6 +48,7 @@ LOOKUP_ACCEPTANCE_ENGINE_IDS = {
     "leaf_aquaplus",
     "hunex_gge",
     "sgre",
+    "smash_fzmedia",
 }
 LOOKUP_PROVIDERS = {
     "runtime_layout",
@@ -96,6 +97,10 @@ LOOKUP_NATIVE_PROVIDER_MANIFEST_BINDINGS = {
         "kLookupGeometryProviderEngineExactLayout",
         "kLookupGeometryProviderIdHunexGge",
     ): ("hunex_gge", "engine_exact_layout"),
+    (
+        "kLookupGeometryProviderEngineExactLayout",
+        "kLookupGeometryProviderIdSmashFzmedia",
+    ): ("smash_fzmedia", "engine_exact_layout"),
 }
 SIGNATURE_FIELDS = (
     "executable_names",
@@ -268,6 +273,7 @@ AUDIO_PROOF_BOUNDARIES = {
     "qlie_wuvorbis_float_per_source_pcm": "pcm_observed",
     "qlie_wuvorbis_per_source_pcm": "pcm_observed",
     "resource_audio": "resource_observed",
+    "smash_fzmedia_fcd_ogg_resource": "resource_observed",
     "tyrano_asar_voice_resource": "resource_observed",
     "unity_audioclip_resource": "resource_observed",
     "visual_arts_ovk_resource": "resource_observed",
@@ -1093,7 +1099,7 @@ def validate_manifest(
                 )
     _require(
         lookup_ids == LOOKUP_ACCEPTANCE_ENGINE_IDS,
-        "lookup_support must contain exactly the fixed 15-engine matrix; "
+        "lookup_support must contain exactly the fixed 16-engine matrix; "
         "xaudio2_directsound is an audio backend, not an engine",
     )
     # Temporary evidence-test roots contain only synthetic evidence ledgers.
