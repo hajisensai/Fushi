@@ -301,7 +301,10 @@ struct ParagraphAssembler {
   void AppendCell(uint32_t run_index, const GlyphCell& cell) {
     if (!run_active) return;
     const uint32_t index = run_base + run_index;
-    if (index >= line.unit_count) return;
+    // 两道都要：unit_count 是「本行已有多少格」，kMaxLineUnits 是数组物理上界。
+    // 前者由 BeginRun 夹在后者之内，但那是跨成员不变量——写点自己不带上界，静态
+    // 分析推不出来（Sonar cpp:S3519 BLOCKER），也经不起后来人改 unit_count 写点。
+    if (index >= line.unit_count || index >= kMaxLineUnits) return;
     line.cells[index] = cell;
     line.cells[index].inked = IsNonInkUnit(line.text[index]) ? 0u : 1u;
   }

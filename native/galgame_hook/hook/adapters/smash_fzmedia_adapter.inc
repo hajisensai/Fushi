@@ -994,9 +994,15 @@ class SmashFzmediaAdapter final : public fushi_voice_hook::EngineAdapter {
     installed_ = false;
   }
   fushi_voice_hook::AdapterDiagnostics diagnostics() const override {
+#if defined(_M_X64)
     return {id(), probe(), installed_,
             static_cast<uint32_t>(
                 InterlockedCompareExchange(&g_smash_diagnostics, 0, 0))};
+#else
+    // g_smash_diagnostics 与整套 worker 状态都在本文件的 x64-only 块里（该引擎
+    // 只出 64 位）；x86 TU 里符号不存在，诊断位恒 0。
+    return {id(), probe(), installed_, 0u};
+#endif
   }
 
  private:
