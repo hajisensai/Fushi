@@ -187,4 +187,38 @@ void main() {
     // 归零调用排在 renderPopup() 之前，保证重建的选择器读到的是已归零的标量。
     expect(resetCall, lessThan(renderCall));
   });
+
+  // BUG-2196 ②：制卡上下文对话框的「试听」。这三个覆写没有任何编译期依赖——基类
+  // `base_source_page.dart` 给了安全默认值（`supportsSentenceAudioPreview => false`
+  // 时 previewAudio 直接传 null），所以整块丢掉时 analyze / CI 全绿、按钮悄悄消失。
+  // 它确实丢过一次（#1272 的陈旧副本覆盖），故用源码守卫钉住。
+  test('reader overrides sentence-audio preview with the very range fed to ffmpeg',
+      () {
+    final String reader = readReaderPageSource();
+    expect(
+      reader,
+      contains('bool get supportsSentenceAudioPreview => true;'),
+      reason: '基类默认 false = 对话框拿不到 previewAudio 回调，试听按钮直接没了',
+    );
+    expect(reader, contains('Future<bool> onPreviewSentenceAudio() async {'));
+    expect(reader, contains('Future<void> onStopSentenceAudioPreview() async {'));
+    // 真不变式：试听的区间与 `_prepareMiningContext` 喂给 ffmpeg 的是**同一个表达式**
+    // ——听到什么就会压出什么。播「当前句的 cue」只能证明这句有音频，证明不了裁出来
+    // 的那段念全了，而用户报的正是后者。
+    expect(
+      reader,
+      contains('_miningDraft.composeAudioRange(_currentSentenceAudioRange())'),
+      reason: '试听区间必须现求，且与制卡实际裁片同源',
+    );
+    final String mining = readSource(
+      'lib/src/pages/implementations/reader_fushi/mining.part.dart',
+    );
+    expect(
+      mining,
+      contains('_miningDraft.composeAudioRange(currentRange)'),
+      reason: 'ffmpeg 侧仍走同一个 composeAudioRange，两侧同源才成立',
+    );
+    // 停止试听不得顺手续播正文：用户是在制卡对话框里点的。
+    expect(reader, contains('stopClip(resumeMain: false)'));
+  });
 }
