@@ -2,7 +2,7 @@
 ///
 /// Dart 侧的对应实现是 `package:fushi/src/stats/study_char_count.dart` 的
 /// [countStudyChars]，两份必须同口径——JS 算出的 `charOffset` 会写进 DB 的
-/// `char_offset` 列，并在 `computeCharWatermark`（`reader_fushi_page.dart`）与
+/// `char_offset` 列，并在 `absoluteCharOffsetOf`（`reader_fushi_page.dart`）与
 /// `computeBookProgress`（`reader_fushi_source.dart`）里与 Dart 算出的每章
 /// `characters` **直接相加**。对拍守卫见
 /// `fushi/test/stats/study_char_count_parity_test.dart`（node 真跑本段 JS）。

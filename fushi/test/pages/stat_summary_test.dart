@@ -93,6 +93,25 @@ void main() {
     });
   });
 
+  group('formatWeekOverWeekDelta（BUG-2224：环比封顶）', () {
+    test('普通涨跌带箭头、四舍五入到整数', () {
+      expect(formatWeekOverWeekDelta(1200, 1000), '↑20%');
+      expect(formatWeekOverWeekDelta(800, 1000), '↓20%');
+      expect(formatWeekOverWeekDelta(1000, 1000), '↑0%');
+      expect(formatWeekOverWeekDelta(0, 1000), '↓100%');
+    });
+    test('基期 0 → —（不是 ∞ / 巨数）', () {
+      expect(formatWeekOverWeekDelta(500, 0), '—');
+      expect(formatWeekOverWeekDelta(0, 0), '—');
+    });
+    test('≥ 999% 封顶显示 ↑>999%', () {
+      expect(formatWeekOverWeekDelta(99999, 1), '↑>999%');
+      expect(formatWeekOverWeekDelta(10990, 1000), '↑>999%', reason: '恰 999%');
+      expect(formatWeekOverWeekDelta(10980, 1000), '↑998%', reason: '998% 不封');
+      expect(kWeekOverWeekPercentCap, 999);
+    });
+  });
+
   group('dailyAverageChars（活跃日均值，对齐字符图窗口）', () {
     test('只对有阅读的天取均值，零阅读日不摊薄', () {
       // 30 天窗口里 3 天有阅读（6000/4000/2000），其余 27 天为 0。

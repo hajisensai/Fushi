@@ -58,6 +58,34 @@ class StatFact {
   String get identityKey => mediaKey.isNotEmpty ? mediaKey : title;
 }
 
+/// 库表按 title 分桶（BUG-2216：legacy 阅读行只有 title，反查库表补身份时同名
+/// ≥2 本不能贴给任意一本——宁可留成无身份组也不错贴）。
+Map<String, List<EpubBookMeta>> _booksByTitle(Iterable<EpubBookMeta> rows) {
+  final Map<String, List<EpubBookMeta>> out = <String, List<EpubBookMeta>>{};
+  for (final EpubBookMeta r in rows) {
+    out.putIfAbsent(r.title, () => <EpubBookMeta>[]).add(r);
+  }
+  return out;
+}
+
+/// title → bookKey 的**唯一**反查表：库里恰好一本叫这个名字才进表。页面给 legacy
+/// 无身份行 / 无身份 tile 反查 bookKey（合集归属、override 书名、删除）都只许用它。
+Map<String, String> uniqueBookKeyByTitle(Iterable<EpubBookMeta> rows) =>
+    <String, String>{
+      for (final MapEntry<String, List<EpubBookMeta>> e
+          in _booksByTitle(rows).entries)
+        if (e.value.length == 1) e.key: e.value.single.bookKey,
+    };
+
+/// 库里同名 ≥2 本的 title 集合：喂 `groupStatFactsByIdentity` 的吸收否决（与视频域
+/// `computeVideoStats(ambiguousTitles:)` 同判据——库表判同名时，legacy 无身份行不许
+/// 吸进任何身份组）。
+Set<String> ambiguousBookTitles(Iterable<EpubBookMeta> rows) => <String>{
+      for (final MapEntry<String, List<EpubBookMeta>> e
+          in _booksByTitle(rows).entries)
+        if (e.value.length >= 2) e.key,
+    };
+
 /// 一次加载得到的全部统计事实，分**两面**：
 ///  * [daily]：日总量 / per-media / 热力图 / 趋势用——legacy 日汇总行 + 全部段；
 ///  * [hourly]：今日按小时图用——legacy 小时行 + 全部段。
@@ -193,14 +221,18 @@ Future<StatFacts> loadStatFacts(
   ]);
 
   final List<EpubBookMeta> epubRows = await epubRowsF;
+  // BUG-2216：同名 ≥2 本时不反查（后者覆盖前者 = 把一本书的历史错贴给另一本）。
   final Map<String, EpubBookMeta> bookByTitle = <String, EpubBookMeta>{
-    for (final EpubBookMeta r in epubRows) r.title: r,
+    for (final MapEntry<String, List<EpubBookMeta>> e
+        in _booksByTitle(epubRows).entries)
+      if (e.value.length == 1) e.key: e.value.single,
   };
   final List<StatFact> daily = <StatFact>[];
   final List<StatFact> hourly = <StatFact>[];
 
-  // legacy 日行：阅读按 title 反查库表补身份与 format（查不到 = 书已删，身份 ''、
-  // format ''，按 title 分组、归普通书）；视频 v39 起自带 bookUid。
+  // legacy 日行：阅读按 title 反查库表补身份与 format（查不到 = 书已删或同名歧义，
+  // 身份 ''、format ''，读取端按 unique-title 吸收 / 无身份分组）；视频 v39 起自带
+  // bookUid。
   for (final ReadingStatisticRow r in await readingF) {
     final EpubBookMeta? book = bookByTitle[r.title];
     daily.add(

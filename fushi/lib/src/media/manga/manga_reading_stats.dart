@@ -12,8 +12,8 @@ import 'package:fushi/src/stats/study_char_count.dart';
 /// 口径与 EPUB 完全一致：走 [countStudyChars]（无空格文字按码点、空格分词文字按词，剔除
 /// 标点、括号、空白），所以两种书的「字数」「阅读速度」可直接相加、直接比较。
 ///
-/// 去重语义：以**页**为记账单位，一页在同一次阅读会话里只计一次（[counted]
-/// 集合），来回翻页刷不出字数或页数。跳读没停留过的页不计——宁可少算，不虚高。
+/// 去重不在这里：「哪些页算读过」由 `ReadUnitLedger`（翻走即计 + 会话覆盖并集，
+/// 2026-09-06 裁定）决定，本文件只做「给定页号 → 字数与页数」的纯换算。
 
 /// 单页 OCR 文本的实义字符数。无 OCR（纯图页 / 尚未识别）自然为 0。
 int mangaPageCharCount(MokuroImage page) {
@@ -26,22 +26,19 @@ int mangaPageCharCount(MokuroImage page) {
   return countStudyChars(buffer.toString());
 }
 
-/// 把 [pageIndices] 中**尚未记账**的页计入 [counted]，返回本次新增的字符数与页数。
+/// [pageIndices] 这些页的字符数与页数（调用方已按会话并集去重，这里不再去重）。
 ///
-/// 字数与页数是两个独立量纲，一起返回、分别落库（`charsRead` / `pagesRead`）：漫画
-/// 「今天读了 3200 字 / 48 页」两个都要真，页数绝不塞进字数。越界页码直接忽略
-/// （布局重建 / payload 换书的竞态下可能短暂出现）。调用方在每次页码推进时调用，
-/// flush 时把累计值随时长一起落库。
-({int chars, int pages}) mangaAccumulateReadingStats({
-  required MokuroPayload payload,
-  required Iterable<int> pageIndices,
-  required Set<int> counted,
-}) {
+/// 字数与页数是两个独立量纲，一起返回、分别落库（`study_segments.chars` /
+/// `.pages`）：漫画「今天读了 3200 字 / 48 页」两个都要真，页数绝不塞进字数。越界
+/// 页码直接忽略（布局重建 / payload 换书的竞态下可能短暂出现）。
+({int chars, int pages}) mangaStatsForPages(
+  MokuroPayload payload,
+  Iterable<int> pageIndices,
+) {
   int chars = 0;
   int pages = 0;
   for (final int index in pageIndices) {
     if (index < 0 || index >= payload.images.length) continue;
-    if (!counted.add(index)) continue;
     chars += mangaPageCharCount(payload.images[index]);
     pages++;
   }

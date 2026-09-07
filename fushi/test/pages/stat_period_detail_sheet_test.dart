@@ -19,19 +19,18 @@ StatFact _fact(
   String title = '',
   int chars = 0,
   int ms = 0,
-}) =>
-    StatFact(
-      mediaKind: kind,
-      mediaKey: key,
-      title: title,
-      format: '',
-      dateKey: dateKey,
-      hour: -1,
-      ms: ms,
-      chars: chars,
-      pages: 0,
-      lastActiveMs: 0,
-    );
+}) => StatFact(
+  mediaKind: kind,
+  mediaKey: key,
+  title: title,
+  format: '',
+  dateKey: dateKey,
+  hour: -1,
+  ms: ms,
+  chars: chars,
+  pages: 0,
+  lastActiveMs: 0,
+);
 
 Future<void> _open(
   WidgetTester tester, {
@@ -96,9 +95,87 @@ void main() {
     expect(watchY, lessThan(gameY));
   });
 
-  testWidgets('同一媒体的时长段与字数段按 identityKey 并组成一条', (
+  testWidgets('BUG-2216：legacy 无身份行 unique-title 吸收进唯一身份组；同名双身份不合并', (
     WidgetTester tester,
   ) async {
+    await _open(
+      tester,
+      facts: <StatFact>[
+        // 「已删又重导」的书：段带 bookKey，legacy 日行只有 title。
+        _fact(
+          kActivityMediaBook,
+          '2026-06-06',
+          key: 'k1',
+          title: 'Solo',
+          ms: 60000,
+        ),
+        _fact(kActivityMediaBook, '2026-06-05', title: 'Solo', ms: 30000),
+        // 同名两本各有身份：两条，不合并。
+        _fact(
+          kActivityMediaBook,
+          '2026-06-06',
+          key: 'd1',
+          title: 'Dup',
+          ms: 1000,
+        ),
+        _fact(
+          kActivityMediaBook,
+          '2026-06-06',
+          key: 'd2',
+          title: 'Dup',
+          ms: 2000,
+        ),
+        // 同名歧义的 legacy 行：不贴给任何一本，独立成无身份条目。
+        _fact(kActivityMediaBook, '2026-06-06', title: 'Dup', ms: 3000),
+      ],
+      contains: (String _) => true,
+    );
+    expect(find.text('Solo'), findsOneWidget, reason: 'legacy 行并入唯一身份组');
+    expect(find.text('Dup'), findsNWidgets(3), reason: '两个身份 + 一个无身份组');
+  });
+
+  testWidgets('BUG-2216：库表判同名歧义时，unique-title 也不许吸收', (
+    WidgetTester tester,
+  ) async {
+    late BuildContext hostContext;
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (BuildContext context) {
+                hostContext = context;
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    showStatPeriodDetailSheet(
+      hostContext,
+      periodLabel: 'PERIOD',
+      contains: (String _) => true,
+      facts: <StatFact>[
+        _fact(
+          kActivityMediaBook,
+          '2026-06-06',
+          key: 'k1',
+          title: 'A',
+          ms: 60000,
+        ),
+        _fact(kActivityMediaBook, '2026-06-05', title: 'A', ms: 30000),
+      ],
+      resolvers: StatPeriodDetailResolvers(
+        titleOf: (StatFact f) => f.title,
+        ambiguousTitlesOf: (String kind) => <String>{'A'},
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('A'), findsNWidgets(2), reason: '行宇宙唯一但库表判同名 → 不吸收');
+  });
+
+  testWidgets('同一媒体的时长段与字数段按 identityKey 并组成一条', (WidgetTester tester) async {
     await _open(
       tester,
       facts: <StatFact>[
@@ -110,9 +187,7 @@ void main() {
     expect(find.text('Clannad'), findsOneWidget);
   });
 
-  testWidgets('合集分组：组头在左带小计、组间按时长倒序、未分组殿后', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('合集分组：组头在左带小计、组间按时长倒序、未分组殿后', (WidgetTester tester) async {
     await _open(
       tester,
       facts: <StatFact>[
@@ -132,8 +207,9 @@ void main() {
     // 时长最大，仍殿后并挂「未分组」头。
     final double bigY = tester.getTopLeft(find.text('大合集')).dy;
     final double smallY = tester.getTopLeft(find.text('小合集')).dy;
-    final double ungroupedY =
-        tester.getTopLeft(find.text(t.stat_detail_ungrouped)).dy;
+    final double ungroupedY = tester
+        .getTopLeft(find.text(t.stat_detail_ungrouped))
+        .dy;
     final double looseY = tester.getTopLeft(find.text('散片')).dy;
     expect(bigY, lessThan(smallY));
     expect(smallY, lessThan(ungroupedY));
@@ -157,8 +233,9 @@ void main() {
     expect(find.text('书'), findsNothing);
   });
 
-  testWidgets('长按条目 → 确认删除 → 回调收到身份 + 命中日集，行移除、汇总重算、关闭时报告已删',
-      (WidgetTester tester) async {
+  testWidgets('长按条目 → 确认删除 → 回调收到身份 + 命中日集，行移除、汇总重算、关闭时报告已删', (
+    WidgetTester tester,
+  ) async {
     StatPeriodEntryTarget? target;
     bool? closedDeleted;
     await _open(
@@ -186,8 +263,10 @@ void main() {
     expect(target!.mediaKind, kActivityMediaVideo);
     expect(target!.mediaKey, 'v1');
     expect(target!.title, 'EP1');
-    expect(target!.dateKeys, <String>{'2026-09-01', '2026-09-02'},
-        reason: '只删本时段求和用到的那几天；08-20 不在时段内不动');
+    expect(target!.dateKeys, <String>{
+      '2026-09-01',
+      '2026-09-02',
+    }, reason: '只删本时段求和用到的那几天；08-20 不在时段内不动');
     expect(find.text('EP1'), findsNothing);
     expect(find.text('EP2'), findsOneWidget);
     // 关掉 sheet：调用方收到「删过」。

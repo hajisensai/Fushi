@@ -1,0 +1,6 @@
+## BUG-2228 · 听书自动翻页未计入读过字数（未复现）
+- **报告**：2026-09-06（用户：「我发现有声书触发的翻页没有计入真正的翻页统计」）
+- **真实性**：❌ 未复现（当前 develop）。真实链路：`audiobook_controller.dart:1326 _updateCurrentCue`（只在 cue 索引变化时 notify）→ `audiobook.part.dart:554 _onCueChanged` → `shouldRevealCurrentCue` → `_reanchorClearedAt` 打点 → `AudiobookBridge.highlight(reveal: true)`（JS `revealElement` 翻页）→ `_scheduleRevealProgressRefresh()`（250ms 后 `_refreshProgress` → `arrive`）。`_refreshProgress` 三个门（控制器 / 歌词 / 恢复在飞）在跟随播放态均放行；`stableProgressInvocation` 与 highlight 同一 FIFO 通道，必然读到 reveal 之后的页。headless 真渲染探针 `tool/reader_pitch_headless/audiobook_reveal_progress_probe.mjs`（分页横 / 竖 / 连续，70 cue）逐 cue 断言 cue 首字落在回传 `[start,end)` 内，全过；`charOffsetEnd` 四段协议齐全。补刷接线自 `a460b6571e`（2026-09-06 19:55，随 `bb39e1ad0b` 合入 develop）起存在。
+- **[ ] ① 未修复** — 无需修（未复现）。可能的观察口径：① 用户构建早于 `a460b6571e`（无补刷，症状成立、已修）；② 账本是**翻走即计**：每次自动翻页涨的是**上一页**字数，正在看的这页要到下一次翻页才入账；③ 手机端有声书面板是模态弹层（`chrome.part.dart:1747-1766`），开着时 `_withStudyClockPaused` 停表，停表期 `addChars` 丢弃（BUG-2208 / 2172 设计）——听书时把面板留在前台会让跟随翻页的字数全部不计；④ 切后台 / 熄屏听书同样停表（BUG-2209 设计，用户 2026-09-06 拍板保留）。
+- **[ ] ② 未加自动化测试** — 接线守卫已有（`reader_read_ledger_wiring_guard_static_test.dart` 「听书 reveal 落定后补刷进度」组）；探针留档。
+- **备注**：若用户在当前构建仍复现，需要：构建 commit、听书时面板是否开着、前台 / 后台、分页还是连续、状态行「本次字数」在翻页前后的读数。

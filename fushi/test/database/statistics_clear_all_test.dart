@@ -56,10 +56,13 @@ Future<void> _seedVideoStats(FushiDatabase db) async {
 }
 
 /// 一段 study_segments 事实（v92）。
+/// [startAt] 默认沿用原来的 1000；要造「墓碑之后新开的段」时显式传一个大于
+/// `deletedAt` 的值——墓碑只压制 `startAt < deletedAt`，这是分界点所在。
 Future<void> _seedSegment(
   FushiDatabase db, {
   required String mediaKind,
   required String mediaKey,
+  int startAt = 1000,
 }) =>
     db.upsertStudySegment(StudySegmentsCompanion.insert(
       uid: FushiDatabase.newStudySegmentUid(),
@@ -67,11 +70,11 @@ Future<void> _seedSegment(
       mediaKind: mediaKind,
       mediaKey: mediaKey,
       title: mediaKey,
-      startAt: 1000,
-      endAt: 61000,
+      startAt: startAt,
+      endAt: startAt + 60000,
       dateKey: '2026-07-05',
       hour: 10,
-      updatedAt: 61000,
+      updatedAt: startAt + 60000,
     ));
 
 void main() {
@@ -126,7 +129,7 @@ void main() {
 
     test(
         'v92: also wipes book study_segments, keeps video segments, and writes '
-        'no per-media tombstone (整体重置不立碑)', () async {
+        'a per-media tombstone (BUG-2215：立碑挡回灌)', () async {
       final FushiDatabase db = await _openDb();
       await _seedSegment(db, mediaKind: kActivityMediaBook, mediaKey: 'book/A');
       await _seedSegment(db, mediaKind: kActivityMediaVideo, mediaKey: 'vid-1');
@@ -142,8 +145,34 @@ void main() {
               mediaKind: kActivityMediaVideo, mediaKey: 'vid-1'),
           hasLength(1),
           reason: '清空阅读域不牵连视频域事实');
-      expect(await db.getStudySegmentTombstones(), isEmpty,
-          reason: '全量重置逐媒体立碑会永久毒化身份空间');
+
+      // BUG-2215：**必须**逐身份立碑，否则互联 / 云同步下次聚合会把对端持有的
+      // 整批历史回灌，用户「清空全部」等于没清。
+      //
+      // 本条断言此前是 `isEmpty`，理由写的是「逐媒体立碑会永久毒化身份空间」。
+      // 那个担忧对应的是旧墓碑语义（压制该身份的一切段）。现在墓碑只压制
+      // `startAt < deletedAt` 的段（见 `_isStudySegmentTombstoned`），下面那条
+      // 断言就是它的证据——所以「毒化」不再成立，断言随语义一起翻转。
+      final List<StudySegmentTombstoneRow> tombs =
+          await db.getStudySegmentTombstones();
+      expect(tombs.map((StudySegmentTombstoneRow t) => t.mediaKey), <String>[
+        'book/A',
+      ], reason: '清掉的每个身份都要留碑，且不牵连没清的视频域身份');
+
+      // 立碑不毒化身份空间：碑之后再读同一本书，新段照常存活。
+      final int afterTomb = tombs.single.deletedAt + 1000;
+      await _seedSegment(
+        db,
+        mediaKind: kActivityMediaBook,
+        mediaKey: 'book/A',
+        startAt: afterTomb,
+      );
+      expect(
+          await db.getStudySegmentsForMedia(
+              mediaKind: kActivityMediaBook, mediaKey: 'book/A'),
+          hasLength(1),
+          reason: '墓碑只压制 startAt < deletedAt 的段，之后新开的段必须能存活——'
+              '这正是「立碑不再毒化身份空间」的可执行证据');
     });
   });
 
@@ -181,7 +210,7 @@ void main() {
 
     test(
         'v92: also wipes video study_segments, keeps book segments, and writes '
-        'no per-media tombstone', () async {
+        'a per-media tombstone (BUG-2215)', () async {
       final FushiDatabase db = await _openDb();
       await _seedSegment(db, mediaKind: kActivityMediaBook, mediaKey: 'book/A');
       await _seedSegment(db, mediaKind: kActivityMediaVideo, mediaKey: 'vid-1');
@@ -197,7 +226,11 @@ void main() {
               mediaKind: kActivityMediaBook, mediaKey: 'book/A'),
           hasLength(1),
           reason: '清空视频域不牵连阅读域事实');
-      expect(await db.getStudySegmentTombstones(), isEmpty);
+      // 与阅读域对称：清掉的身份留碑挡回灌，没清的阅读域身份不留碑。
+      expect(
+          (await db.getStudySegmentTombstones())
+              .map((StudySegmentTombstoneRow t) => t.mediaKey),
+          <String>['vid-1']);
     });
   });
 }

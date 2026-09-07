@@ -914,34 +914,41 @@ extension _ReaderChrome on _ReaderFushiPageState {
   void _openImageViewer(String imgUrl) {
     final File? file = _readerImageFileForUrl(imgUrl);
     if (file == null) return;
-    Navigator.push(
-      context,
-      PageRouteBuilder<void>(
-        opaque: false,
-        barrierColor:
-            Theme.of(context).colorScheme.scrim.withValues(alpha: 0.87),
-        barrierDismissible: true,
-        pageBuilder: (BuildContext routeContext, __, ___) => ContextMenuTrigger(
-          // 右键菜单改由绑定表决定唤出键（默认仍是右键）；右键被别的动作占用时自动让位。
-          onInvoke: isWindowsPlatform
-              ? (Offset position) => unawaited(
-                    _showReaderImageContextMenuAtGlobalPosition(
-                      imgUrl,
-                      position,
-                      menuContext: routeContext,
+    // BUG-2208：全屏看图期间停表（路由 pop 后按判据续表）。
+    unawaited(
+      _withStudyClockPaused(
+        () => Navigator.push(
+          context,
+          PageRouteBuilder<void>(
+            opaque: false,
+            barrierColor: Theme.of(
+              context,
+            ).colorScheme.scrim.withValues(alpha: 0.87),
+            barrierDismissible: true,
+            pageBuilder: (BuildContext routeContext, __, ___) =>
+                ContextMenuTrigger(
+                  // 右键菜单改由绑定表决定唤出键（默认仍是右键）；右键被别的动作占用时自动让位。
+                  onInvoke: isWindowsPlatform
+                      ? (Offset position) => unawaited(
+                          _showReaderImageContextMenuAtGlobalPosition(
+                            imgUrl,
+                            position,
+                            menuContext: routeContext,
+                          ),
+                        )
+                      : null,
+                  ladder: kReaderMouseLadder,
+                  child: GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: InteractiveViewer(
+                      minScale: 0.5,
+                      maxScale: 10,
+                      child: Center(
+                        child: Image.file(file, fit: BoxFit.contain),
+                      ),
                     ),
-                  )
-              : null,
-          ladder: kReaderMouseLadder,
-          child: GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: InteractiveViewer(
-              minScale: 0.5,
-              maxScale: 10,
-              child: Center(
-                child: Image.file(file, fit: BoxFit.contain),
-              ),
-            ),
+                  ),
+                ),
           ),
         ),
       ),
@@ -960,45 +967,50 @@ extension _ReaderChrome on _ReaderFushiPageState {
     if (book == null) return;
     final List<EpubImageRef> images = book.images;
     final int currentChapter = _currentChapter;
-    Navigator.push(
-      context,
-      MaterialPageRoute<void>(
-        builder: (BuildContext routeContext) => ReaderGalleryPage(
-          images: images,
-          currentChapter: currentChapter,
-          blurImages: _settings?.blurImages ?? false,
-          revealedImageKeys: _revealedImageKeys,
-          onRevealImage: (String key) {
-            if (!_revealedImageKeys.add(key)) return;
-            final String? bookUid = _bookUid;
-            if (bookUid != null) {
-              unawaited(appModel.database.markImageRevealed(
-                bookUid,
-                key,
-                DateTime.now().millisecondsSinceEpoch,
-              ));
-            }
-            unawaited(_controller?.evaluateJavascript(source: '''
-              (function() {
-                var key = ${jsonEncode(key)};
-                if (window.__fushiMarkImageRevealed) {
-                  window.__fushiMarkImageRevealed(key);
+    // BUG-2208：插图画廊是从阅读器 push 出去的全页路由，压住期间停表。
+    unawaited(
+      _withStudyClockPaused(
+        () => Navigator.push(
+          context,
+          MaterialPageRoute<void>(
+            builder: (BuildContext routeContext) => ReaderGalleryPage(
+              images: images,
+              currentChapter: currentChapter,
+              blurImages: _settings?.blurImages ?? false,
+              revealedImageKeys: _revealedImageKeys,
+              onRevealImage: (String key) {
+                if (!_revealedImageKeys.add(key)) return;
+                final String? bookUid = _bookUid;
+                if (bookUid != null) {
+                  unawaited(appModel.database.markImageRevealed(
+                    bookUid,
+                    key,
+                    DateTime.now().millisecondsSinceEpoch,
+                  ));
                 }
-                if (!window.__fushiImageRevealKey) return;
-                document.querySelectorAll('img.blurred, svg.blurred').forEach(function(el) {
-                  if (window.__fushiImageRevealKey(el) === key) el.classList.remove('blurred');
-                });
-              })();
-            '''));
-          },
-          fileForRef: (EpubImageRef ref) =>
-              _readerImageFileForUrl(ReaderFushiSource.epubUrl(ref.src)),
-          onOpenImage: (EpubImageRef ref) =>
-              _openImageViewer(ReaderFushiSource.epubUrl(ref.src)),
-          onJumpTo: (EpubImageRef ref) {
-            Navigator.pop(routeContext);
-            unawaited(_navigateToChapter(ref.chapterIndex, manual: true));
-          },
+                unawaited(_controller?.evaluateJavascript(source: '''
+                  (function() {
+                    var key = ${jsonEncode(key)};
+                    if (window.__fushiMarkImageRevealed) {
+                      window.__fushiMarkImageRevealed(key);
+                    }
+                    if (!window.__fushiImageRevealKey) return;
+                    document.querySelectorAll('img.blurred, svg.blurred').forEach(function(el) {
+                      if (window.__fushiImageRevealKey(el) === key) el.classList.remove('blurred');
+                    });
+                  })();
+                '''));
+              },
+              fileForRef: (EpubImageRef ref) =>
+                  _readerImageFileForUrl(ReaderFushiSource.epubUrl(ref.src)),
+              onOpenImage: (EpubImageRef ref) =>
+                  _openImageViewer(ReaderFushiSource.epubUrl(ref.src)),
+              onJumpTo: (EpubImageRef ref) {
+                Navigator.pop(routeContext);
+                unawaited(_navigateToChapter(ref.chapterIndex, manual: true));
+              },
+            ),
+          ),
         ),
       ),
     );
@@ -1696,50 +1708,68 @@ extension _ReaderChrome on _ReaderFushiPageState {
         initialSubPage: initialSubPage,
       );
 
-      if (presentation == ReaderQuickSettingsPresentation.audiobookPanel &&
-          !useAudiobookDialog) {
-        // 手机：全高 bottom sheet 承载面板（面板内部 Flexible 需要有界高度）。
-        await adaptiveModalSheet<void>(
-          context: context,
-          builder: (BuildContext ctx) => SizedBox(
-            height: MediaQuery.sizeOf(ctx).height * 0.9,
-            child: sheetContent,
-          ),
-        );
-      } else if (presentation ==
-          ReaderQuickSettingsPresentation.audiobookPanel) {
-        await showAppDialog<void>(
-          context: context,
-          builder: (_) => FushiDialogFrame(
-            maxWidth: 680,
-            maxHeightFactor: 0.88,
-            scrollable: false,
-            child: sheetContent,
-          ),
-        );
-      } else {
-        // 抽屉开着期间顶部工具栏不自动收起（否则用户改设置时工具栏在背后消失，
-        // 关抽屉后点空白又要再唤一次）；关掉后若仍是悬浮可见态，重新武装计时。
-        _cancelChromeAutoHide();
-        await showReaderSideSheet<void>(
-          context: context,
-          // ッツ 形态：导航 / 章节贴左，外观设置贴右。
-          side: presentation ==
-                  ReaderQuickSettingsPresentation.sideSheetNavigation
-              ? ReaderSideSheetSide.left
-              : ReaderSideSheetSide.right,
-          builder: (_) => sheetContent,
-        );
-        if (mounted && _anyChromeFloating && _chromeTransientVisible) {
-          _armChromeAutoHide();
-        }
-      }
+      // BUG-2208：外观 / 导航 / 搜索 / 收藏 / 有声书面板压着正文期间停表。
+      await _withStudyClockPaused(
+        () => _presentQuickSettings(
+          sheetContent: sheetContent,
+          presentation: presentation,
+          useAudiobookDialog: useAudiobookDialog,
+        ),
+      );
 
       _syncDictionaryTheme();
+      // BUG-2213：面板里可能改了空闲门分钟数，关掉即生效（不必等下次 _ensureStudyClock）。
+      _studyClock?.idleTimeout = appModel.readingIdleTimeout;
     } finally {
       _appearanceSheetOpen = false;
       // 复位后重建把 blur 挂回 pill（dispose 后不能 setState，纯赋值已够）。
       if (mounted) _rebuild(() {});
+    }
+  }
+
+  /// [_showAppearanceSheet] 的呈现分派（居中对话框 / 移动端 sheet / 桌面端左右抽屉），
+  /// 返回的 Future 在面板关闭后完成。
+  Future<void> _presentQuickSettings({
+    required Widget sheetContent,
+    required ReaderQuickSettingsPresentation presentation,
+    required bool useAudiobookDialog,
+  }) async {
+    if (presentation == ReaderQuickSettingsPresentation.audiobookPanel &&
+        !useAudiobookDialog) {
+      // 手机：全高 bottom sheet 承载面板（面板内部 Flexible 需要有界高度）。
+      await adaptiveModalSheet<void>(
+        context: context,
+        builder: (BuildContext ctx) => SizedBox(
+          height: MediaQuery.sizeOf(ctx).height * 0.9,
+          child: sheetContent,
+        ),
+      );
+    } else if (presentation == ReaderQuickSettingsPresentation.audiobookPanel) {
+      await showAppDialog<void>(
+        context: context,
+        builder: (_) => FushiDialogFrame(
+          maxWidth: 680,
+          maxHeightFactor: 0.88,
+          scrollable: false,
+          child: sheetContent,
+        ),
+      );
+    } else {
+      // 抽屉开着期间顶部工具栏不自动收起（否则用户改设置时工具栏在背后消失，
+      // 关抽屉后点空白又要再唤一次）；关掉后若仍是悬浮可见态，重新武装计时。
+      _cancelChromeAutoHide();
+      await showReaderSideSheet<void>(
+        context: context,
+        // ッツ 形态：导航 / 章节贴左，外观设置贴右。
+        side:
+            presentation == ReaderQuickSettingsPresentation.sideSheetNavigation
+            ? ReaderSideSheetSide.left
+            : ReaderSideSheetSide.right,
+        builder: (_) => sheetContent,
+      );
+      if (mounted && _anyChromeFloating && _chromeTransientVisible) {
+        _armChromeAutoHide();
+      }
     }
   }
 
@@ -1834,23 +1864,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
       chapterLabel: _currentChapterLabel(),
       onSearchJump: (BookSearchResult result, String query) async {
         if (!mounted || _book == null || _controller == null) return;
-        // BUG-1762：搜索跳转是跳转不是阅读——先按命中位置抬统计水位（不计数）。
-        // 三个分支落点后的首个 _refreshProgress 都不再把「旧位置 → 命中处」的
-        // 前缀计成新读字数；跨章导航旧行为只把水位播到章首，章首到命中处的整段
-        // 前缀一样会被误计。往回搜低于水位天然 no-op（只升不降）。
-        _sessionMaxAbsoluteChars = sessionWatermarkAfterRestore(
-          _sessionMaxAbsoluteChars,
-          computeCharWatermark(
-            chapterCumulativeChars: _chapterCumulativeChars,
-            chapterCharCounts: _chapterCharCounts,
-            chapter: result.sectionIndex,
-            progress: 0,
-            charOffset: result.charOffset,
-          ),
-        );
-        _lastWatermarkAdvanceAt = DateTime.now();
-        // 起新 session / 跳转播种：额度一并清零，否则带着满桶开局会让掠过被计入。
-        _readChargeCreditMilliChars = 0;
+        // 搜索跳转是跳转不是阅读：字数账本（ReadUnitLedger）不需要播种——跳走前那页
+        // 在落点的首个 arrive 时结算，命中处之前跳过的正文从未成为当前单元、不计。
         final String preciseLocateJs =
             ReaderPaginationScripts.scrollToSearchMatchInvocation(
           query,
@@ -2180,18 +2195,22 @@ extension _ReaderChrome on _ReaderFushiPageState {
     final int? remainingChapter =
         _progress.remainingChapterChars(_currentChapter);
     final int? remainingBook = _progress.remainingBookChars;
+    // BUG-2208：看统计浮层不是阅读，打开期间停表（浮层里的会话读数因此冻结在打开
+    // 那一刻，与「本次」语义一致）。
     unawaited(
-      showAppDialog<void>(
-        context: context,
-        builder: (_) => FushiDialogFrame(
-          maxWidth: 640,
-          child: ReaderStatisticsDialog(
-            sessionTotals: _readingSessionTotals,
-            loadBookTotals: _loadReaderBookStatTotals,
-            trackingPaused: () => _studyClockManualPause,
-            onToggleTracking: _toggleStudyClockManualPause,
-            remainingChapterChars: remainingChapter,
-            remainingBookChars: remainingBook,
+      _withStudyClockPaused(
+        () => showAppDialog<void>(
+          context: context,
+          builder: (_) => FushiDialogFrame(
+            maxWidth: 640,
+            child: ReaderStatisticsDialog(
+              sessionTotals: _readingSessionTotals,
+              loadBookTotals: _loadReaderBookStatTotals,
+              trackingPaused: () => _studyClockManualPause,
+              onToggleTracking: _toggleStudyClockManualPause,
+              remainingChapterChars: remainingChapter,
+              remainingBookChars: remainingBook,
+            ),
           ),
         ),
       ),
@@ -2202,14 +2221,12 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// `start()` 重锚 tick 起点开新段。旗标同时门住 [_ensureStudyClock] 与生命周期
   /// resumed 的自动起表。
   void _toggleStudyClockManualPause() {
-    final StudyClock clock = _ensureStudyClock();
+    _ensureStudyClock();
     final bool pause = !_studyClockManualPause;
     _rebuild(() => _studyClockManualPause = pause);
-    if (pause) {
-      unawaited(clock.stop());
-    } else {
-      clock.start();
-    }
+    // 统一判据（BUG-2209）：统计浮层本身是弹层（modalDepth > 0），「继续」在关掉浮层
+    // 后才真正起表；切后台期间点「继续」也只是清旗、回前台再起。
+    _syncStudyClockRunState();
   }
 
   /// 有声书面板「对齐文件」：打开导入对话框并预填当前音频（对话框内可选文件 /
@@ -2218,14 +2235,17 @@ extension _ReaderChrome on _ReaderFushiPageState {
       {String? initialAlignmentPath}) async {
     final Audiobook? audiobook = _audiobookController?.audiobook;
     final AudiobookRepository repo = AudiobookRepository(appModel.database);
-    await showAppDialog<void>(
-      context: context,
-      builder: (ctx) => AudiobookImportDialog(
-        bookKey: widget.bookKey,
-        repo: repo,
-        extractDir: _extractDir,
-        initialAudioPaths: audiobook?.audioPaths,
-        initialAlignmentPath: initialAlignmentPath,
+    // BUG-2208：导入 / 对齐对话框压着正文期间停表。
+    await _withStudyClockPaused(
+      () => showAppDialog<void>(
+        context: context,
+        builder: (ctx) => AudiobookImportDialog(
+          bookKey: widget.bookKey,
+          repo: repo,
+          extractDir: _extractDir,
+          initialAudioPaths: audiobook?.audioPaths,
+          initialAlignmentPath: initialAlignmentPath,
+        ),
       ),
     );
     try {
@@ -2255,10 +2275,12 @@ extension _ReaderChrome on _ReaderFushiPageState {
     final EpubBookRow? book =
         await appModel.database.getEpubBook(widget.bookKey);
     if (!mounted) return;
-    final String? srtPath = await showAsrTranscribeSheet(
-      context: context,
-      audioPaths: List<String>.of(audio),
-      languageHint: asrLanguageHintFromBookLanguage(book?.language),
+    final String? srtPath = await _withStudyClockPaused(
+      () => showAsrTranscribeSheet(
+        context: context,
+        audioPaths: List<String>.of(audio),
+        languageHint: asrLanguageHintFromBookLanguage(book?.language),
+      ),
     );
     if (srtPath == null || !mounted) return;
     await _openAlignmentImportDialog(initialAlignmentPath: srtPath);
@@ -2782,6 +2804,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
       return;
     }
     if (!mounted || _controller == null) return;
+    // BUG-2225：同章收藏跳转不经 _beginNavigation，离开当前页在此结算（by-text
+    // 回退路径只滚动、不 notifyRestoreComplete，旧页在落点首个 arrive 时照常结算，
+    // 但同样属于「跳走」，一并在此 leave 保持同一语义）。
+    _readLedger.leave();
     if (useOffset) {
       await _controller!.evaluateJavascript(
         source: 'window.fushiReader && window.fushiReader'

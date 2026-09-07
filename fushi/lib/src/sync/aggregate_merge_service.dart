@@ -2,6 +2,7 @@ import 'package:fushi/src/sync/aggregate_snapshot.dart'
     show StudySegmentRecord, StudyTombstoneRecord;
 import 'package:fushi_audio/fushi_audio.dart'
     show FavoriteSentence, FavoriteSentenceRepository;
+import 'package:fushi_core/fushi_core.dart' show kActivityMediaGame;
 
 /// Pure, side-effect-free merge semantics for the aggregate families that
 /// travel between devices on both offline backup merge-import (TODO-888) and
@@ -112,10 +113,23 @@ class AggregateMergeService {
     return out;
   }
 
-  /// 「删除 vs 重新学习」仲裁（纯函数，与收藏的 `_arbitrateFavorites` 同律）：
-  /// - 墓碑 `deletedAt` **严格大于**段 `updatedAt` → 段出局（删除跨端传播）；
-  /// - 否则段保留；某身份若有任一段 `updatedAt >= deletedAt`，该墓碑出局
-  ///   （用户又读了 = 复活，且防「删除僵尸」反向把新段删掉）。
+  /// BUG-2221：游戏（galgame hook 字数段）是本机局域身份（`galgames.id` 不跨端
+  /// 搬运，见 tables.dart 的 GalgameTagMappings 注释），段与墓碑都**不进**聚合同步 /
+  /// 备份合并——导出、并集仲裁、落地、备份 ATTACH 四处同一判据。
+  static bool isStudyKindSyncable(String mediaKind) =>
+      mediaKind != kActivityMediaGame;
+
+  /// 「删除 vs 重新学习」仲裁（纯函数）。BUG-2214 / BUG-2220 口径：
+  /// - 段存活 iff 可同步种类（[isStudyKindSyncable]）且无同身份墓碑或
+  ///   `startAt >= deletedAt`（删除**之后开始**的段）；
+  /// - 墓碑**永不退场**：live = 全部合并后的碑（同身份只有 deletedAt 最大的一块，
+  ///   [mergeStudyTombstones]），只按种类过滤。
+  ///
+  /// 旧口径「有 `updatedAt >= deletedAt` 的段则碑出局」的病：删除时仍在跑的时钟
+  /// 下一 tick 把开放段的 updatedAt 推过 deletedAt，整块碑被判死、对端持有的全部
+  /// 历史随下次并集回灌；且 updatedAt 与本机墙钟直比，两端 skew 会让碑在两端之间
+  /// 来回消失。改判 `startAt`：一个段是否「删除之前的学习」在它开始那一刻就定了，
+  /// 不随 tick 漂移；skew 只影响删除时刻附近那一段的归属。
   static ({
     List<StudySegmentRecord> segments,
     List<StudyTombstoneRecord> tombstones
@@ -123,18 +137,15 @@ class AggregateMergeService {
     required Iterable<StudySegmentRecord> union,
     required Map<String, StudyTombstoneRecord> tombstones,
   }) {
-    final Map<String, int> latestUpdated = <String, int>{};
-    for (final StudySegmentRecord s in union) {
-      final int prev = latestUpdated[s.mediaIdentity] ?? -1;
-      if (s.updatedAt > prev) latestUpdated[s.mediaIdentity] = s.updatedAt;
-    }
     final List<StudySegmentRecord> segments = <StudySegmentRecord>[
       for (final StudySegmentRecord s in union)
-        if ((tombstones[s.mediaIdentity]?.deletedAt ?? 0) <= s.updatedAt) s,
+        if (isStudyKindSyncable(s.mediaKind) &&
+            (tombstones[s.mediaIdentity]?.deletedAt ?? 0) <= s.startAt)
+          s,
     ];
     final List<StudyTombstoneRecord> live = <StudyTombstoneRecord>[
       for (final StudyTombstoneRecord t in tombstones.values)
-        if ((latestUpdated[t.key] ?? -1) < t.deletedAt) t,
+        if (isStudyKindSyncable(t.mediaKind)) t,
     ];
     return (segments: segments, tombstones: live);
   }

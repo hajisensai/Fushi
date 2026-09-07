@@ -23,6 +23,11 @@ class StatWindow {
 
   final DateTime _now;
 
+  /// 本窗口的锚时刻（构造时传入的 now）。消费方按同一个窗口做「小时/分钟级」判据
+  /// （近 7 天曲线的当日切片、活动流分组）时必须用它，不许现调 `DateTime.now()`
+  /// ——那会让聚合与谓词落在两个时刻上，跨午夜时「今日」卡与明细对不上（BUG-2219）。
+  DateTime get now => _now;
+
   /// 今日。
   final String todayKey;
 
@@ -54,7 +59,7 @@ class StatWindow {
 
   /// 到下一个统计日边界（[FushiDatabase.statDayResetHour] 整点）的时长（恒 > 0）。
   /// 统计页 / 首页用它排一次性 Timer：跨边界后整页重聚合，让加载时的窗口与卡片
-  /// 谓词永远是同一个 [StatWindow]（BUG-2181：此前聚合用加载时刻、卡片谓词在点击
+  /// 谓词永远是同一个 [StatWindow]（BUG-2219：此前聚合用加载时刻、卡片谓词在点击
   /// 时现算，跨午夜后「今日」卡的数和明细对不上）。按日历取下一个边界时刻
   /// （DST 切换日不是恰 24h）。
   static Duration untilNextStatDayBoundary(DateTime now) =>

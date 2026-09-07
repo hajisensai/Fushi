@@ -303,10 +303,14 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     );
     if (shown || !mounted) return;
     src.setPreference<bool>(key: 'lyrics_mode_hint_shown', value: true);
-    showAppDialog<void>(
-      context: context,
-      builder: (BuildContext ctx) => ReaderLyricsModeHintDialog(
-        onClose: () => Navigator.of(ctx).pop(),
+    unawaited(
+      _withStudyClockPaused(
+        () => showAppDialog<void>(
+          context: context,
+          builder: (BuildContext ctx) => ReaderLyricsModeHintDialog(
+            onClose: () => Navigator.of(ctx).pop(),
+          ),
+        ),
       ),
     );
   }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/pages/implementations/activity_feed.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_hourly_breakdown.dart';
+import 'package:fushi/src/stats/stat_facts.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -306,6 +307,21 @@ List<StatIdentityGroup<T>> groupStatRowsByIdentity<T>(
     ...orphanGroups.values,
   ];
 }
+
+/// 统一事实面行的按身份分组（BUG-2216）：阅读统计页「按书」与时段明细 sheet 都走
+/// 这一个入口，与视频域 `computeVideoStats` 同一套 [groupStatRowsByIdentity] 契约——
+/// 有 mediaKey 按身份分组；legacy 无身份行（书已删 / 库表同名歧义）在行宇宙里恰好
+/// 一个身份组占用该 title 且不在 [ambiguousTitles] 时并入，否则独立成无身份组。
+/// 此前阅读域裸按 `identityKey` 分组：删书后 legacy 行与段各成一组、同名两条。
+List<StatIdentityGroup<StatFact>> groupStatFactsByIdentity(
+  Iterable<StatFact> facts, {
+  Set<String> ambiguousTitles = const <String>{},
+}) => groupStatRowsByIdentity<StatFact>(
+  facts.toList(growable: false),
+  identityOf: (StatFact f) => f.mediaKey,
+  titleOf: (StatFact f) => f.title,
+  ambiguousTitles: ambiguousTitles,
+);
 
 /// TODO-1204：把查词/制卡计数行按 [LookupMiningCounterRow.title] 聚合成
 /// (查词数, 制卡数)，供 per-book tile 展示。无书查词（title 空）不入

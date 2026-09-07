@@ -76,6 +76,19 @@ double? computeWeekOverWeekPercent(int thisWeek, int lastWeek) {
   return (thisWeek - lastWeek) / lastWeek * 100.0;
 }
 
+/// 环比展示上限（百分比）。上周 1 字、本周 1 万字的「↑999900%」没有信息量
+/// （BUG-2224），≥ 此值一律显示 `↑>999%`。
+const int kWeekOverWeekPercentCap = 999;
+
+/// 纯函数：KPI 条的环比文案。基期为 0 → `—`（无基线，不是「涨 ∞%」）；
+/// ≥ [kWeekOverWeekPercentCap] → `↑>999%`；其余 `↑12%` / `↓8%`（四舍五入到整数）。
+String formatWeekOverWeekDelta(int thisWeek, int lastWeek) {
+  final double? pct = computeWeekOverWeekPercent(thisWeek, lastWeek);
+  if (pct == null) return '—';
+  if (pct >= kWeekOverWeekPercentCap) return '↑>$kWeekOverWeekPercentCap%';
+  return '${pct >= 0 ? '↑' : '↓'}${pct.abs().round()}%';
+}
+
 /// 纯函数：近期「日均字数」= 窗口内**有阅读的天**的平均字数。
 ///
 /// BUG-892 后续：KPI 条的「日均」旧实现是**终身**均值（总字数 ÷ 历史全部活跃天），近期

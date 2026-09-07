@@ -28,10 +28,15 @@ class StatPeriodDetailResolvers {
     this.collectionOf,
     this.onEntryTap,
     this.onEntryDelete,
+    this.ambiguousTitlesOf,
   });
 
   /// 事实行 → 展示标题（**不带**合集前缀——合集名已是组头，不重复拼）。
   final String Function(StatFact fact) titleOf;
+
+  /// 某媒体种类下库表判为多身份的 title 集合（BUG-2216 身份分组的吸收否决，
+  /// 与 [groupStatFactsByIdentity] 的 `ambiguousTitles` 同义）。null = 不否决。
+  final Set<String> Function(String mediaKind)? ambiguousTitlesOf;
 
   /// 事实行 → 所属合集名；null = 未分组。
   final String? Function(StatFact fact)? collectionOf;
@@ -117,25 +122,43 @@ Future<bool> showStatPeriodDetailSheet(
   required Iterable<StatFact> facts,
   required StatPeriodDetailResolvers resolvers,
 }) async {
-  // 按 (mediaKind, identityKey) 聚合时段内行；插入序 = 首见序，展示前再排序。
-  final Map<String, _PeriodEntry> byIdentity = <String, _PeriodEntry>{};
+  // 按 mediaKind 切片后走统一身份分组（BUG-2216：legacy 无身份行 unique-title
+  // 吸收进唯一身份组，与阅读统计页「按书」/ 视频域同一契约）；插入序 = 种类首见序
+  // × 组序，展示前再排序。
+  final Map<String, List<StatFact>> byKind = <String, List<StatFact>>{};
   for (final StatFact f in facts) {
     if (!contains(f.dateKey)) continue;
-    final _PeriodEntry entry = byIdentity.putIfAbsent(
-      '${f.mediaKind}|${f.identityKey}',
-      () => _PeriodEntry(
-        mediaKind: f.mediaKind,
-        mediaKey: f.mediaKey,
-        rawTitle: f.title,
-        title: resolvers.titleOf(f),
-        collection: resolvers.collectionOf?.call(f),
-      ),
-    );
-    entry.chars += f.chars;
-    entry.ms += f.ms;
-    entry.dateKeys.add(f.dateKey);
+    byKind.putIfAbsent(f.mediaKind, () => <StatFact>[]).add(f);
   }
-  final List<_PeriodEntry> entries = byIdentity.values.toList();
+  final List<_PeriodEntry> entries = <_PeriodEntry>[];
+  byKind.forEach((String kind, List<StatFact> rows) {
+    for (final StatIdentityGroup<StatFact> g in groupStatFactsByIdentity(
+      rows,
+      ambiguousTitles:
+          resolvers.ambiguousTitlesOf?.call(kind) ?? const <String>{},
+    )) {
+      final StatFact first = g.rows.first;
+      // 删除键：组里若吸收了 legacy 无身份行，legacy 按 title 删行要用那行的 title
+      // （改名书的身份行 title 快照可能已不同）。
+      final StatFact legacy = g.rows.firstWhere(
+        (StatFact r) => r.mediaKey.isEmpty,
+        orElse: () => first,
+      );
+      final _PeriodEntry entry = _PeriodEntry(
+        mediaKind: kind,
+        mediaKey: g.identity ?? '',
+        rawTitle: legacy.title,
+        title: resolvers.titleOf(first),
+        collection: resolvers.collectionOf?.call(first),
+      );
+      for (final StatFact r in g.rows) {
+        entry.chars += r.chars;
+        entry.ms += r.ms;
+        entry.dateKeys.add(r.dateKey);
+      }
+      entries.add(entry);
+    }
+  });
   final _DeletedFlag deleted = _DeletedFlag();
   await adaptiveModalSheet<void>(
     context: context,

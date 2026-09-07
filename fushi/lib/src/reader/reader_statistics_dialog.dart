@@ -12,7 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi_audio/fushi_audio.dart' show StudySessionTotals;
 
 import 'package:fushi/src/pages/implementations/stat_trends.dart'
-    show computeCph;
+    show computeCph, kMinCphSampleMs;
 import 'package:fushi/src/reader/reader_desktop_chrome.dart'
     show ReaderSideSheetSectionLabel;
 import 'package:fushi/src/reader/reader_status_footer.dart'
@@ -30,8 +30,12 @@ typedef ReaderBookStatTotals = ({
   int allMs,
 });
 
-const ReaderBookStatTotals kEmptyReaderBookStatTotals =
-    (todayChars: 0, todayMs: 0, allChars: 0, allMs: 0);
+const ReaderBookStatTotals kEmptyReaderBookStatTotals = (
+  todayChars: 0,
+  todayMs: 0,
+  allChars: 0,
+  allMs: 0,
+);
 
 /// 从阅读域日面事实里切出**本书**的今日 / 累计。身份优先 `mediaKey == bookKey`；
 /// legacy 无身份行按 title 回退（与阅读统计页的按书分组同一规则）。
@@ -76,11 +80,20 @@ double? readerFinishCph({
   required StudySessionTotals session,
   required ReaderBookStatTotals book,
 }) {
-  final double? sessionCph =
-      session.chars > 0 ? computeCph(session.chars, session.durationMs) : null;
+  final double? sessionCph = session.chars > 0
+      ? computeCph(session.chars, session.durationMs)
+      : null;
   if (sessionCph != null && sessionCph > 0) return sessionCph;
   final double? allCph = computeCph(book.allChars, book.allMs);
   return (allCph != null && allCph > 0) ? allCph : null;
+}
+
+/// 今日 / 累计卡的速度文案（BUG-2218）：与统计页同一口径 [computeCph]（最小样本
+/// [kMinCphSampleMs]），样本不足显示与统计页一致的 `—`，不再把几十秒的脏样本外推成
+/// 爆表数字。会话卡是实时秒表，仍走 [readingCharsPerHour] 开局即显 `0 / h`。
+String readerBookSpeedLabel(int chars, int ms) {
+  final double? cph = computeCph(chars, ms);
+  return cph == null ? '—' : '${cph.round()}';
 }
 
 /// `h:mm:ss`（恒带小时位，与 Hoshi 一致）。
@@ -145,9 +158,11 @@ class _ReaderStatisticsDialogState extends State<ReaderStatisticsDialog> {
       if (snap == _lastSnapshot) return;
       setState(() => _lastSnapshot = snap);
     });
-    unawaited(widget.loadBookTotals().then((ReaderBookStatTotals totals) {
-      if (mounted) setState(() => _book = totals);
-    }));
+    unawaited(
+      widget.loadBookTotals().then((ReaderBookStatTotals totals) {
+        if (mounted) setState(() => _book = totals);
+      }),
+    );
   }
 
   @override
@@ -234,22 +249,36 @@ class _ReaderStatisticsDialogState extends State<ReaderStatisticsDialog> {
                   ],
                 ),
                 _StatCard(
-                    cells: _metricCells(session.chars, session.durationMs)),
+                  cells: _metricCells(
+                    session.chars,
+                    session.durationMs,
+                    live: true,
+                  ),
+                ),
                 ReaderSideSheetSectionLabel(
                   '${t.stat_today} · ${t.reader_stats_this_book}',
                 ),
-                _StatCard(cells: _metricCells(book.todayChars, book.todayMs)),
+                _StatCard(
+                  cells: _metricCells(
+                    book.todayChars,
+                    book.todayMs,
+                    live: false,
+                  ),
+                ),
                 ReaderSideSheetSectionLabel(
                   '${t.stat_all_time} · ${t.reader_stats_this_book}',
                 ),
-                _StatCard(cells: _metricCells(book.allChars, book.allMs)),
+                _StatCard(
+                  cells: _metricCells(book.allChars, book.allMs, live: false),
+                ),
                 ReaderSideSheetSectionLabel(t.reader_stats_time_to_finish),
                 _StatCard(
                   cells: <_StatCell>[
                     _StatCell(
                       label: t.reader_stats_finish_chapter,
-                      value:
-                          chapterMs == null ? '—' : formatStatClock(chapterMs),
+                      value: chapterMs == null
+                          ? '—'
+                          : formatStatClock(chapterMs),
                     ),
                     _StatCell(
                       label: t.reader_stats_finish_book,
@@ -265,11 +294,15 @@ class _ReaderStatisticsDialogState extends State<ReaderStatisticsDialog> {
     );
   }
 
-  List<_StatCell> _metricCells(int chars, int ms) {
-    final int cph = readingCharsPerHour(chars: chars, durationMs: ms);
+  /// [live] = 本次会话秒表（开局即显 0，不套样本门槛）；今日 / 累计走统计口径
+  /// [readerBookSpeedLabel]（BUG-2218）。
+  List<_StatCell> _metricCells(int chars, int ms, {required bool live}) {
+    final String speed = live
+        ? '${readingCharsPerHour(chars: chars, durationMs: ms)}'
+        : readerBookSpeedLabel(chars, ms);
     return <_StatCell>[
       _StatCell(label: t.stat_metric_chars, value: '$chars'),
-      _StatCell(label: t.stat_metric_speed, value: '$cph', unit: '/ h'),
+      _StatCell(label: t.stat_metric_speed, value: speed, unit: '/ h'),
       _StatCell(label: t.stat_metric_time, value: formatStatClock(ms)),
     ];
   }

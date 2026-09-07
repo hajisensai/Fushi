@@ -89,7 +89,7 @@ const List<String> kStatPages = <String>[
   'lib/src/pages/implementations/stat_activity.dart',
   'lib/src/pages/implementations/stat_source_totals.dart',
   'lib/src/pages/implementations/activity_feed.dart',
-  // BUG-2166 批新增的阅读器统计浮层（桌面 chrome 里的「统计」入口）。
+  // 阅读器内统计浮层：今日 / 累计卡按 StatWindow.isToday 切片（BUG-2218 起走统计口径）。
   'lib/src/reader/reader_statistics_dialog.dart',
 ];
 
@@ -272,10 +272,10 @@ void main() {
     expect(
       containsCodeLine(
         read('lib/src/pages/implementations/reader_fushi/navigation.part.dart'),
-        '_ensureStudyClock().addChars(delta.charsAdded)',
+        '_readLedger.arrive(',
       ),
       isTrue,
-      reason: 'EPUB 新读字数直接记进当前段',
+      reason: 'EPUB 新读字数经 ReadUnitLedger（翻走即计）记进当前段',
     );
     final String manga = read(
       'lib/src/media/manga/reader/manga_fushi_page.dart',
@@ -306,13 +306,23 @@ void main() {
       expect(resumed, greaterThan(inactive), reason: path);
       final String bg = body.substring(inactive, resumed);
       final String fg = body.substring(resumed);
+      // EPUB 面（BUG-2209）：start / stop 决策收敛到统一判据 studyClockMayRun——生命
+      // 周期分支只置旗再 _syncStudyClockRunState()（后台听书跟随经 _ensureStudyClock
+      // 到达时看到旗子不会重新起表）。PDF / 漫画仍是直接 stop / start。
+      final bool unifiedGate = path.endsWith('reader_fushi_page.dart');
       expect(
-        bg.contains('_studyClock?.stop()'),
+        unifiedGate
+            ? bg.contains('_studyClockLifecycleStopped = true;') &&
+                  bg.contains('_syncStudyClockRunState();')
+            : bg.contains('_studyClock?.stop()'),
         isTrue,
         reason: '$path：失焦 / 进后台必须停表（切屏自动暂停，用户拍板只对阅读面）',
       );
       expect(
-        fg.contains('_studyClock?.start()'),
+        unifiedGate
+            ? fg.contains('_studyClockLifecycleStopped = false;') &&
+                  fg.contains('_syncStudyClockRunState();')
+            : fg.contains('_studyClock?.start()'),
         isTrue,
         reason: '$path：回前台重启（后台段靠停表丢弃，不靠重锚）',
       );

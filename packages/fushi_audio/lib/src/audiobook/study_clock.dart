@@ -12,20 +12,22 @@ import 'package:fushi_core/fushi_core.dart';
 /// `kMaxWatchGap` 与本常量同值同义，v92 起统一只剩这一个。
 const Duration kMaxReadingGap = Duration(seconds: 120);
 
-/// 「到达即计」治理的统一停留门（BUG-1761 漫画 / BUG-1763 视频）。
+/// 视频 cue 字数的停留门（BUG-1763）：cue 要真实播放停留这么久才算「看过」其字幕字数。
 ///
-/// 产品裁定：到达 ≠ 读过 / 看过。三个域各自的机制不同（EPUB 按字数水位 + 速度封顶、
-/// 漫画按当前页停留、视频按 cue 的真实播放停留），但「多久才算停留过」是同一条产品
-/// 判据，只应有一个数。此前漫画的 `_kPageDwellThreshold` 与视频的 `kCueDwellMs` 是两
-/// 个互不相干的 1500 字面量——同值不同名，正是日后必漂的形状。
+/// 阅读三域（EPUB / 漫画 / PDF）**不用**停留门：2026-09-06 裁定「读过」= 翻走即计 +
+/// 会话覆盖并集（`fushi/lib/src/stats/read_unit_ledger.dart`，对齐 Hoshi Reader），
+/// 离开一个单元那一刻把其中未覆盖的部分全额计入，没有停留门、没有速率封顶（旧的
+/// EPUB 字数水位 + 速度封顶、漫画到达停留 1.5s 都已拆除）。本常量因此只剩视频 cue
+/// 一个消费者（`kCueDwellMs`）；仍保留为具名常量而不是回落成字面量。
 ///
 /// 用毫秒 int 而不是 Duration：`Duration.inMilliseconds` 是 getter、不能 const 求值，
 /// 而消费端两侧一个要 int、一个要 Duration，只有 int 能让两边都真正引用同一个数
 /// （`Duration(milliseconds: kArrivalDwellMs)` 仍是 const）。
 const int kArrivalDwellMs = 1500;
 
-/// 阅读空闲门默认值：这么久没有任何输入（翻页 / 滚动 / 查词 / 听书播放态）就视为
-/// 没在读，之后的 tick 不入账。用户可在设置里改（偏好键见 [kStudyIdleTimeoutPrefKey]）。
+/// 阅读空闲门默认值：这么久没有任何输入（翻页 / 滚动 / 听书播放态的 cue 推进）就
+/// 视为没在读，之后的 tick 不入账。查词**不**喂门（BUG-2212：它走词典弹窗，不经
+/// [StudyClock.touch]）。用户可在设置里改（偏好键见 [kStudyIdleTimeoutPrefKey]）。
 /// 只对阅读面生效；视频面以播放态为准（切走仍在播就照常计时，用户拍板）。
 const Duration kDefaultReadingIdleTimeout = Duration(minutes: 10);
 
@@ -72,6 +74,14 @@ DateTime hourBoundaryAfter(DateTime t) =>
 /// 一个口进 `study_segments`；抽成 typedef 是给纯单测注入 fake。
 typedef StudySegmentSink = Future<void> Function(StudySegmentsCompanion row);
 
+/// 把一笔「没有任何人能 await 的写」交给进程退出的统一 await 点。
+///
+/// 唯一消费者是 [StudyClock.detach]：页面 `State.dispose()` 是同步的，在那里发起的
+/// DB 事务没有 future 持有者，与随后的 `db.close()` 互等（widget 测试的 FakeAsync
+/// 下 100% 挂死，生产退出路径是同一形状的竞态）。app 层传
+/// `ExitFlushRegistry.instance.defer`；null = 直接丢弃，纯单测默认零 IO。
+typedef DeferredStudyWrite = void Function(Future<void> Function() write);
+
 /// [StudyClock] 的时长来源。
 enum StudyAccrual {
   /// 墙钟窗口：每个 tick 把 `[上次 tick, now]` 整窗计入（经断档 / 活跃态 / 空闲三道
@@ -106,6 +116,12 @@ class _OpenSegment {
 
   /// 有未落库的改动。写失败保持 true，下个 tick 用绝对值重写——重试不会翻倍。
   bool dirty = false;
+
+  /// 至少排队过一次落库：库里可能已有这行。之后即便被 [StudyClock.retractChars] /
+  /// [StudyClock.retractPages] 撤回到 0 字 0 页且不足 1s，也必须用绝对值重写成 0
+  /// ——[StudyClock._worthWriting] 只是「没写过的抖动段不值一行」的门槛，对已在库里
+  /// 的行不适用，否则库里会留着撤回前的旧值。
+  bool persisted = false;
 }
 
 /// 本次会话（一个 [StudyClock] 实例从建到销毁）的累计读数，供页面**只读展示**
@@ -139,7 +155,8 @@ typedef StudySessionTotals = ({int durationMs, int chars, bool active});
 ///  * 空闲：[idleTimeout]（阅读面 10 分钟无 [touch] 即不入账；视频不设）。
 ///
 /// 字数 / 页数经 [addChars] / [addPages] 记到当前打开段（没有就以 0 时长开一段），
-/// 与时长同一行、同一 uid、同一次写。
+/// 与时长同一行、同一 uid、同一次写；回翻经 [retractChars] / [retractPages] 从最新
+/// 的段往前扣回（会话级夹 0）。
 class StudyClock {
   StudyClock({
     required FushiDatabase database,
@@ -152,6 +169,7 @@ class StudyClock {
     this.idleTimeout,
     this.onTick,
     this.onWriteError,
+    this.deferWrite,
     Duration tick = const Duration(seconds: 60),
     StudySegmentSink? sink,
     Future<String> Function()? deviceId,
@@ -202,7 +220,11 @@ class StudyClock {
   /// ErrorLogService，页面把它接上让 DB 写异常线上可查（BUG-911 纪律）。
   void Function(Object error, StackTrace stack)? onWriteError;
 
-  /// 会话累计（见 [StudySessionTotals]）：只增不减，封段不清。
+  /// [detach] 结算出来的最后一笔写的去处（见 [DeferredStudyWrite]）。
+  final DeferredStudyWrite? deferWrite;
+
+  /// 会话累计（见 [StudySessionTotals]）：封段不清。时长只增不减；字数会被
+  /// [retractChars]（回翻）扣回，但不低于 0。
   int _sessionDurationMs = 0;
   int _sessionChars = 0;
 
@@ -212,8 +234,19 @@ class StudyClock {
   _OpenSegment? _open;
   String? _cachedDeviceId;
 
+  /// 本会话开过的全部段（含已封的），按打开顺序。封段只丢 [_open] 引用，对象留在
+  /// 这里给 [retractChars] / [retractPages] 从尾往前扣；封段时没有内容账的段摘掉
+  /// （无可撤回，也让表不随空闲门反复封段无限长）。
+  final List<_OpenSegment> _sessionSegments = <_OpenSegment>[];
+
   /// 写链：绝对值写按时间序串行落地，防止旧 tick 的写晚于新 tick 落地把值倒回去。
   Future<void> _writeChain = Future<void>.value();
+
+  /// [detach] 期间：所有 [_enqueueWrite] 不立即发起事务，改为攒进 [_deferredSegments]。
+  bool _deferring = false;
+
+  /// [detach] 攒下的待写段（绝对值重写，顺序即入队序）。
+  final List<_OpenSegment> _deferredSegments = <_OpenSegment>[];
 
   /// 计时中（已 [start] 且未 [stop]）。停表期间恒 false，后台时长永不入账。
   bool get isRunning => _timer != null;
@@ -262,11 +295,14 @@ class StudyClock {
     return (durationMs: s.durationMs, chars: s.chars, pages: s.pages);
   }
 
+  /// 起表。start 本身由用户动作触发（回前台 / 手动继续 / 关掉面板），就是一次
+  /// 输入：空闲基准无条件重锚到 now（BUG-2211——旧 `_lastTouch ??= now` 只在首次
+  /// 起表时置，挂机超时 → 切走 → 回前台后首个 tick 仍按陈旧基准被空闲门拒掉）。
   void start() {
     if (_timer != null) return;
     final DateTime now = _now();
     _tickStart = now;
-    _lastTouch ??= now;
+    _lastTouch = now;
     _timer = Timer.periodic(_tick, (_) => unawaited(_onTimer()));
   }
 
@@ -283,34 +319,133 @@ class StudyClock {
     _tickStart = null;
     final _OpenSegment? seg = _open;
     _open = null;
-    if (seg != null && seg.dirty && _worthWriting(seg)) _enqueueWrite(seg);
+    if (seg != null && _needsWrite(seg)) _enqueueWrite(seg);
     await _writeChain;
   }
 
-  void dispose() {
-    unawaited(stop());
+  /// 与页面解绑（`State.dispose`）：**零 DB IO 的最终结算**。
+  ///
+  /// 没有 `dispose()`——那个入口只能写成 `unawaited(stop())`，而 dispose 是同步的，
+  /// 起出来的事务没有任何人持有它的 future：widget 测试里 teardown 的 `db.close()`
+  /// 与它互等（FakeAsync 在测试体结束后不再推进，事务续体永远不跑），生产退出路径
+  /// 是同一形状的竞态。入口删掉，只剩这一个原语。
+  ///
+  /// [settle] 在解绑**前**跑，做纯内存的最后结算（阅读账本 `leave()` → 字数 / 页数
+  /// 入账或撤回）——放在这里而不是让调用方自己排顺序，是因为它必须发生在时钟停表
+  /// 之前（[addChars] / [addPages] 停表即丢，BUG-2210），顺序错了就静默少记一页。
+  ///
+  /// 期间攒下的写交给 [deferWrite]（进程退出统一 await）；没接就丢弃。正常退出走
+  /// [stop]（调用方 await 到底），本方法只是异常拆栈时的兜底。
+  void detach([void Function()? settle]) {
+    _deferring = true;
+    settle?.call();
+    final Timer? timer = _timer;
+    _timer = null;
+    timer?.cancel();
+    _accrue(_now());
+    _tickStart = null;
+    final _OpenSegment? seg = _open;
+    _open = null;
+    if (seg != null && _needsWrite(seg)) _enqueueWrite(seg);
+    if (_deferredSegments.isEmpty) return;
+    final List<_OpenSegment> pending = List<_OpenSegment>.of(_deferredSegments);
+    _deferredSegments.clear();
+    final DateTime now = _now();
+    deferWrite?.call(() => _flushDetached(pending, now));
   }
 
-  /// 用户输入（翻页 / 滚动 / 查词 / 听书播放态）：喂空闲门。
+  /// 用户输入（翻页 / 滚动 / 听书播放态的 cue 推进）：喂空闲门。查词不经这里。
   void touch() {
     _lastTouch = _now();
   }
 
   /// 记字数到当前打开段（没有就开一段）。字数本身就是一次输入，顺带 [touch]。
+  ///
+  /// 停表期间（手动暂停 / 切屏 / 面板打开）直接丢弃（BUG-2210）：停表 = 不在学习，
+  /// 字数与时长一并不计；水位照常由页面推进，所以这些字之后也不会补计——这是有意的，
+  /// 否则会产出「0 时长却有字数」的段，把字/时推向无穷。
   void addChars(int chars) {
-    if (chars <= 0) return;
+    if (chars <= 0 || !isRunning) return;
     touch();
+    _settleBeforeContentAccount();
     _ensureOpen(_now()).chars += chars;
     _open!.dirty = true;
     _sessionChars += chars;
   }
 
-  /// 记页数到当前打开段（漫画 / PDF 翻页）。
+  /// 记页数到当前打开段（漫画 / PDF 翻页）。停表期间丢弃，同 [addChars]。
   void addPages(int pages) {
-    if (pages <= 0) return;
+    if (pages <= 0 || !isRunning) return;
     touch();
+    _settleBeforeContentAccount();
     _ensureOpen(_now()).pages += pages;
     _open!.dirty = true;
+  }
+
+  /// 撤回本会话已记的字数（回翻）。阅读账本的入账额是「会话覆盖并集 ∩ [0, 当前
+  /// 位置)」（2026-09-06 裁定，对齐 Hoshi 的会话级负数扣减）：用户回翻时把之前记
+  /// 的字数扣回来，再前进时按并集恢复。
+  ///
+  /// 从最新的段往前扣：先扣当前打开段，不够再扣本会话之前封掉的段，每段夹 0；
+  /// 总额因此自然夹在「本会话已记字数」以内（会话级夹 0）。被扣的已封段重新排队
+  /// 落库（绝对值 upsert 重写，不删行——uid 可能已同步出去，删行留给墓碑体系）；
+  /// 打开段只改内存值，等下一 tick / [flushNow] 正常写。
+  ///
+  /// 撤回不是内容输入：不 [touch]、不开段、不结算待定窗口。停表期间与 [addChars]
+  /// 同律直接丢弃（BUG-2210）。返回实际扣掉的数。
+  int retractChars(int chars) {
+    if (chars <= 0 || !isRunning) return 0;
+    final int taken = _retract(
+      chars,
+      (_OpenSegment seg) => seg.chars,
+      (_OpenSegment seg, int value) => seg.chars = value,
+    );
+    _sessionChars -= taken;
+    return taken;
+  }
+
+  /// 撤回本会话已记的页数（漫画 / PDF 回翻），同 [retractChars]。页数没有会话
+  /// 累计器，只改段。
+  int retractPages(int pages) {
+    if (pages <= 0 || !isRunning) return 0;
+    return _retract(
+      pages,
+      (_OpenSegment seg) => seg.pages,
+      (_OpenSegment seg, int value) => seg.pages = value,
+    );
+  }
+
+  /// [retractChars] / [retractPages] 的共用扣减：从 [_sessionSegments] 尾往前，
+  /// 按 [read] / [write] 操作同一个内容账字段。返回实际扣掉的总数。
+  int _retract(
+    int amount,
+    int Function(_OpenSegment seg) read,
+    void Function(_OpenSegment seg, int value) write,
+  ) {
+    int remaining = amount;
+    for (int i = _sessionSegments.length - 1; i >= 0 && remaining > 0; i--) {
+      final _OpenSegment seg = _sessionSegments[i];
+      final int have = read(seg);
+      if (have <= 0) continue;
+      final int take = have < remaining ? have : remaining;
+      write(seg, have - take);
+      remaining -= take;
+      seg.dirty = true;
+      // 已封段没有下一个 tick 替它写，这里就得排队；它有过内容账就一定排队过落库
+      // （[_worthWriting] 见内容账即过），库里的旧值必须被绝对值覆盖。
+      if (!identical(seg, _open)) _enqueueWrite(seg);
+    }
+    return amount - remaining;
+  }
+
+  /// 墙钟模式下记内容账（字数 / 页数）之前先把待定窗口 `[上次 tick, now]` 结算掉。
+  ///
+  /// BUG-2217：跨小时瞬间 [addChars] 若直接 [_ensureOpen]，会按新小时先开一段只装
+  /// 字数，随后 tick 的 [_accrue] 按旧小时拆桶时发现打开段小时不符 → 把它封成
+  /// 「0 时长纯字数段」再另开旧小时段。先结算，旧小时的时长就先落旧段、新段同时
+  /// 承接新小时的时长与字数。显式记账模式（视频）的窗口裁决只在 tick 做，不在这里。
+  void _settleBeforeContentAccount() {
+    if (accrual == StudyAccrual.wallClock) _accrue(_now());
   }
 
   /// 显式记账（仅 [StudyAccrual.explicit]）：把 [ms] 墙钟毫秒计到当前打开段（没有 /
@@ -333,7 +468,7 @@ class StudyClock {
   Future<void> flushNow() async {
     _accrue(_now());
     final _OpenSegment? seg = _open;
-    if (seg != null && seg.dirty && _worthWriting(seg)) _enqueueWrite(seg);
+    if (seg != null && _needsWrite(seg)) _enqueueWrite(seg);
     await _writeChain;
   }
 
@@ -341,7 +476,7 @@ class StudyClock {
     final DateTime now = _now();
     _accrue(now);
     final _OpenSegment? seg = _open;
-    if (seg != null && seg.dirty && _worthWriting(seg)) _enqueueWrite(seg);
+    if (seg != null && _needsWrite(seg)) _enqueueWrite(seg);
     onTick?.call(now);
     await _writeChain;
   }
@@ -419,27 +554,46 @@ class StudyClock {
       hour: hour,
     );
     _open = seg;
+    _sessionSegments.add(seg);
     return seg;
   }
 
-  /// 封当前段：有脏数据先排队落库，然后丢引用。
+  /// 封当前段：有脏数据先排队落库，然后丢引用。对象留在 [_sessionSegments]
+  /// 供撤回，除非它没有内容账（无可撤回）。
   void _seal() {
     final _OpenSegment? seg = _open;
     if (seg == null) return;
     _open = null;
-    if (seg.dirty && _worthWriting(seg)) _enqueueWrite(seg);
+    if (_needsWrite(seg)) _enqueueWrite(seg);
+    if (seg.chars == 0 && seg.pages == 0) _sessionSegments.remove(seg);
   }
 
   /// 落库门槛（与 v92 前各页面「<1s 且无内容账的段不记账」同一条判据）：不足 1 秒
   /// 又没有字数 / 页数的段是生命周期抖动（开书秒关、失焦回焦），不值一行；
   /// [flushNow] 下段仍开着、保持 dirty 留到下次，[stop] / 封段则直接丢弃。
-  /// 这也让「打开页面立刻 dispose」的路径零 DB 写——测试 harness 的 FakeAsync 在
-  /// teardown 后不再推进，dispose 里起的事务会把 `db.close()` 挂死。
+  ///
+  /// 注意这道门**挡不住**「无人 await 的写」：只要有一页内容账（`pages > 0`）就照常
+  /// 过门，而页面 dispose 里的账本 `leave()` 正是在记页数。零 IO 由 [detach] 结构性
+  /// 保证，不靠这道阈值——早先靠它的说法是错的。
   static bool _worthWriting(_OpenSegment seg) =>
       seg.durationMs >= 1000 || seg.chars > 0 || seg.pages > 0;
 
+  /// 本次是否要写：有脏改动，且（已在库里 或 过 [_worthWriting] 门槛）。前者覆盖
+  /// 「写过 300 字 0 时长 → 被撤回成 0 字」：不写穿，库里就留着 300。
+  static bool _needsWrite(_OpenSegment seg) =>
+      seg.dirty && (seg.persisted || _worthWriting(seg));
+
   void _enqueueWrite(_OpenSegment seg) {
     seg.dirty = false;
+    seg.persisted = true;
+    if (_deferring) {
+      // 解绑中：一笔都不许现在发起（[detach]），攒起来交给退出汇合点。撤回
+      // （[_retract]）也走这里，所以 dispose 里的 leave() 触发回翻同样零 IO。
+      if (!_deferredSegments.any((_OpenSegment s) => identical(s, seg))) {
+        _deferredSegments.add(seg);
+      }
+      return;
+    }
     final DateTime now = _now();
     _writeChain = _writeChain.then((_) => _write(seg, now)).catchError((
       Object e,
@@ -450,6 +604,20 @@ class StudyClock {
       debugPrint('[study-clock] write error: $e\n$stack');
       onWriteError?.call(e, stack);
     });
+  }
+
+  /// [detach] 攒下的段在退出路径上串行落地。先等在飞的 tick 写（[_writeChain]），
+  /// 保证绝对值不被旧值倒回；逐笔 fail-open，一段写崩不影响其余。
+  Future<void> _flushDetached(List<_OpenSegment> segments, DateTime now) async {
+    await _writeChain;
+    for (final _OpenSegment seg in segments) {
+      try {
+        await _write(seg, now);
+      } catch (e, stack) {
+        debugPrint('[study-clock] detached write error: $e\n$stack');
+        onWriteError?.call(e, stack);
+      }
+    }
   }
 
   Future<void> _write(_OpenSegment seg, DateTime now) async {

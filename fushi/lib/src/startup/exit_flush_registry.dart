@@ -49,9 +49,29 @@ class ExitFlushRegistry {
     _callbacks.remove(callback);
   }
 
+  /// 一次性延迟写：页面 `dispose()` 结算出来的最后一笔（阅读位置 / 学习段）**没有
+  /// 任何人能 await**——dispose 是同步的，在那里直接发起就是一笔无人持有 future 的
+  /// 事务，与随后的 `db.close()` 互等（widget 测试的 FakeAsync 下必挂，生产退出是
+  /// 同一形状的竞态）。改为登记到这里，与其余 flush 一起被退出路径 await 一次，
+  /// 跑完即丢。
+  ///
+  /// 与 [register] 的差别只有生命周期：[register] 的回调属于**活着的**页面、可反复
+  /// 跑、由页面注销；这里的属于**已经销毁的**页面、只跑一次、跑完自动清。
+  void defer(ExitFlushCallback write) {
+    _deferred.add(write);
+  }
+
+  /// 见 [defer]。用 List 而非 Set：同一页面可能先后交多笔（位置 + 学习段），顺序即
+  /// 提交顺序，且它们是不同闭包，没有去重需求。
+  final List<ExitFlushCallback> _deferred = <ExitFlushCallback>[];
+
+  @visibleForTesting
+  int get deferredCount => _deferred.length;
+
   @visibleForTesting
   void clear() {
     _callbacks.clear();
+    _deferred.clear();
   }
 
   /// 退出路径调用：并发跑完所有登记的 flush 回调，每个有 [perCallbackTimeout]
@@ -63,13 +83,18 @@ class ExitFlushRegistry {
   /// Android 退后台不是进程退出：此时也要把活跃 reader/video 的进度写穿，但页面
   /// 可能随后恢复并继续持有同一回调。因此 [clearCallbacks] 可设为 false，用同一组
   /// 回调做“保留式 flush”，真正退出时再清空。
+  /// [defer] 的一次性写无论 [clearCallbacks] 与否都跑完即清：它们属于已销毁的页面，
+  /// 不存在「页面随后恢复继续持有」这回事（Android 退后台再回前台也不该重跑）。
   Future<void> flushAll({bool clearCallbacks = true}) async {
     final List<ExitFlushCallback> snapshot = _callbacks.toList(growable: false);
     if (clearCallbacks) {
       _callbacks.clear();
     }
+    final List<ExitFlushCallback> deferred = _deferred.toList(growable: false);
+    _deferred.clear();
     await Future.wait(<Future<void>>[
       for (final ExitFlushCallback callback in snapshot) _runGuarded(callback),
+      for (final ExitFlushCallback write in deferred) _runGuarded(write),
     ]);
   }
 

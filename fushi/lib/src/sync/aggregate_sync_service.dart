@@ -282,8 +282,9 @@ class AggregateSyncService {
           .getSyncDeletionTombstonesOfType(kFavoriteSentenceTombstoneType))
         row.itemKey: row.deletedAt,
     };
-    // v92：本地段墓碑压制的段不上行（merged 是 local ∪ peer，peer 那份仍带本机已删
-    // 媒体的旧段——与 BUG-1572 的 legacy 同病）；墓碑本身透传，删除才能传到对端。
+    // v92：本地段墓碑压制的段（`startAt < deletedAt`，BUG-2214）不上行（merged 是
+    // local ∪ peer，peer 那份仍带本机已删媒体的旧段——与 BUG-1572 的 legacy 同病）；
+    // 墓碑本身透传，删除才能传到对端。
     final Map<String, int> segmentTombstoned = <String, int>{
       for (final StudySegmentTombstoneRow t
           in await _db.getStudySegmentTombstones())
@@ -298,7 +299,7 @@ class AggregateSyncService {
     return AggregateSnapshot(
       studySegments: <StudySegmentRecord>[
         for (final StudySegmentRecord s in snapshot.studySegments)
-          if ((segmentTombstoned[s.mediaIdentity] ?? 0) <= s.updatedAt) s,
+          if ((segmentTombstoned[s.mediaIdentity] ?? 0) <= s.startAt) s,
       ],
       studySegmentTombstones: snapshot.studySegmentTombstones,
       readingStats: <ReadingStatRecord>[
@@ -383,7 +384,9 @@ class AggregateSyncService {
       keyOf: FavoriteSentenceRepository.itemKeyOf,
       createdAtOf: (FavoriteSentence s) => s.createdAt.millisecondsSinceEpoch,
     );
-    // v92 wire v2：段按 uid LWW 并集，墓碑按身份取 max，再仲裁「删除 vs 又读了」。
+    // v92 wire v2：段按 uid LWW 并集，墓碑按身份取 max，再仲裁「删除之前开始的段
+    // 出局、墓碑永不退场」（BUG-2214 / BUG-2220）；游戏段 / 碑在仲裁里被过滤
+    // （BUG-2221：旧端混进来的也不再随 merged 上行）。
     final ({
       List<StudySegmentRecord> segments,
       List<StudyTombstoneRecord> tombstones
@@ -799,21 +802,25 @@ class AggregateSyncService {
     final List<FavoriteWordRow> favWords = await _db.getAllFavoriteWords();
     final List<FavoriteSentence> favSentences = await _readFavoriteSentences();
     // v92 wire v2：事实段与按身份墓碑全量上行（uid 幂等，对端按 LWW 并集）。
+    // BUG-2221：游戏段 / 碑不出本机（[AggregateMergeService.isStudyKindSyncable]）。
     final List<StudySegmentRow> segments = await _db.getStudySegments();
     final List<StudySegmentTombstoneRow> segmentTombstones =
         await _db.getStudySegmentTombstones();
 
     return AggregateSnapshot(
       studySegments: <StudySegmentRecord>[
-        for (final StudySegmentRow s in segments) _segmentRecordOf(s),
+        for (final StudySegmentRow s in segments)
+          if (AggregateMergeService.isStudyKindSyncable(s.mediaKind))
+            _segmentRecordOf(s),
       ],
       studySegmentTombstones: <StudyTombstoneRecord>[
         for (final StudySegmentTombstoneRow t in segmentTombstones)
-          StudyTombstoneRecord(
-            mediaKind: t.mediaKind,
-            mediaKey: t.mediaKey,
-            deletedAt: t.deletedAt,
-          ),
+          if (AggregateMergeService.isStudyKindSyncable(t.mediaKind))
+            StudyTombstoneRecord(
+              mediaKind: t.mediaKind,
+              mediaKey: t.mediaKey,
+              deletedAt: t.deletedAt,
+            ),
       ],
       readingStats: <ReadingStatRecord>[
         for (final ReadingStatisticRow r in reading)
@@ -925,22 +932,27 @@ class AggregateSyncService {
         updatedAt: r.updatedAt,
       );
 
-  /// v92 wire v2 落地：先落墓碑（只写严格较新者，并删本地被压制的段），再按 uid
-  /// LWW upsert 段（merge 侧已仲裁掉被墓碑压制的段；本地 DAO 再按 updatedAt 双保险）。
+  /// v92 wire v2 落地：**先落墓碑**（碑戳只增不减，并删本地 `startAt < deletedAt`
+  /// 的段），**再**按 uid LWW upsert 段——顺序不可反：段先落、碑后到会让 DAO 的
+  /// 墓碑门（`upsertStudySegmentsIfNewer` 跳过 `startAt < deletedAt`）看不到新碑。
+  /// merge 侧已仲裁掉被压制的段与游戏段（BUG-2221：旧端快照直落时这里再丢一次）。
   /// 幂等：同一快照重放，墓碑不变、段同值不覆盖。
   Future<void> _applyStudySegments(AggregateSnapshot snapshot) async {
     for (final StudyTombstoneRecord t in snapshot.studySegmentTombstones) {
+      if (!AggregateMergeService.isStudyKindSyncable(t.mediaKind)) continue;
       await _db.applyStudySegmentTombstone(
         mediaKind: t.mediaKind,
         mediaKey: t.mediaKey,
         deletedAt: t.deletedAt,
       );
     }
-    if (snapshot.studySegments.isEmpty) return;
-    await _db.upsertStudySegmentsIfNewer(<StudySegmentsCompanion>[
+    final List<StudySegmentsCompanion> rows = <StudySegmentsCompanion>[
       for (final StudySegmentRecord r in snapshot.studySegments)
-        _segmentCompanionOf(r),
-    ]);
+        if (AggregateMergeService.isStudyKindSyncable(r.mediaKind))
+          _segmentCompanionOf(r),
+    ];
+    if (rows.isEmpty) return;
+    await _db.upsertStudySegmentsIfNewer(rows);
   }
 
   /// 把快照里的收藏删除墓碑落进本地墓碑表（只写严格较新者，旧戳不降级），并删掉

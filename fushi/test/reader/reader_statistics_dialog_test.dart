@@ -1,4 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/pages/implementations/stat_trends.dart'
+    show kMinCphSampleMs;
 import 'package:fushi/src/reader/reader_statistics_dialog.dart';
 import 'package:fushi/src/reader/reader_status_footer.dart';
 import 'package:fushi/src/stats/stat_facts.dart';
@@ -92,6 +94,22 @@ void main() {
         ),
         isNull,
       );
+    });
+  });
+
+  group('readerBookSpeedLabel（BUG-2218：今日 / 累计速度套最小样本门槛）', () {
+    test('样本不足 1 分钟显示 —，与统计页 computeCph 同口径', () {
+      expect(readerBookSpeedLabel(11000, 30000), '—', reason: '30 秒 1.1 万字不外推');
+      expect(readerBookSpeedLabel(0, 0), '—');
+      expect(readerBookSpeedLabel(100, kMinCphSampleMs - 1), '—');
+    });
+    test('样本够则四舍五入到整数字/时', () {
+      expect(readerBookSpeedLabel(100, kMinCphSampleMs), '6000');
+      expect(readerBookSpeedLabel(6000, 3600000), '6000');
+      expect(readerBookSpeedLabel(1, 3600000 * 3), '0');
+    });
+    test('会话秒表口径不变：readingCharsPerHour 开局即 0、不设门槛', () {
+      expect(readingCharsPerHour(chars: 100, durationMs: 30000), 12000);
     });
   });
 

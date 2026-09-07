@@ -35,6 +35,11 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
   String? _error;
   GameStatsAggregate _aggregate = GameStatsAggregate();
 
+  /// **本轮加载时**的统计窗口：聚合（[computeGameStats]）与时段卡谓词同一个
+  /// （BUG-2219）；跨午夜由 [_midnightReload] 整页重聚合。
+  StatWindow _window = StatWindow(DateTime.now());
+  Timer? _midnightReload;
+
   /// 游戏域日面事实行（loadStatFacts 的 dailyGames 切片：galgame_sessions 时长
   /// 段 + legacy hook 字数行）：时段明细 sheet 的数据源（阶段 1——本页此前只按
   /// 天总量聚合，出不了 per-game 明细）。
@@ -55,6 +60,20 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
+  @override
+  void dispose() {
+    _midnightReload?.cancel();
+    super.dispose();
+  }
+
+  /// 到下一个本地午夜整页重聚合（每次加载重新排一次；页面已卸载则不动）。
+  void _armMidnightReload(DateTime now) {
+    _midnightReload?.cancel();
+    _midnightReload = Timer(StatWindow.untilNextStatDayBoundary(now), () {
+      if (mounted) unawaited(_load());
+    });
+  }
+
   /// 统计中心把三页塞进 TabBarView（无 keepAlive，离屏即 unmount），
   /// 「点开 tab → DB 还在查 → 切走」是一秒可复现的常规操作：首帧 postFrameCallback
   /// 与多次 await 之后的两处 setState 都必须过 mounted 门，否则 debug 断言
@@ -70,10 +89,13 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
       final FushiDatabase db = appModelNoUpdate.database;
       final Map<String, (int totalSeconds, int sessionCount)> dailyTotals =
           await db.getAllGalgameDailyTotals();
+      final DateTime now = DateTime.now();
+      _window = StatWindow(now);
+      _armMidnightReload(now);
       _aggregate = computeGameStats(
         games: games,
         dailyTotals: dailyTotals,
-        now: DateTime.now(),
+        now: now,
       );
       // 时段明细要 per-game × per-day 事实行：统一事实面是唯一读取入口
       // （legacy hook 字数行 + galgame_sessions 段都在里面归一）。
@@ -132,10 +154,7 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
       slivers: <Widget>[
         SliverToBoxAdapter(child: _buildSummaryCards()),
         SliverToBoxAdapter(
-          child: buildStatDailyDurationChartSection(
-            context,
-            _aggregate.daily,
-          ),
+          child: buildStatDailyDurationChartSection(context, _aggregate.daily),
         ),
         SliverToBoxAdapter(
           child: Padding(
@@ -166,37 +185,34 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
   }
 
   Widget _buildSummaryCards() {
-    // 时段谓词在点击时现算（跨日后点卡按点击时刻的窗口取数）。
-    final StatWindow w = StatWindow(DateTime.now());
-    return buildStatPeriodSummaryGrid(
-      context,
-      <StatPeriodSummary>[
-        _periodSummary(
-          t.stat_today,
-          _aggregate.todayMs,
-          _aggregate.todaySessions,
-          contains: w.isToday,
-        ),
-        _periodSummary(
-          t.stat_this_week,
-          _aggregate.weekMs,
-          _aggregate.weekSessions,
-          contains: w.inWeek,
-        ),
-        _periodSummary(
-          t.stat_this_month,
-          _aggregate.monthMs,
-          _aggregate.monthSessions,
-          contains: w.inMonth,
-        ),
-        _periodSummary(
-          t.stat_all_time,
-          _aggregate.allMs,
-          _aggregate.allSessions,
-          contains: (String _) => true,
-        ),
-      ],
-    );
+    // 时段谓词与聚合同一个窗口（BUG-2219），跨午夜靠 [_midnightReload] 重聚合。
+    final StatWindow w = _window;
+    return buildStatPeriodSummaryGrid(context, <StatPeriodSummary>[
+      _periodSummary(
+        t.stat_today,
+        _aggregate.todayMs,
+        _aggregate.todaySessions,
+        contains: w.isToday,
+      ),
+      _periodSummary(
+        t.stat_this_week,
+        _aggregate.weekMs,
+        _aggregate.weekSessions,
+        contains: w.inWeek,
+      ),
+      _periodSummary(
+        t.stat_this_month,
+        _aggregate.monthMs,
+        _aggregate.monthSessions,
+        contains: w.inMonth,
+      ),
+      _periodSummary(
+        t.stat_all_time,
+        _aggregate.allMs,
+        _aggregate.allSessions,
+        contains: (String _) => true,
+      ),
+    ]);
   }
 
   StatPeriodSummary _periodSummary(
@@ -210,10 +226,7 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
       primaryValue: formatStatTime(ms),
       onTap: () => unawaited(_showPeriodDetail(label, contains)),
       lines: <StatSummaryLine>[
-        StatSummaryLine(
-          label: t.game_stat_sessions,
-          value: '$sessions',
-        ),
+        StatSummaryLine(label: t.game_stat_sessions, value: '$sessions'),
       ],
     );
   }
@@ -238,8 +251,10 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
             mediaKey: f.mediaKey,
             title: f.title,
           );
-          final String name =
-              displayTitleForGame(entry: entry, rawTitle: f.title);
+          final String name = displayTitleForGame(
+            entry: entry,
+            rawTitle: f.title,
+          );
           return name.isEmpty ? f.mediaKey : name;
         },
         collectionOf: (StatFact f) => f.mediaKey.isEmpty
@@ -257,7 +272,8 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
             }
           }
         },
-        onEntryDelete: (StatPeriodEntryTarget t) => deleteStatPeriodEntry(db, t),
+        onEntryDelete: (StatPeriodEntryTarget t) =>
+            deleteStatPeriodEntry(db, t),
       ),
     );
     if (deleted && mounted) await _load();
@@ -268,9 +284,7 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
     final ColorScheme colors = Theme.of(context).colorScheme;
     final String lastPlayed = game.lastPlayedMs <= 0
         ? '-'
-        : statDateKey(
-            DateTime.fromMillisecondsSinceEpoch(game.lastPlayedMs),
-          );
+        : statDateKey(DateTime.fromMillisecondsSinceEpoch(game.lastPlayedMs));
     return Padding(
       padding: EdgeInsets.symmetric(
         horizontal: tokens.spacing.card,
@@ -280,10 +294,7 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
         onTap: () => _openGame(game),
         child: Row(
           children: <Widget>[
-            Icon(
-              Icons.sports_esports_outlined,
-              color: colors.primary,
-            ),
+            Icon(Icons.sports_esports_outlined, color: colors.primary),
             SizedBox(width: tokens.spacing.gap),
             Expanded(
               child: Column(
@@ -319,10 +330,7 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
               ),
             ),
             SizedBox(width: tokens.spacing.gap / 2),
-            Icon(
-              Icons.chevron_right,
-              color: colors.onSurfaceVariant,
-            ),
+            Icon(Icons.chevron_right, color: colors.onSurfaceVariant),
           ],
         ),
       ),
@@ -332,10 +340,8 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
   Future<void> _openGame(GalgameEntry game) async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (BuildContext context) => GalgameDetailPage(
-          gameId: game.id,
-          initialTab: 0,
-        ),
+        builder: (BuildContext context) =>
+            GalgameDetailPage(gameId: game.id, initialTab: 0),
       ),
     );
     if (mounted) await _load();

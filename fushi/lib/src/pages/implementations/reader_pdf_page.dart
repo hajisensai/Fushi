@@ -19,6 +19,7 @@ import 'package:fushi/src/pages/base_source_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/pdf/pdf_engine.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
+import 'package:fushi/src/stats/read_unit_ledger.dart';
 import 'package:fushi/utils.dart';
 
 /// PDF 阅读器页面（Phase 1 渲染 / Phase 2 点选查词 / Phase 3 页码进度 / Phase 4 制卡）。
@@ -71,6 +72,19 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
   /// （与 `ReaderPositions.sectionIndex` 的 EPUB 章 index 口径一致）。
   int _currentPageIndex = 0;
   int _lastSavedPageIndex = -1;
+
+  /// 「读过」判据的唯一账本（2026-09-06 裁定，三域共用，见
+  /// `docs/plans/2026-09-06-read-unit-ledger.md`）：**翻走即计 + 会话覆盖并集**。
+  /// 单元 = 页号半开区间 `[page, page+1)`；离开一页那一刻把它（若本会话未覆盖）
+  /// 记进时钟当前段的页数。跳 N 页只计跳走前那页、跳过的从未成为当前单元；往回翻 /
+  /// 回到已读页并集已覆盖 → 0；无存档预置（续读时存档页是当前单元，翻走计一次）。
+  /// 此前是标量水位 `_sessionMaxPageIndex`（BUG-2222：跳 N 页计 N 页），已废。
+  late final ReadUnitLedger _readLedger = ReadUnitLedger(
+    onCredit: (List<(int, int)> fresh) =>
+        _studyClock?.addPages(readUnitsLength(fresh)),
+    onRetract: (List<(int, int)> retracted) =>
+        _studyClock?.retractPages(readUnitsLength(retracted)),
+  );
   Timer? _saveDebounce;
   bool _restoreDone = false;
 
@@ -100,20 +114,31 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    // 进程退出兜底：把未落盘的页码 flush 掉（与 EPUB 阅读器同纪律）。
-    ExitFlushRegistry.instance.register(_flushPosition);
+    // 进程退出兜底：把未落盘的页码 + 学习段 flush 掉（与 EPUB 阅读器同纪律）。
+    ExitFlushRegistry.instance.register(_flushForExit);
   }
 
   @override
   void dispose() {
-    ExitFlushRegistry.instance.unregister(_flushPosition);
+    ExitFlushRegistry.instance.unregister(_flushForExit);
     WidgetsBinding.instance.removeObserver(this);
     _saveDebounce?.cancel();
-    // dispose 里只能 fire-and-forget（不能 await）；正常退出走 onSourcePagePop
-    // 的 await 路径，这里是崩溃/异常拆栈时的兜底。
-    unawaited(_flushPosition());
-    _studyClock?.dispose();
+    // 崩溃 / 异常拆栈的兜底（正常退出走 onSourcePagePop 的 await 路径）：dispose
+    // 是同步的，这里**一笔 DB 写都不许发起**——无人 await 的事务与随后的
+    // `db.close()` 互等。账本结算（leave → 页数入账）由 detach 在停表前跑完，攒下
+    // 的写和最后的位置一起交给退出汇合点统一 await。
+    // 时钟为空 = 本页从没开始计时，账本结算没有消费者，整段跳过。
+    _studyClock?.detach(_readLedger.leave);
+    ExitFlushRegistry.instance.defer(_flushPosition);
     super.dispose();
+  }
+
+  /// 进程退出 / 退后台的统一 flush（[ExitFlushRegistry]）：先把当前页结算进账本
+  /// （退出也是「翻走」），再落位置 + 学习段。用 [ReadUnitLedger.settle] 而非
+  /// `leave()`，理由见其文档。
+  Future<void> _flushForExit() async {
+    _readLedger.settle();
+    await _flushPosition();
   }
 
   @override
@@ -133,6 +158,8 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
 
   @override
   Future<void> onSourcePagePop() async {
+    // 离开当前页：账本结算最后一个单元（翻走即计），再落盘。
+    _readLedger.leave();
     // 返回书架的正常路径：await 落盘，保证书架 recency/进度立刻正确。
     await _flushPosition();
     await _studyClock?.stop();
@@ -174,6 +201,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
       idleTimeout: appModel.readingIdleTimeout,
       onWriteError: (Object e, StackTrace st) =>
           ErrorLogService.instance.log('StudyClock.write(pdf)', e, st),
+      deferWrite: ExitFlushRegistry.instance.defer,
     );
     _studyClock!.start();
     return _PdfBookLoad(path: path, row: row);
@@ -195,6 +223,9 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     if (pageIndex < 0) return;
     // v92 阅读空闲门：翻页 = 用户输入。
     _studyClock?.touch();
+    // 翻走即计：到达新页 = 离开上一页，账本结算上一页（首次覆盖才 addPages，与时长
+    // 同段同 uid）；本页要等下次翻走才计。
+    _readLedger.arrive(pageIndex, pageIndex + 1);
     _currentPageIndex = pageIndex;
     // 500ms debounce（与 EPUB 阅读器同口径）：连续翻页只落最后一次。
     if (pageIndex == _lastSavedPageIndex) return;
