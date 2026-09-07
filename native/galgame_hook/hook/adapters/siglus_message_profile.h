@@ -1,6 +1,7 @@
 #pragma once
 
 #include "siglus_autoprofile.h"
+#include "siglus_resource_mapping.h"
 
 namespace fushi_voice_hook {
 
@@ -204,6 +205,9 @@ inline bool ResolveSiglusMessageProfile(
   out->owner_surface_begin_offset = 0x228u;
   out->owner_surface_end_offset = 0x22cu;
   out->surface_stride = 0x1c0u;
+  // Static resource mapping is independently available, but it does not prove
+  // which observed file produced a payload. Keep audio admission closed until
+  // the runtime caller binds the proved resource source to actual file identity.
   return true;
 }
 }  // namespace fushi_voice_hook
