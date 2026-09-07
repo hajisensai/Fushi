@@ -8,6 +8,8 @@
 #include "siglus_voice_source.h"
 #include "siglus_message_profile.h"
 #include "siglus_resource_mapping.h"
+#include "siglus_native_resource.h"
+#include "siglus_native_message_profile.h"
 #include "siglus_image.h"
 
 namespace {
@@ -198,6 +200,8 @@ void TestCwdChange() {
 bool g_capture_enabled = true, g_cs_ready = true;
 CRITICAL_SECTION g_cs;
 SiglusMessageProfile g_siglus_message_profile;
+bool g_siglus_message_native_ecx = false;
+SiglusNativeMessageProfile g_siglus_native_message_profile;
 bool message_installed = true;
 bool IsSiglusMessageTextInstalled() { return message_installed; }
 const SiglusLookupProfile* ActiveSiglusLookupProfile() { return nullptr; }
@@ -260,6 +264,7 @@ __declspec(naked) void InvokeSource() {
     mov expected_return, eax
     // The production caller gate is a runtime-relocated return address.
     mov g_siglus_voice_source_layout.payload_return, eax
+    mov g_siglus_native_source_layout.payload_return, eax
     std
     stc
     call Detour_SiglusVoiceSource
@@ -272,6 +277,7 @@ __declspec(naked) void InvokeSource() {
   }
 }
 void TestProductionNakedSource() {
+  g_siglus_voice_source_native_ecx = false;
   uint32_t frame[128] = {};
   uint32_t reader[4] = {};
   fake_frame = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&frame[100]));
@@ -330,6 +336,60 @@ void TestProductionNakedSource() {
   while (g_siglus_voice_source_tasks.TryPop(&task)) {}
 }
 
+void TestProductionNativeSource() {
+  alignas(8) uint32_t frame[128] = {};
+  uint32_t reader[4] = {0x7000};
+  fake_frame = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&frame[100]));
+  fake_reader = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(reader));
+  fake_ebx = fake_frame + 8;
+  fake_esi = 0xdeadbeef; // NativeEcx never interprets ESI as an offset.
+  fake_path = fake_frame - 0xc8;
+  fake_offset = 0x100; fake_length = 0x40;
+  frame[96] = fake_ebx;
+  frame[104] = frame[36] = 100100297;
+  frame[29] = fake_reader;
+  frame[67] = fake_offset; frame[34] = fake_length;
+  auto* text = reinterpret_cast<wchar_t*>(&frame[50]);
+  wcscpy_s(text, 8, L"D:\\x"); frame[54] = 4; frame[55] = 7;
+  g_siglus_voice_source_native_ecx = true;
+  g_siglus_native_source_layout = {0, 0x7000};
+  g_orig_SiglusVoiceSource = reinterpret_cast<void*>(&OriginalSource);
+  g_siglus_voice_source_enabled.store(true);
+  SiglusVoiceSourceTask task;
+  SetLastError(43); InvokeSource();
+  const DWORD last_error = GetLastError();
+  Check(g_siglus_voice_source_tasks.TryPop(&task));
+  Check(task.key == 100100297 && task.offset == 0x100 && task.length == 0x40);
+  Check(std::wcscmp(task.path, L"D:\\x") == 0);
+  Check(original_ecx == fake_reader && original_ebp == fake_frame);
+  Check(original_esi == fake_esi && original_ebx == fake_ebx);
+  Check(before_esp == after_esp && (original_flags & 0x401) == 0x401);
+  Check(last_error == 43);
+  const uint32_t checked_words[] = {96, 104, 36, 29, 67, 34};
+  for (const uint32_t index : checked_words) {
+    ++frame[index]; InvokeSource();
+    Check(!g_siglus_voice_source_tasks.TryPop(&task));
+    --frame[index];
+  }
+  ++fake_ebx; InvokeSource();
+  Check(!g_siglus_voice_source_tasks.TryPop(&task)); --fake_ebx;
+  reader[0] = 0; InvokeSource();
+  Check(!g_siglus_voice_source_tasks.TryPop(&task)); reader[0] = 0x7000;
+  frame[50] = 1; frame[54] = 10; frame[55] = 15; InvokeSource();
+  Check(!g_siglus_voice_source_tasks.TryPop(&task)); // actual invalid heap pointer
+  wcscpy_s(text, 8, L"x.ovk"); frame[54] = 5; frame[55] = 7; InvokeSource();
+  Check(!g_siglus_voice_source_tasks.TryPop(&task));
+  wcscpy_s(text, 8, L"D:\\x"); frame[54] = 4; frame[55] = 7;
+  const int before = published;
+  InvokeSource(); ProcessSiglusVoiceSourceTasks();
+  Check(published == before + 1 && published_task.key == 100100297);
+  g_capture_enabled = false; InvokeSource();
+  Check(!g_siglus_voice_source_tasks.TryPop(&task)); g_capture_enabled = true;
+  g_siglus_voice_source_enabled.store(false); InvokeSource();
+  Check(!g_siglus_voice_source_tasks.TryPop(&task));
+  g_siglus_voice_source_native_ecx = false;
+}
+
 void TestInstallation() {
   InitializeCriticalSection(&g_cs);
   const auto reset = [] {
@@ -370,7 +430,7 @@ int main() {
   TestPureSource();
   TestStablePaths(); TestCwdChange();
 #if defined(_M_IX86)
-  TestProductionNakedSource(); TestInstallation();
+  TestProductionNakedSource(); TestProductionNativeSource(); TestInstallation();
 #else
   Check(!TryHookSiglusVoiceSource()); Check(!IsSiglusVoiceSourceInstalled());
   ProcessSiglusVoiceSourceTasks(); ShutdownSiglusVoiceSource();

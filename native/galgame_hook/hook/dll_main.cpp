@@ -79,6 +79,7 @@
 #include "adapters/siglus_native_message_profile.h"
 #include "adapters/siglus_native_message_capture.h"
 #include "adapters/siglus_resource_mapping.h"
+#include "adapters/siglus_native_resource.h"
 #include "adapters/siglus_voice_source.h"
 #include "adapters/hunex_gge_lookup.h"
 #include "adapters/hunex_gge_capture_bridge.h"

@@ -191,14 +191,26 @@ LOOPERS PLUS 原版由 Start.exe34172（19:42:32.505292）经 StartMenu40196 进
 
 20:36:46.068点击正文显示真实新明解词条，hit引用真实seq2而geometry generation为16。20:37:34.304窗外点击只关闭词典、原句保留；20:37:49.443下一次点击才推进到seq3/tick956836562。未要求风险确认或校准。此时新版source模块尚未接线，不把这一条文本/查词回归写成逐句音频或真卡通过。本机元数据为`native-message32232-runtime.json`；宿主线程目录显示的历史计数129没有作为IPC计数证据，实际推进前全局text_count为2。
 
+## NativeEcx 原资源接线与 LOOPERS PLUS 真卡（21:03）
+
+`e335a94106` 新增独立资源 ABI 后，生产 source observer 按已准入 message family 分派；NativeEcx 从保存的原 EBX 取得资源调用栈，不沿用旧版 ESI/EBX 的 offset/length 含义。完整 profile 证明 voice→resource→kind3→成员行→OggOpen 后才启用该分支，后续沿用真实事件编号、稳定绝对路径、文件身份与唯一索引核验。独立纯解析器审查和接线审查均无生产阻断；接线的合成测试直接执行真实 naked thunk 与队列，但未单独模拟 live installer 的完整 family 分派。
+
+完整分发退出0，x86/x64各83/83，真实x86 source回调测试183项、纯资源测试365项，结构47/47，manifest/profile生成检查通过。x86 ZIP `0ca1498a95aff98617b5963214390b2e60e8bd47fa85ef07db0c2dc0f5beb2b6`，x64 ZIP `6ada60df64053d03b13939b76406e49298daf9a939376fb51142fa50640cb3d4`；x86 DLL `df4f00e531ee764ba5e6a4811552e9dde7de5c40dd964a5a69fe6d5cbd6fb36c`，x64 DLL `6aa6a9f311247c540c36691895317e532b6f3f4a30d75a996b518b25dd54b6f3`。安装脚本退出0。首次手动profile检查误用不存在的脚本名，改用实际`generate_luna_profiles.py --check`退出0；不把误命令当通过。
+
+原始Start55156→StartMenu71768→SiglusEngine68684（20:51:05.427566），宿主73120于20:51:39.910默认附着，helper9876与实际DLL位于`be4639f98e9bcf3a/x86`，IPC24、owner2、无Luna模块。20:52:26.397原生读取slot001，产生seq2/tick957714921与`957714921_fushi_textseq2_z1001.ovk_363.ogg`。此资源71737字节，与原始z1001.ovk唯一member363（offset6818446、sample_count150270）逐字节哈希一致：`1abaf11d9f01eb8bbbbcdb292430ecd5b44cb5b8152ff6f5b92293306c94d78d`。解码44100Hz mono、150270帧、3.407483秒且非静音；这不等于额外证明纯人声分类。
+
+20:54:19.418直接点击游戏正文显示词典，hit引用seq2/geometry17。20:54:46.436经真实弹窗制卡，Anki note`1788785687383`、card`1788785687384`已写入。正文去除标记后的UTF-16哈希与实际IPC seq2完全一致；句音46987字节AAC与该原音按生产参数转码完全相同，SHA-256 `9686f249683b651326f9cec4f4671d17ed5a53c48e29ec1850d726842ceaf1a2`；配图50194字节，实际查看为同句游戏画面且无查词弹窗。本机完整元数据：`native-source68684-runtime.json`、`lp68684-textseq2-resource-verification.json`、`lp68684-card-verification.json`；没有入库游戏载荷。为核对句子新增的本机只读digest工具先因UTF-8编译参数缺失失败，随后因生产Interlocked读helper要求写权限而自身崩溃；改用x64有界只读快照后退出0，没有改变游戏映射权限或游戏状态。
+
+21:00:13.392首次窗外点击只关闭弹窗，21:00:27.518下一点才推进seq3。21:01:54.366重复读取同一存档，产生同文新seq4/tick958282875；原音以新的`textseq4`文件导出且哈希与seq2相同，宿主对应行也引用该新文件。21:02:22.790同词再次查词引用seq4/geometry55。不过21:02:34.757第二次窗外关闭后出现seq5推进，尚需复现和输入屏蔽路径审计，不能宣称重复交互全部通过。
+
 ## Not proved
 
 - `6f18f9...` v24 DLL 在 LOOPERS PLUS、LOOPERS 原版和終のステラ有有限查词交互证据；LUNARiA、SPRB 和 Anemoi 的旧 v23 证据不能互换为该构建验收；更不能将任何旧会话替换成最新 `7312ef...` 身份修正构建的验收。
 - Rewrite 与 Angel Beats! 的原路径启动停在日语 Windows / Locale Emulator 边界，尚无正常正文会话。LE 相关源码修补尚未 runtime 验证；不能通过修改游戏二进制、清 mutex 或绕过启动条件制造成功。
 - 月の彼方で逢いましょう的原路径重跑停在日语 Windows 环境检测，静态通过不能升级为正常正文会话。
-- 仅 LUNARiA 新构建会话的上述 seq11 形成正文、对应原始资源、当前画面与真卡关联；其他样本及编译 family 不因此升级。Loopback、音频纯净性与跨版本兼容性仍分开记录。
+- LUNARiA的seq11和LOOPERS PLUS上述seq2分别在各自明确的DLL会话形成正文、对应原始资源、当前画面与真卡关联；其他样本及编译family不因此升级。Loopback、音频纯净性与跨版本兼容性仍分开记录。
 - 未宣称任意 Siglus build、任意字体/排版或全部 galgame 引擎已支持；未知布局和歧义仍须拒绝。
 
 ## Next gate
 
-NativeEcx 的有声单片段与无声连续outer身份已观察，正在据此实现独立严格profile与调用帧校验；其下一资源边界仍需证明真实source调用的key、路径和成员范围，不能套用旧EBP偏移。整段文本聚合及有声多片段未证明，不凭同owner/key/栈地址拼接。LUNARiA的重复句/读档/重播及旧样本启动门仍未验证；独立LE源码修补不能替代原始游戏会话。
+当前先复查LOOPERS PLUS重复同词查词后窗外点击的意外推进。Anemoi仍拒绝完整Native message布局，需要从正常原路径启动后的实际映像定位首个结构差异；不能扩大签名制造通过。整段文本聚合及有声多片段未证明，不凭同owner/key/栈地址拼接。LUNARiA的重复句/读档/重播及旧样本启动门仍未验证；独立LE源码修补不能替代原始游戏会话。

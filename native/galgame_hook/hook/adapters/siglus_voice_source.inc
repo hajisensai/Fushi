@@ -9,6 +9,9 @@ std::atomic<int> g_siglus_voice_source_state{0};
 std::atomic<bool> g_siglus_voice_source_enabled{false};
 fushi_voice_hook::SiglusResourceMappingProfile g_siglus_voice_source_profile;
 fushi_voice_hook::SiglusVoiceSourceLayout g_siglus_voice_source_layout;
+bool g_siglus_voice_source_native_ecx = false;
+fushi_voice_hook::SiglusNativeResourceMappingProfile g_siglus_native_source_profile;
+fushi_voice_hook::SiglusNativeVoiceSourceLayout g_siglus_native_source_layout;
 fushi_voice_hook::SiglusMessageQueue<fushi_voice_hook::SiglusVoiceSourceTask,
                                    kSiglusVoiceSourceTaskSlots>
     g_siglus_voice_source_tasks;
@@ -41,8 +44,13 @@ void __stdcall ObserveSiglusVoiceSource(uint32_t reader, uint32_t entry_esp,
       !ReadSiglusVoiceSourceMemory(entry_esp - 20, &call.original_ebx, 4)) return;
   auto read = ReadSiglusVoiceSourceMemory;
   fushi_voice_hook::SiglusVoiceSourceTask task;
-  if (fushi_voice_hook::CaptureSiglusVoiceSource(g_siglus_voice_source_layout,
-                                               call, read, &task) &&
+  const bool captured = g_siglus_voice_source_native_ecx
+      ? fushi_voice_hook::CaptureSiglusNativeVoiceSource(
+            g_siglus_native_source_layout,
+            {reader, entry_esp, caller_ebp, call.original_ebx}, read, &task)
+      : fushi_voice_hook::CaptureSiglusVoiceSource(
+            g_siglus_voice_source_layout, call, read, &task);
+  if (captured &&
       g_siglus_voice_source_enabled.load(std::memory_order_acquire))
     (void)g_siglus_voice_source_tasks.TryPush(task);
 }
@@ -109,14 +117,47 @@ bool ResolveLiveSiglusVoiceSource(HMODULE module, uintptr_t proved_voice_entry,
   }
 }
 
+bool ResolveLiveSiglusNativeVoiceSource(HMODULE module, uintptr_t proved_voice_entry,
+    fushi_voice_hook::SiglusNativeResourceMappingProfile* profile) {
+  __try {
+    fushi_voice_hook::exact_lookup::LoadedPeImage image;
+    return fushi_voice_hook::OpenSiglusLoadedImage(module, &image) &&
+        fushi_voice_hook::ResolveSiglusNativeResourceMappingProfile(
+            image, proved_voice_entry, profile) &&
+        image.base[profile->ogg_open_rva] == 0x55;
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    return false;
+  }
+}
+
 bool TryHookSiglusVoiceSource() {
   if (IsSiglusVoiceSourceInstalled()) return true;
   if (g_siglus_voice_source_state.load(std::memory_order_acquire) != 0 ||
       !g_cs_ready || !IsSiglusMessageTextInstalled()) return false;
   const auto* lane = ActiveSiglusLookupProfile();
   HMODULE module = GetModuleHandleW(nullptr);
-  if (lane == nullptr || module == nullptr || lane->text_feed !=
-      fushi_voice_hook::SiglusLookupTextFeed::kLunaScenarioLane) return false;
+  if (lane == nullptr || module == nullptr) return false;
+  const uintptr_t base = reinterpret_cast<uintptr_t>(module);
+  if (lane->text_feed ==
+      fushi_voice_hook::SiglusLookupTextFeed::kNativeEcxTextUnion) {
+    if (!g_siglus_message_native_ecx ||
+        !ResolveLiveSiglusNativeVoiceSource(module,
+            g_siglus_native_message_profile.voice_entry_rva,
+            &g_siglus_native_source_profile)) {
+      g_siglus_voice_source_state.store(-1, std::memory_order_release);
+      return false;
+    }
+    const auto& profile = g_siglus_native_source_profile;
+    g_siglus_voice_source_native_ecx = true;
+    g_siglus_native_source_layout = {
+        static_cast<uint32_t>(base + profile.payload_return_rva),
+        static_cast<uint32_t>(base + profile.ogg_vtable_rva)};
+    g_siglus_voice_source_target = reinterpret_cast<void*>(base + profile.ogg_open_rva);
+    return InstallSiglusVoiceSourceHook();
+  }
+  if (lane->text_feed !=
+      fushi_voice_hook::SiglusLookupTextFeed::kLunaScenarioLane ||
+      g_siglus_message_native_ecx) return false;
   // The message entry is already detoured. Its immutable admitted proof is the
   // source of this voice entry, never a second scan or a nearby address guess.
   if (!ResolveLiveSiglusVoiceSource(module, g_siglus_message_profile.voice_entry_rva,
@@ -125,7 +166,6 @@ bool TryHookSiglusVoiceSource() {
     return false;
   }
   const auto& profile = g_siglus_voice_source_profile;
-  const uintptr_t base = reinterpret_cast<uintptr_t>(module);
   g_siglus_voice_source_layout = {
       static_cast<uint32_t>(base + profile.payload_return_rva),
       static_cast<uint32_t>(base + profile.ogg_vtable_rva),
