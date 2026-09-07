@@ -357,7 +357,7 @@ void main() {
   });
 
   testWidgets(
-      'source settings keep AniDB fixed and persist safe output toggles',
+      'source settings explain MAL primary and persist safe output toggles',
       (WidgetTester tester) async {
     final FushiDatabase db = _memDb();
     addTearDown(db.close);
@@ -560,7 +560,7 @@ void main() {
     expect(runner.queries, <String>['Doraemon Movies']);
 
     await tester.tap(find.byKey(
-      const ValueKey<String>('video-source-candidate-anidb-65733'),
+      const ValueKey<String>('video-source-candidate-anidb-tv-65733'),
     ));
     await tester.pumpAndSettle();
 

@@ -103,7 +103,7 @@ Fushi/                      # Repository root (Melos workspace: fushi_workspace)
 
 </details>
 
-Video import supports grouping by work or folder. See the [video organization and scraping workflow](docs/specs/2026-09-07-video-library-workflow.md) for manual AniDB matching and background tasks.
+Video import supports grouping by work or folder. See the [video workflow](docs/specs/2026-09-07-video-library-workflow.md) and [MAL/TMDB metadata with AniDB file hashing](docs/specs/2026-09-07-mal-tmdb-anidb-hash.md) for matching and background tasks.
 
 ## Privacy & Data
 

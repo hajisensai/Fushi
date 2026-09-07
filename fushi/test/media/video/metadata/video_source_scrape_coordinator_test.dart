@@ -55,6 +55,7 @@ void main() {
     final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
     final VideoSourceScrapeCoordinator coordinator =
         VideoSourceScrapeCoordinator(
+      primaryProvider: VideoMetadataProviderKind.anidb,
       database: db,
       config: const VideoSourceScrapeGlobalConfig(),
       registry: VideoMetadataProviderRegistry(
@@ -109,6 +110,7 @@ void main() {
     final _FakeAniDbProvider provider = _FakeAniDbProvider();
     final VideoSourceScrapeCoordinator coordinator =
         VideoSourceScrapeCoordinator(
+      primaryProvider: VideoMetadataProviderKind.anidb,
       database: db,
       config: const VideoSourceScrapeGlobalConfig(),
       registry:
@@ -143,6 +145,7 @@ void main() {
     final _FakeAniDbProvider provider = _FakeAniDbProvider();
     final VideoSourceScrapeCoordinator coordinator =
         VideoSourceScrapeCoordinator(
+      primaryProvider: VideoMetadataProviderKind.anidb,
       database: db,
       config: const VideoSourceScrapeGlobalConfig(),
       registry:
@@ -170,7 +173,8 @@ void main() {
       await expectLater(
           coordinator.searchManualCandidates(
               source: source, workTitle: 'Local work', query: query),
-          throwsFormatException);
+          throwsFormatException,
+          reason: 'Invalid identity query: $query');
     }
     await coordinator.searchManualCandidates(
         source: source, workTitle: '86', query: '86');
@@ -231,6 +235,7 @@ void main() {
     final _FakeAniDbProvider provider = _FakeAniDbProvider();
     final VideoSourceScrapeCoordinator coordinator =
         VideoSourceScrapeCoordinator(
+      primaryProvider: VideoMetadataProviderKind.anidb,
       database: db,
       config: const VideoSourceScrapeGlobalConfig(),
       registry:
@@ -292,6 +297,7 @@ void main() {
     final _ThrowingTmdbProvider tmdb = _ThrowingTmdbProvider();
     final VideoSourceScrapeCoordinator coordinator =
         VideoSourceScrapeCoordinator(
+      primaryProvider: VideoMetadataProviderKind.anidb,
       database: db,
       config: const VideoSourceScrapeGlobalConfig(),
       registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
@@ -327,6 +333,7 @@ void main() {
     final _TwoBackdropTmdbProvider tmdb = _TwoBackdropTmdbProvider();
     final VideoSourceScrapeCoordinator coordinator =
         VideoSourceScrapeCoordinator(
+      primaryProvider: VideoMetadataProviderKind.anidb,
       database: db,
       config: const VideoSourceScrapeGlobalConfig(),
       registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[tmdb]),
@@ -357,6 +364,7 @@ void main() {
     final _ThrowingTmdbProvider tmdb = _ThrowingTmdbProvider();
     final VideoSourceScrapeCoordinator coordinator =
         VideoSourceScrapeCoordinator(
+      primaryProvider: VideoMetadataProviderKind.anidb,
       database: db,
       config: const VideoSourceScrapeGlobalConfig(),
       registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
@@ -396,6 +404,7 @@ void main() {
         _RecordingCrossrefTmdbProvider();
     final VideoSourceScrapeCoordinator firstCoordinator =
         VideoSourceScrapeCoordinator(
+      primaryProvider: VideoMetadataProviderKind.anidb,
       database: db,
       config: const VideoSourceScrapeGlobalConfig(),
       registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
@@ -419,6 +428,7 @@ void main() {
         _RecordingCrossrefTmdbProvider();
     final VideoSourceScrapeCoordinator secondCoordinator =
         VideoSourceScrapeCoordinator(
+      primaryProvider: VideoMetadataProviderKind.anidb,
       database: db,
       config: const VideoSourceScrapeGlobalConfig(),
       registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
@@ -449,6 +459,7 @@ void main() {
     final SourceLibraryRow source = await _createMovieSource(db, root,
         provider: VideoMetadataProviderKind.anidb);
     final VideoSourceScrapeCoordinator first = VideoSourceScrapeCoordinator(
+      primaryProvider: VideoMetadataProviderKind.anidb,
       database: db,
       config: const VideoSourceScrapeGlobalConfig(),
       registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
@@ -466,6 +477,7 @@ void main() {
     final _RecordingCrossrefTmdbProvider tmdb =
         _RecordingCrossrefTmdbProvider();
     final VideoSourceScrapeCoordinator second = VideoSourceScrapeCoordinator(
+      primaryProvider: VideoMetadataProviderKind.anidb,
       database: db,
       config: const VideoSourceScrapeGlobalConfig(),
       registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
@@ -519,6 +531,7 @@ void main() {
     );
     final VideoSourceScrapeCoordinator firstCoordinator =
         VideoSourceScrapeCoordinator(
+      primaryProvider: VideoMetadataProviderKind.anidb,
       database: db,
       config: const VideoSourceScrapeGlobalConfig(),
       registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
@@ -538,6 +551,7 @@ void main() {
     final _ThrowingTmdbProvider secondTmdb = _ThrowingTmdbProvider();
     final VideoSourceScrapeCoordinator secondCoordinator =
         VideoSourceScrapeCoordinator(
+      primaryProvider: VideoMetadataProviderKind.anidb,
       database: db,
       config: const VideoSourceScrapeGlobalConfig(),
       registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
@@ -598,6 +612,7 @@ void main() {
         _RecordingCrossrefTmdbProvider();
     final VideoSourceScrapeCoordinator coordinator =
         VideoSourceScrapeCoordinator(
+      primaryProvider: VideoMetadataProviderKind.anidb,
       database: db,
       config: const VideoSourceScrapeGlobalConfig(),
       registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
@@ -641,6 +656,7 @@ void main() {
         _CatalogConfirmationAniDbProvider();
     final VideoSourceScrapeCoordinator coordinator =
         VideoSourceScrapeCoordinator(
+      primaryProvider: VideoMetadataProviderKind.anidb,
       database: db,
       config: const VideoSourceScrapeGlobalConfig(),
       registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
@@ -674,6 +690,7 @@ void main() {
     final _PrimaryContinuationProvider primary = _PrimaryContinuationProvider();
     final VideoSourceScrapeCoordinator firstCoordinator =
         VideoSourceScrapeCoordinator(
+      primaryProvider: VideoMetadataProviderKind.anidb,
       database: db,
       config: const VideoSourceScrapeGlobalConfig(),
       registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
@@ -709,6 +726,7 @@ void main() {
     final _ThrowingTmdbProvider failingTmdb = _ThrowingTmdbProvider();
     final VideoSourceScrapeCoordinator secondCoordinator =
         VideoSourceScrapeCoordinator(
+      primaryProvider: VideoMetadataProviderKind.anidb,
       database: db,
       config: const VideoSourceScrapeGlobalConfig(),
       registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
@@ -747,6 +765,7 @@ void main() {
     );
     final VideoSourceScrapeCoordinator firstCoordinator =
         VideoSourceScrapeCoordinator(
+      primaryProvider: VideoMetadataProviderKind.anidb,
       database: db,
       config: const VideoSourceScrapeGlobalConfig(),
       registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
@@ -776,6 +795,7 @@ void main() {
     );
     final VideoSourceScrapeCoordinator secondCoordinator =
         VideoSourceScrapeCoordinator(
+      primaryProvider: VideoMetadataProviderKind.anidb,
       database: db,
       config: const VideoSourceScrapeGlobalConfig(),
       registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
@@ -838,6 +858,7 @@ void main() {
     final _YearCapturingAniDbProvider provider = _YearCapturingAniDbProvider();
     final VideoSourceScrapeCoordinator coordinator =
         VideoSourceScrapeCoordinator(
+      primaryProvider: VideoMetadataProviderKind.anidb,
       database: db,
       config: const VideoSourceScrapeGlobalConfig(),
       registry:
@@ -901,6 +922,7 @@ void main() {
     final _HimoutoAniDbProvider provider = _HimoutoAniDbProvider();
     final VideoSourceScrapeCoordinator coordinator =
         VideoSourceScrapeCoordinator(
+      primaryProvider: VideoMetadataProviderKind.anidb,
       database: db,
       config: const VideoSourceScrapeGlobalConfig(),
       registry:
@@ -990,6 +1012,7 @@ void main() {
     final _ReZeroAniDbProvider provider = _ReZeroAniDbProvider();
     final VideoSourceScrapeCoordinator coordinator =
         VideoSourceScrapeCoordinator(
+      primaryProvider: VideoMetadataProviderKind.anidb,
       database: db,
       config: const VideoSourceScrapeGlobalConfig(),
       registry:
@@ -1061,6 +1084,7 @@ void main() {
     );
     final VideoSourceScrapeCoordinator coordinator =
         VideoSourceScrapeCoordinator(
+      primaryProvider: VideoMetadataProviderKind.anidb,
       database: db,
       config: const VideoSourceScrapeGlobalConfig(),
       registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
@@ -1093,6 +1117,7 @@ void main() {
     final _RefreshingAniDbProvider provider = _RefreshingAniDbProvider();
     final VideoSourceScrapeCoordinator coordinator =
         VideoSourceScrapeCoordinator(
+            primaryProvider: VideoMetadataProviderKind.anidb,
             database: db,
             config: const VideoSourceScrapeGlobalConfig(),
             registry: VideoMetadataProviderRegistry(
@@ -1142,6 +1167,7 @@ void main() {
     final _RecordingAssetDownloader downloader = _RecordingAssetDownloader();
     final VideoSourceScrapeCoordinator coordinator =
         VideoSourceScrapeCoordinator(
+      primaryProvider: VideoMetadataProviderKind.anidb,
       database: db,
       config: const VideoSourceScrapeGlobalConfig(),
       registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
@@ -1185,6 +1211,7 @@ void main() {
     final _ExactMovieProvider provider = _ExactMovieProvider();
     final VideoSourceScrapeCoordinator coordinator =
         VideoSourceScrapeCoordinator(
+            primaryProvider: VideoMetadataProviderKind.anidb,
             database: db,
             config: const VideoSourceScrapeGlobalConfig(),
             registry: VideoMetadataProviderRegistry(

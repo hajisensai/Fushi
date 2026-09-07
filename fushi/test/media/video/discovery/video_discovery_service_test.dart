@@ -594,6 +594,49 @@ void main() {
       expect(second.requestedPages, <int>[1, 1, 2]);
     });
 
+    test('MAL cross identity is the primary discovery detail source', () async {
+      final VideoMetadataWork malWork = VideoMetadataWork(
+        provider: VideoMetadataProviderKind.mal,
+        kind: VideoMetadataMediaKind.tv,
+        title: 'MAL title',
+        plot: 'MAL synopsis',
+        ids: const <VideoMetadataId>[
+          VideoMetadataId(type: 'mal', value: '42', isDefault: true),
+        ],
+      );
+      final VideoDiscoveryService service = VideoDiscoveryService(
+        providers: const <VideoDiscoveryProvider>[],
+        metadataProviders: <VideoMetadataProvider>[
+          _FakeMetadataProvider(
+              kind: VideoMetadataProviderKind.mal, work: malWork),
+          _FakeMetadataProvider(
+            kind: VideoMetadataProviderKind.anilist,
+            work: VideoMetadataWork(
+              provider: VideoMetadataProviderKind.anilist,
+              kind: VideoMetadataMediaKind.tv,
+              title: 'AniList title',
+              plot: 'AniList synopsis',
+            ),
+          ),
+        ],
+      );
+      final VideoMetadataWork? result = await service.loadDetails(
+        VideoDiscoveryItem(
+            reference: VideoMediaReference(
+          providerId: 'anilist',
+          mediaId: '1',
+          mediaKind: VideoMetadataMediaKind.tv,
+          discoveryCategory: VideoDiscoveryCategory.anime,
+          title: 'AniList title',
+          anilistId: 1,
+          externalIds: const <String, String>{'mal': '42'},
+        )),
+      );
+      expect(result?.provider, VideoMetadataProviderKind.mal);
+      expect(result?.title, 'MAL title');
+      expect(result?.plot, 'MAL synopsis');
+    });
+
     test('hydrates AniList details without probing a legacy Bangumi id',
         () async {
       final VideoMetadataWork anilistWork = VideoMetadataWork(

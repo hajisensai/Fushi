@@ -12,6 +12,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:fushi/src/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_candidate_tile.dart';
+import 'package:fushi/src/media/video/metadata/video_manual_identity_query.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -315,6 +316,7 @@ class _ManualBindingDialogState extends State<_ManualBindingDialog> {
   List<VideoSourceScrapeConfirmationCandidate>? _results;
   bool _searching = false;
   bool _byId = false;
+  VideoManualIdentitySource _idSource = VideoManualIdentitySource.mal;
   String? _error;
 
   @override
@@ -323,24 +325,9 @@ class _ManualBindingDialogState extends State<_ManualBindingDialog> {
     super.dispose();
   }
 
-  String _manualQuery() {
-    final String query = _query.text.trim();
-    if (!_byId) return query;
-    if (RegExp(r'^[0-9]+$').hasMatch(query) && (int.tryParse(query) ?? 0) > 0) {
-      return 'anidb=$query';
-    }
-    final Uri? uri =
-        Uri.tryParse(query.contains('://') ? query : 'https://$query');
-    if (uri != null &&
-        (uri.scheme == 'https' || uri.scheme == 'http') &&
-        (uri.host == 'anidb.net' || uri.host == 'www.anidb.net') &&
-        uri.pathSegments.length == 2 &&
-        uri.pathSegments.first == 'anime' &&
-        (int.tryParse(uri.pathSegments.last) ?? 0) > 0) {
-      return uri.toString();
-    }
-    throw const FormatException('Invalid AniDB work ID');
-  }
+  String _manualQuery() => _byId
+      ? videoManualIdentityQuery(_query.text, _idSource)
+      : _query.text.trim();
 
   Future<void> _search() async {
     if (_searching) return;
@@ -417,6 +404,38 @@ class _ManualBindingDialogState extends State<_ManualBindingDialog> {
                         },
                 ),
                 const SizedBox(height: 12),
+                if (_byId) ...<Widget>[
+                  DropdownButtonFormField<VideoManualIdentitySource>(
+                    key:
+                        const ValueKey<String>('video-source-manual-id-source'),
+                    initialValue: _idSource,
+                    items: <DropdownMenuItem<VideoManualIdentitySource>>[
+                      const DropdownMenuItem(
+                        value: VideoManualIdentitySource.mal,
+                        child: Text('MAL'),
+                      ),
+                      DropdownMenuItem(
+                        value: VideoManualIdentitySource.tmdbMovie,
+                        child: Text(t.video_source_scrape_manual_tmdb_movie),
+                      ),
+                      DropdownMenuItem(
+                        value: VideoManualIdentitySource.tmdbTv,
+                        child: Text(t.video_source_scrape_manual_tmdb_tv),
+                      ),
+                    ],
+                    onChanged: _searching
+                        ? null
+                        : (VideoManualIdentitySource? value) {
+                            if (value == null) return;
+                            setState(() {
+                              _idSource = value;
+                              _results = null;
+                              _error = null;
+                            });
+                          },
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 Text(t.video_source_scrape_manual_query_hint),
                 const SizedBox(height: 12),
                 TextField(

@@ -270,7 +270,7 @@ class _VideoSourceScrapeTaskPanelState
           leading: Text('$index'),
           title: Text(request.workTitle),
           subtitle: Text(
-              '${request.source.label} · AniDB ${request.lookup.externalId}'),
+              '${request.source.label} · ${request.lookup.provider.name.toUpperCase()} ${request.lookup.externalId}'),
           trailing: IconButton(
             tooltip: t.video_source_scrape_queue_remove,
             onPressed: () =>

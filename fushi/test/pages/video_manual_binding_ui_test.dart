@@ -113,23 +113,23 @@ void main() {
     runner.results = <VideoSourceScrapeConfirmationCandidate>[
       VideoSourceScrapeConfirmationCandidate(
           lookup: const VideoMetadataLookup(
-              provider: VideoMetadataProviderKind.anidb,
+              provider: VideoMetadataProviderKind.mal,
               externalId: '42',
               mediaKind: VideoMetadataMediaKind.tv),
           work: VideoMetadataWork(
-              provider: VideoMetadataProviderKind.anidb,
+              provider: VideoMetadataProviderKind.mal,
               kind: VideoMetadataMediaKind.tv,
               title: 'Confirmed work')),
     ];
     await tester.enterText(query, '42');
     await tester.tap(search);
     await tester.pumpAndSettle();
-    expect(runner.queries.last, 'anidb=42');
+    expect(runner.queries.last, 'mal=42');
     expect(selected, isNull);
     expect(runner.boundLookups, isEmpty);
-    expect(find.text('ANIDB · 42'), findsOneWidget);
+    expect(find.text('MAL · 42'), findsOneWidget);
     await tester.tap(
-        find.byKey(const ValueKey<String>('video-source-candidate-anidb-42')));
+        find.byKey(const ValueKey<String>('video-source-candidate-mal-tv-42')));
     await tester.pumpAndSettle();
     expect(selected?.lookup.externalId, '42');
   });

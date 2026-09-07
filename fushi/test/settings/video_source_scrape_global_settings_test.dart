@@ -21,7 +21,7 @@ void main() {
         (SettingsItem candidate) => candidate.id == id,
       );
 
-  test('AniDB is fixed as the metadata identity source', () {
+  test('MAL and TMDB policy is fixed; AniDB remains file identification', () {
     expect(
       allScrapeSettings().map((SettingsItem candidate) => candidate.id),
       isNot(contains('video.library.metadata_primary_provider')),
@@ -32,6 +32,8 @@ void main() {
     final Map<String, bool> expectedSecret = <String, bool>{
       'services.metadata.anidb_client': false,
       'services.metadata.anidb_client_version': false,
+      'services.metadata.anidb_username': false,
+      'services.metadata.anidb_password': true,
       'services.metadata.tmdb_api_key': true,
       'video.library.metadata_locale': false,
     };
@@ -64,8 +66,9 @@ void main() {
     );
     expect(
       call.allMatches(servicesSource).length,
-      3,
-      reason: 'AniDB client/version + TMDB key must use the shared helper',
+      5,
+      reason:
+          'AniDB client/version/account + TMDB key must use the shared helper',
     );
     expect(
       call.allMatches(actionsSource).length,
@@ -86,6 +89,25 @@ void main() {
     expect(parseAniDbClientVersion('-1'), isNull);
     expect(parseAniDbClientVersion('not-a-number'), isNull);
     expect(parseAniDbClientVersion(null), isNull);
+  });
+
+  test('hash identification is opt-in and requires all registration fields',
+      () {
+    expect(item('services.metadata.anidb_hash_enabled'),
+        isA<SettingsSwitchItem>());
+    const VideoSourceScrapeGlobalConfig empty = VideoSourceScrapeGlobalConfig();
+    expect(empty.hashEnabled, isFalse);
+    expect(empty.anidbUdpConfig.isAvailable, isFalse);
+    const VideoSourceScrapeGlobalConfig configured =
+        VideoSourceScrapeGlobalConfig(
+      hashEnabled: true,
+      anidbUsername: 'tester',
+      anidbPassword: ' spaced password ',
+      anidbClientName: 'fushitest',
+      anidbClientVersion: 1,
+    );
+    expect(configured.anidbUdpConfig.isAvailable, isTrue);
+    expect(configured.anidbUdpConfig.password, ' spaced password ');
   });
 
   test('obsolete provider settings are no longer exposed', () {

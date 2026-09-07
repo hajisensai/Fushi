@@ -1043,7 +1043,8 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
         await showAppDialog<_VideoSourceScrapeSettingsDraft>(
       context: context,
       builder: (BuildContext context) => _VideoSourceScrapeSettingsDialog(
-        initial: _VideoSourceScrapeSettingsDraft.fromRow(existing,
+        initial: _VideoSourceScrapeSettingsDraft.fromRow(
+          existing,
           groupingMode: row.videoGroupingMode,
         ),
       ),
@@ -1059,7 +1060,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
       VideoSourceScrapeSettingsCompanion.insert(
         sourceId: Value<int>(row.id),
         enabled: Value<bool>(draft.enabled),
-        // 旧列保留作数据库兼容；新保存一律清空，AniDB 是固定主身份源。
+        // 旧列保留作数据库兼容；新保存一律清空，MAL 是主源，TMDB 兜底。
         providerOverride: const Value<String?>(null),
         autoAfterScan: Value<bool>(draft.autoAfterScan),
         writeNfo: Value<bool>(draft.writeNfo),
@@ -1362,6 +1363,7 @@ class _VideoSourceScrapeSettingsDialogState
               ),
               Text(t.video_source_grouping_change_hint),
               if (_groupingMode != 'folder') ...<Widget>[
+                Text(t.video_source_scrape_provider_policy),
                 AdaptiveSettingsSwitchRow(
                   title: t.video_source_scrape_enabled_toggle,
                   subtitle: t.video_source_scrape_enabled_toggle_hint,

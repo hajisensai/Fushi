@@ -103,7 +103,7 @@ Fushi/                      # 仓库根（Melos workspace: fushi_workspace）
 
 </details>
 
-视频导入支持按作品或文件夹分组。手动指定 AniDB 作品及后台任务的使用方式见[视频组织与刮削流程](docs/specs/2026-09-07-video-library-workflow.md)。
+视频导入支持按作品或文件夹分组。使用方式见[视频组织与刮削流程](docs/specs/2026-09-07-video-library-workflow.md)及[MAL/TMDB 资料与 AniDB 文件哈希识别](docs/specs/2026-09-07-mal-tmdb-anidb-hash.md)。
 
 ## 隐私与数据
 
