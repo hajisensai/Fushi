@@ -111,12 +111,14 @@ class NyaaVideoResourceProvider implements VideoResourceProvider {
   }
 }
 
-/// Nyaa 标题命中以 AniList 罗马字和日文原名最稳定。发现页展示标题
-/// 可能已本地化，因此只把它放在罗马字/日文后作最后兜底。
+/// 明确查询词按原意搜索，确保文本框、订阅与任务重搜不受隐藏别名影响。
+/// 未指定查询词时才按罗马字、日文原名、展示标题选择默认候选。
 List<String> preferredNyaaSearchQueries(VideoResourceSearchRequest request) {
+  final String explicitQuery = request.query?.trim() ?? '';
+  if (explicitQuery.isNotEmpty) return <String>[explicitQuery];
+
   final VideoMediaReference? media = request.media;
   final List<String> candidates = <String>[
-    if (request.query case final String query) query,
     if (media != null) ...media.aliases,
     if (media?.originalTitle case final String original) original,
     if (media != null) media.title,

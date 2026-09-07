@@ -103,6 +103,10 @@ Fushi/                      # Repository root (Melos workspace: fushi_workspace)
 
 </details>
 
+Video import supports grouping by work or folder. See the [video workflow](docs/specs/2026-09-07-video-library-workflow.md) and [MAL/TMDB metadata with AniDB file hashing](docs/specs/2026-09-07-mal-tmdb-anidb-hash.md) for matching and background tasks.
+
+[Optional online service setup](docs/specs/2026-09-07-online-services-setup.md) explains bundled application identities, personal credentials, and the dismissible video setup reminder.
+
 ## Privacy & Data
 
 Fushi stores imported books, dictionaries, fonts, audiobook data, videos, reading progress, highlights, statistics, and settings in the app's local storage.

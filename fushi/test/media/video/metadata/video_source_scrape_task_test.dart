@@ -16,6 +16,7 @@ void main() {
         transport: 'local',
         rootPath: 'D:/source-$id',
         recursive: true,
+        videoGroupingMode: 'series',
         configJson: null,
         mediaCount: 0,
         lastScannedAt: null,
@@ -151,6 +152,356 @@ void main() {
     expect(controller.pendingConfirmation, isNull);
     expect(controller.progress.phase, VideoSourceScrapePhase.completed);
   });
+
+  // ── 手动指定作品的排队语义（早先第二条请求直接被拒，UI 只好把整屏按钮灰掉）──
+
+  test('same titles retain separate stable identities through the queue',
+      () async {
+    final _ManualRunner runner = _ManualRunner();
+    final VideoSourceScrapeTaskController controller =
+        VideoSourceScrapeTaskController(runner);
+    addTearDown(controller.dispose);
+    final Future<SourceScrapeReport> first = controller.rescrapeWorkWithLookup(
+      source: source(1),
+      workTitle: 'same',
+      workStableKey: 'book:a',
+      lookup: _lookup('1'),
+    );
+    expect(
+        controller.isManualRequestPending(
+            sourceId: 1, workTitle: 'same', workStableKey: 'book:b'),
+        isFalse);
+    final Future<SourceScrapeReport> second = controller.rescrapeWorkWithLookup(
+      source: source(1),
+      workTitle: 'same',
+      workStableKey: 'book:b',
+      lookup: _lookup('2'),
+    );
+    expect(controller.queuedManualRequests.single.workStableKey, 'book:b');
+    runner.release('same');
+    await first;
+    await second;
+    expect(runner.stableKeys, <String?>['book:a', 'book:b']);
+  });
+
+  test('连续提交的手动重刮按提交顺序串行执行，不再拒绝第二条', () async {
+    final _ManualRunner runner = _ManualRunner();
+    final VideoSourceScrapeTaskController controller =
+        VideoSourceScrapeTaskController(runner);
+
+    final Future<SourceScrapeReport> first = controller.rescrapeWorkWithLookup(
+      source: source(1),
+      workTitle: 'work-a',
+      lookup: _lookup('1'),
+    );
+    final Future<SourceScrapeReport> second = controller.rescrapeWorkWithLookup(
+      source: source(1),
+      workTitle: 'work-b',
+      lookup: _lookup('2'),
+    );
+    final Future<SourceScrapeReport> third = controller.rescrapeWorkWithLookup(
+      source: source(1),
+      workTitle: 'work-c',
+      lookup: _lookup('3'),
+    );
+
+    // 第一条立刻占门，其余两条排队——而不是像以前那样抛 StateError。
+    await pumpEventQueue();
+    expect(runner.started, <String>['work-a']);
+    expect(controller.queuedManualRequestCount, 2);
+    expect(controller.activeManualRequest?.workTitle, 'work-a');
+    expect(
+      controller.isManualRequestPending(sourceId: 1, workTitle: 'work-c'),
+      isTrue,
+    );
+    expect(
+      controller.isManualRequestPending(sourceId: 1, workTitle: 'work-z'),
+      isFalse,
+    );
+    expect(
+      controller.isManualRequestPending(sourceId: 2, workTitle: 'work-c'),
+      isFalse,
+      reason: '队列身份含来源 id，不同来源的同名作品不能互相冒认',
+    );
+
+    runner.release('work-a');
+    expect(await first, isA<SourceScrapeReport>());
+    await pumpEventQueue();
+    expect(runner.started, <String>['work-a', 'work-b']);
+    expect(controller.queuedManualRequestCount, 1);
+
+    runner.release('work-b');
+    await second;
+    await pumpEventQueue();
+    expect(runner.started, <String>['work-a', 'work-b', 'work-c']);
+
+    runner.release('work-c');
+    await third;
+    expect(controller.isBusy, isFalse);
+    expect(controller.queuedManualRequestCount, 0);
+    expect(controller.activeManualRequest, isNull);
+  });
+
+  test('每条手动重刮的 Future 拿到的是它自己那一条的报告', () async {
+    final _ManualRunner runner = _ManualRunner();
+    final VideoSourceScrapeTaskController controller =
+        VideoSourceScrapeTaskController(runner);
+
+    final Future<SourceScrapeReport> first = controller.rescrapeWorkWithLookup(
+      source: source(1),
+      workTitle: 'work-a',
+      lookup: _lookup('1'),
+    );
+    final Future<SourceScrapeReport> second = controller.rescrapeWorkWithLookup(
+      source: source(2),
+      workTitle: 'work-b',
+      lookup: _lookup('2'),
+    );
+
+    await pumpEventQueue();
+    runner.release('work-a');
+    runner.release('work-b');
+
+    expect((await first).sourceIds, <int>[1]);
+    expect((await second).sourceIds, <int>[2]);
+  });
+
+  test('批次占门期间提交的手动重刮排队，批次结束后自动接棒', () async {
+    final _ManualRunner runner = _ManualRunner();
+    final VideoSourceScrapeTaskController controller =
+        VideoSourceScrapeTaskController(runner);
+
+    final Future<SourceScrapeReport> batch = controller.scrapeSource(source(1));
+    expect(controller.isRunning, isTrue);
+
+    final Future<SourceScrapeReport> manual = controller.rescrapeWorkWithLookup(
+      source: source(1),
+      workTitle: 'work-a',
+      lookup: _lookup('1'),
+    );
+    await pumpEventQueue();
+    expect(runner.started, isEmpty, reason: '批次还占着门，手动请求必须等');
+    expect(controller.queuedManualRequestCount, 1);
+
+    runner.releaseBatch();
+    await batch;
+    await pumpEventQueue();
+    expect(
+      runner.started,
+      <String>['work-a'],
+      reason: '门一空就接棒，不该等到下一次用户交互',
+    );
+
+    runner.release('work-a');
+    await manual;
+    expect(controller.isBusy, isFalse);
+  });
+
+  test('取消会作废还没开始的手动重刮，而不是让它们随后自己跑起来', () async {
+    final _ManualRunner runner = _ManualRunner();
+    final VideoSourceScrapeTaskController controller =
+        VideoSourceScrapeTaskController(runner);
+
+    final Future<SourceScrapeReport> first = controller.rescrapeWorkWithLookup(
+      source: source(1),
+      workTitle: 'work-a',
+      lookup: _lookup('1'),
+    );
+    final Future<SourceScrapeReport> queued = controller.rescrapeWorkWithLookup(
+      source: source(1),
+      workTitle: 'work-b',
+      lookup: _lookup('2'),
+    );
+    await pumpEventQueue();
+    expect(controller.queuedManualRequestCount, 1);
+
+    controller.cancel();
+    await expectLater(queued, throwsA(isA<VideoSourceScrapeCancelled>()));
+    expect(controller.queuedManualRequestCount, 0);
+
+    runner.release('work-a');
+    await first.then<void>((_) {}, onError: (_, __) {});
+    await pumpEventQueue();
+    expect(
+      runner.started,
+      <String>['work-a'],
+      reason: '被取消的那条永远不该开跑',
+    );
+  });
+
+  test('控制器释放时挂着的手动重刮以错误结束，不会永远等下去', () async {
+    final _ManualRunner runner = _ManualRunner();
+    final VideoSourceScrapeTaskController controller =
+        VideoSourceScrapeTaskController(runner);
+
+    unawaited(controller
+        .rescrapeWorkWithLookup(
+          source: source(1),
+          workTitle: 'work-a',
+          lookup: _lookup('1'),
+        )
+        .then<void>((_) {}, onError: (_, __) {}));
+    final Future<SourceScrapeReport> queued = controller.rescrapeWorkWithLookup(
+      source: source(1),
+      workTitle: 'work-b',
+      lookup: _lookup('2'),
+    );
+    await pumpEventQueue();
+
+    controller.dispose();
+    await expectLater(queued, throwsA(isA<StateError>()));
+  });
+
+  test('撤回中间的排队请求保留当前与后续任务', () async {
+    final _ManualRunner runner = _ManualRunner();
+    final VideoSourceScrapeTaskController controller =
+        VideoSourceScrapeTaskController(runner);
+    addTearDown(controller.dispose);
+    final Future<SourceScrapeReport> first = controller.rescrapeWorkWithLookup(
+      source: source(1),
+      workTitle: 'first',
+      lookup: _lookup('1'),
+    );
+    final Future<SourceScrapeReport> removed =
+        controller.rescrapeWorkWithLookup(
+      source: source(1),
+      workTitle: 'removed',
+      lookup: _lookup('2'),
+    );
+    final Future<SourceScrapeReport> last = controller.rescrapeWorkWithLookup(
+      source: source(1),
+      workTitle: 'last',
+      lookup: _lookup('3'),
+    );
+    final Future<void> cancelled = expectLater(
+      removed,
+      throwsA(isA<VideoSourceScrapeCancelled>()),
+    );
+    final VideoSourceScrapeManualRequest request =
+        controller.queuedManualRequests.first;
+    expect(controller.cancelQueuedManualRequest(request), isTrue);
+    await cancelled;
+    expect(controller.cancelQueuedManualRequest(request), isFalse);
+    expect(controller.queuedManualRequests.single.workTitle, 'last');
+    expect(
+        controller.cancelQueuedManualRequest(controller.activeManualRequest!),
+        isFalse);
+    runner.release('first');
+    await first;
+    await pumpEventQueue();
+    expect(runner.started, <String>['first', 'last']);
+    runner.release('last');
+    await last;
+    expect(controller.queuedManualRequests, isEmpty);
+  });
+
+  test('取消正在执行的手动任务发布 cancelled 而不是 failed', () async {
+    final _ManualRunner runner = _ManualRunner();
+    final VideoSourceScrapeTaskController controller =
+        VideoSourceScrapeTaskController(runner);
+    addTearDown(controller.dispose);
+    final Future<SourceScrapeReport> active = controller.rescrapeWorkWithLookup(
+      source: source(1),
+      workTitle: 'active',
+      lookup: _lookup('1'),
+    );
+    controller.cancel();
+    runner.release('active');
+    expect((await active).cancelled, isTrue);
+    expect(controller.progress.phase, VideoSourceScrapePhase.cancelled);
+    expect(controller.isBusy, isFalse);
+  });
+
+  test('runner 不支持手动绑定时立即报错，不进队列', () async {
+    final _BlockingRunner runner = _BlockingRunner();
+    final VideoSourceScrapeTaskController controller =
+        VideoSourceScrapeTaskController(runner);
+
+    await expectLater(
+      controller.rescrapeWorkWithLookup(
+        source: source(1),
+        workTitle: 'work-a',
+        lookup: _lookup('1'),
+      ),
+      throwsA(isA<StateError>()),
+    );
+    expect(controller.queuedManualRequestCount, 0);
+    expect(controller.isBusy, isFalse);
+  });
+}
+
+VideoMetadataLookup _lookup(String externalId) => VideoMetadataLookup(
+      provider: VideoMetadataProviderKind.anidb,
+      externalId: externalId,
+      mediaKind: VideoMetadataMediaKind.tv,
+    );
+
+/// 既是批次 runner 又支持手动绑定：手动重刮按 workTitle 单独开闸，
+/// 这样测试能精确观察「谁开跑了、谁还在队列里」。
+class _ManualRunner
+    implements VideoSourceScrapeRunner, VideoSourceScrapeManualBinding {
+  final List<String> started = <String>[];
+  final List<String?> stableKeys = <String?>[];
+  final Map<String, Completer<void>> _gates = <String, Completer<void>>{};
+  final Completer<void> _batchGate = Completer<void>();
+
+  void release(String workTitle) {
+    final Completer<void> gate =
+        _gates.putIfAbsent(workTitle, Completer<void>.new);
+    if (!gate.isCompleted) gate.complete();
+  }
+
+  void releaseBatch() {
+    if (!_batchGate.isCompleted) _batchGate.complete();
+  }
+
+  @override
+  Future<SourceScrapeReport> scrapeSource(
+    SourceLibraryRow source, {
+    required VideoSourceScrapeCancellationToken cancellationToken,
+    required VideoSourceScrapeProgressCallback onProgress,
+    VideoSourceScrapeConfirmationCallback? onConfirmation,
+    VideoSourceScrapeBatchContext? batchContext,
+    List<VideoSourceScrapeWork>? plannedWorks,
+    String runScope = 'source',
+  }) async {
+    await _batchGate.future;
+    cancellationToken.throwIfCancelled();
+    return SourceScrapeReport(
+      sourceIds: <int>[source.id],
+      totalWorks: 1,
+      succeededWorks: 1,
+    );
+  }
+
+  @override
+  Future<List<VideoSourceScrapeConfirmationCandidate>> searchManualCandidates({
+    required SourceLibraryRow source,
+    required String workTitle,
+    String? workStableKey,
+    required String query,
+  }) async =>
+      const <VideoSourceScrapeConfirmationCandidate>[];
+
+  @override
+  Future<SourceScrapeReport> rescrapeWorkWithLookup({
+    required SourceLibraryRow source,
+    required String workTitle,
+    String? workStableKey,
+    required VideoMetadataLookup lookup,
+    required VideoSourceScrapeCancellationToken cancellationToken,
+    required VideoSourceScrapeProgressCallback onProgress,
+  }) async {
+    started.add(workTitle);
+    stableKeys.add(workStableKey);
+    await _gates.putIfAbsent(workTitle, Completer<void>.new).future;
+    cancellationToken.throwIfCancelled();
+    return SourceScrapeReport(
+      sourceIds: <int>[source.id],
+      totalWorks: 1,
+      succeededWorks: 1,
+    );
+  }
 }
 
 class _BlockingRunner implements VideoSourceScrapeRunner {

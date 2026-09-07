@@ -3,6 +3,9 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_folder_group_coordinator.dart';
+import 'package:fushi/src/media/video/video_folder_collection_policy.dart';
+import 'package:fushi/src/media/video/video_filename_parser.dart';
+import 'package:fushi/src/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 void main() {
@@ -48,6 +51,167 @@ void main() {
         ),
         sourceId: sourceId,
       );
+
+  test('一级难度目录的 1500 个不相关文件保持三个合集，重扫幂等且不生成刮削计划', () async {
+    final int sourceId = await db.insertMediaSource(
+      MediaSourcesCompanion.insert(
+        label: 'Lessons',
+        mediaKind: 'video',
+        rootPath: '/lessons',
+        createdAt: 1000,
+        videoGroupingMode: const Value('folder'),
+      ),
+    );
+    final List<String> paths = <String>[];
+    await db.transaction(() async {
+      for (int folder = 0; folder < 3; folder++) {
+        for (int index = 0; index < 500; index++) {
+          final String path =
+              '/lessons/level-$folder/${index.isEven ? 'nested/' : ''}clip-$index.mp4';
+          paths.add(path);
+          await addVideo(uid: '$folder-$index', path: path, sourceId: sourceId);
+        }
+      }
+    });
+    final VideoFolderGroupSummary first = await coordinator.groupPaths(
+      videoPaths: paths,
+      sourceId: sourceId,
+      groupingMode: 'folder',
+      sourceRoot: '/lessons',
+    );
+    expect(first.createdCollectionIds, hasLength(3));
+    for (final int id in first.createdCollectionIds) {
+      expect(await db.getCollectionItems(id), hasLength(500));
+      expect(
+        (await db.getMediaCollectionById(id))!.collectionType,
+        'collection',
+      );
+    }
+    final VideoFolderGroupSummary second = await coordinator.groupPaths(
+      videoPaths: paths.reversed.toList(),
+      sourceId: sourceId,
+      groupingMode: 'folder',
+      sourceRoot: '/lessons',
+    );
+    expect(second.createdCollectionIds, isEmpty);
+    expect(second.updatedCollectionIds, isEmpty);
+    expect(
+      await VideoSourceWorkPlanner(
+        db,
+      ).plan((await db.getMediaSourceById(sourceId))!),
+      isEmpty,
+    );
+  });
+
+  test('目录名碰撞不认领手动合集，根直属文件也创建合集，展示优先目录归属', () async {
+    final int manual = await db.createMediaCollection('easy');
+    final int sourceId = await addSource('/lessons');
+    await (db.update(db.mediaSources)..where((tbl) => tbl.id.equals(sourceId)))
+        .write(const MediaSourcesCompanion(videoGroupingMode: Value('folder')));
+    await addVideo(uid: 'one', path: '/lessons/easy/a.mp4', sourceId: sourceId);
+    await addVideo(uid: 'root', path: '/lessons/b.mp4', sourceId: sourceId);
+    await db.addToCollection(manual, MediaKind.video, 'one');
+    final VideoFolderGroupSummary result = await coordinator.groupPaths(
+      videoPaths: <String>['/lessons/easy/a.mp4', '/lessons/b.mp4'],
+      sourceId: sourceId,
+      groupingMode: 'folder',
+      sourceRoot: '/lessons',
+    );
+    expect(result.createdCollectionIds, hasLength(2));
+    expect((await db.getMediaCollectionById(manual))!.sourceFolderPath, isNull);
+    final Map<String, int> display = applyVideoFolderCollectionPolicy(
+      primary: await db.getPrimaryCollectionIdByEntry(),
+      collections: await db.getAllMediaCollections(),
+      items: await db.getAllCollectionItems(),
+      books: await db.allVideoBooks(),
+      sources: await db.getMediaSourcesByKind('video'),
+    );
+    expect(display['video|one'], isNot(manual));
+    await (db.update(db.mediaSources)..where((tbl) => tbl.id.equals(sourceId)))
+        .write(const MediaSourcesCompanion(videoGroupingMode: Value('series')));
+    final Map<String, int> restored = applyVideoFolderCollectionPolicy(
+      primary: await db.getPrimaryCollectionIdByEntry(),
+      collections: await db.getAllMediaCollections(),
+      items: await db.getAllCollectionItems(),
+      books: await db.allVideoBooks(),
+      sources: await db.getMediaSourcesByKind('video'),
+    );
+    expect(restored['video|one'], manual);
+    expect(restored.containsKey('video|root'), isFalse);
+    expect(
+      videoSourceFolderPath(r'C:\Lessons\easy\deep\a.mp4', r'C:\Lessons'),
+      'c:/lessons/easy',
+    );
+    expect(
+      () => videoSourceFolderPath('/else/a.mp4', '/lessons'),
+      throwsArgumentError,
+    );
+  });
+
+  test('目录重扫保留用户移出墓碑且Windows根大小写不改变合集身份', () async {
+    final int sourceId = await addSource('D:/Lessons');
+    final List<String> paths = <String>[
+      'D:/Lessons/Easy/one.mp4',
+      'D:/Lessons/Easy/two.mp4'
+    ];
+    await addVideo(uid: 'one', path: paths[0], sourceId: sourceId);
+    await addVideo(uid: 'two', path: paths[1], sourceId: sourceId);
+    final VideoFolderGroupSummary first = await coordinator.groupPaths(
+      videoPaths: paths,
+      sourceId: sourceId,
+      groupingMode: 'folder',
+      sourceRoot: 'd:/lessons',
+    );
+    final int collectionId = first.createdCollectionIds.single;
+    expect((await db.getMediaCollectionById(collectionId))!.name, 'Easy');
+    expect((await db.getMediaCollectionById(collectionId))!.sourceFolderPath,
+        'd:/lessons/easy');
+    await db.removeFromCollection(collectionId, MediaKind.video, 'one');
+    final VideoFolderGroupSummary second = await coordinator.groupPaths(
+      videoPaths: paths,
+      sourceId: sourceId,
+      groupingMode: 'folder',
+      sourceRoot: 'D:/LESSONS',
+    );
+    expect(second.createdCollectionIds, isEmpty);
+    expect(
+        (await db.getCollectionItems(collectionId))
+            .map((MediaCollectionItemRow row) => row.entryKey),
+        <String>['two']);
+    expect(
+        (await db.getAllCollectionMemberTombstones())
+            .any((CollectionMemberTombstoneRow row) => row.entryKey == 'one'),
+        isTrue);
+    await db.removeFromCollection(collectionId, MediaKind.video, 'two');
+    final VideoFolderGroupSummary third = await coordinator.groupPaths(
+      videoPaths: paths,
+      sourceId: sourceId,
+      groupingMode: 'folder',
+      sourceRoot: 'D:/Lessons',
+    );
+    expect(third.createdCollectionIds, isEmpty, reason: '移空合集后不重新建立空容器或复活成员');
+    expect(await db.getAllMediaCollections(), isEmpty);
+    expect(
+        videoSourceFolderPath(
+            r'\\Server\Share\Root\Easy\one.mp4', r'\\server\share\root'),
+        '//server/share/root/easy');
+    expect(videoSourceFolderPath('/Library/Easy/a.mp4', '/Library'),
+        '/Library/Easy');
+    expect(() => videoSourceFolderPath('/library/Easy/a.mp4', '/Library'),
+        throwsArgumentError);
+  });
+
+  test('截图 Fate 的 VCB 文件名当前解析合为同作品并保留集号', () {
+    final List<VideoGroup> groups = groupVideosIntoPlaylists(<String>[
+      for (int index = 0; index < 3; index++)
+        '/anime/[VCB-Studio] Fate stay night Unlimited Blade Works [0$index][Ma10p_1080p][x265_flac].mkv',
+    ]);
+    expect(groups, hasLength(1));
+    expect(
+      groups.single.episodes.map((VideoEpisode episode) => episode.episode),
+      <int>[0, 1, 2],
+    );
+  });
 
   test('散装分集原地归组、只回填空来源并保持用户数据', () async {
     final int sourceId = await addSource('/library');

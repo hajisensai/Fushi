@@ -66,7 +66,6 @@ void main() {
           aliases: const <String>['Death Note', 'DEATH NOTE'],
           anilistId: 1535,
         ),
-        query: '死亡笔记',
       ),
     );
 
@@ -74,6 +73,47 @@ void main() {
     expect(result.items, hasLength(1));
     expect(result.failures, isEmpty);
   });
+
+  for (final String query in <String>[
+    '死亡笔记',
+    'デスノート',
+    'Death Note 1080p -batch',
+  ]) {
+    test('Nyaa explicit query is independent of hidden aliases: $query',
+        () async {
+      final List<String> queries = <String>[];
+      final NyaaVideoResourceProvider provider = NyaaVideoResourceProvider(
+        client: NyaaClient(
+          client: MockClient((http.Request request) async {
+            queries.add(request.url.queryParameters['q']!);
+            return http.Response(_nyaaFeed, 200);
+          }),
+        ),
+      );
+      addTearDown(provider.close);
+      for (final VideoMediaReference? media in <VideoMediaReference?>[
+        null,
+        VideoMediaReference(
+          providerId: 'anilist',
+          mediaId: '1535',
+          mediaKind: VideoMetadataMediaKind.tv,
+          discoveryCategory: VideoDiscoveryCategory.anime,
+          title: '死亡笔记',
+          originalTitle: 'デスノート',
+          aliases: const <String>['Death Note', 'DEATH NOTE'],
+          anilistId: 1535,
+        ),
+      ]) {
+        final ProviderBatchResult<VideoResourceCandidate> result =
+            await provider.search(
+          VideoResourceSearchRequest(media: media, query: '  $query  '),
+        );
+        expect(result.failures, isEmpty);
+        expect(result.items, hasLength(1));
+      }
+      expect(queries, <String>[query, query]);
+    });
+  }
 
   test('Jimaku adapter searches, filters text subtitles, and downloads',
       () async {

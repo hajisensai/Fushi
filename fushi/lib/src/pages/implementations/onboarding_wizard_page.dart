@@ -12,6 +12,7 @@ import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/onboarding/onboarding_sample_text.dart';
 import 'package:fushi/src/onboarding/onboarding_steps.dart';
+import 'package:fushi/src/onboarding/online_services_onboarding_view.dart';
 import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
 import 'package:fushi/src/onboarding/recommended_pack.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
@@ -20,6 +21,7 @@ import 'package:fushi/src/settings/settings_actions.dart'
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_card_creation.dart';
+import 'package:fushi/src/settings/settings_schema_services.dart';
 import 'package:fushi/src/settings/settings_schema_lookup.dart'
     show showAudioSourcesManagerDialog;
 import 'package:fushi/src/shortcuts/input_binding.dart'
@@ -112,11 +114,8 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   /// 已勾选的功能。模块项在 initState 从当前偏好播种（重开向导时反映现状）；
   /// 能力项默认勾推荐包 + Anki 制卡 + 字体（查词→制卡是本应用的最大公约数，
   /// 字体是几乎所有人都会碰的一步；备份/互联按需自选）。
-  final Set<OnboardingFeature> _selected = <OnboardingFeature>{
-    OnboardingFeature.recommendedPack,
-    OnboardingFeature.anki,
-    OnboardingFeature.fonts,
-  };
+  final Set<OnboardingFeature> _selected =
+      Set<OnboardingFeature>.of(kOnboardingDefaultCapabilities);
 
   int _stepIndex = 0;
   final OnboardingTutorialProgress _tutorialProgress =
@@ -849,6 +848,17 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
         return _buildManualResourcesStep();
       case OnboardingStepId.anki:
         return _buildAnkiStep();
+      case OnboardingStepId.onlineServices:
+        return OnlineServicesOnboardingView(
+          items: onlineServiceOnboardingItems(),
+          onOpenLink: (Uri url) => launchUrl(
+            url,
+            mode: LaunchMode.externalApplication,
+          ),
+          onConfigure: () => _pushPage(
+            (_) => SettingsDetailPage(destination: buildServicesDestination()),
+          ),
+        );
       case OnboardingStepId.backup:
         return OnboardingStepView(
           icon: Icons.cloud_sync_outlined,
@@ -1408,6 +1418,8 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
         return Icons.build_circle_outlined;
       case OnboardingFeature.anki:
         return Icons.style_outlined;
+      case OnboardingFeature.onlineServices:
+        return Icons.cloud_outlined;
       case OnboardingFeature.fonts:
         return Icons.font_download_outlined;
       case OnboardingFeature.backup:
@@ -1435,6 +1447,8 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
         return t.onboarding_feature_manual_resources;
       case OnboardingFeature.anki:
         return t.onboarding_feature_anki;
+      case OnboardingFeature.onlineServices:
+        return t.onboarding_online_services_title;
       case OnboardingFeature.fonts:
         return t.onboarding_feature_fonts;
       case OnboardingFeature.backup:
@@ -1462,6 +1476,8 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
         return t.onboarding_feature_manual_resources_hint;
       case OnboardingFeature.anki:
         return t.onboarding_feature_anki_hint;
+      case OnboardingFeature.onlineServices:
+        return t.onboarding_online_services_hint;
       case OnboardingFeature.fonts:
         return t.onboarding_feature_fonts_hint;
       case OnboardingFeature.backup:

@@ -283,6 +283,7 @@ jobs:
           dandanplay-app-id: ${{ secrets.DANDANPLAY_APP_ID }}
           dandanplay-app-secret: ${{ secrets.DANDANPLAY_APP_SECRET }}
           tmdb-api-key: ${{ secrets.TMDB_API_KEY }}
+          opensubtitles-api-key: ${{ secrets.OPENSUBTITLES_API_KEY }}
       # TODO-1208: cache media_kit's pre-built libmpv + ANGLE .7z archives it
       # downloads from GitHub into the CMake binary dir (fushi/build/windows/x64).
       # media_kit's download_and_verify skips the download when the archive exists
@@ -1031,6 +1032,7 @@ jobs:
           dandanplay-app-id: ${{ secrets.DANDANPLAY_APP_ID }}
           dandanplay-app-secret: ${{ secrets.DANDANPLAY_APP_SECRET }}
           tmdb-api-key: ${{ secrets.TMDB_API_KEY }}
+          opensubtitles-api-key: ${{ secrets.OPENSUBTITLES_API_KEY }}
       # TODO-1208: cache CocoaPods spec repos + downloaded pod source and the
       # generated Pods dirs. Keyed on the Podfile.lock/pubspec.lock so a pod bump
       # invalidates it; CocoaPods re-installs on a mismatch, and a miss just
@@ -1585,6 +1587,7 @@ jobs:
           dandanplay-app-id: ${{ secrets.DANDANPLAY_APP_ID }}
           dandanplay-app-secret: ${{ secrets.DANDANPLAY_APP_SECRET }}
           tmdb-api-key: ${{ secrets.TMDB_API_KEY }}
+          opensubtitles-api-key: ${{ secrets.OPENSUBTITLES_API_KEY }}
       # TODO-1208: cache CocoaPods spec repos + downloaded pod source and the
       # generated Pods dirs. Keyed on the Podfile.lock/pubspec.lock so a pod bump
       # invalidates it; CocoaPods re-installs on a mismatch, and a miss just

@@ -89,6 +89,7 @@ jobs:
           dandanplay-app-id: ${{ secrets.DANDANPLAY_APP_ID }}
           dandanplay-app-secret: ${{ secrets.DANDANPLAY_APP_SECRET }}
           tmdb-api-key: ${{ secrets.TMDB_API_KEY }}
+          opensubtitles-api-key: ${{ secrets.OPENSUBTITLES_API_KEY }}
       # TODO-2721: 只缓存 Gradle 的下载物（modules-2 / wrapper dists），不缓存
       # <ver>/transforms 这类可从 modules-2 重算的派生产物。三个 workflow
       # （main / release / build-multiplatform）的 path + key 必须逐字相同，且此步
@@ -227,6 +228,7 @@ jobs:
           dandanplay-app-id: ${{ secrets.DANDANPLAY_APP_ID }}
           dandanplay-app-secret: ${{ secrets.DANDANPLAY_APP_SECRET }}
           tmdb-api-key: ${{ secrets.TMDB_API_KEY }}
+          opensubtitles-api-key: ${{ secrets.OPENSUBTITLES_API_KEY }}
       - name: Flutter pub get
         working-directory: fushi
         run: flutter pub get
@@ -331,6 +333,7 @@ jobs:
           dandanplay-app-id: ${{ secrets.DANDANPLAY_APP_ID }}
           dandanplay-app-secret: ${{ secrets.DANDANPLAY_APP_SECRET }}
           tmdb-api-key: ${{ secrets.TMDB_API_KEY }}
+          opensubtitles-api-key: ${{ secrets.OPENSUBTITLES_API_KEY }}
       # TODO-1208: cache CocoaPods spec repos, downloaded pod source and generated
       # Pods dirs. Keyed on Podfile.lock/pubspec.lock; CocoaPods re-installs on a
       # mismatch and a miss just re-downloads.
@@ -452,6 +455,7 @@ jobs:
           dandanplay-app-id: ${{ secrets.DANDANPLAY_APP_ID }}
           dandanplay-app-secret: ${{ secrets.DANDANPLAY_APP_SECRET }}
           tmdb-api-key: ${{ secrets.TMDB_API_KEY }}
+          opensubtitles-api-key: ${{ secrets.OPENSUBTITLES_API_KEY }}
       # TODO-1208: cache CocoaPods spec repos, downloaded pod source and generated
       # Pods dirs. Keyed on Podfile.lock/pubspec.lock; CocoaPods re-installs on a
       # mismatch and a miss just re-downloads.
@@ -512,6 +516,7 @@ jobs:
           dandanplay-app-id: ${{ secrets.DANDANPLAY_APP_ID }}
           dandanplay-app-secret: ${{ secrets.DANDANPLAY_APP_SECRET }}
           tmdb-api-key: ${{ secrets.TMDB_API_KEY }}
+          opensubtitles-api-key: ${{ secrets.OPENSUBTITLES_API_KEY }}
       # TODO-1208: cache media_kit's libmpv + ANGLE .7z archives it downloads into
       # the CMake binary dir (fushi/build/windows/x64). media_kit skips the
       # download when the .7z exists with a matching MD5, so caching just the

@@ -49,10 +49,24 @@ inputs:
     description: secrets.TMDB_API_KEY
     required: false
     default: ''
+  opensubtitles-api-key:
+    description: secrets.OPENSUBTITLES_API_KEY
+    required: false
+    default: ''
 
 runs:
   using: composite
   steps:
+    - name: Provide OpenSubtitles API key stub
+      shell: bash
+      env:
+        OPENSUBTITLES_API_KEY: ${{ inputs.opensubtitles-api-key }}
+      run: |
+        dst=fushi/lib/src/media/video/subtitle/opensubtitles_default_key.dart
+        if [ -n "$OPENSUBTITLES_API_KEY" ]; then
+          key_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["OPENSUBTITLES_API_KEY"]).replace("$", "\\$"))')"
+          printf 'const String kBuiltinOpenSubtitlesApiKey = %s;\n' "$key_literal" > "$dst"
+        fi
     # google_oauth_secret.dart 是 gitignored 的（真值只存在于仓库 secret 与本机），
     # 所以这里连占位都可能不存在，缺文件时才从 .example.dart 复制。
     - name: Provide gitignored Google OAuth secret stub

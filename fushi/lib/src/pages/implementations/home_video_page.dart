@@ -25,6 +25,10 @@ import 'package:fushi/src/media/video/video_specs_service.dart';
 import 'package:fushi/src/media/torrent/anime_download_subscription.dart'
     show AnimeDownloadSubscription, AnimeDownloadSubscriptionStore;
 import 'package:fushi/src/media/video/video_home_layout.dart';
+import 'package:fushi/src/media/video/video_online_services_banner.dart';
+import 'package:fushi/src/settings/settings_detail_page.dart';
+import 'package:fushi/src/settings/settings_schema_services.dart';
+import 'package:fushi/src/onboarding/online_services_onboarding_view.dart';
 import 'package:fushi/src/media/video/video_subscription_updates.dart';
 import 'package:fushi/src/media/video/scraper/auto_scrape_service.dart';
 import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
@@ -34,6 +38,7 @@ import 'package:fushi/src/media/video/cover_backfill_ledger.dart';
 import 'package:fushi/src/media/video/video_cover_extractor.dart'
     show isLocalFrameExtractableVideoSource;
 import 'package:fushi/src/media/video/m3u8_playlist.dart';
+import 'package:fushi/src/media/video/video_folder_collection_policy.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_library_delete.dart';
 import 'package:fushi/src/sync/local_file_delete_feedback.dart';
@@ -658,6 +663,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 先 Future.wait 挂上监听，某个查询失败时其余错误不会成为无人接的未处理异常。
     final Future<List<MediaCollectionRow>> collectionsF =
         db.getAllMediaCollections();
+    final Future<List<VideoBookRow>> folderBooksF = db.allVideoBooks();
+    final Future<List<MediaSourceRow>> folderSourcesF =
+        db.getMediaSourcesByKind('video');
     final Future<Map<String, int>> primaryMapF =
         db.getPrimaryCollectionIdByEntry();
     final Future<List<MediaCollectionItemRow>> collectionItemsF =
@@ -681,6 +689,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final Future<List<MediaImageRow>> mediaImagesF = db.getAllMediaImages();
     await Future.wait<Object?>(<Future<Object?>>[
       collectionsF,
+      folderBooksF,
+      folderSourcesF,
       primaryMapF,
       collectionItemsF,
       watchRowsF,
@@ -694,7 +704,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       mediaImagesF,
     ]);
     final List<MediaCollectionRow> collections = await collectionsF;
-    final Map<String, int> primaryMap = await primaryMapF;
+    final Map<String, int> primaryMap = applyVideoFolderCollectionPolicy(
+      primary: await primaryMapF,
+      collections: collections,
+      items: await collectionItemsF,
+      books: await folderBooksF,
+      sources: await folderSourcesF,
+    );
     // 层次 C：条目在其主折叠合集里的 sortIndex（只记归属合集的行——一条目属多
     // 合集时行内序跟随折叠归属，与 primaryMap 同口径）。一次 [getAllCollectionItems]
     // 查全部成员内存分组，替代逐合集 [getCollectionItems] 的 N+1（合集越多越慢，
@@ -830,7 +846,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final List<VideoDownloadSubscriptionRow> subscriptions =
         await db.getVideoDownloadSubscriptions();
     final Map<String, List<VideoDownloadSubscriptionItemRow>>
-        itemsBySubscription = <String, List<VideoDownloadSubscriptionItemRow>>{};
+        itemsBySubscription =
+        <String, List<VideoDownloadSubscriptionItemRow>>{};
     final Map<String, int> collectionIdByProviderIdentity = <String, int>{};
     for (final VideoDownloadSubscriptionRow sub in subscriptions) {
       itemsBySubscription[sub.subscriptionId] =
@@ -2838,6 +2855,25 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                   _buildTagFilterBar(allTags),
                 // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时零高度。
                 const SyncProgressBanner(),
+                VideoOnlineServicesBanner(
+                  preferences: ref.read(appProvider).prefsRepo,
+                  onRegister: () async {
+                    await Navigator.of(context).push<void>(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const OnlineServicesOnboardingPage(),
+                      ),
+                    );
+                  },
+                  onOpenSettings: () async {
+                    await Navigator.of(context).push<void>(
+                      MaterialPageRoute<void>(
+                        builder: (_) => SettingsDetailPage(
+                          destination: buildServicesDestination(),
+                        ),
+                      ),
+                    );
+                  },
+                ),
                 // 有作品刮不出身份时的常驻提醒（BUG-2201）。放在这里而不是正文
                 // sliver 里：正文按分区分三套 sliver，且会随列表滚走。
                 _buildPendingScrapeBanner(),

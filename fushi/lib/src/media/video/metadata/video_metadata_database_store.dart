@@ -34,10 +34,11 @@ class VideoMetadataDatabaseStore {
 
   /// Returns every persisted work identity, with the primary identity first.
   ///
-  /// The canonical AniDB binding and its secondary TMDB cross-reference must
+  /// The canonical MAL/TMDB binding and its secondary cross-references must
   /// survive independently of generated NFO files. Callers can therefore
   /// reuse an already-confirmed TMDB id/episode group without title-searching
-  /// and potentially rebinding the same AniDB work on every rescrape.
+  /// and potentially rebinding the same work on every rescrape. A secondary
+  /// identity must never be promoted merely because the old primary retired.
   Future<List<VideoMetadataLookup>> lookupsForWork(
     VideoSourceScrapeWork localWork,
   ) async {
@@ -924,6 +925,8 @@ class VideoMetadataDatabaseStore {
     return switch (work.provider) {
       VideoMetadataProviderKind.local => null,
       VideoMetadataProviderKind.anidb => 'https://anidb.net/anime/${id.value}',
+      VideoMetadataProviderKind.mal =>
+        'https://myanimelist.net/anime/${id.value}',
       VideoMetadataProviderKind.tmdb =>
         'https://www.themoviedb.org/${work.kind.name}/${id.value}',
       VideoMetadataProviderKind.bangumi => 'https://bgm.tv/subject/${id.value}',

@@ -60,8 +60,12 @@ class _VideoSourceScrapeTaskPanelState
   VideoSourceScrapePhase _lastPhase = VideoSourceScrapePhase.idle;
   final Set<int> _retrying = <int>{};
   List<VideoPendingScrapeWork> _pendingWorks = const <VideoPendingScrapeWork>[];
-  String? _bindingStableKey;
+  final Set<String> _bindingStableKeys = <String>{};
   String? _bindError;
+  bool _loadingPending = true;
+  Object? _pendingError;
+  int _pendingLoadGeneration = 0;
+  int _historyLoadGeneration = 0;
 
   @override
   void initState() {
@@ -93,19 +97,36 @@ class _VideoSourceScrapeTaskPanelState
   }
 
   Future<void> _reloadPendingWorks() async {
+    final int generation = ++_pendingLoadGeneration;
     final Future<List<VideoPendingScrapeWork>> Function()? load =
         widget.loadPendingWorks;
-    if (load == null) return;
+    if (load == null) {
+      if (mounted) setState(() => _loadingPending = false);
+      return;
+    }
+    if (mounted) {
+      setState(() {
+        _loadingPending = true;
+        _pendingError = null;
+      });
+    }
     try {
       final List<VideoPendingScrapeWork> pending = await load();
-      if (!mounted) return;
+      if (!mounted || generation != _pendingLoadGeneration) return;
       setState(() => _pendingWorks = pending);
-    } catch (_) {
-      // 队列是辅助视图：加载失败保持现状，不用错误打断面板。
+    } on Object catch (error) {
+      if (mounted && generation == _pendingLoadGeneration) {
+        setState(() => _pendingError = error);
+      }
+    } finally {
+      if (mounted && generation == _pendingLoadGeneration) {
+        setState(() => _loadingPending = false);
+      }
     }
   }
 
   Future<void> _reloadHistory() async {
+    final int generation = ++_historyLoadGeneration;
     if (mounted) {
       setState(() {
         _loadingHistory = true;
@@ -114,13 +135,13 @@ class _VideoSourceScrapeTaskPanelState
     }
     try {
       final List<VideoSourceScrapeRunRow> runs = await widget.loadRuns();
-      if (!mounted) return;
+      if (!mounted || generation != _historyLoadGeneration) return;
       setState(() {
         _runs = runs;
         _loadingHistory = false;
       });
     } on Object catch (error) {
-      if (!mounted) return;
+      if (!mounted || generation != _historyLoadGeneration) return;
       setState(() {
         _historyError = error;
         _loadingHistory = false;
@@ -130,84 +151,134 @@ class _VideoSourceScrapeTaskPanelState
 
   @override
   Widget build(BuildContext context) {
-    final VideoSourceScrapeProgress progress = widget.controller.progress;
-    final SourceScrapeReport? report = progress.report;
     final bool running = widget.controller.isRunning;
     final VideoSourceScrapeConfirmation? confirmation =
         widget.controller.pendingConfirmation;
-    return AlertDialog(
-      title: Text(t.video_source_scrape_tasks_open),
-      content: SizedBox(
-        width: 560,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 620),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                if (widget.controller.isBusy ||
-                    progress.phase != VideoSourceScrapePhase.idle) ...<Widget>[
-                  Text(
-                    t.video_source_scrape_tasks_current,
-                    style: Theme.of(context).textTheme.titleMedium,
+    return DefaultTabController(
+      length: 3,
+      child: AlertDialog(
+        title: Text(t.video_source_scrape_tasks_open),
+        content: SizedBox(
+          width: 880,
+          height: (MediaQuery.sizeOf(context).height * .65).clamp(240, 640),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Text(t.video_source_scrape_background_hint),
+              const SizedBox(height: 12),
+              TabBar(
+                isScrollable: false,
+                labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+                tabs: <Widget>[
+                  Tab(
+                    key: const ValueKey<String>('video-source-tab-activity'),
+                    text: t.video_source_scrape_tasks_current,
                   ),
-                  const SizedBox(height: 8),
-                  FushiCard(
-                    padding: const EdgeInsets.all(12),
-                    child: widget.controller.isScanning
-                        ? Text(t.video_source_scrape_phase_scanning)
-                        : confirmation != null
-                            ? _buildConfirmation(confirmation)
-                            : report != null
-                                ? _buildReport(report)
-                                : _buildProgress(progress),
+                  Tab(
+                    key: const ValueKey<String>('video-source-tab-pending'),
+                    text: t.video_source_scrape_pending_tab,
                   ),
-                  const SizedBox(height: 18),
+                  Tab(
+                    key: const ValueKey<String>('video-source-tab-history'),
+                    text: t.video_source_scrape_tasks_history,
+                  ),
                 ],
-                if (_pendingWorks.isNotEmpty) ...<Widget>[
-                  Text(
-                    t.video_source_scrape_pending_works,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(t.video_source_scrape_pending_works_hint),
-                  const SizedBox(height: 8),
-                  _buildPendingWorks(),
-                  if (_bindError case final String error) ...<Widget>[
-                    const SizedBox(height: 6),
-                    SelectableText(error),
+              ),
+              const SizedBox(height: 16),
+              Expanded(
+                child: TabBarView(
+                  children: <Widget>[
+                    _buildActivity(),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        Text(
+                            '${_pendingWorks.length} · ${t.video_source_scrape_pending_works_hint}'),
+                        const SizedBox(height: 12),
+                        if (_bindError case final String error)
+                          SelectableText(error),
+                        Expanded(child: _buildPendingWorks()),
+                      ],
+                    ),
+                    _buildHistory(),
                   ],
-                  const SizedBox(height: 18),
-                ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(t.dialog_close),
+          ),
+          if (running)
+            TextButton(
+              onPressed: widget.controller.cancel,
+              child: Text(t.video_source_scrape_queue_cancel_all),
+            ),
+          if (confirmation != null)
+            TextButton(
+              key: const ValueKey<String>('video-source-confirmation-skip'),
+              onPressed: widget.controller.skipPendingConfirmation,
+              child: Text(t.video_source_scrape_confirmation_skip),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActivity() {
+    final VideoSourceScrapeProgress progress = widget.controller.progress;
+    final VideoSourceScrapeConfirmation? confirmation =
+        widget.controller.pendingConfirmation;
+    final SourceScrapeReport? report = progress.report;
+    final List<VideoSourceScrapeManualRequest> queued =
+        widget.controller.queuedManualRequests;
+    return ListView.builder(
+      key: const PageStorageKey<String>('video-source-activity-list'),
+      itemCount: queued.length + 1,
+      itemBuilder: (BuildContext context, int index) {
+        if (index == 0) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              if (widget.controller.isScanning)
+                Text(t.video_source_scrape_phase_scanning)
+              else if (confirmation != null)
+                _buildConfirmation(confirmation)
+              else if (report != null) ...<Widget>[
+                Text(_phaseLabel(progress.phase),
+                    style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                _buildReport(report),
+              ] else
+                _buildProgress(progress),
+              if (queued.isNotEmpty) ...<Widget>[
+                const Divider(height: 32),
                 Text(
-                  t.video_source_scrape_tasks_history,
+                  '${t.video_source_scrape_queue_waiting} (${queued.length})',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
-                const SizedBox(height: 8),
-                _buildHistory(),
               ],
-            ),
+            ],
+          );
+        }
+        final VideoSourceScrapeManualRequest request = queued[index - 1];
+        return FushiListItem(
+          key: ObjectKey(request),
+          leading: Text('$index'),
+          title: Text(request.workTitle),
+          subtitle: Text(
+              '${request.source.label} · ${request.lookup.provider.name.toUpperCase()} ${request.lookup.externalId}'),
+          trailing: IconButton(
+            tooltip: t.video_source_scrape_queue_remove,
+            onPressed: () =>
+                widget.controller.cancelQueuedManualRequest(request),
+            icon: const Icon(Icons.close),
           ),
-        ),
-      ),
-      actions: <Widget>[
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text(t.dialog_close),
-        ),
-        if (running)
-          TextButton(
-            onPressed: widget.controller.cancel,
-            child: Text(t.dialog_cancel),
-          ),
-        if (confirmation != null)
-          TextButton(
-            key: const ValueKey<String>('video-source-confirmation-skip'),
-            onPressed: widget.controller.skipPendingConfirmation,
-            child: Text(t.video_source_scrape_confirmation_skip),
-          ),
-      ],
+        );
+      },
     );
   }
 
@@ -249,34 +320,43 @@ class _VideoSourceScrapeTaskPanelState
   /// 待确认队列：条目来自当前计划（不是历史 run 快照），手动指定按 stableKey
   /// 对应的真实作品执行——绑定入口永远不会指向已消失的作品。
   Widget _buildPendingWorks() {
-    final bool controllerBusy = widget.controller.isBusy;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        for (final VideoPendingScrapeWork entry in _pendingWorks)
-          FushiListItem(
-            key: ValueKey<String>(
-              'video-source-pending-work-${entry.work.stableKey}',
-            ),
-            density: FushiListDensity.compact,
-            padding: EdgeInsets.zero,
-            leading: const Icon(Icons.rule_folder_outlined),
-            title: Text(entry.work.title),
-            subtitle: Text(entry.source.label),
-            trailing: _bindingStableKey == entry.work.stableKey
-                ? const SizedBox.square(
-                    dimension: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : IconButton(
-                    tooltip: t.video_source_scrape_manual_search_title,
-                    onPressed: controllerBusy || _bindingStableKey != null
-                        ? null
-                        : () => unawaited(_bindPendingWork(entry)),
-                    icon: const Icon(Icons.search),
-                  ),
+    if (_loadingPending) {
+      return const Center(child: CircularProgressIndicator.adaptive());
+    }
+    if (_pendingError case final Object error) {
+      return _buildLoadError(error, _reloadPendingWorks);
+    }
+    if (_pendingWorks.isEmpty) {
+      return Text(t.video_source_scrape_pending_empty);
+    }
+    return ListView.builder(
+      key: const PageStorageKey<String>('video-source-pending-list'),
+      itemCount: _pendingWorks.length,
+      itemBuilder: (BuildContext context, int index) {
+        final VideoPendingScrapeWork entry = _pendingWorks[index];
+        final bool pending = widget.controller.isManualRequestPending(
+          sourceId: entry.source.id,
+          workTitle: entry.work.title,
+          workStableKey: entry.work.stableKey,
+        );
+        return FushiListItem(
+          key: ValueKey<String>(
+            'video-source-pending-work-${entry.work.stableKey}',
           ),
-      ],
+          density: FushiListDensity.compact,
+          padding: EdgeInsets.zero,
+          leading: const Icon(Icons.rule_folder_outlined),
+          title: Text(entry.work.title),
+          subtitle: Text(entry.source.label),
+          trailing: pending || _bindingStableKeys.contains(entry.work.stableKey)
+              ? Text(t.video_source_scrape_queue_submitted)
+              : IconButton(
+                  tooltip: t.video_source_scrape_manual_search_title,
+                  onPressed: () => unawaited(_bindPendingWork(entry)),
+                  icon: const Icon(Icons.search),
+                ),
+        );
+      },
     );
   }
 
@@ -287,20 +367,24 @@ class _VideoSourceScrapeTaskPanelState
       controller: widget.controller,
       source: entry.source,
       workTitle: entry.work.title,
+      workStableKey: entry.work.stableKey,
     );
     if (candidate == null || !mounted) return;
     setState(() {
-      _bindingStableKey = entry.work.stableKey;
+      _bindingStableKeys.add(entry.work.stableKey);
       _bindError = null;
     });
     try {
       await widget.controller.rescrapeWorkWithLookup(
         source: entry.source,
         workTitle: entry.work.title,
+        workStableKey: entry.work.stableKey,
         lookup: candidate.lookup,
       );
       await _reloadHistory();
       await _reloadPendingWorks();
+    } on VideoSourceScrapeCancelled {
+      // 撤回排队是用户操作，不把它显示成一次失败。
     } on VideoSourceScrapeWorkNotFound {
       if (!mounted) return;
       setState(() => _bindError = t.video_source_scrape_work_missing);
@@ -309,7 +393,9 @@ class _VideoSourceScrapeTaskPanelState
       if (!mounted) return;
       setState(() => _bindError = error.toString());
     } finally {
-      if (mounted) setState(() => _bindingStableKey = null);
+      if (mounted) {
+        setState(() => _bindingStableKeys.remove(entry.work.stableKey));
+      }
     }
   }
 
@@ -318,45 +404,64 @@ class _VideoSourceScrapeTaskPanelState
       return const Center(child: CircularProgressIndicator.adaptive());
     }
     if (_historyError case final Object error) {
-      return SelectableText(error.toString());
+      return _buildLoadError(error, _reloadHistory);
     }
     if (_runs.isEmpty) return Text(t.video_source_scrape_tasks_empty);
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        for (final VideoSourceScrapeRunRow run in _runs)
-          FushiListItem(
-            key: ValueKey<String>('video-source-scrape-run-${run.id}'),
-            density: FushiListDensity.compact,
-            padding: EdgeInsets.zero,
-            leading: Icon(_runIcon(run.status)),
-            title: Text(
-              '${videoSourceScrapeRunStatusLabel(run.status)} · '
-              '${run.provider?.toUpperCase() ?? t.nav_video}',
-            ),
-            subtitle: Text(_runSubtitle(run)),
-            subtitleMaxLines: 3,
-            onTap: () => unawaited(_openRunDetail(run)),
-            trailing: widget.onRetry != null &&
-                    run.sourceId != null &&
-                    scrapeRunHasUnresolvedWorks(run)
-                ? IconButton(
-                    tooltip: t.video_source_scrape_rescrape_source,
-                    onPressed: _retrying.contains(run.id)
-                        ? null
-                        : () => unawaited(_retry(run)),
-                    icon: _retrying.contains(run.id)
-                        ? const SizedBox.square(
-                            dimension: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.replay_outlined),
-                  )
-                : null,
+    return ListView.builder(
+      key: const PageStorageKey<String>('video-source-history-list'),
+      itemCount: _runs.length,
+      itemBuilder: (BuildContext context, int index) {
+        final VideoSourceScrapeRunRow run = _runs[index];
+        return FushiListItem(
+          key: ValueKey<String>('video-source-scrape-run-${run.id}'),
+          density: FushiListDensity.compact,
+          padding: EdgeInsets.zero,
+          leading: Icon(_runIcon(run.status)),
+          title: Text(
+            '${videoSourceScrapeRunStatusLabel(run.status)} · '
+            '${run.provider?.toUpperCase() ?? t.nav_video}',
           ),
-      ],
+          subtitle: Text(_runSubtitle(run)),
+          subtitleMaxLines: 3,
+          onTap: () => unawaited(_openRunDetail(run)),
+          trailing: widget.onRetry != null &&
+                  run.sourceId != null &&
+                  scrapeRunHasUnresolvedWorks(run)
+              ? IconButton(
+                  tooltip: t.video_source_scrape_rescrape_source,
+                  onPressed:
+                      _retrying.contains(run.id) || widget.controller.isBusy
+                          ? null
+                          : () => unawaited(_retry(run)),
+                  icon: _retrying.contains(run.id)
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.replay_outlined),
+                )
+              : null,
+        );
+      },
     );
   }
+
+  Widget _buildLoadError(Object error, Future<void> Function() reload) =>
+      ListView(
+        children: <Widget>[
+          Text(t.video_source_scrape_list_load_failed),
+          const SizedBox(height: 8),
+          SelectableText(error.toString()),
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: TextButton.icon(
+              onPressed: () => unawaited(reload()),
+              icon: const Icon(Icons.refresh),
+              label: Text(t.video_source_scrape_list_reload),
+            ),
+          ),
+        ],
+      );
 
   String _runSubtitle(VideoSourceScrapeRunRow run) {
     final String started = FushiTimeFormat.dateHourMinute(

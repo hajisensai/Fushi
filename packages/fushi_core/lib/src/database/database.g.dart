@@ -6659,6 +6659,19 @@ class $MediaSourcesTable extends MediaSources
     ),
     defaultValue: const Constant(true),
   );
+  static const VerificationMeta _videoGroupingModeMeta = const VerificationMeta(
+    'videoGroupingMode',
+  );
+  @override
+  late final GeneratedColumn<String> videoGroupingMode =
+      GeneratedColumn<String>(
+        'video_grouping_mode',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        defaultValue: const Constant('series'),
+      );
   static const VerificationMeta _sortOrderMeta = const VerificationMeta(
     'sortOrder',
   );
@@ -6694,6 +6707,7 @@ class $MediaSourcesTable extends MediaSources
     lastScannedAt,
     lastScanError,
     recursive,
+    videoGroupingMode,
     sortOrder,
     createdAt,
   ];
@@ -6778,6 +6792,15 @@ class $MediaSourcesTable extends MediaSources
         recursive.isAcceptableOrUnknown(data['recursive']!, _recursiveMeta),
       );
     }
+    if (data.containsKey('video_grouping_mode')) {
+      context.handle(
+        _videoGroupingModeMeta,
+        videoGroupingMode.isAcceptableOrUnknown(
+          data['video_grouping_mode']!,
+          _videoGroupingModeMeta,
+        ),
+      );
+    }
     if (data.containsKey('sort_order')) {
       context.handle(
         _sortOrderMeta,
@@ -6841,6 +6864,10 @@ class $MediaSourcesTable extends MediaSources
         DriftSqlType.bool,
         data['${effectivePrefix}recursive'],
       )!,
+      videoGroupingMode: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}video_grouping_mode'],
+      )!,
       sortOrder: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}sort_order'],
@@ -6891,6 +6918,10 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
   /// 是否递归扫描子目录。
   final bool recursive;
 
+  /// 视频分组方式（schema v98）：'series' 按作品识别，'folder' 按导入目录合集。
+  /// 与网络连接参数独立；旧来源保持作品识别行为。
+  final String videoGroupingMode;
+
   /// 列表排序权重（同 [BookTags].sortOrder 范式）。
   final int sortOrder;
 
@@ -6907,6 +6938,7 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
     this.lastScannedAt,
     this.lastScanError,
     required this.recursive,
+    required this.videoGroupingMode,
     required this.sortOrder,
     required this.createdAt,
   });
@@ -6929,6 +6961,7 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
       map['last_scan_error'] = Variable<String>(lastScanError);
     }
     map['recursive'] = Variable<bool>(recursive);
+    map['video_grouping_mode'] = Variable<String>(videoGroupingMode);
     map['sort_order'] = Variable<int>(sortOrder);
     map['created_at'] = Variable<int>(createdAt);
     return map;
@@ -6952,6 +6985,7 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
           ? const Value.absent()
           : Value(lastScanError),
       recursive: Value(recursive),
+      videoGroupingMode: Value(videoGroupingMode),
       sortOrder: Value(sortOrder),
       createdAt: Value(createdAt),
     );
@@ -6973,6 +7007,7 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
       lastScannedAt: serializer.fromJson<DateTime?>(json['lastScannedAt']),
       lastScanError: serializer.fromJson<String?>(json['lastScanError']),
       recursive: serializer.fromJson<bool>(json['recursive']),
+      videoGroupingMode: serializer.fromJson<String>(json['videoGroupingMode']),
       sortOrder: serializer.fromJson<int>(json['sortOrder']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
     );
@@ -6991,6 +7026,7 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
       'lastScannedAt': serializer.toJson<DateTime?>(lastScannedAt),
       'lastScanError': serializer.toJson<String?>(lastScanError),
       'recursive': serializer.toJson<bool>(recursive),
+      'videoGroupingMode': serializer.toJson<String>(videoGroupingMode),
       'sortOrder': serializer.toJson<int>(sortOrder),
       'createdAt': serializer.toJson<int>(createdAt),
     };
@@ -7007,6 +7043,7 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
     Value<DateTime?> lastScannedAt = const Value.absent(),
     Value<String?> lastScanError = const Value.absent(),
     bool? recursive,
+    String? videoGroupingMode,
     int? sortOrder,
     int? createdAt,
   }) => MediaSourceRow(
@@ -7024,6 +7061,7 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
         ? lastScanError.value
         : this.lastScanError,
     recursive: recursive ?? this.recursive,
+    videoGroupingMode: videoGroupingMode ?? this.videoGroupingMode,
     sortOrder: sortOrder ?? this.sortOrder,
     createdAt: createdAt ?? this.createdAt,
   );
@@ -7047,6 +7085,9 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
           ? data.lastScanError.value
           : this.lastScanError,
       recursive: data.recursive.present ? data.recursive.value : this.recursive,
+      videoGroupingMode: data.videoGroupingMode.present
+          ? data.videoGroupingMode.value
+          : this.videoGroupingMode,
       sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
     );
@@ -7065,6 +7106,7 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
           ..write('lastScannedAt: $lastScannedAt, ')
           ..write('lastScanError: $lastScanError, ')
           ..write('recursive: $recursive, ')
+          ..write('videoGroupingMode: $videoGroupingMode, ')
           ..write('sortOrder: $sortOrder, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
@@ -7083,6 +7125,7 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
     lastScannedAt,
     lastScanError,
     recursive,
+    videoGroupingMode,
     sortOrder,
     createdAt,
   );
@@ -7100,6 +7143,7 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
           other.lastScannedAt == this.lastScannedAt &&
           other.lastScanError == this.lastScanError &&
           other.recursive == this.recursive &&
+          other.videoGroupingMode == this.videoGroupingMode &&
           other.sortOrder == this.sortOrder &&
           other.createdAt == this.createdAt);
 }
@@ -7115,6 +7159,7 @@ class MediaSourcesCompanion extends UpdateCompanion<MediaSourceRow> {
   final Value<DateTime?> lastScannedAt;
   final Value<String?> lastScanError;
   final Value<bool> recursive;
+  final Value<String> videoGroupingMode;
   final Value<int> sortOrder;
   final Value<int> createdAt;
   const MediaSourcesCompanion({
@@ -7128,6 +7173,7 @@ class MediaSourcesCompanion extends UpdateCompanion<MediaSourceRow> {
     this.lastScannedAt = const Value.absent(),
     this.lastScanError = const Value.absent(),
     this.recursive = const Value.absent(),
+    this.videoGroupingMode = const Value.absent(),
     this.sortOrder = const Value.absent(),
     this.createdAt = const Value.absent(),
   });
@@ -7142,6 +7188,7 @@ class MediaSourcesCompanion extends UpdateCompanion<MediaSourceRow> {
     this.lastScannedAt = const Value.absent(),
     this.lastScanError = const Value.absent(),
     this.recursive = const Value.absent(),
+    this.videoGroupingMode = const Value.absent(),
     this.sortOrder = const Value.absent(),
     required int createdAt,
   }) : label = Value(label),
@@ -7159,6 +7206,7 @@ class MediaSourcesCompanion extends UpdateCompanion<MediaSourceRow> {
     Expression<DateTime>? lastScannedAt,
     Expression<String>? lastScanError,
     Expression<bool>? recursive,
+    Expression<String>? videoGroupingMode,
     Expression<int>? sortOrder,
     Expression<int>? createdAt,
   }) {
@@ -7173,6 +7221,7 @@ class MediaSourcesCompanion extends UpdateCompanion<MediaSourceRow> {
       if (lastScannedAt != null) 'last_scanned_at': lastScannedAt,
       if (lastScanError != null) 'last_scan_error': lastScanError,
       if (recursive != null) 'recursive': recursive,
+      if (videoGroupingMode != null) 'video_grouping_mode': videoGroupingMode,
       if (sortOrder != null) 'sort_order': sortOrder,
       if (createdAt != null) 'created_at': createdAt,
     });
@@ -7189,6 +7238,7 @@ class MediaSourcesCompanion extends UpdateCompanion<MediaSourceRow> {
     Value<DateTime?>? lastScannedAt,
     Value<String?>? lastScanError,
     Value<bool>? recursive,
+    Value<String>? videoGroupingMode,
     Value<int>? sortOrder,
     Value<int>? createdAt,
   }) {
@@ -7203,6 +7253,7 @@ class MediaSourcesCompanion extends UpdateCompanion<MediaSourceRow> {
       lastScannedAt: lastScannedAt ?? this.lastScannedAt,
       lastScanError: lastScanError ?? this.lastScanError,
       recursive: recursive ?? this.recursive,
+      videoGroupingMode: videoGroupingMode ?? this.videoGroupingMode,
       sortOrder: sortOrder ?? this.sortOrder,
       createdAt: createdAt ?? this.createdAt,
     );
@@ -7241,6 +7292,9 @@ class MediaSourcesCompanion extends UpdateCompanion<MediaSourceRow> {
     if (recursive.present) {
       map['recursive'] = Variable<bool>(recursive.value);
     }
+    if (videoGroupingMode.present) {
+      map['video_grouping_mode'] = Variable<String>(videoGroupingMode.value);
+    }
     if (sortOrder.present) {
       map['sort_order'] = Variable<int>(sortOrder.value);
     }
@@ -7263,6 +7317,7 @@ class MediaSourcesCompanion extends UpdateCompanion<MediaSourceRow> {
           ..write('lastScannedAt: $lastScannedAt, ')
           ..write('lastScanError: $lastScanError, ')
           ..write('recursive: $recursive, ')
+          ..write('videoGroupingMode: $videoGroupingMode, ')
           ..write('sortOrder: $sortOrder, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
@@ -10330,6 +10385,18 @@ class $VideoBooksTable extends VideoBooks
   final GeneratedDatabase attachedDatabase;
   final String? _alias;
   $VideoBooksTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _videoGroupingModeMeta = const VerificationMeta(
+    'videoGroupingMode',
+  );
+  @override
+  late final GeneratedColumn<String> videoGroupingMode =
+      GeneratedColumn<String>(
+        'video_grouping_mode',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
   static const VerificationMeta _bookUidMeta = const VerificationMeta(
     'bookUid',
   );
@@ -10555,6 +10622,7 @@ class $VideoBooksTable extends VideoBooks
   );
   @override
   List<GeneratedColumn> get $columns => [
+    videoGroupingMode,
     bookUid,
     title,
     videoPath,
@@ -10588,6 +10656,15 @@ class $VideoBooksTable extends VideoBooks
   }) {
     final context = VerificationContext();
     final data = instance.toColumns(true);
+    if (data.containsKey('video_grouping_mode')) {
+      context.handle(
+        _videoGroupingModeMeta,
+        videoGroupingMode.isAcceptableOrUnknown(
+          data['video_grouping_mode']!,
+          _videoGroupingModeMeta,
+        ),
+      );
+    }
     if (data.containsKey('book_uid')) {
       context.handle(
         _bookUidMeta,
@@ -10759,6 +10836,10 @@ class $VideoBooksTable extends VideoBooks
   VideoBookRow map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
     return VideoBookRow(
+      videoGroupingMode: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}video_grouping_mode'],
+      ),
       bookUid: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}book_uid'],
@@ -10849,6 +10930,9 @@ class $VideoBooksTable extends VideoBooks
 }
 
 class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
+  /// 最近一次导入的分组选择（schema v98）；来源删除后仍保留目录/作品模式。
+  /// NULL 是旧视频，按作品模式处理；存在来源时以来源当前设置为准。
+  final String? videoGroupingMode;
   final String bookUid;
   final String title;
   final String videoPath;
@@ -10927,6 +11011,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
   /// 在书架持久、可重复打开。null = 无外挂字幕/header 的直链流或本地视频。
   final String? streamSpecJson;
   const VideoBookRow({
+    this.videoGroupingMode,
     required this.bookUid,
     required this.title,
     required this.videoPath,
@@ -10951,6 +11036,9 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
+    if (!nullToAbsent || videoGroupingMode != null) {
+      map['video_grouping_mode'] = Variable<String>(videoGroupingMode);
+    }
     map['book_uid'] = Variable<String>(bookUid);
     map['title'] = Variable<String>(title);
     map['video_path'] = Variable<String>(videoPath);
@@ -11006,6 +11094,9 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
 
   VideoBooksCompanion toCompanion(bool nullToAbsent) {
     return VideoBooksCompanion(
+      videoGroupingMode: videoGroupingMode == null && nullToAbsent
+          ? const Value.absent()
+          : Value(videoGroupingMode),
       bookUid: Value(bookUid),
       title: Value(title),
       videoPath: Value(videoPath),
@@ -11063,6 +11154,9 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
   }) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return VideoBookRow(
+      videoGroupingMode: serializer.fromJson<String?>(
+        json['videoGroupingMode'],
+      ),
       bookUid: serializer.fromJson<String>(json['bookUid']),
       title: serializer.fromJson<String>(json['title']),
       videoPath: serializer.fromJson<String>(json['videoPath']),
@@ -11093,6 +11187,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
   Map<String, dynamic> toJson({ValueSerializer? serializer}) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
+      'videoGroupingMode': serializer.toJson<String?>(videoGroupingMode),
       'bookUid': serializer.toJson<String>(bookUid),
       'title': serializer.toJson<String>(title),
       'videoPath': serializer.toJson<String>(videoPath),
@@ -11119,6 +11214,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
   }
 
   VideoBookRow copyWith({
+    Value<String?> videoGroupingMode = const Value.absent(),
     String? bookUid,
     String? title,
     String? videoPath,
@@ -11140,6 +11236,9 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
     Value<int?> sourceId = const Value.absent(),
     Value<String?> streamSpecJson = const Value.absent(),
   }) => VideoBookRow(
+    videoGroupingMode: videoGroupingMode.present
+        ? videoGroupingMode.value
+        : this.videoGroupingMode,
     bookUid: bookUid ?? this.bookUid,
     title: title ?? this.title,
     videoPath: videoPath ?? this.videoPath,
@@ -11175,6 +11274,9 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
   );
   VideoBookRow copyWithCompanion(VideoBooksCompanion data) {
     return VideoBookRow(
+      videoGroupingMode: data.videoGroupingMode.present
+          ? data.videoGroupingMode.value
+          : this.videoGroupingMode,
       bookUid: data.bookUid.present ? data.bookUid.value : this.bookUid,
       title: data.title.present ? data.title.value : this.title,
       videoPath: data.videoPath.present ? data.videoPath.value : this.videoPath,
@@ -11227,6 +11329,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
   @override
   String toString() {
     return (StringBuffer('VideoBookRow(')
+          ..write('videoGroupingMode: $videoGroupingMode, ')
           ..write('bookUid: $bookUid, ')
           ..write('title: $title, ')
           ..write('videoPath: $videoPath, ')
@@ -11252,7 +11355,8 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
   }
 
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => Object.hashAll([
+    videoGroupingMode,
     bookUid,
     title,
     videoPath,
@@ -11273,11 +11377,12 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
     completedAt,
     sourceId,
     streamSpecJson,
-  );
+  ]);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is VideoBookRow &&
+          other.videoGroupingMode == this.videoGroupingMode &&
           other.bookUid == this.bookUid &&
           other.title == this.title &&
           other.videoPath == this.videoPath &&
@@ -11301,6 +11406,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
 }
 
 class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
+  final Value<String?> videoGroupingMode;
   final Value<String> bookUid;
   final Value<String> title;
   final Value<String> videoPath;
@@ -11323,6 +11429,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
   final Value<String?> streamSpecJson;
   final Value<int> rowid;
   const VideoBooksCompanion({
+    this.videoGroupingMode = const Value.absent(),
     this.bookUid = const Value.absent(),
     this.title = const Value.absent(),
     this.videoPath = const Value.absent(),
@@ -11346,6 +11453,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     this.rowid = const Value.absent(),
   });
   VideoBooksCompanion.insert({
+    this.videoGroupingMode = const Value.absent(),
     required String bookUid,
     required String title,
     required String videoPath,
@@ -11371,6 +11479,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
        title = Value(title),
        videoPath = Value(videoPath);
   static Insertable<VideoBookRow> custom({
+    Expression<String>? videoGroupingMode,
     Expression<String>? bookUid,
     Expression<String>? title,
     Expression<String>? videoPath,
@@ -11394,6 +11503,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
+      if (videoGroupingMode != null) 'video_grouping_mode': videoGroupingMode,
       if (bookUid != null) 'book_uid': bookUid,
       if (title != null) 'title': title,
       if (videoPath != null) 'video_path': videoPath,
@@ -11421,6 +11531,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
   }
 
   VideoBooksCompanion copyWith({
+    Value<String?>? videoGroupingMode,
     Value<String>? bookUid,
     Value<String>? title,
     Value<String>? videoPath,
@@ -11444,6 +11555,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     Value<int>? rowid,
   }) {
     return VideoBooksCompanion(
+      videoGroupingMode: videoGroupingMode ?? this.videoGroupingMode,
       bookUid: bookUid ?? this.bookUid,
       title: title ?? this.title,
       videoPath: videoPath ?? this.videoPath,
@@ -11473,6 +11585,9 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
+    if (videoGroupingMode.present) {
+      map['video_grouping_mode'] = Variable<String>(videoGroupingMode.value);
+    }
     if (bookUid.present) {
       map['book_uid'] = Variable<String>(bookUid.value);
     }
@@ -11546,6 +11661,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
   @override
   String toString() {
     return (StringBuffer('VideoBooksCompanion(')
+          ..write('videoGroupingMode: $videoGroupingMode, ')
           ..write('bookUid: $bookUid, ')
           ..write('title: $title, ')
           ..write('videoPath: $videoPath, ')
@@ -14807,6 +14923,17 @@ class $MediaCollectionsTable extends MediaCollections
       'PRIMARY KEY AUTOINCREMENT',
     ),
   );
+  static const VerificationMeta _sourceFolderPathMeta = const VerificationMeta(
+    'sourceFolderPath',
+  );
+  @override
+  late final GeneratedColumn<String> sourceFolderPath = GeneratedColumn<String>(
+    'source_folder_path',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _nameMeta = const VerificationMeta('name');
   @override
   late final GeneratedColumn<String> name = GeneratedColumn<String>(
@@ -14954,6 +15081,7 @@ class $MediaCollectionsTable extends MediaCollections
   @override
   List<GeneratedColumn> get $columns => [
     id,
+    sourceFolderPath,
     name,
     collectionType,
     coverSource,
@@ -14982,6 +15110,15 @@ class $MediaCollectionsTable extends MediaCollections
     final data = instance.toColumns(true);
     if (data.containsKey('id')) {
       context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('source_folder_path')) {
+      context.handle(
+        _sourceFolderPathMeta,
+        sourceFolderPath.isAcceptableOrUnknown(
+          data['source_folder_path']!,
+          _sourceFolderPathMeta,
+        ),
+      );
     }
     if (data.containsKey('name')) {
       context.handle(
@@ -15102,6 +15239,10 @@ class $MediaCollectionsTable extends MediaCollections
         DriftSqlType.int,
         data['${effectivePrefix}id'],
       )!,
+      sourceFolderPath: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source_folder_path'],
+      ),
       name: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}name'],
@@ -15166,6 +15307,10 @@ class $MediaCollectionsTable extends MediaCollections
 class MediaCollectionRow extends DataClass
     implements Insertable<MediaCollectionRow> {
   final int id;
+
+  /// 目录自动合集的本机目录身份（schema v98）；NULL 表示非目录自动合集。
+  /// 与来源根一样属于用户外部路径，不跨端同步，不据合集名称推断归属。
+  final String? sourceFolderPath;
 
   /// 合集名（必填）。
   final String name;
@@ -15253,6 +15398,7 @@ class MediaCollectionRow extends DataClass
   final String? subtitleReleaseGroup;
   const MediaCollectionRow({
     required this.id,
+    this.sourceFolderPath,
     required this.name,
     required this.collectionType,
     this.coverSource,
@@ -15271,6 +15417,9 @@ class MediaCollectionRow extends DataClass
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
+    if (!nullToAbsent || sourceFolderPath != null) {
+      map['source_folder_path'] = Variable<String>(sourceFolderPath);
+    }
     map['name'] = Variable<String>(name);
     map['collection_type'] = Variable<String>(collectionType);
     if (!nullToAbsent || coverSource != null) {
@@ -15308,6 +15457,9 @@ class MediaCollectionRow extends DataClass
   MediaCollectionsCompanion toCompanion(bool nullToAbsent) {
     return MediaCollectionsCompanion(
       id: Value(id),
+      sourceFolderPath: sourceFolderPath == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sourceFolderPath),
       name: Value(name),
       collectionType: Value(collectionType),
       coverSource: coverSource == null && nullToAbsent
@@ -15347,6 +15499,7 @@ class MediaCollectionRow extends DataClass
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return MediaCollectionRow(
       id: serializer.fromJson<int>(json['id']),
+      sourceFolderPath: serializer.fromJson<String?>(json['sourceFolderPath']),
       name: serializer.fromJson<String>(json['name']),
       collectionType: serializer.fromJson<String>(json['collectionType']),
       coverSource: serializer.fromJson<String?>(json['coverSource']),
@@ -15371,6 +15524,7 @@ class MediaCollectionRow extends DataClass
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
+      'sourceFolderPath': serializer.toJson<String?>(sourceFolderPath),
       'name': serializer.toJson<String>(name),
       'collectionType': serializer.toJson<String>(collectionType),
       'coverSource': serializer.toJson<String?>(coverSource),
@@ -15391,6 +15545,7 @@ class MediaCollectionRow extends DataClass
 
   MediaCollectionRow copyWith({
     int? id,
+    Value<String?> sourceFolderPath = const Value.absent(),
     String? name,
     String? collectionType,
     Value<String?> coverSource = const Value.absent(),
@@ -15406,6 +15561,9 @@ class MediaCollectionRow extends DataClass
     Value<String?> subtitleReleaseGroup = const Value.absent(),
   }) => MediaCollectionRow(
     id: id ?? this.id,
+    sourceFolderPath: sourceFolderPath.present
+        ? sourceFolderPath.value
+        : this.sourceFolderPath,
     name: name ?? this.name,
     collectionType: collectionType ?? this.collectionType,
     coverSource: coverSource.present ? coverSource.value : this.coverSource,
@@ -15431,6 +15589,9 @@ class MediaCollectionRow extends DataClass
   MediaCollectionRow copyWithCompanion(MediaCollectionsCompanion data) {
     return MediaCollectionRow(
       id: data.id.present ? data.id.value : this.id,
+      sourceFolderPath: data.sourceFolderPath.present
+          ? data.sourceFolderPath.value
+          : this.sourceFolderPath,
       name: data.name.present ? data.name.value : this.name,
       collectionType: data.collectionType.present
           ? data.collectionType.value
@@ -15467,6 +15628,7 @@ class MediaCollectionRow extends DataClass
   String toString() {
     return (StringBuffer('MediaCollectionRow(')
           ..write('id: $id, ')
+          ..write('sourceFolderPath: $sourceFolderPath, ')
           ..write('name: $name, ')
           ..write('collectionType: $collectionType, ')
           ..write('coverSource: $coverSource, ')
@@ -15487,6 +15649,7 @@ class MediaCollectionRow extends DataClass
   @override
   int get hashCode => Object.hash(
     id,
+    sourceFolderPath,
     name,
     collectionType,
     coverSource,
@@ -15506,6 +15669,7 @@ class MediaCollectionRow extends DataClass
       identical(this, other) ||
       (other is MediaCollectionRow &&
           other.id == this.id &&
+          other.sourceFolderPath == this.sourceFolderPath &&
           other.name == this.name &&
           other.collectionType == this.collectionType &&
           other.coverSource == this.coverSource &&
@@ -15523,6 +15687,7 @@ class MediaCollectionRow extends DataClass
 
 class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
   final Value<int> id;
+  final Value<String?> sourceFolderPath;
   final Value<String> name;
   final Value<String> collectionType;
   final Value<String?> coverSource;
@@ -15538,6 +15703,7 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
   final Value<String?> subtitleReleaseGroup;
   const MediaCollectionsCompanion({
     this.id = const Value.absent(),
+    this.sourceFolderPath = const Value.absent(),
     this.name = const Value.absent(),
     this.collectionType = const Value.absent(),
     this.coverSource = const Value.absent(),
@@ -15554,6 +15720,7 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
   });
   MediaCollectionsCompanion.insert({
     this.id = const Value.absent(),
+    this.sourceFolderPath = const Value.absent(),
     required String name,
     this.collectionType = const Value.absent(),
     this.coverSource = const Value.absent(),
@@ -15571,6 +15738,7 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
        createdAt = Value(createdAt);
   static Insertable<MediaCollectionRow> custom({
     Expression<int>? id,
+    Expression<String>? sourceFolderPath,
     Expression<String>? name,
     Expression<String>? collectionType,
     Expression<String>? coverSource,
@@ -15587,6 +15755,7 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
+      if (sourceFolderPath != null) 'source_folder_path': sourceFolderPath,
       if (name != null) 'name': name,
       if (collectionType != null) 'collection_type': collectionType,
       if (coverSource != null) 'cover_source': coverSource,
@@ -15607,6 +15776,7 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
 
   MediaCollectionsCompanion copyWith({
     Value<int>? id,
+    Value<String?>? sourceFolderPath,
     Value<String>? name,
     Value<String>? collectionType,
     Value<String?>? coverSource,
@@ -15623,6 +15793,7 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
   }) {
     return MediaCollectionsCompanion(
       id: id ?? this.id,
+      sourceFolderPath: sourceFolderPath ?? this.sourceFolderPath,
       name: name ?? this.name,
       collectionType: collectionType ?? this.collectionType,
       coverSource: coverSource ?? this.coverSource,
@@ -15645,6 +15816,9 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
     final map = <String, Expression>{};
     if (id.present) {
       map['id'] = Variable<int>(id.value);
+    }
+    if (sourceFolderPath.present) {
+      map['source_folder_path'] = Variable<String>(sourceFolderPath.value);
     }
     if (name.present) {
       map['name'] = Variable<String>(name.value);
@@ -15696,6 +15870,7 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
   String toString() {
     return (StringBuffer('MediaCollectionsCompanion(')
           ..write('id: $id, ')
+          ..write('sourceFolderPath: $sourceFolderPath, ')
           ..write('name: $name, ')
           ..write('collectionType: $collectionType, ')
           ..write('coverSource: $coverSource, ')
@@ -54197,6 +54372,7 @@ typedef $$MediaSourcesTableCreateCompanionBuilder =
       Value<DateTime?> lastScannedAt,
       Value<String?> lastScanError,
       Value<bool> recursive,
+      Value<String> videoGroupingMode,
       Value<int> sortOrder,
       required int createdAt,
     });
@@ -54212,6 +54388,7 @@ typedef $$MediaSourcesTableUpdateCompanionBuilder =
       Value<DateTime?> lastScannedAt,
       Value<String?> lastScanError,
       Value<bool> recursive,
+      Value<String> videoGroupingMode,
       Value<int> sortOrder,
       Value<int> createdAt,
     });
@@ -54436,6 +54613,11 @@ class $$MediaSourcesTableFilterComposer
 
   ColumnFilters<bool> get recursive => $composableBuilder(
     column: $table.recursive,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get videoGroupingMode => $composableBuilder(
+    column: $table.videoGroupingMode,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -54690,6 +54872,11 @@ class $$MediaSourcesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get videoGroupingMode => $composableBuilder(
+    column: $table.videoGroupingMode,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get sortOrder => $composableBuilder(
     column: $table.sortOrder,
     builder: (column) => ColumnOrderings(column),
@@ -54747,6 +54934,11 @@ class $$MediaSourcesTableAnnotationComposer
 
   GeneratedColumn<bool> get recursive =>
       $composableBuilder(column: $table.recursive, builder: (column) => column);
+
+  GeneratedColumn<String> get videoGroupingMode => $composableBuilder(
+    column: $table.videoGroupingMode,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<int> get sortOrder =>
       $composableBuilder(column: $table.sortOrder, builder: (column) => column);
@@ -54985,6 +55177,7 @@ class $$MediaSourcesTableTableManager
                 Value<DateTime?> lastScannedAt = const Value.absent(),
                 Value<String?> lastScanError = const Value.absent(),
                 Value<bool> recursive = const Value.absent(),
+                Value<String> videoGroupingMode = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
               }) => MediaSourcesCompanion(
@@ -54998,6 +55191,7 @@ class $$MediaSourcesTableTableManager
                 lastScannedAt: lastScannedAt,
                 lastScanError: lastScanError,
                 recursive: recursive,
+                videoGroupingMode: videoGroupingMode,
                 sortOrder: sortOrder,
                 createdAt: createdAt,
               ),
@@ -55013,6 +55207,7 @@ class $$MediaSourcesTableTableManager
                 Value<DateTime?> lastScannedAt = const Value.absent(),
                 Value<String?> lastScanError = const Value.absent(),
                 Value<bool> recursive = const Value.absent(),
+                Value<String> videoGroupingMode = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
                 required int createdAt,
               }) => MediaSourcesCompanion.insert(
@@ -55026,6 +55221,7 @@ class $$MediaSourcesTableTableManager
                 lastScannedAt: lastScannedAt,
                 lastScanError: lastScanError,
                 recursive: recursive,
+                videoGroupingMode: videoGroupingMode,
                 sortOrder: sortOrder,
                 createdAt: createdAt,
               ),
@@ -57920,6 +58116,7 @@ typedef $$SyncBaselinesTableProcessedTableManager =
     >;
 typedef $$VideoBooksTableCreateCompanionBuilder =
     VideoBooksCompanion Function({
+      Value<String?> videoGroupingMode,
       required String bookUid,
       required String title,
       required String videoPath,
@@ -57944,6 +58141,7 @@ typedef $$VideoBooksTableCreateCompanionBuilder =
     });
 typedef $$VideoBooksTableUpdateCompanionBuilder =
     VideoBooksCompanion Function({
+      Value<String?> videoGroupingMode,
       Value<String> bookUid,
       Value<String> title,
       Value<String> videoPath,
@@ -58119,6 +58317,11 @@ class $$VideoBooksTableFilterComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
+  ColumnFilters<String> get videoGroupingMode => $composableBuilder(
+    column: $table.videoGroupingMode,
+    builder: (column) => ColumnFilters(column),
+  );
+
   ColumnFilters<String> get bookUid => $composableBuilder(
     column: $table.bookUid,
     builder: (column) => ColumnFilters(column),
@@ -58373,6 +58576,11 @@ class $$VideoBooksTableOrderingComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
+  ColumnOrderings<String> get videoGroupingMode => $composableBuilder(
+    column: $table.videoGroupingMode,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get bookUid => $composableBuilder(
     column: $table.bookUid,
     builder: (column) => ColumnOrderings(column),
@@ -58501,6 +58709,11 @@ class $$VideoBooksTableAnnotationComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
+  GeneratedColumn<String> get videoGroupingMode => $composableBuilder(
+    column: $table.videoGroupingMode,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<String> get bookUid =>
       $composableBuilder(column: $table.bookUid, builder: (column) => column);
 
@@ -58771,6 +58984,7 @@ class $$VideoBooksTableTableManager
               $$VideoBooksTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback:
               ({
+                Value<String?> videoGroupingMode = const Value.absent(),
                 Value<String> bookUid = const Value.absent(),
                 Value<String> title = const Value.absent(),
                 Value<String> videoPath = const Value.absent(),
@@ -58793,6 +59007,7 @@ class $$VideoBooksTableTableManager
                 Value<String?> streamSpecJson = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => VideoBooksCompanion(
+                videoGroupingMode: videoGroupingMode,
                 bookUid: bookUid,
                 title: title,
                 videoPath: videoPath,
@@ -58817,6 +59032,7 @@ class $$VideoBooksTableTableManager
               ),
           createCompanionCallback:
               ({
+                Value<String?> videoGroupingMode = const Value.absent(),
                 required String bookUid,
                 required String title,
                 required String videoPath,
@@ -58839,6 +59055,7 @@ class $$VideoBooksTableTableManager
                 Value<String?> streamSpecJson = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => VideoBooksCompanion.insert(
+                videoGroupingMode: videoGroupingMode,
                 bookUid: bookUid,
                 title: title,
                 videoPath: videoPath,
@@ -60961,6 +61178,7 @@ typedef $$ShelfEntriesTableProcessedTableManager =
 typedef $$MediaCollectionsTableCreateCompanionBuilder =
     MediaCollectionsCompanion Function({
       Value<int> id,
+      Value<String?> sourceFolderPath,
       required String name,
       Value<String> collectionType,
       Value<String?> coverSource,
@@ -60978,6 +61196,7 @@ typedef $$MediaCollectionsTableCreateCompanionBuilder =
 typedef $$MediaCollectionsTableUpdateCompanionBuilder =
     MediaCollectionsCompanion Function({
       Value<int> id,
+      Value<String?> sourceFolderPath,
       Value<String> name,
       Value<String> collectionType,
       Value<String?> coverSource,
@@ -61160,6 +61379,11 @@ class $$MediaCollectionsTableFilterComposer
   });
   ColumnFilters<int> get id => $composableBuilder(
     column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sourceFolderPath => $composableBuilder(
+    column: $table.sourceFolderPath,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -61395,6 +61619,11 @@ class $$MediaCollectionsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get sourceFolderPath => $composableBuilder(
+    column: $table.sourceFolderPath,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get name => $composableBuilder(
     column: $table.name,
     builder: (column) => ColumnOrderings(column),
@@ -61472,6 +61701,11 @@ class $$MediaCollectionsTableAnnotationComposer
   });
   GeneratedColumn<int> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get sourceFolderPath => $composableBuilder(
+    column: $table.sourceFolderPath,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<String> get name =>
       $composableBuilder(column: $table.name, builder: (column) => column);
@@ -61725,6 +61959,7 @@ class $$MediaCollectionsTableTableManager
           updateCompanionCallback:
               ({
                 Value<int> id = const Value.absent(),
+                Value<String?> sourceFolderPath = const Value.absent(),
                 Value<String> name = const Value.absent(),
                 Value<String> collectionType = const Value.absent(),
                 Value<String?> coverSource = const Value.absent(),
@@ -61740,6 +61975,7 @@ class $$MediaCollectionsTableTableManager
                 Value<String?> subtitleReleaseGroup = const Value.absent(),
               }) => MediaCollectionsCompanion(
                 id: id,
+                sourceFolderPath: sourceFolderPath,
                 name: name,
                 collectionType: collectionType,
                 coverSource: coverSource,
@@ -61757,6 +61993,7 @@ class $$MediaCollectionsTableTableManager
           createCompanionCallback:
               ({
                 Value<int> id = const Value.absent(),
+                Value<String?> sourceFolderPath = const Value.absent(),
                 required String name,
                 Value<String> collectionType = const Value.absent(),
                 Value<String?> coverSource = const Value.absent(),
@@ -61772,6 +62009,7 @@ class $$MediaCollectionsTableTableManager
                 Value<String?> subtitleReleaseGroup = const Value.absent(),
               }) => MediaCollectionsCompanion.insert(
                 id: id,
+                sourceFolderPath: sourceFolderPath,
                 name: name,
                 collectionType: collectionType,
                 coverSource: coverSource,
