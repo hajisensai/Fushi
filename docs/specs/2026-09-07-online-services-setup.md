@@ -25,7 +25,7 @@ API 登录/服务端可用性与“已配置凭据”不同；界面只说明注
 
 OpenSubtitles 密钥值不进入仓库或文档，tracked 默认文件为空，由共享 `provide-baked-secrets` action 在构建时写入。用户 key 覆盖优先，序列化只保留用户输入，不导出内置 key；无配置或未启用状态保持原样，不因内置 key 而自动发起网络请求。
 
-内置 OpenSubtitles key 仅用于官方 HTTPS `api.opensubtitles.com:443/api/v1`，自定义服务器须填写自己的 key，避免把应用凭据发送给其他服务器。本轮已准备好构建注入；新建 GitHub Actions Secret 的操作仍待用户确认，不视为已配置完成。
+内置 OpenSubtitles key 仅用于官方 HTTPS `api.opensubtitles.com:443/api/v1`，自定义服务器须填写自己的 key，避免把应用凭据发送给其他服务器。用户确认后已保存 GitHub Actions Secret `OPENSUBTITLES_API_KEY`，页面回读确认创建成功。本地真值按现有模式保存到 Dart 配置文件，当前工作树使用 `skip-worktree`；尚未合入新文件的主 checkout 使用本地 Git exclude，并另留仓库外私密备份。源码提交仍为空占位。主 checkout 合入该文件后应为其启用 `skip-worktree`，供现有 worktree 初始化脚本自动同步。
 
 ## 新手教程与视频提醒
 
