@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2064 条。点号进各自文件。
+> 共 2066 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2234](bugs/BUG-2234-siglus-partial-redraw-retires-popup.md) | ✅ | ✅ | Siglus同句分批重绘错误撤销已打开词典 |
+| [BUG-2233](bugs/BUG-2233-siglus-text-hook-ownership-race.md) | ✅ | ✅ | Siglus原生文本适配与Luna自动扫描争抢入口 |
 | [BUG-2231](bugs/BUG-2231-windows-uia-flutter-host-crash.md) | 🚧 | 🚧 | Windows宿主在UIAutomation回调进入Flutter时访问冲突退出 |
 | [BUG-2230](bugs/BUG-2230-geometry-snapshot-conflict-as-none.md) | ✅ | ✅ | Windows宿主将快照读取冲突误报为没有原生查词provider |
 | [BUG-2229](bugs/BUG-2229-dictionary-expanded-column-version-collision.md) | ✅ | ✅ | 同版本数据库缺词典显式展开列导致启动空值崩溃 |

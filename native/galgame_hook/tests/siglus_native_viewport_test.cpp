@@ -32,9 +32,12 @@ class TestImage {
   }
 
   void Pattern(uint32_t rva, bool render, uint32_t slot = kSlot,
-               uint32_t base = kBase) {
-    const auto& pattern = render ? viewport::kRenderSizePattern
-                                 : viewport::kNormalizeSizePattern;
+               uint32_t base = kBase, bool alternate = false) {
+    const auto& pattern = alternate
+        ? (render ? viewport::kAlternateRenderSizePattern
+                  : viewport::kAlternateNormalizeSizePattern)
+        : (render ? viewport::kRenderSizePattern
+                  : viewport::kNormalizeSizePattern);
     assert(rva <= bytes.size() && pattern.size <= bytes.size() - rva);
     std::memcpy(bytes.data() + rva, pattern.bytes, pattern.size);
     const uint32_t address = base + slot;
@@ -145,6 +148,91 @@ void EmptyAndArchitecture() {
   assert(fushi_voice_hook::siglus_viewport::ValidDesignSize(1280, 720));
 }
 
+void AlternateLayoutLocationsAndSlots() {
+  for (const uint32_t render : {0x440u, 0x640u}) {
+    for (const uint32_t normalize : {0x800u, 0xb00u}) {
+      TestImage test;
+      test.image.absolute_base = 0x180000u;
+      test.Pattern(render, true, 0x1500u, 0x180000u, true);
+      test.Pattern(normalize, false, 0x1500u, 0x180000u, true);
+      assert(viewport::ResolveNativeConfigSlot(test.image) == 0x1500u);
+      test.Pattern(normalize, false, 0x1504u, 0x180000u, true);
+      assert(viewport::ResolveNativeConfigSlot(test.image) == 0u);
+    }
+  }
+  for (const uint32_t slot : {0x200u, 0x800u, 0x1201u, 0x2000u}) {
+    TestImage test;
+    test.Pattern(0x440u, true, slot, TestImage::kBase, true);
+    test.Pattern(0x800u, false, slot, TestImage::kBase, true);
+    assert(viewport::ResolveNativeConfigSlot(test.image) == 0u);
+  }
+  constexpr std::array<uint32_t, 3u> invalid_roles = {
+      IMAGE_SCN_MEM_READ, IMAGE_SCN_MEM_WRITE,
+      IMAGE_SCN_MEM_READ | IMAGE_SCN_MEM_WRITE | IMAGE_SCN_MEM_EXECUTE};
+  for (const uint32_t role : invalid_roles) {
+    TestImage test;
+    test.Pattern(0x440u, true, TestImage::kSlot, TestImage::kBase, true);
+    test.Pattern(0x800u, false, TestImage::kSlot, TestImage::kBase, true);
+    test.image.sections[1].characteristics = role;
+    assert(viewport::ResolveNativeConfigSlot(test.image) == 0u);
+  }
+}
+
+void LayoutPairsCannotMixOrCompete() {
+  for (const bool alternate_render : {false, true}) {
+    TestImage test;
+    test.Pattern(0x440u, true, TestImage::kSlot, TestImage::kBase,
+                 alternate_render);
+    test.Pattern(0x800u, false, TestImage::kSlot, TestImage::kBase,
+                 !alternate_render);
+    assert(viewport::ResolveNativeConfigSlot(test.image) == 0u);
+  }
+  for (const uint32_t alternate_slot : {TestImage::kSlot,
+                                       TestImage::kSlot + 4u}) {
+    TestImage test;
+    test.Pattern(0x440u, true);
+    test.Pattern(0x800u, false);
+    test.Pattern(0x640u, true, alternate_slot, TestImage::kBase, true);
+    test.Pattern(0xb00u, false, alternate_slot, TestImage::kBase, true);
+    assert(viewport::ResolveNativeConfigSlot(test.image) == 0u);
+  }
+  for (const bool render : {false, true}) {
+    for (const bool alternate_duplicate : {false, true}) {
+      TestImage test;
+      test.Pattern(0x440u, true, TestImage::kSlot, TestImage::kBase, true);
+      test.Pattern(0x800u, false, TestImage::kSlot, TestImage::kBase, true);
+      test.Pattern(0xc00u, render, TestImage::kSlot, TestImage::kBase,
+                   alternate_duplicate);
+      assert(viewport::ResolveNativeConfigSlot(test.image) == 0u);
+      std::memset(test.bytes.data() + 0xc00u, 0, 0x100u);
+      test.Pattern(0x1600u, render, TestImage::kSlot, TestImage::kBase,
+                   alternate_duplicate);
+      assert(viewport::ResolveNativeConfigSlot(test.image) == TestImage::kSlot);
+      test.image.sections[2] = {test.bytes.data() + 0x1600u, 0x100u, 0x1600u,
+                               IMAGE_SCN_MEM_READ | IMAGE_SCN_MEM_EXECUTE};
+      test.image.section_count = 3u;
+      assert(viewport::ResolveNativeConfigSlot(test.image) == 0u);
+    }
+  }
+}
+
+void AlternateLayoutPreservesEveryAbiByte() {
+  for (const bool render : {false, true}) {
+    const auto& pattern = render ? viewport::kAlternateRenderSizePattern
+                                  : viewport::kAlternateNormalizeSizePattern;
+    for (size_t index = 0u; index < pattern.size; ++index) {
+      if (pattern.mask[index] == 0u) continue;
+      TestImage test;
+      test.Pattern(0x440u, true, TestImage::kSlot, TestImage::kBase, true);
+      test.Pattern(0x800u, false, TestImage::kSlot, TestImage::kBase, true);
+      // Includes all scalar offsets, saved stack slot, source dimensions,
+      // destination fields, divide operands, and the unique final multiply.
+      test.bytes[(render ? 0x440u : 0x800u) + index] ^= 1u;
+      assert(viewport::ResolveNativeConfigSlot(test.image) == 0u);
+    }
+  }
+}
+
 }  // namespace
 
 int main() {
@@ -152,5 +240,8 @@ int main() {
   InvalidGlobalsAndSections();
   AmbiguityAndMissingPatterns();
   EmptyAndArchitecture();
+  AlternateLayoutLocationsAndSlots();
+  LayoutPairsCannotMixOrCompete();
+  AlternateLayoutPreservesEveryAbiByte();
   return 0;
 }

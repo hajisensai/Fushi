@@ -18,10 +18,104 @@ void Push(char16_t code_unit, int32_t x, int32_t y,
   assert(AppendSiglusLookupGlyphCapture(code_unit, x, y, extent, captures));
 }
 
+void TestSplitRedrawLifetime() {
+  using namespace fushi_voice_hook;
+  const auto& profile = kAnemoiSiglusLookupProfile;
+  SiglusLookupGlyphCaptureBuffer captures;
+  SiglusLookupLayoutState state;
+  Push(u'A', 100, 200, &captures);
+  assert(!UpdateSiglusLookupLayout(profile, captures, u"ABC", 3, &state));
+  assert(!state.current_valid && !state.line_has_complete_layout);
+  SiglusLookupClickSampleState initial_press;
+  AdvanceSiglusLookupClickSample(true, false, false, kSiglusLookupNoGlyph,
+                                 &initial_press);
+  auto edge = AdvanceSiglusLookupClickSample(
+      true, true, false, kSiglusLookupNoGlyph, &initial_press);
+  assert(!edge.consume && !edge.submit);
+  AdvanceSiglusLookupClickSample(true, false, false, kSiglusLookupNoGlyph,
+                                 &initial_press);
+  Push(u'B', 140, 200, &captures);
+  Push(u'C', 180, 200, &captures);
+  assert(UpdateSiglusLookupLayout(profile, captures, u"ABC", 3, &state));
+  assert(state.current_valid && state.line_has_complete_layout);
+  const uint64_t committed_generation = state.generation;
+  const uint64_t pressed_epoch = state.snapshot_epoch;
+  assert(IsSiglusLookupLayoutSubmissionCurrent(state, committed_generation,
+                                                pressed_epoch));
+
+  SiglusLookupClickSampleState held;
+  AdvanceSiglusLookupClickSample(true, false, false, 0, &held);
+  edge = AdvanceSiglusLookupClickSample(true, true, false, 0, &held);
+  assert(edge.consume && edge.begin);
+  // The production consumer runs between A and BC of an identical redraw.
+  Push(u'A', 100, 200, &captures);
+  assert(!UpdateSiglusLookupLayout(profile, captures, u"ABC", 3, &state));
+  assert(!state.current_valid && state.line_has_complete_layout);
+  assert(state.generation == committed_generation);
+  assert(!IsSiglusLookupLayoutSubmissionCurrent(state, committed_generation,
+                                                 pressed_epoch));
+  auto released_during_gap = held;
+  edge = AdvanceSiglusLookupClickSample(true, false, false,
+                                        kSiglusLookupNoGlyph,
+                                        &released_during_gap);
+  // The raw tail stays consumed, but the production publication gate rejects
+  // this submit intent because no current click snapshot exists.
+  assert(edge.consume && edge.submit);
+  assert(!IsSiglusLookupLayoutSubmissionCurrent(state, committed_generation,
+                                                 pressed_epoch));
+  Push(u'B', 140, 200, &captures);
+  Push(u'C', 180, 200, &captures);
+  assert(UpdateSiglusLookupLayout(profile, captures, u"ABC", 3, &state));
+  assert(state.line_has_complete_layout && state.current_valid);
+  assert(state.generation == committed_generation);
+  edge = AdvanceSiglusLookupClickSample(true, false, false,
+                                        kSiglusLookupNoGlyph, &held);
+  assert(edge.consume && edge.submit);
+  // Recovery of identical geometry must not revive a pre-gap down payload.
+  assert(!IsSiglusLookupLayoutSubmissionCurrent(state, committed_generation,
+                                                 pressed_epoch));
+  assert(IsSiglusLookupLayoutSubmissionCurrent(state, state.generation,
+                                                state.snapshot_epoch));
+
+  const uint64_t before_move = state.generation;
+  Push(u'A', 300, 400, &captures);
+  assert(!UpdateSiglusLookupLayout(profile, captures, u"ABC", 3, &state));
+  assert(state.line_has_complete_layout && !state.current_valid);
+  Push(u'B', 340, 400, &captures);
+  Push(u'C', 380, 400, &captures);
+  assert(UpdateSiglusLookupLayout(profile, captures, u"ABC", 3, &state));
+  assert(state.generation == NextSiglusLookupLogicalGeneration(before_move));
+  assert(state.geometry.glyphs[0].rect.x == 300);
+
+  // A real sentence change revokes the committed lifetime before rebuilding.
+  ResetSiglusLookupLayout(&state);
+  Push(u'X', 100, 200, &captures);
+  assert(!UpdateSiglusLookupLayout(profile, captures, u"XYZ", 3, &state));
+  assert(!state.line_has_complete_layout && !state.current_valid);
+  Push(u'Y', 140, 200, &captures);
+  Push(u'Z', 180, 200, &captures);
+  assert(UpdateSiglusLookupLayout(profile, captures, u"XYZ", 3, &state));
+  // The worker uses the same reset on sensor, viewport, HWND or session loss,
+  // and discards pre-loss captures. Merely restoring the sensor is not Ready.
+  const uint64_t before_loss = state.generation;
+  const uint64_t epoch_before_loss = state.snapshot_epoch;
+  ResetSiglusLookupLayout(&state);
+  ClearSiglusLookupGlyphCapture(&captures);
+  assert(!UpdateSiglusLookupLayout(profile, captures, u"XYZ", 3, &state));
+  assert(!state.line_has_complete_layout && !state.current_valid);
+  assert(!IsSiglusLookupLayoutSubmissionCurrent(state, before_loss,
+                                                 epoch_before_loss));
+  auto wrong_viewport = profile;
+  wrong_viewport.viewport_width = 0;
+  assert(!UpdateSiglusLookupLayout(wrong_viewport, captures, u"XYZ", 3, &state));
+  assert(!state.line_has_complete_layout);
+}
+
 } // namespace
 
 int main() {
   using namespace fushi_voice_hook;
+  TestSplitRedrawLifetime();
 
   assert(IsSiglusLookupResolutionPending(0));
   assert(IsSiglusLookupResolutionPending(2));

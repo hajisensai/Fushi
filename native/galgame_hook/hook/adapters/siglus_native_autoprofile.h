@@ -38,6 +38,90 @@ inline constexpr Signature kLeftButtonConsumer{
     "83 BF 58 C1 00 00 01 75 17 80 BD D9 FD FF FF 00 75 0E 83 EC 08 8D 8F 58 C1 00 00 E8 ?? ?? ?? ??"};
 inline constexpr Signature kInputReturn{"5E 8B E5 5D C2 0C 00"};
 
+// A second measured compiler layout keeps the same message and glyph ABI.
+// Its longer alignment instruction, key table and caller stack slot must be
+// selected together; a match from each of two layouts is not a third ABI.
+inline constexpr Signature kAlignedMainInputCall{
+    "8B 43 10 8B 73 08 50 FF 73 0C 89 85 4C FF FF FF 56 E8 ?? ?? ?? ?? 81 FE 12 01 00 00"};
+inline constexpr Signature kAlignedKeyboardLoop{
+    "8B 1D ?? ?? ?? ?? 33 F6 BF 00 80 00 00 0F 1F 44 00 00 56 FF D3 66 85 C7 0F 97 C0 88 84 35 F8 FD FF FF 46 81 FE 00 01 00 00 7C E7"};
+inline constexpr Signature kAlignedLeftButtonConsumer{
+    "83 BF 58 C1 00 00 01 75 17 80 BD F9 FD FF FF 00 75 0E 83 EC 08 8D 8F 58 C1 00 00 E8 ?? ?? ?? ??"};
+// The message switch subtracts WM_LBUTTONUP (0x202). Its table's first
+// destination must be this self+0xc158 release block, not merely a nearby call.
+inline constexpr Signature kMessageLeftButtonUp{
+    "05 FE FD FF FF 83 F8 08 0F 87 ?? ?? ?? ?? FF 24 85 ?? ?? ?? ?? 83 EC 08 8D 8E 58 C1 00 00 E8 ?? ?? ?? ?? 5E 8B E5 5D C2 0C 00"};
+
+struct InputAnchors {
+  uintptr_t main_call = 0u;
+  uintptr_t keyboard = 0u;
+  uintptr_t left_button = 0u;
+  size_t key_return_offset = 0u;
+  bool verify_message_up = false;
+};
+
+inline bool ResolveInputAnchors(const exact_lookup::LoadedPeImage& image,
+                                InputAnchors* out) {
+  const auto compact_main = exact_lookup::FindUniquePatternInExecutableSections(
+      image, kMainInputCall.pattern());
+  const auto aligned_main = exact_lookup::FindUniquePatternInExecutableSections(
+      image, kAlignedMainInputCall.pattern());
+  const auto compact_keys = exact_lookup::FindUniquePatternInExecutableSections(
+      image, kKeyboardLoop.pattern());
+  const auto aligned_keys = exact_lookup::FindUniquePatternInExecutableSections(
+      image, kAlignedKeyboardLoop.pattern());
+  // Uniqueness is across the whole set of admitted layouts, including orphan
+  // or duplicated anchors that cannot themselves form a complete alternative.
+  if (compact_main.count + aligned_main.count != 1u ||
+      compact_keys.count + aligned_keys.count != 1u) return false;
+  const bool has_aligned = aligned_main.count == 1u;
+  if (has_aligned != (aligned_keys.count == 1u)) return false;
+  out->main_call = static_cast<uintptr_t>(
+      (has_aligned ? aligned_main.address : compact_main.address) - image.base);
+  out->keyboard = static_cast<uintptr_t>(
+      (has_aligned ? aligned_keys.address : compact_keys.address) - image.base);
+  if (!siglus_family::UniqueWithin(
+          image, out->keyboard,
+          siglus_family::BoundedFunctionEnd(image, out->keyboard, 0x400u),
+          has_aligned ? kAlignedLeftButtonConsumer.pattern()
+                      : kLeftButtonConsumer.pattern(),
+          &out->left_button)) return false;
+  out->key_return_offset = has_aligned ? 21u : 17u;
+  out->verify_message_up = has_aligned;
+  return exact_lookup::MatchesRegisterIndirectCallEndingAt(
+      image, out->keyboard + out->key_return_offset, 0xd3u);
+}
+
+inline bool MatchesMessageRelease(const exact_lookup::LoadedPeImage& image,
+                                  uintptr_t input, uintptr_t left_button) {
+  uintptr_t message_up = 0u;
+  if (!siglus_family::UniqueWithin(
+          image, input, siglus_family::BoundedFunctionEnd(image, input, 0x200u),
+          kMessageLeftButtonUp.pattern(), &message_up)) return false;
+  // The admitted entry's JA after cmp(message, WM_LBUTTONDOWN) must reach
+  // this switch. A matching but unreachable block does not prove the route.
+  const int64_t upper_messages = static_cast<int64_t>(input) + 24 +
+      static_cast<int8_t>(image.base[input + 23u]);
+  if (upper_messages < 0 ||
+      static_cast<uint64_t>(upper_messages) != message_up) return false;
+  uintptr_t table = 0u, ignored = 0u, branch = 0u;
+  if (!exact_lookup::DecodeAbsolute32ImageAddress(
+          image, image.base + message_up + 17u, &ignored, &table) ||
+      !exact_lookup::SectionHasRole(
+          exact_lookup::FindSectionForRva(image, table, 4u),
+          IMAGE_SCN_MEM_READ) ||
+      !exact_lookup::DecodeAbsolute32ImageAddress(
+          image, image.base + table, &ignored, &branch) ||
+      branch != message_up + 21u) return false;
+  uintptr_t target = 0u, target_rva = 0u;
+  return exact_lookup::DecodeRel32CallTarget(
+             image.base + left_button + 27u, &target) &&
+         exact_lookup::AddressToRva(image, target, &target_rva) &&
+         siglus_family::ExecutableSpan(image, target_rva, 1u) &&
+         exact_lookup::MatchesRel32CallEndingAt(
+             image, message_up + 35u, target_rva);
+}
+
 inline bool ReadableDataSlot(const exact_lookup::LoadedPeImage& image,
                             uintptr_t instruction_operand,
                             uintptr_t* slot_rva) {
@@ -69,7 +153,8 @@ inline bool ResolveSiglusNativeFamilyProfile(
       bound_get_key_state > UINT32_MAX) return false;
 
   uintptr_t glyph = 0u, dialogue = 0u, text_tail = 0u, text_caller = 0u;
-  uintptr_t input = 0u, main_call = 0u, keyboard = 0u;
+  uintptr_t input = 0u;
+  InputAnchors input_anchors;
   uintptr_t coordinates = 0u, writer = 0u;
   if (!Unique(image, siglus_exact::kGlyphLayoutEntryPattern, &glyph) ||
       image.base[glyph + siglus_exact::kGlyphLayoutStackByteOffset] != 0xdcu ||
@@ -77,8 +162,7 @@ inline bool ResolveSiglusNativeFamilyProfile(
       !Unique(image, kTextTail.pattern(), &text_tail) || text_tail < 7u ||
       !Unique(image, kTextCaller.pattern(), &text_caller) ||
       !Unique(image, siglus_exact::kAnemoiInputMessageEntryPattern, &input) ||
-      !Unique(image, kMainInputCall.pattern(), &main_call) ||
-      !Unique(image, kKeyboardLoop.pattern(), &keyboard) ||
+      !ResolveInputAnchors(image, &input_anchors) ||
       !Unique(image, kGlyphCoordinates.pattern(), &coordinates) ||
       !Unique(image, kCoordinateWriter.pattern(), &writer)) return false;
 
@@ -101,12 +185,14 @@ inline bool ResolveSiglusNativeFamilyProfile(
       coordinates + kGlyphCoordinates.bytes.size() > glyph_end ||
       !UniqueWithin(image, input, BoundedFunctionEnd(image, input, 0x50u),
                     kInputReturn.pattern(), &ignored) ||
-      !UniqueWithin(image, keyboard, BoundedFunctionEnd(image, keyboard, 0x400u),
-                    kLeftButtonConsumer.pattern(), &ignored)) return false;
+      (input_anchors.verify_message_up &&
+       !MatchesMessageRelease(image, input, input_anchors.left_button)))
+    return false;
 
   uintptr_t key_slot = 0u;
   uint32_t key_target = 0u;
-  if (!ReadableDataSlot(image, keyboard + 2u, &key_slot)) return false;
+  if (!ReadableDataSlot(image, input_anchors.keyboard + 2u, &key_slot))
+    return false;
   std::memcpy(&key_target, image.base + key_slot, sizeof(key_target));
   if (key_target != bound_get_key_state ||
       !exact_lookup::MatchesRel32CallEndingAt(
@@ -114,7 +200,7 @@ inline bool ResolveSiglusNativeFamilyProfile(
       !exact_lookup::MatchesRel32CallEndingAt(
           image, text_caller + kTextCallOffset + 5u, text) ||
       !exact_lookup::MatchesRel32CallEndingAt(
-          image, main_call + kMainInputCallOffset + 5u, input) ||
+          image, input_anchors.main_call + kMainInputCallOffset + 5u, input) ||
       !exact_lookup::MatchesRel32CallEndingAt(
           image, coordinates + 21u, writer)) return false;
   // Both TextUnion copies use the same string-assignment implementation.
@@ -137,9 +223,11 @@ inline bool ResolveSiglusNativeFamilyProfile(
   out->dialogue_glyph_return_rva = dialogue + kDialogueCallOffset + 5u;
   out->exact_text_rva = text;
   out->exact_text_return_rva = text_caller + kTextCallOffset + 5u;
-  out->get_key_state_return_rva = keyboard + 17u;
+  out->get_key_state_return_rva =
+      input_anchors.keyboard + input_anchors.key_return_offset;
   out->input_message_rva = input;
-  out->main_input_message_return_rva = main_call + kMainInputCallOffset + 5u;
+  out->main_input_message_return_rva =
+      input_anchors.main_call + kMainInputCallOffset + 5u;
   return true;
 }
 }  // namespace fushi_voice_hook

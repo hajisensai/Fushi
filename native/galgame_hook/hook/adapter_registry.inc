@@ -65,9 +65,23 @@ class SiglusAdapter final : public fushi_voice_hook::EngineAdapter {
     return audio_ready_;
   }
   void InstallText() {
+    if (fushi_voice_hook::ReadSiglusTextOwner(g_header) !=
+        fushi_voice_hook::SiglusTextOwner::kPending) {
+      text_pending_ = false;
+      return;
+    }
     const bool complete = TryHookSiglusExactText();
-    text_pending_ = !complete && IsSiglusLookupIdentityUndecided();
+    fushi_voice_hook::CompleteSiglusTextOwner(
+        g_header, IsSiglusExactTextInstalled(),
+        !complete && IsSiglusLookupIdentityUndecided());
+    text_pending_ = fushi_voice_hook::ReadSiglusTextOwner(g_header) ==
+        fushi_voice_hook::SiglusTextOwner::kPending;
     installed_ = installed_ || probe();
+  }
+  void FailTextStartup() {
+    text_pending_ = false;
+    fushi_voice_hook::CompleteSiglusTextOwner(
+        g_header, IsSiglusExactTextInstalled(), false);
   }
   void ProcessPendingEvents() {
     // Hydration can finish after startup. Advance the pending admission on
@@ -91,6 +105,7 @@ class SiglusAdapter final : public fushi_voice_hook::EngineAdapter {
     // MinHook retry handles its protected launch window, not delayed engine modules.
   }
   void shutdown() override {
+    FailTextStartup();
     ShutdownSiglusLookup();
     installed_ = false;
     audio_ready_ = false;
@@ -520,6 +535,7 @@ class LoopbackAdapter final : public fushi_voice_hook::EngineAdapter {
 
 class AdapterRegistry {
  public:
+  void FailSiglusTextStartup() { siglus_.FailTextStartup(); }
   bool siglus_applicable() const { return siglus_.probe(); }
 
   void InstallStartupAdapters() {

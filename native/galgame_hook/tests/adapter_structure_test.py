@@ -308,12 +308,47 @@ class AdapterStructureTest(unittest.TestCase):
         siglus_capture = self._function_body(
             siglus, "void ConsumeSiglusLookupCaptures()"
         )
-        self.assertIn("SameSiglusLookupGeometry", siglus_capture)
-        self.assertIn("NextSiglusLookupLogicalGeneration", siglus_capture)
-        self.assertIn(
-            "matched_end == g_siglus_lookup_glyph_captures.count",
-            siglus_capture,
+        self.assertIn("UpdateSiglusLookupLayout", siglus_capture)
+        layout_header = (ROOT / "hook" / "adapters" / "siglus_lookup.h").read_text(
+            encoding="utf-8"
         )
+        layout = self._function_body(layout_header, "inline bool UpdateSiglusLookupLayout(")
+        self.assertIn("SameSiglusLookupGeometry", layout)
+        self.assertIn("NextSiglusLookupLogicalGeneration", layout)
+        self.assertIn("matched_end != captures.count", layout)
+
+    def test_siglus_split_redraw_preserves_only_committed_lifetime(self) -> None:
+        siglus = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "siglus_lookup.inc").read_text(
+                encoding="utf-8")
+        )
+        tick = self._function_body(siglus, "void ProcessSiglusLookupTick()")
+        self.assertIn("if (g_siglus_lookup_layout.line_has_complete_layout)", tick)
+        self.assertLess(tick.index("GetClientRect(game, &client)"),
+                        tick.index("if (!g_siglus_lookup_layout.current_valid)"))
+        self.assertIn("client.right <= client.left", tick)
+        self.assertIn("client.bottom <= client.top", tick)
+        self.assertIn("g_siglus_lookup_layout_window != game", tick)
+        self.assertGreaterEqual(tick.count("ResetSiglusLookupRuntimeLayout();"), 4)
+        cursor_failure = self._function_body(tick, "if (!GetCursorPos(&cursor))")
+        self.assertIn("InvalidateSiglusLookupClickTarget();", cursor_failure)
+        self.assertNotIn("Retire(", cursor_failure)
+        captures = self._function_body(siglus, "void ConsumeSiglusLookupCaptures()")
+        changed_line = self._function_body(captures, "if (!same)")
+        self.assertIn("ResetSiglusLookupLayout", changed_line)
+        self.assertIn(".Retire(", changed_line)
+        self.assertIn("InvalidateSiglusLookupClickTarget();", captures)
+        reserved = self._function_body(
+            captures, "if (g_siglus_lookup_glyph_processed_seq != latest)")
+        self.assertIn("InvalidateSiglusLookupCurrentLayout", reserved)
+        self.assertIn("InvalidateSiglusLookupClickTarget();", reserved)
+        reset = self._function_body(siglus, "void ResetSiglusLookupRuntimeLayout()")
+        self.assertIn("ClearSiglusLookupGlyphCapture", reset)
+        self.assertIn("ResetSiglusLookupLayout", reset)
+        pending = self._function_body(siglus, "bool SiglusLookupPayloadMatchesPublishedTarget(")
+        self.assertIn("payload.snapshot_epoch == target.snapshot_epoch", pending)
+        current = self._function_body(siglus, "bool IsSiglusLookupPayloadCurrent(")
+        self.assertIn("IsSiglusLookupLayoutSubmissionCurrent", current)
 
     def test_exact_engine_signatures_are_portable_unique_and_fail_closed(
         self,
@@ -451,11 +486,48 @@ class AdapterStructureTest(unittest.TestCase):
             "class UnityIl2CppAdapter final", 1
         )[0]
         install_text = self._member_body(siglus_adapter, "void InstallText()")
-        self.assertIn("text_pending_ = !complete && IsSiglusLookupIdentityUndecided()",
+        self.assertIn("!complete && IsSiglusLookupIdentityUndecided()",
                       install_text)
+        self.assertIn("CompleteSiglusTextOwner", install_text)
         pending = self._member_body(siglus_adapter, "void ProcessPendingEvents()")
         self.assertIn("if (text_pending_) InstallText();", pending)
         self.assertNotIn("lookup_enabled", pending)
+
+    def test_siglus_text_ownership_fences_every_luna_start(self) -> None:
+        worker_source = self._strip_comments(
+            (ROOT / "hook" / "dll_main.cpp").read_text(encoding="utf-8")
+        )
+        worker = self._function_body(worker_source, "DWORD WINAPI HookWorker(")
+        self.assertLess(worker.index("InitializeSiglusTextOwner"),
+                        worker.index("SignalReady"))
+        self.assertIn("registry.FailSiglusTextStartup();", worker)
+        ready_failure = self._function_body(worker, "if (!SignalReady(")
+        self.assertIn("AtomicStoreShared32(&g_header->hooked, 0u)", ready_failure)
+        self.assertLess(ready_failure.index("&g_header->hooked, 0u"),
+                        ready_failure.index("registry.FailSiglusTextStartup();"))
+        self.assertLess(ready_failure.index("registry.FailSiglusTextStartup();"),
+                        ready_failure.index("return 1;"))
+        injector = self._strip_comments(
+            (ROOT / "injector" / "injector_main.cpp").read_text(encoding="utf-8")
+        )
+        run = self._function_body(injector, "int RunInjection(")
+        start = self._function_body(run, "auto maybe_start_luna =")
+        self.assertEqual(run.count("InitLunaHook("), 1)
+        self.assertLess(start.index("ShouldAttempt"), start.index("InitLunaHook("))
+        self.assertIn("ReadSiglusTextOwner(header)", start)
+        self.assertNotIn("Sleep(", start)
+        guarded = self._function_body(run, "auto init_guarded_luna =")
+        self.assertIn("maybe_start_luna();", guarded)
+        hold = run[run.index("if (hold) {"):]
+        self.assertEqual(hold.count("maybe_start_luna();"), 2)
+        text = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "text_render_adapter.inc").read_text(
+                encoding="utf-8")
+        )
+        install = self._function_body(text, "bool InstallSiglusExactTextAt(")
+        self.assertLess(install.index("HookFn("),
+                        install.index("g_siglus_exact_text_installed = true"))
+        self.assertIn("g_orig_SiglusExactText == nullptr", install)
 
     def test_hunex_lookup_exact_provider_stays_fail_closed_and_registry_owned(
         self,

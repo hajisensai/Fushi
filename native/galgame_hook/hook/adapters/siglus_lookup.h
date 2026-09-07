@@ -594,6 +594,65 @@ BuildSiglusLookupGeometry(const SiglusLookupProfile &profile,
   return true;
 }
 
+// A committed same-line layout owns the provider lifetime, while only a
+// complete newest capture may supply a fresh click. Worker slices can end in
+// the middle of an identical redraw; that does not retire an existing popup.
+struct SiglusLookupLayoutState {
+  SiglusLookupGeometry geometry;
+  bool current_valid = false;
+  bool line_has_complete_layout = false;
+  uint64_t generation = 0;
+  // A press begun before an incomplete capture cannot submit after recovery,
+  // even if the logical geometry and its generation remain unchanged.
+  uint64_t snapshot_epoch = 0;
+};
+
+inline void InvalidateSiglusLookupCurrentLayout(SiglusLookupLayoutState* state) {
+  if (state == nullptr) return;
+  if (state->current_valid)
+    state->snapshot_epoch = NextSiglusLookupLogicalGeneration(state->snapshot_epoch);
+  state->current_valid = false;
+}
+
+// New text or loss of sensor/window/viewport/session revokes the committed
+// lifetime too. Counters stay monotonic so old payloads cannot become current.
+inline void ResetSiglusLookupLayout(SiglusLookupLayoutState* state) {
+  if (state == nullptr) return;
+  InvalidateSiglusLookupCurrentLayout(state);
+  state->line_has_complete_layout = false;
+}
+
+inline bool UpdateSiglusLookupLayout(
+    const SiglusLookupProfile& profile,
+    const SiglusLookupGlyphCaptureBuffer& captures,
+    const char16_t* line, size_t units, SiglusLookupLayoutState* state) {
+  if (state == nullptr) return false;
+  SiglusLookupGeometry candidate;
+  size_t matched_end = 0;
+  if (!BuildSiglusLookupGeometry(profile, captures, line, units, &candidate,
+                                 &matched_end) || matched_end != captures.count) {
+    InvalidateSiglusLookupCurrentLayout(state);
+    return false;
+  }
+  if (!state->line_has_complete_layout ||
+      !SameSiglusLookupGeometry(state->geometry, candidate)) {
+    state->generation = NextSiglusLookupLogicalGeneration(state->generation);
+  }
+  if (state->snapshot_epoch == 0)
+    state->snapshot_epoch = NextSiglusLookupLogicalGeneration(state->snapshot_epoch);
+  state->geometry = candidate;
+  state->current_valid = true;
+  state->line_has_complete_layout = true;
+  return true;
+}
+
+inline bool IsSiglusLookupLayoutSubmissionCurrent(
+    const SiglusLookupLayoutState& state, uint64_t generation,
+    uint64_t snapshot_epoch) {
+  return state.current_valid && generation != 0 && snapshot_epoch != 0 &&
+         generation == state.generation && snapshot_epoch == state.snapshot_epoch;
+}
+
 // The admitted build lays out text in a 1920x1080 design surface even when
 // the PMv2 HWND client is physically larger. Fit that surface into the real
 // client with the same centered letterbox transform used by the renderer.

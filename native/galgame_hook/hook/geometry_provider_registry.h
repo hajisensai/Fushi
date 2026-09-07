@@ -155,9 +155,13 @@ class GeometryProviderRegistry {
     ReleaseSRWLockExclusive(&lock_);
   }
 
-  // A provider offers readiness only after it has a current, usable horizontal
-  // layout snapshot.  The offer is remembered even when a mouse transaction
-  // temporarily prevents it from pre-empting the current provider.
+  // First readiness requires a usable horizontal layout, not just an installed
+  // sensor. A healthy same-line provider may retain that lifetime while its
+  // renderer publishes a split redraw, so an already displayed immutable popup
+  // survives. The adapter must invalidate fresh click targets and reject stale
+  // queued hits until the newest layout is complete; real text/window/sensor
+  // loss retires the lifetime. An offer is also remembered while a mouse tail
+  // temporarily prevents a provider handoff.
   bool OfferReady(SharedHeader* header, uint32_t provider_kind,
                   uint32_t provider_id) {
     const int provider_index =

@@ -636,8 +636,8 @@ void TestV14LookupRegionIsPureAppendOverV13() {
 }
 
 void TestV16V17AndV19OnlyAppendOverV15() {
-  Check(kSharedVersion == 23,
-        "本测试锁的是 v23 契约（BUG-2149 adapter 运行期读数在层原点块后纯追加）");
+  Check(kSharedVersion == 24,
+        "本测试锁的是 v24 契约（BUG-2233 Siglus text ownership 尾追加）");
 
   // v14 的最后一个字段是 lookup_diag。v15 只能紧随其后追加一个 64 位 applied seq；
   // 把字段插进 v14 中间，或在 applied seq 后再偷偷长出别的字段，都必须判红。
@@ -988,11 +988,14 @@ void TestV19AdmissionIsPureAppendOverV17() {
   Check(offsetof(SharedHeader, adapter_report_count) % 4 == 0 &&
             offsetof(SharedHeader, adapter_report_seq) % 4 == 0,
         "count/seq 必须 4 字节对齐（Interlocked 前提）");
+  Check(offsetof(SharedHeader, siglus_text_owner) ==
+            offsetof(SharedHeader, adapter_report_seq) + sizeof(uint32_t),
+        "v24 owner 只能追加在 v23 adapter 读数之后");
   Check(sizeof(SharedHeader) ==
-            ((offsetof(SharedHeader, adapter_report_seq) +
+            ((offsetof(SharedHeader, siglus_text_owner) +
               sizeof(uint32_t) + 7u) /
              8u) * 8u,
-        "v23 末尾除 8 字节对齐填充外不得混入其他字段");
+        "v24 末尾除 8 字节对齐填充外不得混入其他字段");
 }
 
 // 准入的读写往返。这些性质全都是「UI 会不会误导用户」的直接决定因素，不是内部细节。

@@ -151,7 +151,12 @@ static_assert(sizeof(SiglusTextUnionW) == 24,
 
 using SiglusExactTextFn = uintptr_t(__thiscall*)(SiglusTextUnionW* self);
 SiglusExactTextFn g_orig_SiglusExactText = nullptr;
+bool g_siglus_exact_text_installed = false;
 uintptr_t g_siglus_text_function_rva = 0;
+
+bool IsSiglusExactTextInstalled() {
+  return g_siglus_exact_text_installed && g_orig_SiglusExactText != nullptr;
+}
 
 bool IsReadableSpan(const void* pointer, size_t bytes) {
   if (pointer == nullptr || bytes == 0) return false;
@@ -232,10 +237,12 @@ uintptr_t __fastcall Detour_SiglusExactText(SiglusTextUnionW* self, void*) {
 bool InstallSiglusExactTextAt(void* target, uintptr_t rva) {
   g_siglus_text_function_rva = rva;
   if (!HookFn(target, reinterpret_cast<void*>(&Detour_SiglusExactText),
-              reinterpret_cast<void**>(&g_orig_SiglusExactText))) {
+              reinterpret_cast<void**>(&g_orig_SiglusExactText)) ||
+      g_orig_SiglusExactText == nullptr) {
     g_siglus_text_function_rva = 0;
     return false;
   }
+  g_siglus_exact_text_installed = true;
   if (g_header != nullptr) {
     g_header->text_hooked = 1;
     g_header->hook_diagnostics |= kDiagSiglusExactTextHookReady;
@@ -245,7 +252,9 @@ bool InstallSiglusExactTextAt(void* target, uintptr_t rva) {
 
 bool TryHookSiglusExactText() {
   if (!IsSiglusEngine()) return true;
-  if (g_orig_SiglusExactText != nullptr) return true;
+  if (IsSiglusExactTextInstalled()) return true;
+  if (fushi_voice_hook::ReadSiglusTextOwner(g_header) !=
+      fushi_voice_hook::SiglusTextOwner::kPending) return true;
   const bool resolved = IsSiglusLookupProfileMatched();
   // Do not let the historical first-match text locator patch an entry while
   // the lookup resolver is still checking whole-image uniqueness and its ABI.
@@ -292,6 +301,7 @@ bool TryHookSiglusExactText() {
 #else
 
 bool TryHookSiglusExactText() { return true; }
+bool IsSiglusExactTextInstalled() { return false; }
 
 #endif  // _M_IX86
 

@@ -693,3 +693,9 @@ add_executable(fushi_engine_identity_layout_test
 target_include_directories(fushi_engine_identity_layout_test PRIVATE "hook")
 add_test(NAME fushi_engine_identity_layout_test
   COMMAND fushi_engine_identity_layout_test)
+
+add_executable(fushi_siglus_text_owner_test "tests/siglus_text_owner_test.cpp")
+target_include_directories(fushi_siglus_text_owner_test PRIVATE "include")
+target_compile_definitions(fushi_siglus_text_owner_test PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_siglus_text_owner_test COMMAND fushi_siglus_text_owner_test)

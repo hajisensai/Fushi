@@ -135,7 +135,16 @@ constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
 //     读数看着正常，说的却是另一个 adapter。
 //     与 v22 同理，布局变了就必须升版（两侧都用 `sizeof(SharedHeader)` 现算 ring /
 //     region 基址，新旧混装会整体错位而版本门本会放行）。
-constexpr uint32_t kSharedVersion = 23;
+// v24 appends the injected Siglus text ownership decision. DLL Ready is not
+// permission for the injector to race native text installation with Luna.
+constexpr uint32_t kSharedVersion = 24;
+
+enum class SiglusTextOwner : uint32_t {
+  kPending = 0,
+  kNotApplicable = 1,
+  kNativeOwned = 2,
+  kLunaAllowed = 3,
+};
 constexpr uint32_t kStableIpcVersion = 1;
 
 // BUG-1882 — SGRE 的鼠标输入走 DirectInput immediate state，不经过普通
@@ -1291,6 +1300,9 @@ struct SharedHeader {
   AdapterReportSlot adapter_reports[kAdapterReportSlots];
   volatile uint32_t adapter_report_count;  // 实际使用的槽数，<= kAdapterReportSlots
   volatile uint32_t adapter_report_seq;    // 单调；0 = 从未上报过（≠"没有 adapter"）
+  // v24, hook worker -> injector, single writer. Initialize before Ready;
+  // Pending may become one terminal value and never return to Pending.
+  volatile uint32_t siglus_text_owner;
 };
 #pragma pack(pop)
 
@@ -2486,6 +2498,8 @@ inline bool IsLookupFrameSane(const SharedHeader* header,
 }
 
 static_assert(sizeof(SharedHeader) % 8 == 0, "SharedHeader must stay 8-aligned");
+static_assert(offsetof(SharedHeader, siglus_text_owner) % 4 == 0,
+              "Siglus ownership must support aligned Interlocked access");
 static_assert(sizeof(LookupHitSlot) % 8 == 0, "LookupHitSlot must stay 8-aligned");
 static_assert(sizeof(LookupFrame) % 8 == 0, "LookupFrame must stay 8-aligned");
 static_assert(sizeof(LookupInputSlot) % 8 == 0,

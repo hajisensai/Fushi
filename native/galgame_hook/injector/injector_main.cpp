@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "voice_hook_ipc.h"
+#include "siglus_text_owner.h"
 #include "voice_hook_session.h"
 #include "hook_module_identity.h"
 #include "child_process_policy.h"
@@ -1904,18 +1905,34 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
   // CREATE_SUSPENDED launch 必须等游戏内 DLL 完成首次 XAudio2/DirectSound 导出 hook，
   // 再恢复主线程。否则 Unity 可能先创建全部 source voice，之后晚 attach 只能拿到混音。
   bool luna_initialized = false;
+  fushi_voice_hook::SiglusLunaStartupGate luna_startup_gate;
+  uint32_t last_siglus_text_owner = UINT32_MAX;
+  auto maybe_start_luna = [&]() {
+    if (!hold || !luna.enabled || luna_initialized) return;
+    const auto text_owner = fushi_voice_hook::ReadSiglusTextOwner(header);
+    if (last_siglus_text_owner != static_cast<uint32_t>(text_owner)) {
+      last_siglus_text_owner = static_cast<uint32_t>(text_owner);
+      fprintf(stderr, "[siglus] text_owner=%u\n", last_siglus_text_owner);
+    }
+    if (!luna_startup_gate.ShouldAttempt(text_owner)) return;
+    luna_initialized =
+        InitLunaHook(header, target, pid, luna.codepage, luna.pc_hooks,
+                     luna.normalize_mages_controls,
+                     luna.hook_codes, luna.blocked_hook_codes,
+                     luna.blocked_hook_names, luna.preferred_hook_codes);
+  };
   auto init_guarded_luna = [&]() -> bool {
+    // Native ownership inserts no Luna hooks, so there is nothing to remove.
+    // An undecided Siglus cannot bypass its ownership gate via a guarded call.
+    if (fushi_voice_hook::ReadSiglusTextOwner(header) ==
+        fushi_voice_hook::SiglusTextOwner::kNativeOwned) return true;
     if (luna.blocked_hook_names.size() != luna.blocked_hook_codes.size()) {
       fprintf(stderr,
               "[luna] blocked-hook profile is missing removal confirmation "
               "names\n");
       return false;
     }
-    luna_initialized =
-        InitLunaHook(header, target, pid, luna.codepage, luna.pc_hooks,
-                     luna.normalize_mages_controls,
-                     luna.hook_codes, luna.blocked_hook_codes,
-                     luna.blocked_hook_names, luna.preferred_hook_codes);
+    maybe_start_luna();
     if (!luna_initialized) return false;
     const LONG expected_removed =
         static_cast<LONG>(luna.blocked_hook_codes.size());
@@ -2055,13 +2072,10 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
 
   // host 模式（--hold）才接入 LunaHook 全引擎文本 hook：写同一文本环，与游戏内 GDI hook
   // 并存（原子占号防撞槽）。probe 模式确认即退，LunaHook 没有捕获窗口，故不接。
-  if (hold && luna.enabled && !luna_initialized) {
-    InitLunaHook(header, target, pid, luna.codepage, luna.pc_hooks,
-                 luna.normalize_mages_controls,
-                 luna.hook_codes, luna.blocked_hook_codes,
-                 luna.blocked_hook_names,
-                 luna.preferred_hook_codes);
-  }
+  // BUG-2233: Ready/audio ACK do not transfer Siglus text ownership. Pending
+  // hydration is advanced by the DLL; normal hold polling starts Luna exactly
+  // once after an explicit decision, without holding a launched game suspended.
+  maybe_start_luna();
 
   if (hold) {
     // host 模式：常驻维持共享内存存活，供 Hibiki 消费（C.2 起真正读 PCM）。
@@ -2070,6 +2084,7 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
     uint64_t next_unity_event = 0;
     if (hold_process != nullptr) {
       while (WaitForSingleObject(hold_process, 50) == WAIT_TIMEOUT) {
+        maybe_start_luna();
         ProcessUnityVoiceEvents(header, unity_extractor,
                                 unity_data_directory, &next_unity_event);
       }
@@ -2077,6 +2092,7 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
                               unity_data_directory, &next_unity_event);
     } else {
       for (;;) {
+        maybe_start_luna();
         ProcessUnityVoiceEvents(header, unity_extractor,
                                 unity_data_directory, &next_unity_event);
         Sleep(50);

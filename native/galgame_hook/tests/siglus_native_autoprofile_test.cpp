@@ -12,15 +12,18 @@ struct Layout {
   uintptr_t glyph = 0x1000u, dialogue = 0x2200u, text = 0x2800u;
   uintptr_t text_caller = 0x3000u, input = 0x3800u, main_call = 0x4000u;
   uintptr_t keyboard = 0x4400u, writer = 0x5000u, assignment = 0x5400u;
-  uintptr_t key_slot = 0x7000u, text_slot = 0x7100u;
+  uintptr_t release = 0x5500u;
+  uintptr_t key_slot = 0x7000u, text_slot = 0x7100u, jump_table = 0x7200u;
 };
 struct Image {
   uint8_t* bytes = static_cast<uint8_t*>(VirtualAlloc(
       nullptr, 0x9000u, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
   exact_lookup::LoadedPeImage view;
   Layout p;
+  bool aligned;
   static constexpr uint32_t kExport = 0x76543210u;
-  explicit Image(Layout layout = {}) : p(layout) {
+  explicit Image(Layout layout = {}, bool use_aligned = false)
+      : p(layout), aligned(use_aligned) {
     assert(bytes);
     std::memset(bytes, 0xcc, 0x9000u);
     view.base = bytes; view.absolute_base = 0x110000u;
@@ -46,9 +49,14 @@ struct Image {
     Put(p.text_caller, kTextCaller.pattern());
     Put(p.input, siglus_exact::kAnemoiInputMessageEntryPattern);
     Put(p.input + 0x40u, kInputReturn.pattern());
-    Put(p.main_call, kMainInputCall.pattern());
-    Put(p.keyboard, kKeyboardLoop.pattern());
-    Put(p.keyboard + 0x200u, kLeftButtonConsumer.pattern());
+    SetInputLayout(aligned ? 7u : 0u);
+    Put(p.input + 0x74u, kMessageLeftButtonUp.pattern());
+    U32(p.input + 0x85u,
+        static_cast<uint32_t>(view.absolute_base + p.jump_table));
+    U32(p.jump_table,
+        static_cast<uint32_t>(view.absolute_base + p.input + 0x89u));
+    Call(p.input + 0x92u, p.release);
+    bytes[p.release] = 0xc3u;
     Put(p.writer, kCoordinateWriter.pattern());
     Call(p.dialogue + kDialogueCallOffset, p.glyph);
     Call(p.glyph + 0x200u + 16u, p.writer);
@@ -71,6 +79,22 @@ struct Image {
     bytes[at] = 0xe8u;
     U32(at + 1u, static_cast<uint32_t>(target - at - 5u));
   }
+  // Independent bits deliberately permit malformed mixtures in negative tests.
+  void SetInputLayout(unsigned bits) {
+    std::memset(bytes + p.main_call, 0xcc, 0x40u);
+    std::memset(bytes + p.keyboard, 0xcc, 0x40u);
+    std::memset(bytes + p.keyboard + 0x200u, 0xcc, 0x40u);
+    Put(p.main_call, (bits & 1u) ? kAlignedMainInputCall.pattern()
+                                : kMainInputCall.pattern());
+    Put(p.keyboard, (bits & 2u) ? kAlignedKeyboardLoop.pattern()
+                               : kKeyboardLoop.pattern());
+    Put(p.keyboard + 0x200u, (bits & 4u)
+                                ? kAlignedLeftButtonConsumer.pattern()
+                                : kLeftButtonConsumer.pattern());
+    Call(p.main_call + kMainInputCallOffset, p.input);
+    U32(p.keyboard + 2u, static_cast<uint32_t>(view.absolute_base + p.key_slot));
+    Call(p.keyboard + 0x200u + 27u, p.release);
+  }
   bool Resolve(SiglusLookupProfile* result) {
     return ResolveSiglusNativeFamilyProfile(view, kExport, result);
   }
@@ -83,7 +107,10 @@ struct Image {
     assert(result.exact_text_return_rva == p.text_caller + 16u);
     assert(result.input_message_rva == p.input);
     assert(result.main_input_message_return_rva == p.main_call + 22u);
-    assert(result.get_key_state_return_rva == p.keyboard + 17u);
+    assert(result.get_key_state_return_rva ==
+           p.keyboard + (aligned ? 21u : 17u));
+    assert(exact_lookup::MatchesRegisterIndirectCallEndingAt(
+        view, result.get_key_state_return_rva, 0xd3u));
     assert(result.viewport_width == 0 && result.viewport_height == 0);
     assert(result.text_feed == SiglusLookupTextFeed::kNativeEcxTextUnion);
     assert((result.executable_sha256 == std::array<uint8_t, 32>{}));
@@ -98,13 +125,92 @@ struct Image {
 }
 int main() {
   Image{}.Check();
+  Image{{}, true}.Check();
   Layout moved;
   moved.glyph += 0x35u; moved.dialogue += 0x81u; moved.text += 0x127u;
   moved.text_caller += 0x42u; moved.input += 0x31u;
   moved.main_call += 0x79u; moved.keyboard += 0x13u;
   moved.writer += 0x97u; moved.assignment += 0x25u;
+  moved.release += 0x13u;
   moved.key_slot += 0x44u; moved.text_slot += 0x64u;
+  moved.jump_table += 0x27u;
   Image{moved}.Check();
+  Image{moved, true}.Check();
+  for (unsigned bits = 1u; bits != 7u; ++bits) {
+    Image image; image.SetInputLayout(bits); image.Reject();
+  }
+  // Finding both complete input layouts is ambiguous, even with valid calls.
+  for (bool aligned : {false, true}) {
+    Image image({}, aligned);
+    image.Put(0x5800u, aligned ? kMainInputCall.pattern()
+                              : kAlignedMainInputCall.pattern());
+    image.Put(0x5c00u, aligned ? kKeyboardLoop.pattern()
+                              : kAlignedKeyboardLoop.pattern());
+    image.Put(0x5e00u, aligned ? kLeftButtonConsumer.pattern()
+                              : kAlignedLeftButtonConsumer.pattern());
+    image.Call(0x5811u, image.p.input);
+    image.U32(0x5c02u,
+              static_cast<uint32_t>(image.view.absolute_base + image.p.key_slot));
+    image.Call(0x5e1bu, image.p.release);
+    image.Reject();
+  }
+  for (auto pattern : {kAlignedMainInputCall.pattern(),
+                       kAlignedKeyboardLoop.pattern()}) {
+    Image image({}, true); image.Put(0x6000u, pattern); image.Reject();
+  }
+  // An incomplete or ambiguous alternative still violates global uniqueness.
+  for (bool aligned : {false, true}) {
+    for (auto pattern : {aligned ? kMainInputCall.pattern()
+                                 : kAlignedMainInputCall.pattern(),
+                         aligned ? kKeyboardLoop.pattern()
+                                 : kAlignedKeyboardLoop.pattern()}) {
+      Image image({}, aligned);
+      image.Put(0x6000u, pattern); image.Reject();
+      image.Put(0x6100u, pattern); image.Reject();
+    }
+  }
+  {
+    Image image({}, true);
+    image.Put(image.p.keyboard + 0x280u, kAlignedLeftButtonConsumer.pattern());
+    image.Reject();
+  }
+  // The extended layout proves WM_LBUTTONUP and sampled release call the
+  // same executable helper, with the switch table selecting that exact block.
+  for (int i = 0; i != 10; ++i) {
+    Image image({}, true);
+    switch (i) {
+      case 0: image.Call(image.p.main_call + 17u, 0x6600u); break;
+      case 1: image.U32(image.p.key_slot, Image::kExport + 1u); break;
+      case 2: image.bytes[image.p.keyboard + 20u] = 0xd7u; break;
+      case 3: image.Call(image.p.keyboard + 0x21bu, 0x6600u); break;
+      case 4: image.Call(image.p.input + 0x92u, 0x6600u); break;
+      case 5:
+        image.Call(image.p.keyboard + 0x21bu, image.p.key_slot);
+        image.Call(image.p.input + 0x92u, image.p.key_slot);
+        break;
+      case 6: image.U32(image.p.jump_table,
+                       static_cast<uint32_t>(image.view.absolute_base +
+                                             image.p.input + 0x8au)); break;
+      case 7: image.U32(image.p.input + 0x85u, 0xffffffffu); break;
+      case 8: image.bytes[image.p.keyboard + 29u] ^= 1u; break;
+      case 9: image.bytes[image.p.keyboard + 0x20bu] ^= 1u; break;
+    }
+    image.Reject();
+  }
+  {
+    Image image({}, true);
+    std::memset(image.bytes + image.p.input + 0x74u, 0xcc, 0x40u);
+    image.Put(image.p.input + 0x210u, kMessageLeftButtonUp.pattern());
+    image.Reject();
+  }
+  {
+    Image image({}, true);
+    std::memcpy(image.bytes + image.p.input + 0x100u,
+                image.bytes + image.p.input + 0x74u,
+                kMessageLeftButtonUp.bytes.size());
+    std::memset(image.bytes + image.p.input + 0x74u, 0xcc, 0x40u);
+    image.Reject();  // Nearby, but the entry's branch does not reach it.
+  }
   // Uniqueness applies to every independent executable anchor.
   const exact_lookup::MaskedPattern anchors[] = {
       siglus_exact::kGlyphLayoutEntryPattern, kDialogueCall.pattern(),
