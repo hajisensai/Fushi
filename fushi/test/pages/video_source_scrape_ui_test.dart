@@ -134,6 +134,7 @@ class _ManualBindingRunner
   Future<List<VideoSourceScrapeConfirmationCandidate>> searchManualCandidates({
     required SourceLibraryRow source,
     required String workTitle,
+    String? workStableKey,
     required String query,
   }) async {
     queries.add(query);
@@ -144,6 +145,7 @@ class _ManualBindingRunner
   Future<SourceScrapeReport> rescrapeWorkWithLookup({
     required SourceLibraryRow source,
     required String workTitle,
+    String? workStableKey,
     required VideoMetadataLookup lookup,
     required VideoSourceScrapeCancellationToken cancellationToken,
     required VideoSourceScrapeProgressCallback onProgress,
@@ -315,6 +317,9 @@ void main() {
     expect(find.text('Background tasks'), findsOneWidget);
     expect(find.textContaining('Example Show'), findsOneWidget);
     expect(find.text('Recent tasks'), findsOneWidget);
+    await tester
+        .tap(find.byKey(const ValueKey<String>('video-source-tab-history')));
+    await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey<String>('video-source-scrape-run-1')),
         findsOneWidget);
 
@@ -352,7 +357,7 @@ void main() {
   });
 
   testWidgets(
-      'source settings keep AniDB fixed and persist safe output toggles',
+      'source settings explain MAL primary and persist safe output toggles',
       (WidgetTester tester) async {
     final FushiDatabase db = _memDb();
     addTearDown(db.close);
@@ -371,7 +376,9 @@ void main() {
     // BUG-1999：enabled 是此来源刮削的总闸，UI 必须可改且真写穿 DB（旧实现
     // 根本没画这个开关、保存时硬编码回写旧值）。
     await tester.tap(find.text('Enable scraping for this source'));
+    await tester.ensureVisible(find.text('Scrape after scanning'));
     await tester.tap(find.text('Scrape after scanning'));
+    await tester.ensureVisible(find.text('Write image files'));
     await tester.tap(find.text('Write image files'));
     await tester.tap(find.text('SAVE'));
     await tester.pumpAndSettle();
@@ -553,7 +560,7 @@ void main() {
     expect(runner.queries, <String>['Doraemon Movies']);
 
     await tester.tap(find.byKey(
-      const ValueKey<String>('video-source-candidate-anidb-65733'),
+      const ValueKey<String>('video-source-candidate-anidb-tv-65733'),
     ));
     await tester.pumpAndSettle();
 
@@ -603,6 +610,9 @@ void main() {
     await tester.tap(find.text('Open tasks'));
     await tester.pumpAndSettle();
 
+    await tester
+        .tap(find.byKey(const ValueKey<String>('video-source-tab-history')));
+    await tester.pumpAndSettle();
     // 这次 run 的 status 是 completed —— 旧判据（status 白名单）在这里没有入口。
     final Finder rescrape = find.descendant(
       of: find.byKey(ValueKey<String>('video-source-scrape-run-$runId')),

@@ -14,6 +14,58 @@ List<EpubImageRef> _images(int n) => <EpubImageRef>[
 Widget _host(Widget child) => MaterialApp(home: child);
 
 void main() {
+  testWidgets('模糊设置同步舞台与缩略图，揭开后再按 Enter 才打开查看器', (tester) async {
+    final List<String> revealed = <String>[];
+    final List<EpubImageRef> opened = <EpubImageRef>[];
+    await tester.pumpWidget(
+      _host(
+        ReaderGalleryPage(
+          images: _images(3),
+          currentChapter: 0,
+          fileForRef: (_) => null,
+          onOpenImage: opened.add,
+          onJumpTo: (_) {},
+          blurImages: true,
+          revealedImageKeys: const <String>{'img1.png'},
+          onRevealImage: revealed.add,
+        ),
+      ),
+    );
+    await tester.pump();
+    // 两张尚未揭开的缩略图 + 当前大图；已揭开的 img1 保持清晰。
+    expect(find.byType(ImageFiltered), findsNWidgets(3));
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+    expect(revealed, <String>['img0.png']);
+    expect(opened, isEmpty);
+    expect(find.byType(ImageFiltered), findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    expect(opened.single.src, 'img0.png');
+
+    // 切到新图仍遮罩；回到刚揭开的图不会重新模糊。
+    await tester.sendKeyEvent(LogicalKeyboardKey.end);
+    await tester.pumpAndSettle();
+    expect(find.byType(ImageFiltered), findsNWidgets(2));
+    await tester.sendKeyEvent(LogicalKeyboardKey.home);
+    await tester.pumpAndSettle();
+    expect(find.byType(ImageFiltered), findsOneWidget);
+  });
+
+  testWidgets('关闭图片模糊后所有插图直接显示', (tester) async {
+    await tester.pumpWidget(
+      _host(
+        ReaderGalleryPage(
+          images: _images(3),
+          currentChapter: 0,
+          fileForRef: (_) => null,
+          onOpenImage: (_) {},
+          onJumpTo: (_) {},
+        ),
+      ),
+    );
+    expect(find.byType(ImageFiltered), findsNothing);
+  });
+
   testWidgets('空书：显示空态文案，没有缩略图带', (tester) async {
     await tester.pumpWidget(_host(ReaderGalleryPage(
       images: const <EpubImageRef>[],

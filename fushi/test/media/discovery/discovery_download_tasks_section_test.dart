@@ -10,6 +10,7 @@ import 'package:fushi/src/media/discovery/discovery_download_queue.dart';
 import 'package:fushi/src/media/discovery/discovery_download_tasks_section.dart';
 import 'package:fushi/src/media/discovery/discovery_labels.dart';
 import 'package:fushi/src/media/discovery/discovery_models.dart';
+import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart';
 
 import '../../helpers/source_guard.dart';
 
@@ -43,6 +44,8 @@ Future<void> _pump(
   WidgetTester tester,
   DiscoveryDownloadQueue queue, {
   Size size = const Size(800, 700),
+  Future<bool> Function(String path)? pathRevealer,
+  RevealHost? Function()? revealHostProbe,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -58,7 +61,13 @@ Future<void> _pump(
           home: Scaffold(
             body: Column(
               children: <Widget>[
-                DiscoveryDownloadTasksSection(queueOverride: queue),
+                DiscoveryDownloadTasksSection(
+                  queueOverride: queue,
+                  pathRevealer: pathRevealer,
+                  // 默认按桌面渲染：这套行的动作在三桌面端都在，测试不该跟着
+                  // 跑测试的宿主平台变结论（CI 是 Linux，本机是 Windows）。
+                  revealHostProbe: revealHostProbe ?? () => RevealHost.windows,
+                ),
                 const Expanded(child: SizedBox.shrink()),
               ],
             ),
@@ -84,8 +93,8 @@ void main() {
       reason: '找不到 downloads_page.dart（路径变了要同步本守卫）',
     );
     final String code = maskCommentsAndScriptLines(f.readAsStringSync());
-    final int mokuro = code.indexOf('const MokuroMoeTasksSection(),');
-    final int direct = code.indexOf('const DiscoveryDownloadTasksSection(),');
+    final int mokuro = code.indexOf('MokuroMoeTasksSection(');
+    final int direct = code.indexOf('DiscoveryDownloadTasksSection(');
     expect(
       direct,
       greaterThan(-1),
@@ -94,7 +103,10 @@ void main() {
           '「已加入下载」之后用户就是来这里找任务的',
     );
     expect(mokuro, greaterThan(-1));
-    expect(direct, greaterThan(mokuro), reason: '与漫画目录队列区并列、紧随其后（同屏任务视图的固定次序）');
+    expect(code, contains('tasksBuilder:'));
+    expect(code, contains('additionalTasks:'));
+    expect(code, contains('unified: true'));
+    expect(code, isNot(contains('legacyHeight')));
   });
 
   testWidgets('队列为空不占位', (WidgetTester tester) async {
@@ -206,6 +218,144 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('行内「打开文件位置」调文件管理器；失败出声', (
+    WidgetTester tester,
+  ) async {
+    final DiscoveryDownloadQueue queue = DiscoveryDownloadQueue(
+      resolvePayload: (DiscoveryResourceItem item) =>
+          throw StateError('boom'),
+      importer: (DiscoveryDownloadTask task, File file) async =>
+          const DiscoveryImportOutcome(),
+    );
+    addTearDown(queue.dispose);
+    final List<String> revealed = <String>[];
+    await _pump(
+      tester,
+      queue,
+      pathRevealer: (String path) async {
+        revealed.add(path);
+        return false; // 路径已不在 / 启动失败
+      },
+    );
+    queue.enqueue(_item('g1', title: 'Game One'), destinationDir: r'C:\dl');
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('discovery-download-src-g1-location')),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(revealed, <String>[r'C:\dl']);
+    expect(
+      find.text(t.download_task_location_open_failed),
+      findsOneWidget,
+      reason: 'reveal 失败必须出声，不能点了什么都不发生',
+    );
+  });
+
+  test('打开文件位置的目标：落盘文件优先于目标目录，都没有则不画按钮', () {
+    DiscoveryDownloadTask task({String dir = '', String? filePath}) =>
+        DiscoveryDownloadTask.forTesting(
+          item: _item('x'),
+          destinationDir: dir,
+          filePath: filePath,
+        );
+    expect(
+      discoveryDownloadRevealTarget(
+        task(dir: r'C:\dl', filePath: r'C:\dl.zip'),
+      ),
+      r'C:\dl.zip',
+      reason: '下完了就选中文件本身，用户要的是那个文件',
+    );
+    expect(
+      discoveryDownloadRevealTarget(task(dir: r'C:\dl')),
+      r'C:\dl',
+      reason: '还没下完只能打开目标目录',
+    );
+    expect(discoveryDownloadRevealTarget(task()), isNull);
+    expect(discoveryDownloadRevealTarget(task(dir: '  ')), isNull);
+  });
+
+  testWidgets('行内「删除任务」：确认后摘行、文件留着；取消则什么都不做', (
+    WidgetTester tester,
+  ) async {
+    // 用「必失败」的 resolver 让两条都停在终态：running 行的进度环是无限动画，
+    // 会让确认框的 pumpAndSettle 永远等不到静止。
+    final DiscoveryDownloadQueue queue = DiscoveryDownloadQueue(
+      resolvePayload: (DiscoveryResourceItem item) =>
+          throw StateError('boom'),
+      importer: (DiscoveryDownloadTask task, File file) async =>
+          const DiscoveryImportOutcome(),
+    );
+    addTearDown(queue.dispose);
+    await _pump(tester, queue);
+    queue.enqueue(_item('g1', title: 'Game One'), destinationDir: r'C:\dl');
+    queue.enqueue(
+      _item('g2', title: 'Game Two'),
+      destinationDir: r'C:\dl',
+    );
+    await tester.pump();
+    await tester.pump();
+    await tester.pump();
+    expect(queue.totalCount, 2);
+    expect(
+      queue.tasks.every((DiscoveryDownloadTask t) => t.isFinished),
+      isTrue,
+    );
+
+    Finder deleteButton(String id) =>
+        find.byKey(ValueKey<String>('discovery-download-src-$id-delete'));
+
+    // 取消确认：任务留着。
+    await tester.tap(deleteButton('g1'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text(t.download_task_delete_files),
+      findsNothing,
+      reason: '直链行不提供「同时删除已下载文件」——完成的文件已经入库',
+    );
+    await tester.tap(find.text(t.dialog_cancel));
+    await tester.pumpAndSettle();
+    expect(queue.totalCount, 2);
+    expect(_row('g1'), findsOneWidget);
+
+    // 确认：这行消失。
+    await tester.tap(deleteButton('g1'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>(
+          'video-download-job-delete-confirm-discovery-src-g1',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(queue.totalCount, 1);
+    expect(_row('g1'), findsNothing);
+    expect(_row('g2'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('移动端没有文件管理器契约：隐藏「打开文件位置」，删除仍在', (
+    WidgetTester tester,
+  ) async {
+    final DiscoveryDownloadQueue queue = _hangingQueue();
+    addTearDown(queue.dispose);
+    await _pump(tester, queue, revealHostProbe: () => null);
+    queue.enqueue(_item('g1', title: 'Game One'), destinationDir: '/sdcard/dl');
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey<String>('discovery-download-src-g1-location')),
+      findsNothing,
+      reason: '画一个点了没反应的按钮比没有按钮更糟',
+    );
+    expect(
+      find.byKey(const ValueKey<String>('discovery-download-src-g1-delete')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('360 逻辑像素宽不溢出', (WidgetTester tester) async {
     final DiscoveryDownloadQueue queue = _hangingQueue();
     addTearDown(queue.dispose);
@@ -217,7 +367,8 @@ void main() {
             'A very long game title that keeps going and going '
             'to force wrapping on narrow phones',
       ),
-      destinationDir: '',
+      // 非空目录 = 「打开文件位置」也在 → 量的是三个动作全在的最宽形态。
+      destinationDir: r'C:\dl',
     );
     await tester.pump();
     expect(_row('g1'), findsOneWidget);

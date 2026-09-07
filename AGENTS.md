@@ -6,7 +6,7 @@
 
 ## 动画刮削长期参考
 
-[`references/ShokoServer`](./references/ShokoServer) 是动画识别、元数据刮削与 AniDB→TMDB 补充链路的长期架构参考（git submodule，只读参考，不参与 Hibiki/Fushi 构建或运行）。动画**元数据刮削**只保留 Shoko 同源边界：AniDB 是作品、文件与分集身份核心，TMDB 只作交叉映射和图片/演职员等补充；不得重新引入 Bangumi、Douban、AniList、Jikan/MAL、Fanart.tv 等并行刮削 provider。发现、字幕、资源搜索是独立域，其中 Fushi 发现页禁止接入 Bangumi；完整约束仍以 [`CLAUDE.md`](./CLAUDE.md#动画刮削参考与-provider-边界) 为唯一真相源。
+用户于 2026-09-07 调整为 **MAL 主资料源、TMDB 兜底，AniDB 做真实 ED2K 文件哈希识别**。MAL 通过 Jikan 只读接口获取，明确映射后才跨站绑定；不把 AniDB 原生集号未经验证套到其它站点。[`references/ShokoServer`](./references/ShokoServer) 保留为哈希、协议与缓存分层的只读参考，不参与构建。发现、字幕、资源搜索独立于刮削，发现页仍禁止 Bangumi。完整约束以 [`CLAUDE.md`](./CLAUDE.md#动画刮削参考与-provider-边界) 为准。
 
 ## Galgame Windows-only 执行边界
 

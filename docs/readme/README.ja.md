@@ -102,6 +102,8 @@ Fushi は、インポートした書籍、辞書、フォント、オーディ�
 
 Fushi は以下のプロジェクトとエコシステムを基盤としています。
 
+### 学習ツールと先行事例
+
 | プロジェクト | 説明 |
 |---|---|
 | [jidoujisho](https://github.com/arianneorpilla/jidoujisho) | 日本語没入型学習ツール |
@@ -116,6 +118,48 @@ Fushi は以下のプロジェクトとエコシステムを基盤としてい�
 | [ッツ Ebook Reader](https://github.com/ttu-ttu/ebook-reader) | リーダー、統計、同期の互換性の参考 |
 | [media_kit](https://github.com/media-kit/media-kit) | Flutter 動画再生フレームワーク（libmpv コア） |
 | [Niratan](https://github.com/W1ght/Niratan) | macOS 向け没入型言語学習スイート |
+
+### エンジンとネイティブコンポーネント
+
+| プロジェクト | 説明 |
+|---|---|
+| [LunaHook](https://github.com/HIllya51/LunaTranslator) | ギャルゲーのテキストフックエンジン（vendored DLL、インジェクターが読み込み） |
+| [MinHook](https://github.com/TsudaKageyu/minhook) | ギャルゲーインジェクターが使うインラインフックライブラリ |
+| [libtorrent](https://github.com/arvidn/libtorrent) | 内蔵 torrent ダウンロードエンジン |
+| [mpv](https://github.com/mpv-player/mpv) | media_kit の基盤となる libmpv 再生コア |
+| [FFmpeg](https://ffmpeg.org) | メディア解析、切り出し、音声抽出 |
+| [libplacebo](https://github.com/haasn/libplacebo) | GPU 映像シェーダーと HDR トーンマッピング |
+| [flutter_inappwebview](https://github.com/pichillilorenzo/flutter_inappwebview) | EPUB リーダーを描画する WebView エンジン |
+| [ONNX Runtime](https://github.com/microsoft/onnxruntime) | 音声認識と OCR の端末内推論 |
+| [zstd](https://github.com/facebook/zstd) · [xxHash](https://github.com/Cyan4973/xxHash) · [libdeflate](https://github.com/ebiggers/libdeflate) · [glaze](https://github.com/stephenberry/glaze) · [unordered_dense](https://github.com/martinus/unordered_dense) · [utf8proc](https://github.com/JuliaStrings/utf8proc) · [utfcpp](https://github.com/nemtrif/utfcpp) | 辞書エンジンの依存ライブラリ |
+
+### 端末内モデル
+
+| プロジェクト | 説明 |
+|---|---|
+| [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) | Zipformer 音声認識モデルパッケージと VAD ビルド |
+| [ReazonSpeech k2-v2](https://huggingface.co/reazon-research/reazonspeech-k2-v2) | 日本語音声認識モデル |
+| [Omnilingual ASR](https://github.com/facebookresearch/omnilingual-asr) | 多言語 CTC 音声認識モデル |
+| [Silero VAD](https://github.com/snakers4/silero-vad) | 音声区間検出モデル |
+| [manga-ocr](https://github.com/kha-white/manga-ocr) / [manga-ocr-onnx](https://huggingface.co/mayocream/manga-ocr-onnx) | マンガ OCR モデル |
+| [comic-text-and-bubble-detector](https://huggingface.co/ogkalu/comic-text-and-bubble-detector) | マンガのテキストと吹き出し検出モデル |
+
+### コンテンツソースと連携
+
+| プロジェクト | 説明 |
+|---|---|
+| [Mihon](https://github.com/mihonapp/mihon) | マンガソース拡張のエコシステム |
+| [M-Extension-Server](https://github.com/kodjodevf/M-Extension-Server) | デスクトップ向けマンガ拡張ランタイム |
+| [aidoku-rs](https://github.com/Aidoku/aidoku-rs) | マンガソースランタイムの ABI |
+| [asbplayer](https://github.com/asbplayer/asbplayer) | ブラウザ拡張のストリーミング字幕ブリッジの参考 |
+| [Shoko Server](https://github.com/ShokoAnime/ShokoServer) | アニメ識別とスクレイピング設計の参考 |
+| [ReinaManager](https://github.com/huoshen80/ReinaManager) | ギャルゲーライブラリの情報設計の参考 |
+| [AniDB](https://anidb.net) | アニメ・エピソード・ファイルの同定 |
+| [TMDB](https://www.themoviedb.org) | 補助的なメタデータと画像 |
+| [Jimaku](https://jimaku.cc) | 日本語字幕ソース |
+| [OpenSubtitles](https://www.opensubtitles.com) | 字幕ソース |
+
+> このアプリケーションはTMDBおよびTMDB APIを使用していますが、TMDBによる推奨、認証、その他の承認を受けたものではありません。
 
 ## ライセンス
 

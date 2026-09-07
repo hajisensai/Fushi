@@ -4,6 +4,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart' show VideoBookRow;
+import 'package:fushi/src/media/downloads/download_task_entry.dart';
+import 'package:fushi/src/media/downloads/download_task_card.dart';
 
 import 'package:fushi/src/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/media/torrent/anime_download_matching.dart';
@@ -17,6 +19,7 @@ import 'package:fushi/src/media/torrent/nyaa_client.dart';
 import 'package:fushi/src/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/media/torrent/torrent_task_display.dart';
 import 'package:fushi/src/media/video/anilist_client.dart';
+import 'package:fushi/src/media/video/anilist_failure_notice.dart';
 import 'package:fushi/src/media/video/jimaku_client.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -136,12 +139,58 @@ class _TorrentSearchSnapshot {
   final bool trustedOnly;
 }
 
+/// Preserve legacy ownership while supplying comparable task metadata.
+DownloadTaskEntry animeDownloadTaskEntry({
+  required AnimeDownloadPlan plan,
+  required WidgetBuilder builder,
+  double? progress,
+  DownloadTaskStats? stats,
+}) {
+  final DownloadTaskKind kind = switch (plan.contentKind) {
+    AnimeDownloadPlan.kindGame => DownloadTaskKind.game,
+    AnimeDownloadPlan.kindBook => DownloadTaskKind.novel,
+    AnimeDownloadPlan.kindAudiobook => DownloadTaskKind.audiobook,
+    _ => DownloadTaskKind.video,
+  };
+  final TorrentDisplayStatus? observed = stats == null
+      ? null
+      : torrentDisplayStatusFor(stats.state);
+  final DownloadTaskStatus status = switch (plan.status) {
+    AnimeDownloadPlan.statusImported => DownloadTaskStatus.completed,
+    AnimeDownloadPlan.statusFailed => DownloadTaskStatus.attention,
+    _ => switch (observed) {
+      TorrentDisplayStatus.paused => DownloadTaskStatus.paused,
+      TorrentDisplayStatus.queued => DownloadTaskStatus.queued,
+      TorrentDisplayStatus.error => DownloadTaskStatus.attention,
+      _ => DownloadTaskStatus.active,
+    },
+  };
+  final String? collectionKey = plan.collectionId != null
+      ? 'collection:${plan.collectionId}'
+      : plan.anilistId != null
+      ? 'series:anilist:${plan.anilistId}'
+      : null;
+  return DownloadTaskEntry(
+    id: 'legacy-plan:${plan.id.trim().toLowerCase()}',
+    title: plan.seriesTitle.isEmpty ? plan.torrentTitle : plan.seriesTitle,
+    kind: kind,
+    status: status,
+    createdAt: plan.createdAtMs,
+    progress: plan.status == AnimeDownloadPlan.statusImported ? 1 : progress,
+    collectionKey: collectionKey,
+    collectionTitle: collectionKey == null ? null : plan.seriesTitle,
+    searchTerms: <String>[plan.torrentTitle, plan.qbCategory],
+    builder: builder,
+  );
+}
+
 class AnimeDownloadDialog extends ConsumerStatefulWidget {
   const AnimeDownloadDialog({
     super.key,
     this.embedded = false,
     this.showTasks = true,
     this.tasksOnly = false,
+    this.tasksBuilder,
     this.onTaskPresenceChanged,
     this.onOpenSettings,
     this.initialSearchQuery,
@@ -160,6 +209,9 @@ class AnimeDownloadDialog extends ConsumerStatefulWidget {
 
   /// Renders only the full-height task list for the Downloads page task tab.
   final bool tasksOnly;
+
+  /// Lets the Downloads page combine all sources before sorting/grouping.
+  final DownloadTasksBuilder? tasksBuilder;
 
   /// 旧版番剧计划是否有记录。下载中心据此只在确有旧任务时为兼容列表分配高度，
   /// 避免它的空态与新版持久任务同时出现并遮住半屏。
@@ -225,6 +277,9 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
 
   /// 搜番失败的真实错误串（异常 toString），错误态原样展示帮助定位网络问题。
   String? _animeSearchErrorDetail;
+
+  /// 搜番失败的类别：决定说哪句话，也决定要不要提代理（见 [_buildErrorRetry]）。
+  AniListFailureKind? _animeSearchErrorKind;
   List<AniListMedia> _animeMatches = const <AniListMedia>[];
   AniListMedia? _selectedMedia;
 
@@ -277,6 +332,10 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
 
   // ---- 下载任务折叠区 ----
   List<AnimeDownloadPlan> _plans = const <AnimeDownloadPlan>[];
+  AnimeDownloadPlanStore? _observedPlanStore;
+  int _planLoadGeneration = 0;
+
+  void _onPlanStoreChanged() => unawaited(_reloadPlans());
 
   @override
   void initState() {
@@ -321,11 +380,15 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         if (mounted) unawaited(_searchAnime());
       });
     }
+    _observedPlanStore = appModel.animeDownloadPlanStore;
+    _observedPlanStore?.revision.addListener(_onPlanStoreChanged);
     unawaited(_reloadPlans());
   }
 
   @override
   void dispose() {
+    _planLoadGeneration++;
+    _observedPlanStore?.revision.removeListener(_onPlanStoreChanged);
     _torrentRequestGeneration++;
     _activeNyaaClient?.close();
     _activeNyaaClient = null;
@@ -362,6 +425,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       _searchedAnime = false;
       _animeSearchError = false;
       _animeSearchErrorDetail = null;
+      _animeSearchErrorKind = null;
       _animeMatches = const <AniListMedia>[];
     });
     AniListClient? anilist;
@@ -378,6 +442,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         setState(() {
           _animeSearchError = true;
           _animeSearchErrorDetail = outcome.failure;
+          _animeSearchErrorKind = outcome.kind;
         });
         return;
       }
@@ -391,6 +456,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         setState(() {
           _animeSearchError = true;
           _animeSearchErrorDetail = error.toString();
+          _animeSearchErrorKind = classifyAniListError(error);
         });
       }
     } finally {
@@ -1018,6 +1084,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
   // ------------------------------------------------------------ 下载任务区
 
   Future<void> _reloadPlans() async {
+    final int generation = ++_planLoadGeneration;
     final AnimeDownloadPlanStore? store =
         ref.read(appProvider).animeDownloadPlanStore;
     if (store == null) {
@@ -1025,7 +1092,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       return;
     }
     final List<AnimeDownloadPlan> plans = await store.loadAll();
-    if (!mounted) return;
+    if (!mounted || generation != _planLoadGeneration) return;
     // loadAll 按创建时间升序；展示新的在上。
     setState(() => _plans = plans.reversed.toList(growable: false));
     widget.onTaskPresenceChanged?.call(plans.isNotEmpty);
@@ -1482,6 +1549,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     VoidCallback onRetry, {
     String? detail,
     bool offerSettings = false,
+    String? anilistNotice,
   }) {
     return Center(
       child: Column(
@@ -1494,6 +1562,13 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
           ),
           const SizedBox(height: 8),
           Text(message, textAlign: TextAlign.center),
+          if (anilistNotice != null) ...<Widget>[
+            const SizedBox(height: 4),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: Text(anilistNotice, textAlign: TextAlign.center),
+            ),
+          ],
           if (detail != null && detail.isNotEmpty) ...<Widget>[
             const SizedBox(height: 4),
             ConstrainedBox(
@@ -1588,12 +1663,19 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       return buildLoading();
     }
     if (_animeSearchError) {
+      final AniListFailureKind? kind = _animeSearchErrorKind;
       return _buildErrorRetry(
         theme,
         t.anime_download_search_failed,
         _searchAnime,
         detail: _animeSearchErrorDetail,
-        offerSettings: true,
+        // 只有真·连不上才谈代理。AniList 官方停服 / 限流时请求已经打到对方并被
+        // 明确拒绝，此时提示「配置代理」是把用户往错误方向支使（他配到天亮也
+        // 好不了）——所以按类别决定，而不是无脑 true。
+        offerSettings: kind == null ||
+            kind == AniListFailureKind.unreachable ||
+            kind == AniListFailureKind.other,
+        anilistNotice: anilistFailureNotice(kind),
       );
     }
     if (_searchedAnime && _animeMatches.isEmpty) {
@@ -2652,6 +2734,64 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
   }
 
   Widget _buildTasksPage(ThemeData theme) {
+    final DownloadTasksBuilder? tasksBuilder = widget.tasksBuilder;
+    if (tasksBuilder != null) {
+      Widget buildEntries(
+        Map<String, double> progress,
+        Map<String, DownloadTaskStats> stats,
+      ) {
+        return tasksBuilder(context, <DownloadTaskEntry>[
+          for (final AnimeDownloadPlan plan in _plans)
+            animeDownloadTaskEntry(
+              plan: plan,
+              progress: progress[plan.id],
+              stats: stats[plan.id],
+              builder: (BuildContext context) => DownloadTaskCard(
+                key: ValueKey<String>('legacy-plan:${plan.id}'),
+                taskId: 'legacy-plan:${plan.id.trim().toLowerCase()}',
+                title: plan.seriesTitle.isEmpty
+                    ? plan.torrentTitle
+                    : plan.seriesTitle,
+                subtitle: plan.torrentTitle == plan.seriesTitle
+                    ? null
+                    : plan.torrentTitle,
+                status: plan.status == AnimeDownloadPlan.statusImported
+                    ? t.download_task_status_completed
+                    : plan.status == AnimeDownloadPlan.statusFailed
+                    ? t.download_task_status_error
+                    : _torrentStatusLabel(
+                            torrentDisplayStatusFor(
+                              stats[plan.id]?.state ?? '',
+                            ),
+                          ) ??
+                          t.download_task_status_downloading,
+                progress: plan.status == AnimeDownloadPlan.statusImported
+                    ? 1
+                    : progress[plan.id],
+                details: _buildPlanRow(Theme.of(context), plan),
+              ),
+            ),
+        ]);
+      }
+
+      final AnimeDownloadService? service = ref
+          .read(appProvider)
+          .animeDownloadService;
+      if (service == null) return buildEntries(const {}, const {});
+      return ValueListenableBuilder<Map<String, double>>(
+        valueListenable: service.downloadProgress,
+        builder: (BuildContext context, Map<String, double> progress, _) =>
+            ValueListenableBuilder<Map<String, DownloadTaskStats>>(
+              valueListenable: service.downloadStats,
+              builder:
+                  (
+                    BuildContext context,
+                    Map<String, DownloadTaskStats> stats,
+                    _,
+                  ) => buildEntries(progress, stats),
+            ),
+      );
+    }
     return RefreshIndicator(
       onRefresh: _refreshPlans,
       child: _plans.isEmpty
@@ -2687,15 +2827,15 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    if (widget.tasksOnly) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: _buildTasksPage(theme),
+      );
+    }
     final Widget stage;
     if (_selectedMedia == null) {
       stage = _buildAnimeSearchStage(theme);
-      if (widget.tasksOnly) {
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: _buildTasksPage(theme),
-        );
-      }
     } else if (_selectedTorrent == null) {
       stage = _buildTorrentStage(theme);
     } else {

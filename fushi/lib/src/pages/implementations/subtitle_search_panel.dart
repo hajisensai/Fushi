@@ -18,6 +18,7 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/media/external_provider.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/video/anilist_client.dart';
+import 'package:fushi/src/media/video/anilist_failure_notice.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/jimaku_client.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
@@ -360,6 +361,10 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
   /// BUG-1782：上一次 AniList 系列解析**没问上**（网络 / 429 限流），而不是「查无此番」。
   /// 为真时本次结果是纯文本回退搜出来的，可能横跨同系列多季，结果区据此如实告知。
   bool _seriesLookupFailed = false;
+
+  /// 降级的**原因**类别（[_seriesLookupFailed] 为 true 时有值）：提示条据此
+  /// 补一句「AniList 官方停服 / 限流 / 连不上」，而不是只说「没确认上」。
+  AniListFailureKind? _seriesLookupKind;
   String? _busyName; // 正在下载的文件名
   String? _busySourceKey; // 正在下载的候选 identityKey（版本卡视图用）
   List<JimakuCandidate> _candidates = const <JimakuCandidate>[];
@@ -502,6 +507,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
         _selectedSeriesId = null;
         _seriesPickedByUser = false;
         _seriesLookupFailed = false;
+        _seriesLookupKind = null;
       }
     });
     // BUG-1509：先让「按钮禁用 + 结果区 loading」完整绘制一帧，再做偏好写入、
@@ -557,6 +563,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
       }
       setState(() {
         _seriesLookupFailed = outcome.degraded;
+        _seriesLookupKind = outcome.kind;
         // BUG-1843 与 BUG-1782 合成**一套**判据：能不能覆盖已有系列列表，只看这次
         // AniList 有没有给出可信答案（`degraded`）。
         // - 没降级 → 这是权威答案，哪怕是空的（真的查无此番）也照单替换；
@@ -1137,7 +1144,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
       return _noticeBanner(
         theme,
         icon: Icons.warning_amber_outlined,
-        message: t.video_jimaku_series_lookup_degraded,
+        message: jimakuSeriesLookupNotice(_seriesLookupKind),
         onRetry: _search,
       );
     }

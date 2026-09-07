@@ -305,6 +305,71 @@ void main() {
     expect(queue.totalCount, 0);
   });
 
+  test('remove 摘掉任意状态的一行：终态也受理，落盘文件不动', () async {
+    final DiscoveryDownloadQueue queue = DiscoveryDownloadQueue(
+      resolvePayload: _defaultResolver,
+      importer: (DiscoveryDownloadTask _, File __) async =>
+          const DiscoveryImportOutcome(),
+      openOverride: (Uri uri, Map<String, String> headers) async =>
+          okBytes(utf8.encode('x')),
+    );
+    addTearDown(queue.dispose);
+
+    queue.enqueue(_item('1'), destinationDir: tempDir.path);
+    await _waitFor(() => queue.tasks.single.isFinished);
+    final DiscoveryDownloadTask done = queue.tasks.single;
+    expect(done.status, DiscoveryDownloadStatus.done);
+
+    // cancel 对终态 no-op（那是「中止下载」）；remove 是「这行消失」。
+    queue.cancel(done);
+    expect(queue.totalCount, 1);
+    queue.remove(done);
+    expect(queue.totalCount, 0);
+    expect(
+      File(done.filePath!).existsSync(),
+      isTrue,
+      reason: '删的是任务不是文件——它已经入库了',
+    );
+    queue.remove(done); // 已不在队列：二次删除 no-op，不抛。
+    expect(queue.totalCount, 0);
+  });
+
+  // 注入的 openOverride 路径不建真 HttpClient，所以这里断言的是「摘行 + 让出
+  // 执行位」这半（强关连接那半与 cancel 共用同一行代码，由取消用例覆盖）。
+  test('remove 执行中的任务：立刻摘行，收尾照常放行下一个', () async {
+    final Completer<void> gate = Completer<void>();
+    final DiscoveryDownloadQueue queue = DiscoveryDownloadQueue(
+      resolvePayload: _defaultResolver,
+      importer: (DiscoveryDownloadTask _, File __) async =>
+          const DiscoveryImportOutcome(),
+      openOverride: (Uri uri, Map<String, String> headers) async {
+        if (uri.path.endsWith('book.epub')) await gate.future;
+        return okBytes(utf8.encode('x'));
+      },
+    );
+    addTearDown(queue.dispose);
+
+    queue.enqueue(_item('1'), destinationDir: tempDir.path);
+    queue.enqueue(
+      _item('2', url: 'https://example.com/files/two.epub'),
+      destinationDir: tempDir.path,
+    );
+    await _waitFor(
+      () => queue.tasks.first.status == DiscoveryDownloadStatus.running,
+    );
+
+    final DiscoveryDownloadTask running = queue.tasks.first;
+    queue.remove(running);
+    expect(queue.tasks.contains(running), isFalse);
+    expect(queue.totalCount, 1);
+
+    // 收尾仍以 `_running` 身份认领这次执行 → 执行位释放，第二个任务跑完。
+    gate.complete();
+    await _waitFor(() => queue.tasks.single.status ==
+        DiscoveryDownloadStatus.done);
+    expect(queue.runningTask, isNull);
+  });
+
   group('sanitizeDiscoveryFileName', () {
     test('剥路径分隔与 Windows 非法字符', () {
       expect(

@@ -24,6 +24,7 @@
 | `unity_il2cpp` | Unity IL2CPP | `verified` | luna_pc_hooks (verified)；unity_tmp_events (verified)；unity_legacy_text_events (implemented_unverified) | unity_audioclip_resource (verified)；xaudio2_source_voice_pcm (verified)；process_loopback (verified) | 1 |
 | `leaf_aquaplus` | Leaf / AQUAPLUS (WHITE ALBUM2 exact profile) | `implemented_unverified` | luna_exact_cp932_thread (implemented_unverified)；ingame_lookup_geometry (implemented_unverified)；ingame_lookup_sampled_input_shield (implemented_unverified) | leaf_lac_voice_resource (implemented_unverified)；directsound_pcm (implemented_unverified) | 0 |
 | `hunex_gge` | HUNEX GGE / HFA-HW | `implemented_unverified` | luna_typemoon_dialogue_thread (implemented_unverified) | hunex_hfa_hw_ogg_resource (implemented_unverified) | 0 |
+| `smash_fzmedia` | smash / fzmedia (TYPE-MOON smash framework) | `implemented_unverified` | engine_exact_utf16_hook (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | smash_fzmedia_fcd_ogg_resource (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `sgre` | M2 wind3d11 runtime (STEINS;GATE RE:BOOT) | `implemented_unverified` | ingame_lookup_geometry (implemented_unverified)；ingame_lookup_directinput_shield (implemented_unverified) | engine_archive_resource (implemented_unverified) | 0 |
 | `unreal_iostore` | Unreal Engine (IoStore) | `implemented_unverified` | luna_pc_hooks (implemented_unverified) | xaudio2_or_directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `aos_sfa` | AOS / SFA (Princess Sugar, Atelier Kaguya family) | `implemented_unverified` | — | xaudio2_or_directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
@@ -50,6 +51,7 @@
 | `leaf_aquaplus` | engine_exact_layout、attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
 | `hunex_gge` | engine_exact_layout、attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
 | `sgre` | engine_exact_layout、attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
+| `smash_fzmedia` | engine_exact_layout、attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
 
 证据边界：
 
@@ -98,6 +100,9 @@
 - `sgre` geometry：The measured SHA-256 row is a consistency check only. Known and unknown hashes traverse populated, mutually corroborated draw/vtable/DirectInput signatures across all executable sections, PE exception-directory function bounds, decoded module-relative targets and live vtable/COM ABI gates. Zero/multiple intersections, layout/codegen mismatches and structure faults fail closed. 2026-09-03 original-path E2E on the measured Steam x64 build (SHA-256 75A83A0E…C404B9D8, Fushi 2.2.4-debug.13075 launching sgre_steam.exe, injected helper, IPC v21): hover+Shift lookups (いて/サイ) and a bare left click on 話 each published a hit, presented the direct galCard inside the game and the game line did not advance; one word card was written (Sentence エル・プ<b>サイ</b>・コングルゥ, 3.19 s paired xWMA voice re-encoded to AAC, 480×270 AVIF animation). Evidence grade for the audio stops at captured: neither a byte-hash comparison against the source voice_body.bin entry nor a pure-voice classification was recorded, so hash_verified and voice_classified are NOT claimed and the run does not satisfy the per-sentence original-resource claim in full. Only this one build is covered.
   - verified shield：Exact DirectInput and generic shield code exists, but the 1,000-transaction real-build gate has not run.
   - risky left click：Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate). 2026-09-03 measurement, taken while that gate still existed: 8 popup-outside quick clicks (60 ms down/up) after Shift or click lookups, 7 were swallowed by the WH_MOUSE_LL + DirectInput shield pair with no line advance; the first click right after the mid-session risk acceptance (needsRiskAcceptance → activeNative) leaked and advanced the line once, and the leak did not reproduce on a fresh session whose acceptance was restored from memory. That one leak sat on the acceptance transition itself, which no longer happens; the shield pair it measured is unchanged. Too few transactions for a rate; the 1,000-transaction gate has not run.
+- `smash_fzmedia` geometry：The calibrated fallback and a fail-closed exact provider are implemented. Glyph cells come from the KAG TextLayerBase::layoutChar detour in layer units; they are projected with the uniform 1920x1080 stage fit plus a host-solved layer origin (PublishLookupLayerLine / ReadLookupLayerOrigin). Readiness requires a solved origin for the current client size and every inked cell inside the client rect (8 px tolerance); no real-session hit, lookup or card E2E is recorded.
+  - verified shield：Generic shielding plus a GWLP_WNDPROC subclass of the GLFW30 game window (bare left down/up on a glyph consumed and queued as Submit; every client-area left down/up swallowed while a card is published or a v19 transaction targets the window; Shift-move hover never consumed) are implemented, but the real-build click, Shift and popup transaction gates have not run. XInput / joystick input has no shield.
+  - risky left click：Per-executable risk gating and fail-closed native-input admission are implemented; no measured real-build click-leak rate is recorded.
 
 ## 识别与能力明细
 
@@ -784,6 +789,50 @@ Tests：`tests/leaf_aquaplus_adapter_test.cpp`、`tests/exact_lookup_signature_t
 Fixtures：尚无（P5 补齐）
 
 Tests：`tests/hunex_gge_adapter_test.cpp`、`tests/hunex_gge_capture_bridge_test.cpp`、`tests/hunex_gge_lookup_test.cpp`、`tests/hunex_gge_selected_text_test.cpp`、`tests/resource_audio_ready_test.cpp`、`tests/adapter_structure_test.py`、`tests/engine_support_manifest_test.py`
+
+### smash / fzmedia (TYPE-MOON smash framework) (`smash_fzmedia`)
+
+- 状态：`implemented_unverified`
+- 别名：fsn_remastered、null-ge、fzmedia
+- 家族：`smash`（TYPE-MOON smash framework (smash::fw::IGameEngine exported by null-ge-*.dll) with the fzmedia-*.dll media library; the app layer is a KAG re-implementation whose namespace differs per title (fate::app::krkrz on the measured sample), so admission is the framework structure, not a title profile）
+- 当前 adapter：`hook/adapters/smash_fzmedia_adapter.inc`
+- 进程策略：launch=`create_suspended_early_injection`，attach=`supported`，follow-child=`false`
+
+识别签名（所有非空项均带真实样本或运行时观察证据）：
+
+- `pe_architectures`：x64；证据：runtime_observation — Fate/stay night REMASTERED v1.1.127 (fsn2-win64vc14-release.exe) was measured as a single x64 process with no child processes on 2026-09-04; the adapter is x64-only and the x86 build compiles an inert stub.
+- `pe_imports`：null-ge-*.dll: ?bindGameEngine_*@@YAPEAVIGameEngine@fw@smash@@XZ；证据：runtime_observation — The main executable imports the smash framework engine factory from a DLL whose name starts with null-ge-; the adapter walks the PE64 import directory for a null-ge- module exporting a symbol containing IGameEngine@fw@smash@@ (measured 2026-09-04). No executable or module SHA-256 gate is used.
+- `runtime_modules`：fzmedia-*.dll: ?create@SoundManager@sound@fz@@, ?play@SoundObject@sound@fz@@, ?getId@SoundObject@sound@fz@@, ?convertToRawFile@SoundObject@sound@fz@@, ?isReady@SoundObject@sound@fz@@；证据：runtime_observation — fzmedia-win64vc14-release-dynamic.dll was loaded by the measured sample and exports the fz::sound MSVC-decorated API; the adapter requires every listed export prefix on a loaded fzmedia- module before claiming the engine (2026-09-04).
+- `resource_extensions`：.fcd；证据：runtime_observation — Character voice resource ids observed through SoundManager::create end in .fcd (FCD container: 'FCD\0', u16be version, u16be flags with bit 0 = encrypted, u32be header size); fzmedia decrypts in place and convertToRawFile yields the complete Ogg Vorbis file (2026-09-04).
+
+文本能力：
+
+- `engine_exact_utf16_hook`：`implemented_unverified` — The KAG TextLayerBase::layoutChar detour (anchors derived from RTTI + call shape) copies each run's UTF-16 text and per-glyph cells; paragraphs are merged across [r] runs while the CJK quote balance is open and published through the native text lane (source kind 6). Only offline synthetic-image tests exist; no same-session real-game text_ready evidence is recorded.
+- `ingame_lookup_geometry`：`implemented_unverified` — Layer-unit glyph cells are projected with the uniform 1920x1080 stage fit plus a host-solved layer origin; readiness fails closed without an origin or with any inked cell outside the client rect. No real-session hit or card E2E is recorded.
+- codepage：UTF-16
+- 线程提示：Select the native 'smash exact' thread (ENGINE:SMASH:kag_text_layer); it carries whole paragraphs, not per-glyph draws.
+
+音频优先级：
+
+1. `smash_fzmedia_fcd_ogg_resource` — `implemented_unverified`；格式：ogg_vorbis；clean voice：是
+2. `process_loopback` — `implemented_unverified`；格式：mixed process loopback PCM；clean voice：否
+
+真实样本证据：
+
+
+已知限制：
+
+- XInput / joystick input has no shield; only Win32 messages, raw input and GetKeyState surfaces are covered by the generic shield plus the GLFW30 window subclass.
+- The text layer origin inside the 1920x1080 stage is not readable from the layer object; it is solved by the host from a frame (PublishLookupLayerLine / ReadLookupLayerOrigin) and geometry stays unready until that solution exists for the current client size.
+- Paragraphs are merged across runs by CJK quote balance (「」『』（）) with a 2500 ms continuation window; unbalanced narration or unusual quoting can split or merge lines differently from the on-screen page, and a continuation arriving after the partial publication republishes the merged text as a new text event.
+- Text lane events are written when a balanced run starts (whole run text is available at index 0); glyph cells follow at run end. Voice pairing therefore uses the run-start timestamp, but a paragraph whose merged publication lands more than 1500 ms after SoundObject::play falls back to the unmarked resource filename.
+- Steam retail (SteamStub) builds are unmeasured: the anchor rescan strategy exists but has not been exercised against a packed executable; the measured sample was already unpacked.
+- The decrypted vector returned by convertToRawFile is released through the CRT operator delete that fzmedia imports, honouring the vc14 STL big-allocation shape; when the shape cannot be validated the buffer is intentionally leaked (kXAudioDiag2SmashVoiceBufferLeaked) rather than risk heap corruption.
+- No real-session process_found -> text_ready -> resource_observed -> paired -> card E2E ledger exists yet; every capability above is offline-tested only and the convertToRawFile output has not been hash-compared with the in-place decrypted payload.
+
+Fixtures：`tests/fixtures/smash_fzmedia_replay.json`
+
+Tests：`tests/smash_fzmedia_adapter_test.cpp`、`tests/smash_fzmedia_lookup_test.cpp`、`tests/adapter_structure_test.py`、`tests/engine_support_manifest_test.py`、`tests/galhook_workflow_test.py`
 
 ### M2 wind3d11 runtime (STEINS;GATE RE:BOOT) (`sgre`)
 

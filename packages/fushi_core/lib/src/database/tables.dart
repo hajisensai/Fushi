@@ -593,6 +593,10 @@ class SyncBaselines extends Table {
 // ── video_books ─────────────────────────────────────────────────────
 @DataClassName('VideoBookRow')
 class VideoBooks extends Table {
+  /// 最近一次导入的分组选择（schema v98）；来源删除后仍保留目录/作品模式。
+  /// NULL 是旧视频，按作品模式处理；存在来源时以来源当前设置为准。
+  TextColumn get videoGroupingMode => text().nullable()();
+
   // Primary key is book_uid (content-derived), aligned with the name-PK model
   // (EpubBooks keys on bookKey). No autoincrement id: a video book's identity
   // is its book_uid so it stays stable across devices/reimports.
@@ -857,6 +861,11 @@ class MediaSources extends Table {
   /// 是否递归扫描子目录。
   BoolColumn get recursive => boolean().withDefault(const Constant(true))();
 
+  /// 视频分组方式（schema v98）：'series' 按作品识别，'folder' 按导入目录合集。
+  /// 与网络连接参数独立；旧来源保持作品识别行为。
+  TextColumn get videoGroupingMode =>
+      text().withDefault(const Constant('series'))();
+
   /// 列表排序权重（同 [BookTags].sortOrder 范式）。
   IntColumn get sortOrder => integer().withDefault(const Constant(0))();
 
@@ -926,6 +935,10 @@ class ShelfEntries extends Table {
 @DataClassName('MediaCollectionRow')
 class MediaCollections extends Table {
   IntColumn get id => integer().autoIncrement()();
+
+  /// 目录自动合集的本机目录身份（schema v98）；NULL 表示非目录自动合集。
+  /// 与来源根一样属于用户外部路径，不跨端同步，不据合集名称推断归属。
+  TextColumn get sourceFolderPath => text().nullable()();
 
   /// 合集名（必填）。
   TextColumn get name => text()();

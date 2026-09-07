@@ -3,6 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:window_manager/window_manager.dart';
+import 'helpers/observe_capture.dart';
+import 'helpers/focus_driver.dart';
+import 'package:fushi/utils.dart';
 
 import 'helpers/library_fixture.dart';
 import 'support/test_app_launcher.dart';
@@ -115,6 +119,54 @@ void main() {
       await key(tester, LogicalKeyboardKey.escape);
       await pumpFor(tester, 4);
       expect(sheet, findsNothing);
+
+      // Exercise the same production chrome at phone-like width in the native
+      // Windows runner; this covers responsive geometry, not mobile WebView.
+      final Size originalSize = await windowManager.getSize();
+      try {
+        await windowManager.setSize(const Size(360, 720));
+        await pumpFor(tester, 8);
+        await key(tester, LogicalKeyboardKey.keyT);
+        expect(await waitFor(tester, sheet), isTrue);
+        final Size narrowScreen =
+            tester.getSize(find.byType(MaterialApp).first);
+        expect(narrowScreen.width, lessThan(400));
+        expect(tester.getRect(sheet).right, narrowScreen.width);
+        final model = await enableFocusNavigation(tester);
+        final String previousBrightness = model.brightnessMode;
+        final Finder brightnessRow = find.byWidgetPredicate(
+          (Widget widget) =>
+              widget is AdaptiveSettingsSegmentedRow<String> &&
+              widget.title == t.dark_mode,
+        );
+        final FocusDriver focus = FocusDriver(tester);
+        expect(await focus.focusWidget(brightnessRow), isTrue);
+        try {
+          await focus.adjust(steps: -2);
+          expect(model.brightnessMode, 'light');
+          await focus.adjust(steps: 2);
+          expect(model.brightnessMode, 'dark');
+          await captureFlutterFrame(tester, 'observe-reader-night-selector');
+          await focus.adjust(steps: -1);
+          expect(model.brightnessMode, 'system');
+        } finally {
+          await model.setBrightnessMode(previousBrightness);
+        }
+        final ObserveShot settingsShot =
+            await captureFlutterFrame(tester, 'observe-reader-narrow-settings');
+        expect(settingsShot.saved, isTrue);
+        await key(tester, LogicalKeyboardKey.escape);
+        expect(sheet, findsNothing);
+        await key(tester, LogicalKeyboardKey.keyF, ctrl: true);
+        expect(await waitFor(tester, sheet), isTrue);
+        expect(tester.getRect(sheet).left, 0);
+        await key(tester, LogicalKeyboardKey.escape);
+        expect(sheet, findsNothing);
+        expect(footer, findsOneWidget);
+        await captureFlutterFrame(tester, 'observe-reader-narrow-chrome');
+      } finally {
+        await windowManager.setSize(originalSize);
+      }
 
       assertStrictErrors(errors);
       debugPrint('[desktop-chrome] PASS — gallery / statistics / left nav / '

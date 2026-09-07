@@ -215,6 +215,101 @@ void TestHunexNativeInputRequiresAppliedHostAdmission() {
         "publishing deny must close consumption before its ack is observed");
 }
 
+void TestNativeInputGateIsAnAllowListOfKindIdPairs() {
+  using fushi_voice_hook::IsLookupGeometryNativeInputGatedProvider;
+  Check(IsLookupGeometryNativeInputGatedProvider(
+            fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+            fushi_voice_hook::kLookupGeometryProviderIdHunexGge),
+        "HUNEX exact stays native-input gated");
+  Check(IsLookupGeometryNativeInputGatedProvider(
+            fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+            fushi_voice_hook::kLookupGeometryProviderIdSmashFzmedia),
+        "smash exact must be native-input gated");
+  Check(!IsLookupGeometryNativeInputGatedProvider(
+            fushi_voice_hook::kLookupGeometryProviderRuntimeLayout,
+            fushi_voice_hook::kLookupGeometryProviderIdSmashFzmedia),
+        "smash id with the wrong kind must not inherit the gate");
+  Check(!IsLookupGeometryNativeInputGatedProvider(
+            fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+            fushi_voice_hook::kLookupGeometryProviderIdSgre),
+        "geometry-only exact providers are not native-input gated");
+  Check(fushi_voice_hook::IsLookupGeometryProductionProviderPair(
+            fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+            fushi_voice_hook::kLookupGeometryProviderIdSmashFzmedia),
+        "smash exact identity must be a production pair");
+
+  FakeMapping mapping;
+  GeometryProviderRegistry registry;
+  registry.Reset(mapping.header());
+  // A non-gated provider never gets NativeInputAllowed, even when the host
+  // has applied an allow admission and the provider is the active owner.
+  auto sgre = Publication(
+      fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+      fushi_voice_hook::kLookupGeometryProviderIdSgre, 3);
+  const uint32_t allow_seq =
+      fushi_voice_hook::PublishLookupGeometryAdmission(
+          mapping.header(), fushi_voice_hook::kLookupGeometryAdmissionAuto,
+          false, true);
+  Check(allow_seq != 0 &&
+            registry.OfferReady(mapping.header(), sgre.provider_kind,
+                                sgre.provider_id) &&
+            registry.Reconcile(mapping.header()) &&
+            registry.PublishHit(mapping.header(), sgre),
+        "non-gated exact provider publishes without the native-input gate");
+  Check(!registry.NativeInputAllowed(mapping.header(), sgre.provider_kind,
+                                     sgre.provider_id),
+        "NativeInputAllowed must deny providers outside the allow-list");
+}
+
+void TestSmashFzmediaNativeInputRequiresAppliedHostAdmission() {
+  FakeMapping mapping;
+  GeometryProviderRegistry registry;
+  registry.Reset(mapping.header());
+  auto smash = Publication(
+      fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+      fushi_voice_hook::kLookupGeometryProviderIdSmashFzmedia, 21);
+  Check(registry.OfferReady(mapping.header(), smash.provider_kind,
+                            smash.provider_id),
+        "smash discovery/readiness must not depend on NativeInputAllowed");
+  Check(!registry.NativeInputAllowed(mapping.header(), smash.provider_kind,
+                                     smash.provider_id) &&
+            !registry.PublishHit(mapping.header(), smash),
+        "smash click consume/publication must default deny");
+
+  const uint32_t allow_seq =
+      fushi_voice_hook::PublishLookupGeometryAdmission(
+          mapping.header(), fushi_voice_hook::kLookupGeometryAdmissionAuto,
+          false, true);
+  Check(allow_seq != 0 &&
+            !registry.NativeInputAllowed(mapping.header(), smash.provider_kind,
+                                         smash.provider_id),
+        "an un-applied allow request must remain fail-closed for smash");
+  Check(registry.Reconcile(mapping.header()) &&
+            mapping.header()->lookup_geometry_admission_applied_seq ==
+                allow_seq &&
+            registry.NativeInputAllowed(mapping.header(), smash.provider_kind,
+                                        smash.provider_id) &&
+            registry.PublishHit(mapping.header(), smash),
+        "applied allow plus exact active smash must admit one native hit");
+  const auto* hit = LookupHitOf(mapping.header());
+  Check(hit != nullptr &&
+            hit->provider_id ==
+                fushi_voice_hook::kLookupGeometryProviderIdSmashFzmedia &&
+            hit->provider_kind ==
+                fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+        "wire hit must carry the smash exact identity");
+
+  const uint32_t deny_seq =
+      fushi_voice_hook::PublishLookupGeometryAdmission(
+          mapping.header(), fushi_voice_hook::kLookupGeometryAdmissionAuto,
+          false, false);
+  Check(deny_seq > allow_seq &&
+            !registry.NativeInputAllowed(mapping.header(), smash.provider_kind,
+                                         smash.provider_id) &&
+            !registry.PublishHit(mapping.header(), smash),
+        "publishing deny must close smash consumption before its ack");
+}
+
 void TestPriorityAndTransactionFencedRetire() {
   FakeMapping mapping;
   GeometryProviderRegistry registry;
@@ -556,6 +651,8 @@ int main() {
   TestCompletePublicationAndGenerationFence();
   TestStrictKindIdWhitelist();
   TestHunexNativeInputRequiresAppliedHostAdmission();
+  TestNativeInputGateIsAnAllowListOfKindIdPairs();
+  TestSmashFzmediaNativeInputRequiresAppliedHostAdmission();
   TestPriorityAndTransactionFencedRetire();
   TestFailClosedShapesAndUtf16Span();
   TestDisableRetiresOnlyAfterNeutralTail();

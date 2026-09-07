@@ -976,6 +976,31 @@ extension _ReaderChrome on _ReaderFushiPageState {
             builder: (BuildContext routeContext) => ReaderGalleryPage(
               images: images,
               currentChapter: currentChapter,
+              blurImages: _settings?.blurImages ?? false,
+              revealedImageKeys: _revealedImageKeys,
+              onRevealImage: (String key) {
+                if (!_revealedImageKeys.add(key)) return;
+                final String? bookUid = _bookUid;
+                if (bookUid != null) {
+                  unawaited(appModel.database.markImageRevealed(
+                    bookUid,
+                    key,
+                    DateTime.now().millisecondsSinceEpoch,
+                  ));
+                }
+                unawaited(_controller?.evaluateJavascript(source: '''
+                  (function() {
+                    var key = ${jsonEncode(key)};
+                    if (window.__fushiMarkImageRevealed) {
+                      window.__fushiMarkImageRevealed(key);
+                    }
+                    if (!window.__fushiImageRevealKey) return;
+                    document.querySelectorAll('img.blurred, svg.blurred').forEach(function(el) {
+                      if (window.__fushiImageRevealKey(el) === key) el.classList.remove('blurred');
+                    });
+                  })();
+                '''));
+              },
               fileForRef: (EpubImageRef ref) =>
                   _readerImageFileForUrl(ReaderFushiSource.epubUrl(ref.src)),
               onOpenImage: (EpubImageRef ref) =>
@@ -1410,11 +1435,13 @@ extension _ReaderChrome on _ReaderFushiPageState {
   Widget _wrapBottomChromeBar({Key? key, required Widget bar}) {
     return Positioned(
       key: key,
-      left: 0,
-      right: 0,
+      left: MediaQuery.viewPaddingOf(context).left,
+      right: MediaQuery.viewPaddingOf(context).right,
       // 桌面端底栏（有声书播放条）唤出时盖住状态行，但把状态行的文字并进播放条右端
       // （[_buildBarStatusText]）——底部只有一条，而不是播放条 + 状态行叠两条。
-      bottom: 0,
+      bottom: _separatePlaybackStatus
+          ? _statusFooterReserve + _stableBottomInset
+          : 0,
       // BUG-1692：底栏排在 WebView **之后**绘制。不自带 RepaintBoundary 就会并进
       // 页面级 RepaintBoundary 那张 cull rect = 整窗的 PictureLayer，macOS engine
       // 把整窗写进 FlutterMutatorView 的 _hitTestIgnoreRegion，整块 WebView 收不到
@@ -1434,7 +1461,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
                 ColoredBox(
                   color: _themeBackgroundColor(),
                   child: SizedBox(
-                    height: _stableBottomInset,
+                    height: _separatePlaybackStatus ? 0 : _stableBottomInset,
                     width: double.infinity,
                   ),
                 ),
@@ -1486,12 +1513,12 @@ extension _ReaderChrome on _ReaderFushiPageState {
             // TODO-830: per-reader 功能反转（getter 内部走 readerSettings?
             // 分层，否则退化全局）；与 reversed 的位置镜像维度正交。
             invertSkip: ReaderFushiSource.instance.invertAudiobookSkipDirection,
-            // TODO-728: per-reader toggle for the current-sentence cue.
-            showCue: ReaderFushiSource.instance.showBottomBarCue,
             // 桌面端：播放条唤出时覆盖状态行，阅读追踪 / 进度并进条右端；传输键与
             // 有声书面板同一套（-10s / 上一句 / 播放 / 下一句 / +10s）。
-            trailing: _desktopChromeEnabled ? _buildBarStatusText() : null,
-            showSeekButtons: _desktopChromeEnabled,
+            trailing: _playbackStatusInline ? _buildBarStatusText() : null,
+            showSeekButtons:
+                _desktopChromeEnabled && _readerControlsWidth >= 308,
+            showSettingsButton: !_desktopChromeEnabled,
           ),
         );
       },
@@ -1662,11 +1689,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
 
       if (!mounted) return;
 
-      // 桌面端 ッツ 形态：「导航」→ 左抽屉；「有声书」→ 居中面板；其余 → 右侧设置抽屉。
-      // 桌面端与平板宽窗都走左右抽屉（歌词模式同样；布局子页在歌词模式下给歌词专用
-      // 显示项）；手机窄窗走 bottom sheet 的主页 / 子页。有声书面板任何形态都是独立
-      // 面板：宽窗居中对话框、手机全高 bottom sheet。
-      final bool useSideSheet = readerUsesSideSheets(
+      // 所有平台共用左侧导航与右侧设置；仅有声书面板保留宽窄容器适配。
+      final bool useAudiobookDialog = readerAudiobookUsesDialog(
         desktop: isDesktopPlatform,
         window: MediaQuery.sizeOf(context),
       );
@@ -1674,11 +1698,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
           initialSubPage == 'audiobook' && _audiobookController != null;
       final ReaderQuickSettingsPresentation presentation = audiobookPanel
           ? ReaderQuickSettingsPresentation.audiobookPanel
-          : !useSideSheet
-              ? ReaderQuickSettingsPresentation.sheet
-              : initialSubPage == 'location'
-                  ? ReaderQuickSettingsPresentation.sideSheetNavigation
-                  : ReaderQuickSettingsPresentation.sideSheetAppearance;
+          : initialSubPage == 'location'
+              ? ReaderQuickSettingsPresentation.sideSheetNavigation
+              : ReaderQuickSettingsPresentation.sideSheetAppearance;
       final Widget sheetContent = _buildQuickSettingsSheet(
         favorites: favorites,
         favRepo: favRepo,
@@ -1691,7 +1713,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
         () => _presentQuickSettings(
           sheetContent: sheetContent,
           presentation: presentation,
-          useSideSheet: useSideSheet,
+          useAudiobookDialog: useAudiobookDialog,
         ),
       );
 
@@ -1710,10 +1732,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
   Future<void> _presentQuickSettings({
     required Widget sheetContent,
     required ReaderQuickSettingsPresentation presentation,
-    required bool useSideSheet,
+    required bool useAudiobookDialog,
   }) async {
     if (presentation == ReaderQuickSettingsPresentation.audiobookPanel &&
-        !useSideSheet) {
+        !useAudiobookDialog) {
       // 手机：全高 bottom sheet 承载面板（面板内部 Flexible 需要有界高度）。
       await adaptiveModalSheet<void>(
         context: context,
@@ -1732,7 +1754,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
           child: sheetContent,
         ),
       );
-    } else if (useSideSheet) {
+    } else {
       // 抽屉开着期间顶部工具栏不自动收起（否则用户改设置时工具栏在背后消失，
       // 关抽屉后点空白又要再唤一次）；关掉后若仍是悬浮可见态，重新武装计时。
       _cancelChromeAutoHide();
@@ -1748,23 +1770,6 @@ extension _ReaderChrome on _ReaderFushiPageState {
       if (mounted && _anyChromeFloating && _chromeTransientVisible) {
         _armChromeAutoHide();
       }
-    } else if (isDesktopPlatform) {
-      await showAppDialog(
-        context: context,
-        builder: (_) => FushiDialogFrame(
-          // master-detail（左父菜单 + 右详情）需要更宽画布；窄于 640 的窗口
-          // 由面板内部 LayoutBuilder 自动降级回单列 push。
-          maxWidth: kFushiSettingsDialogMaxWidth,
-          maxHeightFactor: 0.80,
-          scrollable: false,
-          child: sheetContent,
-        ),
-      );
-    } else {
-      await adaptiveModalSheet<void>(
-        context: context,
-        builder: (_) => sheetContent,
-      );
     }
   }
 
@@ -1821,7 +1826,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
           : null,
       onTranscribe: _srtBookUid == null &&
               _audiobookController != null &&
-              AsrTranscriptionService.isSupported
+              isAsrSupported
           ? () => unawaited(_transcribeFromAudiobookPanel())
           : null,
       lyricsMode: _lyricsMode,
@@ -2084,8 +2089,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
     final Color fg = _themeTextColor();
     return Positioned(
       top: _stableTopInset + _macosWindowTitlebarInset,
-      left: 0,
-      right: 0,
+      left: MediaQuery.viewPaddingOf(context).left,
+      right: MediaQuery.viewPaddingOf(context).right,
       // 焦点排除在 ReaderDesktopHeader 内部（纯指针面，TODO-700 不变式）；底栏的
       // ExcludeFocus 外壳仍唯一在 _wrapBottomChromeBar（守卫 reader_focus_chrome_excluded）。
       child: RepaintBoundary(
@@ -2311,9 +2316,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
       return const SizedBox.shrink();
     }
     return Positioned(
-      left: 0,
-      right: 0,
-      bottom: _bottomChromeReserve + _stableBottomInset,
+      left: MediaQuery.viewPaddingOf(context).left,
+      right: MediaQuery.viewPaddingOf(context).right,
+      bottom: _statusFooterBottomOffset,
       // BUG-1692：状态行排在 WebView **之后**绘制，必须自带 RepaintBoundary，否则并进
       // 页面级 PictureLayer 的整窗 cull rect，macOS 上整块 WebView 收不到鼠标事件。
       child: RepaintBoundary(
@@ -2342,7 +2347,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// [kReaderHoverRevealStripHeight] 内即唤出工具栏；工具栏本体再挂 MouseRegion，
   /// 悬停期间不自动收起、离开后按计时收起。只占顶部几像素的命中面，不影响正文。
   Widget _buildHoverRevealLayer() {
-    if (!_desktopChromeEnabled ||
+    if (!isDesktopPlatform ||
+        !_desktopChromeEnabled ||
         !_bottomBarFloating ||
         !_hasEverLoaded ||
         _chromeTransientVisible) {

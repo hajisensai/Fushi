@@ -24,6 +24,13 @@
 - 遇到 WebView renderer crash、资源 404、CacheStorage 或旧资源症状，要区分当前资源拦截、旧迁移资产和用户设备缓存；不要加 TTU dummy 文件或用清数据掩盖真实升级问题。
 - 调试 DOM/JS 用 Chrome DevTools Protocol 或 WebView inspection 读 DOM、console、JS 变量和布局尺寸；截图只能证明视觉现象，不能替代 DOM/边界数据。
 
+## 跨平台阅读控制界面
+
+- 正文模式各平台共用顶部工具栏、左侧导航、右侧设置和底部阅读状态行。`readerDesktopChromeEnabled` 保留原符号名，但不再以操作系统限制启用；歌词模式继续使用独立文档控制界面。
+- 顶部工具栏按可用宽度折叠次要动作。导航/设置侧栏避开系统安全区和键盘，有声书容器另由 `readerAudiobookUsesDialog` 决定：宽窗居中，手机全高底部面板。
+- 窄屏将播放条与阅读状态分行，避免数字挤占播放按钮；无音频时不再预留旧底部设置栏高度。检查视觉高度、正文预留与安全区三者必须一致。
+- `desktop_reader_chrome_shortcuts_itest.dart` 覆盖真实 Windows 宽/窄窗快捷键开关侧栏；它不能替代 Android/iOS 的系统安全区、软键盘和 WebView 真机验收。
+
 ## Headless Chrome 探针（真渲染、本机跑）
 
 CI 跑不到真 WebView，分页 / 连续 shell 的落点、重锚、字号变化这类**真渲染**行为只能靠 `tool/reader_pitch_headless/*.mjs`（puppeteer-core + 本机 Chrome，`npm install` 一次装依赖，`CHROME_PATH` 可覆盖路径）。shell 自 2026-08 起是运行时工厂（`window.__fushiShells.<mode>(C)`），裸 shell 不能自举——探针必须吃 `reader_headless_shell_dump_test.dart` 写到 systemTemp 的**完整引擎产物** `fushi_engine_{paginated,continuous}.html`，在页面里按真实装配顺序 `window.__fushiInstallShell(C)` 安装（C 至少含 `vnMode / continuousMode / dartPageWidth / dartPageHeight / chromeTopInset / chromeBottomInset / initialCharOffset / initialProgress / initialFragment / sentenceAudioCues`），load 时自动 boot `initialize()`。范例：`font_shrink_reanchor_probe.mjs`（BUG-2205：改字号重锚后页首字不得越过锚字）、`visible_range_probe.mjs`（ReadUnitLedger：逐页 `fushiProgressDetails()` 的 `[start,end)` 单调且并集覆盖全章）、`audiobook_reveal_progress_probe.mjs`（BUG-2228：逐 cue `highlightSentenceAudioCue(id, true)` 后 cue 首字落在回传 `[start,end)` 内；引擎产物不含 setup 脚本的 `__fushiApplyReaderMargins`，探针须桩掉它）。仍读旧 `fushi_shell_*.html` 的老探针需要按同样方式改造后才能跑。

@@ -13,3 +13,4 @@
         unreal_iostore_.onModuleLoaded(entry.szModule);
         aos_sfa_.onModuleLoaded(entry.szModule);
         unity_mono_.onModuleLoaded(entry.szModule);
+        smash_fzmedia_.onModuleLoaded(entry.szModule);

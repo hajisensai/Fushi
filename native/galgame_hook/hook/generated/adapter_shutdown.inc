@@ -13,3 +13,4 @@
     unreal_iostore_.shutdown();
     aos_sfa_.shutdown();
     unity_mono_.shutdown();
+    smash_fzmedia_.shutdown();

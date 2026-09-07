@@ -103,6 +103,10 @@ Fushi/                      # Repository root (Melos workspace: fushi_workspace)
 
 </details>
 
+Video import supports grouping by work or folder. See the [video workflow](docs/specs/2026-09-07-video-library-workflow.md) and [MAL/TMDB metadata with AniDB file hashing](docs/specs/2026-09-07-mal-tmdb-anidb-hash.md) for matching and background tasks.
+
+[Optional online service setup](docs/specs/2026-09-07-online-services-setup.md) explains bundled application identities, personal credentials, and the dismissible video setup reminder.
+
 ## Privacy & Data
 
 Fushi stores imported books, dictionaries, fonts, audiobook data, videos, reading progress, highlights, statistics, and settings in the app's local storage.
@@ -137,6 +141,8 @@ The three lanes are the update channels the app itself offers, and each is scale
 
 Fushi builds on the following projects and ecosystem:
 
+### Learning tools and prior art
+
 | Project | Description |
 |---|---|
 | [jidoujisho](https://github.com/arianneorpilla/jidoujisho) | Japanese immersive learning tool |
@@ -151,6 +157,48 @@ Fushi builds on the following projects and ecosystem:
 | [ッツ Ebook Reader](https://github.com/ttu-ttu/ebook-reader) | Reader, statistics, and sync compatibility reference |
 | [media_kit](https://github.com/media-kit/media-kit) | Flutter video playback framework (libmpv core) |
 | [Niratan](https://github.com/W1ght/Niratan) | Immersion language learning suite for macOS |
+
+### Engines and native components
+
+| Project | Description |
+|---|---|
+| [LunaHook](https://github.com/HIllya51/LunaTranslator) | Galgame text hooking engine (vendored DLLs loaded by the injector) |
+| [MinHook](https://github.com/TsudaKageyu/minhook) | Inline hooking library used by the galgame injector |
+| [libtorrent](https://github.com/arvidn/libtorrent) | Built-in torrent download engine |
+| [mpv](https://github.com/mpv-player/mpv) | libmpv playback core behind media_kit |
+| [FFmpeg](https://ffmpeg.org) | Media probing, clipping, and audio extraction |
+| [libplacebo](https://github.com/haasn/libplacebo) | GPU video shaders and HDR tone mapping |
+| [flutter_inappwebview](https://github.com/pichillilorenzo/flutter_inappwebview) | WebView engine that renders the EPUB reader |
+| [ONNX Runtime](https://github.com/microsoft/onnxruntime) | On-device inference for speech recognition and OCR |
+| [zstd](https://github.com/facebook/zstd) · [xxHash](https://github.com/Cyan4973/xxHash) · [libdeflate](https://github.com/ebiggers/libdeflate) · [glaze](https://github.com/stephenberry/glaze) · [unordered_dense](https://github.com/martinus/unordered_dense) · [utf8proc](https://github.com/JuliaStrings/utf8proc) · [utfcpp](https://github.com/nemtrif/utfcpp) | Dictionary engine dependencies |
+
+### On-device models
+
+| Project | Description |
+|---|---|
+| [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) | Zipformer speech recognition model packages and VAD builds |
+| [ReazonSpeech k2-v2](https://huggingface.co/reazon-research/reazonspeech-k2-v2) | Japanese speech recognition model |
+| [Omnilingual ASR](https://github.com/facebookresearch/omnilingual-asr) | Multilingual CTC speech recognition model |
+| [Silero VAD](https://github.com/snakers4/silero-vad) | Voice activity detection model |
+| [manga-ocr](https://github.com/kha-white/manga-ocr) / [manga-ocr-onnx](https://huggingface.co/mayocream/manga-ocr-onnx) | Manga OCR model |
+| [comic-text-and-bubble-detector](https://huggingface.co/ogkalu/comic-text-and-bubble-detector) | Manga text and speech bubble detection model |
+
+### Content sources and integrations
+
+| Project | Description |
+|---|---|
+| [Mihon](https://github.com/mihonapp/mihon) | Manga source extension ecosystem |
+| [M-Extension-Server](https://github.com/kodjodevf/M-Extension-Server) | Manga extension runtime for desktop |
+| [aidoku-rs](https://github.com/Aidoku/aidoku-rs) | Manga source runtime ABI |
+| [asbplayer](https://github.com/asbplayer/asbplayer) | Streaming subtitle bridge reference for the browser extension |
+| [Shoko Server](https://github.com/ShokoAnime/ShokoServer) | Anime identification and scraping architecture reference |
+| [ReinaManager](https://github.com/huoshen80/ReinaManager) | Galgame library information architecture reference |
+| [AniDB](https://anidb.net) | Anime, episode, and file identity |
+| [TMDB](https://www.themoviedb.org) | Supplementary metadata and artwork |
+| [Jimaku](https://jimaku.cc) | Japanese subtitle source |
+| [OpenSubtitles](https://www.opensubtitles.com) | Subtitle source |
+
+> This application uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB.
 
 ## License
 

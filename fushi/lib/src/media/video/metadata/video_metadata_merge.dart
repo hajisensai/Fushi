@@ -1,5 +1,5 @@
-/// 多来源结果合并规则：AniDB 拥有动画身份与展示资料，TMDB 只补规范身份、
-/// 图片、演职员和季集骨架。纯函数，便于用 provider mock 锁定行为。
+/// 多来源结果合并规则：保留 MAL 主资料，TMDB 补充缺失字段和季集骨架。
+/// 兼容旧 AniDB 资料对象；文件哈希身份不因此变为新的主资料源。
 library;
 
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';

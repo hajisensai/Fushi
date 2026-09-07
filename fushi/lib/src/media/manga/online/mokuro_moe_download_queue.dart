@@ -59,7 +59,16 @@ enum MokuroMoeTaskStatus {
 /// 队列中的一个卷下载任务（可变快照；变更经队列 [MokuroMoeDownloadQueue]
 /// 的 notifyListeners 广播）。
 class MokuroMoeDownloadTask {
-  MokuroMoeDownloadTask._({required this.seriesName, required this.volumeName});
+  MokuroMoeDownloadTask._({required this.seriesName, required this.volumeName})
+      : createdAt = DateTime.now().millisecondsSinceEpoch;
+
+  static int _nextTaskId = 0;
+
+  /// Unique queue entry identity, including repeated downloads of one resource.
+  final int taskId = _nextTaskId++;
+
+  /// Initial enqueue time; retries keep the same task and timestamp.
+  final int createdAt;
 
   final String seriesName;
   final String volumeName;
@@ -243,6 +252,12 @@ class MokuroMoeDownloadQueue extends ChangeNotifier {
     task.lastEvent = null;
     task.bookKey = null;
     task.skippedExisting = false;
+  }
+
+  /// Remove one finished entry without touching its files or other tasks.
+  void removeFinished(MokuroMoeDownloadTask task) {
+    if (!task.isFinished || !_tasks.remove(task)) return;
+    notifyListeners();
   }
 
   /// 清掉所有已结束任务（下载页「清除已完成」）。

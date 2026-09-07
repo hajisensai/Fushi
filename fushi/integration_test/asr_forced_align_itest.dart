@@ -28,14 +28,8 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:fushi/src/asr/asr_ctc_align.dart';
-import 'package:fushi/src/asr/asr_ctc_decoder.dart';
-import 'package:fushi/src/asr/asr_cue_builder.dart';
-import 'package:fushi/src/asr/asr_engine.dart';
-import 'package:fushi/src/asr/asr_model_manifest.dart';
-import 'package:fushi/src/asr/asr_model_store.dart';
-import 'package:fushi/src/asr/asr_pcm_source.dart';
-import 'package:fushi/src/asr/asr_types.dart';
+import 'package:asr_core/asr_core.dart';
+import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/epub/epub_book.dart';
 import 'package:fushi/src/epub/epub_parser.dart';
 import 'package:fushi/src/media/audiobook/audiobook_alignment_service.dart'
@@ -212,7 +206,7 @@ void main() {
 
       // 4. 装载 CTC 模型（动态会话；对齐一段一次 run，不用静态桶）。
       final Stopwatch loadClock = Stopwatch()..start();
-      sessions = await AsrEngineLoader().load(
+      sessions = await AsrEngineLoader(factory: buildFushiOnnxFactory()).load(
         store: store,
         variant: variant,
         preference: cpuOnly

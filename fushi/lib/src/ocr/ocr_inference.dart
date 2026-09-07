@@ -8,10 +8,22 @@
 /// OCR 特有的部分——模型种类、平台、EP 偏好表与选择函数——仍住在这里。
 library;
 
-import 'package:fushi/src/onnx/onnx_inference.dart';
-
-export 'package:fushi/src/onnx/onnx_inference.dart';
-
+import 'package:asr_core/asr_core.dart';
+// 只放行共享 ONNX 抽象那几个名字，**不要整份 re-export**：asr_core 里还有模型
+// 清单、目录占用测量、日志出口这些与 OCR 无关的顶层符号，整份放出去会和本仓同名
+// 的 `measureDirectoryBytes` / `isLocalOnnxRuntimeAvailable` 撞成 ambiguous import
+// （实测 manga_ocr_service_impl.dart 上 4 处）。别名层本来就该是窄的。
+export 'package:asr_core/asr_core.dart'
+    show
+        OnnxExecutionProvider,
+        OnnxProviderResolution,
+        OnnxSession,
+        OnnxSessionFactory,
+        OnnxTensor,
+        OnnxTensorType,
+        createOnnxSessionWithProviderFallback,
+        kOnnxTraceEnabled,
+        onnxTrace;
 /// 支持的张量元素类型（别名，见 [OnnxTensorType]）。
 typedef OcrTensorType = OnnxTensorType;
 

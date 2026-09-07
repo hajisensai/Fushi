@@ -1,4 +1,4 @@
-/// MoviePilot 风格的「单主源」视频元数据 provider 契约。
+/// 视频资料源的统一查询、身份和分集能力契约。
 library;
 
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';

@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "id": "smash_fzmedia",
+  "status": "implemented_unverified",
+  "detection": {
+    "executable_sha256": [],
+    "module_sha256": []
+  },
+  "capabilities": {
+    "text": true,
+    "resource_audio": true,
+    "pcm_audio": false
+  },
+  "profile_metadata": {
+    "format_family": "TYPE-MOON smash framework + fzmedia media library",
+    "admission": {
+      "kind": "engine_structure_signature",
+      "hash_allowlist": false,
+      "conditions": [
+        "main executable import directory references a DLL whose name starts with null-ge- and imports a symbol containing IGameEngine@fw@smash@@",
+        "a loaded module whose name starts with fzmedia- exports every prefix in required_fzmedia_export_prefixes",
+        "x64 process (the x86 build compiles an inert stub: probe=false, lookup admission EngineUnsupported)"
+      ],
+      "identity_cache": "tri-state (unknown / accepted / rejected); unknown never takes an irreversible decision and is re-probed every 500 ms",
+      "required_fzmedia_export_prefixes": [
+        "?create@SoundManager@sound@fz@@QEAA?AV?$shared_ptr@VSoundObject@sound@fz@@@std@@AEBVSoundResourceId",
+        "?play@SoundObject@sound@fz@@QEAAXAEBVSoundPlayInfo",
+        "?getId@SoundObject@sound@fz@@",
+        "?convertToRawFile@SoundObject@sound@fz@@",
+        "?isReady@SoundObject@sound@fz@@"
+      ]
+    },
+    "measured_sample": {
+      "title": "Fate/stay night REMASTERED",
+      "version": "1.1.127",
+      "measured_on": "2026-09-04",
+      "architecture": "x64",
+      "process_model": "single process, no child processes",
+      "window_class": "GLFW30",
+      "renderer": "OpenGL",
+      "audio_backend": "WASAPI",
+      "app_namespace": "fate::app::krkrz (KAG re-implementation; other smash titles use a different namespace tail)",
+      "note": "Executable and module hashes are recorded only in the evidence ledger, never as an admission gate."
+    },
+    "audio": {
+      "voice_sound_category": 5,
+      "sound_categories": {
+        "1": "system SE",
+        "4": "BGM",
+        "5": "character voice",
+        "6": "other"
+      },
+      "resource_container": "FCD ('FCD\\0', u16be version, u16be flags bit0 = encrypted, u32be header size); fzmedia decrypts in place on its file thread before play",
+      "capture": "SoundObject::play detour: category 5 and isReady -> convertToRawFile(this, shared_ptr<vector<uint8_t>>) -> complete Ogg Vorbis file (OggS, observed 25-95 KB, <= 1 MiB enforced) copied into an 8 x 1 MiB bounded slot ring",
+      "storage_name": "<resource id without .fcd>.ogg",
+      "pairing": "resource precedes text by ~70-80 ms; ResolveFollowingSelectedText with a 1500 ms window; same id deduplicated within 2000 ms",
+      "audio_kind": "smash_fzmedia_fcd_ogg_resource",
+      "format": "ogg_vorbis",
+      "clean_voice": true
+    },
+    "text": {
+      "stage_design_size": [1920, 1080],
+      "layer_units": "design pixels, uniform aspect-fit into the client area, centred",
+      "anchor_derivation_chain": [
+        "RTTI TypeDescriptor name prefix .?AVGlyphComponentMesh@krkrz@app@ (unique)",
+        "x64 CompleteObjectLocator {signature=1, offset=0, pTypeDescriptor=TD rva, pSelf=own rva} (unique)",
+        "vtable = the slot after the unique pointer to that COL",
+        "constructor = the unique function containing lea rax,[rip+vtable]; mov [rsi],rax",
+        "mesh build = the unique function with >= 5 direct E8 calls to the constructor",
+        "layoutChar = the unique function containing mov rax,[rdx+d]; movzx r10d,word [rax+r8*2] and exactly one direct call to mesh build",
+        "field offsets decoded from layoutChar bytes: text_begin/text_end (r15+e / r15+b with e == b + 8), cursor_x (addss/movss same disp), cursor_y (= cursor_x + 4, followed by movd xmm0,[rdi+line_pitch]), font_px (mulss xmm8), scale (movss/mulss xmm0 same disp)"
+      ],
+      "measured_offsets_reference_only": {
+        "text_begin": "0x48",
+        "text_end": "0x50",
+        "cursor_x": "0x4c",
+        "cursor_y": "0x50",
+        "line_pitch": "0x38",
+        "font_px": "0x30",
+        "scale": "0x40",
+        "font_px_value": 44,
+        "line_pitch_value": 73,
+        "glyph_advance_value": 47.52
+      },
+      "retry": "anchor scan retried every 500 ms for up to 120 s (SteamStub unpacks .text after entry) and immediately whenever install() re-enters",
+      "paragraph_assembly": "runs merged while the CJK quote balance (「」『』（）) is open, 2500 ms continuation window, single-space wait-cursor run ignored, same-run re-layout is idempotent",
+      "text_source_kind": 6,
+      "thread_identity": "ENGINE:SMASH:kag_text_layer / smash exact"
+    }
+  },
+  "evidence": []
+}

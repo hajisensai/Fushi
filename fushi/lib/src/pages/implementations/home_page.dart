@@ -17,6 +17,8 @@ import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:fushi_anki/fushi_anki.dart' show AnkiMediaDedupReport;
 import 'package:fushi/src/anki/anki_media_dedup_dialogs.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_mini_bar.dart';
+import 'package:fushi/src/onboarding/recommended_pack_tutorial_prompt.dart';
+import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
 import 'package:fushi/src/utils/components/fushi_windows_title_bar.dart';
 import 'package:fushi/src/utils/components/nav_rail_brand_button.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
@@ -36,13 +38,9 @@ import 'package:drift/drift.dart' show Value;
 import 'package:fushi/src/media/collections/collection_continue.dart';
 import 'package:fushi/src/media/torrent/nyaa_resource_provider.dart';
 import 'package:fushi/src/media/torrent/video_resource_provider.dart';
-import 'package:fushi/src/media/video/discovery/discovery_anidb_identity.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_service.dart';
 import 'package:fushi/src/media/video/download/video_media_reference_codec.dart';
-import 'package:fushi/src/media/video/metadata/anidb_video_metadata_provider.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_provider.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_resolver.dart';
 import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi/src/media/drag_drop/drop_surface_scope.dart';
 import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
@@ -430,7 +428,33 @@ class _HomePageState extends BasePageState<HomePage>
         .addListener(_onHomeDictionaryTabRequested);
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (appModel.isFirstTimeSetup) {
+      if (!mounted) return;
+      final RecommendedPackTutorialState tutorialState =
+          RecommendedPackTutorialState(appModelNoUpdate.appDirectory);
+      if (await tutorialState.shouldPrompt) {
+        // Persist before the prompt can consume its receipt or open a tutorial.
+        // Killing the app in the tutorial must not replay the setup wizard.
+        appModelNoUpdate.setFirstTimeSetupFlag();
+        await appModelNoUpdate.setOnboardingCompleted(value: true);
+      }
+      if (!mounted) return;
+      // Serialize follow-up with ordinary onboarding and update dialogs.
+      final bool tutorialOffered = await showRecommendedPackTutorialPrompt(
+        context: context,
+        state: tutorialState,
+        onStart: () async {
+          await Navigator.of(context).push(
+            adaptivePageRoute<void>(
+              context: context,
+              builder: (_) => const OnboardingWizardPage(tutorialOnly: true),
+              fullscreenDialog: true,
+            ),
+          );
+        },
+      );
+      if (!mounted) return;
+
+      if (!tutorialOffered && appModel.isFirstTimeSetup) {
         appModel.setLastSelectedDictionaryFormat(
             JapaneseLanguage.instance.standardFormat);
         appModel.setFirstTimeSetupFlag();
@@ -442,7 +466,7 @@ class _HomePageState extends BasePageState<HomePage>
 
       // 新手引导在更新弹窗之前弹（避免两个模态抢同一帧）；向导关闭（完成/
       // 跳过/返回）后统一标记完成，之后可从「设置 → 系统」随时重新打开。
-      if (mounted && !appModel.onboardingCompleted) {
+      if (mounted && !tutorialOffered && !appModel.onboardingCompleted) {
         await Navigator.of(context).push(
           adaptivePageRoute<void>(
             context: context,
@@ -1364,6 +1388,9 @@ class _HomePageState extends BasePageState<HomePage>
       config.tmdbApiKey,
       config.anidbClientName,
       config.anidbClientVersion ?? 0,
+      config.hashEnabled,
+      config.anidbUsername,
+      config.anidbPassword,
       config.locale,
     ].join('\u0000');
     final VideoDiscoveryController? existing = _videoDiscoveryController;
@@ -1594,41 +1621,6 @@ class _HomePageState extends BasePageState<HomePage>
     return retried;
   }
 
-  /// 下载/订阅确认时的 AniDB 身份就地解析（刮削重设计 P1）。provider 一次性
-  /// 构建、用完即关；AniDB 搜索走本地标题目录，无网络代价。永不阻断确认流程。
-  Future<VideoMediaReference> _confirmDiscoveryAniDbIdentity(
-    BuildContext context,
-    VideoMediaReference reference,
-  ) async {
-    final String configuredTmdbKey = appModelNoUpdate.prefsRepo
-        .getPref(kVideoScraperTmdbApiKeyPref, defaultValue: '') as String;
-    final VideoSourceScrapeGlobalConfig config =
-        VideoSourceScrapeGlobalConfig.fromPreferences(
-      appModelNoUpdate.prefsRepo,
-      resolvedTmdbApiKey: resolveTmdbApiKey(configuredTmdbKey),
-    );
-    final VideoMetadataProviderRegistry registry =
-        VideoMetadataProviderRegistry(<VideoMetadataProvider>[
-      AniDbVideoMetadataProvider(
-        clientName: config.anidbClientName,
-        clientVersion: config.anidbClientVersion,
-        language: config.locale,
-      ),
-    ]);
-    try {
-      return await confirmAniDbDiscoveryIdentity(
-        context: context,
-        reference: reference,
-        registry: registry,
-      );
-    } catch (_) {
-      // 身份解析是下载的增值，不是前置条件：任何失败都放行原 reference。
-      return reference;
-    } finally {
-      registry.close();
-    }
-  }
-
   Future<void> _openVideoDiscoveryResourceSearch(
     BuildContext context,
     VideoDiscoveryItem item,
@@ -1663,12 +1655,8 @@ class _HomePageState extends BasePageState<HomePage>
           onSubmit: (VideoDiscoveryDownloadSelection selection) async {
             final VideoDownloadBackendTarget target =
                 await appModelNoUpdate.currentVideoDownloadBackendTarget();
-            // 刮削重设计 P1：确认下载的这一刻就地解析 AniDB 规范身份——
-            // 唯一命中静默补上、歧义当场弹一次候选、查无明示后照常下载。
-            // 之后管线不再有任何模糊匹配。
-            final VideoMediaReference media = context.mounted
-                ? await _confirmDiscoveryAniDbIdentity(context, selection.media)
-                : selection.media;
+            // 保留发现来源提供的 MAL / TMDB 精确身份，导入时优先 MAL。
+            final VideoMediaReference media = selection.media;
             await pipeline.enqueue(
               VideoDownloadEnqueueRequest(
                 media: media,
@@ -1737,11 +1725,8 @@ class _HomePageState extends BasePageState<HomePage>
                 await appModelNoUpdate.database
                     .getVideoDownloadSubscription(subscriptionId);
             final VideoResourceCandidate resource = selection.download.resource;
-            // 刮削重设计 P1：建订阅的这一刻就地解析 AniDB 规范身份，之后每一集
-            // 派生任务都直接携带确认身份，导入后零模糊匹配。
-            final VideoMediaReference reference = context.mounted
-                ? await _confirmDiscoveryAniDbIdentity(context, item.reference)
-                : item.reference;
+            // 订阅快照保留交叉 ID，每集下载可沿用同一个 MAL / TMDB 身份。
+            final VideoMediaReference reference = item.reference;
             await appModelNoUpdate.database.upsertVideoDownloadSubscription(
               VideoDownloadSubscriptionsCompanion.insert(
                 subscriptionId: subscriptionId,

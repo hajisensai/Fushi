@@ -38,6 +38,9 @@ enum OnboardingFeature {
   /// Anki 制卡（AnkiConnect / AnkiDroid）。
   anki,
 
+  /// 在线服务账号与 API 配置总览；默认不选，仅展示配置教程。
+  onlineServices,
+
   /// 自定义字体（界面/正文/词典）。默认勾选；不勾则向导不出现字体步骤。
   fonts,
 
@@ -47,6 +50,14 @@ enum OnboardingFeature {
   /// 设备互联（局域网配对、共享书库/进度/查词）。
   interconnect,
 }
+
+/// 配置能力的默认教程选择；不控制服务启用，也不读取或修改已有账号。
+const Set<OnboardingFeature> kOnboardingDefaultCapabilities =
+    <OnboardingFeature>{
+  OnboardingFeature.recommendedPack,
+  OnboardingFeature.anki,
+  OnboardingFeature.fonts,
+};
 
 /// 库页模块集合（勾选写 tab 显隐偏好；除 browserExtension 外不产生引导步骤）。
 const Set<OnboardingFeature> kOnboardingModuleFeatures = <OnboardingFeature>{
@@ -93,6 +104,7 @@ enum OnboardingStepId {
   /// 手动导入词典、有声书与发音来源。
   manualResources,
   anki,
+  onlineServices,
   backup,
   interconnect,
 
@@ -141,6 +153,8 @@ List<OnboardingStepId> onboardingStepSequence({
     if (selected.contains(OnboardingFeature.manualResources))
       OnboardingStepId.manualResources,
     if (selected.contains(OnboardingFeature.anki)) OnboardingStepId.anki,
+    if (selected.contains(OnboardingFeature.onlineServices))
+      OnboardingStepId.onlineServices,
     if (selected.contains(OnboardingFeature.backup)) OnboardingStepId.backup,
     if (selected.contains(OnboardingFeature.interconnect))
       OnboardingStepId.interconnect,
@@ -157,4 +171,38 @@ List<OnboardingStepId> onboardingStepSequence({
       OnboardingStepId.firstAnkiCard,
     OnboardingStepId.finish,
   ];
+}
+
+/// Imported resources need only the operation tutorials, never setup preferences.
+List<OnboardingStepId> onboardingTutorialStepSequence({
+  required bool globalLookupAvailable,
+}) =>
+    <OnboardingStepId>[
+      OnboardingStepId.clickLookup,
+      if (globalLookupAvailable) OnboardingStepId.globalLookup,
+      OnboardingStepId.finish,
+    ];
+
+/// Records explicit Next actions, not merely visiting a page or leaving via Skip.
+class OnboardingTutorialProgress {
+  final Set<OnboardingStepId> _completed = <OnboardingStepId>{};
+
+  void completeStep(OnboardingStepId step) {
+    if (_isTutorial(step)) _completed.add(step);
+  }
+
+  bool shouldMarkCompleted({
+    required List<OnboardingStepId> steps,
+    required bool finished,
+  }) {
+    final List<OnboardingStepId> tutorials = steps.where(_isTutorial).toList();
+    return finished &&
+        tutorials.isNotEmpty &&
+        tutorials.every(_completed.contains);
+  }
+
+  static bool _isTutorial(OnboardingStepId step) =>
+      step == OnboardingStepId.clickLookup ||
+      step == OnboardingStepId.globalLookup ||
+      step == OnboardingStepId.firstAnkiCard;
 }

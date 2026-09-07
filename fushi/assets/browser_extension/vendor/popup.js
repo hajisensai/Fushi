@@ -321,6 +321,7 @@ function parseMineResult(reply) {
             noteId,
             message,
             duplicate: reply.duplicate === true,
+            queued: reply.queued === true,
         };
     }
     return { ankiConnect: reply === true, noteId: null, message: '', duplicate: false };
@@ -3394,7 +3395,15 @@ function createEntryHeader(entry, idx) {
     //   the last card is fixed in place — no delete-then-recreate. Mining another
     //   word, or re-querying, supersedes it back to an ordinary ✓ (only the most
     //   recent card stays editable). AnkiDroid returns no id → never green ✓⤺.
+    let queuedLocally = false;
+    const isEntryQueued = () => typeof window.fushiIsEntryQueued === 'function'
+        ? window.fushiIsEntryQueued({ expression, reading }) === true
+        : queuedLocally;
     const setMineState = (isMined) => {
+        const queued = isEntryQueued();
+        mineButton.dataset.queued = queued ? '1' : '';
+        mineButton.title = queued ? (window.i18nMineQueued || '已加入制卡队列') : '';
+        mineButton.classList.toggle('queued', queued);
         // Single source of truth for the button's lookup-time-detected state.
         // The optional second flag is the "latest editable" sub-state; it is only
         // meaningful when the word is the current latest-mined card.
@@ -3405,8 +3414,8 @@ function createEntryHeader(entry, idx) {
         // ✓ 已制卡 / ✓↩ 最新可改），不再走 SVG 图标（audio/favorite 等其余按钮保留 SVG）。
         // TODO-1338：给 ↩ 追加 VS15(U+FE0E) 强制「文本呈现」，杜绝系统把 U+21A9 走彩色
         // emoji 回退变乱码（字体隔离在 popup.css .mine-button 单色符号栈里，此处是双保险）。
-        mineButton.textContent = isMined ? (latest ? '✓↩︎' : '✓') : '+';
-        if (isMined) {
+        mineButton.textContent = isMined ? (latest ? '✓↩︎' : '✓') : (queued ? '✓' : '+');
+        if (isMined || queued) {
             mineButton.classList.add('duplicate');
         } else {
             mineButton.classList.remove('duplicate');
@@ -3450,6 +3459,10 @@ function createEntryHeader(entry, idx) {
             // in finally — it is the ONLY thing that disables the button, never a
             // permanent lock (BUG-077).
             if (mineButton.dataset.mining === '1') return;
+            if (isEntryQueued()) {
+                setMineState(mineButton.dataset.mined === '1');
+                return;
+            }
             mineButton.dataset.mining = '1';
             mineButton.disabled = true;
             try {
@@ -3572,7 +3585,10 @@ function createEntryHeader(entry, idx) {
                     setMineState(wasAdded);
                 };
 
-                if (result.ankiConnect) {
+                if (result.queued) {
+                    queuedLocally = true;
+                    setMineState(false);
+                } else if (result.ankiConnect) {
                     // TODO-270 D: a freshly mined card with a real note id becomes
                     // the new "latest editable"; this also supersedes any prior
                     // latest word (only one editable card at a time).
@@ -5755,10 +5771,10 @@ if (typeof chrome !== 'undefined' && !!(chrome.runtime && chrome.runtime.id)) {
 
 
 let _popupMouseDownPos = null;
-document.addEventListener('mousedown', (e) => {
+function __fushiPopupMouseDown(e) {
     if (!__fushiEventInsidePopup(e)) return;
     _popupMouseDownPos = { x: e.clientX, y: e.clientY };
-});
+}
 
 // BUG-767：MDX 词典条目里的交叉引用（類義語 等）是原始 HTML
 // `<a href="entry://词（読み）">词</a>`，经 innerHTML 注入到 .glossary-content
@@ -5805,7 +5821,7 @@ function handleGlossaryAnchorClick(event, anchor) {
     });
 }
 
-document.addEventListener('click', (e) => {
+function __fushiPopupClick(e) {
     if (!__fushiEventInsidePopup(e)) return;
     if (_popupMouseDownPos) {
         const dx = e.clientX - _popupMouseDownPos.x;
@@ -5888,10 +5904,10 @@ document.addEventListener('click', (e) => {
         return;
     }
     window.flutter_inappwebview.callHandler('tapOutside');
-});
+}
 
 var _popupShiftLastX = -1, _popupShiftLastY = -1;
-document.addEventListener('mousemove', function(e) {
+function __fushiPopupMouseMove(e) {
     if (!__fushiEventInsidePopup(e)) return;
     if (!e.shiftKey) { _popupShiftLastX = -1; _popupShiftLastY = -1; return; }
     var dx = e.clientX - _popupShiftLastX, dy = e.clientY - _popupShiftLastY;
@@ -5900,7 +5916,32 @@ document.addEventListener('mousemove', function(e) {
     if (window.fushiSelection) {
         window.fushiSelection.selectText(e.clientX, e.clientY, 20);
     }
-}, {passive: true});
+}
+
+// 扩展与播放器共享 document，必须在 ShadowRoot 内完成正文取词和交叉引用处理，
+// 再截住冒泡；到 document 才拦截时，站点监听可能已把视频恢复播放并关闭查词窗。
+// App WebView 仍由 document 委托；每个新建的扩展 ShadowRoot 单独绑定一次。
+var __fushiPopupInteractionRoots = new WeakSet();
+window.__fushiBindPopupInteractions = function(root) {
+    if (!root || __fushiPopupInteractionRoots.has(root)) return;
+    __fushiPopupInteractionRoots.add(root);
+    const handlers = {
+        mousedown: __fushiPopupMouseDown,
+        click: __fushiPopupClick,
+        mousemove: __fushiPopupMouseMove,
+    };
+    Object.keys(handlers).forEach(function(type) {
+        root.addEventListener(type, function(event) {
+            if (root !== document) event.stopPropagation();
+            handlers[type](event);
+        }, type === 'mousemove' ? { passive: true } : false);
+    });
+};
+if (!(typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id)) {
+    window.__fushiBindPopupInteractions(document);
+} else if (window.__fushiRoot) {
+    window.__fushiBindPopupInteractions(window.__fushiRoot);
+}
 
 // Niratan 对齐（2026-08-23）— 滚动条静止隐形、滚动时浮现。popup.css 的
 // ::-webkit-scrollbar-thumb 静止透明，靠 :hover 或 .popup-scroll-active 显形；

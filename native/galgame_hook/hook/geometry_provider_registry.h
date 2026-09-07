@@ -85,6 +85,8 @@ inline constexpr LookupGeometryProviderIdentity
          kLookupGeometryProviderIdSgre},
         {kLookupGeometryProviderEngineExactLayout,
          kLookupGeometryProviderIdHunexGge},
+        {kLookupGeometryProviderEngineExactLayout,
+         kLookupGeometryProviderIdSmashFzmedia},
         {kLookupGeometryProviderPositionedTextApi,
          kLookupGeometryProviderIdGdiPositioned},
         {kLookupGeometryProviderPositionedTextApi,
@@ -112,6 +114,33 @@ inline constexpr int LookupGeometryProductionProviderIndex(uint32_t kind,
 inline constexpr bool IsLookupGeometryProductionProviderPair(uint32_t kind,
                                                              uint32_t id) {
   return LookupGeometryProductionProviderIndex(kind, id) >= 0;
+}
+
+// Providers whose injected code consumes a physical left click itself (a
+// sampled-state detour or a window-procedure subclass) instead of leaving the
+// down to the host's low-level hook.  For these, consuming the click and
+// publishing the resulting hit are both gated on the host having applied a
+// NativeInputAllowed admission; every other production provider publishes
+// geometry only and never eats input, so the extra gate would be meaningless
+// for it.  Same allow-list discipline as the production pairs: kind and id
+// are checked together.
+inline constexpr LookupGeometryProviderIdentity
+    kLookupGeometryNativeInputGatedProviders[] = {
+        {kLookupGeometryProviderEngineExactLayout,
+         kLookupGeometryProviderIdHunexGge},
+        {kLookupGeometryProviderEngineExactLayout,
+         kLookupGeometryProviderIdSmashFzmedia},
+};
+
+inline constexpr bool IsLookupGeometryNativeInputGatedProvider(uint32_t kind,
+                                                               uint32_t id) {
+  for (const LookupGeometryProviderIdentity& identity :
+       kLookupGeometryNativeInputGatedProviders) {
+    if (identity.kind == kind && identity.id == id) {
+      return IsLookupGeometryProductionProviderPair(kind, id);
+    }
+  }
+  return false;
 }
 
 inline uint32_t LookupUtf16SourceLength(const wchar_t* text,
@@ -299,14 +328,16 @@ class GeometryProviderRegistry {
     return matches;
   }
 
-  // Fail-closed HUNEX semantic-input gate.  OfferReady/provider discovery must
-  // remain independent from host risk admission; consuming the semantic click
-  // is allowed only after the host request (including NativeInputAllowed) is
-  // fully applied and this exact provider is the stable active owner.
+  // Fail-closed semantic-input gate for the native-input-gated providers
+  // (kLookupGeometryNativeInputGatedProviders).  OfferReady/provider discovery
+  // must remain independent from host risk admission; consuming the semantic
+  // click is allowed only after the host request (including
+  // NativeInputAllowed) is fully applied and this exact provider is the
+  // stable active owner.  Any other provider identity is denied outright.
   bool NativeInputAllowed(const SharedHeader* header, uint32_t provider_kind,
                           uint32_t provider_id) {
-    if (provider_kind != kLookupGeometryProviderEngineExactLayout ||
-        provider_id != kLookupGeometryProviderIdHunexGge ||
+    if (!IsLookupGeometryNativeInputGatedProvider(provider_kind,
+                                                  provider_id) ||
         !IsHeaderSane(header, true)) {
       return false;
     }
@@ -353,13 +384,12 @@ class GeometryProviderRegistry {
     const bool same_provider =
         publication.provider_kind == active_kind_ &&
         publication.provider_id == active_id_;
-    const bool hunex_native_input_allowed =
-        publication.provider_kind !=
-            kLookupGeometryProviderEngineExactLayout ||
-        publication.provider_id != kLookupGeometryProviderIdHunexGge ||
+    const bool native_input_allowed =
+        !IsLookupGeometryNativeInputGatedProvider(publication.provider_kind,
+                                                  publication.provider_id) ||
         NativeInputAdmissionApplied(header);
     if (!same_provider || active_retire_pending_ ||
-        !hunex_native_input_allowed ||
+        !native_input_allowed ||
         publication.text_generation < text_generation_ ||
         publication.geometry_generation < geometry_generation_) {
       ReleaseSRWLockExclusive(&lock_);

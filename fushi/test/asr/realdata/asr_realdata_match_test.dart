@@ -4,7 +4,7 @@ library;
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/asr/asr_cue_builder.dart' show parseAsrCueTokens;
+import 'package:asr_core/asr_core.dart';
 import 'package:fushi/src/epub/epub_book.dart';
 import 'package:fushi/src/epub/epub_parser.dart';
 import 'package:fushi/src/media/audiobook/audiobook_alignment_service.dart'

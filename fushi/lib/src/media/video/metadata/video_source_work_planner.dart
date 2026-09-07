@@ -52,7 +52,9 @@ class VideoSourceWorkPlanner {
   final FushiDatabase _database;
 
   Future<List<VideoSourceScrapeWork>> plan(SourceLibraryRow source) async {
-    if (source.mediaKind != 'video') return const <VideoSourceScrapeWork>[];
+    if (source.mediaKind != 'video' || source.videoGroupingMode == 'folder') {
+      return const <VideoSourceScrapeWork>[];
+    }
 
     final List<VideoBookRow> sourceBooks = (await _database.allVideoBooks())
         .where((VideoBookRow row) => row.sourceId == source.id)
@@ -61,13 +63,17 @@ class VideoSourceWorkPlanner {
 
     final List<MediaCollectionItemRow> allItems =
         await _database.getAllCollectionItems();
-    final Map<String, int> primaryCollections =
-        multiMemberCollectionIdByVideoUid(allItems);
     final Map<int, MediaCollectionRow> collections = <int, MediaCollectionRow>{
       for (final MediaCollectionRow row
           in await _database.getAllMediaCollections())
         row.id: row,
     };
+    // 目录合集是用户组织容器，切回作品模式后仍保留，但不能充当动画身份。
+    final Map<String, int> primaryCollections =
+        multiMemberCollectionIdByVideoUid(<MediaCollectionItemRow>[
+      for (final MediaCollectionItemRow item in allItems)
+        if (collections[item.collectionId]?.sourceFolderPath == null) item,
+    ]);
     final Map<int, List<VideoBookRow>> grouped = <int, List<VideoBookRow>>{};
     final List<VideoSourceScrapeWork> result = <VideoSourceScrapeWork>[];
 

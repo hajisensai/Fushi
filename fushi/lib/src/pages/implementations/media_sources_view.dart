@@ -455,9 +455,11 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
                 FushiIconButton(
                   icon: Icons.manage_search_outlined,
                   size: 18,
-                  tooltip: t.video_source_scrape_action,
+                  tooltip: row.videoGroupingMode == 'folder'
+                      ? t.video_source_grouping_folder_hint
+                      : t.video_source_scrape_action,
                   busy: scraping,
-                  enabled: !busy,
+                  enabled: !busy && row.videoGroupingMode != 'folder',
                   padding: EdgeInsets.all(tokens.spacing.gap / 2),
                   onTap: () => _scrapeSource(row),
                 ),
@@ -808,6 +810,8 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
       return;
     }
 
+    final String? groupingMode = await _pickVideoGroupingMode();
+    if (!mounted || groupingMode == null) return;
     final int newId = await _db.insertMediaSource(
       MediaSourcesCompanion(
         label: Value(defaultLabelFromRoot(norm, transport: 'local')),
@@ -815,6 +819,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
         transport: const Value('local'),
         rootPath: Value(norm),
         recursive: const Value(true),
+        videoGroupingMode: Value(groupingMode),
         sortOrder: Value(_nextSortOrder()),
         createdAt: Value(DateTime.now().millisecondsSinceEpoch),
       ),
@@ -851,6 +856,8 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
       }
     }
 
+    final String? groupingMode = await _pickVideoGroupingMode();
+    if (!mounted || groupingMode == null) return;
     final VoidCallback? onLibraryChanged = widget.onLibraryChanged;
     final int tempId = await _db.insertMediaSource(
       MediaSourcesCompanion(
@@ -859,6 +866,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
         transport: const Value('local'),
         rootPath: Value(norm),
         recursive: const Value(true),
+        videoGroupingMode: Value(groupingMode),
         sortOrder: Value(_nextSortOrder()),
         createdAt: Value(DateTime.now().millisecondsSinceEpoch),
       ),
@@ -1004,6 +1012,10 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   }
 
   Future<void> _scrapeSource(SourceLibraryRow row) async {
+    if (row.videoGroupingMode == 'folder') {
+      FushiToast.show(msg: t.video_source_grouping_folder_hint);
+      return;
+    }
     final Future<void> Function(SourceLibraryRow source)? scrape =
         widget.onScrapeSource;
     if (scrape == null || isBusy) {
@@ -1031,15 +1043,24 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
         await showAppDialog<_VideoSourceScrapeSettingsDraft>(
       context: context,
       builder: (BuildContext context) => _VideoSourceScrapeSettingsDialog(
-        initial: _VideoSourceScrapeSettingsDraft.fromRow(existing),
+        initial: _VideoSourceScrapeSettingsDraft.fromRow(
+          existing,
+          groupingMode: row.videoGroupingMode,
+        ),
       ),
     );
     if (draft == null) return;
+    await (_db.update(
+      _db.mediaSources,
+    )..where((tbl) => tbl.id.equals(row.id)))
+        .write(
+      MediaSourcesCompanion(videoGroupingMode: Value(draft.groupingMode)),
+    );
     await _db.upsertVideoSourceScrapeSettings(
       VideoSourceScrapeSettingsCompanion.insert(
         sourceId: Value<int>(row.id),
         enabled: Value<bool>(draft.enabled),
-        // 旧列保留作数据库兼容；新保存一律清空，AniDB 是固定主身份源。
+        // 旧列保留作数据库兼容；新保存一律清空，MAL 是主源，TMDB 兜底。
         providerOverride: const Value<String?>(null),
         autoAfterScan: Value<bool>(draft.autoAfterScan),
         writeNfo: Value<bool>(draft.writeNfo),
@@ -1048,6 +1069,38 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
         imagePolicy: Value<String>(draft.imagePolicy),
         allowExternalOverwrite: Value<bool>(draft.allowExternalOverwrite),
         updatedAt: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+    await _load();
+    widget.onLibraryChanged?.call();
+  }
+
+  Future<String?> _pickVideoGroupingMode() async {
+    if (widget.mediaKind != 'video') return 'series';
+    return await showAppDialog<String>(
+      context: context,
+      builder: (BuildContext context) => SimpleDialog(
+        title: Text(t.video_source_grouping_mode),
+        children: <Widget>[
+          for (final String mode in <String>['series', 'folder'])
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, mode),
+              child: FushiListItem(
+                padding: EdgeInsets.zero,
+                subtitleMaxLines: 6,
+                title: Text(
+                  mode == 'folder'
+                      ? t.video_source_grouping_folder
+                      : t.video_source_grouping_series,
+                ),
+                subtitle: Text(
+                  mode == 'folder'
+                      ? t.video_source_grouping_folder_hint
+                      : t.video_source_grouping_series_hint,
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -1140,12 +1193,9 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
           );
         }
       } else {
-        await FushiShare.shareFiles(
-          <XFile>[
-            XFile(temporaryPackage.path, mimeType: 'application/zip'),
-          ],
-          subject: t.video_scrape_diagnostic_share_subject,
-        );
+        await FushiShare.shareFiles(<XFile>[
+          XFile(temporaryPackage.path, mimeType: 'application/zip'),
+        ], subject: t.video_scrape_diagnostic_share_subject);
       }
     } catch (error) {
       FushiToast.show(
@@ -1199,6 +1249,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
 
 class _VideoSourceScrapeSettingsDraft {
   const _VideoSourceScrapeSettingsDraft({
+    this.groupingMode = 'series',
     required this.enabled,
     required this.autoAfterScan,
     required this.writeNfo,
@@ -1209,9 +1260,11 @@ class _VideoSourceScrapeSettingsDraft {
   });
 
   factory _VideoSourceScrapeSettingsDraft.fromRow(
-    VideoSourceScrapeSettingRow? row,
-  ) {
+    VideoSourceScrapeSettingRow? row, {
+    String groupingMode = 'series',
+  }) {
     return _VideoSourceScrapeSettingsDraft(
+      groupingMode: groupingMode,
       enabled: row?.enabled ?? true,
       autoAfterScan: row?.autoAfterScan ?? false,
       writeNfo: row?.writeNfo ?? true,
@@ -1225,6 +1278,7 @@ class _VideoSourceScrapeSettingsDraft {
   /// 此来源的刮削总闸。协调器早就检查它（关 = 手动/扫描后/导入后/补刮全部
   /// 短路），但 UI 从没画过这个开关、保存时还硬编码回写旧值（BUG-1999）。
   final bool enabled;
+  final String groupingMode;
   final bool autoAfterScan;
   final bool writeNfo;
   final bool writeImages;
@@ -1251,6 +1305,7 @@ class _VideoSourceScrapeSettingsDialog extends StatefulWidget {
 class _VideoSourceScrapeSettingsDialogState
     extends State<_VideoSourceScrapeSettingsDialog> {
   late bool _enabled = widget.initial.enabled;
+  late String _groupingMode = widget.initial.groupingMode;
   late bool _autoAfterScan = widget.initial.autoAfterScan;
   late bool _writeNfo = widget.initial.writeNfo;
   late bool _writeImages = widget.initial.writeImages;
@@ -1262,6 +1317,7 @@ class _VideoSourceScrapeSettingsDialogState
     Navigator.pop(
       context,
       _VideoSourceScrapeSettingsDraft(
+        groupingMode: _groupingMode,
         enabled: _enabled,
         autoAfterScan: _autoAfterScan,
         writeNfo: _writeNfo,
@@ -1283,51 +1339,79 @@ class _VideoSourceScrapeSettingsDialogState
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              AdaptiveSettingsSwitchRow(
-                title: t.video_source_scrape_enabled_toggle,
-                subtitle: t.video_source_scrape_enabled_toggle_hint,
-                value: _enabled,
-                onChanged: (bool value) => setState(() => _enabled = value),
-              ),
-              AdaptiveSettingsSwitchRow(
-                title: t.video_source_scrape_auto_after_scan,
-                subtitle: t.video_source_scrape_auto_after_scan_hint,
-                value: _autoAfterScan,
-                onChanged: (bool value) =>
-                    setState(() => _autoAfterScan = value),
-              ),
-              AdaptiveSettingsSwitchRow(
-                title: t.video_source_scrape_write_nfo,
-                value: _writeNfo,
-                onChanged: (bool value) => setState(() => _writeNfo = value),
-              ),
-              AdaptiveSettingsSwitchRow(
-                title: t.video_source_scrape_write_images,
-                value: _writeImages,
-                onChanged: (bool value) => setState(() => _writeImages = value),
-              ),
               AdaptiveSettingsPickerRow<String>(
-                title: t.video_source_scrape_nfo_policy,
-                selected: _nfoPolicy,
-                options: _policyOptions(),
-                onChanged: (String value) => setState(() => _nfoPolicy = value),
-                controlBelow: true,
-              ),
-              AdaptiveSettingsPickerRow<String>(
-                title: t.video_source_scrape_image_policy,
-                selected: _imagePolicy,
-                options: _policyOptions(),
+                title: t.video_source_grouping_mode,
+                selected: _groupingMode,
+                options: <AdaptiveSettingsPickerOption<String>>[
+                  AdaptiveSettingsPickerOption<String>(
+                    value: 'series',
+                    label: t.video_source_grouping_series,
+                  ),
+                  AdaptiveSettingsPickerOption<String>(
+                    value: 'folder',
+                    label: t.video_source_grouping_folder,
+                  ),
+                ],
                 onChanged: (String value) =>
-                    setState(() => _imagePolicy = value),
+                    setState(() => _groupingMode = value),
                 controlBelow: true,
               ),
-              AdaptiveSettingsSwitchRow(
-                title: t.video_source_scrape_external_overwrite,
-                subtitle: t.video_source_scrape_external_overwrite_hint,
-                value: _allowExternalOverwrite,
-                onChanged: (bool value) =>
-                    setState(() => _allowExternalOverwrite = value),
+              Text(
+                _groupingMode == 'folder'
+                    ? t.video_source_grouping_folder_hint
+                    : t.video_source_grouping_series_hint,
               ),
+              Text(t.video_source_grouping_change_hint),
+              if (_groupingMode != 'folder') ...<Widget>[
+                Text(t.video_source_scrape_provider_policy),
+                AdaptiveSettingsSwitchRow(
+                  title: t.video_source_scrape_enabled_toggle,
+                  subtitle: t.video_source_scrape_enabled_toggle_hint,
+                  value: _enabled,
+                  onChanged: (bool value) => setState(() => _enabled = value),
+                ),
+                AdaptiveSettingsSwitchRow(
+                  title: t.video_source_scrape_auto_after_scan,
+                  subtitle: t.video_source_scrape_auto_after_scan_hint,
+                  value: _autoAfterScan,
+                  onChanged: (bool value) =>
+                      setState(() => _autoAfterScan = value),
+                ),
+                AdaptiveSettingsSwitchRow(
+                  title: t.video_source_scrape_write_nfo,
+                  value: _writeNfo,
+                  onChanged: (bool value) => setState(() => _writeNfo = value),
+                ),
+                AdaptiveSettingsSwitchRow(
+                  title: t.video_source_scrape_write_images,
+                  value: _writeImages,
+                  onChanged: (bool value) =>
+                      setState(() => _writeImages = value),
+                ),
+                AdaptiveSettingsPickerRow<String>(
+                  title: t.video_source_scrape_nfo_policy,
+                  selected: _nfoPolicy,
+                  options: _policyOptions(),
+                  onChanged: (String value) =>
+                      setState(() => _nfoPolicy = value),
+                  controlBelow: true,
+                ),
+                AdaptiveSettingsPickerRow<String>(
+                  title: t.video_source_scrape_image_policy,
+                  selected: _imagePolicy,
+                  options: _policyOptions(),
+                  onChanged: (String value) =>
+                      setState(() => _imagePolicy = value),
+                  controlBelow: true,
+                ),
+                AdaptiveSettingsSwitchRow(
+                  title: t.video_source_scrape_external_overwrite,
+                  subtitle: t.video_source_scrape_external_overwrite_hint,
+                  value: _allowExternalOverwrite,
+                  onChanged: (bool value) =>
+                      setState(() => _allowExternalOverwrite = value),
+                ),
+              ],
             ],
           ),
         ),

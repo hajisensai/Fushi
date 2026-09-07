@@ -29,11 +29,33 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2086 条。点号进各自文件。
+> 共 2109 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2251](bugs/BUG-2251-video-tracker-dispose-unawaited-write.md) | 🚧 | 🚧 | VideoWatchTracker.dispose 在 dispose 里发起无人 await 的 DB 写 |
+| [BUG-2250](bugs/BUG-2250-reader-brightness-selector.md) | ✅ | ✅ | 阅读器主题卡遗漏日间跟随系统夜间选择器 |
+| [BUG-2249](bugs/BUG-2249-reader-gallery-blur.md) | ✅ | ✅ | 插图画廊未同步正文图片模糊设置 |
+| [BUG-2248](bugs/BUG-2248-audiobook-narrow-transport.md) | ✅ | ✅ | 有声书窄屏封面挤压播放按钮导致越界 |
+| [BUG-2247](bugs/BUG-2247-audiobook-tab-scroll.md) | ✅ | ✅ | 有声书切换设置标签沿用章节滚动位置 |
+| [BUG-2246](bugs/BUG-2246-discovery-anime-resource-category.md) | ✅ | ✅ | 发现资源搜索把TMDB动画当普通剧集且不能手动切换类型 |
+| [BUG-2245](bugs/BUG-2245-browser-nested-popup-stack.md) | ✅ | ✅ | 浏览器嵌套查词没有按App保留父子弹窗层级 |
+| [BUG-2244](bugs/BUG-2244-browser-nested-lookup-dismissal.md) | ✅ | ✅ | 浏览器嵌套查词点击泄漏给播放器导致查词窗关闭 |
+| [BUG-2243](bugs/BUG-2243-browser-subtitle-open-position.md) | ✅ | ✅ | 浏览器字幕列表打开落在顶部而非当前时间附近 |
+| [BUG-2242](bugs/BUG-2242-browser-queued-mine-state.md) | ✅ | ✅ | 浏览器制卡入队后加号恢复且缺少队列状态 |
+| [BUG-2241](bugs/BUG-2241-browser-sentence-context-dismissal.md) | ✅ | ✅ | 浏览器调整上下文误关查词框并恢复播放 |
+| [BUG-2240](bugs/BUG-2240-grammar-label-locale.md) | ✅ | ✅ | 词形变化标签未本地化且部分日语标签缺少说明 |
+| [BUG-2239](bugs/BUG-2239-pack-failed-import-cleanup.md) | ✅ | ✅ | 推荐包导入失败后仍被启动清理删除 |
+| [BUG-2238](bugs/BUG-2238-pack-delete-orphan-hidden.md) | ✅ | ✅ | 推荐包部分删除失败后残包入口消失 |
+| [BUG-2237](bugs/BUG-2237-pack-delete-download-race.md) | ✅ | ✅ | 推荐包清理与续传缺少互斥 |
+| [BUG-2236](bugs/BUG-2236-video-folder-organization.md) | ✅ | ✅ | 视频文件夹导入按文件名拆散难度合集 |
+| [BUG-2235](bugs/BUG-2235-subtitle-hide-lookup-replay-reobscures.md) | ✅ | ✅ | 隐藏字幕在查词浮层重播时又被遮回去 |
+| [BUG-2234](bugs/BUG-2234-download-task-unified-list.md) | ✅ | ✅ | 下载任务按来源分裂导致筛选排序遗漏且不能按合集折叠 |
+| [BUG-2233](bugs/BUG-2233-video-manual-scrape-queue.md) | ✅ | ✅ | 手动重刮遇后台任务时全屏禁用且无法查看或撤回排队作品 |
+| [BUG-2232](bugs/BUG-2232-nyaa-explicit-query.md) | ✅ | ✅ | Nyaa资源搜索会用隐藏别名替换或扩展明确查询词 |
+| [BUG-2231](bugs/BUG-2231-anilist-api-disabled-mistaken-for-network-failure.md) | ✅ | ✅ | AniList 官方停用公开 API 时被显示成「连不上」并诱导用户去配代理 |
+| [BUG-2230](bugs/BUG-2230-video-web-and-work-detail-loading-no-exit.md) | ✅ | ✅ | 网页流媒体页与作品详情页的加载态没有返回入口，且 init 异常无归宿 |
+| [BUG-2229](bugs/BUG-2229-video-missing-resource-no-back.md) | ✅ | ✅ | 视频资源缺失态没有返回入口，进入后无法退出 |
 | [BUG-2228](bugs/BUG-2228-reader-ledger-audiobook-reveal-turn-uncounted.md) | 🚧 | 🚧 | 听书自动翻页未计入读过字数（未复现） |
 | [BUG-2227](bugs/BUG-2227-reader-ledger-close-settles-stale-unit.md) | ✅ | ✅ | 关书结算的是上次采样单元而非此刻可见页 |
 | [BUG-2226](bugs/BUG-2226-reader-ledger-fail-navigation-discards-read-page.md) | ✅ | ✅ | 导航失败/兜底超时 discard 丢掉用户真读过的上一页 |
@@ -58,6 +80,7 @@
 | [BUG-2207](bugs/BUG-2207-reader-reload-poll-unguarded.md) | ✅ | ✅ | 重载在飞时 10s 进度轮询不门控，瞬态 atEnd 可把本章剩余计入 |
 | [BUG-2206](bugs/BUG-2206-reader-restore-clears-read-credit.md) | ✅ | ✅ | 重排/宽变/模式切换恢复完成无条件清零令牌桶额度致漏计 |
 | [BUG-2205](bugs/BUG-2205-reader-paged-style-reanchor-page-drift.md) | ✅ | ✅ | 分页模式缩字号/减边距后 ±1 页 hint 保原页，位置前漂一页并被计入字数 |
+| [BUG-2204](bugs/BUG-2204-srt-cue-tail-overlap-jumps-to-later-sentence.md) | ✅ | ✅ | 听书 ASR 字幕前句多吃下一句首字，后句跳到远处同前缀句、中间十几句全未匹配 |
 | [BUG-2203](bugs/BUG-2203-update-installer-self-kill-taskkill-tree.md) | ✅ | ✅ | 应用内更新静默失败：安装器被自己的 taskkill /T 连同祖先树一起杀掉，且被误诊为 app_mutex_running |
 | [BUG-2202](bugs/BUG-2202-clip-export-tx3g-unplayable-in-im.md) | ✅ | ✅ | 内封 tx3g 字幕轨让导出的片段在 QQ 等 IM 里整个不可播 |
 | [BUG-2201](bugs/BUG-2201-video-pending-scrape-has-no-visible-surface.md) | ✅ | ✅ | 待确认身份的作品在视频页零提示用户无从知道要去确认 |
