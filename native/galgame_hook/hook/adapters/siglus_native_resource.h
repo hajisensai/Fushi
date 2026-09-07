@@ -6,6 +6,8 @@
 namespace fushi_voice_hook {
 // This is a static source ABI capability. Actual path, file identity, archive
 // member/range and bytes still need the worker's independent verification.
+enum class SiglusNativeResourceFrame { kStack120, kStack118 };
+
 struct SiglusNativeResourceMappingProfile {
   uintptr_t voice_entry_rva = 0;
   uintptr_t resource_entry_rva = 0;
@@ -13,13 +15,14 @@ struct SiglusNativeResourceMappingProfile {
   uintptr_t ogg_open_rva = 0;
   uintptr_t payload_return_rva = 0;
   uintptr_t ogg_vtable_rva = 0;
+  SiglusNativeResourceFrame frame = SiglusNativeResourceFrame::kStack120;
   static constexpr uint32_t kVoiceKeyRadix = 100000u;
   static constexpr uint32_t kOvkResourceKind = 3u;
   static constexpr uint32_t ogg_callee_cleanup_bytes = 12u;
 };
 namespace siglus_native_resource {
 using siglus_family::Signature;
-// One independently measured NativeEcx compiler ABI. Only image addresses and
+// Independently measured NativeEcx compiler ABIs. Only image addresses and
 // direct call operands vary; registers, stack locals, arithmetic and branches
 // remain exact. The request key's quotient formats z%04d.ovk, while remainder
 // matches [row+8] in 16-byte rows; [row+4]/[row] supply offset/length.
@@ -226,12 +229,141 @@ inline constexpr Signature kCopyUnion{
     "0F 42 F8 8D 47 01 89 45 FC 8D 45 FC 50 56 E8 ?? ?? ?? ?? 8D 0C 5D 02 00 "
     "00 00 89 06 51 FF 75 08 89 5E 10 50 89 7E 14 E8 ?? ?? ?? ?? 83 C4 14 8B "
     "C6 5F 5E 5B 8B E5 5D C2 04 00 E8 ?? ?? ?? ??"};
+// The 0x118 frame is a separate complete compiler layout. Its key copy,
+// selected member fields and reader holder differ from the 0x120 frame.
+inline constexpr Signature kResource118{
+    "53 8B DC 83 EC 08 83 E4 F8 83 C4 04 55 8B 6B 04 89 6C 24 04 8B EC 6A FF "
+    "68 ?? ?? ?? ?? 64 A1 00 00 00 00 50 53 81 EC 18 01 00 00 A1 ?? ?? ?? ?? "
+    "33 C5 89 45 EC 56 57 50 8D 45 F4 64 A3 00 00 00 00 8B F1 89 B5 E0 FE FF "
+    "FF 8A 4B 1C 8B 7B 08 89 BD FC FE FF FF 84 C9 75 0A 8B CE E8 ?? ?? ?? ?? "
+    "8A 4B 1C A1 ?? ?? ?? ?? 80 38 00 75 04 84 C9 75 04 85 FF 79 07 B0 01 E9 "
+    "BE 10 00 00 B8 8F 58 8B 4F C7 85 F8 FE FF FF 00 00 00 00 F7 E7 8B C7 8B "
+    "CF 2B C2 D1 E8 03 C2 C1 E8 10 69 C0 A0 86 01 00 2B C8 A1 ?? ?? ?? ?? 83 "
+    "C0 18 89 8D 00 FF FF FF 50 8D 8D 08 FF FF FF E8 ?? ?? ?? ?? C7 45 FC 00 "
+    "00 00 00 8D 4D 80 6A 03 0F 57 C0 C7 45 90 00 00 00 00 68 ?? ?? ?? ?? 0F "
+    "11 45 80 C7 45 94 00 00 00 00 E8 ?? ?? ?? ?? 8D 85 F8 FE FF FF C6 45 FC "
+    "01 50 8D 45 80 57 50 8D 95 08 FF FF FF 8D 8D 38 FF FF FF E8 ?? ?? ?? ?? "
+    "83 C4 0C"};
+inline constexpr Signature kKind1118{
+    "8B 85 F8 FE FF FF 83 F8 01 0F 85 2A 01 00 00"};
+inline constexpr Signature kKind2118{"83 F8 02 0F 85 2F 01 00 00"};
+inline constexpr Signature kArchive118{
+    "83 F8 03 0F 85 94 03 00 00 0F 57 C0 C7 45 88 00 00 00 00 66 0F 13 45 90 "
+    "68 ?? ?? ?? ?? 8D 4D B0 C6 45 FC 18 E8 ?? ?? ?? ?? 8D 45 B0 C6 45 FC 19 "
+    "50 8D 85 38 FF FF FF 50 8D 4D 88 E8 ?? ?? ?? ?? 8D 4D B0 88 85 07 FF FF "
+    "FF C6 45 FC 18 E8 ?? ?? ?? ?? 80 BD 07 FF FF FF 00 75 75"};
+inline constexpr Signature kRows118{
+    "FF 75 88 BA 04 00 00 00 C7 45 AC FF FF FF FF 8D 8D F8 FE FF FF C7 85 64 "
+    "FF FF FF 00 00 00 00 C7 85 F8 FE FF FF 00 00 00 00 E8 ?? ?? ?? ?? 8B 85 "
+    "F8 FE FF FF 83 C4 04 85 C0 0F 84 27 01 00 00 C7 45 BC 00 00 00 00 C7 45 "
+    "C0 00 00 00 00 C7 45 C4 00 00 00 00 C1 E0 04 8D 4D BC 50 C6 45 FC 1E E8 "
+    "?? ?? ?? ?? 8B 4D BC 33 C0 3B 4D C0 8B 95 F8 FE FF FF FF 75 88 0F 44 C8 "
+    "C1 E2 04 E8 ?? ?? ?? ?? 8B 4D BC 33 D2 83 C4 04 8B C1 3B 4D C0 0F 44 C2 "
+    "33 C9 39 8D F8 FE FF FF 7E 1B 8B 95 00 FF FF FF 39 50 08 0F 84 8F 00 00 "
+    "00 41 83 C0 10 3B 8D F8 FE FF FF 7C EB"};
+inline constexpr Signature kMember118{
+    "8B 48 04 8B 00 89 4D AC 89 85 64 FF FF FF 83 F9 FF 0F 84 66 FF FF FF 8B "
+    "45 BC 3B 45 C0 74 03 89 45 C0 8D 4D BC C6 45 FC 18 E8 ?? ?? ?? ?? 80 7B "
+    "1C 00 74 0C C6 85 07 FF FF FF 01 E9 29 01 00 00 6A 20 E8 ?? ?? ?? ?? 83 "
+    "C4 04 89 85 00 FF FF FF 6A 00 8B C8 C6 45 FC 24 E8 ?? ?? ?? ?? 50 8D 8D "
+    "E8 FE FF FF C6 45 FC 18 E8 ?? ?? ?? ?? C6 45 FC 25 8D 95 38 FF FF FF 8B "
+    "8D E8 FE FF FF FF B5 64 FF FF FF FF 75 AC 8B 01 52 8B 40 04 FF D0 84 C0 "
+    "75 43"};
+inline constexpr Signature kBuilder118{
+    "53 8B DC 83 EC 08 83 E4 F8 83 C4 04 55 8B 6B 04 89 6C 24 04 8B EC 6A FF "
+    "68 ?? ?? ?? ?? 64 A1 00 00 00 00 50 53 81 EC B0 00 00 00 A1 ?? ?? ?? ?? "
+    "33 C5 89 45 EC 56 57 50 8D 45 F4 64 A3 00 00 00 00 89 95 68 FF FF FF 8B "
+    "C1 89 85 48 FF FF FF 89 45 80 8B 53 0C 0F 57 C0 89 85 44 FF FF FF B9 07 "
+    "00 00 00 8B 43 08 89 85 6C FF FF FF 8B 43 10 89 85 44 FF FF FF 33 C0 0F "
+    "11 45 BC 89 95 4C FF FF FF C7 45 CC 00 00 00 00 89 4D 88 89 4D D0 66 89 "
+    "45 BC 89 45 FC 0F 11 45 D4 89 45 E4 89 4D E8 66 89 45 D4 B8 89 B5 F8 14 "
+    "C6 45 FC 01 8B 35 ?? ?? ?? ?? F7 EA C7 85 74 FF FF FF 00 00 00 00 C1 FA "
+    "0D 8B C2 C1 E8 1F 03 C2 89 85 70 FF FF FF"};
+inline constexpr Signature kOvkBuild118{
+    "FF B5 70 FF FF FF 0F 57 C0 C7 85 78 FF FF FF 03 00 00 00 83 EC 18 8B CC "
+    "89 4D 80 6A 05 0F 11 01 68 ?? ?? ?? ?? C7 41 10 00 00 00 00 C7 41 14 00 "
+    "00 00 00 E8 ?? ?? ?? ?? 8D 45 8C 50 E8 ?? ?? ?? ?? 83 C4 20 8D 4D BC C6 "
+    "45 FC 09 3B C8 0F 84 E9 00 00 00 83 78 14 07 8B C8 89 45 84 76 05 8B 08 "
+    "89 4D 84 8B 40 10 8B 7D D0 89 85 7C FF FF FF 89 7D 80 3B C7 77 27 83 7D "
+    "80 07 8D 34 00 56 8D 7D BC 89 45 CC 0F 47 7D BC 51 57 E8 ?? ?? ?? ?? 83 "
+    "C4 0C 33 C0 66 89 04 3E E9 9F 00 00 00 3D FE FF FF 7F 0F 87 40 03 00 00 "
+    "8B F0 83 CE 07 81 FE FE FF FF 7F 76 0A BE FE FF FF 7F 8D 46 01 EB 2F 8B "
+    "CF B8 FE FF FF 7F D1 E9 2B C1 3B F8 76 0A BE FE FF FF 7F 8D 46 01 EB 16 "
+    "8D 04 39 3B F0 0F 42 F0 8D 46 01 3D FF FF FF 7F 0F 87 F5 02 00 00 03 C0 "
+    "50 E8 ?? ?? ?? ?? 8B 8D 7C FF FF FF 83 C4 04 89 75 D0 89 45 88 89 4D CC "
+    "8D 34 09 56 FF 75 84 50 E8 ?? ?? ?? ?? 8B 45 88 33 C9 83 C4 0C 66 89 0C "
+    "06 83 FF 07 76 13 57 FF 75 BC 8D 45 BC 50 E8 ?? ?? ?? ?? 8B 45 88 83 C4 "
+    "0C 89 45 BC 8D 4D 8C C6 45 FC 02 E8 ?? ?? ?? ?? 6A 03 0F 57 C0 C7 45 B4 "
+    "00 00 00 00 68 ?? ?? ?? ?? 8D 4D A4 C7 45 B8 00 00 00 00 0F 11 45 A4 E8 "
+    "?? ?? ?? ?? 8B 95 68 FF FF FF 8D 45 A4 50 8D 45 BC C6 45 FC 0A 50 FF B5 "
+    "6C FF FF FF 8D 85 50 FF FF FF 50 8D 4D 8C E8 ?? ?? ?? ?? 83 C4 10 8D 4D "
+    "D4 C6 45 FC 0B 3B C8 0F 84 E9 00 00 00 83 78 14 07 8B C8 89 45 84 76 05 "
+    "8B 08 89 4D 84 8B 40 10 8B 7D E8 89 85 7C FF FF FF 89 7D 80 3B C7 77 27 "
+    "83 7D 80 07 8D 34 00 56 8D 7D D4 89 45 E4 0F 47 7D D4 51 57 E8 ?? ?? ?? "
+    "?? 83 C4 0C 33 C0 66 89 04 37 E9 9F 00 00 00 3D FE FF FF 7F 0F 87 EE 01 "
+    "00 00 8B F0 83 CE 07 81 FE FE FF FF 7F 76 0A BE FE FF FF 7F 8D 46 01 EB "
+    "2F 8B CF B8 FE FF FF 7F D1 E9 2B C1 3B F8 76 0A BE FE FF FF 7F 8D 46 01 "
+    "EB 16 8D 04 0F 3B F0 0F 42 F0 8D 46 01 3D FF FF FF 7F 0F 87 A3 01 00 00 "
+    "03 C0 50 E8 ?? ?? ?? ?? 8B 8D 7C FF FF FF 83 C4 04 89 75 E8 89 45 88 89 "
+    "4D E4 8D 34 09 56 FF 75 84 50 E8 ?? ?? ?? ?? 8B 45 88 33 C9 83 C4 0C 66 "
+    "89 0C 30 83 FF 07 76 13 57 FF 75 D4 8D 45 D4 50 E8 ?? ?? ?? ?? 8B 45 88 "
+    "83 C4 0C 89 45 D4 8D 4D 8C E8 ?? ?? ?? ?? C6 45 FC 02 8B 4D B8 83 F9 07 "
+    "76 32 8B 55 A4 8D 0C 4D 02 00 00 00 8B C2 81 F9 00 10 00 00 72 14 8B 50 "
+    "FC 83 C1 23 2B C2 83 C0 FC 83 F8 1F 0F 87 23 01 00 00 51 52 E8 ?? ?? ?? "
+    "?? 83 C4 08 83 7D E8 07 8D 45 D4 0F 47 45 D4 50 FF 15 ?? ?? ?? ?? 83 F8 "
+    "FF 74 04 A8 10 74 78"};
+inline constexpr Signature kBuilderResult118{
+    "C6 45 FC 01 8B 8D 64 FF FF FF 83 F9 07 76 31 8B 95 50 FF FF FF 8D 0C 4D "
+    "02 00 00 00 8B C2 81 F9 00 10 00 00 72 10 8B 50 FC 83 C1 23 2B C2 83 C0 "
+    "FC 83 F8 1F 77 50 51 52 E8 ?? ?? ?? ?? 83 C4 08 8B 8D 44 FF FF FF 85 C9 "
+    "74 08 8B 85 78 FF FF FF 89 01 8B 8D 48 FF FF FF 8D 45 D4 50 E8 ?? ?? ?? "
+    "??"};
+inline constexpr Signature kAssign118{
+    "55 8B EC 51 53 8B 5D 0C 56 57 8B F9 89 7D FC 81 FB FE FF FF 7F 0F 87 92 "
+    "00 00 00 83 FB 07 77 29 8D 34 1B 89 5F 10 56 FF 75 08 C7 47 14 07 00 00 "
+    "00 57 E8 ?? ?? ?? ?? 83 C4 0C 33 C0 66 89 04 3E 5F 5E 5B 8B E5 5D C2 08 "
+    "00 8B F3 83 CE 07 81 FE FE FF FF 7F 76 3E BE FE FF FF 7F B8 FF FF FF 7F "
+    "03 C0 50 E8 ?? ?? ?? ?? 8B F8 8B 45 FC 89 70 14 8D 34 1B 56 FF 75 08 89 "
+    "38 57 89 58 10 E8 ?? ?? ?? ?? 83 C4 10 33 C0 66 89 04 3E 5F 5E 5B 8B E5 "
+    "5D C2 08 00 B8 0A 00 00 00 3B F0 0F 42 F0 8D 46 01 3D FF FF FF 7F 76 B8 "
+    "E8 ?? ?? ?? ?? E8 ?? ?? ?? ??"};
+inline constexpr Signature kCopyUnion118{
+    "55 8B EC 51 53 8B 5D 08 0F 57 C0 56 8B F1 89 5D 08 57 89 75 FC 8B C3 0F "
+    "11 06 C7 46 10 00 00 00 00 C7 46 14 00 00 00 00 83 7B 14 07 76 05 8B 03 "
+    "89 45 08 8B 5B 10 81 FB FE FF FF 7F 77 7F 83 FB 07 77 1B 89 5E 10 C7 46 "
+    "14 07 00 00 00 0F 10 00 8B C6 0F 11 06 5F 5E 5B 8B E5 5D C2 04 00 8B FB "
+    "83 CF 07 81 FF FE FF FF 7F 76 39 BF FE FF FF 7F B8 FF FF FF 7F 03 C0 50 "
+    "E8 ?? ?? ?? ?? 8D 0C 5D 02 00 00 00 89 06 51 FF 75 08 89 5E 10 50 89 7E "
+    "14 E8 ?? ?? ?? ?? 83 C4 10 8B C6 5F 5E 5B 8B E5 5D C2 04 00 B8 0A 00 00 "
+    "00 3B F8 0F 42 F8 8D 47 01 3D FF FF FF 7F 76 BD E8 ?? ?? ?? ?? E8 ?? ?? "
+    "?? ??"};
+
 inline bool At(const exact_lookup::LoadedPeImage &image, uintptr_t start,
                uintptr_t offset, const exact_lookup::MaskedPattern &pattern) {
   return offset <= image.size && start < image.size - offset &&
          siglus_family::ExecutableSpan(image, start + offset, pattern.size) &&
          exact_lookup::MatchesMaskedPattern(image.base + start + offset,
                                             pattern);
+}
+// Count across both layouts before selecting one. A second, incomplete or
+// ambiguous alternative cannot be ignored just because one full family works.
+inline bool UniquePair(const exact_lookup::LoadedPeImage &image,
+                       const exact_lookup::MaskedPattern &stack120,
+                       const exact_lookup::MaskedPattern &stack118,
+                       SiglusNativeResourceFrame *frame, uintptr_t *rva) {
+  const auto a =
+      exact_lookup::FindUniquePatternInExecutableSections(image, stack120);
+  const auto b =
+      exact_lookup::FindUniquePatternInExecutableSections(image, stack118);
+  if (a.count + b.count != 1u)
+    return false;
+  const auto *address = a.count ? a.address : b.address;
+  if (!address)
+    return false;
+  *frame = a.count ? SiglusNativeResourceFrame::kStack120
+                   : SiglusNativeResourceFrame::kStack118;
+  *rva = static_cast<uintptr_t>(address - image.base);
+  return true;
 }
 } // namespace siglus_native_resource
 
@@ -254,14 +386,22 @@ inline bool ResolveSiglusNativeResourceMappingProfile(
             formatter = 0;
   uintptr_t crt = 0, assign = 0, ctor = 0, ogg = 0, read = 0, archive = 0,
             archive_read = 0, copy = 0;
+  SiglusNativeResourceFrame frame{}, builder_frame{}, assign_frame{},
+      copy_frame{};
+  if (!UniquePair(image, kResource.pattern(), kResource118.pattern(), &frame,
+                  &resource) ||
+      !UniquePair(image, kBuilder.pattern(), kBuilder118.pattern(),
+                  &builder_frame, &builder) ||
+      !UniquePair(image, kAssign.pattern(), kAssign118.pattern(), &assign_frame,
+                  &assign) ||
+      !UniquePair(image, kCopyUnion.pattern(), kCopyUnion118.pattern(),
+                  &copy_frame, &copy) ||
+      frame != builder_frame || frame != assign_frame || frame != copy_frame)
+    return false;
   if (!Unique(image, kVoice.pattern(), &voice) || voice != voice_entry ||
       !Unique(image, kPlay.pattern(), &play) ||
-      !Unique(image, kResource.pattern(), &resource) ||
-      !Unique(image, kBuilder.pattern(), &builder) ||
       !Unique(image, kConcat.pattern(), &concat) ||
       !Unique(image, kFormatter.pattern(), &formatter) ||
-      !Unique(image, kAssign.pattern(), &assign) ||
-      !Unique(image, kCopyUnion.pattern(), &copy) ||
       !Unique(image, kOggCtor.pattern(), &ctor) ||
       !Unique(image, kOggOpen.pattern(), &ogg) ||
       !Unique(image, kOggRead.pattern(), &read) ||
@@ -281,40 +421,76 @@ inline bool ResolveSiglusNativeResourceMappingProfile(
   // These offsets are instruction positions in the independently located
   // compiler ABI, never offsets from an old module address. The three kind
   // dispatch branches are exact and lead to the checked kind-3 archive body.
-  if (!At(image, resource, 0x2a3, kKind1.pattern()) ||
-      !At(image, resource, 0x3e8, kKind2.pattern()) ||
-      !At(image, resource, 0x52c, kArchive.pattern()) ||
-      !At(image, resource, 0x5fc, kRows.pattern()) ||
-      !At(image, resource, 0x73d, kMember.pattern()) ||
-      !At(image, builder, 0x961, kOvkBuild.pattern()) ||
-      !At(image, builder, 0xd7a, kBuilderResult.pattern()) ||
-      !Calls(image, voice + 0xae, play) ||
-      !Calls(image, play + 0x55, resource) ||
-      !Calls(image, resource + 0x100, builder) ||
-      !Calls(image, resource + 0xdf, assign) ||
-      !Calls(image, resource + 0xb4, copy) ||
-      !Calls(image, builder + 0xd96, copy) ||
-      !Calls(image, builder + 0x997, assign) ||
-      !Calls(image, builder + 0xb05, assign) ||
-      !Calls(image, builder + 0x9a3, formatter) ||
-      !Calls(image, builder + 0xb2c, concat) ||
-      !Calls(image, formatter + 0x6e, crt) ||
-      !Calls(image, formatter + 0xac, assign) ||
-      !Calls(image, resource + 0x567, archive) ||
-      !Calls(image, resource + 0x628, archive_read) ||
-      !Calls(image, resource + 0x679, archive_read) ||
-      !Calls(image, resource + 0x687, archive_read) ||
-      !Calls(image, resource + 0x797, ctor) ||
-      !WideLiteral(image, resource + 0xd0, L"koe") ||
-      !WideLiteral(image, builder + 0x985, L"z%04d") ||
-      !WideLiteral(image, builder + 0xaf3, L"ovk") ||
-      !WideLiteral(image, concat + 0x55, L"\\") ||
-      !WideLiteral(image, concat + 0x80, L"\\") ||
-      !WideLiteral(image, concat + 0xab, L"\\") ||
-      !WideLiteral(image, concat + 0xd3, L".") ||
-      !WideLiteral(image, resource + 0x545, L"rb") ||
-      !WideLiteral(image, ogg + 0x26, L"rb"))
-    return false;
+  if (frame == SiglusNativeResourceFrame::kStack120) {
+    if (!At(image, resource, 0x2a3, kKind1.pattern()) ||
+        !At(image, resource, 0x3e8, kKind2.pattern()) ||
+        !At(image, resource, 0x52c, kArchive.pattern()) ||
+        !At(image, resource, 0x5fc, kRows.pattern()) ||
+        !At(image, resource, 0x73d, kMember.pattern()) ||
+        !At(image, builder, 0x961, kOvkBuild.pattern()) ||
+        !At(image, builder, 0xd7a, kBuilderResult.pattern()) ||
+        !Calls(image, voice + 0xae, play) ||
+        !Calls(image, play + 0x55, resource) ||
+        !Calls(image, resource + 0x100, builder) ||
+        !Calls(image, resource + 0xdf, assign) ||
+        !Calls(image, resource + 0xb4, copy) ||
+        !Calls(image, builder + 0xd96, copy) ||
+        !Calls(image, builder + 0x997, assign) ||
+        !Calls(image, builder + 0xb05, assign) ||
+        !Calls(image, builder + 0x9a3, formatter) ||
+        !Calls(image, builder + 0xb2c, concat) ||
+        !Calls(image, formatter + 0x6e, crt) ||
+        !Calls(image, formatter + 0xac, assign) ||
+        !Calls(image, resource + 0x567, archive) ||
+        !Calls(image, resource + 0x628, archive_read) ||
+        !Calls(image, resource + 0x679, archive_read) ||
+        !Calls(image, resource + 0x687, archive_read) ||
+        !Calls(image, resource + 0x797, ctor) ||
+        !WideLiteral(image, resource + 0xd0, L"koe") ||
+        !WideLiteral(image, builder + 0x985, L"z%04d") ||
+        !WideLiteral(image, builder + 0xaf3, L"ovk") ||
+        !WideLiteral(image, concat + 0x55, L"\\") ||
+        !WideLiteral(image, concat + 0x80, L"\\") ||
+        !WideLiteral(image, concat + 0xab, L"\\") ||
+        !WideLiteral(image, concat + 0xd3, L".") ||
+        !WideLiteral(image, resource + 0x545, L"rb") ||
+        !WideLiteral(image, ogg + 0x26, L"rb"))
+      return false;
+  } else {
+    if (!At(image, resource, 0x2a0, kKind1118.pattern()) ||
+        !At(image, resource, 0x3d9, kKind2118.pattern()) ||
+        !At(image, resource, 0x511, kArchive118.pattern()) ||
+        !At(image, resource, 0x5e1, kRows118.pattern()) ||
+        !At(image, resource, 0x719, kMember118.pattern()) ||
+        !At(image, builder, 0x8a5, kOvkBuild118.pattern()) ||
+        !At(image, builder, 0xc0c, kBuilderResult118.pattern()) ||
+        !Calls(image, voice + 0xae, play) ||
+        !Calls(image, play + 0x55, resource) ||
+        !Calls(image, resource + 0x103, builder) ||
+        !Calls(image, resource + 0xe2, assign) ||
+        !Calls(image, resource + 0xb7, copy) ||
+        !Calls(image, builder + 0xc68, copy) ||
+        !Calls(image, builder + 0x8d8, assign) ||
+        !Calls(image, builder + 0xa0c, assign) ||
+        !Calls(image, builder + 0x8e1, formatter) ||
+        !Calls(image, builder + 0xa33, concat) ||
+        !Calls(image, formatter + 0x6e, crt) ||
+        !Calls(image, formatter + 0xac, assign) ||
+        !Calls(image, resource + 0x54c, archive) ||
+        !Calls(image, resource + 0x60a, archive_read) ||
+        !Calls(image, resource + 0x65c, archive_read) ||
+        !Calls(image, resource + 0x771, ctor) ||
+        !WideLiteral(image, resource + 0xd3, L"koe") ||
+        !WideLiteral(image, builder + 0x8c6, L"z%04d") ||
+        !WideLiteral(image, builder + 0x9fa, L"ovk") ||
+        !WideLiteral(image, concat + 0x55, L"\\") ||
+        !WideLiteral(image, concat + 0x80, L"\\") ||
+        !WideLiteral(image, concat + 0xab, L"\\") ||
+        !WideLiteral(image, concat + 0xd3, L".") ||
+        !WideLiteral(image, resource + 0x52a, L"rb") ||
+        !WideLiteral(image, ogg + 0x26, L"rb"))
+      return false;
+  }
   uintptr_t vtable = 0, method = 0, callback = 0;
   if (!siglus_resource::ImagePointer(image, ctor + 0x52, &vtable) ||
       !exact_lookup::SectionHasRole(
@@ -329,7 +505,10 @@ inline bool ResolveSiglusNativeResourceMappingProfile(
   out->resource_entry_rva = resource;
   out->archive_builder_rva = builder;
   out->ogg_open_rva = ogg;
-  out->payload_return_rva = resource + 0x7d0;
+  out->payload_return_rva =
+      resource +
+      (frame == SiglusNativeResourceFrame::kStack120 ? 0x7d0 : 0x7a7);
+  out->frame = frame;
   out->ogg_vtable_rva = vtable;
   return true;
 }
@@ -337,6 +516,7 @@ inline bool ResolveSiglusNativeResourceMappingProfile(
 struct SiglusNativeVoiceSourceLayout {
   uint32_t payload_return = 0;
   uint32_t ogg_vtable = 0;
+  SiglusNativeResourceFrame frame = SiglusNativeResourceFrame::kStack120;
 };
 struct SiglusNativeVoiceSourceCall {
   uint32_t reader = 0;
@@ -360,6 +540,23 @@ bool CaptureSiglusNativeVoiceSource(const SiglusNativeVoiceSourceLayout &layout,
       ((call.entry_esp | call.caller_ebp | call.original_ebx) & 3u) != 0 ||
       call.caller_ebp != ((call.original_ebx - 8u) & ~7u))
     return false;
+  int32_t key_slot = 0, reader_slot = 0, offset_slot = 0, length_slot = 0;
+  switch (layout.frame) {
+  case SiglusNativeResourceFrame::kStack120:
+    key_slot = -0x100;
+    reader_slot = -0x11c;
+    offset_slot = -0x84;
+    length_slot = -0x108;
+    break;
+  case SiglusNativeResourceFrame::kStack118:
+    key_slot = -0x104;
+    reader_slot = -0x118;
+    offset_slot = -0x54;
+    length_slot = -0x9c;
+    break;
+  default:
+    return false;
+  }
   uint32_t caller = 0, saved_stack = 0, key = 0, copy = 0, reader = 0,
            vtable = 0;
   uint32_t path = 0, expected_path = 0, offset = 0, length = 0,
@@ -370,9 +567,9 @@ bool CaptureSiglusNativeVoiceSource(const SiglusNativeVoiceSourceLayout &layout,
       saved_stack != call.original_ebx ||
       !ReadSiglusVoiceSourceWord(read, call.original_ebx, 8, &key) ||
       key > INT32_MAX ||
-      !ReadSiglusVoiceSourceWord(read, call.caller_ebp, -0x100, &copy) ||
+      !ReadSiglusVoiceSourceWord(read, call.caller_ebp, key_slot, &copy) ||
       copy != key ||
-      !ReadSiglusVoiceSourceWord(read, call.caller_ebp, -0x11c, &reader) ||
+      !ReadSiglusVoiceSourceWord(read, call.caller_ebp, reader_slot, &reader) ||
       reader != call.reader ||
       !ReadSiglusVoiceSourceWord(read, reader, 0, &vtable) ||
       vtable != layout.ogg_vtable ||
@@ -381,8 +578,9 @@ bool CaptureSiglusNativeVoiceSource(const SiglusNativeVoiceSourceLayout &layout,
       path != expected_path ||
       !ReadSiglusVoiceSourceWord(read, call.entry_esp, 8, &offset) ||
       !ReadSiglusVoiceSourceWord(read, call.entry_esp, 12, &length) ||
-      !ReadSiglusVoiceSourceWord(read, call.caller_ebp, -0x84, &frame_offset) ||
-      !ReadSiglusVoiceSourceWord(read, call.caller_ebp, -0x108,
+      !ReadSiglusVoiceSourceWord(read, call.caller_ebp, offset_slot,
+                                 &frame_offset) ||
+      !ReadSiglusVoiceSourceWord(read, call.caller_ebp, length_slot,
                                  &frame_length) ||
       offset != frame_offset || length != frame_length || offset == 0 ||
       length == 0 || length > UINT32_MAX - offset)
