@@ -124,10 +124,51 @@ void TestAttachedRequestsNeedAnEstablishedEpochHandshake() {
          policy::Attribution::kPending);
 }
 
-void TestVerifiedCoverageOverridesPersistedRiskPreference() {
-  assert(!policy::EffectiveAllowRisk(true, true));
-  assert(policy::EffectiveAllowRisk(true, false));
-  assert(!policy::EffectiveAllowRisk(false, false));
+void TestNativeInspectionNeedsNoAttachedRiskConfiguration() {
+  // BUG-2154: a native provider reaches this policy after InspectTarget only,
+  // with neither a saved profile nor a Configure/StartCalibration request.
+  assert(policy::kRiskAlwaysAccepted);
+  assert(policy::PermitsLookup(true, false, false));  // Partial / Unknown.
+  assert(policy::EffectiveAllowRisk(false));
+  assert(policy::PermitsLookup(true, false, true));
+  assert(!policy::EffectiveAllowRisk(true));  // Never downgrade Verified.
+
+  // Default acceptance must not bypass a pending/foreign handshake or fault,
+  // even when a stale or contradictory snapshot advertises Verified.
+  for (const bool verified : {false, true}) {
+    assert(!policy::PermitsLookup(false, false, verified));
+    assert(!policy::PermitsLookup(false, true, verified));
+    assert(!policy::PermitsLookup(true, true, verified));
+  }
+}
+
+void TestDefaultAcceptanceStillRequiresCurrentStrictProbe() {
+  constexpr policy::Epoch epoch{15u, 1u};
+  constexpr uint64_t target = 0x678u;
+  constexpr policy::HandshakeIdentity handshake{epoch, target, 0x100000001u,
+                                                51u};
+  policy::StatusIdentity status =
+      AcknowledgedProbe(target, handshake.transaction_id, handshake.request_seq);
+  status.status_flags = 0x02u;  // Partial is deliberately not Verified.
+  const auto permits = [&](const policy::Epoch &current_epoch,
+                           uint64_t current_target) {
+    const bool acknowledged =
+        policy::ClassifyHandshake(status, handshake, current_epoch,
+                                  current_target) ==
+        policy::Attribution::kAcknowledged;
+    return policy::PermitsLookup(acknowledged, false, false);
+  };
+  assert(permits(epoch, target));
+  status.applied_seq--;
+  assert(!permits(epoch, target));
+  status.applied_seq++;
+  status.allow_risk = true;
+  assert(!permits(epoch, target));  // The challenge itself must stay strict.
+  status.allow_risk = false;
+  assert(!permits({epoch.session, epoch.surface + 1u}, target));
+  assert(!permits({epoch.session + 1u, epoch.surface}, target));
+  assert(!permits(epoch, target + 1u));
+  assert(permits(epoch, target));
 }
 
 void TestSurfaceWiresRebindAndEffectiveRiskPolicy() {
@@ -136,6 +177,32 @@ void TestSurfaceWiresRebindAndEffectiveRiskPolicy() {
   assert(input.good());
   const std::string source((std::istreambuf_iterator<char>(input)),
                            std::istreambuf_iterator<char>());
+
+  // No constructor, epoch reset or legacy Configure(false) may restore a
+  // per-session consent gate. Keep the channel argument for wire compatibility.
+  assert(source.find("risk_accepted_") == std::string::npos);
+  assert(source.find("riskAcceptanceRequired") == std::string::npos);
+  assert(source.find("risk_acceptance_required") == std::string::npos);
+  assert(source.find("snapshot.risk_accepted =\n"
+                     "      fushi::attached_shield_status_policy::"
+                     "kRiskAlwaysAccepted;") != std::string::npos);
+  const std::string permit = FunctionSlice(
+      source, "bool AttachedTextSurfaceWindow::ShieldPermitsLookup() const {",
+      "void AttachedTextSurfaceWindow::OnGeometryProviderStatusChanged()");
+  assert(permit.find("fushi::attached_shield_status_policy::PermitsLookup(") !=
+         std::string::npos);
+  assert(permit.find("ShieldStatusBelongsToCurrentHandshake(), ShieldFaulted(), "
+                     "ShieldVerified()") != std::string::npos);
+  const std::string risk = FunctionSlice(
+      source, "bool AttachedTextSurfaceWindow::EffectiveAllowRisk() const {",
+      "void AttachedTextSurfaceWindow::RefreshGeometryProviderStatus()");
+  assert(risk.find("fushi::attached_shield_status_policy::EffectiveAllowRisk(\n"
+                   "      ShieldVerified())") != std::string::npos);
+  const std::string handshake = FunctionSlice(
+      source, "AttachedTextSurfaceWindow::EnsureShieldHandshake() {",
+      "bool AttachedTextSurfaceWindow::ShieldStatusBelongsToCurrentHandshake()");
+  assert(handshake.find("publish_shield_probe_(target_.hwnd, transaction_id, "
+                        "false)") != std::string::npos);
 
   const std::string rebind =
       FunctionSlice(source, "bool AttachedTextSurfaceWindow::TryRebindTarget(",
@@ -173,7 +240,8 @@ int main() {
   TestEpochAndTransactionFenceTheHandshake();
   TestPendingChallengeAndStuckTransactionRemainBlocked();
   TestAttachedRequestsNeedAnEstablishedEpochHandshake();
-  TestVerifiedCoverageOverridesPersistedRiskPreference();
+  TestNativeInspectionNeedsNoAttachedRiskConfiguration();
+  TestDefaultAcceptanceStillRequiresCurrentStrictProbe();
   TestSurfaceWiresRebindAndEffectiveRiskPolicy();
   return 0;
 }

@@ -299,14 +299,15 @@ class GeometryProviderRegistry {
     return matches;
   }
 
-  // Fail-closed HUNEX semantic-input gate.  OfferReady/provider discovery must
+  // Fail-closed HUNEX/Siglus semantic-input gate. OfferReady/provider discovery must
   // remain independent from host risk admission; consuming the semantic click
   // is allowed only after the host request (including NativeInputAllowed) is
   // fully applied and this exact provider is the stable active owner.
   bool NativeInputAllowed(const SharedHeader* header, uint32_t provider_kind,
                           uint32_t provider_id) {
     if (provider_kind != kLookupGeometryProviderEngineExactLayout ||
-        provider_id != kLookupGeometryProviderIdHunexGge ||
+        (provider_id != kLookupGeometryProviderIdHunexGge &&
+         provider_id != kLookupGeometryProviderIdSiglus) ||
         !IsHeaderSane(header, true)) {
       return false;
     }
@@ -353,13 +354,14 @@ class GeometryProviderRegistry {
     const bool same_provider =
         publication.provider_kind == active_kind_ &&
         publication.provider_id == active_id_;
-    const bool hunex_native_input_allowed =
+    const bool native_input_allowed =
         publication.provider_kind !=
             kLookupGeometryProviderEngineExactLayout ||
-        publication.provider_id != kLookupGeometryProviderIdHunexGge ||
+        (publication.provider_id != kLookupGeometryProviderIdHunexGge &&
+         publication.provider_id != kLookupGeometryProviderIdSiglus) ||
         NativeInputAdmissionApplied(header);
     if (!same_provider || active_retire_pending_ ||
-        !hunex_native_input_allowed ||
+        !native_input_allowed ||
         publication.text_generation < text_generation_ ||
         publication.geometry_generation < geometry_generation_) {
       ReleaseSRWLockExclusive(&lock_);

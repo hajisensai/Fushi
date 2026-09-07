@@ -735,10 +735,27 @@ void main() {
               'constboolpopup_shield=direct_shield||bitmap_popup_visible;',
             ) &&
             detour.contains(
-              'AdvanceSiglusLookupClickSample(button_down,popup_shield,',
+              'AdvanceSiglusLookupClickSample('
+              'native_input_allowed,button_down,popup_shield,',
             ),
         isTrue,
         reason: 'direct WebView 与 bitmap fallback 都必须进入既有完整 click owner 状态机',
+      );
+      const String siglusAdmission =
+          'g_geometry_provider_registry.NativeInputAllowed('
+          'g_header,fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,'
+          'fushi_voice_hook::kLookupGeometryProviderIdSiglus)';
+      expect(detour, contains(siglusAdmission));
+      expect(messageDetour, contains(siglusAdmission));
+      expect(
+        detour.indexOf(siglusAdmission),
+        lessThan(detour.indexOf('BuildSiglusLookupPayloadAtPress(')),
+        reason: '正文新点击必须在命中测试前取得当前 Siglus owner 与已应用宿主准入',
+      );
+      expect(
+        messageDetour,
+        contains('DecideSiglusLookupMouseMessage(native_input_allowed,'),
+        reason: 'WM 边沿路径必须使用同一准入门；已有 down 的 up 仍由 latch 收尾',
       );
       final int popupShield = detour.indexOf(
         'constboolpopup_shield=direct_shield||bitmap_popup_visible;',

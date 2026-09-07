@@ -25,7 +25,7 @@ void Check(bool condition, const char* message) {
 struct FakeMapping {
   std::vector<uint8_t> bytes;
 
-  FakeMapping() {
+  explicit FakeMapping(bool native_input_allowed = false) {
     const uint64_t lookup_bytes = LookupRegionBytes(
         fushi_voice_hook::kLookupInputSlotCount,
         fushi_voice_hook::kLookupFrameCount,
@@ -42,7 +42,7 @@ struct FakeMapping {
     h->lookup_enabled = 1;
     Check(fushi_voice_hook::PublishLookupGeometryAdmission(
               h, fushi_voice_hook::kLookupGeometryAdmissionAuto, false,
-              false) != 0,
+              native_input_allowed) != 0,
           "fake mapping must publish a coherent default auto admission");
   }
 
@@ -79,7 +79,7 @@ LookupGeometryHitPublication Publication(uint32_t kind, uint32_t id,
 }
 
 void TestCompletePublicationAndGenerationFence() {
-  FakeMapping mapping;
+  FakeMapping mapping(true);
   GeometryProviderRegistry registry;
   registry.Reset(mapping.header());
   auto exact = Publication(
@@ -173,20 +173,20 @@ void TestStrictKindIdWhitelist() {
         "PublishHit must enforce the same strict pair whitelist");
 }
 
-void TestHunexNativeInputRequiresAppliedHostAdmission() {
+void TestNativeInputRequiresAppliedHostAdmission(uint32_t provider_id) {
   FakeMapping mapping;
   GeometryProviderRegistry registry;
   registry.Reset(mapping.header());
   auto hunex = Publication(
       fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
-      fushi_voice_hook::kLookupGeometryProviderIdHunexGge, 17);
+      provider_id, 17);
   Check(registry.OfferReady(mapping.header(), hunex.provider_kind,
                             hunex.provider_id),
-        "HUNEX discovery/readiness must not depend on NativeInputAllowed");
+        "native discovery/readiness must not depend on NativeInputAllowed");
   Check(!registry.NativeInputAllowed(mapping.header(), hunex.provider_kind,
                                      hunex.provider_id) &&
             !registry.PublishHit(mapping.header(), hunex),
-        "HUNEX semantic consume/publication must default deny");
+        "native semantic consume/publication must default deny");
 
   const uint32_t allow_seq =
       fushi_voice_hook::PublishLookupGeometryAdmission(
@@ -202,7 +202,21 @@ void TestHunexNativeInputRequiresAppliedHostAdmission() {
             registry.NativeInputAllowed(mapping.header(), hunex.provider_kind,
                                         hunex.provider_id) &&
             registry.PublishHit(mapping.header(), hunex),
-        "applied allow plus exact active HUNEX must admit one native hit");
+        "applied allow plus exact Ready (zero generations) must admit the first hit");
+  Check(registry.NativeInputAllowed(mapping.header(), hunex.provider_kind,
+                                    hunex.provider_id),
+        "the first Active publication must preserve input admission");
+
+  // A writer-held request must not reuse an older allow/ack.
+  fushi_voice_hook::AtomicStoreShared32(
+      &mapping.header()->lookup_geometry_admission_request_seq,
+      allow_seq | fushi_voice_hook::kLookupGeometryAdmissionWriteInProgress);
+  Check(!registry.NativeInputAllowed(mapping.header(), hunex.provider_kind,
+                                     hunex.provider_id) &&
+            !registry.PublishHit(mapping.header(), hunex),
+        "a concurrent admission writer must close new consume and publication");
+  fushi_voice_hook::AtomicStoreShared32(
+      &mapping.header()->lookup_geometry_admission_request_seq, allow_seq);
 
   const uint32_t deny_seq =
       fushi_voice_hook::PublishLookupGeometryAdmission(
@@ -213,6 +227,31 @@ void TestHunexNativeInputRequiresAppliedHostAdmission() {
                                          hunex.provider_id) &&
             !registry.PublishHit(mapping.header(), hunex),
         "publishing deny must close consumption before its ack is observed");
+
+  // attachedOnly keeps lookup_enabled and native geometry discovery alive.
+  // Even an accidentally retained native flag cannot authorize this provider.
+  Check(fushi_voice_hook::PublishLookupGeometryAdmission(
+            mapping.header(), fushi_voice_hook::kLookupGeometryAdmissionAttachedOnly,
+            true, true) != 0 && registry.Reconcile(mapping.header()),
+        "attachedOnly must select the host offer");
+  Check(mapping.header()->lookup_enabled == 1 &&
+            !registry.NativeInputAllowed(mapping.header(), hunex.provider_kind,
+                                         hunex.provider_id) &&
+            !registry.PublishHit(mapping.header(), hunex),
+        "attachedOnly must not consume native glyphs despite live sensors");
+
+  Check(fushi_voice_hook::PublishLookupGeometryAdmission(
+            mapping.header(), fushi_voice_hook::kLookupGeometryAdmissionAuto,
+            false, true) != 0 && registry.Reconcile(mapping.header()),
+        "auto must restore native ownership");
+  auto higher = Publication(fushi_voice_hook::kLookupGeometryProviderRuntimeLayout,
+                            fushi_voice_hook::kLookupGeometryProviderIdRenpy, 18);
+  Check(registry.OfferReady(mapping.header(), higher.provider_kind,
+                            higher.provider_id) &&
+            !registry.NativeInputAllowed(mapping.header(), hunex.provider_kind,
+                                         hunex.provider_id) &&
+            !registry.PublishHit(mapping.header(), hunex),
+        "an allowed but non-owning provider must not consume or publish");
 }
 
 void TestPriorityAndTransactionFencedRetire() {
@@ -398,7 +437,7 @@ void TestDisableRetiresOnlyAfterNeutralTail() {
 }
 
 void TestHostAdmissionSeparatesGeometryFromShieldRuntime() {
-  FakeMapping mapping;
+  FakeMapping mapping(true);
   GeometryProviderRegistry registry;
   registry.Reset(mapping.header());
   auto exact = Publication(
@@ -486,7 +525,7 @@ void TestHostAdmissionSeparatesGeometryFromShieldRuntime() {
 }
 
 void TestProviderSwitchWaitsForShieldRequestWriter() {
-  FakeMapping mapping;
+  FakeMapping mapping(true);
   GeometryProviderRegistry registry;
   registry.Reset(mapping.header());
   auto exact = Publication(
@@ -555,7 +594,10 @@ void TestNativePreemptionRevokesAttachedOwnership() {
 int main() {
   TestCompletePublicationAndGenerationFence();
   TestStrictKindIdWhitelist();
-  TestHunexNativeInputRequiresAppliedHostAdmission();
+  TestNativeInputRequiresAppliedHostAdmission(
+      fushi_voice_hook::kLookupGeometryProviderIdHunexGge);
+  TestNativeInputRequiresAppliedHostAdmission(
+      fushi_voice_hook::kLookupGeometryProviderIdSiglus);
   TestPriorityAndTransactionFencedRetire();
   TestFailClosedShapesAndUtf16Span();
   TestDisableRetiresOnlyAfterNeutralTail();

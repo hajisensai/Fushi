@@ -1075,14 +1075,24 @@ SHORT WINAPI Detour_SiglusGetKeyState(int virtual_key) {
   SiglusLookupPayload pressed_payload;
   uint16_t hit_index = fushi_voice_hook::kSiglusLookupNoGlyph;
   bool hit = false;
-  if (fresh_down && runtime_enabled && !popup_shield && pointer_valid &&
+  // A live text/geometry sensor is not permission to consume game input.
+  // Query the registry at the down edge (and recheck before submitting up),
+  // without waiting on its worker lock. Existing owners retain their tail.
+  const bool native_input_allowed = runtime_enabled &&
+      (fresh_down || (!button_down &&
+          g_siglus_lookup_click_sample_state.owner ==
+              fushi_voice_hook::SiglusLookupClickOwner::kLookup)) &&
+      fushi_voice_hook::g_geometry_provider_registry.NativeInputAllowed(
+          g_header, fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+          fushi_voice_hook::kLookupGeometryProviderIdSiglus);
+  if (fresh_down && native_input_allowed && !popup_shield && pointer_valid &&
       ReadSiglusLookupClickTarget(&g_siglus_lookup_click_read_target)) {
     hit =
         BuildSiglusLookupPayloadAtPress(g_siglus_lookup_click_read_target, game,
                                         pointer, &pressed_payload, &hit_index);
   }
   const auto decision = fushi_voice_hook::AdvanceSiglusLookupClickSample(
-      button_down, popup_shield,
+      native_input_allowed, button_down, popup_shield,
       hit ? hit_index : fushi_voice_hook::kSiglusLookupNoGlyph,
       &g_siglus_lookup_click_sample_state);
   if (decision.begin && decision.popup_transaction && pointer_valid &&
@@ -1163,9 +1173,12 @@ void __stdcall Detour_SiglusInputMessage(UINT message, WPARAM wparam,
       direct_shield || IsLookupOverlayInputShieldVisible();
 
   bool glyph_hit = false;
-  if (is_down && !popup_shield &&
+  const bool native_input_allowed = is_down && !popup_shield &&
       g_siglus_lookup_click_runtime_enabled.load(std::memory_order_acquire) &&
-      game != nullptr) {
+      fushi_voice_hook::g_geometry_provider_registry.NativeInputAllowed(
+          g_header, fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+          fushi_voice_hook::kLookupGeometryProviderIdSiglus);
+  if (native_input_allowed && game != nullptr) {
     POINT screen_point = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
     SiglusLookupClickTarget target;
     SiglusLookupPayload payload;
@@ -1180,7 +1193,8 @@ void __stdcall Detour_SiglusInputMessage(UINT message, WPARAM wparam,
   const bool latched = g_siglus_lookup_message_left_button_latched.load(
       std::memory_order_acquire);
   const auto decision = fushi_voice_hook::DecideSiglusLookupMouseMessage(
-      static_cast<uint32_t>(message), popup_shield, glyph_hit, latched);
+      native_input_allowed, static_cast<uint32_t>(message), popup_shield,
+      glyph_hit, latched);
   g_siglus_lookup_message_left_button_latched.store(decision.next_latched,
                                                     std::memory_order_release);
   if (decision.consume) {

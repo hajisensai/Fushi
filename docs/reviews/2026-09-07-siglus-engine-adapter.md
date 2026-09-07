@@ -3,7 +3,8 @@
 ## Scope
 
 - 日期：2026-09-07。
-- 实现 worktree：`D:\codehibiki\.worktrees\codex-siglus-engine-adapter`；基线 `ec7807328a6bd66830885cbb0812fd19770678d0`。
+- 当前实现 worktree：`D:\codehibiki\.worktrees\codex-siglus-upstream-adapter`；完整上游基线 `9bd6522e793abbd833922d5874e609bd2450e6f8`（`upstream/develop`），Siglus 移植提交 `0efe972b2d`。
+- 原阶段 worktree `D:\codehibiki\.worktrees\codex-siglus-engine-adapter` 的改造已保存在 `ff0fe2f467`，未覆盖主工作区。当前分支从完整上游创建，只移入 Siglus 改造，未选择性摘取上游功能。
 - 本轮仅处理 Windows Siglus，用户明确指定其为第一优先引擎。x86/x64 helper 均构建，但新结构识别限定 x86 ABI，不宣称存在 Siglus x64 引擎实现。
 - 总体 16 引擎覆盖审计是独立提交 `53242297ad`，报告为 `docs/reviews/2026-09-07-galgame-engine-audit.md`。本报告只跟踪 Siglus 阶段，不表示其他引擎已经适配完成。
 - 规则依据：根 `CLAUDE.md`、`native/galgame_hook/CLAUDE.md`、`docs/agent/galgame-hooking.md`、`docs/agent/review-process.md`。
@@ -51,7 +52,7 @@ lookup identity 使用 unknown/pending/matched/final-rejected 状态；扫描持
 | HBK-AUDIT-SIGLUS-002 | 高 / 已实现，完整 UI 验收未完成 | 保护壳 raw extent 不能代表 loaded-image 范围 | Siglus 显式选择 VirtualSize，完整 bounds/readability/overlap 检查 |
 | HBK-AUDIT-SIGLUS-003 | 中 / 已实现，真实生命周期仍需验证 | startup pending 后文本安装未必再次推进 | worker 继续 `text_pending_`；pending 不抢 patch；成功或最终拒绝后完成文本安装尝试 |
 | HBK-AUDIT-SIGLUS-004 | 中 / 已实现，尺寸切换运行时未证明 | 固定设计尺寸无法代表不同兼容 build | 两链解析 Gameexe；无效或变化时撤销，不修改已发布 profile |
-| HBK-AUDIT-SIGLUS-005 | 高 / 用户报告 SPRB 输入屏蔽/风险握手阻塞，待定位 | 最终 Anemoi 有命中与词典；SPRB 用户报告必须确认风险才能推进下一句，现有 hit 计数不能证明可用 | 用户不接受手动确认风险作为解决方案；先同步最新上游再沿真实输入屏蔽/风险握手定位。Anemoi 受焦点干扰的关闭检查仍未证明 |
+| HBK-AUDIT-SIGLUS-005 | 高 / 根因已修复，v23 真机复测未完成 | 上游 Dart 已恒接受风险，但首次 native 路径绕过 Configure，runner 仍可能等待旧确认；Siglus 新点击缺少宿主准入/当前 owner 校验 | runner 策略贯通，Dart pending 优先于 geometry ready，原生 down/up 与发布校验准入；快切模式等待旧 detach 并重新检查。原版 UI 复测仍待完成 |
 
 负向验证包括：缺失/重复签名、全可执行节范围的第二候选、错误调用目标、错误栈清理/对象偏移、跨 ABI 误匹配、非 x86 架构、错误键 slot/真实导出不符、两条 Gameexe 链指向不同槽、数据节里的伪签名、无效设计尺寸、越界/重叠/不可读的 loaded section。未知 hash 的正向证明仍须满足完整 ABI 结构；测试不能用 fixture expected 反向构造生产准入结果。
 
@@ -67,7 +68,7 @@ lookup identity 使用 unknown/pending/matched/final-rejected 状态；扫描持
 
 ## 验证记录
 
-以下构建与完整 native 测试结果由本轮集成主代理提供；报告编写子任务没有重新执行构建，避免与正在进行的真机验收竞争。
+以下表格记录上游整合前的阶段验证，不代表新 IPC v23 宿主的运行时验收。
 
 | 检查 | 本轮结果 | 能证明的范围 |
 |---|---|---|
@@ -118,7 +119,30 @@ Anemoi 随后的关闭检查使用了 game window 与 related popup 截图流程
 
 Anemoi evidence 台账的 verify 退出 `2`，当前缺准确注入 timestamp。已观察的命中/词典呈现不能填补时序证据缺项，台账不能视为 release-eligible；text/lookup 仍保持 `implemented_unverified`，不提升任何能力状态。
 
-随后用户反馈：**SPRB 必须点击确认风险才能推进下一句**，要求先拉取上游代码继续开发，不接受手动确认风险。当前首个失败边界为输入屏蔽/风险握手，先前 hit 不代表可用。已 fetch 两个 remote，确认 `upstream/develop` 包含去除风险门的 `f7277a3fe3` 和残留清理 `562e29061d`；当前基线尚不包含它们。下一步先保存本轮快照，再合入 upstream/develop；此处不预告合并或修复完成。
+随后用户反馈：**SPRB 必须点击确认风险才能推进下一句**，要求先拉取上游代码继续开发，不接受手动确认风险。当前首个失败边界为输入屏蔽/风险握手，先前 hit 不代表可用。已同步完整 `upstream/develop`，包括去除风险门的 `f7277a3fe3` 和残留清理 `562e29061d`。新基线 IPC 为 v23，不能用旧宿主/探针及上述 v22 会话替代验证。
+
+### 完整上游基线验证
+
+在 `0efe972b2d` 上，官方 `tools/build_distribution.ps1 -RunTests` 退出 0，Windows x86/x64 均完整构建、各 71/71 CTest 通过并成功组包。生成器检查、22 项 manifest、39 项结构、6 项 workflow 与离线 replay 通过。这是后续输入准入修复前的基线验证。
+
+Windows 宿主首次 Release 编译完成，但安装阶段因新工作区缺少 `fushi_torrent_ffi.dll` 等四个下载运行时预编译依赖失败。该组件源码与原工作区一致，已复用本机对应预编译依赖；不能将首次失败记为完整宿主构建通过。
+
+沿新上游真实调用链确认两处残留：native provider 首次就绪可绕过 Configure，runner 的旧风险字段没有贯彻已移除确认门的产品策略；Siglus 新字形点击缺少当前 provider owner 与已应用 native input admission 校验。
+
+### 风险状态与输入准入修复
+
+- Windows runner 去除可变的会话风险字段，统一使用已移除确认 UI 的产品策略；保留当前 HWND/epoch 的严格 probe（`allowRisk=false`）及 fault 拒绝。未握手时返回可恢复的 `shieldHandshakePending`，不再发送 `riskAcceptanceRequired`。
+- Dart 在 initial inspect、Configure 返回和状态事件三处，先处理握手/退役 pending，再判断 provider ready。无 profile 的原生路径无需进入 attached 校准。`nativeOnly` 退出旧 surface 后重新 Inspect；快速切回 auto 时，由最新模式等待同一 target 的在途 detach，避免旧操作被 revision 拒绝后留下永久 Detached 状态。
+- Siglus 的 GetKeyState 与 WM 新字形点击均通过 registry 的非阻塞 owner/admission 校验；命中发布也拒绝失效许可。撤权取消提交，已经认领的 down/up 仍完整收尾。已显示的 popup 保持独立的有效 HWND/Ready 保护。
+- 回归覆盖 deny、未应用 request、attachedOnly、owner 错配、Ready→首 hit、撤权后的尾部、无 profile Partial、握手 pending、快速模式切换；消费端测试直接断言 `nativeInputAllowed` 按 pending→ready→rehandshake 发生 false→true→false。
+
+修复后的官方 native 双架构构建/组包再次退出 0，x86/x64 各 71/71 CTest 通过。对应 x86 DLL SHA-256 为 `2FD722C97019A2FF789C155372C3A585751894569A016D7D58417BF6BAF346E9`，并已核对 Windows bundle 的实际文件一致。39 项结构、22 项 manifest、6 项 workflow、8 项点击屏蔽守卫通过；Dart controller 44 项、overlay controller 14 项通过。Windows runner policy 测试在 `-DNDEBUG -Wall -Wextra -Werror` 下编译运行通过，测试显式恢复断言，未空跑。
+
+最终消费端九个定向测试文件共 133/133 通过（controller+overlay 58、另外六文件 67、click guard 8，重复批次不累计）。四个改动 Dart 文件的定向 analyze 无问题。包含快切修复的最后一次 `flutter build windows --release --no-pub` 退出 0（129.3 秒），双架构 helper 随包安装成功。构建产物位于本 worktree 的 `fushi/build/windows/x64/runner/Release/`；尚未替换用户正在运行的旧宿主。
+
+### v23 真机边界
+
+原版 SPRB 已从用户原始路径重新启动，PID `19596`，开始时间 `2026-09-07T13:24:16.8706135+08:00`。桌面控制两次返回 `foreground window did not report a process id`，当前只确认 `process_found`；新宿主 attach、helper/IPC、台词、点击/关闭及制卡均未运行，不能把旧 v22 会话算入本轮通过。已请求用户恢复可控桌面，源码和离线验证继续完成；未改存档或要求用户确认点击风险。
 
 ## Not proved
 
@@ -130,6 +154,6 @@ Anemoi evidence 台账的 verify 退出 `2`，当前缺准确注入 timestamp。
 
 ## Next gate / Next Scope
 
-当前第一个未通过边界是 **SPRB 输入屏蔽/风险握手**。按用户要求保存阶段快照后同步 upstream/develop，整合已有的风险门移除，再沿原版路径验证不需确认风险即可正常推进剧情及查词。
+当前产品验收目标是 **SPRB 无风险确认的输入与查词**；v23 新会话当前停在 `process_found`。恢复桌面控制后，用新 Windows bundle 附着原版 SPRB，先核对实际 helper/DLL 与 IPC v23，再验证正常推进、字形查词和关闭输入恢复，随后回归原版 Anemoi。
 
 Anemoi 关闭事务保留为未证明的后续验证项，不再将“等待用户确认风险/自行绕过”作为当前推进方案。本阶段交接完成后文件交由集成主代理接管，后续同步、修复与验证结果由其追加。音频、配对、制卡和引擎支持升级仍不在已通过结论内。

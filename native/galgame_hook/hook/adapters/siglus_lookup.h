@@ -674,8 +674,12 @@ struct SiglusLookupClickDecision {
 // matching up. A miss is passed through for the whole transaction. A lookup
 // hit or popup shield consumes the complete down/hold/up transaction; only a
 // lookup-owned up submits the glyph captured on its down.
+// Native admission gates new glyph ownership and submission, not an already
+// owned tail. A host-published popup has its own shield transaction, including
+// attached-only popups; revoking glyph input must not expose its close click.
 inline SiglusLookupClickDecision
-AdvanceSiglusLookupClickSample(bool button_down, bool popup_shield,
+AdvanceSiglusLookupClickSample(bool native_input_allowed, bool button_down,
+                               bool popup_shield,
                                uint16_t hit_glyph_index,
                                SiglusLookupClickSampleState *state) {
   SiglusLookupClickDecision decision;
@@ -699,7 +703,7 @@ AdvanceSiglusLookupClickSample(bool button_down, bool popup_shield,
       decision.popup_transaction = true;
       return decision;
     }
-    if (hit_glyph_index != kSiglusLookupNoGlyph) {
+    if (native_input_allowed && hit_glyph_index != kSiglusLookupNoGlyph) {
       state->owner = SiglusLookupClickOwner::kLookup;
       state->glyph_index = hit_glyph_index;
       decision.consume = true;
@@ -720,7 +724,8 @@ AdvanceSiglusLookupClickSample(bool button_down, bool popup_shield,
                              ? owned_glyph
                              : kSiglusLookupNoGlyph;
   if (!button_down) {
-    decision.submit = owner == SiglusLookupClickOwner::kLookup;
+    decision.submit = owner == SiglusLookupClickOwner::kLookup &&
+                      native_input_allowed;
     state->owner = SiglusLookupClickOwner::kIdle;
     state->glyph_index = kSiglusLookupNoGlyph;
   }
@@ -767,12 +772,13 @@ struct SiglusLookupMouseMessageDecision {
 //     filter latch heals from the physical `!button_down` sample; the message
 //     path heals from the down edge, which is its equivalent ground truth.
 inline SiglusLookupMouseMessageDecision
-DecideSiglusLookupMouseMessage(uint32_t message, bool popup_shield,
+DecideSiglusLookupMouseMessage(bool native_input_allowed, uint32_t message,
+                               bool popup_shield,
                                bool glyph_hit, bool latched) {
   SiglusLookupMouseMessageDecision decision;
   if (message == kSiglusLookupWmLeftButtonDown ||
       message == kSiglusLookupWmLeftButtonDoubleClick) {
-    decision.consume = popup_shield || glyph_hit;
+    decision.consume = popup_shield || (native_input_allowed && glyph_hit);
     decision.next_latched = decision.consume;
     return decision;
   }

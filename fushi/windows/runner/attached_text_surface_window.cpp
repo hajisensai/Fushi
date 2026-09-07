@@ -461,7 +461,6 @@ void AttachedTextSurfaceWindow::AdoptNewEpoch(const Epoch &epoch,
   text_layout_.Reset();
   clusters_.clear();
   layout_dirty_ = true;
-  risk_accepted_ = false;
   input_mode_.clear();
   surface_mode_ = "attachedOnly";
   // A new surface epoch is a new HWND/profile identity transaction even when
@@ -798,7 +797,7 @@ AttachedTextSurfaceWindow::RequestResult
 AttachedTextSurfaceWindow::StartCalibration(
     const Epoch &epoch, uint32_t target_pid, HWND target_hwnd,
     const NormalizedRect *initial_rect, const ReferenceClient &reference_client,
-    const Layout &layout, bool risk_accepted, const std::string &input_mode,
+    const Layout &layout, bool /*risk_accepted*/, const std::string &input_mode,
     std::string *error) {
   const RequestResult accepted =
       AcceptRequest(epoch, target_pid, target_hwnd, true, error);
@@ -830,7 +829,6 @@ AttachedTextSurfaceWindow::StartCalibration(
   layout_ = layout;
   if (layout_.font_family.empty())
     layout_.font_family = L"Yu Gothic";
-  risk_accepted_ = risk_accepted;
   input_mode_ = input_mode.empty() ? "unsafeLeftClick" : input_mode;
   surface_mode_ = "attachedOnly";
 
@@ -1065,7 +1063,7 @@ AttachedTextSurfaceWindow::CancelCalibration(const Epoch &epoch,
 AttachedTextSurfaceWindow::RequestResult AttachedTextSurfaceWindow::Configure(
     const Epoch &epoch, uint32_t target_pid, HWND target_hwnd,
     const NormalizedRect &body_rect, const ReferenceClient &reference_client,
-    const Layout &layout, bool risk_accepted, const std::string &input_mode,
+    const Layout &layout, bool /*risk_accepted*/, const std::string &input_mode,
     const std::string &surface_mode, std::string *error) {
   const RequestResult accepted =
       AcceptRequest(epoch, target_pid, target_hwnd, true, error);
@@ -1104,7 +1102,6 @@ AttachedTextSurfaceWindow::RequestResult AttachedTextSurfaceWindow::Configure(
   layout_ = layout;
   if (layout_.font_family.empty())
     layout_.font_family = L"Yu Gothic";
-  risk_accepted_ = risk_accepted;
   input_mode_ = "unsafeLeftClick";
   surface_mode_ = requested_surface_mode;
   mode_ = Mode::kConfigured;
@@ -1132,11 +1129,10 @@ AttachedTextSurfaceWindow::RequestResult AttachedTextSurfaceWindow::Configure(
   }
   if (!ShieldPermitsLookup()) {
     HideSurface();
-    SetState("suspended", "riskAcceptanceRequired", "input_shield_unverified");
+    SetState("suspended", "shieldHandshakePending",
+             "input_shield_rehandshake_pending");
     EmitStateIfChanged(true);
-    if (error != nullptr)
-      *error = "risk_acceptance_required";
-    return RequestResult::kRejected;
+    return RequestResult::kApplied;
   }
   if (surface_mode_ == "auto" && NativeProviderPreferred()) {
     // Native admission depends on the live target/presentation transport.  In
@@ -1260,7 +1256,6 @@ AttachedTextSurfaceWindow::Detach(const Epoch &epoch, uint32_t target_pid,
   text_generation_ = 0;
   clusters_.clear();
   text_layout_.Reset();
-  risk_accepted_ = false;
   calibration_probe_mask_ = 0;
   probe_start_index_ = -1;
   probe_middle_index_ = -1;
@@ -1592,9 +1587,8 @@ void AttachedTextSurfaceWindow::SyncToTarget() {
     }
     if (!ShieldPermitsLookup()) {
       HideSurface();
-      DestroySurfaceWindow();
-      SetState("suspended", "riskAcceptanceRequired",
-               "native_input_shield_unverified");
+      SetState("suspended", "shieldHandshakePending",
+               "input_shield_rehandshake_pending");
       EmitStateIfChanged();
       return;
     }
@@ -1671,7 +1665,7 @@ void AttachedTextSurfaceWindow::SyncToTarget() {
                  : (mode_ == Mode::kTargetReady ? "targetReady" : "suspended"),
              ShieldFaulted()
                  ? "shieldFaulted"
-                 : (ShieldPermitsLookup() ? "ready" : "riskAcceptanceRequired"),
+                 : (ShieldPermitsLookup() ? "ready" : "shieldHandshakePending"),
              ShieldFaulted() ? "input_shield_faulted" : std::string());
     EmitStateIfChanged();
     return;
@@ -2486,7 +2480,7 @@ AttachedTextSurfaceWindow::ShieldStatusForSnapshot() const {
 
 bool AttachedTextSurfaceWindow::EffectiveAllowRisk() const {
   return fushi::attached_shield_status_policy::EffectiveAllowRisk(
-      risk_accepted_, ShieldVerified());
+      ShieldVerified());
 }
 
 void AttachedTextSurfaceWindow::RefreshGeometryProviderStatus() {
@@ -2628,7 +2622,8 @@ bool AttachedTextSurfaceWindow::ShieldVerified() const {
 }
 
 bool AttachedTextSurfaceWindow::ShieldPermitsLookup() const {
-  return !ShieldFaulted() && (ShieldVerified() || risk_accepted_);
+  return fushi::attached_shield_status_policy::PermitsLookup(
+      ShieldStatusBelongsToCurrentHandshake(), ShieldFaulted(), ShieldVerified());
 }
 
 void AttachedTextSurfaceWindow::OnGeometryProviderStatusChanged() {
@@ -2803,7 +2798,8 @@ AttachedTextSurfaceWindow::GetSnapshot() const {
   snapshot.status = status_;
   snapshot.reason = reason_;
   snapshot.surface_visible = surface_visible_;
-  snapshot.risk_accepted = risk_accepted_;
+  snapshot.risk_accepted =
+      fushi::attached_shield_status_policy::kRiskAlwaysAccepted;
   snapshot.text_generation = text_generation_;
   snapshot.calibration_probe_mask = calibration_probe_mask_;
   snapshot.probe_start_observed_index = probe_start_observed_index_;

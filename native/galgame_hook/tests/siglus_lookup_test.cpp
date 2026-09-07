@@ -256,46 +256,46 @@ int main() {
 
   SiglusLookupClickSampleState click;
   // Installation while physically held passes through until a real up.
-  auto decision = AdvanceSiglusLookupClickSample(true, false, 2u, &click);
+  auto decision = AdvanceSiglusLookupClickSample(true, true, false, 2u, &click);
   assert(!decision.consume && !click.synchronized);
-  decision = AdvanceSiglusLookupClickSample(false, false, kSiglusLookupNoGlyph,
+  decision = AdvanceSiglusLookupClickSample(true, false, false, kSiglusLookupNoGlyph,
                                             &click);
   assert(!decision.consume && click.synchronized);
 
   // A miss remains pass-through even if the cursor later becomes a hit while
   // the same physical press is held.
   decision =
-      AdvanceSiglusLookupClickSample(true, false, kSiglusLookupNoGlyph, &click);
+      AdvanceSiglusLookupClickSample(true, true, false, kSiglusLookupNoGlyph, &click);
   assert(!decision.consume &&
          click.owner == SiglusLookupClickOwner::kPassThrough);
-  decision = AdvanceSiglusLookupClickSample(true, false, 4u, &click);
+  decision = AdvanceSiglusLookupClickSample(true, true, false, 4u, &click);
   assert(!decision.consume);
-  decision = AdvanceSiglusLookupClickSample(false, false, 4u, &click);
+  decision = AdvanceSiglusLookupClickSample(true, false, false, 4u, &click);
   assert(!decision.consume && !decision.submit &&
          click.owner == SiglusLookupClickOwner::kIdle);
 
   // A fresh hit consumes down/hold/up and submits the glyph owned at down.
-  decision = AdvanceSiglusLookupClickSample(true, false, 3u, &click);
+  decision = AdvanceSiglusLookupClickSample(true, true, false, 3u, &click);
   assert(decision.consume && decision.begin && !decision.submit &&
          decision.glyph_index == 3u);
   assert(FilterSiglusLookupGetKeyState(static_cast<int16_t>(0x8001u),
                                        decision.consume) == 1);
-  decision = AdvanceSiglusLookupClickSample(true, true, 5u, &click);
+  decision = AdvanceSiglusLookupClickSample(true, true, true, 5u, &click);
   assert(decision.consume && !decision.begin && !decision.submit &&
          !decision.popup_transaction && decision.glyph_index == 3u);
-  decision = AdvanceSiglusLookupClickSample(false, false, kSiglusLookupNoGlyph,
+  decision = AdvanceSiglusLookupClickSample(true, false, false, kSiglusLookupNoGlyph,
                                             &click);
   assert(decision.consume && decision.submit && decision.glyph_index == 3u);
 
   // Popup ownership also latches through physical up after the popup closes,
   // but it never turns into a word submission.
   decision =
-      AdvanceSiglusLookupClickSample(true, true, kSiglusLookupNoGlyph, &click);
+      AdvanceSiglusLookupClickSample(true, true, true, kSiglusLookupNoGlyph, &click);
   assert(decision.consume && decision.begin && decision.popup_transaction);
   decision =
-      AdvanceSiglusLookupClickSample(true, false, kSiglusLookupNoGlyph, &click);
+      AdvanceSiglusLookupClickSample(true, true, false, kSiglusLookupNoGlyph, &click);
   assert(decision.consume && decision.popup_transaction && !decision.submit);
-  decision = AdvanceSiglusLookupClickSample(false, false, kSiglusLookupNoGlyph,
+  decision = AdvanceSiglusLookupClickSample(true, false, false, kSiglusLookupNoGlyph,
                                             &click);
   assert(decision.consume && decision.popup_transaction && !decision.submit);
   assert(click.owner == SiglusLookupClickOwner::kIdle);
@@ -304,53 +304,120 @@ int main() {
 
   // The independent main-window message sink must never receive either edge
   // of an admitted lookup click. Misses remain ordinary game input.
-  auto message_decision = DecideSiglusLookupMouseMessage(
+  auto message_decision = DecideSiglusLookupMouseMessage(true,
       kSiglusLookupWmLeftButtonDown, false, true, false);
   assert(message_decision.consume && message_decision.next_latched);
-  message_decision = DecideSiglusLookupMouseMessage(
+  message_decision = DecideSiglusLookupMouseMessage(true,
       kSiglusLookupWmLeftButtonUp, false, false, message_decision.next_latched);
   assert(message_decision.consume && !message_decision.next_latched);
-  message_decision = DecideSiglusLookupMouseMessage(
+  message_decision = DecideSiglusLookupMouseMessage(true,
       kSiglusLookupWmLeftButtonDown, false, false, false);
   assert(!message_decision.consume && !message_decision.next_latched);
 
   // Popup dismissal and a double-click's second transaction are also held to
   // their matching up even if visibility changes in between.
-  message_decision = DecideSiglusLookupMouseMessage(
+  message_decision = DecideSiglusLookupMouseMessage(true,
       kSiglusLookupWmLeftButtonDown, true, false, false);
   assert(message_decision.consume && message_decision.next_latched);
-  message_decision = DecideSiglusLookupMouseMessage(
+  message_decision = DecideSiglusLookupMouseMessage(true,
       kSiglusLookupWmLeftButtonUp, false, false, message_decision.next_latched);
   assert(message_decision.consume && !message_decision.next_latched);
-  message_decision = DecideSiglusLookupMouseMessage(
+  message_decision = DecideSiglusLookupMouseMessage(true,
       kSiglusLookupWmLeftButtonDoubleClick, false, true, false);
   assert(message_decision.consume && message_decision.next_latched);
-  message_decision = DecideSiglusLookupMouseMessage(
+  message_decision = DecideSiglusLookupMouseMessage(true,
       kSiglusLookupWmLeftButtonUp, false, false, message_decision.next_latched);
   assert(message_decision.consume && !message_decision.next_latched);
 
   // A down that reached the engine must have its up reach the engine too, even
   // if the popup opened in between on the worker tick. Otherwise Siglus keeps a
   // left button that never comes back up.
-  message_decision = DecideSiglusLookupMouseMessage(
+  message_decision = DecideSiglusLookupMouseMessage(true,
       kSiglusLookupWmLeftButtonDown, false, false, false);
   assert(!message_decision.consume && !message_decision.next_latched);
-  message_decision = DecideSiglusLookupMouseMessage(
+  message_decision = DecideSiglusLookupMouseMessage(true,
       kSiglusLookupWmLeftButtonUp, true, false, message_decision.next_latched);
   assert(!message_decision.consume && !message_decision.next_latched);
 
   // A lost up (alt-tab, WM_CANCELMODE, drag out of the window) must not turn the
   // latch into a permanent left-button sink: the next down is judged on its own
   // merits and republishes the latch from scratch.
-  message_decision = DecideSiglusLookupMouseMessage(
+  message_decision = DecideSiglusLookupMouseMessage(true,
       kSiglusLookupWmLeftButtonDown, false, false, true);
   assert(!message_decision.consume && !message_decision.next_latched);
-  message_decision = DecideSiglusLookupMouseMessage(
+  message_decision = DecideSiglusLookupMouseMessage(true,
       kSiglusLookupWmLeftButtonUp, false, false, message_decision.next_latched);
   assert(!message_decision.consume && !message_decision.next_latched);
-  message_decision = DecideSiglusLookupMouseMessage(
+  message_decision = DecideSiglusLookupMouseMessage(true,
       kSiglusLookupWmLeftButtonDoubleClick, false, false, true);
   assert(!message_decision.consume && !message_decision.next_latched);
+
+  // A valid glyph does not grant semantic input permission. This models
+  // attachedOnly, an unapplied allow, deny, and a different active provider.
+  SiglusLookupClickSampleState denied_click;
+  decision = AdvanceSiglusLookupClickSample(
+      false, false, false, kSiglusLookupNoGlyph, &denied_click);
+  decision = AdvanceSiglusLookupClickSample(
+      false, true, false, 3u, &denied_click);
+  assert(!decision.consume && !decision.submit &&
+         denied_click.owner == SiglusLookupClickOwner::kPassThrough);
+  // Allow arriving during an already passed-through press cannot steal it.
+  decision = AdvanceSiglusLookupClickSample(
+      true, true, false, 3u, &denied_click);
+  assert(!decision.consume && !decision.submit);
+  decision = AdvanceSiglusLookupClickSample(
+      true, false, false, 3u, &denied_click);
+  assert(!decision.consume && !decision.submit);
+
+  decision = AdvanceSiglusLookupClickSample(
+      true, true, false, 3u, &denied_click);
+  assert(decision.consume && decision.begin);
+  // Revocation after an owned down cancels the submission, never its tail.
+  decision = AdvanceSiglusLookupClickSample(
+      false, true, false, 3u, &denied_click);
+  assert(decision.consume && !decision.submit);
+  decision = AdvanceSiglusLookupClickSample(
+      false, false, false, 3u, &denied_click);
+  assert(decision.consume && !decision.submit &&
+         denied_click.owner == SiglusLookupClickOwner::kIdle);
+  decision = AdvanceSiglusLookupClickSample(
+      false, true, false, 3u, &denied_click);
+  assert(!decision.consume);
+  AdvanceSiglusLookupClickSample(
+      false, false, false, 3u, &denied_click);
+  // A committed popup remains protected even if native glyph input is denied.
+  decision = AdvanceSiglusLookupClickSample(
+      false, true, true, kSiglusLookupNoGlyph, &denied_click);
+  assert(decision.consume && decision.popup_transaction);
+  decision = AdvanceSiglusLookupClickSample(
+      false, false, false, kSiglusLookupNoGlyph, &denied_click);
+  assert(decision.consume && !decision.submit &&
+         denied_click.owner == SiglusLookupClickOwner::kIdle);
+
+  message_decision = DecideSiglusLookupMouseMessage(
+      false, kSiglusLookupWmLeftButtonDown, false, true, false);
+  assert(!message_decision.consume && !message_decision.next_latched);
+  message_decision = DecideSiglusLookupMouseMessage(
+      true, kSiglusLookupWmLeftButtonUp, false, true,
+      message_decision.next_latched);
+  assert(!message_decision.consume);
+  message_decision = DecideSiglusLookupMouseMessage(
+      true, kSiglusLookupWmLeftButtonDown, false, true, false);
+  assert(message_decision.consume && message_decision.next_latched);
+  message_decision = DecideSiglusLookupMouseMessage(
+      false, kSiglusLookupWmLeftButtonUp, false, false,
+      message_decision.next_latched);
+  assert(message_decision.consume && !message_decision.next_latched);
+  message_decision = DecideSiglusLookupMouseMessage(
+      false, kSiglusLookupWmLeftButtonDoubleClick, false, true, true);
+  assert(!message_decision.consume && !message_decision.next_latched);
+  message_decision = DecideSiglusLookupMouseMessage(
+      false, kSiglusLookupWmLeftButtonDown, true, false, false);
+  assert(message_decision.consume && message_decision.next_latched);
+  message_decision = DecideSiglusLookupMouseMessage(
+      false, kSiglusLookupWmLeftButtonUp, false, false,
+      message_decision.next_latched);
+  assert(message_decision.consume && !message_decision.next_latched);
 
   bool last_shift_down = false;
   assert(!ConsumeSiglusLookupShiftSample(0x0000u, &last_shift_down));
