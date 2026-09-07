@@ -3,6 +3,7 @@
 
 void QueueSiglusMessageVoice(uint64_t event_id, uint32_t frozen_voice_key,
                             uint64_t tick_ms);
+bool IsSiglusVoiceSourceInstalled();
 
 #if defined(_M_IX86)
 
@@ -107,7 +108,7 @@ bool IsSiglusMessageTextOwnershipBlocked() {
 
 bool IsSiglusMessageVoiceMappingProved() {
   return IsSiglusMessageTextInstalled() &&
-         g_siglus_message_profile.voice_key_resource_mapping_proved;
+         IsSiglusVoiceSourceInstalled();
 }
 
 // Never free a trampoline that a thread already inside an observer may jump to.
@@ -232,11 +233,13 @@ void ProcessSiglusMessageTextTasks() {
         (static_cast<uint64_t>(g_siglus_message_scenario_rva) << 32) ^
         g_siglus_message_profile.scenario_return_rva;
     EnterCriticalSection(&g_text_cs);
+    uint64_t committed_tick_ms = 0;
     const uint64_t event_id = WriteTextRingEntryLocked(
         task.text, static_cast<int>(task.text_units), thread_id,
         g_siglus_message_scenario_rva,
         g_siglus_message_profile.scenario_return_rva,
-        fushi_voice_hook::kTextSourceSiglus, "SiglusEngine message", nullptr);
+        fushi_voice_hook::kTextSourceSiglus, "SiglusEngine message", nullptr,
+        &committed_tick_ms);
     if (event_id != 0) {
       PublishSiglusLookupTextSnapshot(task.text, task.text_units,
                                       {event_id, thread_id});
@@ -247,9 +250,8 @@ void ProcessSiglusMessageTextTasks() {
     }
     LeaveCriticalSection(&g_text_cs);
     // A frozen engine field alone is not proof of archive/member identity.
-    if (event_id != 0 &&
-        g_siglus_message_profile.voice_key_resource_mapping_proved)
-      QueueSiglusMessageVoice(event_id, task.voice_key, task.tick_ms);
+    if (event_id != 0 && IsSiglusMessageVoiceMappingProved())
+      QueueSiglusMessageVoice(event_id, task.voice_key, committed_tick_ms);
   }
 }
 

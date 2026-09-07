@@ -9,12 +9,52 @@
 #include "siglus_message_capture.h"
 #include "siglus_message_profile.h"
 #include "siglus_image.h"
-#include "../include/voice_hook_ipc.h"
+// Exercise the production clock write deterministically, without sleeping or
+// substituting a second implementation of TextLaneEvent publication.
+ULONGLONG SiglusTestCommitClock() { return 5000; }
+#define GetTickCount64 SiglusTestCommitClock
+#include "voice_hook_ipc.h"
+#undef GetTickCount64
 
 namespace {
 using namespace fushi_voice_hook;
 int checks = 0;
 void Check(bool value) { ++checks; assert(value); }
+
+struct TextMapping {
+  std::vector<uint8_t> bytes;
+  TextMapping() : bytes(static_cast<size_t>(sizeof(SharedHeader) +
+      TextRegionBytes(kTextLaneCount, kTextLaneSlotCount)), 0) {
+    auto* h = header();
+    h->magic = kSharedMagic;
+    h->version = kSharedVersion;
+    h->text_region_offset = static_cast<uint32_t>(sizeof(SharedHeader));
+    h->text_lane_count = kTextLaneCount;
+    h->text_lane_slot_count = kTextLaneSlotCount;
+  }
+  SharedHeader* header() { return reinterpret_cast<SharedHeader*>(bytes.data()); }
+};
+
+void TestCommittedTextLaneTimestamp() {
+  TextMapping mapping;
+  TextLaneWrite write;
+  write.thread_id = 42;
+  write.text = L"X";
+  write.byte_len = sizeof(wchar_t);
+  uint64_t tick = UINT64_MAX;
+  const uint64_t seq = WriteTextLaneEvent(mapping.header(), 0, 1, write, &tick);
+  Check(seq != 0 && tick == SiglusTestCommitClock());
+  const auto* slot = reinterpret_cast<const TextSlot*>(
+      TextLaneSlotAt(mapping.header(), 0, 1));
+  Check(slot != nullptr && slot->seq == seq && slot->timestamp_ms == tick);
+  tick = UINT64_MAX;
+  Check(WriteTextLaneEvent(nullptr, 0, 1, write, &tick) == 0 && tick == 0);
+  tick = UINT64_MAX;
+  Check(WriteTextLaneEvent(mapping.header(), 1, 1, write, &tick) == 0 && tick == 0);
+  mapping.header()->text_lane_slot_count = 0;
+  tick = UINT64_MAX;
+  Check(WriteTextLaneEvent(mapping.header(), 0, 1, write, &tick) == 0 && tick == 0);
+}
 
 struct Memory {
   std::map<uint32_t, uint32_t> words;
@@ -136,12 +176,13 @@ void TestQueue() {
 #if defined(_M_IX86)
 // Compile and exercise the production include against bounded fake publication
 // and hook backends. No game is opened or modified by this executable.
-struct Header { uint32_t luna_active = 0; uint32_t hook_diagnostics = 0; };
-Header header;
-Header* g_header = &header;
+SharedHeader header = {};
+SharedHeader* g_header = &header;
 bool g_capture_enabled = true;
 bool g_text_cs_ready = true;
 bool g_cs_ready = true;
+bool voice_source_installed = false;
+bool IsSiglusVoiceSourceInstalled() { return voice_source_installed; }
 CRITICAL_SECTION g_text_cs, g_cs;
 constexpr uint32_t kDiagSiglusExactTextObserved = 1;
 struct SiglusTextUnionW {
@@ -183,17 +224,42 @@ MH_STATUS MH_DisableHook(void*) {
 }
 MH_STATUS MH_RemoveHook(void*) { ++mock_removed; return MH_OK; }
 uint64_t published_seq = 0, snapshot_seq = 0, queued_voice_seq = 0;
+uint64_t queued_voice_tick = 0, last_writer_tick = 0;
+bool use_real_lane_writer = false;
 int writes = 0;
-uint64_t WriteTextRingEntryLocked(const wchar_t*, int, uint64_t, uint64_t,
-                                 uint64_t, uint32_t, const char*, const wchar_t*) {
-  ++writes; return published_seq;
+uint64_t WriteTextRingEntryLocked(const wchar_t* text, int units,
+                                 uint64_t thread_id, uint64_t address,
+                                 uint64_t context, uint32_t source_kind,
+                                 const char* name, const wchar_t* code,
+                                 uint64_t* committed_tick_ms = nullptr) {
+  ++writes;
+  if (committed_tick_ms != nullptr) *committed_tick_ms = 0;
+  if (use_real_lane_writer) {
+    TextLaneWrite write;
+    write.thread_id = thread_id;
+    write.thread_address = address;
+    write.thread_context = context;
+    write.source_kind = source_kind;
+    write.text = text;
+    write.byte_len = static_cast<uint32_t>(units) * sizeof(wchar_t);
+    write.hook_name = name;
+    write.hook_code = code;
+    const uint64_t seq = WriteTextLaneEvent(g_header, kNativeThreadPreviewStart,
+        kTextLaneCount, write, committed_tick_ms);
+    last_writer_tick = committed_tick_ms == nullptr ? 0 : *committed_tick_ms;
+    return seq;
+  }
+  if (published_seq != 0 && committed_tick_ms != nullptr)
+    *committed_tick_ms = SiglusTestCommitClock();
+  return published_seq;
 }
 void PublishSiglusLookupTextSnapshot(const wchar_t*, uint32_t,
                                      SiglusLookupTextIdentity identity) {
   snapshot_seq = identity.event_id;
 }
-void QueueSiglusMessageVoice(uint64_t event_id, uint32_t, uint64_t) {
+void QueueSiglusMessageVoice(uint64_t event_id, uint32_t, uint64_t tick_ms) {
   queued_voice_seq = event_id;
+  queued_voice_tick = tick_ms;
 }
 #endif
 }  // namespace
@@ -311,6 +377,12 @@ void TestProductionWorkerAndRollback() {
   ProcessSiglusMessageTextTasks();
   Check(writes == 1 && snapshot_seq == 123 && queued_voice_seq == 0);
   g_siglus_message_profile.voice_key_resource_mapping_proved = true;
+  Check(!IsSiglusMessageVoiceMappingProved());  // Static profile is insufficient.
+  published_seq = 124;
+  Check(g_siglus_message_tasks.TryPush(task));
+  ProcessSiglusMessageTextTasks();
+  Check(snapshot_seq == 124 && queued_voice_seq == 0);
+  voice_source_installed = true;
   Check(IsSiglusMessageVoiceMappingProved());
   published_seq = 125;
   Check(g_siglus_message_tasks.TryPush(task));
@@ -337,6 +409,45 @@ void TestProductionWorkerAndRollback() {
   Check(RollbackSiglusMessageHooks()); Check(mock_removed == 1);
   Check(g_siglus_message_created[0] && !g_siglus_message_created[1]);
   DeleteCriticalSection(&g_text_cs); DeleteCriticalSection(&g_cs);
+}
+
+void TestDelayedWorkerUsesCommittedTimestamp() {
+  InitializeCriticalSection(&g_text_cs);
+  TextMapping mapping;
+  g_header = mapping.header();
+  use_real_lane_writer = true;
+  g_siglus_message_capture_enabled.store(true);
+  g_siglus_message_install_state.store(1);
+  voice_source_installed = true;
+  g_siglus_message_profile.voice_key_resource_mapping_proved = true;
+  g_siglus_message_scenario_rva = 0x1000;
+  g_siglus_message_profile.scenario_return_rva = 0x2000;
+  SiglusMessageTextTask task;
+  while (g_siglus_message_tasks.TryPop(&task)) {}
+  task = {};
+  task.text_units = 1; task.text[0] = L'X'; task.voice_key = 42;
+  task.tick_ms = 1;  // Callback predates the deterministic commit by >1500 ms.
+  queued_voice_seq = queued_voice_tick = 0;
+  Check(g_siglus_message_tasks.TryPush(task));
+  ProcessSiglusMessageTextTasks();
+  const auto* slot = reinterpret_cast<const TextSlot*>(
+      TextLaneSlotAt(g_header, kNativeThreadPreviewStart, 1));
+  Check(slot != nullptr && slot->seq == 1);
+  Check(slot->timestamp_ms - task.tick_ms > 1500);
+  Check(queued_voice_seq == slot->seq && snapshot_seq == slot->seq);
+  Check(queued_voice_tick == slot->timestamp_ms && last_writer_tick == slot->timestamp_ms);
+  // Actual production publication failure, not a fabricated zero-seq return.
+  g_header->text_lane_slot_count = 0;
+  last_writer_tick = UINT64_MAX;
+  Check(g_siglus_message_tasks.TryPush(task));
+  ProcessSiglusMessageTextTasks();
+  Check(last_writer_tick == 0);
+  Check(queued_voice_seq == 1 && queued_voice_tick == SiglusTestCommitClock());
+  Check(snapshot_seq == 1);
+  g_siglus_message_capture_enabled.store(false);
+  use_real_lane_writer = false;
+  g_header = &header;
+  DeleteCriticalSection(&g_text_cs);
 }
 
 void TestProductionObservers() {
@@ -458,9 +569,10 @@ void TestInstallationFailures() {
 }  // namespace
 
 int main() {
-  TestTicket(); TestQueue();
+  TestTicket(); TestQueue(); TestCommittedTextLaneTimestamp();
 #if defined(_M_IX86)
   TestNakedAbi(); TestProductionObservers(); TestProductionWorkerAndRollback();
+  TestDelayedWorkerUsesCommittedTimestamp();
   TestInstallationFailures();
 #else
   Check(!TryHookSiglusMessageText());
