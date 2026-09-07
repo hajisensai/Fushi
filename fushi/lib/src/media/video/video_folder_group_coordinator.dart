@@ -1,3 +1,5 @@
+import 'package:drift/drift.dart'
+    show Value, OrderingTerm, BooleanExpressionOperators;
 import 'package:fushi/src/media/video/external_video.dart'
     show normalizeVideoPath;
 import 'package:fushi/src/media/video/video_book_repository.dart';
@@ -41,6 +43,8 @@ class VideoFolderGroupCoordinator {
     required List<String> videoPaths,
     List<String> createdVideoPaths = const <String>[],
     int? sourceId,
+    String groupingMode = 'series',
+    String? sourceRoot,
   }) async {
     final Map<String, String> uniquePaths = <String, String>{};
     for (final String path in videoPaths) {
@@ -71,6 +75,12 @@ class VideoFolderGroupCoordinator {
       if (sourceId != null && row.sourceId == null) {
         await _repository.assignSourceIfNull(row.bookUid, sourceId);
       }
+      // 一次性导入随后会删除临时来源，组织选择不能随 sourceId 一起丢失。
+      if (row.videoGroupingMode != groupingMode) {
+        await (_database.update(_database.videoBooks)
+              ..where((tbl) => tbl.bookUid.equals(row.bookUid)))
+            .write(VideoBooksCompanion(videoGroupingMode: Value(groupingMode)));
+      }
     }
 
     // 来源回填后重读，让候选合集的来源判定与数据库一致。
@@ -96,6 +106,111 @@ class VideoFolderGroupCoordinator {
 
     final List<int> createdCollectionIds = <int>[];
     final List<int> updatedCollectionIds = <int>[];
+    if (groupingMode == 'folder') {
+      if (sourceRoot == null || sourceRoot.isEmpty) {
+        throw ArgumentError('Folder grouping requires a source root');
+      }
+      final Map<String, List<VideoBookRow>> folders =
+          <String, List<VideoBookRow>>{};
+      final Map<String, String> folderDisplayPaths = <String, String>{};
+      for (final String path in paths) {
+        final VideoBookRow? row = booksByPath[normalizeVideoPath(path)];
+        if (row == null) continue;
+        final String folder = videoSourceFolderPath(path, sourceRoot);
+        folderDisplayPaths.putIfAbsent(
+            folder, () => _videoSourceFolderDisplayPath(path, sourceRoot));
+        folders.putIfAbsent(folder, () => <VideoBookRow>[]).add(row);
+      }
+      for (final MapEntry<String, List<VideoBookRow>> entry
+          in folders.entries) {
+        await _database.transaction(() async {
+          MediaCollectionRow? collection =
+              await (_database.select(_database.mediaCollections)
+                    ..where((tbl) => tbl.sourceFolderPath.equals(entry.key))
+                    ..orderBy(<OrderingTerm Function(MediaCollections)>[
+                      (tbl) => OrderingTerm.asc(tbl.id)
+                    ])
+                    ..limit(1))
+                  .getSingleOrNull();
+          bool created = false;
+          if (collection == null) {
+            final String displayPath = folderDisplayPaths[entry.key]!;
+            final String baseName = p.posix.basename(displayPath);
+            String name = baseName;
+            int suffix = 1;
+            while (await _database.getMediaCollectionByNaturalKey(
+                  name,
+                  'collection',
+                ) !=
+                null) {
+              name =
+                  '$baseName (${p.posix.basename(p.posix.dirname(displayPath))}${suffix == 1 ? '' : ' $suffix'})';
+              suffix++;
+            }
+            if (await _database.hasCollectionDeletionTombstone(
+              name,
+              'collection',
+            )) {
+              return;
+            }
+            final Set<String> removed =
+                await _removedFolderMembers(name, 'collection');
+            if (entry.value
+                .every((VideoBookRow row) => removed.contains(row.bookUid))) {
+              return;
+            }
+            final int id = await _database.createMediaCollection(
+              name,
+              collectionType: 'collection',
+            );
+            await (_database.update(
+              _database.mediaCollections,
+            )..where((tbl) => tbl.id.equals(id)))
+                .write(
+              MediaCollectionsCompanion(
+                sourceFolderPath: Value<String?>(entry.key),
+              ),
+            );
+            collection = (await _database.getMediaCollectionById(id))!;
+            collections.add(collection);
+            createdCollectionIds.add(id);
+            created = true;
+          }
+          final Set<String> members =
+              (await _database.getCollectionItems(collection.id))
+                  .where(
+                    (MediaCollectionItemRow item) =>
+                        item.mediaType == MediaKind.video.dbValue,
+                  )
+                  .map((MediaCollectionItemRow item) => item.entryKey)
+                  .toSet();
+          bool changed = false;
+          final Set<String> removedMembers = await _removedFolderMembers(
+              collection.name, collection.collectionType);
+          entry.value.sort(
+            (VideoBookRow a, VideoBookRow b) =>
+                a.videoPath.compareTo(b.videoPath),
+          );
+          for (final VideoBookRow row in entry.value) {
+            if (removedMembers.contains(row.bookUid)) continue;
+            if (!members.add(row.bookUid)) continue;
+            await _database.addToCollection(
+              collection.id,
+              MediaKind.video,
+              row.bookUid,
+            );
+            changed = true;
+          }
+          if (!created && changed) updatedCollectionIds.add(collection.id);
+        });
+      }
+      return (
+        createdVideoUids: List<String>.unmodifiable(createdVideoUids),
+        reusedVideoUids: List<String>.unmodifiable(reusedVideoUids),
+        createdCollectionIds: List<int>.unmodifiable(createdCollectionIds),
+        updatedCollectionIds: List<int>.unmodifiable(updatedCollectionIds),
+      );
+    }
     for (final VideoGroup group in groupVideosIntoPlaylists(paths)) {
       final List<VideoBookRow> groupRows = <VideoBookRow>[];
       for (final VideoEpisode episode in group.episodes) {
@@ -237,6 +352,16 @@ class VideoFolderGroupCoordinator {
       updatedCollectionIds: List<int>.unmodifiable(updatedCollectionIds),
     );
   }
+
+  Future<Set<String>> _removedFolderMembers(String name, String type) async =>
+      (await (_database.select(_database.collectionMemberTombstones)
+                ..where((tbl) =>
+                    tbl.collectionName.equals(name) &
+                    tbl.collectionType.equals(type) &
+                    tbl.mediaType.equals(MediaKind.video.dbValue)))
+              .get())
+          .map((CollectionMemberTombstoneRow row) => row.entryKey)
+          .toSet();
 }
 
 const VideoFolderGroupSummary _emptySummary = (
@@ -316,3 +441,32 @@ String _seriesKeyForPath(String path) =>
     _seriesKey(parseVideoFilename(p.basename(path)).series);
 
 String _seriesKey(String value) => value.trim().toLowerCase();
+
+/// 来源根直属文件放在根合集，深层文件归入第一级子目录。
+String videoSourceFolderPath(String videoPath, String sourceRoot) {
+  final String display = _videoSourceFolderDisplayPath(videoPath, sourceRoot);
+  return _isWindowsSourcePath(sourceRoot) ? display.toLowerCase() : display;
+}
+
+bool _isWindowsSourcePath(String path) =>
+    RegExp(r'^[a-zA-Z]:[/\\]').hasMatch(path) ||
+    path.startsWith(r'\\') ||
+    path.startsWith('//');
+
+String _videoSourceFolderDisplayPath(String videoPath, String sourceRoot) {
+  final p.Context context = p.Context(
+      style:
+          _isWindowsSourcePath(sourceRoot) ? p.Style.windows : p.Style.posix);
+  final String root = context.normalize(sourceRoot);
+  final String path = context.normalize(videoPath);
+  final String relative = context.relative(path, from: root);
+  if (relative == '..' ||
+      relative.startsWith('../') ||
+      relative.startsWith(r'..\') ||
+      context.isAbsolute(relative)) {
+    throw ArgumentError.value(videoPath, 'videoPath', 'Outside source root');
+  }
+  final List<String> parts = context.split(relative);
+  return (parts.length > 1 ? context.join(root, parts.first) : root)
+      .replaceAll('\\', '/');
+}

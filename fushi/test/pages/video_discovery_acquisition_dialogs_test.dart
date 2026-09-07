@@ -322,6 +322,7 @@ void main() {
               registry: VideoResourceRegistry(const <VideoResourceProvider>[]),
               sources: const <MediaSourceRow>[
                 MediaSourceRow(
+                  videoGroupingMode: 'series',
                   id: 1,
                   label: 'himoto',
                   mediaKind: 'video',
@@ -363,6 +364,7 @@ void main() {
             registry: VideoResourceRegistry(const <VideoResourceProvider>[]),
             sources: const <MediaSourceRow>[
               MediaSourceRow(
+                videoGroupingMode: 'series',
                 id: 1,
                 label: 'himoto',
                 mediaKind: 'video',
@@ -405,6 +407,7 @@ void main() {
             ),
             sources: const <MediaSourceRow>[
               MediaSourceRow(
+                videoGroupingMode: 'series',
                 id: 1,
                 label: 'himoto',
                 mediaKind: 'video',

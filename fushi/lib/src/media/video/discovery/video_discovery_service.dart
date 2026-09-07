@@ -6,6 +6,7 @@ import 'package:fushi/src/media/external_provider.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_adapters.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/metadata/anilist_video_metadata_provider.dart';
+import 'package:fushi/src/media/video/metadata/mal_video_metadata_provider.dart';
 import 'package:fushi/src/media/video/metadata/tmdb_video_metadata_provider.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_merge.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
@@ -52,7 +53,11 @@ class VideoDiscoveryService {
           language: config.locale,
         ),
       ],
-      metadataProviders: <VideoMetadataProvider>[tmdb, anilist],
+      metadataProviders: <VideoMetadataProvider>[
+        MalVideoMetadataProvider(),
+        tmdb,
+        anilist,
+      ],
       closesProviders: true,
     );
   }
@@ -166,7 +171,7 @@ class VideoDiscoveryService {
   }
 
   /// 按发现项的主身份读取发现域详情。该入口不重新模糊搜索；返回的 lookup 仍属于
-  /// 发现域，进入元数据刮削时只有 AniDB 身份可直接确认，其他来源只作交叉引用提示。
+  /// 发现域；MAL 交叉 ID 与 TMDB 类型化 ID 可直接传给下载导入后的刮削。
   Future<VideoMetadataWork?> loadDetails(VideoDiscoveryItem item) async {
     if (_closed) return item.metadataWork;
     final List<VideoMetadataWork> works = <VideoMetadataWork>[
@@ -214,7 +219,7 @@ class VideoDiscoveryService {
       );
     }
 
-    add(VideoMetadataProviderKind.anidb, reference.anidbId);
+    add(VideoMetadataProviderKind.mal, reference.externalIds['mal']);
     add(VideoMetadataProviderKind.anilist, reference.anilistId);
     add(VideoMetadataProviderKind.tmdb, reference.tmdbId);
     return lookups.values.toList(growable: false);
@@ -622,7 +627,8 @@ int _primaryRank(String providerId, {required bool anime}) {
   final String provider = providerId.trim().toLowerCase();
   if (anime) {
     return switch (provider) {
-      'anilist' => 0,
+      'mal' => 0,
+      'anilist' => 1,
       'tmdb' => 2,
       _ => 10,
     };

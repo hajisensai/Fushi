@@ -96,6 +96,7 @@ void main() {
                   VideoResourceRegistry(<VideoResourceProvider>[provider]),
               sources: const <MediaSourceRow>[
                 MediaSourceRow(
+                  videoGroupingMode: 'series',
                   id: 1,
                   label: 'Videos',
                   mediaKind: 'video',

@@ -27,6 +27,7 @@ import 'package:fushi/src/media/torrent/torrent_add_coordinator.dart';
 import 'package:fushi/src/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/media/torrent/torrent_metainfo.dart';
 import 'package:fushi/src/media/torrent/video_resource_provider.dart';
+import 'package:fushi/src/media/video/discovery/discovery_metadata_identity.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi/src/media/video/download/video_download_organizer.dart';
@@ -3441,13 +3442,8 @@ class VideoDownloadPipelineService {
       );
     }
     database.notifyVideoLibraryChanged();
-    // 刮削只认 AniDB 规范身份（BUG-2004）。修前的判据方向正好反了：带
-    // anilist/bangumi 等杂牌 id 的任务被强制进 scrape，解析层却整条丢弃这些
-    // lookup、退回拿显示名模糊搜 → 歧义 → needsAttention 卡死且管线内无法
-    // 交互确认；而没有任何 id 的任务反而直接完成。现在判据只有一条：入队
-    // 快照里有已确认的 AniDB id 才进 scrape；否则任务正常完成，作品留在
-    // 视频页的待确认队列（刮削重设计 P2）由用户补身份或由自动补刮认领。
-    if (legacy || _confirmedAniDbId(job) == null) {
+    // 已确认的 MAL/TMDB 身份直接刮削；无身份作品留给媒体库自动识别或人工确认。
+    if (legacy || _confirmedMetadataLookup(job) == null) {
       await _releaseLeaseWith(
         () => database.completeVideoDownloadJob(
           jobId: job.jobId,
@@ -3460,17 +3456,9 @@ class VideoDownloadPipelineService {
     await _advance(job, VideoDownloadJobStage.scrape, nowAt: now);
   }
 
-  /// 任务携带的已确认 AniDB 身份：优先 v94 identity_json 快照，回退旧行
-  /// （metadataProvider == 'anidb' 的 externalId）。null = 无规范身份。
-  int? _confirmedAniDbId(VideoDownloadJobRow job) {
-    final VideoMediaReference? stored =
-        decodeVideoMediaReference(job.identityJson);
-    if (stored?.anidbId != null) return stored!.anidbId;
-    if (job.metadataProvider == 'anidb') {
-      return int.tryParse(job.externalId ?? '');
-    }
-    return null;
-  }
+  /// 从持久化发现身份恢复 MAL/TMDB lookup，保留旧行读取兼容。
+  VideoMetadataLookup? _confirmedMetadataLookup(VideoDownloadJobRow job) =>
+      videoDiscoveryMetadataLookup(_mediaReference(job));
 
   /// 手动「按域入库」任务的 import：整包绝对路径交给 [discoveryImporter]
   /// （分类 → 需要时解压 → 各域既有导入原语），成功即完成任务。
@@ -3534,11 +3522,11 @@ class VideoDownloadPipelineService {
   Future<void> _scrapeMedia(VideoDownloadJobRow job) async {
     _ensureLeaseHeld();
     final MediaSourceRow source = await _managedSource(job);
-    final int? anidbId = _confirmedAniDbId(job);
-    final VideoMetadataMediaKind? mediaKind = VideoMetadataMediaKind.values
-        .asNameMap()[job.mediaKind];
-    if (anidbId == null || mediaKind == null) {
-      // 防御分支：import 阶段的闸已保证只有带 AniDB 身份的任务进到这里。
+    final VideoMetadataLookup? lookup = _confirmedMetadataLookup(job);
+    final VideoMetadataMediaKind? mediaKind =
+        VideoMetadataMediaKind.values.asNameMap()[job.mediaKind];
+    if (lookup == null || mediaKind == null) {
+      // 防御分支：import 阶段的闸已保证只有带 MAL/TMDB 身份的任务进到这里。
       // 万一（旧行重试/竞态）没有身份，按同一判据正常完成而不是卡死。
       await _releaseLeaseWith(
         () => database.completeVideoDownloadJob(
@@ -3617,15 +3605,9 @@ class VideoDownloadPipelineService {
         'Imported media could not be mapped exactly back to its managed source',
       );
     }
-    // AniDB 是唯一能直接确认主身份的 provider（解析层对其余 provider 的
-    // confirmedLookup 一律降级，见 VideoSourceScrapeCoordinator._resolveWork）。
     final report = await scrapeCoordinator.scrapeImportedWork(
       work,
-      lookup: VideoMetadataLookup(
-        provider: VideoMetadataProviderKind.anidb,
-        externalId: '$anidbId',
-        mediaKind: mediaKind,
-      ),
+      lookup: lookup,
     );
     _ensureLeaseHeld();
     database.notifyVideoLibraryChanged();

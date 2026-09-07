@@ -1,8 +1,13 @@
-/// 严格、单主源的视频资料识别器。
+/// MAL 主源、TMDB 兜底的严格视频资料识别器。
 library;
 
+import 'dart:async';
+import 'dart:io';
+
+import 'package:http/http.dart' as http;
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_provider.dart';
+import 'package:fushi/src/media/video/metadata/video_metadata_transport.dart';
 import 'package:fushi/src/media/video/scraper/filename_parser.dart';
 import 'package:fushi/src/media/video/scraper/title_normalizer.dart';
 
@@ -56,8 +61,7 @@ class VideoMetadataResolution {
   final VideoMetadataWork? work;
   final VideoMetadataLookup? lookup;
 
-  /// 真正给出这条结果的资料源。严格单源解析下它必定等于
-  /// `request.selectedProvider`；保留字段供调用方显式记录该不变量。
+  /// 真正给出结果的来源；MAL 未命中或不可用时可能为 TMDB。
   final VideoMetadataProviderKind? providerKind;
   final List<VideoMetadataWork> candidates;
   final String? reason;
@@ -87,85 +91,116 @@ class VideoMetadataResolver {
 
   final VideoMetadataProviderRegistry registry;
 
-  /// 严格单主源解析只返回所选 provider。缺失或不可用时 fail closed，绝不能把
-  /// registry 中的补充/历史 provider 静默提升为规范身份源。
-  List<VideoMetadataProvider> _resolutionChain(
-    VideoMetadataProviderKind selected,
-  ) {
-    final VideoMetadataProvider? primary = registry.provider(selected);
-    if (primary != null && primary.isAvailable) {
-      return <VideoMetadataProvider>[primary];
-    }
-    return const <VideoMetadataProvider>[];
-  }
-
   Future<VideoMetadataResolution> resolve(
     VideoMetadataResolveRequest request,
   ) async {
+    // A confirmed or explicit identity locks the source, including TMDB under
+    // the MAL-first policy. Failed IDs must never turn into a title search.
     final VideoMetadataLookup? confirmed = request.confirmedLookup;
-    if (confirmed != null && confirmed.provider == request.selectedProvider) {
-      final VideoMetadataResolution resolved = await _resolveLookup(
-        confirmed,
-        request,
-        VideoMetadataResolutionMethod.confirmed,
+    if (confirmed != null && _acceptsIdentity(confirmed.provider, request)) {
+      return _attempt(
+        confirmed.provider,
+        () => _resolveLookup(
+          confirmed,
+          request,
+          VideoMetadataResolutionMethod.confirmed,
+        ),
+        lookup: confirmed,
+        method: VideoMetadataResolutionMethod.confirmed,
       );
-      // 所选源不可用时继续走统一的 fail-closed 出口，不能换源。
-      if (resolved.status !=
-          VideoMetadataResolutionStatus.providerUnavailable) {
-        return resolved;
-      }
     }
-
-    final List<String> hints = <String>[
-      ...request.identityHints,
-      ...request.titleCandidates,
-    ];
     final List<VideoMetadataLookup> explicit = parseExplicitVideoMetadataIds(
-      hints,
+      <String>[...request.identityHints, ...request.titleCandidates],
       fallbackMediaKind: request.mediaKind,
     );
-    if (explicit.isNotEmpty) {
-      // 明确 ID 只能命中当前主身份源。其它来源 ID 是 cross-reference hint，
-      // 不能把 TMDB/历史 provider 提升为 canonical；主源无 ID 时继续标题识别。
-      for (final VideoMetadataLookup lookup in explicit) {
-        if (lookup.provider != request.selectedProvider) continue;
-        final VideoMetadataResolution resolved = await _resolveLookup(
+    for (final VideoMetadataLookup lookup in explicit) {
+      if (!_acceptsIdentity(lookup.provider, request)) continue;
+      return _attempt(
+        lookup.provider,
+        () => _resolveLookup(
           lookup,
           request,
           VideoMetadataResolutionMethod.explicitId,
-        );
-        if (resolved.status !=
-            VideoMetadataResolutionStatus.providerUnavailable) {
-          return resolved;
-        }
-        break;
-      }
-    }
-
-    final List<VideoMetadataProvider> chain =
-        _resolutionChain(request.selectedProvider);
-    if (chain.isEmpty) {
-      return VideoMetadataResolution(
-        status: VideoMetadataResolutionStatus.providerUnavailable,
-        reason: 'no video metadata provider is configured',
+        ),
+        lookup: lookup,
+        method: VideoMetadataResolutionMethod.explicitId,
       );
     }
-    VideoMetadataResolution? ambiguous;
-    for (final VideoMetadataProvider provider in chain) {
-      final VideoMetadataResolution resolved =
-          await _searchWithProvider(provider, request);
-      if (resolved.status == VideoMetadataResolutionStatus.matched) {
+
+    final List<VideoMetadataProviderKind> chain = <VideoMetadataProviderKind>[
+      request.selectedProvider,
+      if (request.selectedProvider == VideoMetadataProviderKind.mal)
+        VideoMetadataProviderKind.tmdb,
+    ];
+    final List<VideoMetadataResolution> failures = <VideoMetadataResolution>[];
+    for (final VideoMetadataProviderKind kind in chain) {
+      final VideoMetadataResolution resolved = await _attempt(kind, () async {
+        final VideoMetadataProvider? provider = registry.provider(kind);
+        if (provider == null || !provider.isAvailable) {
+          return VideoMetadataResolution(
+            status: VideoMetadataResolutionStatus.providerUnavailable,
+            providerKind: kind,
+            reason: '${kind.name} is not configured',
+          );
+        }
+        return _searchWithProvider(provider, request);
+      });
+      if (resolved.status == VideoMetadataResolutionStatus.matched ||
+          resolved.status == VideoMetadataResolutionStatus.ambiguous) {
         return resolved;
       }
-      if (resolved.status == VideoMetadataResolutionStatus.ambiguous) {
-        ambiguous ??= resolved;
-      }
+      failures.add(resolved);
     }
-    return ambiguous ??
-        VideoMetadataResolution(
-          status: VideoMetadataResolutionStatus.notFound,
-          reason: 'No candidate passed title, type, year and season gates',
-        );
+    if (failures.length == 1) return failures.single;
+    return VideoMetadataResolution(
+      status: failures.any((VideoMetadataResolution result) =>
+              result.status ==
+              VideoMetadataResolutionStatus.providerUnavailable)
+          ? VideoMetadataResolutionStatus.providerUnavailable
+          : VideoMetadataResolutionStatus.notFound,
+      providerKind: failures.last.providerKind,
+      reason: failures
+          .map((VideoMetadataResolution result) =>
+              '${result.providerKind?.name}: ${result.reason}')
+          .join('; '),
+    );
+  }
+
+  bool _acceptsIdentity(
+    VideoMetadataProviderKind provider,
+    VideoMetadataResolveRequest request,
+  ) =>
+      provider == request.selectedProvider ||
+      (request.selectedProvider == VideoMetadataProviderKind.mal &&
+          (provider == VideoMetadataProviderKind.tmdb ||
+              provider == VideoMetadataProviderKind.anidb));
+
+  Future<VideoMetadataResolution> _attempt(
+    VideoMetadataProviderKind kind,
+    Future<VideoMetadataResolution> Function() operation, {
+    VideoMetadataLookup? lookup,
+    VideoMetadataResolutionMethod? method,
+  }) async {
+    try {
+      return await operation();
+    } catch (error) {
+      if (error is! VideoMetadataProviderUnavailable &&
+          error is! VideoMetadataNetworkException &&
+          error is! TimeoutException &&
+          error is! SocketException &&
+          error is! HttpException &&
+          error is! TlsException &&
+          error is! http.ClientException) {
+        rethrow;
+      }
+      return VideoMetadataResolution(
+        status: VideoMetadataResolutionStatus.providerUnavailable,
+        providerKind: kind,
+        lookup: lookup,
+        method: method,
+        reason: error.toString(),
+      );
+    }
   }
 
   Future<VideoMetadataResolution> _searchWithProvider(
@@ -280,6 +315,7 @@ class VideoMetadataResolver {
         status: VideoMetadataResolutionStatus.providerUnavailable,
         method: method,
         lookup: lookup,
+        providerKind: lookup.provider,
         reason: '${lookup.provider.name} is not configured',
       );
     }
@@ -296,7 +332,10 @@ class VideoMetadataResolver {
     // A confirmed binding or an explicit provider ID is authoritative. Local
     // filename/NFO year and season heuristics are search gates, not grounds to
     // reject a known AniDB identity (continuation seasons routinely differ).
-    if (work.kind != request.mediaKind) {
+    // MAL has one anime ID namespace across movie/TV. A known MAL identity
+    // supplies its actual type; TMDB IDs remain locked to /movie or /tv.
+    if (lookup.provider != VideoMetadataProviderKind.mal &&
+        work.kind != request.mediaKind) {
       return VideoMetadataResolution(
         status: VideoMetadataResolutionStatus.notFound,
         method: method,
@@ -343,9 +382,10 @@ class VideoMetadataResolver {
     if (seasonNumber == null || work.kind == VideoMetadataMediaKind.movie) {
       return work;
     }
-    if (provider.providerKind == VideoMetadataProviderKind.anidb) {
+    if (provider.providerKind == VideoMetadataProviderKind.anidb ||
+        provider.providerKind == VideoMetadataProviderKind.mal) {
       final int? inferred = _inferredSeasonNumber(work);
-      // One AniDB aid represents one independently titled anime entry. Many
+      // AniDB and MAL IDs each represent one independently titled anime entry. Many
       // sequels (for example `K-ON!!`) carry no parseable "Season 2" token,
       // so an absent inferred number is unknown rather than season 1. Reject
       // only an explicit conflicting season; the coordinator later remaps the
@@ -489,12 +529,17 @@ List<VideoMetadataLookup> parseExplicitVideoMetadataIds(
     if (uri != null && uri.host.isNotEmpty) {
       final String host = uri.host.toLowerCase().replaceFirst('www.', '');
       final List<String> path = uri.pathSegments;
-      if (host.endsWith('anidb.net') &&
+      if (host == 'anidb.net' &&
           path.length >= 2 &&
           path[0] == 'anime' &&
           RegExp(r'^\d+$').hasMatch(path[1])) {
         add(VideoMetadataProviderKind.anidb, path[1], fallbackMediaKind);
-      } else if (host.endsWith('themoviedb.org') && path.length >= 2) {
+      } else if (host == 'myanimelist.net' &&
+          path.length >= 2 &&
+          path[0] == 'anime' &&
+          RegExp(r'^\d+$').hasMatch(path[1])) {
+        add(VideoMetadataProviderKind.mal, path[1], fallbackMediaKind);
+      } else if (host == 'themoviedb.org' && path.length >= 2) {
         final VideoMetadataMediaKind? kind = switch (path[0]) {
           'tv' => VideoMetadataMediaKind.tv,
           'movie' => VideoMetadataMediaKind.movie,
@@ -532,24 +577,38 @@ List<VideoMetadataLookup> parseExplicitVideoMetadataIds(
 
     final RegExp pattern = RegExp(
       r'(?:^|[\[{(_\s.-])'
-      r'(anidb|aid|tmdb|tmdbid|douban|doubanid|bangumi|bgm|anilist)'
+      r'(anidb|aid|mal|myanimelist|tmdb|tmdbid|douban|doubanid|bangumi|bgm|anilist)'
+      r'(?:\s*:\s*(tv|movie)(?=\s*[:=_-]))?'
       r'\s*(?:id)?\s*[:=_-]\s*([A-Za-z0-9.-]+)',
       caseSensitive: false,
     );
     for (final RegExpMatch match in pattern.allMatches(value)) {
       final String source = match.group(1)!.toLowerCase();
-      final String id = match.group(2)!;
+      final String id = match.group(3)!;
+      final VideoMetadataMediaKind tokenKind =
+          switch (match.group(2)?.toLowerCase()) {
+        'tv' => VideoMetadataMediaKind.tv,
+        'movie' => VideoMetadataMediaKind.movie,
+        _ => declaredKind,
+      };
       final VideoMetadataProviderKind provider = switch (source) {
         'anidb' || 'aid' => VideoMetadataProviderKind.anidb,
+        'mal' || 'myanimelist' => VideoMetadataProviderKind.mal,
         'tmdb' || 'tmdbid' => VideoMetadataProviderKind.tmdb,
         'douban' || 'doubanid' => VideoMetadataProviderKind.douban,
         'bangumi' || 'bgm' => VideoMetadataProviderKind.bangumi,
         _ => VideoMetadataProviderKind.anilist,
       };
+      if ((provider == VideoMetadataProviderKind.mal ||
+              provider == VideoMetadataProviderKind.anidb ||
+              provider == VideoMetadataProviderKind.tmdb) &&
+          !RegExp(r'^[0-9]+$').hasMatch(id)) {
+        continue;
+      }
       add(
         provider,
         id,
-        declaredKind,
+        tokenKind,
         episodeGroupId: episodeGroupId,
       );
     }

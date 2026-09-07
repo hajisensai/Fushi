@@ -16,7 +16,7 @@ import 'package:fushi/utils.dart';
 /// 「在线服务」一级设置分类：第三方 API / 索引器 / 媒体服务器的凭据与端点。
 ///
 /// 此前这些东西按「服务于哪个媒介」散在两页：字幕两家（Jimaku / OpenSubtitles）
-/// 在视频页与下载页各挂一份同一组件，刮削三家（AniDB / TMDB / Jellyfin）在视频，
+/// 在视频页与下载页各挂一份同一组件，刮削三家（MAL / TMDB / AniDB 文件识别 / Jellyfin）在视频，
 /// 索引器（内置来源 / Torznab / 发现来源）在下载，Dandanplay 服务器在视频·弹幕。
 /// 用户在视频页配完 Jimaku 不知道下载页还有 Torznab；BUG-1712 的双挂载修法是把
 /// 症状固化成结构。互联分区那条「同步主机服务配置」开关早已把这组服务当成一个
@@ -78,12 +78,52 @@ SettingsDestination buildServicesDestination() {
           ),
         ],
       ),
-      // ── 元数据刮削（AniDB 身份 + TMDB 补充）─────────────────────────────
+      // ── 元数据刮削（MAL 主源 / TMDB 兜底 / AniDB 文件哈希识别）─────────────────────────────
       // 刮削语言等行为偏好仍在视频·媒体库；这里只放服务凭据。写 prefsRepo 后
       // 重建下载刮削快照（commitVideoMetadataRuntimePreference）。
       SettingsSection(
         title: t.section_services_metadata,
         items: <SettingsItem>[
+          SettingsSwitchItem(
+            id: 'services.metadata.anidb_hash_enabled',
+            title: t.video_anidb_hash_enabled,
+            subtitle: t.video_anidb_hash_hint,
+            icon: Icons.fingerprint,
+            value: (SettingsContext settingsContext) => settingsContext
+                    .appModel.prefsRepo
+                    .getPref(kVideoAniDbHashEnabledPref, defaultValue: false)
+                as bool,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.prefsRepo
+                  .setPref(kVideoAniDbHashEnabledPref, value);
+              await settingsContext.appModel
+                  .reloadVideoDownloadPipelineRuntime();
+            },
+          ),
+          SettingsTextItem(
+            id: 'services.metadata.anidb_username',
+            title: t.video_anidb_username,
+            icon: Icons.person_outline,
+            value: (SettingsContext settingsContext) => settingsContext
+                .appModel.prefsRepo
+                .getPref(kVideoAniDbUsernamePref, defaultValue: '') as String,
+            onChanged: (SettingsContext settingsContext, String value) =>
+                commitVideoMetadataRuntimePreference(
+                    settingsContext, kVideoAniDbUsernamePref, value),
+          ),
+          SettingsTextItem(
+            id: 'services.metadata.anidb_password',
+            title: t.video_anidb_password,
+            icon: Icons.lock_outline,
+            secret: true,
+            value: (SettingsContext settingsContext) => settingsContext
+                .appModel.prefsRepo
+                .getPref(kVideoAniDbPasswordPref, defaultValue: '') as String,
+            onChanged: (SettingsContext settingsContext, String value) =>
+                commitVideoMetadataRuntimePreference(
+                    settingsContext, kVideoAniDbPasswordPref, value,
+                    trimValue: false),
+          ),
           SettingsTextItem(
             id: 'services.metadata.anidb_client',
             title: t.video_source_scrape_anidb_client,

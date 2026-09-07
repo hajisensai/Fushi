@@ -191,6 +191,7 @@ class _DiscoveryGateAppModel extends AppModel {
 }
 
 const MediaSourceRow _managedSource = MediaSourceRow(
+  videoGroupingMode: 'series',
   id: 1,
   label: 'himoto',
   mediaKind: 'video',

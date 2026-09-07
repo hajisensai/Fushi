@@ -209,6 +209,7 @@ void main() {
                 rootPath: r'D:\itest-video-library',
                 mediaCount: 0,
                 recursive: true,
+                videoGroupingMode: 'series',
                 sortOrder: 0,
                 createdAt: 1,
               ),

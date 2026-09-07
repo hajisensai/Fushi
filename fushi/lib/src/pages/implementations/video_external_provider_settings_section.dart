@@ -620,6 +620,14 @@ class _VideoExternalProviderSettingsSectionState
           label: t.video_external_api_key,
           initialValue: draft.apiKey,
           secret: true,
+          helper: draft
+                      .copyWith(apiKey: '')
+                      .toConfig()
+                      ?.effectiveApiKey
+                      .isNotEmpty ==
+                  true
+              ? t.video_opensubtitles_app_key_hint
+              : null,
           onChanged: (String value) =>
               _updateOpenSubtitles(draft.copyWith(apiKey: value)),
         ),

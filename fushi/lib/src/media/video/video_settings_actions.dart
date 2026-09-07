@@ -45,9 +45,13 @@ bool videoHostVisible(SettingsContext context) =>
 Future<void> commitVideoMetadataRuntimePreference(
   SettingsContext settingsContext,
   String key,
-  String value,
-) async {
-  await settingsContext.appModel.prefsRepo.setPref(key, value.trim());
+  String value, {
+  bool trimValue = true,
+}) async {
+  await settingsContext.appModel.prefsRepo.setPref(
+    key,
+    trimValue ? value.trim() : value,
+  );
   await settingsContext.appModel.reloadVideoDownloadPipelineRuntime();
 }
 
