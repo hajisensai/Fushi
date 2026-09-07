@@ -33,7 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-2252](bugs/BUG-2252-jellyfin-fnos-x-emby-auth.md) | ✅ | ✅ | 飞牛影视 Jellyfin 兼容层要求 X-Emby-Authorization 认证头 |
+| [BUG-2254](bugs/BUG-2254-jellyfin-fnos-x-emby-auth.md) | ✅ | ✅ | 飞牛影视 Jellyfin 兼容层要求 X-Emby-Authorization 认证头 |
 | [BUG-2250](bugs/BUG-2250-reader-brightness-selector.md) | ✅ | ✅ | 阅读器主题卡遗漏日间跟随系统夜间选择器 |
 | [BUG-2249](bugs/BUG-2249-reader-gallery-blur.md) | ✅ | ✅ | 插图画廊未同步正文图片模糊设置 |
 | [BUG-2248](bugs/BUG-2248-audiobook-narrow-transport.md) | ✅ | ✅ | 有声书窄屏封面挤压播放按钮导致越界 |

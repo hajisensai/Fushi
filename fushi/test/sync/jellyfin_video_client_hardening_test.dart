@@ -38,31 +38,32 @@ Map<String, Object?> _episodeJson({
   int? sizeBytes,
   bool? hasSubtitlesFlag,
   List<Map<String, Object?>> subtitleStreams = const <Map<String, Object?>>[],
-}) => <String, Object?>{
-  'Id': id,
-  'Name': 'The Pilot',
-  'Type': 'Episode',
-  'SeriesName': 'Show A',
-  'ParentIndexNumber': 1,
-  'IndexNumber': 2,
-  'RunTimeTicks': 90 * 60 * 1000 * kTicksPerMs,
-  'ImageTags': <String, Object?>{'Primary': 'tag'},
-  if (hasSubtitlesFlag != null) 'HasSubtitles': hasSubtitlesFlag,
-  'UserData': <String, Object?>{
-    'PlaybackPositionTicks': positionTicks ?? 0,
-    if (lastPlayedDate != null) 'LastPlayedDate': lastPlayedDate,
-  },
-  'MediaSources': <Object?>[
+}) =>
     <String, Object?>{
-      'Id': 'src1',
-      if (sizeBytes != null) 'Size': sizeBytes,
-      'MediaStreams': <Object?>[
-        <String, Object?>{'Type': 'Video', 'Index': 0},
-        ...subtitleStreams,
+      'Id': id,
+      'Name': 'The Pilot',
+      'Type': 'Episode',
+      'SeriesName': 'Show A',
+      'ParentIndexNumber': 1,
+      'IndexNumber': 2,
+      'RunTimeTicks': 90 * 60 * 1000 * kTicksPerMs,
+      'ImageTags': <String, Object?>{'Primary': 'tag'},
+      if (hasSubtitlesFlag != null) 'HasSubtitles': hasSubtitlesFlag,
+      'UserData': <String, Object?>{
+        'PlaybackPositionTicks': positionTicks ?? 0,
+        if (lastPlayedDate != null) 'LastPlayedDate': lastPlayedDate,
+      },
+      'MediaSources': <Object?>[
+        <String, Object?>{
+          'Id': 'src1',
+          if (sizeBytes != null) 'Size': sizeBytes,
+          'MediaStreams': <Object?>[
+            <String, Object?>{'Type': 'Video', 'Index': 0},
+            ...subtitleStreams,
+          ],
+        },
       ],
-    },
-  ],
-};
+    };
 
 /// 外挂日文 srt 轨。
 const Map<String, Object?> _externalSrt = <String, Object?>{
@@ -85,26 +86,27 @@ const Map<String, Object?> _graphicPgs = <String, Object?>{
 
 /// 熔断用的极简条目（只要能被 parseItem 解析即可，避免 2 万条的构造开销）。
 Map<String, Object?> _tinyJson(String id) => <String, Object?>{
-  'Id': id,
-  'Name': id,
-  'Type': 'Movie',
-};
+      'Id': id,
+      'Name': id,
+      'Type': 'Movie',
+    };
 
 JellyfinApi _api(MockClient client, {String token = 'tok'}) => JellyfinApi(
-  serverUrl: 'http://nas:8096',
-  accessToken: token,
-  client: client,
-);
+      serverUrl: 'http://nas:8096',
+      accessToken: token,
+      client: client,
+    );
 
 JellyfinVideoClient _client(
   MockClient client, {
   String userId = 'u1',
   List<String> libraryIds = const <String>[],
-}) => JellyfinVideoClient(
-  api: _api(client),
-  userId: userId,
-  libraryIds: libraryIds,
-);
+}) =>
+    JellyfinVideoClient(
+      api: _api(client),
+      userId: userId,
+      libraryIds: libraryIds,
+    );
 
 /// `/Users/{uid}/Views` 的响应。
 ///
@@ -113,18 +115,16 @@ JellyfinVideoClient _client(
 /// 测试会「静默走进整库递归回退」而不是红。
 http.Response _viewsResponse(List<List<String?>> idNameType) =>
     http.Response.bytes(
-      utf8.encode(
-        jsonEncode(<String, Object?>{
-          'Items': <Object?>[
-            for (final List<String?> v in idNameType)
-              <String, Object?>{
-                'Id': v[0],
-                'Name': v[1],
-                if (v[2] != null) 'CollectionType': v[2],
-              },
-          ],
-        }),
-      ),
+      utf8.encode(jsonEncode(<String, Object?>{
+        'Items': <Object?>[
+          for (final List<String?> v in idNameType)
+            <String, Object?>{
+              'Id': v[0],
+              'Name': v[1],
+              if (v[2] != null) 'CollectionType': v[2],
+            },
+        ],
+      })),
       200,
     );
 
@@ -134,23 +134,19 @@ void main() {
       'putRemoteVideoPosition 打 /Sessions/Playing/Progress 且带 IsPaused:false',
       () async {
         final List<http.Request> posts = <http.Request>[];
-        final JellyfinVideoClient c = _client(
-          MockClient((http.Request req) async {
-            posts.add(req);
-            return http.Response('', 204);
-          }),
-        );
+        final JellyfinVideoClient c =
+            _client(MockClient((http.Request req) async {
+          posts.add(req);
+          return http.Response('', 204);
+        }));
 
         await c.putRemoteVideoPosition('ep1', 90000, 1755000000000);
 
         expect(posts, hasLength(1));
-        expect(
-          posts.single.url.path,
-          '/Sessions/Playing/Progress',
-          reason: 'Stopped 会在接近片尾时标记已播放并清空 resume 位置，不能当心跳用',
-        );
-        final Map<String, Object?> body = (jsonDecode(posts.single.body) as Map)
-            .cast<String, Object?>();
+        expect(posts.single.url.path, '/Sessions/Playing/Progress',
+            reason: 'Stopped 会在接近片尾时标记已播放并清空 resume 位置，不能当心跳用');
+        final Map<String, Object?> body =
+            (jsonDecode(posts.single.body) as Map).cast<String, Object?>();
         expect(body['ItemId'], 'ep1');
         expect(body['PositionTicks'], 90000 * kTicksPerMs);
         expect(body['IsPaused'], false);
@@ -176,14 +172,11 @@ void main() {
 
     test('换条目立刻重开窗口（切集后第一发不被上一集吃掉）', () async {
       final List<String> itemIds = <String>[];
-      final JellyfinVideoClient c = _client(
-        MockClient((http.Request req) async {
-          itemIds.add(
-            ((jsonDecode(req.body) as Map)['ItemId'] as String?) ?? '',
-          );
-          return http.Response('', 204);
-        }),
-      );
+      final JellyfinVideoClient c =
+          _client(MockClient((http.Request req) async {
+        itemIds.add(((jsonDecode(req.body) as Map)['ItemId'] as String?) ?? '');
+        return http.Response('', 204);
+      }));
 
       await c.putRemoteVideoPosition('ep1', 1000, 1);
       await c.putRemoteVideoPosition('ep2', 1000, 2);
@@ -194,23 +187,18 @@ void main() {
 
     test('reportStopped 仍打 /Sessions/Playing/Stopped（真停止播放的入口保留）', () async {
       late http.Request seen;
-      final JellyfinApi api = _api(
-        MockClient((http.Request req) async {
-          seen = req;
-          return http.Response('', 204);
-        }),
-      );
+      final JellyfinApi api = _api(MockClient((http.Request req) async {
+        seen = req;
+        return http.Response('', 204);
+      }));
       await api.reportStopped(itemId: 'ep1', positionMs: 1234);
       expect(seen.url.path, '/Sessions/Playing/Stopped');
-      expect(
-        (jsonDecode(seen.body) as Map)['PositionTicks'],
-        1234 * kTicksPerMs,
-      );
+      expect((jsonDecode(seen.body) as Map)['PositionTicks'], 1234 * kTicksPerMs);
     });
   });
 
   group('[2] 清单真分页', () {
-    test('BUG-2252：IncludeItemTypes 按单值拆 Movie/Episode 两轮，不发逗号多值', () async {
+    test('BUG-2254：IncludeItemTypes 按单值拆 Movie/Episode 两轮，不发逗号多值', () async {
       final List<Map<String, String>> queries = <Map<String, String>>[];
       final JellyfinApi api = _api(
         MockClient((http.Request req) async {
@@ -259,23 +247,21 @@ void main() {
     test('翻到 TotalRecordCount 为止：1200 条 / pageSize 500 = 3 轮，全部拿回', () async {
       const int total = 1200;
       final List<Map<String, String>> queries = <Map<String, String>>[];
-      final JellyfinApi api = _api(
-        MockClient((http.Request req) async {
-          queries.add(req.url.queryParameters);
-          final int start = int.parse(req.url.queryParameters['StartIndex']!);
-          final int limit = int.parse(req.url.queryParameters['Limit']!);
-          final int n = (total - start).clamp(0, limit);
-          return http.Response(
-            jsonEncode(<String, Object?>{
-              'Items': <Object?>[
-                for (int i = 0; i < n; i++) _tinyJson('ep${start + i}'),
-              ],
-              'TotalRecordCount': total,
-            }),
-            200,
-          );
-        }),
-      );
+      final JellyfinApi api = _api(MockClient((http.Request req) async {
+        queries.add(req.url.queryParameters);
+        final int start = int.parse(req.url.queryParameters['StartIndex']!);
+        final int limit = int.parse(req.url.queryParameters['Limit']!);
+        final int n = (total - start).clamp(0, limit);
+        return http.Response(
+          jsonEncode(<String, Object?>{
+            'Items': <Object?>[
+              for (int i = 0; i < n; i++) _tinyJson('ep${start + i}'),
+            ],
+            'TotalRecordCount': total,
+          }),
+          200,
+        );
+      }));
 
       final JellyfinRecursiveResult result = await api.recursiveVideoItems(
         userId: 'u1',
@@ -284,7 +270,7 @@ void main() {
       final List<JellyfinItem> items = result.items;
 
       expect(result.truncated, isFalse);
-      // BUG-2252 拆轮后 Movie/Episode 各跑一遍完整分页：两轮 × 3 页 = 6 发，
+      // BUG-2254 拆轮后 Movie/Episode 各跑一遍完整分页：两轮 × 3 页 = 6 发，
       // 每轮都把 1200 条翻完（mock 对两种类型返回同一批，条目数 ×2）。
       expect(
         items,
@@ -295,7 +281,7 @@ void main() {
       expect(
         queries.map((Map<String, String> q) => q['IncludeItemTypes']).toSet(),
         <String>{'Movie', 'Episode'},
-        reason: '飞牛对逗号多值返 0 条，单值拆轮（BUG-2252）',
+        reason: '飞牛对逗号多值返 0 条，单值拆轮（BUG-2254）',
       );
       expect(
         queries
@@ -312,22 +298,20 @@ void main() {
 
     test('服务器谎报 TotalRecordCount 时按 kMaxRecursiveItems 熔断，不死循环', () async {
       int calls = 0;
-      final JellyfinApi api = _api(
-        MockClient((http.Request req) async {
-          calls++;
-          final int limit = int.parse(req.url.queryParameters['Limit']!);
-          return http.Response(
-            jsonEncode(<String, Object?>{
-              'Items': <Object?>[
-                for (int i = 0; i < limit; i++) _tinyJson('x$calls-$i'),
-              ],
-              // 永远大于已取到的数量：没有熔断这里就是无限循环 + 无限内存。
-              'TotalRecordCount': 1 << 30,
-            }),
-            200,
-          );
-        }),
-      );
+      final JellyfinApi api = _api(MockClient((http.Request req) async {
+        calls++;
+        final int limit = int.parse(req.url.queryParameters['Limit']!);
+        return http.Response(
+          jsonEncode(<String, Object?>{
+            'Items': <Object?>[
+              for (int i = 0; i < limit; i++) _tinyJson('x$calls-$i'),
+            ],
+            // 永远大于已取到的数量：没有熔断这里就是无限循环 + 无限内存。
+            'TotalRecordCount': 1 << 30,
+          }),
+          200,
+        );
+      }));
 
       final JellyfinRecursiveResult result = await api.recursiveVideoItems(
         userId: 'u1',
@@ -336,33 +320,28 @@ void main() {
       );
 
       expect(JellyfinApi.kMaxRecursiveItems, 20000);
-      // 拆轮（BUG-2252）后 Movie/Episode 各自熔断在 20000：条目与请求数都 ×2。
+      // 拆轮（BUG-2254）后 Movie/Episode 各自熔断在 20000：条目与请求数都 ×2。
       expect(result.items, hasLength(JellyfinApi.kMaxRecursiveItems * 2));
       expect(calls, 40);
-      expect(
-        result.truncated,
-        isTrue,
-        reason: 'BUG-1891：熔断此前是静默截断——用户拿到「前 20000 条」却以为拉全了',
-      );
+      expect(result.truncated, isTrue,
+          reason: 'BUG-1891：熔断此前是静默截断——用户拿到「前 20000 条」却以为拉全了');
     });
 
     test('分页之间有最小间隔：40 次重查询不再零间隔连发（BUG-1891）', () {
       fakeAsync((FakeAsync async) {
         int calls = 0;
-        final JellyfinApi api = _api(
-          MockClient((_) async {
-            calls++;
-            return http.Response(
-              jsonEncode(<String, Object?>{
-                'Items': <Object?>[
-                  for (int i = 0; i < 500; i++) _tinyJson('c$calls-$i'),
-                ],
-                'TotalRecordCount': 1500,
-              }),
-              200,
-            );
-          }),
-        );
+        final JellyfinApi api = _api(MockClient((_) async {
+          calls++;
+          return http.Response(
+            jsonEncode(<String, Object?>{
+              'Items': <Object?>[
+                for (int i = 0; i < 500; i++) _tinyJson('c$calls-$i'),
+              ],
+              'TotalRecordCount': 1500,
+            }),
+            200,
+          );
+        }));
 
         unawaited(api.recursiveVideoItems(userId: 'u1'));
         // 第一页不等（进页面的首屏不该被人为拖慢）。
@@ -371,11 +350,10 @@ void main() {
         expect(calls, 1);
 
         // 第二页要等满 kPageInterval 才发。
-        async.elapse(
-          JellyfinApi.kPageInterval - const Duration(milliseconds: 1),
-        );
+        async.elapse(JellyfinApi.kPageInterval - const Duration(milliseconds: 1));
         async.flushMicrotasks();
-        expect(calls, 1, reason: '零间隔连发正是 Emby/Jellyfin 滥用检测眼里的爬虫特征');
+        expect(calls, 1,
+            reason: '零间隔连发正是 Emby/Jellyfin 滥用检测眼里的爬虫特征');
 
         async.elapse(const Duration(milliseconds: 2));
         async.flushMicrotasks();
@@ -386,20 +364,18 @@ void main() {
 
     test('某页返空即停（totalCount 偏大也不空转）', () async {
       int calls = 0;
-      final JellyfinApi api = _api(
-        MockClient((_) async {
-          calls++;
-          return http.Response(
-            jsonEncode(<String, Object?>{
-              'Items': calls == 1
-                  ? <Object?>[_tinyJson('a'), _tinyJson('b')]
-                  : <Object?>[],
-              'TotalRecordCount': 999,
-            }),
-            200,
-          );
-        }),
-      );
+      final JellyfinApi api = _api(MockClient((_) async {
+        calls++;
+        return http.Response(
+          jsonEncode(<String, Object?>{
+            'Items': calls == 1
+                ? <Object?>[_tinyJson('a'), _tinyJson('b')]
+                : <Object?>[],
+            'TotalRecordCount': 999,
+          }),
+          200,
+        );
+      }));
 
       final JellyfinRecursiveResult result = await api.recursiveVideoItems(
         userId: 'u1',
@@ -407,7 +383,7 @@ void main() {
       );
       expect(result.items, hasLength(2));
       expect(result.truncated, isFalse);
-      // 拆轮（BUG-2252）后 Movie 轮 2 发（2 条→空停）、Episode 轮 1 发（空停）。
+      // 拆轮（BUG-2254）后 Movie 轮 2 发（2 条→空停）、Episode 轮 1 发（空停）。
       expect(calls, 3);
     });
   });
@@ -415,10 +391,10 @@ void main() {
   group('[3] 重字段不在清单里，由 remoteVideoDetail 按需补齐（BUG-1891）', () {
     test('清单 Fields = ProductionYear，全程没有一条请求要过 MediaSources', () async {
       final List<Uri> seen = <Uri>[];
-      final JellyfinVideoClient c = _client(
-        MockClient((http.Request req) async {
-          seen.add(req.url);
-          if (req.url.path == '/Users/u1/Views') {
+      final JellyfinVideoClient c =
+          _client(MockClient((http.Request req) async {
+        seen.add(req.url);
+        if (req.url.path == '/Users/u1/Views') {
             return http.Response(
               jsonEncode(<String, Object?>{
                 'Items': <Object?>[
@@ -434,12 +410,11 @@ void main() {
           }
           return http.Response(
             jsonEncode(<String, Object?>{
-              // 服务器没被要 MediaSources 就不会下发它——桩必须照做，否则这条测试
-              // 会拿着一份现实里不存在的响应体自我安慰。
-              'Items': <Object?>[
-                _episodeJson(hasSubtitlesFlag: true)..remove('MediaSources'),
-              ],
-              'TotalRecordCount': 1,
+            // 服务器没被要 MediaSources 就不会下发它——桩必须照做，否则这条测试
+            // 会拿着一份现实里不存在的响应体自我安慰。
+            'Items': <Object?>[_episodeJson(hasSubtitlesFlag: true)
+              ..remove('MediaSources')],
+            'TotalRecordCount': 1,
             }),
             200,
           );
@@ -448,14 +423,10 @@ void main() {
 
       final List<RemoteVideoInfo> list = await c.listRemoteVideos();
 
-      final Uri itemsUri = seen.firstWhere(
-        (Uri u) => u.path == '/Users/u1/Items',
-      );
-      expect(
-        itemsUri.queryParameters['Fields'],
-        'ProductionYear',
-        reason:
-            'Fields=MediaSources 会让服务器为每一条目展开媒体源'
+      final Uri itemsUri =
+          seen.firstWhere((Uri u) => u.path == '/Users/u1/Items');
+      expect(itemsUri.queryParameters['Fields'], 'ProductionYear',
+        reason: 'Fields=MediaSources 会让服务器为每一条目展开媒体源'
             '（Emby 侧还含外挂字幕的磁盘探测），几十万条目的服务器上一进视频页'
             '就是几十上百个这种重查询连发——用户报的「一添加就开始刮削、卡死、'
             '封号」正是它',
@@ -467,31 +438,25 @@ void main() {
       );
 
       final RemoteVideoInfo info = list.single;
-      expect(
-        info.hasSubtitle,
-        isTrue,
-        reason: '清单卡的字幕角标退回服务器的粗粒度 HasSubtitles（会把图形轨也算上）',
-      );
+      expect(info.hasSubtitle, isTrue,
+          reason: '清单卡的字幕角标退回服务器的粗粒度 HasSubtitles（会把图形轨也算上）');
       expect(info.sizeBytes, isNull, reason: '重字段不在清单里');
       expect(info.subtitleFileName, isNull, reason: '重字段不在清单里');
     });
 
     test('remoteVideoDetail 打一次 /Items/{id} 把大小 / 精确字幕轨补回来', () async {
       final List<Uri> seen = <Uri>[];
-      final JellyfinVideoClient c = _client(
-        MockClient((http.Request req) async {
-          seen.add(req.url);
-          return http.Response(
-            jsonEncode(
-              _episodeJson(
-                sizeBytes: 123456789,
-                subtitleStreams: <Map<String, Object?>>[_externalSrt],
-              ),
-            ),
-            200,
-          );
-        }),
-      );
+      final JellyfinVideoClient c =
+          _client(MockClient((http.Request req) async {
+        seen.add(req.url);
+        return http.Response(
+          jsonEncode(_episodeJson(
+            sizeBytes: 123456789,
+            subtitleStreams: <Map<String, Object?>>[_externalSrt],
+          )),
+          200,
+        );
+      }));
 
       final RemoteVideoInfo detail = await c.remoteVideoDetail(
         const RemoteVideoInfo(id: 'ep1', title: 'Show A S01E02 The Pilot'),
@@ -499,36 +464,25 @@ void main() {
 
       expect(seen.single.path, '/Users/u1/Items/ep1');
       expect(detail.sizeBytes, 123456789);
-      expect(
-        detail.hasSubtitle,
-        isTrue,
-        reason: 'home_video_page 的 if (!video.hasSubtitle) return 是下载外挂字幕的早返门',
-      );
-      expect(
-        detail.subtitleFileName,
-        'Show A S01E02 The Pilot.jpn.srt',
-        reason:
-            '文件名带着真实编码——为空时消费端按扩展名选解析器会恒落 srt，'
-            'ASS 轨会被 srt 解析器解成 0 条 cue',
-      );
+      expect(detail.hasSubtitle, isTrue,
+          reason:
+              'home_video_page 的 if (!video.hasSubtitle) return 是下载外挂字幕的早返门');
+      expect(detail.subtitleFileName, 'Show A S01E02 The Pilot.jpn.srt',
+          reason: '文件名带着真实编码——为空时消费端按扩展名选解析器会恒落 srt，'
+              'ASS 轨会被 srt 解析器解成 0 条 cue');
     });
 
     test('只有图形轨（PGS）时 remoteVideoDetail 把 hasSubtitle 纠回 false', () async {
-      final JellyfinVideoClient c = _client(
-        MockClient(
-          (_) async => http.Response(
-            jsonEncode(
-              _episodeJson(
-                // 服务器的 HasSubtitles 把图形轨也算 true——清单阶段只能信它，
-                // 所以真要下字幕之前必须补一次详情把它纠回来。
-                hasSubtitlesFlag: true,
-                subtitleStreams: <Map<String, Object?>>[_graphicPgs],
-              ),
-            ),
-            200,
-          ),
-        ),
-      );
+      final JellyfinVideoClient c =
+          _client(MockClient((_) async => http.Response(
+                jsonEncode(_episodeJson(
+                  // 服务器的 HasSubtitles 把图形轨也算 true——清单阶段只能信它，
+                  // 所以真要下字幕之前必须补一次详情把它纠回来。
+                  hasSubtitlesFlag: true,
+                  subtitleStreams: <Map<String, Object?>>[_graphicPgs],
+                )),
+                200,
+              )));
 
       final RemoteVideoInfo detail = await c.remoteVideoDetail(
         const RemoteVideoInfo(id: 'ep1', title: 'Show A S01E02 The Pilot'),
@@ -560,14 +514,10 @@ void main() {
         final JellyfinApi api = _api(
           MockClient((_) => Completer<http.Response>().future),
         );
-        unawaited(
-          api
-              .views('u1')
-              .then<void>(
-                (List<JellyfinLibraryView> _) {},
-                onError: (Object e, StackTrace _) => err = e,
-              ),
-        );
+        unawaited(api.views('u1').then<void>(
+              (List<JellyfinLibraryView> _) {},
+              onError: (Object e, StackTrace _) => err = e,
+            ));
 
         async.elapse(const Duration(seconds: 14));
         async.flushMicrotasks();
@@ -575,27 +525,22 @@ void main() {
 
         async.elapse(const Duration(seconds: 2));
         async.flushMicrotasks();
-        expect(
-          err,
-          isA<TimeoutException>(),
-          reason: 'createAppHttpIoClient 只有连接超时，响应挂起必须由这层兜住',
-        );
+        expect(err, isA<TimeoutException>(),
+            reason: 'createAppHttpIoClient 只有连接超时，响应挂起必须由这层兜住');
       });
     });
   });
 
   group('[5] 缓存槽身份含 userId', () {
     test('remoteLibrarySourceId = jellyfin:<serverUrl>|<userId>', () {
-      final JellyfinVideoClient c = _client(
-        MockClient((_) async => http.Response('{}', 200)),
-      );
+      final JellyfinVideoClient c =
+          _client(MockClient((_) async => http.Response('{}', 200)));
       expect(c.remoteLibrarySourceId, 'jellyfin:http://nas:8096|u1');
     });
 
     test('同机换账号必须换槽（否则 TTL 内把 A 的库清单渲染给 B）', () {
-      final JellyfinVideoClient a = _client(
-        MockClient((_) async => http.Response('{}', 200)),
-      );
+      final JellyfinVideoClient a =
+          _client(MockClient((_) async => http.Response('{}', 200)));
       final JellyfinVideoClient b = _client(
         MockClient((_) async => http.Response('{}', 200)),
         userId: 'u2',
@@ -604,9 +549,8 @@ void main() {
     });
 
     test('sourceIdFor 与实例属性同一真相（登出失效不会拼歪）', () {
-      final JellyfinVideoClient a = _client(
-        MockClient((_) async => http.Response('{}', 200)),
-      );
+      final JellyfinVideoClient a =
+          _client(MockClient((_) async => http.Response('{}', 200)));
       expect(
         JellyfinVideoClient.sourceIdFor(
           serverUrl: 'http://nas:8096',
@@ -619,17 +563,14 @@ void main() {
 
   group('[6] 服务器断点带更新时刻（LastPlayedDate）', () {
     const String kLastPlayed = '2026-08-19T10:20:30.0000000Z';
-    final int kLastPlayedMs = DateTime.parse(
-      kLastPlayed,
-    ).millisecondsSinceEpoch;
+    final int kLastPlayedMs =
+        DateTime.parse(kLastPlayed).millisecondsSinceEpoch;
 
     test('parseItem 解 UserData.LastPlayedDate -> lastPlayedAtMs', () {
-      final JellyfinItem item = JellyfinApi.parseItem(
-        _episodeJson(
-          positionTicks: 42000 * kTicksPerMs,
-          lastPlayedDate: kLastPlayed,
-        ),
-      );
+      final JellyfinItem item = JellyfinApi.parseItem(_episodeJson(
+        positionTicks: 42000 * kTicksPerMs,
+        lastPlayedDate: kLastPlayed,
+      ));
       expect(item.positionMs, 42000);
       expect(item.lastPlayedAtMs, kLastPlayedMs);
     });
@@ -653,8 +594,8 @@ void main() {
         ),
       );
 
-      final ({int positionMs, int updatedAtMs}) pos = await c
-          .remoteVideoPosition('ep1');
+      final ({int positionMs, int updatedAtMs}) pos =
+          await c.remoteVideoPosition('ep1');
       expect(pos.positionMs, 42000);
       expect(
         pos.updatedAtMs,
@@ -693,15 +634,15 @@ void main() {
     const String kToken = 'SUPERSECRETTOKEN';
 
     MockClient throwingClient() => MockClient((http.Request req) async {
-      // package:http 的 IOClient 就是这么抛的：把 request.url 整个塞进异常，
-      // 而 Jellyfin 的图片/流/字幕 URL 自带 api_key。
-      throw http.ClientException('Connection reset by peer', req.url);
-    });
+          // package:http 的 IOClient 就是这么抛的：把 request.url 整个塞进异常，
+          // 而 Jellyfin 的图片/流/字幕 URL 自带 api_key。
+          throw http.ClientException('Connection reset by peer', req.url);
+        });
 
     Future<Object> caught(Future<Object?> future) => future.then<Object>(
-      (Object? _) => 'no throw',
-      onError: (Object e, StackTrace _) => e,
-    );
+          (Object? _) => 'no throw',
+          onError: (Object e, StackTrace _) => e,
+        );
 
     test('fetchBytes：封面失败的异常文本不含令牌', () async {
       final JellyfinApi api = _api(throwingClient(), token: kToken);
@@ -716,16 +657,16 @@ void main() {
     });
 
     test('downloadToFile：整片/字幕下载失败的异常文本不含令牌', () async {
-      final Directory dir = Directory.systemTemp.createTempSync(
-        'jf_redact_test',
-      );
+      final Directory dir =
+          Directory.systemTemp.createTempSync('jf_redact_test');
       addTearDown(() {
         if (dir.existsSync()) dir.deleteSync(recursive: true);
       });
       final JellyfinApi api = _api(throwingClient(), token: kToken);
-      final Object err = await caught(
-        api.downloadToFile(api.streamUrl('ep1'), File('${dir.path}/out.mp4')),
-      );
+      final Object err = await caught(api.downloadToFile(
+        api.streamUrl('ep1'),
+        File('${dir.path}/out.mp4'),
+      ));
 
       expect(err.toString(), isNot(contains(kToken)));
       expect(err.toString(), contains('api_key=$kRedactedPlaceholder'));
@@ -733,9 +674,9 @@ void main() {
 
     test('脱敏只动凭据参数，其余排查信息保留', () async {
       final JellyfinApi api = _api(throwingClient(), token: kToken);
-      final Object err = await caught(
-        api.fetchBytes('${api.imageUrl('ep1')}&maxWidth=300'),
-      );
+      final Object err = await caught(api.fetchBytes(
+        '${api.imageUrl('ep1')}&maxWidth=300',
+      ));
       expect(err.toString(), contains('maxWidth=300'));
       expect(err.toString(), contains('/Items/ep1/Images/Primary'));
     });
@@ -744,38 +685,37 @@ void main() {
   group('[8] 枚举面收窄到媒体库视图（BUG-1891）', () {
     test('默认（未点名库）只递归视频域媒体库：音乐/图书库不再被扫', () async {
       final List<Uri> seen = <Uri>[];
-      final JellyfinVideoClient c = _client(
-        MockClient((http.Request req) async {
-          seen.add(req.url);
-          if (req.url.path == '/Users/u1/Views') {
-            return _viewsResponse(<List<String?>>[
-              <String?>['lib-movies', '电影', 'movies'],
-              <String?>['lib-music', '音乐', 'music'],
-              <String?>['lib-books', '图书', 'books'],
-              <String?>['lib-tv', '剧集', 'tvshows'],
-              <String?>['lib-mixed', '混合', null],
-            ]);
-          }
-          final String parent = req.url.queryParameters['ParentId']!;
-          // 拆轮（BUG-2252）：每库 Movie/Episode 各一发；条目挂在 Episode 轮。
-          if (req.url.queryParameters['IncludeItemTypes'] == 'Episode') {
-            return http.Response(
-              jsonEncode(<String, Object?>{
-                'Items': <Object?>[_tinyJson('$parent-1')],
-                'TotalRecordCount': 1,
-              }),
-              200,
-            );
-          }
+      final JellyfinVideoClient c =
+          _client(MockClient((http.Request req) async {
+        seen.add(req.url);
+        if (req.url.path == '/Users/u1/Views') {
+          return _viewsResponse(<List<String?>>[
+            <String?>['lib-movies', '电影', 'movies'],
+            <String?>['lib-music', '音乐', 'music'],
+            <String?>['lib-books', '图书', 'books'],
+            <String?>['lib-tv', '剧集', 'tvshows'],
+            <String?>['lib-mixed', '混合', null],
+          ]);
+        }
+        final String parent = req.url.queryParameters['ParentId']!;
+        // 拆轮（BUG-2254）：每库 Movie/Episode 各一发；条目挂在 Episode 轮。
+        if (req.url.queryParameters['IncludeItemTypes'] == 'Episode') {
           return http.Response(
             jsonEncode(<String, Object?>{
-              'Items': <Object?>[],
-              'TotalRecordCount': 0,
+              'Items': <Object?>[_tinyJson('$parent-1')],
+              'TotalRecordCount': 1,
             }),
             200,
           );
-        }),
-      );
+        }
+        return http.Response(
+          jsonEncode(<String, Object?>{
+            'Items': <Object?>[],
+            'TotalRecordCount': 0,
+          }),
+          200,
+        );
+      }));
 
       final List<RemoteVideoInfo> list = await c.listRemoteVideos();
 
@@ -784,24 +724,13 @@ void main() {
             .where((Uri u) => u.path == '/Users/u1/Items')
             .map((Uri u) => u.queryParameters['ParentId'])
             .toList(),
-        // 拆轮（BUG-2252）后每库 Movie/Episode 各一发，ParentId 序列翻倍。
-        <String>[
-          'lib-movies',
-          'lib-movies',
-          'lib-tv',
-          'lib-tv',
-          'lib-mixed',
-          'lib-mixed',
-        ],
-        reason:
-            '整台服务器递归（不带 ParentId）在几十万条目的公共 Emby 服上就是'
+        // 拆轮（BUG-2254）后每库 Movie/Episode 各一发，ParentId 序列翻倍。
+        <String>['lib-movies', 'lib-movies', 'lib-tv', 'lib-tv', 'lib-mixed', 'lib-mixed'],
+        reason: '整台服务器递归（不带 ParentId）在几十万条目的公共 Emby 服上就是'
             '几十上百个重查询连发；音乐/图书/照片库更是白扫',
       );
-      expect(list.map((RemoteVideoInfo v) => v.id).toList(), <String>[
-        'lib-movies-1',
-        'lib-tv-1',
-        'lib-mixed-1',
-      ]);
+      expect(list.map((RemoteVideoInfo v) => v.id).toList(),
+          <String>['lib-movies-1', 'lib-tv-1', 'lib-mixed-1']);
     });
 
     test('用户点名了库 → 只递归这几个，连 Views 都不问', () async {
@@ -827,9 +756,7 @@ void main() {
       expect(seen.map((Uri u) => u.path).toSet(), <String>{'/Users/u1/Items'});
       expect(
         seen
-            .where(
-              (Uri u) => u.queryParameters['IncludeItemTypes'] == 'Episode',
-            )
+            .where((Uri u) => u.queryParameters['IncludeItemTypes'] == 'Episode')
             .single
             .queryParameters['ParentId'],
         'lib-anime',
@@ -840,21 +767,20 @@ void main() {
 
     test('Views 失败 → 退回整库递归（宁可多扫也不能让用户的库整个消失）', () async {
       final List<Uri> seen = <Uri>[];
-      final JellyfinVideoClient c = _client(
-        MockClient((http.Request req) async {
-          seen.add(req.url);
-          if (req.url.path == '/Users/u1/Views') {
-            return http.Response('', 500);
-          }
-          return http.Response(
-            jsonEncode(<String, Object?>{
-              'Items': <Object?>[_tinyJson('m1')],
-              'TotalRecordCount': 1,
-            }),
-            200,
-          );
-        }),
-      );
+      final JellyfinVideoClient c =
+          _client(MockClient((http.Request req) async {
+        seen.add(req.url);
+        if (req.url.path == '/Users/u1/Views') {
+          return http.Response('', 500);
+        }
+        return http.Response(
+          jsonEncode(<String, Object?>{
+            'Items': <Object?>[_tinyJson('m1')],
+            'TotalRecordCount': 1,
+          }),
+          200,
+        );
+      }));
 
       final List<RemoteVideoInfo> list = await c.listRemoteVideos();
 
@@ -865,15 +791,13 @@ void main() {
 
     test('同一条目同时落在两个被点名的库里只出一张卡', () async {
       final JellyfinVideoClient c = _client(
-        MockClient(
-          (_) async => http.Response(
-            jsonEncode(<String, Object?>{
-              'Items': <Object?>[_tinyJson('dup')],
-              'TotalRecordCount': 1,
-            }),
-            200,
-          ),
-        ),
+        MockClient((_) async => http.Response(
+              jsonEncode(<String, Object?>{
+                'Items': <Object?>[_tinyJson('dup')],
+                'TotalRecordCount': 1,
+              }),
+              200,
+            )),
         libraryIds: <String>['a', 'b'],
       );
 
