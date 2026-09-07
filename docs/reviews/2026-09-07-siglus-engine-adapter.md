@@ -52,7 +52,7 @@ lookup identity 使用 unknown/pending/matched/final-rejected 状态；扫描持
 | HBK-AUDIT-SIGLUS-002 | 高 / 已实现，完整 UI 验收未完成 | 保护壳 raw extent 不能代表 loaded-image 范围 | Siglus 显式选择 VirtualSize，完整 bounds/readability/overlap 检查 |
 | HBK-AUDIT-SIGLUS-003 | 中 / 已实现，真实生命周期仍需验证 | startup pending 后文本安装未必再次推进 | worker 继续 `text_pending_`；pending 不抢 patch；成功或最终拒绝后完成文本安装尝试 |
 | HBK-AUDIT-SIGLUS-004 | 中 / 已实现，尺寸切换运行时未证明 | 固定设计尺寸无法代表不同兼容 build | 两链解析 Gameexe；无效或变化时撤销，不修改已发布 profile |
-| HBK-AUDIT-SIGLUS-005 | 高 / 根因已修复，v23 真机复测未完成 | 上游 Dart 已恒接受风险，但首次 native 路径绕过 Configure，runner 仍可能等待旧确认；Siglus 新点击缺少宿主准入/当前 owner 校验 | runner 策略贯通，Dart pending 优先于 geometry ready，原生 down/up 与发布校验准入；快切模式等待旧 detach 并重新检查。原版 UI 复测仍待完成 |
+| HBK-AUDIT-SIGLUS-005 | 高 / 根因已修复，两款原版 v23 有限输入序列通过 | 上游 Dart 已恒接受风险，但首次 native 路径绕过 Configure，runner 仍可能等待旧确认；Siglus 新点击缺少宿主准入/当前 owner 校验 | runner 策略贯通，Dart pending 优先于 geometry ready，原生 down/up 与发布校验准入；快切模式等待旧 detach 并重新检查。SPRB 与 Anemoi 已实际验证真实词条弹窗打开不翻页、窗外关闭不翻页、下一次点击正常推进 |
 
 负向验证包括：缺失/重复签名、全可执行节范围的第二候选、错误调用目标、错误栈清理/对象偏移、跨 ABI 误匹配、非 x86 架构、错误键 slot/真实导出不符、两条 Gameexe 链指向不同槽、数据节里的伪签名、无效设计尺寸、越界/重叠/不可读的 loaded section。未知 hash 的正向证明仍须满足完整 ABI 结构；测试不能用 fixture expected 反向构造生产准入结果。
 
@@ -101,9 +101,9 @@ metadata 子任务另已执行 `python tools/generate_engine_support.py`、`--ch
 - provider 准入、host shield 和 hit：prototype 尚未通过。
 - 本轮音频捕获、逐句配对与真卡写入：没有同会话 E2E 证明，不从历史音频支持外推。
 
-## Final runtime：已观察事实与当前限制
+## Runtime：历史 v22 与上游 v23 分阶段记录
 
-本节事实由集成主代理在最终 DLL 与 Fushi 宿主会话中提供。process 身份文件只读保存在主 checkout 的 `.codex-test/siglus-engine-adapter/`；未将台词、截图或游戏载荷加入本文。
+本节先记录整合上游前的 v22 事实，再记录 v23 的修复与实测。不能混用两代产物的身份或测试结论。process 身份文件只读保存在主 checkout 的 `.codex-test/siglus-engine-adapter/`；未将台词、截图或游戏载荷加入本文。
 
 | 组件 | 最终身份 |
 |---|---|
@@ -142,11 +142,46 @@ Windows 宿主首次 Release 编译完成，但安装阶段因新工作区缺少
 
 ### v23 真机边界
 
-原版 SPRB 已从用户原始路径重新启动，PID `19596`，开始时间 `2026-09-07T13:24:16.8706135+08:00`。桌面控制两次返回 `foreground window did not report a process id`，当前只确认 `process_found`；新宿主 attach、helper/IPC、台词、点击/关闭及制卡均未运行，不能把旧 v22 会话算入本轮通过。已请求用户恢复可控桌面，源码和离线验证继续完成；未改存档或要求用户确认点击风险。
+原版 SPRB 从用户原始路径启动，PID `19596`，父 PID `71316`，开始时间 `2026-09-07T13:24:16.8706135+08:00`。桌面工具此前两次返回 `foreground window did not report a process id`；重置其持久会话后恢复，不能据该错误判断用户锁屏或游戏不可控。
+
+新宿主首次启动暴露真实数据库兼容问题：当前 schema 已是 97，但缺少上游 v96 引入的 `expanded_languages_json`，导致生成 mapper 在载入词典元数据时崩溃。`a4cefcce01` 在版本降级保护之后，幂等补齐这个已知缺列；未降低 schema，也未直接编辑用户数据库。新回归及 v96/v97/降级保护测试合计 12/12，通过实际退出码确认。用户数据库已先作本地在线备份；修复后 Windows Release 构建退出 0（126.7 秒），实际启动正常。详见 `BUG-2229-dictionary-expanded-column-version-collision.md`。
+
+| v23 会话组件 | 实际身份 |
+|---|---|
+| Fushi host | PID `56324`，启动 `2026-09-07T14:04:04.4687374+08:00`，本 worktree Release bundle |
+| app.so | SHA-256 `A26E931BC5A1B475C6CE8D2B068AEA69C29F8F123AABC94D2CCA798D2A405641` |
+| helper | PID `24932`，父 PID `56324`，启动 `2026-09-07T14:05:39.973003+08:00` |
+| runtime 目录 | `C:\Users\Wight\AppData\Roaming\Fushi\Fushi\voice_hook_runtime\31a0b31f3245b10a\x86\` |
+| 实际 x86 DLL | SHA-256 `2FD722C97019A2FF789C155372C3A585751894569A016D7D58417BF6BAF346E9`，与本轮产物一致 |
+
+宿主在约 `14:05:39 +08:00` 发起附着；这是操作前的秒级时间记录，不当作精确远程注入完成时刻。选择正文线程 `EmbedSiglus · 0x5decf0`，实际台词与游戏画面一致。以 `--no-enable` 只读 probe 核实 IPC v23、provider kind/id=`2/3`、shield request/applied=`2/2`、ready=`0xE4`、fault=`0`。首次主代理字形点击产生 hit=1、frames=2、generation/text_generation=`9/9`，实际 WebView 词典弹窗可见，剧情未推进，无校准或风险确认操作。
+
+随后另一字形点击显示弹窗；主代理点击窗外空白，弹窗关闭且原句保持；再次点击同一空白处，游戏正常推进下一句。该受控序列证明此 SPRB 会话的关闭输入没有穿透、下一次正常输入恢复。全局累计 hit/text 计数可能包含用户操作，不按总数推断受控测试次数。
+
+此阶段弹窗对两个常见日语词均返回零词条，只证明命中、查词请求和弹窗呈现。只读排查发现 DB 保留 49 本词典元数据，当前 `C:\文档\dictionaryResources` 对应目录均不存在；旧 nested 资源根也为空。前缀扫描包含首字，语言和查询上限正常。后续用户给出本地词典包并授权导入，恢复后的真实词条验证见下节；不能把之前空结果归因于 Siglus adapter。
+
+`14:09:17` 曾出现弹窗消失及短暂 provider unavailable；仅凭现有日志不能确定原因。另行发现宿主在四次一致性读取均冲突后返回默认 None 的静态契约缺口，修复只忽略明确冲突，真实 None、退出及 epoch 变化仍清状态；不得将该修复宣称为上述运行时事件的已证实原因。
+
+### 恢复词典后的双原版查阅与输入验证
+
+用户明确提供 `D:\smb\yomitan` 并授权导入日语词典。主代理通过现有词典管理的本地更新入口，重新导入同名《新明解国語辞典　第八版》（ZIP 10,507,053 字节），恢复原先缺失的资源，未批量删除其他词典或直接改数据库。原有顺序和可见性沿更新流程保留。新资源落在应用既有默认目录；下一次游戏查询已实际显示该词典的释义。
+
+含快照一致性修复 `aeedaedda6` 的 Windows Release 构建退出 0（33.0 秒）；新增有界采样与生产接线测试在 MSVC C++17 `/W4 /WX /utf-8` 下通过，已有 policy 测试文件共执行 9 个测试函数。该修复仅改 Windows host，native DLL 与 IPC v23 未改变。BUG-2230 记录静态根因与定向测试，不把运行时短暂退出自动归因于读冲突。独立复核未发现阻断问题；双读相等不是写端 seqlock，上层重采样冲突可能暂存旧 UI 元数据，实时 native 所有者/代次/握手门仍负责拒绝失效输入。
+
+最终用于本节实测的 host PID `36616`，启动 `2026-09-07T14:28:03.0172219+08:00`；`fushi.exe` SHA-256 为 `D85A5BB43C272BFCD0BEE809500C67C4F5B7FF2387C9916FB59225BDEDF75CF7`，`app.so` 仍为上表的 `A26E…5641`。两款原版使用同一实际 x86 DLL `2FD722…46E9`，运行时目录保持 `31a0b31f3245b10a\x86`。
+
+| 原版 | 会话及直接观察 | 结论边界 |
+|---|---|---|
+| Anemoi | 游戏 PID `39348`，原路径启动于 `14:22:33 +08:00`；host 于约 `14:29:22` 发起附着，helper PID `69520`，启动 `14:29:22.966511`。选定 `SiglusEngine exact · 0x25c880`，正文与画面一致。点击当前原文字形，实际新明解释义可见，text=1、hit=1、frames=2、provider=2/3 Active、generation/text_generation=5/5 | 同一 game 截图坐标下，第一次窗外点击关闭弹窗、原句保持；第二次同点点击推进下一句。后续只读快照 text=2、hit=1、frames=3。无风险确认或校准 |
+| SPRB | 同一游戏 PID `19596`，host `36616` 约 `14:33:05` 重新附着，选定 `EmbedSiglus · 0x5decf0`。恢复词典后的点击产生 hit seq=6、frames=17、generation=29/29；主代理实际看到新明解词条。下一句多字词点击产生 hit seq=7、frames=20、generation=50/50，释义与所点词一致 | 窗外关闭不翻页，第二次同点点击正常推进；另一弹窗的关闭按钮也未推进原句。请求/应用=3/3、ready=0xE4、fault=0。累计 hit 包含此前会话，不当作独立测试次数 |
+
+以上是 DLL 原文几何命中→实际词典释义→关闭→游戏输入恢复的有限验证，覆盖两套独立 Siglus x86 ABI。没有依赖汉化版本、手工校准或单游戏新增 hash/RVA 放行。约秒级附着操作时间不能代替精确 DLL 注入时刻；SPRB 重附着也不能记成新的 DLL 注入。
+
+本轮另观察一次宿主 PID `73368` 崩溃：恢复词典后切换页面，尚未附着任何游戏时，Windows 记录 `flutter_windows.dll+0x8e50da` 的无效读取。两份转储的异常线程沿 `oleacc/UIAutomationCore` 回调进入 Flutter；缺少匹配 PDB，尚不能确认内部函数或根因。重启 PID `36616` 后页面、附着和上述查词均正常，但这不等于崩溃已修复。BUG-2231 单独保留未修复状态；没有关闭可访问性或用 adapter 特例掩盖它。
 
 ## Not proved
 
-尚未证明 Anemoi 在无截图/焦点干扰条件下关闭词典时正确吞掉对应 down/up 并恢复游戏输入；SPRB 有有效 hit 计数，但尚缺主代理可见词典佐证，且最新用户反馈指出实际推进台词受风险确认阻塞。上述数据没有证明两套 ABI 的输入行为可用，更没有证明任意 build、尺寸切换或输入事务序列都正确。
+两款原版的 v23 会话均已直接观察真实词条及关闭输入序列，不再停留在仅有 hit、空词条或等待风险确认的边界。上述有限序列没有证明任意 build、尺寸切换或全部输入事务都正确。
 
 本轮仍无“当前文本 → 对应音频 → 画面 → 真卡写入”的同会话 E2E，音频、paired、card 不从历史支持或本轮文字命中外推。准确注入 timestamp 缺项仍须补证，不能通过调整 evidence gate 或 allowlist 绕过。
 
@@ -154,6 +189,6 @@ Windows 宿主首次 Release 编译完成，但安装阶段因新工作区缺少
 
 ## Next gate / Next Scope
 
-当前产品验收目标是 **SPRB 无风险确认的输入与查词**；v23 新会话当前停在 `process_found`。恢复桌面控制后，用新 Windows bundle 附着原版 SPRB，先核对实际 helper/DLL 与 IPC v23，再验证正常推进、字形查词和关闭输入恢复，随后回归原版 Anemoi。
+当前阶段的 **SPRB 与 Anemoi 无风险确认原文查词** 已通过上述实际词条、关闭和推进序列。若继续扩大兼容范围，应选择第三个未汉化原版或官方试用版验证结构解析及实际设计尺寸；不以添加样本 hash 代替引擎结构证明。
 
-Anemoi 关闭事务保留为未证明的后续验证项，不再将“等待用户确认风险/自行绕过”作为当前推进方案。本阶段交接完成后文件交由集成主代理接管，后续同步、修复与验证结果由其追加。音频、配对、制卡和引擎支持升级仍不在已通过结论内。
+Anemoi 的窗外关闭事务已通过本轮有限序列，不再将“等待用户确认风险/自行绕过”作为推进方案。后续更广输入生命周期、第三样本、音频、配对、制卡和引擎支持升级仍不在已通过结论内；BUG-2231 的宿主可访问性崩溃另需带符号定位。
