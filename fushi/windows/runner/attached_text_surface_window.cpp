@@ -2485,7 +2485,11 @@ bool AttachedTextSurfaceWindow::EffectiveAllowRisk() const {
 
 void AttachedTextSurfaceWindow::RefreshGeometryProviderStatus() {
   if (read_geometry_provider_status_) {
-    provider_status_ = read_geometry_provider_status_();
+    const GeometryProviderStatus sample = read_geometry_provider_status_();
+    // A concurrent registry write is not an authoritative retirement. Keep
+    // the last coherent metadata for this target until an actual sample or
+    // session error arrives; input still checks the live registry owner.
+    if (!sample.snapshot_conflicted) provider_status_ = sample;
   } else {
     provider_status_ = GeometryProviderStatus{};
   }

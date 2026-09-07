@@ -90,6 +90,7 @@ public:
     uint64_t generation = 0;
     uint64_t text_generation = 0;
     bool available = false;
+    bool snapshot_conflicted = false;
   };
 
   struct Snapshot {

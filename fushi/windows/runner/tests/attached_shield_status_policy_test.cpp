@@ -4,6 +4,7 @@
 #undef NDEBUG
 
 #include "../attached_shield_status_policy.h"
+#include "../lookup_geometry_snapshot.h"
 
 #include <cassert>
 #include <fstream>
@@ -233,9 +234,89 @@ void TestSurfaceWiresRebindAndEffectiveRiskPolicy() {
          std::string::npos);
 }
 
+void TestGeometryReadConflictIsNotAConfirmedMissingProvider() {
+  namespace geometry = fushi::lookup_geometry_snapshot;
+  const geometry::Identity ready{2u, 3u, 1u, 0u, 0u};
+  geometry::Identity accepted = ready;
+  int reads = 0;
+  const bool sampled = geometry::TryRead([&reads, &ready]() {
+    geometry::Identity changing = ready;
+    // Ownership changes on every read, including while generation is zero.
+    changing.provider_id += static_cast<uint32_t>(++reads);
+    return changing;
+  }, &accepted);
+  assert(!sampled);
+  assert(reads == 8);  // The reader remains bounded; it never waits for a writer.
+  assert(geometry::SameIdentity(accepted, ready));
+
+  // A real, coherent None must replace the preceding Ready immediately.
+  const geometry::Identity none{};
+  assert(geometry::TryRead([&none]() { return none; }, &accepted));
+  assert(geometry::SameIdentity(accepted, none));
+  assert(geometry::TryRead([&ready]() { return ready; }, &accepted));
+  assert(geometry::SameIdentity(accepted, ready));
+
+  // Changes of lifecycle/text generation also invalidate a sample even when
+  // the provider pair itself is unchanged.
+  for (int field = 0; field < 3; ++field) {
+    reads = 0;
+    assert(!geometry::TryRead([&]() {
+      geometry::Identity changing = ready;
+      const uint32_t revision = static_cast<uint32_t>(++reads);
+      if (field == 0) changing.provider_status = revision;
+      if (field == 1) changing.text_generation = revision;
+      if (field == 2) changing.generation = revision;
+      return changing;
+    }, &accepted));
+    assert(geometry::SameIdentity(accepted, ready));
+  }
+}
+
+void TestGeometryConflictIsDroppedBeforeHostMetadataPublication() {
+  const auto read = [](const char* name) {
+    std::ifstream input(std::string(FUSHI_RUNNER_SOURCE_DIR) + name);
+    assert(input.good());
+    return std::string((std::istreambuf_iterator<char>(input)),
+                       std::istreambuf_iterator<char>());
+  };
+  const std::string reader = read("/voice_hook_reader.cpp");
+  const std::string sample = FunctionSlice(
+      reader, "VoiceHookLookupGeometryStatus VoiceHookReader::LookupGeometryStatus() {",
+      "bool VoiceHookReader::PollLookupHit(");
+  assert(sample.find("out.error = LookupGateLocked(h, false);") !=
+         std::string::npos);
+  assert(sample.find("if (out.error != VoiceHookLookupError::kNone) return out;") !=
+         std::string::npos);  // Session errors are not classified as conflicts.
+  assert(sample.find("out.error = VoiceHookLookupError::kGeometrySnapshotConflicted;") !=
+         std::string::npos);
+  assert(reader.find("geometry.error != VoiceHookLookupError::kGeometrySnapshotConflicted") !=
+         std::string::npos);
+  const std::string bridge = read("/flutter_window.cpp");
+  const std::string geometry_bridge = FunctionSlice(
+      bridge, "SetGeometryProviderStatusCallback([]() {",
+      "SetLookupGeometryStatusSink(");
+  assert(geometry_bridge.find("attached.snapshot_conflicted =") !=
+         std::string::npos);
+  const std::string surface = read("/attached_text_surface_window.cpp");
+  const std::string refresh = FunctionSlice(
+      surface, "void AttachedTextSurfaceWindow::RefreshGeometryProviderStatus() {",
+      "fushi::attached_overlayability::Evaluation");
+  assert(refresh.find("if (!sample.snapshot_conflicted) provider_status_ = sample;") !=
+         std::string::npos);
+  // Only conflicts are ignored. Confirmed None and unavailable/session errors
+  // replace cached metadata; a new surface epoch never inherits old Ready.
+  const std::string reset = FunctionSlice(
+      surface, "void AttachedTextSurfaceWindow::AdoptNewEpoch(",
+      "AttachedTextSurfaceWindow::AcceptRequest(");
+  assert(reset.find("provider_status_ = GeometryProviderStatus{};") !=
+         std::string::npos);
+}
+
 } // namespace
 
 int main() {
+  TestGeometryReadConflictIsNotAConfirmedMissingProvider();
+  TestGeometryConflictIsDroppedBeforeHostMetadataPublication();
   TestSamePidReplacementCannotBorrowOldFault();
   TestEpochAndTransactionFenceTheHandshake();
   TestPendingChallengeAndStuckTransactionRemainBlocked();

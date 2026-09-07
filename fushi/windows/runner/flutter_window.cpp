@@ -1594,6 +1594,8 @@ void FlutterWindow::RegisterGalHookTextChannel() {
         fushi::VoiceHookReader::Instance().LookupGeometryStatus();
     AttachedTextSurfaceWindow::GeometryProviderStatus attached;
     attached.available = status.ok();
+    attached.snapshot_conflicted =
+        status.error == fushi::VoiceHookLookupError::kGeometrySnapshotConflicted;
     attached.provider_kind = status.provider_kind;
     attached.provider_id = status.provider_id;
     attached.provider_status = status.provider_status;
