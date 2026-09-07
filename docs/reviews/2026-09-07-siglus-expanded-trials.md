@@ -171,6 +171,16 @@ LUNARiA 从原版 Start.exe 16340 经 StartMenu 71952 进入游戏 71920（19:01
 
 Windows Release 重建退出 0、139.2 秒，使用与此前运行环境相同的 Flutter3.44.0/Dart3.12.0。新宿主 EXE SHA-256 `4729c2e4d786ecb48564a27e638b3755f58c15bfded062ebb0f546ca56ad8375`，AOT `58b17978f2bdd4a1fbfaeabecc9bf7b6a4ba433015653448a297aa711c3c29b0`；native DLL 不变。宿主73120于19:37:48.014009启动，helper4636于19:38:53.268942附着同一游戏71920。约19:39:27手动选择同一原生线程后恢复八条历史，seq11即时显示原来的逐句资源，邻接无声行保持仅文本；期间没有推进或重播。seq1已被八槽缓冲覆盖，本次不宣称恢复了seq1。本机证据追加在同一 runtime 元数据台账。
 
+### NativeEcx 消息身份的原路径诊断
+
+LOOPERS PLUS 原版由 Start.exe34172（19:42:32.505292）经 StartMenu40196 进入游戏41020（19:43:02.300446），新宿主73120及helper67832（19:43:55.579549）默认附着。实际游戏为1.1.140.8/x86，EXE SHA-256 `49bac0ac8d3520554220f7cd7dd289d3f740fb3b1740bc108138f253a77de1c7`；实际DLL仍为上述`cb34c479...`，IPC24/NativeOwned，无Luna模块。诊断只记录调用帧、对象字段和哈希，不导出游戏正文或语音。
+
+前两批64个标量事件中，七条有声调用链均证明同次 voice request、写后key提交、outer、NativeText和surface的关系。原EBX为outerESP−4，NativeText的ECX为outerESP+0xc，EDI为对应owner；调用者保存槽、返回地址及surface向量关系全部一致。请求阶段的旧owner语音字段不能代替本次请求key，资源链也不能套用旧message family的EBP偏移。
+
+病房场景的下一批在首次outer发现owner改变后按计划立即清除断点，没有把旧堆对象当成当前正文对象。第四批沿真实调用记录新owner，观察到四组完整无声O→N→R：每段旁白先清语音字段到`UINT32_MAX`，随后两次outer分别提交两个文本片段，期间没有voice request或key提交。两次outer复用相同栈地址，因此一次性票据必须随每次outer进入重新生成，不能以owner、key或ESP相等来复用正文事件。无声与有声的outer调用者不同，固定有声caller会漏掉旁白。主代理在同一时段实际观察到两段无角色名旁白；尚未观察到同一句有声语音对应多个文本片段。
+
+四批本机台账分别为`lp41020-native-message-runtime.json`（SHA-256 `45260f0459d372b21c77b29b1170ba7c3dcc23cd00eace8384f65d13eb36f5a7`）、`lp41020-native-message-batch2-runtime.json`（`b755e6b726acafd521a375bfde3636c613a92031b901fa2e5602fa8669d87484`）、`lp41020-native-message-batch3-runtime.json`（`3cf5863089c68ab80f50e99b91cf29b6a7f12779f46fc386453217bab6f99727`）及`lp41020-native-message-batch4-runtime.json`（`e8213da8589e1d89643f145f6abe3e1019b81da04acd1d885e63052e80fe7d98`）。首次清理耗时130.623秒，超过120秒目标，事实保留；后三批分别89.685、28.924、79.113秒，均在90秒以内。调试器退出码1没有被写成命令通过；每批均另行确认Detached、没有调试器附着且原入口字节恢复。
+
 ## Not proved
 
 - `6f18f9...` v24 DLL 在 LOOPERS PLUS、LOOPERS 原版和終のステラ有有限查词交互证据；LUNARiA、SPRB 和 Anemoi 的旧 v23 证据不能互换为该构建验收；更不能将任何旧会话替换成最新 `7312ef...` 身份修正构建的验收。
@@ -181,4 +191,4 @@ Windows Release 重建退出 0、139.2 秒，使用与此前运行环境相同�
 
 ## Next gate
 
-历史回捞首门已通过，下一边界是 NativeEcx 编译 family 的消息/语音共同身份。原版 LOOPERS PLUS 的静态对齐栈与资源调用时序不同于已验证的消息 family，须先在原路径冻结同 owner 的 voice request、写后提交、正文原栈、无声清除及连续片段，不能套用旧 EBP 偏移或把静态签名通过当作新音频已支持。LUNARiA 的重复句/读档/重播及旧样本启动门仍未验证；独立 LE 源码修补不能替代原始游戏会话。
+NativeEcx 的有声单片段与无声连续outer身份已观察，正在据此实现独立严格profile与调用帧校验；其下一资源边界仍需证明真实source调用的key、路径和成员范围，不能套用旧EBP偏移。整段文本聚合及有声多片段未证明，不凭同owner/key/栈地址拼接。LUNARiA的重复句/读档/重播及旧样本启动门仍未验证；独立LE源码修补不能替代原始游戏会话。
