@@ -735,8 +735,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
       ),
     );
     _cachedSentenceOffset = data.sentenceOffset;
-    _lookupCue = data.normalizedOffset != null
-        ? _findCueForOffset(data.normalizedOffset!)
+    final List<AudioCue>? allCues = _cachedAllCues;
+    _lookupCue = data.audioCuePayload != null && allCues != null
+        ? cueForPointerPayload(data.audioCuePayload!, allCues)
         : null;
     if (_lookupCue == null && _srtBookUid != null) {
       _lookupCue = _findCueForSentence(data.sentence);

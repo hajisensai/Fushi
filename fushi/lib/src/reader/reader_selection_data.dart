@@ -10,6 +10,7 @@ class ReaderSelectionData {
     this.sentenceNormalizedLength,
     this.verticalWriting = false,
     this.mangaPageIndex,
+    this.audioCuePayload,
   });
 
   factory ReaderSelectionData.fromJson(Map<String, dynamic> json) {
@@ -30,16 +31,20 @@ class ReaderSelectionData {
       normalizedOffset: (json['normalizedOffset'] as num?)?.toInt(),
       normalizedLength: (json['normalizedLength'] as num?)?.toInt(),
       sentenceOffset: (json['sentenceOffset'] as num?)?.toInt() ?? 0,
-      sentenceNormalizedOffset:
-          (json['sentenceNormalizedOffset'] as num?)?.toInt(),
-      sentenceNormalizedLength:
-          (json['sentenceNormalizedLength'] as num?)?.toInt(),
+      sentenceNormalizedOffset: (json['sentenceNormalizedOffset'] as num?)
+          ?.toInt(),
+      sentenceNormalizedLength: (json['sentenceNormalizedLength'] as num?)
+          ?.toInt(),
       verticalWriting: json['verticalWriting'] as bool? ?? false,
       mangaPageIndex: (json['mangaPageIndex'] as num?)?.toInt(),
+      audioCuePayload: json['audioCuePayload'] as String?,
     );
   }
 
   final String text;
+
+  /// Cue identity from the rendered DOM, independent of study-unit offsets.
+  final String? audioCuePayload;
   final String sentence;
   final Map<String, double>? rect;
   final int? normalizedOffset;

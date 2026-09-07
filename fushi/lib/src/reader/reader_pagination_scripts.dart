@@ -1638,13 +1638,26 @@ window.__fushiInstallShell = function(C) {
     if (!window.fushiSelection || !window.fushiSelection.getCaretRange) return null;
     var caret = window.fushiSelection.getCaretRange(x, y);
     if (!caret) return null;
-    var node = caret.startContainer, off = caret.startOffset;
+    return this.cueIdAtDomPoint(caret.startContainer, caret.startOffset);
+  },
+  // Resolve the actual rendered cue, shared by pointer seek and lookup payloads.
+  // Study-unit offsets are not subtitle-normalized character offsets.
+  cueIdAtDomPoint: function(node, off) {
+    var el = node && node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+    var sidEl = el && el.closest ? el.closest('[data-cue-id]') : null;
+    if (sidEl) return JSON.stringify({ type: 'sid', id: sidEl.getAttribute('data-cue-id') });
     var found = null;
     if (this.cueRangesMap && this.cueRangesMap.size) {
       this.cueRangesMap.forEach(function(ranges, id) {
         if (found) return;
         for (var i = 0; i < ranges.length; i++) {
-          try { if (ranges[i].comparePoint(node, off) === 0) { found = id; break; } }
+          try {
+            var r = ranges[i];
+            if (r.comparePoint(node, off) === 0 &&
+                !(r.endContainer === node && r.endOffset === off)) {
+              found = id; break;
+            }
+          }
           catch (e) {}
         }
       });

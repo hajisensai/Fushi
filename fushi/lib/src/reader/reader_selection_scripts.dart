@@ -1010,6 +1010,8 @@ window.fushiSelection = {
     return {
       text: text,
       sentence: sentence,
+      audioCuePayload: window.fushiReader && window.fushiReader.cueIdAtDomPoint
+        ? window.fushiReader.cueIdAtDomPoint(startNode, startOffset) : null,
       normalizedOffset: normalizedOffset,
       normalizedLength: normalizedLength,
       sentenceOffset: sentenceOffset,
@@ -1316,6 +1318,8 @@ window.fushiSelection = {
       sentence: mangaSentence !== null && mangaSentence !== ''
         ? mangaSentence : sentenceContext.sentence,
       rect: mangaGroupRect || this.getSelectionRect(x, y),
+      audioCuePayload: window.fushiReader && window.fushiReader.cueIdAtDomPoint
+        ? window.fushiReader.cueIdAtDomPoint(startNode, startOffset) : null,
       normalizedOffset: normalizedOffset,
       normalizedLength: normalizedLength,
       sentenceOffset: mangaSentence !== null && mangaSentence !== ''
