@@ -45,6 +45,11 @@ on:
         required: false
         default: true
         type: boolean
+      build_only:
+        description: 'Build the channel artifacts but publish nothing: no GitHub Release, no update manifest. Artifacts stay downloadable from the run page. Use to hand a release candidate out for testing before committing to the publish.'
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: fushi-release-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}
@@ -87,6 +92,7 @@ jobs:
       shell: bash
       env:
         INPUT_CHANNEL: ${{ github.event.inputs.channel }}
+        INPUT_BUILD_ONLY: ${{ github.event.inputs.build_only }}
         INPUT_TAG_NAME: ${{ github.event.inputs.tag_name }}
         INPUT_RELEASE_NAME: ${{ github.event.inputs.release_name }}
         RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
@@ -243,6 +249,21 @@ jobs:
         # managed release does. Only the `release` event opts in above independently.
         if [ -z "$MANIFEST_CHANNEL" ]; then MANIFEST_CHANNEL="$CHANNEL"; fi
         if [ "$PUBLISH_MANAGED_RELEASE" = true ]; then PUBLISH_MANIFEST=true; fi
+
+        # build_only：出候选包给人测，但**什么都不发布**。
+        #
+        # 刻意放在所有 channel 分支解析完之后：版本串、资产名、签名、构建开关全部
+        # 照该 channel 的真实规则算（所以 formal 的 build_only 产物就是正式版产物，
+        # 不是「像正式版的东西」），只把最后两个发布开关摁掉。
+        #
+        # 只认 workflow_dispatch：`release` 事件（手动发 GitHub Release）本身就是
+        # 发布意图，push 的滚动 debug 也必须照常出包，两者都不该被这个开关影响——
+        # 它们的 github.event.inputs.build_only 恒为空，下面的等值判断自然不成立。
+        if [ "$INPUT_BUILD_ONLY" = "true" ]; then
+          PUBLISH_MANAGED_RELEASE=false
+          PUBLISH_MANIFEST=false
+          echo "::notice title=Build-only run::Channel '$CHANNEL' artifacts will be built and uploaded to this workflow run, but no GitHub Release and no update manifest will be published."
+        fi
 
         BUILD_VERSION_NAME="${TAG#v}"
         BUILD_VERSION_NAME="${BUILD_VERSION_NAME%%+*}"
@@ -607,7 +628,10 @@ jobs:
     # 不变式与反向用例见
     # fushi/test/utils/misc/formal_asset_naming_legacy_contract_test.dart。
     - name: Require migration bridge assets on the formal tag
-      if: steps.channel.outputs.manifest_channel == 'formal'
+      # 这道门保护的是「正式 release 上传本体资产」这件事本身。build_only 的跑法
+      # 不创建也不修改任何 Release，没有可被污染的对象，所以再加一层 publish_manifest
+      # 门；真正发布 formal 时 publish_manifest 仍为 true，门原样生效。
+      if: steps.channel.outputs.manifest_channel == 'formal' && steps.channel.outputs.publish_manifest == 'true'
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         REPO: ${{ github.repository }}

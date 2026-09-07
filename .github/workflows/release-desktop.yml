@@ -67,6 +67,14 @@ on:
         required: false
         default: true
         type: boolean
+      # 与 release.yml 的同名输入成对，语义必须一致：两条 workflow 同 tag 共用一个
+      # concurrency 组、产出同一个 release 的不同平台资产，一边发一边不发会造出
+      # 「只有一半平台的正式版」。改一边就要改另一边（守卫测试钉住这条对偶）。
+      build_only:
+        description: 'Build the channel artifacts but publish nothing: no GitHub Release, no update manifest, no TestFlight upload. Artifacts stay downloadable from the run page. Use to hand a release candidate out for testing before committing to the publish.'
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: fushi-release-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}
@@ -93,6 +101,7 @@ jobs:
         shell: bash
         env:
           INPUT_CHANNEL: ${{ github.event.inputs.channel }}
+          INPUT_BUILD_ONLY: ${{ github.event.inputs.build_only }}
           INPUT_TAG_NAME: ${{ github.event.inputs.tag_name }}
           INPUT_RELEASE_NAME: ${{ github.event.inputs.release_name }}
           RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
@@ -191,6 +200,19 @@ jobs:
           # CHANNEL and manifest publishes whenever the managed release does.
           if [ -z "$MANIFEST_CHANNEL" ]; then MANIFEST_CHANNEL="$CHANNEL"; fi
           if [ "$PUBLISH_MANAGED_RELEASE" = true ]; then PUBLISH_MANIFEST=true; fi
+
+          # build_only：出候选包给人测，但**什么都不发布**。与 release.yml 的同名
+          # 开关成对，语义必须一致——两条 workflow 同 tag 共用一个 concurrency 组、
+          # 产出的是同一个 release 的不同平台资产，一边发一边不发会造出「只有一半
+          # 平台的正式版」，比两边都不发更糟。
+          #
+          # 本文件有四份独立的 channel 解析（每个 job 一份），四份都要摁；漏一份就是
+          # 「那个平台照发」。守卫测试逐个 occurrence 校验，不是只看第一份。
+          if [ "$INPUT_BUILD_ONLY" = "true" ]; then
+            PUBLISH_MANAGED_RELEASE=false
+            PUBLISH_MANIFEST=false
+            echo "::notice title=Build-only run::Channel '$CHANNEL' artifacts will be built and uploaded to this workflow run, but no GitHub Release and no update manifest will be published."
+          fi
 
           BUILD_VERSION_NAME="$VERSION"
           case "$CHANNEL" in
@@ -851,6 +873,7 @@ jobs:
         shell: bash
         env:
           INPUT_CHANNEL: ${{ github.event.inputs.channel }}
+          INPUT_BUILD_ONLY: ${{ github.event.inputs.build_only }}
           INPUT_TAG_NAME: ${{ github.event.inputs.tag_name }}
           INPUT_RELEASE_NAME: ${{ github.event.inputs.release_name }}
           RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
@@ -949,6 +972,19 @@ jobs:
           # CHANNEL and manifest publishes whenever the managed release does.
           if [ -z "$MANIFEST_CHANNEL" ]; then MANIFEST_CHANNEL="$CHANNEL"; fi
           if [ "$PUBLISH_MANAGED_RELEASE" = true ]; then PUBLISH_MANIFEST=true; fi
+
+          # build_only：出候选包给人测，但**什么都不发布**。与 release.yml 的同名
+          # 开关成对，语义必须一致——两条 workflow 同 tag 共用一个 concurrency 组、
+          # 产出的是同一个 release 的不同平台资产，一边发一边不发会造出「只有一半
+          # 平台的正式版」，比两边都不发更糟。
+          #
+          # 本文件有四份独立的 channel 解析（每个 job 一份），四份都要摁；漏一份就是
+          # 「那个平台照发」。守卫测试逐个 occurrence 校验，不是只看第一份。
+          if [ "$INPUT_BUILD_ONLY" = "true" ]; then
+            PUBLISH_MANAGED_RELEASE=false
+            PUBLISH_MANIFEST=false
+            echo "::notice title=Build-only run::Channel '$CHANNEL' artifacts will be built and uploaded to this workflow run, but no GitHub Release and no update manifest will be published."
+          fi
 
           BUILD_VERSION_NAME="$VERSION"
           case "$CHANNEL" in
@@ -1406,6 +1442,7 @@ jobs:
         shell: bash
         env:
           INPUT_CHANNEL: ${{ github.event.inputs.channel }}
+          INPUT_BUILD_ONLY: ${{ github.event.inputs.build_only }}
           INPUT_TAG_NAME: ${{ github.event.inputs.tag_name }}
           INPUT_RELEASE_NAME: ${{ github.event.inputs.release_name }}
           RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
@@ -1504,6 +1541,19 @@ jobs:
           # CHANNEL and manifest publishes whenever the managed release does.
           if [ -z "$MANIFEST_CHANNEL" ]; then MANIFEST_CHANNEL="$CHANNEL"; fi
           if [ "$PUBLISH_MANAGED_RELEASE" = true ]; then PUBLISH_MANIFEST=true; fi
+
+          # build_only：出候选包给人测，但**什么都不发布**。与 release.yml 的同名
+          # 开关成对，语义必须一致——两条 workflow 同 tag 共用一个 concurrency 组、
+          # 产出的是同一个 release 的不同平台资产，一边发一边不发会造出「只有一半
+          # 平台的正式版」，比两边都不发更糟。
+          #
+          # 本文件有四份独立的 channel 解析（每个 job 一份），四份都要摁；漏一份就是
+          # 「那个平台照发」。守卫测试逐个 occurrence 校验，不是只看第一份。
+          if [ "$INPUT_BUILD_ONLY" = "true" ]; then
+            PUBLISH_MANAGED_RELEASE=false
+            PUBLISH_MANIFEST=false
+            echo "::notice title=Build-only run::Channel '$CHANNEL' artifacts will be built and uploaded to this workflow run, but no GitHub Release and no update manifest will be published."
+          fi
 
           BUILD_VERSION_NAME="$VERSION"
           case "$CHANNEL" in
@@ -1679,6 +1729,7 @@ jobs:
           APPSTORE_API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
           RELEASE_CHANNEL: ${{ steps.channel.outputs.channel }}
           INPUT_UPLOAD_TESTFLIGHT: ${{ github.event.inputs.upload_testflight }}
+          INPUT_BUILD_ONLY: ${{ github.event.inputs.build_only }}
         run: |
           set -euo pipefail
           CREDS=false
@@ -1690,9 +1741,13 @@ jobs:
           # 只在手动 beta/formal 发布时上传。push 触发的 debug 通道每次提交都会跑，
           # 传 TestFlight 只会白烧 App Store Connect 的处理配额并把构建号推高，
           # 而构建号在同一个 CFBundleShortVersionString 下必须单调，浪费不可回收。
+          # build_only 也必须挡住这条：TestFlight 上传是**不可回收**的外发——
+          # 同一个 CFBundleShortVersionString 下构建号必须单调，传上去就再也拿不
+          # 回来，而 build_only 的语义是「先出包给人测、还没决定要不要发」。
           TESTFLIGHT=false
           if [ "$CREDS" = true ] && [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] \
              && { [ "$RELEASE_CHANNEL" = beta ] || [ "$RELEASE_CHANNEL" = formal ]; } \
+             && [ "${INPUT_BUILD_ONLY:-}" != true ] \
              && [ "${INPUT_UPLOAD_TESTFLIGHT:-true}" != false ]; then
             TESTFLIGHT=true
           fi
@@ -1880,6 +1935,7 @@ jobs:
         shell: bash
         env:
           INPUT_CHANNEL: ${{ github.event.inputs.channel }}
+          INPUT_BUILD_ONLY: ${{ github.event.inputs.build_only }}
           INPUT_TAG_NAME: ${{ github.event.inputs.tag_name }}
           INPUT_RELEASE_NAME: ${{ github.event.inputs.release_name }}
           RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
@@ -1978,6 +2034,19 @@ jobs:
           # CHANNEL and manifest publishes whenever the managed release does.
           if [ -z "$MANIFEST_CHANNEL" ]; then MANIFEST_CHANNEL="$CHANNEL"; fi
           if [ "$PUBLISH_MANAGED_RELEASE" = true ]; then PUBLISH_MANIFEST=true; fi
+
+          # build_only：出候选包给人测，但**什么都不发布**。与 release.yml 的同名
+          # 开关成对，语义必须一致——两条 workflow 同 tag 共用一个 concurrency 组、
+          # 产出的是同一个 release 的不同平台资产，一边发一边不发会造出「只有一半
+          # 平台的正式版」，比两边都不发更糟。
+          #
+          # 本文件有四份独立的 channel 解析（每个 job 一份），四份都要摁；漏一份就是
+          # 「那个平台照发」。守卫测试逐个 occurrence 校验，不是只看第一份。
+          if [ "$INPUT_BUILD_ONLY" = "true" ]; then
+            PUBLISH_MANAGED_RELEASE=false
+            PUBLISH_MANIFEST=false
+            echo "::notice title=Build-only run::Channel '$CHANNEL' artifacts will be built and uploaded to this workflow run, but no GitHub Release and no update manifest will be published."
+          fi
 
           BUILD_VERSION_NAME="$VERSION"
           case "$CHANNEL" in
