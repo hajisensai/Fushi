@@ -2876,3 +2876,60 @@ testBridgeRejectionIsNeverSilent().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
+
+async function testQueuedMineStateTracksQueueWithoutAnkiRefresh() {
+  const context = loadPopup();
+  let queued = false;
+  let mines = 0;
+  let duplicates = 0;
+  context.window.fushiIsEntryQueued = () => queued;
+  context.window.flutter_inappwebview.callHandler = (name) => {
+    if (name === 'duplicateCheck') { duplicates++; return Promise.resolve(false); }
+    if (name === 'mineEntry') {
+      mines++;
+      queued = true;
+      return Promise.resolve({ queued: true, ankiConnect: false });
+    }
+    return Promise.resolve(null);
+  };
+  const button = buildMineHeaderFor(context, '猫');
+  await flush();
+  const before = duplicates;
+  await button.onclick();
+  await flush();
+  assert.equal(button.dataset.queued, '1');
+  assert.equal(button.textContent, '✓');
+  assert.ok(button.classList.contains('duplicate'), 'queued mark must hide the CSS plus');
+  assert.notEqual(button.dataset.mined, '1', 'queued is not an Anki card');
+  assert.equal(button.title, '已加入制卡队列');
+  assert.equal(duplicates, before, 'queue success must not probe Anki');
+  await button.onclick();
+  assert.equal(mines, 1, 'repeated click must not enqueue again');
+  const reopened = buildMineHeaderFor(context, '猫');
+  await flush();
+  assert.equal(reopened.dataset.queued, '1', 'reopened popup reads the real queue');
+  queued = false;
+  await button.onclick();
+  assert.equal(mines, 2, 'removing the item permits a new enqueue');
+}
+
+async function testQueueFailureKeepsPlusAndAllowsRetry() {
+  const context = loadPopup();
+  let calls = 0;
+  context.window.flutter_inappwebview.callHandler = (name) => {
+    if (name === 'mineEntry') { calls++; return Promise.resolve({ queued: false, ankiConnect: false }); }
+    return Promise.resolve(false);
+  };
+  const button = buildMineHeaderFor(context, '猫');
+  await flush();
+  await button.onclick();
+  assert.equal(button.textContent, '+');
+  assert.notEqual(button.dataset.queued, '1');
+  await button.onclick();
+  assert.equal(calls, 2);
+}
+
+Promise.all([
+  testQueuedMineStateTracksQueueWithoutAnkiRefresh(),
+  testQueueFailureKeepsPlusAndAllowsRetry(),
+]).catch((error) => { console.error(error); process.exitCode = 1; });

@@ -321,6 +321,7 @@ function parseMineResult(reply) {
             noteId,
             message,
             duplicate: reply.duplicate === true,
+            queued: reply.queued === true,
         };
     }
     return { ankiConnect: reply === true, noteId: null, message: '', duplicate: false };
@@ -3394,7 +3395,15 @@ function createEntryHeader(entry, idx) {
     //   the last card is fixed in place — no delete-then-recreate. Mining another
     //   word, or re-querying, supersedes it back to an ordinary ✓ (only the most
     //   recent card stays editable). AnkiDroid returns no id → never green ✓⤺.
+    let queuedLocally = false;
+    const isEntryQueued = () => typeof window.fushiIsEntryQueued === 'function'
+        ? window.fushiIsEntryQueued({ expression, reading }) === true
+        : queuedLocally;
     const setMineState = (isMined) => {
+        const queued = isEntryQueued();
+        mineButton.dataset.queued = queued ? '1' : '';
+        mineButton.title = queued ? (window.i18nMineQueued || '已加入制卡队列') : '';
+        mineButton.classList.toggle('queued', queued);
         // Single source of truth for the button's lookup-time-detected state.
         // The optional second flag is the "latest editable" sub-state; it is only
         // meaningful when the word is the current latest-mined card.
@@ -3405,8 +3414,8 @@ function createEntryHeader(entry, idx) {
         // ✓ 已制卡 / ✓↩ 最新可改），不再走 SVG 图标（audio/favorite 等其余按钮保留 SVG）。
         // TODO-1338：给 ↩ 追加 VS15(U+FE0E) 强制「文本呈现」，杜绝系统把 U+21A9 走彩色
         // emoji 回退变乱码（字体隔离在 popup.css .mine-button 单色符号栈里，此处是双保险）。
-        mineButton.textContent = isMined ? (latest ? '✓↩︎' : '✓') : '+';
-        if (isMined) {
+        mineButton.textContent = isMined ? (latest ? '✓↩︎' : '✓') : (queued ? '✓' : '+');
+        if (isMined || queued) {
             mineButton.classList.add('duplicate');
         } else {
             mineButton.classList.remove('duplicate');
@@ -3450,6 +3459,10 @@ function createEntryHeader(entry, idx) {
             // in finally — it is the ONLY thing that disables the button, never a
             // permanent lock (BUG-077).
             if (mineButton.dataset.mining === '1') return;
+            if (isEntryQueued()) {
+                setMineState(mineButton.dataset.mined === '1');
+                return;
+            }
             mineButton.dataset.mining = '1';
             mineButton.disabled = true;
             try {
@@ -3572,7 +3585,10 @@ function createEntryHeader(entry, idx) {
                     setMineState(wasAdded);
                 };
 
-                if (result.ankiConnect) {
+                if (result.queued) {
+                    queuedLocally = true;
+                    setMineState(false);
+                } else if (result.ankiConnect) {
                     // TODO-270 D: a freshly mined card with a real note id becomes
                     // the new "latest editable"; this also supersedes any prior
                     // latest word (only one editable card at a time).

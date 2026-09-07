@@ -156,6 +156,20 @@ test('上下文四个 ± 经 document capture 点击仍调整句子，保留底�
   }
 });
 
+test('连续加减复用全部按钮和预览骨架，不移除焦点所在节点', () => {
+  const h = loadContent();
+  h.window.fushiOpenSentenceContextModal({ matched: '当前' });
+  const buttons = h.buttons();
+  const card = buttons[0].parentNode.parentNode;
+  const skeleton = [...card.children];
+  for (const index of [0, 2, 0, 2, 1, 3, 1, 3]) {
+    h.clickButton(index);
+    assert.deepEqual(h.buttons(), buttons, '重建按钮会让键盘焦点落回页面');
+    assert.deepEqual(card.children, skeleton, '预览更新不得清空整张弹层');
+    assert.equal(h.video.playCalls, 0);
+  }
+});
+
 test('Escape 只取消顶层上下文并还原快照；第二次 Escape 才关闭词典恢复视频', () => {
   const h = loadContent();
   h.window.fushiSetSentenceContext(1, 0);

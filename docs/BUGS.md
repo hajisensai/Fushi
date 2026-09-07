@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2065 条。点号进各自文件。
+> 共 2067 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2243](bugs/BUG-2243-browser-subtitle-open-position.md) | ✅ | ✅ | 浏览器字幕列表打开落在顶部而非当前时间附近 |
+| [BUG-2242](bugs/BUG-2242-browser-queued-mine-state.md) | ✅ | ✅ | 浏览器制卡入队后加号恢复且缺少队列状态 |
 | [BUG-2241](bugs/BUG-2241-browser-sentence-context-dismissal.md) | ✅ | ✅ | 浏览器调整上下文误关查词框并恢复播放 |
 | [BUG-2230](bugs/BUG-2230-video-web-and-work-detail-loading-no-exit.md) | ✅ | ✅ | 网页流媒体页与作品详情页的加载态没有返回入口，且 init 异常无归宿 |
 | [BUG-2229](bugs/BUG-2229-video-missing-resource-no-back.md) | ✅ | ✅ | 视频资源缺失态没有返回入口，进入后无法退出 |

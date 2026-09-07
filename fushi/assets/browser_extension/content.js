@@ -589,60 +589,70 @@ window.fushiOpenSentenceContextModal = function (args) {
     box.appendChild(document.createTextNode(text.slice(i + matched.length)));
   }
   let busy = false;
+  // 保留弹层骨架和操作按钮：加减只更新预览，不能清空 card 后重建焦点所在按钮。
+  card.appendChild(el('div', 'eyebrow', t.eyebrow));
+  card.appendChild(el('div', 'title', t.title));
+  const count = el('div', 'count');
+  card.appendChild(count);
+  card.appendChild(el('div', 'label', t.boxPrev));
+  const prevBox = el('div', 'box');
+  card.appendChild(prevBox);
+  card.appendChild(el('div', 'label', t.boxCurrent));
+  const cur = el('div', 'box cur');
+  card.appendChild(cur);
+  card.appendChild(el('div', 'label', t.boxNext));
+  const nextBox = el('div', 'box');
+  card.appendChild(nextBox);
+  const row = el('div', 'row');
+  const mk = function (label, dPrev, dNext) {
+    const b = el('button', '', label);
+    b.onclick = function () {
+      if (busy) return;
+      busy = true;
+      try {
+        window.fushiSetSentenceContext(
+          Math.max(0, fushiSentenceCtx.prev + dPrev), Math.max(0, fushiSentenceCtx.next + dNext));
+      } finally { busy = false; }
+      render();
+    };
+    row.appendChild(b);
+    return b;
+  };
+  const prevPlus = mk(t.prevPlus, 1, 0);
+  const prevMinus = mk(t.prevMinus, -1, 0);
+  const nextPlus = mk(t.nextPlus, 0, 1);
+  const nextMinus = mk(t.nextMinus, 0, -1);
+  card.appendChild(row);
+
+  const foot = el('div', 'foot');
+  const cancel = el('button', '', t.cancel);
+  cancel.onclick = function () {
+    window.fushiSetSentenceContext(snap.prev, snap.next);
+    fushiCloseSentenceContextModal();
+  };
+  const confirm = el('button', 'primary', t.confirm);
+  confirm.onclick = function () {
+    fushiCloseSentenceContextModal();
+    if (typeof window.fushiPopupMineEntryByIndex === 'function') window.fushiPopupMineEntryByIndex(entryIndex);
+  };
+  foot.appendChild(cancel);
+  foot.appendChild(confirm);
+  card.appendChild(foot);
+
   function render() {
-    card.textContent = '';
     const p = window.fushiSentenceContextPreview({ matched: matched });
     const prev = Array.isArray(p.prev) ? p.prev : [];
     const next = Array.isArray(p.next) ? p.next : [];
-    card.appendChild(el('div', 'eyebrow', t.eyebrow));
-    card.appendChild(el('div', 'title', t.title));
-    card.appendChild(el('div', 'count', String(t.count).replace('%d', String(prev.length + next.length))));
-    card.appendChild(el('div', 'label', t.boxPrev));
-    if (!prev.length) card.appendChild(el('div', 'box empty', t.boxEmpty));
-    for (const s of prev) card.appendChild(el('div', 'box', s));
-    card.appendChild(el('div', 'label', t.boxCurrent));
-    const cur = el('div', 'box cur');
+    count.textContent = String(t.count).replace('%d', String(prev.length + next.length));
+    prevBox.className = prev.length ? 'box' : 'box empty';
+    prevBox.textContent = prev.length ? prev.join('\n') : t.boxEmpty;
     renderCurrent(cur, typeof p.current === 'string' ? p.current : '');
-    card.appendChild(cur);
-    card.appendChild(el('div', 'label', t.boxNext));
-    if (!next.length) card.appendChild(el('div', 'box empty', t.boxEmpty));
-    for (const s of next) card.appendChild(el('div', 'box', s));
-
-    const row = el('div', 'row');
-    const mk = function (label, disabled, dPrev, dNext) {
-      const b = el('button', '', label);
-      b.disabled = !!disabled || busy;
-      b.onclick = function () {
-        if (busy) return;
-        busy = true;
-        try {
-          window.fushiSetSentenceContext(
-            Math.max(0, fushiSentenceCtx.prev + dPrev), Math.max(0, fushiSentenceCtx.next + dNext));
-        } finally { busy = false; }
-        render();
-      };
-      return b;
-    };
-    row.appendChild(mk(t.prevPlus, p.prevAtMax === true, 1, 0));
-    row.appendChild(mk(t.prevMinus, prev.length <= 0, -1, 0));
-    row.appendChild(mk(t.nextPlus, p.nextAtMax === true, 0, 1));
-    row.appendChild(mk(t.nextMinus, next.length <= 0, 0, -1));
-    card.appendChild(row);
-
-    const foot = el('div', 'foot');
-    const cancel = el('button', '', t.cancel);
-    cancel.onclick = function () {
-      window.fushiSetSentenceContext(snap.prev, snap.next);
-      fushiCloseSentenceContextModal();
-    };
-    const confirm = el('button', 'primary', t.confirm);
-    confirm.onclick = function () {
-      fushiCloseSentenceContextModal();
-      if (typeof window.fushiPopupMineEntryByIndex === 'function') window.fushiPopupMineEntryByIndex(entryIndex);
-    };
-    foot.appendChild(cancel);
-    foot.appendChild(confirm);
-    card.appendChild(foot);
+    nextBox.className = next.length ? 'box' : 'box empty';
+    nextBox.textContent = next.length ? next.join('\n') : t.boxEmpty;
+    prevPlus.disabled = p.prevAtMax === true;
+    prevMinus.disabled = prev.length <= 0;
+    nextPlus.disabled = p.nextAtMax === true;
+    nextMinus.disabled = next.length <= 0;
   }
   bg.addEventListener('click', function (e) { if (e.target === bg) { window.fushiSetSentenceContext(snap.prev, snap.next); fushiCloseSentenceContextModal(); } });
   // 模态开着时按键不能漏给宿主页：Netflix/YouTube 把空格/方向键/数字键都绑成播放快捷键，
@@ -713,6 +723,19 @@ window.fushiMineContext = function () {
     contextSentence: composed ? composed.sentence : null,
     contextWindow: composed ? { startV: composed.startV, endV: composed.endV } : null,
   };
+};
+// 上下文草稿入队即清空，按钮状态按当前句身份查询真实队列，不能再用草稿合成句回查。
+window.fushiIsEntryQueued = function (fields) {
+  const ctx = window.fushiMineContext();
+  if (!ctx.window) return false;
+  const word = fields && (fields.expression || fields.word || fields.term) || '';
+  return fushiQueue.some(function (item) {
+    const queuedWord = item.fields && (item.fields.expression || item.fields.word || item.fields.term) || '';
+    return String(queuedWord) === String(word) && item.site === ctx.site &&
+      (item.youtubeId || null) === (ctx.youtubeId || null) &&
+      (item.netflixId || null) === (ctx.netflixId || null) &&
+      item.cueStartV === ctx.window.startV;
+  });
 };
 window.fushiEnqueue = function (fields, sentence) {
   const ctx = window.fushiMineContext();

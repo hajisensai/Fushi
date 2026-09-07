@@ -32,6 +32,7 @@
   var cues = [];
   var rows = [];
   var currentIndex = -1;
+  var scrollIndex = -1;
   var stateSignature = '';
   var autoScroll = true;
   var fontStep = 1;
@@ -729,6 +730,7 @@
     listEl.textContent = '';
     rows = [];
     currentIndex = -1;
+    scrollIndex = -1;
     if (!cues.length) {
       var empty = document.createElement('div');
       empty.className = 'empty';
@@ -805,21 +807,39 @@
       fragment.appendChild(row);
     });
     listEl.appendChild(fragment);
-    updateCurrent(currentState ? currentState.currentTimeMs : 0);
+    updateCurrent(currentState && currentState.currentTimeMs);
+  }
+
+  // 高亮只属于正在显示的字幕；列表定位还需覆盖字幕间隙、片头和片尾。
+  function nearestCueIndex(items, timeMs) {
+    var active = cueIndexAt(items, timeMs);
+    if (active >= 0 || !items.length) return active;
+    var lo = 0, hi = items.length;
+    while (lo < hi) {
+      var mid = (lo + hi) >> 1;
+      if (items[mid].startMs <= timeMs) lo = mid + 1;
+      else hi = mid;
+    }
+    if (lo === 0) return 0;
+    if (lo === items.length) return lo - 1;
+    return timeMs - items[lo - 1].endMs <= items[lo].startMs - timeMs ? lo - 1 : lo;
   }
 
   function updateCurrent(timeMs) {
-    if (!cues.length) return;
-    var next = cueIndexAt(cues, Number(timeMs) || 0);
-    if (next === currentIndex) return;
-    if (rows[currentIndex]) rows[currentIndex].classList.remove('is-current');
-    currentIndex = next;
-    var row = rows[currentIndex];
-    if (row) {
-      row.classList.add('is-current');
-      if (autoScroll) {
-        try { row.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (_) { row.scrollIntoView(); }
-      }
+    // 初始取轨可能先于播放状态到达，不能把尚未知的时间当作 0 消耗首次定位。
+    if (!cues.length || typeof timeMs !== 'number' || !Number.isFinite(timeMs)) return;
+    var next = cueIndexAt(cues, timeMs);
+    if (next !== currentIndex) {
+      if (rows[currentIndex]) rows[currentIndex].classList.remove('is-current');
+      currentIndex = next;
+      if (rows[currentIndex]) rows[currentIndex].classList.add('is-current');
+    }
+    var nearest = nearestCueIndex(cues, timeMs);
+    if (autoScroll && nearest !== scrollIndex && rows[nearest]) {
+      var behavior = scrollIndex < 0 ? 'instant' : 'smooth';
+      scrollIndex = nearest;
+      try { rows[nearest].scrollIntoView({ block: 'center', behavior: behavior }); }
+      catch (_) { rows[nearest].scrollIntoView(); }
     }
   }
 
@@ -1065,7 +1085,7 @@
   autoButton.addEventListener('click', function () {
     autoScroll = !autoScroll;
     autoButton.classList.toggle('is-on', autoScroll);
-    if (autoScroll) { currentIndex = -1; updateCurrent(currentState ? currentState.currentTimeMs : 0); }
+    if (autoScroll) { scrollIndex = -1; updateCurrent(currentState && currentState.currentTimeMs); }
   });
   document.getElementById('settings').addEventListener('click', function () {
     chrome.runtime.openOptionsPage();
@@ -1111,6 +1131,13 @@
   window.addEventListener('blur', function () { closeLookup(); });
   listEl.addEventListener('wheel', function () { closeLookup(); }, { passive: true });
   listEl.addEventListener('touchmove', function () { closeLookup(); }, { passive: true });
+  // 用户主动翻阅后停止跟随，点击跟随按钮才重新定位；普通状态轮询不会抢回视口。
+  function stopAutoScroll() {
+    autoScroll = false;
+    autoButton.classList.toggle('is-on', false);
+  }
+  listEl.addEventListener('wheel', stopAutoScroll, { passive: true });
+  listEl.addEventListener('touchmove', stopAutoScroll, { passive: true });
   // 查词面板拖拽调整大小（CSS resize 把手在右下角）：pointerdown 落在右下角 20px 内时快照
   // 尺寸，松手时尺寸真变了才算「用户拖过」——置 lookupUserResized + 回写 app 尺寸键
   // （app clamp 后按「拖即解锁」持久化，下次查词/会话经主题带回来）。

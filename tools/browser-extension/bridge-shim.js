@@ -99,7 +99,8 @@ window.flutter_inappwebview = {
           else if (res && res.ok) toast('✓ 已加入制卡队列（' + res.count + '）\n看完后一次生成全部');
           else if (res && res.reason === 'no-cue') toast('✗ 没找到当前字幕，稍候再试');
           else toast('✗ 入队失败');
-          resolve(!!(res && res.ok));
+          // Queue membership is not an Anki note: preserve that distinction for the button.
+          resolve({ queued: !!(res && res.ok), ankiConnect: false });
         });
       case 'duplicateCheck':
         // TODO-1176：真查重（+→✓，与 app 内一致）。经 background.js 转发到 server
