@@ -362,10 +362,20 @@ class JellyfinApi {
   }
 
   /// MediaBrowser 认证头（Jellyfin/Emby 通用；认证前无 Token 字段）。
+  ///
+  /// 同一份头并发 `Authorization` 与 `X-Emby-Authorization` 两个名字：
+  /// Jellyfin 10.11+ 只认 `Authorization`，Emby 与飞牛影视（fnOS 影视）等
+  /// Jellyfin 兼容层只认 `X-Emby-Authorization`——缺它直接 400
+  /// "X-Emby-Authorization is missing"（BUG-2254）。两家对未知头都宽容，
+  /// 双发是在不引入服务器类型探测的前提下唯一同时覆盖两族的写法。
+  static String authHeaderFor([String? accessToken]) =>
+      'MediaBrowser Client="Hibiki", Device="Hibiki", '
+      'DeviceId="hibiki-app", Version="1.0"'
+      '${accessToken == null ? '' : ', Token="$accessToken"'}';
+
   Map<String, String> get _headers => <String, String>{
-        'Authorization': 'MediaBrowser Client="Hibiki", Device="Hibiki", '
-            'DeviceId="hibiki-app", Version="1.0"'
-            '${accessToken == null ? '' : ', Token="$accessToken"'}',
+        'Authorization': authHeaderFor(accessToken),
+        'X-Emby-Authorization': authHeaderFor(accessToken),
         'Content-Type': 'application/json',
       };
 
@@ -447,6 +457,12 @@ class JellyfinApi {
 
   /// 递归列出 [parentId]（缺省全库）下所有可播视频叶子（电影 + 单集）。
   ///
+  /// **类型过滤按单值拆成 Movie / Episode 两轮**（BUG-2254）：飞牛影视的
+  /// `/Items` 不认 `IncludeItemTypes` 逗号多值——`Movie,Episode` 静默返回
+  /// 0 条（单值 Movie / Episode 均正常），整台服务器在库页表现为「空库」。
+  /// 原版 Jellyfin / Emby 对单值与多值语义一致，拆开发不留行为差异。两轮
+  /// 各自独立分页，Movie 轮在前（集合名排序下 Episode 轮的分页窗口互不干扰）。
+  ///
   /// **真分页**：单发一次 + 硬上限的旧写法在 100 部番 x 12 集就到顶，第 2001 条
   /// 起永久不可见且无任何提示；TotalRecordCount 解出来却被丢弃、StartIndex 根本
   /// 没传。这里按 [pageSize] 逐页取到 StartIndex >= totalCount（或某页返空）为止，
@@ -471,34 +487,40 @@ class JellyfinApi {
     Duration pageInterval = kPageInterval,
   }) async {
     final List<JellyfinItem> all = <JellyfinItem>[];
-    int start = 0;
     int total = 0;
     bool truncated = false;
-    while (true) {
-      if (start >= kMaxRecursiveItems) {
-        truncated = true;
-        break;
+    // 飞牛不认逗号多值（BUG-2254），按单值各跑一轮完整分页；消费端按 id 去重
+    // （listRemoteVideos 的 seen 集合），同一叶子在两轮都命中也不会重复。
+    for (final String type in const <String>['Movie', 'Episode']) {
+      int start = 0;
+      while (true) {
+        if (start >= kMaxRecursiveItems) {
+          truncated = true;
+          break;
+        }
+        if (start > 0 && pageInterval > Duration.zero) {
+          await Future<void>.delayed(pageInterval);
+        }
+        final Map<String, Object?> json =
+            await _getJson('/Users/$userId/Items', <String, String>{
+          if (parentId != null) 'ParentId': parentId,
+          'Recursive': 'true',
+          'IncludeItemTypes': type,
+          'StartIndex': '$start',
+          'Limit': '$pageSize',
+          'Fields': 'ProductionYear',
+          'SortBy': 'SortName',
+          'SortOrder': 'Ascending',
+        });
+        final JellyfinItemsPage page = parseItemsPage(json);
+        all.addAll(page.items);
+        total += page.totalCount;
+        if (page.items.isEmpty) break;
+        start += page.items.length;
+        if (start >= page.totalCount) break;
       }
-      if (start > 0 && pageInterval > Duration.zero) {
-        await Future<void>.delayed(pageInterval);
-      }
-      final Map<String, Object?> json =
-          await _getJson('/Users/$userId/Items', <String, String>{
-        if (parentId != null) 'ParentId': parentId,
-        'Recursive': 'true',
-        'IncludeItemTypes': 'Movie,Episode',
-        'StartIndex': '$start',
-        'Limit': '$pageSize',
-        'Fields': 'ProductionYear',
-        'SortBy': 'SortName',
-        'SortOrder': 'Ascending',
-      });
-      final JellyfinItemsPage page = parseItemsPage(json);
-      all.addAll(page.items);
-      total = page.totalCount;
-      if (page.items.isEmpty) break;
-      start += page.items.length;
-      if (start >= page.totalCount) break;
+      // 刻意不在轮间因 truncated 收工：Movie 轮熔断后 Episode 轮仍要跑完
+      // （否则 >2 万电影的服务器上剧集整体消失）；上限按轮独立生效。
     }
     return JellyfinRecursiveResult(
       items: all,
@@ -570,14 +592,30 @@ class JellyfinApi {
 
   /// 直连播放流 URL（static=true 原文件直出，内嵌字幕/音轨全保留；`api_key`
   /// 查询参数自带认证——[RemoteVideoStreamUrls] 没有 HTTP 头通道）。
-  String streamUrl(String itemId) =>
-      '$serverUrl/Videos/$itemId/stream?static=true&api_key=${accessToken ?? ''}';
+  ///
+  /// `MediaSourceId` 必带（BUG-2254 ③）：飞牛影视对缺它的 `/Videos/{id}/stream`
+  /// 一律 400，且**不能拿条目 id 充数**——MediaSource id 是与条目 id 互相独立的
+  /// GUID（MediaSources[0].Id）。原版 Jellyfin / Emby 缺省时按条目 id 解析，显式
+  /// 带上对三家都正确。播放器（mpv/media_kit）发请求没有头通道，令牌仍走
+  /// `api_key`（飞牛在流/字幕端点对该参数实测有效——唯一带参传令牌的例外）。
+  String streamUrl(String itemId, {String? mediaSourceId}) =>
+      '$serverUrl/Videos/$itemId/stream?static=true'
+      '${mediaSourceId == null ? '' : '&MediaSourceId=$mediaSourceId'}'
+      '&api_key=${accessToken ?? ''}';
 
   /// 封面 URL（Primary 图；无图的条目由调用方按 hasPrimaryImage 过滤）。
+  ///
+  /// 飞牛影视**不支持**该端点（任何认证都 404，兼容层未提供图片服务；官方对
+  /// VidHub 接入的文档亦明示「不支持显示媒体库封面」）——飞牛上无封面属服务端
+  /// 能力缺失，非缺陷（BUG-2254 备注③）；原版 Jellyfin / Emby 正常。
   String imageUrl(String itemId) =>
       '$serverUrl/Items/$itemId/Images/Primary?api_key=${accessToken ?? ''}';
 
   /// 字幕流下载 URL（外挂或可提取文本内嵌轨都走这个端点）。
+  ///
+  /// 飞牛影视**不支持**该端点（任何认证都回 SPA index.html）——飞牛上外挂字幕
+  /// 取不到属服务端能力缺失，非缺陷（BUG-2254 备注④）；mkv 内嵌文本轨经 mpv
+  /// 直读不受影响。原版 Jellyfin / Emby 正常。
   String subtitleUrl({
     required String itemId,
     required String mediaSourceId,
@@ -941,8 +979,17 @@ class JellyfinVideoClient
     String id,
     File dest, {
     void Function(double progress)? onProgress,
-  }) =>
-      api.downloadToFile(api.streamUrl(id), dest, onProgress: onProgress);
+  }) async {
+    // 飞牛要求 stream 端点带 MediaSourceId（BUG-2254 ③），而下载入参只有条目
+    // id：先打一次 /Items/{id} 拿 MediaSources[0].Id。原版 Jellyfin/Emby 上省这发
+    // 也可（stream 缺省按条目 id 解析），取一次是为了三家走同一条正确路径。
+    final JellyfinItem item = await api.itemDetail(userId: userId, itemId: id);
+    await api.downloadToFile(
+      api.streamUrl(id, mediaSourceId: item.mediaSourceId),
+      dest,
+      onProgress: onProgress,
+    );
+  }
 
   @override
   Future<RemoteVideoStreamUrls> remoteVideoStreamUrls(
@@ -977,7 +1024,9 @@ class JellyfinVideoClient
     }
 
     return RemoteVideoStreamUrls(
-      streamUrl: api.streamUrl(id),
+      // 飞牛要求带 MediaSourceId（BUG-2254 ③）；服务器没给流表（null）时省略，
+      // 回落原版语义（stream 端点按条目 id 解析）。
+      streamUrl: api.streamUrl(id, mediaSourceId: mediaSourceId),
       subtitleUrl: external == null || mediaSourceId == null
           ? null
           : api.subtitleUrl(

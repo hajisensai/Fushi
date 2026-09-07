@@ -131,33 +131,36 @@ http.Response _viewsResponse(List<List<String?>> idNameType) =>
 void main() {
   group('[1] 断点上报走 Progress 并节流', () {
     test(
-        'putRemoteVideoPosition 打 /Sessions/Playing/Progress 且带 IsPaused:false',
-        () async {
-      final List<http.Request> posts = <http.Request>[];
-      final JellyfinVideoClient c =
-          _client(MockClient((http.Request req) async {
-        posts.add(req);
-        return http.Response('', 204);
-      }));
+      'putRemoteVideoPosition 打 /Sessions/Playing/Progress 且带 IsPaused:false',
+      () async {
+        final List<http.Request> posts = <http.Request>[];
+        final JellyfinVideoClient c =
+            _client(MockClient((http.Request req) async {
+          posts.add(req);
+          return http.Response('', 204);
+        }));
 
-      await c.putRemoteVideoPosition('ep1', 90000, 1755000000000);
+        await c.putRemoteVideoPosition('ep1', 90000, 1755000000000);
 
-      expect(posts, hasLength(1));
-      expect(posts.single.url.path, '/Sessions/Playing/Progress',
-          reason: 'Stopped 会在接近片尾时标记已播放并清空 resume 位置，不能当心跳用');
-      final Map<String, Object?> body =
-          (jsonDecode(posts.single.body) as Map).cast<String, Object?>();
-      expect(body['ItemId'], 'ep1');
-      expect(body['PositionTicks'], 90000 * kTicksPerMs);
-      expect(body['IsPaused'], false);
-    });
+        expect(posts, hasLength(1));
+        expect(posts.single.url.path, '/Sessions/Playing/Progress',
+            reason: 'Stopped 会在接近片尾时标记已播放并清空 resume 位置，不能当心跳用');
+        final Map<String, Object?> body =
+            (jsonDecode(posts.single.body) as Map).cast<String, Object?>();
+        expect(body['ItemId'], 'ep1');
+        expect(body['PositionTicks'], 90000 * kTicksPerMs);
+        expect(body['IsPaused'], false);
+      },
+    );
 
     test('同一条目 10s 内的重复上报被节流掉（每秒回调不再刷爆服务器）', () async {
       int posts = 0;
-      final JellyfinVideoClient c = _client(MockClient((_) async {
-        posts++;
-        return http.Response('', 204);
-      }));
+      final JellyfinVideoClient c = _client(
+        MockClient((_) async {
+          posts++;
+          return http.Response('', 204);
+        }),
+      );
 
       await c.putRemoteVideoPosition('ep1', 1000, 1);
       await c.putRemoteVideoPosition('ep1', 2000, 2);
@@ -190,12 +193,57 @@ void main() {
       }));
       await api.reportStopped(itemId: 'ep1', positionMs: 1234);
       expect(seen.url.path, '/Sessions/Playing/Stopped');
-      expect(
-          (jsonDecode(seen.body) as Map)['PositionTicks'], 1234 * kTicksPerMs);
+      expect((jsonDecode(seen.body) as Map)['PositionTicks'], 1234 * kTicksPerMs);
     });
   });
 
   group('[2] 清单真分页', () {
+    test('BUG-2254：IncludeItemTypes 按单值拆 Movie/Episode 两轮，不发逗号多值', () async {
+      final List<Map<String, String>> queries = <Map<String, String>>[];
+      final JellyfinApi api = _api(
+        MockClient((http.Request req) async {
+          queries.add(req.url.queryParameters);
+          final String type = req.url.queryParameters['IncludeItemTypes']!;
+          final int total = type == 'Movie' ? 2 : 3;
+          final int start = int.parse(req.url.queryParameters['StartIndex']!);
+          return http.Response(
+            jsonEncode(<String, Object?>{
+              'Items': <Object?>[
+                for (int i = 0; i < total - start; i++)
+                  _tinyJson('$type$start$i'),
+              ],
+              'TotalRecordCount': total,
+            }),
+            200,
+          );
+        }),
+      );
+
+      final JellyfinRecursiveResult result = await api.recursiveVideoItems(
+        userId: 'u1',
+        pageInterval: Duration.zero,
+      );
+
+      // 5 页 = Movie 轮 1 页 + Episode 轮 1 页（都在 pageSize 内）……拆轮后
+      // 每轮独立分页；这里两轮各 1 页共 2 发。
+      expect(queries, hasLength(2));
+      expect(
+        queries.map((Map<String, String> q) => q['IncludeItemTypes']).toList(),
+        <String>['Movie', 'Episode'],
+        reason: '飞牛对逗号多值静默返 0 条，必须单值拆轮',
+      );
+      for (final Map<String, String> q in queries) {
+        expect(
+          q['IncludeItemTypes'],
+          isNot(contains(',')),
+          reason: '任何一轮都不允许再出现逗号多值',
+        );
+      }
+      expect(result.items, hasLength(5));
+      expect(result.truncated, isFalse);
+      expect(result.totalCount, 5);
+    });
+
     test('翻到 TotalRecordCount 为止：1200 条 / pageSize 500 = 3 轮，全部拿回', () async {
       const int total = 1200;
       final List<Map<String, String>> queries = <Map<String, String>>[];
@@ -222,13 +270,26 @@ void main() {
       final List<JellyfinItem> items = result.items;
 
       expect(result.truncated, isFalse);
-      expect(items, hasLength(total),
-          reason: '旧实现单发一次 + Limit=2000 不翻页，第 2001 条起永久不可见且无提示');
-      expect(queries, hasLength(3));
+      // BUG-2254 拆轮后 Movie/Episode 各跑一遍完整分页：两轮 × 3 页 = 6 发，
+      // 每轮都把 1200 条翻完（mock 对两种类型返回同一批，条目数 ×2）。
       expect(
-        queries.map((Map<String, String> q) => q['StartIndex']).toList(),
+        items,
+        hasLength(total * 2),
+        reason: '拆轮后同一 mock 数据每轮各取一遍；分页本身仍要翻到 totalCount',
+      );
+      expect(queries, hasLength(6));
+      expect(
+        queries.map((Map<String, String> q) => q['IncludeItemTypes']).toSet(),
+        <String>{'Movie', 'Episode'},
+        reason: '飞牛对逗号多值返 0 条，单值拆轮（BUG-2254）',
+      );
+      expect(
+        queries
+            .where((Map<String, String> q) => q['IncludeItemTypes'] == 'Movie')
+            .map((Map<String, String> q) => q['StartIndex'])
+            .toList(),
         <String>['0', '500', '1000'],
-        reason: '旧实现根本没传 StartIndex，补上才叫分页',
+        reason: '每轮内仍按 StartIndex 翻页',
       );
       expect(queries.first['Limit'], '500', reason: 'pageSize 默认 500');
       expect(items.first.id, 'ep0');
@@ -259,8 +320,9 @@ void main() {
       );
 
       expect(JellyfinApi.kMaxRecursiveItems, 20000);
-      expect(result.items, hasLength(JellyfinApi.kMaxRecursiveItems));
-      expect(calls, 20);
+      // 拆轮（BUG-2254）后 Movie/Episode 各自熔断在 20000：条目与请求数都 ×2。
+      expect(result.items, hasLength(JellyfinApi.kMaxRecursiveItems * 2));
+      expect(calls, 40);
       expect(result.truncated, isTrue,
           reason: 'BUG-1891：熔断此前是静默截断——用户拿到「前 20000 条」却以为拉全了');
     });
@@ -321,7 +383,8 @@ void main() {
       );
       expect(result.items, hasLength(2));
       expect(result.truncated, isFalse);
-      expect(calls, 2);
+      // 拆轮（BUG-2254）后 Movie 轮 2 发（2 条→空停）、Episode 轮 1 发（空停）。
+      expect(calls, 3);
     });
   });
 
@@ -332,40 +395,42 @@ void main() {
           _client(MockClient((http.Request req) async {
         seen.add(req.url);
         if (req.url.path == '/Users/u1/Views') {
+            return http.Response(
+              jsonEncode(<String, Object?>{
+                'Items': <Object?>[
+                  <String, Object?>{
+                    'Id': 'lib-tv',
+                    'Name': 'TV',
+                    'CollectionType': 'tvshows',
+                  },
+                ],
+              }),
+              200,
+            );
+          }
           return http.Response(
             jsonEncode(<String, Object?>{
-              'Items': <Object?>[
-                <String, Object?>{
-                  'Id': 'lib-tv',
-                  'Name': 'TV',
-                  'CollectionType': 'tvshows',
-                },
-              ],
-            }),
-            200,
-          );
-        }
-        return http.Response(
-          jsonEncode(<String, Object?>{
             // 服务器没被要 MediaSources 就不会下发它——桩必须照做，否则这条测试
             // 会拿着一份现实里不存在的响应体自我安慰。
             'Items': <Object?>[_episodeJson(hasSubtitlesFlag: true)
               ..remove('MediaSources')],
             'TotalRecordCount': 1,
-          }),
-          200,
-        );
-      }));
+            }),
+            200,
+          );
+        }),
+      );
 
       final List<RemoteVideoInfo> list = await c.listRemoteVideos();
 
       final Uri itemsUri =
           seen.firstWhere((Uri u) => u.path == '/Users/u1/Items');
       expect(itemsUri.queryParameters['Fields'], 'ProductionYear',
-          reason: 'Fields=MediaSources 会让服务器为每一条目展开媒体源'
-              '（Emby 侧还含外挂字幕的磁盘探测），几十万条目的服务器上一进视频页'
-              '就是几十上百个这种重查询连发——用户报的「一添加就开始刮削、卡死、'
-              '封号」正是它');
+        reason: 'Fields=MediaSources 会让服务器为每一条目展开媒体源'
+            '（Emby 侧还含外挂字幕的磁盘探测），几十万条目的服务器上一进视频页'
+            '就是几十上百个这种重查询连发——用户报的「一添加就开始刮削、卡死、'
+            '封号」正是它',
+      );
       expect(
         seen.any((Uri u) => u.toString().contains('MediaSources')),
         isFalse,
@@ -515,36 +580,49 @@ void main() {
     });
 
     test('remoteVideoPosition 报真实 updatedAtMs（恒 0 会让本地 LWW 恒胜）', () async {
-      final JellyfinVideoClient c =
-          _client(MockClient((_) async => http.Response(
-              jsonEncode(_episodeJson(
+      final JellyfinVideoClient c = _client(
+        MockClient(
+          (_) async => http.Response(
+            jsonEncode(
+              _episodeJson(
                 positionTicks: 42000 * kTicksPerMs,
                 lastPlayedDate: kLastPlayed,
-              )),
-              200)));
+              ),
+            ),
+            200,
+          ),
+        ),
+      );
 
       final ({int positionMs, int updatedAtMs}) pos =
           await c.remoteVideoPosition('ep1');
       expect(pos.positionMs, 42000);
-      expect(pos.updatedAtMs, kLastPlayedMs,
-          reason:
-              'fushi_library_host_service 的 localUpdatedAtMs > remoteUpdatedAtMs '
-              '在 remote 恒 0 时永远成立——「手机看一半回电脑接力」就是这么坏的');
+      expect(
+        pos.updatedAtMs,
+        kLastPlayedMs,
+        reason:
+            'fushi_library_host_service 的 localUpdatedAtMs > remoteUpdatedAtMs '
+            '在 remote 恒 0 时永远成立——「手机看一半回电脑接力」就是这么坏的',
+      );
     });
 
     test('清单条目也带 positionUpdatedAtMs', () async {
-      final JellyfinVideoClient c =
-          _client(MockClient((_) async => http.Response(
-              jsonEncode(<String, Object?>{
-                'Items': <Object?>[
-                  _episodeJson(
-                    positionTicks: 60000 * kTicksPerMs,
-                    lastPlayedDate: kLastPlayed,
-                  ),
-                ],
-                'TotalRecordCount': 1,
-              }),
-              200)));
+      final JellyfinVideoClient c = _client(
+        MockClient(
+          (_) async => http.Response(
+            jsonEncode(<String, Object?>{
+              'Items': <Object?>[
+                _episodeJson(
+                  positionTicks: 60000 * kTicksPerMs,
+                  lastPlayedDate: kLastPlayed,
+                ),
+              ],
+              'TotalRecordCount': 1,
+            }),
+            200,
+          ),
+        ),
+      );
 
       final RemoteVideoInfo info = (await c.listRemoteVideos()).single;
       expect(info.positionMs, 60000);
@@ -561,16 +639,20 @@ void main() {
           throw http.ClientException('Connection reset by peer', req.url);
         });
 
-    Future<Object> caught(Future<Object?> future) =>
-        future.then<Object>((Object? _) => 'no throw',
-            onError: (Object e, StackTrace _) => e);
+    Future<Object> caught(Future<Object?> future) => future.then<Object>(
+          (Object? _) => 'no throw',
+          onError: (Object e, StackTrace _) => e,
+        );
 
     test('fetchBytes：封面失败的异常文本不含令牌', () async {
       final JellyfinApi api = _api(throwingClient(), token: kToken);
       final Object err = await caught(api.fetchBytes(api.imageUrl('ep1')));
 
-      expect(err.toString(), isNot(contains(kToken)),
-          reason: 'ErrorLogService 存的就是 error.toString()，无脱敏落盘并可一键上传');
+      expect(
+        err.toString(),
+        isNot(contains(kToken)),
+        reason: 'ErrorLogService 存的就是 error.toString()，无脱敏落盘并可一键上传',
+      );
       expect(err.toString(), contains('api_key=$kRedactedPlaceholder'));
     });
 
@@ -616,10 +698,20 @@ void main() {
           ]);
         }
         final String parent = req.url.queryParameters['ParentId']!;
+        // 拆轮（BUG-2254）：每库 Movie/Episode 各一发；条目挂在 Episode 轮。
+        if (req.url.queryParameters['IncludeItemTypes'] == 'Episode') {
+          return http.Response(
+            jsonEncode(<String, Object?>{
+              'Items': <Object?>[_tinyJson('$parent-1')],
+              'TotalRecordCount': 1,
+            }),
+            200,
+          );
+        }
         return http.Response(
           jsonEncode(<String, Object?>{
-            'Items': <Object?>[_tinyJson('$parent-1')],
-            'TotalRecordCount': 1,
+            'Items': <Object?>[],
+            'TotalRecordCount': 0,
           }),
           200,
         );
@@ -632,7 +724,8 @@ void main() {
             .where((Uri u) => u.path == '/Users/u1/Items')
             .map((Uri u) => u.queryParameters['ParentId'])
             .toList(),
-        <String>['lib-movies', 'lib-tv', 'lib-mixed'],
+        // 拆轮（BUG-2254）后每库 Movie/Episode 各一发，ParentId 序列翻倍。
+        <String>['lib-movies', 'lib-movies', 'lib-tv', 'lib-tv', 'lib-mixed', 'lib-mixed'],
         reason: '整台服务器递归（不带 ParentId）在几十万条目的公共 Emby 服上就是'
             '几十上百个重查询连发；音乐/图书/照片库更是白扫',
       );
@@ -661,7 +754,14 @@ void main() {
       final List<RemoteVideoInfo> list = await c.listRemoteVideos();
 
       expect(seen.map((Uri u) => u.path).toSet(), <String>{'/Users/u1/Items'});
-      expect(seen.single.queryParameters['ParentId'], 'lib-anime');
+      expect(
+        seen
+            .where((Uri u) => u.queryParameters['IncludeItemTypes'] == 'Episode')
+            .single
+            .queryParameters['ParentId'],
+        'lib-anime',
+        reason: '拆轮后每库两发（Movie/Episode），条目断言只看 Episode 轮',
+      );
       expect(list.single.id, 'lib-anime-1');
     });
 
@@ -684,8 +784,7 @@ void main() {
 
       final List<RemoteVideoInfo> list = await c.listRemoteVideos();
 
-      final Uri items =
-          seen.firstWhere((Uri u) => u.path == '/Users/u1/Items');
+      final Uri items = seen.firstWhere((Uri u) => u.path == '/Users/u1/Items');
       expect(items.queryParameters.containsKey('ParentId'), isFalse);
       expect(list.single.id, 'm1');
     });

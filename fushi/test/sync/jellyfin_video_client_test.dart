@@ -4,6 +4,7 @@
 // 外挂字幕优先 / 断点读写）。
 
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -134,6 +135,9 @@ void main() {
       final JellyfinAuthResult r = await api.authenticateByName('u', 'p');
       expect(seen.url.path, '/Users/AuthenticateByName');
       expect(seen.headers['Authorization'], contains('MediaBrowser'));
+      // BUG-2254：飞牛影视等兼容层只认 X-Emby-Authorization，必须双头并发。
+      expect(seen.headers['X-Emby-Authorization'], contains('MediaBrowser'));
+      expect(seen.headers['X-Emby-Authorization'], seen.headers['Authorization']);
       expect(
           jsonDecode(seen.body), <String, Object?>{'Username': 'u', 'Pw': 'p'});
       expect(r.userId, 'u1');
@@ -166,9 +170,10 @@ void main() {
       expect(seen.url.path, '/Sessions/Playing/Stopped');
       expect(jsonDecode(seen.body), <String, Object?>{
         'ItemId': 'ep1',
-        'PositionTicks': 1234 * kTicksPerMs
+        'PositionTicks': 1234 * kTicksPerMs,
       });
       expect(seen.headers['Authorization'], contains('Token="tok"'));
+      expect(seen.headers['X-Emby-Authorization'], contains('Token="tok"'));
     });
   });
 
@@ -212,34 +217,48 @@ void main() {
       final JellyfinVideoClient c =
           clientWith(MockClient((http.Request req) async {
         // BUG-1891：默认枚举先问 Views（只递归视频域媒体库），再逐库列条目。
-        if (req.url.path == '/Users/u1/Views') {
+          if (req.url.path == '/Users/u1/Views') {
+            return http.Response(
+              jsonEncode(<String, Object?>{
+                'Items': <Object?>[
+                  <String, Object?>{
+                    'Id': 'lib-tv',
+                    'Name': 'TV',
+                    'CollectionType': 'tvshows',
+                  },
+                ],
+              }),
+              200,
+            );
+          }
+          expect(req.url.path, '/Users/u1/Items');
+          expect(req.url.queryParameters['ParentId'], 'lib-tv');
+          expect(req.url.queryParameters['Recursive'], 'true');
+          // BUG-2254：飞牛不认逗号多值，Movie/Episode 拆成两轮单值查询。
+          expect(
+            req.url.queryParameters['IncludeItemTypes'],
+            isIn(<String>['Movie', 'Episode']),
+          );
+          if (req.url.queryParameters['IncludeItemTypes'] == 'Episode') {
+            return http.Response(
+              jsonEncode(<String, Object?>{
+                'Items': <Object?>[
+                  _episodeJson(positionTicks: 60000 * kTicksPerMs),
+                ],
+                'TotalRecordCount': 1,
+              }),
+              200,
+            );
+          }
           return http.Response(
             jsonEncode(<String, Object?>{
-              'Items': <Object?>[
-                <String, Object?>{
-                  'Id': 'lib-tv',
-                  'Name': 'TV',
-                  'CollectionType': 'tvshows',
-                },
-              ],
+              'Items': <Object?>[],
+              'TotalRecordCount': 0,
             }),
             200,
           );
-        }
-        expect(req.url.path, '/Users/u1/Items');
-        expect(req.url.queryParameters['ParentId'], 'lib-tv');
-        expect(req.url.queryParameters['Recursive'], 'true');
-        expect(req.url.queryParameters['IncludeItemTypes'], 'Movie,Episode');
-        return http.Response(
-          jsonEncode(<String, Object?>{
-            'Items': <Object?>[
-              _episodeJson(positionTicks: 60000 * kTicksPerMs)
-            ],
-            'TotalRecordCount': 1,
-          }),
-          200,
-        );
-      }));
+        }),
+      );
       final List<RemoteVideoInfo> list = await c.listRemoteVideos();
       final RemoteVideoInfo info = list.single;
       expect(info.id, 'ep1');
@@ -291,44 +310,113 @@ void main() {
         );
       }));
       final RemoteVideoStreamUrls urls = await c.remoteVideoStreamUrls('ep1');
-      expect(urls.streamUrl,
-          'http://nas:8096/Videos/ep1/stream?static=true&api_key=tok');
-      expect(urls.subtitleUrl,
-          'http://nas:8096/Videos/ep1/src1/Subtitles/3/Stream.srt?api_key=tok',
-          reason: '外挂文本轨优先作为默认外挂字幕');
+      // BUG-2254 ③：MediaSourceId 必带（飞牛缺它 400；条目 id 不能充数）。
+      expect(
+        urls.streamUrl,
+        'http://nas:8096/Videos/ep1/stream?static=true&MediaSourceId=src1'
+        '&api_key=tok',
+      );
+      expect(
+        urls.subtitleUrl,
+        'http://nas:8096/Videos/ep1/src1/Subtitles/3/Stream.srt?api_key=tok',
+        reason: '外挂文本轨优先作为默认外挂字幕',
+      );
       expect(urls.subtitleFileName, 'Show A S01E02 The Pilot.jpn.srt');
-      expect(urls.embeddedSubtitleTracks, hasLength(2),
-          reason: '图形字幕（pgssub）不进文本轨选择器');
+      expect(
+        urls.embeddedSubtitleTracks,
+        hasLength(2),
+        reason: '图形字幕（pgssub）不进文本轨选择器',
+      );
       expect(urls.miningVideoHasAudio, isTrue);
+    });
+
+    test(
+      'downloadRemoteVideo：先取详情拿 MediaSourceId 再拼下载 URL（BUG-2254 ③）',
+      () async {
+        final List<http.Request> seen = <http.Request>[];
+        final JellyfinVideoClient c = clientWith(
+          MockClient((http.Request req) async {
+            seen.add(req);
+            if (req.url.path == '/Users/u1/Items/ep1') {
+              return http.Response(jsonEncode(_episodeJson()), 200);
+            }
+            return http.Response('bytes', 200);
+          }),
+        );
+        final Directory dir = Directory.systemTemp.createTempSync('jf_dl_test');
+        addTearDown(() => dir.deleteSync(recursive: true));
+        final File dest = File('${dir.path}/out.mp4');
+
+        await c.downloadRemoteVideo('ep1', dest);
+
+        expect(dest.readAsStringSync(), 'bytes');
+        expect(seen.map((http.Request r) => r.url.path).toList(), <String>[
+          '/Users/u1/Items/ep1',
+          '/Videos/ep1/stream',
+        ]);
+        expect(
+          seen.last.url.queryParameters['MediaSourceId'],
+          'src1',
+          reason: '飞牛对缺 MediaSourceId 的 stream 端点一律 400',
+        );
+        expect(seen.last.url.queryParameters['static'], 'true');
+      },
+    );
+
+    test('streamUrl：不带 mediaSourceId 时省略参数（原版回退语义）', () {
+      final JellyfinApi api = JellyfinApi(
+        serverUrl: 'http://nas:8096',
+        accessToken: 'tok',
+      );
+      expect(
+        api.streamUrl('ep1'),
+        'http://nas:8096/Videos/ep1/stream?static=true&api_key=tok',
+      );
+      expect(
+        api.streamUrl('ep1', mediaSourceId: 'ms1'),
+        'http://nas:8096/Videos/ep1/stream?static=true&MediaSourceId=ms1'
+        '&api_key=tok',
+      );
+      api.close();
     });
 
     test('remoteVideoPosition 读 UserData；put 走 reportProgress', () async {
       final List<http.Request> seen = <http.Request>[];
-      final JellyfinVideoClient c =
-          clientWith(MockClient((http.Request req) async {
-        seen.add(req);
-        if (req.method == 'POST') return http.Response('', 204);
-        return http.Response(
-            jsonEncode(_episodeJson(positionTicks: 42000 * kTicksPerMs)), 200);
-      }));
+      final JellyfinVideoClient c = clientWith(
+        MockClient((http.Request req) async {
+          seen.add(req);
+          if (req.method == 'POST') return http.Response('', 204);
+          return http.Response(
+            jsonEncode(_episodeJson(positionTicks: 42000 * kTicksPerMs)),
+            200,
+          );
+        }),
+      );
       final ({int positionMs, int updatedAtMs}) pos =
           await c.remoteVideoPosition('ep1');
       expect(pos.positionMs, 42000);
-      expect(pos.updatedAtMs, 0,
-          reason: '本条目 UserData 没带 LastPlayedDate（从未播过）→ 退回 0');
+      expect(
+        pos.updatedAtMs,
+        0,
+        reason: '本条目 UserData 没带 LastPlayedDate（从未播过）→ 退回 0',
+      );
 
       await c.putRemoteVideoPosition('ep1', 90000, 1755000000000);
       expect(seen.last.method, 'POST');
-      expect(seen.last.url.path, '/Sessions/Playing/Progress',
-          reason: '播放中的周期上报是 Progress，不是 Stopped');
+      expect(
+        seen.last.url.path,
+        '/Sessions/Playing/Progress',
+        reason: '播放中的周期上报是 Progress，不是 Stopped',
+      );
       expect(jsonDecode(seen.last.body)['PositionTicks'], 90000 * kTicksPerMs);
     });
   });
 
   group('JellyfinServerConfig 持久化（SyncRepository）', () {
     test('set → get 往返；null = 登出删键', () async {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
 
@@ -364,7 +452,9 @@ void main() {
 
     test('sync_jellyfin_server 在设备本地键目录（令牌不随备份跨设备）', () {
       expect(
-          SyncRepository.deviceLocalPrefKeys, contains('sync_jellyfin_server'));
+        SyncRepository.deviceLocalPrefKeys,
+        contains('sync_jellyfin_server'),
+      );
     });
   });
 }
