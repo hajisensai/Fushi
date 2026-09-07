@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2070 条。点号进各自文件。
+> 共 2071 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2246](bugs/BUG-2246-discovery-anime-resource-category.md) | ✅ | ✅ | 发现资源搜索把TMDB动画当普通剧集且不能手动切换类型 |
 | [BUG-2240](bugs/BUG-2240-grammar-label-locale.md) | ✅ | ✅ | 词形变化标签未本地化且部分日语标签缺少说明 |
 | [BUG-2239](bugs/BUG-2239-pack-failed-import-cleanup.md) | ✅ | ✅ | 推荐包导入失败后仍被启动清理删除 |
 | [BUG-2238](bugs/BUG-2238-pack-delete-orphan-hidden.md) | ✅ | ✅ | 推荐包部分删除失败后残包入口消失 |

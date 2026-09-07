@@ -482,9 +482,14 @@ class TmdbVideoDiscoveryProvider implements VideoDiscoveryProvider {
     );
     return VideoDiscoveryItem.fromMetadataWork(
       work: work,
-      discoveryCategory: kind == VideoMetadataMediaKind.movie
-          ? VideoDiscoveryCategory.movie
-          : VideoDiscoveryCategory.tv,
+      // 内容类型与 TMDB 的 movie/tv 身份是两个维度。动画电影/剧集都要进入
+      // 动画资源源；不能因为来自 /tv 就把 Nyaa 排除，也不能改掉 TMDB ID 命名空间。
+      discoveryCategory:
+          metadataList(item['genre_ids']).map<int?>(metadataInt).contains(16)
+              ? VideoDiscoveryCategory.anime
+              : kind == VideoMetadataMediaKind.movie
+                  ? VideoDiscoveryCategory.movie
+                  : VideoDiscoveryCategory.tv,
       externalId: id,
     );
   }
