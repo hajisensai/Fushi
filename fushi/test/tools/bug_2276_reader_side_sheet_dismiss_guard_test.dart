@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 
-/// BUG-2260 守卫：阅读设置 / 导航抽屉开着时，点正文必须把抽屉关掉。
+/// BUG-2276 守卫：阅读设置 / 导航抽屉开着时，点正文必须把抽屉关掉。
 ///
 /// 根因是 BUG-1692 那套 macOS 平台视图命中模型的**另一面**：engine 只把「平台视图
 /// 之后**画了东西**的 Flutter 图层」的 `paint_region` 写进
@@ -18,7 +18,7 @@ import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 /// 「抽屉正压着正文」时先关抽屉并吞掉该次点击。其它平台遮罩照常吃点击、JS 侧根本
 /// 不会上报 tap，判据恒假、行为零变化。
 void main() {
-  group('BUG-2260 readerWebViewPointerClosesSideSheet 判据', () {
+  group('BUG-2276 readerWebViewPointerClosesSideSheet 判据', () {
     test('抽屉开着且阅读器不是顶层路由 → 这次点击用来关抽屉', () {
       expect(
         readerWebViewPointerClosesSideSheet(
@@ -53,7 +53,7 @@ void main() {
     });
   });
 
-  group('BUG-2260 源码守卫：正文 tap 桥接入点', () {
+  group('BUG-2276 源码守卫：正文 tap 桥接入点', () {
     test('_sideSheetOpen 只在 showReaderSideSheet 两侧翻，且 finally 复位', () {
       final File f = File(
         'lib/src/pages/implementations/reader_fushi/chrome.part.dart',
@@ -68,7 +68,7 @@ void main() {
       expect(
         before.contains('_sideSheetOpen = true'),
         isTrue,
-        reason: '旗没在抽屉打开前置位 ⇒ macOS 上点正文仍然关不掉抽屉（BUG-2260 回归）',
+        reason: '旗没在抽屉打开前置位 ⇒ macOS 上点正文仍然关不掉抽屉（BUG-2276 回归）',
       );
       final String after = src.substring(at, at + 600);
       expect(
@@ -108,7 +108,7 @@ void main() {
           body.contains('_closeSideSheetForWebViewPointer()'),
           isTrue,
           reason: '$bridge 少了门控 ⇒ macOS 上抽屉开着时点正文会照常翻页 / 查词 / 跳播，'
-              '抽屉却纹丝不动（BUG-2260）',
+              '抽屉却纹丝不动（BUG-2276）',
         );
       }
     });

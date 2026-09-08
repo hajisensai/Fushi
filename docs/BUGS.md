@@ -29,12 +29,15 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2116 条。点号进各自文件。
+> 共 2119 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2276](bugs/BUG-2276-macos-reader-panel-transparent-barrier.md) | ✅ | ✅ | macOS 阅读设置/导航抽屉打开后点正文不关闭 |
 | [BUG-2263](bugs/BUG-2263-macos-mihon-chapters-not-loading.md) | 🚧 | 🚧 | macOS Mihon 章节列表加载不出来（未复现） |
 | [BUG-2262](bugs/BUG-2262-macos-aidoku-partial-result-chapters-dropped.md) | ✅ | ✅ | macOS Aidoku 章节列表恒为空：桌面 runtime 丢弃 send_partial_result 回传的章节 |
+| [BUG-2259](bugs/BUG-2259-macos-quit-no-exit-flush.md) | ✅ | ✅ | macOS Cmd+Q 退出不跑退出 flush（阅读位置/有声书进度/阅读统计丢最后一段） |
+| [BUG-2258](bugs/BUG-2258-macos-video-retina-blur.md) | ✅ | ✅ | mac 视频在 Retina 上发虚：media_kit 按视频原生分辨率建纹理，放大交给 Flutter 双线性 |
 | [BUG-2256](bugs/BUG-2256-subtitle-pause-reveal-ignores-gate.md) | ✅ | ✅ | 关掉「悬停或点击显形」后，暂停仍会揭开被隐藏的字幕 |
 | [BUG-2255](bugs/BUG-2255-reader-sentence-seek-dom-identity.md) | ✅ | ✅ | 正文从本句播放误取上一条字幕 |
 | [BUG-2254](bugs/BUG-2254-jellyfin-fnos-x-emby-auth.md) | ✅ | ✅ | 飞牛影视 Jellyfin 兼容层要求 X-Emby-Authorization 认证头 |
