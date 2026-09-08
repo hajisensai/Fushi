@@ -759,18 +759,18 @@ void main() {
   });
 
   group('detach：页面 dispose 的零 DB IO 收尾（无人 await 的事务会与 db.close() 互等）', () {
-    test('结算回调在停表前跑：leave 记的页数进段，不因停表被丢弃', () async {
+    test('停表前记的页数进段：detach 只封段，不丢已记的内容账', () async {
       final _Harness h = _Harness(collectDeferred: true);
       h.clock.start();
       h.advance(const Duration(seconds: 30));
-      // settle 回调里记页数——若 detach 先停表再跑它，addPages 会被 isRunning 挡掉。
-      h.clock.detach(() => h.clock.addPages(3));
+      h.clock.addPages(3);
+      h.clock.detach();
       expect(h.sink.writes, isEmpty, reason: 'detach 期间一笔都不许现在写');
       expect(h.deferred, hasLength(1), reason: '攒下的写交给退出汇合点');
 
       await h.runDeferred();
       expect(h.sink.writes, hasLength(1));
-      expect(h.sink.last.pages.value, 3, reason: '结算必须发生在停表之前');
+      expect(h.sink.last.pages.value, 3);
       expect(h.sink.last.durationMs.value, 30000);
     });
 
@@ -778,12 +778,13 @@ void main() {
       final _Harness h = _Harness();
       h.clock.start();
       h.advance(const Duration(seconds: 30));
-      h.clock.detach(() => h.clock.addPages(2));
+      h.clock.addPages(2);
+      h.clock.detach();
       expect(h.sink.writes, isEmpty);
       expect(h.clock.isRunning, isFalse, reason: '定时器必须停掉，否则页面走了还在写');
     });
 
-    test('detach 里的回翻撤回同样不落库（_retract 也走 _enqueueWrite）', () async {
+    test('detach 前的回翻撤回同样只经 deferred 落库（_retract 也走 _enqueueWrite）', () async {
       final _Harness h = _Harness(collectDeferred: true);
       h.clock.start();
       h.clock.addChars(100);
@@ -792,7 +793,8 @@ void main() {
       final int writesBefore = h.sink.writes.length;
       expect(writesBefore, greaterThan(0));
 
-      h.clock.detach(() => h.clock.retractChars(40));
+      h.clock.retractChars(40);
+      h.clock.detach();
       expect(
         h.sink.writes,
         hasLength(writesBefore),
@@ -806,7 +808,8 @@ void main() {
       final _Harness h = _Harness(collectDeferred: true);
       h.clock.start();
       h.advance(const Duration(seconds: 30));
-      h.clock.detach(() => h.clock.addPages(1));
+      h.clock.addPages(1);
+      h.clock.detach();
       await h.runDeferred();
       final int after = h.sink.writes.length;
       await h.clock.stop();

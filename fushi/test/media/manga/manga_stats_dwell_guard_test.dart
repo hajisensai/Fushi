@@ -14,10 +14,10 @@ import '../../helpers/source_guard.dart';
 /// 1. **唯一账本**：位置落定只经 `_noteVisiblePages()`（`touch()` + `arrive`），
 ///    `_readLedger.arrive(` 只出现在这一处；四个位置变化入口（本地开书 / 在线开章 /
 ///    `_recordProgress` / spread↔webtoon 切换）都走它。
-/// 2. **离开结算**：`onSourcePagePop` 在 flush 之前 `_readLedger.leave()`；dispose 把
-///    leave 作为回调交给 `StudyClock.detach`（在停表前跑完、全程零 DB IO——dispose 是
-///    同步的，在那里起的事务没人 await，与随后的 `db.close()` 互等）；进程退出登记
-///    `_flushForExit`（`settle()` 而非 `leave()`）；换章 `leave()` + `reset()`。
+/// 2. **离开结算只在翻走**：换章 `leave()` + `reset()`。关书三条路（`onSourcePagePop` /
+///    dispose 的 `StudyClock.detach()` / 进程退出 `_flushForExit`）**不碰账本**
+///    （BUG-2264：关书不是翻走，站着的那页下次翻走时才计；dispose 全程零 DB IO——
+///    dispose 是同步的，在那里起的事务没人 await，与随后的 `db.close()` 互等）。
 /// 3. **停留门 / Set / 预置形态不得回潮**：`_sessionCountedPages` / `_pageDwellTimer` /
 ///    `_kPageDwellThreshold` / `kArrivalDwellMs` / `_seedCountedPagesFromRestore` 一律
 ///    不许出现（`kArrivalDwellMs` 的唯一消费者是视频 cue 停留门）。
@@ -72,7 +72,7 @@ void main() {
     );
   });
 
-  test('离开结算：dispose 交给 detach（零 DB IO），onSourcePagePop 在 flush 前 leave()，换章 leave + reset', () {
+  test('离开结算只在换章（leave + reset）；关书三条路不碰账本（BUG-2264）', () {
     final String dispose = _functionSource(
       src,
       '  void dispose() {',
@@ -80,10 +80,15 @@ void main() {
     );
     expect(
       dispose,
-      contains('_studyClock?.detach(_readLedger.leave);'),
-      reason: 'dispose 是同步的：结算（leave → addPages）必须作为回调交给 detach，'
-          '由它在停表前跑完并把攒下的写交给 ExitFlushRegistry.defer。'
-          '在 dispose 里直接落库 = 一笔无人 await 的事务，与随后的 db.close() 互等',
+      contains('_studyClock?.detach();'),
+      reason: 'dispose 是同步的：停表必须走 detach（零 IO，攒下的写交给 '
+          'ExitFlushRegistry.defer）。在 dispose 里直接落库 = 一笔无人 await 的事务，'
+          '与随后的 db.close() 互等',
+    );
+    expect(
+      dispose.contains('_readLedger'),
+      isFalse,
+      reason: 'BUG-2264：关书不是翻走，dispose 不许把 leave 交给 detach 结算落地页',
     );
     // dispose 里一笔 DB 写都不许发起（FakeAsync 下必挂死，生产退出是同一形状竞态）。
     for (final String forbidden in <String>[
@@ -102,22 +107,18 @@ void main() {
       contains('ExitFlushRegistry.instance.defer(_flushPosition);'),
       reason: '最后一次位置落盘改为登记到退出汇合点，由退出路径统一 await',
     );
-    // 进程退出登记的是 _flushForExit（先 settle 再落盘），不是裸 _flushPosition：
-    // 桌面点 X 不触发 dispose，账本不结算就丢最后一页的字 / 页。
+    // 进程退出登记的是 _flushForExit（只落盘）：桌面点 X 不触发 dispose。
     expect(src, contains('ExitFlushRegistry.instance.register(_flushForExit);'));
     final String forExit = _functionSource(
       src,
       '  Future<void> _flushForExit() async {',
       '\n  }\n',
     );
+    expect(forExit, contains('await _flushPosition();'));
     expect(
-      forExit.indexOf('_readLedger.settle();'),
-      allOf(
-        greaterThanOrEqualTo(0),
-        lessThan(forExit.indexOf('await _flushPosition();')),
-      ),
-      reason: '退出 flush 用 settle 不用 leave：这条路径不保证进程真死，'
-          '清空当前单元会让下一次落回同一页的 arrive 把刚记的页数撤回',
+      forExit.contains('_readLedger'),
+      isFalse,
+      reason: '退出 / 退后台不是翻走（BUG-2264）；旧 settle 已删',
     );
 
     final String pop = _functionSource(
@@ -125,20 +126,17 @@ void main() {
       '  Future<void> onSourcePagePop() async {',
       '\n  }\n',
     );
+    expect(pop, contains('await _flushPosition();'));
     expect(
-      pop.indexOf('_readLedger.leave();'),
-      allOf(
-        greaterThanOrEqualTo(0),
-        lessThan(pop.indexOf('await _flushPosition();')),
-      ),
-      reason: '正常退出路径同样先结算最后一个单元再落盘',
+      pop.contains('_readLedger'),
+      isFalse,
+      reason: '关书那页此刻不结算（开关一次涨一次的根因就是这里的 leave）',
     );
     expect(
-      '_readLedger.leave();'.allMatches(src).length,
-      1,
-      reason: '只剩 onSourcePagePop 一处直接调用（dispose 改为把 leave 作为回调交给 '
-          'detach，退出 flush 走 settle）；生命周期 paused 仍不 leave——停表期间 '
-          'addPages 会被丢弃，且恢复后当前页要继续算',
+      '_readLedger.leave();'.allMatches(src),
+      isEmpty,
+      reason: '单行 leave 已无：关书三条路零账本动作；生命周期 paused 也不 leave——'
+          '停表期间 addPages 会被丢弃，且恢复后当前页要继续算',
     );
     // 换章：同一 State 内页号坐标系重用，先结算旧章末页再清并集。
     final String online = _functionSource(

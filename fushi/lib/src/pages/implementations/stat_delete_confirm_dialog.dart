@@ -9,10 +9,18 @@ import 'package:fushi/utils.dart';
 /// 与书架删除确认（`ReaderHistoryDeleteDialog` / `_SeriesConfirmDialog`）同结构。
 @visibleForTesting
 class StatDeleteConfirmDialog extends StatelessWidget {
-  const StatDeleteConfirmDialog({required this.itemTitle, super.key});
+  const StatDeleteConfirmDialog({
+    required this.itemTitle,
+    this.message,
+    super.key,
+  });
 
   /// 被删项的展示名（书 / 视频标题），显示在正文首行。
   final String itemTitle;
+
+  /// 正文说明；null = 默认的「删该项全部统计」文案（`stat_delete_message`）。会话流
+  /// 删单次会话传 `stat_session_delete_message`。
+  final String? message;
 
   @override
   Widget build(BuildContext context) {
@@ -36,7 +44,7 @@ class StatDeleteConfirmDialog extends StatelessWidget {
           tokens.spacing.card,
         ),
         body: Text(
-          '$itemTitle\n\n${t.stat_delete_message}',
+          '$itemTitle\n\n${message ?? t.stat_delete_message}',
           style: tokens.type.listSubtitle,
         ),
         footer: Wrap(
@@ -65,12 +73,13 @@ class StatDeleteConfirmDialog extends StatelessWidget {
 /// 弹出统计删除确认框；仅当用户点「删除」时返回 true（取消 / 点外面关闭返回 false）。
 Future<bool> confirmDeleteStatistics(
   BuildContext context,
-  String itemTitle,
-) async {
+  String itemTitle, {
+  String? message,
+}) async {
   final bool? confirmed = await showAppDialog<bool>(
     context: context,
     builder: (BuildContext ctx) =>
-        StatDeleteConfirmDialog(itemTitle: itemTitle),
+        StatDeleteConfirmDialog(itemTitle: itemTitle, message: message),
   );
   return confirmed == true;
 }

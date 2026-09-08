@@ -1073,10 +1073,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
     // 崩溃 / 异常拆栈的兜底（正常退出走 onSourcePagePop 的 await 路径）：dispose
     // 是同步的，这里**一笔 DB 写都不许发起**——无人 await 的事务与随后的
-    // `db.close()` 互等。账本结算（leave → 页数入账）由 detach 在停表前跑完，攒下
-    // 的写和最后的位置一起交给退出汇合点统一 await。
-    // 时钟为空 = 本页从没开始计时，账本结算没有消费者，整段跳过。
-    _studyClock?.detach(_readLedger.leave);
+    // `db.close()` 互等。关书不是翻走：站着的那页不结算（`ReadUnitLedger` 类文档），
+    // detach 只停表，攒下的写和最后的位置一起交给退出汇合点统一 await。
+    // 时钟为空 = 本页从没开始计时，整段跳过。
+    _studyClock?.detach();
     ExitFlushRegistry.instance.defer(_flushPosition);
     _pageNotifier.dispose();
     _focusNode.dispose();
@@ -1191,8 +1191,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (_ownsWindowFullscreen) {
       await _setMangaFullscreen(false);
     }
-    // 离开当前页：账本结算最后一个单元（翻走即计），再落盘。
-    _readLedger.leave();
+    // 关书不是翻走：站着的那页不结算（`ReadUnitLedger` 类文档），只落盘 + 停表。
     // 返回书架的正常路径：await 落盘，保证书架 recency/进度立刻正确。
     await _flushPosition();
     await _studyClock?.stop();
@@ -3904,12 +3903,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
   }
 
-  /// 进程退出 / 退后台的统一 flush（[ExitFlushRegistry]）：先把当前页结算进账本
-  /// （退出也是「翻走」；此前登记的是裸 `_flushPosition`，桌面点 X 时最后一页的
-  /// 字 / 页直接丢——账本从没被结算过），
-  /// 再落位置 + 学习段。用 [ReadUnitLedger.settle] 而非 `leave()`，理由见其文档。
+  /// 进程退出 / 退后台的统一 flush（[ExitFlushRegistry]）：只落位置。退出不是翻走，
+  /// 站着的那页不结算（`ReadUnitLedger` 类文档）；学习段由时钟 stop / detach 写穿。
   Future<void> _flushForExit() async {
-    _readLedger.settle();
     await _flushPosition();
   }
 
