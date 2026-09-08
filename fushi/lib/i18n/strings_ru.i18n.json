@@ -3287,7 +3287,7 @@
   "dict_language_auto": "Автоматически",
   "book_language_action": "Язык содержимого",
   "book_language_description": "Определяет, какой шрифт используется для отображения текста книги. «Автоматически» использует язык, указанный в EPUB.",
-  "local_audio_reference_unavailable": "Невозможно сослаться на исходный файл без полного доступа к файлам; вместо этого импортирована копия.",
+  "local_audio_reference_unavailable": "Выбранный файл — временная копия. Вместо неё будет импортирована постоянная копия.",
   "video_collection_scrape": "Получить информацию и обложку",
   "update_testflight_open": "Открыть TestFlight",
   "update_app_store_open": "Открыть App Store",
@@ -4436,5 +4436,7 @@
   "video_opensubtitles_app_key_hint": "Оставьте пустым, чтобы использовать встроенный ключ API приложения.",
   "video_anilist_error_api_disabled": "AniList has temporarily disabled its public API because of server-side stability problems. This is not a problem with your network or proxy - the request reached AniList and was refused. Please try again later.",
   "video_anilist_error_rate_limited": "AniList is rate-limiting this app right now. Wait a moment and retry.",
-  "video_anilist_error_unreachable": "Cannot reach AniList (graphql.anilist.co). Check your network connection, or configure a proxy in download settings."
+  "video_anilist_error_unreachable": "Cannot reach AniList (graphql.anilist.co). Check your network connection, or configure a proxy in download settings.",
+  "local_audio_file_unavailable": "База аудиоданных недоступна. Выберите исходный файл DB ещё раз.",
+  "local_audio_file_reselect": "Выбрать базу аудиоданных заново"
 }

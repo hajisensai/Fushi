@@ -182,6 +182,30 @@ class PreferencesRepository extends ChangeNotifier {
     await _db.setPrefs(encoded);
   }
 
+  /// 只在持久化原值仍匹配快照时提交更新。耗时迁移在事务外准备文件，
+  /// 此处仅短事务比较/写入，避免覆盖其它进程或用户期间的新配置。
+  /// [expectedRaw] 使用 [prefsSnapshot] 的原始编码值；null 表示 key 不存在。
+  Future<bool> compareAndSetPrefs({
+    required Map<String, String?> expectedRaw,
+    required Map<String, dynamic> updates,
+  }) async {
+    final Map<String, String> encoded = <String, String>{
+      for (final MapEntry<String, dynamic> entry in updates.entries)
+        entry.key: PrefCodec.encode(entry.value),
+    };
+    final bool applied = await _db.transaction(() async {
+      final Map<String, String> persisted = await _db.getAllPrefs();
+      for (final MapEntry<String, String?> entry in expectedRaw.entries) {
+        if (persisted[entry.key] != entry.value) return false;
+      }
+      await _db.setPrefs(encoded);
+      return true;
+    });
+    // 冲突时也刷新本进程，后续绑定必须使用赢家配置；提交前不改缓存。
+    await loadFromDb();
+    return applied;
+  }
+
   /// The prefs-version value currently held in this process's in-memory cache,
   /// as last populated by [loadFromDb]/[refreshFromDb] (0 when never loaded).
   /// Cheap synchronous read; NOT a cross-process check and NOT advanced by this

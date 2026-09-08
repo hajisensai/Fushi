@@ -3287,7 +3287,7 @@
   "dict_language_auto": "Tự động",
   "book_language_action": "Ngôn ngữ nội dung",
   "book_language_description": "Quyết định phông chữ nào hiển thị văn bản của cuốn sách này. Tự động sử dụng ngôn ngữ được khai báo trong EPUB.",
-  "local_audio_reference_unavailable": "Không thể tham chiếu tệp gốc mà không có quyền truy cập tất cả tệp; đã nhập một bản sao thay thế.",
+  "local_audio_reference_unavailable": "Tệp đã chọn là bản sao tạm thời. Hệ thống sẽ nhập một bản sao được lưu trữ lâu dài thay thế.",
   "video_collection_scrape": "Quét thông tin & bìa",
   "update_testflight_open": "Mở TestFlight",
   "update_app_store_open": "Mở App Store",
@@ -4436,5 +4436,7 @@
   "video_opensubtitles_app_key_hint": "Để trống để dùng khóa API tích hợp trong ứng dụng.",
   "video_anilist_error_api_disabled": "AniList has temporarily disabled its public API because of server-side stability problems. This is not a problem with your network or proxy - the request reached AniList and was refused. Please try again later.",
   "video_anilist_error_rate_limited": "AniList is rate-limiting this app right now. Wait a moment and retry.",
-  "video_anilist_error_unreachable": "Cannot reach AniList (graphql.anilist.co). Check your network connection, or configure a proxy in download settings."
+  "video_anilist_error_unreachable": "Cannot reach AniList (graphql.anilist.co). Check your network connection, or configure a proxy in download settings.",
+  "local_audio_file_unavailable": "Không thể sử dụng cơ sở dữ liệu âm thanh. Vui lòng chọn lại tệp DB gốc.",
+  "local_audio_file_reselect": "Chọn lại cơ sở dữ liệu âm thanh"
 }

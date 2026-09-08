@@ -3287,7 +3287,7 @@
   "dict_language_auto": "Automático",
   "book_language_action": "Idioma del contenido",
   "book_language_description": "Decide qué fuente renderiza el texto de este libro. Automático usa el idioma declarado en el EPUB.",
-  "local_audio_reference_unavailable": "No se puede referenciar el archivo original sin acceso a todos los archivos; se importó una copia en su lugar.",
+  "local_audio_reference_unavailable": "El archivo seleccionado es una copia temporal. Se importará una copia permanente en su lugar.",
   "video_collection_scrape": "Obtener info y portada",
   "update_testflight_open": "Abrir TestFlight",
   "update_app_store_open": "Abrir App Store",
@@ -4436,5 +4436,7 @@
   "video_opensubtitles_app_key_hint": "Déjalo vacío para usar la clave API incluida en la aplicación.",
   "video_anilist_error_api_disabled": "AniList has temporarily disabled its public API because of server-side stability problems. This is not a problem with your network or proxy - the request reached AniList and was refused. Please try again later.",
   "video_anilist_error_rate_limited": "AniList is rate-limiting this app right now. Wait a moment and retry.",
-  "video_anilist_error_unreachable": "Cannot reach AniList (graphql.anilist.co). Check your network connection, or configure a proxy in download settings."
+  "video_anilist_error_unreachable": "Cannot reach AniList (graphql.anilist.co). Check your network connection, or configure a proxy in download settings.",
+  "local_audio_file_unavailable": "La base de datos de audio no está disponible. Selecciona de nuevo el archivo DB original.",
+  "local_audio_file_reselect": "Seleccionar de nuevo la base de datos de audio"
 }

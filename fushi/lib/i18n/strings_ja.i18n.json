@@ -3287,7 +3287,7 @@
   "dict_language_auto": "自動",
   "book_language_action": "コンテンツ言語",
   "book_language_description": "この本のテキストを表示するフォントを決定します。自動の場合、EPUBで宣言された言語を使用します。",
-  "local_audio_reference_unavailable": "すべてのファイルへのアクセスがないため元のファイルを参照できません。代わりにコピーがインポートされました。",
+  "local_audio_reference_unavailable": "選択したファイルは一時コピーです。代わりに永続的なコピーとしてインポートします。",
   "video_collection_scrape": "情報と封面を取得",
   "update_testflight_open": "TestFlightを開く",
   "update_app_store_open": "App Storeを開く",
@@ -4436,5 +4436,7 @@
   "video_opensubtitles_app_key_hint": "空欄の場合、アプリ内蔵の API キーを使用します。",
   "video_anilist_error_api_disabled": "AniList has temporarily disabled its public API because of server-side stability problems. This is not a problem with your network or proxy - the request reached AniList and was refused. Please try again later.",
   "video_anilist_error_rate_limited": "AniList is rate-limiting this app right now. Wait a moment and retry.",
-  "video_anilist_error_unreachable": "Cannot reach AniList (graphql.anilist.co). Check your network connection, or configure a proxy in download settings."
+  "video_anilist_error_unreachable": "Cannot reach AniList (graphql.anilist.co). Check your network connection, or configure a proxy in download settings.",
+  "local_audio_file_unavailable": "音声データベースを利用できません。元の DB ファイルを選択し直してください。",
+  "local_audio_file_reselect": "音声データベースを選択し直す"
 }

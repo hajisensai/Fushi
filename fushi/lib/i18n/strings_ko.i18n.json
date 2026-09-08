@@ -3287,7 +3287,7 @@
   "dict_language_auto": "자동",
   "book_language_action": "콘텐츠 언어",
   "book_language_description": "이 책의 텍스트를 렌더링할 글꼴을 결정합니다. 자동은 EPUB에 선언된 언어를 사용합니다.",
-  "local_audio_reference_unavailable": "모든 파일 접근 권한 없이는 원본 파일을 참조할 수 없어 사본이 대신 가져와졌습니다.",
+  "local_audio_reference_unavailable": "선택한 파일은 임시 사본입니다. 대신 영구적으로 저장되는 사본을 가져옵니다.",
   "video_collection_scrape": "정보 및 표지 스크랩",
   "update_testflight_open": "TestFlight 열기",
   "update_app_store_open": "App Store 열기",
@@ -4436,5 +4436,7 @@
   "video_opensubtitles_app_key_hint": "비워 두면 앱에 내장된 API 키를 사용합니다.",
   "video_anilist_error_api_disabled": "AniList has temporarily disabled its public API because of server-side stability problems. This is not a problem with your network or proxy - the request reached AniList and was refused. Please try again later.",
   "video_anilist_error_rate_limited": "AniList is rate-limiting this app right now. Wait a moment and retry.",
-  "video_anilist_error_unreachable": "Cannot reach AniList (graphql.anilist.co). Check your network connection, or configure a proxy in download settings."
+  "video_anilist_error_unreachable": "Cannot reach AniList (graphql.anilist.co). Check your network connection, or configure a proxy in download settings.",
+  "local_audio_file_unavailable": "음성 데이터베이스를 사용할 수 없습니다. 원본 DB 파일을 다시 선택하세요.",
+  "local_audio_file_reselect": "음성 데이터베이스 다시 선택"
 }

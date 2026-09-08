@@ -2694,7 +2694,7 @@ class AppModel with ChangeNotifier {
         JapaneseLanguage.instance.initialise(),
         injectAssetLicenses(),
         _seedBuiltInTags(),
-        _localAudioManager.bindForNativeHandler(clearMissingPath: true),
+        _prepareLocalAudioForPlayback(),
       ]);
 
       debugPrint(
@@ -2929,7 +2929,7 @@ class AppModel with ChangeNotifier {
       // mutated a preference / switched profile since the last lookup; a cheap
       // single-row DB version read gates it.
       await refreshPrefCacheIfChanged();
-      await _localAudioManager.bindForNativeHandler();
+      await _prepareLocalAudioForPlayback();
       return;
     }
     try {
@@ -3006,7 +3006,7 @@ class AppModel with ChangeNotifier {
         exportDirectory: _exportDirectory,
         alternateExportDirectory: _alternateExportDirectory,
       );
-      await _localAudioManager.bindForNativeHandler();
+      await _prepareLocalAudioForPlayback();
 
       populateLanguages();
       populateLocales();
@@ -7314,7 +7314,7 @@ class AppModel with ChangeNotifier {
   /// 持久化交给后续 [setAudioSourceConfigs]。
   ///
   /// [reference]=true（仅桌面）时跳过复制、直接引用用户原路径（BUG-483），不在
-  /// AppData 留副本；移动端缓存临时副本不可引用，故 UI 只在桌面暴露此开关，默认 false。
+  /// AppData 留副本；临时副本不可引用，调用方按选择结果的实际出处决定。
   Future<LocalAudioDbEntry> importLocalAudioDbFile(
     String sourcePath, {
     required String displayName,
@@ -7325,6 +7325,23 @@ class AppModel with ChangeNotifier {
 
   Future<void> setLocalAudioDbs(List<LocalAudioDbEntry> dbs) =>
       _localAudioManager.setEntries(dbs);
+
+  /// 修复旧版本保存的临时缓存引用后再绑定，主入口与弹窗入口共用。
+  Future<void> _prepareLocalAudioForPlayback() async {
+    try {
+      await _localAudioManager.migrateTemporaryReferences(temporaryDirectory);
+    } catch (error, stack) {
+      // 迁移事务失败已恢复旧配置；发音库故障不能阻止用户打开书籍和诊断页。
+      ErrorLogService.instance.log('AppModel.migrateLocalAudio', error, stack);
+    }
+    await _localAudioManager.bindForNativeHandler();
+  }
+
+  Future<bool> isLocalAudioDbAvailable(String storedPath) async {
+    final String resolved = LocalAudioManager.resolveInternalPath(
+        storedPath, databaseDirectory.path);
+    return File(resolved).exists();
+  }
 
   /// 枚举一个本地音频库内的全部子来源名（用于「编辑来源」对话框）。
   Future<List<String>> listLocalAudioSources(String path) =>

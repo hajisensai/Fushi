@@ -3287,7 +3287,7 @@
   "dict_language_auto": "自動",
   "book_language_action": "內容語言",
   "book_language_description": "決定這本書的正文用哪種字體渲染。自動 = 用 EPUB 裡聲明的語言。",
-  "local_audio_reference_unavailable": "沒有「所有檔案訪問權限」無法引用原檔案，已改為導入副本。",
+  "local_audio_reference_unavailable": "所選檔案是暫存副本，已改為匯入永久副本。",
   "video_collection_scrape": "刮削資料與封面",
   "update_testflight_open": "打開 TestFlight",
   "update_app_store_open": "打開 App Store",
@@ -4436,5 +4436,7 @@
   "video_opensubtitles_app_key_hint": "留空以使用應用程式內置的 API 金鑰。",
   "video_anilist_error_api_disabled": "AniList 官方因伺服器穩定性問題暫時停用了公開 API。這不是你的網絡或代理的問題——請求已經打到 AniList 並被它當面拒絕了。請稍後再試。",
   "video_anilist_error_rate_limited": "AniList 正在對本應用限流。稍等一會兒再重試。",
-  "video_anilist_error_unreachable": "連不上 AniList（graphql.anilist.co）。請檢查網絡連接，或在下載設定中配置代理。"
+  "video_anilist_error_unreachable": "連不上 AniList（graphql.anilist.co）。請檢查網絡連接，或在下載設定中配置代理。",
+  "local_audio_file_unavailable": "發音庫檔案無法使用，請重新選擇原始 DB 檔案。",
+  "local_audio_file_reselect": "重新選擇發音庫"
 }
