@@ -10,52 +10,49 @@ import 'package:fushi/src/mining/galgame_audio_source.dart';
 ///
 /// 返回 null 表示没有比内部代码更有用的信息可说（[GalHookInjectorFailure.none] /
 /// [GalHookInjectorFailure.unknown]）——此时调用方应回退显示原始代码，绝不编造原因。
-String? galHookFailureLabel(GalHookInjectorFailure failure) =>
-    switch (failure) {
-      GalHookInjectorFailure.none => null,
-      GalHookInjectorFailure.unknown => null,
-      GalHookInjectorFailure.helperMissing => t.game_hook_reason_helper_missing,
-      GalHookInjectorFailure.targetMissing => t.game_hook_reason_target_missing,
-      GalHookInjectorFailure.spawnFailed => t.game_hook_reason_spawn_failed,
-      GalHookInjectorFailure.bitnessMismatch =>
-        t.game_hook_reason_bitness_mismatch,
-      GalHookInjectorFailure.accessDenied => t.game_hook_reason_access_denied,
-      GalHookInjectorFailure.elevationRequired =>
-        t.game_hook_reason_elevation_required,
-      GalHookInjectorFailure.createProcessFailed =>
-        t.game_hook_reason_create_process_failed,
-      GalHookInjectorFailure.hookDllMissing =>
-        t.game_hook_reason_hook_dll_missing,
-      GalHookInjectorFailure.gameExeMissing =>
-        t.game_hook_reason_game_exe_missing,
-      // 这两个**不能**合成一句：[GalHookInjectorFailure.staleSession] 是旧映射暂时
-      // 不可复用（旧 injector 刚退出、Toolhelp/文件系统竞态），宿主自己有界重试就会
-      // 好，用户什么都不用做；[GalHookInjectorFailure.residentHookMismatch] 是已经
-      // 证明驻留 hook DLL 与本次请求不同，而 Windows 不卸载已注入 DLL，不重启游戏
-      // 重试多少次都不会好。合成一句「请重启一次游戏」等于对前者谎报要动手、对后者
-      // 又和「等一下」混在一起，用户只能瞎试。分流判据与 [galHookFailureIsRetryable]
-      // 同源（同一份事实，两处消费）。
-      GalHookInjectorFailure.staleSession => t.game_hook_reason_stale_session,
-      GalHookInjectorFailure.residentHookMismatch =>
-        t.game_hook_reason_resident_hook_mismatch,
-      GalHookInjectorFailure.readyTimeout => t.game_hook_reason_ready_timeout,
-      GalHookInjectorFailure.nativeLoopbackAckTimeout =>
-        t.game_hook_reason_native_loopback_ack_timeout,
-      GalHookInjectorFailure.injectionFailed =>
-        t.game_hook_reason_injection_failed,
-      GalHookInjectorFailure.guardedHookFailed =>
-        t.game_hook_reason_guarded_hook_failed,
-      GalHookInjectorFailure.resumeFailed => t.game_hook_reason_resume_failed,
-      GalHookInjectorFailure.steamTimeout => t.game_hook_reason_steam_timeout,
-      GalHookInjectorFailure.sharedMemoryUnavailable =>
-        t.game_hook_reason_shared_memory_unavailable,
-      GalHookInjectorFailure.protocolMismatch =>
-        t.game_hook_reason_protocol_mismatch,
-      GalHookInjectorFailure.capabilityProbeFailed =>
-        t.game_hook_reason_capability_probe_failed,
-      GalHookInjectorFailure.handshakeTimeout =>
-        t.game_hook_reason_handshake_timeout,
-    };
+String? galHookFailureLabel(
+  GalHookInjectorFailure failure,
+) => switch (failure) {
+  GalHookInjectorFailure.none => null,
+  GalHookInjectorFailure.unknown => null,
+  GalHookInjectorFailure.helperMissing => t.game_hook_reason_helper_missing,
+  GalHookInjectorFailure.targetMissing => t.game_hook_reason_target_missing,
+  GalHookInjectorFailure.spawnFailed => t.game_hook_reason_spawn_failed,
+  GalHookInjectorFailure.bitnessMismatch => t.game_hook_reason_bitness_mismatch,
+  GalHookInjectorFailure.accessDenied => t.game_hook_reason_access_denied,
+  GalHookInjectorFailure.elevationRequired =>
+    t.game_hook_reason_elevation_required,
+  GalHookInjectorFailure.createProcessFailed =>
+    t.game_hook_reason_create_process_failed,
+  GalHookInjectorFailure.hookDllMissing => t.game_hook_reason_hook_dll_missing,
+  GalHookInjectorFailure.gameExeMissing => t.game_hook_reason_game_exe_missing,
+  // 这两个**不能**合成一句：[GalHookInjectorFailure.staleSession] 是旧映射暂时
+  // 不可复用（旧 injector 刚退出、Toolhelp/文件系统竞态），宿主自己有界重试就会
+  // 好，用户什么都不用做；[GalHookInjectorFailure.residentHookMismatch] 是已经
+  // 证明驻留 hook DLL 与本次请求不同，而 Windows 不卸载已注入 DLL，不重启游戏
+  // 重试多少次都不会好。合成一句「请重启一次游戏」等于对前者谎报要动手、对后者
+  // 又和「等一下」混在一起，用户只能瞎试。分流判据与 [galHookFailureIsRetryable]
+  // 同源（同一份事实，两处消费）。
+  GalHookInjectorFailure.staleSession => t.game_hook_reason_stale_session,
+  GalHookInjectorFailure.residentHookMismatch =>
+    t.game_hook_reason_resident_hook_mismatch,
+  GalHookInjectorFailure.readyTimeout => t.game_hook_reason_ready_timeout,
+  GalHookInjectorFailure.nativeLoopbackAckTimeout =>
+    t.game_hook_reason_native_loopback_ack_timeout,
+  GalHookInjectorFailure.injectionFailed => t.game_hook_reason_injection_failed,
+  GalHookInjectorFailure.guardedHookFailed =>
+    t.game_hook_reason_guarded_hook_failed,
+  GalHookInjectorFailure.resumeFailed => t.game_hook_reason_resume_failed,
+  GalHookInjectorFailure.steamTimeout => t.game_hook_reason_steam_timeout,
+  GalHookInjectorFailure.sharedMemoryUnavailable =>
+    t.game_hook_reason_shared_memory_unavailable,
+  GalHookInjectorFailure.protocolMismatch =>
+    t.game_hook_reason_protocol_mismatch,
+  GalHookInjectorFailure.capabilityProbeFailed =>
+    t.game_hook_reason_capability_probe_failed,
+  GalHookInjectorFailure.handshakeTimeout =>
+    t.game_hook_reason_handshake_timeout,
+};
 
 /// 一次「启动游戏」结束后要 toast 给用户的话（BUG-1089 / BUG-1142）。
 ///
@@ -81,16 +78,27 @@ String? galHookLaunchOutcomeMessage({
   final String? reason = galHookFailureLabel(failure);
   // 本次启动结果自带的诊断优先；没有（降级路径 result 是 launched）才用会话状态里的。
   final String resultDetail = galHookDiagnosticsDetail(result.diagnostics);
-  final String detail =
-      resultDetail.isNotEmpty ? resultDetail : injectorDetail.trim();
+  final String detail = resultDetail.isNotEmpty
+      ? resultDetail
+      : injectorDetail.trim();
   return switch (outcome) {
     GalHookLaunchOutcome.superseded => null,
-    GalHookLaunchOutcome.failed =>
-      _failedMessage(result, reason, lastError, detail),
-    GalHookLaunchOutcome.windowMissing =>
-      _annotate(t.game_capture_window_missing, reason, detail),
-    GalHookLaunchOutcome.degradedLoopback =>
-      _annotate(t.game_capture_degraded_loopback, reason, detail),
+    GalHookLaunchOutcome.failed => _failedMessage(
+      result,
+      reason,
+      lastError,
+      detail,
+    ),
+    GalHookLaunchOutcome.windowMissing => _annotate(
+      t.game_capture_window_missing,
+      reason,
+      detail,
+    ),
+    GalHookLaunchOutcome.degradedLoopback => _annotate(
+      t.game_capture_degraded_loopback,
+      reason,
+      detail,
+    ),
     GalHookLaunchOutcome.running => t.game_capture_running,
   };
 }
@@ -169,13 +177,12 @@ String galHookFallbackHeadline({
 ///
 /// 未知代码返回 null（调用方回退显示原始代码，绝不编造原因）。
 String? galHookFallbackLabel(String fallbackReason) => switch (fallbackReason) {
-      'engine_pcm_unavailable' => t.game_hook_fallback_engine_pcm_unavailable,
-      'all_audio_sources_failed' =>
-        t.game_hook_fallback_all_audio_sources_failed,
-      'window_not_found' => t.game_hook_fallback_window_not_found,
-      'engine_attach_failed' => t.game_hook_fallback_engine_attach_failed,
-      'launch_injection_failed' => t.game_hook_fallback_launch_injection_failed,
-      'helper_missing' => t.game_hook_reason_helper_missing,
-      'target_missing' => t.game_hook_reason_target_missing,
-      _ => null,
-    };
+  'engine_pcm_unavailable' => t.game_hook_fallback_engine_pcm_unavailable,
+  'all_audio_sources_failed' => t.game_hook_fallback_all_audio_sources_failed,
+  'window_not_found' => t.game_hook_fallback_window_not_found,
+  'engine_attach_failed' => t.game_hook_fallback_engine_attach_failed,
+  'launch_injection_failed' => t.game_hook_fallback_launch_injection_failed,
+  'helper_missing' => t.game_hook_reason_helper_missing,
+  'target_missing' => t.game_hook_reason_target_missing,
+  _ => null,
+};
