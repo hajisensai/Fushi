@@ -15,10 +15,13 @@ class AdapterStructureTest(unittest.TestCase):
     def _siglus_source() -> str:
         adapters = ROOT / "hook" / "adapters"
         source = (adapters / "siglus_lookup.inc").read_text(encoding="utf-8")
-        marker = '#include "siglus_lookup_worker.inc"'
-        if source.count(marker) != 1:
-            raise AssertionError("Siglus production worker must be included once")
-        return source.replace(marker, (adapters / "siglus_lookup_worker.inc").read_text(encoding="utf-8"))
+        for name in ("siglus_lookup_input_diagnostics.inc", "siglus_lookup_click_target.inc",
+                     "siglus_lookup_worker.inc", "siglus_lookup_click_policy.inc"):
+            marker = f'#include "{name}"'
+            if source.count(marker) != 1:
+                raise AssertionError(f"Siglus production {name} must be included once")
+            source = source.replace(marker, (adapters / name).read_text(encoding="utf-8"))
+        return source
 
     @staticmethod
     def _strip_comments(source: str) -> str:
@@ -381,7 +384,8 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn("ClearSiglusLookupGlyphCapture", reset)
         self.assertIn("ResetSiglusLookupLayout", reset)
         pending = self._function_body(siglus, "bool SiglusLookupPayloadMatchesPublishedTarget(")
-        self.assertIn("payload.snapshot_epoch == target.snapshot_epoch", pending)
+        self.assertIn("payload.snapshot_epoch != target.snapshot_epoch", pending)
+        self.assertIn("RejectSiglusLookupPress(diagnostic, Reason::kPendingEpoch)", pending)
         current = self._function_body(siglus, "bool IsSiglusLookupPayloadEligible(")
         self.assertIn("IsSiglusLookupLayoutSubmissionCurrent", current)
 

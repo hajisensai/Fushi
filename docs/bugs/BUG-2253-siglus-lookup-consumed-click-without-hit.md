@@ -18,3 +18,13 @@
 私有符号 `g_siglus_lookup_worker_diagnostic_count` 和 `g_siglus_lookup_worker_diagnostics` 是 8 槽 seqlock 环，不扩展 IPC。每条 112 字节：序号、首/末队列号、预期/当前正文事件、预期/当前 geometry/epoch、字形和文本的已发布/已消费前沿、原因枚举与保留字。没有字符、路径、音频或指针字段。多条 reset/覆盖范围的未知事件身份为 0；单条 reset 仅在槽序号稳定时记录其实际身份。
 
 下一门是在同一原始启动路径注入新 DLL，单击后只读该环，按原因枚举区分 layout/epoch、engine view、窗口/前台、投影、重复或发布函数拒绝（含 IPC / registry 检查），再决定是否需要根因修复。现有失败门保持，不以延迟、重试或放宽 epoch 制造命中。
+
+### 后续首按边界（2026-09-08）
+
+原始新会话 PID 6464 使用 DLL SHA-256 `e1e5616f5b4d248242a3a005eb604505089d2fd76e3797e246d9f12428b0fe4a`，首次点击直接推进而未显示词典。随后只读快照确认 `click_event_count=click_processed_seq=0`，不是仅凭 worker diagnostic count=0 推断未入队。第二次短句点击及之后长句点击已正常发布命中；因此不能认定准入一直失效。证据为本机 `rewrite6464-input-private-metadata.json`、`rewrite6464-input-admission-metadata.jsonl` 及主代理点击台账。历史 first-down 拒绝原因仍未知。
+
+前置诊断由 `siglus_lookup_click_target.inc` 的真实 Read/Build 检查和 `siglus_lookup_click_policy.inc` 的真实采样/消息路径填写。它区分稳定目标失效、过期、身份/代际缺失、窗口/前台/客户区或投影失败、live view 返回失败、registry 准入返回失败、尚未同步，以及本次成功取得输入所有权。registry 内部拒绝未另作猜测拆分，也不会额外读取游戏内存。取得 down 所有权不等于 up 已入队或 worker 已发布。
+
+新增私有 `g_siglus_lookup_press_diagnostics` 环为 8×160 字节固定标量，计数为 `g_siglus_lookup_press_diagnostic_count`，竞争丢弃计数为 `g_siglus_lookup_press_diagnostic_dropped`。在已准入调用面的 GetKeyState/GetKeyboardState 各自观测到 down 边沿、引擎 DOWN/DBLCLICK 消息，以及 lookup-owned up 未入队时记录；不记录每帧 hold、idle up 或成功 up，也不记录未进入这些调用面的输入。completion 保留 pending 与当次稳定目标的真实 event/thread/gen/epoch，沿原短路顺序诊断，没有额外游戏内存读取。两个采样面使用独立 TLS 观测状态；新 epoch 或观察到 capture=false 的早退会清诊断历史，既捕获重新启用后的首次 held，又不每帧重复；实际输入 sample state 不受诊断改动。写者只尝试私有 SRW 独占锁，冲突直接增加 dropped；锁内清槽 seq→写固定标量→发布 seq→最后发布 count。记录不含正文、资源路径或游戏对象指针。
+
+`siglus_lookup_input_diagnostics_test.cpp` 直接包含生产 Read/Build/采样/消息函数，使用窄 Win32/view 边界与真实 registry，覆盖 22 种拒绝在 65 个调用面用例、9 个 owned-up 失败用例、half-transaction/hold、跨 capture/epoch/TLS 线程生命周期、不复活 miss、成功输入、原 view 读取次数、消息与采样分工、诊断锁冲突不改变接管、8 槽覆盖、真实 copy 边界 seq=0/count 未提前发布。并发测试通过 Windows ReadProcessMemory 读取本测试自己的环，验证 writer 暂停在 copy 中时被 reader 拒绝、发布后被接受，及有界多 writer/reader 交错中的记录一致性；不把普通 C++ 非原子数据并发复制当合法读协议。x86/x64 `/O2 /W4 /WX` 各 8 组通过，原 worker 各 20 场景保持通过。此补充仍只是诊断，不勾选根因修复。
