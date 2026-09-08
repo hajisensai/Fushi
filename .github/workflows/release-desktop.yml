@@ -1125,7 +1125,7 @@ jobs:
             fi
           done < <(find "$runtime_dir" -type f)
           chmod +x tool/mihon/verify_desktop_runtime.sh
-          tool/mihon/verify_desktop_runtime.sh "$runtime_dir"
+          tool/mihon/verify_desktop_runtime.sh "$runtime_dir" "$app_dir/Contents/MacOS/fushi"
           codesign --force --deep --sign - --timestamp=none "$app_dir"
           codesign --verify --deep --strict --verbose=2 "$app_dir"
       # BUG-1922：这一步以前根本不存在。tool/aidoku/build_macos_runtime.sh 只被本地
