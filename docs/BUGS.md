@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2117 条。点号进各自文件。
+> 共 2118 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2263](bugs/BUG-2263-audiobook-multifile-position-no-file-index.md) | ✅ | ✅ | 多文件有声书持久化文件内毫秒无文件下标，重开恒落文件0 |
 | [BUG-2262](bugs/BUG-2262-eink-toggle-no-reader-reinject.md) | ✅ | ✅ | 墨水屏开关不通知阅读器重注入正文样式 |
 | [BUG-2261](bugs/BUG-2261-reader-vn-live-style-css-dropped.md) | ✅ | ✅ | 阅读器视觉小说视图下纯CSS外观设置不实时生效 |
 | [BUG-2258](bugs/BUG-2258-audiobook-resume-ignored-on-open.md) | ✅ | ✅ | 打开带有声书的书不按有声书进度定位，按播放才跳 |

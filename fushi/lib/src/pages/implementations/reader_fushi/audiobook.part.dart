@@ -445,9 +445,9 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
   /// 无 cue / cue 反查不到章），调用方据此回退阅读进度（BUG-2258）。
   ///
   /// 三条反查路径（sasayaki fragment → SRT 切章表 → href/正文兜底）只算「章 + 章内
-  /// 分数」，统一由 [_applyAudioCueResumePoint] 落到起点字段——cue 派生的起点没有
-  /// WebView 精确字符锚，必须把 `_initialCharOffset` 归 -1，否则 saved 分支先填进去的
-  /// 存档锚会在 restoreToCharOffset 里压过分数、把视口拽回旧位置。
+  /// 分数」，统一由 [_setOpenResumePoint] 落到起点字段——cue 派生的起点没有 WebView
+  /// 精确字符锚，charOffset 取默认 -1；那里一次写齐七个字段，存档分支残留的锚不会
+  /// 在 restoreToCharOffset 里压过分数、把视口拽回旧位置。
   bool _restoreFromCurrentAudioCue() {
     final AudioCue? cue = _audiobookController?.cueAtCurrentPositionInBook();
     if (cue == null || _book == null) return false;
@@ -461,7 +461,7 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       // TODO-746: reuse the shared in-chapter progress helper (DRY). On initial
       // open a null (unknown char count) falls back to 0.0 = chapter start,
       // which is a sane initial anchor and preserves the original behaviour.
-      _applyAudioCueResumePoint(
+      _setOpenResumePoint(
         chapter: frag.sectionIndex,
         progress:
             audiobookSentenceAudioCrossChapterProgress(
@@ -484,7 +484,7 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
         // TODO-746: reuse the shared in-chapter progress helper (DRY). On
         // initial open a null (single-cue chapter) falls back to 0.0 =
         // chapter start, preserving the original restore behaviour.
-        _applyAudioCueResumePoint(
+        _setOpenResumePoint(
           chapter: srtChapter,
           progress:
               audiobookSrtCrossChapterProgress(
@@ -504,30 +504,12 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
         ? chapter
         : _chapterIndexForText(cue.text);
     if (fallbackChapter < 0) return false;
-    _applyAudioCueResumePoint(
+    _setOpenResumePoint(
       chapter: fallbackChapter,
       progress: 0.0,
       source: 'audio cue chapter href=${cue.chapterHref}',
     );
     return true;
-  }
-
-  void _applyAudioCueResumePoint({
-    required int chapter,
-    required double progress,
-    required String source,
-  }) {
-    _currentChapter = chapter;
-    _initialProgress = progress;
-    _initialCharOffset = -1;
-    _initialCharOffsetEnd = -1;
-    _lastProgressSection = chapter;
-    _lastProgressValue = progress;
-    _lastProgressCharOffset = -1;
-    debugPrint(
-      '[ReaderFushi] restore from $source: '
-      'chapter=$_currentChapter progress=$_initialProgress',
-    );
   }
 
   int _chapterIndexForCue(AudioCue cue) {

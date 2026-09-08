@@ -63,8 +63,9 @@ void main() {
   }
 
   test('three shells really are three different scripts', () {
-    final Set<String> distinct =
-        shells.map((s) => s.source()).toSet();
+    final Set<String> distinct = shells
+        .map((({String label, String Function() source}) s) => s.source())
+        .toSet();
     expect(distinct.length, shells.length,
         reason: '守卫曾两轮都读分页脚本——连续 shell 从未被真正断言');
   });

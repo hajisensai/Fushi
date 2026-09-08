@@ -1465,6 +1465,30 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   int _initialCharOffsetEnd = -1;
   // _refreshProgress 算得的最新精确字符偏移，供退出 flush 与 debounce 保存共用。
   int _lastProgressCharOffset = -1;
+
+  /// 开书起点的**唯一**写入口（书签 / 存档 / 音频 cue 三条分支都经这里）：七个起点
+  /// 字段必须一次写齐——尤其是 [_initialCharOffset]：精确锚在 restoreToCharOffset 里
+  /// 压过分数，某条分支只写 progress 不决定 charOffset，就会让上一条分支残留的锚把
+  /// 视口拽回旧位置（BUG-2258 修复期实际踩到的坑）。以后给起点加字段只改这里。
+  void _setOpenResumePoint({
+    required int chapter,
+    required double progress,
+    required String source,
+    int charOffset = -1,
+    int charOffsetEnd = -1,
+  }) {
+    _currentChapter = chapter;
+    _initialProgress = progress;
+    _initialCharOffset = charOffset;
+    _initialCharOffsetEnd = charOffsetEnd;
+    _lastProgressSection = chapter;
+    _lastProgressValue = progress;
+    _lastProgressCharOffset = charOffset;
+    debugPrint(
+      '[ReaderFushi] restore from $source: '
+      'chapter=$chapter progress=$progress charOffset=$charOffset',
+    );
+  }
   // BUG-459: 临时浏览跳转（收藏句 / 制卡历史跳回原文）整页生命周期内抑制 ReaderPosition
   // 持久化——用户从收藏 / 制卡历史点进来看某句，不应把该书真实阅读进度覆盖成跳转锚。
   // 由 widget.initialBookmarkJump.preserveSavedPosition 在开书时置位；普通打开 / 真实
@@ -2342,37 +2366,27 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     if (bm != null &&
         bm.sectionIndex >= 0 &&
         bm.sectionIndex < _book!.chapters.length) {
-      _currentChapter = bm.sectionIndex;
       // BUG-459: 收藏句 / 制卡历史跳转带 charAnchor（getNormalizedOffset 口径的章节内
       // 绝对字符索引，与 _initialCharOffset / ReaderPosition.charOffset 同计量）→ 走精确
       // 字符锚恢复（scrollToCharOffset），不再把绝对索引误当 0-10000 分数 /10000≈0 而
       // 恒跳章首。真实书签 charAnchor==null → 仍按 normCharOffset 分数跳（BUG-162 不变）。
-      final int? charAnchor = bm.charAnchor;
-      if (charAnchor != null && charAnchor >= 0) {
-        _initialCharOffset = charAnchor;
-        _initialProgress = 0.0; // 精确锚优先；分数仅作锚算不出时的兜底。
-        // BUG-461: 句长可用时算句尾绝对偏移（连续模式横排整句对齐进可见区，句尾不被
-        // 底栏切）。无句长（制卡行 / 老收藏）→ -1 退回单点句首锚（旧行为）。
-        final int? len = bm.charAnchorLength;
-        _initialCharOffsetEnd = (len != null && len > 0)
-            ? charAnchor + len
-            : -1;
-      } else {
-        _initialProgress = bm.normCharOffset / 10000.0;
-        _initialCharOffset = -1; // BUG-162: 书签按 normCharOffset 分数跳转，非 char 锚。
-        _initialCharOffsetEnd = -1;
-      }
+      // BUG-461: 句长可用时算句尾绝对偏移（连续模式横排整句对齐进可见区，句尾不被
+      // 底栏切）。无句长（制卡行 / 老收藏）→ -1 退回单点句首锚（旧行为）。
       // BUG-459: 临时浏览跳转（收藏 / 制卡历史）进入后不覆盖该书已保存的阅读进度——
       // 用户点进来看某句不该毁掉真正的阅读位置。普通书签跳转照常持久化。
       _suppressPositionPersist = bm.preserveSavedPosition;
-      _lastProgressSection = _currentChapter;
-      _lastProgressValue = _initialProgress;
-      _lastProgressCharOffset = _initialCharOffset;
-      debugPrint(
-        '[ReaderFushi] restore from bookmark: '
-        'chapter=$_currentChapter progress=$_initialProgress '
-        'charAnchor=$_initialCharOffset '
-        'preserveSavedPosition=$_suppressPositionPersist',
+      final int? charAnchor = bm.charAnchor;
+      final int? len = bm.charAnchorLength;
+      final bool precise = charAnchor != null && charAnchor >= 0;
+      _setOpenResumePoint(
+        chapter: bm.sectionIndex,
+        // 精确锚优先；分数仅作锚算不出时的兜底。
+        progress: precise ? 0.0 : bm.normCharOffset / 10000.0,
+        charOffset: precise ? charAnchor : -1,
+        charOffsetEnd: precise && len != null && len > 0
+            ? charAnchor + len
+            : -1,
+        source: 'bookmark preserveSavedPosition=$_suppressPositionPersist',
       );
     } else {
       ReaderPosition? saved = await savedPositionFuture;
@@ -2403,20 +2417,25 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
           );
       bool restored = false;
       if (preferAudio) {
-        await audioSlotFuture;
+        // 音频槽失败（audio_service 冷启 / setAudioSource 超时 / 文件不在）不能把整本
+        // 书开失败：正文照开，起点回退存档；底栏由后面的 .catchError 分支提示。
+        try {
+          await audioSlotFuture;
+        } catch (_) {
+          // 已由 audioSlotFuture 的 catchError 链上报 ErrorLogService，这里只回退。
+        }
         if (!mounted) return;
         restored = _restoreFromCurrentAudioCue();
       }
       if (!restored && saved != null) {
-        _currentChapter = saved.sectionIndex;
-        _initialProgress = saved.normCharOffset / 10000.0;
         // BUG-162: 有精确锚就用它（restoreToCharOffset 不动点），否则 -1 回退分数。
-        _initialCharOffset = saved.charOffset ?? -1;
         // BUG-461: 存档恢复无句子区间，单点句首锚（仅收藏句跳转才有句尾锚）。
-        _initialCharOffsetEnd = -1;
-        _lastProgressSection = _currentChapter;
-        _lastProgressValue = _initialProgress;
-        _lastProgressCharOffset = _initialCharOffset;
+        _setOpenResumePoint(
+          chapter: saved.sectionIndex,
+          progress: saved.normCharOffset / 10000.0,
+          charOffset: saved.charOffset ?? -1,
+          source: 'saved position',
+        );
       }
     }
     _openTrace.mark('position');

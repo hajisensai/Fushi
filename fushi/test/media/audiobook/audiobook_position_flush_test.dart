@@ -324,7 +324,9 @@ void main() {
       reason: '释放后不得再用归零位置覆盖刚写穿的值',
     );
     // 位置必须在 stop 之前**同步**采样（BUG-1240 的真不变式），此后不再采样。
-    final int sampleAt = body.indexOf('_player.position.inMilliseconds');
+    // BUG-2263 起采的是 globalPosition（全书毫秒 = 前序文件时长和 + `_player.position`，
+    // 同步 getter），多文件书才不会把文件内毫秒当全书位置存。
+    final int sampleAt = body.indexOf('globalPosition.inMilliseconds');
     expect(sampleAt, greaterThanOrEqualTo(0), reason: '必须显式采样 stop 前的位置');
     expect(sampleAt, lessThan(mainStopAt),
         reason: 'stop 会把 position 归零，采样必须发生在它之前');

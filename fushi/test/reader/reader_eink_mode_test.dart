@@ -9,6 +9,8 @@ import 'package:fushi/src/profile/profile_keys.dart';
 import 'package:fushi/src/reader/reader_content_styles.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 
+import '../helpers/source_guard.dart';
+
 /// 墨水屏模式（eink_mode）守卫：
 ///  1. 阅读器 CSS 生成器的 eink 分支——纯黑白正文、线式高亮、关过渡、
 ///     `--fushi-reader-eink-mode: 1`（JS 侧 isEInkMode() 与连续模式跟随滚动
@@ -109,20 +111,23 @@ void main() {
       // einkMode 是 ReaderContentStyles.css 的入参：开着书切换必须走
       // notifyReaderSettingsChanged（→ onSettingsChangedLive → _applyStylesLive）
       // 重注入正文 CSS，只 refresh() 设置页会让正文退出重进才变黑白。
-      final String source = File(
-        'lib/src/settings/settings_schema_appearance.dart',
-      ).readAsStringSync();
-      final int id = source.indexOf("id: 'appearance.eink_mode'");
+      // 注释掩掉再切：注释里提到调用名不算数；切片以「本项 id → 下一项 id」为界，
+      // 不钉相邻项的类型，schema 重排 / 中间插项都不会让断言漂到别的 handler 上。
+      final String schema = maskComments(
+        File('lib/src/settings/settings_schema_appearance.dart')
+            .readAsStringSync(),
+      );
+      final int id = schema.indexOf("id: 'appearance.eink_mode'");
       expect(id, isNonNegative);
-      final int onChanged = source.indexOf('onChanged:', id);
-      final int nextItem = source.indexOf('SettingsSliderItem(', onChanged);
-      expect(onChanged, greaterThan(id));
-      expect(nextItem, greaterThan(onChanged));
-      final String handler = source.substring(onChanged, nextItem);
-      expect(handler, contains('setEinkMode(value)'));
-      expect(handler, contains('notifyReaderSettingsChanged(settingsContext)'),
+      final int next = schema.indexOf("id: '", id + 5);
+      final String item =
+          next == -1 ? schema.substring(id) : schema.substring(id, next);
+      expect(item, contains('setEinkMode(value)'));
+      expect(item, contains('notifyReaderSettingsChanged(settingsContext)'),
           reason: 'eink toggle must re-inject reader CSS live, not only '
               'refresh the settings sheet');
+      expect(item, isNot(contains('settingsContext.refresh()')),
+          reason: 'notifyReaderSettingsChanged already refreshes the sheet');
     });
   });
 
