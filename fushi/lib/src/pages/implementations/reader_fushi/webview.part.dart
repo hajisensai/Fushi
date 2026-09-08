@@ -2003,7 +2003,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           handlerName: 'onTap',
           callback: (args) {
             if (args.length < 2) return;
-            // BUG-2260：抽屉压着正文时，这次点击是「点遮罩关抽屉」，不是正文点击。
+            // BUG-2276：抽屉压着正文时，这次点击是「点遮罩关抽屉」，不是正文点击。
             if (_closeSideSheetForWebViewPointer()) return;
             final bool shiftKey = args.length >= 3 && args[2] == true;
             if (!_showChrome && !shiftKey) {
@@ -2047,7 +2047,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
         controller.addJavaScriptHandler(
           handlerName: 'onTapEmpty',
           callback: (_) {
-            // BUG-2260：抽屉压着正文时，这次点击是「点遮罩关抽屉」，不是正文点击。
+            // BUG-2276：抽屉压着正文时，这次点击是「点遮罩关抽屉」，不是正文点击。
             if (_closeSideSheetForWebViewPointer()) return;
             // TODO-1027：有可见查词弹窗时，本 onTapEmpty 是 dismiss barrier 转发的
             // 真点击命中空白（onDismissBarrierTap → _selectTextAt 命中真空白才 fire）。
@@ -2081,7 +2081,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
         controller.addJavaScriptHandler(
           handlerName: 'onVnBlankTap',
           callback: (_) {
-            // BUG-2260：抽屉压着正文时，这次点击是「点遮罩关抽屉」，不是正文点击。
+            // BUG-2276：抽屉压着正文时，这次点击是「点遮罩关抽屉」，不是正文点击。
             if (_closeSideSheetForWebViewPointer()) return;
             _handleVnBlankTap();
           },
@@ -2100,7 +2100,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           handlerName: 'onLyricsTapEmpty',
           callback: (_) {
             if (!_lyricsMode) return;
-            // BUG-2260：抽屉压着歌词页时，这次点击是「点遮罩关抽屉」。
+            // BUG-2276：抽屉压着歌词页时，这次点击是「点遮罩关抽屉」。
             if (_closeSideSheetForWebViewPointer()) return;
             if (isDictionaryShown) {
               clearDictionaryResult();
@@ -2129,7 +2129,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
         controller.addJavaScriptHandler(
           handlerName: 'onSpreadTapEmpty',
           callback: (_) {
-            // BUG-2260：抽屉压着双页 spread 时，这次点击是「点遮罩关抽屉」。
+            // BUG-2276：抽屉压着双页 spread 时，这次点击是「点遮罩关抽屉」。
             if (_closeSideSheetForWebViewPointer()) return;
             if (isDictionaryShown) {
               clearDictionaryResult();
@@ -2365,7 +2365,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           handlerName: 'onImageTap',
           callback: (args) {
             if (args.isEmpty) return;
-            // BUG-2260：抽屉压着正文时，点插图同样是「点遮罩关抽屉」——尤其在
+            // BUG-2276：抽屉压着正文时，点插图同样是「点遮罩关抽屉」——尤其在
             // spread / 图片章，整屏几乎都是 img，不拦就会跳进图片查看器。
             if (_closeSideSheetForWebViewPointer()) return;
             // BUG-1280：点图片同样把 OS 焦点交给了 WebView，不 reclaim 则看完图
@@ -2442,7 +2442,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           handlerName: 'onCueTap',
           callback: (List<dynamic> args) {
             if (args.isEmpty || _audiobookController == null) return;
-            // BUG-2260：抽屉压着正文时，点句子是「点遮罩关抽屉」，不是跳播。
+            // BUG-2276：抽屉压着正文时，点句子是「点遮罩关抽屉」，不是跳播。
             if (_closeSideSheetForWebViewPointer()) return;
             final int sentenceIndex = (args[0] as num).toInt();
             final List<AudioCue>? allCues = _cachedAllCues;

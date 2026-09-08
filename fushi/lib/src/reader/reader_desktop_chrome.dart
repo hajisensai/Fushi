@@ -349,7 +349,7 @@ class ReaderSideSheetSectionLabel extends StatelessWidget {
 /// 抽屉贴哪一边：ッツ 形态下「导航 / 章节」贴左、「外观」贴右。
 enum ReaderSideSheetSide { left, right }
 
-/// BUG-2260：正文 WebView 上报的一次点击，是否应当**只**用来关掉压在正文之上的
+/// BUG-2276：正文 WebView 上报的一次点击，是否应当**只**用来关掉压在正文之上的
 /// 侧抽屉（外观设置 / 导航），而不再当成正文点击（翻页 / 查词 / 收放控制栏）。
 ///
 /// 为什么正文点击会漏过 Flutter 的 modal barrier：[showReaderSideSheet] 是

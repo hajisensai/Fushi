@@ -1735,7 +1735,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   bool _gamepadALongFired = false;
   // 重入守卫：「调整」面板从点击到 show 之间有 DB 读 await，快速连点会二次进入并
   // 弹出两个面板（BUG-026）。打开期间置 true、关闭后于 finally 复位。
-  // BUG-2260：当前压在正文之上的是**透明遮罩**侧抽屉（showReaderSideSheet 的
+  // BUG-2276：当前压在正文之上的是**透明遮罩**侧抽屉（showReaderSideSheet 的
   // 外观 / 导航形态）。只有这一种呈现形态的遮罩不画像素，也只有它会在 macOS 上
   // 漏掉落在正文 WebView 上的点击——判据与代价见
   // [readerWebViewPointerClosesSideSheet]。居中对话框 / bottom sheet 形态的遮罩

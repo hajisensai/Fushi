@@ -1759,7 +1759,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       // 抽屉开着期间顶部工具栏不自动收起（否则用户改设置时工具栏在背后消失，
       // 关抽屉后点空白又要再唤一次）；关掉后若仍是悬浮可见态，重新武装计时。
       _cancelChromeAutoHide();
-      // BUG-2260：透明遮罩形态开始 / 结束的唯一两点。旗只在这里翻，
+      // BUG-2276：透明遮罩形态开始 / 结束的唯一两点。旗只在这里翻，
       // [_closeSideSheetForWebViewPointer] 只读，不存在第二个所有者。
       _sideSheetOpen = true;
       try {
@@ -1781,7 +1781,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     }
   }
 
-  /// BUG-2260：正文 WebView 上报的一次点击落在「侧抽屉正压着正文」的状态里时，
+  /// BUG-2276：正文 WebView 上报的一次点击落在「侧抽屉正压着正文」的状态里时，
   /// 把它当成对遮罩的点击——关掉抽屉并**吞掉**这次点击（返回 true，调用方立即
   /// return，不再翻页 / 查词 / 收放控制栏）。
   ///
