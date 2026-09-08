@@ -30,4 +30,10 @@
 - 全量 `flutter analyze --no-pub`：零问题。
 - `dart tool/bug.dart check`：号唯一、索引同步、无跨工作区撞号。
 - Android `:app:assembleRelease`：因缺少本地 `android/key.properties` 被发布签名门阻止，未绕过签名。
-- Android 平台测试首次零用例启动失败：Flutter 在未生成 APK 时不识别当前 launcher activity-alias；继续先构建 debug APK，再执行平台测试。最终结果待补。
+- Android 平台测试首次零用例启动失败：Flutter 在未生成 APK 时不识别当前 launcher activity-alias；继续先构建 debug APK，再执行平台测试。后续构建与运行结果见下。
+- Android 调试 APK 构建通过（包含本轮 Java/Dart 修复）。依赖下载最初失败后，从相同上游下载 SQLite / PDFium 并供原构建 hook 使用（SQLite SHA-256 校验通过）；未修改依赖或绕过签名。
+- 最后新增的正常配置迁移快路径：相关迁移/绑定 12 条重跑通过，全量 analyze 再次零问题（78.5s）。
+
+- Android API 34 x86_64 隔离模拟器：`flutter test integration_test/local_audio_cache_recovery_itest.dart -d emulator-5584 --no-pub` **1 条通过**（实际执行，11s）；真实 native 查询、提取字节一致、WAV 启播、清源缓存后重载和旧缓存迁移均通过。API 36 旧模拟器因 SurfaceFlinger 图形服务断言和包管理服务故障未能执行；未把零用例安装失败当作测试通过。
+- 尚未覆盖：报告用户原始文件 provider 的真实 SAF 选择 UI、用户手机升级全链路和扬声器录音验收。平台测试验证启播返回值，不声称人耳已确认声音。
+- 修复提交：`0dbc59ceab`；正常配置迁移快路径：`fa189d1b19`。
