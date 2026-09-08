@@ -7,6 +7,14 @@ bool ProcessSiglusLookupClickSubmissions();
 // remains authoritative; overwritten entries can never be resurrected.
 uint64_t g_siglus_lookup_waiting_click_seq = 0;
 uint64_t g_siglus_lookup_waiting_glyph_seq = 0;
+// Reserved transport is not a new semantic layout. While this frontier is
+// pending, the worker cannot republish a fresh target or submit via Shift.
+uint64_t g_siglus_lookup_unpublished_glyph_frontier = 0;
+
+bool IsSiglusLookupCaptureReadyForInput() {
+  return g_siglus_lookup_layout.current_valid &&
+         g_siglus_lookup_unpublished_glyph_frontier == 0;
+}
 
 // Private diagnostic metadata only. This eight-record worker-owned ring does
 // not extend SharedHeader, grant input, retain text, or alter publication.
@@ -186,6 +194,7 @@ void ResetSiglusLookupRuntimeLayout() {
   g_siglus_lookup_click_processed_seq = latest_click;
   g_siglus_lookup_waiting_click_seq = 0;
   g_siglus_lookup_waiting_glyph_seq = 0;
+  g_siglus_lookup_unpublished_glyph_frontier = 0;
   // The bound text event remains the same committed occurrence. Fresh glyphs
   // are required after reset; preserving its ID does not revive old geometry.
   fushi_voice_hook::ResetSiglusLookupLayout(&g_siglus_lookup_layout);
@@ -199,6 +208,7 @@ void ResetSiglusLookupRuntimeLayout() {
 void ConsumeSiglusLookupCaptures() {
   ConsumeSiglusLookupLunaScenarioText();
   bool changed = false;
+  bool glyph_appended = false;
   SiglusLookupTextSnapshot text_snapshot;
   uint64_t text_seq = 0;
   if (ReadLatestSiglusLookupText(&text_snapshot, &text_seq)) {
@@ -257,18 +267,26 @@ void ConsumeSiglusLookupCaptures() {
           static_cast<char16_t>(event.code_unit), event.design_x,
           event.design_y, event.extent, &g_siglus_lookup_glyph_captures);
       processed_through = seq;
+      glyph_appended = true;
       changed = true;
     }
     g_siglus_lookup_glyph_processed_seq = processed_through;
   }
 
   if (g_siglus_lookup_glyph_processed_seq != latest) {
-    // A reserved but unpublished glyph is an incomplete snapshot too. Do not
-    // republish the old click target merely because this tick appended none.
-    fushi_voice_hook::InvalidateSiglusLookupCurrentLayout(&g_siglus_lookup_layout);
+    g_siglus_lookup_unpublished_glyph_frontier = latest;
+    // No published glyph was consumed: there is no new semantic evidence to
+    // invalidate a previously complete layout. Keep its epoch, but suspend
+    // input until the reserved frontier is consumed and fully revalidated.
+    // Any known prefix remains conservatively invalid. In particular B before
+    // a gap and A after it must never revive an older A press via equal gen.
+    if (glyph_appended) {
+      fushi_voice_hook::InvalidateSiglusLookupCurrentLayout(&g_siglus_lookup_layout);
+    }
     InvalidateSiglusLookupClickTarget();
     return;
   }
+  g_siglus_lookup_unpublished_glyph_frontier = 0;
   if (!changed || g_siglus_lookup_active_line_units == 0)
     return;
   const auto *profile = ActiveSiglusLookupProfile();

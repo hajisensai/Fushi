@@ -1016,7 +1016,7 @@ void ProcessSiglusLookupTick() {
       static_cast<uint16_t>(GetAsyncKeyState(VK_SHIFT));
   const bool shift_submit = fushi_voice_hook::ConsumeSiglusLookupShiftSample(
       shift_state, &g_siglus_lookup_last_shift_down);
-  if (!g_siglus_lookup_layout.current_valid) {
+  if (!IsSiglusLookupCaptureReadyForInput()) {
     InvalidateSiglusLookupClickTarget();
     return;
   }

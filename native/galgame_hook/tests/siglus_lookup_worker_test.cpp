@@ -8,6 +8,7 @@
 #include <cassert>
 #include <cstring>
 #include <cstdio>
+#include <cstdlib>
 #include <vector>
 
 namespace {
@@ -35,6 +36,8 @@ const HWND kWindow = reinterpret_cast<HWND>(uintptr_t{1});
 std::atomic<HWND> g_siglus_sampled_input_game_window{kWindow};
 HWND foreground = kWindow;
 bool window_valid = true;
+int32_t current_client_width = 1920;
+int invalidated_targets = 0;
 ULONGLONG tick = 1000;
 void (*before_second_validation)() = nullptr;
 SiglusLookupProfile active_profile = kAnemoiSiglusLookupProfile;
@@ -45,7 +48,7 @@ const SiglusLookupProfile* ActiveSiglusLookupProfile() {
   return &active_profile;
 }
 void ConsumeSiglusLookupLunaScenarioText() {}
-void InvalidateSiglusLookupClickTarget() {}
+void InvalidateSiglusLookupClickTarget() { ++invalidated_targets; }
 void SetSiglusLookupDiag(uint32_t value) { g_header->lookup_diag |= value; }
 bool ReadSiglusLookupEngineView(HWND, SiglusLookupEngineView* view) {
   *view = active_view;
@@ -60,7 +63,7 @@ BOOL TestIsWindow(HWND window) { return window_valid && window == kWindow; }
 HWND TestGetForegroundWindow() { return foreground; }
 BOOL TestGetClientRect(HWND window, RECT* rect) {
   if (!TestIsWindow(window)) return FALSE;
-  *rect = {0, 0, 1920, 1080};
+  *rect = {0, 0, current_client_width, 1080};
   return TRUE;
 }
 BOOL TestClientToScreen(HWND window, POINT*) { return TestIsWindow(window); }
@@ -116,11 +119,14 @@ struct Fixture {
     g_siglus_lookup_click_processed_seq = 0;
     g_siglus_lookup_waiting_click_seq = 0;
     g_siglus_lookup_waiting_glyph_seq = 0;
+    g_siglus_lookup_unpublished_glyph_frontier = 0;
     g_siglus_lookup_worker_diagnostic_count = 0;
     g_siglus_lookup_last_hit_identity = 0;
     g_siglus_lookup_last_hit_tick = 0;
     foreground = kWindow;
     window_valid = true;
+    current_client_width = 1920;
+    invalidated_targets = 0;
     tick = 1000;
     before_second_validation = nullptr;
     active_profile = kAnemoiSiglusLookupProfile;
@@ -196,6 +202,142 @@ void TestUnreadCompleteRedrawDoesNotAcknowledgeClick() {
   assert(LookupHitOf(g_header)->text_generation == 42);
   assert(!ProcessSiglusLookupClickSubmissions());
   assert(g_header->lookup_hit_count == 1);
+}
+
+uint64_t ReserveGlyph() {
+  const auto seq = static_cast<uint64_t>(InterlockedIncrement64(&g_siglus_lookup_glyph_event_count));
+  InterlockedExchange64(&g_siglus_lookup_glyph_events[seq % kSiglusLookupGlyphEventSlots].seq, 0);
+  return seq;
+}
+void PublishReservedGlyph(uint64_t seq, char16_t unit = u'A', int32_t x = 100) {
+  auto& slot = g_siglus_lookup_glyph_events[seq % kSiglusLookupGlyphEventSlots];
+  slot.code_unit = unit; slot.design_x = x; slot.design_y = 200; slot.extent = 40;
+  InterlockedExchange64(&slot.seq, static_cast<LONG64>(seq));
+}
+SiglusLookupPayload BeginSingleGlyph() {
+  PublishSiglusLookupTextSnapshot(L"A", 1, {42, 7});
+  Glyph(u'A', 100); Consume();
+  auto payload = Press(); payload.text_units = 1;
+  return payload;
+}
+void TestZeroPrefixReservedGapPreservesOnlyPendingRelease() {
+  Fixture fixture;
+  const auto payload = BeginSingleGlyph();
+  QueueSiglusLookupClickSubmit(payload);
+  const auto reserved = ReserveGlyph();
+  const auto before_invalidations = invalidated_targets;
+  Consume();
+  if (!g_siglus_lookup_layout.current_valid) {
+    std::puts("zero-prefix reserved gap invalidated the committed layout before publication");
+    std::exit(91);
+  }
+  assert(g_siglus_lookup_layout.snapshot_epoch == payload.snapshot_epoch);
+  assert(invalidated_targets > before_invalidations);
+  assert(!IsSiglusLookupCaptureReadyForInput());
+  for (int idle = 0; idle < 20; ++idle) {
+    assert(!ProcessSiglusLookupClickSubmissions());
+    assert(g_siglus_lookup_click_processed_seq == 0);
+    assert(g_siglus_lookup_waiting_glyph_seq == reserved);
+    Consume();
+  }
+  assert(g_siglus_lookup_worker_diagnostic_count == 0 && g_header->lookup_hit_count == 0);
+  PublishReservedGlyph(reserved); Consume();
+  assert(IsSiglusLookupCaptureReadyForInput());
+  assert(g_siglus_lookup_layout.snapshot_epoch == payload.snapshot_epoch);
+  assert(ProcessSiglusLookupClickSubmissions());
+  assert(!ProcessSiglusLookupClickSubmissions() && g_header->lookup_hit_count == 1);
+}
+void TestReservedGapKnownPrefixNeverRevivesOldGeometry() {
+  for (int kind = 0; kind < 3; ++kind) {
+    Fixture fixture; Begin();
+    const auto payload = Press(); QueueSiglusLookupClickSubmit(payload);
+    if (kind == 0) {
+      // Complete displaced B, then gap, then original A: generation alone is
+      // insufficient because the worker has observed an intervening prefix.
+      Glyph(u'A', 300); Glyph(u'B', 340); Glyph(u'C', 380);
+      const auto reserved = ReserveGlyph(); Consume();
+      assert(!g_siglus_lookup_layout.current_valid);
+      assert(!ProcessSiglusLookupClickSubmissions());
+      PublishReservedGlyph(reserved); Glyph(u'B', 140); Glyph(u'C', 180);
+    } else {
+      const auto first = ReserveGlyph(); Consume();
+      assert(!ProcessSiglusLookupClickSubmissions());
+      PublishReservedGlyph(first);
+      if (kind == 1) {
+        const auto second = ReserveGlyph(); Consume();
+        // Pure gap became a known partial prefix followed by a new gap.
+        assert(!g_siglus_lookup_layout.current_valid);
+        assert(!ProcessSiglusLookupClickSubmissions());
+        PublishReservedGlyph(second, u'B', 140); Glyph(u'C', 180);
+      } else {
+        // Transport is fully consumed, but its semantic tail is partial.
+        Consume(); assert(!g_siglus_lookup_layout.current_valid);
+        assert(!ProcessSiglusLookupClickSubmissions());
+        Glyph(u'B', 140); Glyph(u'C', 180);
+      }
+    }
+    Consume();
+    assert(g_siglus_lookup_layout.current_valid);
+    assert(g_siglus_lookup_layout.generation == payload.geometry_generation);
+    assert(g_siglus_lookup_layout.snapshot_epoch != payload.snapshot_epoch);
+    assert(!ProcessSiglusLookupClickSubmissions());
+    assert(g_siglus_lookup_click_processed_seq == 1 && g_header->lookup_hit_count == 0);
+  }
+}
+void TestReservedGapHardFailuresRemainTerminal() {
+  for (int kind = 0; kind < 7; ++kind) {
+    Fixture fixture; const auto payload = BeginSingleGlyph();
+    QueueSiglusLookupClickSubmit(payload);
+    const auto reserved = ReserveGlyph(); Consume();
+    assert(!ProcessSiglusLookupClickSubmissions());
+    switch (kind) {
+      case 0: PublishSiglusLookupTextSnapshot(L"A", 1, {43, 7}); break;
+      case 1: foreground = nullptr; break;
+      case 2: view_valid = false; break;
+      case 3: ++active_view.owner; break;
+      case 4: ++current_client_width; break;
+      case 5: window_valid = false; break;
+      case 6: ResetSiglusLookupRuntimeLayout(); break;
+    }
+    assert(!ProcessSiglusLookupClickSubmissions());
+    assert(g_siglus_lookup_click_processed_seq == 1);
+    foreground = kWindow; view_valid = window_valid = true;
+    active_view = {}; current_client_width = 1920;
+    PublishReservedGlyph(reserved); Consume();
+    assert(!ProcessSiglusLookupClickSubmissions() && g_header->lookup_hit_count == 0);
+    if (kind == 6) assert(g_siglus_lookup_unpublished_glyph_frontier == 0);
+  }
+}
+void TestReservedGapLossAndChangedGeometryReject() {
+  for (int kind = 0; kind < 3; ++kind) {
+    Fixture fixture; const auto payload = BeginSingleGlyph();
+    QueueSiglusLookupClickSubmit(payload);
+    const auto reserved = ReserveGlyph(); Consume();
+    assert(!ProcessSiglusLookupClickSubmissions());
+    if (kind == 0) {
+      // Even zero actual appends after a lost ring prefix must not preserve A.
+      for (size_t n = 0; n < kSiglusLookupGlyphEventSlots; ++n) ReserveGlyph();
+    } else {
+      PublishReservedGlyph(reserved, u'A', kind == 1 ? 300 : 100);
+      if (kind == 2) ++g_siglus_lookup_layout.snapshot_epoch;
+    }
+    Consume();
+    assert(!ProcessSiglusLookupClickSubmissions());
+    assert(g_siglus_lookup_click_processed_seq == 1 && g_header->lookup_hit_count == 0);
+    if (kind == 0) assert(!IsSiglusLookupCaptureReadyForInput());
+  }
+}
+void TestReservedGapClickOverflowDoesNotReviveLostPrefix() {
+  Fixture fixture; const auto payload = BeginSingleGlyph();
+  QueueSiglusLookupClickSubmit(payload);
+  const auto reserved = ReserveGlyph(); Consume();
+  assert(!ProcessSiglusLookupClickSubmissions());
+  for (int i = 0; i < 5; ++i) QueueSiglusLookupClickSubmit(payload);
+  assert(!ProcessSiglusLookupClickSubmissions());
+  assert(g_siglus_lookup_click_processed_seq == 2 && g_siglus_lookup_waiting_click_seq == 3);
+  PublishReservedGlyph(reserved); Consume();
+  assert(ProcessSiglusLookupClickSubmissions());
+  assert(g_siglus_lookup_click_processed_seq == 3 && g_header->lookup_hit_count == 1);
 }
 
 void TestRedrawBetweenBothPublicationChecks() {
@@ -564,6 +706,11 @@ void TestResetAndOverflowDiagnosticRanges() {
 }  // namespace
 
 int main() {
+  TestZeroPrefixReservedGapPreservesOnlyPendingRelease();
+  TestReservedGapKnownPrefixNeverRevivesOldGeometry();
+  TestReservedGapHardFailuresRemainTerminal();
+  TestReservedGapLossAndChangedGeometryReject();
+  TestReservedGapClickOverflowDoesNotReviveLostPrefix();
   TestUnreadCompleteRedrawDoesNotAcknowledgeClick();
   TestRedrawBetweenBothPublicationChecks();
   TestNoProgressAndContinuingCompleteRedraws();
@@ -584,5 +731,5 @@ int main() {
   TestOnlyTerminalOutcomesPublishDiagnostic();
   TestDiagnosticRingIsBoundedMetadata();
   TestResetAndOverflowDiagnosticRanges();
-  std::puts("siglus_lookup_worker_test: 20 scenarios passed (12 rejection variants)");
+  std::puts("siglus_lookup_worker_test: 25 groups passed (15 reserved-gap cases, 12 rejection variants)");
 }

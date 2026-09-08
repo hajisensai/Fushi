@@ -363,7 +363,14 @@ class AdapterStructureTest(unittest.TestCase):
         tick = self._function_body(siglus, "void ProcessSiglusLookupTick()")
         self.assertIn("if (g_siglus_lookup_layout.line_has_complete_layout &&", tick)
         self.assertLess(tick.index("GetClientRect(game, &client)"),
-                        tick.index("if (!g_siglus_lookup_layout.current_valid)"))
+                        tick.index("if (!IsSiglusLookupCaptureReadyForInput())"))
+        self.assertLess(tick.index("ConsumeSiglusLookupShiftSample("),
+                        tick.index("if (!IsSiglusLookupCaptureReadyForInput())"))
+        self.assertLess(tick.index("if (!IsSiglusLookupCaptureReadyForInput())"),
+                        tick.index("PublishSiglusLookupClickTarget("))
+        capture_ready = self._function_body(siglus, "bool IsSiglusLookupCaptureReadyForInput()")
+        self.assertIn("g_siglus_lookup_layout.current_valid", capture_ready)
+        self.assertIn("g_siglus_lookup_unpublished_glyph_frontier == 0", capture_ready)
         self.assertIn("client.right <= client.left", tick)
         self.assertIn("client.bottom <= client.top", tick)
         self.assertIn("g_siglus_lookup_layout_window != game", tick)
@@ -379,6 +386,8 @@ class AdapterStructureTest(unittest.TestCase):
         reserved = self._function_body(
             captures, "if (g_siglus_lookup_glyph_processed_seq != latest)")
         self.assertIn("InvalidateSiglusLookupCurrentLayout", reserved)
+        self.assertIn("if (glyph_appended)", reserved)
+        self.assertIn("g_siglus_lookup_unpublished_glyph_frontier = latest", reserved)
         self.assertIn("InvalidateSiglusLookupClickTarget();", reserved)
         reset = self._function_body(siglus, "void ResetSiglusLookupRuntimeLayout()")
         self.assertIn("ClearSiglusLookupGlyphCapture", reset)
