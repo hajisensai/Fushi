@@ -877,7 +877,11 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     final DateTime until = DateTime.now().add(const Duration(seconds: 30));
     while (DateTime.now().isBefore(until)) {
       if (!mounted || _mineStopRequested) return false;
-      if (_videoKey == row.videoKey && (_state?.hasVideo ?? false)) return true;
+      if (_videoKey == row.videoKey && (_state?.hasVideo ?? false)) {
+        // 画面就绪可能早于 onLoadStop；开录前再挂一次（页面侧按 style id 幂等）。
+        await _setPlayerChromeHidden(true);
+        return true;
+      }
       await Future<void>.delayed(const Duration(milliseconds: 250));
     }
     return false;
@@ -1831,6 +1835,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       },
       onLoadStop: (InAppWebViewController controller, WebUri? url) {
         unawaited(_setNativeSubtitlesHidden(_hideNativeSubtitles));
+        // BUG-2260：队列换集走 loadUrl 整页重载，上一份文档里的 chrome 隐藏 <style> 随之消失，
+        // 之后每张卡都带控制条/分级提示。隐藏态归 Dart 所有，新文档就绪时按 _mineRunning 重挂。
+        unawaited(_setPlayerChromeHidden(_mineRunning));
         unawaited(_js('window.__fushiWebVideo.replayCues()'));
         unawaited(_syncDomSubtitles());
       },
