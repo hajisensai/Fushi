@@ -1506,15 +1506,21 @@ class ReaderFushiSource extends ReaderMediaSource {
 
   /// 正文字重。UI 侧（SettingsStepperItem）值域是 double，存储与 CSS 侧是整数轴，
   /// 故在此边界一次性 `round()`，不让 `400.0` 这类值流进 CSS 生成器。
-  double get readerFontWeight => (readerSettings?.fontWeight ??
+  ///
+  /// 读写两侧都夹到 CSS 的合法轴 100~900：stepper 自己保证了值域，但这个 facade 是
+  /// public，值也可能从旧机 / 同步 / 手改 DB 进来。越界值会生成 `font-weight: 0`
+  /// 这类整条被浏览器丢弃的声明——不崩，但静默退回书自带样式，极难查。
+  double get readerFontWeight => _clampFontWeight(readerSettings?.fontWeight ??
           getPreference<int>(key: 'font_weight', defaultValue: 400))
       .toDouble();
   Future<void> setReaderFontWeight(double v) async {
-    final int weight = v.round();
+    final int weight = _clampFontWeight(v.round());
     await (readerSettings?.setFontWeight(weight) ??
         setPreference<int>(key: 'font_weight', value: weight));
     onSettingsChangedLive?.call();
   }
+
+  static int _clampFontWeight(int v) => v.clamp(100, 900);
 
   double get lyricsFontSize =>
       readerSettings?.lyricsFontSize ??

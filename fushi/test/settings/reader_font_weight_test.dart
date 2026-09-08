@@ -105,10 +105,13 @@ void main() {
       for (final String mode in <String>['paginated', 'continuous', 'vn']) {
         await settings.setViewMode(mode);
         final String css = ReaderContentStyles.css(settings: settings);
+        // 断言收窄到「本设置注入的那条声明」，不要用裸 'font-weight' 扫整份 CSS：
+        // 那样任何未来 PR 只要在阅读器 CSS 的任意位置（<rt>、滚动条、@font-face
+        // 描述符…）写一条 font-weight，这条就红，而红的原因与那个 PR 无关。
         expect(
           css,
-          isNot(contains('font-weight')),
-          reason: '默认值必须不注入任何 font-weight：书自带样式表原样生效（零回归）[$mode]',
+          isNot(contains(RegExp(r'font-weight:\s*\d'))),
+          reason: '默认值必须不注入任何 font-weight 声明：书自带样式表原样生效（零回归）[$mode]',
         );
       }
     });
