@@ -426,6 +426,170 @@ void main() {
     expect(merged.seasons.last.title, 'TMDB Season 2');
   });
 
+  group('supplementVideoMetadata 有序合并', () {
+    VideoMetadataWork mal({
+      String? plot,
+      String? tagline,
+      List<String> genres = const <String>[],
+      List<String> aliases = const <String>[],
+      double? rating,
+    }) =>
+        VideoMetadataWork(
+          provider: VideoMetadataProviderKind.mal,
+          kind: VideoMetadataMediaKind.tv,
+          title: 'MAL title',
+          originalTitle: '日本語原題',
+          plot: plot,
+          tagline: tagline,
+          genres: genres,
+          aliases: aliases,
+          rating: rating,
+          ratingVotes: rating == null ? null : 1000,
+          studios: const <String>['MAPPA'],
+          ids: const <VideoMetadataId>[
+            VideoMetadataId(type: 'mal', value: '1')
+          ],
+        );
+    VideoMetadataWork tmdb({
+      String? plot,
+      String? tagline,
+      List<String> genres = const <String>[],
+      List<String> aliases = const <String>[],
+    }) =>
+        VideoMetadataWork(
+          provider: VideoMetadataProviderKind.tmdb,
+          kind: VideoMetadataMediaKind.tv,
+          title: 'TMDB title',
+          plot: plot,
+          tagline: tagline,
+          genres: genres,
+          aliases: aliases,
+          studios: const <String>['mappa', 'Studio B'],
+          ids: const <VideoMetadataId>[
+            VideoMetadataId(type: 'tmdb', value: '2')
+          ],
+        );
+
+    test('对称：TMDB 主源时 MAL 补评分、日文原名、别名', () {
+      final VideoMetadataWork merged = supplementVideoMetadata(
+        tmdb(plot: 'TMDB plot'),
+        mal(
+            plot: 'MAL synopsis',
+            rating: 8.7,
+            aliases: const <String>['Alias']),
+      );
+
+      expect(merged.provider, VideoMetadataProviderKind.tmdb);
+      expect(merged.title, 'TMDB title');
+      expect(merged.plot, 'TMDB plot', reason: '无首选语言 → 先到者独占');
+      expect(merged.rating, 8.7);
+      expect(merged.ratingVotes, 1000);
+      expect(merged.originalTitle, '日本語原題');
+      expect(merged.aliases, <String>['Alias']);
+      expect(merged.ids.map((VideoMetadataId id) => id.type),
+          <String>['tmdb', 'mal']);
+    });
+
+    test('集合并集去重：primary 在前，supplement 只追加归一化后不重复的项', () {
+      final VideoMetadataWork merged = supplementVideoMetadata(
+        mal(
+          genres: const <String>['Action', 'Sci-Fi', '動作'],
+          aliases: const <String>['Ａlias One'],
+        ),
+        tmdb(
+          genres: const <String>['action', 'Sci Fi', 'Drama', '动作', ' '],
+          aliases: const <String>['alias one', 'Alias Two'],
+        ),
+      );
+
+      expect(merged.genres, <String>['Action', 'Sci-Fi', '動作', 'Drama']);
+      expect(merged.studios, <String>['MAPPA', 'Studio B']);
+      expect(merged.aliases, <String>['Ａlias One', 'Alias Two']);
+    });
+
+    test('plot 语言感知：zh-CN 首选下 MAL 英文简介被 TMDB 中文简介覆盖', () {
+      final VideoMetadataWork merged = supplementVideoMetadata(
+        mal(plot: 'English synopsis', tagline: 'English tagline'),
+        tmdb(plot: '中文简介', tagline: '中文标语'),
+        preferredLanguage: 'zh-CN',
+      );
+
+      expect(merged.plot, '中文简介');
+      expect(merged.tagline, '中文标语');
+      expect(merged.title, 'MAL title', reason: '只覆盖简介/标语，标题仍先到者');
+    });
+
+    test('plot 语言感知：supplement 首选但为空时回落 primary', () {
+      final VideoMetadataWork merged = supplementVideoMetadata(
+        mal(plot: 'English synopsis'),
+        tmdb(plot: '   '),
+        preferredLanguage: 'zh',
+      );
+
+      expect(merged.plot, 'English synopsis');
+    });
+
+    test('plot 语言感知：en 首选下 MAL 简介保留', () {
+      final VideoMetadataWork merged = supplementVideoMetadata(
+        mal(plot: 'English synopsis'),
+        tmdb(plot: 'English overview from TMDB'),
+        preferredLanguage: 'en-US',
+      );
+
+      expect(merged.plot, 'English synopsis');
+    });
+
+    test('plot 语言感知：TMDB 主源 zh 首选时 MAL 英文不覆盖', () {
+      final VideoMetadataWork merged = supplementVideoMetadata(
+        tmdb(plot: '中文简介'),
+        mal(plot: 'English synopsis'),
+        preferredLanguage: 'zh-Hans',
+      );
+
+      expect(merged.plot, '中文简介');
+    });
+
+    test('preferredLanguage 为 null 时退化成「空才补」', () {
+      expect(
+        supplementVideoMetadata(
+          mal(plot: 'English synopsis'),
+          tmdb(plot: '中文简介'),
+        ).plot,
+        'English synopsis',
+      );
+      expect(
+        supplementVideoMetadata(mal(), tmdb(plot: '中文简介')).plot,
+        '中文简介',
+      );
+    });
+
+    test('同 provider 原样返回', () {
+      final VideoMetadataWork primary = mal(plot: 'a');
+      expect(
+        supplementVideoMetadata(primary, mal(plot: 'b'),
+            preferredLanguage: 'zh'),
+        same(primary),
+      );
+      expect(supplementVideoMetadata(primary, null), same(primary));
+    });
+
+    test('旧别名 supplementVideoMetadataWithTmdb 行为不变', () {
+      final VideoMetadataWork tmdbPrimary = tmdb(plot: 'TMDB plot');
+      expect(
+        supplementVideoMetadataWithTmdb(tmdbPrimary, tmdb(plot: 'other')),
+        same(tmdbPrimary),
+        reason: 'primary 已是 TMDB → 原样返回',
+      );
+      final VideoMetadataWork merged = supplementVideoMetadataWithTmdb(
+        mal(plot: 'English synopsis'),
+        tmdb(plot: '中文简介', genres: const <String>['Drama']),
+      );
+      expect(merged.plot, 'English synopsis', reason: '不做语言感知');
+      expect(merged.genres, <String>['Drama']);
+      expect(merged.provider, VideoMetadataProviderKind.mal);
+    });
+  });
+
   test('主源字段缺失时由 TMDB 补齐但不替换 provider 和标题', () {
     final VideoMetadataWork primary = VideoMetadataWork(
       provider: VideoMetadataProviderKind.anidb,

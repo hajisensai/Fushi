@@ -274,18 +274,11 @@ class VideoMetadataResolver {
       if (title.isEmpty) continue;
       final Set<String> normalizedTitles = _normalizedTitles(title);
       if (normalizedTitles.isEmpty) continue;
-      final List<VideoMetadataWork> searched = await provider.search(
-        VideoMetadataSearchRequest(
-          title: title,
-          mediaKind: request.mediaKind,
-          year: request.year,
-          seasonNumber: request.seasonNumber,
-        ),
-      );
+      final List<VideoMetadataWork> searched =
+          await _searchGated(provider, request, title);
       final Map<String, VideoMetadataWork> exact =
           <String, VideoMetadataWork>{};
       for (final VideoMetadataWork candidate in searched) {
-        if (!_passesTypeYearGate(candidate, request)) continue;
         final VideoMetadataLookup? lookup =
             _lookupForWork(candidate, provider.providerKind);
         if (lookup == null) continue;
@@ -411,18 +404,49 @@ class VideoMetadataResolver {
     );
   }
 
+  /// 一个标题的搜索计划（对标 MoviePilot `TmdbApi.match`）：先带年份搜；
+  /// 过 type/year gate 后为空再用同一标题、不带年份搜一次（gate 仍按
+  /// request.year ±1 过滤）。provider 侧的年份过滤（TMDB `first_air_date_year`）
+  /// 是精确匹配，本地目录年份常是首播年 / 发布年差一年，带年搜会整批漏掉。
+  Future<List<VideoMetadataWork>> _searchGated(
+    VideoMetadataProvider provider,
+    VideoMetadataResolveRequest request,
+    String title,
+  ) async {
+    Future<List<VideoMetadataWork>> search(int? year) async {
+      final List<VideoMetadataWork> searched = await provider.search(
+        VideoMetadataSearchRequest(
+          title: title,
+          mediaKind: request.mediaKind,
+          year: year,
+          seasonNumber: request.seasonNumber,
+        ),
+      );
+      return <VideoMetadataWork>[
+        for (final VideoMetadataWork candidate in searched)
+          if (_passesTypeYearGate(candidate, request)) candidate,
+      ];
+    }
+
+    final List<VideoMetadataWork> withYear = await search(request.year);
+    if (withYear.isNotEmpty || request.year == null) return withYear;
+    return search(null);
+  }
+
   bool _passesTypeYearGate(
     VideoMetadataWork candidate,
     VideoMetadataResolveRequest request,
   ) {
     if (candidate.kind != request.mediaKind) return false;
-    if (request.year != null &&
-        candidate.year != null &&
-        candidate.year != request.year) {
-      return false;
-    }
-    return true;
+    return _passesYearGate(candidate.year, request.year);
   }
+
+  /// 年份容差 ±1：本地目录年份常是首播年 / 发布年差一年（跨年档、BD 发行年）。
+  /// 任一侧未知则不作为拒绝依据。
+  static bool _passesYearGate(int? candidateYear, int? requestYear) =>
+      candidateYear == null ||
+      requestYear == null ||
+      (candidateYear - requestYear).abs() <= 1;
 
   Future<VideoMetadataWork?> _validatedDetails(
     VideoMetadataProvider provider,
@@ -431,11 +455,7 @@ class VideoMetadataResolver {
     VideoMetadataResolveRequest request,
   ) async {
     if (work.kind != request.mediaKind) return null;
-    if (request.year != null &&
-        work.year != null &&
-        work.year != request.year) {
-      return null;
-    }
+    if (!_passesYearGate(work.year, request.year)) return null;
     final int? seasonNumber = request.seasonNumber;
     if (seasonNumber == null || work.kind == VideoMetadataMediaKind.movie) {
       return work;

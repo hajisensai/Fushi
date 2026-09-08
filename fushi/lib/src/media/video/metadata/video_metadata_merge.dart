@@ -1,44 +1,155 @@
-/// 多来源结果合并规则：保留 MAL 主资料，TMDB 补充缺失字段和季集骨架。
-/// 兼容旧 AniDB 资料对象；文件哈希身份不因此变为新的主资料源。
+/// 多来源结果合并规则（对标 Jellyfin `MergeBaseItemData`）：先到者（主源）
+/// 标量独占、后到者只补空；集合类并集去重；简介 / 标语按首选语言可被补充源覆盖。
+/// 主源可以是 MAL 也可以是 TMDB（对称）。兼容旧 AniDB 资料对象；文件哈希身份
+/// 不因此变为新的主资料源。
 library;
 
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi/src/media/video/scraper/title_normalizer.dart';
 
+/// 有序合并：先到者（[primary]）标量独占、后到者（[supplement]）只补空；
+/// genres / studios / countries / keywords / aliases 取并集去重；
+/// `plot` / `tagline` 语言感知：primary 文本不是首选语言而 supplement 是首选
+/// 语言时用 supplement。[preferredLanguage] 为 BCP-47（如 `zh-CN`），`null`
+/// 时退化成「空才补」。两边同一 provider 时原样返回。
+VideoMetadataWork supplementVideoMetadata(
+  VideoMetadataWork primary,
+  VideoMetadataWork? supplement, {
+  String? preferredLanguage,
+}) {
+  if (supplement == null || primary.provider == supplement.provider) {
+    return primary;
+  }
+  final bool preferSupplementText = _preferSupplementText(
+    primary.provider,
+    supplement.provider,
+    preferredLanguage,
+  );
+  return primary.copyWith(
+    originalTitle: primary.originalTitle ?? supplement.originalTitle,
+    tagline: _pickText(
+      primary.tagline,
+      supplement.tagline,
+      preferSupplement: preferSupplementText,
+    ),
+    aliases: _unionStrings(primary.aliases, supplement.aliases),
+    year: primary.year ?? supplement.year,
+    premiered: primary.premiered ?? supplement.premiered,
+    endDate: primary.endDate ?? supplement.endDate,
+    plot: _pickText(
+      primary.plot,
+      supplement.plot,
+      preferSupplement: preferSupplementText,
+    ),
+    rating: primary.rating ?? supplement.rating,
+    ratingVotes: primary.ratingVotes ?? supplement.ratingVotes,
+    runtimeMinutes: primary.runtimeMinutes ?? supplement.runtimeMinutes,
+    contentRating: primary.contentRating ?? supplement.contentRating,
+    status: primary.status ?? supplement.status,
+    originalLanguage: primary.originalLanguage ?? supplement.originalLanguage,
+    homepage: primary.homepage ?? supplement.homepage,
+    episodeGroupId: primary.episodeGroupId ?? supplement.episodeGroupId,
+    ids: _mergeIds(primary.ids, supplement.ids),
+    seasonCount: primary.seasonCount ?? supplement.seasonCount,
+    episodeCount: primary.episodeCount ?? supplement.episodeCount,
+    genres: _unionStrings(primary.genres, supplement.genres),
+    studios: _unionStrings(primary.studios, supplement.studios),
+    countries: _unionStrings(primary.countries, supplement.countries),
+    keywords: _unionStrings(primary.keywords, supplement.keywords),
+    credits: _mergeCredits(primary.credits, supplement.credits),
+    seasons: _mergeSeasons(primary.seasons, supplement.seasons),
+    images: _mergeImagesFillingMissing(primary.images, supplement.images),
+    extras: _mergeExtras(primary.extras, supplement.extras),
+  );
+}
+
+/// 兼容旧调用方：等价 `supplementVideoMetadata(primary, tmdb)`；primary 已是
+/// TMDB 时原样返回（同 provider 短路）。不做语言感知。
 VideoMetadataWork supplementVideoMetadataWithTmdb(
   VideoMetadataWork primary,
   VideoMetadataWork? tmdb,
+) =>
+    supplementVideoMetadata(primary, tmdb);
+
+/// 各 provider 返回文本（简介 / 标语）的语言约定：Jikan synopsis 恒英文；
+/// TMDB 按请求 locale 返回，即调用方传入的首选语言；其它源未知（不覆盖）。
+String? _providerTextLanguage(
+  VideoMetadataProviderKind provider,
+  String? preferredLanguage,
+) =>
+    switch (provider) {
+      VideoMetadataProviderKind.mal => 'en',
+      VideoMetadataProviderKind.tmdb => preferredLanguage,
+      _ => null,
+    };
+
+/// Jellyfin `ResultLanguage` 规则：primary 文本已是首选语言、或 supplement
+/// 文本不是首选语言 → 沿用先到者优先；只有 primary 非首选且 supplement 首选
+/// 才让补充源覆盖。
+bool _preferSupplementText(
+  VideoMetadataProviderKind primary,
+  VideoMetadataProviderKind supplement,
+  String? preferredLanguage,
 ) {
-  if (tmdb == null || primary.provider == VideoMetadataProviderKind.tmdb) {
-    return primary;
-  }
-  return primary.copyWith(
-    originalTitle: primary.originalTitle ?? tmdb.originalTitle,
-    tagline: primary.tagline ?? tmdb.tagline,
-    aliases: primary.aliases.isEmpty ? tmdb.aliases : primary.aliases,
-    year: primary.year ?? tmdb.year,
-    premiered: primary.premiered ?? tmdb.premiered,
-    endDate: primary.endDate ?? tmdb.endDate,
-    plot: primary.plot ?? tmdb.plot,
-    rating: primary.rating ?? tmdb.rating,
-    ratingVotes: primary.ratingVotes ?? tmdb.ratingVotes,
-    runtimeMinutes: primary.runtimeMinutes ?? tmdb.runtimeMinutes,
-    contentRating: primary.contentRating ?? tmdb.contentRating,
-    status: primary.status ?? tmdb.status,
-    originalLanguage: primary.originalLanguage ?? tmdb.originalLanguage,
-    homepage: primary.homepage ?? tmdb.homepage,
-    episodeGroupId: primary.episodeGroupId ?? tmdb.episodeGroupId,
-    ids: _mergeIds(primary.ids, tmdb.ids),
-    seasonCount: primary.seasonCount ?? tmdb.seasonCount,
-    episodeCount: primary.episodeCount ?? tmdb.episodeCount,
-    genres: primary.genres.isEmpty ? tmdb.genres : primary.genres,
-    studios: primary.studios.isEmpty ? tmdb.studios : primary.studios,
-    countries: primary.countries.isEmpty ? tmdb.countries : primary.countries,
-    keywords: primary.keywords.isEmpty ? tmdb.keywords : primary.keywords,
-    credits: _mergeCredits(primary.credits, tmdb.credits),
-    seasons: _mergeSeasons(primary.seasons, tmdb.seasons),
-    images: _mergeImagesFillingMissing(primary.images, tmdb.images),
-    extras: _mergeExtras(primary.extras, tmdb.extras),
+  final bool primaryPreferred = _matchesPreferredLanguage(
+    _providerTextLanguage(primary, preferredLanguage),
+    preferredLanguage,
   );
+  final bool supplementPreferred = _matchesPreferredLanguage(
+    _providerTextLanguage(supplement, preferredLanguage),
+    preferredLanguage,
+  );
+  return !primaryPreferred && supplementPreferred;
+}
+
+/// 照 Jellyfin `MetadataLanguageUtils.MatchesPreferredLanguage`：任一为空即
+/// 不匹配；否则只比较主子标签（`zh-CN` 与 `zh` 同语言）。
+bool _matchesPreferredLanguage(String? language, String? preferredLanguage) {
+  final String? actual = _primaryLanguageSubtag(language);
+  final String? preferred = _primaryLanguageSubtag(preferredLanguage);
+  return actual != null && preferred != null && actual == preferred;
+}
+
+String? _primaryLanguageSubtag(String? tag) {
+  final String trimmed = tag?.trim().toLowerCase() ?? '';
+  if (trimmed.isEmpty) return null;
+  final String primary = trimmed.split(RegExp(r'[-_]')).first;
+  return primary.isEmpty ? null : primary;
+}
+
+String? _pickText(
+  String? primary,
+  String? supplement, {
+  required bool preferSupplement,
+}) {
+  final String? first = preferSupplement ? supplement : primary;
+  final String? second = preferSupplement ? primary : supplement;
+  return _isBlank(first) ? second : first;
+}
+
+bool _isBlank(String? value) => value == null || value.trim().isEmpty;
+
+/// 集合并集：primary 原样在前，supplement 只追加 primary 里没有的项。去重键用
+/// `TitleNormalizer.normalize`（全半角、繁简、大小写、装饰符号折叠），避免
+/// `Sci-Fi` / `Sci Fi`、`动作` / `動作` 这种同义标签在合并后成对出现。
+List<String> _unionStrings(
+  Iterable<String> primary,
+  Iterable<String> supplement,
+) {
+  final List<String> result = primary.toList();
+  final Set<String> seen = <String>{
+    for (final String value in result) _unionKey(value),
+  };
+  for (final String value in supplement) {
+    if (value.trim().isEmpty) continue;
+    if (seen.add(_unionKey(value))) result.add(value);
+  }
+  return result;
+}
+
+String _unionKey(String value) {
+  final String normalized = TitleNormalizer.normalize(value);
+  return normalized.isEmpty ? value.trim().toLowerCase() : normalized;
 }
 
 List<VideoMetadataExtra> _mergeExtras(

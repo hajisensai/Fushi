@@ -354,6 +354,18 @@ void main() {
         isEmpty);
   });
 
+  test('year-bound search retries without year once per provider', () async {
+    // MAL 带年搜空 → 去年份重搜仍空 → 才问 TMDB；TMDB 带年即命中，不重搜。
+    final _Provider mal = _Provider(VideoMetadataProviderKind.mal, empty: true);
+    final _Provider tmdb = _Provider(VideoMetadataProviderKind.tmdb);
+    final VideoMetadataResolution result =
+        await _resolve(mal, tmdb, year: 2024);
+    expect(result.status, VideoMetadataResolutionStatus.matched);
+    expect(result.providerKind, VideoMetadataProviderKind.tmdb);
+    expect(mal.searchYears, <int?>[2024, null]);
+    expect(tmdb.searchYears, <int?>[2024]);
+  });
+
   test('numeric titles remain title searches', () async {
     final _Provider mal = _Provider(VideoMetadataProviderKind.mal, title: '86');
     final VideoMetadataResolution result = await _resolve(
@@ -373,6 +385,7 @@ Future<VideoMetadataResolution> _resolve(
   VideoMetadataLookup? confirmed,
   List<String> hints = const <String>[],
   int? season,
+  int? year,
   String title = 'Show',
   VideoMetadataProviderKind selected = VideoMetadataProviderKind.mal,
   bool singleSource = false,
@@ -389,6 +402,7 @@ Future<VideoMetadataResolution> _resolve(
       confirmedLookup: confirmed,
       identityHints: hints,
       seasonNumber: season,
+      year: year,
     ));
 
 class _Provider implements VideoMetadataProvider {
@@ -406,6 +420,7 @@ class _Provider implements VideoMetadataProvider {
   final String title;
   final bool movie;
   int searchCalls = 0;
+  final List<int?> searchYears = <int?>[];
   @override
   bool get isAvailable => true;
   VideoMetadataWork _work(String id) => VideoMetadataWork(
@@ -420,6 +435,7 @@ class _Provider implements VideoMetadataProvider {
   Future<List<VideoMetadataWork>> search(
       VideoMetadataSearchRequest request) async {
     searchCalls++;
+    searchYears.add(request.year);
     final Object? error = failure;
     if (error is Exception) throw error;
     if (error is Error) throw error;

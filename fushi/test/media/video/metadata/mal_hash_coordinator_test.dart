@@ -192,7 +192,9 @@ void main() {
     );
     expect((await scrape(runner, source)).succeededWorks, 1);
     expect(applied?.provider, VideoMetadataProviderKind.mal);
-    expect(applied?.plot, 'mal plot');
+    // 简介语言感知（设计稿 A3）：默认刮削语言 zh-CN，MAL 简介恒英文、TMDB 简介
+    // 按 zh-CN 返回 → 简介取 TMDB；评分等其它标量仍是主源 MAL 独占。
+    expect(applied?.plot, 'tmdb plot');
     expect(applied?.rating, 8);
     expect(
         applied?.images.any((VideoMetadataImage image) =>
