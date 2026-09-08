@@ -88,15 +88,22 @@ class HeadlessHost {
   final _AsyncMutex _mutex = _AsyncMutex();
   PendingPairing? _pendingPairing;
   String? _hostFingerprint;
+  SecurityContext? _securityContext;
 
   /// 给 CLI / WebUI 看的状态。
   PendingPairing? get pendingPairing => _pendingPairing;
   String? get hostFingerprint => _hostFingerprint;
+
+  /// 互联端口用的 TLS 上下文；admin 端口复用同一份自签证书。
+  SecurityContext? get securityContext => _securityContext;
   bool get isRunning => _server != null;
   int get port => _server?.port ?? config.port;
   MangaOcrServiceImpl? get ocrService => _ocrService;
   HostJobManager? get jobs => _jobs;
   ServerDownloadHost? get downloads => _downloads;
+
+  /// 吊销 peer 后让服务器重读 token 集（否则旧 token 还在缓存里能用到重启）。
+  void invalidatePeerTokens() => _server?.invalidatePeerTokenCache();
 
   /// 配对 PIN 出现/消失时的观察者（WebUI SSE、CLI 打印）。
   final StreamController<PendingPairing?> pairingEvents =
@@ -116,6 +123,7 @@ class HeadlessHost {
         ..usePrivateKeyBytes(utf8.encode(tlsIdentity.privateKeyPem));
       _hostFingerprint = tlsIdentity.fingerprintSha256;
     }
+    _securityContext = securityContext;
 
     final MangaOcrServiceImpl ocrService = MangaOcrServiceImpl();
     _ocrService = ocrService;

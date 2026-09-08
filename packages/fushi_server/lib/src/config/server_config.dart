@@ -67,9 +67,15 @@ class ServerConfig {
     required this.qbittorrentUsername,
     required this.qbittorrentPassword,
     required this.ortLibraryPath,
+    required this.adminPort,
+    required this.adminBind,
   });
 
   static const int defaultPort = 38765;
+
+  /// WebUI / admin API 单独一个端口：互联协议端口只跑冻结面上的 `/api/*`，
+  /// admin 鉴权（admin token）与 per-peer token 完全分开。
+  static const int defaultAdminPort = 38780;
 
   factory ServerConfig.defaults({required String dataDir}) => ServerConfig(
         dataDir: dataDir,
@@ -87,6 +93,8 @@ class ServerConfig {
         qbittorrentUsername: null,
         qbittorrentPassword: null,
         ortLibraryPath: null,
+        adminPort: defaultAdminPort,
+        adminBind: '0.0.0.0',
       );
 
   final String dataDir;
@@ -113,6 +121,10 @@ class ServerConfig {
   /// onnxruntime 动态库覆盖路径（null = asr_onnx_ffi 默认候选）。
   final String? ortLibraryPath;
 
+  /// WebUI / admin API 监听端口与地址（0 = 关闭 WebUI）。
+  final int adminPort;
+  final String adminBind;
+
   ServerConfig copyWith({
     int? port,
     String? bind,
@@ -128,6 +140,8 @@ class ServerConfig {
     String? qbittorrentUsername,
     String? qbittorrentPassword,
     String? ortLibraryPath,
+    int? adminPort,
+    String? adminBind,
   }) =>
       ServerConfig(
         dataDir: dataDir,
@@ -145,6 +159,8 @@ class ServerConfig {
         qbittorrentUsername: qbittorrentUsername ?? this.qbittorrentUsername,
         qbittorrentPassword: qbittorrentPassword ?? this.qbittorrentPassword,
         ortLibraryPath: ortLibraryPath ?? this.ortLibraryPath,
+        adminPort: adminPort ?? this.adminPort,
+        adminBind: adminBind ?? this.adminBind,
       );
 
   /// 从 YAML 文本解析；缺项取默认。[dataDir] 相对路径按配置文件所在目录解析。
@@ -180,6 +196,8 @@ class ServerConfig {
       qbittorrentUsername: qbMap['username']?.toString(),
       qbittorrentPassword: qbMap['password']?.toString(),
       ortLibraryPath: map['onnxruntime_library']?.toString(),
+      adminPort: _int(map['admin_port']) ?? base.adminPort,
+      adminBind: map['admin_bind']?.toString() ?? base.adminBind,
     );
   }
 
@@ -198,6 +216,8 @@ class ServerConfig {
     b.writeln('tls: $tls');
     b.writeln('device_name: ${_q(deviceName)}');
     b.writeln('lan_requires_pin: $lanRequiresPin');
+    b.writeln('admin_port: $adminPort');
+    b.writeln('admin_bind: ${_q(adminBind)}');
     b.writeln('subtitle_language: ${_q(subtitleLanguage)}');
     if (ffmpegPath != null) b.writeln('ffmpeg: ${_q(ffmpegPath!)}');
     if (ortLibraryPath != null) {

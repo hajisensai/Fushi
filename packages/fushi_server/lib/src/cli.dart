@@ -19,6 +19,8 @@ import 'package:args/args.dart';
 import 'package:asr_core/asr_core.dart' as asr;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
+import 'package:fushi_server/src/admin/admin_context.dart';
+import 'package:fushi_server/src/admin/admin_server.dart';
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/headless_host.dart';
 import 'package:fushi_server/src/host_bindings.dart';
@@ -217,8 +219,35 @@ Future<int> _serve(_Runtime rt, {required bool scan}) async {
       '${rt.config.tls ? '(https, fingerprint ${host.hostFingerprint})' : '(http)'}');
   stdout.writeln('设备名: ${rt.config.deviceName}   设备 id: ${rt.identity.deviceId}');
   stdout.writeln('配对：在 Fushi 里添加互联设备，输入本机地址；PIN 会打印在这里。');
+  final AdminContext adminCtx = AdminContext(
+    config: rt.config,
+    configFile: rt.configFile,
+    paths: rt.paths,
+    log: rt.log,
+    db: rt.db,
+    identity: rt.identity,
+    host: host,
+    startedAt: DateTime.now(),
+  );
+  AdminServer? admin;
+  if (rt.config.adminPort > 0) {
+    admin = AdminServer(
+      ctx: adminCtx,
+      token: rt.config.adminToken!,
+      securityContext: host.securityContext,
+    );
+    try {
+      await admin.start();
+      stdout.writeln('WebUI: ${rt.config.tls ? 'https' : 'http'}://'
+          '${rt.config.adminBind == '0.0.0.0' ? '<本机地址>' : rt.config.adminBind}:${admin.port}/ '
+          '（admin_token 在配置文件里）');
+    } on SocketException catch (e) {
+      stderr.writeln('WebUI 端口 ${rt.config.adminPort} 起不来: ${e.message}');
+      admin = null;
+    }
+  }
   if (scan && rt.config.libraries.isNotEmpty) {
-    unawaited(_scanInBackground(rt));
+    unawaited(_scanInBackground(adminCtx));
   }
   final Completer<void> stop = Completer<void>();
   void onSignal(ProcessSignal s) {
@@ -235,19 +264,17 @@ Future<int> _serve(_Runtime rt, {required bool scan}) async {
   stdout.writeln('正在停止…');
   await sigint.cancel();
   await sigterm?.cancel();
+  await admin?.stop();
   await host.stop();
   return 0;
 }
 
-Future<void> _scanInBackground(_Runtime rt) async {
+Future<void> _scanInBackground(AdminContext ctx) async {
   try {
-    final ScanSummary summary = await LibraryScanner(
-      db: rt.db,
-      subtitleLanguage: rt.config.subtitleLanguage,
-    ).scanAll(rt.config.libraries);
+    final ScanSummary summary = await ctx.scanLibraries();
     stdout.writeln('库扫描完成: $summary');
   } catch (e, stack) {
-    rt.log.log('serve.scan', e, stack);
+    ctx.log.log('serve.scan', e, stack);
   }
 }
 
