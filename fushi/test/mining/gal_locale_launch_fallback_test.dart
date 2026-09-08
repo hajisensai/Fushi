@@ -25,6 +25,10 @@ class _LocaleEngine extends EngineHookGalAudioSource {
   final String launchOutput;
 
   @override
+  bool get gameLaunchConfirmed =>
+      parseInjectorLaunchObservation(launchOutput)?.gameTarget == true;
+
+  @override
   bool get localeGameLaunchConfirmed {
     final GalHookLaunchObservation? launch = parseInjectorLaunchObservation(
       launchOutput,
@@ -182,11 +186,19 @@ void main() {
     launchOutput = 'LAUNCH pid=1111 arch=x86 role=launcher locale=1\n';
     alivePids = <int>{3333}; // StartMenu lives after Start has exited.
     final GalHookSessionController controller = build();
-    await controller.launchGame(r'D:\game\Start.exe');
+    final GalHookLaunchResult result = await controller.launchGame(
+      r'D:\game\Start.exe',
+    );
+    expect(result.launched, isFalse);
+    expect(controller.state.gamePid, isNull);
     expect(requestedModes, <GalJapaneseLocaleMode>[GalJapaneseLocaleMode.auto]);
     expect(
       controller.events.map((GalHookEvent e) => e.code),
       isNot(contains('launch.japanese_locale_fallback')),
+    );
+    expect(
+      controller.events.map((GalHookEvent e) => e.code),
+      isNot(contains('engine.launch_injection_degraded')),
     );
     await controller.close();
   });

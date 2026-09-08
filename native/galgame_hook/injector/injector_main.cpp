@@ -29,6 +29,7 @@
 #include "locale_emulator_launch.h"
 #include "kirikiri_launch_profile.h"
 #include "launcher_layout.h"
+#include "launcher_wait.h"
 #include "siglus_launch.h"
 #include "unreal_launch.h"
 #include "steam_launch.h"
@@ -2396,6 +2397,12 @@ class LaunchProcessLineage {
         WaitForSingleObject(handle->second, 0) != WAIT_TIMEOUT) return nullptr;
     return lineage_.Find(pid);
   }
+  bool HasLiveNode() const {
+    for (const auto& item : handles_) {
+      if (LiveNode(item.first) != nullptr) return true;
+    }
+    return false;
+  }
 
  private:
   static fushi_voice_hook::ProcessIdentity RootIdentity(HANDLE root, DWORD pid) {
@@ -2408,7 +2415,8 @@ class LaunchProcessLineage {
 };
 
 fushi_voice_hook::ProcessIdentity FindGameChildProcess(
-    DWORD root_pid, LaunchProcessLineage* lineage) {
+    DWORD root_pid, LaunchProcessLineage* lineage, bool* observation_valid) {
+  *observation_valid = false;
   lineage->Refresh();
   HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
   if (snapshot == INVALID_HANDLE_VALUE) return {};
@@ -2420,6 +2428,7 @@ fushi_voice_hook::ProcessIdentity FindGameChildProcess(
   PROCESSENTRY32W process = {0};
   process.dwSize = sizeof(process);
   if (Process32FirstW(snapshot, &process)) {
+    *observation_valid = true;
     do {
       if (process.th32ProcessID != root_pid && process.th32ProcessID != 0) {
         OwnedCandidate candidate;
@@ -2458,33 +2467,32 @@ fushi_voice_hook::ProcessIdentity FindGameChildProcess(
   return best;
 }
 
-fushi_voice_hook::ProcessIdentity WaitForGameChildProcess(
-    HANDLE root_process, DWORD root_pid, DWORD wait_ms) {
+struct GameChildWaitResult {
+  fushi_voice_hook::ProcessIdentity identity{};
+  fushi_voice_hook::ChildWaitAction action = fushi_voice_hook::ChildWaitAction::kFailed;
+};
+
+GameChildWaitResult WaitForGameChildProcess(
+    HANDLE root_process, DWORD root_pid, DWORD wait_ms, bool interactive) {
   LaunchProcessLineage lineage(root_process, root_pid);
   const uint64_t started = GetTickCount64();
-  const uint64_t deadline = GetTickCount64() + wait_ms;
-  fushi_voice_hook::ProcessIdentity last_candidate;
-  int stable_observations = 0;
-  while (GetTickCount64() < deadline) {
-    const auto candidate = FindGameChildProcess(root_pid, &lineage);
-    if (candidate.pid != 0 && candidate.pid == last_candidate.pid &&
-        candidate.created_at == last_candidate.created_at) {
-      ++stable_observations;
-      if (stable_observations >= 2) return candidate;
-    } else {
-      last_candidate = candidate;
-      stable_observations = candidate.pid == 0 ? 0 : 1;
-    }
+  fushi_voice_hook::LauncherWaitState waiting(interactive, started, wait_ms);
+  for (;;) {
+    bool observation_valid = false;
+    const auto candidate = FindGameChildProcess(root_pid, &lineage, &observation_valid);
+    bool root_runtime = false;
     if (candidate.pid == 0 && GetTickCount64() - started >= 1000 &&
         lineage.LiveNode(root_pid) != nullptr) {
       fushi_voice_hook::ChildProcessCandidate launcher;
       launcher.pid = root_pid;
       InspectFfmpegModules(root_pid, &launcher);
-      if (launcher.has_avcodec && launcher.has_avformat) return {};
+      root_runtime = launcher.has_avcodec && launcher.has_avformat;
     }
+    const auto action = waiting.Observe(GetTickCount64(), observation_valid,
+        candidate, lineage.HasLiveNode(), root_runtime);
+    if (action != fushi_voice_hook::ChildWaitAction::kWait) return {candidate, action};
     Sleep(100);
   }
-  return last_candidate;
 }
 
 std::string Sha256File(const std::wstring& path) {
@@ -3000,9 +3008,10 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
 
   // 游戏进程**已经存在**这件事必须先于注入结果回报：注入之后再失败时，host 才知道
   // 「游戏其实在跑」，可以改走附着重试，而不是把一个有窗口的游戏报成「启动失败」。
-  printf("LAUNCH pid=%lu arch=%s role=%s locale=%d\n", pi.dwProcessId,
+  printf("LAUNCH pid=%lu arch=%s role=%s locale=%d%s\n", pi.dwProcessId,
          sizeof(void*) == 8 ? "x64" : "x86",
-         follow_children ? "launcher" : "game", locale_launched ? 1 : 0);
+         follow_children ? "launcher" : "game", locale_launched ? 1 : 0,
+         launcher_layout ? " wait=launcher" : "");
   fflush(stdout);
 
   // 进程当前是否处于挂起态，是一个**事实**，只有一个来源：普通路径看 creation_flags；
@@ -3050,8 +3059,22 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
   if (follow_children) {
     const DWORD child_wait_ms =
         wait_ms > static_cast<DWORD>(15000) ? wait_ms : static_cast<DWORD>(15000);
-    const auto child_identity =
-        WaitForGameChildProcess(pi.hProcess, pi.dwProcessId, child_wait_ms);
+    const auto child_result = WaitForGameChildProcess(
+        pi.hProcess, pi.dwProcessId, child_wait_ms, launcher_layout);
+    if (child_result.action == fushi_voice_hook::ChildWaitAction::kEnded ||
+        child_result.action == fushi_voice_hook::ChildWaitAction::kFailed) {
+      fprintf(stderr, "[launch] launcher wait ended without a game (reason=%s)\n",
+          child_result.action == fushi_voice_hook::ChildWaitAction::kEnded
+              ? "lineageEnded" : "observationFailed");
+      ReportFailureReason(child_result.action == fushi_voice_hook::ChildWaitAction::kEnded
+          ? fushi_voice_hook::LaunchFailureReason::kLauncherEnded
+          : fushi_voice_hook::LaunchFailureReason::kLauncherDiscoveryFailed, 1);
+      CloseHandle(pi.hThread);
+      CloseHandle(pi.hProcess);
+      return 1;
+    }
+    const auto child_identity = child_result.action == fushi_voice_hook::ChildWaitAction::kGame
+        ? child_result.identity : fushi_voice_hook::ProcessIdentity{};
     const DWORD child_pid = child_identity.pid;
     if (child_pid != 0) {
       child_process = OpenProcess(
@@ -3079,6 +3102,19 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
       }
     }
     if (target_process == pi.hProcess) {
+      if (launcher_layout && child_result.action != fushi_voice_hook::ChildWaitAction::kRootRuntime) {
+        // A discovered child that disappeared or could not be opened is not
+        // permission to inject the already identified launcher instead.
+        ReportFailureReason(fushi_voice_hook::LaunchFailureReason::kInjectionFailed, 1);
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+        return 1;
+      }
+      if (child_result.action == fushi_voice_hook::ChildWaitAction::kRootRuntime) {
+        printf("LAUNCH pid=%lu arch=%s role=game locale=%d\n", target_pid,
+               sizeof(void*) == 8 ? "x64" : "x86", locale_launched ? 1 : 0);
+        fflush(stdout);
+      }
       fprintf(stderr,
               "[process] no stable game child found; attaching launcher pid=%lu\n",
               pi.dwProcessId);

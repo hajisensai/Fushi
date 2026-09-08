@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2084 条。点号进各自文件。
+> 共 2085 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2252](bugs/BUG-2252-siglus-launcher-wait-handshake.md) | ✅ | ✅ | 启动菜单等待耗尽游戏注入握手期限 |
 | [BUG-2251](bugs/BUG-2251-siglus-legacy-owner-publication-churn.md) | ✅ | ✅ | 旧版Siglus重复发布正文对象导致查词弹窗闪退 |
 | [BUG-2250](bugs/BUG-2250-siglus-legacy-keyboard-hook-owner.md) | ✅ | ✅ | 旧版Siglus键盘状态接口被通用输入盾抢占 |
 | [BUG-2249](bugs/BUG-2249-launcher-exit-locale-relaunch.md) | ✅ | ✅ | 启动器正常退出被误判转区崩溃并重复启动 |

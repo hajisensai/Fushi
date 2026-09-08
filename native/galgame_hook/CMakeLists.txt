@@ -429,6 +429,13 @@ add_executable(fushi_child_process_policy_test
 target_include_directories(fushi_child_process_policy_test PRIVATE "injector")
 add_test(NAME fushi_child_process_policy_test COMMAND fushi_child_process_policy_test)
 
+add_executable(fushi_launcher_wait_test "tests/launcher_wait_test.cpp")
+target_include_directories(fushi_launcher_wait_test PRIVATE "injector")
+if(MSVC)
+  target_compile_options(fushi_launcher_wait_test PRIVATE /W4 /WX)
+endif()
+add_test(NAME fushi_launcher_wait_test COMMAND fushi_launcher_wait_test)
+
 # injector 重连同一游戏进程时必须复用 DLL 持有的映射，不能把 hooked/text/audio 环清零。
 add_executable(fushi_voice_session_reuse_test
   "tests/session_reuse_test.cpp"

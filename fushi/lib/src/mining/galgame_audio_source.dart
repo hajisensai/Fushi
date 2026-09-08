@@ -208,10 +208,15 @@ class GalHookLaunchObservation {
     required this.pid,
     required this.gameTarget,
     required this.localeLaunch,
+    this.launcherWait = false,
   });
   final int pid;
   final bool gameTarget;
   final bool localeLaunch;
+  // Only the new helper's structurally confirmed interactive-launcher phase
+  // can suspend the injection clock. role=launcher alone also covers bounded
+  // runtime discovery and older helpers, so it is insufficient.
+  final bool launcherWait;
 }
 
 GalHookLaunchObservation? parseInjectorLaunchObservation(String stdout) {
@@ -223,13 +228,65 @@ GalHookLaunchObservation? parseInjectorLaunchObservation(String stdout) {
     final int? pid = int.tryParse(match.group(1)!);
     if (pid == null || pid <= 0) continue;
     final List<String> fields = match.group(2)!.trim().split(RegExp(r'\s+'));
+    final List<String> roles = fields
+        .where((String field) => field.startsWith('role='))
+        .toList();
     result = GalHookLaunchObservation(
       pid: pid,
-      gameTarget: fields.contains('role=game'),
+      gameTarget: roles.length == 1 && roles.single == 'role=game',
       localeLaunch: fields.contains('locale=1'),
+      launcherWait:
+          roles.length == 1 &&
+          roles.single == 'role=launcher' &&
+          fields
+                  .where((String field) => field.startsWith('wait='))
+                  .toList()
+                  .join() ==
+              'wait=launcher',
     );
   }
   return result;
+}
+
+// One helper lifetime owns one wait. The user-controlled menu phase does not
+// consume the machine's injection budget. No duplicate record can renew the
+// game deadline or return from game injection to launcher waiting.
+class _InjectorReadyWait {
+  _InjectorReadyWait({required this.launchMode, required this.timeout}) {
+    _armDeadline();
+  }
+  final bool launchMode;
+  final Duration timeout;
+  final Completer<int?> result = Completer<int?>();
+  Timer? _timer;
+  bool _waitingLauncher = false;
+  bool _gameStarted = false;
+
+  void _armDeadline() {
+    _timer?.cancel();
+    _timer = Timer(timeout, () => complete(null));
+  }
+
+  void observe(GalHookLaunchObservation observation) {
+    if (!launchMode || result.isCompleted || _gameStarted) return;
+    if (observation.gameTarget) {
+      _gameStarted = true;
+      if (_waitingLauncher) _armDeadline();
+      _waitingLauncher = false;
+    } else if (observation.launcherWait) {
+      _waitingLauncher = true;
+      _timer?.cancel();
+    }
+  }
+
+  void complete(int? pid) {
+    _timer?.cancel();
+    if (!result.isCompleted) result.complete(pid);
+  }
+
+  void hooked(int? pid) {
+    complete(_waitingLauncher ? null : pid);
+  }
 }
 
 /// injector 启动/附着失败的结构化原因。
@@ -299,6 +356,12 @@ enum GalHookInjectorFailure {
 
   /// Steam 客户端接受了启动请求但未在超时内出现目标进程。
   steamTimeout,
+
+  /// The verified launcher lineage ended before a game target appeared.
+  launcherEnded,
+
+  /// The helper could not observe the launcher lineage reliably.
+  launcherDiscoveryFailed,
 
   /// injector 已宣告 hooked，但共享内存打不开（native 通道不可用）。
   sharedMemoryUnavailable,
@@ -1380,7 +1443,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
   Process? _injector;
   final List<StreamSubscription<String>> _injectorOutputSubscriptions =
       <StreamSubscription<String>>[];
-  Completer<int?>? _hookedPidCompleter;
+  _InjectorReadyWait? _hookedPidWait;
 
   /// injector 诊断输出尾部（stdout+stderr 合流，有界）。失败时唯一的证据来源：
   /// native 早就把「位数不匹配 / OpenProcess 失败 / 未收到就绪信号」打出来了，
@@ -1433,6 +1496,8 @@ class EngineHookGalAudioSource implements GalAudioSource {
 
   int _launchedPid = 0;
   GalHookLaunchObservation? _launchObservation;
+
+  bool get gameLaunchConfirmed => _launchObservation?.gameTarget == true;
 
   /// Only a helper-confirmed game target from a locale launch may use the
   /// existing crash fallback. Unknown roles and pending launchers fail closed.
@@ -1984,9 +2049,22 @@ class EngineHookGalAudioSource implements GalAudioSource {
       Utf8Decoder(allowMalformed: true);
 
   void _beginInjectorOutputDrain(Process process) {
-    final Completer<int?> pidCompleter = Completer<int?>();
+    final _InjectorReadyWait waiting = _InjectorReadyWait(
+      launchMode: launchExe != null && launchExe!.isNotEmpty,
+      timeout: _readyTimeout,
+    );
+    final Completer<int?> pidCompleter = waiting.result;
     final StringBuffer stdoutBuffer = StringBuffer();
-    _hookedPidCompleter = pidCompleter;
+    String pendingLines = '';
+    _hookedPidWait = waiting;
+    // --hold keeps a successfully hooked helper alive. A terminated helper
+    // cannot discover another game, even when a descendant inherited a pipe.
+    unawaited(
+      process.exitCode.then<void>(
+        (int _) => waiting.complete(null),
+        onError: (Object _) => waiting.complete(null),
+      ),
+    );
     _injectorOutputSubscriptions.add(
       process.stdout
           .transform(_injectorOutputDecoder)
@@ -1994,28 +2072,33 @@ class EngineHookGalAudioSource implements GalAudioSource {
             (String chunk) {
               _emitInjectorOutput(isStderr: false, chunk: chunk);
               stdoutBuffer.write(chunk);
-              // `LAUNCH pid=` 先于注入结果到达，且在 hooked 之后仍要保留：注入失败时
-              // 它是「游戏已经起来了」的唯一证据，不能因为 pidCompleter 已完成就不解析。
-              final GalHookLaunchObservation? launched =
-                  parseInjectorLaunchObservation(stdoutBuffer.toString());
-              if (launched != null) {
-                _launchedPid = launched.pid;
-                _launchObservation = launched;
+              // Consume every complete record in order: one pipe chunk can
+              // contain both the game transition and a late launcher record.
+              pendingLines += chunk;
+              int newline;
+              while ((newline = pendingLines.indexOf('\n')) >= 0) {
+                final String line = pendingLines.substring(0, newline + 1);
+                pendingLines = pendingLines.substring(newline + 1);
+                final GalHookLaunchObservation? launched =
+                    parseInjectorLaunchObservation(line);
+                if (launched != null && !gameLaunchConfirmed) {
+                  _launchedPid = launched.pid;
+                  _launchObservation = launched;
+                  waiting.observe(launched);
+                }
               }
               if (pidCompleter.isCompleted) return;
               final int? pid = parseInjectorHookedPid(stdoutBuffer.toString());
-              if (pid != null) pidCompleter.complete(pid);
+              if (pid != null) waiting.hooked(pid);
             },
             onDone: () {
               if (!pidCompleter.isCompleted) {
-                pidCompleter.complete(
-                  parseInjectorHookedPid(stdoutBuffer.toString()),
-                );
+                waiting.hooked(parseInjectorHookedPid(stdoutBuffer.toString()));
               }
             },
             onError: (Object _) {
               if (!pidCompleter.isCompleted) {
-                pidCompleter.complete(null);
+                waiting.complete(null);
               }
             },
           ),
@@ -2052,9 +2135,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
   /// 等 stdout 中的 `OK hooked pid=<N>`；订阅本身不会在解析成功后取消，仍负责排空
   /// helper 余生的输出。launch 用返回 PID 发现新游戏，attach 用它避免抢跑共享内存。
   Future<int?> _awaitHookedPid() async {
-    final Completer<int?>? completer = _hookedPidCompleter;
-    if (completer == null) return null;
-    return completer.future.timeout(_readyTimeout, onTimeout: () => null);
+    return _hookedPidWait?.result.future;
   }
 
   /// 轮询 native `status`：hook 就绪（ready）且格式有效时返回 [PcmFormat]，否则 null。
@@ -2708,11 +2789,8 @@ class EngineHookGalAudioSource implements GalAudioSource {
     final List<StreamSubscription<String>> outputSubscriptions =
         List<StreamSubscription<String>>.of(_injectorOutputSubscriptions);
     _injectorOutputSubscriptions.clear();
-    final Completer<int?>? pidCompleter = _hookedPidCompleter;
-    _hookedPidCompleter = null;
-    if (pidCompleter != null && !pidCompleter.isCompleted) {
-      pidCompleter.complete(null);
-    }
+    _hookedPidWait?.complete(null);
+    _hookedPidWait = null;
     await Future.wait(
       outputSubscriptions.map(
         (StreamSubscription<String> subscription) => subscription.cancel(),

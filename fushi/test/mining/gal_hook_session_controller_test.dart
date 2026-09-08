@@ -3975,6 +3975,9 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
   int? get launchedPid => launched;
 
   @override
+  bool get gameLaunchConfirmed => launched != null;
+
+  @override
   bool get textHookReady => textReady;
 
   @override

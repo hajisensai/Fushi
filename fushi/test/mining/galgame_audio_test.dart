@@ -1345,7 +1345,8 @@ void main() {
         final String producer = File(
           '../native/galgame_hook/injector/injector_main.cpp',
         ).readAsStringSync();
-        expect(producer, contains('role=%s locale=%d\\n'));
+        expect(producer, contains('role=%s locale=%d%s\\n'));
+        expect(producer, contains('launcher_layout ? " wait=launcher" : ""'));
         expect(
           producer,
           contains(

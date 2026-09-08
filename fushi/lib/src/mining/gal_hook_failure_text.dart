@@ -44,6 +44,9 @@ String? galHookFailureLabel(
     t.game_hook_reason_guarded_hook_failed,
   GalHookInjectorFailure.resumeFailed => t.game_hook_reason_resume_failed,
   GalHookInjectorFailure.steamTimeout => t.game_hook_reason_steam_timeout,
+  GalHookInjectorFailure.launcherEnded ||
+  GalHookInjectorFailure.launcherDiscoveryFailed =>
+    t.game_hook_reason_target_missing,
   GalHookInjectorFailure.sharedMemoryUnavailable =>
     t.game_hook_reason_shared_memory_unavailable,
   GalHookInjectorFailure.protocolMismatch =>

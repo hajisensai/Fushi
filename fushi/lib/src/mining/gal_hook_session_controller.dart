@@ -1610,7 +1610,11 @@ class GalHookSessionController extends ChangeNotifier {
       // 无关。拿得到它就说明**游戏已经在跑**：此时把整个会话判成「启动失败」是错的——
       // 用户面前明明有个游戏窗口，Hibiki 却停在终态错误，只能手动去「捕获目标」重绑。
       // 改为保留会话、降级到 Loopback，并按退避表重试附着。
-      final int? runningPid = engine.launchedPid;
+      // A launcher (or an old/unknown role) is not a game target. In particular,
+      // an exited Start with a surviving menu must not seed loopback/recovery.
+      final int? runningPid = engine.gameLaunchConfirmed
+          ? engine.launchedPid
+          : null;
       final bool localeLaunchDied =
           engine.japaneseLocaleApplied &&
           engine.localeGameLaunchConfirmed &&
