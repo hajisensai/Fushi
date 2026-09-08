@@ -56,8 +56,12 @@ class VideoSourceScrapeCoordinator
     AnimeOfflineIdentityResolver? offlineIdentityResolver,
     bool enableOfflineTitleIndex = false,
     AnimeEpisodeRelationsCatalog? episodeRelations,
+    VideoMetadataProviderRegistry Function(String locale)?
+        localeRegistryFactory,
     this.onWorkScraped,
   })  : primaryProvider = primaryProvider ?? config.primaryProvider,
+        _localeRegistryFactory = localeRegistryFactory ??
+            ((String locale) => _createRegistry(config, locale: locale)),
         episodeRelations = episodeRelations ??
             (enableOfflineTitleIndex ? AnimeEpisodeRelationsCatalog() : null),
         _ownsEpisodeRelations = episodeRelations == null,
@@ -128,14 +132,37 @@ class VideoSourceScrapeCoordinator
   final Set<int> _interruptedRunIds = <int>{};
   int? _activeRunId;
 
+  /// 本趟刮削的来源级 provider 注册表与资料语言（v99 `metadata_locale`）。
+  ///
+  /// TMDB provider 的 `language` 是**构造期**参数，来源 locale 与全局不同时不能
+  /// 复用同一个实例，所以这一趟临时建一套、跑完关掉。协调器同时只跑一趟
+  /// （见 [_activeRunId]，run 生命周期本来就用单字段表达），所以作用域用字段承载
+  /// 是与既有设计一致的；null = 跟随全局。
+  VideoMetadataProviderRegistry? _scopedRegistry;
+  String? _scopedLocale;
+
+  /// 建「本趟的 provider 注册表」的工厂。生产装配就是 [_createRegistry]；测试注入
+  /// 假工厂来断言这一趟到底拿到了哪个 locale——否则来源级 locale 是否真的传下去，
+  /// 只能靠读代码判断。
+  final VideoMetadataProviderRegistry Function(String locale)
+      _localeRegistryFactory;
+
+  /// 刮削管线内部一律用这个 getter 取 provider，别直接用 [registry]——后者是
+  /// 全局 locale 的那套，只留给不写库的手动搜索。
+  VideoMetadataProviderRegistry get _registry => _scopedRegistry ?? registry;
+
+  /// 本趟刮削的有效资料语言（来源级覆盖 > 全局）。
+  String get _locale => _scopedLocale ?? config.locale;
+
   static VideoMetadataProviderRegistry _createRegistry(
-    VideoSourceScrapeGlobalConfig config,
-  ) =>
+    VideoSourceScrapeGlobalConfig config, {
+    String? locale,
+  }) =>
       VideoMetadataProviderRegistry(<VideoMetadataProvider>[
         MalVideoMetadataProvider(),
         TmdbVideoMetadataProvider(
           apiKey: config.tmdbApiKey,
-          language: config.locale,
+          language: locale ?? config.locale,
         ),
       ]);
 
@@ -428,6 +455,14 @@ class VideoSourceScrapeCoordinator
       return SourceScrapeReport(sourceIds: <int>[source.id]);
     }
 
+    // 来源级资料语言与全局不同 → 这一趟用一套自己的 provider（TMDB 的
+    // `language` 只能在构造期给），finally 里关掉。注入进来的 registry 不属于
+    // 协调器，永远只读不关（见 [_ownsRegistry]）——这里关的是本方法自己建的那套。
+    if (settings.locale != config.locale) {
+      _scopedLocale = settings.locale;
+      _scopedRegistry = _localeRegistryFactory(settings.locale);
+    }
+
     final int startedAt = DateTime.now().millisecondsSinceEpoch;
     final int runId = await database.insertVideoSourceScrapeRun(
       VideoSourceScrapeRunsCompanion.insert(
@@ -474,7 +509,7 @@ class VideoSourceScrapeCoordinator
 
       final bool hasProvider = _providerChain(settings.provider).any(
           (VideoMetadataProviderKind kind) =>
-              registry.provider(kind)?.isAvailable ?? false);
+              _registry.provider(kind)?.isAvailable ?? false);
       if (!hasProvider && works.isNotEmpty) {
         failed = works.length;
         errors.add(SourceScrapeIssue(
@@ -492,7 +527,7 @@ class VideoSourceScrapeCoordinator
       // 「剩下的没做」如实结账成一条可操作说明，而不是让用户对着 N 条一模一样的分
       // 集抓取失败去猜发生了什么。
       final AniDbVideoMetadataProvider? anidb =
-          switch (registry.provider(VideoMetadataProviderKind.anidb)) {
+          switch (_registry.provider(VideoMetadataProviderKind.anidb)) {
         final AniDbVideoMetadataProvider provider => provider,
         _ => null,
       };
@@ -734,6 +769,9 @@ class VideoSourceScrapeCoordinator
     } finally {
       if (_activeRunId == runId) _activeRunId = null;
       _interruptedRunIds.remove(runId);
+      _scopedRegistry?.close();
+      _scopedRegistry = null;
+      _scopedLocale = null;
     }
   }
 
@@ -1036,7 +1074,7 @@ class VideoSourceScrapeCoordinator
                   AniDbVideoMetadataProvider.catalogOnlyPayloadKey] ==
               true) {
         final VideoMetadataProvider? provider =
-            registry.provider(selected.lookup.provider);
+            _registry.provider(selected.lookup.provider);
         try {
           resolvedWork =
               await provider?.fetchWork(selected.lookup) ?? selected.work;
@@ -1137,7 +1175,7 @@ class VideoSourceScrapeCoordinator
       metadata = supplementVideoMetadata(
         metadata,
         tmdb.metadata,
-        preferredLanguage: config.locale,
+        preferredLanguage: _locale,
       );
     }
     if (hashEvidence.animeId != null &&
@@ -1295,7 +1333,7 @@ class VideoSourceScrapeCoordinator
     const _SeasonExpansion none = _SeasonExpansion();
     final AnimeIdentityMapping? mapping = identityMapping;
     final VideoMetadataProvider? provider =
-        registry.provider(VideoMetadataProviderKind.mal);
+        _registry.provider(VideoMetadataProviderKind.mal);
     final int? malId = int.tryParse(primaryLookup.externalId);
     if (mapping == null || provider == null || malId == null) return none;
 
@@ -1705,7 +1743,7 @@ class VideoSourceScrapeCoordinator
     List<SourceScrapeIssue> warnings,
     String localTitle,
   ) async {
-    final VideoMetadataProvider? provider = registry.provider(lookup.provider);
+    final VideoMetadataProvider? provider = _registry.provider(lookup.provider);
     if (provider == null) {
       return _HydratedWork(metadata: work, complete: false);
     }
@@ -1821,7 +1859,7 @@ class VideoSourceScrapeCoordinator
     VideoMetadataLookup? lookupHint,
   }) async {
     final VideoMetadataProvider? tmdb =
-        registry.provider(VideoMetadataProviderKind.tmdb);
+        _registry.provider(VideoMetadataProviderKind.tmdb);
     if (tmdb == null || !tmdb.isAvailable) {
       return const _TmdbSupplementResult();
     }
@@ -2670,6 +2708,7 @@ class _EffectiveSourceSettings {
   const _EffectiveSourceSettings({
     required this.enabled,
     required this.provider,
+    required this.locale,
     required this.writeNfo,
     required this.writeImages,
     required this.nfoPolicy,
@@ -2689,6 +2728,11 @@ class _EffectiveSourceSettings {
       // （bangumi / douban / anilist / anidb）回落全局默认。
       provider: parseSelectableVideoMetadataProvider(row?.providerOverride) ??
           primaryProvider,
+      // 来源级 metadata_locale：NULL / 全空白 = 跟随全局。
+      locale: switch (row?.metadataLocale?.trim()) {
+        final String value when value.isNotEmpty => value,
+        _ => config.locale,
+      },
       writeNfo: row?.writeNfo ?? true,
       writeImages: row?.writeImages ?? true,
       nfoPolicy: _policy(row?.nfoPolicy),
@@ -2700,6 +2744,9 @@ class _EffectiveSourceSettings {
 
   final bool enabled;
   final VideoMetadataProviderKind provider;
+
+  /// 本来源刮削用的资料语言（BCP-47）；已经过「空 → 全局」归一。
+  final String locale;
   final bool writeNfo;
   final bool writeImages;
   final SidecarWritePolicy nfoPolicy;
