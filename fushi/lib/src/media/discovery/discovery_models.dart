@@ -126,6 +126,10 @@ final class DiscoveryResourceItem extends DiscoveryEntry {
     this.note,
     this.gameLocalization,
     this.isDownloadable = true,
+    this.category,
+    this.trusted = false,
+    this.remake = false,
+    this.contentHint = DiscoveryContentHint.none,
   });
 
   /// 源内稳定 id（去重/防重复入队的身份键；语义源自定义：文件路径、种子页 URL 等）。
@@ -172,6 +176,44 @@ final class DiscoveryResourceItem extends DiscoveryEntry {
 
   /// false 表示该来源只支持展示/辨认，当前下载模块没有可执行 payload。
   final bool isDownloadable;
+
+  /// 源内分类 id（nyaa `categoryId`，如 `3_1` = Literature English-translated）；
+  /// 源不给分类时为 null。
+  final String? category;
+
+  /// 源标记的 trusted 发布（nyaa HTML 行 class `success`）。
+  final bool trusted;
+
+  /// 源标记的 remake（nyaa HTML 行 class `danger`）。nyaa 的行颜色只有一种，
+  /// remake 会盖掉 trusted——两者同真在 HTML 路径上不会出现。
+  final bool remake;
+
+  /// 标题/体积推断出的内容形态，见 [DiscoveryContentHint]。默认 [DiscoveryContentHint.none]
+  /// = 源没跑分类器（非 nyaa 小说域、OPDS、直链源）。
+  final DiscoveryContentHint contentHint;
+}
+
+/// 资源条目的内容形态提示：Nyaa Literature（`3_x`）里轻小说与扫图漫画、同人志
+/// 图包混放，站方没有「小说 vs 漫画」维度，只能靠标题命名规范 + 体积推断
+/// （`nyaa_literature_classifier.dart`）。
+///
+/// 这是**提示**不是事实：发现页默认只隐藏 [manga] 档，[undecided] 保留显示，
+/// 用户随时能一键显示被隐藏的条目。
+enum DiscoveryContentHint {
+  /// 判定为漫画（漫画分领先小说分 ≥ 2）。
+  manga,
+
+  /// 判定为小说。
+  novel,
+
+  /// 两边信号打平或都没有：保留显示。
+  undecided,
+
+  /// 有声书（`Audiobook|MP3|M4B|FLAC|M4A`），不参与小说/漫画判定。
+  audiobook,
+
+  /// 该条目没有跑分类器。
+  none,
 }
 
 /// BUG-1910：游戏资源的汉化状态。值域来自 shinnku 上游 `get_game_type` 的三分类。

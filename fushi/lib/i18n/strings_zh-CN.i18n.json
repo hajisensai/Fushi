@@ -4485,5 +4485,16 @@
   "video_metadata_primary_provider_hint": "主源没有唯一精确命中或不可用时，自动用另一个源兜底。",
   "video_metadata_provider_mal": "MAL（经 Jikan）",
   "video_metadata_provider_tmdb": "TMDB",
-  "video_source_scrape_provider_follow_global": "跟随全局默认"
+  "video_source_scrape_provider_follow_global": "跟随全局默认",
+  "discovery_filter_hide_zero_seeders": "隐藏无人做种",
+  "discovery_filter_hide_suspected_manga": "隐藏疑似漫画",
+  "discovery_hidden_zero_seeders_count": "已隐藏 ${n} 条无人做种",
+  "discovery_hidden_suspected_manga_count": "已隐藏 ${n} 条疑似漫画",
+  "discovery_hidden_show": "显示",
+  "discovery_nyaa_filter_all": "全部",
+  "discovery_nyaa_filter_no_remakes": "排除 remake",
+  "discovery_nyaa_filter_trusted_only": "仅信任发布者",
+  "discovery_badge_trusted": "信任发布者",
+  "discovery_badge_remake": "Remake",
+  "discovery_content_hint_manga": "疑似漫画"
 }

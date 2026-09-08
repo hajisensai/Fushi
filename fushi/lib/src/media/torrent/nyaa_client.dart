@@ -248,12 +248,51 @@ DateTime? parseNyaaPubDate(String raw) {
 ///
 /// `nyaa:` 命名空间字段按本地名匹配（`nyaa:seeders` → `seeders`），对命名空间
 /// 前缀变化保持宽容；`<item>` 内本地名与 nyaa 扩展字段无冲突。
+///
+/// 生产搜索已改走 HTML 搜索页（见 [NyaaClient.search]：RSS 被 nyaa 后端强制按
+/// id 倒序、忽略 `s/o` 与分页）；本函数与 [parseNyaaRssStrict] 只保留给测试与
+/// 仍消费 RSS 的旧调用方。
 List<NyaaTorrent> parseNyaaRss(String body) {
   if (body.trim().isEmpty) return const <NyaaTorrent>[];
   try {
     return _parseNyaaDocument(XmlDocument.parse(body));
   } catch (_) {
     return const <NyaaTorrent>[];
+  }
+}
+
+/// 严格解析 Nyaa RSS：空 body / 非 UTF-8 XML 声明 / 坏 XML / 非 `<rss>` /
+/// 缺 `<channel>` / 缺必需字段 / 命名空间不对一律抛 [NyaaFeedFormatException]
+/// （错误码见 [NyaaFeedErrorCode]），只有结构有效、确实没有 `<item>` 才返回空。
+///
+/// 这是原 [NyaaClient.search] RSS 首屏的解析层；HTTP 层（charset 头、UTF-8
+/// 解码）不在这里。见 [parseNyaaRss] 的说明。
+List<NyaaTorrent> parseNyaaRssStrict(String body) {
+  if (body.trim().isEmpty) {
+    throw NyaaFeedFormatException(
+      NyaaFeedErrorCode.emptyBody,
+      'response body was empty',
+    );
+  }
+  try {
+    final XmlDocument doc = XmlDocument.parse(body);
+    final String? xmlEncoding = doc.declaration?.encoding?.toLowerCase();
+    if (xmlEncoding != null &&
+        xmlEncoding != 'utf-8' &&
+        xmlEncoding != 'utf8') {
+      throw NyaaFeedFormatException(
+        NyaaFeedErrorCode.unsupportedEncoding,
+        'XML declared $xmlEncoding; UTF-8 is required',
+      );
+    }
+    return _parseNyaaDocumentStrict(doc);
+  } on NyaaFeedFormatException {
+    rethrow;
+  } on XmlException catch (error) {
+    throw NyaaFeedFormatException(
+      NyaaFeedErrorCode.malformedXml,
+      error.message,
+    );
   }
 }
 
@@ -422,23 +461,136 @@ String _childText(XmlElement item, String local) {
   return '';
 }
 
+/// Nyaa HTML 搜索页的排序字段（查询参数 `s`）。
+///
+/// 只有 HTML 搜索页尊重它：nyaa 后端 `search.py` 对 RSS 两处写死按 id 倒序
+/// （ES 路径 "Only allow ID, desc if RSS"，DB 路径 "Force sort by id desc if
+/// rss"），所以排序必须走 HTML。
+enum NyaaSort {
+  /// 做种数（发现页默认：死种沉底）。
+  seeders('seeders'),
+
+  /// 发布时间（站内 id 单调递增，nyaa 用 `s=id` 表示按时间；订阅轮询用它
+  /// 保住「最新集在前 75 条里」的旧语义）。
+  date('id'),
+
+  size('size'),
+  leechers('leechers'),
+  downloads('downloads');
+
+  const NyaaSort(this.queryValue);
+
+  /// 透传给 nyaa 的 `s=` 值。
+  final String queryValue;
+}
+
+/// Nyaa 搜索排序方向（查询参数 `o`）。
+enum NyaaSortOrder {
+  desc,
+  asc;
+
+  /// 透传给 nyaa 的 `o=` 值。
+  String get queryValue => name;
+}
+
+/// Nyaa 过滤三态（查询参数 `f`）。`f=3`（仅完结批次）后端有但 UI 不露出、
+/// 无文档，刻意不暴露。
+enum NyaaQualityFilter {
+  /// 全部（与 Nyaa UI / Prowlarr / Flexget 默认一致）。
+  all('0'),
+
+  /// 排除 remake。
+  noRemakes('1'),
+
+  /// 仅 trusted 发布者。
+  trustedOnly('2');
+
+  const NyaaQualityFilter(this.queryValue);
+
+  /// 透传给 nyaa 的 `f=` 值。
+  final String queryValue;
+
+  /// 从持久化的 int（0/1/2）还原；越界值回落 [all]，不抛。
+  static NyaaQualityFilter fromIndex(int index) =>
+      index >= 0 && index < values.length ? values[index] : all;
+}
+
+/// 关键词搜索走 Elasticsearch，后端最多回 1000 条 = 14 页（每页 75）。
+const int kNyaaMaxSearchPages = 14;
+
+/// 无关键词浏览走 DB，后端最多 100 页。
+const int kNyaaMaxBrowsePages = 100;
+
+/// 同一 host 两次请求的最小间隔（对齐 Jackett/Prowlarr 的 nyaasi 定义）。
+const Duration kNyaaMinRequestInterval = Duration(seconds: 2);
+
 /// Nyaa（nyaa.si）搜索客户端。无需鉴权。
 ///
-/// 首屏端点：`GET {base}/?page=rss&q=<query>&c=<category>&f=<filter>`。
-/// 后续页使用 Nyaa 的 HTML 搜索端点 `GET {base}/?p=<page>&...`。Nyaa
-/// 上游虽然会解析 RSS 请求里的 `p`，但 RSS 查询分支只做 `limit`、不做
-/// `offset`，会重复返回首屏；因此不能用 RSS 假装分页。
+/// 端点：HTML 搜索页
+/// `GET {base}/?q=<query>&c=<category>&f=<filter>&s=<sort>&o=<order>[&p=<page>]`。
+/// **不用 RSS 作首屏**：nyaa 后端对 RSS 强制按 id 倒序、忽略 `s/o`、只回 75
+/// 条且不做 `offset` 分页；同参数实测 RSS 首条做种 34、HTML 首条 288。HTML
+/// 行 class 给出 trusted（`success`）/ remake（`danger`）；remake 行只显示红，
+/// trusted 用户发的 remake 在 HTML 里 trusted 信息被吞，与 RSS 不同。
 /// category 直接透传（常用：`1_0` 全部动画 / `1_2` 英译 / `1_3` 非英译 /
-/// `1_4` 生肉 Raw）；filter：`0` 无过滤 / `2` 仅 trusted。
+/// `1_4` 生肉 Raw / `3_0` 全部 Literature）；filter 见 [NyaaQualityFilter]。
+///
+/// 打同一站点 host 的请求按 [minRequestInterval] 节流（跨实例共用节奏，实例内串行）。
 class NyaaClient {
   NyaaClient({
     this.baseUrl = 'https://nyaa.si',
     http.Client? client,
     this.requestTimeout = kDownloadDiscoveryTimeout,
+    this.minRequestInterval = kNyaaMinRequestInterval,
   }) : _client = client ?? createAppHttpIoClient();
 
   final String baseUrl;
   final http.Client _client;
+
+  /// 同 host 两次请求**开始**之间的最小间隔；测试可注入 [Duration.zero]。
+  final Duration minRequestInterval;
+
+  /// 各站点 host 最近一次请求的开始时刻。多个实例（发现源 / 视频资源 provider /
+  /// 订阅轮询）打同一站点时共用节奏，这才是「同 host」而不只是「同实例」。
+  ///
+  /// 只存时刻、不存 Future：完成态 Future 记住创建时的 zone，测试在 setUp 里建
+  /// client、在 fake-async 测试体里 await 时，`then` 回调会被派到拿不到 pump 的
+  /// zone 里，整条搜索无声挂死（pumpAndSettle 超时、请求根本没发出）。
+  static final Map<String, DateTime> _lastRequestStartByHost =
+      <String, DateTime>{};
+
+  /// 本实例排队的尾巴；null = 没人在排。惰性创建，理由同上。
+  Future<void>? _requestQueueTail;
+
+  /// 排队等到下一个允许发请求的时刻；并发调用按到达顺序串行放行。
+  Future<void> _reserveRequestSlot() {
+    final Future<void> slot = _waitForRequestSlot(_requestQueueTail);
+    _requestQueueTail = slot;
+    return slot;
+  }
+
+  Future<void> _waitForRequestSlot(Future<void>? previous) async {
+    if (previous != null) await previous;
+    final String host = Uri.parse(baseUrl).host;
+    // **先占坑、再等**，而不是「读 last → 睡 → 写 last」。后者中间隔着一个 await：
+    // 发现源 / 资源 provider / 订阅轮询各自 new 的 client 并发打同一站点时，会同时
+    // 读到同一个 last、同时睡到同一时刻、然后一起发请求 —— 契约说的「同 host 至少
+    // 间隔 minRequestInterval」退化成「一阵爆发再等一轮」。
+    //
+    // 这里的读改写全在同一个同步段里完成（Dart 单线程，无 await 即不可被打断），
+    // 所以第二个并发调用看到的 last 已经是第一个占掉的那一格，自己顺延一格。
+    // 存的仍然只是时刻、不是 Future —— 静态存完成态 Future 正是上面注释里那个
+    // 跨 zone 挂死的坑，别为了排队把它请回来。
+    final DateTime now = DateTime.now();
+    final DateTime? last = _lastRequestStartByHost[host];
+    final DateTime start =
+        (last == null || now.difference(last) >= minRequestInterval)
+            ? now
+            : last.add(minRequestInterval);
+    _lastRequestStartByHost[host] = start;
+    final Duration wait = start.difference(now);
+    if (wait > Duration.zero) await Future<void>.delayed(wait);
+  }
 
   /// 单次请求的整体超时上限。默认取发现链路的唯一真相源
   /// [kDownloadDiscoveryTimeout]；可注入只为测试能用短值跑。
@@ -462,27 +614,38 @@ class NyaaClient {
   /// 按关键词搜索种子。网络错误 / 非 200 **抛出**（`ClientException` /
   /// `SocketException` / `HandshakeException` 等），由调用方决定展示或记录：
   /// 以前这里吞错返回空列表，真实网络故障（如站点被墙、代理未配）会被
-  /// 误报成「无结果」，用户无从判断。空响应 / 损坏 RSS 同样抛
-  /// [FormatException]；只有结构有效、确实没有 `<item>` 才返回空列表。
+  /// 误报成「无结果」，用户无从判断。空响应 / 不是搜索页的 HTML 同样抛
+  /// [NyaaFeedFormatException]；只有结构有效、确实没有结果行才返回空列表。
+  ///
+  /// [sort] / [order] 默认按做种数降序。[page] 越过后端上限
+  /// （[kNyaaMaxSearchPages] / [kNyaaMaxBrowsePages]）直接返回空、不发请求
+  /// 也不抛——那是「翻到底了」，不是错误。
   Future<List<NyaaTorrent>> search(
     String query, {
     String category = '1_0',
     String filter = '0',
     int page = 1,
+    NyaaSort sort = NyaaSort.seeders,
+    NyaaSortOrder order = NyaaSortOrder.desc,
   }) async {
     if (page <= 0) throw ArgumentError.value(page, 'page');
-    final bool renderAsRss = page == 1;
+    final int maxPages =
+        query.trim().isEmpty ? kNyaaMaxBrowsePages : kNyaaMaxSearchPages;
+    if (page > maxPages) return const <NyaaTorrent>[];
     final Uri uri = Uri.parse(baseUrl).replace(
       path: '/',
       queryParameters: <String, String>{
-        if (renderAsRss) 'page': 'rss' else 'p': page.toString(),
         'q': query,
         'c': category,
         'f': filter,
+        's': sort.queryValue,
+        'o': order.queryValue,
+        if (page > 1) 'p': page.toString(),
       },
     );
+    await _reserveRequestSlot();
     final http.Response res = await _client.get(uri).timeout(requestTimeout);
-    if (!renderAsRss && res.statusCode == 404) {
+    if (page > 1 && res.statusCode == 404) {
       // Nyaa returns 404 when a valid HTML search asks past its final page.
       return const <NyaaTorrent>[];
     }
@@ -502,8 +665,9 @@ class NyaaClient {
       );
     }
 
-    // Nyaa RSS 是 UTF-8但常不声明 charset；必须严格解码，损坏字节不能被 U+FFFD
-    // 替换后继续冒充有效结果。
+    // Nyaa 响应是 UTF-8 但常不声明 charset；必须严格解码，损坏字节不能被 U+FFFD
+    // 替换后继续冒充有效结果。gzip 由 dart:io HttpClient 默认 autoUncompress
+    // 解掉（createAppHttpClient 没有关它），这里拿到的已是明文字节。
     final String body;
     try {
       body = utf8.decode(res.bodyBytes);
@@ -519,27 +683,7 @@ class NyaaClient {
         'response body was empty',
       );
     }
-    if (!renderAsRss) return _parseNyaaHtmlSearch(body, uri);
-    try {
-      final XmlDocument doc = XmlDocument.parse(body);
-      final String? xmlEncoding = doc.declaration?.encoding?.toLowerCase();
-      if (xmlEncoding != null &&
-          xmlEncoding != 'utf-8' &&
-          xmlEncoding != 'utf8') {
-        throw NyaaFeedFormatException(
-          NyaaFeedErrorCode.unsupportedEncoding,
-          'XML declared $xmlEncoding; UTF-8 is required',
-        );
-      }
-      return _parseNyaaDocumentStrict(doc);
-    } on NyaaFeedFormatException {
-      rethrow;
-    } on XmlException catch (error) {
-      throw NyaaFeedFormatException(
-        NyaaFeedErrorCode.malformedXml,
-        error.message,
-      );
-    }
+    return _parseNyaaHtmlSearch(body, uri);
   }
 
   void close() => _client.close();

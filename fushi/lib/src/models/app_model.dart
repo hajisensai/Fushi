@@ -4701,6 +4701,11 @@ class AppModel with ChangeNotifier {
           DiscoveryMediaKind.audiobook: '2_0',
         },
         client: NyaaClient(),
+        // 每次请求按当前偏好取：源实例常驻，偏好可随时改。偏好未就绪
+        // （早一帧打开发现页）时用默认「全部」。
+        qualityFilter: () => NyaaQualityFilter.fromIndex(
+          isPreferencesReady ? prefsRepo.discoveryNyaaQualityFilter : 0,
+        ),
       ),
       NyaaDiscoverySource(
         id: 'sukebei',

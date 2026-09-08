@@ -1,17 +1,29 @@
-/// nyaa 系站点的发现源 adapter：复用 `NyaaClient`（RSS 首屏 + HTML 翻页），
-/// 一个实例 = 一个站点（nyaa.si / sukebei.nyaa.si），媒体域 → 站点分类 id 的
-/// 映射由组装点给定：
+/// nyaa 系站点的发现源 adapter：复用 `NyaaClient`（HTML 搜索页，服务端按做种
+/// 降序），一个实例 = 一个站点（nyaa.si / sukebei.nyaa.si），媒体域 → 站点分类
+/// id 的映射由组装点给定：
 ///
 /// - nyaa.si：小说 `3_0`（Literature）、有声书 `2_0`（Audio）、动画 `1_0`
 /// - sukebei.nyaa.si：galgame `1_3`（Art - Games）
 ///
 /// 产出 torrent payload：UI 分流给 torrent 后端，不进 HTTP 下载队列。
+///
+/// 小说域结果经 `classifyNyaaLiterature` 打 [DiscoveryResourceItem.contentHint]
+/// （Literature 分类里漫画与小说混放，站方不区分）；其余域恒
+/// [DiscoveryContentHint.none]。
 library;
 
 import 'package:fushi/src/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/discovery/media_discovery_source.dart';
+import 'package:fushi/src/media/discovery/nyaa_literature_classifier.dart';
 import 'package:fushi/src/media/external_provider.dart';
 import 'package:fushi/src/media/torrent/nyaa_client.dart';
+
+/// 请求时取当前 Nyaa 过滤三态的回调（偏好可随时变，源实例常驻，所以按次读）。
+typedef NyaaQualityFilterProvider = NyaaQualityFilter Function();
+
+NyaaQualityFilter _allFilter() => NyaaQualityFilter.all;
+
+NyaaQualityFilter _trustedOnlyFilter() => NyaaQualityFilter.trustedOnly;
 
 class NyaaDiscoverySource extends MediaDiscoverySource {
   NyaaDiscoverySource({
@@ -21,9 +33,12 @@ class NyaaDiscoverySource extends MediaDiscoverySource {
     required NyaaClient client,
     this.priority = 10,
     this.trustedOnly = false,
+    NyaaQualityFilterProvider? qualityFilter,
   })  : _categoryByKind =
             Map<DiscoveryMediaKind, String>.unmodifiable(categoryByKind),
-        _client = client;
+        _client = client,
+        _qualityFilter =
+            qualityFilter ?? (trustedOnly ? _trustedOnlyFilter : _allFilter);
 
   @override
   final String id;
@@ -34,11 +49,12 @@ class NyaaDiscoverySource extends MediaDiscoverySource {
   @override
   final int priority;
 
-  /// 只收 trusted 发布（nyaa `f=2`）。
+  /// 只收 trusted 发布（nyaa `f=2`）的固定档；给了 `qualityFilter` 时以后者为准。
   final bool trustedOnly;
 
   final Map<DiscoveryMediaKind, String> _categoryByKind;
   final NyaaClient _client;
+  final NyaaQualityFilterProvider _qualityFilter;
 
   @override
   DiscoveryCapabilities get capabilities => DiscoveryCapabilities(
@@ -64,9 +80,10 @@ class NyaaDiscoverySource extends MediaDiscoverySource {
     final List<NyaaTorrent> torrents = await _client.search(
       request.query!.trim(),
       category: category,
-      filter: trustedOnly ? '2' : '0',
+      filter: _qualityFilter().queryValue,
       page: request.page,
     );
+    final bool classify = request.kind == DiscoveryMediaKind.novel;
     return ProviderBatchResult<DiscoveryResultPage>.success(
       <DiscoveryResultPage>[
         DiscoveryResultPage(
@@ -86,11 +103,21 @@ class NyaaDiscoverySource extends MediaDiscoverySource {
                 seeders: torrent.seeders,
                 leechers: torrent.leechers,
                 detailUrl: torrent.pageUrl,
-                note: torrent.trusted ? 'trusted' : null,
+                category:
+                    torrent.categoryId.isEmpty ? null : torrent.categoryId,
+                trusted: torrent.trusted,
+                remake: torrent.remake,
+                contentHint: classify
+                    ? classifyNyaaLiterature(
+                        title: torrent.title,
+                        sizeBytes: torrent.sizeBytes,
+                        categoryId: torrent.categoryId,
+                      )
+                    : DiscoveryContentHint.none,
               ),
           ],
           page: request.page,
-          // 过了末页 nyaa 返回空列表（client 把 404 归一成空）；空页即到底。
+          // 过了末页 nyaa 返回空列表（client 把 404 / 越界页归一成空）；空页即到底。
           hasMore: torrents.isNotEmpty,
         ),
       ],

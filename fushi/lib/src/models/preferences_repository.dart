@@ -2780,6 +2780,36 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 发现页隐藏 0 做种的种子条目。**默认开**（用户 2026-09-08 拍板；调研里
+  /// 交互式 UI 的通行做法是只沉底不隐藏，记录为反对意见）。
+  bool get discoveryHideZeroSeeders =>
+      getPref('discovery_hide_zero_seeders', defaultValue: true) as bool;
+
+  Future<void> setDiscoveryHideZeroSeeders(bool value) async {
+    await setPref('discovery_hide_zero_seeders', value);
+    notifyListeners();
+  }
+
+  /// 发现页隐藏疑似漫画（只隐藏 `DiscoveryContentHint.manga` 档，undecided
+  /// 保留）。默认开。
+  bool get discoveryHideSuspectedManga =>
+      getPref('discovery_hide_suspected_manga', defaultValue: true) as bool;
+
+  Future<void> setDiscoveryHideSuspectedManga(bool value) async {
+    await setPref('discovery_hide_suspected_manga', value);
+    notifyListeners();
+  }
+
+  /// 发现页 Nyaa 过滤三态（0 全部 / 1 排除 remake / 2 仅 trusted），透传为
+  /// nyaa `f`。默认 0，与 Nyaa UI / Prowlarr / Flexget 一致。
+  int get discoveryNyaaQualityFilter =>
+      getPref('discovery_nyaa_quality_filter', defaultValue: 0) as int;
+
+  Future<void> setDiscoveryNyaaQualityFilter(int value) async {
+    await setPref('discovery_nyaa_quality_filter', value);
+    notifyListeners();
+  }
+
   /// 用户停用的**内置**视频资源索引器 id（逗号分隔，默认空 = 全部启用）。
   ///
   /// 与 [discoveryDisabledSources] 同形：都是「一组零配置内置源，按 id 记停用」。

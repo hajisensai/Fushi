@@ -4485,5 +4485,16 @@
   "video_metadata_primary_provider_hint": "The other source is used as a fallback when the primary source has no exact match or is unavailable.",
   "video_metadata_provider_mal": "MAL (via Jikan)",
   "video_metadata_provider_tmdb": "TMDB",
-  "video_source_scrape_provider_follow_global": "Follow global default"
+  "video_source_scrape_provider_follow_global": "Follow global default",
+  "discovery_filter_hide_zero_seeders": "Hide unseeded",
+  "discovery_filter_hide_suspected_manga": "Hide suspected manga",
+  "discovery_hidden_zero_seeders_count": "${n} unseeded hidden",
+  "discovery_hidden_suspected_manga_count": "${n} suspected manga hidden",
+  "discovery_hidden_show": "Show",
+  "discovery_nyaa_filter_all": "All",
+  "discovery_nyaa_filter_no_remakes": "No remakes",
+  "discovery_nyaa_filter_trusted_only": "Trusted only",
+  "discovery_badge_trusted": "Trusted",
+  "discovery_badge_remake": "Remake",
+  "discovery_content_hint_manga": "Suspected manga"
 }
