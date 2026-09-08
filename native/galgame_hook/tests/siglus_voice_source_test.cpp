@@ -12,6 +12,7 @@
 #include "siglus_native_message_profile.h"
 #include "siglus_legacy_message_profile.h"
 #include "siglus_legacy_resource.h"
+#include "siglus_legacy_live_admission.h"
 #include "siglus_image.h"
 
 namespace {

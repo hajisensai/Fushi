@@ -75,6 +75,7 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/siglus_legacy_message_profile.h"
   "hook/adapters/siglus_legacy_message_capture.h"
   "hook/adapters/siglus_legacy_resource.h"
+  "hook/adapters/siglus_legacy_live_admission.h"
   "hook/adapters/siglus_voice_source.h"
   "hook/adapters/siglus_voice_source.inc"
   "hook/adapters/siglus_message_capture.h"
@@ -172,6 +173,16 @@ if(MSVC)
   target_compile_options(fushi_siglus_voice_source_test PRIVATE /O2 /W4 /WX)
 endif()
 add_test(NAME fushi_siglus_voice_source_test COMMAND fushi_siglus_voice_source_test)
+
+add_executable(fushi_siglus_legacy_live_admission_test
+  "tests/siglus_legacy_live_admission_test.cpp")
+target_include_directories(fushi_siglus_legacy_live_admission_test PRIVATE
+  "hook/adapters" "include")
+if(MSVC)
+  target_compile_options(fushi_siglus_legacy_live_admission_test PRIVATE /O2 /W4 /WX /utf-8)
+endif()
+add_test(NAME fushi_siglus_legacy_live_admission_test
+  COMMAND fushi_siglus_legacy_live_admission_test)
 
 add_executable(fushi_siglus_message_capture_test "tests/siglus_message_capture_test.cpp")
 target_include_directories(fushi_siglus_message_capture_test PRIVATE "hook/adapters" "include")

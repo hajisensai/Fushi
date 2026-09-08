@@ -272,27 +272,6 @@ bool ResolveLiveSiglusNativeMessage(HMODULE module,
   }
 }
 
-bool ResolveLiveSiglusLegacyMessage(HMODULE module,
-    const fushi_voice_hook::SiglusLookupProfile& lane,
-    fushi_voice_hook::SiglusLegacyMessageProfile* profile) {
-  __try {
-    fushi_voice_hook::exact_lookup::LoadedPeImage image;
-    fushi_voice_hook::SiglusLegacyResourceMappingProfile resource;
-    return fushi_voice_hook::OpenSiglusLoadedImage(module, &image) &&
-        fushi_voice_hook::ResolveSiglusLegacyMessageProfile(
-            image, lane, g_siglus_legacy_glyph_sites, profile) &&
-        // Retain the existing Luna/resource fallback when the independent old
-        // voice contract is absent. Source installation still has its own gate.
-        fushi_voice_hook::ResolveSiglusLegacyResourceMappingProfile(
-            image, profile->voice_entry_rva, &resource) &&
-        image.base[resource.ogg_open_rva] == 0x55 &&
-        image.base[lane.exact_text_rva] == 0x6a &&
-        image.base[profile->message_entry_rva] == 0x6a;
-  } __except (EXCEPTION_EXECUTE_HANDLER) {
-    return false;
-  }
-}
-
 // Called only after immutable full-profile admission in TryHook below. Kept as
 // a separate unit so fault-injected MinHook outcomes exercise production rollback.
 bool InstallSiglusMessageHookGroup() {
@@ -361,8 +340,9 @@ bool TryHookSiglusMessageText() {
   const uintptr_t base = reinterpret_cast<uintptr_t>(module);
   if (lane->glyph_abi ==
       fushi_voice_hook::SiglusGlyphLayoutAbi::kStackSixteenArguments) {
-    if (!ResolveLiveSiglusLegacyMessage(module, *lane,
-                                        &g_siglus_legacy_message_profile)) {
+    if (!fushi_voice_hook::ResolveLiveSiglusLegacyMessage(
+            module, *lane, g_siglus_legacy_glyph_sites,
+            &g_siglus_legacy_message_profile)) {
       g_siglus_message_install_state.store(-1, std::memory_order_release);
       return false;
     }

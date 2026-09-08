@@ -13,6 +13,7 @@
 #include "siglus_legacy_message_profile.h"
 #include "siglus_legacy_message_capture.h"
 #include "siglus_legacy_resource.h"
+#include "siglus_legacy_live_admission.h"
 #include "siglus_image.h"
 // Exercise the production clock write deterministically, without sleeping or
 // substituting a second implementation of TextLaneEvent publication.

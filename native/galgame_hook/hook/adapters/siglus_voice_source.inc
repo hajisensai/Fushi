@@ -172,19 +172,6 @@ bool ResolveLiveSiglusNativeVoiceSource(HMODULE module, uintptr_t proved_voice_e
   }
 }
 
-bool ResolveLiveSiglusLegacyVoiceSource(HMODULE module, uintptr_t proved_voice_entry,
-    fushi_voice_hook::SiglusLegacyResourceMappingProfile* profile) {
-  __try {
-    fushi_voice_hook::exact_lookup::LoadedPeImage image;
-    return fushi_voice_hook::OpenSiglusLoadedImage(module, &image) &&
-        fushi_voice_hook::ResolveSiglusLegacyResourceMappingProfile(
-            image, proved_voice_entry, profile) &&
-        image.base[profile->ogg_open_rva] == 0x55;
-  } __except (EXCEPTION_EXECUTE_HANDLER) {
-    return false;
-  }
-}
-
 bool TryHookSiglusVoiceSource() {
   if (IsSiglusVoiceSourceInstalled()) return true;
   if (g_siglus_voice_source_state.load(std::memory_order_acquire) != 0 ||
@@ -196,7 +183,7 @@ bool TryHookSiglusVoiceSource() {
   if (g_siglus_message_legacy) {
     if (lane->glyph_abi !=
             fushi_voice_hook::SiglusGlyphLayoutAbi::kStackSixteenArguments ||
-        !ResolveLiveSiglusLegacyVoiceSource(module,
+        !fushi_voice_hook::ResolveLiveSiglusLegacyVoiceSource(module,
             g_siglus_legacy_message_profile.voice_entry_rva,
             &g_siglus_legacy_source_profile)) {
       g_siglus_voice_source_state.store(-1, std::memory_order_release);

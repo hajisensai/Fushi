@@ -85,6 +85,7 @@
 #include "adapters/siglus_legacy_message_profile.h"
 #include "adapters/siglus_legacy_message_capture.h"
 #include "adapters/siglus_legacy_resource.h"
+#include "adapters/siglus_legacy_live_admission.h"
 #include "adapters/siglus_resource_mapping.h"
 #include "adapters/siglus_native_resource.h"
 #include "adapters/siglus_voice_source.h"
