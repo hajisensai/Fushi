@@ -85,11 +85,6 @@ void main() {
           find.byKey(const ValueKey<String>('fushi_reader_stats_close'));
       expect(await waitFor(tester, statsClose), isTrue,
           reason: 'I must open the statistics dialog');
-      expect(
-        find.byKey(
-            const ValueKey<String>('fushi_reader_stats_tracking_toggle')),
-        findsOneWidget,
-      );
       await key(tester, LogicalKeyboardKey.escape);
       await pumpFor(tester, 4);
       expect(statsClose, findsNothing);

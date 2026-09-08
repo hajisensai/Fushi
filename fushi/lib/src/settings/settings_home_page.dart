@@ -10,7 +10,7 @@ import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_renderer.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
 import 'package:fushi/src/settings/settings_search.dart';
-import 'package:fushi/src/utils/components/fushi_windows_title_bar.dart';
+import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/utils.dart';
 
 class SettingsHomePage extends BasePage {
@@ -54,8 +54,9 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     // 主从：详情内容直接在本页渲染，走不到 [SettingsDetailPage] 那份订阅
     // （BUG-2165）。不听这一条，开着设置页时下载开始/下完/暂停，「推荐包」那一行
     // 的出现与消失就只能靠 AppModel 顺带 notify 撞上，变成偶发刷新。
-    appModelNoUpdate.recommendedPackDownloadController.stage
-        .addListener(_onLogChanged);
+    appModelNoUpdate.recommendedPackDownloadController.stage.addListener(
+      _onLogChanged,
+    );
   }
 
   @override
@@ -64,8 +65,9 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     ErrorLogService.instance.removeListener(_onLogChanged);
     DebugLogService.instance.removeListener(_onLogChanged);
     GalIngameLookupController.instance.admission.removeListener(_onLogChanged);
-    appModelNoUpdate.recommendedPackDownloadController.stage
-        .removeListener(_onLogChanged);
+    appModelNoUpdate.recommendedPackDownloadController.stage.removeListener(
+      _onLogChanged,
+    );
     super.dispose();
   }
 
@@ -259,9 +261,10 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     if (!widget.embedded) {
       return content;
     }
-    // Windows 主窗口已经由应用壳层提供当前 tab 标题；设置仍是普通 home tab，
-    // 左侧主导航始终可见，因此无需再画第二条「返回 + 设置」页头。
-    if (FushiWindowsTitleBar.isEnabled) {
+    // 自绘顶栏的桌面主窗口（Windows / macOS）已经由应用壳层提供当前 tab 标题；
+    // 设置仍是普通 home tab，左侧主导航始终可见，因此无需再画第二条
+    // 「返回 + 设置」页头。
+    if (FushiDesktopTitleBar.isEnabled) {
       return content;
     }
     // Cupertino 手机（compact 走底栏导航、onBack 为空、无需返回出口）保持原生

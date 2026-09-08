@@ -5,7 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:asr_core/asr_core.dart';
+import 'package:fushi_asr_core/asr_core.dart';
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
 import 'package:fushi/utils.dart';
 import 'package:path/path.dart' as p;
@@ -97,6 +97,9 @@ class _FakeService extends AsrTranscriptionService {
   int downloadCalls = 0;
   int discardCalls = 0;
   final List<AsrLanguage> planLanguages = <AsrLanguage>[];
+  final List<AsrAccelerationPreference> planPreferences =
+      <AsrAccelerationPreference>[];
+  AsrAccelerationPreference? lastStartPreference;
   AsrLanguage? lastDownloadLanguage;
   AsrLanguage? lastStartLanguage;
 
@@ -106,6 +109,7 @@ class _FakeService extends AsrTranscriptionService {
     required AsrAccelerationPreference preference,
   }) async {
     planLanguages.add(language);
+    planPreferences.add(preference);
     return AsrTranscribePlan(
       language: language,
       variant: AsrEncoderVariant.int8,
@@ -169,6 +173,7 @@ class _FakeService extends AsrTranscriptionService {
     required AsrAccelerationPreference preference,
   }) async {
     lastStartLanguage = language;
+    lastStartPreference = preference;
     final AsrEngineSessions sessions = AsrEngineSessions(
       encoder: _NoopSession(),
       decoder: _NoopSession(),
@@ -337,6 +342,52 @@ void main() {
     await tester.pumpAndSettle();
     expect(service.lastStartLanguage, AsrLanguage.english);
   });
+
+  testWidgets('非 macOS：加速分段只有自动 / 仅 CPU，不露 CoreML',
+      (WidgetTester tester) async {
+    final _FakeService service = _FakeService(ready: true, jobsDir: tmp);
+    await tester.pumpWidget(wrap(service, (String? _) {}));
+    await tester.tap(find.byKey(const ValueKey<String>('open')));
+    await tester.pumpAndSettle();
+    expect(find.text(t.audiobook_transcribe_accel_auto), findsOneWidget);
+    expect(find.text(t.audiobook_transcribe_accel_cpu), findsOneWidget);
+    expect(find.text(t.audiobook_transcribe_accel_coreml), findsNothing);
+  });
+
+  testWidgets('macOS：露出 CoreML 分段，选中后 plan / start 都收到 coreml',
+      (WidgetTester tester) async {
+    final _FakeService service = _FakeService(ready: true, jobsDir: tmp);
+    await tester.pumpWidget(wrap(service, (String? _) {}));
+    await tester.tap(find.byKey(const ValueKey<String>('open')));
+    await tester.pumpAndSettle();
+    expect(service.planPreferences, <AsrAccelerationPreference>[
+      AsrAccelerationPreference.auto,
+    ]);
+
+    await tester.tap(find.text(t.audiobook_transcribe_accel_coreml));
+    await tester.pumpAndSettle();
+    expect(service.planPreferences.last, AsrAccelerationPreference.coreml);
+
+    await tester.runAsync(() async {
+      await tester.tap(
+        find.widgetWithText(FilledButton, t.audiobook_transcribe_start),
+      );
+      for (int i = 0; i < 50; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        // 等任务真正跑完再退出：提前退出会让 fake 任务还握着 jobsDir 里的文件
+        // 句柄，tearDown 删临时目录在 Windows 上会撞 errno 32。
+        if (find
+            .widgetWithText(FilledButton, t.audiobook_transcribe_use_result)
+            .evaluate()
+            .isNotEmpty) {
+          break;
+        }
+      }
+    });
+    await tester.pumpAndSettle();
+    expect(service.lastStartPreference, AsrAccelerationPreference.coreml);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
 
   testWidgets('就绪 → 开始 → 完成 → 使用字幕返回 SRT 路径', (WidgetTester tester) async {
     final _FakeService service = _FakeService(ready: true, jobsDir: tmp);

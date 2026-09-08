@@ -236,7 +236,7 @@ void main() {
         readAt,
       );
       final int readChromeAt = navDart.indexOf(
-        'FushiWindowsTitleBar.setWindowManagerFullscreen(fullscreen)',
+        'FushiDesktopTitleBar.setWindowManagerFullscreen(fullscreen)',
         readAt,
       );
       expect(readWinAt, isNonNegative);

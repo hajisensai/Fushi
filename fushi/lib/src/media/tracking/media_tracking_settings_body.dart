@@ -1,3 +1,4 @@
+import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/material.dart';
 import 'package:fushi/src/media/collections/collection_season_groups.dart'
     show collectionGroupKeyForFilename, isMultiSeasonGrouped;
@@ -653,8 +654,8 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
                     padding: EdgeInsets.zero,
                     leading: subject.coverUrl == null
                         ? const Icon(Icons.auto_stories_outlined)
-                        : Image.network(
-                            subject.coverUrl!,
+                        : Image(
+                          image: AppHttpImage(subject.coverUrl!),
                             width: 42,
                             height: 56,
                             fit: BoxFit.cover,

@@ -11,7 +11,7 @@ import 'dart:io';
 
 import 'package:fushi/src/ocr/manga_ocr_model_manifest.dart';
 import 'package:fushi/src/ocr/manga_ocr_service.dart';
-import 'package:asr_core/asr_core.dart';
+import 'package:fushi_asr_core/asr_core.dart';
 /// 默认进度事件的字节间隔（与共享下载器同值）。
 const int kMangaOcrDownloadProgressInterval = kModelDownloadProgressInterval;
 

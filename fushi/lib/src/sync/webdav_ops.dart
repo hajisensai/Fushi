@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/tls/fushi_pinning_http.dart';
 import 'package:fushi/src/sync/sync_utils.dart';
+import 'package:fushi/src/utils/net/app_http.dart';
 
 /// 服务端在错误响应体里给出的拒绝原因（截断后的），读不出来就返回 null。
 ///
@@ -54,16 +55,16 @@ class WebDavOps {
     Duration connectionTimeout = const Duration(seconds: 60),
     String? pinnedFingerprint,
     void Function()? onConnectivityError,
-  })  : _baseUrl = baseUrl,
-        _connectionTimeout = connectionTimeout,
-        _pinnedFingerprint = pinnedFingerprint,
-        _onConnectivityError = onConnectivityError,
-        // 用户名和密码都空 = 匿名 / 无鉴权 WebDAV：根本不带 Authorization 头，
-        // 而不是发 `Basic base64(':')`（很多匿名服务器仍会因此回 401）。任一凭据
-        // 非空时行为完全不变（BUG-1016）。
-        _authHeader = (username.isEmpty && password.isEmpty)
-            ? null
-            : 'Basic ${base64Encode(utf8.encode('$username:$password'))}';
+  }) : _baseUrl = baseUrl,
+       _connectionTimeout = connectionTimeout,
+       _pinnedFingerprint = pinnedFingerprint,
+       _onConnectivityError = onConnectivityError,
+       // 用户名和密码都空 = 匿名 / 无鉴权 WebDAV：根本不带 Authorization 头，
+       // 而不是发 `Basic base64(':')`（很多匿名服务器仍会因此回 401）。任一凭据
+       // 非空时行为完全不变（BUG-1016）。
+       _authHeader = (username.isEmpty && password.isEmpty)
+           ? null
+           : 'Basic ${base64Encode(utf8.encode('$username:$password'))}';
 
   final String _baseUrl;
   final String? _authHeader;
@@ -77,7 +78,7 @@ class WebDavOps {
   final void Function()? _onConnectivityError;
 
   /// TODO-961 M1: https 端点的证书 SHA-256 钉扎指纹（aa:bb:.. 形式）。null = 明文
-  /// http 老路径，用裸 [HttpClient]（行为零变化）；非 null = 用 pinned client，仅
+  /// 普通 WebDAV，遵循应用出站代理与局域网绕过；非 null = 用 pinned client，仅
   /// 接受指纹相等的自签证书。由数据（URL 是否带指纹）决定，不靠平台分支。
   final String? _pinnedFingerprint;
   HttpClient? _httpClient;
@@ -96,14 +97,14 @@ class WebDavOps {
     final HttpClient? existing = _httpClient;
     if (existing != null) return existing;
     final String? fp = _pinnedFingerprint;
-    // 指纹非空 → pinned client（仅接受证书指纹相等的自签 https）；否则裸 client
-    // （明文 http 老路径，字节不变）。连接超时只约束 connect，不约束正文传输。
+    // 配对端保留证书钉扎；普通 WebDAV 也可能部署在公网，统一选择出站代理。
+    // 连接超时只约束 connect，不约束正文传输。
     final HttpClient client = fp != null && fp.isNotEmpty
         ? createPinnedHttpClient(
             expectedFingerprint: fp,
             connectionTimeout: _connectionTimeout,
           )
-        : (HttpClient()..connectionTimeout = _connectionTimeout);
+        : createAppHttpClient(connectionTimeout: _connectionTimeout);
     return _httpClient = client;
   }
 
@@ -189,7 +190,8 @@ class WebDavOps {
     await mkcolResp.drain<void>();
     if (mkcolResp.statusCode >= 400 && mkcolResp.statusCode != 405) {
       throw SyncBackendError(
-          'Failed to create folder: ${mkcolResp.statusCode}');
+        'Failed to create folder: ${mkcolResp.statusCode}',
+      );
     }
   }
 
@@ -241,8 +243,10 @@ class WebDavOps {
 
     final body = await response.transform(utf8.decoder).join();
     if (response.statusCode != 207) {
-      throw SyncBackendError('PROPFIND failed: ${response.statusCode}',
-          isRetryable: response.statusCode == 404);
+      throw SyncBackendError(
+        'PROPFIND failed: ${response.statusCode}',
+        isRetryable: response.statusCode == 404,
+      );
     }
     return parsePropfindResponse(body, path);
   }
@@ -250,13 +254,16 @@ class WebDavOps {
   List<DavEntry> parsePropfindResponse(String xml, String basePath) {
     final entries = <DavEntry>[];
     final responsePattern = RegExp(
-        r'<(?:[a-zA-Z0-9]+:)?response[>\s](.*?)</(?:[a-zA-Z0-9]+:)?response>',
-        dotAll: true);
-    final hrefPattern =
-        RegExp(r'<(?:[a-zA-Z0-9]+:)?href>(.*?)</(?:[a-zA-Z0-9]+:)?href>');
+      r'<(?:[a-zA-Z0-9]+:)?response[>\s](.*?)</(?:[a-zA-Z0-9]+:)?response>',
+      dotAll: true,
+    );
+    final hrefPattern = RegExp(
+      r'<(?:[a-zA-Z0-9]+:)?href>(.*?)</(?:[a-zA-Z0-9]+:)?href>',
+    );
     final collectionPattern = RegExp(r'<(?:[a-zA-Z0-9]+:)?collection\s*/?>');
     final displayNamePattern = RegExp(
-        r'<(?:[a-zA-Z0-9]+:)?displayname>(.*?)</(?:[a-zA-Z0-9]+:)?displayname>');
+      r'<(?:[a-zA-Z0-9]+:)?displayname>(.*?)</(?:[a-zA-Z0-9]+:)?displayname>',
+    );
 
     for (final match in responsePattern.allMatches(xml)) {
       final block = match.group(1)!;
@@ -279,11 +286,13 @@ class WebDavOps {
       }
 
       final resolvedHref = resolveHref(href, basePath);
-      entries.add(DavEntry(
-        href: resolvedHref,
-        displayName: displayName,
-        isCollection: isCollection,
-      ));
+      entries.add(
+        DavEntry(
+          href: resolvedHref,
+          displayName: displayName,
+          isCollection: isCollection,
+        ),
+      );
     }
     return entries;
   }
@@ -303,7 +312,8 @@ class WebDavOps {
       }
       return href;
     }
-    final isDefaultPort = (baseUri.scheme == 'http' && baseUri.port == 80) ||
+    final isDefaultPort =
+        (baseUri.scheme == 'http' && baseUri.port == 80) ||
         (baseUri.scheme == 'https' && baseUri.port == 443);
     final portSuffix = isDefaultPort ? '' : ':${baseUri.port}';
     return '${baseUri.scheme}://${baseUri.host}$portSuffix$href';
@@ -330,14 +340,20 @@ class WebDavOps {
   }
 
   Future<void> uploadJson(
-      String folderId, String fileName, dynamic data) async {
+    String folderId,
+    String fileName,
+    dynamic data,
+  ) async {
     final path = '$folderId${Uri.encodeComponent(fileName)}';
     final bytes = utf8.encode(jsonEncode(data));
     await putBytes(path, bytes, 'application/json');
   }
 
   Future<void> putBytes(
-      String path, List<int> bytes, String contentType) async {
+    String path,
+    List<int> bytes,
+    String contentType,
+  ) async {
     final request = await buildRequest('PUT', path);
     request.headers.set('Content-Type', contentType);
     request.headers.set('Content-Length', '${bytes.length}');
@@ -392,7 +408,8 @@ class WebDavOps {
     }
   }
 
-  static const propfindBody = '<?xml version="1.0" encoding="utf-8"?>'
+  static const propfindBody =
+      '<?xml version="1.0" encoding="utf-8"?>'
       '<d:propfind xmlns:d="DAV:">'
       '<d:prop>'
       '<d:resourcetype/>'

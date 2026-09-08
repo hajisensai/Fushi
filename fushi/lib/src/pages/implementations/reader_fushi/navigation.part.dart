@@ -1502,10 +1502,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       _syncPositionFromCurrentCue();
     }
     await _flushPosition();
-    // settle 而非 leave：这条路径不保证进程真的死（Android 退后台用同一组回调
-    // flush 后页面继续活着），清空当前单元会让下一次落回同一页的 arrive 把位置退
-    // 回单元起点、把刚记的字数撤回去。
-    _readLedger.settle();
+    // 退出 / 退后台不是翻走：站着的那页不结算（`ReadUnitLedger` 类文档），只写穿时钟。
     await _flushReadingStats();
     await _audiobookController?.flushPosition();
   }

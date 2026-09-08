@@ -174,7 +174,8 @@ function loadWorld(prefs) {
     const el = findById(html, STYLE_ID);
     return el ? el.textContent : null;
   };
-  const overlayEl = () => findById(body, OVERLAY_ID);
+  // 覆盖层落点已改 <html>（fullscreenElement || documentElement），从根往下找。
+const overlayEl = () => findById(html, OVERLAY_ID);
   // 写 store + 走 content.js 真实的通知链（fushiNotifyPanel → fushiSubtitlePanelOnCues），
   // 面板据此重新选轨。绕过通知直接改 store 是测试世界独有的假路径，不用。
   const setTrack = (lang, cues) => {

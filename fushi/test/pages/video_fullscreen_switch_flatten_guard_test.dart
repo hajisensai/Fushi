@@ -256,7 +256,7 @@ void main() {
     );
     expect(
       fullscreenSrc.contains(
-        'FushiWindowsTitleBar.setContentFullscreen(owner: this, enabled: true)',
+        'FushiDesktopTitleBar.setContentFullscreen(owner: this, enabled: true)',
       ),
       isTrue,
       reason: '认领时 Windows 必须立刻持有标题栏 owner，否则旧页 dispose 后标题栏闪出',

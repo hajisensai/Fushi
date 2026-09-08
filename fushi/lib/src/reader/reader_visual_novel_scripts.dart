@@ -14,8 +14,13 @@
 //   * `notifyRestoreComplete` forwards to InAppWebView's `onRestoreComplete`
 //     handler instead of hoshi's native `FushiReaderRestore.postMessage`.
 //   * media-semantics is an M0 no-op stub (images render from cloned chapter
-//     markup); Sasayaki / highlights / E-Ink overlay are M1 (their hoshi calls
-//     are guarded by `window.fushiHighlights` / popupHost checks, safe at M0).
+//     markup); highlights are M1 (guarded by `window.fushiHighlights`).
+//   * Sasayaki cues always take the inline `.fushi-sentence-audio-cue` wrapper
+//     path, in e-ink too. hoshi swaps to a native rect overlay under e-ink
+//     (`popupHost.renderSentenceAudioHighlight`); Hibiki never ported that host,
+//     so the branch rendered nothing at all and the read-along highlight was
+//     invisible in VN + e-ink. The wrapper class is what the e-ink CSS bar rule
+//     in `ReaderContentStyles` targets, so one path now serves every mode.
 //   * Config placeholders become Dart interpolation; `clickAdvance` is NOT a
 //     hoshi JS concern -- the host (webview.part.dart) binds blank-tap ->
 //     `paginate("forward")`.
@@ -785,7 +790,6 @@ window.fushiReader = {
   sentenceAudioCuesSignature: null,
   cueWrappers: new Map(),
   cueSourceRanges: new Map(),
-  cueGeometryRanges: new Map(),
   nodeStartOffsets: new WeakMap(),
   nodeStartRawOffsets: new WeakMap(),
   contentStream: null,
@@ -817,9 +821,6 @@ window.fushiReader = {
   },
   readerCssVariable: function(name) {
     return window.getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  },
-  isEInkMode: function() {
-    return this.readerCssVariable('--fushi-reader-eink-mode') === '1';
   },
   isFurigana: function(node) {
     var el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
@@ -2838,81 +2839,17 @@ $sharedInitViewport
     }
     return wrapped;
   },
-  buildSentenceAudioGeometryRanges: function(cueRanges) {
-    var geometryRanges = new Map();
-    for (var i = 0; i < cueRanges.length; i++) {
-      var id = cueRanges[i].id;
-      var ranges = cueRanges[i].ranges;
-      if (!ranges.length) continue;
-      var cueGeometryRanges = [];
-      for (var j = 0; j < ranges.length; j++) {
-        var segment = ranges[j];
-        var range = document.createRange();
-        range.setStart(segment.node, segment.start);
-        range.setEnd(segment.node, segment.end);
-        cueGeometryRanges.push(range);
-      }
-      if (cueGeometryRanges.length) geometryRanges.set(id, cueGeometryRanges);
-    }
-    return geometryRanges;
-  },
   prepareSentenceAudioInlineTargets: function(cueRanges) {
-    if (!this.isEInkMode()) {
-      this.wrapSentenceAudioCueRanges(cueRanges);
-      this.buildNodeOffsets();
-    }
+    this.wrapSentenceAudioCueRanges(cueRanges);
+    this.buildNodeOffsets();
   },
   ensureSentenceAudioInlineTargetsForCue: function(cueId) {
-    if (this.isEInkMode() || this.sentenceAudioInlineTargetsForCue(cueId).length) return;
+    if (this.sentenceAudioInlineTargetsForCue(cueId).length) return;
     var cue = this.sentenceAudioCueMap.get(cueId);
     if (!cue) return;
     var cueRanges = this.collectSentenceAudioCueRanges([cue]);
     this.rememberSentenceAudioCueSources(cueRanges);
     this.prepareSentenceAudioInlineTargets(cueRanges);
-  },
-  ensureSentenceAudioCueGeometry: function(cue) {
-    var cueId = typeof cue === 'string' ? cue : cue && cue.id;
-    if (!cueId) return;
-    var existing = this.cueGeometryRanges.get(cueId);
-    if (existing && existing.length) return;
-    var cueObject = this.sentenceAudioCueForInput(cue) || this.sentenceAudioCueMap.get(cueId);
-    if (!cueObject) return;
-    var cueRanges = this.collectSentenceAudioCueRanges([cueObject]);
-    this.rememberSentenceAudioCueSources(cueRanges);
-    var geometryRanges = this.buildSentenceAudioGeometryRanges(cueRanges).get(cueId) || [];
-    if (geometryRanges.length) this.cueGeometryRanges.set(cueId, geometryRanges);
-  },
-  sentenceAudioOverlayRects: function(cueId) {
-    var ranges = this.cueGeometryRanges.get(cueId) || [];
-    var rects = [];
-    ranges.forEach(function(range) {
-      if (window.fushiRubyGeometry) {
-        window.fushiRubyGeometry.rectsForRange(range).forEach(function(rect) { rects.push(rect); });
-      } else {
-        Array.from(range.getClientRects()).forEach(function(rect) {
-          rects.push({ x: rect.x, y: rect.y, width: rect.width, height: rect.height });
-        });
-      }
-    });
-    return window.fushiRubyGeometry ? window.fushiRubyGeometry.mergeInlineRects(rects) : rects;
-  },
-  renderSentenceAudioOverlay: function() {
-    if (!this.activeCueId || !this.isEInkMode()) {
-      this.clearSentenceAudioOverlay();
-      return;
-    }
-    if (window.fushiReaderPopupHost && window.fushiReaderPopupHost.renderSentenceAudioHighlight) {
-      window.fushiReaderPopupHost.renderSentenceAudioHighlight({
-        rects: this.sentenceAudioOverlayRects(this.activeCueId),
-        eInkMode: true,
-        verticalWriting: this.isVertical()
-      });
-    }
-  },
-  clearSentenceAudioOverlay: function() {
-    if (window.fushiReaderPopupHost && window.fushiReaderPopupHost.clearSentenceAudioHighlight) {
-      window.fushiReaderPopupHost.clearSentenceAudioHighlight();
-    }
   },
   clearInlineSentenceAudioCue: function(cueId) {
     var clearWrappers = function(wrappers) {
@@ -2935,13 +2872,10 @@ $sharedInitViewport
   },
   clearSentenceAudioCuePresentation: function() {
     this.clearInlineSentenceAudioCue();
-    this.clearSentenceAudioOverlay();
   },
   clearCurrentSentenceAudioScreenTargets: function() {
     this.cueSourceRanges.clear();
-    this.cueGeometryRanges.clear();
     this.cueWrappers.clear();
-    this.clearSentenceAudioOverlay();
   },
   clearSentenceAudioTargets: function() {
     this.clearSentenceAudioCuePresentation();
@@ -2951,7 +2885,6 @@ $sharedInitViewport
     });
     this.cueWrappers.clear();
     this.cueSourceRanges.clear();
-    this.cueGeometryRanges.clear();
     this.buildNodeOffsets();
   },
   applySentenceAudioCues: function(cues) {
@@ -3003,25 +2936,13 @@ $sharedInitViewport
     this.activeCueId = null;
   },
   refreshSentenceAudioCuePresentation: function() {
-    if (!this.activeCueId) {
-      this.clearSentenceAudioOverlay();
-      return;
-    }
+    if (!this.activeCueId) return;
     this.clearInlineSentenceAudioCue(this.activeCueId);
     var cue = this.sentenceAudioCueMap.get(this.activeCueId);
     var screen = this.screens && this.screens[this.currentScreenIndex];
-    if (!cue || !this.sentenceAudioCueIntersectsScreen(cue, screen) || !this.revealComplete) {
-      this.clearSentenceAudioOverlay();
-      return;
-    }
-    if (this.isEInkMode()) {
-      this.ensureSentenceAudioCueGeometry(cue);
-      this.renderSentenceAudioOverlay();
-    } else {
-      this.clearSentenceAudioOverlay();
-      this.ensureSentenceAudioInlineTargetsForCue(this.activeCueId);
-      this.applyInlineSentenceAudioCue(this.activeCueId);
-    }
+    if (!cue || !this.sentenceAudioCueIntersectsScreen(cue, screen) || !this.revealComplete) return;
+    this.ensureSentenceAudioInlineTargetsForCue(this.activeCueId);
+    this.applyInlineSentenceAudioCue(this.activeCueId);
   },
   resetSentenceAudioCues: function() {
     this.clearSentenceAudioTargets();

@@ -98,10 +98,7 @@ abstract interface class MihonRuntime {
     required List<MihonPreference> persisted,
   });
 
-  Future<void> clearSourceData(
-    MihonExtensionRef extension,
-    MihonSource source,
-  );
+  Future<void> clearSourceData(MihonExtensionRef extension, MihonSource source);
 
   Future<void> invalidateExtension(String packageName);
 
@@ -123,28 +120,27 @@ abstract interface class CancellableMihonRuntime {
   Future<void> cancelImageRequests(Iterable<String> requestIds);
 }
 
+/// Interactive verification is opt-in; background source requests only report
+/// a challenge and must never open an Activity themselves.
+abstract interface class ChallengeMihonRuntime {
+  Future<void> solveCloudflare(Uri uri, {String? userAgent});
+}
+
 Map<String, Object?> mihonBridgeContext(
   MihonSource source, {
   String? changedPreferenceKey,
-}) =>
-    <String, Object?>{
-      'key': '__mangatan_bridge_context__',
-      'sourceId': source.id,
-      if (changedPreferenceKey != null)
-        'changedPreferenceKey': changedPreferenceKey,
-    };
+}) => <String, Object?>{
+  'key': '__mangatan_bridge_context__',
+  'sourceId': source.id,
+  if (changedPreferenceKey != null)
+    'changedPreferenceKey': changedPreferenceKey,
+};
 
 List<Map<String, Object?>> mihonBridgePreferences(
   MihonSource source,
   List<MihonPreference> preferences, {
   String? changedPreferenceKey,
-}) =>
-    <Map<String, Object?>>[
-      mihonBridgeContext(
-        source,
-        changedPreferenceKey: changedPreferenceKey,
-      ),
-      ...preferences.map(
-        (MihonPreference preference) => preference.toBridgeJson(),
-      ),
-    ];
+}) => <Map<String, Object?>>[
+  mihonBridgeContext(source, changedPreferenceKey: changedPreferenceKey),
+  ...preferences.map((MihonPreference preference) => preference.toBridgeJson()),
+];

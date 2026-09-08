@@ -825,7 +825,11 @@ class JellyfinApi {
 /// playlist 合集卡（组内序 = 季×10000+集），复用库页既有的合集混排/上下集/
 /// 剧集面板——不另造 Jellyfin 专属浏览层。
 class JellyfinVideoClient
-    implements RemoteVideoClient, RemoteCoverFetcher, RemoteVideoDetailFetch {
+    implements
+        RemoteVideoClient,
+        RemoteCoverFetcher,
+        RemoteVideoDetailFetch,
+        RemoteVideoPlaybackStop {
   JellyfinVideoClient({
     required this.api,
     required this.userId,
@@ -1132,6 +1136,13 @@ class JellyfinVideoClient
     // last-write-wins（服务器无按时间戳合并）；updatedAtMs 不上传。
     await api.reportProgress(itemId: id, positionMs: positionMs);
   }
+
+  /// 播放真正停止时通知 Jellyfin，触发已播放判定与 webhook 等服务端副作用。
+  ///
+  /// 与 [putRemoteVideoPosition] 分开：后者是播放中的节流心跳，不能替代停止事件。
+  @override
+  Future<void> stopRemoteVideoPlayback(String id, int positionMs) =>
+      api.reportStopped(itemId: id, positionMs: positionMs);
 
   void close() => api.close();
 }

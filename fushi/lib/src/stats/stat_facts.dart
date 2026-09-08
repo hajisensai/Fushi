@@ -1,3 +1,4 @@
+import 'package:fushi/src/stats/study_sessions.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 一条学习统计事实的统一形状（v92 统计域重构）。
@@ -147,6 +148,14 @@ class StatFacts {
     return all.length <= activityLimit ? all : all.sublist(0, activityLimit);
   }
 
+  /// **会话流的唯一数据源**（统计中心总览 + 三个域 tab + 按媒体的会话列表都吃它）：
+  /// 段按 [kStudySessionGap] 归并 + 最近游玩会话骨架，按结束时刻倒序；写零的段不进。
+  List<StudySession> get sessions => deriveStudySessions(
+        segments: segments,
+        gameSessions: recentGameSessions,
+        gameNamesById: gameNamesById,
+      );
+
   final List<StatFact> daily;
   final List<StatFact> hourly;
 
@@ -178,6 +187,9 @@ class StatFacts {
 ///
 /// [activityLimit] 是 legacy 活动行的条数上限（首页时间轴只看最近 200 条）；统计页
 /// 不需要活动行可传 0。
+/// 统计页不要活动行时最近游玩会话仍按这个上限取（会话流骨架）。
+const int kRecentGameSessionsLimit = 200;
+
 Future<StatFacts> loadStatFacts(
   FushiDatabase db, {
   int activityLimit = 200,
@@ -204,9 +216,12 @@ Future<StatFacts> loadStatFacts(
     eventTypes: const <String>[kActivityGame],
   );
   final Future<List<StudySegmentRow>> segmentsF = db.getStudySegments();
-  final Future<List<GalgameSessionRow>> recentGameSessionsF = activityLimit <= 0
-      ? Future<List<GalgameSessionRow>>.value(const <GalgameSessionRow>[])
-      : db.getRecentGalgameSessions(limit: activityLimit);
+  // 最近游玩会话不随 [activityLimit] 门控：会话流（[StatFacts.sessions]）在统计页
+  // 也要它——统计页传 0 只是不要 legacy 活动行。
+  final Future<List<GalgameSessionRow>> recentGameSessionsF =
+      db.getRecentGalgameSessions(
+    limit: activityLimit <= 0 ? kRecentGameSessionsLimit : activityLimit,
+  );
   await Future.wait<Object?>(<Future<Object?>>[
     epubRowsF,
     readingF,

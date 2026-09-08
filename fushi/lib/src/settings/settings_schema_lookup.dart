@@ -409,6 +409,21 @@ SettingsDestination buildLookupDestination() {
               settingsContext.refresh();
             },
           ),
+          // 对齐 Hoshi Reader Android 的 "Compact Glossaries"。popup.js 的
+          // createDictionaryBlock 一直按 window.compactGlossaries 产出紧凑释义 CSS，
+          // 但此前没有任何偏好写入那个全局（恒 undefined = 恒关）；这里补上开关。
+          SettingsSwitchItem(
+            id: 'lookup.compact_glossaries',
+            title: t.popup_compact_glossaries,
+            subtitle: t.popup_compact_glossaries_hint,
+            icon: Icons.compress,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.compactGlossaries,
+            onChanged: (SettingsContext settingsContext, bool value) {
+              settingsContext.appModel.toggleCompactGlossaries();
+              settingsContext.refresh();
+            },
+          ),
           SettingsNumberItem(
             id: 'lookup.dictionary_font_size',
             title: t.dictionary_font_size,

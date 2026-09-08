@@ -656,6 +656,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'lookup/Auto-expand rows':
       'test/pages/popup_auto_expand_dictionaries_test.js (popup.js node behaviour guard) + test/pages/popup_auto_expand_dictionaries_test.dart',
   'lookup/Show expression tags': 'DEVICE: popup.js expression tags',
+  // BUG-2284：紧凑释义。效果在 popup.js 的释义排版（WebView 渲染，widget 测不到），
+  // 与同组的 collapse / expression tags 同一类；注入侧由
+  // test/dictionary/popup_instant_scroll_guard_test.dart 与
+  // test/pages/popup_settings_injection_memo_test.dart 钉住。
+  'lookup/Compact glossaries': 'DEVICE: popup.js compact glossaries',
   'lookup/Deduplicate pitch accents': 'DEVICE: popup.js pitch dedup',
   // TODO-702: 有声书退出即停（默认）/ 后台续播（可选）。pref-only（门控阅读器
   // dispose 时是否 stop 会话，无渲染树效果）；schema coverage 证 focus/change/

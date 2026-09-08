@@ -15,11 +15,15 @@ window.flutter_inappwebview = {
           };
           var ctx = (typeof window.fushiMineContext === 'function')
             ? window.fushiMineContext() : null;
-          // 例句三级优先：
+          // 例句四级优先：
           //   ① Netflix 字幕 DOM 直读——严格等于「此刻画面上那一行」，优先级最高且**保持原样**；
           //   ② 当前字幕行（`fushiMineContext`：整集拦截轨 / textTracks 收割 / 用户外挂字幕 /
           //      DOM 采样，站点无关）——此前这一级根本不存在，非 Netflix 的轨全被跳过；
-          //   ③ 弹窗内选区文本（原兜底）。
+          //   ③ 弹窗内选区文本（用户在释义里主动选的，显式意图）；
+          //   ④ 页面正文里这个词**所在的句子**（`fushiMineContext().pageSentence`，来自
+          //      `vendor/selection.js` 的 getSentence）——普通网页（无字幕轨、无视频）上
+          //      前三级恒空，用户报的「浏览器扩展查词不取所在句子」就是这一级从来不存在：
+          //      句子一直在页面 DOM 里，扩展装着与 app 阅读器同源的取句函数却没人调用。
           // ② 是这次补上的那一级：用户在 B 站挂了外挂字幕，轨就在 `fushiActiveFullTrack()` 里，
           // 面板和覆盖层都在用它，制卡却直接从 ① 掉到 ③ → 卡上没有句子。
           var cueText = (typeof extractNetflixCueText === 'function')
@@ -28,8 +32,9 @@ window.flutter_inappwebview = {
           // 多句合一（⓪，最高）：用户在「调整上下文」里选了上/下文 → 合成句（整轨
           // 现算，'\n' 连接）压过所有单句来源；裁切窗同样换成上下文并集。
           var ctxSentence = (ctx && ctx.contextSentence) ? ctx.contextSentence : '';
+          var pageSentence = (ctx && ctx.pageSentence) ? ctx.pageSentence : '';
           var sentence = ctxSentence || cueText || trackText
-            || (args[0] && args[0].popupSelectionText) || '';
+            || (args[0] && args[0].popupSelectionText) || pageSentence || '';
           // TODO-1271：判据是**能不能拿到可裁的原始媒体**，不是站点名（见 `fushiClipSource`）。
           // `mode:'queue'` = 必须先回放/逐条解析才拿得到媒体（Netflix 录制、YouTube 批量），
           // 只适合「看完一集统一生成」，保持既有行为不动。其余一切页面——普通网页、以及有字幕轨

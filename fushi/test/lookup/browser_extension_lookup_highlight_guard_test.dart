@@ -164,8 +164,15 @@ void main() {
                   .hasMatch(src),
               isTrue,
               reason: '${content.path} 未向 background 发 lookup 查词消息');
-          // mousemove 命中后调用 fushiSendLookup（1132 抽取后的分发点）。
-          expect(src.contains('fushiSendLookup(term, fushiAnchorRect)'), isTrue,
+          // mousemove 命中后调用 fushiSendLookup（1132 抽取后的分发点）。守的是
+          // 「用 mousemove 取到的 term + 该次的锚点矩形去分发」这条接线，**不是**
+          // 参数列表长度——与上面 sendMessage 那条同一口径。BUG-2277 给这处补了第 5
+          // 个实参（页面正文所在句的锚点），把完整实参串写死会让这条守卫在每次
+          // 扩参时假红，而接线其实一直在。
+          expect(
+              RegExp(r'fushiSendLookup\(\s*term\s*,\s*fushiAnchorRect')
+                  .hasMatch(src),
+              isTrue,
               reason: '${content.path} mousemove 未调用 fushiSendLookup 发查词');
         });
 

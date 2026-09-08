@@ -52,7 +52,19 @@ on:
         type: boolean
 
 concurrency:
-  group: fushi-release-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}
+  # 组名带 workflow 名（2026-09-08，用户要求正式版并行发包）：Android（release.yml）与
+  # 桌面/Apple（release-desktop.yml）是两条产出不相交的 workflow，而 GitHub 的 concurrency
+  # 组是**仓库级**的——两条 workflow 只要组名算出来一样就串行，且同组「1 个 in-progress +
+  # 1 个 pending」的语义会让第二个 pending 把第一个 pending **取消**（2026-09-03 实测：同
+  # sha 先后 dispatch Android beta 与桌面 beta，Android 那条 5 秒内 cancelled、0 个 job）。
+  # 正式版靠 `release: published` 同时点燃两条、同 tag 同组必串行：桌面/Apple 包要等
+  # Android 整条跑完才开始（v2.2.4：Android 13:44 上传，Windows/macOS/iOS 14:52）。
+  # 两条并行上传同一个 GitHub Release 是安全的，上传侧本就按此设计：rolling debug 的
+  # prune 只删本平台资产（TODO-1131）；softprops 建 release 撞车会重取（同一条 workflow
+  # 里 windows/macos/ios 早就并行上传同一个 release）；update-manifest 推送有「重取远端
+  # tip 再合并」循环（TODO-781）。同一条 workflow 内仍按 tag/sha 串行，同 tag 两次 dispatch
+  # 不会互相踩。守卫：fushi/test/build/release_workflow_concurrency_guard_test.dart。
+  group: fushi-release-${{ github.workflow }}-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}
   cancel-in-progress: false
 
 jobs:
@@ -826,6 +838,59 @@ jobs:
         ASSET_GLOB: fushi-*.apk
         PLATFORM_LABEL: android
       run: bash tool/publish_update_manifest.sh
+
+    # 正式版发布成功后自动把 main 同步成 develop（2026-09-08 用户要求）。
+    #
+    # main 只有两种来源的提交：从 develop 合过来的（历史上是人工 `Merge develop into main
+    # for X.Y.Z`），以及两条图表 workflow 的机器人提交（dev-activity.yml / star-history.yml
+    # 是 scheduled，只能跑在默认分支 main 上，SVG 因此只落在 main）。所以 main 永远不是
+    # develop 的祖先、纯快进永远失败，这里沿用人工时代的合并：`git merge --no-ff -X theirs`——
+    # 图表 SVG 两边都改过就取 develop 的（第二天定时任务会重新生成），除此之外 main 不该有
+    # develop 没有的东西。-X theirs 解不了的冲突（modify/delete）直接红，让人来看，绝不
+    # force-push。GITHUB_TOKEN 的 push 不级联触发 main 的 push 构建，也不会因此多发一版。
+    #
+    # 只在本 workflow 做（release-desktop.yml 不做）：两条正式版 workflow 现在并行，各推一次
+    # 就是两条合并提交。排在清单发布之后：清单落地 = 这一版的 Android 资产已上传完，此时
+    # 同步 main 才是「发布成功后」。用 GITHUB_WORKSPACE 当 --reference 借对象，不重新拉全库；
+    # 不在工作树里直接 checkout main：烘密钥那步改过已入库的占位文件，切分支会被挡。
+    # 守卫：fushi/test/build/release_workflow_main_sync_guard_test.dart。
+    - name: Sync main to develop after formal release
+      if: steps.channel.outputs.manifest_channel == 'formal'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        REPO: ${{ github.repository }}
+        RELEASE_TAG: ${{ steps.channel.outputs.tag }}
+      run: |
+        set -euo pipefail
+        WORK="$(mktemp -d)"
+        REMOTE="https://x-access-token:${GITHUB_TOKEN}@github.com/${REPO}.git"
+        git clone -q --no-tags --reference "$GITHUB_WORKSPACE" --branch main "$REMOTE" "$WORK"
+        git -C "$WORK" config user.name 'github-actions[bot]'
+        git -C "$WORK" config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+        for attempt in 1 2 3; do
+          git -C "$WORK" fetch -q --no-tags origin +refs/heads/develop:refs/remotes/origin/develop +refs/heads/main:refs/remotes/origin/main
+          git -C "$WORK" checkout -q -B main origin/main
+          DEVELOP="$(git -C "$WORK" rev-parse --short origin/develop)"
+          if git -C "$WORK" merge-base --is-ancestor origin/develop HEAD; then
+            echo "main already contains develop ($DEVELOP); nothing to sync."
+            exit 0
+          fi
+          if ! git -C "$WORK" merge --no-ff -X theirs -m "Merge develop into main for ${RELEASE_TAG} (formal release)" origin/develop; then
+            git -C "$WORK" merge --abort || true
+            echo "::error title=main sync failed::develop 合不进 main（-X theirs 解不了的冲突）。main 上不该有 develop 没有的实质改动，请人工合并。"
+            exit 1
+          fi
+          if git -C "$WORK" push -q origin HEAD:refs/heads/main; then
+            echo "main -> $(git -C "$WORK" rev-parse --short HEAD) (develop $DEVELOP, attempt $attempt)"
+            exit 0
+          fi
+          echo "push rejected (attempt $attempt); main moved underneath us, re-fetching and re-merging..."
+          git -C "$WORK" reset -q --hard
+          sleep "$attempt"
+        done
+        echo "::error title=main sync failed::推 main 三次都被拒（有人同时在推 main）。请人工把 develop 合进 main。"
+        exit 1
 
   # TODO-fast-release: the analyze/unit/package suites that used to run as
   # sequential steps at the top of the `build` job (gating `flutter build apk`)

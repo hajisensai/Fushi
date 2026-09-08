@@ -20,7 +20,6 @@ import 'package:fushi/src/models/theme_notifier.dart'
     show SurfaceRoles, ThemeNotifier, deriveSurfaceRolesFrom;
 import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/epub/epub_book.dart';
 import 'package:fushi/src/epub/epub_parser.dart';
@@ -92,7 +91,6 @@ import 'package:fushi/src/webview/webview_death_guard.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/media/audiobook/pointer_seek.dart';
-import 'package:fushi/src/platform/macos_fullscreen_state.dart';
 import 'package:fushi/src/platform/selection_external_actions.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
@@ -109,7 +107,6 @@ import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
-import 'package:window_manager/window_manager.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
@@ -456,7 +453,7 @@ int absoluteCharOffsetOf({
 
 /// 阅读时钟「此刻可跑」的统一判据（BUG-2209 / BUG-2208）。
 ///
-/// 三个正交旗：用户在统计浮层手动暂停（[manualPause]）、app 切后台 / 桌面失焦
+/// 三个正交旗：用户点状态行计时器手动暂停（[manualPause]）、app 切后台 / 桌面失焦
 /// （[lifecycleStopped]）、阅读器面板 / 弹层 / 全页路由压在正文上（[modalDepth] > 0，
 /// 对齐 Hoshi Android 的 `modalPaused`）。任一为真都不算在读。页面里所有 start /
 /// stop 决策只经这一个判据——旧实现 `_ensureStudyClock` 只看手动暂停旗，后台听书
@@ -1738,6 +1735,13 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   bool _gamepadALongFired = false;
   // 重入守卫：「调整」面板从点击到 show 之间有 DB 读 await，快速连点会二次进入并
   // 弹出两个面板（BUG-026）。打开期间置 true、关闭后于 finally 复位。
+  // BUG-2276：当前压在正文之上的是**透明遮罩**侧抽屉（showReaderSideSheet 的
+  // 外观 / 导航形态）。只有这一种呈现形态的遮罩不画像素，也只有它会在 macOS 上
+  // 漏掉落在正文 WebView 上的点击——判据与代价见
+  // [readerWebViewPointerClosesSideSheet]。居中对话框 / bottom sheet 形态的遮罩
+  // 有实色，不置此旗。
+  bool _sideSheetOpen = false;
+
   bool get _appearanceSheetOpen => _chrome.appearanceSheetOpen;
   set _appearanceSheetOpen(bool value) => _chrome.appearanceSheetOpen = value;
 
@@ -1787,7 +1791,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// （BUG-1052 / BUG-1107 的形状）。页面不再持有任何可被重锚的会话计数字段。
   StudyClock? _studyClock;
 
-  /// 用户在阅读统计浮层里手动暂停了会话计时。为 true 时 [_ensureStudyClock] /
+  /// 用户点底部状态行左侧的计时器手动暂停了会话计时。为 true 时 [_ensureStudyClock] /
   /// 生命周期 resumed 都不再 `start()`，直到用户再点一次继续；切屏自动暂停
   /// （BUG-892）与之正交——账仍只在 [StudyClock] 一本。
   bool _studyClockManualPause = false;
@@ -2023,25 +2027,12 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   bool get _anyChromeFloating =>
       (_topProgressFloating && !_statusFooterEnabled) || _bottomBarFloating;
 
-  /// BUG-1343：macOS 的 NSWindow 全局启用了透明标题栏 + full-size content，而默认 MD3 根壳
-  /// 不挂 MacosWindow/ToolBar。阅读器需自行保留一条可拖拽标题栏，否则原生 WebView
-  /// 吞满顶边后窗口没有稳定抓手。其它平台严格为 0。
-  ///
-  /// BUG-1744：原生全屏下这条带子必须归零。全屏时既没有标题栏也没有交通灯，窗口
-  /// 也不能被拖动——留着它就是一条纯浪费的不透明横带（用户报的「顶部横带」），
-  /// 还连带把正文整体下压 28pt。这里是单一真相源：[_readerTopOffset] /
-  /// [popupTopReserve] / `independentDocumentInsets` / 顶部进度条全部读它。
-  double get _macosWindowTitlebarInset =>
-      Platform.isMacOS && !_macosFullscreen ? kMacTitleBarHeight : 0;
-
-  /// macOS 原生全屏态。非 macOS 恒为 false。
-  bool _macosFullscreen = false;
-
+  // BUG-1343 / BUG-1744 的 macOS 顶部拖拽带（`_macosWindowTitlebarInset` + 一条
+  // 28pt 的 DragToMoveArea）已随「macOS 改用自绘 MD3 顶栏」整块删除：交通灯在
+  // `main()` 里被隐藏，[FushiDesktopTitleBar] 在整个 Navigator 之上提供稳定抓手，
+  // 阅读器不再需要自己让位或自绘拖拽带——留着就是顶栏下面又压一条 28pt 空白。
   double get _readerTopOffset =>
-      _stableTopInset +
-      _macosWindowTitlebarInset +
-      _topProgressReserve +
-      _desktopHeaderReserve;
+      _stableTopInset + _topProgressReserve + _desktopHeaderReserve;
 
   double get _readerBottomReserve =>
       _bottomChromeReserve + _statusFooterReserve + _stableBottomInset;
@@ -2053,7 +2044,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       _bottomChromeReserve > 0 ? _readerBottomReserve : 0;
 
   @override
-  double get popupTopReserve => _stableTopInset + _macosWindowTitlebarInset;
+  double get popupTopReserve => _stableTopInset;
 
   @override
   bool get popupVerticalWriting =>
@@ -2085,14 +2076,6 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _exitFlushCallback = ExitFlushRegistry.instance.register(
       _flushAllForProcessExit,
     );
-    // BUG-1744：macOS 全屏进出必须重算顶部让位并把新 inset 回喂给 WebView。
-    // didChangeDependencies 只比较 viewPadding，而桌面全屏切换通常不改
-    // viewPadding（两边都是 0），所以那条路径永远不会触发。
-    _macosFullscreen = MacosFullscreenState.instance.isFullscreen.value;
-    MacosFullscreenState.instance.isFullscreen.addListener(
-      _onMacosFullscreenChanged,
-    );
-    unawaited(MacosFullscreenState.instance.ensureRegistered());
     // The inset reading-content focus ring only paints in traditional
     // (keyboard/gamepad) highlight mode; rebuild it when the mode flips so it
     // appears/disappears with the input device, not only on focus changes.
@@ -2672,23 +2655,17 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   @override
   void dispose() {
-    // 关书 = 离开当前单元：先把它结算进时钟（翻走即计）。必须在 [_failNavigation]
-    // 之前——那里会 `_readLedger.discard()`（导航中止路径不计），而关书那页是用户
-    // 真读到的。
+    // 关书不是翻走：站着的那页不结算（`ReadUnitLedger` 类文档），只停表。
     //
     // 全程零 DB IO：dispose 是同步的，在这里发起的事务没有任何人持有它的 future，
-    // 与随后的 `db.close()` 互等。[StudyClock.detach] 把结算攒下的写交给
+    // 与随后的 `db.close()` 互等。[StudyClock.detach] 把停表攒下的写交给
     // [ExitFlushRegistry] 的退出汇合点统一 await。时钟为空 = 本页从没开始计时，
-    // 整段跳过：入账回调（[_ensureStudyClock]）会现造一个时钟并起表，在 dispose
-    // 里造时钟是净负。
-    _studyClock?.detach(_readLedger.leave);
+    // 整段跳过。
+    _studyClock?.detach();
     // Search navigation can still be awaiting restore while the route closes.
     // Complete it as failed now (and clear its precise-locate request) instead
     // of leaving the callback alive until the 10-second timeout.
     _failNavigation();
-    MacosFullscreenState.instance.isFullscreen.removeListener(
-      _onMacosFullscreenChanged,
-    );
     assert(() {
       // TODO-2603：页面走了就释放钩子所有权，下一个阅读器才能装（无条件清，与旧行为
       // 逐字一致——钩子本来就是无条件清的，这里只多清一个所有者字段）。
@@ -2799,8 +2776,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   @override
   Future<void> onSourcePagePop() async {
     await _syncAndFlushPosition();
-    // 离开当前单元（翻走即计）后再结算时钟，让最后一页的字数进同一段。
-    _readLedger.leave();
+    // 关书不是翻走：站着的那页不结算（`ReadUnitLedger` 类文档），只把时钟写穿。
     await _flushReadingStats();
     // TODO-831：「退出后续播」关闭（audiobookBackgroundPlay=false）时，把真正
     // 停会话从 dispose 提前到这里——此刻页面仍 mounted、pop 动画尚未开始，
@@ -3014,19 +2990,6 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _armResizeRepaginateDebounce();
   }
 
-  /// BUG-1744：全屏翻转 → 重算 [_macosWindowTitlebarInset] → 回喂 WebView 几何。
-  ///
-  /// 只 setState 是不够的：JS 侧的 `--chrome-top-inset` 由 [_applyChromeInsets]
-  /// 单独推送，不跟着 Flutter 重建走。漏了它，正文 padding-top 会停在旧的 28px
-  /// 上（全屏后顶部仍留一条空白带，正是要修的症状）。
-  void _onMacosFullscreenChanged() {
-    if (!mounted) return;
-    final bool next = MacosFullscreenState.instance.isFullscreen.value;
-    if (next == _macosFullscreen) return;
-    setState(() => _macosFullscreen = next);
-    unawaited(_applyChromeInsets());
-  }
-
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -3215,30 +3178,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                             ),
                           ),
                         ),
-                      // BUG-1744：全屏时窗口不可拖动、也没有交通灯要让位——这条
-                      // 不透明带在全屏下纯粹是一条顶部横带，必须整体不挂。
-                      if (Platform.isMacOS && !_macosFullscreen)
-                        Positioned(
-                          top: 0,
-                          left: 0,
-                          right: 0,
-                          height: kMacTitleBarHeight,
-                          // BUG-1692：本 Stack 里排在 WebView **之后**的每一块 Flutter
-                          // 内容都必须自带 RepaintBoundary，否则它们会合并进页面级
-                          // RepaintBoundary 那一张 cull rect = 整窗的 PictureLayer，
-                          // macOS engine 据此把整窗加进 FlutterMutatorView 的
-                          // _hitTestIgnoreRegion，WebView 整块收不到任何鼠标事件。
-                          child: RepaintBoundary(
-                            child: DragToMoveArea(
-                              child: ColoredBox(
-                                key: const ValueKey<String>(
-                                  'fushi_reader_window_drag_area',
-                                ),
-                                color: bgColor,
-                              ),
-                            ),
-                          ),
-                        ),
+                      // 这里曾挂 macOS 专用的 28pt 拖拽带（BUG-1343，全屏下不挂
+                      // 见 BUG-1744）。macOS 改用自绘 MD3 顶栏后，窗口抓手由
+                      // [FushiDesktopTitleBar] 的 DragToMoveArea 提供、交通灯也已
+                      // 隐藏，阅读器再挂一条只会在顶栏下面多压一条不透明带。
                       _buildTopProgressBar(),
                       // 桌面端顶边悬停热区（收起时才存在）+ 顶部工具栏（ッツ 形态）：与底栏
                       // 同一显隐状态机，排在词典弹层之前。
@@ -3281,11 +3224,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     // _showChrome / _hasEverLoaded 切换会触发 _rebuild 重建本树。
     final EdgeInsets independentDocumentPadding = independentDocumentInsets(
       lyricsMode: _lyricsMode,
-      spreadDocumentLoaded: _spreadDocumentLoaded,
       // 底栏占位条件与 _buildBottomChrome / popupBottomReserve 一致。
       chromeOccupiesLayout: _hasEverLoaded && _showChrome,
       bottomReserve: _readerBottomReserve,
-      titlebarInset: _macosWindowTitlebarInset,
     );
     if (independentDocumentPadding == EdgeInsets.zero) return webView;
     return Padding(padding: independentDocumentPadding, child: webView);
