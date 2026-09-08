@@ -192,7 +192,7 @@ void main([List<String> args = const <String>[]]) {
     // app-support 根里。bundle id 从 com.example.hibiki 改成 app.fushi.reader
     // 后旧域整份不可见，其中就有用户自选的数据根路径——只捞回那几个锚点键。
     await recoverLegacyMacosPrefsFromSharedPreferences();
-    // ASR 算法层住在独立包（asr_core），它的数据根 / 出站 HTTP / 日志三个装配点
+    // ASR 算法层住在独立包（fushi_asr_core），它的数据根 / 出站 HTTP / 日志三个装配点
     // 由宿主装上。放在这里而不是 `AppModel.initialise()`：装的全是同步工厂，没有
     // 时序前置条件，而 `initialise()` 有两个 entry point 绕开它（弹窗词典与悬浮
     // 词典），写在 main 里哪个入口都不会漏。

@@ -73,15 +73,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.6.5"
-  asr_core:
-    dependency: transitive
-    description:
-      path: "packages/asr_core"
-      ref: "7eb70dc01bebc9f2c180af5f5eee012485fe7147"
-      resolved-ref: "7eb70dc01bebc9f2c180af5f5eee012485fe7147"
-      url: "https://github.com/hajisensai/fushi-asr.git"
-    source: git
-    version: "0.1.0"
   async:
     dependency: transitive
     description:
@@ -890,6 +881,15 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  fushi_asr_core:
+    dependency: transitive
+    description:
+      path: "packages/asr_core"
+      ref: ac67a2e92800a334f46124f4b4461ce04f8283a2
+      resolved-ref: ac67a2e92800a334f46124f4b4461ce04f8283a2
+      url: "https://github.com/hajisensai/fushi-subtitles.git"
+    source: git
+    version: "0.1.0"
   gamepads:
     dependency: transitive
     description:
