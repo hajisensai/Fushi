@@ -78,6 +78,8 @@ impl NetworkCookie {
 #[serde(rename_all = "camelCase")]
 struct NetworkSession {
     #[serde(default)]
+    proxy_url: Option<String>,
+    #[serde(default)]
     user_agent: Option<String>,
     #[serde(default)]
     cookies: Vec<NetworkCookie>,
@@ -117,7 +119,19 @@ impl NetworkSession {
     /// (challenge cookie → API call → image URL), which a per-request client
     /// silently threw away.
     fn client(&self) -> Result<reqwest::blocking::Client> {
-        reqwest::blocking::Client::builder()
+        let mut builder = reqwest::blocking::Client::builder().no_proxy();
+        if let Some(proxy_url) = &self.proxy_url {
+            // Only the app's authenticated loopback relay is accepted. It
+            // resolves every destination using the current app proxy settings.
+            let url = reqwest::Url::parse(proxy_url).context("invalid native proxy endpoint")?;
+            if url.scheme() != "http" || url.host_str() != Some("127.0.0.1") || url.port().is_none()
+            {
+                bail!("native proxy endpoint must be loopback HTTP");
+            }
+            builder =
+                builder.proxy(reqwest::Proxy::all(url).context("invalid native proxy endpoint")?);
+        }
+        builder
             .cookie_provider(Arc::new(self.cookie_jar()))
             .build()
             .context("failed to build Aidoku HTTP client")
@@ -2512,6 +2526,20 @@ mod tests {
         // `null` is what the Dart codec sends for an omitted optional field.
         let session = NetworkSession::from_request(&json!({"network": null})).unwrap();
         assert!(session.cookies.is_empty());
+    }
+
+    #[test]
+    fn network_session_only_accepts_the_app_loopback_proxy() {
+        let local = NetworkSession::from_request(&json!({"network": {
+            "proxyUrl": "http://fushi:local-token@127.0.0.1:12345"
+        }}))
+        .unwrap();
+        assert!(local.client().is_ok());
+        let remote = NetworkSession::from_request(&json!({"network": {
+            "proxyUrl": "http://example.com:12345"
+        }}))
+        .unwrap();
+        assert!(remote.client().is_err());
     }
 
     #[test]

@@ -146,6 +146,10 @@ class MihonChannelHandler(private val app: Application) {
     }
 
     private fun handle(call: MethodCall): Any? = when (call.method) {
+        "configureProxyPolicy" -> HostProxyPolicy.configure(
+            call.argument<Int>("port") ?: throw IllegalArgumentException("Missing policy port"),
+            stringArgument(call, "token"),
+        )
         "capabilities" -> mapOf(
             "fushiMihonBridge" to 1,
             "sourceFactory" to true,

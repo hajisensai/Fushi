@@ -1,3 +1,4 @@
+import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/material.dart';
 
 import 'package:fushi/src/media/collections/collection_relation.dart';
@@ -161,7 +162,7 @@ class _CollectionRelationsSectionState
     BuildContext context,
     CollectionRelationRow relation,
   ) {
-    // 封面三级回落：coverPath 本地文件 → coverUrl 网络（Image.network 是刮削
+    // 封面三级回落：coverPath 本地文件 → coverUrl 网络（AppHttpImage 是刮削
     // 候选封面的既有口径，见 scrape_cover_preview.dart）→ 占位图标。
     final ImageProvider? localCover = resolveMediaCoverImage(
       kind: MediaKind.video,
@@ -175,8 +176,8 @@ class _CollectionRelationsSectionState
         errorBuilder: (BuildContext _) => _coverPlaceholder(context),
       );
     } else if (coverUrl != null && coverUrl.isNotEmpty) {
-      coverWidget = Image.network(
-        coverUrl,
+      coverWidget = Image(
+        image: AppHttpImage(coverUrl),
         fit: BoxFit.cover,
         errorBuilder: (_, __, ___) => _coverPlaceholder(context),
       );

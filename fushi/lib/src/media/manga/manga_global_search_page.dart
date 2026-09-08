@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/material.dart';
 
 import 'package:fushi_core/fushi_core.dart';
@@ -386,7 +387,7 @@ class _SectionMessage extends StatelessWidget {
       );
 }
 
-/// Aidoku 搜索结果封面。裸 `Image.network` + 浏览器 UA，与单源浏览页同一策略。
+/// Aidoku 搜索结果封面。`AppHttpImage` + 浏览器 UA，与单源浏览页同一策略。
 class _AidokuStripCover extends StatelessWidget {
   const _AidokuStripCover({required this.url});
 
@@ -401,10 +402,12 @@ class _AidokuStripCover extends StatelessWidget {
         child: Center(child: Icon(Icons.image_not_supported_outlined)),
       );
     }
-    return Image.network(
-      value,
+    return Image(
+      image: AppHttpImage(
+        value,
+        headers: const <String, String>{'User-Agent': kAidokuUserAgent},
+      ),
       fit: BoxFit.cover,
-      headers: const <String, String>{'User-Agent': kAidokuUserAgent},
       errorBuilder: (_, __, ___) => const ColoredBox(
         color: Color(0x11000000),
         child: Center(child: Icon(Icons.broken_image_outlined)),

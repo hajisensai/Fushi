@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/manga/aidoku/aidoku_network_session.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
+import 'package:fushi/src/utils/net/app_native_proxy.dart';
 
 const Duration kAidokuRuntimeTimeout = Duration(seconds: 90);
 const int kAidokuRuntimeOutputLimit = 32 * 1024 * 1024;
@@ -52,9 +53,10 @@ class AidokuPackageInspection {
   factory AidokuPackageInspection.fromJson(Map<String, Object?> json) {
     final Map<String, Object?> runtime =
         (json['runtime'] as Map<Object?, Object?>?)?.cast<String, Object?>() ??
-            const <String, Object?>{};
+        const <String, Object?>{};
     return AidokuPackageInspection(
-      manifest: (json['manifest'] as Map<Object?, Object?>?)
+      manifest:
+          (json['manifest'] as Map<Object?, Object?>?)
               ?.cast<String, Object?>() ??
           const <String, Object?>{},
       imports: (runtime['imports'] as List<Object?>? ?? const <Object?>[])
@@ -95,20 +97,20 @@ class AidokuListing {
   });
 
   factory AidokuListing.fromJson(Map<String, Object?> json) => AidokuListing(
-        id: json['id']?.toString() ?? '',
-        name: json['name']?.toString() ?? '',
-        kind: json['kind']?.toString() ?? 'Default',
-      );
+    id: json['id']?.toString() ?? '',
+    name: json['name']?.toString() ?? '',
+    kind: json['kind']?.toString() ?? 'Default',
+  );
 
   final String id;
   final String name;
   final String kind;
 
   Map<String, Object?> toJson() => <String, Object?>{
-        'id': id,
-        'name': name,
-        'kind': kind,
-      };
+    'id': id,
+    'name': name,
+    'kind': kind,
+  };
 }
 
 abstract interface class AidokuRuntime {
@@ -297,9 +299,13 @@ class IosAidokuRuntime implements AidokuRuntime {
     Map<String, Object?> request,
     Map<String, Object?>? network,
   ) async {
+    final Uri endpoint = await ensureAppNativeProxyEndpoint();
     final Map<String, Object?> payload = <String, Object?>{
       ...request,
-      if (network != null) 'network': network,
+      'network': <String, Object?>{
+        ...?network,
+        'proxyUrl': endpoint.toString(),
+      },
     };
     try {
       final Object? response = await FushiChannels.aidokuRuntime
@@ -316,11 +322,12 @@ class IosAidokuRuntime implements AidokuRuntime {
       final bool challenged = error.code == kAidokuCloudflareChallengeCode;
       throw AidokuRuntimeException(
         error.code,
-        error.message ?? 'Aidoku runtime failed',
+        redactAppNativeProxySecrets(error.message ?? 'Aidoku runtime failed'),
         cause: error,
         challengeUrl: challenged ? _challengeUrl(error.details) : null,
-        challengeUserAgent:
-            challenged ? _challengeUserAgent(error.details) : null,
+        challengeUserAgent: challenged
+            ? _challengeUserAgent(error.details)
+            : null,
       );
     } on MissingPluginException catch (error) {
       throw AidokuRuntimeException(
@@ -369,10 +376,8 @@ class IosAidokuRuntime implements AidokuRuntime {
 }
 
 class DesktopAidokuRuntime implements AidokuRuntime {
-  DesktopAidokuRuntime({
-    File? executable,
-    this.timeout = kAidokuRuntimeTimeout,
-  }) : executable = executable ?? _bundledExecutable();
+  DesktopAidokuRuntime({File? executable, this.timeout = kAidokuRuntimeTimeout})
+    : executable = executable ?? _bundledExecutable();
 
   final File executable;
   final Duration timeout;
@@ -387,12 +392,14 @@ class DesktopAidokuRuntime implements AidokuRuntime {
       );
     }
     final Directory contents = File(Platform.resolvedExecutable).parent.parent;
-    return File(p.join(
-      contents.path,
-      'Resources',
-      'aidoku_runtime',
-      'fushi-aidoku-runtime',
-    ));
+    return File(
+      p.join(
+        contents.path,
+        'Resources',
+        'aidoku_runtime',
+        'fushi-aidoku-runtime',
+      ),
+    );
   }
 
   @override
@@ -492,6 +499,9 @@ class DesktopAidokuRuntime implements AidokuRuntime {
         arguments,
         mode: ProcessStartMode.normal,
         runInShell: false,
+        environment: appNativeProxyEnvironment(
+          await ensureAppNativeProxyEndpoint(),
+        ),
       );
     } on Object catch (error) {
       throw AidokuRuntimeException(
@@ -522,7 +532,9 @@ class DesktopAidokuRuntime implements AidokuRuntime {
     }
 
     final String output = utf8.decode(await stdout, allowMalformed: true);
-    final String errorOutput = utf8.decode(await stderr, allowMalformed: true);
+    final String errorOutput = redactAppNativeProxySecrets(
+      utf8.decode(await stderr, allowMalformed: true),
+    );
     if (exitCode != 0) {
       throw AidokuRuntimeException(
         'EXIT_$exitCode',

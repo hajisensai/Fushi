@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
+import 'package:fushi/src/utils/net/app_native_proxy.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -219,6 +220,9 @@ esac
       'packagePath': '/documents/source.aix',
       'query': '東京',
       'page': 2,
+      'network': <String, Object?>{
+        'proxyUrl': (await ensureAppNativeProxyEndpoint()).toString(),
+      },
     });
   });
 
