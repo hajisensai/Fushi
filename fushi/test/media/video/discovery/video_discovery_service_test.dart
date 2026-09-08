@@ -15,6 +15,8 @@ import 'package:fushi/src/media/video/metadata/video_metadata_transport.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
+import '../../../torrent/nyaa_html_fixture.dart';
+
 void main() {
   group('TMDB discovery adapter', () {
     test('uses discover filters and maps a real movie response', () async {
@@ -161,19 +163,21 @@ void main() {
                 NyaaVideoResourceProvider(
                   closesClient: true,
                   client: NyaaClient(
+                    minRequestInterval: Duration.zero,
                     client: MockClient((http.Request request) async {
                       nyaaRequests.add(request.url);
                       return http.Response.bytes(
-                        utf8.encode('''
-<rss version="2.0" xmlns:nyaa="https://nyaa.si/xmlns/nyaa">
-  <channel><item>
-    <title>$title</title>
-    <link>https://nyaa.si/download/9.torrent</link>
-    <guid>https://nyaa.si/view/9</guid>
-    <nyaa:infoHash>abcdef0123456789abcdef0123456789abcdef01</nyaa:infoHash>
-    <nyaa:seeders>1</nyaa:seeders>
-  </item></channel>
-</rss>'''),
+                        utf8.encode(
+                          nyaaSearchHtml(const <NyaaHtmlRow>[
+                            NyaaHtmlRow(
+                              title: title,
+                              infoHash:
+                                  'abcdef0123456789abcdef0123456789abcdef01',
+                              id: '9',
+                              seeders: 1,
+                            ),
+                          ]),
+                        ),
                         200,
                       );
                     }),

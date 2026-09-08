@@ -15,13 +15,16 @@ import 'package:fushi/src/media/video/jimaku_subtitle_provider.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart';
 
+import 'nyaa_html_fixture.dart';
+
 void main() {
   test('Nyaa adapter preserves release fields and resolves a magnet', () async {
     final NyaaVideoResourceProvider provider = NyaaVideoResourceProvider(
       client: NyaaClient(
+        minRequestInterval: Duration.zero,
         client: MockClient((http.Request request) async {
           expect(request.url.queryParameters['q'], 'Test Show');
-          return http.Response(_nyaaFeed, 200);
+          return http.Response(_nyaaPage, 200);
         }),
       ),
     );
@@ -46,9 +49,10 @@ void main() {
     final List<String> queries = <String>[];
     final NyaaVideoResourceProvider provider = NyaaVideoResourceProvider(
       client: NyaaClient(
+        minRequestInterval: Duration.zero,
         client: MockClient((http.Request request) async {
           queries.add(request.url.queryParameters['q']!);
-          return http.Response(_nyaaFeed, 200);
+          return http.Response(_nyaaPage, 200);
         }),
       ),
     );
@@ -84,9 +88,10 @@ void main() {
       final List<String> queries = <String>[];
       final NyaaVideoResourceProvider provider = NyaaVideoResourceProvider(
         client: NyaaClient(
+          minRequestInterval: Duration.zero,
           client: MockClient((http.Request request) async {
             queries.add(request.url.queryParameters['q']!);
-            return http.Response(_nyaaFeed, 200);
+            return http.Response(_nyaaPage, 200);
           }),
         ),
       );
@@ -188,22 +193,17 @@ void main() {
   });
 }
 
-const String _nyaaFeed = '''
-<?xml version="1.0" encoding="UTF-8"?>
-<rss xmlns:nyaa="https://nyaa.si/xmlns/nyaa">
-  <channel><item>
-    <title>[Group] Test Show - 02 [1080p]</title>
-    <link>https://nyaa.si/download/1.torrent</link>
-    <guid>https://nyaa.si/view/1</guid>
-    <pubDate>Fri, 03 Nov 2023 12:30:00 -0000</pubDate>
-    <nyaa:infoHash>0123456789abcdef0123456789abcdef01234567</nyaa:infoHash>
-    <nyaa:seeders>15</nyaa:seeders>
-    <nyaa:leechers>2</nyaa:leechers>
-    <nyaa:downloads>100</nyaa:downloads>
-    <nyaa:size>1.4 GiB</nyaa:size>
-    <nyaa:categoryId>1_2</nyaa:categoryId>
-    <nyaa:trusted>Yes</nyaa:trusted>
-    <nyaa:remake>No</nyaa:remake>
-  </item></channel>
-</rss>
-''';
+/// 一条 trusted 结果的 HTML 搜索页（id `1` → pageUrl `https://nyaa.si/view/1`）。
+final String _nyaaPage = nyaaSearchHtml(const <NyaaHtmlRow>[
+  NyaaHtmlRow(
+    title: '[Group] Test Show - 02 [1080p]',
+    infoHash: '0123456789abcdef0123456789abcdef01234567',
+    id: '1',
+    seeders: 15,
+    leechers: 2,
+    downloads: 100,
+    size: '1.4 GiB',
+    categoryId: '1_2',
+    trusted: true,
+  ),
+]);

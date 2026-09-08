@@ -4436,5 +4436,16 @@
   "video_opensubtitles_app_key_hint": "Déjalo vacío para usar la clave API incluida en la aplicación.",
   "video_anilist_error_api_disabled": "AniList has temporarily disabled its public API because of server-side stability problems. This is not a problem with your network or proxy - the request reached AniList and was refused. Please try again later.",
   "video_anilist_error_rate_limited": "AniList is rate-limiting this app right now. Wait a moment and retry.",
-  "video_anilist_error_unreachable": "Cannot reach AniList (graphql.anilist.co). Check your network connection, or configure a proxy in download settings."
+  "video_anilist_error_unreachable": "Cannot reach AniList (graphql.anilist.co). Check your network connection, or configure a proxy in download settings.",
+  "discovery_filter_hide_zero_seeders": "Hide unseeded",
+  "discovery_filter_hide_suspected_manga": "Hide suspected manga",
+  "discovery_hidden_zero_seeders_count": "${n} unseeded hidden",
+  "discovery_hidden_suspected_manga_count": "${n} suspected manga hidden",
+  "discovery_hidden_show": "Show",
+  "discovery_nyaa_filter_all": "All",
+  "discovery_nyaa_filter_no_remakes": "No remakes",
+  "discovery_nyaa_filter_trusted_only": "Trusted only",
+  "discovery_badge_trusted": "Trusted",
+  "discovery_badge_remake": "Remake",
+  "discovery_content_hint_manga": "Suspected manga"
 }
