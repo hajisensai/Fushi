@@ -147,7 +147,7 @@ void main() {
   group('下载管线 stop 不再无界忙等', () {
     test('while (_running) 有超时放行', () {
       final String source = File(
-        'lib/src/media/video/download/video_download_pipeline_service.dart',
+        '../packages/fushi_engine/lib/media/video/download/video_download_pipeline_service.dart',
       ).readAsStringSync();
 
       // 同文件里 VideoDownloadLeaseGuard 也有 stop()，锚点必须先框到目标类，

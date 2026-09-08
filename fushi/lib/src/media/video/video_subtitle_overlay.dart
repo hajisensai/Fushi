@@ -8,7 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart'
     show BoxHitTestEntry, BoxHitTestResult, RenderProxyBox;
 import 'package:flutter/scheduler.dart' show Ticker;
-import 'package:fushi_engine/models/content_font_chain.dart';
+import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:flutter/services.dart' show HardwareKeyboard;
 
 import 'package:fushi/src/media/video/ass_font_metrics.dart';

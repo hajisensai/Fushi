@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:fushi/src/sync/deletion_disclosure.dart';
-import 'package:fushi/src/media/collections/collection_asset_reclaim.dart';
+import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
 import 'package:fushi/src/media/collections/collection_one_key_sort.dart'
     show sortedCollectionRows;
 import 'package:fushi/src/media/collections/collection_shelf_row.dart'

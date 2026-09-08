@@ -1,6 +1,6 @@
-import 'package:flutter/foundation.dart';
-import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_audio/fushi_audio_core.dart';
 import 'package:path/path.dart' as p;
+import 'package:meta/meta.dart';
 
 /// 片段导出的字幕封装：把**播放器内存里的 cue 列表**裁成片段区间的 SRT 文本。
 ///

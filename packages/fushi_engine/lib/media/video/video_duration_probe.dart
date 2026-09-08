@@ -22,11 +22,11 @@ library;
 import 'dart:convert';
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart'
-    show debugPrint, immutable, visibleForTesting;
 
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/video_dynamic_range.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:meta/meta.dart';
 
 /// ffprobe 探测的超时。只读 header，不解码，几十毫秒级；给足 20s 覆盖冷缓存
 /// 与机械盘。**超时按失败处理并返回空结果**——校验拿不到时长时会退化成「只做内容
@@ -405,7 +405,7 @@ Future<VideoProbeFacts> probeVideoFacts(
     return parseFfprobeFacts(result.output);
   } catch (e) {
     // 缺 ffprobe 是**正常降级**（用户没装 / 没捆绑），不是错误路径。
-    debugPrint('[VideoDurationProbe] probe failed for "$path": $e');
+    fushiDebugPrint('[VideoDurationProbe] probe failed for "$path": $e');
     return VideoProbeFacts.empty;
   }
 }

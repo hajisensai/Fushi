@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:fushi_engine/epub/epub_importer.dart' show EpubImporter;
-import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_audio/fushi_audio_core.dart';
 
 /// Converts plain text files (TXT, HTML, MD, etc.) into valid EPUB 3 bytes
 /// suitable for import via [EpubImporter].

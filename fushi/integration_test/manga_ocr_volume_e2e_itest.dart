@@ -33,7 +33,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/ocr/manga_ocr_model_manifest.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
-import 'package:fushi/src/ocr/manga_ocr_service_impl.dart';
+import 'package:fushi_engine/ocr/manga_ocr_service_impl.dart';
 
 /// 合成页上的气泡：位置、尺寸与竖排文本（= ground truth）。
 class _Bubble {

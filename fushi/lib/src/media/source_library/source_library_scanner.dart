@@ -46,10 +46,10 @@ import 'package:fushi/src/media/drag_drop/drop_classification.dart'
 import 'package:fushi/src/media/import/sidecar_finder.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
 import 'package:fushi/src/media/manga/import/manga_archive_importer.dart';
-import 'package:fushi/src/media/manga/manga_importer.dart';
-import 'package:fushi/src/media/manga/manga_storage.dart'
+import 'package:fushi_engine/media/manga/manga_importer.dart';
+import 'package:fushi_engine/media/manga/manga_storage.dart'
     show MangaImportException;
-import 'package:fushi/src/media/manga/mokuro_payload.dart'
+import 'package:fushi_engine/media/manga/mokuro_payload.dart'
     show
         MokuroImage,
         MokuroPayload,
@@ -68,7 +68,7 @@ import 'package:fushi_engine/media/video/m3u8_playlist.dart';
 import 'package:fushi/src/media/video/url_stream_video.dart'
     show StreamVideoSpec;
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
-import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
+import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_folder_group_coordinator.dart';
 import 'package:fushi_engine/media/video/video_storage.dart';

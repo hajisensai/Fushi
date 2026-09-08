@@ -98,7 +98,7 @@ void main() {
 
     setUpAll(() {
       appModel = _read('lib/src/models/app_model.dart');
-      host = _read('lib/src/media/torrent/embedded_torrent_host.dart');
+      host = _read('../packages/fushi_engine/lib/media/torrent/embedded_torrent_host.dart');
     });
 
     test('计划 id 集合是可空哨兵，不许退化成 const {}', () {

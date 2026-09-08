@@ -1,8 +1,7 @@
 import 'dart:convert';
-import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 
 void main() {
   group('parseMokuro', () {
@@ -50,11 +49,11 @@ void main() {
 
       final MokuroImage page0 = payload.images[0];
       expect(page0.url, 'vol1/p001.jpg');
-      expect(page0.size, const Size(1200, 1700));
+      expect(page0.size, const MokuroSize(1200, 1700));
       expect(page0.blocks.length, 2);
 
       final MokuroBlock block0 = page0.blocks[0];
-      expect(block0.rectangle, const Rect.fromLTRB(100, 200, 300, 500));
+      expect(block0.rectangle, const MokuroRect.fromLTRB(100, 200, 300, 500));
       expect(block0.isVertical, isTrue);
       expect(block0.fontSize, 32.0);
       expect(block0.zIndex, 0);
@@ -113,7 +112,7 @@ void main() {
 
       final MokuroBlock block =
           parseMokuro(jsonStr).images.single.blocks.single;
-      expect(block.rectangle, const Rect.fromLTRB(1, 2, 3, 4));
+      expect(block.rectangle, const MokuroRect.fromLTRB(1, 2, 3, 4));
       expect(block.fontSize, isA<double>());
       expect(block.fontSize, 40.0);
     });
@@ -204,10 +203,10 @@ void main() {
         images: <MokuroImage>[
           MokuroImage(
             url: 'vol1/p001.jpg',
-            size: Size(1200, 1700),
+            size: MokuroSize(1200, 1700),
             blocks: <MokuroBlock>[
               MokuroBlock(
-                rectangle: Rect.fromLTRB(100, 200, 300, 500),
+                rectangle: MokuroRect.fromLTRB(100, 200, 300, 500),
                 isVertical: true,
                 fontSize: 32,
                 zIndex: 0,
@@ -241,10 +240,10 @@ void main() {
         images: <MokuroImage>[
           MokuroImage(
             url: 'p.jpg',
-            size: Size(100, 100),
+            size: MokuroSize(100, 100),
             blocks: <MokuroBlock>[
               MokuroBlock(
-                rectangle: Rect.fromLTRB(0, 0, 10, 10),
+                rectangle: MokuroRect.fromLTRB(0, 0, 10, 10),
                 isVertical: false,
                 fontSize: 10,
                 zIndex: 0,
@@ -295,9 +294,9 @@ void main() {
       expect(restored.images.length, original.images.length);
       final MokuroImage page = restored.images.single;
       expect(page.url, 'vol1/p001.jpg');
-      expect(page.size, const Size(1200, 1700));
+      expect(page.size, const MokuroSize(1200, 1700));
       expect(page.blocks.length, 2);
-      expect(page.blocks[0].rectangle, const Rect.fromLTRB(100, 200, 300, 500));
+      expect(page.blocks[0].rectangle, const MokuroRect.fromLTRB(100, 200, 300, 500));
       expect(page.blocks[0].isVertical, isTrue);
       expect(page.blocks[0].fontSize, 32.0);
       expect(page.blocks[0].zIndex, 0);
@@ -332,10 +331,10 @@ void main() {
         images: <MokuroImage>[
           MokuroImage(
             url: 'p.jpg',
-            size: Size(100, 100),
+            size: MokuroSize(100, 100),
             blocks: <MokuroBlock>[
               MokuroBlock(
-                rectangle: Rect.fromLTRB(0, 0, 50, 50),
+                rectangle: MokuroRect.fromLTRB(0, 0, 50, 50),
                 isVertical: true,
                 fontSize: 10,
                 zIndex: 0,
@@ -376,17 +375,17 @@ void main() {
         images: <MokuroImage>[
           MokuroImage(
             url: 'images/p1.png',
-            size: Size(100, 200),
+            size: MokuroSize(100, 200),
             blocks: <MokuroBlock>[
               MokuroBlock(
-                rectangle: Rect.fromLTWH(10, 20, 30, 40),
+                rectangle: MokuroRect.fromLTWH(10, 20, 30, 40),
                 isVertical: false,
                 fontSize: 12,
                 zIndex: 0,
                 lines: <String>['日本'],
                 regions: <MangaOcrTextRegion>[
                   MangaOcrTextRegion(
-                    rectangle: Rect.fromLTWH(10, 20, 15, 40),
+                    rectangle: MokuroRect.fromLTWH(10, 20, 15, 40),
                     utf16Start: 0,
                     utf16End: 1,
                   ),
@@ -402,7 +401,7 @@ void main() {
       expect(parsed.ocr?.engineSignature, 'google-lens-v1-ja');
       final MangaOcrTextRegion region =
           parsed.images.single.blocks.single.regions!.single;
-      expect(region.rectangle, const Rect.fromLTWH(10, 20, 15, 40));
+      expect(region.rectangle, const MokuroRect.fromLTWH(10, 20, 15, 40));
       expect(region.utf16Start, 0);
       expect(region.utf16End, 1);
     });

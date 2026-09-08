@@ -13,7 +13,7 @@ import 'package:fushi/src/media/import/import_flow_mixin.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/manga/import/manga_folder_batch.dart';
 import 'package:fushi/src/media/manga/manga_module.dart';
-import 'package:fushi/src/media/manga/manga_storage.dart'
+import 'package:fushi_engine/media/manga/manga_storage.dart'
     show MangaImportException;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';

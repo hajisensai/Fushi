@@ -155,7 +155,7 @@ void main() {
   group('源码不变式', () {
     test('TOFU 探测不得再把超时交给 SecureSocket.connect 的 timeout: 参数', () {
       final String src =
-          File('lib/src/sync/tls/fushi_tofu_probe.dart').readAsStringSync();
+          File('../packages/fushi_engine/lib/sync/tls/fushi_tofu_probe.dart').readAsStringSync();
       // 锚点字面量：.timeout( / timeout: timeout / unawaited( / destroy()
       expect(
         containsCodeLine(src, '.timeout('),
@@ -178,8 +178,8 @@ void main() {
 
     test('两个探测层的瞬时失败走 logDiagnostic，不进用户可见错误日志', () {
       for (final String path in <String>[
-        'lib/src/sync/tls/fushi_tofu_probe.dart',
-        'lib/src/sync/pairing/fushi_ping_client.dart',
+        '../packages/fushi_engine/lib/sync/tls/fushi_tofu_probe.dart',
+        '../packages/fushi_engine/lib/sync/pairing/fushi_ping_client.dart',
       ]) {
         final String src = File(path).readAsStringSync();
         // 锚点字面量：ErrorLogService.instance.logDiagnostic(
@@ -198,13 +198,13 @@ void main() {
 
     test('丢失败原因的薄封装不得复活（删掉错误入口，而不是加守卫查调用点）', () {
       final String ping = File(
-        'lib/src/sync/pairing/fushi_ping_client.dart',
+        '../packages/fushi_engine/lib/sync/pairing/fushi_ping_client.dart',
       ).readAsStringSync();
       final String probe = File(
-        'lib/src/sync/pairing/discovered_pairing_probe.dart',
+        '../packages/fushi_engine/lib/sync/pairing/discovered_pairing_probe.dart',
       ).readAsStringSync();
       final String tofu =
-          File('lib/src/sync/tls/fushi_tofu_probe.dart').readAsStringSync();
+          File('../packages/fushi_engine/lib/sync/tls/fushi_tofu_probe.dart').readAsStringSync();
       // 锚点标识符：fetchFushiPing / probeDiscoveredPairingEndpoint /
       // captureFingerprint（末者在 probe 里仍是**测试注入缝的参数名**，所以只对
       // tofu 文件断言它不再是个入口）。

@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
-import 'package:fushi/src/media/manga/manga_storage.dart';
+import 'package:fushi_engine/media/manga/manga_storage.dart';
 import 'package:path/path.dart' as p;
 
 void main() {

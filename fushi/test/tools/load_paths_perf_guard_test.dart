@@ -24,7 +24,7 @@ void main() {
   }
 
   group('video shelf', () {
-    final String repo = read('lib/src/media/video/video_book_repository.dart');
+    final String repo = read('../packages/fushi_engine/lib/media/video/video_book_repository.dart');
     final String page =
         read('lib/src/pages/implementations/home_video_page.dart');
 
@@ -69,7 +69,7 @@ void main() {
 
   group('dashboard / stat facts', () {
     test('loadStatFacts fans out its reads', () {
-      final String src = read('lib/src/stats/stat_facts.dart');
+      final String src = read('../packages/fushi_engine/lib/stats/stat_facts.dart');
       final String body =
           methodBody(src, 'Future<StatFacts> loadStatFacts(', topLevel: true);
       expect(body.contains('await Future.wait<Object?>('), isTrue);

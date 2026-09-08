@@ -13,7 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// ⑤android build.gradle 用本地自编 AAR、不再拉 maven 预编译。实际原生执行需真机验证。
 void main() {
   final String src =
-      File('lib/src/media/video/ffmpeg_backend.dart').readAsStringSync();
+      File('../packages/fushi_engine/lib/media/video/ffmpeg_backend.dart').readAsStringSync();
 
   test('不再依赖崩溃的预编译 ffmpeg_kit_flutter_new_min', () {
     expect(src.contains('ffmpeg_kit_flutter_new'), isFalse);

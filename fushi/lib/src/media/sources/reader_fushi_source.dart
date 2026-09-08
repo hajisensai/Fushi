@@ -21,6 +21,9 @@ import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/shortcuts/visual/gamepad_glyphs.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi_engine/media/media_pref_keys.dart' as pref_keys;
+export 'package:fushi_engine/media/media_pref_keys.dart'
+    show kReaderSourcePersistedKey;
 
 /// BUG-793：EPUB 书 bookKey 集合的响应式来源。`.distinct(listEquals)` 按集合去重
 /// ——插入/删除触发，改作者/封面等纯列更新（集合不变）不触发，避免书架无谓重算。
@@ -180,7 +183,6 @@ class DeleteBookResult {
 /// media_items 的 sourceKey 行都用它）。历史值 `reader_ttu` 已由 v70 Drift 迁移
 /// （W2-1）一次性改写为本值；旧字面量只允许活在 fushi_core 的迁移阶梯里。
 /// 全仓对该字面量的引用一律走本常量（改名守卫锚点）。
-const String kReaderSourcePersistedKey = 'reader_fushi';
 
 class ReaderFushiSource extends ReaderMediaSource {
   ReaderFushiSource._()
@@ -290,7 +292,8 @@ class ReaderFushiSource extends ReaderMediaSource {
   /// that contain no `%` (the common case), so nothing that worked before
   /// changes. Mirrors the HBK-AUDIT-127 encode/decode-symmetry fix for
   /// [epubUrl]/[fontUrl].
-  static const String _bookIdentifierPrefix = 'fushi://book/';
+  static const String _bookIdentifierPrefix =
+      pref_keys.kReaderBookIdentifierPrefix;
 
   static String? parseBookKey(String identifier) {
     if (!identifier.startsWith(_bookIdentifierPrefix)) return null;

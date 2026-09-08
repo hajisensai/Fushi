@@ -2,7 +2,7 @@
 //
 // 背景：全仓曾有 10+ 份手写 `[\\/:*?"<>|]` 及排列变体，其中 home_video_page 的
 // 一份漏写反斜杠（BUG-1125：云视频 id 含 `\` 时字幕与封面落到不同目录）。收敛到
-// `lib/src/utils/misc/safe_file_name.dart` 后，本测试扫描 lib/ 源码，禁止再手写
+// `../packages/fushi_engine/lib/utils/misc/safe_file_name.dart` 后，本测试扫描 lib/ 源码，禁止再手写
 // 该字符类的 RegExp。
 //
 // TODO-2715 修掉判据自身的两个假相源（旧写法是「同一行里既有 `RegExp(` 又有指纹」）：
@@ -32,7 +32,7 @@ const List<String> kBlacklistFingerprints = <String>[
 ];
 
 /// 唯一允许持有该字符类的真相源。
-const String _allowedFile = 'lib/src/utils/misc/safe_file_name.dart';
+const String _allowedFile = '../packages/fushi_engine/lib/utils/misc/safe_file_name.dart';
 
 /// 以独立标识符身份出现的 `RegExp(` 构造（`MyRegExp(` 不算）。
 final RegExp _regExpConstruction = RegExp(r'(?<![A-Za-z0-9_$])RegExp\s*\(');

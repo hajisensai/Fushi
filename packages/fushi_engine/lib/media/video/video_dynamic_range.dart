@@ -13,7 +13,8 @@
 /// 不因为来源不同而放宽或收紧。
 library;
 
-import 'package:flutter/foundation.dart' show immutable;
+import 'package:meta/meta.dart';
+
 
 /// 片源动态范围。
 ///

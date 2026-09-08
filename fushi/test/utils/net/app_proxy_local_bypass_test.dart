@@ -341,7 +341,7 @@ void main() {
 
     test('三个公开工厂都经 applyAppProxySync（源码守卫：漏一个就是一条暗路）', () {
       final String source =
-          File('lib/src/utils/net/app_http.dart').readAsStringSync();
+          File('../packages/fushi_engine/lib/utils/net/app_http.dart').readAsStringSync();
       expect(source, contains('applyAppProxySync(client)'));
       // createAppHttpIoClient / createAppDio 都必须复用 createAppHttpClient，
       // 而不是各自 new 一个裸的。

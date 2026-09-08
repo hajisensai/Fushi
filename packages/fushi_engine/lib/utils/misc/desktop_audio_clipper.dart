@@ -11,9 +11,9 @@ import 'package:fushi_engine/media/video/video_clip_exporter.dart'
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show MiningAnimatedFormat;
 import 'package:http/http.dart' as http;
-import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:meta/meta.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
 
 // resolveFfmpegExecutable 已移到 ffmpeg_backend.dart（执行配置的自然归宿）；
 // 从这里 re-export 让既有 importer 与测试仍从本文件解析它。
@@ -406,9 +406,9 @@ class MiningMediaCompression {
 void _logFfmpegSummary(String source, String summary, StackTrace stack,
     {required bool diagnosticOnly}) {
   if (diagnosticOnly) {
-    ErrorLogService.instance.logDiagnostic(source, summary);
+    engineLog.logDiagnostic(source, summary);
   } else {
-    ErrorLogService.instance.log(source, summary, stack);
+    engineLog.log(source, summary, stack);
   }
 }
 
@@ -445,7 +445,7 @@ void _reportFfmpegEarlyReturn(
   FfmpegFailureReporter? onFailure,
 ) {
   onFailure?.call(summary);
-  ErrorLogService.instance.log(source, summary, StackTrace.current);
+  engineLog.log(source, summary, StackTrace.current);
 }
 
 void _reportFfmpegUnexpectedException(
@@ -593,10 +593,10 @@ Future<String?> extractEmbeddedCoverViaFfmpeg({
     if (output.existsSync() && output.lengthSync() > 0) return outputPath;
     return null;
   } on ProcessException catch (e, stack) {
-    ErrorLogService.instance.log('extractEmbeddedCoverViaFfmpeg', e, stack);
+    engineLog.log('extractEmbeddedCoverViaFfmpeg', e, stack);
     return null;
   } catch (e, stack) {
-    ErrorLogService.instance.log('extractEmbeddedCoverViaFfmpeg', e, stack);
+    engineLog.log('extractEmbeddedCoverViaFfmpeg', e, stack);
     return null;
   }
 }
@@ -691,10 +691,10 @@ Future<AudioMetadata?> extractAudioMetadataViaFfprobe({
     final AudioMetadata meta = parseAudioMetadataFromFfprobeJson(result.output);
     return meta.isEmpty ? null : meta;
   } on ProcessException catch (e, stack) {
-    ErrorLogService.instance.log('extractAudioMetadataViaFfprobe', e, stack);
+    engineLog.log('extractAudioMetadataViaFfprobe', e, stack);
     return null;
   } catch (e, stack) {
-    ErrorLogService.instance.log('extractAudioMetadataViaFfprobe', e, stack);
+    engineLog.log('extractAudioMetadataViaFfprobe', e, stack);
     return null;
   }
 }
@@ -1137,10 +1137,10 @@ Future<String?> extractEmbeddedSubtitleViaFfmpeg({
     return null;
   } on ProcessException catch (e, stack) {
     // ffmpeg not installed / not on PATH — graceful no-subtitle fallback.
-    ErrorLogService.instance.log('extractEmbeddedSubtitleViaFfmpeg', e, stack);
+    engineLog.log('extractEmbeddedSubtitleViaFfmpeg', e, stack);
     return null;
   } catch (e, stack) {
-    ErrorLogService.instance.log('extractEmbeddedSubtitleViaFfmpeg', e, stack);
+    engineLog.log('extractEmbeddedSubtitleViaFfmpeg', e, stack);
     return null;
   }
 }
@@ -1293,10 +1293,10 @@ Future<Map<int, String>> extractEmbeddedSubtitlesViaFfmpeg({
     }
     return written;
   } on ProcessException catch (e, stack) {
-    ErrorLogService.instance.log('extractEmbeddedSubtitlesViaFfmpeg', e, stack);
+    engineLog.log('extractEmbeddedSubtitlesViaFfmpeg', e, stack);
     return const <int, String>{};
   } catch (e, stack) {
-    ErrorLogService.instance.log('extractEmbeddedSubtitlesViaFfmpeg', e, stack);
+    engineLog.log('extractEmbeddedSubtitlesViaFfmpeg', e, stack);
     return const <int, String>{};
   }
 }

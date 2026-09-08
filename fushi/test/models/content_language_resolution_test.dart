@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart' show TargetPlatform;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi_engine/models/content_font_chain.dart';
+import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
 
 void main() {

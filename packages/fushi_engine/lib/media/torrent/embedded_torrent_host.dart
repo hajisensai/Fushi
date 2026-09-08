@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi_engine/media/torrent/anti_leech.dart';
 import 'package:fushi_engine/media/torrent/download_save_root.dart';
@@ -11,6 +10,9 @@ import 'package:fushi_engine/media/torrent/tracker_subscription.dart';
 import 'package:fushi_engine/media/torrent/torrent_upload_policy.dart';
 import 'package:fushi_torrent/fushi_torrent.dart';
 import 'package:path/path.dart' as p;
+import 'package:fushi_core/fushi_core.dart';
+import 'package:meta/meta.dart';
+import 'package:collection/collection.dart';
 
 typedef _NetworkDiscoveryState = ({
   bool dht,
@@ -315,7 +317,7 @@ class EmbeddedTorrentHost {
   /// `AppModel._restoreEmbeddedTorrentSession` 看着 [hasRestored] 补一次。
   int restoreFromResume(Set<String>? keepIds) {
     if (keepIds == null) {
-      debugPrint('[torrent] resume restore skipped: plan ids not loaded yet');
+      fushiDebugPrint('[torrent] resume restore skipped: plan ids not loaded yet');
       return 0;
     }
     _pruneResumeFiles(keepIds);
@@ -329,12 +331,12 @@ class EmbeddedTorrentHost {
     try {
       final List<String> ids = _session.loadResumeDir(_resumeDir);
       if (ids.isNotEmpty) {
-        debugPrint('[torrent] restored ${ids.length} torrent(s) from resume');
+        fushiDebugPrint('[torrent] restored ${ids.length} torrent(s) from resume');
       }
       _restoreUserPaused(ids);
       return ids.length;
     } on Object catch (e) {
-      debugPrint('[torrent] resume restore failed: $e');
+      fushiDebugPrint('[torrent] resume restore failed: $e');
       return 0;
     } finally {
       if (wakeDuringRestore) endNetworkWake();
@@ -372,7 +374,7 @@ class EmbeddedTorrentHost {
     _pausedAwaitingRestore
       ..clear()
       ..addAll(keep.difference(restored));
-    if (!setEquals(keep, wanted)) {
+    if (!const SetEquality<Object?>().equals(keep, wanted)) {
       _persistUserPaused();
     }
   }
@@ -402,22 +404,22 @@ class EmbeddedTorrentHost {
       sw.stop();
       _lastResumeSaveResult = result;
       if (result.failed > 0 || result.timedOut > 0) {
-        debugPrint('[torrent] resume save: ${result.saved} saved, '
+        fushiDebugPrint('[torrent] resume save: ${result.saved} saved, '
             '${result.failed} failed, ${result.timedOut} timed out '
             '(${sw.elapsedMilliseconds}ms)');
       } else if (!_loggedFirstResumeSave && result.saved > 0) {
         _loggedFirstResumeSave = true;
-        debugPrint('[torrent] resume save: ${result.saved} saved '
+        fushiDebugPrint('[torrent] resume save: ${result.saved} saved '
             '(${sw.elapsedMilliseconds}ms)');
       } else if (sw.elapsedMilliseconds >= 500) {
         // 主 isolate 同步 FFI：卡这么久 UI 是真冻住的，必须留痕。
-        debugPrint('[torrent] resume save blocked the UI isolate for '
+        fushiDebugPrint('[torrent] resume save blocked the UI isolate for '
             '${sw.elapsedMilliseconds}ms (${result.saved} saved)');
       }
       _pruneResumeFiles(keepIds);
       return result.saved;
     } on Object catch (e) {
-      debugPrint('[torrent] resume save threw: $e');
+      fushiDebugPrint('[torrent] resume save threw: $e');
       return 0;
     }
   }
@@ -528,7 +530,7 @@ class EmbeddedTorrentHost {
     if (effectiveMixed && !_session.supportsProxyMode) {
       // 老 DLL 无 ht_apply_proxy_mode：engine 会降级全代理。说清降级而不是
       // 假装混合生效。
-      debugPrint('[torrent] mixed proxy mode unsupported by loaded library; '
+      fushiDebugPrint('[torrent] mixed proxy mode unsupported by loaded library; '
           'falling back to full proxy');
     }
     final bool ok = _session.applyProxy(hostPort: target, mixed: mixed);
@@ -537,7 +539,7 @@ class EmbeddedTorrentHost {
       _appliedProxyHostPort = target;
       _appliedProxyMixed = effectiveMixed;
     } else {
-      debugPrint('[torrent] proxy apply failed (${target ?? 'direct'}): '
+      fushiDebugPrint('[torrent] proxy apply failed (${target ?? 'direct'}): '
           '${_session.supportsProxy ? 'native rejected' : 'library lacks ht_apply_proxy'}');
     }
     return ok;
@@ -683,7 +685,7 @@ class EmbeddedTorrentHost {
   void _logNetworkDiscoveryApplyFailure([Object? error]) {
     if (_loggedNetworkDiscoveryApplyFailure) return;
     _loggedNetworkDiscoveryApplyFailure = true;
-    debugPrint('[torrent] network discovery settings apply failed'
+    fushiDebugPrint('[torrent] network discovery settings apply failed'
         '${error == null ? '' : ': $error'}; will retry');
   }
 
@@ -887,7 +889,7 @@ class EmbeddedTorrentHost {
       if (!_session.supportsUploadControl) {
         if (!_loggedUploadControlUnsupported) {
           _loggedUploadControlUnsupported = true;
-          debugPrint('[torrent] upload policy skipped: bundled DLL lacks '
+          fushiDebugPrint('[torrent] upload policy skipped: bundled DLL lacks '
               'ht_set_unchoke_slots/ht_pause_torrent (upload stays enabled; '
               'downloads unaffected)');
         }
@@ -1008,7 +1010,7 @@ int pruneResumeFiles({
   required Set<String>? keepIds,
 }) {
   if (keepIds == null) {
-    debugPrint('[torrent] resume prune refused: plan ids not loaded yet');
+    fushiDebugPrint('[torrent] resume prune refused: plan ids not loaded yet');
     return -1;
   }
   final Set<String> keep = <String>{
@@ -1026,11 +1028,11 @@ int pruneResumeFiles({
         entity.deleteSync();
         removed++;
       } on FileSystemException catch (e) {
-        debugPrint('[torrent] resume prune failed for ${entity.path}: $e');
+        fushiDebugPrint('[torrent] resume prune failed for ${entity.path}: $e');
       }
     }
   } on FileSystemException catch (e) {
-    debugPrint('[torrent] resume prune aborted: $e');
+    fushiDebugPrint('[torrent] resume prune aborted: $e');
     return removed;
   }
   return removed;
@@ -1055,7 +1057,7 @@ Map<String, int> _readSeedStarts(String resumeDir) {
           entry.key.toString().toLowerCase(): (entry.value! as num).toInt(),
     };
   } on Object catch (error) {
-    debugPrint('[torrent] seed starts read failed: $error');
+    fushiDebugPrint('[torrent] seed starts read failed: $error');
     return <String, int>{};
   }
 }
@@ -1075,7 +1077,7 @@ void _writeSeedStarts(String resumeDir, Map<String, int> starts) {
     );
     tmp.renameSync(target);
   } on Object catch (error) {
-    debugPrint('[torrent] seed starts write failed: $error');
+    fushiDebugPrint('[torrent] seed starts write failed: $error');
   }
 }
 
@@ -1100,7 +1102,7 @@ Set<String> readUserPausedFile(String resumeDir) {
         if (id is String && id.isNotEmpty) id.toLowerCase(),
     };
   } on Object catch (e) {
-    debugPrint('[torrent] user paused read failed: $e');
+    fushiDebugPrint('[torrent] user paused read failed: $e');
     return <String>{};
   }
 }
@@ -1146,7 +1148,7 @@ void writeUserPausedFile(String resumeDir, Set<String> infoHashes) {
     );
     tmp.renameSync(target);
   } on Object catch (e) {
-    debugPrint('[torrent] user paused write failed: $e');
+    fushiDebugPrint('[torrent] user paused write failed: $e');
   }
 }
 

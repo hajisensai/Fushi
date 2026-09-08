@@ -15,7 +15,7 @@ import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi/src/pages/implementations/stat_source_totals.dart';
 import 'package:fushi/src/pages/implementations/stat_summary.dart';
 import 'package:fushi/src/pages/implementations/stat_trends.dart';
-import 'package:fushi/src/stats/stat_facts.dart';
+import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_audio/fushi_audio.dart';

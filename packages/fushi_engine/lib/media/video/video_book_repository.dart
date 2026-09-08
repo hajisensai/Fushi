@@ -1,10 +1,9 @@
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
-import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_audio/fushi_audio_core.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/collections/collection_season_groups.dart';
 import 'package:fushi_engine/media/video/external_video.dart'
@@ -25,8 +24,8 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
         videoRemoteDelayPrefKey,
         videoRemoteSecondaryDelayAtPrefKey,
         videoRemoteSecondaryDelayPrefKey;
-import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
 
 /// [VideoBookRepository.importSplitPlaylist] 的落库结果。
 ///
@@ -112,7 +111,7 @@ class VideoBookRepository {
         timestampMs: nowMs,
       );
     } catch (e) {
-      ErrorLogService.instance.log(
+      engineLog.log(
         'VideoBookRepository.recordVideoImportActivity',
         e,
         StackTrace.current,
@@ -878,7 +877,7 @@ class VideoBookRepository {
             stillReferenced: stillReferenced,
           );
           for (final LocalFileDeleteFailure failure in report.failures) {
-            ErrorLogService.instance.log('VideoLocalFileDelete', failure);
+            engineLog.log('VideoLocalFileDelete', failure);
           }
           await _runLocalFileHook(
             'afterDelete',
@@ -902,7 +901,7 @@ class VideoBookRepository {
     try {
       await run();
     } catch (e, stack) {
-      ErrorLogService.instance.log(
+      engineLog.log(
         'VideoBookRepository.localFileHook.$name',
         e,
         stack,
@@ -978,7 +977,7 @@ class VideoBookRepository {
         );
       }
     } catch (e, stack) {
-      debugPrint('VideoBookRepository: video asset cleanup failed: $e\n$stack');
+      fushiDebugPrint('VideoBookRepository: video asset cleanup failed: $e\n$stack');
     }
   }
 
@@ -990,7 +989,7 @@ class VideoBookRepository {
       await _db.customStatement('VACUUM');
       await _db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
     } catch (e, stack) {
-      debugPrint(
+      fushiDebugPrint(
         'VideoBookRepository: compact after video delete failed: $e\n$stack',
       );
     }

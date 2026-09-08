@@ -19,7 +19,7 @@ import 'package:fushi/src/sync/cloud_remote_video_client.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
 import 'package:fushi/src/sync/remote_library_source.dart';
-import 'package:fushi/src/sync/sync_asset_store.dart';
+import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_backend.dart' show SyncBackendType;
 import 'package:fushi/src/sync/video_manifest.dart';
 import 'package:fushi_core/fushi_core.dart';

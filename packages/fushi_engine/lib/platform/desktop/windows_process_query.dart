@@ -38,7 +38,8 @@ import 'dart:ffi';
 import 'dart:io';
 
 import 'package:ffi/ffi.dart';
-import 'package:flutter/foundation.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:meta/meta.dart';
 
 /// 一个进程的最小身份。[path] 为 null 表示没取到（权限不足 / 进程已退出 /
 /// 调用方压根没要求解析路径——见 [enumerateWindowsProcesses] 的惰性契约）。
@@ -226,7 +227,7 @@ class _Win32 {
     try {
       _cached = _Win32._();
     } on Object catch (e) {
-      debugPrint('[WindowsProcessQuery] Win32 bind failed: $e');
+      fushiDebugPrint('[WindowsProcessQuery] Win32 bind failed: $e');
       _cached = null;
     }
     return _cached;

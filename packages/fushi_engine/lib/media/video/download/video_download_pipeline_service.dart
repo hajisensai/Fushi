@@ -3,8 +3,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:drift/drift.dart' show Value;
-import 'package:flutter/foundation.dart' show debugPrint;
-import 'package:fushi_audio/fushi_audio.dart' show decodeTextBytes;
+import 'package:fushi_audio/fushi_audio_core.dart' show decodeTextBytes;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
@@ -50,7 +49,7 @@ import 'package:fushi_engine/media/video/video_duration_probe.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
 import 'package:fushi_engine/media/video/video_sidecar.dart'
     show listSidecarSubtitles;
-import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
 
 enum VideoDownloadSubtitlePolicy { none, bestEffort, required }
 
@@ -450,7 +449,7 @@ Future<void> deletePersistedVideoDownloadJob({
           relativePath: file.currentRelativePath,
         );
         if (resolved == null) {
-          ErrorLogService.instance.log(
+          engineLog.log(
             'VideoDownloadJobDelete',
             'Refused to delete a backend-reported path that escapes the '
                 'observed save path: ${file.currentRelativePath}',
@@ -476,7 +475,7 @@ Future<void> deletePersistedVideoDownloadJob({
         removedPaths.add(path);
       } on Object catch (error, stack) {
         undeleted.add(path);
-        ErrorLogService.instance.log(
+        engineLog.log(
           'VideoDownloadJobDelete',
           'Failed to delete $path: $error',
           stack,
@@ -631,7 +630,7 @@ Future<void> reconcileVideoDownloadJobsAfterLocalDelete({
         }
       }
     } on Object catch (error, stack) {
-      ErrorLogService.instance.log(
+      engineLog.log(
         'VideoDownloadJobReconcile',
         'Failed to reconcile job ${job.jobId} after local delete: $error',
         stack,
@@ -768,7 +767,7 @@ class VideoDownloadLeaseGuard {
       // 续期 UPDATE 拿到 SQLITE_BUSY 后就是在这里被静默吞掉的，那条挂起的写语句
       // 随后毒化了整条数据库连接（每次 COMMIT 都抛「SQL statements in progress」），
       // 错误日志里却看不到第一现场。
-      ErrorLogService.instance.log(
+      engineLog.log(
         'VideoDownloadLeaseGuard.renew',
         error,
         stack,
@@ -1415,7 +1414,7 @@ class VideoDownloadPipelineService {
         TorrentFilePriority.skip,
       );
     } on Object catch (error, stack) {
-      ErrorLogService.instance.log(
+      engineLog.log(
         'VideoDownloadSkipBackendFile',
         'Failed to skip file $fileIndex of job ${job.jobId}: $error',
         stack,
@@ -1613,7 +1612,7 @@ class VideoDownloadPipelineService {
     final Stopwatch waited = Stopwatch()..start();
     while (_running) {
       if (drainTimeout != null && waited.elapsed >= drainTimeout) {
-        debugPrint(
+        fushiDebugPrint(
           '[Fushi] video download pipeline stop timed out after '
           '${waited.elapsedMilliseconds}ms; releasing',
         );
@@ -2940,7 +2939,7 @@ class VideoDownloadPipelineService {
       } on Object catch (error) {
         // 单条下载失败不该中断整轮筛选——下一条可能好好的。
         lastDownloadError = _safeError(error.toString());
-        debugPrint(
+        fushiDebugPrint(
           '[subtitle] candidate download failed '
           '(${candidate.providerId}:${candidate.remoteId}): $error',
         );
@@ -2961,7 +2960,7 @@ class VideoDownloadPipelineService {
         );
       }
       lastRejection = check.detail;
-      debugPrint(
+      fushiDebugPrint(
         '[subtitle] rejected candidate '
         '"${candidate.fileName}": ${check.detail}',
       );
@@ -3493,7 +3492,7 @@ class VideoDownloadPipelineService {
       throw VideoDownloadPipelineActionRequired(error.toString());
     }
     _ensureLeaseHeld();
-    debugPrint(
+    fushiDebugPrint(
       '[manual-download] imported ${outcome.importedCount} item(s) '
       'as ${kind.name}${outcome.summary == null ? '' : ': ${outcome.summary}'}',
     );

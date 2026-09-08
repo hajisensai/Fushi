@@ -69,7 +69,7 @@ import 'package:fushi/src/media/manga/aidoku/aidoku_cloudflare_challenge_page.da
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi_engine/media/video/external_video.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
-import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
+import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi/src/media/video/video_cover_extractor.dart'
     show extractVideoCover;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
@@ -87,6 +87,7 @@ import 'package:fushi_core/fushi_core.dart'
 import 'package:path/path.dart' as p;
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/src/storage/legacy_support_dir_migration.dart';
+import 'package:fushi/src/engine_bindings.dart';
 
 Color? _savedSplashColor;
 
@@ -196,6 +197,7 @@ void main([List<String> args = const <String>[]]) {
     // 由宿主装上。放在这里而不是 `AppModel.initialise()`：装的全是同步工厂，没有
     // 时序前置条件，而 `initialise()` 有两个 entry point 绕开它（弹窗词典与悬浮
     // 词典），写在 main 里哪个入口都不会漏。
+    installEngineHostBindings();
     installAsrHostBindings();
     AppIconSelection startupAppIcon = currentAppIconSelection.value;
     try {

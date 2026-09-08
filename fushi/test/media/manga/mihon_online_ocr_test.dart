@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'dart:typed_data';
-import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
@@ -9,7 +8,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_online_ocr.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
-import 'package:fushi/src/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart';
 import 'package:image/image.dart' as img;
 
@@ -49,7 +48,7 @@ void main() {
         for (int index = 0; index < 3; index++)
           MokuroImage(
             url: 'page-${(index + 1).toString().padLeft(6, '0')}.jpg',
-            size: const Size(1000, 1400),
+            size: const MokuroSize(1000, 1400),
             blocks: const <MokuroBlock>[],
           ),
       ],
@@ -75,7 +74,7 @@ void main() {
     expect(transport.requests, 3);
     expect(runtime.attempts[2], 3, reason: 'page fetch retries are 350/700 ms');
     expect(runtime.fetchCount, 5);
-    expect(firstEvents[0].page?.size, const Size(1200, 1700));
+    expect(firstEvents[0].page?.size, const MokuroSize(1200, 1700));
     await firstSession.close();
 
     final MangaReaderSession reopened = await provider.open();

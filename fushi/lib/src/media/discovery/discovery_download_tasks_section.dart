@@ -11,6 +11,7 @@ import 'package:fushi/src/pages/implementations/video_download_jobs_panel.dart'
     show showDownloadTaskDeleteConfirm;
 import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/misc/engine_listenable.dart';
 
 /// 「下载」页任务 tab 的发现页直链下载区：渲染 [DiscoveryDownloadQueue] 的任务
 /// 列表（游戏 / 小说 / 有声书等 HTTP 直链，与 torrent 任务、漫画目录队列并列，
@@ -53,7 +54,7 @@ class DiscoveryDownloadTasksSection extends ConsumerWidget {
           const SizedBox.shrink();
     }
     return ListenableBuilder(
-      listenable: queue,
+      listenable: EngineListenable(queue),
       builder: (BuildContext context, Widget? _) {
         final List<DiscoveryDownloadTask> tasks = queue.tasks;
         if (tasksBuilder != null) {

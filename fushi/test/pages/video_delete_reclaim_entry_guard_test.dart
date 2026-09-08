@@ -16,13 +16,13 @@ void main() {
       ).readAsStringSync();
       // B4 拆分后 deleteVideo 在 videos.part.dart。
       final String host = File(
-        'lib/src/sync/local_library_host_service/videos.part.dart',
+        '../packages/fushi_engine/lib/sync/local_library_host_service/videos.part.dart',
       ).readAsStringSync();
       final String appModel = File(
         'lib/src/models/app_model.dart',
       ).readAsStringSync();
       final String pipeline = File(
-        'lib/src/media/video/download/video_download_pipeline_service.dart',
+        '../packages/fushi_engine/lib/media/video/download/video_download_pipeline_service.dart',
       ).readAsStringSync();
 
       final String libraryDelete = File(

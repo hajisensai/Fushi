@@ -93,7 +93,7 @@ void main() {
   // mixin 来源为 game（统计口径不动，标签与统计两个维度）。
   test('gal 制卡链路显式声明 game 来源，source 无静默默认值', () {
     final String requestSrc =
-        File('lib/src/mining/immersion_mining_request.dart').readAsStringSync();
+        File('../packages/fushi_engine/lib/mining/immersion_mining_request.dart').readAsStringSync();
     expect(requestSrc, contains('required this.source'),
         reason: 'ImmersionMiningRequest.source 必须必填，禁止恢复 video 默认值');
     expect(requestSrc, isNot(contains('this.source = AnkiMiningSource')),

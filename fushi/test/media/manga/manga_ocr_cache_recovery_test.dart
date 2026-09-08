@@ -1,8 +1,7 @@
 import 'dart:io';
-import 'dart:ui' show Rect, Size;
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_cache_recovery.dart';
@@ -188,12 +187,12 @@ OcrPageResult _localResult({
 
 MokuroImage _page(String url, String text) => MokuroImage(
       url: url,
-      size: const Size(100, 200),
+      size: const MokuroSize(100, 200),
       blocks: text.isEmpty
           ? const <MokuroBlock>[]
           : <MokuroBlock>[
               MokuroBlock(
-                rectangle: const Rect.fromLTWH(10, 20, 30, 40),
+                rectangle: const MokuroRect.fromLTWH(10, 20, 30, 40),
                 isVertical: false,
                 fontSize: 12,
                 zIndex: 0,

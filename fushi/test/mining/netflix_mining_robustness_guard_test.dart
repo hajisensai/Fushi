@@ -193,7 +193,7 @@ void main() {
   group('V16#4 dart 侧时间窗死代码已删', () {
     test('immersion_mine_payload.dart 无 clipGifEndMs', () {
       final String src =
-          File('lib/src/sync/immersion_mine_payload.dart').readAsStringSync();
+          File('../packages/fushi_engine/lib/sync/immersion_mine_payload.dart').readAsStringSync();
       expect(src.contains('clipGifEndMs'), isFalse,
           reason: 'payload 残留 clipGifEndMs 死字段');
     });

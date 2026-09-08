@@ -6,8 +6,8 @@ import 'package:crypto/crypto.dart' as crypto;
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/models/local_audio_source_pref.dart';
-import 'package:fushi/src/sync/sync_asset_package_service.dart';
+import 'package:fushi_engine/models/local_audio_source_pref.dart';
+import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 

@@ -63,7 +63,7 @@ void main() {
 
   test('pinning client 回调确实经过指纹比较（正向守卫，防被改空）', () {
     final String source =
-        File('lib/src/sync/tls/fushi_pinning_http.dart').readAsStringSync();
+        File('../packages/fushi_engine/lib/sync/tls/fushi_pinning_http.dart').readAsStringSync();
     expect(source.contains('certificateMatchesFingerprint'), isTrue,
         reason: 'pinned client 必须用指纹比较判据。');
     expect(source.contains('badCertificateCallback'), isTrue);

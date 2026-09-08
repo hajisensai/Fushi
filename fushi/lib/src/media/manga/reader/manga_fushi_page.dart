@@ -38,7 +38,7 @@ import 'package:fushi/src/media/manga/library/online_manga_library_service.dart'
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_online_ocr.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_reader_chapter.dart';
-import 'package:fushi/src/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_auto_start.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_cache_recovery.dart';
@@ -1528,7 +1528,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             // Mihon does not expose dimensions before fetching the page. This
             // neutral portrait ratio is only used until OCR decodes the real
             // dimensions; image rendering itself keeps the source aspect.
-            size: const Size(1000, 1400),
+            size: const MokuroSize(1000, 1400),
             blocks: const <MokuroBlock>[],
           ),
       ],
@@ -1771,7 +1771,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       final List<MokuroImage> images = List<MokuroImage>.of(current.images);
       images[pageIndex] = MokuroImage(
         url: previous.url,
-        size: Size(width.toDouble(), height.toDouble()),
+        size: MokuroSize(width.toDouble(), height.toDouble()),
         blocks: previous.blocks,
       );
       _payload = MokuroPayload(images: images, ocr: current.ocr);

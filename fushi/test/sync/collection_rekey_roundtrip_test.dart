@@ -1,7 +1,7 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
-import 'package:fushi/src/sync/collection_sync_engine.dart';
+import 'package:fushi_engine/sync/collection_sync_engine.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// v83 合集同步换算口 roundtrip 测试（data-layer-stage2-plan.md §5/§6 缺口 3）。
@@ -15,7 +15,7 @@ import 'package:fushi_core/fushi_core.dart';
 /// 引擎纯函数 [CollectionSyncEngine.merge] 保持纯 wire 域，对键值不解引用。
 ///
 /// 变异实测（2026-08-10，临时破坏 lib 后确认转红、已还原，零 lib 残留）：
-///  - fushi/lib/src/sync/collection_sync_engine.dart 发布口 wireEntryKey 改成
+///  - packages/fushi_engine/lib/sync/collection_sync_engine.dart 发布口 wireEntryKey 改成
 ///    恒等透传（丢 uid→bookKey 换算）→ 发布用例红：wire 出现 uid、bookKey 缺席；
 ///  - 同文件落地口 localEntryKey 改成恒等透传（丢 bookKey→uid 换算）→ 落地
 ///    用例红（成员落成 bookKey 行）+ 收敛用例红（bookKey 行不收敛成 uid 行）。

@@ -1,4 +1,4 @@
-import 'package:fushi_audio/fushi_audio.dart' show FavoriteSentence;
+import 'package:fushi_audio/fushi_audio_core.dart' show FavoriteSentence;
 
 /// A materialised, backend-agnostic snapshot of one device's aggregate state.
 /// It carries the exact families AggregateMergeService folds (statistics +

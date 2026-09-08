@@ -23,7 +23,7 @@ void main() {
     'lib/src/media/manga/aidoku/aidoku_reader_chapter.dart',
     'lib/src/media/manga/aidoku/aidoku_source_browse_page.dart',
     'lib/src/media/manga/ocr/google_lens_ocr_service.dart',
-    'lib/src/media/video/youtube_source_resolver.dart',
+    '../packages/fushi_engine/lib/media/video/youtube_source_resolver.dart',
   };
 
   /// 旧名在**非 UA 语境**下的合法残留（迁移入口、旧包名、旧资产契约）不在扫描面

@@ -59,7 +59,7 @@ void main() {
     'lib/src/pages/implementations/home_page.dart':
         'resumed 生命周期里用固定的 helloWorld 串 + useCache:false 预热词典引擎，'
             '不是用户查词，也没有结果呈现。',
-    'lib/src/sync/fushi_remote_api_handlers.dart':
+    '../packages/fushi_engine/lib/sync/fushi_remote_api_handlers.dart':
         '互联对端 / 浏览器扩展经 HTTP 拉词的服务端 handler：结果序列化给**远端**渲染，'
             '本机屏幕上什么都没发生，出声等于对着空气念。',
     'lib/src/sync/yomitan_api_server.dart':
@@ -67,7 +67,7 @@ void main() {
     'lib/src/sync/fushi_remote_lookup_client.dart':
         '本机作为 client 向 host 查词的传输层封装，返回给上层表面渲染；'
             '朗读由那个表面负责，这里重复朗读会双读。',
-    'lib/src/sync/fushi_remote_lookup_service.dart':
+    '../packages/fushi_engine/lib/sync/fushi_remote_lookup_service.dart':
         '上一条的抽象接口声明（FushiRemoteLookupService），只有方法签名没有实现体，'
             '不产生任何结果也不呈现 UI，谈不上朗读。',
   };

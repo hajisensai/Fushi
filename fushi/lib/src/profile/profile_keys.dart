@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:fushi_anki/fushi_anki.dart';
 
-import 'package:fushi/src/media/override_title_key.dart';
+import 'package:fushi_engine/media/override_title_key.dart';
 import 'package:fushi/src/media/video/video_online_services_preferences.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/sync/pref_redaction_policy.dart';

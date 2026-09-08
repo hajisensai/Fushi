@@ -27,6 +27,8 @@ import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_audio/fushi_audio.dart'
+    show installPlatformCharsetDetector, platformCharsetDecoder;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
@@ -1145,7 +1147,9 @@ sub_b/ep2.mp4
   // guards M1b TODO② (copyToLocal + readTextWithEncoding) from regressing back to
   // a UTF-8-only read. CharsetDetector.autoDecode is a native method channel
   // unavailable in headless flutter test, so we override its platform interface
-  // with a Dart fake that decodes the known SJIS fixture.
+  // with a Dart fake that decodes the known SJIS fixture. The plugin only runs
+  // when installed into fushi_audio's `platformCharsetDecoder` hook (main.dart
+  // does this in production), so the test installs it the same way.
   group('SourceLibraryScanner.scan subtitle charset (SJIS)', () {
     late Directory tmp;
     late CharsetDetectorPlatform original;
@@ -1154,8 +1158,10 @@ sub_b/ep2.mp4
       tmp = Directory.systemTemp.createTempSync('m1c_sjis_');
       original = CharsetDetectorPlatform.instance;
       CharsetDetectorPlatform.instance = _FakeSjisCharsetDetector();
+      installPlatformCharsetDetector();
     });
     tearDown(() {
+      platformCharsetDecoder = null;
       CharsetDetectorPlatform.instance = original;
       try {
         if (tmp.existsSync()) tmp.deleteSync(recursive: true);

@@ -1,5 +1,11 @@
 library hibiki_dictionary;
 
+// 零 Flutter 子集（引擎 / 无头服务端只 import 这一层）。
+export 'fushi_dictionary_core.dart';
+// 阅读器/词典查词共用的文本选区模型（依赖 material 的 TextSelection，留在全 barrel）。
+export 'src/models/fushi_text_selection.dart';
+
+// 以下依赖 Flutter / 平台插件，只供 app 使用。
 export 'src/engine/dictionary.dart';
 export 'src/engine/dictionary_utils.dart';
 export 'src/engine/fushidicts.dart';
@@ -17,10 +23,7 @@ export 'src/formats/abbyy_lingvo_format.dart';
 export 'src/formats/migaku_dictionary_format.dart';
 export 'src/formats/mdict_format.dart';
 export 'src/language/language.dart';
-export 'src/language/transform_description_i18n.dart';
 export 'src/language/language_utils.dart';
 export 'src/language/ruby_text.dart';
 export 'src/language/implementations/japanese_language.dart';
-export 'src/models/dictionary_entry.dart';
 export 'src/models/dictionary_operations_params.dart';
-export 'src/models/dictionary_search_result.dart';

@@ -11,7 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/manga/manga_json_writeback.dart';
-import 'package:fushi/src/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 
 String _mangaJson() {
   return jsonEncode(<String, Object?>{
@@ -51,7 +51,7 @@ String _mangaJson() {
   });
 }
 
-MokuroBlock _block(Rect rect, String text) {
+MokuroBlock _block(MokuroRect rect, String text) {
   return MokuroBlock(
     rectangle: rect,
     isVertical: rect.height > rect.width,
@@ -106,7 +106,7 @@ void main() {
         pageIndex: 1,
         region: const Rect.fromLTRB(300, 100, 380, 500),
         blocks: <MokuroBlock>[
-          _block(const Rect.fromLTRB(310, 120, 370, 480), 'テスト行'),
+          _block(const MokuroRect.fromLTRB(310, 120, 370, 480), 'テスト行'),
         ],
       );
 
@@ -114,7 +114,7 @@ void main() {
       expect(payload.images, hasLength(2));
       // 未触碰页不变。
       expect(payload.images[0].blocks, isEmpty);
-      expect(payload.images[0].size, const Size(1000, 1600));
+      expect(payload.images[0].size, const MokuroSize(1000, 1600));
 
       final MokuroImage page = payload.images[1];
       expect(page.url, 'sub/p002.jpg', reason: '页 url 往返不丢子目录结构');
@@ -125,7 +125,7 @@ void main() {
       expect(page.blocks[0].linesCoords, isNotNull);
       // 新块在末尾，z_index 接着编。
       final MokuroBlock added = page.blocks[1];
-      expect(added.rectangle, const Rect.fromLTRB(310, 120, 370, 480));
+      expect(added.rectangle, const MokuroRect.fromLTRB(310, 120, 370, 480));
       expect(added.isVertical, isTrue);
       expect(added.lines, <String>['テスト行']);
       expect(added.zIndex, 1);
@@ -139,7 +139,7 @@ void main() {
         pageIndex: 1,
         region: const Rect.fromLTRB(0, 0, 200, 300),
         blocks: <MokuroBlock>[
-          _block(const Rect.fromLTRB(12, 22, 108, 218), '重识别'),
+          _block(const MokuroRect.fromLTRB(12, 22, 108, 218), '重识别'),
         ],
       );
       final MokuroImage page = returned.payload.images[1];
@@ -154,7 +154,7 @@ void main() {
         mangaJsonPath: file.path,
         pageIndex: 0,
         region: const Rect.fromLTRB(0, 0, 50, 50),
-        blocks: <MokuroBlock>[_block(const Rect.fromLTRB(0, 0, 50, 50), 'x')],
+        blocks: <MokuroBlock>[_block(const MokuroRect.fromLTRB(0, 0, 50, 50), 'x')],
       );
       final MangaOcrMetadata? ocr = parseMangaJson(file.readAsStringSync()).ocr;
       expect(ocr, isNotNull);
@@ -169,7 +169,7 @@ void main() {
         mangaJsonPath: file.path,
         pageIndex: 0,
         region: const Rect.fromLTRB(0, 0, 50, 50),
-        blocks: <MokuroBlock>[_block(const Rect.fromLTRB(0, 0, 50, 50), 'x')],
+        blocks: <MokuroBlock>[_block(const MokuroRect.fromLTRB(0, 0, 50, 50), 'x')],
       );
       expect(File('${file.path}.tmp').existsSync(), isFalse);
       expect(file.existsSync(), isTrue);
@@ -183,7 +183,7 @@ void main() {
         pageIndex: 0,
         region: const Rect.fromLTRB(0, 0, 50, 50),
         blocks: <MokuroBlock>[
-          _block(const Rect.fromLTRB(0, 0, 50, 50), 'inline'),
+          _block(const MokuroRect.fromLTRB(0, 0, 50, 50), 'inline'),
         ],
       );
       expect(
@@ -205,7 +205,7 @@ void main() {
           mangaJsonPath: file.path,
           pageIndex: 2,
           region: const Rect.fromLTRB(0, 0, 10, 10),
-          blocks: <MokuroBlock>[_block(const Rect.fromLTRB(0, 0, 10, 10), 'x')],
+          blocks: <MokuroBlock>[_block(const MokuroRect.fromLTRB(0, 0, 10, 10), 'x')],
         ),
         throwsA(isA<StateError>()),
       );
@@ -214,7 +214,7 @@ void main() {
           mangaJsonPath: p.join(p.dirname(file.path), 'missing.json'),
           pageIndex: 0,
           region: const Rect.fromLTRB(0, 0, 10, 10),
-          blocks: <MokuroBlock>[_block(const Rect.fromLTRB(0, 0, 10, 10), 'x')],
+          blocks: <MokuroBlock>[_block(const MokuroRect.fromLTRB(0, 0, 10, 10), 'x')],
         ),
         throwsA(isA<StateError>()),
       );
@@ -230,7 +230,7 @@ void main() {
             region: Rect.fromLTRB(i * 100.0, 0, i * 100.0 + 90, 100),
             blocks: <MokuroBlock>[
               _block(
-                Rect.fromLTRB(i * 100.0 + 5, 5, i * 100.0 + 85, 95),
+                MokuroRect.fromLTRB(i * 100.0 + 5, 5, i * 100.0 + 85, 95),
                 'block$i',
               ),
             ],
@@ -260,7 +260,7 @@ void main() {
           mangaJsonPath: file.path,
           pageIndex: 99,
           region: const Rect.fromLTRB(0, 0, 10, 10),
-          blocks: <MokuroBlock>[_block(const Rect.fromLTRB(0, 0, 10, 10), 'x')],
+          blocks: <MokuroBlock>[_block(const MokuroRect.fromLTRB(0, 0, 10, 10), 'x')],
         ),
         throwsA(isA<StateError>()),
       );
@@ -268,7 +268,7 @@ void main() {
         mangaJsonPath: file.path,
         pageIndex: 0,
         region: const Rect.fromLTRB(0, 0, 50, 50),
-        blocks: <MokuroBlock>[_block(const Rect.fromLTRB(0, 0, 50, 50), 'ok')],
+        blocks: <MokuroBlock>[_block(const MokuroRect.fromLTRB(0, 0, 50, 50), 'ok')],
       );
       final MokuroPayload payload = parseMangaJson(file.readAsStringSync());
       expect(payload.images[0].blocks.single.lines, <String>['ok']);
@@ -304,7 +304,7 @@ void main() {
         pageIndex: 1,
         region: const Rect.fromLTRB(0, 0, 200, 300),
         blocks: <MokuroBlock>[
-          _block(const Rect.fromLTRB(12, 22, 108, 218), '重识别'),
+          _block(const MokuroRect.fromLTRB(12, 22, 108, 218), '重识别'),
         ],
       );
       expect(
@@ -327,7 +327,7 @@ void main() {
       expect(restored.images[1].blocks.single.lines, <String>['既存ブロック']);
       expect(restored.ocr?.engineSignature, 'sig-abc');
       // 其余页不受影响。
-      expect(restored.images[0].size, const Size(1000, 1600));
+      expect(restored.images[0].size, const MokuroSize(1000, 1600));
       expect(File('${file.path}.tmp').existsSync(), isFalse);
     });
 
@@ -338,7 +338,7 @@ void main() {
         pageIndex: 1,
         region: const Rect.fromLTRB(0, 0, 200, 300),
         blocks: <MokuroBlock>[
-          _block(const Rect.fromLTRB(12, 22, 108, 218), '重识别'),
+          _block(const MokuroRect.fromLTRB(12, 22, 108, 218), '重识别'),
         ],
       );
       await Future.wait(<Future<void>>[
@@ -352,7 +352,7 @@ void main() {
           pageIndex: 0,
           region: const Rect.fromLTRB(0, 0, 50, 50),
           blocks: <MokuroBlock>[
-            _block(const Rect.fromLTRB(0, 0, 50, 50), 'p0')
+            _block(const MokuroRect.fromLTRB(0, 0, 50, 50), 'p0')
           ],
         ),
       ]);
@@ -506,7 +506,7 @@ void main() {
           pageIndex: 0,
           region: const Rect.fromLTRB(0, 0, 50, 50),
           blocks: <MokuroBlock>[
-            _block(const Rect.fromLTRB(0, 0, 50, 50), 'replaced'),
+            _block(const MokuroRect.fromLTRB(0, 0, 50, 50), 'replaced'),
           ],
         ),
         runExclusiveOnMangaJson<void>(

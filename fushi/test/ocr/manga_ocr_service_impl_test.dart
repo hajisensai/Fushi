@@ -5,10 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/ocr/manga_ocr_model_manifest.dart';
 import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
-import 'package:fushi/src/ocr/manga_ocr_service_impl.dart';
+import 'package:fushi_engine/ocr/manga_ocr_service_impl.dart';
 import 'package:fushi_engine/ocr/ocr_inference.dart';
-import 'package:fushi/src/ocr/ocr_inference_ort.dart'
-    show isLocalOnnxRuntimeAvailable;
 import 'package:path/path.dart' as p;
 
 /// 与真实清单同名同形（detector + encoder/decoder/vocab），尺寸缩成几字节，
@@ -273,7 +271,7 @@ void main() {
       //
       // 换成扫实现体：只要有人再把 `Platform.isXxx` 写回闸门里，任何宿主都当场红。
       final String source =
-          File('lib/src/ocr/manga_ocr_service_impl.dart').readAsStringSync();
+          File('../packages/fushi_engine/lib/ocr/manga_ocr_service_impl.dart').readAsStringSync();
       final RegExpMatch? match = RegExp(
         r'static bool defaultPlatformSupport\(\)\s*=>([\s\S]*?);',
       ).firstMatch(source);
@@ -708,7 +706,7 @@ void main() {
       // `MangaOcrAcceleration(...)`，只能走 [OcrAccelerationPlan.toAcceleration]，
       // 而那个出口是上面几条测出来的。
       final String source =
-          File('lib/src/ocr/manga_ocr_service_impl.dart').readAsStringSync();
+          File('../packages/fushi_engine/lib/ocr/manga_ocr_service_impl.dart').readAsStringSync();
       final int start = source.indexOf('Future<void> _volumeJobIsolateMain(');
       expect(start, isNonNegative,
           reason: '找不到 _volumeJobIsolateMain；改了签名要同步改本守卫');

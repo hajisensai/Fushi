@@ -25,7 +25,7 @@ import 'dart:io';
 
 import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
-import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
+import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi_engine/media/video/scraper/scraper_types.dart'
     show CoverMeta, CoverOrigin;
 import 'package:fushi_engine/media/video/video_book_repository.dart';

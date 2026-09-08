@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/media/manga/mihon/manga_page_provider.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_online_ocr.dart';
-import 'package:fushi/src/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_auto_start.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
@@ -100,7 +100,7 @@ MokuroPayload _payload(int pages) => MokuroPayload(
     for (int index = 0; index < pages; index++)
       MokuroImage(
         url: 'page-${(index + 1).toString().padLeft(6, '0')}.jpg',
-        size: const Size(1000, 1400),
+        size: const MokuroSize(1000, 1400),
         blocks: const <MokuroBlock>[],
       ),
   ],

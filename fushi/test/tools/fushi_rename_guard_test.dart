@@ -215,7 +215,7 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
       'lib/src/sync/sync_orchestrator.dart':
           'kLegacySyncAudiobookAssetName / _legacyDictionaryAssetSuffix / '
               '_legacyLocalAudioAssetSuffix：写新读旧的兼容读入口。',
-      'lib/src/sync/aggregate_sync_service.dart':
+      '../packages/fushi_engine/lib/sync/aggregate_sync_service.dart':
           '_legacyAggregateAssetSuffix：每设备聚合快照的兼容读入口。',
       'lib/src/sync/sync_compare_dialog.dart':
           'legacySuffix：远端词典对比的兼容读分支（与 orchestrator 同源口径）。',

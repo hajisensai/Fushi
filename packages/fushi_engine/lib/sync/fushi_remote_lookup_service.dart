@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
-import 'package:fushi_anki/fushi_anki.dart';
-import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi_anki/fushi_anki_core.dart';
+import 'package:fushi_dictionary/fushi_dictionary_core.dart';
 
 import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
 import 'package:fushi_engine/sync/immersion_mine_payload.dart';

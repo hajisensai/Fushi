@@ -6,7 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:xml/xml.dart';
 
 import 'package:fushi_engine/epub/epub_book.dart';
-import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
 
 /// Pure Dart EPUB parser — no native FFI, no WebView, no IndexedDB.
 ///
@@ -205,8 +205,7 @@ class EpubParser {
       }
       return cssPaths;
     } catch (e, stack) {
-      ErrorLogService.instance
-          .log('EpubParser.discoverCssRelativePaths', e, stack);
+      engineLog.log('EpubParser.discoverCssRelativePaths', e, stack);
       return const <String>[];
     }
   }
@@ -675,7 +674,7 @@ class EpubParser {
         }
       }
     } catch (e, stack) {
-      ErrorLogService.instance.log('EpubParser.parseNav', e, stack);
+      engineLog.log('EpubParser.parseNav', e, stack);
       // Malformed nav doc — fall through to NCX
     }
     return <EpubTocItem>[];
@@ -734,7 +733,7 @@ class EpubParser {
       }
       return _parseNavPoints(navMaps.first, ncxDir, extractDir);
     } catch (e, stack) {
-      ErrorLogService.instance.log('EpubParser.parseNcx', e, stack);
+      engineLog.log('EpubParser.parseNcx', e, stack);
       return <EpubTocItem>[];
     }
   }

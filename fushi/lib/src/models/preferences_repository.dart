@@ -41,6 +41,7 @@ import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/update_check_cache.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
+import 'package:fushi_engine/foundation/pref_store.dart';
 
 /// 视频画面缩放/比例模式（作用于 Flutter 层 [Video] widget 的 [BoxFit]，TODO-152 子B）。
 ///
@@ -80,7 +81,7 @@ BoxFit videoFitModeToBoxFit(VideoFitMode mode) {
   }
 }
 
-class PreferencesRepository extends ChangeNotifier {
+class PreferencesRepository extends ChangeNotifier implements PrefStore {
   PreferencesRepository(this._db);
 
   static const String videoOnlineServicesSetupDismissedKey =
@@ -147,6 +148,7 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  @override
   dynamic getPref(String key, {dynamic defaultValue}) {
     final raw = _prefCache[key];
     if (raw == null) {
@@ -155,6 +157,7 @@ class PreferencesRepository extends ChangeNotifier {
     return PrefCodec.decode(raw, defaultValue);
   }
 
+  @override
   Future<void> setPref(String key, dynamic value) async {
     final String strVal = PrefCodec.encode(value);
     _prefCache[key] = strVal;

@@ -1,12 +1,13 @@
+import 'dart:typed_data';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/video_clip_subtitle.dart';
 import 'package:fushi_engine/media/video/video_clip_subtitle_burn.dart';
-import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:path/path.dart' as p;
+import 'package:fushi_engine/foundation/engine_log.dart';
+import 'package:meta/meta.dart';
 
 // BUG-835：`extractFfmpegFailureReason` 的正准实现搬到 ffmpeg_backend.dart（最底层、
 // 无依赖），供共享的 [FfmpegRunResult.failureSummary] 与音频/视频两路径统一复用。此处
@@ -300,7 +301,7 @@ Future<_ClipProbe> _probeClipCodecPlan(
       parseClipFrameSize(probe.output),
     );
   } catch (e, stack) {
-    ErrorLogService.instance.log('VideoClipExport', e, stack);
+    engineLog.log('VideoClipExport', e, stack);
     return const _ClipProbe(ClipCodecPlan.fullCopy, null);
   }
 }
@@ -335,7 +336,7 @@ Future<Set<String>> _probeFfmpegFilters(
     );
     return parseFfmpegFilterNames(probe.output);
   } catch (e, stack) {
-    ErrorLogService.instance.log('VideoClipExport', e, stack);
+    engineLog.log('VideoClipExport', e, stack);
     return const <String>{};
   }
 }
@@ -748,7 +749,7 @@ Future<VideoClipExportResult> exportVideoClipViaFfmpeg({
             );
           }
           _deleteIfPresent(output);
-          ErrorLogService.instance.log(
+          engineLog.log(
             'VideoClipExport',
             'subtitle burn-in failed, falling back to a subtitle-less '
                 'export: ${burn.failureSummary}',
@@ -825,7 +826,7 @@ Future<VideoClipExportResult> exportVideoClipViaFfmpeg({
     // 降级本身保留，因为它要兜的是用户自带的第三方 ffmpeg，那个仍然不可控。
     // 失败原因照常写进错误日志（下方 ErrorLogService），排查时先看那条。
     if (!result.produced && subtitlePaths.isNotEmpty) {
-      ErrorLogService.instance.log(
+      engineLog.log(
         'VideoClipExport',
         'subtitle mux failed, retrying without subtitles: '
             '${result.last.failureSummary}',
@@ -848,12 +849,10 @@ Future<VideoClipExportResult> exportVideoClipViaFfmpeg({
     // C 修（BUG-345）：把两轮 ffmpeg 的真实失败原因（退出码 + stderr）写进错误日志，
     // 与 desktop_audio_clipper 的 _reportFfmpegFailure 对齐——否则失败是黑盒，真机只
     // 看到一句固定文案，看不到「Stream map matches no streams」/「Invalid argument」。
-    ErrorLogService.instance
-        .log('VideoClipExport', 'stream-copy: ${result.copy.failureSummary}');
+    engineLog.log('VideoClipExport', 'stream-copy: ${result.copy.failureSummary}');
     final FfmpegRunResult? reencode = result.reencode;
     if (reencode != null) {
-      ErrorLogService.instance
-          .log('VideoClipExport', 'reencode: ${reencode.failureSummary}');
+      engineLog.log('VideoClipExport', 'reencode: ${reencode.failureSummary}');
     }
     // TODO-910：detail 回传 stderr **尾段**抽出的真因行（最后实际跑的那轮），而非
     // 全量 stderr。ffmpeg stderr 开头恒是 `Input #0, ...: Metadata: encoder :...`
@@ -866,7 +865,7 @@ Future<VideoClipExportResult> exportVideoClipViaFfmpeg({
     );
   } on ProcessException catch (e, stack) {
     _deleteIfPresent(output);
-    ErrorLogService.instance.log(
+    engineLog.log(
       'VideoClipExport',
       describeFfmpegProcessException(e),
       stack,
@@ -877,7 +876,7 @@ Future<VideoClipExportResult> exportVideoClipViaFfmpeg({
     );
   } catch (e, stack) {
     _deleteIfPresent(output);
-    ErrorLogService.instance.log('VideoClipExport', e, stack);
+    engineLog.log('VideoClipExport', e, stack);
     return VideoClipExportResult.failure(
       VideoClipExportFailure.ffmpegFailed,
       detail: e.toString(),
@@ -948,7 +947,7 @@ Future<_BurnFrames?> _renderClipBurnFrames({
     }
     return _BurnFrames(dir, List<ClipBurnCue>.unmodifiable(out));
   } catch (e, stack) {
-    ErrorLogService.instance.log('VideoClipExport', e, stack);
+    engineLog.log('VideoClipExport', e, stack);
     if (dir != null) {
       try {
         await dir.delete(recursive: true);
@@ -972,7 +971,7 @@ Future<Directory?> _writeTempSubtitleFiles(List<String> contents) async {
     }
     return dir;
   } catch (e, stack) {
-    ErrorLogService.instance.log('VideoClipExport', e, stack);
+    engineLog.log('VideoClipExport', e, stack);
     if (dir != null) {
       try {
         await dir.delete(recursive: true);

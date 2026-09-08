@@ -4,8 +4,8 @@ import 'dart:io';
 
 import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
-import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:http/http.dart' as http;
+import 'package:fushi_engine/foundation/engine_log.dart';
 
 /// TODO-961 M1: v2 配对的 client 侧驱动（与 server 的 `/api/pair/v2`
 /// + `/api/pair/v2/confirm` 对接）。纯传输 + 协议编排，无 UI；M2 的手动 IP / 扫码
@@ -171,7 +171,7 @@ class FushiPairV2Client {
     } catch (e, stack) {
       // BUG-1553：分型并留痕。吞掉全部异常又不记日志，会把「证书指纹对不上」
       // （安全事件）和「对方关机了」呈现成同一句「配对失败」，且事后查不到任何线索。
-      ErrorLogService.instance.log('PairV2Client:$baseUrl', e, stack);
+      engineLog.log('PairV2Client:$baseUrl', e, stack);
       return FushiPairV2Failure(_classifyTransportFailure(e));
     } finally {
       if (_ownsClient) client.close();

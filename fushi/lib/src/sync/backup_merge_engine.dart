@@ -1,8 +1,8 @@
 import 'dart:convert';
 
 import 'package:drift/drift.dart' show QueryRow, Variable;
-import 'package:fushi/src/media/override_title_key.dart';
-import 'package:fushi/src/sync/aggregate_merge_service.dart';
+import 'package:fushi_engine/media/override_title_key.dart';
+import 'package:fushi_engine/sync/aggregate_merge_service.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_audio/fushi_audio.dart' show FavoriteSentence;
 import 'package:fushi_core/fushi_core.dart';

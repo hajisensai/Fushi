@@ -21,7 +21,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
 import 'package:fushi_engine/ocr/manga_ocr_model_manifest.dart';
-import 'package:fushi/src/storage/app_paths.dart';
+import 'package:fushi_engine/foundation/engine_paths.dart';
 
 /// 记忆化 sidecar 文件名（与模型同目录；删模型目录即一并清掉）。
 ///
@@ -36,7 +36,7 @@ const int kMangaOcrModelFingerprintLength = 12;
 
 /// 默认模型目录：`<appSupport>/ocr_models/manga`（经 [AppPaths] 数据根单一入口）。
 Future<Directory> defaultMangaOcrModelsDir() async {
-  final Directory support = await AppPaths.supportRootDirectory();
+  final Directory support = await enginePaths.supportRootDirectory();
   return Directory(p.join(support.path, 'ocr_models', 'manga'));
 }
 

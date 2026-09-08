@@ -7,6 +7,7 @@ import 'package:fushi/src/utils/misc/frame_safe_notifier.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
 
 class ErrorLogEntry {
   ErrorLogEntry({
@@ -32,7 +33,9 @@ class ErrorLogEntry {
   }
 }
 
-class ErrorLogService extends ChangeNotifier with FrameSafeNotifier {
+class ErrorLogService extends ChangeNotifier
+    with FrameSafeNotifier
+    implements EngineLogSink {
   ErrorLogService._();
   static final instance = ErrorLogService._();
 
@@ -397,6 +400,7 @@ class ErrorLogService extends ChangeNotifier with FrameSafeNotifier {
     }
   }
 
+  @override
   void log(String source, Object error, [StackTrace? stack]) {
     final entry = ErrorLogEntry(
       timestamp: DateTime.now(),
@@ -422,6 +426,7 @@ class ErrorLogService extends ChangeNotifier with FrameSafeNotifier {
   /// 进入 [_diagnosticEntries]（独立于 [_entries]）：不计入错误计数、不进用户可见错误
   /// 列表、不写持久化文件；但仍纳入 [getFullLog] 的「诊断/取证」段，随复制/分享/上传带走
   /// （保住 BUG-209 崩前证据可上传，不做删除式绕过）。同样 notify，让打开着的日志页刷新。
+  @override
   void logDiagnostic(String source, Object info) {
     final entry = ErrorLogEntry(
       timestamp: DateTime.now(),
@@ -444,6 +449,7 @@ class ErrorLogService extends ChangeNotifier with FrameSafeNotifier {
   /// `writeAsStringSync(flush:true)` **同步**把这条 entry 追加进日志文件（复用
   /// 导入/查词面包屑同一「同步落盘存活崩溃」范式），保证即便下一刻崩溃，这条致命
   /// 错误也已在磁盘上，下次启动能读到。同步 IO 仅在罕见的致命路径触发，不影响热路径。
+  @override
   void logFatal(String source, Object error, [StackTrace? stack]) {
     final entry = ErrorLogEntry(
       timestamp: DateTime.now(),

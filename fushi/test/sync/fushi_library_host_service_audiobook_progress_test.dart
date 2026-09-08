@@ -2,9 +2,9 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/sync/local_library_host_service.dart';
+import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
-import 'package:fushi/src/sync/sync_asset_package_service.dart';
+import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// host-apply 测试（BUG-471）：互联有声书进度 live 端点必须真读写 host 自己的

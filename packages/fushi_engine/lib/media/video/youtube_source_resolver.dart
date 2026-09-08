@@ -2,10 +2,9 @@
 // player response（见下方注释与 resolveYoutubeSource）。dart format 会把多行 import 的
 // `show VideoController` 换行，令行内 `// ignore` 锚点失效，故用 file 级抑制。
 // ignore_for_file: invalid_use_of_internal_member
-import 'package:flutter/foundation.dart';
 import 'package:html_unescape/html_unescape.dart';
 import 'package:http/http.dart' as http;
-import 'package:fushi_audio/fushi_audio.dart' show AudioCue;
+import 'package:fushi_audio/fushi_audio_core.dart' show AudioCue;
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt;
 // TODO-1000 根因：YouTube 已对 web 端 timedtext（字幕）URL 加 proof-of-origin
 // 门槛，公开 API（closedCaptions.getManifest → web 观看页派生的 URL）实测**所有格式
@@ -28,6 +27,8 @@ import 'package:youtube_explode_dart/src/videos/video_controller.dart'
 import 'package:youtube_explode_dart/src/reverse_engineering/player/player_response.dart'
     show PlayerResponse, ClosedCaptionTrack;
 import 'package:fushi_engine/utils/net/app_http.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:meta/meta.dart';
 
 /// BUG-1498：youtube_explode 自带的 `YoutubeHttpClient` 内部是裸 `http.Client()`
 /// （`findProxy` 为 null，连 `HTTPS_PROXY` 都不读），而 youtube.com / googlevideo.com
@@ -659,7 +660,7 @@ String _pickPlaybackVideoUrl(yt.StreamManifest manifest, int? targetHeight) {
   final yt.VideoOnlyStreamInfo chosen =
       _pickPlaybackVideoStreamInfo(manifest, targetHeight);
   if (chosen.isThrottled) {
-    debugPrint(
+    fushiDebugPrint(
       '[hibiki][youtube] 选中的播放流 isThrottled=true（异常，缓冲可能慢）：'
       'codec=${chosen.videoCodec} res=${chosen.videoResolution}',
     );

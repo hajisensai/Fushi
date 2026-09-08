@@ -1,12 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
-import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_audio/fushi_audio_core.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:meta/meta.dart';
 
 /// 视频字幕源统一模型与枚举/加载逻辑。
 ///
@@ -608,7 +609,7 @@ Future<EmbeddedSubtitleTrackProbeResult> probeEmbeddedSubtitleTracks(
     // 真正失败（超时 SIGKILL → returnCode:null）必须留痕，否则「0 条字幕」与
     // 「真无字幕」无从区分，整类静默失败不可调试。不抛，保持优雅降级契约。
     if (result.returnCode == null) {
-      debugPrint(
+      fushiDebugPrint(
         '[VideoSubtitleSource] embedded enumeration timed out for "$videoPath" '
         '(size=$sizeBytes bytes) — menu will show no '
         'embedded subtitles this time',
@@ -621,7 +622,7 @@ Future<EmbeddedSubtitleTrackProbeResult> probeEmbeddedSubtitleTracks(
       );
     }
     if (result.returnCode != 0 && result.output.trim().isEmpty) {
-      debugPrint(
+      fushiDebugPrint(
         '[VideoSubtitleSource] embedded enumeration failed without ffmpeg '
         'diagnostics for "$videoPath" (returnCode=${result.returnCode}, '
         'size=$sizeBytes bytes)',
@@ -641,7 +642,7 @@ Future<EmbeddedSubtitleTrackProbeResult> probeEmbeddedSubtitleTracks(
     );
   } on ProcessException catch (e) {
     // ffmpeg 未安装：优雅降级为无内嵌字幕。
-    debugPrint('[VideoSubtitleSource] ffmpeg unavailable: $e');
+    fushiDebugPrint('[VideoSubtitleSource] ffmpeg unavailable: $e');
     return EmbeddedSubtitleTrackProbeResult(
       tracks: const <EmbeddedSubtitleTrack>[],
       status: EmbeddedSubtitleTrackProbeStatus.ffmpegUnavailable,
@@ -649,7 +650,7 @@ Future<EmbeddedSubtitleTrackProbeResult> probeEmbeddedSubtitleTracks(
       sizeBytes: sizeBytes,
     );
   } catch (e, stack) {
-    debugPrint('[VideoSubtitleSource] embedded enumeration failed: $e\n$stack');
+    fushiDebugPrint('[VideoSubtitleSource] embedded enumeration failed: $e\n$stack');
     return EmbeddedSubtitleTrackProbeResult(
       tracks: const <EmbeddedSubtitleTrack>[],
       status: EmbeddedSubtitleTrackProbeStatus.failed,
@@ -1209,7 +1210,7 @@ Future<SubtitleCueLoadResult> _readAndParse(
   } catch (e) {
     // 不带栈：读文件失败的异常本身已含路径与 OS errno，栈没有额外信息，
     // 而这条路径（缺失的 sidecar 等）在正常使用中会反复命中。
-    debugPrint('[subtitle] read failed: ${file.path}: $e');
+    fushiDebugPrint('[subtitle] read failed: ${file.path}: $e');
     return const SubtitleCueLoadResult.failed(
       SubtitleCueLoadFailure.fileUnreadable,
     );
@@ -1222,7 +1223,7 @@ Future<SubtitleCueLoadResult> _readAndParse(
       bookUid: bookUid,
     );
   } catch (e, stack) {
-    debugPrint('[subtitle] parse failed: ${file.path}: $e\n$stack');
+    fushiDebugPrint('[subtitle] parse failed: ${file.path}: $e\n$stack');
     return const SubtitleCueLoadResult.failed(
       SubtitleCueLoadFailure.parseFailed,
     );
@@ -1250,7 +1251,7 @@ Future<void> prewarmEmbeddedSubtitleCache(String videoPath) async {
       embeddedSubtitleCacheDir(videoPath),
     );
   } catch (e, stack) {
-    debugPrint('[VideoSubtitleSource] embedded subtitle prewarm failed: '
+    fushiDebugPrint('[VideoSubtitleSource] embedded subtitle prewarm failed: '
         '$e\n$stack');
   }
 }

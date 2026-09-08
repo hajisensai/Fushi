@@ -1,18 +1,19 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:drift/drift.dart';
-import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
-import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_engine/epub/epub_parser.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
+import 'package:meta/meta.dart';
 
 class EpubImporter {
   EpubImporter._();
@@ -31,10 +32,7 @@ class EpubImporter {
     final int tempId = DateTime.now().millisecondsSinceEpoch;
     final String tempDir = await EpubStorage.bookDirectory('.tmp-$tempId');
 
-    final _ParseResult result = await compute(
-      _parseInIsolate,
-      _ParseArgs(bytes: bytes, extractDir: tempDir),
-    );
+    final _ParseResult result = await Isolate.run(() => _parseInIsolate(_ParseArgs(bytes: bytes, extractDir: tempDir)));
     return _persistParsed(
       db: db,
       result: result,
@@ -73,10 +71,7 @@ class EpubImporter {
     final int tempId = DateTime.now().millisecondsSinceEpoch;
     final String tempDir = await EpubStorage.bookDirectory('.tmp-$tempId');
 
-    final _ParseResult result = await compute(
-      _parseFromPathInIsolate,
-      _ParseArgsFromPath(filePath: filePath, extractDir: tempDir),
-    );
+    final _ParseResult result = await Isolate.run(() => _parseFromPathInIsolate(_ParseArgsFromPath(filePath: filePath, extractDir: tempDir)));
     return _persistParsed(
       db: db,
       result: result,
@@ -163,8 +158,7 @@ class EpubImporter {
                   existingBooks.map((EpubBookMeta b) => b.extractDir),
             );
           } catch (e) {
-            ErrorLogService.instance
-                .log('EpubImporter.rename', e, StackTrace.current);
+            engineLog.log('EpubImporter.rename', e, StackTrace.current);
             rethrow;
           }
         } else {
@@ -216,8 +210,7 @@ class EpubImporter {
           timestampMs: importedAtMs,
         );
       } catch (e) {
-        ErrorLogService.instance
-            .log('EpubImporter.addActivityEvent', e, StackTrace.current);
+        engineLog.log('EpubImporter.addActivityEvent', e, StackTrace.current);
       }
 
       return insertedKey;
@@ -226,7 +219,7 @@ class EpubImporter {
         try {
           await db.deleteEpubBook(insertedKey);
         } catch (e, stack) {
-          ErrorLogService.instance.log('EpubImporter.rollbackDelete', e, stack);
+          engineLog.log('EpubImporter.rollbackDelete', e, stack);
         }
       }
       _tryDeleteDir(extractDir);
@@ -280,10 +273,7 @@ class EpubImporter {
     final int tempId = DateTime.now().millisecondsSinceEpoch;
     final String tempDir = await EpubStorage.bookDirectory('.tmp-$tempId');
     try {
-      final _ParseResult result = await compute(
-        _parseFromPathInIsolate,
-        _ParseArgsFromPath(filePath: epubFilePath, extractDir: tempDir),
-      );
+      final _ParseResult result = await Isolate.run(() => _parseFromPathInIsolate(_ParseArgsFromPath(filePath: epubFilePath, extractDir: tempDir)));
       // chaptersJson / coverHref 都是**相对**解压根的路径，先算再搬位置等价。
       final String chaptersJson =
           buildChaptersJson(result.book, result.characterCounts);
@@ -300,7 +290,7 @@ class EpubImporter {
         coverPath: result.book.coverHref,
       );
     } catch (e, stack) {
-      ErrorLogService.instance.log('EpubImporter.rebuildInPlace', e, stack);
+      engineLog.log('EpubImporter.rebuildInPlace', e, stack);
       _tryDeleteDir(tempDir);
       rethrow;
     }
@@ -315,7 +305,7 @@ class EpubImporter {
   static Future<({int chapterCount, String chaptersJson, String? coverPath})>
       reparseExtractedBook(String extractDir) async {
     final _ParseResult result =
-        await compute(_reparseExtractedInIsolate, extractDir);
+        await Isolate.run(() => _reparseExtractedInIsolate(extractDir));
     return (
       chapterCount: result.book.chapters.length,
       chaptersJson: buildChaptersJson(result.book, result.characterCounts),
@@ -385,8 +375,7 @@ class EpubImporter {
       try {
         Directory(bak).renameSync(targetDir);
       } catch (rollbackError, stack) {
-        ErrorLogService.instance
-            .log('EpubImporter.replaceRollback', rollbackError, stack);
+        engineLog.log('EpubImporter.replaceRollback', rollbackError, stack);
       }
       rethrow;
     }
@@ -394,7 +383,7 @@ class EpubImporter {
       Directory(bak).deleteSync(recursive: true);
     } catch (e, stack) {
       // A leftover .bak dir is inert (never a future rename target); log it.
-      ErrorLogService.instance.log('EpubImporter.deleteBak', e, stack);
+      engineLog.log('EpubImporter.deleteBak', e, stack);
     }
     return targetDir;
   }
@@ -419,8 +408,7 @@ class EpubImporter {
       } on FileSystemException catch (e) {
         // Rename rejected (Android fuse/sdcardfs, custom data root on another
         // volume, or a residual target): fall through to copy+delete.
-        ErrorLogService.instance
-            .log('EpubImporter.moveDirCopyFallback', e, StackTrace.current);
+        engineLog.log('EpubImporter.moveDirCopyFallback', e, StackTrace.current);
       }
     }
     final Directory destDir = Directory(dest);
@@ -432,8 +420,7 @@ class EpubImporter {
       try {
         if (destDir.existsSync()) destDir.deleteSync(recursive: true);
       } catch (cleanupError, stack) {
-        ErrorLogService.instance
-            .log('EpubImporter.moveDirCleanup', cleanupError, stack);
+        engineLog.log('EpubImporter.moveDirCleanup', cleanupError, stack);
       }
       rethrow;
     }
@@ -460,7 +447,7 @@ class EpubImporter {
       try {
         dir.deleteSync(recursive: true);
       } catch (e, stack) {
-        ErrorLogService.instance.log('EpubImporter.cleanupDir', e, stack);
+        engineLog.log('EpubImporter.cleanupDir', e, stack);
       }
     }
   }

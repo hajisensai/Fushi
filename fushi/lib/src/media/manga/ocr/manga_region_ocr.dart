@@ -33,7 +33,8 @@ import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
-import 'package:fushi/src/media/manga/mokuro_payload.dart';
+import 'package:fushi/src/media/manga/mokuro_geometry_ui.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 
 /// 临时目录里承载裁图的**子目录**名。引擎链跑的是这个子目录：外部 mokuro 会把
 /// `.mokuro` 产物写到被扫描目录的同级，放一层子目录才能让它落在临时根目录内、
@@ -176,10 +177,11 @@ Future<List<MokuroBlock>> collectMangaRegionOcrBlocks(
 
 /// 纯函数：把裁图坐标系里的块整体平移 [origin]（块框、字符区域、行多边形一起）。
 List<MokuroBlock> offsetMangaBlocks(List<MokuroBlock> blocks, Offset origin) {
+  final MokuroPoint delta = origin.toMokuroPoint();
   return <MokuroBlock>[
     for (final MokuroBlock block in blocks)
       MokuroBlock(
-        rectangle: block.rectangle.shift(origin),
+        rectangle: block.rectangle.shift(delta),
         isVertical: block.isVertical,
         fontSize: block.fontSize,
         zIndex: block.zIndex,
@@ -201,7 +203,7 @@ List<MokuroBlock> offsetMangaBlocks(List<MokuroBlock> blocks, Offset origin) {
             : <MangaOcrTextRegion>[
                 for (final MangaOcrTextRegion region in block.regions!)
                   MangaOcrTextRegion(
-                    rectangle: region.rectangle.shift(origin),
+                    rectangle: region.rectangle.shift(delta),
                     utf16Start: region.utf16Start,
                     utf16End: region.utf16End,
                   ),
@@ -251,8 +253,9 @@ bool isMangaBlockCoveredByRegion(Rect block, Rect region) {
 Rect expandMangaRegionToBlocks(Rect region, List<MokuroBlock> pageBlocks) {
   Rect expanded = region;
   for (final MokuroBlock block in pageBlocks) {
-    if (isMangaBlockInsideRegion(block.rectangle, region)) {
-      expanded = expanded.expandToInclude(block.rectangle);
+    final Rect blockRect = block.rectangle.toRect();
+    if (isMangaBlockInsideRegion(blockRect, region)) {
+      expanded = expanded.expandToInclude(blockRect);
     }
   }
   return expanded;
@@ -270,7 +273,7 @@ MokuroImage replaceMangaPageRegion(
 ) {
   final List<MokuroBlock> merged = <MokuroBlock>[
     for (final MokuroBlock block in page.blocks)
-      if (!isMangaBlockCoveredByRegion(block.rectangle, region)) block,
+      if (!isMangaBlockCoveredByRegion(block.rectangle.toRect(), region)) block,
     ...blocks,
   ];
   return MokuroImage(

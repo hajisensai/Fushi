@@ -27,7 +27,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
-import 'package:fushi/src/media/manga/manga_importer.dart';
+import 'package:fushi_engine/media/manga/manga_importer.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_client.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';

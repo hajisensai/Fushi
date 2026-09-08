@@ -23,7 +23,7 @@ import 'package:flutter_test/flutter_test.dart';
 import '../helpers/source_guard.dart';
 import '../helpers/scan_scale.dart';
 
-const String kPolicyFile = 'lib/src/epub/book_title_conflict.dart';
+const String kPolicyFile = '../packages/fushi_engine/lib/epub/book_title_conflict.dart';
 
 /// 已淘汰的名字 → 换成什么。
 const Map<String, String> kRetiredNames = <String, String>{

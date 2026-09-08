@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
-import 'package:flutter/foundation.dart';
+import 'package:meta/meta.dart';
 
 typedef ResumableDownloadOpen = Future<ResumableDownloadResponse> Function(
   Uri uri,

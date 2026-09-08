@@ -21,10 +21,10 @@ import '../helpers/source_guard.dart';
 /// 白名单只放两类，且必须写明理由：入口实现本体，以及**本来就在解析真 HTML5 文档**
 /// 的调用点（网页抓取），后者与 XHTML 自闭合语义无关。
 const Map<String, String> kAllowedRawHtmlParseFiles = <String, String>{
-  'lib/src/epub/epub_book.dart':
+  '../packages/fushi_engine/lib/epub/epub_book.dart':
       '入口实现本体：parseChapterHtml 就是「归一化 + html_parser.parse」这一句，'
           '它自己必须调裸解析，否则无处落地。',
-  'lib/src/media/torrent/nyaa_client.dart':
+  '../packages/fushi_engine/lib/media/torrent/nyaa_client.dart':
       'nyaa 种子站返回的是真正的 HTML5 页面（text/html），不是 EPUB 章节 XHTML；'
           '自闭合 raw-text 标签在那里既不合法也不会出现，走归一化只会平添开销。',
 };

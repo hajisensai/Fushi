@@ -1,4 +1,4 @@
-import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_audio/fushi_audio_core.dart';
 
 /// TODO-894：为一条 EPUB-backed 有声书补写配对的 srt_books 行。
 ///

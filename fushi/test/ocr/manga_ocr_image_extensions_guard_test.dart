@@ -7,7 +7,7 @@ library;
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:fushi/src/media/manga/manga_importer.dart';
+import 'package:fushi_engine/media/manga/manga_importer.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
 

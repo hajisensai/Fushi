@@ -75,8 +75,8 @@ void main() {
     // 被 E0 收敛的 app 层核心数据存储模块（fushi/ 下，相对 fushi/ 运行）。
     const List<String> convergedModules = <String>[
       'lib/src/models/app_model.dart',
-      'lib/src/epub/epub_storage.dart',
-      'lib/src/media/video/video_storage.dart',
+      '../packages/fushi_engine/lib/epub/epub_storage.dart',
+      '../packages/fushi_engine/lib/media/video/video_storage.dart',
       'lib/src/media/video/video_shader_manager.dart',
       'lib/src/media/video/video_import_dialog.dart',
       'lib/src/media/video/video_subtitle_attach.dart',
@@ -125,14 +125,25 @@ void main() {
         equals(4),
         reason: '_documentsRoot 定义 1 次 + 三个持久目录方法各调用 1 次 = 4',
       );
-      // TODO-1236：_documentsRoot 改为 resolver 注入优先、path_provider 兜底
-      // ——仍是
-      // 包内唯一直连 path_provider 的表达式，只是被注入点门控（app 层注入 AppPaths）。
+      // TODO-1236：_documentsRoot 改为 resolver 注入优先；无头服务端拆分后
+      // audiobook_storage.dart 是纯 Dart，**不再直连 path_provider**——平台兜底
+      // `getApplicationDocumentsDirectory` 挪到重文件 audiobook_storage_platform.dart，
+      // 由 installAudiobookStoragePlatform() 以 `??=` 装入（不覆盖 app 层注入的 AppPaths）。
+      expect(src.contains('path_provider'), isFalse,
+          reason: 'audiobook_storage.dart 必须零插件（无头服务端消费）');
       expect(
-        RegExp(r'documentsRootResolver \?\? getApplicationDocumentsDirectory')
+        RegExp(r'documentsRootResolver \?\? _unassignedDocumentsRoot')
             .hasMatch(src),
         isTrue,
-        reason: '_documentsRoot 应是唯一直连 path_provider 的表达式（经 resolver 门控）',
+        reason: '_documentsRoot 应经 resolver 门控、未装配时抛 StateError',
+      );
+      final String platformSrc = read(
+          '../packages/fushi_audio/lib/src/audiobook/audiobook_storage_platform.dart');
+      expect(
+        RegExp(r'documentsRootResolver \?\?= getApplicationDocumentsDirectory')
+            .hasMatch(platformSrc),
+        isTrue,
+        reason: '平台兜底只能以 ??= 补默认值，不得覆盖 AppPaths 注入',
       );
     });
   });
@@ -184,7 +195,7 @@ void main() {
       // 原宿主文件（音频剪辑工具）也不得回退直连数据根（迁移后其不应再包含封面
       // 目录解析逻辑）。
       final String clipper =
-          read('lib/src/utils/misc/desktop_audio_clipper.dart');
+          read('../packages/fushi_engine/lib/utils/misc/desktop_audio_clipper.dart');
       expect(clipper.contains('getApplicationDocumentsDirectory'), isFalse,
           reason:
               'desktop_audio_clipper 不得直连 getApplicationDocumentsDirectory');

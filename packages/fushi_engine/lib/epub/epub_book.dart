@@ -2,12 +2,12 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi_engine/stats/study_char_count.dart';
 import 'package:fushi_core/fushi_core.dart' show mimeTypeForFilePath;
 import 'package:html/parser.dart' as html_parser;
 import 'package:html/dom.dart' as html_dom;
 import 'package:path/path.dart' as p;
+import 'package:fushi_engine/epub/reader_resource_host.dart';
 
 class EpubBook {
   EpubBook({
@@ -310,7 +310,7 @@ class EpubBook {
   ({int chapterIndex, String? fragment})? resolveInternalLink(String url) {
     final Uri? uri = Uri.tryParse(url);
     if (uri == null) return null;
-    if (uri.host != ReaderFushiSource.kHost) return null;
+    if (uri.host != kReaderResourceHost) return null;
     if (!uri.path.startsWith('/epub/')) return null;
 
     final String epubPath = _canonicalEpubPath(

@@ -2,12 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:ffmpeg_kit_flutter/ffmpeg_kit.dart';
-import 'package:ffmpeg_kit_flutter/ffprobe_kit.dart';
-import 'package:ffmpeg_kit_flutter/return_code.dart';
-import 'package:flutter/foundation.dart';
 
 import 'package:fushi_engine/utils/misc/helper_process_registry.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:meta/meta.dart';
 
 /// 一次 ffmpeg 执行的结果。
 ///
@@ -485,7 +483,7 @@ Future<FfmpegRunResult> _runCliFfmpeg({
         return bundledResult;
       }
       fallbackReason = _bundledFallbackReason(bundledResult, isWindows);
-      debugPrint(
+      fushiDebugPrint(
         '[fushi-ffmpeg] bundled ffmpeg ran but produced no usable output '
         '(returnCode=${bundledResult.returnCode}); '
         'falling back to PATH ffmpeg: $bundled',
@@ -503,7 +501,7 @@ Future<FfmpegRunResult> _runCliFfmpeg({
       // 显式 FUSHI_FFMPEG 覆盖走上面的分支、不进这里，旧契约不变（如实报错）。
       fallbackReason = 'bundled ffmpeg launch failed '
           '(errorCode=${e.errorCode}, message=${e.message})';
-      debugPrint(
+      fushiDebugPrint(
         '[fushi-ffmpeg] bundled ffmpeg failed to launch '
         '(errorCode=${e.errorCode}); falling back to PATH ffmpeg: $bundled',
       );
@@ -640,103 +638,13 @@ class CliFfmpegBackend implements FfmpegBackend {
       );
 }
 
-/// 移动端（Android/iOS）后端：进程内调用「自编」的 ffmpeg-kit（arthenica 源码 +
-/// NDK r25 重编的最小变体；TODO-2357 起带 `--enable-gpl --enable-x264`，产物许可为
-/// GPLv3，与 Hibiki 自身一致），经其 `package:ffmpeg_kit_flutter` API 跑
-/// 同一套 ffmpeg 命令。替代崩溃的第三方预编译 ffmpeg-kit 变体（其
-/// `libffmpegkit_abidetect.so` 在 Android 16/API36 JNI_OnLoad 返回非法版本，启动即崩，
-/// BUG-122）。自编 AAR vendored 在 third_party/ffmpeg_kit_flutter/android/libs。
-///
-/// 与 [CliFfmpegBackend] **同契约**（args→退出码+合并日志），5 个 extract 函数 +
-/// （替代的崩溃包是第三方预编译 ffmpeg-kit 变体，见 BUG-122）。
-/// 字幕枚举零改动。异步启动 `executeWithArgumentsAsync`（立即返回 session），完成回调喂
-/// [Completer]，`.timeout` 等到会话结束后再读 [FFmpegSession.getReturnCode] /
-/// [FFmpegSession.getOutput]（= 合并日志，喂 `parseSubtitleStreamsFromFfmpegLog`）；
-/// 超时只精确取消**本次** session（`FFmpegKit.cancel(session.getSessionId())`），绝不碰并发
-/// 会话——曾用无参 `FFmpegKit.cancel()` 取消全部会话，误杀并发字幕抽取/制卡任务，表现为
-/// 偶发丢内封字幕（BUG-905）。
-class KitFfmpegBackend implements FfmpegBackend {
-  const KitFfmpegBackend();
-
-  @override
-  Future<FfmpegRunResult> run(List<String> args, Duration timeout) async {
-    // 异步启动：立即拿到本次 session，超时才能精确取消它而不误杀并发会话（BUG-905）。
-    final Completer<void> done = Completer<void>();
-    final session = await FFmpegKit.executeWithArgumentsAsync(
-      args,
-      (_) {
-        if (!done.isCompleted) done.complete();
-      },
-    );
-    try {
-      await done.future.timeout(timeout);
-    } on TimeoutException {
-      final int? sessionId = session.getSessionId();
-      if (sessionId != null) {
-        await FFmpegKit.cancel(sessionId);
-      }
-      return const FfmpegRunResult(
-        returnCode: null,
-        output: '',
-        executable: 'ffmpeg-kit',
-        attemptedExecutables: <String>['ffmpeg-kit'],
-      );
-    }
-    final ReturnCode? rc = await session.getReturnCode();
-    final String output = (await session.getOutput()) ?? '';
-    return FfmpegRunResult(
-      returnCode: rc?.getValue(),
-      output: output,
-      executable: 'ffmpeg-kit',
-      attemptedExecutables: const <String>['ffmpeg-kit'],
-    );
-  }
-
-  /// 移动端 ffprobe：进程内 `FFprobeKit.executeWithArguments`，`session.getOutput()`
-  /// 拿 ffprobe 的 JSON 报告（喂 `parseAudioMetadataFromFfprobeJson`）。与 [run] 同款
-  /// 超时/cancel 语义。TODO-1045：移动端也能读 M4B 容器 tag（方案 A 的关键假设）。
-  @override
-  Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) async {
-    // 与 [run] 同款异步启动 + 精确取消语义（BUG-905）。
-    final Completer<void> done = Completer<void>();
-    final session = await FFprobeKit.executeWithArgumentsAsync(
-      args,
-      (_) {
-        if (!done.isCompleted) done.complete();
-      },
-    );
-    try {
-      await done.future.timeout(timeout);
-    } on TimeoutException {
-      final int? sessionId = session.getSessionId();
-      if (sessionId != null) {
-        await FFmpegKit.cancel(sessionId);
-      }
-      return const FfmpegRunResult(
-        returnCode: null,
-        output: '',
-        executable: 'ffprobe-kit',
-        attemptedExecutables: <String>['ffprobe-kit'],
-      );
-    }
-    final ReturnCode? rc = await session.getReturnCode();
-    final String output = (await session.getOutput()) ?? '';
-    return FfmpegRunResult(
-      returnCode: rc?.getValue(),
-      output: output,
-      executable: 'ffprobe-kit',
-      attemptedExecutables: const <String>['ffprobe-kit'],
-    );
-  }
-}
-
 FfmpegBackend? _cachedBackend;
 
 /// 进程级单例 ffmpeg 后端选择。
 ///
 /// - `FUSHI_FFMPEG` 覆盖（绝对路径）→ 系统 CLI（开发/特殊部署，优先）。
-/// - Android / iOS → [KitFfmpegBackend]（进程内自编 ffmpeg-kit；移动端无系统 ffmpeg
-///   且 iOS 禁 exec 子进程）。
+/// - Android / iOS → app 经 [ffmpegPlatformBackendProvider] 装的 `KitFfmpegBackend`
+///   （进程内自编 ffmpeg-kit；移动端无系统 ffmpeg 且 iOS 禁 exec 子进程）。
 /// - 桌面（Windows/macOS/Linux）→ 系统 CLI（打包/用户提供 ffmpeg）。
 FfmpegBackend resolveFfmpegBackend() => _cachedBackend ??= _selectBackend();
 
@@ -745,9 +653,13 @@ void setFfmpegBackendForTesting(FfmpegBackend? backend) {
   _cachedBackend = backend;
 }
 
+/// 平台专属后端装配点：Flutter app 在 `main()` 里装 `KitFfmpegBackend`
+/// （Android / iOS 进程内 ffmpeg-kit，实现留在 app，引擎不依赖插件）；无头
+/// 服务端与桌面不装，走系统 CLI。`FUSHI_FFMPEG` 覆盖永远优先于它。
+FfmpegBackend Function()? ffmpegPlatformBackendProvider;
+
 FfmpegBackend _selectBackend() {
   final String? override = ffmpegEnvOverride()?.trim();
   if (override != null && override.isNotEmpty) return const CliFfmpegBackend();
-  if (Platform.isAndroid || Platform.isIOS) return const KitFfmpegBackend();
-  return const CliFfmpegBackend();
+  return ffmpegPlatformBackendProvider?.call() ?? const CliFfmpegBackend();
 }

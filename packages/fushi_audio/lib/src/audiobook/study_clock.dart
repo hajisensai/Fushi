@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:drift/drift.dart' show Value;
-import 'package:flutter/foundation.dart';
+import 'package:meta/meta.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 单个 tick 允许的最大连续窗口。学习时长由 [StudyClock] 的 60s 定时器驱动，正常窗口
@@ -601,7 +601,7 @@ class StudyClock {
     ) {
       // fail-open：不冒泡、不阻塞阅读 / 播放；段留 dirty，下个 tick 用绝对值重写。
       seg.dirty = true;
-      debugPrint('[study-clock] write error: $e\n$stack');
+      fushiDebugPrint('[study-clock] write error: $e\n$stack');
       onWriteError?.call(e, stack);
     });
   }
@@ -614,7 +614,7 @@ class StudyClock {
       try {
         await _write(seg, now);
       } catch (e, stack) {
-        debugPrint('[study-clock] detached write error: $e\n$stack');
+        fushiDebugPrint('[study-clock] detached write error: $e\n$stack');
         onWriteError?.call(e, stack);
       }
     }

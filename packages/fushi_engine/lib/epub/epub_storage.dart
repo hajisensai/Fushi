@@ -1,9 +1,9 @@
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:path/path.dart' as p;
+import 'package:fushi_engine/foundation/engine_paths.dart';
+import 'package:meta/meta.dart';
 
-import 'package:fushi/src/storage/app_paths.dart';
 
 /// Manages on-disk storage of extracted EPUB content.
 ///
@@ -35,7 +35,7 @@ class EpubStorage {
     if (_cachedBaseDir != null) return _cachedBaseDir!;
     // TODO-935 E0：经唯一入口 [AppPaths] 取 documents 根（内部 honor 测试分支），
     // 派生 `<documents>/fushi_books`——与旧解析逐字节等价。
-    final Directory appDir = await AppPaths.documentsRootDirectory();
+    final Directory appDir = await enginePaths.documentsRootDirectory();
     _cachedBaseDir = p.join(appDir.path, 'fushi_books');
     return _cachedBaseDir!;
   }

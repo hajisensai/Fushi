@@ -15,11 +15,12 @@ import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
-import 'package:fushi/src/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
+import 'package:fushi/src/media/manga/mokuro_geometry_ui.dart';
 import 'package:fushi/src/media/manga/ocr/manga_region_ocr.dart';
 
 MokuroBlock _block(
-  Rect rect,
+  MokuroRect rect,
   String text, {
   int zIndex = 0,
   List<MangaOcrTextRegion>? regions,
@@ -127,11 +128,11 @@ void main() {
       final List<MokuroBlock> moved = offsetMangaBlocks(
         <MokuroBlock>[
           _block(
-            const Rect.fromLTRB(1, 2, 11, 42),
+            const MokuroRect.fromLTRB(1, 2, 11, 42),
             'ab',
             regions: <MangaOcrTextRegion>[
               const MangaOcrTextRegion(
-                rectangle: Rect.fromLTRB(1, 2, 11, 22),
+                rectangle: MokuroRect.fromLTRB(1, 2, 11, 22),
                 utf16Start: 0,
                 utf16End: 1,
               ),
@@ -147,9 +148,9 @@ void main() {
         const Offset(100, 200),
       );
       final MokuroBlock block = moved.single;
-      expect(block.rectangle, const Rect.fromLTRB(101, 202, 111, 242));
+      expect(block.rectangle, const MokuroRect.fromLTRB(101, 202, 111, 242));
       expect(block.regions!.single.rectangle,
-          const Rect.fromLTRB(101, 202, 111, 222));
+          const MokuroRect.fromLTRB(101, 202, 111, 222));
       expect(block.regions!.single.utf16End, 1);
       expect(block.linesCoords, <List<List<double>>>[
         <List<double>>[
@@ -162,7 +163,7 @@ void main() {
 
     test('无 regions / lines_coords 的块保持 null（不凭空造空列表）', () {
       final MokuroBlock block = offsetMangaBlocks(
-        <MokuroBlock>[_block(const Rect.fromLTRB(0, 0, 10, 10), 'x')],
+        <MokuroBlock>[_block(const MokuroRect.fromLTRB(0, 0, 10, 10), 'x')],
         const Offset(5, 5),
       ).single;
       expect(block.regions, isNull);
@@ -250,9 +251,9 @@ void main() {
     // 用户框只圈住竖排气泡的上 80%：照用户框裁图会「整条删、只认回来 80%」。
     const Rect userBox = Rect.fromLTRB(100, 100, 200, 200);
     final MokuroBlock bubble =
-        _block(const Rect.fromLTRB(120, 120, 180, 220), '气泡');
+        _block(const MokuroRect.fromLTRB(120, 120, 180, 220), '气泡');
     final MokuroBlock neighbour =
-        _block(const Rect.fromLTRB(190, 100, 300, 200), '邻块');
+        _block(const MokuroRect.fromLTRB(190, 100, 300, 200), '邻块');
 
     test('被圈中的块把框撑成包围盒，只擦到边的邻块不参与', () {
       expect(
@@ -274,9 +275,9 @@ void main() {
       final List<MokuroBlock> page = <MokuroBlock>[bubble, neighbour];
       final Rect expanded = expandMangaRegionToBlocks(userBox, page);
       for (final MokuroBlock block in page) {
-        if (!isMangaBlockInsideRegion(block.rectangle, userBox)) continue;
+        if (!isMangaBlockInsideRegion(block.rectangle.toRect(), userBox)) continue;
         expect(
-          isMangaBlockCoveredByRegion(block.rectangle, expanded),
+          isMangaBlockCoveredByRegion(block.rectangle.toRect(), expanded),
           isTrue,
           reason: '删掉的块必须整块落在裁图里，否则用户静默丢字',
         );
@@ -300,23 +301,23 @@ void main() {
     test('区域内旧块被换掉，区域外保序在前，新块在后，z_index 连续重编', () {
       final MokuroImage page = MokuroImage(
         url: 'p001.jpg',
-        size: const Size(1000, 1600),
+        size: const MokuroSize(1000, 1600),
         blocks: <MokuroBlock>[
-          _block(const Rect.fromLTRB(0, 0, 50, 50), 'keep-a', zIndex: 0),
-          _block(const Rect.fromLTRB(110, 110, 190, 190), 'old', zIndex: 1),
-          _block(const Rect.fromLTRB(500, 500, 600, 700), 'keep-b', zIndex: 2),
+          _block(const MokuroRect.fromLTRB(0, 0, 50, 50), 'keep-a', zIndex: 0),
+          _block(const MokuroRect.fromLTRB(110, 110, 190, 190), 'old', zIndex: 1),
+          _block(const MokuroRect.fromLTRB(500, 500, 600, 700), 'keep-b', zIndex: 2),
         ],
       );
       final MokuroImage replaced = replaceMangaPageRegion(
         page,
         const Rect.fromLTRB(100, 100, 200, 200),
         <MokuroBlock>[
-          _block(const Rect.fromLTRB(105, 105, 150, 195), 'new-1'),
-          _block(const Rect.fromLTRB(150, 105, 195, 195), 'new-2'),
+          _block(const MokuroRect.fromLTRB(105, 105, 150, 195), 'new-1'),
+          _block(const MokuroRect.fromLTRB(150, 105, 195, 195), 'new-2'),
         ],
       );
       expect(replaced.url, 'p001.jpg');
-      expect(replaced.size, const Size(1000, 1600));
+      expect(replaced.size, const MokuroSize(1000, 1600));
       expect(
         replaced.blocks.map((MokuroBlock b) => b.lines.single).toList(),
         <String>['keep-a', 'keep-b', 'new-1', 'new-2'],
@@ -331,14 +332,14 @@ void main() {
       final MokuroImage replaced = replaceMangaPageRegion(
         MokuroImage(
           url: 'p',
-          size: const Size(1000, 1600),
+          size: const MokuroSize(1000, 1600),
           // 竖排气泡的下 20% 伸出裁图矩形之外。
           blocks: <MokuroBlock>[
-            _block(const Rect.fromLTRB(120, 120, 180, 220), 'half-out'),
+            _block(const MokuroRect.fromLTRB(120, 120, 180, 220), 'half-out'),
           ],
         ),
         const Rect.fromLTRB(100, 100, 200, 200),
-        <MokuroBlock>[_block(const Rect.fromLTRB(130, 130, 170, 190), 'new')],
+        <MokuroBlock>[_block(const MokuroRect.fromLTRB(130, 130, 170, 190), 'new')],
       );
       expect(
         replaced.blocks.map((MokuroBlock b) => b.lines.single).toList(),
@@ -352,8 +353,8 @@ void main() {
       final MokuroImage replaced = replaceMangaPageRegion(
         MokuroImage(
           url: 'p',
-          size: const Size(10, 10),
-          blocks: <MokuroBlock>[_block(const Rect.fromLTRB(1, 1, 5, 5), 'old')],
+          size: const MokuroSize(10, 10),
+          blocks: <MokuroBlock>[_block(const MokuroRect.fromLTRB(1, 1, 5, 5), 'old')],
         ),
         const Rect.fromLTRB(0, 0, 10, 10),
         const <MokuroBlock>[],
@@ -384,7 +385,7 @@ void main() {
         events,
         origin: const Offset(300, 400),
       );
-      expect(blocks.single.rectangle, const Rect.fromLTRB(310, 405, 340, 445));
+      expect(blocks.single.rectangle, const MokuroRect.fromLTRB(310, 405, 340, 445));
       expect(blocks.single.lines, <String>['こんにちは']);
       expect(blocks.single.isVertical, isTrue);
     });

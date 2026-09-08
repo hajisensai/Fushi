@@ -53,12 +53,12 @@ const List<String> kLegacyStatReaders = <String>[
 ];
 
 /// ③ 的豁免（记录在案，逐条有理由）：
-///  - `lib/src/stats/stat_facts.dart`：统一事实面的唯一加载器；
+///  - `../packages/fushi_engine/lib/stats/stat_facts.dart`：统一事实面的唯一加载器；
 ///  - `lib/src/sync/**`：legacy wire 物化 / 备份 / 比对；
 ///  - `home_video_page.dart`：只取 `video_watch_statistics.lastModified` 做「最近观看」
 ///    排序（不是统计展示），v92 起与 `getLatestStudyEndAtByMedia` 并集。
 const List<String> kLegacyReaderExemptFiles = <String>[
-  'lib/src/stats/stat_facts.dart',
+  '../packages/fushi_engine/lib/stats/stat_facts.dart',
   'lib/src/pages/implementations/home_video_page.dart',
 ];
 

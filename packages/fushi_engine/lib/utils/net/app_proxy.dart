@@ -30,9 +30,10 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:fushi_engine/platform/desktop/windows_process_query.dart';
 import 'package:fushi_engine/utils/net/url_input_normalizer.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:meta/meta.dart';
 
 /// 进程级「用户手填代理」读取器——[applyAppProxy] 不显式传 `userProxy` 时的取值来源。
 ///
@@ -515,7 +516,7 @@ Future<Map<String, String>> resolveWindowsSystemProxyEnvironment() async {
     );
   } catch (e) {
     // 读不到注册表（权限/环境异常）就当没有系统代理，回退直连——best-effort。
-    debugPrint('[AppProxy] read windows system proxy failed: $e');
+    fushiDebugPrint('[AppProxy] read windows system proxy failed: $e');
     return const <String, String>{};
   }
 }
@@ -584,14 +585,14 @@ Future<Map<String, String>> resolveMacSystemProxyEnvironment() async {
     final (Map<String, String> proxy, bool pacDowngraded) =
         parseScutilProxy(stdout);
     if (pacDowngraded) {
-      debugPrint(
+      fushiDebugPrint(
         '[AppProxy] 检测到 macOS PAC 自动代理，降级直连（不解析 PAC）',
       );
     }
     return proxy;
   } catch (e) {
     // 读不到系统代理（权限/环境异常）就当没有，回退 env / 直连——best-effort。
-    debugPrint('[AppProxy] read macOS system proxy failed: $e');
+    fushiDebugPrint('[AppProxy] read macOS system proxy failed: $e');
     return const <String, String>{};
   }
 }
@@ -693,14 +694,14 @@ Future<Map<String, String>> resolveLinuxSystemProxyEnvironment() async {
       httpPort: httpPort,
     );
     if (pacDowngraded) {
-      debugPrint(
+      fushiDebugPrint(
         '[AppProxy] 检测到 Linux PAC 自动代理，降级直连（不解析 PAC）',
       );
     }
     return proxy;
   } catch (e) {
     // gsettings 不存在（非 GNOME / 无 glib）或读取异常 → 当没有系统代理，回退 env / 直连。
-    debugPrint('[AppProxy] read Linux system proxy failed: $e');
+    fushiDebugPrint('[AppProxy] read Linux system proxy failed: $e');
     return const <String, String>{};
   }
 }

@@ -1,4 +1,8 @@
-import 'package:flutter/foundation.dart';
+import 'dart:isolate';
+import 'dart:typed_data';
+
+import 'package:fushi_core/fushi_core.dart';
+
 import 'anchor_gap_filler.dart';
 import 'audio_text_normalizer.dart';
 import '../audiobook/audiobook_model.dart';
@@ -155,7 +159,7 @@ class EpubSrtMatcher {
       similarityThreshold: similarityThreshold,
       maxConsecutiveMisses: maxConsecutiveMisses,
     );
-    return compute(_matchEntrypoint, req);
+    return Isolate.run(() => _matchEntrypoint(req));
   }
 
   static Future<ProbeResult> probeInIsolate({
@@ -173,7 +177,7 @@ class EpubSrtMatcher {
       similarityThreshold: similarityThreshold,
       maxConsecutiveMisses: maxConsecutiveMisses,
     );
-    return compute(_probeEntrypoint, req);
+    return Isolate.run(() => _probeEntrypoint(req));
   }
 
   /// [probeInIsolate] 的同步版：在当前 isolate 里对多档 window 各跑一遍
@@ -271,7 +275,7 @@ class EpubSrtMatcher {
       similarityThreshold,
       preNormCueTexts,
     );
-    debugPrint(
+    fushiDebugPrint(
       '[sentenceAudioHighlight] matcher: sections=${sections.length} '
       'totalNormLen=$totalLen cues=${cues.length} startCursor=$start '
       'threshold=$similarityThreshold',
@@ -281,7 +285,7 @@ class EpubSrtMatcher {
       final int s1 = (si + 1 < sections.length)
           ? idx.sectionNormStarts[si + 1]
           : totalLen;
-      debugPrint(
+      fushiDebugPrint(
         '[sentenceAudioHighlight] matcher.section[$si] href="${sections[si].href}" '
         'normStart=$s0 normLen=${s1 - s0}',
       );
@@ -329,7 +333,7 @@ class EpubSrtMatcher {
         if (recovered >= 0) {
           cursor = recovered;
           consecutiveMisses = 0;
-          debugPrint(
+          fushiDebugPrint(
             '[sentenceAudioHighlight] matcher.recover cursor=$cursor '
             'cue="${_clip(cue.text, 24)}"',
           );
@@ -488,14 +492,14 @@ class EpubSrtMatcher {
       } else {
         results.add(CueMatch.unmatched);
         consecutiveMisses++;
-        debugPrint(
+        fushiDebugPrint(
           '[sentenceAudioHighlight] matcher.miss sid=${cue.sentenceIndex} '
           'cue="${_clip(cue.text, 24)}" consecutive=$consecutiveMisses',
         );
       }
     }
 
-    debugPrint(
+    fushiDebugPrint(
       '[sentenceAudioHighlight] matcher done: matched=$matched/${cues.length} '
       'rate=${(matched * 100 / cues.length).toStringAsFixed(1)}% '
       'finalCursor=$cursor/$totalLen',
@@ -522,7 +526,7 @@ class EpubSrtMatcher {
   ) {
     if (hitIndex < 5 || isLast) {
       final String snippet = big.substring(found, matchEnd);
-      debugPrint(
+      fushiDebugPrint(
         '[sentenceAudioHighlight] matcher.hit#$hitIndex sid=${cue.sentenceIndex} '
         'sec=$secIdx ns=${found - secBase} '
         'score=${score.toStringAsFixed(3)} '

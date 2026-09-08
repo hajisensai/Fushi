@@ -1,17 +1,17 @@
 import 'dart:io';
 import 'dart:isolate';
 
-import 'package:flutter/foundation.dart';
-import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_audio/fushi_audio_core.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:asr_core/asr_core.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi_engine/epub/epub_parser.dart';
-import 'package:fushi/src/media/audiobook/subtitle_rematch.dart';
+import 'package:fushi_engine/media/audiobook/subtitle_rematch_policy.dart';
 import 'package:fushi_engine/media/import/epub_backed_srt_book.dart';
-import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
+import 'package:meta/meta.dart';
 
 /// 非 UI 进度回调（替代对话框的 reportProgress）。[fraction] 0..1，[message]
 /// 是给用户看的步骤文案（service 不持有 i18n，文案由调用方喂）。
@@ -114,7 +114,7 @@ CueResegmentResult resegmentCuesBySentence({
     cues: cues,
     result: result,
   );
-  debugPrint('[fushi-import] resegment: ${out.stats}');
+  fushiDebugPrint('[fushi-import] resegment: ${out.stats}');
   return out;
 }
 
@@ -216,9 +216,8 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
     final String extractDir = bookRow?.extractDir ?? '';
     sections = await loadEpubSectionsInBackground(extractDir);
   } catch (e, stack) {
-    ErrorLogService.instance
-        .log('AudiobookAlignmentService.parseEpub', e, stack);
-    debugPrint('[fushi-import] parseFromExtracted failed: $e');
+    engineLog.log('AudiobookAlignmentService.parseEpub', e, stack);
+    fushiDebugPrint('[fushi-import] parseFromExtracted failed: $e');
   }
   report(0.45, messages.parsing);
   final String ext = subtitlePath.split('.').last.toLowerCase();
@@ -234,7 +233,7 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
     subtitlePath,
   );
   AudiobookHealth health;
-  final bool runMatcher = SubtitleRematch.supportedFormats.contains(ext);
+  final bool runMatcher = SubtitleRematchPolicy.supportedFormats.contains(ext);
   if (runMatcher && sections.isNotEmpty && cues.isNotEmpty) {
     report(0.55, messages.matching);
     MatchResult? matchResult;

@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart';
 import 'package:fushi_engine/media/collections/collection_season_groups.dart'
     show isMultiSeasonGrouped;
 import 'package:fushi_engine/media/tracking/bangumi_api_client.dart';
@@ -9,9 +8,10 @@ import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
 import 'package:fushi_engine/media/video/scraper/filename_parser.dart';
 import 'package:fushi_engine/media/video/scraper/scraper_types.dart';
 import 'package:fushi_engine/media/video/scraper/title_normalizer.dart';
-import 'package:fushi/src/models/preferences_repository.dart';
-import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
+import 'package:fushi_engine/foundation/engine_notifier.dart';
 
 /// Bangumi 同步临时下线总开关（2026-08-19 用户决定：匹配/同步效果太差，先撤下、
 /// 改好后再加回）。false = 首页同步卡与设置入口不挂载、四个生产触发点（冷启动
@@ -305,7 +305,7 @@ BangumiSubject? _uniqueHighConfidenceSubject(
 class MediaTrackingService {
   MediaTrackingService({
     required MediaTrackingRepository repository,
-    required PreferencesRepository preferences,
+    required PrefStore preferences,
     required String userAgent,
     BangumiApiFactory? apiFactory,
     TrackingRetryTimerFactory? retryTimerFactory,
@@ -321,7 +321,7 @@ class MediaTrackingService {
                 Timer(delay, callback));
 
   final MediaTrackingRepository _repository;
-  final PreferencesRepository _preferences;
+  final PrefStore _preferences;
   final BangumiApiFactory _apiFactory;
   final TrackingRetryTimerFactory _retryTimerFactory;
 
@@ -344,9 +344,9 @@ class MediaTrackingService {
 
   /// 每次同步结束/连接状态变化后自增，供 UI（首页卡片、设置页）订阅刷新。
   /// 用计数器而不是 ChangeNotifier：外部无法合法调用 `notifyListeners`（@protected）。
-  final ValueNotifier<int> _statusRevision = ValueNotifier<int>(0);
+  final EngineValueNotifier<int> _statusRevision = EngineValueNotifier<int>(0);
 
-  ValueListenable<int> get statusRevision => _statusRevision;
+  EngineValueListenable<int> get statusRevision => _statusRevision;
 
   /// 令牌/账号名被**本服务之外**的路径改写后（互联服务配置导入、Profile 切换）
   /// 通知状态监听者重读。服务本身不缓存令牌（[accessToken] 每次读偏好），所以
@@ -997,7 +997,7 @@ class MediaTrackingService {
         _autoMappingMissAt[key] = DateTime.now().millisecondsSinceEpoch;
         _autoMappingErrors[key] = error.toString();
         _statusRevision.value++;
-        ErrorLogService.instance.log(
+        engineLog.log(
           'MediaTrackingService.autoMap',
           error,
           stackTrace,
@@ -1055,7 +1055,7 @@ class MediaTrackingService {
         _syncAgainRequested = true;
       }
     } catch (error, stackTrace) {
-      ErrorLogService.instance.log(
+      engineLog.log(
         'MediaTrackingService.enqueue',
         error,
         stackTrace,
@@ -1105,7 +1105,7 @@ class MediaTrackingService {
     try {
       earliest = await _repository.earliestNextAttemptAt();
     } catch (error, stackTrace) {
-      ErrorLogService.instance.log(
+      engineLog.log(
         'MediaTrackingService.scheduleRetry',
         error,
         stackTrace,
@@ -1153,7 +1153,7 @@ class MediaTrackingService {
         );
       } catch (error, stackTrace) {
         // fail-open：状态记录失败不能影响已经发出去的同步结果本身。
-        ErrorLogService.instance.log(
+        engineLog.log(
           'MediaTrackingService.persistOutcome',
           error,
           stackTrace,
@@ -1306,7 +1306,7 @@ class MediaTrackingService {
           await _repository.markFailed(update.outbox, error);
           failed++;
           unauthorized = error is BangumiApiException && error.isUnauthorized;
-          ErrorLogService.instance.log(
+          engineLog.log(
             'MediaTrackingService.sync',
             error,
             stackTrace,
@@ -1320,7 +1320,7 @@ class MediaTrackingService {
         await _repository.markFailed(update.outbox, error);
       }
       failed = updates.length;
-      ErrorLogService.instance.log(
+      engineLog.log(
         'MediaTrackingService.authenticate',
         error,
         stackTrace,

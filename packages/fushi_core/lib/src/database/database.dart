@@ -3,13 +3,13 @@ import 'dart:io';
 import 'dart:convert';
 import 'dart:math' show Random;
 
-import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqlite3/common.dart' show CommonDatabase;
 import 'package:sqlite3/sqlite3.dart' as sqlite3;
 
+import '../utils/fushi_debug_print.dart';
 import '../utils/ttu_sanitize.dart';
 import '../utils/video_book_uid.dart';
 import 'activity_event_types.dart';
@@ -226,7 +226,7 @@ Future<QueryExecutor> _openWithRecovery(
             : FushiDatabaseFailureKind.cannotOpen,
       );
     }
-    debugPrint('[fushi-db] sidecar open error on "$path" '
+    fushiDebugPrint('[fushi-db] sidecar open error on "$path" '
         '(main db healthy → recovering): $e\n$stack');
   }
 
@@ -245,12 +245,12 @@ Future<QueryExecutor> _openWithRecovery(
     } finally {
       recover.close();
     }
-    debugPrint(
+    fushiDebugPrint(
         '[fushi-db] Layer 1 recovery OK (checkpoint+DELETE) for "$path"');
     return NativeDatabase.createInBackground(dbFile, setup: applyPragmas);
   } catch (e, stack) {
     if (!_isSidecarOpenError(e)) rethrow;
-    debugPrint('[fushi-db] Layer 1 still failing on "$path": $e\n$stack');
+    fushiDebugPrint('[fushi-db] Layer 1 still failing on "$path": $e\n$stack');
   }
 
   // ── Layer 2 — physical sidecar rebuild. Layer 1 could not even open a raw
@@ -271,7 +271,7 @@ Future<QueryExecutor> _openWithRecovery(
     // ── Layer 3 — sidecar gone yet still failing ⇒ the main fushi.db is
     //    corrupt after all. Terminal: hand the app a recognisable type so it can
     //    stop the Retry loop and offer restore/clear instead of looping.
-    debugPrint(
+    fushiDebugPrint(
         '[fushi-db] Layer 2 rebuild failed, DB unrecoverable: $e\n$stack');
     throw FushiDatabaseUnrecoverableException(dbPath: path, cause: e);
   }
@@ -303,7 +303,7 @@ Future<void> _rebuildSidecar(File dbFile) async {
       try {
         await src.copy('$path.corrupt-bak-$stamp$suffix');
       } catch (e) {
-        debugPrint(
+        fushiDebugPrint(
             '[fushi-db] snapshot of "${src.path}" failed (non-fatal): $e');
       }
     }
@@ -328,7 +328,7 @@ Future<void> _rebuildSidecar(File dbFile) async {
 
   await deleteSidecar('$path-wal');
   await deleteSidecar('$path-shm');
-  debugPrint('[fushi-db] Layer 2: deleted stale -wal/-shm for "$path" '
+  fushiDebugPrint('[fushi-db] Layer 2: deleted stale -wal/-shm for "$path" '
       '(main .db untouched, .corrupt-bak-$stamp snapshot kept)');
 }
 
@@ -527,7 +527,7 @@ Future<void> _migrateLegacyDatabaseFileName(String dbDirectory) async {
     if (!await newDb.exists()) rethrow;
     return;
   }
-  debugPrint('[fushi-db] renamed legacy hibiki.db(+sidecars) -> fushi.db '
+  fushiDebugPrint('[fushi-db] renamed legacy hibiki.db(+sidecars) -> fushi.db '
       'in "$dbDirectory"');
 }
 
@@ -3304,7 +3304,7 @@ class FushiDatabase extends _$FushiDatabase
         rewritten += 1;
       }
 
-      debugPrint(
+      fushiDebugPrint(
         '[fushi-migration v26] audiobook book_key backfill: '
         'rewritten=$rewritten, '
         'skippedAmbiguousOldKey=$skippedAmbiguousOldKey, '
@@ -3316,7 +3316,7 @@ class FushiDatabase extends _$FushiDatabase
 
   /// TODO-894：为缺失配对 srt_books 行的 EPUB-backed 有声书补写一条 srt_books
   /// 行（v29 自愈迁移），仿 [backfillMismatchedAudiobookKeysV26] 范式：表/列守卫 →
-  /// transaction → 裸 SQL → debugPrint 计数。
+  /// transaction → 裸 SQL → fushiDebugPrint 计数。
   ///
   /// 候选只取「audiobooks.book_key 能 JOIN 上 epub_books（即 EPUB-backed），且其
   /// book_key 不在任何 srt_books.book_key 里」。standalone 纯字幕书（有 srt_books
@@ -3376,7 +3376,7 @@ class FushiDatabase extends _$FushiDatabase
         inserted += 1;
       }
 
-      debugPrint(
+      fushiDebugPrint(
         '[fushi-migration v29] EPUB-backed audiobook srt_books backfill: '
         'inserted=$inserted '
         '(standalone 字幕书无 audiobooks 行天然豁免，重复迁移幂等)',
@@ -3438,7 +3438,7 @@ class FushiDatabase extends _$FushiDatabase
       // 引用再 DELETE（等效 FK onDelete:setNull，但显式）。
       await customStatement('UPDATE shelf_entries SET series_id = NULL');
       await customStatement('DELETE FROM series');
-      debugPrint(
+      fushiDebugPrint(
         '[fushi-migration v38] series→collection converted='
         '$convertedCollections',
       );
@@ -3679,7 +3679,8 @@ class FushiDatabase extends _$FushiDatabase
         }
         splitCount += 1;
       }
-      debugPrint('[fushi-migration v38] playlist videos split=$splitCount');
+      fushiDebugPrint(
+          '[fushi-migration v38] playlist videos split=$splitCount');
 
       // favorite_sentences（收藏句）改写并入**同一事务**：整个 v38 拆集要么全成要么全
       // 回滚。否则若拆集事务先提交、收藏改写在两步之间崩溃，重跑时 parent 已删 → splitMap

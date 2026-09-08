@@ -3,7 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 
-import 'package:fushi/src/media/manga/import/image_size_probe.dart';
+import 'package:fushi_engine/media/manga/import/image_size_probe.dart';
 
 /// 头部探测的宽高必须与「整张解码 + bakeOrientation」的宽高逐格式一致——
 /// 漫画导入写进 manga.json 的尺寸从此只读文件头，口径不能漂。

@@ -25,7 +25,7 @@
 /// 字幕却下了中文」。
 library;
 
-import 'package:fushi_engine/models/content_font_chain.dart';
+import 'package:fushi_engine/models/content_language.dart';
 
 /// BCP-47 / ISO 639 语言标签 → 字幕域比较用的基础语言码（小写两字母为主）。
 ///

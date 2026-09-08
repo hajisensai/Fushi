@@ -18,12 +18,13 @@ library;
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi_engine/utils/misc/resumable_downloader.dart';
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
+import 'package:meta/meta.dart';
+import 'package:fushi_engine/foundation/engine_notifier.dart';
 
 /// 自动重试退避梯度；长度即最大自动重试次数（语义同 `kMokuroMoeRetryBackoff`）。
 const List<Duration> kDiscoveryDownloadRetryBackoff = <Duration>[
@@ -150,7 +151,7 @@ class _DiscoveryDownloadCancelled implements Exception {
 }
 
 /// 顺序执行的发现页直链下载队列。
-class DiscoveryDownloadQueue extends ChangeNotifier {
+class DiscoveryDownloadQueue extends EngineChangeNotifier {
   DiscoveryDownloadQueue({
     required DiscoveryPayloadResolver resolvePayload,
     required DiscoveryDownloadImporter importer,

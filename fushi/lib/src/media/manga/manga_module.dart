@@ -8,7 +8,7 @@ import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi/src/media/manga/import/manga_archive_importer.dart';
 import 'package:fushi/src/media/manga/import/manga_folder_batch.dart';
 import 'package:fushi/src/media/manga/import/manga_pdf_importer.dart';
-import 'package:fushi/src/media/manga/manga_importer.dart';
+import 'package:fushi_engine/media/manga/manga_importer.dart';
 import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_dialog.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';

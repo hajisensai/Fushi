@@ -19,13 +19,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/epub/epub_storage.dart' show EpubStorage;
 import 'package:fushi/src/models/local_audio_manager.dart'
     show LocalAudioDbEntry;
-import 'package:fushi/src/models/local_audio_source_pref.dart'
+import 'package:fushi_engine/models/local_audio_source_pref.dart'
     show LocalAudioSourcePref;
-import 'package:fushi/src/sync/local_library_host_service.dart';
+import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
-import 'package:fushi/src/sync/sync_asset_package_service.dart';
-import 'package:fushi/src/sync/sync_asset_store.dart';
+import 'package:fushi_engine/sync/sync_asset_package_service.dart';
+import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_repository.dart';

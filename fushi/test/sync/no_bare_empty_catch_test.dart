@@ -10,9 +10,15 @@ import 'package:flutter_test/flutter_test.dart';
 /// inside the braces — which also stops it matching this guard.
 void main() {
   test('no bare empty catch blocks in lib/src/sync', () {
-    final Directory dir = Directory('lib/src/sync');
-    expect(dir.existsSync(), isTrue,
-        reason: 'run from the fushi/ package root');
+    // 互联 host 服务器已抽到 fushi_engine：两处 sync 目录都在扫描面里。
+    final List<Directory> dirs = <Directory>[
+      Directory('lib/src/sync'),
+      Directory('../packages/fushi_engine/lib/sync'),
+    ];
+    for (final Directory dir in dirs) {
+      expect(dir.existsSync(), isTrue,
+          reason: 'run from the fushi/ package root');
+    }
 
     // Matches an empty (whitespace-only) catch body in either form:
     //   `catch (...) {}` / `catch (...) { }` / `catch (...) {\n}`
@@ -22,7 +28,8 @@ void main() {
         RegExp(r'(?:catch\s*\([^)]*\)|on\s+[\w.<>]+)\s*\{\s*\}');
     final List<String> offenders = <String>[];
 
-    for (final FileSystemEntity entity in dir.listSync(recursive: true)) {
+    for (final FileSystemEntity entity
+        in dirs.expand((Directory d) => d.listSync(recursive: true))) {
       if (entity is! File || !entity.path.endsWith('.dart')) continue;
       final String content = entity.readAsStringSync();
       for (final RegExpMatch m in bareCatch.allMatches(content)) {

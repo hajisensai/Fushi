@@ -2,7 +2,7 @@
 ///
 /// ## 为什么要守
 ///
-/// 代理解析层 `lib/src/utils/net/app_proxy.dart` 从 BUG-1348 起就存在，可它的文件头一度
+/// 代理解析层 `../packages/fushi_engine/lib/utils/net/app_proxy.dart` 从 BUG-1348 起就存在，可它的文件头一度
 /// 白纸黑字列着一份「不经本层」的名单。BUG-1498 的全仓普查实测出 **40+ 条**绕过它的裸出站：
 /// 刮削（TMDB / AniList / Bangumi / Jikan / VNDB / Fanart）、弹幕、字幕、封面、字体、
 /// mpv shader、manga-OCR 模型（470MB from huggingface）、漫画在线源、Mihon 扩展商店、
@@ -12,7 +12,7 @@
 /// `SomeClient({http.Client? c}) : _client = c ?? http.Client();`——初始化列表不能 `await`，
 /// 而 `applyAppProxy` 是异步的（要跑 `reg query` / `scutil` / `gsettings`）。于是每个新写
 /// 出站的人面对的选择是「改成异步工厂 + 改所有调用点」还是「就用裸 client」，**结构决定了
-/// 他们都会选后者**。修法是给出同步装配点（`lib/src/utils/net/app_http.dart`），这条守卫
+/// 他们都会选后者**。修法是给出同步装配点（`../packages/fushi_engine/lib/utils/net/app_http.dart`），这条守卫
 /// 则保证这笔债不会重新长出来。
 ///
 /// ## 守什么
@@ -57,13 +57,13 @@ const List<String> kScanRoots = <String>[
 
 /// **装配点自身**：它们的存在意义就是「建一个配好出口的 client」，当然要碰裸构造。
 const Map<String, String> kOutboundAssemblyPoints = <String, String>{
-  'fushi/lib/src/utils/net/app_http.dart':
+  'packages/fushi_engine/lib/utils/net/app_http.dart':
       '统一装配点本体：createAppHttpClient / createAppHttpIoClient / createAppDio',
   'fushi/lib/src/utils/net/dictionary_dio.dart':
       '词典链路的 app 侧接线（BUG-1493）：把包内 dictionaryDioFactory 接到 applyAppProxy',
   'fushi/lib/src/sync/sync_http.dart':
       '云同步共享 client 的装配点（BUG-1348）：60s 连接超时 + applyAppProxy',
-  'fushi/lib/src/sync/tls/fushi_pinning_http.dart':
+  'packages/fushi_engine/lib/sync/tls/fushi_pinning_http.dart':
       '互联对端的证书指纹钉扎 client 装配点（自签证书，目标恒为局域网 peer）',
   'fushi/lib/src/utils/misc/update_checker_net.dart':
       '更新检查：自建 HttpClient 后立刻 applyAppProxy（每候选镜像单独建，需现场异步解析）',
@@ -91,7 +91,7 @@ const Map<String, String> kBareOutboundRegistry = <String, String>{
           '它自带 connectionFactory 做连接期超时；走 HTTP 代理会让制卡整条链路当场失效。',
   'fushi/lib/src/media/manga/mihon/desktop_mihon_runtime.dart':
       'Mihon 桌面 sidecar：控制面与封面图都打本进程拉起的 127.0.0.1:<port> 认证代理端点。',
-  'fushi/lib/src/media/torrent/qbittorrent_client.dart':
+  'packages/fushi_engine/lib/media/torrent/qbittorrent_client.dart':
       '外接 qBittorrent WebUI，默认 127.0.0.1:8080（用户可改成局域网 NAS）。',
   'fushi/lib/src/media/torrent/torznab_client.dart':
       '用户自配 indexer，实践中多为自建/局域网/loopback（源码里另有 loopback 明文放行判据）。',
@@ -102,7 +102,7 @@ const Map<String, String> kBareOutboundRegistry = <String, String>{
       '互联同步 / 远程库 / 远程视频流：pinned client 之外的回退分支，目标仍是局域网 peer。',
   'fushi/lib/src/sync/interconnect_manga_ocr_client.dart':
       '远程 manga-OCR：把 OCR 卸载到局域网另一台机，经代理等于把内网请求发到公网出口。',
-  'fushi/lib/src/sync/pairing/fushi_ping_client.dart':
+  'packages/fushi_engine/lib/sync/pairing/fushi_ping_client.dart':
       '配对 peer 存活 ping：目标是 mDNS 发现出来的局域网地址。',
   'fushi/lib/src/models/app_model.dart':
       '远端查词 / 远端发音共用的 keep-alive client（TODO-744）：目标恒为已配对的局域网 peer。',
@@ -212,7 +212,7 @@ void main() {
       reason: '新增了绕过统一装配点的裸出站构造。\n'
           '如果目标是**公网**（刮削 / 字幕 / 弹幕 / 封面 / 字体 / 模型 / 日志…），请改用\n'
           '  `createAppHttpIoClient()` / `createAppHttpClient()` / `createAppDio()`\n'
-          '（`lib/src/utils/net/app_http.dart`，同步、可直接写在构造函数初始化列表里）。\n'
+          '（`../packages/fushi_engine/lib/utils/net/app_http.dart`，同步、可直接写在构造函数初始化列表里）。\n'
           '如果目标确实是**本机 / 局域网 / 用户自建服务**，请在 kBareOutboundRegistry 里\n'
           '登记并写明「为什么走代理会更坏」，同时把 kRegisteredOutboundFileCount +1。\n'
           '下游包（packages/*）不能反向 import app 侧代理层，范式见 dictionary_downloader\n'

@@ -15,7 +15,7 @@ import 'package:fushi_engine/media/video/download/video_media_reference_codec.da
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
-import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
 
 typedef VideoDownloadSubscriptionEnqueue = Future<String> Function(
   VideoDownloadEnqueueRequest request,
@@ -245,7 +245,7 @@ class VideoDownloadSubscriptionService {
     } on Object catch (error, stack) {
       // 降级不等于静默：查不出下一次到期就退回均匀间隔，但必须留痕，否则 DB
       // 持续故障时整个节奏特性会无声无息地变成 no-op。
-      ErrorLogService.instance.log(
+      engineLog.log(
         'VideoDownloadSubscriptionService.scheduleNextWake',
         error,
         stack,
@@ -860,7 +860,7 @@ class VideoDownloadSubscriptionService {
     } on Object catch (error, stack) {
       // 读不出历史不影响这一轮的检查结果，退回均匀间隔即可——但要留痕，否则
       // 取样恒失败时节奏特性会静默退化成改动前的行为，没有任何人知道。
-      ErrorLogService.instance.log(
+      engineLog.log(
         'VideoDownloadSubscriptionService.successDelay',
         error,
         stack,

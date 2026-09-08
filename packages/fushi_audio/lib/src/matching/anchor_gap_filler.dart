@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:meta/meta.dart';
 
 import '../audiobook/audiobook_model.dart';
 import 'audio_text_normalizer.dart';
@@ -202,7 +203,7 @@ class AnchorGapFiller {
     final String? violation = _invariantViolation(c);
     if (violation != null) {
       // 不应发生：每串提交前已逐条检查。真到这里宁可放弃整次回填。
-      debugPrint(
+      fushiDebugPrint(
         '[sentenceAudioHighlight] gapFill REJECTED: $violation; '
         'keeping first-pass result',
       );
@@ -216,7 +217,7 @@ class AnchorGapFiller {
     final int matched = c.out.where((CueMatch m) => m.matched).length;
     final GapFillStats stats = c.stats.snapshot(invariantViolated: false);
     if (stats.oversizeRuns > 0 || stats.budgetSkippedRuns > 0) {
-      debugPrint(
+      fushiDebugPrint(
         '[sentenceAudioHighlight] gapFill skipped runs: '
         'oversize=${stats.oversizeRuns} budget=${stats.budgetSkippedRuns} '
         'of ${stats.runs} (work=${stats.work}/$maxTotalWork)',
@@ -292,7 +293,7 @@ class AnchorGapFiller {
     c.stats.runs++;
     if (regionLen > maxRegionChars) {
       c.stats.oversizeRuns++;
-      debugPrint(
+      fushiDebugPrint(
         '[sentenceAudioHighlight] gapFill.skip cues=[$left..$right] '
         'region=$regionLen > maxRegionChars=$maxRegionChars',
       );
@@ -301,7 +302,7 @@ class AnchorGapFiller {
     final int work = regionLen * count;
     if (c.stats.work + work > maxTotalWork) {
       c.stats.budgetSkippedRuns++;
-      debugPrint(
+      fushiDebugPrint(
         '[sentenceAudioHighlight] gapFill.skip cues=[$left..$right] '
         'work=${c.stats.work}+$work > maxTotalWork=$maxTotalWork',
       );

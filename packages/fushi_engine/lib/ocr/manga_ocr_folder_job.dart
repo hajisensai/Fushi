@@ -9,12 +9,11 @@ library;
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:ui' show Rect, Size;
 
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 
-import 'package:fushi/src/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
 import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
@@ -269,7 +268,7 @@ MokuroPayload buildMangaPayloadFromResults(
     for (int b = 0; b < result.blocks.length; b++) {
       final OcrBlock block = result.blocks[b];
       blocks.add(MokuroBlock(
-        rectangle: Rect.fromLTRB(
+        rectangle: MokuroRect.fromLTRB(
           block.box.left,
           block.box.top,
           block.box.right,
@@ -286,7 +285,7 @@ MokuroPayload buildMangaPayloadFromResults(
     }
     images.add(MokuroImage(
       url: pages[i].relativeUrl,
-      size: Size(
+      size: MokuroSize(
         result.imageWidth.toDouble(),
         result.imageHeight.toDouble(),
       ),

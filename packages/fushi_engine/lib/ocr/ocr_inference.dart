@@ -9,6 +9,8 @@
 library;
 
 import 'package:asr_core/asr_core.dart';
+import 'package:asr_core/asr_core.dart' as onnx
+    show isLocalOnnxRuntimeAvailable;
 // 只放行共享 ONNX 抽象那几个名字，**不要整份 re-export**：asr_core 里还有模型
 // 清单、目录占用测量、日志出口这些与 OCR 无关的顶层符号，整份放出去会和本仓同名
 // 的 `measureDirectoryBytes` / `isLocalOnnxRuntimeAvailable` 撞成 ambiguous import
@@ -175,3 +177,77 @@ List<OcrExecutionProvider> selectOcrExecutionProviders({
   }
   return const <OcrExecutionProvider>[OcrExecutionProvider.cpu];
 }
+
+// ── 从 app 的 ocr_inference_ort.dart 下沉的纯 Dart 助手（OCR 输入名对齐、日志名、
+//    provider 回退），app 与无头服务端两边的会话工厂共用。 ──
+
+const String kOcrLogName = 'hibiki.ocr';
+
+/// 本平台是否内置 ONNX Runtime native 库（本地 OCR 推理是否可用）。
+///
+/// 真相源是共享层的同名 getter（`onnx_inference_ort.dart`，五端全真的理由与
+/// 「保留具名闸门」的理由都写在那里）；这里只转发，让 `MangaOcrServiceImpl` 的
+/// 闸门与既有测试继续从 OCR 层拿到它。
+bool get isLocalOnnxRuntimeAvailable => onnx.isLocalOnnxRuntimeAvailable;
+
+/// 用配置的加速 EP 创建会话；首选 EP 建不起来时退 CPU 重试一次。
+///
+/// 转发到共享的 [createOnnxSessionWithProviderFallback]（判据、异常语义、
+/// `onResolved` 必回报一次——全部见那里的注释），只把日志通道钉成 [kOcrLogName]。
+Future<T> createOcrSessionWithProviderFallback<T>({
+  required List<OcrExecutionProvider> providers,
+  required Future<T> Function(List<OcrExecutionProvider> providers) create,
+  void Function(OcrProviderResolution resolution)? onResolved,
+}) {
+  return createOnnxSessionWithProviderFallback<T>(
+    providers: providers,
+    create: create,
+    onResolved: onResolved,
+    logName: kOcrLogName,
+  );
+}
+
+/// 把算法层的语义输入名对齐到当前 ONNX 文件声明的真实输入名。
+///
+/// Manga OCR 下载源的检测器/编码器都只有一个输入，但不同导出版本分别使用过
+/// `pixel_values`、`images` 等名字。单输入模型不存在位置歧义，因此以 session
+/// 元数据为准；多输入 decoder 仍要求名称精确匹配，避免按顺序猜测而接错张量。
+///
+/// 单输入分支必须放在按名匹配**之前**：放在后面时，循环里任一未命中就已经
+/// `return inputs` 退出，循环走完又保证 `resolved` 非空，元数据回退永远不可达
+/// ——doc 宣称的鲁棒性并不存在（BUG-1173 同批审查发现）。
+Map<String, OcrTensor> resolveOcrSessionInputs({
+  required Map<String, OcrTensor> inputs,
+  required List<String> sessionInputNames,
+}) {
+  if (inputs.length == 1 && sessionInputNames.length == 1) {
+    return <String, OcrTensor>{
+      sessionInputNames.single: inputs.values.single,
+    };
+  }
+  final Map<String, OcrTensor> resolved = <String, OcrTensor>{};
+  for (final String sessionName in sessionInputNames) {
+    final OcrTensor? exact = inputs[sessionName];
+    if (exact != null) {
+      resolved[sessionName] = exact;
+      continue;
+    }
+    if (sessionName == 'images' && inputs['pixel_values'] != null) {
+      resolved[sessionName] = inputs['pixel_values']!;
+      continue;
+    }
+    return inputs;
+  }
+  if (resolved.isNotEmpty) {
+    return resolved;
+  }
+  return inputs;
+}
+
+/// [resolveOcrSessionInputs] 适配到共享工厂钩子的位置参数形态。
+
+/// OCR 用的 flutter_onnxruntime 会话工厂：共享 [OrtOnnxSessionFactory] +
+/// manga-ocr 输入名对齐钩子 + `hibiki.ocr` 日志通道。
+///
+/// `availableAcceleratedProviders()`（BUG-2050 的探测语义边界）与带
+/// `onProviderResolved` 的 `createSession` 均由父类提供，注释见那里。

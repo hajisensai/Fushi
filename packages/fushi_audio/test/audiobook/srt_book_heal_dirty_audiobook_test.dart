@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_audio/src/audiobook/audiobook_model.dart';
 import 'package:fushi_audio/src/audiobook/audiobook_repository.dart';
+import 'package:fushi_audio/src/audiobook/audiobook_storage.dart';
+import 'package:fushi_audio/src/audiobook/audiobook_storage_platform.dart';
 import 'package:fushi_audio/src/audiobook/srt_book_model.dart';
 import 'package:fushi_audio/src/audiobook/srt_book_repository.dart';
 import 'package:fushi_audio/src/parsers/srt_parser.dart';
@@ -43,11 +45,14 @@ void main() {
         return null;
       },
     );
+    // 平台兜底（getApplicationDocumentsDirectory → 上面的 mock）现在由重文件装配。
+    installAudiobookStoragePlatform();
     db = FushiDatabase.forTesting(NativeDatabase.memory());
   });
 
   tearDown(() async {
     await db.close();
+    AudiobookStorage.documentsRootResolver = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),

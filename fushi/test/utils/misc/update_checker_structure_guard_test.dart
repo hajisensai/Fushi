@@ -168,7 +168,7 @@ void main() {
   /// part 没法被外部按需 import，于是同步层只能裸连，在开着代理的机器上必然
   /// `errno = 121` 超时。守卫随之调头：**禁止**代理实现回流到 part 里。
   test('the proxy layer lives in its own library, not in the net part', () {
-    const String appProxy = 'lib/src/utils/net/app_proxy.dart';
+    const String appProxy = '../packages/fushi_engine/lib/utils/net/app_proxy.dart';
     expect(File(appProxy).existsSync(), isTrue,
         reason: '$appProxy must exist — the sync layer imports it directly');
 

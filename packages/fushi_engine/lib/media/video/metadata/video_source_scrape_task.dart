@@ -4,7 +4,6 @@ library;
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
@@ -12,6 +11,7 @@ import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.da
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart'
     show VideoSourceScrapeWork;
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/foundation/engine_notifier.dart';
 
 enum VideoSourceScrapePhase {
   idle,
@@ -378,7 +378,7 @@ class VideoSourceScrapeManualRequest {
 
 /// App/HomePage 生命周期级控制器：所有入口共用一把锁，保证同一时刻只有一个联网
 /// 批次。任务 Future 不属于弹窗，关闭弹窗或切换媒体库视图不会中止它。
-class VideoSourceScrapeTaskController extends ChangeNotifier {
+class VideoSourceScrapeTaskController extends EngineChangeNotifier {
   VideoSourceScrapeTaskController(this._runner);
 
   final VideoSourceScrapeRunner _runner;

@@ -1,6 +1,6 @@
 library;
 
-export 'video_local_extra_classifier.dart';
+export 'package:fushi_engine/media/video/metadata/video_local_extra_classifier.dart';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_engine/media/source_library/source_library_row.dart';

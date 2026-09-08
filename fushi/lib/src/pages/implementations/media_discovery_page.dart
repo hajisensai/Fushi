@@ -14,6 +14,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/discovery_header.dart';
 import 'package:fushi/src/pages/implementations/download_actions.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/misc/engine_listenable.dart';
 
 /// 统一发现页：书（小说/有声书）与 galgame 共用的多源在线资源发现视图。
 ///
@@ -647,7 +648,7 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
     }
 
     return AnimatedBuilder(
-      animation: queue,
+      animation: EngineListenable(queue),
       builder: (BuildContext context, Widget? _) => ListView(
         padding: const EdgeInsets.all(16),
         children: <Widget>[

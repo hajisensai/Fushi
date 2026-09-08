@@ -56,7 +56,7 @@ import 'package:fushi/src/reader/dictionary_style_css.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/lookup/browser_extension_installer.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
-import 'package:fushi/src/models/dictionary_directory.dart';
+import 'package:fushi_engine/models/dictionary_directory.dart';
 import 'package:fushi/src/models/dictionary_repository.dart';
 import 'package:fushi/src/models/media_history_repository.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -127,13 +127,13 @@ import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_service.dart';
-import 'package:fushi/src/sync/local_library_host_service.dart';
+import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/deletion_prompt.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/fushi_server_controller.dart';
-import 'package:fushi/src/sync/sync_asset_package_service.dart';
+import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_conflict_prompter.dart';
@@ -157,7 +157,7 @@ import 'package:fushi/src/models/audio_source_config.dart';
 import 'package:fushi/src/models/dictionary_import_manager.dart';
 import 'package:fushi/src/models/file_export_manager.dart';
 import 'package:fushi/src/models/local_audio_manager.dart';
-import 'package:fushi/src/models/local_audio_source_pref.dart';
+import 'package:fushi_engine/models/local_audio_source_pref.dart';
 import 'package:fushi/src/models/anki_integration.dart';
 import 'package:fushi/src/sync/fushi_remote_lookup_client.dart';
 import 'package:fushi/src/sync/fushi_remote_mining_client.dart';
@@ -176,7 +176,7 @@ import 'package:fushi_engine/mining/immersion_mining_request.dart';
 import 'package:fushi/src/mining/immersion_capture_channel.dart';
 import 'package:fushi/src/mining/youtube_clip_miner.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
-import 'package:fushi/src/sync/manga_sync_package.dart';
+import 'package:fushi_engine/sync/manga_sync_package.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/sync/texthooker_ws_client_manager.dart';
@@ -191,7 +191,7 @@ import 'package:fushi/src/platform/platform_providers.dart';
 
 export 'package:fushi/src/models/local_audio_manager.dart'
     show LocalAudioDbEntry, InvalidLocalAudioDbException;
-export 'package:fushi/src/models/local_audio_source_pref.dart'
+export 'package:fushi_engine/models/local_audio_source_pref.dart'
     show LocalAudioSourcePref;
 export 'package:fushi/src/models/audio_source_config.dart'
     show AudioSourceConfig, AudioSourceKind;
@@ -597,6 +597,20 @@ class AppModel with ChangeNotifier {
           // 与「配置管理」页导出同参：把指向本机 custom_fonts/ 的绝对路径剥成相对，
           // 免得对端拿到一堆指向不存在目录的字体路径。
           fontsRootDirectory: path.join(appDirectory.path, 'custom_fonts'),
+        );
+      },
+      // 推送方随书带来的显示名：走 ReaderFushiSource（写穿 MediaSource 内存缓存，
+      // 只写 DB 的话 host 书架会一直显示旧名直到重启）。
+      adoptOverrideTitle: ({
+        required String bookKey,
+        required String title,
+        required int updatedAt,
+      }) {
+        final ReaderFushiSource source = ReaderFushiSource.instance;
+        return source.adoptOverrideTitleIfNewer(
+          item: source.overrideTitleMediaItemForBookKey(bookKey),
+          title: title,
+          updatedAt: updatedAt,
         );
       },
       importProfileJson: (String json) async {

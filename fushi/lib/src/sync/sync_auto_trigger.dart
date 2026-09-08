@@ -9,7 +9,7 @@ import 'package:fushi/src/models/local_audio_manager.dart';
 import 'package:fushi/src/sync/book_exit_sync_scope.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/sync_activity.dart';
-import 'package:fushi/src/sync/sync_asset_package_service.dart';
+import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_manager.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';

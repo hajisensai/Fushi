@@ -3,8 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
-import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:http/http.dart' as http;
+import 'package:fushi_engine/foundation/engine_log.dart';
 
 /// TODO-963 M2: `/api/ping` 的 client 侧响应模型。无鉴权探测，配对前用。
 class FushiPingResult {
@@ -138,7 +138,7 @@ Future<FushiPingOutcome> probeFushiPing(
     // 上的 https 候选每次都必然抛一次 HandshakeException，属预期路径。把它计进
     // 用户可见错误计数 + 持久化日志只是噪声（见 ErrorLogService.logDiagnostic
     // 的文档：多镜像 failover 的瞬时探测失败正是它点名的场景）。
-    ErrorLogService.instance.logDiagnostic('Ping:$baseUrl', e);
+    engineLog.logDiagnostic('Ping:$baseUrl', e);
     return FushiPingOutcome.failed(classifyFushiProbeFailure(e));
   } finally {
     if (ownsClient) client.close();

@@ -228,8 +228,8 @@ void main() {
       // resolveP2pProxyHostPort 裁决的，这样默认直连的语义只钉在一个函数上。
       const List<String> targets = <String>[
         '../packages/fushi_torrent/lib',
-        'lib/src/media/torrent/embedded_torrent_host.dart',
-        'lib/src/media/torrent/embedded_torrent_backend.dart',
+        '../packages/fushi_engine/lib/media/torrent/embedded_torrent_host.dart',
+        '../packages/fushi_engine/lib/media/torrent/embedded_torrent_backend.dart',
       ];
       const List<String> forbidden = <String>[
         'app_proxy.dart',
@@ -371,7 +371,7 @@ void main() {
 
     test('监听接口默认 v4+v6 双栈（与 ht_apply_session_settings 端口重设同形）', () {
       final String host = maskComments(
-        File('lib/src/media/torrent/embedded_torrent_host.dart')
+        File('../packages/fushi_engine/lib/media/torrent/embedded_torrent_host.dart')
             .readAsStringSync(),
       );
       expect(host, contains("listenInterfaces = '0.0.0.0:6881,[::]:6881'"),

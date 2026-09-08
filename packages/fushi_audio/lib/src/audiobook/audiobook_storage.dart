@@ -1,11 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
-import 'package:fushi_core/fushi_core.dart' show fnv1a32Hex;
+import 'package:fushi_core/fushi_core.dart' show fnv1a32Hex, fushiDebugPrint;
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
-import 'package:just_audio/just_audio.dart';
 
 abstract final class AudiobookStorage {
   static const Set<String> audioExtensions = {
@@ -39,18 +36,34 @@ abstract final class AudiobookStorage {
   /// (`AppModel._prepareRuntimeDirectories`) 把此钩子接到 `AppPaths.documentsRootDirectory`
   /// ——单一真相源、自动跟随数据根、不在本包重复 SharedPreferences 解析逻辑。
   ///
-  /// 未注入时（纯 Dart 单测 / 本包被上游独立使用）退回
-  /// `getApplicationDocumentsDirectory()`，与 TODO-1236 前逐字节等价。
+  /// 平台默认值（`getApplicationDocumentsDirectory()`）由重文件
+  /// `audiobook_storage_platform.dart` 的 `installAudiobookStoragePlatform()`
+  /// 以 `??=` 装入——本文件是纯 Dart（无头服务端消费），不能直连 path_provider。
+  /// 两处都未装配（纯 Dart 单测 / 服务端漏装配）时 [_documentsRoot] 抛 [StateError]，
+  /// 而不是静默落到某个猜出来的目录。
   static Future<Directory> Function()? documentsRootResolver;
 
   /// `hibiki_audio` 包内 documents 根的**单一解析点**。
   static Future<Directory> _documentsRoot() =>
-      (documentsRootResolver ?? getApplicationDocumentsDirectory)();
+      (documentsRootResolver ?? _unassignedDocumentsRoot)();
+
+  static Future<Directory> _unassignedDocumentsRoot() =>
+      Future<Directory>.error(StateError(
+        'AudiobookStorage.documentsRootResolver 未装配：Flutter app 调 '
+        'installAudiobookStoragePlatform() / AppModel 注入 AppPaths；服务端在 CLI 入口注入。',
+      ));
+
+  /// 单文件音频时长探测（毫秒）装配点；探测失败返回 0。平台实现（just_audio 一次性
+  /// [AudioPlayer]）由 `installAudiobookStoragePlatform()` 装入。
+  ///
+  /// null = 未装配 → [probeAudioDurationsMs] 全 0，与插件不可用时逐文件 catch 返回 0
+  /// 的既有降级**行为一致**（调用方据 0 判定无法可靠分文件）。
+  static Future<int> Function(String path)? audioDurationProbeMs;
 
   /// TODO-811: 逐个探测音频文件时长（毫秒），下标与 [paths] 对齐。某个文件探测失败
   /// （损坏/解码不支持）返回 0（调用方据此判定无法可靠分文件）。多文件单时间轴有声书
   /// 导入时用这些边界给 cue 重新分配 [AudioCue.audioFileIndex]（见
-  /// [reindexCuesByFileBoundaries]）。每个文件用一次性 [AudioPlayer]，探完即释放。
+  /// [reindexCuesByFileBoundaries]）。探测走 [audioDurationProbeMs]。
   static Future<List<int>> probeAudioDurationsMs(List<String> paths) async {
     // 每个文件一次平台播放器 构造→探头→释放 往返（Android 上 100~500 ms）；
     // 60 章的 m4b 串行就是半分钟卡在「保存中」。有界并行（同时 4 个），
@@ -76,16 +89,12 @@ abstract final class AudiobookStorage {
   /// [probeAudioDurationsMs] 的并行度。
   static const int probeDurationConcurrency = 4;
 
-  static Future<int> _probeOneDurationMs(String path) async {
-    final AudioPlayer player = AudioPlayer();
-    try {
-      final Duration? dur = await player.setFilePath(path);
-      return dur?.inMilliseconds ?? 0;
-    } catch (_) {
-      return 0;
-    } finally {
-      await player.dispose();
+  static Future<int> _probeOneDurationMs(String path) {
+    final Future<int> Function(String path)? probe = audioDurationProbeMs;
+    if (probe == null) {
+      return Future<int>.value(0);
     }
+    return probe(path);
   }
 
   /// FNV-1a 32 位（UTF-8 逐字节），委托 hibiki_core 单一真相源；输出与历史手写
@@ -165,7 +174,7 @@ abstract final class AudiobookStorage {
       );
     }
 
-    debugPrint('[hibiki-import] persisted ${src.path} → $dest '
+    fushiDebugPrint('[hibiki-import] persisted ${src.path} → $dest '
         '(${(totalBytes / 1024 / 1024).toStringAsFixed(1)} MB)');
     return dest;
   }
@@ -313,13 +322,14 @@ abstract final class AudiobookStorage {
     final Directory dir = Directory(p.join(docs.path, 'audiobooks', hash));
     if (dir.existsSync()) {
       await dir.delete(recursive: true);
-      debugPrint('[hibiki-import] deleted persist dir: ${dir.path}');
+      fushiDebugPrint('[hibiki-import] deleted persist dir: ${dir.path}');
     }
     final Directory oldDir = Directory(
         p.join(docs.path, 'audiobooks', bookUid.hashCode.toRadixString(16)));
     if (oldDir.existsSync()) {
       await oldDir.delete(recursive: true);
-      debugPrint('[hibiki-import] deleted legacy persist dir: ${oldDir.path}');
+      fushiDebugPrint(
+          '[hibiki-import] deleted legacy persist dir: ${oldDir.path}');
     }
   }
 }

@@ -10,11 +10,11 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:fushi_engine/media/video/scraper/title_normalizer.dart';
-import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:xml/xml.dart';
+import 'package:fushi_engine/foundation/engine_paths.dart';
 
 typedef AniDbCatalogNow = DateTime Function();
 
@@ -262,7 +262,7 @@ class AniDbTitleCatalog {
   Future<Directory> _resolveCacheDirectory() async {
     final Directory? configured = _cacheDirectory;
     if (configured != null) return configured;
-    final Directory support = await AppPaths.supportRootDirectory();
+    final Directory support = await enginePaths.supportRootDirectory();
     return Directory(p.join(support.path, 'video_metadata', 'anidb'));
   }
 

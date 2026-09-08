@@ -6,7 +6,7 @@
 /// `media_sources.config_json`（该列只属于网络来源连接参数）。
 library;
 
-import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_udp_file_client.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_app_client.dart';
 
@@ -57,7 +57,7 @@ class VideoSourceScrapeGlobalConfig {
   final List<String> imageLanguages;
 
   factory VideoSourceScrapeGlobalConfig.fromPreferences(
-    PreferencesRepository preferences, {
+    PrefStore preferences, {
     required String resolvedTmdbApiKey,
     AniDbAppClientIdentity bundledAniDbClient = kBundledAniDbClient,
   }) {

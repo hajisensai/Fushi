@@ -3,10 +3,10 @@ import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
-import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
 
 /// Jimaku 条目标记位。
 ///
@@ -232,8 +232,7 @@ List<JimakuEntry> parseJimakuEntries(String body, {bool strict = false}) {
     return out;
   } catch (e, stack) {
     // fail-open：解析失败返回空列表（同旧行为），补 diagnostic 便于排障。
-    ErrorLogService.instance
-        .logDiagnostic('JimakuClient.parseJimakuEntries', e);
+    engineLog.logDiagnostic('JimakuClient.parseJimakuEntries', e);
     if (strict) {
       Error.throwWithStackTrace(
         const JimakuRequestException('invalid search response'),
@@ -400,7 +399,7 @@ List<JimakuFile> parseJimakuFiles(String body, {bool strict = false}) {
     return out;
   } catch (e, stack) {
     // fail-open：解析失败返回空列表（同旧行为），补 diagnostic 便于排障。
-    ErrorLogService.instance.logDiagnostic('JimakuClient.parseJimakuFiles', e);
+    engineLog.logDiagnostic('JimakuClient.parseJimakuFiles', e);
     if (strict) {
       Error.throwWithStackTrace(
         const JimakuRequestException('invalid list files response'),
@@ -637,7 +636,7 @@ class JimakuClient {
       );
     } catch (e, stack) {
       // fail-open：预期可失败的网络路径，返回空列表（同旧行为），补 diagnostic。
-      ErrorLogService.instance.logDiagnostic('JimakuClient.searchEntries', e);
+      engineLog.logDiagnostic('JimakuClient.searchEntries', e);
       if (throwOnError) Error.throwWithStackTrace(e, stack);
       return const <JimakuEntry>[];
     }
@@ -671,7 +670,7 @@ class JimakuClient {
       );
     } catch (e, stack) {
       // fail-open：预期可失败的网络路径，返回空列表（同旧行为），补 diagnostic。
-      ErrorLogService.instance.logDiagnostic('JimakuClient.listFiles', e);
+      engineLog.logDiagnostic('JimakuClient.listFiles', e);
       if (throwOnError) Error.throwWithStackTrace(e, stack);
       return const <JimakuFile>[];
     }
@@ -697,7 +696,7 @@ class JimakuClient {
       return res.bodyBytes;
     } catch (e, stack) {
       // fail-open：预期可失败的网络路径，返回 null（同旧行为），补 diagnostic。
-      ErrorLogService.instance.logDiagnostic('JimakuClient.downloadFile', e);
+      engineLog.logDiagnostic('JimakuClient.downloadFile', e);
       if (throwOnError) Error.throwWithStackTrace(e, stack);
       return null;
     }

@@ -579,7 +579,7 @@ void main() {
       expect(source, isNot(contains('TerminateProcess')));
       // 占用者查询本身也不得越权：RM 只做只读查询，不注册 restart/shutdown。
       final String query =
-          File('lib/src/platform/desktop/windows_process_query.dart')
+          File('../packages/fushi_engine/lib/platform/desktop/windows_process_query.dart')
               .readAsStringSync();
       expect(query, isNot(contains('RmShutdown')));
       expect(query, isNot(contains('RmRestart')));

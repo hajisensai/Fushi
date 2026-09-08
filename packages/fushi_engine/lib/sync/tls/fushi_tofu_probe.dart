@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
-import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
 
 /// BUG-1741：TOFU 握手的失败分型。
 ///
@@ -126,7 +126,7 @@ class FushiTofuProbe {
       // 明文 host 每次配对都必然让 https 候选抛一次 HandshakeException，属预期
       // 路径。计进用户可见错误计数 + 持久化日志只会制造噪声
       // （见 ErrorLogService.logDiagnostic 的文档）。
-      ErrorLogService.instance.logDiagnostic('TofuProbe:$host:$port', e);
+      engineLog.logDiagnostic('TofuProbe:$host:$port', e);
       return FushiTofuOutcome.failed(classifyFushiTofuFailure(e));
     } finally {
       try {

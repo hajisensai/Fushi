@@ -35,7 +35,7 @@ void main() {
   String codeOnly(String source) => maskComments(source);
 
   group('ffmpeg backend precise cancel guard (BUG-905)', () {
-    const String path = 'lib/src/media/video/ffmpeg_backend.dart';
+    const String path = '../packages/fushi_engine/lib/media/video/ffmpeg_backend.dart';
 
     test('no argument-less FFmpegKit.cancel() (cancel-all) survives', () {
       final String source = codeOnly(libFile(path));

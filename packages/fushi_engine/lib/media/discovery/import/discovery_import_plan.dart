@@ -6,7 +6,7 @@
 /// `TextToEpub.supportedExtensions`），不自造副本。
 library;
 
-import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_audio/fushi_audio_core.dart';
 
 import 'package:fushi_engine/media/audiobook/text_to_epub.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';

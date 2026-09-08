@@ -1,42 +1,10 @@
 library hibiki_audio;
 
-// Parsers
-export 'src/parsers/srt_parser.dart';
-export 'src/parsers/vtt_parser.dart';
-export 'src/parsers/lrc_parser.dart';
-export 'src/parsers/ass_parser.dart';
-export 'src/parsers/smil_parser.dart';
-export 'src/parsers/json_alignment_parser.dart';
-export 'src/parsers/text_file_io.dart';
-export 'src/parsers/subtitle_markup.dart';
+// 零 Flutter 子集（解析 / 仓储 / 匹配）——无头服务端只 import 这一半。
+export 'fushi_audio_core.dart';
 
-// Audiobook core
-export 'src/audiobook/audiobook_model.dart';
-export 'src/audiobook/audiobook_health.dart';
+// 重文件：just_audio / audio_session / path_provider / method-channel 插件，
+// 只有 Flutter app 需要。
 export 'src/audiobook/audiobook_controller.dart';
-export 'src/audiobook/audiobook_repository.dart';
-export 'src/audiobook/audiobook_storage.dart';
-export 'src/audiobook/audiobook_local_files.dart';
-export 'src/audiobook/audiobook_playback_files.dart';
-export 'src/audiobook/audiobook_path_relocator.dart';
-export 'src/audiobook/audio_file_sort.dart';
-export 'src/audiobook/srt_book_model.dart';
-export 'src/audiobook/srt_book_repository.dart';
-export 'src/audiobook/reader_position_model.dart';
-export 'src/audiobook/reader_position_repository.dart';
-export 'src/audiobook/reading_statistic_model.dart';
-export 'src/audiobook/study_clock.dart';
-export 'src/audiobook/bookmark_repository.dart';
-export 'src/audiobook/favorite_sentence_repository.dart';
-
-// Matching & alignment
-export 'src/matching/audio_text_normalizer.dart';
-export 'src/matching/epub_srt_matcher.dart';
-export 'src/matching/epub_cue_matcher.dart';
-export 'src/matching/anchor_gap_filler.dart';
-export 'src/matching/collection_audio_matcher.dart';
-export 'src/matching/cue_file_index_assigner.dart';
-export 'src/matching/cue_sentence_resegmenter.dart';
-export 'src/matching/subtitle_rematch_codec.dart';
-export 'src/matching/cues_to_epub.dart';
-export 'src/matching/epub_builder.dart';
+export 'src/audiobook/audiobook_storage_platform.dart';
+export 'src/parsers/platform_charset_detector.dart';

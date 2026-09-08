@@ -42,7 +42,7 @@ void main() {
         // BUG-2079：NyaaClient 自己也是消费方——注册表路径
         // （nyaa_discovery_source / nyaa_resource_provider）的调用点没有外层
         // 超时，所以时限必须落在 client 上；同样不许在这里重新长出裸 20s。
-        'lib/src/media/torrent/nyaa_client.dart',
+        '../packages/fushi_engine/lib/media/torrent/nyaa_client.dart',
       ];
       // `.timeout(` 后面直接跟 Duration(...) 的写法即为漏网魔法数字。
       // `const` 可省，故设为可选——只匹配 `const Duration` 的正则会被

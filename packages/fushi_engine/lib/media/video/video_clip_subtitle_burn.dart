@@ -22,10 +22,11 @@
 /// 用不上。
 library;
 
+import 'dart:typed_data';
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:fushi_engine/media/video/video_clip_subtitle.dart';
+import 'package:meta/meta.dart';
 
 /// 把一条 cue 画成与 [ClipFrameSize] 同分辨率的整帧透明 PNG，返回其字节；画不出来
 /// （文本为空、引擎拒绝）返回 null。

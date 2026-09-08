@@ -1,9 +1,9 @@
 import 'dart:io';
 
-import 'package:flutter/painting.dart';
 import 'package:fushi_engine/media/video/video_subtitle_source.dart';
-import 'package:fushi/src/storage/app_paths.dart';
 import 'package:path/path.dart' as p;
+import 'package:fushi_engine/foundation/engine_paths.dart';
+import 'package:fushi_engine/foundation/engine_platform_hooks.dart';
 
 /// 视频媒体在磁盘上的「app 拥有」副本目录管理 + 删除回收（BUG-276 / TODO-365）。
 ///
@@ -65,7 +65,7 @@ class VideoStorage {
   static const String collectionCoversDirName = 'collections';
 
   /// 封面目录绝对路径（不创建）。TODO-935 E0：经唯一入口 [AppPaths] 派生。
-  static Future<Directory> coversDir() => AppPaths.videoCoversDirectory();
+  static Future<Directory> coversDir() => enginePaths.videoCoversDirectory();
 
   /// 合集自有封面目录绝对路径（不创建）。见 [collectionCoversDirName]。
   static Future<Directory> collectionCoversDir() async =>
@@ -123,7 +123,7 @@ class VideoStorage {
   }
 
   /// 导入字幕目录绝对路径（不创建）。TODO-935 E0：经唯一入口 [AppPaths] 派生。
-  static Future<Directory> subtitlesDir() => AppPaths.videoSubtitlesDirectory();
+  static Future<Directory> subtitlesDir() => enginePaths.videoSubtitlesDirectory();
 
   /// 删除一本视频后回收**它自己**的 app 拥有副本：把 [deletedCoverPath] /
   /// [deletedSubtitlePath]（被删 book 删前的 `coverPath` / `subtitleSource`）里、
@@ -222,10 +222,8 @@ class VideoStorage {
 
   static Future<void> _evictImageCacheForFile(File file) async {
     try {
-      final ImageCache imageCache = PaintingBinding.instance.imageCache;
-      imageCache.clearLiveImages();
-      imageCache.clear();
-      await FileImage(file).evict();
+      // 宿主装配（app：PaintingBinding.imageCache 清理；服务端 no-op）。
+      await evictImageCacheForFile(file);
     } catch (_) {
       // Pure storage tests may run without a Flutter painting binding. Cache
       // eviction is only a lock-release hint, so missing binding must not block

@@ -1,10 +1,9 @@
 import 'dart:io';
 import 'dart:typed_data';
-import 'dart:ui' show Rect, Size;
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
@@ -92,22 +91,22 @@ void main() {
       pages[0],
       MokuroImage(
         url: pages[0].relativeUrl,
-        size: const Size(101, 200),
+        size: const MokuroSize(101, 200),
         blocks: const <MokuroBlock>[
           MokuroBlock(
-            rectangle: Rect.fromLTWH(10, 20, 60, 80),
+            rectangle: MokuroRect.fromLTWH(10, 20, 60, 80),
             isVertical: false,
             fontSize: 10,
             zIndex: 0,
             lines: <String>['下上'],
             regions: <MangaOcrTextRegion>[
               MangaOcrTextRegion(
-                rectangle: Rect.fromLTWH(10, 20, 10, 10),
+                rectangle: MokuroRect.fromLTWH(10, 20, 10, 10),
                 utf16Start: 0,
                 utf16End: 1,
               ),
               MangaOcrTextRegion(
-                rectangle: Rect.fromLTWH(10, 80, 10, 10),
+                rectangle: MokuroRect.fromLTWH(10, 80, 10, 10),
                 utf16Start: 1,
                 utf16End: 2,
               ),

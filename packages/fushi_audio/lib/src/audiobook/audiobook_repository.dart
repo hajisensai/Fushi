@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:drift/drift.dart';
-import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'audiobook_health.dart';
 import 'audiobook_model.dart';
@@ -117,7 +116,7 @@ class AudiobookRepository {
     if (audioChanged) {
       await updatePositionMs(bookKey: bookKey, positionMs: 0);
     }
-    debugPrint('[hibiki-audiobook] replaceAudio bookKey=$bookKey '
+    fushiDebugPrint('[hibiki-audiobook] replaceAudio bookKey=$bookKey '
         'files=${audioPaths.length} audioChanged=$audioChanged');
   }
 
@@ -349,8 +348,8 @@ class AudiobookRepository {
             : DateTime.now(),
       );
     } catch (e, stack) {
-      debugPrint('AudiobookRepository.healthOverlay: $e\n$stack');
-      debugPrint('[hibiki-audiobook] readHealthOverlay parse failed: $e');
+      fushiDebugPrint('AudiobookRepository.healthOverlay: $e\n$stack');
+      fushiDebugPrint('[hibiki-audiobook] readHealthOverlay parse failed: $e');
       return null;
     }
   }

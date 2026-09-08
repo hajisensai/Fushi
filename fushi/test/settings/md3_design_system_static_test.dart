@@ -768,11 +768,11 @@ void main() {
       // 漫画 OCR 数据模型：fontSize 是 mokuro/manga.json 的块级字段（气泡文字
       // 的检测字号，随数据往返/估算），不是 Flutter 页面排版——纯数据层文件，
       // 无任何 UI 代码，同「内容而非 chrome」豁免类。
-      'lib/src/media/manga/mokuro_payload.dart':
+      '../packages/fushi_engine/lib/media/manga/mokuro_payload.dart':
           'MokuroBlock.fontSize is a mokuro/manga.json data field (detected '
               'bubble text size, serialized round-trip), not page typography — '
               'pure data-model file with no UI code.',
-      'lib/src/ocr/manga_ocr_folder_job.dart':
+      '../packages/fushi_engine/lib/ocr/manga_ocr_folder_job.dart':
           'Estimates the MokuroBlock.fontSize data field (sqrt(area/chars)) '
               'for OCR-produced manga.json blocks; pure data layer, no UI '
               'code.',
@@ -1218,7 +1218,7 @@ void main() {
       'lib/src/media/video/video_clip_subtitle_image.dart': <String>{
         'fontSize:'
       },
-      'lib/src/media/manga/mokuro_payload.dart': <String>{'fontSize:'},
+      '../packages/fushi_engine/lib/media/manga/mokuro_payload.dart': <String>{'fontSize:'},
       'lib/src/media/manga/ocr/google_lens_ocr_service.dart': <String>{
         'fontSize:'
       },
@@ -1285,7 +1285,7 @@ void main() {
         'surfaceContainerHigh',
         'surfaceContainerHighest'
       },
-      'lib/src/ocr/manga_ocr_folder_job.dart': <String>{'fontSize:'},
+      '../packages/fushi_engine/lib/ocr/manga_ocr_folder_job.dart': <String>{'fontSize:'},
       'lib/src/pages/implementations/anime_download_dialog.dart': <String>{
         'BorderRadius.circular(',
         'VisualDensity.compact',
