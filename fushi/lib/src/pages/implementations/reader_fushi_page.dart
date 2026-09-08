@@ -2672,16 +2672,13 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   @override
   void dispose() {
-    // 关书 = 离开当前单元：先把它结算进时钟（翻走即计）。必须在 [_failNavigation]
-    // 之前——那里会 `_readLedger.discard()`（导航中止路径不计），而关书那页是用户
-    // 真读到的。
+    // 关书不是翻走：站着的那页不结算（`ReadUnitLedger` 类文档），只停表。
     //
     // 全程零 DB IO：dispose 是同步的，在这里发起的事务没有任何人持有它的 future，
-    // 与随后的 `db.close()` 互等。[StudyClock.detach] 把结算攒下的写交给
+    // 与随后的 `db.close()` 互等。[StudyClock.detach] 把停表攒下的写交给
     // [ExitFlushRegistry] 的退出汇合点统一 await。时钟为空 = 本页从没开始计时，
-    // 整段跳过：入账回调（[_ensureStudyClock]）会现造一个时钟并起表，在 dispose
-    // 里造时钟是净负。
-    _studyClock?.detach(_readLedger.leave);
+    // 整段跳过。
+    _studyClock?.detach();
     // Search navigation can still be awaiting restore while the route closes.
     // Complete it as failed now (and clear its precise-locate request) instead
     // of leaving the callback alive until the 10-second timeout.
@@ -2799,8 +2796,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   @override
   Future<void> onSourcePagePop() async {
     await _syncAndFlushPosition();
-    // 离开当前单元（翻走即计）后再结算时钟，让最后一页的字数进同一段。
-    _readLedger.leave();
+    // 关书不是翻走：站着的那页不结算（`ReadUnitLedger` 类文档），只把时钟写穿。
     await _flushReadingStats();
     // TODO-831：「退出后续播」关闭（audiobookBackgroundPlay=false）时，把真正
     // 停会话从 dispose 提前到这里——此刻页面仍 mounted、pop 动画尚未开始，

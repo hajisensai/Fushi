@@ -275,12 +275,27 @@ void main() {
       expect(ledger.current, isNull);
     });
 
-    test('关书：leave() 结算最后一页，同一会话对象不再复用', () {
+    test('关书不结算（BUG-2264）：站着的那页不入账，开关 N 次不涨', () {
+      // 开书落在第 2 页、一个字没读就关：关书三条路都不碰账本，会话对象随 State 死。
+      for (int i = 0; i < 10; i++) {
+        final int before = credited;
+        ledger = ReadUnitLedger(
+          onCredit: (List<(int, int)> fresh) =>
+              credited += readUnitsLength(fresh),
+          onRetract: (List<(int, int)> retracted) =>
+              credited -= readUnitsLength(retracted),
+        );
+        sample(0, 400, 800);
+        expect(credited, before, reason: '第 ${i + 1} 次开关：落地页不计');
+      }
+      expect(credited, 0);
+    });
+
+    test('读到第 2 页关书：第 1 页已在翻走时计，第 2 页下次打开翻走时才计', () {
       sample(0, 0, 400);
       sample(0, 400, 800);
-      ledger.leave();
-      expect(credited, 800);
-      expect(ledger.current, isNull);
+      expect(credited, 400, reason: '关书不 leave：只有翻走的第 1 页入账');
+      expect(ledger.current, (400, 800), reason: '关书不清当前单元，State 随之销毁');
     });
 
     /// 「拖有声书进度条 → 立刻关书」的字数结算时序（沿真实代码路径核对，2026-09-06）。
@@ -310,18 +325,19 @@ void main() {
     ///       **不会 arrive**。
     ///     * **reveal=false**（暂停态 / 跟随音频关 / 还没按过播放）：只加高亮 class、
     ///       不动视口、不打点、不排补刷 → 可见区间没变，本来就不该 arrive。
-    ///  4. 关书 `onSourcePagePop`（reader_fushi_page.dart:2758）：
-    ///     `await _syncAndFlushPosition()` → `_readLedger.leave()` → `_flushReadingStats()`。
-    ///     退出探针 `_syncPositionFromWebViewProgress`（navigation.part.dart:1231）
-    ///     **只写 `_lastProgress*` / 恢复锚，不碰账本**——全语料唯一的 `arrive` 点是
-    ///     `_refreshProgress`（navigation.part.dart:1066，arrive 在 :1152）。`dispose()`（:2639）随后
-    ///     `_readLedger.leave()`（对已清空的账本是 no-op）并 cancel
-    ///     `_revealProgressRefreshTimer`（:2679），未到期的补刷永不执行。
+    ///  4. 关书 `onSourcePagePop`（reader_fushi_page.dart）：
+    ///     `await _syncAndFlushPosition()` → `_flushReadingStats()`，**不碰账本**
+    ///     （BUG-2264：关书不是翻走，站着的那页下次打开翻走时才计）。退出探针
+    ///     `_syncPositionFromWebViewProgress`（navigation.part.dart）**只写 `_lastProgress*`
+    ///     / 恢复锚，不碰账本**——全语料唯一的 `arrive` 点是 `_refreshProgress`。
+    ///     `dispose()` 随后 `_studyClock?.detach()` 只停表，并 cancel
+    ///     `_revealProgressRefreshTimer`，未到期的补刷永不执行。
     ///
-    /// 结论：**250ms 内关书结算的是「拖前那页」**（拖后那页从未 arrive、不计）；
-    /// **250ms 后关书两页都计**（拖前页在补刷 arrive 时结算、拖后页在 leave 时结算）。
+    /// 结论：**关书时站着的那页一律不计**；250ms 内关书连拖前那页都还站着（拖后那页
+    /// 从未 arrive）→ 什么都不多计；250ms 后关书拖前那页已在补刷 arrive 时结算，
+    /// 拖后那页站着不计。
     group('拖音频进度条后关书', () {
-      test('播放跟随 + 250ms 内关书：只结算拖前那页，拖后那页不计', () {
+      test('播放跟随 + 250ms 内关书：拖前那页仍是当前单元，不计；拖后那页从未 arrive', () {
         sample(0, 0, 400);
         sample(0, 400, 800); // 拖前停在这一页（当前单元 [400,800)）
         expect(credited, 400);
@@ -330,19 +346,11 @@ void main() {
         expect(ledger.current, (400, 800));
 
         // reveal=true 的跟随滚动落到第 3 章某处；这 250ms 内 scroll 回传被 B-3 窗
-        // 丢掉，补刷 Timer 尚未到期 → 没有任何 arrive。
-        //
-        // 关书：onSourcePagePop 的 leave() 结算「拖前那页」。
-        ledger.leave();
-        expect(credited, 800, reason: '拖前那页 [400,800) 计入；拖后那页从未成为当前单元');
-        expect(ledger.current, isNull);
-
-        // dispose() 的兜底 leave() 对已清空账本是 no-op，不会重复计。
-        ledger.leave();
-        expect(credited, 800);
+        // 丢掉，补刷 Timer 尚未到期 → 没有任何 arrive。关书三条路零账本动作。
+        expect(credited, 400, reason: '拖前那页 [400,800) 站着不计；拖后那页从未成为当前单元');
       });
 
-      test('播放跟随 + 250ms 后关书：补刷 arrive 结算拖前页，关书 leave 结算拖后页', () {
+      test('播放跟随 + 250ms 后关书：补刷 arrive 结算拖前页，拖后那页站着不计', () {
         sample(0, 0, 400);
         sample(0, 400, 800);
         expect(credited, 400);
@@ -351,29 +359,23 @@ void main() {
         // → arrive(拖后那页)：切换单元的同时结算拖前那页。
         sample(2, 1200, 1600);
         expect(credited, 800, reason: '拖前那页 [400,800) 在补刷 arrive 时结算');
-
-        ledger.leave();
-        expect(credited, 1200, reason: '拖后那页 [4200,4600) 翻走（关书）时全额计');
+        expect(ledger.current, (4200, 4600), reason: '关书不清当前单元、不结算');
       });
 
-      test('暂停态 / 跟随音频关（reveal=false）：视口不动，关书仍只结算当前那页', () {
+      test('暂停态 / 跟随音频关（reveal=false）：视口不动，关书什么都不计', () {
         sample(1, 0, 500);
-        expect(credited, 0);
-
         // reveal=false → 只换高亮 class，不滚视口、不打点、不排补刷 → 无 arrive。
-        ledger.leave();
-        expect(credited, 500, reason: '可见区间没变，结算的就是拖前 = 拖后的同一页');
+        expect(credited, 0, reason: '可见区间没变，站着的这页关书不计');
       });
 
-      test('拖到同一页内（视口未动）：补刷 arrive 同区间是 no-op，关书只计一次', () {
+      test('拖到同一页内（视口未动）：补刷 arrive 同区间是 no-op，关书不计', () {
         sample(1, 0, 500);
         sample(1, 0, 500); // 250ms 后的补刷读回同一个可见区间
         expect(ledger.current, (1000, 1500));
-        ledger.leave();
-        expect(credited, 500);
+        expect(credited, 0);
       });
 
-      test('拖回本会话已读过的位置：撤回落点之后的，关书只计到落点页末', () {
+      test('拖回本会话已读过的位置：撤回落点之后的，关书不再补回落点页', () {
         sample(0, 0, 400);
         sample(0, 400, 800);
         sample(0, 800, 1000);
@@ -381,16 +383,13 @@ void main() {
 
         // 拖回开头，250ms 后补刷 arrive 到首页：位置退到 0，之前入账的全部撤回。
         sample(0, 0, 400);
-        expect(credited, 0, reason: '并集 [0,1000) 不减，但位置之后的不入账');
-        ledger.leave();
-        expect(credited, 400, reason: '关书按落点页末入账 [0,400)');
+        expect(credited, 0, reason: '并集 [0,1000) 不减，但位置之后的不入账；关书不结算落点页');
       });
 
       test('与显式跳句（skipToCue）总额等价：leave 提前只改结算时刻，不改总额', () {
-        // A：拖进度条（无 onExplicitCueJump）。
+        // A：拖进度条（无 onExplicitCueJump），随后关书（零账本动作）。
         sample(0, 0, 400);
         sample(2, 1200, 1600); // 250ms 后补刷
-        ledger.leave();
         final int viaSeek = credited;
 
         credited = 0;
@@ -401,11 +400,10 @@ void main() {
               credited -= readUnitsLength(retracted),
         );
 
-        // B：点句跳转（skipToCue → onExplicitCueJump → leave）。
+        // B：点句跳转（skipToCue → onExplicitCueJump → leave），随后关书。
         sample(0, 0, 400);
         ledger.leave(); // _handleExplicitCueJump
         sample(2, 1200, 1600);
-        ledger.leave();
         expect(
           credited,
           viaSeek,

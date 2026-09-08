@@ -330,15 +330,14 @@ class StudyClock {
   /// 与它互等（FakeAsync 在测试体结束后不再推进，事务续体永远不跑），生产退出路径
   /// 是同一形状的竞态。入口删掉，只剩这一个原语。
   ///
-  /// [settle] 在解绑**前**跑，做纯内存的最后结算（阅读账本 `leave()` → 字数 / 页数
-  /// 入账或撤回）——放在这里而不是让调用方自己排顺序，是因为它必须发生在时钟停表
-  /// 之前（[addChars] / [addPages] 停表即丢，BUG-2210），顺序错了就静默少记一页。
+  /// 只结算时长：关书不是翻走，站着的那页不入账（`ReadUnitLedger` 类文档；此前这里
+  /// 接一个 `leave` 回调在停表前结算当前页，落地页一个字没读也整页入账，开关一次
+  /// 涨一次）。
   ///
   /// 期间攒下的写交给 [deferWrite]（进程退出统一 await）；没接就丢弃。正常退出走
   /// [stop]（调用方 await 到底），本方法只是异常拆栈时的兜底。
-  void detach([void Function()? settle]) {
+  void detach() {
     _deferring = true;
-    settle?.call();
     final Timer? timer = _timer;
     _timer = null;
     timer?.cancel();

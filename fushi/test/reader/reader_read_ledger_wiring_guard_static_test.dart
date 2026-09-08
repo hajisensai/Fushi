@@ -18,7 +18,8 @@ import '../pages/reader_fushi_page_source_corpus.dart';
 ///  * `_failNavigation`（含内容就绪兜底超时）：`discard`；
 ///  * `_recomputeCharCountsInBackground` 落定：`reset`；
 ///  * 显式跳句 `_handleExplicitCueJump`：`leave`；
-///  * dispose / `onSourcePagePop` / 进程退出 flush：`leave` 在 `_flushReadingStats` 之前；
+///  * dispose / `onSourcePagePop` / 进程退出 flush **不碰账本**（BUG-2264：关书不是翻走，
+///    站着的那页下次翻走时才计；旧实现把关书当 `leave`，落地页一字没读也整页入账）；
 ///  * 听书 reveal 落定后与 B-3 窗内丢弃 scroll 回传后各补刷一次 `_refreshProgress`
 ///    （同一个 Timer；BUG-2227：窗内丢掉的可能是用户真实落点，只等 10s 轮询会让关书
 ///    结算旧页）；
@@ -206,7 +207,7 @@ void main() {
     });
   });
 
-  group('leave：显式跳句 + 关书三条路', () {
+  group('leave：显式跳句；关书三条路不碰账本（BUG-2264）', () {
     test('_handleExplicitCueJump 体内只 leave', () {
       final String body = methodBody(
         corpus,
@@ -220,20 +221,18 @@ void main() {
       );
     });
 
-    test('dispose：结算交给 detach（零 DB IO），且在 _failNavigation（discard）之前', () {
+    test('dispose：只 detach 停表（零 DB IO），不结算站着的页', () {
       final String body = methodBody(corpus, 'void dispose()');
-      final int detach = body.indexOf('_studyClock?.detach(_readLedger.leave);');
-      final int fail = body.indexOf('_failNavigation();');
       expect(
-        detach,
-        isNonNegative,
-        reason: 'dispose 是同步的：结算 + 停表必须走 detach（内部零 IO，'
+        containsCodeLine(body, '_studyClock?.detach();'),
+        isTrue,
+        reason: 'dispose 是同步的：停表必须走 detach（内部零 IO，'
             '攒下的写交给 ExitFlushRegistry.defer），不许自己起事务',
       );
       expect(
-        detach,
-        lessThan(fail),
-        reason: '_failNavigation 会 discard，关书那页必须先结算',
+        containsIdentifier(body, '_readLedger'),
+        isFalse,
+        reason: 'BUG-2264：关书不是翻走，dispose 不许把 leave 交给 detach 结算落地页',
       );
       // dispose 里一笔 DB 写都不许发起：无人 await 的事务与随后的 db.close() 互等
       // （widget 测试的 FakeAsync 下必挂，生产退出是同一形状的竞态）。
@@ -261,37 +260,30 @@ void main() {
       );
     });
 
-    test('onSourcePagePop：leave 在 await _flushReadingStats 之前', () {
+    test('onSourcePagePop：不碰账本，只写穿时钟', () {
       final String body = methodBody(
         corpus,
         'Future<void> onSourcePagePop() async',
       );
-      final int leave = body.indexOf('_readLedger.leave();');
-      final int flush = body.indexOf('await _flushReadingStats();');
-      expect(leave, isNonNegative);
-      expect(leave, lessThan(flush));
+      expect(
+        containsIdentifier(body, '_readLedger'),
+        isFalse,
+        reason: 'BUG-2264：关书那页此刻不结算（开关一次涨一次的根因就是这里的 leave）',
+      );
+      expect(containsCodeLine(body, 'await _flushReadingStats();'), isTrue);
     });
 
-    test('进程退出 flush：settle（非 leave）在 await _flushReadingStats 之前', () {
+    test('进程退出 flush：不碰账本，只写穿时钟', () {
       final String body = methodBody(
         corpus,
         'Future<void> _flushAllForProcessExit() async',
       );
-      final int settle = body.indexOf('_readLedger.settle();');
-      final int flush = body.indexOf('await _flushReadingStats();');
       expect(
-        settle,
-        isNonNegative,
-        reason: '退出 flush 用 settle 不用 leave：这条路径不保证进程真死'
-            '（Android 退后台用同一组回调 flush 后页面继续活着），清空当前单元会让'
-            '下一次落回同一页的 arrive 把位置退回单元起点、把刚记的字数撤回',
-      );
-      expect(settle, lessThan(flush));
-      expect(
-        body.contains('_readLedger.leave();'),
+        containsIdentifier(body, '_readLedger'),
         isFalse,
-        reason: '见上：这条路径不许 leave',
+        reason: '退出 / 退后台不是翻走（BUG-2264）；旧 settle 已随之删除',
       );
+      expect(containsCodeLine(body, 'await _flushReadingStats();'), isTrue);
     });
 
     test('_flushReadingStats 体保持只委托 flushNow（不碰账本）', () {
@@ -304,18 +296,18 @@ void main() {
     });
 
     test(
-      'leave 恰六处：跳句 + onSourcePagePop + _beginNavigation + 三个同章跳转入口；'
-      'dispose 走 detach 交棒、进程退出走 settle',
+      'leave 恰五处：跳句 + _beginNavigation + 三个同章跳转入口；'
+      '关书三条路（dispose / onSourcePagePop / 进程退出）零账本动作',
       () {
-        expect('_readLedger.leave('.allMatches(masked), hasLength(6));
-        // dispose 把 leave 作为**回调**交给 detach（在停表前跑、零 IO），不是自己调；
-        // 退出 flush 用 settle（不清当前单元）。两者都不带括号 / 换了名字，因此不计入
-        // 上面的调用点计数——各自单列一条，少一处就是那条路上的最后一页丢账。
+        expect('_readLedger.leave('.allMatches(masked), hasLength(5));
+        // BUG-2264：关书不是翻走。dispose 只 detach() 停表；`settle` 已从账本删除，
+        // 任何形式的「关书结算当前页」回潮都会让开关一次涨一次。
+        expect('_studyClock?.detach();'.allMatches(masked), hasLength(1));
         expect(
-          '_studyClock?.detach(_readLedger.leave);'.allMatches(masked),
-          hasLength(1),
+          masked.contains('_readLedger.settle'),
+          isFalse,
+          reason: 'ReadUnitLedger.settle 已删；关书 / 退后台 / 退出不结算站着的页',
         );
-        expect('_readLedger.settle();'.allMatches(masked), hasLength(1));
       },
     );
   });
