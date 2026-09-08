@@ -29,6 +29,7 @@ class AnimeIdentityEntry {
     this.tvdbSeason,
     this.tvdbEpisodeOffset,
     this.type,
+    this.tmdbIsMovieNamespace = false,
   }) : malIds = Set<int>.unmodifiable(malIds);
 
   final int anidbId;
@@ -42,8 +43,12 @@ class AnimeIdentityEntry {
   final int? tvdbEpisodeOffset;
   final String? type;
 
-  /// Fribb 的 `themoviedb_id` 对电影指向 TMDB movie 命名空间，其余类型指向 tv。
-  bool get isMovie => type?.toUpperCase() == 'MOVIE';
+  /// [tmdbId] 取自 `themoviedb_id.movie`（TMDB 电影命名空间）而非 `.tv`。
+  final bool tmdbIsMovieNamespace;
+
+  /// 是否按 TMDB 电影处理：`themoviedb_id` 自己给出的命名空间优先（它是这条
+  /// 映射的直接事实），其次才看 Fribb 的 `type` 字段。
+  bool get isMovie => tmdbIsMovieNamespace || type?.toUpperCase() == 'MOVIE';
 
   AnimeIdentityMappingResult toMappingResult() =>
       AnimeIdentityMappingResult(anidbId: anidbId, malIds: malIds);
@@ -159,8 +164,19 @@ class _AnimeIdentityCatalog {
       final int? mal = _positiveId(row['mal_id']);
       if (mal != null) builder.malIds.add(mal);
       builder.anilistId ??= _positiveId(row['anilist_id']);
-      builder.tvdbId ??= _positiveId(row['thetvdb_id']);
-      builder.tmdbId ??= _positiveId(row['themoviedb_id']);
+      builder.tvdbId ??= _positiveId(row['tvdb_id']);
+      // 实测 Fribb `anime-list-full.json`（39304 行）：`themoviedb_id` **恒为
+      // 对象**，`{"tv": 209867}`（7092 行）或 `{"movie": [128]}`（1363 行，
+      // movie 侧的值还是数组），从不出现裸数字；`tvdb_id` 才是 TVDB 键
+      // （`thetvdb_id` 零命中）。按裸数字 / 错键名解析会让 tmdbId 与 tvdbId
+      // 恒为 null，多季对齐与 TMDB id 接力全部静默失效。
+      final Object? tmdb = row['themoviedb_id'];
+      builder.tmdbId ??= _firstPositiveId(_field(tmdb, 'tv'));
+      final int? tmdbMovie = _firstPositiveId(_field(tmdb, 'movie'));
+      if (builder.tmdbId == null && tmdbMovie != null) {
+        builder.tmdbId = tmdbMovie;
+        builder.tmdbIsMovieNamespace = true;
+      }
       final Object? season = row['season'];
       final Object? offset = row['episode_offset'];
       builder.tmdbSeason ??= _nonNegativeInt(_field(season, 'tmdb'));
@@ -231,6 +247,10 @@ class _EntryBuilder {
   int? tvdbEpisodeOffset;
   String? type;
 
+  /// [tmdbId] 取自 `themoviedb_id.movie` 而非 `.tv`：该 id 属于 TMDB 的电影
+  /// 命名空间，即便 `type` 字段缺失也不能按剧集去 `/tv/{id}` 拉。
+  bool tmdbIsMovieNamespace = false;
+
   AnimeIdentityEntry build() => AnimeIdentityEntry(
         anidbId: anidbId,
         malIds: malIds,
@@ -242,12 +262,27 @@ class _EntryBuilder {
         tvdbSeason: tvdbSeason,
         tvdbEpisodeOffset: tvdbEpisodeOffset,
         type: type,
+        tmdbIsMovieNamespace: tmdbIsMovieNamespace,
       );
 }
 
 int? _positiveId(Object? value) {
   final int? id = _intOf(value);
   return id != null && id > 0 ? id : null;
+}
+
+/// Fribb 的 id 值可能是标量，也可能是数组（`themoviedb_id.movie` 实测就是
+/// `[128]`）。数组取第一个合法正整数；多值时后面的丢弃——一个 anidb 条目
+/// 指向多个 TMDB 电影不构成可自动采用的唯一映射。
+int? _firstPositiveId(Object? value) {
+  if (value is List) {
+    for (final Object? item in value) {
+      final int? id = _positiveId(item);
+      if (id != null) return id;
+    }
+    return null;
+  }
+  return _positiveId(value);
 }
 
 int? _nonNegativeInt(Object? value) {
