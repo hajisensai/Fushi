@@ -57,6 +57,17 @@ int Orchestrate(HANDLE child_process,HANDLE target_process,DWORD target_pid,
   ApplyLunaProfiles();
   return RunInjection();
 }
+int OrchestrateAttach(HANDLE target,DWORD pid,const std::wstring& target_exe){
+#define CloseHandle TestCloseHandle
+#define TerminateProcess TestTerminateProcess
+#define ResumeThread TestResumeThread
+#include "attached_siglus_readiness.inc"
+#undef ResumeThread
+#undef TerminateProcess
+#undef CloseHandle
+  ApplyLunaProfiles();
+  return RunInjection();
+}
 void TestProductionBlock(){
   const auto child=reinterpret_cast<HANDLE>(0x1100);
   const auto target=reinterpret_cast<HANDLE>(0x2200);
@@ -92,6 +103,42 @@ void TestProductionBlock(){
           "no duplicate wait without discovered child");
   }
 }
+void TestAutomaticAttachAfterFailedLaunch(){
+  const auto child=reinterpret_cast<HANDLE>(0x1100);
+  const auto retry_handle=reinterpret_cast<HANDLE>(0x5500);
+  PROCESS_INFORMATION pi{};pi.hProcess=reinterpret_cast<HANDLE>(0x3300);
+  pi.hThread=reinterpret_cast<HANDLE>(0x4400);pi.dwProcessId=123;
+  const std::wstring final_exe=L"C:\\Synthetic\\GameData\\RenamedEngine.exe";
+  observed={};observed.ready=false;
+  Check(Orchestrate(child,child,987,final_exe,pi)==1,"failed launch leaves child uninjected");
+  Check(OrchestrateAttach(retry_handle,987,final_exe)==1,
+        "automatic PID retry cannot bypass unavailable child window");
+  Check(observed.wait==2&&observed.waited_handle==retry_handle&&observed.waited_pid==987&&observed.timeout==20000,
+        "retry waits on its own target handle and unchanged game PID");
+  Check(observed.classify==2&&observed.classified_path==final_exe,
+        "both entry paths classify actual game identity");
+  Check(observed.closed==std::vector<HANDLE>{child,pi.hThread,pi.hProcess,retry_handle},
+        "retry failure closes exactly its one additional owned handle");
+  Check(observed.apply==0&&observed.inject==0&&observed.terminate==0&&observed.resume==0,
+        "launch plus retry failure never injects or controls game lifetime");
+  Check(observed.report==2&&observed.failure==fushi_voice_hook::LaunchFailureReason::kInjectionFailed&&observed.failure_code==1,
+        "each unavailable entry reports failure once");
+  Check(observed.order==std::vector<std::string>{"classify","wait","report","close","close","close",
+      "classify","wait","report","close"},"retry keeps readiness before all downstream operations");
+  observed={};
+  Check(OrchestrateAttach(retry_handle,987,final_exe)==0,"ready PID attachment continues");
+  Check(observed.wait==1&&observed.waited_handle==retry_handle&&observed.waited_pid==987&&observed.timeout==20000,
+        "ready attachment forwards target identity and bounded wait");
+  Check(observed.order==std::vector<std::string>{"classify","wait","apply","inject"},
+        "attach readiness precedes profiles and injection");
+  Check(observed.closed.empty()&&observed.report==0&&observed.terminate==0&&observed.resume==0,
+        "ready attach does not run failed-gate cleanup");
+  observed={};observed.siglus=false;observed.ready=false;
+  Check(OrchestrateAttach(retry_handle,987,L"C:\\Synthetic\\other.exe")==0,
+        "non-Siglus attachment unchanged");
+  Check(observed.wait==0&&observed.order==std::vector<std::string>{"classify","apply","inject"}&&observed.closed.empty(),
+        "other-engine attachment has no added wait or cleanup");
+}
 void TestProductionPlacement(const std::filesystem::path& source_path){
   std::ifstream input(source_path,std::ios::binary);
   Check(input.good(),"actual injector source available for placement guard");
@@ -107,10 +154,32 @@ void TestProductionPlacement(const std::filesystem::path& source_path){
   Check(child_path!=std::string::npos&&child_path<gate&&gate<apply&&apply<inject&&inject!=std::string::npos,
         "gate after final child identity and before profiles and injection");
   Check(source.find("target_exe =",gate)>apply,"target identity is not reassigned after readiness");
+  const std::string attached_marker="#include \"attached_siglus_readiness.inc\"";
+  const size_t main=source.find("int main(");
+  const size_t attach_open=source.find("HANDLE target = OpenProcess(kInjectionProcessRights, FALSE, pid)",main);
+  const size_t attach_image=source.find("target_exe = ProcessImagePath(target)",main);
+  const size_t attach_gate=source.find(attached_marker,main);
+  const size_t attach_apply=source.find("ApplyLunaProfiles(target_exe, pid",main);
+  const size_t attach_inject=source.find("RunInjection(target, pid",main);
+  Check(main!=std::string::npos&&attach_open!=std::string::npos&&attach_image!=std::string::npos&&
+        attach_gate!=std::string::npos&&attach_apply!=std::string::npos&&attach_inject!=std::string::npos,
+        "actual PID attach uses shared process rights and readiness block");
+  Check(main<attach_open&&attach_open<attach_image&&attach_image<attach_gate&&attach_gate<attach_apply&&attach_apply<attach_inject,
+        "PID gate follows actual image discovery before profiles and injection");
+  Check(source.find(attached_marker,attach_gate+attached_marker.size())==std::string::npos&&
+        source.find("target_exe =",attach_gate)>attach_apply,"single attach gate with stable target identity");
+  const size_t rights=source.find("constexpr DWORD kInjectionProcessRights =");
+  Check(rights!=std::string::npos,"shared injection process rights declaration exists");
+  const size_t end_rights=source.find(';',rights);
+  Check(end_rights!=std::string::npos,"shared rights initializer is bounded");
+  const std::string initializer=source.substr(rights,end_rights-rights);
+  Check(initializer.find("| SYNCHRONIZE")!=std::string::npos&&
+        initializer.find('&')==std::string::npos&&initializer.find('~')==std::string::npos,
+        "PID attach handle grants SYNCHRONIZE for readiness wait");
 }
 }
 int main(int argc,char** argv){
-  TestProductionBlock();
+  TestProductionBlock();TestAutomaticAttachAfterFailedLaunch();
   const std::filesystem::path source=argc==2?std::filesystem::path(argv[1]):
       std::filesystem::path(__FILE__).parent_path().parent_path()/"injector"/"injector_main.cpp";
   TestProductionPlacement(source);
