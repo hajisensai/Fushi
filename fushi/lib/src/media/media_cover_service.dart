@@ -13,6 +13,7 @@ import 'package:fushi/src/mining/galgame_cover_resolver.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/utils/misc/gallery_image_picker.dart';
+import 'package:fushi_engine/media/cover_file_writer.dart';
 
 /// 媒体统一路线 P3：三个媒体岛（书 / 视频 / 游戏）封面「选图 → 落盘 → 缓存驱逐」
 /// 的统一服务入口。
@@ -41,8 +42,6 @@ import 'package:fushi/src/utils/misc/gallery_image_picker.dart';
 class MediaCoverService {
   const MediaCoverService._();
 
-  static int _temporarySerial = 0;
-
   /// 统一落盘入口（文件源）：把 [source] 原子地写到 [destPath]（先写
   /// `<dest>.tmp` 再删旧文件 rename——Windows rename 不覆盖；失败清 .tmp、
   /// **不动旧封面**并 rethrow），成功后**必然**双键驱逐旧解码缓存
@@ -55,20 +54,7 @@ class MediaCoverService {
     required File source,
     required String destPath,
   }) async {
-    final File tmp = File('$destPath.tmp.$pid.${_temporarySerial++}');
-    try {
-      await source.copy(tmp.path);
-      final File dest = File(destPath);
-      if (await dest.exists()) await dest.delete();
-      await tmp.rename(destPath);
-    } catch (_) {
-      try {
-        if (await tmp.exists()) await tmp.delete();
-      } catch (_) {
-        // .tmp 清理失败不掩盖原始写盘异常。
-      }
-      rethrow;
-    }
+    await copyCoverFileAtomically(source: source, destPath: destPath);
     await evictLocalCoverCache(destPath);
   }
 
@@ -78,20 +64,7 @@ class MediaCoverService {
     required List<int> bytes,
     required String destPath,
   }) async {
-    final File tmp = File('$destPath.tmp.$pid.${_temporarySerial++}');
-    try {
-      await tmp.writeAsBytes(bytes, flush: true);
-      final File dest = File(destPath);
-      if (await dest.exists()) await dest.delete();
-      await tmp.rename(destPath);
-    } catch (_) {
-      try {
-        if (await tmp.exists()) await tmp.delete();
-      } catch (_) {
-        // .tmp 清理失败不掩盖原始写盘异常。
-      }
-      rethrow;
-    }
+    await writeCoverBytesAtomically(bytes: bytes, destPath: destPath);
     await evictLocalCoverCache(destPath);
   }
 

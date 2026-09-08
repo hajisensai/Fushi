@@ -14,7 +14,7 @@ import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi_engine/media/video/scraper/scraper_types.dart';
 import 'package:fushi_engine/media/video/scraper/sidecar_scanner.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
-import 'package:fushi/src/media/video/video_cover_extractor.dart'
+import 'package:fushi_engine/media/video/video_cover_extractor.dart'
     show videoCoverFileName;
 import 'package:fushi_engine/media/video/video_storage.dart';
 import 'package:fushi_core/fushi_core.dart' show VideoBookRow;

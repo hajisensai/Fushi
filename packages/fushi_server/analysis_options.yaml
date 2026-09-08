@@ -1,0 +1,16 @@
+include: package:lints/recommended.yaml
+
+analyzer:
+  errors:
+    unnecessary_import: warning
+    unused_element: warning
+
+linter:
+  rules:
+    always_use_package_imports: true
+    avoid_relative_lib_imports: true
+    cancel_subscriptions: true
+    eol_at_end_of_file: true
+    only_throw_errors: true
+    prefer_single_quotes: true
+    use_rethrow_when_possible: true

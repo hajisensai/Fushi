@@ -127,7 +127,7 @@ const Map<String, (CoverDeriverRole, String)> kCoverPathDerivers =
     CoverDeriverRole.derivesPathOnly,
     '仓储层只解析封面路径供读取/展示，不落盘。',
   ),
-  'lib/src/media/video/video_cover_extractor.dart': (
+  '../packages/fushi_engine/lib/media/video/video_cover_extractor.dart': (
     CoverDeriverRole.writesViaService,
     'ffmpeg 子进程直写目标路径（Dart 侧无字节）；下载路已走 applyCoverBytes。'
         '本文件的裸写边界由下面第 ③ 条逐函数名单钉死。',
@@ -318,7 +318,7 @@ void main() {
       'lib/src/media/media_cover_service.dart',
       // 导入期首写产线（ffmpeg 子进程直写目标路径），见其库注释。缩略图下载路
       // 已收口，本条豁免的实际边界由下面第 ③ 条逐函数钉死（BUG-1394）。
-      'lib/src/media/video/video_cover_extractor.dart',
+      '../packages/fushi_engine/lib/media/video/video_cover_extractor.dart',
     };
     final List<String> offenders = <String>[];
     for (final File f in dartFiles()) {
@@ -349,7 +349,7 @@ void main() {
       },
       // ffmpeg 两条路由子进程写盘，Dart 侧无字节；下载路已改走
       // MediaCoverService.applyCoverBytes，故本文件不该再有任何裸写。
-      'lib/src/media/video/video_cover_extractor.dart': <String>{},
+      '../packages/fushi_engine/lib/media/video/video_cover_extractor.dart': <String>{},
     };
     final RegExp rawWrite =
         RegExp(r'writeAsBytes\(|\.copy\(|\.rename\(|openWrite\(');

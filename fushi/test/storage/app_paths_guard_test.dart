@@ -182,7 +182,7 @@ void main() {
         'AppPaths.videoCoversDirectory', () {
       // 审计 §1-A：封面抽取从 desktop_audio_clipper.dart 迁到
       // media/video/video_cover_extractor.dart，守卫跟着实现走。
-      final String src = read('lib/src/media/video/video_cover_extractor.dart');
+      final String src = read('../packages/fushi_engine/lib/media/video/video_cover_extractor.dart');
       // extractVideoCover 封面目录经 AppPaths.videoCoversDirectory()——同上跟随
       // 数据根，不落回平台 Documents。
       expect(src.contains('AppPaths.videoCoversDirectory'), isTrue,

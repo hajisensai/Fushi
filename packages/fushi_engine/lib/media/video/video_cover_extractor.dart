@@ -26,17 +26,17 @@ library;
 
 import 'dart:io';
 
-import 'package:fushi/src/media/media_cover_service.dart';
+import 'package:fushi_engine/media/cover_file_writer.dart';
 import 'package:fushi_engine/media/media_extensions.dart'
     show kPlaylistManifestExtensions;
-import 'package:fushi/src/media/metadata/image_download.dart'
+import 'package:fushi_engine/media/metadata/image_download.dart'
     show looksLikeImageBytes;
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
-import 'package:fushi/src/storage/app_paths.dart';
+import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
     show extractVideoFrameViaFfmpeg;
-import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 import 'package:http/http.dart' as http;
 import 'package:meta/meta.dart';
@@ -142,11 +142,9 @@ void _logEmbeddedCoverFailure(
   required bool diagnosticOnly,
 }) {
   if (diagnosticOnly) {
-    ErrorLogService.instance
-        .logDiagnostic('extractEmbeddedVideoCoverViaFfmpeg', error);
+    engineLog.logDiagnostic('extractEmbeddedVideoCoverViaFfmpeg', error);
   } else {
-    ErrorLogService.instance
-        .log('extractEmbeddedVideoCoverViaFfmpeg', error, stack);
+    engineLog.log('extractEmbeddedVideoCoverViaFfmpeg', error, stack);
   }
 }
 
@@ -221,7 +219,7 @@ bool hasHollowMediaHeader(String path) {
         : kHollowMediaHeaderProbeBytes;
     return isHollowMediaHeaderBytes(handle.readSync(wanted));
   } catch (e) {
-    ErrorLogService.instance.logDiagnostic('hasHollowMediaHeader', '$path: $e');
+    engineLog.logDiagnostic('hasHollowMediaHeader', '$path: $e');
     return false;
   } finally {
     try {
@@ -291,7 +289,7 @@ Future<String?> _downloadVideoCoverToPathUnlocked({
       return null;
     }
     await File(outputPath).parent.create(recursive: true);
-    await MediaCoverService.applyCoverBytes(
+    await writeCoverBytesAtomically(
       bytes: res.bodyBytes,
       destPath: outputPath,
     );
@@ -359,7 +357,7 @@ Future<String?> _extractVideoCoverUnlocked({
   // TODO-1236：经 AppPaths 解析封面目录（跟随桌面自定义数据根 →
   // `<dataRoot>/documents/video_covers`；默认根仍是平台 Documents），与 TODO-1226
   // 迁移白名单 `video_covers` 一致，避免自定义数据根下新封面落回平台 Documents。
-  final Directory coverDir = await AppPaths.videoCoversDirectory();
+  final Directory coverDir = await enginePaths.videoCoversDirectory();
   final String outputPath = p.join(coverDir.path, videoCoverFileName(bookUid));
   // ① 优先视频自带封面（attached_pic）。
   final String? embedded = await extractEmbeddedVideoCoverViaFfmpeg(

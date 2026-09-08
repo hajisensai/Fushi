@@ -1,0 +1,47 @@
+name: fushi_server
+resolution: workspace
+description: >-
+  Fushi 无头服务端（Linux / 任意桌面）：互联 host（配对 / 库 / 流播 / 远程 OCR）、
+  通用任务（ASR）、下载管线、WebUI + admin API。纯 Dart，`dart compile exe` 出单文件。
+publish_to: none
+
+# 不依赖 flutter sdk。解析依赖仍需 Flutter SDK（fushi_audio 等尚声明 flutter），
+# 运行时二进制不含 Flutter；守卫 fushi/test/build/fushi_engine_purity_guard_test.dart。
+environment:
+  sdk: ">=3.8.0 <4.0.0"
+
+executables:
+  fushi_server: fushi_server
+
+dependencies:
+  fushi_core:
+    path: ../fushi_core
+  fushi_audio:
+    path: ../fushi_audio
+  fushi_engine:
+    path: ../fushi_engine
+  fushi_platform:
+    path: ../fushi_platform
+  # 与 fushi/pubspec.yaml 钉同一 sha；asr_onnx_ffi 是纯 Dart FFI 的 ONNX Runtime 后端
+  # （CPU / CUDA / DirectML），服务端的 OCR 与 ASR 会话工厂都用它。
+  asr_core:
+    git:
+      url: https://github.com/hajisensai/fushi-asr.git
+      path: packages/asr_core
+      ref: 7eb70dc01bebc9f2c180af5f5eee012485fe7147
+  asr_onnx_ffi:
+    git:
+      url: https://github.com/hajisensai/fushi-asr.git
+      path: packages/asr_onnx_ffi
+      ref: 7eb70dc01bebc9f2c180af5f5eee012485fe7147
+  args: ^2.4.0
+  crypto: ^3.0.0
+  drift: ">=2.33.0 <2.34.0"
+  http: ^1.2.0
+  path: ^1.8.2
+  shelf: ^1.4.0
+  yaml: ^3.1.0
+
+dev_dependencies:
+  lints: ^2.0.0
+  test: ^1.24.0

@@ -22,7 +22,7 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_storage.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
-import 'package:fushi/src/media/video/video_cover_extractor.dart';
+import 'package:fushi_engine/media/video/video_cover_extractor.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -35,7 +35,7 @@ export 'package:fushi_engine/media/video/video_library_import.dart'
 // media/video/video_cover_extractor.dart（视频封面抽取的归宿，使扫描器无需
 // import UI 层）；从这里 re-export 让既有调用点（home_video_page /
 // source_library_scanner / playlist_book_uid_test）零改动。
-export 'package:fushi/src/media/video/video_cover_extractor.dart'
+export 'package:fushi_engine/media/video/video_cover_extractor.dart'
     show videoCoverFileName, extractVideoCover, extractPlaylistCover;
 
 /// 自动封面导入的统一锁顺序：operation lease -> 封面 mutation gate。

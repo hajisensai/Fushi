@@ -5,7 +5,7 @@ import 'package:fushi/src/media/drag_drop/drop_classification.dart'
     show kDragPlaylistExtensions;
 import 'package:fushi_engine/media/media_extensions.dart'
     show kPlaylistManifestExtensions;
-import 'package:fushi/src/media/video/video_cover_extractor.dart';
+import 'package:fushi_engine/media/video/video_cover_extractor.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart'
     show ErrorLogEntry, ErrorLogService;
 
@@ -281,7 +281,7 @@ void main() {
   group('封面抽取器接线守卫（源码扫描 · BUG-1867）', () {
     late String source;
     setUpAll(() {
-      source = File('lib/src/media/video/video_cover_extractor.dart')
+      source = File('../packages/fushi_engine/lib/media/video/video_cover_extractor.dart')
           .readAsStringSync();
     });
 

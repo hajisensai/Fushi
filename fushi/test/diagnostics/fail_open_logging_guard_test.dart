@@ -48,9 +48,10 @@ void main() {
 
   // 容忍 dart format 把 ErrorLogService.instance.log( 折行成
   // ErrorLogService.instance 换行后 .log(，用正则匹配中间任意空白。
-  final RegExp logRe = RegExp(r'ErrorLogService\.instance\s*\.log\(');
+  // fushi_engine 里的文件走 engineLog（ErrorLogService 在 app 实现该 sink）。
+  final RegExp logRe = RegExp(r'(ErrorLogService\.instance\s*\.|engineLog\.)log\(');
   final RegExp diagRe =
-      RegExp(r'ErrorLogService\.instance\s*\.logDiagnostic\(');
+      RegExp(r'(ErrorLogService\.instance\s*\.|engineLog\.)logDiagnostic\(');
 
   group('collection_exporter.saveOrShareExport fail-open 补 log', () {
     test('catch 仍走 notify 且补 ErrorLogService.log', () {

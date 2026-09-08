@@ -77,8 +77,11 @@ void main() {
   Set<String> collectCallSiteFiles() {
     final Set<String> hits = <String>{};
     scannedFiles = 0;
-    for (final FileSystemEntity e
-        in Directory('lib').listSync(recursive: true)) {
+    // 互联远程查词服务已抽到 fushi_engine：两棵树都在扫描面里，rel 路径与表键同形。
+    for (final FileSystemEntity e in <Directory>[
+      Directory('lib'),
+      Directory('../packages/fushi_engine/lib'),
+    ].expand((Directory d) => d.listSync(recursive: true))) {
       if (e is! File || !e.path.endsWith('.dart')) continue;
       scannedFiles++;
       final String rel = e.path.replaceAll('\\', '/');
@@ -108,7 +111,7 @@ void main() {
   test('每个查词调用点都必须显式声明接不接自动朗读', () {
     final Set<String> found = collectCallSiteFiles();
     expectScanScale(scannedFiles,
-        what: 'lib/ 下的 .dart', atLeast: 750, measured: 939);
+        what: 'lib/ + fushi_engine/lib 下的 .dart', atLeast: 750, measured: 939);
     // `found` 才是判据的真分母：扫描面还在、但预筛/掩码把命中全滤没了，同样是
     // 「守卫在对着空气跑」，而 isNotEmpty 放行到只剩 1 个都不会响。
     // 2026-08-28 删桌面剪贴板查词后 clipboard_panel_controller.dart 整文件删除，

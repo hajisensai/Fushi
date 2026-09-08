@@ -35,7 +35,7 @@ import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi/src/media/video/scraper/cover_scraper_service.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/media/video/cover_backfill_ledger.dart';
-import 'package:fushi/src/media/video/video_cover_extractor.dart'
+import 'package:fushi_engine/media/video/video_cover_extractor.dart'
     show isLocalFrameExtractableVideoSource;
 import 'package:fushi_engine/media/video/m3u8_playlist.dart';
 import 'package:fushi/src/media/video/video_folder_collection_policy.dart';

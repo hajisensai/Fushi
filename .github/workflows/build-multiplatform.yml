@@ -310,6 +310,22 @@ jobs:
           fi
           echo "::endgroup::"
           exit 1
+      # 无头服务端（packages/fushi_server）：纯 Dart，dart build 出带 native assets
+      # （sqlite3）的 CLI bundle。这是 fushi_engine「闭包里没有 dart:ui」的最终门——
+      # flutter analyze / 守卫测试都只是它的镜像。--help 冒烟不开 DB。
+      - name: Build headless fushi_server (Linux)
+        shell: bash
+        run: |
+          set -euo pipefail
+          dart build cli --target packages/fushi_server/bin/fushi_server.dart             --output build/fushi_server_linux
+          ls -la build/fushi_server_linux/bundle
+          build/fushi_server_linux/bundle/bin/fushi_server --help
+      - name: Upload fushi_server (Linux)
+        uses: actions/upload-artifact@v7
+        with:
+          name: fushi_server-linux-x64
+          path: build/fushi_server_linux/bundle/
+          if-no-files-found: error
 
   # macOS gates the desktop build plus the shared smoke contract.
   macos:

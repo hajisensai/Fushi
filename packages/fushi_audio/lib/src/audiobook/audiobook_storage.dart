@@ -38,7 +38,7 @@ abstract final class AudiobookStorage {
   ///
   /// 平台默认值（`getApplicationDocumentsDirectory()`）由重文件
   /// `audiobook_storage_platform.dart` 的 `installAudiobookStoragePlatform()`
-  /// 以 `??=` 装入——本文件是纯 Dart（无头服务端消费），不能直连 path_provider。
+  /// 以 `??=` 装入——本文件是纯 Dart（无头服务端消费），不能直连 平台目录插件。
   /// 两处都未装配（纯 Dart 单测 / 服务端漏装配）时 [_documentsRoot] 抛 [StateError]，
   /// 而不是静默落到某个猜出来的目录。
   static Future<Directory> Function()? documentsRootResolver;

@@ -25,6 +25,7 @@ workspace:
   - packages/fushi_core
   - packages/fushi_dictionary
   - packages/fushi_engine
+  - packages/fushi_server
   - packages/fushi_platform
   - packages/fushi_torrent
   - packages/gamepads_android_stub
@@ -41,6 +42,15 @@ dev_dependencies:
 # pub.dev 版本；再写一条 override 会让 pub 直接报
 # "Cannot override workspace packages."。vendor 的理由见各自 pubspec 顶部。
 dependency_overrides:
+  # 上游 fushi-asr 是 pub workspace：asr_onnx_ffi 的 pubspec 把 asr_core 写成 hosted
+  # ^0.1.0，而本仓把 asr_core 钉在 git sha 上（转录产物字节级可复现），两者在解析器
+  # 眼里是不同来源。这里把 asr_core 统一成同一个 git sha，fushi_server 才能同时依赖
+  # asr_core + asr_onnx_ffi。
+  asr_core:
+    git:
+      url: https://github.com/hajisensai/fushi-asr.git
+      path: packages/asr_core
+      ref: 7eb70dc01bebc9f2c180af5f5eee012485fe7147
   # TODO-1306 / TODO-1275 / BUG-361: vendored desktop_drop 0.5.0. Adds (a) URL
   # drag import — browsers drop a URL as CFSTR_INETURLW (Windows) / public.url
   # (macOS) / an http(s) line in text/uri-list (Linux), all of which upstream

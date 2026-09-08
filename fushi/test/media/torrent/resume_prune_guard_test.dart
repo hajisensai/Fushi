@@ -166,7 +166,8 @@ void main() {
       expect(i, greaterThanOrEqualTo(0));
       final int end = host.indexOf('\n  }', i);
       final String body = host.substring(i, end > i ? end : i + 2500);
-      expect(body.contains('debugPrint('), isTrue,
+      // 引擎不依赖 Flutter：debugPrint 经 fushi_core 的 fushiDebugPrint 装配点。
+      expect(body.contains('fushiDebugPrint('), isTrue,
           reason: 'resume 长期写不进去 = 重启后所有下载蒸发，必须可见');
       expect(body.contains('} on Object {'), isFalse,
           reason: '回归：裸 `on Object { return 0; }` 把 native 的 '

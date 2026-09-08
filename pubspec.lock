@@ -74,9 +74,18 @@ packages:
     source: hosted
     version: "1.6.5"
   asr_core:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
       path: "packages/asr_core"
+      ref: "7eb70dc01bebc9f2c180af5f5eee012485fe7147"
+      resolved-ref: "7eb70dc01bebc9f2c180af5f5eee012485fe7147"
+      url: "https://github.com/hajisensai/fushi-asr.git"
+    source: git
+    version: "0.1.0"
+  asr_onnx_ffi:
+    dependency: transitive
+    description:
+      path: "packages/asr_onnx_ffi"
       ref: "7eb70dc01bebc9f2c180af5f5eee012485fe7147"
       resolved-ref: "7eb70dc01bebc9f2c180af5f5eee012485fe7147"
       url: "https://github.com/hajisensai/fushi-asr.git"

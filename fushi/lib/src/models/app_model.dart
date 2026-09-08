@@ -164,7 +164,7 @@ import 'package:fushi/src/sync/fushi_remote_mining_client.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/sync/remote_audio_lookup_bytes.dart';
 import 'package:fushi/src/utils/misc/lookup_audio_playback.dart';
-import 'package:fushi/src/media/video/video_cover_extractor.dart'
+import 'package:fushi_engine/media/video/video_cover_extractor.dart'
     show extractVideoCover;
 import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
 import 'package:fushi_engine/sync/immersion_mine_payload.dart';

@@ -54,7 +54,7 @@ import 'package:fushi/src/media/collections/collection_context_dialog.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/media/metadata/book_cover_scrape_dialog.dart';
 import 'package:fushi/src/media/metadata/book_metadata_scraper.dart';
-import 'package:fushi/src/media/metadata/image_download.dart';
+import 'package:fushi_engine/media/metadata/image_download.dart';
 import 'package:fushi/src/media/metadata/scrape_batch.dart';
 import 'package:fushi/src/media/metadata/scrape_title_matcher.dart';
 import 'package:fushi/src/media/collections/collection_grouping.dart';

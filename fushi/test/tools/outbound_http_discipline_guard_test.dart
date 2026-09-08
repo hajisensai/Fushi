@@ -47,6 +47,7 @@ import '../helpers/source_guard.dart';
 /// 只会让每次上游同步都要改这份清单。
 const List<String> kScanRoots = <String>[
   'fushi/lib',
+  'packages/fushi_engine/lib',
   'packages/fushi_core/lib',
   'packages/fushi_dictionary/lib',
   'packages/fushi_anki/lib',
