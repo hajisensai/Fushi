@@ -666,6 +666,20 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
 
   Future<void> _doImport() async {
     if (!_hasAudioSource || (!widget.audioOnly && _alignmentPath == null)) {
+      // 有音频没对齐文件：本机能转录就直接问来源（选文件 / 转录），拿到后接着
+      // 导入；与书导入对话框同一条纪律（BUG-2266）——转录入口只是行尾无字图标，
+      // 一句泛泛的「导入失败」是死胡同。
+      if (_hasAudioSource &&
+          !widget.audioOnly &&
+          _alignmentPath == null &&
+          shouldOfferSubtitleSourceChooser(
+            asrSupported: isAsrSupported,
+            hasAudio: _audioPaths?.isNotEmpty ?? false,
+          )) {
+        await _onAlignmentRowTap();
+        if (!mounted || _alignmentPath == null) return;
+        return _doImport();
+      }
       FushiToast.show(
         msg: t.audiobook_import_error,
         severity: ToastSeverity.error,
@@ -954,8 +968,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       reportProgress(0.3, t.import_step_matching);
       // 匹配器放 isolate 跑，主线程不能被大书的 bigram 扫描挤出 ANR。
       final String? alignment = _alignmentPath;
-      final bool hasTokenTiming = alignment != null &&
-          await attachAsrCueTokenTiming(cues, alignment);
+      final bool hasTokenTiming =
+          alignment != null && await attachAsrCueTokenTiming(cues, alignment);
       MatchResult result = await EpubCueMatcher.matchInIsolate(
         sections: sections,
         cues: cues,

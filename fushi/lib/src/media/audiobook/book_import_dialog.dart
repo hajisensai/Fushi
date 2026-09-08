@@ -904,6 +904,18 @@ class _BookImportDialogState extends State<BookImportDialog>
     if (epubPath != null && await _handoffIfManga(epubPath)) return;
     if (!mounted) return;
     if (_epubPath != null && !_hasSubtitles && _audioPaths.isNotEmpty) {
+      // 有音频没字幕：本机能转录就直接问字幕来源（选文件 / 转录），拿到字幕后接着
+      // 导入；只有不能转录的平台才提示。转录入口只是字幕行尾一枚无字图标，用户
+      // 「下载了语音模型 → 选 EPUB + 音频 → 点导入」走到这里，若只给一句「音频需要
+      // 配合字幕使用」就是死胡同（BUG-2266）。
+      if (shouldOfferSubtitleSourceChooser(
+        asrSupported: isAsrSupported,
+        hasAudio: true,
+      )) {
+        await _onSubtitleRowTap();
+        if (!mounted || !_hasSubtitles) return;
+        return _doImport();
+      }
       FushiToast.show(
         msg: t.srt_import_audio_needs_subtitle,
         severity: ToastSeverity.error,

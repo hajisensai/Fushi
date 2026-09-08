@@ -33,7 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-2266](bugs/BUG-2266-asr-model-ready-android-unverified.md) | 🚧 | ✅ | 语音模型已下载但转录弹层选不中/无法识别（Android，未复现） |
+| [BUG-2266](bugs/BUG-2266-import-no-subtitle-dead-end.md) | ✅ | ✅ | 选了音频没字幕点「导入」只提示不引导转录，用户以为语音模型选不中（Android 报告） |
 | [BUG-2256](bugs/BUG-2256-subtitle-pause-reveal-ignores-gate.md) | ✅ | ✅ | 关掉「悬停或点击显形」后，暂停仍会揭开被隐藏的字幕 |
 | [BUG-2255](bugs/BUG-2255-reader-sentence-seek-dom-identity.md) | ✅ | ✅ | 正文从本句播放误取上一条字幕 |
 | [BUG-2254](bugs/BUG-2254-jellyfin-fnos-x-emby-auth.md) | ✅ | ✅ | 飞牛影视 Jellyfin 兼容层要求 X-Emby-Authorization 认证头 |
