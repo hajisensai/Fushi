@@ -175,7 +175,11 @@
     return t < cues[ans].endMs ? ans : -1;
   }
 
-  function parentForOverlay() { return document.fullscreenElement || document.body; }
+  // 兜底父级用 <html> 而不是 <body>：浮层写的是视口坐标的 position:fixed，而安卓播放器
+  // 进/退全屏常给 body 挂 transform 或 scroll-lock（position:fixed;top:-Npx）——fixed 的
+  // 包含块会跟着变成那个带 transform 的祖先，视口坐标落进歪掉的坐标系，每 200ms 重测
+  // 一百次也还是歪的（用户报「退出全屏字幕错位」修不尽的根因）。html 自己从不被 transform。
+  function parentForOverlay() { return document.fullscreenElement || document.documentElement; }
 
   function seekTo(ms) {
     ms = Math.max(0, Math.round(ms));
@@ -347,6 +351,12 @@
       return;
     }
     var video = videoEl();
+    // 先重挂父级再走测量：退出全屏那一刻若 rect 恰好坏掉（播放器挪树/隐藏的瞬间），
+    // 浮层节点绝不能滞留在旧 fullscreenElement 里——那正是下一次显示时的错位源。
+    if (st.overlayEl) {
+      var reparent = parentForOverlay();
+      if (st.overlayEl.parentNode !== reparent) reparent.appendChild(st.overlayEl);
+    }
     if (!video || typeof video.getBoundingClientRect !== 'function') return;
     var rect = video.getBoundingClientRect();
     if (!rect || rect.width <= 0 || rect.height <= 0) return;
@@ -355,9 +365,18 @@
     el.setAttribute('data-theme', resolveTheme());
     if (typeof window.fushiRenderCueText === 'function') window.fushiRenderCueText(el, cue);
     else el.textContent = cue.text;
-    el.style.left = (rect.left + rect.width / 2) + 'px';
-    el.style.top = (rect.top + rect.height * 0.84) + 'px';
-    el.style.maxWidth = Math.max(240, rect.width * 0.9) + 'px';
+    // 中心恒定贴视频（拖拽跟随的关键；上一版把中心夹到视口中央，就是「字幕不跟拖拉」的病根）；行宽从
+    // 视频中心向两侧屏缘撑开、被较近一侧屏缘夹住：非全屏小播放器左右空 → 撑到近满屏不折行；全屏开
+    // 抽屉 → 近侧即屏缘，行宽约等视频盒，永不探进抽屉盖画面（60% 上限保证最窄视频区也 ≥40% 屏）。
+    var vv = window.innerWidth || (rect.left + rect.right);
+    var cx = rect.left + rect.width / 2;
+    var halfToEdge = Math.max(0, Math.min(cx, vv - cx));
+    var maxW = Math.max(200, Math.min(vv * 0.94, (halfToEdge - 6) * 2));
+    el.style.left = cx + 'px';
+    // 底边锚定（CSS transform 是 -100%）：文本块从这条线**往上**长。旧版中心锚 84% 时，
+    // 非全屏矮视频（~200px 高）会垂出视频底缘压住进度条——底锚后任何视频高度都出不了界。
+    el.style.top = (rect.top + rect.height * 0.88) + 'px';
+    el.style.maxWidth = Math.round(maxW) + 'px';
     applyOverlayBlur(el);
   }
 
@@ -384,10 +403,18 @@
 
   // notify=true：这是用户显式的「打开侧边栏」动作，失败必须给可见提示。
   // notify 省略：只是顺带刷新（加载外挂字幕、拖放落地），失败不抢占它们自己的 toast。
-  // 返回值 = 是否已经把这次交互「办成了」。内容脚本这一侧永远办不成（原因见上），故恒为 false，
-  // 调用方（video-shortcuts.js）据此不 preventDefault，按键原样放行给站点。
+  // 返回值 = 是否已经把这次交互「办成了」。桌面内容脚本这一侧永远办不成（原因见上）恒 false，
+  // video-shortcuts.js 据此不 preventDefault 放行站点；触屏抽屉真开了才返回 true（吞键合理）。
   function showPanel(notify) {
     refreshHeadless();
+    // 触屏设备没有 chrome.sidePanel（桌面独有 API）：页内抽屉契约存在（mobile-drawer.js）
+    // 就改拉抽屉，并如实返回 true——抽屉确实开了，Shift+S 该吞键。桌面契约恒缺失，原样走。
+    try {
+      if (typeof window.fushiMobileDrawerOpen === 'function' && window.fushiMobileDrawerOpen()) {
+        if (notify) toast('字幕列表已打开');
+        return true;
+      }
+    } catch (_) {}
     try {
       chrome.runtime.sendMessage({ type: 'openSubtitleSidePanel' }, function (resp) {
         var failed = true;
@@ -777,6 +804,9 @@
   document.addEventListener('fullscreenchange', function () {
     if (!st.enabled) return;
     sync();
+    // 全屏切换后播放器整体挪位（body transform/滚动锁很常见）：立刻重测重摆一次，
+    // 不等下一个 200ms tick——重挂父级（fsEl↔html）也在这一步完成。
+    if (st.overlayCue) updateSubtitleOverlay(st.overlayCue);
   });
 
   var lastPath = location.pathname;

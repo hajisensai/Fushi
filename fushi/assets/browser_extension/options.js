@@ -27,6 +27,12 @@ const settingDefaults = Object.freeze({
   subtitleReplaceNative: false,
   // 隐藏字幕是实际显示状态；Shift+H 是否接管由独立快捷键开关控制。
   subtitleHidden: false,
+  // 触屏查词：点按默认开（手机端没有 Shift 悬停，点按是主入口），长按默认关
+  // （与系统长按选词菜单天然打架）。两者都只在真触屏手势上生效，桌面零影响。
+  touchLookupTap: true,
+  touchLookupHold: false,
+  // 安卓没有 chrome.sidePanel：触屏设备视频页边缘的「字幕列表」抽屉（mobile-drawer.js）。
+  mobileSubtitleDrawer: true,
   videoShortcutPrevCue: true,
   videoShortcutNextCue: true,
   videoShortcutReplayCue: true,
@@ -52,6 +58,9 @@ const toggleIds = Object.freeze({
   subtitleOverlayAllTracks: 'subtitleOverlayAllTracks',
   subtitleReplaceNative: 'subtitleReplaceNative',
   subtitleHidden: 'subtitleHidden',
+  touchLookupTap: 'touchLookupTap',
+  touchLookupHold: 'touchLookupHold',
+  mobileSubtitleDrawer: 'mobileSubtitleDrawer',
   videoShortcutPrevCue: 'videoShortcutPrevCue',
   videoShortcutNextCue: 'videoShortcutNextCue',
   videoShortcutReplayCue: 'videoShortcutReplayCue',

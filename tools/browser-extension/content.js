@@ -25,6 +25,27 @@ let fushiContainer = null;
 // 与 in-app WebView 弹窗一致）。fushiHost 是挂在宿主页的 shadow 宿主元素（负责 fixed 定位），
 // #entries-container 及全部弹窗内容在其 shadow root 内；window.__fushiRoot 暴露给 popup.js。
 let fushiHost = null;
+// 弹窗样式同步注入（「CSS 要渲染一下才正常」的修复）：shadow 里的 content.css 原本经
+// <link> 加载——异步，而 host 每次查词重建、首帧 rAF 立刻「量尺寸 → 落点」。慢设备
+// （手机冷启动首查最典型）样式应用赶不上测量：落点按未加样式的「裸」布局算出，样式
+// 到达后只有改变盒尺寸的规则会触发 ResizeObserver 复算，纯视觉规则（颜色/字体/圆角）
+// 永远不自愈——用户看到的就是弹窗样式/位置错一帧起，滚动或再渲染一次才正常。
+// 修法两层：①启动即预取 CSS 文本，就绪后以同步 <style> 注入（首帧测量必见最终布局，
+// 零竞态）；②预取尚未就绪（页面刚加载的第一发查词，或该内核禁 content script fetch
+// 扩展资源）退回 <link>，并登记 fushiCssLink 门控——place 照旧落点，但「显示」扣到
+// 样式表 load/error/800ms 超时之后，落地时先按最终布局复算一次落点再放行。
+// 表现层的承诺从「快一帧但可能裸奔」换成「最多晚一帧，绝不无样式上屏」。
+let fushiPopupCssText = '';
+try {
+  fetch(chrome.runtime.getURL('vendor/content.css'))
+      .then((r) => (r && r.ok ? r.text() : ''))
+      .then((t) => { if (typeof t === 'string' && t) fushiPopupCssText = t; })
+      .catch(() => { /* 预取失败：永远走 link 回落路径 */ });
+} catch (_) { /* 无 fetch：同上，link 回落 */ }
+// link 回落路径的在途账本：当前弹窗样式表尚未应用完时挂在这里，place 把「显示」挂到
+// 它身后——根治「字先出、CSS 后渲染」（FOUC）：宁晚一帧出场，也不裸奔上屏。
+// 同步 <style> 路径恒为 null（样式即时生效，无需扣显）。
+let fushiCssLink = null;
 // BUG-530 性能：划词监听器原来对每次 mousemove 都发查词请求 → 一直按 Shift 移动会把服务器
 // 刷爆、UI 卡顿。用「位移阈值 + 同词去重 + 在途请求闸」三重节流：只在移到**不同词**上才查。
 let fushiLastTerm = '';
@@ -1446,6 +1467,7 @@ function fushiNativeSubtitleSelectors() {
     '.ytp-caption-window-container', // YouTube
     '.captions-text',                // 通用（部分播放器）
     '.libassjs-canvas-parent',       // ASS/SSA 渲染层
+    '.bilibili-player-video-subtitle', // B站网页播放器的自绘字幕层
   ];
 }
 // 扩展自绘覆盖层（subtitle-panel.js 的 #fushi-subtitle-overlay）。
@@ -1467,10 +1489,13 @@ function fushiApplySubtitleHiding() {
   }
   const manual = fushiSubtitleHideReasons.has('manual');
   const selectors = manual ? fushiSubtitleHideSelectors() : fushiNativeSubtitleSelectors();
-  // ::cue（原生 <track> 字幕）必须单独成一条规则：它只接受受限属性集，且与普通选择器
-  // 并列时若被浏览器判为无效会**整条规则**失效，连带把上面的站点字幕也藏不掉。
+  // ::cue（原生 <track> 字幕的 cue 伪元素）与 ::-webkit-media-text-track-container
+  // （Blink 原生 track 渲染层本体——TVer/B站/一堆用 <track> 出字的站点全靠它）必须各自
+  // 单独成规则：它们只接受受限属性集，且与普通选择器并列时若被浏览器判为无效会**整条规则**
+  // 失效，连带把上面的站点字幕也藏不掉（历史上就是这么翻的车，别再并排写）。
   const css = selectors.join(',') + '{visibility:hidden!important}' +
-      'video::cue{visibility:hidden!important}';
+      'video::cue{visibility:hidden!important}' +
+      'video::-webkit-media-text-track-container{visibility:hidden!important}';
   const style = existing || document.createElement('style');
   style.id = FUSHI_HIDE_SUBS_ID;
   if (style.textContent !== css) style.textContent = css;
@@ -1611,13 +1636,46 @@ function fushiEnsureContainer() {
         '#entries-container{width:100%!important;max-width:none!important;' +
         'max-height:none!important;overflow:visible!important;zoom:1!important;}';
     shadow.appendChild(norm);
-    // 把弹窗样式注入 shadow：content.css 作为扩展资源经 <link> 加载（web_accessible_resources）。
+    // 把弹窗样式注入 shadow：content.css 是扩展资源（web_accessible_resources）。
     // 其中宿主页级选择器（高亮层等）在 shadow 内无对应元素、天然失效；
     // 弹窗选择器（#entries-container/.glossary-group/ruby…）在 shadow 内生效。
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = chrome.runtime.getURL('vendor/content.css');
-    shadow.appendChild(link);
+    // 首选预取到的文本走同步 <style>（消除「异步 link vs 首帧测量」竞态，见上方
+    // fushiPopupCssText 注释）；预取尚未就绪时回落 <link>，并在其 load 后补算一次落点。
+    if (fushiPopupCssText) {
+      fushiCssLink = null;
+      const css = document.createElement('style');
+      css.textContent = fushiPopupCssText;
+      shadow.appendChild(css);
+    } else {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = chrome.runtime.getURL('vendor/content.css');
+      // 「样式落地」门控：place 的显示回调排队等 load/error/超时兜底——样式没到宁可
+      // 弹窗晚一帧出场，绝不裸奔上屏（FOUC）。落地后先按最终布局复算落点再放行显示。
+      const waiters = [];
+      let settled = false;
+      const settle = () => {
+        if (settled) return;
+        settled = true;
+        try {
+          if (fushiHost && fushiContainer && fushiHost.isConnected) fushiApplyPlacement();
+        } catch (_) { /* 弹窗已销毁 */ }
+        if (fushiCssLink === link) fushiCssLink = null;
+        while (waiters.length) {
+          const fn = waiters.shift();
+          try { fn(); } catch (_) { /* 单个回调异常不吞其余 */ }
+        }
+      };
+      link.__fushiCssGate = {
+        // add 返回 true = 已入队（调用方不得自行显示）；false = 样式已落地，立即显示。
+        add: (fn) => { if (settled) return false; waiters.push(fn); return true; },
+      };
+      link.addEventListener('load', settle);
+      link.addEventListener('error', settle);
+      setTimeout(settle, 800); // 个别内核不派发 load/error：超时兜底放行，绝不永久藏窗
+      shadow.appendChild(link);
+      fushiCssLink = link;
+    }
     const c = document.createElement('div');
     c.id = 'entries-container';
     // 主题落在弹窗根 #entries-container 上（content.css 作用域 #entries-container[data-theme]）；
@@ -1794,6 +1852,9 @@ function fushiRemoveContainer() {
   fushiBindPopupPerfContext(null);
   fushiHost = null;
   fushiContainer = null;
+  // 在途 link 门控随窗作废：waiters 里的 reveal 绑的是被销毁的容器，留引用只会在
+  // settle 时对孤儿节点写 visibility（无害但无意义）；置 null 让新弹窗登记新门。
+  fushiCssLink = null;
   window.__fushiRoot = null;
   // TODO-1272：关窗即撤覆盖层高亮（被查词高亮跟随弹窗生命周期，弹窗在则在、弹窗关则撤）。
   fushiClearHighlightOverlay();
@@ -2558,14 +2619,21 @@ function fushiRender(popupJson, termLen, theme, anchorRect) {
   fushiPlaceAnchor = wordRect || null;
   fushiUserResizedPopup = false;
   fushiRenderEntries(popupJson);
+  const reveal = () => {
+    c.style.visibility = 'visible';
+    fushiReportVisibleAfterPaint(fushiLookupPerfContext, c);
+  };
   const place = () => {
     // BUG-688/BUG-767/BUG-1726：量实测尺寸 → 纯函数落点 → 写回 host + 记录 Phase D 夹取
     // 上下文，全部收进 fushiApplyPlacement（首帧与 ResizeObserver 复算共用同一份实现/锚点）。
     fushiApplyPlacement();
     // BUG-1726：popup.js 此刻还在逐宏任务追加词典块（弹窗会继续长高），挂观察器随尺寸复算。
     fushiObservePopupResize();
-    c.style.visibility = 'visible';
-    fushiReportVisibleAfterPaint(fushiLookupPerfContext, c);
+    // 样式表走 <link> 且尚未应用（预取没赶上的首查）：把「显示」扣到样式落地之后——
+    // 落点已按当前布局尽力算过，settle 里还会按最终样式再复算一次。同步 <style> 路径
+    // fushiCssLink 恒为 null，直接放行，不多等一帧。
+    const gate = fushiCssLink && fushiCssLink.__fushiCssGate;
+    if (!(gate && gate.add(reveal))) reveal();
   };
   requestAnimationFrame(place);
 }
