@@ -45,11 +45,30 @@ void main() {
     // effectiveDictColumns 必须按视口宽 / 每列最小宽收敛（与 CSS grid 同一公式）。
     expect(js.contains('DICT_COLUMN_MIN_WIDTH'), isTrue,
         reason: '有效列数必须按每列最小宽 DICT_COLUMN_MIN_WIDTH 收敛');
-    expect(
-        RegExp(r'Math\.floor\(\s*width\s*/\s*DICT_COLUMN_MIN_WIDTH\s*\)')
-            .hasMatch(js),
-        isTrue,
+    // 这里钉的是不变式「装得下的列数 = floor(视口宽 / 每列最小宽)」，**不是**
+    // 某个字面除数。每列最小宽本身允许按设备变（触屏把门槛加倍，
+    // 见 popup.js 的 colFloor）——旧写法把 `width / DICT_COLUMN_MIN_WIDTH` 整个写死，
+    // 那类合法改动一改就无辜变红（实发生过）。改成：除数只需是个在本函数
+    // 里由 DICT_COLUMN_MIN_WIDTH 推出来的量，挡的仍然是「另起炉灶第二套门槛」。
+    final int edcAt = js.indexOf('function effectiveDictColumns(');
+    expect(edcAt, isNonNegative);
+    final int edcEnd = js.indexOf('\n}', edcAt);
+    expect(edcEnd, greaterThan(edcAt));
+    final String edcBody = js.substring(edcAt, edcEnd);
+    final RegExpMatch? fitMatch =
+        RegExp(r'Math\.floor\(\s*width\s*/\s*([A-Za-z_$][\w$]*)\s*\)')
+            .firstMatch(edcBody);
+    expect(fitMatch, isNotNull,
         reason: '装得下的列数 = floor(视口宽 / 每列最小宽)');
+    final String divisor = fitMatch!.group(1)!;
+    if (divisor != 'DICT_COLUMN_MIN_WIDTH') {
+      expect(
+          RegExp('(?:const|let|var)\\s+$divisor\\s*=[^;]*DICT_COLUMN_MIN_WIDTH')
+              .hasMatch(edcBody),
+          isTrue,
+          reason: '除数 $divisor 必须由 DICT_COLUMN_MIN_WIDTH 推出，'
+              '不能是另起炉灶的第二套门槛');
+    }
     // dictColumns()（masonry 列数来源）必须委托给 effectiveDictColumns，而非读原始值。
     final int dcAt = js.indexOf('function dictColumns(');
     expect(dcAt, isNonNegative);
