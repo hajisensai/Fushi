@@ -1,11 +1,13 @@
 ## BUG-2280 · Android快速重开复用已关库引擎
 - **报告**：2026-09-08（用户：手机快速关闭重开感觉卡死）
 - **真实性**：✅ 真 bug（Android 保留引擎与关库生命周期契约冲突已沿应用、依赖和 Flutter 原生源码确认；用户设备症状尚未复现）。
-- **[ ] ① 未修复** —
-- **[ ] ② 未加自动化测试** —
+- **[x] ① 根因修复已实现** — `e2d614f2e9`：Android view 的 inactive/hidden/paused/detached 统一保留式 flush，不设置终止标志、不关闭引擎所有的 DB/服务。已有 flush 之后收到的新请求串行补存，避免遗漏旧快照之后新增的 deferred 写。
+- **[x] ② 自动化测试** — `fushi/test/startup/android_view_lifecycle_test.dart` 使用真实 Drift DB 验证 detached/resumed 后继续读写、未完成 flush 时重开及新增 deferred 写的串行落库、后续回调保留。`exit_flush_test.dart` 验证 Android 接线不进入破坏性退出分支；5 文件共 37 项定向测试通过。
 - **根因**：`fushi/lib/main.dart:800-802` 对 Android `detached` 调用退出清理，`:994-995` 置 `_shutdownStarted`，`:1019` 关闭数据库；`:789-791` resumed 仅刷新配色，没有取消仍在飞的退出清理或恢复已关闭的资源。
 - **真实路径**：`fushi/android/app/src/main/java/app/fushi/reader/MainActivity.java:59` 继承 `AudioServiceActivity`。`pubspec.lock:101-108` 解析为 audio_service 0.18.18；其 `AudioServiceActivity.java:12-13` 提供插件缓存引擎，`AudioServicePlugin.java:70-113` 复用 audio_service_engine，`:116-123` 明确在新 Activity 已绑定时保留引擎。本机 Flutter 的 `FlutterActivityAndFragmentDelegate.java:805-810` 脱离时发送 detached，而 `FlutterActivity.java:1081-1087` 对宿主提供引擎默认不销毁。因而 Activity 销毁不等于应用引擎结束。
 - **后果**：`fushi/lib/src/models/app_model.dart:6522-6533` 关库还会标记未初始化、撤销观察者、停止后台服务；快速恢复的旧引擎可能继续使用这些资源，甚至先恢复界面、随后被尚未完成的退出清理关闭数据库。问题是关闭了仍需复用的资源，不能简化为数据库关闭不完全。
 - **触发边界**：Activity 销毁后音频引擎仍保留，或新 Activity 在旧服务销毁引擎前重新绑定。普通返回桌面只走 inactive/paused/hidden 的保留式 flush，不能据此直接认定触发。进程完全终止后冷启动也不属于复用旧引擎路径。
-- **修复方向**：将 view 脱离与 engine/进程终止分开管理，保留引擎时只做可恢复的持久化；补 detached → resumed 以及清理未完成便 resumed 的行为测试，证明同一引擎仍能读写 DB 和使用后台服务。
-- **验证边界**：本轮只检查和登记；未修改产品代码，未做 Android 真机/E2E。iOS 未找到同等缓存主引擎复用证据，不外推为 iOS 已确诊。
+- **验证**：最终 `flutter analyze --no-pub` 通过；最新代码 `flutter build apk --debug --no-pub` 通过。相邻 76 文件检查 775 项通过、4 项失败，详见 BUG-2279；不将该批记为全绿。
+- **模拟器验证**：API 34 x86_64 上安装最终 APK，返回桌面立即重开 PID 5944 不变；`CLEAR_TASK | NEW_TASK` 重建 Activity 后，同一 FFmpegKit 插件实例从旧 Activity 重附着新 Activity，只有最初一次 Dart VM service 启动，确认引擎真实复用。延后约 30 秒 onboarding 仍正常渲染，无关库异常或 FATAL。证据在本工作区 `.codex-test/android-reopen-recreate-logcat.txt`、`android-reopen-device-logcat.txt`、`android-reopen-capture-screen.png`。APK SHA256 `AFDEF68BC3956DFE77127F59C0B8DEF5F378DA6B3A70DA2D3923D8916F1CFF1D`。
+- **验证边界**：`implemented_unverified`：尚未完成音频服务保活下 Activity 销毁并复用相同引擎的设备 E2E，单测不替代该门槛。iOS 未找到同等缓存主引擎复用证据，不外推为 iOS 已确诊。
+- **模拟器独立缺口**：x86_64 的 ffmpeg-kit 报缺少 `libffmpegkit_abidetect.so`，未导致此次启动/重建崩溃；未测真实音频播放、阅读位置保存和完整首页交互。未修改用户真实安装。
