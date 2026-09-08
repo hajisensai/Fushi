@@ -112,6 +112,21 @@ CTest x86 96/96、x64 92/92 通过，结构 49/49、manifest/profile 检查、
 BUG-2249 启动记录角色/转区回退修复已整合为 `8fa25b18a2`，定向测试 86/86
 及定向分析通过；当前运行 Fushi/helper 尚未部署该修复，不能算运行时验收。
 
+## 2026-09-08 用户制卡反馈与窗口比例回归
+
+用户反馈 Rewrite 制卡没有明显问题，记录为用户已验证制卡交互；该反馈不替代
+旧版逐句原音来源、配对和资源哈希的证据。当前进度经正常 Save 界面保存到
+此前空白的 006（游戏显示保存时间 12:11），未覆盖已有 001–005。
+
+同一 PID 48540、同一已加载 Hook 下，通过 Config 的显示详细设置由 100%
+切为 75%，返回原句后点击正文没有产生新 hit，provider 2/3 status 1、
+generation 0/0，且游戏没有推进。恢复原来的 100% 并返回同句后，同一词
+立即出现词典：hit 10、char index 11/count 26、generation 1214/103，
+provider 2/3 status 2。因此缩放回归未通过，仍须定位真实视口拒绝门。
+
+本 worktree 完成 bootstrap 后 Windows Release 主程序构建退出 0（426.6 秒）；
+尚未将该程序替换到运行会话，也未据此认定启动角色修复已通过运行验证。
+
 ## Not proved
 
 原始启动、自动跟随、注入和选定正文线程已有运行证据；当前候选恢复附着后的正文几何、查词停留和菜单拒绝已通过上述范围。完整无中断重启、新尺寸 viewport、更多对象变化仍需验证。resource/pcm_ready、paired、e2e_verified 尚未通过；旧版原音 adapter 尚未实现，已有 loopback 不能当作原音捕获。Angel Beats! 与月彼本轮尚未运行。未升级 engine-support.yaml，未更新既有 PR 或正式随包运行库。
