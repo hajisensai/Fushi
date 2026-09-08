@@ -13,6 +13,8 @@ struct SiglusMessageTextTask {
   uint64_t tick_ms = 0;
   uint32_t voice_key = UINT32_MAX;
   uint32_t text_units = 0;
+  uint64_t eightarg_epoch = 0;
+  fushi_voice_hook::siglus_eightarg_message::Owner eightarg_owner{};
   wchar_t text[kSiglusMessageMaxTextUnits + 1] = {};
 };
 
@@ -24,6 +26,8 @@ fushi_voice_hook::SiglusMessageProfile g_siglus_message_profile;
 fushi_voice_hook::SiglusMessageLayout g_siglus_message_layout;
 bool g_siglus_message_native_ecx = false;
 bool g_siglus_message_legacy = false;
+bool g_siglus_message_eightarg = false;
+fushi_voice_hook::siglus_eightarg_message::Layout g_siglus_eightarg_message_layout;
 fushi_voice_hook::SiglusLegacyMessageProfile g_siglus_legacy_message_profile;
 fushi_voice_hook::SiglusLegacyMessageLayout g_siglus_legacy_message_layout;
 fushi_voice_hook::SiglusNativeMessageProfile g_siglus_native_message_profile;
@@ -40,6 +44,9 @@ __declspec(thread) fushi_voice_hook::SiglusNativeMessageTicket
     g_siglus_native_message_ticket = {};
 __declspec(thread) fushi_voice_hook::SiglusLegacyMessageTicket
     g_siglus_legacy_message_ticket = {};
+__declspec(thread) fushi_voice_hook::siglus_eightarg_message::Ticket
+    g_siglus_eightarg_message_ticket = {};
+__declspec(thread) uint64_t g_siglus_eightarg_message_epoch = 0;
 fushi_voice_hook::SiglusMessageQueue<SiglusMessageTextTask,
                                    kSiglusMessageTaskSlots>
     g_siglus_message_tasks;
@@ -64,9 +71,12 @@ void __stdcall ObserveSiglusMessageEntry(uint32_t owner, uint32_t entry_esp,
       g_siglus_message_layout, owner, entry_esp, read, &g_siglus_message_ticket);
 }
 
-// Both admitted message ABIs hand off a validated occurrence here. Its bounded
+// Admitted message ABIs hand off a validated occurrence here. Its bounded
 // copy owns the bytes before the engine returns; publication remains on worker.
-void QueueSiglusMessageText(uint32_t text_union, uint32_t frozen_voice_key) {
+void QueueSiglusMessageText(uint32_t text_union, uint32_t frozen_voice_key,
+    uint64_t occurrence_epoch = 0,
+    const fushi_voice_hook::siglus_eightarg_message::Owner* eightarg_owner = nullptr) {
+  if ((occurrence_epoch != 0) != (eightarg_owner != nullptr)) return;
   // ReadSiglusText validates the engine string union and its terminator. SEH
   // contains page lifetime changes between validation and the bounded copy.
   __try {
@@ -78,6 +88,8 @@ void QueueSiglusMessageText(uint32_t text_union, uint32_t frozen_voice_key) {
     SiglusMessageTextTask task;
     task.tick_ms = GetTickCount64();
     task.voice_key = frozen_voice_key;
+    task.eightarg_epoch = occurrence_epoch;
+    if (eightarg_owner != nullptr) task.eightarg_owner = *eightarg_owner;
     task.text_units = units;
     memcpy(task.text, text, units * sizeof(wchar_t));
     task.text[units] = L'\0';
@@ -113,6 +125,54 @@ FUSHI_SIGLUS_MESSAGE_THUNK(Detour_SiglusMessageEntry,
 FUSHI_SIGLUS_MESSAGE_THUNK(Detour_SiglusMessageScenario,
                          ObserveSiglusMessageScenario,
                          g_orig_SiglusMessageScenario)
+
+void __stdcall ObserveSiglusEightArgMessageEntry(uint32_t owner,
+    uint32_t entry_esp, uint32_t /*outer_caller_ebp*/) {
+  g_siglus_eightarg_message_ticket = {};
+  g_siglus_eightarg_message_epoch = 0;
+  if (!g_siglus_message_capture_enabled.load(std::memory_order_acquire) ||
+      !g_capture_enabled || entry_esp < 0x20 ||
+      entry_esp > UINT32_MAX - 0x24 || (entry_esp & 3u) != 0) return;
+  uint32_t caller = 0;
+  if (g_siglus_eightarg_message_layout.message_return == 0 ||
+      !ReadSiglusMessageWord(entry_esp, &caller) ||
+      caller != g_siglus_eightarg_message_layout.message_return) return;
+  // This proved new invocation revokes the old occurrence even if its owner,
+  // text, or bounded queue subsequently fails. Only the worker writes layout.
+  const uint64_t epoch = BeginSiglusEightArgOccurrence();
+  if (epoch == 0) return;
+  auto read = ReadSiglusMessageWord;
+  if (fushi_voice_hook::siglus_eightarg_message::Arm(
+          g_siglus_eightarg_message_layout, owner, entry_esp, read,
+          &g_siglus_eightarg_message_ticket))
+    g_siglus_eightarg_message_epoch = epoch;
+}
+
+void __stdcall ObserveSiglusEightArgMessageScenario(uint32_t surface,
+    uint32_t entry_esp, uint32_t message_ebp) {
+  const uint64_t epoch = g_siglus_eightarg_message_epoch;
+  g_siglus_eightarg_message_epoch = 0;
+  if (!g_siglus_message_capture_enabled.load(std::memory_order_acquire) ||
+      !g_capture_enabled || epoch == 0) {
+    g_siglus_eightarg_message_ticket = {};
+    return;
+  }
+  auto read = ReadSiglusMessageWord;
+  fushi_voice_hook::siglus_eightarg_message::Owner frozen{};
+  uint32_t text_union = 0;
+  if (!fushi_voice_hook::siglus_eightarg_message::Consume(
+          g_siglus_eightarg_message_layout, surface, entry_esp, message_ebp,
+          read, &g_siglus_eightarg_message_ticket, &frozen, &text_union)) return;
+  // The original Scenario has not run yet. Keep its bounded owner metadata in
+  // the caller's occurrence scope, then own the TextUnion bytes before return.
+  QueueSiglusEightArgObservedBody(epoch, frozen);
+  QueueSiglusMessageText(text_union, UINT32_MAX, epoch, &frozen);
+}
+
+FUSHI_SIGLUS_MESSAGE_THUNK(Detour_SiglusEightArgMessageEntry,
+    ObserveSiglusEightArgMessageEntry, g_orig_SiglusMessageEntry)
+FUSHI_SIGLUS_MESSAGE_THUNK(Detour_SiglusEightArgMessageScenario,
+    ObserveSiglusEightArgMessageScenario, g_orig_SiglusMessageScenario)
 
 void __stdcall ObserveSiglusNativeMessageEntry(
     const fushi_voice_hook::SiglusNativeMessageSavedRegisters* registers) {
@@ -212,7 +272,7 @@ bool IsSiglusMessageTextOwnershipBlocked() {
 }
 
 bool IsSiglusMessageVoiceMappingProved() {
-  return IsSiglusMessageTextInstalled() &&
+  return !g_siglus_message_eightarg && IsSiglusMessageTextInstalled() &&
          IsSiglusVoiceSourceInstalled();
 }
 
@@ -272,6 +332,34 @@ bool ResolveLiveSiglusNativeMessage(HMODULE module,
   }
 }
 
+bool ResolveLiveSiglusEightArgMessage(HMODULE module,
+    const fushi_voice_hook::SiglusEightArgGlyphSites& sites) {
+  __try {
+    fushi_voice_hook::exact_lookup::LoadedPeImage image;
+    if (!fushi_voice_hook::OpenSiglusLoadedImage(module, &image) ||
+        sites.message_entry_rva == 0 || sites.scenario_entry_rva == 0 ||
+        sites.message_caller_return_rva == 0 ||
+        sites.message_scenario_return_rva == 0) return false;
+    const uintptr_t base = reinterpret_cast<uintptr_t>(module);
+    for (uintptr_t rva : {sites.message_entry_rva, sites.scenario_entry_rva,
+                         sites.message_caller_return_rva,
+                         sites.message_scenario_return_rva}) {
+      if (rva > UINT32_MAX - base ||
+          !fushi_voice_hook::siglus_family::ExecutableSpan(image, rva, 1)) return false;
+    }
+    // The full family has already been admitted. Verify the original loaded
+    // entry patterns before taking ownership; never follow a Luna detour.
+    return fushi_voice_hook::siglus_eight_arg_glyph::At(image,
+               sites.message_entry_rva, 0,
+               fushi_voice_hook::siglus_eight_arg_glyph::kMessage.pattern()) &&
+        fushi_voice_hook::siglus_eight_arg_glyph::At(image,
+               sites.scenario_entry_rva, 0,
+               fushi_voice_hook::siglus_eight_arg_glyph::kScenarioEntry.pattern());
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    return false;
+  }
+}
+
 // Called only after immutable full-profile admission in TryHook below. Kept as
 // a separate unit so fault-injected MinHook outcomes exercise production rollback.
 bool InstallSiglusMessageHookGroup() {
@@ -283,6 +371,9 @@ bool InstallSiglusMessageHookGroup() {
   } else if (g_siglus_message_legacy) {
     detours[0] = reinterpret_cast<void*>(&Detour_SiglusLegacyMessageEntry);
     detours[1] = reinterpret_cast<void*>(&Detour_SiglusLegacyMessageText);
+  } else if (g_siglus_message_eightarg) {
+    detours[0] = reinterpret_cast<void*>(&Detour_SiglusEightArgMessageEntry);
+    detours[1] = reinterpret_cast<void*>(&Detour_SiglusEightArgMessageScenario);
   }
   void** originals[] = {&g_orig_SiglusMessageEntry, &g_orig_SiglusMessageScenario};
   bool complete = true;
@@ -321,7 +412,8 @@ bool InstallSiglusMessageHookGroup() {
     // Previously enabled trampolines cannot be freed while callbacks may use
     // them, so cleanly disabling one still does not transfer its ownership.
     const bool native_entry_reserved =
-        (g_siglus_message_native_ecx || g_siglus_message_legacy) &&
+        (g_siglus_message_native_ecx || g_siglus_message_legacy ||
+         g_siglus_message_eightarg) &&
         (g_siglus_message_created[1] || text_entry_conflict);
     g_siglus_message_install_state.store(clean && !native_entry_reserved ? -1 : -2,
                                           std::memory_order_release);
@@ -338,6 +430,22 @@ bool TryHookSiglusMessageText() {
   HMODULE module = GetModuleHandleW(nullptr);
   if (lane == nullptr || module == nullptr) return false;
   const uintptr_t base = reinterpret_cast<uintptr_t>(module);
+  if (IsEightArgSiglusLookup(*lane)) {
+    const auto& sites = g_siglus_eightarg_sites.glyph;
+    if (!ResolveLiveSiglusEightArgMessage(module, sites)) {
+      g_siglus_message_install_state.store(-1, std::memory_order_release);
+      return false;
+    }
+    g_siglus_message_eightarg = true;
+    g_siglus_eightarg_message_layout = {
+        static_cast<uint32_t>(base + sites.message_caller_return_rva),
+        static_cast<uint32_t>(base + sites.message_scenario_return_rva)};
+    g_siglus_message_scenario_rva = sites.scenario_entry_rva;
+    g_siglus_message_profile.scenario_return_rva = sites.message_scenario_return_rva;
+    g_siglus_message_targets[0] = reinterpret_cast<void*>(base + sites.message_entry_rva);
+    g_siglus_message_targets[1] = reinterpret_cast<void*>(base + sites.scenario_entry_rva);
+    return InstallSiglusMessageHookGroup();
+  }
   if (lane->glyph_abi ==
       fushi_voice_hook::SiglusGlyphLayoutAbi::kStackSixteenArguments) {
     if (!fushi_voice_hook::ResolveLiveSiglusLegacyMessage(
@@ -406,12 +514,14 @@ bool TryHookSiglusMessageText() {
 }
 
 void ProcessSiglusMessageTextTasks() {
+  if (g_siglus_message_eightarg) SyncSiglusEightArgOccurrence();
   if (!g_siglus_message_capture_enabled.load(std::memory_order_acquire) ||
       !g_capture_enabled || !g_text_cs_ready) return;
   SiglusMessageTextTask task;
   // Bounded per worker tick even under a continuous producer.
   for (uint32_t count = 0; count < kSiglusMessageTaskSlots; ++count) {
     if (!g_siglus_message_tasks.TryPop(&task)) break;
+    if (g_siglus_message_eightarg && task.eightarg_epoch == 0) continue;
     const uint64_t thread_id =
         (static_cast<uint64_t>(g_siglus_message_scenario_rva) << 32) ^
         g_siglus_message_profile.scenario_return_rva;
@@ -424,8 +534,10 @@ void ProcessSiglusMessageTextTasks() {
         fushi_voice_hook::kTextSourceSiglus, "SiglusEngine message", nullptr,
         &committed_tick_ms);
     if (event_id != 0) {
-      PublishSiglusLookupTextSnapshot(task.text, task.text_units,
-                                      {event_id, thread_id});
+      const fushi_voice_hook::SiglusLookupTextIdentity identity{event_id, thread_id};
+      if (task.eightarg_epoch == 0 || BindSiglusEightArgText(
+              task.eightarg_epoch, task.eightarg_owner, identity))
+        PublishSiglusLookupTextSnapshot(task.text, task.text_units, identity);
       if (g_header != nullptr) {
         g_header->luna_active = 1;
         g_header->hook_diagnostics |= kDiagSiglusExactTextObserved;
@@ -433,7 +545,8 @@ void ProcessSiglusMessageTextTasks() {
     }
     LeaveCriticalSection(&g_text_cs);
     // A frozen engine field alone is not proof of archive/member identity.
-    if (event_id != 0 && IsSiglusMessageVoiceMappingProved())
+    if (task.eightarg_epoch == 0 && !g_siglus_message_eightarg &&
+        event_id != 0 && IsSiglusMessageVoiceMappingProved())
       QueueSiglusMessageVoice(event_id, task.voice_key, committed_tick_ms);
   }
 }
@@ -443,6 +556,8 @@ void ShutdownSiglusMessageText() {
   g_siglus_message_ticket = {};
   g_siglus_native_message_ticket = {};
   g_siglus_legacy_message_ticket = {};
+  g_siglus_eightarg_message_ticket = {};
+  g_siglus_eightarg_message_epoch = 0;
   if (!g_cs_ready) return;
   EnterCriticalSection(&g_cs);
   const bool clean = RollbackSiglusMessageHooks();

@@ -14,6 +14,8 @@
 #include "siglus_legacy_message_capture.h"
 #include "siglus_legacy_resource.h"
 #include "siglus_legacy_live_admission.h"
+#include "siglus_eight_arg_glyph.h"
+#include "siglus_eightarg_message_capture.h"
 #include "siglus_image.h"
 // Exercise the production clock write deterministically, without sleeping or
 // substituting a second implementation of TextLaneEvent publication.
@@ -189,6 +191,35 @@ bool g_text_cs_ready = true;
 bool g_cs_ready = true;
 bool voice_source_installed = false;
 LegacyGlyphSites g_siglus_legacy_glyph_sites;
+struct { SiglusEightArgGlyphSites glyph; } g_siglus_eightarg_sites;
+bool IsEightArgSiglusLookup(const SiglusLookupProfile& profile) {
+  return profile.glyph_abi == SiglusGlyphLayoutAbi::kEcxEightArguments;
+}
+uint64_t eightarg_epoch = 0, observed_epoch = 0, bound_epoch = 0;
+int begin_calls = 0, observed_calls = 0, sync_calls = 0, bind_calls = 0;
+bool bind_allowed = true;
+siglus_eightarg_message::Owner observed_body{}, bound_body{};
+SiglusLookupTextIdentity bound_identity{};
+uint64_t BeginSiglusEightArgOccurrence() {
+  ++begin_calls;
+  SetLastError(99);
+  __asm { pxor xmm0, xmm0 }
+  return ++eightarg_epoch;
+}
+void QueueSiglusEightArgObservedBody(uint64_t epoch,
+    const siglus_eightarg_message::Owner& owner) {
+  ++observed_calls; observed_epoch = epoch; observed_body = owner;
+  SetLastError(98);
+  __asm { pxor xmm0, xmm0 }
+}
+void SyncSiglusEightArgOccurrence() { ++sync_calls; }
+bool BindSiglusEightArgText(uint64_t epoch,
+    const siglus_eightarg_message::Owner& owner, SiglusLookupTextIdentity identity) {
+  ++bind_calls;
+  if (!bind_allowed || epoch != eightarg_epoch) return false;
+  bound_epoch = epoch; bound_body = owner; bound_identity = identity;
+  return true;
+}
 bool IsSiglusVoiceSourceInstalled() { return voice_source_installed; }
 CRITICAL_SECTION g_text_cs, g_cs;
 constexpr uint32_t kDiagSiglusExactTextObserved = 1;
@@ -215,9 +246,11 @@ int mock_created = 0, mock_enabled = 0;
 int mock_null_original = -1;
 MH_STATUS mock_create_status[2] = {MH_OK, MH_OK};
 MH_STATUS mock_enable_status[2] = {MH_OK, MH_OK};
-MH_STATUS MH_CreateHook(void*, void*, void** original) {
+void* mock_detours[2] = {};
+MH_STATUS MH_CreateHook(void*, void* detour, void** original) {
   const int index = mock_created++;
   assert(index < 2);
+  mock_detours[index] = detour;
   if (mock_create_status[index] == MH_OK && mock_null_original != index)
     *original = reinterpret_cast<void*>(static_cast<uintptr_t>(0x1000 + index));
   return mock_create_status[index];
@@ -604,6 +637,7 @@ void TestInstallationFailures() {
     g_siglus_message_install_state.store(0);
     g_siglus_message_native_ecx = false;
     g_siglus_message_legacy = false;
+    g_siglus_message_eightarg = false;
     g_orig_SiglusMessageEntry = g_orig_SiglusMessageScenario = nullptr;
     for (int i = 0; i < 2; ++i) {
       mock_create_status[i] = mock_enable_status[i] = MH_OK;
@@ -657,6 +691,21 @@ void TestInstallationFailures() {
   Check(!InstallSiglusMessageHookGroup());
   Check(IsSiglusMessageTextOwnershipBlocked());
   Check(!g_siglus_message_created[1] && mock_enabled == 0);
+  reset(); g_siglus_message_eightarg = true;
+  mock_enable_status[1] = MH_ERROR_NOT_CREATED;
+  Check(!InstallSiglusMessageHookGroup());
+  Check(IsSiglusMessageTextOwnershipBlocked());
+  Check(g_siglus_message_created[1] && g_orig_SiglusMessageScenario != nullptr);
+  reset(); g_siglus_message_eightarg = true;
+  mock_create_status[1] = MH_ERROR_ALREADY_CREATED;
+  Check(!InstallSiglusMessageHookGroup());
+  Check(IsSiglusMessageTextOwnershipBlocked());
+  Check(!g_siglus_message_created[1] && mock_enabled == 0);
+  reset(); g_siglus_message_eightarg = true;
+  Check(InstallSiglusMessageHookGroup());
+  Check(mock_detours[0] == reinterpret_cast<void*>(&Detour_SiglusEightArgMessageEntry));
+  Check(mock_detours[1] == reinterpret_cast<void*>(&Detour_SiglusEightArgMessageScenario));
+  Check(IsSiglusMessageTextInstalled() && g_siglus_message_capture_enabled.load());
   reset();
   Check(InstallSiglusMessageHookGroup());
   Check(IsSiglusMessageTextInstalled() && g_siglus_message_capture_enabled.load());
@@ -725,6 +774,233 @@ void TestLegacyProductionObservers() {
         !g_siglus_message_tasks.TryPop(&task));
   g_siglus_message_capture_enabled.store(false);
 }
+
+uint32_t eight_owner = 0, eight_surface = 0, eight_outer_return = 0;
+uint32_t eight_inner_return = 0, eight_before = 0, eight_after = 0;
+uint32_t eight_entry_ecx = 0, eight_entry_edx = 0, eight_inner_ecx = 0;
+uint32_t eight_entry_flags = 0, eight_inner_flags = 0;
+uint32_t eight_entry_error = 0, eight_inner_error = 0;
+uint32_t eight_observed_before_original = 0, eight_result = 0;
+__declspec(align(16)) uint32_t eight_entry_xmm[4] = {}, eight_inner_xmm[4] = {};
+
+void TestEightArgLiveEntryAdmission() {
+  // Use the real loaded-PE opener and production live gate. Synthetic bytes
+  // are only read; this allocation is never executable and never called.
+  auto* bytes = static_cast<uint8_t*>(VirtualAlloc(nullptr, 0x3000,
+      MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE));
+  Check(bytes != nullptr);
+  auto* dos = reinterpret_cast<IMAGE_DOS_HEADER*>(bytes);
+  dos->e_magic = IMAGE_DOS_SIGNATURE; dos->e_lfanew = 0x80;
+  auto* nt = reinterpret_cast<IMAGE_NT_HEADERS32*>(bytes + 0x80);
+  nt->Signature = IMAGE_NT_SIGNATURE;
+  nt->FileHeader.Machine = IMAGE_FILE_MACHINE_I386;
+  nt->FileHeader.NumberOfSections = 1;
+  nt->FileHeader.SizeOfOptionalHeader = sizeof(IMAGE_OPTIONAL_HEADER32);
+  nt->OptionalHeader.Magic = IMAGE_NT_OPTIONAL_HDR32_MAGIC;
+  nt->OptionalHeader.SizeOfImage = 0x3000;
+  auto* section = IMAGE_FIRST_SECTION(nt);
+  section->VirtualAddress = 0x1000; section->Misc.VirtualSize = 0x2000;
+  section->Characteristics = IMAGE_SCN_MEM_READ | IMAGE_SCN_MEM_EXECUTE;
+  SiglusEightArgGlyphSites sites;
+  sites.message_entry_rva = 0x1100; sites.scenario_entry_rva = 0x1500;
+  sites.message_caller_return_rva = 0x1800;
+  sites.message_scenario_return_rva = 0x1900;
+  const auto& message = siglus_eight_arg_glyph::kMessage;
+  const auto& scenario = siglus_eight_arg_glyph::kScenarioEntry;
+  std::memcpy(bytes + sites.message_entry_rva, message.bytes.data(), message.bytes.size());
+  std::memcpy(bytes + sites.scenario_entry_rva, scenario.bytes.data(), scenario.bytes.size());
+  const auto module = reinterpret_cast<HMODULE>(bytes);
+  Check(ResolveLiveSiglusEightArgMessage(module, sites));
+  for (const auto entry : {sites.message_entry_rva, sites.scenario_entry_rva}) {
+    bytes[entry] = 0xe9;
+    Check(!ResolveLiveSiglusEightArgMessage(module, sites));
+    bytes[entry] = 0x55;
+    bytes[entry + 2] ^= 1;
+    Check(!ResolveLiveSiglusEightArgMessage(module, sites));
+    bytes[entry + 2] ^= 1;
+  }
+  for (auto member : {&SiglusEightArgGlyphSites::message_entry_rva,
+                     &SiglusEightArgGlyphSites::scenario_entry_rva,
+                     &SiglusEightArgGlyphSites::message_caller_return_rva,
+                     &SiglusEightArgGlyphSites::message_scenario_return_rva}) {
+    for (uintptr_t invalid : {uintptr_t{0}, uintptr_t{0x400}, UINTPTR_MAX}) {
+      auto wrong = sites; wrong.*member = invalid;
+      Check(!ResolveLiveSiglusEightArgMessage(module, wrong));
+    }
+  }
+  section->Characteristics = IMAGE_SCN_MEM_READ;
+  Check(!ResolveLiveSiglusEightArgMessage(module, sites));
+  Check(VirtualFree(bytes, 0, MEM_RELEASE) != FALSE);
+}
+__declspec(naked) void EightScenarioOriginal() {
+  __asm {
+    mov eight_inner_ecx, ecx
+    pushfd
+    pop eight_inner_flags
+    movdqu eight_inner_xmm, xmm0
+    mov eax, fs:[34h]
+    mov eight_inner_error, eax
+    mov eax, observed_calls
+    mov eight_observed_before_original, eax
+    mov al, 0a5h
+    ret 8
+  }
+}
+__declspec(naked) void EightMessageOriginal() {
+  __asm {
+    mov eight_entry_ecx, ecx
+    mov eight_entry_edx, edx
+    pushfd
+    pop eight_entry_flags
+    movdqu eight_entry_xmm, xmm0
+    mov eax, fs:[34h]
+    mov eight_entry_error, eax
+    push ebp
+    mov ebp, esp
+    sub esp, 40h
+    lea eax, inner_return
+    mov eight_inner_return, eax
+    lea eax, [ebp - 30h]
+    push eax
+    lea eax, [ebp + 10h]
+    push eax
+    mov ecx, eight_surface
+    movdqu xmm0, xmm_seed
+    std
+    stc
+    call Detour_SiglusEightArgMessageScenario
+  inner_return:
+    movzx eax, al
+    mov eight_result, eax
+    cld
+    mov esp, ebp
+    pop ebp
+    ret
+  }
+}
+__declspec(naked) void RunEightArgProduction() {
+  __asm {
+    pushfd
+    pushad
+    mov eight_before, esp
+    sub esp, 20h
+    mov dword ptr [esp], 1111h
+    mov dword ptr [esp + 4], 2222h
+    mov dword ptr [esp + 8], 00420041h
+    mov dword ptr [esp + 0ch], 0
+    mov dword ptr [esp + 10h], 0
+    mov dword ptr [esp + 14h], 0
+    mov dword ptr [esp + 18h], 2
+    mov dword ptr [esp + 1ch], 7
+    lea eax, outer_return
+    mov eight_outer_return, eax
+    mov ecx, eight_owner
+    mov edx, 9876h
+    movdqu xmm0, xmm_seed
+    std
+    stc
+    call Detour_SiglusEightArgMessageEntry
+  outer_return:
+    cld
+    add esp, 20h
+    mov eight_after, esp
+    popad
+    popfd
+    ret
+  }
+}
+
+void TestEightArgProduction() {
+  uint32_t owner[112] = {}, surfaces[146] = {}, frames[128] = {};
+  const auto address = [](const void* p) {
+    return static_cast<uint32_t>(reinterpret_cast<uintptr_t>(p));
+  };
+  eight_owner = address(owner); eight_surface = address(surfaces) + 0x124;
+  owner[0x160 / 4] = 1; owner[0x1a8 / 4] = address(surfaces);
+  owner[0x1ac / 4] = address(surfaces) + sizeof(surfaces);
+  g_orig_SiglusMessageEntry = reinterpret_cast<void*>(&EightMessageOriginal);
+  g_orig_SiglusMessageScenario = reinterpret_cast<void*>(&EightScenarioOriginal);
+  g_siglus_message_capture_enabled.store(false);
+  RunEightArgProduction(); // Discover labels without arming a ticket.
+  g_siglus_eightarg_message_layout = {eight_outer_return, eight_inner_return};
+  g_siglus_message_capture_enabled.store(true); g_capture_enabled = true;
+  SiglusMessageTextTask task;
+  while (g_siglus_message_tasks.TryPop(&task)) {}
+  const int before_observed = observed_calls;
+  SetLastError(77);
+  RunEightArgProduction();
+  Check(GetLastError() == 77 && eight_entry_error == 77 && eight_inner_error == 77);
+  Check(eight_entry_ecx == eight_owner && eight_entry_edx == 0x9876);
+  Check(eight_inner_ecx == eight_surface && eight_before == eight_after);
+  Check((eight_entry_flags & 0x401) == 0x401 && (eight_inner_flags & 0x401) == 0x401);
+  Check(std::memcmp(eight_entry_xmm, xmm_seed, sizeof(xmm_seed)) == 0);
+  Check(std::memcmp(eight_inner_xmm, xmm_seed, sizeof(xmm_seed)) == 0);
+  Check(eight_result == 0xa5 &&
+        eight_observed_before_original == static_cast<uint32_t>(before_observed + 1));
+  Check(g_siglus_message_tasks.TryPop(&task));
+  Check(task.eightarg_epoch == eightarg_epoch && task.voice_key == UINT32_MAX);
+  Check(task.eightarg_owner.address == eight_owner &&
+        task.eightarg_owner.surface == eight_surface && std::wcscmp(task.text, L"AB") == 0);
+  Check(!g_siglus_eightarg_message_ticket.armed && g_siglus_eightarg_message_epoch == 0);
+
+  const uint32_t outer = address(&frames[80]), inner = address(&frames[40]);
+  frames[80] = 0x7000; frames[40] = 0x8000; frames[41] = outer + 12;
+  auto* text = reinterpret_cast<SiglusTextUnionW*>(outer + 12);
+  text->size = 2; text->capacity = 7;
+  text->storage.chars[0] = L'A'; text->storage.chars[1] = L'B';
+  g_siglus_eightarg_message_layout = {0x7000, 0x8000};
+  const auto arm = [&] { ObserveSiglusEightArgMessageEntry(eight_owner, outer, 0); };
+  const auto consume = [&] { ObserveSiglusEightArgMessageScenario(eight_surface, inner, outer - 4); };
+  arm();
+  std::thread unrelated([&] { consume(); }); unrelated.join();
+  Check(!g_siglus_message_tasks.TryPop(&task));
+  consume(); Check(g_siglus_message_tasks.TryPop(&task));
+  consume(); Check(!g_siglus_message_tasks.TryPop(&task));
+  const uint64_t epoch = eightarg_epoch;
+  arm(); frames[80] = 0; arm(); frames[80] = 0x7000;
+  consume(); Check(!g_siglus_message_tasks.TryPop(&task));
+  Check(eightarg_epoch == epoch + 1); // Unknown outer caller never starts an occurrence.
+  ObserveSiglusEightArgMessageEntry(1, outer, 0);
+  Check(eightarg_epoch == epoch + 2 && !g_siglus_eightarg_message_ticket.armed);
+  arm(); text->capacity = 15; text->storage.text = reinterpret_cast<const wchar_t*>(1);
+  consume(); Check(!g_siglus_message_tasks.TryPop(&task));
+  Check(!g_siglus_eightarg_message_ticket.armed && eightarg_epoch == epoch + 3);
+  *text = {}; text->size = 1; text->capacity = 7; text->storage.chars[0] = L'X';
+  for (uint32_t i = 0; i < kSiglusMessageTaskSlots; ++i)
+    Check(g_siglus_message_tasks.TryPush(task));
+  arm(); consume();
+  Check(eightarg_epoch == epoch + 4 && !g_siglus_eightarg_message_ticket.armed);
+  uint32_t queued = 0;
+  while (g_siglus_message_tasks.TryPop(&task)) ++queued;
+  Check(queued == kSiglusMessageTaskSlots);
+
+  InitializeCriticalSection(&g_text_cs);
+  g_siglus_message_eightarg = true;
+  voice_source_installed = true;
+  g_siglus_message_install_state.store(1);
+  g_siglus_message_profile.voice_key_resource_mapping_proved = true;
+  Check(!IsSiglusMessageVoiceMappingProved());
+  arm(); consume();
+  published_seq = 801; snapshot_seq = queued_voice_seq = 0;
+  ProcessSiglusMessageTextTasks();
+  Check(snapshot_seq == 801 && bound_identity.event_id == 801);
+  Check(bound_epoch == eightarg_epoch && bound_body.surface == eight_surface);
+  Check(queued_voice_seq == 0);
+  arm(); consume(); arm(); // Older queued occurrence may be history, never current.
+  published_seq = 802; ProcessSiglusMessageTextTasks();
+  Check(snapshot_seq == 801 && queued_voice_seq == 0);
+  consume(); bind_allowed = false; ProcessSiglusMessageTextTasks();
+  Check(snapshot_seq == 801); bind_allowed = true;
+  arm(); consume(); published_seq = 0;
+  const int binds = bind_calls;
+  ProcessSiglusMessageTextTasks(); Check(bind_calls == binds);
+  const int syncs = sync_calls;
+  g_capture_enabled = false;
+  ProcessSiglusMessageTextTasks(); Check(sync_calls == syncs + 1);
+  g_capture_enabled = true;
+  g_siglus_message_eightarg = false;
+  DeleteCriticalSection(&g_text_cs);
+}
 #endif
 }  // namespace
 
@@ -736,6 +1012,8 @@ int main() {
   TestNativeProductionObservers();
   TestLegacyProductionObservers();
   TestInstallationFailures();
+  TestEightArgProduction();
+  TestEightArgLiveEntryAdmission();
 #else
   Check(!TryHookSiglusMessageText());
   Check(!IsSiglusMessageTextInstalled());
