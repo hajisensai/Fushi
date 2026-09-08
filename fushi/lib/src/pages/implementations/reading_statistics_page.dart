@@ -11,12 +11,14 @@ import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart'
 import 'package:fushi/src/pages/implementations/stat_kpi_strip.dart';
 import 'package:fushi/src/pages/implementations/stat_period_detail_sheet.dart';
 import 'package:fushi/src/pages/implementations/stat_ring.dart';
+import 'package:fushi/src/pages/implementations/stat_session_list.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi/src/pages/implementations/stat_source_totals.dart';
 import 'package:fushi/src/pages/implementations/stat_summary.dart';
 import 'package:fushi/src/pages/implementations/stat_trends.dart';
 import 'package:fushi/src/stats/stat_facts.dart';
 import 'package:fushi/src/stats/stat_window.dart';
+import 'package:fushi/src/stats/study_sessions.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -50,6 +52,9 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   /// 阅读域（普通书 + 漫画）的日面事实：v92 起只从统一事实面 [loadStatFacts] 取
   /// （legacy `reading_statistics` 日行 + `study_segments` 段），不再直接读表。
   List<StatFact> _bookFacts = <StatFact>[];
+
+  /// 阅读域会话流（`StatFacts.sessions` 的书切片，按结束时刻倒序）。
+  List<StudySession> _sessions = <StudySession>[];
 
   /// 阅读域逐日合计：普通书与漫画同属阅读统计，视频和游戏由各自统计页负责。
   Map<StatBreakdownSource, Map<String, StatSourceTotals>> _sourceDaily =
@@ -191,6 +196,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       final StatFacts facts = await loadStatFacts(db, activityLimit: 0);
       _bookFacts = facts.dailyBooks.toList();
       _dailyFacts = facts.daily;
+      _sessions = facts.sessions.where((StudySession s) => s.isBook).toList();
       _sourceDaily = aggregateStatSourceDaily(_bookFacts);
       // 加载事实时顺带取的书表：下面的 title→bookKey（合集归属 / legacy 行回退）
       // 与 bookKey→uid 换算复用同一批行，不再单独查。
@@ -563,6 +569,14 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
                   ),
                 ),
                 SliverToBoxAdapter(child: _buildSummaryCards()),
+                SliverToBoxAdapter(
+                  child: buildStatSessionSection(
+                    context,
+                    sessions: _sessions,
+                    titleOf: _sessionTitle,
+                    onDelete: _deleteSession,
+                  ),
+                ),
                 SliverToBoxAdapter(child: _buildSourceBreakdown()),
                 SliverToBoxAdapter(child: _buildGoalPanel()),
                 SliverToBoxAdapter(
@@ -1507,6 +1521,36 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
         book.title;
   }
 
+  /// 会话行展示名：段 title 快照 → override 书名（与 [_bookDisplayTitle] 同判据）。
+  String _sessionTitle(StudySession s) =>
+      ReaderFushiSource.instance.overrideTitleForBookKey(s.mediaKey) ?? s.title;
+
+  /// 删一次会话：段写零（同步安全），再从 DB 重新聚合。
+  Future<void> _deleteSession(StudySession s) async {
+    await appModelNoUpdate.database.deleteStudySession(
+      segmentUids: s.segmentUids.toSet(),
+    );
+    if (mounted) await _loadFromDatabase();
+  }
+
+  /// 点按书 tile → 这本书的会话列表 sheet（legacy 无身份 tile 按 title 反查；
+  /// 反查不到就没有会话——legacy 日行本来也没有会话）。
+  Future<void> _showBookSessions(_BookData book) async {
+    final String? bookKey = book.bookKey ?? _bookKeyByTitle[book.title];
+    final List<StudySession> sessions = bookKey == null
+        ? const <StudySession>[]
+        : _sessions.where((StudySession s) => s.mediaKey == bookKey).toList();
+    final bool deleted = await showStatSessionsSheet(
+      context,
+      title: _bookDisplayTitle(book),
+      sessions: sessions,
+      titleOf: _sessionTitle,
+      onDelete: (StudySession s) => appModelNoUpdate.database
+          .deleteStudySession(segmentUids: s.segmentUids.toSet()),
+    );
+    if (deleted && mounted) await _loadFromDatabase();
+  }
+
   Widget _buildBookTile(_BookData book) {
     // TODO-1204：查词/制卡计数按 title 聚合（无记录则 0）。
     final ({int lookups, int mines}) counter =
@@ -1527,6 +1571,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       child: Material(
         type: MaterialType.transparency,
         child: InkWell(
+          onTap: () => unawaited(_showBookSessions(book)),
           onLongPress: () => _confirmAndDeleteBook(book),
           child: Padding(
             padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),

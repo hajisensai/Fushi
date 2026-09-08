@@ -7,10 +7,12 @@ import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_period_detail_sheet.dart';
+import 'package:fushi/src/pages/implementations/stat_session_list.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi/src/pages/implementations/video_stat_aggregates.dart';
 import 'package:fushi/src/stats/stat_facts.dart';
 import 'package:fushi/src/stats/stat_window.dart';
+import 'package:fushi/src/stats/study_sessions.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -44,6 +46,9 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
   /// 观看域日面事实行（loadStatFacts 的 dailyVideos 切片）：时段明细 sheet 的
   /// 数据源（阶段 1——此前这份数据聚合完即丢，时段明细要 per-video × per-day）。
   List<StatFact> _videoFacts = <StatFact>[];
+
+  /// 观看域会话流（`StatFacts.sessions` 的视频切片，按结束时刻倒序）。
+  List<StudySession> _sessions = <StudySession>[];
 
   /// 合集归属映射（书架同源）：按视频 tile 显示所属合集名用。
   /// - [_collectionNamesById]：collectionId → 合集名。
@@ -110,6 +115,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
       final StatFacts facts = await loadStatFacts(db, activityLimit: 0);
       final List<StatFact> stats = facts.dailyVideos.toList();
       _videoFacts = stats;
+      _sessions = facts.sessions.where((StudySession s) => s.isVideo).toList();
       final List<VideoBookRow> books = await VideoBookRepository(db).listAll();
       final List<DateTime> completed = books
           .map((VideoBookRow b) => b.completedAt)
@@ -262,6 +268,14 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
           child: buildStatDailyDurationChartSection(context, _agg.daily),
         ),
         SliverToBoxAdapter(
+          child: buildStatSessionSection(
+            context,
+            sessions: _sessions,
+            titleOf: (StudySession s) => s.title,
+            onDelete: _deleteSession,
+          ),
+        ),
+        SliverToBoxAdapter(
           child: Padding(
             padding: EdgeInsets.fromLTRB(
               tokens.spacing.card,
@@ -412,6 +426,29 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
   /// 再从 DB 重新聚合刷新（TODO-1204 后续）。
   ///
   /// v76：身份感知删除——只删本 tile 展示的行：该 uid 的行 + 本 tile 吸收过的
+  /// 删一次会话：段写零（同步安全），再从 DB 重新聚合。
+  Future<void> _deleteSession(StudySession s) async {
+    await appModelNoUpdate.database.deleteStudySession(
+      segmentUids: s.segmentUids.toSet(),
+    );
+    if (mounted) await _loadFromDatabase();
+  }
+
+  /// 点按视频 tile → 这部视频的会话列表 sheet。
+  Future<void> _showVideoSessions(VideoStatBookData video) async {
+    final String? uid = video.bookUid;
+    if (uid == null) return;
+    final bool deleted = await showStatSessionsSheet(
+      context,
+      title: video.title,
+      sessions: _sessions.where((StudySession s) => s.mediaKey == uid).toList(),
+      titleOf: (StudySession s) => s.title,
+      onDelete: (StudySession s) => appModelNoUpdate.database
+          .deleteStudySession(segmentUids: s.segmentUids.toSet()),
+    );
+    if (deleted && mounted) await _loadFromDatabase();
+  }
+
   /// 同 title 无身份遗留行（[VideoStatBookData.absorbedUnattributed]，与展示层
   /// 是同一次身份分组给出的同一个判据）。同名另一视频的 per-uid 行不再连坐。
   Future<void> _confirmAndDeleteVideo(VideoStatBookData video) async {
@@ -473,6 +510,10 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
       child: Material(
         type: MaterialType.transparency,
         child: InkWell(
+          // 点按 → 这部视频的会话列表（无身份遗留组没有会话）。
+          onTap: video.bookUid == null
+              ? null
+              : () => unawaited(_showVideoSessions(video)),
           // 移动端长按、桌面端右键都弹删除确认（与阅读统计页同款交互）。
           onLongPress: () => _confirmAndDeleteVideo(video),
           child: Padding(

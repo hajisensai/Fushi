@@ -436,6 +436,15 @@ Map<String, int> aggregateStatFavoritesByTitle(List<FavoriteWordRow> rows) {
   return out;
 }
 
+/// 一次会话的时间范围文案：`2026-07-24 21:03 → 22:41`（游戏详情页会话列表与统计页
+/// 会话流同一口径）。委托 [FushiTimeFormat]（起点 = dateHourMinute，终点 = hourMinute）。
+String formatStatSessionRange(int startMs, int endMs) {
+  final DateTime start = DateTime.fromMillisecondsSinceEpoch(startMs);
+  final DateTime end = DateTime.fromMillisecondsSinceEpoch(endMs);
+  return '${FushiTimeFormat.dateHourMinute(start)} → '
+      '${FushiTimeFormat.hourMinute(end)}';
+}
+
 /// 统计页时长外显：不足 1 小时套 i18n 分钟文案，否则套 i18n 时+分文案。
 String formatStatTime(int ms) {
   final int totalMin = ms ~/ 60000;

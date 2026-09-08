@@ -11,9 +11,11 @@ import 'package:fushi/src/pages/implementations/game_statistics_page.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/galgame_detail_page.dart';
 import 'package:fushi/src/pages/implementations/stat_period_detail_sheet.dart';
+import 'package:fushi/src/pages/implementations/stat_session_list.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi/src/stats/stat_facts.dart';
 import 'package:fushi/src/stats/stat_window.dart';
+import 'package:fushi/src/stats/study_sessions.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -90,6 +92,9 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
   bool _loading = true;
   String? _error;
   List<StatFact> _daily = <StatFact>[];
+
+  /// 跨域会话流（`StatFacts.sessions`：书 / 视频 / 游戏混排，按结束时刻倒序）。
+  List<StudySession> _sessions = <StudySession>[];
   Map<String, String> _bookKeyByTitle = <String, String>{};
   Set<String> _ambiguousBookTitles = <String>{};
   Map<String, String> _epubUidByBookKey = <String, String>{};
@@ -109,6 +114,7 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
       final FushiDatabase db = appModel.database;
       final StatFacts facts = await loadStatFacts(db, activityLimit: 0);
       _daily = facts.daily;
+      _sessions = facts.sessions;
       // BUG-2216：同名 ≥2 本的 title 不进反查表（贴给任意一本都是错贴）。
       _bookKeyByTitle = uniqueBookKeyByTitle(facts.epubRows);
       _ambiguousBookTitles = ambiguousBookTitles(facts.epubRows);
@@ -146,8 +152,44 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
     final StatWindow w = StatWindow(DateTime.now());
     return ListView(
       padding: EdgeInsets.only(bottom: tokens.spacing.card * 2),
-      children: <Widget>[_buildGoalCard(tokens, w), _buildSummaryCards(w)],
+      children: <Widget>[
+        _buildGoalCard(tokens, w),
+        _buildSummaryCards(w),
+        buildStatSessionSection(
+          context,
+          sessions: _sessions,
+          titleOf: _sessionTitle,
+          onDelete: _deleteSession,
+        ),
+      ],
     );
+  }
+
+  /// 会话行展示名：与时段明细的 [_entryTitle] 同判据（游戏走库内显示名、书走
+  /// override 书名），只是输入是会话而非事实行。
+  String _sessionTitle(StudySession s) {
+    if (s.isGame) {
+      final GalgameEntry? entry = findGalgameForActivity(
+        _games,
+        mediaKey: s.mediaKey,
+        title: s.title,
+      );
+      return displayTitleForGame(entry: entry, rawTitle: s.title);
+    }
+    if (s.isBook) {
+      return ReaderFushiSource.instance.overrideTitleForBookKey(s.mediaKey) ??
+          s.title;
+    }
+    return s.title;
+  }
+
+  /// 删一次会话：段写零 + 游戏骨架行硬删（同一事务），再整页重聚合。
+  Future<void> _deleteSession(StudySession s) async {
+    await ref.read(appProvider).database.deleteStudySession(
+          segmentUids: s.segmentUids.toSet(),
+          gameSessionId: s.gameSessionId,
+        );
+    if (mounted) await _load();
   }
 
   /// 跨域「今日目标」进度卡（只读展示；编辑入口在首页/阅读统计页）。目标未设
