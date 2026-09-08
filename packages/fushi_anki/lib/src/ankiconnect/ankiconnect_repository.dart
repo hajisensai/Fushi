@@ -1397,9 +1397,9 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     final Map<int, String> failures = <int, String>{};
     int written = 0;
     for (int i = 0; i < results.length; i++) {
-      final AnkiConnectBatchResult r = results[i];
-      if (r.isError) {
-        failures[updates[i].cardId] = r.error!;
+      final String? failure = ankiSetSpecificValueFailure(results[i]);
+      if (failure != null) {
+        failures[updates[i].cardId] = failure;
       } else {
         written++;
       }

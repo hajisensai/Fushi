@@ -334,6 +334,11 @@ class AnkiConnectService {
               'action': a.action,
               'version': 6,
               if (a.params != null) 'params': a.params,
+              // 子 action 也要带 key：插件的 `multi` 就是对每条子请求再跑一遍
+              // `handler`，而 `handler` 逐条比对 key。外层带了、里层不带，配置了
+              // apiKey 的 Anki 会把每一条都判 'valid api key must be provided'，
+              // 整批批量写（去重改写 / 批量改字段 / 重排位置）静默全失败。
+              if (apiKey.isNotEmpty) 'key': apiKey,
             },
         ],
       },
@@ -905,8 +910,14 @@ class AnkiConnectService {
 
   /// 批量改写新卡的队列位置：每张卡一条 `setSpecificValueOfCard`
   /// `{card, keys: ['due'], newValues: [due], warning_check: true}`，打成
-  /// `multi` 分批发。`warning_check` 是 AnkiConnect 对 due/queue/type 这类
-  /// 危险键的显式确认开关，不带它整条直接被拒。
+  /// `multi` 分批发。`warning_check` 是 AnkiConnect 对 did/queue/type 这类
+  /// 危险键的显式确认开关（本机 AnkiConnect 源码里 `due` 不在那张清单上，
+  /// 带上只是前向兼容，无副作用）。
+  ///
+  /// **结果形状不走 error 信封**（读的是插件源码）：成功是 `[true]`，
+  /// 卡不存在等异常是 `[[false, "<msg>"]]`，参数形状不对直接 `false`——
+  /// 三种都在 `result` 里、`error` 为 null。调用方用
+  /// [ankiSetSpecificValueFailure] 解读，别拿 `isError` 当成功判据。
   ///
   /// 同 id + 同值重发结果一致，幂等，可安全走连接掉线重试。逐条报告结果
   /// （与 [updates] 同序），失败条不抛。
@@ -1068,6 +1079,25 @@ String ankiDuplicateDeckFilter(String deckName, AnkiDuplicateScope scope) {
       if (deckName.isEmpty) return '';
       return 'deck:"${_escapeAnkiQuery(deckName)}"';
   }
+}
+
+/// 解读一条 `setSpecificValueOfCard` 的结果：null = 成功，否则是失败原因。
+///
+/// AnkiConnect 该 action 把失败写在 `result` 里而不是 `error`：成功 `[true]`，
+/// 异常 `[[false, "<msg>"]]`，参数形状不对返回裸 `false`。
+String? ankiSetSpecificValueFailure(AnkiConnectBatchResult r) {
+  if (r.isError) return r.error;
+  final Object? v = r.result;
+  if (v is List && v.isNotEmpty) {
+    final Object? first = v.first;
+    if (first == true) return null;
+    if (first is List && first.isNotEmpty && first.first == false) {
+      return first.length > 1 ? first[1].toString() : 'rejected';
+    }
+    return 'unexpected setSpecificValueOfCard result: $first';
+  }
+  if (v == false) return 'setSpecificValueOfCard rejected the request';
+  return 'unexpected setSpecificValueOfCard result: $v';
 }
 
 /// 卡组新卡重排的 Anki 搜索串：按**卡组 id** 选中 [deckName] 及其全部子卡组，

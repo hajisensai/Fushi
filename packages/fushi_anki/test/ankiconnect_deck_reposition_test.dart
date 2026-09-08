@@ -136,11 +136,16 @@ void main() {
         (Map<String, dynamic> body) {
           final List<dynamic> actions = (body['params']
               as Map<String, dynamic>)['actions'] as List<dynamic>;
+          // 真 AnkiConnect 的形状：成功 [true]；异常 [[false, msg]]，error 仍为 null。
           return <Object?>[
             for (int i = 0; i < actions.length; i++)
               <String, Object?>{
-                'result': null,
-                'error': i == 1 ? 'card was not found: 2' : null,
+                'result': i == 1
+                    ? <Object?>[
+                        <Object?>[false, 'card was not found: 2']
+                      ]
+                    : <Object?>[true],
+                'error': null,
               },
           ];
         },
@@ -167,8 +172,74 @@ void main() {
         'newValues': <int>[1],
         'warning_check': true,
       });
-      expect(results.map((AnkiConnectBatchResult r) => r.isError).toList(),
-          <bool>[false, true, false]);
+      expect(
+        results.map(ankiSetSpecificValueFailure).toList(),
+        <String?>[null, 'card was not found: 2', null],
+      );
+    });
+
+    test('配置了 apiKey 时 multi 的每条子 action 都带 key（真机实测：不带整批被拒）', () async {
+      final List<http.Request> issued = <http.Request>[];
+      final AnkiConnectService s = AnkiConnectService(
+        host: '127.0.0.1',
+        port: 8765,
+        apiKey: 'secret',
+        client: MockClient((http.Request request) async {
+          issued.add(request);
+          final Map<String, dynamic> body =
+              jsonDecode(request.body) as Map<String, dynamic>;
+          final List<dynamic> actions = (body['params']
+              as Map<String, dynamic>)['actions'] as List<dynamic>;
+          return http.Response(
+            jsonEncode(<String, Object?>{
+              'result': <Object?>[
+                for (int i = 0; i < actions.length; i++)
+                  <String, Object?>{
+                    'result': <Object?>[true],
+                    'error': null
+                  },
+              ],
+              'error': null,
+            }),
+            200,
+            headers: <String, String>{'content-type': 'application/json'},
+          );
+        }),
+      );
+      await s.setCardsDueMany(const <AnkiCardDueUpdate>[
+        AnkiCardDueUpdate(cardId: 1, due: 1),
+        AnkiCardDueUpdate(cardId: 2, due: 2),
+      ]);
+      final Map<String, dynamic> body =
+          jsonDecode(issued.single.body) as Map<String, dynamic>;
+      expect(body['key'], 'secret');
+      final List<dynamic> actions =
+          (body['params'] as Map<String, dynamic>)['actions'] as List<dynamic>;
+      for (final dynamic a in actions) {
+        expect((a as Map<String, dynamic>)['key'], 'secret');
+      }
+    });
+
+    test('ankiSetSpecificValueFailure 解读三种结果形状', () {
+      expect(
+        ankiSetSpecificValueFailure(
+          const AnkiConnectBatchResult(result: <Object?>[true]),
+        ),
+        isNull,
+      );
+      expect(
+        ankiSetSpecificValueFailure(
+          const AnkiConnectBatchResult(result: false),
+        ),
+        isNotNull,
+        reason: '参数形状不对时插件返回裸 false，不能当成功',
+      );
+      expect(
+        ankiSetSpecificValueFailure(
+          const AnkiConnectBatchResult(result: null, error: 'boom'),
+        ),
+        'boom',
+      );
     });
   });
 
@@ -222,7 +293,14 @@ void main() {
             as Map<String, dynamic>)['actions'] as List<dynamic>;
         return <Object?>[
           for (int i = 0; i < actions.length; i++)
-            <String, Object?>{'result': null, 'error': i == 0 ? 'boom' : null},
+            <String, Object?>{
+              'result': i == 0
+                  ? <Object?>[
+                      <Object?>[false, 'boom']
+                    ]
+                  : <Object?>[true],
+              'error': null,
+            },
         ];
       });
       final AnkiCardDueWriteResult r =
