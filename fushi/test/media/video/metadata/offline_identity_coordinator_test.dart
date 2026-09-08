@@ -156,7 +156,7 @@ void main() {
         registry:
             VideoMetadataProviderRegistry(<VideoMetadataProvider>[mal, tmdb]),
         identityMapping: _mapping(
-          '[{"anidb_id":5,"mal_id":42,"themoviedb_id":777,"type":"TV"}]',
+          '[{"anidb_id":5,"mal_id":42,"themoviedb_id":{"tv":777},"type":"TV"}]',
         ),
       ),
       source,

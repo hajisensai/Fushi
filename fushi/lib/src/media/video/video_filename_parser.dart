@@ -160,6 +160,40 @@ class VideoGroup {
   bool get isPlaylist => episodes.length > 1;
 }
 
+/// 分组用的系列名。
+///
+/// 文件名解得出标题就用它（既有行为）。**文件名只剩集号**时（`01.mp4`、
+/// `第01集.mp4`、`S01E01.mkv`——番名写在目录上是常见整理方式）按 stem 分组会
+/// 让每一集各成一个单集组、各成一张卡，用户看到的就是「整部番被拆成一堆分开
+/// 的条目」；这时回落到父目录名，与 [parseVideoPath] 把季号回落到父目录同源。
+///
+/// 父目录名同样过一遍规则引擎剥掉字幕组/画质块；父目录自己也解不出标题时
+/// （`Season 1`、`01`）用父目录原名——它至少能把同一目录的文件归到一起，且
+/// 不会把两个季目录并成一组（并了会让 S1E01 与 S2E01 撞键丢文件）。
+String _groupingSeries(String path, String name, VideoNameInfo info) {
+  if (info.episode == null) return info.series;
+  if (FilenameParser.parse(name).title.trim().isNotEmpty) return info.series;
+  final List<String> segments = _pathSegments(path);
+  if (segments.length < 2) return info.series;
+  final String parent = _decodedSegment(path, segments[segments.length - 2]);
+  final String parsed = FilenameParser.parse(parent).title.trim();
+  if (parsed.isNotEmpty) return parsed;
+  final String raw = parent.trim();
+  return raw.isEmpty ? info.series : raw;
+}
+
+/// 网络来源的 URL 段是百分号编码的，与 [decodedSourceBasename] 同口径解码。
+String _decodedSegment(String path, String segment) {
+  if (!path.startsWith('http://') && !path.startsWith('https://')) {
+    return segment;
+  }
+  try {
+    return Uri.decodeComponent(segment);
+  } catch (_) {
+    return segment;
+  }
+}
+
 /// 把一批视频文件路径按解析出的系列名分组成 [VideoGroup]，组内按 季→集→标题 排序，
 /// 组间按系列名（不区分大小写）稳定排序。纯函数（只读文件名，不碰磁盘），便于单测。
 List<VideoGroup> groupVideosIntoPlaylists(List<String> paths) {
@@ -172,8 +206,9 @@ List<VideoGroup> groupVideosIntoPlaylists(List<String> paths) {
     // 本地路径原样返回，行为不变。
     final String name = decodedSourceBasename(path);
     final VideoNameInfo info = parseVideoFilename(name);
-    final String key = info.series.toLowerCase();
-    displaySeries.putIfAbsent(key, () => info.series);
+    final String series = _groupingSeries(path, name, info);
+    final String key = series.toLowerCase();
+    displaySeries.putIfAbsent(key, () => series);
     byKey.putIfAbsent(key, () => <VideoEpisode>[]).add(VideoEpisode(
           path: path,
           title: p.basenameWithoutExtension(name),

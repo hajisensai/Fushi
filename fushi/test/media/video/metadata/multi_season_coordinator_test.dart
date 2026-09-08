@@ -26,9 +26,9 @@ import 'package:path/path.dart' as p;
 /// S2 = MAL 59978 / anidb 18886（tmdb 同剧 209867，offset 28）；
 /// anime-relations：`52991:29-38 -> 59978:1-10!`。
 const String _fribb = '['
-    '{"anidb_id":17617,"mal_id":52991,"themoviedb_id":209867,'
+    '{"anidb_id":17617,"mal_id":52991,"themoviedb_id":{"tv":209867},'
     '"season":{"tvdb":1,"tmdb":1},"type":"TV"},'
-    '{"anidb_id":18886,"mal_id":59978,"themoviedb_id":209867,'
+    '{"anidb_id":18886,"mal_id":59978,"themoviedb_id":{"tv":209867},'
     '"season":{"tvdb":2,"tmdb":1},"episode_offset":{"tmdb":28},"type":"TV"}'
     ']';
 const String _relations = '::meta\n- version: 1\n\n::rules\n'

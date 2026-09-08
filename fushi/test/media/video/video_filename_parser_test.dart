@@ -280,6 +280,76 @@ void main() {
     test('空输入 → 空分组', () {
       expect(groupVideosIntoPlaylists(const <String>[]), isEmpty);
     });
+
+    test('文件名只剩集号 → 系列名回落父目录（用户报「被拆成分开的剧集」）', () {
+      final List<VideoGroup> groups = groupVideosIntoPlaylists(<String>[
+        r'D:\Videos\动漫\葬送的芙莉莲\02.mp4',
+        r'D:\Videos\动漫\葬送的芙莉莲\01.mp4',
+        r'D:\Videos\动漫\葬送的芙莉莲\13.mp4',
+      ]);
+      expect(groups, hasLength(1), reason: '同目录的纯集号文件必须归一组');
+      final VideoGroup g = groups.single;
+      expect(g.series, '葬送的芙莉莲');
+      expect(g.isPlaylist, isTrue);
+      expect(
+        g.episodes.map((VideoEpisode e) => e.episode).toList(),
+        <int>[1, 2, 13],
+      );
+    });
+
+    test('第NN集 / SxxEyy 形态同样回落父目录', () {
+      expect(
+        groupVideosIntoPlaylists(<String>[
+          '/v/间谍过家家/第01集.mp4',
+          '/v/间谍过家家/第02集.mp4',
+        ]).single.series,
+        '间谍过家家',
+      );
+      expect(
+        groupVideosIntoPlaylists(<String>[
+          '/v/Dandadan/S01E01.mkv',
+          '/v/Dandadan/S01E02.mkv',
+        ]).single.series,
+        'Dandadan',
+      );
+    });
+
+    test('父目录是季目录 → 用目录原名，不并季（并了会撞键丢文件）', () {
+      final List<VideoGroup> groups = groupVideosIntoPlaylists(<String>[
+        '/v/Show/Season 1/01.mkv',
+        '/v/Show/Season 2/01.mkv',
+      ]);
+      expect(groups.map((VideoGroup g) => g.series).toList(),
+          <String>['Season 1', 'Season 2']);
+      expect(groups.every((VideoGroup g) => g.episodes.length == 1), isTrue);
+    });
+
+    test('目录里混着不同番的纯集号文件仍按目录归一组（可由用户拆分）', () {
+      final List<VideoGroup> groups =
+          groupVideosIntoPlaylists(<String>['/v/杂/01.mkv', '/v/杂/02.mkv']);
+      expect(groups.single.series, '杂');
+    });
+
+    test('文件名自带番名时不看目录（既有行为不变）', () {
+      final List<VideoGroup> groups = groupVideosIntoPlaylists(<String>[
+        '/v/合集目录/Alpha - 01.mkv',
+        '/v/合集目录/Beta - 01.mkv',
+      ]);
+      expect(groups.map((VideoGroup g) => g.series).toList(),
+          <String>['Alpha', 'Beta']);
+    });
+
+    test('网络来源的百分号编码目录名解码后再做系列名', () {
+      final List<VideoGroup> groups = groupVideosIntoPlaylists(<String>[
+        'https://dav.example.com/media/Show%20A/01.mkv',
+        'https://dav.example.com/media/Show%20A/02.mkv',
+      ]);
+      expect(groups.single.series, 'Show A');
+    });
+
+    test('无父目录段（裸文件名）保持原样', () {
+      expect(groupVideosIntoPlaylists(<String>['01.mkv']).single.series, '01');
+    });
   });
 
   group('listVideoFilesInDirectory', () {

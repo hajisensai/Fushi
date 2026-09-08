@@ -4,22 +4,30 @@ import 'package:http/testing.dart';
 import 'package:fushi/src/media/video/metadata/anime_identity_mapping.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_transport.dart';
 
-// Fribb anime-list-full.json 真实形状（Frieren S1/S2 + 电影 + 脏值）。
+// Fribb anime-list-full.json 的**实测**形状（2026-09-08 抓真文件核对，39304 行）：
+// `themoviedb_id` 恒为对象 `{"tv": N}`（7092 行）或 `{"movie": [N]}`（1363 行，
+// movie 侧的值是数组），从不是裸数字；TVDB 键是 `tvdb_id` 而不是 `thetvdb_id`
+// （后者零命中）。用错形状会让 tmdbId / tvdbId 恒为 null，多季对齐与 id 接力
+// 静默失效——本 fixture 照真数据写，别再改回裸数字。
 const String _fribbSample = '[' // Frieren S1
-    '{"anidb_id":17617,"mal_id":52991,"anilist_id":154587,"thetvdb_id":424536,'
-    '"themoviedb_id":209867,"season":{"tvdb":1,"tmdb":1},"type":"TV"},'
-    // Frieren S2：tmdb 同剧、偏移 28；字符串数字
-    '{"anidb_id":18886,"mal_id":"59978","anilist_id":182255,"thetvdb_id":"424536",'
-    '"themoviedb_id":"209867","season":{"tvdb":2,"tmdb":"1"},'
+    '{"anidb_id":17617,"mal_id":52991,"anilist_id":154587,"tvdb_id":424536,'
+    '"themoviedb_id":{"tv":209867},"season":{"tvdb":1,"tmdb":1},"type":"TV"},'
+    // Frieren S2：tmdb 同剧、偏移 28；字符串数字（旧文件里出现过）
+    '{"anidb_id":18886,"mal_id":"59978","anilist_id":182255,"tvdb_id":"424536",'
+    '"themoviedb_id":{"tv":"209867"},"season":{"tvdb":2,"tmdb":"1"},'
     '"episode_offset":{"tmdb":"28"},"type":"TV"},'
     // 特典：同 tmdb 剧、无偏移字段、season 0
-    '{"anidb_id":19000,"mal_id":59978,"themoviedb_id":209867,'
+    '{"anidb_id":19000,"mal_id":59978,"themoviedb_id":{"tv":209867},'
     '"season":{"tvdb":0,"tmdb":0},"type":"SPECIAL"},'
-    // 电影：themoviedb_id 是 movie 命名空间，不进 tv 索引
-    '{"anidb_id":20000,"mal_id":70000,"themoviedb_id":209867,"type":"MOVIE"},'
-    // 脏值：负 id、小数、乱字符串、season 不是对象
-    '{"anidb_id":30000,"mal_id":-1,"anilist_id":2.5,"thetvdb_id":"abc",'
-    '"themoviedb_id":0,"season":"x","episode_offset":{"tmdb":-3},"type":""},'
+    // 电影：movie 命名空间且值是数组，不进 tv 索引
+    '{"anidb_id":20000,"mal_id":70000,"themoviedb_id":{"movie":[128]},'
+    '"type":"MOVIE"},'
+    // 电影但 type 缺失：命名空间本身就足以判定，不能按 tv 拉
+    '{"anidb_id":20001,"mal_id":70001,"themoviedb_id":{"movie":[129]}},'
+    // 脏值：负 id、小数、乱字符串、season 不是对象、空数组
+    '{"anidb_id":30000,"mal_id":-1,"anilist_id":2.5,"tvdb_id":"abc",'
+    '"themoviedb_id":{"tv":0,"movie":[]},"season":"x",'
+    '"episode_offset":{"tmdb":-3},"type":""},'
     // 非对象行
     '42,null'
     ']';
@@ -115,6 +123,16 @@ void main() {
     expect(dirty.tmdbSeason, isNull);
     expect(dirty.tmdbEpisodeOffset, isNull);
     expect(dirty.type, isNull);
+
+    // `themoviedb_id.movie` 是数组，取首个正整数；命名空间本身判定 isMovie，
+    // 即便 type 缺失也不能按 /tv/{id} 拉。
+    final AnimeIdentityEntry? movie = await mapping.entryForAnidb(20000);
+    expect(movie!.tmdbId, 128);
+    expect(movie.isMovie, isTrue);
+    final AnimeIdentityEntry? movieNoType = await mapping.entryForAnidb(20001);
+    expect(movieNoType!.tmdbId, 129);
+    expect(movieNoType.type, isNull);
+    expect(movieNoType.isMovie, isTrue, reason: 'movie 命名空间优先于缺失的 type 字段');
 
     expect(await mapping.entryForAnidb(99999), isNull);
     expect(() => mapping.entryForAnidb(0), throwsArgumentError);
