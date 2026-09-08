@@ -52,7 +52,9 @@ void main() {
 
     expect(find.text(t.audiobook_subtitle_source_title), findsOneWidget);
     expect(find.text(t.audiobook_transcribe_action), findsOneWidget);
-    expect(find.text(t.srt_import_audio_needs_subtitle), findsNothing);
+    // 不断言「没弹旧提示」：`FushiToast` 要有全局 navigatorKey 才画得出 overlay，
+    // widget 测试里没设，toast 从来进不了树——那种 `findsNothing` 恒真、守不住
+    // 任何东西。旧行为已被上面「来源选择真的出现了」正面钉住。
     // 用户关掉来源选择 = 取消：什么都不导入。
     tester.state<NavigatorState>(find.byType(Navigator)).pop();
     await tester.pumpAndSettle();
@@ -90,7 +92,7 @@ void main() {
 
     expect(find.text(t.audiobook_subtitle_source_title), findsOneWidget);
     expect(find.text(t.audiobook_transcribe_action), findsOneWidget);
-    expect(find.text(t.audiobook_import_error), findsNothing);
+    // 同上：toast 进不了 widget 树，不写恒真的 findsNothing。
     tester.state<NavigatorState>(find.byType(Navigator)).pop();
     await tester.pumpAndSettle();
     expect(await repo.findByBookKey('bug-2266-book'), isNull);

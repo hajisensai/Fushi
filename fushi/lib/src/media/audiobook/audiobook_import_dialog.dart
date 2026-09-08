@@ -666,16 +666,12 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
 
   Future<void> _doImport() async {
     if (!_hasAudioSource || (!widget.audioOnly && _alignmentPath == null)) {
-      // 有音频没对齐文件：本机能转录就直接问来源（选文件 / 转录），拿到后接着
-      // 导入；与书导入对话框同一条纪律（BUG-2266）——转录入口只是行尾无字图标，
-      // 一句泛泛的「导入失败」是死胡同。
-      if (_hasAudioSource &&
-          !widget.audioOnly &&
-          _alignmentPath == null &&
-          shouldOfferSubtitleSourceChooser(
-            asrSupported: isAsrSupported,
-            hasAudio: _audioPaths?.isNotEmpty ?? false,
-          )) {
+      // 选了音频但缺对齐文件（走到这里 [_hasAudioSource] 为真就必然是这种情形）：
+      // 交给点对齐文件行的同一条路，它自己按本机能否转录分流成「字幕来源」选择或
+      // 文件选择器；拿到对齐文件后接着导入。一句泛泛的「导入失败」是死胡同——
+      // 转录入口只是行尾一枚无字图标，用户根本找不到（BUG-2266）。
+      // 「导入失败」只留给真的什么都没选（[_hasAudioSource] 为假，含 audioOnly）。
+      if (_hasAudioSource) {
         await _onAlignmentRowTap();
         if (!mounted || _alignmentPath == null) return;
         return _doImport();

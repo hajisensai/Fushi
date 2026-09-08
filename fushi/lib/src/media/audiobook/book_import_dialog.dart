@@ -70,9 +70,10 @@ class BookImportDialog extends StatefulWidget {
   final String? initialSubtitlePath;
 
   /// 拖拽导入预填：随新书一起拖入的音频文件路径。EPUB+音频拖到书架空白处时透传，
-  /// 否则丢失（书架 `importNewBook` 此前未携带 `files.audios`）。音频必配字幕，
-  /// 故仅预填展示——`_doImport` 的「音频必须配字幕」校验照旧（拖 EPUB+音频无字幕
-  /// 时仍要求补字幕）。
+  /// 否则丢失（书架 `importNewBook` 此前未携带 `files.audios`）。音频仍必配字幕，
+  /// 故仅预填展示——`_doImport` 的「音频必须配字幕」校验照旧，只是能转录的平台
+  /// 改为弹「字幕来源」（选文件 / 转录）就地补上，不能转录的平台仍要求补字幕
+  /// （BUG-2266）。
   final List<String>? initialAudioPaths;
 
   /// 测试计数缝：生产始终走 [MangaModule.isImageArchive]；回归测试只在外层计数后
