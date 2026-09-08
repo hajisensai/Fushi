@@ -20,14 +20,14 @@ struct Sites {
   uintptr_t window_slot = 0x100c, input_slot = 0x1010;
   uintptr_t current_input_slot = 0x1014, prior_input_slot = 0x1018;
   uintptr_t viewport_slot = 0x101c, gate2_slot = 0x1020;
-  uintptr_t gate3_slot = 0x1024, manager_slot = 0x1028;
+  uintptr_t gate3_slot = 0x1024, manager_slot = 0x1028, scene_slot = 0x102c;
   uintptr_t window_vtable = 0x9000, window_handler = 0xa000;
 };
 constexpr uintptr_t Sites::* kSiteMembers[] = {
     &Sites::root_slot, &Sites::config_slot, &Sites::owner_slot,
     &Sites::window_slot, &Sites::input_slot, &Sites::current_input_slot,
     &Sites::prior_input_slot, &Sites::viewport_slot, &Sites::gate2_slot,
-    &Sites::gate3_slot, &Sites::manager_slot};
+    &Sites::gate3_slot, &Sites::manager_slot, &Sites::scene_slot};
 struct Access { uint32_t address; size_t size; };
 struct Memory {
   std::map<uint32_t, uint8_t> bytes;
@@ -67,8 +67,8 @@ struct Fixture {
     const uint32_t pointers[] = {root, config(), owner(), window(),
         owner() + 0x35ad4, owner() + 0x3939c, owner() + 0x3b000,
         owner() + 0x3cca0, owner() + 0x3d124, owner() + 0x4296c,
-        owner() + 0x3d174};
-    for (size_t n = 0; n < 11; ++n)
+        owner() + 0x3d174, owner() + 0x42898};
+    for (size_t n = 0; n < 12; ++n)
       memory.Put(base + static_cast<uint32_t>(sites.*kSiteMembers[n]), pointers[n]);
     memory.Put(window(), base + static_cast<uint32_t>(sites.window_vtable));
     memory.Put(base + static_cast<uint32_t>(sites.window_vtable) + 4,
@@ -104,6 +104,7 @@ void TestStableAndGates() {
   Fixture f; runtime::Snapshot out;
   Check(f.Read(&out) && out.input_allowed, "complete stable runtime");
   Check(out.root == f.root && out.config == f.config() && out.owner == f.owner(), "root aliases");
+  Check(out.scene == f.owner() + 0x42898, "scene aliases the admitted engine owner member");
   Check(out.window_handle == 0x550012 && out.design_width == 1280 && out.design_height == 720,
         "design dimensions and HWND preserved");
   Check(out.viewport_x == 37 && out.viewport_y == -19 && out.viewport_width == 1537 &&
@@ -115,9 +116,9 @@ void TestStableAndGates() {
             "each stable byte gate blocks input without losing valid snapshot");
     }
   }
-  for (size_t n = 0; n < 11; ++n) {
+  for (size_t n = 0; n < 12; ++n) {
     Check(f.memory.reads[n].address == f.base + f.sites.*kSiteMembers[n] && f.memory.reads[n].size == 4,
-          "all eleven resolved slots read at actual module base");
+          "all twelve resolved slots read at actual module base");
   }
 }
 
@@ -168,7 +169,7 @@ void TestSecondPassAndFailures() {
   Fixture baseline; runtime::Snapshot out;
   Check(baseline.Read(&out), "baseline read trace");
   const auto trace = baseline.memory.reads;
-  Check(trace.size() == 50, "two bounded passes, twenty-five scalars each");
+  Check(trace.size() == 52, "two bounded passes, twenty-six scalars each");
   const size_t pass = trace.size() / 2;
   for (size_t n = 0; n < trace.size(); ++n) {
     Fixture f; f.memory.fail_on = n + 1; f.Reject();
@@ -183,6 +184,15 @@ void TestSecondPassAndFailures() {
   // requires comparing complete snapshots rather than just validating pass 2.
   { Fixture f; f.memory.change_on = pass + 1;
     f.memory.change = [&] { f.root += 0x100000; f.Populate(); }; f.Reject(); }
+  // Scene is an independently resolved slot, not a recomputed address that
+  // can silently ignore disagreement with the engine's live pointer table.
+  { Fixture f; f.memory.Put(f.base + static_cast<uint32_t>(f.sites.scene_slot),
+                            f.owner() + 0x4289c); f.Reject(); }
+  { Fixture f; f.memory.change_on = pass + 1;
+    f.memory.change = [&] {
+      f.memory.Put(f.base + static_cast<uint32_t>(f.sites.scene_slot),
+                   f.owner() + 0x4289c);
+    }; f.Reject(); }
   // Both design sources agree in each pass, but a resize is not stable.
   { Fixture f; f.memory.change_on = pass + 1;
     f.memory.change = [&] { f.memory.Put(f.config() + 0x64, int32_t{1920});
