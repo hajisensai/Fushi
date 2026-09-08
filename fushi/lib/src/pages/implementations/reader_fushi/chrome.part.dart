@@ -1759,19 +1759,47 @@ extension _ReaderChrome on _ReaderFushiPageState {
       // 抽屉开着期间顶部工具栏不自动收起（否则用户改设置时工具栏在背后消失，
       // 关抽屉后点空白又要再唤一次）；关掉后若仍是悬浮可见态，重新武装计时。
       _cancelChromeAutoHide();
-      await showReaderSideSheet<void>(
-        context: context,
-        // ッツ 形态：导航 / 章节贴左，外观设置贴右。
-        side:
-            presentation == ReaderQuickSettingsPresentation.sideSheetNavigation
-            ? ReaderSideSheetSide.left
-            : ReaderSideSheetSide.right,
-        builder: (_) => sheetContent,
-      );
+      // BUG-2260：透明遮罩形态开始 / 结束的唯一两点。旗只在这里翻，
+      // [_closeSideSheetForWebViewPointer] 只读，不存在第二个所有者。
+      _sideSheetOpen = true;
+      try {
+        await showReaderSideSheet<void>(
+          context: context,
+          // ッツ 形态：导航 / 章节贴左，外观设置贴右。
+          side: presentation ==
+                  ReaderQuickSettingsPresentation.sideSheetNavigation
+              ? ReaderSideSheetSide.left
+              : ReaderSideSheetSide.right,
+          builder: (_) => sheetContent,
+        );
+      } finally {
+        _sideSheetOpen = false;
+      }
       if (mounted && _anyChromeFloating && _chromeTransientVisible) {
         _armChromeAutoHide();
       }
     }
+  }
+
+  /// BUG-2260：正文 WebView 上报的一次点击落在「侧抽屉正压着正文」的状态里时，
+  /// 把它当成对遮罩的点击——关掉抽屉并**吞掉**这次点击（返回 true，调用方立即
+  /// return，不再翻页 / 查词 / 收放控制栏）。
+  ///
+  /// 抽屉是路由，故走 [Navigator.maybePop]（与面板内「退出书籍」按钮同款：不绕过
+  /// 任何 PopScope）。判据与「为什么 macOS 上这次点击会漏过 modal barrier」见
+  /// [readerWebViewPointerClosesSideSheet]；其它平台该判据恒假，此方法恒返回
+  /// false，行为与修复前逐字相同。
+  bool _closeSideSheetForWebViewPointer() {
+    if (!mounted) return false;
+    final ModalRoute<Object?>? owner = ModalRoute.of(context);
+    if (!readerWebViewPointerClosesSideSheet(
+      sideSheetOpen: _sideSheetOpen,
+      readerRouteIsCurrent: owner == null || owner.isCurrent,
+    )) {
+      return false;
+    }
+    unawaited(Navigator.of(context).maybePop());
+    return true;
   }
 
   /// 组装书内快捷设置面板（居中对话框 / 移动端 sheet / 桌面端右侧抽屉共用同一份

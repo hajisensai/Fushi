@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui' show PlatformDispatcher;
+import 'dart:ui' show AppExitResponse, PlatformDispatcher;
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -670,6 +670,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   /// [didChangeAppLifecycleState] 的 `detached` 兜底重复触发。
   bool _shutdownStarted = false;
 
+  /// BUG-2259：macOS ⌘Q / 菜单退出 / Dock 退出的 Dart 侧落点（仅 macOS 注册，
+  /// 见 [initState]）。持有以便 [dispose] 注销。
+  AppLifecycleListener? _exitRequestListener;
+
   /// 退出总预算。窗口在 flush 开始前就已隐藏，这个上界只决定「进程最多在后台多待
   /// 多久」，不影响用户看到的关闭速度。取 6s：足够覆盖最坏情况下的 Mihon sidecar
   /// 关停（~1.8s）与关书同步 drain（5s 上界，实际多为 0），外加 checkpoint 余量。
@@ -740,6 +744,28 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     // 停掉 Bonsoir mDNS 事件源（TODO-036）。
     if (_isDesktop) {
       windowManager.addListener(this);
+    }
+    // BUG-2259：macOS 的「退出应用」不是「关窗口」。window_manager 的
+    // setPreventClose(true) 只拦 NSWindow 的 windowShouldClose:（点红叉），而
+    // ⌘Q / 菜单「退出 Hibiki」/ Dock 右键退出 走的是 NSApplication 的
+    // applicationShouldTerminate:——它完全不经过 [onWindowClose]，于是整条
+    // [_flushAndExitForWindowClose]（窗口几何落盘 → ExitFlushRegistry 把活跃
+    // 阅读/听书/观看页尚未落库的位置与统计写穿 → 关书同步 drain → close
+    // database 做 WAL checkpoint）在 macOS 上最常用的退出方式下**一次都不跑**。
+    // 结果：阅读位置只剩 500ms 去抖那一档、有声书位置只剩「整秒变化」那一档、
+    // 阅读统计段落（StudyClock / ReadUnitLedger）整段丢失。
+    //
+    // AppLifecycleListener.onExitRequested 正是 applicationShouldTerminate: 在
+    // Dart 侧的落点（engine 的 FlutterAppDelegate 把该 selector 转成
+    // System.requestAppExit，framework 再派发给已注册的监听者），且系统会**等**
+    // 我们的 Future 完成后才终止进程——这正是 flush 需要的「退出前还活着」窗口。
+    // 只在 macOS 注册：Windows/Linux 的关闭信号已由 window_manager 的
+    // preventClose 完整覆盖，两条路同时挂只会让同一次退出跑两遍（虽有
+    // _shutdownStarted 幂等守卫，但没有收益）。
+    if (Platform.isMacOS) {
+      _exitRequestListener = AppLifecycleListener(
+        onExitRequested: _handleExitRequested,
+      );
     }
     if (Platform.isWindows) {
       _externalVideoChannel.setMethodCallHandler(_handleExternalVideoChannel);
@@ -812,6 +838,23 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     if (state == AppLifecycleState.detached) {
       unawaited(_flushAndCloseForLifecycleDetach());
     }
+  }
+
+  /// BUG-2259：macOS「退出应用」（⌘Q / 菜单退出 / Dock 右键退出）的落点。
+  ///
+  /// 与 [onWindowClose] 走**同一条**退出链——两者的语义要求完全一样（把还没落库
+  /// 的阅读位置 / 有声书位置 / 阅读统计写穿，再 checkpoint 关库），差别只在原生
+  /// 侧由哪个 selector 触发。复用同一个方法而不是复制一条精简版，是为了让
+  /// 「关窗口能保住的数据，⌘Q 也一定保得住」成为结构性事实，而不是靠两处实现
+  /// 各自记得同步。[_flushAndExitForWindowClose] 自带 [_shutdownStarted] 幂等
+  /// 守卫，⌘Q 与红叉竞发也只会跑一遍。
+  ///
+  /// 正常情况下这个方法不返回：链尾的 `exitApp()` 就把进程终止了。真返回时
+  /// （exitApp 未能杀掉进程，或 flush 已由另一条路径跑过）答 [AppExitResponse.exit]
+  /// 放行系统的终止流程——退出请求绝不能被我们卡住变成「⌘Q 关不掉」。
+  Future<AppExitResponse> _handleExitRequested() async {
+    await _flushAndExitForWindowClose();
+    return AppExitResponse.exit;
   }
 
   /// 桌面原生窗口关闭信号（main() 已 setPreventClose(true) → 窗口不会自己关）。
@@ -1028,6 +1071,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     _iosUrlSubscription?.cancel();
     _systemColorRefreshDebounce?.cancel();
     _loadingWatchdog?.cancel();
+    _exitRequestListener?.dispose();
     if (_isDesktop) {
       windowManager.removeListener(this);
     }
