@@ -1939,6 +1939,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 是否处于客户端合集连播模式（成员是各自独立 video id）。
   bool get _isRemoteCollection => _remoteMembers.length > 1;
 
+  /// 远端播放代际：每次远端换集递增，用来抑制同一播放实例的重复 Stopped 请求，
+  /// 同时允许用户再次打开同一集时重新上报。
+  int _remotePlaybackGeneration = 0;
+  final Set<int> _remotePlaybackStopGenerations = <int>{};
+
   /// 有效远端 info/client：合集连播优先返回当前成员 [_activeRemoteMember]（换成员即跟随）；
   /// 否则 LAN 远端书用构造器传入的 widget.remote*，书架流媒体书用 [_init] 重建的
   /// _resolvedStream*。二者互斥、至多一个非空。
@@ -2444,6 +2449,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     required EpisodeStartIntent startIntent,
     int? initialPositionMsOverride,
   }) async {
+    ++_remotePlaybackGeneration;
     // 合集连播模式：换集换的是**兄弟成员 id**（各自独立单视频，episodeIndex 恒 0），并把
     // 当前成员指针切到目标成员，使 _effectiveRemoteInfo / 断点键 / 字幕键 / host 上报跟随。
     // host-playlist / 单视频模式：同一 info.id 换 episodeIndex（旧行为，零变化）。
@@ -2916,6 +2922,74 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       );
     } catch (e) {
       debugPrint('[VideoFushiPage] remote position upload failed: $e');
+    }
+  }
+
+  /// 向支持会话生命周期的远端源上报本次播放已停止。
+  ///
+  /// Jellyfin 的 Stopped 不只是最后一次断点写入，还会触发已播放判定、webhook 和
+  /// 播放统计；因此只在完成、退出或换集时调用，绝不放进每秒位置心跳。失败只记日志，
+  /// 不阻塞离开视频页。
+  Future<void> _reportRemotePlaybackStopped({
+    required RemoteVideoInfo? info,
+    required RemoteVideoClient? client,
+    required int positionMs,
+    required int generation,
+  }) async {
+    final Object? stopClient = client;
+    if (info == null || stopClient is! RemoteVideoPlaybackStop) return;
+    if (!_remotePlaybackStopGenerations.add(generation)) return;
+    try {
+      await stopClient.stopRemoteVideoPlayback(info.id, positionMs);
+    } catch (e) {
+      debugPrint('[VideoFushiPage] remote playback stop upload failed: $e');
+    }
+  }
+
+  /// Flush the local position and then report the remote session stop.
+  ///
+  /// The caller deliberately starts this future without awaiting it so route
+  /// exit cannot be blocked by a database write. Keeping the async body here,
+  /// outside the exit method, also makes that non-blocking boundary explicit.
+  Future<void> _flushPositionAndReportRemotePlaybackStopped({
+    required VideoPlayerController? controller,
+    required RemoteVideoInfo? info,
+    required RemoteVideoClient? client,
+    required int? positionMs,
+    required int generation,
+  }) async {
+    try {
+      await controller?.flushPosition();
+    } finally {
+      if (positionMs != null) {
+        await _reportRemotePlaybackStopped(
+          info: info,
+          client: client,
+          positionMs: positionMs,
+          generation: generation,
+        );
+      }
+    }
+  }
+
+  /// Persist a remote episode position and then close that remote playback
+  /// session. The operation is handed to [persistInBackground] by callers.
+  Future<void> _persistRemotePositionAndReportPlaybackStopped({
+    required String uid,
+    required int positionMs,
+    required RemoteVideoInfo? info,
+    required RemoteVideoClient? client,
+    required int generation,
+  }) async {
+    try {
+      await _persistRemotePosition(uid, positionMs);
+    } finally {
+      await _reportRemotePlaybackStopped(
+        info: info,
+        client: client,
+        positionMs: positionMs,
+        generation: generation,
+      );
     }
   }
 
@@ -4704,8 +4778,18 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (_dismissTopForegroundLayer()) return;
     final NavigatorState nav = Navigator.of(context);
     final VideoPlayerController? controller = _controller;
+    final int? remotePositionMs = controller?.positionMs;
+    final RemoteVideoInfo? remoteInfo = _effectiveRemoteInfo;
+    final RemoteVideoClient? remoteClient = _effectiveRemoteClient;
+    final int remoteGeneration = _remotePlaybackGeneration;
     exitAfterPersist(
-      persist: () => controller?.flushPosition() ?? Future<void>.value(),
+      persist: () => _flushPositionAndReportRemotePlaybackStopped(
+        controller: controller,
+        info: remoteInfo,
+        client: remoteClient,
+        positionMs: remotePositionMs,
+        generation: remoteGeneration,
+      ),
       exit: nav.pop,
       onPersistError: (Object error, StackTrace stack) => ErrorLogService
           .instance

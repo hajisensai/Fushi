@@ -115,18 +115,18 @@ void main() {
 
   // 真正的断点是**页面层**：controller.dispose() 里的 `_forceSavePositionSync()`
   // 是 fire-and-forget，与 Navigator 同步销毁 State 竞争、写不完，导致「退出再进
-  // 没回到上次位置」。页面必须在路由 pop **之前** await `_controller.flushPosition()`
-  // 把退出瞬间位置可靠落库（对齐阅读器 `onWillPop` 先 await 落库再 pop）。后台生命
-  // 周期也要 flush，覆盖硬杀进程（dispose 不跑）。这两条无法纯单测（需真实 libmpv），
+  // 没回到上次位置」。页面必须在路由 pop **之前**启动 `_controller.flushPosition()`
+  // 把退出瞬间位置可靠落库，同时不能 await 它阻塞退出。后台生命周期也要 flush，
+  // 覆盖硬杀进程（dispose 不跑）。这两条无法纯单测（需真实 libmpv），
   // 故在源码层钉死结构。
   group('VideoFushiPage exit/background flush wiring (问题 1)', () {
     final String page =
         read('lib/src/pages/implementations/video_fushi_page.dart');
 
-    test('PopScope intercepts the route pop (canPop:false) to await the flush',
+    test('PopScope intercepts the route pop (canPop:false) to start the flush',
         () {
       expect(page, contains('canPop: false'),
-          reason: '页面必须自管退出（canPop:false），才能在 pop 前 await 落库');
+          reason: '页面必须自管退出（canPop:false），才能在 pop 前启动落库');
     });
 
     test('pop handler delegates to _handleBackOrExit (PopScope/Esc 共用汇聚点)', () {
@@ -153,12 +153,14 @@ void main() {
       final String b = body!.group(1)!;
       expect(b, contains('exitAfterPersist('),
           reason: '退出必须走 exitAfterPersist 原语');
-      expect(b, contains('flushPosition()'),
-          reason: '退出前仍必须发起 flushPosition()（进度落库不能丢）');
+      expect(b, contains('_flushPositionAndReportRemotePlaybackStopped('),
+          reason: '退出前仍必须发起位置 flush 与远端停止上报');
       expect(b, contains('exit: nav.pop'),
           reason: 'pop 由 exitAfterPersist 无条件执行');
       expect(b, isNot(contains('await ')),
           reason: '退出路径不得 await 任何东西（BUG-2119）');
+      expect(page, contains('await controller?.flushPosition();'),
+          reason: '后台退出回调仍必须 flush 播放位置（进度落库不能丢）');
     });
 
     test('background lifecycle flushes the playback position (hard-kill cover)',

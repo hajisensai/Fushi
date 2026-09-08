@@ -16,6 +16,15 @@ part of '../video_fushi_page.dart';
 /// scope.
 extension _VideoEpisode on _VideoFushiPageState {
   void _handlePlaybackCompleted() {
+    final int? positionMs = _controller?.positionMs;
+    if (positionMs != null) {
+      unawaited(_reportRemotePlaybackStopped(
+        info: _effectiveRemoteInfo,
+        client: _effectiveRemoteClient,
+        positionMs: positionMs,
+        generation: _remotePlaybackGeneration,
+      ));
+    }
     if (!mounted) return;
     // 有下一集才连播（单集 / 末集 / 越界不推进，停在本集结束）。
     final int cur = _currentEpisode;
@@ -107,13 +116,22 @@ extension _VideoEpisode on _VideoFushiPageState {
     if (_isRemote) {
       final int? curPos = _controller?.positionMs;
       if (curPos != null) {
+        final RemoteVideoInfo? currentInfo = _effectiveRemoteInfo;
+        final RemoteVideoClient? currentClient = _effectiveRemoteClient;
+        final int currentGeneration = _remotePlaybackGeneration;
         // BUG-2119：与本地分支同律，远端换集也不等落库。
         // `_persistRemotePosition` 里两次 `setPref` 加一次 `updatePosition` 走同一条
         // 连接，任一次事务 COMMIT 抛错，异常就从这里逃逸——`_loadRemoteEpisode` 永不
         // 执行、`_currentEpisode` 不推进，互联 / Jellyfin / 流媒体书的换集按钮、剧集
         // 列表、连播全部失灵，与本地分支此前那条同形。
         persistInBackground(
-          persist: () => _persistRemotePosition(widget.bookUid, curPos),
+          persist: () => _persistRemotePositionAndReportPlaybackStopped(
+            uid: widget.bookUid,
+            positionMs: curPos,
+            info: currentInfo,
+            client: currentClient,
+            generation: currentGeneration,
+          ),
           onPersistError: (Object error, StackTrace stack) => ErrorLogService
               .instance
               .log('VideoFushiPage.switchRemoteEpisodePersist', error, stack),
