@@ -211,6 +211,13 @@ class LocalAudioManager {
   /// native 绑定前等待完成；不能用路径中的 `cache` 字样猜测用户文件归属。
   /// 缺失或不可复制的文件保留原配置供重新选择；不会删除源文件或推送 native。
   Future<void> migrateTemporaryReferences(Directory temporaryDirectory) async {
+    final String temporaryRoot = path.canonicalize(temporaryDirectory.path);
+    if (!entries.any((LocalAudioDbEntry entry) =>
+        entry.path.isNotEmpty &&
+        path.isWithin(temporaryRoot, path.canonicalize(entry.path)))) {
+      // 正常配置的 warm popup 不应为了已完成的迁移重新读整张偏好表。
+      return;
+    }
     await _withMigrationLock(() async {
       await _prefsRepo.loadFromDb();
       await _migrateTemporaryReferencesLocked(temporaryDirectory);
