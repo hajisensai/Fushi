@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2131 条。点号进各自文件。
+> 共 2132 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -44,6 +44,7 @@
 | [BUG-2270](bugs/BUG-2270-sidecar-ownership-record-failed-opaque.md) | ✅ | 🚧 | 刮削 sidecar 报「文件已写入，但所有权记录失败」但不给出真实异常，Cover Song Collection 三条无法定位根因 |
 | [BUG-2269](bugs/BUG-2269-ankiconnect-multi-subaction-key.md) | ✅ | ✅ | AnkiConnect multi 子 action 缺 key：配置 apiKey 时所有批量写被整批拒绝 |
 | [BUG-2268](bugs/BUG-2268-mal-ambiguity-blocks-tmdb-fallback.md) | ✅ | ✅ | MAL 主源歧义即终止识别链，TMDB 兜底永远不被询问，中文目录名整批记成待确认 |
+| [BUG-2266](bugs/BUG-2266-import-no-subtitle-dead-end.md) | ✅ | ✅ | 选了音频没字幕点「导入」只提示不引导转录，用户以为语音模型选不中（Android 报告） |
 | [BUG-2264](bugs/BUG-2264-reopen-book-credits-landing-page.md) | ✅ | ✅ | 重复开关书落地页整页入账且写出零时长段 |
 | [BUG-2263](bugs/BUG-2263-macos-mihon-chapters-not-loading.md) | 🚧 | 🚧 | macOS Mihon 章节列表加载不出来（未复现） |
 | [BUG-2262](bugs/BUG-2262-macos-aidoku-partial-result-chapters-dropped.md) | ✅ | ✅ | macOS Aidoku 章节列表恒为空：桌面 runtime 丢弃 send_partial_result 回传的章节 |
