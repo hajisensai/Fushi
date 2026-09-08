@@ -549,6 +549,22 @@ public class AnkiChannelHandler {
                 null);
             return false;
         }
+        // BUG-2278: 权限已授 != provider 现在还在。用户可以在 AnkiDroid 里关掉 API
+        // provider——包还在、授权还在，shouldRequestPermission() 仍是 false——而
+        // AnkiDroidHelper.getApi() 这时返回 null。三个消费方（findDuplicateNotesByKeys /
+        // findModelIdByName / findDeckIdByName）都是裸解引用，NPE 会逃出下面那些只捕
+        // IllegalStateException 的 catch，result 一次都不会被调用，Dart 侧的
+        // invokeMethod Future 就永远挂着：用户看到制卡卡死、零提示。
+        //
+        // 这条不变式以前靠「provider 一次解析后永不失效」的静态缓存兜着（那也意味着
+        // 运行期装上 AnkiDroid 要重启才认），本 PR 拆掉缓存后必须在入口显式判。
+        if (!AnkiDroidHelper.isApiAvailable(context)) {
+            result.error("ANKI_NOT_INSTALLED",
+                "AnkiDroid's API provider is unavailable "
+                    + "(not installed, or the API is disabled in AnkiDroid).",
+                null);
+            return false;
+        }
         return true;
     }
 
