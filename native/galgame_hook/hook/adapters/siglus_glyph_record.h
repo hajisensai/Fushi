@@ -18,7 +18,7 @@ enum class SiglusGlyphLayoutAbi : uint8_t {
 inline constexpr size_t SiglusGlyphRecordBytes(SiglusGlyphLayoutAbi abi) {
   switch (abi) {
     case SiglusGlyphLayoutAbi::kEcxTenArguments: return 0x48u;
-    case SiglusGlyphLayoutAbi::kEcxEightArguments: return 0x48u;
+    case SiglusGlyphLayoutAbi::kEcxEightArguments: return 0x70u;
     case SiglusGlyphLayoutAbi::kStackSixteenArguments: return 0x3cu;
   }
   return 0;
@@ -42,6 +42,20 @@ inline bool DecodeSiglusGlyphRecord(SiglusGlyphLayoutAbi abi,
   const size_t required = SiglusGlyphRecordBytes(abi);
   if (required == 0 || bytes == nullptr || size < required ||
       width <= 0 || height <= 0) return false;
+  if (abi == SiglusGlyphLayoutAbi::kEcxEightArguments) {
+    // This family's writer copies the transformed logical position to 40/44,
+    // accumulated float XYZ scale to 58/5c/60 and angles to 64/68/6c.
+    // The font extent at 8 is still untransformed. Until transformed glyph
+    // bounds are proved, admit only neutral scale/rotation; never approximate
+    // an animated glyph with its old unscaled square or replay its transform.
+    for (size_t axis = 0; axis < 3; ++axis) {
+      float scale = 0, angle = 0;
+      std::memcpy(&scale, bytes + 0x58 + axis * sizeof(float), sizeof(scale));
+      std::memcpy(&angle, bytes + 0x64 + axis * sizeof(float), sizeof(angle));
+      if (!std::isfinite(scale) || scale != 1.0f ||
+          !std::isfinite(angle) || angle != 0.0f) return false;
+    }
+  }
   const size_t position = abi == SiglusGlyphLayoutAbi::kStackSixteenArguments
                               ? 0x34u : 0x40u;
   uint32_t character = 0;
