@@ -8,9 +8,14 @@ import 'package:fushi/src/reader/reader_chrome_floating.dart'
 
 /// 各平台共用的阅读器底部状态行。
 ///
-/// 一条极简、常驻、**挤压式**（占预留高、正文永不压到它下面）的状态行：
-///  * 左：阅读追踪——计时器图标 + `<字/时> / h <本次时长>`（如 `0 / h 0:00`）；
-///  * 右：字数进度——`<已读> / <总字数>  <百分比>%`。
+/// 一条极简、常驻、**挤压式**（占预留高、正文永不压到它下面）的状态行。两段读数都
+/// 贴**右下角**，顺序与播放条唤出时的 [ReaderStatusInline] 一致：
+///  * 阅读追踪——计时器图标 + `<字/时> / h <本次时长>`（如 `0 / h 0:00`）；
+///  * 字数进度——`<已读> / <总字数>  <百分比>%`。
+///
+/// 追踪块此前独自钉在**左**下角：底部信息被劈成左右两个角，视线要在两角之间跳；而
+/// 有声书播放条一唤出（[ReaderStatusInline]），同一串数字又整体飞到右端，两条底部形态
+/// 互换时读数横跨整屏跳位。两段并排贴右后，底部读数只有一处落点。
 ///
 /// 它取代顶部进度 pill：进度数字统一放在右下角；窄屏文案省略，完整统计仍可点击查看。
 ///
@@ -60,7 +65,7 @@ String formatReadingSessionClock(int durationMs) {
   return '$minutes:$ss';
 }
 
-/// 左侧阅读追踪文案：`<字/时> / h <本次时长>`。
+/// 阅读追踪文案：`<字/时> / h <本次时长>`。
 String readerTrackerLabel(StudySessionTotals totals) {
   final int cph = readingCharsPerHour(
     chars: totals.chars,
@@ -69,9 +74,9 @@ String readerTrackerLabel(StudySessionTotals totals) {
   return '$cph / h  ${formatReadingSessionClock(totals.durationMs)}';
 }
 
-/// 右侧进度文案：`<已读> / <总字数>  <百分比>%`，与顶部进度 pill 同一格式；
+/// 进度文案：`<已读> / <总字数>  <百分比>%`，与顶部进度 pill 同一格式；
 /// 本章字数已知时再接一段括号 `(<本章已读> / <本章总字数> <本章百分比>%)`。
-/// 总字数未知 / 为 0 时返回 null（右侧不画）。
+/// 总字数未知 / 为 0 时返回 null（不画这一段）。
 String? readerProgressLabel({
   required int? current,
   required int? total,
@@ -114,7 +119,7 @@ class ReaderStatusFooter extends StatefulWidget {
   final int? currentChars;
   final int? totalChars;
 
-  /// 本章已读 / 本章总字数（右侧括号段；任一未知则不画括号）。
+  /// 本章已读 / 本章总字数（进度后的括号段；任一未知则不画括号）。
   final int? chapterCurrentChars;
   final int? chapterTotalChars;
 
@@ -131,11 +136,11 @@ class ReaderStatusFooter extends StatefulWidget {
   /// 点状态行空白处：与顶部进度 pill 同语义——唤出 / 收起控制栏。
   final VoidCallback? onTap;
 
-  /// 点左侧「计时器 + 字/时 + 时长」：切换手动暂停计时。这是手动停 / 续表的**唯一**
+  /// 点计时块「计时器 + 字/时 + 时长」：切换手动暂停计时。这是手动停 / 续表的**唯一**
   /// 入口——统计浮层里曾有一个同功能按钮，但开浮层本身就停表，层内开关改不动运行态。
   final VoidCallback? onTapTracker;
 
-  /// 点右侧进度数字：直接打开阅读统计浮层。
+  /// 点进度数字：直接打开阅读统计浮层。
   final VoidCallback? onTapProgress;
 
   @override
@@ -164,6 +169,24 @@ class _ReaderStatusFooterState extends State<ReaderStatusFooter> {
     super.dispose();
   }
 
+  /// 状态行里可点的一段（计时块 / 进度数字）。命中区**撑满整条行高**：裸文字 + 14px
+  /// 图标的行盒只有十几 px 高，指针（尤其手指）要精确戳中那一行才有反应；撑满后整条
+  /// 28px 高的那一段都可点。只扩竖向、不加横向内边距——右端 16 的边距是与顶部 pill /
+  /// inline 形态共用的视觉基线，补一层横向 padding 会把进度数字从右缘往里推。行高不
+  /// 能为命中区加高（视觉高度 == 预留高度是 chrome 铁律，加高就是挤正文），所以这一段
+  /// 的命中区上限就是行高 28px，达不到 48dp 的触摸下限。统计浮层里那颗 48dp 的整宽开关
+  /// 已经撤了（开浮层本身就停表，层内开关改不动运行态），别再把它当后备入口写进注释。
+  Widget _hitTarget({required Widget child, VoidCallback? onTap}) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: SizedBox(
+        height: widget.height,
+        child: Center(widthFactor: 1, child: child),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final StudySessionTotals totals = widget.sessionTotals();
@@ -190,17 +213,20 @@ class _ReaderStatusFooterState extends State<ReaderStatusFooter> {
           height: widget.height,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
+            // 两段读数并排贴右：Row 主轴 end 对齐把它们一起推到右缘，追踪块不再被
+            // Expanded 的进度段挤到左角。窄屏保护不变——追踪块仍最多占 40% 宽、
+            // 两段都 ellipsis，谁放不下谁先省略，行永远不溢出。
             child: LayoutBuilder(
                 builder: (BuildContext context, BoxConstraints constraints) {
               return Row(
+                mainAxisAlignment: MainAxisAlignment.end,
                 children: <Widget>[
                   ConstrainedBox(
                     constraints: BoxConstraints(
                       maxWidth:
                           constraints.maxWidth * (progress == null ? 1 : .4),
                     ),
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
+                    child: _hitTarget(
                       onTap: widget.onTapTracker,
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -229,22 +255,18 @@ class _ReaderStatusFooterState extends State<ReaderStatusFooter> {
                     ),
                   ),
                   if (progress != null)
-                    Expanded(
+                    Flexible(
                       child: Padding(
                         padding: const EdgeInsets.only(left: 8),
-                        child: Align(
-                          alignment: Alignment.centerRight,
-                          child: GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap: widget.onTapProgress,
-                            child: Text(
-                              progress,
-                              key: const ValueKey<String>(
-                                  'fushi_status_progress'),
-                              style: style,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                        child: _hitTarget(
+                          onTap: widget.onTapProgress,
+                          child: Text(
+                            progress,
+                            key:
+                                const ValueKey<String>('fushi_status_progress'),
+                            style: style,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ),
