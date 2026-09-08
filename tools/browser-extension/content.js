@@ -325,6 +325,40 @@ window.fushiToast = function (text, sticky, openSettings) {
 // （无 cueWindow）清成 null 回落 DOM 采样。制卡入口 fushiEnqueue 优先消费它。null 表示无精确窗。
 let fushiPendingCueWindow = null;
 
+// 页面正文的「所在句子」——普通网页（没有字幕轨、没有视频）上制卡时例句的来源。
+//
+// 用户报「浏览器扩展查词不取所在句子」：制卡例句过去只有四级来源，全都绑在**字幕**上
+// （多句合一草稿 / Netflix 字幕 DOM / 当前字幕行 / 弹窗内选区）。在一篇普通文章上查词，
+// 前三级恒空、弹窗内又没选任何东西 → 卡上一句例句都没有。而句子明明就在页面 DOM 里：
+// `vendor/selection.js` 有一份与 app 阅读器同源的 `getSentence(node, offset)`（跨文本节点
+// 扩句、跳振假名/ruby-reserve、括号配平），扩展装了它却从来没有人调用过一次。
+//
+// 契约：查词命中的 (文本节点, 字符偏移) 在这里存成锚点，**不当场算句**——Shift 悬停是每几
+// 像素一次的高频路径，而 getSentence 在没有段落祖先时会退到 body 遍历。真正要句子的只有
+// 「点制卡」那一下，所以下面 fushiPageSentence() 惰性算一次并缓存到下次查词。
+let fushiPendingLookupAnchor = null; // { node, offset }；null = 本次查词没有页面锚点（侧栏路径）
+let fushiPendingPageSentence = null; // 惰性缓存：null = 还没算过；字符串 = 已算（含空串）
+// 无句末标点的长块（整段没有 。！？. ! ? 的页面）会让 getSentence 一路拼到块尾/body 尾。
+// 与其把几千字塞进 Anki 例句字段，不如判定「这里没有可用的句子」退回旧行为。
+const FUSHI_PAGE_SENTENCE_MAX = 200;
+function fushiPageSentence() {
+  if (typeof fushiPendingPageSentence === 'string') return fushiPendingPageSentence;
+  fushiPendingPageSentence = '';
+  const anchor = fushiPendingLookupAnchor;
+  const sel = window.fushiSelection;
+  if (!anchor || !anchor.node || !sel || typeof sel.getSentence !== 'function') {
+    return fushiPendingPageSentence;
+  }
+  try {
+    const sentence = String(sel.getSentence(anchor.node, anchor.offset) || '').trim();
+    if (sentence && sentence.length <= FUSHI_PAGE_SENTENCE_MAX) {
+      fushiPendingPageSentence = sentence;
+    }
+  } catch (_) { /* 节点已从 DOM 摘除 / 跨 shadow：无句子，退旧行为 */ }
+  return fushiPendingPageSentence;
+}
+window.fushiPageSentence = fushiPageSentence;
+
 let fushiYtCaptionsFetchedFor = null; // 已请求过的 videoId（防重复请求；SPA 切视频后 id 变即重取）
 let fushiYtDirectBridgeStartedAt = 0;
 let fushiYtDirectBridgeVideoId = null;
@@ -728,6 +762,9 @@ window.fushiMineContext = function () {
     documentTitle: documentTitle,
     contextSentence: composed ? composed.sentence : null,
     contextWindow: composed ? { startV: composed.startV, endV: composed.endV } : null,
+    // 普通网页的所在句（惰性算，见 fushiPageSentence）。字幕来源都空时才轮到它，
+    // 所以有字幕的页面行为逐字不变。
+    pageSentence: fushiPageSentence(),
   };
 };
 // 上下文草稿入队即清空，按钮状态按当前句身份查询真实队列，不能再用草稿合成句回查。
@@ -1891,7 +1928,7 @@ document.addEventListener('mousemove', (e) => {
   if (!term || !term.trim()) return;
   if (term === fushiLastTerm) return; // 同词去重：还在同一个词上就不重复查/重渲染
   fushiLastTerm = term;
-  fushiSendLookup(term, fushiAnchorRect);
+  fushiSendLookup(term, fushiAnchorRect, null, false, hit);
 });
 
 let fushiLastConnectionHintAt = 0;
@@ -1920,11 +1957,16 @@ function fushiShowConnectionFailure(resp) {
 // 用户开启「查词时暂停」后，仅在确实发起了非空查词请求时暂停正在播放的视频，并记下
 // fushiPausedForLookup；关闭查词弹窗时自动恢复（fushiRemoveContainer）。关闭该设置时
 // 任何站点都不因查词被暂停。
-function fushiSendLookup(term, anchorRect, cueWindow, fromSidePanel) {
+function fushiSendLookup(term, anchorRect, cueWindow, fromSidePanel, lookupAnchor) {
   if (window.fushiNestedPopups) window.fushiNestedPopups.clear();
   // TODO-1219 P3：每次查词刷新精确窗——面板行查词传 cueWindow（该行精确 [startMs,endMs]），
   // mousemove 划词不传则清空，使后续制卡回落 DOM 采样窗（live 视频 hover 取当前句）。
   fushiPendingCueWindow = cueWindow || null;
+  // 页面句锚点与精确窗同一契约：每次查词都刷新，不传即清空（侧栏把词直接交回来的那条路没有
+  // 页面命中点），绝不让上一次查词的句子跟到下一个词的卡上。
+  fushiPendingLookupAnchor =
+      lookupAnchor && lookupAnchor.node ? lookupAnchor : null;
+  fushiPendingPageSentence = null;
   fushiLookupFromSidePanel = fromSidePanel === true; // 关窗回执只发给真正的侧栏路径
   if (!term || !term.trim()) return;
   if (!fushiExtAlive()) return; // 扩展已重载/失效：静默停手（重载页面恢复）
@@ -2079,7 +2121,7 @@ window.fushiLookupAtPoint = function (clientX, clientY, cueWindow, options) {
     fushiLastAutoLookupKey = lookupKey;
   }
   fushiLastTerm = term || ''; // 与 mousemove 去重状态对齐，避免点后立刻 hover 同词重查
-  fushiSendLookup(term, anchorRect, cueWindow); // TODO-1219 P3：面板行传入精确窗
+  fushiSendLookup(term, anchorRect, cueWindow, false, hit); // TODO-1219 P3：面板行传入精确窗
 };
 // 原生 Side Panel 自己请求并渲染词典，视频页只保留精确 cue 窗（制卡媒体）以及可选的
 // “查词时暂停”。这里不创建弹窗、不读/写宿主 Selection，也不修改任何宿主文本节点。
