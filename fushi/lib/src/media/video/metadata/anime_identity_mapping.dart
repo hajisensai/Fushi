@@ -15,6 +15,40 @@ class AnimeIdentityMappingResult {
   bool get isAmbiguous => malIds.length > 1;
 }
 
+/// Fribb anime-lists 一行的跨站身份：以 AniDB 条目为粒度，附带 TVDB/TMDB 的
+/// 季号与集偏移（`season` / `episode_offset` 对象里按站点取值）。
+class AnimeIdentityEntry {
+  AnimeIdentityEntry({
+    required this.anidbId,
+    required Set<int> malIds,
+    this.anilistId,
+    this.tvdbId,
+    this.tmdbId,
+    this.tmdbSeason,
+    this.tmdbEpisodeOffset,
+    this.tvdbSeason,
+    this.tvdbEpisodeOffset,
+    this.type,
+  }) : malIds = Set<int>.unmodifiable(malIds);
+
+  final int anidbId;
+  final Set<int> malIds;
+  final int? anilistId;
+  final int? tvdbId;
+  final int? tmdbId;
+  final int? tmdbSeason;
+  final int? tmdbEpisodeOffset;
+  final int? tvdbSeason;
+  final int? tvdbEpisodeOffset;
+  final String? type;
+
+  /// Fribb 的 `themoviedb_id` 对电影指向 TMDB movie 命名空间，其余类型指向 tv。
+  bool get isMovie => type?.toUpperCase() == 'MOVIE';
+
+  AnimeIdentityMappingResult toMappingResult() =>
+      AnimeIdentityMappingResult(anidbId: anidbId, malIds: malIds);
+}
+
 class AnimeIdentityMapping {
   AnimeIdentityMapping({
     VideoMetadataHttpClient? httpClient,
@@ -33,26 +67,43 @@ class AnimeIdentityMapping {
   final DateTime Function() _now;
   final Duration cacheTtl;
   final int maxResponseBytes;
-  Map<int, Set<int>>? _catalog;
+  _AnimeIdentityCatalog? _catalog;
   DateTime? _expiresAt;
-  Future<Map<int, Set<int>>>? _loading;
+  Future<_AnimeIdentityCatalog>? _loading;
 
   Future<AnimeIdentityMappingResult> lookupAnidb(int animeId) async {
     if (animeId <= 0) throw ArgumentError.value(animeId, 'animeId');
-    final Map<int, Set<int>> catalog = await _load();
+    final _AnimeIdentityCatalog catalog = await _load();
     return AnimeIdentityMappingResult(
       anidbId: animeId,
-      malIds: catalog[animeId] ?? const <int>{},
+      malIds: catalog.byAnidb[animeId]?.malIds ?? const <int>{},
     );
   }
 
-  Future<Map<int, Set<int>>> _load() async {
+  Future<AnimeIdentityEntry?> entryForAnidb(int anidbId) async {
+    if (anidbId <= 0) throw ArgumentError.value(anidbId, 'anidbId');
+    return (await _load()).byAnidb[anidbId];
+  }
+
+  /// 反向索引：同一 MAL 条目可能对应多个 AniDB 条目（如 TV 与其特典拆条）。
+  Future<List<AnimeIdentityEntry>> entriesForMal(int malId) async {
+    if (malId <= 0) throw ArgumentError.value(malId, 'malId');
+    return (await _load()).byMal[malId] ?? const <AnimeIdentityEntry>[];
+  }
+
+  /// 同一 TMDB 剧集下的全部季条目（不含电影），按 `tmdbEpisodeOffset` 升序。
+  Future<List<AnimeIdentityEntry>> entriesForTmdbTv(int tmdbId) async {
+    if (tmdbId <= 0) throw ArgumentError.value(tmdbId, 'tmdbId');
+    return (await _load()).byTmdbTv[tmdbId] ?? const <AnimeIdentityEntry>[];
+  }
+
+  Future<_AnimeIdentityCatalog> _load() async {
     if (_catalog != null && _expiresAt!.isAfter(_now())) return _catalog!;
     if (_loading != null) return _loading!;
-    final Future<Map<int, Set<int>>> pending = _download();
+    final Future<_AnimeIdentityCatalog> pending = _download();
     _loading = pending;
     try {
-      final Map<int, Set<int>> catalog = await pending;
+      final _AnimeIdentityCatalog catalog = await pending;
       _catalog = catalog;
       _expiresAt = _now().add(cacheTtl);
       return catalog;
@@ -61,7 +112,7 @@ class AnimeIdentityMapping {
     }
   }
 
-  Future<Map<int, Set<int>>> _download() async {
+  Future<_AnimeIdentityCatalog> _download() async {
     final VideoMetadataHttpResponse response = await _http.get(
       sourceUri,
       operation: 'Anime identity mapping',
@@ -77,27 +128,135 @@ class AnimeIdentityMapping {
     if (decoded is! List) {
       throw const FormatException('Anime identity mapping must be a list');
     }
-    final Map<int, Set<int>> catalog = <int, Set<int>>{};
-    for (final Object? row in decoded) {
-      if (row is! Map) continue;
-      final int? aid = _positiveId(row['anidb_id']);
-      final int? mal = _positiveId(row['mal_id']);
-      if (aid == null || mal == null) continue;
-      (catalog[aid] ??= <int>{}).add(mal);
-    }
-    return catalog;
-  }
-
-  static int? _positiveId(Object? value) {
-    final int? id = value is int
-        ? value
-        : value is String
-            ? int.tryParse(value)
-            : null;
-    return id != null && id > 0 ? id : null;
+    return _AnimeIdentityCatalog.fromRows(decoded);
   }
 
   void close() {
     if (_ownsHttp) _http.close();
   }
+}
+
+class _AnimeIdentityCatalog {
+  const _AnimeIdentityCatalog({
+    required this.byAnidb,
+    required this.byMal,
+    required this.byTmdbTv,
+  });
+
+  final Map<int, AnimeIdentityEntry> byAnidb;
+  final Map<int, List<AnimeIdentityEntry>> byMal;
+  final Map<int, List<AnimeIdentityEntry>> byTmdbTv;
+
+  /// 同一 anidb_id 出现多行时合并：`mal_id` 取并集，其余字段首个合法值生效；
+  /// 非法值（非正数、小数、乱字符串）静默跳过。
+  static _AnimeIdentityCatalog fromRows(List<Object?> rows) {
+    final Map<int, _EntryBuilder> builders = <int, _EntryBuilder>{};
+    for (final Object? row in rows) {
+      if (row is! Map) continue;
+      final int? aid = _positiveId(row['anidb_id']);
+      if (aid == null) continue;
+      final _EntryBuilder builder = builders[aid] ??= _EntryBuilder(aid);
+      final int? mal = _positiveId(row['mal_id']);
+      if (mal != null) builder.malIds.add(mal);
+      builder.anilistId ??= _positiveId(row['anilist_id']);
+      builder.tvdbId ??= _positiveId(row['thetvdb_id']);
+      builder.tmdbId ??= _positiveId(row['themoviedb_id']);
+      final Object? season = row['season'];
+      final Object? offset = row['episode_offset'];
+      builder.tmdbSeason ??= _nonNegativeInt(_field(season, 'tmdb'));
+      builder.tvdbSeason ??= _nonNegativeInt(_field(season, 'tvdb'));
+      builder.tmdbEpisodeOffset ??= _nonNegativeInt(_field(offset, 'tmdb'));
+      builder.tvdbEpisodeOffset ??= _nonNegativeInt(_field(offset, 'tvdb'));
+      final Object? type = row['type'];
+      if (type is String && type.trim().isNotEmpty) {
+        builder.type ??= type.trim();
+      }
+    }
+    final Map<int, AnimeIdentityEntry> byAnidb = <int, AnimeIdentityEntry>{};
+    final Map<int, List<AnimeIdentityEntry>> byMal =
+        <int, List<AnimeIdentityEntry>>{};
+    final Map<int, List<AnimeIdentityEntry>> byTmdbTv =
+        <int, List<AnimeIdentityEntry>>{};
+    for (final _EntryBuilder builder in builders.values) {
+      final AnimeIdentityEntry entry = builder.build();
+      byAnidb[entry.anidbId] = entry;
+      for (final int mal in entry.malIds) {
+        (byMal[mal] ??= <AnimeIdentityEntry>[]).add(entry);
+      }
+      final int? tmdb = entry.tmdbId;
+      if (tmdb != null && !entry.isMovie) {
+        (byTmdbTv[tmdb] ??= <AnimeIdentityEntry>[]).add(entry);
+      }
+    }
+    for (final List<AnimeIdentityEntry> entries in byMal.values) {
+      entries.sort(_byAnidbId);
+    }
+    for (final List<AnimeIdentityEntry> entries in byTmdbTv.values) {
+      entries.sort(_byTmdbOrder);
+    }
+    return _AnimeIdentityCatalog(
+      byAnidb: byAnidb,
+      byMal: byMal,
+      byTmdbTv: byTmdbTv,
+    );
+  }
+
+  static int _byAnidbId(AnimeIdentityEntry a, AnimeIdentityEntry b) =>
+      a.anidbId.compareTo(b.anidbId);
+
+  static int _byTmdbOrder(AnimeIdentityEntry a, AnimeIdentityEntry b) {
+    final int offset =
+        (a.tmdbEpisodeOffset ?? 0).compareTo(b.tmdbEpisodeOffset ?? 0);
+    if (offset != 0) return offset;
+    final int season = (a.tmdbSeason ?? 0).compareTo(b.tmdbSeason ?? 0);
+    if (season != 0) return season;
+    return a.anidbId.compareTo(b.anidbId);
+  }
+
+  static Object? _field(Object? container, String key) =>
+      container is Map ? container[key] : null;
+}
+
+class _EntryBuilder {
+  _EntryBuilder(this.anidbId);
+
+  final int anidbId;
+  final Set<int> malIds = <int>{};
+  int? anilistId;
+  int? tvdbId;
+  int? tmdbId;
+  int? tmdbSeason;
+  int? tmdbEpisodeOffset;
+  int? tvdbSeason;
+  int? tvdbEpisodeOffset;
+  String? type;
+
+  AnimeIdentityEntry build() => AnimeIdentityEntry(
+        anidbId: anidbId,
+        malIds: malIds,
+        anilistId: anilistId,
+        tvdbId: tvdbId,
+        tmdbId: tmdbId,
+        tmdbSeason: tmdbSeason,
+        tmdbEpisodeOffset: tmdbEpisodeOffset,
+        tvdbSeason: tvdbSeason,
+        tvdbEpisodeOffset: tvdbEpisodeOffset,
+        type: type,
+      );
+}
+
+int? _positiveId(Object? value) {
+  final int? id = _intOf(value);
+  return id != null && id > 0 ? id : null;
+}
+
+int? _nonNegativeInt(Object? value) {
+  final int? number = _intOf(value);
+  return number != null && number >= 0 ? number : null;
+}
+
+int? _intOf(Object? value) {
+  if (value is int) return value;
+  if (value is String) return int.tryParse(value.trim());
+  return null;
 }
