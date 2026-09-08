@@ -4441,5 +4441,7 @@
   "stat_sessions_show_all": "全部会话",
   "stat_sessions_empty": "还没有会话记录",
   "stat_session_delete": "删除会话",
-  "stat_session_delete_message": "删除这次会话的时长、字数和页数？收藏的词句不受影响。"
+  "stat_session_delete_message": "删除这次会话的时长、字数和页数？收藏的词句不受影响。",
+  "stat_analysis": "分析",
+  "stat_sessions_count": "$n 次会话"
 }

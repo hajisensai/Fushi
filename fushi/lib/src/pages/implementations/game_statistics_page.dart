@@ -294,61 +294,19 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
     if (deleted && mounted) await _load();
   }
 
+  /// 「按游戏」一行：三域共用的 [buildStatMediaRow]（本行就是它的原型）。
   Widget _buildGameRow(GalgameEntry game) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ColorScheme colors = Theme.of(context).colorScheme;
     final String lastPlayed = game.lastPlayedMs <= 0
         ? '-'
         : statDateKey(DateTime.fromMillisecondsSinceEpoch(game.lastPlayedMs));
-    return Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: tokens.spacing.card,
-        vertical: tokens.spacing.gap / 2,
-      ),
-      child: FushiCard(
-        onTap: () => _openGame(game),
-        child: Row(
-          children: <Widget>[
-            Icon(Icons.sports_esports_outlined, color: colors.primary),
-            SizedBox(width: tokens.spacing.gap),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    game.displayName,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodyLarge,
-                  ),
-                  SizedBox(height: tokens.spacing.gap / 2),
-                  Text(
-                    '${t.game_stat_sessions}: ${game.sessionCount} · '
-                    '${t.game_stat_last_played}: $lastPlayed',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: tokens.type.metadata.copyWith(
-                      color: colors.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            SizedBox(width: tokens.spacing.gap),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 120),
-              child: Text(
-                formatStatTime(game.totalPlaySeconds * 1000),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-            ),
-            SizedBox(width: tokens.spacing.gap / 2),
-            Icon(Icons.chevron_right, color: colors.onSurfaceVariant),
-          ],
-        ),
-      ),
+    return buildStatMediaRow(
+      context,
+      icon: Icons.sports_esports_outlined,
+      title: game.displayName,
+      meta: '${t.game_stat_sessions}: ${game.sessionCount} · '
+          '${t.game_stat_last_played}: $lastPlayed',
+      trailing: formatStatTime(game.totalPlaySeconds * 1000),
+      onTap: () => unawaited(_openGame(game)),
     );
   }
 

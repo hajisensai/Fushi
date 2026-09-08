@@ -2,9 +2,162 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/pages/implementations/activity_feed.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_hourly_breakdown.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/stats/stat_facts.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
+
+/// 三个域统计页「按媒体」列表共用的一行（用户 2026-09-08「统计全改成游戏那种」：
+/// 原游戏页 `_buildGameRow` 的形态提成共享件）：左域图标 · 标题（+ 合集标签）·
+/// 一到两行 meta · 右侧主值（时长）· 有 [onTap] 时带 chevron。
+/// [onDelete] 挂在移动端长按 + 桌面端右键（经 [ContextMenuTrigger] 走绑定表，BUG-2111）。
+Widget buildStatMediaRow(
+  BuildContext context, {
+  required IconData icon,
+  required String title,
+  required String meta,
+  required String trailing,
+  String? collectionName,
+  String? meta2,
+  VoidCallback? onTap,
+  VoidCallback? onDelete,
+}) {
+  final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+  final ColorScheme colors = Theme.of(context).colorScheme;
+  final TextStyle metaStyle = tokens.type.metadata.copyWith(
+    color: colors.onSurfaceVariant,
+  );
+  final Widget card = FushiCard(
+    onTap: onTap,
+    onLongPress: onDelete,
+    child: Row(
+      children: <Widget>[
+        Icon(icon, color: colors.primary),
+        SizedBox(width: tokens.spacing.gap),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodyLarge,
+              ),
+              if (collectionName != null) ...<Widget>[
+                SizedBox(height: tokens.spacing.gap / 4),
+                buildStatCollectionLabel(context, collectionName),
+              ],
+              SizedBox(height: tokens.spacing.gap / 2),
+              Text(
+                meta,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: metaStyle,
+              ),
+              if (meta2 != null) ...<Widget>[
+                SizedBox(height: tokens.spacing.gap / 4),
+                Text(
+                  meta2,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: metaStyle,
+                ),
+              ],
+            ],
+          ),
+        ),
+        SizedBox(width: tokens.spacing.gap),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 120),
+          child: Text(
+            trailing,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+        ),
+        if (onTap != null) ...<Widget>[
+          SizedBox(width: tokens.spacing.gap / 2),
+          Icon(Icons.chevron_right, color: colors.onSurfaceVariant),
+        ],
+      ],
+    ),
+  );
+  return Padding(
+    padding: EdgeInsets.symmetric(
+      horizontal: tokens.spacing.card,
+      vertical: tokens.spacing.gap / 2,
+    ),
+    child: onDelete == null
+        ? card
+        : ContextMenuTrigger(
+            onInvoke: contextMenuInvoker(onDelete),
+            child: card,
+          ),
+  );
+}
+
+/// 统计页「分析」折叠区：三个域 tab 收敛到「时段卡 → 每日图 → 最近会话 → 按媒体」
+/// 的游戏页骨架后，阅读页的 KPI 条 / 趋势 / 今日环 / 速度摘要 / 来源分布 / 小时×格式
+/// 与视频页的小时分布都下沉到这里，默认收起。纯 UI 状态，不持久化。
+class StatAnalysisFold extends StatefulWidget {
+  const StatAnalysisFold({required this.children, super.key});
+
+  /// 展开后按序堆叠的区块（各区块自带横向留白）。
+  final List<Widget> children;
+
+  @override
+  State<StatAnalysisFold> createState() => _StatAnalysisFoldState();
+}
+
+class _StatAnalysisFoldState extends State<StatAnalysisFold> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Padding(
+          padding: EdgeInsets.fromLTRB(
+            tokens.spacing.card,
+            tokens.spacing.card + tokens.spacing.gap,
+            tokens.spacing.card,
+            0,
+          ),
+          child: Material(
+            type: MaterialType.transparency,
+            child: InkWell(
+              borderRadius: FushiBorderRadius.card,
+              onTap: () => setState(() => _expanded = !_expanded),
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
+                child: Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Text(
+                        t.stat_analysis,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ),
+                    Icon(
+                      _expanded ? Icons.expand_less : Icons.expand_more,
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        if (_expanded) ...widget.children,
+      ],
+    );
+  }
+}
 
 /// 阅读、视频与游戏统计页共用的聚合 / 格式化 / 页面状态 / 卡片与图表辅助。
 

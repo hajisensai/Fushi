@@ -27,6 +27,16 @@
 | i18n | `stat_sessions_recent` / `stat_sessions_show_all` / `stat_sessions_empty` / `stat_session_delete` / `stat_session_delete_message`（`i18n_sync --add`，15 语言待补译） |
 | 测试 | `test/stats/study_sessions_test.dart`（归并 / gap 边界 / 跨媒体不并 / 零段不进不当桥 / 游戏吸收 / 孤儿字数段不丢 / title 取最新快照）、`test/database/study_segments_test.dart`（按 uid 写零不立碑 / 游戏骨架硬删 + 段写零 / 写零后不再出现在 sessions）、`test/pages/stat_session_list_test.dart`（行文案 / 空态 / limit + 全部会话 sheet / 确认→删除→行移除、取消不动） |
 
-## 4. C：页面收敛到游戏页骨架（未做）
+## 4. C：页面收敛到游戏页骨架（用户「全部做完」，同 PR 落地）
 
-阅读页 9 个区块是「clunky」的本体。建议三个域 tab 统一为「时段卡 → 每日图 → 最近会话 → 按媒体列表」，阅读页保留目标卡与速度、把趋势 / 来源分布 / 小时×格式下沉到可折叠「分析」区。哪些下沉由用户拍板，另开 PR。
+阅读页 9 个区块是「clunky」的本体。三个域 tab 统一为游戏页骨架：
+
+| 页 | 顺序 |
+|---|---|
+| 阅读 | 时段卡 → 每日时长图（`_dailyData`，近 30 天）→ 最近会话 → 目标卡 → 「分析」折叠 → 按书 |
+| 视频 | 时段卡 → 每日图 → 最近会话 → 「分析」折叠（小时分布）→ 按视频 |
+| 游戏 | 时段卡 → 每日图 → 最近会话 → 按游戏（原样） |
+
+- 「分析」折叠（`StatAnalysisFold`，`stat_shared.dart`，默认收起、不持久化）装下阅读页下沉的 KPI 条 / 趋势 / 今日环 + 速度摘要 / 来源分布 / 小时×格式——**一个区块都没删**，守卫 `stat_pages_skeleton_guard_static_test` 钉五个区块必须在折叠里。
+- 按媒体一行统一为 `buildStatMediaRow`（原游戏页 `_buildGameRow` 提成共享件）：域图标 · 标题（+ 合集标签）· meta（书：字数 · N 次会话 · 速度；视频：N 次会话；游戏：次数 · 最后游玩）· 第二行查词 / 制卡 / 收藏 · 右侧时长 · 有点按则 chevron。书 / 视频点按进该媒体会话 sheet，长按 / 右键删该媒体统计。进度条排行删除（排序 chips 保留）。
+- i18n 新增 `stat_analysis` / `stat_sessions_count`；本 PR 7 个新 key 的 15 种语言译文已补齐（`i18n_sync --add` 默认只填 en / zh）。

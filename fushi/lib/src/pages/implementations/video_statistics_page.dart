@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
@@ -258,12 +257,10 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
   Widget _buildContent() {
     final tokens = FushiDesignTokens.of(context);
 
+    // 骨架与阅读 / 游戏 tab 同形：时段卡 → 每日图 → 最近会话 → 「分析」折叠 → 按视频。
     return CustomScrollView(
       slivers: [
         SliverToBoxAdapter(child: _buildSummaryCards()),
-        SliverToBoxAdapter(
-          child: buildStatHourlyChartSection(context, _hourlyMs),
-        ),
         SliverToBoxAdapter(
           child: buildStatDailyDurationChartSection(context, _agg.daily),
         ),
@@ -273,6 +270,13 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
             sessions: _sessions,
             titleOf: (StudySession s) => s.title,
             onDelete: _deleteSession,
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: StatAnalysisFold(
+            children: <Widget>[
+              buildStatHourlyChartSection(context, _hourlyMs),
+            ],
           ),
         ),
         SliverToBoxAdapter(
@@ -491,87 +495,27 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
     );
   }
 
+  /// 「按视频」一行（游戏页同款 [buildStatMediaRow]）：会话数 / 查词 · 制卡 · 收藏，
+  /// 右侧观看时长；点按进该视频的会话 sheet（无身份遗留组没有会话），长按 / 右键删
+  /// 该视频统计。
   Widget _buildVideoTile(VideoStatBookData video) {
     // v76：查词/制卡/收藏数由 computeVideoStats 的同一次身份分组挂在 tile 上，
     // 这里只读——不做任何第二次归并（两套判据 = 计数在同名 tile 间游走）。
-    final int favorites = video.favorites;
-    final String? collectionName = _collectionNameForVideo(video);
-    // 按观看时长排行（byVideo 已按 ms 降序），进度条与排行同维度。
-    final maxMs = _agg.byVideo.isEmpty
-        ? 1
-        : _agg.byVideo.first.ms.clamp(1, 1 << 50);
-    final fraction = video.ms / maxMs;
-    final colorScheme = Theme.of(context).colorScheme;
-    final tokens = FushiDesignTokens.of(context);
-
-    return ContextMenuTrigger(
-      // 右键菜单改由绑定表决定唤出键（默认仍是右键）；右键被别的动作占用时自动让位。
-      onInvoke: (Offset _) => _confirmAndDeleteVideo(video),
-      child: Material(
-        type: MaterialType.transparency,
-        child: InkWell(
-          // 点按 → 这部视频的会话列表（无身份遗留组没有会话）。
-          onTap: video.bookUid == null
-              ? null
-              : () => unawaited(_showVideoSessions(video)),
-          // 移动端长按、桌面端右键都弹删除确认（与阅读统计页同款交互）。
-          onLongPress: () => _confirmAndDeleteVideo(video),
-          child: Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: tokens.spacing.card,
-              vertical: tokens.spacing.gap / 2,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  video.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-                if (collectionName != null) ...[
-                  SizedBox(height: tokens.spacing.gap / 4),
-                  buildStatCollectionLabel(context, collectionName),
-                ],
-                SizedBox(height: tokens.spacing.gap / 2),
-                Row(
-                  children: [
-                    Expanded(
-                      child: ClipRRect(
-                        borderRadius: tokens.radii.chipRadius,
-                        child: LinearProgressIndicator(
-                          value: fraction,
-                          minHeight: 8,
-                          backgroundColor: colorScheme.surfaceContainerHighest,
-                          color: colorScheme.primary,
-                        ),
-                      ),
-                    ),
-                    SizedBox(
-                      width: tokens.spacing.gap + tokens.spacing.gap / 2,
-                    ),
-                    Text(
-                      formatStatTime(video.ms),
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-                SizedBox(height: tokens.spacing.gap / 2),
-                Text(
-                  '${t.stat_lookup}: ${video.lookups} · ${t.stat_mined}: ${video.mines} · ${t.stat_favorited}: $favorites',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                SizedBox(height: tokens.spacing.gap / 2),
-              ],
-            ),
-          ),
-        ),
-      ),
+    final String? uid = video.bookUid;
+    final int sessionCount = uid == null
+        ? 0
+        : _sessions.where((StudySession s) => s.mediaKey == uid).length;
+    return buildStatMediaRow(
+      context,
+      icon: Icons.movie,
+      title: video.title,
+      collectionName: _collectionNameForVideo(video),
+      meta: t.stat_sessions_count(n: sessionCount),
+      meta2:
+          '${t.stat_lookup}: ${video.lookups} · ${t.stat_mined}: ${video.mines} · ${t.stat_favorited}: ${video.favorites}',
+      trailing: formatStatTime(video.ms),
+      onTap: uid == null ? null : () => unawaited(_showVideoSessions(video)),
+      onDelete: () => unawaited(_confirmAndDeleteVideo(video)),
     );
   }
 }

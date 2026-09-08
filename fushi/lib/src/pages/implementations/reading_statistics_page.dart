@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
@@ -442,19 +441,6 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     }
   }
 
-  /// 当前排序维度下该书的度量值（字数 / 时长ms / 速度cph）。
-  /// 进度条填充用它，使填充维度始终与 [_bookSort] 一致（W1）。
-  double _sortMetric(_BookData b) {
-    switch (_bookSort) {
-      case _BookSort.chars:
-        return b.chars.toDouble();
-      case _BookSort.time:
-        return b.ms.toDouble();
-      case _BookSort.speed:
-        return b.cph;
-    }
-  }
-
   static String _formatChars(int chars) {
     if (chars >= 10000) {
       return t.stat_format_chars_wan(n: (chars / 10000).toStringAsFixed(1));
@@ -530,10 +516,13 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     );
   }
 
+  /// 页面骨架与视频 / 游戏 tab 同形（用户 2026-09-08「统计全改成游戏那种」）：
+  /// 时段卡 → 每日时长图 → 最近会话 → 目标卡 → 「分析」折叠 → 按书列表。
+  /// KPI 条 / 趋势 / 今日环 + 速度摘要 / 来源分布 / 小时×格式全部下沉进折叠区，
+  /// 一个都没删。
   Widget _buildContent() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double card = tokens.spacing.card;
-    final EdgeInsets hPad = EdgeInsets.symmetric(horizontal: card);
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final bool wide = constraints.maxWidth >= _kWideBreakpoint;
@@ -542,33 +531,13 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
             constraints: const BoxConstraints(maxWidth: _kMaxContentWidth),
             child: CustomScrollView(
               slivers: <Widget>[
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.fromLTRB(card, card, card, card),
-                    child: _buildKpiStrip(),
-                  ),
-                ),
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.only(
-                      left: card,
-                      right: card,
-                      bottom: card,
-                    ),
-                    child: _buildTrendPanel(),
-                  ),
-                ),
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.only(
-                      left: card,
-                      right: card,
-                      bottom: card,
-                    ),
-                    child: _buildMidSection(wide),
-                  ),
-                ),
                 SliverToBoxAdapter(child: _buildSummaryCards()),
+                SliverToBoxAdapter(
+                  child: buildStatDailyDurationChartSection(
+                    context,
+                    _dailyData,
+                  ),
+                ),
                 SliverToBoxAdapter(
                   child: buildStatSessionSection(
                     context,
@@ -577,11 +546,8 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
                     onDelete: _deleteSession,
                   ),
                 ),
-                SliverToBoxAdapter(child: _buildSourceBreakdown()),
                 SliverToBoxAdapter(child: _buildGoalPanel()),
-                SliverToBoxAdapter(
-                  child: buildStatHourlyFormatChartSection(context, _hourly),
-                ),
+                SliverToBoxAdapter(child: _buildAnalysisFold(wide)),
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: EdgeInsets.fromLTRB(
@@ -595,10 +561,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
                 ),
                 SliverList(
                   delegate: SliverChildBuilderDelegate(
-                    (context, index) => Padding(
-                      padding: hPad,
-                      child: _buildBookTile(_bookData[index]),
-                    ),
+                    (context, index) => _buildBookTile(_bookData[index]),
                     childCount: _bookData.length,
                   ),
                 ),
@@ -608,6 +571,29 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
           ),
         );
       },
+    );
+  }
+
+  /// 「分析」折叠区：KPI 条 → 趋势 → 今日环 + 速度摘要 → 来源分布 → 小时×格式。
+  Widget _buildAnalysisFold(bool wide) {
+    final double card = FushiDesignTokens.of(context).spacing.card;
+    return StatAnalysisFold(
+      children: <Widget>[
+        Padding(
+          padding: EdgeInsets.fromLTRB(card, card, card, card),
+          child: _buildKpiStrip(),
+        ),
+        Padding(
+          padding: EdgeInsets.only(left: card, right: card, bottom: card),
+          child: _buildTrendPanel(),
+        ),
+        Padding(
+          padding: EdgeInsets.only(left: card, right: card, bottom: card),
+          child: _buildMidSection(wide),
+        ),
+        _buildSourceBreakdown(),
+        buildStatHourlyFormatChartSection(context, _hourly),
+      ],
     );
   }
 
@@ -1551,81 +1537,30 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     if (deleted && mounted) await _loadFromDatabase();
   }
 
+  /// 「按书」一行（游戏页同款 [buildStatMediaRow]）：字数 · 会话数 · 速度 / 查词 ·
+  /// 制卡 · 收藏，右侧时长；点按进该书的会话 sheet，长按 / 右键删该书统计。
   Widget _buildBookTile(_BookData book) {
     // TODO-1204：查词/制卡计数按 title 聚合（无记录则 0）。
     final ({int lookups, int mines}) counter =
         _bookCounters[book.title] ?? (lookups: 0, mines: 0);
     final int favorites = _bookFavorites[book.title] ?? 0;
-    final String? collectionName = _collectionNameForBook(book);
-    // 进度条填充维度 = 当前排序维度（W1）：first 是当前排序下第一名（最大值）。
-    final double topMetric = _bookData.isEmpty
+    final String? bookKey = book.bookKey ?? _bookKeyByTitle[book.title];
+    final int sessionCount = bookKey == null
         ? 0
-        : _sortMetric(_bookData.first);
-    final double fraction = bookProgressFraction(_sortMetric(book), topMetric);
-    final colorScheme = Theme.of(context).colorScheme;
-    final tokens = FushiDesignTokens.of(context);
-
-    return ContextMenuTrigger(
-      // 移动端长按、桌面端右键都弹删除确认（书架同款交互）；右键那一半现在走绑定表。
-      onInvoke: (Offset _) => _confirmAndDeleteBook(book),
-      child: Material(
-        type: MaterialType.transparency,
-        child: InkWell(
-          onTap: () => unawaited(_showBookSessions(book)),
-          onLongPress: () => _confirmAndDeleteBook(book),
-          child: Padding(
-            padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _bookDisplayTitle(book),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-                if (collectionName != null) ...[
-                  SizedBox(height: tokens.spacing.gap / 4),
-                  buildStatCollectionLabel(context, collectionName),
-                ],
-                SizedBox(height: tokens.spacing.gap / 2),
-                Row(
-                  children: [
-                    Expanded(
-                      child: ClipRRect(
-                        borderRadius: tokens.radii.chipRadius,
-                        child: LinearProgressIndicator(
-                          value: fraction,
-                          minHeight: 8,
-                          backgroundColor: colorScheme.surfaceContainerHighest,
-                          color: colorScheme.primary,
-                        ),
-                      ),
-                    ),
-                    SizedBox(
-                      width: tokens.spacing.gap + tokens.spacing.gap / 2,
-                    ),
-                    Text(
-                      '${_formatChars(book.chars)} · ${formatStatTime(book.ms)}',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-                SizedBox(height: tokens.spacing.gap / 2),
-                Text(
-                  '${t.stat_lookup}: ${counter.lookups} · ${t.stat_mined}: ${counter.mines} · ${t.stat_favorited}: $favorites',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                SizedBox(height: tokens.spacing.gap / 2),
-              ],
-            ),
-          ),
-        ),
-      ),
+        : _sessions.where((StudySession s) => s.mediaKey == bookKey).length;
+    final String speed = book.cph > 0 ? ' · ${_formatCph(book.cph)}' : '';
+    return buildStatMediaRow(
+      context,
+      icon: Icons.menu_book,
+      title: _bookDisplayTitle(book),
+      collectionName: _collectionNameForBook(book),
+      meta: '${_formatChars(book.chars)} · '
+          '${t.stat_sessions_count(n: sessionCount)}$speed',
+      meta2:
+          '${t.stat_lookup}: ${counter.lookups} · ${t.stat_mined}: ${counter.mines} · ${t.stat_favorited}: $favorites',
+      trailing: formatStatTime(book.ms),
+      onTap: () => unawaited(_showBookSessions(book)),
+      onDelete: () => unawaited(_confirmAndDeleteBook(book)),
     );
   }
 }

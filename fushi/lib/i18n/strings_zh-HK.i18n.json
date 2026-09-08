@@ -4437,9 +4437,11 @@
   "video_anilist_error_api_disabled": "AniList 官方因伺服器穩定性問題暫時停用了公開 API。這不是你的網絡或代理的問題——請求已經打到 AniList 並被它當面拒絕了。請稍後再試。",
   "video_anilist_error_rate_limited": "AniList 正在對本應用限流。稍等一會兒再重試。",
   "video_anilist_error_unreachable": "連不上 AniList（graphql.anilist.co）。請檢查網絡連接，或在下載設定中配置代理。",
-  "stat_sessions_recent": "Recent sessions",
-  "stat_sessions_show_all": "All sessions",
-  "stat_sessions_empty": "No sessions yet",
-  "stat_session_delete": "Delete session",
-  "stat_session_delete_message": "Delete this session's time, character and page counts? Your saved words and sentences are not affected."
+  "stat_sessions_recent": "最近會話",
+  "stat_sessions_show_all": "全部會話",
+  "stat_sessions_empty": "還沒有會話記錄",
+  "stat_session_delete": "刪除會話",
+  "stat_session_delete_message": "刪除這次會話的時長、字數和頁數？收藏的詞句不受影響。",
+  "stat_analysis": "分析",
+  "stat_sessions_count": "$n 次會話"
 }

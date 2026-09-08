@@ -4437,9 +4437,11 @@
   "video_anilist_error_api_disabled": "AniList has temporarily disabled its public API because of server-side stability problems. This is not a problem with your network or proxy - the request reached AniList and was refused. Please try again later.",
   "video_anilist_error_rate_limited": "AniList is rate-limiting this app right now. Wait a moment and retry.",
   "video_anilist_error_unreachable": "Cannot reach AniList (graphql.anilist.co). Check your network connection, or configure a proxy in download settings.",
-  "stat_sessions_recent": "Recent sessions",
-  "stat_sessions_show_all": "All sessions",
-  "stat_sessions_empty": "No sessions yet",
-  "stat_session_delete": "Delete session",
-  "stat_session_delete_message": "Delete this session's time, character and page counts? Your saved words and sentences are not affected."
+  "stat_sessions_recent": "Recente sessies",
+  "stat_sessions_show_all": "Alle sessies",
+  "stat_sessions_empty": "Nog geen sessies",
+  "stat_session_delete": "Sessie verwijderen",
+  "stat_session_delete_message": "Tijd, tekens en pagina’s van deze sessie verwijderen? Opgeslagen woorden en zinnen blijven behouden.",
+  "stat_analysis": "Analyse",
+  "stat_sessions_count": "$n sessies"
 }

@@ -4441,5 +4441,7 @@
   "stat_sessions_show_all": "All sessions",
   "stat_sessions_empty": "No sessions yet",
   "stat_session_delete": "Delete session",
-  "stat_session_delete_message": "Delete this session's time, character and page counts? Your saved words and sentences are not affected."
+  "stat_session_delete_message": "Delete this session's time, character and page counts? Your saved words and sentences are not affected.",
+  "stat_analysis": "Analysis",
+  "stat_sessions_count": "$n sessions"
 }
