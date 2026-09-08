@@ -56,8 +56,12 @@ $workflowPaths = @(
 foreach ($relativePath in $workflowPaths) {
   $content = Read-RepoFile $relativePath
 
-  Require-Text $relativePath $content 'concurrency:' 'release publishers must share a cross-workflow lock'
-  Require-Text $relativePath $content 'group: fushi-release-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}' 'same tag/commit publishes serialize instead of racing separate releases'
+  Require-Text $relativePath $content 'concurrency:' 'release publishers must serialize same-tag runs within each workflow'
+  # 2026-09-08：组名带 workflow 名。GitHub 的 concurrency 组是仓库级的，两条 workflow 同名组会串行，
+  # 且同组第二个 pending 会取消第一个 pending；正式版 release:published 同时点燃两条时桌面/Apple 要等
+  # Android 整条跑完。带上 workflow 名后两条并行、同一条内仍按 tag/sha 串行。
+  # Dart 侧同一不变式：fushi/test/build/release_workflow_concurrency_guard_test.dart。
+  Require-Text $relativePath $content 'group: fushi-release-${{ github.workflow }}-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}' 'same tag/commit publishes serialize within a workflow while Android and desktop publishers run in parallel'
   Require-Text $relativePath $content 'cancel-in-progress: false' 'Android and desktop publishers both need to complete'
   Require-Text $relativePath $content 'fetch-depth: 0' 'release sequence uses full git history'
   Require-Text $relativePath $content 'RELEASE_SEQUENCE=$(bash tool/release_sequence.sh)' 'release sequence must be shared by Android and desktop workflows'
