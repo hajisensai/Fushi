@@ -2,23 +2,23 @@ name: fushi
 resolution: workspace
 description: A focused Japanese EPUB reader with popup dictionary and Anki integration.
 publish_to: 'none'
-version: 2.3.0+1248
+version: 2.3.0+1249
 environment:
   sdk: ">=3.8.0 <4.0.0"
   flutter: "^3.41.6"
 
 dependencies:
-  # 语音识别生成字幕：算法层已抽成独立仓库（hajisensai/asr，GPL-3.0），本仓只留
+  # 语音识别生成字幕：算法层已抽成独立仓库（hajisensai/fushi-subtitles，GPL-3.0），本仓只留
   # Flutter 插件后端（`src/onnx/onnx_inference_ort.dart`）与 UI。漫画 OCR 也经
-  # `src/ocr/ocr_inference.dart` 复用同一套 ONNX 抽象，所以 asr_core 不只服务 ASR。
+  # `src/ocr/ocr_inference.dart` 复用同一套 ONNX 抽象，所以 fushi_asr_core 不只服务 ASR。
   #
   # 钉 sha 而不是分支：转录产物的字节级一致要能复现，跟着分支飘会让「同一版
   # Hibiki 转出来的字幕不一样」这种事无从追查。
-  asr_core:
+  fushi_asr_core:
     git:
-      url: https://github.com/hajisensai/fushi-asr.git
+      url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_core
-      ref: 7eb70dc01bebc9f2c180af5f5eee012485fe7147
+      ref: ac67a2e92800a334f46124f4b4461ce04f8283a2
   archive: ^3.6.1
   async_zip: ^0.1.0
   basic_utils: ^5.7.0

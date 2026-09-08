@@ -15,7 +15,7 @@ library;
 
 import 'dart:io';
 
-import 'package:asr_core/asr_core.dart';
+import 'package:fushi_asr_core/asr_core.dart';
 /// 模型文件归属：检测 / 识别（[MangaOcrModelStatus] 的两个就绪位分别聚合）。
 enum MangaOcrModelRole { detector, recognizer }
 

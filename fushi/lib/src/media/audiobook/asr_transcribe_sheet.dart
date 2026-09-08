@@ -10,12 +10,14 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
 
-import 'package:asr_core/asr_core.dart';
+import 'package:fushi_asr_core/asr_core.dart';
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
@@ -737,6 +739,14 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
                 value: AsrAccelerationPreference.cpuOnly,
                 label: Text(t.audiobook_transcribe_accel_cpu),
               ),
+              // 上游只在 macOS 接受 coreml（别的平台 plan() 直接抛
+              // UnsupportedError），auto 在 macOS 仍走 INT8 CPU，CoreML 是显式
+              // 选项——按 defaultTargetPlatform 露出，widget 测试可覆盖。
+              if (defaultTargetPlatform == TargetPlatform.macOS)
+                ButtonSegment<AsrAccelerationPreference>(
+                  value: AsrAccelerationPreference.coreml,
+                  label: Text(t.audiobook_transcribe_accel_coreml),
+                ),
             ],
             selected: <AsrAccelerationPreference>{_preference},
             onSelectionChanged: !_canChangePreference
