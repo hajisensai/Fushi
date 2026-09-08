@@ -3,11 +3,11 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
-import 'package:fushi/src/media/video/metadata/anidb_ed2k.dart';
-import 'package:fushi/src/media/video/metadata/anidb_hash_identity_service.dart';
-import 'package:fushi/src/media/video/metadata/anidb_udp_file_client.dart';
-import 'package:fushi/src/media/video/metadata/anime_identity_mapping.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_transport.dart';
+import 'package:fushi_engine/media/video/metadata/anidb_ed2k.dart';
+import 'package:fushi_engine/media/video/metadata/anidb_hash_identity_service.dart';
+import 'package:fushi_engine/media/video/metadata/anidb_udp_file_client.dart';
+import 'package:fushi_engine/media/video/metadata/anime_identity_mapping.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
 
 const AnidbUdpConfig config = AnidbUdpConfig(
     username: 'testuser',

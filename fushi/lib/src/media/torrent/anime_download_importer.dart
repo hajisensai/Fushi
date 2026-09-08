@@ -6,12 +6,12 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi/src/media/torrent/anime_download_service.dart';
-import 'package:fushi/src/media/video/m3u8_playlist.dart';
-import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
+import 'package:fushi_engine/media/video/m3u8_playlist.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
-import 'package:fushi/src/media/video/video_book_repository.dart';
-import 'package:fushi/src/media/video/video_filename_parser.dart';
-import 'package:fushi/src/media/video/video_storage.dart';
+import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/video_filename_parser.dart';
+import 'package:fushi_engine/media/video/video_storage.dart';
 import 'package:fushi/src/media/video/video_cover_extractor.dart'
     show downloadVideoCoverToPath, extractVideoCover, videoCoverFileName;
 

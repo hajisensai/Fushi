@@ -30,9 +30,9 @@ import 'package:path/path.dart' as p;
 
 import 'package:asr_core/asr_core.dart';
 import 'package:fushi/src/asr_host/asr_host.dart';
-import 'package:fushi/src/epub/epub_book.dart';
-import 'package:fushi/src/epub/epub_parser.dart';
-import 'package:fushi/src/media/audiobook/audiobook_alignment_service.dart'
+import 'package:fushi_engine/epub/epub_book.dart';
+import 'package:fushi_engine/epub/epub_parser.dart';
+import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart'
     show epubSectionsFromBook;
 
 String _param(String name, {String defaultValue = ''}) {

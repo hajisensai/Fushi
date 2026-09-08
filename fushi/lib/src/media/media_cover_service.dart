@@ -2,13 +2,13 @@ import 'dart:io';
 
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/media_source.dart';
-import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
-import 'package:fushi/src/media/video/scraper/scraper_types.dart';
-import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/scraper/scraper_types.dart';
+import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart'
     show setVideoCoverFromPickedFile;
-import 'package:fushi/src/media/video/video_storage.dart';
+import 'package:fushi_engine/media/video/video_storage.dart';
 import 'package:fushi/src/mining/galgame_cover_resolver.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/cover_image.dart';

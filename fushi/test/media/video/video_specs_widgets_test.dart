@@ -8,7 +8,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/cover_ui/video_specs_badges.dart';
 import 'package:fushi/src/media/video/cover_ui/video_specs_panel.dart';
-import 'package:fushi/src/media/video/video_duration_probe.dart';
+import 'package:fushi_engine/media/video/video_duration_probe.dart';
 import 'package:fushi/src/media/video/video_specs_service.dart';
 
 /// 规格 UI：角标条、紧凑摘要行、完整规格面板。

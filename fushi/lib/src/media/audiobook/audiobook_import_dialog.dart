@@ -4,14 +4,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:asr_core/asr_core.dart';
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
-import 'package:fushi/src/media/audiobook/audiobook_alignment_service.dart'
+import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart'
     show
         attachAsrCueTokenTiming,
         loadEpubSectionsInBackground,
         parseCuesForFormat,
         resegmentCuesBySentence;
 import 'package:fushi/src/media/import/audiobook_health_summary.dart';
-import 'package:fushi/src/media/import/epub_backed_srt_book.dart';
+import 'package:fushi_engine/media/import/epub_backed_srt_book.dart';
 import 'package:fushi/src/media/import/import_dialog_frame.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -26,7 +26,7 @@ import 'package:fushi/src/media/import/import_flow_mixin.dart';
 import 'package:fushi/src/media/audiobook/subtitle_rematch.dart';
 import 'package:fushi/src/sync/deletion_disclosure.dart';
 import 'package:fushi/src/sync/deletion_prompt.dart';
-import 'package:fushi/src/sync/deletion_propagation.dart';
+import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/local_file_delete_feedback.dart';
 import 'package:fushi/utils.dart';
 

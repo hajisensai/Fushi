@@ -5,7 +5,7 @@ import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
-import 'package:fushi/src/sync/interconnect_service_config.dart';
+import 'package:fushi_engine/sync/interconnect_service_config.dart';
 
 /// 来源开关的偏好层：默认值即**兼容契约**，所以每一条默认值都要有断言。
 void main() {

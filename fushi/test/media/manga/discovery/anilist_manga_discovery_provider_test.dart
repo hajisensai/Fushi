@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:fushi/src/media/manga/discovery/anilist_manga_discovery_provider.dart';
 import 'package:fushi/src/media/manga/discovery/manga_discovery_models.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_transport.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
 
 /// AniList 漫画发现 provider：combined query 一次请求解析出四条 feed，
 /// 字段映射（评分 /10、HTML 剥离、多标题）与 GraphQL 错误转异常都要真解析。

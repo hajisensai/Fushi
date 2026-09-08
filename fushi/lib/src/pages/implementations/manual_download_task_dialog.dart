@@ -5,13 +5,13 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
-import 'package:fushi/src/media/discovery/discovery_models.dart'
+import 'package:fushi_engine/media/discovery/discovery_models.dart'
     show DiscoveryMediaKind;
-import 'package:fushi/src/media/torrent/magnet_utils.dart';
-import 'package:fushi/src/media/torrent/torrent_metainfo.dart';
-import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
-import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_models.dart'
+import 'package:fushi_engine/media/torrent/magnet_utils.dart';
+import 'package:fushi_engine/media/torrent/torrent_metainfo.dart';
+import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
+import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
     show VideoMetadataMediaKind;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/download_backend_setup_dialog.dart';

@@ -6,7 +6,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/downloads/download_task_browser.dart';
 import 'package:fushi/src/media/downloads/download_task_card.dart';
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
-import 'package:fushi/src/media/torrent/torrent_backend.dart';
+import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/pages/implementations/video_download_jobs_panel.dart';
 import 'package:fushi_core/fushi_core.dart';
 

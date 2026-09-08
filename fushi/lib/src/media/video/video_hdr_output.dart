@@ -5,7 +5,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
-import 'package:fushi/src/media/video/video_dynamic_range.dart';
+import 'package:fushi_engine/media/video/video_dynamic_range.dart';
 import 'package:fushi/src/models/preferences_repository.dart' show VideoFitMode;
 
 /// Windows HDR 直通 / 10-bit 输出（计划 `docs/plans/2026-08-30-video-hdr-passthrough.md`）。

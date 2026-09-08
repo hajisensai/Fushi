@@ -15,7 +15,7 @@ library;
 
 import 'dart:convert';
 import 'dart:io';
-import 'package:fushi/src/utils/net/app_http.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
 
 /// 默认目录站点（偏好 `manga_online_catalog_base_url` 空值时的回退）。
 const String kMokuroMoeDefaultBaseUrl = 'https://mokuro.moe';

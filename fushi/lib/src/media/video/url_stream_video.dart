@@ -6,12 +6,12 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi_audio/fushi_audio.dart' show AudioCue;
 
 import 'package:fushi/src/media/source_library/stream_auth_scope.dart';
-import 'package:fushi/src/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
-import 'package:fushi/src/media/video/youtube_source_resolver.dart'
+import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
     show isYoutubeUrl, youtubeVideoIdOrNull, YoutubeCaptionTrack;
 import 'package:http/http.dart' as http;
-import 'package:fushi/src/utils/net/app_http.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
 
 /// 纯函数：判断 [url] 是否是可直接交给播放器的网络流 URL（TODO-850 阶段①）。
 ///

@@ -12,10 +12,10 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
-import 'package:fushi/src/ocr/manga_ocr_folder_job.dart';
-import 'package:fushi/src/ocr/manga_ocr_pipeline.dart';
-import 'package:fushi/src/ocr/manga_ocr_service.dart';
-import 'package:fushi/src/utils/net/app_http.dart';
+import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
+import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart';
+import 'package:fushi_engine/ocr/manga_ocr_service.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
 
 final Uri kGoogleLensEndpoint =
     Uri.parse('https://lensfrontend-pa.googleapis.com/v1/crupload');

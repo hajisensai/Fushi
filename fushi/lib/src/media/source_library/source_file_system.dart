@@ -25,7 +25,7 @@ import 'package:flutter/foundation.dart';
 import 'package:ftpconnect/ftpconnect.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:fushi/src/media/video/external_video.dart'
+import 'package:fushi_engine/media/video/external_video.dart'
     show sourceEntryBasename;
 import 'package:fushi/src/sync/webdav_ops.dart';
 

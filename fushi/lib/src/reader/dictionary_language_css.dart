@@ -26,7 +26,7 @@ library;
 
 import 'package:flutter/foundation.dart' show TargetPlatform;
 import 'package:fushi/src/models/cjk_font_families.dart';
-import 'package:fushi/src/models/content_font_chain.dart';
+import 'package:fushi_engine/models/content_font_chain.dart';
 
 /// 一本词典在字体分流里需要的全部信息。
 class DictionaryLanguageEntry {

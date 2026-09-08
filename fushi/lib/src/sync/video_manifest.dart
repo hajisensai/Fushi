@@ -1,4 +1,4 @@
-import 'package:fushi/src/sync/sync_manifest_codec.dart';
+import 'package:fushi_engine/sync/sync_manifest_codec.dart';
 import 'package:fushi_core/fushi_core.dart' show fnv1a32Utf16PairHex;
 import 'package:path/path.dart' as p;
 

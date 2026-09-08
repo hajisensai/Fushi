@@ -6,10 +6,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
-import 'package:fushi/src/media/torrent/anime_release_descriptor.dart';
-import 'package:fushi/src/media/torrent/download_timeouts.dart';
-import 'package:fushi/src/media/torrent/nyaa_client.dart';
-import 'package:fushi/src/media/torrent/public_trackers.dart';
+import 'package:fushi_engine/media/torrent/anime_release_descriptor.dart';
+import 'package:fushi_engine/media/torrent/download_timeouts.dart';
+import 'package:fushi_engine/media/torrent/nyaa_client.dart';
+import 'package:fushi_engine/media/torrent/public_trackers.dart';
 
 /// 构造只关心 [title] / [infoHash] 的最小 [NyaaTorrent]，供派生 getter 测试用。
 NyaaTorrent makeTorrent(String title, {String infoHash = ''}) {

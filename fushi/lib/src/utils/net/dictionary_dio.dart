@@ -24,7 +24,7 @@ import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
-import 'package:fushi/src/utils/net/app_proxy.dart';
+import 'package:fushi_engine/utils/net/app_proxy.dart';
 import 'package:fushi/src/utils/net/github_mirrors.dart';
 
 /// 把词典链路的 Dio 工厂接到全应用的代理解析层。幂等，可重复调用。

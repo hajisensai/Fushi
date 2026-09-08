@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:fushi/src/media/video/jimaku_client.dart';
+import 'package:fushi_engine/media/video/jimaku_client.dart';
 import 'package:fushi/src/media/video/jimaku_matching.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_episode_matching.dart';
-import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart';
+import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 
 /// 最小 registry 候选：只有 fileName / language / episode 参与判据。
 class _Candidate extends VideoSubtitleCandidate {

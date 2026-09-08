@@ -4,7 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:fushi/src/sync/sync_backend.dart';
-import 'package:fushi/src/sync/tls/fushi_pinning_http.dart';
+import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
 import 'package:fushi/src/sync/sync_utils.dart';
 
 /// 服务端在错误响应体里给出的拒绝原因（截断后的），读不出来就返回 null。

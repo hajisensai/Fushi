@@ -24,9 +24,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
-import 'package:fushi/src/media/metadata/credential_redaction.dart'
+import 'package:fushi_engine/media/metadata/credential_redaction.dart'
     show kRedactedPlaceholder;
-import 'package:fushi/src/sync/fushi_library_host_service.dart'
+import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteVideoInfo;
 import 'package:fushi/src/sync/jellyfin_video_client.dart';
 

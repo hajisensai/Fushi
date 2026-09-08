@@ -13,7 +13,7 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
-import 'package:fushi/src/utils/net/app_http.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
 
 /// 图片下载异常（网络失败 / 非 2xx / 非图片）。绝不吞异常，交上层给用户可见提示。
 class ImageDownloadException implements Exception {

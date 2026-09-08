@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/metadata/anidb_ed2k.dart';
+import 'package:fushi_engine/media/video/metadata/anidb_ed2k.dart';
 
 void main() {
   test('RFC 1320 MD4 standard vectors below one ED2K chunk', () {

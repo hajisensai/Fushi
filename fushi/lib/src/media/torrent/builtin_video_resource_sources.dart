@@ -1,10 +1,10 @@
 import 'package:http/http.dart' as http;
 
-import 'package:fushi/src/media/torrent/nyaa_client.dart';
+import 'package:fushi_engine/media/torrent/nyaa_client.dart';
 import 'package:fushi/src/media/torrent/nyaa_resource_provider.dart';
-import 'package:fushi/src/media/torrent/public_video_index_client.dart';
-import 'package:fushi/src/media/torrent/public_video_index_provider.dart';
-import 'package:fushi/src/media/torrent/video_resource_provider.dart';
+import 'package:fushi_engine/media/torrent/public_video_index_client.dart';
+import 'package:fushi_engine/media/torrent/public_video_index_provider.dart';
+import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi/utils.dart';
 
 /// 随应用内置、零配置的视频资源索引器。

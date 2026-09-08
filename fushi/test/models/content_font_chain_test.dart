@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart' show TargetPlatform;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/cjk_font_families.dart';
-import 'package:fushi/src/models/content_font_chain.dart';
+import 'package:fushi_engine/models/content_font_chain.dart';
 
 /// 断言 [chain] 里 [first] 出现在 [second] 之前（两者都必须存在）。
 ///

@@ -3,7 +3,7 @@ import 'package:fushi/src/media/audiobook/audiobook_import_dialog.dart'
     show AudiobookImportDialog;
 
 import 'package:fushi_audio/fushi_audio.dart';
-import 'package:fushi/src/media/audiobook/audiobook_alignment_service.dart'
+import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart'
     show loadEpubSectionsInBackground;
 import 'package:fushi/utils.dart';
 

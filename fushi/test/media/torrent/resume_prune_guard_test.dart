@@ -21,7 +21,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/torrent/embedded_torrent_host.dart';
+import 'package:fushi_engine/media/torrent/embedded_torrent_host.dart';
 import 'package:path/path.dart' as p;
 
 String _read(String relPath) => File(relPath).readAsStringSync();

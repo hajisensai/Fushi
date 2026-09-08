@@ -7,8 +7,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
-import 'package:fushi/src/ocr/manga_ocr_folder_job.dart';
-import 'package:fushi/src/ocr/manga_ocr_service.dart';
+import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
+import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 

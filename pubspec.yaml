@@ -24,6 +24,7 @@ workspace:
   - packages/fushi_audio
   - packages/fushi_core
   - packages/fushi_dictionary
+  - packages/fushi_engine
   - packages/fushi_platform
   - packages/fushi_torrent
   - packages/gamepads_android_stub

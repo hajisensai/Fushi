@@ -18,8 +18,8 @@ import 'package:fushi/src/media/manga/manga_json_writeback.dart';
 import 'package:fushi/src/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart'
     show GoogleLensPageCache;
-import 'package:fushi/src/ocr/manga_ocr_folder_job.dart';
-import 'package:fushi/src/ocr/manga_ocr_service.dart';
+import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
+import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
 
 /// 单页识别超时。系统识别器正常是几百毫秒级，30 秒只用来兜住「彻底卡住」。

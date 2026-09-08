@@ -5,9 +5,9 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:asr_core/asr_core.dart';
-import 'package:fushi/src/epub/epub_book.dart';
-import 'package:fushi/src/epub/epub_parser.dart';
-import 'package:fushi/src/media/audiobook/audiobook_alignment_service.dart'
+import 'package:fushi_engine/epub/epub_book.dart';
+import 'package:fushi_engine/epub/epub_parser.dart';
+import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart'
     show epubSectionsFromBook;
 import 'package:fushi_audio/fushi_audio.dart';
 

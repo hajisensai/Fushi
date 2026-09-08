@@ -4,7 +4,7 @@ import 'package:archive/archive_io.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/aggregate_merge_service.dart';
-import 'package:fushi/src/sync/aggregate_snapshot.dart';
+import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi/src/sync/aggregate_sync_service.dart';
 import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/sync_asset_store.dart' show AssetEntry;

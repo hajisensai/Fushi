@@ -20,8 +20,8 @@ library;
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/utils/net/app_http.dart';
-import 'package:fushi/src/utils/net/app_proxy.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
+import 'package:fushi_engine/utils/net/app_proxy.dart';
 
 /// 本仓真实存在的本机 / 局域网出站目标（取自 BUG-1498 普查表的「禁止接代理清单」）。
 const List<String> kLocalOnlyTargets = <String>[

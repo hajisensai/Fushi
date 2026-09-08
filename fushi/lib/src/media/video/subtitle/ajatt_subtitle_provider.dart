@@ -10,11 +10,11 @@
 /// 站点/仓库形态见 `ajatt_catalog.dart` 文件头。
 library;
 
-import 'package:fushi/src/media/external_provider.dart';
+import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi/src/media/media_search_text.dart';
-import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
+import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/subtitle/ajatt_catalog.dart';
-import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart';
+import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 
 /// provider id（registry 分派 / 候选 `providerId`）。
 const String kAjattSubtitleProviderId = 'ajatt';

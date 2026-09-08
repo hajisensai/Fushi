@@ -8,10 +8,10 @@
 /// 产出 torrent payload：UI 分流给 torrent 后端，不进 HTTP 下载队列。
 library;
 
-import 'package:fushi/src/media/discovery/discovery_models.dart';
+import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/discovery/media_discovery_source.dart';
-import 'package:fushi/src/media/external_provider.dart';
-import 'package:fushi/src/media/torrent/nyaa_client.dart';
+import 'package:fushi_engine/media/external_provider.dart';
+import 'package:fushi_engine/media/torrent/nyaa_client.dart';
 
 class NyaaDiscoverySource extends MediaDiscoverySource {
   NyaaDiscoverySource({

@@ -6,9 +6,9 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/utils/misc/download_plan.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
-import 'package:fushi/src/utils/misc/resumable_downloader.dart';
+import 'package:fushi_engine/utils/misc/resumable_downloader.dart';
 import 'package:fushi/src/utils/misc/segmented_downloader.dart';
-import 'package:fushi/src/utils/net/app_http.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:path/path.dart' as p;
 
 /// 官方推荐包（词典 + 日/英发音音频库，Fushi 备份 zip 格式）的**整包**回退直链。

@@ -1,5 +1,5 @@
 import 'package:fushi/src/media/manga/mokuro_payload.dart';
-import 'package:fushi/src/stats/study_char_count.dart';
+import 'package:fushi_engine/stats/study_char_count.dart';
 
 /// 漫画阅读的**字数**记账（统计口径接入）。
 ///

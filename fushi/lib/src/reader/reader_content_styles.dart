@@ -2,7 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:fushi/src/models/cjk_font_families.dart';
-import 'package:fushi/src/models/content_font_chain.dart';
+import 'package:fushi_engine/models/content_font_chain.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 
 class ReaderLayoutDefaults {

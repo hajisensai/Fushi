@@ -14,12 +14,12 @@ import 'package:fushi_core/fushi_core.dart'
         VideoDownloadJobStage;
 
 import 'package:fushi/src/media/discovery/discovery_labels.dart';
-import 'package:fushi/src/media/discovery/discovery_models.dart';
+import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/media_search_text.dart';
-import 'package:fushi/src/media/torrent/torrent_backend.dart';
-import 'package:fushi/src/media/torrent/torrent_task_display.dart';
+import 'package:fushi_engine/media/torrent/torrent_backend.dart';
+import 'package:fushi_engine/media/torrent/torrent_task_display.dart';
 import 'package:fushi/src/media/video/download/video_download_error_presentation.dart';
-import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart'
+import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart'
     show downloadOnlyKindOfOrganizationPolicy;
 import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart';
 import 'package:fushi/utils.dart';

@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/epub/epub_book.dart';
+import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 
 import '../pages/reader_fushi_page_source_corpus.dart';

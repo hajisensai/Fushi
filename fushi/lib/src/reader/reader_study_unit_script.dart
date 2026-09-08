@@ -1,6 +1,6 @@
 /// 阅读器 WebView 侧「学习单位」计数判据的**唯一** JS 源。
 ///
-/// Dart 侧的对应实现是 `package:fushi/src/stats/study_char_count.dart` 的
+/// Dart 侧的对应实现是 `package:fushi_engine/stats/study_char_count.dart` 的
 /// [countStudyChars]，两份必须同口径——JS 算出的 `charOffset` 会写进 DB 的
 /// `char_offset` 列，并在 `absoluteCharOffsetOf`（`reader_fushi_page.dart`）与
 /// `computeBookProgress`（`reader_fushi_source.dart`）里与 Dart 算出的每章

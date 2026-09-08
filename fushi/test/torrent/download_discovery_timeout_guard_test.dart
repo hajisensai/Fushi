@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:fushi/src/media/torrent/download_timeouts.dart';
+import 'package:fushi_engine/media/torrent/download_timeouts.dart';
 
 import '../helpers/source_guard.dart';
 

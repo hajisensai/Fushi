@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/utils/net/app_user_agent.dart';
+import 'package:fushi_engine/utils/net/app_user_agent.dart';
 
 import '../helpers/scan_scale.dart';
 import '../helpers/source_guard.dart';

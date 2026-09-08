@@ -14,10 +14,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart'
     show BackgroundIsolateBinaryMessenger, RootIsolateToken;
 
-import 'package:fushi/src/media/video/ffmpeg_backend.dart' as host_ffmpeg;
+import 'package:fushi_engine/media/video/ffmpeg_backend.dart' as host_ffmpeg;
 import 'package:fushi/src/onnx/onnx_inference_ort.dart';
 import 'package:fushi/src/storage/app_paths.dart';
-import 'package:fushi/src/utils/net/app_http.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
 
 /// 在后台转录 isolate 里建 ONNX 会话工厂。
 ///

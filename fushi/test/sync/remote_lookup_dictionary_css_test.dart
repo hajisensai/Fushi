@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/sync/fushi_remote_api_handlers.dart';
-import 'package:fushi/src/sync/fushi_remote_lookup_service.dart';
+import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart';
+import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 /// BUG-1718 守卫：`/api/lookup/dictionary` 必须把「弹窗 CSS 尾段」（词典包自带 styles.css +

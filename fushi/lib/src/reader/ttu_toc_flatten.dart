@@ -1,4 +1,4 @@
-import 'package:fushi/src/epub/epub_book.dart';
+import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
 
 /// TODO-1333: 纯函数——把 EPUB 的树状目录（[EpubTocItem]）压平成阅读器用的

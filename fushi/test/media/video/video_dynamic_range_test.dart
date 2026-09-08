@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/video_dynamic_range.dart';
+import 'package:fushi_engine/media/video/video_dynamic_range.dart';
 import 'package:fushi/src/media/video/video_hdr_output.dart';
 
 /// 动态范围归一的值域与判据。

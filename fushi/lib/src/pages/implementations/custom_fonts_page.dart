@@ -13,7 +13,7 @@ import 'package:fushi/src/reader/font_catalog.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/utils.dart';
-import 'package:fushi/src/utils/net/app_user_agent.dart';
+import 'package:fushi_engine/utils/net/app_user_agent.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:path/path.dart' as p;
 

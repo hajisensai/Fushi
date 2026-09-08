@@ -7,10 +7,10 @@ import 'package:image/image.dart' as img;
 
 import 'package:fushi/src/mining/immersion_capture_channel.dart';
 import 'package:fushi/src/mining/immersion_mining_engine.dart';
-import 'package:fushi/src/mining/immersion_mining_request.dart';
-import 'package:fushi/src/sync/immersion_mine_payload.dart';
+import 'package:fushi_engine/mining/immersion_mining_request.dart';
+import 'package:fushi_engine/sync/immersion_mine_payload.dart';
 import 'package:fushi/src/utils/misc/card_screenshot_downsampler.dart';
-import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart';
+import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 
 /// 制卡封面**静图格式**（`video_mining_still_format`）：用户选「制卡时截图 / 字幕开头截图」
 /// 后，那张图过去被硬编码成 JPEG（`immersion_frame.jpg` / `immersion_shot.jpg` /

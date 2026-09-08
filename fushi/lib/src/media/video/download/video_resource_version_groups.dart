@@ -6,7 +6,7 @@
 /// 负责把「哪个组哪个清晰度」这层决策折起来，选组后再展开挑集。
 library;
 
-import 'package:fushi/src/media/torrent/video_resource_provider.dart';
+import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 
 /// 从发布标题解析集号（`S01E05` / `Title - 05 [1080p]` 两种主流形态）。
 /// 认不出返回 null。纯函数（原居 acquisition dialogs，聚类需要后下沉到此，

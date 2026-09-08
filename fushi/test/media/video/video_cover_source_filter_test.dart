@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart'
     show kDragPlaylistExtensions;
-import 'package:fushi/src/media/media_extensions.dart'
+import 'package:fushi_engine/media/media_extensions.dart'
     show kPlaylistManifestExtensions;
 import 'package:fushi/src/media/video/video_cover_extractor.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart'

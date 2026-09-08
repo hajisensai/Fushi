@@ -3,9 +3,9 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/mining/immersion_capture_channel.dart';
-import 'package:fushi/src/mining/immersion_mining_request.dart';
-import 'package:fushi/src/sync/immersion_mine_payload.dart';
-import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart';
+import 'package:fushi_engine/mining/immersion_mining_request.dart';
+import 'package:fushi_engine/sync/immersion_mine_payload.dart';
+import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 
 import '../helpers/source_guard.dart';
 

@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
 import 'package:fushi/src/anki/remote_mining_anki_repository.dart';
-import 'package:fushi/src/sync/forwarded_mine_payload.dart';
+import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
 import 'package:fushi/src/sync/fushi_remote_mining_client.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 

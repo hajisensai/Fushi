@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/jimaku_client.dart';
+import 'package:fushi_engine/media/video/jimaku_client.dart';
 import 'package:fushi/src/sync/remote_jimaku_subtitle_handlers.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';

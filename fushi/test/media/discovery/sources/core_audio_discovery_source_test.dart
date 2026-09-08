@@ -5,10 +5,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
-import 'package:fushi/src/media/discovery/discovery_models.dart';
+import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/discovery/sources/core_audio_discovery_source.dart';
-import 'package:fushi/src/media/external_provider.dart';
-import 'package:fushi/src/media/torrent/torrent_metainfo.dart';
+import 'package:fushi_engine/media/external_provider.dart';
+import 'package:fushi_engine/media/torrent/torrent_metainfo.dart';
 
 void main() {
   test('catalog 保留全部 Source，按系列分组并复用媒体搜索归一化', () {

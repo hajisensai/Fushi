@@ -2,8 +2,8 @@ import 'dart:typed_data';
 
 import 'package:fushi_audio/fushi_audio.dart' show decodeTextBytes;
 
-import 'package:fushi/src/media/video/jimaku_client.dart';
-import 'package:fushi/src/media/video/video_subtitle_source.dart';
+import 'package:fushi_engine/media/video/jimaku_client.dart';
+import 'package:fushi_engine/media/video/video_subtitle_source.dart';
 
 /// 浏览器扩展「Jimaku 查字幕」桥（Side Panel → server → jimaku.cc）的共享 handler 逻辑。
 /// 与 [buildRemoteDictionaryLookupResponse] 同范式：纯逻辑（已解析 body Map → 注入的窄

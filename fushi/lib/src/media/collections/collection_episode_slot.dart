@@ -1,5 +1,5 @@
-import 'package:fushi/src/media/video/video_book_repository.dart';
-import 'package:fushi/src/sync/fushi_library_host_service.dart'
+import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteVideoInfo;
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
 import 'package:fushi_core/fushi_core.dart'

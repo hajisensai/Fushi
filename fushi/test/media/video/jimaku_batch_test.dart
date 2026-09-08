@@ -6,7 +6,7 @@ import 'package:http/testing.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:fushi/src/media/video/jimaku_batch.dart';
-import 'package:fushi/src/media/video/jimaku_client.dart';
+import 'package:fushi_engine/media/video/jimaku_client.dart';
 
 JimakuBatchTarget _t(String uid, String path,
         {int sortIndex = 0, String? title, bool isStream = false}) =>

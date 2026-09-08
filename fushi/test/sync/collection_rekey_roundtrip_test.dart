@@ -1,6 +1,6 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/sync/collection_manifest.dart';
+import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi/src/sync/collection_sync_engine.dart';
 import 'package:fushi_core/fushi_core.dart';
 

@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/ffmpeg_backend.dart';
+import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi/src/mining/galgame_window_video.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 

@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/youtube_source_resolver.dart';
+import 'package:fushi_engine/media/video/youtube_source_resolver.dart';
 import 'package:fushi/src/media/video/video_cover_extractor.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_merge.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_merge.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 
 void main() {
   test('TMDB supplement cannot replace the AniDB media kind', () {

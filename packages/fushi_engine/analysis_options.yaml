@@ -1,0 +1,21 @@
+include: package:lints/recommended.yaml
+
+analyzer:
+  exclude:
+    - '**.g.dart'
+  errors:
+    deprecated_member_use: ignore
+    library_private_types_in_public_api: ignore
+    prefer_const_constructors: ignore
+    unnecessary_import: warning
+    unused_element: warning
+
+linter:
+  rules:
+    always_use_package_imports: true
+    avoid_relative_lib_imports: true
+    cancel_subscriptions: true
+    eol_at_end_of_file: true
+    only_throw_errors: true
+    prefer_single_quotes: true
+    use_rethrow_when_possible: true

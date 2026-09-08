@@ -6,16 +6,16 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:shelf/shelf_io.dart' as shelf_io;
 
-import 'package:fushi/src/media/video/jimaku_client.dart' show JimakuClient;
-import 'package:fushi/src/media/video/video_subtitle_source.dart'
+import 'package:fushi_engine/media/video/jimaku_client.dart' show JimakuClient;
+import 'package:fushi_engine/media/video/video_subtitle_source.dart'
     show buildParsedSubtitleResponse;
-import 'package:fushi/src/media/video/youtube_source_resolver.dart'
+import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
     show resolveYoutubeCaptionsForExtension;
-import 'package:fushi/src/sync/fushi_remote_api_handlers.dart';
+import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart';
 import 'package:fushi/src/sync/remote_jimaku_subtitle_handlers.dart';
-import 'package:fushi/src/sync/remote_lookup_routes.dart';
-import 'package:fushi/src/sync/fushi_remote_lookup_service.dart';
-import 'package:fushi/src/sync/fushi_sync_server.dart'
+import 'package:fushi_engine/sync/remote_lookup_routes.dart';
+import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
+import 'package:fushi_engine/sync/fushi_sync_server.dart'
     show SyncServerPortInUseException, isAddressInUseError;
 import 'package:fushi/src/sync/yomitan_term_entries_adapter.dart';
 import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';

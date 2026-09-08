@@ -1,5 +1,5 @@
 import 'package:fushi/src/media/collections/collection_asset_reclaim.dart';
-import 'package:fushi/src/sync/collection_manifest.dart';
+import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 合集同步引擎（多端库联合视图 §2.3 任务4）。

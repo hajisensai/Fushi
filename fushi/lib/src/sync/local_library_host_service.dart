@@ -7,7 +7,7 @@ import 'package:fushi/src/models/local_audio_manager.dart'
     show LocalAudioDbEntry;
 import 'package:fushi/src/media/video/video_import_dialog.dart'
     show parseSubtitleCues;
-import 'package:fushi/src/media/video/video_sidecar.dart'
+import 'package:fushi_engine/media/video/video_sidecar.dart'
     show findSidecarSubtitle, isSidecarSubtitleSuffix, pickSidecar;
 import 'package:fushi_audio/fushi_audio.dart'
     show AudioCue, readTextWithEncoding;
@@ -15,11 +15,11 @@ import 'package:fushi/src/media/media_source.dart'
     show MediaSource, dbSourcePrefKey;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart'
     show ReaderFushiSource;
-import 'package:fushi/src/media/video/m3u8_playlist.dart' show PlaylistEntry;
-import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
+import 'package:fushi_engine/media/video/m3u8_playlist.dart' show PlaylistEntry;
+import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
-import 'package:fushi/src/media/video/video_book_repository.dart';
-import 'package:fushi/src/media/video/video_storage.dart';
+import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/video_storage.dart';
 import 'package:fushi/src/media/video/series_playback_prefs.dart'
     show
         effectiveSeriesAudioTrackId,
@@ -28,22 +28,22 @@ import 'package:fushi/src/media/video/series_playback_prefs.dart'
 import 'package:fushi/src/sync/manga_sync_package.dart'
     show kMangaPackageMarker, repackageMangaBook;
 import 'package:fushi/src/stats/stat_facts.dart';
-import 'package:fushi/src/sync/aggregate_snapshot.dart';
+import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi/src/sync/override_title_lookup.dart';
 import 'package:fushi/src/sync/aggregate_sync_service.dart';
-import 'package:fushi/src/sync/collection_manifest.dart';
+import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi/src/sync/collection_sync_engine.dart';
-import 'package:fushi/src/sync/fushi_library_host_service.dart';
-import 'package:fushi/src/sync/interconnect_service_config.dart';
-import 'package:fushi/src/sync/interconnect_profile_transfer.dart';
-import 'package:fushi/src/sync/deletion_propagation.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/interconnect_service_config.dart';
+import 'package:fushi_engine/sync/interconnect_profile_transfer.dart';
+import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/sync_asset_package_service.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_manager.dart'
     show repackageExtractedEpub, resolveExtractedEpubRoot;
 import 'package:fushi/src/utils/misc/error_log_service.dart'
     show ErrorLogService;
-import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart'
+import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
     show extractAudioSegmentViaFfmpeg;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';

@@ -25,7 +25,7 @@ import 'dart:isolate';
 import 'package:archive/archive_io.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:fushi/src/ocr/manga_ocr_model_manifest.dart';
+import 'package:fushi_engine/ocr/manga_ocr_model_manifest.dart';
 
 /// 一个来源被拒绝的原因。
 enum MangaOcrModelImportRejectReason {

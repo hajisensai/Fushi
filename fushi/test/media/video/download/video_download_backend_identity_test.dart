@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:fushi/src/media/torrent/anime_download_config.dart';
-import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
+import 'package:fushi_engine/media/torrent/anime_download_config.dart';
+import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 
 void main() {
   test('missing embedded runtime is rejected before a job is persisted', () {

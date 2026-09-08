@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/sync/tls/fushi_tofu_probe.dart';
+import 'package:fushi_engine/sync/tls/fushi_tofu_probe.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 import '../../helpers/source_guard.dart';

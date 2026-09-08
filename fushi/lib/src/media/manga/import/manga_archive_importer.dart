@@ -6,9 +6,9 @@ import 'package:archive/archive_io.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi/src/epub/epub_book.dart';
-import 'package:fushi/src/epub/epub_parser.dart';
-import 'package:fushi/src/epub/book_title_conflict.dart';
+import 'package:fushi_engine/epub/epub_book.dart';
+import 'package:fushi_engine/epub/epub_parser.dart';
+import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi/src/media/discovery/import/discovery_archive_extractor.dart';
 import 'package:fushi/src/media/manga/manga_importer.dart';
 import 'package:fushi/src/media/manga/manga_storage.dart';

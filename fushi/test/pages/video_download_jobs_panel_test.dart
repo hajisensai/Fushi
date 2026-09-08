@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/media/torrent/torrent_backend.dart';
+import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/media/video/download/video_download_error_presentation.dart';
 import 'package:fushi/src/pages/implementations/video_download_jobs_panel.dart';
 

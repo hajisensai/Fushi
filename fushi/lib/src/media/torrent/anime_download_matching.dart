@@ -1,9 +1,9 @@
 import 'package:path/path.dart' as p;
 
-import 'package:fushi/src/media/torrent/nyaa_client.dart';
-import 'package:fushi/src/media/video/jimaku_client.dart';
+import 'package:fushi_engine/media/torrent/nyaa_client.dart';
+import 'package:fushi_engine/media/video/jimaku_client.dart';
 import 'package:fushi/src/media/video/jimaku_matching.dart';
-import 'package:fushi/src/media/video/video_filename_parser.dart';
+import 'package:fushi_engine/media/video/video_filename_parser.dart';
 
 // 按集索引与单集判据已抽到 media/video/jimaku_matching.dart（BUG-1695）——它同时
 // 服务合集批量与番剧下载两条路径，放在 torrent 域下会让 video 域反向依赖 torrent。

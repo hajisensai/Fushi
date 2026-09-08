@@ -30,9 +30,9 @@ import 'package:crypto/crypto.dart' show sha1;
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:http/http.dart' as http;
 
-import 'package:fushi/src/media/metadata/credential_redaction.dart'
+import 'package:fushi_engine/media/metadata/credential_redaction.dart'
     show redactCredentialsInText;
-import 'package:fushi/src/sync/fushi_library_host_service.dart'
+import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show
         RemoteCollectionMembership,
         RemoteVideoEmbeddedSubtitleTrack,
@@ -40,8 +40,8 @@ import 'package:fushi/src/sync/fushi_library_host_service.dart'
         RemoteVideoStreamUrls;
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
-import 'package:fushi/src/utils/net/app_http.dart';
-import 'package:fushi/src/utils/net/url_input_normalizer.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
+import 'package:fushi_engine/utils/net/url_input_normalizer.dart';
 
 /// 1 毫秒 = 10000 个 Jellyfin tick（100ns）。
 const int kTicksPerMs = 10000;

@@ -6,8 +6,8 @@ import 'dart:typed_data';
 import 'package:fushi_anki/fushi_anki.dart';
 
 import 'package:fushi/src/utils/misc/card_screenshot_downsampler.dart';
-import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart';
-import 'package:fushi/src/mining/immersion_mining_request.dart';
+import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
+import 'package:fushi_engine/mining/immersion_mining_request.dart';
 import 'package:fushi/src/mining/serial_job_queue.dart';
 
 /// 制卡静图格式 → 降采样器的编码枚举（两层各自的词汇，在此处一次性对齐）。

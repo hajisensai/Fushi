@@ -27,21 +27,21 @@ library;
 import 'dart:io';
 
 import 'package:fushi/src/media/media_cover_service.dart';
-import 'package:fushi/src/media/media_extensions.dart'
+import 'package:fushi_engine/media/media_extensions.dart'
     show kPlaylistManifestExtensions;
 import 'package:fushi/src/media/metadata/image_download.dart'
     show looksLikeImageBytes;
-import 'package:fushi/src/media/video/ffmpeg_backend.dart';
-import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
+import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi/src/storage/app_paths.dart';
-import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart'
+import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
     show extractVideoFrameViaFfmpeg;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
-import 'package:fushi/src/utils/misc/safe_file_name.dart';
+import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 import 'package:http/http.dart' as http;
 import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
-import 'package:fushi/src/utils/net/app_http.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
 
 /// Builds the ffmpeg argument list to extract the **embedded cover art** of a
 /// video container (e.g. an mkv with a `cover.jpg`/`cover.png` attachment, or an

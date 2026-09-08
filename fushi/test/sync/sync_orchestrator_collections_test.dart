@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/sync/collection_manifest.dart';
+import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi/src/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_repository.dart';

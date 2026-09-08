@@ -1,4 +1,4 @@
-import 'package:fushi/src/sync/aggregate_snapshot.dart'
+import 'package:fushi_engine/sync/aggregate_snapshot.dart'
     show StudySegmentRecord, StudyTombstoneRecord;
 import 'package:fushi_audio/fushi_audio.dart'
     show FavoriteSentence, FavoriteSentenceRepository;

@@ -3,7 +3,7 @@ library;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
-import 'package:fushi/src/mining/metadata/galgame_metadata_source.dart';
+import 'package:fushi_engine/mining/metadata/galgame_metadata_source.dart';
 
 void main() {
   group('GalgameMetadataDraft 序列化', () {

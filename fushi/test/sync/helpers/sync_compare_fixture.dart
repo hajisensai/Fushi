@@ -2,8 +2,8 @@ import 'package:drift/drift.dart';
 import 'package:fushi/src/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
-import 'package:fushi/src/sync/ttu_filename.dart';
-import 'package:fushi/src/sync/ttu_models.dart';
+import 'package:fushi_engine/sync/ttu_filename.dart';
+import 'package:fushi_engine/sync/ttu_models.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 同步对比对话框的共享夹具（golden 与排版行为测试共用一份，免得两份 fake 漂移）。

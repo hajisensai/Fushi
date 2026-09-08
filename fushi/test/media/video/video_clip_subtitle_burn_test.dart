@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/video_clip_subtitle_burn.dart';
+import 'package:fushi_engine/media/video/video_clip_subtitle_burn.dart';
 
 /// `ffmpeg-min`（n7.1.x，`--disable-everything` + 白名单）`-filters` 的真实开头，
 /// 取自**加 overlay 重编之前**入库的那版二进制（28 个 filter）。flag 列是 **3 位**

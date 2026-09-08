@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/video_clip_subtitle.dart';
+import 'package:fushi_engine/media/video/video_clip_subtitle.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
 /// 只填 [buildClipSrtContent] 真正读到的三个字段；AudioCue 其余 late 字段（bookKey /
