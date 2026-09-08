@@ -1,9 +1,13 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/stat_trends.dart'
     show kMinCphSampleMs;
 import 'package:fushi/src/reader/reader_statistics_dialog.dart';
 import 'package:fushi/src/reader/reader_status_footer.dart';
 import 'package:fushi/src/stats/stat_facts.dart';
+import 'package:fushi_audio/fushi_audio.dart' show StudySessionTotals;
 import 'package:fushi_core/fushi_core.dart'
     show FushiDatabase, kActivityMediaBook;
 
@@ -142,5 +146,111 @@ void main() {
       ),
       '10 / 100  10.00%',
     );
+  });
+
+  group('浮层排版（窄屏不截断 + 计时开关是底栏级按钮）', () {
+    /// 320dp 是仓库里最窄的在售机型宽度（见 FushiDialogFrame 的 BUG-1184 注释），
+    /// 数值取到「五位字数 + 五位速度 + 带小时位的时钟」这种最长形态。
+    const StudySessionTotals session = (
+      durationMs: 12345678,
+      chars: 98765,
+      active: true,
+    );
+
+    Future<void> pumpDialog(
+      WidgetTester tester, {
+      required bool paused,
+      VoidCallback? onToggle,
+    }) async {
+      tester.view.physicalSize = const Size(320, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: ReaderStatisticsDialog(
+                sessionTotals: () => session,
+                loadBookTotals: () async => (
+                  todayChars: 87654,
+                  todayMs: 23456789,
+                  allChars: 987654,
+                  allMs: 123456789,
+                ),
+                remainingChapterChars: 12345,
+                remainingBookChars: 654321,
+                trackingPaused: () => paused,
+                onToggleTracking: onToggle ?? () {},
+                tick: const Duration(days: 1),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    // 计时 ticker 是 Timer.periodic：不卸载会留 pending timer 把测试判红。
+    Future<void> disposeDialog(WidgetTester tester) =>
+        tester.pumpWidget(const SizedBox.shrink());
+
+    testWidgets('320dp 窄屏上标签在左、数值在右，且没有一格被挤到溢出', (WidgetTester tester) async {
+      await pumpDialog(tester, paused: false);
+      expect(
+        tester.takeException(),
+        isNull,
+        reason: '纯文字行不得在最窄机型上撑出 RenderFlex overflow',
+      );
+
+      // 「速度」这一行是旧三格排版最先被省略成「…」的那格（标签 + 数值 + 单位）。
+      final Finder speedLabel = find.text(t.stat_metric_speed).first;
+      final Finder speedRow = find
+          .ancestor(of: speedLabel, matching: find.byType(Row))
+          .first;
+      final Rect rowRect = tester.getRect(speedRow);
+      final Rect labelRect = tester.getRect(speedLabel);
+      final Finder speedValue = find
+          .descendant(of: speedRow, matching: find.byType(Text))
+          .last;
+      final Rect valueRect = tester.getRect(speedValue);
+
+      expect(labelRect.left, lessThan(valueRect.left), reason: '左标签右数值');
+      expect(
+        valueRect.right,
+        closeTo(rowRect.right, 0.5),
+        reason: '数值贴行右缘（右对齐）',
+      );
+      final RenderParagraph value = tester.renderObject<RenderParagraph>(
+        speedValue,
+      );
+      expect(value.didExceedMaxLines, isFalse, reason: '数值整条行宽可用，不再被省略成「…」');
+      await disposeDialog(tester);
+    });
+
+    testWidgets('计时开关是整宽、底栏级高度的按钮，不是紧凑小图标', (WidgetTester tester) async {
+      int toggled = 0;
+      await pumpDialog(tester, paused: false, onToggle: () => toggled++);
+      final Finder toggle = find.byKey(
+        const ValueKey<String>('fushi_reader_stats_tracking_toggle'),
+      );
+      final Size size = tester.getSize(toggle);
+      expect(
+        size.height,
+        greaterThanOrEqualTo(48),
+        reason: '触摸目标不得低于 48dp（旧的紧凑 IconButton 只有 40）',
+      );
+      expect(size.width, greaterThan(200), reason: '整宽按钮，与底栏按钮同一级别');
+      expect(find.text(t.pause), findsOneWidget);
+      await tester.tap(toggle);
+      expect(toggled, 1);
+      await disposeDialog(tester);
+    });
+
+    testWidgets('暂停中按钮切成「播放」文案 + 播放图标', (WidgetTester tester) async {
+      await pumpDialog(tester, paused: true);
+      expect(find.text(t.play), findsOneWidget);
+      expect(find.text(t.pause), findsNothing);
+      await disposeDialog(tester);
+    });
   });
 }

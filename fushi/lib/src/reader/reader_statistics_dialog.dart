@@ -4,6 +4,16 @@
 /// `loadStatFacts` 切片，统计域 v92 纪律：展示只从 `StatFacts` 派生）/ 预计读完
 /// （本章 / 全书剩余字数 ÷ 速度）。账本只在 `StudyClock` 一本，本层不持有任何会话
 /// 累计副本——会话读数是每秒采样的函数（同底部状态行）。
+///
+/// 排版是**纯文字行**：一块一列，每行左标签、右数值（[_StatRows]）。此前是等宽三
+/// 格 + 竖分隔线的横排卡片，格宽 = 卡宽 / 3 与文字长度无关——手机窄屏上「速度」
+/// 那格的 `12345 / h`、时长那格的 `1:23:45` 稳定被省略成「…」，统计浮层最该看的
+/// 数字反而看不全。纵向排一行给数值整条行宽，任何语言的标签和任何位数的数值都不
+/// 再互相挤。
+///
+/// 手动计时开关是浮层底部的整宽按钮（[_TrackingToggleButton]），与底栏按钮同级
+/// （高度走 `density.controlHeight`）：它此前是「本次会话」小标题旁 18px 的紧凑
+/// IconButton，触摸目标远小于 48dp 的可点击下限，手机上难点中。
 library;
 
 import 'dart:async';
@@ -215,40 +225,16 @@ class _ReaderStatisticsDialogState extends State<ReaderStatisticsDialog> {
             ],
           ),
           Padding(
-            padding: EdgeInsets.only(right: tokens.spacing.gap),
+            // 标题行的关闭键贴着 gap 的右边距，正文行不跟着贴——补到与左边一样的
+            // page，纯文字行的右侧数值才与左侧标签对称。
+            padding: EdgeInsets.only(
+              right: tokens.spacing.page - tokens.spacing.gap,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                Row(
-                  children: <Widget>[
-                    ReaderSideSheetSectionLabel(t.reader_stats_session),
-                    const SizedBox(width: 4),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 12),
-                      child: IconButton(
-                        key: const ValueKey<String>(
-                          'fushi_reader_stats_tracking_toggle',
-                        ),
-                        visualDensity: VisualDensity.compact,
-                        iconSize: 18,
-                        tooltip: paused ? t.play : t.pause,
-                        icon: Icon(
-                          paused
-                              ? Icons.play_arrow_rounded
-                              : Icons.pause_rounded,
-                          color: paused
-                              ? theme.colorScheme.primary
-                              : theme.colorScheme.onSurfaceVariant,
-                        ),
-                        onPressed: () {
-                          widget.onToggleTracking();
-                          setState(() {});
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-                _StatCard(
+                ReaderSideSheetSectionLabel(t.reader_stats_session),
+                _StatRows(
                   cells: _metricCells(
                     session.chars,
                     session.durationMs,
@@ -258,7 +244,7 @@ class _ReaderStatisticsDialogState extends State<ReaderStatisticsDialog> {
                 ReaderSideSheetSectionLabel(
                   '${t.stat_today} · ${t.reader_stats_this_book}',
                 ),
-                _StatCard(
+                _StatRows(
                   cells: _metricCells(
                     book.todayChars,
                     book.todayMs,
@@ -268,11 +254,11 @@ class _ReaderStatisticsDialogState extends State<ReaderStatisticsDialog> {
                 ReaderSideSheetSectionLabel(
                   '${t.stat_all_time} · ${t.reader_stats_this_book}',
                 ),
-                _StatCard(
+                _StatRows(
                   cells: _metricCells(book.allChars, book.allMs, live: false),
                 ),
                 ReaderSideSheetSectionLabel(t.reader_stats_time_to_finish),
-                _StatCard(
+                _StatRows(
                   cells: <_StatCell>[
                     _StatCell(
                       label: t.reader_stats_finish_chapter,
@@ -285,6 +271,14 @@ class _ReaderStatisticsDialogState extends State<ReaderStatisticsDialog> {
                       value: bookMs == null ? '—' : formatStatClock(bookMs),
                     ),
                   ],
+                ),
+                SizedBox(height: tokens.spacing.page),
+                _TrackingToggleButton(
+                  paused: paused,
+                  onPressed: () {
+                    widget.onToggleTracking();
+                    setState(() {});
+                  },
                 ),
               ],
             ),
@@ -316,9 +310,13 @@ class _StatCell {
   final String? unit;
 }
 
-/// 一行等宽格子：上小标签、下大数字（等宽数字）。格子间竖分隔线。
-class _StatCard extends StatelessWidget {
-  const _StatCard({required this.cells});
+/// 一块统计：每行左标签、右数值（等宽数字），行间横分隔线。
+///
+/// 纵向排而不是横排等宽格子——横排时格宽恒为卡宽 / 3，与文字实际长度无关，窄屏
+/// 上数值只能省略成「…」；纵排把整条行宽让给数值，标签按剩余宽度收缩，数值永不
+/// 被截断（[Text] 不加 `overflow`，宽度由它自己的内在尺寸决定）。
+class _StatRows extends StatelessWidget {
+  const _StatRows({required this.cells});
 
   final List<_StatCell> cells;
 
@@ -326,10 +324,10 @@ class _StatCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final TextStyle labelStyle = theme.textTheme.labelMedium!.copyWith(
+    final TextStyle labelStyle = theme.textTheme.bodyMedium!.copyWith(
       color: theme.colorScheme.onSurfaceVariant,
     );
-    final TextStyle valueStyle = theme.textTheme.headlineSmall!.copyWith(
+    final TextStyle valueStyle = theme.textTheme.titleMedium!.copyWith(
       fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
       color: theme.colorScheme.onSurface,
     );
@@ -342,51 +340,86 @@ class _StatCard extends StatelessWidget {
         borderRadius: tokens.radii.cardRadius,
         border: Border.all(color: theme.colorScheme.outlineVariant),
       ),
-      child: IntrinsicHeight(
-        child: Row(
-          children: <Widget>[
-            for (int i = 0; i < cells.length; i++) ...<Widget>[
-              if (i > 0)
-                VerticalDivider(
-                  width: 1,
-                  thickness: 1,
-                  color: theme.colorScheme.outlineVariant,
-                ),
-              Expanded(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: tokens.spacing.gap * 1.5,
-                    vertical: tokens.spacing.gap,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      Text(cells[i].label, style: labelStyle, maxLines: 1),
-                      const SizedBox(height: 4),
-                      Text.rich(
-                        TextSpan(
-                          text: cells[i].value,
-                          style: valueStyle,
-                          children: <InlineSpan>[
-                            if (cells[i].unit != null)
-                              TextSpan(
-                                text: ' ${cells[i].unit}',
-                                style: unitStyle,
-                              ),
-                          ],
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
-                ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          for (int i = 0; i < cells.length; i++) ...<Widget>[
+            if (i > 0)
+              Divider(
+                height: 1,
+                thickness: 1,
+                color: theme.colorScheme.outlineVariant,
               ),
-            ],
+            Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: tokens.spacing.gap * 1.5,
+                vertical: tokens.spacing.gap,
+              ),
+              child: Row(
+                children: <Widget>[
+                  // 标签是唯一可收缩的一侧：长标签折行 / 收窄，数值照常整数显示。
+                  Expanded(child: Text(cells[i].label, style: labelStyle)),
+                  SizedBox(width: tokens.spacing.gap * 1.5),
+                  Text.rich(
+                    TextSpan(
+                      text: cells[i].value,
+                      style: valueStyle,
+                      children: <InlineSpan>[
+                        if (cells[i].unit != null)
+                          TextSpan(text: ' ${cells[i].unit}', style: unitStyle),
+                      ],
+                    ),
+                    textAlign: TextAlign.end,
+                  ),
+                ],
+              ),
+            ),
           ],
-        ),
+        ],
       ),
+    );
+  }
+}
+
+/// 浮层底部的手动计时开关：整宽、底栏级高度（`density.controlHeight`）的按钮。
+///
+/// 暂停中用实心 [FilledButton]（计时停着是需要用户注意的非常态），计时中用
+/// tonal 变体。文案沿用旧 tooltip 的 `t.play` / `t.pause`——这两个 key 在 17 种
+/// 语言都有真翻译，新造一对「暂停计时 / 继续计时」只会在 15 种语言上回落成英文。
+/// key 沿用旧的紧凑 IconButton 那一个，桌面端快捷键集成测试按它断言浮层里有计时
+/// 开关。
+class _TrackingToggleButton extends StatelessWidget {
+  const _TrackingToggleButton({required this.paused, required this.onPressed});
+
+  final bool paused;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final Widget icon = Icon(
+      paused ? Icons.play_arrow_rounded : Icons.pause_rounded,
+    );
+    final Widget label = Text(paused ? t.play : t.pause);
+    const ValueKey<String> key = ValueKey<String>(
+      'fushi_reader_stats_tracking_toggle',
+    );
+    return SizedBox(
+      width: double.infinity,
+      height: tokens.density.controlHeight,
+      child: paused
+          ? FilledButton.icon(
+              key: key,
+              onPressed: onPressed,
+              icon: icon,
+              label: label,
+            )
+          : FilledButton.tonalIcon(
+              key: key,
+              onPressed: onPressed,
+              icon: icon,
+              label: label,
+            ),
     );
   }
 }
