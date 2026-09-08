@@ -334,6 +334,11 @@ class AnkiConnectService {
               'action': a.action,
               'version': 6,
               if (a.params != null) 'params': a.params,
+              // 子 action 也要带 key：插件的 `multi` 就是对每条子请求再跑一遍
+              // `handler`，而 `handler` 逐条比对 key。外层带了、里层不带，配置了
+              // apiKey 的 Anki 会把每一条都判 'valid api key must be provided'，
+              // 整批批量写（去重改写 / 批量改字段 / 重排位置）静默全失败。
+              if (apiKey.isNotEmpty) 'key': apiKey,
             },
         ],
       },
@@ -860,6 +865,76 @@ class AnkiConnectService {
     return out;
   }
 
+  // ── 卡片级 API：卡组新卡按词频重排 ──────────────────────────────────────
+
+  /// AnkiConnect `findCards`：按 Anki 搜索语法返回 card id。
+  Future<List<int>> findCards(String query) async {
+    final dynamic result =
+        await _request('findCards', <String, dynamic>{'query': query});
+    if (result is! List) {
+      throw AnkiConnectException(
+        'Unexpected AnkiConnect response for findCards (expected a list)',
+      );
+    }
+    return <int>[
+      for (final dynamic item in result)
+        if (item is int) item else if (item is num) item.toInt(),
+    ];
+  }
+
+  /// 一次 `cardsInfo` 最多带多少张卡：每项都附带渲染好的问答 HTML 与全部
+  /// 字段正文，几千张一次拉回来 payload 会到几十 MB。
+  static const int kCardsInfoBatchSize = 200;
+
+  /// AnkiConnect `cardsInfo`：按 [cardIds] 顺序返回每张卡的信息，分批往返。
+  /// 不存在的卡（AnkiConnect 给空对象）被跳过。
+  Future<List<AnkiCardInfo>> cardsInfo(List<int> cardIds) async {
+    final List<AnkiCardInfo> out = <AnkiCardInfo>[];
+    for (int i = 0; i < cardIds.length; i += kCardsInfoBatchSize) {
+      final int end = (i + kCardsInfoBatchSize).clamp(0, cardIds.length);
+      final dynamic result = await _request('cardsInfo', <String, dynamic>{
+        'cards': cardIds.sublist(i, end),
+      });
+      if (result is! List) {
+        throw AnkiConnectException(
+          'Unexpected AnkiConnect response for cardsInfo (expected a list)',
+        );
+      }
+      for (final dynamic item in result) {
+        final AnkiCardInfo? info = AnkiCardInfo.fromJson(item);
+        if (info != null) out.add(info);
+      }
+    }
+    return out;
+  }
+
+  /// 批量改写新卡的队列位置：每张卡一条 `setSpecificValueOfCard`
+  /// `{card, keys: ['due'], newValues: [due], warning_check: true}`，打成
+  /// `multi` 分批发。`warning_check` 是 AnkiConnect 对 did/queue/type 这类
+  /// 危险键的显式确认开关（本机 AnkiConnect 源码里 `due` 不在那张清单上，
+  /// 带上只是前向兼容，无副作用）。
+  ///
+  /// **结果形状不走 error 信封**（读的是插件源码）：成功是 `[true]`，
+  /// 卡不存在等异常是 `[[false, "<msg>"]]`，参数形状不对直接 `false`——
+  /// 三种都在 `result` 里、`error` 为 null。调用方用
+  /// [ankiSetSpecificValueFailure] 解读，别拿 `isError` 当成功判据。
+  ///
+  /// 同 id + 同值重发结果一致，幂等，可安全走连接掉线重试。逐条报告结果
+  /// （与 [updates] 同序），失败条不抛。
+  Future<List<AnkiConnectBatchResult>> setCardsDueMany(
+    List<AnkiCardDueUpdate> updates,
+  ) {
+    return _requestMultiChunked(<AnkiConnectAction>[
+      for (final AnkiCardDueUpdate u in updates)
+        AnkiConnectAction('setSpecificValueOfCard', <String, dynamic>{
+          'card': u.cardId,
+          'keys': <String>['due'],
+          'newValues': <int>[u.due],
+          'warning_check': true,
+        }),
+    ]);
+  }
+
   // TODO-1007/1008：在 Anki 桌面端打开浏览器并选中 [noteId]（`guiBrowse` 接收
   // `{query: 'nid:<id>'}`，把 Anki 主窗口的 Browse 视图过滤到该 note）。需要 Anki GUI
   // 在前台才有视觉效果；纯远程/无 GUI 时 AnkiConnect 仍返回成功（不抛）。
@@ -1004,6 +1079,50 @@ String ankiDuplicateDeckFilter(String deckName, AnkiDuplicateScope scope) {
       if (deckName.isEmpty) return '';
       return 'deck:"${_escapeAnkiQuery(deckName)}"';
   }
+}
+
+/// 解读一条 `setSpecificValueOfCard` 的结果：null = 成功，否则是失败原因。
+///
+/// AnkiConnect 该 action 把失败写在 `result` 里而不是 `error`：成功 `[true]`，
+/// 异常 `[[false, "<msg>"]]`，参数形状不对返回裸 `false`。
+String? ankiSetSpecificValueFailure(AnkiConnectBatchResult r) {
+  if (r.isError) return r.error;
+  final Object? v = r.result;
+  if (v is List && v.isNotEmpty) {
+    final Object? first = v.first;
+    if (first == true) return null;
+    if (first is List && first.isNotEmpty && first.first == false) {
+      return first.length > 1 ? first[1].toString() : 'rejected';
+    }
+    return 'unexpected setSpecificValueOfCard result: $first';
+  }
+  if (v == false) return 'setSpecificValueOfCard rejected the request';
+  return 'unexpected setSpecificValueOfCard result: $v';
+}
+
+/// 卡组新卡重排的 Anki 搜索串：按**卡组 id** 选中 [deckName] 及其全部子卡组，
+/// 再限定 `is:new` 并排除筛选牌组（`-deck:filtered`：那里的 `due` 是暂存值，
+/// 改了会在退出筛选时被覆盖或把原值弄丢）。
+///
+/// 不用 `deck:"名字"`：它是通配匹配（BUG-2051，`_` 单字、`*` 任意），带 `_`
+/// 的卡组名会把兄弟卡组一起圈进来，而重排写的是队列位置，圈错一张就是改错
+/// 一张。`did:` 只匹配该 id 本身、不含子卡组，所以子树要自己按 `父::子` 名字
+/// 前缀展开。找不到卡组返回空串（调用方按「没有新卡」处理）。
+String ankiDeckNewCardsQuery(
+  Map<String, int> deckNamesAndIds,
+  String deckName,
+) {
+  if (deckName.isEmpty) return '';
+  final String prefix = '$deckName::';
+  final List<int> ids = <int>[
+    for (final MapEntry<String, int> e in deckNamesAndIds.entries)
+      if (e.key == deckName || e.key.startsWith(prefix)) e.value,
+  ];
+  if (ids.isEmpty) return '';
+  final String scope = ids.length == 1
+      ? 'did:${ids.single}'
+      : '(${ids.map((int id) => 'did:$id').join(' OR ')})';
+  return '$scope is:new -deck:filtered';
 }
 
 Map<String, Object> _addNoteDuplicateOptions({

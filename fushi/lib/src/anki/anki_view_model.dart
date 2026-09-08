@@ -3,6 +3,7 @@ import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi/src/anki/anki_deck_reposition_runner.dart';
 import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
 import 'package:fushi/src/anki/lapis_template_service.dart';
 import 'package:fushi/src/anki/remote_mining_anki_repository.dart';
@@ -418,6 +419,32 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
   /// 与当前仓库绑定的去重编排器（无状态，随用随建）。
   AnkiMediaDedupRunner get mediaDedupRunner =>
       AnkiMediaDedupRunner(_repository);
+
+  // ── 卡组新卡按词频重排 ───────────────────────────────────────────────────
+
+  /// 当前设置快照（弹窗初始化用；后续变化仍以 [state] 为准）。
+  AnkiSettings get settings => state.settings;
+
+  /// 本后端能不能读卡组新卡并改写位置（只有 AnkiConnect 能）。
+  bool get supportsDeckReposition => _repository.supportsDeckReposition;
+
+  /// 与当前仓库绑定的重排编排器（无状态，随用随建）。
+  AnkiDeckRepositionRunner get deckRepositionRunner =>
+      AnkiDeckRepositionRunner(_repository);
+
+  /// 记住用户上次选的词频来源 / 词典 / 复合方式，下次打开弹窗直接复用。
+  Future<void> setRepositionOptions({
+    required AnkiRepositionSource source,
+    required List<String> dictionaries,
+    required String aggregate,
+  }) async {
+    final updated = await _repository.updateSettings((s) => s.copyWith(
+          repositionSource: source,
+          repositionDictionaries: dictionaries,
+          repositionAggregate: aggregate,
+        ));
+    state = state.copyWith(settings: updated);
+  }
 
   /// 打开/关闭去重的自动处理。默认关；打开后自动路径**仍然只做干跑并提示**，
   /// 要真删得由用户在确认弹窗里点，或另外打开 [setMediaDedupAutoDelete]。
