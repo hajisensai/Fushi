@@ -2759,6 +2759,7 @@
   "reader_copy_image": "Копировать изображение",
   "reader_font_size": "Размер шрифта",
   "reader_font_vpal": "VPAL (верт. альт.)",
+  "reader_font_weight": "Насыщенность шрифта",
   "reader_furigana_hide": "Скрыть",
   "reader_furigana_mode": "Фуригана",
   "reader_furigana_mode_hint": "",

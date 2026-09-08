@@ -2759,6 +2759,7 @@
   "reader_copy_image": "คัดลอกรูปภาพ",
   "reader_font_size": "ขนาดฟอนต์",
   "reader_font_vpal": "VPAL (ตัวอักษรทดแทน)",
+  "reader_font_weight": "น้ำหนักฟอนต์",
   "reader_furigana_hide": "ซ่อน",
   "reader_furigana_mode": "ฟุริงานะ",
   "reader_furigana_mode_hint": "",

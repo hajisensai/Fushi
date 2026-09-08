@@ -2759,6 +2759,7 @@
   "reader_copy_image": "画像をコピー",
   "reader_font_size": "フォントサイズ",
   "reader_font_vpal": "VPAL（縦書き代替）",
+  "reader_font_weight": "フォントの太さ",
   "reader_furigana_hide": "非表示",
   "reader_furigana_mode": "ふりがな",
   "reader_furigana_mode_hint": "",
