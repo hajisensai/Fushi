@@ -4501,5 +4501,17 @@
   "video_metadata_identifier_words_hint": "Rewrite, block or offset titles before they are matched",
   "video_metadata_identifier_words_empty": "Not configured",
   "video_metadata_identifier_words_invalid": "Invalid rules",
-  "video_metadata_identifier_words_syntax": "One rule per line, # starts a comment. Block: a regular expression. Replace: A => B. Episode offset: front <> back >> EP+1. Combined: A => B && front <> back >> EP+1."
+  "video_metadata_identifier_words_syntax": "One rule per line, # starts a comment. Block: a regular expression. Replace: A => B. Episode offset: front <> back >> EP+1. Combined: A => B && front <> back >> EP+1.",
+  "video_source_scrape_metadata_locale": "Metadata language",
+  "video_source_scrape_metadata_locale_hint": "BCP-47 language tag such as ja or zh-CN. Leave empty to follow the global metadata language.",
+  "video_work_locked_fields": "Locked fields",
+  "video_work_locked_fields_hint": "Locked fields keep their current values the next time this work is scraped.",
+  "video_work_locked_fields_saved": "Field locks saved",
+  "video_work_field_title": "Title",
+  "video_work_field_original_title": "Original title",
+  "video_work_field_overview": "Overview",
+  "video_work_field_tagline": "Tagline",
+  "video_work_field_rating": "Rating",
+  "video_work_field_cover": "Cover",
+  "video_work_field_backdrop": "Backdrop"
 }
