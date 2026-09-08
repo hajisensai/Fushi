@@ -85,7 +85,7 @@ test('mobile-drawer 抽屉状态机全链（门控/底挂/让位/adopt/还原/�
   const chrome = {
     runtime: {
       getURL: (p) => 'chrome-extension://aaa/' + p,
-      sendMessage(msg, cb) { captured.message.push(msg); if (msg.type === 'drawerSelfTab') cb && cb({ ok: true, tabId: 42 }); else cb && cb({}); },
+      sendMessage(msg, cb) { captured.message.push(msg); if (msg.type === 'drawerSelfTab') cb && cb({ ok: true, tabId: 42, token: 'tok-abc' }); else cb && cb({}); },
       lastError: null,
     },
     storage: { local: storageArea, onChanged: storageArea.onChanged },
@@ -134,7 +134,9 @@ test('mobile-drawer 抽屉状态机全链（门控/底挂/让位/adopt/还原/�
   tap(200, 790);
   const frame = root.children[1];
   if (!frame || frame.tag !== 'iframe') throw new Error('点开后 iframe 未建');
-  if (!/fushiEmbed=1&fushiTabId=42&fushiHostOrigin=https%3A%2F%2Fm\.test$/.test(frame.src)) throw new Error('src 参数不全: ' + frame.src);
+  // 报告 #1295：URL 只许带 SW 签发的 token——自证 origin 的 fushiHostOrigin 永久除名。
+  if (!/fushiEmbed=1&fushiTabId=42&fushiEmbedToken=tok-abc$/.test(frame.src)) throw new Error('src 参数不全: ' + frame.src);
+  if (/fushiHostOrigin/.test(frame.src)) throw new Error('fushiHostOrigin 回潮——origin 不许自证: ' + frame.src);
   if (T() !== 'translateY(0px)') throw new Error('开态应贴零: ' + T());
   if (videoEl.style.width || videoEl.style.height || htmlEl.style.width || htmlEl.style.height) {
     throw new Error('非全屏竖屏绝不让位');

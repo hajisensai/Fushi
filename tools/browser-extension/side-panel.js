@@ -1221,20 +1221,34 @@
   } catch (_) {}
 
   // 抽屉宿主（mobile-drawer.js）的可见性协议：收起=暂停轮询，拉开=立刻全量刷新。
+  // 审计报告 #1295：宿主 origin 的来源从「URL 参数自证」（任意网站可伪造）改为
+  // 「持 SW 签发的 token 回 SW 核销」——SW 绑定签发 tab、TTL 过期，伪造的 token 兑不出
+  // origin。核销前 EMBED_HOST_ORIGIN 保持初始 sentinel（永不等于任何真实 origin），
+  // 天然 fail-closed：兑不到就一直不收宿主消息。
   if (EMBED) {
-    // S5691：宿主 origin 由 mobile-drawer 经 iframe URL 显式声明，收消息先验来源。
-    // 缺参数时 EMBED_HOST_ORIGIN='' 永远匹配不上任何真实 origin——天然 fail-closed。
-    var EMBED_HOST_ORIGIN = (function () {
-      var m = /[?&]fushiHostOrigin=([^&]*)/.exec(EMBED_SEARCH);
-      try { return m ? decodeURIComponent(m[1]) : ''; } catch (_) { return ''; }
-    })();
-    window.addEventListener('message', function (ev) {
+    var EMBED_HOST_ORIGIN = 'fushi-unverified-pending'; // 未核销前的哨兵，绝不匹配任何 origin
+    var hostMsg = function (ev) {
       if (ev.origin !== EMBED_HOST_ORIGIN) return;
       var d = ev && ev.data;
       if (!d || d.source !== 'fushi-drawer') return;
       if (d.type === 'pause') embedPaused = true;
       else if (d.type === 'resume') { embedPaused = false; refresh(true); }
-    });
+    };
+    window.addEventListener('message', hostMsg);
+    (function () {
+      var m = /[?&]fushiEmbedToken=([^&]*)/.exec(EMBED_SEARCH);
+      if (!m) return; // 没 token：哨兵永挂，只读面板（不收宿主 pause/resume），功能不炸
+      var tok = '';
+      try { tok = decodeURIComponent(m[1]); } catch (_) { return; }
+      if (!tok) return;
+      try {
+        chrome.runtime.sendMessage({ type: 'drawerEmbedVerify', token: tok }, function (resp) {
+          try { if (chrome.runtime.lastError) return; } catch (_) { return; }
+          var o = resp && typeof resp.origin === 'string' ? resp.origin : '';
+          if (o) EMBED_HOST_ORIGIN = o; // 只有核销成功才把哨兵换成真 origin
+        });
+      } catch (_) { /* 保持哨兵 = fail-closed */ }
+    })();
   }
 
   refresh(true);

@@ -493,6 +493,37 @@ async function fushiIconClick(tab) {
 // 迁到 action-popup.js 的「开始生成/录制」按钮：按钮点击是用户手势，query 到当前 tab 后发
 // fushiIconAction 消息到这里，由下方 onMessage 分支调用同一个 fushiIconClick（逻辑不变，只换触发口）。
 
+// 审计报告 #1295：抽屉 iframe 的面板过去把「宿主 origin」写在 URL 参数里自证——
+// 任意网站嵌一句 `side-panel.html?fushiEmbed=1&fushiHostOrigin=https://evil.com`
+// 就能让自己的 origin 通过校验。改为 **SW 背书的双向兑换**：
+//   ① 抽屉 content script 要 token：SW 从 `sender.tab.url`（网页不可见、不可伪造）
+//      取真 origin，签发一次性凭证（绑定 tabId，TTL 10 分钟）；
+//   ② 面板 iframe 拿 token 来兑：核销 tabId 相符后回真 origin，供 ev.origin 校验。
+// 攻击者直接嵌 iframe 手里没有 token（web 页发不了 runtime 消息），兑换必然落空 →
+// EMBED_HOST_ORIGIN 恒为 ''，宿主消息全数丢弃（面板照常渲染，只是驱动不进来）。
+const fushiEmbedTokens = new Map(); // token -> {tabId, origin, exp}
+function fushiIssueEmbedToken(tabId, tabUrl) {
+  let origin = '';
+  try { origin = new URL(tabUrl).origin; } catch (_) { return null; }
+  if (!origin || origin === 'null' || !Number.isInteger(tabId)) return null;
+  const now = Date.now();
+  for (const [t, r] of fushiEmbedTokens) if (r.exp < now) fushiEmbedTokens.delete(t);
+  let token;
+  try { token = crypto.randomUUID(); } catch (_) {
+    token = now.toString(36) + '-' + Math.random().toString(36).slice(2);
+  }
+  fushiEmbedTokens.set(token, { tabId, origin, exp: now + 600000 });
+  return token;
+}
+function fushiRedeemEmbedToken(token, senderTabId) {
+  if (!token || typeof token !== 'string') return '';
+  const rec = fushiEmbedTokens.get(token);
+  if (!rec || rec.exp < Date.now()) { fushiEmbedTokens.delete(token); return ''; }
+  // token 换 Tab 用不了：核销方必须是签发时那个标签页。
+  if (!Number.isInteger(senderTabId) || rec.tabId !== senderTabId) return '';
+  return rec.origin;
+}
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   // 发给 offscreen 的消息由 offscreen 处理，background 不插手。
   if (msg && msg.target === 'offscreen') return false;
@@ -520,10 +551,21 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   // 又没有 chrome.tabs 可用——由 SW 如实回报发信标签 id，抽屉拼进
   // side-panel.html?fushiEmbed=1&fushiTabId=N（嵌入模式下绑死这一页，见 side-panel.js）。
   if (msg && msg.type === 'drawerSelfTab') {
+    const tid = _sender && _sender.tab && Number.isInteger(_sender.tab.id) ? _sender.tab.id : null;
     sendResponse({
       ok: true,
-      tabId: _sender && _sender.tab && Number.isInteger(_sender.tab.id) ? _sender.tab.id : null,
+      tabId: tid,
+      // 审计报告 #1295：随标签 id 一并签发嵌入凭证（真 origin 由 SW 从 sender.tab.url
+      // 取得，只有拿 token 来兑的面板能知道）。签发失败（异常 sender）回 null——
+      // 面板端 fail-closed，宿主消息通道整个关死。
+      token: tid != null ? fushiIssueEmbedToken(tid, _sender.tab.url) : null,
     });
+    return true;
+  }
+  if (msg && msg.type === 'drawerEmbedVerify') {
+    // 面板 iframe 持 token 核销；核销方 tab 必须与签发时一致。
+    const senderTid = _sender && _sender.tab && _sender.tab.id;
+    sendResponse({ ok: true, origin: fushiRedeemEmbedToken(msg.token, senderTid) });
     return true;
   }
   if (msg && msg.type === 'openSubtitleSidePanel') {

@@ -263,22 +263,33 @@
     iframeEl = document.createElement('iframe');
     iframeEl.id = 'fushi-drawer-frame';
     iframeEl.setAttribute('aria-label', '字幕列表');
-    var start = function (tid) {
+    var start = function (resp) {
       var url = chrome.runtime.getURL('side-panel.html') + '?fushiEmbed=1';
+      var tid = resp && Number.isInteger(resp.tabId) ? resp.tabId : null;
       if (tid != null) url += '&fushiTabId=' + tid;
-      // 与 postToFrame 的接收端配对（S5691）：面板只认这个 origin 发来的宿主消息。
-      // content script 里 location.origin 就是宿主页 origin，也正是 postMessage 的投递源。
-      url += '&fushiHostOrigin=' + encodeURIComponent(location.origin);
+      // 审计报告 #1295：宿主 origin **不再自证**（旧版把 location.origin 拼进 URL，
+      // 任意网站嵌 iframe 填自己 origin 就骗过面板校验）。改带 SW 签发的一次性 token，
+      // 面板回 SW 核销（绑定签发 tab）才认宿主消息。token 缺席 = 通道关死（面板 fail-closed）。
+      var token = resp && typeof resp.token === 'string' ? resp.token : '';
+      if (token) url += '&fushiEmbedToken=' + encodeURIComponent(token);
       iframeEl.src = url;
     };
-    if (frameTabId !== undefined) start(frameTabId);
-    else {
+    if (frameTabId !== undefined) {
+      // iframe 重建（SPA 恢复开态）也现领新 token：从不缓存上一次的应答，
+      // 拿旧串拼 URL 的口子从这里堵死。
+      try {
+        chrome.runtime.sendMessage({ type: 'drawerSelfTab' }, function (resp) {
+          try { if (chrome.runtime.lastError) { start(null); return; } } catch (_) {}
+          start(resp);
+        });
+      } catch (_) { start(null); }
+    } else {
       try {
         chrome.runtime.sendMessage({ type: 'drawerSelfTab' }, function (resp) {
           var tid = null;
           try { if (!chrome.runtime.lastError && resp && Number.isInteger(resp.tabId)) tid = resp.tabId; } catch (_) {}
           frameTabId = tid;
-          start(tid);
+          start(resp);
         });
       } catch (_) { frameTabId = null; start(null); }
     }
@@ -474,6 +485,9 @@
   function unmount() {
     if (!rootEl) return;
     endWindowDrag(); // 拖到一半被停用也不能留监听
+    drag = null; // 报告 #1295：光撤监听还不够——残留的 drag 对象会让重装后的
+                 // adoptTimer 永远卡在 `!drag` 判假（播放器改尺寸再也不吸收），
+                 // 直到下一次完整拖拽才自愈。旋转/全屏切换正是 mid-drag 卸除的高发点。
     if (adoptTimer) { clearInterval(adoptTimer); adoptTimer = 0; }
     document.removeEventListener('fullscreenchange', onFullscreenChange);
     window.removeEventListener('resize', onResize);
