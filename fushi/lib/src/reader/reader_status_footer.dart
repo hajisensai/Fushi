@@ -131,7 +131,8 @@ class ReaderStatusFooter extends StatefulWidget {
   /// 点状态行空白处：与顶部进度 pill 同语义——唤出 / 收起控制栏。
   final VoidCallback? onTap;
 
-  /// 点左侧「计时器 + 字/时 + 时长」：切换手动暂停计时（少进一次菜单）。
+  /// 点左侧「计时器 + 字/时 + 时长」：切换手动暂停计时。这是手动停 / 续表的**唯一**
+  /// 入口——统计浮层里曾有一个同功能按钮，但开浮层本身就停表，层内开关改不动运行态。
   final VoidCallback? onTapTracker;
 
   /// 点右侧进度数字：直接打开阅读统计浮层。

@@ -148,7 +148,7 @@ void main() {
     );
   });
 
-  group('浮层排版（窄屏不截断 + 计时开关是底栏级按钮）', () {
+  group('浮层排版（窄屏不截断）', () {
     /// 320dp 是仓库里最窄的在售机型宽度（见 FushiDialogFrame 的 BUG-1184 注释），
     /// 数值取到「五位字数 + 五位速度 + 带小时位的时钟」这种最长形态。
     const StudySessionTotals session = (
@@ -157,11 +157,7 @@ void main() {
       active: true,
     );
 
-    Future<void> pumpDialog(
-      WidgetTester tester, {
-      required bool paused,
-      VoidCallback? onToggle,
-    }) async {
+    Future<void> pumpDialog(WidgetTester tester) async {
       tester.view.physicalSize = const Size(320, 2400);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
@@ -179,8 +175,6 @@ void main() {
                 ),
                 remainingChapterChars: 12345,
                 remainingBookChars: 654321,
-                trackingPaused: () => paused,
-                onToggleTracking: onToggle ?? () {},
                 tick: const Duration(days: 1),
               ),
             ),
@@ -195,7 +189,7 @@ void main() {
         tester.pumpWidget(const SizedBox.shrink());
 
     testWidgets('320dp 窄屏上标签在左、数值在右，且没有一格被挤到溢出', (WidgetTester tester) async {
-      await pumpDialog(tester, paused: false);
+      await pumpDialog(tester);
       expect(
         tester.takeException(),
         isNull,
@@ -227,29 +221,18 @@ void main() {
       await disposeDialog(tester);
     });
 
-    testWidgets('计时开关是整宽、底栏级高度的按钮，不是紧凑小图标', (WidgetTester tester) async {
-      int toggled = 0;
-      await pumpDialog(tester, paused: false, onToggle: () => toggled++);
-      final Finder toggle = find.byKey(
-        const ValueKey<String>('fushi_reader_stats_tracking_toggle'),
-      );
-      final Size size = tester.getSize(toggle);
+    testWidgets('浮层里不再有手动计时开关：看统计期间计时本来就停着', (WidgetTester tester) async {
+      await pumpDialog(tester);
       expect(
-        size.height,
-        greaterThanOrEqualTo(48),
-        reason: '触摸目标不得低于 48dp（旧的紧凑 IconButton 只有 40）',
+        find.byKey(
+          const ValueKey<String>('fushi_reader_stats_tracking_toggle'),
+        ),
+        findsNothing,
+        reason: '开浮层经 _withStudyClockPaused 停表（BUG-2208），层内开关改不动运行态',
       );
-      expect(size.width, greaterThan(200), reason: '整宽按钮，与底栏按钮同一级别');
-      expect(find.text(t.pause), findsOneWidget);
-      await tester.tap(toggle);
-      expect(toggled, 1);
-      await disposeDialog(tester);
-    });
-
-    testWidgets('暂停中按钮切成「播放」文案 + 播放图标', (WidgetTester tester) async {
-      await pumpDialog(tester, paused: true);
-      expect(find.text(t.play), findsOneWidget);
       expect(find.text(t.pause), findsNothing);
+      expect(find.text(t.play), findsNothing);
+      expect(find.byType(FilledButton), findsNothing);
       await disposeDialog(tester);
     });
   });

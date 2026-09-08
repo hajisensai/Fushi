@@ -2235,8 +2235,6 @@ extension _ReaderChrome on _ReaderFushiPageState {
             child: ReaderStatisticsDialog(
               sessionTotals: _readingSessionTotals,
               loadBookTotals: _loadReaderBookStatTotals,
-              trackingPaused: () => _studyClockManualPause,
-              onToggleTracking: _toggleStudyClockManualPause,
               remainingChapterChars: remainingChapter,
               remainingBookChars: remainingBook,
             ),
@@ -2246,15 +2244,17 @@ extension _ReaderChrome on _ReaderFushiPageState {
     );
   }
 
-  /// 统计浮层「本次会话」旁的手动开关：暂停 → `stop()` 结算并封段；继续 →
-  /// `start()` 重锚 tick 起点开新段。旗标同时门住 [_ensureStudyClock] 与生命周期
-  /// resumed 的自动起表。
+  /// 手动计时开关：暂停 → `stop()` 结算并封段；继续 → `start()` 重锚 tick 起点开
+  /// 新段。旗标同时门住 [_ensureStudyClock] 与生命周期 resumed 的自动起表。
+  ///
+  /// 入口只有底部状态行左侧的计时器（[ReaderStatusFooter.onTapTracker]）——在正文
+  /// 里点，停 / 续当场生效。统计浮层里曾另有一个同功能按钮，但开浮层本身就经
+  /// [_withStudyClockPaused] 停表（BUG-2208），层内那个按钮改不动当下的运行态。
   void _toggleStudyClockManualPause() {
     _ensureStudyClock();
     final bool pause = !_studyClockManualPause;
     _rebuild(() => _studyClockManualPause = pause);
-    // 统一判据（BUG-2209）：统计浮层本身是弹层（modalDepth > 0），「继续」在关掉浮层
-    // 后才真正起表；切后台期间点「继续」也只是清旗、回前台再起。
+    // 统一判据（BUG-2209）：切后台期间点「继续」只是清旗、回前台再起表。
     _syncStudyClockRunState();
   }
 
