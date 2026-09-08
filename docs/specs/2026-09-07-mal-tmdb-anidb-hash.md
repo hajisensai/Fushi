@@ -2,6 +2,8 @@
 
 用户在视频工作流重做之后明确调整：MAL 为主，TMDB 兜底，同时 AniDB 必须具备真正的哈希识别。此前 AniDB 唯一主资料源约束已同步更新到 CLAUDE.md / AGENTS.md。
 
+> 2026-09-08 修订：主源改为用户可选（默认仍 MAL），MAL ↔ TMDB 互为兜底，识别链只在唯一精确命中时终止（主源歧义继续问兜底源，BUG-2268）。本文「MAL 查无/不可用才允许 TMDB」一句已被替代，其余策略不变。见 `2026-09-08-scrape-provider-choice.md`。
+
 ## 资料策略
 
 - 新作品优先查 MAL，实际传输使用 Jikan v4 公共只读接口，持久 provider 名为 `mal`。

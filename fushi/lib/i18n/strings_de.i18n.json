@@ -4402,7 +4402,6 @@
   "video_source_scrape_pending_tab": "Nicht zugeordnet",
   "video_source_scrape_manual_tmdb_movie": "TMDB-Film",
   "video_source_scrape_manual_tmdb_tv": "TMDB-Serie",
-  "video_source_scrape_provider_policy": "MAL (über Jikan) ist die primäre Metadatenquelle; TMDB dient als Ersatz.",
   "video_anidb_hash_enabled": "Dateien mit AniDB ED2K identifizieren",
   "video_anidb_hash_hint": "Erfordert ein AniDB-Konto und einen registrierten Client. Überträgt nur Dateigröße und Hash. Die AniDB-Anmeldung über UDP ist unverschlüsselt; nur in einem vertrauenswürdigen Netzwerk aktivieren.",
   "video_anidb_username": "AniDB-Benutzername",
@@ -4436,5 +4435,10 @@
   "video_opensubtitles_app_key_hint": "Leer lassen, um den enthaltenen API-Schlüssel der App zu verwenden.",
   "video_anilist_error_api_disabled": "AniList has temporarily disabled its public API because of server-side stability problems. This is not a problem with your network or proxy - the request reached AniList and was refused. Please try again later.",
   "video_anilist_error_rate_limited": "AniList is rate-limiting this app right now. Wait a moment and retry.",
-  "video_anilist_error_unreachable": "Cannot reach AniList (graphql.anilist.co). Check your network connection, or configure a proxy in download settings."
+  "video_anilist_error_unreachable": "Cannot reach AniList (graphql.anilist.co). Check your network connection, or configure a proxy in download settings.",
+  "video_metadata_primary_provider": "Primary metadata source",
+  "video_metadata_primary_provider_hint": "The other source is used as a fallback when the primary source has no exact match or is unavailable.",
+  "video_metadata_provider_mal": "MAL (via Jikan)",
+  "video_metadata_provider_tmdb": "TMDB",
+  "video_source_scrape_provider_follow_global": "Follow global default"
 }

@@ -4402,7 +4402,6 @@
   "video_source_scrape_pending_tab": "待确认",
   "video_source_scrape_manual_tmdb_movie": "TMDB 电影",
   "video_source_scrape_manual_tmdb_tv": "TMDB 电视剧",
-  "video_source_scrape_provider_policy": "MAL（经 Jikan）为主要资料源，TMDB 兜底。",
   "video_anidb_hash_enabled": "通过 AniDB ED2K 识别文件",
   "video_anidb_hash_hint": "需要 AniDB 账号和已注册客户端，仅提交文件大小与哈希。AniDB UDP 登录未加密，请仅在可信网络下开启。",
   "video_anidb_username": "AniDB 用户名",
@@ -4436,5 +4435,10 @@
   "video_opensubtitles_app_key_hint": "留空使用应用内置 API 密钥。",
   "video_anilist_error_api_disabled": "AniList 官方因服务器稳定性问题暂时停用了公开 API。这不是你的网络或代理的问题——请求已经打到 AniList 并被它当面拒绝了。请稍后再试。",
   "video_anilist_error_rate_limited": "AniList 正在对本应用限流。稍等一会儿再重试。",
-  "video_anilist_error_unreachable": "连不上 AniList（graphql.anilist.co）。请检查网络连接，或在下载设置中配置代理。"
+  "video_anilist_error_unreachable": "连不上 AniList（graphql.anilist.co）。请检查网络连接，或在下载设置中配置代理。",
+  "video_metadata_primary_provider": "主资料源",
+  "video_metadata_primary_provider_hint": "主源没有唯一精确命中或不可用时，自动用另一个源兜底。",
+  "video_metadata_provider_mal": "MAL（经 Jikan）",
+  "video_metadata_provider_tmdb": "TMDB",
+  "video_source_scrape_provider_follow_global": "跟随全局默认"
 }

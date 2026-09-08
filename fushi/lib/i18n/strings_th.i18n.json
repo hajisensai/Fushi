@@ -4402,7 +4402,6 @@
   "video_source_scrape_pending_tab": "ยังไม่จับคู่",
   "video_source_scrape_manual_tmdb_movie": "ภาพยนตร์ TMDB",
   "video_source_scrape_manual_tmdb_tv": "ซีรีส์ TMDB",
-  "video_source_scrape_provider_policy": "MAL (ผ่าน Jikan) เป็นแหล่งข้อมูลเมตาหลัก และใช้ TMDB เป็นแหล่งสำรอง",
   "video_anidb_hash_enabled": "ระบุไฟล์ด้วย AniDB ED2K",
   "video_anidb_hash_hint": "ต้องมีบัญชี AniDB และไคลเอนต์ที่ลงทะเบียนแล้ว ส่งเฉพาะขนาดไฟล์และค่าแฮช การเข้าสู่ระบบ AniDB ผ่าน UDP ไม่ได้เข้ารหัส โปรดเปิดใช้เฉพาะบนเครือข่ายที่เชื่อถือได้",
   "video_anidb_username": "ชื่อผู้ใช้ AniDB",
@@ -4436,5 +4435,10 @@
   "video_opensubtitles_app_key_hint": "เว้นว่างไว้เพื่อใช้คีย์ API ที่มีอยู่ในแอป",
   "video_anilist_error_api_disabled": "AniList has temporarily disabled its public API because of server-side stability problems. This is not a problem with your network or proxy - the request reached AniList and was refused. Please try again later.",
   "video_anilist_error_rate_limited": "AniList is rate-limiting this app right now. Wait a moment and retry.",
-  "video_anilist_error_unreachable": "Cannot reach AniList (graphql.anilist.co). Check your network connection, or configure a proxy in download settings."
+  "video_anilist_error_unreachable": "Cannot reach AniList (graphql.anilist.co). Check your network connection, or configure a proxy in download settings.",
+  "video_metadata_primary_provider": "Primary metadata source",
+  "video_metadata_primary_provider_hint": "The other source is used as a fallback when the primary source has no exact match or is unavailable.",
+  "video_metadata_provider_mal": "MAL (via Jikan)",
+  "video_metadata_provider_tmdb": "TMDB",
+  "video_source_scrape_provider_follow_global": "Follow global default"
 }

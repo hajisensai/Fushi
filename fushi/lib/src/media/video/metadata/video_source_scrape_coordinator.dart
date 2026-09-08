@@ -30,6 +30,7 @@ import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi/src/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi/src/media/video/scraper/filename_parser.dart';
+import 'package:fushi/src/media/video/scraper/scraper_types.dart';
 import 'package:fushi/src/media/video/video_filename_parser.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
@@ -43,11 +44,12 @@ class VideoSourceScrapeCoordinator
     required this.database,
     required this.config,
     VideoMetadataProviderRegistry? registry,
-    this.primaryProvider = VideoMetadataProviderKind.mal,
+    VideoMetadataProviderKind? primaryProvider,
     AnidbHashIdentityService? hashIdentityService,
     VideoMetadataAssetDownloader? assetDownloader,
     this.onWorkScraped,
-  })  : registry = registry ?? _createRegistry(config),
+  })  : primaryProvider = primaryProvider ?? config.primaryProvider,
+        registry = registry ?? _createRegistry(config),
         assetDownloader = assetDownloader ?? VideoMetadataAssetDownloader(),
         hashIdentityService = hashIdentityService ??
             AnidbHashIdentityService(
@@ -60,6 +62,8 @@ class VideoSourceScrapeCoordinator
   final FushiDatabase database;
   final VideoSourceScrapeGlobalConfig config;
   final VideoMetadataProviderRegistry registry;
+
+  /// 全局默认主源；来源级 `provider_override` 可覆盖，见 [_sourceProvider]。
   final VideoMetadataProviderKind primaryProvider;
   final AnidbHashIdentityService hashIdentityService;
   final bool _ownsHashIdentityService;
@@ -143,13 +147,13 @@ class VideoSourceScrapeCoordinator
         RegExp(r'^(?:mal|myanimelist|tmdb|anidb|aid)\s*[:=]',
                 caseSensitive: false)
             .hasMatch(trimmed);
+    final VideoMetadataProviderKind selected = await _sourceProvider(source);
+    final List<VideoMetadataProviderKind> chain = _providerChain(selected);
     if (identityInput) {
       final VideoMetadataLookup? lookup =
           explicit.length == 1 ? explicit.single : null;
       if (lookup == null ||
-          !(lookup.provider == primaryProvider ||
-              (primaryProvider == VideoMetadataProviderKind.mal &&
-                  lookup.provider == VideoMetadataProviderKind.tmdb)) ||
+          !chain.contains(lookup.provider) ||
           !RegExp(r'^[0-9]+$').hasMatch(lookup.externalId) ||
           (int.tryParse(lookup.externalId) ?? 0) <= 0) {
         throw const FormatException('Invalid video metadata work ID');
@@ -185,12 +189,6 @@ class VideoSourceScrapeCoordinator
     final List<VideoSourceScrapeConfirmationCandidate> candidates =
         <VideoSourceScrapeConfirmationCandidate>[];
     final Set<String> seenLookups = <String>{};
-    final VideoMetadataProviderKind selected = await _sourceProvider(source);
-    final List<VideoMetadataProviderKind> chain = <VideoMetadataProviderKind>[
-      selected,
-      if (selected == VideoMetadataProviderKind.mal)
-        VideoMetadataProviderKind.tmdb,
-    ];
     for (final VideoMetadataProviderKind providerKind in chain) {
       final VideoMetadataProvider? provider =
           _manualSearchProvider(providerKind);
@@ -284,7 +282,23 @@ class VideoSourceScrapeCoordinator
         primaryProvider: primaryProvider,
       ).provider;
 
-  /// 取一个已配置的来源，手动搜索由上层按 MAL → TMDB 顺序调用。
+  /// 某来源的询问链：主源 + 兜底源（MAL ↔ TMDB 互为兜底；AniDB 等单源无兜底）。
+  static List<VideoMetadataProviderKind> _providerChain(
+    VideoMetadataProviderKind selected,
+  ) =>
+      <VideoMetadataProviderKind>[
+        selected,
+        if (videoMetadataFallbackProvider(selected)
+            case final VideoMetadataProviderKind fallback)
+          fallback,
+      ];
+
+  /// 是否为双源策略（有兜底源）。旧代码到处写 `selected == mal` 表达的其实就是
+  /// 这个意思；换成 TMDB 主源后语义一样成立。
+  static bool _isTwoSourcePolicy(VideoMetadataProviderKind selected) =>
+      videoMetadataFallbackProvider(selected) != null;
+
+  /// 取一个已配置的来源，手动搜索由上层按主源 → 兜底源顺序调用。
   VideoMetadataProvider? _manualSearchProvider(
     VideoMetadataProviderKind selected,
   ) {
@@ -415,13 +429,9 @@ class VideoSourceScrapeCoordinator
         totalWorks: works.length,
       );
 
-      final bool hasProvider =
-          (registry.provider(settings.provider)?.isAvailable ?? false) ||
-              (settings.provider == VideoMetadataProviderKind.mal &&
-                  (registry
-                          .provider(VideoMetadataProviderKind.tmdb)
-                          ?.isAvailable ??
-                      false));
+      final bool hasProvider = _providerChain(settings.provider).any(
+          (VideoMetadataProviderKind kind) =>
+              registry.provider(kind)?.isAvailable ?? false);
       if (!hasProvider && works.isNotEmpty) {
         failed = works.length;
         errors.add(SourceScrapeIssue(
@@ -723,10 +733,11 @@ class VideoSourceScrapeCoordinator
     );
     final List<VideoMetadataLookup> storedLookups =
         await _store.lookupsForWork(localWork);
+    final List<VideoMetadataProviderKind> chain =
+        _providerChain(selectedProvider);
+    final bool twoSourcePolicy = _isTwoSourcePolicy(selectedProvider);
     bool acceptsCanonical(VideoMetadataLookup lookup) =>
-        lookup.provider == selectedProvider ||
-        (selectedProvider == VideoMetadataProviderKind.mal &&
-            lookup.provider == VideoMetadataProviderKind.tmdb);
+        chain.contains(lookup.provider);
     final VideoMetadataLookup? confirmedCanonical =
         confirmedLookup != null && acceptsCanonical(confirmedLookup)
             ? confirmedLookup
@@ -734,16 +745,14 @@ class VideoSourceScrapeCoordinator
     // The first persisted identity is the primary. A retired primary's TMDB
     // cross-reference must not silently become a new canonical binding.
     final VideoMetadataLookup? storedPrimary = storedLookups.firstOrNull;
-    final bool retiredStoredIdentity =
-        selectedProvider == VideoMetadataProviderKind.mal &&
-            storedPrimary != null &&
-            !acceptsCanonical(storedPrimary);
-    final VideoMetadataLookup? storedCanonical =
-        selectedProvider == VideoMetadataProviderKind.mal
-            ? (storedPrimary != null && acceptsCanonical(storedPrimary)
-                ? storedPrimary
-                : null)
-            : storedLookups.where(acceptsCanonical).firstOrNull;
+    final bool retiredStoredIdentity = twoSourcePolicy &&
+        storedPrimary != null &&
+        !acceptsCanonical(storedPrimary);
+    final VideoMetadataLookup? storedCanonical = twoSourcePolicy
+        ? (storedPrimary != null && acceptsCanonical(storedPrimary)
+            ? storedPrimary
+            : null)
+        : storedLookups.where(acceptsCanonical).firstOrNull;
     final List<VideoMetadataLookup> nfoLookups = _lookupsForNfo(nfo);
     final Set<String> defaultNfoSources = <String>{
       for (final VideoMetadataId id in nfo?.ids ?? <VideoMetadataId>[])
@@ -755,16 +764,14 @@ class VideoSourceScrapeCoordinator
         .firstOrNull;
     final VideoMetadataLookup? nfoIdentityOwner =
         nfoPrimary ?? nfoLookups.firstOrNull;
-    final bool retiredNfoIdentity =
-        selectedProvider == VideoMetadataProviderKind.mal &&
-            nfoIdentityOwner != null &&
-            !acceptsCanonical(nfoIdentityOwner);
-    final VideoMetadataLookup? nfoCanonical =
-        selectedProvider == VideoMetadataProviderKind.mal
-            ? (nfoPrimary != null && acceptsCanonical(nfoPrimary)
-                ? nfoPrimary
-                : null)
-            : nfoLookups.where(acceptsCanonical).firstOrNull;
+    final bool retiredNfoIdentity = twoSourcePolicy &&
+        nfoIdentityOwner != null &&
+        !acceptsCanonical(nfoIdentityOwner);
+    final VideoMetadataLookup? nfoCanonical = twoSourcePolicy
+        ? (nfoPrimary != null && acceptsCanonical(nfoPrimary)
+            ? nfoPrimary
+            : null)
+        : nfoLookups.where(acceptsCanonical).firstOrNull;
     final VideoMetadataLookup? storedSameSource = confirmedCanonical == null
         ? null
         : _lookupForProvider(storedLookups, confirmedCanonical.provider);
@@ -852,6 +859,7 @@ class VideoSourceScrapeCoordinator
     VideoMetadataResolution resolution =
         await resolver.resolve(VideoMetadataResolveRequest(
       selectedProvider: selectedProvider,
+      fallbackProvider: videoMetadataFallbackProvider(selectedProvider),
       mediaKind: kind,
       titleCandidates: searchTitles,
       year: nfo?.year ?? _parsedYear(localWork),
@@ -878,13 +886,12 @@ class VideoSourceScrapeCoordinator
     VideoMetadataWork? resolvedWork = resolution.work;
     VideoMetadataLookup? resolvedLookup = resolution.lookup;
     if (resolution.status == VideoMetadataResolutionStatus.ambiguous) {
-      // 候选身份使用实际返回来源；TMDB 兜底结果必须保留 TMDB ID 命名空间。
-      final VideoMetadataProviderKind candidateProvider =
-          resolution.providerKind ?? selectedProvider;
+      // 候选身份使用每条候选自己的来源：主备两源都只剩待确认候选时它们会被
+      // 合并在一起，兜底源的结果必须保留自己的 ID 命名空间。
       final List<VideoSourceScrapeConfirmationCandidate> options =
           <VideoSourceScrapeConfirmationCandidate>[
         for (final VideoMetadataWork candidate in resolution.candidates)
-          if (_lookupForCandidate(candidate, candidateProvider)
+          if (_lookupForCandidate(candidate, candidate.provider)
               case final VideoMetadataLookup lookup)
             VideoSourceScrapeConfirmationCandidate(
               lookup: lookup,
@@ -1868,30 +1875,12 @@ class VideoSourceScrapeCoordinator
   static List<String> _titleCandidates(
     VideoSourceScrapeWork work,
     VideoNameInfo parsed,
-  ) {
-    final String path = work.members.first.videoPath;
-    final List<String> rawValues = <String>[
-      work.title,
-      parsed.series,
-      p.basename(p.dirname(path)),
-      p.basename(p.dirname(p.dirname(path))),
-    ];
-    // MoviePilot MetaInfoPath 会分别解析文件名、父目录和祖父目录后再合并。
-    // 原始目录名通常还带字幕组、全集范围、编码等块，直接拿它请求 provider 会
-    // 得到零结果；清洗后的标题必须先进入候选，原值仅保留显式 ID 等兼容信息。
-    final List<String> values = <String>[
-      for (final String value in rawValues) ...<String>[
-        FilenameParser.parse(value).title,
-        value,
-      ],
-    ];
-    final Set<String> seen = <String>{};
-    return <String>[
-      for (final String value in values)
-        if (value.trim().isNotEmpty && seen.add(value.trim().toLowerCase()))
-          value.trim(),
-    ];
-  }
+  ) =>
+      videoScrapeTitleCandidates(
+        workTitle: work.title,
+        parsedSeries: parsed.series,
+        videoPath: work.members.first.videoPath,
+      );
 
   static int? _parsedSeason(
     VideoSourceScrapeWork work,
@@ -2064,6 +2053,56 @@ class VideoSourceScrapeCoordinator
   }
 }
 
+/// 作品识别的标题候选，按文件名、父目录、祖父目录的优先级排列。
+///
+/// MoviePilot MetaInfoPath 会分别解析文件名、父目录和祖父目录后再合并。
+/// 原始目录名通常还带字幕组、全集范围、编码等块，直接拿它请求 provider 会
+/// 得到零结果；清洗后的标题必须先进入候选，原值仅保留显式 ID 等兼容信息。
+///
+/// **文件派生**候选（作品标题 / 文件名解析出的系列名）若只是纯集号标签
+/// （`01` / `第01集` / `S01E01`：引擎给不出标题却解出了集号），不进 provider：
+/// 它们在 MAL/TMDB 上只能搜出一堆类型合格、标题不符的垃圾候选，把整条识别
+/// 污染成「待确认」，还白白消耗 Jikan 配额。**目录名**候选不受此限——目录
+/// `86` 是用户手写的番名，不是集号。
+List<String> videoScrapeTitleCandidates({
+  required String workTitle,
+  required String parsedSeries,
+  required String videoPath,
+}) {
+  final List<String> fileDerived = <String>[workTitle, parsedSeries];
+  final List<String> directoryDerived = <String>[
+    p.basename(p.dirname(videoPath)),
+    p.basename(p.dirname(p.dirname(videoPath))),
+  ];
+  final List<String> rawValues = <String>[
+    for (final String value in fileDerived)
+      if (!isEpisodeLabelTitle(value)) value,
+    ...directoryDerived,
+  ];
+  final List<String> values = <String>[
+    for (final String value in rawValues) ...<String>[
+      FilenameParser.parse(value).title,
+      value,
+    ],
+  ];
+  final Set<String> seen = <String>{};
+  return <String>[
+    for (final String value in values)
+      if (value.trim().isNotEmpty && seen.add(value.trim().toLowerCase()))
+        value.trim(),
+  ];
+}
+
+/// 一个字符串是否只是集号标签而非作品标题：规则引擎解不出标题、却解出了集号。
+/// 四位数（`1917` 这类年份/片名）不算，避免把纯数字片名误杀。
+bool isEpisodeLabelTitle(String value) {
+  final String trimmed = value.trim();
+  if (trimmed.isEmpty) return false;
+  if (RegExp(r'\d{4}').hasMatch(trimmed)) return false;
+  final ParsedMediaName parsed = FilenameParser.parse(trimmed);
+  return parsed.title.trim().isEmpty && parsed.episode != null;
+}
+
 class _EffectiveSourceSettings {
   const _EffectiveSourceSettings({
     required this.enabled,
@@ -2083,8 +2122,10 @@ class _EffectiveSourceSettings {
   }) {
     return _EffectiveSourceSettings(
       enabled: row?.enabled ?? true,
-      // 历史 provider_override 不改变生产 MAL 主源策略。
-      provider: primaryProvider,
+      // 来源级 provider_override：mal / tmdb 覆盖全局主源；NULL 或历史值
+      // （bangumi / douban / anilist / anidb）回落全局默认。
+      provider: parseSelectableVideoMetadataProvider(row?.providerOverride) ??
+          primaryProvider,
       writeNfo: row?.writeNfo ?? true,
       writeImages: row?.writeImages ?? true,
       nfoPolicy: _policy(row?.nfoPolicy),
