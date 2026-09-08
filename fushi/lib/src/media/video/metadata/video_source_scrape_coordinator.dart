@@ -8,7 +8,10 @@ import 'dart:typed_data';
 import 'package:drift/drift.dart' show Value;
 import 'package:http/http.dart' as http;
 import 'package:fushi/src/media/video/metadata/anidb_hash_identity_service.dart';
+import 'package:fushi/src/media/video/metadata/anidb_title_catalog.dart';
 import 'package:fushi/src/media/video/metadata/anidb_udp_file_client.dart';
+import 'package:fushi/src/media/video/metadata/anime_identity_mapping.dart';
+import 'package:fushi/src/media/video/metadata/anime_offline_identity_resolver.dart';
 import 'package:fushi/src/media/video/metadata/mal_video_metadata_provider.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_transport.dart';
 import 'package:fushi/src/media/source_library/source_library_row.dart';
@@ -47,6 +50,9 @@ class VideoSourceScrapeCoordinator
     VideoMetadataProviderKind? primaryProvider,
     AnidbHashIdentityService? hashIdentityService,
     VideoMetadataAssetDownloader? assetDownloader,
+    AnimeIdentityMapping? identityMapping,
+    AnimeOfflineIdentityResolver? offlineIdentityResolver,
+    bool enableOfflineTitleIndex = false,
     this.onWorkScraped,
   })  : primaryProvider = primaryProvider ?? config.primaryProvider,
         registry = registry ?? _createRegistry(config),
@@ -54,10 +60,25 @@ class VideoSourceScrapeCoordinator
         hashIdentityService = hashIdentityService ??
             AnidbHashIdentityService(
                 enabled: config.hashEnabled, config: config.anidbUdpConfig),
+        identityMapping = identityMapping ??
+            (enableOfflineTitleIndex ? AnimeIdentityMapping() : null),
         _ownsHashIdentityService = hashIdentityService == null,
         _ownsRegistry = registry == null,
         _ownsAssetDownloader = assetDownloader == null,
-        _store = VideoMetadataDatabaseStore(database);
+        _ownsIdentityMapping = identityMapping == null,
+        _store = VideoMetadataDatabaseStore(database) {
+    // 离线标题索引与 id 接力都要联网拉数据包（AniDB 标题包 / Fribb 表），所以
+    // 默认关闭：只有生产装配点显式打开，或测试注入自己的 resolver，绝不让
+    // 单测因为默认构造去下载 20MB 数据。
+    this.offlineIdentityResolver = offlineIdentityResolver ??
+        (enableOfflineTitleIndex
+            ? AnimeOfflineIdentityResolver(
+                catalog: AniDbTitleCatalog(),
+                mapping: this.identityMapping!,
+                ownsCatalog: true,
+              )
+            : null);
+  }
 
   final FushiDatabase database;
   final VideoSourceScrapeGlobalConfig config;
@@ -68,8 +89,16 @@ class VideoSourceScrapeCoordinator
   final AnidbHashIdentityService hashIdentityService;
   final bool _ownsHashIdentityService;
   final VideoMetadataAssetDownloader assetDownloader;
+
+  /// 跨站 id 映射（Fribb anime-lists）：TMDB 补充的 id 接力用；null = 不接力。
+  final AnimeIdentityMapping? identityMapping;
+
+  /// 离线标题索引阶段（设计稿 A2）：AniDB 标题包唯一精确命中 → Fribb 换 id；
+  /// null = 跳过该阶段。
+  late final AnimeOfflineIdentityResolver? offlineIdentityResolver;
   final bool _ownsRegistry;
   final bool _ownsAssetDownloader;
+  final bool _ownsIdentityMapping;
   final VideoMetadataDatabaseStore _store;
 
   /// 一个作品刮完（规范数据已落库、sidecar 已写）后的通知。
@@ -821,7 +850,7 @@ class VideoSourceScrapeCoordinator
     final VideoMetadataLookup? canonicalLookup = confirmedCanonical ??
         storedCanonical ??
         (conflictingNfo || retiredNfoIdentity ? null : nfoCanonical);
-    final VideoMetadataLookup? tmdbLookupHint =
+    VideoMetadataLookup? tmdbLookupHint =
         _lookupForProvider(identityHints, VideoMetadataProviderKind.tmdb);
     final List<String> pathHints = <String>[
       for (final VideoBookRow member in localWork.members) member.videoPath,
@@ -854,6 +883,26 @@ class VideoSourceScrapeCoordinator
       else
         ...candidates,
     ];
+    // 离线标题索引阶段（A2）：没有任何已知身份时，先拿标题去 AniDB 标题包做
+    // 唯一精确命中，再经 Fribb 换成链上两家的 id。命中后按 id 直拉，不发搜索。
+    final AnimeOfflineIdentity? offline =
+        canonicalLookup == null && hashLookup == null && !hasExplicitId
+            ? await _identifyOffline(searchTitles, kind, warnings, localWork)
+            : null;
+    final List<VideoMetadataLookup> offlineLookups = <VideoMetadataLookup>[
+      if (offline != null)
+        for (final VideoMetadataProviderKind providerKind in chain)
+          if (offline.lookupFor(providerKind, kind)
+              case final VideoMetadataLookup lookup)
+            lookup,
+    ];
+    if (offline?.tmdbId != null) {
+      tmdbLookupHint ??=
+          offline!.lookupFor(VideoMetadataProviderKind.tmdb, kind);
+    }
+    final int? searchYear = nfo?.year ?? _parsedYear(localWork);
+    final int? episodeCount =
+        localWork.isEpisodic ? localWork.members.length : null;
     final VideoMetadataResolver resolver =
         VideoMetadataResolver(registry: registry);
     VideoMetadataResolution resolution =
@@ -862,12 +911,49 @@ class VideoSourceScrapeCoordinator
       fallbackProvider: videoMetadataFallbackProvider(selectedProvider),
       mediaKind: kind,
       titleCandidates: searchTitles,
-      year: nfo?.year ?? _parsedYear(localWork),
+      year: searchYear,
       seasonNumber: seasonNumber,
-      episodeCount: localWork.isEpisodic ? localWork.members.length : null,
-      confirmedLookup: canonicalLookup ?? hashLookup,
+      episodeCount: episodeCount,
+      confirmedLookup:
+          canonicalLookup ?? hashLookup ?? offlineLookups.firstOrNull,
       identityHints: pathHints,
     ));
+    if (canonicalLookup == null &&
+        hashLookup == null &&
+        offlineLookups.isNotEmpty) {
+      // 离线身份是自动证据，不是用户锁定：主源那家 id 拉不到（Jikan 504、条目
+      // 下架）就换链上另一家的 id；两家都不行才退回严格标题搜索。
+      for (int index = 1;
+          index < offlineLookups.length && !_isUsableResolution(resolution);
+          index++) {
+        final VideoMetadataLookup lookup = offlineLookups[index];
+        resolution = await resolver.resolve(VideoMetadataResolveRequest(
+          selectedProvider: lookup.provider,
+          mediaKind: kind,
+          titleCandidates: searchTitles,
+          year: searchYear,
+          seasonNumber: seasonNumber,
+          episodeCount: episodeCount,
+          confirmedLookup: lookup,
+        ));
+      }
+      if (!_isUsableResolution(resolution)) {
+        warnings.add(SourceScrapeIssue(
+            workTitle: localWork.title,
+            message:
+                '离线标题索引已命中 AniDB ${offline!.anidbId}（${offline.matchedTitle}），但按 id 拉取资料失败（${resolution.reason}）；退回标题搜索。'));
+        resolution = await resolver.resolve(VideoMetadataResolveRequest(
+          selectedProvider: selectedProvider,
+          fallbackProvider: videoMetadataFallbackProvider(selectedProvider),
+          mediaKind: kind,
+          titleCandidates: searchTitles,
+          year: searchYear,
+          seasonNumber: seasonNumber,
+          episodeCount: episodeCount,
+          identityHints: pathHints,
+        ));
+      }
+    }
     if (canonicalLookup == null &&
         hashLookup != null &&
         resolution.status ==
@@ -945,6 +1031,8 @@ class VideoSourceScrapeCoordinator
       );
     }
 
+    // 身份接力：MAL 主身份 + 还没有 TMDB 身份 → 经 Fribb 换 TMDB id，补充按 id 直拉。
+    tmdbLookupHint ??= await _tmdbLookupFromMapping(resolvedLookup, kind);
     final _HydratedWork primaryHydration = await _hydrateWork(
       resolvedWork,
       resolvedLookup,
@@ -985,7 +1073,13 @@ class VideoSourceScrapeCoordinator
                   localWork.title,
                   lookupHint: tmdbLookupHint,
                 );
-      metadata = supplementVideoMetadataWithTmdb(metadata, tmdb.metadata);
+      // 有序合并：主源标量独占、补充只填空、集合并集；简介按刮削语言感知
+      // （MAL 简介恒英文，zh-CN 用户拿到 TMDB 中文简介时以后者为准）。
+      metadata = supplementVideoMetadata(
+        metadata,
+        tmdb.metadata,
+        preferredLanguage: config.locale,
+      );
     }
     if (hashEvidence.animeId != null &&
         hashEvidence.malId != null &&
@@ -993,10 +1087,10 @@ class VideoSourceScrapeCoordinator
         _lookupForCandidate(metadata, VideoMetadataProviderKind.mal)
                 ?.externalId ==
             '${hashEvidence.malId}') {
-      metadata = metadata.copyWith(ids: <VideoMetadataId>[
-        ...metadata.ids.where((VideoMetadataId id) => id.type != 'anidb'),
-        VideoMetadataId(type: 'anidb', value: '${hashEvidence.animeId}'),
-      ]);
+      metadata = _withAnidbId(metadata, hashEvidence.animeId!);
+    } else if (offline != null && _resolvedFromOffline(metadata, offline)) {
+      // 离线标题索引定的身份：把 AniDB id 一并落成交叉引用，下次不必再查索引。
+      metadata = _withAnidbId(metadata, offline.anidbId);
     }
     metadata = _preserveHistoricalIdentities(
       metadata,
@@ -1081,6 +1175,103 @@ class VideoSourceScrapeCoordinator
       conflicting: conflicting || animeIds.length > 1 || malIds.length > 1,
     );
   }
+
+  /// 离线标题索引阶段：唯一精确命中才返回身份；歧义 / 查无 / 不可用都只记一条
+  /// 说明并返回 null，让在线链继续，绝不因离线数据拉不到而判整条失败。
+  Future<AnimeOfflineIdentity?> _identifyOffline(
+    List<String> titles,
+    VideoMetadataMediaKind kind,
+    List<SourceScrapeIssue> warnings,
+    VideoSourceScrapeWork work,
+  ) async {
+    final AnimeOfflineIdentityResolver? resolver = offlineIdentityResolver;
+    if (resolver == null) return null;
+    final AnimeOfflineIdentityResolution resolution = await resolver.resolve(
+      titleCandidates: titles,
+      mediaKind: kind,
+    );
+    switch (resolution.status) {
+      case AnimeOfflineIdentityStatus.matched:
+        final AnimeOfflineIdentity identity = resolution.identity!;
+        if (!identity.hasOnlineIdentity) {
+          warnings.add(SourceScrapeIssue(
+              workTitle: work.title,
+              message:
+                  '离线标题索引命中 AniDB ${identity.anidbId}（${identity.matchedTitle}），但跨站映射表里没有它的 MAL/TMDB id；继续在线标题搜索。'));
+          return null;
+        }
+        return identity;
+      case AnimeOfflineIdentityStatus.ambiguous:
+        warnings.add(SourceScrapeIssue(
+            workTitle: work.title,
+            message: '离线标题索引有多个同名候选，不自动决定（${resolution.reason}）；继续在线标题搜索。'));
+        return null;
+      case AnimeOfflineIdentityStatus.unavailable:
+        warnings.add(SourceScrapeIssue(
+            workTitle: work.title,
+            message: '离线标题索引不可用（${resolution.reason}）；继续在线标题搜索。'));
+        return null;
+      case AnimeOfflineIdentityStatus.notFound:
+        return null;
+    }
+  }
+
+  static bool _isUsableResolution(VideoMetadataResolution resolution) =>
+      resolution.status == VideoMetadataResolutionStatus.matched ||
+      resolution.status == VideoMetadataResolutionStatus.ambiguous;
+
+  /// 身份接力（Jellyfin `MergeNewData` 的思路）：主源是 MAL 而本地还没有任何
+  /// TMDB 身份时，用 Fribb 映射把 MAL id 换成 TMDB 剧/电影 id，让 TMDB 补充按
+  /// id 直拉而不是再按标题搜一次（少一次歧义机会，也不吃 TMDB 搜索配额）。
+  /// 映射不唯一或拉不到映射表时返回 null，退回原有的标题补充路径。
+  Future<VideoMetadataLookup?> _tmdbLookupFromMapping(
+    VideoMetadataLookup? resolved,
+    VideoMetadataMediaKind kind,
+  ) async {
+    final AnimeIdentityMapping? mapping = identityMapping;
+    if (mapping == null ||
+        resolved == null ||
+        resolved.provider != VideoMetadataProviderKind.mal) {
+      return null;
+    }
+    final int? malId = int.tryParse(resolved.externalId);
+    if (malId == null) return null;
+    try {
+      final Set<int> tmdbIds = <int>{
+        for (final AnimeIdentityEntry entry
+            in await mapping.entriesForMal(malId))
+          if (entry.tmdbId case final int id)
+            if (entry.isMovie == (kind == VideoMetadataMediaKind.movie)) id,
+      };
+      if (tmdbIds.length != 1) return null;
+      return VideoMetadataLookup(
+        provider: VideoMetadataProviderKind.tmdb,
+        externalId: '${tmdbIds.single}',
+        mediaKind: kind,
+      );
+    } on Object {
+      return null;
+    }
+  }
+
+  /// 最终资料是否就是离线索引指到的那部作品（MAL id 或 TMDB id 对得上）。
+  static bool _resolvedFromOffline(
+    VideoMetadataWork work,
+    AnimeOfflineIdentity offline,
+  ) {
+    final String? malId =
+        _lookupForCandidate(work, VideoMetadataProviderKind.mal)?.externalId;
+    final String? tmdbId =
+        _lookupForCandidate(work, VideoMetadataProviderKind.tmdb)?.externalId;
+    return (offline.malId != null && malId == '${offline.malId}') ||
+        (offline.tmdbId != null && tmdbId == '${offline.tmdbId}');
+  }
+
+  static VideoMetadataWork _withAnidbId(VideoMetadataWork work, int anidbId) =>
+      work.copyWith(ids: <VideoMetadataId>[
+        ...work.ids.where((VideoMetadataId id) => id.type != 'anidb'),
+        VideoMetadataId(type: 'anidb', value: '$anidbId'),
+      ]);
 
   static bool _sameLookup(
           VideoMetadataLookup first, VideoMetadataLookup second) =>
@@ -2045,6 +2236,8 @@ class VideoSourceScrapeCoordinator
     if (_ownsHashIdentityService) unawaited(hashIdentityService.close());
     if (_ownsRegistry) registry.close();
     if (_ownsAssetDownloader) assetDownloader.close();
+    offlineIdentityResolver?.close();
+    if (_ownsIdentityMapping) identityMapping?.close();
   }
 
   static String _pathKey(String value) {

@@ -2201,6 +2201,9 @@ class _HomePageState extends BasePageState<HomePage>
         VideoSourceScrapeCoordinator(
       database: appModel.database,
       config: config,
+      // 生产装配点显式打开离线标题索引（AniDB 标题包 + Fribb 映射）；默认关是
+      // 为了单测不联网。
+      enableOfflineTitleIndex: true,
     );
     _videoSourceScrapeCoordinator = coordinator;
     _videoSourceScrapeConfigFingerprint = fingerprint;
