@@ -14,6 +14,15 @@
 
 ### 历史运行记录
 
+2026-09-08 v8 从原始 Start.exe 经 Fushi CP932 启动的 PID 72288 实际加载
+`039e7fe5663fdb65ebcafa7ca8deb1f11020611044f9a410566bff73cc2e615a`。
+100% 两次同字、75% 同字、恢复 100% 后换至短句的四次受控查词均显示并停留，
+关闭弹窗没有误推进。只读 worker 队列 1–4 均为 Published；前三条 event 154，
+第四条 event 1571，各自预期/当前 event、generation、epoch 一致，字形与文本
+前沿已消费完。证据在本机 rewrite72288-click4-short-worker.json，详见同日
+legacy adapter 审查台账。这是代表性复测通过，不能证明真实运行已命中特定
+零前缀排程，历史首次按下泄漏与已知 partial 布局仍未关闭。
+
 - 原始游戏 PID 48540，实际 DLL SHA-256 `c38766f11e53dabb35d53a2489112108f5307b3d97a1a98b5017a7c2b0cfaffb`。只读本机元数据 `rewrite48540-lookup-private-metadata.json` 与 `rewrite48540-viewport-100pct.json` / `rewrite48540-viewport-75pct.json` 未含正文或游戏载荷。
 - 75% 失败点击保留在队列事件 11：真实正文事件 1214、26 字、字符索引 11，几何代际 102、epoch 13065，客户区 960×540、投影矩形 `[428,420,22,23]`。它已被 worker 消费，但没有对应新 IPC hit。随后 100% 成功点击为队列事件 12。
 - 75% 时直接以有界只读 RPM 执行生产 `ReadSnapshot`、owner `BuildSnapshot` 和 `RenderAllowed` 全部通过；profile/config/owner 设计尺寸仍 1280×720，实际 viewport/client 为 960×540，四项可见性阻止标志均为零。DLL 私有当前布局完整有效且持续收到字形。
