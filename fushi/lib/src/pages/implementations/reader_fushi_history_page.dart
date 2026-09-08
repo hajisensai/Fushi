@@ -269,6 +269,13 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
 
+  /// BUG-2259：书架搜索命中判据，**四路**卡源（本地 EPUB / 本地 SRT / 远端 EPUB
+  /// 占位 / 远端 SRT 占位）共用同一口径 [matchesMediaSearch]（空查询恒命中）。
+  /// 此前只裁本地 EPUB 列表，其余三路走未过滤源——挂了有声书的书本身就以 SRT 卡
+  /// 渲染，用户实报「书架搜索不生效」。
+  bool _matchesShelfSearch(Iterable<String> titles) =>
+      matchesMediaSearch(query: _searchQuery, titles: titles);
+
   /// 层次 C：`'mediaType|entryKey' → 该条目在其主折叠合集里的 sortIndex`（组内序
   /// 真相源，与详情页 `getCollectionItems` 同源）。
   Map<String, int> _memberSortIndex = const <String, int>{};
@@ -625,14 +632,11 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
                         // [matchesMediaSearch]（全角/片假名/标点折叠）。
                         if (_searchQuery.trim().isNotEmpty) {
                           filtered = filtered.where((MediaItem item) {
-                            return matchesMediaSearch(
-                              query: _searchQuery,
-                              titles: <String>[
-                                ReaderFushiSource.instance
-                                    .getDisplayTitleFromMediaItem(item),
-                                item.title,
-                              ],
-                            );
+                            return _matchesShelfSearch(<String>[
+                              ReaderFushiSource.instance
+                                  .getDisplayTitleFromMediaItem(item),
+                              item.title,
+                            ]);
                           }).toList();
                         }
                         return FutureBuilder<Map<String, _AudiobookInfo>>(
@@ -1295,9 +1299,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     // 时 srt 成员被剥光、折叠不出合集组。
     final Set<int>? collectionFilter =
         ref.watch(filteredCollectionIdsProvider).valueOrNull;
-    final List<SrtBook> srtBooks;
+    final List<SrtBook> tagFilteredSrtBooks;
     if (srtFilterSet != null) {
-      srtBooks = allSrtBooks
+      tagFilteredSrtBooks = allSrtBooks
           .where((b) => keepMemberUnderTagFilter(
                 memberMatched: srtFilterSet.contains(b.uid),
                 primaryCollectionId: _primaryCollectionByEntry[
@@ -1306,10 +1310,15 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
               ))
           .toList();
     } else if (hasActiveFilter) {
-      srtBooks = const [];
+      tagFilteredSrtBooks = const [];
     } else {
-      srtBooks = allSrtBooks;
+      tagFilteredSrtBooks = allSrtBooks;
     }
+    // BUG-2259：SRT 卡与 EPUB 卡同口径过搜索（显示名 + DB 原名双匹配）。
+    final List<SrtBook> srtBooks = <SrtBook>[
+      for (final SrtBook b in tagFilteredSrtBooks)
+        if (_matchesShelfSearch(<String>[_srtDisplayTitle(b), b.title])) b,
+    ];
     // 视频归「视频」tab（HomeVideoPage）独占，书架不再显示视频分区（用户反馈：
     // 书架是书的地方）。已导入视频只在视频 tab 呈现；书架拖入视频仍可导入（经
     // _handleShelfDrop → VideoImportDialog），落库后同样只在视频 tab 可见。
@@ -1333,12 +1342,20 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         !remoteState.failed &&
         !hasActiveFilter &&
         appModel.prefsRepo.showRemoteEntries;
-    final List<RemoteBookInfo> remoteBooks =
-        showRemote ? remoteState.books : const <RemoteBookInfo>[];
+    // BUG-2259：远端占位卡同样过搜索——它们与本地卡混排在同一网格里，搜索时
+    // 本地卡被裁、远端卡还满屏，用户看到的就是「搜索不生效」。
+    final List<RemoteBookInfo> remoteBooks = <RemoteBookInfo>[
+      if (showRemote)
+        for (final RemoteBookInfo b in remoteState.books)
+          if (_matchesShelfSearch(<String>[b.title])) b,
+    ];
     // 纯 SRT（standalone）远端有声书占位（互联后端 listRemoteAudiobooks 的 standalone
     // 项，本地无同 uid SrtBook）——与远端 EPUB 书同门控混排进主网格。
-    final List<RemoteAudiobookInfo> remoteSrtBooks =
-        showRemote ? remoteState.srtAudiobooks : const <RemoteAudiobookInfo>[];
+    final List<RemoteAudiobookInfo> remoteSrtBooks = <RemoteAudiobookInfo>[
+      if (showRemote)
+        for (final RemoteAudiobookInfo b in remoteState.srtAudiobooks)
+          if (_matchesShelfSearch(<String>[b.title ?? b.identity])) b,
+    ];
     // 统一合集：把 SRT + EPUB 混排序列经 groupByCollections 折叠——散书每条单独成
     // group、同合集折叠成一组（组内序 = 合集 sortIndex，与详情页同源），再按当前
     // 排序方式排 group（散书与合集行同层混排）。「最近阅读」量纲 = 最后阅读时间
@@ -1494,11 +1511,14 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     // 无条件叠「无匹配」空态文案，且丢 RefreshIndicator / 合集横排行 / 书库概览。
     // 筛选态与常态统一走下方主分支组装（shelfGroups 已能承载纯 SRT 命中结果），
     // 特殊分支消灭。
+    // BUG-2259：搜索零命中与标签筛选零命中同一空态（「没有符合筛选的书」），
+    // 不能落到「书架为空」占位——那会把用户引去导入。
+    final bool searching = _searchQuery.trim().isNotEmpty;
     if (epubBooks.isEmpty &&
         srtBooks.isEmpty &&
         remoteBooks.isEmpty &&
         remoteSrtBooks.isEmpty) {
-      return hasActiveFilter
+      return hasActiveFilter || searching
           ? Center(
               child: FushiPlaceholderMessage(
                 icon: Icons.filter_list_off,

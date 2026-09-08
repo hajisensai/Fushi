@@ -3002,12 +3002,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             final List<RemoteVideoInfo> remoteVideos = <RemoteVideoInfo>[
               for (final RemoteVideoInfo v in _visibleRemoteVideos(
                   snapState ?? _lastRemoteState, filter))
+                // BUG-2259：远端占位卡与本地卡同口径过搜索（此前只裁本地列表，
+                // 搜索时远端占位卡照样满屏）。
                 // 远端占位与本地同规则过系列归属筛选，判据同样取**在系列墙上的
                 // 折叠形态**：host 下发的 membership 还要能解析到本机存在的合集
                 // （[_remoteCollectionId]，解析不到系列墙就按散卡降级）。只看
                 // `collection != null` 会让「host 有、本机没有同名合集」的占位卡
                 // 在系列墙上是散卡、在这里却算系列成员。
-                if (_yearFilter.matches(null) &&
+                if (matchesMediaSearch(
+                      query: _searchQuery,
+                      titles: <String>[v.title],
+                    ) &&
+                    _yearFilter.matches(null) &&
                     matchesVideoSeriesFilter(
                       filter: _effectiveSeriesFilter,
                       inSeries: _remoteCollectionId(v) != null,

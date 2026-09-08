@@ -1,0 +1,6 @@
+## BUG-2259 · 库页搜索漏过 SRT 有声书卡与远端占位卡
+- **报告**：2026-09-08（用户：「书架等搜索不生效」）
+- **真实性**：✅ 真 bug。书架（`reader_fushi_history_page.dart`）P5-A 搜索只裁**本地 EPUB** `MediaItem` 列表（`filtered = filtered.where(matchesMediaSearch…)`），渲染层 `_buildBodyWithSrtBooks` 另外三路卡源走的是**未过滤源**：本地 SRT 卡 `srtBooks = allSrtBooks`（origin/develop `reader_fushi_history_page.dart:1311`）、远端 EPUB 占位 `showRemote ? remoteState.books`（`:1337`）、远端 SRT 占位 `showRemote ? remoteState.srtAudiobooks`（`:1341`）。挂了有声书的 EPUB 本身就被 `srtBookKeys` 从 EPUB 列表剔除、只以 SRT 卡渲染，所以这类书搜索**完全不生效**；有声书为主的书架看起来就是「搜索没反应」。视频页同病：远端占位 `_visibleRemoteVideos(...)` 列表推导只过年份/系列/看完筛选，不过搜索（`home_video_page.dart:3003`）。另书架搜索零命中落到 `buildPlaceholder()`（`:1501` 只认 `hasActiveFilter`）——「书架为空、去导入」的占位，语义错。
+- **[x] ① 已修复** — 书架加统一判据 `_matchesShelfSearch(Iterable<String> titles)`（`matchesMediaSearch` 空查询恒命中），四路卡源同口径：本地 EPUB（显示名 + 原名）、本地 SRT（`_srtDisplayTitle` + 原名，标签筛选之后）、远端 EPUB（title）、远端 SRT（title ?? identity）；搜索零命中与标签筛选零命中同走「没有符合筛选的书」空态。视频页远端占位列表推导补 `matchesMediaSearch(query: _searchQuery, titles: [v.title])`。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/reader_shelf_search_srt_remote_test.dart`（3 条：SRT 卡随搜索裁剪 / 零命中走空态 / 远端 EPUB + 远端 SRT 占位随搜索裁剪，修前全红）、`fushi/test/pages/home_video_remote_mixed_grid_test.dart` 新增「BUG-2259：搜索同口径裁掉不命中的远端占位卡」。
+- **备注**：游戏库页（`galgame_library_query.dart`）本就单路数据、无此问题。书架顶部「继续阅读 hero」沿用 P5-A 起的行为（喂搜索过滤后的 EPUB 列表），本次不动。
