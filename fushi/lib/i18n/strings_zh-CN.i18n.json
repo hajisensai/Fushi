@@ -4436,5 +4436,9 @@
   "video_opensubtitles_app_key_hint": "留空使用应用内置 API 密钥。",
   "video_anilist_error_api_disabled": "AniList 官方因服务器稳定性问题暂时停用了公开 API。这不是你的网络或代理的问题——请求已经打到 AniList 并被它当面拒绝了。请稍后再试。",
   "video_anilist_error_rate_limited": "AniList 正在对本应用限流。稍等一会儿再重试。",
-  "video_anilist_error_unreachable": "连不上 AniList（graphql.anilist.co）。请检查网络连接，或在下载设置中配置代理。"
+  "video_anilist_error_unreachable": "连不上 AniList（graphql.anilist.co）。请检查网络连接，或在下载设置中配置代理。",
+  "download_request_failed": "无法创建下载。请检查下载设置和任务列表后重试。",
+  "download_resource_resolve_failed": "无法获取下载资源。请检查网络和代理设置后重试。",
+  "download_torrent_invalid": "来源返回的种子数据无效。请稍后重试或更换来源。",
+  "download_torrent_selection_failed": "无法在种子中唯一匹配这本书。请刷新目录或更换来源。"
 }

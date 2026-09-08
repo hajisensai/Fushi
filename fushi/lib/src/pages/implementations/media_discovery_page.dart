@@ -349,12 +349,14 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
         final String resolvingKey = '${item.sourceId}\u0000${item.id}';
         if (!_resolvingTorrentIds.add(resolvingKey)) return;
         if (mounted) setState(() {});
+        bool resolving = true;
         try {
           final MediaDiscoverySource? source =
               appModel.mediaDiscoveryService.sourceById(item.sourceId);
           if (source == null) return;
           final DiscoveryPayload payload =
               item.payload ?? await source.resolvePayload(item);
+          resolving = false;
           if (!mounted) return;
           final GenericPushOutcome outcome;
           if (payload is DiscoveryTorrentPayload) {
@@ -393,10 +395,17 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
                 ? ToastSeverity.success
                 : ToastSeverity.error,
           );
-        } on Object {
+        } on Object catch (error, stack) {
+          ErrorLogService.instance.log(
+            'DiscoveryTorrent.${resolving ? 'resolve' : 'enqueue'}.${item.sourceId}',
+            error,
+            stack,
+          );
           if (mounted) {
             FushiToast.show(
-              msg: genericPushMessage(GenericPushOutcome.pushFailed),
+              msg: resolving
+                  ? discoveryTorrentResolveFailureMessage(error)
+                  : genericPushMessage(GenericPushOutcome.pushFailed),
               severity: ToastSeverity.error,
             );
           }

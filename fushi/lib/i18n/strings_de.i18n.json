@@ -4436,5 +4436,9 @@
   "video_opensubtitles_app_key_hint": "Leer lassen, um den enthaltenen API-Schlüssel der App zu verwenden.",
   "video_anilist_error_api_disabled": "AniList has temporarily disabled its public API because of server-side stability problems. This is not a problem with your network or proxy - the request reached AniList and was refused. Please try again later.",
   "video_anilist_error_rate_limited": "AniList is rate-limiting this app right now. Wait a moment and retry.",
-  "video_anilist_error_unreachable": "Cannot reach AniList (graphql.anilist.co). Check your network connection, or configure a proxy in download settings."
+  "video_anilist_error_unreachable": "Cannot reach AniList (graphql.anilist.co). Check your network connection, or configure a proxy in download settings.",
+  "download_request_failed": "Could not create the download. Check the download settings and task list, then try again.",
+  "download_resource_resolve_failed": "Could not fetch the download resource. Check the network and proxy settings, then try again.",
+  "download_torrent_invalid": "The source returned invalid torrent data. Retry later or choose another source.",
+  "download_torrent_selection_failed": "Could not uniquely match this volume in the torrent. Refresh the catalog or choose another source."
 }
