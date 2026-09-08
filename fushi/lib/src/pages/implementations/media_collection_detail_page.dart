@@ -26,6 +26,7 @@ import 'package:fushi/src/media/video/cover_ui/video_specs_panel.dart';
 import 'package:fushi/src/media/video/video_specs_service.dart';
 import 'package:fushi/src/media/video/metadata/video_country_display.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_credit_repository.dart';
+import 'package:fushi/src/media/video/metadata/video_metadata_lock_dialog.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/metadata/video_source_metadata_indexer.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
@@ -2380,6 +2381,9 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       case _CollectionManageAction.splitBySeason:
         await _splitBySeason();
         return;
+      case _CollectionManageAction.lockFields:
+        await _editLockedFields();
+        return;
       case _CollectionManageAction.rename:
         await renameDetailCollection();
         return;
@@ -2390,6 +2394,21 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         await _delete();
         return;
     }
+  }
+
+  /// 字段锁：勾中的字段下次刮削保留当前值。作品行还没刮出来时菜单项本身就是灰的
+  /// （见 [_buildAppBar]），所以这里只需处理「点开后行没了」的竞态。
+  Future<void> _editLockedFields() async {
+    final VideoMetadataWorkRow? work = _canonicalWork;
+    if (work == null) return;
+    final bool saved = await editVideoMetadataLockedFields(
+      context: context,
+      database: widget.database,
+      workId: work.id,
+    );
+    if (!saved || !mounted) return;
+    FushiToast.show(msg: t.video_work_locked_fields_saved);
+    await _reload();
   }
 
   PopupMenuItem<_CollectionManageAction> _manageMenuItem(
@@ -2459,6 +2478,12 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
               enabled: _hasSeasonTabs,
             ),
             const PopupMenuDivider(),
+            _manageMenuItem(
+              _CollectionManageAction.lockFields,
+              Icons.lock_outline,
+              t.video_work_locked_fields,
+              enabled: _canonicalWork != null,
+            ),
             _manageMenuItem(
               _CollectionManageAction.rename,
               Icons.drive_file_rename_outline,
@@ -2563,6 +2588,7 @@ enum _CollectionManageAction {
   renameEpisodes,
   fillMissing,
   splitBySeason,
+  lockFields,
   rename,
   tags,
   delete,

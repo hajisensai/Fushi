@@ -4440,5 +4440,17 @@
   "video_metadata_primary_provider_hint": "The other source is used as a fallback when the primary source has no exact match or is unavailable.",
   "video_metadata_provider_mal": "MAL (via Jikan)",
   "video_metadata_provider_tmdb": "TMDB",
-  "video_source_scrape_provider_follow_global": "Follow global default"
+  "video_source_scrape_provider_follow_global": "Follow global default",
+  "video_source_scrape_metadata_locale": "Metadata language",
+  "video_source_scrape_metadata_locale_hint": "BCP-47 language tag such as ja or zh-CN. Leave empty to follow the global metadata language.",
+  "video_work_locked_fields": "Locked fields",
+  "video_work_locked_fields_hint": "Locked fields keep their current values the next time this work is scraped.",
+  "video_work_locked_fields_saved": "Field locks saved",
+  "video_work_field_title": "Title",
+  "video_work_field_original_title": "Original title",
+  "video_work_field_overview": "Overview",
+  "video_work_field_tagline": "Tagline",
+  "video_work_field_rating": "Rating",
+  "video_work_field_cover": "Cover",
+  "video_work_field_backdrop": "Backdrop"
 }

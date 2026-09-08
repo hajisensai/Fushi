@@ -1571,6 +1571,12 @@ class VideoMetadataWorks extends Table {
 
   /// TMDB 电视剧分组规则；NULL = 使用源默认季集编排。
   TextColumn get episodeGroupId => text().nullable()();
+
+  /// v99 字段锁（对标 Jellyfin `LockedFields`）：逗号分隔的可锁字段名集合，
+  /// 例如 `title,overview,cover`。NULL / 空 = 无锁。用户手改过的字段进这里，
+  /// 下一次刮削一律保留旧值。值域由 `VideoMetadataLockableField` 维护，未知值
+  /// 静默忽略以保持前向兼容（新版本加的锁在旧版本里只是不生效，不会炸库）。
+  TextColumn get lockedFields => text().nullable()();
   IntColumn get updatedAt => integer()();
 
   @override
@@ -1913,6 +1919,11 @@ class VideoSourceScrapeSettings extends Table {
 
   /// NULL = 继承全局默认；非空 = tmdb / douban / bangumi / anilist。
   TextColumn get providerOverride => text().nullable()();
+
+  /// v99 来源级资料语言覆盖（对标 Jellyfin `LibraryOptions
+  /// .PreferredMetadataLanguage` / Kodi 的 per-path 设置）：BCP-47 语言标签，
+  /// NULL / 空白 = 跟随全局 `video_metadata_locale`。
+  TextColumn get metadataLocale => text().nullable()();
   BoolColumn get autoAfterScan =>
       boolean().withDefault(const Constant(false))();
   BoolColumn get writeNfo => boolean().withDefault(const Constant(true))();
