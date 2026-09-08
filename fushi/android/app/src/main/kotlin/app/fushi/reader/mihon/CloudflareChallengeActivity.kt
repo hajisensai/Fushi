@@ -40,12 +40,31 @@ class CloudflareChallengeActivity : Activity() {
     }
     private var authAttempted = false
 
+    /**
+     * The two callbacks [complete] is allowed to cancel.
+     *
+     * They used to be cancelled with `main.removeCallbacksAndMessages(null)`, which wipes the
+     * **whole** main queue -- including the `setProxyOverride` completion that calls
+     * [ChallengeProxyLifecycle.installed] (its executor posts there too). Cancelling between
+     * the post and its run left the lifecycle stuck in `installing`, so `close()` early-returned
+     * and the reply was never sent: the coordinator waited out its 100 s timeout, and that path
+     * deliberately does not reset `activeSession`, so every later verification returned
+     * CHALLENGE_CLEANUP_PENDING until the app was restarted. Every other main-queue callback
+     * here already no-ops on [finished]; only these two need explicit cancelling.
+     */
+    private var timeoutCallback: Runnable? = null
+    private var clearancePoll: Runnable? = null
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(state: Bundle?) {
         // The isolated process has not created WebViews or CookieManager yet.
+        // Throws if this process already created a WebView. It cannot here (dedicated
+        // process, this is the only entry point), but a crash in onCreate would take the
+        // whole verification down with no reply, so it degrades instead.
         if (Build.VERSION.SDK_INT >= 28 && !dataDirectoryConfigured) {
-            WebView.setDataDirectorySuffix("network_challenge")
-            dataDirectoryConfigured = true
+            dataDirectoryConfigured = runCatching {
+                WebView.setDataDirectorySuffix("network_challenge")
+            }.isSuccess
         }
         super.onCreate(state)
         receiver = intent.getParcelableExtra("receiver")
@@ -69,7 +88,12 @@ class CloudflareChallengeActivity : Activity() {
         endpoint = proxy
         val layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.WHITE) }
         layout.addView(Button(this).apply { setText(android.R.string.cancel); setOnClickListener { complete(false) } })
-        val view = WebView(this)
+        // No WebView provider (updating / disabled / missing) throws here.
+        val view = runCatching { WebView(this) }.getOrNull()
+        if (view == null) {
+            complete(false, code = "CHALLENGE_UNAVAILABLE")
+            return
+        }
         browser = view
         layout.addView(view, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(layout)
@@ -112,9 +136,15 @@ class CloudflareChallengeActivity : Activity() {
                 } else handler.cancel()
             }
         }
-        main.postDelayed({ complete(false, code = "CHALLENGE_TIMEOUT") }, 90_000)
+        val timeout = Runnable { complete(false, code = "CHALLENGE_TIMEOUT") }
+        timeoutCallback = timeout
+        main.postDelayed(timeout, 90_000)
         val config = ProxyConfig.Builder().addProxyRule("http://127.0.0.1:${proxy.port}").removeImplicitRules().build()
         proxyLifecycle.begin()
+        // A throw here would leave the lifecycle stuck in `installing` forever: close()
+        // early-returns while installing, so the reply would never be sent and the
+        // coordinator's session lease would never be released.
+        val installed = runCatching {
         ProxyController.getInstance().setProxyOverride(config, { main.post(it) }) {
             proxyLifecycle.installed()
             if (finished) {
@@ -132,22 +162,34 @@ class CloudflareChallengeActivity : Activity() {
                 // Primary login cookies are deliberately not transferred:
                 // CookieManager cannot export their HttpOnly/scope metadata.
                 view.loadUrl(url.toString())
-                main.post(object : Runnable {
+                val poll = object : Runnable {
                     override fun run() {
                         if (finished) return
                         val cookies = manager.getCookie(url.toString()).orEmpty()
                         val clearance = cookies.split(';').any { it.trim().startsWith("cf_clearance=") && it.substringAfter('=').isNotEmpty() && it.trim() != previousClearance && it.trim() != intent.getStringExtra("staleClearance") }
                         if (clearance) complete(true, cookies) else main.postDelayed(this, 500)
                     }
-                })
+                }
+                clearancePoll = poll
+                main.post(poll)
             }
+        }
+        }
+        if (installed.isFailure) {
+            // Nothing was installed, so nothing has to be undone: hand the lifecycle the
+            // terminal transition it is waiting for, then report unavailable.
+            runCatching { proxyLifecycle.installed() }
+            complete(false, code = "CHALLENGE_UNAVAILABLE")
         }
     }
 
     private fun complete(success: Boolean, cookies: String? = null, code: String = "CHALLENGE_CANCELLED") {
         if (finished) return
         finished = true
-        main.removeCallbacksAndMessages(null)
+        timeoutCallback?.let(main::removeCallbacks)
+        timeoutCallback = null
+        clearancePoll?.let(main::removeCallbacks)
+        clearancePoll = null
         val resultReceiver = receiver
         receiver = null
         val reply: () -> Unit = {

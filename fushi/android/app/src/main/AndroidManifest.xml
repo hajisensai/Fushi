@@ -23,7 +23,9 @@
             android:name=".mihon.CloudflareChallengeActivity"
             android:exported="false"
             android:process=":network_challenge"
-            android:excludeFromRecents="true" />
+            android:excludeFromRecents="true"
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|navigation|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
