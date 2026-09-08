@@ -27,6 +27,16 @@
   行为断言）、`fushi/test/reader/reader_desktop_chrome_test.dart`（pinned 动作在紧凑形态
   仍是可见按钮）、`fushi/integration_test/reader_lyrics_mode_entry_itest.dart`（真 app：
   进歌词模式 → 唤出 chrome → 顶栏与模式键在场 → 按下去真切回正文）。
-- **备注**：`reader_desktop_chrome_test.dart` 里那条「顶栏自带 RepaintBoundary」的守卫
-  原来切「方法签名后 900 字符」的定长窗口，往方法开头加几行就会假红；一并改成取整个
-  方法体（`methodBody`）。
+- **真机证据**：Windows 离屏 runner（`fushi/tool/run_windows_itest.ps1`）跑
+  `reader_lyrics_mode_entry_itest.dart` 通过（exit 0，`All tests passed`）：种一本有声书 →
+  进歌词模式 → 走生产唤出路径（歌词页空白点击桥 `onLyricsTapEmpty`）→ 顶栏
+  `fushi_desktop_header` 与播放条 `fushi_play_bar` 同时在场 → 顶栏模式键按下去后
+  `lyricsMode` 落回 false、正文重新就绪。
+- **备注**：三处顺带修的既有问题（都会让上面那条真机验证跑不到本 bug 的断言）：
+  ① `reader_desktop_chrome_test.dart` 里「顶栏自带 RepaintBoundary」的守卫原来切「方法
+  签名后 900 字符」的定长窗口，往方法开头加几行就假红，改成取整个方法体（`methodBody`）；
+  ② 该集成测试按 focus-id 前缀 `reader-action` 找歌词开关，而设置面改成右侧抽屉后那颗
+  开关的焦点目标前缀已是 `settings-row`——**修本 bug 之前该测试就卡在这一步**（已在
+  upstream/develop 基线上复现），改成不钉前缀、只要求「是个能接 ActivateIntent 的具体
+  焦点停靠点」；③ 首次进歌词模式的一次性提示对话框是一层吃指针的模态，会把对顶栏的
+  点击吸走，测试里把 `lyrics_mode_hint_shown` 预置成已看过。

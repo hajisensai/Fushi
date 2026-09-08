@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
@@ -86,6 +85,12 @@ void main() {
             await ReaderFushiSource.instance.setLyricsMode(originalLyricsMode);
           });
           await ReaderFushiSource.instance.setLyricsMode(false);
+          // 首次进入歌词模式会弹一次性提示对话框（`lyrics_mode_hint_shown`）。它是
+          // 一层吃掉指针的模态路由：留着它，后面对顶栏那颗模式键的点击会被它吸走
+          // （hit test 落在 AbsorbPointer 上）。本用例测的不是这条提示，直接把一次性
+          // 旗预置成「已看过」，与真机上第二次进歌词模式的状态一致。
+          ReaderFushiSource.instance
+              .setPreference<bool>(key: 'lyrics_mode_hint_shown', value: true);
 
           final String bookKey = await seedAudiobook(
             tester,
@@ -142,17 +147,19 @@ void main() {
               find.byKey(const ValueKey<String>('fushi_lyrics_mode_toggle'));
           expect(lyricsToggle, findsOneWidget,
               reason: 'quick settings must expose the lyrics-mode action');
+          // 不再按 `reader-action` 这个 focus-id 前缀过滤：设置面改成右侧抽屉后，
+          // 这颗开关由 AdaptiveSettingsNavigationRow 渲染，焦点目标的 id 前缀是
+          // `settings-row`；钉死旧前缀会让这一步在真机上恒 false（本条修复前该
+          // 集成测试就卡在这里，与歌词模式本身无关）。断言的意图不变：这颗开关
+          // 必须是一个**具体的、能接 ActivateIntent 的焦点停靠点**，而不是裸 InkWell。
           expect(
-            await driver.requestFocusInside(
-              lyricsToggle,
-              debugLabelContains: 'reader-action',
-            ),
+            await driver.requestFocusInside(lyricsToggle),
             isTrue,
-            reason:
-                'lyrics-mode action must expose a concrete reader-action focus node',
+            reason: 'lyrics-mode action must expose a concrete focus node',
           );
           expect(await driver.activateIntent(), isTrue,
-              reason: 'lyrics-mode reader-action must handle ActivateIntent');
+              reason:
+                  'the focused lyrics-mode action must handle ActivateIntent');
           await tester.pump(const Duration(seconds: 1));
           expect(lyricsToggle, findsNothing,
               reason: 'activating lyrics mode must dismiss quick settings');
@@ -183,15 +190,20 @@ void main() {
           );
 
           // 歌词模式的顶栏必须与阅读模式一样在场，并挂着回正文的模式键。
-          // 默认底栏是悬浮态（点空白唤出 / 3 秒自动收起），所以先按 chrome 开关键
-          // （readerToggleChrome，默认 M）把 chrome 唤出来，再断言——这与用户在真机上
-          // 点一下空白处看到的是同一台状态机。
-          await tester.sendKeyEvent(LogicalKeyboardKey.keyM);
-          await tester.pump(const Duration(milliseconds: 300));
+          // 默认 chrome 是悬浮态（点空白唤出 / 计时自动收起），所以先走用户在歌词页
+          // 唤出 chrome 的**生产路径**：歌词文档空白点击 → `onLyricsTapEmpty` 桥
+          // （lyrics_mode_html.dart 里就是这么调的）。顶栏与底栏是同一台状态机，
+          // 所以两者一起断言——只出一个才说明顶栏那半边被漏掉了。
+          await ReaderFushiPage.debugEvaluateJavascript?.call(
+            "window.flutter_inappwebview.callHandler('onLyricsTapEmpty');true",
+          );
           final Finder header =
               find.byKey(const ValueKey<String>('fushi_desktop_header'));
-          expect(header, findsOneWidget,
-              reason: '歌词模式必须和阅读模式一样有顶栏（它是这里唯一的返回 / 设置面）');
+          await _pumpUntil(tester, () => header.evaluate().isNotEmpty,
+              reason: '歌词模式必须和阅读模式一样有顶栏（它是这里唯一的返回 / 设置面）', polls: 20);
+          expect(find.byKey(const ValueKey<String>('fushi_play_bar')),
+              findsOneWidget,
+              reason: '底栏与顶栏同一台显隐状态机，唤出后两条都该在');
           final Finder modeButton = find.byKey(
             const ValueKey<String>('fushi_reader_lyrics_mode_button'),
           );
