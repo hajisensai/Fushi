@@ -59,7 +59,7 @@ class ReaderCaretScripts {
   /// Toggle popup caret scrolling between the default browser movement and
   /// explicit instant movement for e-ink screens.
   ///
-  /// BUG-2267: guarded. This is spliced into the middle of the big per-lookup
+  /// BUG-2284: guarded. This is spliced into the middle of the big per-lookup
   /// injection in [DictionaryPopupWebViewState._pushResults], which can run in
   /// the window between `onLoadStop` setting `_ready` and the caret source
   /// actually landing. A bare call on an undefined `window.fushiCaret` throws
@@ -734,7 +734,7 @@ window.fushiCaret = {
   },
   _scrollWindowBy: function(dx, dy) {
     try {
-      // BUG-2267: 'auto' 在弹窗里本来就是瞬时的（全链路无 scroll-behavior:smooth），
+      // BUG-2284: 'auto' 在弹窗里本来就是瞬时的（全链路无 scroll-behavior:smooth），
       // 所以这条三元的两个分支等价——caret 移动一直是瞬时的，切开关看不出差别。真正
       // 区分「墨水屏固定距离瞬跳 vs 按 delta 比例连续滚」的是滚轮路径（popup.js 读
       // window.__fushiPopupInstantScroll）。这里保留显式 'instant'：它表达意图，且将来

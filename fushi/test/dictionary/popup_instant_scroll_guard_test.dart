@@ -1,4 +1,4 @@
-// BUG-2267 回归守卫：查词弹窗「瞬时滚动」（lookup.popup_instant_scroll）必须真的
+// BUG-2284 回归守卫：查词弹窗「瞬时滚动」（lookup.popup_instant_scroll）必须真的
 // 改变滚动行为，以及对齐 Hoshi Reader Android 的「紧凑释义」开关必须真的下发。
 //
 // 原始 bug：开关打开后用户看不出任何差别。两条独立原因——
@@ -26,7 +26,7 @@ void main() {
     '../tools/browser-extension/vendor/popup.js', // 扩展 tools 镜像
   ];
 
-  group('BUG-2267 popup instant-scroll guard', () {
+  group('BUG-2284 popup instant-scroll guard', () {
     for (final String path in popupCopies) {
       test('[$path] 滚轮按 __fushiPopupInstantScroll 走固定步长瞬跳', () {
         final String src = File(path).readAsStringSync();
@@ -147,7 +147,7 @@ void main() {
   group('对齐 Hoshi Reader Android：紧凑释义开关', () {
     test('渲染器的 window.compactGlossaries 有唯一写入点', () {
       // popup.js 的 createDictionaryBlock 一直按这个全局产出紧凑释义 CSS，但在
-      // BUG-2267 之前全 app 没有任何地方给它赋值（恒 undefined = 死代码）。
+      // BUG-2284 之前全 app 没有任何地方给它赋值（恒 undefined = 死代码）。
       final String injection = File(
         'lib/src/pages/implementations/popup_settings_injection.dart',
       ).readAsStringSync();

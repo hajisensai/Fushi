@@ -5561,7 +5561,7 @@ let _popupWheelResidualAt = 0;
 // until the idle/surface reset so one occasional large mid-fling frame is not
 // mis-classified as a coarse mouse notch and momentarily over-tamed.
 let _popupWheelFineDevice = false;
-// BUG-2267: 墨水屏「瞬时滚动」（app 设置 lookup.popup_instant_scroll，经
+// BUG-2284: 墨水屏「瞬时滚动」（app 设置 lookup.popup_instant_scroll，经
 // popup_settings_injection / 扩展 theme 下发 window.__fushiPopupInstantScroll）。
 // 墨水屏刷一次全屏才划算，按 delta 比例的连续滚动会一路刷出残影；开启后滚轮改成
 // 「每次手势跳固定距离」——步长 = 被滚表面视口高度 × VIEWPORT_FRACTION，乘用户的
@@ -5757,7 +5757,7 @@ const __fushiPopupWheelListener = (e) => {
         isFinite(window.__fushiPopupWheelSpeed) && window.__fushiPopupWheelSpeed > 0)
         ? window.__fushiPopupWheelSpeed
         : 1;
-    // BUG-2267: 墨水屏瞬时滚动——固定距离跳，不按 delta 比例连续滚。放在这里是因为
+    // BUG-2284: 墨水屏瞬时滚动——固定距离跳，不按 delta 比例连续滚。放在这里是因为
     // 它要复用上面已解析的 wheelSpeed（同一个「滚轮速度」旋钮同时缩放两种模式）与
     // scroller/deltaPx，且必须走在比例滚动的 factor/亚像素余量之前把事件吃掉。
     if (window.__fushiPopupInstantScroll) {

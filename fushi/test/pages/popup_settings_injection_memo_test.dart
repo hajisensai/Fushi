@@ -388,6 +388,16 @@ void main() {
             marker: 'window.showExpressionTags = true',
           ),
           (
+            name: 'popupInstantScroll（BUG-2284 瞬时滚动）',
+            mutate: (MemoAppModel m) => m.popupInstantScrollValue = true,
+            marker: 'window.__fushiPopupInstantScroll = true',
+          ),
+          (
+            name: 'compactGlossaries（BUG-2284 紧凑释义）',
+            mutate: (MemoAppModel m) => m.compactGlossariesValue = true,
+            marker: 'window.compactGlossaries = true',
+          ),
+          (
             name: 'popupAutoExpandDictionaries（autoExpandRows）',
             mutate: (MemoAppModel m) => m.popupAutoExpandDictionariesValue = 3,
             marker: 'window.autoExpandRows = 3',
@@ -767,6 +777,10 @@ class MemoAppModel extends AppModel {
   bool harmonicFrequencyValue = false;
   bool showExpressionTagsValue = false;
   bool collapseDictionariesValue = false;
+  // BUG-2284：这两个是 buildPopupStaticSettingsJs 新读的 prefsRepo-backed getter。
+  // 本 fake 从不跑 initialise()，prefsRepo 为 null，不覆写就是 build 时 null check 抛。
+  bool popupInstantScrollValue = false;
+  bool compactGlossariesValue = false;
   List<Dictionary> dictionariesValue = <Dictionary>[];
   Map<String, String> customDictCSSValue = <String, String>{};
   String globalDictCSSValue = '';
@@ -791,6 +805,10 @@ class MemoAppModel extends AppModel {
   bool get showExpressionTags => showExpressionTagsValue;
   @override
   bool get collapseDictionaries => collapseDictionariesValue;
+  @override
+  bool get popupInstantScroll => popupInstantScrollValue;
+  @override
+  bool get compactGlossaries => compactGlossariesValue;
   @override
   List<Dictionary> get dictionaries => dictionariesValue;
   @override

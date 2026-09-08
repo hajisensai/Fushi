@@ -3252,7 +3252,7 @@ class AppModel with ChangeNotifier {
       // content.js fushiRender 读它设 window.__fushiPopupWheelSpeed（与 in-app 注入同名
       // 全局），popup.js 的 wheel factor 乘它。走 theme 通道与 --fushi-swipe-close 同法。
       '--fushi-wheel-speed': popupWheelSpeed.toStringAsFixed(3),
-      // BUG-2267：墨水屏「瞬时滚动」下发给扩展 content.js（非 CSS 变量、仅 JS 消费）。
+      // BUG-2284：墨水屏「瞬时滚动」下发给扩展 content.js（非 CSS 变量、仅 JS 消费）。
       // content.js fushiRender 读它设 window.__fushiPopupInstantScroll（与 in-app 注入
       // 同名全局），popup.js 的 wheel 监听据此改走固定步长瞬跳。值 '1'/'0'。
       '--fushi-instant-scroll': popupInstantScroll ? '1' : '0',

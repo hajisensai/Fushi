@@ -799,7 +799,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     // BUG-1026: 查词弹窗滚轮速度倍率。popup.js 的 wheel 监听器把 factor 乘以它
     // （缺省 1.0）。三种 in-app 弹窗都经此 head 注入；浏览器扩展走 theme 通道另发。
     window.__fushiPopupWheelSpeed = ${appModel.popupWheelSpeed};
-    // BUG-2267：墨水屏「瞬时滚动」。popup.js 的 wheel 监听读它决定滚轮是按 delta 比例
+    // BUG-2284：墨水屏「瞬时滚动」。popup.js 的 wheel 监听读它决定滚轮是按 delta 比例
     // 连续滚（false，默认）还是每次手势跳固定距离（true）。此前该偏好只经
     // ReaderCaretScripts.setInstantScroll 走 fushiCaret 的 behavior 参数，而 caret 路径
     // 的两个分支（'instant' / 'auto'）在无 scroll-behavior:smooth 的弹窗里完全等价，

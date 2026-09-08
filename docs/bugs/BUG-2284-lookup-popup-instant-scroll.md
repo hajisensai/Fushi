@@ -1,4 +1,4 @@
-## BUG-2267 · 查词弹窗「瞬时滚动」开关对滚轮完全无效
+## BUG-2284 · 查词弹窗「瞬时滚动」开关对滚轮完全无效
 - **报告**：2026-09-08（用户：「查词弹窗瞬间滚动似乎不生效」，同时要求把弹窗配置项与 Hoshi Reader Android 对齐）
 - **真实性**：✅ **真 bug（空开关）**。两条独立原因叠加，任一条单独成立就足以让开关看不出差别：
   - **① 唯一消费点的两个分支等价**：偏好 `popup_instant_scroll`（`fushi/lib/src/models/preferences_repository.dart:699`）经 `ReaderCaretScripts.instantScrollInvocation`（`fushi/lib/src/reader/reader_caret_scripts.dart:61`）只落到 JS 侧 `fushiCaret.instantScroll`，而它**唯一**的消费点是 `_scrollWindowBy` 的 `behavior: this.instantScroll ? 'instant' : 'auto'`（`fushi/lib/src/reader/reader_caret_scripts.dart:736`）。弹窗全链路**没有任何 `scroll-behavior: smooth`**（`fushi/assets/popup/popup.css` 只有 `:65 overscroll-behavior-y: contain`；`popup_settings_injection.dart` / `popup_theme_css.dart` 零命中），而 CSS `scroll-behavior` 的默认计算值就是 `auto` = 立即跳转。于是 ON/OFF 产生**逐像素相同**的滚动。`preferences_repository.dart:695` 的注释把 OFF 描述成 "smooth/animated popup scrolling"，与实现自相矛盾，是这条的直接证据。
