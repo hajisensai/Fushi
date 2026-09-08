@@ -3057,8 +3057,10 @@ $sharedInitViewport
   if (!vn) return;
   // BUG-1688：可用盒变了（视口尺寸 or chrome 预留带）就得按新盒重切屏并停在原处。
   // updatePageSize / setChromeInsets 只在「写哪几个 CSS 变量」上不同，重切动作同一份。
+  // 可选 anchorCharOffset（BUG-2261 样式重锚用）：给了就落到覆盖该字符偏移的屏，
+  // 查无 / 没给才退回按重切前的进度比例选屏。
   if (typeof vn.refitScreensToCurrentViewport !== 'function') {
-    vn.refitScreensToCurrentViewport = function() {
+    vn.refitScreensToCurrentViewport = function(anchorCharOffset) {
       if (!this.screens || !this.screens.length) return;
       var progress = this.calculateProgress();
       this.applyImageMaxVars();
@@ -3066,7 +3068,34 @@ $sharedInitViewport
         ? this.mergeSentenceAudioCrossScreenScreens(this.baseScreens)
         : this.screens);
       this.assignScreenProgressAnchors();
-      this.renderScreen(this.screenIndexForProgress(progress), true);
+      var index = this.screenIndexForCharOffset(
+        anchorCharOffset === undefined ? -1 : anchorCharOffset);
+      if (index < 0) index = this.screenIndexForProgress(progress);
+      this.renderScreen(index, true);
+    };
+  }
+  // BUG-2261：样式实时下发的两阶段重锚入口（与分页/连续 shell 同名同契约：begin 同步
+  // 换 CSS + 采锚、返回字符偏移或 -1；commit 在 Dart postFrame settle 后落位）。VN 曾整体
+  // 缺席这对方法 → Dart 侧 gate 开时把换 CSS 全托付给它，结果 CSS 一次都没换，字号/
+  // 边距/主题等纯 CSS 设置在 VN 下退出重进才生效。VN 没有滚动轴，「落位」= 按新 CSS
+  // 重切屏后翻到原来那一屏的字符偏移；没有 _reanchorPending 旗要置（VN 不回传 scroll）。
+  if (typeof vn.beginStyleReanchor !== 'function') {
+    vn.beginStyleReanchor = function(styleEl, css) {
+      var charOffset = this.getFirstVisibleCharOffset();
+      if (styleEl) styleEl.textContent = css;
+      if (this.paginationMetrics !== undefined) this.paginationMetrics = null;
+      if (!(charOffset >= 0)) return -1;
+      this._styleReanchorOffset = charOffset;
+      return charOffset;
+    };
+  }
+  if (typeof vn.commitStyleReanchor !== 'function') {
+    vn.commitStyleReanchor = function() {
+      var off = this._styleReanchorOffset;
+      this._styleReanchorOffset = undefined;
+      if (!(off >= 0)) return false;
+      this.refitScreensToCurrentViewport(off);
+      return true;
     };
   }
   if (typeof vn.updatePageSize !== 'function') {

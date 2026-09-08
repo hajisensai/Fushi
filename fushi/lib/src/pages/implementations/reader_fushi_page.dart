@@ -29,6 +29,7 @@ import 'package:fushi/src/epub/epub_spread_map.dart';
 import 'package:fushi/src/epub/epub_storage.dart';
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
+import 'package:fushi/src/media/audiobook/audiobook_resume_point.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session_launcher.dart';
 import 'package:fushi/src/media/audiobook/lyrics_mode_html.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_routing.dart';
@@ -2207,6 +2208,12 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
             return ReaderPositionRepository(db).findByBookUid(uid);
           });
     savedPositionFuture.ignore();
+    // BUG-2258：有声书进度的最后写入时刻与阅读进度并行取（两行 + 两偏好，不解析
+    // 音频、不起 audio_service），开书时按 LWW 决定起点跟谁；书签跳转分支不消费。
+    final Future<int> audioPositionAtFuture = widget.initialBookmarkJump != null
+        ? Future<int>.value(0)
+        : AudiobookSessionLauncher(db).readPositionUpdatedAtMs(widget.bookKey);
+    audioPositionAtFuture.ignore();
 
     await profileSettingsFuture;
     if (!mounted) return;
@@ -2368,16 +2375,39 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
         'preserveSavedPosition=$_suppressPositionPersist',
       );
     } else {
-      final ReaderPosition? saved = await savedPositionFuture;
+      ReaderPosition? saved = await savedPositionFuture;
       if (!mounted) return;
       debugPrint(
         '[ReaderFushi] restore lookup: bookKey=${widget.bookKey} '
         'saved=$saved section=${saved?.sectionIndex} '
         'offset=${saved?.normCharOffset}',
       );
+      // 章号越界（书结构变了）的存档视同没有存档。
       if (saved != null &&
-          saved.sectionIndex >= 0 &&
-          saved.sectionIndex < _book!.chapters.length) {
+          (saved.sectionIndex < 0 ||
+              saved.sectionIndex >= _book!.chapters.length)) {
+        saved = null;
+      }
+      // BUG-2258：阅读进度与有声书进度各自持久化、各带写入时刻。退书后台听书 /
+      // 书架小播放器听书只推进音频进度，重开书若无条件按阅读存档定位，用户看到的
+      // 永远不是听到的地方、按播放后视口才被 cue 拽过去。谁更新谁做起点（LWW，与
+      // 互联同步 BUG-471 同语义）；没有存档时照旧从音频 cue 推。两条音频路都必须等
+      // 有声书槽落定；起点算不出（无 cue / 反查不到章）再回退存档。
+      final int audioAt = await audioPositionAtFuture;
+      if (!mounted) return;
+      final bool preferAudio =
+          saved == null ||
+          audiobookResumeWinsOverReader(
+            readerUpdatedAt: saved.updatedAt,
+            audioUpdatedAt: audioAt,
+          );
+      bool restored = false;
+      if (preferAudio) {
+        await audioSlotFuture;
+        if (!mounted) return;
+        restored = _restoreFromCurrentAudioCue();
+      }
+      if (!restored && saved != null) {
         _currentChapter = saved.sectionIndex;
         _initialProgress = saved.normCharOffset / 10000.0;
         // BUG-162: 有精确锚就用它（restoreToCharOffset 不动点），否则 -1 回退分数。
@@ -2387,11 +2417,6 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
         _lastProgressSection = _currentChapter;
         _lastProgressValue = _initialProgress;
         _lastProgressCharOffset = _initialCharOffset;
-      } else {
-        // 没有保存位置：起点从当前音频 cue 推，这条路必须等有声书槽落定。
-        await audioSlotFuture;
-        if (!mounted) return;
-        _restoreFromCurrentAudioCue();
       }
     }
     _openTrace.mark('position');

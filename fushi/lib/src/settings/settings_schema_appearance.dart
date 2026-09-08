@@ -78,7 +78,9 @@ SettingsDestination buildAppearanceDestination() {
                 settingsContext.appModel.einkMode,
             onChanged: (SettingsContext settingsContext, bool value) async {
               await settingsContext.appModel.setEinkMode(value);
-              settingsContext.refresh();
+              // BUG-2262：einkMode 是正文 CSS 的入参（ReaderContentStyles.css 的
+              // einkMode），开着书切换必须重注入，否则正文要退出重进才变黑白。
+              notifyReaderSettingsChanged(settingsContext);
             },
           ),
           // 「界面大小」滑条：commitOnRelease——本滑条位于受 FushiAppUiScale 的

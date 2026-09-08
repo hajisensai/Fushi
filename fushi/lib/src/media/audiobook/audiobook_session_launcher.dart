@@ -32,6 +32,33 @@ class AudiobookSessionLauncher {
     return null;
   }
 
+  /// 该书有声书进度的最后写入时刻（epoch 毫秒；无有声书 / 从未写过返回 0），供
+  /// reader 开书时与阅读进度 `updatedAt` 做 LWW 仲裁（BUG-2258）。
+  ///
+  /// 只查两行 + 两个偏好，不解析音频文件、不起 audio_service——它跑在首屏关键路径
+  /// 上（与书定位并行），真正的会话装配仍由 [resolve] 在后台完成。Audiobook 行与
+  /// SrtBook 行的位置键不同（前者 = bookKey，后者 = uid），两者都可能存在（旧 audioOnly
+  /// 脏行 + 后来配对的 SrtBook），取较大者而不按 [resolve] 的优先序二选一：会话实际
+  /// 写的是哪个键，哪个就最新。
+  Future<int> readPositionUpdatedAtMs(String bookKey) async {
+    final AudiobookRepository repo = AudiobookRepository(_db);
+    final List<Object?> rows = await Future.wait<Object?>(<Future<Object?>>[
+      _db.getAudiobookByBookKey(bookKey),
+      _db.getSrtBookByBookKey(bookKey),
+    ]);
+    final AudiobookRow? abRow = rows[0] as AudiobookRow?;
+    final SrtBookRow? srtRow = rows[1] as SrtBookRow?;
+    final List<String> keys = <String>[
+      if (abRow != null) bookKey,
+      if (srtRow != null) srtRow.uid,
+    ];
+    if (keys.isEmpty) return 0;
+    final List<int> stamps = await Future.wait<int>(
+      keys.map(repo.readPositionUpdatedAtMs),
+    );
+    return stamps.reduce((int a, int b) => a > b ? a : b);
+  }
+
   Future<AudiobookSessionStartRequest?> _resolveAudiobook(
     AudiobookRow row,
     String bookKey,

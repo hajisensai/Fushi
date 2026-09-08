@@ -29,10 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2114 条。点号进各自文件。
+> 共 2117 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2262](bugs/BUG-2262-eink-toggle-no-reader-reinject.md) | ✅ | ✅ | 墨水屏开关不通知阅读器重注入正文样式 |
+| [BUG-2261](bugs/BUG-2261-reader-vn-live-style-css-dropped.md) | ✅ | ✅ | 阅读器视觉小说视图下纯CSS外观设置不实时生效 |
+| [BUG-2258](bugs/BUG-2258-audiobook-resume-ignored-on-open.md) | ✅ | ✅ | 打开带有声书的书不按有声书进度定位，按播放才跳 |
 | [BUG-2256](bugs/BUG-2256-subtitle-pause-reveal-ignores-gate.md) | ✅ | ✅ | 关掉「悬停或点击显形」后，暂停仍会揭开被隐藏的字幕 |
 | [BUG-2255](bugs/BUG-2255-reader-sentence-seek-dom-identity.md) | ✅ | ✅ | 正文从本句播放误取上一条字幕 |
 | [BUG-2254](bugs/BUG-2254-jellyfin-fnos-x-emby-auth.md) | ✅ | ✅ | 飞牛影视 Jellyfin 兼容层要求 X-Emby-Authorization 认证头 |

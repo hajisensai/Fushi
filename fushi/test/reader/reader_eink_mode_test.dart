@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -99,6 +101,28 @@ void main() {
       expect(cs.onPrimary, Colors.black);
       expect(cs.outline, Colors.white);
       expect(cs.surfaceTint, Colors.transparent);
+    });
+  });
+
+  group('live re-injection (BUG-2262)', () {
+    test('appearance.eink_mode onChanged notifies the open reader', () {
+      // einkMode 是 ReaderContentStyles.css 的入参：开着书切换必须走
+      // notifyReaderSettingsChanged（→ onSettingsChangedLive → _applyStylesLive）
+      // 重注入正文 CSS，只 refresh() 设置页会让正文退出重进才变黑白。
+      final String source = File(
+        'lib/src/settings/settings_schema_appearance.dart',
+      ).readAsStringSync();
+      final int id = source.indexOf("id: 'appearance.eink_mode'");
+      expect(id, isNonNegative);
+      final int onChanged = source.indexOf('onChanged:', id);
+      final int nextItem = source.indexOf('SettingsSliderItem(', onChanged);
+      expect(onChanged, greaterThan(id));
+      expect(nextItem, greaterThan(onChanged));
+      final String handler = source.substring(onChanged, nextItem);
+      expect(handler, contains('setEinkMode(value)'));
+      expect(handler, contains('notifyReaderSettingsChanged(settingsContext)'),
+          reason: 'eink toggle must re-inject reader CSS live, not only '
+              'refresh the settings sheet');
     });
   });
 
