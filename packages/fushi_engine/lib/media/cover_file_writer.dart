@@ -1,11 +1,15 @@
-/// 封面文件落盘（tmp + rename，写稳后再替换）。
+/// 封面文件落盘（tmp + rename，写稳后再替换）**并驱逐该路径的解码缓存**。
 ///
-/// 从 app 的 `MediaCoverService.applyCoverBytes` / `applyCoverFile` 抽出的纯 IO
-/// 一半；app 的两个静态方法委派到这里，然后各自再做图片缓存驱逐（那是 Flutter
-/// 的事，引擎不管）。
+/// 这是 BUG-1118 不变量「这条路径上的图变了就得驱逐」的唯一写侧实现：app 的
+/// `MediaCoverService.applyCoverBytes` / `applyCoverFile` 是它的薄委派，引擎里的
+/// 下载路（`video_cover_extractor`）直接调它。驱逐经 [evictImageCacheForFile]
+/// 装配点回到 Flutter（app 绑成双键 evict；无头服务端是 no-op）。写盘与驱逐必须在
+/// 同一个函数里——拆开就是当年「落盘后忘 evict」回归的形状。
 library;
 
 import 'dart:io';
+
+import 'package:fushi_engine/foundation/engine_platform_hooks.dart';
 
 int _temporarySerial = 0;
 
@@ -19,6 +23,7 @@ Future<void> writeCoverBytesAtomically({
     final File dest = File(destPath);
     if (await dest.exists()) await dest.delete();
     await tmp.rename(destPath);
+    await evictImageCacheForFile(dest);
   } catch (_) {
     try {
       if (await tmp.exists()) await tmp.delete();
@@ -39,6 +44,7 @@ Future<void> copyCoverFileAtomically({
     final File dest = File(destPath);
     if (await dest.exists()) await dest.delete();
     await tmp.rename(destPath);
+    await evictImageCacheForFile(dest);
   } catch (_) {
     try {
       if (await tmp.exists()) await tmp.delete();

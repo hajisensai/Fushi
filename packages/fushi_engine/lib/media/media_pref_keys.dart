@@ -24,3 +24,8 @@ String readerBookMediaIdentifierFor(String bookKey) =>
 /// 规范书名覆盖键：`override_title://<mediaIdentifier>`。
 String overrideTitleKeyFor(String mediaIdentifier) =>
     '$kOverrideTitleKeyMarker$mediaIdentifier';
+
+/// 用户自定义 TMDB API key 的偏好键（存 Drift `preferences` 表，不改 schema）。
+/// app 侧 `tmdb_default_key.dart` 再导出它并与内置 key 一起决定「这次请求用哪把」；
+/// 服务端刮削装配直接读它。
+const String kVideoScraperTmdbApiKeyPref = 'video_scraper_tmdb_api_key';

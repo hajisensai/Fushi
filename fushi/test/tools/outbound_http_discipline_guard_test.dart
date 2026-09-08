@@ -103,6 +103,10 @@ const Map<String, String> kBareOutboundRegistry = <String, String>{
       '互联同步 / 远程库 / 远程视频流：pinned client 之外的回退分支，目标仍是局域网 peer。',
   'fushi/lib/src/sync/interconnect_manga_ocr_client.dart':
       '远程 manga-OCR：把 OCR 卸载到局域网另一台机，经代理等于把内网请求发到公网出口。',
+  'fushi/lib/src/sync/interconnect_job_client.dart':
+      '互联通用任务（ASR 等）客户端：目标恒为已配对 host，与 manga-OCR 客户端同一理由。',
+  'fushi/lib/src/sync/interconnect_download_client.dart':
+      '互联代下载客户端：目标恒为已配对 host，与 manga-OCR 客户端同一理由。',
   'packages/fushi_engine/lib/sync/pairing/fushi_ping_client.dart':
       '配对 peer 存活 ping：目标是 mDNS 发现出来的局域网地址。',
   'fushi/lib/src/models/app_model.dart':
@@ -113,7 +117,7 @@ const Map<String, String> kBareOutboundRegistry = <String, String>{
 
 /// 登记在案的文件总数（装配点 + 豁免）。**这是自校验用的哨兵**：改清单必须同步改这个数，
 /// 光靠「新增未登记即红」挡不住「悄悄多登记一条」。
-const int kRegisteredOutboundFileCount = 19;
+const int kRegisteredOutboundFileCount = 21;
 
 /// 裸出站构造的判据。
 ///

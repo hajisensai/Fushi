@@ -11,3 +11,8 @@ import 'dart:io';
 /// 持有的句柄会让 `File.delete` 失败）。app 装 `PaintingBinding.imageCache` 清理；
 /// 服务端 no-op。
 Future<void> Function(File file) evictImageCacheForFile = (File _) async {};
+
+/// 删文件**之前**释放图片缓存对它的引用（Windows 上被解码器持有的文件句柄会让
+/// delete 失败）。语义是「锁释放提示」，实现可以比 [evictImageCacheForFile] 重
+/// （app 侧整表 clear）；只在删除路径用，别拿它做写后驱逐。
+Future<void> Function(File file) releaseImageCacheBeforeDelete = (File _) async {};

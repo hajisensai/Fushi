@@ -53,20 +53,18 @@ class MediaCoverService {
   static Future<void> applyCoverFile({
     required File source,
     required String destPath,
-  }) async {
-    await copyCoverFileAtomically(source: source, destPath: destPath);
-    await evictLocalCoverCache(destPath);
-  }
+  }) =>
+      // 写盘 + 驱逐都在引擎 writer 里（驱逐经 evictImageCacheForFile 钩子回到
+      // evictLocalCoverCache 的双键 evict）；这里不再重复 evict，一份真相。
+      copyCoverFileAtomically(source: source, destPath: destPath);
 
   /// 统一落盘入口（内存字节源，下载场景）：语义同 [applyCoverFile]，
   /// 只是源换成 [bytes]（`flush: true` 落稳后 rename）。
   static Future<void> applyCoverBytes({
     required List<int> bytes,
     required String destPath,
-  }) async {
-    await writeCoverBytesAtomically(bytes: bytes, destPath: destPath);
-    await evictLocalCoverCache(destPath);
-  }
+  }) =>
+      writeCoverBytesAtomically(bytes: bytes, destPath: destPath);
 
   /// 统一「封面已消失」入口：[destPath] 上的封面文件**已经被删除**时调用，
   /// 双键驱逐它的解码缓存。

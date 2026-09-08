@@ -1,6 +1,6 @@
 # Fushi 无头服务端（Linux CLI + WebUI）与互联计算卸载设计
 
-日期：2026-09-08 · 状态：执行中 · 分支 `worktree-fushi-server-headless`
+日期：2026-09-08 · 状态：四期全部落地（见 §7）· 分支 `worktree-fushi-server-headless`
 
 ## 0. 一句话
 
@@ -210,3 +210,29 @@ Android / iOS / macOS 装服务端；`/api/ocr/job` 迁通用协议。
 - 第 1/2 期：引擎层 shelf 路由单测（`shelf` 内存请求）+ Windows 真机
   端到端（ASR 任务、下载任务）。
 - 第 3 期：WebUI 走 node 宿主测试（与 popup 同法）+ 手工截图证据。
+
+## 7. 落地记录（2026-09-08）
+
+| 期 | 提交 | 交付 |
+|---|---|---|
+| 0A/0B/0C | `7330439057` `70a53e10c1` `362dd2a863` | `packages/fushi_engine`（平移 + 切割边钩子）、`packages/fushi_server`（init/serve/scan/status/pair/admin/models/transcribe）、纯度守卫、CI linux 出 bundle |
+| 1 | `b5cbe92883` | `/api/jobs` 通用任务协议 + ASR runner；app 转录弹层「运行位置：本机 / host」 |
+| 2 | `834f32bc65` | `/api/downloads` + `ServerDownloadHost`；app 手动下载对话框「下载到」+ 下载中心混排 host 任务 |
+| 3 | `8e193edbe5` | admin 端口独立、token/cookie 鉴权、`/api/admin/*` 九组、单页 WebUI、分块可续上传 + 配额 |
+| 4 | `38da0dde35` | `torrent.engine` 三态 + 内置 libtorrent 随包；ORT 随包 + CUDA 说明；CI 编 `.so`/下 ORT/真进程冒烟；README |
+
+### 与原设计的偏差（明说）
+
+- **订阅（tracker 订阅 CRUD）没进 `/api/downloads`**：host 只接客户端投来的磁力；订阅仍在客户端本地跑、可把目标选成 host。原因：订阅带发现页身份快照与「实例接管」判据，服务端没有发现页，硬塞会造出第二套判据。
+- **漫画目录扫描没做**：`LibraryRootConfig.kind` 只认 `video` / `book`；漫画走客户端上传（既有 manga sync package）+ OCR 任务。
+- **`ffmpeg` 配置项只做展示**：引擎 CLI 后端只认 `FUSHI_FFMPEG` 环境变量与可执行同级；`serve` 启动时校验路径并提示用环境变量。根治要改引擎的 ffmpeg 解析装配点，本轮不动（影响面是 app 五端）。
+- **Linux torrent bridge 动态链接发行版 libtorrent**（不是 vcpkg 静态链）：目标机要装 `libtorrent-rasterbar2.0`。换静态链只多 40 分钟冷编、不多信息，等真有「目标机装不了 apt 包」的用户再说。
+- **WebUI 没有浏览器级自动化测试**：内联 JS 过 `node --check`，API 面走真进程 HTTP 冒烟（27 + 9 项）；页面交互靠人工。
+- **audiobooks 库服务仍返回空集**（第 0 期既定），有声书不经 host 托管。
+
+### 验证证据（本机 Windows）
+
+- `packages/fushi_server`：`dart analyze` 零 issue；`dart test` 9 条全过（配置往返 / 上传分块 / 随包库定位）。
+- 真进程 HTTP 冒烟 `serve`：登录页 / 401 / Bearer / cookie 302+HttpOnly / 库 CRUD 写回 yaml / 上传三段+重放 409+穿越 400+配额账本 / 设置写回 / 扫描单飞 / 互联端口拒绝 admin 路由——27 项 PASS。
+- 随包原生库冒烟：`bundle/lib/` 放入 `fushi_torrent_ffi.dll`（+3 个运行时 DLL）与 `onnxruntime.dll`，`torrent.engine: auto` 解析成 `embedded`（libtorrent 2.0.11），17 语 ASR plan 无 error，磁力任务经内置引擎入 `video_download_jobs` 并可删——9 项 PASS。
+- Linux 真机没有：CI linux job 的冒烟步骤是 Linux 侧唯一证据（合并后看该 job）。

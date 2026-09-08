@@ -182,14 +182,16 @@ void main() {
         '../packages/fushi_engine/lib/sync/pairing/fushi_ping_client.dart',
       ]) {
         final String src = File(path).readAsStringSync();
-        // 锚点字面量：ErrorLogService.instance.logDiagnostic(
+        // 锚点字面量：engineLog.logDiagnostic(
+        // （探测层在 fushi_engine 里，日志走装配点 engineLog；app 侧
+        // installEngineHostBindings 把它接到 ErrorLogService，语义不变）
         expect(
-          containsCodeLine(src, 'ErrorLogService.instance.logDiagnostic('),
+          containsCodeLine(src, 'engineLog.logDiagnostic('),
           isTrue,
           reason: '未把瞬时探测失败记为诊断：$path',
         );
         expect(
-          containsCodeLine(src, 'ErrorLogService.instance.log('),
+          containsCodeLine(src, 'engineLog.log('),
           isFalse,
           reason: '把 failover 的预期失败灌进用户可见错误计数 + 持久化日志：$path',
         );

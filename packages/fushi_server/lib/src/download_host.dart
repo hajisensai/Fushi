@@ -13,6 +13,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
+import 'package:fushi_engine/media/media_pref_keys.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi_engine/media/torrent/embedded_torrent_host.dart';
 import 'package:fushi_engine/media/torrent/qb_torrent_backend.dart';
@@ -111,7 +112,7 @@ class ServerDownloadHost implements HostDownloadHost {
       database: db,
       config: VideoSourceScrapeGlobalConfig.fromPreferences(
         prefs,
-        resolvedTmdbApiKey: (prefs.getPref('video_scraper_tmdb_api_key', defaultValue: '') as String).trim(),
+        resolvedTmdbApiKey: (prefs.getPref(kVideoScraperTmdbApiKeyPref, defaultValue: '') as String).trim(),
       ),
     );
     _scrape = scrape;

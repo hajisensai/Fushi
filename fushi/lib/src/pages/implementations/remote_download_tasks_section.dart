@@ -10,6 +10,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/media/downloads/download_task_card.dart';
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/interconnect_download_client.dart';
@@ -129,18 +130,39 @@ class _RemoteDownloadTasksSectionState
       onClear: finished
           ? () => _action(() => client.delete(target, job.jobId))
           : () => _action(() => client.cancel(target, job.jobId)),
-      builder: (BuildContext context) => ListTile(
-        dense: true,
+      // 与本地任务同一张卡（DownloadTaskCard），不再另开 ListTile 决策。
+      builder: (BuildContext context) => DownloadTaskCard(
+        key: ValueKey<String>('remote:${target.baseUrl}:${job.jobId}'),
+        taskId: 'remote:${target.baseUrl}:${job.jobId}',
+        title: job.title,
+        status: '${job.stage} · ${(job.stageProgress * 100).toStringAsFixed(0)}%',
+        subtitle: target.label,
+        progress: job.stageProgress,
         leading: const Icon(Icons.cloud_download_outlined),
-        title: Text(job.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-        subtitle: Text(
-          '${target.label} · ${job.stage} · '
-          '${(job.stageProgress * 100).toStringAsFixed(0)}%'
-          '${job.lastError == null ? '' : ' · ${job.lastError}'}',
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-        ),
+        details: _details(context, target, job),
       ),
+    );
+  }
+
+  Widget _details(
+    BuildContext context,
+    HostDownloadTarget target,
+    HostDownloadJob job,
+  ) {
+    final TextTheme text = Theme.of(context).textTheme;
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text('${target.label} · ${target.baseUrl}', style: text.bodySmall),
+        if (job.lastError != null)
+          Text(
+            job.lastError!,
+            style: text.bodySmall?.copyWith(color: scheme.error),
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+          ),
+      ],
     );
   }
 

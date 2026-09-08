@@ -223,7 +223,7 @@ class VideoStorage {
   static Future<void> _evictImageCacheForFile(File file) async {
     try {
       // 宿主装配（app：PaintingBinding.imageCache 清理；服务端 no-op）。
-      await evictImageCacheForFile(file);
+      await releaseImageCacheBeforeDelete(file);
     } catch (_) {
       // Pure storage tests may run without a Flutter painting binding. Cache
       // eviction is only a lock-release hint, so missing binding must not block

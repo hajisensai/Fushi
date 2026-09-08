@@ -15,6 +15,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/painting.dart';
 import 'package:flutter/services.dart' show RootIsolateToken;
+import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/media/video/ffmpeg_kit_backend.dart';
 import 'package:fushi/src/ocr/ocr_inference_ort.dart';
 import 'package:fushi/src/storage/app_paths.dart';
@@ -44,11 +45,23 @@ class AppPathsEngineBridge extends EnginePaths {
   Future<Directory> tempRootDirectory() => AppPaths.tempRootDirectory();
 }
 
-Future<void> _evictImageCacheForFile(File file) async {
-  final ImageCache imageCache = PaintingBinding.instance.imageCache;
-  imageCache.clearLiveImages();
-  imageCache.clear();
-  await FileImage(file).evict();
+/// 写后驱逐：与 `MediaCoverService` 历来的收口同一份双键 evict（裸 FileImage +
+/// resizedFileImage），只动这一条路径的条目，不清整表——刮削几百张封面时整表
+/// clear 会把书架滚动变成重解码风暴。
+Future<void> _evictImageCacheForFile(File file) => evictLocalCoverCache(file.path);
+
+/// 删前释放：与 develop 上 `VideoStorage._evictImageCacheForFile` 逐字同义——
+/// 整表 clear 是「锁释放提示」（Windows 上解码器持有的句柄让 delete 失败），
+/// 纯存储测试没有 painting binding 时吞掉，不能挡住真正的删除。
+Future<void> _releaseImageCacheBeforeDelete(File file) async {
+  try {
+    final ImageCache imageCache = PaintingBinding.instance.imageCache;
+    imageCache.clearLiveImages();
+    imageCache.clear();
+    await FileImage(file).evict();
+  } catch (_) {
+    // 见上：缺 binding 只意味着没有缓存可放，不影响删除。
+  }
 }
 
 FfmpegBackend _platformFfmpegBackend() {
@@ -61,6 +74,7 @@ void installEngineHostBindings() {
   engineLog = ErrorLogService.instance;
   enginePaths = const AppPathsEngineBridge();
   evictImageCacheForFile = _evictImageCacheForFile;
+  releaseImageCacheBeforeDelete = _releaseImageCacheBeforeDelete;
   // 词典导入/删除前释放 FFI 引擎的文件映射（BUG-1756）。
   releaseDictionaryMappings = FushiDicts.releaseAllMappings;
   ffmpegPlatformBackendProvider = _platformFfmpegBackend;
