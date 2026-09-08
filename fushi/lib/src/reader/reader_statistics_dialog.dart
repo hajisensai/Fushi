@@ -11,9 +11,11 @@
 /// 数字反而看不全。纵向排一行给数值整条行宽，任何语言的标签和任何位数的数值都不
 /// 再互相挤。
 ///
-/// 手动计时开关是浮层底部的整宽按钮（[_TrackingToggleButton]），与底栏按钮同级
-/// （高度走 `density.controlHeight`）：它此前是「本次会话」小标题旁 18px 的紧凑
-/// IconButton，触摸目标远小于 48dp 的可点击下限，手机上难点中。
+/// 浮层里**没有**手动计时开关：打开这层的入口（`_openReadingStatistics`）本身经
+/// `_withStudyClockPaused` 停表（BUG-2208，浮层是弹层 → `modalDepth > 0`），看统计
+/// 期间计时恒停，层内再摆一个「暂停 / 继续」既改不动当下的运行态，又与「会话读数
+/// 冻结在打开那一刻」的表象自相矛盾。手动暂停的入口是底部状态行左侧的计时器
+/// （`ReaderStatusFooter.onTapTracker`）——在正文里点，停 / 续立刻生效。
 library;
 
 import 'dart:async';
@@ -122,8 +124,6 @@ class ReaderStatisticsDialog extends StatefulWidget {
     required this.loadBookTotals,
     required this.remainingChapterChars,
     required this.remainingBookChars,
-    required this.trackingPaused,
-    required this.onToggleTracking,
     this.tick = const Duration(seconds: 1),
   });
 
@@ -137,12 +137,6 @@ class ReaderStatisticsDialog extends StatefulWidget {
   final int? remainingBookChars;
   final Duration tick;
 
-  /// 会话计时是否被用户手动暂停（读口，每 tick 采样）。
-  final bool Function() trackingPaused;
-
-  /// 「本次会话」旁的 ▶/⏸：手动暂停 / 继续计时（切屏自动暂停之外的手动开关）。
-  final VoidCallback onToggleTracking;
-
   @override
   State<ReaderStatisticsDialog> createState() => _ReaderStatisticsDialogState();
 }
@@ -150,7 +144,7 @@ class ReaderStatisticsDialog extends StatefulWidget {
 class _ReaderStatisticsDialogState extends State<ReaderStatisticsDialog> {
   Timer? _ticker;
   ReaderBookStatTotals? _book;
-  ({int seconds, int chars, bool active, bool paused})? _lastSnapshot;
+  ({int seconds, int chars, bool active})? _lastSnapshot;
 
   @override
   void initState() {
@@ -159,11 +153,10 @@ class _ReaderStatisticsDialogState extends State<ReaderStatisticsDialog> {
     _ticker = Timer.periodic(widget.tick, (_) {
       if (!mounted) return;
       final StudySessionTotals s = widget.sessionTotals();
-      final ({int seconds, int chars, bool active, bool paused}) snap = (
+      final ({int seconds, int chars, bool active}) snap = (
         seconds: s.durationMs ~/ 1000,
         chars: s.chars,
         active: s.active,
-        paused: widget.trackingPaused(),
       );
       if (snap == _lastSnapshot) return;
       setState(() => _lastSnapshot = snap);
@@ -186,7 +179,6 @@ class _ReaderStatisticsDialogState extends State<ReaderStatisticsDialog> {
     final ThemeData theme = Theme.of(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final StudySessionTotals session = widget.sessionTotals();
-    final bool paused = widget.trackingPaused();
     final ReaderBookStatTotals book = _book ?? kEmptyReaderBookStatTotals;
     final double? finishCph = readerFinishCph(session: session, book: book);
     final int? chapterMs = estimateFinishMs(
@@ -271,14 +263,6 @@ class _ReaderStatisticsDialogState extends State<ReaderStatisticsDialog> {
                       value: bookMs == null ? '—' : formatStatClock(bookMs),
                     ),
                   ],
-                ),
-                SizedBox(height: tokens.spacing.page),
-                _TrackingToggleButton(
-                  paused: paused,
-                  onPressed: () {
-                    widget.onToggleTracking();
-                    setState(() {});
-                  },
                 ),
               ],
             ),
@@ -377,49 +361,6 @@ class _StatRows extends StatelessWidget {
           ],
         ],
       ),
-    );
-  }
-}
-
-/// 浮层底部的手动计时开关：整宽、底栏级高度（`density.controlHeight`）的按钮。
-///
-/// 暂停中用实心 [FilledButton]（计时停着是需要用户注意的非常态），计时中用
-/// tonal 变体。文案沿用旧 tooltip 的 `t.play` / `t.pause`——这两个 key 在 17 种
-/// 语言都有真翻译，新造一对「暂停计时 / 继续计时」只会在 15 种语言上回落成英文。
-/// key 沿用旧的紧凑 IconButton 那一个，桌面端快捷键集成测试按它断言浮层里有计时
-/// 开关。
-class _TrackingToggleButton extends StatelessWidget {
-  const _TrackingToggleButton({required this.paused, required this.onPressed});
-
-  final bool paused;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final Widget icon = Icon(
-      paused ? Icons.play_arrow_rounded : Icons.pause_rounded,
-    );
-    final Widget label = Text(paused ? t.play : t.pause);
-    const ValueKey<String> key = ValueKey<String>(
-      'fushi_reader_stats_tracking_toggle',
-    );
-    return SizedBox(
-      width: double.infinity,
-      height: tokens.density.controlHeight,
-      child: paused
-          ? FilledButton.icon(
-              key: key,
-              onPressed: onPressed,
-              icon: icon,
-              label: label,
-            )
-          : FilledButton.tonalIcon(
-              key: key,
-              onPressed: onPressed,
-              icon: icon,
-              label: label,
-            ),
     );
   }
 }
