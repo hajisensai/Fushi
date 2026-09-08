@@ -1393,6 +1393,7 @@ class _HomePageState extends BasePageState<HomePage>
       config.anidbPassword,
       config.locale,
       config.primaryProvider.name,
+      config.identifierWords.source,
     ].join('\u0000');
     final VideoDiscoveryController? existing = _videoDiscoveryController;
     if (existing != null && _videoDiscoveryConfigFingerprint == fingerprint) {
@@ -2188,6 +2189,7 @@ class _HomePageState extends BasePageState<HomePage>
       config.anidbClientVersion ?? 0,
       config.locale,
       config.primaryProvider.name,
+      config.identifierWords.source,
     ].join('\u0000');
     if (existing != null &&
         (existing.isBusy ||

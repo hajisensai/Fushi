@@ -11,12 +11,17 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/media/video/metadata/anidb_udp_file_client.dart';
 import 'package:fushi/src/media/video/metadata/anidb_app_client.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi/src/media/video/scraper/scrape_identifier_words.dart';
 
 const String kVideoMetadataAniDbClientNamePref =
     'video_metadata_anidb_client_name';
 const String kVideoMetadataAniDbClientVersionPref =
     'video_metadata_anidb_client_version';
 const String kVideoMetadataLocalePref = 'video_metadata_locale';
+
+/// 用户自定义识别词表（多行文本，语法见 [ScrapeIdentifierWords]）。默认空。
+const String kVideoMetadataIdentifierWordsPref =
+    'video_metadata_identifier_words';
 const String kVideoAniDbHashEnabledPref = 'video_anidb_hash_enabled';
 const String kVideoAniDbUsernamePref = 'video_anidb_username';
 const String kVideoAniDbPasswordPref = 'video_anidb_password';
@@ -78,6 +83,7 @@ class VideoSourceScrapeGlobalConfig {
     this.locale = 'zh-CN',
     this.imageLanguages = const <String>['zh', 'en', ''],
     this.primaryProvider = VideoMetadataProviderKind.mal,
+    this.identifierWords = ScrapeIdentifierWords.empty,
   });
 
   /// 全局主资料源（来源级 `provider_override` 可覆盖）；另一个可选源恒为兜底。
@@ -97,6 +103,10 @@ class VideoSourceScrapeGlobalConfig {
       );
   final String locale;
   final List<String> imageLanguages;
+
+  /// 标题候选的用户预处理词表（屏蔽 / 替换 / 集偏移）。解析失败的行已在
+  /// 构造时丢弃，只有可用的规则会进到这里。
+  final ScrapeIdentifierWords identifierWords;
 
   factory VideoSourceScrapeGlobalConfig.fromPreferences(
     PreferencesRepository preferences, {
@@ -128,6 +138,11 @@ class VideoSourceScrapeGlobalConfig {
             read(kVideoMetadataPrimaryProviderPref),
           ) ??
           VideoMetadataProviderKind.mal,
+      // 解析失败不抛：非法行在这里被丢弃，错误说明由设置页自己再解析一次展示。
+      identifierWords: ScrapeIdentifierWords.parse(
+        preferences.getPref(kVideoMetadataIdentifierWordsPref, defaultValue: '')
+            as String,
+      ).identifierWords,
     );
   }
 }

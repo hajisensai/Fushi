@@ -21,10 +21,15 @@ void main() {
         (SettingsItem candidate) => candidate.id == id,
       );
 
-  test('MAL and TMDB policy is fixed; AniDB remains file identification', () {
+  test('primary metadata source is user-selectable between MAL and TMDB', () {
+    // 2026-09-08 起主源可选（BUG-2268）：这一项从「必须不存在」翻成「必须存在
+    // 且只有 MAL / TMDB 两个选项」——AniDB 等历史 provider 仍不可选。
+    final SettingsSegmentedItem<String> picker =
+        item('video.library.metadata_primary_provider')
+            as SettingsSegmentedItem<String>;
     expect(
-      allScrapeSettings().map((SettingsItem candidate) => candidate.id),
-      isNot(contains('video.library.metadata_primary_provider')),
+      picker.options.map((SettingsSegmentOption<String> option) => option.value),
+      <String>['mal', 'tmdb'],
     );
   });
 
@@ -61,8 +66,9 @@ void main() {
     final RegExp call = RegExp(r'commitVideoMetadataRuntimePreference\(');
     expect(
       call.allMatches(videoSource).length,
-      1,
-      reason: 'the locale preference must use the shared helper',
+      3,
+      reason: '刮削语言、主资料源、识别词三项都必须走同一个写穿 helper '
+          '（写完要重建下载流水线的刮削快照，否则下一批刮削还用旧值）',
     );
     expect(
       call.allMatches(servicesSource).length,
@@ -119,7 +125,6 @@ void main() {
       'video.library.metadata_bangumi_token',
       'video.library.metadata_douban_endpoint',
       'video.library.metadata_douban_token',
-      'video.library.metadata_primary_provider'
     }) {
       expect(ids, isNot(contains(obsolete)));
     }

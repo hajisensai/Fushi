@@ -14,6 +14,7 @@ import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_provider_label.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_cleanup_action.dart';
+import 'package:fushi/src/media/video/scraper/scrape_identifier_words.dart';
 import 'package:fushi/src/media/video/video_subtitle_style.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/settings/settings_context.dart';
@@ -413,6 +414,17 @@ SettingsDestination buildVideoDestination() {
                 value,
               );
             },
+          ),
+          // 识别词（设计稿 C 二期，对标 MoviePilot WordsMatcher）：用户词表在
+          // 识别前改写标题、屏蔽发布组等噪声块、偏移集号。词表是多行文本，
+          // 单行的 SettingsTextItem 装不下，所以走 action + 编辑对话框。
+          SettingsActionItem(
+            id: 'video.library.metadata_identifier_words',
+            title: t.video_metadata_identifier_words,
+            subtitle: t.video_metadata_identifier_words_hint,
+            subtitleBuilder: videoScrapeIdentifierWordsSubtitle,
+            icon: Icons.rule_outlined,
+            onTap: showVideoScrapeIdentifierWordsDialog,
           ),
           SettingsActionItem(
             id: 'video.library.scrape_records_clear_all',
@@ -1892,5 +1904,136 @@ String _videoDragSeekSensitivityLabel(VideoSeekSensitivity value) {
       return t.video_setting_drag_seek_sensitivity_medium;
     case VideoSeekSensitivity.high:
       return t.video_setting_drag_seek_sensitivity_high;
+  }
+}
+
+/// 识别词行的副标题：规则条数 + 非法行条数。非法行不静默吞，用户必须看得见。
+String videoScrapeIdentifierWordsSubtitle(SettingsContext settingsContext) {
+  final ScrapeIdentifierWordParseResult parsed = ScrapeIdentifierWords.parse(
+    settingsContext.appModel.prefsRepo.getPref(
+      kVideoMetadataIdentifierWordsPref,
+      defaultValue: '',
+    ) as String,
+  );
+  if (parsed.words.isEmpty && parsed.errors.isEmpty) {
+    return t.video_metadata_identifier_words_empty;
+  }
+  final String rules =
+      '${t.video_metadata_identifier_words_hint} \u00b7 ${parsed.words.length}';
+  return parsed.errors.isEmpty
+      ? rules
+      : '$rules \u00b7 ${t.video_metadata_identifier_words_invalid}: '
+          '${parsed.errors.length}';
+}
+
+/// 识别词编辑对话框：多行词表 + 实时非法行提示。取消不写任何偏好。
+Future<void> showVideoScrapeIdentifierWordsDialog(
+  SettingsContext settingsContext,
+) async {
+  final String? saved = await showDialog<String>(
+    context: settingsContext.context,
+    builder: (BuildContext dialogContext) => _IdentifierWordsDialog(
+      initialText: settingsContext.appModel.prefsRepo.getPref(
+        kVideoMetadataIdentifierWordsPref,
+        defaultValue: '',
+      ) as String,
+    ),
+  );
+  if (saved == null) return;
+  // 词表里的换行与缩进是语义的一部分，不能走默认的 trim。
+  await commitVideoMetadataRuntimePreference(
+    settingsContext,
+    kVideoMetadataIdentifierWordsPref,
+    saved,
+    trimValue: false,
+  );
+  settingsContext.refresh();
+}
+
+/// 编辑框自己持有 TextEditingController：对话框退场动画还会重建 TextField，
+/// 由 showDialog 的调用者在 await 返回后 dispose 会撞上「controller 已释放」。
+class _IdentifierWordsDialog extends StatefulWidget {
+  const _IdentifierWordsDialog({required this.initialText});
+
+  final String initialText;
+
+  @override
+  State<_IdentifierWordsDialog> createState() => _IdentifierWordsDialogState();
+}
+
+class _IdentifierWordsDialogState extends State<_IdentifierWordsDialog> {
+  late final TextEditingController _controller =
+      TextEditingController(text: widget.initialText);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ScrapeIdentifierWordParseResult parsed =
+        ScrapeIdentifierWords.parse(_controller.text);
+    return AlertDialog(
+      title: Text(t.video_metadata_identifier_words),
+      content: SizedBox(
+        width: 520,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                t.video_metadata_identifier_words_syntax,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                key: const ValueKey<String>(
+                  'video.library.metadata_identifier_words.field',
+                ),
+                controller: _controller,
+                minLines: 6,
+                maxLines: 12,
+                autofocus: true,
+                keyboardType: TextInputType.multiline,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                onChanged: (String _) => setState(() {}),
+              ),
+              if (parsed.errors.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 8),
+                Text(
+                  '${t.video_metadata_identifier_words_invalid}: '
+                  '${parsed.errors.length}',
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+                for (final String error in parsed.errors)
+                  Text(error, style: Theme.of(context).textTheme.bodySmall),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: <Widget>[
+        TextButton(
+          key: const ValueKey<String>(
+            'video.library.metadata_identifier_words.cancel',
+          ),
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(t.dialog_cancel),
+        ),
+        TextButton(
+          key: const ValueKey<String>(
+            'video.library.metadata_identifier_words.save',
+          ),
+          onPressed: () => Navigator.of(context).pop(_controller.text),
+          child: Text(t.dialog_save),
+        ),
+      ],
+    );
   }
 }

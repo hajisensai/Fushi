@@ -4440,5 +4440,10 @@
   "video_metadata_primary_provider_hint": "主源没有唯一精确命中或不可用时，自动用另一个源兜底。",
   "video_metadata_provider_mal": "MAL（经 Jikan）",
   "video_metadata_provider_tmdb": "TMDB",
-  "video_source_scrape_provider_follow_global": "跟随全局默认"
+  "video_source_scrape_provider_follow_global": "跟随全局默认",
+  "video_metadata_identifier_words": "识别词",
+  "video_metadata_identifier_words_hint": "识别前先改写、屏蔽标题或偏移集号",
+  "video_metadata_identifier_words_empty": "未配置",
+  "video_metadata_identifier_words_invalid": "无效规则",
+  "video_metadata_identifier_words_syntax": "一行一条规则，# 开头是注释。屏蔽：直接写正则。替换：A => B。集偏移：前 <> 后 >> EP+1。组合：A => B && 前 <> 后 >> EP+1。"
 }

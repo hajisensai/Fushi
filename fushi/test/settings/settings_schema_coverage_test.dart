@@ -235,6 +235,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 同一实例下轮即刮）。
   'video/Auto-fetch series info':
       'test/media/video/scraper/auto_scrape_service_test.dart',
+  // BUG-2268 主资料源（MAL / TMDB）。写 prefsRepo（changed=true），生效点是
+  // VideoSourceScrapeGlobalConfig 快照 → 协调器识别链的源顺序，既不进 reader
+  // CSS 也不进主题树，harness 观测不到；由识别器 / 协调器专项测试咬住（对称
+  // 兜底、来源级 override 覆盖全局、历史值回落、切源后配置指纹重建）。
+  'video/Primary metadata source':
+      'test/media/video/metadata/mal_fallback_resolver_test.dart + '
+          'test/media/video/metadata/video_source_scrape_provider_override_test.dart',
   // 库内自动补刮总闸。写 prefsRepo（changed=true），生效点在
   // VideoLibraryScrapeSweep.sweepOnce 的进场门（关=不发起任何补刮批次），不是
   // reader CSS / 主题树，无适用探针；由专项测试咬住（总闸关=不补刮但队列仍可见、
