@@ -77,7 +77,19 @@ on:
         type: boolean
 
 concurrency:
-  group: fushi-release-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}
+  # 组名带 workflow 名（2026-09-08，用户要求正式版并行发包）：Android（release.yml）与
+  # 桌面/Apple（release-desktop.yml）是两条产出不相交的 workflow，而 GitHub 的 concurrency
+  # 组是**仓库级**的——两条 workflow 只要组名算出来一样就串行，且同组「1 个 in-progress +
+  # 1 个 pending」的语义会让第二个 pending 把第一个 pending **取消**（2026-09-03 实测：同
+  # sha 先后 dispatch Android beta 与桌面 beta，Android 那条 5 秒内 cancelled、0 个 job）。
+  # 正式版靠 `release: published` 同时点燃两条、同 tag 同组必串行：桌面/Apple 包要等
+  # Android 整条跑完才开始（v2.2.4：Android 13:44 上传，Windows/macOS/iOS 14:52）。
+  # 两条并行上传同一个 GitHub Release 是安全的，上传侧本就按此设计：rolling debug 的
+  # prune 只删本平台资产（TODO-1131）；softprops 建 release 撞车会重取（同一条 workflow
+  # 里 windows/macos/ios 早就并行上传同一个 release）；update-manifest 推送有「重取远端
+  # tip 再合并」循环（TODO-781）。同一条 workflow 内仍按 tag/sha 串行，同 tag 两次 dispatch
+  # 不会互相踩。守卫：fushi/test/build/release_workflow_concurrency_guard_test.dart。
+  group: fushi-release-${{ github.workflow }}-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}
   cancel-in-progress: false
 
 jobs:
