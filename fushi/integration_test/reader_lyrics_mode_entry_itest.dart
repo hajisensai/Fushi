@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
@@ -181,7 +182,37 @@ void main() {
             reason: 'the live WebView document must be LyricsModeHtml',
           );
 
+          // 歌词模式的顶栏必须与阅读模式一样在场，并挂着回正文的模式键。
+          // 默认底栏是悬浮态（点空白唤出 / 3 秒自动收起），所以先按 chrome 开关键
+          // （readerToggleChrome，默认 M）把 chrome 唤出来，再断言——这与用户在真机上
+          // 点一下空白处看到的是同一台状态机。
+          await tester.sendKeyEvent(LogicalKeyboardKey.keyM);
+          await tester.pump(const Duration(milliseconds: 300));
+          final Finder header =
+              find.byKey(const ValueKey<String>('fushi_desktop_header'));
+          expect(header, findsOneWidget,
+              reason: '歌词模式必须和阅读模式一样有顶栏（它是这里唯一的返回 / 设置面）');
+          final Finder modeButton = find.byKey(
+            const ValueKey<String>('fushi_reader_lyrics_mode_button'),
+          );
+          expect(modeButton, findsOneWidget,
+              reason: '歌词模式顶栏必须有一颗看得见的「回到阅读模式」键');
+
           await takeScreenshot(binding, 'reader_lyrics_mode_entry_ready');
+
+          // 那颗键真的能把文档换回正文（回路闭合，不只是画出来）。顶栏整体包在
+          // ExcludeFocus 里（TODO-700 不变式：焦点只住在正文），是纯指针面，没有
+          // 焦点等价物，故此处按豁免通道①用一次坐标点击。
+          await tester.tap(
+              modeButton); // itest-tap-allow: 顶栏是 ExcludeFocus 的纯指针面，无焦点等价路径
+          await _pumpUntil(
+            tester,
+            () => !ReaderFushiSource.instance.lyricsMode,
+            reason: '顶栏模式键必须真把歌词模式关掉',
+            polls: 20,
+          );
+          await _pumpUntil(tester, _readerContentReady,
+              reason: '退出歌词模式后正文必须重新就绪');
         },
       );
     },

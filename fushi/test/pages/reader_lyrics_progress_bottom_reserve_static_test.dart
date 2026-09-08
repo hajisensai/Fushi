@@ -29,14 +29,18 @@ void main() {
   group('independentDocumentInsets（独立 HTML 文档留白契约）', () {
     const double reserve = 72;
 
+    const double topReserve = 60;
+
     EdgeInsets insets({
       required bool lyricsMode,
       required bool chromeOccupiesLayout,
       double bottomReserve = reserve,
+      double top = topReserve,
     }) {
       return independentDocumentInsets(
         lyricsMode: lyricsMode,
         chromeOccupiesLayout: chromeOccupiesLayout,
+        topReserve: top,
         bottomReserve: bottomReserve,
       );
     }
@@ -76,12 +80,26 @@ void main() {
       // ——判据只认 lyricsMode，所以 spread 与「没有独立文档」在这里同为 0。
     });
 
-    test('顶部恒不留白（macOS 拖拽带随自绘顶栏一并删除）', () {
-      // BUG-1343 曾让独立文档顶部缩进 macOS 阅读器自绘的 28pt 拖拽带。macOS 改用
-      // 应用级 MD3 顶栏（FushiDesktopTitleBar，在整个 Navigator 之上）后，页内不再
-      // 有任何叠在 WebView 上的顶部 chrome，这笔留白必须消失，否则歌词/整页图会在
-      // 顶栏下面再空一条。
-      expect(insets(lyricsMode: true, chromeOccupiesLayout: true).top, 0);
+    test('歌词模式：顶部留白 == 调用方给的顶部 chrome 占高（顶栏在歌词模式在场）', () {
+      // 顶栏过去在歌词模式整块不启用，歌词文档因此从 y=0 起画，系统状态栏 / 刘海
+      // 直接压在首行歌词上；顶栏恢复在场后，独立文档必须像正文一样给它让位。
+      expect(
+          insets(lyricsMode: true, chromeOccupiesLayout: true).top, topReserve);
+      expect(insets(lyricsMode: true, chromeOccupiesLayout: true, top: 12).top,
+          12);
+    });
+
+    test('顶部留白不受底栏占位门控（顶栏是否占位已由调用方算进 topReserve）', () {
+      // 悬浮顶栏不占正文位置时调用方喂进来的就是「只剩系统 inset」的那个值，
+      // 这里不能再叠一道底栏的门 —— 底栏收起并不会让状态栏不压歌词。
+      expect(
+        insets(lyricsMode: true, chromeOccupiesLayout: false).top,
+        topReserve,
+      );
+    });
+
+    test('正文 / spread 模式不留顶部（正文走 setChromeInsets，重复留白会挖掉一条空白）', () {
+      expect(insets(lyricsMode: false, chromeOccupiesLayout: true).top, 0);
       expect(insets(lyricsMode: false, chromeOccupiesLayout: false).top, 0);
     });
 
@@ -91,7 +109,12 @@ void main() {
         EdgeInsets.zero,
       );
       expect(
-        insets(lyricsMode: true, chromeOccupiesLayout: true, bottomReserve: 0),
+        insets(
+          lyricsMode: true,
+          chromeOccupiesLayout: true,
+          bottomReserve: 0,
+          top: 0,
+        ),
         EdgeInsets.zero,
       );
     });
