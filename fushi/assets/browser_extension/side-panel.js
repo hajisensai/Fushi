@@ -1259,6 +1259,7 @@
   // 「持 SW 签发的 token 回 SW 核销」——SW 绑定签发 tab、TTL 过期，伪造的 token 兑不出
   // origin。核销前 EMBED_HOST_ORIGIN 保持初始 sentinel（永不等于任何真实 origin），
   // 天然 fail-closed：兑不到就一直不收宿主消息。
+  var requestEmbedAttestation = null; // EMBED 时装上；见下（轮询要复用它重试）
   if (EMBED) {
     var EMBED_HOST_ORIGIN = 'fushi-unverified-pending'; // 未核销前的哨兵，绝不匹配任何 origin
     var hostMsg = function (ev) {
@@ -1269,14 +1270,23 @@
       else if (d.type === 'resume') { embedPaused = false; refresh(true); }
     };
     window.addEventListener('message', hostMsg);
-    (function () {
-      var tok = '';
-      var m = /[?&]fushiEmbedToken=([^&]*)/.exec(EMBED_SEARCH);
-      if (m) { try { tok = decodeURIComponent(m[1]); } catch (_) { tok = ''; } }
-      // 有没有 token 都要问这一次：origin 要 token 才兑得出（宿主 pause/resume 通道），
-      // 而 tabId 只看 sender.tab.id、SW 无条件如实给。两者信任根不同，别合成一个判断。
+    var embedTok = '';
+    var embedTokMatch = /[?&]fushiEmbedToken=([^&]*)/.exec(EMBED_SEARCH);
+    if (embedTokMatch) {
+      try { embedTok = decodeURIComponent(embedTokMatch[1]); } catch (_) { embedTok = ''; }
+    }
+    var embedVerifyBusy = false;
+    // 有没有 token 都要问：origin 要 token 才兑得出（宿主 pause/resume 通道），而 tabId
+    // 只看 sender.tab.id、SW 无条件如实给。两者信任根不同，别合成一个判断。
+    // 做成**幂等可重试**而不是开局一发：SW 是会被浏览器随时休眠/重启的，那一次 sendMessage
+    // 撞上 lastError 就永远拿不到 tabId 了 —— 而 tabId 现在是驱动本页的唯一来源，
+    // 一次哑火 = 抽屉永久停在「找不到当前标签页」。轮询里补请求，最多 300ms 自愈。
+    requestEmbedAttestation = function () {
+      if (embedVerifyBusy || EMBED_TAB_ID != null) return;
+      embedVerifyBusy = true;
       try {
-        chrome.runtime.sendMessage({ type: 'drawerEmbedVerify', token: tok }, function (resp) {
+        chrome.runtime.sendMessage({ type: 'drawerEmbedVerify', token: embedTok }, function (resp) {
+          embedVerifyBusy = false;
           try { if (chrome.runtime.lastError) return; } catch (_) { return; }
           if (!resp) return;
           var o = typeof resp.origin === 'string' ? resp.origin : '';
@@ -1286,10 +1296,14 @@
             refresh(true); // 背书到货之前 queryActiveTab 是空的，这一刻才是真正的开局刷新
           }
         });
-      } catch (_) { /* 保持哨兵 + 空 tab = fail-closed */ }
-    })();
+      } catch (_) { embedVerifyBusy = false; /* 保持哨兵 + 空 tab = fail-closed */ }
+    };
+    requestEmbedAttestation();
   }
 
   refresh(true);
-  setInterval(function () { refresh(false); }, 300);
+  setInterval(function () {
+    if (requestEmbedAttestation) requestEmbedAttestation(); // 背书没到手就一直补请求
+    refresh(false);
+  }, 300);
 })();

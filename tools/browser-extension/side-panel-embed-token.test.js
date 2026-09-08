@@ -43,6 +43,8 @@ async function loadEmbedPanel(opts) {
   const o = opts || {};
   const tabSends = [];
   const runtimeSends = [];
+  let verifyCalls = 0;
+  let currentLastError; // 真 chrome 在回调期间才置位；这里照搬这个时序
   const intervals = [];
   const winHandlers = {};
   const els = new Map();
@@ -52,7 +54,7 @@ async function loadEmbedPanel(opts) {
       if (key === 'runtime') {
         return {
           id: 'test-ext-id',
-          lastError: undefined,
+          get lastError() { return currentLastError; },
           getURL() { return 'chrome-extension://test/x'; },
           onMessage: { addListener() {} },
           sendMessage(message, callback) {
@@ -63,11 +65,16 @@ async function loadEmbedPanel(opts) {
               var base = o.verifyResp || { origin: '' };
               var resp = { origin: base.origin || '' };
               resp.tabId = Object.prototype.hasOwnProperty.call(base, 'tabId') ? base.tabId : 42;
+              verifyCalls += 1;
+              var dead = !!(o.failFirstVerify && verifyCalls === 1); // SW 正好休眠了
               // 真 chrome.runtime.sendMessage 的回调**永远是异步的**：核销到货之前
               // 面板已经跑过一轮 refresh。同步 mock 会把这段窗口抹掉，让「URL 自证的
               // tabId 被首轮用掉」这类真漏洞在测试里看不见（实测：同步 mock 下该用例
               // 对着有漏洞的实现照样绿）。这里必须跨一个宏任务。
-              setImmediate(function () { callback(resp); });
+              setImmediate(function () {
+                currentLastError = dead ? { message: 'The message port closed' } : undefined;
+                try { callback(dead ? undefined : resp); } finally { currentLastError = undefined; }
+              });
               return;
             }
             if (callback) callback({});
@@ -230,4 +237,21 @@ test('SW 背书不出 tabId：一条消息都不许发（fail-closed）', async 
   await p.tick();
   await p.tick();
   assert.strictEqual(p.tabSends.length, 0, '拿不到背书就不许回落去猜标签页');
+});
+
+test('开局核销撞上 SW 休眠（lastError）：下一次轮询补请求并自愈', async () => {
+  // tabId 现在是驱动本页的唯一来源（URL 自证的路已拆），所以「问 SW」这一步不能是
+  // 开局一发定生死 —— service worker 本就会被浏览器随时休眠/重启。一次哑火之后，
+  // 抽屉必须能自己爬起来，而不是永久停在「找不到当前标签页」。
+  const p = await loadEmbedPanel({
+    search: '?fushiEmbed=1&fushiEmbedToken=TK1',
+    verifyResp: { origin: 'https://m.test', tabId: 42 },
+    failFirstVerify: true,
+  });
+  assert.strictEqual(p.tabSends.length, 0, '核销哑火期间不许凭空驱动任何标签页');
+  await p.tick();
+  assert.ok(p.tabSends.length > 0, 'SW 一次哑火就让抽屉永久停摆 = 用参数换来了更脆的东西');
+  for (const s of p.tabSends) {
+    assert.strictEqual(s.tabId, 42, '自愈后仍然只认背书的那一页');
+  }
 });
