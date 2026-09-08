@@ -4436,5 +4436,7 @@
   "video_opensubtitles_app_key_hint": "留空使用应用内置 API 密钥。",
   "video_anilist_error_api_disabled": "AniList 官方因服务器稳定性问题暂时停用了公开 API。这不是你的网络或代理的问题——请求已经打到 AniList 并被它当面拒绝了。请稍后再试。",
   "video_anilist_error_rate_limited": "AniList 正在对本应用限流。稍等一会儿再重试。",
-  "video_anilist_error_unreachable": "连不上 AniList（graphql.anilist.co）。请检查网络连接，或在下载设置中配置代理。"
+  "video_anilist_error_unreachable": "连不上 AniList（graphql.anilist.co）。请检查网络连接，或在下载设置中配置代理。",
+  "popup_compact_glossaries": "紧凑释义",
+  "popup_compact_glossaries_hint": "查词弹窗里的释义条目改为同行显示、用「 | 」分隔，不再每条占一行。"
 }

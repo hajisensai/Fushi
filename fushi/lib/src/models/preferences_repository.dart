@@ -1786,6 +1786,18 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  // 对齐 Hoshi Reader Android 的 "Compact Glossaries"：释义列表由每条一行改成
+  // inline + ` | ` 分隔的紧凑排版（popup.js createDictionaryBlock 的 compactCss）。
+  // 渲染器早就支持 window.compactGlossaries，只是从来没有偏好写入它。默认 false =
+  // 保持现状（Android 那边默认 true，但改默认会让所有存量用户的弹窗观感突变）。
+  bool get compactGlossaries =>
+      getPref('popup_compact_glossaries', defaultValue: false) as bool;
+
+  void toggleCompactGlossaries() async {
+    await setPref('popup_compact_glossaries', !compactGlossaries);
+    notifyListeners();
+  }
+
   // ── custom CSS ───────────────────────────────────────────────────────
 
   Map<String, String> get customDictCSS {

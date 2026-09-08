@@ -162,6 +162,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'player_hardware_acceleration',
   'popup_auto_expand_dictionaries',
   'popup_bottom_docked',
+  // bool：查词弹窗释义紧凑排版（对齐 Hoshi Reader Android
+  // "Compact Glossaries"）。默认 false。
+  'popup_compact_glossaries',
   'popup_dictionary_columns',
   'popup_instant_scroll',
   'popup_max_height',

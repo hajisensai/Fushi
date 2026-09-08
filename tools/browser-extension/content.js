@@ -2441,6 +2441,9 @@ function fushiApplyTheme(c, theme, applyBox) {
     const ws = parseFloat(theme['--fushi-wheel-speed']);
     window.__fushiPopupWheelSpeed = (isFinite(ws) && ws > 0) ? ws : 1;
   }
+  // BUG-2267：墨水屏「瞬时滚动」随 theme 下发（app popupInstantScroll）→ 设同名全局供
+  // popup.js 的 wheel 监听器读（滚轮改成每次跳固定距离）。缺该 key = 旧 app，保持关闭。
+  window.__fushiPopupInstantScroll = theme['--fushi-instant-scroll'] === '1';
   // BUG-688：尺寸盒 + zoom 落到 host（视口坐标，确定宽度 → header 满宽、按钮右推、不再全屏铺开）。
   if (applyBox && fushiHost) {
     // 尺寸真相源是 app 下发的 theme（扩展设置页「查词框大小」写的也是它，经
