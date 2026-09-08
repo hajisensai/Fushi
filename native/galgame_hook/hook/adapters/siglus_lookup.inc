@@ -12,11 +12,13 @@ static_assert(sizeof(wchar_t) == sizeof(char16_t),
 #include "siglus_lookup_worker_types.inc"
 
 using fushi_voice_hook::SiglusGlyphLayoutFn;
+using fushi_voice_hook::SiglusEightArgGlyphLayoutFn;
 using fushi_voice_hook::SiglusLegacyGlyphLayoutFn;
 using SiglusInputMessageFn = void(__stdcall *)(UINT, WPARAM, LPARAM);
 using SiglusLegacyInputMessageFn = void(__fastcall *)(LPARAM, WPARAM, UINT);
 
 SiglusGlyphLayoutFn g_orig_SiglusGlyphLayout = nullptr;
+SiglusEightArgGlyphLayoutFn g_orig_SiglusEightArgGlyphLayout = nullptr;
 SiglusLegacyGlyphLayoutFn g_orig_SiglusLegacyGlyphLayout = nullptr;
 decltype(&GetKeyState) g_orig_SiglusGetKeyState = nullptr;
 decltype(&GetKeyboardState) g_orig_SiglusGetKeyboardState = nullptr;
@@ -800,6 +802,11 @@ bool InstallSiglusLookupSensor() {
   if (profile == nullptr)
     return false;
   HMODULE module = GetModuleHandleW(nullptr);
+  // Eight-argument forwarding is tested independently. It must not fall
+  // through to the modern installer before its complete input/owner family
+  // has its own production admission and installation path.
+  if (profile->glyph_abi ==
+      fushi_voice_hook::SiglusGlyphLayoutAbi::kEcxEightArguments) return false;
   const bool legacy = IsLegacySiglusLookup(*profile);
   if (profile->viewport_config_rva != 0) {
     int32_t width = 0, height = 0;

@@ -1,5 +1,5 @@
 // Included in the injected adapter and the x86 ABI regression executable.
-// The resolver/installer owns admission; neither callback guesses an ABI.
+// The resolver/installer owns admission; no callback guesses an ABI.
 
 void CaptureSiglusLookupGlyph(void* self, uint8_t result,
                               uintptr_t return_address,
@@ -11,7 +11,7 @@ void CaptureSiglusLookupGlyph(void* self, uint8_t result,
   if (profile == nullptr || profile->glyph_abi != abi ||
       return_address < module ||
       return_address - module != profile->dialogue_glyph_return_rva) return;
-  if (abi == fushi_voice_hook::SiglusGlyphLayoutAbi::kStackSixteenArguments &&
+  if (abi != fushi_voice_hook::SiglusGlyphLayoutAbi::kEcxTenArguments &&
       !IsSiglusLookupGlyphOwned(self)) return;
   const size_t size = fushi_voice_hook::SiglusGlyphRecordBytes(abi);
   if (size == 0 || size > 0x48u) return;
@@ -40,6 +40,21 @@ uint8_t __fastcall Detour_SiglusGlyphLayout(void* self, void*, uintptr_t arg1,
                                   arg6, arg7, arg8, arg9, arg10);
   CaptureSiglusLookupGlyph(self, result, caller,
       fushi_voice_hook::SiglusGlyphLayoutAbi::kEcxTenArguments);
+  return result;
+}
+
+// The intermediate family keeps ECX=self but cleans up only eight DWORDs.
+// Its coordinate writer shares the final fields, not the ten-argument ABI.
+uint8_t __fastcall Detour_SiglusEightArgGlyphLayout(void* self, void*,
+    uintptr_t arg1, uintptr_t arg2, uintptr_t arg3, uintptr_t arg4,
+    uintptr_t arg5, uintptr_t arg6, uintptr_t arg7, uintptr_t arg8) {
+  const uintptr_t caller = reinterpret_cast<uintptr_t>(_ReturnAddress());
+  const auto original = g_orig_SiglusEightArgGlyphLayout;
+  if (original == nullptr) return 0;
+  const uint8_t result = original(self, arg1, arg2, arg3, arg4,
+                                  arg5, arg6, arg7, arg8);
+  CaptureSiglusLookupGlyph(self, result, caller,
+      fushi_voice_hook::SiglusGlyphLayoutAbi::kEcxEightArguments);
   return result;
 }
 

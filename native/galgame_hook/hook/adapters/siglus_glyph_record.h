@@ -12,11 +12,13 @@ namespace fushi_voice_hook {
 enum class SiglusGlyphLayoutAbi : uint8_t {
   kEcxTenArguments = 1,
   kStackSixteenArguments = 2,
+  kEcxEightArguments = 3,
 };
 
 inline constexpr size_t SiglusGlyphRecordBytes(SiglusGlyphLayoutAbi abi) {
   switch (abi) {
     case SiglusGlyphLayoutAbi::kEcxTenArguments: return 0x48u;
+    case SiglusGlyphLayoutAbi::kEcxEightArguments: return 0x48u;
     case SiglusGlyphLayoutAbi::kStackSixteenArguments: return 0x3cu;
   }
   return 0;
@@ -40,8 +42,8 @@ inline bool DecodeSiglusGlyphRecord(SiglusGlyphLayoutAbi abi,
   const size_t required = SiglusGlyphRecordBytes(abi);
   if (required == 0 || bytes == nullptr || size < required ||
       width <= 0 || height <= 0) return false;
-  const size_t position = abi == SiglusGlyphLayoutAbi::kEcxTenArguments
-                              ? 0x40u : 0x34u;
+  const size_t position = abi == SiglusGlyphLayoutAbi::kStackSixteenArguments
+                              ? 0x34u : 0x40u;
   uint32_t character = 0;
   int32_t extent = 0;
   float x = 0, y = 0;

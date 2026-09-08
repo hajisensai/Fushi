@@ -85,7 +85,10 @@ bool RefreshSiglusLegacyGlyphOwners() {
 bool IsSiglusLookupGlyphOwned(void* self) {
   const auto* profile = ActiveSiglusLookupProfile();
   if (profile == nullptr) return false;
-  if (!IsLegacySiglusLookup(*profile)) return true;
+  if (profile->glyph_abi ==
+      fushi_voice_hook::SiglusGlyphLayoutAbi::kEcxTenArguments) return true;
+  // New ABI families must install their own occurrence-bound owner proof.
+  if (!IsLegacySiglusLookup(*profile)) return false;
   if (!TryAcquireSRWLockShared(&g_siglus_legacy_owner_lock)) return false;
   auto read = [](uint32_t address, void* output, size_t bytes) {
     return ReadSiglusLegacyMemory(nullptr, address, output, bytes);

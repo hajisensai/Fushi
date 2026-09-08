@@ -80,6 +80,7 @@ int main() {
   using namespace fushi_voice_hook;
   CheckLayout(SiglusGlyphLayoutAbi::kEcxTenArguments, 0x40);
   CheckLayout(SiglusGlyphLayoutAbi::kStackSixteenArguments, 0x34);
+  CheckLayout(SiglusGlyphLayoutAbi::kEcxEightArguments, 0x40);
   SiglusGlyphRecord glyph{1, 1, 1, 1};
   const auto unknown = static_cast<SiglusGlyphLayoutAbi>(255);
   assert(SiglusGlyphRecordBytes(unknown) == 0);
@@ -89,10 +90,11 @@ int main() {
   auto profile = kAnemoiSiglusLookupProfile;
   assert(MatchesSiglusLookupProfile(profile, profile.executable_sha256.data(),
                                     32, profile.pe_machine));
-  for (auto abi : {SiglusGlyphLayoutAbi::kStackSixteenArguments, unknown}) {
+  for (auto abi : {SiglusGlyphLayoutAbi::kStackSixteenArguments,
+                  SiglusGlyphLayoutAbi::kEcxEightArguments, unknown}) {
     profile.glyph_abi = abi;
     assert(!MatchesSiglusLookupProfile(profile, profile.executable_sha256.data(),
                                        32, profile.pe_machine));
   }
-  std::puts("Siglus glyph records: two layouts, bounds and ABI isolation passed");
+  std::puts("Siglus glyph records: three ABIs, bounds and ABI isolation passed");
 }
