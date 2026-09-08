@@ -10,6 +10,9 @@ std::atomic<bool> g_siglus_voice_source_enabled{false};
 fushi_voice_hook::SiglusResourceMappingProfile g_siglus_voice_source_profile;
 fushi_voice_hook::SiglusVoiceSourceLayout g_siglus_voice_source_layout;
 bool g_siglus_voice_source_native_ecx = false;
+bool g_siglus_voice_source_legacy = false;
+fushi_voice_hook::SiglusLegacyResourceMappingProfile g_siglus_legacy_source_profile;
+fushi_voice_hook::SiglusLegacyVoiceSourceLayout g_siglus_legacy_source_layout;
 fushi_voice_hook::SiglusNativeResourceMappingProfile g_siglus_native_source_profile;
 fushi_voice_hook::SiglusNativeVoiceSourceLayout g_siglus_native_source_layout;
 fushi_voice_hook::SiglusMessageQueue<fushi_voice_hook::SiglusVoiceSourceTask,
@@ -55,7 +58,9 @@ void __stdcall ObserveSiglusVoiceSource(uint32_t reader, uint32_t entry_esp,
   uint32_t return_address = 0;
   if (ReadSiglusVoiceSourceMemory(entry_esp, &return_address, 4)) {
     observations.last_return.store(return_address, std::memory_order_relaxed);
-    const uint32_t admitted_return = g_siglus_voice_source_native_ecx
+    const uint32_t admitted_return = g_siglus_voice_source_legacy
+        ? g_siglus_legacy_source_layout.payload_return
+        : g_siglus_voice_source_native_ecx
         ? g_siglus_native_source_layout.payload_return
         : g_siglus_voice_source_layout.payload_return;
     if (return_address == admitted_return)
@@ -69,12 +74,21 @@ void __stdcall ObserveSiglusVoiceSource(uint32_t reader, uint32_t entry_esp,
       !ReadSiglusVoiceSourceMemory(entry_esp - 20, &call.original_ebx, 4)) return;
   auto read = ReadSiglusVoiceSourceMemory;
   fushi_voice_hook::SiglusVoiceSourceTask task;
-  const bool captured = g_siglus_voice_source_native_ecx
+  bool captured = false;
+  if (g_siglus_voice_source_legacy) {
+    uint32_t original_edi = 0;
+    if (!read(entry_esp - 36, &original_edi, 4)) return;
+    captured = fushi_voice_hook::CaptureSiglusLegacyVoiceSource(
+        g_siglus_legacy_source_layout,
+        {reader, entry_esp, original_edi, caller_ebp}, read, &task);
+  } else {
+    captured = g_siglus_voice_source_native_ecx
       ? fushi_voice_hook::CaptureSiglusNativeVoiceSource(
             g_siglus_native_source_layout,
             {reader, entry_esp, caller_ebp, call.original_ebx}, read, &task)
       : fushi_voice_hook::CaptureSiglusVoiceSource(
             g_siglus_voice_source_layout, call, read, &task);
+  }
   if (captured) {
     observations.captured.fetch_add(1, std::memory_order_relaxed);
     if (g_siglus_voice_source_enabled.load(std::memory_order_acquire) &&
@@ -158,6 +172,19 @@ bool ResolveLiveSiglusNativeVoiceSource(HMODULE module, uintptr_t proved_voice_e
   }
 }
 
+bool ResolveLiveSiglusLegacyVoiceSource(HMODULE module, uintptr_t proved_voice_entry,
+    fushi_voice_hook::SiglusLegacyResourceMappingProfile* profile) {
+  __try {
+    fushi_voice_hook::exact_lookup::LoadedPeImage image;
+    return fushi_voice_hook::OpenSiglusLoadedImage(module, &image) &&
+        fushi_voice_hook::ResolveSiglusLegacyResourceMappingProfile(
+            image, proved_voice_entry, profile) &&
+        image.base[profile->ogg_open_rva] == 0x55;
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    return false;
+  }
+}
+
 bool TryHookSiglusVoiceSource() {
   if (IsSiglusVoiceSourceInstalled()) return true;
   if (g_siglus_voice_source_state.load(std::memory_order_acquire) != 0 ||
@@ -166,6 +193,24 @@ bool TryHookSiglusVoiceSource() {
   HMODULE module = GetModuleHandleW(nullptr);
   if (lane == nullptr || module == nullptr) return false;
   const uintptr_t base = reinterpret_cast<uintptr_t>(module);
+  if (g_siglus_message_legacy) {
+    if (lane->glyph_abi !=
+            fushi_voice_hook::SiglusGlyphLayoutAbi::kStackSixteenArguments ||
+        !ResolveLiveSiglusLegacyVoiceSource(module,
+            g_siglus_legacy_message_profile.voice_entry_rva,
+            &g_siglus_legacy_source_profile)) {
+      g_siglus_voice_source_state.store(-1, std::memory_order_release);
+      return false;
+    }
+    const auto& profile = g_siglus_legacy_source_profile;
+    g_siglus_voice_source_legacy = true;
+    g_siglus_legacy_source_layout = {
+        static_cast<uint32_t>(base + profile.payload_return_rva),
+        static_cast<uint32_t>(base + profile.resource_return_rva),
+        static_cast<uint32_t>(base + profile.ogg_vtable_rva)};
+    g_siglus_voice_source_target = reinterpret_cast<void*>(base + profile.ogg_open_rva);
+    return InstallSiglusVoiceSourceHook();
+  }
   if (lane->text_feed ==
       fushi_voice_hook::SiglusLookupTextFeed::kNativeEcxTextUnion) {
     if (!g_siglus_message_native_ecx ||

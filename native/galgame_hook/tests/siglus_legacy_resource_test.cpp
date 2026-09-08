@@ -171,12 +171,12 @@ struct Source {
     memory.Word(0x200c,call.original_ebp);
     Path(L"C:\\audio\\z0123.ovk");
   }
-  void Path(const std::wstring& path,bool small=false) {
+  void Path(const std::wstring& path,bool use_inline=false) {
     memory.Word(0x20c8,0x7770); // Iterator proxy, not the buffer.
     memory.Word(0x20cc,0x6000);
     memory.Word(0x20dc,static_cast<uint32_t>(path.size()));
-    memory.Word(0x20e0,small?7:static_cast<uint32_t>(path.size()));
-    std::memcpy(memory.bytes.data()+(small?0x20cc:0x6000),path.c_str(),(path.size()+1)*2);
+    memory.Word(0x20e0,use_inline?7:static_cast<uint32_t>(path.size()));
+    std::memcpy(memory.bytes.data()+(use_inline?0x20cc:0x6000),path.c_str(),(path.size()+1)*2);
   }
   bool Capture(SiglusVoiceSourceTask* out) {
     return CaptureSiglusLegacyVoiceSource(layout,call,memory,out);

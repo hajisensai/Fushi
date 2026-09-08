@@ -23,6 +23,9 @@ std::atomic<bool> g_siglus_message_capture_enabled{false};
 fushi_voice_hook::SiglusMessageProfile g_siglus_message_profile;
 fushi_voice_hook::SiglusMessageLayout g_siglus_message_layout;
 bool g_siglus_message_native_ecx = false;
+bool g_siglus_message_legacy = false;
+fushi_voice_hook::SiglusLegacyMessageProfile g_siglus_legacy_message_profile;
+fushi_voice_hook::SiglusLegacyMessageLayout g_siglus_legacy_message_layout;
 fushi_voice_hook::SiglusNativeMessageProfile g_siglus_native_message_profile;
 fushi_voice_hook::SiglusNativeMessageLayout g_siglus_native_message_layout;
 uintptr_t g_siglus_message_scenario_rva = 0;
@@ -35,6 +38,8 @@ __declspec(thread) fushi_voice_hook::SiglusMessageTicket
     g_siglus_message_ticket = {};
 __declspec(thread) fushi_voice_hook::SiglusNativeMessageTicket
     g_siglus_native_message_ticket = {};
+__declspec(thread) fushi_voice_hook::SiglusLegacyMessageTicket
+    g_siglus_legacy_message_ticket = {};
 fushi_voice_hook::SiglusMessageQueue<SiglusMessageTextTask,
                                    kSiglusMessageTaskSlots>
     g_siglus_message_tasks;
@@ -150,6 +155,54 @@ FUSHI_SIGLUS_NATIVE_MESSAGE_THUNK(Detour_SiglusNativeMessageEntry,
 FUSHI_SIGLUS_NATIVE_MESSAGE_THUNK(Detour_SiglusNativeMessageText,
     ObserveSiglusNativeMessageText, g_orig_SiglusMessageScenario)
 
+bool ReadSiglusLegacyMessageMemory(uint32_t address, void* output, size_t bytes) {
+  if (address == 0 || output == nullptr || (bytes != 1 && bytes != 4) ||
+      bytes - 1 > UINT32_MAX - address) return false;
+  __try {
+    memcpy(output, reinterpret_cast<const void*>(address), bytes);
+    return true;
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    return false;
+  }
+}
+
+void __stdcall ObserveSiglusLegacyMessageEntry(
+    const fushi_voice_hook::SiglusNativeMessageSavedRegisters* registers) {
+  g_siglus_legacy_message_ticket = {};
+  if (registers == nullptr ||
+      !g_siglus_message_capture_enabled.load(std::memory_order_acquire) ||
+      !g_capture_enabled) return;
+  auto read = ReadSiglusLegacyMessageMemory;
+  fushi_voice_hook::ArmSiglusLegacyMessageTicket(
+      g_siglus_legacy_message_layout, *registers, read,
+      &g_siglus_legacy_message_ticket);
+}
+
+void __stdcall ObserveSiglusLegacyMessageText(
+    const fushi_voice_hook::SiglusNativeMessageSavedRegisters* registers) {
+  if (registers == nullptr ||
+      !g_siglus_message_capture_enabled.load(std::memory_order_acquire) ||
+      !g_capture_enabled) {
+    g_siglus_legacy_message_ticket = {};
+    return;
+  }
+  auto read = ReadSiglusLegacyMessageMemory;
+  fushi_voice_hook::SiglusLegacyMessageOccurrence frozen;
+  if (!fushi_voice_hook::ConsumeSiglusLegacyMessageTicket(
+          g_siglus_legacy_message_layout, *registers, read,
+          &g_siglus_legacy_message_ticket, &frozen)) return;
+  // The admitted legacy value owns a four-byte iterator proxy before the same
+  // bounded WCHAR storage/size/capacity union. Consume validates the full old
+  // descriptor and invocation before this common copy; no engine code runs
+  // between the observation and copying the callback-scoped bytes.
+  QueueSiglusMessageText(frozen.string_object + 4, frozen.snapshot.voice_key);
+}
+
+FUSHI_SIGLUS_NATIVE_MESSAGE_THUNK(Detour_SiglusLegacyMessageEntry,
+    ObserveSiglusLegacyMessageEntry, g_orig_SiglusMessageEntry)
+FUSHI_SIGLUS_NATIVE_MESSAGE_THUNK(Detour_SiglusLegacyMessageText,
+    ObserveSiglusLegacyMessageText, g_orig_SiglusMessageScenario)
+
 bool IsSiglusMessageTextInstalled() {
   return g_siglus_message_install_state.load(std::memory_order_acquire) == 1;
 }
@@ -219,6 +272,27 @@ bool ResolveLiveSiglusNativeMessage(HMODULE module,
   }
 }
 
+bool ResolveLiveSiglusLegacyMessage(HMODULE module,
+    const fushi_voice_hook::SiglusLookupProfile& lane,
+    fushi_voice_hook::SiglusLegacyMessageProfile* profile) {
+  __try {
+    fushi_voice_hook::exact_lookup::LoadedPeImage image;
+    fushi_voice_hook::SiglusLegacyResourceMappingProfile resource;
+    return fushi_voice_hook::OpenSiglusLoadedImage(module, &image) &&
+        fushi_voice_hook::ResolveSiglusLegacyMessageProfile(
+            image, lane, g_siglus_legacy_glyph_sites, profile) &&
+        // Retain the existing Luna/resource fallback when the independent old
+        // voice contract is absent. Source installation still has its own gate.
+        fushi_voice_hook::ResolveSiglusLegacyResourceMappingProfile(
+            image, profile->voice_entry_rva, &resource) &&
+        image.base[resource.ogg_open_rva] == 0x55 &&
+        image.base[lane.exact_text_rva] == 0x6a &&
+        image.base[profile->message_entry_rva] == 0x6a;
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    return false;
+  }
+}
+
 // Called only after immutable full-profile admission in TryHook below. Kept as
 // a separate unit so fault-injected MinHook outcomes exercise production rollback.
 bool InstallSiglusMessageHookGroup() {
@@ -227,6 +301,9 @@ bool InstallSiglusMessageHookGroup() {
   if (g_siglus_message_native_ecx) {
     detours[0] = reinterpret_cast<void*>(&Detour_SiglusNativeMessageEntry);
     detours[1] = reinterpret_cast<void*>(&Detour_SiglusNativeMessageText);
+  } else if (g_siglus_message_legacy) {
+    detours[0] = reinterpret_cast<void*>(&Detour_SiglusLegacyMessageEntry);
+    detours[1] = reinterpret_cast<void*>(&Detour_SiglusLegacyMessageText);
   }
   void** originals[] = {&g_orig_SiglusMessageEntry, &g_orig_SiglusMessageScenario};
   bool complete = true;
@@ -264,7 +341,8 @@ bool InstallSiglusMessageHookGroup() {
     // It must not re-enable a retained observer or somebody else's inner entry.
     // Previously enabled trampolines cannot be freed while callbacks may use
     // them, so cleanly disabling one still does not transfer its ownership.
-    const bool native_entry_reserved = g_siglus_message_native_ecx &&
+    const bool native_entry_reserved =
+        (g_siglus_message_native_ecx || g_siglus_message_legacy) &&
         (g_siglus_message_created[1] || text_entry_conflict);
     g_siglus_message_install_state.store(clean && !native_entry_reserved ? -1 : -2,
                                           std::memory_order_release);
@@ -280,11 +358,30 @@ bool TryHookSiglusMessageText() {
   const auto* lane = ActiveSiglusLookupProfile();
   HMODULE module = GetModuleHandleW(nullptr);
   if (lane == nullptr || module == nullptr) return false;
-  // Legacy iterator-proxy strings are a different contract. Luna retains
-  // ownership until an independent original-message/audio proof is admitted.
+  const uintptr_t base = reinterpret_cast<uintptr_t>(module);
+  if (lane->glyph_abi ==
+      fushi_voice_hook::SiglusGlyphLayoutAbi::kStackSixteenArguments) {
+    if (!ResolveLiveSiglusLegacyMessage(module, *lane,
+                                        &g_siglus_legacy_message_profile)) {
+      g_siglus_message_install_state.store(-1, std::memory_order_release);
+      return false;
+    }
+    const auto& profile = g_siglus_legacy_message_profile;
+    g_siglus_message_legacy = true;
+    g_siglus_legacy_message_layout = {
+        static_cast<uint32_t>(base + profile.script_slot_rva),
+        static_cast<uint32_t>(base + profile.text_return_rva),
+        kSiglusMessageMaxTextUnits};
+    g_siglus_message_scenario_rva = profile.text_entry_rva;
+    g_siglus_message_profile.scenario_return_rva = profile.text_return_rva;
+    g_siglus_message_targets[0] =
+        reinterpret_cast<void*>(base + profile.message_entry_rva);
+    g_siglus_message_targets[1] =
+        reinterpret_cast<void*>(base + profile.text_entry_rva);
+    return InstallSiglusMessageHookGroup();
+  }
   if (lane->glyph_abi !=
       fushi_voice_hook::SiglusGlyphLayoutAbi::kEcxTenArguments) return false;
-  const uintptr_t base = reinterpret_cast<uintptr_t>(module);
   if (lane->text_feed ==
       fushi_voice_hook::SiglusLookupTextFeed::kNativeEcxTextUnion) {
     if (!ResolveLiveSiglusNativeMessage(module, *lane,
@@ -365,6 +462,7 @@ void ShutdownSiglusMessageText() {
   g_siglus_message_capture_enabled.store(false, std::memory_order_release);
   g_siglus_message_ticket = {};
   g_siglus_native_message_ticket = {};
+  g_siglus_legacy_message_ticket = {};
   if (!g_cs_ready) return;
   EnterCriticalSection(&g_cs);
   const bool clean = RollbackSiglusMessageHooks();

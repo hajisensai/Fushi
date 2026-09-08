@@ -10,6 +10,8 @@
 #include "siglus_resource_mapping.h"
 #include "siglus_native_resource.h"
 #include "siglus_native_message_profile.h"
+#include "siglus_legacy_message_profile.h"
+#include "siglus_legacy_resource.h"
 #include "siglus_image.h"
 
 namespace {
@@ -201,6 +203,8 @@ bool g_capture_enabled = true, g_cs_ready = true;
 CRITICAL_SECTION g_cs;
 SiglusMessageProfile g_siglus_message_profile;
 bool g_siglus_message_native_ecx = false;
+bool g_siglus_message_legacy = false;
+SiglusLegacyMessageProfile g_siglus_legacy_message_profile;
 SiglusNativeMessageProfile g_siglus_native_message_profile;
 bool message_installed = true;
 bool IsSiglusMessageTextInstalled() { return message_installed; }
@@ -237,10 +241,12 @@ uint32_t fake_esi = 0x100, fake_ebx = 0x40;
 uint32_t expected_return = 0, original_flags = 0;
 uint32_t before_esp = 0, after_esp = 0, original_esi = 0, original_ebx = 0;
 uint32_t original_ecx = 0, original_ebp = 0;
+uint32_t original_edi = 0, legacy_key_copy = 100000321;
 __declspec(naked) void OriginalSource() {
   __asm {
     mov original_ecx, ecx
     mov original_ebp, ebp
+    mov original_edi, edi
     mov original_esi, esi
     mov original_ebx, ebx
     pushfd
@@ -457,6 +463,83 @@ void TestInstallation() {
   Check(removed == 0 && g_orig_SiglusVoiceSource != nullptr);
   DeleteCriticalSection(&g_cs);
 }
+
+// Reproduce the independently proved FPO call scope on the real test stack.
+// The production thunk must preserve EBP as a length, and recover saved EDI.
+__declspec(naked) void InvokeLegacySource() {
+  __asm {
+    pushfd
+    pushad
+    mov before_esp, esp
+    sub esp, 140h
+    lea eax, [esp-10h]
+    mov dword ptr [eax+130h], 7001h
+    mov dword ptr [eax+134h], 100000321
+    mov edx, legacy_key_copy
+    mov [eax+20h], edx
+    mov dword ptr [eax+48h], 321
+    mov ecx, fake_reader
+    mov [eax+40h], ecx
+    mov dword ptr [eax+0c8h], 0
+    mov dword ptr [eax+0cch], 003a0043h
+    mov dword ptr [eax+0d0h], 0078005ch
+    mov dword ptr [eax+0d4h], 0
+    mov dword ptr [eax+0d8h], 0
+    mov dword ptr [eax+0dch], 4
+    mov dword ptr [eax+0e0h], 7
+    lea edx, [eax+0c8h]
+    push 40h
+    push 100h
+    push edx
+    mov edi, 100h
+    mov ebp, 40h
+    mov esi, 0deadbeefh
+    mov ebx, 0cafebabeh
+    mov eax, offset returned
+    mov g_siglus_legacy_source_layout.payload_return, eax
+    std
+    stc
+    call Detour_SiglusVoiceSource
+  returned:
+    cld
+    add esp, 140h
+    mov after_esp, esp
+    popad
+    popfd
+    ret
+  }
+}
+
+void TestProductionLegacySource() {
+  uint32_t reader[4] = {0x7000};
+  fake_reader = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(reader));
+  g_siglus_voice_source_legacy = true;
+  g_siglus_voice_source_native_ecx = false;
+  g_siglus_legacy_source_layout = {0, 0x7001, 0x7000};
+  g_orig_SiglusVoiceSource = reinterpret_cast<void*>(&OriginalSource);
+  g_siglus_voice_source_enabled.store(true);
+  SiglusVoiceSourceTask task;
+  while (g_siglus_voice_source_tasks.TryPop(&task)) {}
+  SetLastError(44); InvokeLegacySource();
+  const DWORD last_error = GetLastError();
+  Check(g_siglus_voice_source_tasks.TryPop(&task));
+  Check(task.key == 100000321 && task.offset == 0x100 && task.length == 0x40);
+  Check(std::wcscmp(task.path, L"C:\\x") == 0);
+  Check(original_ecx == fake_reader && original_edi == 0x100 && original_ebp == 0x40);
+  Check(original_esi == 0xdeadbeef && original_ebx == 0xcafebabe);
+  Check(before_esp == after_esp && (original_flags & 0x401) == 0x401);
+  Check(last_error == 44);
+  ++legacy_key_copy; InvokeLegacySource();
+  Check(!g_siglus_voice_source_tasks.TryPop(&task)); --legacy_key_copy;
+  reader[0] = 0; InvokeLegacySource();
+  Check(!g_siglus_voice_source_tasks.TryPop(&task)); reader[0] = 0x7000;
+  const int before = published;
+  InvokeLegacySource(); ProcessSiglusVoiceSourceTasks();
+  Check(published == before + 1 && published_task.key == 100000321);
+  g_siglus_voice_source_enabled.store(false); InvokeLegacySource();
+  Check(!g_siglus_voice_source_tasks.TryPop(&task));
+  g_siglus_voice_source_legacy = false;
+}
 #endif
 }  // namespace
 
@@ -467,6 +550,7 @@ int main() {
   TestProductionNakedSource();
   TestProductionNativeSource(SiglusNativeResourceFrame::kStack120);
   TestProductionNativeSource(SiglusNativeResourceFrame::kStack118);
+  TestProductionLegacySource();
   TestInstallation();
 #else
   Check(!TryHookSiglusVoiceSource()); Check(!IsSiglusVoiceSourceInstalled());

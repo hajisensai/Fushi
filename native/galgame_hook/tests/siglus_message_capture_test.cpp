@@ -10,6 +10,9 @@
 #include "siglus_message_profile.h"
 #include "siglus_native_message_profile.h"
 #include "siglus_native_message_capture.h"
+#include "siglus_legacy_message_profile.h"
+#include "siglus_legacy_message_capture.h"
+#include "siglus_legacy_resource.h"
 #include "siglus_image.h"
 // Exercise the production clock write deterministically, without sleeping or
 // substituting a second implementation of TextLaneEvent publication.
@@ -184,6 +187,7 @@ bool g_capture_enabled = true;
 bool g_text_cs_ready = true;
 bool g_cs_ready = true;
 bool voice_source_installed = false;
+LegacyGlyphSites g_siglus_legacy_glyph_sites;
 bool IsSiglusVoiceSourceInstalled() { return voice_source_installed; }
 CRITICAL_SECTION g_text_cs, g_cs;
 constexpr uint32_t kDiagSiglusExactTextObserved = 1;
@@ -598,6 +602,7 @@ void TestInstallationFailures() {
     g_siglus_message_capture_enabled.store(false);
     g_siglus_message_install_state.store(0);
     g_siglus_message_native_ecx = false;
+    g_siglus_message_legacy = false;
     g_orig_SiglusMessageEntry = g_orig_SiglusMessageScenario = nullptr;
     for (int i = 0; i < 2; ++i) {
       mock_create_status[i] = mock_enable_status[i] = MH_OK;
@@ -641,6 +646,16 @@ void TestInstallationFailures() {
   Check(!InstallSiglusMessageHookGroup());
   Check(IsSiglusMessageTextOwnershipBlocked());
   Check(!g_siglus_message_created[1] && mock_enabled == 0);
+  reset(); g_siglus_message_legacy = true;
+  mock_enable_status[1] = MH_ERROR_NOT_CREATED;
+  Check(!InstallSiglusMessageHookGroup());
+  Check(IsSiglusMessageTextOwnershipBlocked());
+  Check(g_siglus_message_created[1] && g_orig_SiglusMessageScenario != nullptr);
+  reset(); g_siglus_message_legacy = true;
+  mock_create_status[1] = MH_ERROR_ALREADY_CREATED;
+  Check(!InstallSiglusMessageHookGroup());
+  Check(IsSiglusMessageTextOwnershipBlocked());
+  Check(!g_siglus_message_created[1] && mock_enabled == 0);
   reset();
   Check(InstallSiglusMessageHookGroup());
   Check(IsSiglusMessageTextInstalled() && g_siglus_message_capture_enabled.load());
@@ -651,6 +666,64 @@ void TestInstallationFailures() {
         g_orig_SiglusMessageScenario != nullptr);
   DeleteCriticalSection(&g_cs);
 }
+
+void TestLegacyProductionObservers() {
+  uint32_t owner[80] = {}, script[112] = {}, frames[128] = {};
+  const auto address = [](const void* p) {
+    return static_cast<uint32_t>(reinterpret_cast<uintptr_t>(p));
+  };
+  uint32_t script_slot = address(script);
+  const uint32_t outer = address(&frames[80]), inner = outer - 0x68;
+  auto* text = reinterpret_cast<SiglusTextUnionW*>(outer + 8);
+  text->size = 2; text->capacity = 7;
+  text->storage.chars[0] = L'A'; text->storage.chars[1] = L'B';
+  frames[80] = 0x8000;
+  *reinterpret_cast<uint32_t*>(inner) = 0x7004;
+  script[0x19c / 4] = 100000321;
+  script[0x1a0 / 4] = script[0x1a4 / 4] = 1;
+  owner[0x120 / 4] = 100000123; // Previous message, deliberately different.
+  owner[0x124 / 4] = 1;
+  g_siglus_legacy_message_layout = {address(&script_slot), 0x7004, 1500};
+  SiglusNativeMessageSavedRegisters entry{}, call{};
+  entry.saved_esp = outer - 4; entry.ecx = address(owner);
+  call.saved_esp = inner - 4; call.ecx = outer + 4; call.edi = address(owner);
+  g_siglus_message_capture_enabled.store(true);
+  g_capture_enabled = true;
+  SiglusMessageTextTask task;
+  while (g_siglus_message_tasks.TryPop(&task)) {}
+  ObserveSiglusLegacyMessageEntry(&entry);
+  Check(g_siglus_legacy_message_ticket.armed);
+  std::thread unrelated([&] { ObserveSiglusLegacyMessageText(&call); });
+  unrelated.join();
+  Check(!g_siglus_message_tasks.TryPop(&task));
+  ObserveSiglusLegacyMessageText(&call);
+  Check(g_siglus_message_tasks.TryPop(&task));
+  Check(task.voice_key == 100000321 && task.text_units == 2 &&
+        std::wcscmp(task.text, L"AB") == 0);
+  ObserveSiglusLegacyMessageText(&call);
+  Check(!g_siglus_message_tasks.TryPop(&task));
+  // Silence and repeats still publish text, without inheriting the old key.
+  script[0x19c / 4] = script[0x1a0 / 4] = UINT32_MAX;
+  for (int i = 0; i < 2; ++i) {
+    ObserveSiglusLegacyMessageEntry(&entry);
+    ObserveSiglusLegacyMessageText(&call);
+    Check(g_siglus_message_tasks.TryPop(&task));
+    Check(task.voice_key == UINT32_MAX);
+  }
+  ObserveSiglusLegacyMessageEntry(&entry);
+  script[0x19c / 4] = 100000322;
+  ObserveSiglusLegacyMessageText(&call);
+  Check(!g_siglus_legacy_message_ticket.armed &&
+        !g_siglus_message_tasks.TryPop(&task));
+  // A valid descriptor but bad payload is consumed without escaping SEH.
+  text->capacity = 15;
+  text->storage.text = reinterpret_cast<const wchar_t*>(0x1000);
+  ObserveSiglusLegacyMessageEntry(&entry);
+  ObserveSiglusLegacyMessageText(&call);
+  Check(!g_siglus_legacy_message_ticket.armed &&
+        !g_siglus_message_tasks.TryPop(&task));
+  g_siglus_message_capture_enabled.store(false);
+}
 #endif
 }  // namespace
 
@@ -660,6 +733,7 @@ int main() {
   TestNakedAbi(); TestProductionObservers(); TestProductionWorkerAndRollback();
   TestDelayedWorkerUsesCommittedTimestamp();
   TestNativeProductionObservers();
+  TestLegacyProductionObservers();
   TestInstallationFailures();
 #else
   Check(!TryHookSiglusMessageText());

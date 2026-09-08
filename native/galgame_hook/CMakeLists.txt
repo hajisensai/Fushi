@@ -72,6 +72,9 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/siglus_message_profile.h"
   "hook/adapters/siglus_resource_mapping.h"
   "hook/adapters/siglus_native_resource.h"
+  "hook/adapters/siglus_legacy_message_profile.h"
+  "hook/adapters/siglus_legacy_message_capture.h"
+  "hook/adapters/siglus_legacy_resource.h"
   "hook/adapters/siglus_voice_source.h"
   "hook/adapters/siglus_voice_source.inc"
   "hook/adapters/siglus_message_capture.h"
@@ -305,6 +308,15 @@ if(MSVC)
   target_compile_options(fushi_siglus_native_resource_test PRIVATE /W4 /WX)
 endif()
 add_test(NAME fushi_siglus_native_resource_test COMMAND fushi_siglus_native_resource_test)
+
+foreach(contract legacy_message_profile legacy_message_capture legacy_resource)
+  add_executable(fushi_siglus_${contract}_test "tests/siglus_${contract}_test.cpp")
+  target_include_directories(fushi_siglus_${contract}_test PRIVATE "hook/adapters")
+  if(MSVC)
+    target_compile_options(fushi_siglus_${contract}_test PRIVATE /W4 /WX /utf-8)
+  endif()
+  add_test(NAME fushi_siglus_${contract}_test COMMAND fushi_siglus_${contract}_test)
+endforeach()
 add_executable(fushi_siglus_viewport_test "tests/siglus_viewport_test.cpp")
 target_include_directories(fushi_siglus_viewport_test PRIVATE "hook/adapters")
 add_test(NAME fushi_siglus_viewport_test COMMAND fushi_siglus_viewport_test)
