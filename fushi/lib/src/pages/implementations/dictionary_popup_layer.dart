@@ -1330,8 +1330,7 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector>
     super.didChangeDependencies();
     // 墨水屏模式：滑出/弹回补间归零（Duration.zero 的 forward 立即 complete，
     // onDismiss 时序不变，只是不再画补间帧）。跟随主题切换双向生效。
-    _controller.duration =
-        isEinkTheme(context) ? Duration.zero : _kSlideDuration;
+    _controller.duration = einkSafeDuration(context, _kSlideDuration);
   }
 
   @override

@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
+    show einkSafeDuration;
+
 /// TODO-407/716 单一真相：查词弹窗"水平滑动关闭"的位移阈值（px）。
 ///
 /// [sensitivity] 越高（越灵敏）阈值越小：0.6（默认）≈ 94px，1.0 → 30px，0 → 190px。
@@ -64,6 +67,16 @@ class _SwipeDismissWrapperState extends State<SwipeDismissWrapper>
         AnimationController(vsync: this, duration: _kSwipeSlideDuration)
           ..addListener(_onAnimTick)
           ..addStatusListener(_onAnimStatus);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 墨水屏模式：松手后的「补间滑出屏外 / 弹回原位」归零。[Duration.zero] 的
+    // `animateTo` 当帧就 complete，`onDismiss` 时序不变（仍在完成回调里关一层），
+    // 只是不再画中间帧——慢刷新屏上这段 200ms 位移+淡出是一串灰阶残影。
+    // 与弹窗正文的 `_BodySwipeDismissDetector` 同款处理，跟随主题切换双向生效。
+    _controller.duration = einkSafeDuration(context, _kSwipeSlideDuration);
   }
 
   @override
