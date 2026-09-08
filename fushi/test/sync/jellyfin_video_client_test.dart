@@ -12,6 +12,8 @@ import 'package:http/testing.dart';
 import 'package:fushi/src/sync/fushi_library_host_service.dart'
     show RemoteVideoInfo, RemoteVideoStreamUrls;
 import 'package:fushi/src/sync/jellyfin_video_client.dart';
+import 'package:fushi/src/sync/remote_video_client.dart'
+    show RemoteVideoPlaybackStop;
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 
