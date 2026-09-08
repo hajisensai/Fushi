@@ -13,12 +13,16 @@ import 'dart:io';
 
 import 'package:fushi_core/fushi_core.dart';
 import 'package:drift/drift.dart' show Value;
+import 'package:fushi_engine/asr/asr_host_job_runner.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
+import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_cover_extractor.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service_impl.dart';
 import 'package:fushi_engine/sync/fushi_manga_ocr_host.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
+import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
+import 'package:fushi_engine/sync/host_jobs/host_job_runner.dart';
 import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi_engine/sync/manga_sync_package.dart';
 import 'package:fushi_engine/sync/override_title_db.dart';
@@ -26,6 +30,7 @@ import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi_engine/sync/tls/fushi_tls_identity.dart';
 import 'package:fushi_server/src/config/server_config.dart';
+import 'package:fushi_server/src/host_bindings.dart';
 import 'package:fushi_server/src/lan_advertiser.dart';
 import 'package:fushi_server/src/server_identity.dart';
 import 'package:fushi_server/src/server_paths.dart';
@@ -77,6 +82,7 @@ class HeadlessHost {
   FushiSyncServer? _server;
   LanAdvertiser? _advertiser;
   MangaOcrServiceImpl? _ocrService;
+  HostJobManager? _jobs;
   final _AsyncMutex _mutex = _AsyncMutex();
   PendingPairing? _pendingPairing;
   String? _hostFingerprint;
@@ -87,6 +93,7 @@ class HeadlessHost {
   bool get isRunning => _server != null;
   int get port => _server?.port ?? config.port;
   MangaOcrServiceImpl? get ocrService => _ocrService;
+  HostJobManager? get jobs => _jobs;
 
   /// 配对 PIN 出现/消失时的观察者（WebUI SSE、CLI 打印）。
   final StreamController<PendingPairing?> pairingEvents =
@@ -114,6 +121,19 @@ class HeadlessHost {
       jobRoot: paths.mangaOcrJobs,
     );
 
+    // 通用任务（第 1 期：ASR）。任务目录持久化，重启可续。
+    final HostJobManager jobs = HostJobManager(
+      jobRoot: paths.hostJobs,
+      runners: <HostJobRunner>[
+        AsrHostJobRunner(
+          serviceFactory: createServerAsrTranscriptionService,
+          resolveVideoPath: _resolveVideoPath,
+        ),
+      ],
+    );
+    await jobs.load();
+    _jobs = jobs;
+
     final FushiSyncServer server = FushiSyncServer(
       syncDataDir: paths.syncData.path,
       port: config.port,
@@ -121,6 +141,7 @@ class HeadlessHost {
       allowLan: config.bind != '127.0.0.1' && config.bind != 'localhost',
       libraryService: _buildLibraryService(),
       mangaOcrJobs: ocrJobs,
+      hostJobs: jobs,
       securityContext: securityContext,
       hostFingerprint: _hostFingerprint,
       deviceName: config.deviceName,
@@ -211,6 +232,14 @@ class HeadlessHost {
   Future<Set<String>> _loadPairedPeerTokens() async {
     final List<FushiPairedPeerRow> peers = await db.getPairedPeers();
     return peers.map((FushiPairedPeerRow r) => r.token).toSet();
+  }
+
+  /// `asr` 任务的 `videoId` → host 库里的视频文件（分集 0）。
+  Future<String?> _resolveVideoPath(String videoId) async {
+    final VideoBookRow? row = await VideoBookRepository(db).getByBookUid(videoId);
+    if (row == null) return null;
+    final File f = File(row.videoPath);
+    return await f.exists() ? f.path : null;
   }
 
   // ── 库服务 ────────────────────────────────────────────────────────────

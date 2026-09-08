@@ -18,6 +18,8 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/interconnect_profile_transfer.dart';
 import 'package:fushi_engine/sync/interconnect_service_config.dart';
 import 'package:fushi_engine/sync/fushi_manga_ocr_host.dart';
+import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
+import 'package:fushi_engine/sync/host_jobs/host_job_routes.dart';
 import 'package:fushi_engine/sync/interconnect_device_name.dart';
 import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart';
 import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
@@ -202,6 +204,7 @@ class FushiSyncServer {
     FushiRemoteHistoryService? historyService,
     FushiLibraryHostService? libraryService,
     MangaOcrHostJobManager? mangaOcrJobs,
+    HostJobManager? hostJobs,
     SecurityContext? securityContext,
     String? hostFingerprint,
     String? deviceName,
@@ -220,6 +223,7 @@ class FushiSyncServer {
         _historyService = historyService,
         _libraryService = libraryService,
         _mangaOcrJobs = mangaOcrJobs,
+        _hostJobs = hostJobs,
         _dictionaryMediaProvider = dictionaryMediaProvider,
         _now = now ?? DateTime.now;
 
@@ -248,6 +252,9 @@ class FushiSyncServer {
   /// `mangaOcr` 字段）。null = 未接线（headless/单测/host 未启用），端点 404、
   /// capabilities 不带该字段——老 client / 老 host 双向兼容。
   final MangaOcrHostJobManager? _mangaOcrJobs;
+
+  /// 通用任务（ASR 等，设计 §3.4）。null = host 不提供，`/api/jobs` 404、能力位无 `jobs`。
+  final HostJobManager? _hostJobs;
 
   /// TODO-1215: dictionary media (gaiji/accent SVG, etc.) byte provider.
   /// Injected rather than depending on the FushiDicts singleton directly, so
@@ -382,6 +389,7 @@ class FushiSyncServer {
     _exportCache.dispose();
     // 漫画 P3：host 停机时中止在跑的 OCR 任务（页边界停，断点缓存保留）。
     await _mangaOcrJobs?.disposeAll();
+    await _hostJobs?.disposeAll();
   }
 
   /// gzip 压缩 JSON/XML 文本响应（`Accept-Encoding: gzip` 内容协商）。
@@ -490,6 +498,12 @@ class FushiSyncServer {
       final MangaOcrHostJobManager? mangaOcr = _mangaOcrJobs;
       if (mangaOcr == null) return shelf.Response.notFound('Manga OCR off');
       return handleMangaOcrRequest(mangaOcr, request, method, reqPath);
+    }
+    // 通用任务协议（设计 §3.4）：/api/ocr/job 原样冻结，新任务类型一律走这里。
+    if (reqPath == '/api/jobs' || reqPath.startsWith('/api/jobs/')) {
+      final HostJobManager? jobs = _hostJobs;
+      if (jobs == null) return shelf.Response.notFound('Host jobs off');
+      return handleHostJobRequest(jobs, request, method, reqPath);
     }
     if (reqPath == '/api/library/dictionaries' ||
         reqPath.startsWith('/api/library/dictionaries/')) {

@@ -6,6 +6,7 @@ import 'dart:io';
 import 'package:asr_core/asr_core.dart' as asr;
 import 'package:asr_onnx_ffi/asr_onnx_ffi.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/asr/fushi_asr_ffmpeg_backend.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
@@ -61,3 +62,20 @@ Future<String?> validateFfmpeg(ServerConfig config) async {
   }
   return null;
 }
+
+/// ASR 后台 isolate 引导：把 ORT 库路径带进 isolate（顶层变量不跨 isolate）。
+void serverAsrIsolateBootstrap(Object arg) {
+  if (arg is String && arg.isNotEmpty) serverOrtLibraryPath = arg;
+}
+
+/// 与 app 的 `createAsrTranscriptionService()` 对偶：同一个 asr_core 服务，
+/// 后端换成 FFI ORT + 引擎 ffmpeg 转接。
+asr.AsrTranscriptionService createServerAsrTranscriptionService() =>
+    asr.AsrTranscriptionService(
+      backend: asr.AsrIsolateBackend(
+        buildFactory: buildServerAsrOnnxFactory,
+        bootstrap: serverAsrIsolateBootstrap,
+        bootstrapArg: serverOrtLibraryPath ?? '',
+      ),
+      pcm: asr.FfmpegAsrPcmSource(backend: const FushiAsrFfmpegBackend()),
+    );

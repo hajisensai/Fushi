@@ -7,6 +7,8 @@
 /// fushi_server status [--config …]
 /// fushi_server pair   ls | revoke <peerId>            [--config …]
 /// fushi_server admin  reset-token                     [--config …]
+/// fushi_server models pull|status --language ja        [--config …]
+/// fushi_server transcribe <audio> --language ja [--out x.srt] [--config …]
 /// ```
 library;
 
@@ -14,6 +16,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:args/args.dart';
+import 'package:asr_core/asr_core.dart' as asr;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_server/src/config/server_config.dart';
@@ -69,12 +72,20 @@ ArgParser _buildParser() {
   parser.addCommand('status');
   parser.addCommand('pair');
   parser.addCommand('admin');
+  parser
+      .addCommand('models')
+      .addOption('language', abbr: 'l', help: 'ASR 语言 tag（ja / en / zh …）');
+  parser.addCommand('transcribe')
+    ..addOption('language', abbr: 'l', help: 'ASR 语言 tag', defaultsTo: 'ja')
+    ..addOption('out', abbr: 'o', help: '输出 .srt 路径（默认与音频同名）')
+    ..addFlag('cpu', negatable: false, help: '只用 CPU');
   return parser;
 }
 
 void _usage(ArgParser parser) {
   stdout.writeln('fushi_server <command> [options]\n');
-  stdout.writeln('commands: init | serve | scan | status | pair ls|revoke <peerId> | admin reset-token\n');
+  stdout.writeln('commands: init | serve | scan | status | pair ls|revoke <peerId> | '
+      'admin reset-token | models pull|status -l <lang> | transcribe <audio> -l <lang>\n');
   stdout.writeln(parser.usage);
 }
 
@@ -108,6 +119,10 @@ Future<int> runFushiServerCli(List<String> args) async {
       return _withRuntime(configFile, verbose, (_Runtime rt) => _pair(rt, command.rest));
     case 'admin':
       return _withRuntime(configFile, verbose, (_Runtime rt) => _admin(rt, command.rest));
+    case 'models':
+      return _withRuntime(configFile, verbose, (_Runtime rt) => _models(rt, command));
+    case 'transcribe':
+      return _withRuntime(configFile, verbose, (_Runtime rt) => _transcribe(rt, command));
   }
   _usage(parser);
   return 64;
@@ -308,4 +323,116 @@ Future<int> _admin(_Runtime rt, List<String> rest) async {
       stderr.writeln('用法: admin reset-token');
       return 64;
   }
+}
+
+asr.AsrLanguage? _languageArg(ArgResults command) {
+  final String? tag = command['language'] as String?;
+  final asr.AsrLanguage? language = asr.AsrLanguage.fromTag(tag);
+  if (language == null) {
+    stderr.writeln('未知语言 "$tag"；可用: '
+        '${asr.AsrLanguage.registered.map((asr.AsrLanguage l) => l.tag).join(', ')}');
+  }
+  return language;
+}
+
+Future<int> _models(_Runtime rt, ArgResults command) async {
+  final String sub = command.rest.isEmpty ? 'status' : command.rest.first;
+  final asr.AsrTranscriptionService service = createServerAsrTranscriptionService();
+  if (sub == 'status') {
+    for (final asr.AsrLanguage language in asr.AsrLanguage.registered) {
+      final asr.AsrTranscribePlan plan = await service.plan(
+        language: language,
+        preference: asr.AsrAccelerationPreference.auto,
+      );
+      stdout.writeln('${language.tag.padRight(4)} ${plan.modelReady ? 'ready  ' : 'missing'} '
+          '${plan.variant.name} ${plan.expectedProvider.name} '
+          '${plan.modelStatus.obtainedBytes}/${plan.modelStatus.totalBytes} bytes');
+    }
+    return 0;
+  }
+  if (sub == 'pull') {
+    final asr.AsrLanguage? language = _languageArg(command);
+    if (language == null) return 64;
+    final asr.AsrTranscribePlan plan = await service.plan(
+      language: language,
+      preference: asr.AsrAccelerationPreference.auto,
+    );
+    if (plan.modelReady) {
+      stdout.writeln('${language.tag}: 模型已就绪');
+      return 0;
+    }
+    String last = '';
+    await for (final asr.ModelDownloadEvent e
+        in service.downloadModel(language: language, variant: plan.variant)) {
+      final String line = '${e.fileName} ${e.receivedBytes}/${e.totalBytes}${e.done ? ' done' : ''}';
+      if (line != last) {
+        stdout.writeln(line);
+        last = line;
+      }
+    }
+    stdout.writeln('${language.tag}: 下载完成');
+    return 0;
+  }
+  stderr.writeln('用法: models status | models pull --language <tag>');
+  return 64;
+}
+
+/// 离线直转：不经 HTTP，方便脚本与排障（与 `/api/jobs` 的 asr runner 同一条链路）。
+Future<int> _transcribe(_Runtime rt, ArgResults command) async {
+  if (command.rest.isEmpty) {
+    stderr.writeln('用法: transcribe <audio> --language <tag> [--out x.srt]');
+    return 64;
+  }
+  final String audio = p.absolute(command.rest.first);
+  if (!await File(audio).exists()) {
+    stderr.writeln('找不到文件: $audio');
+    return 66;
+  }
+  final asr.AsrLanguage? language = _languageArg(command);
+  if (language == null) return 64;
+  final asr.AsrAccelerationPreference preference = command['cpu'] as bool
+      ? asr.AsrAccelerationPreference.cpuOnly
+      : asr.AsrAccelerationPreference.auto;
+  final asr.AsrTranscriptionService service = createServerAsrTranscriptionService();
+  final asr.AsrTranscribePlan plan =
+      await service.plan(language: language, preference: preference);
+  if (!plan.modelReady) {
+    stderr.writeln('${language.tag} 模型未下载：先跑 fushi_server models pull -l ${language.tag}');
+    return 69;
+  }
+  final asr.AsrRunningTranscription running = await service.start(
+    audioPaths: <String>[audio],
+    language: language,
+    variant: plan.variant,
+    preference: preference,
+  );
+  asr.AsrTranscribeResult? result;
+  try {
+    await for (final asr.AsrTranscribeEvent e in running.run()) {
+      switch (e) {
+        case asr.AsrTranscribeProgressEvent(progress: final asr.AsrTranscribeProgress pr):
+          final double? f = pr.fraction;
+          if (f != null) stderr.write('\r${(f * 100).toStringAsFixed(1)}%   ');
+        case asr.AsrTranscribePausedEvent():
+          break;
+        case asr.AsrTranscribeFinishedEvent(result: final asr.AsrTranscribeResult r):
+          result = r;
+      }
+    }
+  } finally {
+    await running.dispose();
+  }
+  stderr.writeln();
+  if (result == null) {
+    stderr.writeln('转录未产生结果');
+    return 1;
+  }
+  final String out = command['out'] as String? ?? p.setExtension(audio, '.srt');
+  await File(result.srtPath).copy(out);
+  final File tokens = File(p.join(p.dirname(result.srtPath), asr.AsrJobFiles.cueTokens));
+  if (await tokens.exists()) {
+    await tokens.copy(p.setExtension(out, '.tokens.jsonl'));
+  }
+  stdout.writeln('已写入 $out（${result.cueCount} 条字幕）');
+  return 0;
 }

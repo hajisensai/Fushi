@@ -342,8 +342,11 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     // 漫画 P3 能力协商：仅接线了 OCR 任务管理器的 host 带 `mangaOcr` 字段；老
     // host 响应里没有该字段 → client 隐藏「已配对主机」OCR 选项（零破坏）。
     final Map<String, Object?>? mangaOcr = await _mangaOcrJobs?.capability();
+    final Map<String, Object?>? jobs = await _hostJobs?.capability();
     return jsonResponse(<String, dynamic>{
       if (mangaOcr != null) 'mangaOcr': mangaOcr,
+      // 通用任务能力位：`jobs.kinds` + 每种 kind 的就绪信息；老 client 读不到也不崩。
+      if (jobs != null) 'jobs': jobs,
       'liveLibrary': <String, dynamic>{
         'dictionaries': lib,
         'books': lib,

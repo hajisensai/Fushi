@@ -53,7 +53,7 @@ void main() {
     for (final RegExpMatch m in directive.allMatches(f.readAsStringSync())) {
       final String uri = m.group(1)!;
       if (uri == 'dart:ui' || uri.startsWith('dart:ui/')) {
-        out.add('$uri');
+        out.add(uri);
         continue;
       }
       for (final String prefix in forbiddenPrefixes) {
