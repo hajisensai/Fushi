@@ -2129,10 +2129,18 @@ class VideoSourceScrapeCoordinator
         );
       }
       if (result.isFailure || result.artifactStoreError != null) {
+        // 所有权登记失败时把真实异常带出去：只有「文件已写入，但所有权记录失败」
+        // 一句话，用户和我们都无从判断是 context 没登记、UNIQUE 撞了还是 DB 忙
+        // （2026-09-08 用户 Takagi-san Cover Song Collection 三条报错就卡在这里）。
+        final Object? detail = result.artifactStoreError ?? result.error;
+        final String base =
+            result.message ?? result.error?.toString() ?? 'sidecar 写入失败';
         errors.add(SourceScrapeIssue(
           workTitle: localWork.title,
           path: result.targetPath,
-          message: result.message ?? result.error?.toString() ?? 'sidecar 写入失败',
+          message: detail == null || base.contains(detail.toString())
+              ? base
+              : '$base：$detail',
         ));
       }
     }
