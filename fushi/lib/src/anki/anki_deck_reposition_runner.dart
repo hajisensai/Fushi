@@ -39,10 +39,15 @@ class AnkiRepositionOutcome {
     required this.written,
     required this.failures,
     required this.snapshot,
+    this.skipped = 0,
   });
 
   final int written;
   final Map<int, String> failures;
+
+  /// 计划里、但写回那一刻已经不是新卡的卡数（用户在预览期间去 Anki 学了几张）。
+  /// 它们的位置**没有**被写，见 [AnkiDeckRepositionRunner.apply]。
+  final int skipped;
 
   /// 落盘的快照文件（写回前的旧位置）。
   final File? snapshot;
@@ -240,26 +245,57 @@ class AnkiDeckRepositionRunner {
   static String _plain(Map<String, String> fields, String? name) =>
       name == null ? '' : ankiFieldPlainText(fields[name] ?? '');
 
-  /// 写回 [plan]：先落快照，再批量写位置。
+  /// 写回 [plan]：先按当前新卡集合重新过滤，再落快照，再批量写位置。
+  ///
+  /// 为什么要重新过滤：plan 是**预览之前**算的，而预览弹窗可以开任意久，这条链路
+  /// 的前提又正是「Anki 正开着」——用户完全可能在这期间去学几张。卡一旦离开新卡
+  /// 队列，`due` 的语义就从「队列位置」变成「到期日」，把位置写进去等于把复习卡
+  /// 打成 1970 年代到期，进度被毁；而 [undo] 也救不回来（它同样只恢复「此刻仍是
+  /// 新卡」的那些）。仓储层在 `listNewCards` 里为几百毫秒的窗口做了 `type == 0`
+  /// 二次校验，真正长的这个窗口反而不能不设防。
   Future<AnkiRepositionOutcome> apply(
     AnkiRepositionPlan plan, {
     AnkiRepositionOnProgress? onProgress,
   }) async {
     onProgress?.call(AnkiRepositionProgress(
-      stage: AnkiRepositionStage.write,
+      stage: AnkiRepositionStage.fetch,
       total: plan.updates.length,
     ));
-    final File snapshot = await _writeSnapshot(plan);
+    final List<AnkiCardInfo> current =
+        await _repository.listNewCards(plan.deckName);
+    final Set<int> stillNew = <int>{
+      for (final AnkiCardInfo c in current) c.cardId,
+    };
+    final List<AnkiCardDueUpdate> updates = <AnkiCardDueUpdate>[
+      for (final AnkiCardDueUpdate u in plan.updates)
+        if (stillNew.contains(u.cardId)) u,
+    ];
+    final int skipped = plan.updates.length - updates.length;
+    // 快照只存真的会被写的那些：撤销要回到的是「我们动过的卡」的旧位置，
+    // 没动过的卡不该出现在里面。
+    final List<AnkiCardDueUpdate> previous = <AnkiCardDueUpdate>[
+      for (final AnkiCardDueUpdate u in plan.previous)
+        if (stillNew.contains(u.cardId)) u,
+    ];
+    onProgress?.call(AnkiRepositionProgress(
+      stage: AnkiRepositionStage.write,
+      total: updates.length,
+    ));
+    final File snapshot = await _writeSnapshot(plan, previous);
     final AnkiCardDueWriteResult result =
-        await _repository.setNewCardPositions(plan.updates);
+        await _repository.setNewCardPositions(updates);
     return AnkiRepositionOutcome(
       written: result.written,
       failures: result.failures,
       snapshot: snapshot,
+      skipped: skipped,
     );
   }
 
-  Future<File> _writeSnapshot(AnkiRepositionPlan plan) async {
+  Future<File> _writeSnapshot(
+    AnkiRepositionPlan plan,
+    List<AnkiCardDueUpdate> previous,
+  ) async {
     final Directory dir = await _snapshotDirectory();
     final DateTime now = DateTime.now();
     final String stamp = now.toUtc().toIso8601String().replaceAll(':', '-');
@@ -268,7 +304,7 @@ class AnkiDeckRepositionRunner {
       file: file,
       deckName: plan.deckName,
       createdAt: now,
-      positions: plan.previous,
+      positions: previous,
     );
     // 先 encode 再 open：encode 抛异常时文件不会被截成零字节。
     final String body = jsonEncode(snapshot.toJson());
@@ -315,7 +351,11 @@ class AnkiDeckRepositionRunner {
     ];
     final AnkiCardDueWriteResult result =
         await _repository.setNewCardPositions(restorable);
-    if (!result.hasFailures) {
+    // 一张都没恢复就删快照 = 把唯一的后悔药静默销毁。restorable 为空时仓储层
+    // 直接 early return（written=0, failures={}），hasFailures 是 false —— 只要
+    // listNewCards 这一刻因为任何原因（卡组改名、连接抖动、用户手动动过）没返回
+    // 这些卡，快照就没了。必须真的写成功过才删。
+    if (result.written > 0 && !result.hasFailures) {
       try {
         await snapshot.file.delete();
       } on FileSystemException catch (e) {

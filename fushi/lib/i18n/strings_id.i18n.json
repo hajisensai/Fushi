@@ -4476,5 +4476,6 @@
   "yomitan_port_kill_confirm_title": "Akhiri proses yang menggunakan port $port?",
   "yomitan_port_kill_failed": "Tidak bisa mengakhiri $process. Silakan akhiri secara manual, lalu coba lagi.",
   "yomitan_port_kill_protected": "$process adalah proses sistem penting — Fushi tidak akan mengakhirinya. Ganti port saja.",
-  "yomitan_port_kill_self_instance": "Proses ini adalah instance lain dari aplikasi ini yang sedang berjalan."
+  "yomitan_port_kill_self_instance": "Proses ini adalah instance lain dari aplikasi ini yang sedang berjalan.",
+  "anki_reposition_done_skipped": "Repositioned $count new cards; $skipped were skipped because they are no longer new."
 }

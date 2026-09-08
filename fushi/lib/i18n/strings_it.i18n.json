@@ -4476,5 +4476,6 @@
   "yomitan_port_kill_confirm_title": "Terminare il processo che usa la porta $port?",
   "yomitan_port_kill_failed": "Impossibile terminare $process. Terminalo manualmente, poi riprova.",
   "yomitan_port_kill_protected": "$process è un processo di sistema critico — Fushi non lo terminerà. Cambia la porta.",
-  "yomitan_port_kill_self_instance": "Questo processo è un'altra istanza in esecuzione di questa app."
+  "yomitan_port_kill_self_instance": "Questo processo è un'altra istanza in esecuzione di questa app.",
+  "anki_reposition_done_skipped": "Repositioned $count new cards; $skipped were skipped because they are no longer new."
 }

@@ -51,9 +51,30 @@ void main() {
 
     test('只有一本时两种模式都退化成该值；空表为 null', () {
       for (final FrequencyAggregate m in FrequencyAggregate.values) {
+        // 250 是「幸运值」：1/(1.0/250) 恰好还原成 250。不能只用它断言——
+        // 1..100000 里有 5850 个整数（93 / 99 / 105 / 117 / 123 …）会在
+        // 浮点往返后被 floor 算成 n-1。这些才是真判据。
         expect(aggregateFrequencyRanks(<int>[250], m), 250);
+        for (final int n in <int>[93, 99, 105, 117, 123, 186, 198, 211]) {
+          expect(aggregateFrequencyRanks(<int>[n], m), n,
+              reason: '单本必须原样返回，不许被浮点往返算小 1');
+        }
         expect(aggregateFrequencyRanks(<int>[], m), isNull);
       }
+    });
+
+    test('多本时的浮点误差同样要吸附回整数（排序键不许算小 1）', () {
+      // 2 / (1/10 + 1/15) = 12 整；裸 floor 会给 11。
+      expect(aggregateFrequencyRanks(<int>[10, 15], FrequencyAggregate.harmonic),
+          12);
+      // 2 / (1/20 + 1/30) = 24 整；裸 floor 会给 23。
+      expect(aggregateFrequencyRanks(<int>[20, 30], FrequencyAggregate.harmonic),
+          24);
+      // 真的不是整数时仍然向下取整，不许乱吸附。
+      expect(
+          aggregateFrequencyRanks(
+              <int>[10, 20, 40], FrequencyAggregate.harmonic),
+          17);
     });
 
     test('fromName 认名字，未知回落调和平均', () {

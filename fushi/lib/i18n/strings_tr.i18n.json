@@ -4476,5 +4476,6 @@
   "yomitan_port_kill_confirm_title": "$port portunu kullanan işlem sonlandırılsın mı?",
   "yomitan_port_kill_failed": "$process sonlandırılamadı. Lütfen manuel olarak sonlandırıp tekrar deneyin.",
   "yomitan_port_kill_protected": "$process kritik bir sistem işlemidir — Fushi onu sonlandırmaz. Bunun yerine portu değiştirin.",
-  "yomitan_port_kill_self_instance": "Bu işlem, uygulamanın çalışan başka bir örneğidir."
+  "yomitan_port_kill_self_instance": "Bu işlem, uygulamanın çalışan başka bir örneğidir.",
+  "anki_reposition_done_skipped": "Repositioned $count new cards; $skipped were skipped because they are no longer new."
 }

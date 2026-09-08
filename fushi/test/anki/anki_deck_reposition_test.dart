@@ -474,6 +474,70 @@ void main() {
       expect(snap.existsSync(), isFalse, reason: '撤销成功后快照删除，不会二次撤销');
     });
 
+    test('写回前重校验：预览期间被学掉的卡不写位置，也不进快照', () async {
+      // 计划算好时两张都是新卡。
+      final _FakeRepo repo = _FakeRepo(cards: <AnkiCardInfo>[
+        _card(1, due: 1, fields: <String, String>{'FreqSort': '900'}),
+        _card(2, due: 2, fields: <String, String>{'FreqSort': '10'}),
+      ]);
+      final AnkiDeckRepositionRunner r = runner(repo);
+      final AnkiRepositionPlan plan = (await r.plan(
+        deckName: 'D',
+        settings: const AnkiSettings(),
+        options:
+            const AnkiRepositionRankOptions(source: AnkiRepositionSource.field),
+      ))!;
+
+      // 用户盯着预览弹窗时切去 Anki 学了卡 1：它的 due 已经是「到期日」，
+      // 把队列位置写进去就是毁进度。
+      repo.cards = <AnkiCardInfo>[
+        _card(2, due: 2, fields: <String, String>{'FreqSort': '10'}),
+      ];
+      final AnkiRepositionOutcome out = await r.apply(plan);
+
+      expect(out.skipped, 1, reason: '卡 1 已不是新卡，必须被跳过');
+      expect(
+        repo.writes.last.map((AnkiCardDueUpdate u) => u.cardId),
+        <int>[2],
+        reason: '一条针对卡 1 的写都不许发出去',
+      );
+      final Map<String, dynamic> json =
+          jsonDecode(out.snapshot!.readAsStringSync()) as Map<String, dynamic>;
+      expect(
+        (json['positions'] as List<dynamic>)
+            .map((dynamic e) => (e as Map<String, dynamic>)['cardId']),
+        <int>[2],
+        reason: '快照只该记我们真的动过的卡',
+      );
+    });
+
+    test('撤销一张都没恢复时不删快照（唯一的后悔药）', () async {
+      final _FakeRepo repo = _FakeRepo(cards: <AnkiCardInfo>[
+        _card(1, due: 1, fields: <String, String>{'FreqSort': '900'}),
+        _card(2, due: 2, fields: <String, String>{'FreqSort': '10'}),
+      ]);
+      final AnkiDeckRepositionRunner r = runner(repo);
+      final AnkiRepositionPlan plan = (await r.plan(
+        deckName: 'D',
+        settings: const AnkiSettings(),
+        options:
+            const AnkiRepositionRankOptions(source: AnkiRepositionSource.field),
+      ))!;
+      final AnkiRepositionOutcome out = await r.apply(plan);
+      final AnkiRepositionSnapshot latest = (await r.latestSnapshot('D'))!;
+
+      // listNewCards 这一刻一张都没返回（卡组改名 / 连接抖动 / 用户手动动过）。
+      repo.cards = <AnkiCardInfo>[];
+      final AnkiRepositionUndoOutcome undo = await r.undo(latest);
+
+      expect(undo.restored, 0);
+      expect(
+        out.snapshot!.existsSync(),
+        isTrue,
+        reason: '一张都没恢复就删快照 = 把唯一的后悔药静默销毁',
+      );
+    });
+
     test('坏快照文件被跳过，不影响找最新的', () async {
       File('${tmp.path}/reposition-bad.json').writeAsStringSync('{nope');
       final AnkiDeckRepositionRunner r = runner(_FakeRepo());

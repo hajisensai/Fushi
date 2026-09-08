@@ -334,12 +334,18 @@ class _RepositionDialogState extends State<_RepositionDialog> {
       );
       if (!mounted || outcome == null) return;
       messenger?.showSnackBar(SnackBar(
-        content: Text(outcome.failures.isEmpty
-            ? t.anki_reposition_done(count: outcome.written)
-            : t.anki_reposition_partial(
+        content: Text(outcome.failures.isNotEmpty
+            ? t.anki_reposition_partial(
                 failed: outcome.failures.length,
                 error: outcome.failures.values.first,
-              )),
+              )
+            : outcome.skipped > 0
+                // 预览期间用户去 Anki 学过几张：那些卡已不是新卡，位置没写。
+                ? t.anki_reposition_done_skipped(
+                    count: outcome.written,
+                    skipped: outcome.skipped,
+                  )
+                : t.anki_reposition_done(count: outcome.written)),
       ));
       await _refreshSnapshot();
     } on AnkiRepositionCancelled {

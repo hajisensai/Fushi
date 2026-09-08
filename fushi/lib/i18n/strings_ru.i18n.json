@@ -4476,5 +4476,6 @@
   "yomitan_port_kill_confirm_title": "Завершить процесс, использующий порт $port?",
   "yomitan_port_kill_failed": "Не удалось завершить $process. Пожалуйста, завершите его вручную, затем повторите.",
   "yomitan_port_kill_protected": "$process — критический системный процесс, Fushi не будет его завершать. Измените порт.",
-  "yomitan_port_kill_self_instance": "Этот процесс — другой запущенный экземпляр данного приложения."
+  "yomitan_port_kill_self_instance": "Этот процесс — другой запущенный экземпляр данного приложения.",
+  "anki_reposition_done_skipped": "Repositioned $count new cards; $skipped were skipped because they are no longer new."
 }

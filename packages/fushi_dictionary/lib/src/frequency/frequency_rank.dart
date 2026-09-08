@@ -46,15 +46,28 @@ int? dictionaryFrequencyRank(Iterable<FushiFrequency> frequencies) {
 
 /// 多本词典的 rank 按 [mode] 复合；[ranks] 为空返回 null。
 ///
-/// 只勾一本时两种模式都退化成该本的值，不需要单独分支。
+/// 只勾一本时两种模式都退化成该本的值。
 int? aggregateFrequencyRanks(List<int> ranks, FrequencyAggregate mode) {
   if (ranks.isEmpty) return null;
+  // 只有一本：调和平均在数学上就等于它本身，但 1/(1.0/n) 的浮点往返会把
+  // 1..100000 里 5850 个整数（93 / 99 / 105 / 117 …）算成 n-1。直接短路。
+  if (ranks.length == 1) return ranks.single;
   switch (mode) {
     case FrequencyAggregate.min:
       return ranks.reduce((int a, int b) => a < b ? a : b);
     case FrequencyAggregate.harmonic:
       final double reciprocalSum =
           ranks.fold<double>(0, (double sum, int v) => sum + 1 / v);
-      return (ranks.length / reciprocalSum).floor();
+      final double mean = ranks.length / reciprocalSum;
+      // 同一个浮点误差在多本时同样存在（[10,15] 真值 12，裸 floor 给 11）。
+      // 落在整数的 1e-9 邻域内就吸附回去，再向下取整。
+      // 这个数以前只是制卡的展示字段，误差无害；现在它是新卡队列的**排序键**，
+      // 算小 1 会让本该有序的两个词并成 tie、退回旧 due 序，而且
+      // source: field 与 source: dictionaries 会给同一张卡不同的数。
+      final double nearest = mean.roundToDouble();
+      if ((mean - nearest).abs() <= 1e-9 * (nearest.abs() + 1)) {
+        return nearest.toInt();
+      }
+      return mean.floor();
   }
 }
