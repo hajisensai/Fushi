@@ -24,6 +24,8 @@ bool ReadSiglusLegacyMemory(void*, uint32_t address, void* output, size_t bytes)
   } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
 }
 
+#include "siglus_lookup_eightarg.inc"
+
 bool ReadSiglusLegacySnapshot(siglus_legacy_live::Snapshot* snapshot) {
   return siglus_legacy_live::ReadSnapshot(
       reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr)),
@@ -36,6 +38,7 @@ bool ReadSiglusLookupEngineView(HWND game,
   *view = {};
   const auto* profile = ActiveSiglusLookupProfile();
   if (profile == nullptr) return false;
+  if (IsEightArgSiglusLookup(*profile)) return ReadSiglusEightArgView(game, *profile, view);
   if (!IsLegacySiglusLookup(*profile)) return true;
   DWORD window_process = 0;
   if (game == nullptr || GetWindowThreadProcessId(game, &window_process) == 0 ||
@@ -85,6 +88,7 @@ bool RefreshSiglusLegacyGlyphOwners() {
 bool IsSiglusLookupGlyphOwned(void* self) {
   const auto* profile = ActiveSiglusLookupProfile();
   if (profile == nullptr) return false;
+  if (IsEightArgSiglusLookup(*profile)) return IsSiglusEightArgGlyphOwned(self);
   if (profile->glyph_abi ==
       fushi_voice_hook::SiglusGlyphLayoutAbi::kEcxTenArguments) return true;
   // New ABI families must install their own occurrence-bound owner proof.

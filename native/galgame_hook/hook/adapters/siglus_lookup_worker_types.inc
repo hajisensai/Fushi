@@ -9,6 +9,7 @@ constexpr ULONGLONG kSiglusLookupDuplicateHitWindowMs = 250;
 
 struct SiglusLookupGlyphEvent {
   volatile LONG64 seq = 0;
+  uint64_t occurrence = 0;
   uint16_t code_unit = 0;
   uint16_t reserved = 0;
   int32_t design_x = 0;

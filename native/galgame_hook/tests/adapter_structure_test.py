@@ -2083,17 +2083,17 @@ class AdapterStructureTest(unittest.TestCase):
                 )
                 self.assertIn("state == 0 || state == 2", pending)
 
-    def test_unintegrated_siglus_eightarg_cannot_install_or_bypass_owner(self) -> None:
+    def test_siglus_eightarg_requires_message_owner_before_sensor(self) -> None:
         source = self._siglus_source()
         install = self._function_body(source, "bool InstallSiglusLookupSensor(")
-        self.assertRegex(install, r"if\s*\(profile->glyph_abi\s*==\s*"
-                         r"fushi_voice_hook::SiglusGlyphLayoutAbi::"
-                         r"kEcxEightArguments\)\s*return false;")
+        self.assertIn("if (eightarg && !IsSiglusMessageTextInstalled()) return false;", install)
+        self.assertIn("Detour_SiglusEightArgGlyphLayout", install)
         legacy = self._strip_comments(
             (ROOT / "hook" / "adapters" / "siglus_lookup_legacy.inc").read_text(
                 encoding="utf-8")
         )
         owner = self._function_body(legacy, "bool IsSiglusLookupGlyphOwned(")
+        self.assertIn("IsSiglusEightArgGlyphOwned(self)", owner)
         self.assertIn("if (!IsLegacySiglusLookup(*profile)) return false;", owner)
         self.assertNotIn("if (!IsLegacySiglusLookup(*profile)) return true;", owner)
         self.assertLess(owner.index("if (!IsLegacySiglusLookup(*profile))"),

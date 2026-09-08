@@ -315,7 +315,8 @@ bool ShouldReserveSiglusKeyboardState() {
 }
 
 bool ReadSiglusDesignSize(HMODULE module, uintptr_t config_rva,
-                          int32_t* width, int32_t* height, bool legacy = false) {
+                          int32_t* width, int32_t* height, bool legacy = false,
+                          bool eightarg = false) {
   if (module == nullptr || config_rva == 0 || width == nullptr || height == nullptr)
     return false;
   __try {
@@ -325,9 +326,9 @@ bool ReadSiglusDesignSize(HMODULE module, uintptr_t config_rva,
     const uintptr_t config = *reinterpret_cast<const uint32_t*>(slot);
     if (config == 0 || (config & 3u) != 0 ||
         !fushi_voice_hook::exact_lookup::IsReadableSpan(
-            reinterpret_cast<const void*>(config), legacy ? 0x98 : 0x84)) return false;
-    *width = *reinterpret_cast<const int32_t*>(config + (legacy ? 0x90 : 0x7c));
-    *height = *reinterpret_cast<const int32_t*>(config + (legacy ? 0x94 : 0x80));
+            reinterpret_cast<const void*>(config), eightarg ? 0x6c : (legacy ? 0x98 : 0x84))) return false;
+    *width = *reinterpret_cast<const int32_t*>(config + (eightarg ? 0x64 : (legacy ? 0x90 : 0x7c)));
+    *height = *reinterpret_cast<const int32_t*>(config + (eightarg ? 0x68 : (legacy ? 0x94 : 0x80)));
     return fushi_voice_hook::siglus_viewport::ValidDesignSize(*width, *height);
   } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
 }
@@ -365,10 +366,39 @@ bool ResolveSiglusLiveFamily(HMODULE module,
         fushi_voice_hook::ResolveSiglusLegacyGlyphSites(image, &glyph_sites) &&
         siglus_legacy_input::Resolve(image, legacy_imports, &input_sites) &&
         siglus_legacy_owner::Resolve(image, glyph_sites, input_sites, &owner_sites);
+    const fushi_voice_hook::siglus_eightarg_input_viewport::Imports eightarg_imports = {
+        verified_import("GetKeyState"), verified_import("GetCursorPos"),
+        verified_import("GetActiveWindow"), verified_import("ScreenToClient")};
+    siglus_eightarg::Sites eightarg_sites;
+    const bool eightarg_matched = siglus_eightarg::Resolve(
+        image, eightarg_imports, &eightarg_sites);
     // Complete families are mutually exclusive; no digest or scan order
     // may choose between ambiguous contracts.
     if (!fushi_voice_hook::HasUniqueSiglusLookupFamily(
-            luna_matched, native_matched, legacy_matched)) return false;
+            luna_matched, native_matched, legacy_matched, eightarg_matched)) return false;
+    if (eightarg_matched) {
+      siglus_eightarg_live::Snapshot snapshot;
+      if (!siglus_eightarg::ValidateLiveEntries(image, eightarg_sites) ||
+          !siglus_eightarg_live::ReadSnapshot(reinterpret_cast<uintptr_t>(module),
+              eightarg_sites.input, ReadSiglusLegacyMemory, nullptr, &snapshot)) return false;
+      *profile = {};
+      profile->pe_machine = IMAGE_FILE_MACHINE_I386;
+      profile->pointer_bits = 32;
+      profile->text_feed = fushi_voice_hook::SiglusLookupTextFeed::kLunaScenarioLane;
+      profile->glyph_abi = fushi_voice_hook::SiglusGlyphLayoutAbi::kEcxEightArguments;
+      profile->glyph_layout_rva = eightarg_sites.glyph.glyph_entry_rva;
+      profile->dialogue_glyph_return_rva = eightarg_sites.glyph.wrapper_glyph_return_rva;
+      profile->exact_text_rva = eightarg_sites.glyph.scenario_entry_rva;
+      profile->exact_text_return_rva = eightarg_sites.glyph.message_scenario_return_rva;
+      profile->input_message_rva = eightarg_sites.input.message;
+      profile->main_input_message_return_rva = eightarg_sites.input.window_message_return;
+      profile->get_key_state_return_rva = eightarg_sites.input.key_state_return;
+      profile->viewport_config_rva = eightarg_sites.input.config_slot;
+      profile->viewport_width = snapshot.design_width;
+      profile->viewport_height = snapshot.design_height;
+      g_siglus_eightarg_sites = eightarg_sites;
+      return true;
+    }
     if (legacy_matched) {
       siglus_legacy_live::Snapshot snapshot;
       if (!siglus_legacy_live::ReadSnapshot(reinterpret_cast<uintptr_t>(module),
@@ -582,6 +612,11 @@ bool IsSiglusExactBinaryStructureMatched(
 
 bool MatchesSiglusGlyphLayoutEntry(const uint8_t *target) {
   const auto* profile = ActiveSiglusLookupProfile();
+  if (profile != nullptr && IsEightArgSiglusLookup(*profile)) {
+    const auto pattern = fushi_voice_hook::siglus_eight_arg_glyph::kGlyphEntry.pattern();
+    return fushi_voice_hook::exact_lookup::IsReadableSpan(target, pattern.size) &&
+        fushi_voice_hook::exact_lookup::MatchesMaskedPattern(target, pattern);
+  }
   if (profile != nullptr && IsLegacySiglusLookup(*profile)) {
     const auto pattern = fushi_voice_hook::siglus_legacy_glyph::kGlyphEntry.pattern();
     return fushi_voice_hook::exact_lookup::IsReadableSpan(target, pattern.size) &&
@@ -598,6 +633,11 @@ bool MatchesSiglusGlyphLayoutEntry(const uint8_t *target) {
 
 bool MatchesSiglusInputMessageEntry(const uint8_t *target) {
   const auto *profile = ActiveSiglusLookupProfile();
+  if (profile != nullptr && IsEightArgSiglusLookup(*profile)) {
+    const auto pattern = fushi_voice_hook::siglus_eightarg_input_viewport::kMessage.pattern();
+    return fushi_voice_hook::exact_lookup::IsReadableSpan(target, pattern.size) &&
+        fushi_voice_hook::exact_lookup::MatchesMaskedPattern(target, pattern);
+  }
   if (profile != nullptr && IsLegacySiglusLookup(*profile)) {
     const auto pattern = siglus_legacy_input::kMessage.pattern();
     return fushi_voice_hook::exact_lookup::IsReadableSpan(target, pattern.size) &&
@@ -615,22 +655,57 @@ bool MatchesSiglusInputMessageEntry(const uint8_t *target) {
                                                               *pattern);
 }
 
-void PublishSiglusLookupGlyphEvent(uint16_t code_unit, int32_t design_x,
-                                   int32_t design_y, int32_t extent) {
-  if (code_unit == 0 || extent <= 0)
+#include "siglus_lookup_glyph_batch_transport.inc"
+
+thread_local fushi_voice_hook::siglus_eightarg_glyph_batch::Collector
+    g_siglus_eightarg_glyph_batch;
+
+void PublishSiglusLookupGlyphRecord(uint16_t code_unit, int32_t design_x,
+                                   int32_t design_y, int32_t extent, bool invalid) {
+  if (!invalid && (code_unit == 0 || extent <= 0))
     return;
+  const auto* profile = ActiveSiglusLookupProfile();
+  const uint64_t occurrence = profile && IsEightArgSiglusLookup(*profile)
+      ? g_siglus_eightarg_thread_occurrence : 0;
+  if (profile && IsEightArgSiglusLookup(*profile) && (occurrence == 0 ||
+      occurrence != g_siglus_eightarg_occurrence.load(std::memory_order_acquire))) return;
   const uint64_t next = static_cast<uint64_t>(
       InterlockedIncrement64(&g_siglus_lookup_glyph_event_count));
   SiglusLookupGlyphEvent *event =
       &g_siglus_lookup_glyph_events[next % kSiglusLookupGlyphEventSlots];
   InterlockedExchange64(&event->seq, 0);
   event->code_unit = code_unit;
-  event->reserved = 0;
+  event->reserved = invalid ? 1 : 0;
   event->design_x = design_x;
   event->design_y = design_y;
   event->extent = extent;
+  event->occurrence = occurrence;
   InterlockedExchange64(&event->seq, static_cast<LONG64>(next));
-  SetSiglusLookupDiag(fushi_voice_hook::kLookupDiagSiglusGlyphObserved);
+  if (!invalid) SetSiglusLookupDiag(fushi_voice_hook::kLookupDiagSiglusGlyphObserved);
+}
+
+void PublishSiglusLookupGlyphEvent(uint16_t code_unit, int32_t design_x,
+                                   int32_t design_y, int32_t extent) {
+  PublishSiglusLookupGlyphRecord(code_unit, design_x, design_y, extent, false);
+}
+void PublishSiglusLookupGlyphInvalidation() {
+  g_siglus_eightarg_glyph_batch.Reset();
+  PublishSiglusEightArgGlyphBatch(nullptr, 1, g_siglus_eightarg_thread_occurrence);
+}
+
+void CaptureSiglusEightArgGlyphRecord(const fushi_voice_hook::SiglusGlyphRecord& glyph,
+                                    uint32_t ordinal, uint32_t count,
+                                    const siglus_eightarg_owner::Vector& vector) {
+  const fushi_voice_hook::siglus_eightarg_glyph_batch::Identity identity{
+      g_siglus_eightarg_thread_occurrence,
+      g_siglus_lookup_click_epoch.load(std::memory_order_acquire),
+      g_siglus_eightarg_thread_body, vector.begin, vector.end, vector.capacity};
+  const auto result = g_siglus_eightarg_glyph_batch.Push(identity, ordinal, count, glyph);
+  if (result.invalidate_previous)
+    PublishSiglusEightArgGlyphBatch(nullptr, 1, identity.occurrence);
+  if (result.complete)
+    PublishSiglusEightArgGlyphBatch(g_siglus_eightarg_glyph_batch.entries(),
+        g_siglus_eightarg_glyph_batch.size(), identity.occurrence);
 }
 
 #include "siglus_lookup_glyph.inc"
@@ -802,15 +877,13 @@ bool InstallSiglusLookupSensor() {
   if (profile == nullptr)
     return false;
   HMODULE module = GetModuleHandleW(nullptr);
-  // Eight-argument forwarding is tested independently. It must not fall
-  // through to the modern installer before its complete input/owner family
-  // has its own production admission and installation path.
-  if (profile->glyph_abi ==
-      fushi_voice_hook::SiglusGlyphLayoutAbi::kEcxEightArguments) return false;
+  const bool eightarg = IsEightArgSiglusLookup(*profile);
+  // The occurrence observer must own Scenario before glyph/input capture.
+  if (eightarg && !IsSiglusMessageTextInstalled()) return false;
   const bool legacy = IsLegacySiglusLookup(*profile);
   if (profile->viewport_config_rva != 0) {
     int32_t width = 0, height = 0;
-    if (!ReadSiglusDesignSize(module, profile->viewport_config_rva, &width, &height, legacy) ||
+    if (!ReadSiglusDesignSize(module, profile->viewport_config_rva, &width, &height, legacy, eightarg) ||
         width != profile->viewport_width || height != profile->viewport_height) {
       g_siglus_lookup_sensor_installed.store(false, std::memory_order_release);
       RevokeSiglusSampledInputShieldReady(g_siglus_sampled_input_property_window);
@@ -823,7 +896,8 @@ bool InstallSiglusLookupSensor() {
   const ULONGLONG now = GetTickCount64();
   const HWND cached_game =
       g_siglus_sampled_input_game_window.load(std::memory_order_acquire);
-  const bool glyph_installed = legacy ? g_orig_SiglusLegacyGlyphLayout != nullptr
+  const bool glyph_installed = eightarg ? g_orig_SiglusEightArgGlyphLayout != nullptr
+                                      : legacy ? g_orig_SiglusLegacyGlyphLayout != nullptr
                                       : g_orig_SiglusGlyphLayout != nullptr;
   const bool message_installed = legacy ? g_orig_SiglusLegacyInputMessage != nullptr
                                         : g_orig_SiglusInputMessage != nullptr;
@@ -845,9 +919,11 @@ bool InstallSiglusLookupSensor() {
   if (!glyph_installed) {
     auto *target = reinterpret_cast<uint8_t *>(module) +
                    profile->glyph_layout_rva;
-    void* callback = legacy ? reinterpret_cast<void*>(&Detour_SiglusLegacyGlyphLayout)
+    void* callback = eightarg ? reinterpret_cast<void*>(&Detour_SiglusEightArgGlyphLayout)
+                            : legacy ? reinterpret_cast<void*>(&Detour_SiglusLegacyGlyphLayout)
                             : reinterpret_cast<void*>(&Detour_SiglusGlyphLayout);
-    void** original = legacy ? reinterpret_cast<void**>(&g_orig_SiglusLegacyGlyphLayout)
+    void** original = eightarg ? reinterpret_cast<void**>(&g_orig_SiglusEightArgGlyphLayout)
+                              : legacy ? reinterpret_cast<void**>(&g_orig_SiglusLegacyGlyphLayout)
                               : reinterpret_cast<void**>(&g_orig_SiglusGlyphLayout);
     if (!MatchesSiglusGlyphLayoutEntry(target) ||
         !HookFn(target, callback, original) || *original == nullptr) {
@@ -993,15 +1069,35 @@ void ProcessSiglusLookupTick() {
     fushi_voice_hook::g_geometry_provider_registry.Retire(
         g_header, fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
         fushi_voice_hook::kLookupGeometryProviderIdSiglus);
+    const uint64_t processed = g_siglus_lookup_glyph_processed_seq;
+    const auto* current_profile = ActiveSiglusLookupProfile();
+    const uint64_t occurrence = g_siglus_eightarg_occurrence.load(std::memory_order_acquire);
+    const bool awaiting_initial_view = current_profile && IsEightArgSiglusLookup(*current_profile) &&
+        occurrence != 0 && occurrence == g_siglus_eightarg_worker_occurrence &&
+        g_siglus_lookup_engine_view.occurrence != occurrence;
     ResetSiglusLookupRuntimeLayout();
+    if (awaiting_initial_view) g_siglus_lookup_glyph_processed_seq = processed;
     return;
   }
   if (!fushi_voice_hook::SameSiglusLookupEngineView(engine_view, g_siglus_lookup_engine_view)) {
+    const uint64_t processed = g_siglus_lookup_glyph_processed_seq;
     ResetSiglusLookupRuntimeLayout();
+    if (IsEightArgSiglusLookup(*ActiveSiglusLookupProfile()) &&
+        engine_view.occurrence != g_siglus_lookup_engine_view.occurrence)
+      g_siglus_lookup_glyph_processed_seq = processed;
     g_siglus_lookup_layout_window = game;
   }
   g_siglus_lookup_engine_view = engine_view;
   ConsumeSiglusLookupCaptures();
+
+  if (IsEightArgSiglusLookup(*ActiveSiglusLookupProfile()) &&
+      engine_view.occurrence != g_siglus_eightarg_occurrence.load(std::memory_order_acquire)) {
+    InvalidateSiglusLookupClickTarget();
+    fushi_voice_hook::g_geometry_provider_registry.Retire(g_header,
+        fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+        fushi_voice_hook::kLookupGeometryProviderIdSiglus);
+    return;
+  }
 
   if (g_siglus_lookup_layout.line_has_complete_layout &&
       g_siglus_lookup_text_identity.event_id != 0 &&

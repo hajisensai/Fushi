@@ -42,6 +42,7 @@ ULONGLONG tick = 1000;
 void (*before_second_validation)() = nullptr;
 SiglusLookupProfile active_profile = kAnemoiSiglusLookupProfile;
 SiglusLookupEngineView active_view;
+SiglusLookupEngineView g_siglus_lookup_engine_view;
 bool view_valid = true;
 
 const SiglusLookupProfile* ActiveSiglusLookupProfile() {
@@ -91,6 +92,23 @@ ULONGLONG TestGetTickCount64() {
 #undef ClientToScreen
 #undef GetTickCount64
 
+std::atomic<uint64_t> g_siglus_eightarg_occurrence{0};
+void (*during_batch_slot)() = nullptr;
+LONG64 BatchExchange(volatile LONG64* address, LONG64 value) {
+  const LONG64 previous = InterlockedExchange64(address, value);
+  if (address != &g_siglus_lookup_glyph_event_count && during_batch_slot)
+    during_batch_slot();
+  return previous;
+}
+#pragma push_macro("InterlockedExchange64")
+#undef InterlockedExchange64
+#define InterlockedExchange64 BatchExchange
+#include "../hook/adapters/siglus_lookup_glyph_batch_transport.inc"
+#pragma pop_macro("InterlockedExchange64")
+#undef GetClientRect
+#undef ClientToScreen
+#undef GetTickCount64
+
 struct Fixture {
   std::vector<uint8_t> bytes;
   Fixture() {
@@ -133,13 +151,14 @@ struct Fixture {
     active_view = {};
     view_valid = true;
     g_siglus_sampled_input_game_window = kWindow;
+    g_siglus_lookup_engine_view = {};
     for (auto& slot : g_siglus_lookup_click_events) slot = {};
     for (auto& slot : g_siglus_lookup_glyph_events) slot = {};
     for (auto& slot : g_siglus_lookup_text_snapshots) slot = {};
   }
 };
 
-void Glyph(char16_t character, int32_t x) {
+void Glyph(char16_t character, int32_t x, uint64_t occurrence = 0) {
   const uint64_t next = static_cast<uint64_t>(
       InterlockedIncrement64(&g_siglus_lookup_glyph_event_count));
   auto& slot = g_siglus_lookup_glyph_events[next % kSiglusLookupGlyphEventSlots];
@@ -148,6 +167,7 @@ void Glyph(char16_t character, int32_t x) {
   slot.design_x = x;
   slot.design_y = 200;
   slot.extent = 40;
+  slot.occurrence = occurrence;
   InterlockedExchange64(&slot.seq, static_cast<LONG64>(next));
 }
 void FullRedraw() {
@@ -703,9 +723,81 @@ void TestResetAndOverflowDiagnosticRanges() {
     assert(Diagnostic(2).queue_seq == 3 && g_header->lookup_hit_count == 1);
   }
 }
+void TestEightArgGlyphOccurrenceCannotMix() {
+  Fixture fixture;
+  g_siglus_lookup_engine_view.occurrence = 2;
+  PublishSiglusLookupTextSnapshot(L"ABC", 3, {43, 7});
+  // A previous callback finishes publishing after the new message began.
+  Glyph(u'A', 900, 1); Glyph(u'B', 940, 1); Glyph(u'C', 980, 1);
+  Consume();
+  assert(!g_siglus_lookup_layout.current_valid);
+  Glyph(u'A', 100, 2); Glyph(u'B', 140, 2); Glyph(u'C', 180, 2);
+  Consume();
+  assert(g_siglus_lookup_layout.current_valid);
+  assert(g_siglus_lookup_layout.geometry.glyphs[0].rect.x == 100);
+  const uint64_t generation = g_siglus_lookup_layout.generation;
+  Glyph(u'A', 900, 1);
+  Consume();
+  assert(g_siglus_lookup_layout.generation == generation);
+  assert(g_siglus_lookup_glyph_processed_seq == 7);
+  Glyph(u'A', 200, 3); Glyph(u'B', 240, 3); Glyph(u'C', 280, 3);
+  Consume();
+  assert(g_siglus_lookup_glyph_processed_seq == 7);
+  assert(g_siglus_lookup_unpublished_glyph_frontier == 10);
+  g_siglus_lookup_engine_view.occurrence = 3;
+  ClearSiglusLookupGlyphCapture(&g_siglus_lookup_glyph_captures);
+  PublishSiglusLookupTextSnapshot(L"ABC",3,{44,7});
+  Consume();
+  assert(g_siglus_lookup_glyph_processed_seq == 10);
+  assert(g_siglus_lookup_layout.geometry.glyphs[0].rect.x == 200);
+  Glyph(0, 0, 3);
+  g_siglus_lookup_glyph_events[11].reserved = 1;
+  Consume();
+  assert(!g_siglus_lookup_layout.current_valid);
+  assert(!g_siglus_lookup_layout.line_has_complete_layout);
+  Glyph(u'A', 200, 3); Glyph(u'B', 240, 3); Glyph(u'C', 280, 3);
+  Consume();
+  assert(g_siglus_lookup_layout.current_valid);
+}
+void TestEightArgBatchFrontierNeverExposesPartialRedraw() {
+  Fixture fixture;
+  g_siglus_eightarg_occurrence = 2;
+  g_siglus_lookup_engine_view.occurrence = 2;
+  PublishSiglusLookupTextSnapshot(L"ABC", 3, {43, 7});
+  const SiglusGlyphRecord frame[] = {{u'A',40,100,200},{u'B',40,140,200},{u'C',40,180,200}};
+  assert(PublishSiglusEightArgGlyphBatch(frame, 3, 2));
+  Consume();
+  assert(g_siglus_lookup_layout.current_valid);
+  const auto epoch = g_siglus_lookup_layout.snapshot_epoch;
+  during_batch_slot = [] {
+    ConsumeSiglusLookupCaptures();
+    assert(g_siglus_lookup_layout.current_valid);
+    assert(g_siglus_lookup_unpublished_glyph_frontier == 0);
+  };
+  // Consume at every individual slot write, including across a ring wrap.
+  for (int i = 0; i < 200; ++i) {
+    assert(PublishSiglusEightArgGlyphBatch(frame, 3, 2));
+    Consume();
+    assert(g_siglus_lookup_layout.current_valid);
+    assert(g_siglus_lookup_layout.snapshot_epoch == epoch);
+  }
+  during_batch_slot = nullptr;
+  assert(PublishSiglusEightArgGlyphBatch(nullptr, 1, 2));
+  Consume();
+  assert(!g_siglus_lookup_layout.current_valid);
+  assert(PublishSiglusEightArgGlyphBatch(frame, 3, 2));
+  Consume();
+  assert(g_siglus_lookup_layout.current_valid);
+  const auto before = g_siglus_lookup_glyph_event_count;
+  g_siglus_eightarg_occurrence = 3;
+  assert(!PublishSiglusEightArgGlyphBatch(frame, 3, 2));
+  assert(g_siglus_lookup_glyph_event_count == before);
+}
 }  // namespace
 
 int main() {
+  TestEightArgBatchFrontierNeverExposesPartialRedraw();
+  TestEightArgGlyphOccurrenceCannotMix();
   TestZeroPrefixReservedGapPreservesOnlyPendingRelease();
   TestReservedGapKnownPrefixNeverRevivesOldGeometry();
   TestReservedGapHardFailuresRemainTerminal();
@@ -731,5 +823,5 @@ int main() {
   TestOnlyTerminalOutcomesPublishDiagnostic();
   TestDiagnosticRingIsBoundedMetadata();
   TestResetAndOverflowDiagnosticRanges();
-  std::puts("siglus_lookup_worker_test: 25 groups passed (15 reserved-gap cases, 12 rejection variants)");
+  std::puts("siglus_lookup_worker_test: 27 groups passed (atomic batch publication, occurrence filtering, reserved gaps and rejection variants)");
 }

@@ -4,28 +4,44 @@
 void CaptureSiglusLookupGlyph(void* self, uint8_t result,
                               uintptr_t return_address,
                               fushi_voice_hook::SiglusGlyphLayoutAbi abi) {
-  if (result == 0 || self == nullptr ||
+  if (self == nullptr ||
       !g_siglus_lookup_capture_enabled.load(std::memory_order_acquire)) return;
   const uintptr_t module = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
   const auto* profile = ActiveSiglusLookupProfile();
   if (profile == nullptr || profile->glyph_abi != abi ||
       return_address < module ||
       return_address - module != profile->dialogue_glyph_return_rva) return;
-  if (abi != fushi_voice_hook::SiglusGlyphLayoutAbi::kEcxTenArguments &&
-      !IsSiglusLookupGlyphOwned(self)) return;
+  const bool eightarg = abi == fushi_voice_hook::SiglusGlyphLayoutAbi::kEcxEightArguments;
+  uint32_t ordinal = 0, count = 0;
+  fushi_voice_hook::siglus_eightarg_owner::Vector vector;
+  if (eightarg) {
+    if (!ReadSiglusEightArgGlyphOrdinal(self, &ordinal, &count, &vector)) return;
+  } else if (abi != fushi_voice_hook::SiglusGlyphLayoutAbi::kEcxTenArguments &&
+             !IsSiglusLookupGlyphOwned(self)) return;
+  if (result == 0) {
+    // The admitted eight-argument wrapper stops at the first failed ordinal.
+    // A partial pass cannot keep an older complete frame eligible for input.
+    if (eightarg) PublishSiglusLookupGlyphInvalidation();
+    return;
+  }
   const size_t size = fushi_voice_hook::SiglusGlyphRecordBytes(abi);
-  if (size == 0 || size > 0x48u) return;
+  if (size == 0 || size > 0x70u) return;
   __try {
-    uint8_t bytes[0x48] = {};
+    uint8_t bytes[0x70] = {};
     memcpy(bytes, self, size);
     fushi_voice_hook::SiglusGlyphRecord glyph;
     if (fushi_voice_hook::DecodeSiglusGlyphRecord(
             abi, bytes, size, profile->viewport_width,
             profile->viewport_height, &glyph)) {
-      PublishSiglusLookupGlyphEvent(glyph.code_unit, glyph.x, glyph.y,
-                                    glyph.extent);
+      if (eightarg) CaptureSiglusEightArgGlyphRecord(glyph, ordinal, count, vector);
+      else PublishSiglusLookupGlyphEvent(glyph.code_unit, glyph.x, glyph.y,
+                                         glyph.extent);
+    } else if (abi == fushi_voice_hook::SiglusGlyphLayoutAbi::kEcxEightArguments) {
+      PublishSiglusLookupGlyphInvalidation();
     }
   } __except (EXCEPTION_EXECUTE_HANDLER) {
+    if (abi == fushi_voice_hook::SiglusGlyphLayoutAbi::kEcxEightArguments)
+      PublishSiglusLookupGlyphInvalidation();
   }
 }
 

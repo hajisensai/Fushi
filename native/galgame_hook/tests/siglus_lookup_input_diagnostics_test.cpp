@@ -446,4 +446,5 @@ int main() {
   TestConcurrentReadPublication();
   TestBoundedPublicationAndContention();
   std::puts("siglus_lookup_input_diagnostics_test: 8 groups, 65 down rejection cases and 9 owned-up cases passed");
+  return 0;
 }

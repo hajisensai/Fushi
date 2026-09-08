@@ -56,9 +56,10 @@ enum class SiglusLookupTextFeed : uint8_t {
   kLunaScenarioLane = 2,
 };
 
-inline bool HasUniqueSiglusLookupFamily(bool luna, bool native, bool legacy) {
+inline bool HasUniqueSiglusLookupFamily(bool luna, bool native, bool legacy,
+                                       bool eightarg = false) {
   return static_cast<int>(luna) + static_cast<int>(native) +
-             static_cast<int>(legacy) == 1;
+             static_cast<int>(legacy) + static_cast<int>(eightarg) == 1;
 }
 
 // A profile is either a measured executable or a structurally resolved ABI
@@ -729,13 +730,14 @@ inline bool ScaleSiglusLookupRectToClient(const SiglusLookupProfile &profile,
 struct SiglusLookupEngineView {
   uintptr_t owner = 0;
   SiglusLookupRect viewport;
+  uint64_t occurrence = 0;
 };
 
 inline bool SameSiglusLookupEngineView(const SiglusLookupEngineView& lhs,
                                       const SiglusLookupEngineView& rhs) {
   return lhs.owner == rhs.owner && lhs.viewport.x == rhs.viewport.x &&
       lhs.viewport.y == rhs.viewport.y && lhs.viewport.width == rhs.viewport.width &&
-      lhs.viewport.height == rhs.viewport.height;
+      lhs.viewport.height == rhs.viewport.height && lhs.occurrence == rhs.occurrence;
 }
 
 inline bool ProjectSiglusLookupRect(const SiglusLookupProfile& profile,
@@ -749,7 +751,10 @@ inline bool ProjectSiglusLookupRect(const SiglusLookupProfile& profile,
     return view.owner == 0 && ScaleSiglusLookupRectToClient(
         profile, design, client_width, client_height, output);
   }
-  if (profile.glyph_abi != SiglusGlyphLayoutAbi::kStackSixteenArguments ||
+  if (profile.glyph_abi == SiglusGlyphLayoutAbi::kEcxEightArguments &&
+      view.occurrence == 0) return false;
+  if ((profile.glyph_abi != SiglusGlyphLayoutAbi::kStackSixteenArguments &&
+       profile.glyph_abi != SiglusGlyphLayoutAbi::kEcxEightArguments) ||
       view.owner == 0 || profile.viewport_width <= 0 || profile.viewport_height <= 0 ||
       client_width <= 0 || client_height <= 0 || view.viewport.width <= 0 ||
       view.viewport.height <= 0 || design.x < 0 || design.y < 0 ||

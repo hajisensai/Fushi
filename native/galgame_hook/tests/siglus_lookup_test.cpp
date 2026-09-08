@@ -629,10 +629,10 @@ int main() {
                                                  stable_client));
 
   SiglusLookupProfile legacy = kAnemoiSiglusLookupProfile;
-  for (unsigned families = 0; families < 8; ++families) {
+  for (unsigned families = 0; families < 16; ++families) {
     assert(HasUniqueSiglusLookupFamily((families & 1) != 0, (families & 2) != 0,
-                                      (families & 4) != 0) ==
-           (families == 1 || families == 2 || families == 4));
+                                      (families & 4) != 0, (families & 8) != 0) ==
+           (families == 1 || families == 2 || families == 4 || families == 8));
   }
   legacy.glyph_abi = SiglusGlyphLayoutAbi::kStackSixteenArguments;
   legacy.viewport_width = 1280;
@@ -659,6 +659,24 @@ int main() {
                                  3000, 1000, &projected));
   assert(!ProjectSiglusLookupRect(kAnemoiSiglusLookupProfile, actual_view,
                                  {240, 560, 30, 30}, 3000, 1000, &projected));
+
+  auto eightarg = legacy;
+  eightarg.glyph_abi = SiglusGlyphLayoutAbi::kEcxEightArguments;
+  assert(!ProjectSiglusLookupRect(eightarg, actual_view, {285,572,26,26},
+                                 1280,720,&projected));
+  actual_view.occurrence = 7;
+  assert(ProjectSiglusLookupRect(eightarg, actual_view, {285,572,26,26},
+                                1280,720,&projected));
+  assert(projected.x == 285 && projected.y == 572 && projected.width == 26);
+  // Engine viewport is in client logical pixels; DPI conversion is downstream.
+  actual_view.viewport = {40,20,960,540};
+  assert(ProjectSiglusLookupRect(eightarg, actual_view, {284,572,28,28},
+                                1280,720,&projected));
+  assert(projected.x == 253 && projected.y == 449 &&
+         projected.width == 21 && projected.height == 21);
+  auto next_view = actual_view;
+  ++next_view.occurrence;
+  assert(!SameSiglusLookupEngineView(actual_view, next_view));
 
   return 0;
 }

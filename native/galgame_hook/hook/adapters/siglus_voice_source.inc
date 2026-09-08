@@ -179,6 +179,8 @@ bool TryHookSiglusVoiceSource() {
   const auto* lane = ActiveSiglusLookupProfile();
   HMODULE module = GetModuleHandleW(nullptr);
   if (lane == nullptr || module == nullptr) return false;
+  if (lane->glyph_abi ==
+      fushi_voice_hook::SiglusGlyphLayoutAbi::kEcxEightArguments) return false;
   const uintptr_t base = reinterpret_cast<uintptr_t>(module);
   if (g_siglus_message_legacy) {
     if (lane->glyph_abi !=

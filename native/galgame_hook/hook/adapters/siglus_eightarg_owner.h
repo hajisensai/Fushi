@@ -47,7 +47,7 @@ inline bool ReadVector(runtime::Read read, void* context, uint32_t object,
 // Requires the separately admitted normal-group selector/render root proof.
 // Only the script's primary group (+0x734) is accepted. The auxiliary root
 // at +0x48d10 and the second group (+0xe68) are not inferred from similarity.
-inline bool ReadOnce(uint32_t engine_owner, const message::Owner& frozen,
+inline bool ReadSelectedBodyOnce(uint32_t engine_owner, const message::Owner& frozen,
                      runtime::Read read, void* context, Path* out) {
   Path p;
   if (engine_owner < 0x10000u || (engine_owner & 3u) != 0 ||
@@ -61,7 +61,31 @@ inline bool ReadOnce(uint32_t engine_owner, const message::Owner& frozen,
     return runtime::Scalar(read, context, address, 0, value);
   };
   if (!message::ReadOwner(frozen.address, word, &p.body) ||
-      !message::Same(frozen, p.body) ||
+      !message::Same(frozen, p.body)) return false;
+  p.engine_owner = engine_owner;
+  *out = p;
+  return true;
+}
+
+// Message entry precedes Scenario constructing its glyph vector. Freeze only
+// the selected normal body here; visible/input admission still needs ReadPath.
+inline bool ReadSelectedBody(uint32_t engine_owner, const message::Owner& frozen,
+                             runtime::Read read, void* context, Path* out) {
+  if (!out) return false;
+  *out = {};
+  if (!read) return false;
+  Path first, second;
+  if (!ReadSelectedBodyOnce(engine_owner, frozen, read, context, &first) ||
+      !ReadSelectedBodyOnce(engine_owner, frozen, read, context, &second) ||
+      !Same(first, second)) return false;
+  *out = second;
+  return true;
+}
+
+inline bool ReadOnce(uint32_t engine_owner, const message::Owner& frozen,
+                     runtime::Read read, void* context, Path* out) {
+  Path p;
+  if (!ReadSelectedBodyOnce(engine_owner, frozen, read, context, &p) ||
       !runtime::Scalar(read, context, frozen.address, 0x156, &p.active) ||
       !runtime::Scalar(read, context, frozen.address, 0x18c, &p.animation) ||
       (p.active == 0 && p.animation < 0) ||

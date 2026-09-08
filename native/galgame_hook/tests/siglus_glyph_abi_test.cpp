@@ -6,6 +6,7 @@
 #include <intrin.h>
 
 #include "../hook/adapters/siglus_lookup.h"
+#include "../hook/adapters/siglus_eightarg_owner.h"
 
 #include <atomic>
 #include <cassert>
@@ -23,6 +24,7 @@ std::atomic<bool> g_siglus_lookup_capture_enabled{false};
 SiglusLookupProfile test_profile;
 SiglusGlyphRecord published;
 size_t publications = 0, original_calls = 0;
+size_t invalidations = 0;
 uint8_t original_result = 0xa5;
 bool glyph_owned = true;
 void* expected_self = nullptr;
@@ -31,10 +33,23 @@ constexpr uintptr_t args[] = {0x12345678u, 0x80000001u, 0x3f800000u,
 
 const SiglusLookupProfile* ActiveSiglusLookupProfile() { return &test_profile; }
 bool IsSiglusLookupGlyphOwned(void*) { return glyph_owned; }
+bool ReadSiglusEightArgGlyphOrdinal(void*, uint32_t* ordinal, uint32_t* count,
+                                  siglus_eightarg_owner::Vector* vector) {
+  *vector = {0x10000, 0x103b4, 0x103b4};
+  *ordinal = 0; *count = 1; return glyph_owned;
+}
+void PublishSiglusLookupGlyphInvalidation() { ++invalidations; }
 void PublishSiglusLookupGlyphEvent(uint16_t code_unit, int32_t x, int32_t y,
                                    int32_t extent) {
   published = {code_unit, extent, x, y};
   ++publications;
+}
+void CaptureSiglusEightArgGlyphRecord(const SiglusGlyphRecord& glyph,
+                                    uint32_t ordinal, uint32_t count,
+                                    const siglus_eightarg_owner::Vector& vector) {
+  assert(vector.begin == 0x10000);
+  assert(ordinal == 0 && count == 1);
+  PublishSiglusLookupGlyphEvent(glyph.code_unit, glyph.x, glyph.y, glyph.extent);
 }
 
 #include "../hook/adapters/siglus_lookup_glyph.inc"
@@ -102,7 +117,7 @@ void Put(uint8_t* bytes, size_t offset, T value) {
 }  // namespace
 
 int main() {
-  uint8_t record[0x48] = {};
+  uint8_t record[0x70] = {};
   expected_self = record;
   assert(CallModern() == 0 && CallLegacy() == 0 && CallEightArg() == 0 &&
          original_calls == 0);
@@ -129,6 +144,9 @@ int main() {
   Put(record, 0x38, 560.0f);
   Put(record, 0x40, 400.0f);
   Put(record, 0x44, 300.0f);
+  Put(record, 0x58, 1.0f);
+  Put(record, 0x5c, 1.0f);
+  Put(record, 0x60, 1.0f);
   g_siglus_lookup_capture_enabled = true;
   CaptureSiglusLookupGlyph(record, 1, caller, SiglusGlyphLayoutAbi::kEcxTenArguments);
   assert(publications == 1 && published.x == 400 && published.y == 300);
@@ -171,5 +189,6 @@ int main() {
   CaptureSiglusLookupGlyph(reinterpret_cast<void*>(1), 1, caller,
       test_profile.glyph_abi);
   assert(publications == 3);
+  assert(invalidations == 3); // Failed ordinal ends an eight-argument pass.
   std::puts("Siglus x86 ABI: argument bits, AL, stack cleanup and capture gates passed");
 }

@@ -507,18 +507,69 @@ membership 必须进一步与当次正文 ECX、选中 surface 和字形集合�
 下一步仍是将完整八参数结构及 occurrence 归属接入生产 profile，并回原始启动
 路径验证专用正文与内嵌查词；该边界通过后继续对应引擎音频和制卡。
 
+## 2026-09-08 Angel Beats 八参数生产接线与点击失效定位
+
+八参数 glyph/input/normal-owner 结构联合解析已接入生产准入，与十参数、十六参数
+互斥；正文外层 ticket 与 Scenario 的实际对象冻结绑定到单调 occurrence 和真实
+IPC event ID。worker、字形回调和输入均重新核对正常正文组、surface、glyph vector、
+viewport、HWND/PID。字形仅接受已证明的单位缩放和零旋转；未知变换撤销几何。
+旧语音映射继续明确排除八参数，不将 Loopback 记为引擎音频通过。
+
+v13 从原始 Start.exe 经 Fushi 的 `--japanese-locale` 启动，helper 17720，真实
+游戏 PID 27452（18:33:07，x86）；实际 DLL `07c67817…309156` 与部署哈希一致。
+原生 `SiglusEngine message` 正文已捕获并选中，字形、输入采样、结构准入都通过。
+但用户报告点击无效，实机点击正文直接推进，命中计数仍为 0。私有只读元数据
+证实 WM 与 GetKeyState 的同次 down 都是 `kTargetInvalid`，不是坐标未命中。
+
+当前正文/binding/worker occurrence 均为 14，15 个字形曾形成完整布局；连续
+字形事件无 invalid 标记。worker 读到上一轮完整布局加下一轮前缀时，尾部未对齐
+导致当前布局失效。这是逐字 transport 与完整布局消费之间的边界错误（BUG-2265）。
+现八参数回调按真实 vector ordinal/count 收齐完整批次，绑定 occurrence、body、
+surface 和 vector begin/end/capacity，所有 slots 写完后一次提交 frontier；相同
+重绘仍逐批发布以允许窗口/菜单恢复，实际变化或提前终止仍发布失效屏障。
+生产 consumer 回归在每次 slot 写入时消费，覆盖跨 ring wrap、旧 occurrence、
+失效后同句恢复；纯收集器涵盖向量重新分配、错序与容量边界。
+
+v13 全部离线门通过：x86 CTest 111/111、x64 107/107；v14 初轮全构建与
+CTest 112/112、108/108 通过。补充 vector 身份后的最终构建和完整 CTest 同样
+112/112、108/108 通过。v14 由原始 Start.exe 经日语转区重启，helper 64136，
+游戏 77612（19:02:19），实际 x86 DLL `82e7af2f…082439` 与部署一致。
+读取 slot001 后布局持续有效，generation/epoch 为 6，15 字形完整，WM down
+两次均为 `kLookupOwned`；但没有对应采样 down，队列仍为 0。WM 只屏蔽却丢弃
+payload，依赖短点击必被 GetKeyState 观察的假设不成立。
+
+v15 改由已证明的 WM sink 在 down 冻结命中票据，up 重验当前正文、几何、epoch、
+窗口线程及前台后提交一次。GetKeyState 保留输入屏蔽和弹框关闭职责；其弹框按住
+尾部使用独立业务状态，避免弹框消失后泄漏按下。取消/失焦撤销票据但仍吞掉已拥有
+的释放；新 down 回收丢失 up 的旧票据。十参数与十六参数保持既有采样提交路径。
+独立审查指出的跨线程状态访问、弹框按住尾部及诊断状态混用均已修正。
+
+最终 Windows x86/x64 Release 全构建退出 0；完整 CTest 为 113/113（40.24 秒）、
+109/109（25.96 秒）。新增真实 click policy 事务 harness 每架构 179 项检查，
+覆盖 WM-only 短点击、采样交错、重复释放、取消/失焦、跨线程、目标/epoch 失效、
+丢失释放及旧 ABI 回归。两项生成检查、manifest 22、结构 50、workflow 6 和生产
+replay 均退出 0。
+
+原始 Start.exe 经 Fushi 日语转区启动 v15，官方菜单 PID 6436 → 游戏 PID 73784
+（19:25:27，x86），helper 69692，宿主 32700。实际 DLL SHA-256 为
+`d38d5061119e9b02a6c9f75f3748cb1baa924ff9b33c1df4465e4459dbd886c4`，
+与部署一致。实机两句共 3 次点词均显示词典，点词不推进；弹框持续保持、关闭后
+同句再次查词、外点只关闭、下一次外点正常推进、新句查词均通过。文本事件为 2，
+目标代次由 `1/7` 更新为 `2/13`。私有台账仅记录元数据，游戏载荷未入库。
+
 ## Not proved
 
 Rewrite 按用户手动制卡验收记为通过，不再要求用户重复测试；上述旧会话未覆盖的
 严格同会话身份与逐句资源哈希链仍保持证据限制，不由用户验收推断补齐。
-Angel Beats 已进入游戏且 IPC 可读，专用 profile 准入失败，内嵌查词与音频后续
-阶段未验收。月彼启动复验和用户制卡验收已通过，源 entry 字节哈希尚未独立核验。未升级
+Angel Beats 专用 profile、原生正文、字形、整批几何及内嵌查词在 v15 原始路径
+实机通过；引擎语音配对与真卡 E2E 尚未验收。月彼启动复验和用户制卡验收
+已通过，源 entry 字节哈希尚未独立核验。未升级
 engine-support.yaml，未更新既有四标题 PR 或正式随包运行库。
 
 源码准备及正式工具构建脚本已维护，最终候选重建与 PE 契约自动校验均通过。上游仍含预编译 MyLib；当前源码补丁和依赖说明不宣称其完整对应源码，也不宣称已满足修改 DLL 的正式分发条件。
 
 ## Next gate
 
-Angel Beats 先完成独立 8 参数 ABI 的正文/字形调用链与输入、画布、窗口和正文
-所有权结构证明，再接入实际 profile；只推进当前首个失败边界，随后仍须验证
-对应引擎语音，不以 Loopback 替代引擎语音适配。Rewrite 与月彼不再重复验收。
+Angel Beats 核对八参数正文 occurrence 对应的引擎语音资源访问与身份绑定，
+先通过 resource/PCM 边界；不以 Loopback 替代引擎语音适配。Rewrite 与月彼不再
+重复验收。

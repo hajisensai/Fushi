@@ -1,3 +1,5 @@
+#include "siglus_lookup_message_transaction.inc"
+
 SHORT FilterSiglusLookupLeftButtonSample(SHORT raw, uintptr_t return_address,
                                          bool keyboard_table) {
   if (!g_capture_enabled) {
@@ -40,6 +42,10 @@ SHORT FilterSiglusLookupLeftButtonSample(SHORT raw, uintptr_t return_address,
         raw, popup_shield || lookup_press_latched);
   }
   SetSiglusLookupDiag(fushi_voice_hook::kLookupDiagSiglusGetKeyStateObserved);
+  if (IsSiglusLookupMessageTransactionProfile()) {
+    return FilterSiglusLookupMessageTransactionSample(raw, popup_shield,
+        direct_shield, bitmap_popup_visible, published_game);
+  }
   const bool button_down = (static_cast<uint16_t>(raw) & 0x8000u) != 0;
   const uint32_t epoch =
       g_siglus_lookup_click_epoch.load(std::memory_order_acquire);
@@ -229,7 +235,8 @@ bool ConsumeSiglusLookupInputMessage(UINT message, LPARAM lparam,
       message == fushi_voice_hook::kSiglusLookupWmLeftButtonDown ||
       message == fushi_voice_hook::kSiglusLookupWmLeftButtonDoubleClick;
   const bool is_up = message == fushi_voice_hook::kSiglusLookupWmLeftButtonUp;
-  if (!is_down && !is_up) {
+  const bool message_transaction = IsSiglusLookupMessageTransactionProfile();
+  if (!is_down && !is_up && !message_transaction) {
     return false;
   }
 
@@ -243,6 +250,9 @@ bool ConsumeSiglusLookupInputMessage(UINT message, LPARAM lparam,
       direct_popup != nullptr && IsSiglusSampledInputShieldReadyPublished(game);
   const bool popup_shield =
       direct_shield || IsLookupOverlayInputShieldVisible();
+
+  if (message_transaction)
+    return ConsumeSiglusLookupMessageTransaction(message, lparam, game, popup_shield);
 
   bool glyph_hit = false;
   SiglusLookupPressDiagnostic diagnostic;

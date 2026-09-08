@@ -263,6 +263,25 @@ void ConsumeSiglusLookupCaptures() {
       // advancing straight to `latest` would permanently drop a tail glyph.
       if (!ReadSiglusLookupGlyphEvent(seq, &event))
         break;
+      // A new message may start after the worker read its engine view. Leave
+      // its initial glyphs unread until that occurrence's body is committed.
+      if (event.occurrence > g_siglus_lookup_engine_view.occurrence) break;
+      if (event.occurrence < g_siglus_lookup_engine_view.occurrence) {
+        processed_through = seq;
+        continue;
+      }
+      if (event.reserved != 0) {
+        fushi_voice_hook::ResetSiglusLookupLayout(&g_siglus_lookup_layout);
+        fushi_voice_hook::ClearSiglusLookupGlyphCapture(&g_siglus_lookup_glyph_captures);
+        InvalidateSiglusLookupClickTarget();
+        fushi_voice_hook::g_geometry_provider_registry.Retire(g_header,
+            fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+            fushi_voice_hook::kLookupGeometryProviderIdSiglus);
+        processed_through = seq;
+        glyph_appended = true;
+        changed = true;
+        continue;
+      }
       fushi_voice_hook::AppendSiglusLookupGlyphCapture(
           static_cast<char16_t>(event.code_unit), event.design_x,
           event.design_y, event.extent, &g_siglus_lookup_glyph_captures);

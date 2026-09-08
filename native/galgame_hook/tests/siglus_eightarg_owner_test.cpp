@@ -107,5 +107,12 @@ int main() {
   Check(!owner::ReadPath(engine, frozen, nullptr, &m, &p));
   Check(!owner::ReadPath(engine, frozen, Memory::Read, &m, nullptr));
   Check(!owner::ReadPath(UINT32_MAX - 3, frozen, Memory::Read, &m, &p));
+  m = Seed();
+  m.Put(surface + 0x11c, glyphs);
+  m.Put(body + 0x156, uint8_t{0});
+  Check(owner::ReadSelectedBody(engine, frozen, Memory::Read, &m, &p));
+  Check(!Read(m, &p)); // A committed text need not have rendered yet.
+  m.Put(body + 0x160, 0u);
+  Check(!owner::ReadSelectedBody(engine, frozen, Memory::Read, &m, &p));
   std::printf("siglus_eightarg_owner: %u checks passed\n", checks);
 }
