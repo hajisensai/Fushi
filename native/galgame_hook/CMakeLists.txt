@@ -718,12 +718,23 @@ add_test(NAME fushi_directsound_format_registry_test
 # CREATE_SUSPENDED 早注入，Siglus/Enigma 自动延迟附着）两种模式，各 arch 一份。
 add_executable(fushi_voice_injector
   "injector/injector_main.cpp"
+  "injector/followed_siglus_readiness.inc"
+  "injector/attached_siglus_readiness.inc"
   "injector/child_process_policy.h"
   "injector/locale_emulator_launch.h"
 )
 target_include_directories(fushi_voice_injector PRIVATE "include" "hook" "injector")
 target_compile_definitions(fushi_voice_injector PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_link_libraries(fushi_voice_injector PRIVATE shell32 bcrypt)
+
+add_executable(fushi_siglus_child_readiness_test
+  "tests/siglus_child_readiness_test.cpp")
+target_include_directories(fushi_siglus_child_readiness_test PRIVATE "injector" "include")
+target_compile_features(fushi_siglus_child_readiness_test PRIVATE cxx_std_17)
+if(MSVC)
+  target_compile_options(fushi_siglus_child_readiness_test PRIVATE /O2 /W4 /WX /utf-8)
+endif()
+add_test(NAME fushi_siglus_child_readiness_test COMMAND fushi_siglus_child_readiness_test)
 
 # CLI-only preflight contract. The script launches only the injector itself
 # with --capabilities/invalid policy and never opens or creates a game process.

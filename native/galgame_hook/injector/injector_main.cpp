@@ -3121,6 +3121,8 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
     }
   }
 
+#include "followed_siglus_readiness.inc"
+
   // 跟随子进程后目标换人了：自动 PC hooks 的判据必须按**真实游戏镜像**重算。启动器那层
   // 没有引擎布局，只在 exe 上判一次等于对启动器型游戏永不开启——UE 样本的原始启动入口
   // 正是外层 stub，判据锚在 `<Game>\Binaries\Win64` 上，在 stub 那层恒为假。
@@ -3340,11 +3342,8 @@ int main() {
                      native_loopback_requested);
   }
 
-  // attach 模式：注入已运行进程（老路径行为不变）。
-  HANDLE target = OpenProcess(
-      PROCESS_CREATE_THREAD | PROCESS_VM_OPERATION | PROCESS_VM_WRITE |
-          PROCESS_VM_READ | PROCESS_QUERY_INFORMATION,
-      FALSE, pid);
+  // Attach also serves automatic recovery; preserve engine readiness there.
+  HANDLE target = OpenProcess(kInjectionProcessRights, FALSE, pid);
   if (target == nullptr) {
     fprintf(stderr, "OpenProcess(%lu) failed: %lu (需管理员/相同完整性级别?)\n",
             pid, GetLastError());
@@ -3356,6 +3355,7 @@ int main() {
 
   LunaOptions effective_luna = luna;
   const std::wstring target_exe = ProcessImagePath(target);
+#include "attached_siglus_readiness.inc"
   ApplyLunaProfiles(target_exe, pid, effective_luna.profile_path,
                     &effective_luna);
   if (!effective_luna.pc_hooks && !target_exe.empty() &&
