@@ -349,6 +349,31 @@ class ReaderSideSheetSectionLabel extends StatelessWidget {
 /// 抽屉贴哪一边：ッツ 形态下「导航 / 章节」贴左、「外观」贴右。
 enum ReaderSideSheetSide { left, right }
 
+/// BUG-2260：正文 WebView 上报的一次点击，是否应当**只**用来关掉压在正文之上的
+/// 侧抽屉（外观设置 / 导航），而不再当成正文点击（翻页 / 查词 / 收放控制栏）。
+///
+/// 为什么正文点击会漏过 Flutter 的 modal barrier：[showReaderSideSheet] 是
+/// `barrierColor: Colors.transparent` 的路由（ッツ 形态不给正文压暗），而
+/// **透明遮罩不画任何像素**。macOS 的平台视图命中模型恰恰以「平台视图之上有没有
+/// Flutter 绘制」为唯一判据：`FlutterCompositor` 把排在平台视图之后的 backing
+/// store 图层的 `paint_region` 写进 `FlutterMutatorView._hitTestIgnoreRegion`，
+/// 只有落在该区域的鼠标事件才会被 Flutter 截住（BUG-1692 的根因，同一机制的
+/// 另一面）。一张什么都不画的遮罩因此在 macOS 上等于不存在——点击直穿到
+/// WKWebView，抽屉的 `barrierDismissible` 永远等不到那次点击，用户看到的就是
+/// 「设置/导航开着，点正文关不掉」。Windows（WebView 是纹理）与 Android
+/// （hybrid composition）由 Flutter 统一派发指针，遮罩照常吃掉点击，JS 侧根本
+/// 收不到这次 tap，故该门在那些平台恒假、行为零变化。
+///
+/// [readerRouteIsCurrent] 是「阅读器页是不是最顶层路由」：抽屉开着时为 false。
+/// 两个条件缺一不可——只看抽屉标志会在抽屉关闭动画期误吞一次正文点击，只看路由
+/// 则会把压在正文上的**实色**遮罩对话框（那些遮罩在 macOS 上照常吃点击，JS 不会
+/// 上报 tap）也算进来。
+bool readerWebViewPointerClosesSideSheet({
+  required bool sideSheetOpen,
+  required bool readerRouteIsCurrent,
+}) =>
+    sideSheetOpen && !readerRouteIsCurrent;
+
 /// 从左或右贴边滑出一条全高抽屉路由。遮罩透明（正文照常可见），点抽屉外空白即关。
 ///
 /// 用**路由**而非页内 Stack 叠层：抽屉里有输入框（书内搜索 / 按字数跳转），焦点
