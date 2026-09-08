@@ -8,6 +8,87 @@ bool ProcessSiglusLookupClickSubmissions();
 uint64_t g_siglus_lookup_waiting_click_seq = 0;
 uint64_t g_siglus_lookup_waiting_glyph_seq = 0;
 
+// Private diagnostic metadata only. This eight-record worker-owned ring does
+// not extend SharedHeader, grant input, retain text, or alter publication.
+enum class SiglusLookupRejectReason : uint32_t {
+  kNone = 0,
+  kPublished,
+  kProfileUnavailable,
+  kTextIdentity,
+  kLayoutIncomplete,
+  kGeometryGeneration,
+  kSnapshotEpoch,
+  kTextBody,
+  kUnreadText,
+  kEngineViewUnavailable,
+  kEngineViewChanged,
+  kWindowUnavailable,
+  kForegroundChanged,
+  kSampledWindowChanged,
+  kClientUnavailable,
+  kClientTransformChanged,
+  kGlyphProjection,
+  kGlyphRectangle,
+  kGlyphMissing,
+  kDuplicate,
+  kHitPublicationRejected,  // Includes final encoding/IPC/registry validators.
+  kRuntimeReset,
+  kQueueOverwritten,
+};
+struct SiglusLookupWorkerDiagnostic {
+  volatile LONG64 seq = 0;
+  uint64_t first_queue_seq = 0;
+  uint64_t queue_seq = 0;
+  uint64_t event_id = 0;
+  uint64_t current_event_id = 0;
+  uint64_t geometry_generation = 0;
+  uint64_t current_geometry_generation = 0;
+  uint64_t snapshot_epoch = 0;
+  uint64_t current_snapshot_epoch = 0;
+  uint64_t glyph_frontier = 0;
+  uint64_t consumed_glyph_frontier = 0;
+  uint64_t text_frontier = 0;
+  uint64_t consumed_text_frontier = 0;
+  SiglusLookupRejectReason reason = SiglusLookupRejectReason::kNone;
+  uint32_t reserved = 0;
+};
+constexpr size_t kSiglusLookupWorkerDiagnosticSlots = 8;
+static_assert(sizeof(SiglusLookupWorkerDiagnostic) == 112,
+              "Private read-only diagnostic record stride");
+volatile SiglusLookupWorkerDiagnostic g_siglus_lookup_worker_diagnostics[
+    kSiglusLookupWorkerDiagnosticSlots];
+volatile LONG64 g_siglus_lookup_worker_diagnostic_count = 0;
+
+void RecordSiglusLookupWorkerDiagnostic(uint64_t first_queue_seq,
+    uint64_t queue_seq, const SiglusLookupPayload* payload,
+    SiglusLookupRejectReason reason) {
+  uint64_t next = static_cast<uint64_t>(InterlockedCompareExchange64(
+      &g_siglus_lookup_worker_diagnostic_count, 0, 0)) + 1;
+  if (next == 0) next = 1;
+  auto& record = g_siglus_lookup_worker_diagnostics[
+      next % kSiglusLookupWorkerDiagnosticSlots];
+  InterlockedExchange64(&record.seq, 0);
+  record.first_queue_seq = first_queue_seq;
+  record.queue_seq = queue_seq;
+  record.event_id = payload == nullptr ? 0 : payload->text_identity.event_id;
+  record.current_event_id = g_siglus_lookup_text_identity.event_id;
+  record.geometry_generation = payload == nullptr ? 0 : payload->geometry_generation;
+  record.current_geometry_generation = g_siglus_lookup_layout.generation;
+  record.snapshot_epoch = payload == nullptr ? 0 : payload->snapshot_epoch;
+  record.current_snapshot_epoch = g_siglus_lookup_layout.snapshot_epoch;
+  record.glyph_frontier = static_cast<uint64_t>(InterlockedCompareExchange64(
+      &g_siglus_lookup_glyph_event_count, 0, 0));
+  record.consumed_glyph_frontier = g_siglus_lookup_glyph_processed_seq;
+  record.text_frontier = static_cast<uint64_t>(InterlockedCompareExchange64(
+      &g_siglus_lookup_text_count, 0, 0));
+  record.consumed_text_frontier = g_siglus_lookup_text_processed_seq;
+  record.reason = reason;
+  record.reserved = 0;
+  InterlockedExchange64(&record.seq, static_cast<LONG64>(next));
+  InterlockedExchange64(&g_siglus_lookup_worker_diagnostic_count,
+                        static_cast<LONG64>(next));
+}
+
 bool ReadSiglusLookupGlyphEvent(uint64_t seq, SiglusLookupGlyphEvent *copy) {
   if (seq == 0 || copy == nullptr)
     return false;
@@ -51,6 +132,9 @@ bool ReadNextSiglusLookupClickSubmit(SiglusLookupClickEvent *copy,
   // bounded queue, discard the lost prefix; never read a newer slot as it.
   if (latest > kSiglusLookupClickEventSlots &&
       g_siglus_lookup_click_processed_seq < latest - kSiglusLookupClickEventSlots) {
+    RecordSiglusLookupWorkerDiagnostic(g_siglus_lookup_click_processed_seq + 1,
+        latest - kSiglusLookupClickEventSlots, nullptr,
+        SiglusLookupRejectReason::kQueueOverwritten);
     g_siglus_lookup_click_processed_seq = latest - kSiglusLookupClickEventSlots;
     g_siglus_lookup_waiting_click_seq = 0;
     g_siglus_lookup_waiting_glyph_seq = 0;
@@ -74,8 +158,32 @@ bool ReadNextSiglusLookupClickSubmit(SiglusLookupClickEvent *copy,
 void ResetSiglusLookupRuntimeLayout() {
   // Session/window/sensor loss terminates queued transactions as well as the
   // layout. Re-enabling lookup must not revive an older physical release.
-  g_siglus_lookup_click_processed_seq = static_cast<uint64_t>(
+  const uint64_t latest_click = static_cast<uint64_t>(
       InterlockedCompareExchange64(&g_siglus_lookup_click_event_count, 0, 0));
+  if (latest_click > g_siglus_lookup_click_processed_seq) {
+    // A reset can retire releases before they reach the normal submission
+    // branch. Preserve their sequence range; never guess overwritten identity.
+    SiglusLookupPayload metadata;
+    const SiglusLookupPayload* retained = nullptr;
+    if (latest_click == g_siglus_lookup_click_processed_seq + 1) {
+      auto& source = g_siglus_lookup_click_events[
+          latest_click % kSiglusLookupClickEventSlots];
+      const uint64_t before = static_cast<uint64_t>(InterlockedCompareExchange64(
+          &source.seq, 0, 0));
+      if (before == latest_click) {
+        // Only identity fields, never the body, enter this diagnostic copy.
+        metadata.text_identity = source.payload.text_identity;
+        metadata.geometry_generation = source.payload.geometry_generation;
+        metadata.snapshot_epoch = source.payload.snapshot_epoch;
+        const uint64_t after = static_cast<uint64_t>(InterlockedCompareExchange64(
+            &source.seq, 0, 0));
+        if (after == before) retained = &metadata;
+      }
+    }
+    RecordSiglusLookupWorkerDiagnostic(g_siglus_lookup_click_processed_seq + 1,
+        latest_click, retained, SiglusLookupRejectReason::kRuntimeReset);
+  }
+  g_siglus_lookup_click_processed_seq = latest_click;
   g_siglus_lookup_waiting_click_seq = 0;
   g_siglus_lookup_waiting_glyph_seq = 0;
   // The bound text event remains the same committed occurrence. Fresh glyphs
@@ -216,7 +324,13 @@ bool PublishSiglusLookupHit(const SiglusLookupPayload &payload) {
   return fushi_voice_hook::g_geometry_provider_registry.PublishHit(g_header, publication);
 }
 
-bool IsSiglusLookupPayloadEligible(const SiglusLookupPayload &payload) {
+bool IsSiglusLookupPayloadEligible(const SiglusLookupPayload &payload,
+    SiglusLookupRejectReason* rejection = nullptr) {
+  if (rejection != nullptr) *rejection = SiglusLookupRejectReason::kNone;
+  const auto reject = [rejection](SiglusLookupRejectReason reason) {
+    if (rejection != nullptr) *rejection = reason;
+    return false;
+  };
   const auto *profile = ActiveSiglusLookupProfile();
   const uint64_t latest_text = static_cast<uint64_t>(
       InterlockedCompareExchange64(&g_siglus_lookup_text_count, 0, 0));
@@ -231,22 +345,40 @@ bool IsSiglusLookupPayloadEligible(const SiglusLookupPayload &payload) {
       payload.char_index >= payload.text_units ||
       memcmp(payload.text, g_siglus_lookup_active_line,
              static_cast<size_t>(payload.text_units) * sizeof(wchar_t)) != 0) {
-    return false;
+    if (profile == nullptr) return reject(SiglusLookupRejectReason::kProfileUnavailable);
+    if (!fushi_voice_hook::IsSiglusLookupTextIdentityCurrent(
+            payload.text_identity, g_siglus_lookup_text_identity))
+      return reject(SiglusLookupRejectReason::kTextIdentity);
+    if (!g_siglus_lookup_layout.current_valid)
+      return reject(SiglusLookupRejectReason::kLayoutIncomplete);
+    if (payload.geometry_generation == 0 ||
+        payload.geometry_generation != g_siglus_lookup_layout.generation)
+      return reject(SiglusLookupRejectReason::kGeometryGeneration);
+    if (payload.snapshot_epoch == 0 ||
+        payload.snapshot_epoch != g_siglus_lookup_layout.snapshot_epoch)
+      return reject(SiglusLookupRejectReason::kSnapshotEpoch);
+    if (payload.text_units == 0) return reject(SiglusLookupRejectReason::kTextBody);
+    if (latest_text != g_siglus_lookup_text_processed_seq)
+      return reject(SiglusLookupRejectReason::kUnreadText);
+    return reject(SiglusLookupRejectReason::kTextBody);
   }
 
   const HWND game = reinterpret_cast<HWND>(payload.game_window);
   fushi_voice_hook::SiglusLookupEngineView engine_view;
-  if (!ReadSiglusLookupEngineView(game, &engine_view) ||
-      !fushi_voice_hook::SameSiglusLookupEngineView(engine_view, payload.engine_view))
-    return false;
+  if (!ReadSiglusLookupEngineView(game, &engine_view))
+    return reject(SiglusLookupRejectReason::kEngineViewUnavailable);
+  if (!fushi_voice_hook::SameSiglusLookupEngineView(engine_view, payload.engine_view))
+    return reject(SiglusLookupRejectReason::kEngineViewChanged);
   RECT client = {};
   POINT origin = {0, 0};
-  if (game == nullptr || !IsWindow(game) || GetForegroundWindow() != game ||
-      g_siglus_sampled_input_game_window.load(std::memory_order_acquire) !=
-          game ||
-      !GetClientRect(game, &client) || !ClientToScreen(game, &origin)) {
-    return false;
-  }
+  if (game == nullptr || !IsWindow(game))
+    return reject(SiglusLookupRejectReason::kWindowUnavailable);
+  if (GetForegroundWindow() != game)
+    return reject(SiglusLookupRejectReason::kForegroundChanged);
+  if (g_siglus_sampled_input_game_window.load(std::memory_order_acquire) != game)
+    return reject(SiglusLookupRejectReason::kSampledWindowChanged);
+  if (!GetClientRect(game, &client) || !ClientToScreen(game, &origin))
+    return reject(SiglusLookupRejectReason::kClientUnavailable);
   const fushi_voice_hook::SiglusLookupClientSnapshot active_client = {
       reinterpret_cast<uintptr_t>(game), origin.x, origin.y,
       client.right - client.left, client.bottom - client.top};
@@ -254,7 +386,7 @@ bool IsSiglusLookupPayloadEligible(const SiglusLookupPayload &payload) {
           payload.geometry_generation,
           SiglusLookupPayloadClientSnapshot(payload),
           g_siglus_lookup_layout.generation, active_client)) {
-    return false;
+    return reject(SiglusLookupRejectReason::kClientTransformChanged);
   }
 
   for (size_t index = 0;
@@ -266,13 +398,14 @@ bool IsSiglusLookupPayloadEligible(const SiglusLookupPayload &payload) {
     if (!fushi_voice_hook::ProjectSiglusLookupRect(
             *profile, engine_view, glyph.rect, active_client.width, active_client.height,
             &expected)) {
-      return false;
+      return reject(SiglusLookupRejectReason::kGlyphProjection);
     }
-    return payload.rect.x == expected.x && payload.rect.y == expected.y &&
+    const bool same = payload.rect.x == expected.x && payload.rect.y == expected.y &&
            payload.rect.width == expected.width &&
            payload.rect.height == expected.height;
+    return same || reject(SiglusLookupRejectReason::kGlyphRectangle);
   }
-  return false;
+  return reject(SiglusLookupRejectReason::kGlyphMissing);
 }
 
 enum class SiglusLookupSubmissionResult {
@@ -283,9 +416,10 @@ enum class SiglusLookupSubmissionResult {
 };
 
 SiglusLookupSubmissionResult CheckSiglusLookupSubmission(
-    const SiglusLookupPayload &payload, uint64_t* awaiting_glyph_seq) {
+    const SiglusLookupPayload &payload, uint64_t* awaiting_glyph_seq,
+    SiglusLookupRejectReason* rejection = nullptr) {
   *awaiting_glyph_seq = 0;
-  if (!IsSiglusLookupPayloadEligible(payload))
+  if (!IsSiglusLookupPayloadEligible(payload, rejection))
     return SiglusLookupSubmissionResult::kRejected;
   const uint64_t latest_glyph = static_cast<uint64_t>(
       InterlockedCompareExchange64(&g_siglus_lookup_glyph_event_count, 0, 0));
@@ -297,8 +431,9 @@ SiglusLookupSubmissionResult CheckSiglusLookupSubmission(
 }
 
 SiglusLookupSubmissionResult TryPublishSiglusLookupPayload(
-    const SiglusLookupPayload &payload, uint64_t* awaiting_glyph_seq) {
-  const auto initial = CheckSiglusLookupSubmission(payload, awaiting_glyph_seq);
+    const SiglusLookupPayload &payload, uint64_t* awaiting_glyph_seq,
+    SiglusLookupRejectReason* rejection = nullptr) {
+  const auto initial = CheckSiglusLookupSubmission(payload, awaiting_glyph_seq, rejection);
   if (initial != SiglusLookupSubmissionResult::kReady)
     return initial;
   const ULONGLONG now = GetTickCount64();
@@ -318,13 +453,16 @@ SiglusLookupSubmissionResult TryPublishSiglusLookupPayload(
       now >= g_siglus_lookup_last_hit_tick &&
       now - g_siglus_lookup_last_hit_tick <=
           kSiglusLookupDuplicateHitWindowMs) {
+    if (rejection != nullptr) *rejection = SiglusLookupRejectReason::kDuplicate;
     return SiglusLookupSubmissionResult::kRejected;
   }
-  const auto confirmed = CheckSiglusLookupSubmission(payload, awaiting_glyph_seq);
+  const auto confirmed = CheckSiglusLookupSubmission(payload, awaiting_glyph_seq, rejection);
   if (confirmed != SiglusLookupSubmissionResult::kReady)
     return confirmed;
-  if (!PublishSiglusLookupHit(payload))
+  if (!PublishSiglusLookupHit(payload)) {
+    if (rejection != nullptr) *rejection = SiglusLookupRejectReason::kHitPublicationRejected;
     return SiglusLookupSubmissionResult::kRejected;
+  }
   g_siglus_lookup_last_hit_identity = identity;
   g_siglus_lookup_last_hit_tick = now;
   return SiglusLookupSubmissionResult::kPublished;
@@ -348,13 +486,17 @@ bool ProcessSiglusLookupClickSubmissions() {
     return false;
   }
   uint64_t awaiting_glyph_seq = 0;
+  SiglusLookupRejectReason rejection = SiglusLookupRejectReason::kNone;
   const auto result =
-      TryPublishSiglusLookupPayload(click_event.payload, &awaiting_glyph_seq);
+      TryPublishSiglusLookupPayload(click_event.payload, &awaiting_glyph_seq, &rejection);
   if (result == SiglusLookupSubmissionResult::kAwaitingCapture) {
     g_siglus_lookup_waiting_click_seq = click_seq;
     g_siglus_lookup_waiting_glyph_seq = awaiting_glyph_seq;
     return false;
   }
+  RecordSiglusLookupWorkerDiagnostic(click_seq, click_seq, &click_event.payload,
+      result == SiglusLookupSubmissionResult::kPublished
+          ? SiglusLookupRejectReason::kPublished : rejection);
   g_siglus_lookup_click_processed_seq = click_seq;
   g_siglus_lookup_waiting_click_seq = 0;
   g_siglus_lookup_waiting_glyph_seq = 0;

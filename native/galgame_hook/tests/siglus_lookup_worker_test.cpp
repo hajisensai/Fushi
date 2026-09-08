@@ -116,12 +116,16 @@ struct Fixture {
     g_siglus_lookup_click_processed_seq = 0;
     g_siglus_lookup_waiting_click_seq = 0;
     g_siglus_lookup_waiting_glyph_seq = 0;
+    g_siglus_lookup_worker_diagnostic_count = 0;
     g_siglus_lookup_last_hit_identity = 0;
     g_siglus_lookup_last_hit_tick = 0;
     foreground = kWindow;
     window_valid = true;
     tick = 1000;
     before_second_validation = nullptr;
+    active_profile = kAnemoiSiglusLookupProfile;
+    active_view = {};
+    view_valid = true;
     g_siglus_sampled_input_game_window = kWindow;
     for (auto& slot : g_siglus_lookup_click_events) slot = {};
     for (auto& slot : g_siglus_lookup_glyph_events) slot = {};
@@ -436,6 +440,127 @@ void TestLegacyViewAndVisibilityRecheckedBeforePublish() {
   QueueSiglusLookupClickSubmit(Press());
   assert(ProcessSiglusLookupClickSubmissions() && g_header->lookup_hit_count == 1);
 }
+const volatile SiglusLookupWorkerDiagnostic& Diagnostic(uint64_t sequence) {
+  assert(sequence != 0);
+  const auto& record = g_siglus_lookup_worker_diagnostics[
+      sequence % kSiglusLookupWorkerDiagnosticSlots];
+  assert(static_cast<uint64_t>(record.seq) == sequence);
+  return record;
+}
+
+void TestWorkerRejectionReasonMetadata() {
+  constexpr SiglusLookupRejectReason expected[] = {
+      SiglusLookupRejectReason::kTextIdentity,
+      SiglusLookupRejectReason::kLayoutIncomplete,
+      SiglusLookupRejectReason::kGeometryGeneration,
+      SiglusLookupRejectReason::kSnapshotEpoch,
+      SiglusLookupRejectReason::kUnreadText,
+      SiglusLookupRejectReason::kEngineViewUnavailable,
+      SiglusLookupRejectReason::kEngineViewChanged,
+      SiglusLookupRejectReason::kForegroundChanged,
+      SiglusLookupRejectReason::kWindowUnavailable,
+      SiglusLookupRejectReason::kSampledWindowChanged,
+      SiglusLookupRejectReason::kHitPublicationRejected,
+      SiglusLookupRejectReason::kGlyphRectangle,
+  };
+  for (size_t scenario = 0; scenario < std::size(expected); ++scenario) {
+    Fixture fixture;
+    Begin();
+    auto payload = Press();
+    if (scenario == 11) ++payload.rect.x;
+    QueueSiglusLookupClickSubmit(payload);
+    switch (scenario) {
+      case 0: ++g_siglus_lookup_text_identity.event_id; break;
+      case 1: InvalidateSiglusLookupCurrentLayout(&g_siglus_lookup_layout); break;
+      case 2: ++g_siglus_lookup_layout.generation; break;
+      case 3: ++g_siglus_lookup_layout.snapshot_epoch; break;
+      case 4: PublishSiglusLookupTextSnapshot(L"XYZ", 3, {43, 7}); break;
+      case 5: view_valid = false; break;
+      case 6: ++active_view.owner; break;
+      case 7: foreground = nullptr; break;
+      case 8: window_valid = false; break;
+      case 9: g_siglus_sampled_input_game_window = nullptr; break;
+      case 10: g_header->lookup_enabled = 0; break;
+      default: break;
+    }
+    assert(!ProcessSiglusLookupClickSubmissions());
+    assert(g_header->lookup_hit_count == 0);
+    assert(g_siglus_lookup_click_processed_seq == 1);
+    assert(g_siglus_lookup_worker_diagnostic_count == 1);
+    const auto& record = Diagnostic(1);
+    assert(record.reason == expected[scenario]);
+    assert(record.queue_seq == 1 && record.first_queue_seq == 1);
+    assert(record.event_id == 42);
+    assert(record.current_event_id == g_siglus_lookup_text_identity.event_id);
+    assert(record.geometry_generation == payload.geometry_generation);
+    assert(record.current_geometry_generation == g_siglus_lookup_layout.generation);
+    assert(record.snapshot_epoch == payload.snapshot_epoch);
+    assert(record.current_snapshot_epoch == g_siglus_lookup_layout.snapshot_epoch);
+    assert(record.glyph_frontier == 3 && record.consumed_glyph_frontier == 3);
+    assert(!ProcessSiglusLookupClickSubmissions());
+    assert(g_siglus_lookup_worker_diagnostic_count == 1);
+  }
+}
+
+void TestOnlyTerminalOutcomesPublishDiagnostic() {
+  Fixture fixture;
+  Begin();
+  QueueSiglusLookupClickSubmit(Press());
+  FullRedraw();
+  for (int i = 0; i < 20; ++i) {
+    assert(!ProcessSiglusLookupClickSubmissions());
+    assert(g_siglus_lookup_worker_diagnostic_count == 0);
+  }
+  Consume();
+  assert(ProcessSiglusLookupClickSubmissions());
+  assert(Diagnostic(1).reason == SiglusLookupRejectReason::kPublished);
+  assert(Diagnostic(1).glyph_frontier == 6);
+  assert(Diagnostic(1).consumed_glyph_frontier == 6);
+  QueueSiglusLookupClickSubmit(Press());
+  assert(!ProcessSiglusLookupClickSubmissions());
+  assert(Diagnostic(2).reason == SiglusLookupRejectReason::kDuplicate);
+  assert(g_header->lookup_hit_count == 1);
+}
+
+void TestDiagnosticRingIsBoundedMetadata() {
+  Fixture fixture;
+  Begin();
+  foreground = nullptr;
+  static_assert(sizeof(SiglusLookupWorkerDiagnostic) == 112);
+  static_assert(sizeof(g_siglus_lookup_worker_diagnostics) == 8 * 112);
+  for (uint64_t i = 1; i <= 20; ++i) {
+    QueueSiglusLookupClickSubmit(Press());
+    assert(!ProcessSiglusLookupClickSubmissions());
+    assert(Diagnostic(i).queue_seq == i);
+    assert(Diagnostic(i).reason == SiglusLookupRejectReason::kForegroundChanged);
+  }
+  assert(g_siglus_lookup_worker_diagnostic_count == 20);
+  for (uint64_t i = 13; i <= 20; ++i) assert(Diagnostic(i).event_id == 42);
+  assert(g_header->lookup_hit_count == 0);
+}
+
+void TestResetAndOverflowDiagnosticRanges() {
+  {
+    Fixture fixture;
+    Begin();
+    QueueSiglusLookupClickSubmit(Press());
+    ResetSiglusLookupRuntimeLayout();
+    assert(Diagnostic(1).reason == SiglusLookupRejectReason::kRuntimeReset);
+    assert(Diagnostic(1).queue_seq == 1 && Diagnostic(1).event_id == 42);
+    assert(g_siglus_lookup_click_processed_seq == 1);
+  }
+  {
+    Fixture fixture;
+    Begin();
+    for (uint32_t i = 0; i < 6; ++i) QueueSiglusLookupClickSubmit(Press(i % 3));
+    assert(ProcessSiglusLookupClickSubmissions());
+    assert(Diagnostic(1).reason == SiglusLookupRejectReason::kQueueOverwritten);
+    assert(Diagnostic(1).first_queue_seq == 1 && Diagnostic(1).queue_seq == 2);
+    assert(Diagnostic(1).event_id == 0);  // No overwritten identity is guessed.
+    assert(Diagnostic(2).reason == SiglusLookupRejectReason::kPublished);
+    assert(Diagnostic(2).queue_seq == 3 && g_header->lookup_hit_count == 1);
+  }
+}
 }  // namespace
 
 int main() {
@@ -455,5 +580,9 @@ int main() {
   TestRegistryRejectionIsTerminal();
   TestWindowInvalidationIsTerminal();
   TestLegacyViewAndVisibilityRecheckedBeforePublish();
-  std::puts("siglus_lookup_worker_test: 16 scenarios passed");
+  TestWorkerRejectionReasonMetadata();
+  TestOnlyTerminalOutcomesPublishDiagnostic();
+  TestDiagnosticRingIsBoundedMetadata();
+  TestResetAndOverflowDiagnosticRanges();
+  std::puts("siglus_lookup_worker_test: 20 scenarios passed (12 rejection variants)");
 }

@@ -318,7 +318,7 @@ class AdapterStructureTest(unittest.TestCase):
         siglus_publish = self._function_body(
             siglus, "SiglusLookupSubmissionResult TryPublishSiglusLookupPayload("
         )
-        self.assertEqual(siglus_publish.count("CheckSiglusLookupSubmission(payload, awaiting_glyph_seq)"), 2)
+        self.assertEqual(siglus_publish.count("CheckSiglusLookupSubmission(payload, awaiting_glyph_seq, rejection)"), 2)
         siglus_capture = self._function_body(
             siglus, "void ConsumeSiglusLookupCaptures()"
         )
@@ -344,7 +344,7 @@ class AdapterStructureTest(unittest.TestCase):
         waiting = self._function_body(submit, "if (result == SiglusLookupSubmissionResult::kAwaitingCapture)")
         self.assertNotIn("g_siglus_lookup_click_processed_seq =", waiting)
         check = self._function_body(source, "SiglusLookupSubmissionResult CheckSiglusLookupSubmission(")
-        self.assertIn("IsSiglusLookupPayloadEligible(payload)", check)
+        self.assertIn("IsSiglusLookupPayloadEligible(payload, rejection)", check)
         self.assertIn("latest_glyph != g_siglus_lookup_glyph_processed_seq", check)
         eligible = self._function_body(source, "bool IsSiglusLookupPayloadEligible(")
         self.assertIn("IsSiglusLookupLayoutSubmissionCurrent", eligible)
