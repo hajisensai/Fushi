@@ -71,7 +71,7 @@ SettingsDestination buildReadingDestination() {
             controlBelow: true,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 4,
+              order: 5,
             ),
             options: <SettingsSegmentOption<String>>[
               SettingsSegmentOption<String>(
@@ -98,7 +98,7 @@ SettingsDestination buildReadingDestination() {
             controlBelow: true,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 5,
+              order: 6,
             ),
             options: <SettingsSegmentOption<String>>[
               SettingsSegmentOption<String>(
@@ -132,7 +132,7 @@ SettingsDestination buildReadingDestination() {
                 c.readerSource.readerSpreadMode != 'off',
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 6,
+              order: 7,
             ),
             // label 用本地化全称（从右到左/从左到右），不再用只有排版从业者
             // 认识的 RTL/LTR 缩写；分段条过宽时 _SegmentedStripHost 自带横向
@@ -164,7 +164,7 @@ SettingsDestination buildReadingDestination() {
             visible: isVertical,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 13,
+              order: 14,
             ),
             options: <SettingsSegmentOption<String>>[
               SettingsSegmentOption<String>(
@@ -192,7 +192,7 @@ SettingsDestination buildReadingDestination() {
             controlBelow: true,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 12,
+              order: 13,
             ),
             options: <SettingsSegmentOption<String>>[
               SettingsSegmentOption<String>(
@@ -250,6 +250,27 @@ SettingsDestination buildReadingDestination() {
               notifyReaderSettingsChanged(c);
             },
           ),
+          // 正文字重。纯 CSS 键（只改 body 的 `font-weight`，不动几何），故走
+          // notifyReaderSettingsChanged 的活样式热替换，不需要重排章节。
+          // 400 = CSS `normal` 是默认值，落到生成器是「不发声明」= 书自带样式原样。
+          SettingsStepperItem(
+            id: 'reading_display.font_weight',
+            title: t.reader_font_weight,
+            icon: Icons.format_bold,
+            min: 100,
+            max: 900,
+            step: 100,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.layout,
+              order: 2,
+            ),
+            value: (SettingsContext c) => c.readerSource.readerFontWeight,
+            format: (double v) => '${v.round()}',
+            onChanged: (SettingsContext c, double v) {
+              c.readerSource.setReaderFontWeight(v);
+              notifyReaderSettingsChanged(c);
+            },
+          ),
           SettingsStepperItem(
             id: 'reading_display.line_height',
             title: t.reader_line_height,
@@ -259,7 +280,7 @@ SettingsDestination buildReadingDestination() {
             step: 0.1,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 2,
+              order: 3,
             ),
             value: (SettingsContext c) => c.readerSource.readerLineHeight,
             format: (double v) => v.toStringAsFixed(2),
@@ -278,7 +299,7 @@ SettingsDestination buildReadingDestination() {
             step: 1,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 3,
+              order: 4,
             ),
             value: (SettingsContext c) => c.readerSource.readerTextIndentation,
             format: (double v) => '${v.round()}',
@@ -298,7 +319,7 @@ SettingsDestination buildReadingDestination() {
             step: 0.1,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 18,
+              order: 19,
             ),
             value: (SettingsContext c) => c.readerSource.readerParagraphSpacing,
             format: (double v) => '${v.toStringAsFixed(1)}em',
@@ -320,7 +341,7 @@ SettingsDestination buildReadingDestination() {
             step: 1,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 7,
+              order: 8,
             ),
             value: (SettingsContext c) =>
                 c.readerSource.readerPageColumns.toDouble(),
@@ -343,7 +364,7 @@ SettingsDestination buildReadingDestination() {
             step: 1,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 8,
+              order: 9,
             ),
             value: (SettingsContext c) => c.readerSource.readerMarginTop,
             format: (double v) => '${v.round()}%',
@@ -361,7 +382,7 @@ SettingsDestination buildReadingDestination() {
             step: 1,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 9,
+              order: 10,
             ),
             value: (SettingsContext c) => c.readerSource.readerMarginBottom,
             format: (double v) => '${v.round()}%',
@@ -379,7 +400,7 @@ SettingsDestination buildReadingDestination() {
             step: 1,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 10,
+              order: 11,
             ),
             value: (SettingsContext c) => c.readerSource.readerMarginLeft,
             format: (double v) => '${v.round()}%',
@@ -397,7 +418,7 @@ SettingsDestination buildReadingDestination() {
             step: 1,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 11,
+              order: 12,
             ),
             value: (SettingsContext c) => c.readerSource.readerMarginRight,
             format: (double v) => '${v.round()}%',
@@ -681,7 +702,7 @@ SettingsDestination buildReadingDestination() {
             icon: Icons.format_align_justify,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 14,
+              order: 15,
             ),
             value: (SettingsContext c) =>
                 c.readerSource.readerEnableTextJustification,
@@ -697,7 +718,7 @@ SettingsDestination buildReadingDestination() {
             visible: isVertical,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 15,
+              order: 16,
             ),
             value: (SettingsContext c) =>
                 c.readerSource.readerEnableVerticalFontKerning,
@@ -713,7 +734,7 @@ SettingsDestination buildReadingDestination() {
             visible: isVertical,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 16,
+              order: 17,
             ),
             value: (SettingsContext c) => c.readerSource.readerEnableFontVPAL,
             onChanged: (SettingsContext c, bool value) {
@@ -727,7 +748,7 @@ SettingsDestination buildReadingDestination() {
             icon: Icons.style_outlined,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 17,
+              order: 18,
             ),
             value: (SettingsContext c) =>
                 c.readerSource.readerPrioritizeReaderStyles,
@@ -744,7 +765,7 @@ SettingsDestination buildReadingDestination() {
             icon: Icons.blur_on_outlined,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 19,
+              order: 20,
             ),
             value: (SettingsContext c) => c.readerSource.readerBlurImages,
             onChanged: (SettingsContext c, bool value) {
@@ -764,7 +785,7 @@ SettingsDestination buildReadingDestination() {
             icon: Icons.collections_bookmark_outlined,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
-              order: 20,
+              order: 21,
             ),
             value: (SettingsContext c) => c.readerSource.readerMergeImagePages,
             onChanged: (SettingsContext c, bool value) {

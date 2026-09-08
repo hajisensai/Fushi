@@ -1504,6 +1504,18 @@ class ReaderFushiSource extends ReaderMediaSource {
     onSettingsChangedLive?.call();
   }
 
+  /// 正文字重。UI 侧（SettingsStepperItem）值域是 double，存储与 CSS 侧是整数轴，
+  /// 故在此边界一次性 `round()`，不让 `400.0` 这类值流进 CSS 生成器。
+  double get readerFontWeight => (readerSettings?.fontWeight ??
+          getPreference<int>(key: 'font_weight', defaultValue: 400))
+      .toDouble();
+  Future<void> setReaderFontWeight(double v) async {
+    final int weight = v.round();
+    await (readerSettings?.setFontWeight(weight) ??
+        setPreference<int>(key: 'font_weight', value: weight));
+    onSettingsChangedLive?.call();
+  }
+
   double get lyricsFontSize =>
       readerSettings?.lyricsFontSize ??
       getPreference<double>(key: 'lyrics_font_size', defaultValue: 24);

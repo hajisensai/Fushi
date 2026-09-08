@@ -4477,5 +4477,6 @@
   "yomitan_port_kill_failed": "No se pudo finalizar $process. Finalícelo manualmente, luego reintente.",
   "yomitan_port_kill_protected": "$process es un proceso crítico del sistema — Fushi no lo finalizará. Cambie el puerto en su lugar.",
   "yomitan_port_kill_self_instance": "Este proceso es otra instancia en ejecución de esta app.",
-  "anki_reposition_done_skipped": "Repositioned $count new cards; $skipped were skipped because they are no longer new."
+  "anki_reposition_done_skipped": "Repositioned $count new cards; $skipped were skipped because they are no longer new.",
+  "reader_font_weight": "Grosor de fuente"
 }
