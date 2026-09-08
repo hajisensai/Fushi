@@ -240,7 +240,9 @@ void main() {
       final String anyFloating = _slice(
         src,
         '  bool get _anyChromeFloating =>',
-        '  /// BUG-1343',
+        // 结束锚点用结构（下一个 getter 定义），不用某条注释：BUG-1343 那段
+        // macOS 拖拽带的文档注释已随该功能删除。
+        '  double get _readerTopOffset =>',
       );
       expect(
         anyFloating.contains('(_topProgressFloating && !_statusFooterEnabled)'),

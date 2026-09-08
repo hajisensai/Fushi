@@ -19,7 +19,7 @@ import 'package:fushi/src/anki/anki_media_dedup_dialogs.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_mini_bar.dart';
 import 'package:fushi/src/onboarding/recommended_pack_tutorial_prompt.dart';
 import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
-import 'package:fushi/src/utils/components/fushi_windows_title_bar.dart';
+import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/utils/components/nav_rail_brand_button.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/pages/implementations/download_backend_setup_dialog.dart';
@@ -1207,12 +1207,13 @@ class _HomePageState extends BasePageState<HomePage>
   }
 
   Widget _buildDesktopLayout(WindowSizeClass sizeClass) {
-    // Windows 自绘标题栏（[FushiWindowsTitleBar.isEnabled]）已经把当前 tab 名画在
-    // 应用顶栏上，主导航 rail 始终可见，再叠一层「隐藏 rail + 页头返回箭头」的全屏
-    // 设置就成了没有来源的第二条返回出口。**只有 Windows 走这个新路径**：macOS
-    // （交通灯预留 BUG-869）、Linux、横屏 Android 平板都保持原分支，它们的顶栏没有
-    // tab 名、也没有 rail 常驻的保证。
-    if (_visibleTab == HomeTab.settings && !FushiWindowsTitleBar.isEnabled) {
+    // 自绘标题栏（[FushiDesktopTitleBar.isEnabled]，Windows + macOS）已经把当前
+    // tab 名画在应用顶栏上，主导航 rail 始终可见，再叠一层「隐藏 rail + 页头返回
+    // 箭头」的全屏设置就成了没有来源的第二条返回出口。macOS 现在与 Windows 同壳，
+    // 设置页因此也是「rail 常驻 + 二栏 list-detail」（用户拍板：两端一致）。
+    // Linux、横屏 Android 平板仍走原分支：它们的顶栏没有 tab 名、也没有 rail 常驻
+    // 的保证。
+    if (_visibleTab == HomeTab.settings && !FushiDesktopTitleBar.isEnabled) {
       // 设置标签（全部设计系统）：隐藏 3 图标侧栏，全屏二栏（内部
       // MaterialSupportingPaneLayout），左上返回箭头切回来源 tab（参考 Mihon
       // 宽屏设置）。Cupertino 桌面也走这里——叶子控件保持 Cupertino 皮肤，但外壳
@@ -1222,12 +1223,11 @@ class _HomePageState extends BasePageState<HomePage>
       return Scaffold(
         resizeToAvoidBottomInset: false,
         body: SafeArea(
-          // macOS 透明标题栏 + full-size content view 下，交通灯不计入
-          // MediaQuery.padding，返回箭头会被压在按钮下方。预留标题栏高度作为
-          // SafeArea 下限，让顶部内容整体让位（BUG-869）。其它平台 top=0 无影响。
-          minimum: EdgeInsets.only(
-            top: Platform.isMacOS ? kMacTitleBarHeight : 0,
-          ),
+          // 这里曾按 BUG-869 预留一条 macOS 标题栏高度：透明标题栏 +
+          // full-size content view 下交通灯不计入 MediaQuery.padding，会压住返回
+          // 箭头。macOS 改用自绘顶栏后交通灯已被隐藏（`main()` 的
+          // `windowButtonVisibility: false`），且这条分支在 macOS 上根本不再命中
+          // （[FushiDesktopTitleBar.isEnabled] 恒真），预留带随之删除。
           child: FocusTraversalGroup(
             child: _buildSettingsTabContent(showBackButton: true),
           ),
@@ -1257,12 +1257,10 @@ class _HomePageState extends BasePageState<HomePage>
     return Scaffold(
       resizeToAvoidBottomInset: false,
       body: SafeArea(
-        // macOS 交通灯保留带：透明标题栏 + full-size content view 下交通灯不计入
-        // SafeArea，导航 rail 顶部会被红黄绿按钮压住。预留标题栏高度作为下限，
-        // 把整行内容下移一条标题栏（BUG-869）。其它平台 top=0，零影响。
-        minimum: EdgeInsets.only(
-          top: Platform.isMacOS ? kMacTitleBarHeight : 0,
-        ),
+        // 这里曾是 macOS 交通灯保留带（BUG-869）：透明标题栏 + full-size content
+        // view 下交通灯不计入 SafeArea，会压住导航 rail 顶部。macOS 现在与 Windows
+        // 一样自绘顶栏、交通灯在 `main()` 里被隐藏，rail 本来就落在顶栏之下，
+        // 再留一条 28pt 就是纯空白。
         // Two traversal groups so Tab / Shift+Tab walk each region as one block
         // in visual order (whole rail, then whole content) instead of zig-zagging
         // between the rail and the content pane row-by-row.

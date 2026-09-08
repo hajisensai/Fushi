@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/utils/components/fushi_windows_title_bar.dart';
+import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:window_manager/window_manager.dart';
 
-/// [FushiWindowsTitleBar] 把整棵 app 子树（`FushiAppUiScale` → 全局快捷键 Focus 节点
+/// [FushiDesktopTitleBar] 把整棵 app 子树（`FushiAppUiScale` → 全局快捷键 Focus 节点
 /// → `FushiFocusRoot` 焦点控制器 → Navigator）挂在自己下面。这些层里除 Navigator 外
 /// 都没有 key，所以**它们的 Element 身份完全由本组件 build 出的 widget 树形状决定**。
 ///
@@ -42,7 +42,7 @@ void main() {
 
   tearDown(() {
     // 静态 owner 集合是进程级的，用例之间必须归零，否则会污染后续用例。
-    FushiWindowsTitleBar.setContentFullscreen(owner: owner, enabled: false);
+    FushiDesktopTitleBar.setContentFullscreen(owner: owner, enabled: false);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(const MethodChannel('window_manager'), null);
   });
@@ -50,8 +50,10 @@ void main() {
   testWidgets('进出全屏不重建标题栏下方子树，焦点保持原位', (WidgetTester tester) async {
     await tester.pumpWidget(
       const MaterialApp(
-        home:
-            FushiWindowsTitleBar(title: Text('Fushi'), child: _SubtreeProbe()),
+        home: FushiDesktopTitleBar(
+          title: Text('Fushi'),
+          child: _SubtreeProbe(),
+        ),
       ),
     );
     await tester.pump();
@@ -64,12 +66,14 @@ void main() {
     expect(before.node.hasFocus, isTrue, reason: '前置条件：焦点先落在子树里');
 
     // 进全屏。
-    FushiWindowsTitleBar.setContentFullscreen(owner: owner, enabled: true);
+    FushiDesktopTitleBar.setContentFullscreen(owner: owner, enabled: true);
     await tester.pump();
 
     expect(
       identical(
-          tester.state<_SubtreeProbeState>(find.byType(_SubtreeProbe)), before),
+        tester.state<_SubtreeProbeState>(find.byType(_SubtreeProbe)),
+        before,
+      ),
       isTrue,
       reason: '进全屏时标题栏下方子树被重建了——全局快捷键 Focus 节点与焦点控制器'
           '（都没有 key）会一起销毁重建，焦点必然丢失。',
@@ -77,12 +81,14 @@ void main() {
     expect(before.node.hasFocus, isTrue, reason: '进全屏后焦点必须仍在原处');
 
     // 出全屏。
-    FushiWindowsTitleBar.setContentFullscreen(owner: owner, enabled: false);
+    FushiDesktopTitleBar.setContentFullscreen(owner: owner, enabled: false);
     await tester.pump();
 
     expect(
       identical(
-          tester.state<_SubtreeProbeState>(find.byType(_SubtreeProbe)), before),
+        tester.state<_SubtreeProbeState>(find.byType(_SubtreeProbe)),
+        before,
+      ),
       isTrue,
       reason: '出全屏时标题栏下方子树被重建了（同上）。',
     );
@@ -92,8 +98,10 @@ void main() {
   testWidgets('全屏态下 resize 边框零命中区，widget 类型不变', (WidgetTester tester) async {
     await tester.pumpWidget(
       const MaterialApp(
-        home:
-            FushiWindowsTitleBar(title: Text('Fushi'), child: _SubtreeProbe()),
+        home: FushiDesktopTitleBar(
+          title: Text('Fushi'),
+          child: _SubtreeProbe(),
+        ),
       ),
     );
     await tester.pump();
@@ -106,7 +114,7 @@ void main() {
       const <ResizeEdge>[
         ResizeEdge.topLeft,
         ResizeEdge.top,
-        ResizeEdge.topRight
+        ResizeEdge.topRight,
       ],
       reason: 'window_manager 的 TitleBarStyle.hidden 只吃掉顶边，顶边三个 resize '
           '把手必须由 Flutter 侧补。',
@@ -114,7 +122,7 @@ void main() {
     // 顶栏可见。
     expect(find.byIcon(Icons.close_rounded), findsOneWidget);
 
-    FushiWindowsTitleBar.setContentFullscreen(owner: owner, enabled: true);
+    FushiDesktopTitleBar.setContentFullscreen(owner: owner, enabled: true);
     await tester.pump();
 
     expect(
@@ -122,11 +130,7 @@ void main() {
       findsOneWidget,
       reason: '全屏态必须仍是 DragToResizeArea——换成别的 widget 类型会让整棵子树重建。',
     );
-    expect(
-      area().enableResizeEdges,
-      isEmpty,
-      reason: '全屏时不得留任何 resize 命中区。',
-    );
+    expect(area().enableResizeEdges, isEmpty, reason: '全屏时不得留任何 resize 命中区。');
     // 顶栏隐藏。
     expect(find.byIcon(Icons.close_rounded), findsNothing);
   });

@@ -2089,7 +2089,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     }
     final Color fg = _themeTextColor();
     return Positioned(
-      top: _stableTopInset + _macosWindowTitlebarInset,
+      top: _stableTopInset,
       left: MediaQuery.viewPaddingOf(context).left,
       right: MediaQuery.viewPaddingOf(context).right,
       // 焦点排除在 ReaderDesktopHeader 内部（纯指针面，TODO-700 不变式）；底栏的
@@ -2356,7 +2356,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       return const SizedBox.shrink();
     }
     return Positioned(
-      top: _stableTopInset + _macosWindowTitlebarInset,
+      top: _stableTopInset,
       left: 0,
       right: 0,
       height: kReaderHoverRevealStripHeight,
@@ -2482,7 +2482,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
               );
 
     return Positioned(
-      top: _stableTopInset + _macosWindowTitlebarInset,
+      top: _stableTopInset,
       left: 16,
       right: 16,
       child: Align(

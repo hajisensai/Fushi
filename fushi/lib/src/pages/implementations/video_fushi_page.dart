@@ -31,7 +31,7 @@ import 'package:fushi/src/media/tracking/media_tracking_service.dart'
     show kMediaTrackingEnabled;
 import 'package:fushi/src/pages/implementations/video_loading_overlay.dart';
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
-import 'package:fushi/src/utils/components/fushi_windows_title_bar.dart';
+import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 // 只取语义枚举与调色板：视频页的通知一律走左上角 _showOsd，不得用 FushiToast
 // （BUG-931 有守卫），故刻意不 import 整套 toast API。
 import 'package:fushi/src/utils/misc/toast_severity.dart';
@@ -85,6 +85,7 @@ import 'package:fushi/src/media/video/video_controls_focus_gate.dart';
 import 'package:fushi/src/media/video/video_controls_theme_pair.dart';
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_danmaku_overlay.dart';
+import 'package:fushi/src/media/video/video_backing_render_size.dart';
 import 'package:fushi/src/media/video/video_danmaku_source.dart';
 import 'package:fushi/src/media/video/video_filename_parser.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
@@ -2011,11 +2012,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     VideoDisplayClaim.claim(this);
     // TODO-099: 进入视频页强制横屏（移动端），退出 [dispose] 还原；桌面 no-op。
     unawaited(_lockLandscapeForVideo());
-    // BUG-973: 进入视频页隐藏 macOS 系统交通灯（左上角三个圆点），退出 [dispose] 恢复。
-    // 交通灯浮在透明标题栏 + 全尺寸内容视图之上，会遮住视频顶栏返回按钮 / 左上角 OSD
-    // 提示（用户报告）。仅 macOS 有交通灯；Windows / Linux / 移动端恒 no-op。用户仍可
-    // Esc / 顶栏返回按钮 / Cmd+Q / 进原生全屏退出，不损失退出口。
-    unawaited(setMacOSTrafficLightsHidden(true));
+    // BUG-973 的「进页隐藏 / 退页恢复 macOS 交通灯」已删除：macOS 改用自绘 MD3 顶栏
+    // 后，`main()` 启动时就把三个圆点永久隐藏了（`windowButtonVisibility: false`），
+    // 视频页再隐藏一次是重复，退页恢复更会把它们放回来（正是 BUG-973 的症状）。
+    // 唯一仍需重申的时机是「退出原生全屏」——AppKit 重建标题栏视图会复位
+    // `isHidden`，那条重申留在 [_exitVideoNativeFullscreen] 与
+    // [FushiDesktopTitleBar] 的全屏监听里。
     // TODO-158/BUG-219: 进入视频页显式持有「沉浸隐藏系统栏」所有权（移动端）。原先
     // 只靠 [AppModel.openMedia] 在打开媒体时一次性设 immersiveSticky（书 / 视频共用
     // 入口），从不重申 → 后台返回 / 通知栏交互 / 全屏路由后系统栏残留。退出由
@@ -3830,7 +3832,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       WindowsImeSpaceChannel.clearHandler(this);
       // Abnormal route teardown must never leave the app frame hidden. The
       // normal fullscreen exit releases this owner only after HWND restoration.
-      FushiWindowsTitleBar.setContentFullscreen(
+      FushiDesktopTitleBar.setContentFullscreen(
         owner: this,
         enabled: false,
       );
@@ -6758,8 +6760,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     }
     // TODO-099: 还原屏幕方向允许态（移动端），不把其他页锁死在横屏；桌面 no-op。
     unawaited(_restoreOrientationOnExit());
-    // BUG-973: 恢复 macOS 系统交通灯（与 initState 的隐藏对称）；非 macOS 恒 no-op。
-    unawaited(setMacOSTrafficLightsHidden(false));
+    // 这里曾与 initState 对称地恢复 macOS 交通灯（BUG-973）。交通灯现在是全局
+    // 永久隐藏（`main()` 的 `windowButtonVisibility: false`），退视频页恢复它们
+    // 等于让三个系统圆点重新压在自绘顶栏上，故整条删除。
   }
 
   Future<void> _setLockWindowAspectRatio(bool value) async {
