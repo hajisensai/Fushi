@@ -41,9 +41,9 @@ void main() {
       expect(ReaderCaretScripts.scrollPageInvocation(false),
           'JSON.stringify(window.fushiCaret.scrollPage(false))');
       expect(ReaderCaretScripts.instantScrollInvocation(true),
-          'window.fushiCaret.setInstantScroll(true)');
+          'window.fushiCaret && window.fushiCaret.setInstantScroll(true)');
       expect(ReaderCaretScripts.instantScrollInvocation(false),
-          'window.fushiCaret.setInstantScroll(false)');
+          'window.fushiCaret && window.fushiCaret.setInstantScroll(false)');
     });
 
     test('jumpDict passes the direction boolean through (TODO-070 go-to-dict)',

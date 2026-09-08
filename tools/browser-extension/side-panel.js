@@ -261,6 +261,9 @@
     }
     var wheelSpeed = parseFloat(theme['--fushi-wheel-speed']);
     window.__fushiPopupWheelSpeed = isFinite(wheelSpeed) && wheelSpeed > 0 ? wheelSpeed : 1;
+    // BUG-2267：墨水屏「瞬时滚动」随主题下发（app popupInstantScroll），popup.js 的 wheel
+    // 监听读同名全局改走固定步长瞬跳。缺该 key = 旧 app，保持关闭。
+    window.__fushiPopupInstantScroll = theme['--fushi-instant-scroll'] === '1';
     // 用户拖过尺寸（lookupUserResized）后，本会话内不再让主题下发的宽高盖掉用户的选择；
     // 拖拽结果经 popupSize 回写 app，下次会话由主题带回来。
     lookupThemeForBox = theme;

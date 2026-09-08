@@ -309,6 +309,7 @@
   "anki_reposition_dicts_hint": "Hidden frequency dictionaries are not loaded; unhide them in dictionary management first. Nothing selected means all loaded dictionaries.",
   "anki_reposition_dicts_none": "No frequency dictionaries are loaded.",
   "anki_reposition_done": "Repositioned $count new cards.",
+  "anki_reposition_done_skipped": "Repositioned $count new cards; $skipped were skipped because they are no longer new.",
   "anki_reposition_empty": "This deck has no new cards.",
   "anki_reposition_failed": "Reorder failed: $error",
   "anki_reposition_gather_order_hint": "If the deck's options use random new card order, positions are ignored. Set the new card gather/sort order to sequential.",
@@ -2684,6 +2685,8 @@
   "popup_bottom_docked": "Popup ancorato in basso",
   "popup_bottom_docked_hint": "Fissa il popup di ricerca come un pannello a tutta larghezza in fondo allo schermo invece di seguire la parola cercata.",
   "popup_clear_sentence_draft_tooltip": "Cancella le frasi aggiunte",
+  "popup_compact_glossaries": "Compact glossaries",
+  "popup_compact_glossaries_hint": "Show dictionary glossary entries inline, separated by ' | ', instead of one per line in the lookup popup.",
   "popup_ctx_adjust_button": "Regola contesto",
   "popup_ctx_box_current": "Current",
   "popup_ctx_box_empty": "(nessuno)",
@@ -4476,6 +4479,5 @@
   "yomitan_port_kill_confirm_title": "Terminare il processo che usa la porta $port?",
   "yomitan_port_kill_failed": "Impossibile terminare $process. Terminalo manualmente, poi riprova.",
   "yomitan_port_kill_protected": "$process è un processo di sistema critico — Fushi non lo terminerà. Cambia la porta.",
-  "yomitan_port_kill_self_instance": "Questo processo è un'altra istanza in esecuzione di questa app.",
-  "anki_reposition_done_skipped": "Repositioned $count new cards; $skipped were skipped because they are no longer new."
+  "yomitan_port_kill_self_instance": "Questo processo è un'altra istanza in esecuzione di questa app."
 }

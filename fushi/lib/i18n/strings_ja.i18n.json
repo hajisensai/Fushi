@@ -309,6 +309,7 @@
   "anki_reposition_dicts_hint": "Hidden frequency dictionaries are not loaded; unhide them in dictionary management first. Nothing selected means all loaded dictionaries.",
   "anki_reposition_dicts_none": "No frequency dictionaries are loaded.",
   "anki_reposition_done": "Repositioned $count new cards.",
+  "anki_reposition_done_skipped": "Repositioned $count new cards; $skipped were skipped because they are no longer new.",
   "anki_reposition_empty": "This deck has no new cards.",
   "anki_reposition_failed": "Reorder failed: $error",
   "anki_reposition_gather_order_hint": "If the deck's options use random new card order, positions are ignored. Set the new card gather/sort order to sequential.",
@@ -2684,6 +2685,8 @@
   "popup_bottom_docked": "下部固定ポップアップ",
   "popup_bottom_docked_hint": "辞書ポップアップを、引いた単語に追従させる代わりに、画面下部の全幅パネルとして固定します。",
   "popup_clear_sentence_draft_tooltip": "追加した文をクリア",
+  "popup_compact_glossaries": "コンパクト釈義",
+  "popup_compact_glossaries_hint": "ポップアップの釈義項目を1行ずつではなく「 | 」区切りで同じ行に表示します。",
   "popup_ctx_adjust_button": "文脈を調整",
   "popup_ctx_box_current": "Current",
   "popup_ctx_box_empty": "（なし）",
@@ -4476,6 +4479,5 @@
   "yomitan_port_kill_confirm_title": "ポート$portを使用中のプロセスを終了しますか？",
   "yomitan_port_kill_failed": "$processを終了できませんでした。手動で終了してから再試行してください。",
   "yomitan_port_kill_protected": "$processは重要なシステムプロセスです — Fushiでは終了しません。代わりにポートを変更してください。",
-  "yomitan_port_kill_self_instance": "このプロセスは、このアプリの別のインスタンスです。",
-  "anki_reposition_done_skipped": "Repositioned $count new cards; $skipped were skipped because they are no longer new."
+  "yomitan_port_kill_self_instance": "このプロセスは、このアプリの別のインスタンスです。"
 }

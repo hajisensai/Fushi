@@ -309,6 +309,7 @@
   "anki_reposition_dicts_hint": "Hidden frequency dictionaries are not loaded; unhide them in dictionary management first. Nothing selected means all loaded dictionaries.",
   "anki_reposition_dicts_none": "No frequency dictionaries are loaded.",
   "anki_reposition_done": "Repositioned $count new cards.",
+  "anki_reposition_done_skipped": "Repositioned $count new cards; $skipped were skipped because they are no longer new.",
   "anki_reposition_empty": "This deck has no new cards.",
   "anki_reposition_failed": "Reorder failed: $error",
   "anki_reposition_gather_order_hint": "If the deck's options use random new card order, positions are ignored. Set the new card gather/sort order to sequential.",
@@ -2684,6 +2685,8 @@
   "popup_bottom_docked": "หน้าต่างค้นคำติดด้านล่าง",
   "popup_bottom_docked_hint": "ปักหน้าต่างค้นคำเป็นแผงเต็มความกว้างที่ด้านล่างของหน้าจอ แทนการตามตำแหน่งคำที่ค้น",
   "popup_clear_sentence_draft_tooltip": "ล้างประโยคที่เพิ่มไว้",
+  "popup_compact_glossaries": "Compact glossaries",
+  "popup_compact_glossaries_hint": "Show dictionary glossary entries inline, separated by ' | ', instead of one per line in the lookup popup.",
   "popup_ctx_adjust_button": "ปรับบริบท",
   "popup_ctx_box_current": "Current",
   "popup_ctx_box_empty": "(ไม่มี)",
@@ -4476,6 +4479,5 @@
   "yomitan_port_kill_confirm_title": "จบโปรเซสที่ใช้พอร์ต $port หรือไม่?",
   "yomitan_port_kill_failed": "ไม่สามารถจบ $process ได้ กรุณาจบด้วยตนเองแล้วลองใหม่",
   "yomitan_port_kill_protected": "$process เป็นโปรเซสระบบที่สำคัญ — Fushi จะไม่จบโปรเซสนี้ เปลี่ยนพอร์ตแทน",
-  "yomitan_port_kill_self_instance": "โปรเซสนี้เป็นอินสแตนซ์อื่นของแอปนี้ที่กำลังทำงานอยู่",
-  "anki_reposition_done_skipped": "Repositioned $count new cards; $skipped were skipped because they are no longer new."
+  "yomitan_port_kill_self_instance": "โปรเซสนี้เป็นอินสแตนซ์อื่นของแอปนี้ที่กำลังทำงานอยู่"
 }

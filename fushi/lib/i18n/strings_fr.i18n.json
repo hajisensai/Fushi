@@ -309,6 +309,7 @@
   "anki_reposition_dicts_hint": "Hidden frequency dictionaries are not loaded; unhide them in dictionary management first. Nothing selected means all loaded dictionaries.",
   "anki_reposition_dicts_none": "No frequency dictionaries are loaded.",
   "anki_reposition_done": "Repositioned $count new cards.",
+  "anki_reposition_done_skipped": "Repositioned $count new cards; $skipped were skipped because they are no longer new.",
   "anki_reposition_empty": "This deck has no new cards.",
   "anki_reposition_failed": "Reorder failed: $error",
   "anki_reposition_gather_order_hint": "If the deck's options use random new card order, positions are ignored. Set the new card gather/sort order to sequential.",
@@ -2684,6 +2685,8 @@
   "popup_bottom_docked": "Fenêtre de recherche ancrée en bas",
   "popup_bottom_docked_hint": "Épingle la fenêtre de recherche en un panneau pleine largeur au bas de l'écran, au lieu de la faire suivre le mot recherché.",
   "popup_clear_sentence_draft_tooltip": "Effacer les phrases ajoutées",
+  "popup_compact_glossaries": "Compact glossaries",
+  "popup_compact_glossaries_hint": "Show dictionary glossary entries inline, separated by ' | ', instead of one per line in the lookup popup.",
   "popup_ctx_adjust_button": "Ajuster le contexte",
   "popup_ctx_box_current": "Current",
   "popup_ctx_box_empty": "(aucun)",
@@ -4476,6 +4479,5 @@
   "yomitan_port_kill_confirm_title": "Arrêter le processus utilisant le port $port ?",
   "yomitan_port_kill_failed": "Impossible d'arrêter $process. Veuillez l'arrêter manuellement, puis réessayez.",
   "yomitan_port_kill_protected": "$process est un processus système critique — Fushi ne l'arrêtera pas. Changez de port à la place.",
-  "yomitan_port_kill_self_instance": "Ce processus est une autre instance en cours d'exécution de cette application.",
-  "anki_reposition_done_skipped": "Repositioned $count new cards; $skipped were skipped because they are no longer new."
+  "yomitan_port_kill_self_instance": "Ce processus est une autre instance en cours d'exécution de cette application."
 }

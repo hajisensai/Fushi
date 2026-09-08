@@ -597,6 +597,7 @@ class _PopupStaticSettingsMemo {
     required this.appUiScale,
     required this.dictionaryFontSize,
     required this.popupWheelSpeed,
+    required this.popupInstantScroll,
     required this.wheelBindingsJson,
     required this.popupKeyBindings,
     required this.audioSourcesJson,
@@ -606,6 +607,7 @@ class _PopupStaticSettingsMemo {
     required this.harmonicFrequency,
     required this.showExpressionTags,
     required this.collapseDictionaries,
+    required this.compactGlossaries,
     required this.autoExpandRows,
     required this.collapsedNames,
     required this.expandedNames,
@@ -622,6 +624,7 @@ class _PopupStaticSettingsMemo {
   final double appUiScale;
   final double dictionaryFontSize;
   final double popupWheelSpeed;
+  final bool popupInstantScroll;
   final String wheelBindingsJson;
   final String popupKeyBindings;
   final String audioSourcesJson;
@@ -631,6 +634,7 @@ class _PopupStaticSettingsMemo {
   final bool harmonicFrequency;
   final bool showExpressionTags;
   final bool collapseDictionaries;
+  final bool compactGlossaries;
   final int autoExpandRows;
   final String collapsedNames;
   final String expandedNames;
@@ -736,6 +740,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
       cached.appUiScale == appModel.appUiScale &&
       cached.dictionaryFontSize == appModel.dictionaryFontSize &&
       cached.popupWheelSpeed == appModel.popupWheelSpeed &&
+      cached.popupInstantScroll == appModel.popupInstantScroll &&
       cached.wheelBindingsJson == wheelBindingsJson &&
       cached.popupKeyBindings == popupKeyBindings &&
       cached.audioSourcesJson == audioSourcesJson &&
@@ -745,6 +750,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
       cached.harmonicFrequency == appModel.harmonicFrequency &&
       cached.showExpressionTags == appModel.showExpressionTags &&
       cached.collapseDictionaries == appModel.collapseDictionaries &&
+      cached.compactGlossaries == appModel.compactGlossaries &&
       cached.autoExpandRows == appModel.popupAutoExpandDictionaries &&
       cached.collapsedNames == collapsedNames &&
       // BUG-2158 补修：命中判据必须是产物**全部输入**的廉价投影（本类文档写死的
@@ -793,6 +799,12 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     // BUG-1026: 查词弹窗滚轮速度倍率。popup.js 的 wheel 监听器把 factor 乘以它
     // （缺省 1.0）。三种 in-app 弹窗都经此 head 注入；浏览器扩展走 theme 通道另发。
     window.__fushiPopupWheelSpeed = ${appModel.popupWheelSpeed};
+    // BUG-2267：墨水屏「瞬时滚动」。popup.js 的 wheel 监听读它决定滚轮是按 delta 比例
+    // 连续滚（false，默认）还是每次手势跳固定距离（true）。此前该偏好只经
+    // ReaderCaretScripts.setInstantScroll 走 fushiCaret 的 behavior 参数，而 caret 路径
+    // 的两个分支（'instant' / 'auto'）在无 scroll-behavior:smooth 的弹窗里完全等价，
+    // 滚轮路径又根本不读它——开关两端行为一致 = 用户看到的「不生效」。
+    window.__fushiPopupInstantScroll = ${appModel.popupInstantScroll};
     // 查词弹窗「上/下一个词条」的滚轮绑定（ShortcutAction.popupNextEntry /
     // popupPrevEntry，默认 Alt+滚轮下/上）。popup.js 的 wheel 监听读它，命中即调
     // fushiFocusDictionaryEntryMove 并吃掉该事件（不滚动内容）。三种 in-app 弹窗
@@ -842,6 +854,11 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     window.harmonicFrequency = ${appModel.harmonicFrequency};
     window.showExpressionTags = ${appModel.showExpressionTags};
     window.collapseDictionaries = ${appModel.collapseDictionaries};
+    // 对齐 Hoshi Reader Android 的 "Compact Glossaries"：popup.js 的
+    // createDictionaryBlock 早就按这个全局产出「释义列表 inline + ` | ` 分隔」的
+    // 紧凑 CSS（assets/popup/popup.js 的 compactCss），但此前全 app 无人给它赋值，
+    // 恒 undefined = 恒关。这里补上唯一的写入点。
+    window.compactGlossaries = ${appModel.compactGlossaries};
     window.autoExpandRows = ${appModel.popupAutoExpandDictionaries};
     window.collapsedDictionaryNames = $collapsedNames;
     window.expandedDictionaryNames = $expandedNames;
@@ -864,6 +881,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     appUiScale: appModel.appUiScale,
     dictionaryFontSize: appModel.dictionaryFontSize,
     popupWheelSpeed: appModel.popupWheelSpeed,
+    popupInstantScroll: appModel.popupInstantScroll,
     wheelBindingsJson: wheelBindingsJson,
     popupKeyBindings: popupKeyBindings,
     audioSourcesJson: audioSourcesJson,
@@ -873,6 +891,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     harmonicFrequency: appModel.harmonicFrequency,
     showExpressionTags: appModel.showExpressionTags,
     collapseDictionaries: appModel.collapseDictionaries,
+    compactGlossaries: appModel.compactGlossaries,
     autoExpandRows: appModel.popupAutoExpandDictionaries,
     collapsedNames: collapsedNames,
     expandedNames: expandedNames,

@@ -5561,6 +5561,23 @@ let _popupWheelResidualAt = 0;
 // until the idle/surface reset so one occasional large mid-fling frame is not
 // mis-classified as a coarse mouse notch and momentarily over-tamed.
 let _popupWheelFineDevice = false;
+// BUG-2267: 墨水屏「瞬时滚动」（app 设置 lookup.popup_instant_scroll，经
+// popup_settings_injection / 扩展 theme 下发 window.__fushiPopupInstantScroll）。
+// 墨水屏刷一次全屏才划算，按 delta 比例的连续滚动会一路刷出残影；开启后滚轮改成
+// 「每次手势跳固定距离」——步长 = 被滚表面视口高度 × VIEWPORT_FRACTION，乘用户的
+// 滚轮速度倍率后夹在 [MIN_STEP, 一屏] 内（永不跳过整屏内容），并在 COOLDOWN_MS 内
+// 吃掉后续帧：触控板一次惯性滑动会连发几十帧，不合并就直接跳到底。
+const POPUP_EINK_WHEEL_VIEWPORT_FRACTION = 0.5; // 一次跳半屏
+const POPUP_EINK_WHEEL_MIN_STEP = 48;           // 视口异常小时的下限（布局 px）
+const POPUP_EINK_WHEEL_COOLDOWN_MS = 140;       // 一次手势内的跳跃合并窗口
+let _popupEinkWheelAt = 0;
+// 被滚表面的视口高度，单位与 scrollBy 的实参一致（布局 px）。扩展的滚动者是 shadow
+// host（zoom 设在 host 上，clientHeight 已是它自己的布局 px）；in-app 滚 document，
+// window.innerHeight 是视觉 px，要除以 documentElement 的 zoom 才是布局 px。
+function popupEinkWheelExtent(scroller) {
+    if (scroller && scroller.clientHeight > 0) return scroller.clientHeight;
+    return (window.innerHeight || 0) / popupCurrentZoom(null);
+}
 function popupCurrentZoom(scroller) {
     // BUG-688: read the zoom of the surface we are about to scroll. The in-app
     // popup zooms document.documentElement (popup_settings_injection.dart sets
@@ -5740,6 +5757,23 @@ const __fushiPopupWheelListener = (e) => {
         isFinite(window.__fushiPopupWheelSpeed) && window.__fushiPopupWheelSpeed > 0)
         ? window.__fushiPopupWheelSpeed
         : 1;
+    // BUG-2267: 墨水屏瞬时滚动——固定距离跳，不按 delta 比例连续滚。放在这里是因为
+    // 它要复用上面已解析的 wheelSpeed（同一个「滚轮速度」旋钮同时缩放两种模式）与
+    // scroller/deltaPx，且必须走在比例滚动的 factor/亚像素余量之前把事件吃掉。
+    if (window.__fushiPopupInstantScroll) {
+        if ((nowMs - _popupEinkWheelAt) < POPUP_EINK_WHEEL_COOLDOWN_MS) return;
+        _popupEinkWheelAt = nowMs;
+        _popupWheelResidual = 0; // 比例模式的余量在瞬时模式下无意义，切换回去也别延迟跳
+        const extent = popupEinkWheelExtent(scroller);
+        const jump = Math.max(
+            POPUP_EINK_WHEEL_MIN_STEP,
+            Math.min(extent, extent * POPUP_EINK_WHEEL_VIEWPORT_FRACTION * wheelSpeed));
+        const step = Math.trunc(deltaPx < 0 ? -jump : jump);
+        if (step === 0) return;
+        if (scroller) { scroller.scrollBy({ top: step, behavior: 'auto' }); }
+        else { window.scrollBy({ top: step, behavior: 'auto' }); }
+        return;
+    }
     const factor = (coarseMouseNotch
         ? POPUP_WHEEL_PIXEL_FACTOR
         : POPUP_WHEEL_TRACKPAD_FACTOR) * wheelSpeed;

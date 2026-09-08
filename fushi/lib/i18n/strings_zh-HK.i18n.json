@@ -309,6 +309,7 @@
   "anki_reposition_dicts_hint": "Hidden frequency dictionaries are not loaded; unhide them in dictionary management first. Nothing selected means all loaded dictionaries.",
   "anki_reposition_dicts_none": "No frequency dictionaries are loaded.",
   "anki_reposition_done": "Repositioned $count new cards.",
+  "anki_reposition_done_skipped": "Repositioned $count new cards; $skipped were skipped because they are no longer new.",
   "anki_reposition_empty": "This deck has no new cards.",
   "anki_reposition_failed": "Reorder failed: $error",
   "anki_reposition_gather_order_hint": "If the deck's options use random new card order, positions are ignored. Set the new card gather/sort order to sequential.",
@@ -2684,6 +2685,8 @@
   "popup_bottom_docked": "底部停靠查詞彈窗",
   "popup_bottom_docked_hint": "將查詞彈窗固定為螢幕底部一條整寬面板，而非跟隨被查的字詞。",
   "popup_clear_sentence_draft_tooltip": "清空已加入的句子",
+  "popup_compact_glossaries": "緊湊釋義",
+  "popup_compact_glossaries_hint": "查詞彈窗裡的釋義條目改為同行顯示、用「 | 」分隔，不再每條佔一行。",
   "popup_ctx_adjust_button": "調整上下文",
   "popup_ctx_box_current": "Current",
   "popup_ctx_box_empty": "（無）",
@@ -4476,6 +4479,5 @@
   "yomitan_port_kill_confirm_title": "結束佔用端口 $port 的進程？",
   "yomitan_port_kill_failed": "無法結束 $process，請手動結束該進程後重試。",
   "yomitan_port_kill_protected": "$process 是關鍵系統進程，Fushi 不會結束它；請改用其他端口。",
-  "yomitan_port_kill_self_instance": "該進程是本應用的另一個正在運行的實例。",
-  "anki_reposition_done_skipped": "Repositioned $count new cards; $skipped were skipped because they are no longer new."
+  "yomitan_port_kill_self_instance": "該進程是本應用的另一個正在運行的實例。"
 }
