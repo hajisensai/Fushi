@@ -62,7 +62,7 @@ label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mu
 <nav>
 <button data-s="status" class="on">状态</button><button data-s="pairing">配对</button><button data-s="libraries">库</button>
 <button data-s="upload">上传</button><button data-s="jobs">任务</button><button data-s="downloads">下载</button>
-<button data-s="models">模型</button><button data-s="settings">设置</button><button data-s="logs">日志</button>
+<button data-s="subscriptions">订阅</button><button data-s="models">模型</button><button data-s="settings">设置</button><button data-s="logs">日志</button>
 </nav>
 <form method="post" action="/logout" style="margin:0"><button class="b sec" type="submit">退出</button></form>
 </header>
@@ -114,6 +114,15 @@ label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mu
 <table><thead><tr><th>标题</th><th>状态</th><th>进度</th><th>错误</th><th></th></tr></thead><tbody id="dls"></tbody></table></div>
 </section>
 
+<section id="s-subscriptions">
+<div class="card"><h2>新建订阅（按搜索词追新）</h2>
+<div class="row"><input type="text" id="sub-title" placeholder="标题（显示用）"><input type="text" id="sub-query" placeholder="搜索词，如 Frieren 1080p" style="flex:1"></div>
+<div class="row"><select id="sub-provider"></select><select id="sub-kind"><option value="tv">tv（持续追新）</option><option value="movie">movie（一次）</option></select><input type="number" id="sub-after" placeholder="从第几集之后开始（可空）" style="min-width:220px"><button class="b" id="btn-sub-add">创建</button></div>
+<p class="small muted" id="sub-cap">从 Fushi 客户端的发现页订阅会带完整作品身份（原名/别名/交叉 ID）；这里只按搜索词匹配。</p></div>
+<div class="card"><h2>订阅</h2><div class="row"><button class="b sec" id="btn-sub-check-all">全部立即检查</button></div>
+<table><thead><tr><th>标题</th><th>搜索词</th><th>源</th><th>状态</th><th>集数</th><th>最近</th><th></th></tr></thead><tbody id="subs"></tbody></table></div>
+</section>
+
 <section id="s-models">
 <div class="card"><h2>ASR 模型</h2>
 <table><thead><tr><th>语言</th><th>就绪</th><th>变体 / provider</th><th>字节</th><th></th></tr></thead><tbody id="asr-models"></tbody></table></div>
@@ -123,7 +132,7 @@ label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mu
 <section id="s-settings">
 <div class="card"><h2>设置</h2>
 <div class="grid" id="settings-form"></div>
-<div class="row" style="margin-top:12px"><button class="b" id="btn-settings-save">保存</button><span class="small muted">端口 / TLS / 绑定 / qBittorrent / onnxruntime 路径改后需重启 serve。</span></div>
+<div class="row" style="margin-top:12px"><button class="b" id="btn-settings-save">保存</button><span class="small muted">端口 / TLS / 绑定 / qBittorrent / torrent / ffmpeg / onnxruntime 路径改后需重启 serve。</span></div>
 </div>
 </section>
 
@@ -166,6 +175,7 @@ async function loadStatus(){
     ['视频', s.videos], ['书', s.books], ['已配对', s.peers], ['库根', s.libraries],
     ['OCR 模型', s.ocr ? (s.ocr.ready?'就绪':'缺失') : '—'],
     ['下载后端', s.downloads ? (s.downloads.supported ? (s.downloads.backend||'ok') : '未配置') : '—'],
+    ['订阅', s.subscriptionCount==null ? '—' : s.subscriptionCount],
     ['上传配额', fmtBytes(s.uploadUsedBytes)+' / '+fmtBytes(s.uploadQuotaBytes)],
   ];
   $('#status-grid').innerHTML = kv.map(([k,v])=>`<div class="kv"><b>${esc(k)}</b><span>${esc(v)}</span></div>`).join('');
@@ -240,6 +250,25 @@ async function loadDownloads(){
 }
 $('#btn-dl-add').onclick = guard(async()=>{ await post('downloads',{magnet:$('#dl-magnet').value, title:$('#dl-title').value, mediaKind:$('#dl-kind').value}); $('#dl-magnet').value=''; $('#dl-title').value=''; toast('已添加'); loadDownloads(); });
 
+// ── 订阅 ──
+async function loadSubscriptions(){
+  const r = await api('subscriptions');
+  $('#sub-cap').textContent = r.supported ? `后端: ${r.backend}；可用索引器: ${(r.providers||[]).join(', ')||'无'}` : '下载后端未配置，订阅不可用。';
+  $('#btn-sub-add').disabled = !r.supported; $('#btn-sub-check-all').disabled = !r.supported;
+  const sel = $('#sub-provider'); const cur = sel.value;
+  sel.innerHTML = (r.providers||[]).map(p=>`<option value="${esc(p)}">${esc(p)}</option>`).join('');
+  if (cur) sel.value = cur;
+  const fmtCounts = (c)=> c ? Object.entries(c).map(([k,v])=>`${k} ${v}`).join(' · ') : '';
+  $('#subs').innerHTML = (r.subscriptions||[]).map(s=>`<tr><td>${esc(s.title)}<div class="small muted">${esc(s.mediaKind)} · ${esc(s.mode)}</div></td><td class="small">${esc(s.searchQuery)}</td><td class="small">${esc(s.resourceProvider)}</td><td>${s.enabled?'<span class="tag ok">启用</span>':'<span class="tag">停用</span>'} ${s.lastError?`<div class="small" style="color:var(--err)">${esc(s.lastError)}</div>`:''}</td><td class="small">${esc(fmtCounts(s.itemCounts))}</td><td class="small">${s.lastCheckedAt?fmtTime(s.lastCheckedAt):'—'}</td><td class="row"><button class="b sec" data-sub="enable" data-id="${esc(s.subscriptionId)}" data-enabled="${s.enabled?'0':'1'}">${s.enabled?'停用':'启用'}</button><button class="b sec" data-sub="check" data-id="${esc(s.subscriptionId)}">检查</button><button class="b danger" data-sub="delete" data-id="${esc(s.subscriptionId)}">删除</button></td></tr>`).join('') || '<tr><td colspan="7" class="muted">无</td></tr>';
+  $('#subs').querySelectorAll('[data-sub]').forEach(b=>b.onclick=guard(async()=>{ const id=encodeURIComponent(b.dataset.id);
+    if(b.dataset.sub==='delete'){ if(!confirm('删除该订阅？（已下载的任务不受影响）')) return; await del('subscriptions/'+id); }
+    else if(b.dataset.sub==='enable'){ await post('subscriptions/'+id+'/enable',{enabled:b.dataset.enabled==='1'}); }
+    else { await post('subscriptions/'+id+'/check'); }
+    loadSubscriptions(); }));
+}
+$('#btn-sub-add').onclick = guard(async()=>{ const after=$('#sub-after').value.trim(); await post('subscriptions',{title:$('#sub-title').value, searchQuery:$('#sub-query').value, mediaKind:$('#sub-kind').value, resourceProvider:$('#sub-provider').value, startAfterEpisode: after?Number(after):undefined}); $('#sub-title').value=''; $('#sub-query').value=''; toast('已创建'); loadSubscriptions(); });
+$('#btn-sub-check-all').onclick = guard(async()=>{ await post('subscriptions/check'); toast('已触发检查'); loadSubscriptions(); });
+
 // ── 模型 ──
 async function loadModels(){
   const r = await api('models');
@@ -251,7 +280,7 @@ async function loadModels(){
 // ── 设置 ──
 const FIELDS = [
   ['deviceName','设备名','text'],['port','互联端口','number'],['bind','绑定地址','text'],['tls','TLS','bool'],['lanRequiresPin','局域网配对必须 PIN','bool'],
-  ['subtitleLanguage','字幕语言','text'],['ffmpeg','ffmpeg 路径','text'],['onnxruntimeLibrary','onnxruntime 动态库','text'],['uploadQuotaBytes','上传配额（字节）','number'],['adminPort','WebUI 端口','number'],
+  ['subtitleLanguage','字幕语言','text'],['ffmpeg','ffmpeg 路径（空=PATH）','text'],['ffprobe','ffprobe 路径（空=PATH）','text'],['onnxruntimeLibrary','onnxruntime 动态库','text'],['uploadQuotaBytes','上传配额（字节）','number'],['adminPort','WebUI 端口','number'],
   ['torrent.engine','torrent 引擎','select:auto,embedded,qbittorrent'],['torrent.library','内置引擎库路径（空=随包/系统）','text'],['torrent.listen','libtorrent 监听接口','text'],
   ['qbittorrent.url','qBittorrent WebUI 地址','text'],['qbittorrent.username','qBittorrent 用户名','text'],['qbittorrent.password','qBittorrent 密码','password'],
 ];
@@ -270,7 +299,7 @@ $('#btn-settings-save').onclick = guard(async()=>{
   for(const [k,,type] of FIELDS){ const el=$('#f-'+k.replace('.','-')); let v=el.value; if(type==='bool') v=(v==='true'); else if(type==='number') v=Number(v); if(type!=='bool'&&type!=='number'&&v==='') v=null;
     if(k.includes('.')) body[k.split('.')[0]][k.split('.')[1]]=v; else body[k]=v; }
   // 路径类字段：空串代表「清掉」——但 copyWith 的 null 是「不改」，所以传空串让服务端按空处理
-  for(const k of ['ffmpeg','onnxruntimeLibrary']) if(body[k]===null) delete body[k];
+  for(const k of ['ffmpeg','ffprobe','onnxruntimeLibrary']) if(body[k]===null) delete body[k];
   await put('settings',body); toast('已保存'); loadSettings();
 });
 
@@ -279,7 +308,7 @@ async function loadLogs(){ const r = await api('logs'); const pre=$('#logs'); co
 $('#btn-log-refresh').onclick = guard(loadLogs);
 
 // ── 轮询 ──
-const loaders = {status:loadStatus, pairing:loadPairing, libraries:loadLibraries, upload:async()=>{ await loadLibraries(); const s=await api('status'); $('#up-quota').textContent=`配额已用 ${fmtBytes(s.uploadUsedBytes)} / ${fmtBytes(s.uploadQuotaBytes)}`; }, jobs:loadJobs, downloads:loadDownloads, models:loadModels, settings:async()=>{ if(!settingsCache) await loadSettings(); }, logs:async()=>{ if($('#log-auto').checked) await loadLogs(); }};
+const loaders = {status:loadStatus, pairing:loadPairing, libraries:loadLibraries, upload:async()=>{ await loadLibraries(); const s=await api('status'); $('#up-quota').textContent=`配额已用 ${fmtBytes(s.uploadUsedBytes)} / ${fmtBytes(s.uploadQuotaBytes)}`; }, jobs:loadJobs, downloads:loadDownloads, subscriptions:loadSubscriptions, models:loadModels, settings:async()=>{ if(!settingsCache) await loadSettings(); }, logs:async()=>{ if($('#log-auto').checked) await loadLogs(); }};
 let busy=false;
 async function refresh(){ if(busy) return; busy=true; try{ await loaders[current](); }catch(e){ console.warn(e); } finally{ busy=false; } }
 refresh(); setInterval(refresh, 2500);

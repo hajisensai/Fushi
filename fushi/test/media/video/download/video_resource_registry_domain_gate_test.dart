@@ -4,7 +4,7 @@ import 'package:http/testing.dart';
 
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi/src/media/torrent/builtin_video_resource_sources.dart';
-import 'package:fushi/src/media/torrent/nyaa_resource_provider.dart';
+import 'package:fushi_engine/media/torrent/nyaa_resource_provider.dart';
 import 'package:fushi_engine/media/torrent/public_video_index_provider.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';

@@ -60,6 +60,7 @@ class ServerConfig {
     required this.lanRequiresPin,
     required this.libraries,
     required this.ffmpegPath,
+    required this.ffprobePath,
     required this.adminToken,
     required this.uploadQuotaBytes,
     required this.subtitleLanguage,
@@ -96,6 +97,7 @@ class ServerConfig {
         lanRequiresPin: true,
         libraries: const <LibraryRootConfig>[],
         ffmpegPath: null,
+        ffprobePath: null,
         adminToken: null,
         uploadQuotaBytes: 50 * 1024 * 1024 * 1024,
         subtitleLanguage: 'ja',
@@ -119,7 +121,11 @@ class ServerConfig {
   /// 无头服务端没有审批 UI，PIN 是唯一的人因；默认恒需 PIN。
   final bool lanRequiresPin;
   final List<LibraryRootConfig> libraries;
+
+  /// ffmpeg / ffprobe 可执行路径：装进引擎 `ffmpegPathOverride` / `ffprobePathOverride`
+  /// （显式覆盖，优先于 `FUSHI_FFMPEG` 环境变量与 PATH）。null = 不装。
   final String? ffmpegPath;
+  final String? ffprobePath;
 
   /// WebUI / admin API 的凭据；null = 首次启动生成并写回。
   final String? adminToken;
@@ -152,6 +158,7 @@ class ServerConfig {
     bool? lanRequiresPin,
     List<LibraryRootConfig>? libraries,
     String? ffmpegPath,
+    String? ffprobePath,
     String? adminToken,
     int? uploadQuotaBytes,
     String? subtitleLanguage,
@@ -174,6 +181,7 @@ class ServerConfig {
         lanRequiresPin: lanRequiresPin ?? this.lanRequiresPin,
         libraries: libraries ?? this.libraries,
         ffmpegPath: ffmpegPath ?? this.ffmpegPath,
+        ffprobePath: ffprobePath ?? this.ffprobePath,
         adminToken: adminToken ?? this.adminToken,
         uploadQuotaBytes: uploadQuotaBytes ?? this.uploadQuotaBytes,
         subtitleLanguage: subtitleLanguage ?? this.subtitleLanguage,
@@ -222,6 +230,7 @@ class ServerConfig {
       lanRequiresPin: _bool(map['lan_requires_pin']) ?? base.lanRequiresPin,
       libraries: libraries,
       ffmpegPath: map['ffmpeg']?.toString(),
+      ffprobePath: map['ffprobe']?.toString(),
       adminToken: map['admin_token']?.toString(),
       uploadQuotaBytes: _int(map['upload_quota_bytes']) ?? base.uploadQuotaBytes,
       subtitleLanguage:
@@ -257,6 +266,7 @@ class ServerConfig {
     b.writeln('admin_bind: ${_q(adminBind)}');
     b.writeln('subtitle_language: ${_q(subtitleLanguage)}');
     if (ffmpegPath != null) b.writeln('ffmpeg: ${_q(ffmpegPath!)}');
+    if (ffprobePath != null) b.writeln('ffprobe: ${_q(ffprobePath!)}');
     if (ortLibraryPath != null) {
       b.writeln('onnxruntime_library: ${_q(ortLibraryPath!)}');
     }

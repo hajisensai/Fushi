@@ -6,6 +6,23 @@ import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 /// 桌面 ffmpeg 可执行解析优先级：FUSHI_FFMPEG 覆盖 > 程序旁捆绑 ffmpeg > 系统 PATH。
 /// 让没装 ffmpeg 的电脑也能用捆绑的（开箱即用），同时保留显式覆盖与 PATH 回退。
 void main() {
+  group('resolveHostOverrideFrom（宿主装配 > 环境变量）', () {
+    test('宿主装配非空就用它，环境变量被压过', () {
+      expect(resolveHostOverrideFrom('/opt/ffmpeg', '/usr/bin/ffmpeg'), '/opt/ffmpeg');
+    });
+    test('宿主装配空白按没装，退到环境变量', () {
+      expect(resolveHostOverrideFrom('   ', '/usr/bin/ffmpeg'), '/usr/bin/ffmpeg');
+      expect(resolveHostOverrideFrom(null, '/usr/bin/ffmpeg'), '/usr/bin/ffmpeg');
+    });
+    test('两边都没有 → null（走捆绑 / PATH）', () {
+      expect(resolveHostOverrideFrom(null, null), isNull);
+      expect(resolveHostOverrideFrom('', null), isNull);
+    });
+    test('宿主装配值会 trim（配置文件里的尾随空格不进 Process.start）', () {
+      expect(resolveHostOverrideFrom(' /opt/ffmpeg ', null), '/opt/ffmpeg');
+    });
+  });
+
   // BUG-1664：环境变量覆盖的「新名优先、旧名回退」。改名批次把 5 个调用点都写成了
   // `env['FUSHI_FFMPEG'] ?? env['FUSHI_FFMPEG']`——两边同名，注释承诺的 `HIBIKI_FFMPEG`
   // 回退从未生效。旧名是改名前公开给用户的变量，设了它的人一升级就静默失去覆盖能力，

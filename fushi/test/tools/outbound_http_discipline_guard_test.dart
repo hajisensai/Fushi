@@ -94,7 +94,7 @@ const Map<String, String> kBareOutboundRegistry = <String, String>{
       'Mihon 桌面 sidecar：控制面与封面图都打本进程拉起的 127.0.0.1:<port> 认证代理端点。',
   'packages/fushi_engine/lib/media/torrent/qbittorrent_client.dart':
       '外接 qBittorrent WebUI，默认 127.0.0.1:8080（用户可改成局域网 NAS）。',
-  'fushi/lib/src/media/torrent/torznab_client.dart':
+  'packages/fushi_engine/lib/media/torrent/torznab_client.dart':
       '用户自配 indexer，实践中多为自建/局域网/loopback（源码里另有 loopback 明文放行判据）。',
   // --- 局域网互联（peer 发现 / 配对 / 直连） ---
   'fushi/lib/src/sync/interconnect_post_transport.dart':
@@ -107,6 +107,8 @@ const Map<String, String> kBareOutboundRegistry = <String, String>{
       '互联通用任务（ASR 等）客户端：目标恒为已配对 host，与 manga-OCR 客户端同一理由。',
   'fushi/lib/src/sync/interconnect_download_client.dart':
       '互联代下载客户端：目标恒为已配对 host，与 manga-OCR 客户端同一理由。',
+  'fushi/lib/src/sync/interconnect_subscription_client.dart':
+      '互联内容订阅客户端：目标恒为已配对 host，与 manga-OCR 客户端同一理由。',
   'packages/fushi_engine/lib/sync/pairing/fushi_ping_client.dart':
       '配对 peer 存活 ping：目标是 mDNS 发现出来的局域网地址。',
   'fushi/lib/src/models/app_model.dart':
@@ -117,7 +119,7 @@ const Map<String, String> kBareOutboundRegistry = <String, String>{
 
 /// 登记在案的文件总数（装配点 + 豁免）。**这是自校验用的哨兵**：改清单必须同步改这个数，
 /// 光靠「新增未登记即红」挡不住「悄悄多登记一条」。
-const int kRegisteredOutboundFileCount = 21;
+const int kRegisteredOutboundFileCount = 22;
 
 /// 裸出站构造的判据。
 ///

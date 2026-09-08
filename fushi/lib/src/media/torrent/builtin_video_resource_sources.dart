@@ -1,17 +1,17 @@
 import 'package:http/http.dart' as http;
 
-import 'package:fushi_engine/media/torrent/nyaa_client.dart';
-import 'package:fushi/src/media/torrent/nyaa_resource_provider.dart';
-import 'package:fushi_engine/media/torrent/public_video_index_client.dart';
+import 'package:fushi_engine/media/torrent/builtin_video_resource_providers.dart';
+import 'package:fushi_engine/media/torrent/nyaa_resource_provider.dart';
 import 'package:fushi_engine/media/torrent/public_video_index_provider.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi/utils.dart';
 
 /// 随应用内置、零配置的视频资源索引器。
 ///
-/// 这张表是**唯一真相源**：`AppModel` 按它构造 provider，设置页按它渲染开关行。
-/// 之前 provider 在 `AppModel` 里内联 new、设置页另手写一行只读的 Nyaa——加一个
-/// 内置源要改两处，漏一处就出现「搜得到但设置里看不见」或反过来。
+/// id / 品牌名 / 构造方式的真相源在引擎 `kBuiltinVideoResourceProviderSpecs`（无头
+/// 服务端跑订阅与代搜按同一张表注册，客户端搜到的 provider id 在 host 上才对得上）；
+/// 这里只再挂一层设置页的 i18n `hint`。`AppModel` 按本表构造 provider，设置页按本表
+/// 渲染开关行——加一个内置源改引擎那一处 + 这里补一句 hint，漏 hint 会在启动时 assert。
 class BuiltinVideoResourceSource {
   const BuiltinVideoResourceSource({
     required this.id,
@@ -36,34 +36,28 @@ class BuiltinVideoResourceSource {
   final VideoResourceProvider Function(http.Client client) create;
 }
 
-/// 内置视频资源索引器全表（构造序 = 设置页显示序）。
+/// 内置视频资源索引器全表（构造序 = 设置页显示序 = 引擎 spec 表序）。
 final List<BuiltinVideoResourceSource> kBuiltinVideoResourceSources =
     <BuiltinVideoResourceSource>[
-  BuiltinVideoResourceSource(
-    id: kNyaaResourceProviderId,
-    displayName: 'Nyaa',
-    hint: () => t.video_builtin_nyaa_hint,
-    create: (http.Client client) => NyaaVideoResourceProvider(
-      client: NyaaClient(client: client),
-      closesClient: true,
+  for (final BuiltinVideoResourceProviderSpec spec
+      in kBuiltinVideoResourceProviderSpecs)
+    BuiltinVideoResourceSource(
+      id: spec.id,
+      displayName: spec.displayName,
+      hint: _hintFor(spec.id),
+      create: spec.create,
     ),
-  ),
-  BuiltinVideoResourceSource(
-    id: kApibayResourceProviderId,
-    displayName: 'apibay',
-    hint: () => t.video_builtin_apibay_hint,
-    create: (http.Client client) => ApibayVideoResourceProvider(
-      client: ApibayClient(client: client),
-      closesClient: true,
-    ),
-  ),
-  BuiltinVideoResourceSource(
-    id: kKnabenResourceProviderId,
-    displayName: 'Knaben',
-    hint: () => t.video_builtin_knaben_hint,
-    create: (http.Client client) => KnabenVideoResourceProvider(
-      client: KnabenClient(client: client),
-      closesClient: true,
-    ),
-  ),
 ];
+
+/// 覆盖范围说明（惰性取值：`t` 要等 i18n 初始化后才有值）。
+String Function() _hintFor(String id) {
+  switch (id) {
+    case kNyaaResourceProviderId:
+      return () => t.video_builtin_nyaa_hint;
+    case kApibayResourceProviderId:
+      return () => t.video_builtin_apibay_hint;
+    case kKnabenResourceProviderId:
+      return () => t.video_builtin_knaben_hint;
+  }
+  throw StateError('内置索引器 $id 缺设置页 hint：引擎 spec 表加了源，这里要补文案');
+}

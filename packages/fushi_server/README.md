@@ -10,30 +10,31 @@ Fushi 通过「互联」配对后，把这些活丢给它：
 | 漫画整卷 OCR | `/api/manga_ocr/*` | 客户端上传卷，服务端跑 ONNX 检测+识别，回传 mokuro |
 | 字幕识别（ASR） | `/api/jobs`（kind=`asr`） | 客户端上传音轨或指定 host 视频，服务端转录成 SRT + token 时间轴 |
 | 代下载 | `/api/downloads` | 内置 libtorrent 引擎或外接 qBittorrent，落 `<data>/documents/downloads` 后自动入库 |
+| 内容订阅 | `/api/subscriptions` | 订阅在 host 上创建、由 host 周期检查（Nyaa / apibay / Knaben / Torznab）并投进自己的下载管线；客户端发现页可选「运行在 host」 |
 | WebUI / admin API | `http(s)://<host>:38780/` | 状态、配对 PIN、库根管理、上传、任务、下载、模型、设置、日志 |
 
 设计文档：[`docs/specs/2026-09-08-fushi-server-headless-design.md`](../../docs/specs/2026-09-08-fushi-server-headless-design.md)。
 
 ## 安装
 
-CI（`build-multiplatform.yml` 的 linux job）产出 `fushi_server-linux-x64` 工件，布局：
+从本仓 GitHub Releases 下 tag 以 `fushi-server-v` 开头的包（`release-server.yml` 手动
+发布；beta 是 prerelease）：`fushi_server-<version>-<seq>-linux-x64.tar.gz` /
+`fushi_server-<version>-<seq>-windows-x64.zip`。每条 PR 也在 `build-multiplatform.yml`
+的 linux job 出一份 `fushi_server-linux-x64` 工件（Actions 页面下载）。布局：
 
 ```
-bundle/
-  bin/fushi_server            # 可执行文件
+fushi_server/
+  bin/fushi_server            # 可执行文件（Windows 为 .exe）
   lib/libsqlite3.so           # dart build 的 native asset
-  lib/libfushi_torrent_ffi.so # 内置 torrent 引擎 bridge（动态链接发行版 libtorrent-rasterbar 2.0）
+  lib/libfushi_torrent_ffi.so # 内置 torrent 引擎（Linux 静态链 libtorrent/boost/openssl，零运行库依赖；Windows 为 DLL + 3 个运行时 DLL）
   lib/libonnxruntime.so*      # onnxruntime 1.22.0 CPU 版（OCR / ASR）
+  README.md
 ```
 
-解压到任意目录即可（例 `/opt/fushi_server`）。**目标机运行期依赖**（Debian/Ubuntu）：
+解压到任意目录即可（例 `/opt/fushi_server`）。**目标机运行期依赖**：
 
-```bash
-sudo apt-get install -y libtorrent-rasterbar2.0 libssl3 ffmpeg
-```
-
-- `libtorrent-rasterbar2.0`：内置 torrent 引擎；没有它只是内置引擎不可用（`torrent.engine: auto` 会退到外接 qBittorrent，都没有就报 `supported=false`），其他功能照常。
-- `ffmpeg`：视频封面抽帧、ASR 音轨解码、下载后转封装。不在 PATH 时用环境变量 `FUSHI_FFMPEG=/path/to/ffmpeg`。
+- Linux：glibc ≥ 2.35（Debian 12 / Ubuntu 22.04 及以后）。内置 torrent 引擎与 onnxruntime 都随包、静态，不用装 `libtorrent-rasterbar` / `libssl`。
+- `ffmpeg` / `ffprobe`：视频封面抽帧、ASR 音轨解码、下载后转封装。不在 PATH 时在配置里写 `ffmpeg:` / `ffprobe:` 路径（直接生效，不需要环境变量；`FUSHI_FFMPEG` 仍认，配置优先）。
 - 局域网自动发现（可选）：`avahi-utils`（有 `avahi-publish` 就广播 `_fushi._tcp`；没有也能手输地址配对）。
 
 本机自己构建（任何平台，需 Dart SDK ≥ 3.8）：
@@ -72,7 +73,6 @@ User=fushi
 WorkingDirectory=/opt/fushi_server
 ExecStart=/opt/fushi_server/bin/fushi_server serve --config /opt/fushi_server/fushi_server.yaml
 Restart=on-failure
-Environment=FUSHI_FFMPEG=/usr/bin/ffmpeg
 
 [Install]
 WantedBy=multi-user.target
@@ -91,7 +91,8 @@ admin_port: 38780             # WebUI / admin API；0 = 关闭
 admin_bind: "0.0.0.0"
 admin_token: "..."            # init 生成；忘了用 `fushi_server admin reset-token`
 subtitle_language: "ja"       # 扫描视频时 sidecar 字幕匹配语言
-# ffmpeg: "/usr/bin/ffmpeg"   # 只做展示；真正生效走环境变量 FUSHI_FFMPEG
+# ffmpeg: "/usr/bin/ffmpeg"    # 可执行路径（优先于 FUSHI_FFMPEG 与 PATH）；空 = PATH
+# ffprobe: "/usr/bin/ffprobe"
 # onnxruntime_library: "/opt/ort-gpu/lib/libonnxruntime.so"   # 换 GPU 版 ORT 时指过去
 upload_quota_bytes: 53687091200   # WebUI 上传累计配额（50 GB），防被当网盘
 torrent:
@@ -105,7 +106,11 @@ qbittorrent:                  # engine=qbittorrent 或 auto 无内置库时用
 libraries:
   - id: "anime"
     path: "/srv/media/anime"
-    kind: "video"             # video | book
+    kind: "video"             # video | book | manga
+    enabled: true
+  - id: "manga"
+    path: "/srv/media/manga"
+    kind: "manga"             # .mokuro 卷 + 纯页图目录（根有页图=一卷；否则每个含页图的直接子目录一卷）；cbz/cbr/pdf 暂不支持
     enabled: true
 ```
 
@@ -137,6 +142,7 @@ fushi_server transcribe <media> --lang ja [--cpu]   本地跑一次 ASR（调试
 | `GET|POST libraries` / `DELETE libraries/<id>` / `POST scan` | 库根管理（写回 yaml）/ 触发扫描（单飞） |
 | `GET jobs` / `DELETE jobs/<id>` | 互联任务（ASR 等） |
 | `GET|POST downloads` / `POST downloads/<id>/cancel|retry` / `DELETE downloads/<id>` | 代下载 |
+| `GET|POST subscriptions` / `POST subscriptions/check` / `POST subscriptions/<id>/enable|check` / `DELETE subscriptions/<id>` | 内容订阅（WebUI 只按搜索词建；客户端发现页建的带完整作品身份） |
 | `GET models` / `POST models/pull {model}` | ASR 各语言 + OCR 模型状态 / 后台拉取 |
 | `GET|PUT settings` | 配置读写 |
 | `GET|PUT upload?library=<id>&path=<相对路径>` | 分块上传（下节） |
@@ -159,8 +165,8 @@ fushi_server transcribe <media> --lang ja [--cpu]   本地跑一次 ASR（调试
 ## 服务端**不**做什么
 
 - 不装词典 FFI 引擎（`fushidicts`）：服务端只托管词典包文件供客户端同步，查词仍在客户端本地；Linux 桌面版 Fushi 自带 `libfushidicts_ffi.so`，与服务端无关。
-- 不做发现页（Nyaa/Torznab 搜索订阅）：只接客户端投来的磁力/种子。订阅仍在客户端本地跑，可以把下载目标选成 host。
-- 不扫描漫画目录（漫画走客户端上传 / OCR 任务）。
+- 不做发现页 UI：host 的订阅由客户端发现页（带作品身份）或 WebUI（只按搜索词）创建；host 自己搜 Nyaa / apibay / Knaben / Torznab（Torznab indexer 与停用清单读同一张 `preferences` 表的 `video_resource_torznab_config` / `video_resource_disabled_sources`，目前经互联「配置文件」同步或直接改库）。
+- 漫画根只认 `.mokuro` 卷与纯页图目录：cbz / cbr / cb7 / pdf 暂不扫描（压缩包导入器还在 app 侧、rar 需外部 7-Zip），这类文件仍走客户端导入。
 
 ## 开发
 

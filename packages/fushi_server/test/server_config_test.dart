@@ -14,6 +14,8 @@ void main() {
       ],
       adminPort: 9000,
       adminBind: '127.0.0.1',
+      ffmpegPath: '/usr/bin/ffmpeg',
+      ffprobePath: '/usr/bin/ffprobe',
     );
     final ServerConfig b = ServerConfig.parse(a.toYaml(), configDir: '/etc/fushi');
     expect(b.dataDir, a.dataDir);
@@ -21,6 +23,8 @@ void main() {
     expect(b.adminPort, 9000);
     expect(b.adminBind, '127.0.0.1');
     expect(b.adminToken, 'tok');
+    expect(b.ffmpegPath, '/usr/bin/ffmpeg');
+    expect(b.ffprobePath, '/usr/bin/ffprobe');
     expect(b.qbittorrentUrl, 'http://qb:8080');
     expect(b.qbittorrentPassword, 'p"w\\d');
     expect(b.libraries.map((LibraryRootConfig l) => l.id), <String>['anime', 'books']);

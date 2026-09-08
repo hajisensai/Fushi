@@ -2,7 +2,11 @@ name: fushi_server
 resolution: workspace
 description: >-
   Fushi 无头服务端（Linux / 任意桌面）：互联 host（配对 / 库 / 流播 / 远程 OCR）、
-  通用任务（ASR）、下载管线、WebUI + admin API。纯 Dart，`dart compile exe` 出单文件。
+  通用任务（ASR）、下载管线 + 内容订阅、WebUI + admin API。纯 Dart，`dart build cli`
+  出 bundle（sqlite3 是 native asset，`dart compile exe` 单文件运行时打不开 DB）。
+# 服务端自己的版本（release-server.yml 的 tag / 包名从这里取）；与 app 的 fushi/pubspec
+# 版本独立，按服务端功能里程碑升。
+version: 0.1.0
 publish_to: none
 
 # 不依赖 flutter sdk。解析依赖仍需 Flutter SDK（fushi_audio 等尚声明 flutter），

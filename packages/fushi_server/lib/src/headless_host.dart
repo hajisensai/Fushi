@@ -27,6 +27,7 @@ import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi_engine/sync/manga_sync_package.dart';
 import 'package:fushi_engine/sync/override_title_db.dart';
 import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
+import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi_engine/sync/tls/fushi_tls_identity.dart';
 import 'package:fushi_server/src/config/server_config.dart';
@@ -101,6 +102,7 @@ class HeadlessHost {
   MangaOcrServiceImpl? get ocrService => _ocrService;
   HostJobManager? get jobs => _jobs;
   ServerDownloadHost? get downloads => _downloads;
+  HostSubscriptionHost? get subscriptions => _downloads?.subscriptions;
 
   /// 吊销 peer 后让服务器重读 token 集（否则旧 token 还在缓存里能用到重启）。
   void invalidatePeerTokens() => _server?.invalidatePeerTokenCache();
@@ -165,6 +167,7 @@ class HeadlessHost {
       mangaOcrJobs: ocrJobs,
       hostJobs: jobs,
       downloads: downloads,
+      subscriptions: downloads.subscriptions,
       securityContext: securityContext,
       hostFingerprint: _hostFingerprint,
       deviceName: config.deviceName,

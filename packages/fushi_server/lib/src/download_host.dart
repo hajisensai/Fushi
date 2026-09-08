@@ -15,6 +15,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/media_pref_keys.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
+import 'package:fushi_engine/media/torrent/builtin_video_resource_providers.dart';
+import 'package:fushi_engine/media/torrent/torznab_client.dart';
 import 'package:fushi_engine/media/torrent/embedded_torrent_host.dart';
 import 'package:fushi_engine/media/torrent/qb_torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/qbittorrent_client.dart';
@@ -22,11 +24,15 @@ import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
+import 'package:fushi_engine/media/video/download/video_download_subscription_service.dart';
+import 'package:fushi_engine/media/video/download/video_resource_prefs.dart';
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart';
 import 'package:fushi_engine/sync/downloads/host_download_host.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
+import 'package:fushi_server/src/subscription_host.dart';
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/native_libs.dart';
 import 'package:fushi_server/src/server_identity.dart';
@@ -51,6 +57,13 @@ class ServerDownloadHost implements HostDownloadHost {
 
   VideoDownloadPipelineService? _pipeline;
   VideoSourceScrapeCoordinator? _scrape;
+  VideoResourceRegistry? _registry;
+  VideoDownloadSubscriptionService? _subscriptionService;
+  ServerSubscriptionHost? _subscriptions;
+
+  /// 内容订阅面（`/api/subscriptions`）。下载后端没起来时也挂着——能力位如实报
+  /// supported=false，路由不 404（客户端好区分「host 不懂」与「host 没配后端」）。
+  ServerSubscriptionHost get subscriptions => _subscriptions ??= _buildSubscriptionHost();
   TorrentBackend? _backend;
   EmbeddedTorrentHost? _embedded;
   int? _sourceId;
@@ -116,15 +129,29 @@ class ServerDownloadHost implements HostDownloadHost {
       ),
     );
     _scrape = scrape;
+    // 资源索引器：与 app 同一张内置表 + 同一个 Torznab 偏好键（同一张 preferences 表），
+    // 停用清单同源。订阅服务的在场校验看它，客户端搜到的 provider id 才对得上。
+    final VideoResourceRegistry registry = _buildRegistry();
+    _registry = registry;
     final VideoDownloadPipelineService pipeline = VideoDownloadPipelineService(
       database: db,
-      resourceRegistry: VideoResourceRegistry(const <VideoResourceProvider>[]),
+      resourceRegistry: registry,
       backendResolver: _resolveBackend,
       scrapeCoordinator: scrape,
       manualTorrentDirectory: Directory(p.join(paths.support.path, 'manual_torrents')),
       workerId: 'fushi-server-${identity.deviceId}',
     )..start();
     _pipeline = pipeline;
+    // 内容订阅：host 自己抢租约、搜、投管线（与 app 同一个服务类）。
+    final VideoDownloadSubscriptionService subscriptions = VideoDownloadSubscriptionService(
+      database: db,
+      resourceRegistry: registry,
+      enqueue: pipeline.enqueue,
+      workerId: 'fushi-server-sub-${identity.deviceId}',
+    );
+    subscriptions.start();
+    _subscriptionService = subscriptions;
+    _subscriptions = null; // 让 getter 按新的 service 重建
     engineLog.logDiagnostic(
       'ServerDownloadHost',
       'pipeline started (backend=$_resolvedBackend'
@@ -156,7 +183,36 @@ class ServerDownloadHost implements HostDownloadHost {
     return _embedded = host;
   }
 
+  VideoResourceRegistry _buildRegistry() {
+    final List<TorznabIndexerConfig> torznab = readTorznabIndexerConfigs(
+      prefs,
+      onDecodeError: (Object e, StackTrace st) =>
+          engineLog.log('ServerDownloadHost.torznabConfig', e, st),
+    );
+    return VideoResourceRegistry(
+      <VideoResourceProvider>[
+        for (final BuiltinVideoResourceProviderSpec spec in kBuiltinVideoResourceProviderSpecs)
+          spec.create(createAppHttpIoClient()),
+        TorznabClient(indexers: torznab, client: createAppHttpIoClient(), closesClient: true),
+      ],
+      disabledProviderIds: readVideoResourceDisabledSourceIds(prefs),
+    );
+  }
+
+  ServerSubscriptionHost _buildSubscriptionHost() => ServerSubscriptionHost(
+        db: db,
+        registry: _registry ?? _buildRegistry(),
+        backendTarget: () => VideoDownloadBackendTarget(identity: _identity(), category: _qbConfig.category),
+        targetSourceId: () => _sourceId ?? (throw const VideoDownloadPipelineActionRequired('download source not ready')),
+        backendName: _resolvedBackend ?? 'none',
+        service: _subscriptionService,
+      );
+
   Future<void> stop() async {
+    final VideoDownloadSubscriptionService? subscriptions = _subscriptionService;
+    _subscriptionService = null;
+    _subscriptions = null;
+    if (subscriptions != null) await subscriptions.dispose();
     final VideoDownloadPipelineService? pipeline = _pipeline;
     _pipeline = null;
     if (pipeline != null) await pipeline.dispose(drainTimeout: const Duration(seconds: 5));

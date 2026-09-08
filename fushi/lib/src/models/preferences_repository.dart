@@ -7,7 +7,8 @@ import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
-import 'package:fushi/src/media/torrent/torznab_client.dart';
+import 'package:fushi_engine/media/torrent/torznab_client.dart';
+import 'package:fushi_engine/media/video/download/video_resource_prefs.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
 import 'package:fushi_engine/media/video/download/video_download_path_mapping.dart';
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
@@ -1142,29 +1143,22 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
 
   /// 多个 Torznab indexer 的设备本地配置。API key 与 endpoint 分栏保存，读取旧
   /// Jackett/Prowlarr `?apikey=` URL 时由 codec 拆开，避免含密钥 URL 流出本机。
-  List<TorznabIndexerConfig> get videoResourceTorznabConfigs {
-    final String raw = getPref(
-      'video_resource_torznab_config',
-      defaultValue: '',
-    ) as String;
-    if (raw.trim().isEmpty) return const <TorznabIndexerConfig>[];
-    try {
-      return decodeTorznabIndexerConfigs(jsonDecode(raw));
-    } on Object catch (error, stack) {
-      ErrorLogService.instance.log(
-        'PreferencesRepository.videoResourceTorznabConfigs.decode',
-        error,
-        stack,
+  List<TorznabIndexerConfig> get videoResourceTorznabConfigs =>
+      readTorznabIndexerConfigs(
+        this,
+        onDecodeError: (Object error, StackTrace stack) =>
+            ErrorLogService.instance.log(
+          'PreferencesRepository.videoResourceTorznabConfigs.decode',
+          error,
+          stack,
+        ),
       );
-      return const <TorznabIndexerConfig>[];
-    }
-  }
 
   Future<void> setVideoResourceTorznabConfigs(
     Iterable<TorznabIndexerConfig> configs,
   ) async {
     await setPref(
-      'video_resource_torznab_config',
+      kVideoResourceTorznabConfigPref,
       jsonEncode(encodeTorznabIndexerConfigs(configs)),
     );
     notifyListeners();

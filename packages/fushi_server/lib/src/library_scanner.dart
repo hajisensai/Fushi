@@ -2,8 +2,8 @@
 ///
 /// 与 app 的 `SourceLibraryScanner` 走同一条入库路径（`VideoBookRepository` /
 /// `EpubImporter`），所以客户端经 `/api/library/videos` / `/books` 看到的行与
-/// 本机导入的一模一样。第 0 期只做视频与 EPUB；漫画目录的扫描留给漫画域接入
-/// （引擎里的 `MangaImporter` 已在，接线时补）。
+/// 本机导入的一模一样。漫画根（kind=manga）走引擎 `MangaImporter`：`.mokuro`
+/// 卷与纯页图目录，卷归组规则与 app 共用引擎 `planMangaFolders`。
 library;
 
 import 'dart:io';
@@ -13,6 +13,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
+import 'package:fushi_engine/media/manga/manga_folder_plan.dart';
+import 'package:fushi_engine/media/manga/manga_importer.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_cover_extractor.dart';
@@ -26,11 +28,14 @@ class ScanSummary {
   int videosSkipped = 0;
   int booksAdded = 0;
   int booksSkipped = 0;
+  int mangaAdded = 0;
+  int mangaSkipped = 0;
   final List<String> errors = <String>[];
 
   @override
   String toString() => 'videos +$videosAdded (skipped $videosSkipped), '
-      'books +$booksAdded (skipped $booksSkipped), errors ${errors.length}';
+      'books +$booksAdded (skipped $booksSkipped), '
+      'manga +$mangaAdded (skipped $mangaSkipped), errors ${errors.length}';
 }
 
 class LibraryScanner {
@@ -59,8 +64,10 @@ class LibraryScanner {
           await _scanVideos(dir, summary);
         case 'book':
           await _scanBooks(dir, summary);
+        case 'manga':
+          await _scanManga(dir, summary);
         default:
-          summary.errors.add('${root.id}: 未支持的 kind "${root.kind}"（第 0 期只有 video / book）');
+          summary.errors.add('${root.id}: 未支持的 kind "${root.kind}"（只有 video / book / manga）');
       }
     }
     engineLog.logDiagnostic('LibraryScanner', 'scan done: $summary');
@@ -134,6 +141,55 @@ class LibraryScanner {
         summary.errors.add('${e.path}: $err');
         engineLog.log('LibraryScanner.book', err, stack);
       }
+    }
+  }
+
+  /// 漫画根：先逐个导入 `.mokuro` 卷，再把引擎归组出的纯页图卷目录逐个导入
+  /// （标题 = 目录名，与 app 源库扫描同口径）。重复卷按标题身份静默跳过；单卷
+  /// 失败只记错误，不中断整批。
+  ///
+  /// cbz / cbr / pdf 本轮不做：压缩包导入器（`MangaArchiveImporter`）还在 app 侧
+  /// 且 rar/cb7 依赖外部 7-Zip；等它下沉进引擎再接。
+  Future<void> _scanManga(Directory dir, ScanSummary summary) async {
+    final MangaFolderPlan plan = planMangaFoldersInDirectory(dir);
+    for (final String mokuroPath in plan.mokuroPaths) {
+      await _importManga(
+        summary,
+        mokuroPath,
+        () => MangaImporter.importFromMokuroPath(
+          db: db,
+          mokuroPath: mokuroPath,
+          policy: const DuplicatePolicy.skip(),
+        ),
+      );
+    }
+    for (final String folder in plan.imageFolders) {
+      await _importManga(
+        summary,
+        folder,
+        () => MangaImporter.importFromImageFolder(
+          db: db,
+          imageDirPath: folder,
+          title: p.basename(folder),
+          policy: const DuplicatePolicy.skip(),
+        ),
+      );
+    }
+  }
+
+  Future<void> _importManga(
+    ScanSummary summary,
+    String sourcePath,
+    Future<String> Function() import,
+  ) async {
+    try {
+      await import();
+      summary.mangaAdded++;
+    } on DuplicateImportCancelledException {
+      summary.mangaSkipped++;
+    } catch (err, stack) {
+      summary.errors.add('$sourcePath: $err');
+      engineLog.log('LibraryScanner.manga', err, stack);
     }
   }
 

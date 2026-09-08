@@ -20,6 +20,8 @@ import 'package:fushi_engine/sync/interconnect_service_config.dart';
 import 'package:fushi_engine/sync/fushi_manga_ocr_host.dart';
 import 'package:fushi_engine/sync/downloads/host_download_host.dart';
 import 'package:fushi_engine/sync/downloads/host_download_routes.dart';
+import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
+import 'package:fushi_engine/sync/subscriptions/host_subscription_routes.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_routes.dart';
 import 'package:fushi_engine/sync/interconnect_device_name.dart';
@@ -207,6 +209,7 @@ class FushiSyncServer {
     FushiLibraryHostService? libraryService,
     MangaOcrHostJobManager? mangaOcrJobs,
     HostJobManager? hostJobs,
+    HostSubscriptionHost? subscriptions,
     HostDownloadHost? downloads,
     SecurityContext? securityContext,
     String? hostFingerprint,
@@ -228,6 +231,7 @@ class FushiSyncServer {
         _mangaOcrJobs = mangaOcrJobs,
         _hostJobs = hostJobs,
         _downloads = downloads,
+        _subscriptions = subscriptions,
         _dictionaryMediaProvider = dictionaryMediaProvider,
         _now = now ?? DateTime.now;
 
@@ -262,6 +266,9 @@ class FushiSyncServer {
 
   /// 代下载（设计 §3.3）。null = host 不提供，`/api/downloads` 404、能力位无 `downloads`。
   final HostDownloadHost? _downloads;
+
+  /// 内容订阅（host 自建自跑）。null = 不提供，`/api/subscriptions` 404、能力位无 `subscriptions`。
+  final HostSubscriptionHost? _subscriptions;
 
   /// TODO-1215: dictionary media (gaiji/accent SVG, etc.) byte provider.
   /// Injected rather than depending on the FushiDicts singleton directly, so
@@ -516,6 +523,11 @@ class FushiSyncServer {
       final HostDownloadHost? downloads = _downloads;
       if (downloads == null) return shelf.Response.notFound('Host downloads off');
       return handleHostDownloadRequest(downloads, request, method, reqPath);
+    }
+    if (reqPath == '/api/subscriptions' || reqPath.startsWith('/api/subscriptions/')) {
+      final HostSubscriptionHost? subscriptions = _subscriptions;
+      if (subscriptions == null) return shelf.Response.notFound('Host subscriptions off');
+      return handleHostSubscriptionRequest(subscriptions, request, method, reqPath);
     }
     if (reqPath == '/api/library/dictionaries' ||
         reqPath.startsWith('/api/library/dictionaries/')) {

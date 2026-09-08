@@ -231,9 +231,36 @@ abstract class FfmpegBackend {
 ///    用户自己装 ffmpeg；否则没装 ffmpeg 的电脑会丢内封字幕/cue 动图/制卡音频）；
 /// 3. 回退系统 PATH 上的 `ffmpeg`。
 String resolveFfmpegExecutable() => resolveFfmpegExecutableFrom(
-      override: ffmpegEnvOverride(),
+      override: ffmpegExplicitOverride(),
       bundledPath: _bundledFfmpegPath(),
     );
+
+/// 宿主**显式装配**的 ffmpeg / ffprobe 可执行路径（无头服务端从 `fushi_server.yaml`
+/// 的 `ffmpeg:` / `ffprobe:` 装；app 不装 = null）。
+///
+/// 语义与 `FUSHI_FFMPEG` 环境变量完全同构、且优先于它：走「显式覆盖」分支——不做
+/// 捆绑损坏回退、跑不起来如实抛。之所以不是「配置项写进子进程环境」：
+/// `Platform.environment` 只读，服务端启动后没法给自己设环境变量；此前配置项只做
+/// 展示 + 提示用户去设 `FUSHI_FFMPEG`，等于配置文件里放了个不生效的键。
+String? ffmpegPathOverride;
+String? ffprobePathOverride;
+
+/// 「显式覆盖」的单一入口：宿主装配值 > 环境变量（新名 > 旧名）> null。
+/// 所有拿 override 的地方（解析、CLI 后端、后端选择）都只问这里。
+String? ffmpegExplicitOverride() =>
+    resolveHostOverrideFrom(ffmpegPathOverride, ffmpegEnvOverride());
+
+/// ffprobe 版的 [ffmpegExplicitOverride]。
+String? ffprobeExplicitOverride() =>
+    resolveHostOverrideFrom(ffprobePathOverride, ffprobeEnvOverride());
+
+/// 纯函数：宿主装配值非空（trim 后）就用它，否则退到环境变量链的结果。
+/// 空串/纯空白按「没装」——与 [resolveEnvOverrideFrom] 同一条约定。
+String? resolveHostOverrideFrom(String? hostOverride, String? envOverride) {
+  final String? host = hostOverride?.trim();
+  if (host != null && host.isNotEmpty) return host;
+  return envOverride;
+}
 
 /// BUG-1664：ffmpeg 可执行的环境覆盖——**新名优先，旧名回退**（`HIBIKI_FFMPEG` 是改名
 /// 前公开给用户的变量名，仍须认）。
@@ -288,7 +315,7 @@ String? _bundledFfmpegPath() => _bundledExecutablePath('ffmpeg');
 /// 同款优先级：`FUSHI_FFPROBE` 覆盖 > 程序旁捆绑 `ffprobe(.exe)`（打包时与 ffmpeg
 /// 并排塞进各桌面产物）> 系统 PATH 上的 `ffprobe`。
 String resolveFfprobeExecutable() => resolveFfprobeExecutableFrom(
-      override: ffprobeEnvOverride(),
+      override: ffprobeExplicitOverride(),
       bundledPath: _bundledFfprobePath(),
     );
 
@@ -619,7 +646,7 @@ class CliFfmpegBackend implements FfmpegBackend {
   @override
   Future<FfmpegRunResult> run(List<String> args, Duration timeout) =>
       _runCliFfmpeg(
-        override: ffmpegEnvOverride(),
+        override: ffmpegExplicitOverride(),
         bundledPath: _bundledFfmpegPath(),
         isWindows: Platform.isWindows,
         args: args,
@@ -630,7 +657,7 @@ class CliFfmpegBackend implements FfmpegBackend {
   @override
   Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) =>
       _runCliFfprobe(
-        override: ffprobeEnvOverride(),
+        override: ffprobeExplicitOverride(),
         bundledPath: _bundledFfprobePath(),
         args: args,
         timeout: timeout,
@@ -642,7 +669,8 @@ FfmpegBackend? _cachedBackend;
 
 /// 进程级单例 ffmpeg 后端选择。
 ///
-/// - `FUSHI_FFMPEG` 覆盖（绝对路径）→ 系统 CLI（开发/特殊部署，优先）。
+/// - 显式覆盖（宿主装配 [ffmpegPathOverride] 或 `FUSHI_FFMPEG`，绝对路径）→ 系统 CLI
+///   （开发/特殊部署/无头服务端配置，优先）。
 /// - Android / iOS → app 经 [ffmpegPlatformBackendProvider] 装的 `KitFfmpegBackend`
 ///   （进程内自编 ffmpeg-kit；移动端无系统 ffmpeg 且 iOS 禁 exec 子进程）。
 /// - 桌面（Windows/macOS/Linux）→ 系统 CLI（打包/用户提供 ffmpeg）。
@@ -659,7 +687,8 @@ void setFfmpegBackendForTesting(FfmpegBackend? backend) {
 FfmpegBackend Function()? ffmpegPlatformBackendProvider;
 
 FfmpegBackend _selectBackend() {
-  final String? override = ffmpegEnvOverride()?.trim();
+  // 显式覆盖（宿主装配 / FUSHI_FFMPEG）→ 系统 CLI，永远优先于平台后端。
+  final String? override = ffmpegExplicitOverride()?.trim();
   if (override != null && override.isNotEmpty) return const CliFfmpegBackend();
   return ffmpegPlatformBackendProvider?.call() ?? const CliFfmpegBackend();
 }

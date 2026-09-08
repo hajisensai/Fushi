@@ -26,10 +26,11 @@ void installServerHostBindings({
   engineLog = log;
   fushiDebugPrint = (String? message, {int? wrapWidth}) => log.debug(message);
   enginePaths = paths;
-  // ffmpeg：桌面/服务端一律系统 CLI；配置文件的 ffmpeg 路径等价于 FUSHI_FFMPEG 覆盖。
-  // 引擎只认环境变量与「可执行文件同目录」，这里没法改进程环境，所以配置路径走
-  // 平台后端装配点：返回一个把可执行路径钉死的 CLI 后端。
-  ffmpegPlatformBackendProvider = () => const CliFfmpegBackend();
+  // ffmpeg / ffprobe：配置文件路径装进引擎的显式覆盖（优先于 FUSHI_FFMPEG 与 PATH，
+  // 语义同环境变量覆盖：不做捆绑回退、跑不起来如实抛）。必须在首个
+  // resolveFfmpegBackend() 之前装——后端选择是进程级单例。
+  ffmpegPathOverride = config.ffmpegPath;
+  ffprobePathOverride = config.ffprobePath;
   // 漫画 OCR 整卷任务的后台 isolate：FFI ONNX Runtime 工厂 + ORT 库路径引导。
   ocrSessionFactoryBuilder = buildServerOcrSessionFactory;
   ocrIsolateBootstrap = serverOcrIsolateBootstrap;
@@ -51,17 +52,16 @@ asr.OnnxSessionFactory buildServerAsrOnnxFactory() => FfiOnnxSessionFactory(
       libraryPathOverride: serverOrtLibraryPath,
     );
 
-/// 配置里的 ffmpeg 路径 → 进程环境覆盖的等价物：CLI 解析函数认 `FUSHI_FFMPEG`，
-/// 这里在启动时把它塞进子进程环境做不到（`Platform.environment` 只读），所以
-/// `serve` 命令在启动前校验路径存在并提示用户用环境变量；配置项保留给 WebUI 显示。
+/// 启动前校验配置里的 ffmpeg / ffprobe 路径存在（存在性而已：能不能跑由引擎的
+/// 显式覆盖分支如实报错）。返回第一条问题；都没问题返回 null。
 Future<String?> validateFfmpeg(ServerConfig config) async {
-  final String? configured = config.ffmpegPath;
-  if (configured != null && configured.isNotEmpty) {
-    if (!await File(configured).exists()) {
-      return 'ffmpeg 路径不存在: $configured';
-    }
-    if ((Platform.environment['FUSHI_FFMPEG'] ?? '').isEmpty) {
-      return 'ffmpeg 配置项只做展示；请同时设置环境变量 FUSHI_FFMPEG=$configured';
+  for (final (String label, String? configured) in <(String, String?)>[
+    ('ffmpeg', config.ffmpegPath),
+    ('ffprobe', config.ffprobePath),
+  ]) {
+    if (configured == null || configured.trim().isEmpty) continue;
+    if (!await File(configured.trim()).exists()) {
+      return '$label 路径不存在: $configured';
     }
   }
   return null;

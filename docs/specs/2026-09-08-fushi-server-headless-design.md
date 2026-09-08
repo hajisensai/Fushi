@@ -220,15 +220,18 @@ Android / iOS / macOS 装服务端；`/api/ocr/job` 迁通用协议。
 | 2 | `834f32bc65` | `/api/downloads` + `ServerDownloadHost`；app 手动下载对话框「下载到」+ 下载中心混排 host 任务 |
 | 3 | `8e193edbe5` | admin 端口独立、token/cookie 鉴权、`/api/admin/*` 九组、单页 WebUI、分块可续上传 + 配额 |
 | 4 | `38da0dde35` | `torrent.engine` 三态 + 内置 libtorrent 随包；ORT 随包 + CUDA 说明；CI 编 `.so`/下 ORT/真进程冒烟；README |
+| 5（用户复审后追加，2026-09-08） | 见 git log | ① 内容订阅进 host：`/api/subscriptions`（引擎接口/路由）、`ServerSubscriptionHost`（后端四元组与落地源由 host 覆写）、host 真 provider registry（Torznab/Nyaa provider 搬进引擎、内置表去 i18n、偏好读侧下沉）+ `VideoDownloadSubscriptionService` 在 host 上跑；客户端发现页订阅加「运行位置：本机 / host」，下载页订阅 tab 顶部混排 host 订阅；WebUI「订阅」页。② `libraries[].kind: manga`：页图目录归组规则下沉引擎 `manga_folder_plan.dart`，服务端扫 `.mokuro` 卷 + 页图目录。③ ffmpeg：引擎解析层加宿主显式路径第 0 级（`ffmpegPathOverride` / `ffprobePathOverride`），配置 `ffmpeg:` / `ffprobe:` 真正生效。④ Linux `.so` 改 vcpkg 静态链（`build_linux_so.sh` + `x64-linux-fpic` triplet + `-static-libstdc++`），目标机零 libtorrent 依赖。⑤ `release-server.yml` 专用发布（beta/formal，永不 Latest）。 |
 
-### 与原设计的偏差（明说）
+### 与原设计的偏差（明说；第 5 批之后仍成立的）
 
-- **订阅（tracker 订阅 CRUD）没进 `/api/downloads`**：host 只接客户端投来的磁力；订阅仍在客户端本地跑、可把目标选成 host。原因：订阅带发现页身份快照与「实例接管」判据，服务端没有发现页，硬塞会造出第二套判据。
-- **漫画目录扫描没做**：`LibraryRootConfig.kind` 只认 `video` / `book`；漫画走客户端上传（既有 manga sync package）+ OCR 任务。
-- **`ffmpeg` 配置项只做展示**：引擎 CLI 后端只认 `FUSHI_FFMPEG` 环境变量与可执行同级；`serve` 启动时校验路径并提示用环境变量。根治要改引擎的 ffmpeg 解析装配点，本轮不动（影响面是 app 五端）。
-- **Linux torrent bridge 动态链接发行版 libtorrent**（不是 vcpkg 静态链）：目标机要装 `libtorrent-rasterbar2.0`。换静态链只多 40 分钟冷编、不多信息，等真有「目标机装不了 apt 包」的用户再说。
-- **WebUI 没有浏览器级自动化测试**：内联 JS 过 `node --check`，API 面走真进程 HTTP 冒烟（27 + 9 项）；页面交互靠人工。
+第 5 批已根治的旧偏差：订阅进 host、漫画目录扫描、`ffmpeg` 配置项生效、Linux `.so` 静态链、专用发布——不再列。仍成立的：
+
+- **订阅的「实例接管」判据没有变成第二套**：订阅行落 host 的表、后端四元组由 host 用自己的 `_identity()` 覆写，客户端只传内容身份；host 管线的 `_validateBackendBinding` 与 app 侧同一段代码。代价是**客户端搜到的 provider 必须在 host 上也注册了**（能力位 `providers` 报清单，客户端提交前校验、host 再校验一次 400 `provider_unavailable`）。Torznab indexer 配置与停用清单 host 侧读同一张 `preferences` 表，目前没有 WebUI 编辑面。
+- **漫画根只认 `.mokuro` 卷与纯页图目录**：cbz / cbr / cb7 / pdf 不扫（压缩包导入器还在 app 侧、rar 需外部 7-Zip、pdf 需 app 侧栅格化）。
+- **Linux 桌面版 Fushi 仍未随包内置引擎**：服务端那份静态 `.so` 可直接复用，但 runner CMake copy-if-present 未接（另起 job）。
+- **WebUI 没有浏览器级自动化测试**：内联 JS 过 `node --check`，API 面走真进程 HTTP 冒烟；页面交互靠人工。
 - **audiobooks 库服务仍返回空集**（第 0 期既定），有声书不经 host 托管。
+- **`release-server.yml` 没有真跑过一次**：workflow 语法、`check_release_policy.ps1`、Dart 侧 workflow 守卫都过了，但发布链路的证据要等第一次手动 dispatch。
 
 ### 验证证据（本机 Windows）
 

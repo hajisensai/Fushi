@@ -36,7 +36,9 @@ import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi/src/media/collections/collection_continue.dart';
-import 'package:fushi/src/media/torrent/nyaa_resource_provider.dart';
+import 'package:fushi_engine/media/torrent/nyaa_resource_provider.dart';
+import 'package:fushi/src/sync/interconnect_subscription_client.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_service.dart';
@@ -1692,19 +1694,31 @@ class _HomePageState extends BasePageState<HomePage>
     }
     final VideoResourceRegistry? registry =
         appModelNoUpdate.videoResourceRegistry;
-    if (registry == null ||
-        appModelNoUpdate.videoDownloadPipelineService == null ||
-        appModelNoUpdate.videoDownloadSubscriptionService == null) {
+    // 订阅可以交给已配对 host 跑（host 自己搜、自己下）：先探一遍，有 host 时
+    // 本地下载后端/落地源都不是硬前置。
+    final InterconnectSubscriptionClient remoteClient =
+        InterconnectSubscriptionClient(
+      repo: SyncRepository(appModelNoUpdate.database),
+    );
+    final List<HostSubscriptionTarget> remoteTargets =
+        await remoteClient.probeAll();
+    if (!context.mounted) return;
+    final bool localRunnable = registry != null &&
+        appModelNoUpdate.videoDownloadPipelineService != null &&
+        appModelNoUpdate.videoDownloadSubscriptionService != null;
+    if (registry == null || (!localRunnable && remoteTargets.isEmpty)) {
       unawaited(_promptDownloadBackendSetup(context));
       return;
     }
-    final List<MediaSourceRow> sources =
-        await _managedVideoDownloadSourcesOrPrompt(context);
+    final List<MediaSourceRow> sources = remoteTargets.isEmpty
+        ? await _managedVideoDownloadSourcesOrPrompt(context)
+        : await appModelNoUpdate.getManagedVideoDownloadSources();
     // PR #1021 把「后端 runtime 是否可用」延后到真正提交下载时（target 在
     // onSubmit 里取），后端没配好也能先搜资源。但「有没有受管视频来源」是另一
     // 回事：没有落地文件夹时来源下拉是空的、提交按钮永远灰着，所以 BUG-1872 的
     // 引导必须留在打开页面之前。两个原因本来就是两条分支，别再合成一条。
-    if (!context.mounted || sources.isEmpty) return;
+    // 有 host 可用时例外：落点在 host，没有本地来源也能订阅。
+    if (!context.mounted || (sources.isEmpty && remoteTargets.isEmpty)) return;
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (_) => VideoDiscoverySubscriptionPage(
@@ -1715,6 +1729,36 @@ class _HomePageState extends BasePageState<HomePage>
               appModelNoUpdate.prefsRepo.videoDownloadTargetSourceId,
           // 同资源搜索页：后端没配好这条失败落在页面里，配置引导按端口注入。
           onConfigureBackend: _promptDownloadBackendSetup,
+          remoteTargets: remoteTargets,
+          onRemoteSubmit:
+              (VideoDiscoveryRemoteSubscriptionSelection selection) async {
+            final VideoMediaReference reference = selection.media;
+            await remoteClient.create(
+              selection.target,
+              HostSubscriptionCreate(
+                // 与本地订阅同一个稳定 id：同一作品在同一台 host 上重复订阅只 upsert。
+                subscriptionId: videoDiscoverySubscriptionId(reference),
+                title: reference.title,
+                searchQuery: _videoResourceSearchQuery(reference),
+                mediaKind: reference.mediaKind.name,
+                mode: reference.mediaKind == VideoMetadataMediaKind.movie
+                    ? 'oneShot'
+                    : 'ongoing',
+                resourceProvider:
+                    persistedVideoResourceProviderId(selection.resource),
+                identityJson: encodeVideoMediaReference(reference),
+                metadataProvider: reference.providerId,
+                externalId: reference.mediaId,
+                discoveryCategory: reference.discoveryCategory.name,
+                year: reference.year,
+                season: reference.season,
+                coverUrl: item.posterUrl,
+                filterJson: selection.filter.json,
+                startAfterEpisode: selection.startAfterEpisode,
+                subtitlePolicy: selection.subtitlePolicy.name,
+              ),
+            );
+          },
           onSubmit: (VideoDiscoverySubscriptionSelection selection) async {
             final VideoDownloadBackendTarget target =
                 await appModelNoUpdate.currentVideoDownloadBackendTarget();

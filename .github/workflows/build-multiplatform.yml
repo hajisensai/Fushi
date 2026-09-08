@@ -324,37 +324,61 @@ jobs:
       # 第 4 期：无头服务端的两块随包原生库，都落 bundle/lib/（服务端按
       # `<exe>/../lib/<裸名>` 定位，见 packages/fushi_server/lib/src/native_libs.dart）。
       #
-      # (a) 内置 torrent 引擎 bridge：与 native-torrent-gate.yml 的 bridge-linux job
-      #     同一条路径——host GCC + 发行版 libtorrent-rasterbar 2.0.x 动态链接。
-      #     产物运行期依赖目标机的 libtorrent-rasterbar.so.2.0（apt 包
-      #     libtorrent-rasterbar2.0），README 有写；不走 vcpkg 静态链是因为冷编 40 分钟
-      #     换不来新增信息（ABI 门已由 gate 守住）。
+      # (a) 内置 torrent 引擎 bridge：**vcpkg manifest 静态链**（x64-linux-fpic overlay
+      #     triplet，libtorrent 2.0.11 + boost + openssl 全进 .so，libstdc++ 也静态），
+      #     目标机零运行库依赖——此前动态链发行版 libtorrent-rasterbar，等于逼用户
+      #     `apt install` 或退到外接 qBittorrent。冷编约 40 min，二进制缓存命中后 ~3 min；
+      #     缓存 key 带 runner ImageVersion（TODO-2668 同款理由）。
       # (b) onnxruntime CPU 版：与 third_party/flutter_onnxruntime/linux 钉同一版本
       #     1.22.0（asr_onnx_ffi 的 kOrtApiVersion=22 要求 ≥1.22）。要 CUDA 的用户
       #     自行换成 GPU 包并在配置 onnxruntime_library 指过去（README「GPU」一节）。
-      - name: Install libtorrent-rasterbar (host toolchain)
+      - name: Resolve vcpkg cache identity (fushi_server)
+        id: vcpkg_cache_id_server
         shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get install -y --no-install-recommends \
-            libtorrent-rasterbar-dev libboost-dev libssl-dev
-          ver="$(dpkg-query -W -f='${Version}' libtorrent-rasterbar-dev)"
-          echo "libtorrent-rasterbar-dev = $ver"
-          case "$ver" in
-            2.0.*) : ;;
-            *) echo "::error title=libtorrent ABI line drifted::期望 2.0.x，实际 $ver（bridge 是 2.0 API）"; exit 1 ;;
-          esac
-      - name: Build embedded torrent bridge for fushi_server (Linux)
+          image="${ImageVersion:-unknown-image}"
+          image="$(echo "$image" | tr -c '0-9A-Za-z._-' '-')"
+          echo "vcpkg cache identity (runner ImageVersion): $image"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+      - name: Cache vcpkg source distfiles (libtorrent linux)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.temp }}/vcpkg-downloads
+            !${{ runner.temp }}/vcpkg-downloads/tools
+          key: ${{ runner.os }}-vcpkg-downloads-libtorrent-linux-v1-${{ steps.vcpkg_cache_id_server.outputs.image }}
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-downloads-libtorrent-linux-v1-
+      - name: Cache vcpkg binary archives (libtorrent linux)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/vcpkg/archives
+          key: ${{ runner.os }}-vcpkg-libtorrent-x64-linux-fpic-v1-${{ steps.vcpkg_cache_id_server.outputs.image }}
+      - name: Build embedded torrent bridge for fushi_server (Linux, static)
         shell: bash
+        env:
+          VCPKG_DOWNLOADS: ${{ runner.temp }}/vcpkg-downloads
         run: |
           set -euo pipefail
-          cmake -G Ninja -B "$RUNNER_TEMP/torrent-bridge-linux" -S native/fushi_torrent \
-            -DCMAKE_BUILD_TYPE=Release
-          cmake --build "$RUNNER_TEMP/torrent-bridge-linux"
-          so="$RUNNER_TEMP/torrent-bridge-linux/libfushi_torrent_ffi.so"
+          chmod +x native/fushi_torrent/build_linux_so.sh
+          bash native/fushi_torrent/build_linux_so.sh "$VCPKG_INSTALLATION_ROOT"
+          so=native/fushi_torrent/prebuilt/linux-x64/libfushi_torrent_ffi.so
           bash .github/scripts/verify_torrent_abi.sh "$so" nm
           mkdir -p build/fushi_server_linux/bundle/lib
           cp "$so" build/fushi_server_linux/bundle/lib/
+      # 与 windows job 同一理由：这是 Linux 上唯一能把 Dart FFI 绑定按真实 ABI 调一遍
+      # 的地方（release.yml 的真单测门没有原生产物，这个包整组 skip）。
+      - name: Run fushi_torrent FFI tests against the freshly built .so
+        shell: bash
+        working-directory: packages/fushi_torrent
+        env:
+          FUSHI_TORRENT_LIB: ${{ github.workspace }}/native/fushi_torrent/prebuilt/linux-x64/libfushi_torrent_ffi.so
+        run: |
+          set -euo pipefail
+          test -f "$FUSHI_TORRENT_LIB" || { echo "::error::.so not found at $FUSHI_TORRENT_LIB"; exit 1; }
+          dart pub get
+          dart test
       - name: Bundle onnxruntime (CPU) for fushi_server (Linux)
         shell: bash
         run: |

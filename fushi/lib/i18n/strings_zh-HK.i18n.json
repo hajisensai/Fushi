@@ -4447,5 +4447,12 @@
   "download_target_local": "This device",
   "download_target_remote": "$device (interconnect host)",
   "download_remote_jobs_title": "Tasks on $device",
-  "download_remote_jobs_empty": "No tasks on the host yet"
+  "download_remote_jobs_empty": "No tasks on the host yet",
+  "subscription_run_location": "Run on",
+  "subscription_run_local": "This device",
+  "subscription_remote_empty": "No subscriptions on the host",
+  "subscription_remote_unsupported": "The host has no download backend configured",
+  "subscription_run_remote": "Host $device",
+  "subscription_remote_section_title": "Subscriptions on $device",
+  "subscription_remote_provider_unavailable": "The host has no indexer for this resource ($provider)"
 }

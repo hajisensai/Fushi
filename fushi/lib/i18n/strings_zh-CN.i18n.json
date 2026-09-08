@@ -4447,5 +4447,12 @@
   "download_target_local": "本机",
   "download_target_remote": "$device（互联主机）",
   "download_remote_jobs_title": "$device 上的任务",
-  "download_remote_jobs_empty": "主机上还没有任务"
+  "download_remote_jobs_empty": "主机上还没有任务",
+  "subscription_run_location": "运行位置",
+  "subscription_run_local": "本机",
+  "subscription_remote_empty": "主机上没有订阅",
+  "subscription_remote_unsupported": "主机未配置下载后端",
+  "subscription_run_remote": "主机 $device",
+  "subscription_remote_section_title": "$device 上的订阅",
+  "subscription_remote_provider_unavailable": "主机上没有这个资源的索引器（$provider）"
 }

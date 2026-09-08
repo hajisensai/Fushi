@@ -16,6 +16,7 @@ import 'package:fushi_core/fushi_core.dart'
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/remote_subscriptions_section.dart';
 import 'package:fushi/src/pages/implementations/video_download_subscription_edit_dialog.dart';
 import 'package:fushi/utils.dart';
 
@@ -292,6 +293,7 @@ class _VideoDownloadSubscriptionsPanelState
           itemsWatcher: database.watchVideoDownloadSubscriptionItems,
           itemCountsLoader:
               database.getVideoDownloadSubscriptionItemStatusCounts,
+          remoteSection: const RemoteSubscriptionsSection(),
         );
       },
     );
@@ -310,10 +312,14 @@ class VideoDownloadSubscriptionsView extends StatefulWidget {
     this.onEdit,
     this.itemsWatcher,
     this.itemCountsLoader,
+    this.remoteSection,
     super.key,
   });
 
   final List<VideoDownloadSubscriptionRow> subscriptions;
+
+  /// 已配对 host 上的订阅（host 自己跑的那些），挂在本地列表上方；null = 不显示。
+  final Widget? remoteSection;
   final bool checkingAll;
   final Future<void> Function() onCheckAll;
   final VideoDownloadSubscriptionToggle onToggle;
@@ -497,6 +503,7 @@ class _VideoDownloadSubscriptionsViewState
             ),
           ),
         ),
+        if (widget.remoteSection != null) widget.remoteSection!,
         if (widget.subscriptions.isNotEmpty) _buildToolbar(),
         Expanded(
           child: widget.subscriptions.isEmpty

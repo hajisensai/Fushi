@@ -11,6 +11,8 @@ import 'package:fushi_engine/media/video/download/video_download_pipeline_servic
     show VideoDownloadPipelineActionRequired;
 import 'package:fushi_engine/sync/downloads/host_download_host.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job.dart';
+import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
+import 'package:fushi_engine/sync/subscriptions/host_subscription_routes.dart' show HostSubscriptionRejected;
 import 'package:fushi_server/src/admin/admin_context.dart';
 import 'package:fushi_server/src/admin/upload_store.dart';
 import 'package:fushi_server/src/config/server_config.dart';
@@ -60,6 +62,8 @@ class AdminApi {
       return _err(e.status, e.message);
     } on VideoDownloadPipelineActionRequired catch (e) {
       return _err(409, e.message);
+    } on HostSubscriptionRejected catch (e) {
+      return _json(<String, Object?>{'error': e.message, 'reason': e.reason}, status: e.status);
     } catch (e, stack) {
       ctx.log.log('AdminApi $method $path', e, stack);
       return _err(500, '$e');
@@ -101,6 +105,26 @@ class AdminApi {
         return _json(const <String, Object?>{'ok': true});
       case ('DELETE', _) when path.startsWith('/api/admin/downloads/'):
         await _downloadsHost().deleteJob(path.substring('/api/admin/downloads/'.length));
+        return _json(const <String, Object?>{'ok': true});
+      case ('GET', '/api/admin/subscriptions'):
+        return _subscriptions();
+      case ('POST', '/api/admin/subscriptions'):
+        return _createSubscription(await _body(request));
+      case ('POST', '/api/admin/subscriptions/check'):
+        await _subscriptionsHost().checkNow(null);
+        return _json(const <String, Object?>{'ok': true});
+      case ('POST', _) when path.startsWith('/api/admin/subscriptions/') && path.endsWith('/enable'):
+        final Map<String, dynamic> body = await _body(request);
+        await _subscriptionsHost().setEnabled(
+          _segment(path, '/api/admin/subscriptions/', '/enable'),
+          body['enabled'] == true,
+        );
+        return _json(const <String, Object?>{'ok': true});
+      case ('POST', _) when path.startsWith('/api/admin/subscriptions/') && path.endsWith('/check'):
+        await _subscriptionsHost().checkNow(_segment(path, '/api/admin/subscriptions/', '/check'));
+        return _json(const <String, Object?>{'ok': true});
+      case ('DELETE', _) when path.startsWith('/api/admin/subscriptions/'):
+        await _subscriptionsHost().delete(Uri.decodeComponent(path.substring('/api/admin/subscriptions/'.length)));
         return _json(const <String, Object?>{'ok': true});
       case ('GET', '/api/admin/models'):
         return _models();
@@ -151,6 +175,8 @@ class AdminApi {
       'lastScan': ctx.lastScan?.toString(),
       'lastScanAt': ctx.lastScanAt?.toIso8601String(),
       'downloads': await ctx.host.downloads?.capability(),
+      'subscriptions': await ctx.host.subscriptions?.capability(),
+      'subscriptionCount': (await ctx.host.subscriptions?.list())?.length,
       'ocr': ocr == null
           ? null
           : <String, Object?>{
@@ -271,6 +297,34 @@ class AdminApi {
     return _json(<String, Object?>{'jobId': jobId});
   }
 
+  // ── 订阅 ─────────────────────────────────────────────────────────────
+
+  HostSubscriptionHost _subscriptionsHost() {
+    final HostSubscriptionHost? host = ctx.host.subscriptions;
+    if (host == null) throw const FormatException('subscriptions not available');
+    return host;
+  }
+
+  Future<shelf.Response> _subscriptions() async {
+    final HostSubscriptionHost? host = ctx.host.subscriptions;
+    if (host == null) return _json(const <String, Object?>{'supported': false, 'subscriptions': <Object?>[]});
+    final Map<String, Object?> cap = await host.capability();
+    final Map<String, Map<String, int>> counts = await host.itemCounts();
+    return _json(<String, Object?>{
+      ...cap,
+      'subscriptions': <Object?>[
+        for (final VideoDownloadSubscriptionRow r in await host.list())
+          videoDownloadSubscriptionToWire(r, itemCounts: counts[r.subscriptionId]),
+      ],
+    });
+  }
+
+  Future<shelf.Response> _createSubscription(Map<String, dynamic> body) async {
+    final VideoDownloadSubscriptionRow row =
+        await _subscriptionsHost().create(HostSubscriptionCreateRequest.fromJson(body));
+    return _json(<String, Object?>{'subscription': videoDownloadSubscriptionToWire(row)});
+  }
+
   // ── 模型 ─────────────────────────────────────────────────────────────
 
   Map<String, Object?>? _modelsCache;
@@ -361,6 +415,7 @@ class AdminApi {
         'lanRequiresPin': ctx.config.lanRequiresPin,
         'subtitleLanguage': ctx.config.subtitleLanguage,
         'ffmpeg': ctx.config.ffmpegPath,
+        'ffprobe': ctx.config.ffprobePath,
         'onnxruntimeLibrary': ctx.config.ortLibraryPath,
         'uploadQuotaBytes': ctx.config.uploadQuotaBytes,
         'adminPort': ctx.config.adminPort,
@@ -375,7 +430,7 @@ class AdminApi {
           'listen': ctx.config.torrentListen,
           'embeddedLibraryFound': locateBundledLibrary(torrentLibraryName()),
         },
-        'restartRequiredKeys': const <String>['port', 'bind', 'tls', 'adminPort', 'qbittorrent', 'torrent', 'onnxruntimeLibrary'],
+        'restartRequiredKeys': const <String>['port', 'bind', 'tls', 'adminPort', 'qbittorrent', 'torrent', 'onnxruntimeLibrary', 'ffmpeg', 'ffprobe'],
       });
 
   Future<shelf.Response> _putSettings(Map<String, dynamic> body) async {
@@ -396,6 +451,7 @@ class AdminApi {
       lanRequiresPin: body['lanRequiresPin'] is bool ? body['lanRequiresPin'] as bool : null,
       subtitleLanguage: body['subtitleLanguage']?.toString(),
       ffmpegPath: body['ffmpeg']?.toString(),
+      ffprobePath: body['ffprobe']?.toString(),
       ortLibraryPath: body['onnxruntimeLibrary']?.toString(),
       uploadQuotaBytes: body['uploadQuotaBytes'] is num ? (body['uploadQuotaBytes'] as num).toInt() : null,
       adminPort: body['adminPort'] is num ? (body['adminPort'] as num).toInt() : null,
