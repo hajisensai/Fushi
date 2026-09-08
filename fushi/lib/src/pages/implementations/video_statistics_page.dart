@@ -432,9 +432,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
   /// v76：身份感知删除——只删本 tile 展示的行：该 uid 的行 + 本 tile 吸收过的
   /// 删一次会话：段写零（同步安全），再从 DB 重新聚合。
   Future<void> _deleteSession(StudySession s) async {
-    await appModelNoUpdate.database.deleteStudySession(
-      segmentUids: s.segmentUids.toSet(),
-    );
+    await deleteStudySession(appModelNoUpdate.database, s);
     if (mounted) await _loadFromDatabase();
   }
 
@@ -447,8 +445,8 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
       title: video.title,
       sessions: _sessions.where((StudySession s) => s.mediaKey == uid).toList(),
       titleOf: (StudySession s) => s.title,
-      onDelete: (StudySession s) => appModelNoUpdate.database
-          .deleteStudySession(segmentUids: s.segmentUids.toSet()),
+      onDelete: (StudySession s) =>
+          deleteStudySession(appModelNoUpdate.database, s),
     );
     if (deleted && mounted) await _loadFromDatabase();
   }

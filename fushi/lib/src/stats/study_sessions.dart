@@ -1,8 +1,23 @@
+import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 同一媒体相邻两段间隔不超过这个值就归成同一次会话（与首页活动流的
 /// `kActivitySessionGap` 同值：一条纪律，两处消费）。
 const Duration kStudySessionGap = Duration(minutes: 30);
+
+/// 删一次会话的**唯一**入口：先让段 uid 在所有在跑的 `StudyClock` 上退役，再删库。
+///
+/// 顺序不能反。时钟按 uid upsert **绝对值**，删库与退役之间落下的任何一个 tick 都会
+/// 把刚写零的行原样写回去——用户删掉「刚刚那次」（有声书在放 / galgame hook 在跑，
+/// 段还开着）时必然撞上，表现为「删了又回来」。
+/// 页面**不要**直接调 `FushiDatabase.deleteStudySession`。
+Future<void> deleteStudySession(FushiDatabase db, StudySession s) async {
+  retireStudySegmentUids(s.segmentUids);
+  await db.deleteStudySession(
+    segmentUids: s.segmentUids.toSet(),
+    gameSessionId: s.gameSessionId,
+  );
+}
 
 /// 一次学习会话（统计页「最近会话」一行）：**派生视图，不落库**。
 ///
@@ -62,6 +77,17 @@ class StudySession {
 bool _isZero(StudySegmentRow s) =>
     s.durationMs <= 0 && s.chars <= 0 && s.pages <= 0;
 
+/// 这一段属于「骨架窗口之外的游玩会话」吗？
+///
+/// 游戏会话的时长只存在于 `galgame_sessions` 骨架行上；hook 记的字数段 `durationMs`
+/// 恒为 0。调用方按 `kRecentGameSessionsLimit` 截断骨架，所以更早的游玩会话**没有**
+/// 骨架行——它的字数段若掉进通用归并，产出的是「0 分钟、只有字数」的孤儿会话，
+/// 用户往下翻过那条线之后整片都是它们。窗口之外不做游戏会话，比做一个假的好。
+bool _outsideGameSkeleton(StudySegmentRow s, int? windowStartAt) =>
+    windowStartAt != null &&
+    s.mediaKind == kActivityMediaGame &&
+    s.startAt < windowStartAt;
+
 /// 从事实派生会话列表，按结束时刻倒序。
 ///
 /// [segments] 写零的行（用户已删）不进任何会话；legacy 日行没有 uid、没有起止时刻，
@@ -111,9 +137,19 @@ List<StudySession> deriveStudySessions({
   }
 
   // 2) 其余段：同 (device, kind, key) 按起始时刻排序，gap 内相邻归并。
+  // 骨架窗口的左界：比它更早的游戏段没有骨架行，见 [_outsideGameSkeleton]。
+  int? gameWindowStartAt;
+  for (final GalgameSessionRow g in gameSessions) {
+    if (gameWindowStartAt == null || g.startMs < gameWindowStartAt) {
+      gameWindowStartAt = g.startMs;
+    }
+  }
   final List<StudySegmentRow> rest = <StudySegmentRow>[
     for (final StudySegmentRow s in segments)
-      if (!_isZero(s) && !absorbed.contains(s.uid)) s,
+      if (!_isZero(s) &&
+          !absorbed.contains(s.uid) &&
+          !_outsideGameSkeleton(s, gameWindowStartAt))
+        s,
   ]..sort((StudySegmentRow a, StudySegmentRow b) {
       final int c = _compareGroup(_groupKey(a), _groupKey(b));
       return c != 0 ? c : a.startAt.compareTo(b.startAt);

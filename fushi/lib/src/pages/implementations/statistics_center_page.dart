@@ -185,10 +185,7 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
 
   /// 删一次会话：段写零 + 游戏骨架行硬删（同一事务），再整页重聚合。
   Future<void> _deleteSession(StudySession s) async {
-    await ref.read(appProvider).database.deleteStudySession(
-          segmentUids: s.segmentUids.toSet(),
-          gameSessionId: s.gameSessionId,
-        );
+    await deleteStudySession(ref.read(appProvider).database, s);
     if (mounted) await _load();
   }
 

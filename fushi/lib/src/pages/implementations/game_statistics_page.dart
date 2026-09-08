@@ -332,10 +332,7 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
 
   /// 删一次会话：galgame_sessions 骨架行硬删 + 吸收的字数段写零（同一事务），再重聚合。
   Future<void> _deleteSession(StudySession s) async {
-    await appModelNoUpdate.database.deleteStudySession(
-      segmentUids: s.segmentUids.toSet(),
-      gameSessionId: s.gameSessionId,
-    );
+    await deleteStudySession(appModelNoUpdate.database, s);
     if (mounted) await _load();
   }
 

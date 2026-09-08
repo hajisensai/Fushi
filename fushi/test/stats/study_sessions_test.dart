@@ -108,6 +108,39 @@ void main() {
     expect(out.every((StudySession s) => !s.segmentUids.contains('z')), isTrue);
   });
 
+  test('游戏：骨架窗口之前的字数段不产出 0 分钟孤儿会话（kRecentGameSessionsLimit 截断）',
+      () {
+    // 调用方按 kRecentGameSessionsLimit=200 截断骨架，只传进来最近这一条。
+    // 更早的那次游玩没有骨架行，它的 hook 字数段 durationMs 恒为 0：若掉进通用
+    // 归并就是一条「0 分钟、只有字数」的假会话，用户翻过 200 条之后整片都是。
+    const GalgameSessionRow recent = GalgameSessionRow(
+      id: 9,
+      gameId: 'g1',
+      startMs: 100 * _min,
+      endMs: 160 * _min,
+      durationSeconds: 3600,
+      dateKey: '2026-09-08',
+    );
+    final List<StudySession> out = deriveStudySessions(
+      segments: <StudySegmentRow>[
+        _seg('inside', kind: kActivityMediaGame, key: 'g1', start: 110 * _min,
+            end: 120 * _min, chars: 500),
+        // 骨架窗口之前：属于已被截断的更早那次游玩。
+        _seg('older', kind: kActivityMediaGame, key: 'g1', start: 10 * _min,
+            end: 20 * _min, chars: 700),
+      ],
+      gameSessions: const <GalgameSessionRow>[recent],
+    );
+    expect(out, hasLength(1), reason: '只剩骨架那一条，截断之外不造假会话');
+    expect(out.single.gameSessionId, 9);
+    expect(out.single.segmentUids, <String>['inside']);
+    expect(
+      out.any((StudySession s) => s.segmentUids.contains('older')),
+      isFalse,
+      reason: '骨架窗口之前的游戏段不得变成 0 分钟孤儿会话',
+    );
+  });
+
   test('游戏：galgame_sessions 行是骨架，吸收区间相交的同游戏字数段', () {
     const GalgameSessionRow play = GalgameSessionRow(
       id: 7,

@@ -11,7 +11,8 @@ import 'package:fushi/utils.dart';
 /// 数据只有一处来源 `StatFacts.sessions`（段按 gap 归并 + 游玩会话骨架）；这里是它
 /// 唯一的展示件，统计中心总览、阅读 / 视频 / 游戏三个域 tab 与「按媒体」的会话
 /// sheet 都用同一个列表：一行 = 标题 · 起止时刻 · 时长 / 字数 / 页数 · 垃圾桶。
-/// 删除走确认 → [onDelete]（页面里落 `FushiDatabase.deleteStudySession` 再重聚合）。
+/// 删除走确认 → [onDelete]（页面里落 `deleteStudySession(db, session)` 再重聚合；
+/// 那个 helper 先让段 uid 在在跑的 StudyClock 上退役，别绕过它直接调 DB 层）。
 ///
 /// 没有点击跳转：会话是统计事实，不是媒体入口（按媒体列表 / 时段明细已有跳转）。
 

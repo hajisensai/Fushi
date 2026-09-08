@@ -1513,9 +1513,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
 
   /// 删一次会话：段写零（同步安全），再从 DB 重新聚合。
   Future<void> _deleteSession(StudySession s) async {
-    await appModelNoUpdate.database.deleteStudySession(
-      segmentUids: s.segmentUids.toSet(),
-    );
+    await deleteStudySession(appModelNoUpdate.database, s);
     if (mounted) await _loadFromDatabase();
   }
 
@@ -1531,8 +1529,8 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       title: _bookDisplayTitle(book),
       sessions: sessions,
       titleOf: _sessionTitle,
-      onDelete: (StudySession s) => appModelNoUpdate.database
-          .deleteStudySession(segmentUids: s.segmentUids.toSet()),
+      onDelete: (StudySession s) =>
+          deleteStudySession(appModelNoUpdate.database, s),
     );
     if (deleted && mounted) await _loadFromDatabase();
   }
