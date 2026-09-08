@@ -2119,11 +2119,25 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 优先 per-book（[widget.bookUid]）绑定，其次媒体类型级 'video' 绑定，
   /// 都无则维持当前活跃 profile。镜像 [_ReaderAudiobook._resolveAndApplyProfile]
   /// 的非致命范式：失败只记日志、不打断视频加载。
-  Future<void> _resolveAndApplyVideoProfile() =>
-      ref.read(profileViewModelProvider.notifier).autoApplyBinding(
-            bookUid: widget.bookUid,
-            mediaType: ProfileMediaKind.video,
-          );
+  Future<void> _resolveAndApplyVideoProfile() async {
+    // 语言级绑定要读 `video_books.language`。本方法与视频加载并行跑，那边的
+    // `_bookRow` 此刻还没赋值，所以这里自己读一次（主键查询）。远端视频没有本地
+    // 行 → language 为 null → 语言级整级跳过，落到 'video' 媒体类型绑定。
+    //
+    // 查询失败必须与 autoApplyBinding 一样非致命：这条链绝不能打断视频加载。
+    String? languageTag;
+    try {
+      languageTag =
+          (await widget.repo.getByBookUid(widget.bookUid))?.language;
+    } catch (e, st) {
+      debugPrint('[VideoFushi] 读内容语言失败（非致命，退回媒体类型绑定）: $e\n$st');
+    }
+    await ref.read(profileViewModelProvider.notifier).autoApplyBinding(
+          bookUid: widget.bookUid,
+          languageTag: languageTag,
+          mediaType: ProfileMediaKind.video,
+        );
+  }
 
   /// TODO-1213：切换加载阶段并刷新加载态 UI（mounted 守卫）。离开「下载字幕」阶段时
   /// 一并清字幕进度（其它阶段无确定性进度，转 indeterminate）。

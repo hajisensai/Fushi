@@ -14,7 +14,7 @@ import 'package:fushi_core/fushi_core.dart';
 /// app layer catches it and shows an "update your app" notice.
 ///
 /// These tests therefore assert the OPPOSITE of the old ones: the open must be
-/// REFUSED (throw), never silently rebuilt. Seeds user_version = 99 (well above
+/// REFUSED (throw), never silently rebuilt. Seeds user_version = 999 (well above
 /// the current schema) to force the `from > to` path regardless of how high the
 /// real [FushiDatabase.schemaVersion] climbs, so the guard never goes stale on a
 /// schema bump.
@@ -22,7 +22,7 @@ Future<FushiDatabase> _openDowngradedFromFuture() async {
   return FushiDatabase.forTesting(
     NativeDatabase.memory(
       setup: (rawDb) {
-        // Seed a DB that claims to be a FUTURE version (99 > current) with a
+        // Seed a DB that claims to be a FUTURE version (999 > current) with a
         // real row, so a destructive rebuild (if it ever regressed back) would
         // be observable as data loss.
         rawDb.execute('''
@@ -45,7 +45,7 @@ CREATE TABLE epub_books (
           "(book_key, title, epub_path, extract_dir, chapter_count, chapters_json, imported_at) "
           "VALUES ('stale future row', 'stale future row', '/x.epub', '/x', 0, '[]', 0)",
         );
-        rawDb.execute('PRAGMA user_version = 99');
+        rawDb.execute('PRAGMA user_version = 999');
       },
     ),
   );
@@ -93,7 +93,7 @@ CREATE TABLE book_tag_mappings (
         rawDb.execute(
           "INSERT INTO book_tag_mappings (book_key, tag_id) VALUES ('b', 1)",
         );
-        rawDb.execute('PRAGMA user_version = 99');
+        rawDb.execute('PRAGMA user_version = 999');
       },
     ),
   );
@@ -105,13 +105,13 @@ void main() {
     final FushiDatabase db = await _openDowngradedFromFuture();
     addTearDown(db.close);
 
-    // Reading forces the lazy DB to open, which triggers onUpgrade(99 -> current)
+    // Reading forces the lazy DB to open, which triggers onUpgrade(999 -> current)
     // and must throw the protection exception instead of dropping/rebuilding.
     await expectLater(
       db.customSelect('PRAGMA user_version').getSingle(),
       throwsA(isA<FushiDatabaseDowngradeException>()
           .having((FushiDatabaseDowngradeException e) => e.dbVersion,
-              'dbVersion', 99)
+              'dbVersion', 999)
           .having((FushiDatabaseDowngradeException e) => e.appSchemaVersion,
               'appSchemaVersion', db.schemaVersion)),
       reason: 'a newer-schema DB must be refused to protect user data, '

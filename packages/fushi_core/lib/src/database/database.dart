@@ -633,6 +633,7 @@ void _requireOneVideoMetadataOwner({
   ProfileSettings,
   MediaTypeProfiles,
   BookProfiles,
+  LanguageProfiles,
   SyncBaselines,
   VideoBooks,
   VideoWatchStatistics,
@@ -725,7 +726,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 98;
+  int get schemaVersion => 99;
 
   /// v97：把 v52 / v57 / v87 / v88 四级台阶里「加列 / 改列名」的幂等语句重放一次，
   /// 补齐漂移库（版本号先于这些台阶被写高的库）。每条都先查 `_columnExists`，
@@ -3026,6 +3027,24 @@ class FushiDatabase extends _$FushiDatabase
               await m.addColumn(
                   mediaCollections, mediaCollections.sourceFolderPath);
             }
+          }
+          if (from < 99) {
+            // v99（语言级 Profile 绑定）：新表 language_profiles，把「这种内容语言用
+            // 哪个 Profile」补进 Profile 的自动解析链（book > language > mediaType >
+            // active）。与 v95 同款的纯新增表范式。
+            //
+            // 无损：旧库升级后表为空 = 没有任何语言绑定 = 解析链在语言这一级恒空转、
+            // 直接落到 mediaType，与升级前逐字节一致（Never break userspace）。
+            // 幂等：fresh DB 由 onCreate 的 createAll 建好；重复升级被 _tableExists 短路。
+            if (!await _tableExists('language_profiles')) {
+              await m.createTable(languageProfiles);
+            }
+            // 索引与建表同步内联：`_ensureIndexes` 只在 onCreate 与个别迁移步里跑，
+            // 升级路径不会自动补上（与 v9 同款处理）。
+            await customStatement(
+              'CREATE INDEX IF NOT EXISTS idx_language_profiles_profile '
+              'ON language_profiles (profile_id)',
+            );
           }
         },
         onCreate: (m) async {

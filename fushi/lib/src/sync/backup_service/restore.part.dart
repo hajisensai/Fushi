@@ -605,6 +605,7 @@ class BackupRestoreService {
     'profile_settings',
     'media_type_profiles',
     'book_profiles',
+    'language_profiles',
   ];
 
   /// Restore a backup (overwrite mode), replacing the current database files.

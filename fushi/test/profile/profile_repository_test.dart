@@ -277,31 +277,130 @@ void main() {
       expect(await db.getPref('font_size'), '20'); // normal restore still works
     });
 
-    test('resolveProfileId precedence: book > mediaType > active', () async {
+    test('resolveProfileId precedence: book > language > mediaType > active',
+        () async {
       final db = await _openDb();
       final repo = _repo(db);
       final a = await repo.createProfile('A');
       final b = await repo.createProfile('B');
       final c = await repo.createProfile('C');
+      final l = await repo.createProfile('L');
       await repo.setActiveProfileId(c);
       // 命名统一 Phase 3.4：绑定 API 收口为 ProfileMediaKind（落库串不变）。
       await repo.setMediaTypeBinding(ProfileMediaKind.epub, b);
       await repo.setBookProfile('book/1', a);
+      await repo.setLanguageBinding('ja', l);
 
       expect(
           await repo.resolveProfileId(
-              bookUid: 'book/1', mediaType: ProfileMediaKind.epub),
-          a); // book binding wins
+              bookUid: 'book/1',
+              languageTag: 'ja',
+              mediaType: ProfileMediaKind.epub),
+          a); // book binding wins over everything
+      expect(
+          await repo.resolveProfileId(
+              bookUid: 'book/none',
+              languageTag: 'ja',
+              mediaType: ProfileMediaKind.epub),
+          l); // language wins over mediaType
       expect(
           await repo.resolveProfileId(
               bookUid: 'book/none', mediaType: ProfileMediaKind.epub),
-          b); // mediaType wins when no book binding
+          b); // mediaType wins when no book/language binding
+      expect(
+          await repo.resolveProfileId(
+              bookUid: 'book/none',
+              languageTag: 'en',
+              mediaType: ProfileMediaKind.epub),
+          b); // unbound language falls through to mediaType
       expect(await repo.resolveProfileId(bookUid: null, mediaType: null),
           c); // active fallback
       expect(
           await repo.resolveProfileId(
               bookUid: 'book/none', mediaType: ProfileMediaKind.lyrics),
           c); // full fallthrough to active (kind bound to nothing)
+    });
+
+    test('语言级绑定按归一化键匹配：ja-JP / JA_jp / zh-Hant-TW 都命中', () async {
+      final db = await _openDb();
+      final repo = _repo(db);
+      final active = await repo.createProfile('Active');
+      final japanese = await repo.createProfile('日语');
+      final traditional = await repo.createProfile('繁中');
+      await repo.setActiveProfileId(active);
+
+      // 写侧传原始形态，落库的是归一化键。
+      await repo.setLanguageBinding('ja-JP', japanese);
+      await repo.setLanguageBinding('zh-Hant-TW', traditional);
+      expect(await repo.getAllLanguageBindings(),
+          <String, int>{'ja': japanese, 'zh-Hant': traditional});
+
+      // 读侧传各种形态都要命中同一个 Profile —— 这正是归一化存在的理由：
+      // 内容语言列里 `ja` / `ja-JP` / `ja_JP` 都可能出现。
+      for (final String tag in <String>['ja', 'ja-JP', 'JA', 'ja_jp', ' ja ']) {
+        expect(
+          await repo.resolveProfileId(
+              bookUid: null, languageTag: tag, mediaType: null),
+          japanese,
+          reason: '「$tag」应命中归一化键 ja 的绑定',
+        );
+      }
+
+      // 简繁不能塌成一个键。
+      expect(
+        await repo.resolveProfileId(
+            bookUid: null, languageTag: 'zh-Hans-CN', mediaType: null),
+        active,
+        reason: 'zh-Hans 未绑定，不能命中 zh-Hant 的绑定',
+      );
+    });
+
+    test('语言不可识别时整级跳过，行为与引入语言绑定前一致', () async {
+      final db = await _openDb();
+      final repo = _repo(db);
+      final active = await repo.createProfile('Active');
+      final byKind = await repo.createProfile('ByKind');
+      final byLanguage = await repo.createProfile('ByLanguage');
+      await repo.setActiveProfileId(active);
+      await repo.setMediaTypeBinding(ProfileMediaKind.epub, byKind);
+      await repo.setLanguageBinding('ja', byLanguage);
+
+      // null / 空串 / 纯空白 / und / 垃圾串一律跳过语言级，落到 mediaType。
+      for (final String? tag in <String?>[null, '', '   ', 'und', '!!', '123']) {
+        expect(
+          await repo.resolveProfileId(
+              bookUid: null,
+              languageTag: tag,
+              mediaType: ProfileMediaKind.epub),
+          byKind,
+          reason: '「$tag」不是可识别语言，必须落到 mediaType 级而不是别的地方',
+        );
+      }
+
+      // 归一化后为空的键也绝不能写进绑定表（否则会成为一个吃掉所有未标注内容的
+      // 幽灵绑定）。
+      await repo.setLanguageBinding('und', byLanguage);
+      await repo.setLanguageBinding('', byLanguage);
+      expect(await repo.getAllLanguageBindings(),
+          <String, int>{'ja': byLanguage});
+    });
+
+    test('删 Profile 时其语言绑定 cascade 清除', () async {
+      final db = await _openDb();
+      // 本文件的内存库走 `FushiDatabase.forTesting`，不经 `_openDbFile` 的
+      // `PRAGMA foreign_keys = ON`（那条只设在文件库路径上），所以默认 FK 是关的，
+      // cascade 一律不触发。生产库是文件库、FK 开着，这里显式对齐生产，否则这条
+      // 断言测的是「SQLite 关着外键时什么都不会发生」——恒真且毫无信息。
+      await db.customStatement('PRAGMA foreign_keys = ON');
+      final repo = _repo(db);
+      final keep = await repo.createProfile('Keep');
+      final drop = await repo.createProfile('Drop');
+      await repo.setActiveProfileId(keep);
+      await repo.setLanguageBinding('ja', drop);
+      await repo.setLanguageBinding('en', keep);
+
+      await repo.deleteProfile(drop);
+      expect(await repo.getAllLanguageBindings(), <String, int>{'en': keep});
     });
 
     test('TODO-2936: manga/game/browser kinds bind and resolve like the rest',

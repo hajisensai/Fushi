@@ -794,6 +794,14 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'profiles/Manga': _kMediaTypeBindingEvidence,
   'profiles/Game': _kMediaTypeBindingEvidence,
   'profiles/Browser': _kMediaTypeBindingEvidence,
+  // 语言绑定（v99）与上面八行同理：写的是 `language_profiles` 表，prefs diff 里
+  // 结构上看不到。行标签是内容语言选择器的自称显示名（`contentLanguageLabelOf`），
+  // 与 `kContentLanguageOptions` 一一对应——那份候选变了，这里要跟着变。
+  'profiles/日本語 (ja)': _kLanguageBindingEvidence,
+  'profiles/简体中文 (zh-Hans)': _kLanguageBindingEvidence,
+  'profiles/繁體中文 (zh-Hant)': _kLanguageBindingEvidence,
+  'profiles/한국어 (ko)': _kLanguageBindingEvidence,
+  'profiles/English (en)': _kLanguageBindingEvidence,
   // 制卡字号写的是 SharedPreferences 里的 AnkiSettings JSON blob（与本表既有的
   // cardCreation 开关同因），消费点是 composeLapisCss(fontScalePercent:)。
   'cardCreation/Card font scale':
@@ -851,6 +859,13 @@ const String _kMediaTypeBindingEvidence =
     'test/profile/media_type_binding_video_guard_test.dart + '
     'test/profile/profile_repository_test.dart + '
     'test/database/profiles_test.dart';
+
+/// 语言级 Profile 绑定（v99）的证据链：归一化键的契约、四级优先级（book >
+/// language > mediaType > active）、以及建表 + cascade 的迁移测试。
+const String _kLanguageBindingEvidence =
+    'test/profile/language_binding_test.dart + '
+    'test/profile/profile_repository_test.dart + '
+    'test/database/migration_v99_language_profiles_test.dart';
 
 /// 焦点驱动的 settings schema **全分组**覆盖测试（Phase 1 Task 4）。
 ///

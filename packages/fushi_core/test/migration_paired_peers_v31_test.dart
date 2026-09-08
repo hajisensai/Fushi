@@ -51,8 +51,14 @@ CREATE TABLE epub_books (
   );
 }
 
-/// 手写一个「未来版本」库（user_version = 99 > 代码 schemaVersion）以强制走降级
-/// 保护分支，且 99 恒大于任何未来 bump 不会 stale。
+/// 手写一个「未来版本」库（user_version = 999 > 代码 schemaVersion）以强制走降级
+/// 保护分支。
+///
+/// 这个数必须**远高于**当前 schemaVersion，不能只高一点：原本写的是 99，schema
+/// bump 到 99 时 `99 > 99` 变成假，降级分支不再触发，本文件与另外两个降级守卫
+/// （`migration_downgrade_test.dart`、`fushi/test/database/downgrade_protection_test.dart`）
+/// 一起转红。而这两个包内测试只有 CI 的 package tests 跑，本地按功能域挑的定向
+/// 测试结构上永远选不到它们——所以 bump schema 时请顺手确认这里仍然远大于。
 FushiDatabase _openDowngradedFromFuture() {
   return FushiDatabase.forTesting(
     NativeDatabase.memory(
@@ -70,7 +76,7 @@ CREATE TABLE fushi_paired_peers (
           "INSERT INTO fushi_paired_peers "
           "(peer_id, token, paired_at_ms) VALUES ('p-future', 'tok', 1)",
         );
-        raw.execute('PRAGMA user_version = 99');
+        raw.execute('PRAGMA user_version = 999');
       },
     ),
   );
@@ -182,7 +188,7 @@ void main() {
       db.customSelect('PRAGMA user_version').getSingle(),
       throwsA(isA<FushiDatabaseDowngradeException>()
           .having((FushiDatabaseDowngradeException e) => e.dbVersion,
-              'dbVersion', 99)
+              'dbVersion', 999)
           .having((FushiDatabaseDowngradeException e) => e.appSchemaVersion,
               'appSchemaVersion', db.schemaVersion)),
       reason: 'a newer-schema DB must be refused, never destructively rebuilt',

@@ -4477,5 +4477,7 @@
   "yomitan_port_kill_failed": "Não foi possível encerrar $process. Encerre manualmente e tente novamente.",
   "yomitan_port_kill_protected": "$process é um processo crítico do sistema — o Fushi não vai encerrá-lo. Mude a porta.",
   "yomitan_port_kill_self_instance": "Este processo é outra instância deste app em execução.",
-  "anki_reposition_done_skipped": "Repositioned $count new cards; $skipped were skipped because they are no longer new."
+  "anki_reposition_done_skipped": "Repositioned $count new cards; $skipped were skipped because they are no longer new.",
+  "profile_language_bindings": "Language bindings",
+  "profile_language_bindings_hint": "Applies when an item has its content language set. EPUB books read it from the file; for other formats set it on the item itself."
 }

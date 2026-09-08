@@ -8,7 +8,7 @@ import 'package:sqlite3/sqlite3.dart' as sqlite3;
 /// Downgrade protection guard (root-cause fix for the recurring "old app
 /// downgrades & destroys the user DB" incidents).
 ///
-/// Constructs an on-disk DB whose user_version (99) is far HIGHER than the
+/// Constructs an on-disk DB whose user_version (999) is far HIGHER than the
 /// code's schemaVersion, with a real table + rows, then opens it via
 /// FushiDatabase. The open MUST be refused with FushiDatabaseDowngradeException
 /// and — crucially — the DB file's tables and rows MUST be left completely
@@ -29,13 +29,13 @@ void main() {
     }
   });
 
-  /// Seeds a future-version DB file directly via sqlite3: user_version = 99
+  /// Seeds a future-version DB file directly via sqlite3: user_version = 999
   /// (much newer than any code schemaVersion) plus a user table with rows that
   /// stand in for real user data.
   void seedFutureVersionDb() {
     final db = sqlite3.sqlite3.open(dbPath);
     try {
-      db.execute('PRAGMA user_version = 99');
+      db.execute('PRAGMA user_version = 999');
       db.execute(
         'CREATE TABLE precious_user_data ('
         'id INTEGER PRIMARY KEY, payload TEXT NOT NULL)',
@@ -56,7 +56,7 @@ void main() {
       final versionRow = db.select('PRAGMA user_version');
       expect(
         versionRow.first.values.first,
-        99,
+        999,
         reason: 'user_version must be left unchanged (no migration ran)',
       );
 
@@ -144,7 +144,7 @@ void main() {
       await database.getAllEpubBooks();
       fail('expected FushiDatabaseDowngradeException');
     } on FushiDatabaseDowngradeException catch (e) {
-      expect(e.dbVersion, 99);
+      expect(e.dbVersion, 999);
       expect(e.appSchemaVersion, database.schemaVersion);
       expect(e.appSchemaVersion, lessThan(e.dbVersion));
     }

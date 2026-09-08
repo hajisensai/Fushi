@@ -103,7 +103,8 @@ enum BackupCategory {
   settings,
 
   /// Configuration profiles -- the `profiles`, `profile_settings`,
-  /// `media_type_profiles` and `book_profiles` tables. Stripped from the DB
+  /// `media_type_profiles`, `book_profiles` and `language_profiles` tables.
+  /// Stripped from the DB
   /// copy when unticked; on import the LOCAL device's profiles are preserved
   /// instead of being wiped to empty. Included by default.
   profiles,
@@ -578,7 +579,7 @@ const List<String> _statisticsTables = <String>[
   'galgame_sessions',
 ];
 
-/// The four profile-layer tables in CHILD-first order, so a DELETE sweep of
+/// The five profile-layer tables in CHILD-first order, so a DELETE sweep of
 /// the `profiles` category (TODO-1193) never trips an enforced FK to
 /// `profiles`. The reverse of [_settingsLayerTables] (which is parent-first
 /// for INSERT).
@@ -586,6 +587,7 @@ const List<String> _profilesLayerTablesChildFirst = <String>[
   'profile_settings',
   'media_type_profiles',
   'book_profiles',
+  'language_profiles',
   'profiles',
 ];
 
