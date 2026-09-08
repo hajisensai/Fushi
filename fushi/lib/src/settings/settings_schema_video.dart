@@ -10,6 +10,8 @@ import 'package:fushi/src/media/video/video_hdr_output.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
 import 'package:fushi/src/media/video/video_settings_actions.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
+import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi/src/media/video/metadata/video_metadata_provider_label.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_cleanup_action.dart';
 import 'package:fushi/src/media/video/video_subtitle_style.dart';
@@ -358,6 +360,40 @@ SettingsDestination buildVideoDestination() {
             onChanged: (SettingsContext settingsContext, bool value) async {
               await settingsContext.appModel
                   .setVideoLibraryAutoBackfillScrape(value);
+            },
+          ),
+          // 主资料源二选一；另一源恒为兜底（MAL ↔ TMDB）。来源级可在来源
+          // 刮削设置里覆盖。改后经 commitVideoMetadataRuntimePreference 重建
+          // 刮削快照，下一批即用新主源。
+          SettingsSegmentedItem<String>(
+            id: 'video.library.metadata_primary_provider',
+            title: t.video_metadata_primary_provider,
+            subtitle: t.video_metadata_primary_provider_hint,
+            icon: Icons.travel_explore_outlined,
+            dropdown: true,
+            options: <SettingsSegmentOption<String>>[
+              for (final VideoMetadataProviderKind kind
+                  in kSelectableVideoMetadataProviders)
+                SettingsSegmentOption<String>(
+                  value: kind.name,
+                  label: videoMetadataProviderLabel(kind),
+                ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                (parseSelectableVideoMetadataProvider(
+                          settingsContext.appModel.prefsRepo.getPref(
+                            kVideoMetadataPrimaryProviderPref,
+                            defaultValue: VideoMetadataProviderKind.mal.name,
+                          ) as String,
+                        ) ??
+                        VideoMetadataProviderKind.mal)
+                    .name,
+            onChanged: (SettingsContext settingsContext, String value) async {
+              await commitVideoMetadataRuntimePreference(
+                settingsContext,
+                kVideoMetadataPrimaryProviderPref,
+                value,
+              );
             },
           ),
           SettingsTextItem(

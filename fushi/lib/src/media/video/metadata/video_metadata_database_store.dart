@@ -13,6 +13,21 @@ import 'package:fushi/src/media/video/video_filename_parser.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
+/// 成员视频的本地 (季, 集) 键：优先协调器给出的覆盖（多季合集 / 绝对集号重定向），
+/// 否则按文件名解析（季缺省 1）；解不出集号返回 null。入库、sidecar、旧投影
+/// 三处必须用同一把键，否则同一集会在三个地方绑到不同文件。
+(int, int)? localEpisodeKeyFor(
+  VideoBookRow book,
+  Map<String, (int, int)> episodeOverrides,
+) {
+  final (int, int)? override = episodeOverrides[book.bookUid];
+  if (override != null) return override;
+  final VideoNameInfo parsed = parseVideoFilename(p.basename(book.videoPath));
+  final int? episode = parsed.episode;
+  if (episode == null) return null;
+  return (parsed.season ?? 1, episode);
+}
+
 class PersistedVideoMetadata {
   const PersistedVideoMetadata({
     required this.workId,
@@ -118,10 +133,13 @@ class VideoMetadataDatabaseStore {
     );
   }
 
+  /// [episodeOverrides]：成员 `bookUid` → 本地 (季, 集)。多季合集 / 绝对集号
+  /// 重定向后由协调器给出，覆盖单纯按文件名解析的键；没有条目的成员照旧解析。
   Future<PersistedVideoMetadata> apply(
     VideoSourceScrapeWork localWork,
     VideoMetadataWork metadata, {
     bool seasonEpisodesAuthoritative = true,
+    Map<String, (int, int)> episodeOverrides = const <String, (int, int)>{},
   }) async {
     final int now = DateTime.now().millisecondsSinceEpoch;
     late int workId;
@@ -256,7 +274,7 @@ class VideoMetadataDatabaseStore {
       }
 
       final Map<(int, int), VideoBookRow> localEpisodeBooks =
-          _localEpisodeBooks(localWork.members);
+          _localEpisodeBooks(localWork.members, episodeOverrides);
       await _clearReassignedEpisodeBooks(
         localEpisodeBooks: localEpisodeBooks,
         seasons: metadata.seasons,
@@ -850,14 +868,13 @@ class VideoMetadataDatabaseStore {
 
   static Map<(int, int), VideoBookRow> _localEpisodeBooks(
     Iterable<VideoBookRow> books,
+    Map<String, (int, int)> episodeOverrides,
   ) {
     final Map<(int, int), VideoBookRow> result = <(int, int), VideoBookRow>{};
     for (final VideoBookRow book in books) {
-      final VideoNameInfo parsed =
-          parseVideoFilename(p.basename(book.videoPath));
-      final int? episode = parsed.episode;
-      if (episode == null) continue;
-      result.putIfAbsent((parsed.season ?? 1, episode), () => book);
+      final (int, int)? key = localEpisodeKeyFor(book, episodeOverrides);
+      if (key == null) continue;
+      result.putIfAbsent(key, () => book);
     }
     return result;
   }

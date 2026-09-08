@@ -233,6 +233,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // VideoScrapeAutoService.sweep 的进场门（关=零网络请求、零资料落库），不是
   // reader CSS / 主题树，无适用探针；由专项服务测试咬住（关=不发请求、关→开
   // 同一实例下轮即刮）。
+  // BUG-2268：作品资料的主源二选一（MAL ↔ TMDB，另一源恒为兜底）。写 prefsRepo
+  // （changed=true），生效点在下一批刮削时协调器选哪家问、歧义时问不问兜底源——
+  // 要网络、要一次完整识别链，不是 reader CSS / 主题树，无适用探针；由专项测试
+  // 直接驱动协调器咬住（全局偏好 / 来源级 override / 双源歧义合并候选）。
+  'video/Primary metadata source':
+      'test/media/video/metadata/video_source_scrape_provider_override_test.dart',
   'video/Auto-fetch series info':
       'test/media/video/scraper/auto_scrape_service_test.dart',
   // 库内自动补刮总闸。写 prefsRepo（changed=true），生效点在

@@ -4480,5 +4480,10 @@
   "yomitan_port_kill_confirm_title": "포트 $port를 사용 중인 프로세스를 종료하시겠습니까?",
   "yomitan_port_kill_failed": "$process를 종료할 수 없습니다. 수동으로 종료한 후 다시 시도하세요.",
   "yomitan_port_kill_protected": "$process는 중요한 시스템 프로세스입니다. Fushi가 종료하지 않습니다. 대신 포트를 변경하세요.",
-  "yomitan_port_kill_self_instance": "이 프로세스는 이 앱의 다른 실행 중인 인스턴스입니다."
+  "yomitan_port_kill_self_instance": "이 프로세스는 이 앱의 다른 실행 중인 인스턴스입니다.",
+  "video_metadata_primary_provider": "Primary metadata source",
+  "video_metadata_primary_provider_hint": "The other source is used as a fallback when the primary source has no exact match or is unavailable.",
+  "video_metadata_provider_mal": "MAL (via Jikan)",
+  "video_metadata_provider_tmdb": "TMDB",
+  "video_source_scrape_provider_follow_global": "Follow global default"
 }

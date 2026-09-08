@@ -1390,6 +1390,7 @@ class _HomePageState extends BasePageState<HomePage>
       config.anidbUsername,
       config.anidbPassword,
       config.locale,
+      config.primaryProvider.name,
     ].join('\u0000');
     final VideoDiscoveryController? existing = _videoDiscoveryController;
     if (existing != null && _videoDiscoveryConfigFingerprint == fingerprint) {
@@ -2184,6 +2185,7 @@ class _HomePageState extends BasePageState<HomePage>
       config.anidbClientName,
       config.anidbClientVersion ?? 0,
       config.locale,
+      config.primaryProvider.name,
     ].join('\u0000');
     if (existing != null &&
         (existing.isBusy ||
@@ -2197,6 +2199,9 @@ class _HomePageState extends BasePageState<HomePage>
         VideoSourceScrapeCoordinator(
       database: appModel.database,
       config: config,
+      // 生产装配点显式打开离线标题索引（AniDB 标题包 + Fribb 映射）；默认关是
+      // 为了单测不联网。
+      enableOfflineTitleIndex: true,
     );
     _videoSourceScrapeCoordinator = coordinator;
     _videoSourceScrapeConfigFingerprint = fingerprint;

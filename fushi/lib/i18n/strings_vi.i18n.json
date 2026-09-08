@@ -4480,5 +4480,10 @@
   "yomitan_port_kill_confirm_title": "Kết thúc tiến trình đang dùng cổng $port?",
   "yomitan_port_kill_failed": "Không thể kết thúc $process. Vui lòng kết thúc thủ công rồi thử lại.",
   "yomitan_port_kill_protected": "$process là tiến trình hệ thống quan trọng — Fushi sẽ không kết thúc nó. Hãy đổi cổng thay vì vậy.",
-  "yomitan_port_kill_self_instance": "Tiến trình này là một phiên bản đang chạy khác của ứng dụng."
+  "yomitan_port_kill_self_instance": "Tiến trình này là một phiên bản đang chạy khác của ứng dụng.",
+  "video_metadata_primary_provider": "Primary metadata source",
+  "video_metadata_primary_provider_hint": "The other source is used as a fallback when the primary source has no exact match or is unavailable.",
+  "video_metadata_provider_mal": "MAL (via Jikan)",
+  "video_metadata_provider_tmdb": "TMDB",
+  "video_source_scrape_provider_follow_global": "Follow global default"
 }

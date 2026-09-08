@@ -31,6 +31,9 @@ import 'package:fushi/models.dart';
 import 'package:fushi/src/media/source_library/source_library_credential_store.dart';
 import 'package:fushi/src/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
+import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi/src/media/video/metadata/video_metadata_provider_label.dart';
+import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_run_detail_dialog.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_cleanup_action.dart';
@@ -1060,8 +1063,8 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
       VideoSourceScrapeSettingsCompanion.insert(
         sourceId: Value<int>(row.id),
         enabled: Value<bool>(draft.enabled),
-        // 旧列保留作数据库兼容；新保存一律清空，MAL 是主源，TMDB 兜底。
-        providerOverride: const Value<String?>(null),
+        // 来源级主资料源覆盖；NULL = 跟随全局默认。
+        providerOverride: Value<String?>(draft.providerOverride),
         autoAfterScan: Value<bool>(draft.autoAfterScan),
         writeNfo: Value<bool>(draft.writeNfo),
         writeImages: Value<bool>(draft.writeImages),
@@ -1257,6 +1260,7 @@ class _VideoSourceScrapeSettingsDraft {
     required this.nfoPolicy,
     required this.imagePolicy,
     required this.allowExternalOverwrite,
+    this.providerOverride,
   });
 
   factory _VideoSourceScrapeSettingsDraft.fromRow(
@@ -1265,6 +1269,9 @@ class _VideoSourceScrapeSettingsDraft {
   }) {
     return _VideoSourceScrapeSettingsDraft(
       groupingMode: groupingMode,
+      // 历史值（bangumi / douban / anilist / anidb）不是可选主源，按「跟随全局」显示。
+      providerOverride:
+          parseSelectableVideoMetadataProvider(row?.providerOverride)?.name,
       enabled: row?.enabled ?? true,
       autoAfterScan: row?.autoAfterScan ?? false,
       writeNfo: row?.writeNfo ?? true,
@@ -1285,6 +1292,9 @@ class _VideoSourceScrapeSettingsDraft {
   final String nfoPolicy;
   final String imagePolicy;
   final bool allowExternalOverwrite;
+
+  /// 此来源的主资料源覆盖：`mal` / `tmdb`；`null` = 跟随全局默认。
+  final String? providerOverride;
 
   static String _validPolicy(String? value) =>
       const <String>{'skip', 'missingOnly', 'overwrite'}.contains(value)
@@ -1313,11 +1323,15 @@ class _VideoSourceScrapeSettingsDialogState
   late String _imagePolicy = widget.initial.imagePolicy;
   late bool _allowExternalOverwrite = widget.initial.allowExternalOverwrite;
 
+  /// 选择器的值：'' = 跟随全局；否则为 provider 名。
+  late String _providerOverride = widget.initial.providerOverride ?? '';
+
   void _save() {
     Navigator.pop(
       context,
       _VideoSourceScrapeSettingsDraft(
         groupingMode: _groupingMode,
+        providerOverride: _providerOverride.isEmpty ? null : _providerOverride,
         enabled: _enabled,
         autoAfterScan: _autoAfterScan,
         writeNfo: _writeNfo,
@@ -1363,7 +1377,26 @@ class _VideoSourceScrapeSettingsDialogState
               ),
               Text(t.video_source_grouping_change_hint),
               if (_groupingMode != 'folder') ...<Widget>[
-                Text(t.video_source_scrape_provider_policy),
+                AdaptiveSettingsPickerRow<String>(
+                  title: t.video_metadata_primary_provider,
+                  selected: _providerOverride,
+                  options: <AdaptiveSettingsPickerOption<String>>[
+                    AdaptiveSettingsPickerOption<String>(
+                      value: '',
+                      label: t.video_source_scrape_provider_follow_global,
+                    ),
+                    for (final VideoMetadataProviderKind kind
+                        in kSelectableVideoMetadataProviders)
+                      AdaptiveSettingsPickerOption<String>(
+                        value: kind.name,
+                        label: videoMetadataProviderLabel(kind),
+                      ),
+                  ],
+                  onChanged: (String value) =>
+                      setState(() => _providerOverride = value),
+                  controlBelow: true,
+                ),
+                Text(t.video_metadata_primary_provider_hint),
                 AdaptiveSettingsSwitchRow(
                   title: t.video_source_scrape_enabled_toggle,
                   subtitle: t.video_source_scrape_enabled_toggle_hint,

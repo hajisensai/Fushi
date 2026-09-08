@@ -6,6 +6,7 @@ import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_resolver.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_transport.dart';
+import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
 
 void main() {
   test('MAL exact match wins and records MAL identity', () async {
@@ -59,14 +60,107 @@ void main() {
     expect(result.reason, contains('tmdb:'));
   });
 
-  test('MAL ambiguity does not let TMDB decide', () async {
+  test('MAL ambiguity (two exact hits) lets a unique TMDB exact match decide',
+      () async {
     final _Provider tmdb = _Provider(VideoMetadataProviderKind.tmdb);
     final VideoMetadataResolution result = await _resolve(
       _Provider(VideoMetadataProviderKind.mal, ambiguous: true),
       tmdb,
     );
+    expect(result.status, VideoMetadataResolutionStatus.matched);
+    expect(result.providerKind, VideoMetadataProviderKind.tmdb);
+    expect(result.lookup?.externalId, '42');
+    expect(tmdb.searchCalls, 1);
+  });
+
+  test('MAL review-only candidates (title mismatch) continue to TMDB',
+      () async {
+    // MAL 没有中文标题：中文目录名只能得到类型合格、标题不符的候选。旧链在这
+    // 里就停了，TMDB 永远不被问；现在必须继续问兜底源。
+    final _Provider tmdb = _Provider(VideoMetadataProviderKind.tmdb);
+    final VideoMetadataResolution result = await _resolve(
+      _Provider(VideoMetadataProviderKind.mal, title: 'Other'),
+      tmdb,
+    );
+    expect(result.status, VideoMetadataResolutionStatus.matched);
+    expect(result.providerKind, VideoMetadataProviderKind.tmdb);
+    expect(tmdb.searchCalls, 1);
+  });
+
+  test('both sources ambiguous merges candidates with their own provider',
+      () async {
+    final VideoMetadataResolution result = await _resolve(
+      _Provider(VideoMetadataProviderKind.mal, ambiguous: true),
+      _Provider(VideoMetadataProviderKind.tmdb, title: 'Other'),
+    );
     expect(result.status, VideoMetadataResolutionStatus.ambiguous);
+    expect(result.candidates, hasLength(3));
+    expect(
+      result.candidates.map((VideoMetadataWork w) => w.provider).toSet(),
+      <VideoMetadataProviderKind>{
+        VideoMetadataProviderKind.mal,
+        VideoMetadataProviderKind.tmdb,
+      },
+    );
+    expect(result.providerKind, VideoMetadataProviderKind.mal);
+    expect(result.reason, contains('mal:'));
+    expect(result.reason, contains('tmdb:'));
+  });
+
+  test('MAL unavailable and TMDB ambiguous stays ambiguous', () async {
+    final VideoMetadataResolution result = await _resolve(
+      _Provider(VideoMetadataProviderKind.mal,
+          failure: const SocketException('offline')),
+      _Provider(VideoMetadataProviderKind.tmdb, ambiguous: true),
+    );
+    expect(result.status, VideoMetadataResolutionStatus.ambiguous);
+    expect(result.providerKind, VideoMetadataProviderKind.tmdb);
     expect(result.candidates, hasLength(2));
+  });
+
+  test('TMDB primary falls back to MAL symmetrically', () async {
+    final _Provider mal = _Provider(VideoMetadataProviderKind.mal);
+    final _Provider tmdb =
+        _Provider(VideoMetadataProviderKind.tmdb, empty: true);
+    final VideoMetadataResolution result = await _resolve(
+      mal,
+      tmdb,
+      selected: VideoMetadataProviderKind.tmdb,
+    );
+    expect(result.status, VideoMetadataResolutionStatus.matched);
+    expect(result.providerKind, VideoMetadataProviderKind.mal);
+    expect(tmdb.searchCalls, 1);
+    expect(mal.searchCalls, 1);
+  });
+
+  test('TMDB primary accepts a persisted MAL identity as canonical', () async {
+    final _Provider mal = _Provider(VideoMetadataProviderKind.mal);
+    final _Provider tmdb = _Provider(VideoMetadataProviderKind.tmdb);
+    final VideoMetadataResolution result = await _resolve(
+      mal,
+      tmdb,
+      selected: VideoMetadataProviderKind.tmdb,
+      confirmed: const VideoMetadataLookup(
+        provider: VideoMetadataProviderKind.mal,
+        externalId: '7',
+        mediaKind: VideoMetadataMediaKind.tv,
+      ),
+    );
+    expect(result.status, VideoMetadataResolutionStatus.matched);
+    expect(result.method, VideoMetadataResolutionMethod.confirmed);
+    expect(result.providerKind, VideoMetadataProviderKind.mal);
+    expect(tmdb.searchCalls, 0);
+  });
+
+  test('single-source request never consults a second provider', () async {
+    final _Provider tmdb = _Provider(VideoMetadataProviderKind.tmdb);
+    final VideoMetadataResolution result = await _resolve(
+      _Provider(VideoMetadataProviderKind.mal, empty: true),
+      tmdb,
+      singleSource: true,
+    );
+    expect(result.status, VideoMetadataResolutionStatus.notFound);
+    expect(result.providerKind, VideoMetadataProviderKind.mal);
     expect(tmdb.searchCalls, 0);
   });
 
@@ -240,6 +334,7 @@ void main() {
       ]),
     ).resolve(VideoMetadataResolveRequest(
       selectedProvider: VideoMetadataProviderKind.mal,
+      fallbackProvider: VideoMetadataProviderKind.tmdb,
       mediaKind: VideoMetadataMediaKind.movie,
       titleCandidates: <String>['Unknown'],
       identityHints: <String>['tmdb:movie=42'],
@@ -259,6 +354,18 @@ void main() {
         isEmpty);
   });
 
+  test('year-bound search retries without year once per provider', () async {
+    // MAL 带年搜空 → 去年份重搜仍空 → 才问 TMDB；TMDB 带年即命中，不重搜。
+    final _Provider mal = _Provider(VideoMetadataProviderKind.mal, empty: true);
+    final _Provider tmdb = _Provider(VideoMetadataProviderKind.tmdb);
+    final VideoMetadataResolution result =
+        await _resolve(mal, tmdb, year: 2024);
+    expect(result.status, VideoMetadataResolutionStatus.matched);
+    expect(result.providerKind, VideoMetadataProviderKind.tmdb);
+    expect(mal.searchYears, <int?>[2024, null]);
+    expect(tmdb.searchYears, <int?>[2024]);
+  });
+
   test('numeric titles remain title searches', () async {
     final _Provider mal = _Provider(VideoMetadataProviderKind.mal, title: '86');
     final VideoMetadataResolution result = await _resolve(
@@ -270,24 +377,32 @@ void main() {
   });
 }
 
+/// 默认按生产双源策略：[selected] 为主源、另一家为兜底；[singleSource] = true
+/// 时不传兜底（AniDB 之类的单源语义）。
 Future<VideoMetadataResolution> _resolve(
   _Provider? mal,
   _Provider tmdb, {
   VideoMetadataLookup? confirmed,
   List<String> hints = const <String>[],
   int? season,
+  int? year,
   String title = 'Show',
+  VideoMetadataProviderKind selected = VideoMetadataProviderKind.mal,
+  bool singleSource = false,
 }) =>
     VideoMetadataResolver(
         registry: VideoMetadataProviderRegistry(
       <VideoMetadataProvider>[if (mal != null) mal, tmdb],
     )).resolve(VideoMetadataResolveRequest(
-      selectedProvider: VideoMetadataProviderKind.mal,
+      selectedProvider: selected,
+      fallbackProvider:
+          singleSource ? null : videoMetadataFallbackProvider(selected),
       mediaKind: VideoMetadataMediaKind.tv,
       titleCandidates: <String>[title],
       confirmedLookup: confirmed,
       identityHints: hints,
       seasonNumber: season,
+      year: year,
     ));
 
 class _Provider implements VideoMetadataProvider {
@@ -305,6 +420,7 @@ class _Provider implements VideoMetadataProvider {
   final String title;
   final bool movie;
   int searchCalls = 0;
+  final List<int?> searchYears = <int?>[];
   @override
   bool get isAvailable => true;
   VideoMetadataWork _work(String id) => VideoMetadataWork(
@@ -319,6 +435,7 @@ class _Provider implements VideoMetadataProvider {
   Future<List<VideoMetadataWork>> search(
       VideoMetadataSearchRequest request) async {
     searchCalls++;
+    searchYears.add(request.year);
     final Object? error = failure;
     if (error is Exception) throw error;
     if (error is Error) throw error;

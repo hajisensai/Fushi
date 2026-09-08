@@ -1,4 +1,8 @@
-/// MAL 主源、TMDB 兜底的严格视频资料识别器。
+/// 严格视频资料识别器：一个主源 + 至多一个兜底源。
+///
+/// 主源/兜底源由调用方按用户偏好给出（生产是 MAL ↔ TMDB 互为主备；AniDB
+/// 之类的单源语义就不传兜底）。主源没有**唯一精确命中**时才问兜底源；兜底源
+/// 精确命中即采用；两边都只剩待确认候选时把两边候选合并交人工。
 library;
 
 import 'dart:async';
@@ -29,12 +33,26 @@ class VideoMetadataResolveRequest {
     this.seasonNumber,
     this.episodeCount,
     this.confirmedLookup,
+    this.fallbackProvider,
     List<String> identityHints = const <String>[],
-  })  : titleCandidates = List<String>.unmodifiable(titleCandidates),
+  })  : assert(fallbackProvider != selectedProvider),
+        titleCandidates = List<String>.unmodifiable(titleCandidates),
         identityHints = List<String>.unmodifiable(identityHints);
 
   final VideoMetadataProviderKind selectedProvider;
+
+  /// 主源没有唯一精确命中或不可用时询问的第二个源；`null` = 单源语义
+  /// （主源失败就失败，绝不静默换源）。
+  final VideoMetadataProviderKind? fallbackProvider;
   final VideoMetadataMediaKind mediaKind;
+
+  /// 按询问顺序排列的源链：主源在前，兜底源（若有）在后。
+  List<VideoMetadataProviderKind> get providerChain =>
+      <VideoMetadataProviderKind>[
+        selectedProvider,
+        if (fallbackProvider case final VideoMetadataProviderKind fallback)
+          fallback,
+      ];
 
   /// 按文件名、父目录、祖父目录的优先级传入；resolver 依次尝试，不混池降权。
   final List<String> titleCandidates;
@@ -61,7 +79,8 @@ class VideoMetadataResolution {
   final VideoMetadataWork? work;
   final VideoMetadataLookup? lookup;
 
-  /// 真正给出结果的来源；MAL 未命中或不可用时可能为 TMDB。
+  /// 真正给出结果的来源；主源未命中或不可用时可能是兜底源。歧义候选可能
+  /// 来自链上多个源，每条候选各自的来源以 [VideoMetadataWork.provider] 为准。
   final VideoMetadataProviderKind? providerKind;
   final List<VideoMetadataWork> candidates;
   final String? reason;
@@ -94,8 +113,9 @@ class VideoMetadataResolver {
   Future<VideoMetadataResolution> resolve(
     VideoMetadataResolveRequest request,
   ) async {
-    // A confirmed or explicit identity locks the source, including TMDB under
-    // the MAL-first policy. Failed IDs must never turn into a title search.
+    // A confirmed or explicit identity locks the source, including the fallback
+    // source of a two-source policy. Failed IDs must never turn into a title
+    // search.
     final VideoMetadataLookup? confirmed = request.confirmedLookup;
     if (confirmed != null && _acceptsIdentity(confirmed.provider, request)) {
       return _attempt(
@@ -127,13 +147,14 @@ class VideoMetadataResolver {
       );
     }
 
-    final List<VideoMetadataProviderKind> chain = <VideoMetadataProviderKind>[
-      request.selectedProvider,
-      if (request.selectedProvider == VideoMetadataProviderKind.mal)
-        VideoMetadataProviderKind.tmdb,
-    ];
+    // 只有「唯一精确命中」才终止链。主源只剩待确认候选（典型：MAL 没有中文
+    // 标题，中文目录名在 MAL 上只能得到一堆类型/年份合格但标题不符的候选）时
+    // 必须继续问兜底源——兜底源的严格精确命中比主源的模糊候选更可信；两边
+    // 都不精确才把候选合并交人工确认（旧行为是主源一歧义就截止，TMDB 永远
+    // 不被询问，后台任务于是把整条记成待确认）。
+    final List<VideoMetadataResolution> ambiguous = <VideoMetadataResolution>[];
     final List<VideoMetadataResolution> failures = <VideoMetadataResolution>[];
-    for (final VideoMetadataProviderKind kind in chain) {
+    for (final VideoMetadataProviderKind kind in request.providerChain) {
       final VideoMetadataResolution resolved = await _attempt(kind, () async {
         final VideoMetadataProvider? provider = registry.provider(kind);
         if (provider == null || !provider.isAvailable) {
@@ -145,12 +166,17 @@ class VideoMetadataResolver {
         }
         return _searchWithProvider(provider, request);
       });
-      if (resolved.status == VideoMetadataResolutionStatus.matched ||
-          resolved.status == VideoMetadataResolutionStatus.ambiguous) {
-        return resolved;
+      switch (resolved.status) {
+        case VideoMetadataResolutionStatus.matched:
+          return resolved;
+        case VideoMetadataResolutionStatus.ambiguous:
+          ambiguous.add(resolved);
+        case VideoMetadataResolutionStatus.notFound:
+        case VideoMetadataResolutionStatus.providerUnavailable:
+          failures.add(resolved);
       }
-      failures.add(resolved);
     }
+    if (ambiguous.isNotEmpty) return _mergeAmbiguous(ambiguous);
     if (failures.length == 1) return failures.single;
     return VideoMetadataResolution(
       status: failures.any((VideoMetadataResolution result) =>
@@ -166,14 +192,46 @@ class VideoMetadataResolver {
     );
   }
 
+  /// 链上多个源都只给出待确认候选：按链序拼接、同源同 id 去重。结果的
+  /// [VideoMetadataResolution.providerKind] 取主源，每条候选自带来源。
+  static VideoMetadataResolution _mergeAmbiguous(
+    List<VideoMetadataResolution> results,
+  ) {
+    if (results.length == 1) return results.single;
+    final Map<String, VideoMetadataWork> merged = <String, VideoMetadataWork>{};
+    for (final VideoMetadataResolution result in results) {
+      for (final VideoMetadataWork candidate in result.candidates) {
+        final VideoMetadataLookup? lookup =
+            _lookupForWork(candidate, candidate.provider);
+        final String key = lookup == null
+            ? '${candidate.provider.name}:${identityHashCode(candidate)}'
+            : '${lookup.provider.name}:${lookup.externalId}';
+        merged.putIfAbsent(key, () => candidate);
+      }
+    }
+    return VideoMetadataResolution(
+      status: VideoMetadataResolutionStatus.ambiguous,
+      method: VideoMetadataResolutionMethod.exactSearch,
+      candidates: merged.values.toList(growable: false),
+      providerKind: results.first.providerKind,
+      reason: results
+          .map((VideoMetadataResolution result) =>
+              '${result.providerKind?.name}: ${result.reason}')
+          .join('; '),
+    );
+  }
+
+  /// 已确认/显式身份只在链上的源之间受理。历史 AniDB 绑定在含 MAL 的链上
+  /// 仍受理（协调器靠它做 AniDB→MAL 映射与旧身份保护），单源语义不受理外源。
   bool _acceptsIdentity(
     VideoMetadataProviderKind provider,
     VideoMetadataResolveRequest request,
-  ) =>
-      provider == request.selectedProvider ||
-      (request.selectedProvider == VideoMetadataProviderKind.mal &&
-          (provider == VideoMetadataProviderKind.tmdb ||
-              provider == VideoMetadataProviderKind.anidb));
+  ) {
+    final List<VideoMetadataProviderKind> chain = request.providerChain;
+    return chain.contains(provider) ||
+        (chain.contains(VideoMetadataProviderKind.mal) &&
+            provider == VideoMetadataProviderKind.anidb);
+  }
 
   Future<VideoMetadataResolution> _attempt(
     VideoMetadataProviderKind kind,
@@ -216,18 +274,11 @@ class VideoMetadataResolver {
       if (title.isEmpty) continue;
       final Set<String> normalizedTitles = _normalizedTitles(title);
       if (normalizedTitles.isEmpty) continue;
-      final List<VideoMetadataWork> searched = await provider.search(
-        VideoMetadataSearchRequest(
-          title: title,
-          mediaKind: request.mediaKind,
-          year: request.year,
-          seasonNumber: request.seasonNumber,
-        ),
-      );
+      final List<VideoMetadataWork> searched =
+          await _searchGated(provider, request, title);
       final Map<String, VideoMetadataWork> exact =
           <String, VideoMetadataWork>{};
       for (final VideoMetadataWork candidate in searched) {
-        if (!_passesTypeYearGate(candidate, request)) continue;
         final VideoMetadataLookup? lookup =
             _lookupForWork(candidate, provider.providerKind);
         if (lookup == null) continue;
@@ -353,18 +404,49 @@ class VideoMetadataResolver {
     );
   }
 
+  /// 一个标题的搜索计划（对标 MoviePilot `TmdbApi.match`）：先带年份搜；
+  /// 过 type/year gate 后为空再用同一标题、不带年份搜一次（gate 仍按
+  /// request.year ±1 过滤）。provider 侧的年份过滤（TMDB `first_air_date_year`）
+  /// 是精确匹配，本地目录年份常是首播年 / 发布年差一年，带年搜会整批漏掉。
+  Future<List<VideoMetadataWork>> _searchGated(
+    VideoMetadataProvider provider,
+    VideoMetadataResolveRequest request,
+    String title,
+  ) async {
+    Future<List<VideoMetadataWork>> search(int? year) async {
+      final List<VideoMetadataWork> searched = await provider.search(
+        VideoMetadataSearchRequest(
+          title: title,
+          mediaKind: request.mediaKind,
+          year: year,
+          seasonNumber: request.seasonNumber,
+        ),
+      );
+      return <VideoMetadataWork>[
+        for (final VideoMetadataWork candidate in searched)
+          if (_passesTypeYearGate(candidate, request)) candidate,
+      ];
+    }
+
+    final List<VideoMetadataWork> withYear = await search(request.year);
+    if (withYear.isNotEmpty || request.year == null) return withYear;
+    return search(null);
+  }
+
   bool _passesTypeYearGate(
     VideoMetadataWork candidate,
     VideoMetadataResolveRequest request,
   ) {
     if (candidate.kind != request.mediaKind) return false;
-    if (request.year != null &&
-        candidate.year != null &&
-        candidate.year != request.year) {
-      return false;
-    }
-    return true;
+    return _passesYearGate(candidate.year, request.year);
   }
+
+  /// 年份容差 ±1：本地目录年份常是首播年 / 发布年差一年（跨年档、BD 发行年）。
+  /// 任一侧未知则不作为拒绝依据。
+  static bool _passesYearGate(int? candidateYear, int? requestYear) =>
+      candidateYear == null ||
+      requestYear == null ||
+      (candidateYear - requestYear).abs() <= 1;
 
   Future<VideoMetadataWork?> _validatedDetails(
     VideoMetadataProvider provider,
@@ -373,11 +455,7 @@ class VideoMetadataResolver {
     VideoMetadataResolveRequest request,
   ) async {
     if (work.kind != request.mediaKind) return null;
-    if (request.year != null &&
-        work.year != null &&
-        work.year != request.year) {
-      return null;
-    }
+    if (!_passesYearGate(work.year, request.year)) return null;
     final int? seasonNumber = request.seasonNumber;
     if (seasonNumber == null || work.kind == VideoMetadataMediaKind.movie) {
       return work;

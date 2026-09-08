@@ -4480,5 +4480,10 @@
   "yomitan_port_kill_confirm_title": "$port portunu kullanan işlem sonlandırılsın mı?",
   "yomitan_port_kill_failed": "$process sonlandırılamadı. Lütfen manuel olarak sonlandırıp tekrar deneyin.",
   "yomitan_port_kill_protected": "$process kritik bir sistem işlemidir — Fushi onu sonlandırmaz. Bunun yerine portu değiştirin.",
-  "yomitan_port_kill_self_instance": "Bu işlem, uygulamanın çalışan başka bir örneğidir."
+  "yomitan_port_kill_self_instance": "Bu işlem, uygulamanın çalışan başka bir örneğidir.",
+  "video_metadata_primary_provider": "Primary metadata source",
+  "video_metadata_primary_provider_hint": "The other source is used as a fallback when the primary source has no exact match or is unavailable.",
+  "video_metadata_provider_mal": "MAL (via Jikan)",
+  "video_metadata_provider_tmdb": "TMDB",
+  "video_source_scrape_provider_follow_global": "Follow global default"
 }

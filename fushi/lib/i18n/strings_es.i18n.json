@@ -4480,5 +4480,10 @@
   "yomitan_port_kill_confirm_title": "¿Finalizar el proceso usando el puerto $port?",
   "yomitan_port_kill_failed": "No se pudo finalizar $process. Finalícelo manualmente, luego reintente.",
   "yomitan_port_kill_protected": "$process es un proceso crítico del sistema — Fushi no lo finalizará. Cambie el puerto en su lugar.",
-  "yomitan_port_kill_self_instance": "Este proceso es otra instancia en ejecución de esta app."
+  "yomitan_port_kill_self_instance": "Este proceso es otra instancia en ejecución de esta app.",
+  "video_metadata_primary_provider": "Primary metadata source",
+  "video_metadata_primary_provider_hint": "The other source is used as a fallback when the primary source has no exact match or is unavailable.",
+  "video_metadata_provider_mal": "MAL (via Jikan)",
+  "video_metadata_provider_tmdb": "TMDB",
+  "video_source_scrape_provider_follow_global": "Follow global default"
 }

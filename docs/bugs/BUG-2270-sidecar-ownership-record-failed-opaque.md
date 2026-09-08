@@ -1,0 +1,6 @@
+## BUG-2270 · 刮削 sidecar 报「文件已写入，但所有权记录失败」但不给出真实异常，Cover Song Collection 三条无法定位根因
+- **报告**：2026-09-08（用户：Windows，`D:\Videos\动漫\[VCB-Studio] Karakai Jouzu no Takagi-san\...` 的 `[Cover Song Collection]` 三个文件，运行结果「已应用 1 个，已跳过 1 个」并列三条同样的红字）
+- **真实性**：✅ 真 bug（可观测性缺陷，根因待用户下次运行的详细文案定位）。`fushi/lib/src/media/video/metadata/video_sidecar_writer.dart:245-266`：文件原子写入成功后 `artifactStore.upsert(...)` 抛异常被捕获进 `SidecarWriteResult.artifactStoreError`，`message` 固定为「文件已写入，但所有权记录失败」；协调器 `video_source_scrape_coordinator.dart`（`_writeSidecars` 收尾的 `errors.add`）只取 `result.message`，**把 `artifactStoreError` 丢掉**。`DatabaseSidecarArtifactStore.upsert`（`video_sidecar_artifact_store.dart`）有两种抛法：`StateError('sidecar artifact context was not registered: <path>')`（写前没 `register` 该目标路径——Cover Song Collection 这类 extras 目标路径与正片不同层级时最可疑）和 Drift 写入异常（UNIQUE / BUSY）。三条报错的路径显示都是同一目录 `...\[VCB-Studio] Karakai Jouzu no Takagi-san\[VCB-Studio] Karakai Jouzu no Takagi-san`，即三个成员写同一层级的 sidecar。
+- **[x] ① 已修复（可观测性）** — 协调器把 `artifactStoreError ?? error` 追加进 issue 文案（`…所有权记录失败：<真实异常>`），下次运行详情页直接能看到是 context 未登记还是 DB 异常。**根因修复待补**：拿到真实异常后按 extras 目标路径登记 / UNIQUE 处理继续查，届时在本文件追加。
+- **[ ] ② 未加自动化测试** — 待根因确定后一并加（extras 同层级三成员写 sidecar 的协调器用例）。
+- **备注**：与 BUG-2268 同一批次（`feat/scrape-provider-choice`）顺手修的可观测性；不改写入行为。
