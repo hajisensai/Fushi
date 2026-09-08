@@ -4496,5 +4496,12 @@
   "discovery_nyaa_filter_trusted_only": "Trusted only",
   "discovery_badge_trusted": "Trusted",
   "discovery_badge_remake": "Remake",
-  "discovery_content_hint_manga": "Suspected manga"
+  "discovery_content_hint_manga": "Suspected manga",
+  "video_subtitle_retime_action": "Retime with speech model",
+  "video_subtitle_retime_no_track": "Load a subtitle track first",
+  "video_subtitle_retime_running": "Retiming subtitles with the speech model…",
+  "video_subtitle_retime_done": "Retimed $matched/$total lines ($percent%), median shift $ms ms",
+  "video_subtitle_retime_low_match": "Only $percent% of lines matched. Check the spoken language and whether this subtitle belongs to this episode.",
+  "video_subtitle_retime_dropped": "$count malformed lines were left out",
+  "video_subtitle_retime_failed": "Subtitle retiming failed"
 }
