@@ -86,11 +86,21 @@ extension _VideoLayout on _VideoFushiPageState {
       // Row[Expanded(Video), 面板列]，画面真挤窄、不被遮（见 [_videoWithSubtitlePanel]）。
       child: _videoWithSubtitlePanel(
         controller,
-        // HDR 直通：把 Video 的物理像素矩形喂给 runner 宿主窗（非 HDR 时只是记着，
-        // 进入直通那一刻就有正确矩形可用）。
-        HdrHostRectReporter(
-          onRect: controller.reportHdrHostRect,
-          child: Video(
+        // macOS Retina：让 mpv 直接渲染到画面实际占用的物理像素（IINA 同款做法），
+        // 否则 1080p 片源在 Retina 上永远是「原生纹理被 Flutter 双线性拉大」= 发虚。
+        // 非 macOS 恒透传（见 [VideoBackingRenderSize]）。
+        VideoBackingRenderSize(
+          controller: videoController,
+          videoSize: videoNativeSizeOf(
+            controller.videoWidth,
+            controller.videoHeight,
+          ),
+          fit: videoFitModeToBoxFit(_videoFitMode),
+          // HDR 直通：把 Video 的物理像素矩形喂给 runner 宿主窗（非 HDR 时只是记着，
+          // 进入直通那一刻就有正确矩形可用）。
+          child: HdrHostRectReporter(
+            onRect: controller.reportHdrHostRect,
+            child: Video(
           controller: videoController,
           // 用本页持有的 FocusNode 替换 Video 内置的匿名节点，以便覆盖层（对话框 /
           // bottom sheet / 文件选择器）关闭后能主动把键盘焦点还给它，恢复空格等内置
@@ -138,6 +148,7 @@ extension _VideoLayout on _VideoFushiPageState {
           onEnterFullscreen: _enterVideoNativeFullscreen,
           onExitFullscreen: _exitVideoNativeFullscreen,
         ),
+          ),
         ),
       ),
     );

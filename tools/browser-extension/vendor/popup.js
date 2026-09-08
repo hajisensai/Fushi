@@ -5102,10 +5102,25 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
 // min(用户设置, 装得下的列数)，写 --dict-columns-effective 供 grid 消费；
 // resize 只改 CSS 变量（grid 自动 reflow，零重渲）。in-app 弹窗同规则受益。
 const DICT_COLUMN_MIN_WIDTH = 170;
+// 触屏设备（主指针 coarse）列宽门槛加倍：每列至少 2×DICT_COLUMN_MIN_WIDTH 才许并排。
+// 手机弹窗本就窄（竖屏 ~400px 宽 → 340 门槛下仍是单列，维持「竖着堆叠才是手机上正确
+// 形态」的原裁决），但不再被无条件锁死——平板横屏、in-app 桌面尺寸大窗这类 coarse 且
+// 宽的场景按视口正常出多列（审计报告 #1295：老版 coarse→1 把 in-app 弹窗静默锁死单列，
+// 没有任何逃生门）。fine 指针（桌面）门槛不变。CSS grid 与 JS masonry 都经本函数取列数。
+function isCoarsePointerType() {
+    try {
+        return !!(window.matchMedia
+            && window.matchMedia('(pointer: coarse)').matches);
+    } catch (e) {
+        return false;
+    }
+}
 // 视口感知的有效列数（单一真值来源）：min(用户设置 --dict-columns, 每列 ≥DICT_COLUMN_MIN_WIDTH
 // px 装得下的列数)。CSS grid 经 --dict-columns-effective 消费、masonry 经 dictColumns() 消费，
 // 两者都走此函数——绝不再分叉（历史上 masonry 漏了视口收敛，自动调整对方框布局不生效）。
 function effectiveDictColumns() {
+    // 报告 #1295：coarse 不再「一律单列」，改为提高单列门槛（见上方注释）。
+    const colFloor = isCoarsePointerType() ? DICT_COLUMN_MIN_WIDTH * 2 : DICT_COLUMN_MIN_WIDTH;
     let configured = 1;
     try {
         configured = parseInt(
@@ -5117,7 +5132,7 @@ function effectiveDictColumns() {
     if (!(configured > 0)) configured = 1;
     const width = __fushiViewportWidth();
     const fit = width > 0
-        ? Math.max(1, Math.floor(width / DICT_COLUMN_MIN_WIDTH))
+        ? Math.max(1, Math.floor(width / colFloor))
         : configured;
     return Math.min(configured, fit);
 }
@@ -5561,6 +5576,23 @@ let _popupWheelResidualAt = 0;
 // until the idle/surface reset so one occasional large mid-fling frame is not
 // mis-classified as a coarse mouse notch and momentarily over-tamed.
 let _popupWheelFineDevice = false;
+// BUG-2284: 墨水屏「瞬时滚动」（app 设置 lookup.popup_instant_scroll，经
+// popup_settings_injection / 扩展 theme 下发 window.__fushiPopupInstantScroll）。
+// 墨水屏刷一次全屏才划算，按 delta 比例的连续滚动会一路刷出残影；开启后滚轮改成
+// 「每次手势跳固定距离」——步长 = 被滚表面视口高度 × VIEWPORT_FRACTION，乘用户的
+// 滚轮速度倍率后夹在 [MIN_STEP, 一屏] 内（永不跳过整屏内容），并在 COOLDOWN_MS 内
+// 吃掉后续帧：触控板一次惯性滑动会连发几十帧，不合并就直接跳到底。
+const POPUP_EINK_WHEEL_VIEWPORT_FRACTION = 0.5; // 一次跳半屏
+const POPUP_EINK_WHEEL_MIN_STEP = 48;           // 视口异常小时的下限（布局 px）
+const POPUP_EINK_WHEEL_COOLDOWN_MS = 140;       // 一次手势内的跳跃合并窗口
+let _popupEinkWheelAt = 0;
+// 被滚表面的视口高度，单位与 scrollBy 的实参一致（布局 px）。扩展的滚动者是 shadow
+// host（zoom 设在 host 上，clientHeight 已是它自己的布局 px）；in-app 滚 document，
+// window.innerHeight 是视觉 px，要除以 documentElement 的 zoom 才是布局 px。
+function popupEinkWheelExtent(scroller) {
+    if (scroller && scroller.clientHeight > 0) return scroller.clientHeight;
+    return (window.innerHeight || 0) / popupCurrentZoom(null);
+}
 function popupCurrentZoom(scroller) {
     // BUG-688: read the zoom of the surface we are about to scroll. The in-app
     // popup zooms document.documentElement (popup_settings_injection.dart sets
@@ -5740,6 +5772,23 @@ const __fushiPopupWheelListener = (e) => {
         isFinite(window.__fushiPopupWheelSpeed) && window.__fushiPopupWheelSpeed > 0)
         ? window.__fushiPopupWheelSpeed
         : 1;
+    // BUG-2284: 墨水屏瞬时滚动——固定距离跳，不按 delta 比例连续滚。放在这里是因为
+    // 它要复用上面已解析的 wheelSpeed（同一个「滚轮速度」旋钮同时缩放两种模式）与
+    // scroller/deltaPx，且必须走在比例滚动的 factor/亚像素余量之前把事件吃掉。
+    if (window.__fushiPopupInstantScroll) {
+        if ((nowMs - _popupEinkWheelAt) < POPUP_EINK_WHEEL_COOLDOWN_MS) return;
+        _popupEinkWheelAt = nowMs;
+        _popupWheelResidual = 0; // 比例模式的余量在瞬时模式下无意义，切换回去也别延迟跳
+        const extent = popupEinkWheelExtent(scroller);
+        const jump = Math.max(
+            POPUP_EINK_WHEEL_MIN_STEP,
+            Math.min(extent, extent * POPUP_EINK_WHEEL_VIEWPORT_FRACTION * wheelSpeed));
+        const step = Math.trunc(deltaPx < 0 ? -jump : jump);
+        if (step === 0) return;
+        if (scroller) { scroller.scrollBy({ top: step, behavior: 'auto' }); }
+        else { window.scrollBy({ top: step, behavior: 'auto' }); }
+        return;
+    }
     const factor = (coarseMouseNotch
         ? POPUP_WHEEL_PIXEL_FACTOR
         : POPUP_WHEEL_TRACKPAD_FACTOR) * wheelSpeed;

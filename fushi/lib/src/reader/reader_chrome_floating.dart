@@ -104,20 +104,22 @@ double bottomChromeReserve({
 ///    （`_hasEverLoaded && _showChrome`，与 [bottomChromeReserve] 同一门控），
 ///    [bottomReserve] 已含悬浮态恒 0 的语义（悬浮不占正文位置）。
 ///    spread 不需要底部留白：它没有文档级滚动条，底栏叠在整页图上是既有可接受形态。
-///  * **顶部**（BUG-1343）：macOS 顶部 DragToMoveArea 叠在 WebView 之上，独立文档若不
-///    缩进，首行歌词 / 整页图会落到拖拽区下面且无法交互。[titlebarInset] 在非 macOS 恒 0。
+///  * **顶部**：曾有一笔 `titlebarInset`（BUG-1343：macOS 阅读器自绘的 28pt
+///    DragToMoveArea 叠在 WebView 之上，独立文档不缩进就会把首行歌词 / 整页图压到
+///    拖拽区下面）。macOS 改用自绘 MD3 顶栏（`FushiDesktopTitleBar`，在整个
+///    Navigator 之上）后那条带子已删除，页内不再有任何叠在 WebView 上的顶部 chrome
+///    需要独立文档让位，这笔留白随之取消。
 ///
 /// 返回 [EdgeInsets.zero] 表示「无需任何留白」，调用方据此跳过 `Padding` 包装。
+/// 顶部那笔取消后，spread 与「完全没有独立文档」在留白上已不可区分（两者都是
+/// 零），所以 `spreadDocumentLoaded` 也一并从签名里去掉——留一个不影响任何返回值的
+/// 必填参数只会让调用方以为它还有作用。
 EdgeInsets independentDocumentInsets({
   required bool lyricsMode,
-  required bool spreadDocumentLoaded,
   required bool chromeOccupiesLayout,
   required double bottomReserve,
-  required double titlebarInset,
 }) {
-  final bool independentDocument = lyricsMode || spreadDocumentLoaded;
   return EdgeInsets.only(
-    top: independentDocument ? titlebarInset : 0,
     bottom: lyricsMode && chromeOccupiesLayout ? bottomReserve : 0,
   );
 }

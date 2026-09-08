@@ -233,15 +233,14 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // VideoScrapeAutoService.sweep 的进场门（关=零网络请求、零资料落库），不是
   // reader CSS / 主题树，无适用探针；由专项服务测试咬住（关=不发请求、关→开
   // 同一实例下轮即刮）。
+  // BUG-2268：作品资料的主源二选一（MAL ↔ TMDB，另一源恒为兜底）。写 prefsRepo
+  // （changed=true），生效点在下一批刮削时协调器选哪家问、歧义时问不问兜底源——
+  // 要网络、要一次完整识别链，不是 reader CSS / 主题树，无适用探针；由专项测试
+  // 直接驱动协调器咬住（全局偏好 / 来源级 override / 双源歧义合并候选）。
+  'video/Primary metadata source':
+      'test/media/video/metadata/video_source_scrape_provider_override_test.dart',
   'video/Auto-fetch series info':
       'test/media/video/scraper/auto_scrape_service_test.dart',
-  // BUG-2268 主资料源（MAL / TMDB）。写 prefsRepo（changed=true），生效点是
-  // VideoSourceScrapeGlobalConfig 快照 → 协调器识别链的源顺序，既不进 reader
-  // CSS 也不进主题树，harness 观测不到；由识别器 / 协调器专项测试咬住（对称
-  // 兜底、来源级 override 覆盖全局、历史值回落、切源后配置指纹重建）。
-  'video/Primary metadata source':
-      'test/media/video/metadata/mal_fallback_resolver_test.dart + '
-          'test/media/video/metadata/video_source_scrape_provider_override_test.dart',
   // 库内自动补刮总闸。写 prefsRepo（changed=true），生效点在
   // VideoLibraryScrapeSweep.sweepOnce 的进场门（关=不发起任何补刮批次），不是
   // reader CSS / 主题树，无适用探针；由专项测试咬住（总闸关=不补刮但队列仍可见、
@@ -663,6 +662,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'lookup/Auto-expand rows':
       'test/pages/popup_auto_expand_dictionaries_test.js (popup.js node behaviour guard) + test/pages/popup_auto_expand_dictionaries_test.dart',
   'lookup/Show expression tags': 'DEVICE: popup.js expression tags',
+  // BUG-2284：紧凑释义。效果在 popup.js 的释义排版（WebView 渲染，widget 测不到），
+  // 与同组的 collapse / expression tags 同一类；注入侧由
+  // test/dictionary/popup_instant_scroll_guard_test.dart 与
+  // test/pages/popup_settings_injection_memo_test.dart 钉住。
+  'lookup/Compact glossaries': 'DEVICE: popup.js compact glossaries',
   'lookup/Deduplicate pitch accents': 'DEVICE: popup.js pitch dedup',
   // TODO-702: 有声书退出即停（默认）/ 后台续播（可选）。pref-only（门控阅读器
   // dispose 时是否 stop 会话，无渲染树效果）；schema coverage 证 focus/change/

@@ -5,6 +5,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_network_session.dart';
+import 'package:fushi/src/media/manga/aidoku/aidoku_proxy_challenge.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
 
 /// 把「在 WebView 里解 Cloudflare 挑战」装成 [AidokuCloudflareGate.resolver]。
@@ -52,6 +53,19 @@ Future<bool> _solveChallenge(
 ) async {
   final NavigatorState? navigator = navigatorKey.currentState;
   if (navigator == null) return false;
+  if (pageBuilder == null) {
+    final bool? nativeResult = await solveAidokuProxyChallenge(
+      url: challengeUrl,
+      userAgent: userAgent,
+      jar: AidokuCookieJar.shared,
+      title: t.manga_source_cloudflare_verify_title,
+      closeLabel: MaterialLocalizations.of(
+        navigator.context,
+      ).closeButtonTooltip,
+    );
+    if (nativeResult != null) return nativeResult;
+    if (!navigator.mounted) return false;
+  }
   final bool? solved = await navigator.push<bool>(
     MaterialPageRoute<bool>(
       builder: (BuildContext context) =>
@@ -258,11 +272,16 @@ class _AidokuCloudflareChallengePageState
                     onLoadStop: (_, __) => unawaited(_check()),
                     // 非 null 本身就是救命动作：Java 侧据此 `return true`，不再连坐杀 app。
                     onRenderProcessGone:
-                        (InAppWebViewController _, RenderProcessGoneDetail detail) =>
-                            unawaited(_deathGuard.handleDeath(
-                      didCrash: detail.didCrash,
-                      rendererPriorityAtExit: detail.rendererPriorityAtExit,
-                    )),
+                        (
+                          InAppWebViewController _,
+                          RenderProcessGoneDetail detail,
+                        ) => unawaited(
+                          _deathGuard.handleDeath(
+                            didCrash: detail.didCrash,
+                            rendererPriorityAtExit:
+                                detail.rendererPriorityAtExit,
+                          ),
+                        ),
                   ),
                 ),
           ),

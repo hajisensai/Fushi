@@ -1759,19 +1759,47 @@ extension _ReaderChrome on _ReaderFushiPageState {
       // 抽屉开着期间顶部工具栏不自动收起（否则用户改设置时工具栏在背后消失，
       // 关抽屉后点空白又要再唤一次）；关掉后若仍是悬浮可见态，重新武装计时。
       _cancelChromeAutoHide();
-      await showReaderSideSheet<void>(
-        context: context,
-        // ッツ 形态：导航 / 章节贴左，外观设置贴右。
-        side:
-            presentation == ReaderQuickSettingsPresentation.sideSheetNavigation
-            ? ReaderSideSheetSide.left
-            : ReaderSideSheetSide.right,
-        builder: (_) => sheetContent,
-      );
+      // BUG-2276：透明遮罩形态开始 / 结束的唯一两点。旗只在这里翻，
+      // [_closeSideSheetForWebViewPointer] 只读，不存在第二个所有者。
+      _sideSheetOpen = true;
+      try {
+        await showReaderSideSheet<void>(
+          context: context,
+          // ッツ 形态：导航 / 章节贴左，外观设置贴右。
+          side: presentation ==
+                  ReaderQuickSettingsPresentation.sideSheetNavigation
+              ? ReaderSideSheetSide.left
+              : ReaderSideSheetSide.right,
+          builder: (_) => sheetContent,
+        );
+      } finally {
+        _sideSheetOpen = false;
+      }
       if (mounted && _anyChromeFloating && _chromeTransientVisible) {
         _armChromeAutoHide();
       }
     }
+  }
+
+  /// BUG-2276：正文 WebView 上报的一次点击落在「侧抽屉正压着正文」的状态里时，
+  /// 把它当成对遮罩的点击——关掉抽屉并**吞掉**这次点击（返回 true，调用方立即
+  /// return，不再翻页 / 查词 / 收放控制栏）。
+  ///
+  /// 抽屉是路由，故走 [Navigator.maybePop]（与面板内「退出书籍」按钮同款：不绕过
+  /// 任何 PopScope）。判据与「为什么 macOS 上这次点击会漏过 modal barrier」见
+  /// [readerWebViewPointerClosesSideSheet]；其它平台该判据恒假，此方法恒返回
+  /// false，行为与修复前逐字相同。
+  bool _closeSideSheetForWebViewPointer() {
+    if (!mounted) return false;
+    final ModalRoute<Object?>? owner = ModalRoute.of(context);
+    if (!readerWebViewPointerClosesSideSheet(
+      sideSheetOpen: _sideSheetOpen,
+      readerRouteIsCurrent: owner == null || owner.isCurrent,
+    )) {
+      return false;
+    }
+    unawaited(Navigator.of(context).maybePop());
+    return true;
   }
 
   /// 组装书内快捷设置面板（居中对话框 / 移动端 sheet / 桌面端右侧抽屉共用同一份
@@ -2089,7 +2117,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     }
     final Color fg = _themeTextColor();
     return Positioned(
-      top: _stableTopInset + _macosWindowTitlebarInset,
+      top: _stableTopInset,
       left: MediaQuery.viewPaddingOf(context).left,
       right: MediaQuery.viewPaddingOf(context).right,
       // 焦点排除在 ReaderDesktopHeader 内部（纯指针面，TODO-700 不变式）；底栏的
@@ -2207,8 +2235,6 @@ extension _ReaderChrome on _ReaderFushiPageState {
             child: ReaderStatisticsDialog(
               sessionTotals: _readingSessionTotals,
               loadBookTotals: _loadReaderBookStatTotals,
-              trackingPaused: () => _studyClockManualPause,
-              onToggleTracking: _toggleStudyClockManualPause,
               remainingChapterChars: remainingChapter,
               remainingBookChars: remainingBook,
             ),
@@ -2218,15 +2244,17 @@ extension _ReaderChrome on _ReaderFushiPageState {
     );
   }
 
-  /// 统计浮层「本次会话」旁的手动开关：暂停 → `stop()` 结算并封段；继续 →
-  /// `start()` 重锚 tick 起点开新段。旗标同时门住 [_ensureStudyClock] 与生命周期
-  /// resumed 的自动起表。
+  /// 手动计时开关：暂停 → `stop()` 结算并封段；继续 → `start()` 重锚 tick 起点开
+  /// 新段。旗标同时门住 [_ensureStudyClock] 与生命周期 resumed 的自动起表。
+  ///
+  /// 入口只有底部状态行左侧的计时器（[ReaderStatusFooter.onTapTracker]）——在正文
+  /// 里点，停 / 续当场生效。统计浮层里曾另有一个同功能按钮，但开浮层本身就经
+  /// [_withStudyClockPaused] 停表（BUG-2208），层内那个按钮改不动当下的运行态。
   void _toggleStudyClockManualPause() {
     _ensureStudyClock();
     final bool pause = !_studyClockManualPause;
     _rebuild(() => _studyClockManualPause = pause);
-    // 统一判据（BUG-2209）：统计浮层本身是弹层（modalDepth > 0），「继续」在关掉浮层
-    // 后才真正起表；切后台期间点「继续」也只是清旗、回前台再起。
+    // 统一判据（BUG-2209）：切后台期间点「继续」只是清旗、回前台再起表。
     _syncStudyClockRunState();
   }
 
@@ -2356,7 +2384,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       return const SizedBox.shrink();
     }
     return Positioned(
-      top: _stableTopInset + _macosWindowTitlebarInset,
+      top: _stableTopInset,
       left: 0,
       right: 0,
       height: kReaderHoverRevealStripHeight,
@@ -2482,7 +2510,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
               );
 
     return Positioned(
-      top: _stableTopInset + _macosWindowTitlebarInset,
+      top: _stableTopInset,
       left: 16,
       right: 16,
       child: Align(

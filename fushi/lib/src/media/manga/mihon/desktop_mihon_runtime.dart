@@ -13,6 +13,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_bridge_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_child_process_containment.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_proxy_policy_server.dart';
 
 const Duration kMihonSourceImageHeaderTimeout = Duration(seconds: 90);
 const Duration kMihonSourceImageIdleTimeout = Duration(seconds: 90);
@@ -49,9 +50,9 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     required this.dataDirectory,
     Directory? resourceDirectory,
     http.Client? httpClient,
-  })  : resourceDirectory = resourceDirectory ?? _defaultResourceDirectory(),
-        _processContainment = MihonChildProcessContainment.platform(),
-        _http = httpClient ?? http.Client();
+  }) : resourceDirectory = resourceDirectory ?? _defaultResourceDirectory(),
+       _processContainment = MihonChildProcessContainment.platform(),
+       _http = httpClient ?? http.Client();
 
   final Directory dataDirectory;
   final Directory resourceDirectory;
@@ -64,7 +65,7 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
   _SidecarLogSink? _log;
   Future<void>? _starting;
   bool _disposed = false;
-  bool _restartUsed = false;
+  MihonProxyPolicyServer? _proxyPolicy;
   final Map<String, _CachedApk> _apkCache = <String, _CachedApk>{};
   final Map<String, http.Client> _imageClients = <String, http.Client>{};
   int _imageRequestSequence = 0;
@@ -84,13 +85,13 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
   }
 
   Map<String, String> get _headers => <String, String>{
-        'Authorization': 'Bearer $_token',
-        // NanoHTTPD 2.3.1 falls back to US-ASCII when a request content type
-        // omits its charset. Mihon manga URLs commonly contain CJK text, so
-        // omitting this parameter corrupts those URLs into U+FFFD on the
-        // bridge round trip and makes otherwise valid detail pages return 404.
-        'Content-Type': 'application/json; charset=utf-8',
-      };
+    'Authorization': 'Bearer $_token',
+    // NanoHTTPD 2.3.1 falls back to US-ASCII when a request content type
+    // omits its charset. Mihon manga URLs commonly contain CJK text, so
+    // omitting this parameter corrupts those URLs into U+FFFD on the
+    // bridge round trip and makes otherwise valid detail pages return 404.
+    'Content-Type': 'application/json; charset=utf-8',
+  };
 
   @override
   Future<MihonCapabilities> getCapabilities() async {
@@ -135,14 +136,13 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     MihonSource source,
     MihonPage page, {
     List<MihonPreference> preferences = const <MihonPreference>[],
-  }) =>
-      fetchImageRequest(
-        extension,
-        source,
-        page,
-        requestId: 'direct-${_imageRequestSequence++}',
-        preferences: preferences,
-      );
+  }) => fetchImageRequest(
+    extension,
+    source,
+    page,
+    requestId: 'direct-${_imageRequestSequence++}',
+    preferences: preferences,
+  );
 
   @override
   Future<Uint8List> fetchImageRequest(
@@ -216,8 +216,9 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
         'url': url,
         'preferences': mihonBridgePreferences(source, preferences),
       });
-    final http.StreamedResponse response =
-        await _http.send(request).timeout(kMihonSourceImageHeaderTimeout);
+    final http.StreamedResponse response = await _http
+        .send(request)
+        .timeout(kMihonSourceImageHeaderTimeout);
     if (response.statusCode != HttpStatus.ok) {
       await response.stream.drain<void>().timeout(kMihonSourceImageIdleTimeout);
       throw MihonRuntimeException(
@@ -240,13 +241,10 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     MihonExtensionRef extension,
     MihonSource source,
   ) async {
-    await _postObject(
-      '/source-data/clear',
-      <String, Object?>{
-        'data': await _apkBase64(extension.apkPath),
-        'sourceId': source.id,
-      },
-    );
+    await _postObject('/source-data/clear', <String, Object?>{
+      'data': await _apkBase64(extension.apkPath),
+      'sourceId': source.id,
+    });
     await _restart();
   }
 
@@ -263,6 +261,7 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
+    final _SidecarLogSink? log = _log;
     try {
       if (_process != null && _port != null) {
         await _http
@@ -300,6 +299,9 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     }
     _imageClients.clear();
     _http.close();
+    await log?.close();
+    await _proxyPolicy?.close();
+    _proxyPolicy = null;
   }
 
   Future<void> _ensureStarted() async {
@@ -323,10 +325,9 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
 
   Future<void> _start() async {
     final File java = File(_javaExecutablePath());
-    final File server = File(p.join(
-      resourceDirectory.path,
-      'm-extension-server.jar',
-    ));
+    final File server = File(
+      p.join(resourceDirectory.path, 'm-extension-server.jar'),
+    );
     if (!java.existsSync() || !server.existsSync()) {
       throw MihonRuntimeException(
         'RUNTIME_MISSING',
@@ -335,13 +336,18 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
       );
     }
     await dataDirectory.create(recursive: true);
-    final Directory preferences =
-        Directory(p.join(dataDirectory.path, 'preferences'));
+    final Directory preferences = Directory(
+      p.join(dataDirectory.path, 'preferences'),
+    );
     await preferences.create(recursive: true);
     final Random random = Random.secure();
     final String token = base64UrlEncode(
       List<int>.generate(32, (_) => random.nextInt(256)),
     ).replaceAll('=', '');
+    await _proxyPolicy?.close();
+    final MihonProxyPolicyServer proxyPolicy =
+        await MihonProxyPolicyServer.start(token);
+    _proxyPolicy = proxyPolicy;
     final Process process = await Process.start(
       java.path,
       <String>[
@@ -359,7 +365,10 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
         '0',
         dataDirectory.path,
       ],
-      environment: <String, String>{'FUSHI_MIHON_TOKEN': token},
+      environment: <String, String>{
+        'FUSHI_MIHON_TOKEN': token,
+        'FUSHI_MIHON_PROXY_POLICY_PORT': '${proxyPolicy.port}',
+      },
       mode: ProcessStartMode.normal,
     );
     if (_disposed) {
@@ -408,25 +417,29 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
         .transform(const Utf8Decoder(allowMalformed: true))
         .transform(const LineSplitter())
         .listen((String line) {
-      log.write(line);
-      if (announced.isCompleted) return;
-      final int? port = _parseReadyPort(line);
-      if (port != null) announced.complete(port);
-    });
+          log.write(line);
+          if (announced.isCompleted) return;
+          final int? port = _parseReadyPort(line);
+          if (port != null) announced.complete(port);
+        });
     process.stderr
         .transform(const Utf8Decoder(allowMalformed: true))
         .transform(const LineSplitter())
         .listen(log.write);
-    unawaited(process.exitCode.then((int _) {
-      if (!announced.isCompleted) announced.complete(null);
-      if (identical(_process, process)) {
-        _process = null;
-        _port = null;
-        _token = null;
-      }
-      if (identical(_log, log)) _log = null;
-      unawaited(log.close());
-    }));
+    unawaited(
+      process.exitCode.then((int _) {
+        unawaited(proxyPolicy.close());
+        if (identical(_proxyPolicy, proxyPolicy)) _proxyPolicy = null;
+        if (!announced.isCompleted) announced.complete(null);
+        if (identical(_process, process)) {
+          _process = null;
+          _port = null;
+          _token = null;
+        }
+        if (identical(_log, log)) _log = null;
+        unawaited(log.close());
+      }),
+    );
 
     final DateTime deadline = DateTime.now().add(const Duration(seconds: 20));
     final int? readyPort = await announced.future.timeout(
@@ -522,10 +535,16 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
         'M-Extension-Server capabilities request failed',
       );
     }
-    return MihonCapabilities.fromJson(
-      (jsonDecode(response.body) as Map<Object?, Object?>)
-          .cast<String, Object?>(),
-    );
+    final Map<String, Object?> payload =
+        (jsonDecode(response.body) as Map<Object?, Object?>)
+            .cast<String, Object?>();
+    if (payload['hostProxyPolicy'] != true) {
+      throw const MihonRuntimeException(
+        'INCOMPATIBLE_BRIDGE',
+        'Bundled M-Extension-Server lacks host proxy policy support',
+      );
+    }
+    return MihonCapabilities.fromJson(payload);
   }
 
   Future<Map<String, Object?>> _postObject(
@@ -542,21 +561,19 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     return response.cast<String, Object?>();
   }
 
-  Future<Object?> _postJson(
-    String path,
-    Map<String, Object?> body, {
-    bool allowRestart = true,
-  }) async {
+  Future<Object?> _postJson(String path, Map<String, Object?> body) async {
     await _ensureStarted();
     try {
       final http.Response response = await _http
           .post(_uri(path), headers: _headers, body: jsonEncode(body))
           .timeout(const Duration(seconds: 45));
-      final Object? decoded =
-          response.body.isEmpty ? null : jsonDecode(response.body);
+      final Object? decoded = response.body.isEmpty
+          ? null
+          : jsonDecode(response.body);
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        final Map<Object?, Object?>? error =
-            decoded is Map<Object?, Object?> ? decoded : null;
+        final Map<Object?, Object?>? error = decoded is Map<Object?, Object?>
+            ? decoded
+            : null;
         throw MihonRuntimeException(
           'BRIDGE_HTTP_${response.statusCode}',
           error?['error']?.toString() ?? 'Mihon bridge request failed',
@@ -569,19 +586,20 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
       return decoded;
     } on MihonRuntimeException {
       rethrow;
+    } on TimeoutException catch (error) {
+      // A slow source is not evidence that the shared JVM has died. Killing it
+      // here aborts every concurrent source search and silently replays actions.
+      throw MihonRuntimeException(
+        'BRIDGE_TIMEOUT',
+        'Mihon source request timed out',
+        cause: error,
+      );
     } on Object catch (error) {
-      if (allowRestart && !_restartUsed) {
-        _restartUsed = true;
-        await _restart();
-        return _postJson(path, body, allowRestart: false);
-      }
       throw MihonRuntimeException(
         'BRIDGE_IO',
         'M-Extension-Server request failed',
         cause: error,
       );
-    } finally {
-      if (!allowRestart) _restartUsed = false;
     }
   }
 
@@ -627,8 +645,8 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
   String _javaExecutablePath() {
     final String runtimeName = Platform.isMacOS
         ? (Abi.current() == Abi.macosArm64
-            ? 'runtime-macos-arm64'
-            : 'runtime-macos-x64')
+              ? 'runtime-macos-arm64'
+              : 'runtime-macos-x64')
         : 'runtime';
     return p.join(
       resourceDirectory.path,
@@ -650,12 +668,9 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
   static Directory _defaultResourceDirectory() {
     final Directory executable = File(Platform.resolvedExecutable).parent;
     if (Platform.isMacOS) {
-      return Directory(p.normalize(p.join(
-        executable.path,
-        '..',
-        'Resources',
-        'mihon_bridge',
-      )));
+      return Directory(
+        p.normalize(p.join(executable.path, '..', 'Resources', 'mihon_bridge')),
+      );
     }
     return Directory(p.join(executable.path, 'mihon_bridge'));
   }
@@ -694,6 +709,7 @@ class _SidecarLogSink {
   IOSink? _sink;
   int _written;
   bool _closed = false;
+  Future<void>? _closing;
 
   static Future<_SidecarLogSink> open(Directory dataDirectory) async {
     final Directory logs = Directory(p.join(dataDirectory.path, 'logs'));
@@ -742,7 +758,9 @@ class _SidecarLogSink {
     }
   }
 
-  Future<void> close() async {
+  Future<void> close() => _closing ??= _close();
+
+  Future<void> _close() async {
     if (_closed) return;
     _closed = true;
     final IOSink? sink = _sink;

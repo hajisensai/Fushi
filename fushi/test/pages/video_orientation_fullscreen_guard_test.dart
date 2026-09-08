@@ -111,7 +111,7 @@ void main() {
         reason: '进全屏桌面分支必须转调 defaultEnterNativeFullscreen (保留桌面真全屏)',
       );
       expect(
-        enterBody.contains('FushiWindowsTitleBar.setContentFullscreen') &&
+        enterBody.contains('FushiDesktopTitleBar.setContentFullscreen') &&
             enterBody.contains('owner: this') &&
             enterBody.contains('enabled: true'),
         isTrue,

@@ -1,17 +1,54 @@
+import 'dart:convert';
+import 'dart:math';
+
 import 'package:flutter/services.dart';
 
 import 'package:fushi/src/media/manga/mihon/mihon_bridge_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_proxy_policy_server.dart';
+import 'package:fushi/src/utils/net/app_native_proxy.dart';
 
 class AndroidMihonRuntime extends MihonBridgeRuntime
-    implements CancellableMihonRuntime {
-  AndroidMihonRuntime({
-    MethodChannel? channel,
-  }) : _channel = channel ?? const MethodChannel('app.fushi.reader/mihon');
+    implements CancellableMihonRuntime, ChallengeMihonRuntime {
+  AndroidMihonRuntime({MethodChannel? channel})
+    : _channel = channel ?? const MethodChannel('app.fushi.reader/mihon');
 
   final MethodChannel _channel;
   int _imageRequestSequence = 0;
+  MihonProxyPolicyServer? _proxyPolicy;
+  Future<void>? _proxyConfiguration;
+
+  Future<void> _configureProxyPolicy() async {
+    final Random random = Random.secure();
+    final String token = base64UrlEncode(
+      List<int>.generate(32, (_) => random.nextInt(256)),
+    );
+    final MihonProxyPolicyServer server = await MihonProxyPolicyServer.start(
+      token,
+    );
+    try {
+      final Uri relay = await ensureAppChallengeProxyEndpoint();
+      await _channel
+          .invokeMethod<void>('configureProxyPolicy', <String, Object?>{
+            'port': server.port,
+            'token': token,
+            'challengeProxyEndpoint': relay.toString(),
+          });
+      _proxyPolicy = server;
+    } on Object {
+      await server.close();
+      _proxyConfiguration = null;
+      rethrow;
+    }
+  }
+
+  @override
+  Future<void> solveCloudflare(Uri uri, {String? userAgent}) =>
+      _invokeVoid('solveCloudflare', <String, Object?>{
+        'url': uri.toString(),
+        if (userAgent != null) 'userAgent': userAgent,
+      });
 
   @override
   Future<MihonCapabilities> getCapabilities() async =>
@@ -22,10 +59,9 @@ class AndroidMihonRuntime extends MihonBridgeRuntime
   @override
   Future<MihonExtensionInspection> inspectExtension(String apkPath) async =>
       MihonExtensionInspection.fromJson(
-        await _invokeMap(
-          'inspectExtension',
-          <String, Object?>{'apkPath': apkPath},
-        ),
+        await _invokeMap('inspectExtension', <String, Object?>{
+          'apkPath': apkPath,
+        }),
       );
 
   @override
@@ -39,25 +75,21 @@ class AndroidMihonRuntime extends MihonBridgeRuntime
 
   @override
   Future<void> uninstallPrivateExtension(String packageName) => _invokeVoid(
-        'uninstallPrivateExtension',
-        <String, Object?>{'packageName': packageName},
-      );
+    'uninstallPrivateExtension',
+    <String, Object?>{'packageName': packageName},
+  );
 
   @override
   Future<Object?> invokeBridge(
     MihonExtensionRef extension,
     String method,
     Map<String, Object?> arguments,
-  ) =>
-      _invoke<Object?>(
-        'invoke',
-        <String, Object?>{
-          'packageName': extension.packageName,
-          'apkPath': extension.apkPath,
-          'method': method,
-          ...arguments,
-        },
-      );
+  ) => _invoke<Object?>('invoke', <String, Object?>{
+    'packageName': extension.packageName,
+    'apkPath': extension.apkPath,
+    'method': method,
+    ...arguments,
+  });
 
   @override
   Future<Uint8List> fetchImage(
@@ -65,14 +97,13 @@ class AndroidMihonRuntime extends MihonBridgeRuntime
     MihonSource source,
     MihonPage page, {
     List<MihonPreference> preferences = const <MihonPreference>[],
-  }) =>
-      fetchImageRequest(
-        extension,
-        source,
-        page,
-        requestId: 'direct-${_imageRequestSequence++}',
-        preferences: preferences,
-      );
+  }) => fetchImageRequest(
+    extension,
+    source,
+    page,
+    requestId: 'direct-${_imageRequestSequence++}',
+    preferences: preferences,
+  );
 
   @override
   Future<Uint8List> fetchImageRequest(
@@ -108,9 +139,9 @@ class AndroidMihonRuntime extends MihonBridgeRuntime
 
   @override
   Future<void> cancelImageRequests(Iterable<String> requestIds) => _invokeVoid(
-        'cancelImageRequests',
-        <String, Object?>{'requestIds': requestIds.toList(growable: false)},
-      );
+    'cancelImageRequests',
+    <String, Object?>{'requestIds': requestIds.toList(growable: false)},
+  );
 
   @override
   Future<Uint8List> fetchSourceImage(
@@ -119,16 +150,14 @@ class AndroidMihonRuntime extends MihonBridgeRuntime
     String url, {
     List<MihonPreference> preferences = const <MihonPreference>[],
   }) async {
-    final Uint8List? bytes = await _invoke<Uint8List>(
-      'fetchSourceImage',
-      <String, Object?>{
-        'packageName': extension.packageName,
-        'apkPath': extension.apkPath,
-        'sourceId': source.id,
-        'url': url,
-        'preferences': mihonBridgePreferences(source, preferences),
-      },
-    );
+    final Uint8List? bytes =
+        await _invoke<Uint8List>('fetchSourceImage', <String, Object?>{
+          'packageName': extension.packageName,
+          'apkPath': extension.apkPath,
+          'sourceId': source.id,
+          'url': url,
+          'preferences': mihonBridgePreferences(source, preferences),
+        });
     if (bytes == null || bytes.isEmpty) {
       throw const MihonRuntimeException(
         'EMPTY_IMAGE',
@@ -142,23 +171,28 @@ class AndroidMihonRuntime extends MihonBridgeRuntime
   Future<void> clearSourceData(
     MihonExtensionRef extension,
     MihonSource source,
-  ) =>
-      _invokeVoid(
-        'clearSourceData',
-        <String, Object?>{
-          'packageName': extension.packageName,
-          'sourceId': source.id,
-        },
-      );
+  ) => _invokeVoid('clearSourceData', <String, Object?>{
+    'packageName': extension.packageName,
+    'sourceId': source.id,
+  });
 
   @override
   Future<void> invalidateExtension(String packageName) => _invokeVoid(
-        'invalidateExtension',
-        <String, Object?>{'packageName': packageName},
-      );
+    'invalidateExtension',
+    <String, Object?>{'packageName': packageName},
+  );
 
   @override
-  Future<void> dispose() => _invokeVoid('dispose', const <String, Object?>{});
+  Future<void> dispose() async {
+    try {
+      await _proxyConfiguration;
+      await _invokeVoid('dispose', const <String, Object?>{});
+    } finally {
+      await _proxyPolicy?.close();
+      _proxyPolicy = null;
+      _proxyConfiguration = null;
+    }
+  }
 
   Future<Map<String, Object?>> _invokeMap(
     String method,
@@ -181,13 +215,33 @@ class AndroidMihonRuntime extends MihonBridgeRuntime
     await _invoke<Object?>(method, arguments);
   }
 
-  Future<T?> _invoke<T>(
-    String method,
-    Map<String, Object?> arguments,
-  ) async {
+  Future<T?> _invoke<T>(String method, Map<String, Object?> arguments) async {
     try {
+      if (const <String>{
+        'invoke',
+        'fetchImage',
+        'fetchSourceImage',
+        'solveCloudflare',
+      }.contains(method)) {
+        await (_proxyConfiguration ??= _configureProxyPolicy());
+      }
       return await _channel.invokeMethod<T>(method, arguments);
     } on PlatformException catch (error) {
+      if (error.code == 'CLOUDFLARE_CHALLENGE_REQUIRED' &&
+          error.details is Map) {
+        final Map<Object?, Object?> details =
+            error.details as Map<Object?, Object?>;
+        final Uri? url = Uri.tryParse(details['url']?.toString() ?? '');
+        if (url != null &&
+            const <String>{'http', 'https'}.contains(url.scheme) &&
+            url.host.isNotEmpty) {
+          throw MihonCloudflareChallengeException(
+            url,
+            userAgent: details['userAgent']?.toString(),
+            cause: error,
+          );
+        }
+      }
       throw MihonRuntimeException(
         error.code,
         error.message ?? 'Android Mihon runtime failed',

@@ -42,6 +42,7 @@ typedef _LayoutCssArgs = ({
   bool isVertical,
   _ThemeColors colors,
   String resolvedFontFamily,
+  String fontWeightCss,
   String textSpacingCss,
   String paddingCss,
   String gridCss,
@@ -315,6 +316,17 @@ class ReaderContentStyles {
     final String textSpacingCss =
         'line-height: ${settings.lineHeight} !important;';
 
+    // 正文字重。只声明在 `body` 上，靠继承覆盖正文——不下放到 `p`/`*`，因为 UA
+    // 样式表给 `<strong>`/`<b>` 的是相对值 `bolder`：挂在 body 上时加粗仍相对用户
+    // 选定的基准再上一档（400→700、600→900），书里的强调不会被抹平；一旦改成
+    // 通配选择器 + !important 就会把 `<strong>` 一起钉死成同一字重。
+    // 400 = CSS `normal` 是默认值，此时整条声明不注入：书自带样式表原样生效，
+    // 与本功能引入前的渲染完全一致（零回归），与 `textIndentCss`/`gridCss` 的
+    // 「默认值产出空串」同构。
+    final int fontWeight = settings.fontWeight;
+    final String fontWeightCss =
+        fontWeight == 400 ? '' : 'font-weight: $fontWeight !important;';
+
     final String gridCss = settings.enableTextJustification
         ? ''
         : '''
@@ -399,6 +411,7 @@ svg.block-img.blurred {
       isVertical: isVertical,
       colors: colors,
       resolvedFontFamily: resolvedFontFamily,
+      fontWeightCss: fontWeightCss,
       textSpacingCss: textSpacingCss,
       paddingCss: paddingCss,
       gridCss: gridCss,
@@ -762,10 +775,14 @@ ${einkMode ? _einkOverrideCss(einkDark: einkDark) : ''}
   /// 设计对齐 Hoshi-Reader-Android 的 E-ink 适配：
   /// - 高亮全部从「半透明色块背景」改为**线式标记**——色块在墨水屏上是一大片
   ///   抖动灰阶，且每次高亮移动都触发大面积刷新；下划线只刷新贴近文字的一条线。
-  ///   查词选区=粗实线、有声书跟随=虚线、搜索命中=双线、收藏句=保留原下划线但
+  ///   查词选区=粗实线、有声书跟随=细实线、搜索命中=双线、收藏句=保留原下划线但
   ///   去掉色块（五色在灰阶屏上不可分，线本身就是收藏语义）。
-  /// - `--fushi-reader-eink-mode: 1` 点亮 JS 侧既有的 isEInkMode() 分支
-  ///   （reader_visual_novel_scripts / 连续模式滚动缓动短路）。
+  /// - 跟读线用**实线**而非虚线：上游 HSA 的墨水屏跟读高亮是 overlay 层画的
+  ///   1.5px 实心直线条（reader-popup-host.js `renderSasayakiHighlight`），
+  ///   虚线在慢刷新屏上每段短划都是独立的黑白跳变，既更脏也更难一眼定位当前句。
+  /// - `--fushi-reader-eink-mode: 1` 供 JS 侧读：连续模式跟随滚动短路成瞬时
+  ///   （reader_pagination_scripts）。VN 侧不再据此分流——跟读高亮在所有模式
+  ///   下都走同一条 inline wrapper 路径，正是本文件这些线式规则的作用对象。
   /// - 关掉书籍自带的 transition/animation，慢刷新屏上任何补间都是残影。
   static String _einkOverrideCss({required bool einkDark}) {
     final String fg = einkDark ? '#fff' : '#000';
@@ -809,7 +826,7 @@ ruby.fushi-selection-ruby-active {
   background-color: transparent;
   color: inherit;
   text-decoration-line: underline;
-  text-decoration-style: dashed;
+  text-decoration-style: solid;
   text-decoration-color: $fg;
   text-decoration-thickness: 0.10em;
   text-underline-offset: 0.18em;
@@ -818,7 +835,7 @@ ruby.fushi-sentence-audio-ruby-active {
   background-color: transparent !important;
   color: inherit !important;
   text-decoration-line: underline !important;
-  text-decoration-style: dashed !important;
+  text-decoration-style: solid !important;
   text-decoration-color: $fg !important;
   text-decoration-thickness: 0.10em !important;
   text-underline-offset: 0.18em !important;
@@ -827,7 +844,7 @@ ruby.fushi-sentence-audio-ruby-active {
   background-color: transparent !important;
   color: inherit !important;
   text-decoration-line: underline !important;
-  text-decoration-style: dashed !important;
+  text-decoration-style: solid !important;
   text-decoration-color: $fg !important;
   text-decoration-thickness: 0.10em !important;
   text-underline-offset: 0.18em !important;
@@ -869,6 +886,7 @@ a {
     final ReaderSettings settings = a.settings;
     final _ThemeColors colors = a.colors;
     final String resolvedFontFamily = a.resolvedFontFamily;
+    final String fontWeightCss = a.fontWeightCss;
     final String textSpacingCss = a.textSpacingCss;
     final String paddingCss = a.paddingCss;
     final String gridCss = a.gridCss;
@@ -900,6 +918,7 @@ html, body {
 body {
   font-family: $resolvedFontFamily !important;
   font-size: ${settings.fontSize}px !important;
+  $fontWeightCss
   -webkit-text-size-adjust: none !important;
   overflow-wrap: anywhere !important;
   $textSpacingCss
@@ -983,6 +1002,7 @@ html::before {
     final bool isVertical = a.isVertical;
     final _ThemeColors colors = a.colors;
     final String resolvedFontFamily = a.resolvedFontFamily;
+    final String fontWeightCss = a.fontWeightCss;
     final String textSpacingCss = a.textSpacingCss;
     final String paddingCss = a.paddingCss;
     final String gridCss = a.gridCss;
@@ -1014,6 +1034,7 @@ html, body {
 body {
   font-family: $resolvedFontFamily !important;
   font-size: ${settings.fontSize}px !important;
+  $fontWeightCss
   -webkit-text-size-adjust: none !important;
   overflow-wrap: anywhere !important;
   box-sizing: border-box !important;
@@ -1068,6 +1089,7 @@ body {
     final bool isVertical = a.isVertical;
     final _ThemeColors colors = a.colors;
     final String resolvedFontFamily = a.resolvedFontFamily;
+    final String fontWeightCss = a.fontWeightCss;
     final String textSpacingCss = a.textSpacingCss;
     final String paddingCss = a.paddingCss;
     final String gridCss = a.gridCss;
@@ -1116,6 +1138,7 @@ html, body {
 body {
   font-family: $resolvedFontFamily !important;
   font-size: ${settings.fontSize}px !important;
+  $fontWeightCss
   -webkit-text-size-adjust: none !important;
   overflow-wrap: anywhere !important;
   $textSpacingCss

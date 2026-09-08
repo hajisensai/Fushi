@@ -6,6 +6,9 @@ import 'package:fushi/models.dart';
 import 'package:fushi/utils.dart';
 
 import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart'
+    show Dictionary, JapaneseLanguage;
+import 'package:fushi/src/anki/anki_deck_reposition_dialogs.dart';
 import 'package:fushi/src/anki/anki_media_dedup_dialogs.dart';
 import 'package:fushi/src/anki/lapis_backup_retention.dart';
 import 'package:fushi/src/anki/lapis_style_editor_page.dart';
@@ -380,6 +383,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
             children: [
               _buildDeckDropdown(settings, vm),
               _buildNoteTypeDropdown(settings, vm),
+              _buildDeckRepositionRow(vm),
             ],
           ),
           // 字段映射的主入口已经是可视化编辑器（选中区域 → 直接改喂它的字段），
@@ -1252,6 +1256,34 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
 
   Widget _buildNoteTypeDropdown(AnkiSettings settings, AnkiViewModel vm) =>
       AnkiNoteTypePickerRow(settings: settings, viewModel: vm);
+
+  /// 「按词频重排新卡」入口。只有 AnkiConnect 有卡片级读写；其它后端把行
+  /// 置灰并说明原因，而不是隐藏——隐藏会让用户以为功能不存在。
+  Widget _buildDeckRepositionRow(AnkiViewModel vm) {
+    final bool supported = vm.supportsDeckReposition;
+    return AdaptiveSettingsRow(
+      icon: Icons.sort_outlined,
+      showIcon: true,
+      title: t.anki_reposition_title,
+      subtitle:
+          supported ? t.anki_reposition_hint : t.anki_reposition_unsupported,
+      subtitleMaxLines: 3,
+      onTap: supported ? () => _openDeckReposition(vm) : null,
+    );
+  }
+
+  Future<void> _openDeckReposition(AnkiViewModel vm) {
+    // 隐藏的词频词典根本不进引擎（AppModel.bucketDictPaths），列表只给已装载的。
+    final List<String> loaded = appModel.freqDictionaries
+        .where((Dictionary d) => !d.isHidden(JapaneseLanguage.instance))
+        .map((Dictionary d) => d.name)
+        .toList();
+    return showAnkiDeckRepositionDialog(
+      context,
+      viewModel: vm,
+      loadedFrequencyDictionaries: loaded,
+    );
+  }
 
   List<Widget> _buildFieldMappings(AnkiSettings settings, AnkiViewModel vm) {
     final noteType = settings.selectedNoteType;

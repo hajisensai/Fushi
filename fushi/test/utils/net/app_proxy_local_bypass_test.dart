@@ -72,10 +72,9 @@ class _CapturingHttpClient implements HttpClient {
 
   @override
   set authenticateProxy(
-          Future<bool> Function(String host, int port, String scheme,
-                  String? realm)?
-              f) =>
-      capturedAuth = f;
+    Future<bool> Function(String host, int port, String scheme, String? realm)?
+    f,
+  ) => capturedAuth = f;
 
   @override
   void addProxyCredentials(
@@ -88,8 +87,7 @@ class _CapturingHttpClient implements HttpClient {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 void main() {
@@ -114,18 +112,49 @@ void main() {
     resetAppProxyCacheForTest();
   });
 
+  test('native proxy credentials follow current mode and destination', () {
+    final Uri remote = Uri.parse('https://example.com/file');
+    appUserProxyModeReader = () => kProxyModeManual;
+    appUserProxyReader = () => '127.0.0.1:7890';
+    appUserProxyUsernameReader = () => 'reader';
+    appUserProxyPasswordReader = () => 'secret';
+    expect(resolveAppProxyCredentials(remote), (
+      username: 'reader',
+      password: 'secret',
+    ));
+    for (final String target in kLocalOnlyTargets) {
+      expect(resolveAppProxyCredentials(Uri.parse(target)), isNull);
+    }
+    appUserProxyModeReader = () => kProxyModeDirect;
+    expect(resolveAppProxyCredentials(remote), isNull);
+    appUserProxyModeReader = () => kProxyModeAuto;
+    expect(resolveAppProxyCredentials(remote), isNull);
+    appUserProxyModeReader = () => kProxyModeManual;
+    appUserProxyReader = () => 'invalid';
+    expect(resolveAppProxyCredentials(remote), isNull);
+    appUserProxyReader = () => '127.0.0.1:7890';
+    appUserProxyUsernameReader = () => '';
+    expect(resolveAppProxyCredentials(remote), isNull);
+  });
+
   group('isDirectProxyTarget：纯判据', () {
     test('本机 / 私网 / link-local / mDNS 名一律直连', () {
       for (final String url in kLocalOnlyTargets) {
-        expect(isDirectProxyTarget(Uri.parse(url).host), isTrue,
-            reason: '$url 必须直连');
+        expect(
+          isDirectProxyTarget(Uri.parse(url).host),
+          isTrue,
+          reason: '$url 必须直连',
+        );
       }
     });
 
     test('公网主机不受影响（否则代理等于白接）', () {
       for (final String url in kPublicTargets) {
-        expect(isDirectProxyTarget(Uri.parse(url).host), isFalse,
-            reason: '$url 必须能走代理');
+        expect(
+          isDirectProxyTarget(Uri.parse(url).host),
+          isFalse,
+          reason: '$url 必须能走代理',
+        );
       }
     });
 
@@ -181,12 +210,18 @@ void main() {
     test('用户手填代理下，本机 / 局域网仍直连，公网走代理', () {
       appUserProxyReader = () => '1.2.3.4:8080';
       for (final String url in kLocalOnlyTargets) {
-        expect(resolveAppProxyDirective(Uri.parse(url)), 'DIRECT',
-            reason: '$url 被塞进了用户手填代理');
+        expect(
+          resolveAppProxyDirective(Uri.parse(url)),
+          'DIRECT',
+          reason: '$url 被塞进了用户手填代理',
+        );
       }
       for (final String url in kPublicTargets) {
-        expect(resolveAppProxyDirective(Uri.parse(url)), 'PROXY 1.2.3.4:8080',
-            reason: '$url 没走用户手填代理');
+        expect(
+          resolveAppProxyDirective(Uri.parse(url)),
+          'PROXY 1.2.3.4:8080',
+          reason: '$url 没走用户手填代理',
+        );
       }
     });
 
@@ -196,8 +231,11 @@ void main() {
         'https_proxy': '1.2.3.4:8080',
       });
       for (final String url in kLocalOnlyTargets) {
-        expect(resolveAppProxyDirective(Uri.parse(url)), 'DIRECT',
-            reason: '$url 被系统代理吃掉了');
+        expect(
+          resolveAppProxyDirective(Uri.parse(url)),
+          'DIRECT',
+          reason: '$url 被系统代理吃掉了',
+        );
       }
     });
 
@@ -215,7 +253,7 @@ void main() {
       }
       for (final String url in <String>[
         ...kPublicTargets,
-        ...kLocalOnlyTargets
+        ...kLocalOnlyTargets,
       ]) {
         expect(resolveAppProxyDirective(Uri.parse(url)), 'DIRECT');
       }
@@ -228,10 +266,7 @@ void main() {
       appUserProxyModeReader = () => 'direct';
       final _CapturingHttpClient client = _CapturingHttpClient();
       await applyAppProxy(client, userProxy: '1.2.3.4:8080');
-      expect(
-        client.captured!(Uri.parse('https://github.com/x/y')),
-        'DIRECT',
-      );
+      expect(client.captured!(Uri.parse('https://github.com/x/y')), 'DIRECT');
     });
 
     test('手填代理分支：本机直连、公网走代理', () async {
@@ -241,8 +276,10 @@ void main() {
       expect(findProxy, isNotNull);
       expect(findProxy!(Uri.parse('http://127.0.0.1:8765/')), 'DIRECT');
       expect(findProxy(Uri.parse('https://192.168.1.34:38765/')), 'DIRECT');
-      expect(findProxy(Uri.parse('https://api.bgm.tv/v0/subjects/1')),
-          'PROXY 1.2.3.4:8080');
+      expect(
+        findProxy(Uri.parse('https://api.bgm.tv/v0/subjects/1')),
+        'PROXY 1.2.3.4:8080',
+      );
     });
 
     test('系统代理分支：本机直连（异步与同步共用同一道闸门）', () async {
@@ -264,16 +301,17 @@ void main() {
 
       applyAppProxySync(client);
       expect(client.capturedAuth, isNotNull);
-      expect(await client.capturedAuth!('1.2.3.4', 8080, 'Basic', 'realm'),
-          isTrue);
+      expect(
+        await client.capturedAuth!('1.2.3.4', 8080, 'Basic', 'realm'),
+        isTrue,
+      );
       expect(client.addedCredential?.$1, '1.2.3.4');
       expect(client.addedCredential?.$2, 8080);
       expect(client.addedCredential?.$3, 'realm');
       expect(client.addedCredential?.$4, isA<HttpClientBasicCredentials>());
     });
 
-    test('同一 challenge 只交付一次凭据——密码错时不得进无限重试环（BUG-1980）',
-        () async {
+    test('同一 challenge 只交付一次凭据——密码错时不得进无限重试环（BUG-1980）', () async {
       // dart:io 的 retry() 没有深度计数器：回调每次都 addProxyCredentials + 返回
       // true 的话，密码错就会「407 → 移除已用凭据 → 再问回调 → 又加同一份 → retry」
       // 无限打转，请求永不返回、用户只看到转圈。被问第二次 = 上一份被代理拒了。
@@ -284,19 +322,24 @@ void main() {
       final _CapturingHttpClient client = _CapturingHttpClient();
 
       applyAppProxySync(client);
-      expect(await client.capturedAuth!('1.2.3.4', 8080, 'Basic', 'realm'),
-          isTrue,
-          reason: '第一次必须交付，否则认证代理根本用不了');
-      expect(await client.capturedAuth!('1.2.3.4', 8080, 'Basic', 'realm'),
-          isFalse,
-          reason: '第二次必须收手，让 dart:io 把 407 抛给调用方而不是无限重试');
+      expect(
+        await client.capturedAuth!('1.2.3.4', 8080, 'Basic', 'realm'),
+        isTrue,
+        reason: '第一次必须交付，否则认证代理根本用不了',
+      );
+      expect(
+        await client.capturedAuth!('1.2.3.4', 8080, 'Basic', 'realm'),
+        isFalse,
+        reason: '第二次必须收手，让 dart:io 把 407 抛给调用方而不是无限重试',
+      );
       // 另一个 realm 是另一次 challenge，不受上一次影响。
-      expect(await client.capturedAuth!('1.2.3.4', 8080, 'Basic', 'other'),
-          isTrue);
+      expect(
+        await client.capturedAuth!('1.2.3.4', 8080, 'Basic', 'other'),
+        isTrue,
+      );
     });
 
-    test('Digest challenge 直接放弃，不塞永远匹配不上的 Basic 凭据（BUG-1980）',
-        () async {
+    test('Digest challenge 直接放弃，不塞永远匹配不上的 Basic 凭据（BUG-1980）', () async {
       appUserProxyReader = () => '1.2.3.4:8080';
       appUserProxyModeReader = () => 'manual';
       appUserProxyUsernameReader = () => 'alice';
@@ -304,14 +347,17 @@ void main() {
       final _CapturingHttpClient client = _CapturingHttpClient();
 
       applyAppProxySync(client);
-      expect(await client.capturedAuth!('1.2.3.4', 8080, 'Digest', 'realm'),
-          isFalse,
-          reason: 'findCredentials(Digest) 永远匹配不到 Basic 凭据，返 true 就是'
-              '「无凭据 → 问回调 → 加 Basic → retry」的无限环');
+      expect(
+        await client.capturedAuth!('1.2.3.4', 8080, 'Digest', 'realm'),
+        isFalse,
+        reason:
+            'findCredentials(Digest) 永远匹配不到 Basic 凭据，返 true 就是'
+            '「无凭据 → 问回调 → 加 Basic → retry」的无限环',
+      );
       expect(client.addedCredential, isNull);
     });
 
-    test('没配用户名时根本不装认证钩子（不给每个 client 白挂捕获闭包）', () {
+    test('已有client在后来填写认证配置后生效且不向其它代理交付', () async {
       appUserProxyReader = () => '1.2.3.4:8080';
       appUserProxyModeReader = () => 'manual';
       appUserProxyUsernameReader = () => '';
@@ -319,15 +365,30 @@ void main() {
       final _CapturingHttpClient client = _CapturingHttpClient();
 
       applyAppProxySync(client);
-      expect(client.capturedAuth, isNull);
+      expect(client.capturedAuth, isNotNull);
+      expect(
+        await client.capturedAuth!('1.2.3.4', 8080, 'Basic', 'r'),
+        isFalse,
+      );
+      appUserProxyUsernameReader = () => 'alice';
+      appUserProxyPasswordReader = () => 'secret';
+      expect(
+        await client.capturedAuth!('5.6.7.8', 8080, 'Basic', 'r'),
+        isFalse,
+      );
+      expect(await client.capturedAuth!('1.2.3.4', 8080, 'Basic', 'r'), isTrue);
     });
     test('装上的闭包非空——裸 HttpClient 的 findProxy 恒为 null，那正是根因形态', () {
       final _CapturingHttpClient client = _CapturingHttpClient();
       expect(client.captured, isNull);
       applyAppProxySync(client);
-      expect(client.captured, isNotNull,
-          reason: 'BUG-1493/1498 的根因就是 findProxy 为 null——那时连 '
-              'HTTPS_PROXY 都不读');
+      expect(
+        client.captured,
+        isNotNull,
+        reason:
+            'BUG-1493/1498 的根因就是 findProxy 为 null——那时连 '
+            'HTTPS_PROXY 都不读',
+      );
     });
 
     test('装上的就是共享判据：本机目标恒 DIRECT，公网走代理', () {
@@ -335,13 +396,16 @@ void main() {
       final _CapturingHttpClient client = _CapturingHttpClient();
       applyAppProxySync(client);
       expect(client.captured!(Uri.parse('http://127.0.0.1:8765/')), 'DIRECT');
-      expect(client.captured!(Uri.parse('https://api.jikan.moe/v4/anime')),
-          'PROXY 1.2.3.4:8080');
+      expect(
+        client.captured!(Uri.parse('https://api.jikan.moe/v4/anime')),
+        'PROXY 1.2.3.4:8080',
+      );
     });
 
     test('三个公开工厂都经 applyAppProxySync（源码守卫：漏一个就是一条暗路）', () {
-      final String source =
-          File('lib/src/utils/net/app_http.dart').readAsStringSync();
+      final String source = File(
+        'lib/src/utils/net/app_http.dart',
+      ).readAsStringSync();
       expect(source, contains('applyAppProxySync(client)'));
       // createAppHttpIoClient / createAppDio 都必须复用 createAppHttpClient，
       // 而不是各自 new 一个裸的。
@@ -370,11 +434,18 @@ void main() {
 
       await applyAppProxy(client);
 
-      expect(client.capturedAuth, isNotNull,
-          reason: '凭据钩子以前只装在 manual 分支里——用户在 auto 模式下建好的 client '
-              '之后改成 manual，那些 client 永远拿不到 407 应答');
-      expect(await client.capturedAuth!('1.2.3.4', 8080, 'Basic', 'r'), isFalse,
-          reason: '钩子装上了，但当前模式不是 manual 时不该交付凭据');
+      expect(
+        client.capturedAuth,
+        isNotNull,
+        reason:
+            '凭据钩子以前只装在 manual 分支里——用户在 auto 模式下建好的 client '
+            '之后改成 manual，那些 client 永远拿不到 407 应答',
+      );
+      expect(
+        await client.capturedAuth!('1.2.3.4', 8080, 'Basic', 'r'),
+        isFalse,
+        reason: '钩子装上了，但当前模式不是 manual 时不该交付凭据',
+      );
     });
 
     test('异步版装的是请求时求值的闭包：client 建好之后改模式立刻跟上', () async {
@@ -386,10 +457,13 @@ void main() {
       expect(client.captured!(Uri.parse('https://example.com/')), 'DIRECT');
 
       appUserProxyModeReader = () => kProxyModeManual;
-      expect(client.captured!(Uri.parse('https://example.com/')),
-          'PROXY 1.2.3.4:8080',
-          reason: '异步版以前把模式裁决烘焙进闭包：初始化前建好的 client 之后永远'
-              '停在当时那个模式上——这正是「初始化前那一发」的真实形状');
+      expect(
+        client.captured!(Uri.parse('https://example.com/')),
+        'PROXY 1.2.3.4:8080',
+        reason:
+            '异步版以前把模式裁决烘焙进闭包：初始化前建好的 client 之后永远'
+            '停在当时那个模式上——这正是「初始化前那一发」的真实形状',
+      );
 
       appUserProxyModeReader = () => kProxyModeDirect;
       expect(client.captured!(Uri.parse('https://example.com/')), 'DIRECT');

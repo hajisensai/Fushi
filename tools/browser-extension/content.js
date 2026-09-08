@@ -1,10 +1,10 @@
 // 取词扫描 + 弹窗注入。修饰键默认 Shift。普通 DOM（popup.js 依赖顶层 #entries-container）。
 // 样式经 content.css 注入，全部作用域到 #entries-container，不污染宿主页（TODO-1090）。
 // 版本标记：加载后在 Console 打一行，用户可据此确认加载的是**新版**扩展（排查缓存旧版）。
-console.log('[Fushi] content script v47 loaded (BUG-688: popup Shadow DOM isolation + theme single-sourced from app; TODO-1219/1363: subtitle cue replay + universal subtitle-list providers; TODO-1391: hide Netflix start-of-episode maturity/age-rating overlay; BUG-2170: play past that overlay before batch capture)');
+console.log('[Fushi] content script v48 loaded (BUG-688: popup Shadow DOM isolation + theme single-sourced from app; TODO-1219/1363: subtitle cue replay + universal subtitle-list providers; TODO-1391: hide Netflix start-of-episode maturity/age-rating overlay; BUG-2170: play past that overlay before batch capture; BUG-2260: Netflix advisories-container selector drift)');
 // 诊断标记：写进 <html> 的 data-*，页面 Console（主世界）可读，用来隔空排查划词为何不触发
 // （隔离世界的全局变量在页面 console 里看不到，故用 DOM 属性桥接）。
-try { document.documentElement.setAttribute('data-fushi-cs', 'v47'); } catch (_) {}
+try { document.documentElement.setAttribute('data-fushi-cs', 'v48'); } catch (_) {}
 // TODO-1190：网页源文里高亮被查的词。selection.js 默认走 CSS Custom Highlight API
 // （CSS.highlights.set('fushi-selection', …) + content.css 的 ::highlight(fushi-selection)）。
 // 但 content script 跑在**隔离世界**：在隔离世界注册的 highlight 不会被页面渲染引擎绘制
@@ -25,6 +25,27 @@ let fushiContainer = null;
 // 与 in-app WebView 弹窗一致）。fushiHost 是挂在宿主页的 shadow 宿主元素（负责 fixed 定位），
 // #entries-container 及全部弹窗内容在其 shadow root 内；window.__fushiRoot 暴露给 popup.js。
 let fushiHost = null;
+// 弹窗样式同步注入（「CSS 要渲染一下才正常」的修复）：shadow 里的 content.css 原本经
+// <link> 加载——异步，而 host 每次查词重建、首帧 rAF 立刻「量尺寸 → 落点」。慢设备
+// （手机冷启动首查最典型）样式应用赶不上测量：落点按未加样式的「裸」布局算出，样式
+// 到达后只有改变盒尺寸的规则会触发 ResizeObserver 复算，纯视觉规则（颜色/字体/圆角）
+// 永远不自愈——用户看到的就是弹窗样式/位置错一帧起，滚动或再渲染一次才正常。
+// 修法两层：①启动即预取 CSS 文本，就绪后以同步 <style> 注入（首帧测量必见最终布局，
+// 零竞态）；②预取尚未就绪（页面刚加载的第一发查词，或该内核禁 content script fetch
+// 扩展资源）退回 <link>，并登记 fushiCssLink 门控——place 照旧落点，但「显示」扣到
+// 样式表 load/error/800ms 超时之后，落地时先按最终布局复算一次落点再放行。
+// 表现层的承诺从「快一帧但可能裸奔」换成「最多晚一帧，绝不无样式上屏」。
+let fushiPopupCssText = '';
+try {
+  fetch(chrome.runtime.getURL('vendor/content.css'))
+      .then((r) => (r && r.ok ? r.text() : ''))
+      .then((t) => { if (typeof t === 'string' && t) fushiPopupCssText = t; })
+      .catch(() => { /* 预取失败：永远走 link 回落路径 */ });
+} catch (_) { /* 无 fetch：同上，link 回落 */ }
+// link 回落路径的在途账本：当前弹窗样式表尚未应用完时挂在这里，place 把「显示」挂到
+// 它身后——根治「字先出、CSS 后渲染」（FOUC）：宁晚一帧出场，也不裸奔上屏。
+// 同步 <style> 路径恒为 null（样式即时生效，无需扣显）。
+let fushiCssLink = null;
 // BUG-530 性能：划词监听器原来对每次 mousemove 都发查词请求 → 一直按 Shift 移动会把服务器
 // 刷爆、UI 卡顿。用「位移阈值 + 同词去重 + 在途请求闸」三重节流：只在移到**不同词**上才查。
 let fushiLastTerm = '';
@@ -324,6 +345,40 @@ window.fushiToast = function (text, sticky, openSettings) {
 // 每次查词都刷新此变量——面板行查词（fushiLookupAtPoint 带 cueWindow）设精确窗；mousemove 划词
 // （无 cueWindow）清成 null 回落 DOM 采样。制卡入口 fushiEnqueue 优先消费它。null 表示无精确窗。
 let fushiPendingCueWindow = null;
+
+// 页面正文的「所在句子」——普通网页（没有字幕轨、没有视频）上制卡时例句的来源。
+//
+// 用户报「浏览器扩展查词不取所在句子」：制卡例句过去只有四级来源，全都绑在**字幕**上
+// （多句合一草稿 / Netflix 字幕 DOM / 当前字幕行 / 弹窗内选区）。在一篇普通文章上查词，
+// 前三级恒空、弹窗内又没选任何东西 → 卡上一句例句都没有。而句子明明就在页面 DOM 里：
+// `vendor/selection.js` 有一份与 app 阅读器同源的 `getSentence(node, offset)`（跨文本节点
+// 扩句、跳振假名/ruby-reserve、括号配平），扩展装了它却从来没有人调用过一次。
+//
+// 契约：查词命中的 (文本节点, 字符偏移) 在这里存成锚点，**不当场算句**——Shift 悬停是每几
+// 像素一次的高频路径，而 getSentence 在没有段落祖先时会退到 body 遍历。真正要句子的只有
+// 「点制卡」那一下，所以下面 fushiPageSentence() 惰性算一次并缓存到下次查词。
+let fushiPendingLookupAnchor = null; // { node, offset }；null = 本次查词没有页面锚点（侧栏路径）
+let fushiPendingPageSentence = null; // 惰性缓存：null = 还没算过；字符串 = 已算（含空串）
+// 无句末标点的长块（整段没有 。！？. ! ? 的页面）会让 getSentence 一路拼到块尾/body 尾。
+// 与其把几千字塞进 Anki 例句字段，不如判定「这里没有可用的句子」退回旧行为。
+const FUSHI_PAGE_SENTENCE_MAX = 200;
+function fushiPageSentence() {
+  if (typeof fushiPendingPageSentence === 'string') return fushiPendingPageSentence;
+  fushiPendingPageSentence = '';
+  const anchor = fushiPendingLookupAnchor;
+  const sel = window.fushiSelection;
+  if (!anchor || !anchor.node || !sel || typeof sel.getSentence !== 'function') {
+    return fushiPendingPageSentence;
+  }
+  try {
+    const sentence = String(sel.getSentence(anchor.node, anchor.offset) || '').trim();
+    if (sentence && sentence.length <= FUSHI_PAGE_SENTENCE_MAX) {
+      fushiPendingPageSentence = sentence;
+    }
+  } catch (_) { /* 节点已从 DOM 摘除 / 跨 shadow：无句子，退旧行为 */ }
+  return fushiPendingPageSentence;
+}
+window.fushiPageSentence = fushiPageSentence;
 
 let fushiYtCaptionsFetchedFor = null; // 已请求过的 videoId（防重复请求；SPA 切视频后 id 变即重取）
 let fushiYtDirectBridgeStartedAt = 0;
@@ -728,6 +783,9 @@ window.fushiMineContext = function () {
     documentTitle: documentTitle,
     contextSentence: composed ? composed.sentence : null,
     contextWindow: composed ? { startV: composed.startV, endV: composed.endV } : null,
+    // 普通网页的所在句（惰性算，见 fushiPageSentence）。字幕来源都空时才轮到它，
+    // 所以有字幕的页面行为逐字不变。
+    pageSentence: fushiPageSentence(),
   };
 };
 // 上下文草稿入队即清空，按钮状态按当前句身份查询真实队列，不能再用草稿合成句回查。
@@ -889,6 +947,10 @@ async function fushiRunNetflixBatch(introGate) {
     // 受用户开关 netflixHideNextEpisode 门控——用户为了留住 Netflix 的「下一集」按钮把它关掉时，
     // 分级提示就会照录进卡片。录制期无条件藏，用户可见作用域仍归那个开关管。与本 style 同策
     // 用 visibility/opacity（不用 display:none，理由见本文件字幕隐藏那节）。
+    // BUG-2260：2026-09-08 实测 Netflix 当前 DOM 是 .watch-video--advisories-container
+    // （见 fushiNetflixNextEpisodeSelectors 注释），旧 evidence/maturity 选择器全部失配。
+    '.watch-video--advisories-container,[class*="watch-video--advisories"],' +
+    '.watch-video--evidence-overlay-container,' +
     '[class*="watch-video--maturity-rating"],.watch-video [data-uia*="maturity"],' +
     '.watch-video [class*="maturity-rating"]{opacity:0!important;visibility:hidden!important}';
   try { document.head.appendChild(hideStyle); } catch (_) {}
@@ -1335,6 +1397,13 @@ function fushiNetflixNextEpisodeSelectors() {
     '[class*="watch-video--maturity-rating"]',
     '.watch-video [data-uia*="maturity"]',
     '.watch-video [class*="maturity-rating"]',
+    // BUG-2260：2026-09-08 登录态 WebView2 探针实测，Netflix 当前分级提示 DOM 为
+    //   div.watch-video--advisories-container > div.advisory-container > div.advisory >
+    //   [data-uia="advisory-content"] > h4.advisory-header("RATED 7+")
+    // 上面 evidence/maturity 三组选择器一个都不再命中（静默失效，用户截图「RATED 13+ / 暴力, 自杀」
+    // 照旧出现）。子串匹配兜住哈希类名变体；旧选择器保留作 Netflix 回滚时的兜底。
+    '.watch-video--advisories-container',
+    '[class*="watch-video--advisories"]',
   ];
 }
 function fushiApplyNetflixNextEpisodeHiding(hide) {
@@ -1398,6 +1467,7 @@ function fushiNativeSubtitleSelectors() {
     '.ytp-caption-window-container', // YouTube
     '.captions-text',                // 通用（部分播放器）
     '.libassjs-canvas-parent',       // ASS/SSA 渲染层
+    '.bilibili-player-video-subtitle', // B站网页播放器的自绘字幕层
   ];
 }
 // 扩展自绘覆盖层（subtitle-panel.js 的 #fushi-subtitle-overlay）。
@@ -1419,10 +1489,13 @@ function fushiApplySubtitleHiding() {
   }
   const manual = fushiSubtitleHideReasons.has('manual');
   const selectors = manual ? fushiSubtitleHideSelectors() : fushiNativeSubtitleSelectors();
-  // ::cue（原生 <track> 字幕）必须单独成一条规则：它只接受受限属性集，且与普通选择器
-  // 并列时若被浏览器判为无效会**整条规则**失效，连带把上面的站点字幕也藏不掉。
+  // ::cue（原生 <track> 字幕的 cue 伪元素）与 ::-webkit-media-text-track-container
+  // （Blink 原生 track 渲染层本体——TVer/B站/一堆用 <track> 出字的站点全靠它）必须各自
+  // 单独成规则：它们只接受受限属性集，且与普通选择器并列时若被浏览器判为无效会**整条规则**
+  // 失效，连带把上面的站点字幕也藏不掉（历史上就是这么翻的车，别再并排写）。
   const css = selectors.join(',') + '{visibility:hidden!important}' +
-      'video::cue{visibility:hidden!important}';
+      'video::cue{visibility:hidden!important}' +
+      'video::-webkit-media-text-track-container{visibility:hidden!important}';
   const style = existing || document.createElement('style');
   style.id = FUSHI_HIDE_SUBS_ID;
   if (style.textContent !== css) style.textContent = css;
@@ -1563,13 +1636,46 @@ function fushiEnsureContainer() {
         '#entries-container{width:100%!important;max-width:none!important;' +
         'max-height:none!important;overflow:visible!important;zoom:1!important;}';
     shadow.appendChild(norm);
-    // 把弹窗样式注入 shadow：content.css 作为扩展资源经 <link> 加载（web_accessible_resources）。
+    // 把弹窗样式注入 shadow：content.css 是扩展资源（web_accessible_resources）。
     // 其中宿主页级选择器（高亮层等）在 shadow 内无对应元素、天然失效；
     // 弹窗选择器（#entries-container/.glossary-group/ruby…）在 shadow 内生效。
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = chrome.runtime.getURL('vendor/content.css');
-    shadow.appendChild(link);
+    // 首选预取到的文本走同步 <style>（消除「异步 link vs 首帧测量」竞态，见上方
+    // fushiPopupCssText 注释）；预取尚未就绪时回落 <link>，并在其 load 后补算一次落点。
+    if (fushiPopupCssText) {
+      fushiCssLink = null;
+      const css = document.createElement('style');
+      css.textContent = fushiPopupCssText;
+      shadow.appendChild(css);
+    } else {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = chrome.runtime.getURL('vendor/content.css');
+      // 「样式落地」门控：place 的显示回调排队等 load/error/超时兜底——样式没到宁可
+      // 弹窗晚一帧出场，绝不裸奔上屏（FOUC）。落地后先按最终布局复算落点再放行显示。
+      const waiters = [];
+      let settled = false;
+      const settle = () => {
+        if (settled) return;
+        settled = true;
+        try {
+          if (fushiHost && fushiContainer && fushiHost.isConnected) fushiApplyPlacement();
+        } catch (_) { /* 弹窗已销毁 */ }
+        if (fushiCssLink === link) fushiCssLink = null;
+        while (waiters.length) {
+          const fn = waiters.shift();
+          try { fn(); } catch (_) { /* 单个回调异常不吞其余 */ }
+        }
+      };
+      link.__fushiCssGate = {
+        // add 返回 true = 已入队（调用方不得自行显示）；false = 样式已落地，立即显示。
+        add: (fn) => { if (settled) return false; waiters.push(fn); return true; },
+      };
+      link.addEventListener('load', settle);
+      link.addEventListener('error', settle);
+      setTimeout(settle, 800); // 个别内核不派发 load/error：超时兜底放行，绝不永久藏窗
+      shadow.appendChild(link);
+      fushiCssLink = link;
+    }
     const c = document.createElement('div');
     c.id = 'entries-container';
     // 主题落在弹窗根 #entries-container 上（content.css 作用域 #entries-container[data-theme]）；
@@ -1746,6 +1852,9 @@ function fushiRemoveContainer() {
   fushiBindPopupPerfContext(null);
   fushiHost = null;
   fushiContainer = null;
+  // 在途 link 门控随窗作废：waiters 里的 reveal 绑的是被销毁的容器，留引用只会在
+  // settle 时对孤儿节点写 visibility（无害但无意义）；置 null 让新弹窗登记新门。
+  fushiCssLink = null;
   window.__fushiRoot = null;
   // TODO-1272：关窗即撤覆盖层高亮（被查词高亮跟随弹窗生命周期，弹窗在则在、弹窗关则撤）。
   fushiClearHighlightOverlay();
@@ -1891,7 +2000,7 @@ document.addEventListener('mousemove', (e) => {
   if (!term || !term.trim()) return;
   if (term === fushiLastTerm) return; // 同词去重：还在同一个词上就不重复查/重渲染
   fushiLastTerm = term;
-  fushiSendLookup(term, fushiAnchorRect);
+  fushiSendLookup(term, fushiAnchorRect, null, false, hit);
 });
 
 let fushiLastConnectionHintAt = 0;
@@ -1920,11 +2029,16 @@ function fushiShowConnectionFailure(resp) {
 // 用户开启「查词时暂停」后，仅在确实发起了非空查词请求时暂停正在播放的视频，并记下
 // fushiPausedForLookup；关闭查词弹窗时自动恢复（fushiRemoveContainer）。关闭该设置时
 // 任何站点都不因查词被暂停。
-function fushiSendLookup(term, anchorRect, cueWindow, fromSidePanel) {
+function fushiSendLookup(term, anchorRect, cueWindow, fromSidePanel, lookupAnchor) {
   if (window.fushiNestedPopups) window.fushiNestedPopups.clear();
   // TODO-1219 P3：每次查词刷新精确窗——面板行查词传 cueWindow（该行精确 [startMs,endMs]），
   // mousemove 划词不传则清空，使后续制卡回落 DOM 采样窗（live 视频 hover 取当前句）。
   fushiPendingCueWindow = cueWindow || null;
+  // 页面句锚点与精确窗同一契约：每次查词都刷新，不传即清空（侧栏把词直接交回来的那条路没有
+  // 页面命中点），绝不让上一次查词的句子跟到下一个词的卡上。
+  fushiPendingLookupAnchor =
+      lookupAnchor && lookupAnchor.node ? lookupAnchor : null;
+  fushiPendingPageSentence = null;
   fushiLookupFromSidePanel = fromSidePanel === true; // 关窗回执只发给真正的侧栏路径
   if (!term || !term.trim()) return;
   if (!fushiExtAlive()) return; // 扩展已重载/失效：静默停手（重载页面恢复）
@@ -2079,7 +2193,7 @@ window.fushiLookupAtPoint = function (clientX, clientY, cueWindow, options) {
     fushiLastAutoLookupKey = lookupKey;
   }
   fushiLastTerm = term || ''; // 与 mousemove 去重状态对齐，避免点后立刻 hover 同词重查
-  fushiSendLookup(term, anchorRect, cueWindow); // TODO-1219 P3：面板行传入精确窗
+  fushiSendLookup(term, anchorRect, cueWindow, false, hit); // TODO-1219 P3：面板行传入精确窗
 };
 // 原生 Side Panel 自己请求并渲染词典，视频页只保留精确 cue 窗（制卡媒体）以及可选的
 // “查词时暂停”。这里不创建弹窗、不读/写宿主 Selection，也不修改任何宿主文本节点。
@@ -2441,6 +2555,9 @@ function fushiApplyTheme(c, theme, applyBox) {
     const ws = parseFloat(theme['--fushi-wheel-speed']);
     window.__fushiPopupWheelSpeed = (isFinite(ws) && ws > 0) ? ws : 1;
   }
+  // BUG-2284：墨水屏「瞬时滚动」随 theme 下发（app popupInstantScroll）→ 设同名全局供
+  // popup.js 的 wheel 监听器读（滚轮改成每次跳固定距离）。缺该 key = 旧 app，保持关闭。
+  window.__fushiPopupInstantScroll = theme['--fushi-instant-scroll'] === '1';
   // BUG-688：尺寸盒 + zoom 落到 host（视口坐标，确定宽度 → header 满宽、按钮右推、不再全屏铺开）。
   if (applyBox && fushiHost) {
     // 尺寸真相源是 app 下发的 theme（扩展设置页「查词框大小」写的也是它，经
@@ -2502,14 +2619,21 @@ function fushiRender(popupJson, termLen, theme, anchorRect) {
   fushiPlaceAnchor = wordRect || null;
   fushiUserResizedPopup = false;
   fushiRenderEntries(popupJson);
+  const reveal = () => {
+    c.style.visibility = 'visible';
+    fushiReportVisibleAfterPaint(fushiLookupPerfContext, c);
+  };
   const place = () => {
     // BUG-688/BUG-767/BUG-1726：量实测尺寸 → 纯函数落点 → 写回 host + 记录 Phase D 夹取
     // 上下文，全部收进 fushiApplyPlacement（首帧与 ResizeObserver 复算共用同一份实现/锚点）。
     fushiApplyPlacement();
     // BUG-1726：popup.js 此刻还在逐宏任务追加词典块（弹窗会继续长高），挂观察器随尺寸复算。
     fushiObservePopupResize();
-    c.style.visibility = 'visible';
-    fushiReportVisibleAfterPaint(fushiLookupPerfContext, c);
+    // 样式表走 <link> 且尚未应用（预取没赶上的首查）：把「显示」扣到样式落地之后——
+    // 落点已按当前布局尽力算过，settle 里还会按最终样式再复算一次。同步 <style> 路径
+    // fushiCssLink 恒为 null，直接放行，不多等一帧。
+    const gate = fushiCssLink && fushiCssLink.__fushiCssGate;
+    if (!(gate && gate.add(reveal))) reveal();
   };
   requestAnimationFrame(place);
 }

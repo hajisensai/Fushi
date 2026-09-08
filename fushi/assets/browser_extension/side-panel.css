@@ -240,3 +240,128 @@ h1 { margin: 0; font-size: 18px; line-height: 1.3; }
   .toolbar { justify-content: flex-start; margin-top: 9px; }
   .offset-row { grid-template-columns: repeat(3, 1fr); }
 }
+
+/* ── 抽屉嵌入模式（mobile-drawer.js 的 iframe，html.fushi-embed）──
+   手机屏寸土寸金：砍掉大标题、头部分行压紧、折叠钮一键收成一行，列表近乎占满；
+   控件仍保持 ≥38px 的触摸命中区，去 hover 依赖改 :active 反馈，补刘海安全区。 */
+html.fushi-embed body {
+  touch-action: manipulation;
+}
+
+html.fushi-embed button,
+html.fushi-embed select {
+  min-height: 38px;
+  min-width: 38px;
+}
+
+html.fushi-embed button:active { background: var(--surface-strong); }
+
+html.fushi-embed .panel-header {
+  padding: 8px 10px 6px;
+  padding-top: calc(8px + env(safe-area-inset-top));
+}
+
+html.fushi-embed h1 { display: none; }
+
+/* 嵌入头部两行制（展开/折叠一致，用户裁决）：第一行折叠钮＋工具排，第二行
+   「已连接视频」小字（order:3 + basis:100% 自然落下去）。display:flex 同时压掉
+   桌面 @media ≤340px 的 .title-row{display:block} 兜底——它漏进 iframe 就是拆行事故。 */
+html.fushi-embed .title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  column-gap: 3px;
+  row-gap: 2px;
+  justify-content: flex-start;
+}
+
+html.fushi-embed .title-row > div:first-of-type {
+  order: 3;
+  flex: 1 0 100%;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+html.fushi-embed #video-status {
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 允许收缩（0 1 auto）：nowrap 式的 0 0 auto 在窄抽屉会整排溢出容器把 ⚙ 裁掉而不是
+   换行；可收缩后 flex-wrap 才拿得到受限宽度——装得下一行，超出自然折行。 */
+html.fushi-embed .toolbar { flex: 0 1 auto; min-width: 0; margin-top: 0; gap: 3px; }
+
+html.fushi-embed #track { margin-top: 6px; height: 32px; min-height: 32px; font-size: 13px; }
+html.fushi-embed .offset-row { margin-top: 6px; }
+html.fushi-embed .jimaku-row input { min-height: 32px; }
+
+/* ── 嵌入态防出界：窄抽屉（最窄 220）里这些盒子会捅穿面板边，全改可收缩规格 ── */
+/* 时轴行基版是 6 列最少 ~313px：auto-fit 让它按实际宽度自动降列（宽=一行，窄=两三行）。 */
+html.fushi-embed .offset-row {
+  grid-template-columns: repeat(auto-fit, minmax(44px, 1fr));
+}
+
+/* input 默认有 ~147px 固有宽且 grid 项 min-width:auto 不缩，1fr 被顶爆。 */
+html.fushi-embed .jimaku-row { grid-template-columns: 1fr 46px 40px; }
+html.fushi-embed .jimaku-row input { min-width: 0; }
+
+/* 展开设置那一排也缩到 32 档，跟按钮行同高——两态一体。 */
+html.fushi-embed .offset-row button,
+html.fushi-embed .offset-row span,
+html.fushi-embed .jimaku-row button {
+  height: 32px;
+  min-height: 32px;
+}
+
+/* 查词浮层：min-width 250 比最窄抽屉还宽，横 resize 把手在触屏也是误触源——
+   宽度直接跟视口走，只许纵向拉。 */
+html.fushi-embed .lookup-pane {
+  min-width: 0;
+  width: calc(100vw - 12px);
+  resize: vertical;
+}
+
+html.fushi-embed .toast {
+  max-width: calc(100vw - 24px);
+  white-space: normal;
+}
+
+html.fushi-embed .subtitle-row { padding: 10px 6px; }
+
+html.fushi-embed .timestamp { min-height: 34px; }
+
+html.fushi-embed .subtitle-list {
+  padding: 6px 6px calc(16px + env(safe-area-inset-bottom));
+}
+
+/* 折叠态：隐藏选轨/时轴/Jimaku，工具排 display:contents 并进折叠钮同一行。
+   头部两行制与按钮尺寸是 embed 通用规格（见基规则），展开收起只差隐藏与并排。 */
+html.fushi-embed body.hdr-folded .panel-header {
+  padding-top: calc(4px + env(safe-area-inset-top));
+  padding-bottom: 2px;
+}
+html.fushi-embed body.hdr-folded .toolbar {
+  display: contents; /* 六颗钮与折叠钮同池排一行，间距统一吃上面的 column-gap */
+}
+
+/* 静态小钮：展开/折叠共用同一尺寸（两态一致，切换零抖动）。折叠态算式：
+   7×30 + 6×3 缝 + 12 拉手 + 20 header 内边距 = 260 = MIN_OPEN；border-box 下 30/32
+   是终值，min-* 归零防基版 38px 触摸规格顶回来。 */
+html.fushi-embed .hdr-fold,
+html.fushi-embed .toolbar button {
+  flex: 0 0 30px;
+  width: 30px;
+  height: 32px;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+}
+
+html.fushi-embed body.hdr-folded #track,
+html.fushi-embed body.hdr-folded #offset,
+html.fushi-embed body.hdr-folded #jimaku-row,
+html.fushi-embed body.hdr-folded #jimaku-results { display: none !important; }

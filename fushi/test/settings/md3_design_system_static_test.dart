@@ -684,9 +684,6 @@ void main() {
           'Theme preview studio intentionally displays user-selected colors.',
       'lib/src/pages/implementations/reading_statistics_page.dart':
           'Chart and metric preview content keeps small chart typography.',
-      'lib/src/pages/implementations/video_statistics_page.dart':
-          'Video statistics charts/metric bars mirror reading_statistics_page: '
-              'progress-bar track surface is chart content, not page chrome.',
       // PR#247 首页活动热力图加翻页 + 选中日数值气泡：GitHub 式贡献热力图是数据可视化
       // 组件（格子强度按 colorScheme 映射色阶），header 的选中日数值气泡（_bubbleChip
       // 用 surfaceContainerHighest tonal 底 + labelMedium 文本）是图表标注内容，非普通
@@ -1169,8 +1166,10 @@ void main() {
               'reader_fushi/chrome.part.dart.',
       'lib/src/reader/reader_statistics_dialog.dart':
           'Reading-session metric bars are chart content (progress-track '
-              'surface + compact chart controls) — same reviewed exception '
-              'class as reading_statistics_page / video_statistics_page.',
+              'surface) — same reviewed exception class as '
+              'reading_statistics_page / video_statistics_page. The compact '
+              'chart controls are gone: the dialog now uses full-width shared '
+              'components, so VisualDensity.compact is no longer exempted.',
       'lib/src/media/audiobook/reader_quick_settings_sheet.dart':
           'In-book quick settings sheet packs reader controls at reader '
               'density — same reviewed exception class as '
@@ -1361,7 +1360,6 @@ void main() {
         'surfaceContainerHighest'
       },
       'lib/src/reader/reader_statistics_dialog.dart': <String>{
-        'VisualDensity.compact',
         'surfaceContainerHighest'
       },
       'lib/src/media/audiobook/reader_quick_settings_sheet.dart': <String>{
@@ -1434,9 +1432,6 @@ void main() {
       },
       'lib/src/pages/implementations/video_shader_dialog.dart': <String>{
         'CheckboxListTile('
-      },
-      'lib/src/pages/implementations/video_statistics_page.dart': <String>{
-        'surfaceContainerHighest'
       },
       'lib/src/settings/settings_schema_video.dart': <String>{'fontSize:'},
       'lib/src/startup/loading_watchdog_view.dart': <String>{'fontSize:'},

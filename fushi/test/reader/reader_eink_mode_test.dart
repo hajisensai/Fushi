@@ -8,9 +8,9 @@ import 'package:fushi/src/reader/reader_content_styles.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 
 /// 墨水屏模式（eink_mode）守卫：
-///  1. 阅读器 CSS 生成器的 eink 分支——纯黑白正文、线式高亮、关过渡、
-///     `--fushi-reader-eink-mode: 1`（JS 侧 isEInkMode() 与连续模式跟随滚动
-///     瞬时化都读它）；关掉时逐项不出现（零行为变化）。
+///  1. 阅读器 CSS 生成器的 eink 分支——纯黑白正文、线式高亮（一律直线条）、关过渡、
+///     `--fushi-reader-eink-mode: 1`（连续模式跟随滚动瞬时化读它）；关掉时逐项
+///     不出现（零行为变化）。
 ///  2. buildEinkColorScheme——纯黑白 ColorScheme（手工构造，不走 fromSeed），
 ///     surfaceTint/shadow 透明（e-ink 不能有 elevation 灰阶）。
 ///  3. eink_mode 必须在 Profile 快照黑名单里（设备属性，切 Profile 不回滚）。
@@ -36,10 +36,14 @@ void main() {
       // 关过渡：书籍自带动画一并压掉。
       expect(css, contains('transition: none !important'));
       expect(css, contains('animation: none !important'));
-      // 线式高亮：查词=实线、sasayaki=虚线、搜索=双线。
-      expect(css, contains('text-decoration-style: dashed'));
+      // 线式高亮：查词=粗实线、sasayaki=细实线、搜索=双线。
+      expect(css, contains('text-decoration-style: solid'));
       expect(css, contains('text-decoration-style: double'));
       expect(css, contains('text-decoration-line: underline'));
+      // sasayaki 跟读线必须是直线条，不得回退成虚线：上游 HSA 的墨水屏跟读高亮
+      // 是 overlay 画的 1.5px 实心线，虚线的每段短划在慢刷新屏上都是独立黑白
+      // 跳变，既更脏也更难一眼定位当前句。
+      expect(css, isNot(contains('text-decoration-style: dashed')));
     });
 
     test('einkMode=true honours einkDark (white-on-black)', () async {
@@ -71,7 +75,8 @@ void main() {
       final ReaderSettings settings = await _defaultSettings();
       final String css = ReaderContentStyles.css(settings: settings);
       expect(css, isNot(contains('--fushi-reader-eink-mode')));
-      expect(css, isNot(contains('text-decoration-style: dashed')));
+      // 线式高亮整套只属于 eink 分支，非 eink 输出里一条都不该有。
+      expect(css, isNot(contains('text-decoration-style')));
       // sasayaki 仍是色块填充（背景变量非 transparent）。
       expect(css, contains('--fushi-sentence-audio-background-color: rgba'));
     });

@@ -203,15 +203,17 @@ void main() {
         '  double get _readerTopOffset =>',
         '  double get _readerBottomReserve =>',
       );
+      // macOS 那条 28pt 自绘拖拽带（BUG-1343）随「macOS 改用应用级 MD3 顶栏」
+      // 删除，顶部预留不再含 _macosWindowTitlebarInset；派生 getter 本身仍是
+      // 唯一真相源（关掉进度 / 桌面顶栏挤压都靠它回收空白）。
       for (final String term in <String>[
         '_stableTopInset',
-        '_macosWindowTitlebarInset',
         '_topProgressReserve',
         '_desktopHeaderReserve',
       ]) {
         expect(topOffset.contains(term), isTrue,
-            reason: '顶部预留必须经派生 getter（关进度回收空白 / 桌面顶栏挤压），'
-                '并避开 macOS 拖拽区：缺 $term');
+            reason: '顶部预留必须经派生 getter（关进度回收空白 / 桌面顶栏挤压）：'
+                '缺 $term');
       }
       expect(
         src.contains('_readerBottomReserve =>\n'

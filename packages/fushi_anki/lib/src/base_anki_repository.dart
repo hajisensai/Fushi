@@ -414,6 +414,28 @@ abstract class BaseAnkiRepository {
   }) async =>
       null;
 
+  // ── 卡组新卡按词频重排 ───────────────────────────────────────────────────
+
+  /// 本后端能不能读某卡组的新卡并改写它们的队列位置。
+  ///
+  /// **后端不对称（有意）**：只有 AnkiConnect 有卡片级读写（`findCards` /
+  /// `cardsInfo` / `setSpecificValueOfCard`）。AnkiDroid ContentProvider 与
+  /// AnkiMobile 的 URL scheme 都没有改 `due` 的接口；互联「制卡到已配对设备」
+  /// 也没有对应端点。这些后端默认 false，UI 据此把入口置灰并说明原因。
+  bool get supportsDeckReposition => false;
+
+  /// 列出 [deckName]（含子卡组、排除筛选牌组）里的全部**新卡**。
+  /// 默认实现 = 不支持，抛 [UnsupportedError]；调用前先看
+  /// [supportsDeckReposition]。
+  Future<List<AnkiCardInfo>> listNewCards(String deckName) async =>
+      throw UnsupportedError('This Anki backend cannot list deck cards.');
+
+  /// 批量写回新卡位置。默认实现 = 不支持。
+  Future<AnkiCardDueWriteResult> setNewCardPositions(
+    List<AnkiCardDueUpdate> updates,
+  ) async =>
+      throw UnsupportedError('This Anki backend cannot reposition cards.');
+
   /// BUG-1549：按设置解析**当前制卡目标牌组**（id 优先、name 兜底）的单一真相。
   /// 此前这段两级 firstWhereOrNull 在 AnkiConnect / AnkiDroid / AnkiMobile 三个
   /// mine 路径各复制一份；解析结果的 `name` 现在还要随 [MineOutcome.success] 带回

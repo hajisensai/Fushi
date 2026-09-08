@@ -1,11 +1,11 @@
 import 'dart:io';
 
-import 'package:asr_core/asr_core.dart' as asr;
+import 'package:fushi_asr_core/asr_core.dart' as asr;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/media/video/ffmpeg_backend.dart' as host;
 
-/// ASR 的 PCM 解码搬进 `asr_core` 之后，本仓与包之间隔着一个
+/// ASR 的 PCM 解码搬进 `fushi_asr_core` 之后，本仓与包之间隔着一个
 /// [FushiAsrFfmpegBackend]。它转的是两套**同源但不同类型**的 `Ffmpeg*`，字段错位
 /// 或语义走样都不会编译错——只会表现成「能转录但每次都慢一档」这种没人查得动的事。
 /// 这组用例就是那道验收门。

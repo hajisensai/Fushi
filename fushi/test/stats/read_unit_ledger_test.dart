@@ -105,7 +105,7 @@ void main() {
     expect(net(), 1300);
   });
 
-  test('leave：并入 + 按终点入账并清空（关书 / 跳走 / 显式跳句）', () {
+  test('leave：并入 + 按终点入账并清空（跳走 / 显式跳句；关书不调）', () {
     ledger.arrive(0, 500);
     ledger.leave();
     expect(net(), 500);
@@ -113,6 +113,17 @@ void main() {
     expect(ledger.position, 500);
     ledger.leave();
     expect(credits.length, 1, reason: '重复 leave 幂等');
+  });
+
+  test('关书不是翻走（BUG-2264）：只 arrive 不 leave，站着的页永不入账', () {
+    // 一页只在「从它翻走」那一刻入账。关书三条路不碰账本，所以开书落在某页、
+    // 不翻就关，无论多少次都是 0；读到某页关书，那页留给下次打开翻走时计。
+    for (int i = 0; i < 10; i++) {
+      ledger = ReadUnitLedger(onCredit: credits.add, onRetract: retracts.add);
+      ledger.arrive(500, 1000);
+    }
+    expect(credits, isEmpty);
+    expect(retracts, isEmpty);
   });
 
   test('跳转：跳走前那页计入，跳过的从未成为当前单元所以不计，落点页翻走时计', () {

@@ -29,14 +29,30 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2118 条。点号进各自文件。
+> 共 2134 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-2286](bugs/BUG-2286-episode-only-filenames-split-into-cards.md) | 🚧 | 🚧 | 文件名只剩集号时每集各成一张卡，整部番被拆成一堆分开的条目 |
+| [BUG-2286](bugs/BUG-2286-episode-only-filenames-split-into-cards.md) | ✅ | ✅ | 文件名只剩集号时每集各成一张卡，整部番被拆成一堆分开的条目 |
 | [BUG-2285](bugs/BUG-2285-fribb-tmdb-id-shape-misparsed.md) | ✅ | ✅ | Fribb 映射表的 themoviedb_id 是对象不是裸数字、TVDB 键是 tvdb_id，解析用错形状导致 TMDB id 恒为 null |
+| [BUG-2284](bugs/BUG-2284-lookup-popup-instant-scroll.md) | ✅ | ✅ | 查词弹窗「瞬时滚动」开关对滚轮完全无效 |
+| [BUG-2283](bugs/BUG-2283-eink-swipe-dismiss-animation.md) | ✅ | ✅ | 墨水屏模式：查词弹窗滑动关闭仍有滑出/弹回补间动画 |
+| [BUG-2278](bugs/BUG-2278-ankidroid-live-target.md) | ✅ | ✅ | AnkiDroid识别与API实例缓存导致安装或启用后仍无法连接 |
+| [BUG-2277](bugs/BUG-2277-ext-page-sentence.md) | ✅ | ✅ | 浏览器扩展查词/制卡不取页面所在句子 |
+| [BUG-2276](bugs/BUG-2276-macos-reader-panel-transparent-barrier.md) | ✅ | ✅ | macOS 阅读设置/导航抽屉打开后点正文不关闭 |
+| [BUG-2275](bugs/BUG-2275-cloudflare-challenge-proxy.md) | ✅ | ✅ | Cloudflare验证网页未继承手动代理 |
+| [BUG-2273](bugs/BUG-2273-mihon-timeout-kills-other-requests.md) | ✅ | ✅ | 单个漫画源超时重启共享桥接并中断其它请求 |
+| [BUG-2272](bugs/BUG-2272-outbound-proxy-native-images.md) | ✅ | ✅ | 公网图片及原生网络链路未继承应用代理 |
 | [BUG-2270](bugs/BUG-2270-sidecar-ownership-record-failed-opaque.md) | ✅ | 🚧 | 刮削 sidecar 报「文件已写入，但所有权记录失败」但不给出真实异常，Cover Song Collection 三条无法定位根因 |
+| [BUG-2269](bugs/BUG-2269-ankiconnect-multi-subaction-key.md) | ✅ | ✅ | AnkiConnect multi 子 action 缺 key：配置 apiKey 时所有批量写被整批拒绝 |
 | [BUG-2268](bugs/BUG-2268-mal-ambiguity-blocks-tmdb-fallback.md) | ✅ | ✅ | MAL 主源歧义即终止识别链，TMDB 兜底永远不被询问，中文目录名整批记成待确认 |
+| [BUG-2266](bugs/BUG-2266-import-no-subtitle-dead-end.md) | ✅ | ✅ | 选了音频没字幕点「导入」只提示不引导转录，用户以为语音模型选不中（Android 报告） |
+| [BUG-2264](bugs/BUG-2264-reopen-book-credits-landing-page.md) | ✅ | ✅ | 重复开关书落地页整页入账且写出零时长段 |
+| [BUG-2263](bugs/BUG-2263-macos-mihon-chapters-not-loading.md) | 🚧 | 🚧 | macOS Mihon 章节列表加载不出来（未复现） |
+| [BUG-2262](bugs/BUG-2262-macos-aidoku-partial-result-chapters-dropped.md) | ✅ | ✅ | macOS Aidoku 章节列表恒为空：桌面 runtime 丢弃 send_partial_result 回传的章节 |
+| [BUG-2260](bugs/BUG-2260-netflix-advisory-overlay-selector-drift.md) | ✅ | ✅ | Netflix 分级提示 overlay 改用 .watch-video--advisories-container，三处隐藏选择器全部静默失效；内置播放器换集重载后 chrome 隐藏丢失 |
+| [BUG-2259](bugs/BUG-2259-macos-quit-no-exit-flush.md) | ✅ | ✅ | macOS Cmd+Q 退出不跑退出 flush（阅读位置/有声书进度/阅读统计丢最后一段） |
+| [BUG-2258](bugs/BUG-2258-macos-video-retina-blur.md) | ✅ | ✅ | mac 视频在 Retina 上发虚：media_kit 按视频原生分辨率建纹理，放大交给 Flutter 双线性 |
 | [BUG-2256](bugs/BUG-2256-subtitle-pause-reveal-ignores-gate.md) | ✅ | ✅ | 关掉「悬停或点击显形」后，暂停仍会揭开被隐藏的字幕 |
 | [BUG-2255](bugs/BUG-2255-reader-sentence-seek-dom-identity.md) | ✅ | ✅ | 正文从本句播放误取上一条字幕 |
 | [BUG-2254](bugs/BUG-2254-jellyfin-fnos-x-emby-auth.md) | ✅ | ✅ | 飞牛影视 Jellyfin 兼容层要求 X-Emby-Authorization 认证头 |

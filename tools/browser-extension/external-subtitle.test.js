@@ -87,11 +87,16 @@ function loadPanel(opts) {
     addEventListener: (type, fn) => { (documentListeners[type] = documentListeners[type] || []).push(fn); },
     fushiToast: (m) => toasts.push(m),
   };
+  // 覆盖层真实落点是 <html>（parentForOverlay = fullscreenElement || documentElement）。
+  // 真实浏览器 documentElement 恒存，fake 也得有根——查覆盖层从 html 往下找。
+  const htmlRoot = makeEl('html');
+  htmlRoot.appendChild(body);
   const documentObj = {
     body,
+    documentElement: htmlRoot,
     fullscreenElement: null,
     addEventListener: (type, fn) => { (documentListeners[type] = documentListeners[type] || []).push(fn); },
-    getElementById: (id) => findByIdDeep(body, id),
+    getElementById: (id) => findByIdDeep(htmlRoot, id),
     querySelector: (sel) => (sel === 'video' ? video : null),
     querySelectorAll: () => [],
     createElement: (t) => { const e = makeEl(t); if (t === 'input') createdInputs.push(e); return e; },
@@ -134,7 +139,8 @@ function loadPanel(opts) {
   }
   function fireToggle(v) { for (const fn of storageListeners) fn({ netflixSubtitlePanel: { newValue: v } }, 'local'); }
   return {
-    body, video, windowObj, createdInputs, toasts,
+    body,
+    html: htmlRoot, video, windowObj, createdInputs, toasts,
     enable: () => fireToggle(true),
     panel: () => findByIdDeep(body, 'fushi-subtitle-panel'),
     reopen: () => findByIdDeep(body, 'fushi-subtitle-reopen'),
@@ -230,7 +236,7 @@ test('⑤ 外挂字幕按视频矩形叠到画面上，站点轨不重复叠字'
   h.loadFile('overlay.srt', 'dummy');
   h.video.currentTime = 2;
   h.tick();
-  const overlay = findByIdDeep(h.body, 'fushi-subtitle-overlay');
+  const overlay = findByIdDeep(h.html, 'fushi-subtitle-overlay');
   assert.ok(overlay, '当前外挂 cue 应创建视频叠字');
   assert.strictEqual(overlay.textContent, '画面上的外挂字幕');
   assert.strictEqual(overlay.style.left, '500px');

@@ -16,7 +16,7 @@ import 'package:flutter/services.dart';
 
 // `kOnnxLogName` 两边都有：本仓这份是 'hibiki.onnx' 日志通道，明确 hide 掉
 // 包里那份，别靠「本地声明遮蔽 import」这条隐式规则。
-import 'package:asr_core/asr_core.dart' hide kOnnxLogName;
+import 'package:fushi_asr_core/asr_core.dart' hide kOnnxLogName;
 /// 共享层默认的 `dart:developer` 日志通道名。子系统可经 [logName] 参数换成自己
 /// 的通道（OCR 用 `hibiki.ocr`），日志读者按通道过滤即可分清是谁在建会话。
 ///
@@ -63,7 +63,7 @@ typedef OnnxSessionInputResolver = Map<String, OnnxTensor> Function(
 /// 把插件后端的 `PlatformException` 拆成 `code: message` 装进
 /// [OnnxProviderResolution.fallbackReason]。
 ///
-/// asr_core 的回退策略是后端无关的，默认只会 `toString()`。本仓的 UI 与日志按
+/// fushi_asr_core 的回退策略是后端无关的，默认只会 `toString()`。本仓的 UI 与日志按
 /// `code: message` 这个老格式读（`PlatformException.toString()` 会带上 details 与
 /// stacktrace，读起来完全是另一回事），所以在这里把描述器换回来。
 ///

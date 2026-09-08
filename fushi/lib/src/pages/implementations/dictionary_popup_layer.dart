@@ -277,7 +277,7 @@ double resolveAutoFitPopupHeight({
 /// mixin 家族（video / 首页词典 / texthooker / 网页视频）把查词浮层插进根 Overlay，
 /// 再用 [FushiAppUiScaleNeutralizer] 中和回净缩放 1；选区矩形则来自被点字符的
 /// `localToGlobal`。两者只有在根 Overlay 原点与屏幕原点重合时才同系。Windows 上
-/// `FushiWindowsTitleBar` 把整个导航器（含根 Overlay）压在一条 32 逻辑像素的自绘
+/// `FushiDesktopTitleBar` 把整个导航器（含根 Overlay）压在一条 32 逻辑像素的自绘
 /// 标题栏之下（main.dart），根 Overlay 原点就比屏幕原点低一个标题栏：浮层按
 /// 「屏幕 rect」摆到 Overlay 坐标里，整栈集体下移 32px，贴在被查词上方的弹窗底边
 /// 正好压进词里。中和层的原点与根 Overlay 原点重合（FittedBox 左上对齐、净缩放 1），
@@ -1330,8 +1330,7 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector>
     super.didChangeDependencies();
     // 墨水屏模式：滑出/弹回补间归零（Duration.zero 的 forward 立即 complete，
     // onDismiss 时序不变，只是不再画补间帧）。跟随主题切换双向生效。
-    _controller.duration =
-        isEinkTheme(context) ? Duration.zero : _kSlideDuration;
+    _controller.duration = einkSafeDuration(context, _kSlideDuration);
   }
 
   @override

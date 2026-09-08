@@ -31,7 +31,7 @@ import android.net.Uri;
  *
  * <p>本类把「装的是哪一个」变成一次显式解析：逐个候选 authority 去
  * {@link PackageManager#resolveContentProvider}，命中即得包名 / authority / 权限名
- * 三件套。解析结果进程内缓存（安装/卸载会重启进程，缓存不会过期成谎话）。
+ * 三件套。每次访问都查询 PackageManager：安装、卸载或启用 API 不保证重启本进程。
  */
 public final class AnkiDroidTarget {
 
@@ -59,8 +59,6 @@ public final class AnkiDroidTarget {
         MAIN_PACKAGE + ".debug",
     };
 
-    private static volatile AnkiDroidTarget sCached;
-    private static volatile boolean sResolved;
 
     /** 安装包名，例如 {@code com.ichi2.anki.A}。 */
     public final String packageName;
@@ -110,30 +108,14 @@ public final class AnkiDroidTarget {
      * 那种情况下包查得到、provider 查不到，而我们真正需要的是后者。
      */
     public static AnkiDroidTarget resolve(Context context) {
-        if (sResolved) return sCached;
-        synchronized (AnkiDroidTarget.class) {
-            if (sResolved) return sCached;
-            AnkiDroidTarget found = null;
-            final PackageManager pm = context.getPackageManager();
-            for (final String candidate : CANDIDATE_PACKAGES) {
-                final ProviderInfo info =
-                    pm.resolveContentProvider(authorityFor(candidate), 0);
-                if (info != null) {
-                    found = new AnkiDroidTarget(candidate);
-                    break;
-                }
+        final PackageManager pm = context.getPackageManager();
+        for (final String candidate : CANDIDATE_PACKAGES) {
+            final ProviderInfo info =
+                pm.resolveContentProvider(authorityFor(candidate), 0);
+            if (info != null) {
+                return new AnkiDroidTarget(candidate);
             }
-            sCached = found;
-            sResolved = true;
-            return found;
         }
-    }
-
-    /** 仅供测试/诊断：丢弃缓存，下次 {@link #resolve} 重新探测。 */
-    public static void invalidateCache() {
-        synchronized (AnkiDroidTarget.class) {
-            sCached = null;
-            sResolved = false;
-        }
+        return null;
     }
 }

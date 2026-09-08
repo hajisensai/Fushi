@@ -167,6 +167,22 @@ class MinedNoteRef {
   String toString() => 'MinedNoteRef(noteId: $noteId, preview: "$preview")';
 }
 
+/// 卡组新卡按词频重排的词频来源。
+enum AnkiRepositionSource {
+  /// 查已装载的词频词典（可指定一本或多本复合）。
+  dictionaries,
+
+  /// 直接读笔记里映射为 `{frequency-harmonic-rank}` 的字段（如 Lapis 的
+  /// FreqSort），零查询。
+  field;
+
+  static AnkiRepositionSource fromName(String? name) =>
+      AnkiRepositionSource.values.firstWhere(
+        (AnkiRepositionSource v) => v.name == name,
+        orElse: () => AnkiRepositionSource.dictionaries,
+      );
+}
+
 class AnkiSettings {
   const AnkiSettings({
     this.selectedDeckId,
@@ -199,6 +215,9 @@ class AnkiSettings {
     this.lastMediaDedupScanAtMs,
     this.mediaDedupAutoEnabled = false,
     this.mediaDedupAutoDelete = false,
+    this.repositionSource = AnkiRepositionSource.dictionaries,
+    this.repositionDictionaries = const <String>[],
+    this.repositionAggregate = 'harmonic',
   });
 
   factory AnkiSettings.fromJson(Map<String, dynamic> json) => AnkiSettings(
@@ -250,6 +269,15 @@ class AnkiSettings {
         // 一条会动 Anki 媒体文件的自动路径。
         mediaDedupAutoEnabled: json['mediaDedupAutoEnabled'] as bool? ?? false,
         mediaDedupAutoDelete: json['mediaDedupAutoDelete'] as bool? ?? false,
+        repositionSource: AnkiRepositionSource.fromName(
+          json['repositionSource'] as String?,
+        ),
+        repositionDictionaries: (json['repositionDictionaries'] as List?)
+                ?.map((Object? e) => e.toString())
+                .toList() ??
+            const <String>[],
+        repositionAggregate:
+            json['repositionAggregate'] as String? ?? 'harmonic',
       );
   final int? selectedDeckId;
   final String? selectedDeckName;
@@ -359,6 +387,16 @@ class AnkiSettings {
   /// 缺陷正是「自动路径绕过确认框」；加回自动开关不能把这个坑一起加回来。
   final bool mediaDedupAutoDelete;
 
+  /// 卡组新卡按词频重排：词频来源（词典 / 笔记字段）。
+  final AnkiRepositionSource repositionSource;
+
+  /// 重排时勾选的词频词典名；**空 = 全部已装载**（新装的词典自动纳入）。
+  final List<String> repositionDictionaries;
+
+  /// 多本词典的复合方式名（`FrequencyAggregate.name`；这里存字符串，
+  /// fushi_anki 不依赖 fushi_dictionary）。
+  final String repositionAggregate;
+
   bool get isConfigured => selectedDeckId != null && selectedNoteTypeId != null;
 
   AnkiNoteType? get selectedNoteType =>
@@ -404,6 +442,9 @@ class AnkiSettings {
     int? lastMediaDedupScanAtMs,
     bool? mediaDedupAutoEnabled,
     bool? mediaDedupAutoDelete,
+    AnkiRepositionSource? repositionSource,
+    List<String>? repositionDictionaries,
+    String? repositionAggregate,
   }) =>
       AnkiSettings(
         selectedDeckId:
@@ -454,6 +495,10 @@ class AnkiSettings {
         mediaDedupAutoEnabled:
             mediaDedupAutoEnabled ?? this.mediaDedupAutoEnabled,
         mediaDedupAutoDelete: mediaDedupAutoDelete ?? this.mediaDedupAutoDelete,
+        repositionSource: repositionSource ?? this.repositionSource,
+        repositionDictionaries:
+            repositionDictionaries ?? this.repositionDictionaries,
+        repositionAggregate: repositionAggregate ?? this.repositionAggregate,
       );
 
   Map<String, dynamic> toJson() => {
@@ -490,6 +535,9 @@ class AnkiSettings {
         'lastMediaDedupScanAtMs': lastMediaDedupScanAtMs,
         'mediaDedupAutoEnabled': mediaDedupAutoEnabled,
         'mediaDedupAutoDelete': mediaDedupAutoDelete,
+        'repositionSource': repositionSource.name,
+        'repositionDictionaries': repositionDictionaries,
+        'repositionAggregate': repositionAggregate,
       };
 }
 
@@ -1543,4 +1591,112 @@ class MineOutcome {
 
   /// 仅在错误时可能非空：异常栈（写入错误日志）。
   final StackTrace? stackTrace;
+}
+
+// ── 卡组新卡按词频重排（AnkiConnect 卡片级 API）───────────────────────────
+
+/// AnkiConnect `cardsInfo` 的一项里本功能用到的字段。
+///
+/// `fields` 已拍平成 `字段名 → 值`（原始形状是 `{value, order}`）。`type == 0`
+/// 才是新卡；`due` 对新卡来说就是学习队列里的**位置**（对复习卡是天数，
+/// 本功能永远不碰）。
+class AnkiCardInfo {
+  const AnkiCardInfo({
+    required this.cardId,
+    required this.noteId,
+    required this.ord,
+    required this.due,
+    required this.type,
+    required this.queue,
+    required this.modelName,
+    required this.deckName,
+    required this.fields,
+  });
+
+  final int cardId;
+  final int noteId;
+
+  /// 同一 note 的第几张卡（模板序号）。
+  final int ord;
+  final int due;
+
+  /// Anki `type`：0 新卡 / 1 学习中 / 2 复习 / 3 重学。
+  final int type;
+
+  /// Anki `queue`：0 新卡 / -1 暂停 / -2,-3 搁置 / 1,2,3 学习与复习。
+  final int queue;
+  final String modelName;
+  final String deckName;
+  final Map<String, String> fields;
+
+  bool get isNew => type == 0;
+
+  /// 从 AnkiConnect `cardsInfo` 的一项解析；形状异常（不存在的卡返回空对象）
+  /// 返回 null。
+  static AnkiCardInfo? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final int? cardId = _asInt(raw['cardId']);
+    final int? noteId = _asInt(raw['note']);
+    if (cardId == null || noteId == null) return null;
+    final Map<String, String> fields = <String, String>{};
+    final Object? rawFields = raw['fields'];
+    if (rawFields is Map) {
+      rawFields.forEach((dynamic key, dynamic value) {
+        if (value is Map && value['value'] is String) {
+          fields[key.toString()] = value['value'] as String;
+        } else if (value is String) {
+          fields[key.toString()] = value;
+        }
+      });
+    }
+    return AnkiCardInfo(
+      cardId: cardId,
+      noteId: noteId,
+      ord: _asInt(raw['ord']) ?? 0,
+      due: _asInt(raw['due']) ?? 0,
+      type: _asInt(raw['type']) ?? -1,
+      queue: _asInt(raw['queue']) ?? 0,
+      modelName: raw['modelName']?.toString() ?? '',
+      deckName: raw['deckName']?.toString() ?? '',
+      fields: fields,
+    );
+  }
+
+  static int? _asInt(Object? v) =>
+      v is int ? v : (v is num ? v.toInt() : int.tryParse(v?.toString() ?? ''));
+}
+
+/// 给一张**新卡**写入新的队列位置（AnkiConnect `setSpecificValueOfCard`
+/// 的 `due` 键）。
+class AnkiCardDueUpdate {
+  const AnkiCardDueUpdate({required this.cardId, required this.due});
+
+  final int cardId;
+  final int due;
+
+  Map<String, dynamic> toJson() =>
+      <String, dynamic>{'cardId': cardId, 'due': due};
+
+  static AnkiCardDueUpdate? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final Object? c = raw['cardId'];
+    final Object? d = raw['due'];
+    if (c is! int || d is! int) return null;
+    return AnkiCardDueUpdate(cardId: c, due: d);
+  }
+}
+
+/// 批量写位置的结果：哪些卡没写进去（AnkiConnect 逐条报告，一条失败不吞整批）。
+class AnkiCardDueWriteResult {
+  const AnkiCardDueWriteResult({
+    required this.written,
+    required this.failures,
+  });
+
+  final int written;
+
+  /// cardId → AnkiConnect 报的错误文本。
+  final Map<int, String> failures;
+
+  bool get hasFailures => failures.isNotEmpty;
 }

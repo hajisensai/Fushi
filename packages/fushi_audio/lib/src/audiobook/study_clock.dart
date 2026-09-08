@@ -157,6 +157,31 @@ typedef StudySessionTotals = ({int durationMs, int chars, bool active});
 /// 字数 / 页数经 [addChars] / [addPages] 记到当前打开段（没有就以 0 时长开一段），
 /// 与时长同一行、同一 uid、同一次写；回翻经 [retractChars] / [retractPages] 从最新
 /// 的段往前扣回（会话级夹 0）。
+/// 已被用户删除的段 uid。
+///
+/// 删一次会话是把 `study_segments` 里那几行按 uid **写零**，但正在跑的 [StudyClock]
+/// 内存里还持有同一个 uid 的开放段，而 [StudyClock._write] 是按 uid upsert **绝对值**
+/// ——下一个 tick 就把整行原样写回去，用户看到「删了又回来」。
+///
+/// 这里是唯一的退役登记：写路径（含 [StudyClock.detach] 攒下、在退出汇合点才落地的
+/// 那批）见到退役 uid 一律跳过。登记必须发生在删库**之前**，否则两者之间落下的一个
+/// tick 仍会复活整行。
+///
+/// 只在本进程内有效（重启即空），这正好够用：库里那几行已经是零，重启后时钟不会再
+/// 持有那些段。集合只在用户删会话时增长，量级是「被删会话的段数」。
+final Set<String> _retiredStudySegmentUids = <String>{};
+
+/// 声明这些段 uid 已被用户删除，任何在跑的 [StudyClock] 都不得再把它们写回库。
+/// **先登记、后删库**——见 [_retiredStudySegmentUids]。
+void retireStudySegmentUids(Iterable<String> uids) {
+  _retiredStudySegmentUids.addAll(uids);
+}
+
+/// 测试用：清空退役登记（进程级全局，用例之间必须互不串味）。
+void debugClearRetiredStudySegmentUids() {
+  _retiredStudySegmentUids.clear();
+}
+
 class StudyClock {
   StudyClock({
     required FushiDatabase database,
@@ -330,15 +355,14 @@ class StudyClock {
   /// 与它互等（FakeAsync 在测试体结束后不再推进，事务续体永远不跑），生产退出路径
   /// 是同一形状的竞态。入口删掉，只剩这一个原语。
   ///
-  /// [settle] 在解绑**前**跑，做纯内存的最后结算（阅读账本 `leave()` → 字数 / 页数
-  /// 入账或撤回）——放在这里而不是让调用方自己排顺序，是因为它必须发生在时钟停表
-  /// 之前（[addChars] / [addPages] 停表即丢，BUG-2210），顺序错了就静默少记一页。
+  /// 只结算时长：关书不是翻走，站着的那页不入账（`ReadUnitLedger` 类文档；此前这里
+  /// 接一个 `leave` 回调在停表前结算当前页，落地页一个字没读也整页入账，开关一次
+  /// 涨一次）。
   ///
   /// 期间攒下的写交给 [deferWrite]（进程退出统一 await）；没接就丢弃。正常退出走
   /// [stop]（调用方 await 到底），本方法只是异常拆栈时的兜底。
-  void detach([void Function()? settle]) {
+  void detach() {
     _deferring = true;
-    settle?.call();
     final Timer? timer = _timer;
     _timer = null;
     timer?.cancel();
@@ -581,7 +605,9 @@ class StudyClock {
   /// 本次是否要写：有脏改动，且（已在库里 或 过 [_worthWriting] 门槛）。前者覆盖
   /// 「写过 300 字 0 时长 → 被撤回成 0 字」：不写穿，库里就留着 300。
   static bool _needsWrite(_OpenSegment seg) =>
-      seg.dirty && (seg.persisted || _worthWriting(seg));
+      seg.dirty &&
+      !_retiredStudySegmentUids.contains(seg.uid) &&
+      (seg.persisted || _worthWriting(seg));
 
   void _enqueueWrite(_OpenSegment seg) {
     seg.dirty = false;
@@ -621,6 +647,12 @@ class StudyClock {
   }
 
   Future<void> _write(_OpenSegment seg, DateTime now) async {
+    // 用户已经删掉了这一段：绝对值写回去就是「删了又回来」。这是写路径的唯一
+    // 收口点（[_flushDetached] 也直接调它），所以门放在这里，不放调用方。
+    if (_retiredStudySegmentUids.contains(seg.uid)) {
+      seg.dirty = false;
+      return;
+    }
     final String deviceId = _cachedDeviceId ??= await _deviceId();
     await _sink(
       StudySegmentsCompanion(

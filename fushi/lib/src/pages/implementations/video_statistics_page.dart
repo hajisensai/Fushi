@@ -1,16 +1,17 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_period_detail_sheet.dart';
+import 'package:fushi/src/pages/implementations/stat_session_list.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi/src/pages/implementations/video_stat_aggregates.dart';
 import 'package:fushi/src/stats/stat_facts.dart';
 import 'package:fushi/src/stats/stat_window.dart';
+import 'package:fushi/src/stats/study_sessions.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -44,6 +45,9 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
   /// 观看域日面事实行（loadStatFacts 的 dailyVideos 切片）：时段明细 sheet 的
   /// 数据源（阶段 1——此前这份数据聚合完即丢，时段明细要 per-video × per-day）。
   List<StatFact> _videoFacts = <StatFact>[];
+
+  /// 观看域会话流（`StatFacts.sessions` 的视频切片，按结束时刻倒序）。
+  List<StudySession> _sessions = <StudySession>[];
 
   /// 合集归属映射（书架同源）：按视频 tile 显示所属合集名用。
   /// - [_collectionNamesById]：collectionId → 合集名。
@@ -110,6 +114,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
       final StatFacts facts = await loadStatFacts(db, activityLimit: 0);
       final List<StatFact> stats = facts.dailyVideos.toList();
       _videoFacts = stats;
+      _sessions = facts.sessions.where((StudySession s) => s.isVideo).toList();
       final List<VideoBookRow> books = await VideoBookRepository(db).listAll();
       final List<DateTime> completed = books
           .map((VideoBookRow b) => b.completedAt)
@@ -252,14 +257,27 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
   Widget _buildContent() {
     final tokens = FushiDesignTokens.of(context);
 
+    // 骨架与阅读 / 游戏 tab 同形：时段卡 → 每日图 → 最近会话 → 「分析」折叠 → 按视频。
     return CustomScrollView(
       slivers: [
         SliverToBoxAdapter(child: _buildSummaryCards()),
         SliverToBoxAdapter(
-          child: buildStatHourlyChartSection(context, _hourlyMs),
+          child: buildStatDailyDurationChartSection(context, _agg.daily),
         ),
         SliverToBoxAdapter(
-          child: buildStatDailyDurationChartSection(context, _agg.daily),
+          child: buildStatSessionSection(
+            context,
+            sessions: _sessions,
+            titleOf: (StudySession s) => s.title,
+            onDelete: _deleteSession,
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: StatAnalysisFold(
+            children: <Widget>[
+              buildStatHourlyChartSection(context, _hourlyMs),
+            ],
+          ),
         ),
         SliverToBoxAdapter(
           child: Padding(
@@ -412,6 +430,27 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
   /// 再从 DB 重新聚合刷新（TODO-1204 后续）。
   ///
   /// v76：身份感知删除——只删本 tile 展示的行：该 uid 的行 + 本 tile 吸收过的
+  /// 删一次会话：段写零（同步安全），再从 DB 重新聚合。
+  Future<void> _deleteSession(StudySession s) async {
+    await deleteStudySession(appModelNoUpdate.database, s);
+    if (mounted) await _loadFromDatabase();
+  }
+
+  /// 点按视频 tile → 这部视频的会话列表 sheet。
+  Future<void> _showVideoSessions(VideoStatBookData video) async {
+    final String? uid = video.bookUid;
+    if (uid == null) return;
+    final bool deleted = await showStatSessionsSheet(
+      context,
+      title: video.title,
+      sessions: _sessions.where((StudySession s) => s.mediaKey == uid).toList(),
+      titleOf: (StudySession s) => s.title,
+      onDelete: (StudySession s) =>
+          deleteStudySession(appModelNoUpdate.database, s),
+    );
+    if (deleted && mounted) await _loadFromDatabase();
+  }
+
   /// 同 title 无身份遗留行（[VideoStatBookData.absorbedUnattributed]，与展示层
   /// 是同一次身份分组给出的同一个判据）。同名另一视频的 per-uid 行不再连坐。
   Future<void> _confirmAndDeleteVideo(VideoStatBookData video) async {
@@ -454,83 +493,27 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
     );
   }
 
+  /// 「按视频」一行（游戏页同款 [buildStatMediaRow]）：会话数 / 查词 · 制卡 · 收藏，
+  /// 右侧观看时长；点按进该视频的会话 sheet（无身份遗留组没有会话），长按 / 右键删
+  /// 该视频统计。
   Widget _buildVideoTile(VideoStatBookData video) {
     // v76：查词/制卡/收藏数由 computeVideoStats 的同一次身份分组挂在 tile 上，
     // 这里只读——不做任何第二次归并（两套判据 = 计数在同名 tile 间游走）。
-    final int favorites = video.favorites;
-    final String? collectionName = _collectionNameForVideo(video);
-    // 按观看时长排行（byVideo 已按 ms 降序），进度条与排行同维度。
-    final maxMs = _agg.byVideo.isEmpty
-        ? 1
-        : _agg.byVideo.first.ms.clamp(1, 1 << 50);
-    final fraction = video.ms / maxMs;
-    final colorScheme = Theme.of(context).colorScheme;
-    final tokens = FushiDesignTokens.of(context);
-
-    return ContextMenuTrigger(
-      // 右键菜单改由绑定表决定唤出键（默认仍是右键）；右键被别的动作占用时自动让位。
-      onInvoke: (Offset _) => _confirmAndDeleteVideo(video),
-      child: Material(
-        type: MaterialType.transparency,
-        child: InkWell(
-          // 移动端长按、桌面端右键都弹删除确认（与阅读统计页同款交互）。
-          onLongPress: () => _confirmAndDeleteVideo(video),
-          child: Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: tokens.spacing.card,
-              vertical: tokens.spacing.gap / 2,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  video.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-                if (collectionName != null) ...[
-                  SizedBox(height: tokens.spacing.gap / 4),
-                  buildStatCollectionLabel(context, collectionName),
-                ],
-                SizedBox(height: tokens.spacing.gap / 2),
-                Row(
-                  children: [
-                    Expanded(
-                      child: ClipRRect(
-                        borderRadius: tokens.radii.chipRadius,
-                        child: LinearProgressIndicator(
-                          value: fraction,
-                          minHeight: 8,
-                          backgroundColor: colorScheme.surfaceContainerHighest,
-                          color: colorScheme.primary,
-                        ),
-                      ),
-                    ),
-                    SizedBox(
-                      width: tokens.spacing.gap + tokens.spacing.gap / 2,
-                    ),
-                    Text(
-                      formatStatTime(video.ms),
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-                SizedBox(height: tokens.spacing.gap / 2),
-                Text(
-                  '${t.stat_lookup}: ${video.lookups} · ${t.stat_mined}: ${video.mines} · ${t.stat_favorited}: $favorites',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                SizedBox(height: tokens.spacing.gap / 2),
-              ],
-            ),
-          ),
-        ),
-      ),
+    final String? uid = video.bookUid;
+    final int sessionCount = uid == null
+        ? 0
+        : _sessions.where((StudySession s) => s.mediaKey == uid).length;
+    return buildStatMediaRow(
+      context,
+      icon: Icons.movie,
+      title: video.title,
+      collectionName: _collectionNameForVideo(video),
+      meta: t.stat_sessions_count(n: sessionCount),
+      meta2:
+          '${t.stat_lookup}: ${video.lookups} · ${t.stat_mined}: ${video.mines} · ${t.stat_favorited}: ${video.favorites}',
+      trailing: formatStatTime(video.ms),
+      onTap: uid == null ? null : () => unawaited(_showVideoSessions(video)),
+      onDelete: () => unawaited(_confirmAndDeleteVideo(video)),
     );
   }
 }

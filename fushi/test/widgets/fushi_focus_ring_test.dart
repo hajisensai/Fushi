@@ -316,7 +316,7 @@ void main() {
     await tester.pumpWidget(MaterialApp(
       home: Column(
         children: <Widget>[
-          // Mirrors FushiWindowsTitleBar: the app/focus-ring subtree starts
+          // Mirrors FushiDesktopTitleBar: the app/focus-ring subtree starts
           // below a native-sized caption row instead of at view y = 0.
           const SizedBox(height: 48),
           Expanded(

@@ -82,6 +82,63 @@ class _Harness {
 }
 
 void main() {
+  group('删会话的段不得被在跑的时钟写回（绝对值 upsert 复活竞态）', () {
+    setUp(debugClearRetiredStudySegmentUids);
+    tearDown(debugClearRetiredStudySegmentUids);
+
+    test('退役 uid 后，后续 tick / stop 都不再写这一段', () async {
+      final _Harness h = _Harness();
+      h.clock.start();
+      h.advance(const Duration(seconds: 60));
+      await h.clock.flushNow();
+      expect(h.sink.writes, hasLength(1), reason: '第一次落库是正常的');
+      final String uid = h.sink.last.uid.value;
+
+      // 用户在统计页删掉了「刚刚那次」——段还开着。
+      retireStudySegmentUids(<String>[uid]);
+
+      h.advance(const Duration(seconds: 60));
+      await h.clock.flushNow();
+      await h.clock.stop();
+      expect(
+        h.sink.uids.where((String u) => u == uid),
+        hasLength(1),
+        reason: '退役之后一次都不许再写：再写就是把用户删掉的行用绝对值复活',
+      );
+    });
+
+    test('detach 攒下、退出汇合点才落地的那批也认退役', () async {
+      final _Harness h = _Harness(collectDeferred: true);
+      h.clock.start();
+      h.advance(const Duration(seconds: 60));
+      await h.clock.flushNow();
+      final String uid = h.sink.last.uid.value;
+      final int writesBefore = h.sink.writes.length;
+
+      h.advance(const Duration(seconds: 60));
+      h.clock.detach();
+      // 用户在页面销毁之后、退出 flush 之前删掉了这次会话。
+      retireStudySegmentUids(<String>[uid]);
+      await h.runDeferred();
+
+      expect(
+        h.sink.writes, hasLength(writesBefore),
+        reason: 'detach 攒下的写也必须被退役门挡掉',
+      );
+    });
+
+    test('没被退役的其它段照常写', () async {
+      final _Harness h = _Harness();
+      h.clock.start();
+      h.advance(const Duration(seconds: 60));
+      await h.clock.flushNow();
+      retireStudySegmentUids(<String>['某个别的段的 uid']);
+      h.advance(const Duration(seconds: 60));
+      await h.clock.stop();
+      expect(h.sink.writes.length, greaterThan(1), reason: '退役门不许误伤');
+    });
+  });
+
   group('显式记账模式（BUG-2108：视频面时长由 addActiveMs 推入，tick 不按墙钟计）', () {
     test('tick 不再整窗计时：只有 addActiveMs 推入的毫秒进段', () async {
       final _Harness h = _Harness(accrual: StudyAccrual.explicit);
@@ -759,18 +816,18 @@ void main() {
   });
 
   group('detach：页面 dispose 的零 DB IO 收尾（无人 await 的事务会与 db.close() 互等）', () {
-    test('结算回调在停表前跑：leave 记的页数进段，不因停表被丢弃', () async {
+    test('停表前记的页数进段：detach 只封段，不丢已记的内容账', () async {
       final _Harness h = _Harness(collectDeferred: true);
       h.clock.start();
       h.advance(const Duration(seconds: 30));
-      // settle 回调里记页数——若 detach 先停表再跑它，addPages 会被 isRunning 挡掉。
-      h.clock.detach(() => h.clock.addPages(3));
+      h.clock.addPages(3);
+      h.clock.detach();
       expect(h.sink.writes, isEmpty, reason: 'detach 期间一笔都不许现在写');
       expect(h.deferred, hasLength(1), reason: '攒下的写交给退出汇合点');
 
       await h.runDeferred();
       expect(h.sink.writes, hasLength(1));
-      expect(h.sink.last.pages.value, 3, reason: '结算必须发生在停表之前');
+      expect(h.sink.last.pages.value, 3);
       expect(h.sink.last.durationMs.value, 30000);
     });
 
@@ -778,12 +835,13 @@ void main() {
       final _Harness h = _Harness();
       h.clock.start();
       h.advance(const Duration(seconds: 30));
-      h.clock.detach(() => h.clock.addPages(2));
+      h.clock.addPages(2);
+      h.clock.detach();
       expect(h.sink.writes, isEmpty);
       expect(h.clock.isRunning, isFalse, reason: '定时器必须停掉，否则页面走了还在写');
     });
 
-    test('detach 里的回翻撤回同样不落库（_retract 也走 _enqueueWrite）', () async {
+    test('detach 前的回翻撤回同样只经 deferred 落库（_retract 也走 _enqueueWrite）', () async {
       final _Harness h = _Harness(collectDeferred: true);
       h.clock.start();
       h.clock.addChars(100);
@@ -792,7 +850,8 @@ void main() {
       final int writesBefore = h.sink.writes.length;
       expect(writesBefore, greaterThan(0));
 
-      h.clock.detach(() => h.clock.retractChars(40));
+      h.clock.retractChars(40);
+      h.clock.detach();
       expect(
         h.sink.writes,
         hasLength(writesBefore),
@@ -806,7 +865,8 @@ void main() {
       final _Harness h = _Harness(collectDeferred: true);
       h.clock.start();
       h.advance(const Duration(seconds: 30));
-      h.clock.detach(() => h.clock.addPages(1));
+      h.clock.addPages(1);
+      h.clock.detach();
       await h.runDeferred();
       final int after = h.sink.writes.length;
       await h.clock.stop();

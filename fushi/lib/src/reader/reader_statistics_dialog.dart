@@ -4,6 +4,18 @@
 /// `loadStatFacts` 切片，统计域 v92 纪律：展示只从 `StatFacts` 派生）/ 预计读完
 /// （本章 / 全书剩余字数 ÷ 速度）。账本只在 `StudyClock` 一本，本层不持有任何会话
 /// 累计副本——会话读数是每秒采样的函数（同底部状态行）。
+///
+/// 排版是**纯文字行**：一块一列，每行左标签、右数值（[_StatRows]）。此前是等宽三
+/// 格 + 竖分隔线的横排卡片，格宽 = 卡宽 / 3 与文字长度无关——手机窄屏上「速度」
+/// 那格的 `12345 / h`、时长那格的 `1:23:45` 稳定被省略成「…」，统计浮层最该看的
+/// 数字反而看不全。纵向排一行给数值整条行宽，任何语言的标签和任何位数的数值都不
+/// 再互相挤。
+///
+/// 浮层里**没有**手动计时开关：打开这层的入口（`_openReadingStatistics`）本身经
+/// `_withStudyClockPaused` 停表（BUG-2208，浮层是弹层 → `modalDepth > 0`），看统计
+/// 期间计时恒停，层内再摆一个「暂停 / 继续」既改不动当下的运行态，又与「会话读数
+/// 冻结在打开那一刻」的表象自相矛盾。手动暂停的入口是底部状态行左侧的计时器
+/// （`ReaderStatusFooter.onTapTracker`）——在正文里点，停 / 续立刻生效。
 library;
 
 import 'dart:async';
@@ -112,8 +124,6 @@ class ReaderStatisticsDialog extends StatefulWidget {
     required this.loadBookTotals,
     required this.remainingChapterChars,
     required this.remainingBookChars,
-    required this.trackingPaused,
-    required this.onToggleTracking,
     this.tick = const Duration(seconds: 1),
   });
 
@@ -127,12 +137,6 @@ class ReaderStatisticsDialog extends StatefulWidget {
   final int? remainingBookChars;
   final Duration tick;
 
-  /// 会话计时是否被用户手动暂停（读口，每 tick 采样）。
-  final bool Function() trackingPaused;
-
-  /// 「本次会话」旁的 ▶/⏸：手动暂停 / 继续计时（切屏自动暂停之外的手动开关）。
-  final VoidCallback onToggleTracking;
-
   @override
   State<ReaderStatisticsDialog> createState() => _ReaderStatisticsDialogState();
 }
@@ -140,7 +144,7 @@ class ReaderStatisticsDialog extends StatefulWidget {
 class _ReaderStatisticsDialogState extends State<ReaderStatisticsDialog> {
   Timer? _ticker;
   ReaderBookStatTotals? _book;
-  ({int seconds, int chars, bool active, bool paused})? _lastSnapshot;
+  ({int seconds, int chars, bool active})? _lastSnapshot;
 
   @override
   void initState() {
@@ -149,11 +153,10 @@ class _ReaderStatisticsDialogState extends State<ReaderStatisticsDialog> {
     _ticker = Timer.periodic(widget.tick, (_) {
       if (!mounted) return;
       final StudySessionTotals s = widget.sessionTotals();
-      final ({int seconds, int chars, bool active, bool paused}) snap = (
+      final ({int seconds, int chars, bool active}) snap = (
         seconds: s.durationMs ~/ 1000,
         chars: s.chars,
         active: s.active,
-        paused: widget.trackingPaused(),
       );
       if (snap == _lastSnapshot) return;
       setState(() => _lastSnapshot = snap);
@@ -176,7 +179,6 @@ class _ReaderStatisticsDialogState extends State<ReaderStatisticsDialog> {
     final ThemeData theme = Theme.of(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final StudySessionTotals session = widget.sessionTotals();
-    final bool paused = widget.trackingPaused();
     final ReaderBookStatTotals book = _book ?? kEmptyReaderBookStatTotals;
     final double? finishCph = readerFinishCph(session: session, book: book);
     final int? chapterMs = estimateFinishMs(
@@ -215,40 +217,16 @@ class _ReaderStatisticsDialogState extends State<ReaderStatisticsDialog> {
             ],
           ),
           Padding(
-            padding: EdgeInsets.only(right: tokens.spacing.gap),
+            // 标题行的关闭键贴着 gap 的右边距，正文行不跟着贴——补到与左边一样的
+            // page，纯文字行的右侧数值才与左侧标签对称。
+            padding: EdgeInsets.only(
+              right: tokens.spacing.page - tokens.spacing.gap,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                Row(
-                  children: <Widget>[
-                    ReaderSideSheetSectionLabel(t.reader_stats_session),
-                    const SizedBox(width: 4),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 12),
-                      child: IconButton(
-                        key: const ValueKey<String>(
-                          'fushi_reader_stats_tracking_toggle',
-                        ),
-                        visualDensity: VisualDensity.compact,
-                        iconSize: 18,
-                        tooltip: paused ? t.play : t.pause,
-                        icon: Icon(
-                          paused
-                              ? Icons.play_arrow_rounded
-                              : Icons.pause_rounded,
-                          color: paused
-                              ? theme.colorScheme.primary
-                              : theme.colorScheme.onSurfaceVariant,
-                        ),
-                        onPressed: () {
-                          widget.onToggleTracking();
-                          setState(() {});
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-                _StatCard(
+                ReaderSideSheetSectionLabel(t.reader_stats_session),
+                _StatRows(
                   cells: _metricCells(
                     session.chars,
                     session.durationMs,
@@ -258,7 +236,7 @@ class _ReaderStatisticsDialogState extends State<ReaderStatisticsDialog> {
                 ReaderSideSheetSectionLabel(
                   '${t.stat_today} · ${t.reader_stats_this_book}',
                 ),
-                _StatCard(
+                _StatRows(
                   cells: _metricCells(
                     book.todayChars,
                     book.todayMs,
@@ -268,11 +246,11 @@ class _ReaderStatisticsDialogState extends State<ReaderStatisticsDialog> {
                 ReaderSideSheetSectionLabel(
                   '${t.stat_all_time} · ${t.reader_stats_this_book}',
                 ),
-                _StatCard(
+                _StatRows(
                   cells: _metricCells(book.allChars, book.allMs, live: false),
                 ),
                 ReaderSideSheetSectionLabel(t.reader_stats_time_to_finish),
-                _StatCard(
+                _StatRows(
                   cells: <_StatCell>[
                     _StatCell(
                       label: t.reader_stats_finish_chapter,
@@ -316,9 +294,13 @@ class _StatCell {
   final String? unit;
 }
 
-/// 一行等宽格子：上小标签、下大数字（等宽数字）。格子间竖分隔线。
-class _StatCard extends StatelessWidget {
-  const _StatCard({required this.cells});
+/// 一块统计：每行左标签、右数值（等宽数字），行间横分隔线。
+///
+/// 纵向排而不是横排等宽格子——横排时格宽恒为卡宽 / 3，与文字实际长度无关，窄屏
+/// 上数值只能省略成「…」；纵排把整条行宽让给数值，标签按剩余宽度收缩，数值永不
+/// 被截断（[Text] 不加 `overflow`，宽度由它自己的内在尺寸决定）。
+class _StatRows extends StatelessWidget {
+  const _StatRows({required this.cells});
 
   final List<_StatCell> cells;
 
@@ -326,10 +308,10 @@ class _StatCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final TextStyle labelStyle = theme.textTheme.labelMedium!.copyWith(
+    final TextStyle labelStyle = theme.textTheme.bodyMedium!.copyWith(
       color: theme.colorScheme.onSurfaceVariant,
     );
-    final TextStyle valueStyle = theme.textTheme.headlineSmall!.copyWith(
+    final TextStyle valueStyle = theme.textTheme.titleMedium!.copyWith(
       fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
       color: theme.colorScheme.onSurface,
     );
@@ -342,50 +324,42 @@ class _StatCard extends StatelessWidget {
         borderRadius: tokens.radii.cardRadius,
         border: Border.all(color: theme.colorScheme.outlineVariant),
       ),
-      child: IntrinsicHeight(
-        child: Row(
-          children: <Widget>[
-            for (int i = 0; i < cells.length; i++) ...<Widget>[
-              if (i > 0)
-                VerticalDivider(
-                  width: 1,
-                  thickness: 1,
-                  color: theme.colorScheme.outlineVariant,
-                ),
-              Expanded(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: tokens.spacing.gap * 1.5,
-                    vertical: tokens.spacing.gap,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      Text(cells[i].label, style: labelStyle, maxLines: 1),
-                      const SizedBox(height: 4),
-                      Text.rich(
-                        TextSpan(
-                          text: cells[i].value,
-                          style: valueStyle,
-                          children: <InlineSpan>[
-                            if (cells[i].unit != null)
-                              TextSpan(
-                                text: ' ${cells[i].unit}',
-                                style: unitStyle,
-                              ),
-                          ],
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
-                ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          for (int i = 0; i < cells.length; i++) ...<Widget>[
+            if (i > 0)
+              Divider(
+                height: 1,
+                thickness: 1,
+                color: theme.colorScheme.outlineVariant,
               ),
-            ],
+            Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: tokens.spacing.gap * 1.5,
+                vertical: tokens.spacing.gap,
+              ),
+              child: Row(
+                children: <Widget>[
+                  // 标签是唯一可收缩的一侧：长标签折行 / 收窄，数值照常整数显示。
+                  Expanded(child: Text(cells[i].label, style: labelStyle)),
+                  SizedBox(width: tokens.spacing.gap * 1.5),
+                  Text.rich(
+                    TextSpan(
+                      text: cells[i].value,
+                      style: valueStyle,
+                      children: <InlineSpan>[
+                        if (cells[i].unit != null)
+                          TextSpan(text: ' ${cells[i].unit}', style: unitStyle),
+                      ],
+                    ),
+                    textAlign: TextAlign.end,
+                  ),
+                ],
+              ),
+            ),
           ],
-        ),
+        ],
       ),
     );
   }

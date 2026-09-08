@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:asr_core/asr_core.dart';
+import 'package:fushi_asr_core/asr_core.dart';
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
 import 'package:fushi/src/media/audiobook/audiobook_alignment_service.dart'
@@ -666,6 +666,16 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
 
   Future<void> _doImport() async {
     if (!_hasAudioSource || (!widget.audioOnly && _alignmentPath == null)) {
+      // 选了音频但缺对齐文件（走到这里 [_hasAudioSource] 为真就必然是这种情形）：
+      // 交给点对齐文件行的同一条路，它自己按本机能否转录分流成「字幕来源」选择或
+      // 文件选择器；拿到对齐文件后接着导入。一句泛泛的「导入失败」是死胡同——
+      // 转录入口只是行尾一枚无字图标，用户根本找不到（BUG-2266）。
+      // 「导入失败」只留给真的什么都没选（[_hasAudioSource] 为假，含 audioOnly）。
+      if (_hasAudioSource) {
+        await _onAlignmentRowTap();
+        if (!mounted || _alignmentPath == null) return;
+        return _doImport();
+      }
       FushiToast.show(
         msg: t.audiobook_import_error,
         severity: ToastSeverity.error,
@@ -954,8 +964,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       reportProgress(0.3, t.import_step_matching);
       // 匹配器放 isolate 跑，主线程不能被大书的 bigram 扫描挤出 ANR。
       final String? alignment = _alignmentPath;
-      final bool hasTokenTiming = alignment != null &&
-          await attachAsrCueTokenTiming(cues, alignment);
+      final bool hasTokenTiming =
+          alignment != null && await attachAsrCueTokenTiming(cues, alignment);
       MatchResult result = await EpubCueMatcher.matchInIsolate(
         sections: sections,
         cues: cues,

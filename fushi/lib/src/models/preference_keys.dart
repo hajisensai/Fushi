@@ -51,6 +51,14 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 发现页「全部源」聚合默认排除的源 id（逗号分隔；默认 sukebei——18+ 源
   // 只在用户显式单选时使用）。String，读写见 PreferencesRepository。
   'discovery_disabled_sources',
+  // bool（默认 true）：发现页隐藏疑似漫画（`DiscoveryContentHint.manga`）的
+  // 条目；undecided 保留。读写见 PreferencesRepository。
+  'discovery_hide_suspected_manga',
+  // bool（默认 true）：发现页隐藏 0 做种的种子条目。读写见 PreferencesRepository。
+  'discovery_hide_zero_seeders',
+  // int（0 全部 / 1 排除 remake / 2 仅 trusted，默认 0）：发现页 Nyaa 过滤三态，
+  // 透传为 nyaa `f`。读写见 PreferencesRepository。
+  'discovery_nyaa_quality_filter',
   // 用户自配的 OPDS 书目服务器清单（JSON 数组：id/name/url/username/
   // passwordB64/enabled/allowInsecureHttp）。String，读写见
   // PreferencesRepository。与 discovery_disabled_sources 的分界同 Torznab：
@@ -162,6 +170,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'player_hardware_acceleration',
   'popup_auto_expand_dictionaries',
   'popup_bottom_docked',
+  // bool：查词弹窗释义紧凑排版（对齐 Hoshi Reader Android
+  // "Compact Glossaries"）。默认 false。
+  'popup_compact_glossaries',
   'popup_dictionary_columns',
   'popup_instant_scroll',
   'popup_max_height',

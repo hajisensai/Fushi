@@ -1786,6 +1786,18 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  // 对齐 Hoshi Reader Android 的 "Compact Glossaries"：释义列表由每条一行改成
+  // inline + ` | ` 分隔的紧凑排版（popup.js createDictionaryBlock 的 compactCss）。
+  // 渲染器早就支持 window.compactGlossaries，只是从来没有偏好写入它。默认 false =
+  // 保持现状（Android 那边默认 true，但改默认会让所有存量用户的弹窗观感突变）。
+  bool get compactGlossaries =>
+      getPref('popup_compact_glossaries', defaultValue: false) as bool;
+
+  void toggleCompactGlossaries() async {
+    await setPref('popup_compact_glossaries', !compactGlossaries);
+    notifyListeners();
+  }
+
   // ── custom CSS ───────────────────────────────────────────────────────
 
   Map<String, String> get customDictCSS {
@@ -2765,6 +2777,36 @@ class PreferencesRepository extends ChangeNotifier {
 
   Future<void> setDiscoveryDisabledSources(String value) async {
     await setPref('discovery_disabled_sources', value);
+    notifyListeners();
+  }
+
+  /// 发现页隐藏 0 做种的种子条目。**默认开**（用户 2026-09-08 拍板；调研里
+  /// 交互式 UI 的通行做法是只沉底不隐藏，记录为反对意见）。
+  bool get discoveryHideZeroSeeders =>
+      getPref('discovery_hide_zero_seeders', defaultValue: true) as bool;
+
+  Future<void> setDiscoveryHideZeroSeeders(bool value) async {
+    await setPref('discovery_hide_zero_seeders', value);
+    notifyListeners();
+  }
+
+  /// 发现页隐藏疑似漫画（只隐藏 `DiscoveryContentHint.manga` 档，undecided
+  /// 保留）。默认开。
+  bool get discoveryHideSuspectedManga =>
+      getPref('discovery_hide_suspected_manga', defaultValue: true) as bool;
+
+  Future<void> setDiscoveryHideSuspectedManga(bool value) async {
+    await setPref('discovery_hide_suspected_manga', value);
+    notifyListeners();
+  }
+
+  /// 发现页 Nyaa 过滤三态（0 全部 / 1 排除 remake / 2 仅 trusted），透传为
+  /// nyaa `f`。默认 0，与 Nyaa UI / Prowlarr / Flexget 一致。
+  int get discoveryNyaaQualityFilter =>
+      getPref('discovery_nyaa_quality_filter', defaultValue: 0) as int;
+
+  Future<void> setDiscoveryNyaaQualityFilter(int value) async {
+    await setPref('discovery_nyaa_quality_filter', value);
     notifyListeners();
   }
 

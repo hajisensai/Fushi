@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart';
@@ -21,16 +22,51 @@ void main() {
         (SettingsItem candidate) => candidate.id == id,
       );
 
-  test('primary metadata source is user-selectable between MAL and TMDB', () {
-    // 2026-09-08 起主源可选（BUG-2268）：这一项从「必须不存在」翻成「必须存在
-    // 且只有 MAL / TMDB 两个选项」——AniDB 等历史 provider 仍不可选。
-    final SettingsSegmentedItem<String> picker =
+  // 这条原本断言「主源写死、不给用户选」。用户 2026-09-08 推翻了那半条裁决
+  // （BUG-2268）：中文目录名在 MAL 上只搜得到「类型年份合格但标题不符」的候选，
+  // 而旧链路「主源歧义即短路」让 TMDB 永远问不到，整批番剧记成识别失败。
+  //
+  // 但那条测试真正护住的不变式没变，只是被「不给选」连带写死了：**作品资料源
+  // 只有 MAL 与 TMDB 两家**。所以这里改成钉住可选范围与历史值的处置——
+  // 退役的 Bangumi / Douban / AniList 不得借「可选」回潮，AniDB 也不得升格成
+  // 作品资料主源（它只做文件身份识别，见 CLAUDE.md 的 provider 边界）。
+  test('primary metadata source is selectable, but only MAL and TMDB', () {
+    expect(
+      kSelectableVideoMetadataProviders,
+      <VideoMetadataProviderKind>[
+        VideoMetadataProviderKind.mal,
+        VideoMetadataProviderKind.tmdb,
+      ],
+      reason: '作品资料源只有这两家；加第三家是 provider 边界变更，要先过用户',
+    );
+
+    // 下拉的选项必须**由白名单生成**，不能另抄一份可选值——抄一份就会出现
+    // 「白名单收窄了、UI 还给得出旧值」这种两套真相。
+    final SettingsSegmentedItem<String> primary =
         item('video.library.metadata_primary_provider')
             as SettingsSegmentedItem<String>;
     expect(
-      picker.options.map((SettingsSegmentOption<String> option) => option.value),
-      <String>['mal', 'tmdb'],
+      primary.options.map((SettingsSegmentOption<String> o) => o.value),
+      kSelectableVideoMetadataProviders
+          .map((VideoMetadataProviderKind k) => k.name),
     );
+
+    // 已退役资料源的历史持久化值必须回落默认，不得被当成合法主源复活。
+    for (final String retired in <String>[
+      'bangumi',
+      'douban',
+      'anilist',
+      'anidb',
+      'fanart',
+      '',
+      'nonsense',
+    ]) {
+      expect(
+        parseSelectableVideoMetadataProvider(retired),
+        isNull,
+        reason: '$retired 不是可选主源，历史值必须回落全局默认',
+      );
+    }
   });
 
   test('AniDB identity, TMDB key, and locale are reachable from settings', () {
@@ -67,8 +103,9 @@ void main() {
     expect(
       call.allMatches(videoSource).length,
       3,
-      reason: '刮削语言、主资料源、识别词三项都必须走同一个写穿 helper '
-          '（写完要重建下载流水线的刮削快照，否则下一批刮削还用旧值）',
+      reason: '刮削语言、刮削主源与识别词三处运行期偏好都必须走共享 helper —— 只有它'
+          '会重建下载管线的刮削快照；漏一处就是「设置改了、下一批还用旧值」。'
+          '这里数的是「视频·媒体库」分区里的运行期刮削偏好数，再加一项要同步 +1',
     );
     expect(
       call.allMatches(servicesSource).length,
@@ -125,6 +162,8 @@ void main() {
       'video.library.metadata_bangumi_token',
       'video.library.metadata_douban_endpoint',
       'video.library.metadata_douban_token',
+      // metadata_primary_provider 曾在此列（主源写死那一版把设置项也撤了）。
+      // 用户 2026-09-08 让它回来了，可选范围由上面那条测试钉住，不在这里。
     }) {
       expect(ids, isNot(contains(obsolete)));
     }

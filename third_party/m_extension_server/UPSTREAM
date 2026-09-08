@@ -63,6 +63,17 @@ and manifest point straight at the commit recorded above.
 
 Hibiki modifications
 --------------------
+overlay/.../HostProxyPolicy.kt and .../network/NetworkHelper.kt:
+  JVM HTTP clients resolve the host's authenticated loopback proxy policy per
+  URL (FUSHI_MIHON_PROXY_POLICY_PORT; token uses FUSHI_MIHON_TOKEN). The host
+  retains auto/manual/direct, local bypass, NO_PROXY and Basic credentials.
+  NetworkHelper uses HTTP/1.1 with zero idle connections so even an active
+  HTTP/2 connection cannot bypass a new proxy selection after settings change.
+  Existing calls finish normally; each new call incurs connection/TLS setup.
+  It scopes proxy authentication to the selected host/port with one 407 attempt. Request
+  logging is BASIC with authorization headers redacted. Missing host policy
+  fails closed. upstream_src remains pristine.
+
 server-build.gradle.patch:
   build.gradle.kts                 org.jogamp resolution: SciJava mirror first,
                                    then jogamp.org, both content-filtered to

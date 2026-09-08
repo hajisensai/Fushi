@@ -180,6 +180,7 @@ Get-CimInstance Win32_Process |
 | `test/tools/statistics_write_convergence_guard_test.dart` | `lib` 全树 | 统计写入口收敛，legacy 四表禁直写 |
 | `test/tools/tests_for_changes_guard_test.dart` | `test/` 全树 + 全仓路径索引 | 「按触发条件加跑」的推导规则本身：索引规模 + 逐树下界 + 声明 glob 有效 |
 | `test/torrent/download_http_client_proxy_test.dart` | `lib` + 4 个 `packages/*/lib` | 下载链路的 HttpClient 必须走统一代理装配 |
+| `test/utils/net/network_image_proxy_guard_test.dart` | `lib` 全树 | 远端图片必须走 `AppHttpImage`/`AppCachedHttpImage`，裸 provider 会绕过全应用代理装配（自带 `expectScanScale` 哨兵） |
 
 一条命令跑完，**当前基线 362 tests**（2026-09-03 反向枚举复核后实测，51 条 ~62 秒；上一基线 256 / 37 条）——比争论「这条该不该跑」便宜得多，所以**不要挑，整批跑**：
 
@@ -240,7 +241,8 @@ cd fushi && dart run tool/flutter_test_failures.dart --no-pub \
   test/tools/outbound_user_agent_guard_test.dart \
   test/tools/statistics_write_convergence_guard_test.dart \
   test/tools/tests_for_changes_guard_test.dart \
-  test/torrent/download_http_client_proxy_test.dart
+  test/torrent/download_http_client_proxy_test.dart \
+  test/utils/net/network_image_proxy_guard_test.dart
 ```
 
 ### 清单会过期——怎么重新推导

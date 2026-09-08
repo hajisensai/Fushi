@@ -9,7 +9,7 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as path;
@@ -36,6 +36,7 @@ import 'package:fushi/src/storage/sandbox_relocation.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/error_details_dialog.dart';
 import 'package:fushi/src/utils/misc/lookup_input_limits.dart';
+import 'package:fushi/src/utils/net/app_network_bindings.dart';
 import 'package:fushi/src/media/drag_drop/desktop_drop_reinitializer.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
@@ -1177,9 +1178,9 @@ class AppModel with ChangeNotifier {
   }
 
   /// Used for caching images and audio produced from media seeds.
-  DefaultCacheManager get cacheManager =>
-      _cacheManager ??= DefaultCacheManager();
-  DefaultCacheManager? _cacheManager;
+  AppImageCacheManager get cacheManager =>
+      _cacheManager ??= AppImageCacheManager();
+  AppImageCacheManager? _cacheManager;
 
   /// Used to notify dictionary widgets to dictionary history additions.
   final ChangeNotifier dictionaryEntriesNotifier = ChangeNotifier();
@@ -2566,31 +2567,9 @@ class AppModel with ChangeNotifier {
       // 那一刻），这样弹窗词典等**其它**入口不必各自记得补一行——漏一处就是一整个进程
       // 拿不到用户选的模式/凭据。这里只留更新专用的那个。
       appUpdateDownloadSourceReader = () => prefsRepo.updateDownloadSource;
-      // BUG-1493：词典包与 index.json 全托管在 github / raw.githubusercontent /
-      // huggingface 上，而 fushi_dictionary 用的是裸 Dio——`findProxy` 为 null，既不读
-      // HTTP_PROXY 也不读系统代理，于是「浏览器秒开 GitHub、app 里下 30MB 词典却像卡
-      // 死」。fushi_dictionary 是下游包，反向 import 不了 applyAppProxy，故在这里把它
-      // 接进包内的进程级钩子。未接线时钩子是 no-op，行为与接线前逐字等价。
-      installDictionaryDioFactory();
-      // BUG-2188：同一个装配方向，把「一个地址 → 原址 + GitHub 公共镜像」的候选展开
-      // 也接进包内钩子。镜像清单的唯一真相源在 utils/net/github_mirrors.dart，
-      // fushi_dictionary 反向 import 不了它。
-      installDictionaryUrlCandidatesResolver();
-      // BUG-1498：把「平台 GUI 系统代理探测」这一步异步工作提前做掉并缓存，之后
-      // `createAppHttpIoClient()` / `createAppDio()` 就能在构造函数初始化列表里**同步**
-      // 装配出口——那正是全仓 40+ 条裸出站接不上代理层的结构性原因（初始化列表不能
-      // await）。不 await 它：prime 只影响「GUI 系统代理」那一格，没 prime 前解析退化成
-      // `env > DIRECT`，仍不比接线前差，没必要为它拖慢启动。
-      // 系统代理解析完后再下发一次 P2P 代理：宿主可能已经建好、而当时缓存
-      // 还是空的（只有 env/手填能命中）。
-      unawaited(primeAppProxy().then((_) => _applyEmbeddedTorrentProxy()));
-      // BUG-1498：远程发音（Forvo / 词典音频源等公网 URL）的抓取住在 fushi_anki 包里，
-      // 同样反向 import 不了 applyAppProxy。只接**远程媒体**这一条，AnkiConnect 自身
-      // （localhost:8765，也可能是局域网另一台机）绝不经过它。
-      installAnkiRemoteMediaHttpClientFactory();
-      // 「代装 AnkiConnect」从 ankiweb.net 下插件包，同样是公网出站、同样住在
-      // fushi_anki 包里。与上面一条彼此独立：一个抓发音，一个下插件。
-      installAnkiAddonDownloadHttpClientFactory();
+      // 主入口与精简词典入口共用装配，并等系统代理就绪后再启动网络服务。
+      await installAppNetworkBindings();
+      _applyEmbeddedTorrentProxy();
       _applyMemoryPolicy();
       // BUG-1647：lazy getter 可能已提前建过实例；替换前先取消其重试定时器，
       // 否则旧定时器会拿着旧 repository 继续同步。
@@ -2949,6 +2928,7 @@ class AppModel with ChangeNotifier {
 
       _prefsRepo = PreferencesRepository(_database);
       await prefsRepo.loadFromDb();
+      await installAppNetworkBindings();
       _applyStatDayResetHour();
       prefsRepo.addListener(notifyListeners);
       // BUG-1647：同主进程路径，替换前取消旧实例可能挂起的重试定时器。
@@ -3272,6 +3252,10 @@ class AppModel with ChangeNotifier {
       // content.js fushiRender 读它设 window.__fushiPopupWheelSpeed（与 in-app 注入同名
       // 全局），popup.js 的 wheel factor 乘它。走 theme 通道与 --fushi-swipe-close 同法。
       '--fushi-wheel-speed': popupWheelSpeed.toStringAsFixed(3),
+      // BUG-2284：墨水屏「瞬时滚动」下发给扩展 content.js（非 CSS 变量、仅 JS 消费）。
+      // content.js fushiRender 读它设 window.__fushiPopupInstantScroll（与 in-app 注入
+      // 同名全局），popup.js 的 wheel 监听据此改走固定步长瞬跳。值 '1'/'0'。
+      '--fushi-instant-scroll': popupInstantScroll ? '1' : '0',
     };
   }
 
@@ -4717,6 +4701,11 @@ class AppModel with ChangeNotifier {
           DiscoveryMediaKind.audiobook: '2_0',
         },
         client: NyaaClient(),
+        // 每次请求按当前偏好取：源实例常驻，偏好可随时改。偏好未就绪
+        // （早一帧打开发现页）时用默认「全部」。
+        qualityFilter: () => NyaaQualityFilter.fromIndex(
+          isPreferencesReady ? prefsRepo.discoveryNyaaQualityFilter : 0,
+        ),
       ),
       NyaaDiscoverySource(
         id: 'sukebei',
@@ -6709,6 +6698,8 @@ class AppModel with ChangeNotifier {
 
   bool get collapseDictionaries => prefsRepo.collapseDictionaries;
   void toggleCollapseDictionaries() => prefsRepo.toggleCollapseDictionaries();
+  bool get compactGlossaries => prefsRepo.compactGlossaries;
+  void toggleCompactGlossaries() => prefsRepo.toggleCompactGlossaries();
 
   /// TODO-1357: 查词弹窗「列数 / 自动展开词典数」的平台三态默认解析（纯函数，供守卫）。
   /// - 用户显式设过（[hasExplicit]）→ 一律遵从其存储值 [stored]（尊重用户）。

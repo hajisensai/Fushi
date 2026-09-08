@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_action.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -114,11 +115,21 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   bool _busy = false;
   Object? _fatalError;
   OnlineMangaUnavailable? _refreshError;
+  Future<void> Function()? _challengeRetry;
 
   bool _newestFirst = true;
   bool _unreadOnly = false;
 
   AppModel get _appModel => ref.read(appProvider);
+
+  Widget _challengeAction(Object? error) => MihonCloudflareAction(
+    runtime: switch (_adapter) {
+      MihonLibraryAdapter(:final manager) => manager.runtime,
+      _ => null,
+    },
+    error: error,
+    onVerified: () => (_challengeRetry ?? _refreshFromSource)(),
+  );
 
   /// 取 AppModel，取不到返回 null。
   ///
@@ -279,6 +290,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   /// [silent] = 进页时的自动刷新：失败只挂提示条，不弹 toast。用户手点刷新时
   /// 反过来——他在等一个明确回应。
   Future<void> _refreshFromSource({bool silent = false}) async {
+    _challengeRetry = null;
     final OnlineMangaRuntimeAdapter? adapter = _adapter;
     final OnlineMangaLibraryEntry? entry = _entry;
     if (adapter == null || entry == null || _refreshing) return;
@@ -420,6 +432,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         stack,
       );
       if (mounted) {
+        _challengeRetry = () => _openChapterAt(index);
         setState(() => _refreshError = error);
         FushiToast.show(msg: error.message, severity: ToastSeverity.error);
       }
@@ -672,6 +685,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
                         : () => unawaited(_refreshFromSource()),
                     child: Text(t.retry),
                   ),
+                _challengeAction(error),
                 TextButton(
                   key: const ValueKey<String>('manga_series_error_details'),
                   onPressed: () => unawaited(
@@ -762,6 +776,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
                   : () => unawaited(_refreshFromSource()),
               child: Text(t.retry),
             ),
+          _challengeAction(error),
           TextButton(
             key: const ValueKey<String>('manga_series_error_details'),
             onPressed: () => unawaited(

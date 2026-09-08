@@ -185,6 +185,14 @@ class ReaderSettings {
   double get fontSize => _get<double>('font_size', 22);
   Future<void> setFontSize(double v) => _set<double>('font_size', v);
 
+  /// 正文字重（CSS `font-weight` 数值轴 100~900，步进 100）。默认 400 = CSS
+  /// `normal`，此时 [ReaderContentStyles] **不发** `font-weight` 声明——书自带
+  /// 样式表按原样生效，零行为变化（与 `text_indentation`/`paragraph_spacing`
+  /// 的「默认值不注入」同一约定）。存 int 而非 double：字重是整数轴，存 double
+  /// 会让 `toString()` 落 `400.0` 并直接生成非法 CSS。
+  int get fontWeight => _get<int>('font_weight', 400);
+  Future<void> setFontWeight(int v) => _set<int>('font_weight', v);
+
   double get lyricsFontSize => _get<double>('lyrics_font_size', 24);
   Future<void> setLyricsFontSize(double v) =>
       _set<double>('lyrics_font_size', v);

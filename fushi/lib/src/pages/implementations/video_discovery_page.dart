@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/material.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/external_provider.dart';
@@ -972,7 +972,7 @@ class _DiscoveryMediaCard extends StatelessWidget {
                 : item.posterUrl ?? item.backdropUrl)
             ?.trim() ??
         '';
-    return value.isEmpty ? null : CachedNetworkImageProvider(value);
+    return value.isEmpty ? null : AppCachedHttpImage(value);
   }
 }
 

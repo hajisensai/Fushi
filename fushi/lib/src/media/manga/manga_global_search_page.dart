@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_action.dart';
 
+import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/material.dart';
 
 import 'package:fushi_core/fushi_core.dart';
@@ -59,8 +61,9 @@ class MangaGlobalSearchPage extends StatefulWidget {
 
 class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
   final TextEditingController _searchController = TextEditingController();
-  final MihonSourceImageLoadQueue _imageQueue =
-      MihonSourceImageLoadQueue(maxConcurrent: 4);
+  final MihonSourceImageLoadQueue _imageQueue = MihonSourceImageLoadQueue(
+    maxConcurrent: 4,
+  );
 
   List<MangaSourceSearchRun> _runs = const <MangaSourceSearchRun>[];
   int _generation = 0;
@@ -84,11 +87,11 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
   }
 
   List<MangaGlobalSource> _sources() => <MangaGlobalSource>[
-        for (final AidokuInstalledPackage package in widget.aidokuPackages)
-          AidokuGlobalSource(package),
-        for (final MangaOnlineSourceRow row in widget.mihonSources)
-          MihonGlobalSource(row),
-      ];
+    for (final AidokuInstalledPackage package in widget.aidokuPackages)
+      AidokuGlobalSource(package),
+    for (final MangaOnlineSourceRow row in widget.mihonSources)
+      MihonGlobalSource(row),
+  ];
 
   /// 懒创建 Aidoku 运行时：无 Aidoku 源、或平台不支持时永不创建。
   AidokuRuntime? _resolveAidokuRuntime() {
@@ -102,8 +105,9 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
     final String query = _searchController.text.trim();
     if (query.isEmpty) return;
     final int generation = ++_generation;
-    final List<MangaSourceSearchRun> runs =
-        _sources().map(MangaSourceSearchRun.new).toList(growable: false);
+    final List<MangaSourceSearchRun> runs = _sources()
+        .map(MangaSourceSearchRun.new)
+        .toList(growable: false);
     setState(() {
       _searched = true;
       _runs = runs;
@@ -122,6 +126,39 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
     );
   }
 
+  Future<void> _retrySource(MangaSourceSearchRun run) async {
+    final int generation = _generation;
+    if (!mounted || !_runs.contains(run)) return;
+    setState(() {
+      run.status = MangaSearchRunStatus.loading;
+      run.error = null;
+    });
+    await MangaGlobalSearchRunner(
+      mihonManager: widget.mihonManager,
+      resolveAidokuRuntime: _resolveAidokuRuntime,
+    ).search(
+      runs: <MangaSourceSearchRun>[run],
+      query: _searchController.text.trim(),
+      isCancelled: () => !mounted || generation != _generation,
+      onRunUpdated: () {
+        if (mounted && generation == _generation) setState(() {});
+      },
+    );
+  }
+
+  Widget _sourceError(MangaSourceSearchRun run, String message) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: <Widget>[
+      _SectionMessage(message),
+      if (run.source is MihonGlobalSource)
+        MihonCloudflareAction(
+          runtime: widget.mihonManager?.runtime,
+          error: run.error,
+          onVerified: () => _retrySource(run),
+        ),
+    ],
+  );
+
   void _openMihon(MangaSourceSearchRun run, MihonManga manga) {
     final MihonSourceContext? sourceContext = run.mihonContext;
     final MihonManager? manager = widget.mihonManager;
@@ -138,10 +175,7 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
     );
   }
 
-  void _openAidoku(
-    AidokuInstalledPackage package,
-    Map<String, Object?> manga,
-  ) {
+  void _openAidoku(AidokuInstalledPackage package, Map<String, Object?> manga) {
     final AidokuRuntime? runtime = _resolveAidokuRuntime();
     if (runtime == null) return;
     Navigator.of(context).push(
@@ -262,22 +296,22 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
   }
 
   Widget _statusTrailing(MangaSourceSearchRun run) => switch (run.status) {
-        MangaSearchRunStatus.loading => const SizedBox(
-            width: 16,
-            height: 16,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-        _ => const SizedBox.shrink(),
-      };
+    MangaSearchRunStatus.loading => const SizedBox(
+      width: 16,
+      height: 16,
+      child: CircularProgressIndicator(strokeWidth: 2),
+    ),
+    _ => const SizedBox.shrink(),
+  };
 
   Widget _buildSectionBody(MangaSourceSearchRun run) {
     switch (run.status) {
       case MangaSearchRunStatus.loading:
         return const SizedBox(height: 200);
       case MangaSearchRunStatus.cloudflare:
-        return _SectionMessage(t.manga_source_cloudflare_blocked);
+        return _sourceError(run, t.manga_source_cloudflare_blocked);
       case MangaSearchRunStatus.error:
-        return _SectionMessage('${run.error}');
+        return _sourceError(run, '${run.error}');
       case MangaSearchRunStatus.empty:
         return _SectionMessage(t.mihon_source_no_results);
       case MangaSearchRunStatus.done:
@@ -363,12 +397,12 @@ class _LanguageChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => CircleAvatar(
-        radius: 14,
-        child: Text(
-          language.toUpperCase(),
-          style: Theme.of(context).textTheme.labelSmall,
-        ),
-      );
+    radius: 14,
+    child: Text(
+      language.toUpperCase(),
+      style: Theme.of(context).textTheme.labelSmall,
+    ),
+  );
 }
 
 class _SectionMessage extends StatelessWidget {
@@ -378,15 +412,15 @@ class _SectionMessage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Text(
-          message,
-          style: TextStyle(color: Theme.of(context).colorScheme.outline),
-        ),
-      );
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+    child: Text(
+      message,
+      style: TextStyle(color: Theme.of(context).colorScheme.outline),
+    ),
+  );
 }
 
-/// Aidoku 搜索结果封面。裸 `Image.network` + 浏览器 UA，与单源浏览页同一策略。
+/// Aidoku 搜索结果封面。`AppHttpImage` + 浏览器 UA，与单源浏览页同一策略。
 class _AidokuStripCover extends StatelessWidget {
   const _AidokuStripCover({required this.url});
 
@@ -401,10 +435,12 @@ class _AidokuStripCover extends StatelessWidget {
         child: Center(child: Icon(Icons.image_not_supported_outlined)),
       );
     }
-    return Image.network(
-      value,
+    return Image(
+      image: AppHttpImage(
+        value,
+        headers: const <String, String>{'User-Agent': kAidokuUserAgent},
+      ),
       fit: BoxFit.cover,
-      headers: const <String, String>{'User-Agent': kAidokuUserAgent},
       errorBuilder: (_, __, ___) => const ColoredBox(
         color: Color(0x11000000),
         child: Center(child: Icon(Icons.broken_image_outlined)),
