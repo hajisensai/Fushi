@@ -288,6 +288,14 @@ void Tests() {
   Check(out.gate2_slot == 0x6044);
   Check(out.gate3_slot == 0x60ec);
   Check(out.manager_slot == 0x6048);
+  Check(out.scene_slot == 0x60e8);
+  // A relocated scene publication remains valid only as a distinct owner alias.
+  {
+    Fixture f;
+    f.Abs(0x1adf, 0x6f00);
+    Check(f.Resolve(&out));
+    Check(out.scene_slot == 0x6f00);
+  }
   Fixture relocated(0x900000);
   Check(relocated.Resolve());
   // Non-required aliases cannot overwrite required ones in the constructor.

@@ -18,6 +18,8 @@ struct Sites {
             main_sampler_return = 0;
   uintptr_t message = 0, window_handler = 0, window_message_return = 0,
             window_vtable = 0;
+  // Scene alias only; the selected normal group still needs joint glyph proof.
+  uintptr_t scene_slot = 0;
 };
 inline constexpr uint32_t kRootConfig = 0x54, kRootOwner = 0xa476b0;
 inline constexpr uint32_t kConfigOwner = 0xa4765c, kConfigWidth = 0x64,
@@ -27,6 +29,7 @@ inline constexpr uint32_t kOwnerCurrentInput = 0x3939c,
                           kOwnerPriorInput = 0x3b000;
 inline constexpr uint32_t kOwnerViewport = 0x3cca0, kOwnerGate2 = 0x3d124;
 inline constexpr uint32_t kOwnerGate3 = 0x4296c, kOwnerManager = 0x3d174;
+inline constexpr uint32_t kOwnerScene = 0x42898;
 inline constexpr uint32_t kOwnerDesignWidth = 0x3cca8,
                           kOwnerDesignHeight = 0x3ccac;
 inline constexpr uint32_t kOwnerViewportX = 0x3ccb0, kOwnerViewportY = 0x3ccb4;
@@ -522,8 +525,9 @@ inline bool Resolve(const ex::LoadedPeImage& image, const Imports& imports,
   const auto gate2 = Address(image, Aliases + 138);
   const auto gate3 = Address(image, Aliases + 597);
   const auto manager = Address(image, Aliases + 149);
+  const auto scene = Address(image, Aliases + 586);
   const uintptr_t slots[] = {root,  owner,    config, window, input,  current,
-                             prior, viewport, gate2,  gate3,  manager};
+                             prior, viewport, gate2,  gate3,  manager, scene};
   for (size_t a = 0; a < std::size(slots); ++a) {
     if (!slots[a]) return false;
     for (size_t b = 0; b < a; ++b)
@@ -601,7 +605,7 @@ inline bool Resolve(const ex::LoadedPeImage& image, const Imports& imports,
   *output = {root,    owner,   config,         window, input,
              current, prior,   viewport,       gate2,  gate3,
              manager, Sampler, Sampler + 0xa3, Main,   Main + 0x20b,
-             Message, Handler, Handler + 0x1c, vtable};
+             Message, Handler, Handler + 0x1c, vtable, scene};
   return true;
 }
 }  // namespace fushi_voice_hook::siglus_eightarg_input_viewport
