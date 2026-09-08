@@ -1,4 +1,4 @@
-## BUG-2266 · 墨水屏模式：查词弹窗滑动关闭仍有滑出/弹回补间动画
+## BUG-2283 · 墨水屏模式：查词弹窗滑动关闭仍有滑出/弹回补间动画
 - **报告**：2026-09-08（用户：墨水屏模式查词滑动关闭弹框需要跟 hoshi reader Android 一样取消动画）
 - **真实性**：✅ 真 bug —— 根因 `fushi/lib/src/utils/misc/swipe_dismiss_wrapper.dart:66`（原 `initState` 里把 `AnimationController.duration` 恒定钉成 `_kSwipeSlideDuration` = 200ms，全程没读过主题的 eink 扩展）。
   设置页 `eink_mode_hint` 明写「纯黑白主题、**无动画**」，`_BodySwipeDismissDetector`（弹窗正文横拖关，`dictionary_popup_layer.dart:1364`）与入场淡入（同文件 `:507`）都已按 eink 归零，唯独 `SwipeDismissWrapper` 漏了。

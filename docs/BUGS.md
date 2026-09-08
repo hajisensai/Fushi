@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2126 条。点号进各自文件。
+> 共 2128 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2283](bugs/BUG-2283-eink-swipe-dismiss-animation.md) | ✅ | ✅ | 墨水屏模式：查词弹窗滑动关闭仍有滑出/弹回补间动画 |
+| [BUG-2278](bugs/BUG-2278-ankidroid-live-target.md) | ✅ | ✅ | AnkiDroid识别与API实例缓存导致安装或启用后仍无法连接 |
 | [BUG-2277](bugs/BUG-2277-ext-page-sentence.md) | ✅ | ✅ | 浏览器扩展查词/制卡不取页面所在句子 |
 | [BUG-2276](bugs/BUG-2276-macos-reader-panel-transparent-barrier.md) | ✅ | ✅ | macOS 阅读设置/导航抽屉打开后点正文不关闭 |
 | [BUG-2275](bugs/BUG-2275-cloudflare-challenge-proxy.md) | ✅ | ✅ | Cloudflare验证网页未继承手动代理 |
