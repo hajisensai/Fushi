@@ -1,10 +1,10 @@
 // 取词扫描 + 弹窗注入。修饰键默认 Shift。普通 DOM（popup.js 依赖顶层 #entries-container）。
 // 样式经 content.css 注入，全部作用域到 #entries-container，不污染宿主页（TODO-1090）。
 // 版本标记：加载后在 Console 打一行，用户可据此确认加载的是**新版**扩展（排查缓存旧版）。
-console.log('[Fushi] content script v47 loaded (BUG-688: popup Shadow DOM isolation + theme single-sourced from app; TODO-1219/1363: subtitle cue replay + universal subtitle-list providers; TODO-1391: hide Netflix start-of-episode maturity/age-rating overlay; BUG-2170: play past that overlay before batch capture)');
+console.log('[Fushi] content script v48 loaded (BUG-688: popup Shadow DOM isolation + theme single-sourced from app; TODO-1219/1363: subtitle cue replay + universal subtitle-list providers; TODO-1391: hide Netflix start-of-episode maturity/age-rating overlay; BUG-2170: play past that overlay before batch capture; BUG-2260: Netflix advisories-container selector drift)');
 // 诊断标记：写进 <html> 的 data-*，页面 Console（主世界）可读，用来隔空排查划词为何不触发
 // （隔离世界的全局变量在页面 console 里看不到，故用 DOM 属性桥接）。
-try { document.documentElement.setAttribute('data-fushi-cs', 'v47'); } catch (_) {}
+try { document.documentElement.setAttribute('data-fushi-cs', 'v48'); } catch (_) {}
 // TODO-1190：网页源文里高亮被查的词。selection.js 默认走 CSS Custom Highlight API
 // （CSS.highlights.set('fushi-selection', …) + content.css 的 ::highlight(fushi-selection)）。
 // 但 content script 跑在**隔离世界**：在隔离世界注册的 highlight 不会被页面渲染引擎绘制
@@ -889,6 +889,10 @@ async function fushiRunNetflixBatch(introGate) {
     // 受用户开关 netflixHideNextEpisode 门控——用户为了留住 Netflix 的「下一集」按钮把它关掉时，
     // 分级提示就会照录进卡片。录制期无条件藏，用户可见作用域仍归那个开关管。与本 style 同策
     // 用 visibility/opacity（不用 display:none，理由见本文件字幕隐藏那节）。
+    // BUG-2260：2026-09-08 实测 Netflix 当前 DOM 是 .watch-video--advisories-container
+    // （见 fushiNetflixNextEpisodeSelectors 注释），旧 evidence/maturity 选择器全部失配。
+    '.watch-video--advisories-container,[class*="watch-video--advisories"],' +
+    '.watch-video--evidence-overlay-container,' +
     '[class*="watch-video--maturity-rating"],.watch-video [data-uia*="maturity"],' +
     '.watch-video [class*="maturity-rating"]{opacity:0!important;visibility:hidden!important}';
   try { document.head.appendChild(hideStyle); } catch (_) {}
@@ -1335,6 +1339,13 @@ function fushiNetflixNextEpisodeSelectors() {
     '[class*="watch-video--maturity-rating"]',
     '.watch-video [data-uia*="maturity"]',
     '.watch-video [class*="maturity-rating"]',
+    // BUG-2260：2026-09-08 登录态 WebView2 探针实测，Netflix 当前分级提示 DOM 为
+    //   div.watch-video--advisories-container > div.advisory-container > div.advisory >
+    //   [data-uia="advisory-content"] > h4.advisory-header("RATED 7+")
+    // 上面 evidence/maturity 三组选择器一个都不再命中（静默失效，用户截图「RATED 13+ / 暴力, 自杀」
+    // 照旧出现）。子串匹配兜住哈希类名变体；旧选择器保留作 Netflix 回滚时的兜底。
+    '.watch-video--advisories-container',
+    '[class*="watch-video--advisories"]',
   ];
 }
 function fushiApplyNetflixNextEpisodeHiding(hide) {
