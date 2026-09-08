@@ -762,10 +762,14 @@ ${einkMode ? _einkOverrideCss(einkDark: einkDark) : ''}
   /// 设计对齐 Hoshi-Reader-Android 的 E-ink 适配：
   /// - 高亮全部从「半透明色块背景」改为**线式标记**——色块在墨水屏上是一大片
   ///   抖动灰阶，且每次高亮移动都触发大面积刷新；下划线只刷新贴近文字的一条线。
-  ///   查词选区=粗实线、有声书跟随=虚线、搜索命中=双线、收藏句=保留原下划线但
+  ///   查词选区=粗实线、有声书跟随=细实线、搜索命中=双线、收藏句=保留原下划线但
   ///   去掉色块（五色在灰阶屏上不可分，线本身就是收藏语义）。
-  /// - `--fushi-reader-eink-mode: 1` 点亮 JS 侧既有的 isEInkMode() 分支
-  ///   （reader_visual_novel_scripts / 连续模式滚动缓动短路）。
+  /// - 跟读线用**实线**而非虚线：上游 HSA 的墨水屏跟读高亮是 overlay 层画的
+  ///   1.5px 实心直线条（reader-popup-host.js `renderSasayakiHighlight`），
+  ///   虚线在慢刷新屏上每段短划都是独立的黑白跳变，既更脏也更难一眼定位当前句。
+  /// - `--fushi-reader-eink-mode: 1` 供 JS 侧读：连续模式跟随滚动短路成瞬时
+  ///   （reader_pagination_scripts）。VN 侧不再据此分流——跟读高亮在所有模式
+  ///   下都走同一条 inline wrapper 路径，正是本文件这些线式规则的作用对象。
   /// - 关掉书籍自带的 transition/animation，慢刷新屏上任何补间都是残影。
   static String _einkOverrideCss({required bool einkDark}) {
     final String fg = einkDark ? '#fff' : '#000';
@@ -809,7 +813,7 @@ ruby.fushi-selection-ruby-active {
   background-color: transparent;
   color: inherit;
   text-decoration-line: underline;
-  text-decoration-style: dashed;
+  text-decoration-style: solid;
   text-decoration-color: $fg;
   text-decoration-thickness: 0.10em;
   text-underline-offset: 0.18em;
@@ -818,7 +822,7 @@ ruby.fushi-sentence-audio-ruby-active {
   background-color: transparent !important;
   color: inherit !important;
   text-decoration-line: underline !important;
-  text-decoration-style: dashed !important;
+  text-decoration-style: solid !important;
   text-decoration-color: $fg !important;
   text-decoration-thickness: 0.10em !important;
   text-underline-offset: 0.18em !important;
@@ -827,7 +831,7 @@ ruby.fushi-sentence-audio-ruby-active {
   background-color: transparent !important;
   color: inherit !important;
   text-decoration-line: underline !important;
-  text-decoration-style: dashed !important;
+  text-decoration-style: solid !important;
   text-decoration-color: $fg !important;
   text-decoration-thickness: 0.10em !important;
   text-underline-offset: 0.18em !important;

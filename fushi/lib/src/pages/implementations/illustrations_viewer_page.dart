@@ -26,6 +26,55 @@ import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/utils.dart';
 
+/// 未揭开插图的遮罩视觉：普通屏「模糊图 + 蒙层 + 图标」，墨水屏「实心遮板 + 图标」。
+///
+/// 墨水屏不走模糊有两个理由，都不是审美偏好：慢刷新面板渲染不出干净的高斯过渡，
+/// 留下的是一片残影；而灰阶下「一张糊图」在观感上就等于「这张图本身不高清」，
+/// 遮罩的意图一点都传达不到，用户只会以为画廊坏了。实心遮板一眼可辨是盖住的。
+Widget maskedIllustrationCover(
+  BuildContext context,
+  Widget img, {
+  double sigma = 16,
+  Color scrim = const Color(0x33000000),
+  required double iconSize,
+}) {
+  final ColorScheme scheme = Theme.of(context).colorScheme;
+  if (isEinkTheme(context)) {
+    return Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        ColoredBox(color: scheme.surface),
+        Center(
+          child: Icon(
+            Icons.visibility_off_outlined,
+            color: scheme.onSurface,
+            size: iconSize,
+          ),
+        ),
+      ],
+    );
+  }
+  return Stack(
+    fit: StackFit.expand,
+    children: <Widget>[
+      ClipRect(
+        child: ImageFiltered(
+          imageFilter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+          child: img,
+        ),
+      ),
+      ColoredBox(color: scrim),
+      Center(
+        child: Icon(
+          Icons.visibility_off_outlined,
+          color: Colors.white70,
+          size: iconSize,
+        ),
+      ),
+    ],
+  );
+}
+
 /// 一张插画：解码用的字节 + 源磁盘文件（复制/分享需要真实文件路径）+ reveal key。
 class _Illustration {
   const _Illustration({
@@ -79,7 +128,8 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
   final Set<String> _revealed = <String>{};
 
   /// 防剧透遮罩总开关：与阅读器同一偏好（`ttu_blur_images`）。开着时未揭开的图
-  /// 一律遮罩；**关着时仍按阅读进度遮「还没读到」的那些**（见 [_progressIndex]）。
+  /// 一律遮罩；**关着时仍按阅读进度遮「还没读到」的那些**——但只在这本书真有
+  /// 阅读位置行时才成立（见 [_progressIndex] / [_loadReadProgress]）。
   bool get _blurEnabled =>
       ReaderFushiSource.readerSettings?.blurImages ?? false;
 
@@ -87,8 +137,9 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
   /// 或目录不是合法 EPUB（解析失败）→ 不按进度遮罩，退回旧行为。
   IllustrationProgressIndex? _progressIndex;
 
-  /// 本书当前阅读位置（与 `ReaderPosition` 同坐标）。没有位置行 = 一次没读过，
-  /// 按章首 (0, 0) 处理：除封面/开篇之外的插图都算「还没读到」。
+  /// 本书当前阅读位置（与 `ReaderPosition` 同坐标）。只有查到位置行才会被填上，
+  /// 同时 [_progressIndex] 才会挂上去——没读过的书不按进度遮罩，见
+  /// [_loadReadProgress]。
   int _readChapterIndex = 0;
   int _readNormCharOffset = 0;
 
@@ -130,10 +181,14 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
       final IllustrationProgressIndex index =
           await compute(buildIllustrationProgressIndex, widget.extractDir);
       if (!mounted) return;
+      // 没有位置行 = 这本一次都没打开过。退化成 (0, 0) 会把开篇之后的每一张插图
+      // 都判成「还没读到」，整个画廊糊成一片，而用户没有任何开关能关掉它——
+      // 那已经不是防剧透，是画廊坏了。没读过就不按进度遮罩，只留总开关。
+      if (position == null) return;
       setState(() {
         _progressIndex = index;
-        _readChapterIndex = position?.sectionIndex ?? 0;
-        _readNormCharOffset = position?.normCharOffset ?? 0;
+        _readChapterIndex = position.sectionIndex;
+        _readNormCharOffset = position.normCharOffset;
       });
     } catch (e, stack) {
       // 目录不是合法 EPUB（FormatException）等：退回「不按进度遮罩」，不影响看图。
@@ -312,7 +367,7 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
     );
   }
 
-  /// 缩略图：未遮罩直接原图；遮罩则模糊 + 蒙层 + 图标。
+  /// 缩略图：未遮罩直接原图；遮罩走 [maskedIllustrationCover]。
   Widget _thumb(_Illustration im, bool blurred) {
     final Widget img = Image.memory(
       im.bytes,
@@ -320,27 +375,7 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
       errorBuilder: (_, __, ___) =>
           const Center(child: Icon(Icons.broken_image_outlined)),
     );
-    return blurred ? _blurCover(img) : img;
-  }
-
-  /// 防剧透遮罩视觉：模糊图 + 半透明蒙层 + 「点击查看」图标。点击揭开由外层 onTap 处理。
-  Widget _blurCover(Widget img) {
-    return Stack(
-      fit: StackFit.expand,
-      children: <Widget>[
-        ClipRect(
-          child: ImageFiltered(
-            imageFilter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-            child: img,
-          ),
-        ),
-        const ColoredBox(color: Color(0x33000000)),
-        const Center(
-          child: Icon(Icons.visibility_off_outlined,
-              color: Colors.white70, size: 36),
-        ),
-      ],
-    );
+    return blurred ? maskedIllustrationCover(context, img, iconSize: 36) : img;
   }
 
   void _openFullScreen(int initialIndex) {
@@ -618,26 +653,16 @@ class _FullScreenGalleryState extends State<_FullScreenGallery> {
                   ),
                 );
                 if (_isBlurred(im)) {
-                  // 遮罩态：模糊全屏 + 图标，点击揭开（揭开前不许缩放/复制/分享，防剧透）。
+                  // 遮罩态：点击揭开（揭开前不许缩放/复制/分享，防剧透）。
                   return GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: () => _revealCurrent(im),
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: <Widget>[
-                        ClipRect(
-                          child: ImageFiltered(
-                            imageFilter:
-                                ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-                            child: Center(child: image),
-                          ),
-                        ),
-                        const ColoredBox(color: Color(0x66000000)),
-                        const Center(
-                          child: Icon(Icons.visibility_off_outlined,
-                              color: Colors.white70, size: 48),
-                        ),
-                      ],
+                    child: maskedIllustrationCover(
+                      context,
+                      Center(child: image),
+                      sigma: 24,
+                      scrim: const Color(0x66000000),
+                      iconSize: 48,
                     ),
                   );
                 }
