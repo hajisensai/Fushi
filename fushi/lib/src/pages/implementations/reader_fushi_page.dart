@@ -1936,12 +1936,18 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     footerHeight: kReaderStatusFooterHeight,
   );
 
-  /// 桌面端 ッツ 形态 chrome（顶部工具栏 + 右侧抽屉）是否启用：与状态行同判据
-  /// （各平台非歌词模式），单一真相源 [readerDesktopChromeEnabled]。
-  bool get _desktopChromeEnabled => readerDesktopChromeEnabled(
-    desktop: isDesktopPlatform,
-    lyricsMode: _lyricsMode,
-  );
+  /// ッツ 形态共用 chrome（顶部工具栏 + 右侧抽屉）是否启用：**所有平台、两种模式**。
+  ///
+  /// 歌词模式曾与状态行共用 `!lyricsMode` 判据整块关掉它。后果不是「少一条装饰」：
+  /// 顶栏是歌词页（独立 HTML，页内没有任何 chrome）唯一的返回 / 设置面，而「切回
+  /// 阅读模式」的开关本身就住在这套 chrome 的设置抽屉里——歌词模式因此既没有顶栏，
+  /// 也没有回正文的入口。现在顶栏与正文模式对齐（动作按模式取舍见
+  /// [_buildDesktopHeader]，留白见 [_lyricsTopReserve]）。
+  ///
+  /// 仍留在歌词模式之外的只有底部状态行 [_statusFooterEnabled]：它画字数进度 /
+  /// 阅读追踪，而 `_refreshProgress` 在歌词模式整体早返回，画出来的会是进歌词那一刻
+  /// 冻住的旧数。
+  bool get _desktopChromeEnabled => true;
 
   /// 顶部工具栏的顶部预留高：悬浮态（默认）恒 0；挤压态且底栏占位时占工具栏高
   /// （与 [_bottomChromeReserve] 同一台状态机的上端），并入 [_readerTopOffset]。
@@ -1992,11 +1998,16 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
           MediaQuery.viewPaddingOf(context).horizontal) /
       _readerChromeScale;
 
+  /// 两者都以状态行**本身**启用为前提（[_statusFooterEnabled]，而不再是整套 chrome
+  /// 的 [_desktopChromeEnabled]——顶栏在歌词模式已恢复在场，这两条不能跟着它一起
+  /// 在歌词模式翻真）：状态行画的是字数进度 / 阅读追踪，歌词模式不刷新进度，
+  /// 并进播放条右端的那一份同样不能画，否则只是把同一批冻住的旧数字换个位置。
+  /// 正文模式两个判据恒等（非歌词 ⇒ 状态行启用 ⇒ chrome 启用），行为逐字不变。
   bool get _playbackStatusInline =>
-      _desktopChromeEnabled && !readerHeaderCompact(_readerControlsWidth);
+      _statusFooterEnabled && !readerHeaderCompact(_readerControlsWidth);
 
   bool get _separatePlaybackStatus =>
-      _desktopChromeEnabled && !_playbackStatusInline;
+      _statusFooterEnabled && !_playbackStatusInline;
 
   double get _statusFooterBottomOffset =>
       _stableBottomInset + (_separatePlaybackStatus ? 0 : _bottomChromeReserve);
@@ -2033,6 +2044,15 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   // 阅读器不再需要自己让位或自绘拖拽带——留着就是顶栏下面又压一条 28pt 空白。
   double get _readerTopOffset =>
       _stableTopInset + _topProgressReserve + _desktopHeaderReserve;
+
+  /// 歌词模式（独立 HTML 文档）此刻真正被顶部 chrome 占掉的高度：系统顶 inset +
+  /// 顶栏预留（悬浮态顶栏不占正文位置，[_desktopHeaderReserve] 那时本就是 0）。
+  ///
+  /// 与 [_readerTopOffset] 的唯一差别是**不含** [_topProgressReserve]：歌词模式不画
+  /// 顶部进度 pill（[_buildTopProgressBar] 对歌词早返回），把它的预留算进来就是在
+  /// 歌词首行上方留一条谁也不占的空带。正文那条走 `setChromeInsets` 下发给
+  /// WebView，歌词这条走 [independentDocumentInsets] 的 Flutter 侧 Padding。
+  double get _lyricsTopReserve => _stableTopInset + _desktopHeaderReserve;
 
   double get _readerBottomReserve =>
       _bottomChromeReserve + _statusFooterReserve + _stableBottomInset;
@@ -3226,6 +3246,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       lyricsMode: _lyricsMode,
       // 底栏占位条件与 _buildBottomChrome / popupBottomReserve 一致。
       chromeOccupiesLayout: _hasEverLoaded && _showChrome,
+      // 顶栏在歌词模式同样在场（[_desktopChromeEnabled]），文档要给它让位，
+      // 否则首行歌词被顶栏 / 系统状态栏压住。
+      topReserve: _lyricsTopReserve,
       bottomReserve: _readerBottomReserve,
     );
     if (independentDocumentPadding == EdgeInsets.zero) return webView;

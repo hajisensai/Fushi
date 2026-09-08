@@ -136,6 +136,16 @@ dependency_overrides:
   # See third_party/flutter_onnxruntime/PATCHES.md.
   flutter_onnxruntime:
     path: third_party/flutter_onnxruntime
+  # fushi_asr_subtitles 的 pubspec 把 fushi_asr_core 写成 `^0.1.0`（上游 workspace 里
+  # 靠 workspace 解析），我们从 git 单包引进来时 pub 会把它当 hosted 去 pub.dev 找 ——
+  # 那儿没有这个包（publish_to: none），于是 "fushi_asr_subtitles from git is forbidden"。
+  # 这条 override 把它钉回同仓同 sha 的 git 源；ref 必须与 fushi/pubspec.yaml 里那两条
+  # 逐字一致，否则同一份算法会被解析成两个副本。
+  fushi_asr_core:
+    git:
+      url: https://github.com/hajisensai/fushi-subtitles.git
+      path: packages/asr_core
+      ref: 78a5241b30feb9a45f76cca5d6b2907c4d13638b
 
 # Melos 7 的配置位置就是这里（7.0 起 melos.yaml 被废弃）。包列表不再重复声明：
 # 成员由上面的 workspace: 决定，melos 直接读它。

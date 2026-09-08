@@ -2096,10 +2096,16 @@ extension _ReaderChrome on _ReaderFushiPageState {
 
   // ── Desktop header (ッツ / Hoshi Reader 形态) ──────────────────────
 
-  /// 桌面端顶部工具栏：左「← 返回 / 导航 / 插图 / 统计」，居中书名，右「有声书导入 /
-  /// 全屏 / 外观设置」。取代桌面端的底部设置栏，与底栏同一台显隐状态机
-  /// （[_bottomBarShouldPaint]：悬浮态点空白唤出 + 自动收起；挤压态常驻并占
-  /// [_desktopHeaderReserve]）。歌词模式 / 移动端不启用（[_desktopChromeEnabled]）。
+  /// 各平台顶部工具栏：左「← 返回 /（歌词⇄阅读）/ 导航 / 插图 / 统计」，居中书名，
+  /// 右「有声书导入 / 全屏 / 外观设置」。取代桌面端的底部设置栏，与底栏同一台显隐
+  /// 状态机（[_bottomBarShouldPaint]：悬浮态点空白唤出 + 自动收起；挤压态常驻并占
+  /// [_desktopHeaderReserve]）。
+  ///
+  /// **歌词模式同样在场**（[_desktopChromeEnabled]），但动作按模式取舍：导航与插图
+  /// 在歌词页是空转——翻章会把歌词文档换成 EPUB 章节（[_paginate] 为此专门早返回），
+  /// 画廊也没有对应的正文位置——故只在正文模式挂；换来的是「歌词 ⇄ 阅读」这颗模式键，
+  /// 歌词模式下它是**唯一**可见的回正文入口（另一处在设置抽屉的排版页里），所以那时
+  /// 强制 `pinned`，窄窗也不许折进 ⋮ 溢出菜单。
   ///
   /// 纯指针面：包 ExcludeFocus，不进焦点遍历池（与 [_wrapBottomChromeBar] 同一规则，
   /// TODO-700 不变式）。BUG-1692：排在 WebView 之后绘制，必须自带 RepaintBoundary。
@@ -2116,6 +2122,19 @@ extension _ReaderChrome on _ReaderFushiPageState {
       return const SizedBox.shrink();
     }
     final Color fg = _themeTextColor();
+    // 歌词模式必须挂着有声书控制器（[_toggleLyricsMode] 进入分支的前置），没有控制器
+    // 就没有可切的歌词，这颗键整个不出现。
+    final bool lyrics = _lyricsMode;
+    final ReaderHeaderAction? modeToggle = _audiobookController == null
+        ? null
+        : ReaderHeaderAction(
+            key: const ValueKey<String>('fushi_reader_lyrics_mode_button'),
+            icon: lyrics ? Icons.auto_stories_outlined : Icons.lyrics_outlined,
+            label: lyrics ? t.book_mode : t.lyrics_mode,
+            pinned: lyrics,
+            semanticsId: 'hibiki.reader.header.lyrics_mode',
+            onPressed: () => unawaited(_toggleLyricsMode()),
+          );
     return Positioned(
       top: _stableTopInset,
       left: MediaQuery.viewPaddingOf(context).left,
@@ -2147,25 +2166,28 @@ extension _ReaderChrome on _ReaderFushiPageState {
                 // （落位置 flush / closeMedia / 关书同步，BUG-782）。
                 onPressed: () => unawaited(Navigator.of(context).maybePop()),
               ),
-              ReaderHeaderAction(
-                icon: Icons.format_list_bulleted,
-                label: _labelWithShortcut(
-                  t.section_navigation,
-                  ShortcutAction.readerOpenNavigation,
+              if (modeToggle != null) modeToggle,
+              if (!lyrics)
+                ReaderHeaderAction(
+                  icon: Icons.format_list_bulleted,
+                  label: _labelWithShortcut(
+                    t.section_navigation,
+                    ShortcutAction.readerOpenNavigation,
+                  ),
+                  pinned: true,
+                  semanticsId: 'hibiki.reader.header.navigation',
+                  onPressed: () => unawaited(
+                      _showAppearanceSheet(initialSubPage: 'location')),
                 ),
-                pinned: true,
-                semanticsId: 'hibiki.reader.header.navigation',
-                onPressed: () =>
-                    unawaited(_showAppearanceSheet(initialSubPage: 'location')),
-              ),
-              ReaderHeaderAction(
-                icon: Icons.collections_outlined,
-                label: _labelWithShortcut(
-                  t.reader_gallery_tooltip,
-                  ShortcutAction.readerOpenGallery,
+              if (!lyrics)
+                ReaderHeaderAction(
+                  icon: Icons.collections_outlined,
+                  label: _labelWithShortcut(
+                    t.reader_gallery_tooltip,
+                    ShortcutAction.readerOpenGallery,
+                  ),
+                  onPressed: _openGallery,
                 ),
-                onPressed: _openGallery,
-              ),
               ReaderHeaderAction(
                 icon: Icons.insights_outlined,
                 label: _labelWithShortcut(

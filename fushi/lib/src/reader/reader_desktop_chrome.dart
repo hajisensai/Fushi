@@ -1,6 +1,6 @@
 /// 跨平台阅读器 chrome（ッツ / Hoshi Reader 形态）的纯函数与外壳组件。
 ///
-/// 非歌词模式下各平台阅读器的控制面由三块组成：
+/// 各平台阅读器的控制面由三块组成：
 ///  * **顶部工具栏** [ReaderDesktopHeader]：左「← 返回 / 目录 / 插图 / 统计」，居中书名，
 ///    右「有声书导入 / 全屏 / 外观设置」。它取代桌面端的底部设置栏，显隐与底栏同一
 ///    台状态机（点空白唤出、自动收起 / 挤压常驻）。
@@ -8,13 +8,17 @@
 ///    一条纵向面板（[showReaderSideSheet]），点面板外空白即关。
 ///  * **底部状态行**（reader_status_footer.dart）：常驻挤压式。
 ///
-/// 窄屏折叠次要操作，导航和设置共用侧栏；歌词模式仍走旧底栏（独立文档，正文 chrome 不适用）。
+/// 窄屏折叠次要操作，导航和设置共用侧栏。
+///
+/// 顶部工具栏在**歌词模式下同样在场**：歌词页是独立 HTML 文档，页内没有任何 chrome，
+/// 顶栏是它唯一的返回 / 设置面，而「切回阅读模式」的开关本身就住在这套 chrome 的设置
+/// 抽屉里——关掉顶栏等于把歌词模式关成一间没有门的房间。只有底部状态行仍留在歌词模式
+/// 之外（它画字数进度 / 阅读追踪，歌词模式不刷新进度，见 reader_status_footer.dart 的
+/// `readerStatusFooterEnabled`）。
 library;
 
 import 'package:flutter/material.dart';
 
-import 'package:fushi/src/reader/reader_status_footer.dart'
-    show readerStatusFooterEnabled;
 import 'package:fushi/src/utils/misc/platform_utils.dart'
     show kFushiSettingsWideMinHeight, kFushiSettingsWideThreshold;
 
@@ -35,14 +39,6 @@ const double kReaderDesktopHeaderTitleFontSize = 14;
 /// 右侧抽屉宽度（逻辑 px）。窄窗口下由 [showReaderSideSheet] 收窄到留出 48px 空白。
 const double kReaderSideSheetWidth = 400;
 
-/// 共用 chrome（顶部工具栏 + 右侧抽屉）是否启用：与底部状态行同一判据——非
-/// 歌词模式。沿用既有符号名，页面的 `_desktopChromeEnabled` 委托到这里。
-bool readerDesktopChromeEnabled({
-  required bool desktop,
-  required bool lyricsMode,
-}) =>
-    readerStatusFooterEnabled(desktop: desktop, lyricsMode: lyricsMode);
-
 /// 有声书面板的容器按可用空间选择：桌面/宽窗居中，手机保留全高底部面板。
 /// 此判断独立于导航和设置，两者在所有平台均使用侧栏。
 bool readerAudiobookUsesDialog({required bool desktop, required Size window}) =>
@@ -52,7 +48,7 @@ bool readerAudiobookUsesDialog({required bool desktop, required Size window}) =>
 
 /// 顶部工具栏的顶部预留高。
 ///
-///  * 未启用（歌词模式）→ 0；
+///  * 未启用 → 0；
 ///  * 悬浮态（默认：点空白唤出、自动收起）→ 0，工具栏盖在正文之上；
 ///  * 挤压态且底栏占位（`_hasEverLoaded && _showChrome`）→ [headerHeight]。
 ///
