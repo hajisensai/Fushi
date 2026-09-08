@@ -1497,11 +1497,21 @@ class _HomeDashboardPageState
     bool videoLandscape = false,
   }) {
     return FushiHoverLift(
-      builder: (BuildContext _, bool __) => _buildContinueCardForOrientation(
-        tokens,
-        appModel,
-        entry,
-        videoLandscape: videoLandscape,
+      builder: (BuildContext _, bool hovering) => DecoratedBox(
+        position: DecorationPosition.foreground,
+        decoration: BoxDecoration(
+          borderRadius: FushiBorderRadius.card,
+          border: Border.all(
+            color: hovering ? tokens.surfaces.primary : Colors.transparent,
+            width: 2,
+          ),
+        ),
+        child: _buildContinueCardForOrientation(
+          tokens,
+          appModel,
+          entry,
+          videoLandscape: videoLandscape,
+        ),
       ),
     );
   }

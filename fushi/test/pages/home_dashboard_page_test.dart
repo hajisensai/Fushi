@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' show PointerDeviceKind;
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
@@ -391,6 +392,36 @@ void main() {
     // 散卡：标题=书名，副标题=「阅读 · 50%」。
     expect(find.text('横滑测试书'), findsOneWidget);
     expect(find.text('${t.home_filter_read} · 50%'), findsOneWidget);
+
+    // 悬停边框须画在封面和文字前景；移出恢复，且不改变布局尺寸。
+    final Finder frame = find
+        .ancestor(
+          of: find.text('横滑测试书'),
+          matching: find.byWidgetPredicate(
+            (Widget widget) =>
+                widget is DecoratedBox &&
+                widget.position == DecorationPosition.foreground,
+          ),
+        )
+        .first;
+    Border frameBorder() =>
+        (tester.widget<DecoratedBox>(frame).decoration as BoxDecoration).border!
+            as Border;
+    final Size originalSize = tester.getSize(frame);
+    expect(frameBorder().top.color, Colors.transparent);
+    final TestGesture mouse = await tester.createGesture(
+      kind: PointerDeviceKind.mouse,
+    );
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(tester.getCenter(find.text('横滑测试书')));
+    await pumpDashboard(tester);
+    expect(frameBorder().top.color, isNot(Colors.transparent));
+    expect(frameBorder().top.width, 2);
+    expect(tester.getSize(frame), originalSize);
+    await mouse.moveTo(Offset.zero);
+    await pumpDashboard(tester);
+    expect(frameBorder().top.color, Colors.transparent);
+    await mouse.removePointer();
   });
 
   testWidgets('显示名统一：合集成员的继续卡标题=合集名，活动时间轴拼「合集名 - 名字」',
