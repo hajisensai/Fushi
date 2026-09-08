@@ -122,7 +122,14 @@ BUG-2249 启动记录角色/转区回退修复已整合为 `8fa25b18a2`，定向
 切为 75%，返回原句后点击正文没有产生新 hit，provider 2/3 status 1、
 generation 0/0，且游戏没有推进。恢复原来的 100% 并返回同句后，同一词
 立即出现词典：hit 10、char index 11/count 26、generation 1214/103，
-provider 2/3 status 2。因此缩放回归未通过，仍须定位真实视口拒绝门。
+provider 2/3 status 2。后续只读检查确认，失败点击其实已进入 native click ring，
+char 11 投影为 [428,420,22,23]、client 960×540；ReadSnapshot、owner、render
+和设计尺寸检查均通过。稳定正文仍会发生 partial capture epoch 变化，但尚无
+该点击终结时的具体原因证据，不能据此删除 epoch 校验。
+
+再次在 75% 同句单击成功，hit 11、generation 1214/104、view 960×540、
+char 11/count 26，词典正常保持。因此确认缩放映射可用，另有偶发点击在
+worker 提交前丢弃；不认定为 75% 独有问题。窗口已恢复用户原来的 100%。
 
 本 worktree 完成 bootstrap 后 Windows Release 主程序构建退出 0（426.6 秒）；
 尚未将该程序替换到运行会话，也未据此认定启动角色修复已通过运行验证。
