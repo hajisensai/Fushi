@@ -4442,5 +4442,10 @@
   "audiobook_transcribe_run_remote": "$device（互联主机）",
   "audiobook_transcribe_remote_uploading": "正在上传音频到 $device…（$done/$total）",
   "audiobook_transcribe_remote_running": "$device 转录中… $percent%",
-  "audiobook_transcribe_remote_model_missing": "$device 没有该语言的模型"
+  "audiobook_transcribe_remote_model_missing": "$device 没有该语言的模型",
+  "download_target_label": "下载到",
+  "download_target_local": "本机",
+  "download_target_remote": "$device（互联主机）",
+  "download_remote_jobs_title": "$device 上的任务",
+  "download_remote_jobs_empty": "主机上还没有任务"
 }

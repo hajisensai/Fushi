@@ -14,6 +14,8 @@ import 'package:fushi_engine/media/video/download/video_download_pipeline_servic
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
     show VideoMetadataMediaKind;
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/sync/interconnect_download_client.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/pages/implementations/download_backend_setup_dialog.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
@@ -54,8 +56,37 @@ Future<_ManualDownloadBackend> _resolveBackend(AppModel appModel) async {
 Future<void> showManualDownloadTaskDialog({
   required BuildContext context,
   required AppModel appModel,
+  InterconnectDownloadClient? remoteClient,
 }) async {
+  // 互联 host 代下载（设计 §3.3）：有已配对 host 宣告 downloads 能力时，本机没配
+  // 下载后端也能打开对话框，把磁链交给 host。探测失败按「没有远端」处理。
+  final InterconnectDownloadClient remote = remoteClient ??
+      InterconnectDownloadClient(repo: SyncRepository(appModel.database));
+  HostDownloadTarget? remoteTarget;
+  try {
+    remoteTarget = await remote.probe();
+  } catch (_) {
+    remoteTarget = null;
+  }
+  if (!context.mounted) return;
   _ManualDownloadBackend resolved = await _resolveBackend(appModel);
+  if (!resolved.usable && remoteTarget != null) {
+    final List<MediaSourceRow> sources =
+        await appModel.getManagedVideoDownloadSources();
+    if (!context.mounted) return;
+    await showAppDialog<void>(
+      context: context,
+      builder: (BuildContext _) => ManualDownloadTaskDialog(
+        pipeline: null,
+        target: null,
+        sources: sources,
+        defaultSourceId: appModel.prefsRepo.videoDownloadTargetSourceId,
+        remoteClient: remote,
+        remoteTarget: remoteTarget,
+      ),
+    );
+    return;
+  }
   if (!resolved.usable) {
     if (!context.mounted) return;
     // 后端没配好：**直接弹引导**，配完当场重试一次，而不是甩一句提示把用户
@@ -90,6 +121,8 @@ Future<void> showManualDownloadTaskDialog({
       target: target,
       sources: sources,
       defaultSourceId: appModel.prefsRepo.videoDownloadTargetSourceId,
+      remoteClient: remote,
+      remoteTarget: remoteTarget,
     ),
   );
 }
@@ -104,11 +137,18 @@ class ManualDownloadTaskDialog extends StatefulWidget {
     required this.target,
     required this.sources,
     required this.defaultSourceId,
+    this.remoteClient,
+    this.remoteTarget,
     super.key,
   });
 
-  final VideoDownloadPipelineService pipeline;
-  final VideoDownloadBackendTarget target;
+  /// 本机下载管线；null = 本机没配后端（只能投给远端 host）。
+  final VideoDownloadPipelineService? pipeline;
+  final VideoDownloadBackendTarget? target;
+
+  /// 互联代下载：有 host 时对话框多一个「下载到」选择。
+  final InterconnectDownloadClient? remoteClient;
+  final HostDownloadTarget? remoteTarget;
   final List<MediaSourceRow> sources;
   final int? defaultSourceId;
 
@@ -135,11 +175,15 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
   /// 标题框最近一次被自动预填的值：用户改过就不再覆盖。
   String _autoFilledTitle = '';
 
+  /// true = 投给 [ManualDownloadTaskDialog.remoteTarget]。
+  bool _useRemote = false;
+
   @override
   void initState() {
     super.initState();
     _sourceId = widget.defaultSourceId ??
         (widget.sources.isEmpty ? null : widget.sources.first.id);
+    _useRemote = widget.pipeline == null && widget.remoteTarget != null;
   }
 
   @override
@@ -159,7 +203,10 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
       !_submitting &&
       _hasPayload &&
       _titleController.text.trim().isNotEmpty &&
-      (!_isVideo || _sourceId != null);
+      (_useRemote
+          // 远端只收磁链 + 视频（.torrent 文件与非视频域不过线）。
+          ? _metainfo == null && _magnetHash != null && _isVideo
+          : widget.pipeline != null && (!_isVideo || _sourceId != null));
 
   void _prefillTitle(String? candidate) {
     final String value = candidate?.trim() ?? '';
@@ -223,12 +270,16 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
 
   Future<void> _submit() async {
     if (!_canSubmit) return;
+    if (_useRemote) return _submitRemote();
+    final VideoDownloadPipelineService? pipeline = widget.pipeline;
+    final VideoDownloadBackendTarget? target = widget.target;
+    if (pipeline == null || target == null) return;
     setState(() => _submitting = true);
     try {
-      await widget.pipeline.enqueueManual(
+      await pipeline.enqueueManual(
         VideoDownloadManualEnqueueRequest(
           title: _titleController.text.trim(),
-          backendTarget: widget.target,
+          backendTarget: target,
           magnetUri: _metainfo == null ? _magnetController.text.trim() : null,
           metainfo: _metainfo,
           discoveryKind: _discoveryKind,
@@ -236,6 +287,36 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
           targetSourceId: _isVideo ? _sourceId : null,
           subtitlePolicy: _subtitlePolicy,
         ),
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(content: Text(t.download_task_add_submitted)),
+      );
+    } on Object catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          SnackBar(
+            content: Text(t.download_task_action_failed(error: '$error')),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  Future<void> _submitRemote() async {
+    final InterconnectDownloadClient? client = widget.remoteClient;
+    final HostDownloadTarget? target = widget.remoteTarget;
+    if (client == null || target == null) return;
+    setState(() => _submitting = true);
+    try {
+      await client.addMagnet(
+        target,
+        magnetUri: _magnetController.text.trim(),
+        title: _titleController.text.trim(),
+        mediaKind: _mediaKind.name,
       );
       if (!mounted) return;
       Navigator.of(context).pop();
@@ -267,6 +348,34 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
+              if (widget.remoteTarget != null) ...<Widget>[
+                DropdownButtonFormField<bool>(
+                  key: const ValueKey<String>('manual-task-download-target'),
+                  initialValue: _useRemote,
+                  decoration: InputDecoration(
+                    labelText: t.download_target_label,
+                  ),
+                  items: <DropdownMenuItem<bool>>[
+                    if (widget.pipeline != null)
+                      DropdownMenuItem<bool>(
+                        value: false,
+                        child: Text(t.download_target_local),
+                      ),
+                    DropdownMenuItem<bool>(
+                      value: true,
+                      child: Text(
+                        t.download_target_remote(
+                          device: widget.remoteTarget!.label,
+                        ),
+                      ),
+                    ),
+                  ],
+                  onChanged: _submitting
+                      ? null
+                      : (bool? v) => setState(() => _useRemote = v ?? false),
+                ),
+                SizedBox(height: tokens.spacing.gap),
+              ],
               TextField(
                 key: const ValueKey<String>('manual-task-magnet'),
                 controller: _magnetController,

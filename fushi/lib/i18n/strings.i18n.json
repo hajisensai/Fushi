@@ -4442,5 +4442,10 @@
   "audiobook_transcribe_run_remote": "$device (interconnect host)",
   "audiobook_transcribe_remote_uploading": "Uploading audio to $device… ($done/$total)",
   "audiobook_transcribe_remote_running": "Transcribing on $device… $percent%",
-  "audiobook_transcribe_remote_model_missing": "$device has no model for this language"
+  "audiobook_transcribe_remote_model_missing": "$device has no model for this language",
+  "download_target_label": "Download on",
+  "download_target_local": "This device",
+  "download_target_remote": "$device (interconnect host)",
+  "download_remote_jobs_title": "Tasks on $device",
+  "download_remote_jobs_empty": "No tasks on the host yet"
 }

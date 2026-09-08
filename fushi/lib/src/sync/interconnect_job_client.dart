@@ -81,8 +81,9 @@ class HostJobRemoteException implements Exception {
   final String? detail;
 
   @override
-  String toString() =>
-      detail == null ? 'HostJobRemoteException($code)' : 'HostJobRemoteException($code: $detail)';
+  String toString() => detail == null
+      ? 'HostJobRemoteException($code)'
+      : 'HostJobRemoteException($code: $detail)';
 }
 
 class InterconnectJobClient {
@@ -124,18 +125,22 @@ class InterconnectJobClient {
       if (uri == null) continue;
       final String? token = interconnectTokenFor(candidate, fallbackToken);
       if (token == null) continue;
-      final (http.Client client, bool closeAfter) =
-          _clientFor(candidate.url, fingerprint: candidate.fingerprintSha256);
+      final (http.Client client, bool closeAfter) = _clientFor(
+        candidate.url,
+        fingerprint: candidate.fingerprintSha256,
+      );
       try {
-        final http.Response response =
-            await client.get(uri, headers: _headers(token)).timeout(_probeTimeout);
+        final http.Response response = await client
+            .get(uri, headers: _headers(token))
+            .timeout(_probeTimeout);
         if (response.statusCode != 200) continue;
         final dynamic decoded = jsonDecode(utf8.decode(response.bodyBytes));
         if (decoded is! Map) continue;
         final Object? jobs = decoded['jobs'];
         if (jobs is! Map) continue;
         final List<String> kinds =
-            (jobs['kinds'] as List?)?.map((Object? e) => '$e').toList() ?? const <String>[];
+            (jobs['kinds'] as List?)?.map((Object? e) => '$e').toList() ??
+                const <String>[];
         if (!kinds.contains(kind)) continue;
         return HostJobTarget(
           baseUrl: candidate.url,
@@ -162,7 +167,8 @@ class InterconnectJobClient {
     required List<File> inputs,
     required Directory outputDir,
   }) {
-    final StreamController<HostJobEvent> controller = StreamController<HostJobEvent>();
+    final StreamController<HostJobEvent> controller =
+        StreamController<HostJobEvent>();
     bool cancelled = false;
     String? jobId;
 
@@ -170,8 +176,10 @@ class InterconnectJobClient {
       final String? id = jobId;
       if (id == null) return;
       jobId = null;
-      final (http.Client c, bool close) =
-          _clientFor(target.baseUrl, fingerprint: target.fingerprintSha256);
+      final (http.Client c, bool close) = _clientFor(
+        target.baseUrl,
+        fingerprint: target.fingerprintSha256,
+      );
       try {
         final String? token = await _tokenForBaseUrl(target.baseUrl);
         final Uri? uri = _uri(target.baseUrl, '/api/jobs/$id');
@@ -186,14 +194,24 @@ class InterconnectJobClient {
 
     controller.onListen = () {
       unawaited(() async {
-        final (http.Client c, bool close) =
-            _clientFor(target.baseUrl, fingerprint: target.fingerprintSha256);
+        final (http.Client c, bool close) = _clientFor(
+          target.baseUrl,
+          fingerprint: target.fingerprintSha256,
+        );
         try {
           final String? token = await _tokenForBaseUrl(target.baseUrl);
-          if (token == null || token.isEmpty) throw const HostJobRemoteException('no_host');
+          if (token == null || token.isEmpty) {
+            throw const HostJobRemoteException('no_host');
+          }
           final Map<String, dynamic> created = _json(
-            await _send(c, token, 'POST', target, '/api/jobs',
-                jsonBody: <String, Object?>{'kind': kind, 'params': params}),
+            await _send(
+              c,
+              token,
+              'POST',
+              target,
+              '/api/jobs',
+              jsonBody: <String, Object?>{'kind': kind, 'params': params},
+            ),
           );
           final String id = created['jobId'].toString();
           jobId = id;
@@ -201,7 +219,13 @@ class InterconnectJobClient {
           for (int i = 0; i < inputs.length; i++) {
             if (cancelled) throw const HostJobRemoteException('cancelled');
             final File f = inputs[i];
-            await _upload(c, token, target, '/api/jobs/$id/input/${Uri.encodeComponent(p.basename(f.path))}', f);
+            await _upload(
+              c,
+              token,
+              target,
+              '/api/jobs/$id/input/${Uri.encodeComponent(p.basename(f.path))}',
+              f,
+            );
             controller.add(HostJobUploading(i + 1, inputs.length));
           }
           if (cancelled) throw const HostJobRemoteException('cancelled');
@@ -210,10 +234,12 @@ class InterconnectJobClient {
           while (true) {
             if (cancelled) throw const HostJobRemoteException('cancelled');
             await Future<void>.delayed(_pollDelay(attempt++));
-            final Map<String, dynamic> status =
-                _json(await _send(c, token, 'GET', target, '/api/jobs/$id'));
+            final Map<String, dynamic> status = _json(
+              await _send(c, token, 'GET', target, '/api/jobs/$id'),
+            );
             final String state = status['state'].toString();
-            final double progress = (status['progress'] as num?)?.toDouble() ?? 0;
+            final double progress =
+                (status['progress'] as num?)?.toDouble() ?? 0;
             final String? message = status['message']?.toString();
             if (state == 'done') {
               final List<String> names = (status['outputs'] as List?)
@@ -223,8 +249,13 @@ class InterconnectJobClient {
               await outputDir.create(recursive: true);
               final Map<String, File> files = <String, File>{};
               for (final String name in names) {
-                final http.Response r = await _send(c, token, 'GET', target,
-                    '/api/jobs/$id/result/${Uri.encodeComponent(name)}');
+                final http.Response r = await _send(
+                  c,
+                  token,
+                  'GET',
+                  target,
+                  '/api/jobs/$id/result/${Uri.encodeComponent(name)}',
+                );
                 final File out = File(p.join(outputDir.path, p.basename(name)));
                 await out.writeAsBytes(r.bodyBytes, flush: true);
                 files[name] = out;
@@ -236,9 +267,14 @@ class InterconnectJobClient {
               return;
             }
             if (state == 'error') {
-              throw HostJobRemoteException('remote_error', status['error']?.toString());
+              throw HostJobRemoteException(
+                'remote_error',
+                status['error']?.toString(),
+              );
             }
-            if (state == 'cancelled') throw const HostJobRemoteException('cancelled');
+            if (state == 'cancelled') {
+              throw const HostJobRemoteException('cancelled');
+            }
             controller.add(HostJobRunning(progress, message));
           }
         } catch (e, stack) {
@@ -267,7 +303,9 @@ class InterconnectJobClient {
     for (final FushiClientUrl u in urls) {
       if (u.url == baseUrl) return interconnectTokenFor(u, fallbackToken);
     }
-    return (fallbackToken != null && fallbackToken.isNotEmpty) ? fallbackToken : null;
+    return (fallbackToken != null && fallbackToken.isNotEmpty)
+        ? fallbackToken
+        : null;
   }
 
   Map<String, String> _headers(String token) => <String, String>{
@@ -294,13 +332,15 @@ class InterconnectJobClient {
   }) async {
     final Uri? uri = _uri(target.baseUrl, path);
     if (uri == null) throw const HostJobRemoteException('http', 'bad host url');
-    final http.Request req = http.Request(method, uri)..headers.addAll(_headers(token));
+    final http.Request req = http.Request(method, uri)
+      ..headers.addAll(_headers(token));
     if (jsonBody != null) {
       req.headers['Content-Type'] = 'application/json';
       req.body = jsonEncode(jsonBody);
     }
-    final http.Response response =
-        await http.Response.fromStream(await client.send(req).timeout(_requestTimeout));
+    final http.Response response = await http.Response.fromStream(
+      await client.send(req).timeout(_requestTimeout),
+    );
     if (response.statusCode >= 400) {
       throw HostJobRemoteException(
         'http_${response.statusCode}',
@@ -325,16 +365,22 @@ class InterconnectJobClient {
       ..headers['Content-Type'] = 'application/octet-stream'
       ..contentLength = length;
     unawaited(file.openRead().pipe(req.sink));
-    final http.StreamedResponse res = await client.send(req).timeout(_uploadTimeout);
+    final http.StreamedResponse res =
+        await client.send(req).timeout(_uploadTimeout);
     if (res.statusCode >= 400) {
-      throw HostJobRemoteException('http_${res.statusCode}', await res.stream.bytesToString());
+      throw HostJobRemoteException(
+        'http_${res.statusCode}',
+        await res.stream.bytesToString(),
+      );
     }
     await res.stream.drain<void>();
   }
 
   Map<String, dynamic> _json(http.Response r) {
     final dynamic decoded = jsonDecode(utf8.decode(r.bodyBytes));
-    if (decoded is! Map) throw const HostJobRemoteException('http', 'non-object body');
+    if (decoded is! Map) {
+      throw const HostJobRemoteException('http', 'non-object body');
+    }
     return Map<String, dynamic>.from(decoded);
   }
 
@@ -354,5 +400,6 @@ class InterconnectJobClient {
 }
 
 /// `progress` 缺省时的退避（复用漫画 OCR 的），加个上限防 int 溢出。
-Duration hostJobPollDelay(int attempt) =>
-    Duration(milliseconds: min(mangaOcrPollDelay(attempt).inMilliseconds, 5000));
+Duration hostJobPollDelay(int attempt) => Duration(
+      milliseconds: min(mangaOcrPollDelay(attempt).inMilliseconds, 5000),
+    );

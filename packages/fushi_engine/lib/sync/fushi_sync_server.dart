@@ -18,6 +18,8 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/interconnect_profile_transfer.dart';
 import 'package:fushi_engine/sync/interconnect_service_config.dart';
 import 'package:fushi_engine/sync/fushi_manga_ocr_host.dart';
+import 'package:fushi_engine/sync/downloads/host_download_host.dart';
+import 'package:fushi_engine/sync/downloads/host_download_routes.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_routes.dart';
 import 'package:fushi_engine/sync/interconnect_device_name.dart';
@@ -205,6 +207,7 @@ class FushiSyncServer {
     FushiLibraryHostService? libraryService,
     MangaOcrHostJobManager? mangaOcrJobs,
     HostJobManager? hostJobs,
+    HostDownloadHost? downloads,
     SecurityContext? securityContext,
     String? hostFingerprint,
     String? deviceName,
@@ -224,6 +227,7 @@ class FushiSyncServer {
         _libraryService = libraryService,
         _mangaOcrJobs = mangaOcrJobs,
         _hostJobs = hostJobs,
+        _downloads = downloads,
         _dictionaryMediaProvider = dictionaryMediaProvider,
         _now = now ?? DateTime.now;
 
@@ -255,6 +259,9 @@ class FushiSyncServer {
 
   /// 通用任务（ASR 等，设计 §3.4）。null = host 不提供，`/api/jobs` 404、能力位无 `jobs`。
   final HostJobManager? _hostJobs;
+
+  /// 代下载（设计 §3.3）。null = host 不提供，`/api/downloads` 404、能力位无 `downloads`。
+  final HostDownloadHost? _downloads;
 
   /// TODO-1215: dictionary media (gaiji/accent SVG, etc.) byte provider.
   /// Injected rather than depending on the FushiDicts singleton directly, so
@@ -504,6 +511,11 @@ class FushiSyncServer {
       final HostJobManager? jobs = _hostJobs;
       if (jobs == null) return shelf.Response.notFound('Host jobs off');
       return handleHostJobRequest(jobs, request, method, reqPath);
+    }
+    if (reqPath == '/api/downloads' || reqPath.startsWith('/api/downloads/')) {
+      final HostDownloadHost? downloads = _downloads;
+      if (downloads == null) return shelf.Response.notFound('Host downloads off');
+      return handleHostDownloadRequest(downloads, request, method, reqPath);
     }
     if (reqPath == '/api/library/dictionaries' ||
         reqPath.startsWith('/api/library/dictionaries/')) {

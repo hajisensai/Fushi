@@ -30,6 +30,7 @@ import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi_engine/sync/tls/fushi_tls_identity.dart';
 import 'package:fushi_server/src/config/server_config.dart';
+import 'package:fushi_server/src/download_host.dart';
 import 'package:fushi_server/src/host_bindings.dart';
 import 'package:fushi_server/src/lan_advertiser.dart';
 import 'package:fushi_server/src/server_identity.dart';
@@ -83,6 +84,7 @@ class HeadlessHost {
   LanAdvertiser? _advertiser;
   MangaOcrServiceImpl? _ocrService;
   HostJobManager? _jobs;
+  ServerDownloadHost? _downloads;
   final _AsyncMutex _mutex = _AsyncMutex();
   PendingPairing? _pendingPairing;
   String? _hostFingerprint;
@@ -94,6 +96,7 @@ class HeadlessHost {
   int get port => _server?.port ?? config.port;
   MangaOcrServiceImpl? get ocrService => _ocrService;
   HostJobManager? get jobs => _jobs;
+  ServerDownloadHost? get downloads => _downloads;
 
   /// 配对 PIN 出现/消失时的观察者（WebUI SSE、CLI 打印）。
   final StreamController<PendingPairing?> pairingEvents =
@@ -134,6 +137,17 @@ class HeadlessHost {
     await jobs.load();
     _jobs = jobs;
 
+    // 代下载（第 2 期）：qBittorrent 配了才起管线；没配也挂接口，能力位如实报 supported=false。
+    final ServerDownloadHost downloads = ServerDownloadHost(
+      config: config,
+      paths: paths,
+      db: db,
+      prefs: prefs,
+      identity: identity,
+    );
+    await downloads.start();
+    _downloads = downloads;
+
     final FushiSyncServer server = FushiSyncServer(
       syncDataDir: paths.syncData.path,
       port: config.port,
@@ -142,6 +156,7 @@ class HeadlessHost {
       libraryService: _buildLibraryService(),
       mangaOcrJobs: ocrJobs,
       hostJobs: jobs,
+      downloads: downloads,
       securityContext: securityContext,
       hostFingerprint: _hostFingerprint,
       deviceName: config.deviceName,
@@ -176,6 +191,9 @@ class HeadlessHost {
     final FushiSyncServer? server = _server;
     _server = null;
     await server?.stop();
+    final ServerDownloadHost? downloads = _downloads;
+    _downloads = null;
+    await downloads?.stop();
     await pairingEvents.close();
   }
 

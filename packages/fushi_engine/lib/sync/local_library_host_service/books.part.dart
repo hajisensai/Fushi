@@ -259,12 +259,24 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
         displayTitle.isEmpty) {
       return;
     }
+    // 未注入宿主回调时退到引擎的只写 DB 实现（LWW 判据同 app）：无头服务端与
+    // 内存 DB 测试都走这条；app 注入的版本多做一步写穿 MediaSource 内存缓存。
     final Future<bool> Function({
       required String bookKey,
       required String title,
       required int updatedAt,
-    })? adopt = _adoptOverrideTitle;
-    if (adopt == null) return;
+    }) adopt = _adoptOverrideTitle ??
+        ({
+          required String bookKey,
+          required String title,
+          required int updatedAt,
+        }) =>
+            adoptOverrideTitleInDb(
+              _db,
+              bookKey: bookKey,
+              title: title,
+              updatedAt: updatedAt,
+            );
     try {
       await adopt(
         bookKey: bookKey,

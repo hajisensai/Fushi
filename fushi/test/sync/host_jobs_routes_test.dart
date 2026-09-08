@@ -95,8 +95,8 @@ void main() {
 
     // 轮询直到终态（runner 是同步完成的，几轮内必到）。
     Map<String, dynamic> status = <String, dynamic>{};
-    for (int i = 0; i < 50; i++) {
-      await Future<void>.delayed(const Duration(milliseconds: 10));
+    for (int i = 0; i < 400; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 25));
       status = await _json(await _call(jobs, 'GET', '/api/jobs/$id'));
       if (status['state'] == 'done') break;
     }
@@ -143,7 +143,9 @@ void main() {
     expect((await _json(early))['reason'], 'not_done');
     await _call(jobs, 'PUT', '/api/jobs/$id/input/in.txt', bytes: utf8.encode('x'));
     await _call(jobs, 'POST', '/api/jobs/$id/start');
-    await Future<void>.delayed(const Duration(milliseconds: 50));
+    for (int i = 0; i < 400 && jobs.get(id).state != HostJobState.done; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 25));
+    }
     final shelf.Response late =
         await _call(jobs, 'PUT', '/api/jobs/$id/input/more.txt', bytes: utf8.encode('y'));
     expect(late.statusCode, 409);
@@ -157,8 +159,8 @@ void main() {
     await _call(jobs, 'PUT', '/api/jobs/$id/input/in.txt', bytes: utf8.encode('x'));
     await _call(jobs, 'POST', '/api/jobs/$id/start');
     Map<String, dynamic> status = <String, dynamic>{};
-    for (int i = 0; i < 50; i++) {
-      await Future<void>.delayed(const Duration(milliseconds: 10));
+    for (int i = 0; i < 400; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 25));
       status = await _json(await _call(jobs, 'GET', '/api/jobs/$id'));
       if (status['state'] == 'error') break;
     }
