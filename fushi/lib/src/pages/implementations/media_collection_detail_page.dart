@@ -1,7 +1,7 @@
 import 'dart:async' show Timer, unawaited;
 import 'dart:io';
 
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/material.dart';
 
 import 'package:path/path.dart' as p;
@@ -545,7 +545,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       return ResizeImage.resizeIfNeeded(
         decodeWidth,
         null,
-        CachedNetworkImageProvider(source),
+        AppCachedHttpImage(source),
       );
     }
     return resolveMediaCoverImage(
@@ -1800,7 +1800,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                 final ImageProvider? image = path != null &&
                         File(path).existsSync()
                     ? FileImage(File(path))
-                    : (url == null ? null : CachedNetworkImageProvider(url));
+                    : (url == null ? null : AppCachedHttpImage(url));
                 return SizedBox(
                   key: ValueKey<String>(
                       'video-work-credit-${credit.person.personKey}-$index'),
@@ -1917,7 +1917,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                                 Image.file(File(thumb), fit: BoxFit.cover)
                               else if (thumb != null)
                                 Image(
-                                  image: CachedNetworkImageProvider(thumb),
+                                  image: AppCachedHttpImage(thumb),
                                   fit: BoxFit.cover,
                                 )
                               else

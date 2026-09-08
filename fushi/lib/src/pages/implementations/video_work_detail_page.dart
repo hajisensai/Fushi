@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/material.dart';
 import 'package:fushi/src/media/collections/collection_episode_slot.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
@@ -209,7 +209,7 @@ class _StandaloneVideoWorkDetailState
       final String? path = image.localPath;
       if (path != null && File(path).existsSync()) return FileImage(File(path));
       if (image.remoteUrl.isNotEmpty) {
-        return CachedNetworkImageProvider(image.remoteUrl);
+        return AppCachedHttpImage(image.remoteUrl);
       }
     }
     return null;

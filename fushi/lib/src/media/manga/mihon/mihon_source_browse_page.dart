@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_action.dart';
 import 'dart:collection';
 import 'dart:typed_data';
 
@@ -40,10 +41,7 @@ class MihonInstalledTarget extends MihonBrowseTarget {
 /// 留下指向不存在扩展的孤儿行。预览的目的是「看看这个源有没有我要的漫画」，
 /// 网格 + 搜索 + 封面已经够判断，真要读就先装。
 class MihonPreviewTarget extends MihonBrowseTarget {
-  const MihonPreviewTarget({
-    required this.session,
-    required this.source,
-  });
+  const MihonPreviewTarget({required this.session, required this.source});
 
   final MihonPreviewSession session;
   final MihonSource source;
@@ -69,8 +67,9 @@ class MihonSourceBrowsePage extends StatefulWidget {
 
 class _MihonSourceBrowsePageState extends State<MihonSourceBrowsePage> {
   final TextEditingController _searchController = TextEditingController();
-  final MihonSourceImageLoadQueue _imageLoadQueue =
-      MihonSourceImageLoadQueue(maxConcurrent: 4);
+  final MihonSourceImageLoadQueue _imageLoadQueue = MihonSourceImageLoadQueue(
+    maxConcurrent: 4,
+  );
   MihonSourceContext? _sourceContext;
   List<MihonManga> _items = const <MihonManga>[];
   List<MihonFilter> _filters = const <MihonFilter>[];
@@ -142,37 +141,39 @@ class _MihonSourceBrowsePageState extends State<MihonSourceBrowsePage> {
     try {
       final MihonMangaPage response = switch (requestedMode) {
         _MihonBrowseMode.popular => await widget.manager.runtime.getPopular(
-            context.extension,
-            context.source,
-            page: requestedPage,
-            preferences: context.preferences,
-          ),
+          context.extension,
+          context.source,
+          page: requestedPage,
+          preferences: context.preferences,
+        ),
         _MihonBrowseMode.latest => await widget.manager.runtime.getLatest(
-            context.extension,
-            context.source,
-            page: requestedPage,
-            preferences: context.preferences,
-          ),
+          context.extension,
+          context.source,
+          page: requestedPage,
+          preferences: context.preferences,
+        ),
         _MihonBrowseMode.search => await widget.manager.runtime.search(
-            context.extension,
-            context.source,
-            page: requestedPage,
-            query: requestedQuery,
-            filters: requestedFilters,
-            preferences: context.preferences,
-          ),
+          context.extension,
+          context.source,
+          page: requestedPage,
+          query: requestedQuery,
+          filters: requestedFilters,
+          preferences: context.preferences,
+        ),
       };
       if (!mounted || generation != _loadGeneration) return;
       setState(() {
         final List<MihonManga> previous = reset ? const <MihonManga>[] : _items;
-        final Set<String> seen =
-            previous.map((MihonManga item) => item.url).toSet();
+        final Set<String> seen = previous
+            .map((MihonManga item) => item.url)
+            .toSet();
         final List<MihonManga> additions = response.items
             .where((MihonManga item) => seen.add(item.url))
             .toList(growable: false);
         _items = <MihonManga>[...previous, ...additions];
         _page = requestedPage;
-        _hasNextPage = response.hasNextPage &&
+        _hasNextPage =
+            response.hasNextPage &&
             response.items.isNotEmpty &&
             (reset || additions.isNotEmpty);
         _loading = false;
@@ -193,9 +194,8 @@ class _MihonSourceBrowsePageState extends State<MihonSourceBrowsePage> {
     if (_filters.isEmpty) return;
     final List<MihonFilter>? updated = await showAppDialog<List<MihonFilter>>(
       context: context,
-      builder: (BuildContext dialogContext) => _MihonFilterDialog(
-        initial: _filters,
-      ),
+      builder: (BuildContext dialogContext) =>
+          _MihonFilterDialog(initial: _filters),
     );
     if (updated == null || !mounted) return;
     _filters = updated;
@@ -278,6 +278,12 @@ class _MihonSourceBrowsePageState extends State<MihonSourceBrowsePage> {
               },
             ),
           ),
+          if (_error != null && _items.isNotEmpty)
+            MihonCloudflareAction(
+              runtime: widget.manager.runtime,
+              error: _error,
+              onVerified: () => _load(reset: false),
+            ),
           Expanded(child: _buildResults()),
           if (widget.footer != null) widget.footer!,
         ],
@@ -293,7 +299,18 @@ class _MihonSourceBrowsePageState extends State<MihonSourceBrowsePage> {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Text('$_error', textAlign: TextAlign.center),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text('$_error', textAlign: TextAlign.center),
+              MihonCloudflareAction(
+                runtime: widget.manager.runtime,
+                error: _error,
+                onVerified: () =>
+                    _sourceContext == null ? _initialise() : _load(reset: true),
+              ),
+            ],
+          ),
         ),
       );
     }
@@ -381,30 +398,30 @@ class MihonMangaDetailPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => MangaSeriesPage(
-        target: SourceMangaSeriesTarget(
-          // 上下文已经解析好（网格就是用它拉出来的）：直接交给适配器，别让作品页
-          // 再从 manager 现解析一次——预览态（试用未安装的扩展）根本没有库行，
-          // 现解析必然失败。
-          adapter: MihonLibraryAdapter(manager, presetContext: sourceContext),
-          service: mihonOnlineLibraryService(manager),
-          seed: OnlineMangaLibraryEntry(
-            runtime: OnlineMangaRuntimeKind.mihon,
-            extensionPackage: sourceContext.extension.packageName,
-            sourceId: sourceContext.source.id,
-            series: MihonLibraryAdapter.seriesOf(manga),
-            // 网格上只有标题和封面；章节由作品页进页后自己拉。
-            chapters: const <OnlineMangaChapter>[],
-          ),
-          sourceLabel: sourceContext.source.name,
-          // 未入库时封面必须经扩展的 imageProxy 取（带鉴权头），不能裸 https。
-          remoteCoverBuilder: (BuildContext context) => MihonSourceImage(
-            runtime: manager.runtime,
-            cache: manager.coverCache,
-            context: sourceContext,
-            url: manga.coverUrl,
-          ),
-        ),
-      );
+    target: SourceMangaSeriesTarget(
+      // 上下文已经解析好（网格就是用它拉出来的）：直接交给适配器，别让作品页
+      // 再从 manager 现解析一次——预览态（试用未安装的扩展）根本没有库行，
+      // 现解析必然失败。
+      adapter: MihonLibraryAdapter(manager, presetContext: sourceContext),
+      service: mihonOnlineLibraryService(manager),
+      seed: OnlineMangaLibraryEntry(
+        runtime: OnlineMangaRuntimeKind.mihon,
+        extensionPackage: sourceContext.extension.packageName,
+        sourceId: sourceContext.source.id,
+        series: MihonLibraryAdapter.seriesOf(manga),
+        // 网格上只有标题和封面；章节由作品页进页后自己拉。
+        chapters: const <OnlineMangaChapter>[],
+      ),
+      sourceLabel: sourceContext.source.name,
+      // 未入库时封面必须经扩展的 imageProxy 取（带鉴权头），不能裸 https。
+      remoteCoverBuilder: (BuildContext context) => MihonSourceImage(
+        runtime: manager.runtime,
+        cache: manager.coverCache,
+        context: sourceContext,
+        url: manga.coverUrl,
+      ),
+    ),
+  );
 }
 
 class MihonSourceImage extends StatefulWidget {
@@ -509,9 +526,24 @@ class _MihonSourceImageState extends State<MihonSourceImage> {
           );
         }
         if (snapshot.hasError) {
-          return const ColoredBox(
+          return ColoredBox(
             color: Color(0xff303030),
-            child: Icon(Icons.broken_image_outlined),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  const Icon(Icons.broken_image_outlined),
+                  MihonCloudflareAction(
+                    runtime: widget.runtime,
+                    error: snapshot.error,
+                    compact: true,
+                    onVerified: () async {
+                      if (mounted) setState(_reload);
+                    },
+                  ),
+                ],
+              ),
+            ),
           );
         }
         return const ColoredBox(
@@ -531,7 +563,7 @@ class _MihonSourceImageState extends State<MihonSourceImage> {
 /// 独立解码与渲染。
 class MihonSourceImageLoadQueue {
   MihonSourceImageLoadQueue({required this.maxConcurrent})
-      : assert(maxConcurrent > 0);
+    : assert(maxConcurrent > 0);
 
   final int maxConcurrent;
   final Queue<Completer<void>> _waiters = Queue<Completer<void>>();
@@ -581,17 +613,14 @@ class _MihonFilterDialogState extends State<_MihonFilterDialog> {
   late final List<MihonFilter> _filters = List<MihonFilter>.of(widget.initial);
 
   MihonFilter _withState(MihonFilter filter, Object? state) => MihonFilter(
-        name: filter.name,
-        kind: filter.kind,
-        state: state,
-        values: filter.values,
-        children: filter.children,
-      );
+    name: filter.name,
+    kind: filter.kind,
+    state: state,
+    values: filter.values,
+    children: filter.children,
+  );
 
-  MihonFilter _withChildren(
-    MihonFilter filter,
-    List<MihonFilter> children,
-  ) =>
+  MihonFilter _withChildren(MihonFilter filter, List<MihonFilter> children) =>
       MihonFilter(
         name: filter.name,
         kind: filter.kind,
@@ -606,28 +635,25 @@ class _MihonFilterDialogState extends State<_MihonFilterDialog> {
     });
   }
 
-  Widget _buildFilter(
-    MihonFilter filter,
-    ValueChanged<MihonFilter> onChanged,
-  ) {
+  Widget _buildFilter(MihonFilter filter, ValueChanged<MihonFilter> onChanged) {
     return switch (filter.kind) {
       MihonFilterKind.header => FushiListItem(
-          title: Text(
-            filter.name,
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
+        title: Text(
+          filter.name,
+          style: Theme.of(context).textTheme.titleMedium,
         ),
+      ),
       MihonFilterKind.separator => const Divider(),
       MihonFilterKind.checkBox => _MihonCheckRow(
-          label: filter.name,
-          selected: filter.state == true,
-          onChanged: (bool value) => onChanged(_withState(filter, value)),
-        ),
+        label: filter.name,
+        selected: filter.state == true,
+        onChanged: (bool value) => onChanged(_withState(filter, value)),
+      ),
       MihonFilterKind.text => TextFormField(
-          initialValue: filter.state?.toString() ?? '',
-          decoration: InputDecoration(labelText: filter.name),
-          onChanged: (String value) => onChanged(_withState(filter, value)),
-        ),
+        initialValue: filter.state?.toString() ?? '',
+        decoration: InputDecoration(labelText: filter.name),
+        onChanged: (String value) => onChanged(_withState(filter, value)),
+      ),
       MihonFilterKind.select when filter.values.isNotEmpty =>
         DropdownButtonFormField<int>(
           value: (filter.state as int? ?? 0).clamp(0, filter.values.length - 1),
@@ -642,51 +668,40 @@ class _MihonFilterDialogState extends State<_MihonFilterDialog> {
           onChanged: (int? value) => onChanged(_withState(filter, value ?? 0)),
         ),
       MihonFilterKind.triState => DropdownButtonFormField<int>(
-          value: (filter.state as int? ?? 0).clamp(0, 2),
-          decoration: InputDecoration(labelText: filter.name),
-          items: <DropdownMenuItem<int>>[
-            DropdownMenuItem<int>(
-              value: 0,
-              child: Text(t.mihon_filter_ignore),
-            ),
-            DropdownMenuItem<int>(
-              value: 1,
-              child: Text(t.mihon_filter_include),
-            ),
-            DropdownMenuItem<int>(
-              value: 2,
-              child: Text(t.mihon_filter_exclude),
-            ),
-          ],
-          onChanged: (int? value) => onChanged(_withState(filter, value ?? 0)),
-        ),
+        value: (filter.state as int? ?? 0).clamp(0, 2),
+        decoration: InputDecoration(labelText: filter.name),
+        items: <DropdownMenuItem<int>>[
+          DropdownMenuItem<int>(value: 0, child: Text(t.mihon_filter_ignore)),
+          DropdownMenuItem<int>(value: 1, child: Text(t.mihon_filter_include)),
+          DropdownMenuItem<int>(value: 2, child: Text(t.mihon_filter_exclude)),
+        ],
+        onChanged: (int? value) => onChanged(_withState(filter, value ?? 0)),
+      ),
       MihonFilterKind.group => ExpansionTile(
-          title: Text(filter.name),
-          children: <Widget>[
-            for (int index = 0; index < filter.children.length; index++)
-              Padding(
-                padding: const EdgeInsetsDirectional.only(start: 16),
-                child: _buildFilter(
-                  filter.children[index],
-                  (MihonFilter child) {
-                    final List<MihonFilter> children =
-                        List<MihonFilter>.of(filter.children);
-                    children[index] = child;
-                    onChanged(_withChildren(filter, children));
-                  },
-                ),
-              ),
-          ],
-        ),
+        title: Text(filter.name),
+        children: <Widget>[
+          for (int index = 0; index < filter.children.length; index++)
+            Padding(
+              padding: const EdgeInsetsDirectional.only(start: 16),
+              child: _buildFilter(filter.children[index], (MihonFilter child) {
+                final List<MihonFilter> children = List<MihonFilter>.of(
+                  filter.children,
+                );
+                children[index] = child;
+                onChanged(_withChildren(filter, children));
+              }),
+            ),
+        ],
+      ),
       MihonFilterKind.sort when filter.values.isNotEmpty =>
         _MihonSortFilterField(
           filter: filter,
           onChanged: (Object? state) => onChanged(_withState(filter, state)),
         ),
       _ => FushiListItem(
-          title: Text(filter.name),
-          subtitle: Text(t.mihon_extension_incompatible),
-        ),
+        title: Text(filter.name),
+        subtitle: Text(t.mihon_extension_incompatible),
+      ),
     };
   }
 
@@ -723,10 +738,7 @@ class _MihonFilterDialogState extends State<_MihonFilterDialog> {
 }
 
 class _MihonSortFilterField extends StatelessWidget {
-  const _MihonSortFilterField({
-    required this.filter,
-    required this.onChanged,
-  });
+  const _MihonSortFilterField({required this.filter, required this.onChanged});
 
   final MihonFilter filter;
   final ValueChanged<Object?> onChanged;
@@ -736,8 +748,10 @@ class _MihonSortFilterField extends StatelessWidget {
     final Map<Object?, Object?> state = filter.state is Map<Object?, Object?>
         ? filter.state! as Map<Object?, Object?>
         : const <Object?, Object?>{};
-    final int index = ((state['index'] as num?)?.toInt() ?? 0)
-        .clamp(0, filter.values.length - 1);
+    final int index = ((state['index'] as num?)?.toInt() ?? 0).clamp(
+      0,
+      filter.values.length - 1,
+    );
     final bool ascending = state['ascending'] != false;
     void update({int? nextIndex, bool? nextAscending}) {
       onChanged(<String, Object?>{
@@ -793,11 +807,11 @@ class _MihonCheckRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => FushiListItem(
-        title: Text(label),
-        leading: Checkbox(
-          value: selected,
-          onChanged: (bool? value) => onChanged(value == true),
-        ),
-        onTap: () => onChanged(!selected),
-      );
+    title: Text(label),
+    leading: Checkbox(
+      value: selected,
+      onChanged: (bool? value) => onChanged(value == true),
+    ),
+    onTap: () => onChanged(!selected),
+  );
 }

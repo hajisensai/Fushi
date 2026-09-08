@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -1401,7 +1402,8 @@ Widget buildPendingGameDownloadCard(DiscoveryDownloadTask task) {
           Opacity(
             // 压暗以示「还不能玩」——与旁边可启动的真条目在一眼之内可区分。
             opacity: 0.45,
-            child: Image.network(coverUrl,
+            child: Image(
+                image: AppHttpImage(coverUrl),
                 fit: BoxFit.cover,
                 errorBuilder: (_, __, ___) => const ColoredBox(
                       color: Colors.black26,

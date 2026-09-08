@@ -1,3 +1,4 @@
+import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:io';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -341,8 +342,8 @@ class _BangumiWatchedDialogState extends State<_BangumiWatchedDialog> {
                         ? const Icon(Icons.movie_outlined)
                         : ClipRRect(
                             borderRadius: FushiBorderRadius.chip,
-                            child: Image.network(
-                              coverUrl,
+                            child: Image(
+                              image: AppHttpImage(coverUrl),
                               fit: BoxFit.cover,
                               errorBuilder: (_, __, ___) =>
                                   const Icon(Icons.broken_image_outlined),

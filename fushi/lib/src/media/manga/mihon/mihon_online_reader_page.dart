@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_action.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -56,6 +57,7 @@ class _MihonChapterReaderPageState extends State<MihonChapterReaderPage> {
   }
 
   Future<void> _load() async {
+    if (mounted) setState(() => _error = null);
     try {
       final List<MihonPage> pages = await widget.manager.runtime.getPages(
         widget.context.extension,
@@ -66,9 +68,9 @@ class _MihonChapterReaderPageState extends State<MihonChapterReaderPage> {
       final String? libraryBookKey = widget.libraryBookKey;
       final Directory managedDirectory =
           mihonOnlineLibraryService(widget.manager).chapterDirectory(
-        libraryBookKey ?? _onlineBookKey,
-        MihonLibraryAdapter.chapterOf(widget.chapter),
-      );
+            libraryBookKey ?? _onlineBookKey,
+            MihonLibraryAdapter.chapterOf(widget.chapter),
+          );
       if (!mounted) return;
       setState(() {
         _resolved = MihonReaderChapter(
@@ -106,7 +108,17 @@ class _MihonChapterReaderPageState extends State<MihonChapterReaderPage> {
           : Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
-                child: Text('$_error', textAlign: TextAlign.center),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Text('$_error', textAlign: TextAlign.center),
+                    MihonCloudflareAction(
+                      runtime: widget.manager.runtime,
+                      error: _error,
+                      onVerified: _load,
+                    ),
+                  ],
+                ),
               ),
             ),
     );

@@ -6,11 +6,15 @@ import macos_window_utils
 @main
 class AppDelegate: FlutterAppDelegate {
   private var activeSecurityScopedURLs: [String: URL] = [:]
+  private var challengeBrowser: FushiChallengeBrowser?
 
   override func applicationDidFinishLaunching(_ notification: Notification) {
     if let windowController =
         mainFlutterWindow?.contentViewController as? MacOSWindowUtilsViewController {
       let controller = windowController.flutterViewController
+      challengeBrowser = FushiChallengeBrowser(
+        binaryMessenger: controller.engine.binaryMessenger
+      ) { [weak self] in self?.mainFlutterWindow }
       let channel = FlutterMethodChannel(
         name: "app.fushi/data_root_access",
         binaryMessenger: controller.engine.binaryMessenger)

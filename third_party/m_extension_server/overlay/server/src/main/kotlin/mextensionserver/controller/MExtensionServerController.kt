@@ -2,6 +2,7 @@ package mextensionserver.controller
 
 import fi.iki.elonen.NanoHTTPD
 import io.github.oshai.kotlinlogging.KotlinLogging
+import mextensionserver.impl.HostProxyPolicy
 import mextensionserver.impl.MExtensionServerLoader
 import mextensionserver.impl.MihonImageProxy
 import java.io.IOException
@@ -13,6 +14,7 @@ class MExtensionServerController {
 
     fun start(port: Int) {
         try {
+            HostProxyPolicy.install()
             server = WebServer(port)
             server?.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
             val actualPort = server?.listeningPort ?: 0
@@ -59,10 +61,14 @@ class MExtensionServerController {
         const val READY_LINE_PREFIX = "FUSHI_MIHON_READY port="
     }
 
-    private inner class WebServer(port: Int) : NanoHTTPD("127.0.0.1", port) {
-        private val bearer = System.getenv("FUSHI_MIHON_TOKEN")
-            ?.takeIf(String::isNotBlank)
-            ?: throw IllegalStateException("FUSHI_MIHON_TOKEN is required")
+    private inner class WebServer(
+        port: Int,
+    ) : NanoHTTPD("127.0.0.1", port) {
+        private val bearer =
+            System
+                .getenv("FUSHI_MIHON_TOKEN")
+                ?.takeIf(String::isNotBlank)
+                ?: throw IllegalStateException("FUSHI_MIHON_TOKEN is required")
 
         override fun serve(session: IHTTPSession): Response {
             if (!authorized(session)) {
@@ -78,22 +84,25 @@ class MExtensionServerController {
                 "/source-image" -> SourceImageHandler().serve(session)
                 "/source-data/clear" -> SourceDataHandler().serve(session)
                 "/" -> newFixedLengthResponse("Hibiki M-Extension-Server")
-                "/capabilities" -> newFixedLengthResponse(
-                    Response.Status.OK,
-                    "application/json",
-                    """{"fushiMihonBridge":1,"sourceFactory":true,"preferenceCallbacks":true,"imageProxy":true,"sourceUrls":true}""",
-                )
-                "/stop" -> newFixedLengthResponse("Server stopping").also {
-                    Thread {
-                        Thread.sleep(100)
-                        stop()
-                    }.start()
-                }
-                else -> if (session.uri.startsWith(ImageProxyHandler.ROUTE_PREFIX)) {
-                    ImageProxyHandler().serve(session)
-                } else {
-                    newFixedLengthResponse(Response.Status.NOT_FOUND, MIME_PLAINTEXT, "Not Found")
-                }
+                "/capabilities" ->
+                    newFixedLengthResponse(
+                        Response.Status.OK,
+                        "application/json",
+                        """{"fushiMihonBridge":1,"sourceFactory":true,"preferenceCallbacks":true,"imageProxy":true,"sourceUrls":true,"hostProxyPolicy":true}""",
+                    )
+                "/stop" ->
+                    newFixedLengthResponse("Server stopping").also {
+                        Thread {
+                            Thread.sleep(100)
+                            stop()
+                        }.start()
+                    }
+                else ->
+                    if (session.uri.startsWith(ImageProxyHandler.ROUTE_PREFIX)) {
+                        ImageProxyHandler().serve(session)
+                    } else {
+                        newFixedLengthResponse(Response.Status.NOT_FOUND, MIME_PLAINTEXT, "Not Found")
+                    }
             }
         }
 

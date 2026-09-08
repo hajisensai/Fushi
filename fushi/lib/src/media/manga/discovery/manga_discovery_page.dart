@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -715,7 +716,7 @@ class _MangaDiscoverySourceRowState extends State<MangaDiscoverySourceRow> {
   }
 }
 
-/// AniList 封面（公开 CDN，普通 `Image.network` 即可）；空/失败给占位图标。
+/// 发现封面（公开 CDN，经应用代理出口加载）；空/失败给占位图标。
 class MangaDiscoveryCover extends StatelessWidget {
   const MangaDiscoveryCover({required this.url, super.key});
 
@@ -730,8 +731,8 @@ class MangaDiscoveryCover extends StatelessWidget {
         child: Center(child: Icon(Icons.image_not_supported_outlined)),
       );
     }
-    return Image.network(
-      value,
+    return Image(
+      image: AppHttpImage(value),
       fit: BoxFit.cover,
       errorBuilder: (_, __, ___) => const ColoredBox(
         color: Color(0x11000000),
