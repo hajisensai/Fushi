@@ -2942,6 +2942,53 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     }
   }
 
+  /// Flush the local position and then report the remote session stop.
+  ///
+  /// The caller deliberately starts this future without awaiting it so route
+  /// exit cannot be blocked by a database write. Keeping the async body here,
+  /// outside the exit method, also makes that non-blocking boundary explicit.
+  Future<void> _flushPositionAndReportRemotePlaybackStopped({
+    required VideoPlayerController? controller,
+    required RemoteVideoInfo? info,
+    required RemoteVideoClient? client,
+    required int? positionMs,
+    required int generation,
+  }) async {
+    try {
+      await controller?.flushPosition();
+    } finally {
+      if (positionMs != null) {
+        await _reportRemotePlaybackStopped(
+          info: info,
+          client: client,
+          positionMs: positionMs,
+          generation: generation,
+        );
+      }
+    }
+  }
+
+  /// Persist a remote episode position and then close that remote playback
+  /// session. The operation is handed to [persistInBackground] by callers.
+  Future<void> _persistRemotePositionAndReportPlaybackStopped({
+    required String uid,
+    required int positionMs,
+    required RemoteVideoInfo? info,
+    required RemoteVideoClient? client,
+    required int generation,
+  }) async {
+    try {
+      await _persistRemotePosition(uid, positionMs);
+    } finally {
+      await _reportRemotePlaybackStopped(
+        info: info,
+        client: client,
+        positionMs: positionMs,
+        generation: generation,
+      );
+    }
+  }
+
   /// 载入单视频（无播放列表）：优先用 DB 已存 cue；否则先尝试恢复用户上次选的
   /// 字幕源（[row.subtitleSource] 跨重启保留），无匹配再退默认 sidecar 探测。
   Future<void> _loadSingle(VideoBookRow row) async {
@@ -4732,20 +4779,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final RemoteVideoClient? remoteClient = _effectiveRemoteClient;
     final int remoteGeneration = _remotePlaybackGeneration;
     exitAfterPersist(
-      persist: () async {
-        try {
-          await controller?.flushPosition();
-        } finally {
-          if (remotePositionMs != null) {
-            await _reportRemotePlaybackStopped(
-              info: remoteInfo,
-              client: remoteClient,
-              positionMs: remotePositionMs,
-              generation: remoteGeneration,
-            );
-          }
-        }
-      },
+      persist: () => _flushPositionAndReportRemotePlaybackStopped(
+        controller: controller,
+        info: remoteInfo,
+        client: remoteClient,
+        positionMs: remotePositionMs,
+        generation: remoteGeneration,
+      ),
       exit: nav.pop,
       onPersistError: (Object error, StackTrace stack) => ErrorLogService
           .instance
