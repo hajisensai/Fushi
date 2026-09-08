@@ -114,6 +114,7 @@ gh release view v<version> --repo hajisensai/Fushi --json assets \
 - `skip_tests` **只在 `workflow_dispatch` 生效**；`push`（自动 debug）与 `release`（手动 GitHub Release）事件的 `github.event.inputs.skip_tests` 为空，恒跑完整测试门——`main`/`develop` 的持续测试信号不被削弱，慢的只让手动、你在等的那次发版跳过。
 - 想手动发版也跑测试：dispatch 时把 `skip_tests` 取消勾选（设为 `false`）。
 - `release-desktop.yml`（Win/mac/iOS）本就无测试步骤，天生快，无需该开关。
+- **正式版发布后 main 自动同步成 develop**（2026-09-08 起）：`release.yml` 的 build job 在正式通道（`workflow_dispatch channel=formal` 或手动发非 prerelease 的 GitHub Release）写完更新清单后，在临时克隆里 `git merge --no-ff -X theirs origin/develop` 进 main 再推（提交信息沿用人工时代的 `Merge develop into main for <tag>`）。main 上只有两种提交——从 develop 合来的和两条图表 workflow 的机器人提交（scheduled 只能跑在默认分支 main 上，SVG 只落 main），所以 main 永远不是 develop 的祖先、纯快进不可行；`-X theirs` 让图表 SVG 冲突取 develop 的（次日定时任务重生成），其它冲突（modify/delete）直接红、绝不 force-push。只在 `release.yml` 做一次（桌面 workflow 不做，两条并行时不会推两条合并提交）；GITHUB_TOKEN 的 push 不级联触发 main 的 push 构建。守卫 `fushi/test/build/release_workflow_main_sync_guard_test.dart`。
 - 平台并行：Android（`release.yml`）与桌面（`release-desktop.yml`）是两条独立 workflow，concurrency 组名含各自 workflow 名，同一 tag 同时 dispatch / 同一 `release: published` 事件点燃即真并行（2026-09-08 起；此前两条同名组会串行、后到的 pending 还会取消先到的 pending）；桌面内部 `apple needs: windows` 是**故意串行**，避免两 job 抢同一 release 上传，勿改。
 
 ### Apple 签名与 TestFlight

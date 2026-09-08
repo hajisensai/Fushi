@@ -80,6 +80,25 @@ void main() {
     });
   }
 
+  test('tool/check_release_policy.ps1 要求的是同一个组名字面量——它是两条 workflow 的第一步', () {
+    // 这条 PowerShell 守卫在每次发布的第一步跑；它 Require-Text 的组名字面量若停在旧写法，
+    // 组名一改、每次发布第一步就红，而本文件上面那几条 Dart 断言全绿——2026-09-08 改组名
+    // 时就漏过一次。两处必须一起改。
+    final String policy =
+        File('../tool/check_release_policy.ps1').readAsStringSync();
+    expect(
+        policy,
+        contains(
+            r"'group: fushi-release-${{ github.workflow }}-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}'"),
+        reason: 'check_release_policy.ps1 要求的组名与 workflow 里的不一致，发布第一步必红');
+    for (final String name in releaseWorkflows) {
+      final ({String group, String cancel}) c = topLevelConcurrency(
+          File('${workflowsDir.path}/$name').readAsStringSync(), name);
+      expect(policy, contains("'group: ${c.group}'"),
+          reason: '$name 的组名 `${c.group}` 不是 check_release_policy.ps1 要求的那一个');
+    }
+  });
+
   test('两条发布 workflow 的 name 不同——否则 `github.workflow` 分不开它们', () {
     final List<String> names = <String>[];
     for (final String name in releaseWorkflows) {
