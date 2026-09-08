@@ -38,6 +38,7 @@ void main() {
 
     test('native runner：带重启标志检测到已有实例时等待互斥量、不直接退出', () {
       final String src = readSource('windows/runner/main.cpp');
+      final String mutex = readSource('windows/runner/single_instance_mutex.h');
 
       // native 侧重启标志常量字面量必须与 Dart 侧一致。
       expect(
@@ -52,7 +53,7 @@ void main() {
       // 把 another_instance 置回 false 继续启动（而不是直接前置旧窗口退出）。
       expect(src.contains('HasRestartMarker()'), isTrue,
           reason: 'runner must detect the restart marker in argv');
-      expect(src.contains('WaitForSingleInstanceMutex('), isTrue,
+      expect(src.contains('single_instance_mutex.Wait('), isTrue,
           reason: 'runner must wait for the old instance to release the mutex '
               'instead of bailing out on a restart');
       expect(
@@ -64,10 +65,10 @@ void main() {
 
       // 等待逻辑接受 WAIT_OBJECT_0 / WAIT_ABANDONED（旧进程释放或未释放就退出都算
       // 「旧实例已走、本进程接管」），并加超时上界避免永久卡死。
-      expect(src.contains('WAIT_ABANDONED'), isTrue,
+      expect(mutex.contains('WAIT_ABANDONED'), isTrue,
           reason: 'an abandoned mutex (old process exited without release) '
               'must also count as taking over single-instance ownership');
-      expect(src.contains('WaitForSingleInstanceMutex(single_instance_mutex'),
+      expect(src.contains('single_instance_mutex.Wait(10000)'),
           isTrue,
           reason: 'the wait must be bounded so a stuck old process cannot hang '
               'the restart forever');

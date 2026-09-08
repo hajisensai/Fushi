@@ -23,7 +23,8 @@ void main() {
     final String src = read('windows/runner/main.cpp');
 
     // 必须是真正的运行期检查（GetLastError），而非仅注释提到。
-    expect(src.contains('GetLastError() == ERROR_ALREADY_EXISTS'), isTrue,
+    expect(read('windows/runner/single_instance_mutex.h')
+        .contains('GetLastError() == ERROR_ALREADY_EXISTS'), isTrue,
         reason: '必须检测 GetLastError()==ERROR_ALREADY_EXISTS（真单实例守卫）');
     // TODO-935：数据迁移自动重启会以 detached 模式拉起带 --fushi-restarted 标志的新
     // 进程，但旧进程此刻仍持单实例互斥量。带该标志命中已有实例时必须**等待**旧进程
@@ -54,7 +55,7 @@ void main() {
         reason: '第二实例退出前必须经 WM_COPYDATA 把视频路径转交首实例（不能丢路径）');
 
     // 转交必须发生在 ERROR_ALREADY_EXISTS 早退分支内（退出之前）。
-    final int idx = src.indexOf('GetLastError() == ERROR_ALREADY_EXISTS');
+    final int idx = src.indexOf('if (another_instance)');
     final int exitIdx = src.indexOf('return EXIT_SUCCESS;', idx >= 0 ? idx : 0);
     final int handoffIdx = src.indexOf('::fushi::SendExternalVideoPath(');
     expect(idx >= 0 && handoffIdx > idx && handoffIdx < exitIdx, isTrue,

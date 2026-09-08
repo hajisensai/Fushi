@@ -8,6 +8,7 @@
 #include "crash_dump.h"
 #include "external_video_handoff.h"
 #include "flutter_window.h"
+#include "single_instance_mutex.h"
 #include "utils.h"
 
 namespace {
@@ -59,24 +60,6 @@ bool HasRestartMarker() {
   }
   ::LocalFree(argv);
   return found;
-}
-
-// 等待旧实例释放单实例互斥量（[mutex] 由 CreateMutexW 返回、本进程未持有所有权）。
-// 自动重启时旧进程已开始退出序列（prepareForProcessExit + exit(0)），但「拉起新进程」
-// 与「旧进程真正退出」之间有一小段并发窗口：此刻互斥量仍被旧进程持有，新进程裸调
-// CreateMutexW 会拿到 ERROR_ALREADY_EXISTS 而被误判成「二次启动」直接退出，导致重启
-// 落空——数据已迁移但应用从未以新数据根重新初始化（用户感知「弹了下进度就重启、位置没变」）。
-// 这里用 WaitForSingleObject 阻塞到旧进程退出（其句柄关闭 → 互斥量被遗弃 → 本进程拿到
-// WAIT_ABANDONED/WAIT_OBJECT_0 即取得所有权），加超时上界避免旧进程异常不退时永久卡死。
-// 返回 true = 已取得所有权可继续启动；false = 超时（旧实例仍在，按二次启动语义放弃）。
-bool WaitForSingleInstanceMutex(HANDLE mutex, DWORD timeout_ms) {
-  if (mutex == nullptr) {
-    return false;
-  }
-  const DWORD wait = ::WaitForSingleObject(mutex, timeout_ms);
-  // WAIT_OBJECT_0：正常取得；WAIT_ABANDONED：上一持有者（旧进程）未释放就退出，所有权
-  // 移交本进程——对单实例守卫语义而言同样是「旧实例已走、我接管」，可继续启动。
-  return wait == WAIT_OBJECT_0 || wait == WAIT_ABANDONED;
 }
 
 // TODO-1003: 本进程是否为自动化集成测试 runner。itest harness（tool/run_windows_itest.ps1）
@@ -174,15 +157,13 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // 集成测试 runner（FUSHI_TEST_HIDDEN 非空）跳过整套单实例守卫——见 IsTestRunnerMode
   // 注释：否则撞用户实例的互斥量会在引擎初始化前退出，itest 无法 attach。
   const bool test_runner = IsTestRunnerMode();
-  HANDLE single_instance_mutex = nullptr;
-  bool another_instance = false;
-  if (!test_runner) {
-    ::SetLastError(ERROR_SUCCESS);
-    single_instance_mutex =
-        ::CreateMutexW(nullptr, FALSE, L"FushiSingleInstanceMutex");
-    another_instance = single_instance_mutex != nullptr &&
-                       ::GetLastError() == ERROR_ALREADY_EXISTS;
+  ::fushi::SingleInstanceMutex single_instance_mutex(
+      L"FushiSingleInstanceMutex", !test_runner);
+  if (!test_runner && !single_instance_mutex.valid()) {
+    ::OutputDebugStringW(L"Fushi: cannot acquire single-instance guard.\n");
+    return EXIT_FAILURE;  // Fail closed: never start an unguarded engine.
   }
+  bool another_instance = !test_runner && !single_instance_mutex.owns();
   // TODO-935 BUG 修复：数据迁移后的自动重启会以 detached 模式拉起带 [kRestartMarkerArg]
   // 的新进程，但此刻旧进程尚未走完退出序列、仍持有单实例互斥量。若直接按「二次启动」
   // 退出本进程，则重启落空：数据已迁到新根、data_root pref 已写，但应用从未重新初始化
@@ -191,7 +172,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // AppPaths.resolve() 即读到新 data_root。等待加 10s 上界，旧进程异常不退时退回二次
   // 启动语义（前置旧窗口 + 退出），不永久卡死。普通用户二次点击图标无此标志，行为不变。
   if (another_instance && HasRestartMarker()) {
-    if (WaitForSingleInstanceMutex(single_instance_mutex, 10000)) {
+    if (single_instance_mutex.Wait(10000)) {
       another_instance = false;  // 已接管单实例所有权：按首实例正常启动。
     }
   }
@@ -201,13 +182,14 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // 是两头落空：文件转交给一个马上就没的进程 = 路径整个丢掉；前置一个看不见的窗口
   // = 用户双击视频「点了没反应」（TODO-904 修过的正是这个形态）。
   //
+  // 窗口已销毁或尚未创建时也必须等待所有权，不能凭窗口不存在放行。
   // 判据用「主窗口不可见」：本 app 没有托盘，`windowManager.hide()` 全仓只有退出链
   // 那一个调用点，所以不可见 ⇔ 正在退出。等它释放互斥量再按首实例正常启动——复用
   // 重启标志那条路已经在用的等待机械，新实例自己就能打开那个视频。
   if (another_instance && !test_runner) {
     const HWND exiting = ::FindWindowW(nullptr, L"Fushi");
-    if (exiting != nullptr && !::IsWindowVisible(exiting)) {
-      if (WaitForSingleInstanceMutex(single_instance_mutex, 10000)) {
+    if (exiting == nullptr || !::IsWindowVisible(exiting)) {
+      if (single_instance_mutex.Wait(10000)) {
         another_instance = false;
       }
     }
@@ -231,8 +213,6 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
       }
       ::SetForegroundWindow(existing);
     }
-    ::ReleaseMutex(single_instance_mutex);
-    ::CloseHandle(single_instance_mutex);
     return EXIT_SUCCESS;
   }
 

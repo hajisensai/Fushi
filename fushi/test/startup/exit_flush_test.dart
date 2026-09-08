@@ -185,35 +185,25 @@ void main() {
           reason: '根因B：Bonsoir 退出超时从 3s 收紧到 1.5s');
     });
 
-    test('Android background lifecycle flushes active page callbacks', () {
-      final int hookAt =
-          main.indexOf('_flushActivePagesForAndroidBackground() async');
-      expect(hookAt, greaterThanOrEqualTo(0),
-          reason: 'Android pause/hidden needs an app-level awaited flush; '
-              'page-local unawaited flush can lose the write if the process is '
-              'reclaimed immediately after backgrounding');
-      final String body = main.substring(hookAt);
-      expect(body.contains('flushAll(clearCallbacks: false)'), isTrue,
-          reason: 'background flush must retain page callbacks for a later '
-              'resume/exit cycle');
-
+    test('Android view events return before destructive detach cleanup', () {
       final int lifecycleAt = main
           .indexOf('void didChangeAppLifecycleState(AppLifecycleState state)');
       expect(lifecycleAt, greaterThanOrEqualTo(0));
-      final String lifecycle = main.substring(lifecycleAt);
-      expect(lifecycle.contains('AppLifecycleState.paused'), isTrue);
-      expect(lifecycle.contains('AppLifecycleState.hidden'), isTrue);
-      expect(
-          lifecycle.contains('_flushActivePagesForAndroidBackground()'), isTrue,
-          reason: 'Android paused/hidden must trigger the retained flush');
+      final int androidAt = main.indexOf('if (Platform.isAndroid)', lifecycleAt);
+      final int androidEnd = main.indexOf('\n    }', androidAt);
+      final String android = main.substring(androidAt, androidEnd);
+      expect(android, contains('_androidViewLifecycle.handleState(state)'));
+      expect(android, contains('return;'));
+      expect(android, isNot(contains('_flushAndCloseForLifecycleDetach')));
+      expect(android, isNot(contains('closeDatabase')));
+      expect(android, isNot(contains('_shutdownStarted')));
     });
 
-    test('detached lifecycle flushes active pages and closes the database', () {
+    test('non-Android detach fallback flushes before closing the database', () {
       final int hookAt =
           main.indexOf('_flushAndCloseForLifecycleDetach() async');
       expect(hookAt, greaterThanOrEqualTo(0),
-          reason: 'mobile detached is the last chance before engine/process '
-              'teardown, so it must run the same data durability gate as exit');
+          reason: 'non-Android fallback must retain its existing exit gate');
 
       final String body = main.substring(hookAt);
       final int flushAt = body.indexOf('ExitFlushRegistry.instance.flushAll()');
