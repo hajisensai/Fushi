@@ -1,0 +1,11 @@
+## BUG-2280 · Android快速重开复用已关库引擎
+- **报告**：2026-09-08（用户：手机快速关闭重开感觉卡死）
+- **真实性**：✅ 真 bug（Android 保留引擎与关库生命周期契约冲突已沿应用、依赖和 Flutter 原生源码确认；用户设备症状尚未复现）。
+- **[ ] ① 未修复** —
+- **[ ] ② 未加自动化测试** —
+- **根因**：`fushi/lib/main.dart:800-802` 对 Android `detached` 调用退出清理，`:994-995` 置 `_shutdownStarted`，`:1019` 关闭数据库；`:789-791` resumed 仅刷新配色，没有取消仍在飞的退出清理或恢复已关闭的资源。
+- **真实路径**：`fushi/android/app/src/main/java/app/fushi/reader/MainActivity.java:59` 继承 `AudioServiceActivity`。`pubspec.lock:101-108` 解析为 audio_service 0.18.18；其 `AudioServiceActivity.java:12-13` 提供插件缓存引擎，`AudioServicePlugin.java:70-113` 复用 audio_service_engine，`:116-123` 明确在新 Activity 已绑定时保留引擎。本机 Flutter 的 `FlutterActivityAndFragmentDelegate.java:805-810` 脱离时发送 detached，而 `FlutterActivity.java:1081-1087` 对宿主提供引擎默认不销毁。因而 Activity 销毁不等于应用引擎结束。
+- **后果**：`fushi/lib/src/models/app_model.dart:6522-6533` 关库还会标记未初始化、撤销观察者、停止后台服务；快速恢复的旧引擎可能继续使用这些资源，甚至先恢复界面、随后被尚未完成的退出清理关闭数据库。问题是关闭了仍需复用的资源，不能简化为数据库关闭不完全。
+- **触发边界**：Activity 销毁后音频引擎仍保留，或新 Activity 在旧服务销毁引擎前重新绑定。普通返回桌面只走 inactive/paused/hidden 的保留式 flush，不能据此直接认定触发。进程完全终止后冷启动也不属于复用旧引擎路径。
+- **修复方向**：将 view 脱离与 engine/进程终止分开管理，保留引擎时只做可恢复的持久化；补 detached → resumed 以及清理未完成便 resumed 的行为测试，证明同一引擎仍能读写 DB 和使用后台服务。
+- **验证边界**：本轮只检查和登记；未修改产品代码，未做 Android 真机/E2E。iOS 未找到同等缓存主引擎复用证据，不外推为 iOS 已确诊。

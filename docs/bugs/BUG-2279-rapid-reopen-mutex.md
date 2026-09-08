@@ -1,0 +1,11 @@
+## BUG-2279 · Windows快速重开未等待旧实例退出
+- **报告**：2026-09-08（用户：关闭 Fushi 后快速重开，手机和电脑感觉卡死，怀疑数据库没关完）
+- **真实性**：✅ 真 bug（Windows 互斥所有权缺陷已用隔离 Win32 探针验证；用户整机卡死尚未复现）。
+- **[ ] ① 未修复** —
+- **[ ] ② 未加自动化测试** —
+- **根因**：`fushi/windows/runner/main.cpp:182` 使用 `CreateMutexW(nullptr, FALSE, ...)`，首实例只保留句柄，没有取得所有权，后续也没有首次 acquire。`:194` 和 `:210` 却用 `WaitForSingleInstanceMutex` 判断旧进程已退出，未被拥有的 mutex 会立即返回 `WAIT_OBJECT_0`。
+- **真实路径**：`fushi/lib/main.dart:876` 隐藏退出中的窗口，随后 flush、关闭 DB、原生 WebView 清理。此期间新进程命中隐藏窗口分支，等待立即成功并继续启动，旧进程仍在清理，失去原本对 DB / WebView 资源交接的串行保护。自动重启标志分支同样受影响。
+- **验证**：独立随机命名 mutex，不接触运行中 Fushi 的真实锁。第一线程保持句柄不关闭，第二线程 CreateMutex 返回 `ERROR_ALREADY_EXISTS=183`；原实现 `initialOwner=false` 时 wait 返回 `0`；对照 `initialOwner=true` 时第二线程等待 100ms 返回 `WAIT_TIMEOUT=258`。证明的是交接保护失效，不是证明双连接一定令 SQLite 死锁。
+- **现有测试缺口**：`fushi/test/platform/windows_restart_single_instance_guard_test.dart:55-71` 只检查等待调用和分支字串，未验证首实例实际拥有锁。
+- **修复方向**：建立首实例拥有并持续持有锁的完整契约，验证旧进程存活时新线程/进程不能接管、旧进程退出后能接管；同时覆盖普通重开和自动重启。
+- **边界**：本轮只检查和登记；未修改产品代码，未运行真实应用关闭重开 E2E，也未验证用户已安装二进制与当前源码一致。Win32 官方契约：https://learn.microsoft.com/en-us/windows/win32/api/synchapi/nf-synchapi-createmutexa 。
