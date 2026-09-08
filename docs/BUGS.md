@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2086 条。点号进各自文件。
+> 共 2087 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2261](bugs/BUG-2261-siglus-child-delayed-attach.md) | ✅ | ✅ | Siglus启动器子进程绕过延迟附着并抢先LE初始化 |
 | [BUG-2253](bugs/BUG-2253-siglus-lookup-consumed-click-without-hit.md) | 🚧 | ✅ | Siglus已入队查词点击偶发未发布命中且终结原因缺失 |
 | [BUG-2252](bugs/BUG-2252-siglus-launcher-wait-handshake.md) | ✅ | ✅ | 启动菜单等待耗尽游戏注入握手期限 |
 | [BUG-2251](bugs/BUG-2251-siglus-legacy-owner-publication-churn.md) | ✅ | ✅ | 旧版Siglus重复发布正文对象导致查词弹窗闪退 |
