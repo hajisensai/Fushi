@@ -31,6 +31,11 @@ void main() {
                   call.arguments as Map<Object?, Object?>;
               port = args['port']! as int;
               expect(port, inInclusiveRange(1, 65535));
+              final Uri challengeProxy = Uri.parse(
+                args['challengeProxyEndpoint']! as String,
+              );
+              expect(challengeProxy.host, '127.0.0.1');
+              expect(challengeProxy.userInfo, startsWith('fushi:'));
               expect(
                 args['token'],
                 isA<String>().having(
@@ -92,6 +97,64 @@ void main() {
       );
       expect(invocations, 1);
       await runtime.dispose();
+    },
+  );
+
+  test(
+    'background challenge becomes a typed action without opening verification',
+    () async {
+      final List<String> calls = <String>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (MethodCall call) async {
+            calls.add(call.method);
+            if (call.method == 'invoke') {
+              throw PlatformException(
+                code: 'CLOUDFLARE_CHALLENGE_REQUIRED',
+                details: <String, Object?>{
+                  'url': 'https://example.com/challenge',
+                  'userAgent': 'Custom source agent/1',
+                },
+              );
+            }
+            if (call.method == 'solveCloudflare') {
+              expect(
+                (call.arguments as Map<Object?, Object?>)['userAgent'],
+                'Custom source agent/1',
+              );
+            }
+            return null;
+          });
+      final AndroidMihonRuntime runtime = AndroidMihonRuntime(channel: channel);
+      try {
+        await expectLater(
+          runtime.invokeBridge(
+            extension,
+            'getChapterList',
+            <String, Object?>{},
+          ),
+          throwsA(
+            isA<MihonCloudflareChallengeException>()
+                .having(
+                  (MihonCloudflareChallengeException error) => error.url.host,
+                  'origin',
+                  'example.com',
+                )
+                .having(
+                  (MihonCloudflareChallengeException error) => error.userAgent,
+                  'userAgent',
+                  'Custom source agent/1',
+                ),
+          ),
+        );
+        expect(calls, isNot(contains('solveCloudflare')));
+        await runtime.solveCloudflare(
+          Uri.parse('https://example.com/challenge'),
+          userAgent: 'Custom source agent/1',
+        );
+        expect(calls.last, 'solveCloudflare');
+      } finally {
+        await runtime.dispose();
+      }
     },
   );
 }

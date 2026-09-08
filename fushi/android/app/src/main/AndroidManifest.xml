@@ -20,6 +20,11 @@
         xmlns:tools="http://schemas.android.com/tools"
         tools:replace="android:label">
         <activity
+            android:name=".mihon.CloudflareChallengeActivity"
+            android:exported="false"
+            android:process=":network_challenge"
+            android:excludeFromRecents="true" />
+        <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTask"

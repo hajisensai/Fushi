@@ -10,6 +10,7 @@ import Flutter
   private var initialUrl: String?
   private var urlEventSink: FlutterEventSink?
   private var ankiMobileMediaBackgroundTask: UIBackgroundTaskIdentifier = .invalid
+  private var challengeBrowser: FushiChallengeBrowser?
   private let aidokuRuntimeQueue = DispatchQueue(
     label: "app.fushi.reader.aidoku-runtime",
     qos: .userInitiated)
@@ -45,6 +46,13 @@ import Flutter
   }
 
   private func installChannels(binaryMessenger: FlutterBinaryMessenger) {
+    challengeBrowser = FushiChallengeBrowser(binaryMessenger: binaryMessenger) {
+      UIApplication.shared.connectedScenes
+        .compactMap { $0 as? UIWindowScene }
+        .filter { $0.activationState == .foregroundActive }
+        .flatMap { $0.windows }
+        .first { $0.isKeyWindow }?.rootViewController
+    }
     let splashChannel = FlutterMethodChannel(
       name: "app.fushi.reader/splash",
       binaryMessenger: binaryMessenger)

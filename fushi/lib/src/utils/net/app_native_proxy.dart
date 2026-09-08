@@ -7,6 +7,7 @@ import 'package:fushi/src/utils/net/app_http.dart';
 import 'package:fushi/src/utils/net/app_proxy.dart';
 
 Future<AppNativeProxy>? _sharedProxy;
+Future<AppNativeProxy>? _challengeProxy;
 final Set<String> _nativeProxySecrets = <String>{};
 
 /// Scrub native diagnostics before forwarding them to application logs/UI.
@@ -23,6 +24,13 @@ String redactAppNativeProxySecrets(String value) {
 /// Keep this endpoint private: it authorizes access to the local relay.
 Future<Uri> ensureAppNativeProxyEndpoint() async =>
     (await (_sharedProxy ??= AppNativeProxy.start())).endpoint;
+
+/// Challenge JavaScript must not reach local origin servers, including through
+/// service workers or WebSockets that skip WebView navigation callbacks.
+Future<Uri> ensureAppChallengeProxyEndpoint() async =>
+    (await (_challengeProxy ??= AppNativeProxy.start(
+      publicTargetsOnly: true,
+    ))).endpoint;
 
 /// Proxy environment for a native child. Clear inherited bypass rules because
 /// the relay applies the application's rules separately to every destination.
@@ -41,10 +49,11 @@ Map<String, String> appNativeProxyEnvironment(Uri endpoint) => <String, String>{
 };
 
 class AppNativeProxy {
-  AppNativeProxy._(this._server, this._secret);
+  AppNativeProxy._(this._server, this._secret, this._publicTargetsOnly);
 
   final HttpServer _server;
   final String _secret;
+  final bool _publicTargetsOnly;
   final Set<Socket> _sockets = <Socket>{};
   final Set<HttpClient> _clients = <HttpClient>{};
 
@@ -55,7 +64,7 @@ class AppNativeProxy {
     userInfo: 'fushi:$_secret',
   );
 
-  static Future<AppNativeProxy> start() async {
+  static Future<AppNativeProxy> start({bool publicTargetsOnly = false}) async {
     final HttpServer server = await HttpServer.bind(
       InternetAddress.loopbackIPv4,
       0,
@@ -64,7 +73,11 @@ class AppNativeProxy {
     final String secret = base64Url.encode(
       List<int>.generate(32, (int _) => random.nextInt(256)),
     );
-    final AppNativeProxy proxy = AppNativeProxy._(server, secret);
+    final AppNativeProxy proxy = AppNativeProxy._(
+      server,
+      secret,
+      publicTargetsOnly,
+    );
     _nativeProxySecrets.addAll(<String>{
       secret,
       base64.encode(utf8.encode('fushi:$secret')),
@@ -124,6 +137,7 @@ class AppNativeProxy {
       await request.response.close();
       return;
     }
+    if (await _rejectPrivateTarget(request, uri)) return;
     final HttpClient client = createAppHttpClient()..autoUncompress = false;
     _clients.add(client);
     try {
@@ -156,6 +170,7 @@ class AppNativeProxy {
         (target.path.isNotEmpty && target.path != '/')) {
       throw const FormatException('Invalid CONNECT target');
     }
+    if (await _rejectPrivateTarget(request, target)) return;
     final tunnel = await _openTunnel(target);
     final Socket upstream = tunnel.socket;
     final StreamIterator<List<int>> reader = tunnel.reader;
@@ -180,6 +195,13 @@ class AppNativeProxy {
       _sockets.remove(upstream);
       _sockets.remove(downstream);
     }
+  }
+
+  Future<bool> _rejectPrivateTarget(HttpRequest request, Uri target) async {
+    if (!_publicTargetsOnly || !isDirectProxyTarget(target.host)) return false;
+    request.response.statusCode = HttpStatus.forbidden;
+    await request.response.close();
+    return true;
   }
 
   Future<

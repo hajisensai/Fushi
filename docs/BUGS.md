@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2113 条。点号进各自文件。
+> 共 2114 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2275](bugs/BUG-2275-cloudflare-challenge-proxy.md) | ✅ | ✅ | Cloudflare验证网页未继承手动代理 |
 | [BUG-2273](bugs/BUG-2273-mihon-timeout-kills-other-requests.md) | ✅ | ✅ | 单个漫画源超时重启共享桥接并中断其它请求 |
 | [BUG-2272](bugs/BUG-2272-outbound-proxy-native-images.md) | ✅ | ✅ | 公网图片及原生网络链路未继承应用代理 |
 | [BUG-2253](bugs/BUG-2253-gal-japanese-locale-auto-by-default.md) | ✅ | ✅ | 游戏日文转区默认自动，没选过就替用户改了启动方式 |

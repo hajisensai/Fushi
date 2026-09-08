@@ -261,6 +261,7 @@ flutter {
 }
 
 dependencies {
+    implementation "androidx.webkit:webkit:1.12.0"
     testImplementation "org.jetbrains.kotlin:kotlin-test-junit:2.2.20"
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.2.20"
     implementation 'androidx.multidex:multidex:2.0.1'

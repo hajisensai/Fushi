@@ -60,6 +60,37 @@ void main() {
     },
   );
 
+  test('challenge relay blocks local origins for HTTP and CONNECT', () async {
+    await relay.close();
+    relay = await AppNativeProxy.start(publicTargetsOnly: true);
+    for (final String host in <String>[
+      '127.0.0.1',
+      'localhost',
+      '192.168.1.2',
+      '[::1]',
+      'reader.local',
+    ]) {
+      final String http = await raw(
+        'GET http://$host/ HTTP/1.1\r\nHost: $host\r\nProxy-Authorization: ${auth()}',
+      );
+      expect(http, startsWith('HTTP/1.1 403'), reason: host);
+      final String connect = await raw(
+        'CONNECT $host:443 HTTP/1.1\r\nHost: $host\r\nProxy-Authorization: ${auth()}',
+      );
+      // Dart HttpServer rejects numeric CONNECT authorities before dispatch
+      // (verified with a standalone server); that closed connection is also a
+      // denied tunnel. Named local hosts reach our explicit 403 policy.
+      final String literal = host.replaceAll('[', '').replaceAll(']', '');
+      expect(
+        connect,
+        InternetAddress.tryParse(literal) == null
+            ? startsWith('HTTP/1.1 403')
+            : anyOf(isEmpty, startsWith('HTTP/1.1 403')),
+        reason: host,
+      );
+    }
+  });
+
   test('CONNECT cannot smuggle query or fragment into authority', () async {
     for (final String suffix in <String>['?other=443', '#other']) {
       final String response = await raw(

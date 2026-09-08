@@ -58,10 +58,37 @@ authentication, local bypass, mode transitions and cache behavior. Native build
 and device checks are reported separately from Dart/Kotlin/Rust tests; a source
 change alone does not establish that an installed native bundle is repaired.
 
-Interactive Cloudflare challenge WebViews still use the platform browser network
-configuration. Their application-manual-proxy behavior is not covered by these
-HTTP adapters. A process-wide WebView proxy override would also affect the EPUB
-reader and other concurrent WebViews, so it is not installed by a manga request.
+Interactive Cloudflare challenges use isolated browsers (BUG-2275). Android
+opens an explicitly requested, non-exported Activity in `:network_challenge`,
+with its own WebView data directory and process-local proxy override. Only that
+process waits for the proxy configuration before navigating. The application
+process and reader retain their existing WebView configuration. Android 9 and a
+WebView with proxy-override support are required; unsupported configurations
+report an error instead of silently using a different network route.
+
+On iOS 17 / macOS 14 and newer, the native challenge modal owns a non-persistent
+WKWebsiteDataStore with its own proxyConfigurations. Proxy failover is disabled,
+and the local relay has its own authentication credential. Older Apple versions
+cannot silently fall back to system browsing when manual/direct was requested.
+
+Challenge browsers use a separate public-target-only instance of the native
+relay. Local URL destinations are rejected for HTTP and CONNECT even if a
+service worker or WebSocket skips the browser's navigation callbacks. This also
+prevents a local origin from impersonating the relay's HTTP-auth realm in
+Android callbacks, which do not expose an `isProxy` flag. DNS resolution is not
+performed before routing: domains that only resolve through the user's proxy
+must continue to work. This URL restriction is not a general DNS-rebinding
+sandbox; source code remains subject to the browser's origin rules.
+
+Only new clearance cookies for the challenged origin are merged back; an
+unchanged clearance does not complete verification. Existing login cookies are
+not copied into the isolated browser because the host cookie representations
+do not preserve all HttpOnly/SameSite metadata. Login cookies remain in the
+source session and are preserved when the clearance is merged. The actual
+source User-Agent is preserved.
+Cancel, load failure and renderer/process death do not retry the source. An
+explicit successful verification triggers the existing retry action. Ordinary
+background searches never open the Android verification Activity.
 
 2026-09-08: centralize missing image, native and popup-startup network assembly
 after multi-source manga connection failures (BUG-2272).

@@ -7,9 +7,10 @@ import 'package:fushi/src/media/manga/mihon/mihon_bridge_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_proxy_policy_server.dart';
+import 'package:fushi/src/utils/net/app_native_proxy.dart';
 
 class AndroidMihonRuntime extends MihonBridgeRuntime
-    implements CancellableMihonRuntime {
+    implements CancellableMihonRuntime, ChallengeMihonRuntime {
   AndroidMihonRuntime({MethodChannel? channel})
     : _channel = channel ?? const MethodChannel('app.fushi.reader/mihon');
 
@@ -27,10 +28,13 @@ class AndroidMihonRuntime extends MihonBridgeRuntime
       token,
     );
     try {
-      await _channel.invokeMethod<void>(
-        'configureProxyPolicy',
-        <String, Object?>{'port': server.port, 'token': token},
-      );
+      final Uri relay = await ensureAppChallengeProxyEndpoint();
+      await _channel
+          .invokeMethod<void>('configureProxyPolicy', <String, Object?>{
+            'port': server.port,
+            'token': token,
+            'challengeProxyEndpoint': relay.toString(),
+          });
       _proxyPolicy = server;
     } on Object {
       await server.close();
@@ -38,6 +42,13 @@ class AndroidMihonRuntime extends MihonBridgeRuntime
       rethrow;
     }
   }
+
+  @override
+  Future<void> solveCloudflare(Uri uri, {String? userAgent}) =>
+      _invokeVoid('solveCloudflare', <String, Object?>{
+        'url': uri.toString(),
+        if (userAgent != null) 'userAgent': userAgent,
+      });
 
   @override
   Future<MihonCapabilities> getCapabilities() async =>
@@ -210,11 +221,27 @@ class AndroidMihonRuntime extends MihonBridgeRuntime
         'invoke',
         'fetchImage',
         'fetchSourceImage',
+        'solveCloudflare',
       }.contains(method)) {
         await (_proxyConfiguration ??= _configureProxyPolicy());
       }
       return await _channel.invokeMethod<T>(method, arguments);
     } on PlatformException catch (error) {
+      if (error.code == 'CLOUDFLARE_CHALLENGE_REQUIRED' &&
+          error.details is Map) {
+        final Map<Object?, Object?> details =
+            error.details as Map<Object?, Object?>;
+        final Uri? url = Uri.tryParse(details['url']?.toString() ?? '');
+        if (url != null &&
+            const <String>{'http', 'https'}.contains(url.scheme) &&
+            url.host.isNotEmpty) {
+          throw MihonCloudflareChallengeException(
+            url,
+            userAgent: details['userAgent']?.toString(),
+            cause: error,
+          );
+        }
+      }
       throw MihonRuntimeException(
         error.code,
         error.message ?? 'Android Mihon runtime failed',

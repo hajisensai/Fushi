@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_action.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
@@ -789,6 +790,28 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   MangaReaderSession? _pageSession;
   Map<String, int> _localPageIndices = const <String, int>{};
   OnlineMangaReaderChapter? _onlineChapter;
+  Object? _onlinePageChallenge;
+  Object? _onlineChallengeRuntime;
+  Future<void> Function()? _onlineChallengeRetry;
+  int _onlineImageRetry = 0;
+
+  Future<void> _retryChallengedImages() async {
+    final int revision = ++_onlineImageRetry;
+    if (mounted) setState(() => _onlinePageChallenge = null);
+    await _controller?.evaluateJavascript(
+      source:
+          '''
+      document.querySelectorAll('img').forEach(function(image) {
+        if (image.complete && image.naturalWidth > 0) return;
+        const url = new URL(image.src, document.baseURI);
+        if (url.hostname !== '${MangaFushiPage.kMangaHost}' || !url.pathname.startsWith('/img/')) return;
+        url.searchParams.set('retry', '$revision');
+        image.src = url.toString();
+      });
+    ''',
+    );
+  }
+
   bool _persistProgress = true;
   MokuroPayload? _payload;
   MangaReadingMode _mode = MangaReadingMode.spread;
@@ -1399,6 +1422,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     try {
       final OnlineMangaLibraryService service = appModel
           .onlineMangaLibraryService(entry.runtime);
+      if (service.adapter case MihonLibraryAdapter(:final manager)) {
+        _onlineChallengeRuntime = manager.runtime;
+      }
       int chapterIndex = OnlineMangaLibraryService.initialChapterIndex(entry);
       if (chapterIndex < 0) {
         throw const OnlineMangaUnavailable(
@@ -1430,6 +1456,18 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         setState(() {
           _bookRow = row;
           _loadFailed = true;
+          if (mihonCloudflareChallenge(error) != null) {
+            _onlinePageChallenge = error;
+            _onlineChallengeRetry = () async {
+              if (mounted) {
+                setState(() {
+                  _loadFailed = false;
+                  _onlinePageChallenge = null;
+                });
+              }
+              await _loadBook();
+            };
+          }
         });
       }
     }
@@ -1966,6 +2004,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         );
       } on Object catch (error, stackTrace) {
         ErrorLogService.instance.log('MangaFushiPage.page', error, stackTrace);
+        if (mounted && mihonCloudflareChallenge(error) != null) {
+          if (_onlineChapter case MihonReaderChapter(:final manager)) {
+            _onlineChallengeRuntime = manager.runtime;
+          }
+          _onlineChallengeRetry = _retryChallengedImages;
+          setState(() => _onlinePageChallenge = error);
+        }
         return WebResourceResponse(
           contentType: 'text/plain',
           statusCode: 502,
@@ -2290,6 +2335,16 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       }
     } on OnlineMangaUnavailable catch (error) {
       if (mounted) {
+        if (mihonCloudflareChallenge(error) != null &&
+            service.adapter is MihonLibraryAdapter) {
+          _onlineChallengeRuntime =
+              (service.adapter as MihonLibraryAdapter).manager.runtime;
+          _onlineChallengeRetry = () async {
+            if (mounted) setState(() => _onlinePageChallenge = null);
+            await _switchToChapter(index, landOnLastPage: landOnLastPage);
+          };
+          setState(() => _onlinePageChallenge = error);
+        }
         FushiToast.show(msg: error.message, severity: ToastSeverity.error);
       }
     } on Object catch (error, stack) {
@@ -4194,6 +4249,23 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                 fit: StackFit.expand,
                 children: <Widget>[
                   Positioned.fill(child: _buildBody()),
+                  if (_onlinePageChallenge != null &&
+                      _onlineChallengeRuntime != null)
+                    Positioned(
+                      bottom: 16,
+                      left: 16,
+                      right: 16,
+                      child: SafeArea(
+                        child: FushiCard(
+                          child: MihonCloudflareAction(
+                            runtime: _onlineChallengeRuntime,
+                            error: _onlinePageChallenge,
+                            onVerified:
+                                _onlineChallengeRetry ?? _retryChallengedImages,
+                          ),
+                        ),
+                      ),
+                    ),
                   // 查词弹窗层：必须在同一个键盘 Focus 子树里，否则原生词典
                   // WebView 持焦后会吞掉翻页键。
                   Positioned.fill(
