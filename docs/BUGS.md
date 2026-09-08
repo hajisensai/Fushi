@@ -33,7 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-2281](bugs/BUG-2281-dashboard-hover-frame.md) | ✅ | ✅ | 首页继续卡片悬停缺少边框 |
+| [BUG-2281](bugs/BUG-2281-dashboard-hover-frame.md) | ✅ | ✅ | 首页继续卡片悬停放大被列表裁剪 |
 | [BUG-2253](bugs/BUG-2253-gal-japanese-locale-auto-by-default.md) | ✅ | ✅ | 游戏日文转区默认自动，没选过就替用户改了启动方式 |
 | [BUG-2252](bugs/BUG-2252-opensubtitles-key-stub-double-quotes.md) | ✅ | ✅ | CI 注入 OpenSubtitles key 生成双引号字面量，analyze 门必红 |
 | [BUG-2251](bugs/BUG-2251-video-tracker-dispose-unawaited-write.md) | 🚧 | 🚧 | VideoWatchTracker.dispose 在 dispose 里发起无人 await 的 DB 写 |

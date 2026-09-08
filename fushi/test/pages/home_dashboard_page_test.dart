@@ -393,34 +393,35 @@ void main() {
     expect(find.text('横滑测试书'), findsOneWidget);
     expect(find.text('${t.home_filter_read} · 50%'), findsOneWidget);
 
-    // 悬停边框须画在封面和文字前景；移出恢复，且不改变布局尺寸。
-    final Finder frame = find
-        .ancestor(
-          of: find.text('横滑测试书'),
-          matching: find.byWidgetPredicate(
-            (Widget widget) =>
-                widget is DecoratedBox &&
-                widget.position == DecorationPosition.foreground,
-          ),
-        )
-        .first;
-    Border frameBorder() =>
-        (tester.widget<DecoratedBox>(frame).decoration as BoxDecoration).border!
-            as Border;
-    final Size originalSize = tester.getSize(frame);
-    expect(frameBorder().top.color, Colors.transparent);
+    // 悬停绘制须超出卡片原始边界，同时完整落在列表视口内，不被截平。
+    final Finder card = find.ancestor(
+      of: find.text('横滑测试书'),
+      matching: find.byType(InkWell),
+    ).first;
+    final Finder row = find.ancestor(
+      of: card,
+      matching: find.byType(ListView),
+    ).first;
+    final Rect viewport = tester.getRect(row);
+    final Rect originalRect = tester.getRect(card);
+    final Size originalSize = tester.getSize(card);
     final TestGesture mouse = await tester.createGesture(
       kind: PointerDeviceKind.mouse,
     );
     await mouse.addPointer(location: Offset.zero);
     await mouse.moveTo(tester.getCenter(find.text('横滑测试书')));
     await pumpDashboard(tester);
-    expect(frameBorder().top.color, isNot(Colors.transparent));
-    expect(frameBorder().top.width, 2);
-    expect(tester.getSize(frame), originalSize);
+    final Rect liftedRect = tester.getRect(card);
+    expect(liftedRect.top, lessThan(originalRect.top));
+    expect(liftedRect.left, lessThan(originalRect.left));
+    expect(liftedRect.top, greaterThanOrEqualTo(viewport.top - 0.01));
+    expect(liftedRect.left, greaterThanOrEqualTo(viewport.left - 0.01));
+    expect(liftedRect.bottom, lessThanOrEqualTo(viewport.bottom + 0.01));
+    expect(liftedRect.right, lessThanOrEqualTo(viewport.right + 0.01));
+    expect(tester.getSize(card), originalSize);
     await mouse.moveTo(Offset.zero);
     await pumpDashboard(tester);
-    expect(frameBorder().top.color, Colors.transparent);
+    expect(tester.getRect(card), originalRect);
     await mouse.removePointer();
   });
 
@@ -682,6 +683,27 @@ void main() {
         reason: '${row.$1} 行的视频卡应随横版封面自适应成 16:9 横槽，'
             '恒竖槽会把 16:9 抽帧模糊垫底成白条',
       );
+      await tester.ensureVisible(card);
+      await pumpDashboard(tester);
+      final Finder list = find.ancestor(
+        of: card,
+        matching: find.byType(ListView),
+      ).first;
+      final Rect viewport = tester.getRect(list);
+      final Rect original = tester.getRect(card);
+      final TestGesture mouse =
+          await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: Offset.zero);
+      await mouse.moveTo(tester.getCenter(card));
+      await pumpDashboard(tester);
+      final Rect lifted = tester.getRect(card);
+      expect(lifted.width, greaterThan(original.width));
+      expect(lifted.top, greaterThanOrEqualTo(viewport.top - 0.01));
+      expect(lifted.left, greaterThanOrEqualTo(viewport.left - 0.01));
+      expect(lifted.bottom, lessThanOrEqualTo(viewport.bottom + 0.01));
+      expect(lifted.right, lessThanOrEqualTo(viewport.right + 0.01));
+      await mouse.removePointer();
+      await pumpDashboard(tester);
     }
   });
 

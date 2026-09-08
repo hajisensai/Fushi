@@ -1,6 +1,6 @@
-## BUG-2281 · 首页继续卡片悬停缺少边框
-- **报告**：2026-09-08（用户：首页「继续」卡片鼠标移入应该出框）
-- **真实性**：✅ 真 bug。`fushi/lib/src/pages/implementations/home_dashboard_page.dart:1499` 的 `_buildContinueCard` 忽略 `FushiHoverLift.builder` 的悬停状态，只缩放，不绘制边框。
-- **[x] ① 已修复** — 消费已有悬停状态，以 foreground DecoratedBox 绘制 2px 主题色圆角框，移出透明；不会增加布局尺寸，封面不会遮挡描边。「继续」与「最近添加」复用同一修复。提交见本文件所属提交。
-- **[x] ② 已加自动化测试** — `fushi/test/pages/home_dashboard_page_test.dart` 在真实首页书卡上验证鼠标移入显框、移出复位、尺寸不变；与 `fushi_hover_lift_test.dart` 合跑 34 passed，7 个既有 Bangumi 测试 skipped。`flutter analyze --no-pub` 通过。
+## BUG-2281 · 首页继续卡片悬停放大被列表裁剪
+- **报告**：2026-09-08（用户：首页「继续」卡片放大应该能显示在框外，而不是增加描边）
+- **真实性**：✅ 真 bug。`fushi/lib/src/pages/implementations/home_dashboard_page.dart:1280` 的 `_continueCardsRow` 只给视口加高，没有给列表加 padding，横向 ListView 将卡片拉伸到整个视口高度，悬停缩放仍被截平；首尾两端也没有横向放大余量。
+- **[x] ① 已修复** — 列表增加真实上下 padding，使卡体保持原始高度；首尾按最宽横卡计算横向余量。放大绘制可以超出卡片原始边界，仍在视口可见范围内，不会放出缓存中的屏外卡片。「继续」与「最近添加」共用修复。撤销 `418c331c8b` 中因误解需求添加的描边，修复提交见本文件所属提交。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/home_dashboard_page_test.dart` 验证真实书卡鼠标移入后绘制超出原始边界、四边未超出视口、布局尺寸不变、移出复位；两行横版视频卡也验证放大及四边可见。临时移除修复时书卡测试失败（顶部 432.59 < 视口顶部 438），恢复后与 hover 组件合跑 34 passed、7 个既有 Bangumi 用例 skipped。
 - **备注**：未构建/运行真实 Windows 应用，原始截图路径设备肉眼复测待补。未运行全量测试。
