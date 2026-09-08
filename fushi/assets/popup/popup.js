@@ -5075,9 +5075,13 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
 // min(用户设置, 装得下的列数)，写 --dict-columns-effective 供 grid 消费；
 // resize 只改 CSS 变量（grid 自动 reflow，零重渲）。in-app 弹窗同规则受益。
 const DICT_COLUMN_MIN_WIDTH = 170;
-// 触屏设备（手机/平板，主指针 coarse）一律单列：移动端弹窗本就窄，多词典并排每列被
-// 挤到贴地板，义项互相压缩完全没法读——竖着堆叠才是手机上的正确形态。桌面触屏二合一
-// 主指针是 mouse（fine），不受牵连。CSS grid 与 JS masonry 都经本函数取列数，一处收口。
+const DICT_COLUMN_MIN_WIDTH_COARSE = 320; // 触屏指尖精度 + 手机字号下的每列可读下限
+// 触屏（手机/平板，主指针 coarse）上每列的可读下限比鼠标端高得多：170px 一列在手机
+// 弹窗里会把义项压成竖条完全没法读。但不能因此「一律单列」：那是把用户设置整个吞掉——
+// app 内置弹窗在安卓/触屏 Windows 上同样是 coarse，平板横屏与大屏触控一体机明明排
+// 得下多列，却被静默锁死、改设置毫无反应（既无提示也无出路）。正确做法是只抬高
+// 每列的可读下限，仍走同一条 min(用户设置, 装得下的列数) 收敛：手机宽度自然收到
+// 1 列，屏够宽时用户设的多列照旧生效。桌面鼠标主指针是 fine，不受牵连。
 function isCoarsePointerType() {
     try {
         return !!(window.matchMedia
@@ -5090,7 +5094,6 @@ function isCoarsePointerType() {
 // px 装得下的列数)。CSS grid 经 --dict-columns-effective 消费、masonry 经 dictColumns() 消费，
 // 两者都走此函数——绝不再分叉（历史上 masonry 漏了视口收敛，自动调整对方框布局不生效）。
 function effectiveDictColumns() {
-    if (isCoarsePointerType()) return 1;
     let configured = 1;
     try {
         configured = parseInt(
@@ -5101,8 +5104,11 @@ function effectiveDictColumns() {
     }
     if (!(configured > 0)) configured = 1;
     const width = __fushiViewportWidth();
+    const minWidth = isCoarsePointerType()
+        ? DICT_COLUMN_MIN_WIDTH_COARSE
+        : DICT_COLUMN_MIN_WIDTH;
     const fit = width > 0
-        ? Math.max(1, Math.floor(width / DICT_COLUMN_MIN_WIDTH))
+        ? Math.max(1, Math.floor(width / minWidth))
         : configured;
     return Math.min(configured, fit);
 }

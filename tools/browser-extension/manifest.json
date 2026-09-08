@@ -44,8 +44,7 @@
     }
   ],
   "web_accessible_resources": [
-    { "resources": ["vendor/content.css"], "matches": ["<all_urls>"] },
-    { "resources": ["side-panel.html", "side-panel.css", "side-panel.js", "popup-size.js", "auto-read.js", "ruby-render.js", "vendor/selection.js", "vendor/dict-media.js", "vendor/popup.js"], "matches": ["<all_urls>"] }
+    { "resources": ["vendor/content.css", "side-panel.html"], "matches": ["<all_urls>"] }
   ],
   "options_page": "options.html",
   "side_panel": { "default_path": "side-panel.html" },

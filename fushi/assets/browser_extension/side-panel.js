@@ -28,19 +28,30 @@
   window.__fushiRoot = lookupShadow;
   installDictMediaPlaceholderResolver(lookupShadow); // BUG-1718：兑现词条内图片/样式表占位
   var currentTabId = null;
-  // 抽屉嵌入模式（mobile-drawer.js 的 iframe 打开，?fushiEmbed=1）：
-  //   · 绑定来源页 tabId——网页内扩展 iframe 里 tabs.query 的 currentWindow 解析不可靠，
-  //     以 background drawerSelfTab 如实回报的 sender.tab.id 为准（缺参数仍走 queryActiveTab）；
+  // 抽屉嵌入模式（mobile-drawer.js 把本页当 iframe 嵌进宿主网页）：
+  //   · 判据是「我被嵌了吗」而不是 URL 参数——side-panel.html 必须是
+  //     web_accessible_resource（网页里的 iframe 才加载得了），**任何站点**都能把这份
+  //     持完整扩展权限的文档嵌进自己的页面，而且可以一个参数都不带；若按参数
+  //     分流，不带参数那条反而直接跑成完整侧板（轮询 + chrome.tabs + 查词全开）。
+  //     真侧板永远是顶层文档，被嵌 = 只可能是抽屉，因此被嵌就必须验票。
+  //   · 票据由 SW 现发（background.js drawerFrameTicket），面板拿票回问验明正身；
+  //     标签 id 与宿主 origin 只认 SW 回报的值（浏览器给的 sender.tab.id / sender.origin，
+  //     伪造不了），绝不读 URL 里的 tabId/hostOrigin——那是嵌入方自证。
+  //     验票未过 = 整页停摆：不轮询、不碰 chrome.tabs、不收宿主消息（fail-closed）。
   //   · 不挂 tabs.onActivated：抽屉只服务这一页，「跟着切的标签页走」语义在这里不存在；
   //   · 抽屉收起时宿主 postMessage pause → 暂停 300ms 轮询（省电），拉开立刻补一次；
   //   · html 根挂 .fushi-embed 类，side-panel.css 按触屏规格放大控件、补安全区。
-  // typeof 守卫：vm 行为测试沙箱里没有全局 location，扩展页里永远有——两不耽误。
+  // typeof 守卫：vm 行为测试沙箱里没有全局 location，扩展页里永远有——两不耐误。
   var EMBED_SEARCH = typeof location === 'undefined' ? '' : String(location.search || '');
-  var EMBED = /[?&]fushiEmbed=1/.test(EMBED_SEARCH);
-  var EMBED_TAB_ID = (function () {
-    var m = /[?&]fushiTabId=(\d+)/.exec(EMBED_SEARCH);
-    return m ? Number(m[1]) : null;
+  var EMBED = (function () {
+    // 跨源读 window.top 只是引用比较，浏览器里不会抛；抛了只可能是测试沙箱没 window。
+    try { return window.top !== window.self; } catch (_) { return false; }
   })();
+  var EMBED_TICKET = (function () {
+    var m = /[?&]fushiTicket=([^&]*)/.exec(EMBED_SEARCH);
+    try { return m ? decodeURIComponent(m[1]) : ''; } catch (_) { return ''; }
+  })();
+  var embedAuth = null;  // {tabId, hostOrigin}；验票通过前嵌入模式下一切对外动作停摆
   var embedPaused = false;
   if (EMBED) document.documentElement.classList.add('fushi-embed');
   // 嵌入（手机抽屉）模式头部原本叠了标题+工具排+选轨+时轴偏移三四行，把列表挤得没法看。
@@ -706,7 +717,11 @@
   }
 
   function queryActiveTab() {
-    if (EMBED && EMBED_TAB_ID != null) return Promise.resolve({ id: EMBED_TAB_ID });
+    // 嵌入态只服务发票那一页，且该页 id 只认 SW 验票后回报的值；未验票就没有
+    // 「当前标签」，绝不回退到 tabs.query——那等于把用户正在看的任意标签送给嵌入方当靶子。
+    if (EMBED) {
+      return Promise.resolve(embedAuth && Number.isInteger(embedAuth.tabId) ? { id: embedAuth.tabId } : null);
+    }
     return new Promise(function (resolve) {
       chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
         try { if (chrome.runtime.lastError) return resolve(null); } catch (_) { return resolve(null); }
@@ -894,6 +909,7 @@
   }
 
   async function refresh(forceCues) {
+    if (EMBED && !embedAuth) return; // 未验票的嵌入（= 站点自己嵌的）：整页停摆
     if (embedPaused) return; // 抽屉收起：不空转消息，resume 时立即补一次全量
     if (refreshBusy) return;
     refreshBusy = true;
@@ -1220,23 +1236,44 @@
     });
   } catch (_) {}
 
-  // 抽屉宿主（mobile-drawer.js）的可见性协议：收起=暂停轮询，拉开=立刻全量刷新。
-  if (EMBED) {
-    // S5691：宿主 origin 由 mobile-drawer 经 iframe URL 显式声明，收消息先验来源。
-    // 缺参数时 EMBED_HOST_ORIGIN='' 永远匹配不上任何真实 origin——天然 fail-closed。
-    var EMBED_HOST_ORIGIN = (function () {
-      var m = /[?&]fushiHostOrigin=([^&]*)/.exec(EMBED_SEARCH);
-      try { return m ? decodeURIComponent(m[1]) : ''; } catch (_) { return ''; }
-    })();
+  // 验票 + 抽屉宿主（mobile-drawer.js）的可见性协议：收起=暂停轮询，拉开=立即全量刷新。
+  // 验票通过前不挂 message 监听、不刷新：站点自己嵌的面板拿不到票，就只是一页死文档。
+  function startEmbedSession(auth) {
+    embedAuth = auth;
     window.addEventListener('message', function (ev) {
-      if (ev.origin !== EMBED_HOST_ORIGIN) return;
+      // S5691 + 真信任链：宿主 origin 是 SW 从 sender 里读出来的，不是嵌入方声明的。
+      if (!embedAuth || ev.origin !== embedAuth.hostOrigin) return;
       var d = ev && ev.data;
       if (!d || d.source !== 'fushi-drawer') return;
       if (d.type === 'pause') embedPaused = true;
       else if (d.type === 'resume') { embedPaused = false; refresh(true); }
     });
+    refresh(true);
   }
-
-  refresh(true);
+  function denyEmbed() {
+    // 验票未过就把面板钉在拒绝态，并告诉看到的人为什么是空白（别漏一个无声白页）。
+    embedAuth = null;
+    statusEl.textContent = '未授权的嵌入';
+    listEl.innerHTML = '';
+    var deny = document.createElement('div');
+    deny.className = 'empty';
+    deny.textContent = '本页只能由 Fushi 字幕抽屉打开。';
+    listEl.appendChild(deny);
+  }
+  if (EMBED) {
+    try {
+      chrome.runtime.sendMessage({ type: 'drawerFrameAuth', ticket: EMBED_TICKET }, function (resp) {
+        try { if (chrome.runtime.lastError) resp = null; } catch (_) { resp = null; }
+        if (resp && resp.ok === true && Number.isInteger(resp.tabId)
+            && typeof resp.hostOrigin === 'string' && resp.hostOrigin) {
+          startEmbedSession({ tabId: resp.tabId, hostOrigin: resp.hostOrigin });
+          return;
+        }
+        denyEmbed();
+      });
+    } catch (_) { denyEmbed(); }
+  } else {
+    refresh(true);
+  }
   setInterval(function () { refresh(false); }, 300);
 })();

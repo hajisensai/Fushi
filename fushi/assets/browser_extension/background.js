@@ -19,6 +19,63 @@ const lookupPerfReady = chrome.storage.local.get(LOOKUP_PERF_STORAGE_KEY)
   })
   .catch(() => { lookupPerfLogs = []; });
 
+// ── 字幕抽屉的能力票据（详见下方 drawerFrameTicket/drawerFrameAuth 两个分支）──
+// 票只活在 SW 内存里：发票到验票就是一次 iframe 加载（毫秒级，且全程有消息
+// 在途、SW 不会被回收），无需也不应落盘。TTL 只是道保险丝，顺手清掉没被领走的死票。
+const DRAWER_TICKET_TTL_MS = 60000;
+const drawerTickets = new Map(); // ticket -> { tabId, hostOrigin, expiresAt }
+
+function pruneDrawerTickets(now) {
+  for (const [key, rec] of drawerTickets) if (rec.expiresAt <= now) drawerTickets.delete(key);
+}
+
+// 票号必须不可预测：拿不到真随机源宁可不发票（抽屉不能用），
+// 也绝不回退到 Date.now() 之类可猜的值——那等于把锁的钥匙写在门上。
+function newDrawerTicketId() {
+  try {
+    if (crypto && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+    if (crypto && typeof crypto.getRandomValues === 'function') {
+      const buf = new Uint8Array(32);
+      crypto.getRandomValues(buf);
+      return Array.from(buf, (b) => b.toString(16).padStart(2, '0')).join('');
+    }
+  } catch (_) {}
+  return null;
+}
+
+function senderTabId(sender) {
+  return sender && sender.tab && Number.isInteger(sender.tab.id) ? sender.tab.id : null;
+}
+
+function mintDrawerTicket(sender) {
+  const tabId = senderTabId(sender);
+  let hostOrigin = '';
+  try { hostOrigin = new URL(sender && (sender.origin || sender.url) || '').origin; } catch (_) { hostOrigin = ''; }
+  const ticket = newDrawerTicketId();
+  // 没标签身份/没真 origin（opaque 的 'null' 也算）/没随机源——一律不发票。
+  if (tabId == null || !hostOrigin || hostOrigin === 'null' || !ticket) return { ok: false };
+  const now = Date.now();
+  pruneDrawerTickets(now);
+  drawerTickets.set(ticket, { tabId, hostOrigin, expiresAt: now + DRAWER_TICKET_TTL_MS });
+  return { ok: true, ticket };
+}
+
+function verifyDrawerTicket(ticket, sender) {
+  const now = Date.now();
+  pruneDrawerTickets(now);
+  const rec = typeof ticket === 'string' && ticket ? drawerTickets.get(ticket) : null;
+  if (rec) drawerTickets.delete(ticket); // 一次性：取完即焚，重放一概不认
+  const panelUrl = chrome.runtime.getURL('side-panel.html');
+  const fromOwnPanel = !!(sender && typeof sender.url === 'string' && sender.url.indexOf(panelUrl) === 0);
+  if (!rec || !fromOwnPanel) return { ok: false };
+  // 真正的锁是那张不可预测的一次性票：它只交给发票那一页的 content script，别的上下文
+  // 拿不到，也就伪造不出这条回问。标签比对是加固层，**存在才比对**——扩展 iframe 的
+  // sender.tab 在主流内核上都有，但没有的话不该把抽屉整个锁死（那是把加固层当唯一锁）。
+  const askerTabId = senderTabId(sender);
+  if (askerTabId != null && askerTabId !== rec.tabId) return { ok: false };
+  return { ok: true, tabId: rec.tabId, hostOrigin: rec.hostOrigin };
+}
+
 function nextLookupPerfId() {
   try {
     if (crypto && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
@@ -516,14 +573,23 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   // 另外：open() 必须是拿到激活后的第一句——原实现先 `await setOptions(...)`，其 resolve 落在
   // 新的宏任务里，激活早已过期，等于自己把仅有的机会也丢掉了。setOptions 不需要激活，挪到
   // open() 之后补（manifest 的 side_panel.default_path 已足以让 open() 用对页面）。
-  // 字幕抽屉（mobile-drawer.js）：iframe 里的扩展页拿不到宿主标签身份，content script
-  // 又没有 chrome.tabs 可用——由 SW 如实回报发信标签 id，抽屉拼进
-  // side-panel.html?fushiEmbed=1&fushiTabId=N（嵌入模式下绑死这一页，见 side-panel.js）。
-  if (msg && msg.type === 'drawerSelfTab') {
-    sendResponse({
-      ok: true,
-      tabId: _sender && _sender.tab && Number.isInteger(_sender.tab.id) ? _sender.tab.id : null,
-    });
+  // 字幕抽屉（mobile-drawer.js）的能力票据——发票端。
+  // 抽屉把 side-panel.html 嵌进网页，它因此必须是 web_accessible_resource；
+  // 于是**任何站点**都能凭同一个 URL 嵌入这份持完整扩展权限的文档。
+  // 身份不能写在 URL 参数里（嵌入方自证等于没校验）：真凭据只能由 SW 发放。
+  // content script 请票 → SW 记下浏览器给的 sender.tab.id 与宿主 origin（伪造不了）。
+  if (msg && msg.type === 'drawerFrameTicket') {
+    sendResponse(mintDrawerTicket(_sender));
+    return true;
+  }
+  // —— 验票端：由 iframe 里的面板文档回问。
+  // 校验全基于浏览器提供的 sender 与 SW 自己发的票，谁都冒充不了：
+  //   ① 票存在且未过期（一次性，取完即焚）；
+  //   ② 回问者确实是本扩展的 side-panel 页（sender.url）；
+  //   ③ 回问者所在标签 == 发票时那一页（加固层，见 verifyDrawerTicket）。
+  // 通过才如实回报标签 id 与宿主 origin（面板拿它们当唯一真值）。
+  if (msg && msg.type === 'drawerFrameAuth') {
+    sendResponse(verifyDrawerTicket(msg.ticket, _sender));
     return true;
   }
   if (msg && msg.type === 'openSubtitleSidePanel') {

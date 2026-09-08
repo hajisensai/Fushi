@@ -46,10 +46,23 @@ void main() {
     expect(js.contains('DICT_COLUMN_MIN_WIDTH'), isTrue,
         reason: '有效列数必须按每列最小宽 DICT_COLUMN_MIN_WIDTH 收敛');
     expect(
-        RegExp(r'Math\.floor\(\s*width\s*/\s*DICT_COLUMN_MIN_WIDTH\s*\)')
-            .hasMatch(js),
+        RegExp(r'Math\.floor\(\s*width\s*/\s*minWidth\s*\)').hasMatch(js),
         isTrue,
         reason: '装得下的列数 = floor(视口宽 / 每列最小宽)');
+    // 触屏（含 app 内置弹窗所在的安卓/触屏 Windows）只抬高每列可读下限，绝不能拿
+    // `if (isCoarsePointerType()) return 1;` 把用户设的列数整个吞掉：平板横屏、大屏
+    // 触控一体机明明排得下多列，那样会被静默锁死单列且改设置毫无反应（无提示无出路）。
+    expect(
+        RegExp(r'isCoarsePointerType\(\)\s*\?\s*DICT_COLUMN_MIN_WIDTH_COARSE'
+                r'\s*:\s*DICT_COLUMN_MIN_WIDTH')
+            .hasMatch(js),
+        isTrue,
+        reason: '触屏差异只体现为每列最小宽，仍走同一条 min(用户设置, 装得下) 收敛');
+    expect(
+        RegExp(r'if\s*\(\s*isCoarsePointerType\(\)\s*\)\s*return\s+1\s*;')
+            .hasMatch(js),
+        isFalse,
+        reason: '触屏不得硬锁单列——那是把用户的列数设置整个吞掉');
     // dictColumns()（masonry 列数来源）必须委托给 effectiveDictColumns，而非读原始值。
     final int dcAt = js.indexOf('function dictColumns(');
     expect(dcAt, isNonNegative);

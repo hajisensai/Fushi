@@ -2,13 +2,16 @@
 // 安卓系浏览器没有 chrome.sidePanel——那是桌面独有 API，字幕列表（side-panel.html 整套 UI）
 // 在手机上原本没有任何显示面。本脚本在「触屏设备 + 页面里有视频」时挂一条贴边拉条：
 //   · 轻点拉条 → 抽屉滑入：横屏从右缘抽出、竖屏从底部升起；内容是一份 iframe，指向
-//     side-panel.html?fushiEmbed=1&fushiTabId=N —— 选轨/点句跳转/时轴偏移/外挂字幕/Jimaku
+//     side-panel.html?fushiTicket=<一次性票据> —— 选轨/点句跳转/时轴偏移/外挂字幕/Jimaku
 //     搜字幕/制卡/面板查词全部原样复用，零复制逻辑；
 //   · 按住拉条直接左右/上下拖 → 抽屉跟手；松手按露出比例吸附开/关，开态拖过当前尺寸
 //     即顺手加宽/加高并存进 mobileSubtitleDrawerGeom（下次记住）——「可收可拉」；
-//   · iframe 挂 chrome-extension:// 页必须走 web_accessible_resources（manifest 已加），
-//     iframe 上下文里 tabs.query({currentWindow}) 不可靠，标签 id 由 background 的
-//     drawerSelfTab 如实回报 sender.tab.id；
+//   · iframe 挂 chrome-extension:// 页必须走 web_accessible_resources（manifest 已加）——
+//     这意味着**任何站点**都能凭同一个 URL 把这份持完整扩展权限的文档嵌进自己的页面，
+//     所以身份绝不能写在 URL 参数里（那是嵌入方自证）。建帧前先向 SW 现取一张一次性
+//     票据，SW 记下浏览器给的 sender.tab.id 与宿主 origin；面板拿票回问 SW 验明正身
+//     （见 background.js drawerFrameTicket/drawerFrameAuth 与 side-panel.js 的验票段）。
+//     标签 id 与宿主 origin 都由 SW 如实回报，iframe 上下文里 tabs.query 本就不可靠；
 //   · 收起不销毁 iframe（列表滚动位置、在途请求都保命），postMessage 通知面板暂停 300ms
 //     轮询，拉开即恢复；
 //   · 进全屏跟着进：节点迁 fullscreenElement 子树（与字幕覆盖层/查词弹窗同一策略）。
@@ -34,7 +37,6 @@
   var rootEl = null;
   var stripEl = null;
   var iframeEl = null;
-  var frameTabId; // undefined=未知，null=问过拿不到（回落 queryActiveTab）
 
   function coarsePointer() {
     try { return !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches); } catch (_) { return false; }
@@ -258,31 +260,33 @@
     } catch (_) {}
   }
 
+  function dropIframe() {
+    if (!iframeEl) return;
+    try { if (iframeEl.parentNode) iframeEl.parentNode.removeChild(iframeEl); } catch (_) {}
+    iframeEl = null;
+  }
   function ensureIframe() {
     if (iframeEl || !rootEl) return;
     iframeEl = document.createElement('iframe');
     iframeEl.id = 'fushi-drawer-frame';
     iframeEl.setAttribute('aria-label', '字幕列表');
-    var start = function (tid) {
-      var url = chrome.runtime.getURL('side-panel.html') + '?fushiEmbed=1';
-      if (tid != null) url += '&fushiTabId=' + tid;
-      // 与 postToFrame 的接收端配对（S5691）：面板只认这个 origin 发来的宿主消息。
-      // content script 里 location.origin 就是宿主页 origin，也正是 postMessage 的投递源。
-      url += '&fushiHostOrigin=' + encodeURIComponent(location.origin);
-      iframeEl.src = url;
-    };
-    if (frameTabId !== undefined) start(frameTabId);
-    else {
-      try {
-        chrome.runtime.sendMessage({ type: 'drawerSelfTab' }, function (resp) {
-          var tid = null;
-          try { if (!chrome.runtime.lastError && resp && Number.isInteger(resp.tabId)) tid = resp.tabId; } catch (_) {}
-          frameTabId = tid;
-          start(tid);
-        });
-      } catch (_) { frameTabId = null; start(null); }
-    }
     rootEl.appendChild(iframeEl);
+    // 票据是这条 iframe 唯一的身份凭据：不带票的面板文档一律停摆（side-panel.js
+    // 验票段），所以拿不到票就干脆不加载它——留一个空转的扩展页毫无意义，下次
+    // 开抽屉自然重试。每建一帧现取一张（一次性、短 TTL），绝不缓存复用。
+    var frame = iframeEl;
+    try {
+      chrome.runtime.sendMessage({ type: 'drawerFrameTicket' }, function (resp) {
+        if (frame !== iframeEl) return; // 期间已卸除/重建
+        var ticket = '';
+        try {
+          if (!chrome.runtime.lastError && resp && resp.ok && typeof resp.ticket === 'string') ticket = resp.ticket;
+        } catch (_) {}
+        if (!ticket) { dropIframe(); return; }
+        frame.src = chrome.runtime.getURL('side-panel.html')
+          + '?fushiTicket=' + encodeURIComponent(ticket);
+      });
+    } catch (_) { dropIframe(); }
   }
 
   function setOpen(on) {
@@ -474,6 +478,10 @@
   function unmount() {
     if (!rootEl) return;
     endWindowDrag(); // 拖到一半被停用也不能留监听
+    // drag 是模块级状态，不随节点一起消失：卸除时不清，它就永久停在「拖拽中」。
+    // onResize 与 adopt 轮询头一句都是「if (drag) ...」——旋屏/分屏重排、播放器自重排
+    // 跟随从此全部短路，且重挂载也救不回（只有下一次真按住拉条才会被覆盖）。
+    drag = null;
     if (adoptTimer) { clearInterval(adoptTimer); adoptTimer = 0; }
     document.removeEventListener('fullscreenchange', onFullscreenChange);
     window.removeEventListener('resize', onResize);

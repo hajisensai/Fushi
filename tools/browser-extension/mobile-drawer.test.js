@@ -58,7 +58,7 @@ test('mobile-drawer 抽屉状态机全链（门控/底挂/让位/adopt/还原/�
   const videoEl = makeNode('video');
   const htmlEl = makeNode('html');
   const body = makeNode('body');
-  const captured = { message: [], storage: {}, interval: null, intervals: [], rafs: [] };
+  const captured = { message: [], storage: {}, interval: null, intervals: [], rafs: [], ticketSeq: 0, ticketOk: true };
   const document = {
     fullscreenElement: null,
     body,
@@ -85,7 +85,7 @@ test('mobile-drawer 抽屉状态机全链（门控/底挂/让位/adopt/还原/�
   const chrome = {
     runtime: {
       getURL: (p) => 'chrome-extension://aaa/' + p,
-      sendMessage(msg, cb) { captured.message.push(msg); if (msg.type === 'drawerSelfTab') cb && cb({ ok: true, tabId: 42 }); else cb && cb({}); },
+      sendMessage(msg, cb) { captured.message.push(msg); if (msg.type === 'drawerFrameTicket') cb && cb(captured.ticketOk === false ? { ok: false } : { ok: true, ticket: 'tkt-' + (++captured.ticketSeq) }); else cb && cb({}); },
       lastError: null,
     },
     storage: { local: storageArea, onChanged: storageArea.onChanged },
@@ -134,7 +134,9 @@ test('mobile-drawer 抽屉状态机全链（门控/底挂/让位/adopt/还原/�
   tap(200, 790);
   const frame = root.children[1];
   if (!frame || frame.tag !== 'iframe') throw new Error('点开后 iframe 未建');
-  if (!/fushiEmbed=1&fushiTabId=42&fushiHostOrigin=https%3A%2F%2Fm\.test$/.test(frame.src)) throw new Error('src 参数不全: ' + frame.src);
+  // 身份只能是 SW 现发的一次性票据：绝不能再把 tabId/hostOrigin 写进 URL（嵌入方自证）。
+  if (frame.src !== 'chrome-extension://aaa/side-panel.html?fushiTicket=tkt-1') throw new Error('帧 URL 不是票据形态: ' + frame.src);
+  if (/fushiTabId|fushiHostOrigin/.test(frame.src)) throw new Error('URL 里再次出现了可伪造的身份参数: ' + frame.src);
   if (T() !== 'translateY(0px)') throw new Error('开态应贴零: ' + T());
   if (videoEl.style.width || videoEl.style.height || htmlEl.style.width || htmlEl.style.height) {
     throw new Error('非全屏竖屏绝不让位');
@@ -284,4 +286,45 @@ test('mobile-drawer 抽屉状态机全链（门控/底挂/让位/adopt/还原/�
   // 16. 设置关 → 整体卸除干净
   captured.storageOnChanged({ mobileSubtitleDrawer: { newValue: false } }, 'local');
   if (body.children.length !== 0 || fsEl.children.length !== 0) throw new Error('停用后没卸干净');
+
+  // 17. 拖到一半被卸除（门翻转/停用）：drag 是模块级状态，不清就永久停在「拖拽中」，
+  //     而 onResize 头一句就是 `if (drag) return` —— 旋屏重排从此全部短路，重挂载也救不回。
+  captured.storageOnChanged({ mobileSubtitleDrawer: { newValue: true } }, 'local');
+  win.innerWidth = 400; win.innerHeight = 800;
+  document.fullscreenElement = null;
+  syncUi();
+  bindRoot(body);
+  if (!root) throw new Error('17: 重新启用后没挂载');
+  down(200, 700); move(200, 640);            // 拖拽进行中（故意不松手）
+  win.innerWidth = 800; win.innerHeight = 400; // 转横屏非全屏 = 门翻转
+  syncUi();                                   // 900ms 轮询不看拖拽状态，该卸就卸
+  if (body.children.length !== 0) throw new Error('17: 门翻转没卸除');
+  win.innerWidth = 400; win.innerHeight = 800;
+  syncUi();
+  bindRoot(body);
+  if (!root) throw new Error('17: 没重挂');
+  win.innerHeight = 600;                      // 新上限 min(600×0.6, 600-160)=360
+  win.dispatch('resize', {});
+  flush();
+  if (Math.abs(parseFloat(root.style.height) - 360) > 1) {
+    throw new Error('17: 卸除没清 drag，重挂后旋屏重排永久失效: ' + root.style.height);
+  }
+
+  // 18. 拿不到票就不加载面板：不带票的 side-panel 文档在对端一律停摆，
+  //     留个空转的扩展页只是浪费；下次开抽屉重试即可。
+  captured.ticketOk = false;
+  captured.storageOnChanged({ mobileSubtitleDrawer: { newValue: false } }, 'local'); // 卸除（iframe 一并丢）
+  captured.storageOnChanged({ mobileSubtitleDrawer: { newValue: true } }, 'local');
+  syncUi();
+  bindRoot(body);
+  if (!root) throw new Error('18: 没重挂');
+  if (!root.classList.contains('is-open')) tap(200, 790);
+  if (root.children.length !== 1) throw new Error('18: 无票却留下了 iframe');
+  captured.ticketOk = true;
+  tap(200, 790); tap(200, 790); // 关再开：重试取票
+  const frame4 = root.children[1];
+  if (!frame4 || frame4.tag !== 'iframe') throw new Error('18: 取到票后没重建 iframe');
+  if (!/\?fushiTicket=tkt-\d+$/.test(frame4.src)) throw new Error('18: 重建帧没带新票: ' + frame4.src);
+  captured.storageOnChanged({ mobileSubtitleDrawer: { newValue: false } }, 'local');
+  if (body.children.length !== 0) throw new Error('18: 收尾没卸干净');
 });
