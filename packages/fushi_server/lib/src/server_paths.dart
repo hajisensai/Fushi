@@ -34,6 +34,9 @@ class ServerPaths extends EnginePaths {
 
   Directory get logs => Directory(p.join(dataDir, 'logs'));
 
+  /// 内置 torrent 引擎的 fastResume 目录（与 app 的 `<support>/torrent/resume` 同义）。
+  Directory get torrentResume => Directory(p.join(support.path, 'torrent', 'resume'));
+
   Future<void> ensureLayout() async {
     for (final Directory d in <Directory>[
       documents,

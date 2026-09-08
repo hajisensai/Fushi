@@ -1,9 +1,11 @@
-/// 服务端的代下载：用引擎的 `VideoDownloadPipelineService` + qBittorrent 后端。
+/// 服务端的代下载：用引擎的 `VideoDownloadPipelineService` + 内置 libtorrent 引擎
+/// 或外接 qBittorrent。
 ///
 /// 与 app 的 `AppModel.startAnimeDownloadService` 同一条管线、同一张
-/// `video_download_jobs` 表；区别只在装配：后端固定 qBittorrent（内置引擎的
-/// Linux `.so` 是第 4 期）、目标视频源固定为 `<documents>/downloads`（首次启动自动
-/// 建 media_sources 行）、非视频类内容不代下（没有发现导入执行器）。
+/// `video_download_jobs` 表；区别只在装配：后端按 `torrent.engine` 三态解析
+/// （auto：找得到 libfushi_torrent_ffi 就内置，否则配了 qBittorrent 就外接）、
+/// 目标视频源固定为 `<documents>/downloads`（首次启动自动建 media_sources 行）、
+/// 非视频类内容不代下（没有发现导入执行器）。
 library;
 
 import 'dart:io';
@@ -12,6 +14,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
+import 'package:fushi_engine/media/torrent/embedded_torrent_host.dart';
 import 'package:fushi_engine/media/torrent/qb_torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/qbittorrent_client.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
@@ -24,6 +27,7 @@ import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dar
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart';
 import 'package:fushi_engine/sync/downloads/host_download_host.dart';
 import 'package:fushi_server/src/config/server_config.dart';
+import 'package:fushi_server/src/native_libs.dart';
 import 'package:fushi_server/src/server_identity.dart';
 import 'package:fushi_server/src/server_paths.dart';
 import 'package:fushi_server/src/server_prefs.dart';
@@ -47,22 +51,60 @@ class ServerDownloadHost implements HostDownloadHost {
   VideoDownloadPipelineService? _pipeline;
   VideoSourceScrapeCoordinator? _scrape;
   TorrentBackend? _backend;
+  EmbeddedTorrentHost? _embedded;
   int? _sourceId;
 
-  bool get configured =>
-      (config.qbittorrentUrl ?? '').trim().isNotEmpty;
+  /// 启动时解析定的后端：`embedded` / `qbittorrent` / null（都不可用）。
+  String? _resolvedBackend;
+
+  bool get configured => _resolvedBackend != null;
+  bool get _qbConfigured => (config.qbittorrentUrl ?? '').trim().isNotEmpty;
+
+  /// 内置引擎库：配置显式路径 > bundle/lib 随包 > 系统搜索路径（null = 裸名）。
+  String? get _torrentLibraryPath {
+    final String? configured = config.torrentLibraryPath;
+    if (configured != null && configured.trim().isNotEmpty) return configured.trim();
+    return locateBundledLibrary(torrentLibraryName());
+  }
 
   Directory get downloadRoot => Directory(p.join(paths.documents.path, 'downloads'));
 
   QbConnectionConfig get _qbConfig => QbConnectionConfig(
-        backend: QbConnectionConfig.backendQbittorrent,
+        backend: _resolvedBackend == ServerConfig.torrentEngineEmbedded
+            ? QbConnectionConfig.backendEmbedded
+            : QbConnectionConfig.backendQbittorrent,
         baseUrl: config.qbittorrentUrl ?? '',
         username: config.qbittorrentUsername ?? '',
         password: config.qbittorrentPassword ?? '',
       );
 
+  /// `torrent.engine` 三态 → 实际后端。探测只加载库、不建 session。
+  String? _resolveEngine() {
+    final String want = config.torrentEngine;
+    final bool embeddedOk = EmbeddedTorrentHost.probeAvailable(libraryPath: _torrentLibraryPath);
+    switch (want) {
+      case ServerConfig.torrentEngineEmbedded:
+        return embeddedOk ? ServerConfig.torrentEngineEmbedded : null;
+      case ServerConfig.torrentEngineQbittorrent:
+        return _qbConfigured ? ServerConfig.torrentEngineQbittorrent : null;
+      default:
+        if (embeddedOk) return ServerConfig.torrentEngineEmbedded;
+        return _qbConfigured ? ServerConfig.torrentEngineQbittorrent : null;
+    }
+  }
+
   Future<void> start() async {
-    if (!configured || _pipeline != null) return;
+    if (_pipeline != null) return;
+    _resolvedBackend = _resolveEngine();
+    if (_resolvedBackend == null) {
+      engineLog.logDiagnostic(
+        'ServerDownloadHost',
+        'no torrent backend: engine=${config.torrentEngine}, '
+            'embedded lib=${_torrentLibraryPath ?? torrentLibraryName()} unavailable, '
+            'qbittorrent ${_qbConfigured ? 'configured' : 'not configured'}',
+      );
+      return;
+    }
     await downloadRoot.create(recursive: true);
     _sourceId = await _ensureDownloadSource();
     final VideoSourceScrapeCoordinator scrape = VideoSourceScrapeCoordinator(
@@ -82,7 +124,35 @@ class ServerDownloadHost implements HostDownloadHost {
       workerId: 'fushi-server-${identity.deviceId}',
     )..start();
     _pipeline = pipeline;
-    engineLog.logDiagnostic('ServerDownloadHost', 'pipeline started (qBittorrent ${config.qbittorrentUrl}, root ${downloadRoot.path})');
+    engineLog.logDiagnostic(
+      'ServerDownloadHost',
+      'pipeline started (backend=$_resolvedBackend'
+          '${_resolvedBackend == ServerConfig.torrentEngineQbittorrent ? ' ${config.qbittorrentUrl}' : ''}, '
+          'root ${downloadRoot.path})',
+    );
+  }
+
+  /// 内置引擎 session 懒建（幂等）；库/端口失败 → null，调用方报 ActionRequired。
+  Future<EmbeddedTorrentHost?> _ensureEmbedded() async {
+    final EmbeddedTorrentHost? existing = _embedded;
+    if (existing != null) return existing;
+    await paths.torrentResume.create(recursive: true);
+    // 计划集合 = video_download_jobs 里仍活着的 embedded 任务；resume 目录只是它的镜像。
+    final Set<String> restoreIds = legacyEmbeddedTorrentResumeIds(await db.getVideoDownloadJobs());
+    final EmbeddedTorrentHost? host = EmbeddedTorrentHost.open(
+      libraryPath: _torrentLibraryPath,
+      baseSavePath: downloadRoot.path,
+      resumeDir: paths.torrentResume.path,
+      restoreIds: restoreIds,
+      listenInterfaces: config.torrentListen,
+    );
+    if (host == null) {
+      engineLog.logDiagnostic('ServerDownloadHost', 'embedded torrent session failed to open');
+      return null;
+    }
+    host.applySessionSettings(_qbConfig);
+    engineLog.logDiagnostic('ServerDownloadHost', 'embedded libtorrent ${host.libtorrentVersion} on ${config.torrentListen}');
+    return _embedded = host;
   }
 
   Future<void> stop() async {
@@ -93,6 +163,11 @@ class ServerDownloadHost implements HostDownloadHost {
     _scrape = null;
     _backend?.close();
     _backend = null;
+    final EmbeddedTorrentHost? embedded = _embedded;
+    _embedded = null;
+    if (embedded != null) {
+      embedded.dispose(keepIds: legacyEmbeddedTorrentResumeIds(await db.getVideoDownloadJobs()));
+    }
   }
 
   /// `<documents>/downloads` 的托管视频源行（管线 organize/import 要靠它落库）。
@@ -113,26 +188,36 @@ class ServerDownloadHost implements HostDownloadHost {
 
   VideoDownloadBackendIdentity _identity() => buildVideoDownloadBackendIdentity(
         config: _qbConfig,
-        resolvedBackend: QbConnectionConfig.backendQbittorrent,
+        resolvedBackend: _resolvedBackend == ServerConfig.torrentEngineEmbedded
+            ? QbConnectionConfig.backendEmbedded
+            : QbConnectionConfig.backendQbittorrent,
         embeddedInstallationId: identity.deviceId,
       );
 
   Future<VideoDownloadBackendBinding?> _resolveBackend(VideoDownloadJobRow job) async {
-    if (!configured) {
-      throw const VideoDownloadPipelineActionRequired('no torrent backend configured on this host');
+    switch (_resolvedBackend) {
+      case ServerConfig.torrentEngineEmbedded:
+        final EmbeddedTorrentHost? host = await _ensureEmbedded();
+        if (host == null) {
+          throw const VideoDownloadPipelineActionRequired('embedded torrent engine unavailable on this host');
+        }
+        // 短命视图，共享常驻 session（与 app 的 backendFactory 每 tick 一致）。
+        return VideoDownloadBackendBinding(backend: host.backendView(), identity: _identity());
+      case ServerConfig.torrentEngineQbittorrent:
+        _backend ??= QbTorrentBackend(QBittorrentClient(
+          baseUrl: config.qbittorrentUrl!,
+          username: config.qbittorrentUsername ?? '',
+          password: config.qbittorrentPassword ?? '',
+        ));
+        return VideoDownloadBackendBinding(backend: _backend!, identity: _identity());
     }
-    _backend ??= QbTorrentBackend(QBittorrentClient(
-      baseUrl: config.qbittorrentUrl!,
-      username: config.qbittorrentUsername ?? '',
-      password: config.qbittorrentPassword ?? '',
-    ));
-    return VideoDownloadBackendBinding(backend: _backend!, identity: _identity());
+    throw const VideoDownloadPipelineActionRequired('no torrent backend configured on this host');
   }
 
   @override
   Future<Map<String, Object?>> capability() async => <String, Object?>{
         'supported': configured,
-        'backend': configured ? QbConnectionConfig.backendQbittorrent : 'none',
+        'backend': _resolvedBackend ?? 'none',
         'kinds': <String>['video'],
       };
 

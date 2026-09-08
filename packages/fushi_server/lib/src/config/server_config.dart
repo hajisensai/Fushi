@@ -69,6 +69,9 @@ class ServerConfig {
     required this.ortLibraryPath,
     required this.adminPort,
     required this.adminBind,
+    required this.torrentEngine,
+    required this.torrentLibraryPath,
+    required this.torrentListen,
   });
 
   static const int defaultPort = 38765;
@@ -76,6 +79,13 @@ class ServerConfig {
   /// WebUI / admin API 单独一个端口：互联协议端口只跑冻结面上的 `/api/*`，
   /// admin 鉴权（admin token）与 per-peer token 完全分开。
   static const int defaultAdminPort = 38780;
+
+  /// `torrent.engine` 三态：auto = 有随包/系统 libfushi_torrent_ffi 就内置，否则
+  /// 配了 qBittorrent 就外接；embedded / qbittorrent = 显式指定（不满足即 unsupported）。
+  static const String torrentEngineAuto = 'auto';
+  static const String torrentEngineEmbedded = 'embedded';
+  static const String torrentEngineQbittorrent = 'qbittorrent';
+  static const String defaultTorrentListen = '0.0.0.0:6881,[::]:6881';
 
   factory ServerConfig.defaults({required String dataDir}) => ServerConfig(
         dataDir: dataDir,
@@ -95,6 +105,9 @@ class ServerConfig {
         ortLibraryPath: null,
         adminPort: defaultAdminPort,
         adminBind: '0.0.0.0',
+        torrentEngine: torrentEngineAuto,
+        torrentLibraryPath: null,
+        torrentListen: defaultTorrentListen,
       );
 
   final String dataDir;
@@ -125,6 +138,12 @@ class ServerConfig {
   final int adminPort;
   final String adminBind;
 
+  /// 内置 torrent 引擎：`torrent.engine` / `torrent.library`（显式 .so 路径）/
+  /// `torrent.listen`（libtorrent 监听接口串）。
+  final String torrentEngine;
+  final String? torrentLibraryPath;
+  final String torrentListen;
+
   ServerConfig copyWith({
     int? port,
     String? bind,
@@ -142,6 +161,9 @@ class ServerConfig {
     String? ortLibraryPath,
     int? adminPort,
     String? adminBind,
+    String? torrentEngine,
+    String? torrentLibraryPath,
+    String? torrentListen,
   }) =>
       ServerConfig(
         dataDir: dataDir,
@@ -161,6 +183,9 @@ class ServerConfig {
         ortLibraryPath: ortLibraryPath ?? this.ortLibraryPath,
         adminPort: adminPort ?? this.adminPort,
         adminBind: adminBind ?? this.adminBind,
+        torrentEngine: torrentEngine ?? this.torrentEngine,
+        torrentLibraryPath: torrentLibraryPath ?? this.torrentLibraryPath,
+        torrentListen: torrentListen ?? this.torrentListen,
       );
 
   /// 从 YAML 文本解析；缺项取默认。[dataDir] 相对路径按配置文件所在目录解析。
@@ -180,6 +205,15 @@ class ServerConfig {
     final Object? qb = map['qbittorrent'];
     final Map<dynamic, dynamic> qbMap =
         qb is Map ? qb : const <dynamic, dynamic>{};
+    final Object? torrent = map['torrent'];
+    final Map<dynamic, dynamic> torrentMap =
+        torrent is Map ? torrent : const <dynamic, dynamic>{};
+    final String engine = torrentMap['engine']?.toString() ?? base.torrentEngine;
+    if (engine != torrentEngineAuto &&
+        engine != torrentEngineEmbedded &&
+        engine != torrentEngineQbittorrent) {
+      throw FormatException('torrent.engine 只能是 auto / embedded / qbittorrent，实际 "$engine"');
+    }
     return base.copyWith(
       port: _int(map['port']) ?? base.port,
       bind: map['bind']?.toString() ?? base.bind,
@@ -198,6 +232,9 @@ class ServerConfig {
       ortLibraryPath: map['onnxruntime_library']?.toString(),
       adminPort: _int(map['admin_port']) ?? base.adminPort,
       adminBind: map['admin_bind']?.toString() ?? base.adminBind,
+      torrentEngine: engine,
+      torrentLibraryPath: torrentMap['library']?.toString(),
+      torrentListen: torrentMap['listen']?.toString() ?? base.torrentListen,
     );
   }
 
@@ -225,6 +262,10 @@ class ServerConfig {
     }
     b.writeln('upload_quota_bytes: $uploadQuotaBytes');
     if (adminToken != null) b.writeln('admin_token: ${_q(adminToken!)}');
+    b.writeln('torrent:');
+    b.writeln('  engine: ${_q(torrentEngine)}');
+    if (torrentLibraryPath != null) b.writeln('  library: ${_q(torrentLibraryPath!)}');
+    b.writeln('  listen: ${_q(torrentListen)}');
     if (qbittorrentUrl != null) {
       b.writeln('qbittorrent:');
       b.writeln('  url: ${_q(qbittorrentUrl!)}');

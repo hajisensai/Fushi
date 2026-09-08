@@ -252,20 +252,23 @@ async function loadModels(){
 const FIELDS = [
   ['deviceName','设备名','text'],['port','互联端口','number'],['bind','绑定地址','text'],['tls','TLS','bool'],['lanRequiresPin','局域网配对必须 PIN','bool'],
   ['subtitleLanguage','字幕语言','text'],['ffmpeg','ffmpeg 路径','text'],['onnxruntimeLibrary','onnxruntime 动态库','text'],['uploadQuotaBytes','上传配额（字节）','number'],['adminPort','WebUI 端口','number'],
+  ['torrent.engine','torrent 引擎','select:auto,embedded,qbittorrent'],['torrent.library','内置引擎库路径（空=随包/系统）','text'],['torrent.listen','libtorrent 监听接口','text'],
   ['qbittorrent.url','qBittorrent WebUI 地址','text'],['qbittorrent.username','qBittorrent 用户名','text'],['qbittorrent.password','qBittorrent 密码','password'],
 ];
 let settingsCache=null;
 async function loadSettings(){
   const s = await api('settings'); settingsCache=s;
-  $('#settings-form').innerHTML = FIELDS.map(([k,label,type])=>{ const v = k.includes('.') ? (s[k.split('.')[0]]||{})[k.split('.')[1]] : s[k]; const id='f-'+k.replace('.','-');
+  const found = s.torrent && s.torrent.embeddedLibraryFound;
+  $('#settings-form').innerHTML = FIELDS.map(([k,label,type])=>{ const v = k.includes('.') ? (s[k.split('.')[0]]||{})[k.split('.')[1]] : s[k]; const id='f-'+k.replace('.','-'); if(k==='torrent.library'&&!v) label += found ? `（已找到 ${found}）` : '（未找到随包库）';
     if(type==='bool') return `<label class="f">${esc(label)}<select id="${id}"><option value="true" ${v?'selected':''}>开</option><option value="false" ${!v?'selected':''}>关</option></select></label>`;
+    if(type.startsWith('select:')) return `<label class="f">${esc(label)}<select id="${id}">${type.slice(7).split(',').map(o=>`<option value="${esc(o)}" ${o===v?'selected':''}>${esc(o)}</option>`).join('')}</select></label>`;
     if(type==='password') return `<label class="f">${esc(label)} ${s.qbittorrent.passwordSet?'<span class="muted">(已设置，留空不改)</span>':''}<input type="password" id="${id}" value=""></label>`;
     return `<label class="f">${esc(label)}<input type="${type}" id="${id}" value="${esc(v??'')}"></label>`; }).join('');
 }
 $('#btn-settings-save').onclick = guard(async()=>{
-  const body={qbittorrent:{}};
+  const body={qbittorrent:{},torrent:{}};
   for(const [k,,type] of FIELDS){ const el=$('#f-'+k.replace('.','-')); let v=el.value; if(type==='bool') v=(v==='true'); else if(type==='number') v=Number(v); if(type!=='bool'&&type!=='number'&&v==='') v=null;
-    if(k.includes('.')) body.qbittorrent[k.split('.')[1]]=v; else body[k]=v; }
+    if(k.includes('.')) body[k.split('.')[0]][k.split('.')[1]]=v; else body[k]=v; }
   // 路径类字段：空串代表「清掉」——但 copyWith 的 null 是「不改」，所以传空串让服务端按空处理
   for(const k of ['ffmpeg','onnxruntimeLibrary']) if(body[k]===null) delete body[k];
   await put('settings',body); toast('已保存'); loadSettings();

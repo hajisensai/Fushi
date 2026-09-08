@@ -13,6 +13,7 @@ import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/ocr/ocr_host_bindings.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_server/src/config/server_config.dart';
+import 'package:fushi_server/src/native_libs.dart';
 import 'package:fushi_server/src/ocr_session_factory.dart';
 import 'package:fushi_server/src/server_log.dart';
 import 'package:fushi_server/src/server_paths.dart';
@@ -32,8 +33,11 @@ void installServerHostBindings({
   // 漫画 OCR 整卷任务的后台 isolate：FFI ONNX Runtime 工厂 + ORT 库路径引导。
   ocrSessionFactoryBuilder = buildServerOcrSessionFactory;
   ocrIsolateBootstrap = serverOcrIsolateBootstrap;
-  ocrIsolateBootstrapArg = config.ortLibraryPath;
-  serverOrtLibraryPath = config.ortLibraryPath;
+  // ORT：配置显式路径 > bundle/lib 随包（CI 放的 CPU 版；换 CUDA 版只需替换文件或
+  // 在配置里指到 GPU 版路径）> asr_onnx_ffi 自己的候选（ASR_ONNXRUNTIME_LIB / 同级 / 裸名）。
+  final String? ortPath = resolveOrtLibraryPath(config);
+  ocrIsolateBootstrapArg = ortPath;
+  serverOrtLibraryPath = ortPath;
   // ASR（asr_core）的三个装配点：数据根 / 出站 HTTP / 日志。
   asr.asrSupportRootResolver = () async => paths.support;
   asr.asrHttpClientFactory = ({Duration? connectionTimeout}) =>
@@ -79,3 +83,11 @@ asr.AsrTranscriptionService createServerAsrTranscriptionService() =>
       ),
       pcm: asr.FfmpegAsrPcmSource(backend: const FushiAsrFfmpegBackend()),
     );
+
+/// 配置显式路径优先；否则 bundle 布局里找随包的 onnxruntime；都没有返回 null
+/// （交给 asr_onnx_ffi 的候选链）。
+String? resolveOrtLibraryPath(ServerConfig config) {
+  final String? configured = config.ortLibraryPath;
+  if (configured != null && configured.trim().isNotEmpty) return configured.trim();
+  return locateBundledLibrary(onnxRuntimeLibraryName());
+}

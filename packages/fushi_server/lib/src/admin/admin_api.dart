@@ -17,6 +17,7 @@ import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/headless_host.dart';
 import 'package:fushi_server/src/host_bindings.dart';
 import 'package:fushi_server/src/library_scanner.dart';
+import 'package:fushi_server/src/native_libs.dart';
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 
@@ -368,11 +369,25 @@ class AdminApi {
           'username': ctx.config.qbittorrentUsername,
           'passwordSet': (ctx.config.qbittorrentPassword ?? '').isNotEmpty,
         },
-        'restartRequiredKeys': const <String>['port', 'bind', 'tls', 'adminPort', 'qbittorrent', 'onnxruntimeLibrary'],
+        'torrent': <String, Object?>{
+          'engine': ctx.config.torrentEngine,
+          'library': ctx.config.torrentLibraryPath,
+          'listen': ctx.config.torrentListen,
+          'embeddedLibraryFound': locateBundledLibrary(torrentLibraryName()),
+        },
+        'restartRequiredKeys': const <String>['port', 'bind', 'tls', 'adminPort', 'qbittorrent', 'torrent', 'onnxruntimeLibrary'],
       });
 
   Future<shelf.Response> _putSettings(Map<String, dynamic> body) async {
     final Map<String, dynamic>? qb = body['qbittorrent'] is Map ? Map<String, dynamic>.from(body['qbittorrent'] as Map) : null;
+    final Map<String, dynamic>? torrent = body['torrent'] is Map ? Map<String, dynamic>.from(body['torrent'] as Map) : null;
+    final String? engine = torrent?['engine']?.toString();
+    if (engine != null &&
+        engine != ServerConfig.torrentEngineAuto &&
+        engine != ServerConfig.torrentEngineEmbedded &&
+        engine != ServerConfig.torrentEngineQbittorrent) {
+      throw FormatException('torrent.engine must be auto / embedded / qbittorrent, got "$engine"');
+    }
     final ServerConfig next = ctx.config.copyWith(
       deviceName: body['deviceName']?.toString(),
       port: body['port'] is num ? (body['port'] as num).toInt() : null,
@@ -387,6 +402,9 @@ class AdminApi {
       qbittorrentUrl: qb?['url']?.toString(),
       qbittorrentUsername: qb?['username']?.toString(),
       qbittorrentPassword: (qb?['password'] ?? '').toString().isEmpty ? null : qb!['password'].toString(),
+      torrentEngine: engine,
+      torrentLibraryPath: torrent?['library']?.toString(),
+      torrentListen: (torrent?['listen'] ?? '').toString().isEmpty ? null : torrent!['listen'].toString(),
     );
     await ctx.updateConfig(next);
     return _settings();
