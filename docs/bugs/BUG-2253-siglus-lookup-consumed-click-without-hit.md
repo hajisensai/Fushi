@@ -21,6 +21,8 @@
 
 ### 后续首按边界（2026-09-08）
 
+v7 实际会话 PID 72620（Hook SHA-256 `bc9238afee6d78864a835bdb3dc5f39e9fd1473ea7fda700adddcd106f9d0598`）终于取得明确 worker 拒绝：队列 1 的 event 61/current 61、generation 14/14、epoch 12/13 为 LayoutIncomplete；队列 2、3 对同事件在 epoch 16 成功发布；队列 4、5 的 event 226/current 226、generation 24/24 分别在 epoch 146/147、153/154 为 LayoutIncomplete。队列 1、4 的 glyph frontier/consumed 分别为 6347/6346、114861/114860（各差一个），队列 5 为 118472/118472；文本前沿均已消费完。私有证据在本机 rewrite72620-worker.json。此会话包含用户并行输入，不能把这些队列逐条归给主代理的指定坐标；但已证明真实释放入队后因 current layout 无效被拒绝，不再只是候选路径。后续游戏在原生 D3D9 device-lost 恢复循环中未响应，尚未完成受控复测。需审查 worker 对未发布 transport 尾项与分批重绘的失效区分，不能删除 epoch 或凭相同 generation 接受旧几何。
+
 原始新会话 PID 6464 使用 DLL SHA-256 `e1e5616f5b4d248242a3a005eb604505089d2fd76e3797e246d9f12428b0fe4a`，首次点击直接推进而未显示词典。随后只读快照确认 `click_event_count=click_processed_seq=0`，不是仅凭 worker diagnostic count=0 推断未入队。第二次短句点击及之后长句点击已正常发布命中；因此不能认定准入一直失效。证据为本机 `rewrite6464-input-private-metadata.json`、`rewrite6464-input-admission-metadata.jsonl` 及主代理点击台账。历史 first-down 拒绝原因仍未知。
 
 前置诊断由 `siglus_lookup_click_target.inc` 的真实 Read/Build 检查和 `siglus_lookup_click_policy.inc` 的真实采样/消息路径填写。它区分稳定目标失效、过期、身份/代际缺失、窗口/前台/客户区或投影失败、live view 返回失败、registry 准入返回失败、尚未同步，以及本次成功取得输入所有权。registry 内部拒绝未另作猜测拆分，也不会额外读取游戏内存。取得 down 所有权不等于 up 已入队或 worker 已发布。
