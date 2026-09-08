@@ -2,8 +2,10 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// 远端封面必须走 `CachedNetworkImageProvider`（cached_network_image 自带磁盘
-/// 缓存），而不是只有内存缓存的 `NetworkImage` / `Image.network`。
+/// 远端封面必须走 `AppCachedHttpImage`（`extends CachedNetworkImageProvider`，
+/// 磁盘缓存语义不变，另外把请求接进全应用代理装配 —— 裸
+/// `CachedNetworkImageProvider` 已被 network_image_proxy_guard_test 禁掉），
+/// 而不是只有内存缓存的 `NetworkImage` / `Image.network`。
 ///
 /// 这条守卫按**每一处用法**判定：任何一行出现禁用写法都会点名文件与行号。早期
 /// 版本只断言「文件里出现过一次 CachedNetworkImageProvider」，那只能证明有人写
@@ -40,7 +42,7 @@ void main() {
     expect(
       offenders,
       isEmpty,
-      reason: '远端封面只能用 CachedNetworkImageProvider，'
+      reason: '远端封面只能用 AppCachedHttpImage，'
           '以下位置退回了仅有内存缓存的写法：\n${offenders.join('\n')}',
     );
   });
@@ -49,7 +51,7 @@ void main() {
     for (final String path in paths) {
       expect(
         File(path).readAsStringSync(),
-        contains('CachedNetworkImageProvider('),
+        contains('AppCachedHttpImage('),
         reason: '$path 不再出现磁盘缓存封面用法：'
             '要么封面被删（请同步收缩本守卫清单），要么被换成了别的远端图片写法',
       );

@@ -14,7 +14,10 @@ class MExtensionServerController {
 
     fun start(port: Int) {
         try {
-            HostProxyPolicy.install()
+            if (!HostProxyPolicy.install()) {
+                // No host endpoint: standalone sidecar (runtime smoke test). Requests go DIRECT.
+                logger.warn { "Host proxy policy endpoint absent; outbound requests bypass the app proxy" }
+            }
             server = WebServer(port)
             server?.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
             val actualPort = server?.listeningPort ?: 0

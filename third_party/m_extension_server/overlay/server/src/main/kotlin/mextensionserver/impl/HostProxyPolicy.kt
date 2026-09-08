@@ -36,9 +36,25 @@ object HostProxyPolicy : ProxySelector() {
         override fun toString() = "Host proxy policy"
     }
 
-    fun install() {
-        require(port != null && port in 1..65535 && token.isNotEmpty()) { "Host proxy policy endpoint is required" }
+    /**
+     * Route this JVM's proxy decisions through the host, when the host told us where to ask.
+     *
+     * Returns false (and installs nothing) when the endpoint is absent: a sidecar started
+     * outside Fushi -- the desktop runtime smoke tests in tool/mihon/verify_desktop_runtime.*
+     * do exactly this -- has no host to ask, and there is nothing to fall back to but DIRECT.
+     * This used to `require(...)`, which threw IllegalArgumentException out of
+     * MExtensionServerController.start(); that method only catches IOException, so the process
+     * died before printing its ready marker and every desktop build/release job that runs the
+     * verify script failed. Refusing to start is not a safer failure mode than starting without
+     * a policy -- it just breaks the smoke test.
+     *
+     * Fushi itself always passes the endpoint, so a false here in production means the host
+     * wiring regressed: it is logged, not swallowed silently.
+     */
+    fun install(): Boolean {
+        if (port == null || port !in 1..65535 || token.isEmpty()) return false
         setDefault(this)
+        return true
     }
 
     private fun lookup(uri: URI): Policy {
