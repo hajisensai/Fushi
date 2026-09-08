@@ -66,13 +66,13 @@
 
 ## 7. 分批与验收
 
-| 批次 | 内容 | 验收 |
-|---|---|---|
-| A1（本 PR，已改一半） | 主源可选 + 对称链 + 歧义不短路 + 纯集号不搜 + UI | 识别器 / 协调器 / UI 定向测试；Windows 真机中文目录名来源两种主源各跑一次 |
-| A2 | 离线标题索引阶段（AniDB 标题包 → Fribb → mal/tmdb id 直拉）+ 身份接力 | 中文 / 日文 / 罗马字三种目录名离线命中；Jikan 搜索 504 时仍能识别（mock 504） |
-| A3 | TMDB 多轮搜索计划表 + 合并对称 / 并集 / 简介语言感知 | 计划表用例；merge 单测 |
-| B | 多季一张卡（Fribb 季/偏移 + anime-relations 重定向 + 展示聚合） | Frieren / Oshi no Ko / Kusuriya 三例 fixture；绝对集号 25 → S2E1 |
-| C（二期） | 识别词（屏蔽 / 替换 / 集偏移）、字段锁、每来源语言覆盖 | — |
+| 批次 | 内容 | 验收 | 状态（2026-09-08，分支 `feat/scrape-provider-choice`） |
+|---|---|---|---|
+| A1 | 主源可选 + 对称链 + 歧义不短路 + 纯集号不搜 + UI | 识别器 / 协调器 / UI 定向测试；Windows 真机中文目录名来源两种主源各跑一次 | 已提交 `b450030c83`（+ 数据层 `16f11be7c8`）；真机复测待做 |
+| A2 | 离线标题索引阶段（AniDB 标题包 → Fribb → mal/tmdb id 直拉）+ 身份接力 | 中文目录名离线命中不搜索；MAL 504 时换 TMDB id；歧义退回搜索；MAL→TMDB id 接力 | 已提交 `4831c29f34`（`anime_offline_identity_resolver.dart` + `offline_identity_coordinator_test.dart`） |
+| A3 | 年份 ±1 + 去年份重搜 + 合并对称 / 并集 / 简介语言感知 | 计划表用例；merge 单测；`mal_hash_coordinator_test` 简介断言随语义改为 TMDB 中文 | 已提交 `f8f3146cb7` |
+| B | 多季一张卡（Fribb 季序列逐季抓 MAL 分集 + anime-relations 重定向 + 按季集数累加 + 越界只警告） | `multi_season_coordinator_test.dart`：季目录 / 绝对集号 29→S2E1 / 无规则 30→S2E2 / 99 越界未验证 | 已提交 `f1e7696569`。**范围收敛**：只在**一个本地合集内**逐季对齐（成员 (季, 集) 覆盖经 `localEpisodeKeyFor` 三处共用）；跨合集的展示层聚合（S1、S2 两个独立合集并成一张卡）未做——扫描期同名即已并组，拆开的多是文件名本身缺番名，需用户改名或手动并合集 |
+| C（二期） | 识别词（屏蔽 / 替换 / 集偏移）、字段锁、每来源语言覆盖、跨合集展示聚合 | — | 未开始 |
 
 ## 8. 兼容性
 
