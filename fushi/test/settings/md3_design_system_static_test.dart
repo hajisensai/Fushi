@@ -1169,8 +1169,10 @@ void main() {
               'reader_fushi/chrome.part.dart.',
       'lib/src/reader/reader_statistics_dialog.dart':
           'Reading-session metric bars are chart content (progress-track '
-              'surface + compact chart controls) — same reviewed exception '
-              'class as reading_statistics_page / video_statistics_page.',
+              'surface) — same reviewed exception class as '
+              'reading_statistics_page / video_statistics_page. The compact '
+              'chart controls are gone: the dialog now uses full-width shared '
+              'components, so VisualDensity.compact is no longer exempted.',
       'lib/src/media/audiobook/reader_quick_settings_sheet.dart':
           'In-book quick settings sheet packs reader controls at reader '
               'density — same reviewed exception class as '
@@ -1361,7 +1363,6 @@ void main() {
         'surfaceContainerHighest'
       },
       'lib/src/reader/reader_statistics_dialog.dart': <String>{
-        'VisualDensity.compact',
         'surfaceContainerHighest'
       },
       'lib/src/media/audiobook/reader_quick_settings_sheet.dart': <String>{
