@@ -20,7 +20,6 @@ import 'package:fushi/src/models/theme_notifier.dart'
     show SurfaceRoles, ThemeNotifier, deriveSurfaceRolesFrom;
 import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/epub/epub_book.dart';
 import 'package:fushi/src/epub/epub_parser.dart';
@@ -92,7 +91,6 @@ import 'package:fushi/src/webview/webview_death_guard.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/media/audiobook/pointer_seek.dart';
-import 'package:fushi/src/platform/macos_fullscreen_state.dart';
 import 'package:fushi/src/platform/selection_external_actions.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
@@ -109,7 +107,6 @@ import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
-import 'package:window_manager/window_manager.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
@@ -2023,25 +2020,12 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   bool get _anyChromeFloating =>
       (_topProgressFloating && !_statusFooterEnabled) || _bottomBarFloating;
 
-  /// BUG-1343：macOS 的 NSWindow 全局启用了透明标题栏 + full-size content，而默认 MD3 根壳
-  /// 不挂 MacosWindow/ToolBar。阅读器需自行保留一条可拖拽标题栏，否则原生 WebView
-  /// 吞满顶边后窗口没有稳定抓手。其它平台严格为 0。
-  ///
-  /// BUG-1744：原生全屏下这条带子必须归零。全屏时既没有标题栏也没有交通灯，窗口
-  /// 也不能被拖动——留着它就是一条纯浪费的不透明横带（用户报的「顶部横带」），
-  /// 还连带把正文整体下压 28pt。这里是单一真相源：[_readerTopOffset] /
-  /// [popupTopReserve] / `independentDocumentInsets` / 顶部进度条全部读它。
-  double get _macosWindowTitlebarInset =>
-      Platform.isMacOS && !_macosFullscreen ? kMacTitleBarHeight : 0;
-
-  /// macOS 原生全屏态。非 macOS 恒为 false。
-  bool _macosFullscreen = false;
-
+  // BUG-1343 / BUG-1744 的 macOS 顶部拖拽带（`_macosWindowTitlebarInset` + 一条
+  // 28pt 的 DragToMoveArea）已随「macOS 改用自绘 MD3 顶栏」整块删除：交通灯在
+  // `main()` 里被隐藏，[FushiDesktopTitleBar] 在整个 Navigator 之上提供稳定抓手，
+  // 阅读器不再需要自己让位或自绘拖拽带——留着就是顶栏下面又压一条 28pt 空白。
   double get _readerTopOffset =>
-      _stableTopInset +
-      _macosWindowTitlebarInset +
-      _topProgressReserve +
-      _desktopHeaderReserve;
+      _stableTopInset + _topProgressReserve + _desktopHeaderReserve;
 
   double get _readerBottomReserve =>
       _bottomChromeReserve + _statusFooterReserve + _stableBottomInset;
@@ -2053,7 +2037,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       _bottomChromeReserve > 0 ? _readerBottomReserve : 0;
 
   @override
-  double get popupTopReserve => _stableTopInset + _macosWindowTitlebarInset;
+  double get popupTopReserve => _stableTopInset;
 
   @override
   bool get popupVerticalWriting =>
@@ -2085,14 +2069,6 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _exitFlushCallback = ExitFlushRegistry.instance.register(
       _flushAllForProcessExit,
     );
-    // BUG-1744：macOS 全屏进出必须重算顶部让位并把新 inset 回喂给 WebView。
-    // didChangeDependencies 只比较 viewPadding，而桌面全屏切换通常不改
-    // viewPadding（两边都是 0），所以那条路径永远不会触发。
-    _macosFullscreen = MacosFullscreenState.instance.isFullscreen.value;
-    MacosFullscreenState.instance.isFullscreen.addListener(
-      _onMacosFullscreenChanged,
-    );
-    unawaited(MacosFullscreenState.instance.ensureRegistered());
     // The inset reading-content focus ring only paints in traditional
     // (keyboard/gamepad) highlight mode; rebuild it when the mode flips so it
     // appears/disappears with the input device, not only on focus changes.
@@ -2686,9 +2662,6 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     // Complete it as failed now (and clear its precise-locate request) instead
     // of leaving the callback alive until the 10-second timeout.
     _failNavigation();
-    MacosFullscreenState.instance.isFullscreen.removeListener(
-      _onMacosFullscreenChanged,
-    );
     assert(() {
       // TODO-2603：页面走了就释放钩子所有权，下一个阅读器才能装（无条件清，与旧行为
       // 逐字一致——钩子本来就是无条件清的，这里只多清一个所有者字段）。
@@ -3014,19 +2987,6 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _armResizeRepaginateDebounce();
   }
 
-  /// BUG-1744：全屏翻转 → 重算 [_macosWindowTitlebarInset] → 回喂 WebView 几何。
-  ///
-  /// 只 setState 是不够的：JS 侧的 `--chrome-top-inset` 由 [_applyChromeInsets]
-  /// 单独推送，不跟着 Flutter 重建走。漏了它，正文 padding-top 会停在旧的 28px
-  /// 上（全屏后顶部仍留一条空白带，正是要修的症状）。
-  void _onMacosFullscreenChanged() {
-    if (!mounted) return;
-    final bool next = MacosFullscreenState.instance.isFullscreen.value;
-    if (next == _macosFullscreen) return;
-    setState(() => _macosFullscreen = next);
-    unawaited(_applyChromeInsets());
-  }
-
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -3215,30 +3175,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                             ),
                           ),
                         ),
-                      // BUG-1744：全屏时窗口不可拖动、也没有交通灯要让位——这条
-                      // 不透明带在全屏下纯粹是一条顶部横带，必须整体不挂。
-                      if (Platform.isMacOS && !_macosFullscreen)
-                        Positioned(
-                          top: 0,
-                          left: 0,
-                          right: 0,
-                          height: kMacTitleBarHeight,
-                          // BUG-1692：本 Stack 里排在 WebView **之后**的每一块 Flutter
-                          // 内容都必须自带 RepaintBoundary，否则它们会合并进页面级
-                          // RepaintBoundary 那一张 cull rect = 整窗的 PictureLayer，
-                          // macOS engine 据此把整窗加进 FlutterMutatorView 的
-                          // _hitTestIgnoreRegion，WebView 整块收不到任何鼠标事件。
-                          child: RepaintBoundary(
-                            child: DragToMoveArea(
-                              child: ColoredBox(
-                                key: const ValueKey<String>(
-                                  'fushi_reader_window_drag_area',
-                                ),
-                                color: bgColor,
-                              ),
-                            ),
-                          ),
-                        ),
+                      // 这里曾挂 macOS 专用的 28pt 拖拽带（BUG-1343，全屏下不挂
+                      // 见 BUG-1744）。macOS 改用自绘 MD3 顶栏后，窗口抓手由
+                      // [FushiDesktopTitleBar] 的 DragToMoveArea 提供、交通灯也已
+                      // 隐藏，阅读器再挂一条只会在顶栏下面多压一条不透明带。
                       _buildTopProgressBar(),
                       // 桌面端顶边悬停热区（收起时才存在）+ 顶部工具栏（ッツ 形态）：与底栏
                       // 同一显隐状态机，排在词典弹层之前。
@@ -3281,11 +3221,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     // _showChrome / _hasEverLoaded 切换会触发 _rebuild 重建本树。
     final EdgeInsets independentDocumentPadding = independentDocumentInsets(
       lyricsMode: _lyricsMode,
-      spreadDocumentLoaded: _spreadDocumentLoaded,
       // 底栏占位条件与 _buildBottomChrome / popupBottomReserve 一致。
       chromeOccupiesLayout: _hasEverLoaded && _showChrome,
       bottomReserve: _readerBottomReserve,
-      titlebarInset: _macosWindowTitlebarInset,
     );
     if (independentDocumentPadding == EdgeInsets.zero) return webView;
     return Padding(padding: independentDocumentPadding, child: webView);

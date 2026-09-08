@@ -28,21 +28,16 @@ import 'reader_fushi_page_source_corpus.dart';
 void main() {
   group('independentDocumentInsets（独立 HTML 文档留白契约）', () {
     const double reserve = 72;
-    const double titlebar = 28;
 
     EdgeInsets insets({
       required bool lyricsMode,
-      bool spreadDocumentLoaded = false,
       required bool chromeOccupiesLayout,
       double bottomReserve = reserve,
-      double titlebarInset = 0,
     }) {
       return independentDocumentInsets(
         lyricsMode: lyricsMode,
-        spreadDocumentLoaded: spreadDocumentLoaded,
         chromeOccupiesLayout: chromeOccupiesLayout,
         bottomReserve: bottomReserve,
-        titlebarInset: titlebarInset,
       );
     }
 
@@ -75,45 +70,19 @@ void main() {
       expect(insets(lyricsMode: true, chromeOccupiesLayout: false).bottom, 0);
     });
 
-    test('正文模式不留底部（正文走 setChromeInsets，重复留白会挖掉一条空白）', () {
+    test('正文 / spread 模式不留底部（正文走 setChromeInsets，重复留白会挖掉一条空白）', () {
       expect(insets(lyricsMode: false, chromeOccupiesLayout: true).bottom, 0);
-      expect(
-        insets(
-          lyricsMode: false,
-          spreadDocumentLoaded: true,
-          chromeOccupiesLayout: true,
-        ).bottom,
-        0,
-        reason: 'spread 没有文档级滚动条，不需要也不应吃底栏预留',
-      );
+      // spread 整页图也是独立文档，但它没有文档级滚动条，不需要也不应吃底栏预留
+      // ——判据只认 lyricsMode，所以 spread 与「没有独立文档」在这里同为 0。
     });
 
-    test('BUG-1343：歌词 / spread 顶部缩进标题栏高，正文不缩进', () {
-      expect(
-        insets(
-          lyricsMode: true,
-          chromeOccupiesLayout: true,
-          titlebarInset: titlebar,
-        ).top,
-        titlebar,
-      );
-      expect(
-        insets(
-          lyricsMode: false,
-          spreadDocumentLoaded: true,
-          chromeOccupiesLayout: false,
-          titlebarInset: titlebar,
-        ).top,
-        titlebar,
-      );
-      expect(
-        insets(
-          lyricsMode: false,
-          chromeOccupiesLayout: true,
-          titlebarInset: titlebar,
-        ).top,
-        0,
-      );
+    test('顶部恒不留白（macOS 拖拽带随自绘顶栏一并删除）', () {
+      // BUG-1343 曾让独立文档顶部缩进 macOS 阅读器自绘的 28pt 拖拽带。macOS 改用
+      // 应用级 MD3 顶栏（FushiDesktopTitleBar，在整个 Navigator 之上）后，页内不再
+      // 有任何叠在 WebView 上的顶部 chrome，这笔留白必须消失，否则歌词/整页图会在
+      // 顶栏下面再空一条。
+      expect(insets(lyricsMode: true, chromeOccupiesLayout: true).top, 0);
+      expect(insets(lyricsMode: false, chromeOccupiesLayout: false).top, 0);
     });
 
     test('两笔留白都为 0 时返回 EdgeInsets.zero（调用方据此跳过 Padding）', () {

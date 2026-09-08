@@ -434,9 +434,10 @@ void main() {
           reason: 'initState 必须经 VideoDisplayClaim.claim 登记本页持有进程级显示态');
       // 登记必须早于设置动作：先登记再设，换集期间新旧两页同时在册，旧页释放时才
       // 看得到「还有人持有」。
+      // macOS 交通灯已不在此列：改用自绘 MD3 顶栏后它们是启动即永久隐藏，
+      // 视频页不再认领、也不再还原（见 macos_video_trafficlight_hide_guard_test）。
       for (final String action in <String>[
         '_lockLandscapeForVideo()',
-        'setMacOSTrafficLightsHidden(true)',
         '_registerSystemBarsVisibilityCallback()',
       ]) {
         final int at = b.indexOf(action);
@@ -461,7 +462,6 @@ void main() {
       for (final String unconditional in <String>[
         '_restoreOrientationOnExit()',
         'setSystemUIChangeCallback(null)',
-        'setMacOSTrafficLightsHidden(false)',
       ]) {
         expect(b.contains(unconditional), isFalse,
             reason: 'dispose 不得直接调 $unconditional（须经 VideoDisplayClaim 记账门控）');
@@ -484,7 +484,6 @@ void main() {
       for (final String restore in <String>[
         'setSystemUIChangeCallback(null)',
         '_restoreOrientationOnExit()',
-        'setMacOSTrafficLightsHidden(false)',
       ]) {
         final int at = b.indexOf(restore);
         expect(at, greaterThanOrEqualTo(0),

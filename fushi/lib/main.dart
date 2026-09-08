@@ -38,7 +38,7 @@ import 'package:fushi/src/utils/misc/present_watchdog.dart';
 import 'package:fushi/src/utils/misc/shortcut_icon_sync.dart';
 import 'package:fushi/src/utils/misc/wgc_capture_log.dart';
 import 'package:fushi/src/utils/window_caption_channel.dart';
-import 'package:fushi/src/utils/components/fushi_windows_title_bar.dart';
+import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/utils/adaptive/fushi_macos_theme.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/shortcuts/global_navigation.dart';
@@ -237,16 +237,27 @@ void main([List<String> args = const <String>[]]) {
     }
     if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
       await windowManager.ensureInitialized();
-      if (Platform.isWindows) {
+      if (Platform.isWindows || Platform.isMacOS) {
         // window_manager's Windows plugin implements setTitleBarStyle as a
         // string assignment + SetWindowPos and always reports success, so there
-        // is no failure mode to fall back from here. The app frame is therefore
-        // unconditional on Windows once the plugin is initialised.
+        // is no failure mode to fall back from here (the macOS plugin likewise
+        // just flips NSWindow properties). The app frame is therefore
+        // unconditional on both hosts once the plugin is initialised.
+        //
+        // macOS 走同一条路（用户拍板：两端同一个 MD3 顶栏）：`hidden` 在 macOS
+        // 上是 `titleVisibility=.hidden` + `titlebarAppearsTransparent` +
+        // `fullSizeContentView`，`windowButtonVisibility: false` 则把红黄绿三个
+        // 交通灯 `standardWindowButton(_).isHidden = true`。于是 macOS 不再有
+        // 系统交通灯，最小化/缩放/关闭全部由 [FushiDesktopTitleBar] 的 MD3 按钮
+        // 提供（AppKit 仍然自己拥有窗口四边的 resize 边框，不需要 app 代劳）。
+        // 这也一并根除了「交通灯浮在 Flutter 内容左上角」派生的一整串让位补丁
+        // （BUG-869 的 SafeArea 保留带、BUG-973 视频页临时隐藏、BUG-1343 阅读器
+        // 自绘拖拽带）。
         await windowManager.setTitleBarStyle(
           TitleBarStyle.hidden,
           windowButtonVisibility: false,
         );
-        FushiWindowsTitleBar.markEnabled();
+        FushiDesktopTitleBar.markEnabled();
       }
       // BUG-1619：主窗前台真值的唯一来源，必须在 window_manager 初始化之后、
       // 任何页面挂载之前起来——焦点闸门与焦点控制器都读它。
@@ -1983,8 +1994,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                         scale: uiScale,
                         child: navigation,
                       );
-                      if (Platform.isWindows &&
-                          FushiWindowsTitleBar.isEnabled) {
+                      // 自绘顶栏的唯一门控就是这条启动闩（Windows / macOS 由
+                      // `main()` 置位）：不再叠一层 `Platform.isWindows`，否则
+                      // macOS 明明已经隐藏了系统标题栏与交通灯，却拿不到替代顶栏
+                      // ——窗口既没有标题也没有最小化/关闭按钮。
+                      if (FushiDesktopTitleBar.isEnabled) {
                         navigation = ValueListenableBuilder<bool>(
                           // The home rail is only on screen while the home
                           // shell is the top route; opening a media item
@@ -1999,7 +2013,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                             final bool railVisible = !mediaOpen &&
                                 windowSizeClassForWidth(viewport.width) !=
                                     WindowSizeClass.compact;
-                            return FushiWindowsTitleBar(
+                            return FushiDesktopTitleBar(
                               // The native-sized frame sits outside app UI
                               // zoom; align its title with the visually scaled
                               // home rail. Breakpoint and rail width both come

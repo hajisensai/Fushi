@@ -60,7 +60,7 @@ import 'package:fushi/src/sync/fushi_library_host_service.dart'
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
     show adaptivePageRoute;
 import 'package:fushi/src/utils/app_ui_scale.dart';
-import 'package:fushi/src/utils/components/fushi_windows_title_bar.dart';
+import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
 import 'package:fushi/src/utils/overlay_entry_lifecycle.dart';
@@ -503,7 +503,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       _popupOverlayEntry = null;
     }
     if (_fullscreen && Platform.isWindows) {
-      FushiWindowsTitleBar.setContentFullscreen(owner: this, enabled: false);
+      FushiDesktopTitleBar.setContentFullscreen(owner: this, enabled: false);
     }
     _controller.removeListener(_onControllerChanged);
     _controller.dispose();
@@ -1563,7 +1563,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     final bool enter = !_fullscreen;
     setState(() => _fullscreen = enter);
     if (Platform.isWindows) {
-      FushiWindowsTitleBar.setContentFullscreen(owner: this, enabled: enter);
+      FushiDesktopTitleBar.setContentFullscreen(owner: this, enabled: enter);
     }
     try {
       if (enter) {

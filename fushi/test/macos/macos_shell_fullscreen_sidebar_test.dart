@@ -131,107 +131,60 @@ void main() {
             'pagination geometry so fullscreen re-layout uses the live inset.');
   });
 
-  test('BUG-1343 windowed macOS reader exposes a draggable titlebar strip', () {
-    // 默认 auto=MD3 时根部不会挂 MacosWindow/ToolBar，但 NSWindow 仍是透明标题栏 +
-    // full-size content。Reader 必须自己提供稳定可抓区，不能让 WebView 吞满顶边。
-    expect(reader, contains('package:window_manager/window_manager.dart'));
-    expect(reader, contains('DragToMoveArea('));
-    expect(reader, contains("'fushi_reader_window_drag_area'"));
-    expect(reader, contains('kMacTitleBarHeight'));
-    expect(reader, contains('_macosWindowTitlebarInset'));
-    expect(reader, contains('_readerTopOffset =>'));
-    // BUG-1381：这两条原本钉的是 `_lyricsMode || _spreadDocumentLoaded` 和局部变量名
-    // `top: independentDocumentTopInset` 两个**实现拼写**——与它们同一方法体里那条
-    // `EdgeInsets.only(bottom: _readerBottomReserve)` 守卫同属 B 类「要求型」锚点，
-    // `_buildBody` 一重构就凭空变红（行为分毫未变）。独立文档缩进多少现由纯函数
-    // `independentDocumentInsets` 承载，「歌词/spread 缩进标题栏高、正文不缩进」的数值
-    // 契约由 test/pages/reader_lyrics_progress_bottom_reserve_static_test.dart 的行为
-    // 断言钉死；这里只钉一件本文件该管的事：reader 页确实把标题栏高喂进了那个真相源。
-    final String buildBody = methodBody(reader, '  Widget _buildBody()');
-    expect(
-      containsIdentifierCall(buildBody, 'independentDocumentInsets'),
-      isTrue,
-      reason: '不注入正文引擎的歌词/spread 文档也必须避开顶部拖拽区，'
-          '缩进量走单一真相源 independentDocumentInsets',
-    );
-    expect(
-      containsCodeLine(buildBody, 'titlebarInset: _macosWindowTitlebarInset'),
-      isTrue,
-      reason: '独立文档由 Flutter 侧真实缩进标题栏高，不能只改正文 CSS inset',
-    );
-    expect(
-      readerChrome,
-      contains('_stableTopInset + _macosWindowTitlebarInset'),
-      reason: '顶部进度 pill 必须落在 drag strip 下方，不能盖住拖动区或交通灯',
-    );
+  test('macOS 阅读器不再自绘标题栏拖拽带（BUG-1343 / BUG-1744 的形态已作废）', () {
+    // macOS 改用应用级自绘 MD3 顶栏（FushiDesktopTitleBar，包在整个 Navigator 之上）
+    // 后：交通灯在 main() 里被永久隐藏，窗口抓手由顶栏的 DragToMoveArea 提供。
+    // 阅读器再留 BUG-1343 那条 28pt 拖拽带 + 同高让位，就是在顶栏底下又压一条
+    // 不透明带 + 一条空白——所以整块必须消失，而不是「改成条件更严的分支」。
+    // 掩掉注释：删除说明本身会提到这些名字，不掩就等于自己命中自己。
+    final String readerCode = maskComments(reader);
+    for (final String gone in <String>[
+      '_macosWindowTitlebarInset',
+      'fushi_reader_window_drag_area',
+      'kMacTitleBarHeight',
+      'DragToMoveArea(',
+    ]) {
+      expect(readerCode, isNot(contains(gone)),
+          reason: '阅读器残留 macOS 顶部拖拽带痕迹（$gone）= 顶栏下面多一条带/空白');
+    }
+    expect(maskComments(readerChrome),
+        isNot(contains('_macosWindowTitlebarInset')),
+        reason: '顶部进度 pill 不该再为已删除的拖拽带让位');
   });
 
-  // BUG-1744：用户报的「阅读器顶部横带」。BUG-1343 引入的 28pt 拖拽带唯一条件是
-  // Platform.isMacOS——进原生全屏后既没有标题栏也没有交通灯、窗口也拖不动，这条
-  // 不透明带和它同高的正文让位却仍在，就是那条横带。
-  test('BUG-1744 fullscreen drops the titlebar strip and its content inset',
-      () {
-    // 让位量必须由全屏态门控（单一真相源：_readerTopOffset / popupTopReserve /
-    // independentDocumentInsets / 顶部进度 pill 全部读它）。
-    expect(
-      reader,
-      contains(
-          'Platform.isMacOS && !_macosFullscreen ? kMacTitleBarHeight : 0'),
-      reason: '_macosWindowTitlebarInset 未按全屏态门控 → 全屏下正文仍被下压 28pt',
-    );
-    // 带子本身也必须整体不挂，只归零 inset 会留下一条盖住正文的不透明条。
-    // （DragToMoveArea 挂在 build() 的 Stack 里，不在 _buildBody()。）
-    final String pageBuild =
-        methodBody(reader, '  Widget build(BuildContext context)');
-    expect(
-      containsCodeLine(pageBuild, 'if (Platform.isMacOS && !_macosFullscreen)'),
-      isTrue,
-      reason: '全屏下仍挂 DragToMoveArea 的 ColoredBox = 一条纯浪费的顶部横带',
-    );
-    expect(
-      containsCodeLine(pageBuild, 'DragToMoveArea('),
-      isTrue,
-      reason: '守卫取错了窗口（DragToMoveArea 应在同一个 build 方法体内）',
-    );
-    // 状态来源必须是能覆盖**全部**入口的 NSWindowDelegate：绿灯按钮和「显示」
-    // 菜单都不经过 app 自己的 F11 快捷键，只记快捷键状态会漏掉最常用的两条路。
-    expect(
-      reader,
-      contains('MacosFullscreenState.instance'),
-      reason: '全屏态必须取自单一真相源 MacosFullscreenState',
-    );
-    expect(
-      fullscreenState,
-      contains('windowDidEnterFullScreen'),
-      reason: 'NSWindowDelegate 是唯一能覆盖绿灯/菜单/快捷键全部入口的信号',
-    );
-    expect(
-      fullscreenState,
-      contains('windowDidExitFullScreen'),
-      reason: '只监听进入不监听退出，退出全屏后横带不会回来',
-    );
-    // 光 setState 不够：JS 的 --chrome-top-inset 由 _applyChromeInsets 单独推送，
-    // 漏了它正文 padding-top 会停在旧的 28px 上（横带原样还在）。
-    final String onChange =
-        methodBody(reader, '  void _onMacosFullscreenChanged()');
-    expect(containsCodeLine(onChange, '_applyChromeInsets'), isTrue,
-        reason: '全屏翻转后必须把新 inset 回喂 WebView，否则 CSS 侧仍留 28px 空白');
-    expect(containsCodeLine(onChange, 'setState'), isTrue);
-    // 监听器必须摘掉，否则页面走了还在被全局 notifier 持有。
-    // 判据钉「dispose 里确实把这个回调摘掉了」，不钉排版：dart format 的 tall
-    // style 会把 `.removeListener(_onMacosFullscreenChanged)` 拆行并补尾逗号，
-    // 裸 contains 于是凭空变红（行为分毫未变）。改成结构判据——取回调标识符所在
-    // 的**最内层调用**，问它是不是 removeListener；顺带把窗口收进 dispose 体内，
-    // 比原来的全文件 contains 更严（写在别处的 removeListener 不再算数）。
-    final String disposeBody = methodBody(reader, '  void dispose() {');
-    final int callbackAt =
-        maskComments(disposeBody).indexOf('_onMacosFullscreenChanged');
-    expect(callbackAt, isNonNegative,
+  test('窗口抓手与 macOS 全屏信号都归自绘顶栏所有', () {
+    final String titleBar = maskComments(File(
+      'lib/src/utils/components/fushi_desktop_title_bar.dart',
+    ).readAsStringSync());
+    final String mainCode = maskComments(main);
+
+    // ① macOS 与 Windows 走同一条「隐藏系统标题栏 + 自绘顶栏」路径，且交通灯必须
+    //    在同一次调用里关掉（windowButtonVisibility: false），否则三个圆点会浮在
+    //    自绘顶栏的标题上（BUG-973 的根因）。
+    expect(mainCode, contains('Platform.isWindows || Platform.isMacOS'));
+    expect(mainCode, contains('windowButtonVisibility: false'));
+    expect(mainCode, contains('FushiDesktopTitleBar.markEnabled()'),
+        reason: '不置位启动闩 = 隐藏了系统标题栏却不挂替代顶栏（无标题无按钮）');
+
+    // ② 窗口抓手：顶栏自己提供 DragToMoveArea。
+    expect(titleBar, contains('DragToMoveArea('));
+
+    // ③ macOS 原生全屏必须由 NSWindowDelegate 真相源驱动：window_manager 的
+    //    WindowListener 在 macOS 上收不到全屏通知（macos_window_utils 占着
+    //    NSWindow.delegate），只靠它顶栏会在全屏里留成一条横带。
+    expect(titleBar, contains('MacosFullscreenState.instance'),
+        reason: '全屏态必须取自单一真相源 MacosFullscreenState');
+    expect(titleBar, contains('setContentFullscreen('),
+        reason: '全屏时必须按所有者收起自绘顶栏');
+    expect(titleBar, contains('removeListener('),
         reason: 'dispose 未摘监听 = 泄漏 + 已 dispose 的 State 上 setState');
-    expect(
-      enclosingCall(disposeBody, callbackAt).name,
-      endsWith('removeListener'),
-      reason: '回调必须是 removeListener 的实参，不能只是被顺手提到',
-    );
+    // ④ AppKit 退全屏会重建标题栏视图、复位 standardWindowButton.isHidden，
+    //    退出时必须重申隐藏，否则交通灯回到自绘顶栏之上。
+    expect(titleBar, contains('setMacOSTrafficLightsHidden(true)'),
+        reason: '退出原生全屏后不重申隐藏 → 交通灯复现并压住自绘顶栏');
+    expect(fullscreenState, contains('windowDidEnterFullScreen'),
+        reason: 'NSWindowDelegate 是唯一能覆盖绿灯/菜单/快捷键全部入口的信号');
+    expect(fullscreenState, contains('windowDidExitFullScreen'),
+        reason: '只监听进入不监听退出，退出全屏后顶栏不会回来');
   });
 }
