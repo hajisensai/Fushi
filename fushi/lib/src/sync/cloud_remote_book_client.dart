@@ -5,6 +5,7 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/remote_book_client.dart';
 import 'package:fushi/src/sync/remote_library_source.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
+import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart'
     show isReservedSyncFolderName;
@@ -80,7 +81,11 @@ class CloudRemoteBookClient implements RemoteBookClient {
     return <RemoteBookInfo>[
       for (int i = 0; i < bookFolders.length; i++)
         RemoteBookInfo(
-          title: bookFolders[i].name,
+          // 文件夹名是 sanitizeTtuFilename(title)（`:` → `%3A` 等），必须反解成
+          // raw title：下游（书架去重 / 同步 diff / 卡片标题）都按 raw title 再各自
+          // 派生 key；直接给文件夹名会被二次 sanitize 成 `%253A`，与本地 bookKey
+          // 永远对不上（BUG-2274）。互联 host 那条路本来就返回 raw title。
+          title: unsanitizeTtuFilename(bookFolders[i].name),
           hasContent: hasContent[i],
           // folderId 复用为 downloadId：getRemoteBook 据此 listChildren 取 .epub。
           // 去重按 title 进行（dedupeRemoteBooks），bookKey=folderId 不污染去重。

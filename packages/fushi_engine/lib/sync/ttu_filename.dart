@@ -29,6 +29,25 @@ String sanitizeTtuFilename(String title) {
   return result;
 }
 
+/// [sanitizeTtuFilename] 的逆：把云端/磁盘上的 sanitized 文件夹名还原成显示标题。
+///
+/// 两者必须成对使用：云盘远端书的「身份」是 `sanitizeTtuFilename(title)`（= 文件
+/// 夹名 = 本地 `EpubBooks.bookKey`），而 UI 与去重都吃 **raw title**，再各自派生
+/// key。谁拿文件夹名直接当 title，去重那一侧就会把 `%3A` 再编成 `%253A`（`%` 本身
+/// 在 sanitize 的字符集里），本地已有的书在书架上永远多出一张「远端待下载」
+/// （BUG-2274）。
+///
+/// 无损：sanitize 时 `%` 恒被编码成 `%25`，所以这里对 `%XX` 单趟解码不会把原文里的
+/// 字面 `%3A` 误解码；`~ttu-*~` 三个哨兵只在结尾/`*` 位置产生，逆序还原即可。
+String unsanitizeTtuFilename(String name) => name
+    .replaceAll('~ttu-spc~', ' ')
+    .replaceAll('~ttu-dend~', '.')
+    .replaceAll('~ttu-star~', '*')
+    .replaceAllMapped(
+      RegExp(r'%([0-9A-Fa-f]{2})'),
+      (Match m) => String.fromCharCode(int.parse(m[1]!, radix: 16)),
+    );
+
 String progressFileName(int timestampMs, double progress) =>
     'progress_1_6_${timestampMs}_$progress.json';
 

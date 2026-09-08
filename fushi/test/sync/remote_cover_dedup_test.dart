@@ -111,6 +111,28 @@ void main() {
       expect(kept.map((RemoteBookInfo b) => b.title), <String>['只在远端的书']);
     });
 
+    test('BUG-2274：标题含冒号，本端同书按 sanitize 键剔除；给文件夹名则剔不掉', () {
+      const String title = 'Love, Death and Robots: The Official Anthology';
+      final Set<String> localKeys = <String>{sanitizeTtuFilename(title)};
+      expect(
+        dedupeRemoteBooks(
+          remote: <RemoteBookInfo>[book(title)],
+          localBookKeys: localKeys,
+          keyOf: sanitizeTtuFilename,
+        ),
+        isEmpty,
+      );
+      // 反例钉住形状：远端 title 若是 sanitize 过的文件夹名，二次 sanitize 成 %253A。
+      expect(
+        dedupeRemoteBooks(
+          remote: <RemoteBookInfo>[book(sanitizeTtuFilename(title))],
+          localBookKeys: localKeys,
+          keyOf: sanitizeTtuFilename,
+        ),
+        hasLength(1),
+      );
+    });
+
     test('本端为空 → 全部保留', () {
       final List<RemoteBookInfo> remote = <RemoteBookInfo>[
         book('A'),

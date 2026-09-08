@@ -181,7 +181,7 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
   final remoteByTitle = <String, SyncFileRef>{};
   for (final f in remoteBooks) {
     remoteByTitle[f.name] = f;
-    final cleaned = _unsanitize(f.name);
+    final cleaned = unsanitizeTtuFilename(f.name);
     if (cleaned != f.name) remoteByTitle[cleaned] = f;
     allTitles.add(cleaned);
   }
@@ -433,17 +433,6 @@ Future<String> _ensureRoot(
   final savedCache = await repo.getFolderCache(scope);
   backend.restoreCache(rootFolderId: savedRoot, titleToFolderId: savedCache);
   return backend.findOrCreateRootFolder();
-}
-
-String _unsanitize(String name) {
-  return name
-      .replaceAll('~ttu-spc~', ' ')
-      .replaceAll('~ttu-dend~', '.')
-      .replaceAll('~ttu-star~', '*')
-      .replaceAllMapped(
-        RegExp(r'%([0-9A-Fa-f]{2})'),
-        (m) => String.fromCharCode(int.parse(m[1]!, radix: 16)),
-      );
 }
 
 Future<void> showSyncCompareDialog(
