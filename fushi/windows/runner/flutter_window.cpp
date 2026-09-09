@@ -519,7 +519,15 @@ bool FlutterWindow::OnCreate() {
               }
             }
           }
+          const bool was_fullscreen = IsFullscreen();
           SetFullscreen(enter);
+          // A fullscreen/maximized transition can preserve the client size,
+          // so WM_SIZE alone does not guarantee a fresh Flutter presentation.
+          // Request it AFTER geometry restoration and snapshot release, while
+          // the controller is alive. Do not redraw failed or no-op transitions.
+          if (flutter_controller_ && was_fullscreen != IsFullscreen()) {
+            flutter_controller_->ForceRedraw();
+          }
           result->Success();
         } else if (call.method_name() == "isFullscreen") {
           result->Success(flutter::EncodableValue(IsFullscreen()));
