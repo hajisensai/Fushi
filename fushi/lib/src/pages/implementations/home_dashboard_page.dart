@@ -1316,6 +1316,8 @@ class _HomeDashboardPageState
     // 不能改用 Clip.none：懒加载 cacheExtent 里已构建的卡会画到行外。
     final double rowHeight = _continueRowHeight(context, tokens);
     final double liftHeadroom = rowHeight * (kFushiHoverLiftScale - 1) / 2;
+    const double liftSideRoom =
+        _kContinueCoverHeight * 16 / 9 * (kFushiHoverLiftScale - 1) / 2;
     return SizedBox(
       height: rowHeight + liftHeadroom * 2,
       // 桌面默认 MaterialScrollBehavior 的 dragDevices 不含鼠标——横排行
@@ -1324,6 +1326,12 @@ class _HomeDashboardPageState
       child: HorizontalDragScrollable(
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
+          // 卡片不能占满加高后的视口，否则会把放大余量也拉进卡体。
+          // 两端按最宽横卡留量，首尾卡放大时也能完整显示。
+          padding: EdgeInsets.symmetric(
+            vertical: liftHeadroom,
+            horizontal: liftSideRoom,
+          ),
           physics: desktopAwareScrollPhysics(),
           itemCount: entries.length,
           separatorBuilder: (BuildContext _, int __) =>

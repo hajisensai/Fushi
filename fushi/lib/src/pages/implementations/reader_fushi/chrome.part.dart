@@ -277,13 +277,23 @@ extension _ReaderChrome on _ReaderFushiPageState {
           source: ReaderSelectionScripts.nativeSelectionTextInvocation(),
         );
       } catch (e, stack) {
-        ErrorLogService.instance
-            .log('ReaderFushi.showReaderTextContextMenu', e, stack);
+        ErrorLogService.instance.log(
+          'ReaderFushi.showReaderTextContextMenu',
+          e,
+          stack,
+        );
         return;
       }
       final String selectedText =
           ReaderSelectionScripts.nativeSelectionTextFromResult(rawText);
       if (selectedText.isEmpty) return;
+      if (!mounted) return;
+
+      // Capture before the Flutter menu takes focus. Favorite must consume
+      // this immutable selection, never a later WebView selection or lookup cache.
+      final int favoriteSection = _lookupSectionIndex;
+      final ReaderSelectionData? favoriteSelection =
+          await _fillLookupStateFromNativeSelection();
       if (!mounted) return;
 
       // A native WebView2 popup surface is above Flutter routes on Windows. Move
@@ -395,31 +405,33 @@ extension _ReaderChrome on _ReaderFushiPageState {
           await _clearReaderAppSelection();
           if (!mounted) return;
           await searchDictionaryResult(
-              searchTerm: selectedText, selectionRect: rect);
+            searchTerm: selectedText,
+            selectionRect: rect,
+          );
           if (mounted) _checkFavoriteStatus();
           return;
         case 'copy':
           await Clipboard.setData(ClipboardData(text: selectedText));
           FushiToast.show(
-              msg: t.copied_to_clipboard, severity: ToastSeverity.success);
+            msg: t.copied_to_clipboard,
+            severity: ToastSeverity.success,
+          );
           // 复制是终结动作：清掉刻意保留的原生选区，和移动端拖选菜单的 'copy'
           // （_clearReaderAppSelection）对齐。否则残留的原生蓝色选区会一直卡住后续
           // 查词（见 webview.part.dart pointerup 里对 nativeMoved 的处理）。BUG-927。
           await _clearReaderAppSelection();
           return;
         case 'favorite':
-          // BUG-854：右键收藏也走「原生选区 → 查词状态」补写（与 search 同源），确保
-          // _toggleFavoriteSentence 读到的 currentSentence / 句级区间非空；解析失败退回
-          // 选中文本本身满足非空契约。
-          final ReaderSelectionData? favSel =
-              await _fillLookupStateFromNativeSelection();
-          if (!mounted) return;
-          if (favSel == null) {
-            appModel.currentMediaSource?.setCurrentSentence(
-              selection: FushiTextSelection(text: selectedText),
+          if (favoriteSelection == null) {
+            FushiToast.show(
+              msg: t.no_sentence_selected,
+              severity: ToastSeverity.error,
             );
+            return;
           }
-          await _toggleFavoriteSentence();
+          await _toggleFavoriteSentence(
+              selection: favoriteSelection, selectionSection: favoriteSection);
+          await _clearReaderAppSelection();
           return;
         case 'export':
           await _exportAudiobookClipFromSelection();
@@ -450,6 +462,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     // BUG-1236：这里必须是非模态 OverlayEntry。showMenu 会 push 带全屏
     // ModalBarrier 的 PopupRoute，菜单在场时 WebView 里的选区手柄收不到触摸。
     _selectionActionData = data;
+    _selectionActionSectionIndex = _lookupSectionIndex;
     if (_selectionActionBarEntry != null) {
       _selectionActionBarEntry!.markNeedsBuild();
       return;
@@ -470,6 +483,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       ..dispose();
     _selectionActionBarEntry = null;
     _selectionActionData = null;
+    _selectionActionSectionIndex = null;
   }
 
   Widget _buildSelectionActionBar(BuildContext overlayContext) {
@@ -583,6 +597,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
 
   Future<void> _runSelectionAction(String action) async {
     final ReaderSelectionData? data = _selectionActionData;
+    final int? selectionSection = _selectionActionSectionIndex;
     if (data == null) return;
     _removeSelectionActionBar();
     if (!mounted) return;
@@ -600,35 +615,38 @@ extension _ReaderChrome on _ReaderFushiPageState {
       case 'copy':
         await Clipboard.setData(ClipboardData(text: data.text));
         FushiToast.show(
-            msg: t.copied_to_clipboard, severity: ToastSeverity.success);
+          msg: t.copied_to_clipboard,
+          severity: ToastSeverity.success,
+        );
         await _clearReaderAppSelection();
         return;
       case 'share':
-        final bool shared =
-            await SelectionExternalActions.instance.shareText(data.text);
+        final bool shared = await SelectionExternalActions.instance.shareText(
+          data.text,
+        );
         if (mounted && !shared) {
           FushiToast.show(
-              msg: t.selection_share_failed, severity: ToastSeverity.error);
+            msg: t.selection_share_failed,
+            severity: ToastSeverity.error,
+          );
         }
         await _clearReaderAppSelection();
         return;
       case 'webSearch':
-        final bool opened =
-            await SelectionExternalActions.instance.searchWeb(data.text);
+        final bool opened = await SelectionExternalActions.instance.searchWeb(
+          data.text,
+        );
         if (mounted && !opened) {
           FushiToast.show(
-              msg: t.selection_web_search_unavailable,
-              severity: ToastSeverity.error);
+            msg: t.selection_web_search_unavailable,
+            severity: ToastSeverity.error,
+          );
         }
         await _clearReaderAppSelection();
         return;
       case 'favorite':
-        // BUG-854：拖选是 app 自绘选区（无原生选区），从菜单 payload 填查词状态
-        // （currentSentence 非空契约 + 句级区间），与「导出片段」共用
-        // _fillLookupStateFromSelectionData，再走既有收藏句子后端；收藏完清掉选区高亮。
-        await _fillLookupStateFromSelectionData(data,
-            extractNativeImages: false);
-        await _toggleFavoriteSentence();
+        await _toggleFavoriteSentence(
+            selection: data, selectionSection: selectionSection);
         await _clearReaderAppSelection();
         return;
       case 'export':
@@ -735,9 +753,22 @@ extension _ReaderChrome on _ReaderFushiPageState {
       ),
     );
     _cachedSentenceOffset = data.sentenceOffset;
+    _cacheMatchableSelection(data);
+    // cue 解析三级回退，从最强的判据开始：
+    // ① `audioCuePayload` 是 JS 在点击处直接回传的 **cue 身份**
+    //    （`fushiReader.cueIdAtPoint` 的 `{type:'sid'|'frag', id}`），不做任何坐标
+    //    运算，对本轮修的「学习单位 / 音频 UTF-16 两套坐标混用」天然免疫；
+    // ② 没有 payload 的书（DOM 里不带 cue id）退到按**音频坐标** matchableOffset
+    //    在本章 cue 的 fragment 区间里反查——比原先按句子文本找精确；
+    // ③ 仍无命中再退到句子文本匹配（见下方 _findCueForSentence）。
     final List<AudioCue>? allCues = _cachedAllCues;
-    _lookupCue = data.audioCuePayload != null && allCues != null
-        ? cueForPointerPayload(data.audioCuePayload!, allCues)
+    if (data.audioCuePayload != null && allCues != null) {
+      _lookupCue = cueForPointerPayload(data.audioCuePayload!, allCues);
+    } else {
+      _lookupCue = null;
+    }
+    _lookupCue ??= data.matchableOffset != null
+        ? _findCueForOffset(data.matchableOffset!)
         : null;
     if (_lookupCue == null && _srtBookUid != null) {
       _lookupCue = _findCueForSentence(data.sentence);
@@ -928,28 +959,28 @@ extension _ReaderChrome on _ReaderFushiPageState {
             barrierDismissible: true,
             pageBuilder: (BuildContext routeContext, __, ___) =>
                 ContextMenuTrigger(
-                  // 右键菜单改由绑定表决定唤出键（默认仍是右键）；右键被别的动作占用时自动让位。
-                  onInvoke: isWindowsPlatform
-                      ? (Offset position) => unawaited(
-                          _showReaderImageContextMenuAtGlobalPosition(
-                            imgUrl,
-                            position,
-                            menuContext: routeContext,
-                          ),
-                        )
-                      : null,
-                  ladder: kReaderMouseLadder,
-                  child: GestureDetector(
-                    onTap: () => Navigator.pop(context),
-                    child: InteractiveViewer(
-                      minScale: 0.5,
-                      maxScale: 10,
-                      child: Center(
-                        child: Image.file(file, fit: BoxFit.contain),
-                      ),
-                    ),
+              // 右键菜单改由绑定表决定唤出键（默认仍是右键）；右键被别的动作占用时自动让位。
+              onInvoke: isWindowsPlatform
+                  ? (Offset position) => unawaited(
+                        _showReaderImageContextMenuAtGlobalPosition(
+                          imgUrl,
+                          position,
+                          menuContext: routeContext,
+                        ),
+                      )
+                  : null,
+              ladder: kReaderMouseLadder,
+              child: GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: InteractiveViewer(
+                  minScale: 0.5,
+                  maxScale: 10,
+                  child: Center(
+                    child: Image.file(file, fit: BoxFit.contain),
                   ),
                 ),
+              ),
+            ),
           ),
         ),
       ),
@@ -2786,57 +2817,73 @@ extension _ReaderChrome on _ReaderFushiPageState {
     }
     final List<FavoriteSentence> chapterFavs =
         await _favoriteSentencesForSection(section);
-    await HighlightBridge.applyHighlights(_controller!, chapterFavs,
-        backgroundHex: _readerBackgroundHex);
+    if (!mounted || _controller == null || section != _lookupSectionIndex) {
+      return;
+    }
+    await HighlightBridge.applyHighlights(
+      _controller!,
+      chapterFavs,
+      backgroundHex: _readerBackgroundHex,
+    );
     await _controller!.evaluateJavascript(
       source:
           'if (!window.__fushiCssHighlightsSupported) { window.fushiReader && window.fushiReader.buildNodeOffsets(); }',
     );
   }
 
-  Future<void> _toggleFavoriteSentence() async {
+  Future<void> _toggleFavoriteSentence(
+      {ReaderSelectionData? selection, int? selectionSection}) async {
     if (_controller == null || _book == null) return;
-    final String sentence =
-        appModel.currentMediaSource?.currentSentence.text ?? '';
+    final String sentence = selection?.text ??
+        appModel.currentMediaSource?.currentSentence.text ??
+        '';
     if (sentence.isEmpty) {
       FushiToast.show(
-          msg: t.no_sentence_selected, severity: ToastSeverity.error);
+        msg: t.no_sentence_selected,
+        severity: ToastSeverity.error,
+      );
       return;
     }
 
-    final int section = _favoriteSectionIndex;
-    final sentenceRange = _cachedSentenceRange ??
-        (_cachedSelectionRange != null
+    final int section = selectionSection ?? _favoriteSectionIndex;
+    final sentenceRange = selection != null
+        ? (selection.normalizedOffset != null &&
+                selection.normalizedLength != null
             ? (
-                offset: _cachedSelectionRange!.offset,
-                length: _cachedSelectionRange!.length
+                offset: selection.normalizedOffset!,
+                length: selection.normalizedLength!,
               )
-            : null);
-    debugPrint('[fushi-hl] toggleFavorite: '
-        'sentenceRange=${sentenceRange != null ? "(${sentenceRange.offset},${sentenceRange.length})" : "null"} '
-        'cachedSentence=${_cachedSentenceRange != null} '
-        'cachedSelection=${_cachedSelectionRange != null}');
-    final FavoriteSentenceRepository repo =
-        FavoriteSentenceRepository(appModel.database);
+            : null)
+        : _cachedSentenceRange ??
+            (_cachedSelectionRange != null
+                ? (
+                    offset: _cachedSelectionRange!.offset,
+                    length: _cachedSelectionRange!.length,
+                  )
+                : null);
+    debugPrint(
+      '[fushi-hl] toggleFavorite: '
+      'sentenceRange=${sentenceRange != null ? "(${sentenceRange.offset},${sentenceRange.length})" : "null"} '
+      'cachedSentence=${_cachedSentenceRange != null} '
+      'cachedSelection=${_cachedSelectionRange != null}',
+    );
+    final FavoriteSentenceRepository repo = FavoriteSentenceRepository(
+      appModel.database,
+    );
 
-    if (_currentSentenceIsFavorited) {
-      // BUG-494：优先按 _checkFavoriteStatus 缓存的精确条目 id 删单条（身份键坍缩下不连坐
-      // 误删同内容的另一条）；无缓存 id（老路径 / 未经 checkFavoriteStatus）回退内容键删单条。
-      final String? favId = _currentFavoriteId;
-      if (favId != null) {
-        await repo.removeById(favId);
-      } else {
-        await repo.removeByContent(
-          text: sentence,
-          bookKey: widget.bookKey,
-          sectionIndex: section,
-          normCharOffset: sentenceRange?.offset,
-        );
-      }
-      _currentFavoriteId = null;
+    // Resolve identity for this action; cached lookup favorite state can belong
+    // to another sentence, including when a right-click selection is used.
+    final String? matchedId = await repo.matchedFavoriteId(
+      text: sentence,
+      bookKey: widget.bookKey,
+      sectionIndex: section,
+      normCharOffset: sentenceRange?.offset,
+    );
+    if (matchedId != null) {
+      await repo.removeById(matchedId);
       _invalidateFavoriteSentenceCache();
       _rebuild(() => _currentSentenceIsFavorited = false);
-      if (sentenceRange != null || _lyricsMode) {
+      if (mounted) {
         await _refreshSectionHighlights(section);
       }
       FushiToast.show(msg: t.favorite_removed, severity: ToastSeverity.success);
@@ -2857,11 +2904,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
       dateKey: statTodayKey(),
     );
     await repo.add(fav);
-    // BUG-494：记住刚写入条目的精确 id，供随后取消收藏 removeById 精确删单条。
-    _currentFavoriteId = fav.id;
     _invalidateFavoriteSentenceCache();
     _rebuild(() => _currentSentenceIsFavorited = true);
-    if (sentenceRange != null || _lyricsMode) {
+    if (mounted) {
       await _refreshSectionHighlights(section);
     }
     FushiToast.show(msg: t.favorite_added, severity: ToastSeverity.success);
@@ -2874,7 +2919,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     final int? normCharOffset = fav.normCharOffset;
     // TODO-1308 问题②（BUG-696 根因①）：fav.normCharOffset 是写入端
     // （lookup.part / mining.part 的 sentenceNormalizedOffset，即 JS
-    // getNormalizedOffset）产的**章内绝对可匹配字符索引**（0..数千），不是书签的
+    // getNormalizedOffset）产的**章内绝对学习单位索引**（0..数千），不是书签的
     // 0-10000 进度分数。旧代码把它 /10000.0 当分数还原 → 0.0x 分数恒落章节开头。
     // BUG-459 只修了收藏页冷启动入口（charAnchor 绝对锚），书内收藏面板这条
     // 从未修到；TODO-1309 重写 handler 时又原样保留了 /10000。改走与冷启动

@@ -1402,20 +1402,22 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       cue.textFragmentId,
     );
     if (frag != null) {
+      final int? studyOffset = _studyRangeForAudioFragment(frag)?.offset;
+      if (studyOffset == null) return;
       _lastProgressSection = frag.sectionIndex;
       if (frag.sectionIndex >= 0 &&
           frag.sectionIndex < _chapterCharCounts.length &&
           _chapterCharCounts[frag.sectionIndex] > 0) {
         _lastProgressValue =
-            frag.normCharStart / _chapterCharCounts[frag.sectionIndex];
+            studyOffset / _chapterCharCounts[frag.sectionIndex];
         _lastProgressValue = _lastProgressValue.clamp(0.0, 1.0);
-        // BUG-162: cue 派生位置无 WebView 精确偏移 → -1（恢复走 cue 的 normChar 分数），
-        // 并清陈旧锚，避免后续 flush 把别 section 的偏移误写进来。
-        _lastProgressCharOffset = -1;
+        // The validated XHTML mapping gives the same learning-unit anchor as
+        // the reader, including when exiting lyrics mode without a WebView.
+        _lastProgressCharOffset = studyOffset;
         _debouncedSaveReaderPosition(
           _lastProgressSection,
           _lastProgressValue,
-          -1,
+          studyOffset,
         );
       }
       return;

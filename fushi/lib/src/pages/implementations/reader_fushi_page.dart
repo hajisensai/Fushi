@@ -61,6 +61,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/reader/reader_caret_scripts.dart';
+import 'package:fushi/src/reader/reader_audio_position.dart';
 import 'package:fushi/src/reader/reader_chapter_perf_trace.dart';
 import 'package:fushi/src/reader/reader_engine_config.dart';
 import 'package:fushi/src/reader/reader_script_compactor.dart';
@@ -415,7 +416,8 @@ ReaderThemeColors applyReaderThemeOverrides(
   final bool dark = overrides.bg == null
       ? base.dark
       : ThemeData.estimateBrightnessForColor(bg) == Brightness.dark;
-  final Color fg = overrides.fg ??
+  final Color fg =
+      overrides.fg ??
       (overrides.bg == null
           ? base.fg
           : (dark ? const Color(0xDEFFFFFF) : const Color(0xDE000000)));
@@ -1457,6 +1459,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   // ModalBarrier 会截断 WebView 手柄触摸；OverlayEntry 只让按钮区域命中。
   OverlayEntry? _selectionActionBarEntry;
   ReaderSelectionData? _selectionActionData;
+  int? _selectionActionSectionIndex;
   bool _restoreInFlight = false;
   bool _isNavigatingToChapter = false;
   // TODO-1037：跨章推进经过的「纯图片章逐个停留」序列在途时为真，防重入跨章导航。
@@ -2021,12 +2024,12 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 悬浮态恒 0，挤压且占位时占 [_readerChromeHeight]。占位判据与
   /// [_buildBottomChrome] 的可见条件（_hasEverLoaded && _showChrome）一致。
   double get _bottomChromeReserve => bottomChromeReserve(
-        barOccupiesLayout: _hasEverLoaded && _showChrome,
-        floating: _bottomBarFloating,
-        chromeHeight: _desktopChromeEnabled && _audiobookController == null
-            ? 0
-            : _readerChromeHeight,
-      );
+    barOccupiesLayout: _hasEverLoaded && _showChrome,
+    floating: _bottomBarFloating,
+    chromeHeight: _desktopChromeEnabled && _audiobookController == null
+        ? 0
+        : _readerChromeHeight,
+  );
 
   /// 宽屏把阅读状态并入播放条；窄屏保留独立状态行，避免文本挤占触控按钮。
   double get _readerControlsWidth =>
@@ -3655,8 +3658,16 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   void onExplicitCueJump(AudioCue cue) => _handleExplicitCueJump(cue);
 
   AudioCue? _lookupCue;
+  final LinkedHashMap<int, ({String html, ReaderAudioPositionIndex index})>
+  _audioPositionIndices =
+      LinkedHashMap<int, ({String html, ReaderAudioPositionIndex index})>();
   ({int offset, int length, String text})? _cachedSelectionRange;
   ({int offset, int length})? _cachedSentenceRange;
+
+  /// Audio alignment uses normalized UTF-16 characters, independent of the
+  /// learning-unit ranges used by reading progress and persisted favorites.
+  ({int offset, int length, String text})? _cachedMatchableSelectionRange;
+  ({int offset, int length})? _cachedMatchableSentenceRange;
   int? _cachedSentenceOffset;
 
   /// TODO-1127：选区那一刻抽取到的、夹在选区里的 EPUB 插图（`normOffset` = 图在整书归一化
@@ -3675,12 +3686,6 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 无缓存选区，消费点 [_favoriteSectionIndex] 回退当前 [_lookupSectionIndex]（旧行为）。
   int? _cachedSelectionSectionIndex;
   bool _currentSentenceIsFavorited = false;
-
-  /// BUG-494 (TODO-1053 Bug C)：当前句若已收藏，缓存其**精确条目 id**（未收藏 → null）。
-  /// 取消收藏走 [FavoriteSentenceRepository.removeById]（按此 id 删单条），杜绝身份键坍缩下
-  /// 的连坐误删——同章重复短句 normCharOffset 均 null 时内容键相同，若按内容删会把另一条
-  /// 同内容记录一起删掉。由 [_checkFavoriteStatus] 与收藏 toggle 同步维护。
-  String? _currentFavoriteId;
 
   /// 收藏 / 制卡写入与「是否已收藏」判定统一取的 section 来源：优先用选区时刻快照的
   /// [_cachedSelectionSectionIndex]（绑定到选中句所在真实章），无快照时回退当前
@@ -3712,11 +3717,12 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _lookupCue = null;
     _cachedSelectionRange = null;
     _cachedSentenceRange = null;
+    _cachedMatchableSelectionRange = null;
+    _cachedMatchableSentenceRange = null;
     _cachedSentenceOffset = null;
     _cachedSelectionImages = const <({int normOffset, Uint8List bytes})>[];
     _cachedSelectionSectionIndex = null;
     _currentSentenceIsFavorited = false;
-    _currentFavoriteId = null;
     appModel.currentMediaSource?.clearCurrentCueSentence();
     super.clearDictionaryResult();
   }
@@ -3800,8 +3806,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   Future<bool> onPreviewSentenceAudio() async {
     final AudiobookPlayerController? controller = _audiobookController;
     if (controller == null) return false;
-    final AudioPlaybackRange? clip =
-        _miningDraft.composeAudioRange(_currentSentenceAudioRange());
+    final AudioPlaybackRange? clip = _miningDraft.composeAudioRange(
+      _currentSentenceAudioRange(),
+    );
     if (clip == null || clip.endMs <= clip.startMs) return false;
     await controller.playRange(clip);
     return true;

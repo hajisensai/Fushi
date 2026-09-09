@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2177 条。点号进各自文件。
+> 共 2179 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -62,6 +62,7 @@
 | [BUG-2336](bugs/BUG-2336-geometry-snapshot-conflict-as-none.md) | ✅ | ✅ | Windows宿主将快照读取冲突误报为没有原生查词provider |
 | [BUG-2335](bugs/BUG-2335-dictionary-expanded-column-version-collision.md) | ✅ | ✅ | 同版本数据库缺词典显式展开列导致启动空值崩溃 |
 | [BUG-2334](bugs/BUG-2334-mobile-shader-tier-desktop-chain.md) | ✅ | ✅ | mobile-shader-tier-desktop-chain |
+| [BUG-2333](bugs/BUG-2333-reader-favorite-coordinate-contract.md) | ✅ | ✅ | 收藏拖选范围与高亮及音频坐标混用 |
 | [BUG-2332](bugs/BUG-2332-cloud-manga-content-sync.md) | ✅ | ✅ | 云盘同步后端完全不同步漫画（上传静默跳过、下载按 EPUB 导入失败） |
 | [BUG-2331](bugs/BUG-2331-shift-hover-dedupe.md) | ✅ | ✅ | Shift 悬停同一单词重复查词 |
 | [BUG-2330](bugs/BUG-2330-audiobook-multifile-position-no-file-index.md) | ✅ | ✅ | 多文件有声书持久化文件内毫秒无文件下标，重开恒落文件0 |
@@ -74,6 +75,7 @@
 | [BUG-2285](bugs/BUG-2285-fribb-tmdb-id-shape-misparsed.md) | ✅ | ✅ | Fribb 映射表的 themoviedb_id 是对象不是裸数字、TVDB 键是 tvdb_id，解析用错形状导致 TMDB id 恒为 null |
 | [BUG-2284](bugs/BUG-2284-lookup-popup-instant-scroll.md) | ✅ | ✅ | 查词弹窗「瞬时滚动」开关对滚轮完全无效 |
 | [BUG-2283](bugs/BUG-2283-eink-swipe-dismiss-animation.md) | ✅ | ✅ | 墨水屏模式：查词弹窗滑动关闭仍有滑出/弹回补间动画 |
+| [BUG-2281](bugs/BUG-2281-dashboard-hover-frame.md) | ✅ | ✅ | 首页继续卡片悬停放大被列表裁剪 |
 | [BUG-2280](bugs/BUG-2280-android-detach-retained-engine.md) | ✅ | ✅ | Android快速重开复用已关库引擎 |
 | [BUG-2279](bugs/BUG-2279-rapid-reopen-mutex.md) | ✅ | ✅ | Windows快速重开未等待旧实例退出 |
 | [BUG-2278](bugs/BUG-2278-ankidroid-live-target.md) | ✅ | ✅ | AnkiDroid识别与API实例缓存导致安装或启用后仍无法连接 |

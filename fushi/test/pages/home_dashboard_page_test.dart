@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' show PointerDeviceKind;
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
@@ -391,6 +392,37 @@ void main() {
     // 散卡：标题=书名，副标题=「阅读 · 50%」。
     expect(find.text('横滑测试书'), findsOneWidget);
     expect(find.text('${t.home_filter_read} · 50%'), findsOneWidget);
+
+    // 悬停绘制须超出卡片原始边界，同时完整落在列表视口内，不被截平。
+    final Finder card = find.ancestor(
+      of: find.text('横滑测试书'),
+      matching: find.byType(InkWell),
+    ).first;
+    final Finder row = find.ancestor(
+      of: card,
+      matching: find.byType(ListView),
+    ).first;
+    final Rect viewport = tester.getRect(row);
+    final Rect originalRect = tester.getRect(card);
+    final Size originalSize = tester.getSize(card);
+    final TestGesture mouse = await tester.createGesture(
+      kind: PointerDeviceKind.mouse,
+    );
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(tester.getCenter(find.text('横滑测试书')));
+    await pumpDashboard(tester);
+    final Rect liftedRect = tester.getRect(card);
+    expect(liftedRect.top, lessThan(originalRect.top));
+    expect(liftedRect.left, lessThan(originalRect.left));
+    expect(liftedRect.top, greaterThanOrEqualTo(viewport.top - 0.01));
+    expect(liftedRect.left, greaterThanOrEqualTo(viewport.left - 0.01));
+    expect(liftedRect.bottom, lessThanOrEqualTo(viewport.bottom + 0.01));
+    expect(liftedRect.right, lessThanOrEqualTo(viewport.right + 0.01));
+    expect(tester.getSize(card), originalSize);
+    await mouse.moveTo(Offset.zero);
+    await pumpDashboard(tester);
+    expect(tester.getRect(card), originalRect);
+    await mouse.removePointer();
   });
 
   testWidgets('显示名统一：合集成员的继续卡标题=合集名，活动时间轴拼「合集名 - 名字」',
@@ -651,6 +683,27 @@ void main() {
         reason: '${row.$1} 行的视频卡应随横版封面自适应成 16:9 横槽，'
             '恒竖槽会把 16:9 抽帧模糊垫底成白条',
       );
+      await tester.ensureVisible(card);
+      await pumpDashboard(tester);
+      final Finder list = find.ancestor(
+        of: card,
+        matching: find.byType(ListView),
+      ).first;
+      final Rect viewport = tester.getRect(list);
+      final Rect original = tester.getRect(card);
+      final TestGesture mouse =
+          await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: Offset.zero);
+      await mouse.moveTo(tester.getCenter(card));
+      await pumpDashboard(tester);
+      final Rect lifted = tester.getRect(card);
+      expect(lifted.width, greaterThan(original.width));
+      expect(lifted.top, greaterThanOrEqualTo(viewport.top - 0.01));
+      expect(lifted.left, greaterThanOrEqualTo(viewport.left - 0.01));
+      expect(lifted.bottom, lessThanOrEqualTo(viewport.bottom + 0.01));
+      expect(lifted.right, lessThanOrEqualTo(viewport.right + 0.01));
+      await mouse.removePointer();
+      await pumpDashboard(tester);
     }
   });
 

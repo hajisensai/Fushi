@@ -871,8 +871,8 @@ window.fushiSelection = {
     var describe = function(ctx) {
       var entry = { sentence: ctx.sentence };
       if (window.fushiReader) {
-        var s = self.getNormalizedOffset(ctx.sStartNode, ctx.sStartOffset);
-        var e = self.getNormalizedOffset(ctx.sEndNode, ctx.sEndOffset);
+        var s = self.getMatchableOffset(ctx.sStartNode, ctx.sStartOffset);
+        var e = self.getMatchableOffset(ctx.sEndNode, ctx.sEndOffset);
         if (s !== null && e !== null) {
           entry.normOffset = s;
           entry.normLength = Math.max(0, e - s);
@@ -936,23 +936,25 @@ window.fushiSelection = {
     var text = sel.toString();
     if (!text) return null;
     var range = sel.getRangeAt(0);
-    var startNode = range.startContainer;
-    var startOffset = range.startOffset;
-    // 选区起点可能落在元素节点上（如 <p> 的子节点边界）；下钻到其首个文本节点，
-    // 与 getNormalizedOffset / getSentenceContext 的「文本节点 + 字符偏移」契约对齐。
-    if (startNode.nodeType !== Node.TEXT_NODE) {
-      var firstText = this.firstTextNode(startNode);
-      if (!firstText) return null;
-      startNode = firstText.node;
-      startOffset = firstText.offset;
+    // Clip against the actual Range. Element offsets are child indexes, not
+    // text offsets; descending to the element's first child shifts selections.
+    // Use the same visible-text walker as lookup, excluding ruby annotations.
+    var walker = this.createWalker(document.body);
+    var selected = [];
+    var node;
+    while ((node = walker.nextNode()) != null) {
+      if (!range.intersectsNode(node)) continue;
+      var start = node === range.startContainer ? range.startOffset : 0;
+      var end = node === range.endContainer ? range.endOffset : node.textContent.length;
+      if (end > start) selected.push({ node: node, start: start, end: end });
     }
-    var endNode = range.endContainer;
-    var endOffset = range.endOffset;
-    if (endNode.nodeType !== Node.TEXT_NODE) {
-      var firstEnd = this.firstTextNode(endNode);
-      if (firstEnd) { endNode = firstEnd.node; endOffset = firstEnd.offset; }
-      else { endNode = startNode; endOffset = startOffset; }
-    }
+    if (!selected.length) return null;
+    var first = selected[0], last = selected[selected.length - 1];
+    var startNode = first.node, startOffset = first.start;
+    var endNode = last.node, endOffset = last.end;
+    text = selected.map(function(part) {
+      return part.node.textContent.slice(part.start, part.end);
+    }).join('');
     var sentenceContext = this.getSentenceContext(startNode, startOffset);
     var normalizedOffset = window.fushiReader
       ? this.getNormalizedOffset(startNode, startOffset) : null;
@@ -1006,7 +1008,16 @@ window.fushiSelection = {
         }
       }
     }
+    var match = this.matchableRange(startNode, startOffset, endNode, endOffset);
+    var matchSentence = this.matchableRange(
+      sentenceContext.sStartNode, sentenceContext.sStartOffset,
+      span && span.merged ? span.sEndNode : sentenceContext.sEndNode,
+      span && span.merged ? span.sEndOffset : sentenceContext.sEndOffset);
     return {
+      matchableOffset: match.offset,
+      matchableLength: match.length,
+      sentenceMatchableOffset: matchSentence.offset,
+      sentenceMatchableLength: matchSentence.length,
       text: text,
       sentence: sentence,
       audioCuePayload: window.fushiReader && window.fushiReader.cueIdAtDomPoint
@@ -1079,14 +1090,14 @@ window.fushiSelection = {
     w.currentNode = el;
     var after = w.nextNode();
     if (after) {
-      var o = this.getNormalizedOffset(after, 0);
+      var o = this.getMatchableOffset(after, 0);
       if (o !== null) return o;
     }
     var w2 = this.createWalker(document.body);
     w2.currentNode = el;
     var before = w2.previousNode();
     if (before) {
-      var o2 = this.getNormalizedOffset(before, before.textContent.length);
+      var o2 = this.getMatchableOffset(before, before.textContent.length);
       if (o2 !== null) return o2;
     }
     return null;
@@ -1329,7 +1340,18 @@ window.fushiSelection = {
         sentenceNormalizedLength = Math.max(0, snEnd - snStart);
       }
     }
+    var lastSelectedRange = ranges.length ? ranges[ranges.length - 1] : null;
+    var match = lastSelectedRange
+      ? this.matchableRange(startNode, startOffset, lastSelectedRange.node, lastSelectedRange.end)
+      : { offset: null, length: null };
+    var matchSentence = this.matchableRange(
+      sentenceContext.sStartNode, sentenceContext.sStartOffset,
+      sentenceContext.sEndNode, sentenceContext.sEndOffset);
     return {
+      matchableOffset: match.offset,
+      matchableLength: match.length,
+      sentenceMatchableOffset: matchSentence.offset,
+      sentenceMatchableLength: matchSentence.length,
       text: text,
       sentence: mangaSentence !== null && mangaSentence !== ''
         ? mangaSentence : sentenceContext.sentence,
@@ -1783,6 +1805,33 @@ window.fushiSelection = {
     }
     return bounds ? { x: bounds.left, y: bounds.top, width: bounds.right - bounds.left, height: bounds.bottom - bounds.top } : null;
   },
+  // Audio coordinates use normalized UTF-16 units, independently of study
+  // counts. Do not read nodeStartOffsets: that index belongs to navigation.
+  getMatchableOffset: function(targetNode, offset) {
+    if (!window.fushiReader || !targetNode) return null;
+    var walker = this.createWalker(document.body);
+    var count = 0;
+    var node;
+    while ((node = walker.nextNode()) != null) {
+      var text = node.textContent || '';
+      var limit = node === targetNode ? offset : text.length;
+      for (var i = 0; i < limit;) {
+        var ch = String.fromCodePoint(text.codePointAt(i));
+        if (window.fushiReader.isMatchableChar(ch)) count += ch.length;
+        i += ch.length;
+      }
+      if (node === targetNode) return count;
+    }
+    return null;
+  },
+  matchableRange: function(startNode, startOffset, endNode, endOffset) {
+    var start = this.getMatchableOffset(startNode, startOffset);
+    var end = this.getMatchableOffset(endNode, endOffset);
+    return { offset: start, length: start !== null && end !== null && end >= start
+      ? end - start : null };
+  },
+  // Historical API name: this is a learning-unit offset for navigation, not
+  // an audio matching or DOM text index. Keep persisted navigation compatible.
   getNormalizedOffset: function(targetNode, offset) {
     if (!window.fushiReader) return null;
     var base = window.fushiReader.nodeStartOffsets

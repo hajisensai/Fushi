@@ -1,9 +1,7 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fushi/src/reader/reader_content_styles.dart';
-import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
 class HighlightBridge {
@@ -159,33 +157,61 @@ class HighlightBridge {
     });
   }
 
-  function _skip(c) {
-    if (typeof __fushiIsSkippable === 'function') return __fushiIsSkippable(c);
-    if (window.fushiReader && window.fushiReader.isMatchableChar) {
-      return !window.fushiReader.isMatchableChar(String.fromCodePoint(c));
-    }
-    return false;
+  // Text anchors retain punctuation and every script. Only layout whitespace
+  // is ignored; audio's character whitelist is not a favorite-text coordinate.
+  function _anchorText(text) {
+    return Array.from(text || '').filter(function(ch) { return ch.trim() !== ''; }).join('');
   }
 
   function _buildOffsetMap() {
-    var root = _root();
-    var walker = _walker(root);
+    var walker = _walker(_root());
     var map = [];
-    var normCount = 0;
+    var normCount = 0, studyCount = 0;
     var node;
     while ((node = walker.nextNode()) != null) {
       var txt = node.textContent || '';
       for (var i = 0; i < txt.length;) {
         var cp = txt.codePointAt(i);
-        var charLen = cp > 0xFFFF ? 2 : 1;
-        if (!_skip(cp)) {
-          map.push({ node: node, rawIdx: i, normIdx: normCount, rawLen: charLen });
-          normCount++;
+        var ch = String.fromCodePoint(cp);
+        if (_anchorText(ch)) {
+          map.push({ node: node, rawIdx: i, normIdx: normCount,
+            rawLen: ch.length, text: ch, studyIdx: studyCount });
+          normCount += ch.length;
         }
-        i += charLen;
+        if (window.fushiStudyUnits && window.fushiStudyUnits.isUnitEnd(txt, i)) studyCount++;
+        i += ch.length;
       }
     }
     return map;
+  }
+
+  function _resolveTextRange(map, text, studyHint) {
+    var needle = _anchorText(text);
+    if (!needle) return null;
+    var haystack = map.map(function(entry) { return entry.text; }).join('');
+    var best = null, distance = Infinity, tied = false;
+    for (var at = haystack.indexOf(needle); at >= 0;
+         at = haystack.indexOf(needle, at + 1)) {
+      var entry = map[_bisect(map, at)];
+      if (!entry || entry.normIdx !== at) continue;
+      var d = typeof studyHint === 'number' ? Math.abs(entry.studyIdx - studyHint) : 0;
+      if (d < distance) {
+        best = { offset: at, length: needle.length };
+        distance = d;
+        tied = false;
+      } else if (d === distance) tied = true;
+    }
+    // A stale offset may narrow repeated text, but cannot invent a text match.
+    // Ambiguous matches remain unpainted rather than highlighting another copy.
+    return tied ? null : best;
+  }
+
+  function _resolveHighlights(map, highlights) {
+    return (highlights || []).map(function(hl) {
+      var range = _resolveTextRange(map, hl.text, hl.offset);
+      return range ? { id: hl.id, color: hl.color,
+        offset: range.offset, length: range.length } : null;
+    }).filter(function(hl) { return hl !== null; });
   }
 
   function _bisect(map, target) {
@@ -258,45 +284,10 @@ class HighlightBridge {
 
   // ── 从 selection 计算 normCharOffset + length ──
   window.__fushiGetSelectionNormRange = function() {
-    var sel = window.getSelection();
-    if (!sel || sel.isCollapsed || sel.rangeCount === 0) return null;
-    var range = sel.getRangeAt(0);
-    var text = sel.toString().trim();
-    if (!text) return null;
-
-    var root = _root();
-    var walker = _walker(root);
-
-    var normCount = 0;
-    var startNorm = -1;
-    var endNorm = -1;
-    var node;
-
-    while ((node = walker.nextNode()) != null) {
-      var nodeText = node.textContent || '';
-      for (var i = 0; i < nodeText.length;) {
-        var cp = nodeText.codePointAt(i);
-        var charLen = cp > 0xFFFF ? 2 : 1;
-        var inRange;
-        try {
-          var pt = document.createRange();
-          pt.setStart(node, i);
-          pt.setEnd(node, Math.min(i + charLen, node.length));
-          inRange = (range.compareBoundaryPoints(Range.START_TO_END, pt) > 0 &&
-                     range.compareBoundaryPoints(Range.END_TO_START, pt) < 0);
-        } catch(e) { inRange = false; }
-
-        if (!_skip(cp)) {
-          if (inRange && startNorm < 0) startNorm = normCount;
-          if (inRange) endNorm = normCount + 1;
-          normCount++;
-        }
-        i += charLen;
-      }
-    }
-
-    if (startNorm < 0) return null;
-    return { offset: startNorm, length: endNorm - startNorm, text: text };
+    var data = window.fushiSelection && window.fushiSelection.nativeSelectionSentenceRange();
+    return data && data.normalizedOffset !== null && data.normalizedLength !== null
+      ? { offset: data.normalizedOffset, length: data.normalizedLength, text: data.text }
+      : null;
   };
 
   // ── 应用高亮 ──
@@ -312,6 +303,7 @@ class HighlightBridge {
         return;
       }
       var map = _buildOffsetMap();
+      highlightsJson = _resolveHighlights(map, highlightsJson);
       for (var h = 0; h < highlightsJson.length; h++) {
         var hl = highlightsJson[h];
         var color = hl.color || 'yellow';
@@ -350,10 +342,10 @@ class HighlightBridge {
       var root = _root();
       root.normalize();
       if (!highlightsJson || highlightsJson.length === 0) return;
-      var sorted = highlightsJson.slice().sort(function(a, b) {
+      var map = _buildOffsetMap();
+      var sorted = _resolveHighlights(map, highlightsJson).sort(function(a, b) {
         return a.offset - b.offset;
       });
-      var map = _buildOffsetMap();
       for (var h = sorted.length - 1; h >= 0; h--) {
         var hl = sorted[h];
         var groups = _buildGroups(map, hl.offset, hl.length);
@@ -396,38 +388,8 @@ class HighlightBridge {
   };
 
   // ── 文本搜索回退：为没有偏移量的收藏查找位置 ──
-  window.__fushiFindTextNormRange = function(text) {
-    if (!text) return null;
-    var root = _root();
-    var walker = _walker(root);
-    var normChars = [];
-    var node;
-    while ((node = walker.nextNode()) != null) {
-      var txt = node.textContent || '';
-      for (var i = 0; i < txt.length;) {
-        var cp = txt.codePointAt(i);
-        var charLen = cp > 0xFFFF ? 2 : 1;
-        if (!_skip(cp)) {
-          normChars.push(String.fromCodePoint(cp));
-        }
-        i += charLen;
-      }
-    }
-    var haystack = normChars.join('');
-    var needleChars = [];
-    for (var i = 0; i < text.length;) {
-      var cp = text.codePointAt(i);
-      var charLen = cp > 0xFFFF ? 2 : 1;
-      if (!_skip(cp)) {
-        needleChars.push(String.fromCodePoint(cp));
-      }
-      i += charLen;
-    }
-    var needle = needleChars.join('');
-    if (!needle) return null;
-    var idx = haystack.indexOf(needle);
-    if (idx < 0) return null;
-    return { offset: idx, length: needle.length };
+  window.__fushiFindTextNormRange = function(text, studyHint) {
+    return _resolveTextRange(_buildOffsetMap(), text, studyHint);
   };
 
   // ── 移除单条高亮 ──
@@ -482,56 +444,24 @@ class HighlightBridge {
     List<FavoriteSentence> highlights, {
     String backgroundHex = '#ffffff',
   }) async {
-    final List<Map<String, dynamic>> payload = [];
-    int backfillCount = 0;
-    for (final FavoriteSentence h in highlights) {
-      if (h.normCharOffset != null && h.normCharLength != null) {
-        payload.add(<String, dynamic>{
-          'id': h.id,
-          'offset': h.normCharOffset,
-          'length': h.normCharLength,
-          'color': h.color ?? 'yellow',
-        });
-        continue;
-      }
-      if (h.text.isEmpty) continue;
-      final String escapedText = jsonEncode(h.text);
-      final Object? raw = await controller.evaluateJavascript(
-        source:
-            '(function(){try{var r=window.__fushiFindTextNormRange($escapedText);'
-            'return r?JSON.stringify(r):"null";}catch(e){return "null";}})();',
-      );
-      if (raw is String && raw != 'null' && raw.isNotEmpty) {
-        try {
-          final Map<String, dynamic> found =
-              jsonDecode(raw) as Map<String, dynamic>;
-          final int? offset = (found['offset'] as num?)?.toInt();
-          final int? length = (found['length'] as num?)?.toInt();
-          if (offset != null && length != null) {
-            payload.add(<String, dynamic>{
-              'id': h.id,
-              'offset': offset,
-              'length': length,
-              'color': h.color ?? 'yellow',
-            });
-            backfillCount++;
-          }
-        } catch (e, stack) {
-          ErrorLogService.instance
-              .log('HighlightBridge.backfillDecode', e, stack);
-        }
-      }
-    }
-    if (backfillCount > 0) {
-      debugPrint(
-          '[fushi-hl] backfilled $backfillCount favorites via text search');
-    }
+    // Stored offsets are navigation hints, not highlight character indexes.
+    // Always send the text, including for old favorites with a non-null offset.
+    final List<Map<String, dynamic>> payload = highlights
+        .where((FavoriteSentence h) => h.text.isNotEmpty)
+        .map(
+          (FavoriteSentence h) => <String, dynamic>{
+            'id': h.id,
+            'text': h.text,
+            'offset': h.normCharOffset,
+            'length': h.normCharLength,
+            'color': h.color ?? 'yellow',
+          },
+        )
+        .toList();
     final String json = jsonEncode(payload);
-    // G14：深/浅判定在 Dart 侧用与原生滚动条同一个单一真相
-    // （ReaderContentStyles.isDarkBackground，Rec.601/0.5）算好，注入 bool；
-    // JS 侧不再持有第二套亮度公式。
-    final bool backgroundIsDark =
-        ReaderContentStyles.isDarkBackground(backgroundHex);
+    final bool backgroundIsDark = ReaderContentStyles.isDarkBackground(
+      backgroundHex,
+    );
     await controller.evaluateJavascript(
       source: 'window.__fushiHighlightBgDark=$backgroundIsDark;'
           'window.__fushiApplyHighlights && window.__fushiApplyHighlights($json);',

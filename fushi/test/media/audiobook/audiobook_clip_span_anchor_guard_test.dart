@@ -65,11 +65,25 @@ void main() {
         () {
       final String body = fnBody(
           audiobookPart, '({int offset, int length})? _miningSpanRange(');
-      expect(body.contains('_cachedSentenceRange'), isTrue,
-          reason: '_miningSpanRange 必须先取句级 span _cachedSentenceRange。');
-      expect(body.contains('_cachedSelectionRange'), isTrue,
-          reason: '_miningSpanRange 必须回退到选区级 span _cachedSelectionRange '
+      // BUG-2333 起这里用的是**音频匹配坐标**（matchable）而不是学习单位范围：
+      // 学习单位不能拿去和字幕的 normCharStart/End 比，那是这轮修的坐标混用。
+      // 不变式没变（TODO-1278：句级优先、缺失时回退选区级，否则导出误报跨章），
+      // 所以钉的是这个**次序**加上「用的是 matchable 那套」。
+      final int sentenceIdx = body.indexOf('_cachedMatchableSentenceRange');
+      final int selectionIdx = body.indexOf('_cachedMatchableSelectionRange');
+      expect(sentenceIdx, greaterThanOrEqualTo(0),
+          reason:
+              '_miningSpanRange 必须先取句级 span _cachedMatchableSentenceRange。');
+      expect(selectionIdx, greaterThan(sentenceIdx),
+          reason: '_miningSpanRange 必须回退到选区级 span '
+              '_cachedMatchableSelectionRange，且排在句级之后 '
               '(TODO-1278：否则句级 span 缺失时导出误报跨章)。');
+      // 不得回到学习单位坐标——音频裁片段拿它去比字幕偏移就是 BUG-2333 本体。
+      expect(
+        RegExp(r'_cached(?!Matchable)(Sentence|Selection)Range').hasMatch(body),
+        isFalse,
+        reason: '音频 span 只能用 matchable 坐标，不能混用学习单位范围',
+      );
     });
 
     test(
