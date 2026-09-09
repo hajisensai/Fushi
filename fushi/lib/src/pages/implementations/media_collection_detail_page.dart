@@ -504,7 +504,29 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// （BUG-1544）。缺集 / 只导入了一部分时顺位号必然与真实集号错位——用户看到
   /// 「03」点开却是 E05。集号是文件名里写着的事实，不是列表下标的函数。
   int _episodeDisplayNumber(CollectionEpisodeSlot slot, int index) =>
-      parsedEpisodeNumberOf(slot.filename) ?? index + 1;
+      _episodeNumbers[slot.entryKey] ?? index + 1;
+
+  /// [_slots] 整批解析出的集号（entryKey → 集号），按 [_slots] 的**对象身份**
+  /// 缓存：`_slots` 每次变更都是整体替换成新列表，所以 identical 即可当缓存键，
+  /// 四个赋值点都不必记得手动失效。
+  ///
+  /// 整批（而非逐个文件名）解析是 BUG-2369 的要求：不补零的目录里逐个解析会
+  /// 1..9 全解不出、10.. 解得出，一半集卡掉回顺位号，序号与真实集号错位。
+  List<CollectionEpisodeSlot>? _episodeNumbersSlots;
+  Map<String, int> _episodeNumbersCache = const <String, int>{};
+
+  Map<String, int> get _episodeNumbers {
+    if (identical(_episodeNumbersSlots, _slots)) return _episodeNumbersCache;
+    final List<int?> numbers = parsedEpisodeNumbersOf(<String>[
+      for (final CollectionEpisodeSlot slot in _slots) slot.filename,
+    ]);
+    _episodeNumbersCache = <String, int>{
+      for (int i = 0; i < _slots.length; i++)
+        if (numbers[i] != null) _slots[i].entryKey: numbers[i]!,
+    };
+    _episodeNumbersSlots = _slots;
+    return _episodeNumbersCache;
+  }
 
   /// 集简介（集级刮削 summary；无 → null 不占位）。
   String? _episodeSummary(CollectionEpisodeSlot slot) {

@@ -291,14 +291,24 @@ extension _VideoEpisode on _VideoFushiPageState {
     final RemoteCoverFetcher? fetcher =
         remoteCoverFetcherFor(widget.remoteClient ?? _resolvedStreamClient);
     final ImageProvider? seriesFallback = _playlistSeriesFallbackCover();
+    // 集号**整批**解析（BUG-2369）：逐个文件名解析在「不补零」的目录里会
+    // 1..9 解不出、10.. 解得出，一半卡片掉回顺位号；整批交给解析器，解不出的
+    // 由同目录兄弟文件差分补齐。键与下面查表口径必须一致。
+    final List<String> numberKeys = <String>[
+      for (final _PlaylistEpisodeRef e in _episodes)
+        e.path.isNotEmpty ? e.path : e.title,
+    ];
+    final List<int?> numbers = parsedEpisodeNumbersOf(numberKeys);
+    final Map<String, int?> numberByKey = <String, int?>{
+      for (int i = 0; i < numberKeys.length; i++) numberKeys[i]: numbers[i],
+    };
     return <VideoEpisodeEntry>[
       for (final _PlaylistEpisodeRef e in _episodes)
         VideoEpisodeEntry(
           title: e.displayTitle ?? e.title,
           // 角标集号取**文件名解析值**而非列表下标（BUG-1544）：缺集时下标必然
           // 说谎。远端集无路径 → 退回按标题解析；再解不出由卡片回落顺位号。
-          episodeNumber:
-              parsedEpisodeNumberOf(e.path.isNotEmpty ? e.path : e.title),
+          episodeNumber: numberByKey[e.path.isNotEmpty ? e.path : e.title],
           cover: resolveMediaCoverImage(
                 kind: MediaKind.video,
                 localPath: e.coverPath,
