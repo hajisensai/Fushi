@@ -29,12 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2208 条。点号进各自文件。
+> 共 2209 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2393](bugs/BUG-2393-reader-audio-chapter-anchor.md) | ✅ | ✅ | 有声书恢复只定位章节却当作句子恢复成功 |
 | [BUG-2392](bugs/BUG-2392-reader-audio-resume-priority.md) | ✅ | ✅ | 阅读进度异步快照在导航后仍写入位置与统计 |
+| [BUG-2391](bugs/BUG-2391-windows-fullscreen-render-stall.md) | ✅ | ✅ | Windows视频退出全屏后画面停滞需拖动窗口恢复 |
 | [BUG-2390](bugs/BUG-2390-audiobook-resume-priority.md) | ✅ | ✅ | 带有声书的小说仍让阅读位置覆盖音频位置 |
 | [BUG-2388](bugs/BUG-2388-reader-webkit-empty-caret-restore.md) | ✅ | ✅ | WebKit竖排字符锚矩形为空导致重开回章首 |
 | [BUG-2387](bugs/BUG-2387-reader-floating-header-covers-first-line.md) | ✅ | ✅ | 悬浮顶部工具栏压住正文首行（小窗/分屏下暴露） |
