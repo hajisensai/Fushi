@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:archive/archive_io.dart';
 import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
+import 'package:fushi/src/sync/manga_sync_package.dart';
 import 'package:fushi/src/sync/position_converter.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_remote_listing.dart';
@@ -743,7 +744,15 @@ class SyncManager {
     // resolves to a real file, so the old `File(book.epubPath).existsSync()`
     // guard silently skipped every upload — BUG-088). Re-package the extracted
     // directory into a temp .epub and upload that.
-    if (book.extractDir.isNotEmpty && Directory(book.extractDir).existsSync()) {
+    final BookFormat format = BookFormat.parseOrEpub(book.format);
+    // PDF 无内容同步通道（与互联侧 _syncBooksContentLive 同判据）：不打包、不上传。
+    if (format != BookFormat.pdf &&
+        book.extractDir.isNotEmpty &&
+        Directory(book.extractDir).existsSync()) {
+      // 漫画包与 EPUB 共用同一个资产名 `<title>.epub`——与互联通道同契约（扩展名
+      // 不参与判定，内容即真相，导入侧 isMangaPackage 嗅探分流）。云盘侧因此不需
+      // 要第二套命名：内容探针 / getRemoteBook / 对比弹窗的「远端有无内容」判据
+      // 全部零改。
       final fileName = '${sanitizeTtuFilename(book.title)}.epub';
       final existing = await _backend.findContentFile(folderId, fileName);
       if (existing == null) {
@@ -751,8 +760,12 @@ class SyncManager {
             Directory.systemTemp.createTempSync('hibiki_epub_export');
         final File epubTmp = File(p.join(tmpDir.path, fileName));
         try {
-          final bool built =
-              await repackageExtractedEpub(book.extractDir, epubTmp.path);
+          // 漫画 → 书目录整树 zip（manga.json 标记 + 页图）；EPUB → 既有重打包。
+          // 此前恒走 repackageExtractedEpub：漫画目录无 EPUB 根 → 恒 false →
+          // 漫画在所有云盘后端静默永不上传。
+          final bool built = format == BookFormat.manga
+              ? await repackageMangaBook(book.extractDir, epubTmp.path)
+              : await repackageExtractedEpub(book.extractDir, epubTmp.path);
           if (built) {
             await _backend.uploadContentFile(
               folderId: folderId,

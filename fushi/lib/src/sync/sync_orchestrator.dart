@@ -8,7 +8,8 @@ import 'package:fushi/src/media/video/video_sidecar.dart'
     show listSidecarSubtitles;
 import 'package:fushi/src/models/local_audio_manager.dart';
 import 'package:fushi/src/sync/collection_manifest.dart';
-import 'package:fushi/src/sync/manga_sync_package.dart' show repackageMangaBook;
+import 'package:fushi/src/sync/manga_sync_package.dart'
+    show importMangaPackageFile, isMangaPackage, repackageMangaBook;
 import 'package:fushi/src/sync/collection_sync_engine.dart';
 import 'package:fushi/src/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
@@ -1577,7 +1578,8 @@ class SyncOrchestrator {
   }
 }
 
-/// 下载远端书文件夹 [folderId] 里的 `.epub` 内容资产并导入为本地书。
+/// 下载远端书文件夹 [folderId] 里的 `.epub` 内容资产并导入为本地书。资产**内容**
+/// 可以是 EPUB，也可以是漫画书目录整树包（同名 `.epub`，见下方内容嗅探分流）。
 /// 返回 true=导入成功；false=该文件夹没有 `.epub`（发送方关了内容同步，跳过）。
 /// 传输/导入失败时抛出，交调用方决定如何提示。临时文件用后即删。
 Future<bool> importRemoteBookFolder({
@@ -1605,11 +1607,23 @@ Future<bool> importRemoteBookFolder({
   ));
   try {
     await backend.getAsset(epub.id, tmp, onProgress: onProgress);
-    final String importedBookKey = await EpubImporter.importFromPath(
-      db: db,
-      filePath: tmp.path,
-      fileName: epub.name,
-    );
+    // 漫画包与 EPUB 共用同一个 `<title>.epub` 资产名（云盘 push 侧同契约），故按
+    // **内容**嗅探分流：zip 根含 manga.json = 漫画书目录整树包，走 MangaImporter
+    // 的既有两遍式校验落库；否则按 EPUB。与互联通道（host importBookFromFile /
+    // 书架 _importRemoteBookFile）逐字同语义。标题用远端资产名去扩展名
+    // （= sanitizeTtuFilename(title)，bookKey 由它派生），不用本地临时文件名
+    // （带时间戳，会让每次下载漂成一本新书）。
+    final String importedBookKey = (await isMangaPackage(tmp))
+        ? await importMangaPackageFile(
+            db: db,
+            file: tmp,
+            title: p.basenameWithoutExtension(epub.name),
+          )
+        : await EpubImporter.importFromPath(
+            db: db,
+            filePath: tmp.path,
+            fileName: epub.name,
+          );
     // TODO-1165：按标签名重建云盘书标签映射（sidecar 由 push 侧写在同文件夹，只增
     // 不删）。复用已列出的 children，不再多发一次 listChildren。
     await _applyRemoteBookFolderTags(db, backend, children, importedBookKey);
