@@ -69,8 +69,11 @@ void installAsrHostBindings() {
 }
 
 /// 建一个装配好的转录服务。两个生产实例化点都调这里。
-asr.AsrTranscriptionService createAsrTranscriptionService() =>
+asr.AsrTranscriptionService createAsrTranscriptionService({
+  bool alignGeneratedSubtitles = true,
+}) =>
     asr.AsrTranscriptionService(
+      alignGeneratedSubtitles: alignGeneratedSubtitles,
       backend: fushiAsrBackend(),
       pcm: asr.FfmpegAsrPcmSource(backend: const FushiAsrFfmpegBackend()),
     );
