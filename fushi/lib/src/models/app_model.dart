@@ -6484,10 +6484,14 @@ class AppModel with ChangeNotifier {
   ///
   /// 全 app 的门控一律读它。此前底栏与 macOS 侧栏各手抄一份七参表，`games` 的
   /// `Platform.isWindows` 判据抄了两遍、漏了一遍（macOS 那份靠缺省值蒙对）。
+  ///
+  /// 平台判据取自 [PlatformServices]（那是本类「不必知道自己跑在哪个平台」的出口），
+  /// 不再直读 `dart:io` —— 直读会让 widget 测试无缝可注，Windows 独有的模块
+  /// （galgame）在 Linux CI 上被静默滤掉而本机全绿。
   ModuleVisibility get moduleVisibility => ModuleVisibility.resolve(
         prefOf: moduleEnabled,
-        isWindows: Platform.isWindows,
-        isDesktop: DesktopLookupService.isDesktop,
+        isWindows: platformServices.isWindows,
+        isDesktop: platformServices.isDesktop,
       );
 
   /// 是否已展示过「上传/做种」首用提示（下载对话框首次推送时弹一次性提醒）。

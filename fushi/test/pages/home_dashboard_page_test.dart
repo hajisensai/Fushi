@@ -656,6 +656,23 @@ void main() {
 
   /// BUG-1111/BUG-1112 公共装配：塞一个游戏行；[playedAt] 非空则再塞一条游玩会话
   /// （仓储的 lastPlayedMs 由 `galgame_sessions` 现算，不是 `galgames` 上的列）。
+  /// 让本用例以 **Windows** 语义组装 [AppModel]。
+  ///
+  /// galgame 只做 Windows 端，判据收在 [ModuleId.availableOn]（`games => isWindows`），
+  /// 而仪表盘自「功能模块关闭全部入口」那批起会按 [ModuleVisibility] 过滤条目种类。
+  /// 于是「游戏出现在继续区 / 最近添加 / 活动时间轴」这一整类断言**只在 Windows 上
+  /// 成立**：本机是 Windows 所以全绿，CI 跑 Linux 所以全红（develop 上实测 4 条）。
+  ///
+  /// 更阴的是另外两条只做否定断言的用例（封面反查、活动身份门禁）：在 Linux 上游戏
+  /// 整块不渲染，`findsNothing` 恒真、照样绿，等于在 CI 上从来没跑过。所以凡是喂了
+  /// 游戏数据的用例一律显式声明平台，不靠宿主平台碰运气。
+  void useWindowsPlatform() {
+    platformServices = testPlatformServices(isWindows: true, isDesktop: true);
+    appModel = AppModel(platformServices)
+      ..wireDatabaseForTesting(db)
+      ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: storeDir);
+  }
+
   Future<void> seedGame({
     required String id,
     required String name,
@@ -683,6 +700,7 @@ void main() {
   }
 
   testWidgets('BUG-1111：玩过的游戏进「继续」区，且「游戏」筛选档只留游戏', (WidgetTester tester) async {
+    useWindowsPlatform();
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -731,6 +749,7 @@ void main() {
 
   testWidgets('BUG-1111：同合集的多个游戏在「继续」区收敛成一张卡（与视频侧同口径）',
       (WidgetTester tester) async {
+    useWindowsPlatform();
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -771,6 +790,7 @@ void main() {
   });
 
   testWidgets('BUG-1111：新添加的游戏进「最近添加」（类型 · 相对时间）', (WidgetTester tester) async {
+    useWindowsPlatform();
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -793,6 +813,7 @@ void main() {
 
   testWidgets('BUG-1112/BUG-1284：旧 exePath 活动身份也能反查并渲染游戏封面',
       (WidgetTester tester) async {
+    useWindowsPlatform();
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -849,6 +870,7 @@ void main() {
 
   testWidgets('BUG-1412：活动身份门禁——不因重复标题、deleted id 或脏 key 误绑现存游戏封面',
       (WidgetTester tester) async {
+    useWindowsPlatform();
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -931,6 +953,7 @@ void main() {
 
   testWidgets('BUG-1112：点活动时间轴的游戏条切到「游戏」tab，不再落到视频 tab',
       (WidgetTester tester) async {
+    useWindowsPlatform();
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
