@@ -4542,5 +4542,15 @@
   "collection_rescrape": "Rescrape metadata and cover",
   "collection_rescrape_not_planned": "This collection isn't in any local video source's scrape plan",
   "collection_rescrape_started": "Rescrape queued",
-  "collection_rescrape_failed": "Rescrape failed"
+  "collection_rescrape_failed": "Rescrape failed",
+  "reader_vn_settings": "Visual novel settings",
+  "reader_vn_reveal_speed": "Text reveal speed",
+  "reader_vn_reveal_instant": "Instant",
+  "reader_vn_screen_mode": "Screen content",
+  "reader_vn_screen_block": "One block",
+  "reader_vn_screen_sentences": "Sentences",
+  "reader_vn_sentences_per_screen": "Sentences per screen",
+  "reader_vn_preserve_dialogue": "Keep dialogue together",
+  "reader_vn_click_advance": "Blank tap advances",
+  "reader_vn_merge_spoken_sentence": "Keep spoken sentence on one screen"
 }

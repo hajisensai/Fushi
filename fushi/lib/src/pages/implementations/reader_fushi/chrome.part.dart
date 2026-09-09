@@ -126,7 +126,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
         source: ReaderPaginationScripts.paginateInvocation(direction),
       );
       if (!mounted || _controller == null) return;
-      if (!_didScroll(result)) {
+      if (!_didConsumePageTurn(result)) {
         // TODO-1229 v2：惯性型输入(throttleMs>0)跨章前过冷却闸门——同一手势残余惯性
         // 在短章边界的二次跨章被拦；键盘/手柄(throttleMs==0)不受限。窗口不再被被拦的
         // 输入自我续期——只有真跨章与 content-ready 会推进它（BUG-1829）。
@@ -136,7 +136,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       } else {
         await _refreshProgress();
         if (!mounted || _controller == null) return;
-        await _caretReanchor(direction);
+        if (_didScroll(result)) await _caretReanchor(direction);
       }
       return;
     }
@@ -144,10 +144,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
       source: ReaderPaginationScripts.paginateInvocation(direction),
     );
     if (!mounted || _controller == null) return;
-    if (_didScroll(result)) {
+    if (_didConsumePageTurn(result)) {
       await _refreshProgress();
       if (!mounted || _controller == null) return;
-      await _caretReanchor(direction);
+      if (_didScroll(result)) await _caretReanchor(direction);
     } else {
       // TODO-1229 v2：同上——分页模式惯性跨章过冷却闸门，拦同一手势的二次跨章。
       if (throttleMs > 0 && _chapterTurnCoolingDown()) return;
@@ -2805,6 +2805,17 @@ extension _ReaderChrome on _ReaderFushiPageState {
   static bool _didScroll(dynamic result) {
     if (result is String) {
       return result.trim().replaceAll('"', '') == 'scrolled';
+    }
+    return false;
+  }
+
+  static bool _didConsumePageTurn(dynamic result) {
+    if (_didScroll(result)) return true;
+    if (result is String) {
+      // VN 的第一次前进可能只完成当前屏的打字渐显。它虽然没有移动屏索引，
+      // 但已经完整消费了翻页意图，绝不能落进章节边界分支；同时它不算真实
+      // 滚屏，调用方不会误跑 caret 的跨页重锚。
+      return result.trim().replaceAll('"', '') == 'revealed';
     }
     return false;
   }

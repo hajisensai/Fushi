@@ -1881,21 +1881,12 @@ window.__fushiInstallShell = function(C) {
   @visibleForTesting
   static String initImagesScriptForTesting() => _sharedInitImages();
 
-  static String _sharedInitImages() {
-    // TODO-1289：图片防剧透遮罩「点击揭开后又恢复」根因——揭开只删 DOM `blurred`
-    // class，章节 (重)载 / 布局设置切换（writing mode / 分栏 / view mode / spread /
-    // blur 开关，均经 _reloadWithCurrentSettings→_loadChapterDirectly）会重跑
-    // initialize→_sharedInitImages，无条件给所有 block-img 重加 `blurred` → 揭开丢失。
-    // 修复：把「本次阅读会话已揭开」的稳定 key（<img> src / <svg><image> href 相对
-    // baseURI 解析成绝对 URL）注入成 map，_fushiBlurImage 命中则跳过重新遮罩。揭开
-    // 状态的真相源是 Dart 侧 _revealedImageKeys（内存会话集），经 onImageRevealed
-    // 回传持久，重载时再嵌入这里。domStorageEnabled=false 故不用 localStorage。
-    // BUG-1140 第二阶段①：整块从「blurImages 为假时**整段不注入**」改成「函数照常
-    // 定义、副作用照常受 C.blurImages 门控」。行为等价：`window.__fushiMarkImageRevealed`
-    // / `window.__fushiImageRevealKey` 两个全局仍**只在开了防剧透遮罩时**才挂上
-    // （caret / 有声书桥接都用 `if (window.__fushiImageRevealKey && …)` 探测），
-    // `_fushiBlurImage` 也仍只在开关为真时被调用。
-    const String blurFn = '''
+  /// 三种阅读 shell 共用的防剧透图片身份与会话揭开语义。
+  ///
+  /// 图片分类/布局仍由各 shell 自己负责；这段只建立稳定 reveal key、消费 Dart
+  /// 会话里的 [ReaderEngineConfig.revealedKeys]，并提供 `_fushiBlurImage`。VN
+  /// 过去用 no-op media semantics，导致同一 `blur_images` 设置在第三种视图失效。
+  static String imageRevealSemanticsScript() => '''
   var _fushiRevealedKeys = Object.create(null);
   if (C.blurImages) {
     var __fushiKeys = C.revealedKeys;
@@ -1944,6 +1935,22 @@ window.__fushiInstallShell = function(C) {
     if (key && _fushiRevealedKeys[key]) return;
     element.classList.add('blurred');
   }''';
+
+  static String _sharedInitImages() {
+    // TODO-1289：图片防剧透遮罩「点击揭开后又恢复」根因——揭开只删 DOM `blurred`
+    // class，章节 (重)载 / 布局设置切换（writing mode / 分栏 / view mode / spread /
+    // blur 开关，均经 _reloadWithCurrentSettings→_loadChapterDirectly）会重跑
+    // initialize→_sharedInitImages，无条件给所有 block-img 重加 `blurred` → 揭开丢失。
+    // 修复：把「本次阅读会话已揭开」的稳定 key（<img> src / <svg><image> href 相对
+    // baseURI 解析成绝对 URL）注入成 map，_fushiBlurImage 命中则跳过重新遮罩。揭开
+    // 状态的真相源是 Dart 侧 _revealedImageKeys（内存会话集），经 onImageRevealed
+    // 回传持久，重载时再嵌入这里。domStorageEnabled=false 故不用 localStorage。
+    // BUG-1140 第二阶段①：整块从「blurImages 为假时**整段不注入**」改成「函数照常
+    // 定义、副作用照常受 C.blurImages 门控」。行为等价：`window.__fushiMarkImageRevealed`
+    // / `window.__fushiImageRevealKey` 两个全局仍**只在开了防剧透遮罩时**才挂上
+    // （caret / 有声书桥接都用 `if (window.__fushiImageRevealKey && …)` 探测），
+    // `_fushiBlurImage` 也仍只在开关为真时被调用。
+    final String blurFn = imageRevealSemanticsScript();
     const String blurSvgCall = 'if (C.blurImages) _fushiBlurImage(svg);';
     const String blurImgCall = 'if (C.blurImages) _fushiBlurImage(img);';
     return '''

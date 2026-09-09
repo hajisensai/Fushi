@@ -4542,5 +4542,15 @@
   "collection_rescrape": "重新刮削資料與封面",
   "collection_rescrape_not_planned": "這個合集不在任何本機影片來源的刮削計劃裡",
   "collection_rescrape_started": "已開始重新刮削",
-  "collection_rescrape_failed": "重新刮削失敗"
+  "collection_rescrape_failed": "重新刮削失敗",
+  "reader_vn_settings": "Visual novel settings",
+  "reader_vn_reveal_speed": "Text reveal speed",
+  "reader_vn_reveal_instant": "Instant",
+  "reader_vn_screen_mode": "Screen content",
+  "reader_vn_screen_block": "One block",
+  "reader_vn_screen_sentences": "Sentences",
+  "reader_vn_sentences_per_screen": "Sentences per screen",
+  "reader_vn_preserve_dialogue": "Keep dialogue together",
+  "reader_vn_click_advance": "Blank tap advances",
+  "reader_vn_merge_spoken_sentence": "Keep spoken sentence on one screen"
 }

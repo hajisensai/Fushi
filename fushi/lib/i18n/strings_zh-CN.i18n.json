@@ -4542,5 +4542,15 @@
   "collection_rescrape": "重新刮削资料与封面",
   "collection_rescrape_not_planned": "这个合集不在任何本地视频来源的刮削计划里",
   "collection_rescrape_started": "已开始重新刮削",
-  "collection_rescrape_failed": "重新刮削失败"
+  "collection_rescrape_failed": "重新刮削失败",
+  "reader_vn_settings": "视觉小说设置",
+  "reader_vn_reveal_speed": "文字渐显速度",
+  "reader_vn_reveal_instant": "立即显示",
+  "reader_vn_screen_mode": "每屏内容",
+  "reader_vn_screen_block": "一个段落",
+  "reader_vn_screen_sentences": "按句子",
+  "reader_vn_sentences_per_screen": "每屏句数",
+  "reader_vn_preserve_dialogue": "保持对话完整",
+  "reader_vn_click_advance": "点击空白处推进",
+  "reader_vn_merge_spoken_sentence": "有声句保持在同一屏"
 }
