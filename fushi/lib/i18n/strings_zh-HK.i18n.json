@@ -3714,7 +3714,6 @@
   "video_clip_exported_with_subtitles": "片段已導出（含字幕）：${path}",
   "video_clip_exporting": "正在匯出片段…",
   "video_collection_no_local_member": "本合集沒有本地影片",
-  "video_collection_scrape": "刮削資料與封面",
   "video_continue_watching": "Continue Watching",
   "video_control_audio_track": "音軌",
   "video_control_custom_action": "快捷鍵 $index",
@@ -4534,5 +4533,13 @@
   "video_shader_tier_high_hint_mobile": "Anime4K deblur (M) at the source resolution. Larger kernel than Medium; still no upscaling passes. For faster phone GPUs.",
   "video_shader_tier_ultra_hint_mobile": "Anime4K deblur (M) plus an extra soft restore pass, both at the source resolution. Strongest phone tier; still no upscaling. Drop a tier if it drops frames.",
   "dialog_background_close": "Close (task keeps running)",
-  "reader_timer_show": "顯示閱讀計時器"
+  "reader_timer_show": "顯示閱讀計時器",
+  "collection_cover_set": "設定封面",
+  "collection_cover_reset": "回復預設封面",
+  "collection_cover_updated": "封面已更新",
+  "collection_cover_failed": "封面設定失敗",
+  "collection_rescrape": "重新刮削資料與封面",
+  "collection_rescrape_not_planned": "這個合集不在任何本機影片來源的刮削計劃裡",
+  "collection_rescrape_started": "已開始重新刮削",
+  "collection_rescrape_failed": "重新刮削失敗"
 }

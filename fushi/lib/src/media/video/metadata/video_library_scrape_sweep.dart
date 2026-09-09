@@ -34,6 +34,40 @@ class VideoPendingScrapeWork {
   final VideoSourceScrapeWork work;
 }
 
+/// 在所有本地视频来源的刮削计划里定位某个合集对应的作品单元。
+///
+/// 「重新刮削这个合集」需要的三样东西——来源行、作品标题、稳定键——只有计划器
+/// 知道：合集本身不记 sourceId（成员才记），而作品单元是计划器按「合集 = 一个
+/// 剧集作品」现推出来的。所以入口不是「查一张表」，而是「问计划器要同一份计划」，
+/// 与自动补刮、待确认队列、批次刮削看到的作品定义**逐字节同源**。
+///
+/// 按 [VideoSourceScrapeWork.stableKey]（`collection:<id>`）匹配而不是按标题：
+/// 同名合集、改过名的合集都不会认错，也不会撞
+/// [VideoSourceScrapeWorkAmbiguous]。
+///
+/// 找不到返回 null——合集成员全是远端占位、来源已删、或该来源是目录分组模式
+/// （计划器对它返回空计划）时都会这样，调用方需要给出可见提示而不是静默失败。
+Future<VideoPendingScrapeWork?> planScrapeWorkForCollection(
+  FushiDatabase database,
+  int collectionId,
+) async {
+  final String stableKey = 'collection:$collectionId';
+  final List<SourceLibraryRow> sources =
+      (await database.getMediaSourcesByKind('video'))
+          .where((SourceLibraryRow source) => source.transport == 'local')
+          .toList(growable: false);
+  for (final SourceLibraryRow source in sources) {
+    final List<VideoSourceScrapeWork> works =
+        await VideoSourceWorkPlanner(database).plan(source);
+    for (final VideoSourceScrapeWork work in works) {
+      if (work.stableKey == stableKey) {
+        return VideoPendingScrapeWork(source: source, work: work);
+      }
+    }
+  }
+  return null;
+}
+
 /// 自动补刮调度器。生命周期跟随 HomePage 的刮削 controller。
 class VideoLibraryScrapeSweep {
   VideoLibraryScrapeSweep({

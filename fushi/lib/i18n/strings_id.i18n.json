@@ -3714,7 +3714,6 @@
   "video_clip_exported_with_subtitles": "Klip diekspor dengan subtitle: ${path}",
   "video_clip_exporting": "Mengekspor klip…",
   "video_collection_no_local_member": "Tidak ada video lokal dalam koleksi ini",
-  "video_collection_scrape": "Scrape info & sampul",
   "video_continue_watching": "Continue Watching",
   "video_control_audio_track": "Trek audio",
   "video_control_custom_action": "Pintasan $index",
@@ -4534,5 +4533,13 @@
   "video_shader_tier_high_hint_mobile": "Anime4K deblur (M) at the source resolution. Larger kernel than Medium; still no upscaling passes. For faster phone GPUs.",
   "video_shader_tier_ultra_hint_mobile": "Anime4K deblur (M) plus an extra soft restore pass, both at the source resolution. Strongest phone tier; still no upscaling. Drop a tier if it drops frames.",
   "dialog_background_close": "Close (task keeps running)",
-  "reader_timer_show": "Tampilkan pengatur waktu baca"
+  "reader_timer_show": "Tampilkan pengatur waktu baca",
+  "collection_cover_set": "Set cover",
+  "collection_cover_reset": "Reset to default cover",
+  "collection_cover_updated": "Cover updated",
+  "collection_cover_failed": "Couldn't set the cover",
+  "collection_rescrape": "Rescrape metadata and cover",
+  "collection_rescrape_not_planned": "This collection isn't in any local video source's scrape plan",
+  "collection_rescrape_started": "Rescrape queued",
+  "collection_rescrape_failed": "Rescrape failed"
 }

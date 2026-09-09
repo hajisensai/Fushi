@@ -51,6 +51,8 @@ import 'package:fushi/src/media/video/video_library_overview.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi/src/media/video/metadata/video_library_scrape_sweep.dart';
+import 'package:fushi/src/media/video/metadata/video_source_scrape_run_detail_dialog.dart'
+    show showVideoSourceScrapeManualBindingDialog;
 import 'package:fushi/src/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
 import 'package:fushi/src/media/video/video_storage.dart';
@@ -6250,8 +6252,29 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         }
       },
       deleteMembersCheckboxLabel: t.delete_collection_also_videos,
-      // 视频合集特有项只保留批量字幕；在线元数据刮削统一从来源页进入。
+      // 视频合集特有项：封面 / 重刮 / 批量字幕。
+      //
+      // 封面两项只给视频合集：书架与游戏库的合集入口是横排行头，根本没有封面槽，
+      // 挂上去点了也看不出任何变化。「恢复默认」只在真有自有封面时出现——没有
+      // 可恢复的东西就不该占一行菜单。
       extraListActions: <DialogListAction>[
+        DialogListAction(
+          label: t.collection_cover_set,
+          icon: Icons.image_outlined,
+          onPressed: () => _setCollectionCover(collection),
+        ),
+        if (collection.coverPath?.isNotEmpty ?? false)
+          DialogListAction(
+            label: t.collection_cover_reset,
+            icon: Icons.undo_outlined,
+            onPressed: () => _resetCollectionCover(collection),
+          ),
+        if (widget.scrapeTaskController != null)
+          DialogListAction(
+            label: t.collection_rescrape,
+            icon: Icons.image_search,
+            onPressed: () => _rescrapeCollection(collection),
+          ),
         DialogListAction(
           label: t.video_jimaku_batch_title,
           icon: Icons.subtitles_outlined,
@@ -6259,6 +6282,114 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         )
       ],
     );
+  }
+
+  /// 合集右键「设置封面」：选图 → 落 `video_covers/collections/<id>.jpg` → 写
+  /// `media_collections.cover_path` → 刷新。
+  ///
+  /// 合集封面在此之前**没有任何用户入口**：`coverPath` 只有在线刮削和番剧下载
+  /// 导入器会写，`coverSource`（借哪个成员的图）更是只有导入器写。用户既改不了
+  /// 也退不回，只能等刮削刮对。
+  ///
+  /// 手选的图不会被后续刮削顶掉：刮削覆盖判据是「coverPath 为空，或该文件是
+  /// sidecar 登记表里 sha256 未变的生成产物」，手选图从不进那张登记表。
+  Future<void> _setCollectionCover(MediaCollectionRow collection) async {
+    final File? picked = await MediaCoverService.pickCoverImage();
+    if (picked == null) return;
+    try {
+      await MediaCoverService.applyCollectionCover(
+        database: ref.read(appProvider).database,
+        collectionId: collection.id,
+        pickedPath: picked.path,
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('video.setCollectionCover', e, stack);
+      FushiToast.show(
+        msg: t.collection_cover_failed,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    _refresh();
+    FushiToast.show(
+      msg: t.collection_cover_updated,
+      severity: ToastSeverity.success,
+    );
+  }
+
+  /// 合集右键「恢复默认封面」：清 `coverPath` + 回收那张图（与删合集共用同一套
+  /// 误删护栏，见 [clearCollectionOwnCover]），封面回落成员借用链 / canonical 海报。
+  Future<void> _resetCollectionCover(MediaCollectionRow collection) async {
+    await clearCollectionOwnCover(
+      ref.read(appProvider).database,
+      collection.id,
+    );
+    _refresh();
+  }
+
+  /// 合集右键「重新刮削资料与封面」：手动指定作品身份 → 走 canonical 来源刮削
+  /// 管线重刮这一个合集。
+  ///
+  /// 这个入口在 `1637876c64`（AniDB canonical 重构）里连同旧 TMDB 版
+  /// `showCollectionScrapeDialog` 一起被删掉，理由是「在线元数据刮削统一从来源页
+  /// 进入」。但来源页的作用域是**扫描根**，用户手上是**一个刮错的合集**，两者不
+  /// 可互相替代——BUG-1662 当初补这个入口正是因为「想重刮某个合集」在库页是断头
+  /// 路。这里按 canonical 管线接回来，不复活旧刮削路径。
+  ///
+  /// 三个必需事实（来源行 / 作品标题 / 稳定键）全部问计划器要
+  /// （[planScrapeWorkForCollection]），与自动补刮、待确认队列同源；按
+  /// `collection:<id>` 匹配，改过名或同名合集都不会认错。落库走
+  /// [VideoSourceScrapeTaskController.rescrapeWorkWithLookup]——与批次内确认、
+  /// 下载导入后的精确刮削共用同一条 `_store.apply`，不新开第二套绑定保存。
+  Future<void> _rescrapeCollection(MediaCollectionRow collection) async {
+    final VideoSourceScrapeTaskController? controller =
+        widget.scrapeTaskController;
+    if (controller == null) return;
+    final FushiDatabase db = ref.read(appProvider).database;
+    final VideoPendingScrapeWork? planned =
+        await planScrapeWorkForCollection(db, collection.id);
+    if (!mounted) return;
+    if (planned == null) {
+      FushiToast.show(
+        msg: t.collection_rescrape_not_planned,
+        severity: ToastSeverity.info,
+      );
+      return;
+    }
+    final VideoSourceScrapeConfirmationCandidate? candidate =
+        await showVideoSourceScrapeManualBindingDialog(
+      context: context,
+      controller: controller,
+      source: planned.source,
+      workTitle: planned.work.title,
+      workStableKey: planned.work.stableKey,
+    );
+    if (candidate == null || !mounted) return;
+    FushiToast.show(
+      msg: t.collection_rescrape_started,
+      severity: ToastSeverity.info,
+    );
+    try {
+      await controller.rescrapeWorkWithLookup(
+        source: planned.source,
+        workTitle: planned.work.title,
+        workStableKey: planned.work.stableKey,
+        lookup: candidate.lookup,
+      );
+    } on VideoSourceScrapeCancelled {
+      // 用户在任务面板撤回了尚未执行的绑定，不是失败。
+      return;
+    } on Object catch (e, stack) {
+      ErrorLogService.instance.log('video.rescrapeCollection', e, stack);
+      if (!mounted) return;
+      FushiToast.show(
+        msg: t.collection_rescrape_failed,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    if (!mounted) return;
+    _refresh();
   }
 
   /// 合集右键「为合集获取字幕」：与合集详情页 AppBar 同一 [SubtitleWorkbenchPage]
@@ -6352,6 +6483,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
               await repo.compactAfterVideoDeleteBestEffort();
             }
           },
+          // 详情页的「重新刮削资料与封面」：controller 归 HomePage，注入库页同一
+          // 条实现，合集语境下的重刮不再是断头路（BUG-1662 入口的 canonical 复位）。
+          onRescrapeCollection:
+              widget.scrapeTaskController == null ? null : _rescrapeCollection,
         ),
       ),
     );

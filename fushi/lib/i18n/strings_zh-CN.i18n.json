@@ -3714,7 +3714,6 @@
   "video_clip_exported_with_subtitles": "片段已导出（含字幕）：${path}",
   "video_clip_exporting": "正在导出片段…",
   "video_collection_no_local_member": "本合集没有本地视频",
-  "video_collection_scrape": "刮削资料与封面",
   "video_continue_watching": "继续观看",
   "video_control_audio_track": "音轨",
   "video_control_custom_action": "快捷键 $index",
@@ -4534,5 +4533,13 @@
   "video_shader_tier_high_hint_mobile": "Anime4K 去模糊（M），在片源原分辨率上跑。kernel 比「中」更大，同样不含放大 pass。适合较快的手机 GPU。",
   "video_shader_tier_ultra_hint_mobile": "Anime4K 去模糊（M）加一道柔化修复，均在片源原分辨率上跑。手机端最强档，仍不含放大 pass。掉帧就往下退一档。",
   "dialog_background_close": "关闭（任务继续在后台运行）",
-  "reader_timer_show": "显示阅读计时器"
+  "reader_timer_show": "显示阅读计时器",
+  "collection_cover_set": "设置封面",
+  "collection_cover_reset": "恢复默认封面",
+  "collection_cover_updated": "封面已更新",
+  "collection_cover_failed": "封面设置失败",
+  "collection_rescrape": "重新刮削资料与封面",
+  "collection_rescrape_not_planned": "这个合集不在任何本地视频来源的刮削计划里",
+  "collection_rescrape_started": "已开始重新刮削",
+  "collection_rescrape_failed": "重新刮削失败"
 }

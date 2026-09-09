@@ -11,6 +11,7 @@ import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/media/collections/collection_asset_reclaim.dart';
 import 'package:fushi/src/media/collections/collection_continue.dart';
 import 'package:fushi/src/media/collections/collection_episode_slot.dart';
+import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/media/collections/collection_one_key_sort.dart'
     show CollectionSortMeta, compareCollectionMembers;
 import 'package:fushi/src/media/collections/collection_relation.dart';
@@ -68,6 +69,7 @@ class MediaCollectionDetailPage extends StatefulWidget {
     this.remote,
     required this.onChanged,
     this.onDeleteMembersMedia,
+    this.onRescrapeCollection,
     super.key,
   });
 
@@ -101,6 +103,11 @@ class MediaCollectionDetailPage extends StatefulWidget {
   /// app 拥有副本（封面/字幕），**保留用户原始视频文件**（导入时只存路径从不复制）。
   /// null = 详情页不提供该选项（确认框不显示复选框），退回纯解链删除。
   final Future<void> Function(List<VideoBookRow> members)? onDeleteMembersMedia;
+
+  /// 「重新刮削资料与封面」：由库页注入（刮削 controller 的生命周期归 HomePage，
+  /// 详情页不自己造）。null = 当前装配拿不到 controller，菜单项整条不渲染。
+  final Future<void> Function(MediaCollectionRow collection)?
+      onRescrapeCollection;
 
   @override
   State<MediaCollectionDetailPage> createState() =>
@@ -675,6 +682,49 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// 「按季排序」：按文件名重排全表（季→集→标题，PV/特典殿后）并落盘。季 tab
   /// **展示**本身是派生的、进页面即生效，本动作只负责把落盘全序也整理成分季连续
   /// （单季合集执行后无可见变化，幂等）。
+  /// 当前合集行：`_collectionRow` 是 [_reload] 重取的最新快照，
+  /// `widget.collection` 只是进页那一刻的副本（刮削会改写 name / coverPath）。
+  MediaCollectionRow get _collection => _collectionRow ?? widget.collection;
+
+  /// AppBar「设置封面」：选图 → 落 `video_covers/collections/<id>.jpg` → 写
+  /// `media_collections.cover_path`。与库页合集右键同一条
+  /// [MediaCoverService.applyCollectionCover]，不另开落盘路径。
+  Future<void> _setCover() async {
+    final File? picked = await MediaCoverService.pickCoverImage();
+    if (picked == null) return;
+    try {
+      await MediaCoverService.applyCollectionCover(
+        database: widget.database,
+        collectionId: widget.collection.id,
+        pickedPath: picked.path,
+      );
+    } on Object catch (e, stack) {
+      ErrorLogService.instance.log('collectionDetail.setCover', e, stack);
+      if (!mounted) return;
+      FushiToast.show(
+        msg: t.collection_cover_failed,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    if (!mounted) return;
+    await _reload();
+    widget.onChanged();
+    FushiToast.show(
+      msg: t.collection_cover_updated,
+      severity: ToastSeverity.success,
+    );
+  }
+
+  /// AppBar「恢复默认封面」：清 `coverPath` + 回收那张图（与删合集共用同一套误删
+  /// 护栏，见 [clearCollectionOwnCover]），封面回落成员借用链 / canonical 海报。
+  Future<void> _resetCover() async {
+    await clearCollectionOwnCover(widget.database, widget.collection.id);
+    if (!mounted) return;
+    await _reload();
+    widget.onChanged();
+  }
+
   Future<void> _sortBySeason() async {
     if (_slots.isEmpty) return;
     final CollectionSeasonRegroup<CollectionEpisodeSlot> regroup =
@@ -1798,10 +1848,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                 final VideoMetadataCreditSummary credit = credits[index];
                 final String? path = credit.person.profilePath;
                 final String? url = credit.person.profileUrl;
-                final ImageProvider? image = path != null &&
-                        File(path).existsSync()
-                    ? FileImage(File(path))
-                    : (url == null ? null : AppCachedHttpImage(url));
+                final ImageProvider? image =
+                    path != null && File(path).existsSync()
+                        ? FileImage(File(path))
+                        : (url == null ? null : AppCachedHttpImage(url));
                 return SizedBox(
                   key: ValueKey<String>(
                       'video-work-credit-${credit.person.personKey}-$index'),
@@ -2366,6 +2416,16 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 
   Future<void> _handleManageAction(_CollectionManageAction action) async {
     switch (action) {
+      case _CollectionManageAction.setCover:
+        await _setCover();
+        return;
+      case _CollectionManageAction.resetCover:
+        await _resetCover();
+        return;
+      case _CollectionManageAction.rescrape:
+        await widget.onRescrapeCollection?.call(_collection);
+        if (mounted) await _reload();
+        return;
       case _CollectionManageAction.sortBySeason:
         await _sortBySeason();
         return;
@@ -2447,6 +2507,25 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
               unawaited(_handleManageAction(action)),
           itemBuilder: (BuildContext context) =>
               <PopupMenuEntry<_CollectionManageAction>>[
+            _manageMenuItem(
+              _CollectionManageAction.setCover,
+              Icons.image_outlined,
+              t.collection_cover_set,
+            ),
+            if (_collection.coverPath?.isNotEmpty ?? false)
+              _manageMenuItem(
+                _CollectionManageAction.resetCover,
+                Icons.undo_outlined,
+                t.collection_cover_reset,
+              ),
+            // 重刮入口只在库页注入了 controller 时存在（详情页不自造 controller）。
+            if (widget.onRescrapeCollection != null)
+              _manageMenuItem(
+                _CollectionManageAction.rescrape,
+                Icons.image_search,
+                t.collection_rescrape,
+              ),
+            const PopupMenuDivider(),
             _manageMenuItem(
               _CollectionManageAction.sortBySeason,
               Icons.segment,
@@ -2583,6 +2662,9 @@ enum _EpisodeMenuAction {
 }
 
 enum _CollectionManageAction {
+  setCover,
+  resetCover,
+  rescrape,
   sortBySeason,
   subtitles,
   renameEpisodes,

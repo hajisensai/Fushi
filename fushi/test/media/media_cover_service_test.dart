@@ -435,4 +435,104 @@ void main() {
       await expectBothCoverKeysEvicted(filename);
     });
   });
+
+  group('applyCollectionCover（video_covers/collections/<id>.jpg）', () {
+    late FushiDatabase db;
+
+    setUp(() {
+      db = FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+    });
+
+    test('落盘到合集封面目录并写 media_collections.cover_path', () async {
+      final int id = await db.createMediaCollection('Show');
+      final Directory covers = Directory(p.join(tempDir.path, 'collections'));
+      final File source = writePng(tempDir, 'poster.png');
+
+      final String saved = await MediaCoverService.applyCollectionCover(
+        database: db,
+        collectionId: id,
+        pickedPath: source.path,
+        collectionCoversDirectory: covers,
+      );
+
+      expect(saved, p.join(covers.path, videoCoverFileName('$id')));
+      expect(File(saved).existsSync(), isTrue);
+      expect((await db.getMediaCollectionById(id))!.coverPath, saved,
+          reason: '只落盘不写库 = 用户换了封面但界面永远看不到');
+    });
+
+    test('只写 media_collections 一行，一个成员的封面都不动（BUG-1211）', () async {
+      final int id = await db.createMediaCollection('Show');
+      await db.upsertVideoBook(
+        VideoBooksCompanion(
+          bookUid: const Value('video/e1'),
+          title: const Value('E1'),
+          videoPath: const Value('/v/e1.mkv'),
+          coverPath: const Value('/covers/e1.jpg'),
+        ),
+      );
+      await db.addToCollection(id, MediaKind.video, 'video/e1');
+      final Directory covers = Directory(p.join(tempDir.path, 'collections2'));
+
+      await MediaCoverService.applyCollectionCover(
+        database: db,
+        collectionId: id,
+        pickedPath: writePng(tempDir, 'poster2.png').path,
+        collectionCoversDirectory: covers,
+      );
+
+      expect(
+        (await db.getVideoBookByBookUid('video/e1'))!.coverPath,
+        '/covers/e1.jpg',
+        reason: '「匹配的是合集的封面，谁说应用到本机里面的视频了」——BUG-1211',
+      );
+    });
+
+    test('换封面是同路径覆盖写，落盘后双键驱逐解码缓存', () async {
+      final int id = await db.createMediaCollection('Show');
+      final Directory covers = Directory(p.join(tempDir.path, 'collections3'));
+      final String saved = await MediaCoverService.applyCollectionCover(
+        database: db,
+        collectionId: id,
+        pickedPath: writePng(tempDir, 'a.png').path,
+        collectionCoversDirectory: covers,
+      );
+      await populateBothCoverKeys(saved);
+
+      final String again = await MediaCoverService.applyCollectionCover(
+        database: db,
+        collectionId: id,
+        pickedPath: writePng(tempDir, 'b.png').path,
+        collectionCoversDirectory: covers,
+      );
+
+      expect(again, saved, reason: '文件名恒为 <id>.jpg，换图不留孤儿');
+      await expectBothCoverKeysEvicted(saved);
+    });
+
+    test('源文件不可读时抛出，且不写库、不留 .tmp', () async {
+      final int id = await db.createMediaCollection('Show');
+      final Directory covers = Directory(p.join(tempDir.path, 'collections4'));
+
+      await expectLater(
+        MediaCoverService.applyCollectionCover(
+          database: db,
+          collectionId: id,
+          pickedPath: p.join(tempDir.path, 'missing.png'),
+          collectionCoversDirectory: covers,
+        ),
+        throwsA(isA<Object>()),
+      );
+
+      expect((await db.getMediaCollectionById(id))!.coverPath, isNull,
+          reason: '写盘失败还写库 = DB 指着一个不存在的文件');
+      expect(
+        covers
+            .listSync()
+            .where((FileSystemEntity e) => e.path.contains('.tmp')),
+        isEmpty,
+      );
+    });
+  });
 }

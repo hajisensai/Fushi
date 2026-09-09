@@ -3714,7 +3714,6 @@
   "video_clip_exported_with_subtitles": "字幕付きクリップをエクスポートしました：${path}",
   "video_clip_exporting": "クリップを書き出し中…",
   "video_collection_no_local_member": "このコレクションにローカル動画がありません",
-  "video_collection_scrape": "情報と封面を取得",
   "video_continue_watching": "Continue Watching",
   "video_control_audio_track": "音声トラック",
   "video_control_custom_action": "ショートカット $index",
@@ -4534,5 +4533,13 @@
   "video_shader_tier_high_hint_mobile": "Anime4K deblur (M) at the source resolution. Larger kernel than Medium; still no upscaling passes. For faster phone GPUs.",
   "video_shader_tier_ultra_hint_mobile": "Anime4K deblur (M) plus an extra soft restore pass, both at the source resolution. Strongest phone tier; still no upscaling. Drop a tier if it drops frames.",
   "dialog_background_close": "Close (task keeps running)",
-  "reader_timer_show": "読書タイマーを表示"
+  "reader_timer_show": "読書タイマーを表示",
+  "collection_cover_set": "Set cover",
+  "collection_cover_reset": "Reset to default cover",
+  "collection_cover_updated": "Cover updated",
+  "collection_cover_failed": "Couldn't set the cover",
+  "collection_rescrape": "Rescrape metadata and cover",
+  "collection_rescrape_not_planned": "This collection isn't in any local video source's scrape plan",
+  "collection_rescrape_started": "Rescrape queued",
+  "collection_rescrape_failed": "Rescrape failed"
 }
