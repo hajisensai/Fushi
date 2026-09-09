@@ -4,6 +4,8 @@ Fushi 的 Flutter 多平台主应用：EPUB 阅读器 + 划词查词 + 有声书
 Android / iOS / macOS / Windows / Linux 五端出包。项目介绍、下载、构建命令、致谢见仓库根 [README.md](../README.md)；
 进入本目录改代码前先读 [CLAUDE.md](CLAUDE.md)（模块规则）与根 [CLAUDE.md](../CLAUDE.md)（全仓规则）。
 
+设置采用分组导航：常用项直接展示、进阶项按组展开、复杂配置进入子页；支持搜索定位到具体表单行，展开偏好仅保存在本机。分类、兼容与验证约定见[设置结构设计](../docs/specs/2026-09-10-settings-organization.md)。
+
 ## 引用的自有包
 
 本应用不是单体：算法、数据层、平台桥都拆在自有包里，`pubspec.yaml` 只做装配。分两类：

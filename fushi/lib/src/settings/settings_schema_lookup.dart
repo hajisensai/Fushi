@@ -97,7 +97,7 @@ Future<void> _terminatePortOwnerAndRetry(
   // 占用进程已结束（或本就已退出）：重试开启。进程退出后 OS 释放端口可能有极短
   // 延迟，端口仍占时再等一拍重试一次，仍失败按端口冲突报出。
   await appModel.setYomitanApiServerEnabled(true);
-  for (int attempt = 0;; attempt++) {
+  for (int attempt = 0; ; attempt++) {
     try {
       await appModel.startYomitanApiServer();
       break;
@@ -127,6 +127,8 @@ SettingsDestination buildLookupDestination() {
     icon: Icons.manage_search_outlined,
     sections: <SettingsSection>[
       SettingsSection(
+        id: 'lookup.section.dictionaries',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.manager,
         items: <SettingsItem>[
           SettingsNavigationItem(
@@ -152,32 +154,14 @@ SettingsDestination buildLookupDestination() {
               );
             },
           ),
-          // 「管理音频来源」抽成共享 builder：查词分类与 Hibiki 互联分类都引用同一份
-          // 定义（互联音频源 fushiRemote 就在该对话框里管，故互联分类也提供入口）。
-          buildManageAudioSourcesItem(),
-          // 浏览器扩展「安装助手」已独立成桌面专属顶层页（BrowserExtensionPage，仅桌面
-          // 出现），复杂正文（安装引导 + 连接检测 + 版本信息）不再埋在查词设置里；这里
-          // 保留一条可搜索的导航项直达该页（审计 K：独立成页后设置搜索完全搜不到它）。
-          SettingsNavigationItem(
-            id: 'lookup.browser_extension',
-            title: t.nav_browser_extension,
-            icon: Icons.extension_outlined,
-            showIcon: true,
-            visible: (SettingsContext settingsContext) =>
-                DesktopLookupService.isDesktop,
-            onTap: (SettingsContext settingsContext) async {
-              await pushSettingsPage(
-                settingsContext,
-                (_) => const BrowserExtensionPage(),
-              );
-            },
-          ),
         ],
       ),
       // 原「查词行为」19+ 项平铺长列表，按职责拆为四组：查词触发 / 外部集成 /
       // 朗读与反馈 / 弹窗窗口。纯展示重组：item id、持久化 key、
       // onChanged、ReaderPlacement 全部不变。
       SettingsSection(
+        id: 'lookup.section.trigger',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.settings_section_lookup_trigger,
         items: <SettingsItem>[
           SettingsSwitchItem(
@@ -292,8 +276,9 @@ SettingsDestination buildLookupDestination() {
       //（弹窗容器的尺寸与交互，含从行为区移来的滑动关闭手势对——它们改的是
       // 弹窗窗口的关闭手势，与尺寸/停靠为伍）。
       SettingsSection(
+        id: 'lookup.section.content',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.settings_section_lookup_content,
-        collapsedByDefault: true,
         items: <SettingsItem>[
           SettingsSwitchItem(
             id: 'lookup.collapse_dictionaries',
@@ -446,8 +431,13 @@ SettingsDestination buildLookupDestination() {
       ),
       // 朗读与反馈：查中词后的语音朗读与播放暂停联动。
       SettingsSection(
+        id: 'lookup.section.audio',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.settings_section_lookup_audio,
         items: <SettingsItem>[
+          // 「管理音频来源」抽成共享 builder：查词分类与 Hibiki 互联分类都引用同一份
+          // 定义（互联音频源 fushiRemote 就在该对话框里管，故互联分类也提供入口）。
+          buildManageAudioSourcesItem(),
           SettingsSwitchItem(
             id: 'lookup.auto_read_on_lookup',
             title: t.auto_read_on_lookup,
@@ -496,8 +486,9 @@ SettingsDestination buildLookupDestination() {
         ],
       ),
       SettingsSection(
+        id: 'lookup.section.popup_window',
+        presentation: SettingsSectionPresentation.collapsed,
         title: t.settings_section_lookup_popup_window,
-        collapsedByDefault: true,
         items: <SettingsItem>[
           SettingsSliderItem(
             id: 'lookup.popup_max_width',
@@ -730,8 +721,27 @@ SettingsDestination buildLookupDestination() {
       // 外部集成：远程查词 / Yomitan API / texthooker——都是「让别的程序或设备
       // 参与查词」的接线项，与本机查词触发行为分开。
       SettingsSection(
+        id: 'lookup.section.integrations',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.settings_section_lookup_integrations,
         items: <SettingsItem>[
+          // 浏览器扩展「安装助手」已独立成桌面专属顶层页（BrowserExtensionPage，仅桌面
+          // 出现），复杂正文（安装引导 + 连接检测 + 版本信息）不再埋在查词设置里；这里
+          // 保留一条可搜索的导航项直达该页（审计 K：独立成页后设置搜索完全搜不到它）。
+          SettingsNavigationItem(
+            id: 'lookup.browser_extension',
+            title: t.nav_browser_extension,
+            icon: Icons.extension_outlined,
+            showIcon: true,
+            visible: (SettingsContext settingsContext) =>
+                DesktopLookupService.isDesktop,
+            onTap: (SettingsContext settingsContext) async {
+              await pushSettingsPage(
+                settingsContext,
+                (_) => const BrowserExtensionPage(),
+              );
+            },
+          ),
           // 远端词典查询抽成共享 builder：查词分类与 Hibiki 互联分类都引用（它直连
           // 互联对端的词典，逻辑上属互联，故互联分类也提供入口）。
           buildRemoteDictionaryLookupItem(),
@@ -761,6 +771,7 @@ SettingsDestination buildLookupDestination() {
           // API 服务（若已开启）。
           SettingsTextItem(
             id: 'lookup.yomitan_api_key',
+            visible: (SettingsContext c) => c.appModel.yomitanApiServerEnabled,
             title: t.yomitan_api_key,
             icon: Icons.key_outlined,
             secret: true,
@@ -900,8 +911,9 @@ Future<void> showAudioSourcesManagerDialog({
       onReplaceLocalDb: (String oldPath) async {
         final AudioSourceConfig? replacement = await pickLocalDb(false);
         if (replacement != null) {
-          replacementPrefs[replacement.path!] =
-              appModel.sourcePrefsForLocalDb(oldPath);
+          replacementPrefs[replacement.path!] = appModel.sourcePrefsForLocalDb(
+            oldPath,
+          );
         }
         return replacement;
       },

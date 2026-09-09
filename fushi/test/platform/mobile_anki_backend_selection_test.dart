@@ -3,9 +3,12 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_schema_card_creation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/fake_platform_services.dart';
+import '../helpers/source_guard.dart';
 
 /// 移动端 Anki 后端选择：两个平台的原生后端都改不了已存在的 note type
 /// （Android 的 AnkiDroid Content Provider / iOS 的 AnkiMobile URL scheme），
@@ -35,11 +38,56 @@ void main() {
       'lib/src/pages/implementations/anki_settings_page.dart',
     ).readAsStringSync();
 
-    // 开关与分区折叠都必须按「移动端」而不是「Android」门控，否则 iOS 上这一整块
-    // 又会消失。断言字面量刻意写在这里而不是复制平台判断表达式本身。
-    expect(source, isNot(contains('collapsible: Platform.isAndroid')));
-    expect(source, contains('collapsible: _isMobileAnkiPlatform'));
-    expect(source, contains('initiallyExpanded: !_isMobileAnkiPlatform'));
+    final SettingsDestination destination = buildCardCreationDestination();
+    final SettingsSection connection = destination.sections.firstWhere(
+      (SettingsSection section) => section.id == 'card_creation.connection',
+    );
+    expect(
+      connection.presentation,
+      Platform.isAndroid || Platform.isIOS
+          ? SettingsSectionPresentation.collapsed
+          : SettingsSectionPresentation.alwaysExpanded,
+    );
+    // 本机只能执行一个平台分支，另锁两个移动系统共享的 schema 分支，防止 iOS 漏门控。
+    final String schema = maskComments(
+      File(
+        'lib/src/settings/settings_schema_card_creation.dart',
+      ).readAsStringSync(),
+    );
+    expect(
+      schema,
+      matches(
+        RegExp(
+          r'presentation:\s*Platform\.isAndroid\s*\|\|\s*Platform\.isIOS\s*'
+          r'\?\s*SettingsSectionPresentation\.collapsed\s*'
+          r':\s*SettingsSectionPresentation\.alwaysExpanded',
+        ),
+      ),
+    );
+    final SettingsNavigationItem entry =
+        connection.items.single as SettingsNavigationItem;
+    expect(entry.id, 'card_creation.connection.open');
+    final SettingsDestination child = entry.child!();
+    expect(child.id, SettingsDestinationId.cardCreation);
+    expect(child.body, isNotNull);
+    expect(
+      child.bodySearchEntries.map((SettingsBodySearchEntry item) => item.id),
+      containsAll(<String>[
+        'card_creation.anki.connect_host',
+        'card_creation.anki.connect_port',
+        'card_creation.anki.connect_api_key',
+      ]),
+    );
+    final String panel = methodBody(source, 'Widget _buildConnectionPanel(');
+    expect(panel, contains('if (_isMobileAnkiPlatform)'));
+    expect(panel, contains('label: t.anki_connect_host'));
+    expect(panel, contains('label: t.anki_connect_port'));
+    expect(panel, contains('label: t.anki_connect_api_key'));
+    expect(
+      panel,
+      isNot(contains('collapsible:')),
+      reason: '进入子页后直接显示连接字段，折叠仅由上层入口管理',
+    );
     expect(source, contains('t.anki_connect_use_on_mobile'));
     expect(source, contains('obscureText: true'));
     // 清空 API key 必须经页面自己的处置入口，不能直接接 vm（BUG-1608）。
@@ -80,8 +128,11 @@ void main() {
 
     expect(services.offersMobileAnkiConnectChoice, isFalse);
     services.setUseAnkiConnectOnMobile(true, apiKey: 'secret');
-    expect(services.useAnkiConnectOnMobile, isFalse,
-        reason: '桌面本来就走 AnkiConnect，没有这条支路');
+    expect(
+      services.useAnkiConnectOnMobile,
+      isFalse,
+      reason: '桌面本来就走 AnkiConnect，没有这条支路',
+    );
   });
 
   test('mobile restores the persisted AnkiConnect choice on init', () async {
@@ -109,40 +160,43 @@ void main() {
     // Dart 侧字段已改名 useAnkiConnectOnMobile，磁盘上必须原样还是老键——改键名
     // 会让所有老装置的选择在升级后静默变回默认后端。
     expect(
-      const AnkiSettings(useAnkiConnectOnMobile: true)
-          .toJson()['useAnkiConnectOnAndroid'],
+      const AnkiSettings(
+        useAnkiConnectOnMobile: true,
+      ).toJson()['useAnkiConnectOnAndroid'],
       isTrue,
     );
     expect(
-      AnkiSettings.fromJson(
-        <String, dynamic>{'useAnkiConnectOnAndroid': true},
-      ).useAnkiConnectOnMobile,
+      AnkiSettings.fromJson(<String, dynamic>{
+        'useAnkiConnectOnAndroid': true,
+      }).useAnkiConnectOnMobile,
       isTrue,
     );
   });
 
-  test('mobile fails closed when persisted remote backend has no API key',
-      () async {
-    SharedPreferences.setMockInitialValues(<String, Object>{
-      'fushi_anki_settings': jsonEncode(
-        const AnkiSettings(useAnkiConnectOnMobile: true).toJson(),
-      ),
-    });
-    final services = fakePlatformServices(
-      isMobile: true,
-      createAnkiRepository: AnkiRepository.new,
-      createMobileAnkiConnectRepository: AnkiConnectRepository.new,
-    );
+  test(
+    'mobile fails closed when persisted remote backend has no API key',
+    () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'fushi_anki_settings': jsonEncode(
+          const AnkiSettings(useAnkiConnectOnMobile: true).toJson(),
+        ),
+      });
+      final services = fakePlatformServices(
+        isMobile: true,
+        createAnkiRepository: AnkiRepository.new,
+        createMobileAnkiConnectRepository: AnkiConnectRepository.new,
+      );
 
-    await services.init();
+      await services.init();
 
-    expect(services.useAnkiConnectOnMobile, isFalse);
-    expect(services.createAnkiRepository(), isA<AnkiRepository>());
-    expect(
-      (await AnkiRepository().loadSettings()).useAnkiConnectOnMobile,
-      isFalse,
-    );
-  });
+      expect(services.useAnkiConnectOnMobile, isFalse);
+      expect(services.createAnkiRepository(), isA<AnkiRepository>());
+      expect(
+        (await AnkiRepository().loadSettings()).useAnkiConnectOnMobile,
+        isFalse,
+      );
+    },
+  );
 
   group('BUG-1608 ankiConnectUsableOnMobile 是唯一判据', () {
     test('开关开 + key 非空 → 可用', () {
@@ -168,8 +222,9 @@ void main() {
 
     test('开关关 → 不可用（即便填了 key）', () {
       expect(
-        const AnkiSettings(ankiConnectApiKey: 'secret')
-            .ankiConnectUsableOnMobile,
+        const AnkiSettings(
+          ankiConnectApiKey: 'secret',
+        ).ankiConnectUsableOnMobile,
         isFalse,
       );
     });

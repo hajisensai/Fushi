@@ -184,11 +184,17 @@ Future<void> setVideoDanmakuEnabledDual(
   bool value,
 ) async {
   final VideoQuickSettingsHost? host = videoQuickSettingsHostOf(context);
+  // host 在场时**也要把 pref 写穿**：`video.danmaku.online` 与
+  // `video.danmaku.max_active` 的 `visible` 门读的是 pref
+  // （`appModel.videoDanmakuEnabled`），只通知 host 的话，用户在播放页里打开弹幕后
+  // 那两项永远不出现——门控读的值从来没被写过。host 回调只负责让当前播放页即时
+  // 生效（重载/清空弹幕层），与持久化不是二选一。
   if (host?.onDanmakuEnabledChanged != null) {
     await host!.onDanmakuEnabledChanged!(value);
-  } else {
-    await context.appModel.setVideoDanmakuEnabled(value);
   }
+  await context.appModel.setVideoDanmakuEnabled(value);
+  // 门控依赖的值变了，得让 schema 重算 visible。
+  context.refresh();
 }
 
 Future<void> setVideoDanmakuOnlineEnabledDual(

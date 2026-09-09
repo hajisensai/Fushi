@@ -26,6 +26,7 @@ class SettingsSearchEntry {
     required this.item,
     this.sectionTitle,
     this.isBodyEntry = false,
+    this.hasRevealTarget = true,
     this.subPagePath = const <SettingsNavigationItem>[],
     String? resolvedTitle,
   }) : _resolvedTitle = resolvedTitle;
@@ -43,10 +44,9 @@ class SettingsSearchEntry {
   /// 链）；空 = 行就在顶层分类里。
   final List<SettingsNavigationItem> subPagePath;
 
-  /// true = 由 [SettingsDestination.bodySearchEntries] 合成（body 逃生口正文
-  /// 里的行）。命中后只跳转分类，不登记滚动定位挂点——body 行不是 schema item，
-  /// 挂点永远不会被消费。
+  /// 由自绘正文元数据合成。是否可精确定位由 hasRevealTarget 单独声明。
   final bool isBodyEntry;
+  final bool hasRevealTarget;
 
   /// 打分与结果展示用的标题（custom 项取 searchTitle，见
   /// [settingsItemSearchTitle]）。
@@ -88,23 +88,6 @@ List<SettingsSearchEntry> flattenVisibleSettings(
       subPagePath: const <SettingsNavigationItem>[],
       pageTitle: null,
     );
-    // body 逃生口正文（如「制卡」的 AnkiSettingsBody）不走 sections，索引器
-    // 看不见其中的行；把 destination 声明的 bodySearchEntries 合成为普通搜索
-    // 条目（复用 custom 项的 searchTitle 通道），命中后跳转到该分类正文。
-    for (final SettingsBodySearchEntry bodyEntry
-        in destination.bodySearchEntries) {
-      if (!bodyEntry.isVisible(context)) continue;
-      entries.add(SettingsSearchEntry(
-        destination: destination,
-        item: SettingsCustomItem(
-          id: bodyEntry.id,
-          searchTitle: bodyEntry.title,
-          subtitle: bodyEntry.subtitle,
-          builder: (_) => const SizedBox.shrink(),
-        ),
-        isBodyEntry: true,
-      ));
-    }
   }
   return entries;
 }
@@ -123,18 +106,39 @@ void _flattenPageInto(
   required List<SettingsNavigationItem> subPagePath,
   required String? pageTitle,
 }) {
+  // Body forms use the same recursive navigation path as schema controls.
+  for (final SettingsBodySearchEntry bodyEntry in page.bodySearchEntries) {
+    if (!bodyEntry.isVisible(context)) continue;
+    entries.add(
+      SettingsSearchEntry(
+        destination: root,
+        sectionTitle: pageTitle,
+        subPagePath: subPagePath,
+        item: SettingsCustomItem(
+          id: bodyEntry.id,
+          searchTitle: bodyEntry.title,
+          subtitle: bodyEntry.subtitle,
+          builder: (_) => const SizedBox.shrink(),
+        ),
+        isBodyEntry: true,
+        hasRevealTarget: bodyEntry.hasRevealTarget,
+      ),
+    );
+  }
   for (final SettingsSection section in page.visibleSections(context)) {
     final String? sectionTitle = _joinBreadcrumb(pageTitle, section.title);
     for (final SettingsItem item in section.items) {
       final String title = settingsItemSearchTitle(item, context);
       if (title.isNotEmpty) {
-        entries.add(SettingsSearchEntry(
-          destination: root,
-          sectionTitle: sectionTitle,
-          item: item,
-          resolvedTitle: title,
-          subPagePath: subPagePath,
-        ));
+        entries.add(
+          SettingsSearchEntry(
+            destination: root,
+            sectionTitle: sectionTitle,
+            item: item,
+            resolvedTitle: title,
+            subPagePath: subPagePath,
+          ),
+        );
       }
       if (item is! SettingsNavigationItem) continue;
       final SettingsDestination Function()? childBuilder = item.child;
@@ -214,13 +218,42 @@ List<SettingsSearchEntry> filterSettingsEntries(
 /// 跨页面传递「进入详情后要滚到并高亮哪一项」的一次性挂点。
 ///
 /// 搜索结果点击时写入目标 item id；目标行随后在任意详情容器里被
-/// [SettingsSchemaItem] 构建时消费（包上 [SettingsRevealTarget] 滚动定位 +
+/// [SettingsSearchTarget] 构建时消费（包上 [SettingsRevealTarget] 滚动定位 +
 /// 短暂高亮），消费即清除。模块级单槽足够：同一时刻只可能有一个"跳转中"的
 /// 目标，且消费点唯一。
 class SettingsSearchReveal {
   SettingsSearchReveal._();
 
-  static String? pendingItemId;
+  static String? _pendingItemId;
+  static int generation = 0;
+  static String? get pendingItemId => _pendingItemId;
+  static set pendingItemId(String? value) {
+    _pendingItemId = value;
+    if (value != null) generation++;
+  }
+}
+
+/// Real row anchor for both schema controls and custom configuration forms.
+class SettingsSearchTarget extends StatelessWidget {
+  const SettingsSearchTarget({
+    super.key,
+    required this.id,
+    required this.child,
+  });
+
+  final String id;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (SettingsSearchReveal.pendingItemId != id) return child;
+    final int generation = SettingsSearchReveal.generation;
+    SettingsSearchReveal.pendingItemId = null;
+    return SettingsRevealTarget(
+      key: ValueKey<String>('settings-reveal.$id.$generation'),
+      child: child,
+    );
+  }
 }
 
 /// 搜索跳转的落点包装：首帧后把自己滚进视口（滚动统一委托 FushiFocusScroll——
@@ -254,8 +287,9 @@ class _SettingsRevealTargetState extends State<SettingsRevealTarget> {
   Widget build(BuildContext context) {
     final Color highlight = Theme.of(context).colorScheme.primary;
     // MD3 守卫：圆角一律走 design tokens，不自持字面量。
-    final BorderRadius radius =
-        FushiDesignTokens.of(context).radii.controlRadius;
+    final BorderRadius radius = FushiDesignTokens.of(
+      context,
+    ).radii.controlRadius;
     // eink 下闪烁衰减动画归零：TweenAnimationBuilder duration zero 直接落在
     // end（透明），不闪不残影；定位仍由上面的滚动完成。
     return TweenAnimationBuilder<double>(

@@ -48,15 +48,17 @@ void main() {
     expect(
       sha256.convert(svg.readAsBytesSync()).toString(),
       officialDigest,
-      reason: 'sha256 必须等于 TMDB 直链文件名里的摘要串——不等就说明原图被改色/改'
+      reason:
+          'sha256 必须等于 TMDB 直链文件名里的摘要串——不等就说明原图被改色/改'
           '比例/翻转/裁剪/重新导出过（含「为绕开 flutter_svg 的 CSS 限制而把 fill '
           '内联进 path」），或换成了非官方来源。要换变体请从 '
           'themoviedb.org/about/logos-attribution 重新下载原图并同步更新本守卫。',
     );
 
     // provenance 台账必须与实际入库文件一致。
-    final String readme =
-        File('assets/attribution/tmdb/README.md').readAsStringSync();
+    final String readme = File(
+      'assets/attribution/tmdb/README.md',
+    ).readAsStringSync();
     expect(readme, contains(officialDigest));
     expect(readme, contains('themoviedb.org/about/logos-attribution'));
     // 栅格化配方必须可复现（换人/换机重跑得到同一张图）。
@@ -66,22 +68,40 @@ void main() {
   test('pubspec 只打包 PNG，原图与说明留在仓库不进包', () {
     final String pubspec = File('pubspec.yaml').readAsStringSync();
     expect(pubspec, contains('- $pngPath'));
-    expect(pubspec, isNot(contains('- $svgPath')),
-        reason: 'SVG 是 provenance 存证，Flutter 也渲染不了它，不该进包');
-    expect(pubspec, isNot(contains('- assets/attribution/tmdb/\n')),
-        reason: '整目录登记会把 README/配方一起打进包');
+    expect(
+      pubspec,
+      isNot(contains('- $svgPath')),
+      reason: 'SVG 是 provenance 存证，Flutter 也渲染不了它，不该进包',
+    );
+    expect(
+      pubspec,
+      isNot(contains('- assets/attribution/tmdb/\n')),
+      reason: '整目录登记会把 README/配方一起打进包',
+    );
   });
 
   test('设置行同时挂着署名文字与 logo，且展示尺寸克制（删一半即红）', () {
-    final String schema =
-        File('lib/src/settings/settings_schema_system.dart').readAsStringSync();
+    final String schema = File(
+      'lib/src/settings/settings_schema_system.dart',
+    ).readAsStringSync();
     expect(schema, contains("id: 'system.tmdb_attribution'"));
-    expect(schema, contains('t.about_tmdb_attribution'),
-        reason: '条款原句免责声明不得移除');
-    expect(schema, contains("const String kTmdbLogoAsset = '$pngPath'"),
-        reason: 'logo 资源路径不得移除或指向别的文件');
-    expect(schema, contains('Image.asset(\n        kTmdbLogoAsset'),
-        reason: 'logo 必须真的被渲染，而不是只留常量');
+    expect(
+      schema,
+      contains('t.about_tmdb_attribution'),
+      reason: '条款原句免责声明不得移除',
+    );
+    expect(
+      schema,
+      contains("const String kTmdbLogoAsset = '$pngPath'"),
+      reason: 'logo 资源路径不得移除或指向别的文件',
+    );
+    // Formatting and Windows CRLF must not change the attribution contract.
+    // Still require the real Image.asset call to reference the bundled logo.
+    expect(
+      schema,
+      matches(RegExp(r'Image\.asset\(\s*kTmdbLogoAsset\s*,')),
+      reason: 'logo 必须真的被渲染，而不是只留常量',
+    );
     // 比例锁：宽度由原图 viewBox 算死 + BoxFit.contain，杜绝拉伸变形。
     expect(schema, contains('_kTmdbLogoHeight * 190.24 / 81.52'));
     expect(schema, contains('fit: BoxFit.contain'));
@@ -91,8 +111,11 @@ void main() {
     final RegExp height = RegExp(r'_kTmdbLogoHeight = (\d+(?:\.\d+)?)');
     final RegExpMatch? m = height.firstMatch(schema);
     expect(m, isNotNull);
-    expect(double.parse(m!.group(1)!), lessThanOrEqualTo(32),
-        reason: 'TMDB 标识不得比应用自身 logo 更显眼');
+    expect(
+      double.parse(m!.group(1)!),
+      lessThanOrEqualTo(32),
+      reason: 'TMDB 标识不得比应用自身 logo 更显眼',
+    );
   });
 
   test('免责声明正文进设置搜索索引（搜条款里的词也能命中这一行）', () {
@@ -111,17 +134,20 @@ void main() {
     // 端到端：用只存在于声明正文、不存在于 searchTitle 的词检索，必须命中本行
     // ——命中只可能经 subtitle 通道，故本断言直接钉住上面的接线真的生效。
     const String needle = 'otherwise approved';
-    expect(t.about_tmdb_attribution, contains(needle),
-        reason: '条款原句须逐字保留（TMDB Terms of Use 第 3 节）');
-    expect(needle.toLowerCase(), isNot(contains('tmdb')),
-        reason: '检索词若含 TMDB 就会经 searchTitle 命中，测不到 subtitle 通道');
     expect(
-      filterSettingsEntries(
-        <SettingsSearchEntry>[
-          SettingsSearchEntry(destination: system, item: tmdb),
-        ],
-        needle,
-      ).map((SettingsSearchEntry e) => e.item.id),
+      t.about_tmdb_attribution,
+      contains(needle),
+      reason: '条款原句须逐字保留（TMDB Terms of Use 第 3 节）',
+    );
+    expect(
+      needle.toLowerCase(),
+      isNot(contains('tmdb')),
+      reason: '检索词若含 TMDB 就会经 searchTitle 命中，测不到 subtitle 通道',
+    );
+    expect(
+      filterSettingsEntries(<SettingsSearchEntry>[
+        SettingsSearchEntry(destination: system, item: tmdb),
+      ], needle).map((SettingsSearchEntry e) => e.item.id),
       contains('system.tmdb_attribution'),
     );
   });
@@ -140,8 +166,11 @@ void main() {
     final int w = image.width;
     final int h = image.height;
     // 宽高比必须与原图 viewBox 一致（0.5% 容差只留给栅格化取整，不留给改比例）。
-    expect(w / h, closeTo(officialAspect, officialAspect * 0.005),
-        reason: 'PNG 宽高比偏离原图 viewBox = 改比例/裁剪');
+    expect(
+      w / h,
+      closeTo(officialAspect, officialAspect * 0.005),
+      reason: 'PNG 宽高比偏离原图 viewBox = 改比例/裁剪',
+    );
     // 覆盖到 DPR 4（24dp × 4 = 96 px）1:1，低于此会在高密度屏上糊。
     expect(h, greaterThanOrEqualTo(96));
 
@@ -167,11 +196,18 @@ void main() {
       }
     }
     expect(opaque, greaterThan(w * h ~/ 10), reason: '不透明像素太少：标识基本没画出来');
-    expect(transparent, greaterThan(w * h ~/ 10),
-        reason: '几乎没有透明像素：背景被填成了实色（= 加底色/加边框）');
-    expect(offPalette, 0,
-        reason: '出现了不属于 TMDB 官方渐变色域的实心像素。典型成因：渲染器丢了 '
-            '<style> 里的渐变填充、路径退化成黑色（flutter_svg 就是这样），或有人'
-            '把标识改了色。此时展示的已不是 TMDB 官方配色，违反条款。');
+    expect(
+      transparent,
+      greaterThan(w * h ~/ 10),
+      reason: '几乎没有透明像素：背景被填成了实色（= 加底色/加边框）',
+    );
+    expect(
+      offPalette,
+      0,
+      reason:
+          '出现了不属于 TMDB 官方渐变色域的实心像素。典型成因：渲染器丢了 '
+          '<style> 里的渐变填充、路径退化成黑色（flutter_svg 就是这样），或有人'
+          '把标识改了色。此时展示的已不是 TMDB 官方配色，违反条款。',
+    );
   });
 }

@@ -7,11 +7,13 @@ import 'package:fushi/utils.dart';
 SettingsDestination buildProfilesDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.profiles,
-    title: t.settings_destination_profiles,
+    title: t.settings_destination_profile_presets,
     summary: t.profile_management,
     icon: Icons.manage_accounts_outlined,
     sections: <SettingsSection>[
       SettingsSection(
+        id: 'profiles.section.current',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.profile_label,
         items: <SettingsItem>[
           SettingsCustomItem(

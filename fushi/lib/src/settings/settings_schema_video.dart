@@ -45,6 +45,8 @@ SettingsDestination buildVideoDestination() {
     icon: Icons.movie_outlined,
     sections: <SettingsSection>[
       SettingsSection(
+        id: 'video.section.playback',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.section_video_playback,
         items: <SettingsItem>[
           // 自动连播开关（TODO-639）：纯 pref（appModel 直接读写 prefsRepo），默认开。
@@ -94,12 +96,13 @@ SettingsDestination buildVideoDestination() {
             ],
             selected: (SettingsContext settingsContext) =>
                 settingsContext.appModel.videoImmersiveMode,
-            onChanged: (
-              SettingsContext settingsContext,
-              VideoImmersiveMode mode,
-            ) async {
-              await setVideoImmersiveModeDual(settingsContext, mode);
-            },
+            onChanged:
+                (
+                  SettingsContext settingsContext,
+                  VideoImmersiveMode mode,
+                ) async {
+                  await setVideoImmersiveModeDual(settingsContext, mode);
+                },
           ),
           SettingsSegmentedItem<VideoFitMode>(
             id: 'video.playback.picture_fit',
@@ -124,12 +127,10 @@ SettingsDestination buildVideoDestination() {
             ],
             selected: (SettingsContext settingsContext) =>
                 settingsContext.appModel.videoFitMode,
-            onChanged: (
-              SettingsContext settingsContext,
-              VideoFitMode mode,
-            ) async {
-              await setVideoFitModeDual(settingsContext, mode);
-            },
+            onChanged:
+                (SettingsContext settingsContext, VideoFitMode mode) async {
+                  await setVideoFitModeDual(settingsContext, mode);
+                },
           ),
           // Windows HDR 直通 / 10-bit 输出（docs/plans/2026-08-30-video-hdr-passthrough.md）：
           // auto = 显示器 HDR 开着且片源 HDR 才走宿主窗直通；always = 只要在 Windows
@@ -158,12 +159,13 @@ SettingsDestination buildVideoDestination() {
             ],
             selected: (SettingsContext settingsContext) =>
                 settingsContext.appModel.videoHdrOutputMode,
-            onChanged: (
-              SettingsContext settingsContext,
-              VideoHdrOutputMode mode,
-            ) async {
-              await setVideoHdrOutputModeDual(settingsContext, mode);
-            },
+            onChanged:
+                (
+                  SettingsContext settingsContext,
+                  VideoHdrOutputMode mode,
+                ) async {
+                  await setVideoHdrOutputModeDual(settingsContext, mode);
+                },
           ),
           // YouTube 显式画质目标（0=自动=默认策略：编码优先、≤1080p）。非 0 起播即选
           // ≤目标 的最高档（画质菜单同语义），4K 档在 YouTube 侧只有 vp9/av01——无硬解
@@ -176,21 +178,16 @@ SettingsDestination buildVideoDestination() {
             dropdown: true,
             video: VideoPlacement(group: VideoGroup.playback, order: 15),
             options: <SettingsSegmentOption<int>>[
-              SettingsSegmentOption<int>(
-                value: 0,
-                label: t.video_quality_auto,
-              ),
+              SettingsSegmentOption<int>(value: 0, label: t.video_quality_auto),
               for (final int height in <int>[480, 720, 1080, 1440, 2160])
-                SettingsSegmentOption<int>(
-                  value: height,
-                  label: '${height}p',
-                ),
+                SettingsSegmentOption<int>(value: height, label: '${height}p'),
             ],
             selected: (SettingsContext settingsContext) =>
                 settingsContext.appModel.youtubeQualityTargetHeight,
             onChanged: (SettingsContext settingsContext, int height) async {
-              await settingsContext.appModel
-                  .setYoutubeQualityTargetHeight(height);
+              await settingsContext.appModel.setYoutubeQualityTargetHeight(
+                height,
+              );
             },
           ),
           SettingsSegmentedItem<int>(
@@ -266,16 +263,17 @@ SettingsDestination buildVideoDestination() {
             ],
             selected: (SettingsContext settingsContext) =>
                 currentVideoAsbConfig(settingsContext).dragSeekSensitivity,
-            onChanged: (
-              SettingsContext settingsContext,
-              VideoSeekSensitivity value,
-            ) async {
-              await commitVideoAsbConfig(
-                settingsContext,
-                (VideoAsbplayerConfig c) =>
-                    c.copyWith(dragSeekSensitivity: value),
-              );
-            },
+            onChanged:
+                (
+                  SettingsContext settingsContext,
+                  VideoSeekSensitivity value,
+                ) async {
+                  await commitVideoAsbConfig(
+                    settingsContext,
+                    (VideoAsbplayerConfig c) =>
+                        c.copyWith(dragSeekSensitivity: value),
+                  );
+                },
           ),
           SettingsSwitchItem(
             id: 'video.playback.lock_window_aspect',
@@ -349,6 +347,399 @@ SettingsDestination buildVideoDestination() {
         ],
       ),
       SettingsSection(
+        id: 'video.section.subtitles',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        title: t.section_video_subtitles,
+        items: <SettingsItem>[
+          // 「字幕暂停播放模式」从「播放」分区移到「字幕」分区（句尾自动暂停按字幕 cue
+          // 边界暂停，语义归字幕）。VideoPlacement（subtitle order 30）不变——面板投影
+          // 位置照旧，仅调全局设置页所属 SettingsSection。
+          SettingsSwitchItem(
+            id: 'video.playback.pause_at_subtitle_end',
+            title: t.playback_auto_pause,
+            icon: Icons.pause_circle_outline,
+            video: VideoPlacement(group: VideoGroup.subtitle, order: 30),
+            value: (SettingsContext settingsContext) =>
+                currentVideoAsbConfig(settingsContext).pauseAtSubtitleEnd,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await commitVideoAsbConfig(
+                settingsContext,
+                (VideoAsbplayerConfig c) =>
+                    c.copyWith(pauseAtSubtitleEnd: value),
+              );
+            },
+          ),
+          // TODO-840 Part B：遮蔽模式三态选择器——不遮蔽 / 模糊（听力沉浸）/ 隐藏。
+          // 持久化是 preferences 层 lazy 投影（见
+          // [PreferencesRepository.videoSubtitleObscureMode]），无新 Drift schema。
+          SettingsSegmentedItem<VideoSubtitleObscureMode>(
+            id: 'video.subtitle.obscure',
+            title: t.video_setting_subtitle_obscure,
+            subtitle: t.video_setting_subtitle_obscure_hint,
+            icon: Icons.blur_on_outlined,
+            video: VideoPlacement(group: VideoGroup.subtitle, order: 40),
+            options: <SettingsSegmentOption<VideoSubtitleObscureMode>>[
+              for (final VideoSubtitleObscureMode mode
+                  in VideoSubtitleObscureMode.values)
+                SettingsSegmentOption<VideoSubtitleObscureMode>(
+                  value: mode,
+                  label: _videoSubtitleObscureModeLabel(mode),
+                ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoSubtitleObscureMode,
+            onChanged:
+                (
+                  SettingsContext settingsContext,
+                  VideoSubtitleObscureMode mode,
+                ) async {
+                  await setVideoSubtitleObscureModeDual(settingsContext, mode);
+                },
+          ),
+          // TODO-1382：副字幕遮蔽三态（镜像主字幕，独立开关）。快捷键 Shift+G 循环、
+          // Shift+H 隐藏。
+          SettingsSegmentedItem<VideoSubtitleObscureMode>(
+            id: 'video.secondary_subtitle.obscure',
+            title: t.video_setting_secondary_subtitle_obscure,
+            subtitle: t.video_setting_secondary_subtitle_obscure_hint,
+            icon: Icons.blur_on_outlined,
+            video: VideoPlacement(group: VideoGroup.subtitle, order: 50),
+            options: <SettingsSegmentOption<VideoSubtitleObscureMode>>[
+              for (final VideoSubtitleObscureMode mode
+                  in VideoSubtitleObscureMode.values)
+                SettingsSegmentOption<VideoSubtitleObscureMode>(
+                  value: mode,
+                  label: _videoSubtitleObscureModeLabel(mode),
+                ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoSecondarySubtitleObscureMode,
+            onChanged:
+                (
+                  SettingsContext settingsContext,
+                  VideoSubtitleObscureMode mode,
+                ) async {
+                  await setVideoSecondarySubtitleObscureModeDual(
+                    settingsContext,
+                    mode,
+                  );
+                },
+          ),
+          // 从遮蔽模式里拆出来的独立开关（默认开 = 历史行为）：遮蔽模式管「遮什么」
+          // （模糊 / 隐藏），本开关管「能不能临时看一眼」。关掉后遮蔽在整句期间恒定
+          // 生效，不被路过的鼠标或误触揭开。主 / 副字幕共用一个开关（是「显形这个
+          // 行为」的总闸，不是逐层设置）。
+          SettingsSwitchItem(
+            id: 'video.subtitle.obscure_reveal',
+            title: t.video_setting_subtitle_obscure_reveal,
+            subtitle: t.video_setting_subtitle_obscure_reveal_hint,
+            icon: Icons.visibility_outlined,
+            video: VideoPlacement(group: VideoGroup.subtitle, order: 55),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoSubtitleObscureReveal,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await setVideoSubtitleObscureRevealDual(settingsContext, value);
+              settingsContext.refresh();
+            },
+          ),
+          // TODO-1105：尊重 .ass 自带样式开关。开时字幕优先用 .ass 的字体/主色/描边/
+          // 阴影，缺失回退统一外观；关时全走统一外观。默认开。
+          SettingsSwitchItem(
+            id: 'video.subtitle.respect_ass_style',
+            title: t.video_setting_subtitle_respect_ass,
+            subtitle: t.video_setting_subtitle_respect_ass_hint,
+            icon: Icons.style_outlined,
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 60,
+              section: t.video_setting_subtitle_appearance,
+            ),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoRespectAssStyle,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await setVideoRespectAssStyleDual(settingsContext, value);
+              settingsContext.refresh();
+            },
+          ),
+          // 字幕外观（字号/字重/阴影/背景不透明度/位置）全序列化进 videoSubtitleStyle。
+          // 全局设置页无实时预览（没有 overlay），落盘后下次播放生效；播放中拖动经
+          // host 实时预览、松手落盘。字重/阴影粗细在 style 里以 null=「跟随界面缩放」
+          // 存储，这里只在用户显式拖动时写显式值，不主动把默认折成显式值。
+          SettingsSliderItem(
+            id: 'video.subtitle.font_size',
+            title: t.video_setting_subtitle_font_size,
+            icon: Icons.format_size_outlined,
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 70,
+              section: t.video_setting_subtitle_appearance,
+            ),
+            min: 12,
+            max: 48,
+            divisions: 36,
+            label: (double v) => v.round().toString(),
+            value: (SettingsContext settingsContext) =>
+                currentVideoSubtitleStyle(
+                  settingsContext,
+                ).fontSize.clamp(12, 48),
+            onChanged: (SettingsContext settingsContext, double v) {
+              previewVideoSubtitleStyle(
+                settingsContext,
+                (VideoSubtitleStyle s) => s.copyWith(fontSize: v),
+              );
+            },
+            onChangeEnd: (SettingsContext settingsContext, double v) async {
+              await commitVideoSubtitleStyle(
+                settingsContext,
+                (VideoSubtitleStyle s) => s.copyWith(fontSize: v),
+              );
+            },
+          ),
+          SettingsStepperItem(
+            id: 'video.subtitle.font_weight',
+            title: t.video_setting_subtitle_font_weight,
+            icon: Icons.format_bold,
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 80,
+              section: t.video_setting_subtitle_appearance,
+            ),
+            value: (SettingsContext settingsContext) =>
+                currentVideoSubtitleStyle(settingsContext)
+                    .resolveFontWeight(videoSubtitleUiScale(settingsContext))
+                    .toDouble(),
+            step: 100,
+            min: 100,
+            max: 900,
+            format: (double v) => v.round().toString(),
+            onChanged: (SettingsContext settingsContext, double v) async {
+              await commitVideoSubtitleStyle(
+                settingsContext,
+                (VideoSubtitleStyle s) => s.copyWith(fontWeight: v.round()),
+              );
+            },
+          ),
+          SettingsSliderItem(
+            id: 'video.subtitle.shadow',
+            title: t.video_setting_subtitle_shadow,
+            icon: Icons.format_color_text_outlined,
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 100,
+              section: t.video_setting_subtitle_appearance,
+            ),
+            min: 0,
+            max: 12,
+            divisions: 12,
+            label: (double v) => '${v.round()}px',
+            value: (SettingsContext settingsContext) =>
+                currentVideoSubtitleStyle(settingsContext)
+                    .resolveShadowThickness(
+                      videoSubtitleUiScale(settingsContext),
+                    )
+                    .clamp(0, 12),
+            onChanged: (SettingsContext settingsContext, double v) {
+              previewVideoSubtitleStyle(
+                settingsContext,
+                (VideoSubtitleStyle s) => s.copyWith(shadowThickness: v),
+              );
+            },
+            onChangeEnd: (SettingsContext settingsContext, double v) async {
+              await commitVideoSubtitleStyle(
+                settingsContext,
+                (VideoSubtitleStyle s) => s.copyWith(shadowThickness: v),
+              );
+            },
+          ),
+          SettingsSliderItem(
+            id: 'video.subtitle.bg_opacity',
+            title: t.video_setting_subtitle_bg_opacity,
+            icon: Icons.opacity_outlined,
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 110,
+              section: t.video_setting_subtitle_appearance,
+            ),
+            divisions: 20,
+            value: (SettingsContext settingsContext) =>
+                currentVideoSubtitleStyle(
+                  settingsContext,
+                ).backgroundOpacity.clamp(0, 1),
+            onChanged: (SettingsContext settingsContext, double v) {
+              previewVideoSubtitleStyle(
+                settingsContext,
+                (VideoSubtitleStyle s) => s.copyWith(backgroundOpacity: v),
+              );
+            },
+            onChangeEnd: (SettingsContext settingsContext, double v) async {
+              await commitVideoSubtitleStyle(
+                settingsContext,
+                (VideoSubtitleStyle s) => s.copyWith(backgroundOpacity: v),
+              );
+            },
+          ),
+          // 主字幕垂直锚定（TODO-2838）：底部（默认，历史行为）/ 顶部。顶锚时下面的
+          // 「垂直位置」量纲变为**离顶距离**（镜像副字幕置顶的既有消费路径）；ASS 自带
+          // 位置（respectAssStyle 开）仍各遵其位，优先级见 resolveLayerForcedAnchor。
+          SettingsSegmentedItem<String>(
+            id: 'video.subtitle.anchor',
+            title: t.video_setting_subtitle_anchor,
+            icon: Icons.vertical_align_top_outlined,
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 138,
+              section: t.video_setting_subtitle_appearance,
+            ),
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: SubtitleLayerVAnchor.bottom.name,
+                label: t.video_subtitle_anchor_bottom,
+                icon: Icons.vertical_align_bottom_outlined,
+              ),
+              SettingsSegmentOption<String>(
+                value: SubtitleLayerVAnchor.top.name,
+                label: t.video_subtitle_anchor_top,
+                icon: Icons.vertical_align_top_outlined,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                currentVideoSubtitleStyle(settingsContext).mainAnchor.name,
+            onChanged: (SettingsContext settingsContext, String v) async {
+              await commitVideoSubtitleStyle(
+                settingsContext,
+                (VideoSubtitleStyle s) => s.copyWith(
+                  mainAnchor: v == SubtitleLayerVAnchor.top.name
+                      ? SubtitleLayerVAnchor.top
+                      : SubtitleLayerVAnchor.bottom,
+                ),
+              );
+            },
+          ),
+          SettingsSliderItem(
+            id: 'video.subtitle.position',
+            title: t.video_setting_subtitle_position,
+            icon: Icons.height_outlined,
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 140,
+              section: t.video_setting_subtitle_appearance,
+            ),
+            min: 0,
+            // TODO-2838：上限 240 → 400（kVideoSubtitleMaxPadding，与存储 clamp 同源）。
+            // 旧上限让字幕最高只能到画面下 1/3，用户想放到上 1/6 够不着。
+            max: kVideoSubtitleMaxPadding,
+            divisions: 40,
+            value: (SettingsContext settingsContext) =>
+                currentVideoSubtitleStyle(
+                  settingsContext,
+                ).bottomPadding.clamp(0, kVideoSubtitleMaxPadding),
+            onChanged: (SettingsContext settingsContext, double v) {
+              previewVideoSubtitleStyle(
+                settingsContext,
+                (VideoSubtitleStyle s) => s.copyWith(bottomPadding: v),
+              );
+            },
+            onChangeEnd: (SettingsContext settingsContext, double v) async {
+              await commitVideoSubtitleStyle(
+                settingsContext,
+                (VideoSubtitleStyle s) => s.copyWith(bottomPadding: v),
+              );
+            },
+          ),
+          // 副字幕垂直位置：与上面的主字幕位置**同量纲、各自独立**（此前两层共用
+          // `bottomPadding` 一个字段——主字幕拿它当底距、置顶的副字幕拿它当顶距，调一个
+          // 必然把另一个也拽走）。value 在用户没单独调过时回落到主字幕位置（显示成
+          // 「当前跟随主字幕」的那个值），一拖即写入 secondaryBottomPadding、从此解耦。
+          SettingsSliderItem(
+            id: 'video.subtitle.position_secondary',
+            title: t.video_setting_subtitle_position_secondary,
+            icon: Icons.height_outlined,
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 145,
+              section: t.video_setting_subtitle_appearance,
+            ),
+            min: 0,
+            // TODO-2838：与主字幕位置同步拉高上限（kVideoSubtitleMaxPadding）。
+            max: kVideoSubtitleMaxPadding,
+            divisions: 40,
+            value: (SettingsContext settingsContext) {
+              final VideoSubtitleStyle s = currentVideoSubtitleStyle(
+                settingsContext,
+              );
+              return (s.secondaryBottomPadding ?? s.bottomPadding).clamp(
+                0,
+                kVideoSubtitleMaxPadding,
+              );
+            },
+            onChanged: (SettingsContext settingsContext, double v) {
+              previewVideoSubtitleStyle(
+                settingsContext,
+                (VideoSubtitleStyle s) => s.copyWith(secondaryBottomPadding: v),
+              );
+            },
+            onChangeEnd: (SettingsContext settingsContext, double v) async {
+              await commitVideoSubtitleStyle(
+                settingsContext,
+                (VideoSubtitleStyle s) => s.copyWith(secondaryBottomPadding: v),
+              );
+            },
+          ),
+          // 拖拽调整字幕位置入口（TODO-2838）：进入播放器内可视化拖拽模式——字幕盒
+          // 显示可拖边框、竖直拖动实时预览、落点自动定锚（上半屏顶锚/下半屏底锚）、
+          // 松手写回偏好。仅播放中有意义（要有真字幕 overlay 可拖），全局设置页隐藏；
+          // 入口放位置滑条旁而非长按字幕：字级查词已占用字幕的 tap 指针面（BUG-553/838
+          // 竞技场纪律），再叠长按手势会与查词/显形抢竞技场，按钮进入零冲突。
+          SettingsActionItem(
+            id: 'video.subtitle.drag_adjust',
+            title: t.video_setting_subtitle_drag_adjust,
+            subtitle: t.video_subtitle_drag_adjust_hint,
+            icon: Icons.open_with_outlined,
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 148,
+              section: t.video_setting_subtitle_appearance,
+            ),
+            visible: (SettingsContext c) =>
+                videoQuickSettingsHostOf(c)?.onEnterSubtitleDragAdjust != null,
+            onTap: (SettingsContext settingsContext) async {
+              videoQuickSettingsHostOf(
+                settingsContext,
+              )?.onEnterSubtitleDragAdjust?.call();
+            },
+          ),
+          // ── 自动获取字幕 ─────────────────────────────────────────────────
+          // 这个开关的主要价值是**让用户知道这件事存在**（BUG-1698）。
+          //
+          // 自动配字幕其实一直开着（下载流水线的字幕阶段默认 bestEffort），但它
+          // 从来没有名字、没有位置、失败只落在任务行一句英文 note 里——用户没有
+          // 任何途径发现这个能力，更不知道要去配 Jimaku key 才能用上。给它一个
+          // 有名字的条目放在字幕来源配置**正上方**，设置搜索（settings_search）
+          // 就能命中「字幕」搜到它，配置项也在同屏可见。
+          SettingsSwitchItem(
+            id: 'video.subtitle.backfill_after_scrape',
+            title: t.video_setting_subtitle_backfill,
+            subtitle: t.video_setting_subtitle_backfill_hint,
+            icon: Icons.subtitles_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoSubtitleBackfillAfterScrape,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel
+                  .setVideoSubtitleBackfillAfterScrape(value);
+            },
+          ),
+          // ── 在线字幕来源 → 「在线服务」分区 ─────────────────────────────
+          // Jimaku / OpenSubtitles 曾在这里与下载页各挂一份同一组件（BUG-1712 的
+          // 「一个能力两个家」修法是双挂载——那是把症状固化）。第三方凭据现在只
+          // 有一个家：settings_schema_services.dart；这里留一条跳转，用户在字幕
+          // 分区仍能一步到达，且「刮削后自动补字幕」的依赖（要配 Jimaku key）
+          // 同屏可见。媒体服务器（Jellyfin/Emby）同理迁走。
+          buildOpenServicesItem('video.subtitle.online_sources'),
+        ],
+      ),
+      SettingsSection(
+        id: 'video.section.library',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.section_video_library,
         items: <SettingsItem>[
           // AniDB 文件识别凭据 / TMDB key 已迁到「在线服务」分区（第三方凭据一个家，
@@ -366,8 +757,9 @@ SettingsDestination buildVideoDestination() {
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.videoLibraryAutoBackfillScrape,
             onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel
-                  .setVideoLibraryAutoBackfillScrape(value);
+              await settingsContext.appModel.setVideoLibraryAutoBackfillScrape(
+                value,
+              );
             },
           ),
           // 主资料源二选一；另一源恒为兜底（MAL ↔ TMDB）。来源级可在来源
@@ -390,9 +782,11 @@ SettingsDestination buildVideoDestination() {
             selected: (SettingsContext settingsContext) =>
                 (parseSelectableVideoMetadataProvider(
                           settingsContext.appModel.prefsRepo.getPref(
-                            kVideoMetadataPrimaryProviderPref,
-                            defaultValue: VideoMetadataProviderKind.mal.name,
-                          ) as String,
+                                kVideoMetadataPrimaryProviderPref,
+                                defaultValue:
+                                    VideoMetadataProviderKind.mal.name,
+                              )
+                              as String,
                         ) ??
                         VideoMetadataProviderKind.mal)
                     .name,
@@ -410,10 +804,12 @@ SettingsDestination buildVideoDestination() {
             subtitle: t.video_source_scrape_locale_hint,
             icon: Icons.language_outlined,
             placeholder: 'zh-CN',
-            value: (SettingsContext settingsContext) => settingsContext
-                    .appModel.prefsRepo
-                    .getPref(kVideoMetadataLocalePref, defaultValue: 'zh-CN')
-                as String,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.prefsRepo.getPref(
+                      kVideoMetadataLocalePref,
+                      defaultValue: 'zh-CN',
+                    )
+                    as String,
             onChanged: (SettingsContext settingsContext, String value) async {
               await commitVideoMetadataRuntimePreference(
                 settingsContext,
@@ -448,13 +844,67 @@ SettingsDestination buildVideoDestination() {
           ),
         ],
       ),
+      SettingsSection(
+        id: 'video.section.danmaku',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        title: t.section_video_danmaku,
+        items: <SettingsItem>[
+          // 弹幕开关 / 在线匹配 / 同屏上限都是纯 pref，与播放页内弹幕设置语义一致；
+          // 无 host 下次播放生效，host 在场即时重载/清空弹幕层。
+          SettingsSwitchItem(
+            id: 'video.danmaku.enabled',
+            title: t.video_setting_danmaku_enabled,
+            subtitle: t.video_setting_danmaku_enabled_hint,
+            icon: Icons.forum_outlined,
+            video: VideoPlacement(group: VideoGroup.danmaku, order: 10),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoDanmakuEnabled,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await setVideoDanmakuEnabledDual(settingsContext, value);
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'video.danmaku.online',
+            visible: (SettingsContext c) => c.appModel.videoDanmakuEnabled,
+            title: t.video_setting_danmaku_online,
+            subtitle: t.video_setting_danmaku_online_hint,
+            icon: Icons.cloud_sync_outlined,
+            video: VideoPlacement(group: VideoGroup.danmaku, order: 20),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoDanmakuOnlineEnabled,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await setVideoDanmakuOnlineEnabledDual(settingsContext, value);
+            },
+          ),
+          SettingsStepperItem(
+            id: 'video.danmaku.max_active',
+            visible: (SettingsContext c) => c.appModel.videoDanmakuEnabled,
+            title: t.video_setting_danmaku_max_active,
+            subtitle: t.video_setting_danmaku_max_active_hint,
+            icon: Icons.speed_outlined,
+            video: VideoPlacement(group: VideoGroup.danmaku, order: 40),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoDanmakuMaxActive.toDouble(),
+            step: 10,
+            min: 10,
+            max: kMaxVideoDanmakuActive.toDouble(),
+            format: (double v) => v.round().toString(),
+            onChanged: (SettingsContext settingsContext, double v) async {
+              await setVideoDanmakuMaxActiveDual(settingsContext, v.round());
+            },
+          ),
+          // 自建/镜像 Dandanplay 服务器地址是第三方端点，已迁到「在线服务」分区
+          // （settings_schema_services.dart）；弹幕行为开关留在这里。
+        ],
+      ),
       // HDR：这一节控制的是「HDR 片源压到 SDR 屏幕上」那一次不可避免的映射做得好不好，
       // **不是 HDR 直通**。Windows 侧走 vo=libmpv → ANGLE → Flutter 外部纹理，共享纹理
       // 格式写死 8-bit BGRA；Android 侧还额外强制 vf=format=yuv420p 降位（BUG-465）。
       // 直通要动 vendored 的原生 surface 与 Flutter 合成，不在本节范围内。
       SettingsSection(
+        id: 'video.section.hdr',
+        presentation: SettingsSectionPresentation.collapsed,
         title: t.video_setting_mpv_group_hdr,
-        collapsedByDefault: true,
         items: <SettingsItem>[
           SettingsSegmentedItem<String>(
             id: 'video.hdr.tone_mapping',
@@ -485,8 +935,9 @@ SettingsDestination buildVideoDestination() {
               // 一条、decode 白名单没有」这种分叉随时可能发生，而那条分叉是静默的
               // （选了就被 decode 打回默认值，用户只看到「选了没保存」）。
               // `Set` 字面量在 Dart 里是插入序，所以显示顺序仍由白名单那份决定。
-              for (final String curve
-                  in kHdrToneMappingValues.where((String c) => c != 'auto'))
+              for (final String curve in kHdrToneMappingValues.where(
+                (String c) => c != 'auto',
+              ))
                 SettingsSegmentOption<String>(value: curve, label: curve),
             ],
             selected: (SettingsContext settingsContext) =>
@@ -535,8 +986,9 @@ SettingsDestination buildVideoDestination() {
         ],
       ),
       SettingsSection(
+        id: 'video.section.quality',
+        presentation: SettingsSectionPresentation.collapsed,
         title: t.video_setting_mpv_group_quality,
-        collapsedByDefault: true,
         items: <SettingsItem>[
           // 画质增强（mpv 内置高质量缩放开关）+ 解码 / 去色带 / 循环：这些 mpv 配置项
           // 都序列化进 videoMpvConfig，无 host 时下次打开视频 applyMpvConfigToPlayer
@@ -681,8 +1133,9 @@ SettingsDestination buildVideoDestination() {
       // TODO-1247：播放页内 mpv「画面几何 / 色彩均衡 / 音频」详情与首页同源（同一
       // videoMpvConfig；无 host 下次开视频应用，host 在场即改即生效）。
       SettingsSection(
+        id: 'video.section.geometry',
+        presentation: SettingsSectionPresentation.collapsed,
         title: t.video_setting_mpv_group_geometry,
-        collapsedByDefault: true,
         items: <SettingsItem>[
           SettingsSegmentedItem<int>(
             id: 'video.geometry.rotate',
@@ -803,8 +1256,9 @@ SettingsDestination buildVideoDestination() {
         ],
       ),
       SettingsSection(
+        id: 'video.section.color',
+        presentation: SettingsSectionPresentation.collapsed,
         title: t.video_setting_mpv_group_color,
-        collapsedByDefault: true,
         items: <SettingsItem>[
           _videoMpvColorSliderItem(
             id: 'video.color.brightness',
@@ -849,8 +1303,9 @@ SettingsDestination buildVideoDestination() {
         ],
       ),
       SettingsSection(
+        id: 'video.section.audio',
+        presentation: SettingsSectionPresentation.collapsed,
         title: t.video_setting_mpv_group_audio,
-        collapsedByDefault: true,
         items: <SettingsItem>[
           _videoMpvSwitchItem(
             id: 'video.audio.pitch',
@@ -913,445 +1368,13 @@ SettingsDestination buildVideoDestination() {
           ),
         ],
       ),
-      SettingsSection(
-        title: t.section_video_subtitles,
-        items: <SettingsItem>[
-          // 「字幕暂停播放模式」从「播放」分区移到「字幕」分区（句尾自动暂停按字幕 cue
-          // 边界暂停，语义归字幕）。VideoPlacement（subtitle order 30）不变——面板投影
-          // 位置照旧，仅调全局设置页所属 SettingsSection。
-          SettingsSwitchItem(
-            id: 'video.playback.pause_at_subtitle_end',
-            title: t.playback_auto_pause,
-            icon: Icons.pause_circle_outline,
-            video: VideoPlacement(group: VideoGroup.subtitle, order: 30),
-            value: (SettingsContext settingsContext) =>
-                currentVideoAsbConfig(settingsContext).pauseAtSubtitleEnd,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await commitVideoAsbConfig(
-                settingsContext,
-                (VideoAsbplayerConfig c) =>
-                    c.copyWith(pauseAtSubtitleEnd: value),
-              );
-            },
-          ),
-          // TODO-840 Part B：遮蔽模式三态选择器——不遮蔽 / 模糊（听力沉浸）/ 隐藏。
-          // 持久化是 preferences 层 lazy 投影（见
-          // [PreferencesRepository.videoSubtitleObscureMode]），无新 Drift schema。
-          SettingsSegmentedItem<VideoSubtitleObscureMode>(
-            id: 'video.subtitle.obscure',
-            title: t.video_setting_subtitle_obscure,
-            subtitle: t.video_setting_subtitle_obscure_hint,
-            icon: Icons.blur_on_outlined,
-            video: VideoPlacement(group: VideoGroup.subtitle, order: 40),
-            options: <SettingsSegmentOption<VideoSubtitleObscureMode>>[
-              for (final VideoSubtitleObscureMode mode
-                  in VideoSubtitleObscureMode.values)
-                SettingsSegmentOption<VideoSubtitleObscureMode>(
-                  value: mode,
-                  label: _videoSubtitleObscureModeLabel(mode),
-                ),
-            ],
-            selected: (SettingsContext settingsContext) =>
-                settingsContext.appModel.videoSubtitleObscureMode,
-            onChanged: (
-              SettingsContext settingsContext,
-              VideoSubtitleObscureMode mode,
-            ) async {
-              await setVideoSubtitleObscureModeDual(settingsContext, mode);
-            },
-          ),
-          // TODO-1382：副字幕遮蔽三态（镜像主字幕，独立开关）。快捷键 Shift+G 循环、
-          // Shift+H 隐藏。
-          SettingsSegmentedItem<VideoSubtitleObscureMode>(
-            id: 'video.secondary_subtitle.obscure',
-            title: t.video_setting_secondary_subtitle_obscure,
-            subtitle: t.video_setting_secondary_subtitle_obscure_hint,
-            icon: Icons.blur_on_outlined,
-            video: VideoPlacement(group: VideoGroup.subtitle, order: 50),
-            options: <SettingsSegmentOption<VideoSubtitleObscureMode>>[
-              for (final VideoSubtitleObscureMode mode
-                  in VideoSubtitleObscureMode.values)
-                SettingsSegmentOption<VideoSubtitleObscureMode>(
-                  value: mode,
-                  label: _videoSubtitleObscureModeLabel(mode),
-                ),
-            ],
-            selected: (SettingsContext settingsContext) =>
-                settingsContext.appModel.videoSecondarySubtitleObscureMode,
-            onChanged: (
-              SettingsContext settingsContext,
-              VideoSubtitleObscureMode mode,
-            ) async {
-              await setVideoSecondarySubtitleObscureModeDual(
-                settingsContext,
-                mode,
-              );
-            },
-          ),
-          // 从遮蔽模式里拆出来的独立开关（默认开 = 历史行为）：遮蔽模式管「遮什么」
-          // （模糊 / 隐藏），本开关管「能不能临时看一眼」。关掉后遮蔽在整句期间恒定
-          // 生效，不被路过的鼠标或误触揭开。主 / 副字幕共用一个开关（是「显形这个
-          // 行为」的总闸，不是逐层设置）。
-          SettingsSwitchItem(
-            id: 'video.subtitle.obscure_reveal',
-            title: t.video_setting_subtitle_obscure_reveal,
-            subtitle: t.video_setting_subtitle_obscure_reveal_hint,
-            icon: Icons.visibility_outlined,
-            video: VideoPlacement(group: VideoGroup.subtitle, order: 55),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.videoSubtitleObscureReveal,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await setVideoSubtitleObscureRevealDual(settingsContext, value);
-              settingsContext.refresh();
-            },
-          ),
-          // TODO-1105：尊重 .ass 自带样式开关。开时字幕优先用 .ass 的字体/主色/描边/
-          // 阴影，缺失回退统一外观；关时全走统一外观。默认开。
-          SettingsSwitchItem(
-            id: 'video.subtitle.respect_ass_style',
-            title: t.video_setting_subtitle_respect_ass,
-            subtitle: t.video_setting_subtitle_respect_ass_hint,
-            icon: Icons.style_outlined,
-            video: VideoPlacement(
-              group: VideoGroup.subtitle,
-              order: 60,
-              section: t.video_setting_subtitle_appearance,
-            ),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.videoRespectAssStyle,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await setVideoRespectAssStyleDual(settingsContext, value);
-              settingsContext.refresh();
-            },
-          ),
-          // 字幕外观（字号/字重/阴影/背景不透明度/位置）全序列化进 videoSubtitleStyle。
-          // 全局设置页无实时预览（没有 overlay），落盘后下次播放生效；播放中拖动经
-          // host 实时预览、松手落盘。字重/阴影粗细在 style 里以 null=「跟随界面缩放」
-          // 存储，这里只在用户显式拖动时写显式值，不主动把默认折成显式值。
-          SettingsSliderItem(
-            id: 'video.subtitle.font_size',
-            title: t.video_setting_subtitle_font_size,
-            icon: Icons.format_size_outlined,
-            video: VideoPlacement(
-              group: VideoGroup.subtitle,
-              order: 70,
-              section: t.video_setting_subtitle_appearance,
-            ),
-            min: 12,
-            max: 48,
-            divisions: 36,
-            label: (double v) => v.round().toString(),
-            value: (SettingsContext settingsContext) =>
-                currentVideoSubtitleStyle(settingsContext)
-                    .fontSize
-                    .clamp(12, 48),
-            onChanged: (SettingsContext settingsContext, double v) {
-              previewVideoSubtitleStyle(
-                settingsContext,
-                (VideoSubtitleStyle s) => s.copyWith(fontSize: v),
-              );
-            },
-            onChangeEnd: (SettingsContext settingsContext, double v) async {
-              await commitVideoSubtitleStyle(
-                settingsContext,
-                (VideoSubtitleStyle s) => s.copyWith(fontSize: v),
-              );
-            },
-          ),
-          SettingsStepperItem(
-            id: 'video.subtitle.font_weight',
-            title: t.video_setting_subtitle_font_weight,
-            icon: Icons.format_bold,
-            video: VideoPlacement(
-              group: VideoGroup.subtitle,
-              order: 80,
-              section: t.video_setting_subtitle_appearance,
-            ),
-            value: (SettingsContext settingsContext) =>
-                currentVideoSubtitleStyle(settingsContext)
-                    .resolveFontWeight(videoSubtitleUiScale(settingsContext))
-                    .toDouble(),
-            step: 100,
-            min: 100,
-            max: 900,
-            format: (double v) => v.round().toString(),
-            onChanged: (SettingsContext settingsContext, double v) async {
-              await commitVideoSubtitleStyle(
-                settingsContext,
-                (VideoSubtitleStyle s) => s.copyWith(fontWeight: v.round()),
-              );
-            },
-          ),
-          SettingsSliderItem(
-            id: 'video.subtitle.shadow',
-            title: t.video_setting_subtitle_shadow,
-            icon: Icons.format_color_text_outlined,
-            video: VideoPlacement(
-              group: VideoGroup.subtitle,
-              order: 100,
-              section: t.video_setting_subtitle_appearance,
-            ),
-            min: 0,
-            max: 12,
-            divisions: 12,
-            label: (double v) => '${v.round()}px',
-            value: (SettingsContext settingsContext) =>
-                currentVideoSubtitleStyle(settingsContext)
-                    .resolveShadowThickness(
-                      videoSubtitleUiScale(settingsContext),
-                    )
-                    .clamp(0, 12),
-            onChanged: (SettingsContext settingsContext, double v) {
-              previewVideoSubtitleStyle(
-                settingsContext,
-                (VideoSubtitleStyle s) => s.copyWith(shadowThickness: v),
-              );
-            },
-            onChangeEnd: (SettingsContext settingsContext, double v) async {
-              await commitVideoSubtitleStyle(
-                settingsContext,
-                (VideoSubtitleStyle s) => s.copyWith(shadowThickness: v),
-              );
-            },
-          ),
-          SettingsSliderItem(
-            id: 'video.subtitle.bg_opacity',
-            title: t.video_setting_subtitle_bg_opacity,
-            icon: Icons.opacity_outlined,
-            video: VideoPlacement(
-              group: VideoGroup.subtitle,
-              order: 110,
-              section: t.video_setting_subtitle_appearance,
-            ),
-            divisions: 20,
-            value: (SettingsContext settingsContext) =>
-                currentVideoSubtitleStyle(settingsContext)
-                    .backgroundOpacity
-                    .clamp(0, 1),
-            onChanged: (SettingsContext settingsContext, double v) {
-              previewVideoSubtitleStyle(
-                settingsContext,
-                (VideoSubtitleStyle s) => s.copyWith(backgroundOpacity: v),
-              );
-            },
-            onChangeEnd: (SettingsContext settingsContext, double v) async {
-              await commitVideoSubtitleStyle(
-                settingsContext,
-                (VideoSubtitleStyle s) => s.copyWith(backgroundOpacity: v),
-              );
-            },
-          ),
-          // 主字幕垂直锚定（TODO-2838）：底部（默认，历史行为）/ 顶部。顶锚时下面的
-          // 「垂直位置」量纲变为**离顶距离**（镜像副字幕置顶的既有消费路径）；ASS 自带
-          // 位置（respectAssStyle 开）仍各遵其位，优先级见 resolveLayerForcedAnchor。
-          SettingsSegmentedItem<String>(
-            id: 'video.subtitle.anchor',
-            title: t.video_setting_subtitle_anchor,
-            icon: Icons.vertical_align_top_outlined,
-            video: VideoPlacement(
-              group: VideoGroup.subtitle,
-              order: 138,
-              section: t.video_setting_subtitle_appearance,
-            ),
-            options: <SettingsSegmentOption<String>>[
-              SettingsSegmentOption<String>(
-                value: SubtitleLayerVAnchor.bottom.name,
-                label: t.video_subtitle_anchor_bottom,
-                icon: Icons.vertical_align_bottom_outlined,
-              ),
-              SettingsSegmentOption<String>(
-                value: SubtitleLayerVAnchor.top.name,
-                label: t.video_subtitle_anchor_top,
-                icon: Icons.vertical_align_top_outlined,
-              ),
-            ],
-            selected: (SettingsContext settingsContext) =>
-                currentVideoSubtitleStyle(settingsContext).mainAnchor.name,
-            onChanged: (SettingsContext settingsContext, String v) async {
-              await commitVideoSubtitleStyle(
-                settingsContext,
-                (VideoSubtitleStyle s) => s.copyWith(
-                  mainAnchor: v == SubtitleLayerVAnchor.top.name
-                      ? SubtitleLayerVAnchor.top
-                      : SubtitleLayerVAnchor.bottom,
-                ),
-              );
-            },
-          ),
-          SettingsSliderItem(
-            id: 'video.subtitle.position',
-            title: t.video_setting_subtitle_position,
-            icon: Icons.height_outlined,
-            video: VideoPlacement(
-              group: VideoGroup.subtitle,
-              order: 140,
-              section: t.video_setting_subtitle_appearance,
-            ),
-            min: 0,
-            // TODO-2838：上限 240 → 400（kVideoSubtitleMaxPadding，与存储 clamp 同源）。
-            // 旧上限让字幕最高只能到画面下 1/3，用户想放到上 1/6 够不着。
-            max: kVideoSubtitleMaxPadding,
-            divisions: 40,
-            value: (SettingsContext settingsContext) =>
-                currentVideoSubtitleStyle(settingsContext)
-                    .bottomPadding
-                    .clamp(0, kVideoSubtitleMaxPadding),
-            onChanged: (SettingsContext settingsContext, double v) {
-              previewVideoSubtitleStyle(
-                settingsContext,
-                (VideoSubtitleStyle s) => s.copyWith(bottomPadding: v),
-              );
-            },
-            onChangeEnd: (SettingsContext settingsContext, double v) async {
-              await commitVideoSubtitleStyle(
-                settingsContext,
-                (VideoSubtitleStyle s) => s.copyWith(bottomPadding: v),
-              );
-            },
-          ),
-          // 副字幕垂直位置：与上面的主字幕位置**同量纲、各自独立**（此前两层共用
-          // `bottomPadding` 一个字段——主字幕拿它当底距、置顶的副字幕拿它当顶距，调一个
-          // 必然把另一个也拽走）。value 在用户没单独调过时回落到主字幕位置（显示成
-          // 「当前跟随主字幕」的那个值），一拖即写入 secondaryBottomPadding、从此解耦。
-          SettingsSliderItem(
-            id: 'video.subtitle.position_secondary',
-            title: t.video_setting_subtitle_position_secondary,
-            icon: Icons.height_outlined,
-            video: VideoPlacement(
-              group: VideoGroup.subtitle,
-              order: 145,
-              section: t.video_setting_subtitle_appearance,
-            ),
-            min: 0,
-            // TODO-2838：与主字幕位置同步拉高上限（kVideoSubtitleMaxPadding）。
-            max: kVideoSubtitleMaxPadding,
-            divisions: 40,
-            value: (SettingsContext settingsContext) {
-              final VideoSubtitleStyle s =
-                  currentVideoSubtitleStyle(settingsContext);
-              return (s.secondaryBottomPadding ?? s.bottomPadding)
-                  .clamp(0, kVideoSubtitleMaxPadding);
-            },
-            onChanged: (SettingsContext settingsContext, double v) {
-              previewVideoSubtitleStyle(
-                settingsContext,
-                (VideoSubtitleStyle s) => s.copyWith(secondaryBottomPadding: v),
-              );
-            },
-            onChangeEnd: (SettingsContext settingsContext, double v) async {
-              await commitVideoSubtitleStyle(
-                settingsContext,
-                (VideoSubtitleStyle s) => s.copyWith(secondaryBottomPadding: v),
-              );
-            },
-          ),
-          // 拖拽调整字幕位置入口（TODO-2838）：进入播放器内可视化拖拽模式——字幕盒
-          // 显示可拖边框、竖直拖动实时预览、落点自动定锚（上半屏顶锚/下半屏底锚）、
-          // 松手写回偏好。仅播放中有意义（要有真字幕 overlay 可拖），全局设置页隐藏；
-          // 入口放位置滑条旁而非长按字幕：字级查词已占用字幕的 tap 指针面（BUG-553/838
-          // 竞技场纪律），再叠长按手势会与查词/显形抢竞技场，按钮进入零冲突。
-          SettingsActionItem(
-            id: 'video.subtitle.drag_adjust',
-            title: t.video_setting_subtitle_drag_adjust,
-            subtitle: t.video_subtitle_drag_adjust_hint,
-            icon: Icons.open_with_outlined,
-            video: VideoPlacement(
-              group: VideoGroup.subtitle,
-              order: 148,
-              section: t.video_setting_subtitle_appearance,
-            ),
-            visible: (SettingsContext c) =>
-                videoQuickSettingsHostOf(c)?.onEnterSubtitleDragAdjust != null,
-            onTap: (SettingsContext settingsContext) async {
-              videoQuickSettingsHostOf(settingsContext)
-                  ?.onEnterSubtitleDragAdjust
-                  ?.call();
-            },
-          ),
-          // ── 自动获取字幕 ─────────────────────────────────────────────────
-          // 这个开关的主要价值是**让用户知道这件事存在**（BUG-1698）。
-          //
-          // 自动配字幕其实一直开着（下载流水线的字幕阶段默认 bestEffort），但它
-          // 从来没有名字、没有位置、失败只落在任务行一句英文 note 里——用户没有
-          // 任何途径发现这个能力，更不知道要去配 Jimaku key 才能用上。给它一个
-          // 有名字的条目放在字幕来源配置**正上方**，设置搜索（settings_search）
-          // 就能命中「字幕」搜到它，配置项也在同屏可见。
-          SettingsSwitchItem(
-            id: 'video.subtitle.backfill_after_scrape',
-            title: t.video_setting_subtitle_backfill,
-            subtitle: t.video_setting_subtitle_backfill_hint,
-            icon: Icons.subtitles_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.videoSubtitleBackfillAfterScrape,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel
-                  .setVideoSubtitleBackfillAfterScrape(value);
-            },
-          ),
-          // ── 在线字幕来源 → 「在线服务」分区 ─────────────────────────────
-          // Jimaku / OpenSubtitles 曾在这里与下载页各挂一份同一组件（BUG-1712 的
-          // 「一个能力两个家」修法是双挂载——那是把症状固化）。第三方凭据现在只
-          // 有一个家：settings_schema_services.dart；这里留一条跳转，用户在字幕
-          // 分区仍能一步到达，且「刮削后自动补字幕」的依赖（要配 Jimaku key）
-          // 同屏可见。媒体服务器（Jellyfin/Emby）同理迁走。
-          buildOpenServicesItem('video.subtitle.online_sources'),
-        ],
-      ),
-      SettingsSection(
-        title: t.section_video_danmaku,
-        collapsedByDefault: true,
-        items: <SettingsItem>[
-          // 弹幕开关 / 在线匹配 / 同屏上限都是纯 pref，与播放页内弹幕设置语义一致；
-          // 无 host 下次播放生效，host 在场即时重载/清空弹幕层。
-          SettingsSwitchItem(
-            id: 'video.danmaku.enabled',
-            title: t.video_setting_danmaku_enabled,
-            subtitle: t.video_setting_danmaku_enabled_hint,
-            icon: Icons.forum_outlined,
-            video: VideoPlacement(group: VideoGroup.danmaku, order: 10),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.videoDanmakuEnabled,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await setVideoDanmakuEnabledDual(settingsContext, value);
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'video.danmaku.online',
-            title: t.video_setting_danmaku_online,
-            subtitle: t.video_setting_danmaku_online_hint,
-            icon: Icons.cloud_sync_outlined,
-            video: VideoPlacement(group: VideoGroup.danmaku, order: 20),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.videoDanmakuOnlineEnabled,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await setVideoDanmakuOnlineEnabledDual(settingsContext, value);
-            },
-          ),
-          SettingsStepperItem(
-            id: 'video.danmaku.max_active',
-            title: t.video_setting_danmaku_max_active,
-            subtitle: t.video_setting_danmaku_max_active_hint,
-            icon: Icons.speed_outlined,
-            video: VideoPlacement(group: VideoGroup.danmaku, order: 40),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.videoDanmakuMaxActive.toDouble(),
-            step: 10,
-            min: 10,
-            max: kMaxVideoDanmakuActive.toDouble(),
-            format: (double v) => v.round().toString(),
-            onChanged: (SettingsContext settingsContext, double v) async {
-              await setVideoDanmakuMaxActiveDual(settingsContext, v.round());
-            },
-          ),
-          // 自建/镜像 Dandanplay 服务器地址是第三方端点，已迁到「在线服务」分区
-          // （settings_schema_services.dart）；弹幕行为开关留在这里。
-        ],
-      ),
       // ── 播放中专属（控制器绑定 / 仅播放页有意义）───────────────────────────
       // 全部 host 门控：全局设置页 `SettingsContext.video == null` 恒隐藏（本 section
       // 渲染为空被丢弃），播放页面板经 VideoPlacement 投影到对应分类。builder 集中在
       // video_settings_actions.dart（settings/ 不引播放器依赖）。
       SettingsSection(
+        id: 'video.section.session',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
         items: <SettingsItem>[
           // TODO-1158：多档画质入口（HLS master 或 YouTube 流时显示）。
           //
@@ -1393,8 +1416,9 @@ SettingsDestination buildVideoDestination() {
             value: (SettingsContext c) =>
                 snapVideoSpeed(videoQuickSettingsHostOf(c)!.speed()),
             onChanged: (SettingsContext c, double v) async {
-              await videoQuickSettingsHostOf(c)!
-                  .onPreviewSpeed(snapVideoSpeed(v));
+              await videoQuickSettingsHostOf(
+                c,
+              )!.onPreviewSpeed(snapVideoSpeed(v));
             },
             onChangeEnd: (SettingsContext c, double v) async {
               await videoQuickSettingsHostOf(c)!.onSetSpeed(snapVideoSpeed(v));
@@ -1415,9 +1439,8 @@ SettingsDestination buildVideoDestination() {
             onChanged: (SettingsContext c, double v) async {
               await commitVideoAsbConfig(
                 c,
-                (VideoAsbplayerConfig a) => a.copyWith(
-                  speedStep: double.parse(v.toStringAsFixed(2)),
-                ),
+                (VideoAsbplayerConfig a) =>
+                    a.copyWith(speedStep: double.parse(v.toStringAsFixed(2))),
               );
             },
           ),
@@ -1540,10 +1563,10 @@ SettingsDestination buildVideoDestination() {
             subtitle: t.video_setting_mpv_lua_scripts_hint,
             subtitleBuilder: (SettingsContext settingsContext) =>
                 settingsContext.appModel.videoMpvLuaCapability ==
-                        MpvLuaCapability.unavailable
-                    ? '${t.video_setting_mpv_lua_scripts_unavailable}\n'
-                        '${t.video_setting_mpv_lua_scripts_hint}'
-                    : t.video_setting_mpv_lua_scripts_hint,
+                    MpvLuaCapability.unavailable
+                ? '${t.video_setting_mpv_lua_scripts_unavailable}\n'
+                      '${t.video_setting_mpv_lua_scripts_hint}'
+                : t.video_setting_mpv_lua_scripts_hint,
             icon: Icons.data_object_outlined,
             video: VideoPlacement(
               group: VideoGroup.mpv,
@@ -1732,7 +1755,9 @@ SettingsDestination buildVideoDestination() {
 
 /// 轻量提示条（与 settings_schema_lookup.dart 的 `_showSettingsSnackBar` 同款）。
 void _showVideoSettingsSnackBar(
-    SettingsContext settingsContext, String message) {
+  SettingsContext settingsContext,
+  String message,
+) {
   final BuildContext ctx = settingsContext.context;
   if (!ctx.mounted) return;
   ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(message)));
@@ -1742,9 +1767,12 @@ void _showVideoSettingsSnackBar(
 /// 页面回调（落 pref + 开启时把脚本目录即时装载进活播放器，幂等），否则直接落 pref
 /// 下次进入视频页生效。两条入口各写一份就会再次分叉成"导入了但没启用"。
 Future<void> _setVideoLuaScriptsEnabled(
-    SettingsContext settingsContext, bool value) async {
-  final Future<void> Function(bool)? live =
-      videoQuickSettingsHostOf(settingsContext)?.onLuaScriptsEnabledChanged;
+  SettingsContext settingsContext,
+  bool value,
+) async {
+  final Future<void> Function(bool)? live = videoQuickSettingsHostOf(
+    settingsContext,
+  )?.onLuaScriptsEnabledChanged;
   if (live != null) {
     await live(value);
   } else {
@@ -1803,10 +1831,9 @@ SettingsSliderItem _videoMpvColorSliderItem({
     max: 100,
     divisions: 200,
     label: (double v) => v.round().toString(),
-    value: (SettingsContext settingsContext) =>
-        read(currentVideoMpvConfig(settingsContext))
-            .toDouble()
-            .clamp(-100, 100),
+    value: (SettingsContext settingsContext) => read(
+      currentVideoMpvConfig(settingsContext),
+    ).toDouble().clamp(-100, 100),
     onChanged: (SettingsContext settingsContext, double v) async {
       if (!videoHostVisible(settingsContext)) return;
       await commitVideoMpvConfig(
@@ -1838,7 +1865,7 @@ SettingsSliderItem _videoDanmakuStyleSliderItem({
   required String Function(double value) label,
   required double Function(VideoDanmakuStyle style) read,
   required VideoDanmakuStyle Function(VideoDanmakuStyle style, double value)
-      write,
+  write,
 }) {
   return SettingsSliderItem(
     id: id,
@@ -1918,9 +1945,10 @@ String _videoDragSeekSensitivityLabel(VideoSeekSensitivity value) {
 String videoScrapeIdentifierWordsSubtitle(SettingsContext settingsContext) {
   final ScrapeIdentifierWordParseResult parsed = ScrapeIdentifierWords.parse(
     settingsContext.appModel.prefsRepo.getPref(
-      kVideoMetadataIdentifierWordsPref,
-      defaultValue: '',
-    ) as String,
+          kVideoMetadataIdentifierWordsPref,
+          defaultValue: '',
+        )
+        as String,
   );
   if (parsed.words.isEmpty && parsed.errors.isEmpty) {
     return t.video_metadata_identifier_words_empty;
@@ -1930,7 +1958,7 @@ String videoScrapeIdentifierWordsSubtitle(SettingsContext settingsContext) {
   return parsed.errors.isEmpty
       ? rules
       : '$rules \u00b7 ${t.video_metadata_identifier_words_invalid}: '
-          '${parsed.errors.length}';
+            '${parsed.errors.length}';
 }
 
 /// 识别词编辑对话框：多行词表 + 实时非法行提示。取消不写任何偏好。
@@ -1940,10 +1968,12 @@ Future<void> showVideoScrapeIdentifierWordsDialog(
   final String? saved = await showDialog<String>(
     context: settingsContext.context,
     builder: (BuildContext dialogContext) => _IdentifierWordsDialog(
-      initialText: settingsContext.appModel.prefsRepo.getPref(
-        kVideoMetadataIdentifierWordsPref,
-        defaultValue: '',
-      ) as String,
+      initialText:
+          settingsContext.appModel.prefsRepo.getPref(
+                kVideoMetadataIdentifierWordsPref,
+                defaultValue: '',
+              )
+              as String,
     ),
   );
   if (saved == null) return;
@@ -1969,8 +1999,9 @@ class _IdentifierWordsDialog extends StatefulWidget {
 }
 
 class _IdentifierWordsDialogState extends State<_IdentifierWordsDialog> {
-  late final TextEditingController _controller =
-      TextEditingController(text: widget.initialText);
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.initialText,
+  );
 
   @override
   void dispose() {
@@ -1980,8 +2011,9 @@ class _IdentifierWordsDialogState extends State<_IdentifierWordsDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final ScrapeIdentifierWordParseResult parsed =
-        ScrapeIdentifierWords.parse(_controller.text);
+    final ScrapeIdentifierWordParseResult parsed = ScrapeIdentifierWords.parse(
+      _controller.text,
+    );
     return AlertDialog(
       title: Text(t.video_metadata_identifier_words),
       content: SizedBox(

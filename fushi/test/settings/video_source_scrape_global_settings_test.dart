@@ -10,17 +10,25 @@ import 'package:fushi/src/settings/settings_schema_video.dart';
 void main() {
   // AniDB 身份 / TMDB key 是第三方凭据，住「在线服务」分区；刮削语言是刮削行为
   // 偏好，留在视频·媒体库。两处合起来才是完整的刮削运行期偏好面。
+  Iterable<SettingsItem> descendants(SettingsDestination destination) sync* {
+    for (final SettingsSection section in destination.sections) {
+      for (final SettingsItem item in section.items) {
+        yield item;
+        if (item is SettingsNavigationItem && item.child != null) {
+          yield* descendants(item.child!());
+        }
+      }
+    }
+  }
+
   List<SettingsItem> allScrapeSettings() => <SettingsItem>[
-        for (final SettingsSection section in buildVideoDestination().sections)
-          ...section.items,
-        for (final SettingsSection section
-            in buildServicesDestination().sections)
-          ...section.items,
-      ];
+    ...descendants(buildVideoDestination()),
+    ...descendants(buildServicesDestination()),
+  ];
 
   SettingsItem item(String id) => allScrapeSettings().singleWhere(
-        (SettingsItem candidate) => candidate.id == id,
-      );
+    (SettingsItem candidate) => candidate.id == id,
+  );
 
   // 这条原本断言「主源写死、不给用户选」。用户 2026-09-08 推翻了那半条裁决
   // （BUG-2268）：中文目录名在 MAL 上只搜得到「类型年份合格但标题不符」的候选，
@@ -47,8 +55,9 @@ void main() {
             as SettingsSegmentedItem<String>;
     expect(
       primary.options.map((SettingsSegmentOption<String> o) => o.value),
-      kSelectableVideoMetadataProviders
-          .map((VideoMetadataProviderKind k) => k.name),
+      kSelectableVideoMetadataProviders.map(
+        (VideoMetadataProviderKind k) => k.name,
+      ),
     );
 
     // 已退役资料源的历史持久化值必须回落默认，不得被当成合法主源复活。
@@ -89,21 +98,22 @@ void main() {
     }
   });
 
-  test('metadata runtime preferences rebuild the download scraper snapshot',
-      () {
-    final String videoSource =
-        File('lib/src/settings/settings_schema_video.dart').readAsStringSync();
-    final String servicesSource =
-        File('lib/src/settings/settings_schema_services.dart')
-            .readAsStringSync();
-    final String actionsSource =
-        File('lib/src/media/video/video_settings_actions.dart')
-            .readAsStringSync();
+  test('metadata runtime preferences rebuild the download scraper snapshot', () {
+    final String videoSource = File(
+      'lib/src/settings/settings_schema_video.dart',
+    ).readAsStringSync();
+    final String servicesSource = File(
+      'lib/src/settings/settings_schema_services.dart',
+    ).readAsStringSync();
+    final String actionsSource = File(
+      'lib/src/media/video/video_settings_actions.dart',
+    ).readAsStringSync();
     final RegExp call = RegExp(r'commitVideoMetadataRuntimePreference\(');
     expect(
       call.allMatches(videoSource).length,
       3,
-      reason: '刮削语言、刮削主源与识别词三处运行期偏好都必须走共享 helper —— 只有它'
+      reason:
+          '刮削语言、刮削主源与识别词三处运行期偏好都必须走共享 helper —— 只有它'
           '会重建下载管线的刮削快照；漏一处就是「设置改了、下一批还用旧值」。'
           '这里数的是「视频·媒体库」分区里的运行期刮削偏好数，再加一项要同步 +1',
     );
@@ -120,8 +130,10 @@ void main() {
     );
     expect(
       actionsSource,
-      contains('await settingsContext.appModel.'
-          'reloadVideoDownloadPipelineRuntime();'),
+      contains(
+        'await settingsContext.appModel.'
+        'reloadVideoDownloadPipelineRuntime();',
+      ),
     );
   });
 
@@ -134,24 +146,29 @@ void main() {
     expect(parseAniDbClientVersion(null), isNull);
   });
 
-  test('hash identification is opt-in and requires all registration fields',
-      () {
-    expect(item('services.metadata.anidb_hash_enabled'),
-        isA<SettingsSwitchItem>());
-    const VideoSourceScrapeGlobalConfig empty = VideoSourceScrapeGlobalConfig();
-    expect(empty.hashEnabled, isFalse);
-    expect(empty.anidbUdpConfig.isAvailable, isFalse);
-    const VideoSourceScrapeGlobalConfig configured =
-        VideoSourceScrapeGlobalConfig(
-      hashEnabled: true,
-      anidbUsername: 'tester',
-      anidbPassword: ' spaced password ',
-      anidbClientName: 'fushitest',
-      anidbClientVersion: 1,
-    );
-    expect(configured.anidbUdpConfig.isAvailable, isTrue);
-    expect(configured.anidbUdpConfig.password, ' spaced password ');
-  });
+  test(
+    'hash identification is opt-in and requires all registration fields',
+    () {
+      expect(
+        item('services.metadata.anidb_hash_enabled'),
+        isA<SettingsSwitchItem>(),
+      );
+      const VideoSourceScrapeGlobalConfig empty =
+          VideoSourceScrapeGlobalConfig();
+      expect(empty.hashEnabled, isFalse);
+      expect(empty.anidbUdpConfig.isAvailable, isFalse);
+      const VideoSourceScrapeGlobalConfig configured =
+          VideoSourceScrapeGlobalConfig(
+            hashEnabled: true,
+            anidbUsername: 'tester',
+            anidbPassword: ' spaced password ',
+            anidbClientName: 'fushitest',
+            anidbClientVersion: 1,
+          );
+      expect(configured.anidbUdpConfig.isAvailable, isTrue);
+      expect(configured.anidbUdpConfig.password, ' spaced password ');
+    },
+  );
 
   test('obsolete provider settings are no longer exposed', () {
     final Set<String> ids = allScrapeSettings()

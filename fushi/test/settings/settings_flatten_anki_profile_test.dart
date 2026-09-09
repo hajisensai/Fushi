@@ -93,7 +93,9 @@ void main() {
       ..themeNotifier = themeNotifier
       ..wireDatabaseForTesting(db)
       ..wireLocalAudioForTesting(
-          prefsRepo: prefsRepo, databaseDirectory: tmpDir)
+        prefsRepo: prefsRepo,
+        databaseDirectory: tmpDir,
+      )
       ..populateLanguages()
       ..populateLocales();
   }
@@ -114,53 +116,65 @@ void main() {
   Future<SettingsDestination> pumpDestination(
     WidgetTester tester,
     SettingsDestinationId id,
-    List<SettingsDestination> captured,
-  ) async {
+    List<SettingsDestination> captured, {
+    String? panelId,
+  }) async {
     late SettingsDestination target;
-    await tester.pumpWidget(ProviderScope(
-      overrides: <Override>[
-        appProvider.overrideWith((Ref ref) => appModel),
-        platformServicesProvider.overrideWithValue(platformServices),
-      ],
-      child: MaterialApp(
-        theme: ThemeData(
-          useMaterial3: true,
-          platform: TargetPlatform.android,
-          colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
-          extensions: <ThemeExtension<dynamic>>[
-            FushiDesignSystemTheme(themeNotifier.designSystemTheme),
-          ],
-        ),
-        home: Consumer(
-          builder: (BuildContext ctx, WidgetRef ref, Widget? _) {
-            final SettingsContext sctx = SettingsContext(
-              context: ctx,
-              appModel: ref.read(appProvider),
-              ref: ref,
-              readerSource: ReaderFushiSource.instance,
-              refresh: () {},
-            );
-            final List<SettingsDestination> all = buildSettingsSchema(sctx);
-            captured
-              ..clear()
-              ..addAll(all);
-            target = all.firstWhere((SettingsDestination d) => d.id == id);
-            return const MaterialSettingsRenderer().buildDetailPage(
-              settingsContext: sctx,
-              destination: target,
-            );
-          },
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: <Override>[
+          appProvider.overrideWith((Ref ref) => appModel),
+          platformServicesProvider.overrideWithValue(platformServices),
+        ],
+        child: MaterialApp(
+          theme: ThemeData(
+            useMaterial3: true,
+            platform: TargetPlatform.android,
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: const Color(0xFF386A58),
+            ),
+            extensions: <ThemeExtension<dynamic>>[
+              FushiDesignSystemTheme(themeNotifier.designSystemTheme),
+            ],
+          ),
+          home: Consumer(
+            builder: (BuildContext ctx, WidgetRef ref, Widget? _) {
+              final SettingsContext sctx = SettingsContext(
+                context: ctx,
+                appModel: ref.read(appProvider),
+                ref: ref,
+                readerSource: ReaderFushiSource.instance,
+                refresh: () {},
+              );
+              final List<SettingsDestination> all = buildSettingsSchema(sctx);
+              captured
+                ..clear()
+                ..addAll(all);
+              target = all.firstWhere((SettingsDestination d) => d.id == id);
+              if (panelId != null) {
+                target = target.sections
+                    .expand((section) => section.items)
+                    .whereType<SettingsNavigationItem>()
+                    .firstWhere((item) => item.id == panelId)
+                    .child!();
+              }
+              return const MaterialSettingsRenderer().buildDetailPage(
+                settingsContext: sctx,
+                destination: target,
+              );
+            },
+          ),
         ),
       ),
-    ));
+    );
     // 让 anki / profile viewmodel 的异步初始 load 完成。
     await tester.pump(const Duration(milliseconds: 250));
     return target;
   }
 
-  testWidgets(
-      'card creation destination inlines Anki body, no sub-page nav, toggle persists',
-      (WidgetTester tester) async {
+  testWidgets('card creation keeps common settings inline and persists tags', (
+    WidgetTester tester,
+  ) async {
     final List<SettingsDestination> all = <SettingsDestination>[];
     final SettingsDestination cardCreation = await pumpDestination(
       tester,
@@ -168,106 +182,182 @@ void main() {
       all,
     );
 
-    // ① schema 结构：有 body、无任何子页跳转项。
-    expect(cardCreation.body, isNotNull,
-        reason: '制卡 destination 应通过 body 平铺 Anki 正文');
-    final List<SettingsItem> cardItems =
-        cardCreation.sections.expand((SettingsSection s) => s.items).toList();
-    expect(cardItems.whereType<SettingsNavigationItem>(), isEmpty,
-        reason: '制卡 destination 不应再有「Anki 设置」子页跳转项');
-
-    // ② 渲染后 Anki 正文内联现身、详情页无任何子页跳转行。
+    final List<SettingsItem> cardItems = cardCreation.sections
+        .expand((SettingsSection section) => section.items)
+        .toList();
+    expect(cardCreation.body, isNotNull);
+    expect(cardCreation.bodyBeforeSections, isTrue);
+    expect(cardItems.whereType<SettingsCustomItem>(), isEmpty);
+    expect(
+      cardItems.whereType<SettingsNavigationItem>().map((item) => item.id),
+      <String>[
+        'card_creation.connection.open',
+        'card_creation.fields.open',
+        'card_creation.lapis.open',
+        'card_creation.media.open',
+        'card_creation.maintenance.open',
+      ],
+    );
     expect(find.byType(AnkiSettingsBody), findsOneWidget);
-    expect(find.byType(AdaptiveSettingsNavigationRow), findsNothing,
-        reason: '平铺后不应再出现指向 Anki 子页的跳转行');
+    expect(
+      find.ancestor(
+        of: find.byType(AnkiSettingsBody),
+        matching: find.byType(AdaptiveSettingsSection),
+      ),
+      findsNothing,
+      reason: '常用正文自带设置分区，不应再套额外卡片',
+    );
+    expect(
+      tester.getBottomLeft(find.byType(AnkiSettingsBody)).dy,
+      lessThanOrEqualTo(
+        tester.getTopLeft(find.byType(AdaptiveSettingsNavigationRow).first).dy,
+      ),
+      reason: '常用正文应在复杂配置子页入口之前',
+    );
+    expect(
+      find.byType(AdaptiveSettingsSwitchRow),
+      findsNWidgets(4),
+      reason: '常用标签开关直接可见，维护开关属于独立子页',
+    );
+    expect(find.byType(AdaptiveSettingsSliderRow), findsNothing);
+    expect(
+      find.widgetWithText(AdaptiveSettingsSwitchRow, 'Add "fushi" tag'),
+      findsOneWidget,
+      reason: 'hibiki 标签开关应无条件显示',
+    );
+    expect(
+      find.widgetWithText(AdaptiveSettingsSwitchRow, 'Add source category tag'),
+      findsOneWidget,
+      reason: '来源分类开关应无条件显示',
+    );
+    // 只改上面的计数不够：下次谁吞掉一个开关又加一个别的，计数照样是 4。相邻几个
+    // 开关本来就是具名断言，这个（BUG-2396 起的「制卡所在字符数」）补齐第四个。
+    expect(
+      find.widgetWithText(
+        AdaptiveSettingsSwitchRow,
+        'Auto-add mining position to tags',
+      ),
+      findsOneWidget,
+      reason: '「制卡所在字符数」开关应无条件显示',
+    );
+    final Finder autoAddRow = find.widgetWithText(
+      AdaptiveSettingsSwitchRow,
+      'Auto-add book title to tags',
+    );
+    expect(
+      autoAddRow,
+      findsOneWidget,
+      reason: '「自动添加书名」开关必须仍无条件可用（方案B会破坏，绝不退化）',
+    );
+    // 「制卡到已配对设备」已移出本页，改挂 Hibiki 互联 →「交给已配对设备」（它的前置
+    // 条件、目标设备、失效条件全由互联决定，互联关掉时留在这里就是纯死开关）。归属由
+    // test/sync/sync_settings_visibility_test.dart 咬住；这里只守「不得回流」。
+    expect(
+      find.widgetWithText(AdaptiveSettingsSwitchRow, 'Mine to paired device'),
+      findsNothing,
+      reason: '「制卡到已配对设备」不应再出现在 Anki 正文',
+    );
 
-    // ③ TODO-135 方案A：默认标签区的开关（hibiki / 来源分类 / 自动添加书名 /
-    //    自动添加制卡位置）都并入一个无条件显示的区块。未配置 Anki 时它们也都露出。
-    //    TODO-1650 把旧「压缩制卡媒体」开关换成「图片/GIF 清晰度 + 音频质量」两滑块，
-    //    紧随其后的独立无标题区（同样无条件显示）。
-    expect(find.byType(AdaptiveSettingsSwitchRow), findsNWidgets(6),
-        reason: 'TODO-135 方案A 四开关（hibiki / 来源分类 / 自动添加书名 / 自动添加制卡'
-            '位置），未配置 Anki 时都应显示（旧「压缩」开关已换成两滑块，不再是 '
-            'SwitchRow；「制卡到已配对设备」已移到 Hibiki 互联分类）。外加媒体去重区的'
-            '两个自动开关（自动处理 + 自动直接删除），共 6 个。');
-    expect(find.byType(AdaptiveSettingsSliderRow), findsNWidgets(2),
-        reason: 'TODO-1650「图片/GIF 清晰度」+「音频质量」两滑块应无条件显示');
+    // ④「自动添加书名」开关仍真生效（写穿 prefs）——必须保留的用户目标。
+    final bool before = appModel.autoAddBookNameToTags;
+    // 开关在 Anki 正文底部，初始在视口外——先滚动到它再点，否则 tap 落空。
+    final Finder autoAddSwitch = find.descendant(
+      of: autoAddRow,
+      matching: find.byType(Switch),
+    );
+    await tester.ensureVisible(autoAddSwitch);
+    await tester.pump();
+    await tester.tap(autoAddSwitch);
+    await tester.pump();
+    expect(
+      appModel.autoAddBookNameToTags,
+      isNot(before),
+      reason: '点开关应翻转 autoAddBookNameToTags 并写穿 prefs',
+    );
+  });
+
+  testWidgets('maintenance child preserves conservative defaults', (
+    WidgetTester tester,
+  ) async {
+    await pumpDestination(
+      tester,
+      SettingsDestinationId.cardCreation,
+      <SettingsDestination>[],
+      panelId: 'card_creation.maintenance.open',
+    );
     // 媒体去重的两个自动开关：**默认都关**（方案 A 的核心），且「自动直接删除」
     // 在自动处理关着时必须是**禁用**的——它是从属开关，打开自动处理不等于授权
     // 自动删。原实现的缺陷正是「自动路径绕过确认框」。
-    final Finder dedupAutoRow =
-        find.widgetWithText(AdaptiveSettingsSwitchRow, 'Automatic processing');
+    final Finder dedupAutoRow = find.widgetWithText(
+      AdaptiveSettingsSwitchRow,
+      'Automatic processing',
+    );
     expect(dedupAutoRow, findsOneWidget);
     expect(
-        tester.widget<AdaptiveSettingsSwitchRow>(dedupAutoRow).value, isFalse,
-        reason: '自动处理必须默认关');
+      tester.widget<AdaptiveSettingsSwitchRow>(dedupAutoRow).value,
+      isFalse,
+      reason: '自动处理必须默认关',
+    );
     final Finder dedupAutoDeleteRow = find.widgetWithText(
-        AdaptiveSettingsSwitchRow, 'Delete automatically without asking');
+      AdaptiveSettingsSwitchRow,
+      'Delete automatically without asking',
+    );
     expect(dedupAutoDeleteRow, findsOneWidget);
     final AdaptiveSettingsSwitchRow autoDelete =
         tester.widget<AdaptiveSettingsSwitchRow>(dedupAutoDeleteRow);
     expect(autoDelete.value, isFalse, reason: '自动直接删除必须默认关');
     expect(autoDelete.onChanged, isNull, reason: '自动处理关着时「自动直接删除」必须禁用（从属开关）');
-    expect(find.textContaining('Image / GIF quality'), findsOneWidget,
-        reason: 'TODO-1650 图片/GIF 清晰度滑块标题应露出');
-    expect(find.textContaining('Audio quality'), findsOneWidget,
-        reason: 'TODO-1650 音频质量滑块标题应露出');
-    expect(find.widgetWithText(AdaptiveSettingsSwitchRow, 'Add "fushi" tag'),
-        findsOneWidget,
-        reason: 'hibiki 标签开关应无条件显示');
-    expect(
-        find.widgetWithText(
-            AdaptiveSettingsSwitchRow, 'Add source category tag'),
-        findsOneWidget,
-        reason: '来源分类开关应无条件显示');
-    final Finder autoAddRow = find.widgetWithText(
-        AdaptiveSettingsSwitchRow, 'Auto-add book title to tags');
-    expect(autoAddRow, findsOneWidget,
-        reason: '「自动添加书名」开关必须仍无条件可用（方案B会破坏，绝不退化）');
-    // 「制卡到已配对设备」已移出本页，改挂 Hibiki 互联 →「交给已配对设备」（它的前置
-    // 条件、目标设备、失效条件全由互联决定，互联关掉时留在这里就是纯死开关）。归属由
-    // test/sync/sync_settings_visibility_test.dart 咬住；这里只守「不得回流」。
-    expect(
-        find.widgetWithText(AdaptiveSettingsSwitchRow, 'Mine to paired device'),
-        findsNothing,
-        reason: '「制卡到已配对设备」不应再出现在 Anki 正文');
+  });
 
-    // ④「自动添加书名」开关仍真生效（写穿 prefs）——必须保留的用户目标。
-    final bool before = appModel.autoAddBookNameToTags;
-    // 开关在 Anki 正文底部，初始在视口外——先滚动到它再点，否则 tap 落空。
-    final Finder autoAddSwitch =
-        find.descendant(of: autoAddRow, matching: find.byType(Switch));
-    await tester.ensureVisible(autoAddSwitch);
-    await tester.pump();
-    await tester.tap(autoAddSwitch);
-    await tester.pump();
-    expect(appModel.autoAddBookNameToTags, isNot(before),
-        reason: '点开关应翻转 autoAddBookNameToTags 并写穿 prefs');
+  testWidgets('media child exposes quality controls without common settings', (
+    WidgetTester tester,
+  ) async {
+    await pumpDestination(
+      tester,
+      SettingsDestinationId.cardCreation,
+      <SettingsDestination>[],
+      panelId: 'card_creation.media.open',
+    );
+    expect(find.byType(AdaptiveSettingsSliderRow), findsNWidgets(2));
+    expect(find.byType(AdaptiveSettingsSwitchRow), findsNothing);
   });
 
   testWidgets(
-      'profiles destination inlines management body, keeps picker, no sub-page nav',
-      (WidgetTester tester) async {
-    final List<SettingsDestination> all = <SettingsDestination>[];
-    final SettingsDestination profiles = await pumpDestination(
-      tester,
-      SettingsDestinationId.profiles,
-      all,
-    );
+    'profiles destination inlines management body, keeps picker, no sub-page nav',
+    (WidgetTester tester) async {
+      final List<SettingsDestination> all = <SettingsDestination>[];
+      final SettingsDestination profiles = await pumpDestination(
+        tester,
+        SettingsDestinationId.profiles,
+        all,
+      );
 
-    // ① schema 结构：有 body、保留「配置」picker（custom item）、无子页跳转项。
-    expect(profiles.body, isNotNull,
-        reason: '配置方案 destination 应通过 body 平铺 Profile 管理正文');
-    final List<SettingsItem> profileItems =
-        profiles.sections.expand((SettingsSection s) => s.items).toList();
-    expect(profileItems.whereType<SettingsNavigationItem>(), isEmpty,
-        reason: '配置方案 destination 不应再有「配置管理」子页跳转项');
-    expect(profileItems.whereType<SettingsCustomItem>(), isNotEmpty,
-        reason: '应保留顶部「配置」快速切换 picker');
+      // ① schema 结构：有 body、保留「配置」picker（custom item）、无子页跳转项。
+      expect(
+        profiles.body,
+        isNotNull,
+        reason: '配置方案 destination 应通过 body 平铺 Profile 管理正文',
+      );
+      final List<SettingsItem> profileItems =
+          profiles.sections.expand((SettingsSection s) => s.items).toList();
+      expect(
+        profileItems.whereType<SettingsNavigationItem>(),
+        isEmpty,
+        reason: '配置方案 destination 不应再有「配置管理」子页跳转项',
+      );
+      expect(
+        profileItems.whereType<SettingsCustomItem>(),
+        isNotEmpty,
+        reason: '应保留顶部「配置」快速切换 picker',
+      );
 
-    // ② 渲染后管理正文内联现身、详情页无任何子页跳转行。
-    expect(find.byType(ProfileManagementBody), findsOneWidget);
-    expect(find.byType(AdaptiveSettingsNavigationRow), findsNothing,
-        reason: '平铺后不应再出现指向「配置管理」子页的跳转行');
-  });
+      // ② 渲染后管理正文内联现身、详情页无任何子页跳转行。
+      expect(find.byType(ProfileManagementBody), findsOneWidget);
+      expect(
+        find.byType(AdaptiveSettingsNavigationRow),
+        findsNothing,
+        reason: '平铺后不应再出现指向「配置管理」子页的跳转行',
+      );
+    },
+  );
 }
