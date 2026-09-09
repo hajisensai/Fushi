@@ -7,6 +7,8 @@ import java.io.IOException
 import java.net.InetSocketAddress
 import java.net.Proxy
 import java.net.ProxySelector
+import java.net.ServerSocket
+import java.net.Socket
 import java.net.SocketAddress
 import java.net.URI
 import java.util.concurrent.atomic.AtomicInteger
@@ -15,6 +17,58 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFails
 
 class HostProxyPolicyTest {
+    @Test
+    fun globallyInstalledPolicyDoesNotReapplyHttpRoutingToTcpSockets() {
+        val previous = ProxySelector.getDefault()
+        try {
+            ProxySelector.setDefault(HostProxyPolicy)
+            ServerSocket(0).use { server ->
+                server.soTimeout = 3000
+                Socket().use { socket ->
+                    socket.connect(InetSocketAddress("127.0.0.1", server.localPort), 3000)
+                    server.accept().use { accepted ->
+                        socket.getOutputStream().write(42)
+                        accepted.soTimeout = 3000
+                        assertEquals(42, accepted.getInputStream().read())
+                    }
+                }
+            }
+        } finally {
+            ProxySelector.setDefault(previous)
+        }
+    }
+
+    @Test
+    fun globallyInstalledPolicyPreservesSelectedHttpProxyTransport() {
+        val previous = ProxySelector.getDefault()
+        val proxy = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        var requestedUri: String? = null
+        proxy.createContext("/") { exchange ->
+            requestedUri = exchange.requestURI.toString()
+            exchange.sendResponseHeaders(200, -1)
+            exchange.close()
+        }
+        proxy.start()
+        val client =
+            HostProxyPolicy
+                .configureClient(OkHttpClient.Builder())
+                .proxy(Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", proxy.address.port)))
+                .callTimeout(java.time.Duration.ofSeconds(3))
+                .build()
+        try {
+            ProxySelector.setDefault(HostProxyPolicy)
+            client.newCall(Request.Builder().url("http://source.invalid/chapter").build()).execute().use {
+                assertEquals(200, it.code)
+            }
+            assertEquals("http://source.invalid/chapter", requestedUri)
+        } finally {
+            ProxySelector.setDefault(previous)
+            proxy.stop(0)
+            client.connectionPool.evictAll()
+            client.dispatcher.executorService.shutdownNow()
+        }
+    }
+
     @Test
     fun proxyAuthenticationDoesNotLeakAcrossRedirectToDirectOrigin() {
         val origin = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)

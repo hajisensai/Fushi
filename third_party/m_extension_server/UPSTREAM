@@ -67,6 +67,8 @@ overlay/.../HostProxyPolicy.kt and .../network/NetworkHelper.kt:
   JVM HTTP clients resolve the host's authenticated loopback proxy policy per
   URL (FUSHI_MIHON_PROXY_POLICY_PORT; token uses FUSHI_MIHON_TOKEN). The host
   retains auto/manual/direct, local bypass, NO_PROXY and Basic credentials.
+  JVM socket:// selector callbacks connect the already-selected TCP endpoint
+  directly; they must not reapply HTTP policy to the origin or proxy transport.
   NetworkHelper uses HTTP/1.1 with zero idle connections so even an active
   HTTP/2 connection cannot bypass a new proxy selection after settings change.
   Existing calls finish normally; each new call incurs connection/TLS setup.
