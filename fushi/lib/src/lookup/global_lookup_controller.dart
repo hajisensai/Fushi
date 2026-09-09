@@ -947,6 +947,23 @@ class GlobalLookupController {
               capOriginX: capX,
               capOriginY: capY,
             );
+      // BUG-2372 诊断线 —— 「弹窗没锚在被点的词上」这类报告，光看截图量不出
+      // 锚点到卡片的真实偏移。把锚点（逻辑 px）、dpr、真正投给 native 的物理
+      // 坐标、以及 native 回报的工作区/原点一次记全；配合随后的 reveal(box)
+      // 就能把卡片的最终屏幕位置反算到像素，不必再让用户反复截图。
+      glog(
+        'lookup: anchor=${anchorScreenRect == null ? 'null(atCursor)' : '('
+            '${anchorScreenRect.left},${anchorScreenRect.top},'
+            '${anchorScreenRect.width}x${anchorScreenRect.height})'} '
+        'dpr=$dpr appUiScale=${model.appUiScale} '
+        'showAt=(${anchorScreenRect == null ? 'cursor' : '${(anchorScreenRect.left * dpr).round()},'
+            '${((anchorScreenRect.bottom + 4) * dpr).round()}'}) '
+        'cardCss=${overlaySize.width}x${overlaySize.height} '
+        'cap=(${capW}x$capH @$capX,$capY) '
+        'reply=(work=${shown.workWidth}x${shown.workHeight} '
+        'origin=${shown.cursorWorkX},${shown.cursorWorkY} '
+        'monitorDpr=${shown.monitorDpr})',
+      );
       if (!_isCurrentRoute) return false;
       if (!shown.ok) {
         glog('lookup: showAt rejected the current route');

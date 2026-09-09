@@ -224,41 +224,93 @@ void main() {
           reason: '穿透态背景必须无条件清零 alpha');
     });
 
-    // BUG-1853 — 穿透态的碰撞箱是「文字行矩形并集」，不是字形轮廓。
-    // 整窗 alpha 0 + 逐像素命中 = 只有字形像素归我们；口/国/目 的内部、笔画之间、
-    // 字距行距的镂空全透给游戏，点字查词变成看运气。修法是在每行文字的行盒里铺
-    // 一层 kHookTextMinCatchAlpha 的不可见 catch fill：行盒内任何一点都算点在字
-    // 上，行盒外仍是真 alpha 0（「点背景推台词」的不变式不动）。
-    test('穿透态必须在文字行矩形内铺不可见 catch fill（BUG-1853）', () {
-      final String render =
-          functionBody(body, 'void FloatingLyricWindow::Render()');
+    // BUG-1853 / BUG-2371 — 穿透态的碰撞箱是「文字块的外接矩形」，不是字形轮廓，
+    // 也不再是逐行行盒并集。整窗 alpha 0 + 逐像素命中 = 只有窗口像素归我们；逐行铺
+    // 会在块**内部**留下三类 alpha 0 空洞（空行的零宽行盒、多行参差的内凹、行间缝），
+    // 用户明明点在字幕这一块上却被判成背景、点击透给游戏推台词。外接矩形一次消掉
+    // 三类；块**外**（上下留白、居中块两侧整片空白）仍是真 alpha 0，「点背景推台词」
+    // 的不变式不动。
+    test('穿透态必须在文字块外接矩形内铺不可见 catch fill（BUG-1853/2371）', () {
+      final String render = functionBody(
+        body,
+        'void FloatingLyricWindow::Render()',
+      );
       // 判据多了一维 `passthrough_blocks_mouse_`（「穿透时是否仍拦鼠标」可配），
       // 所以锚点只取到那一维之前；后面 `contains` 再确认它确实在同一个条件里。
-      final int catchFill =
-          render.indexOf('if (hook_text_mode_ && pass_through_ &&');
-      expect(catchFill, isNot(-1),
-          reason: '穿透态行矩形 catch fill 的守门条件必须存在，且只在'
-              'hook 台词 + 穿透态下生效（歌词条 / 非穿透态整窗兜底已经可点）');
+      final int catchFill = render.indexOf(
+        'if (hook_text_mode_ && pass_through_ &&',
+      );
+      expect(
+        catchFill,
+        isNot(-1),
+        reason: '穿透态 catch fill 的守门条件必须存在，且只在'
+            'hook 台词 + 穿透态下生效（歌词条 / 非穿透态整窗兜底已经可点）',
+      );
+      // 结构锚，不用固定字符窗口：块尾取下一段「高亮底色」的注释，往里插几行
+      // 合法代码不会让守卫错位。
+      final int blockEnd = render.indexOf(
+        '// Highlight range background.',
+        catchFill,
+      );
+      expect(
+        blockEnd,
+        greaterThan(catchFill),
+        reason: '找不到 catch fill 块的结构尾锚',
+      );
+      final String block = render.substring(catchFill, blockEnd);
       // 行盒必须来自 DirectWrite 自己的排版（HitTestTextRange 全文范围），
       // 不能手算——手算行高会和有注音时 SetLineSpacing 加高后的真实行盒漂移。
-      final String block = render.substring(catchFill, catchFill + 2200);
       expect(
         block.contains('HitTestTextRange(0, static_cast<UINT32>(text_.size())'),
         isTrue,
-        reason: '行矩形必须取自 HitTestTextRange(0, text_.size())，'
-            '即 DirectWrite 排好版的逐行行盒',
+        reason: '行盒必须取自 HitTestTextRange(0, text_.size())，'
+            '即 DirectWrite 排好版的结果',
       );
-      expect(block.contains('kHookTextMinCatchAlpha << 24'), isTrue,
-          reason: 'catch fill 必须用 kHookTextMinCatchAlpha（不可见但可命中），'
-              '不能用可见 alpha——否则穿透态多出一块底色');
-      expect(block.contains('FillRectangle('), isTrue,
-          reason: '行矩形要真的填进 layered 位图，命中判定才会把它算成窗口像素');
+      expect(
+        block.contains('kHookTextMinCatchAlpha << 24'),
+        isTrue,
+        reason: 'catch fill 必须用 kHookTextMinCatchAlpha（不可见但可命中），'
+            '不能用可见 alpha——否则穿透态多出一块底色',
+      );
+      // BUG-2371：必须是**一个**外接矩形，不是逐行填。逐行填 = 把三类内部空洞留着。
+      for (final String token in <String>[
+        'min_left',
+        'min_top',
+        'max_right',
+        'max_bottom',
+      ]) {
+        expect(
+          block.contains(token),
+          isTrue,
+          reason: 'BUG-2371：碰撞箱必须并成外接矩形（缺 $token 说明退回了逐行铺）',
+        );
+      }
+      expect(
+        'FillRectangle('.allMatches(block).length,
+        1,
+        reason: 'BUG-2371：catch fill 只能填一次外接矩形；出现多次 = 又变回逐行铺，'
+            '空行 / 参差内凹的漏点带会回来',
+      );
+      expect(
+        block.contains('D2D1::RectF(min_left, min_top, max_right, max_bottom)'),
+        isTrue,
+        reason: '填的必须就是并出来的外接矩形本身',
+      );
+      // 空行（宽度 0）不能把横向并集拉坏，但必须参与纵向并集——它就是那条漏点带。
+      expect(
+        block.contains('if (m.width <= 0.0f) {'),
+        isTrue,
+        reason: 'BUG-2371：零宽行盒只跳过横向并集，纵向必须照并',
+      );
       // 铺在 PushAxisAlignedClip(text_clip) 之后：滚出视口的行不能吃点击。
       final int clip = render.indexOf('PushAxisAlignedClip(text_clip');
       expect(clip, isNot(-1));
-      expect(clip < catchFill, isTrue,
-          reason: 'catch fill 必须在 text_clip 裁剪之内绘制，'
-              '否则滚出视口的行仍会拦截本该给游戏的点击');
+      expect(
+        clip < catchFill,
+        isTrue,
+        reason: 'catch fill 必须在 text_clip 裁剪之内绘制，'
+            '否则滚出视口的行仍会拦截本该给游戏的点击',
+      );
     });
 
     test('a toolbar that cannot be created cancels pass-through', () {
@@ -321,8 +373,8 @@ void main() {
       expect(body.contains('hook_toolbar::SlotAction(toolbar_profile_, slot)'),
           isTrue,
           reason: 'The body must not keep a private copy of the mapping.');
-      expect(toolbar.contains('hook_toolbar::SlotAction(profile_, slot)'),
-          isTrue);
+      expect(
+          toolbar.contains('hook_toolbar::SlotAction(profile_, slot)'), isTrue);
 
       final String dispatcher = functionBody(body,
           'void FloatingLyricWindow::DispatchControlAction(const std::string& action)');
@@ -348,7 +400,8 @@ void main() {
         // memory (rightmost is always 关闭), so a reorder must be a deliberate
         // edit here and not something a refactor can do quietly.
         expect(found, expected,
-            reason: 'Slot order is the wire contract with the Dart controller.');
+            reason:
+                'Slot order is the wire contract with the Dart controller.');
         // Derived, not a second literal to keep in sync: a table that grows
         // while its count does not is an out-of-bounds read in both windows.
         expect(
@@ -434,11 +487,10 @@ void main() {
           body.contains(
               'hook_toolbar::SlotGlyph(toolbar_profile_, slot, tb_states)'),
           isTrue);
-      expect(
-          body.contains(
-              'hook_toolbar::SlotActive(toolbar_profile_, slot,'),
+      expect(body.contains('hook_toolbar::SlotActive(toolbar_profile_, slot,'),
           isTrue);
-      expect(toolbar.contains('hook_toolbar::SlotGlyph(profile_, slot, states_)'),
+      expect(
+          toolbar.contains('hook_toolbar::SlotGlyph(profile_, slot, states_)'),
           isTrue);
     });
 
@@ -497,8 +549,7 @@ void main() {
       // Tightened from `!(hook_text_mode_ && pass_through_)`: the hook-text
       // overlay now always uses the standalone pill window, click-through or
       // not, so the body paints no buttons at all in that mode.
-      expect(
-          body.contains('const bool draw_body_toolbar = !hook_text_mode_;'),
+      expect(body.contains('const bool draw_body_toolbar = !hook_text_mode_;'),
           isTrue,
           reason: 'Two toolbars drawn at the same spot, one of them dead, is '
               'the UI lie this design exists to remove.');
@@ -526,8 +577,8 @@ void main() {
     setUpAll(() => masked = maskComments(body));
 
     test('MoveBodyTo 是那条原语：钳制 + 顶栏同步都在里面', () {
-      final String moveBody =
-          functionBody(masked, 'void FloatingLyricWindow::MoveBodyTo(int x, int y)');
+      final String moveBody = functionBody(
+          masked, 'void FloatingLyricWindow::MoveBodyTo(int x, int y)');
       expect(moveBody.contains('SyncPassThroughToolbar();'), isTrue,
           reason: '移动正文窗后不同步顶栏，两个窗就会漂开。');
       expect(moveBody.contains('ClampOriginToWorkArea('), isTrue,
