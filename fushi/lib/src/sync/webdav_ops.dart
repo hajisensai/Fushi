@@ -55,10 +55,12 @@ class WebDavOps {
     Duration connectionTimeout = const Duration(seconds: 60),
     String? pinnedFingerprint,
     void Function()? onConnectivityError,
+    SyncAuthFailureKind unauthorizedKind = SyncAuthFailureKind.credentials,
   }) : _baseUrl = baseUrl,
        _connectionTimeout = connectionTimeout,
        _pinnedFingerprint = pinnedFingerprint,
        _onConnectivityError = onConnectivityError,
+       _unauthorizedKind = unauthorizedKind,
        // 用户名和密码都空 = 匿名 / 无鉴权 WebDAV：根本不带 Authorization 头，
        // 而不是发 `Basic base64(':')`（很多匿名服务器仍会因此回 401）。任一凭据
        // 非空时行为完全不变（BUG-1016）。
@@ -81,6 +83,19 @@ class WebDavOps {
   /// 普通 WebDAV，遵循应用出站代理与局域网绕过；非 null = 用 pinned client，仅
   /// 接受指纹相等的自签证书。由数据（URL 是否带指纹）决定，不靠平台分支。
   final String? _pinnedFingerprint;
+
+  /// BUG-2377：本传输层收到 401 时该抛哪一种鉴权失败语义。
+  ///
+  /// [WebDavOps] 是**传输层**，它只知道「服务端说凭据不行」，不知道这份凭据是什么
+  /// 模型——WebDAV 是用户名/密码，互联是配对时对端发的 per-peer token。以前它对
+  /// 两者一律抛默认的 [SyncAuthFailureKind.credentials]，于是互联对端把本机从已配对
+  /// 列表里删掉之后，用户看到的是「登录已过期，请重新登录」——而互联根本没有登录
+  /// 这个操作。凭据语义归**后端拥有者**声明，传输层只转达。
+  ///
+  /// 默认 [SyncAuthFailureKind.credentials] 让 WebDAV / 网络媒体源库等既有调用点
+  /// 行为逐字不变。
+  final SyncAuthFailureKind _unauthorizedKind;
+
   HttpClient? _httpClient;
 
   String get baseUrl => _baseUrl;
@@ -151,7 +166,7 @@ class WebDavOps {
 
       if (response.statusCode == 401) {
         await response.drain<void>();
-        throw SyncAuthError('Authentication failed');
+        throw SyncAuthError('Authentication failed', kind: _unauthorizedKind);
       }
       // BUG-1323：403 是服务端的策略拒绝，用户要看到的是**服务端说了什么**，而不是
       // 「登录已过期，请重新登录」。「测试连接」正是最该把原文摆出来的地方，故这条
@@ -228,7 +243,7 @@ class WebDavOps {
     final response = await closeRequest(request);
 
     if (response.statusCode == 401) {
-      throw SyncAuthError('Authentication failed');
+      throw SyncAuthError('Authentication failed', kind: _unauthorizedKind);
     }
     // BUG-1323：403 带上服务端原文。读响应体放在这条分支里而不是提前统一读——
     // 401 的判定必须先于任何可能抛异常的流读取，否则一个畸形错误体就能把鉴权
@@ -386,7 +401,7 @@ class WebDavOps {
   /// 一行都不用改。
   void checkStatus(int statusCode, String context, {String? serverReason}) {
     if (statusCode == 401) {
-      throw SyncAuthError('Authentication failed');
+      throw SyncAuthError('Authentication failed', kind: _unauthorizedKind);
     }
     // BUG-1323：403 ≠ 401。403 是「凭据已被接受，但服务端按策略拒绝了这一次请求」
     // （host 对明文会话返回 `HTTPS required for service config` 就是有意拒绝，不是

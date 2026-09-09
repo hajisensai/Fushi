@@ -199,6 +199,12 @@ void main() {
         SyncAuthFailureKind.browserTimeout: false,
         // 用户自己在等待对话框里取消（BUG-2120）：连错误都不算，更不该动会话。
         SyncAuthFailureKind.cancelled: false,
+        // 互联对端拒了本机的配对 token（BUG-2377）：互联的 signOut 会清空整份配对
+        // 配置（全部对端地址 + TOFU 指纹 + per-peer token），一台对端的 401 不得
+        // 株连其余对端 —— 这正是 BUG-1550 / BUG-1578 要消灭的行为。
+        SyncAuthFailureKind.pairingRejected: false,
+        // 压根没配对过（BUG-2377）：没有凭据可丢，登出无事可做。
+        SyncAuthFailureKind.pairingNotConfigured: false,
       };
       expect(
         signOutByKind.keys.toSet(),

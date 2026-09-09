@@ -29,13 +29,16 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2193 条。点号进各自文件。
+> 共 2198 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2383](bugs/BUG-2383-vn-m1-completion.md) | ✅ | ✅ | VN专属设置渐显与图片语义仍停在M0 |
+| [BUG-2380](bugs/BUG-2380-ankidroid-create-deck-silent-failure.md) | ✅ | ✅ | AnkiDroid 建牌组/笔记类型失败被吞成成功，一键创建 Lapis 改选用户自己的牌组 |
 | [BUG-2379](bugs/BUG-2379-ci-package-tests-hardcoded-list.md) | ✅ | ✅ | CI 的 Run package tests 循环写死五个包名，新包的测试在 CI 里一次都不会跑 |
 | [BUG-2378](bugs/BUG-2378-nul-guard-scan-roots-hardcoded.md) | ✅ | ✅ | 裸 NUL 守卫的扫描根写死包清单，新包与 packages/*/test 全在扫描面之外 |
+| [BUG-2377](bugs/BUG-2377-interconnect-401-says-login-expired.md) | ✅ | ✅ | 互联对端 401 被误报为「登录已过期，请重新登录」 |
+| [BUG-2376](bugs/BUG-2376-video-exit-refresh-lag.md) | ✅ | ✅ | 从视频退出后库页刷新卡顿 |
 | [BUG-2375](bugs/BUG-2375-asr-unusable-model.md) | ✅ | ✅ | ASR 模型文件损坏后永久卡死：Protobuf parsing failed 且无自愈路径 |
 | [BUG-2374](bugs/BUG-2374-collection-cover-and-rescrape-entries-lost.md) | ✅ | ✅ | 合集丢失设置封面与重新刮削入口 |
 | [BUG-2373](bugs/BUG-2373-android-stylus-idle-loses-hover-pressure-buttons.md) | 🚧 | 🚧 | 安卓平板触控笔闲置1-2分钟后悬停/压力/侧键全失效 |
@@ -47,6 +50,8 @@
 | [BUG-2367](bugs/BUG-2367-subtitle-list-lookup-anchor.md) | ✅ | ✅ | 字幕列表查词：词换行到第二排时被查词弹窗遮住 |
 | [BUG-2366](bugs/BUG-2366-mobile-ffmpeg-no-png-encoder.md) | ✅ | ✅ | 移动端 ffmpeg-kit 无 png 编码器，静图降级链把注定失败记成用户可见错误 |
 | [BUG-2365](bugs/BUG-2365-gal-overlay-body-sinks-under-fullscreen-game.md) | ✅ | ✅ | galgame 全屏后台词浮窗正文窗沉到游戏底下（顶条还在、文字没了） |
+| [BUG-2364](bugs/BUG-2364-vn-mouse-wheel.md) | ✅ | ✅ | VN模式鼠标滚轮被分页器能力门误拦截 |
+| [BUG-2363](bugs/BUG-2363-reader-longpress-stationary-selection.md) | ✅ | ✅ | 小说长按必须额外拖动才进入文本选择 |
 | [BUG-2362](bugs/BUG-2362-ios-exit-affordances.md) | ✅ | ✅ | iOS 多处页面/模态没有出口，进去就得重启 app |
 | [BUG-2361](bugs/BUG-2361-siglus-eightarg-lookup-no-hit.md) | ✅ | ✅ | 八参数Siglus捕获台词后点击正文直接推进且无查词命中 |
 | [BUG-2360](bugs/BUG-2360-siglus-child-delayed-attach.md) | ✅ | ✅ | Siglus启动器子进程绕过延迟附着并抢先LE初始化 |

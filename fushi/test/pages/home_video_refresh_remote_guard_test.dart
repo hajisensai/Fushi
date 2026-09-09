@@ -50,8 +50,10 @@ void main() {
     );
   });
 
-  test('从播放器返回后的刷新是本地 _refresh()（不带 remote）', () {
-    // _open() 返回后刷新继续观看 hero / 进度，只需本地。
+  test('从播放器返回后的刷新不碰远端清单（BUG-2376 后改走窄刷新）', () {
+    // _open() 返回后刷新继续观看 hero / 进度，只需本地。BUG-2376 起这条路径从
+    // 全量 `_refresh()` 收窄为 `_refreshAfterPlayback()`（只重读书架 + 最近观看），
+    // 本守卫钉的是「不重拉远端」这个不变式，不是当年那一行的写法。
     expect(
       src.contains('从播放器返回后刷新'),
       isTrue,
@@ -60,7 +62,7 @@ void main() {
     final int anchor = src.indexOf('从播放器返回后刷新');
     final String tail = src.substring(anchor, anchor + 300);
     expect(
-      tail.contains('if (mounted) _refresh();'),
+      tail.contains('if (mounted) _refreshAfterPlayback();'),
       isTrue,
       reason: '播放器返回只刷本地，不得传 remote: true',
     );
@@ -68,6 +70,16 @@ void main() {
       tail.contains('_refresh(remote: true)'),
       isFalse,
       reason: '播放器返回不得重拉远端清单',
+    );
+    // 窄刷新自身也不得碰远端 future——远端清单不因本地播放而变。
+    final int narrow = src.indexOf('void _refreshAfterPlayback() {');
+    expect(narrow, isNonNegative, reason: '找不到 _refreshAfterPlayback');
+    final int narrowEnd = src.indexOf('\n  }\n', narrow);
+    final String narrowBody = src.substring(narrow, narrowEnd);
+    expect(
+      narrowBody.contains('_remoteFuture'),
+      isFalse,
+      reason: '窄刷新不得重换远端 future（回归即恢复 BUG-894 的闪空重拉）',
     );
   });
 

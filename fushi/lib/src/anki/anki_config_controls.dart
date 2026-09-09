@@ -142,32 +142,7 @@ class _AnkiCreateLapisRowState extends State<AnkiCreateLapisRow> {
       _setBusy(false);
     }
     if (!mounted) return;
-    final String message;
-    switch (result.outcome) {
-      case LapisSetupOutcome.created:
-        message = t.anki_create_lapis_success;
-      case LapisSetupOutcome.alreadyExisted:
-        message = t.anki_create_lapis_exists;
-      case LapisSetupOutcome.failed:
-        message = t.anki_create_lapis_failed(error: result.message ?? '');
-    }
-    // BUG-2098：权限被永久拒绝时系统不再弹授权框，光给一句提示等于把用户堵死；
-    // 唯一出路是应用设置页里的权限项，所以直接把它做成 snackbar 上的一个按钮。
-    final bool needsSettings =
-        result.code == AnkiErrorCode.permissionPermanentlyDenied;
-    messenger.showSnackBar(SnackBar(
-      content: Text(message),
-      duration: needsSettings
-          ? const Duration(seconds: 10)
-          : const Duration(seconds: 4),
-      action: needsSettings
-          ? SnackBarAction(
-              label: t.anki_action_open_settings,
-              onPressed: () =>
-                  unawaited(AnkiRepository.openPermissionSettings()),
-            )
-          : null,
-    ));
+    showLapisSetupResult(messenger, result);
   }
 
   @override
@@ -187,4 +162,91 @@ class _AnkiCreateLapisRowState extends State<AnkiCreateLapisRow> {
       onTap: widget.isFetching || _busy ? null : () => unawaited(_run()),
     );
   }
+}
+
+/// 「创建并选用 Lapis」的结果 snackbar —— **单一实现**。
+///
+/// 设置页 / 引导页的那一行按钮，和 [promptCreateLapisIfCannotMine] 弹窗里的确认，
+/// 走的是同一个 [AnkiViewModel.createLapisSetup]，结果的呈现也必须是同一份：
+/// 复制一份就等于日后 outcome 增删时要改两处。
+void showLapisSetupResult(
+  ScaffoldMessengerState messenger,
+  LapisSetupResult result,
+) {
+  final String message;
+  switch (result.outcome) {
+    case LapisSetupOutcome.created:
+      message = t.anki_create_lapis_success;
+    case LapisSetupOutcome.alreadyExisted:
+      message = t.anki_create_lapis_exists;
+    case LapisSetupOutcome.failed:
+      message = t.anki_create_lapis_failed(error: result.message ?? '');
+  }
+  // BUG-2098：权限被永久拒绝时系统不再弹授权框，光给一句提示等于把用户堵死；
+  // 唯一出路是应用设置页里的权限项，所以直接把它做成 snackbar 上的一个按钮。
+  final bool needsSettings =
+      result.code == AnkiErrorCode.permissionPermanentlyDenied;
+  messenger.showSnackBar(SnackBar(
+    content: Text(message),
+    duration: needsSettings
+        ? const Duration(seconds: 10)
+        : const Duration(seconds: 4),
+    action: needsSettings
+        ? SnackBarAction(
+            label: t.anki_action_open_settings,
+            onPressed: () => unawaited(AnkiRepository.openPermissionSettings()),
+          )
+        : null,
+  ));
+}
+
+/// BUG-2380：当前 Anki 配置**制不出卡**时，劝用户建并选用 Lapis 的弹窗——
+/// 同样是**单一实现**，新手引导点「下一步」与设置页/引导页连接 Anki 之后各调一次。
+///
+/// 判据是 [AnkiSettings.canMineCards]（首字段有没有接模板、选中的牌组还在不在），
+/// **不是**「有没有 Lapis」：用户自己配好的笔记类型照样能制卡，拿 Lapis 当唯一合格
+/// 线会把这些人也弹一遍窗。用户报的原始故障正是反面——配置其实是坏的（牌组被静默
+/// 换成了用户自己的『日语』），却一路无声，直到制卡时才炸。
+///
+/// 清单为空时**不弹**：那是「还没连上 Anki / 这次没拉到东西」，不是配置有问题，
+/// 此时劝人建牌组只是噪音。
+///
+/// 返回 true = 用户选择了创建且真的建成了（调用方据此决定要不要继续往下走）。
+Future<bool> promptCreateLapisIfCannotMine({
+  required BuildContext context,
+  required AnkiViewModel viewModel,
+}) async {
+  final AnkiSettings settings = viewModel.settings;
+  if (settings.availableDecks.isEmpty || settings.availableNoteTypes.isEmpty) {
+    return false;
+  }
+  if (settings.canMineCards) return false;
+
+  final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+  final bool confirmed = await showAppDialog<bool>(
+        context: context,
+        builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+          title: Text(t.anki_lapis_suggest_title),
+          content: Text(t.anki_lapis_suggest_body),
+          actions: <Widget>[
+            adaptiveDialogAction(
+              context: dialogContext,
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: Text(t.anki_lapis_suggest_dismiss),
+            ),
+            adaptiveDialogAction(
+              context: dialogContext,
+              isDefaultAction: true,
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: Text(t.anki_create_lapis),
+            ),
+          ],
+        ),
+      ) ??
+      false;
+  if (!confirmed) return false;
+
+  final LapisSetupResult result = await viewModel.createLapisSetup();
+  showLapisSetupResult(messenger, result);
+  return result.outcome != LapisSetupOutcome.failed;
 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -748,8 +749,17 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       // 任一在途动作（刷新或 Lapis 创建）期间都不可重入。
       onTap: uiState.isFetching || _creatingLapis
           ? null
-          : () => vm.fetchConfiguration(),
+          : () => unawaited(_refreshAndCheckMining(vm)),
     );
+  }
+
+  /// BUG-2380：刷新（= 连接 Anki）之后当场判一次「这套配置真能制出卡吗」，判不过
+  /// 就地劝建并选用 Lapis —— 与新手引导「测试连接」是同一个判据、同一个弹窗
+  /// （[promptCreateLapisIfCannotMine]），两处不许各写一套。
+  Future<void> _refreshAndCheckMining(AnkiViewModel vm) async {
+    await vm.fetchConfiguration();
+    if (!mounted) return;
+    await promptCreateLapisIfCannotMine(context: context, viewModel: vm);
   }
 
   /// AnkiConnect 的 API key 编辑入口。
