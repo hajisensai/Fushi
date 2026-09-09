@@ -77,37 +77,36 @@ void main() {
   });
 
   test('title prefix ranks before title-contains, then metadata matches', () {
-    final List<String> ids = filterSettingsEntries(corpus, '字号')
-        .map((SettingsSearchEntry e) => e.item.id)
-        .toList();
+    final List<String> ids = filterSettingsEntries(
+      corpus,
+      '字号',
+    ).map((SettingsSearchEntry e) => e.item.id).toList();
     // 「字号」标题前缀命中排最前；「词典字号」标题包含其次；副标题/分区不含
     // 「字号」的不出现。
     expect(ids, <String>['reading.font_size', 'lookup.font']);
   });
 
   test('matches section title and destination title as metadata', () {
-    final List<String> ids = filterSettingsEntries(corpus, '弹窗')
-        .map((SettingsSearchEntry e) => e.item.id)
-        .toList();
+    final List<String> ids = filterSettingsEntries(
+      corpus,
+      '弹窗',
+    ).map((SettingsSearchEntry e) => e.item.id).toList();
     // 标题命中（弹窗最大宽度）排最前；副标题/分区命中（词典字号）随后。
     expect(ids, <String>['lookup.popup_max_width', 'lookup.font']);
   });
 
   test('query is case-insensitive for latin text', () {
-    final List<String> ids = filterSettingsEntries(corpus, 'update')
-        .map((SettingsSearchEntry e) => e.item.id)
-        .toList();
+    final List<String> ids = filterSettingsEntries(
+      corpus,
+      'update',
+    ).map((SettingsSearchEntry e) => e.item.id).toList();
     expect(ids, <String>['system.channel']);
   });
 
   test('maxResults caps the list', () {
     final List<SettingsSearchEntry> many = List<SettingsSearchEntry>.generate(
       60,
-      (int i) => entry(
-        destTitle: 'D',
-        id: 'x.$i',
-        title: 'same title $i',
-      ),
+      (int i) => entry(destTitle: 'D', id: 'x.$i', title: 'same title $i'),
     );
     expect(filterSettingsEntries(many, 'same title'), hasLength(50));
   });
@@ -136,13 +135,17 @@ void main() {
       ),
     ];
     expect(
-      filterSettingsEntries(entries, '代理')
-          .map((SettingsSearchEntry e) => e.item.id),
+      filterSettingsEntries(
+        entries,
+        '代理',
+      ).map((SettingsSearchEntry e) => e.item.id),
       <String>['lookup.proxy'],
     );
     expect(
-      filterSettingsEntries(entries, '防抖')
-          .map((SettingsSearchEntry e) => e.item.id),
+      filterSettingsEntries(
+        entries,
+        '防抖',
+      ).map((SettingsSearchEntry e) => e.item.id),
       <String>['lookup.debounce'],
     );
   });
@@ -165,80 +168,84 @@ void main() {
       SettingsSearchEntry(destination: dest('外观'), item: optedIn),
     ];
     final List<SettingsSearchEntry> hits = filterSettingsEntries(entries, '主题');
-    expect(hits.map((SettingsSearchEntry e) => e.item.id),
-        <String>['appearance.theme_picker']);
+    expect(hits.map((SettingsSearchEntry e) => e.item.id), <String>[
+      'appearance.theme_picker',
+    ]);
     // 打分/展示用的 entry.title 与 searchTitle 同源（结果行不显示空标题）。
     expect(hits.single.title, '主题');
   });
 
   testWidgets(
-      'flattenVisibleSettings indexes titled new kinds and opted-in custom '
-      'rows, skips untitled custom rows', (WidgetTester tester) async {
-    late SettingsContext sctx;
-    await tester.pumpWidget(
-      ProviderScope(
-        child: MaterialApp(
-          home: Consumer(
-            builder: (BuildContext context, WidgetRef ref, _) {
-              sctx = SettingsContext(
-                context: context,
-                appModel: _SearchTestAppModel(),
-                ref: ref,
-                readerSource: ReaderFushiSource.instance,
-                refresh: () {},
-              );
-              return const SizedBox.shrink();
-            },
+    'flattenVisibleSettings indexes titled new kinds and opted-in custom '
+    'rows, skips untitled custom rows',
+    (WidgetTester tester) async {
+      late SettingsContext sctx;
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: Consumer(
+              builder: (BuildContext context, WidgetRef ref, _) {
+                sctx = SettingsContext(
+                  context: context,
+                  appModel: _SearchTestAppModel(),
+                  ref: ref,
+                  readerSource: ReaderFushiSource.instance,
+                  refresh: () {},
+                );
+                return const SizedBox.shrink();
+              },
+            ),
           ),
         ),
-      ),
-    );
+      );
 
-    final List<SettingsDestination> destinations = <SettingsDestination>[
-      SettingsDestination(
-        id: SettingsDestinationId.lookup,
-        title: '查词',
-        icon: Icons.search,
-        sections: <SettingsSection>[
-          SettingsSection(
-            title: '服务',
-            items: <SettingsItem>[
-              SettingsTextItem(
-                id: 'lookup.proxy',
-                title: '更新代理地址',
-                value: (_) => '',
-                onChanged: (_, __) {},
-              ),
-              SettingsNumberItem(
-                id: 'lookup.debounce',
-                title: '搜索防抖延迟',
-                value: (_) => 0,
-                onChanged: (_, __) {},
-              ),
-              SettingsCustomItem(
-                id: 'lookup.theme_picker',
-                searchTitle: '主题',
-                builder: (_) => const SizedBox.shrink(),
-              ),
-              SettingsCustomItem(
-                id: 'lookup.untitled_custom',
-                builder: (_) => const SizedBox.shrink(),
-              ),
-            ],
-          ),
-        ],
-      ),
-    ];
+      final List<SettingsDestination> destinations = <SettingsDestination>[
+        SettingsDestination(
+          id: SettingsDestinationId.lookup,
+          title: '查词',
+          icon: Icons.search,
+          sections: <SettingsSection>[
+            SettingsSection(
+              title: '服务',
+              items: <SettingsItem>[
+                SettingsTextItem(
+                  id: 'lookup.proxy',
+                  title: '更新代理地址',
+                  value: (_) => '',
+                  onChanged: (_, __) {},
+                ),
+                SettingsNumberItem(
+                  id: 'lookup.debounce',
+                  title: '搜索防抖延迟',
+                  value: (_) => 0,
+                  onChanged: (_, __) {},
+                ),
+                SettingsCustomItem(
+                  id: 'lookup.theme_picker',
+                  searchTitle: '主题',
+                  builder: (_) => const SizedBox.shrink(),
+                ),
+                SettingsCustomItem(
+                  id: 'lookup.untitled_custom',
+                  builder: (_) => const SizedBox.shrink(),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ];
 
-    final List<String> ids = flattenVisibleSettings(destinations, sctx)
-        .map((SettingsSearchEntry e) => e.item.id)
-        .toList();
-    expect(ids, <String>[
-      'lookup.proxy',
-      'lookup.debounce',
-      'lookup.theme_picker',
-    ]);
-  });
+      final List<String> ids = flattenVisibleSettings(
+        destinations,
+        sctx,
+      ).map((SettingsSearchEntry e) => e.item.id).toList();
+      expect(ids, <String>[
+        'lookup.proxy',
+        'lookup.debounce',
+        'lookup.theme_picker',
+      ]);
+    },
+  );
 
   test('appearance theme and language selectors are now searchable (阶段C)', () {
     // 主题/语言等是 SettingsCustomItem（自绘行），阶段 C 给它们补 searchTitle
@@ -260,41 +267,67 @@ void main() {
     ];
     // 用各自的 searchTitle 精确检索都能命中（与本机 locale 无关）。
     expect(
-      filterSettingsEntries(entries, settingsItemSearchTitle(theme))
-          .map((SettingsSearchEntry e) => e.item.id),
+      filterSettingsEntries(
+        entries,
+        settingsItemSearchTitle(theme),
+      ).map((SettingsSearchEntry e) => e.item.id),
       contains('appearance.theme'),
     );
     expect(
-      filterSettingsEntries(entries, settingsItemSearchTitle(language))
-          .map((SettingsSearchEntry e) => e.item.id),
+      filterSettingsEntries(
+        entries,
+        settingsItemSearchTitle(language),
+      ).map((SettingsSearchEntry e) => e.item.id),
       contains('appearance.language'),
     );
   });
 
   test('home page wires search field, results and reveal hook', () {
-    final String home =
-        File('lib/src/settings/settings_home_page.dart').readAsStringSync();
+    final String home = File(
+      'lib/src/settings/settings_home_page.dart',
+    ).readAsStringSync();
     expect(home, contains('t.settings_search_hint'));
     expect(home, contains('filterSettingsEntries('));
     expect(home, contains('flattenVisibleSettings('));
     expect(home, contains('SettingsSearchReveal.pendingItemId'));
     // 宽屏选中分类、窄屏 push 详情两条路径都要接。
     expect(
-        home, contains('SettingsDetailPage(destination: entry.destination)'));
+      home,
+      contains('SettingsDetailPage(destination: entry.destination)'),
+    );
   });
 
-  test('schema item consumes the reveal hook exactly once', () {
-    final String widgets = File('lib/src/settings/settings_schema_widgets.dart')
-        .readAsStringSync();
-    expect(widgets,
-        contains('if (SettingsSearchReveal.pendingItemId == item.id)'));
-    expect(widgets, contains('SettingsSearchReveal.pendingItemId = null'));
-    expect(widgets, contains('SettingsRevealTarget(child: row)'));
+  testWidgets('schema and body targets consume each search request once', (
+    WidgetTester tester,
+  ) async {
+    Widget page() => const MaterialApp(
+      home: Scaffold(
+        body: SingleChildScrollView(
+          child: SettingsSearchTarget(id: 'target', child: Text('Target')),
+        ),
+      ),
+    );
+    SettingsSearchReveal.pendingItemId = 'target';
+    await tester.pumpWidget(page());
+    expect(SettingsSearchReveal.pendingItemId, isNull);
+    expect(find.byType(SettingsRevealTarget), findsOneWidget);
+    final Widget first = tester.widget(find.byType(SettingsRevealTarget));
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox.shrink());
+    SettingsSearchReveal.pendingItemId = 'target';
+    await tester.pumpWidget(page());
+    expect(SettingsSearchReveal.pendingItemId, isNull);
+    expect(
+      tester.widget(find.byType(SettingsRevealTarget)).key,
+      isNot(first.key),
+    );
+    await tester.pumpAndSettle();
   });
 
   test('reveal target scrolls into view after the first frame', () {
-    final String search =
-        File('lib/src/settings/settings_search.dart').readAsStringSync();
+    final String search = File(
+      'lib/src/settings/settings_search.dart',
+    ).readAsStringSync();
     // 滚动必须委托 FushiFocusScroll（焦点架构守卫禁止 lib/src 自持
     // Scrollable.ensureVisible，见 focus_architecture_static_test）。
     expect(search, contains('FushiFocusScroll.ensureVisible('));
@@ -321,16 +354,20 @@ void main() {
         subtitle: '按全局快捷键查词时读取前台应用选区前后的句子（桌面）',
       ),
     ];
-    final List<String> ids = filterSettingsEntries(entries, '快捷键')
-        .map((SettingsSearchEntry e) => e.item.id)
-        .toList();
-    expect(ids,
-        <String>['system.keyboard_shortcuts', 'lookup.global_context_capture']);
+    final List<String> ids = filterSettingsEntries(
+      entries,
+      '快捷键',
+    ).map((SettingsSearchEntry e) => e.item.id).toList();
+    expect(ids, <String>[
+      'system.keyboard_shortcuts',
+      'lookup.global_context_capture',
+    ]);
   });
 
   test('阶段F：zh-CN 设置文案已把「热键」统一为「快捷键」', () {
-    final String zh =
-        File('lib/i18n/strings_zh-CN.i18n.json').readAsStringSync();
+    final String zh = File(
+      'lib/i18n/strings_zh-CN.i18n.json',
+    ).readAsStringSync();
     // 旧「热键」全部改掉，zh-CN 不得残留。
     expect(zh, isNot(contains('热键')));
   });

@@ -26,10 +26,7 @@ class SettingsSectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: padding ?? const EdgeInsets.only(top: 16, bottom: 4),
-      child: Text(
-        text,
-        style: FushiDesignTokens.of(context).type.sectionLabel,
-      ),
+      child: Text(text, style: FushiDesignTokens.of(context).type.sectionLabel),
     );
   }
 }
@@ -77,7 +74,8 @@ class AdaptiveSettingsScaffold extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool cupertino = isCupertinoPlatform(context);
     final EdgeInsets mediaPadding = MediaQuery.of(context).padding;
-    final EdgeInsetsGeometry listPadding = padding ??
+    final EdgeInsetsGeometry listPadding =
+        padding ??
         EdgeInsets.fromLTRB(
           cupertino ? 12 : 16,
           cupertino ? 10 : 8,
@@ -100,9 +98,7 @@ class AdaptiveSettingsScaffold extends StatelessWidget {
             ),
             SliverPadding(
               padding: listPadding,
-              sliver: SliverList(
-                delegate: SliverChildListDelegate(children),
-              ),
+              sliver: SliverList(delegate: SliverChildListDelegate(children)),
             ),
           ],
         ),
@@ -112,10 +108,7 @@ class AdaptiveSettingsScaffold extends StatelessWidget {
     return FushiToolScaffold.customTitle(
       title: title,
       actions: actions ?? const <Widget>[],
-      body: ListView(
-        padding: listPadding,
-        children: children,
-      ),
+      body: ListView(padding: listPadding, children: children),
     );
   }
 }
@@ -155,10 +148,7 @@ class AdaptiveSettingsSurface extends StatelessWidget {
       children: <Widget>[
         if (title != null && title!.isNotEmpty)
           _buildContainedTitle(context, tokens, cupertino),
-        Padding(
-          padding: contentPadding,
-          child: child,
-        ),
+        Padding(padding: contentPadding, child: child),
       ],
     );
 
@@ -167,8 +157,9 @@ class AdaptiveSettingsSurface extends StatelessWidget {
         borderRadius: tokens.radii.groupRadius,
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: CupertinoColors.secondarySystemGroupedBackground
-                .resolveFrom(context),
+            color: CupertinoColors.secondarySystemGroupedBackground.resolveFrom(
+              context,
+            ),
             borderRadius: tokens.radii.groupRadius,
           ),
           child: content,
@@ -226,8 +217,9 @@ class AdaptiveSettingsSurface extends StatelessWidget {
         Expanded(child: label),
         if (titleTrailing != null)
           Padding(
-            padding:
-                EdgeInsets.only(right: cupertino ? 12 : tokens.spacing.gap),
+            padding: EdgeInsets.only(
+              right: cupertino ? 12 : tokens.spacing.gap,
+            ),
             child: titleTrailing!,
           ),
       ],
@@ -266,6 +258,9 @@ class AdaptiveSettingsSection extends StatefulWidget {
     this.surfaceColor,
     this.collapsible = false,
     this.initiallyExpanded = true,
+    this.expanded,
+    this.onExpansionChanged,
+    this.summary,
   });
 
   final String? title;
@@ -281,6 +276,11 @@ class AdaptiveSettingsSection extends StatefulWidget {
   /// 折叠 section 的初始展开态；仅 [collapsible] 为 true 时有意义。搜索命中折叠
   /// section 内的项时由上层传 true 强制展开定位。
   final bool initiallyExpanded;
+
+  /// Optional controlled state. Only explicit user toggles call the callback.
+  final bool? expanded;
+  final ValueChanged<bool>? onExpansionChanged;
+  final String? summary;
 
   @override
   State<AdaptiveSettingsSection> createState() =>
@@ -310,9 +310,11 @@ class _AdaptiveSettingsSectionState extends State<AdaptiveSettingsSection> {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool titleInside =
         widget.titlePlacement == SettingsSectionTitlePlacement.inside;
-    final bool collapsible = widget.collapsible &&
+    final bool collapsible =
+        widget.collapsible &&
         titleInside &&
         (widget.title?.isNotEmpty ?? false);
+    final bool expanded = widget.expanded ?? _expanded;
     final List<Widget> rows = _withDividers(context, widget.children);
     final Widget rowsColumn = Column(
       mainAxisSize: MainAxisSize.min,
@@ -324,30 +326,53 @@ class _AdaptiveSettingsSectionState extends State<AdaptiveSettingsSection> {
       group = AdaptiveSettingsSurface(
         title: widget.title,
         color: widget.surfaceColor,
-        onTitleTap: () => setState(() => _expanded = !_expanded),
-        titleTrailing: AnimatedRotation(
-          turns: _expanded ? 0.5 : 0.0,
-          // eink 下动画归零（连续重绘=残影），箭头直接跳到目标朝向。
-          duration:
-              einkSafeDuration(context, const Duration(milliseconds: 180)),
-          child: Icon(
-            cupertino ? CupertinoIcons.chevron_down : Icons.expand_more,
-            size: cupertino ? 16 : 22,
-            color: cupertino
-                ? CupertinoColors.tertiaryLabel.resolveFrom(context)
-                : Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
+        onTitleTap: () {
+          final bool next = !expanded;
+          setState(() => _expanded = next);
+          widget.onExpansionChanged?.call(next);
+        },
+        titleTrailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            if (widget.summary?.isNotEmpty ?? false)
+              Flexible(
+                child: Text(
+                  widget.summary!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: tokens.type.metadata,
+                ),
+              ),
+            AnimatedRotation(
+              turns: expanded ? 0.5 : 0.0,
+              // eink 下动画归零（连续重绘=残影），箭头直接跳到目标朝向。
+              duration: einkSafeDuration(
+                context,
+                const Duration(milliseconds: 180),
+              ),
+              child: Icon(
+                cupertino ? CupertinoIcons.chevron_down : Icons.expand_more,
+                size: cupertino ? 16 : 22,
+                color: cupertino
+                    ? CupertinoColors.tertiaryLabel.resolveFrom(context)
+                    : Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
         ),
         // 收起时行不入树（不可聚焦、不参与焦点驱动），只保留标题头；用 AnimatedSize
         // 平滑高度过渡，ClipRect 防过渡帧溢出。eink 下高度过渡同样归零。
         child: ClipRect(
           child: AnimatedSize(
-            duration:
-                einkSafeDuration(context, const Duration(milliseconds: 180)),
+            duration: einkSafeDuration(
+              context,
+              const Duration(milliseconds: 180),
+            ),
             curve: Curves.easeInOut,
             alignment: Alignment.topCenter,
-            child:
-                _expanded ? rowsColumn : const SizedBox(width: double.infinity),
+            child: expanded
+                ? rowsColumn
+                : const SizedBox(width: double.infinity),
           ),
         ),
       );
@@ -371,8 +396,9 @@ class _AdaptiveSettingsSectionState extends State<AdaptiveSettingsSection> {
                     child: Text(
                       widget.title!.toUpperCase(),
                       style: tokens.type.metadata.copyWith(
-                        color:
-                            CupertinoColors.secondaryLabel.resolveFrom(context),
+                        color: CupertinoColors.secondaryLabel.resolveFrom(
+                          context,
+                        ),
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -396,13 +422,15 @@ class _AdaptiveSettingsSectionState extends State<AdaptiveSettingsSection> {
     final List<Widget> result = <Widget>[];
     for (int i = 0; i < rows.length; i++) {
       if (i > 0) {
-        result.add(Divider(
-          height: 1,
-          thickness: 0.5,
-          indent: cupertino ? 16 : tokens.spacing.rowHorizontal,
-          endIndent: cupertino ? 0 : tokens.spacing.rowHorizontal,
-          color: dividerColor,
-        ));
+        result.add(
+          Divider(
+            height: 1,
+            thickness: 0.5,
+            indent: cupertino ? 16 : tokens.spacing.rowHorizontal,
+            endIndent: cupertino ? 0 : tokens.spacing.rowHorizontal,
+            color: dividerColor,
+          ),
+        );
       }
       result.add(rows[i]);
     }
@@ -519,15 +547,18 @@ class AdaptiveSettingsRow extends StatelessWidget {
         // trailing 与 `Expanded` 标题按 flex 五五分整行宽，360dp 上标题只剩 ~130px，
         // 于是标题被压成两行省略号、控件也缩进一条窄滚动条——两边都读不了。窄到放不下
         // 时同样该让出整行给标题、控件独占下一行，与非 flex trailing 完全同一条规则。
-        final bool stackControls = controlBelow ||
+        final bool stackControls =
+            controlBelow ||
             (trailing != null &&
                 constraints.maxWidth < stackThreshold + iconExtra);
         return Padding(
           padding: EdgeInsets.symmetric(
-            horizontal: horizontalPadding ??
+            horizontal:
+                horizontalPadding ??
                 (cupertino ? 16 : tokens.spacing.rowHorizontal),
-            vertical:
-                stackControls ? tokens.spacing.rowVertical : tokens.spacing.gap,
+            vertical: stackControls
+                ? tokens.spacing.rowVertical
+                : tokens.spacing.gap,
           ),
           child: stackControls
               ? _buildColumnLayout(context)
@@ -572,10 +603,7 @@ class AdaptiveSettingsRow extends StatelessWidget {
       focusEnabled: hasFocusRoot,
       child: ExcludeFocus(
         excluding: hasFocusRoot,
-        child: InkWell(
-          onTap: onTap,
-          child: content,
-        ),
+        child: InkWell(onTap: onTap, child: content),
       ),
     );
   }
@@ -584,8 +612,9 @@ class AdaptiveSettingsRow extends StatelessWidget {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return ConstrainedBox(
       constraints: BoxConstraints(
-        minHeight:
-            isCupertinoPlatform(context) ? 46 : tokens.density.controlHeight,
+        minHeight: isCupertinoPlatform(context)
+            ? 46
+            : tokens.density.controlHeight,
       ),
       child: Row(
         children: [
@@ -828,10 +857,7 @@ class AdaptiveSettingsSwitchActionRow extends StatelessWidget {
             switchControl,
           ],
         ),
-        if (panel != null) ...[
-          const SizedBox(height: 8),
-          panel!,
-        ],
+        if (panel != null) ...[const SizedBox(height: 8), panel!],
       ],
     );
   }
@@ -839,10 +865,12 @@ class AdaptiveSettingsSwitchActionRow extends StatelessWidget {
   List<Widget> _spacedActions() {
     final List<Widget> spaced = <Widget>[];
     for (int i = 0; i < actions.length; i++) {
-      spaced.add(Padding(
-        padding: EdgeInsets.only(left: i == 0 ? 0 : 4),
-        child: actions[i],
-      ));
+      spaced.add(
+        Padding(
+          padding: EdgeInsets.only(left: i == 0 ? 0 : 4),
+          child: actions[i],
+        ),
+      );
     }
     return spaced;
   }
@@ -895,7 +923,8 @@ double estimateSectionTabBarWidth(
   final double textScaleFactor = MediaQuery.textScalerOf(context).scale(1);
   double total = 0.0;
   for (final String label in labels) {
-    total += estimateLabelAdvanceWidth(
+    total +=
+        estimateLabelAdvanceWidth(
           label: label,
           fontSize: fontSize,
           textScaleFactor: textScaleFactor,
@@ -919,7 +948,8 @@ double estimateLabelAdvanceWidth({
   final double scaledFont = fontSize * textScaleFactor;
   double width = 0.0;
   for (final int rune in label.runes) {
-    width += scaledFont *
+    width +=
+        scaledFont *
         (rune >= 0x1100
             ? _kSegmentWideGlyphWidthFactor
             : _kSegmentNarrowGlyphWidthFactor);
@@ -1032,8 +1062,9 @@ class AdaptiveSettingsSegmentedRow<T extends Object> extends StatelessWidget {
     // carries no FushiFocusTarget (its
     // AdaptiveSettingsRow has no onTap), so it is invisible to directional
     // navigation — the cursor skips the whole layout section.
-    final int currentIndex =
-        segments.indexWhere((ButtonSegment<T> s) => s.value == selected);
+    final int currentIndex = segments.indexWhere(
+      (ButtonSegment<T> s) => s.value == selected,
+    );
     void selectAt(int index) {
       if (segments.isEmpty) return;
       final int clamped = index.clamp(0, segments.length - 1);
@@ -1043,11 +1074,12 @@ class AdaptiveSettingsSegmentedRow<T extends Object> extends StatelessWidget {
 
     // Extract each segment's label text (null for icon-only segments) so the
     // pure-function width estimate can decide whether the strip fits full-width.
-    final List<String?> segmentLabels =
-        segments.map<String?>((ButtonSegment<T> s) {
-      final Widget? label = s.label;
-      return label is Text ? label.data : null;
-    }).toList(growable: false);
+    final List<String?> segmentLabels = segments
+        .map<String?>((ButtonSegment<T> s) {
+          final Widget? label = s.label;
+          return label is Text ? label.data : null;
+        })
+        .toList(growable: false);
 
     final Widget strip = adaptiveSegmentedButton<T>(
       context: context,
@@ -1210,11 +1242,12 @@ class FushiSegmentedStrip<T extends Object> extends StatelessWidget {
     final double fontSize = tokens.type.controlLabel.fontSize ?? 14.0;
     final double textScale = MediaQuery.textScalerOf(context).scale(1);
     // 与 [_SegmentedStripHost] 同一份估算：只取 Text 段的文案，图标段按固定宽计。
-    final List<String?> segmentLabels =
-        segments.map<String?>((ButtonSegment<T> s) {
-      final Widget? label = s.label;
-      return label is Text ? label.data : null;
-    }).toList(growable: false);
+    final List<String?> segmentLabels = segments
+        .map<String?>((ButtonSegment<T> s) {
+          final Widget? label = s.label;
+          return label is Text ? label.data : null;
+        })
+        .toList(growable: false);
 
     final Widget strip = adaptiveSegmentedButton<T>(
       context: context,
@@ -1241,10 +1274,12 @@ class FushiSegmentedStrip<T extends Object> extends StatelessWidget {
       textScaleFactor: textScale,
       minSegmentWidth: minSegmentWidth ?? 0.0,
     );
-    FushiHeaderCrampScope.maybeOf(context)
-        ?.reportTitleNaturalWidth(preferredWidth);
-    final int selectedIndex =
-        segments.indexWhere((ButtonSegment<T> s) => s.value == selected);
+    FushiHeaderCrampScope.maybeOf(
+      context,
+    )?.reportTitleNaturalWidth(preferredWidth);
+    final int selectedIndex = segments.indexWhere(
+      (ButtonSegment<T> s) => s.value == selected,
+    );
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -1260,8 +1295,8 @@ class FushiSegmentedStrip<T extends Object> extends StatelessWidget {
         // strip's geometry is stable across hosts and window widths.
         final double? target =
             !available.isFinite || preferredWidth <= available
-                ? preferredWidth
-                : (naturalWidth <= available ? naturalWidth : null);
+            ? preferredWidth
+            : (naturalWidth <= available ? naturalWidth : null);
         if (target != null) {
           return Align(
             alignment: alignment,
@@ -1345,10 +1380,10 @@ class _SegmentedStripScrollerState extends State<_SegmentedStripScroller> {
   /// the offset estimate uses the uniform per-cell width too; estimation error
   /// is absorbed by [_kRevealMargin].
   double get _cellWidth => segmentedStripCellWidth(
-        segmentLabels: widget.segmentLabels,
-        fontSize: widget.fontSize,
-        textScaleFactor: widget.textScale,
-      );
+    segmentLabels: widget.segmentLabels,
+    fontSize: widget.fontSize,
+    textScaleFactor: widget.textScale,
+  );
 
   void _ensureSelectedVisible({required bool animate}) {
     if (!mounted || !_controller.hasClients) return;
@@ -1590,11 +1625,7 @@ class AdaptiveSettingsPickerRow<T> extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 6),
-        Icon(
-          CupertinoIcons.chevron_down,
-          size: 16,
-          color: chevronColor,
-        ),
+        Icon(CupertinoIcons.chevron_down, size: 16, color: chevronColor),
       ],
     );
   }
@@ -1689,8 +1720,9 @@ class _AdaptiveSettingsTextFieldState extends State<AdaptiveSettingsTextField> {
   // sit ABOVE the field, so Down jumps up (BUG-048). [FushiTextField] only
   // registers when given a focusId, so we always supply one. The id is owned by
   // the State (stable across rebuilds), mirroring [_SettingsRowFocusTarget].
-  late final FushiFocusId _fallbackFocusId =
-      FushiFocusId('settings-textfield-${identityHashCode(this)}');
+  late final FushiFocusId _fallbackFocusId = FushiFocusId(
+    'settings-textfield-${identityHashCode(this)}',
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -1739,8 +1771,10 @@ class SettingsFormField extends StatelessWidget {
     this.obscureText = false,
     this.keyboardType,
     this.bottomSpacing = 8,
-  }) : assert(initialValue == null || controller == null,
-            'initialValue 与 controller 二选一');
+  }) : assert(
+         initialValue == null || controller == null,
+         'initialValue 与 controller 二选一',
+       );
 
   /// 浮动标签（`InputDecoration.labelText`）。
   final String label;
@@ -1890,21 +1924,26 @@ class _GamepadAdjustableValue extends StatefulWidget {
 }
 
 class _GamepadAdjustableValueState extends State<_GamepadAdjustableValue> {
-  late final FushiFocusId _fallbackFocusId =
-      FushiFocusId('${widget.focusIdPrefix}-${identityHashCode(this)}');
+  late final FushiFocusId _fallbackFocusId = FushiFocusId(
+    '${widget.focusIdPrefix}-${identityHashCode(this)}',
+  );
 
   @override
   Widget build(BuildContext context) {
     return Actions(
       actions: <Type, Action<Intent>>{
-        _AdjustUpIntent: CallbackAction<_AdjustUpIntent>(onInvoke: (_) {
-          widget.onIncrement();
-          return null;
-        }),
-        _AdjustDownIntent: CallbackAction<_AdjustDownIntent>(onInvoke: (_) {
-          widget.onDecrement();
-          return null;
-        }),
+        _AdjustUpIntent: CallbackAction<_AdjustUpIntent>(
+          onInvoke: (_) {
+            widget.onIncrement();
+            return null;
+          },
+        ),
+        _AdjustDownIntent: CallbackAction<_AdjustDownIntent>(
+          onInvoke: (_) {
+            widget.onDecrement();
+            return null;
+          },
+        ),
         // 只消费 D-pad 左/右（调值），其余按键**显式转发**给祖先，让它们真的到得了
         // 页面（Y 聚焦搜索、LT/RT 换 tab、D-pad 上下在行间移焦）。原先那句「Flutter
         // 停在第一个 ENABLED 的 action」不成立：Actions.maybeInvoke 上溯停在第一个
@@ -2262,10 +2301,9 @@ class _SettingsLabel extends StatelessWidget {
             padding: const EdgeInsets.only(top: 2),
             child: Text(
               subtitle!,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(color: subtitleColor),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: subtitleColor),
               // BUG-1184：null = 不钳行数，说明文字整段显示（见
               // [AdaptiveSettingsRow.subtitleMaxLines]）。
               //
@@ -2312,11 +2350,7 @@ class _SettingsIcon extends StatelessWidget {
       child: SizedBox(
         width: 28,
         height: 28,
-        child: Icon(
-          icon,
-          size: 18,
-          color: scheme.onPrimary,
-        ),
+        child: Icon(icon, size: 18, color: scheme.onPrimary),
       ),
     );
   }

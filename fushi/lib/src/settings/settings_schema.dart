@@ -54,8 +54,10 @@ _SettingsSchemaCache _schemaSnapshot() {
   final AppLocale locale = LocaleSettings.currentLocale;
   final _SettingsSchemaCache? cached = _schemaCache;
   if (cached != null && cached.locale == locale) return cached;
-  final _SettingsSchemaCache fresh =
-      _SettingsSchemaCache(locale, _buildDestinations());
+  final _SettingsSchemaCache fresh = _SettingsSchemaCache(
+    locale,
+    _buildDestinations(),
+  );
   _schemaCache = fresh;
   return fresh;
 }
@@ -82,41 +84,22 @@ List<SettingsDestination> buildSettingsSchema(SettingsContext context) =>
 /// [_SettingsSchemaCache] 的「为什么可以缓存」；新增分类若需要读动态状态，写进 item
 /// 闭包，不要写在这里（有源码守卫 `settings_schema_cache_test.dart` 钉零参调用）。
 List<SettingsDestination> _buildDestinations() {
-  // 四块分层排序（用户拍板，取代阶段 G 的纯任务优先排序）——块内相关项相邻：
-  // ① 外观：全局界面，装完 app 第一批要调的，置顶。
-  // ② 内容：阅读 → 听书（同一本书的两面）→ 视频 → 下载（torrent/番剧，喂视频库）
-  //   → 游戏（galgame 库/捕获，仅 Windows 可见）。
-  // ③ 横切工具：查词 → 制卡（阅读/视频/galgame/扩展共用一套查词弹窗；制卡依赖查词）。
-  // ④ 数据与设备：Profile（上述设置的快照）→ 同步备份 → 互联；「系统」惯例殿后。
-  // unmodifiable：这棵树被所有设置宿主共享，任何就地改动都会污染其它面板。
+  // 导航分组与此处共用固定顺序；平台/模块可见性仍在展示时求值。
   return List<SettingsDestination>.unmodifiable(<SettingsDestination>[
     buildAppearanceDestination(),
     buildReadingDestination(),
-    // 「漫画」大类：从阅读分类拆出（观看偏好 + OCR，详见 buildMangaDestination）。
-    buildMangaDestination(),
     buildListeningDestination(),
+    buildMangaDestination(),
     buildVideoDestination(),
-    // Bangumi 同步临时下线（编译期常量开关，不破坏 schema 缓存的纯度前提；
-    // 见 media_tracking_service.dart 的 kMediaTrackingEnabled）。
-    if (kMediaTrackingEnabled) buildMediaTrackingDestination(),
-    // 「下载」大类：内联既有 torrent 设置组件（详见 buildDownloadsDestination）。
-    buildDownloadsDestination(),
-    // 「在线服务」大类：第三方 API / 索引器 / 媒体服务器凭据的唯一的家，紧跟
-    // 它们喂养的视频/下载之后（详见 buildServicesDestination）。
-    buildServicesDestination(),
-    // 「游戏」大类：游戏库 / 捕获工作台 / 诊断的可搜导航入口（仅 Windows，详见
-    // buildGameDestination）。
     buildGameDestination(),
+    if (kMediaTrackingEnabled) buildMediaTrackingDestination(),
     buildLookupDestination(),
     buildCardCreationDestination(),
+    buildDownloadsDestination(),
+    buildServicesDestination(),
     buildProfilesDestination(),
     buildSyncBackupDestination(),
-    // Hibiki 互联从同步分类拆出的独立一级分类（构建函数在 sync_settings_schema
-    // 同库，与同步共享私有状态）。
     buildInterconnectDestination(),
-    // 「存储」大类：磁盘占用 + 可选模块删除恢复（详见 buildStorageDestination）。
-    // 位置在数据块末、系统之前——它是设备级数据管理，与「数据存储位置」（在系统
-    // 分类内）相邻语义。
     buildStorageDestination(),
     buildSystemDestination(),
   ]);
@@ -166,8 +149,10 @@ Map<ReaderGroup, List<SettingsItem>> _collectReaderItems(
     }
   }
   for (final List<SettingsItem> items in grouped.values) {
-    items.sort((SettingsItem a, SettingsItem b) =>
-        a.reader!.order.compareTo(b.reader!.order));
+    items.sort(
+      (SettingsItem a, SettingsItem b) =>
+          a.reader!.order.compareTo(b.reader!.order),
+    );
   }
   return _freezeGroups(grouped);
 }
@@ -178,9 +163,12 @@ Map<G, List<SettingsItem>> _freezeGroups<G>(
   Map<G, List<SettingsItem>> grouped,
 ) {
   return Map<G, List<SettingsItem>>.unmodifiable(
-    grouped.map((G group, List<SettingsItem> items) =>
-        MapEntry<G, List<SettingsItem>>(
-            group, List<SettingsItem>.unmodifiable(items))),
+    grouped.map(
+      (G group, List<SettingsItem> items) => MapEntry<G, List<SettingsItem>>(
+        group,
+        List<SettingsItem>.unmodifiable(items),
+      ),
+    ),
   );
 }
 
@@ -202,9 +190,7 @@ SettingsDestination buildReaderGroupDestination(
 
 /// 遍历完整 schema，收集所有带 [VideoPlacement] 的 item，按 group + order 升序
 /// 分组（与 [collectReaderItems] 同款；阶段 B 视频面板据此投影渲染）。
-Map<VideoGroup, List<SettingsItem>> collectVideoItems(
-  SettingsContext context,
-) {
+Map<VideoGroup, List<SettingsItem>> collectVideoItems(SettingsContext context) {
   final _SettingsSchemaCache snapshot = _schemaSnapshot();
   return snapshot.videoItems ??= _collectVideoItems(
     snapshot.destinations,
@@ -232,8 +218,10 @@ Map<VideoGroup, List<SettingsItem>> _collectVideoItems(
     }
   }
   for (final List<SettingsItem> items in grouped.values) {
-    items.sort((SettingsItem a, SettingsItem b) =>
-        a.video!.order.compareTo(b.video!.order));
+    items.sort(
+      (SettingsItem a, SettingsItem b) =>
+          a.video!.order.compareTo(b.video!.order),
+    );
   }
   return _freezeGroups(grouped);
 }
@@ -277,8 +265,9 @@ SettingsDestination buildVideoGroupDestination(
 SettingsDestination buildReaderQuickSettingsDestination(
   SettingsContext context,
 ) {
-  final Map<ReaderGroup, List<SettingsItem>> grouped =
-      collectReaderItems(context);
+  final Map<ReaderGroup, List<SettingsItem>> grouped = collectReaderItems(
+    context,
+  );
   SettingsSection sectionFor(ReaderGroup group, String title) {
     return SettingsSection(
       title: title,
