@@ -17,13 +17,13 @@
       "sha256": "c552f07aa50490c1142d958abb9c46c0a62418cb9117923b736255049e01093a"
     },
     {
-      "name": "fushi-2.3.0-beta.1248-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.3.0-beta.1248/fushi-2.3.0-beta.1248-windows-setup.exe",
-      "releaseSequence": 13886,
-      "tag": "v2.3.0-beta.1248",
-      "version": "2.3.0-beta.1248",
-      "size": 261877865,
-      "sha256": "459e52265b71dd19fa3dc08df97e14981b91e6b5488967fa22feea93c1d59fd2"
+      "name": "fushi-2.3.0-beta.14191-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.3.0-beta.14191/fushi-2.3.0-beta.14191-windows-setup.exe",
+      "releaseSequence": 14191,
+      "tag": "v2.3.0-beta.14191",
+      "version": "2.3.0-beta.14191",
+      "size": 262146932,
+      "sha256": "88c31b175d988f3c033c03786ecd56409cec78f150b50dedfcf358c1582743ab"
     },
     {
       "name": "hibiki-1.2.0-beta.8024-arm64-v8a.apk",
