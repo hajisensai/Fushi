@@ -96,26 +96,36 @@ void main() {
       );
     });
 
-    test('统计键图标随手动停表状态切换，但点击语义不双关', () {
+    test('统计键图标与状态行同源，且点击语义不双关', () {
       final String body = _settingsBarBody(readReaderPageSource());
       final int stats = body.indexOf('fushi_reader_statistics_button');
       final int settings = body.indexOf('fushi_reader_settings_button');
       final String statsButton = body.substring(stats, settings);
 
+      // 单一真值：状态行那颗计时图标读的是 `totals.active`（见
+      // reader_status_footer.dart）。两者同屏可见，各读各的就会分叉 —— 切后台回来或
+      // 弹层压着正文时 studyClockMayRun 为假、而 _studyClockManualPause 仍是 false，
+      // 于是「状态行说没在计时、底栏说在」。所以这里钉住它读同一个信号。
       expect(
         statsButton,
-        contains('_studyClockManualPause'),
-        reason: '移动端要有「计时被手动暂停」的常驻指示',
+        contains('_readingSessionTotals().active'),
+        reason: '底栏计时指示必须与状态行同源，不得另读一个 flag',
+      );
+      expect(
+        statsButton,
+        isNot(contains('_studyClockManualPause')),
+        reason: '手动停表旗只是 studyClockMayRun 三个旗之一，单读它会与状态行分叉',
       );
       expect(
         statsButton,
         contains('Icons.timer_off_outlined'),
-        reason: '停表态用 timer_off 图标',
+        reason: '没在计时时用 timer_off 图标',
       );
       expect(
         statsButton,
         isNot(contains('_toggleStudyClockManualPause')),
-        reason: '停表 / 继续留在浮层底部那颗整宽按钮上，底栏键不塞第二种动作',
+        reason: '手动停 / 续表的唯一入口是状态行左侧的计时块（onTapTracker）；'
+            '底栏这颗只开浮层，不塞第二种动作',
       );
     });
 

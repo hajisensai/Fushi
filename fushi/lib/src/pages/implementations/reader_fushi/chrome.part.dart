@@ -1634,34 +1634,40 @@ extension _ReaderChrome on _ReaderFushiPageState {
             onPressed: () => unawaited(_changeReaderWindowFullscreen()),
           ),
         ),
-      // 阅读统计直达键。移动端此前**没有**底栏统计入口：唯一的路是齿轮 → 快速设置
-      // sheet → 「阅读统计」行（三步），而手动计时开关又只活在浮层里，于是「现在有没有
-      // 在计时」在正文界面上没有任何指示。桌面端那条状态行（左 14px 计时图标 / 右进度
-      // 数字）只在 isDesktopPlatform 渲染，手机上根本不存在，所以这里是新增一颗、而不是
-      // 搬运一颗。
+      // 阅读统计直达键：一颗**够大**的入口，不是移动端唯一的入口。
       //
-      // 规格与底栏其余键同级：iconSize 22 + IconButton 默认 48dp 命中区（底栏基高 56
-      // 容得下），不是紧凑小图标——与统计浮层里那颗整宽计时开关同一条口径（触摸目标不
-      // 得低于 48dp）。位置在底栏右端、设置齿轮左侧：齿轮仍是最右那颗（移动端唯一的
-      // 面板入口，肌肉记忆不动），统计落在右下角这一片。底栏整体反转（
-      // reverseReaderBottomBar）时随 barItems.reversed 一起镜像，与其它键同待遇。
+      // 别把它写成「移动端此前没有统计入口」——不成立，核过：状态行
+      // [ReaderStatusFooter] 的启用判据是 `readerStatusFooterEnabled = !lyricsMode`
+      // （`desktop` 参数只留着兼容调用方），**各平台都画**；它右端的进度数字点一下就
+      // 开统计浮层（`onTapProgress: _openReadingStatistics`），左边的计时块点一下是
+      // 手动停 / 续表。所以这颗键补的是**触摸目标**：状态行整条只有 28px 高
+      // （`kReaderStatusFooterHeight`，视觉高度 == 预留高度是 chrome 铁律，不能为
+      // 命中区加高），而这里是 iconSize 22 + IconButton 默认 48dp 命中区，与底栏其余
+      // 键同级（底栏基高 56 容得下）。
       //
-      // 图标随**手动停表**状态切换（timer_off = 用户按过暂停），只作状态指示；点击语义
-      // 恒为「打开统计浮层」，停表 / 继续仍在浮层底部那颗整宽按钮上做，不给同一颗键塞
-      // 两种动作。
+      // 位置在底栏右端、设置齿轮左侧：齿轮仍是最右那颗（移动端唯一的面板入口，肌肉
+      // 记忆不动）。底栏整体反转（reverseReaderBottomBar）时随 barItems.reversed 一起
+      // 镜像，与其它键同待遇。
       //
-      // 歌词模式不画：那是独立 HTML 文档，进度与阅读追踪都不适用（桌面状态行在歌词模式
-      // 同样不画，见 readerStatusFooterEnabled），浮层里的「预计读完本章 / 全书」在那儿
-      // 没有意义。
+      // 图标读的真值**必须与状态行那颗计时图标同源**（都是
+      // `_readingSessionTotals().active`）：两者同屏可见（chrome 唤出时），各读各的就会
+      // 出现「状态行说没在计时、这颗说在」——切后台回来或弹层压着正文时
+      // `studyClockMayRun` 为假但 `_studyClockManualPause` 仍是 false，正是那种分叉。
+      // 点击语义恒为「打开统计浮层」，手动停 / 续表在状态行的计时块上做
+      // （[_toggleStudyClockManualPause] 的唯一入口），不给同一颗键塞两种动作。
+      //
+      // 歌词模式不画：那是独立 HTML 文档，进度与阅读追踪都不适用（状态行在歌词模式同样
+      // 不画，见 readerStatusFooterEnabled），浮层里的「预计读完本章 / 全书」在那儿没有
+      // 意义。
       if (!_lyricsMode)
         Semantics(
           identifier: 'hibiki.reader.bottom.statistics',
           child: IconButton(
             key: const ValueKey<String>('fushi_reader_statistics_button'),
             icon: Icon(
-              _studyClockManualPause
-                  ? Icons.timer_off_outlined
-                  : Icons.insights_outlined,
+              _readingSessionTotals().active
+                  ? Icons.insights_outlined
+                  : Icons.timer_off_outlined,
               color: _themeTextColor(),
             ),
             iconSize: 22,
