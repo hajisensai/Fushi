@@ -137,6 +137,17 @@ final List<_Exemption> _repoSlugExemptions = <_Exemption>[
         'hajisensai/Magpie 是外部 fork 仓库真名（slim 包从它的 release 下载），'
         '与本仓改名无关。',
   ),
+  _Exemption(
+    pathSuffix: '../pubspec.yaml',
+    context: RegExp('fushi-subtitles'),
+    reason:
+        'hajisensai/fushi-subtitles 是 ASR 算法层的**独立仓库**真名（GPL-3.0，'
+        '按 sha 钉的 git 依赖），不是本仓改名前的旧 slug。根 pubspec 里这条 '
+        'dependency_overrides 把 fushi_asr_core 钉回同仓同 sha —— 新引进的 '
+        'fushi_asr_subtitles 的 pubspec 写的是 `^0.1.0`（上游靠 workspace 解析），'
+        '单包从 git 引进来时 pub 会当 hosted 去 pub.dev 找而解析失败。'
+        '行级 context 只放行这一行，同文件里新长出来的其它失效 slug 照样报。',
+  ),
 ];
 
 /// C：构建/打包配置里的旧代号词根。

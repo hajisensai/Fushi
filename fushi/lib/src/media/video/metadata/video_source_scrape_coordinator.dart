@@ -2534,8 +2534,8 @@ List<String> videoScrapeTitleCandidates({
 }) {
   final List<String> fileDerived = <String>[workTitle, parsedSeries];
   final List<String> directoryDerived = <String>[
-    p.basename(p.dirname(videoPath)),
-    p.basename(p.dirname(p.dirname(videoPath))),
+    _pathSegmentFromEnd(videoPath, 1),
+    _pathSegmentFromEnd(videoPath, 2),
   ];
   final List<String> rawValues = <String>[
     for (final String value in fileDerived)
@@ -2554,6 +2554,24 @@ List<String> videoScrapeTitleCandidates({
       if (value.trim().isNotEmpty && seen.add(value.trim().toLowerCase()))
         value.trim(),
   ];
+}
+
+/// 取路径倒数第 [n] 层目录名（n = 1 是直接父目录）；取不到回空串。
+///
+/// **不能用 `p.basename(p.dirname(...))`**：`package:path` 顶层函数按**当前平台**
+/// 的分隔符解析，Linux 上遇到 `D:\Videos\86\01.mkv` 这种 Windows 风格路径会认成
+/// 单段，dirname 给出 `'.'`，于是候选里混进一个字面量点 —— 本机 Windows 全绿、
+/// CI Linux 红，正是这条平台差异（develop@60e3964a 的单测门）。
+///
+/// 这里做的只是**文本切分**（从路径里捞目录名当刮削标题候选），与真实文件系统无关，
+/// 所以两种分隔符一律接受，与 `video_filename_parser.dart` 里同款切分保持一致。
+String _pathSegmentFromEnd(String path, int n) {
+  final List<String> segments = path
+      .split(RegExp(r'[\\/]+'))
+      .where((String segment) => segment.isNotEmpty && segment != '.')
+      .toList();
+  final int index = segments.length - 1 - n;
+  return index >= 0 ? segments[index] : '';
 }
 
 /// 一个字符串是否只是集号标签而非作品标题：规则引擎解不出标题、却解出了集号。
