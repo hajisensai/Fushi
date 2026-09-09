@@ -744,6 +744,7 @@ class AnkiMiningContext {
     this.source,
     this.bookTitleTag,
     this.collectionTag,
+    this.charPositionTag,
     this.clipStartMs,
     this.clipEndMs,
   });
@@ -775,6 +776,17 @@ class AnkiMiningContext {
   /// 二者字面量不同则各成一个 tag（Anki 里可按系列聚合、也可按单集/单本区分）；相同时由
   /// [buildNoteTags] 去重合并。见视频 `lookup_mining` / reader `mining` 注入点。
   final String? collectionTag;
+
+  /// 「制卡位置标签」开关开启时，调用方（小说阅读器）算好的**制卡所在字符数标签**
+  /// （`chars_12345`，见 [BaseAnkiRepository.formatCharPositionTag]）：这张卡是在全书
+  /// 第几个学习字（`countStudyChars` 口径）处制的。开关关闭、非小说来源、或锚点取不到
+  /// （章字数未算完 / JS 拿不到 caret）时为 `null`，[BaseAnkiRepository.buildNoteTags]
+  /// 不追加——宁可不打标签，也不打一个 `chars_0` 冒充书首。
+  ///
+  /// 与 [bookTitleTag] / [collectionTag] 同构：真值源（`countStudyChars` 口径的章内锚 +
+  /// 每章累计前缀）都在主 app 的阅读器 state 里，hibiki_anki 是独立包拿不到，故由调用方
+  /// 算好字面量后注入，本包只负责按既有去重规则追加。
+  final String? charPositionTag;
 
   /// 本张卡截取的媒体片段起止（毫秒，媒体时间轴上的**偏移**，非 wall-clock 时刻，
   /// 故按术语表用 `Ms` 后缀）。渲染 `{clip-timestamp}` 用。
@@ -814,6 +826,7 @@ class AnkiMiningContext {
         source: source,
         bookTitleTag: bookTitleTag,
         collectionTag: collectionTag,
+        charPositionTag: charPositionTag,
         clipStartMs: clipStartMs,
         clipEndMs: clipEndMs,
       );

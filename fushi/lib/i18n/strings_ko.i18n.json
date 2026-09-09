@@ -4562,5 +4562,7 @@
   "reader_vn_sentences_per_screen": "Sentences per screen",
   "reader_vn_preserve_dialogue": "Keep dialogue together",
   "reader_vn_click_advance": "Blank tap advances",
-  "reader_vn_merge_spoken_sentence": "Keep spoken sentence on one screen"
+  "reader_vn_merge_spoken_sentence": "Keep spoken sentence on one screen",
+  "auto_add_char_position_to_tags": "Auto-add mining position to tags",
+  "auto_add_char_position_to_tags_hint": "Tags each card with chars_12345 — how many characters into the book it was mined."
 }

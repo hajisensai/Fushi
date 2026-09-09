@@ -111,6 +111,11 @@ SettingsDestination buildCardCreationDestination() {
         subtitle: t.anki_tag_default_section,
       ),
       SettingsBodySearchEntry(
+        id: 'card_creation.anki.tag_char_position',
+        title: t.auto_add_char_position_to_tags,
+        subtitle: t.auto_add_char_position_to_tags_hint,
+      ),
+      SettingsBodySearchEntry(
         id: 'card_creation.anki.mining_image_quality',
         title: t.mining_image_quality,
         subtitle: t.mining_image_quality_hint,

@@ -6696,6 +6696,10 @@ class AppModel with ChangeNotifier {
   bool get autoAddBookNameToTags => prefsRepo.autoAddBookNameToTags;
   void toggleAutoAddBookNameToTags() => prefsRepo.toggleAutoAddBookNameToTags();
 
+  bool get autoAddCharPositionToTags => prefsRepo.autoAddCharPositionToTags;
+  void toggleAutoAddCharPositionToTags() =>
+      prefsRepo.toggleAutoAddCharPositionToTags();
+
   // TODO-1650 制卡图片/GIF 清晰度档 + 音频质量档（透传 prefsRepo）。默认档 = 旧压缩档
   // （现状零破坏）。制卡消费点用 [MiningMediaCompression.resolve] 据这两个档组装媒体档。
   int get miningImageQuality => prefsRepo.miningImageQuality;
@@ -7940,6 +7944,7 @@ class _AppModelRemoteLookupService
         sentenceOffset: payload.sentenceOffset,
         source: _forwardedSourceFromName(payload.source),
         bookTitleTag: payload.bookTitleTag,
+        charPositionTag: payload.charPositionTag,
         // 转发 payload 本来就带片段时间窗（Netflix / YouTube 扩展制卡按视频
         // 时间轴填）。原样透传，有效性由 formatClipTimestamp 单点判定——非视频
         // 转发两端为 null，渲染成空串。
