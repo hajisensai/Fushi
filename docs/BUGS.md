@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2189 条。点号进各自文件。
+> 共 2190 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2380](bugs/BUG-2380-ankidroid-create-deck-silent-failure.md) | ✅ | ✅ | AnkiDroid 建牌组/笔记类型失败被吞成成功，一键创建 Lapis 改选用户自己的牌组 |
 | [BUG-2375](bugs/BUG-2375-asr-unusable-model.md) | ✅ | ✅ | ASR 模型文件损坏后永久卡死：Protobuf parsing failed 且无自愈路径 |
 | [BUG-2373](bugs/BUG-2373-android-stylus-idle-loses-hover-pressure-buttons.md) | 🚧 | 🚧 | 安卓平板触控笔闲置1-2分钟后悬停/压力/侧键全失效 |
 | [BUG-2372](bugs/BUG-2372-gal-overlay-lookup-card-not-anchored-to-word.md) | 🚧 | 🚧 | 悬浮字幕查词弹窗没锚在被点的词上 |

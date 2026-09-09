@@ -1,3 +1,4 @@
+import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -272,8 +273,13 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
   Future<LapisSetupResult> createLapisSetup() async {
     state = state.copyWith(isFetching: true, clearError: true);
     try {
-      final created = await _repository.createNoteType(LapisNoteType.template);
-      await _repository.createDeck(LapisNoteType.deckName);
+      // BUG-2380：牌组的返回值此前被丢掉，于是「笔记类型早就有、这次只补了牌组」
+      // 会报成「已存在」。两者任一是新建的就算这次创建过。
+      final bool noteTypeCreated =
+          await _repository.createNoteType(LapisNoteType.template);
+      final bool deckCreated =
+          await _repository.createDeck(LapisNoteType.deckName);
+      final bool created = noteTypeCreated || deckCreated;
 
       final fetch = await _repository.fetchConfiguration();
       if (fetch is AnkiFetchError) {
@@ -291,12 +297,27 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
       }
 
       final settings = await _repository.loadSettings();
-      final noteType = settings.availableNoteTypes.firstWhere(
-          (t) => t.name == LapisNoteType.modelName,
-          orElse: () => settings.availableNoteTypes.first);
-      final deck = settings.availableDecks.firstWhere(
-          (d) => d.name == LapisNoteType.deckName,
-          orElse: () => settings.availableDecks.first);
+      // BUG-2380：建完之后必须在后端**回读的清单里真的看见** Lapis 才算数。
+      //
+      // 旧实现这两行是 `firstWhere(..., orElse: () => list.first)`。后端把创建静默
+      // 吞掉时（AnkiDroid 的 `addNewDeck` 失败返回 null、native 侧照样报成功，是
+      // 已知形态），兜底会把用户自己的**第一个**牌组/笔记类型当成 Lapis 选中，
+      // 顺手套上 Lapis 的字段映射，最后还返回 `created` ——「创建成功」的 toast +
+      // 选中的却是用户自己的『日语』牌组，字段映射还全是按 Lapis 排的。
+      // 找不到就必须失败，绝不能拿别的牌组顶替。
+      final noteType = settings.availableNoteTypes
+          .firstWhereOrNull((t) => t.name == LapisNoteType.modelName);
+      final deck = settings.availableDecks
+          .firstWhereOrNull((d) => d.name == LapisNoteType.deckName);
+      if (noteType == null || deck == null) {
+        final String message = t.anki_create_lapis_not_found;
+        state = state.copyWith(isFetching: false, errorMessage: message);
+        return LapisSetupResult(
+          LapisSetupOutcome.failed,
+          message,
+          AnkiErrorCode.lapisSetupMissing,
+        );
+      }
 
       final updated = await _repository.updateSettings((s) => s.copyWith(
             selectedDeckId: deck.id,

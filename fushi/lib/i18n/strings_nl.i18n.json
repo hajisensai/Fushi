@@ -4535,5 +4535,9 @@
   "dialog_background_close": "Close (task keeps running)",
   "reader_timer_show": "Leestimer tonen",
   "media_source_root_already_added": "Already a source — rescanning: $path",
-  "audiobook_transcribe_model_discarded": "The model file could not be read and was removed. Download it again."
+  "audiobook_transcribe_model_discarded": "The model file could not be read and was removed. Download it again.",
+  "anki_create_lapis_not_found": "Anki said the Lapis deck and note type were created, but they are still missing when Hibiki reads the collection back. Open Anki, make sure it is not busy, and try again.",
+  "anki_lapis_suggest_title": "Anki can't make cards yet",
+  "anki_lapis_suggest_body": "The selected deck and note type can't produce a card Anki will accept. Hibiki can add its Lapis note type and deck and select them for you.",
+  "anki_lapis_suggest_dismiss": "Keep current setup"
 }

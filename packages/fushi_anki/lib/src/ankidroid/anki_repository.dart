@@ -659,22 +659,27 @@ class AnkiRepository extends BaseAnkiRepository {
     }
   }
 
+  /// BUG-2380：存在性判断**只在 native 一处**（`AnkiChannelHandler.createNoteType`
+  /// 按「名字 + 字段数」查），返回值 true = 这次真建了、false = 本来就有。
+  ///
+  /// 此前这里还有一份自己的判据（`getModelList` 里按名字精确相等），与 native 那份
+  /// 不一致：两边判断分歧时，Dart 认为「不存在，去建」，native 认为「已存在，跳过」，
+  /// 然后报成功——建没建成没人知道。判据只留一份，分歧就无从产生。
   @override
   Future<bool> createNoteType(AnkiNoteTypeTemplate template) async {
     await _ensurePermission();
-    final models = await _channel.invokeMethod('getModelList') as Map?;
-    final exists =
-        models?.values.any((v) => v?.toString() == template.name) ?? false;
-    if (exists) return false;
-    await _channel.invokeMethod('createNoteType', <String, dynamic>{
+    final bool? created =
+        await _channel.invokeMethod('createNoteType', <String, dynamic>{
       'noteTypeName': template.name,
       'noteTypeFields': template.fields,
       'cardName': template.cardName,
       'front': template.front,
       'back': template.back,
       'css': template.css,
-    });
-    return true;
+    }) as bool?;
+    // null 只可能来自契约漂移（native 该回 bool）。当成「建了」，最坏只是 toast
+    // 说成新建而非已存在；真正的成败由 native 抛 CREATE_MODEL_FAILED 表达。
+    return created ?? true;
   }
 
   // ── note type 模板读写（Lapis 客制化/备份/自动迁移）────────────────────
@@ -755,16 +760,18 @@ class AnkiRepository extends BaseAnkiRepository {
     return ok ?? false;
   }
 
+  /// BUG-2380：与 [createNoteType] 同理——存在性判断只留 native 一处（那边是大小写
+  /// 不敏感比较，这里此前是精确相等，两者分歧时 Dart 请求创建、native 静默跳过并报
+  /// 成功）。返回值 true = 这次真建了、false = 本来就有；建失败由 native 抛
+  /// `CREATE_DECK_FAILED`，不再被吞成成功。
   @override
   Future<bool> createDeck(String name) async {
     await _ensurePermission();
-    final decks = await _channel.invokeMethod('getDecks') as Map?;
-    final exists = decks?.values.any((v) => v?.toString() == name) ?? false;
-    if (exists) return false;
-    await _channel.invokeMethod('createDeck', <String, dynamic>{
+    final bool? created =
+        await _channel.invokeMethod('createDeck', <String, dynamic>{
       'deckName': name,
-    });
-    return true;
+    }) as bool?;
+    return created ?? true;
   }
 
   Future<String?> _addCoverImage(String path) async {
