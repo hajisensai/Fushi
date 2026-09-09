@@ -8,6 +8,10 @@ class ReaderSelectionData {
     this.sentenceOffset = 0,
     this.sentenceNormalizedOffset,
     this.sentenceNormalizedLength,
+    this.matchableOffset,
+    this.matchableLength,
+    this.sentenceMatchableOffset,
+    this.sentenceMatchableLength,
     this.verticalWriting = false,
     this.mangaPageIndex,
   });
@@ -34,6 +38,12 @@ class ReaderSelectionData {
           (json['sentenceNormalizedOffset'] as num?)?.toInt(),
       sentenceNormalizedLength:
           (json['sentenceNormalizedLength'] as num?)?.toInt(),
+      matchableOffset: (json['matchableOffset'] as num?)?.toInt(),
+      matchableLength: (json['matchableLength'] as num?)?.toInt(),
+      sentenceMatchableOffset:
+          (json['sentenceMatchableOffset'] as num?)?.toInt(),
+      sentenceMatchableLength:
+          (json['sentenceMatchableLength'] as num?)?.toInt(),
       verticalWriting: json['verticalWriting'] as bool? ?? false,
       mangaPageIndex: (json['mangaPageIndex'] as num?)?.toInt(),
     );
@@ -42,11 +52,20 @@ class ReaderSelectionData {
   final String text;
   final String sentence;
   final Map<String, double>? rect;
+
+  /// Chapter learning-unit coordinates for navigation and persisted favorites.
   final int? normalizedOffset;
   final int? normalizedLength;
   final int sentenceOffset;
   final int? sentenceNormalizedOffset;
   final int? sentenceNormalizedLength;
+
+  /// Audio matching coordinates, measured in normalized UTF-16 code units.
+  /// Never substitute learning-unit offsets when these are unavailable.
+  final int? matchableOffset;
+  final int? matchableLength;
+  final int? sentenceMatchableOffset;
+  final int? sentenceMatchableLength;
 
   /// Whether the source glyph belongs to a vertical writing run.
   ///

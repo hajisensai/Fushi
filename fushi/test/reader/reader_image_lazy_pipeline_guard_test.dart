@@ -125,8 +125,8 @@ void main() {
       final String src =
           navFile.readAsStringSync().replaceAll(RegExp(r'\s+'), ' ');
       expect(
-          src.contains(
-              '_prefetchAdjacentChapterImages( _currentChapter + _chapterAdvanceDirection)'),
+          RegExp(r'_prefetchAdjacentChapterImages\(\s*_currentChapter\s*\+\s*_chapterAdvanceDirection\s*,?\s*\)')
+              .hasMatch(src),
           isTrue,
           reason: '倒着读时必须预热上一章，而不是刚离开的那一章');
       expect(

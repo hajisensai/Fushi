@@ -297,7 +297,7 @@ void main() {
             'WebView 往返（BUG-969 根因），必须经合并执行器收敛',
       );
       expect(
-        src.contains('CoalescedAsyncRunner(() async {'),
+        RegExp(r'CoalescedAsyncRunner\(\s*\(\)\s*async\s*\{').hasMatch(src),
         isTrue,
         reason: '合并动作本体（错误处理/tap-gate/setState）必须收在 runner 内',
       );

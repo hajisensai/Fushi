@@ -58,12 +58,14 @@ extension _ReaderLookup on _ReaderFushiPageState {
     try {
       controller
           .evaluateJavascript(
-              source: 'window.__fushiTapGate = '
-                  '{ chrome: $_showChrome, lookup: $lookup, maxLen: 400 };')
+            source:
+                'window.__fushiTapGate = '
+                '{ chrome: $_showChrome, lookup: $lookup, maxLen: 400 };',
+          )
           .catchError((Object e, StackTrace s) {
-        ErrorLogService.instance.log('ReaderFushi.syncTapGate', e, s);
-        return null;
-      });
+            ErrorLogService.instance.log('ReaderFushi.syncTapGate', e, s);
+            return null;
+          });
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderFushi.syncTapGate', e, stack);
     }
@@ -88,8 +90,11 @@ extension _ReaderLookup on _ReaderFushiPageState {
         source: ReaderSelectionScripts.clearInvocation(),
       );
     } catch (e, stack) {
-      ErrorLogService.instance
-          .log('ReaderFushi.clearLookupState.eval', e, stack);
+      ErrorLogService.instance.log(
+        'ReaderFushi.clearLookupState.eval',
+        e,
+        stack,
+      );
     }
   }
 
@@ -126,8 +131,11 @@ extension _ReaderLookup on _ReaderFushiPageState {
       // evaluateJavascript 抛 MissingPluginException。`_controller != null` 守卫只防
       // null，防不了通道已废 —— 必须 try/catch 兜底。弹窗已显示，重锚失败仅停在选区
       // rect（查词弹窗不中断）。
-      ErrorLogService.instance
-          .log('ReaderFushi.highlightAndShowPopup.eval', e, stack);
+      ErrorLogService.instance.log(
+        'ReaderFushi.highlightAndShowPopup.eval',
+        e,
+        stack,
+      );
     }
   }
 
@@ -171,15 +179,19 @@ extension _ReaderLookup on _ReaderFushiPageState {
     // 时退回选中的词，杜绝收藏读点（chrome.part.dart）误报「未选择句子」。
     final String sentenceText =
         ReaderSelectionScripts.resolveCurrentSentenceText(
-      data.sentence,
-      data.text,
-    );
+          data.sentence,
+          data.text,
+        );
     appModel.currentMediaSource?.setCurrentSentence(
       selection: FushiTextSelection(text: sentenceText),
     );
     _cachedSentenceOffset = data.sentenceOffset;
 
     if (_lyricsMode) {
+      _cacheMatchableSelection(data);
+      _cachedSelectionRange = null;
+      _cachedSentenceRange = null;
+      _cachedSelectionSectionIndex = null;
       _lookupCue = null;
       try {
         // TODO-678（BUG-005 同根因）：把歌词 cue context 的 evaluateJavascript 纳入
@@ -198,15 +210,25 @@ extension _ReaderLookup on _ReaderFushiPageState {
             final SubtitleRematchFragment? frag =
                 SubtitleRematchCodec.tryDecode(fragId);
             if (frag != null) {
-              _cachedSelectionRange = (
+              _cachedMatchableSelectionRange = (
                 offset: frag.normCharStart,
                 length: frag.normCharEnd - frag.normCharStart,
                 text: data.text,
               );
-              _cachedSentenceRange = (
+              _cachedMatchableSentenceRange = (
                 offset: frag.normCharStart,
                 length: frag.normCharEnd - frag.normCharStart,
               );
+              final ({int offset, int length})? studyRange =
+                  _studyRangeForAudioFragment(frag);
+              _cachedSelectionRange = studyRange == null
+                  ? null
+                  : (
+                      offset: studyRange.offset,
+                      length: studyRange.length,
+                      text: data.text,
+                    );
+              _cachedSentenceRange = studyRange;
               // BUG-492：歌词 cue 选区所属章号取自 fragment（与 _lookupSectionIndex 同源）。
               _cachedSelectionSectionIndex = frag.sectionIndex;
             }
@@ -225,8 +247,8 @@ extension _ReaderLookup on _ReaderFushiPageState {
       return;
     }
 
-    _lookupCue = data.normalizedOffset != null
-        ? _findCueForOffset(data.normalizedOffset!)
+    _lookupCue = data.matchableOffset != null
+        ? _findCueForOffset(data.matchableOffset!)
         : null;
     if (_lookupCue == null && _srtBookUid != null) {
       _lookupCue = _findCueForSentence(data.sentence);
@@ -234,6 +256,7 @@ extension _ReaderLookup on _ReaderFushiPageState {
     _syncCueSentence();
 
     await _runLookupAndHighlight(data.text, selectionRect);
+    _cacheMatchableSelection(data);
     if (data.normalizedOffset != null && data.normalizedLength != null) {
       _cachedSelectionRange = (
         offset: data.normalizedOffset!,
@@ -261,28 +284,27 @@ extension _ReaderLookup on _ReaderFushiPageState {
     final String sentence =
         appModel.currentMediaSource?.currentSentence.text ?? '';
     if (sentence.isEmpty) {
-      _currentFavoriteId = null;
       if (_currentSentenceIsFavorited) {
         _rebuild(() => _currentSentenceIsFavorited = false);
       }
       return;
     }
-    final sentenceRange = _cachedSentenceRange ??
+    final sentenceRange =
+        _cachedSentenceRange ??
         (_cachedSelectionRange != null
             ? (
                 offset: _cachedSelectionRange!.offset,
-                length: _cachedSelectionRange!.length
+                length: _cachedSelectionRange!.length,
               )
             : null);
     // BUG-494：拿匹配条目的精确 id（未收藏 → null），供 toggle 用 removeById 精确删单条。
     final String? matchedId =
         await FavoriteSentenceRepository(appModel.database).matchedFavoriteId(
-      text: sentence,
-      bookKey: widget.bookKey,
-      sectionIndex: _favoriteSectionIndex,
-      normCharOffset: sentenceRange?.offset,
-    );
-    _currentFavoriteId = matchedId;
+          text: sentence,
+          bookKey: widget.bookKey,
+          sectionIndex: _favoriteSectionIndex,
+          normCharOffset: sentenceRange?.offset,
+        );
     final bool favorited = matchedId != null;
     if (mounted && favorited != _currentSentenceIsFavorited) {
       _rebuild(() => _currentSentenceIsFavorited = favorited);

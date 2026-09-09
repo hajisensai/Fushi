@@ -20,14 +20,15 @@ double? audiobookSrtCrossChapterProgress({
 /// TODO-746　sasayaki cue cross-chapter in-chapter progress (0..1). When
 /// `chapterChars <= 0` (chapter char count unknown / empty chapter) returns
 /// null — callers must then preserve the current scroll and never zero.
-/// Reuses the restore-path formula `normCharStart / chapterChars`.
+/// Both values use learning units; audio character positions must be converted
+/// with ReaderAudioPositionIndex before calling this helper.
 @visibleForTesting
 double? audiobookSentenceAudioCrossChapterProgress({
-  required int normCharStart,
+  required int studyCharOffset,
   required int chapterChars,
 }) {
   if (chapterChars <= 0) return null;
-  return (normCharStart / chapterChars).clamp(0.0, 1.0);
+  return (studyCharOffset / chapterChars).clamp(0.0, 1.0);
 }
 
 /// 普通 EPUB + SRT 音频在 matcher 未能落到 EPUB 章节时，cue 仍保留
@@ -441,6 +442,33 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     return (map, ranges);
   }
 
+  ({int offset, int length})? _studyRangeForAudioFragment(
+    SubtitleRematchFragment frag,
+  ) {
+    final EpubBook? book = _book;
+    if (book == null ||
+        frag.sectionIndex < 0 ||
+        frag.sectionIndex >= book.chapters.length) {
+      return null;
+    }
+    final String html = book.chapters[frag.sectionIndex].html;
+    final ({String html, ReaderAudioPositionIndex index})? cached =
+        _audioPositionIndices.remove(frag.sectionIndex);
+    final ReaderAudioPositionIndex index = cached?.html == html
+        ? cached!.index
+        : ReaderAudioPositionIndex.fromChapterHtml(html);
+    _audioPositionIndices[frag.sectionIndex] = (html: html, index: index);
+    // The current and adjacent chapters suffice; avoid retaining a whole-book
+    // per-character index when playback moves through a long audiobook.
+    while (_audioPositionIndices.length > 3) {
+      _audioPositionIndices.remove(_audioPositionIndices.keys.first);
+    }
+    return index.studyRangeForFragment(
+      matchableStart: frag.normCharStart,
+      matchableEnd: frag.normCharEnd,
+    );
+  }
+
   void _restoreFromCurrentAudioCue() {
     final AudioCue? cue = _audiobookController?.cueAtCurrentPositionInBook();
     if (cue == null || _book == null) return;
@@ -451,18 +479,20 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     if (frag != null &&
         frag.sectionIndex >= 0 &&
         frag.sectionIndex < _book!.chapters.length) {
+      final int? studyOffset = _studyRangeForAudioFragment(frag)?.offset;
+      if (studyOffset == null) return;
       _currentChapter = frag.sectionIndex;
-      // TODO-746: reuse the shared in-chapter progress helper (DRY). On initial
-      // open a null (unknown char count) falls back to 0.0 = chapter start,
-      // which is a sane initial anchor and preserves the original behaviour.
+      _initialCharOffset = studyOffset;
+      _initialCharOffsetEnd = -1;
       _initialProgress =
           audiobookSentenceAudioCrossChapterProgress(
-            normCharStart: frag.normCharStart,
+            studyCharOffset: studyOffset,
             chapterChars: _chapterCharCounts[frag.sectionIndex],
           ) ??
           0.0;
       _lastProgressSection = _currentChapter;
       _lastProgressValue = _initialProgress;
+      _lastProgressCharOffset = studyOffset;
       debugPrint(
         '[ReaderFushi] restore from audio cue: '
         'chapter=$_currentChapter progress=$_initialProgress',
@@ -719,27 +749,18 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       _audiobookController?.cancelChapterTransition();
       return;
     }
-    // TODO-746: reuse the same sasayaki in-chapter progress formula the restore
-    // path already uses, so cross-chapter playback lands on the cue's real
-    // in-chapter position instead of _navigateToChapter's default progress=0.0
-    // → restoreProgress(0) → scrollToChapterStart six-fold clear (the "slides to
-    // chapter 1" symptom). newSection here is the matched cue's own declared
-    // section (frag.sectionIndex; a text-missing cue has a null/cleared fragment
-    // and never reaches this path), so it legitimately belongs in newSection —
-    // we only need its offset, not a chapter switch. A null progress (chapter
-    // char count transiently 0 before the lazy recompute lands) falls back to
-    // 0.0 = that chapter's own start, which is the original behaviour for a
-    // matched cue and is NOT a zero-to-chapter-1 (it is its real chapter).
+    // Validate the matched fragment against the target chapter and convert its audio
+    // coordinate to a learning-unit anchor before entering the restore chain.
     final AudioCue? cue = _audiobookController?.currentCue;
     final SubtitleRematchFragment? frag = cue == null
         ? null
         : SubtitleRematchCodec.tryDecode(cue.textFragmentId);
-    double? progress;
-    if (frag != null && newSection < _chapterCharCounts.length) {
-      progress = audiobookSentenceAudioCrossChapterProgress(
-        normCharStart: frag.normCharStart,
-        chapterChars: _chapterCharCounts[newSection],
-      );
+    final int? studyOffset = cue != null && frag?.sectionIndex == newSection
+        ? _studyRangeForAudioFragment(frag!)?.offset
+        : null;
+    if (studyOffset == null) {
+      _audiobookController?.cancelChapterTransition();
+      return;
     }
     // TODO-1037：cue 驱动的跨章会一步跳过「独立成章的纯图片页」（无 cue 故从不
     // 被推进看见），图片等待对它彻底失效。跨章落定前先把中间纯图片章逐个导航过去
@@ -753,7 +774,7 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       _audiobookController?.cancelChapterTransition();
       return;
     }
-    await _navigateToChapter(newSection, progress: progress ?? 0.0);
+    await _navigateToChapter(newSection, charOffset: studyOffset);
   }
 
   /// TODO-1037：跨章推进若跨过「独立成章的纯图片章」，且图片等待开启
@@ -892,7 +913,26 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     return _currentChapter;
   }
 
-  AudioCue? _findCueForOffset(int normalizedOffset) {
+  void _cacheMatchableSelection(ReaderSelectionData data) {
+    _cachedMatchableSelectionRange =
+        data.matchableOffset != null && data.matchableLength != null
+        ? (
+            offset: data.matchableOffset!,
+            length: data.matchableLength!,
+            text: data.text,
+          )
+        : null;
+    _cachedMatchableSentenceRange =
+        data.sentenceMatchableOffset != null &&
+            data.sentenceMatchableLength != null
+        ? (
+            offset: data.sentenceMatchableOffset!,
+            length: data.sentenceMatchableLength!,
+          )
+        : null;
+  }
+
+  AudioCue? _findCueForOffset(int matchableOffset) {
     final AudiobookPlayerController? ctrl = _audiobookController;
     if (ctrl == null) return null;
     final List<AudioCue> cues = ctrl.sentenceAudioCuesForSection(
@@ -903,8 +943,8 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
         cue.textFragmentId,
       );
       if (frag == null) continue;
-      if (frag.normCharStart <= normalizedOffset &&
-          frag.normCharEnd > normalizedOffset) {
+      if (frag.normCharStart <= matchableOffset &&
+          frag.normCharEnd > matchableOffset) {
         return cue;
       }
     }
@@ -1005,25 +1045,17 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     );
   }
 
-  /// 归一化选区 span 的单一真相源（TODO-1278）：优先句级 span（[_cachedSentenceRange]），
-  /// 句级缺失时回退到词/选区级 span（[_cachedSelectionRange]）。
-  ///
-  /// 片段导出 / Anki 句子音频的位置锚点**必须**和收藏、制卡历史
-  /// （[_checkFavoriteStatus] / [_recordMinedSentence] / lookup.part / chrome.part）
-  /// 用同一套回退——否则句级 span 偶发缺失（拖选跨 block / ruby / 图片相邻节点未进归一化
-  /// 索引 → JS `sentenceNormalizedOffset` 为 null，见 reader_selection_scripts）时，导出
-  /// 侧独自丢掉位置锚点：[miningSentenceAudioRange] 拿不到 sectionIndex+offset+length，
-  /// 对 gap word（`_lookupCue==null`、currentSentence 为空）解析出 null 区间，被
-  /// [classifyAudiobookClipSelection] 归成 `unsupportedRange`，弹出误导的「跨章或跨音频
-  /// 文件」toast——而选区其实同章、Anki 收藏路径能正常定位。回退到选区级 span 后，位置
-  /// 匹配重新生效，同章选区正常进入导出管线。
+  /// 音频使用匹配字符坐标：优先整句，缺失时用选区。学习单位范围不能
+  /// 与字幕的 normCharStart/End 比较；旧 payload 没有匹配坐标时保留 null，
+  /// 由音频匹配器使用 cue 身份或文本。
   ({int offset, int length})? _miningSpanRange() {
-    final ({int offset, int length})? sentenceRange = _cachedSentenceRange;
+    final ({int offset, int length})? sentenceRange =
+        _cachedMatchableSentenceRange;
     if (sentenceRange != null) {
       return sentenceRange;
     }
     final ({int offset, int length, String text})? selectionRange =
-        _cachedSelectionRange;
+        _cachedMatchableSelectionRange;
     if (selectionRange != null) {
       return (offset: selectionRange.offset, length: selectionRange.length);
     }
@@ -1275,14 +1307,14 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     final AudiobookPlayerController? ctrl = _audiobookController;
     if (ctrl == null) return (plan: null, range: null);
     final ({int offset, int length, String text})? selection =
-        _cachedSelectionRange;
+        _cachedMatchableSelectionRange;
     // BUG-1243：导出入口的主锚是用户真实选区；只有没有原生选区（普通点词导出）时
     // 才回退 currentSentence。不能复用 _miningSpanRange 的「句级优先」规则——那是
     // 单句制卡语义，会把跨多句 selection 收窄回当前句。
     final ({int offset, int length})? fallbackRange = _miningSpanRange();
     final AudiobookClipSelectionSpan resolvedSelection =
         resolveAudiobookClipSelectionSpan(
-          selectedText: selection?.text,
+          selectedText: _cachedSelectionRange?.text,
           selectedOffset: selection?.offset,
           selectedLength: selection?.length,
           fallbackText: appModel.currentMediaSource?.currentSentence.text ?? '',
