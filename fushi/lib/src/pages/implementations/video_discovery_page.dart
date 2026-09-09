@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show SliverConstraints;
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/external_provider.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
@@ -401,6 +402,15 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
 
   Widget _buildControls() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        return _buildControlsForWidth(tokens, constraints.maxWidth);
+      },
+    );
+  }
+
+  Widget _buildControlsForWidth(FushiDesignTokens tokens, double width) {
+    final bool compact = width * FushiAppUiScale.of(context) < 600;
     return Padding(
       padding: EdgeInsets.fromLTRB(
         tokens.spacing.page,
@@ -415,8 +425,9 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
             builder: (BuildContext context, BoxConstraints constraints) {
               final Widget search = FushiSearchField(
                 fieldKey: const ValueKey<String>('video-discovery-search'),
-                clearButtonKey:
-                    const ValueKey<String>('video-discovery-search-clear'),
+                clearButtonKey: const ValueKey<String>(
+                  'video-discovery-search-clear',
+                ),
                 focusId: const FushiFocusId('video-discovery-search'),
                 controller: _searchController,
                 focusNode: _searchFocusNode,
@@ -425,7 +436,33 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
                 onSubmitted: _submitSearch,
                 onClear: _clearSearch,
               );
-              if (constraints.maxWidth < 900) return search;
+              if (compact) {
+                return Row(
+                  children: <Widget>[
+                    Expanded(child: search),
+                    SizedBox(width: tokens.spacing.gap),
+                    IconButton.filledTonal(
+                      constraints:
+                          const BoxConstraints(minWidth: 44, minHeight: 44),
+                      key: const ValueKey<String>(
+                        'video-discovery-open-filters',
+                      ),
+                      tooltip: t.game_filter,
+                      onPressed: _openFilterSheet,
+                      icon: Badge.count(
+                        count: (_year != 0 ? 1 : 0) +
+                            (_region.isNotEmpty ? 1 : 0) +
+                            (_genre.isNotEmpty ? 1 : 0),
+                        isLabelVisible: _year != 0 ||
+                            _region.isNotEmpty ||
+                            _genre.isNotEmpty,
+                        child: const Icon(Icons.tune_rounded),
+                      ),
+                    ),
+                  ],
+                );
+              }
+              if (width < 900) return search;
               return Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
@@ -443,40 +480,50 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
             },
           ),
           SizedBox(height: tokens.spacing.gap),
-          HorizontalDragScrollable(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: <Widget>[
-                  for (final discovery.VideoDiscoveryCategory? category
-                      in <discovery.VideoDiscoveryCategory?>[
-                    null,
-                    ...discovery.VideoDiscoveryCategory.values,
-                  ]) ...<Widget>[
-                    FushiSelectableChip(
-                      key: ValueKey<String>(
-                        'video-discovery-category-${category?.name ?? 'all'}',
-                      ),
-                      label: _categoryLabel(category),
-                      selected: _category == category,
-                      focusId: FushiFocusId(
-                        'video-discovery-category-${category?.name ?? 'all'}',
-                      ),
-                      onSelected: (_) {
-                        if (_category == category) return;
-                        setState(() => _category = category);
-                        unawaited(_reload());
-                      },
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: HorizontalDragScrollable(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: <Widget>[
+                        for (final discovery.VideoDiscoveryCategory? category
+                            in <discovery.VideoDiscoveryCategory?>[
+                          null,
+                          ...discovery.VideoDiscoveryCategory.values,
+                        ]) ...<Widget>[
+                          FushiSelectableChip(
+                            key: ValueKey<String>(
+                              'video-discovery-category-${category?.name ?? 'all'}',
+                            ),
+                            label: _categoryLabel(category),
+                            selected: _category == category,
+                            focusId: FushiFocusId(
+                              'video-discovery-category-${category?.name ?? 'all'}',
+                            ),
+                            onSelected: (_) {
+                              if (_category == category) return;
+                              setState(() => _category = category);
+                              unawaited(_reload());
+                            },
+                          ),
+                          if (category !=
+                              discovery.VideoDiscoveryCategory.values.last)
+                            SizedBox(width: tokens.spacing.gap),
+                        ],
+                      ],
                     ),
-                    if (category !=
-                        discovery.VideoDiscoveryCategory.values.last)
-                      SizedBox(width: tokens.spacing.gap),
-                  ],
-                ],
+                  ),
+                ),
               ),
-            ),
+              if (compact) ...<Widget>[
+                SizedBox(width: tokens.spacing.gap),
+                _buildSortMenu(compact: true),
+              ],
+            ],
           ),
-          if (MediaQuery.sizeOf(context).width < 900) ...<Widget>[
+          if (!compact && width < 900) ...<Widget>[
             SizedBox(height: tokens.spacing.gap),
             Wrap(
               spacing: tokens.spacing.gap,
@@ -494,72 +541,176 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
     );
   }
 
-  Widget _buildYearField() {
+  Future<void> _openFilterSheet() async {
+    int year = _year;
+    String region = _region;
+    String genre = _genre;
+    final bool? apply = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (BuildContext sheetContext) => StatefulBuilder(
+        builder: (BuildContext context, StateSetter setSheetState) {
+          final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+          return SafeArea(
+            top: false,
+            child: SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(
+                tokens.spacing.page,
+                0,
+                tokens.spacing.page,
+                tokens.spacing.page,
+              ),
+              child: Column(
+                key: const ValueKey<String>('video-discovery-filter-sheet'),
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Text(
+                    t.game_filter,
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  SizedBox(height: tokens.spacing.gap),
+                  Text(t.video_filter_year),
+                  _buildYearField(
+                    value: year,
+                    onChanged: (int value) => setSheetState(() => year = value),
+                  ),
+                  SizedBox(height: tokens.spacing.gap),
+                  Text(t.video_work_countries),
+                  _buildRegionMenu(
+                    value: region,
+                    onChanged: (String value) =>
+                        setSheetState(() => region = value),
+                  ),
+                  SizedBox(height: tokens.spacing.gap),
+                  Text(t.video_work_genres),
+                  _buildGenreMenu(
+                    value: genre,
+                    onChanged: (String value) =>
+                        setSheetState(() => genre = value),
+                  ),
+                  SizedBox(height: tokens.spacing.gap),
+                  Wrap(
+                    alignment: WrapAlignment.end,
+                    spacing: tokens.spacing.gap,
+                    children: <Widget>[
+                      TextButton(
+                        key: const ValueKey<String>(
+                          'video-discovery-reset-filters',
+                        ),
+                        onPressed: () => setSheetState(() {
+                          year = 0;
+                          region = '';
+                          genre = '';
+                        }),
+                        child: Text(t.reset),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(sheetContext, false),
+                        child: Text(t.dialog_cancel),
+                      ),
+                      FilledButton(
+                        key: const ValueKey<String>(
+                          'video-discovery-apply-filters',
+                        ),
+                        onPressed: () => Navigator.pop(sheetContext, true),
+                        child: Text(t.dialog_done),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+    if (!mounted ||
+        apply != true ||
+        (year == _year && region == _region && genre == _genre)) {
+      return;
+    }
+    setState(() {
+      _year = year;
+      _region = region;
+      _genre = genre;
+    });
+    unawaited(_reload());
+  }
+
+  Widget _buildYearField({int? value, ValueChanged<int>? onChanged}) {
+    final int selected = value ?? _year;
     final int newestYear = DateTime.now().year + 2;
     return PopupMenuButton<int>(
       key: const ValueKey<String>('video-discovery-filter-year'),
       tooltip: t.video_filter_year,
-      initialValue: _year,
-      onSelected: _applyYearFilter,
+      initialValue: selected,
+      onSelected: onChanged ?? _applyYearFilter,
       itemBuilder: (_) => <PopupMenuEntry<int>>[
         PopupMenuItem<int>(value: 0, child: Text(t.home_filter_all)),
         for (int year = newestYear; year >= 1900; year--)
           PopupMenuItem<int>(value: year, child: Text('$year')),
       ],
       child: _filterButton(
-        label: _year == 0 ? t.video_filter_year : '$_year',
-        active: _year != 0,
+        label: selected == 0 ? t.video_filter_year : '$selected',
+        active: selected != 0,
       ),
     );
   }
 
-  Widget _buildRegionMenu() {
+  Widget _buildRegionMenu({String? value, ValueChanged<String>? onChanged}) {
+    final String selected = value ?? _region;
     const List<String> regions = <String>['CN', 'JP', 'KR', 'US', 'GB', 'FR'];
     return PopupMenuButton<String>(
       key: const ValueKey<String>('video-discovery-filter-region'),
       tooltip: t.video_work_countries,
-      initialValue: _region,
-      onSelected: (String value) {
-        setState(() => _region = value);
-        unawaited(_reload());
-      },
+      initialValue: selected,
+      onSelected: onChanged ??
+          (String value) {
+            setState(() => _region = value);
+            unawaited(_reload());
+          },
       itemBuilder: (_) => <PopupMenuEntry<String>>[
         PopupMenuItem<String>(value: '', child: Text(t.home_filter_all)),
         for (final String region in regions)
           PopupMenuItem<String>(value: region, child: Text(region)),
       ],
       child: _filterButton(
-        label: _region.isEmpty ? t.video_work_countries : _region,
-        active: _region.isNotEmpty,
+        label: selected.isEmpty ? t.video_work_countries : selected,
+        active: selected.isNotEmpty,
       ),
     );
   }
 
-  Widget _buildGenreMenu() {
+  Widget _buildGenreMenu({String? value, ValueChanged<String>? onChanged}) {
+    final String selected = value ?? _genre;
     return PopupMenuButton<String>(
       key: const ValueKey<String>('video-discovery-filter-genre'),
       tooltip: t.video_work_genres,
-      initialValue: _genre,
-      onSelected: (String value) {
-        setState(() => _genre = value);
-        unawaited(_reload());
-      },
+      initialValue: selected,
+      onSelected: onChanged ??
+          (String value) {
+            setState(() => _genre = value);
+            unawaited(_reload());
+          },
       itemBuilder: (_) => <PopupMenuEntry<String>>[
         PopupMenuItem<String>(value: '', child: Text(t.home_filter_all)),
         for (final String genre in _availableGenres)
           PopupMenuItem<String>(value: genre, child: Text(genre)),
       ],
       child: _filterButton(
-        label: _genre.isEmpty ? t.video_work_genres : _genre,
-        active: _genre.isNotEmpty,
+        label: selected.isEmpty ? t.video_work_genres : selected,
+        active: selected.isNotEmpty,
       ),
     );
   }
 
-  Widget _buildSortMenu() {
+  Widget _buildSortMenu({bool compact = false}) {
     return PopupMenuButton<discovery.VideoDiscoverySort>(
       key: const ValueKey<String>('video-discovery-filter-sort'),
-      tooltip: t.sort_by,
+      tooltip: '${t.sort_by}: ${_sortLabel(_sort)}',
       initialValue: _sort,
       onSelected: (discovery.VideoDiscoverySort value) {
         setState(() => _sort = value);
@@ -575,12 +726,23 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
               child: Text(_sortLabel(sort)),
             ),
       ],
-      child: _filterButton(
-        label: _sort == discovery.VideoDiscoverySort.popularity
-            ? t.sort_by
-            : _sortLabel(_sort),
-        active: _sort != discovery.VideoDiscoverySort.popularity,
-      ),
+      child: compact
+          ? SizedBox(
+              width: 48,
+              height: 48,
+              child: Icon(
+                Icons.sort_rounded,
+                color: _sort == discovery.VideoDiscoverySort.popularity
+                    ? null
+                    : Theme.of(context).colorScheme.primary,
+              ),
+            )
+          : _filterButton(
+              label: _sort == discovery.VideoDiscoverySort.popularity
+                  ? t.sort_by
+                  : _sortLabel(_sort),
+              active: _sort != discovery.VideoDiscoverySort.popularity,
+            ),
     );
   }
 
@@ -590,9 +752,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
     return SizedBox(
       height: _filterControlHeight,
       child: FushiCard(
-        padding: EdgeInsets.symmetric(
-          horizontal: tokens.spacing.rowHorizontal,
-        ),
+        padding: EdgeInsets.symmetric(horizontal: tokens.spacing.rowHorizontal),
         color: active ? tokens.surfaces.selected : tokens.surfaces.page,
         borderColor: active ? colors.primary : tokens.surfaces.outline,
         child: Row(
@@ -679,26 +839,41 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
         else
           SliverPadding(
             padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-            sliver: SliverGrid(
-              gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: readerShelfGridExtentForWidth(
+            sliver: SliverLayoutBuilder(
+              builder: (BuildContext context, SliverConstraints constraints) {
+                final double maxExtent = readerShelfGridExtentForWidth(
                   MediaQuery.sizeOf(context).width,
-                ),
-                mainAxisSpacing: tokens.spacing.gap,
-                crossAxisSpacing: tokens.spacing.gap,
-                // BUG-1527：0.52 在长标题 + 当前 UI scale 下让海报+两行标题+元数据
-                // 比网格格子高约 2.4px；0.50 留出稳定正文余量且保持海报密度。
-                childAspectRatio: 0.50,
-              ),
-              delegate: SliverChildBuilderDelegate(
-                (BuildContext context, int index) => _DiscoveryMediaCard(
-                  item: _works[index],
-                  landscape: false,
-                  imageResolver: widget.imageResolver,
-                  onTap: () => _openItem(_works[index]),
-                ),
-                childCount: _works.length,
-              ),
+                );
+                // Keep the existing maximum-extent delegate's column count.
+                final int desiredColumns = (constraints.crossAxisExtent /
+                        (maxExtent + tokens.spacing.gap))
+                    .ceil();
+                final int columns = desiredColumns < 1 ? 1 : desiredColumns;
+                final double coverWidth = (constraints.crossAxisExtent -
+                        tokens.spacing.gap * (columns - 1)) /
+                    columns;
+                // Text does not shrink with the cover width. Reserve its
+                // measured space instead of squeezing it into an aspect ratio.
+                final double textHeight = _cardTextHeight(tokens);
+                return SliverGrid(
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: columns,
+                    mainAxisSpacing: tokens.spacing.gap,
+                    crossAxisSpacing: tokens.spacing.gap,
+                    mainAxisExtent:
+                        coverWidth * 1.5 + tokens.spacing.gap * 2 + textHeight,
+                  ),
+                  delegate: SliverChildBuilderDelegate(
+                    (BuildContext context, int index) => _DiscoveryMediaCard(
+                      item: _works[index],
+                      landscape: false,
+                      imageResolver: widget.imageResolver,
+                      onTap: () => _openItem(_works[index]),
+                    ),
+                    childCount: _works.length,
+                  ),
+                );
+              },
             ),
           ),
         if (_loadingMore)
@@ -714,6 +889,23 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
           ),
       ],
     );
+  }
+
+  double _cardTextHeight(FushiDesignTokens tokens) {
+    double measure(String text, TextStyle style) {
+      final TextPainter painter = TextPainter(
+        text: TextSpan(text: text, style: style),
+        textDirection: Directionality.of(context),
+        textScaler: MediaQuery.textScalerOf(context),
+      )..layout();
+      final double height = painter.height;
+      painter.dispose();
+      return height;
+    }
+
+    return (measure('国M\n国M', tokens.type.listTitle) +
+            measure('2026 · ★ 8.4', tokens.type.metadata))
+        .ceilToDouble();
   }
 
   Widget _buildProviderWarning() {
