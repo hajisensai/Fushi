@@ -338,6 +338,13 @@ extension _VideoLayout on _VideoFushiPageState {
               },
               child: Listener(
                 behavior: HitTestBehavior.translucent,
+                // BUG-2403：按下侧记下「这次是不是非主键」。[PointerUpEvent.buttons]
+                // 抬起时恒为 0，按钮号只在按下事件里有，所以 [_handleVideoPointerUp]
+                // 的「只有左键双击才切全屏」这个判据只能靠这条记账成立。必须与
+                // onPointerUp 挂在同一个 Listener 上：换一层挂载点两者命中集合就不再
+                // 一致，会出现「记了账收不到抬起」或反过来。
+                onPointerDown: _recordVideoPointerButton,
+                onPointerCancel: _forgetVideoPointerButton,
                 onPointerUp: _handleVideoPointerUp,
                 // TODO-1058：桌面在画面上滚鼠标滚轮调音量（门控见 _handleVideoWheelSignal）。
                 // PointerSignal 不进手势竞技场，与单击暂停 / 长按横拖 seek 正交、互不干扰。
@@ -348,6 +355,9 @@ extension _VideoLayout on _VideoFushiPageState {
                 // 与它双触发。阶梯用本页那条（video 先、universal / global 兜底）。左键双击全屏
                 // 仍走外层 Listener.onPointerUp（两路指针语义互不干扰）。触屏按下折不出鼠标
                 // 按钮号、永不触发，[_handleSecondaryTap] 内另有一道平台门控（双保险）。
+                // 「左键双击全屏」这句在 BUG-2403 之前只是注释：双击判定不看按钮号，
+                // 右键 / 中键 / 侧键双击画面同样切全屏。判据现在由上面的
+                // onPointerDown 记账真的写进了实现。
                 child: ContextMenuTrigger(
                   // 右键菜单改由绑定表决定唤出键（默认仍是右键）；右键被别的动作占用时自动让位。
                   onInvoke: (Offset position) => _handleSecondaryTap(position),
