@@ -206,6 +206,16 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'update_debug_channel',
   'update_download_source',
   'update_never_remind',
+  // bool ×5（v101 统一更新提醒）：四个域各一个「要不要提醒」开关 + 系统通知总
+  // 开关。默认全 true（装了订阅功能就是想被告知）。域开关关掉 = 该域整批不投递
+  // （不进更新页、不出红点、不发通知）；总开关只掐系统通知，红点照常。
+  // 调用点走 `UpdateFeedKind.enabledPrefKey` / [kUpdateSystemNotificationsPref]
+  // 常量，不是裸字面量——守卫扫不到，但纪律要求登记。
+  'updates_notify_app_release',
+  'updates_notify_manga_chapter',
+  'updates_notify_manga_extension',
+  'updates_notify_video_episode',
+  'updates_system_notifications',
   'video_anime4k_prompt_shown',
   'video_asbplayer_config',
   'video_auto_play_next',
@@ -292,6 +302,9 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
   'gal_lookup_surface_v1::',
   'media_source_secret_',
   'src:',
+  // int（毫秒，v101）：`updates_last_check_<UpdateFeedKind.dbValue>`——某个域上次
+  // 后台检查完成的时刻。到期判据只读它，失败也照记（否则断网时每个 tick 都重试）。
+  'updates_last_check_',
   'video_danmaku_episode/',
   // 视频远端断点/播放偏好三件套族（PositionPrefKeys，fushi_library_host_service.dart）：
   // `<前缀><bookUid>` 值键 + `<前缀>at_<bookUid>` 时间戳键，逐字段 LWW 跨设备同步

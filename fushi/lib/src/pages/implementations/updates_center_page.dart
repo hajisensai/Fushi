@@ -102,15 +102,19 @@ class _UpdatesCenterPageState extends State<UpdatesCenterPage>
   }
 
   Widget _buildFilters(FushiDesignTokens tokens) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: EdgeInsets.symmetric(horizontal: tokens.spacing.gap),
-      child: Row(
-        children: <Widget>[
-          _filterChip(label: t.updates_filter_all, kind: null),
-          for (final UpdateFeedKind kind in UpdateFeedKind.values)
-            _filterChip(label: updateFeedKindLabel(kind), kind: kind),
-        ],
+    // 横向滚动区必须包 HorizontalDragScrollable：桌面端默认 dragDevices 不含
+    // mouse，不包就是「鼠标拖不动」（守卫 horizontal_drag_scroll_guard 盯着）。
+    return HorizontalDragScrollable(
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: EdgeInsets.symmetric(horizontal: tokens.spacing.gap),
+        child: Row(
+          children: <Widget>[
+            _filterChip(label: t.updates_filter_all, kind: null),
+            for (final UpdateFeedKind kind in UpdateFeedKind.values)
+              _filterChip(label: updateFeedKindLabel(kind), kind: kind),
+          ],
+        ),
       ),
     );
   }

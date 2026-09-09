@@ -73,7 +73,8 @@ class _UpdatesDashboardBannerState extends State<UpdatesDashboardBanner> {
     // （异步），在外面写死一个 SizedBox 会让没有更新时首页顶部空出一条。
     return Padding(
       padding: EdgeInsets.only(bottom: tokens.spacing.card),
-      child: Card(
+      child: FushiCard(
+        padding: EdgeInsets.zero,
         margin: EdgeInsets.zero,
         child: FushiListItem(
           leading: Badge(
