@@ -78,7 +78,7 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
             resolveExtractedEpubRoot(r.extractDir) != null,
         format: format.dbValue,
         hasMangaContent: format == BookFormat.manga &&
-            File(p.join(r.extractDir, kMangaPackageMarker)).existsSync(),
+            hasExportableMangaContent(r.extractDir),
         mangaReadingMode: r.mangaReadingMode,
         hasEmbeddedCover: coverPath != null,
         coverPath: coverPath,

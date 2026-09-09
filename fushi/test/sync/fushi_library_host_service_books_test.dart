@@ -257,6 +257,34 @@ void main() {
       expect(legacy.hasMangaContent, isFalse);
     });
 
+    test('listBooks 在线漫画合集只有空 pages 标记时不可下载', () async {
+      final String extractDir = p.join(tmp.path, 'OnlineSeries');
+      await insertMangaBook(title: 'OnlineSeries', extractDir: extractDir);
+      // OnlineMangaLibraryService.add 的占位布局；封面存在也不代表有正文。
+      File(p.join(extractDir, 'manga.json')).writeAsStringSync('{"pages":[]}');
+
+      final LocalLibraryHostService svc = _buildSvc(db: db);
+      final RemoteBookInfo info = (await svc.listBooks()).single;
+      expect(info.format, 'manga');
+      expect(info.hasEmbeddedCover, isTrue);
+      expect(info.hasContent, isFalse);
+      expect(info.hasMangaContent, isFalse, reason: '未下载的作品合集不应成为远端可下载漫画卡');
+      expect(RemoteBookInfo.fromJson(info.toJson()).hasMangaContent, isFalse);
+    });
+
+    test('listBooks 漫画清单中的页图缺失时不可下载', () async {
+      final String extractDir = p.join(tmp.path, 'MissingMangaPage');
+      await insertMangaBook(title: 'MissingMangaPage', extractDir: extractDir);
+      File(p.join(extractDir, 'images', 'p1.jpg')).deleteSync();
+
+      final LocalLibraryHostService svc = _buildSvc(db: db);
+      final RemoteBookInfo info = (await svc.listBooks()).single;
+      expect(info.format, 'manga');
+      expect(info.hasContent, isFalse);
+      expect(info.hasMangaContent, isFalse,
+          reason: '只有 manifest 但正文页图缺失的包无法成功导入');
+    });
+
     test('EPUB 转化漫画（extractDir 残留 container.xml）hasContent 必须 false（坏包防线）',
         () async {
       await insertMangaBook(

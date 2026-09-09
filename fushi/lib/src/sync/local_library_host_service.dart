@@ -26,7 +26,7 @@ import 'package:fushi/src/media/video/series_playback_prefs.dart'
         effectiveSeriesDelayMs,
         effectiveSeriesSecondaryDelayMs;
 import 'package:fushi/src/sync/manga_sync_package.dart'
-    show kMangaPackageMarker, repackageMangaBook;
+    show hasExportableMangaContent, repackageMangaBook;
 import 'package:fushi/src/stats/stat_facts.dart';
 import 'package:fushi/src/sync/aggregate_snapshot.dart';
 import 'package:fushi/src/sync/override_title_lookup.dart';
