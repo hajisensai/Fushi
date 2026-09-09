@@ -1381,7 +1381,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       exactOnly: true,
     );
     if (listHit != null) {
-      _handleListLookup(listHit.cue, listHit.graphemeIndex, listHit.charRect);
+      _handleListLookup(listHit.cue, listHit.graphemeIndex, listHit.anchorRect);
       return;
     }
     _popNestedPopupAt(0);
