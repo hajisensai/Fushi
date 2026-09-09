@@ -8,6 +8,8 @@ import 'package:fushi/src/sync/sync_error_messages.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/webdav_ops.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-1323 / BUG-1324：同步层两处「把错误压平」的独立缺陷。
 ///
 /// - BUG-1323：`WebDavOps.checkStatus` 把 401（凭据不被接受）和 403（凭据没问题，
@@ -258,6 +260,144 @@ void main() {
         isNot(contains('resolveSyncBackend(await repo.getBackendType())')),
         reason: '按 backendType 猜通道 = 双通道下必然猜错一半',
       );
+    });
+  });
+
+  group('BUG-2377 互联没有「登录」这回事', () {
+    // 用户实拍：存储后端 = Fushi 互联，点「立即同步」→ 上次同步「失败」→ toast
+    // 「登录已过期，请重新登录。」互联的凭据是配对时对端发的 per-peer token，
+    // 应用里根本没有互联的登录入口 —— 这句话把用户指向一个不存在的操作。
+    // 根因：WebDavOps 是**传输层**，对 WebDAV（用户名/密码）和互联（配对 token）
+    // 一律抛默认的 credentials，文案层只能按字符串猜，猜成了 OAuth 的措辞。
+
+    test('传输层默认不变：WebDAV 的 401 仍是 credentials（逐字不回归）', () {
+      final WebDavOps dav = WebDavOps(
+        baseUrl: 'http://127.0.0.1:1/dav',
+        username: 'u',
+        password: 'p',
+      );
+      SyncAuthError? caught;
+      try {
+        dav.checkStatus(401, 'GET /x');
+      } on SyncAuthError catch (e) {
+        caught = e;
+      }
+      expect(caught!.kind, SyncAuthFailureKind.credentials);
+      expect(friendlySyncError(caught), t.sync_err_auth_expired);
+    });
+
+    test('互联声明的传输层：同一个 401 变成「配对被拒」，不再说登录过期', () {
+      final WebDavOps peer = WebDavOps(
+        baseUrl: 'http://127.0.0.1:1/dav',
+        username: 'hibiki',
+        password: 'per-peer-token',
+        unauthorizedKind: SyncAuthFailureKind.pairingRejected,
+      );
+      SyncAuthError? caught;
+      try {
+        peer.checkStatus(401, 'GET /x');
+      } on SyncAuthError catch (e) {
+        caught = e;
+      }
+      expect(caught, isNotNull);
+      expect(caught!.kind, SyncAuthFailureKind.pairingRejected);
+      expect(friendlySyncError(caught), t.sync_err_pairing_rejected);
+      expect(friendlySyncError(caught), isNot(equals(t.sync_err_auth_expired)));
+    });
+
+    test('403 的语义不被 unauthorizedKind 抢走（只管 401）', () {
+      final WebDavOps peer = WebDavOps(
+        baseUrl: 'http://127.0.0.1:1/dav',
+        username: 'hibiki',
+        password: 't',
+        unauthorizedKind: SyncAuthFailureKind.pairingRejected,
+      );
+      SyncAuthError? caught;
+      try {
+        peer.checkStatus(403, 'GET /svc', serverReason: 'HTTPS required');
+      } on SyncAuthError catch (e) {
+        caught = e;
+      }
+      expect(caught!.kind, SyncAuthFailureKind.forbidden);
+      expect(friendlySyncError(caught), contains('HTTPS required'));
+    });
+
+    test('一台对端都没配对：不再把裸英文原文摔给用户', () {
+      final SyncAuthError e = SyncAuthError(
+        'Fushi server credentials not configured',
+        kind: SyncAuthFailureKind.pairingNotConfigured,
+      );
+      expect(friendlySyncError(e), t.sync_err_not_paired);
+      expect(friendlySyncError(e),
+          isNot(contains('Fushi server credentials not configured')));
+      expect(friendlySyncError(e), isNot(equals(t.sync_err_auth_expired)));
+    });
+
+    test('两条新文案都不得再提「登录」（互联没有登录入口）', () {
+      // 英文与简中双语都钉：措辞跑偏成 "sign in again" 就等于回归。
+      for (final String shown in <String>[
+        t.sync_err_pairing_rejected,
+        t.sync_err_not_paired,
+      ]) {
+        expect(shown, isNot(contains('sign in')));
+        expect(shown, isNot(contains('登录')));
+        expect(shown, isNot(contains('登入')));
+      }
+    });
+
+    test('配对被拒**不得**登出：互联登出会清空整份配对配置', () {
+      expect(
+        shouldSignOutOnAuthError(
+          SyncAuthError('Authentication failed',
+              kind: SyncAuthFailureKind.pairingRejected),
+        ),
+        isFalse,
+        reason: 'BUG-1550/BUG-1578：一台对端的 401 不得株连其余对端的配对',
+      );
+      expect(
+        shouldSignOutOnAuthError(
+          SyncAuthError('not configured',
+              kind: SyncAuthFailureKind.pairingNotConfigured),
+        ),
+        isFalse,
+      );
+    });
+
+    test('互联后端**每一个** WebDavOps 都声明了自己的凭据语义（源码守卫）', () {
+      // 漏一处 = 那条路径上的 401 又变回「登录已过期」。互联侧的构造点会随功能
+      // 增加（探测/暂定句柄/已解析会话/测试连接…），故按出现次数配对扫描，而不是
+      // 钉死行号。
+      final String src = maskComments(
+          File('lib/src/sync/interconnect_sync_backend.dart')
+              .readAsStringSync());
+      final int constructions = 'WebDavOps('.allMatches(src).length;
+      final int declared =
+          'unauthorizedKind: SyncAuthFailureKind.pairingRejected'
+              .allMatches(src)
+              .length;
+      expect(constructions, greaterThanOrEqualTo(5),
+          reason: '互联后端至少有 5 处 WebDavOps 构造点');
+      expect(declared, constructions,
+          reason: '有 WebDavOps 构造点没声明 unauthorizedKind —— '
+              '那条路径上的对端 401 会重新被说成「登录已过期」');
+    });
+
+    test('互联的 POST 传输层同样带类型（远程查词/制卡的 401）', () {
+      final String src = maskComments(
+          File('lib/src/sync/interconnect_post_transport.dart')
+              .readAsStringSync());
+      expect(src, contains('kind: SyncAuthFailureKind.pairingRejected'));
+    });
+
+    test('文案层对互联不再靠字符串猜：按 kind 分派先于任何 contains', () {
+      final String src = maskComments(
+          File('lib/src/sync/sync_error_messages.dart').readAsStringSync());
+      final int typeDispatch =
+          src.indexOf('error.kind != SyncAuthFailureKind.credentials');
+      final int stringGuess = src.indexOf("l.contains('401')");
+      expect(typeDispatch, greaterThanOrEqualTo(0));
+      expect(stringGuess, greaterThan(typeDispatch),
+          reason: '类型分派必须排在字符串猜测之前，否则新 kind 又被 contains 抢走');
     });
   });
 

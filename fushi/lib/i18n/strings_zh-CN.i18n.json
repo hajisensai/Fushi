@@ -4535,5 +4535,7 @@
   "dialog_background_close": "关闭（任务继续在后台运行）",
   "reader_timer_show": "显示阅读计时器",
   "media_source_root_already_added": "该位置已是来源，正在重新扫描：$path",
-  "audiobook_transcribe_model_discarded": "模型文件读不出来，已自动清除，请重新下载。"
+  "audiobook_transcribe_model_discarded": "模型文件读不出来，已自动清除，请重新下载。",
+  "sync_err_pairing_rejected": "对方设备已拒绝本机的配对凭据，请重新配对后再同步。",
+  "sync_err_not_paired": "尚未配对任何设备，请先在「Fushi 互联」里完成配对。"
 }

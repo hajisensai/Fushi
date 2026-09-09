@@ -4535,5 +4535,7 @@
   "dialog_background_close": "Close (task keeps running)",
   "reader_timer_show": "독서 타이머 표시",
   "media_source_root_already_added": "Already a source — rescanning: $path",
-  "audiobook_transcribe_model_discarded": "The model file could not be read and was removed. Download it again."
+  "audiobook_transcribe_model_discarded": "The model file could not be read and was removed. Download it again.",
+  "sync_err_pairing_rejected": "페어링된 기기가 이 기기의 자격 증명을 거부했습니다. 동기화를 재개하려면 다시 페어링하세요.",
+  "sync_err_not_paired": "아직 페어링된 기기가 없습니다. 먼저 'Fushi 互联'에서 페어링을 완료하세요."
 }

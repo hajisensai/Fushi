@@ -4535,5 +4535,7 @@
   "dialog_background_close": "Close (task keeps running)",
   "reader_timer_show": "Tampilkan pengatur waktu baca",
   "media_source_root_already_added": "Already a source — rescanning: $path",
-  "audiobook_transcribe_model_discarded": "The model file could not be read and was removed. Download it again."
+  "audiobook_transcribe_model_discarded": "The model file could not be read and was removed. Download it again.",
+  "sync_err_pairing_rejected": "Perangkat yang dipasangkan menolak kredensial perangkat ini — pasangkan ulang untuk melanjutkan sinkronisasi.",
+  "sync_err_not_paired": "Belum ada perangkat yang dipasangkan — atur pemasangan di \"Fushi Interconnect\" terlebih dahulu."
 }

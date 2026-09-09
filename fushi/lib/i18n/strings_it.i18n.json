@@ -4535,5 +4535,7 @@
   "dialog_background_close": "Close (task keeps running)",
   "reader_timer_show": "Mostra timer di lettura",
   "media_source_root_already_added": "Already a source — rescanning: $path",
-  "audiobook_transcribe_model_discarded": "The model file could not be read and was removed. Download it again."
+  "audiobook_transcribe_model_discarded": "The model file could not be read and was removed. Download it again.",
+  "sync_err_pairing_rejected": "Il dispositivo associato ha rifiutato le credenziali di questo dispositivo: esegui di nuovo l'associazione per riprendere la sincronizzazione.",
+  "sync_err_not_paired": "Nessun dispositivo associato: configura prima l'associazione in «Fushi Interconnect»."
 }

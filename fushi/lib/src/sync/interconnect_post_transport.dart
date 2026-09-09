@@ -146,7 +146,14 @@ class InterconnectPostTransport {
         // 传输层失败（连接拒绝/超时/DNS）根本走不到这一行，落在 catch 里。
         anyResponse = true;
         if (response.statusCode == 401) {
-          authError = SyncAuthError(authErrorMessage);
+          // BUG-2377：这条通道的凭据只可能是配对 token（地址行自带的 per-peer
+          // token，或全局回落键）——本文件从头到尾只服务互联。语义写死成
+          // [SyncAuthFailureKind.pairingRejected]，别再让上层从消息字面量去猜：
+          // 猜的结果是「登录已过期，请重新登录」，而互联没有登录这个操作。
+          authError = SyncAuthError(
+            authErrorMessage,
+            kind: SyncAuthFailureKind.pairingRejected,
+          );
           continue;
         }
         if (response.statusCode == 404 || response.statusCode == 405) {
