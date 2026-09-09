@@ -2040,7 +2040,6 @@
   "manga_discovery_section_latest_finished": "최근 완결",
   "manga_discovery_section_popular": "인기",
   "manga_discovery_section_top_rated": "최고 평점",
-  "manga_discovery_section_trending": "트렌딩",
   "manga_discovery_source_popular": "${source}에서 인기",
   "manga_discovery_sources_browse": "소스 탐색",
   "manga_discovery_status_cancelled": "취소됨",
@@ -4520,5 +4519,6 @@
   "video_work_field_tagline": "Tagline",
   "video_work_field_rating": "Rating",
   "video_work_field_cover": "Cover",
-  "video_work_field_backdrop": "Backdrop"
+  "video_work_field_backdrop": "Backdrop",
+  "manga_discovery_section_publishing": "Popular publishing manga"
 }

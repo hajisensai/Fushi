@@ -2040,7 +2040,6 @@
   "manga_discovery_section_latest_finished": "Son tamamlananlar",
   "manga_discovery_section_popular": "Popüler",
   "manga_discovery_section_top_rated": "En yüksek puanlı",
-  "manga_discovery_section_trending": "Trend",
   "manga_discovery_source_popular": "${source} üzerinde popüler",
   "manga_discovery_sources_browse": "Bir kaynağa göz at",
   "manga_discovery_status_cancelled": "İptal edildi",
@@ -4520,5 +4519,6 @@
   "video_work_field_tagline": "Tagline",
   "video_work_field_rating": "Rating",
   "video_work_field_cover": "Cover",
-  "video_work_field_backdrop": "Backdrop"
+  "video_work_field_backdrop": "Backdrop",
+  "manga_discovery_section_publishing": "Popular publishing manga"
 }

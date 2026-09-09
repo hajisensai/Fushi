@@ -2040,7 +2040,6 @@
   "manga_discovery_section_latest_finished": "Hoàn thành gần đây",
   "manga_discovery_section_popular": "Phổ biến",
   "manga_discovery_section_top_rated": "Đánh giá cao nhất",
-  "manga_discovery_section_trending": "Thịnh hành",
   "manga_discovery_source_popular": "Phổ biến trên ${source}",
   "manga_discovery_sources_browse": "Duyệt nguồn",
   "manga_discovery_status_cancelled": "Đã hủy",
@@ -4520,5 +4519,6 @@
   "video_work_field_tagline": "Tagline",
   "video_work_field_rating": "Rating",
   "video_work_field_cover": "Cover",
-  "video_work_field_backdrop": "Backdrop"
+  "video_work_field_backdrop": "Backdrop",
+  "manga_discovery_section_publishing": "Popular publishing manga"
 }

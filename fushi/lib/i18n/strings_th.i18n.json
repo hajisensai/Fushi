@@ -2040,7 +2040,6 @@
   "manga_discovery_section_latest_finished": "จบล่าสุด",
   "manga_discovery_section_popular": "ยอดนิยม",
   "manga_discovery_section_top_rated": "คะแนนสูงสุด",
-  "manga_discovery_section_trending": "กำลังมาแรง",
   "manga_discovery_source_popular": "ยอดนิยมบน ${source}",
   "manga_discovery_sources_browse": "เรียกดูแหล่ง",
   "manga_discovery_status_cancelled": "ยกเลิก",
@@ -4520,5 +4519,6 @@
   "video_work_field_tagline": "Tagline",
   "video_work_field_rating": "Rating",
   "video_work_field_cover": "Cover",
-  "video_work_field_backdrop": "Backdrop"
+  "video_work_field_backdrop": "Backdrop",
+  "manga_discovery_section_publishing": "Popular publishing manga"
 }

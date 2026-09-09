@@ -2040,7 +2040,6 @@
   "manga_discovery_section_latest_finished": "最新完結",
   "manga_discovery_section_popular": "熱門",
   "manga_discovery_section_top_rated": "高分",
-  "manga_discovery_section_trending": "趨勢",
   "manga_discovery_source_popular": "${source} · 熱門",
   "manga_discovery_sources_browse": "瀏覽來源",
   "manga_discovery_status_cancelled": "已腰斬",
@@ -4520,5 +4519,6 @@
   "video_work_field_tagline": "Tagline",
   "video_work_field_rating": "Rating",
   "video_work_field_cover": "Cover",
-  "video_work_field_backdrop": "Backdrop"
+  "video_work_field_backdrop": "Backdrop",
+  "manga_discovery_section_publishing": "Popular publishing manga"
 }

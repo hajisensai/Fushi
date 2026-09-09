@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2137 条。点号进各自文件。
+> 共 2138 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -56,6 +56,7 @@
 | [BUG-2260](bugs/BUG-2260-netflix-advisory-overlay-selector-drift.md) | ✅ | ✅ | Netflix 分级提示 overlay 改用 .watch-video--advisories-container，三处隐藏选择器全部静默失效；内置播放器换集重载后 chrome 隐藏丢失 |
 | [BUG-2259](bugs/BUG-2259-macos-quit-no-exit-flush.md) | ✅ | ✅ | macOS Cmd+Q 退出不跑退出 flush（阅读位置/有声书进度/阅读统计丢最后一段） |
 | [BUG-2258](bugs/BUG-2258-macos-video-retina-blur.md) | ✅ | ✅ | mac 视频在 Retina 上发虚：media_kit 按视频原生分辨率建纹理，放大交给 Flutter 双线性 |
+| [BUG-2257](bugs/BUG-2257-manga-discovery-mal.md) | ✅ | ✅ | 漫画发现 AniList API 停用返回403，迁移MAL |
 | [BUG-2256](bugs/BUG-2256-subtitle-pause-reveal-ignores-gate.md) | ✅ | ✅ | 关掉「悬停或点击显形」后，暂停仍会揭开被隐藏的字幕 |
 | [BUG-2255](bugs/BUG-2255-reader-sentence-seek-dom-identity.md) | ✅ | ✅ | 正文从本句播放误取上一条字幕 |
 | [BUG-2254](bugs/BUG-2254-jellyfin-fnos-x-emby-auth.md) | ✅ | ✅ | 飞牛影视 Jellyfin 兼容层要求 X-Emby-Authorization 认证头 |

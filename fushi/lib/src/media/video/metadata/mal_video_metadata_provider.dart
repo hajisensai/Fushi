@@ -24,13 +24,13 @@ class MalVideoMetadataProvider implements VideoMetadataProvider {
         _transport = transport ??
             VideoMetadataHttpClient(client: client, maxAttempts: 1),
         _ownsTransport = transport == null,
-        _gate = requestGate ?? _sharedGate {
+        _gate = requestGate ?? sharedRequestGate {
     if (_transport.maxAttempts != 1) {
       throw ArgumentError('MAL transport must use maxAttempts: 1');
     }
   }
 
-  static final MalVideoMetadataRequestGate _sharedGate =
+  static final MalVideoMetadataRequestGate sharedRequestGate =
       MalVideoMetadataRequestGate();
   final VideoMetadataHttpClient _transport;
   final bool _ownsTransport;

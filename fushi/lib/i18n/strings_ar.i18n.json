@@ -2040,7 +2040,6 @@
   "manga_discovery_section_latest_finished": "مكتمل مؤخراً",
   "manga_discovery_section_popular": "شائع",
   "manga_discovery_section_top_rated": "الأعلى تقييماً",
-  "manga_discovery_section_trending": "رائج",
   "manga_discovery_source_popular": "شائع على ${source}",
   "manga_discovery_sources_browse": "تصفح مصدر",
   "manga_discovery_status_cancelled": "مُلغى",
@@ -4520,5 +4519,6 @@
   "video_work_field_tagline": "Tagline",
   "video_work_field_rating": "Rating",
   "video_work_field_cover": "Cover",
-  "video_work_field_backdrop": "Backdrop"
+  "video_work_field_backdrop": "Backdrop",
+  "manga_discovery_section_publishing": "Popular publishing manga"
 }

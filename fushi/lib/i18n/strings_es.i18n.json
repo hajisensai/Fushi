@@ -2040,7 +2040,6 @@
   "manga_discovery_section_latest_finished": "Completados recientemente",
   "manga_discovery_section_popular": "Popular",
   "manga_discovery_section_top_rated": "Mejor puntuados",
-  "manga_discovery_section_trending": "Tendencia",
   "manga_discovery_source_popular": "Popular en ${source}",
   "manga_discovery_sources_browse": "Explorar una fuente",
   "manga_discovery_status_cancelled": "Cancelado",
@@ -4520,5 +4519,6 @@
   "video_work_field_tagline": "Tagline",
   "video_work_field_rating": "Rating",
   "video_work_field_cover": "Cover",
-  "video_work_field_backdrop": "Backdrop"
+  "video_work_field_backdrop": "Backdrop",
+  "manga_discovery_section_publishing": "Popular publishing manga"
 }
