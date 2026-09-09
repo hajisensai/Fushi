@@ -48,18 +48,30 @@ bool readerAudiobookUsesDialog({required bool desktop, required Size window}) =>
 
 /// 顶部工具栏的顶部预留高。
 ///
-///  * 未启用 → 0；
-///  * 悬浮态（默认：点空白唤出、自动收起）→ 0，工具栏盖在正文之上；
-///  * 挤压态且底栏占位（`_hasEverLoaded && _showChrome`）→ [headerHeight]。
+///  * 未启用 / 未占位（`_hasEverLoaded && _showChrome`）→ 0；
+///  * 否则 → [headerHeight]，**不分悬浮/挤压**。
+///
+/// BUG-2382：这里曾有一条 `floating → 0` 的特例（照抄底栏与顶部进度的悬浮模型）。
+/// 它对那两者成立、对顶栏不成立，因为顶栏是 **48px 的不透明面**（底栏同样不透明但
+/// 画在底部、压住的是页尾留白；顶部进度只有 18px 且是半透明毛玻璃）。顶栏画在
+/// `Positioned(top: _stableTopInset)`、高 [kReaderDesktopHeaderHeight]，而正文内容盒
+/// 顶部 = `marginTop`(默认 0vh) + `--chrome-top-inset`(悬浮态恒等于 `_stableTopInset`)
+/// —— 二者起点相同，唤出时整条 48px 压在正文首行上。实测（Android API34 全屏 +
+/// Windows 桌面）重叠恒为 48.0 逻辑 px。
+///
+/// 为什么去掉特例不会破坏「悬浮显隐不重锚」（`reader_chrome_floating.dart` 文件头
+/// 的设计律）：悬浮态的显隐走 `_handleFloatingChromeReveal`，**从不翻转
+/// `_showChrome`**，故 `barOccupiesLayout` 在悬浮态恒定 ⇒ 本函数的返回值恒定 ⇒
+/// 唤出/收起不改预留高、不 reflow、不重锚。被去掉的只是「正文可以被盖」这一条，
+/// 而那从来不是悬浮态的收益，是它的代价。
 ///
 /// 与 `bottomChromeReserve` 同构：工具栏和底栏是同一台显隐状态机的上下两端。
 double readerDesktopHeaderReserve({
   required bool enabled,
   required bool barOccupiesLayout,
-  required bool floating,
   required double headerHeight,
 }) {
-  if (!enabled || !barOccupiesLayout || floating) return 0;
+  if (!enabled || !barOccupiesLayout) return 0;
   return headerHeight;
 }
 

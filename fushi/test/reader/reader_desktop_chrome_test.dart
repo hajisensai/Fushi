@@ -113,21 +113,14 @@ void main() {
   });
 
   group('readerDesktopHeaderReserve', () {
-    test('悬浮态恒 0；挤压态且底栏占位时占工具栏高', () {
+    // BUG-2382：悬浮态曾恒返回 0（照抄底栏/顶部进度的悬浮模型），导致 48px 不透明
+    // 顶栏整条压在正文首行上——Android API34 全屏与 Windows 桌面实测重叠均为 48.0
+    // 逻辑 px。顶栏不适用那个模型，故特例（连同 `floating` 参数）已删除：占位即预留。
+    test('占位即预留工具栏高（不分悬浮/挤压）；未占位 / 未启用为 0', () {
       expect(
         readerDesktopHeaderReserve(
           enabled: true,
           barOccupiesLayout: true,
-          floating: true,
-          headerHeight: kReaderDesktopHeaderHeight,
-        ),
-        0,
-      );
-      expect(
-        readerDesktopHeaderReserve(
-          enabled: true,
-          barOccupiesLayout: true,
-          floating: false,
           headerHeight: kReaderDesktopHeaderHeight,
         ),
         kReaderDesktopHeaderHeight,
@@ -136,7 +129,6 @@ void main() {
         readerDesktopHeaderReserve(
           enabled: true,
           barOccupiesLayout: false,
-          floating: false,
           headerHeight: kReaderDesktopHeaderHeight,
         ),
         0,
@@ -145,11 +137,27 @@ void main() {
         readerDesktopHeaderReserve(
           enabled: false,
           barOccupiesLayout: true,
-          floating: false,
           headerHeight: kReaderDesktopHeaderHeight,
         ),
         0,
       );
+    });
+
+    // 「悬浮显隐不重锚」（reader_chrome_floating.dart 文件头设计律）仍然成立的理由：
+    // 悬浮态的显隐走 _handleFloatingChromeReveal，从不翻转 _showChrome，故
+    // barOccupiesLayout 恒定 ⇒ 本函数返回值恒定 ⇒ 唤出/收起不改预留高。
+    test('同一 barOccupiesLayout 下返回值恒定——显隐不改预留高', () {
+      final double revealed = readerDesktopHeaderReserve(
+        enabled: true,
+        barOccupiesLayout: true,
+        headerHeight: kReaderDesktopHeaderHeight,
+      );
+      final double hidden = readerDesktopHeaderReserve(
+        enabled: true,
+        barOccupiesLayout: true,
+        headerHeight: kReaderDesktopHeaderHeight,
+      );
+      expect(revealed, hidden);
     });
   });
 
