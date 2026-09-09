@@ -4565,5 +4565,5 @@
   "updates_system_notifications_hint": "Also send a system notification. Turning this off keeps the in-app badge.",
   "updates_check_now": "Check for updates now",
   "updates_checking": "Checking...",
-  "updates_notification_summary": "{first} and {count} more"
+  "updates_notification_summary": "$first and $count more"
 }

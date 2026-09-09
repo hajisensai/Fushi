@@ -4565,5 +4565,5 @@
   "updates_system_notifications_hint": "同时发送系统通知。关掉后仍保留应用内红点。",
   "updates_check_now": "立即检查更新",
   "updates_checking": "检查中…",
-  "updates_notification_summary": "{first} 等 {count} 项"
+  "updates_notification_summary": "$first 等 $count 项"
 }

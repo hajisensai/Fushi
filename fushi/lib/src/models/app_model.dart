@@ -912,7 +912,33 @@ class AppModel with ChangeNotifier {
         notifier: LocalUpdateNotifier.isSupportedPlatform
             ? LocalUpdateNotifier(appName: 'Fushi')
             : const NoopUpdateNotifier(),
+        notificationText: _localizedUpdateNotificationText,
       );
+
+  /// 通知文案的本地化外壳。服务层默认实现只组装结构（那一层要能在纯 Dart 单测里
+  /// 跑，slang 的 `t` 需要 Flutter binding），这里补上句子。
+  static UpdateNotificationText _localizedUpdateNotificationText(
+    UpdateFeedKind kind,
+    List<UpdateFeedDraft> fresh,
+  ) {
+    final UpdateFeedDraft first = fresh.first;
+    if (fresh.length == 1) {
+      return UpdateNotificationText(
+        title: first.title,
+        body: first.subtitle ?? '',
+      );
+    }
+    final String firstLine = first.subtitle == null || first.subtitle!.isEmpty
+        ? first.title
+        : '${first.title} · ${first.subtitle}';
+    return UpdateNotificationText(
+      title: first.title,
+      body: t.updates_notification_summary(
+        first: firstLine,
+        count: fresh.length - 1,
+      ),
+    );
+  }
 
   UpdateCheckScheduler? _updateCheckScheduler;
 
