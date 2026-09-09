@@ -844,7 +844,7 @@
   "delete_choices_remember": "Ingat pilihan ini",
   "delete_collection": "Hapus koleksi",
   "delete_collection_also_books": "Hapus juga buku di dalamnya",
-  "delete_collection_also_videos": "Hapus juga video (file video asli Anda tetap ada)",
+  "delete_collection_also_videos": "Hapus juga video",
   "delete_collection_confirm": "Hanya pengelompokan yang dihapus. Item di dalamnya dipertahankan.",
   "delete_custom_theme": "Hapus tema",
   "delete_custom_theme_confirm": "Hapus tema kustom ini? Ini tidak bisa dibatalkan.",

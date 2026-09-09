@@ -1865,9 +1865,18 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 「删除合集」时连同成员本体一起删：按 (mediaType, entryKey) 分派到删书/删视频。
   /// 复用批量删除同一分派纪律（[_batchDeleteConfirm]）——epub 直接删；srt 先 findByUid
   /// 拿 bookKey 删本体再删 srt 行；video 逐个删并末尾一次 compact。删书本身各自 VACUUM。
+  /// [deleteLocalFiles] = 确认框二级勾选「同时删除本地文件」。
+  ///
+  /// 本页当前**不注入**那个二级勾选（见两处 `showCollectionContextDialog` /
+  /// `MediaCollectionGridDetailPage` 调用点都没传 label），所以它恒为 false，
+  /// 这里的传递是为了链路完整而不是现在就生效。要在书架侧放出这个勾选，**先把
+  /// 视频分支换成 `deleteVideoBooksWithDecision`**：裸
+  /// `deleteVideoBookAndReclaimAssets` 少了句柄释放与下载任务联动，Windows 上删
+  /// 正在播放的文件会 errno 32、做种任务会因文件缺失被整个停掉（BUG-2389 的教训）。
   Future<void> _deleteCollectionMembersMedia(
-    List<MediaCollectionItemRow> members,
-  ) async {
+    List<MediaCollectionItemRow> members, {
+    required bool deleteLocalFiles,
+  }) async {
     bool anyVideo = false;
     for (final MediaCollectionItemRow m in members) {
       switch (MediaKind.tryParse(m.mediaType)) {
@@ -1882,6 +1891,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
             db: appModel.database,
             bookKey: epubBookKey,
             appModel: appModel,
+            deleteLocalFiles: deleteLocalFiles,
           );
         case MediaKind.srt:
           final SrtBookRepository repo = SrtBookRepository(appModel.database);
@@ -1892,12 +1902,14 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
                 db: appModel.database,
                 bookKey: book.bookKey,
                 appModel: appModel,
+                deleteLocalFiles: deleteLocalFiles,
               );
             }
             await repo.delete(m.entryKey);
           }
         case MediaKind.video:
-          // 混合合集里若混入视频成员：删视频 DB 行 + app 拥有副本，保留原始视频文件。
+          // 混合合集里若混入视频成员：删视频 DB 行 + app 拥有副本。原始视频文件在
+          // 本页恒保留（[deleteLocalFiles] 在此恒 false，理由见方法注释）。
           await _videoRepo.deleteVideoBookAndReclaimAssets(
             m.entryKey,
             compactDatabase: false,

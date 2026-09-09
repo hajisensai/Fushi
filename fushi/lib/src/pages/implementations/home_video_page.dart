@@ -6224,7 +6224,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 语义与合集详情页 AppBar 同源；删除支持「连同视频一起删」勾选（与详情页
   /// `onDeleteMembersMedia` 同一删除纪律）。
   Future<void> _showCollectionContextMenu(MediaCollectionRow collection) {
-    final VideoBookRepository repo = widget.repo;
     final FushiDatabase db = ref.read(appProvider).database;
     return showCollectionContextDialog(
       context: context,
@@ -6236,22 +6235,21 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         ref.invalidate(filteredCollectionIdsProvider);
         _refresh();
       },
-      onDeleteMembersMedia: (List<MediaCollectionItemRow> members) async {
-        bool anyVideo = false;
-        for (final MediaCollectionItemRow m in members) {
+      onDeleteMembersMedia: (
+        List<MediaCollectionItemRow> members, {
+        required bool deleteLocalFiles,
+      }) =>
+          _deleteCollectionMemberVideos(
+        <String>[
           // 视频合集理论上只含 video 成员；混入的未知/跨域成员跳过不误删。
-          if (MediaKind.tryParse(m.mediaType) != MediaKind.video) continue;
-          await repo.deleteVideoBookAndReclaimAssets(
-            m.entryKey,
-            compactDatabase: false,
-          );
-          anyVideo = true;
-        }
-        if (anyVideo) {
-          await repo.compactAfterVideoDeleteBestEffort();
-        }
-      },
+          for (final MediaCollectionItemRow m in members)
+            if (MediaKind.tryParse(m.mediaType) == MediaKind.video) m.entryKey,
+        ],
+        deleteLocalFiles: deleteLocalFiles,
+      ),
       deleteMembersCheckboxLabel: t.delete_collection_also_videos,
+      deleteMembersLocalFilesLabel: t.delete_local_files,
+      deleteMembersLocalFilesSubtitle: t.delete_local_files_video_desc,
       // 视频合集特有项：封面 / 重刮 / 批量字幕。
       //
       // 封面两项只给视频合集：书架与游戏库的合集入口是横排行头，根本没有封面槽，
@@ -6281,6 +6279,49 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           onPressed: () => _openCollectionSubtitles(collection),
         )
       ],
+    );
+  }
+
+  /// 删除合集成员视频（库页右键与合集详情页共用）。
+  ///
+  /// 走 [deleteVideoBooksWithDecision] 而不是裸 `deleteVideoBookAndReclaimAssets`：
+  /// 单卡删除一直走前者，合集删除此前走后者，于是两条路径语义分叉——合集删除**结构
+  /// 上删不掉磁盘上的原始视频**（不传 `deleteLocalFiles`），而且即便传了也会踩
+  /// Windows 的 errno 32（没有 `MediaHandleRegistry.releaseHolding`，正在播放/预览
+  /// 的文件句柄没放），还会把正在做种的下载任务因「文件缺失」整个停掉（没有
+  /// `prepareVideoDownloadJobsForLocalDelete`）。统一入口把这三件事一起带上，
+  /// 顺序即正确性：先让引用方放手，再销毁实体（BUG-2389）。
+  ///
+  /// 批量一次调用而不是逐条循环：整个合集共享一个操作/互斥边界，中途不会被刮削
+  /// 维护插进来，`compactDatabase` 也只在末尾做一次。
+  Future<void> _deleteCollectionMemberVideos(
+    List<String> bookUids, {
+    required bool deleteLocalFiles,
+  }) async {
+    if (bookUids.isEmpty) return;
+    final AppModel appModel = ref.read(appProvider);
+    final VideoLibraryDeleteResult result = await deleteVideoBooksWithDecision(
+      repo: widget.repo,
+      database: appModel.database,
+      pipeline: appModel.videoDownloadPipelineService,
+      bookUids: bookUids,
+      // scope 维持既有语义：合集删除不写同步墓碑（只有单卡删除弹窗才问「其他设备
+      // 也删吗」）。这里只多出「本机原件删不删」这一维。
+      decision: DeleteDecision(
+        scope: DeleteScope.keepLocalOnly,
+        deleteLocalFiles: deleteLocalFiles,
+      ),
+      afterDeleteBeforeReclaim: () async {
+        if (!mounted) return;
+        _refreshAfterTagChange();
+        await _waitForVideoCardsToUnmount();
+      },
+    );
+    if (!mounted) return;
+    // 删不掉的原件必须说出来——「删除成功」而盘上一个文件没少是本 BUG 的原始症状。
+    reportLocalFileDeleteFailures(
+      result.localFiles,
+      source: 'HomeVideoPage.deleteCollectionMemberVideos',
     );
   }
 
@@ -6330,11 +6371,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 合集右键「重新刮削资料与封面」：手动指定作品身份 → 走 canonical 来源刮削
   /// 管线重刮这一个合集。
   ///
-  /// 这个入口在 `1637876c64`（AniDB canonical 重构）里连同旧 TMDB 版
-  /// `showCollectionScrapeDialog` 一起被删掉，理由是「在线元数据刮削统一从来源页
-  /// 进入」。但来源页的作用域是**扫描根**，用户手上是**一个刮错的合集**，两者不
-  /// 可互相替代——BUG-1662 当初补这个入口正是因为「想重刮某个合集」在库页是断头
-  /// 路。这里按 canonical 管线接回来，不复活旧刮削路径。
+  /// 这个入口在 `1637876c64`（AniDB canonical 重构）里连同旧 TMDB 版的合集刮削
+  /// 弹窗一起被删掉，理由是「在线元数据刮削统一从来源页进入」。但来源页的作用域是
+  /// **扫描根**，用户手上是**一个刮错的合集**，两者不可互相替代——BUG-1662 当初补
+  /// 这个入口正是因为「想重刮某个合集」在库页是断头路。这里按 canonical 管线接
+  /// 回来，不复活旧刮削路径（那些退役符号连名字都不该在生产代码里出现，
+  /// `legacy_video_scrape_surface_guard_test.dart` 按字面量扫 lib/ 全树）。
   ///
   /// 三个必需事实（来源行 / 作品标题 / 稳定键）全部问计划器要
   /// （[planScrapeWorkForCollection]），与自动补刮、待确认队列同源；按
@@ -6472,17 +6514,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           workRef: VideoWorkRef.collection(collection.id),
           onChanged: _refresh,
           remote: remote,
-          onDeleteMembersMedia: (List<VideoBookRow> members) async {
-            for (final VideoBookRow member in members) {
-              await repo.deleteVideoBookAndReclaimAssets(
-                member.bookUid,
-                compactDatabase: false,
-              );
-            }
-            if (members.isNotEmpty) {
-              await repo.compactAfterVideoDeleteBestEffort();
-            }
-          },
+          onDeleteMembersMedia: (
+            List<VideoBookRow> members, {
+            required bool deleteLocalFiles,
+          }) =>
+              _deleteCollectionMemberVideos(
+            <String>[
+              for (final VideoBookRow member in members) member.bookUid,
+            ],
+            deleteLocalFiles: deleteLocalFiles,
+          ),
           // 详情页的「重新刮削资料与封面」：controller 归 HomePage，注入库页同一
           // 条实现，合集语境下的重刮不再是断头路（BUG-1662 入口的 canonical 复位）。
           onRescrapeCollection:

@@ -112,10 +112,13 @@ mixin CollectionDetailShared<T extends StatefulWidget> on State<T> {
 
   /// 「删除合集」确认：统一走 PR-0 的 [FushiDestructiveConfirmDialog]。
   /// [checkboxLabel] 非空 = 提供「连同成员本体一起删」勾选行；null = 纯解链删除。
+  /// [nestedCheckboxLabel] 非空 = 在上一行被勾上后再叠一层「连磁盘上的原件一起删」。
   /// 返回 null = 取消。
   Future<FushiDestructiveConfirmResult?> confirmDetailCollectionDelete({
     String? checkboxLabel,
     DeletionDisclosure? checkedDisclosure,
+    String? nestedCheckboxLabel,
+    String? nestedCheckboxSubtitle,
   }) {
     return showAppDialog<FushiDestructiveConfirmResult>(
       context: context,
@@ -125,6 +128,8 @@ mixin CollectionDetailShared<T extends StatefulWidget> on State<T> {
         confirmLabel: t.delete_collection,
         checkboxLabel: checkboxLabel,
         checkedDisclosure: checkedDisclosure,
+        nestedCheckboxLabel: nestedCheckboxLabel,
+        nestedCheckboxSubtitle: nestedCheckboxSubtitle,
       ),
     );
   }

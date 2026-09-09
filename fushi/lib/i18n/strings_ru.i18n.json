@@ -844,7 +844,7 @@
   "delete_choices_remember": "Запомнить этот выбор",
   "delete_collection": "Удалить коллекцию",
   "delete_collection_also_books": "Также удалить книги из неё",
-  "delete_collection_also_videos": "Также удалить видео (исходные видеофайлы сохранятся)",
+  "delete_collection_also_videos": "Также удалить видео",
   "delete_collection_confirm": "Удаляется только группировка. Элементы в ней сохраняются.",
   "delete_custom_theme": "Удалить тему",
   "delete_custom_theme_confirm": "Удалить эту пользовательскую тему? Это действие нельзя отменить.",

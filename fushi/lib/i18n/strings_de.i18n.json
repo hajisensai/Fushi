@@ -844,7 +844,7 @@
   "delete_choices_remember": "Diese Auswahl merken",
   "delete_collection": "Sammlung löschen",
   "delete_collection_also_books": "Auch die enthaltenen Bücher löschen",
-  "delete_collection_also_videos": "Auch die Videos löschen (deine originalen Videodateien bleiben erhalten)",
+  "delete_collection_also_videos": "Auch die Videos löschen",
   "delete_collection_confirm": "Nur die Gruppierung wird entfernt. Die enthaltenen Einträge bleiben erhalten.",
   "delete_custom_theme": "Theme löschen",
   "delete_custom_theme_confirm": "Dieses benutzerdefinierte Theme löschen? Dies kann nicht rückgängig gemacht werden.",

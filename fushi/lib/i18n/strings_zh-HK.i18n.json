@@ -844,7 +844,7 @@
   "delete_choices_remember": "記住這些選擇",
   "delete_collection": "刪除合集",
   "delete_collection_also_books": "同時刪除其中的書",
-  "delete_collection_also_videos": "同時刪除其中的影片（保留你的原始影片檔案）",
+  "delete_collection_also_videos": "同時刪除其中的影片",
   "delete_collection_confirm": "只解除分組，其中的條目會保留。",
   "delete_custom_theme": "刪除主題",
   "delete_custom_theme_confirm": "刪除這個自定義主題？此操作不可撤銷。",

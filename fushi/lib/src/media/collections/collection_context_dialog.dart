@@ -26,7 +26,13 @@ import 'package:fushi_core/fushi_core.dart';
 /// [onChanged] 在任何写库动作（重命名/标签/删除）后调用，页面自刷。
 /// [onDeleteMembersMedia] 非 null 且合集有成员时，删除确认框提供
 /// [deleteMembersCheckboxLabel] 勾选行（调用方按媒体域传
-/// `delete_collection_also_books` / `delete_collection_also_videos` 等文案）。
+/// `delete_collection_also_books` / `delete_collection_also_videos` 等文案），
+/// 回调的 `deleteLocalFiles` 参数携带二级勾选状态。
+///
+/// [deleteMembersLocalFilesLabel] 非 null 时，在上一行被勾上后再叠一层「同时删除
+/// 本地文件」——**删条目**与**删磁盘原件**是两件事：此前合集删除只做前者，用户手上
+/// 那些 .mkv 一个都不会少（BUG-2389）。不注入这个文案的调用方（书架 / 游戏库）
+/// 行为逐字节不变，回调恒收到 false。
 /// [extraListActions] 由调用方注入媒体特有行（视频页：在线匹配封面 / 为合集
 /// 获取字幕），本对话框统一负责「先关自身再执行」，回调里不要再 pop。
 /// 排序两项内建（[applyCollectionOneKeySort]，与详情页 AppBar 排序菜单同源），
@@ -37,9 +43,13 @@ Future<void> showCollectionContextDialog({
   required MediaCollectionRow collection,
   required VoidCallback onOpenDetail,
   required VoidCallback onChanged,
-  Future<void> Function(List<MediaCollectionItemRow> members)?
-      onDeleteMembersMedia,
+  Future<void> Function(
+    List<MediaCollectionItemRow> members, {
+    required bool deleteLocalFiles,
+  })? onDeleteMembersMedia,
   String? deleteMembersCheckboxLabel,
+  String? deleteMembersLocalFilesLabel,
+  String? deleteMembersLocalFilesSubtitle,
   DeletionDisclosure? deleteMembersDisclosure,
   List<DialogListAction> extraListActions = const <DialogListAction>[],
   Widget? cover,
@@ -127,6 +137,9 @@ Future<void> showCollectionContextDialog({
                 onChanged: onChanged,
                 onDeleteMembersMedia: onDeleteMembersMedia,
                 deleteMembersCheckboxLabel: deleteMembersCheckboxLabel,
+                deleteMembersLocalFilesLabel: deleteMembersLocalFilesLabel,
+                deleteMembersLocalFilesSubtitle:
+                    deleteMembersLocalFilesSubtitle,
                 deleteMembersDisclosure: deleteMembersDisclosure,
               ),
             ),
@@ -196,9 +209,13 @@ Future<void> _deleteCollection({
   required FushiDatabase db,
   required MediaCollectionRow collection,
   required VoidCallback onChanged,
-  required Future<void> Function(List<MediaCollectionItemRow> members)?
-      onDeleteMembersMedia,
+  required Future<void> Function(
+    List<MediaCollectionItemRow> members, {
+    required bool deleteLocalFiles,
+  })? onDeleteMembersMedia,
   required String? deleteMembersCheckboxLabel,
+  required String? deleteMembersLocalFilesLabel,
+  required String? deleteMembersLocalFilesSubtitle,
   required DeletionDisclosure? deleteMembersDisclosure,
 }) async {
   final List<MediaCollectionItemRow> members =
@@ -215,11 +232,18 @@ Future<void> _deleteCollection({
       confirmLabel: t.delete_collection,
       checkboxLabel: canDeleteMembers ? deleteMembersCheckboxLabel : null,
       checkedDisclosure: canDeleteMembers ? deleteMembersDisclosure : null,
+      nestedCheckboxLabel:
+          canDeleteMembers ? deleteMembersLocalFilesLabel : null,
+      nestedCheckboxSubtitle:
+          canDeleteMembers ? deleteMembersLocalFilesSubtitle : null,
     ),
   );
   if (result == null || !context.mounted) return;
   if (result.checked && onDeleteMembersMedia != null) {
-    await onDeleteMembersMedia(List<MediaCollectionItemRow>.of(members));
+    await onDeleteMembersMedia(
+      List<MediaCollectionItemRow>.of(members),
+      deleteLocalFiles: result.nestedChecked,
+    );
   }
   await deleteMediaCollectionWithAssets(db, collection.id);
   onChanged();

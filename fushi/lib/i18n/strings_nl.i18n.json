@@ -844,7 +844,7 @@
   "delete_choices_remember": "Deze keuzes onthouden",
   "delete_collection": "Collectie verwijderen",
   "delete_collection_also_books": "Ook de boeken erin verwijderen",
-  "delete_collection_also_videos": "Ook de video's verwijderen (behoudt je originele videobestanden)",
+  "delete_collection_also_videos": "Ook de video's verwijderen",
   "delete_collection_confirm": "Alleen de groepering wordt verwijderd. De items erin worden bewaard.",
   "delete_custom_theme": "Thema verwijderen",
   "delete_custom_theme_confirm": "Dit aangepaste thema verwijderen? Dit kan niet ongedaan worden gemaakt.",

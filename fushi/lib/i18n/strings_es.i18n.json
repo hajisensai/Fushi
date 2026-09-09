@@ -844,7 +844,7 @@
   "delete_choices_remember": "Recordar estas opciones",
   "delete_collection": "Eliminar colección",
   "delete_collection_also_books": "También eliminar los libros que contiene",
-  "delete_collection_also_videos": "También eliminar los vídeos (conserva sus archivos de vídeo originales)",
+  "delete_collection_also_videos": "También eliminar los vídeos",
   "delete_collection_confirm": "Solo se elimina la agrupación. Los elementos que contiene se conservan.",
   "delete_custom_theme": "Eliminar tema",
   "delete_custom_theme_confirm": "¿Eliminar este tema personalizado? Esto no se puede deshacer.",

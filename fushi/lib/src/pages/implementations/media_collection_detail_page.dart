@@ -12,6 +12,8 @@ import 'package:fushi/src/media/collections/collection_asset_reclaim.dart';
 import 'package:fushi/src/media/collections/collection_continue.dart';
 import 'package:fushi/src/media/collections/collection_episode_slot.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
+import 'package:fushi/src/media/video/video_local_files.dart'
+    show videoBookHasLocalFiles;
 import 'package:fushi/src/media/collections/collection_one_key_sort.dart'
     show CollectionSortMeta, compareCollectionMembers;
 import 'package:fushi/src/media/collections/collection_relation.dart';
@@ -102,7 +104,12 @@ class MediaCollectionDetailPage extends StatefulWidget {
   /// 调用方（持 [VideoBookRepository]）注入：按 [VideoBookRow] 删视频 DB 行 +
   /// app 拥有副本（封面/字幕），**保留用户原始视频文件**（导入时只存路径从不复制）。
   /// null = 详情页不提供该选项（确认框不显示复选框），退回纯解链删除。
-  final Future<void> Function(List<VideoBookRow> members)? onDeleteMembersMedia;
+  /// 删成员本体。`deleteLocalFiles` = 用户在确认框里额外勾了「同时删除本地文件」
+  /// （二级勾选，蕴含「连同视频一起删」已勾）。
+  final Future<void> Function(
+    List<VideoBookRow> members, {
+    required bool deleteLocalFiles,
+  })? onDeleteMembersMedia;
 
   /// 「重新刮削资料与封面」：由库页注入（刮削 controller 的生命周期归 HomePage，
   /// 详情页不自己造）。null = 当前装配拿不到 controller，菜单项整条不渲染。
@@ -1102,6 +1109,13 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     final FushiDestructiveConfirmResult? result =
         await confirmDetailCollectionDelete(
       checkboxLabel: canDeleteMembers ? t.delete_collection_also_videos : null,
+      // 二级勾选：删条目之上再叠「连磁盘上的原件一起删」。只在真有本机文件的成员
+      // 存在时摆出来——全是远端流的合集摆了也兑现不了（BUG-2389）。
+      nestedCheckboxLabel:
+          canDeleteMembers && _members.any(videoBookHasLocalFiles)
+              ? t.delete_local_files
+              : null,
+      nestedCheckboxSubtitle: t.delete_local_files_video_desc,
     );
     if (result == null || !mounted) return;
     // 先删各集视频本体（DB 行 + 封面/字幕副本），再解散容器。删视频会连带清各合集
@@ -1109,7 +1123,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     // [deleteMediaCollectionWithAssets]：裸 deleteMediaCollection 只删 DB 行，合集
     // 自有封面会永久留在磁盘上（BUG-1319）。
     if (result.checked && widget.onDeleteMembersMedia != null) {
-      await widget.onDeleteMembersMedia!(List<VideoBookRow>.of(_members));
+      await widget.onDeleteMembersMedia!(
+        List<VideoBookRow>.of(_members),
+        deleteLocalFiles: result.nestedChecked,
+      );
     }
     await deleteMediaCollectionWithAssets(
         widget.database, widget.collection.id);

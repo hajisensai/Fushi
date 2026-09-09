@@ -246,8 +246,10 @@ void main() {
   Widget wrapPageWithDelete(
     MediaCollectionRow col,
     FushiDatabase db, {
-    Future<void> Function(List<MediaCollectionItemRow> members)?
-        onDeleteMembersMedia,
+    Future<void> Function(
+      List<MediaCollectionItemRow> members, {
+      required bool deleteLocalFiles,
+    })? onDeleteMembersMedia,
   }) =>
       TranslationProvider(
         child: MaterialApp(
@@ -284,7 +286,10 @@ void main() {
     await tester.pumpWidget(wrapPageWithDelete(
       s.col,
       s.db,
-      onDeleteMembersMedia: (List<MediaCollectionItemRow> members) async =>
+      onDeleteMembersMedia: (
+        List<MediaCollectionItemRow> members, {
+        required bool deleteLocalFiles,
+      }) async =>
           passed.addAll(members),
     ));
     await tester.pumpAndSettle();
@@ -306,7 +311,10 @@ void main() {
     await tester.pumpWidget(wrapPageWithDelete(
       s.col,
       s.db,
-      onDeleteMembersMedia: (List<MediaCollectionItemRow> members) async =>
+      onDeleteMembersMedia: (
+        List<MediaCollectionItemRow> members, {
+        required bool deleteLocalFiles,
+      }) async =>
           passed.addAll(members.map(
               (MediaCollectionItemRow r) => '${r.mediaType}|${r.entryKey}')),
     ));

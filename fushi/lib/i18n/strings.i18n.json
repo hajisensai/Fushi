@@ -844,7 +844,7 @@
   "delete_choices_remember": "Remember these choices",
   "delete_collection": "Delete collection",
   "delete_collection_also_books": "Also delete the books in it",
-  "delete_collection_also_videos": "Also delete the videos (keeps your original video files)",
+  "delete_collection_also_videos": "Also delete the videos",
   "delete_collection_confirm": "Only the grouping is removed. The items in it are kept.",
   "delete_custom_theme": "Delete theme",
   "delete_custom_theme_confirm": "Delete this custom theme? This cannot be undone.",

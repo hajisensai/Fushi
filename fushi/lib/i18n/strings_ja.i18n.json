@@ -844,7 +844,7 @@
   "delete_choices_remember": "この選択を記憶する",
   "delete_collection": "コレクションを削除",
   "delete_collection_also_books": "中の書籍も削除",
-  "delete_collection_also_videos": "動画も削除（元の動画ファイルは保持されます）",
+  "delete_collection_also_videos": "動画も削除",
   "delete_collection_confirm": "グループのみ削除されます。中のアイテムは保持されます。",
   "delete_custom_theme": "テーマを削除",
   "delete_custom_theme_confirm": "このカスタムテーマを削除しますか？元に戻せません。",

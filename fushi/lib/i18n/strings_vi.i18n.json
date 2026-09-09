@@ -844,7 +844,7 @@
   "delete_choices_remember": "Ghi nhớ các lựa chọn này",
   "delete_collection": "Xóa bộ sưu tập",
   "delete_collection_also_books": "Đồng thời xóa sách trong đó",
-  "delete_collection_also_videos": "Đồng thời xóa video (giữ lại tệp video gốc)",
+  "delete_collection_also_videos": "Đồng thời xóa video",
   "delete_collection_confirm": "Chỉ xóa nhóm. Các mục trong đó vẫn được giữ lại.",
   "delete_custom_theme": "Xóa giao diện",
   "delete_custom_theme_confirm": "Xóa giao diện tùy chỉnh này? Thao tác này không thể hoàn tác.",

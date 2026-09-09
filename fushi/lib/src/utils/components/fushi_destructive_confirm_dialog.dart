@@ -11,9 +11,19 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 /// （无 [FushiDestructiveConfirmDialog.checkboxLabel] 时恒为 false）。
 @immutable
 class FushiDestructiveConfirmResult {
-  const FushiDestructiveConfirmResult({required this.checked});
+  const FushiDestructiveConfirmResult({
+    required this.checked,
+    this.nestedChecked = false,
+  });
 
   final bool checked;
+
+  /// 二级勾选（[FushiDestructiveConfirmDialog.nestedCheckboxLabel]）的状态。
+  ///
+  /// **蕴含 [checked]**：二级行只在一级勾上时才渲染，一级取消勾选时它同时归 false
+  /// （见 dialog 内的状态联动）。所以调用方不必再写 `checked && nestedChecked`。
+  /// 无二级勾选项时恒为 false。
+  final bool nestedChecked;
 }
 
 /// 全 app 统一的「确认销毁」对话框。
@@ -34,6 +44,8 @@ class FushiDestructiveConfirmDialog extends StatefulWidget {
     this.leadingIcon = Icons.delete_outline,
     this.checkboxLabel,
     this.checkboxInitialValue = false,
+    this.nestedCheckboxLabel,
+    this.nestedCheckboxSubtitle,
     this.checkedDisclosure,
     super.key,
   });
@@ -59,6 +71,16 @@ class FushiDestructiveConfirmDialog extends StatefulWidget {
   /// 在勾选状态上，正文才不会再和实际行为说反话。
   final DeletionDisclosure? checkedDisclosure;
 
+  /// 非 null 时，在一级勾选**被勾上后**追加渲染一个二级勾选行（缩进一档）。
+  ///
+  /// 用于「删条目」之上再叠一层「连它在磁盘上的原件一起删」——两者是包含关系而不是
+  /// 并列：不删条目就无从谈删它的文件，所以二级行不独立存在、一级取消时一并归零，
+  /// 而不是摆成两个平级勾选让用户自己去想它们的组合是什么意思。
+  final String? nestedCheckboxLabel;
+
+  /// 二级勾选行下方的一行说明（如「视频文件将从本设备删除，无法恢复」）。
+  final String? nestedCheckboxSubtitle;
+
   @override
   State<FushiDestructiveConfirmDialog> createState() =>
       _FushiDestructiveConfirmDialogState();
@@ -67,6 +89,10 @@ class FushiDestructiveConfirmDialog extends StatefulWidget {
 class _FushiDestructiveConfirmDialogState
     extends State<FushiDestructiveConfirmDialog> {
   late bool _checked = widget.checkboxInitialValue;
+
+  /// 二级勾选。一级取消勾选时必须一起归零——否则用户勾上「删文件」再取消「删条目」，
+  /// 状态还留在那儿，下一次勾回一级就带着一个他没再确认过的破坏性选项。
+  bool _nestedChecked = false;
 
   @override
   Widget build(BuildContext context) {
@@ -119,8 +145,36 @@ class _FushiDestructiveConfirmDialogState
                     ),
                   ),
                 ),
-                onTap: () => setState(() => _checked = !_checked),
+                onTap: () => setState(() {
+                  _checked = !_checked;
+                  if (!_checked) _nestedChecked = false;
+                }),
               ),
+              if (_checked && widget.nestedCheckboxLabel != null)
+                Padding(
+                  padding: EdgeInsets.only(left: tokens.spacing.card),
+                  child: FushiListItem(
+                    density: FushiListDensity.compact,
+                    padding: EdgeInsets.zero,
+                    // 同 BUG-1291：这里也是整句解释，不是标题短语。
+                    titleMaxLines: 3,
+                    title: Text(widget.nestedCheckboxLabel!),
+                    subtitle: widget.nestedCheckboxSubtitle == null
+                        ? null
+                        : Text(widget.nestedCheckboxSubtitle!),
+                    subtitleMaxLines: 3,
+                    leading: ExcludeFocus(
+                      child: IgnorePointer(
+                        child: Checkbox(
+                          value: _nestedChecked,
+                          onChanged: (_) {},
+                        ),
+                      ),
+                    ),
+                    onTap: () =>
+                        setState(() => _nestedChecked = !_nestedChecked),
+                  ),
+                ),
               if (_checked && widget.checkedDisclosure != null) ...<Widget>[
                 SizedBox(height: tokens.spacing.gap),
                 DeletionDisclosureView(
@@ -145,7 +199,10 @@ class _FushiDestructiveConfirmDialogState
               isDestructiveAction: true,
               onPressed: () => Navigator.pop(
                 context,
-                FushiDestructiveConfirmResult(checked: _checked),
+                FushiDestructiveConfirmResult(
+                  checked: _checked,
+                  nestedChecked: _nestedChecked,
+                ),
               ),
               child: Text(widget.confirmLabel ?? t.dialog_delete),
             ),

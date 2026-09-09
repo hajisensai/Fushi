@@ -844,7 +844,7 @@
   "delete_choices_remember": "تذكّر هذه الخيارات",
   "delete_collection": "حذف المجموعة",
   "delete_collection_also_books": "حذف الكتب الموجودة فيها أيضاً",
-  "delete_collection_also_videos": "حذف الفيديوهات أيضاً (يحتفظ بملفات الفيديو الأصلية)",
+  "delete_collection_also_videos": "حذف الفيديوهات أيضاً",
   "delete_collection_confirm": "سيتم إزالة التجميع فقط. العناصر الموجودة فيه ستبقى.",
   "delete_custom_theme": "حذف السمة",
   "delete_custom_theme_confirm": "حذف هذه السمة المخصصة؟ لا يمكن التراجع عن هذا.",

@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2180 条。点号进各自文件。
+> 共 2181 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2389](bugs/BUG-2389-collection-delete-cannot-remove-local-files.md) | ✅ | ✅ | 合集/系列右键删除无法删除本地文件 |
 | [BUG-2374](bugs/BUG-2374-collection-cover-and-rescrape-entries-lost.md) | ✅ | ✅ | 合集丢失设置封面与重新刮削入口 |
 | [BUG-2362](bugs/BUG-2362-ios-exit-affordances.md) | ✅ | ✅ | iOS 多处页面/模态没有出口，进去就得重启 app |
 | [BUG-2361](bugs/BUG-2361-siglus-eightarg-lookup-no-hit.md) | ✅ | ✅ | 八参数Siglus捕获台词后点击正文直接推进且无查词命中 |

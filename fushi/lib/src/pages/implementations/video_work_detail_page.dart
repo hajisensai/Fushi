@@ -55,7 +55,10 @@ class VideoWorkDetailPage extends StatelessWidget {
   /// 视图（调用方没有互联 client），与远端支持引入前逐字节相同。
   final CollectionRemoteContext? remote;
 
-  final Future<void> Function(List<VideoBookRow> members)? onDeleteMembersMedia;
+  final Future<void> Function(
+    List<VideoBookRow> members, {
+    required bool deleteLocalFiles,
+  })? onDeleteMembersMedia;
 
   /// 透传给合集详情页的「重新刮削资料与封面」（刮削 controller 归 HomePage，
   /// 由库页注入）。null = 不渲染该菜单项。

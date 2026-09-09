@@ -844,7 +844,7 @@
   "delete_choices_remember": "Bu seçimleri hatırla",
   "delete_collection": "Koleksiyonu sil",
   "delete_collection_also_books": "İçindeki kitapları da sil",
-  "delete_collection_also_videos": "Videoları da sil (orijinal video dosyalarınız korunur)",
+  "delete_collection_also_videos": "Videoları da sil",
   "delete_collection_confirm": "Yalnızca gruplama kaldırılır. İçindeki öğeler korunur.",
   "delete_custom_theme": "Temayı sil",
   "delete_custom_theme_confirm": "Bu özel tema silinsin mi? Bu işlem geri alınamaz.",

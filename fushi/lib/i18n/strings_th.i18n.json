@@ -844,7 +844,7 @@
   "delete_choices_remember": "จดจำตัวเลือกเหล่านี้",
   "delete_collection": "ลบคอลเลกชัน",
   "delete_collection_also_books": "ลบหนังสือในนั้นด้วย",
-  "delete_collection_also_videos": "ลบวิดีโอด้วย (เก็บไฟล์วิดีโอต้นฉบับไว้)",
+  "delete_collection_also_videos": "ลบวิดีโอด้วย",
   "delete_collection_confirm": "เฉพาะการจัดกลุ่มเท่านั้นที่จะถูกลบ รายการภายในจะยังคงอยู่",
   "delete_custom_theme": "ลบธีม",
   "delete_custom_theme_confirm": "ลบธีมที่กำหนดเองนี้? ไม่สามารถยกเลิกได้",

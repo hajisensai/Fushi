@@ -844,7 +844,7 @@
   "delete_choices_remember": "이 선택 기억하기",
   "delete_collection": "컬렉션 삭제",
   "delete_collection_also_books": "포함된 도서도 삭제",
-  "delete_collection_also_videos": "동영상도 삭제 (원본 동영상 파일은 유지)",
+  "delete_collection_also_videos": "동영상도 삭제",
   "delete_collection_confirm": "그룹만 제거됩니다. 포함된 항목은 유지됩니다.",
   "delete_custom_theme": "테마 삭제",
   "delete_custom_theme_confirm": "이 사용자 정의 테마를 삭제하시겠습니까? 되돌릴 수 없습니다.",

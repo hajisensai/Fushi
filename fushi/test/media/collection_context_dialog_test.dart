@@ -16,8 +16,10 @@ import 'package:fushi/utils.dart';
 /// 且删除有两条语义完全不同的路径：
 ///   1. 只删合集容器（解链）——成员媒体一条不动；
 ///   2. 勾选「连同成员一起删」——先由调用方注入的 `onDeleteMembersMedia` 删成员
-///      本体，再解散容器。
-/// 两条路径混淆 = 用户数据丢失，故必须有行为测试钉死，而不是只靠源码扫描。
+///      本体，再解散容器；
+///   3. 在 ② 之上再勾二级「同时删除本地文件」——连成员在磁盘上的原件一起删
+///      （BUG-2389，只有注入了 `deleteMembersLocalFilesLabel` 的调用方才有这一档）。
+/// 三条路径混淆 = 用户数据丢失，故必须有行为测试钉死，而不是只靠源码扫描。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -45,6 +47,7 @@ void main() {
     required FushiDatabase db,
     required MediaCollectionRow collection,
     required bool injectDeleteMembers,
+    bool injectLocalFilesCheckbox = false,
     List<DialogListAction> extraListActions = const <DialogListAction>[],
   }) async {
     final _Probe probe = _Probe();
@@ -64,15 +67,21 @@ void main() {
                   onOpenDetail: () => probe.openedDetail = true,
                   onChanged: () => probe.changedCount++,
                   onDeleteMembersMedia: injectDeleteMembers
-                      ? (List<MediaCollectionItemRow> members) async {
+                      ? (
+                          List<MediaCollectionItemRow> members, {
+                          required bool deleteLocalFiles,
+                        }) async {
                           probe.deletedMembers = members
                               .map((MediaCollectionItemRow m) => m.entryKey)
                               .toList();
+                          probe.deleteLocalFiles = deleteLocalFiles;
                         }
                       : null,
                   deleteMembersCheckboxLabel: injectDeleteMembers
                       ? t.delete_collection_also_books
                       : null,
+                  deleteMembersLocalFilesLabel:
+                      injectLocalFilesCheckbox ? t.delete_local_files : null,
                   extraListActions: extraListActions,
                 ),
                 child: const Text('open'),
@@ -147,6 +156,101 @@ void main() {
     expect(probe.deletedMembers, <String>['book-1', 'book-2']);
     expect(await db.getAllMediaCollections(), isEmpty);
     expect(probe.changedCount, 1);
+  });
+
+  testWidgets('未注入本地文件文案：勾了一级也不出现二级勾选，回调收到 false',
+      (WidgetTester tester) async {
+    final (FushiDatabase db, MediaCollectionRow collection) =
+        await buildCollection();
+    final _Probe probe = await pumpAndOpen(
+      tester,
+      db: db,
+      collection: collection,
+      injectDeleteMembers: true,
+    );
+
+    await tapDeleteAction(tester);
+    await tester.tap(find.text(t.delete_collection_also_books));
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.delete_local_files), findsNothing,
+        reason: '书架 / 游戏库没接这条链路，摆出勾选就是兑现不了的承诺');
+    await tapConfirm(tester);
+    expect(probe.deleteLocalFiles, isFalse);
+  });
+
+  testWidgets('二级勾选只在一级勾上后才出现', (WidgetTester tester) async {
+    final (FushiDatabase db, MediaCollectionRow collection) =
+        await buildCollection();
+    await pumpAndOpen(
+      tester,
+      db: db,
+      collection: collection,
+      injectDeleteMembers: true,
+      injectLocalFilesCheckbox: true,
+    );
+
+    await tapDeleteAction(tester);
+    expect(find.text(t.delete_local_files), findsNothing,
+        reason: '不删条目就无从谈删它的文件——二级不是平级选项');
+
+    await tester.tap(find.text(t.delete_collection_also_books));
+    await tester.pumpAndSettle();
+    expect(find.text(t.delete_local_files), findsOneWidget);
+  });
+
+  testWidgets('勾了二级「同时删除本地文件」：回调收到 true', (WidgetTester tester) async {
+    final (FushiDatabase db, MediaCollectionRow collection) =
+        await buildCollection();
+    final _Probe probe = await pumpAndOpen(
+      tester,
+      db: db,
+      collection: collection,
+      injectDeleteMembers: true,
+      injectLocalFilesCheckbox: true,
+    );
+
+    await tapDeleteAction(tester);
+    await tester.tap(find.text(t.delete_collection_also_books));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.delete_local_files));
+    await tester.pumpAndSettle();
+    await tapConfirm(tester);
+
+    expect(probe.deletedMembers, <String>['book-1', 'book-2']);
+    expect(probe.deleteLocalFiles, isTrue,
+        reason: '这一位就是「磁盘上的原件删不删」，丢了它删除就只剩库记录（BUG-2389）');
+  });
+
+  testWidgets('取消一级勾选会把二级一并归零，不留下没再确认过的破坏性选项',
+      (WidgetTester tester) async {
+    final (FushiDatabase db, MediaCollectionRow collection) =
+        await buildCollection();
+    final _Probe probe = await pumpAndOpen(
+      tester,
+      db: db,
+      collection: collection,
+      injectDeleteMembers: true,
+      injectLocalFilesCheckbox: true,
+    );
+
+    await tapDeleteAction(tester);
+    await tester.tap(find.text(t.delete_collection_also_books));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.delete_local_files));
+    await tester.pumpAndSettle();
+    // 反悔：取消一级 → 二级行消失
+    await tester.tap(find.text(t.delete_collection_also_books));
+    await tester.pumpAndSettle();
+    expect(find.text(t.delete_local_files), findsNothing);
+    // 再勾回一级，二级必须是未勾状态
+    await tester.tap(find.text(t.delete_collection_also_books));
+    await tester.pumpAndSettle();
+    await tapConfirm(tester);
+
+    expect(probe.deletedMembers, <String>['book-1', 'book-2']);
+    expect(probe.deleteLocalFiles, isFalse,
+        reason: '勾过又取消的破坏性选项不许悄悄留在状态里');
   });
 
   testWidgets('取消确认框：合集与成员都不动，页面也不刷新', (WidgetTester tester) async {
@@ -314,6 +418,31 @@ void main() {
       });
     });
 
+    test('视频合集删成员必须走 deleteVideoBooksWithDecision（BUG-2389）', () {
+      final String src = File(
+        'lib/src/pages/implementations/home_video_page.dart',
+      ).readAsStringSync();
+      expect(
+        src,
+        contains('deleteMembersLocalFilesLabel: t.delete_local_files'),
+        reason: '不注入这个文案 = 合集删除又回到「磁盘上的原件一个都不少」。',
+      );
+      expect(
+        src,
+        contains('deleteVideoBooksWithDecision('),
+        reason: '合集删成员必须走与单卡删除同一个统一入口——它才带着 '
+            'MediaHandleRegistry.releaseHolding（Windows 不放句柄就 errno 32）'
+            '与下载任务联动（做种文件要先标 skip）。',
+      );
+      // 根因守卫：合集删除路径此前裸调仓库方法，结构上就传不了 deleteLocalFiles。
+      expect(
+        src.contains('repo.deleteVideoBookAndReclaimAssets('),
+        isFalse,
+        reason: '裸调仓库单删方法会绕开句柄释放与下载联动；删成员一律走 '
+            'deleteVideoBooksWithDecision 批量入口。',
+      );
+    });
+
     test('games_library_page 走统一合集菜单且**不**注入删成员本体（纯解散语义）', () {
       final String src = File(
         'lib/src/pages/implementations/games_library_page.dart',
@@ -339,4 +468,7 @@ class _Probe {
   bool openedDetail = false;
   int changedCount = 0;
   List<String>? deletedMembers;
+
+  /// 回调收到的二级勾选状态（「同时删除本地文件」）。null = 回调没被调用过。
+  bool? deleteLocalFiles;
 }

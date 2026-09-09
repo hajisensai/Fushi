@@ -60,8 +60,12 @@ class MediaCollectionGridDetailPage extends StatefulWidget {
   /// （持 AppModel + [ReaderFushiSource] / [VideoBookRepository]）注入：按每个成员
   /// (mediaType, entryKey) 删底层书/有声书/视频本体 + 磁盘副本，并释放空间。
   /// null = 详情页不提供该选项（确认框不显示复选框），退回纯解链删除。
-  final Future<void> Function(List<MediaCollectionItemRow> members)?
-      onDeleteMembersMedia;
+  /// 删成员本体。`deleteLocalFiles` = 二级勾选状态；本页当前不提供二级勾选
+  /// （书架成员的本地原件删除走 reader source 自己那套），故恒为 false。
+  final Future<void> Function(
+    List<MediaCollectionItemRow> members, {
+    required bool deleteLocalFiles,
+  })? onDeleteMembersMedia;
 
   @override
   State<MediaCollectionGridDetailPage> createState() =>
@@ -159,8 +163,10 @@ class _MediaCollectionGridDetailPageState
     // 行，故随后的解散负责清掉残留引用 + 写合集级墓碑 + 回收合集自有封面
     // （[deleteMediaCollectionWithAssets]，BUG-1319）。
     if (result.checked && widget.onDeleteMembersMedia != null) {
-      await widget
-          .onDeleteMembersMedia!(List<MediaCollectionItemRow>.of(_rows));
+      await widget.onDeleteMembersMedia!(
+        List<MediaCollectionItemRow>.of(_rows),
+        deleteLocalFiles: result.nestedChecked,
+      );
     }
     await deleteMediaCollectionWithAssets(
         widget.database, widget.collection.id);

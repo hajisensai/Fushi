@@ -1,0 +1,18 @@
+## BUG-2389 · 合集/系列右键删除无法删除本地文件
+- **报告**：2026-09-09（用户：「系列右键不能删除本地文件」）
+- **真实性**：✅ 真 bug。合集删除路径与单卡删除路径**语义分叉**，前者结构上删不掉磁盘原件。
+  - **单卡**（`home_video_page._confirmDelete`）：`showDeleteScopeConfirm` 给出「同时删除本地文件」勾选 → `deleteVideoBooksWithDecision`，链路完整。
+  - **合集/系列卡右键**（`_showCollectionContextMenu` → `collection_context_dialog._deleteCollection`）：确认框是 `FushiDestructiveConfirmDialog`，**只有一个**「同时删除其中的视频」勾选；执行时 `repo.deleteVideoBookAndReclaimAssets(m.entryKey, compactDatabase: false)` —— **不传 `deleteLocalFiles`**，所以无论怎么勾，磁盘上的原始视频一个都不会少，只删了 DB 行和 app 自己的封面/字幕副本。合集详情页 `_delete`（`media_collection_detail_page.dart`）同病。
+  - 底层能力一直是齐的（`VideoBookRepository.deleteVideoBooksAndReclaimAssets` 的 `deleteLocalFiles` 参数 + `video_library_delete.dart` 的统一入口），缺的只是合集这条路径没接上去。
+  - 旁证：勾选文案当时写的就是「同时删除其中的视频（**保留你的原始视频文件**）」——文案诚实地描述了这个限制，但用户要的正是删掉它们。
+- **[x] ① 已修复** —
+  - `FushiDestructiveConfirmDialog` 支持**二级勾选**（`nestedCheckboxLabel` / `nestedCheckboxSubtitle`），只在一级勾上后渲染、缩进一档；一级取消时二级**一并归零**（否则勾了「删文件」再取消「删条目」，状态会留着，下次勾回一级就带上一个用户没再确认过的破坏性选项）。结果对象加 `nestedChecked`，其语义**蕴含** `checked`，调用方不必再写 `checked && nested`。
+  - `showCollectionContextDialog` / `confirmDetailCollectionDelete` 透传新参数；`onDeleteMembersMedia` 回调签名加 `required bool deleteLocalFiles`（三个 widget + 4 处调用方同步更新）。
+  - **视频合集删成员改走 `deleteVideoBooksWithDecision`**（新的 `_deleteCollectionMemberVideos`，库页右键与详情页共用）。这是根因修复的关键一步：裸调仓库单删方法不只是少传一个 bool——它同时少了 `MediaHandleRegistry.releaseHolding`（Windows 上不放句柄 `File.delete()` 直接 errno 32，用户看到「删除成功」而盘上一个文件没少）与 `prepareVideoDownloadJobsForLocalDelete`（正在做种的文件不先标 skip，种子会因「文件缺失」被整个停掉）。批量一次调用共享一个操作/互斥边界，`compactDatabase` 末尾只做一次。
+  - 勾选只在**真有本机文件的成员**存在时摆出（`videoBookHasLocalFiles`）——全是远端流的合集摆了也兑现不了。删不掉的原件经 `reportLocalFileDeleteFailures` 上报，不再「删除成功」而盘上没少。
+  - 一级勾选文案去掉「（保留你的原始视频文件）」那半句（17 份 json，各语言主干本身是地道翻译，只摘掉括号说明）——二级勾选出现后那半句会说谎，正是 BUG-1305 那类「正文与实际行为说反话」。
+  - 书架 / 游戏库**行为零变化**：它们不注入二级勾选文案，回调恒收到 false。书架侧把参数如实传给 `ReaderFushiSource.deleteBook`（那条链路本就支持），并在注释里写明「要在书架放出这个勾选，先把视频分支换成 `deleteVideoBooksWithDecision`」。
+- **[x] ② 已加自动化测试** —
+  - `fushi/test/media/collection_context_dialog_test.dart`：未注入文案时勾一级也不出现二级且回调收 false；二级只在一级勾上后出现；勾二级回调收 true；**取消一级把二级一并归零**（勾过又取消的破坏性选项不许留在状态里）。另加源码守卫：`home_video_page` 必须注入 `deleteMembersLocalFilesLabel`、必须出现 `deleteVideoBooksWithDecision(`、**不得**再出现 `repo.deleteVideoBookAndReclaimAssets(`（根因守卫）。
+  - `fushi/test/pages/collection_detail_delete_local_files_test.dart`（新增）：详情页三条——有本机文件时二级出现且回调收 true、只勾一级收 false、成员全是远端流时不摆二级勾选。
+- **备注**：修完发现**上一条 PR（BUG-2374 重刮入口）漏跑了「目录枚举型守卫」整批**，`test/pages/legacy_video_scrape_surface_guard_test.dart` 因此变红——不是功能问题，是我在新方法的**文档注释**里写了已退役符号名 `showCollectionScrapeDialog`，而那条守卫按字面量扫 `lib/` 全树、不区分注释与代码。已改注释（不放宽守卫），并补跑整批 51 条：368 tests 全绿（基线 362 + 本条新增 4 + 2 条 develop 期间漂移）。教训与 CLAUDE.md「每条 PR 合入 develop 后固定加跑目录枚举型守卫整批」逐字一致。
