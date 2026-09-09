@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2210 条。点号进各自文件。
+> 共 2211 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2397](bugs/BUG-2397-pitch-dedup-ignores-patterns-and-ipa.md) | ✅ | ✅ | 音调去重对 pattern 式音调与 IPA 完全不生效 |
 | [BUG-2395](bugs/BUG-2395-mobile-nav-bar-too-tall.md) | ✅ | ✅ | 移动端底部导航栏过高未贴近底部 |
 | [BUG-2393](bugs/BUG-2393-reader-audio-chapter-anchor.md) | ✅ | ✅ | 有声书恢复只定位章节却当作句子恢复成功 |
 | [BUG-2392](bugs/BUG-2392-reader-audio-resume-priority.md) | ✅ | ✅ | 阅读进度异步快照在导航后仍写入位置与统计 |
