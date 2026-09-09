@@ -2413,7 +2413,6 @@
   "module_disabled_hint": "This feature module is turned off in Settings > Appearance > Feature modules.",
   "module_downloads_hidden_hint": "Tab Tải xuống đang bị ẩn trong Cài đặt → Giao diện → Mô-đun tính năng; bật lại để quản lý đăng ký.",
   "module_extension_label": "Tiện ích mở rộng trình duyệt",
-  "module_toggle_hint": "Turn off to close every entry point for this module - navigation, home, settings and cross-page jumps",
   "move_down": "Di chuyển xuống",
   "move_up": "Di chuyển lên",
   "name": "Tên",

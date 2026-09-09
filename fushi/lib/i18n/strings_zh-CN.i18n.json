@@ -2413,7 +2413,6 @@
   "module_disabled_hint": "该功能模块已在「设置 → 外观 → 功能模块」中关闭。",
   "module_downloads_hidden_hint": "「下载」页已在 设置 → 外观 → 功能模块 中隐藏；重新打开它才能管理订阅。",
   "module_extension_label": "浏览器扩展",
-  "module_toggle_hint": "关闭后该模块的全部入口一起消失：导航栏、首页、设置分类与跨页跳转",
   "move_down": "下移",
   "move_up": "上移",
   "name": "名称",

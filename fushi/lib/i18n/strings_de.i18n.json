@@ -2413,7 +2413,6 @@
   "module_disabled_hint": "This feature module is turned off in Settings > Appearance > Feature modules.",
   "module_downloads_hidden_hint": "Der Tab „Downloads“ ist unter Einstellungen → Erscheinungsbild → Funktionsmodule ausgeblendet; schalte ihn wieder ein, um Abos zu verwalten.",
   "module_extension_label": "Browser-Erweiterung",
-  "module_toggle_hint": "Turn off to close every entry point for this module - navigation, home, settings and cross-page jumps",
   "move_down": "Nach unten",
   "move_up": "Nach oben",
   "name": "Name",

@@ -2413,7 +2413,6 @@
   "module_disabled_hint": "This feature module is turned off in Settings > Appearance > Feature modules.",
   "module_downloads_hidden_hint": "Het tabblad Downloads is verborgen via Instellingen → Uiterlijk → Functiemodules; zet het weer aan om abonnementen te beheren.",
   "module_extension_label": "Browserextensie",
-  "module_toggle_hint": "Turn off to close every entry point for this module - navigation, home, settings and cross-page jumps",
   "move_down": "Omlaag",
   "move_up": "Omhoog",
   "name": "Naam",

@@ -2413,7 +2413,6 @@
   "module_disabled_hint": "This feature module is turned off in Settings > Appearance > Feature modules.",
   "module_downloads_hidden_hint": "İndirmeler sekmesi Ayarlar → Görünüm → Özellik modülleri altında gizli; abonelikleri yönetmek için yeniden açın.",
   "module_extension_label": "Tarayıcı eklentisi",
-  "module_toggle_hint": "Turn off to close every entry point for this module - navigation, home, settings and cross-page jumps",
   "move_down": "Aşağı taşı",
   "move_up": "Yukarı taşı",
   "name": "Ad",
