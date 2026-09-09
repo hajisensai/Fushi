@@ -41,8 +41,7 @@ class ReaderSelectionScripts {
     double y,
     int maxLength, {
     bool fromHover = false,
-  }) =>
-      'window.fushiSelection.selectText($x, $y, $maxLength, $fromHover)';
+  }) => 'window.fushiSelection.selectText($x, $y, $maxLength, $fromHover)';
 
   static String highlightInvocation(int count) =>
       'JSON.stringify(window.fushiSelection.highlightSelection($count))';
@@ -195,7 +194,7 @@ class ReaderSelectionScripts {
   /// 每条带 [sentence] 文本与（可选）整书归一化偏移 [normOffset]/[normLength]
   /// （供有声书裁句子音频区间）。无选区 / 解析失败时返回两个空列表。
   static ({List<SurroundingSentence> prev, List<SurroundingSentence> next})
-      surroundingSentencesFromResult(Object? raw) {
+  surroundingSentencesFromResult(Object? raw) {
     const empty = (
       prev: <SurroundingSentence>[],
       next: <SurroundingSentence>[],
@@ -1157,6 +1156,23 @@ window.fushiSelection = {
       }
       return null;
     }
+    // Hover identity uses the matched word, not the entire forward scan buffer.
+    // The latter can contain the rest of the sentence and would block new words.
+    if (fromHover && this.selection) {
+      var insideMatch = (this.selection.matchedRanges || []).some(function(r) {
+        return hit.node === r.node && hit.offset >= r.start && hit.offset < r.end;
+      });
+      var wrapper = hit.node.parentElement && hit.node.parentElement.closest('.fushi-dict-highlight');
+      if (insideMatch || (wrapper && this.highlightWrappers.indexOf(wrapper) >= 0)) return null;
+      // Before lookup finishes, normalize Latin hits just as selectFromPosition
+      // does so hovering a different letter does not enqueue the same lookup.
+      var content = hit.node.textContent;
+      var offset = hit.offset;
+      if (offset < content.length && !this.isCodePointJapanese(content.codePointAt(offset))) {
+        while (offset > 0 && !this.isScanBoundary(content[offset - 1])) offset--;
+      }
+      if (hit.node === this.selection.startNode && offset === this.selection.startOffset) return null;
+    }
     if (this.selection && hit.node === this.selection.startNode && hit.offset === this.selection.startOffset) {
       // 悬停连续查词（fromHover）命中的还是同一个词：什么都不做，保留当前选区
       // 高亮与弹窗——这是「按住 Shift 一路滑，弹窗跟着光标走」的去重基石。滑过一
@@ -1705,6 +1721,7 @@ window.fushiSelection = {
       }
       trimmedRanges.push({ node: r.node, start: r.start, end: end });
     }
+    this.selection.matchedRanges = trimmedRanges;
     var bounds = null;
     for (var i = 0; i < trimmedRanges.length; i++) {
       var seg = trimmedRanges[i];
