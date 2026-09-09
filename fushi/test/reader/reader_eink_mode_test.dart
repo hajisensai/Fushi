@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -6,6 +8,8 @@ import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/profile/profile_keys.dart';
 import 'package:fushi/src/reader/reader_content_styles.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
+
+import '../helpers/source_guard.dart';
 
 /// 墨水屏模式（eink_mode）守卫：
 ///  1. 阅读器 CSS 生成器的 eink 分支——纯黑白正文、线式高亮（一律直线条）、关过渡、
@@ -104,6 +108,31 @@ void main() {
       expect(cs.onPrimary, Colors.black);
       expect(cs.outline, Colors.white);
       expect(cs.surfaceTint, Colors.transparent);
+    });
+  });
+
+  group('live re-injection (BUG-2329)', () {
+    test('appearance.eink_mode onChanged notifies the open reader', () {
+      // einkMode 是 ReaderContentStyles.css 的入参：开着书切换必须走
+      // notifyReaderSettingsChanged（→ onSettingsChangedLive → _applyStylesLive）
+      // 重注入正文 CSS，只 refresh() 设置页会让正文退出重进才变黑白。
+      // 注释掩掉再切：注释里提到调用名不算数；切片以「本项 id → 下一项 id」为界，
+      // 不钉相邻项的类型，schema 重排 / 中间插项都不会让断言漂到别的 handler 上。
+      final String schema = maskComments(
+        File('lib/src/settings/settings_schema_appearance.dart')
+            .readAsStringSync(),
+      );
+      final int id = schema.indexOf("id: 'appearance.eink_mode'");
+      expect(id, isNonNegative);
+      final int next = schema.indexOf("id: '", id + 5);
+      final String item =
+          next == -1 ? schema.substring(id) : schema.substring(id, next);
+      expect(item, contains('setEinkMode(value)'));
+      expect(item, contains('notifyReaderSettingsChanged(settingsContext)'),
+          reason: 'eink toggle must re-inject reader CSS live, not only '
+              'refresh the settings sheet');
+      expect(item, isNot(contains('settingsContext.refresh()')),
+          reason: 'notifyReaderSettingsChanged already refreshes the sheet');
     });
   });
 

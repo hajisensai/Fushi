@@ -221,11 +221,21 @@ class AudiobookRepository {
 
   /// 写位置（毫秒）并同时写入当前时刻为更新时间戳（BUG-471）。位置与时间戳是同一
   /// 进度的两个 pref，必须一起写，否则 LWW 无依据。
+  ///
+  /// 位置**没变就什么都不写**（BUG-2328）：时间戳的语义是「位置最后一次变动的时刻」，
+  /// 不是「最后一次有人调本方法的时刻」。控制器在暂停 / 退后台 / 关书 / stop 都会强制
+  /// flush 一次（durability 契约，见 [AudiobookPlayerController.flushPosition]），而 reader
+  /// 关书时先落阅读位置再 flush 音频——若每次 flush 都重盖时间戳，音频进度就永远比
+  /// 阅读进度「更新」，开书 LWW 仲裁会被写入顺序而不是用户行为决定（暂停在第 3 章、
+  /// 静读到第 10 章关书，重开跳回第 3 章）。
   Future<void> updatePositionMs({
     required String bookKey,
     required int positionMs,
   }) async {
-    await _db.setPrefTyped('$_kPositionMsKeyPrefix$bookKey', positionMs);
+    final String posKey = '$_kPositionMsKeyPrefix$bookKey';
+    final int current = await _db.getPrefTyped<int>(posKey, 0);
+    if (current == positionMs) return;
+    await _db.setPrefTyped(posKey, positionMs);
     await _db.setPrefTyped('$_kPositionAtMsKeyPrefix$bookKey',
         DateTime.now().millisecondsSinceEpoch);
   }

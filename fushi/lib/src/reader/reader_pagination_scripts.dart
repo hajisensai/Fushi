@@ -831,11 +831,28 @@ class ReaderPaginationScripts {
   /// 因 scrollToCharOffset 签名两 shell 不同）；曾只加进连续 shell、分页缺席致改字号/边距/主题
   /// 等纯 CSS 设置在分页模式不实时生效（守卫见 reader_style_reanchor_both_shells_guard_test）。
   /// 分页/连续各自的 getFirstVisibleCharOffset/scrollToCharOffset 经 `this` 解析（连续含 A-2 兜底）。
+  ///
+  /// BUG-2261：`:-1` 兜底分支**自己换 CSS**。Dart 侧 `_applyStylesLive` 只在「重锚不会跑」
+  /// （gate 关 / 无 fushiReader）时裸换 CSS，gate 开时把换 CSS 全托付给本调用；若某个 shell
+  /// 有 `window.fushiReader` 却没实现 `beginStyleReanchor`（VN 第三 shell 曾如此），旧兜底
+  /// 裸返 -1 = 两边都没换 → 字号/边距/主题等纯 CSS 设置静默丢弃、退出重进才生效——
+  /// 这是 BUG-849（分页缺席）同一契约漏洞的第三次复发。把「CSS 永不丢」收进调用点，
+  /// 不再靠每个 shell 都记得实现方法。
   static String beginStyleReanchorInvocation(String jsonCss) =>
-      '(window.fushiReader && '
-      "typeof window.fushiReader.beginStyleReanchor === 'function') "
-      '? window.fushiReader.beginStyleReanchor('
-      "document.getElementById('fushi-reader-style'), $jsonCss) : -1";
+      '(function(){'
+      'var css = $jsonCss;'
+      "var el = document.getElementById('fushi-reader-style');"
+      'if (window.fushiReader && '
+      "typeof window.fushiReader.beginStyleReanchor === 'function') {"
+      'return window.fushiReader.beginStyleReanchor(el, css);'
+      '}'
+      'if (el) el.textContent = css;'
+      'if (window.fushiReader && '
+      'window.fushiReader.paginationMetrics !== undefined) {'
+      'window.fushiReader.paginationMetrics = null;'
+      '}'
+      'return -1;'
+      '})()';
 
   /// TODO-736 B-1：第二阶段——过渡帧 settle 后把暂存锚滚回视口首边并清 `_reanchorPending`。
   /// 仅当第一阶段成功暂存了有效锚时才生效，否则 no-op（绝不误清别处的重锚旗）。

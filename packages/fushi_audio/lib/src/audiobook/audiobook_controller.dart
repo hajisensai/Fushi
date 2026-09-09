@@ -817,10 +817,26 @@ class AudiobookPlayerController extends ChangeNotifier {
     }
 
     // 恢复上次播放位置（页面重建场景下避免音频回到 0）。
+    // BUG-2330：持久化的是**全书**毫秒（[globalPosition] 口径）。多文件有声书要按
+    // 各文件时长拆成（文件下标, 文件内偏移）再 seek——调用方须在 load 前
+    // [setAllBookCues] 灌好 cue 才有 [_fileDurationsMs]；没有（单文件 / 无对齐）时
+    // 全书毫秒 = 文件内毫秒，退化为裸 seek。旧数据里多文件书存的是「不知哪个文件
+    // 的文件内毫秒」，按全书毫秒解释落点 ≤ 旧行为（旧行为恒落文件 0），不会更糟。
     final int savedMs = initialPositionMs;
     if (savedMs > 0) {
       try {
-        await _player.seek(Duration(milliseconds: savedMs));
+        if (_fileDurationsMs.isEmpty) {
+          await _player.seek(Duration(milliseconds: savedMs));
+        } else {
+          final ({int fileIndex, int offsetMs}) target = splitGlobalMs(
+            savedMs,
+            _fileDurationsMs,
+          );
+          await _player.seek(
+            Duration(milliseconds: target.offsetMs),
+            index: target.fileIndex,
+          );
+        }
       } catch (e, stack) {
         debugPrint('AudiobookController.seekSaved: $e\n$stack');
         debugPrint('[hibiki-audiobook] seek to saved $savedMs ms failed: $e');
@@ -891,11 +907,14 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 125ms tick 触发 8 次里只有 1 次真的落库，IO 成本和上游等价。
   ///
   /// 调用时机：cue 变化（_updateCurrentCue）、暂停、dispose。
+  ///
+  /// 三条落库路径（本方法 / [flushPosition] / [stopPlayback]）采的都是 [globalPosition]
+  /// 全书毫秒（BUG-2330）：多文件书若存文件内毫秒而不存文件下标，重开只能落回文件 0。
   void _maybeSavePosition({bool force = false}) {
     if (_stopRequested) return;
     final String? uid = _audiobook?.bookKey;
     if (uid == null) return;
-    final int posMs = _player.position.inMilliseconds;
+    final int posMs = globalPosition.inMilliseconds;
     final int wholeSec = posMs ~/ 1000;
     if (!force && wholeSec == _lastSavedWholeSec) {
       return;
@@ -928,7 +947,7 @@ class AudiobookPlayerController extends ChangeNotifier {
       await _positionWriteTail;
       return;
     }
-    final int posMs = _player.position.inMilliseconds;
+    final int posMs = globalPosition.inMilliseconds;
     _lastSavedWholeSec = posMs ~/ 1000;
     await _enqueuePositionWrite(uid, posMs);
   }
@@ -1861,7 +1880,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     // play 的那一方，且音频停得更快（不被一次数据库写入挡在前面）。
     final String? uid = _audiobook?.bookKey;
     final int? sampledPosMs =
-        uid == null ? null : _player.position.inMilliseconds;
+        uid == null ? null : globalPosition.inMilliseconds;
 
     // 位置写必须在 `_player.stop()` **之前发出**（这里只建链，不 await），真正的
     // await 放到 stop 之后 —— 两个位置都不能挪：

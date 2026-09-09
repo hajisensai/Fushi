@@ -29,10 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2138 条。点号进各自文件。
+> 共 2142 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2330](bugs/BUG-2330-audiobook-multifile-position-no-file-index.md) | ✅ | ✅ | 多文件有声书持久化文件内毫秒无文件下标，重开恒落文件0 |
+| [BUG-2329](bugs/BUG-2329-eink-toggle-no-reader-reinject.md) | ✅ | ✅ | 墨水屏开关不通知阅读器重注入正文样式 |
+| [BUG-2328](bugs/BUG-2328-audiobook-resume-ignored-on-open.md) | ✅ | ✅ | 打开带有声书的书不按有声书进度定位，按播放才跳 |
 | [BUG-2327](bugs/BUG-2327-library-search-skips-srt-remote.md) | ✅ | ✅ | 库页搜索漏过 SRT 有声书卡与远端占位卡 |
 | [BUG-2326](bugs/BUG-2326-lyrics-mode-top-chrome.md) | ✅ | ✅ | 歌词模式没有顶栏，也没有回到阅读模式的入口 |
 | [BUG-2325](bugs/BUG-2325-audiobook-follow-flips-back-one-page.md) | ✅ | ✅ | 有声书跟随播放时视口自己退回前一页，下一句又翻回来 |
@@ -53,6 +56,7 @@
 | [BUG-2264](bugs/BUG-2264-reopen-book-credits-landing-page.md) | ✅ | ✅ | 重复开关书落地页整页入账且写出零时长段 |
 | [BUG-2263](bugs/BUG-2263-macos-mihon-chapters-not-loading.md) | 🚧 | 🚧 | macOS Mihon 章节列表加载不出来（未复现） |
 | [BUG-2262](bugs/BUG-2262-macos-aidoku-partial-result-chapters-dropped.md) | ✅ | ✅ | macOS Aidoku 章节列表恒为空：桌面 runtime 丢弃 send_partial_result 回传的章节 |
+| [BUG-2261](bugs/BUG-2261-reader-vn-live-style-css-dropped.md) | ✅ | ✅ | 阅读器视觉小说视图下纯CSS外观设置不实时生效 |
 | [BUG-2260](bugs/BUG-2260-netflix-advisory-overlay-selector-drift.md) | ✅ | ✅ | Netflix 分级提示 overlay 改用 .watch-video--advisories-container，三处隐藏选择器全部静默失效；内置播放器换集重载后 chrome 隐藏丢失 |
 | [BUG-2259](bugs/BUG-2259-macos-quit-no-exit-flush.md) | ✅ | ✅ | macOS Cmd+Q 退出不跑退出 flush（阅读位置/有声书进度/阅读统计丢最后一段） |
 | [BUG-2258](bugs/BUG-2258-macos-video-retina-blur.md) | ✅ | ✅ | mac 视频在 Retina 上发虚：media_kit 按视频原生分辨率建纹理，放大交给 Flutter 双线性 |
