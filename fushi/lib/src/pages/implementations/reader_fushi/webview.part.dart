@@ -1487,7 +1487,12 @@ $kPagedWheelGestureHelperJs
         'onBoundarySwipe', wheelDir, pointerKind);
       return;
     }
-    if (!r || !('paginationMetrics' in r)) return;
+    // BUG-2364: VN uses the same paginate(direction) contract as the regular
+    // paged shell, but intentionally has no paginationMetrics (it advances a
+    // screen stream rather than a CSS column viewport). The old capability
+    // gate therefore discarded every VN wheel event before it reached the
+    // shared onWheelPaginate -> _paginate throttle/chapter-turn path.
+    if (!r || (!fushiVnMode && !('paginationMetrics' in r))) return;
     // TODO-737: 分页滚轮方向脱钩 invertSwipeDirection——改回传新 handler onWheelPaginate
     // 产「语义意图」(forward/backward)，方向 deltaY>0=forward 对齐连续滚轮(沿书写轴
     // delta>0=前进)，不再经 onSwipe 被 invertSwipeDirection(默认 true) 连坐反向。
