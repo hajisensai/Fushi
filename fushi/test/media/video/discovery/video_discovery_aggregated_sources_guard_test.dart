@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/media/video/discovery/video_discovery_service.dart';
+import 'package:fushi/src/media/video/metadata/video_metadata_provider.dart';
+import 'package:fushi/src/media/video/metadata/video_metadata_resolver.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
 
 import '../../../helpers/source_guard.dart';
@@ -29,6 +31,18 @@ void main() {
       <String>{'mal', 'anilist', 'tmdb'},
     );
     expect(providerIds, isNot(contains('bangumi')));
+    final VideoMetadataProviderRegistry catalog =
+        VideoMetadataProviderRegistry.production(
+      const VideoSourceScrapeGlobalConfig(tmdbApiKey: 'test-key'),
+    );
+    addTearDown(catalog.close);
+    expect(
+      service.searchProviderIdsForTesting,
+      catalog.providers
+          .map((VideoMetadataProvider p) => p.providerKind.name)
+          .toSet(),
+    );
+    expect(service.searchProviderIdsForTesting, isNot(contains('anilist')));
   });
 
   test('discovery source selection has no dependency on proxy configuration',

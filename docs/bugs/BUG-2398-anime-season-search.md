@@ -4,3 +4,11 @@
 - **[x] ① 根因修复** — 复用既有 `VideoMetadataSearchDiscoveryProvider` 将 MAL 接入全部/番剧搜索，共享详情 provider 生命周期与 Jikan 限流。推荐 feed 保持既有能力，不伪造 MAL 推荐端点。
 - **[x] ② 自动化测试** — `fushi/test/media/video/video_metadata_discovery_provider_test.dart` 覆盖真实 MAL 解析、两季独立身份，以及 AniList 503 时全部/番剧搜索保留两季；`video_discovery_aggregated_sources_guard_test.dart` 覆盖生产装配。adapter/service/来源守卫/页面装配/详情选择五文件共 46 个测试通过（退出码 0）。首轮 pdfium 依赖下载超时零执行，通过代理重跑成功。
 - **备注**：2026-09-10 通过本机代理请求 Jikan 同名查询返回 504（Jikan 无法连接 MAL）；线上第二季搜索与用户设备 E2E 尚未验证。该修改补齐搜索来源，不能消除上游同时不可用。MAL 当前复用非分页搜索契约，不宣称完整分页目录覆盖。
+
+### 来源统一（用户后续要求）
+
+- 第一轮 `47c8fceb47` 只补齐 MAL 搜索入口，仍留下两份生产来源清单。
+- 统一由 `VideoMetadataProviderRegistry.production` 创建作品资料源；刮削全局/来源 locale 注册表与发现搜索共用该工厂。发现搜索的允许来源从同一注册表派生，不再单独维护 MAL/TMDB/AniList 清单。
+- AniList 继续提供发现推荐和历史条目详情兼容，不再参与生产作品搜索。发现页搜索使用 MAL/TMDB；刮削仍按用户主源偏好做精确匹配与兜底，搜索结果展示仍保留多候选。
+- TMDB 的发现分页/筛选适配器继续使用；MAL 复用 metadata 搜索 adapter。统一的是资料源注册与配置入口，推荐接口、搜索展示和自动绑定各自保留明确契约。
+- 验证：11 个定向测试文件共 135 项通过，覆盖统一注册表、搜索/推荐请求隔离、来源级 locale、识别及 MAL/TMDB 兜底。没有把离线回归当作线上 Jikan 恢复或用户设备 E2E。

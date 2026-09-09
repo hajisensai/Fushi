@@ -13,11 +13,11 @@ import 'package:fushi/src/media/video/metadata/anidb_udp_file_client.dart';
 import 'package:fushi/src/media/video/metadata/anime_episode_relations.dart';
 import 'package:fushi/src/media/video/metadata/anime_identity_mapping.dart';
 import 'package:fushi/src/media/video/metadata/anime_offline_identity_resolver.dart';
-import 'package:fushi/src/media/video/metadata/mal_video_metadata_provider.dart';
+import 'package:fushi/src/media/video/metadata/mal_video_metadata_provider.dart'
+    show malIncompleteCreditEndpointsKey;
 import 'package:fushi/src/media/video/metadata/video_metadata_transport.dart';
 import 'package:fushi/src/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/video/metadata/anidb_video_metadata_provider.dart';
-import 'package:fushi/src/media/video/metadata/tmdb_video_metadata_provider.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_asset_downloader.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_database_store.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_merge.dart';
@@ -158,13 +158,7 @@ class VideoSourceScrapeCoordinator
     VideoSourceScrapeGlobalConfig config, {
     String? locale,
   }) =>
-      VideoMetadataProviderRegistry(<VideoMetadataProvider>[
-        MalVideoMetadataProvider(),
-        TmdbVideoMetadataProvider(
-          apiKey: config.tmdbApiKey,
-          language: locale ?? config.locale,
-        ),
-      ]);
+      VideoMetadataProviderRegistry.production(config, locale: locale);
 
   /// 对刚完成下载导入的单个作品执行身份受控的刮削。
   ///
