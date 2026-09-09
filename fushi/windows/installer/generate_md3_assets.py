@@ -18,6 +18,7 @@ WizardSmallImageFile 引用。改配色或形状后重跑本脚本并提交产�
 from __future__ import annotations
 
 import os
+import sys
 from typing import Sequence
 
 from PIL import Image, ImageDraw, ImageFont
@@ -185,22 +186,80 @@ def draw_back(size: tuple[int, int], dark: bool) -> Image.Image:
     return Image.alpha_composite(canvas, glow).convert('RGB')
 
 
+def draw_folder_icon(side: int, dark: bool) -> Image.Image:
+    """MD3 folder 图标，32 位带 alpha 的 BMP 用图。
+
+    为什么要它：向导「选择安装位置」页左侧那个图标是 Inno 内置的经典 Win95 黄纸夹
+    （`WizardForm.SelectDirBitmapImage`），在一屏 MD3 里是最扎眼的一处。它是个
+    普通 TBitmapImage，运行期换掉即可。
+
+    为什么是 BMP 不是 PNG：TBitmapImage.Bitmap 是 TBitmap，只吃 BMP。
+
+    为什么直接把底色烧进图里、而不是留 alpha：TBitmapImage **没有 AlphaFormat
+    属性**（实测写了编译失败：Unknown identifier 'ALPHAFORMAT'），32 位 BMP 的
+    alpha 通道无人解释，圆角外会露黑块。图标落点在页面左上，那一带的背景图正好
+    是接近纯 surface 的底色，所以把 surface 合成进去，肉眼看不出与背景的接缝。
+    """
+    ground = SURFACE_DARK if dark else (254, 247, 255)  # #FEF7FF = MD3 light surface
+    canvas = Image.new('RGBA', (side * SS, side * SS), ground + (255,))
+    d = ImageDraw.Draw(canvas)
+    fill = PRIMARY_FIXED_DIM if dark else PRIMARY
+    s = side * SS
+
+    # Material Symbols 的 folder：左上一个抬高的 tab，下面一个更宽的圆角主体。
+    # tab 必须明显高出主体，否则被主体盖住就只剩一个纯色方块（第一版就是这样）。
+    body_top = round(s * 0.30)
+    d.rounded_rectangle(
+        (round(s * 0.08), round(s * 0.16), round(s * 0.48), body_top + round(s * 0.10)),
+        radius=round(s * 0.05), fill=fill + (255,))
+    d.rounded_rectangle(
+        (round(s * 0.08), body_top, round(s * 0.92), round(s * 0.84)),
+        radius=round(s * 0.09), fill=fill + (255,))
+
+    # 转 RGB：Pillow 存 RGBA 会写 32bpp，而 TBitmapImage 解释不了 alpha（见上）。
+    return canvas.resize((side, side), Image.LANCZOS).convert('RGB')
+
+
+# 「选择安装位置」页图标的尺寸档。Inno 不会自动缩放 TBitmapImage 的位图，
+# [Code] 里按控件实际宽度挑最接近的一档。
+FOLDER_SIZES: Sequence[int] = (32, 48, 64, 96)
+
+
 def main() -> None:
+    # ⚠ hero 与 mark 的入库产物**已经不是本脚本的输出**：95aee16b29 之后它们是手工
+    # 换上的兔子图标，而本脚本画的仍是早期的「圆角方块 + 字母 F」占位。无脑重跑会把
+    # 兔子覆盖回 F（实测踩过一次：右上角标记当场退回 F 方块）。所以这两类默认跳过，
+    # 要重生成占位图得显式传 --regenerate-placeholders —— 那多半意味着你在换一整套
+    # 新品牌图，而不是「顺手重跑一下资产脚本」。
+    regen_placeholders = '--regenerate-placeholders' in sys.argv
+
     out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'assets')
     os.makedirs(out_dir, exist_ok=True)
 
     written: list[str] = []
-    for width, height in HERO_SIZES:
+
+    for side in FOLDER_SIZES:
         for dark in (False, True):
-            name = 'wizard_hero{}_{}x{}.png'.format('_dark' if dark else '', width, height)
-            draw_hero((width, height), dark).save(os.path.join(out_dir, name))
+            name = 'wizard_folder{}_{}.bmp'.format('_dark' if dark else '', side)
+            draw_folder_icon(side, dark).save(os.path.join(out_dir, name))
             written.append(name)
 
-    for side in MARK_SIZES:
-        for dark in (False, True):
-            name = 'wizard_mark{}_{}.png'.format('_dark' if dark else '', side)
-            draw_mark(side, dark).save(os.path.join(out_dir, name))
-            written.append(name)
+    if regen_placeholders:
+        for width, height in HERO_SIZES:
+            for dark in (False, True):
+                name = 'wizard_hero{}_{}x{}.png'.format(
+                    '_dark' if dark else '', width, height)
+                draw_hero((width, height), dark).save(os.path.join(out_dir, name))
+                written.append(name)
+
+        for side in MARK_SIZES:
+            for dark in (False, True):
+                name = 'wizard_mark{}_{}.png'.format('_dark' if dark else '', side)
+                draw_mark(side, dark).save(os.path.join(out_dir, name))
+                written.append(name)
+    else:
+        print('跳过 hero/mark：入库的是手工换的兔子图标，重跑会覆盖成 F 占位。'
+              '确需重生成占位图请加 --regenerate-placeholders。')
 
     for dark in (False, True):
         name = 'wizard_back{}_{}x{}.png'.format(
