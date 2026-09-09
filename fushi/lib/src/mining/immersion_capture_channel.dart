@@ -7,7 +7,9 @@ import 'package:fushi/src/mining/immersion_mining_engine.dart'
         AnimatedClipExtraction,
         AudioExtractor,
         GifExtractor,
-        extractAnimatedClipWithFallback;
+        StillFrameExtraction,
+        extractAnimatedClipWithFallback,
+        extractStillWithFallback;
 import 'package:fushi/src/mining/immersion_mining_request.dart';
 import 'package:fushi/src/sync/immersion_mine_payload.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart';
@@ -66,6 +68,9 @@ typedef ClipFrameExtractor = Future<String?> Function({
   bool decodeFromStart,
   FfmpegFailureReporter? onFailure,
   String? tlsPinSha256,
+  // BUG-2366：同 `FrameExtractor.diagnosticOnly`——非末次编码尝试的失败是能力探测，
+  // 不是错误。两条静图链共用 [extractStillWithFallback] 下发本参数。
+  bool diagnosticOnly,
 });
 
 /// 纯函数：把用户的图片模式偏好 + 请求里的三个**视频时间**换算成片段内偏移。可单测。
@@ -313,6 +318,7 @@ Future<ImmersionCaptureResult> transcodeClipToCapture(
               bool decodeFromStart = false,
               FfmpegFailureReporter? onFailure,
               String? tlsPinSha256,
+              bool diagnosticOnly = false,
             }) =>
               extractVideoFrameViaFfmpeg(
                 inputPath: inputPath,
@@ -322,6 +328,7 @@ Future<ImmersionCaptureResult> transcodeClipToCapture(
                 onFailure: onFailure,
                 tlsPinSha256: tlsPinSha256,
                 cropFilter: cropFilter,
+                diagnosticOnly: diagnosticOnly,
               );
   final Directory dir = Directory('$tempDir/nf_clip_${clipBytes.length}');
   await dir.create(recursive: true);
@@ -331,24 +338,31 @@ Future<ImmersionCaptureResult> transcodeClipToCapture(
     final int endMs = durationMs > 0 ? durationMs : 6000;
     // 静态帧模式：片段内定点抽一帧，**不进** extractAnimatedClipWithFallback（既是行为正确
     // 性，也避免顶格档动图编码那种大体积开销 —— 静态帧不吃 gifFps/gifWidth）。
-    // 输出扩展名由 [MiningStillFormat.fileExtension] 给（ffmpeg 按扩展名选编码器），首选
-    // 失败按 [MiningStillFormat.encodeAttempts] 退回 JPEG 再抽一次；实际用成的那个格式随
-    // 结果带回，供文件名跟随真实字节。
+    // 输出扩展名由 [MiningStillFormat.fileExtension] 给（ffmpeg 按扩展名选编码器），降级
+    // 走与引擎链**同一份** [extractStillWithFallback]（BUG-2366：这里以前自己写了一遍
+    // 循环，漏掉了「非末次尝试的失败是能力探测、不记用户可见错误」）；实际用成的那个
+    // 格式随结果带回，供文件名跟随真实字节。
     String? framePath;
     MiningStillFormat producedStillFormat = MiningStillFormat.jpg;
     if (stillTarget != null) {
-      for (final MiningStillFormat attempt in stillFormat.encodeAttempts) {
-        framePath = await frames(
+      final StillFrameExtraction? still = await extractStillWithFallback(
+        format: stillFormat,
+        attempt: (
+          MiningStillFormat attempt, {
+          required bool diagnosticOnly,
+          required FfmpegFailureReporter? onFailure,
+        }) =>
+            frames(
           inputPath: clip.path,
           outputPath: '${dir.path}/clip_frame.${attempt.fileExtension}',
           atSeconds: stillTarget.offsetMs / 1000.0,
           decodeFromStart: true,
-        );
-        if (framePath != null) {
-          producedStillFormat = attempt;
-          break;
-        }
-      }
+          diagnosticOnly: diagnosticOnly,
+          onFailure: onFailure,
+        ),
+      );
+      framePath = still?.path;
+      if (still != null) producedStillFormat = still.format;
     }
     // 输出扩展名由每次尝试的格式补（ffmpeg 按扩展名选 muxer），故这里只给不含扩展名的前缀。
     final AnimatedClipExtraction? animated = stillTarget != null

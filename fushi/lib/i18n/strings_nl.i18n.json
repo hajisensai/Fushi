@@ -3165,7 +3165,6 @@
   "stat_favorited": "Favorieten",
   "stat_favorited_sentence": "Favoriete zinnen",
   "stat_format_chars": "$n tekens",
-  "stat_format_chars_wan": "$n万 tekens",
   "stat_format_days": "$n dagen",
   "stat_format_hours_minutes": "$h uur $m min",
   "stat_format_minutes": "$n min",

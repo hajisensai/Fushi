@@ -3165,7 +3165,6 @@
   "stat_favorited": "お気に入り",
   "stat_favorited_sentence": "お気に入りの文",
   "stat_format_chars": "$n 文字",
-  "stat_format_chars_wan": "$n 万字",
   "stat_format_days": "$n日",
   "stat_format_hours_minutes": "$h 時間 $m 分",
   "stat_format_minutes": "$n 分",

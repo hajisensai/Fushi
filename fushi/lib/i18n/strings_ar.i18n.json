@@ -3165,7 +3165,6 @@
   "stat_favorited": "المفضلة",
   "stat_favorited_sentence": "الجمل المفضلة",
   "stat_format_chars": "$n حرف",
-  "stat_format_chars_wan": "$n万 حرف",
   "stat_format_days": "$n أيام",
   "stat_format_hours_minutes": "$h س $m د",
   "stat_format_minutes": "$n د",

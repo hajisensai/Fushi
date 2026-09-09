@@ -3165,7 +3165,6 @@
   "stat_favorited": "Favorited",
   "stat_favorited_sentence": "Favorited sentences",
   "stat_format_chars": "$n characters",
-  "stat_format_chars_wan": "$n万 characters",
   "stat_format_days": "$n days",
   "stat_format_hours_minutes": "$h hr $m min",
   "stat_format_minutes": "$n min",

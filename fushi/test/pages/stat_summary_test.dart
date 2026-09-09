@@ -160,8 +160,10 @@ void main() {
     test('time >= 60 min shows hours', () {
       expect(trendMetricAxisLabel(90, StatTrendMetric.time), '1.5h');
     });
-    test('chars uses compact axis', () {
-      expect(trendMetricAxisLabel(12000, StatTrendMetric.chars), '1.2万');
+    test('chars uses compact axis（进制随界面语言，不是固定「万」）', () {
+      // 这条断言原本硬写死 '1.2万'——它本身就是 BUG-935 二期病根的一部分：把中文
+      // 万进制当成语言无关的输出。默认（en）界面下 12000 应读作 12K。
+      expect(trendMetricAxisLabel(12000, StatTrendMetric.chars), '12K');
     });
   });
 

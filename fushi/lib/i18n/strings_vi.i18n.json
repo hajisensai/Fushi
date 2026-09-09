@@ -3165,7 +3165,6 @@
   "stat_favorited": "Đã yêu thích",
   "stat_favorited_sentence": "Câu đã yêu thích",
   "stat_format_chars": "$n ký tự",
-  "stat_format_chars_wan": "$n万 ký tự",
   "stat_format_days": "$n ngày",
   "stat_format_hours_minutes": "$h giờ $m phút",
   "stat_format_minutes": "$n phút",
