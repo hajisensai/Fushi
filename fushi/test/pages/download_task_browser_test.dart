@@ -9,6 +9,8 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/downloads/download_task_browser.dart';
 import 'package:fushi/src/media/downloads/download_task_card.dart';
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
+import 'package:fushi/src/utils/components/batch_action_bar.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 
 DownloadTaskEntry _task(
   String id, {
@@ -352,6 +354,218 @@ void main() {
       } finally {
         image.dispose();
       }
+    });
+  });
+
+  group('多选批量操作', () {
+    DownloadTaskEntry actionable(
+      String id, {
+      required DownloadTaskActions actions,
+    }) => DownloadTaskEntry(
+      id: id,
+      title: id,
+      kind: DownloadTaskKind.video,
+      status: DownloadTaskStatus.active,
+      actions: actions,
+      builder: (BuildContext context) => DownloadTaskCard(
+        key: ValueKey<String>(id),
+        taskId: id,
+        title: id,
+        status: 'x',
+        details: Text('details-$id'),
+      ),
+    );
+
+    Future<void> enterSelection(WidgetTester tester) async {
+      await tester.tap(
+        find.byKey(const ValueKey<String>('download-task-select-mode')),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('默认不在选择态；点「选择」才出现勾选框与操作栏', (
+      WidgetTester tester,
+    ) async {
+      _viewport(tester, const Size(900, 900));
+      await tester.pumpWidget(
+        _host(<DownloadTaskEntry>[_task('a'), _task('b')]),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(BatchActionBar), findsNothing);
+      expect(find.byType(Checkbox), findsNothing);
+
+      await enterSelection(tester);
+      expect(find.byType(BatchActionBar), findsOneWidget);
+      expect(find.byType(Checkbox), findsNWidgets(2));
+    });
+
+    testWidgets('选择态下点整行只切换选中，不触发卡片自身的按钮', (
+      WidgetTester tester,
+    ) async {
+      _viewport(tester, const Size(900, 900));
+      int cardTaps = 0;
+      final DownloadTaskEntry trap = DownloadTaskEntry(
+        id: 'trap',
+        title: 'trap',
+        kind: DownloadTaskKind.video,
+        status: DownloadTaskStatus.active,
+        builder: (BuildContext context) => TextButton(
+          key: const ValueKey<String>('trap-button'),
+          onPressed: () => cardTaps++,
+          child: const Text('danger'),
+        ),
+      );
+      await tester.pumpWidget(_host(<DownloadTaskEntry>[trap]));
+      await tester.pumpAndSettle();
+      await enterSelection(tester);
+
+      // warnIfMissed: false 是**被测行为本身**：选择态下 IgnorePointer 罩住卡片，
+      // 这一 tap 打不到按钮才是对的，命中了反而说明回归了。
+      await tester.tap(
+        find.byKey(const ValueKey<String>('trap-button')),
+        warnIfMissed: false,
+      );
+      await tester.pumpAndSettle();
+      expect(cardTaps, 0, reason: '选择态里卡片按钮必须让位，否则勾选会变成删除');
+      expect(
+        tester.widget<Checkbox>(find.byType(Checkbox)).value,
+        isTrue,
+        reason: '这一下应该被算作「勾选这一行」',
+      );
+    });
+
+    testWidgets('批量重试只作用于支持重试的条目，不支持的单独计数', (
+      WidgetTester tester,
+    ) async {
+      _viewport(tester, const Size(900, 900));
+      final List<String> retried = <String>[];
+      await tester.pumpWidget(
+        _host(<DownloadTaskEntry>[
+          actionable(
+            'has-retry',
+            actions: DownloadTaskActions(
+              retry: () async => retried.add('has-retry'),
+            ),
+          ),
+          actionable('no-retry', actions: DownloadTaskActions.none),
+        ]),
+      );
+      await tester.pumpAndSettle();
+      await enterSelection(tester);
+      await tester.tap(find.text(t.batch_select_all));
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('download-batch-retry')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(retried, <String>['has-retry']);
+      expect(find.textContaining(t.download_batch_done(n: 1)), findsOneWidget);
+      expect(
+        find.textContaining(t.download_batch_unsupported(n: 1)),
+        findsOneWidget,
+        reason: '「不支持」要和「失败」分开说：再点一百次也一样',
+      );
+    });
+
+    testWidgets('选中集里没有条目支持某动作时按钮禁用', (
+      WidgetTester tester,
+    ) async {
+      _viewport(tester, const Size(900, 900));
+      await tester.pumpWidget(
+        _host(<DownloadTaskEntry>[
+          actionable(
+            'only-clear',
+            actions: DownloadTaskActions(clear: () async {}),
+          ),
+        ]),
+      );
+      await tester.pumpAndSettle();
+      await enterSelection(tester);
+      await tester.tap(find.text(t.batch_select_all));
+      await tester.pumpAndSettle();
+
+      expect(
+        tester
+            .widget<FushiIconButton>(
+              find.byKey(const ValueKey<String>('download-batch-clear')),
+            )
+            .enabled,
+        isTrue,
+      );
+      expect(
+        tester
+            .widget<FushiIconButton>(
+              find.byKey(const ValueKey<String>('download-batch-pause')),
+            )
+            .enabled,
+        isFalse,
+        reason: '单跑道队列没有暂停态，摆一个点了没反应的按钮比没有更糟',
+      );
+    });
+
+    testWidgets('全选 / 反选以当前可见集合为域（被搜索筛掉的不算）', (
+      WidgetTester tester,
+    ) async {
+      _viewport(tester, const Size(900, 900));
+      final List<String> cleared = <String>[];
+      DownloadTaskEntry clearable(String id) => DownloadTaskEntry(
+        id: id,
+        title: id,
+        kind: DownloadTaskKind.video,
+        status: DownloadTaskStatus.active,
+        actions: DownloadTaskActions(clear: () async => cleared.add(id)),
+        builder: (BuildContext context) => DownloadTaskCard(
+          key: ValueKey<String>(id),
+          taskId: id,
+          title: id,
+          status: 'x',
+          details: Text('details-$id'),
+        ),
+      );
+      await tester.pumpWidget(
+        _host(<DownloadTaskEntry>[clearable('alpha'), clearable('beta')]),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('download-task-search')),
+        'alpha',
+      );
+      await tester.pumpAndSettle();
+      await enterSelection(tester);
+      await tester.tap(find.text(t.batch_select_all));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('download-batch-clear')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        cleared,
+        <String>['alpha'],
+        reason: '被搜索筛掉的 beta 不该被「全选」卷进来',
+      );
+    });
+
+    testWidgets('批量操作栏在 360 逻辑像素宽不溢出', (WidgetTester tester) async {
+      _viewport(tester, const Size(360, 720));
+      await tester.pumpWidget(
+        _host(<DownloadTaskEntry>[
+          actionable(
+            'a',
+            actions: DownloadTaskActions(
+              retry: () async {},
+              clear: () async {},
+            ),
+          ),
+        ]),
+      );
+      await tester.pumpAndSettle();
+      await enterSelection(tester);
+      await tester.tap(find.text(t.batch_select_all));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
     });
   });
 }

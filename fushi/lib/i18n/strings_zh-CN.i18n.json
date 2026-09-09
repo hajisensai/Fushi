@@ -4534,5 +4534,9 @@
   "video_shader_tier_high_hint_mobile": "Anime4K 去模糊（M），在片源原分辨率上跑。kernel 比「中」更大，同样不含放大 pass。适合较快的手机 GPU。",
   "video_shader_tier_ultra_hint_mobile": "Anime4K 去模糊（M）加一道柔化修复，均在片源原分辨率上跑。手机端最强档，仍不含放大 pass。掉帧就往下退一档。",
   "dialog_background_close": "关闭（任务继续在后台运行）",
-  "reader_timer_show": "显示阅读计时器"
+  "reader_timer_show": "显示阅读计时器",
+  "download_batch_done": "已处理 $n 项",
+  "download_batch_unsupported": "$n 项不支持此操作",
+  "download_batch_failed": "$n 项失败",
+  "download_batch_delete_confirm": "删除 $n 个下载任务？"
 }
