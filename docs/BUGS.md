@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2143 条。点号进各自文件。
+> 共 2144 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -52,6 +52,7 @@
 | [BUG-2270](bugs/BUG-2270-sidecar-ownership-record-failed-opaque.md) | ✅ | 🚧 | 刮削 sidecar 报「文件已写入，但所有权记录失败」但不给出真实异常，Cover Song Collection 三条无法定位根因 |
 | [BUG-2269](bugs/BUG-2269-ankiconnect-multi-subaction-key.md) | ✅ | ✅ | AnkiConnect multi 子 action 缺 key：配置 apiKey 时所有批量写被整批拒绝 |
 | [BUG-2268](bugs/BUG-2268-mal-ambiguity-blocks-tmdb-fallback.md) | ✅ | ✅ | MAL 主源歧义即终止识别链，TMDB 兜底永远不被询问，中文目录名整批记成待确认 |
+| [BUG-2267](bugs/BUG-2267-coreaudio-download-errors.md) | ✅ | ✅ | CoreAudio下载失败被误报为qBittorrent推送失败 |
 | [BUG-2266](bugs/BUG-2266-import-no-subtitle-dead-end.md) | ✅ | ✅ | 选了音频没字幕点「导入」只提示不引导转录，用户以为语音模型选不中（Android 报告） |
 | [BUG-2265](bugs/BUG-2265-android-audio-saf-cache-reference.md) | ✅ | ✅ | 安卓查词发音库把 SAF 缓存副本当成原文件引用 |
 | [BUG-2264](bugs/BUG-2264-reopen-book-credits-landing-page.md) | ✅ | ✅ | 重复开关书落地页整页入账且写出零时长段 |

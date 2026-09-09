@@ -4522,5 +4522,9 @@
   "video_work_field_backdrop": "Backdrop",
   "manga_discovery_section_publishing": "Popular publishing manga",
   "local_audio_file_unavailable": "Basis data audio tidak tersedia. Pilih kembali file DB asli.",
-  "local_audio_file_reselect": "Pilih kembali basis data audio"
+  "local_audio_file_reselect": "Pilih kembali basis data audio",
+  "download_request_failed": "Could not create the download. Check the download settings and task list, then try again.",
+  "download_resource_resolve_failed": "Could not fetch the download resource. Check the network and proxy settings, then try again.",
+  "download_torrent_invalid": "The source returned invalid torrent data. Retry later or choose another source.",
+  "download_torrent_selection_failed": "Could not uniquely match this volume in the torrent. Refresh the catalog or choose another source."
 }
