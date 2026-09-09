@@ -64,8 +64,8 @@ void main() {
       expect(bridgeSrc.contains('__fushiHighlightBgDark'), isTrue,
           reason: 'JS 读 Dart 注入的 __fushiHighlightBgDark');
       expect(
-          bridgeSrc
-              .contains('ReaderContentStyles.isDarkBackground(backgroundHex)'),
+          RegExp(r'ReaderContentStyles\.isDarkBackground\(\s*backgroundHex\s*,?\s*\)')
+              .hasMatch(bridgeSrc),
           isTrue,
           reason: 'applyHighlights 必须用滚动条同款单一真相计算深浅');
     });

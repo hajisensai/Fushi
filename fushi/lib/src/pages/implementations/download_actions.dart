@@ -1,7 +1,5 @@
 import 'dart:async' show unawaited;
-
 import 'package:flutter/material.dart';
-
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
@@ -13,6 +11,7 @@ import 'package:fushi_engine/media/video/download/video_download_pipeline_servic
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/torrent_upload_consent_dialog.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/media/discovery/sources/core_audio_discovery_source.dart';
 
 /// 通用磁力推送的结果（调用方据此弹提示）。
 enum GenericPushOutcome {
@@ -159,7 +158,8 @@ Future<GenericPushOutcome> enqueueSelectedDiscoveryTorrent({
       ),
     );
     return GenericPushOutcome.ok;
-  } on Object {
+  } on Object catch (error, stack) {
+    ErrorLogService.instance.log('DiscoveryTorrent.enqueue', error, stack);
     return GenericPushOutcome.pushFailed;
   }
 }
@@ -168,7 +168,7 @@ Future<GenericPushOutcome> enqueueSelectedDiscoveryTorrent({
 String genericPushMessage(GenericPushOutcome outcome) {
   switch (outcome) {
     case GenericPushOutcome.ok:
-      return t.anime_download_pushed;
+      return t.discovery_download_queued;
     case GenericPushOutcome.invalidMagnet:
       return t.anime_download_magnet_invalid;
     case GenericPushOutcome.storeUnavailable:
@@ -176,6 +176,15 @@ String genericPushMessage(GenericPushOutcome outcome) {
     case GenericPushOutcome.notReady:
       return t.download_backend_not_configured;
     case GenericPushOutcome.pushFailed:
-      return t.anime_download_push_failed;
+      return t.download_request_failed;
   }
+}
+
+/// 解析尚未触及下载后端；按数据边界提示恢复动作，避免误导用户修改 qB 设置。
+String discoveryTorrentResolveFailureMessage(Object error) {
+  if (error is CoreAudioFileMatchException) {
+    return t.download_torrent_selection_failed;
+  }
+  if (error is FormatException) return t.download_torrent_invalid;
+  return t.download_resource_resolve_failed;
 }

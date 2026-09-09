@@ -1,6 +1,6 @@
 /// 跨平台阅读器 chrome（ッツ / Hoshi Reader 形态）的纯函数与外壳组件。
 ///
-/// 非歌词模式下各平台阅读器的控制面由三块组成：
+/// 各平台阅读器的控制面由三块组成：
 ///  * **顶部工具栏** [ReaderDesktopHeader]：左「← 返回 / 目录 / 插图 / 统计」，居中书名，
 ///    右「有声书导入 / 全屏 / 外观设置」。它取代桌面端的底部设置栏，显隐与底栏同一
 ///    台状态机（点空白唤出、自动收起 / 挤压常驻）。
@@ -8,13 +8,17 @@
 ///    一条纵向面板（[showReaderSideSheet]），点面板外空白即关。
 ///  * **底部状态行**（reader_status_footer.dart）：常驻挤压式。
 ///
-/// 窄屏折叠次要操作，导航和设置共用侧栏；歌词模式仍走旧底栏（独立文档，正文 chrome 不适用）。
+/// 窄屏折叠次要操作，导航和设置共用侧栏。
+///
+/// 顶部工具栏在**歌词模式下同样在场**：歌词页是独立 HTML 文档，页内没有任何 chrome，
+/// 顶栏是它唯一的返回 / 设置面，而「切回阅读模式」的开关本身就住在这套 chrome 的设置
+/// 抽屉里——关掉顶栏等于把歌词模式关成一间没有门的房间。只有底部状态行仍留在歌词模式
+/// 之外（它画字数进度 / 阅读追踪，歌词模式不刷新进度，见 reader_status_footer.dart 的
+/// `readerStatusFooterEnabled`）。
 library;
 
 import 'package:flutter/material.dart';
 
-import 'package:fushi/src/reader/reader_status_footer.dart'
-    show readerStatusFooterEnabled;
 import 'package:fushi/src/utils/misc/platform_utils.dart'
     show kFushiSettingsWideMinHeight, kFushiSettingsWideThreshold;
 
@@ -35,14 +39,6 @@ const double kReaderDesktopHeaderTitleFontSize = 14;
 /// 右侧抽屉宽度（逻辑 px）。窄窗口下由 [showReaderSideSheet] 收窄到留出 48px 空白。
 const double kReaderSideSheetWidth = 400;
 
-/// 共用 chrome（顶部工具栏 + 右侧抽屉）是否启用：与底部状态行同一判据——非
-/// 歌词模式。沿用既有符号名，页面的 `_desktopChromeEnabled` 委托到这里。
-bool readerDesktopChromeEnabled({
-  required bool desktop,
-  required bool lyricsMode,
-}) =>
-    readerStatusFooterEnabled(desktop: desktop, lyricsMode: lyricsMode);
-
 /// 有声书面板的容器按可用空间选择：桌面/宽窗居中，手机保留全高底部面板。
 /// 此判断独立于导航和设置，两者在所有平台均使用侧栏。
 bool readerAudiobookUsesDialog({required bool desktop, required Size window}) =>
@@ -50,20 +46,47 @@ bool readerAudiobookUsesDialog({required bool desktop, required Size window}) =>
     (window.width >= kFushiSettingsWideThreshold &&
         window.height >= kFushiSettingsWideMinHeight);
 
+/// 导航抽屉打开时是否把焦点直接放进「书内搜索」输入框。
+///
+/// 桌面端有物理键盘：Ctrl+F / 工具栏目录键唤出导航抽屉后，光标落进搜索框才是
+/// 「搜索」这个动作的自然续写，不占任何屏幕空间。
+///
+/// 移动端相反——autofocus 会立刻顶起软键盘，把本来就是主角的**章节目录**压到
+/// 剩下的半屏里（抽屉是全高路由，键盘的 viewInsets 直接吃掉下半部分），用户
+/// 十次里有九次只是想点一章跳过去，却先要按返回键收键盘。故手机 / 平板一律
+/// 不 autofocus：点搜索框仍照常弹键盘，主动权交回用户。
+bool readerNavigationAutofocusesSearch({
+  required bool navigationPresentation,
+  required bool desktop,
+}) =>
+    navigationPresentation && desktop;
+
 /// 顶部工具栏的顶部预留高。
 ///
-///  * 未启用（歌词模式）→ 0；
-///  * 悬浮态（默认：点空白唤出、自动收起）→ 0，工具栏盖在正文之上；
-///  * 挤压态且底栏占位（`_hasEverLoaded && _showChrome`）→ [headerHeight]。
+///  * 未启用 / 未占位（`_hasEverLoaded && _showChrome`）→ 0；
+///  * 否则 → [headerHeight]，**不分悬浮/挤压**。
+///
+/// BUG-2387：这里曾有一条 `floating → 0` 的特例（照抄底栏与顶部进度的悬浮模型）。
+/// 它对那两者成立、对顶栏不成立，因为顶栏是 **48px 的不透明面**（底栏同样不透明但
+/// 画在底部、压住的是页尾留白；顶部进度只有 18px 且是半透明毛玻璃）。顶栏画在
+/// `Positioned(top: _stableTopInset)`、高 [kReaderDesktopHeaderHeight]，而正文内容盒
+/// 顶部 = `marginTop`(默认 0vh) + `--chrome-top-inset`(悬浮态恒等于 `_stableTopInset`)
+/// —— 二者起点相同，唤出时整条 48px 压在正文首行上。实测（Android API34 全屏 +
+/// Windows 桌面）重叠恒为 48.0 逻辑 px。
+///
+/// 为什么去掉特例不会破坏「悬浮显隐不重锚」（`reader_chrome_floating.dart` 文件头
+/// 的设计律）：悬浮态的显隐走 `_handleFloatingChromeReveal`，**从不翻转
+/// `_showChrome`**，故 `barOccupiesLayout` 在悬浮态恒定 ⇒ 本函数的返回值恒定 ⇒
+/// 唤出/收起不改预留高、不 reflow、不重锚。被去掉的只是「正文可以被盖」这一条，
+/// 而那从来不是悬浮态的收益，是它的代价。
 ///
 /// 与 `bottomChromeReserve` 同构：工具栏和底栏是同一台显隐状态机的上下两端。
 double readerDesktopHeaderReserve({
   required bool enabled,
   required bool barOccupiesLayout,
-  required bool floating,
   required double headerHeight,
 }) {
-  if (!enabled || !barOccupiesLayout || floating) return 0;
+  if (!enabled || !barOccupiesLayout) return 0;
   return headerHeight;
 }
 
@@ -348,6 +371,31 @@ class ReaderSideSheetSectionLabel extends StatelessWidget {
 
 /// 抽屉贴哪一边：ッツ 形态下「导航 / 章节」贴左、「外观」贴右。
 enum ReaderSideSheetSide { left, right }
+
+/// BUG-2276：正文 WebView 上报的一次点击，是否应当**只**用来关掉压在正文之上的
+/// 侧抽屉（外观设置 / 导航），而不再当成正文点击（翻页 / 查词 / 收放控制栏）。
+///
+/// 为什么正文点击会漏过 Flutter 的 modal barrier：[showReaderSideSheet] 是
+/// `barrierColor: Colors.transparent` 的路由（ッツ 形态不给正文压暗），而
+/// **透明遮罩不画任何像素**。macOS 的平台视图命中模型恰恰以「平台视图之上有没有
+/// Flutter 绘制」为唯一判据：`FlutterCompositor` 把排在平台视图之后的 backing
+/// store 图层的 `paint_region` 写进 `FlutterMutatorView._hitTestIgnoreRegion`，
+/// 只有落在该区域的鼠标事件才会被 Flutter 截住（BUG-1692 的根因，同一机制的
+/// 另一面）。一张什么都不画的遮罩因此在 macOS 上等于不存在——点击直穿到
+/// WKWebView，抽屉的 `barrierDismissible` 永远等不到那次点击，用户看到的就是
+/// 「设置/导航开着，点正文关不掉」。Windows（WebView 是纹理）与 Android
+/// （hybrid composition）由 Flutter 统一派发指针，遮罩照常吃掉点击，JS 侧根本
+/// 收不到这次 tap，故该门在那些平台恒假、行为零变化。
+///
+/// [readerRouteIsCurrent] 是「阅读器页是不是最顶层路由」：抽屉开着时为 false。
+/// 两个条件缺一不可——只看抽屉标志会在抽屉关闭动画期误吞一次正文点击，只看路由
+/// 则会把压在正文上的**实色**遮罩对话框（那些遮罩在 macOS 上照常吃点击，JS 不会
+/// 上报 tap）也算进来。
+bool readerWebViewPointerClosesSideSheet({
+  required bool sideSheetOpen,
+  required bool readerRouteIsCurrent,
+}) =>
+    sideSheetOpen && !readerRouteIsCurrent;
 
 /// 从左或右贴边滑出一条全高抽屉路由。遮罩透明（正文照常可见），点抽屉外空白即关。
 ///

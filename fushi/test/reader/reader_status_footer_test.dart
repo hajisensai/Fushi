@@ -15,14 +15,44 @@ import '../pages/reader_fushi_page_source_corpus.dart';
 void main() {
   group('pure helpers', () {
     test('enabled on every platform outside lyrics mode', () {
+      bool enabled({required bool desktop, required bool lyricsMode}) =>
+          readerStatusFooterEnabled(
+            desktop: desktop,
+            lyricsMode: lyricsMode,
+            showTimer: true,
+            showProgress: true,
+          );
+      expect(enabled(desktop: true, lyricsMode: false), isTrue);
+      expect(enabled(desktop: true, lyricsMode: true), isFalse);
+      expect(enabled(desktop: false, lyricsMode: false), isTrue);
+      expect(enabled(desktop: false, lyricsMode: true), isFalse);
+    });
+
+    // 两段读数各有开关：任一开着行就在（还有内容要画），都关掉整条行连同 28px
+    // 预留一起消失——空行照占正文高度是白吃。
+    test('disabled only when both readouts are switched off', () {
+      bool enabled({required bool showTimer, required bool showProgress}) =>
+          readerStatusFooterEnabled(
+            desktop: true,
+            lyricsMode: false,
+            showTimer: showTimer,
+            showProgress: showProgress,
+          );
+      expect(enabled(showTimer: true, showProgress: true), isTrue);
+      expect(enabled(showTimer: true, showProgress: false), isTrue);
+      expect(enabled(showTimer: false, showProgress: true), isTrue);
+      expect(enabled(showTimer: false, showProgress: false), isFalse,
+          reason: '两段都不画时不留空行、回收预留高');
       expect(
-          readerStatusFooterEnabled(desktop: true, lyricsMode: false), isTrue);
-      expect(
-          readerStatusFooterEnabled(desktop: true, lyricsMode: true), isFalse);
-      expect(
-          readerStatusFooterEnabled(desktop: false, lyricsMode: false), isTrue);
-      expect(
-          readerStatusFooterEnabled(desktop: false, lyricsMode: true), isFalse);
+        readerStatusFooterEnabled(
+          desktop: true,
+          lyricsMode: true,
+          showTimer: true,
+          showProgress: true,
+        ),
+        isFalse,
+        reason: '歌词模式仍然一票否决',
+      );
     });
 
     test('reserve: enabled -> footerHeight, else 0', () {
@@ -82,6 +112,7 @@ void main() {
       int? total = 123962,
       int? chapterCurrent,
       int? chapterTotal,
+      bool showTimer = true,
       bool showProgress = true,
       VoidCallback? onTap,
       VoidCallback? onTapTracker,
@@ -97,6 +128,7 @@ void main() {
               totalChars: total,
               chapterCurrentChars: chapterCurrent,
               chapterTotalChars: chapterTotal,
+              showTimer: showTimer,
               showProgress: showProgress,
               textColor: Colors.white,
               backgroundColor: Colors.black,
@@ -158,6 +190,30 @@ void main() {
           findsNothing);
     });
 
+    testWidgets('tracker hidden by its own switch, progress keeps its place',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(host(
+        totals: () => (durationMs: 61000, chars: 100, active: true),
+        showTimer: false,
+      ));
+      expect(find.byKey(const ValueKey<String>('fushi_status_tracker')),
+          findsNothing);
+      expect(find.byIcon(Icons.timer_outlined), findsNothing,
+          reason: '计时器图标与读数一起隐藏');
+      final Finder progress =
+          find.byKey(const ValueKey<String>('fushi_status_progress'));
+      expect(progress, findsOneWidget);
+      final Rect strip = tester.getRect(find.byType(ReaderStatusFooter));
+      expect(strip.height, kReaderStatusFooterHeight,
+          reason: '行还在（进度还开着），高度不变');
+      expect(strip.right - tester.getRect(progress).right, closeTo(16, 0.5),
+          reason: '进度仍贴右缘 16');
+
+      // 秒表 tick 不再重建这一层：读数隐藏后没有随秒变化的内容。
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('tap anywhere on the strip fires onTap',
         (WidgetTester tester) async {
       int taps = 0;
@@ -207,6 +263,50 @@ void main() {
       expect(trackerTaps, 1);
       expect(progressTaps, 1);
     });
+
+    // 追踪块此前钉在左下角、进度在右下角，底部读数被劈成两个角；播放条一唤出
+    // （ReaderStatusInline）同一串数字又整体飞到右端。两段现在并排贴右，与 inline
+    // 同序：计时块在左、进度在右。
+    testWidgets('tracker and progress sit together at the right end',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(
+        host(totals: () => (durationMs: 0, chars: 0, active: true)),
+      );
+      final Rect strip = tester.getRect(find.byType(ReaderStatusFooter));
+      final Rect tracker = tester
+          .getRect(find.byKey(const ValueKey<String>('fushi_status_tracker')));
+      final Rect progress = tester
+          .getRect(find.byKey(const ValueKey<String>('fushi_status_progress')));
+
+      expect(tracker.right, lessThanOrEqualTo(progress.left),
+          reason: '与 inline 形态同序：计时块在进度左边');
+      // 判据是「两段挨在一起」而不是「都在右半边」——两段文字合起来本就可能超过半屏。
+      expect(progress.left - tracker.right, lessThanOrEqualTo(24),
+          reason: '两段之间只隔一个间距，不再被撑成左右两角');
+      expect(strip.right - progress.right, closeTo(16, 0.5),
+          reason: '右端内边距仍是 16，进度贴着右缘');
+      expect(tracker.left - strip.left, greaterThan(32),
+          reason: '左端留白（点它唤出 / 收起 chrome），计时块不再钉在左下角');
+    });
+
+    testWidgets('tracker hit box spans the full strip height',
+        (WidgetTester tester) async {
+      int trackerTaps = 0;
+      await tester.pumpWidget(
+        host(
+          totals: () => (durationMs: 0, chars: 0, active: true),
+          onTapTracker: () => trackerTaps++,
+        ),
+      );
+      final Rect strip = tester.getRect(find.byType(ReaderStatusFooter));
+      final Rect tracker = tester
+          .getRect(find.byKey(const ValueKey<String>('fushi_status_tracker')));
+
+      // 裸文字行盒只有十几 px 高；命中区撑满整条 28px 后，贴着行顶 / 行底也点得中。
+      await tester.tapAt(Offset(tracker.center.dx, strip.top + 2));
+      await tester.tapAt(Offset(tracker.center.dx, strip.bottom - 2));
+      expect(trackerTaps, 2, reason: '计时块命中区要撑满整条行高，不是只有那一行文字');
+    });
   });
 
   group('source-scan guards', () {
@@ -240,7 +340,9 @@ void main() {
       final String anyFloating = _slice(
         src,
         '  bool get _anyChromeFloating =>',
-        '  /// BUG-1343',
+        // 结束锚点用结构（下一个 getter 定义），不用某条注释：BUG-1343 那段
+        // macOS 拖拽带的文档注释已随该功能删除。
+        '  double get _readerTopOffset =>',
       );
       expect(
         anyFloating.contains('(_topProgressFloating && !_statusFooterEnabled)'),

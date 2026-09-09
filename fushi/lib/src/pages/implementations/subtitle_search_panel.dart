@@ -12,6 +12,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/batch_action_bar.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
@@ -255,6 +256,28 @@ const ValueKey<String> kSubtitleNoticeBannerKey = ValueKey<String>(
   'jimaku-notice-banner',
 );
 
+/// 在 [directory] 下为 [fileName] 取一个**不会覆盖已有文件**的落盘路径。
+///
+/// 已存在时依次试 `name (2).srt`、`name (3).srt`……批量下载多条候选时，不同
+/// provider、不同版本组常常给出一模一样的文件名（`[Group] Show - 01.srt`），
+/// 直接写进去就是后一条把前一条盖掉——用户以为下了 5 条，盘上只剩 1 条，而且
+/// 盖掉的那几条永远不会有人发现。
+///
+/// 批量落盘路径（[runSubtitleBatch]）早就踩过同一个坑，用的是 bookUid 前缀；
+/// 这里是「同一集的多个候选」，没有 bookUid 可用，故按序号消歧。
+@visibleForTesting
+String uniqueSubtitleDestination(String directory, String fileName) {
+  final String ext = p.extension(fileName);
+  final String stem = p.basenameWithoutExtension(fileName);
+  String candidate = p.join(directory, fileName);
+  int counter = 2;
+  while (File(candidate).existsSync()) {
+    candidate = p.join(directory, '$stem ($counter)$ext');
+    counter++;
+  }
+  return candidate;
+}
+
 class SubtitleSearchPanel extends StatefulWidget {
   const SubtitleSearchPanel({
     required this.onDownloaded,
@@ -278,7 +301,11 @@ class SubtitleSearchPanel extends StatefulWidget {
 
   /// 下载落盘成功后的回调（绝对路径）。对话框壳用它 `Navigator.pop`，全屏工作台
   /// 用它把路径带回播放页——面板自己**不**碰 Navigator。
-  final void Function(String path) onDownloaded;
+  /// 下载完成后回调，参数是**本次落盘的全部字幕绝对路径**，按用户勾选顺序。
+  ///
+  /// 单选时就是一条。多选时调用方负责「全部登记进字幕轨列表、只应用第一条」——
+  /// 单值契约表达不了这件事，所以这里收的是 List。
+  final void Function(List<String> paths) onDownloaded;
 
   /// 「取消」按钮回调；null = 不渲染取消按钮（宿主自己有返回入口，如 AppBar）。
   final VoidCallback? onCancel;
@@ -367,6 +394,30 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
   AniListFailureKind? _seriesLookupKind;
   String? _busyName; // 正在下载的文件名
   String? _busySourceKey; // 正在下载的候选 identityKey（版本卡视图用）
+
+  /// 已勾选的候选，按点选顺序（下载与「应用第一条」都按这个顺序）。
+  final List<VideoSubtitleCandidate> _selectedCandidates =
+      <VideoSubtitleCandidate>[];
+
+  bool get _multiSelecting => _selectedCandidates.isNotEmpty;
+
+  Set<String> get _selectedIdentityKeys => <String>{
+        for (final VideoSubtitleCandidate c in _selectedCandidates)
+          c.identityKey,
+      };
+
+  void _toggleCandidate(VideoSubtitleCandidate candidate) {
+    setState(() {
+      final int at = _selectedCandidates.indexWhere(
+        (VideoSubtitleCandidate c) => c.identityKey == candidate.identityKey,
+      );
+      if (at >= 0) {
+        _selectedCandidates.removeAt(at);
+      } else {
+        _selectedCandidates.add(candidate);
+      }
+    });
+  }
   List<JimakuCandidate> _candidates = const <JimakuCandidate>[];
 
   /// true = 平铺文件列表（旧视图）；false（默认）= 版本卡视图。候选缺 source
@@ -830,6 +881,60 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
 
   /// 下载真实来源候选（文件视图与版本卡视图共用）：registry 按 providerId
   /// 分派，落盘后 pop 回本地路径。
+  /// 批量下载已勾选的字幕：串行，落盘路径逐条去重，最后一次性回调。
+  ///
+  /// 串行而非并发：OpenSubtitles 只是**读取并上报**配额与 429（客户端没有任何
+  /// 限流器、也没有按 Retry-After 等待的代码），并发下载一勾十条就是主动撞配额；
+  /// 顺序执行还让「应用第一条」有确定含义。
+  ///
+  /// 一条失败不中断整批（某个 provider 挂了不该把其余的也废掉），失败条数汇总到
+  /// 错误提示里；一条都没成功时不回调，避免调用方拿着空列表去「应用第一条」。
+  Future<void> _downloadSelected() async {
+    final VideoSubtitleRegistry? registry = widget.subtitleRegistry?.call();
+    if (registry == null || _selectedCandidates.isEmpty) return;
+    final List<VideoSubtitleCandidate> targets =
+        List<VideoSubtitleCandidate>.of(_selectedCandidates);
+    final List<String> saved = <String>[];
+    int failed = 0;
+    for (final VideoSubtitleCandidate source in targets) {
+      if (!mounted) return;
+      setState(() {
+        _busyName = source.fileName;
+        _busySourceKey = source.identityKey;
+        _error = null;
+      });
+      try {
+        final VideoSubtitleDownload download = await registry.download(source);
+        if (download.bytes.isEmpty) {
+          failed++;
+          continue;
+        }
+        final Directory dir = Directory(widget.saveDirectory);
+        if (!dir.existsSync()) dir.createSync(recursive: true);
+        final String dest = uniqueSubtitleDestination(
+          dir.path,
+          safeSubtitleFileName(download.fileName),
+        );
+        await File(dest).writeAsBytes(download.bytes);
+        saved.add(dest);
+      } on Object catch (error) {
+        failed++;
+        debugPrint('[fushi-subtitle] batch download failed: $error');
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      _busyName = null;
+      _busySourceKey = null;
+    });
+    if (saved.isEmpty) {
+      _showError(t.video_jimaku_download_failed);
+      return;
+    }
+    if (failed > 0) _showError(t.download_batch_failed(n: failed));
+    widget.onDownloaded(saved);
+  }
+
   Future<void> _downloadSource(VideoSubtitleCandidate source) async {
     final VideoSubtitleRegistry? registry = widget.subtitleRegistry?.call();
     if (registry == null) return;
@@ -848,13 +953,13 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
       if (!dir.existsSync()) dir.createSync(recursive: true);
       // BUG-1845：文件名来自远端 provider，只取安全叶名——`../` / `..\` 不得逃出
       // [SubtitleSearchPanel.saveDirectory]。
-      final String dest = p.join(
+      final String dest = uniqueSubtitleDestination(
         dir.path,
         safeSubtitleFileName(download.fileName),
       );
       await File(dest).writeAsBytes(download.bytes);
       if (!mounted) return;
-      widget.onDownloaded(dest);
+      widget.onDownloaded(<String>[dest]);
     } on Object catch (error) {
       // BUG-1844：401（key 过期）/ 429（限流）/ 404（文件下架）对用户是完全不同的三
       // 件事，一律显示「下载失败」等于什么都没说。
@@ -1259,6 +1364,8 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
         requestedEpisode: int.tryParse(_episodeCtrl.text.trim()),
         busyIdentityKey: _busySourceKey,
         onPickCandidate: _busyName == null ? _downloadSource : null,
+        selectedIdentityKeys: _selectedIdentityKeys,
+        onToggleCandidate: _busyName == null ? _toggleCandidate : null,
         probedLanguages: _probedGroupLanguages,
       );
     }
@@ -1342,6 +1449,41 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
             },
           ),
         ),
+        // 勾了字幕才出现的批量栏：本面板的主操作仍是「搜索」，多选是叠加能力，
+        // 没勾东西时不该占掉本来就紧张的固定高（窄机横屏正文只剩百来 dp）。
+        if (_multiSelecting)
+          BatchActionBar(
+            selectedCount: _selectedCandidates.length,
+            onSelectAll: () => setState(() {
+              _selectedCandidates
+                ..clear()
+                ..addAll(_candidates
+                    .map((JimakuCandidate c) => c.source)
+                    .whereType<VideoSubtitleCandidate>());
+            }),
+            onInvertSelection: () => setState(() {
+              final Set<String> current = _selectedIdentityKeys;
+              final List<VideoSubtitleCandidate> next =
+                  <VideoSubtitleCandidate>[
+                for (final JimakuCandidate c in _candidates)
+                  if (c.source != null &&
+                      !current.contains(c.source!.identityKey))
+                    c.source!,
+              ];
+              _selectedCandidates
+                ..clear()
+                ..addAll(next);
+            }),
+            actions: <Widget>[
+              FushiIconButton(
+                key: const ValueKey<String>('subtitle-batch-download'),
+                enabled: _busyName == null,
+                tooltip: t.video_jimaku_batch_download,
+                icon: Icons.download_outlined,
+                onTap: () => unawaited(_downloadSelected()),
+              ),
+            ],
+          ),
         const SizedBox(height: 8),
         // 底部固定操作栏：「取消」+「搜索」。搜索是本面板唯一主操作，必须在不随
         // 正文滚动的槽位——它此前跟着输入框放在筛选面板（可滚区）里，iPhone 横屏

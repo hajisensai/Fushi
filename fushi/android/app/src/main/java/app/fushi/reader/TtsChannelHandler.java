@@ -304,7 +304,16 @@ public class TtsChannelHandler {
             synchronized (dbLock) {
                 closeAllAudioDbsLocked();
 
+                final List<String> indexTargets = new ArrayList<>();
                 for (String dbPath : paths) {
+                    // BUG-2265: Dart queries by configured enabled-source index.
+                    // Missing/broken databases must keep their slot; compacting
+                    // the list would query a different source at the same index.
+                    final int slot = localAudioDbs.size();
+                    localAudioDbs.add(null);
+                    localAudioDbPaths.add(dbPath);
+                    List<String> order = orderByPath.get(dbPath);
+                    localAudioDbOrders.add(order != null ? order : new ArrayList<>());
                     if (dbPath == null || dbPath.isEmpty()) continue;
                     try {
                         File dbFile = new File(dbPath);
@@ -334,18 +343,14 @@ public class TtsChannelHandler {
                                     | SQLiteDatabase.NO_LOCALIZED_COLLATORS);
                             db.enableWriteAheadLogging();
                         }
-                        localAudioDbPaths.add(dbPath);
-                        localAudioDbs.add(db);
-                        // 开库成功后再记 order，保证与 localAudioDbs 的 index 对齐。
-                        List<String> order = orderByPath.get(dbPath);
-                        localAudioDbOrders.add(order != null ? order : new ArrayList<>());
+                        localAudioDbs.set(slot, db);
+                        indexTargets.add(dbPath);
                     } catch (Exception e) {
                         android.util.Log.e("hibiki-audio",
                             "Failed to open DB: " + dbPath, e);
                     }
                 }
 
-                final List<String> indexTargets = new ArrayList<>(localAudioDbPaths);
                 indexFuture = ioExecutor.submit(() -> {
                     for (String path : indexTargets) {
                         ensureQueryIndexes(path);

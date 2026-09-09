@@ -19,30 +19,59 @@ class AudiobookSessionLauncher {
   /// 解析一本书的会话启动材料。优先 Audiobook 记录，回退 SrtBook（与 reader
   /// `_resolveAudioSlot` 同序）。
   Future<AudiobookSessionStartRequest?> resolve(String bookKey) async {
+    final _SessionSource? source = await _pickSource(bookKey);
+    if (source == null) return null;
+    final SrtBook? srtBook = source.srtBook;
+    if (srtBook != null) {
+      return _resolveSrtBook(srtBook, source.audiobook, source.audioFiles);
+    }
+    return _resolveAudiobook(source.audiobook, source.audioFiles, bookKey);
+  }
+
+  /// 会话来源的唯一裁决点：Audiobook 行（有可播放音频）优先，否则 SrtBook 行（有可
+  /// 播放音频），都没有 = 无有声书。
+  Future<_SessionSource?> _pickSource(String bookKey) async {
     final AudiobookRow? abRow = await _db.getAudiobookByBookKey(bookKey);
     if (abRow != null) {
-      final AudiobookSessionStartRequest? req =
-          await _resolveAudiobook(abRow, bookKey);
-      if (req != null) return req;
+      final Audiobook audiobook = _audiobookFromRow(abRow);
+      final List<File> audioFiles = await _resolveAudioFiles(
+        audioPaths: audiobook.audioPaths,
+        audioRoot: audiobook.audioRoot,
+      );
+      if (audioFiles.isNotEmpty) {
+        return _SessionSource(
+          audiobook: audiobook,
+          audioFiles: audioFiles,
+          positionKey: bookKey,
+        );
+      }
     }
     final SrtBookRow? srtRow = await _db.getSrtBookByBookKey(bookKey);
-    if (srtRow != null) {
-      return _resolveSrtBook(srtRow);
-    }
-    return null;
+    if (srtRow == null) return null;
+    final SrtBook srtBook = _srtBookFromRow(srtRow);
+    final List<File> audioFiles = await _resolveAudioFiles(
+      audioPaths: srtBook.audioPaths,
+      audioRoot: srtBook.audioRoot,
+    );
+    if (audioFiles.isEmpty) return null;
+    return _SessionSource(
+      audiobook: Audiobook()
+        ..bookKey = srtBook.uid
+        ..audioRoot = srtBook.audioRoot
+        ..audioPaths = srtBook.audioPaths
+        ..alignmentFormat = 'srt'
+        ..alignmentPath = srtBook.srtPath,
+      audioFiles: audioFiles,
+      positionKey: srtBook.uid,
+      srtBook: srtBook,
+    );
   }
 
   Future<AudiobookSessionStartRequest?> _resolveAudiobook(
-    AudiobookRow row,
+    Audiobook audiobook,
+    List<File> audioFiles,
     String bookKey,
   ) async {
-    final Audiobook audiobook = _audiobookFromRow(row);
-    final List<File> audioFiles = await _resolveAudioFiles(
-      audioPaths: audiobook.audioPaths,
-      audioRoot: audiobook.audioRoot,
-    );
-    if (audioFiles.isEmpty) return null;
-
     final AudiobookRepository repo = AudiobookRepository(_db);
     final SessionPrefs prefs = await _readPrefs(repo, bookKey);
     final SessionPersistCallbacks persist = _persistFor(repo, bookKey);
@@ -75,21 +104,11 @@ class AudiobookSessionLauncher {
     );
   }
 
-  Future<AudiobookSessionStartRequest?> _resolveSrtBook(SrtBookRow row) async {
-    final SrtBook srtBook = _srtBookFromRow(row);
-    final List<File> audioFiles = await _resolveAudioFiles(
-      audioPaths: srtBook.audioPaths,
-      audioRoot: srtBook.audioRoot,
-    );
-    if (audioFiles.isEmpty) return null;
-
-    final Audiobook synthetic = Audiobook()
-      ..bookKey = srtBook.uid
-      ..audioRoot = srtBook.audioRoot
-      ..audioPaths = srtBook.audioPaths
-      ..alignmentFormat = 'srt'
-      ..alignmentPath = srtBook.srtPath;
-
+  Future<AudiobookSessionStartRequest?> _resolveSrtBook(
+    SrtBook srtBook,
+    Audiobook synthetic,
+    List<File> audioFiles,
+  ) async {
     final AudiobookRepository repo = AudiobookRepository(_db);
     final String key = srtBook.uid;
     final SessionPrefs prefs = await _readPrefs(repo, key);
@@ -237,6 +256,23 @@ class AudiobookSessionLauncher {
 }
 
 /// 一本书的会话启动材料聚合。
+/// [AudiobookSessionLauncher._pickSource] 的裁决结果：要播的 [audiobook]（SrtBook 来源
+/// 时是 uid 身份的合成对象）、已确认存在的 [audioFiles]、持久化位置用的
+/// [positionKey]；[srtBook] 非空 = 来源是 SrtBook 行。
+class _SessionSource {
+  const _SessionSource({
+    required this.audiobook,
+    required this.audioFiles,
+    required this.positionKey,
+    this.srtBook,
+  });
+
+  final Audiobook audiobook;
+  final List<File> audioFiles;
+  final String positionKey;
+  final SrtBook? srtBook;
+}
+
 class AudiobookSessionStartRequest {
   const AudiobookSessionStartRequest({
     required this.info,

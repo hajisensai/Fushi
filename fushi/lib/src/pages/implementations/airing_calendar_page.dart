@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
@@ -559,7 +559,7 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
         child: url.isEmpty
             ? placeholder
             : PortraitCoverImage(
-                image: CachedNetworkImageProvider(url),
+                image: AppCachedHttpImage(url),
                 errorBuilder: (_) => placeholder,
               ),
       ),

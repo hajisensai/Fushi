@@ -50,12 +50,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 热力图用例（读取面 key 算术）咬住。
   'reading/Day starts at':
       'test/stats/stat_date_key_test.dart + test/stats/stat_window_test.dart + '
-          'test/pages/stat_summary_test.dart + '
-          'test/widgets/stat_contribution_heatmap_test.dart',
-  // 「功能模块」七开关（五库页 + 下载/查词两个工具 tab）。写 prefsRepo
-  // （changed=true），生效点是 HomePage/macOS 侧栏的可见 tab 列表——harness 里没有
-  // 挂 HomePage 外壳，探不到底栏。行为由 homeActiveTabs 纯函数用例咬住：各开关
-  // =false 各自隐藏对应 tab、首页/设置恒在。
+      'test/pages/stat_summary_test.dart + '
+      'test/widgets/stat_contribution_heatmap_test.dart',
+  // 「功能模块」里**有底栏 tab 的七个**（五库页 + 下载/查词两个工具 tab）。写
+  // prefsRepo（changed=true），生效点是 HomePage/macOS 侧栏的可见 tab 列表——harness
+  // 里没有挂 HomePage 外壳，探不到底栏。行为由 homeActiveTabs 纯函数用例咬住：各开关
+  // =false 各自隐藏对应 tab、首页/设置恒在。（这七个同时也会藏掉自己的设置分类，那一
+  // 半由 settings_module_gating_test 一并咬住。）
   //
   // 键的两半都随「功能模块」搬家改过：destId `system` → `appearance`（本区管底栏
   // 出现哪些 tab，与「反转导航栏」同域），行标题不再是手抄的 module_*_label，而是
@@ -77,6 +78,16 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'appearance/Downloads': 'test/pages/home_page_tabs_test.dart',
   'appearance/Lookup': 'test/pages/home_page_tabs_test.dart',
   'appearance/Extension': 'test/pages/home_page_tabs_test.dart',
+  // 「功能模块」后加的四个横切开关（听书/制卡/在线服务/同步备份）。它们**没有底栏
+  // tab**，homeActiveTabs 那套用例咬不到；写 prefsRepo（changed=true）之后能观测到的
+  // 生效点是**设置一级分类整条消失**（列表 + 搜索索引），而 harness 观测的是本行自己
+  // 所在的那棵渲染树，看不到「另一条 destination 没了」。由专项测试逐个模块咬住：
+  // 关掉它 → 名下分类从可见列表消失、从搜索索引消失，且不波及别的分类。
+  'appearance/Listening': 'test/settings/settings_module_gating_test.dart',
+  'appearance/Card creation': 'test/settings/settings_module_gating_test.dart',
+  'appearance/Online services':
+      'test/settings/settings_module_gating_test.dart',
+  'appearance/Sync & backup': 'test/settings/settings_module_gating_test.dart',
   // 漫画观看偏好五项。写 prefsRepo（changed=true），生效点全部在**漫画阅读器的
   // WebView 文档**里——这些值被注入成 CSS 过渡声明 / JS 常量（ZOOM_SENS、
   // TAP_ZONE_PAGING、IS_RTL、PAGE_ANIM），widget harness 里没有 WebView，也就没有
@@ -233,6 +244,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // VideoScrapeAutoService.sweep 的进场门（关=零网络请求、零资料落库），不是
   // reader CSS / 主题树，无适用探针；由专项服务测试咬住（关=不发请求、关→开
   // 同一实例下轮即刮）。
+  // BUG-2268：作品资料的主源二选一（MAL ↔ TMDB，另一源恒为兜底）。写 prefsRepo
+  // （changed=true），生效点在下一批刮削时协调器选哪家问、歧义时问不问兜底源——
+  // 要网络、要一次完整识别链，不是 reader CSS / 主题树，无适用探针；由专项测试
+  // 直接驱动协调器咬住（全局偏好 / 来源级 override / 双源歧义合并候选）。
+  'video/Primary metadata source':
+      'test/media/video/metadata/video_source_scrape_provider_override_test.dart',
   'video/Auto-fetch series info':
       'test/media/video/scraper/auto_scrape_service_test.dart',
   // 库内自动补刮总闸。写 prefsRepo（changed=true），生效点在
@@ -343,6 +360,16 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'cardCreation/Auto-add book title to tags':
       'test/settings/settings_flatten_anki_profile_test.dart + live consume in '
           'reader_fushi/mining.part.dart & video_fushi/lookup_mining.part.dart (bookTitleTag)',
+  // 「制卡所在字符数」标签（`chars_12345`）。与上面那条同构：写 prefsRepo
+  // （changed=true），真正的消费点在制卡路径 reader_fushi/mining.part.dart 的
+  // charPositionTag（读 appModel.autoAddCharPositionToTags），harness 里没有阅读器、
+  // 也没有 Anki，探不到「卡上真带了这个 tag」。两端各有专项测试咬住：注入点由源码
+  // 守卫钉死（开关门控 + 走 absoluteCharOffsetOf + 负数哨兵不退化成 0），tag 装配由
+  // hibiki_anki 的 buildNoteTags 用例钉死（追加位置 / 去重 / 清洗 / withMediaRefs）。
+  'cardCreation/Auto-add mining position to tags':
+      'test/pages/reader_mining_char_position_tag_guard_test.dart + '
+          'packages/fushi_anki/test/mining_tag_and_parallel_test.dart '
+          '(charPositionTag group)',
   // TODO-1650: 制卡图片/GIF 清晰度 + 音频质量两滑块（替代旧「压缩」开关）。写
   // AppModel.miningImageQuality / miningAudioQuality（prefsRepo），焦点遍历能切到
   // 并写穿 DB（changed=true），但消费点在 ffmpeg/截图编码参数（非 reader CSS / 主题
@@ -611,6 +638,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 显隐，非 reader CSS / 主题树）；由专项 getter 真值表 + 源码守卫覆盖。默认 true=保持现状。
   'reading/Reading progress indicator':
       'test/settings/top_progress_toggle_guard_test.dart',
+  // 底部状态行左段「阅读计时器」（计时器图标 + 字/时 + 本次时长）的显隐开关。生效点
+  // 在状态行组件自身的 showTimer 门控与 readerStatusFooterEnabled（两段都关时整条行
+  // 连同 28px 底部预留一起消失），既不进 reader CSS 也不进主题树，harness 的渲染输入
+  // 观测不到；由专项纯函数真值表 + widget 行为用例覆盖。默认 true=保持现状。
+  'reading/Show reading timer': 'test/reader/reader_status_footer_test.dart',
   // TODO-975: 顶部进度悬浮开关 + 悬浮控件自动隐藏延时。生效点在 reader 页悬浮
   // chrome 状态机（_topProgressReserve/_bottomChromeReserve 派生 + 自动隐藏定时器，
   // 非 reader CSS / 主题树）；由专项纯函数真值表 + 持久化 + 源码守卫覆盖。
@@ -656,6 +688,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'lookup/Auto-expand rows':
       'test/pages/popup_auto_expand_dictionaries_test.js (popup.js node behaviour guard) + test/pages/popup_auto_expand_dictionaries_test.dart',
   'lookup/Show expression tags': 'DEVICE: popup.js expression tags',
+  // BUG-2284：紧凑释义。效果在 popup.js 的释义排版（WebView 渲染，widget 测不到），
+  // 与同组的 collapse / expression tags 同一类；注入侧由
+  // test/dictionary/popup_instant_scroll_guard_test.dart 与
+  // test/pages/popup_settings_injection_memo_test.dart 钉住。
+  'lookup/Compact glossaries': 'DEVICE: popup.js compact glossaries',
   'lookup/Deduplicate pitch accents': 'DEVICE: popup.js pitch dedup',
   // TODO-702: 有声书退出即停（默认）/ 后台续播（可选）。pref-only（门控阅读器
   // dispose 时是否 stop 会话，无渲染树效果）；schema coverage 证 focus/change/
@@ -794,6 +831,14 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'profiles/Manga': _kMediaTypeBindingEvidence,
   'profiles/Game': _kMediaTypeBindingEvidence,
   'profiles/Browser': _kMediaTypeBindingEvidence,
+  // 语言绑定（v99）与上面八行同理：写的是 `language_profiles` 表，prefs diff 里
+  // 结构上看不到。行标签是内容语言选择器的自称显示名（`contentLanguageLabelOf`），
+  // 与 `kContentLanguageOptions` 一一对应——那份候选变了，这里要跟着变。
+  'profiles/日本語 (ja)': _kLanguageBindingEvidence,
+  'profiles/简体中文 (zh-Hans)': _kLanguageBindingEvidence,
+  'profiles/繁體中文 (zh-Hant)': _kLanguageBindingEvidence,
+  'profiles/한국어 (ko)': _kLanguageBindingEvidence,
+  'profiles/English (en)': _kLanguageBindingEvidence,
   // 制卡字号写的是 SharedPreferences 里的 AnkiSettings JSON blob（与本表既有的
   // cardCreation 开关同因），消费点是 composeLapisCss(fontScalePercent:)。
   'cardCreation/Card font scale':
@@ -851,6 +896,13 @@ const String _kMediaTypeBindingEvidence =
     'test/profile/media_type_binding_video_guard_test.dart + '
     'test/profile/profile_repository_test.dart + '
     'test/database/profiles_test.dart';
+
+/// 语言级 Profile 绑定（v99）的证据链：归一化键的契约、四级优先级（book >
+/// language > mediaType > active）、以及建表 + cascade 的迁移测试。
+const String _kLanguageBindingEvidence =
+    'test/profile/language_binding_test.dart + '
+    'test/profile/profile_repository_test.dart + '
+    'test/database/migration_v99_language_profiles_test.dart';
 
 /// 焦点驱动的 settings schema **全分组**覆盖测试（Phase 1 Task 4）。
 ///

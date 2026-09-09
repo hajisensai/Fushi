@@ -4,6 +4,7 @@ import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_renderer.dart';
+import 'package:fushi/src/settings/settings_navigation_groups.dart';
 import 'package:fushi/src/settings/settings_schema_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 
@@ -45,30 +46,59 @@ class CupertinoSettingsRenderer implements SettingsRenderer {
     required ValueChanged<SettingsDestinationId> onDestinationSelected,
     bool pushRoutes = true,
   }) {
-    final Color primaryColor =
-        CupertinoTheme.of(settingsContext.context).primaryColor;
-    return CupertinoListSection.insetGrouped(
-      backgroundColor: CupertinoColors.systemGroupedBackground.resolveFrom(
-        settingsContext.context,
+    final Color primaryColor = CupertinoTheme.of(
+      settingsContext.context,
+    ).primaryColor;
+    final BuildContext context = settingsContext.context;
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return SingleChildScrollView(
+      padding: EdgeInsets.only(
+        bottom: tokens.spacing.page + MediaQuery.of(context).padding.bottom,
       ),
-      children: destinations.map((SettingsDestination destination) {
-        return CupertinoListTile(
-          leading: Icon(destination.icon, color: primaryColor),
-          title: Text(destination.title),
-          subtitle:
-              destination.summary != null ? Text(destination.summary!) : null,
-          trailing: const CupertinoListTileChevron(),
-          onTap: () {
-            onDestinationSelected(destination.id);
-            if (!pushRoutes) return;
-            Navigator.of(settingsContext.context).push(
-              CupertinoPageRoute<void>(
-                builder: (_) => SettingsDetailPage(destination: destination),
-              ),
-            );
-          },
-        );
-      }).toList(growable: false),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          for (final SettingsNavigationGroup group in groupSettingsDestinations(
+            destinations,
+          ))
+            CupertinoListSection.insetGrouped(
+              key: ValueKey<SettingsNavigationGroupId>(group.id),
+              header: Text(group.id.title(context)),
+              backgroundColor: CupertinoColors.systemGroupedBackground
+                  .resolveFrom(context),
+              children: <Widget>[
+                for (final SettingsDestination destination
+                    in group.destinations)
+                  CupertinoListTile(
+                    leading: Icon(destination.icon, color: primaryColor),
+                    title: Text(destination.title, maxLines: 2),
+                    subtitle: destination.summary != null
+                        ? Text(destination.summary!)
+                        : null,
+                    trailing: pushRoutes
+                        ? const CupertinoListTileChevron()
+                        : null,
+                    backgroundColor:
+                        destination.id == selectedDestinationId && !pushRoutes
+                        ? CupertinoColors.tertiarySystemFill.resolveFrom(
+                            context,
+                          )
+                        : null,
+                    onTap: () {
+                      onDestinationSelected(destination.id);
+                      if (!pushRoutes) return;
+                      Navigator.of(context).push(
+                        CupertinoPageRoute<void>(
+                          builder: (_) =>
+                              SettingsDetailPage(destination: destination),
+                        ),
+                      );
+                    },
+                  ),
+              ],
+            ),
+        ],
+      ),
     );
   }
 
@@ -83,9 +113,7 @@ class CupertinoSettingsRenderer implements SettingsRenderer {
       ),
       child: CustomScrollView(
         slivers: <Widget>[
-          CupertinoSliverNavigationBar(
-            largeTitle: Text(destination.title),
-          ),
+          CupertinoSliverNavigationBar(largeTitle: Text(destination.title)),
           SliverToBoxAdapter(
             child: buildDetailContent(
               settingsContext: settingsContext,
@@ -110,29 +138,38 @@ class CupertinoSettingsRenderer implements SettingsRenderer {
     // 外层容器提供留白），故 [insetHorizontally] 对其无影响，仅为满足接口签名。
     bool insetHorizontally = true,
   }) {
-    final List<SettingsSection> sections =
-        destination.visibleSections(settingsContext);
-    final EdgeInsets mediaPadding =
-        MediaQuery.of(settingsContext.context).padding;
+    final List<SettingsSection> sections = destination.visibleSections(
+      settingsContext,
+    );
+    final EdgeInsets mediaPadding = MediaQuery.of(
+      settingsContext.context,
+    ).padding;
     // 底部留安全区，自滚到底时最后一项不贴边（对齐 Material 渲染器）。
     final EdgeInsets padding = EdgeInsets.only(bottom: mediaPadding.bottom);
 
     Widget section(int index) => SettingsSchemaSection(
-          section: sections[index],
-          settingsContext: settingsContext,
-          showIcons: false,
-          routeBuilder: (BuildContext context, WidgetBuilder builder) {
-            return CupertinoPageRoute<void>(builder: builder);
-          },
-          footerStyle: (BuildContext context) =>
-              FushiDesignTokens.of(context).type.metadata.copyWith(
-                    color: CupertinoColors.secondaryLabel.resolveFrom(context),
-                  ),
-        );
+      key: ValueKey<String>('${destination.id.name}.${sections[index].id}'),
+      scopeId: destination.id.name,
+      section: sections[index],
+      settingsContext: settingsContext,
+      showIcons: false,
+      routeBuilder: (BuildContext context, WidgetBuilder builder) {
+        return CupertinoPageRoute<void>(builder: builder);
+      },
+      footerStyle: (BuildContext context) => FushiDesignTokens.of(context)
+          .type
+          .metadata
+          .copyWith(color: CupertinoColors.secondaryLabel.resolveFrom(context)),
+    );
 
     // 整页正文逃生口（见 SettingsDestination.body）：接在所有 schema section 之后，
     // 与它们共享同一个滚动容器与内边距。
     final Widget? bodyWidget = destination.body?.call(settingsContext);
+    final List<Widget> content = <Widget>[
+      if (bodyWidget != null && destination.bodyBeforeSections) bodyWidget,
+      for (int index = 0; index < sections.length; index++) section(index),
+      if (bodyWidget != null && !destination.bodyBeforeSections) bodyWidget,
+    ];
 
     // shrinkWrap：嵌在外层 sliver / SingleChildScrollView 里（buildDetailPage 的
     // CustomScrollView 复用此路径），由父滚动；shrinkWrap ListView 必须布局全部子项
@@ -143,9 +180,8 @@ class CupertinoSettingsRenderer implements SettingsRenderer {
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
         padding: padding,
-        itemCount: sections.length + (bodyWidget != null ? 1 : 0),
-        itemBuilder: (BuildContext context, int index) =>
-            index < sections.length ? section(index) : bodyWidget!,
+        itemCount: content.length,
+        itemBuilder: (BuildContext context, int index) => content[index],
       );
     }
 
@@ -158,10 +194,7 @@ class CupertinoSettingsRenderer implements SettingsRenderer {
       padding: padding,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          for (int index = 0; index < sections.length; index++) section(index),
-          if (bodyWidget != null) bodyWidget,
-        ],
+        children: content,
       ),
     );
   }

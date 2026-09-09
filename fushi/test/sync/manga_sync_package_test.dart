@@ -90,6 +90,59 @@ void main() {
     expect(await isMangaPackage(garbage), isFalse);
   });
 
+  test('空的在线合集不能打包，下载页图后才成为可导出内容', () async {
+    final Directory src = _mangaBookDir(pages: 0);
+    addTearDown(() => src.deleteSync(recursive: true));
+    final String output = p.join(booksRoot.path, 'collection.zip');
+    expect(hasExportableMangaContent(src.path), isFalse);
+    expect(await repackageMangaBook(src.path, output), isFalse);
+    expect(File(output).existsSync(), isFalse);
+
+    File(p.join(src.path, kMangaPackageMarker)).writeAsStringSync(
+      jsonEncode(<String, Object?>{
+        'pages': <Object?>[
+          <String, Object?>{
+            'url': 'images/page.jpg',
+            'width': 800,
+            'height': 1200,
+          },
+        ],
+      }),
+    );
+    expect(
+      hasExportableMangaContent(src.path),
+      isFalse,
+      reason: '声明了页图但尚未下载也不能导出',
+    );
+    expect(await repackageMangaBook(src.path, output), isFalse);
+    expect(File(output).existsSync(), isFalse);
+    File(
+      p.join(src.path, 'images', 'page.jpg'),
+    ).writeAsBytesSync(<int>[1, 2, 3]);
+    expect(hasExportableMangaContent(src.path), isTrue);
+    expect(await repackageMangaBook(src.path, output), isTrue);
+  });
+
+  test('坏元数据或部分缺页不能作为可下载漫画', () async {
+    final Directory src = _mangaBookDir();
+    addTearDown(() => src.deleteSync(recursive: true));
+    File(p.join(src.path, 'images', 'p2.jpg')).deleteSync();
+    expect(hasExportableMangaContent(src.path), isFalse);
+    final String output = p.join(booksRoot.path, 'broken.zip');
+    expect(await repackageMangaBook(src.path, output), isFalse);
+    for (final String json in <String>[
+      '{',
+      '{}',
+      '{"pages":[{"url":123}]}',
+      '{"pages":[{"url":"../outside.jpg"}]}',
+    ]) {
+      File(p.join(src.path, kMangaPackageMarker)).writeAsStringSync(json);
+      expect(hasExportableMangaContent(src.path), isFalse);
+      expect(await repackageMangaBook(src.path, output), isFalse);
+    }
+    expect(File(output).existsSync(), isFalse);
+  });
+
   test('extractMangaPackage 拒绝路径穿越条目（zip-slip 防线）', () async {
     final Directory out = Directory.systemTemp.createTempSync('hbk_evil');
     addTearDown(() => out.deleteSync(recursive: true));

@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
 import 'package:fushi/src/sync/sync_utils.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
 
 /// 服务端在错误响应体里给出的拒绝原因（截断后的），读不出来就返回 null。
 ///
@@ -54,16 +55,18 @@ class WebDavOps {
     Duration connectionTimeout = const Duration(seconds: 60),
     String? pinnedFingerprint,
     void Function()? onConnectivityError,
-  })  : _baseUrl = baseUrl,
-        _connectionTimeout = connectionTimeout,
-        _pinnedFingerprint = pinnedFingerprint,
-        _onConnectivityError = onConnectivityError,
-        // 用户名和密码都空 = 匿名 / 无鉴权 WebDAV：根本不带 Authorization 头，
-        // 而不是发 `Basic base64(':')`（很多匿名服务器仍会因此回 401）。任一凭据
-        // 非空时行为完全不变（BUG-1016）。
-        _authHeader = (username.isEmpty && password.isEmpty)
-            ? null
-            : 'Basic ${base64Encode(utf8.encode('$username:$password'))}';
+    SyncAuthFailureKind unauthorizedKind = SyncAuthFailureKind.credentials,
+  }) : _baseUrl = baseUrl,
+       _connectionTimeout = connectionTimeout,
+       _pinnedFingerprint = pinnedFingerprint,
+       _onConnectivityError = onConnectivityError,
+       _unauthorizedKind = unauthorizedKind,
+       // 用户名和密码都空 = 匿名 / 无鉴权 WebDAV：根本不带 Authorization 头，
+       // 而不是发 `Basic base64(':')`（很多匿名服务器仍会因此回 401）。任一凭据
+       // 非空时行为完全不变（BUG-1016）。
+       _authHeader = (username.isEmpty && password.isEmpty)
+           ? null
+           : 'Basic ${base64Encode(utf8.encode('$username:$password'))}';
 
   final String _baseUrl;
   final String? _authHeader;
@@ -77,9 +80,22 @@ class WebDavOps {
   final void Function()? _onConnectivityError;
 
   /// TODO-961 M1: https 端点的证书 SHA-256 钉扎指纹（aa:bb:.. 形式）。null = 明文
-  /// http 老路径，用裸 [HttpClient]（行为零变化）；非 null = 用 pinned client，仅
+  /// 普通 WebDAV，遵循应用出站代理与局域网绕过；非 null = 用 pinned client，仅
   /// 接受指纹相等的自签证书。由数据（URL 是否带指纹）决定，不靠平台分支。
   final String? _pinnedFingerprint;
+
+  /// BUG-2377：本传输层收到 401 时该抛哪一种鉴权失败语义。
+  ///
+  /// [WebDavOps] 是**传输层**，它只知道「服务端说凭据不行」，不知道这份凭据是什么
+  /// 模型——WebDAV 是用户名/密码，互联是配对时对端发的 per-peer token。以前它对
+  /// 两者一律抛默认的 [SyncAuthFailureKind.credentials]，于是互联对端把本机从已配对
+  /// 列表里删掉之后，用户看到的是「登录已过期，请重新登录」——而互联根本没有登录
+  /// 这个操作。凭据语义归**后端拥有者**声明，传输层只转达。
+  ///
+  /// 默认 [SyncAuthFailureKind.credentials] 让 WebDAV / 网络媒体源库等既有调用点
+  /// 行为逐字不变。
+  final SyncAuthFailureKind _unauthorizedKind;
+
   HttpClient? _httpClient;
 
   String get baseUrl => _baseUrl;
@@ -96,14 +112,14 @@ class WebDavOps {
     final HttpClient? existing = _httpClient;
     if (existing != null) return existing;
     final String? fp = _pinnedFingerprint;
-    // 指纹非空 → pinned client（仅接受证书指纹相等的自签 https）；否则裸 client
-    // （明文 http 老路径，字节不变）。连接超时只约束 connect，不约束正文传输。
+    // 配对端保留证书钉扎；普通 WebDAV 也可能部署在公网，统一选择出站代理。
+    // 连接超时只约束 connect，不约束正文传输。
     final HttpClient client = fp != null && fp.isNotEmpty
         ? createPinnedHttpClient(
             expectedFingerprint: fp,
             connectionTimeout: _connectionTimeout,
           )
-        : (HttpClient()..connectionTimeout = _connectionTimeout);
+        : createAppHttpClient(connectionTimeout: _connectionTimeout);
     return _httpClient = client;
   }
 
@@ -150,7 +166,7 @@ class WebDavOps {
 
       if (response.statusCode == 401) {
         await response.drain<void>();
-        throw SyncAuthError('Authentication failed');
+        throw SyncAuthError('Authentication failed', kind: _unauthorizedKind);
       }
       // BUG-1323：403 是服务端的策略拒绝，用户要看到的是**服务端说了什么**，而不是
       // 「登录已过期，请重新登录」。「测试连接」正是最该把原文摆出来的地方，故这条
@@ -189,7 +205,8 @@ class WebDavOps {
     await mkcolResp.drain<void>();
     if (mkcolResp.statusCode >= 400 && mkcolResp.statusCode != 405) {
       throw SyncBackendError(
-          'Failed to create folder: ${mkcolResp.statusCode}');
+        'Failed to create folder: ${mkcolResp.statusCode}',
+      );
     }
   }
 
@@ -226,7 +243,7 @@ class WebDavOps {
     final response = await closeRequest(request);
 
     if (response.statusCode == 401) {
-      throw SyncAuthError('Authentication failed');
+      throw SyncAuthError('Authentication failed', kind: _unauthorizedKind);
     }
     // BUG-1323：403 带上服务端原文。读响应体放在这条分支里而不是提前统一读——
     // 401 的判定必须先于任何可能抛异常的流读取，否则一个畸形错误体就能把鉴权
@@ -241,8 +258,10 @@ class WebDavOps {
 
     final body = await response.transform(utf8.decoder).join();
     if (response.statusCode != 207) {
-      throw SyncBackendError('PROPFIND failed: ${response.statusCode}',
-          isRetryable: response.statusCode == 404);
+      throw SyncBackendError(
+        'PROPFIND failed: ${response.statusCode}',
+        isRetryable: response.statusCode == 404,
+      );
     }
     return parsePropfindResponse(body, path);
   }
@@ -250,13 +269,16 @@ class WebDavOps {
   List<DavEntry> parsePropfindResponse(String xml, String basePath) {
     final entries = <DavEntry>[];
     final responsePattern = RegExp(
-        r'<(?:[a-zA-Z0-9]+:)?response[>\s](.*?)</(?:[a-zA-Z0-9]+:)?response>',
-        dotAll: true);
-    final hrefPattern =
-        RegExp(r'<(?:[a-zA-Z0-9]+:)?href>(.*?)</(?:[a-zA-Z0-9]+:)?href>');
+      r'<(?:[a-zA-Z0-9]+:)?response[>\s](.*?)</(?:[a-zA-Z0-9]+:)?response>',
+      dotAll: true,
+    );
+    final hrefPattern = RegExp(
+      r'<(?:[a-zA-Z0-9]+:)?href>(.*?)</(?:[a-zA-Z0-9]+:)?href>',
+    );
     final collectionPattern = RegExp(r'<(?:[a-zA-Z0-9]+:)?collection\s*/?>');
     final displayNamePattern = RegExp(
-        r'<(?:[a-zA-Z0-9]+:)?displayname>(.*?)</(?:[a-zA-Z0-9]+:)?displayname>');
+      r'<(?:[a-zA-Z0-9]+:)?displayname>(.*?)</(?:[a-zA-Z0-9]+:)?displayname>',
+    );
 
     for (final match in responsePattern.allMatches(xml)) {
       final block = match.group(1)!;
@@ -279,11 +301,13 @@ class WebDavOps {
       }
 
       final resolvedHref = resolveHref(href, basePath);
-      entries.add(DavEntry(
-        href: resolvedHref,
-        displayName: displayName,
-        isCollection: isCollection,
-      ));
+      entries.add(
+        DavEntry(
+          href: resolvedHref,
+          displayName: displayName,
+          isCollection: isCollection,
+        ),
+      );
     }
     return entries;
   }
@@ -303,7 +327,8 @@ class WebDavOps {
       }
       return href;
     }
-    final isDefaultPort = (baseUri.scheme == 'http' && baseUri.port == 80) ||
+    final isDefaultPort =
+        (baseUri.scheme == 'http' && baseUri.port == 80) ||
         (baseUri.scheme == 'https' && baseUri.port == 443);
     final portSuffix = isDefaultPort ? '' : ':${baseUri.port}';
     return '${baseUri.scheme}://${baseUri.host}$portSuffix$href';
@@ -330,14 +355,20 @@ class WebDavOps {
   }
 
   Future<void> uploadJson(
-      String folderId, String fileName, dynamic data) async {
+    String folderId,
+    String fileName,
+    dynamic data,
+  ) async {
     final path = '$folderId${Uri.encodeComponent(fileName)}';
     final bytes = utf8.encode(jsonEncode(data));
     await putBytes(path, bytes, 'application/json');
   }
 
   Future<void> putBytes(
-      String path, List<int> bytes, String contentType) async {
+    String path,
+    List<int> bytes,
+    String contentType,
+  ) async {
     final request = await buildRequest('PUT', path);
     request.headers.set('Content-Type', contentType);
     request.headers.set('Content-Length', '${bytes.length}');
@@ -370,7 +401,7 @@ class WebDavOps {
   /// 一行都不用改。
   void checkStatus(int statusCode, String context, {String? serverReason}) {
     if (statusCode == 401) {
-      throw SyncAuthError('Authentication failed');
+      throw SyncAuthError('Authentication failed', kind: _unauthorizedKind);
     }
     // BUG-1323：403 ≠ 401。403 是「凭据已被接受，但服务端按策略拒绝了这一次请求」
     // （host 对明文会话返回 `HTTPS required for service config` 就是有意拒绝，不是
@@ -392,7 +423,8 @@ class WebDavOps {
     }
   }
 
-  static const propfindBody = '<?xml version="1.0" encoding="utf-8"?>'
+  static const propfindBody =
+      '<?xml version="1.0" encoding="utf-8"?>'
       '<d:propfind xmlns:d="DAV:">'
       '<d:prop>'
       '<d:resourcetype/>'

@@ -212,6 +212,18 @@ extension _VideoSubtitle on _VideoFushiPageState {
                       : _pickAndImportSubtitle(controller),
                 ),
       ),
+      // 模型重定时：与上面两行同属「拿到 / 修好一份字幕」，所以并在同一组。
+      // 只对本地视频出现——它要把整条音轨喂给设备端转录，远端模式手里只有一条流。
+      // 空 cue 时也显示（点了会说「先选一条字幕轨」），不显示反而更像功能坏了。
+      if (!_isRemote && _currentVideoPath != null && isAsrSupported)
+        ListTile(
+          leading: const Icon(Icons.model_training_outlined),
+          title: Text(t.video_subtitle_retime_action),
+          enabled: !_subtitleLoadingShown,
+          onTap: _subtitleLoadingShown
+              ? null
+              : () => unawaited(_retimeSubtitleWithSpeechModel(controller)),
+        ),
       const Divider(height: 1),
       ListTile(
         leading: const Icon(Icons.subtitles_off),
@@ -1145,7 +1157,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final SubtitleSearchSeed seed = await _buildJimakuSeed(query);
     final SubtitleCollectionSpec? collection = await _subtitleCollectionSpec();
     if (!context.mounted) return;
-    final String? downloaded = await SubtitleWorkbenchPage.open(
+    final List<String>? downloadedPaths = await SubtitleWorkbenchPage.open(
       context,
       host: AppSubtitleWorkbenchHost(appModel),
       saveDirectory: saveDir,
@@ -1160,7 +1172,18 @@ extension _VideoSubtitle on _VideoFushiPageState {
     );
     // 工作台内含联网搜索/下载，会夺焦；关闭后把焦点还给 Video。
     _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
-    if (downloaded == null || !context.mounted) return;
+    if (downloadedPaths == null ||
+        downloadedPaths.isEmpty ||
+        !context.mounted) {
+      return;
+    }
+    // 多选下载：**全部**登记进字幕轨列表，只把第一条（用户最先勾的那条）应用为
+    // 当前字幕。其余就在轨列表里等着切——一次下 5 条却只有 1 条能找得到，等于
+    // 另外 4 条白下了。
+    for (final String extra in downloadedPaths.skip(1)) {
+      _registerImportedSubtitleSource(extra);
+    }
+    final String downloaded = downloadedPaths.first;
     if (_isRemote) {
       // 远端：内存应用，不写本地 DB（_applyRemoteSubtitle 自带 cue 为空时的失败提示
       // + 成功 OSD），不叠加额外提示。
@@ -1618,6 +1641,95 @@ extension _VideoSubtitle on _VideoFushiPageState {
         t.video_subtitle_switched(label: _youtubeCaptionTrackLabel(track)),
       );
     }
+  }
+
+  /// 用设备端语音模型**重定时**当前字幕轨：跑一遍 ASR 转录当参照，逐句修正时间，
+  /// 结果写成一份新的外挂字幕档并当场切过去。
+  ///
+  /// 与「自动对轴」（[_autoAlignSubtitle]）的分工：那条只算一个整体平移量写进
+  /// `delayMs`，修不了帧率漂移与分段偏移；这条逐句给时间，所以产出是**新档**而不是
+  /// 一个偏移量——原档一个字节都不动，用户随时能在字幕轨列表里切回去比较。
+  ///
+  /// 转录整段复用有声书那个弹层（[showAsrTranscribeSheet]）：模型下载、进度、暂停 /
+  /// 取消、语音语言选择全在里面，视频侧一行 UI 都不用重写。它返回落盘的 SRT 路径，
+  /// 用户中途取消则返回 null，这里直接安静收工。
+  ///
+  /// 算法在 `fushi_asr_subtitles`（见 [retimeVideoSubtitleToFile]），只认唯一且单调
+  /// 的文本锚点、推不出来的段原样保留，所以**低命中率不会毁字幕**——但会得到一份
+  /// 几乎没改过的新档，那种情况下明确告诉用户去查语言 / 集数，别让他自己发现。
+  Future<void> _retimeSubtitleWithSpeechModel(
+    VideoPlayerController controller,
+  ) async {
+    final String? videoPath = _currentVideoPath;
+    if (videoPath == null || videoPath.isEmpty) return;
+    final List<AudioCue> cues = List<AudioCue>.of(controller.cues);
+    if (cues.isEmpty) {
+      _showOsd(
+        t.video_subtitle_retime_no_track,
+        severity: ToastSeverity.warning,
+      );
+      return;
+    }
+    final String? transcriptSrt = await showAsrTranscribeSheet(
+      context: context,
+      audioPaths: <String>[videoPath],
+    );
+    if (transcriptSrt == null || !mounted) return;
+    _showOsd(
+      t.video_subtitle_retime_running,
+      icon: Icons.model_training_outlined,
+      severity: ToastSeverity.info,
+    );
+    RetimedSubtitleFile? retimed;
+    try {
+      retimed = await retimeVideoSubtitleToFile(
+        subtitleCues: cues,
+        transcriptSrtPath: transcriptSrt,
+        outputDirectory: await AppPaths.videoSubtitlesDirectory(),
+        baseName: p.basename(videoPath),
+      );
+    } catch (error) {
+      debugPrint('[fushi-video] subtitle retiming failed: $error');
+      retimed = null;
+    }
+    if (!mounted) return;
+    if (retimed == null) {
+      _showOsd(
+        t.video_subtitle_retime_failed,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    // 落盘的新档走既有外挂字幕链路：拷进字幕目录（同目录时跳过）、选中、并入字幕轨
+    // 列表。这条路径已经处理好持久化与「当场出现在列表里」（BUG-1329 / BUG-1861）。
+    await _importExternalSubtitle(controller, retimed.path);
+    if (!mounted) return;
+    final ({int matched, int total, int percent, int medianShiftMs}) summary =
+        retimedSubtitleSummary(retimed);
+    if (retimed.droppedInputCues > 0) {
+      _showOsd(
+        t.video_subtitle_retime_dropped(count: retimed.droppedInputCues),
+        severity: ToastSeverity.warning,
+      );
+    }
+    if (summary.total > 0 &&
+        summary.matched / summary.total < kRetimedSubtitleLowMatchRate) {
+      _showOsd(
+        t.video_subtitle_retime_low_match(percent: summary.percent),
+        severity: ToastSeverity.warning,
+      );
+      return;
+    }
+    _showOsd(
+      t.video_subtitle_retime_done(
+        matched: summary.matched,
+        total: summary.total,
+        percent: summary.percent,
+        ms: summary.medianShiftMs,
+      ),
+      icon: Icons.model_training_outlined,
+      severity: ToastSeverity.success,
+    );
   }
 
   Future<void> _importExternalSubtitle(

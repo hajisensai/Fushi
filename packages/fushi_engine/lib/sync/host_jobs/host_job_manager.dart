@@ -85,7 +85,13 @@ class HostJobManager {
       await _jobRoot.create(recursive: true);
       return;
     }
-    await for (final FileSystemEntity e in _jobRoot.list()) {
+    // 必须是 listSync，不能是 `await for (… in _jobRoot.list())`。
+    // 异步目录流的完成事件走真实事件循环，而 widget 测试在 fake-async 里推进
+    // 时钟——那个事件永远送不到，`load()` 的 future 因此永不 resolve。本类被 app
+    // 侧 `FushiSyncServer` 消费，任何驱动到 `/api/jobs` 的 widget 测试都会挂在
+    // `pumpAndSettle` 上（同 video_book_repository.dart 里那处的成因）。
+    // 循环体内的 await 不受影响：那是普通 future，不依赖目录流的完成事件。
+    for (final FileSystemEntity e in _jobRoot.listSync()) {
       if (e is! Directory) continue;
       final File f = File(p.join(e.path, 'job.json'));
       if (!await f.exists()) continue;

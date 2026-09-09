@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -7,6 +8,7 @@ import 'package:path/path.dart' as path;
 import 'package:fushi_engine/models/local_audio_source_pref.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/utils/misc/local_audio_db.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/tts_channel.dart';
 import 'package:fushi_engine/models/local_audio_db_entry.dart';
 export 'package:fushi_engine/models/local_audio_db_entry.dart';
@@ -43,8 +45,46 @@ class LocalAudioManager {
   /// 让每次导入的内部文件名唯一（仍是单段数字，匹配 [pruneOrphans] 的命名正则）。
   static int _lastImportStamp = 0;
 
+  // 文件锁覆盖主进程/:popup；进程内文件锁不一定互斥独立句柄，另按目录串行。
+  static final Map<String, Future<void>> _migrationQueues =
+      <String, Future<void>>{};
+
+  Future<void> _withMigrationLock(Future<void> Function() action) async {
+    final String directory = path.canonicalize(_databaseDirectory.absolute.path);
+    final String key = Platform.isWindows ? directory.toLowerCase() : directory;
+    final Future<void> previous = _migrationQueues[key] ?? Future<void>.value();
+    final Completer<void> released = Completer<void>();
+    _migrationQueues[key] = released.future;
+    await previous;
+    try {
+      if (!await _databaseDirectory.exists()) return;
+      final RandomAccessFile lock = await File(
+        path.join(directory, 'local_audio_migration.lock'),
+      ).open(mode: FileMode.append);
+      bool acquired = false;
+      try {
+        await lock.lock(FileLock.blockingExclusive);
+        acquired = true;
+        await action();
+      } finally {
+        try {
+          if (acquired) await lock.unlock();
+        } finally {
+          await lock.close();
+        }
+      }
+      // 锁文件永久保留：删掉会使等待者与新进程锁住不同 inode。
+    } finally {
+      released.complete();
+      if (identical(_migrationQueues[key], released.future)) {
+        _migrationQueues.remove(key);
+      }
+    }
+  }
+
   /// 内部副本命名（[importFile] 生成、[pruneOrphans] 回收的形状）：
-  /// `local_audio_<毫秒时间戳>.db`。是判定「可跨机按文件名归一」的唯一真值。
+  /// `local_audio_<数字标识>.db`（兼容旧时间戳；新文件附加进程 ID）。
+  /// 是判定「可跨机按文件名归一」的唯一真值。
   static final RegExp _internalCopyNamePattern =
       RegExp(r'^local_audio_\d+\.db$');
 
@@ -120,6 +160,107 @@ class LocalAudioManager {
         .setLocalAudioDbs(dbs.where((e) => e.enabled).map(_configFor).toList());
   }
 
+  /// 把旧版本误存的临时引用收进持久库。调用方传本机实际临时目录，并在
+  /// native 绑定前等待完成；不能用路径中的 `cache` 字样猜测用户文件归属。
+  /// 缺失或不可复制的文件保留原配置供重新选择；不会删除源文件或推送 native。
+  Future<void> migrateTemporaryReferences(Directory temporaryDirectory) async {
+    final String temporaryRoot = path.canonicalize(temporaryDirectory.path);
+    if (!entries.any((LocalAudioDbEntry entry) =>
+        entry.path.isNotEmpty &&
+        path.isWithin(temporaryRoot, path.canonicalize(entry.path)))) {
+      // 正常配置的 warm popup 不应为了已完成的迁移重新读整张偏好表。
+      return;
+    }
+    await _withMigrationLock(() async {
+      await _prefsRepo.loadFromDb();
+      await _migrateTemporaryReferencesLocked(temporaryDirectory);
+    });
+  }
+
+  Future<void> _migrateTemporaryReferencesLocked(
+      Directory temporaryDirectory) async {
+    final Map<String, String> snapshot = _prefsRepo.prefsSnapshot;
+    final Map<String, String?> expectedRaw = <String, String?>{
+      for (final String key in <String>[
+        'local_audio_dbs',
+        'local_audio_db_path',
+        'local_audio_db_display_name',
+        'audio_source_configs',
+      ])
+        key: snapshot[key],
+    };
+    final dynamic storedSources = _prefsRepo.getPref(
+      'audio_source_configs',
+      defaultValue: null,
+    );
+    final String temporaryRoot = path.canonicalize(temporaryDirectory.path);
+    final List<LocalAudioDbEntry> current = entries;
+    final Map<String, String> replacements = <String, String>{};
+    for (final LocalAudioDbEntry entry in current) {
+      if (entry.path.isEmpty ||
+          !path.isWithin(temporaryRoot, path.canonicalize(entry.path)) ||
+          replacements.containsKey(entry.path)) {
+        continue;
+      }
+      try {
+        final LocalAudioDbEntry copied = await importFile(
+          entry.path,
+          displayName: entry.displayName,
+        );
+        replacements[entry.path] = copied.path;
+      } catch (error, stack) {
+        ErrorLogService.instance.log(
+          'LocalAudioManager.migrateTemporaryReferences',
+          error,
+          stack,
+        );
+      }
+    }
+    if (replacements.isEmpty) return;
+
+    final Map<String, dynamic> updates = <String, dynamic>{
+      'local_audio_dbs': jsonEncode(
+        current
+            .map(
+              (LocalAudioDbEntry entry) =>
+                  entry.copyWith(path: replacements[entry.path]).toJson(),
+            )
+            .toList(),
+      ),
+      'local_audio_db_path': '',
+      'local_audio_db_display_name': '',
+    };
+    // 修改存储列表本身，避免 getter 补默认来源、过滤未知字段或改变顺序。
+    if (storedSources is List) {
+      updates['audio_source_configs'] = storedSources.map((dynamic source) {
+        if (source is! Map || source['kind'] != 'localAudio') return source;
+        final String? replacement = replacements[source['path']];
+        if (replacement == null) return source;
+        return <String, dynamic>{
+          ...Map<String, dynamic>.from(source),
+          'path': replacement,
+        };
+      }).toList();
+    }
+    try {
+      // 两份路径必须同一事务提交，避免进程退出时一份仍引用缓存。
+      await _prefsRepo.compareAndSetPrefs(
+        expectedRaw: expectedRaw,
+        updates: updates,
+      );
+    } catch (error, stack) {
+      ErrorLogService.instance.log(
+        'LocalAudioManager.migrateTemporaryReferences.persist',
+        error,
+        stack,
+      );
+      // 回读回滚后的 DB，避免本进程继续绑定复制期间已过期的配置。
+      // 已复制的文件留给既有 pruneOrphans 回收，原文件始终保留。
+      await _prefsRepo.loadFromDb();
+      rethrow;
+    }
+  }
+
   /// 只改某个库的子来源偏好（优先级序 + 逐源启用），立即持久化并重推 native。
   Future<void> setSourcesFor(
       String path, List<LocalAudioSourcePref> prefs) async {
@@ -189,7 +330,9 @@ class LocalAudioManager {
     int stamp = DateTime.now().millisecondsSinceEpoch;
     if (stamp <= _lastImportStamp) stamp = _lastImportStamp + 1;
     _lastImportStamp = stamp;
-    final String internalName = 'local_audio_$stamp.db';
+    // Android 主进程与 :popup 可同毫秒复制；数字段附加 pid 隔离两者，
+    // 仍满足既有内部副本识别/孤儿清理的 local_audio_\d+.db 契约。
+    final String internalName = 'local_audio_$stamp$pid.db';
     final String internalPath =
         path.join(_databaseDirectory.path, internalName);
     try {
@@ -215,6 +358,18 @@ class LocalAudioManager {
   /// （只动 `local_audio_*.db` 及其 -wal/-shm 旁文件，绝不碰其它文件，如主库 hibiki.db）。
   /// 用于回收"拷贝了但从未持久化"的孤儿文件。
   Future<void> pruneOrphans(Iterable<String> keepPaths) async {
+    final List<String> requestedKeep = List<String>.of(keepPaths);
+    await _withMigrationLock(() async {
+      // 等待迁移提交后重新读取；调用者传进来的 keep 列表可能还指向旧缓存。
+      await _prefsRepo.loadFromDb();
+      await _pruneOrphansLocked(<String>[
+        ...requestedKeep,
+        ...entries.map((LocalAudioDbEntry entry) => entry.path),
+      ]);
+    });
+  }
+
+  Future<void> _pruneOrphansLocked(Iterable<String> keepPaths) async {
     // 规范化引用路径，避免 Windows 反斜杠 / 正斜杠 + 大小写差异导致误删被引用文件。
     // 归一后再规范化：跨机导入后 keepPaths 里内部副本仍带**源机**绝对前缀，
     // 若不归一，本机已落地的同名副本会被判为孤儿误删（TODO-1171 数据丢失）。
@@ -278,26 +433,25 @@ class LocalAudioManager {
     await setEntries(dbs);
   }
 
-  Future<void> bindForNativeHandler({bool clearMissingPath = false}) async {
+  Future<void> bindForNativeHandler() async {
     final dbs = entries;
-    if (dbs.isEmpty) return;
 
-    final validConfigs = <LocalAudioDbConfig>[];
+    final configs = <LocalAudioDbConfig>[];
     for (final entry in dbs) {
       if (!entry.enabled) continue;
       // 存在性判定认归一后的本机路径（内部副本按文件名重挂），而非可能来自别机
       // 的存储 path——否则跨机导入的同名库虽已落地却被判缺失静默跳过（TODO-1171）。
       final String resolved =
           resolveInternalPath(entry.path, _databaseDirectory.path);
-      if (await File(resolved).exists()) {
-        validConfigs.add(_configFor(entry));
-      } else {
-        debugPrint('[fushi-audio] DB missing, skipping: $resolved'
+      if (!await File(resolved).exists()) {
+        debugPrint('[fushi-audio] DB missing, retaining source slot: $resolved'
             '${resolved == entry.path ? '' : ' (stored: ${entry.path})'}');
       }
+      // BUG-2265: resolver 的 dbIndex 按启用来源计数，缺失项也必须占位；
+      // 否则前一个缓存库失效会把后面的正常库错配到其它来源。
+      configs.add(_configFor(entry));
     }
-    if (validConfigs.isNotEmpty) {
-      await TtsChannel.instance.setLocalAudioDbs(validConfigs);
-    }
+    // warm popup 也会重绑定。全关闭/全删除时必须清空旧句柄，不能保留上次状态。
+    await TtsChannel.instance.setLocalAudioDbs(configs);
   }
 }

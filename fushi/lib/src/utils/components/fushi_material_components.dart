@@ -657,15 +657,25 @@ class FushiSelectableChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
-    final Color foreground =
-        selected ? colors.onPrimaryContainer : tokens.surfaces.onSurface;
+    final bool eink = isEinkTheme(context);
+    // E-ink：`primaryContainer` 与 `onPrimaryContainer` 双双塌缩到页面底色/前景，
+    // 于是选中态既没有填充差异、边框还从 outlineVariant 变成了底色——选中的
+    // chip 比未选中的更没有边，是个负信号。反色填充是墨水屏上唯一稳定可辨的
+    // 选中通道（与 segmentedButtonTheme / chipTheme 的处理同源）。
+    final Color selectedFill =
+        eink ? colors.onSurface : colors.primaryContainer;
+    final Color foreground = selected
+        ? (eink ? colors.surface : colors.onPrimaryContainer)
+        : tokens.surfaces.onSurface;
     // 仅图标模式（TODO-640）：图标当作 chip 的 label（不再放进 avatar + 文字），
     // chip 收成正方裸图标；需 leadingIcon 非空才生效，否则退化为普通文字 chip。
     final bool effectiveIconOnly = iconOnly && leadingIcon != null;
     final Widget? effectiveAvatar = effectiveIconOnly
         ? null
         : (avatar ??
-            (leadingIcon == null ? null : Icon(leadingIcon, size: 18)));
+            (leadingIcon == null
+                ? null
+                : Icon(leadingIcon, size: 18, color: foreground)));
     final Widget labelWidget = effectiveIconOnly
         ? Icon(leadingIcon, size: 18, color: foreground)
         : Text(
@@ -683,11 +693,13 @@ class FushiSelectableChip extends StatelessWidget {
       labelPadding: effectiveIconOnly ? EdgeInsets.zero : null,
       selected: selected,
       showCheckmark: false,
-      selectedColor: colors.primaryContainer,
+      selectedColor: selectedFill,
       backgroundColor: Colors.transparent,
       labelStyle: tokens.type.controlLabel.copyWith(color: foreground),
       side: BorderSide(
-        color: selected ? colors.primaryContainer : colors.outlineVariant,
+        color: selected
+            ? (eink ? colors.outline : colors.primaryContainer)
+            : colors.outlineVariant,
       ),
       shape: RoundedRectangleBorder(borderRadius: tokens.radii.chipRadius),
       visualDensity: VisualDensity.compact,
@@ -1804,9 +1816,13 @@ class FushiPageHeader extends StatelessWidget {
           FushiAppUiScale.of(context),
         ) ==
         WindowSizeClass.compact;
-    final double resolvedTop = compact
-        ? tokens.spacing.gap
-        : (narrowWindow ? tokens.spacing.page : tokens.spacing.page + 8);
+    // Embedded tabs already own a touch-height row; the home shell owns SafeArea.
+    // A second title margin pushes phone navigation away from the status bar.
+    final double resolvedTop = narrowWindow && titleWidget != null
+        ? 0
+        : compact
+            ? tokens.spacing.gap
+            : (narrowWindow ? tokens.spacing.page : tokens.spacing.page + 8);
     final EdgeInsetsGeometry resolvedPadding = padding ??
         EdgeInsets.fromLTRB(
           tokens.spacing.page,

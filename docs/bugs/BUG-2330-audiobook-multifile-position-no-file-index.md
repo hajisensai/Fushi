@@ -1,0 +1,6 @@
+## BUG-2330 · 多文件有声书持久化文件内毫秒无文件下标，重开恒落文件0
+- **报告**：2026-09-08（用户：BUG-2258 代码审查中发现，用户未直接报告）
+- **真实性**：✅ 真 bug。根因 `packages/fushi_audio/lib/src/audiobook/audiobook_controller.dart:898`（`_maybeSavePosition` 存 `_player.position`，`ConcatenatingAudioSource` 下是**文件内**毫秒，没有文件下标；`flushPosition` :931 / `stopPlayback` :1864 同）+ `:820`（`load()` 裸 `_player.seek(savedMs)`，不带 index → 恒进文件 0）。五文件书上次听到第 4 文件 12:30，重开 seek 到文件 0 的 12:30；此前只是暂停态播放器停错地方，BUG-2258 让开书仲裁选中音频起点后，视口也跟着落到文件 0 那句所在的章。
+- **[x] ① 已修复** — 三条落库路径统一采 `globalPosition`（全书毫秒 = 前序文件时长和 + 文件内位置，与进度条同口径）；`load()` 在 `_fileDurationsMs` 已知时按 `splitGlobalMs` 拆成（文件下标, 文件内偏移）`seek(index:)`。各文件时长由全书 cue 推出，故 `AudiobookSession.start` 把 `setAllBookCues` 提到 `load` **之前**（它不碰播放器；按位置解析 currentCue 的 `setChapterCues` 仍在 load 后）。单文件 / 无对齐数据时全书毫秒 = 文件内毫秒，行为不变；旧数据里多文件书存的「不知哪个文件的文件内毫秒」按全书毫秒解释，落点 ≤ 旧行为（旧行为恒落文件 0），不会更糟，无需迁移。
+- **[x] ② 已加自动化测试** — `fushi/test/media/audiobook/audiobook_multifile_global_position_test.dart`：两文件 cue 先灌再 `load(13000)` → 位置驱动 cue 落在文件 1；播放后在文件 1 内推进到 4000ms，`flushPosition` / `stopPlayback` 落库 ≥ 14000（全书）而非 ~4000（文件内）；单文件无 cue 路径 global == local。
+- **备注**：`preload: false` 下 load 期 seek 走 just_audio 的 idle 播放器，假平台看不到 `SeekRequest`，测试钉可观察结果而非 seek 参数。

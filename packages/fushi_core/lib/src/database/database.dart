@@ -633,6 +633,7 @@ void _requireOneVideoMetadataOwner({
   ProfileSettings,
   MediaTypeProfiles,
   BookProfiles,
+  LanguageProfiles,
   SyncBaselines,
   VideoBooks,
   VideoWatchStatistics,
@@ -725,7 +726,18 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 98;
+  int get schemaVersion => 100;
+
+  /// BUG-2335: version 97 also exists in a parallel migration history without
+  /// the v96 expansion column. Reuse the additive migration on open so a
+  /// matching user_version cannot skip the column required by the mapper.
+  Future<void> _ensureDictionaryExpandedLanguagesColumn(Migrator m) async {
+    if (await _tableExists('dictionary_metadata') &&
+        !await _columnExists('dictionary_metadata', 'expanded_languages_json')) {
+      await m.addColumn(
+          dictionaryMetadata, dictionaryMetadata.expandedLanguagesJson);
+    }
+  }
 
   /// v97：把 v52 / v57 / v87 / v88 四级台阶里「加列 / 改列名」的幂等语句重放一次，
   /// 补齐漂移库（版本号先于这些台阶被写高的库）。每条都先查 `_columnExists`，
@@ -2990,12 +3002,7 @@ class FushiDatabase extends _$FushiDatabase
             // = 逐字节保持 v96 前的折叠行为（Never break userspace）。
             // 幂等：fresh DB 由 onCreate 的 createAll 建好；重复升级被
             // _columnExists 短路。
-            if (await _tableExists('dictionary_metadata') &&
-                !await _columnExists(
-                    'dictionary_metadata', 'expanded_languages_json')) {
-              await m.addColumn(dictionaryMetadata,
-                  dictionaryMetadata.expandedLanguagesJson);
-            }
+            await _ensureDictionaryExpandedLanguagesColumn(m);
           }
           if (from < 97) {
             // v97（schema 漂移修补，BUG-2162）：真实用户库 user_version 已是 95，却缺
@@ -3027,6 +3034,39 @@ class FushiDatabase extends _$FushiDatabase
                   mediaCollections, mediaCollections.sourceFolderPath);
             }
           }
+          if (from < 99) {
+            // 刮削 C 二期：来源级资料语言覆盖 + 作品级字段锁。两列都是可空
+            // 文本，NULL = 沿用既有行为（跟随全局 locale / 无锁），存量库无需回填。
+            if (await _tableExists('video_source_scrape_settings') &&
+                !await _columnExists(
+                    'video_source_scrape_settings', 'metadata_locale')) {
+              await m.addColumn(videoSourceScrapeSettings,
+                  videoSourceScrapeSettings.metadataLocale);
+            }
+            if (await _tableExists('video_metadata_works') &&
+                !await _columnExists('video_metadata_works', 'locked_fields')) {
+              await m.addColumn(
+                  videoMetadataWorks, videoMetadataWorks.lockedFields);
+            }
+          }
+          if (from < 100) {
+            // v100（语言级 Profile 绑定）：新表 language_profiles，把「这种内容语言用
+            // 哪个 Profile」补进 Profile 的自动解析链（book > language > mediaType >
+            // active）。与 v95 同款的纯新增表范式。
+            //
+            // 无损：旧库升级后表为空 = 没有任何语言绑定 = 解析链在语言这一级恒空转、
+            // 直接落到 mediaType，与升级前逐字节一致（Never break userspace）。
+            // 幂等：fresh DB 由 onCreate 的 createAll 建好；重复升级被 _tableExists 短路。
+            if (!await _tableExists('language_profiles')) {
+              await m.createTable(languageProfiles);
+            }
+            // 索引与建表同步内联：`_ensureIndexes` 只在 onCreate 与个别迁移步里跑，
+            // 升级路径不会自动补上（与 v9 同款处理）。
+            await customStatement(
+              'CREATE INDEX IF NOT EXISTS idx_language_profiles_profile '
+              'ON language_profiles (profile_id)',
+            );
+          }
         },
         onCreate: (m) async {
           await m.createAll();
@@ -3057,6 +3097,11 @@ class FushiDatabase extends _$FushiDatabase
               appSchemaVersion: schemaVersion,
             );
           }
+
+          // This one known same-version collision cannot reach onUpgrade.
+          // Keep it after downgrade refusal and before any generated query;
+          // do not rewrite user_version or replay unrelated migration steps.
+          await _ensureDictionaryExpandedLanguagesColumn(createMigrator());
 
           // A hard process exit cannot run HomePage.dispose, so a scrape run
           // left in `running` would otherwise remain active forever. Reconcile

@@ -64,13 +64,23 @@ class _LiveBookLibraryService implements FushiLibraryHostService {
           CollectionManifest incoming) async =>
       incoming;
 
-  const _LiveBookLibraryService(this.bookTitle);
+  const _LiveBookLibraryService(this.bookTitle, {this.manga = false});
 
   final String bookTitle;
 
+  /// true = 该 host 书是漫画：host 对漫画恒 `hasContent: false`（那是 EPUB 内容树
+  /// 判据），内容可下载性走 `hasMangaContent`。
+  final bool manga;
+
   @override
-  Future<List<RemoteBookInfo>> listBooks() async =>
-      <RemoteBookInfo>[RemoteBookInfo(title: bookTitle, hasContent: true)];
+  Future<List<RemoteBookInfo>> listBooks() async => <RemoteBookInfo>[
+        RemoteBookInfo(
+          title: bookTitle,
+          hasContent: !manga,
+          hasMangaContent: manga,
+          format: manga ? 'manga' : 'epub',
+        ),
+      ];
 
   @override
   Future<File> exportBook(String title) async {
@@ -261,5 +271,45 @@ void main() {
         reason: 'live library book does not live in the WebDAV book folder');
     expect(liveEntry.isDownloadableRemoteOnly, isTrue,
         reason: 'Hibiki 互联 compare 必须读取 live /api/library/books');
+  });
+
+  test('远端独有的互联漫画同样可下载（hasContent 恒 false，判据须并上 hasMangaContent）', () async {
+    final FushiDatabase db = _memDb();
+    addTearDown(db.close);
+    final Directory tempDir =
+        Directory.systemTemp.createTempSync('hibiki_compare_live_manga');
+    addTearDown(() {
+      try {
+        if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
+      } catch (_) {}
+    });
+
+    final FushiSyncServer server = FushiSyncServer(
+      syncDataDir: '${tempDir.path}/server',
+      port: 0,
+      token: 'compare-live-manga',
+      allowLan: false,
+      libraryService:
+          const _LiveBookLibraryService('MangaOnlyBook', manga: true),
+    );
+    await server.start();
+    addTearDown(server.stop);
+
+    final InterconnectSyncBackend backend = await _buildLiveBackend(
+      db: db,
+      base: 'http://127.0.0.1:${server.port}',
+      token: 'compare-live-manga',
+    );
+    addTearDown(backend.clearCache);
+
+    final List<SyncCompareEntry> entries =
+        await fetchCompareDataForTest(db, backend);
+    final SyncCompareEntry liveEntry =
+        entries.singleWhere((SyncCompareEntry e) => e.title == 'MangaOnlyBook');
+
+    // 修复前判据只看 live.hasContent（漫画恒 false）→ 互联漫画在对比弹窗里
+    // 连下载入口都不出现。
+    expect(liveEntry.isDownloadableRemoteOnly, isTrue,
+        reason: '漫画内容走 hasMangaContent，判据必须取并');
   });
 }

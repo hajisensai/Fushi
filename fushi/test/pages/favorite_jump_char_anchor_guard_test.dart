@@ -33,14 +33,47 @@ void main() {
             .readAsStringSync();
     expect(src, contains('final int? charAnchor = bm.charAnchor;'),
         reason: '读取跳转携带的绝对字符锚');
-    expect(src, contains('_initialCharOffset = charAnchor;'),
-        reason: 'charAnchor 非负时设精确字符锚 → restoreToCharOffset 精确恢复');
+    // 钉不变式而不是写法：起点字段后来收敛成唯一写入口 [_setOpenResumePoint]
+    // （某条分支只写 progress 不决定 charOffset 会让上一条分支残留的锚把视口拽回
+    // 旧位置），`_initialCharOffset = charAnchor;` 这行字面量早就不存在了，但接线
+    // 一点没断。所以这里只要求「精确判据存在」且「charAnchor 被交给起点的
+    // charOffset」，允许中间隔着三元、换行与参数名。
+    expect(
+      src,
+      matches(RegExp(r'precise\s*=\s*charAnchor\s*!=\s*null\s*&&'
+          r'\s*charAnchor\s*>=\s*0')),
+      reason: 'charAnchor 非负才算精确锚',
+    );
+    expect(
+      src,
+      matches(RegExp(r'charOffset:\s*precise\s*\?\s*charAnchor\s*:')),
+      reason: 'charAnchor 精确时交给起点的 charOffset → restoreToCharOffset 精确恢复',
+    );
     expect(
         src, contains('_suppressPositionPersist = bm.preserveSavedPosition;'),
         reason: '临时浏览跳转据 preserveSavedPosition 置位抑制标记');
     // BUG-162 分数兜底路径仍在（真实书签 charAnchor==null）。
-    expect(src, contains('_initialProgress = bm.normCharOffset / 10000.0;'),
-        reason: '真实书签仍按分数恢复，未破坏既有行为');
+    expect(
+      src,
+      matches(RegExp(r'progress:\s*precise\s*\?\s*0\.0\s*:'
+          r'\s*bm\.normCharOffset\s*/\s*10000\.0')),
+      reason: '不精确时仍按分数恢复，未破坏既有行为',
+    );
+    // 起点必须经唯一写入口写——这才是那次重构真正要护住的东西，旧守卫护不到：
+    // 绕开它单写 _initialCharOffset 就会让别的分支残留锚复活。
+    expect(
+      src,
+      contains('void _setOpenResumePoint({'),
+      reason: '开书起点必须保留唯一写入口',
+    );
+    expect(
+      RegExp(r'^\s*_initialCharOffset\s*=', multiLine: true)
+          .allMatches(src)
+          .length,
+      1,
+      reason: '_initialCharOffset 只能在 _setOpenResumePoint 里被赋值一次'
+          '（字段声明的初始化不算——正则按行首赋值语句匹配）',
+    );
   });
 
   test('_persistPosition 单点拦截：preserve 跳转不落盘覆盖原进度', () {

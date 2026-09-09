@@ -642,17 +642,6 @@ extension _ReaderWebView on _ReaderFushiPageState {
     // exclusive with continuous (it is a page-flip stage, not native scroll),
     // so continuousMode stays false here.
     final bool vnMode = s.isVnMode;
-    // TODO-909 M0: VN blank-tap advance. hoshi default clickAdvance=false
-    // (commit `42c0bab`); M0 force-enables the tap binding so the device Gate
-    // can verify click-to-advance. M1 falls back to s.visualNovelClickAdvance.
-    const bool vnClickAdvanceM0ForceOn = true; // M1: s.visualNovelClickAdvance
-    // TODO-909 M0: reveal（打字渐显）是 M1 功能。在 M0 强制 revealSpeed=0，使每屏
-    // renderScreen 即 revealComplete=true、paginate 只返 "scrolled"/"limit"。否则
-    // revealSpeed>0 时新屏停在 revealComplete=false，forward 翻屏会命中 paginate 的
-    // `if(!revealComplete) completeCurrentReveal(); return "revealed"` 分支，而
-    // Dart 的 _didScroll（chrome.part.dart）只认 "scrolled" 为真 → 误判章节边界
-    // 触发 _handlePageTurnLimit 跨章。M1 去掉本强制、改走 s.visualNovelRevealSpeed。
-    const int vnRevealSpeedM0ForceZero = 0; // M1: s.visualNovelRevealSpeed
     final Size screenSize = MediaQuery.of(context).size;
     // BUG-111: 这就是 JS 分页用的权威宽高（dartPageWidth/Height）。记下来作为
     // content-ready 后的「已分页基线」，供 _syncPageSize 与 settle 后的真实视口比对。
@@ -662,7 +651,7 @@ extension _ReaderWebView on _ReaderFushiPageState {
       navigationGeneration: navigationGeneration,
       continuousMode: continuousMode,
       vnMode: vnMode,
-      vnClickAdvance: vnMode && vnClickAdvanceM0ForceOn,
+      vnClickAdvance: vnMode && s.visualNovelClickAdvance,
       scanNonJapaneseText: appModel.scanNonJapaneseText,
       // TODO-756b：是否“鼠标悬停即自动查词”。live 变更经 _applyHoverAutoLookupLive
       // 改同一个 JS 全局，无需整章重注入。
@@ -700,7 +689,7 @@ extension _ReaderWebView on _ReaderFushiPageState {
       // TODO-perf（跨章）：JS 侧埋点与 Dart 侧同一个开关。生产下恒 false，
       // perfMark / perfSnapshot 在 JS 里直接 early-return。
       perfTraceEnabled: ReaderChapterPerfTrace.enabled,
-      vnRevealSpeed: vnMode ? vnRevealSpeedM0ForceZero : 0,
+      vnRevealSpeed: vnMode ? s.visualNovelRevealSpeed : 0,
       vnScreenMode: s.visualNovelScreenMode,
       vnSentencesPerScreen: s.visualNovelSentencesPerScreen,
       vnPreserveDialogue: s.visualNovelPreserveDialogueBubbles,
@@ -801,7 +790,7 @@ install: function(C) {
   // BUG-239: 连续模式不让 _gestureEnd 回传 onSwipe（交给原生滚动 + 边界 IIFE），
   // 消除横向滑动 90% 跳页与原生滚动的轴向冲突；分页模式照旧水平滑动翻页。
   var fushiContinuousMode = C.continuousMode;
-  // TODO-909 M0: VN-mode blank-tap advance flag (see Dart above).
+  // TODO-909: VN-mode blank-tap advance flag (see Dart above).
   var fushiVnMode = C.vnMode;
   var fushiVnClickAdvance = C.vnClickAdvance;
   window.__hoverAutoLookup = C.hoverAutoLookup;
@@ -836,7 +825,7 @@ install: function(C) {
       gestureExceededTapSlop = true;
     }
   }
-  // TODO-909 M0: a VN tap is "blank" when the user tapped margin/gap rather than
+  // TODO-909: a VN tap is "blank" when the user tapped margin/gap rather than
   // a word (blank -> paginate forward; word -> onTap lookup).
   // BUG-748: caretPositionFromPoint/caretRangeFromPoint CLAMP to the nearest
   // character even when the tap is in the margin. VN centers one short block in a
@@ -1039,10 +1028,15 @@ install: function(C) {
     var el = _fushiResolveBlockImageElement(target);
     if (el && el.classList && el.classList.contains('blurred')) {
       el.classList.remove('blurred');
-      // TODO-1289：揭开状态持久——回传稳定 key 给 Dart 会话集，章节重载不再重新遮罩。
-      if (window.__fushiImageRevealKey && window.flutter_inappwebview) {
+      // TODO-1289：Dart 会话集负责跨文档；JS 活集负责 VN 同一文档内来回切屏。
+      if (window.__fushiImageRevealKey) {
         var key = window.__fushiImageRevealKey(el);
-        if (key) window.flutter_inappwebview.callHandler('onImageRevealed', key);
+        if (key && window.__fushiMarkImageRevealed) {
+          window.__fushiMarkImageRevealed(key);
+        }
+        if (key && window.flutter_inappwebview) {
+          window.flutter_inappwebview.callHandler('onImageRevealed', key);
+        }
       }
       return true;
     }
@@ -1132,7 +1126,7 @@ install: function(C) {
       } else if (fushiVnMode && fushiVnClickAdvance &&
           _fushiVnTapIsBlank(x, y) &&
           window.fushiReader && window.fushiReader.paginate) {
-        // TODO-909 M0: VN blank-tap. Only when the tap is NOT over matchable
+        // TODO-909: VN blank-tap. Only when the tap is NOT over matchable
         // text (so word lookup still wins on text).
         // BUG-1195: 这里**不再**自己 paginate。旧实现直调
         // `window.fushiReader.paginate('forward')` 把每一次空白点都吃掉，而空白点
@@ -1487,7 +1481,12 @@ $kPagedWheelGestureHelperJs
         'onBoundarySwipe', wheelDir, pointerKind);
       return;
     }
-    if (!r || !('paginationMetrics' in r)) return;
+    // BUG-2364: VN uses the same paginate(direction) contract as the regular
+    // paged shell, but intentionally has no paginationMetrics (it advances a
+    // screen stream rather than a CSS column viewport). The old capability
+    // gate therefore discarded every VN wheel event before it reached the
+    // shared onWheelPaginate -> _paginate throttle/chapter-turn path.
+    if (!r || (!fushiVnMode && !('paginationMetrics' in r))) return;
     // TODO-737: 分页滚轮方向脱钩 invertSwipeDirection——改回传新 handler onWheelPaginate
     // 产「语义意图」(forward/backward)，方向 deltaY>0=forward 对齐连续滚轮(沿书写轴
     // delta>0=前进)，不再经 onSwipe 被 invertSwipeDirection(默认 true) 连坐反向。
@@ -2003,6 +2002,8 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           handlerName: 'onTap',
           callback: (args) {
             if (args.length < 2) return;
+            // BUG-2276：抽屉压着正文时，这次点击是「点遮罩关抽屉」，不是正文点击。
+            if (_closeSideSheetForWebViewPointer()) return;
             final bool shiftKey = args.length >= 3 && args[2] == true;
             if (!_showChrome && !shiftKey) {
               _toggleChrome();
@@ -2045,6 +2046,8 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
         controller.addJavaScriptHandler(
           handlerName: 'onTapEmpty',
           callback: (_) {
+            // BUG-2276：抽屉压着正文时，这次点击是「点遮罩关抽屉」，不是正文点击。
+            if (_closeSideSheetForWebViewPointer()) return;
             // TODO-1027：有可见查词弹窗时，本 onTapEmpty 是 dismiss barrier 转发的
             // 真点击命中空白（onDismissBarrierTap → _selectTextAt 命中真空白才 fire）。
             // 此时按 barrier 旧语义清整栈（clearDictionaryResult → onAllPopupsDismissed
@@ -2077,6 +2080,8 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
         controller.addJavaScriptHandler(
           handlerName: 'onVnBlankTap',
           callback: (_) {
+            // BUG-2276：抽屉压着正文时，这次点击是「点遮罩关抽屉」，不是正文点击。
+            if (_closeSideSheetForWebViewPointer()) return;
             _handleVnBlankTap();
           },
         );
@@ -2094,6 +2099,8 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           handlerName: 'onLyricsTapEmpty',
           callback: (_) {
             if (!_lyricsMode) return;
+            // BUG-2276：抽屉压着歌词页时，这次点击是「点遮罩关抽屉」。
+            if (_closeSideSheetForWebViewPointer()) return;
             if (isDictionaryShown) {
               clearDictionaryResult();
               return;
@@ -2121,6 +2128,8 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
         controller.addJavaScriptHandler(
           handlerName: 'onSpreadTapEmpty',
           callback: (_) {
+            // BUG-2276：抽屉压着双页 spread 时，这次点击是「点遮罩关抽屉」。
+            if (_closeSideSheetForWebViewPointer()) return;
             if (isDictionaryShown) {
               clearDictionaryResult();
               return;
@@ -2355,6 +2364,9 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           handlerName: 'onImageTap',
           callback: (args) {
             if (args.isEmpty) return;
+            // BUG-2276：抽屉压着正文时，点插图同样是「点遮罩关抽屉」——尤其在
+            // spread / 图片章，整屏几乎都是 img，不拦就会跳进图片查看器。
+            if (_closeSideSheetForWebViewPointer()) return;
             // BUG-1280：点图片同样把 OS 焦点交给了 WebView，不 reclaim 则看完图
             // pop 回来后 ESC 退不出书（BUG-136 同族）。在 spread 页尤其致命：两张
             // 整页图铺满视口，点击几乎必然命中 img，于是「唤不出底栏」与「ESC 失效」
@@ -2429,6 +2441,8 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           handlerName: 'onCueTap',
           callback: (List<dynamic> args) {
             if (args.isEmpty || _audiobookController == null) return;
+            // BUG-2276：抽屉压着正文时，点句子是「点遮罩关抽屉」，不是跳播。
+            if (_closeSideSheetForWebViewPointer()) return;
             final int sentenceIndex = (args[0] as num).toInt();
             final List<AudioCue>? allCues = _cachedAllCues;
             if (allCues == null) return;

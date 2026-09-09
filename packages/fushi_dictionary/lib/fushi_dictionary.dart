@@ -15,6 +15,7 @@ export 'src/engine/fushidicts.dart';
 // API would let consumers hold pointers past the free boundary (use-after-free
 // the type system presents as valid). fushidicts.dart imports the bindings via
 // a relative path; only the safe FushiDicts wrapper + Hoshi* data classes are public.
+export 'src/frequency/frequency_rank.dart';
 export 'src/formats/dictionary_format.dart';
 export 'src/formats/dictionary_downloader.dart';
 export 'src/formats/dictionary_update_service.dart';

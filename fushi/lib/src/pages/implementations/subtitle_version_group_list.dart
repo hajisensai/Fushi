@@ -22,6 +22,8 @@ class SubtitleVersionGroupList extends StatefulWidget {
     required this.requestedEpisode,
     required this.busyIdentityKey,
     required this.onPickCandidate,
+    this.selectedIdentityKeys = const <String>{},
+    this.onToggleCandidate,
     this.probedLanguages = const <String, SubtitleContentLanguage>{},
     super.key,
   });
@@ -36,6 +38,12 @@ class SubtitleVersionGroupList extends StatefulWidget {
 
   /// 用户最终选定某个文件（下载动作由宿主执行）。null = 全部禁用。
   final void Function(VideoSubtitleCandidate candidate)? onPickCandidate;
+
+  /// 已勾选的候选 identityKey。非空时列表进入多选态：点行只勾选，不再直接下载。
+  final Set<String> selectedIdentityKeys;
+
+  /// 勾选/取消一个候选；null = 不支持多选。
+  final void Function(VideoSubtitleCandidate candidate)? onToggleCandidate;
 
   /// 正文语言探测结果（group.key → 检测值）：文件名认不出语言的组，宿主可
   /// 后台探测正文后回填，本组件只展示（`正文：简体中文`），不参与分组。
@@ -245,6 +253,14 @@ class _SubtitleVersionGroupListState extends State<SubtitleVersionGroupList> {
     ];
     return FushiListItem(
       key: ValueKey<String>('subtitle-file-${candidate.identityKey}'),
+      leading: widget.onToggleCandidate == null
+          ? null
+          : Checkbox(
+              value: widget.selectedIdentityKeys.contains(
+                candidate.identityKey,
+              ),
+              onChanged: (_) => widget.onToggleCandidate!(candidate),
+            ),
       density: FushiListDensity.compact,
       padding: const EdgeInsets.symmetric(horizontal: 4),
       selected: highlight,

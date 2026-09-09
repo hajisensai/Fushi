@@ -219,6 +219,61 @@ const Anime4kPreset kAnime4kUltraDeblurPreset = Anime4kPreset(
   ],
 );
 
+/// ── 移动端画质档位用的 GLSL 预设（「只修复、不放大」）─────────────────────────
+/// 桌面三档（中/高/极高）的开销主体是 Anime4K 链里的两个 `Upscale_CNN_x2` 加两个
+/// `AutoDownscalePre`，它们为「1080p 片源 → 4K 桌面显示器」设计。手机的输出分辨率通常
+/// **不高于**片源分辨率，放大出来的中间帧最终仍被压回屏幕尺寸——GPU 代价全额付（2x/4x
+/// 中间帧缓冲 + 每帧 3 个 CNN pass），收益却被显示分辨率截断。而移动端 libmpv 的 vo=gpu
+/// 与 Flutter 的 raster 共用同一块 GPU 和 EGL 驱动，GPU 被占满时**播放和整个 app 一起
+/// 掉帧**（用户实测：手机上选高于「低」的任意档就卡）。
+///
+/// 所以移动端不是「换一条更弱的 Anime4K」，而是**砍掉整条放大链，只留修复 pass**：
+/// `Clamp_Highlights`（保高光）+ `Restore_CNN_*`（去模糊/降噪，在**原分辨率**上跑）。
+/// pass 数 6~7 → 2~3，中间帧缓冲 2x/4x → 1x，是数量级削减而非调参；而 1:1 观看时真正
+/// 改善观感的本来就是修复 pass，放大 pass 的贡献在小屏上几乎被采样回原尺寸抵消。
+///
+/// 三档梯度靠 CNN kernel 规模拉开（S → M → M+Soft_M），仍是可往下调的阶梯：某机型连
+/// 「中」都吃不消时，用户退回「低」（纯 mpv 内置 spline36，零 GLSL）即可。
+///
+/// 全部文件均在 bloc97/Anime4K master 存在（联网核对 2026-09-09：`glsl/Restore/` 下
+/// `Anime4K_Restore_CNN_S/M.glsl` 与 `Anime4K_Restore_CNN_Soft_M.glsl` 均在列），MIT，
+/// 与桌面档共用同一套多镜像下载/落盘/勾选管线。
+
+/// 移动「中」档：保高光 + 最轻的 CNN 去模糊（S）。
+const Anime4kPreset kAnime4kMobileRestoreSPreset = Anime4kPreset(
+  id: 'mobile_restore_s',
+  name: 'Anime4K Restore (S, mobile)',
+  description: 'Deblur only, no upscaling passes. Lightest tier for phones.',
+  shaders: <Anime4kShaderFile>[
+    Anime4kShaderFile('glsl/Restore/Anime4K_Clamp_Highlights.glsl'),
+    Anime4kShaderFile('glsl/Restore/Anime4K_Restore_CNN_S.glsl'),
+  ],
+);
+
+/// 移动「高」档：保高光 + 更大 kernel 的 CNN 去模糊（M）。
+const Anime4kPreset kAnime4kMobileRestoreMPreset = Anime4kPreset(
+  id: 'mobile_restore_m',
+  name: 'Anime4K Restore (M, mobile)',
+  description: 'Deblur only, larger kernel. For faster phone GPUs.',
+  shaders: <Anime4kShaderFile>[
+    Anime4kShaderFile('glsl/Restore/Anime4K_Clamp_Highlights.glsl'),
+    Anime4kShaderFile('glsl/Restore/Anime4K_Restore_CNN_M.glsl'),
+  ],
+);
+
+/// 移动「极高」档：保高光 + 去模糊（M）+ 额外柔化修复（Soft_M），对 web 压制番双重修复。
+/// 文件集比「高」档多一个 Soft_M → 与其余移动档两两不等，[tierFromState] 反查无歧义。
+const Anime4kPreset kAnime4kMobileRestoreMSoftPreset = Anime4kPreset(
+  id: 'mobile_restore_m_soft',
+  name: 'Anime4K Restore (M + Soft, mobile)',
+  description: 'Deblur plus an extra soft restore pass. Still no upscaling.',
+  shaders: <Anime4kShaderFile>[
+    Anime4kShaderFile('glsl/Restore/Anime4K_Clamp_Highlights.glsl'),
+    Anime4kShaderFile('glsl/Restore/Anime4K_Restore_CNN_M.glsl'),
+    Anime4kShaderFile('glsl/Restore/Anime4K_Restore_CNN_Soft_M.glsl'),
+  ],
+);
+
 /// GitHub raw 直连不通（GFW 机器、app 运行时**不走**本机命令行代理）时的镜像回退源。
 /// 与 `update_checker.dart` 的 `_kProxyPrefixes`（BUG-319）同一范式：公共镜像会不定期
 /// 轮换/下线，按顺序逐个尝试，全部失败才放弃；具体哪个通取决于用户机器与时段，多备几个。
@@ -538,6 +593,10 @@ List<String> anime4kManifestFileNames() {
   for (final Anime4kPreset preset in <Anime4kPreset>[
     ...kAnime4kPresets,
     kAnime4kUltraDeblurPreset,
+    // 移动档同样经本管线落盘，漏登记会让存储页删不掉这几个文件（留下孤儿）。
+    kAnime4kMobileRestoreSPreset,
+    kAnime4kMobileRestoreMPreset,
+    kAnime4kMobileRestoreMSoftPreset,
   ]) {
     for (final String name in preset.fileNames) {
       if (!out.contains(name)) out.add(name);

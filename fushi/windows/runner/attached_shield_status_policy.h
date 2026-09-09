@@ -95,8 +95,20 @@ inline bool IsNeutralForRehandshake(const StatusIdentity &status) {
          (status.status_flags & kStatusTransactionActive) == 0;
 }
 
-inline bool EffectiveAllowRisk(bool risk_accepted, bool shield_verified) {
-  return risk_accepted && !shield_verified;
+// BUG-2154: the product no longer asks for per-executable risk consent.
+// Match GalAttachedTextController._unsafeLeftClickAlwaysAccepted here too:
+// native providers may activate after InspectTarget without ever configuring
+// an attached layout. A session/profile flag would leave that path blocked.
+inline constexpr bool kRiskAlwaysAccepted = true;
+
+inline bool PermitsLookup(bool handshake_acknowledged, bool shield_faulted,
+                          bool shield_verified) {
+  return handshake_acknowledged && !shield_faulted &&
+         (shield_verified || kRiskAlwaysAccepted);
+}
+
+inline bool EffectiveAllowRisk(bool shield_verified) {
+  return kRiskAlwaysAccepted && !shield_verified;
 }
 
 } // namespace fushi::attached_shield_status_policy

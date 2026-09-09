@@ -282,15 +282,23 @@ class ReaderPaginationScripts {
   /// 横排 `padding-left`）。滚动坐标原点是 body 的 padding box，列内容却从 content box
   /// 起始边开始，故列 j 的起始滚动坐标 = `contentStart + j*pageSize`。不减相位就等于把
   /// 网格整体平移了 contentStart，见 `alignToPage` 注释与 BUG-1764/BUG-875。
+  ///
+  /// [columnGap] 是 BUG-2325 的落页下侧容差：`pageSize` 由 CSSOM 序列化的列宽（3 位小数）
+  /// 推出，浏览器排版却把 used 列宽量化到 1/64 px，两者每页差一点点并**累积**，于是第 j 列
+  /// 的真实起始坐标比网格线 `j*pageSize` 低 j·δ —— 列顶首字的 anchor 就被 floor 判进前一列
+  /// （用户可见：有声书跟随读到列顶那句时视口退回上一页）。网格线之前的 column-gap 带没有
+  /// 任何内容，落进去的锚只可能是后一列的列顶字，故按「gap 归属后一列」定义列号。默认 0 =
+  /// 旧语义（既有相位契约用例口径不变）；JS `alignToPage` 恒传 `context.columnGap`。
   @visibleForTesting
   static double revealAnchorTargetScrollForTesting({
     required double rectStart,
     required double currentScroll,
     required double pageSize,
     double contentStart = 0,
+    double columnGap = 0,
   }) {
     if (pageSize <= 0) return currentScroll;
-    final double anchor = rectStart + currentScroll - contentStart;
+    final double anchor = rectStart + currentScroll - contentStart + columnGap;
     final double safe = anchor < 0 ? 0 : anchor;
     return (safe / pageSize).floorToDouble() * pageSize;
   }
@@ -312,6 +320,7 @@ class ReaderPaginationScripts {
     required double currentScroll,
     required double pageSize,
     double contentStart = 0,
+    double columnGap = 0,
   }) {
     if (pageSize <= 0) return null;
     final double target = revealAnchorTargetScrollForTesting(
@@ -319,6 +328,7 @@ class ReaderPaginationScripts {
       currentScroll: currentScroll,
       pageSize: pageSize,
       contentStart: contentStart,
+      columnGap: columnGap,
     );
     if (target == currentScroll) return null;
     return target;
@@ -821,11 +831,28 @@ class ReaderPaginationScripts {
   /// 因 scrollToCharOffset 签名两 shell 不同）；曾只加进连续 shell、分页缺席致改字号/边距/主题
   /// 等纯 CSS 设置在分页模式不实时生效（守卫见 reader_style_reanchor_both_shells_guard_test）。
   /// 分页/连续各自的 getFirstVisibleCharOffset/scrollToCharOffset 经 `this` 解析（连续含 A-2 兜底）。
+  ///
+  /// BUG-2261：`:-1` 兜底分支**自己换 CSS**。Dart 侧 `_applyStylesLive` 只在「重锚不会跑」
+  /// （gate 关 / 无 fushiReader）时裸换 CSS，gate 开时把换 CSS 全托付给本调用；若某个 shell
+  /// 有 `window.fushiReader` 却没实现 `beginStyleReanchor`（VN 第三 shell 曾如此），旧兜底
+  /// 裸返 -1 = 两边都没换 → 字号/边距/主题等纯 CSS 设置静默丢弃、退出重进才生效——
+  /// 这是 BUG-849（分页缺席）同一契约漏洞的第三次复发。把「CSS 永不丢」收进调用点，
+  /// 不再靠每个 shell 都记得实现方法。
   static String beginStyleReanchorInvocation(String jsonCss) =>
-      '(window.fushiReader && '
-      "typeof window.fushiReader.beginStyleReanchor === 'function') "
-      '? window.fushiReader.beginStyleReanchor('
-      "document.getElementById('fushi-reader-style'), $jsonCss) : -1";
+      '(function(){'
+      'var css = $jsonCss;'
+      "var el = document.getElementById('fushi-reader-style');"
+      'if (window.fushiReader && '
+      "typeof window.fushiReader.beginStyleReanchor === 'function') {"
+      'return window.fushiReader.beginStyleReanchor(el, css);'
+      '}'
+      'if (el) el.textContent = css;'
+      'if (window.fushiReader && '
+      'window.fushiReader.paginationMetrics !== undefined) {'
+      'window.fushiReader.paginationMetrics = null;'
+      '}'
+      'return -1;'
+      '})()';
 
   /// TODO-736 B-1：第二阶段——过渡帧 settle 后把暂存锚滚回视口首边并清 `_reanchorPending`。
   /// 仅当第一阶段成功暂存了有效锚时才生效，否则 no-op（绝不误清别处的重锚旗）。
@@ -1207,6 +1234,32 @@ window.__fushiInstallShell = function(C) {
       if (runningOffset > charOffset) return true;
     }
     return false;
+  },
+  // WebKit vertical text can give a collapsed caret range an all-zero rect,
+  // even for an off-screen character. Measure that character instead; treating
+  // the empty rect as a real origin restores every saved anchor to chapter start.
+  characterAnchorRect: function(range) {
+    var rect = range.getBoundingClientRect();
+    if (rect.width > 0 || rect.height > 0) return rect;
+    var node = range.startContainer;
+    if (!node || node.nodeType !== 3) return null;
+    var text = node.textContent || '';
+    var start = range.startOffset;
+    if (start >= text.length) return null;
+    var glyph = range.cloneRange();
+    // A learning-unit boundary can precede collapsed whitespace. Skip its
+    // empty boxes, measuring one code point at a time rather than a union rect.
+    while (start < text.length) {
+      var end = start + (text.codePointAt(start) > 0xFFFF ? 2 : 1);
+      glyph.setStart(node, start);
+      glyph.setEnd(node, end);
+      var rects = glyph.getClientRects();
+      for (var i = 0; i < rects.length; i++) {
+        if (rects[i].width > 0 && rects[i].height > 0) return rects[i];
+      }
+      start = end;
+    }
+    return null;
   },
   // TODO-736 A-1：连续模式进度的「字符级」分子。移植安卓 reader-continuous.js
   // countCharsBeforeViewport（:92-151）：返回本文本节点里**已滚出视口首边**的可匹配字符
@@ -1854,21 +1907,12 @@ window.__fushiInstallShell = function(C) {
   @visibleForTesting
   static String initImagesScriptForTesting() => _sharedInitImages();
 
-  static String _sharedInitImages() {
-    // TODO-1289：图片防剧透遮罩「点击揭开后又恢复」根因——揭开只删 DOM `blurred`
-    // class，章节 (重)载 / 布局设置切换（writing mode / 分栏 / view mode / spread /
-    // blur 开关，均经 _reloadWithCurrentSettings→_loadChapterDirectly）会重跑
-    // initialize→_sharedInitImages，无条件给所有 block-img 重加 `blurred` → 揭开丢失。
-    // 修复：把「本次阅读会话已揭开」的稳定 key（<img> src / <svg><image> href 相对
-    // baseURI 解析成绝对 URL）注入成 map，_fushiBlurImage 命中则跳过重新遮罩。揭开
-    // 状态的真相源是 Dart 侧 _revealedImageKeys（内存会话集），经 onImageRevealed
-    // 回传持久，重载时再嵌入这里。domStorageEnabled=false 故不用 localStorage。
-    // BUG-1140 第二阶段①：整块从「blurImages 为假时**整段不注入**」改成「函数照常
-    // 定义、副作用照常受 C.blurImages 门控」。行为等价：`window.__fushiMarkImageRevealed`
-    // / `window.__fushiImageRevealKey` 两个全局仍**只在开了防剧透遮罩时**才挂上
-    // （caret / 有声书桥接都用 `if (window.__fushiImageRevealKey && …)` 探测），
-    // `_fushiBlurImage` 也仍只在开关为真时被调用。
-    const String blurFn = '''
+  /// 三种阅读 shell 共用的防剧透图片身份与会话揭开语义。
+  ///
+  /// 图片分类/布局仍由各 shell 自己负责；这段只建立稳定 reveal key、消费 Dart
+  /// 会话里的 [ReaderEngineConfig.revealedKeys]，并提供 `_fushiBlurImage`。VN
+  /// 过去用 no-op media semantics，导致同一 `blur_images` 设置在第三种视图失效。
+  static String imageRevealSemanticsScript() => '''
   var _fushiRevealedKeys = Object.create(null);
   if (C.blurImages) {
     var __fushiKeys = C.revealedKeys;
@@ -1917,6 +1961,22 @@ window.__fushiInstallShell = function(C) {
     if (key && _fushiRevealedKeys[key]) return;
     element.classList.add('blurred');
   }''';
+
+  static String _sharedInitImages() {
+    // TODO-1289：图片防剧透遮罩「点击揭开后又恢复」根因——揭开只删 DOM `blurred`
+    // class，章节 (重)载 / 布局设置切换（writing mode / 分栏 / view mode / spread /
+    // blur 开关，均经 _reloadWithCurrentSettings→_loadChapterDirectly）会重跑
+    // initialize→_sharedInitImages，无条件给所有 block-img 重加 `blurred` → 揭开丢失。
+    // 修复：把「本次阅读会话已揭开」的稳定 key（<img> src / <svg><image> href 相对
+    // baseURI 解析成绝对 URL）注入成 map，_fushiBlurImage 命中则跳过重新遮罩。揭开
+    // 状态的真相源是 Dart 侧 _revealedImageKeys（内存会话集），经 onImageRevealed
+    // 回传持久，重载时再嵌入这里。domStorageEnabled=false 故不用 localStorage。
+    // BUG-1140 第二阶段①：整块从「blurImages 为假时**整段不注入**」改成「函数照常
+    // 定义、副作用照常受 C.blurImages 门控」。行为等价：`window.__fushiMarkImageRevealed`
+    // / `window.__fushiImageRevealKey` 两个全局仍**只在开了防剧透遮罩时**才挂上
+    // （caret / 有声书桥接都用 `if (window.__fushiImageRevealKey && …)` 探测），
+    // `_fushiBlurImage` 也仍只在开关为真时被调用。
+    final String blurFn = imageRevealSemanticsScript();
     const String blurSvgCall = 'if (C.blurImages) _fushiBlurImage(svg);';
     const String blurImgCall = 'if (C.blurImages) _fushiBlurImage(img);';
     return '''
@@ -2209,7 +2269,10 @@ $_sharedJs
       maxScroll: maxScroll,
       physicalMaxScroll: physicalMaxScroll,
       viewportExtent: viewportExtent,
-      contentStart: contentStart
+      contentStart: contentStart,
+      // BUG-2325：列间距。alignToPage 拿它当「落页网格的下侧容差」——gap 带里没有任何
+      // 内容，落进去的锚只可能是后一列列顶被网格漂移带到线下的字。见 alignToPage。
+      columnGap: gap
     };
   },
   getPagePosition: function(context) {
@@ -2280,8 +2343,30 @@ $_sharedJs
     // 减相位后 alignToPage 就是精确的列号函数，两个方向的错判同时消失，不需要任何可见性特例。
     // 返回值仍落在 j*pageSize 的滚动网格上（页对齐后内容起始边露出 contentStart 的页边距，
     // 与 paginate / pageStepPosition / minScroll 的网格严格同源，网格本身零变化）。
+    //
+    // BUG-2325（真机 HiBreak 竖排：有声书跟随读到「句首恰在列顶」的句子时退回前一页，下
+    // 一句又翻回来）：列号函数还必须带**下侧容差**，否则它在列边界上是零余量的等号判据。
+    // 根因是 pageStep 与浏览器真实列周期之间存在**每页累积**的亚像素差：
+    //   · pageStep 由 `parseFloat(getComputedStyle(body).columnWidth)` 推出，而 CSSOM 把
+    //     used 值序列化成 3 位小数字符串；
+    //   · 浏览器内部把 used 列宽量化到 LayoutUnit（1/64 px）再排版。
+    //   两者只有在列宽恰好是 1/64 的整数倍时才相等。真机 824x1648@300dpi → DPR 1.875 →
+    //   CSS 视口高 878.9333…px（小数！）→ used 列宽 832.9333…px 被量化成 832.921875px，
+    //   而 JS 读到 "832.933px" → pageStep 每页比真实列周期大 0.0111px。第 j 列的真实起始
+    //   坐标因此比网格线 j*pageStep 低 j*0.0111px：第 9 页起就低过 0.1px，第 89 页低近 1px。
+    //   列顶首字的 anchor 恰好等于该列真实起始坐标，于是 floor 把它判进**前一列** → 视口
+    //   退回上一页；下一句 cue 不在列顶，anchor 远离网格线，又翻回来。整数 CSS 视口（列宽
+    //   本就是 1/64 倍数）零漂移，所以这条只在小数 DPR 设备上现形。
+    // 网格线之前恰好是 column-gap 那一段，**没有任何内容**（前一列内容盒在 gap 之前就结束
+    // 了），所以落进 gap 带的锚只可能是后一列被漂移带下来的列顶字。列号按「gap 归属后一列」
+    // 定义即可，容差用的是几何真值 gap(22px)，不是拍脑袋的 ε：按上面的漂移率能兜住约 1900
+    // 页，且列内任意位置（含列末最后一像素，anchor−phase+gap < (j+1)*pageSize）仍落本列，
+    // BUG-875 / BUG-1764 两个方向都不受影响。
+    // 不去改 pageStep 本身（把它量化到 1/64 是 Blink 实现细节、跨引擎不成立；改列周期口径
+    // 会动到 paginate/minScroll/restore 全部落页路径，见 TODO-753/792 的历史）。
     var phase = context.contentStart || 0;
-    return Math.floor(Math.max(0, offset - phase) / context.pageSize) * context.pageSize;
+    var gapTolerance = context.columnGap || 0;
+    return Math.floor(Math.max(0, offset - phase + gapTolerance) / context.pageSize) * context.pageSize;
   },
   alignContentStartToPage: function(context, offset) {
     // TODO-1179：章首落点只能向下偏置到「包含首行内容边」的那一页。firstContentEdge
@@ -2291,7 +2376,11 @@ $_sharedJs
     // 「含首行」那页，绝不跳过首行（宁可多显示半列 padding）。与 scrollToCharOffset /
     // scrollToProgressPaged 的 floor(alignToPage) 落页锚同量纲；此函数只被 minScroll
     // 一处调用，无其它场景受影响。
-    return this.alignToPage(context, offset);
+    // BUG-2325：alignToPage 起带 gap 下侧容差（列顶字不再被网格漂移判进前一列）；章首落点
+    // **不吃**这条容差——这里的语义是「绝不跳过首行」，首行内容边真落在前一列末时必须留在
+    // 前一列，吃了容差反而会把它推进下一列、跳过首行。故保留裸相位 floor。
+    var phase = context.contentStart || 0;
+    return Math.floor(Math.max(0, offset - phase) / context.pageSize) * context.pageSize;
   },
   pageStepPosition: function(currentScroll, pitch) {
     if (pitch <= 0) return currentScroll;
@@ -2812,12 +2901,16 @@ $_sharedJs
     var range = document.createRange();
     range.setStart(targetNode, Math.min(textOffset, text.length));
     range.collapse(true);
-    var rect = range.getBoundingClientRect();
+    var rect = this.characterAnchorRect(range);
+    if (!rect) return;
     var context = this.getScrollContext();
     var scrollOffset = context.vertical
       ? (context.scrollEl.scrollTop + rect.top)
       : (context.scrollEl.scrollLeft + rect.left);
-    var charPage = Math.floor(Math.max(0, scrollOffset) / context.pageSize);
+    // BUG-2325：字符落页走同一个列号函数 alignToPage（减相位 + gap 下侧容差）。旧的裸
+    // floor(scrollOffset/pageSize) 既漏了相位 contentStart，也吃不住上面那条每页累积的
+    // 网格漂移：精确锚恢复 / 样式重锚 commit 落到「页首字」时同样会退回前一列。
+    var charPage = Math.round(this.alignToPage(context, scrollOffset) / context.pageSize);
     var aligned;
     if (hintScroll !== undefined) {
       // Page-stable hint: if the target char is within one page of where we
@@ -3437,14 +3530,17 @@ $_sharedJs
     }
     var startRange = this.collapsedRangeAtCharOffset(charOffset);
     if (!startRange) return;
-    var rect = startRange.getBoundingClientRect();
+    var rect = this.characterAnchorRect(startRange);
+    if (!rect) return;
     var vertical = this.isVertical();
     var root = document.scrollingElement || document.documentElement;
     var cs = getComputedStyle(document.body);
     if (vertical) {
       var pr = parseFloat(cs.paddingRight) || 0;
       var targetX = window.innerWidth - pr;
-      var startScrollV = root.scrollLeft + (rect.left - targetX);
+      // Align the glyph's right edge with the content band. Aligning its left
+      // edge puts the whole glyph outside the viewport after expanding a caret.
+      var startScrollV = root.scrollLeft + (rect.right - targetX);
       // 竖排可见区在内容宽度轴（chrome-* inset 仍是顶/底 padding 与本轴正交），无「句尾被
       // 底栏切」语义 → 句首贴右沿即可（与旧版一致）。
       root.scrollLeft = startScrollV;
@@ -3454,8 +3550,8 @@ $_sharedJs
     // 句尾区间锚（BUG-461）：仅横排、且调用方给了句尾偏移时启用。
     if (typeof endCharOffset === 'number' && endCharOffset > charOffset) {
       var endRange = this.collapsedRangeAtCharOffset(endCharOffset);
-      if (endRange) {
-        var endRect = endRange.getBoundingClientRect();
+      var endRect = endRange ? this.characterAnchorRect(endRange) : null;
+      if (endRect) {
         var lineH = parseFloat(cs.lineHeight);
         if (!(lineH > 0)) lineH = (parseFloat(cs.fontSize) || 16) * 1.5;
         // 句尾远边 = 句尾字符底边（含其所在行高），相对句首起始边的尺寸。

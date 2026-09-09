@@ -1,8 +1,8 @@
 import 'dart:io';
-
 import 'package:fushi_engine/media/video/video_storage.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
+import 'package:fushi_engine/foundation/engine_platform_hooks.dart';
 
 /// 合集自有磁盘资产的回收（BUG-1319）。
 ///
@@ -84,6 +84,42 @@ Future<int> deleteMediaCollectionWithAssets(
     collectionCoversDirectory: collectionCoversDirectory,
   );
   return removed;
+}
+
+/// 清掉合集**自有**封面，回到自动推导（成员借用链 / canonical 海报）。
+///
+/// 与 [deleteMediaCollectionWithAssets] 的关系：那条是「合集没了，顺手回收它的
+/// 图」，这条是「合集还在，只是不要这张图了」。两者共用**同一套误删护栏**——先把
+/// `coverPath` 置 null，再把置 null 前的快照当作「已删资产」交给
+/// [reclaimDeletedCollectionAssets]。置 null 已经落库，所以那边重查全库时本合集
+/// 不再引用该路径，护栏第 3 条自然放行；而别的合集若碰巧引用同一路径，文件照样
+/// 保留。这就是为什么这里不自己写一遍删除条件。
+///
+/// 顺序不可颠倒：先落库置 null，再删文件。反过来一旦删文件后置 null 失败，DB 就
+/// 指着一个不存在的文件。
+///
+/// 合集还活着、UI 还在画这张图，因此删完必须走
+/// [evictImageCacheForFile] 双键驱逐解码缓存（app 装配成 `evictLocalCoverCache`：
+/// `FileImage` + `resizedFileImage` 两个 key）——否则封面卡会继续画
+/// 一张文件已经不在的图直到重启（BUG-1118 同型）。
+///
+/// 无自有封面时是彻底的空操作（零 IO、零写库）。
+Future<void> clearCollectionOwnCover(
+  FushiDatabase db,
+  int collectionId, {
+  Directory? collectionCoversDirectory,
+}) async {
+  final MediaCollectionRow? snapshot =
+      await db.getMediaCollectionById(collectionId);
+  final String? coverPath = snapshot?.coverPath;
+  if (snapshot == null || coverPath == null || coverPath.isEmpty) return;
+  await db.updateMediaCollectionCoverPath(collectionId, null);
+  await reclaimDeletedCollectionAssets(
+    db,
+    <MediaCollectionRow>[snapshot],
+    collectionCoversDirectory: collectionCoversDirectory,
+  );
+  await evictImageCacheForFile(File(coverPath));
 }
 
 /// 回收 [deletedCollections]（DB 行**已删**的合集快照）各自自有的磁盘资产。

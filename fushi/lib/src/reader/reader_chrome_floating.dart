@@ -104,20 +104,28 @@ double bottomChromeReserve({
 ///    （`_hasEverLoaded && _showChrome`，与 [bottomChromeReserve] 同一门控），
 ///    [bottomReserve] 已含悬浮态恒 0 的语义（悬浮不占正文位置）。
 ///    spread 不需要底部留白：它没有文档级滚动条，底栏叠在整页图上是既有可接受形态。
-///  * **顶部**（BUG-1343）：macOS 顶部 DragToMoveArea 叠在 WebView 之上，独立文档若不
-///    缩进，首行歌词 / 整页图会落到拖拽区下面且无法交互。[titlebarInset] 在非 macOS 恒 0。
+///  * **顶部**（歌词顶栏对齐）：歌词模式过去整块关掉顶部工具栏，文档从 y=0 起画，
+///    连系统状态栏 / 刘海都压在歌词首行上。顶栏在歌词模式恢复在场后，独立文档必须
+///    像正文一样给它让位：[topReserve] 由调用方喂「此刻顶部 chrome 真占掉多少」
+///    （系统顶 inset + 挤压态顶栏高；悬浮态顶栏不占正文位置，那笔本就是 0）。
+///    它**不含**顶部进度 pill 的预留——歌词模式不画那颗 pill（`_buildTopProgressBar`
+///    对歌词早返回），算进来就是在文档顶上留一条谁也不占的空带。
+///    （更早还有一笔 `titlebarInset`（BUG-1343，macOS 自绘 28pt DragToMoveArea），
+///    macOS 改用 `FushiDesktopTitleBar` 后那条带子连同这笔留白一起删了。）
+///    spread 不需要顶部留白：它是整页图，顶栏叠在图上与底栏叠在图上是同一形态。
 ///
 /// 返回 [EdgeInsets.zero] 表示「无需任何留白」，调用方据此跳过 `Padding` 包装。
+/// 判据只认 [lyricsMode]：spread 与「完全没有独立文档」在留白上不可区分（两者都是
+/// 零），所以 `spreadDocumentLoaded` 不在签名里——留一个不影响任何返回值的必填参数
+/// 只会让调用方以为它还有作用。
 EdgeInsets independentDocumentInsets({
   required bool lyricsMode,
-  required bool spreadDocumentLoaded,
   required bool chromeOccupiesLayout,
+  required double topReserve,
   required double bottomReserve,
-  required double titlebarInset,
 }) {
-  final bool independentDocument = lyricsMode || spreadDocumentLoaded;
   return EdgeInsets.only(
-    top: independentDocument ? titlebarInset : 0,
+    top: lyricsMode ? topReserve : 0,
     bottom: lyricsMode && chromeOccupiesLayout ? bottomReserve : 0,
   );
 }

@@ -232,7 +232,7 @@ void main() {
       expect(pdf, isNot(contains('_sessionMaxPageIndex')));
     });
 
-    test('dispose 交给 detach（零 DB IO）/ onSourcePagePop 在 flush 前 leave()，结算停在的最后一页', () {
+    test('关书三条路只停表 / 落盘，不结算站着的页（BUG-2264）', () {
       final String dispose = _functionSource(
         pdf,
         '  void dispose() {',
@@ -240,10 +240,15 @@ void main() {
       );
       expect(
         dispose,
-        contains('_studyClock?.detach(_readLedger.leave);'),
-        reason: 'dispose 是同步的：结算（leave → addPages）必须作为回调交给 detach，'
-            '由它在停表前跑完并把攒下的写交给 ExitFlushRegistry.defer；'
-            '在 dispose 里直接落库 = 无人 await 的事务，与随后的 db.close() 互等',
+        contains('_studyClock?.detach();'),
+        reason: 'dispose 是同步的：停表必须走 detach（零 IO，攒下的写交给 '
+            'ExitFlushRegistry.defer）；在 dispose 里直接落库 = 无人 await 的事务，'
+            '与随后的 db.close() 互等',
+      );
+      expect(
+        dispose.contains('_readLedger'),
+        isFalse,
+        reason: 'BUG-2264：关书不是翻走，dispose 不许把 leave 交给 detach 结算落地页',
       );
       for (final String forbidden in <String>[
         'unawaited(_flushPosition());',
@@ -259,32 +264,34 @@ void main() {
         dispose,
         contains('ExitFlushRegistry.instance.defer(_flushPosition);'),
       );
-      // 进程退出登记 _flushForExit（先 settle 再落盘）：桌面点 X 不触发 dispose。
+      // 进程退出登记 _flushForExit（只落盘）：桌面点 X 不触发 dispose。
       expect(pdf, contains('ExitFlushRegistry.instance.register(_flushForExit);'));
       final String forExit = _functionSource(
         pdf,
         '  Future<void> _flushForExit() async {',
         '\n  }\n',
       );
+      expect(forExit, contains('await _flushPosition();'));
       expect(
-        forExit.indexOf('_readLedger.settle();'),
-        allOf(
-          greaterThanOrEqualTo(0),
-          lessThan(forExit.indexOf('await _flushPosition();')),
-        ),
-        reason: '退出 flush 用 settle 不用 leave（这条路径不保证进程真死）',
+        forExit.contains('_readLedger'),
+        isFalse,
+        reason: '退出 / 退后台不是翻走（BUG-2264）；旧 settle 已删',
       );
       final String pop = _functionSource(
         pdf,
         '  Future<void> onSourcePagePop() async {',
         '\n  }\n',
       );
+      expect(pop, contains('await _flushPosition();'));
       expect(
-        pop.indexOf('_readLedger.leave();'),
-        allOf(
-          greaterThanOrEqualTo(0),
-          lessThan(pop.indexOf('await _flushPosition();')),
-        ),
+        pop.contains('_readLedger'),
+        isFalse,
+        reason: '关书那页此刻不结算（开关一次涨一次的根因就是这里的 leave）',
+      );
+      expect(
+        '_readLedger.leave('.allMatches(pdf),
+        isEmpty,
+        reason: 'PDF 没有跳转入口：翻页 / 跳页都经 arrive 切单元，全文件零 leave',
       );
     });
   });

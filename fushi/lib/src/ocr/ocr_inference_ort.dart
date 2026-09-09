@@ -11,21 +11,18 @@
 library;
 
 import 'dart:developer' as developer;
-
 import 'package:flutter/services.dart'
     show BackgroundIsolateBinaryMessenger, RootIsolateToken;
 import 'package:flutter_onnxruntime/flutter_onnxruntime.dart';
-
 import 'package:fushi_engine/ocr/ocr_inference.dart';
-
 export 'package:fushi_engine/ocr/ocr_inference.dart'
     show
-        kOcrLogName,
-        isLocalOnnxRuntimeAvailable,
         createOcrSessionWithProviderFallback,
+        isLocalOnnxRuntimeAvailable,
+        kOcrLogName,
         resolveOcrSessionInputs;
 import 'package:fushi/src/onnx/onnx_inference_ort.dart';
-// 本地推理可不可用的那道闸门随共享 ONNX 抽象一起搬进了 asr_core；本层保留同名
+// 本地推理可不可用的那道闸门随共享 ONNX 抽象一起搬进了 fushi_asr_core；本层保留同名
 // getter 转发，OCR 调用方与测试零改动。
 
 /// 本子系统统一的 `dart:developer` 日志通道名。

@@ -32,12 +32,13 @@ class LocalAudioDbEntry {
   final List<LocalAudioSourcePref> sources;
 
   LocalAudioDbEntry copyWith({
+    String? path,
     String? displayName,
     bool? enabled,
     List<LocalAudioSourcePref>? sources,
   }) =>
       LocalAudioDbEntry(
-        path: path,
+        path: path ?? this.path,
         displayName: displayName ?? this.displayName,
         enabled: enabled ?? this.enabled,
         sources: sources ?? this.sources,

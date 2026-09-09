@@ -1,0 +1,7 @@
+## BUG-2346 · Windows线程历史回捞跳过已导出的精确事件语音配对
+- **报告**：2026-09-07（Windows Siglus 原始会话的第一句在选线程前已导出语音，选定后历史行仍显示无音频。）
+- **真实性**：✅ 真 bug。基线 `5c931c2558` 的 `fushi/lib/src/mining/gal_hook_session_controller.dart:2460` 回捞真实 native 文本道，`:2494`/`:2495` 保留原 seq/tick，但 `:2499` 固定音频 unavailable，既不查已导出的资源，也不登记待配队列。预览仅维护线程目录，不会生成假事件身份。现场文本事件 seq=1、tick=951860281 与导出文件的事件标记一致；导出早于用户选线程约一分钟。
+- **[x] ① 已修复** — 本条同提交：历史回捞在 Windows 内沿真实 seq/tick 登记严格资源所有权待配记录，当场匹配已经存在的资源，文件或资源后端晚到仍沿既有待配生命周期处理。独立 `findEventOwnedVoiceResourceId` / `findEventOwnedResourceNames` 仅查带同事件 ID 的资源桶，并校验原始 tick 距离；不会把无标记文件、其它事件、字符串或最新资源当作替代。原实时匹配策略不扩改，历史 PCM/loopback 不重放，用户人工音频裁决仍优先。
+- **[x] ② 已加自动化测试** — `fushi/test/mining/gal_hook_session_controller_test.dart` 新增 6 个 Windows 行为用例，经过真实 `GalVoiceDumpIndex`、生产 source 查询与 controller 的未选线程轮询→选择→历史回捞：选前资源、选后晚到资源、相同 tick 不同事件、无标记文件、无声、相同事件但过期 tick。断言原 seq/tick/row ID 保留，成功行固化 resource ID，负向保持不可用且未调用宽松查询或 PCM 抓取。与 `gal_voice_dump_index_test.dart` 两文件定向回归共 **69/69，exit 0**；新增 6 条已包含在 69 条内，不重复计数。
+- **原路径回归**：集成提交 `98884fa55e` 的 Windows Release 重建退出 0（139.2 秒），新 AOT SHA-256 `58b17978f2bdd4a1fbfaeabecc9bf7b6a4ba433015653448a297aa711c3c29b0`。新宿主73120/helper4636正常附着仍存活的原版 LUNARiA71920，约19:39:27选择同一原生线程，缓冲区内8条历史恢复；seq11立即显示 `game_resource` 与此前已存在的 `952081921_fushi_textseq11_z0101.ovk_131.ogg`，相邻无声历史行保持仅文本。没有推进或重播补资源。原seq1已经被八槽缓冲覆盖，不声称重获seq1；验证的是同一历史回捞分支的保留seq11。支持矩阵不因这一消费修复单独升级。
+- **备注**：测试首轮从仓库根目录运行导致 fixture 相对路径与 SQLite native assets 装载失败，已从 `fushi/` 正确目录重跑通过；未修改测试预期掩盖失败。仅 Windows 必需共享消费边界，未改 native DLL 或其它平台实现。

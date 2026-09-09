@@ -13,6 +13,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
 
 import '../helpers/test_platform_services.dart';
+import '../torrent/nyaa_html_fixture.dart';
 
 /// TODO-2485：AnimeDownloadDialog 初始上下文入参。
 /// ① initialMedia（合集绑 anilistId 时本地合成）→ 直达选种段：Nyaa 查询词与
@@ -37,12 +38,8 @@ void main() {
       );
     }
     if (url.contains('nyaa.si')) {
-      return http.Response(
-        '<?xml version="1.0" encoding="utf-8"?>'
-        '<rss version="2.0" xmlns:nyaa="https://nyaa.si/xmlns/nyaa">'
-        '<channel></channel></rss>',
-        200,
-      );
+      // nyaa 无结果：HTML 搜索页的「No results found」。
+      return http.Response(kNyaaNoResultsHtml, 200);
     }
     if (url.contains('/entries/search')) {
       // 一条 Jimaku 条目：让对话框继续调 files 端点（集号过滤在那一步）。

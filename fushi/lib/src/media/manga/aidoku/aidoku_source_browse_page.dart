@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -511,13 +512,15 @@ class _AidokuCover extends StatelessWidget {
         child: Center(child: Icon(Icons.image_not_supported_outlined)),
       );
     }
-    return Image.network(
-      value,
+    return Image(
+      image: AppHttpImage(
+        value,
+        headers: <String, String>{
+          'User-Agent': kAidokuUserAgent,
+          if (referer != null) 'Referer': referer!,
+        },
+      ),
       fit: BoxFit.cover,
-      headers: <String, String>{
-        'User-Agent': kAidokuUserAgent,
-        if (referer != null) 'Referer': referer!,
-      },
       errorBuilder: (_, __, ___) => const ColoredBox(
         color: Color(0x11000000),
         child: Center(child: Icon(Icons.broken_image_outlined)),

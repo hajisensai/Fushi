@@ -9,6 +9,7 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi/src/models/audio_source_config.dart';
 import 'package:fushi_engine/media/override_title_key.dart';
 import 'package:fushi/src/models/local_audio_manager.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/sync/backup_merge_engine.dart';
 import 'package:fushi/src/sync/pref_redaction_policy.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -103,7 +104,8 @@ enum BackupCategory {
   settings,
 
   /// Configuration profiles -- the `profiles`, `profile_settings`,
-  /// `media_type_profiles` and `book_profiles` tables. Stripped from the DB
+  /// `media_type_profiles`, `book_profiles` and `language_profiles` tables.
+  /// Stripped from the DB
   /// copy when unticked; on import the LOCAL device's profiles are preserved
   /// instead of being wiped to empty. Included by default.
   profiles,
@@ -578,7 +580,7 @@ const List<String> _statisticsTables = <String>[
   'galgame_sessions',
 ];
 
-/// The four profile-layer tables in CHILD-first order, so a DELETE sweep of
+/// The five profile-layer tables in CHILD-first order, so a DELETE sweep of
 /// the `profiles` category (TODO-1193) never trips an enforced FK to
 /// `profiles`. The reverse of [_settingsLayerTables] (which is parent-first
 /// for INSERT).
@@ -586,6 +588,7 @@ const List<String> _profilesLayerTablesChildFirst = <String>[
   'profile_settings',
   'media_type_profiles',
   'book_profiles',
+  'language_profiles',
   'profiles',
 ];
 
@@ -1333,11 +1336,33 @@ class BackupService {
     );
   }
 
+  /// 「这条 `preferences` key 不得离开本设备」的备份侧唯一判据：
+  /// [PrefRedactionPolicy]（凭据 + 同步/设备本地配置）**加上**「功能模块」的 11
+  /// 个 `module_*_enabled` 开关。
+  ///
+  /// 模块开关放这里、而**不是**放进 [settingsPrefPredicate] 的保留名单：那份名单
+  /// 的语义是「不归 `settings` 类别管」＝**不勾 settings 也照样跟着备份走**
+  /// （书名 override 正是这么处理的），加进去只会让开关更难拦。模块开关要的是
+  /// 反过来的性质——**任何类别组合下都不出境、导入时从本机保留**，那正是本谓词
+  /// 的语义。
+  ///
+  /// 不这么做的实际后果：勾了 `settings` 的备份把 `module_books_enabled=false`
+  /// 带到新设备，恢复完首屏只剩首页 + 设置，用户第一反应是「我的书没恢复」。而
+  /// pref 缺省全 true，**不带过去**才是安全方向。
+  ///
+  /// 对称性红线（见 [PrefRedactionPolicy] 文档）照旧：导出剔除什么，
+  /// [_readDeviceLocalPrefs] 就用**同一个**谓词从本机捞出来、由
+  /// `_applyPreservedConfig` 在导入后写回，两侧绝不各写一份清单。
+  static bool _isDeviceLocalPrefKey(String key) =>
+      PrefRedactionPolicy.isDeviceLocalOrCredential(key) ||
+      ModuleId.allPrefKeys.contains(key);
+
   /// Strips device-local config and credentials from the standalone DB copy in
   /// [dbDirectory] before it leaves the device. Opened via [FushiDatabase]
   /// (the copy is already at the current schema, so no migration runs).
   ///
-  /// What counts as "must not leave this device" is [PrefRedactionPolicy] —
+  /// What counts as "must not leave this device" is [_isDeviceLocalPrefKey] =
+  /// [PrefRedactionPolicy]（凭据/设备本地）+ 「功能模块」开关 —
   /// the single predicate shared by all three outbound channels (backup zip,
   /// Profile snapshot, Profile share JSON) and by the import-side preserve
   /// ([_readDeviceLocalPrefs]). It subsumes the old two layers here (the
@@ -1363,7 +1388,7 @@ class BackupService {
     try {
       final Map<String, String> allPrefs = await db.getAllPrefs();
       final List<String> redactedPrefKeys = allPrefs.keys
-          .where(PrefRedactionPolicy.isDeviceLocalOrCredential)
+          .where(_isDeviceLocalPrefKey)
           .toList(growable: false);
       if (redactedPrefKeys.isNotEmpty) {
         await (db.delete(db.preferences)
@@ -1407,7 +1432,7 @@ class BackupService {
     ).get();
     final List<String> redacted = rows
         .map((QueryRow row) => row.read<String>('key'))
-        .where(PrefRedactionPolicy.isDeviceLocalOrCredential)
+        .where(_isDeviceLocalPrefKey)
         .toList(growable: false);
     if (redacted.isEmpty) return;
     final String placeholders =

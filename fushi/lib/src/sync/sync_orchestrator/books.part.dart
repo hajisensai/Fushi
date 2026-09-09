@@ -78,6 +78,12 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
           index++;
           continue;
         }
+        // 在线合集只有元数据占位，没有可上传的漫画页图。
+        if (format == BookFormat.manga &&
+            !hasExportableMangaContent(row.extractDir)) {
+          index++;
+          continue;
+        }
         tmp = _tmpFile('.epub');
         // 漫画 → 书目录整树 zip（manga.json 标记，host importBook 内容嗅探分流）；
         // EPUB → 既有 repackage。

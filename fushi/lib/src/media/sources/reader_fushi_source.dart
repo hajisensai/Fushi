@@ -1395,6 +1395,19 @@ class ReaderFushiSource extends ReaderMediaSource {
         ));
   }
 
+  /// 底部状态行左段「阅读计时器」是否显示（分层同 [showTopProgressBar]）。
+  bool get showReadingTimer =>
+      readerSettings?.showReadingTimer ??
+      getPreference<bool>(key: 'show_reading_timer', defaultValue: true);
+
+  void toggleShowReadingTimer() async {
+    await (readerSettings?.toggleShowReadingTimer() ??
+        setPreference<bool>(
+          key: 'show_reading_timer',
+          value: !showReadingTimer,
+        ));
+  }
+
   bool get keepScreenAwake =>
       readerSettings?.keepScreenAwake ??
       getPreference<bool>(key: 'keep_screen_awake', defaultValue: true);
@@ -1506,6 +1519,24 @@ class ReaderFushiSource extends ReaderMediaSource {
         setPreference<double>(key: 'font_size', value: v));
     onSettingsChangedLive?.call();
   }
+
+  /// 正文字重。UI 侧（SettingsStepperItem）值域是 double，存储与 CSS 侧是整数轴，
+  /// 故在此边界一次性 `round()`，不让 `400.0` 这类值流进 CSS 生成器。
+  ///
+  /// 读写两侧都夹到 CSS 的合法轴 100~900：stepper 自己保证了值域，但这个 facade 是
+  /// public，值也可能从旧机 / 同步 / 手改 DB 进来。越界值会生成 `font-weight: 0`
+  /// 这类整条被浏览器丢弃的声明——不崩，但静默退回书自带样式，极难查。
+  double get readerFontWeight => _clampFontWeight(readerSettings?.fontWeight ??
+          getPreference<int>(key: 'font_weight', defaultValue: 400))
+      .toDouble();
+  Future<void> setReaderFontWeight(double v) async {
+    final int weight = _clampFontWeight(v.round());
+    await (readerSettings?.setFontWeight(weight) ??
+        setPreference<int>(key: 'font_weight', value: weight));
+    onSettingsChangedLive?.call();
+  }
+
+  static int _clampFontWeight(int v) => v.clamp(100, 900);
 
   double get lyricsFontSize =>
       readerSettings?.lyricsFontSize ??
@@ -1622,6 +1653,69 @@ class ReaderFushiSource extends ReaderMediaSource {
     await (readerSettings?.setViewMode(v) ??
         setPreference<String>(key: 'view_mode', value: v));
     onSettingsChangedLive?.call();
+  }
+
+  int get readerVisualNovelRevealSpeed =>
+      readerSettings?.visualNovelRevealSpeed ??
+      getPreference<int>(key: 'vn_reveal_speed', defaultValue: 45)
+          .clamp(0, 120);
+  Future<void> setReaderVisualNovelRevealSpeed(int v) async {
+    final int normalized = v.clamp(0, 120);
+    await (readerSettings?.setVisualNovelRevealSpeed(normalized) ??
+        setPreference<int>(key: 'vn_reveal_speed', value: normalized));
+  }
+
+  String get readerVisualNovelScreenMode {
+    final String raw = readerSettings?.visualNovelScreenMode ??
+        getPreference<String>(key: 'vn_screen_mode', defaultValue: 'block');
+    return raw.toLowerCase() == 'sentences' ? 'sentences' : 'block';
+  }
+
+  Future<void> setReaderVisualNovelScreenMode(String v) async {
+    final String normalized =
+        v.toLowerCase() == 'sentences' ? 'sentences' : 'block';
+    await (readerSettings?.setVisualNovelScreenMode(normalized) ??
+        setPreference<String>(key: 'vn_screen_mode', value: normalized));
+  }
+
+  int get readerVisualNovelSentencesPerScreen =>
+      readerSettings?.visualNovelSentencesPerScreen ??
+      getPreference<int>(key: 'vn_sentences_per_screen', defaultValue: 1)
+          .clamp(1, 12);
+  Future<void> setReaderVisualNovelSentencesPerScreen(int v) async {
+    final int normalized = v.clamp(1, 12);
+    await (readerSettings?.setVisualNovelSentencesPerScreen(normalized) ??
+        setPreference<int>(
+          key: 'vn_sentences_per_screen',
+          value: normalized,
+        ));
+  }
+
+  bool get readerVisualNovelPreserveDialogue =>
+      readerSettings?.visualNovelPreserveDialogueBubbles ??
+      getPreference<bool>(key: 'vn_preserve_dialogue', defaultValue: false);
+  Future<void> setReaderVisualNovelPreserveDialogue(bool v) async {
+    await (readerSettings?.setVisualNovelPreserveDialogueBubbles(v) ??
+        setPreference<bool>(key: 'vn_preserve_dialogue', value: v));
+  }
+
+  bool get readerVisualNovelClickAdvance =>
+      readerSettings?.visualNovelClickAdvance ??
+      getPreference<bool>(key: 'vn_click_advance', defaultValue: false);
+  Future<void> setReaderVisualNovelClickAdvance(bool v) async {
+    await (readerSettings?.setVisualNovelClickAdvance(v) ??
+        setPreference<bool>(key: 'vn_click_advance', value: v));
+  }
+
+  bool get readerVisualNovelMergeSpokenSentence =>
+      readerSettings?.visualNovelMergeCrossScreenSentenceAudioCues ??
+      getPreference<bool>(
+        key: 'vn_merge_cross_screen_cues',
+        defaultValue: false,
+      );
+  Future<void> setReaderVisualNovelMergeSpokenSentence(bool v) async {
+    await (readerSettings?.setVisualNovelMergeCrossScreenSentenceAudioCues(v) ??
+        setPreference<bool>(key: 'vn_merge_cross_screen_cues', value: v));
   }
 
   String get readerTheme =>

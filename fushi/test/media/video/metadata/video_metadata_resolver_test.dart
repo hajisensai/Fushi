@@ -357,10 +357,11 @@ void main() {
           title: 'Year Gate Anime',
           year: 2024,
         );
+        // 年份 gate 容差 ±1（见下方 tolerance 用例），差 2 年才算不符。
         final VideoMetadataWork mismatchingDetails = _work(
           id: 'year-mismatch',
           title: 'Year Gate Anime',
-          year: 2023,
+          year: 2022,
         );
         final _FakeProvider provider = _FakeProvider(
           kind: VideoMetadataProviderKind.tmdb,
@@ -392,6 +393,136 @@ void main() {
         expect(result.work?.year, 2024);
       },
     );
+
+    test('year gate tolerates a one-year offset but rejects two', () async {
+      final VideoMetadataWork offByOne = _work(
+        id: 'off-by-one',
+        title: 'Tolerant Anime',
+        year: 2023,
+      );
+      final VideoMetadataWork offByTwo = _work(
+        id: 'off-by-two',
+        title: 'Tolerant Anime',
+        year: 2022,
+      );
+      final _FakeProvider provider = _FakeProvider(
+        kind: VideoMetadataProviderKind.tmdb,
+        searchResults: <VideoMetadataWork>[offByOne, offByTwo],
+        works: <String, VideoMetadataWork>{
+          'off-by-one': offByOne,
+          'off-by-two': offByTwo,
+        },
+      );
+
+      final VideoMetadataResolution result = await VideoMetadataResolver(
+        registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+          provider,
+        ]),
+      ).resolve(
+        VideoMetadataResolveRequest(
+          selectedProvider: VideoMetadataProviderKind.tmdb,
+          mediaKind: VideoMetadataMediaKind.tv,
+          titleCandidates: const <String>['Tolerant Anime'],
+          year: 2024,
+        ),
+      );
+
+      expect(result.status, VideoMetadataResolutionStatus.matched);
+      expect(result.lookup?.externalId, 'off-by-one');
+      expect(provider.fetchCalls, 1, reason: '差 2 年的候选不该进详情请求');
+    });
+
+    test('year-bound search that gates to nothing retries without year',
+        () async {
+      // provider 侧年份过滤是精确匹配：本地目录写 2024、TMDB 首播 2023 时带年
+      // 搜索为空；去年份重搜后 gate 仍按 ±1 放行 2023、拒绝 2021。
+      final VideoMetadataWork hit = _work(
+        id: 'hit',
+        title: 'Plan Anime',
+        year: 2023,
+      );
+      final VideoMetadataWork stale = _work(
+        id: 'stale',
+        title: 'Plan Anime',
+        year: 2021,
+      );
+      final _YearPlanProvider provider = _YearPlanProvider(
+        yearlessResults: <VideoMetadataWork>[stale, hit],
+        works: <String, VideoMetadataWork>{'hit': hit, 'stale': stale},
+      );
+
+      final VideoMetadataResolution result = await VideoMetadataResolver(
+        registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+          provider,
+        ]),
+      ).resolve(
+        VideoMetadataResolveRequest(
+          selectedProvider: VideoMetadataProviderKind.tmdb,
+          mediaKind: VideoMetadataMediaKind.tv,
+          titleCandidates: const <String>['Plan Anime'],
+          year: 2024,
+        ),
+      );
+
+      expect(provider.searchYears, <int?>[2024, null]);
+      expect(result.status, VideoMetadataResolutionStatus.matched);
+      expect(result.lookup?.externalId, 'hit');
+    });
+
+    test('year-bound search retries once per title, not per candidate',
+        () async {
+      // 带年搜索有结果但全被 type gate 刷掉 → 也算「gate 后为空」，重搜一次；
+      // 第二个标题同样走「带年 → 去年」两步，总共 4 次搜索。
+      final VideoMetadataWork movie = _work(
+        id: 'movie',
+        title: 'Two Titles',
+        year: 2024,
+        mediaKind: VideoMetadataMediaKind.movie,
+      );
+      final _YearPlanProvider provider = _YearPlanProvider(
+        searchResults: <VideoMetadataWork>[movie],
+        yearlessResults: const <VideoMetadataWork>[],
+        works: <String, VideoMetadataWork>{'movie': movie},
+      );
+
+      final VideoMetadataResolution result = await VideoMetadataResolver(
+        registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+          provider,
+        ]),
+      ).resolve(
+        VideoMetadataResolveRequest(
+          selectedProvider: VideoMetadataProviderKind.tmdb,
+          mediaKind: VideoMetadataMediaKind.tv,
+          titleCandidates: const <String>['Two Titles', 'Second Title'],
+          year: 2024,
+        ),
+      );
+
+      expect(provider.searchYears, <int?>[2024, null, 2024, null]);
+      expect(result.status, VideoMetadataResolutionStatus.notFound);
+    });
+
+    test('search without a local year is issued exactly once', () async {
+      final _YearPlanProvider provider = _YearPlanProvider(
+        searchResults: const <VideoMetadataWork>[],
+        yearlessResults: const <VideoMetadataWork>[],
+      );
+
+      final VideoMetadataResolution result = await VideoMetadataResolver(
+        registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+          provider,
+        ]),
+      ).resolve(
+        VideoMetadataResolveRequest(
+          selectedProvider: VideoMetadataProviderKind.tmdb,
+          mediaKind: VideoMetadataMediaKind.tv,
+          titleCandidates: const <String>['No Year Anime'],
+        ),
+      );
+
+      expect(provider.searchYears, <int?>[null]);
+      expect(result.status, VideoMetadataResolutionStatus.notFound);
+    });
 
     test(
       'valid provider candidates are kept for confirmation on title miss',
@@ -832,6 +963,28 @@ class _FakeProvider implements VideoMetadataProvider {
 
   @override
   void close() {}
+}
+
+/// 记录每次搜索收到的 `year`；带年搜索返回 [searchResults]，去年份重搜返回
+/// [yearlessResults]，用来钉住「带年 → 去年」计划表。
+class _YearPlanProvider extends _FakeProvider {
+  _YearPlanProvider({
+    super.searchResults,
+    required this.yearlessResults,
+    super.works,
+  }) : super(kind: VideoMetadataProviderKind.tmdb);
+
+  final List<VideoMetadataWork> yearlessResults;
+  final List<int?> searchYears = <int?>[];
+
+  @override
+  Future<List<VideoMetadataWork>> search(
+    VideoMetadataSearchRequest request,
+  ) async {
+    searchYears.add(request.year);
+    searchCalls++;
+    return request.year == null ? yearlessResults : searchResults;
+  }
 }
 
 class _FakeEpisodeGroupProvider extends _FakeProvider

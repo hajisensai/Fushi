@@ -301,6 +301,39 @@ void main() {
 
     tearDown(() async => server.stop());
 
+    test('空在线漫画合集正常跳过，不上传空包或记录同步失败', () async {
+      final FushiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+      final Directory source = Directory(p.join(work.path, 'online_manga'))
+        ..createSync();
+      File(p.join(source.path, 'manga.json')).writeAsStringSync('{"pages":[]}');
+      await localDb.insertEpubBook(EpubBooksCompanion.insert(
+        bookKey: 'OnlineManga',
+        title: 'OnlineManga',
+        epubPath: 'manga.json',
+        extractDir: source.path,
+        chapterCount: 0,
+        chaptersJson: '[]',
+        importedAt: 1,
+        format: const Value<String>('manga'),
+      ));
+      final Directory tmp = Directory(p.join(work.path, 'tmp_empty_manga'))
+        ..createSync();
+      final InterconnectSyncBackend backend =
+          await _buildClientBackend(base: serverBase, token: token);
+      final SyncOrchestrator orch = _bookOrchestrator(
+        db: localDb,
+        backend: backend,
+        tmp: tmp,
+        syncContent: true,
+      );
+      final SyncRunReport report = SyncRunReport();
+      await orch.syncBooksContentLiveForTest(report, backend);
+      expect(report.errors, isEmpty);
+      expect(await hostDb.getEpubBook('OnlineManga'), isNull);
+      expect(tmp.listSync(), isEmpty);
+    });
+
     test('本地无 BookY，syncContent=true → 不自动拉取远端独有 BookY', () async {
       // 本地：只有 BookX，没有 BookY
       final FushiDatabase localDb = _memDb();

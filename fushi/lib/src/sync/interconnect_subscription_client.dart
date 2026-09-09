@@ -325,8 +325,9 @@ class InterconnectSubscriptionClient {
         try {
           final dynamic decoded = jsonDecode(text);
           if (decoded is Map) {
-            if (decoded['message'] != null)
+            if (decoded['message'] != null) {
               detail = decoded['message'].toString();
+            }
             reason = decoded['reason']?.toString();
           }
         } catch (_) {

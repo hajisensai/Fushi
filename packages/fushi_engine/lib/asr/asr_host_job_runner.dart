@@ -13,7 +13,7 @@ library;
 import 'dart:async';
 import 'dart:io';
 
-import 'package:asr_core/asr_core.dart' as asr;
+import 'package:fushi_asr_core/asr_core.dart' as asr;
 import 'package:fushi_engine/sync/host_jobs/host_job_runner.dart';
 import 'package:path/path.dart' as p;
 

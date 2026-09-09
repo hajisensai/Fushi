@@ -29,6 +29,7 @@ List<TtuTocEntry> flattenTtuTocEntries(
           index: index,
           label: item.label,
           parent: parentLabel,
+          fragment: tocHrefFragment(item.href),
         ));
       }
       walk(item.children, item.label);
@@ -37,4 +38,24 @@ List<TtuTocEntry> flattenTtuTocEntries(
 
   walk(items, null);
   return result;
+}
+
+/// 目录 href 的 `#fragment`（章内锚），没有 / 为空时 null。
+///
+/// 口径与 [EpubBook.resolveInternalLink] 一致：那里取 `Uri.fragment`（percent
+/// 已解码），锚点最终喂给 WebView 的 `getElementById`，两条路径必须给出同一个
+/// id，否则目录跳转和点书里的内链会落在不同地方。href 是不可信输入，
+/// percent 转义坏了就退回原文，绝不因此丢掉整条目录项。
+String? tocHrefFragment(String? href) {
+  if (href == null) return null;
+  final int hash = href.indexOf('#');
+  if (hash < 0 || hash + 1 >= href.length) return null;
+  final String raw = href.substring(hash + 1);
+  if (raw.isEmpty) return null;
+  try {
+    final String decoded = Uri.decodeComponent(raw);
+    return decoded.isEmpty ? null : decoded;
+  } on ArgumentError {
+    return raw;
+  }
 }

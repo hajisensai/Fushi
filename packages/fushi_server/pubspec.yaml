@@ -26,18 +26,22 @@ dependencies:
     path: ../fushi_engine
   fushi_platform:
     path: ../fushi_platform
-  # 与 fushi/pubspec.yaml 钉同一 sha；asr_onnx_ffi 是纯 Dart FFI 的 ONNX Runtime 后端
-  # （CPU / CUDA / DirectML），服务端的 OCR 与 ASR 会话工厂都用它。
-  asr_core:
+  # 与 fushi/pubspec.yaml 钉同一 sha；fushi_asr_onnx_ffi 是纯 Dart FFI 的 ONNX Runtime
+  # 后端（CPU / CUDA / DirectML），服务端的 OCR 与 ASR 会话工厂都用它。
+  #
+  # app 侧不引 fushi_asr_onnx_ffi（Flutter 端走 flutter_onnxruntime 插件后端），
+  # 只有无头服务端需要进程内的纯 Dart ONNX；它对 `archive` 的约束比本仓紧，
+  # 处理见根 pubspec.yaml 的 dependency_overrides。
+  fushi_asr_core:
     git:
-      url: https://github.com/hajisensai/fushi-asr.git
+      url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_core
-      ref: 7eb70dc01bebc9f2c180af5f5eee012485fe7147
-  asr_onnx_ffi:
+      ref: e4dd0f882eb92230ad63a2a540fde273a67ca489
+  fushi_asr_onnx_ffi:
     git:
-      url: https://github.com/hajisensai/fushi-asr.git
+      url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_onnx_ffi
-      ref: 7eb70dc01bebc9f2c180af5f5eee012485fe7147
+      ref: e4dd0f882eb92230ad63a2a540fde273a67ca489
   args: ^2.4.0
   crypto: ^3.0.0
   drift: ">=2.33.0 <2.34.0"

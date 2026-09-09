@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/media/audiobook/asr_models_settings_section.dart';
 import 'package:fushi/src/media/audiobook/audiobook_material_library_dialog.dart';
+import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -12,11 +13,19 @@ import 'package:fushi/utils.dart';
 SettingsDestination buildListeningDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.listening,
+    // 「功能模块」门控：关掉本模块 = 整条分类不渲染 / 不进搜索索引 / 主从详情不可选
+    // （三条渲染路径共用 isVisible）。归属表见 module_registry.dart，别在此另写判据。
+    visible: (SettingsContext c) => isSettingsDestinationVisible(
+      SettingsDestinationId.listening,
+      c.appModel.moduleVisibility,
+    ),
     title: t.settings_destination_listening,
     summary: t.floating_lyric_hint,
     icon: Icons.headphones_outlined,
     sections: <SettingsSection>[
       SettingsSection(
+        id: 'listening.section.playback',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.section_audiobook,
         items: <SettingsItem>[
           // TODO-702：有声书退出即停（默认 OFF）/ 后台续播（开启）。默认关 = 退出
@@ -29,8 +38,9 @@ SettingsDestination buildListeningDestination() {
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.audiobookBackgroundPlay,
             onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel
-                  .setAudiobookBackgroundPlay(value: value);
+              await settingsContext.appModel.setAudiobookBackgroundPlay(
+                value: value,
+              );
               settingsContext.refresh();
             },
           ),
@@ -81,27 +91,12 @@ SettingsDestination buildListeningDestination() {
           ),
         ],
       ),
-      // 有声书设备端转录的语言模型包：让用户预先只下自己要的语言、也能删掉
-      // 腾磁盘。仅本机随包了 ONNX Runtime 的平台才有这一组（与转录入口同门控）。
-      SettingsSection(
-        title: t.asr_models_section,
-        footer: t.asr_models_section_summary,
-        collapsedByDefault: true,
-        visible: (_) => isAsrSupported,
-        items: <SettingsItem>[
-          SettingsCustomItem(
-            id: 'listening.asr_models',
-            searchTitle: t.asr_models_section,
-            builder: (SettingsContext _) =>
-                AsrModelsSettingsSection(service: createAsrTranscriptionService()),
-          ),
-        ],
-      ),
       // 悬浮歌词全家桶（总开关 + 7 个样式/行为子项）独立成组：原先与后台播放/
       // 媒体通知平铺同级，一个子功能占了「有声书」分区 2/3 的行数。
       SettingsSection(
+        id: 'listening.section.floating_lyric',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.section_floating_lyric,
-        collapsedByDefault: true,
         items: <SettingsItem>[
           SettingsSwitchItem(
             id: 'listening.floating_lyric',
@@ -129,7 +124,9 @@ SettingsDestination buildListeningDestination() {
             id: 'listening.floating_lyric_font_size',
             title: t.floating_lyric_font_size,
             icon: Icons.format_size,
-            visible: (_) => Platform.isAndroid || Platform.isWindows,
+            visible: (SettingsContext c) =>
+                (Platform.isAndroid || Platform.isWindows) &&
+                c.appModel.showFloatingLyric,
             min: 8,
             max: 64,
             step: 1,
@@ -152,7 +149,9 @@ SettingsDestination buildListeningDestination() {
             id: 'listening.floating_lyric_text_opacity',
             title: t.floating_lyric_text_opacity,
             icon: Icons.opacity_outlined,
-            visible: (_) => Platform.isAndroid || Platform.isWindows,
+            visible: (SettingsContext c) =>
+                (Platform.isAndroid || Platform.isWindows) &&
+                c.appModel.showFloatingLyric,
             min: 0,
             max: 100,
             step: 5,
@@ -160,8 +159,9 @@ SettingsDestination buildListeningDestination() {
                 settingsContext.appModel.floatingLyricTextOpacity.toDouble(),
             format: (double value) => '${value.round()}%',
             onChanged: (SettingsContext settingsContext, double value) async {
-              await settingsContext.appModel
-                  .setFloatingLyricTextOpacity(value.round());
+              await settingsContext.appModel.setFloatingLyricTextOpacity(
+                value.round(),
+              );
               await settingsContext.appModel.audiobookSession
                   .applyFloatingLyricStyle();
               settingsContext.refresh();
@@ -171,17 +171,21 @@ SettingsDestination buildListeningDestination() {
             id: 'listening.floating_lyric_button_bg_opacity',
             title: t.floating_lyric_button_bg_opacity,
             icon: Icons.smart_button_outlined,
-            visible: (_) => Platform.isAndroid || Platform.isWindows,
+            visible: (SettingsContext c) =>
+                (Platform.isAndroid || Platform.isWindows) &&
+                c.appModel.showFloatingLyric,
             min: 0,
             max: 100,
             step: 5,
             value: (SettingsContext settingsContext) => settingsContext
-                .appModel.floatingLyricButtonBgOpacity
+                .appModel
+                .floatingLyricButtonBgOpacity
                 .toDouble(),
             format: (double value) => '${value.round()}%',
             onChanged: (SettingsContext settingsContext, double value) async {
-              await settingsContext.appModel
-                  .setFloatingLyricButtonBgOpacity(value.round());
+              await settingsContext.appModel.setFloatingLyricButtonBgOpacity(
+                value.round(),
+              );
               await settingsContext.appModel.audiobookSession
                   .applyFloatingLyricStyle();
               settingsContext.refresh();
@@ -193,7 +197,9 @@ SettingsDestination buildListeningDestination() {
             id: 'listening.floating_lyric_bg_opacity',
             title: t.floating_lyric_bg_opacity,
             icon: Icons.gradient_outlined,
-            visible: (_) => Platform.isAndroid || Platform.isWindows,
+            visible: (SettingsContext c) =>
+                (Platform.isAndroid || Platform.isWindows) &&
+                c.appModel.showFloatingLyric,
             min: 0,
             max: 100,
             step: 5,
@@ -201,8 +207,9 @@ SettingsDestination buildListeningDestination() {
                 settingsContext.appModel.floatingLyricBgOpacity.toDouble(),
             format: (double value) => '${value.round()}%',
             onChanged: (SettingsContext settingsContext, double value) async {
-              await settingsContext.appModel
-                  .setFloatingLyricBgOpacity(value.round());
+              await settingsContext.appModel.setFloatingLyricBgOpacity(
+                value.round(),
+              );
               await settingsContext.appModel.audiobookSession
                   .applyFloatingLyricStyle();
               settingsContext.refresh();
@@ -215,7 +222,9 @@ SettingsDestination buildListeningDestination() {
             title: t.floating_lyric_corner_radius,
             subtitle: t.floating_lyric_corner_radius_hint,
             icon: Icons.rounded_corner_outlined,
-            visible: (_) => Platform.isAndroid || Platform.isWindows,
+            visible: (SettingsContext c) =>
+                (Platform.isAndroid || Platform.isWindows) &&
+                c.appModel.showFloatingLyric,
             min: 0,
             max: 48,
             step: 2,
@@ -224,8 +233,9 @@ SettingsDestination buildListeningDestination() {
             format: (double value) =>
                 value.round() == 0 ? t.audio_panel_auto : '${value.round()}',
             onChanged: (SettingsContext settingsContext, double value) async {
-              await settingsContext.appModel
-                  .setFloatingLyricCornerRadius(value.round());
+              await settingsContext.appModel.setFloatingLyricCornerRadius(
+                value.round(),
+              );
               await settingsContext.appModel.audiobookSession
                   .applyFloatingLyricStyle();
               settingsContext.refresh();
@@ -238,7 +248,9 @@ SettingsDestination buildListeningDestination() {
             title: t.floating_lyric_width,
             subtitle: t.floating_lyric_width_hint,
             icon: Icons.width_normal_outlined,
-            visible: (_) => Platform.isAndroid || Platform.isWindows,
+            visible: (SettingsContext c) =>
+                (Platform.isAndroid || Platform.isWindows) &&
+                c.appModel.showFloatingLyric,
             min: 0,
             max: 1200,
             step: 40,
@@ -249,8 +261,9 @@ SettingsDestination buildListeningDestination() {
             onChanged: (SettingsContext settingsContext, double value) async {
               // 0=自动；其余夹到 [200,1200]（<200 的步进值向上取到 200，保持哨兵语义只在 0）。
               final int rounded = value.round();
-              final int width =
-                  rounded <= 0 ? 0 : (rounded < 200 ? 200 : rounded);
+              final int width = rounded <= 0
+                  ? 0
+                  : (rounded < 200 ? 200 : rounded);
               await settingsContext.appModel.setFloatingLyricWidth(width);
               await settingsContext.appModel.audiobookSession
                   .applyFloatingLyricStyle();
@@ -265,7 +278,9 @@ SettingsDestination buildListeningDestination() {
             title: t.floating_lyric_context_lines,
             subtitle: t.floating_lyric_context_lines_hint,
             icon: Icons.format_line_spacing_outlined,
-            visible: (_) => Platform.isAndroid || Platform.isWindows,
+            visible: (SettingsContext c) =>
+                (Platform.isAndroid || Platform.isWindows) &&
+                c.appModel.showFloatingLyric,
             min: 0,
             max: 3,
             step: 1,
@@ -273,8 +288,9 @@ SettingsDestination buildListeningDestination() {
                 settingsContext.appModel.floatingLyricContextLines.toDouble(),
             format: (double value) => value.round().toString(),
             onChanged: (SettingsContext settingsContext, double value) async {
-              await settingsContext.appModel
-                  .setFloatingLyricContextLines(value.round());
+              await settingsContext.appModel.setFloatingLyricContextLines(
+                value.round(),
+              );
               await settingsContext.appModel.audiobookSession
                   .resyncFloatingLyricText();
               settingsContext.refresh();
@@ -285,7 +301,9 @@ SettingsDestination buildListeningDestination() {
             title: t.floating_lyric_click_lookup,
             subtitle: t.floating_lyric_click_lookup_hint,
             icon: Icons.touch_app_outlined,
-            visible: (_) => Platform.isAndroid || Platform.isWindows,
+            visible: (SettingsContext c) =>
+                (Platform.isAndroid || Platform.isWindows) &&
+                c.appModel.showFloatingLyric,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.floatingLyricClickLookup,
             onChanged: (SettingsContext settingsContext, bool value) async {
@@ -295,6 +313,37 @@ SettingsDestination buildListeningDestination() {
           ),
         ],
       ),
+      // 有声书设备端转录的语言模型包：让用户预先只下自己要的语言、也能删掉
+      // 腾磁盘。仅本机随包了 ONNX Runtime 的平台才有这一组（与转录入口同门控）。
+      SettingsSection(
+        id: 'listening.section.models',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        title: t.asr_models_section,
+        visible: (_) => isAsrSupported,
+        items: <SettingsItem>[
+          SettingsNavigationItem(
+            id: 'listening.asr_models',
+            title: t.asr_models_section,
+            subtitle: t.asr_models_section_summary,
+            icon: Icons.record_voice_over_outlined,
+            child: _buildAsrModelsDestination,
+          ),
+        ],
+      ),
     ],
+  );
+}
+
+/// Reuse the model manager as the page body to avoid nested settings cards.
+SettingsDestination _buildAsrModelsDestination() {
+  return SettingsDestination(
+    id: SettingsDestinationId.listening,
+    title: t.asr_models_section,
+    icon: Icons.record_voice_over_outlined,
+    sections: const <SettingsSection>[],
+    body: (SettingsContext _) => AsrModelsSettingsSection(
+      // 模型管理页里每个包（含共用对齐器）各自管理，这里不做自动调轴。
+      service: createAsrTranscriptionService(alignGeneratedSubtitles: false),
+    ),
   );
 }

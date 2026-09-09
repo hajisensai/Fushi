@@ -45,6 +45,10 @@ Future<File> _giveCover(
 }
 
 void main() {
+  // clearCollectionOwnCover 会驱逐解码缓存（PaintingBinding.imageCache），
+  // 没有 binding 直接抛 "Binding has not yet been initialized"。
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('deleteMediaCollectionWithAssets', () {
     test('回收被删合集自己的封面文件，同时删掉 DB 行', () async {
       final FushiDatabase db = await _openDb();
@@ -250,6 +254,69 @@ void main() {
       final int reclaimAt = body.indexOf('reclaimDeletedCollectionAssets(');
       expect(txEnd >= 0 && reclaimAt > txEnd, isTrue,
           reason: '文件 IO 必须落在 db.transaction 之后，不能在事务里做');
+    });
+  });
+
+  group('clearCollectionOwnCover', () {
+    test('清掉自有封面：coverPath 置 null 且文件被回收，合集本身还在', () async {
+      final FushiDatabase db = await _openDb();
+      final Directory covers = await _tempCoversDir();
+      final int id = await db.createMediaCollection('A');
+      final File cover = await _giveCover(db, covers, id);
+      expect(cover.existsSync(), isTrue);
+
+      await clearCollectionOwnCover(db, id, collectionCoversDirectory: covers);
+
+      final MediaCollectionRow? row = await db.getMediaCollectionById(id);
+      expect(row, isNotNull, reason: '恢复默认封面绝不能把合集本身删掉');
+      expect(row!.coverPath, isNull);
+      expect(cover.existsSync(), isFalse,
+          reason: '清掉的自有封面不回收就是泄漏——gcOrphanCovers 扫不到这个子目录');
+    });
+
+    test('别的合集仍引用同一张图时保留文件，只清本合集的 coverPath', () async {
+      final FushiDatabase db = await _openDb();
+      final Directory covers = await _tempCoversDir();
+      final int a = await db.createMediaCollection('A');
+      final int b = await db.createMediaCollection('B');
+      final File shared = await _giveCover(db, covers, a);
+      await db.updateMediaCollectionCoverPath(b, shared.path);
+
+      await clearCollectionOwnCover(db, a, collectionCoversDirectory: covers);
+
+      expect((await db.getMediaCollectionById(a))!.coverPath, isNull);
+      expect((await db.getMediaCollectionById(b))!.coverPath, shared.path);
+      expect(shared.existsSync(), isTrue, reason: '还有合集指着这张图，删了就是误删——护栏第 3 条');
+    });
+
+    test('目录外的用户图片只解引用，绝不删除', () async {
+      final FushiDatabase db = await _openDb();
+      final Directory covers = await _tempCoversDir();
+      final Directory outside =
+          await Directory.systemTemp.createTemp('outside_cover_');
+      addTearDown(() async {
+        if (await outside.exists()) await outside.delete(recursive: true);
+      });
+      final File userImage = File(p.join(outside.path, 'my.jpg'));
+      await userImage.writeAsBytes(<int>[0xFF, 0xD8, 0xFF]);
+      final int id = await db.createMediaCollection('A');
+      await db.updateMediaCollectionCoverPath(id, userImage.path);
+
+      await clearCollectionOwnCover(db, id, collectionCoversDirectory: covers);
+
+      expect((await db.getMediaCollectionById(id))!.coverPath, isNull);
+      expect(userImage.existsSync(), isTrue,
+          reason: '合集封面目录之外的文件是用户自己的，任何情况下都不许删');
+    });
+
+    test('本来就没有自有封面时是彻底的空操作', () async {
+      final FushiDatabase db = await _openDb();
+      final Directory covers = await _tempCoversDir();
+      final int id = await db.createMediaCollection('A');
+
+      await clearCollectionOwnCover(db, id, collectionCoversDirectory: covers);
+
+      expect((await db.getMediaCollectionById(id))!.coverPath, isNull);
     });
   });
 }

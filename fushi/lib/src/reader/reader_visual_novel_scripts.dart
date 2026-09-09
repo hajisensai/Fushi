@@ -1,4 +1,4 @@
-// TODO-909 (M0): Visual-Novel reader view-mode, ported from hoshi a
+// TODO-909: Visual-Novel reader view-mode, ported from hoshi a
 // (Hoshi-Reader-Android origin/main @ 24361a9):
 //   app/src/main/assets/hoshi-web/reader/{reader-text-semantics,
 //   reader-vn-content-stream, reader-vn-range-map, reader-visual-novel}.js
@@ -13,9 +13,15 @@
 //     vn-range-map / media-semantics) are inlined ahead of `window.fushiReader`.
 //   * `notifyRestoreComplete` forwards to InAppWebView's `onRestoreComplete`
 //     handler instead of hoshi's native `FushiReaderRestore.postMessage`.
-//   * media-semantics is an M0 no-op stub (images render from cloned chapter
-//     markup); Sasayaki / highlights / E-Ink overlay are M1 (their hoshi calls
-//     are guarded by `window.fushiHighlights` / popupHost checks, safe at M0).
+//   * Images render from cloned chapter markup; block-image promotion stays
+//     VN-specific, while spoiler/reveal identity reuses the shared reader
+//     image semantics.
+//   * Sasayaki cues always take the inline `.fushi-sentence-audio-cue` wrapper
+//     path, in e-ink too. hoshi swaps to a native rect overlay under e-ink
+//     (`popupHost.renderSentenceAudioHighlight`); Hibiki never ported that host,
+//     so the branch rendered nothing at all and the read-along highlight was
+//     invisible in VN + e-ink. The wrapper class is what the e-ink CSS bar rule
+//     in `ReaderContentStyles` targets, so one path now serves every mode.
 //   * Config placeholders become Dart interpolation; `clickAdvance` is NOT a
 //     hoshi JS concern -- the host (webview.part.dart) binds blank-tap ->
 //     `paginate("forward")`.
@@ -62,6 +68,8 @@ class ReaderVisualNovelScripts {
     // BUG-1688：与分页/连续 shell 同一份视口 meta 重写（单一真相源）。
     const String sharedInitViewport =
         ReaderPaginationScripts.sharedInitViewportJs;
+    final String imageRevealSemantics =
+        ReaderPaginationScripts.imageRevealSemanticsScript();
     // TODO-1085 (BUG-513): single source of truth for the image viewport ratio,
     // shared with the paginated shell (ReaderLayoutDefaults.imageWidthViewportRatio),
     // consumed by applyImageMaxVars below.
@@ -99,17 +107,29 @@ window.__fushiShells.vn = function(C) {
     countRawChars: countRawChars
   };
 })(window);
+$imageRevealSemantics
 (function(global) {
   'use strict';
-  // TODO-909 M0 stub: hoshi a's media-semantics bridges images to an
-  // Android native @JavascriptInterface (FushiReaderImage). Hibiki has no
-  // such bridge at M0, so images render from the chapter's own <img> markup
-  // cloned into the VN screen. These no-ops keep reader-visual-novel.js's
-  // setupReaderImage(s) calls safe. M1 wires Hibiki image interception.
-  function noop() { return null; }
+  // VN keeps its own block-image promotion because it renders one cloned
+  // screen at a time. Spoiler/reveal identity is shared with paginated and
+  // continuous mode through `_fushiBlurImage` above.
+  function setupReaderImage(element) {
+    if (C.blurImages && element && element.classList &&
+        element.classList.contains('block-img')) {
+      _fushiBlurImage(element);
+    }
+    return element;
+  }
+  function setupReaderImages(scope) {
+    if (!scope || !scope.querySelectorAll) return [];
+    var images = Array.from(scope.querySelectorAll(
+      'img.block-img, svg.block-img'));
+    if (C.blurImages) images.forEach(_fushiBlurImage);
+    return images;
+  }
   global.fushiReaderMediaSemantics = {
-    setupReaderImage: noop,
-    setupReaderImages: noop
+    setupReaderImage: setupReaderImage,
+    setupReaderImages: setupReaderImages
   };
 })(window);
 (function(global) {
@@ -785,7 +805,6 @@ window.fushiReader = {
   sentenceAudioCuesSignature: null,
   cueWrappers: new Map(),
   cueSourceRanges: new Map(),
-  cueGeometryRanges: new Map(),
   nodeStartOffsets: new WeakMap(),
   nodeStartRawOffsets: new WeakMap(),
   contentStream: null,
@@ -817,9 +836,6 @@ window.fushiReader = {
   },
   readerCssVariable: function(name) {
     return window.getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  },
-  isEInkMode: function() {
-    return this.readerCssVariable('--fushi-reader-eink-mode') === '1';
   },
   isFurigana: function(node) {
     var el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
@@ -2422,8 +2438,8 @@ $sharedInitViewport
   },
   setupReaderImages: function(root) {
     var scope = root || this.screen;
-    // TODO-1085 (BUG-513): the media-semantics stub is a no-op at M0, so cloned
-    // VN images never received the `.block-img` class that the shared reader CSS
+    // TODO-1085 (BUG-513): VN images originally never received the `.block-img`
+    // class that the shared reader CSS
     // (reader_content_styles.dart) needs to give an image a page-sized centred
     // box. Without it they fell through to `img:not(.block-img){max-width:100%}`,
     // whose 100% resolves against the shrink-to-fit `.fushi-vn-content` flex item
@@ -2838,81 +2854,17 @@ $sharedInitViewport
     }
     return wrapped;
   },
-  buildSentenceAudioGeometryRanges: function(cueRanges) {
-    var geometryRanges = new Map();
-    for (var i = 0; i < cueRanges.length; i++) {
-      var id = cueRanges[i].id;
-      var ranges = cueRanges[i].ranges;
-      if (!ranges.length) continue;
-      var cueGeometryRanges = [];
-      for (var j = 0; j < ranges.length; j++) {
-        var segment = ranges[j];
-        var range = document.createRange();
-        range.setStart(segment.node, segment.start);
-        range.setEnd(segment.node, segment.end);
-        cueGeometryRanges.push(range);
-      }
-      if (cueGeometryRanges.length) geometryRanges.set(id, cueGeometryRanges);
-    }
-    return geometryRanges;
-  },
   prepareSentenceAudioInlineTargets: function(cueRanges) {
-    if (!this.isEInkMode()) {
-      this.wrapSentenceAudioCueRanges(cueRanges);
-      this.buildNodeOffsets();
-    }
+    this.wrapSentenceAudioCueRanges(cueRanges);
+    this.buildNodeOffsets();
   },
   ensureSentenceAudioInlineTargetsForCue: function(cueId) {
-    if (this.isEInkMode() || this.sentenceAudioInlineTargetsForCue(cueId).length) return;
+    if (this.sentenceAudioInlineTargetsForCue(cueId).length) return;
     var cue = this.sentenceAudioCueMap.get(cueId);
     if (!cue) return;
     var cueRanges = this.collectSentenceAudioCueRanges([cue]);
     this.rememberSentenceAudioCueSources(cueRanges);
     this.prepareSentenceAudioInlineTargets(cueRanges);
-  },
-  ensureSentenceAudioCueGeometry: function(cue) {
-    var cueId = typeof cue === 'string' ? cue : cue && cue.id;
-    if (!cueId) return;
-    var existing = this.cueGeometryRanges.get(cueId);
-    if (existing && existing.length) return;
-    var cueObject = this.sentenceAudioCueForInput(cue) || this.sentenceAudioCueMap.get(cueId);
-    if (!cueObject) return;
-    var cueRanges = this.collectSentenceAudioCueRanges([cueObject]);
-    this.rememberSentenceAudioCueSources(cueRanges);
-    var geometryRanges = this.buildSentenceAudioGeometryRanges(cueRanges).get(cueId) || [];
-    if (geometryRanges.length) this.cueGeometryRanges.set(cueId, geometryRanges);
-  },
-  sentenceAudioOverlayRects: function(cueId) {
-    var ranges = this.cueGeometryRanges.get(cueId) || [];
-    var rects = [];
-    ranges.forEach(function(range) {
-      if (window.fushiRubyGeometry) {
-        window.fushiRubyGeometry.rectsForRange(range).forEach(function(rect) { rects.push(rect); });
-      } else {
-        Array.from(range.getClientRects()).forEach(function(rect) {
-          rects.push({ x: rect.x, y: rect.y, width: rect.width, height: rect.height });
-        });
-      }
-    });
-    return window.fushiRubyGeometry ? window.fushiRubyGeometry.mergeInlineRects(rects) : rects;
-  },
-  renderSentenceAudioOverlay: function() {
-    if (!this.activeCueId || !this.isEInkMode()) {
-      this.clearSentenceAudioOverlay();
-      return;
-    }
-    if (window.fushiReaderPopupHost && window.fushiReaderPopupHost.renderSentenceAudioHighlight) {
-      window.fushiReaderPopupHost.renderSentenceAudioHighlight({
-        rects: this.sentenceAudioOverlayRects(this.activeCueId),
-        eInkMode: true,
-        verticalWriting: this.isVertical()
-      });
-    }
-  },
-  clearSentenceAudioOverlay: function() {
-    if (window.fushiReaderPopupHost && window.fushiReaderPopupHost.clearSentenceAudioHighlight) {
-      window.fushiReaderPopupHost.clearSentenceAudioHighlight();
-    }
   },
   clearInlineSentenceAudioCue: function(cueId) {
     var clearWrappers = function(wrappers) {
@@ -2935,13 +2887,10 @@ $sharedInitViewport
   },
   clearSentenceAudioCuePresentation: function() {
     this.clearInlineSentenceAudioCue();
-    this.clearSentenceAudioOverlay();
   },
   clearCurrentSentenceAudioScreenTargets: function() {
     this.cueSourceRanges.clear();
-    this.cueGeometryRanges.clear();
     this.cueWrappers.clear();
-    this.clearSentenceAudioOverlay();
   },
   clearSentenceAudioTargets: function() {
     this.clearSentenceAudioCuePresentation();
@@ -2951,7 +2900,6 @@ $sharedInitViewport
     });
     this.cueWrappers.clear();
     this.cueSourceRanges.clear();
-    this.cueGeometryRanges.clear();
     this.buildNodeOffsets();
   },
   applySentenceAudioCues: function(cues) {
@@ -3003,25 +2951,13 @@ $sharedInitViewport
     this.activeCueId = null;
   },
   refreshSentenceAudioCuePresentation: function() {
-    if (!this.activeCueId) {
-      this.clearSentenceAudioOverlay();
-      return;
-    }
+    if (!this.activeCueId) return;
     this.clearInlineSentenceAudioCue(this.activeCueId);
     var cue = this.sentenceAudioCueMap.get(this.activeCueId);
     var screen = this.screens && this.screens[this.currentScreenIndex];
-    if (!cue || !this.sentenceAudioCueIntersectsScreen(cue, screen) || !this.revealComplete) {
-      this.clearSentenceAudioOverlay();
-      return;
-    }
-    if (this.isEInkMode()) {
-      this.ensureSentenceAudioCueGeometry(cue);
-      this.renderSentenceAudioOverlay();
-    } else {
-      this.clearSentenceAudioOverlay();
-      this.ensureSentenceAudioInlineTargetsForCue(this.activeCueId);
-      this.applyInlineSentenceAudioCue(this.activeCueId);
-    }
+    if (!cue || !this.sentenceAudioCueIntersectsScreen(cue, screen) || !this.revealComplete) return;
+    this.ensureSentenceAudioInlineTargetsForCue(this.activeCueId);
+    this.applyInlineSentenceAudioCue(this.activeCueId);
   },
   resetSentenceAudioCues: function() {
     this.clearSentenceAudioTargets();
@@ -3048,7 +2984,7 @@ $sharedInitViewport
 
 
 
-// ── Hibiki host-compat shims (TODO-909 M0) ───────────────────────────────────
+// ── Hibiki host-compat shims (TODO-909) ──────────────────────────────────────
 // The Dart side calls a few methods on window.fushiReader that hoshi a's VN
 // object does not define. Add minimal, correct equivalents so the shared Dart
 // reader paths behave under VN mode.
@@ -3057,8 +2993,10 @@ $sharedInitViewport
   if (!vn) return;
   // BUG-1688：可用盒变了（视口尺寸 or chrome 预留带）就得按新盒重切屏并停在原处。
   // updatePageSize / setChromeInsets 只在「写哪几个 CSS 变量」上不同，重切动作同一份。
+  // 可选 anchorCharOffset（BUG-2261 样式重锚用）：给了就落到覆盖该字符偏移的屏，
+  // 查无 / 没给才退回按重切前的进度比例选屏。
   if (typeof vn.refitScreensToCurrentViewport !== 'function') {
-    vn.refitScreensToCurrentViewport = function() {
+    vn.refitScreensToCurrentViewport = function(anchorCharOffset) {
       if (!this.screens || !this.screens.length) return;
       var progress = this.calculateProgress();
       this.applyImageMaxVars();
@@ -3066,7 +3004,34 @@ $sharedInitViewport
         ? this.mergeSentenceAudioCrossScreenScreens(this.baseScreens)
         : this.screens);
       this.assignScreenProgressAnchors();
-      this.renderScreen(this.screenIndexForProgress(progress), true);
+      var index = this.screenIndexForCharOffset(
+        anchorCharOffset === undefined ? -1 : anchorCharOffset);
+      if (index < 0) index = this.screenIndexForProgress(progress);
+      this.renderScreen(index, true);
+    };
+  }
+  // BUG-2261：样式实时下发的两阶段重锚入口（与分页/连续 shell 同名同契约：begin 同步
+  // 换 CSS + 采锚、返回字符偏移或 -1；commit 在 Dart postFrame settle 后落位）。VN 曾整体
+  // 缺席这对方法 → Dart 侧 gate 开时把换 CSS 全托付给它，结果 CSS 一次都没换，字号/
+  // 边距/主题等纯 CSS 设置在 VN 下退出重进才生效。VN 没有滚动轴，「落位」= 按新 CSS
+  // 重切屏后翻到原来那一屏的字符偏移；没有 _reanchorPending 旗要置（VN 不回传 scroll）。
+  if (typeof vn.beginStyleReanchor !== 'function') {
+    vn.beginStyleReanchor = function(styleEl, css) {
+      var charOffset = this.getFirstVisibleCharOffset();
+      if (styleEl) styleEl.textContent = css;
+      if (this.paginationMetrics !== undefined) this.paginationMetrics = null;
+      if (!(charOffset >= 0)) return -1;
+      this._styleReanchorOffset = charOffset;
+      return charOffset;
+    };
+  }
+  if (typeof vn.commitStyleReanchor !== 'function') {
+    vn.commitStyleReanchor = function() {
+      var off = this._styleReanchorOffset;
+      this._styleReanchorOffset = undefined;
+      if (!(off >= 0)) return false;
+      this.refitScreensToCurrentViewport(off);
+      return true;
     };
   }
   if (typeof vn.updatePageSize !== 'function') {

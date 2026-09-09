@@ -1,11 +1,9 @@
 import 'dart:io';
 import 'dart:isolate';
-
 import 'package:fushi_audio/fushi_audio_core.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
-
-import 'package:asr_core/asr_core.dart';
+import 'package:fushi_asr_core/asr_core.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi_engine/epub/epub_parser.dart';
 import 'package:fushi_engine/media/audiobook/subtitle_rematch_policy.dart';
@@ -80,7 +78,7 @@ class AudiobookAlignmentMessages {
 /// 后面全部错位，而下游照样跑完、照样落库、UI 完全正常，只是跳播位置全偏——没有
 /// 任何断言会红。**行号错位比没有更糟**，所以宁可一条都不挂。
 ///
-/// 抽包之后 `asr_core` 只负责「读 sidecar 并回读到的行」（`readCueTokenTimings`），
+/// 抽包之后 `fushi_asr_core` 只负责「读 sidecar 并回读到的行」（`readCueTokenTimings`），
 /// 挂到哪种 cue 类型上是宿主的事，长度校验也就落在这里。
 Future<bool> attachAsrCueTokenTiming(
   List<AudioCue> cues,

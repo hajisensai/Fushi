@@ -1,0 +1,9 @@
+## BUG-2361 · 八参数Siglus捕获台词后点击正文直接推进且无查词命中
+- **报告**：2026-09-08（用户：Angel Beats! 点击台词还是不行）
+- **真实性**：✅ 真 bug。原版启动器经 Fushi 日语转区启动；八参数 message 已选中。真实按下记录在 WM 与 GetKeyState 两条路径均为 `kTargetInvalid`，点击放行后进入下一句。`siglus_lookup.h` 的 `UpdateSiglusLookupLayout` 要求最后完整台词匹配结束位置等于 capture 尾部；`siglus_lookup.inc` 原逐字发布计数使 worker 截到下一轮重绘前缀，撤销仍在显示的完整布局。运行时正文、binding、worker occurrence 均为 14，15 个字形已完整匹配，最近 32 个字形均无 invalid 标记，排除线程误选及解码失败。
+- **[x] ① 修复** — 八参数回调沿已验证 glyph vector 取得 ordinal/count，收齐同一正文发生、surface、capture epoch 的完整有序批次；写完全部 transport slots 后一次提交可见 frontier。实际字形变化、错序、解码失败和提前终止仍撤销旧批次；正常相同重绘前缀不会清空目标。实现见 `siglus_eightarg_glyph_batch.h`、`siglus_lookup_glyph_batch_transport.inc` 与 `siglus_lookup_glyph.inc`。提交见本文件所在修复提交。
+- **[x] ② 自动化测试** — `siglus_eightarg_glyph_batch_test.cpp` 覆盖有序完整性、身份/epoch、错序、重复、容量、变化与恢复；`siglus_lookup_worker_test.cpp` 在每个 slot 写入时运行真实 consumer，200 轮跨 ring wrap 验证不暴露半轮重绘、失效后同句恢复及拒绝旧 occurrence；`siglus_glyph_abi_test.cpp` 验证提前终止和解码失败的 invalidation。
+- **运行复测**：v14 双架构全构建及 CTest 112/112、108/108 通过。原始 Start.exe 转区启动后的 PID 77612 实际 DLL 哈希与候选一致；读取同一存档后，15 字形布局持续有效，WM down 两次均为 `kLookupOwned`，不再误翻页。但没有对应 GetKeyState down，click queue 为 0：`siglus_lookup_click_policy.inc` 原 WM 路径丢弃命中 payload，完全依赖另一轮询通道观察短按，导致吞点击后不查词。
+- **后续修复**：八参数沿已证明的 exact WM sink 冻结 down payload，up 重验正文、几何、epoch、前台和输入准入后只提交一次；GetKeyState 仅屏蔽输入，不再承担该家族的提交。取消及失焦撤销票据，已拥有的 up 仍屏蔽。实现见 `siglus_lookup_message_transaction.inc`；窗口线程身份在读写票据前核验，弹框按住尾部使用独立业务状态保持屏蔽。
+- **最终验证**：v15 Windows x86/x64 全构建退出 0，完整 CTest 分别 113/113、109/109；新增真实 click policy 事务测试每架构 179 项检查，涵盖仅 WM 短点击、采样交错、重复 up、取消/失焦、跨线程、丢失 up、弹框按住及十/十六参数回归。生成检查、manifest 22、结构 50、workflow 6、生产 replay 均退出 0。原始 Start.exe 经 Fushi 日语转区重启后，游戏 PID 73784、helper 69692，实际 x86 DLL `d38d5061…86c4` 与部署一致。实机两句共 3 次点词均显示词典；弹框保持、关闭后同句再次查词、外点仅关闭、随后正常推进及新句查词均通过。当前文本代次由 `1/7` 更新为 `2/13`，未沿用旧句目标。
+- **备注**：私有运行证据仅存元数据，未入库游戏载荷。语音配对和真卡 E2E 尚未完成，不升级引擎支持声明。

@@ -20,6 +20,7 @@ import 'package:fushi/src/pages/implementations/jimaku_entry_picker.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 import '../helpers/test_platform_services.dart';
+import '../torrent/nyaa_html_fixture.dart';
 
 /// 番剧下载「发现」流 UX 回归：
 /// - Nyaa 搜索网络故障不再吞成「无结果」/统一文案：错误态展示真实异常串 +
@@ -54,32 +55,22 @@ const NyaaTorrent _kTorrent = NyaaTorrent(
   pubDate: null,
 );
 
-String _rssItem({
-  required String title,
-  required String hash,
-  required int seeders,
-  required String size,
-}) {
-  return '''
-  <item>
-    <title>$title</title>
-    <link>https://nyaa.si/download/$hash.torrent</link>
-    <guid>https://nyaa.si/view/$hash</guid>
-    <nyaa:infoHash>$hash</nyaa:infoHash>
-    <nyaa:seeders>$seeders</nyaa:seeders>
-    <nyaa:size>$size</nyaa:size>
-  </item>''';
-}
-
-final String _kSortRss = '''
-<?xml version="1.0" encoding="utf-8"?>
-<rss version="2.0" xmlns:nyaa="https://nyaa.si/xmlns/nyaa">
-  <channel>
-${_rssItem(title: 'seeders-top', hash: 'a' * 40, seeders: 300, size: '1 GiB')}
-${_rssItem(title: 'size-top', hash: 'b' * 40, seeders: 10, size: '10 GiB')}
-${_rssItem(title: 'middle', hash: 'c' * 40, seeders: 100, size: '5 GiB')}
-  </channel>
-</rss>''';
+/// 三条做种数 / 体积交错的结果（排序用例）。
+final String _kSortHtml = nyaaSearchHtml(<NyaaHtmlRow>[
+  NyaaHtmlRow(
+    title: 'seeders-top',
+    infoHash: 'a' * 40,
+    seeders: 300,
+    size: '1 GiB',
+  ),
+  NyaaHtmlRow(
+    title: 'size-top',
+    infoHash: 'b' * 40,
+    seeders: 10,
+    size: '10 GiB',
+  ),
+  NyaaHtmlRow(title: 'middle', infoHash: 'c' * 40, seeders: 100, size: '5 GiB'),
+]);
 
 /// 纯内存计划存储（widget 测试不碰真实文件）。字幕暂存目录落到临时目录，
 /// 避免推送流程往仓库工作区写字幕文件。
@@ -278,10 +269,8 @@ void main() {
   testWidgets('Nyaa 真 0 条：展示实际查询词与筛选；损坏 feed 不伪装成无结果', (
     WidgetTester tester,
   ) async {
-    const String emptyRss =
-        '<rss><channel><title>valid empty</title></channel></rss>';
     final _FakeAppModel emptyModel = _FakeAppModel(
-      (http.Request req) async => http.Response(emptyRss, 200),
+      (http.Request req) async => http.Response(kNyaaNoResultsHtml, 200),
     );
     await pumpDialog(tester, emptyModel);
     await tester.tap(find.byTooltip(t.anime_download_search).first);
@@ -297,7 +286,7 @@ void main() {
       findsOneWidget,
     );
 
-    // 损坏 RSS 必须落错误态并带真实解析原因，不能再显示「无结果」。
+    // 不是搜索页的响应必须落错误态并带真实解析原因，不能再显示「无结果」。
     await tester.pumpWidget(const SizedBox.shrink());
     final _FakeAppModel brokenModel = _FakeAppModel(
       (http.Request req) async => http.Response('not xml <<<', 200),
@@ -306,7 +295,7 @@ void main() {
     await tester.tap(find.byTooltip(t.anime_download_search).first);
     await tester.pumpAndSettle();
     expect(find.text(t.anime_download_search_failed), findsOneWidget);
-    expect(find.textContaining('malformedXml'), findsOneWidget);
+    expect(find.textContaining('missingStructure'), findsOneWidget);
     expect(find.text(t.anime_download_no_results), findsNothing);
   });
 
@@ -314,13 +303,11 @@ void main() {
     WidgetTester tester,
   ) async {
     final Completer<http.Response> oldResponse = Completer<http.Response>();
-    const String emptyRss =
-        '<rss><channel><title>valid empty</title></channel></rss>';
     final _FakeAppModel appModel = _FakeAppModel((http.Request req) async {
       if (req.url.queryParameters['q'] == 'old query') {
         return oldResponse.future;
       }
-      return http.Response(emptyRss, 200);
+      return http.Response(kNyaaNoResultsHtml, 200);
     });
     await pumpDialog(tester, appModel);
 
@@ -349,7 +336,7 @@ void main() {
     expect(find.textContaining('Query: new query;'), findsOneWidget);
     expect(find.textContaining('Query: unsent current text;'), findsNothing);
 
-    oldResponse.complete(http.Response(_kSortRss, 200));
+    oldResponse.complete(http.Response(_kSortHtml, 200));
     await tester.pumpAndSettle();
     expect(find.text(t.anime_download_no_results), findsOneWidget);
     expect(
@@ -361,7 +348,7 @@ void main() {
 
   testWidgets('选种结果排序：默认做种数降序，切「体积」就地重排', (WidgetTester tester) async {
     final _FakeAppModel appModel = _FakeAppModel((http.Request req) async {
-      return http.Response.bytes(_kSortRss.codeUnits, 200);
+      return http.Response.bytes(_kSortHtml.codeUnits, 200);
     });
     await pumpDialog(tester, appModel);
 

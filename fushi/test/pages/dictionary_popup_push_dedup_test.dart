@@ -567,6 +567,10 @@ class PushDedupAppModel extends AppModel {
   double get popupWheelSpeed => 1.0;
   @override
   bool get popupInstantScroll => false;
+  // BUG-2284：与 popupInstantScroll 同批新增的注入项；本 fake 的 prefsRepo 为 null，
+  // 不覆写就会在 _pushResults 里抛 null check，pushCount 归零。
+  @override
+  bool get compactGlossaries => false;
   @override
   int get popupDictionaryColumns => 1;
   @override

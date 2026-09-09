@@ -16,9 +16,10 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:args/args.dart';
-import 'package:asr_core/asr_core.dart' as asr;
+import 'package:fushi_asr_core/asr_core.dart' as asr;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
+import 'package:fushi_engine/utils/net/app_proxy.dart';
 import 'package:fushi_server/src/admin/admin_context.dart';
 import 'package:fushi_server/src/admin/admin_server.dart';
 import 'package:fushi_server/src/config/server_config.dart';
@@ -179,6 +180,12 @@ Future<int> _withRuntime(
   );
   await log.open();
   installServerHostBindings(config: config, paths: paths, log: log);
+  // 与 app 侧 `AppModel.initialise()` 对偶：`createAppHttpClient()` 的 auto 模式
+  // 要读这份缓存，不 prime 的话服务端只认 HTTP(S)_PROXY 环境变量，系统代理设置
+  // 一律看不见（装在有桌面环境的 Linux / macOS 上就会莫名其妙地直连）。
+  // 无头机器上解析不出系统代理是正常情况：`primeAppProxy` 约定失败即空 map、
+  // 绝不抛，等价于此前的直连行为。
+  await primeAppProxy();
   final String? ffmpegProblem = await validateFfmpeg(config);
   if (ffmpegProblem != null) log.info(ffmpegProblem);
   final FushiDatabase db = FushiDatabase(paths.support.path);

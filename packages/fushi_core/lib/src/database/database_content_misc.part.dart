@@ -344,6 +344,38 @@ mixin _FushiDbContentMisc
     ));
   }
 
+  /// 按 uid 写零（会话流「删这一次会话」的段侧原语，与 [zeroStudySegmentsOnDays]
+  /// 同语义：零值 = 一次新的绝对值写，经 uid LWW 同步传到对端；**不**立按身份的
+  /// 墓碑——墓碑压制 `startAt < deletedAt` 的全部段，会连这本书的整段历史一起压死）。
+  /// 返回改写的行数。
+  Future<int> zeroStudySegmentsByUids(Set<String> uids) {
+    if (uids.isEmpty) return Future<int>.value(0);
+    return (update(studySegments)..where((t) => t.uid.isIn(uids)))
+        .write(StudySegmentsCompanion(
+      durationMs: const Value(0),
+      chars: const Value(0),
+      pages: const Value(0),
+      updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
+    ));
+  }
+
+  /// 删一次学习会话（统计页会话流每行的垃圾桶）：组成它的段写零（同步安全）；游戏
+  /// 会话另有 `galgame_sessions` 骨架行 [gameSessionId]，硬删（游戏统计不出本机，
+  /// BUG-2221）。同一事务。不动收藏 / 制卡历史 / 查词计数、不立墓碑、不动视频覆盖并集
+  /// （与按天删同一「只清纯统计」边界）。
+  Future<void> deleteStudySession({
+    required Set<String> segmentUids,
+    int? gameSessionId,
+  }) =>
+      transaction(() async {
+        await zeroStudySegmentsByUids(segmentUids);
+        if (gameSessionId != null) {
+          await (delete(galgameSessions)
+                ..where((t) => t.id.equals(gameSessionId)))
+              .go();
+        }
+      });
+
   /// 时段明细 sheet 的「删这一条」（BUG-2108 用户诉求：看着不对的数据要能删）：
   /// 删某媒体在 [dateKeys] 这几天的**全部统计事实**——正是 sheet 那一行求和用到的
   /// 行集，不多不少。

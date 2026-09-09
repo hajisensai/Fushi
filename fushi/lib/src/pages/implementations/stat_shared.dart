@@ -1,10 +1,164 @@
 import 'package:flutter/material.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/activity_feed.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_hourly_breakdown.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
+
+/// 三个域统计页「按媒体」列表共用的一行（用户 2026-09-08「统计全改成游戏那种」：
+/// 原游戏页 `_buildGameRow` 的形态提成共享件）：左域图标 · 标题（+ 合集标签）·
+/// 一到两行 meta · 右侧主值（时长）· 有 [onTap] 时带 chevron。
+/// [onDelete] 挂在移动端长按 + 桌面端右键（经 [ContextMenuTrigger] 走绑定表，BUG-2111）。
+Widget buildStatMediaRow(
+  BuildContext context, {
+  required IconData icon,
+  required String title,
+  required String meta,
+  required String trailing,
+  String? collectionName,
+  String? meta2,
+  VoidCallback? onTap,
+  VoidCallback? onDelete,
+}) {
+  final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+  final ColorScheme colors = Theme.of(context).colorScheme;
+  final TextStyle metaStyle = tokens.type.metadata.copyWith(
+    color: colors.onSurfaceVariant,
+  );
+  final Widget card = FushiCard(
+    onTap: onTap,
+    onLongPress: onDelete,
+    child: Row(
+      children: <Widget>[
+        Icon(icon, color: colors.primary),
+        SizedBox(width: tokens.spacing.gap),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodyLarge,
+              ),
+              if (collectionName != null) ...<Widget>[
+                SizedBox(height: tokens.spacing.gap / 4),
+                buildStatCollectionLabel(context, collectionName),
+              ],
+              SizedBox(height: tokens.spacing.gap / 2),
+              Text(
+                meta,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: metaStyle,
+              ),
+              if (meta2 != null) ...<Widget>[
+                SizedBox(height: tokens.spacing.gap / 4),
+                Text(
+                  meta2,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: metaStyle,
+                ),
+              ],
+            ],
+          ),
+        ),
+        SizedBox(width: tokens.spacing.gap),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 120),
+          child: Text(
+            trailing,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+        ),
+        if (onTap != null) ...<Widget>[
+          SizedBox(width: tokens.spacing.gap / 2),
+          Icon(Icons.chevron_right, color: colors.onSurfaceVariant),
+        ],
+      ],
+    ),
+  );
+  return Padding(
+    padding: EdgeInsets.symmetric(
+      horizontal: tokens.spacing.card,
+      vertical: tokens.spacing.gap / 2,
+    ),
+    child: onDelete == null
+        ? card
+        : ContextMenuTrigger(
+            onInvoke: contextMenuInvoker(onDelete),
+            child: card,
+          ),
+  );
+}
+
+/// 统计页「分析」折叠区：三个域 tab 收敛到「时段卡 → 每日图 → 最近会话 → 按媒体」
+/// 的游戏页骨架后，阅读页的 KPI 条 / 趋势 / 今日环 / 速度摘要 / 来源分布 / 小时×格式
+/// 与视频页的小时分布都下沉到这里，默认收起。纯 UI 状态，不持久化。
+class StatAnalysisFold extends StatefulWidget {
+  const StatAnalysisFold({required this.children, super.key});
+
+  /// 展开后按序堆叠的区块（各区块自带横向留白）。
+  final List<Widget> children;
+
+  @override
+  State<StatAnalysisFold> createState() => _StatAnalysisFoldState();
+}
+
+class _StatAnalysisFoldState extends State<StatAnalysisFold> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Padding(
+          padding: EdgeInsets.fromLTRB(
+            tokens.spacing.card,
+            tokens.spacing.card + tokens.spacing.gap,
+            tokens.spacing.card,
+            0,
+          ),
+          child: Material(
+            type: MaterialType.transparency,
+            child: InkWell(
+              borderRadius: FushiBorderRadius.card,
+              onTap: () => setState(() => _expanded = !_expanded),
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
+                child: Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Text(
+                        t.stat_analysis,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ),
+                    Icon(
+                      _expanded ? Icons.expand_less : Icons.expand_more,
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        if (_expanded) ...widget.children,
+      ],
+    );
+  }
+}
 
 /// 阅读、视频与游戏统计页共用的聚合 / 格式化 / 页面状态 / 卡片与图表辅助。
 
@@ -209,7 +363,7 @@ Widget buildStatDailyDurationChartSection(
                 color: colorScheme.onSurfaceVariant,
               ),
               valueOf: statMsValue,
-              labelFormatter: formatStatDurationAxis,
+              axisScaleOf: statDurationAxisScale,
             ),
           ),
         ),
@@ -436,6 +590,15 @@ Map<String, int> aggregateStatFavoritesByTitle(List<FavoriteWordRow> rows) {
   return out;
 }
 
+/// 一次会话的时间范围文案：`2026-07-24 21:03 → 22:41`（游戏详情页会话列表与统计页
+/// 会话流同一口径）。委托 [FushiTimeFormat]（起点 = dateHourMinute，终点 = hourMinute）。
+String formatStatSessionRange(int startMs, int endMs) {
+  final DateTime start = DateTime.fromMillisecondsSinceEpoch(startMs);
+  final DateTime end = DateTime.fromMillisecondsSinceEpoch(endMs);
+  return '${FushiTimeFormat.dateHourMinute(start)} → '
+      '${FushiTimeFormat.hourMinute(end)}';
+}
+
 /// 统计页时长外显：不足 1 小时套 i18n 分钟文案，否则套 i18n 时+分文案。
 String formatStatTime(int ms) {
   final int totalMin = ms ~/ 60000;
@@ -445,14 +608,97 @@ String formatStatTime(int ms) {
   return t.stat_format_hours_minutes(h: h, m: m);
 }
 
-/// 统计页字数外显：≥1 万套「万」文案（保留 1 位小数），否则整数字文案。
-/// 与阅读统计页原私有 `_formatChars` 同口径，供热力图气泡等复用（机械去重）。
-String formatStatChars(int chars) {
-  if (chars >= 10000) {
-    return t.stat_format_chars_wan(n: (chars / 10000).toStringAsFixed(1));
-  }
-  return t.stat_format_chars(n: chars);
+/// 每日 / 每周字数目标编辑对话框。写 0 = 清除（隐藏）该目标。返回 true 表示用户
+/// 点了保存并已写穿偏好，调用方据此重建。
+///
+/// 阅读统计 tab 与统计中心总览 tab 编辑的是**同一个**持久化目标
+/// （`readingGoal*Chars`），所以只有一份表单；两处各写一份的话，单位、清零语义和
+/// 校验规则一改就只改到一处。
+Future<bool> showStatGoalEditDialog(
+  BuildContext context,
+  AppModel appModel,
+) async {
+  final TextEditingController dailyController = TextEditingController(
+    text: appModel.readingGoalDailyChars == 0
+        ? ''
+        : appModel.readingGoalDailyChars.toString(),
+  );
+  final TextEditingController weeklyController = TextEditingController(
+    text: appModel.readingGoalWeeklyChars == 0
+        ? ''
+        : appModel.readingGoalWeeklyChars.toString(),
+  );
+
+  final bool? saved = await showDialog<bool>(
+    context: context,
+    builder: (BuildContext dialogContext) {
+      final FushiDesignTokens tokens = FushiDesignTokens.of(dialogContext);
+      return AlertDialog(
+        title: Text(t.stat_goal_set),
+        // helperText 让内容变高：横屏/小窗下用滚动兜底，不再顶到溢出。
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              // BUG-1075：单位（与首页仪表盘目标对话框同一批 i18n key，两处编辑的是
+              // 同一个持久化目标）。口径说明行已按用户要求删除——统计口径由实际计入的
+              // 来源（阅读/漫画/视频字幕/游戏文本）自解释，不再在文案里逐项列举。
+              TextField(
+                controller: dailyController,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: t.stat_goal_daily,
+                  suffixText: t.stat_goal_unit_chars,
+                ),
+              ),
+              SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
+              TextField(
+                controller: weeklyController,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: t.stat_goal_weekly,
+                  suffixText: t.stat_goal_unit_chars,
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(t.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(t.dialog_save),
+          ),
+        ],
+      );
+    },
+  );
+
+  final String dailyText = dailyController.text.trim();
+  final String weeklyText = weeklyController.text.trim();
+  dailyController.dispose();
+  weeklyController.dispose();
+
+  if (saved != true) return false;
+
+  final int daily = int.tryParse(dailyText) ?? 0;
+  final int weekly = int.tryParse(weeklyText) ?? 0;
+  await appModel.setReadingGoalDailyChars(daily < 0 ? 0 : daily);
+  await appModel.setReadingGoalWeeklyChars(weekly < 0 ? 0 : weekly);
+  return true;
 }
+
+/// 统计页字数外显：数字部分走当前语言的紧凑写法（[formatCompactCount]：CJK
+/// `6.8万`、其余语言 `68K`），再套上 i18n 的「N characters」文案。
+///
+/// 倍率单位不再进 i18n 词条——它是语言属性而非可翻译文案，旧的
+/// `stat_format_chars_wan` 键把中文万进制硬贴给了 13 种非 CJK 语言（BUG-935）。
+/// 全统计页只此一份实现（阅读页原私有 `_formatChars` 已并入）。
+String formatStatChars(int chars) =>
+    t.stat_format_chars(n: formatStatCharsAxis(chars));
 
 /// 相对时间外显：把 [activityRelativeTime] 的结构化结果套上 i18n 文案
 /// （刚刚 / N 分钟前 / N 小时前 / N 天前）。

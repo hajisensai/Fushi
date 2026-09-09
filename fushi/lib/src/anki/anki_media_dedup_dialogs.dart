@@ -63,6 +63,17 @@ Future<AnkiMediaDedupReport?> runAnkiMediaDedupWithProgress(
                   child: Text(
                       requested ? t.anki_dedup_cancelling : t.dialog_cancel),
                 ),
+              )
+            else
+              // 但也不能一颗按钮都不给：本框是 `barrierDismissible: false` +
+              // `PopScope(canPop: false)`，iOS 既没有系统返回键、对话框路由也没有
+              // 侧滑返回，于是唯一的关闭点只剩任务结束时 finally 里那次 pop——而
+              // 远端制卡后端（iOS 上的主力，本机无 AnkiDroid）那条请求超时是 30
+              // 分钟，主机一休眠/掉线就是半小时全屏死锁，只能杀进程。这颗按钮只把
+              // UI 与请求解绑（任务照跑），不谎称能停任务，与上面那条注释不冲突。
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: Text(t.dialog_background_close),
               ),
           ],
         ),

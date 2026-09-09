@@ -102,7 +102,7 @@
 | autostart | 播放推进算 `pageturn` 输入（iOS 分页 / 滚动都触发；Android 仅 `countStatistics=true` 分支） | 开书即计，不适用 |
 | 后台 / 锁屏播放 | 音频继续；tick 停、回前台重置基线 → **后台听的时长与字数都丢** | `paused / inactive` 都停表、`addChars` 丢弃；退出页面后台续播时 `StudyClock` 随页面 dispose，**完全没有统计写入方**。缺口与 Hoshi 相同 |
 | 面板 | Android：Sasayaki 面板停统计；iOS：任何面板都不停 | 有声书面板 / 导入 / 对齐 / ASR sheet 都停（`_withStudyClockPaused`）；底部播放条不停 |
-| 关书 | iOS 返回键 `stopTracking → flushStats`，swipe-dismiss 路径未见 flush；Android `closeReader` 先存位置再停播放 | `onSourcePagePop`：flush 位置 → `leave()` → `_flushReadingStats()`；进程退出同序 |
+| 关书 | iOS 返回键 `stopTracking → flushStats`，swipe-dismiss 路径未见 flush；Android `closeReader` 先存位置再停播放 | `onSourcePagePop`：flush 位置 → `_flushReadingStats()`，**不碰账本**（BUG-2264，2026-09-08 改：关书不是翻走，站着的那页下次打开翻走时才计；此前 `leave()` 让落地页一字没读也入账、开关一次涨一次）；进程退出同序 |
 | UI 展示 | 无听书项（Session / Today / All Time 三段） | 无听书项（会话 / 今日 / 累计 / 预计读完；统计中心 overview / reading / video / game） |
 
 ## 2. 边界条件（现状 → 新模型）

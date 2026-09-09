@@ -169,8 +169,15 @@ void main() {
     final base = read('lib/src/pages/base_source_page.dart');
     expect(base.contains('Future<MinePopupResult> onMinedCardActionFromPopup('),
         isTrue);
+    // 钉不变式而不是某一种写法：制卡模块关掉时这条接线变成
+    // `onMinedCardAction: cardCreationEnabled ? onMinedCardActionFromPopup : null`
+    // 并换了行，接线本身没断。写死整串实参会让这类合法改动无辜变红。
     expect(
-        base.contains('onMinedCardAction: onMinedCardActionFromPopup'), isTrue);
+      RegExp(r'onMinedCardAction:[\s\S]{0,120}?onMinedCardActionFromPopup')
+          .hasMatch(base),
+      isTrue,
+      reason: 'host lane 必须把 onMinedCardActionFromPopup 接进弹窗层（允许模块闸）',
+    );
     expect(base.contains('runAnkiMinedCardAction('), isTrue);
   });
 

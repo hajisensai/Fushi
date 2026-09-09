@@ -32,8 +32,15 @@ void main() {
     expect(pagesCredited, 1);
     onPageChanged(2);
     expect(pagesCredited, 2);
-    ledger.leave(); // 关书：结算停在的第 2 页
-    expect(pagesCredited, 3);
+    // 关书不碰账本（BUG-2264）：停在的第 2 页下次打开翻走时才计。
+    expect(ledger.current, (2, 3));
+  });
+
+  test('开书落在第 5 页、不翻就关（BUG-2264）：开关多少次都不计', () {
+    for (int i = 0; i < 5; i++) {
+      onPageChanged(5);
+      expect(pagesCredited, 0, reason: '第 ${i + 1} 次：落地页不是翻走的页');
+    }
   });
 
   test('回翻：撤回落点之后已计的页；再前翻按并集恢复；越过最远处的新页照常计', () {

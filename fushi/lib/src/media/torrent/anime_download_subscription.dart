@@ -409,6 +409,9 @@ class AnimeDownloadSubscriptionService {
             subscription.nyaaQuery,
             category: subscription.category,
             filter: subscription.trustedOnly ? '2' : '0',
+            // 订阅追的是「最新集」：一页只有 75 条，长篇（One Piece 级）按做种
+            // 排会把刚出的新集挤出首页。按发布时间倒序保住旧 RSS 语义。
+            sort: NyaaSort.date,
           )
           .timeout(kDownloadDiscoveryTimeout);
     } finally {

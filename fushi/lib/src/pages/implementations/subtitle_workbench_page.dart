@@ -137,11 +137,15 @@ class SubtitleWorkbenchPage extends StatefulWidget {
 
   final SubtitleWorkbenchScope initialScope;
 
-  /// 推整页路由。返回「本集」作用域下载落盘的字幕绝对路径（用户直接返回为 null）。
+  /// 推整页路由。返回「本集」作用域下载落盘的**全部**字幕绝对路径，按用户勾选
+  /// 顺序（用户直接返回为 null）。
+  ///
+  /// 多选下载完成后由调用方「全部登记进字幕轨列表、只应用第一条」——单值返回
+  /// 表达不了这件事，所以这里是 List。
   ///
   /// `fullscreenDialog` + root navigator：播放页全屏态自建的路由在 root 上，工作台
   /// 必须盖在它之上；关闭后由调用方归还播放器焦点。
-  static Future<String?> open(
+  static Future<List<String>?> open(
     BuildContext context, {
     required SubtitleWorkbenchHost host,
     required String saveDirectory,
@@ -149,8 +153,8 @@ class SubtitleWorkbenchPage extends StatefulWidget {
     SubtitleCollectionSpec? collection,
     SubtitleWorkbenchScope initialScope = SubtitleWorkbenchScope.episode,
   }) {
-    return Navigator.of(context, rootNavigator: true).push<String>(
-      MaterialPageRoute<String>(
+    return Navigator.of(context, rootNavigator: true).push<List<String>>(
+      MaterialPageRoute<List<String>>(
         fullscreenDialog: true,
         builder: (_) => SubtitleWorkbenchPage(
           host: host,
@@ -196,7 +200,8 @@ class _SubtitleWorkbenchPageState extends State<SubtitleWorkbenchPage> {
       initialPreferredLanguage: host.preferredLanguageFor(spec.seriesKey),
       onPreferredLanguageChanged: (String lang) =>
           host.setPreferredLanguage(spec.seriesKey, lang),
-      onDownloaded: (String path) => Navigator.of(context).pop(path),
+      onDownloaded: (List<String> paths) =>
+          Navigator.of(context).pop(paths),
     );
   }
 

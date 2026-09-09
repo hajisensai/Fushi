@@ -68,13 +68,25 @@ void main() {
     expect(libDir.existsSync(), isTrue,
         reason: '需在 fushi/ 包根下运行（flutter test 默认即是）');
 
+    // 唯一允许的实现本身就住在引擎里（safe_file_name.dart），扫描面却不含引擎——
+    // 那等于「例外在场内、规矩只管场外」。
+    const List<String> scanRoots = <String>[
+      'lib',
+      '../packages/fushi_engine/lib',
+      '../packages/fushi_server/lib',
+    ];
+
     final List<String> violations = <String>[];
-    final Iterable<File> files = libDir
-        .listSync(recursive: true)
-        .whereType<File>()
-        .where((File f) => f.path.endsWith('.dart'));
+    final Iterable<File> files = <File>[
+      for (final String rel in scanRoots)
+        if (Directory(rel).existsSync())
+          ...Directory(rel)
+              .listSync(recursive: true)
+              .whereType<File>()
+              .where((File f) => f.path.endsWith('.dart')),
+    ];
     expectScanScale(files.length,
-        what: 'lib/ 下的 .dart', atLeast: 750, measured: 939);
+        what: 'lib/ 下的 .dart', atLeast: 1120, measured: 1401);
     for (final File f in files) {
       final String rel = f.path.replaceAll(r'\', '/');
       if (rel == _allowedFile || rel.endsWith('/$_allowedFile')) continue;

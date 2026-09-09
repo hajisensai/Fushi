@@ -671,6 +671,11 @@ extension _ReaderCaret on _ReaderFushiPageState {
         return KeyEventResult.handled;
       case ShortcutAction.readerOpenAudiobook:
         // 一键打开有声书面板（默认 B）；没挂有声书时直接进导入。
+        // 「听书」模块关掉时本键**不消费**（ignored 而非 handled）：吃掉按键会让
+        // 同一个键上可能存在的通用动作也跟着失效，而模块关掉只该关自己的入口。
+        if (!_moduleVisibility.isEnabled(ModuleId.listening)) {
+          return KeyEventResult.ignored;
+        }
         if (isDictionaryShown) {
           clearDictionaryResult();
           return KeyEventResult.handled;
@@ -706,19 +711,34 @@ extension _ReaderCaret on _ReaderFushiPageState {
         }
         return KeyEventResult.handled;
       case ShortcutAction.readerCreateCardFromPopup:
-        final Future<void>? mining =
-            _caretTopPopupState?.mineFirstVisibleEntry();
+        // 「制卡」模块关掉时不消费（同 readerOpenAudiobook 的 ignored 理由）。
+        if (!_moduleVisibility.isEnabled(ModuleId.cardCreation)) {
+          return KeyEventResult.ignored;
+        }
+        final Future<void>? mining = _caretTopPopupState
+            ?.mineFirstVisibleEntry();
         if (mining != null) {
           unawaited(mining);
         }
         return KeyEventResult.handled;
+      // 三个有声书传输键同属 [ShortcutScope.audiobook]，「听书」模块关掉时统一
+      // 不消费（ignored），让键继续冒泡给可能绑同一键的通用动作。
       case ShortcutAction.audiobookPlayPause:
+        if (!_moduleVisibility.isEnabled(ModuleId.listening)) {
+          return KeyEventResult.ignored;
+        }
         _audiobookController?.togglePlayPause();
         return KeyEventResult.handled;
       case ShortcutAction.audiobookNextSentence:
+        if (!_moduleVisibility.isEnabled(ModuleId.listening)) {
+          return KeyEventResult.ignored;
+        }
         _audiobookController?.skipToNextCue();
         return KeyEventResult.handled;
       case ShortcutAction.audiobookPrevSentence:
+        if (!_moduleVisibility.isEnabled(ModuleId.listening)) {
+          return KeyEventResult.ignored;
+        }
         _audiobookController?.skipToPrevCue();
         return KeyEventResult.handled;
       default:

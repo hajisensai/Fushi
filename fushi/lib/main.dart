@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui' show PlatformDispatcher;
+import 'dart:ui' show AppExitResponse, PlatformDispatcher;
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -25,6 +25,7 @@ import 'package:fushi/models.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/popup_main.dart' as popup_entrypoint;
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/sync/dropbox_sync_backend.dart';
 import 'package:fushi/src/sync/onedrive_sync_backend.dart';
@@ -38,7 +39,7 @@ import 'package:fushi/src/utils/misc/present_watchdog.dart';
 import 'package:fushi/src/utils/misc/shortcut_icon_sync.dart';
 import 'package:fushi/src/utils/misc/wgc_capture_log.dart';
 import 'package:fushi/src/utils/window_caption_channel.dart';
-import 'package:fushi/src/utils/components/fushi_windows_title_bar.dart';
+import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/utils/adaptive/fushi_macos_theme.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/shortcuts/global_navigation.dart';
@@ -56,6 +57,7 @@ import 'package:fushi/src/sync/sync_settings_schema.dart'
     show backupImportRestart, dataRootMigrationRestart;
 import 'package:fushi/src/startup/webview_prewarm.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
+import 'package:fushi/src/startup/android_view_lifecycle.dart';
 import 'package:fushi/src/sync/book_exit_sync_scope.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/ankimobile_repository.dart';
@@ -193,7 +195,7 @@ void main([List<String> args = const <String>[]]) {
     // app-support 根里。bundle id 从 com.example.hibiki 改成 app.fushi.reader
     // 后旧域整份不可见，其中就有用户自选的数据根路径——只捞回那几个锚点键。
     await recoverLegacyMacosPrefsFromSharedPreferences();
-    // ASR 算法层住在独立包（asr_core），它的数据根 / 出站 HTTP / 日志三个装配点
+    // ASR 算法层住在独立包（fushi_asr_core），它的数据根 / 出站 HTTP / 日志三个装配点
     // 由宿主装上。放在这里而不是 `AppModel.initialise()`：装的全是同步工厂，没有
     // 时序前置条件，而 `initialise()` 有两个 entry point 绕开它（弹窗词典与悬浮
     // 词典），写在 main 里哪个入口都不会漏。
@@ -239,16 +241,27 @@ void main([List<String> args = const <String>[]]) {
     }
     if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
       await windowManager.ensureInitialized();
-      if (Platform.isWindows) {
+      if (Platform.isWindows || Platform.isMacOS) {
         // window_manager's Windows plugin implements setTitleBarStyle as a
         // string assignment + SetWindowPos and always reports success, so there
-        // is no failure mode to fall back from here. The app frame is therefore
-        // unconditional on Windows once the plugin is initialised.
+        // is no failure mode to fall back from here (the macOS plugin likewise
+        // just flips NSWindow properties). The app frame is therefore
+        // unconditional on both hosts once the plugin is initialised.
+        //
+        // macOS 走同一条路（用户拍板：两端同一个 MD3 顶栏）：`hidden` 在 macOS
+        // 上是 `titleVisibility=.hidden` + `titlebarAppearsTransparent` +
+        // `fullSizeContentView`，`windowButtonVisibility: false` 则把红黄绿三个
+        // 交通灯 `standardWindowButton(_).isHidden = true`。于是 macOS 不再有
+        // 系统交通灯，最小化/缩放/关闭全部由 [FushiDesktopTitleBar] 的 MD3 按钮
+        // 提供（AppKit 仍然自己拥有窗口四边的 resize 边框，不需要 app 代劳）。
+        // 这也一并根除了「交通灯浮在 Flutter 内容左上角」派生的一整串让位补丁
+        // （BUG-869 的 SafeArea 保留带、BUG-973 视频页临时隐藏、BUG-1343 阅读器
+        // 自绘拖拽带）。
         await windowManager.setTitleBarStyle(
           TitleBarStyle.hidden,
           windowButtonVisibility: false,
         );
-        FushiWindowsTitleBar.markEnabled();
+        FushiDesktopTitleBar.markEnabled();
       }
       // BUG-1619：主窗前台真值的唯一来源，必须在 window_manager 初始化之后、
       // 任何页面挂载之前起来——焦点闸门与焦点控制器都读它。
@@ -558,8 +571,23 @@ void main([List<String> args = const <String>[]]) {
       unawaited(Future(() async {
         try {
           await WidgetsBinding.instance.endOfFrame;
-          await GlobalLookupController.instance.start(appModel: appModel);
-          if (GalHookTextOverlayController.isSupported) {
+          // 两个控制器分属不同模块，各判各的门——**必须写成两条独立的 if**：
+          // 它们此前在同一个 try 里顺序执行，给第一个加 early return 会连带
+          // 跳过 galgame 浮窗（games 与 lookup 正交）。
+          //
+          // 「下次启动不再自启」的语义在这里是字面的：两个 start() 都只有单向
+          // 闩（`_started`）、生产路径没有 stop，所以关掉模块要到下次启动才
+          // 真的不装钩子；这正是用户选的「不切断进行中的任务」。
+          final ModuleVisibility modules = appModel.moduleVisibility;
+          if (modules.isEnabled(ModuleId.lookup)) {
+            // app 外全局取词：OS 级热键 + 鼠标侧键 RawInput + 手柄触发 + 离屏
+            // WebView2 预热，四条通道全部依附于这一次 start()。关掉查词模块
+            // 就不该再往系统里装钩子（快捷键设置页的 globalExternal 分区同步
+            // 隐藏，见 shortcut_settings_page）。
+            await GlobalLookupController.instance.start(appModel: appModel);
+          }
+          if (modules.isEnabled(ModuleId.games) &&
+              GalHookTextOverlayController.isSupported) {
             await GalHookTextOverlayController.instance
                 .start(appModel: appModel);
           }
@@ -672,6 +700,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   /// [didChangeAppLifecycleState] 的 `detached` 兜底重复触发。
   bool _shutdownStarted = false;
 
+  /// BUG-2259：macOS ⌘Q / 菜单退出 / Dock 退出的 Dart 侧落点（仅 macOS 注册，
+  /// 见 [initState]）。持有以便 [dispose] 注销。
+  AppLifecycleListener? _exitRequestListener;
+
   /// 退出总预算。窗口在 flush 开始前就已隐藏，这个上界只决定「进程最多在后台多待
   /// 多久」，不影响用户看到的关闭速度。取 6s：足够覆盖最坏情况下的 Mihon sidecar
   /// 关停（~1.8s）与关书同步 drain（5s 上界，实际多为 0），外加 checkpoint 余量。
@@ -681,7 +713,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   /// 缺；WAL 崩溃安全，超时放行只损失一次 checkpoint，不损失已提交的数据。
   static const Duration _closeDatabaseOnExitTimeout = Duration(seconds: 3);
 
-  Future<void>? _androidBackgroundFlushInFlight;
+  final AndroidViewLifecycle _androidViewLifecycle = AndroidViewLifecycle();
 
   /// 守卫：Windows 安装器 handoff reconcile 的 post-frame 调度只挂一个。
   bool _windowsUpdateHandoffScheduled = false;
@@ -743,6 +775,28 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     if (_isDesktop) {
       windowManager.addListener(this);
     }
+    // BUG-2259：macOS 的「退出应用」不是「关窗口」。window_manager 的
+    // setPreventClose(true) 只拦 NSWindow 的 windowShouldClose:（点红叉），而
+    // ⌘Q / 菜单「退出 Hibiki」/ Dock 右键退出 走的是 NSApplication 的
+    // applicationShouldTerminate:——它完全不经过 [onWindowClose]，于是整条
+    // [_flushAndExitForWindowClose]（窗口几何落盘 → ExitFlushRegistry 把活跃
+    // 阅读/听书/观看页尚未落库的位置与统计写穿 → 关书同步 drain → close
+    // database 做 WAL checkpoint）在 macOS 上最常用的退出方式下**一次都不跑**。
+    // 结果：阅读位置只剩 500ms 去抖那一档、有声书位置只剩「整秒变化」那一档、
+    // 阅读统计段落（StudyClock / ReadUnitLedger）整段丢失。
+    //
+    // AppLifecycleListener.onExitRequested 正是 applicationShouldTerminate: 在
+    // Dart 侧的落点（engine 的 FlutterAppDelegate 把该 selector 转成
+    // System.requestAppExit，framework 再派发给已注册的监听者），且系统会**等**
+    // 我们的 Future 完成后才终止进程——这正是 flush 需要的「退出前还活着」窗口。
+    // 只在 macOS 注册：Windows/Linux 的关闭信号已由 window_manager 的
+    // preventClose 完整覆盖，两条路同时挂只会让同一次退出跑两遍（虽有
+    // _shutdownStarted 幂等守卫，但没有收益）。
+    if (Platform.isMacOS) {
+      _exitRequestListener = AppLifecycleListener(
+        onExitRequested: _handleExitRequested,
+      );
+    }
     if (Platform.isWindows) {
       _externalVideoChannel.setMethodCallHandler(_handleExternalVideoChannel);
       _systemThemeChannel.setMethodCallHandler(_handleSystemThemeChannel);
@@ -793,18 +847,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       return;
     }
     if (Platform.isAndroid) {
-      switch (state) {
-        case AppLifecycleState.inactive:
-        case AppLifecycleState.paused:
-        case AppLifecycleState.hidden:
-          unawaited(_flushActivePagesForAndroidBackground());
-          return;
-        case AppLifecycleState.detached:
-          unawaited(_flushAndCloseForLifecycleDetach());
-          return;
-        case AppLifecycleState.resumed:
-          return;
-      }
+      // BUG-2280: AudioServiceActivity can detach while its cached engine
+      // survives. A new Activity must retain that engine's DB and services.
+      unawaited(_androidViewLifecycle.handleState(state));
+      return;
     }
     // `detached` = the app is about to be terminated (the engine is detaching
     // from the view). Tear down Bonsoir's mDNS event sources here as a fallback
@@ -814,6 +860,23 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     if (state == AppLifecycleState.detached) {
       unawaited(_flushAndCloseForLifecycleDetach());
     }
+  }
+
+  /// BUG-2259：macOS「退出应用」（⌘Q / 菜单退出 / Dock 右键退出）的落点。
+  ///
+  /// 与 [onWindowClose] 走**同一条**退出链——两者的语义要求完全一样（把还没落库
+  /// 的阅读位置 / 有声书位置 / 阅读统计写穿，再 checkpoint 关库），差别只在原生
+  /// 侧由哪个 selector 触发。复用同一个方法而不是复制一条精简版，是为了让
+  /// 「关窗口能保住的数据，⌘Q 也一定保得住」成为结构性事实，而不是靠两处实现
+  /// 各自记得同步。[_flushAndExitForWindowClose] 自带 [_shutdownStarted] 幂等
+  /// 守卫，⌘Q 与红叉竞发也只会跑一遍。
+  ///
+  /// 正常情况下这个方法不返回：链尾的 `exitApp()` 就把进程终止了。真返回时
+  /// （exitApp 未能杀掉进程，或 flush 已由另一条路径跑过）答 [AppExitResponse.exit]
+  /// 放行系统的终止流程——退出请求绝不能被我们卡住变成「⌘Q 关不掉」。
+  Future<AppExitResponse> _handleExitRequested() async {
+    await _flushAndExitForWindowClose();
+    return AppExitResponse.exit;
   }
 
   /// 桌面原生窗口关闭信号（main() 已 setPreventClose(true) → 窗口不会自己关）。
@@ -960,36 +1023,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
         '[Fushi] exit step "$label" took ${watch.elapsedMilliseconds}ms');
   }
 
-  /// Android 退后台不是退出：只做保留式 flush，页面回前台后仍继续持有回调。
-  ///
-  /// 页面本身也会在 paused/hidden 尝试 flush，但那是 fire-and-forget；这里给
-  /// Android 一个 app-level 汇聚点，确保 reader/video/audiobook 的 pending 位置写穿。
-  Future<void> _flushActivePagesForAndroidBackground() async {
-    final Future<void>? existing = _androidBackgroundFlushInFlight;
-    if (existing != null) {
-      return existing;
-    }
-
-    final Future<void> run = () async {
-      try {
-        await ExitFlushRegistry.instance.flushAll(clearCallbacks: false);
-      } catch (e) {
-        debugPrint('[Fushi] android background flush failed: $e');
-      }
-    }();
-    _androidBackgroundFlushInFlight = run;
-    try {
-      await run;
-    } finally {
-      if (identical(_androidBackgroundFlushInFlight, run)) {
-        _androidBackgroundFlushInFlight = null;
-      }
-    }
-  }
-
   /// 停掉 Bonsoir 的 LAN 广播 + 发现（mDNS 事件源），再 flush 活跃页面并 close DB。
   ///
-  /// 仅作 `detached` 生命周期兜底（移动端 / 不经 window_manager 的退出路径）。桌面
+  /// 仅作非 Android 的 `detached` 生命周期兜底。Android view 脱离不代表引擎退出。桌面
   /// 点 X 走 [_flushAndExitForWindowClose]（flush + closeDB + exit(0)），不再到这里。
   /// 超时上限收紧到 1.5s（TODO-086）：原生 stop 不归时放行，避免拖住退出。
   Future<void> _flushAndCloseForLifecycleDetach() async {
@@ -1007,11 +1043,6 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     }
 
     try {
-      final Future<void>? pendingBackgroundFlush =
-          _androidBackgroundFlushInFlight;
-      if (pendingBackgroundFlush != null) {
-        await pendingBackgroundFlush;
-      }
       await ExitFlushRegistry.instance.flushAll();
     } catch (e) {
       debugPrint('[Fushi] lifecycle detach flush failed: $e');
@@ -1030,6 +1061,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     _iosUrlSubscription?.cancel();
     _systemColorRefreshDebounce?.cancel();
     _loadingWatchdog?.cancel();
+    _exitRequestListener?.dispose();
     if (_isDesktop) {
       windowManager.removeListener(this);
     }
@@ -1220,6 +1252,21 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   Future<void> _openExternalVideo(String videoPath) async {
     final NavigatorState? navigator = appModel.navigatorKey.currentState;
     if (navigator == null) return;
+
+    // ⓪ 模块门：视频模块关掉时「看不见也到不了」——文件关联 / 命令行 argv /
+    // 单实例转发 / 拖拽四条外部路径都汇到这里，是唯一能读到偏好的落地点（冷启动
+    // argv 分支跑在 AppModel.initialise 之前，那时 prefs 还在 Drift 里读不到）。
+    //
+    // 判定必须排在**入库之前**：下面会经 VideoBookRepository 建/取一行
+    // video_books，若放行到那之后再拦，视频就进了一个用户根本看不见的库。给
+    // toast 而不是静默——双击 mkv 毫无反应会被当成 app 坏了。
+    if (!appModel.moduleVisibility.isEnabled(ModuleId.video)) {
+      FushiToast.show(
+        msg: t.module_disabled_hint,
+        severity: ToastSeverity.info,
+      );
+      return;
+    }
 
     // ③ 存在性校验：冷启动 argv 路径虽在 main() 已 existsSync 过，但从那次检查到
     // 此处首帧入库之间文件可能被移动/删除（或检查与使用间的竞态），故再校验一次；
@@ -1951,27 +1998,14 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                                 sidebar: mediaOpen
                                     ? null
                                     : buildFushiMacosSidebar(
+                                        // 与 HomePage._activeTabs 同一真值、
+                                        // 同一个参数。此前这里是第二份手抄的
+                                        // 七参实参表，漏传 gamesEnabled 靠缺省
+                                        // false 蒙对，注释还把漏写说成「macOS
+                                        // 恒 false」——收成一个 ModuleVisibility
+                                        // 后不可能再漂移。
                                         activeTabs: homeActiveTabs(
-                                          // 小说/漫画/视频/扩展按「功能模块」偏好
-                                          // 显隐（与 HomePage._activeTabs 同一真值）。
-                                          // games（galgame 库）仅 Windows；macOS 根
-                                          // 侧栏此处恒 false（gamesEnabled 缺省）。
-                                          booksEnabled:
-                                              appModel.moduleBooksEnabled,
-                                          videoEnabled:
-                                              appModel.moduleVideoEnabled,
-                                          mangaEnabled:
-                                              appModel.moduleMangaEnabled,
-                                          downloadsEnabled:
-                                              appModel.moduleDownloadsEnabled,
-                                          dictionariesEnabled: appModel
-                                              .moduleDictionariesEnabled,
-                                          // 浏览器扩展 tab「电脑才有」：此处为 macOS 根
-                                          // 侧栏，macOS 即桌面 → 与底栏/rail 同一门控。
-                                          browserExtensionEnabled:
-                                              DesktopLookupService.isDesktop &&
-                                                  appModel
-                                                      .moduleBrowserExtensionEnabled,
+                                          appModel.moduleVisibility,
                                         ),
                                       ),
                                 child: child!,
@@ -1985,8 +2019,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                         scale: uiScale,
                         child: navigation,
                       );
-                      if (Platform.isWindows &&
-                          FushiWindowsTitleBar.isEnabled) {
+                      // 自绘顶栏的唯一门控就是这条启动闩（Windows / macOS 由
+                      // `main()` 置位）：不再叠一层 `Platform.isWindows`，否则
+                      // macOS 明明已经隐藏了系统标题栏与交通灯，却拿不到替代顶栏
+                      // ——窗口既没有标题也没有最小化/关闭按钮。
+                      if (FushiDesktopTitleBar.isEnabled) {
                         navigation = ValueListenableBuilder<bool>(
                           // The home rail is only on screen while the home
                           // shell is the top route; opening a media item
@@ -2001,7 +2038,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                             final bool railVisible = !mediaOpen &&
                                 windowSizeClassForWidth(viewport.width) !=
                                     WindowSizeClass.compact;
-                            return FushiWindowsTitleBar(
+                            return FushiDesktopTitleBar(
                               // The native-sized frame sits outside app UI
                               // zoom; align its title with the visually scaled
                               // home rail. Breakpoint and rail width both come

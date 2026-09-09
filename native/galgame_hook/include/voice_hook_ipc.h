@@ -135,7 +135,20 @@ constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
 //     读数看着正常，说的却是另一个 adapter。
 //     与 v22 同理，布局变了就必须升版（两侧都用 `sizeof(SharedHeader)` 现算 ring /
 //     region 基址，新旧混装会整体错位而版本门本会放行）。
-constexpr uint32_t kSharedVersion = 23;
+// v24 appends the injected Siglus text ownership decision. DLL Ready is not
+// permission for the injector to race native text installation with Luna.
+constexpr uint32_t kSharedVersion = 24;
+
+enum class SiglusTextOwner : uint32_t {
+  kPending = 0,
+  kNotApplicable = 1,
+  kNativeOwned = 2,
+  kLunaAllowed = 3,
+  // Terminal failure: a partial native installation could not be disabled.
+  // This additive value preserves the v24 layout; older gates reject unknown
+  // values too. Neither native readiness nor Luna permission is implied.
+  kUnavailable = 4,
+};
 constexpr uint32_t kStableIpcVersion = 1;
 
 // BUG-1882 — SGRE 的鼠标输入走 DirectInput immediate state，不经过普通
@@ -1312,6 +1325,9 @@ struct SharedHeader {
   AdapterReportSlot adapter_reports[kAdapterReportSlots];
   volatile uint32_t adapter_report_count;  // 实际使用的槽数，<= kAdapterReportSlots
   volatile uint32_t adapter_report_seq;    // 单调；0 = 从未上报过（≠"没有 adapter"）
+  // v24, hook worker -> injector, single writer. Initialize before Ready;
+  // Pending may become one terminal value and never return to Pending.
+  volatile uint32_t siglus_text_owner;
 };
 #pragma pack(pop)
 
@@ -2279,7 +2295,9 @@ struct TextLaneWrite {
 // 前面的数据写对 reader 先于 lane_seq 可见）。
 inline uint64_t WriteTextLaneEvent(SharedHeader* header, uint32_t lane_begin,
                                    uint32_t lane_end,
-                                   const TextLaneWrite& write) {
+                                   const TextLaneWrite& write,
+                                   uint64_t* committed_tick_ms = nullptr) {
+  if (committed_tick_ms != nullptr) *committed_tick_ms = 0;
   if (header == nullptr || write.thread_id == 0) return 0;
   TextLane* lanes = TextLanesOf(header);
   if (lanes == nullptr || header->text_lane_count == 0) return 0;
@@ -2368,6 +2386,7 @@ inline uint64_t WriteTextLaneEvent(SharedHeader* header, uint32_t lane_begin,
   // 且 64 位不可撕裂（x86 上普通写会被拆成两次 32 位写）。与预览槽 seq 同一套纪律。
   AtomicStorePreview64(&ts->lane_seq, lane_seq);
   if (header->text_hooked == 0) header->text_hooked = 1;
+  if (committed_tick_ms != nullptr) *committed_tick_ms = ts->timestamp_ms;
   return global_seq;
 }
 
@@ -2507,6 +2526,8 @@ inline bool IsLookupFrameSane(const SharedHeader* header,
 }
 
 static_assert(sizeof(SharedHeader) % 8 == 0, "SharedHeader must stay 8-aligned");
+static_assert(offsetof(SharedHeader, siglus_text_owner) % 4 == 0,
+              "Siglus ownership must support aligned Interlocked access");
 static_assert(sizeof(LookupHitSlot) % 8 == 0, "LookupHitSlot must stay 8-aligned");
 static_assert(sizeof(LookupFrame) % 8 == 0, "LookupFrame must stay 8-aligned");
 static_assert(sizeof(LookupInputSlot) % 8 == 0,

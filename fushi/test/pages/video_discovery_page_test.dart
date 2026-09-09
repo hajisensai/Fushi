@@ -10,6 +10,7 @@ import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart
     as discovery;
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_page.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
 
 typedef _LoadHandler = Future<ProviderBatchResult<discovery.VideoDiscoveryPage>>
     Function(
@@ -78,9 +79,14 @@ ProviderBatchResult<discovery.VideoDiscoveryPage> _result(
 Widget _harness(
   VideoDiscoveryController controller, {
   ValueChanged<discovery.VideoDiscoveryItem>? onOpenItem,
+  double scale = 1,
 }) {
   return TranslationProvider(
     child: MaterialApp(
+      builder: (BuildContext context, Widget? child) => FushiAppUiScale(
+        scale: scale,
+        child: child!,
+      ),
       theme: ThemeData.dark(useMaterial3: true),
       home: Scaffold(
         body: VideoDiscoveryPage(
@@ -232,14 +238,14 @@ void main() {
     );
   });
 
-  testWidgets('紧凑布局将搜索与筛选分行且不溢出', (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(480, 800);
+  testWidgets('手机保留分类和排序，高级筛选在底部面板统一应用', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     final _FakeDiscoveryController controller = _FakeDiscoveryController(
       (_) async => _result(<discovery.VideoDiscoveryItem>[
-        _item('compact', '紧凑布局作品'),
+        _item('compact', '窄屏里仍然完整容纳两行的作品标题'),
       ]),
     );
 
@@ -252,8 +258,125 @@ void main() {
     );
     expect(
       find.byKey(const ValueKey<String>('video-discovery-filter-year')),
-      findsOneWidget,
+      findsNothing,
     );
+    final Finder search = find.byKey(
+      const ValueKey<String>('video-discovery-search'),
+    );
+    final Finder sort = find.byKey(
+      const ValueKey<String>('video-discovery-filter-sort'),
+    );
+    final Finder category = find.byKey(
+      const ValueKey<String>('video-discovery-category-all'),
+    );
+    expect(
+      tester.getCenter(sort).dy,
+      closeTo(tester.getCenter(category).dy, 1),
+    );
+    expect(
+      tester.getBottomRight(sort).dy - tester.getTopLeft(search).dy,
+      lessThan(140),
+    );
+    final int originalRequests = controller.requests.length;
+    await tester.tap(
+      find.byKey(const ValueKey<String>('video-discovery-open-filters')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('video-discovery-filter-year')),
+    );
+    await tester.pumpAndSettle();
+    final int year = DateTime.now().year + 1;
+    await tester.tap(find.text('$year').last);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('video-discovery-filter-region')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('JP').last);
+    await tester.pumpAndSettle();
+    expect(controller.requests, hasLength(originalRequests));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('video-discovery-apply-filters')),
+    );
+    await tester.pumpAndSettle();
+    expect(controller.requests, hasLength(originalRequests + 1));
+    expect(controller.requests.last.year, year);
+    expect(controller.requests.last.region, 'JP');
+    expect(
+      find.byKey(const ValueKey<String>('video-discovery-filter-sheet')),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('手机筛选重置可取消，再次打开保留已应用值', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final _FakeDiscoveryController controller = _FakeDiscoveryController(
+      (_) async => _result(<discovery.VideoDiscoveryItem>[
+        _item('narrow', '更窄屏幕也容纳两行标题和年份评分'),
+      ]),
+    );
+    await tester.pumpWidget(_harness(controller));
+    await tester.pumpAndSettle();
+    final Finder openFilters = find.byKey(
+      const ValueKey<String>('video-discovery-open-filters'),
+    );
+    final Finder region = find.byKey(
+      const ValueKey<String>('video-discovery-filter-region'),
+    );
+    final Finder apply = find.byKey(
+      const ValueKey<String>('video-discovery-apply-filters'),
+    );
+    final Finder reset = find.byKey(
+      const ValueKey<String>('video-discovery-reset-filters'),
+    );
+    await tester.tap(openFilters);
+    await tester.pumpAndSettle();
+    await tester.tap(region);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('JP').last);
+    await tester.pumpAndSettle();
+    await tester.tap(apply);
+    await tester.pumpAndSettle();
+    final int appliedRequests = controller.requests.length;
+
+    await tester.tap(openFilters);
+    await tester.pumpAndSettle();
+    await tester.tap(reset);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.dialog_cancel));
+    await tester.pumpAndSettle();
+    expect(controller.requests, hasLength(appliedRequests));
+    await tester.tap(openFilters);
+    await tester.pumpAndSettle();
+    expect(tester.widget<PopupMenuButton<String>>(region).initialValue, 'JP');
+    await tester.tap(reset);
+    await tester.pumpAndSettle();
+    await tester.tap(apply);
+    await tester.pumpAndSettle();
+    expect(controller.requests.last.region, isNull);
+    expect(controller.requests.last.year, isNull);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('手机缩小界面后仍将高级筛选收进面板', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final _FakeDiscoveryController controller = _FakeDiscoveryController(
+      (_) async => _result(const <discovery.VideoDiscoveryItem>[]),
+    );
+    await tester.pumpWidget(_harness(controller, scale: 0.6));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey<String>('video-discovery-open-filters')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('video-discovery-filter-year')),
+        findsNothing);
     expect(tester.takeException(), isNull);
   });
 

@@ -69,6 +69,14 @@ bool shouldSignOutOnAuthError(SyncAuthError error) => switch (error.kind) {
       SyncAuthFailureKind.forbidden => false,
       SyncAuthFailureKind.browserTimeout => false,
       SyncAuthFailureKind.cancelled => false,
+      // BUG-2377：互联的「登出」会清空 `sync_hibiki_client_urls`——全部对端地址、
+      // TOFU 指纹和 per-peer token 一起没。用一台对端的 401 去清整份配对配置，
+      // 正是 BUG-1550 / BUG-1578 要消灭的株连。凭据失效由配对流程处理，不在这
+      // 里代劳。（`shouldSignOutChannelOnAuthError` 已按通道拦了一层，这里是同
+      // 一决定的第二道：裸 SyncAuthError 走不到那层。）
+      SyncAuthFailureKind.pairingRejected => false,
+      // 压根没有凭据可丢，登出无事可做。
+      SyncAuthFailureKind.pairingNotConfigured => false,
     };
 
 /// 一条**具名通道**的鉴权失败之后，该不该对这条通道执行登出（BUG-1578）。

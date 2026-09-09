@@ -1,16 +1,17 @@
 import 'dart:io';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async';
-
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'
+    show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:transparent_image/transparent_image.dart';
 import 'package:url_launcher/url_launcher.dart';
-
 import 'package:fushi/media.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/media/collections/collection_continue.dart';
 import 'package:fushi/src/media/display_title.dart';
@@ -53,6 +54,7 @@ import 'package:fushi/src/pages/implementations/migration_page.dart';
 import 'package:fushi/src/pages/implementations/migration_import_page.dart';
 import 'package:fushi/src/migration/migration_importer.dart';
 import 'package:fushi_engine/foundation/engine_notifier.dart';
+import 'package:fushi/src/utils/net/app_http_image.dart';
 
 /// 首页仪表盘（阅读向），参考 ReinaManager 首页改造：
 ///
@@ -133,6 +135,21 @@ class _ContinueEntry {
 
   /// 游戏分支（竖版封面 / 跳游戏 tab）。
   bool get isGame => kind == MediaKind.game;
+
+  /// 本条所属功能模块（首页聚合列表的门控判据）。
+  ///
+  /// ⚠️ 漫画盖不住 [MediaKind]（见 `module_registry.dart`）：漫画行是
+  /// `EpubBooks.format=='manga'` 派生，[kind] 仍是 [MediaKind.epub]。本地书条目
+  /// 能从 [MediaItem.mediaSourceIdentifier] 认出漫画身份（`_bookToMediaItem` 给
+  /// 漫画行打的就是 [MangaFushiSource.kUniqueKey]），所以这里能按 manga 单独门控。
+  ///
+  /// 远端补位条目（[remote]）判不出漫画，一律按 [moduleOfMediaKind] 归 books
+  /// ——host 侧的漫画本就进不了「继续」（`remoteContinueCandidates` 按
+  /// `hasContent` 已把无 EPUB 内容树的漫画/PDF 行滤掉，BUG-1638）。
+  ModuleId get module =>
+      book?.mediaSourceIdentifier == MangaFushiSource.kUniqueKey
+      ? ModuleId.manga
+      : moduleOfMediaKind(kind);
 
   final String title;
 
@@ -341,8 +358,8 @@ class _BangumiWatchedDialogState extends State<_BangumiWatchedDialog> {
                         ? const Icon(Icons.movie_outlined)
                         : ClipRRect(
                             borderRadius: FushiBorderRadius.chip,
-                            child: Image.network(
-                              coverUrl,
+                            child: Image(
+                              image: AppHttpImage(coverUrl),
                               fit: BoxFit.cover,
                               errorBuilder: (_, __, ___) =>
                                   const Icon(Icons.broken_image_outlined),
@@ -985,7 +1002,12 @@ class _HomeDashboardPageState
     // Bangumi 同步临时下线（kMediaTrackingEnabled，见 media_tracking_service.dart）。
     // 上线状态下此卡恒显示（未连接时也要显示——「没连上」本身就是用户最需要看到的
     // 那条状态，隐藏它就回到了「看完了没反应」的黑盒）。
-    final Widget? trackingCard = kMediaTrackingEnabled
+    // 媒体追踪属 [ModuleId.services]（追踪靠在线服务的凭据跑，同一个开关）：模块
+    // 关掉时整卡不挂载——卡内的「去设置」直落 mediaTracking 分类，而那个分类此刻
+    // 已被同一个开关从设置页藏掉，留着就是一条通往不存在页面的死路。
+    final Widget? trackingCard =
+        kMediaTrackingEnabled &&
+            appModel.moduleVisibility.isEnabled(ModuleId.services)
         ? _buildTrackingCard(tokens, appModel, now)
         : null;
 
@@ -1219,11 +1241,29 @@ class _HomeDashboardPageState
         remote: c,
       ));
     }
-    entries.sort((_ContinueEntry a, _ContinueEntry b) =>
-        b.recentMs.compareTo(a.recentMs));
+    entries.sort(
+      (_ContinueEntry a, _ContinueEntry b) => b.recentMs.compareTo(a.recentMs),
+    );
+    // 模块门控：关掉的模块的条目**先出局再 take(10)**——顺序反过来会出现「过滤后
+    // 不足 10 条」（前 10 条恰好全是被关模块的条目时甚至整行空掉）。
+    final ModuleVisibility visibility = appModel.moduleVisibility;
+    final List<(int, String)> filterOptions = _visibleMediaFilterOptions<int>(
+      visibility,
+      all: (0, t.home_filter_all),
+      read: (1, t.home_filter_read),
+      watch: (2, t.home_filter_watch),
+      // BUG-1111：与下方热力图筛选同一组档位（复用既有 key，不新增 i18n）。
+      game: (3, t.home_filter_game),
+    );
+    final int activeFilter = _effectiveFilter<int>(
+      _continueFilter,
+      filterOptions,
+      fallback: 0,
+    );
     final List<_ContinueEntry> filtered = entries
+        .where((_ContinueEntry e) => visibility.isEnabled(e.module))
         .where((_ContinueEntry e) {
-          switch (_continueFilter) {
+          switch (activeFilter) {
             case 1:
               // BUG-1111：旧实现是 `!e.isVideo`——二元取反，游戏一旦进列表就会被
               // 误算进「阅读」。按种类正面判定。
@@ -1242,18 +1282,14 @@ class _HomeDashboardPageState
     return _sectionCard(
       tokens,
       title: t.home_continue,
-      header: _filterChips<int>(
-        tokens: tokens,
-        selected: _continueFilter,
-        onSelected: (int v) => setState(() => _continueFilter = v),
-        options: <(int, String)>[
-          (0, t.home_filter_all),
-          (1, t.home_filter_read),
-          (2, t.home_filter_watch),
-          // BUG-1111：与下方热力图筛选同一组档位（复用既有 key，不新增 i18n）。
-          (3, t.home_filter_game),
-        ],
-      ),
+      header: filterOptions.length > 2
+          ? _filterChips<int>(
+              tokens: tokens,
+              selected: activeFilter,
+              onSelected: (int v) => setState(() => _continueFilter = v),
+              options: filterOptions,
+            )
+          : null,
       child: filtered.isEmpty
           ? Text(t.home_activity_empty, style: tokens.type.metadata)
           : _continueCardsRow(tokens, appModel, filtered, videoLandscape: true),
@@ -1279,6 +1315,8 @@ class _HomeDashboardPageState
     // 不能改用 Clip.none：懒加载 cacheExtent 里已构建的卡会画到行外。
     final double rowHeight = _continueRowHeight(context, tokens);
     final double liftHeadroom = rowHeight * (kFushiHoverLiftScale - 1) / 2;
+    const double liftSideRoom =
+        _kContinueCoverHeight * 16 / 9 * (kFushiHoverLiftScale - 1) / 2;
     return SizedBox(
       height: rowHeight + liftHeadroom * 2,
       // 桌面默认 MaterialScrollBehavior 的 dragDevices 不含鼠标——横排行
@@ -1287,6 +1325,12 @@ class _HomeDashboardPageState
       child: HorizontalDragScrollable(
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
+          // 卡片不能占满加高后的视口，否则会把放大余量也拉进卡体。
+          // 两端按最宽横卡留量，首尾卡放大时也能完整显示。
+          padding: EdgeInsets.symmetric(
+            vertical: liftHeadroom,
+            horizontal: liftSideRoom,
+          ),
           physics: desktopAwareScrollPhysics(),
           itemCount: entries.length,
           separatorBuilder: (BuildContext _, int __) =>
@@ -1371,6 +1415,10 @@ class _HomeDashboardPageState
         game: g,
       ));
     }
+    // 模块门控与「继续」同判据，同样**先过滤再 take(12)**（顺序反了会出现「过滤
+    // 后不足 12 条」）。整行被过滤空 = 与空库同样返回 null，不留一张空卡占位。
+    final ModuleVisibility visibility = appModel.moduleVisibility;
+    entries.removeWhere((_ContinueEntry e) => !visibility.isEnabled(e.module));
     if (entries.isEmpty) return null;
     entries.sort((_ContinueEntry a, _ContinueEntry b) =>
         b.recentMs.compareTo(a.recentMs));
@@ -1803,9 +1851,10 @@ class _HomeDashboardPageState
     AppModel appModel,
     _ContinueEntry entry,
   ) async {
+    // 卡片本身已按 [_ContinueEntry.module] 过滤过（关掉的模块根本没有卡），所以
+    // 这里的每条落地路径都在开着的模块内；[_goToTab] 的门只是防御性兜底。
     if (entry.remote != null) {
-      homeShellTabNotifier.value =
-          entry.isVideo ? HomeTab.video : HomeTab.books;
+      _goToTab(entry.isVideo ? HomeTab.video : HomeTab.books);
       return;
     }
     if (entry.isVideo) {
@@ -1816,13 +1865,43 @@ class _HomeDashboardPageState
     // 位数探测 / helper 确认下载 / 注入会话（`GamesLibraryPage._launchGame`，
     // 数秒且可能弹窗），从首页静默触发是危险的误操作面；库页才是启动入口。
     if (entry.isGame) {
-      homeShellTabNotifier.value = HomeTab.games;
+      _goToTab(HomeTab.games);
       return;
     }
     final MediaItem item = entry.book!;
     final MediaSource source = item.getMediaSource(appModel: appModel);
     await appModel.openMedia(ref: ref, mediaSource: source, item: item);
   }
+
+  /// 切到顶层 tab 的**唯一**出口（本页 6 处跨页跳转全走它）：目标 tab 所属模块
+  /// 被用户关掉时不切，改给一句可见提示。
+  ///
+  /// 为什么需要提示而不是「不渲染入口」：首页的活动时间轴与热力图日明细是**历史
+  /// 事实流**，行不按模块删（删了等于让用户以为记录丢了），于是「点一条已关模块
+  /// 的记录」是真实可达路径。静默不动正是本次要消灭的反模式。
+  void _goToTab(HomeTab tab) {
+    if (!isHomeTabVisible(tab, ref.read(appProvider).moduleVisibility)) {
+      _showModuleHiddenHint();
+      return;
+    }
+    homeShellTabNotifier.value = tab;
+  }
+
+  /// 「目标页已被功能模块开关关掉」的可见反馈。
+  void _showModuleHiddenHint() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(t.module_disabled_hint)));
+  }
+
+  /// 本地书条目所属模块：漫画行（[MangaFushiSource]）归 manga，其余（EPUB / PDF /
+  /// SRT）归 books。与 [_ContinueEntry.module] 同一判据，都靠
+  /// [MediaItem.mediaSourceIdentifier] 认漫画身份。
+  ModuleId _moduleOfBookItem(MediaItem item) =>
+      item.mediaSourceIdentifier == MangaFushiSource.kUniqueKey
+      ? ModuleId.manga
+      : ModuleId.books;
 
   /// 直接续播本地视频：与视频页 hero/卡片同一条共享路由入口 [openLocalVideoBook]
   /// （合集成员带主合集 id → 播放器建剧集面板/上下集/连播；散卡单视频打开）。
@@ -1854,8 +1933,24 @@ class _HomeDashboardPageState
   /// 加来源筛选（全部/阅读/观看/游戏），格下加「今日目标」行，点选某日弹当日明细
   /// sheet（用户反馈「点了只有日期和字数，分不清干了什么」三连的解药）。
   Widget _buildHeatmapCard(FushiDesignTokens tokens) {
-    final Map<String, int> charsByDay = _heatmapCharsByDay();
-    final Map<String, int> timeMsByDay = _heatmapTimeMsByDay();
+    // 筛选条按模块过滤（用户实报：关掉视频与游戏后「学习活动」仍是
+    // 全部/阅读/观看/游戏）。格子里的**历史事实不删**——统计是既成事实，藏掉等于
+    // 让用户以为数据丢了；关掉的只是「按那个模块看」这个入口，选中它时回落「全部」。
+    final ModuleVisibility visibility = ref.read(appProvider).moduleVisibility;
+    final List<(int, String)> filterOptions = _visibleMediaFilterOptions<int>(
+      visibility,
+      all: (0, t.home_filter_all),
+      read: (1, t.home_filter_read),
+      watch: (2, t.home_filter_watch),
+      game: (3, t.home_filter_game),
+    );
+    final int activeFilter = _effectiveFilter<int>(
+      _heatmapFilter,
+      filterOptions,
+      fallback: 0,
+    );
+    final Map<String, int> charsByDay = _heatmapCharsByDay(activeFilter);
+    final Map<String, int> timeMsByDay = _heatmapTimeMsByDay(activeFilter);
     final Widget card = _sectionCard(
       tokens,
       title: t.reading_activity,
@@ -1864,17 +1959,15 @@ class _HomeDashboardPageState
       header: Row(
         children: <Widget>[
           Expanded(
-            child: _filterChips<int>(
-              tokens: tokens,
-              selected: _heatmapFilter,
-              onSelected: (int v) => setState(() => _heatmapFilter = v),
-              options: <(int, String)>[
-                (0, t.home_filter_all),
-                (1, t.home_filter_read),
-                (2, t.home_filter_watch),
-                (3, t.home_filter_game),
-              ],
-            ),
+            // 只剩一个真实档时整行不渲染（留一排「全部/阅读」是两个同义 chip）。
+            child: filterOptions.length > 2
+                ? _filterChips<int>(
+                    tokens: tokens,
+                    selected: activeFilter,
+                    onSelected: (int v) => setState(() => _heatmapFilter = v),
+                    options: filterOptions,
+                  )
+                : const SizedBox.shrink(),
           ),
           SizedBox(width: tokens.spacing.gap),
           FushiIconButton(
@@ -1938,8 +2031,9 @@ class _HomeDashboardPageState
   }
 
   /// 当前热力图筛选对应的每日字数映射（0=全部合计，1=阅读，2=观看，3=游戏）。
-  Map<String, int> _heatmapCharsByDay() {
-    switch (_heatmapFilter) {
+  /// 档位由调用方给（模块关掉时已回落成「全部」），不再直读 `_heatmapFilter`。
+  Map<String, int> _heatmapCharsByDay(int filter) {
+    switch (filter) {
       case 1:
         return _readCharsByDay;
       case 2:
@@ -1952,8 +2046,8 @@ class _HomeDashboardPageState
   }
 
   /// 当前热力图筛选对应的每日时长映射（分档同 [_heatmapCharsByDay]）。
-  Map<String, int> _heatmapTimeMsByDay() {
-    switch (_heatmapFilter) {
+  Map<String, int> _heatmapTimeMsByDay(int filter) {
+    switch (filter) {
       case 1:
         return _readTimeMsByDay;
       case 2:
@@ -2150,9 +2244,16 @@ class _HomeDashboardPageState
   /// 同构，身份来源换成事实行的 mediaKind/mediaKey。
   Future<void> _openStatEntry(String mediaKind, String mediaKey) async {
     final AppModel appModel = ref.read(appProvider);
+    // 日明细 sheet 的行来自事实面（历史统计，不按模块删行），所以打开路径必须
+    // 自己判模块：关掉的模块只给提示，不静默、也不真把页面拉起来。
+    final ModuleVisibility visibility = appModel.moduleVisibility;
     if (mediaKey.isNotEmpty) {
       if (mediaKind == kActivityMediaVideo &&
           _videos.any((VideoBookRow v) => v.bookUid == mediaKey)) {
+        if (!visibility.isEnabled(ModuleId.video)) {
+          _showModuleHiddenHint();
+          return;
+        }
         await _openLocalVideo(mediaKey);
         return;
       }
@@ -2166,6 +2267,10 @@ class _HomeDashboardPageState
               ReaderFushiSource.parseBookKey(item.mediaIdentifier) ??
                   ReaderFushiSource.parseSrtBookUid(item.mediaIdentifier);
           if (key == mediaKey) {
+            if (!visibility.isEnabled(_moduleOfBookItem(item))) {
+              _showModuleHiddenHint();
+              return;
+            }
             final MediaSource source = item.getMediaSource(appModel: appModel);
             await appModel.openMedia(ref: ref, mediaSource: source, item: item);
             return;
@@ -2173,11 +2278,11 @@ class _HomeDashboardPageState
         }
       }
     }
-    homeShellTabNotifier.value = switch (mediaKind) {
+    _goToTab(switch (mediaKind) {
       kActivityMediaBook => HomeTab.books,
       kActivityMediaGame => HomeTab.games,
       _ => HomeTab.video,
-    };
+    });
   }
 
   /// 游戏活动标题 → 显示名（P4）：先按 [mediaKey]（galgames.id）精确命中，
@@ -2204,11 +2309,30 @@ class _HomeDashboardPageState
     Map<String, MediaItem> booksByKey,
     Map<String, VideoBookRow> videosByUid,
   ) {
-    final List<ActivityEventRow> filtered = _activityFilter == null
+    // 筛选条按模块过滤（与热力图同判据）；时间轴**条目本身不删**——它是历史事实
+    // 流，藏掉等于让用户以为记录丢了。关掉模块的那些行改为「点了给提示」，见
+    // [_openActivityEntry]。
+    final ModuleVisibility visibility = appModel.moduleVisibility;
+    final List<(String?, String)> filterOptions =
+        _visibleMediaFilterOptions<String?>(
+          visibility,
+          all: (null, t.home_filter_all),
+          read: (kActivityRead, t.home_filter_read),
+          watch: (kActivityWatch, t.home_filter_watch),
+          game: (kActivityGame, t.home_filter_game),
+          // 「添加」跨全部媒体，不属任何单一模块，恒在。
+          trailing: <(String?, String)>[(kActivityAdded, t.home_filter_added)],
+        );
+    final String? activeFilter = _effectiveFilter<String?>(
+      _activityFilter,
+      filterOptions,
+      fallback: null,
+    );
+    final List<ActivityEventRow> filtered = activeFilter == null
         ? _activityEvents
         : _activityEvents
-            .where((ActivityEventRow e) => e.eventType == _activityFilter)
-            .toList();
+              .where((ActivityEventRow e) => e.eventType == activeFilter)
+              .toList();
     // 设备来源进聚合：互联对端事件带 host 设备名（identity 识别——远端行 id=0
     // 哨兵且可能与本地行值相等），与本机事件分条展示（「标明设备来源」）。
     final List<ActivityDateGroup> groups = aggregateActivityEvents(
@@ -2224,21 +2348,17 @@ class _HomeDashboardPageState
     return _sectionCard(
       tokens,
       title: t.home_activity,
-      header: _filterChips<String?>(
-        tokens: tokens,
-        selected: _activityFilter,
-        onSelected: (String? v) => setState(() {
-          _activityFilter = v;
-          _visibleActivityEntryCount = _kActivityPageSize;
-        }),
-        options: <(String?, String)>[
-          (null, t.home_filter_all),
-          (kActivityRead, t.home_filter_read),
-          (kActivityWatch, t.home_filter_watch),
-          (kActivityGame, t.home_filter_game),
-          (kActivityAdded, t.home_filter_added),
-        ],
-      ),
+      header: filterOptions.length > 2
+          ? _filterChips<String?>(
+              tokens: tokens,
+              selected: activeFilter,
+              onSelected: (String? v) => setState(() {
+                _activityFilter = v;
+                _visibleActivityEntryCount = _kActivityPageSize;
+              }),
+              options: filterOptions,
+            )
+          : null,
       child: groups.isEmpty
           ? Text(t.home_activity_empty, style: tokens.type.metadata)
           : Column(
@@ -2519,16 +2639,27 @@ class _HomeDashboardPageState
     Map<String, MediaItem> booksByKey,
     Map<String, VideoBookRow> videosByUid,
   ) async {
+    // 时间轴的行是历史事实、不按模块删（删了像是记录丢了），所以打开路径自己判
+    // 模块：关掉的模块给提示、不真拉起页面（[_goToTab] 同样带这道门）。
+    final ModuleVisibility visibility = appModel.moduleVisibility;
     final String? key = entry.mediaKey;
     if (key != null && key.isNotEmpty) {
       if (entry.mediaType == kActivityMediaVideo &&
           videosByUid.containsKey(key)) {
+        if (!visibility.isEnabled(ModuleId.video)) {
+          _showModuleHiddenHint();
+          return;
+        }
         await _openLocalVideo(key);
         return;
       }
       if (entry.mediaType == kActivityMediaBook) {
         final MediaItem? book = booksByKey[key];
         if (book != null) {
+          if (!visibility.isEnabled(_moduleOfBookItem(book))) {
+            _showModuleHiddenHint();
+            return;
+          }
           final MediaSource source = book.getMediaSource(appModel: appModel);
           await appModel.openMedia(ref: ref, mediaSource: source, item: book);
           return;
@@ -2537,12 +2668,12 @@ class _HomeDashboardPageState
     }
     if (entry.eventType == kActivityRead ||
         entry.mediaType == kActivityMediaBook) {
-      homeShellTabNotifier.value = HomeTab.books;
+      _goToTab(HomeTab.books);
     } else if (entry.eventType == kActivityGame ||
         entry.mediaType == kActivityMediaGame) {
-      homeShellTabNotifier.value = HomeTab.games;
+      _goToTab(HomeTab.games);
     } else {
-      homeShellTabNotifier.value = HomeTab.video;
+      _goToTab(HomeTab.video);
     }
   }
 
@@ -3018,6 +3149,50 @@ class _HomeDashboardPageState
       ),
     );
   }
+
+  /// 「全部 / 阅读 / 观看 / 游戏」四档筛选条的模块过滤，三处筛选条共用（继续 /
+  /// 学习活动热力图 / 活动时间轴）。三处的档位值类型不统一（前两处 int、时间轴
+  /// `String?`），故走泛型——**不为了统一去改既有 filter 的存储类型**。
+  ///
+  /// 档位与模块的对应：
+  /// - 「阅读」= books ∪ manga：漫画的继续卡与阅读活动都落在这一档（[MediaKind]
+  ///   盖不住漫画），两者任一开着就得留着这档；
+  /// - 「观看」= video、「游戏」= games；
+  /// - 「全部」恒在且恒是第 0 项，[trailing]（时间轴的「添加」档）跨媒体、也恒在。
+  ///
+  /// 返回长度 <= 2 意味着「只剩一个真实档」——那条 chip 行已无信息量，调用方按此
+  /// 判据整行不渲染（「入口不渲染」优于「渲染出来点了没差别」）。
+  List<(T, String)> _visibleMediaFilterOptions<T>(
+    ModuleVisibility visibility, {
+    required (T, String) all,
+    required (T, String) read,
+    required (T, String) watch,
+    required (T, String) game,
+    // 默认值必须是 const，而 const 列表字面量不能带类型参数 T，故用可空 + 展开。
+    List<(T, String)>? trailing,
+  }) => <(T, String)>[
+    all,
+    if (visibility.isEnabled(ModuleId.books) ||
+        visibility.isEnabled(ModuleId.manga))
+      read,
+    if (visibility.isEnabled(ModuleId.video)) watch,
+    if (visibility.isEnabled(ModuleId.games)) game,
+    ...?trailing,
+  ];
+
+  /// 选中档被模块开关滤掉时回落到 [fallback]（恒是「全部」档）。
+  ///
+  /// 只在渲染期换算、**不写回** `_continueFilter` / `_heatmapFilter` /
+  /// `_activityFilter` 状态字段：build 里 setState 会重入，而且用户把模块开回来时
+  /// 原来的选择应该自然复活。回落本身是硬要求——选中值不在选项里，Cupertino 分段
+  /// 控件会直接 assert。
+  static T _effectiveFilter<T>(
+    T selected,
+    List<(T, String)> options, {
+    required T fallback,
+  }) => options.any(((T, String) option) => option.$1 == selected)
+      ? selected
+      : fallback;
 
   /// 泛型筛选 chip 行：[ChoiceChip] 的 [Wrap]（窄屏自动换行，不溢出）。
   Widget _filterChips<T>({

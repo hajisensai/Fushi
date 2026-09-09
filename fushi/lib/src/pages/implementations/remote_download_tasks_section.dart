@@ -123,13 +123,29 @@ class _RemoteDownloadTasksSectionState
       collectionKey: 'remote:${target.baseUrl}',
       collectionTitle: t.download_remote_jobs_title(device: target.label),
       searchTerms: <String>[job.title, target.label],
-      onRetry: job.lifecycle == VideoDownloadJobLifecycle.needsAttention ||
-              job.lifecycle == VideoDownloadJobLifecycle.failed
-          ? () => _action(() => client.retry(target, job.jobId))
-          : null,
-      onClear: finished
-          ? () => _action(() => client.delete(target, job.jobId))
-          : () => _action(() => client.cancel(target, job.jobId)),
+      // develop 把裸回调收敛成了 [DownloadTaskActions] 槽位；远端三个动作按语义
+      // 各就各位，不再把「中止」和「删除」挤进同一个 onClear。
+      //
+      // `deletesFiles: true` 是如实声明而非乐观假设：远端 DELETE
+      // /api/downloads/<id> 落到 `download_host.dart` 的
+      // `deleteJob(jobId, deleteFiles: true)`，**恒删磁盘文件且无法关闭**——
+      // 协议上没有「只移出列表」这一路。所以它进 [delete] 槽而不是 [clear]
+      // （放 clear 会让用户以为远端文件还在），且 deleteFiles 传 false 时也照删，
+      // 这一点由 deletesFiles 如实告知 UI。
+      actions: DownloadTaskActions(
+        retry: job.lifecycle == VideoDownloadJobLifecycle.needsAttention ||
+                job.lifecycle == VideoDownloadJobLifecycle.failed
+            ? () => _action(() => client.retry(target, job.jobId))
+            : null,
+        cancel: finished
+            ? null
+            : () => _action(() => client.cancel(target, job.jobId)),
+        delete: finished
+            ? ({required bool deleteFiles}) =>
+                _action(() => client.delete(target, job.jobId))
+            : null,
+        deletesFiles: true,
+      ),
       // 与本地任务同一张卡（DownloadTaskCard），不再另开 ListTile 决策。
       builder: (BuildContext context) => DownloadTaskCard(
         key: ValueKey<String>('remote:${target.baseUrl}:${job.jobId}'),

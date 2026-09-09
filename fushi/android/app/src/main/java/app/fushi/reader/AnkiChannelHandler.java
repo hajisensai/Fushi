@@ -293,9 +293,13 @@ public class AnkiChannelHandler {
                                 "noteTypeName and noteTypeFields are required", null);
                         } else if (requirePermission(result)) {
                             try {
-                                createNoteType(noteTypeName, noteTypeFields,
-                                    cardName, front, back, css);
-                                result.success(null);
+                                // BUG-2380: true = created now, false = already
+                                // there. Dart needs the difference for its
+                                // "created" vs "already existed" message and no
+                                // longer runs a second, disagreeing existence
+                                // check of its own.
+                                result.success(createNoteType(noteTypeName,
+                                    noteTypeFields, cardName, front, back, css));
                             } catch (Exception e) {
                                 result.error("CREATE_MODEL_FAILED",
                                     e.getMessage(), null);
@@ -356,10 +360,34 @@ public class AnkiChannelHandler {
                                 "deckName is required", null);
                         } else if (requirePermission(result)) {
                             try {
-                                if (ankiDroid.findDeckIdByName(deckName) == null) {
-                                    api.addNewDeck(deckName);
+                                // BUG-2380: addNewDeck's return value is the
+                                // *only* success signal the provider gives us
+                                // (null = the insert failed, see
+                                // AnkiProvider#addNewDeck). It used to be
+                                // dropped on the floor followed by an
+                                // unconditional success(null), so a failed
+                                // creation reached Dart as a success and
+                                // "create and use Lapis" ended up selecting the
+                                // user's own first deck instead. addNote and
+                                // addFileToMedia in this same file have always
+                                // null-checked; only the two create-structure
+                                // paths were missing it.
+                                //
+                                // The name lookup here is also the single
+                                // idempotency check now (Dart's own one is
+                                // gone): this one is case-insensitive, Dart's
+                                // was exact, and when they disagreed Dart asked
+                                // for a creation that this branch silently
+                                // skipped while still reporting success.
+                                if (ankiDroid.findDeckIdByName(deckName) != null) {
+                                    result.success(false);
+                                } else if (api.addNewDeck(deckName) == null) {
+                                    result.error("CREATE_DECK_FAILED",
+                                        "AnkiDroid refused to create the deck: "
+                                            + deckName, null);
+                                } else {
+                                    result.success(true);
                                 }
-                                result.success(null);
                             } catch (Exception e) {
                                 result.error("CREATE_DECK_FAILED",
                                     e.getMessage(), null);
@@ -546,6 +574,22 @@ public class AnkiChannelHandler {
         if (ankiDroid.shouldRequestPermission()) {
             result.error("PERMISSION_DENIED",
                 "AnkiDroid permission not granted. Please grant and retry.",
+                null);
+            return false;
+        }
+        // BUG-2278: 权限已授 != provider 现在还在。用户可以在 AnkiDroid 里关掉 API
+        // provider——包还在、授权还在，shouldRequestPermission() 仍是 false——而
+        // AnkiDroidHelper.getApi() 这时返回 null。三个消费方（findDuplicateNotesByKeys /
+        // findModelIdByName / findDeckIdByName）都是裸解引用，NPE 会逃出下面那些只捕
+        // IllegalStateException 的 catch，result 一次都不会被调用，Dart 侧的
+        // invokeMethod Future 就永远挂着：用户看到制卡卡死、零提示。
+        //
+        // 这条不变式以前靠「provider 一次解析后永不失效」的静态缓存兜着（那也意味着
+        // 运行期装上 AnkiDroid 要重启才认），本 PR 拆掉缓存后必须在入口显式判。
+        if (!AnkiDroidHelper.isApiAvailable(context)) {
+            result.error("ANKI_NOT_INSTALLED",
+                "AnkiDroid's API provider is unavailable "
+                    + "(not installed, or the API is disabled in AnkiDroid).",
                 null);
             return false;
         }
@@ -819,13 +863,33 @@ public class AnkiChannelHandler {
         return true;
     }
 
-    private void createNoteType(String name, ArrayList<String> fields,
-                                String cardName, String front, String back,
-                                String css) {
+    /**
+     * BUG-2380: returns true when this call actually created the note type,
+     * false when an equivalent one already existed.
+     *
+     * It used to return void and drop {@code addNewCustomModel}'s result. That
+     * result is the *only* success signal the provider gives us (it returns
+     * null on failure, see {@link AnkiProvider#addNewCustomModel}), so dropping
+     * it meant a failed creation reached Dart as a success — and "create and
+     * use Lapis" then picked whatever note type happened to be first in the
+     * user's collection. Throw instead, so the channel maps it to
+     * CREATE_MODEL_FAILED like any other failure on this path.
+     *
+     * The existence check also *is* the idempotency check now: Dart no longer
+     * runs its own (they disagreed — this one matches on name + field count,
+     * Dart compared names for exact equality, so a collection where the two
+     * disagreed made Dart ask for a creation that this method silently skipped
+     * while reporting success).
+     */
+    private boolean createNoteType(String name, ArrayList<String> fields,
+                                   String cardName, String front, String back,
+                                   String css) {
         final AnkiProvider api = AnkiProviders.forContext(context);
         // Idempotent: a model with this name + field count already exists.
-        if (ankiDroid.findModelIdByName(name, fields.size()) != null) return;
-        api.addNewCustomModel(
+        if (ankiDroid.findModelIdByName(name, fields.size()) != null) {
+            return false;
+        }
+        final Long modelId = api.addNewCustomModel(
             name,
             fields.toArray(new String[0]),
             new String[] { cardName },
@@ -835,6 +899,11 @@ public class AnkiChannelHandler {
             null,
             null
         );
+        if (modelId == null) {
+            throw new IllegalStateException(
+                "AnkiDroid refused to create the note type: " + name);
+        }
+        return true;
     }
 
     /** `content://com.ichi2.anki.flashcards/models/<mid>`。 */

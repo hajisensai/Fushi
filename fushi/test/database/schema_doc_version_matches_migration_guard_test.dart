@@ -470,11 +470,33 @@ class _MigrationIndex {
   /// 重建换列惯用形的表名后缀：`bookmarks_v82` → 基表 `bookmarks`。
   static final RegExp _rebuildSuffix = RegExp(r'^(\w+)_v\d+$');
 
+  /// 台阶里对私有 helper 的调用（`await _ensureXxx(m);`）就地展开成它的方法体。
+  ///
+  /// 台阶允许把幂等的加列/建表抽成具名方法给别处复用（`beforeOpen` 的漂移修补就
+  /// 这么干），落地版本仍由调用它的那个 `if (from < N)` 块决定。不展开的话守卫只
+  /// 看得见一个函数名，会把「已经落地的列」报成「迁移阶梯里根本找不到落地点」——
+  /// 接线没断却报红，而且报的还是「改 doc 让它说实话」这种会把人带沟里的建议。
+  ///
+  /// 只展开一层：helper 里再调 helper 的写法本仓目前没有，真出现了就是该拆的信号。
+  static final RegExp _migratorHelperCall =
+      RegExp(r'await\s+(_[A-Za-z0-9_$]+)\s*\(\s*m\s*\)\s*;');
+
+  static String _inlineMigratorHelpers(String ladder, String databaseSrc) {
+    return ladder.replaceAllMapped(_migratorHelperCall, (Match m) {
+      final String name = m.group(1)!;
+      final String sig = 'Future<void> $name(Migrator m) async';
+      if (!maskComments(databaseSrc).contains(sig)) return m.group(0)!;
+      return methodBody(databaseSrc, sig);
+    });
+  }
+
   static _MigrationIndex parse(String databaseSrc, _TableModel model) {
     // 阶梯窗口用结构原语定边界，别用「从 onUpgrade 往后数 N 个字符」——方法体一
     // 变长断言就凭空变假。
-    final String ladder =
-        methodBody(databaseSrc, 'onUpgrade: (m, from, to) async');
+    final String ladder = _inlineMigratorHelpers(
+      methodBody(databaseSrc, 'onUpgrade: (m, from, to) async'),
+      databaseSrc,
+    );
     // 只掩注释、保留字符串：裸 SQL 的表/列名活在字符串里，掩掉就读不到了。
     // 注释必须掩——`// v66（原写作 v65…）` 这类注释里全是版本号与表名，不掩就是
     // 「拿被守卫的那份叙述当判据」，守卫等于自证。

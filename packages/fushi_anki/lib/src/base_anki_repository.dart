@@ -414,6 +414,28 @@ abstract class BaseAnkiRepository {
   }) async =>
       null;
 
+  // ── 卡组新卡按词频重排 ───────────────────────────────────────────────────
+
+  /// 本后端能不能读某卡组的新卡并改写它们的队列位置。
+  ///
+  /// **后端不对称（有意）**：只有 AnkiConnect 有卡片级读写（`findCards` /
+  /// `cardsInfo` / `setSpecificValueOfCard`）。AnkiDroid ContentProvider 与
+  /// AnkiMobile 的 URL scheme 都没有改 `due` 的接口；互联「制卡到已配对设备」
+  /// 也没有对应端点。这些后端默认 false，UI 据此把入口置灰并说明原因。
+  bool get supportsDeckReposition => false;
+
+  /// 列出 [deckName]（含子卡组、排除筛选牌组）里的全部**新卡**。
+  /// 默认实现 = 不支持，抛 [UnsupportedError]；调用前先看
+  /// [supportsDeckReposition]。
+  Future<List<AnkiCardInfo>> listNewCards(String deckName) async =>
+      throw UnsupportedError('This Anki backend cannot list deck cards.');
+
+  /// 批量写回新卡位置。默认实现 = 不支持。
+  Future<AnkiCardDueWriteResult> setNewCardPositions(
+    List<AnkiCardDueUpdate> updates,
+  ) async =>
+      throw UnsupportedError('This Anki backend cannot reposition cards.');
+
   /// BUG-1549：按设置解析**当前制卡目标牌组**（id 优先、name 兜底）的单一真相。
   /// 此前这段两级 firstWhereOrNull 在 AnkiConnect / AnkiDroid / AnkiMobile 三个
   /// mine 路径各复制一份；解析结果的 `name` 现在还要随 [MineOutcome.success] 带回
@@ -496,6 +518,24 @@ abstract class BaseAnkiRepository {
   /// `video` 的旧卡不迁移不重写。
   static const String gameTag = 'game';
 
+  /// 「制卡所在字符数」标签的前缀（`chars_12345`）。下划线而非 `::`：Anki 里
+  /// `chars::12345` 会在标签树下堆出成千上万个一次性子节点，而扁平 `chars_12345`
+  /// 既能被 `tag:chars_*` 整体检索，也能按字面量排序看出制卡是在书的哪一段。
+  static const String charPositionTagPrefix = 'chars_';
+
+  /// 把制卡时的**全书绝对学习字数位置**格式化成单个 Anki tag（`chars_12345`）。
+  ///
+  /// 口径是 `countStudyChars`（全仓唯一计字口径，见 `stats/study_char_count.dart`），
+  /// 与阅读进度条分子、`study_segments.chars` 同一根数轴——所以卡片上的数字和用户在
+  /// 状态行看到的「已读字数」是同一个数，能直接对上。
+  ///
+  /// [absoluteChars] 为 `null` / 负数时返回 `null`：那是「锚点没取到」（章字数还没算完、
+  /// JS 拿不到 caret），不是「在第 0 字」。宁可不打标签，也不打一个 `chars_0` 冒充书首。
+  static String? formatCharPositionTag(int? absoluteChars) {
+    if (absoluteChars == null || absoluteChars < 0) return null;
+    return '$charPositionTagPrefix$absoluteChars';
+  }
+
   /// 把制卡来源类别映射成分类标签；`null`（未指定来源）时返回 `null`（不追加）。
   static String? _categoryTagForSource(AnkiMiningSource? source) {
     switch (source) {
@@ -525,6 +565,9 @@ abstract class BaseAnkiRepository {
   /// - [collectionTag]（同「自动添加书名到标签」开关）非空时追加**已清洗的合集/系列名
   ///   标签**（去重后）：视频=播放列表系列名，书籍=所属合集名。与 [titleTag] 并列，二者
   ///   字面量不同则各成一个 tag，相同时由 [seen] 去重合并。
+  /// - [charPositionTag]（「自动添加制卡位置到标签」开关）非空时追加**制卡所在字符数
+  ///   标签**（`chars_12345`，由 [formatCharPositionTag] 产出）：小说阅读器制卡时这张
+  ///   卡在全书第几个学习字处制的。只有书籍来源会注入；开关关闭或锚点取不到时为 `null`。
   /// - 两 backend（AnkiConnect / AnkiDroid）共用同一逻辑，避免一端漏加或漂移。
   @protected
   List<String> buildNoteTags(
@@ -534,6 +577,7 @@ abstract class BaseAnkiRepository {
     bool includeCategory = true,
     String? titleTag,
     String? collectionTag,
+    String? charPositionTag,
   }) {
     final seen = <String>{};
     final result = <String>[];
@@ -557,6 +601,14 @@ abstract class BaseAnkiRepository {
     final cleanCollection = sanitizeTitleTag(collectionTag);
     if (cleanCollection != null && seen.add(cleanCollection)) {
       result.add(cleanCollection);
+    }
+    // 制卡所在字符数标签（`chars_12345`）：排在最后，因为它是这批 tag 里唯一**每张卡
+    // 都不同**的——放前面会把 Anki 标签列表里稳定的那几个挤到看不见的地方。同样过
+    // [sanitizeTitleTag]：字面量本该由 [formatCharPositionTag] 产出（无空白），但互联
+    // 转发端送来的值是外部输入，带空格会被 Anki 拆成两个垃圾 tag。
+    final cleanCharPosition = sanitizeTitleTag(charPositionTag);
+    if (cleanCharPosition != null && seen.add(cleanCharPosition)) {
+      result.add(cleanCharPosition);
     }
     return result;
   }

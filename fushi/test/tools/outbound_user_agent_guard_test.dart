@@ -41,9 +41,21 @@ void main() {
     final Directory lib = Directory('lib');
     expect(lib.existsSync(), isTrue, reason: '必须在 fushi/ 下跑');
 
+    // 出站 UA 纪律对引擎/服务端的 HTTP 客户端同样适用（同族的
+    // outbound_http_discipline_guard 已经把这两个包收进去了，这条漏了）。
+    const List<String> scanRoots = <String>[
+      'lib',
+      '../packages/fushi_engine/lib',
+      '../packages/fushi_server/lib',
+    ];
+
     final List<String> offenders = <String>[];
     int scanned = 0;
-    for (final FileSystemEntity entity in lib.listSync(recursive: true)) {
+    for (final FileSystemEntity entity in <FileSystemEntity>[
+      for (final String rel in scanRoots)
+        if (Directory(rel).existsSync())
+          ...Directory(rel).listSync(recursive: true),
+    ]) {
       if (entity is! File || !entity.path.endsWith('.dart')) continue;
       scanned++;
       final String relative = entity.path.replaceAll(r'\', '/');
@@ -68,8 +80,8 @@ void main() {
     expectScanScale(
       scanned,
       what: 'lib/ 下的 .dart',
-      atLeast: 950,
-      measured: 1221,
+      atLeast: 1120,
+      measured: 1401,
     );
 
     expect(

@@ -41,8 +41,7 @@ class ReaderSelectionScripts {
     double y,
     int maxLength, {
     bool fromHover = false,
-  }) =>
-      'window.fushiSelection.selectText($x, $y, $maxLength, $fromHover)';
+  }) => 'window.fushiSelection.selectText($x, $y, $maxLength, $fromHover)';
 
   static String highlightInvocation(int count) =>
       'JSON.stringify(window.fushiSelection.highlightSelection($count))';
@@ -50,11 +49,12 @@ class ReaderSelectionScripts {
   static String clearInvocation() => 'window.fushiSelection.clearSelection()';
 
   /// TODO-1317: 移动端「长按拖选」手势 IIFE（注入进阅读器 setup script）。触屏在正文
-  /// 长按 [delayMs] 毫秒进入拖选态，拖动经 `window.fushiSelection.updateRangeSelection`
+  /// 长按 [delayMs] 毫秒即建立单字选区，继续拖动经
+  /// `window.fushiSelection.updateRangeSelection`
   /// 扩展 app 自绘选区（CSS Custom Highlight `fushi-selection`，绝不建立原生选区，
   /// 保住 TODO-1279 触屏无双选区），松手经 `endRangeSelection` 弹选区菜单（复制 / 查词，
   /// 走 `onSelectionMenu`）—— 选区间(可复制)与查词/制卡共存，不再被强制查词；原地未拖动
-  /// 退回单击查词（`selectText`，保住慢速点词）。移动 > [slop]px
+  /// 也保留长按时建立的单字选区，对齐 Hoshi/Android 原生长按选择。移动 > [slop]px
   /// 未及 [delayMs] 判为滑动/滚动，放弃拖选（长按 vs swipe 消歧）。置全局标志
   /// `window.__fushiTextSelectDragActive`，翻页（`_gestureEnd`）与边界跨章（`_bEnd`）
   /// 见到即让路，绝不与拖选争同一次触摸（消除拖选后误翻页 / 双查词）。
@@ -62,16 +62,14 @@ class ReaderSelectionScripts {
   /// 单独一个 IIFE、只挂 document 上的 touch 监听，与图片长按（`onImageLongPress`，
   /// 550ms，仅命中图片才 arm）按命中元素天然互斥；多指触摸（缩放）直接不 arm。
   static String longPressDragGestureScript({
-    int delayMs = 500,
+    int delayMs = 400,
     int slop = 10,
-    int maxLength = 400,
   }) {
     final int slopSq = slop * slop;
     return '''
 (function() {
   var LPS_DELAY = $delayMs;
   var LPS_SLOP_SQ = $slopSq;
-  var LPS_MAXLEN = $maxLength;
   var lpsTimer = null;
   var lpsActive = false;
   var lpsStartX = 0, lpsStartY = 0;
@@ -138,12 +136,8 @@ class ReaderSelectionScripts {
     var t = (e.changedTouches && e.changedTouches[0]) || null;
     var x = t ? t.clientX : lpsStartX;
     var y = t ? t.clientY : lpsStartY;
-    var fired = window.fushiSelection && window.fushiSelection.endRangeSelection &&
+    if (window.fushiSelection && window.fushiSelection.endRangeSelection) {
       window.fushiSelection.endRangeSelection(x, y);
-    if (!fired && window.fushiSelection && window.fushiSelection.selectText) {
-      // Long-press without a drag: behave exactly like a tap (word lookup),
-      // preserving slow-steady-tap word lookup (TODO-971).
-      window.fushiSelection.selectText(x, y, LPS_MAXLEN);
     }
     // Keep __fushiTextSelectDragActive true until the next touchstart resets it:
     // a trailing compatibility pointerup (order vs touchend varies by WebView)
@@ -195,7 +189,7 @@ class ReaderSelectionScripts {
   /// 每条带 [sentence] 文本与（可选）整书归一化偏移 [normOffset]/[normLength]
   /// （供有声书裁句子音频区间）。无选区 / 解析失败时返回两个空列表。
   static ({List<SurroundingSentence> prev, List<SurroundingSentence> next})
-      surroundingSentencesFromResult(Object? raw) {
+  surroundingSentencesFromResult(Object? raw) {
     const empty = (
       prev: <SurroundingSentence>[],
       next: <SurroundingSentence>[],
@@ -365,19 +359,8 @@ const JAPANESE_RANGES = [
 window.__fushiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
 window.fushiSelection = {
   selection: null,
-  // TODO-1317: mobile long-press drag-select anchor / whether the finger
-  // actually dragged (vs a stationary long-press that falls back to word lookup).
+  // TODO-1317: mobile long-press selection anchor.
   dragAnchor: null,
-  dragMoved: false,
-  // TODO-1366: screen anchor of the long-press start + a small pixel slop, so
-  // "drag intent" is physical finger movement (even a short drag that stays
-  // inside one glyph box) rather than crossing a character boundary. A truly
-  // stationary long-press (jitter < slop) still falls through to word lookup
-  // (TODO-971). This kills the "short selection is treated as a stationary tap
-  // and immediately looks up" special case the user hit.
-  dragStartX: 0,
-  dragStartY: 0,
-  dragMoveSlopSq: 64,
   // TODO-1366: start/end drag handles (touch grips) for the app-drawn selection.
   // Elements are lazily created and parented to <html> (like the caret ring),
   // shown only while a drag-selection is live and adjustable, hidden on clear.
@@ -872,8 +855,8 @@ window.fushiSelection = {
     var describe = function(ctx) {
       var entry = { sentence: ctx.sentence };
       if (window.fushiReader) {
-        var s = self.getNormalizedOffset(ctx.sStartNode, ctx.sStartOffset);
-        var e = self.getNormalizedOffset(ctx.sEndNode, ctx.sEndOffset);
+        var s = self.getMatchableOffset(ctx.sStartNode, ctx.sStartOffset);
+        var e = self.getMatchableOffset(ctx.sEndNode, ctx.sEndOffset);
         if (s !== null && e !== null) {
           entry.normOffset = s;
           entry.normLength = Math.max(0, e - s);
@@ -937,23 +920,25 @@ window.fushiSelection = {
     var text = sel.toString();
     if (!text) return null;
     var range = sel.getRangeAt(0);
-    var startNode = range.startContainer;
-    var startOffset = range.startOffset;
-    // 选区起点可能落在元素节点上（如 <p> 的子节点边界）；下钻到其首个文本节点，
-    // 与 getNormalizedOffset / getSentenceContext 的「文本节点 + 字符偏移」契约对齐。
-    if (startNode.nodeType !== Node.TEXT_NODE) {
-      var firstText = this.firstTextNode(startNode);
-      if (!firstText) return null;
-      startNode = firstText.node;
-      startOffset = firstText.offset;
+    // Clip against the actual Range. Element offsets are child indexes, not
+    // text offsets; descending to the element's first child shifts selections.
+    // Use the same visible-text walker as lookup, excluding ruby annotations.
+    var walker = this.createWalker(document.body);
+    var selected = [];
+    var node;
+    while ((node = walker.nextNode()) != null) {
+      if (!range.intersectsNode(node)) continue;
+      var start = node === range.startContainer ? range.startOffset : 0;
+      var end = node === range.endContainer ? range.endOffset : node.textContent.length;
+      if (end > start) selected.push({ node: node, start: start, end: end });
     }
-    var endNode = range.endContainer;
-    var endOffset = range.endOffset;
-    if (endNode.nodeType !== Node.TEXT_NODE) {
-      var firstEnd = this.firstTextNode(endNode);
-      if (firstEnd) { endNode = firstEnd.node; endOffset = firstEnd.offset; }
-      else { endNode = startNode; endOffset = startOffset; }
-    }
+    if (!selected.length) return null;
+    var first = selected[0], last = selected[selected.length - 1];
+    var startNode = first.node, startOffset = first.start;
+    var endNode = last.node, endOffset = last.end;
+    text = selected.map(function(part) {
+      return part.node.textContent.slice(part.start, part.end);
+    }).join('');
     var sentenceContext = this.getSentenceContext(startNode, startOffset);
     var normalizedOffset = window.fushiReader
       ? this.getNormalizedOffset(startNode, startOffset) : null;
@@ -1007,7 +992,16 @@ window.fushiSelection = {
         }
       }
     }
+    var match = this.matchableRange(startNode, startOffset, endNode, endOffset);
+    var matchSentence = this.matchableRange(
+      sentenceContext.sStartNode, sentenceContext.sStartOffset,
+      span && span.merged ? span.sEndNode : sentenceContext.sEndNode,
+      span && span.merged ? span.sEndOffset : sentenceContext.sEndOffset);
     return {
+      matchableOffset: match.offset,
+      matchableLength: match.length,
+      sentenceMatchableOffset: matchSentence.offset,
+      sentenceMatchableLength: matchSentence.length,
       text: text,
       sentence: sentence,
       audioCuePayload: window.fushiReader && window.fushiReader.cueIdAtDomPoint
@@ -1080,14 +1074,14 @@ window.fushiSelection = {
     w.currentNode = el;
     var after = w.nextNode();
     if (after) {
-      var o = this.getNormalizedOffset(after, 0);
+      var o = this.getMatchableOffset(after, 0);
       if (o !== null) return o;
     }
     var w2 = this.createWalker(document.body);
     w2.currentNode = el;
     var before = w2.previousNode();
     if (before) {
-      var o2 = this.getNormalizedOffset(before, before.textContent.length);
+      var o2 = this.getMatchableOffset(before, before.textContent.length);
       if (o2 !== null) return o2;
     }
     return null;
@@ -1156,6 +1150,23 @@ window.fushiSelection = {
         window.flutter_inappwebview.callHandler('onTapEmpty');
       }
       return null;
+    }
+    // Hover identity uses the matched word, not the entire forward scan buffer.
+    // The latter can contain the rest of the sentence and would block new words.
+    if (fromHover && this.selection) {
+      var insideMatch = (this.selection.matchedRanges || []).some(function(r) {
+        return hit.node === r.node && hit.offset >= r.start && hit.offset < r.end;
+      });
+      var wrapper = hit.node.parentElement && hit.node.parentElement.closest('.fushi-dict-highlight');
+      if (insideMatch || (wrapper && this.highlightWrappers.indexOf(wrapper) >= 0)) return null;
+      // Before lookup finishes, normalize Latin hits just as selectFromPosition
+      // does so hovering a different letter does not enqueue the same lookup.
+      var content = hit.node.textContent;
+      var offset = hit.offset;
+      if (offset < content.length && !this.isCodePointJapanese(content.codePointAt(offset))) {
+        while (offset > 0 && !this.isScanBoundary(content[offset - 1])) offset--;
+      }
+      if (hit.node === this.selection.startNode && offset === this.selection.startOffset) return null;
     }
     if (this.selection && hit.node === this.selection.startNode && hit.offset === this.selection.startOffset) {
       // 悬停连续查词（fromHover）命中的还是同一个词：什么都不做，保留当前选区
@@ -1313,7 +1324,18 @@ window.fushiSelection = {
         sentenceNormalizedLength = Math.max(0, snEnd - snStart);
       }
     }
+    var lastSelectedRange = ranges.length ? ranges[ranges.length - 1] : null;
+    var match = lastSelectedRange
+      ? this.matchableRange(startNode, startOffset, lastSelectedRange.node, lastSelectedRange.end)
+      : { offset: null, length: null };
+    var matchSentence = this.matchableRange(
+      sentenceContext.sStartNode, sentenceContext.sStartOffset,
+      sentenceContext.sEndNode, sentenceContext.sEndOffset);
     return {
+      matchableOffset: match.offset,
+      matchableLength: match.length,
+      sentenceMatchableOffset: matchSentence.offset,
+      sentenceMatchableLength: matchSentence.length,
       text: text,
       sentence: mangaSentence !== null && mangaSentence !== ''
         ? mangaSentence : sentenceContext.sentence,
@@ -1358,8 +1380,9 @@ window.fushiSelection = {
   // window.getSelection()/addRange, so no native selection is ever created. On
   // release a real drag hands Dart a selection menu (fireSelectionMenu ->
   // onSelectionMenu) offering Copy / Lookup so plain-text selection (copy) and
-  // lookup/mining coexist. A stationary long-press (no drag) falls back to word
-  // lookup at the caller so slow-steady taps keep looking up the whole word.
+  // lookup/mining coexist. The anchor glyph is selected as soon as the long-press
+  // threshold fires, so a stationary long-press behaves like Hoshi/Android's
+  // native text selection instead of requiring a hidden extra drag.
   //
   // Build the ordered per-textnode ranges + concatenated text spanning the two
   // character positions (drag anchor + current point). Endpoints are ordered by
@@ -1418,9 +1441,9 @@ window.fushiSelection = {
     if (!hit) return false;
     this.clearSelection();
     this.dragAnchor = { node: hit.node, offset: hit.offset };
-    this.dragStartX = x;
-    this.dragStartY = y;
-    this.dragMoved = false;
+    // Establish and paint the anchor glyph immediately. This is the feedback the
+    // native Android selection path gives at long-press time; the old path only
+    // armed an anchor and made selection contingent on a later drag.
     this.updateRangeSelection(x, y);
     return true;
   },
@@ -1430,21 +1453,6 @@ window.fushiSelection = {
     // Over a gap/blank while dragging, keep the anchor as the end (no shrink).
     var endNode = hit ? hit.node : this.dragAnchor.node;
     var endOffset = hit ? hit.offset : this.dragAnchor.offset;
-    // TODO-1366: drag intent = physical finger travel past a small pixel slop
-    // OR crossing into a different glyph. The pixel test makes a short drag that
-    // stays within one glyph box still count as a drag (so release stops at the
-    // selection state instead of falling through to an immediate word lookup);
-    // the glyph-cross test is kept so nothing that used to register as a drag
-    // regresses. Truly stationary jitter (< slop, same glyph) stays a stationary
-    // long-press -> word lookup (TODO-971).
-    var ddx = x - this.dragStartX;
-    var ddy = y - this.dragStartY;
-    if ((ddx * ddx + ddy * ddy) > this.dragMoveSlopSq) {
-      this.dragMoved = true;
-    }
-    if (hit && (hit.node !== this.dragAnchor.node || hit.offset !== this.dragAnchor.offset)) {
-      this.dragMoved = true;
-    }
     var built = this.collectRangeBetween(
       this.dragAnchor.node, this.dragAnchor.offset, endNode, endOffset);
     if (!built) return null;
@@ -1455,20 +1463,16 @@ window.fushiSelection = {
     this.renderSelectionHighlight();
     return built.text;
   },
-  // Finalize the drag: extend to the release point, then present the selection
-  // menu (Copy / Lookup) iff the finger actually dragged a range. Returns true
-  // when it handled the release (caller does nothing more), false for a
-  // stationary long-press (caller falls back to single-word lookup, TODO-971).
+  // Finalize the long-press selection: extend to the release point, then present
+  // the selection menu (Copy / Lookup). `beginRangeSelection` already selected
+  // the anchor glyph, so this also handles a stationary long-press.
   // TODO-1317: a real drag no longer fires lookup directly -- it keeps
   // this.selection (highlight stays up) and hands Dart a menu so a plain-text
   // range selection (copy) and lookup/mining coexist instead of forcing lookup.
   endRangeSelection: function(x, y) {
-    var moved = this.dragMoved;
     this.updateRangeSelection(x, y);
-    moved = moved || this.dragMoved;
     this.dragAnchor = null;
-    this.dragMoved = false;
-    if (!moved || !this.selection || !this.selection.text) {
+    if (!this.selection || !this.selection.text) {
       this.clearSelection();
       return false;
     }
@@ -1705,6 +1709,7 @@ window.fushiSelection = {
       }
       trimmedRanges.push({ node: r.node, start: r.start, end: end });
     }
+    this.selection.matchedRanges = trimmedRanges;
     var bounds = null;
     for (var i = 0; i < trimmedRanges.length; i++) {
       var seg = trimmedRanges[i];
@@ -1766,6 +1771,33 @@ window.fushiSelection = {
     }
     return bounds ? { x: bounds.left, y: bounds.top, width: bounds.right - bounds.left, height: bounds.bottom - bounds.top } : null;
   },
+  // Audio coordinates use normalized UTF-16 units, independently of study
+  // counts. Do not read nodeStartOffsets: that index belongs to navigation.
+  getMatchableOffset: function(targetNode, offset) {
+    if (!window.fushiReader || !targetNode) return null;
+    var walker = this.createWalker(document.body);
+    var count = 0;
+    var node;
+    while ((node = walker.nextNode()) != null) {
+      var text = node.textContent || '';
+      var limit = node === targetNode ? offset : text.length;
+      for (var i = 0; i < limit;) {
+        var ch = String.fromCodePoint(text.codePointAt(i));
+        if (window.fushiReader.isMatchableChar(ch)) count += ch.length;
+        i += ch.length;
+      }
+      if (node === targetNode) return count;
+    }
+    return null;
+  },
+  matchableRange: function(startNode, startOffset, endNode, endOffset) {
+    var start = this.getMatchableOffset(startNode, startOffset);
+    var end = this.getMatchableOffset(endNode, endOffset);
+    return { offset: start, length: start !== null && end !== null && end >= start
+      ? end - start : null };
+  },
+  // Historical API name: this is a learning-unit offset for navigation, not
+  // an audio matching or DOM text index. Keep persisted navigation compatible.
   getNormalizedOffset: function(targetNode, offset) {
     if (!window.fushiReader) return null;
     var base = window.fushiReader.nodeStartOffsets

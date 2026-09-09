@@ -7,9 +7,13 @@ import 'package:macos_ui/macos_ui.dart' show WindowManipulator;
 ///
 /// macOS 壳启动时开了透明标题栏 + 全尺寸内容视图（`main.dart` 的
 /// `makeTitlebarTransparent` + `enableFullSizeContentView`），Flutter 内容一直画到
-/// 窗口左上角，系统交通灯浮在其上。视频页把「退出 / 返回」按钮和左上角 OSD 提示画在
-/// 同一位置会被交通灯遮住（BUG-973 用户报告）。视频页全程隐藏交通灯即根除遮挡——
-/// 用户仍可用 Esc / 顶栏返回按钮 / Cmd+Q / 进原生全屏退出，不损失任何退出口。
+/// 窗口左上角，系统交通灯浮在其上（BUG-973：视频页的返回按钮 / 左上角 OSD 被遮）。
+///
+/// 现在交通灯是**启动即永久隐藏**：`main()` 用
+/// `setTitleBarStyle(hidden, windowButtonVisibility: false)` 一次性关掉它们，窗口
+/// 控制改由自绘的 [FushiDesktopTitleBar] MD3 顶栏提供。所以本函数只剩一个用途——
+/// **重申隐藏**（见下面的时序告警）；`hidden: false` 分支只作为对称 API 保留，
+/// 生产路径不再调用它（调了就等于把三个系统圆点放回顶栏之上）。
 ///
 /// 底层是 `NSWindow.standardWindowButton(_).isHidden`（见 macos_window_utils 的
 /// `MainFlutterWindowManipulator`），一个持久属性。只有 macOS 有交通灯，其它平台
@@ -17,8 +21,10 @@ import 'package:macos_ui/macos_ui.dart' show WindowManipulator;
 /// 吞掉，绝不因窗口按钮操作崩溃调用方。
 ///
 /// ⚠️ 时序：AppKit 的 `toggleFullScreen` 进出原生全屏会重建标题栏视图、可能把
-/// `isHidden` 复位。故不能「隐藏一次」了事——退出原生全屏后需重新调用本函数断言隐藏
-/// （视频页在 `_exitVideoNativeFullscreen` 处理）。
+/// `isHidden` 复位。故不能「隐藏一次」了事——退出原生全屏后需重新调用本函数断言隐藏。
+/// 两个重申点：[FushiDesktopTitleBar] 监听 `MacosFullscreenState`（覆盖快捷键 /
+/// 菜单 / 手势等**全部**入口），视频页在 `_exitVideoNativeFullscreen` 里另有一次
+/// （media_kit 自己的退全屏路径，不经 app 的全屏开关）。
 Future<void> setMacOSTrafficLightsHidden(bool hidden) async {
   if (!Platform.isMacOS) {
     return;

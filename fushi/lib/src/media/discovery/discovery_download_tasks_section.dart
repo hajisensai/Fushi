@@ -142,8 +142,14 @@ class DiscoveryDownloadTasksSection extends ConsumerWidget {
       id: id,
       title: task.item.title,
       createdAt: task.createdAt,
-      onRetry: _canRetry(task) ? () => queue.retry(task) : null,
-      onClear: task.isFinished ? () => queue.remove(task) : null,
+      // 直链队列同样是单跑道内存队列：无调度优先级、无暂停态（续传靠 retry 走
+      // ResumableDownloader 的 Range）。删除只能移出列表——文件删除被显式关掉
+      // （见本文件 offerDeleteFiles: false 处的说明），故只填 clear 不填 delete。
+      actions: DownloadTaskActions(
+        retry: _canRetry(task) ? () async => queue.retry(task) : null,
+        clear: task.isFinished ? () async => queue.remove(task) : null,
+        cancel: task.isFinished ? null : () async => queue.cancel(task),
+      ),
       kind: switch (task.item.kind) {
         DiscoveryMediaKind.novel => DownloadTaskKind.novel,
         DiscoveryMediaKind.audiobook => DownloadTaskKind.audiobook,

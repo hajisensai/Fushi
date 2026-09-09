@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:network_to_file_image/network_to_file_image.dart';
@@ -390,7 +390,7 @@ abstract class MediaSource {
         // BUG-959: 按物理像素上限解码，避免 EPUB 原始封面(常 1600×2400)整帧撑爆 ImageCache。
         return resizedFileImage(File(filePath));
       } else {
-        return CachedNetworkImageProvider(
+        return AppCachedHttpImage(
           fallbackUrl ?? item.imageUrl!,
           cacheKey: item.uniqueKey,
         );

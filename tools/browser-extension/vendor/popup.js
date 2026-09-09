@@ -2901,19 +2901,40 @@ function createPitchSection(pitches, reading) {
     const merged = mergeIdenticalPitchGroups(pitches);
     const groups = [];
     if (window.deduplicatePitchAccents) {
-        const seen = new Set();
+        // BUG-2397：去重必须覆盖**三类可见条目**，各自一套 seen。此前只有数字
+        // 位置进 seen，`patterns`（“heiban” 等 pattern 式音调）与 `transcriptions`（IPA）
+        // 一概不管：两本词典都标 heiban、或都给同一段 IPA 时，它们照样各占一行，
+        // 用户看到的就是「开了去重还是重复」。（mergeIdenticalPitchGroups 只能接住整份
+        // payload 全等的那一种；只要两本词典在另一个字段上差一点，合并就不成立，
+        // 重复全部落到这一步。）
+        //
+        // 三类各一个 Set、不合并成一个：位置是数字、另两类是字符串，混在一起
+        // `1` 与 `'1'` 会互相误杀（Set 按 SameValueZero 比，不会相等，但语义上
+        // 把三个值域摆进同一个命名空间本身就是错的）。
+        const seenPositions = new Set();
+        const seenPatterns = new Set();
+        const seenTranscriptions = new Set();
         merged.forEach(group => {
-            const unique = (group.pitchPositions || []).filter(pos => !seen.has(pos));
+            const unique = (group.pitchPositions || []).filter(pos => !seenPositions.has(pos));
             // TODO-688: a group with no unique pitch positions but with IPA
             // transcriptions (Yomitan `ipa`-mode dicts have no pitch positions)
             // must still render, or the transcriptions are silently dropped.
             // Pattern-style accents (79c55c2) likewise keep the group alive.
-            const hasTranscriptions = group.transcriptions?.length;
-            const hasPatterns = group.patterns?.length;
-            if (unique.length > 0 || hasTranscriptions || hasPatterns) {
-                unique.forEach(pos => seen.add(pos));
-                // 保留合并出来的 `dictionaries`，只把位置换成去重后的那份。
-                groups.push(Object.assign({}, group, { pitchPositions: unique }));
+            // BUG-2397：保活的判据从「原始字段非空」改成「**去重后**还剩东西」——
+            // 前者会把一整行已经显示过的 IPA / pattern 再画一遍。
+            const uniquePatterns = (group.patterns || []).filter(p => !seenPatterns.has(p));
+            const uniqueTranscriptions =
+                (group.transcriptions || []).filter(ipa => !seenTranscriptions.has(ipa));
+            if (unique.length > 0 || uniquePatterns.length > 0 || uniqueTranscriptions.length > 0) {
+                unique.forEach(pos => seenPositions.add(pos));
+                uniquePatterns.forEach(p => seenPatterns.add(p));
+                uniqueTranscriptions.forEach(ipa => seenTranscriptions.add(ipa));
+                // 保留合并出来的 `dictionaries`，只把三类可见条目换成去重后的那份。
+                groups.push(Object.assign({}, group, {
+                    pitchPositions: unique,
+                    patterns: uniquePatterns,
+                    transcriptions: uniqueTranscriptions,
+                }));
             }
         });
     } else {
@@ -3359,6 +3380,17 @@ function createEntryHeader(entry, idx) {
     }
     
     const buttonsContainer = el('div', { className: 'header-buttons' });
+
+    // 「制卡」功能模块（Dart 侧 ModuleId.cardCreation）关掉时，词条头上的「+」制卡
+    // 按钮与跟它同源的「在 Anki 中打开」↗ 按钮**整颗不渲染**：模块关掉的语义是「该
+    // 模块的全部入口消失」，不是「按钮还在、点了没反应」。
+    //
+    // 判据写成 `!== false` 而不是真值判断：宿主没注入过这个 flag（浏览器扩展 content
+    // 侧、node 单测）时是 undefined → 照旧渲染，零回归。形态与既有的
+    // window.sentenceDraftEnabled / window.sentenceContextPreviewEnabled 一致——由宿主
+    // 声明能力，JS 侧只读不猜。注入点见 popup_settings_injection.dart（in-app 弹窗与
+    // app 外全局查词窗共用同一段 head，故两类表面同时生效）。
+    const miningEnabled = window.__fushiMiningEnabled !== false;
     
     if (window.audioSources?.length) {
         buttonsContainer.appendChild(createAudioButton(expression, reading, idx));
@@ -3641,7 +3673,9 @@ function createEntryHeader(entry, idx) {
             }
         }
     });
-    buttonsContainer.appendChild(mineButton);
+    if (miningEnabled) {
+        buttonsContainer.appendChild(mineButton);
+    }
 
     // TODO-1360：「在 Anki 中打开卡片」按钮——仅当该词已制卡（data-mined）时显示。点击
     // 让宿主据 expression/reading 反查 Anki 全部命中卡并直接跳转打开（单卡直开 / 多卡弹
@@ -3666,7 +3700,9 @@ function createEntryHeader(entry, idx) {
         }
     });
     setButtonIcon(openAnkiButton, 'openInAnki');
-    buttonsContainer.appendChild(openAnkiButton);
+    if (miningEnabled) {
+        buttonsContainer.appendChild(openAnkiButton);
+    }
     // Lookup-time detection: query Anki's real card existence for THIS word as
     // the popup renders it, and set the accurate 已制卡 ✓ / 可制卡 + state.
     //
@@ -3678,37 +3714,41 @@ function createEntryHeader(entry, idx) {
     // earlier card to the editable ✓↩ latest state so a single click overwrites
     // it in place — no need to have mined it in this popup session. A null reply
     // keeps the ordinary two-state behaviour (Never break userspace).
-    scheduleEntryStateCheck(
-        mineButton,
-        `duplicate\u0000${mineEntryKey(expression, reading)}`,
-        () => window.flutter_inappwebview.callHandler(
-            'duplicateCheck', { expression, reading }),
-        async (isDuplicate) => {
-            const stateEpoch = entryStateCheckEpoch;
-            const stateVersion = mineButton.__fushiEntryStateVersion || 0;
-            // Paint ✓/+ as soon as duplicateCheck answers. The optional
-            // overwrite-target probe is a second Anki round trip and must not
-            // hold the basic lookup-time state hostage.
-            setMineState(isDuplicate);
-            if (isDuplicate && !isLatestEditable(expression, reading)) {
-                try {
-                    const noteId = await window.flutter_inappwebview.callHandler(
-                        'overwriteTargetNoteId', { expression, reading });
-                    if (stateEpoch !== entryStateCheckEpoch ||
-                        stateVersion !== (mineButton.__fushiEntryStateVersion || 0) ||
-                        mineButton.isConnected === false) return;
-                    if (typeof noteId === 'number' && Number.isFinite(noteId)) {
-                        rememberLatestMined(expression, reading, noteId);
-                        setMineState(true);
+    // 制卡模块关掉时上面一颗制卡按钮都没渲染，这里的查重探测也一并停掉——模块
+    // 关掉 = 它的后台流量（每次查词一次 Anki 查重 + 可能的覆写目标反查）也一起停。
+    if (miningEnabled) {
+        scheduleEntryStateCheck(
+            mineButton,
+            `duplicate\u0000${mineEntryKey(expression, reading)}`,
+            () => window.flutter_inappwebview.callHandler(
+                'duplicateCheck', { expression, reading }),
+            async (isDuplicate) => {
+                const stateEpoch = entryStateCheckEpoch;
+                const stateVersion = mineButton.__fushiEntryStateVersion || 0;
+                // Paint ✓/+ as soon as duplicateCheck answers. The optional
+                // overwrite-target probe is a second Anki round trip and must not
+                // hold the basic lookup-time state hostage.
+                setMineState(isDuplicate);
+                if (isDuplicate && !isLatestEditable(expression, reading)) {
+                    try {
+                        const noteId = await window.flutter_inappwebview.callHandler(
+                            'overwriteTargetNoteId', { expression, reading });
+                        if (stateEpoch !== entryStateCheckEpoch ||
+                            stateVersion !== (mineButton.__fushiEntryStateVersion || 0) ||
+                            mineButton.isConnected === false) return;
+                        if (typeof noteId === 'number' && Number.isFinite(noteId)) {
+                            rememberLatestMined(expression, reading, noteId);
+                            setMineState(true);
+                        }
+                    } catch (e) {
+                        // A failed overwrite-target probe must never break the ✓/+ paint;
+                        // fall back to the ordinary mined state below.
+                        console.error('overwriteTargetNoteId probe failed', e);
                     }
-                } catch (e) {
-                    // A failed overwrite-target probe must never break the ✓/+ paint;
-                    // fall back to the ordinary mined state below.
-                    console.error('overwriteTargetNoteId probe failed', e);
                 }
-            }
-        },
-    );
+            },
+        );
+    }
 
     // TODO-393「查词窗口句子上下文制卡」：仅支持草稿的表面（书籍/有声书/视频；宿主接受
     // setSentenceContext）渲染「上 N 句 / 下 N 句」上下文选择器。选「上 N」「下 N」把当前
@@ -5102,10 +5142,25 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
 // min(用户设置, 装得下的列数)，写 --dict-columns-effective 供 grid 消费；
 // resize 只改 CSS 变量（grid 自动 reflow，零重渲）。in-app 弹窗同规则受益。
 const DICT_COLUMN_MIN_WIDTH = 170;
+// 触屏设备（主指针 coarse）列宽门槛加倍：每列至少 2×DICT_COLUMN_MIN_WIDTH 才许并排。
+// 手机弹窗本就窄（竖屏 ~400px 宽 → 340 门槛下仍是单列，维持「竖着堆叠才是手机上正确
+// 形态」的原裁决），但不再被无条件锁死——平板横屏、in-app 桌面尺寸大窗这类 coarse 且
+// 宽的场景按视口正常出多列（审计报告 #1295：老版 coarse→1 把 in-app 弹窗静默锁死单列，
+// 没有任何逃生门）。fine 指针（桌面）门槛不变。CSS grid 与 JS masonry 都经本函数取列数。
+function isCoarsePointerType() {
+    try {
+        return !!(window.matchMedia
+            && window.matchMedia('(pointer: coarse)').matches);
+    } catch (e) {
+        return false;
+    }
+}
 // 视口感知的有效列数（单一真值来源）：min(用户设置 --dict-columns, 每列 ≥DICT_COLUMN_MIN_WIDTH
 // px 装得下的列数)。CSS grid 经 --dict-columns-effective 消费、masonry 经 dictColumns() 消费，
 // 两者都走此函数——绝不再分叉（历史上 masonry 漏了视口收敛，自动调整对方框布局不生效）。
 function effectiveDictColumns() {
+    // 报告 #1295：coarse 不再「一律单列」，改为提高单列门槛（见上方注释）。
+    const colFloor = isCoarsePointerType() ? DICT_COLUMN_MIN_WIDTH * 2 : DICT_COLUMN_MIN_WIDTH;
     let configured = 1;
     try {
         configured = parseInt(
@@ -5117,7 +5172,7 @@ function effectiveDictColumns() {
     if (!(configured > 0)) configured = 1;
     const width = __fushiViewportWidth();
     const fit = width > 0
-        ? Math.max(1, Math.floor(width / DICT_COLUMN_MIN_WIDTH))
+        ? Math.max(1, Math.floor(width / colFloor))
         : configured;
     return Math.min(configured, fit);
 }
@@ -5561,6 +5616,23 @@ let _popupWheelResidualAt = 0;
 // until the idle/surface reset so one occasional large mid-fling frame is not
 // mis-classified as a coarse mouse notch and momentarily over-tamed.
 let _popupWheelFineDevice = false;
+// BUG-2284: 墨水屏「瞬时滚动」（app 设置 lookup.popup_instant_scroll，经
+// popup_settings_injection / 扩展 theme 下发 window.__fushiPopupInstantScroll）。
+// 墨水屏刷一次全屏才划算，按 delta 比例的连续滚动会一路刷出残影；开启后滚轮改成
+// 「每次手势跳固定距离」——步长 = 被滚表面视口高度 × VIEWPORT_FRACTION，乘用户的
+// 滚轮速度倍率后夹在 [MIN_STEP, 一屏] 内（永不跳过整屏内容），并在 COOLDOWN_MS 内
+// 吃掉后续帧：触控板一次惯性滑动会连发几十帧，不合并就直接跳到底。
+const POPUP_EINK_WHEEL_VIEWPORT_FRACTION = 0.5; // 一次跳半屏
+const POPUP_EINK_WHEEL_MIN_STEP = 48;           // 视口异常小时的下限（布局 px）
+const POPUP_EINK_WHEEL_COOLDOWN_MS = 140;       // 一次手势内的跳跃合并窗口
+let _popupEinkWheelAt = 0;
+// 被滚表面的视口高度，单位与 scrollBy 的实参一致（布局 px）。扩展的滚动者是 shadow
+// host（zoom 设在 host 上，clientHeight 已是它自己的布局 px）；in-app 滚 document，
+// window.innerHeight 是视觉 px，要除以 documentElement 的 zoom 才是布局 px。
+function popupEinkWheelExtent(scroller) {
+    if (scroller && scroller.clientHeight > 0) return scroller.clientHeight;
+    return (window.innerHeight || 0) / popupCurrentZoom(null);
+}
 function popupCurrentZoom(scroller) {
     // BUG-688: read the zoom of the surface we are about to scroll. The in-app
     // popup zooms document.documentElement (popup_settings_injection.dart sets
@@ -5740,6 +5812,23 @@ const __fushiPopupWheelListener = (e) => {
         isFinite(window.__fushiPopupWheelSpeed) && window.__fushiPopupWheelSpeed > 0)
         ? window.__fushiPopupWheelSpeed
         : 1;
+    // BUG-2284: 墨水屏瞬时滚动——固定距离跳，不按 delta 比例连续滚。放在这里是因为
+    // 它要复用上面已解析的 wheelSpeed（同一个「滚轮速度」旋钮同时缩放两种模式）与
+    // scroller/deltaPx，且必须走在比例滚动的 factor/亚像素余量之前把事件吃掉。
+    if (window.__fushiPopupInstantScroll) {
+        if ((nowMs - _popupEinkWheelAt) < POPUP_EINK_WHEEL_COOLDOWN_MS) return;
+        _popupEinkWheelAt = nowMs;
+        _popupWheelResidual = 0; // 比例模式的余量在瞬时模式下无意义，切换回去也别延迟跳
+        const extent = popupEinkWheelExtent(scroller);
+        const jump = Math.max(
+            POPUP_EINK_WHEEL_MIN_STEP,
+            Math.min(extent, extent * POPUP_EINK_WHEEL_VIEWPORT_FRACTION * wheelSpeed));
+        const step = Math.trunc(deltaPx < 0 ? -jump : jump);
+        if (step === 0) return;
+        if (scroller) { scroller.scrollBy({ top: step, behavior: 'auto' }); }
+        else { window.scrollBy({ top: step, behavior: 'auto' }); }
+        return;
+    }
     const factor = (coarseMouseNotch
         ? POPUP_WHEEL_PIXEL_FACTOR
         : POPUP_WHEEL_TRACKPAD_FACTOR) * wheelSpeed;

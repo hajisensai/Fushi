@@ -184,13 +184,11 @@ void main() {
 
       await repo.setVideoLibraryAutoBackfillScrape(false);
       expect(repo.videoLibraryAutoBackfillScrape, isFalse);
-      expect(repo.videoAutoScrape, isTrue,
-          reason: '关掉补刮不得连带改动旧的本地封面 sweep 开关');
+      expect(repo.videoAutoScrape, isTrue, reason: '关掉补刮不得连带改动旧的本地封面 sweep 开关');
 
       await repo.setVideoAutoScrape(false);
       await repo.setVideoLibraryAutoBackfillScrape(true);
-      expect(repo.videoAutoScrape, isFalse,
-          reason: '两个键必须是两份独立状态，不是同一个键的两个名字');
+      expect(repo.videoAutoScrape, isFalse, reason: '两个键必须是两份独立状态，不是同一个键的两个名字');
       expect(repo.videoLibraryAutoBackfillScrape, isTrue);
 
       await repo.loadFromDb();
@@ -282,5 +280,54 @@ void main() {
       pending.map((VideoPendingScrapeWork e) => e.work.title),
       <String>['Unscraped Movie'],
     );
+  });
+
+  group('planScrapeWorkForCollection（「重刮这一个合集」的定位入口）', () {
+    /// 建一个多成员合集并返回 id —— 计划器只把**多成员**合集当剧集作品单元。
+    Future<int> addCollection(String name, int sourceId,
+        {required List<String> uids}) async {
+      for (final String uid in uids) {
+        await addVideo(uid, 'D:/A/$uid.mkv', sourceId, title: uid);
+      }
+      final int id = await db.createMediaCollection(name);
+      for (final String uid in uids) {
+        await db.addToCollection(id, MediaKind.video, uid);
+      }
+      return id;
+    }
+
+    test('按 stableKey 命中该合集的作品单元，并带回它所属的来源行', () async {
+      final int sourceId = await addSource('D:/A');
+      final int id =
+          await addCollection('Show', sourceId, uids: <String>['s-e1', 's-e2']);
+
+      final VideoPendingScrapeWork? planned =
+          await planScrapeWorkForCollection(db, id);
+
+      expect(planned, isNotNull);
+      expect(planned!.source.id, sourceId);
+      expect(planned.work.stableKey, 'collection:$id');
+      expect(planned.work.collection?.id, id);
+    });
+
+    test('同名合集不会认错——匹配的是 stableKey 不是标题', () async {
+      final int sourceId = await addSource('D:/A');
+      final int first =
+          await addCollection('Show', sourceId, uids: <String>['a-e1', 'a-e2']);
+      final int second =
+          await addCollection('Show', sourceId, uids: <String>['b-e1', 'b-e2']);
+
+      expect(
+          (await planScrapeWorkForCollection(db, first))!.work.collection?.id,
+          first);
+      expect(
+          (await planScrapeWorkForCollection(db, second))!.work.collection?.id,
+          second);
+    });
+
+    test('合集不在任何本地来源的计划里时返回 null（调用方据此给可见提示）', () async {
+      final int orphan = await db.createMediaCollection('No members');
+      expect(await planScrapeWorkForCollection(db, orphan), isNull);
+    });
   });
 }

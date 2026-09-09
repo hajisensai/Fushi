@@ -357,7 +357,7 @@ void main() {
   });
 
   testWidgets(
-      'source settings explain MAL primary and persist safe output toggles',
+      'source settings offer a primary-source picker and persist safe output toggles',
       (WidgetTester tester) async {
     final FushiDatabase db = _memDb();
     addTearDown(db.close);
@@ -366,15 +366,22 @@ void main() {
 
     await tester.tap(find.byTooltip('Source scrape settings'));
     await tester.pumpAndSettle();
-    expect(find.text('Use global default'), findsNothing);
+    // 主资料源选择器默认「跟随全局」；退役的 AniDB / Bangumi / Douban / AniList
+    // 与 Fanart 开关不再出现在来源设置里。
+    expect(find.text('Follow global default'), findsOneWidget);
     expect(find.text('AniDB'), findsNothing);
-    expect(find.text('TMDB'), findsNothing);
     expect(find.text('Use Fanart images'), findsNothing);
     expect(find.text('Bangumi'), findsNothing);
     expect(find.text('Douban'), findsNothing);
     expect(find.text('AniList'), findsNothing);
+    // 选 TMDB 为此来源主源：第二个下拉是主资料源（第一个是分组模式）。
+    await tester.tap(find.byType(DropdownMenu<int>).at(1));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('TMDB').last);
+    await tester.pumpAndSettle();
     // BUG-1999：enabled 是此来源刮削的总闸，UI 必须可改且真写穿 DB（旧实现
     // 根本没画这个开关、保存时硬编码回写旧值）。
+    await tester.ensureVisible(find.text('Enable scraping for this source'));
     await tester.tap(find.text('Enable scraping for this source'));
     await tester.ensureVisible(find.text('Scrape after scanning'));
     await tester.tap(find.text('Scrape after scanning'));
@@ -386,7 +393,7 @@ void main() {
     final VideoSourceScrapeSettingRow settings =
         (await db.getVideoSourceScrapeSettings(sourceId))!;
     expect(settings.enabled, isFalse);
-    expect(settings.providerOverride, isNull);
+    expect(settings.providerOverride, 'tmdb');
     expect(settings.autoAfterScan, isTrue);
     expect(settings.writeNfo, isTrue);
     expect(settings.writeImages, isFalse);
@@ -396,6 +403,50 @@ void main() {
       reason: 'legacy column stays compatible even though the UI ignores it',
     );
     expect(settings.allowExternalOverwrite, isFalse);
+    expect(settings.metadataLocale, isNull,
+        reason: 'v99 资料语言留空 = 跟随全局，不写死一个字符串');
+  });
+
+  testWidgets('source settings persist a per-source metadata language (v99)',
+      (WidgetTester tester) async {
+    final FushiDatabase db = _memDb();
+    addTearDown(db.close);
+    final int sourceId = await _seedSource(db, mediaKind: 'video');
+    await _pumpView(tester, db, mediaKind: 'video');
+
+    Finder localeField() => find.ancestor(
+          of: find.text('Metadata language'),
+          matching: find.byType(TextField),
+        );
+
+    await tester.tap(find.byTooltip('Source scrape settings'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(localeField());
+    await tester.enterText(localeField(), '  ja  ');
+    await tester.tap(find.text('SAVE'));
+    await tester.pumpAndSettle();
+
+    expect(
+      (await db.getVideoSourceScrapeSettings(sourceId))!.metadataLocale,
+      'ja',
+      reason: '首尾空白裁掉后写穿 metadata_locale',
+    );
+
+    // 再开一次：输入框回显已存的值，清空后保存回到「跟随全局」= NULL。
+    await tester.tap(find.byTooltip('Source scrape settings'));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<TextField>(localeField()).controller!.text,
+      'ja',
+    );
+    await tester.enterText(localeField(), '   ');
+    await tester.tap(find.text('SAVE'));
+    await tester.pumpAndSettle();
+    expect(
+      (await db.getVideoSourceScrapeSettings(sourceId))!.metadataLocale,
+      isNull,
+      reason: '空白 = 跟随全局，必须落回 NULL 而不是空串',
+    );
   });
 
   testWidgets('latest persisted run replaces the scan-count subtitle',

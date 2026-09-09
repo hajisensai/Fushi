@@ -155,6 +155,7 @@ void main() {
       double atSeconds = 0,
       dynamic onFailure,
       String? tlsPinSha256,
+      bool diagnosticOnly = false,
     }) async {
       (onFailure as void Function(String)?)?.call('frame boom');
       return null;

@@ -25,19 +25,15 @@ public class AnkiDroidHelper {
     private static final String DECK_REF_DB = "com.ichi2.anki.api.decks";
     private static final String MODEL_REF_DB = "com.ichi2.anki.api.models";
 
-    private AnkiProvider mApi;
-    private Context mContext;
+    private final Context mContext;
 
     public AnkiDroidHelper(Context context) {
         mContext = context.getApplicationContext();
-        // BUG-2195：主包仍是 AddContentApi（逐行委托、行为不变），并行版走自建的
-        // ContentResolver 实现。一个都没装时为 null——调用点在此之前都被
-        // isApiAvailable 挡住了。
-        mApi = AnkiProviders.forContext(mContext);
     }
 
+    /** 按当前可用安装创建 provider，不保留启动时的 null 或旧安装实例。 */
     public AnkiProvider getApi() {
-        return mApi;
+        return AnkiProviders.forContext(mContext);
     }
 
     /**
@@ -46,7 +42,7 @@ public class AnkiDroidHelper {
      *
      * <p>BUG-2195：判据从 {@code AddContentApi.getAnkiDroidPackageName}（只认写死的
      * 主包 authority {@code com.ichi2.anki.flashcards}）换成 {@link AnkiDroidTarget}
-     * 的逐候选探测，否则装了并行版（{@code com.ichi2.anki.A} 等）的机器上这里恒
+     * 的逐候选探测，否则装了并行版（{@code com.ichi2.anki.e} 等）的机器上这里恒
      * false，权限框一次都不会弹。
      *
      * @return true if the API is available to use
@@ -64,7 +60,7 @@ public class AnkiDroidHelper {
 
     /**
      * 要申请的读写权限名。BUG-2195：并行版定义的是**它自己**那个带后缀的权限
-     * （{@code com.ichi2.anki.A.permission.READ_WRITE_DATABASE}），申请主包那个只会
+     * （{@code com.ichi2.anki.e.permission.READ_WRITE_DATABASE}），申请主包那个只会
      * 静默判拒。没解析到安装时回退主包常量——此时 shouldRequestPermission 的结果无人
      * 使用（isApiAvailable 已经先短路了）。
      */
@@ -129,12 +125,13 @@ public class AnkiDroidHelper {
      */
     private SparseArray<List<AnkiNote>> findDuplicateNotesByKeys(
             long modelId, List<String> keys) {
+        final AnkiProvider api = getApi();
         // BUG-2195：AnkiProvider 只暴露单 key 查重（两个实现都能可靠支持），多 key
         // 版在这里按 key 逐个查。本方法只服务下面那个从上游 sample 抄来的
         // removeDuplicates —— 它全仓无调用，保留只为不删上游对照代码。
         final SparseArray<List<AnkiNote>> result = new SparseArray<>();
         for (int i = 0; i < keys.size(); i++) {
-            final List<AnkiNote> found = mApi.findDuplicateNotes(modelId, keys.get(i));
+            final List<AnkiNote> found = api.findDuplicateNotes(modelId, keys.get(i));
             if (found != null && !found.isEmpty()) {
                 result.put(i, found);
             }
@@ -188,16 +185,17 @@ public class AnkiDroidHelper {
      * @return the model ID or null if something went wrong
      */
     public Long findModelIdByName(String modelName, int numFields) {
+        final AnkiProvider api = getApi();
         SharedPreferences modelsDb = mContext.getSharedPreferences(MODEL_REF_DB, Context.MODE_PRIVATE);
         long prefsModelId = modelsDb.getLong(modelName, -1L);
         // if we have a reference saved to modelName and it exists and has at least numFields then return it
         if ((prefsModelId != -1L)
-                && (mApi.getModelName(prefsModelId) != null)
-                && (mApi.getFieldList(prefsModelId) != null)
-                && (mApi.getFieldList(prefsModelId).length >= numFields)) { // could potentially have been renamed
+                && (api.getModelName(prefsModelId) != null)
+                && (api.getFieldList(prefsModelId) != null)
+                && (api.getFieldList(prefsModelId).length >= numFields)) { // could potentially have been renamed
             return prefsModelId;
         }
-        Map<Long, String> modelList = mApi.getModelList(numFields);
+        Map<Long, String> modelList = api.getModelList(numFields);
         if (modelList != null) {
             for (Map.Entry<Long, String> entry : modelList.entrySet()) {
                 if (entry.getValue().equals(modelName)) {
@@ -220,16 +218,17 @@ public class AnkiDroidHelper {
      * @return the did of the deck in Anki
      */
     public Long findDeckIdByName(String deckName) {
+        final AnkiProvider api = getApi();
         SharedPreferences decksDb = mContext.getSharedPreferences(DECK_REF_DB, Context.MODE_PRIVATE);
         // Look for deckName in the deck list
-        Long did = getDeckId(deckName);
+        Long did = getDeckId(api, deckName);
         if (did != null) {
             // If the deck was found then return it's id
             return did;
         } else {
             // Otherwise try to check if we have a reference to a deck that was renamed and return that
             did = decksDb.getLong(deckName, -1);
-            if (did != -1 && mApi.getDeckName(did) != null) {
+            if (did != -1 && api.getDeckName(did) != null) {
                 return did;
             } else {
                 // If the deck really doesn't exist then return null
@@ -243,8 +242,8 @@ public class AnkiDroidHelper {
      * @param deckName Exact name of deck (note: deck names are unique in Anki)
      * @return the ID of the deck that has given name, or null if no deck was found or API error
      */
-    private Long getDeckId(String deckName) {
-        Map<Long, String> deckList = mApi.getDeckList();
+    private Long getDeckId(AnkiProvider api, String deckName) {
+        Map<Long, String> deckList = api.getDeckList();
         if (deckList != null) {
             for (Map.Entry<Long, String> entry : deckList.entrySet()) {
                 if (entry.getValue().equalsIgnoreCase(deckName)) {

@@ -15,7 +15,7 @@
 /// `serverOcrIsolateBootstrap` 收到后写入本 isolate 的 [serverOrtLibraryPath]。
 library;
 
-import 'package:asr_onnx_ffi/asr_onnx_ffi.dart';
+import 'package:fushi_asr_onnx_ffi/asr_onnx_ffi.dart';
 import 'package:fushi_engine/ocr/ocr_inference.dart';
 
 /// 本 isolate 内的 ORT 库覆盖路径（由 [serverOcrIsolateBootstrap] 写入）。

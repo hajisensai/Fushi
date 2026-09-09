@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:crypto/crypto.dart';
+import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
@@ -685,7 +686,26 @@ class _VideoResourceSearchSurfaceState
   VideoMetadataMediaKind _manualMediaKind = VideoMetadataMediaKind.tv;
   String _manualProvider = 'anidb';
   ProviderBatchResult<VideoResourceCandidate>? _result;
-  VideoResourceCandidate? _selected;
+  /// 已选中的候选，按点选顺序（入队顺序就按这个走，与用户看到的顺序一致）。
+  ///
+  /// 只有**下载模式**才可能多于一条：订阅是「一条规则跟一个 release 模板」，
+  /// 多选在那里没有意义，所以订阅模式下选新的直接替换旧的（见 [_select]）。
+  /// 用一个集合而不是「单值 + 集合」两份状态，是为了不再有两处要同步。
+  final List<VideoResourceCandidate> _selectedCandidates =
+      <VideoResourceCandidate>[];
+
+  VideoResourceCandidate? get _selected =>
+      _selectedCandidates.isEmpty ? null : _selectedCandidates.last;
+
+  bool _isSelected(VideoResourceCandidate candidate) =>
+      _selectedCandidates.any(
+        (VideoResourceCandidate c) => c.identityKey == candidate.identityKey,
+      );
+
+  Set<String> get _selectedIdentityKeys => <String>{
+        for (final VideoResourceCandidate c in _selectedCandidates)
+          c.identityKey,
+      };
   int? _sourceId;
   VideoDownloadSubtitlePolicy _subtitlePolicy =
       VideoDownloadSubtitlePolicy.bestEffort;
@@ -761,7 +781,7 @@ class _VideoResourceSearchSurfaceState
       ++_generation;
       _loading = false;
       _result = null;
-      _selected = null;
+      _selectedCandidates.clear();
       _strictConfirmed = false;
     });
   }
@@ -812,7 +832,7 @@ class _VideoResourceSearchSurfaceState
     final int generation = ++_generation;
     setState(() {
       _loading = true;
-      _selected = null;
+      _selectedCandidates.clear();
       _strictConfirmed = false;
     });
     final ProviderBatchResult<VideoResourceCandidate> result =
@@ -831,9 +851,26 @@ class _VideoResourceSearchSurfaceState
 
   void _select(VideoResourceCandidate candidate) {
     setState(() {
-      _selected = candidate;
       _strictConfirmed = false;
-      final int? episode = episodeNumberFromReleaseTitle(candidate.title);
+      if (widget.subscription) {
+        // 订阅只跟一条模板：选新的直接替换，不累积。
+        _selectedCandidates
+          ..clear()
+          ..add(candidate);
+      } else if (!_selectedCandidates.remove(
+        _selectedCandidates.firstWhereOrNull(
+          (VideoResourceCandidate c) =>
+              c.identityKey == candidate.identityKey,
+        ),
+      )) {
+        _selectedCandidates.add(candidate);
+      }
+      // 起始集号只对订阅有意义，且要跟着「当前这一条」走；下载模式多选时用最后
+      // 点的那条填，反正提交时不读它。
+      final VideoResourceCandidate? current = _selected;
+      final int? episode = current == null
+          ? null
+          : episodeNumberFromReleaseTitle(current.title);
       _startAfterController.text = episode?.toString() ?? '';
     });
   }
@@ -848,21 +885,27 @@ class _VideoResourceSearchSurfaceState
   Future<void> _submit() async {
     if (_remote) return _submitRemote();
     final VideoMediaReference? media = _media;
-    final VideoResourceCandidate? resource = _selected;
     final MediaSourceRow? source = _source;
-    if (media == null || resource == null || source == null || _submitting) {
+    // 目标集在任何 await 之前定死：提交期间搜索结果会被刷新重建，跨 await 重读
+    // 会让「按钮上写的 N」与实际入队条数对不上。
+    final List<VideoResourceCandidate> resources =
+        List<VideoResourceCandidate>.of(_selectedCandidates);
+    if (media == null || resources.isEmpty || source == null || _submitting) {
       return;
     }
-    final VideoDiscoveryDownloadSelection download =
+    VideoDiscoveryDownloadSelection downloadFor(
+      VideoResourceCandidate resource,
+    ) =>
         VideoDiscoveryDownloadSelection(
-      media: media,
-      resource: resource,
-      source: source,
-      subtitlePolicy: _subtitlePolicy,
-    );
+          media: media,
+          resource: resource,
+          source: source,
+          subtitlePolicy: _subtitlePolicy,
+        );
     setState(() => _submitting = true);
     try {
       if (widget.subscription) {
+        final VideoResourceCandidate resource = resources.first;
         final StrictVideoSubscriptionFilter? filter =
             deriveStrictVideoSubscriptionFilter(resource);
         if (filter == null || !_strictConfirmed) return;
@@ -871,13 +914,31 @@ class _VideoResourceSearchSurfaceState
             : int.tryParse(_startAfterController.text.trim());
         await widget.onSubscriptionSubmit!(
           VideoDiscoverySubscriptionSelection(
-            download: download,
+            download: downloadFor(resource),
             filter: filter,
             startAfterEpisode: startAfter,
           ),
         );
       } else {
-        await widget.onSubmit!(download);
+        // 串行：入队最终落到同一张 video_download_jobs 表，并发只会把一批提交
+        // 变成一批竞态。首条失败直接抛给下面的 catch（后端不可用 / 没配好这类
+        // 前置问题对整批都成立，逐条重复报 N 次没有意义）；后续条目的失败聚合成
+        // 一句，不让一条挂掉把其余的也废掉。
+        int failed = 0;
+        for (int i = 0; i < resources.length; i++) {
+          try {
+            await widget.onSubmit!(downloadFor(resources[i]));
+          } on Object catch (error, stackTrace) {
+            if (i == 0) rethrow;
+            failed++;
+            debugPrint(
+              '[fushi-discovery] batch enqueue failed: $error\n$stackTrace',
+            );
+          }
+        }
+        if (failed > 0 && mounted) {
+          _showSubmitFailure(t.download_batch_failed(n: failed), null);
+        }
       }
       if (mounted) widget.onClose?.call();
     } on VideoDownloadBackendUnavailable catch (error) {
@@ -1145,7 +1206,7 @@ class _VideoResourceSearchSurfaceState
                   setState(() {
                     _manualMediaKind = value;
                     _result = null;
-                    _selected = null;
+                    _selectedCandidates.clear();
                     _strictConfirmed = false;
                   });
                 },
@@ -1179,7 +1240,7 @@ class _VideoResourceSearchSurfaceState
                     setState(() {
                       _manualProvider = value;
                       _result = null;
-                      _selected = null;
+                      _selectedCandidates.clear();
                     });
                   },
                 );
@@ -1272,7 +1333,13 @@ class _VideoResourceSearchSurfaceState
                 label: Text(
                   widget.subscription
                       ? t.video_discovery_subscribe
-                      : t.dialog_done,
+                      : _selectedCandidates.length > 1
+                          // 选了多条时按钮上直接写清楚这一下会入队几条，
+                          // 免得用户以为只下最后点的那一条。
+                          ? t.batch_selected_count(
+                              n: _selectedCandidates.length,
+                            )
+                          : t.dialog_done,
                 ),
               ),
             ],
@@ -1285,7 +1352,8 @@ class _VideoResourceSearchSurfaceState
   bool _canSubmit(StrictVideoSubscriptionFilter? filter) =>
       !_loading &&
       !_submitting &&
-      _selected != null &&
+      _selectedCandidates.isNotEmpty &&
+      // 远端下载目标不需要本地 source：任务整条交给对端执行。
       (_source != null || _remote) &&
       (!widget.subscription || (filter != null && _strictConfirmed));
 
@@ -1343,7 +1411,8 @@ class _VideoResourceSearchSurfaceState
             Expanded(
               child: VideoResourceVersionGroupList(
                 groups: buildVideoResourceVersionGroups(result.items),
-                selectedIdentityKey: _selected?.identityKey,
+                selectedIdentityKeys: _selectedIdentityKeys,
+                multiSelect: !widget.subscription,
                 onSelect: _select,
                 compact: !widget.pageMode,
               ),
@@ -1411,10 +1480,17 @@ class _VideoResourceSearchSurfaceState
           density: widget.pageMode
               ? FushiListDensity.standard
               : FushiListDensity.compact,
-          selected: identical(_selected, candidate),
-          leading: Icon(candidate.trusted
-              ? Icons.verified_rounded
-              : Icons.cloud_download_outlined),
+          selected: _isSelected(candidate),
+          // 下载模式给勾选框（可多选整季分集）；订阅模式仍是单选，摆勾选框会
+          // 让人以为能订阅一批。
+          leading: widget.subscription
+              ? Icon(candidate.trusted
+                  ? Icons.verified_rounded
+                  : Icons.cloud_download_outlined)
+              : Checkbox(
+                  value: _isSelected(candidate),
+                  onChanged: (_) => _select(candidate),
+                ),
           onTap: () => _select(candidate),
         );
       },

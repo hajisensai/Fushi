@@ -172,7 +172,7 @@ void main() {
     );
     final String toggleBody = methodBody(
       src,
-      'Future<void> _toggleFavoriteSentence()',
+      'Future<void> _toggleFavoriteSentence(',
     );
     // 这两条锚点是**跨行**的相邻语句对（「删完紧接着失效缓存」），containsCodeLine 逐行
     // 匹配表达不了，故保留整段 contains——窗口已掩码，注释满足不了它。
@@ -183,19 +183,22 @@ void main() {
       ),
       reason: '设置面板删除收藏后，当前 reader 缓存必须失效',
     );
-    // BUG-494：取消收藏优先按缓存的精确条目 id removeById 删单条，无 id 时才回退内容键
-    // removeByContent（包在 else 分支里，故内容键删单条这段多缩进一层，text: 现为 10 空格
-    // 缩进）。守卫更新到当前缩进，不变量强度不变：内容键删除仍走 removeByContent 单条删。
+    // 每次操作按实际选区解析精确收藏 ID，不能采用另一句的查词缓存。
     expect(
       toggleBody,
-      contains('await repo.removeByContent(\n          text: sentence,'),
+      contains('await repo.matchedFavoriteId('),
+    );
+    expect(
+      toggleBody,
+      contains('await repo.removeById(matchedId);'),
     );
     expect(
       containsCodeLine(toggleBody, '_invalidateFavoriteSentenceCache();'),
       isTrue,
     );
-    // 删除路径（内容键回退分支）删后必失效缓存。
-    final int removeIdx = toggleBody.indexOf('await repo.removeByContent(');
+    // 精确删除后必失效缓存。
+    final int removeIdx =
+        toggleBody.indexOf('await repo.removeById(matchedId);');
     final int removeInvalidateIdx = toggleBody.indexOf(
       '_invalidateFavoriteSentenceCache();',
       removeIdx,
@@ -203,12 +206,10 @@ void main() {
     expect(
       removeInvalidateIdx,
       greaterThan(removeIdx),
-      reason: '删除收藏（内容键回退）后当前 reader 缓存必须失效',
+      reason: '删除本次选区对应收藏后当前 reader 缓存必须失效',
     );
-    // 新增收藏：repo.add(fav) 后必记住精确 id（BUG-494 removeById 用）并失效缓存再刷新
-    // 高亮。BUG-494 在 add 与 invalidate 之间插入 _currentFavoriteId = fav.id;，故不再是
-    // 紧邻两行——改为「add 之后、rebuild 之前必有 _currentFavoriteId 记账 + 缓存失效」，
-    // 不变量强度不变（新增后缓存必失效）。
+    // 新增后先失效缓存再刷新高亮。后续删除重新按本次文本与章号解析 ID，
+    // 不依赖可能属于其他查词选区的 _currentFavoriteId。
     final int addIdx = toggleBody.indexOf('await repo.add(fav);');
     expect(addIdx, greaterThan(0), reason: '新增收藏必须 repo.add(fav)');
     final int rebuildAfterAddIdx = toggleBody.indexOf(
@@ -221,11 +222,12 @@ void main() {
       reason: '新增收藏后必须 rebuild 星标态',
     );
     final String addBody = toggleBody.substring(addIdx, rebuildAfterAddIdx);
-    expect(
-      containsCodeLine(addBody, '_currentFavoriteId = fav.id;'),
-      isTrue,
-      reason: 'BUG-494：新增后记住精确 id，供随后 removeById 精确删单条',
-    );
+    final int matchIdx = toggleBody.indexOf('await repo.matchedFavoriteId(');
+    expect(matchIdx, lessThan(removeIdx));
+    final String matchBody = toggleBody.substring(matchIdx, removeIdx);
+    expect(matchBody, contains('text: sentence,'));
+    expect(matchBody, contains('sectionIndex: section,'));
+    expect(matchBody, contains('if (matchedId != null)'));
     expect(
       containsCodeLine(addBody, '_invalidateFavoriteSentenceCache();'),
       isTrue,

@@ -2,7 +2,6 @@
 library;
 
 import 'dart:convert';
-
 import 'package:crypto/crypto.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
@@ -12,6 +11,22 @@ import 'package:fushi_engine/media/video/scraper/title_normalizer.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
+import 'package:fushi_engine/media/video/metadata/video_metadata_locked_fields.dart';
+
+/// 成员视频的本地 (季, 集) 键：优先协调器给出的覆盖（多季合集 / 绝对集号重定向），
+/// 否则按文件名解析（季缺省 1）；解不出集号返回 null。入库、sidecar、旧投影
+/// 三处必须用同一把键，否则同一集会在三个地方绑到不同文件。
+(int, int)? localEpisodeKeyFor(
+  VideoBookRow book,
+  Map<String, (int, int)> episodeOverrides,
+) {
+  final (int, int)? override = episodeOverrides[book.bookUid];
+  if (override != null) return override;
+  final VideoNameInfo parsed = parseVideoFilename(p.basename(book.videoPath));
+  final int? episode = parsed.episode;
+  if (episode == null) return null;
+  return (parsed.season ?? 1, episode);
+}
 
 class PersistedVideoMetadata {
   const PersistedVideoMetadata({
@@ -118,10 +133,13 @@ class VideoMetadataDatabaseStore {
     );
   }
 
+  /// [episodeOverrides]：成员 `bookUid` → 本地 (季, 集)。多季合集 / 绝对集号
+  /// 重定向后由协调器给出，覆盖单纯按文件名解析的键；没有条目的成员照旧解析。
   Future<PersistedVideoMetadata> apply(
     VideoSourceScrapeWork localWork,
     VideoMetadataWork metadata, {
     bool seasonEpisodesAuthoritative = true,
+    Map<String, (int, int)> episodeOverrides = const <String, (int, int)>{},
   }) async {
     final int now = DateTime.now().millisecondsSinceEpoch;
     late int workId;
@@ -131,6 +149,19 @@ class VideoMetadataDatabaseStore {
         <String, VideoMetadataEpisode>{};
 
     await database.transaction(() async {
+      // v99 字段锁：先读旧行，被锁字段一律保留旧值。必须在
+      // `_removeBookOwnedWorksForCollection` 之前读——那一步只删「成员自己拥有的
+      // 作品行」，但把读放在最前面才不用去推理它到底删了谁。
+      final VideoMetadataWorkRow? existingWork = localWork.collection == null
+          ? await database
+              .getVideoMetadataWorkByBook(localWork.members.single.bookUid)
+          : await database
+              .getVideoMetadataWorkByCollection(localWork.collection!.id);
+      final Set<VideoMetadataLockableField> locked =
+          parseLockedFields(existingWork?.lockedFields);
+      bool isLocked(VideoMetadataLockableField field) =>
+          existingWork != null && locked.contains(field);
+
       if (localWork.collection case final MediaCollectionRow collection) {
         await _removeBookOwnedWorksForCollection(collection.id);
       }
@@ -141,14 +172,32 @@ class VideoMetadataDatabaseStore {
               ? localWork.members.single.bookUid
               : null),
           mediaType: metadata.kind.name,
-          title: metadata.title,
-          originalTitle: Value<String?>(metadata.originalTitle),
-          overview: Value<String?>(metadata.plot),
-          tagline: Value<String?>(metadata.tagline),
+          title: isLocked(VideoMetadataLockableField.title)
+              ? existingWork!.title
+              : metadata.title,
+          originalTitle: Value<String?>(
+            isLocked(VideoMetadataLockableField.originalTitle)
+                ? existingWork!.originalTitle
+                : metadata.originalTitle,
+          ),
+          overview: Value<String?>(
+            isLocked(VideoMetadataLockableField.overview)
+                ? existingWork!.overview
+                : metadata.plot,
+          ),
+          tagline: Value<String?>(
+            isLocked(VideoMetadataLockableField.tagline)
+                ? existingWork!.tagline
+                : metadata.tagline,
+          ),
           premiereDate: Value<String?>(metadata.premiered),
           endDate: Value<String?>(metadata.endDate),
           year: Value<int?>(metadata.year),
-          rating: Value<double?>(metadata.rating),
+          rating: Value<double?>(
+            isLocked(VideoMetadataLockableField.rating)
+                ? existingWork!.rating
+                : metadata.rating,
+          ),
           ratingCount: Value<int?>(metadata.ratingVotes),
           runtimeMinutes: Value<int?>(metadata.runtimeMinutes),
           contentRating: Value<String?>(metadata.contentRating),
@@ -167,10 +216,35 @@ class VideoMetadataDatabaseStore {
         now: now,
       );
       await _replaceRawSnapshot(workId, metadata, now);
-      await _replaceTerms(workId, metadata);
+      // 锁住的整组词（genres / studios）保留旧集合；其余种类照常整体替换。
+      final Map<String, List<String>> lockedTerms =
+          isLocked(VideoMetadataLockableField.genres) ||
+                  isLocked(VideoMetadataLockableField.studios)
+              ? await _termsByKind(workId)
+              : const <String, List<String>>{};
+      await _replaceTerms(
+        workId,
+        metadata,
+        genres: isLocked(VideoMetadataLockableField.genres)
+            ? (lockedTerms['genre'] ?? const <String>[])
+            : metadata.genres,
+        studios: isLocked(VideoMetadataLockableField.studios)
+            ? (lockedTerms['studio'] ?? const <String>[])
+            : metadata.studios,
+      );
       await _replaceCredits(
           workId: workId, credits: metadata.credits, now: now);
-      await _replaceImages(workId: workId, images: metadata.images, now: now);
+      await _replaceImages(
+        workId: workId,
+        images: metadata.images,
+        now: now,
+        lockedKinds: <VideoMetadataImageKind>{
+          if (isLocked(VideoMetadataLockableField.cover))
+            VideoMetadataImageKind.cover,
+          if (isLocked(VideoMetadataLockableField.backdrop))
+            VideoMetadataImageKind.backdrop,
+        },
+      );
       await database.replaceOnlineVideoMetadataExtras(
         workId,
         <VideoMetadataExtrasCompanion>[
@@ -256,7 +330,7 @@ class VideoMetadataDatabaseStore {
       }
 
       final Map<(int, int), VideoBookRow> localEpisodeBooks =
-          _localEpisodeBooks(localWork.members);
+          _localEpisodeBooks(localWork.members, episodeOverrides);
       await _clearReassignedEpisodeBooks(
         localEpisodeBooks: localEpisodeBooks,
         seasons: metadata.seasons,
@@ -441,11 +515,23 @@ class VideoMetadataDatabaseStore {
     required Map<String, String> localPathByRemoteUrl,
   }) async {
     final int now = DateTime.now().millisecondsSinceEpoch;
+    // 下载落盘后这一趟会整体重写作品级图行；锁住的图种必须在这里也守住，否则
+    // apply() 保住的旧封面会被同一次刮削的第二步又换掉。
+    final VideoMetadataWorkRow? workRow =
+        await database.getVideoMetadataWorkById(persisted.workId);
+    final Set<VideoMetadataLockableField> locked =
+        parseLockedFields(workRow?.lockedFields);
     await _replaceImages(
       workId: persisted.workId,
       images: metadata.images,
       now: now,
       localPathByRemoteUrl: localPathByRemoteUrl,
+      lockedKinds: <VideoMetadataImageKind>{
+        if (locked.contains(VideoMetadataLockableField.cover))
+          VideoMetadataImageKind.cover,
+        if (locked.contains(VideoMetadataLockableField.backdrop))
+          VideoMetadataImageKind.backdrop,
+      },
     );
     for (final VideoMetadataSeason season in metadata.seasons) {
       final int? seasonId = persisted.seasonIds[season.seasonNumber];
@@ -532,10 +618,27 @@ class VideoMetadataDatabaseStore {
     );
   }
 
-  Future<void> _replaceTerms(int workId, VideoMetadataWork metadata) async {
+  /// 读回本作品当前的词条，按 kind 分组（字段锁保留整组词时用）。
+  Future<Map<String, List<String>>> _termsByKind(int workId) async {
+    final Map<String, List<String>> out = <String, List<String>>{};
+    for (final VideoMetadataTermRow row
+        in await database.getVideoMetadataTermsForWork(workId)) {
+      out.putIfAbsent(row.kind, () => <String>[]).add(row.name);
+    }
+    return out;
+  }
+
+  /// [genres] / [studios] 由调用方给出：字段锁生效时传旧集合，否则传
+  /// `metadata` 自己的。其余种类（country / keyword）没有锁，直接取 metadata。
+  Future<void> _replaceTerms(
+    int workId,
+    VideoMetadataWork metadata, {
+    List<String>? genres,
+    List<String>? studios,
+  }) async {
     final List<(String, String)> values = <(String, String)>[
-      for (final String value in metadata.genres) ('genre', value),
-      for (final String value in metadata.studios) ('studio', value),
+      for (final String value in genres ?? metadata.genres) ('genre', value),
+      for (final String value in studios ?? metadata.studios) ('studio', value),
       for (final String value in metadata.countries) ('country', value),
       for (final String value in metadata.keywords) ('keyword', value),
     ];
@@ -693,6 +796,9 @@ class VideoMetadataDatabaseStore {
     );
   }
 
+  /// [lockedKinds]：字段锁住的图种。这些种类的旧行**原样留下**（远端 url、本地
+  /// 缓存路径、评分都不动），新抓到的同种图整批丢弃——锁的语义是「不换」，不是
+  /// 「抓不到才不换」。
   Future<void> _replaceImages({
     int? workId,
     int? seasonId,
@@ -700,6 +806,7 @@ class VideoMetadataDatabaseStore {
     required List<VideoMetadataImage> images,
     required int now,
     Map<String, String> localPathByRemoteUrl = const <String, String>{},
+    Set<VideoMetadataImageKind> lockedKinds = const <VideoMetadataImageKind>{},
   }) async {
     final List<VideoMetadataImageRow> existing =
         await database.getVideoMetadataImages(
@@ -707,6 +814,9 @@ class VideoMetadataDatabaseStore {
       seasonId: seasonId,
       episodeId: episodeId,
     );
+    final Set<String> lockedKindNames = <String>{
+      for (final VideoMetadataImageKind kind in lockedKinds) kind.name,
+    };
     final Map<(String, String, String), String> existingLocalPaths =
         <(String, String, String), String>{
       for (final VideoMetadataImageRow row in existing)
@@ -717,7 +827,25 @@ class VideoMetadataDatabaseStore {
         <VideoMetadataImageKind, int>{};
     final List<VideoMetadataImagesCompanion> rows =
         <VideoMetadataImagesCompanion>[];
+    for (final VideoMetadataImageRow row in existing) {
+      if (!lockedKindNames.contains(row.kind)) continue;
+      rows.add(VideoMetadataImagesCompanion.insert(
+        workId: Value<int?>(workId),
+        seasonId: Value<int?>(seasonId),
+        episodeId: Value<int?>(episodeId),
+        provider: row.provider,
+        kind: row.kind,
+        position: Value<int>(row.position),
+        language: Value<String?>(row.language),
+        remoteUrl: row.remoteUrl,
+        localPath: Value<String?>(row.localPath),
+        rating: Value<double?>(row.rating),
+        voteCount: Value<int?>(row.voteCount),
+        updatedAt: row.updatedAt,
+      ));
+    }
     for (final VideoMetadataImage image in images) {
+      if (lockedKindNames.contains(image.kind.name)) continue;
       final int position = positions.update(
         image.kind,
         (int value) => value + 1,
@@ -850,14 +978,13 @@ class VideoMetadataDatabaseStore {
 
   static Map<(int, int), VideoBookRow> _localEpisodeBooks(
     Iterable<VideoBookRow> books,
+    Map<String, (int, int)> episodeOverrides,
   ) {
     final Map<(int, int), VideoBookRow> result = <(int, int), VideoBookRow>{};
     for (final VideoBookRow book in books) {
-      final VideoNameInfo parsed =
-          parseVideoFilename(p.basename(book.videoPath));
-      final int? episode = parsed.episode;
-      if (episode == null) continue;
-      result.putIfAbsent((parsed.season ?? 1, episode), () => book);
+      final (int, int)? key = localEpisodeKeyFor(book, episodeOverrides);
+      if (key == null) continue;
+      result.putIfAbsent(key, () => book);
     }
     return result;
   }

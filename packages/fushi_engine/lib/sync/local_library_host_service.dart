@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:io';
-
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_engine/models/dictionary_directory.dart';
 import 'package:fushi_engine/models/local_audio_db_entry.dart';
@@ -9,7 +8,7 @@ import 'package:fushi_engine/media/video/video_library_import.dart'
 import 'package:fushi_engine/media/video/video_sidecar.dart'
     show findSidecarSubtitle, isSidecarSubtitleSuffix, pickSidecar;
 import 'package:fushi_audio/fushi_audio_core.dart'
-    show AudioCue, readTextWithEncoding;
+    show AudioCue, AudiobookStorage, readTextWithEncoding;
 import 'package:fushi_engine/media/media_pref_keys.dart';
 import 'package:fushi_engine/media/video/m3u8_playlist.dart' show PlaylistEntry;
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
@@ -22,7 +21,7 @@ import 'package:fushi_engine/media/video/series_playback_prefs.dart'
         effectiveSeriesDelayMs,
         effectiveSeriesSecondaryDelayMs;
 import 'package:fushi_engine/sync/manga_sync_package.dart'
-    show kMangaPackageMarker, repackageMangaBook;
+    show hasExportableMangaContent, repackageMangaBook;
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/override_title_lookup.dart';
@@ -40,7 +39,6 @@ import 'package:fushi_engine/sync/epub_repackage.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
     show extractAudioSegmentViaFfmpeg;
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi_audio/fushi_audio_core.dart' show AudiobookStorage;
 import 'package:path/path.dart' as p;
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/dictionary/dictionary_engine_hooks.dart';

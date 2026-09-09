@@ -14,7 +14,7 @@ void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.zhCn));
 
   const MangaDiscoveryEntry entry = MangaDiscoveryEntry(
-    anilistId: 1,
+    malId: 1,
     titleNative: '葬送のフリーレン',
     titleRomaji: 'Sousou no Frieren',
     averageScore: 8.9,
@@ -108,8 +108,7 @@ void main() {
     expect(opened, 1);
   });
 
-  testWidgets('不在壳里（去处为 null）：兜底搜索页只给文案不给按钮',
-      (WidgetTester tester) async {
+  testWidgets('不在壳里（去处为 null）：兜底搜索页只给文案不给按钮', (WidgetTester tester) async {
     await tester.pumpWidget(
       wrap(
         MangaDiscoveryDetailPage(

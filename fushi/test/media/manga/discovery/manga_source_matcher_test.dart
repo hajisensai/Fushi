@@ -6,7 +6,7 @@ import 'package:fushi/src/media/manga/discovery/manga_source_matcher.dart';
 /// 查询词按来源语言排序（日文源先原文）。
 void main() {
   const MangaDiscoveryEntry entry = MangaDiscoveryEntry(
-    anilistId: 1,
+    malId: 1,
     titleNative: '葬送のフリーレン',
     titleRomaji: 'Sousou no Frieren',
     titleEnglish: "Frieren: Beyond Journey's End",
@@ -106,7 +106,7 @@ void main() {
   test('无标题或无来源返回空表', () async {
     expect(
       await matchMangaAcrossSources(
-        entry: const MangaDiscoveryEntry(anilistId: 2),
+        entry: const MangaDiscoveryEntry(malId: 2),
         sources: <MangaMatchSource>[
           source('any', 'ja', (String query) async {
             fail('无标题不应发起搜索');

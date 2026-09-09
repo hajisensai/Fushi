@@ -15,7 +15,7 @@ library;
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:asr_core/asr_core.dart';
+import 'package:fushi_asr_core/asr_core.dart';
 void main(List<String> args) {
   final Map<String, String> opts = _parseArgs(args);
   final String decoderPath = _require(opts, 'decoder');

@@ -13,6 +13,7 @@
 *.diff  -whitespace
 
 # 二进制文件不做行尾转换
+*.bmp   binary
 *.png   binary
 *.jpg   binary
 *.jpeg  binary

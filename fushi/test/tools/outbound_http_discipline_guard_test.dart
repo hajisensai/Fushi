@@ -48,6 +48,7 @@ import '../helpers/source_guard.dart';
 const List<String> kScanRoots = <String>[
   'fushi/lib',
   'packages/fushi_engine/lib',
+  'packages/fushi_server/lib',
   'packages/fushi_core/lib',
   'packages/fushi_dictionary/lib',
   'packages/fushi_anki/lib',
@@ -113,13 +114,11 @@ const Map<String, String> kBareOutboundRegistry = <String, String>{
       '配对 peer 存活 ping：目标是 mDNS 发现出来的局域网地址。',
   'fushi/lib/src/models/app_model.dart':
       '远端查词 / 远端发音共用的 keep-alive client（TODO-744）：目标恒为已配对的局域网 peer。',
-  // --- 用户自配服务器 ---
-  'fushi/lib/src/sync/webdav_ops.dart': 'WebDAV 同步后端：地址由用户填，NAS / 局域网部署是主流用法。',
 };
 
 /// 登记在案的文件总数（装配点 + 豁免）。**这是自校验用的哨兵**：改清单必须同步改这个数，
 /// 光靠「新增未登记即红」挡不住「悄悄多登记一条」。
-const int kRegisteredOutboundFileCount = 22;
+const int kRegisteredOutboundFileCount = 21;
 
 /// 裸出站构造的判据。
 ///

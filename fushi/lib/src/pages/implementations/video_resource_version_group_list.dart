@@ -13,16 +13,21 @@ import 'package:fushi/utils.dart';
 class VideoResourceVersionGroupList extends StatefulWidget {
   const VideoResourceVersionGroupList({
     required this.groups,
-    required this.selectedIdentityKey,
+    required this.selectedIdentityKeys,
     required this.onSelect,
+    this.multiSelect = false,
     this.compact = false,
     super.key,
   });
 
   final List<VideoResourceVersionGroup> groups;
 
-  /// 当前选中发布的 identityKey（外层 `_selected`）；null = 未选。
-  final String? selectedIdentityKey;
+  /// 当前选中发布的 identityKey 集合（外层选中集）；空集 = 未选。
+  final Set<String> selectedIdentityKeys;
+
+  /// 是否允许多选（下载模式）。订阅是「一条规则跟一个 release 模板」，多选在那里
+  /// 没有意义，所以订阅模式传 false：不摆勾选框、点卡仍是「挑一条」。
+  final bool multiSelect;
 
   final void Function(VideoResourceCandidate candidate)? onSelect;
 
@@ -45,6 +50,10 @@ class _VideoResourceVersionGroupListState
   }
 
   void _onCardTap(VideoResourceVersionGroup group) {
+    // 点卡仍走「这组里唯一合理的那条」：对单成员组它就是那一条，对能唯一确定的
+    // 组（整季包 / 集号精确命中）也是用户要的默认，挑不出来才展开手选。多选并不
+    // 改变这条快捷路径——多选模式下 onSelect 本身是 toggle，点第二下即取消；
+    // 想挑分集照旧展开后逐行勾。
     final VideoResourceCandidate? picked = pickResourceVersionCandidate(group);
     if (picked != null && widget.onSelect != null) {
       widget.onSelect!(picked);
@@ -52,6 +61,14 @@ class _VideoResourceVersionGroupListState
     }
     _toggleExpanded(group.key);
   }
+
+  /// 本组里已被选中的成员数——多选时卡片上直接写出来，免得折起来后看不见。
+  int _selectedCountIn(VideoResourceVersionGroup group) => group.members
+      .where(
+        (VideoResourceCandidate member) =>
+            widget.selectedIdentityKeys.contains(member.identityKey),
+      )
+      .length;
 
   String _relativeLabel(DateTime at) {
     final ActivityRelativeTime rel = activityRelativeTime(
@@ -97,12 +114,8 @@ class _VideoResourceVersionGroupListState
 
   Widget _buildCard(ThemeData theme, VideoResourceVersionGroup group) {
     final bool expanded = _expanded.contains(group.key);
-    final bool containsSelection =
-        widget.selectedIdentityKey != null &&
-        group.members.any(
-          (VideoResourceCandidate member) =>
-              member.identityKey == widget.selectedIdentityKey,
-        );
+    final int selectedInGroup = _selectedCountIn(group);
+    final bool containsSelection = selectedInGroup > 0;
     return FushiCard(
       key: ValueKey<String>('resource-version-${group.key}'),
       padding: const EdgeInsets.all(12),
@@ -195,7 +208,13 @@ class _VideoResourceVersionGroupListState
           ? FushiListDensity.compact
           : FushiListDensity.standard,
       padding: const EdgeInsets.symmetric(horizontal: 4),
-      selected: widget.selectedIdentityKey == member.identityKey,
+      selected: widget.selectedIdentityKeys.contains(member.identityKey),
+      leading: widget.multiSelect && widget.onSelect != null
+          ? Checkbox(
+              value: widget.selectedIdentityKeys.contains(member.identityKey),
+              onChanged: (_) => widget.onSelect!(member),
+            )
+          : null,
       onTap: widget.onSelect == null ? null : () => widget.onSelect!(member),
       title: Text(
         member.title,

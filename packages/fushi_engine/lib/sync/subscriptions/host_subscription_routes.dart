@@ -49,8 +49,9 @@ Future<shelf.Response> handleHostSubscriptionRequest(
       }
       if (method == 'POST') {
         final Object? decoded = jsonDecode(await request.readAsString());
-        if (decoded is! Map)
+        if (decoded is! Map) {
           return shelf.Response(400, body: 'JSON object body required');
+        }
         final VideoDownloadSubscriptionRow row = await host.create(
           HostSubscriptionCreateRequest.fromJson(
               Map<String, dynamic>.from(decoded)),
@@ -78,8 +79,9 @@ Future<shelf.Response> handleHostSubscriptionRequest(
       case 'enable':
         final Object? decoded = jsonDecode(await request.readAsString());
         final Object? enabled = decoded is Map ? decoded['enabled'] : null;
-        if (enabled is! bool)
+        if (enabled is! bool) {
           return shelf.Response(400, body: 'enabled (bool) required');
+        }
         await host.setEnabled(id, enabled);
         return _json(const <String, Object?>{'ok': true});
       case 'check':

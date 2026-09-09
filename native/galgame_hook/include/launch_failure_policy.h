@@ -28,6 +28,8 @@ enum class LaunchFailureReason {
   kGameExeMissing,
   kHookDllMissing,
   kSteamTimeout,
+  kLauncherEnded,
+  kLauncherDiscoveryFailed,
 };
 
 inline const char* LaunchFailureToken(LaunchFailureReason reason) {
@@ -60,6 +62,10 @@ inline const char* LaunchFailureToken(LaunchFailureReason reason) {
       return "hookDllMissing";
     case LaunchFailureReason::kSteamTimeout:
       return "steamTimeout";
+    case LaunchFailureReason::kLauncherEnded:
+      return "launcherEnded";
+    case LaunchFailureReason::kLauncherDiscoveryFailed:
+      return "launcherDiscoveryFailed";
   }
   return "unknown";
 }

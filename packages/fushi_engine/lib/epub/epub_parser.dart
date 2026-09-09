@@ -697,6 +697,11 @@ class EpubParser {
       for (final XmlElement child in li.childElements) {
         if (child.name.local == 'a') {
           label = child.innerText.trim();
+          // 图片目录项：<a> 里只有 <img>（图集/漫画/扉页目录的常见写法），
+          // innerText 为空。拿图片自己的 alt / title 当标签，别让整条目录项无名。
+          if (label.isEmpty) {
+            label = _imageLabelWithin(child);
+          }
           final String? rawHref = child.getAttribute('href');
           if (rawHref != null) {
             href = _resolveTocHref(rawHref, navDir, extractDir);
@@ -714,9 +719,27 @@ class EpubParser {
           href: href,
           children: children,
         ));
+      } else {
+        // 取不到任何标签时只丢这一条**自己**，子树并入上一层——旧代码把已经解析
+        // 好的整棵 children 跟着扔掉，一个无名分组节点就能让它名下所有章节从
+        // 目录里消失（用户看到的「章节列表显示不全」）。
+        items.addAll(children);
       }
     }
     return items;
+  }
+
+  /// `<a>` 内第一张图片的 `alt` / `title`，都没有时返回 null。
+  /// 图片目录项（`<a><img/></a>`）没有任何文本，这是它唯一的自带标签来源。
+  static String? _imageLabelWithin(XmlElement anchor) {
+    for (final XmlElement e in anchor.descendantElements) {
+      if (e.name.local != 'img') continue;
+      for (final String attr in const <String>['alt', 'title']) {
+        final String? value = e.getAttribute(attr)?.trim();
+        if (value != null && value.isNotEmpty) return value;
+      }
+    }
+    return null;
   }
 
   /// Parse EPUB 2 NCX table of contents.
@@ -774,6 +797,10 @@ class EpubParser {
           href: href,
           children: children,
         ));
+      } else {
+        // 与 nav 侧同理：无名 navPoint 只丢自己，名下子节点并入上一层，
+        // 不让一个空 navLabel 把整段章节从目录里抹掉。
+        items.addAll(children);
       }
     }
     return items;

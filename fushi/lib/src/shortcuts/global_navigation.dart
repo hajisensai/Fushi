@@ -16,7 +16,7 @@ import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/shortcuts/window_fullscreen_hosts.dart';
-import 'package:fushi/src/utils/components/fushi_windows_title_bar.dart';
+import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show
         arrowFocusMoveDirection,
@@ -525,7 +525,7 @@ Future<bool?> readDesktopWindowFullscreen() async {
       // WindowCaptionChannel.setFullscreen 的文档）；window_manager 在 Windows
       // 上不再进入全屏、其 isFullScreen 恒 false，状态只能问 runner。
       final bool fullscreen = await WindowCaptionChannel.isFullscreen();
-      FushiWindowsTitleBar.setWindowManagerFullscreen(fullscreen);
+      FushiDesktopTitleBar.setWindowManagerFullscreen(fullscreen);
       return fullscreen;
     }
     if (Platform.isLinux) {
@@ -572,16 +572,16 @@ Future<bool?> setDesktopWindowFullscreen(bool fullscreen) async {
       // not emit leave-full-screen when a fullscreen window returns to its
       // previous maximized state, so WindowListener alone can remain stuck.
       final bool previousChromeState =
-          FushiWindowsTitleBar.isWindowManagerFullscreen;
+          FushiDesktopTitleBar.isWindowManagerFullscreen;
       // Claim the hidden-caption state before the native flip so the app frame
       // never paints over the fullscreen surface for a frame.
       if (fullscreen) {
-        FushiWindowsTitleBar.setWindowManagerFullscreen(true);
+        FushiDesktopTitleBar.setWindowManagerFullscreen(true);
       }
       // One resolve, one write: the chrome owner is derived from the single
       // authoritative value below instead of being poked at every step.
       final bool? applied = await _resolveWindowsFullscreen(fullscreen);
-      FushiWindowsTitleBar.setWindowManagerFullscreen(
+      FushiDesktopTitleBar.setWindowManagerFullscreen(
         applied ?? previousChromeState,
       );
       return applied;

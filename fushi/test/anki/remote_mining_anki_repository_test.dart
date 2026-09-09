@@ -189,6 +189,40 @@ void main() {
       expect(cap.dictionaryMedia.single.bytes, <int>[9, 9]);
     });
 
+    // 「制卡所在字符数」标签（`chars_12345`）：小说阅读器算好字面量放进
+    // AnkiMiningContext，远端制卡时必须原样搬进转发 payload——否则卡落在主机上
+    // 就只有本机才有这条标签，同一本书两台设备制的卡对不上。
+    // 撤掉 remote_mining_anki_repository.dart 里
+    // `charPositionTag: context.charPositionTag` 这一行 → 第一条断言红。
+    test('制卡位置标签从 context 搬进转发 payload', () async {
+      final _FakeSender sender =
+          _FakeSender(<String, dynamic>{'result': 'success'});
+      final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
+        local: _FakeLocal(),
+        client: sender,
+        fileByteLoader: (String p) async => null,
+        dictMediaLoader: (String d, String p) => null,
+      );
+
+      await repo.mineEntry(
+        rawPayloadJson: jsonEncode(<String, dynamic>{'expression': '猫'}),
+        context: const AnkiMiningContext(
+          sentence: '猫がいる',
+          source: AnkiMiningSource.book,
+          charPositionTag: 'chars_12345',
+        ),
+      );
+      expect(sender.captured!.charPositionTag, 'chars_12345');
+
+      // 开关关闭 / 非小说来源 / 锚点取不到 → context 侧就是 null，转发也保持 null
+      // （主机端 buildNoteTags 不追加，绝不补一个 chars_0）。
+      await repo.mineEntry(
+        rawPayloadJson: jsonEncode(<String, dynamic>{'expression': '犬'}),
+        context: const AnkiMiningContext(sentence: '犬がいる'),
+      );
+      expect(sender.captured!.charPositionTag, isNull);
+    });
+
     test('http 单词音频不搬字节（留给服务端下载）', () async {
       final _FakeSender sender =
           _FakeSender(<String, dynamic>{'result': 'success'});

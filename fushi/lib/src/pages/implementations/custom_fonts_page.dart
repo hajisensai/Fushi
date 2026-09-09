@@ -11,6 +11,7 @@ import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/models/app_font_loader.dart';
 import 'package:fushi/src/reader/font_catalog.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
+import 'package:fushi/src/utils/components/batch_action_bar.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_engine/utils/net/app_user_agent.dart';
@@ -218,8 +219,9 @@ int _nextCatalogFontId(List<CustomFontCatalogRow> rows) {
   return next;
 }
 
-class _RecommendedFont {
-  _RecommendedFont({
+@visibleForTesting
+class RecommendedFont {
+  RecommendedFont({
     required this.name,
     required this.nameJa,
     required this.urls,
@@ -242,9 +244,10 @@ class _RecommendedFont {
 //
 // jsDelivr 对整个包 >50MB 的目录会整目录 403（例如 notoserifsc），这类只能
 // 走 GitHub raw；GitHub raw 无此限制，对 CJK 大字体统一补一条兜底直链。
-List<_RecommendedFont> get _recommendedFonts => [
+@visibleForTesting
+List<RecommendedFont> get recommendedFontsCatalog => [
   // ── 推荐首选 ──
-  _RecommendedFont(
+  RecommendedFont(
     name: 'Klee One',
     nameJa: 'クレー One',
     urls: [
@@ -256,7 +259,7 @@ List<_RecommendedFont> get _recommendedFonts => [
     description: t.font_desc_klee_one,
   ),
   // ── CJK 覆盖（日中韩通用，不会缺字） ──
-  _RecommendedFont(
+  RecommendedFont(
     name: 'Noto Sans JP',
     nameJa: 'Noto Sans 日本語',
     urls: [
@@ -267,7 +270,7 @@ List<_RecommendedFont> get _recommendedFonts => [
     license: 'OFL 1.1',
     description: t.font_desc_noto_sans_jp,
   ),
-  _RecommendedFont(
+  RecommendedFont(
     name: 'Noto Serif JP',
     nameJa: 'Noto Serif 日本語',
     urls: [
@@ -278,7 +281,7 @@ List<_RecommendedFont> get _recommendedFonts => [
     license: 'OFL 1.1',
     description: t.font_desc_noto_serif_jp,
   ),
-  _RecommendedFont(
+  RecommendedFont(
     name: 'Noto Sans SC',
     nameJa: 'Noto Sans 简体中文',
     urls: [
@@ -289,7 +292,7 @@ List<_RecommendedFont> get _recommendedFonts => [
     license: 'OFL 1.1',
     description: t.font_desc_noto_sans_sc,
   ),
-  _RecommendedFont(
+  RecommendedFont(
     name: 'Noto Serif SC',
     nameJa: 'Noto Serif 简体中文',
     // jsDelivr 整目录 >50MB → notoserifsc 直接 403，只能走 GitHub raw。
@@ -300,7 +303,7 @@ List<_RecommendedFont> get _recommendedFonts => [
     license: 'OFL 1.1',
     description: t.font_desc_noto_serif_sc,
   ),
-  _RecommendedFont(
+  RecommendedFont(
     name: 'Noto Sans TC',
     nameJa: 'Noto Sans 繁體中文',
     urls: [
@@ -311,7 +314,7 @@ List<_RecommendedFont> get _recommendedFonts => [
     license: 'OFL 1.1',
     description: t.font_desc_noto_sans_tc,
   ),
-  _RecommendedFont(
+  RecommendedFont(
     name: 'Noto Serif TC',
     nameJa: 'Noto Serif 繁體中文',
     urls: [
@@ -323,7 +326,7 @@ List<_RecommendedFont> get _recommendedFonts => [
     description: t.font_desc_noto_serif_tc,
   ),
   // ── 日语特色字体（风格独特，建议搭配 Noto Sans JP 做回退） ──
-  _RecommendedFont(
+  RecommendedFont(
     name: 'Shippori Mincho',
     nameJa: 'しっぽり明朝',
     urls: [
@@ -333,7 +336,7 @@ List<_RecommendedFont> get _recommendedFonts => [
     license: 'OFL 1.1',
     description: t.font_desc_shippori_mincho,
   ),
-  _RecommendedFont(
+  RecommendedFont(
     name: 'Zen Old Mincho',
     nameJa: '禅オールド明朝',
     urls: [
@@ -343,7 +346,7 @@ List<_RecommendedFont> get _recommendedFonts => [
     license: 'OFL 1.1',
     description: t.font_desc_zen_old_mincho,
   ),
-  _RecommendedFont(
+  RecommendedFont(
     name: 'Zen Maru Gothic',
     nameJa: '禅丸ゴシック',
     urls: [
@@ -353,7 +356,7 @@ List<_RecommendedFont> get _recommendedFonts => [
     license: 'OFL 1.1',
     description: t.font_desc_zen_maru_gothic,
   ),
-  _RecommendedFont(
+  RecommendedFont(
     name: 'M PLUS Rounded 1c',
     nameJa: 'M PLUS Rounded 1c',
     urls: [
@@ -363,7 +366,7 @@ List<_RecommendedFont> get _recommendedFonts => [
     license: 'OFL 1.1',
     description: t.font_desc_mplus_rounded_1c,
   ),
-  _RecommendedFont(
+  RecommendedFont(
     name: 'Hina Mincho',
     nameJa: 'ひな明朝',
     urls: [
@@ -373,7 +376,7 @@ List<_RecommendedFont> get _recommendedFonts => [
     license: 'OFL 1.1',
     description: t.font_desc_hina_mincho,
   ),
-  _RecommendedFont(
+  RecommendedFont(
     name: 'Zen Kaku Gothic New',
     nameJa: '禅角ゴシック New',
     urls: [
@@ -963,36 +966,29 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
     }
   }
 
-  Future<void> _downloadUrl(
+  /// 一次字体下载的结果。[importedCount] > 0 即成功；[error] 非空说明失败，
+  /// [cancelled] 是用户主动取消（既不算成功也不该报错）。
+  ///
+  /// 执行体不弹任何 toast / 对话框，就是为了让批量下载能把 N 条结果聚合成一句话。
+  ///
+  /// 批量下载真正要避开的是旧实现里「每条各弹一个 barrierDismissible:false +
+  /// PopScope(canPop:false) 的独占模态框」——那种框在下载期间把整个 UI 锁死，
+  /// 连着下 5 个字体就是连着锁 5 次，中途还没法看进度到哪了。
+  ///
+  /// 执行体的取消由调用方持有 [cancelToken]：批量时一次取消应当停掉整批。
+
+  /// 下载执行体：**不碰 Navigator、不弹 toast**，只跑「多源回退下载 → 校验 →
+  /// 解包/落库」。UI 由调用方负责。
+  Future<_FontDownloadResult> _runFontDownload(
     String url, {
-    String? displayName,
+    required ValueNotifier<double?> progressNotifier,
+    required CancelToken cancelToken,
     List<String> mirrorUrls = const [],
     String? overrideName,
   }) async {
     final allUrls = [url, ...mirrorUrls];
     final ts = DateTime.now().millisecondsSinceEpoch;
     final tempPath = p.join(_fontsDir.path, '_tmp_$ts');
-    final progressNotifier = ValueNotifier<double?>(null);
-    final cancelToken = CancelToken();
-
-    if (mounted) {
-      showAppDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) => PopScope(
-          canPop: false,
-          child: CustomFontDownloadProgressDialog(
-            title: displayName ?? t.custom_fonts_downloading,
-            progressNotifier: progressNotifier,
-            onCancel: () {
-              cancelToken.cancel();
-              Navigator.pop(ctx);
-            },
-          ),
-        ),
-      );
-    }
-
     try {
       // BUG-1498：字体全在 cdn.jsdelivr.net / raw.githubusercontent.com /
       // fonts.google.com 上，原先是裸 `Dio(...)`（`findProxy` 为 null，连 HTTPS_PROXY
@@ -1060,8 +1056,6 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
         throw Exception(err.toString());
       }
 
-      if (mounted) Navigator.pop(context);
-
       final tempFile = File(tempPath);
       final fileName = _fileNameFromUrl(downloadedUrl);
       int count = 0;
@@ -1086,11 +1080,77 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
         );
       }
       if (await tempFile.exists()) await tempFile.delete();
+      return _FontDownloadResult(importedCount: count);
+    } on DioError catch (e, stack) {
+      final f = File(tempPath);
+      if (await f.exists()) await f.delete();
+      if (e.type == DioErrorType.cancel) {
+        return const _FontDownloadResult(cancelled: true);
+      }
+      debugPrint(
+        '[fushi-fonts] DioError: type=${e.type} '
+        'status=${e.response?.statusCode} msg=${e.message}',
+      );
+      debugPrint('[fushi-fonts] stack: $stack');
+      return _FontDownloadResult(error: e.type.name);
+    } catch (e, stack) {
+      final f = File(tempPath);
+      if (await f.exists()) await f.delete();
+      debugPrint('[fushi-fonts] download failed: $e');
+      debugPrint('[fushi-fonts] stack: $stack');
+      return _FontDownloadResult(error: '$e');
+    }
+  }
 
-      if (count > 0) {
+  /// 单条下载：独占进度框 + 逐条 toast，行为与重构前一致。
+  Future<void> _downloadUrl(
+    String url, {
+    String? displayName,
+    List<String> mirrorUrls = const [],
+    String? overrideName,
+  }) async {
+    final progressNotifier = ValueNotifier<double?>(null);
+    final cancelToken = CancelToken();
+    if (mounted) {
+      showAppDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => PopScope(
+          canPop: false,
+          child: CustomFontDownloadProgressDialog(
+            title: displayName ?? t.custom_fonts_downloading,
+            progressNotifier: progressNotifier,
+            onCancel: () {
+              cancelToken.cancel();
+              Navigator.pop(ctx);
+            },
+          ),
+        ),
+      );
+    }
+    try {
+      final _FontDownloadResult result = await _runFontDownload(
+        url,
+        progressNotifier: progressNotifier,
+        cancelToken: cancelToken,
+        mirrorUrls: mirrorUrls,
+        overrideName: overrideName,
+      );
+      // 取消时进度框已被 onCancel 关掉，别再 pop 一次——那会连着把字体页也弹掉。
+      if (mounted && !result.cancelled) Navigator.pop(context);
+      if (result.cancelled) return;
+      if (result.error != null) {
+        FushiToast.show(
+          msg: '${t.custom_fonts_download_failed}: ${result.error}',
+          toastLength: Toast.LENGTH_LONG,
+          severity: ToastSeverity.error,
+        );
+        return;
+      }
+      if (result.importedCount > 0) {
         await _save();
         FushiToast.show(
-          msg: t.custom_fonts_imported_count(count: count),
+          msg: t.custom_fonts_imported_count(count: result.importedCount),
           severity: ToastSeverity.success,
         );
       } else {
@@ -1099,33 +1159,6 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
           severity: ToastSeverity.error,
         );
       }
-    } on DioError catch (e, stack) {
-      if (mounted) Navigator.pop(context);
-      if (e.type != DioErrorType.cancel) {
-        debugPrint(
-          '[fushi-fonts] DioError: type=${e.type} '
-          'status=${e.response?.statusCode} msg=${e.message}',
-        );
-        debugPrint('[fushi-fonts] stack: $stack');
-        FushiToast.show(
-          msg: '${t.custom_fonts_download_failed}: ${e.type.name}',
-          toastLength: Toast.LENGTH_LONG,
-          severity: ToastSeverity.error,
-        );
-      }
-      final f = File(tempPath);
-      if (await f.exists()) await f.delete();
-    } catch (e, stack) {
-      if (mounted) Navigator.pop(context);
-      debugPrint('[fushi-fonts] download failed: $e');
-      debugPrint('[fushi-fonts] stack: $stack');
-      FushiToast.show(
-        msg: '${t.custom_fonts_download_failed}: $e',
-        toastLength: Toast.LENGTH_LONG,
-        severity: ToastSeverity.error,
-      );
-      final f = File(tempPath);
-      if (await f.exists()) await f.delete();
     } finally {
       progressNotifier.dispose();
     }
@@ -1153,13 +1186,88 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
     await _downloadUrl(url);
   }
 
-  Future<void> _downloadRecommendedFont(_RecommendedFont font) async {
-    await _downloadUrl(
-      font.urls.first,
-      displayName: font.name,
-      mirrorUrls: font.urls.skip(1).toList(),
-      overrideName: font.name,
+  /// 批量下载推荐字体：**一个**进度框跑完整批，逐条串行。
+  ///
+  /// 串行而非并发：每条都要落到同一个字体目录、跑同一套解包与 _save() 落库，
+  /// 并发只会让临时文件与 catalog 写入互相踩。
+  ///
+  /// 一条失败不中断整批（网络抽风是常态，一条挂掉不该把其余六条也废掉），
+  /// 结果聚合成一句 toast；中途取消则停掉整批——用户点的是「取消」不是「跳过」。
+  Future<void> _downloadRecommendedFonts(List<RecommendedFont> fonts) async {
+    final progressNotifier = ValueNotifier<double?>(null);
+    final cancelToken = CancelToken();
+    final ValueNotifier<String> titleNotifier = ValueNotifier<String>(
+      fonts.first.name,
     );
+    if (mounted) {
+      showAppDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => PopScope(
+          canPop: false,
+          child: ValueListenableBuilder<String>(
+            valueListenable: titleNotifier,
+            builder: (BuildContext context, String title, _) =>
+                CustomFontDownloadProgressDialog(
+              title: title,
+              progressNotifier: progressNotifier,
+              onCancel: () {
+                cancelToken.cancel();
+                Navigator.pop(ctx);
+              },
+            ),
+          ),
+        ),
+      );
+    }
+    int imported = 0;
+    int failed = 0;
+    bool cancelled = false;
+    try {
+      for (int i = 0; i < fonts.length; i++) {
+        final RecommendedFont font = fonts[i];
+        titleNotifier.value = fonts.length > 1
+            ? '${font.name}  (${i + 1}/${fonts.length})'
+            : font.name;
+        progressNotifier.value = null;
+        final _FontDownloadResult result = await _runFontDownload(
+          font.urls.first,
+          progressNotifier: progressNotifier,
+          cancelToken: cancelToken,
+          mirrorUrls: font.urls.skip(1).toList(),
+          overrideName: font.name,
+        );
+        if (result.cancelled) {
+          cancelled = true;
+          break;
+        }
+        if (result.error != null || result.importedCount == 0) {
+          failed++;
+          continue;
+        }
+        imported += result.importedCount;
+      }
+      // 取消时进度框已被 onCancel 关掉，别再 pop 一次。
+      if (mounted && !cancelled) Navigator.pop(context);
+      if (imported > 0) await _save();
+      if (!mounted) return;
+      if (imported > 0) {
+        FushiToast.show(
+          msg: t.custom_fonts_imported_count(count: imported),
+          severity: ToastSeverity.success,
+        );
+      }
+      if (failed > 0) {
+        FushiToast.show(
+          msg: '${t.custom_fonts_download_failed}: $failed',
+          toastLength: Toast.LENGTH_LONG,
+          severity: ToastSeverity.error,
+        );
+      }
+    } finally {
+      progressNotifier.dispose();
+      titleNotifier.dispose();
+    }
   }
 
   // HBK-AUDIT-109: one canonical dedupe key (the display name) shared by both
@@ -1172,15 +1280,15 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
   Future<void> _openRecommended() async {
     await _fontsReady;
     if (!mounted) return;
-    final font = await Navigator.push<_RecommendedFont>(
+    final fonts = await Navigator.push<List<RecommendedFont>>(
       context,
       adaptivePageRoute(
         context: context,
-        builder: (_) => _RecommendedFontsPage(alreadyAdded: _addedFontNames),
+        builder: (_) => RecommendedFontsPage(alreadyAdded: _addedFontNames),
       ),
     );
-    if (font == null || !mounted) return;
-    await _downloadRecommendedFont(font);
+    if (fonts == null || fonts.isEmpty || !mounted) return;
+    await _downloadRecommendedFonts(fonts);
   }
 
   Future<void> _addSystemFont() async {
@@ -1502,31 +1610,108 @@ class _CustomFontUrlImportDialogState extends State<CustomFontUrlImportDialog> {
   }
 }
 
-class _RecommendedFontsPage extends StatelessWidget {
-  const _RecommendedFontsPage({required this.alreadyAdded});
+/// 一次字体下载的结果：导入了几个字面、是否被取消、失败原因。
+class _FontDownloadResult {
+  const _FontDownloadResult({
+    this.importedCount = 0,
+    this.error,
+    this.cancelled = false,
+  });
+
+  final int importedCount;
+  final String? error;
+  final bool cancelled;
+
+  bool get succeeded => error == null && !cancelled && importedCount > 0;
+}
+
+/// 推荐字体页：**默认就是多选**，不设「进入选择态」开关。
+///
+/// 这个页面唯一的用途就是挑字体下载，再要求先点一下「选择」纯属多余一步；词典
+/// 下载弹窗也是同样形态（进去就是勾选列表），两处保持一致。
+///
+/// 返回 `List<RecommendedFont>`（取消为 null）。旧实现是 `Navigator.pop(context, font)`
+/// 单值返回，选一个字体就把整页弹掉，想再下一个得重新进来——这正是要改掉的。
+@visibleForTesting
+class RecommendedFontsPage extends StatefulWidget {
+  const RecommendedFontsPage({required this.alreadyAdded, super.key});
   final Set<String> alreadyAdded;
+
+  @override
+  State<RecommendedFontsPage> createState() => _RecommendedFontsPageState();
+}
+
+class _RecommendedFontsPageState extends State<RecommendedFontsPage> {
+  final Set<String> _selected = <String>{};
+
+  bool _isAdded(RecommendedFont font) => widget.alreadyAdded.any(
+        (String name) => name.toLowerCase() == font.name.toLowerCase(),
+      );
+
+  /// 可勾选域：已装的不参与全选，与词典下载弹窗同判据——已经有的再下一遍只是
+  /// 白跑一趟下载 + 导入。
+  List<RecommendedFont> get _selectable =>
+      recommendedFontsCatalog.where((f) => !_isAdded(f)).toList();
+
+  void _toggle(RecommendedFont font) {
+    setState(() {
+      if (!_selected.remove(font.name)) _selected.add(font.name);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
+    final List<RecommendedFont> selectable = _selectable;
     return AdaptiveSettingsScaffold(
       title: Text(t.custom_fonts_recommended),
+      bottom: _selected.isEmpty
+          ? null
+          : BatchActionBar(
+              selectedCount: _selected.length,
+              onSelectAll: () => setState(
+                () => _selected.addAll(selectable.map((f) => f.name)),
+              ),
+              onInvertSelection: () => setState(() {
+                final Set<String> next = <String>{
+                  for (final RecommendedFont font in selectable)
+                    if (!_selected.contains(font.name)) font.name,
+                };
+                _selected
+                  ..clear()
+                  ..addAll(next);
+              }),
+              actions: <Widget>[
+                FushiIconButton(
+                  key: const ValueKey<String>('recommended-fonts-download'),
+                  tooltip: t.dialog_import,
+                  icon: Icons.download_outlined,
+                  onTap: () => Navigator.pop(
+                    context,
+                    <RecommendedFont>[
+                      for (final RecommendedFont font in recommendedFontsCatalog)
+                        if (_selected.contains(font.name)) font,
+                    ],
+                  ),
+                ),
+              ],
+            ),
       children: [
         AdaptiveSettingsSection(
-          children: _recommendedFonts.map((font) {
-            final bool added = alreadyAdded.any(
-              (String name) => name.toLowerCase() == font.name.toLowerCase(),
-            );
+          children: recommendedFontsCatalog.map((font) {
+            final bool added = _isAdded(font);
+            final bool selected = _selected.contains(font.name);
             return AdaptiveSettingsRow(
+              key: ValueKey<String>('recommended-font-${font.name}'),
               title: font.name,
               subtitle: '${font.nameJa}\n${font.description}',
               icon: Icons.font_download_outlined,
+              onTap: added ? null : () => _toggle(font),
               trailing: added
                   ? Icon(Icons.check, color: scheme.outline)
-                  : IconButton.filledTonal(
-                      icon: const Icon(Icons.download_outlined, size: 20),
-                      tooltip: t.dialog_import,
-                      onPressed: () => Navigator.pop(context, font),
+                  : Checkbox(
+                      value: selected,
+                      onChanged: (_) => _toggle(font),
                     ),
             );
           }).toList(),

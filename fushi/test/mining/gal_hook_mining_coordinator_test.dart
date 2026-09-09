@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
+import 'package:fushi/src/lookup/gal_ingame_mining_binding.dart';
 import 'package:fushi/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_window_gif.dart'
@@ -14,6 +16,28 @@ import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 import 'package:fushi_anki/fushi_anki.dart';
+
+class _OccurrenceSession extends GalHookSessionController {
+  _OccurrenceSession(this.service)
+      : super(textService: service, isWindows: false);
+
+  final TexthookerService service;
+  bool selected = true;
+  @override
+  List<TexthookerLineEntry> get selectedSessionLines =>
+      selected ? service.entries : <TexthookerLineEntry>[];
+
+  final List<GalIngameMiningBinding> captured = <GalIngameMiningBinding>[];
+
+  @override
+  Future<Uint8List?> captureAudioForOccurrence({
+    required GalIngameMiningBinding occurrence,
+    required String outputExtension,
+  }) async {
+    captured.add(occurrence);
+    return Uint8List.fromList(<int>[7, 8, 9]);
+  }
+}
 
 class _RecordingRepo extends BaseAnkiRepository {
   _RecordingRepo({
@@ -98,6 +122,7 @@ void main() {
 
   GalHookMiningCoordinator coordinator({
     required bool Function(TexthookerLineEntry entry) validator,
+    GalHookSessionController? session,
     Future<Uint8List?> Function({
       required String lineId,
       required String sentence,
@@ -110,6 +135,7 @@ void main() {
     Future<Directory> Function()? tempFactory,
   }) =>
       GalHookMiningCoordinator(
+        session: session,
         textService: service,
         lineLookup: service.entryById,
         lineValidator: validator,
@@ -133,6 +159,120 @@ void main() {
                 ),
         createTempDirectory: tempFactory,
       );
+
+  test(
+    'Windows popup keeps host occurrence through real whitespace fold and mining',
+    () async {
+      final TexthookerLineEntry original = service.appendLine(
+        'ABC DEF',
+        source: TexthookerLineSource.engineHook,
+        sourceLabel: 'Siglus',
+        textThreadKey: 'body',
+        sourceSequence: 1,
+      )!;
+      final GalIngameMiningBinding popup = GalIngameMiningBinding(
+        textEventId: 1,
+        sessionStartedAt: activeState.sessionStartedAt,
+        targetHwnd: activeState.boundWindow!.hwnd,
+        selectedLines: service.entries,
+      );
+      final TexthookerLineEntry folded = service.appendLine(
+        'ABC\nDEF',
+        source: TexthookerLineSource.engineHook,
+        sourceLabel: 'Siglus',
+        textThreadKey: 'body',
+        sourceSequence: 2,
+      )!;
+      expect(folded.id, original.id);
+      expect(folded.sourceSequence, 2);
+      expect(service.entries.where((e) => e.sourceSequence == 1), isEmpty);
+      final String? lineId = popup.resolve(
+        currentSessionStartedAt: activeState.sessionStartedAt,
+        currentTargetHwnd: activeState.boundWindow!.hwnd,
+        selectedLines: service.entries,
+      );
+      expect(lineId, original.id);
+      final List<String> audioLineIds = <String>[];
+      final _OccurrenceSession occurrenceSession = _OccurrenceSession(service);
+      addTearDown(occurrenceSession.close);
+      final List<int> capturedWindows = <int>[];
+      final _RecordingRepo repo = _RecordingRepo();
+      final GalHookMiningResult result =
+          await coordinator(
+        session: occurrenceSession,
+        validator: (entry) => entry.id == original.id,
+            audio:
+                ({
+                  required String lineId,
+                  required String sentence,
+                  required String outputExtension,
+                }) async {
+                  audioLineIds.add(lineId);
+                  return Uint8List.fromList(<int>[7, 8, 9]);
+                },
+            gif:
+                ({
+                  required int hwnd,
+                  MiningAnimatedFormat format = MiningAnimatedFormat.gif,
+                }) async {
+                  capturedWindows.add(hwnd);
+                  return (
+                    bytes: Uint8List.fromList(<int>[71, 73, 70]),
+                    format: format,
+                  );
+                },
+            tempFactory: () async => testRoot,
+          ).mineLine(
+            lineId: lineId!,
+        occurrence: popup,
+        fields: const <String, String>{'expression': 'ABC'},
+            sentenceOverride: original.text,
+            compression: MiningMediaCompression.compressed,
+            repo: repo,
+          );
+      expect(result.success, isTrue);
+      expect(audioLineIds, isEmpty,
+          reason: 'Popup audio must not resolve the mutable folded row');
+      expect(occurrenceSession.captured.single, same(popup));
+      expect(
+          occurrenceSession.captured.single.boundOccurrence!.sourceSequence, 1);
+      expect(capturedWindows, <int>[901]);
+      expect(repo.contexts.single.sentence, original.text);
+      expect(service.entryById(original.id)!.mined, isTrue);
+      await testRoot.create(recursive: true);
+      final Completer<void> capturing = Completer<void>();
+      final Completer<GalWindowAnimatedCapture?> capture =
+          Completer<GalWindowAnimatedCapture?>();
+      final Future<GalHookMiningResult> obsolete = coordinator(
+        session: occurrenceSession,
+        validator: (_) => true,
+        gif: (
+            {required int hwnd,
+            MiningAnimatedFormat format = MiningAnimatedFormat.gif}) {
+          capturing.complete();
+          return capture.future;
+        },
+        tempFactory: () async => testRoot,
+      ).mineLine(
+        lineId: original.id,
+        occurrence: popup,
+        fields: const <String, String>{'expression': 'ABC'},
+        compression: MiningMediaCompression.compressed,
+        repo: repo,
+      );
+      await capturing.future;
+      occurrenceSession.selected = false;
+      capture.complete((
+        bytes: Uint8List.fromList(<int>[71, 73, 70]),
+        format: MiningAnimatedFormat.gif
+      ));
+      final GalHookMiningResult obsoleteResult = await obsolete;
+      expect(obsoleteResult.failureReason, contains('occurrence'),
+          reason:
+              'Selection changed during capture must abort before card write');
+      expect(repo.contexts, hasLength(1));
+    },
+  );
 
   test('exact duplicate lines keep distinct scene and audio context', () async {
     final DateTime now = DateTime(2026, 7, 20, 12, 0, 1);

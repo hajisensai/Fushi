@@ -3,6 +3,11 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
+/// 比当前代码 schema 高一级的版本号，用来伪造「未来版本的库」。读 `schemaVersion`
+/// 只是取常量 getter，不触发 lazy open，探针实例不建表、不落盘。
+final int kFutureSchemaVersion =
+    FushiDatabase.forTesting(NativeDatabase.memory()).schemaVersion + 1;
+
 /// TODO-1017 阶段1：互联 per-peer 授权凭据表 fushi_paired_peers 的建表迁移
 /// （v30 -> v31；历史上以旧名 hibiki_paired_peers 建出，v69 起统一新名）与
 /// DB 方法的守护测试。
@@ -51,8 +56,12 @@ CREATE TABLE epub_books (
   );
 }
 
-/// 手写一个「未来版本」库（user_version = 99 > 代码 schemaVersion）以强制走降级
-/// 保护分支，且 99 恒大于任何未来 bump 不会 stale。
+/// 手写一个「未来版本」库以强制走降级保护分支。
+///
+/// 版本号**从代码派生**（[kFutureSchemaVersion] = 当前 schemaVersion + 1），不写死。
+/// 这里原本是字面量 99，注释还写着「99 恒大于任何未来 bump 不会 stale」——直到
+/// schema 真的升到 99（v98 → v99：每来源资料语言 + 刮削字段锁），99 就不再是未来
+/// 版本，`from > to` 分支根本不进，这条守卫在 develop 的 package 测试门上空转。
 FushiDatabase _openDowngradedFromFuture() {
   return FushiDatabase.forTesting(
     NativeDatabase.memory(
@@ -70,7 +79,7 @@ CREATE TABLE fushi_paired_peers (
           "INSERT INTO fushi_paired_peers "
           "(peer_id, token, paired_at_ms) VALUES ('p-future', 'tok', 1)",
         );
-        raw.execute('PRAGMA user_version = 99');
+        raw.execute('PRAGMA user_version = $kFutureSchemaVersion');
       },
     ),
   );
@@ -182,7 +191,7 @@ void main() {
       db.customSelect('PRAGMA user_version').getSingle(),
       throwsA(isA<FushiDatabaseDowngradeException>()
           .having((FushiDatabaseDowngradeException e) => e.dbVersion,
-              'dbVersion', 99)
+              'dbVersion', kFutureSchemaVersion)
           .having((FushiDatabaseDowngradeException e) => e.appSchemaVersion,
               'appSchemaVersion', db.schemaVersion)),
       reason: 'a newer-schema DB must be refused, never destructively rebuilt',

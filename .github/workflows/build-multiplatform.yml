@@ -496,7 +496,7 @@ jobs:
             fi
           done < <(find "$runtime_dir" -type f)
           chmod +x tool/mihon/verify_desktop_runtime.sh
-          tool/mihon/verify_desktop_runtime.sh "$runtime_dir"
+          tool/mihon/verify_desktop_runtime.sh "$runtime_dir" "$app_dir/Contents/MacOS/fushi"
           codesign --force --deep --sign - --timestamp=none "$app_dir"
           codesign --verify --deep --strict --verbose=2 "$app_dir"
       # BUG-1922：与 release-desktop.yml 的 macos job 成对存在。这条 debug job 是

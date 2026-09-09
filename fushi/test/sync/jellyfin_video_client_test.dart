@@ -1,7 +1,7 @@
 // JellyfinApi / JellyfinVideoClient 离线单测（MockClient，无真实服务器）。
 // 覆盖：URL 归一化、认证头与令牌回填、JSON→DTO 解析（tick→ms、字幕流、
 // 单集展示标题）、RemoteVideoClient 适配（清单映射 / 流 URL 自带 api_key /
-// 外挂字幕优先 / 断点读写）。
+// 外挂字幕优先 / 断点读写 / 停止上报）。
 
 import 'dart:convert';
 import 'dart:io';
@@ -13,6 +13,8 @@ import 'package:http/testing.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteVideoInfo, RemoteVideoStreamUrls;
 import 'package:fushi/src/sync/jellyfin_video_client.dart';
+import 'package:fushi/src/sync/remote_video_client.dart'
+    show RemoteVideoPlaybackStop;
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -191,6 +193,23 @@ void main() {
       final JellyfinVideoClient c =
           clientWith(MockClient((_) async => http.Response('{}', 200)));
       expect(c.remoteLibrarySourceId, 'jellyfin:http://nas:8096|u1');
+    });
+
+    test('实现可选停止能力并上报 Jellyfin Stopped', () async {
+      late http.Request seen;
+      final JellyfinVideoClient c = clientWith(
+        MockClient((http.Request req) async {
+          seen = req;
+          return http.Response('', 204);
+        }),
+      );
+      expect(c, isA<RemoteVideoPlaybackStop>());
+      await c.stopRemoteVideoPlayback('ep1', 1234);
+      expect(seen.url.path, '/Sessions/Playing/Stopped');
+      expect(jsonDecode(seen.body), <String, Object?>{
+        'ItemId': 'ep1',
+        'PositionTicks': 1234 * kTicksPerMs,
+      });
     });
 
     test('coverCacheNamespace 按服务器+用户稳定细分（BUG-1693 口径）', () {

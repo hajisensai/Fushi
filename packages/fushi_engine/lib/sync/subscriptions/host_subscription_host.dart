@@ -50,8 +50,9 @@ class HostSubscriptionCreateRequest {
     final String mediaKind = str('mediaKind');
     final String resourceProvider = str('resourceProvider');
     if (title.isEmpty) throw const FormatException('title required');
-    if (searchQuery.isEmpty)
+    if (searchQuery.isEmpty) {
       throw const FormatException('searchQuery required');
+    }
     if (mediaKind != 'movie' && mediaKind != 'tv') {
       throw const FormatException('mediaKind must be movie or tv');
     }

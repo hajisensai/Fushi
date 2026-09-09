@@ -41,7 +41,16 @@ void main() {
         isNot(contains(OnboardingStepId.onlineServices)));
     expect(_steps(<OnboardingFeature>{OnboardingFeature.video}),
         isNot(contains(OnboardingStepId.onlineServices)));
+    // 勾了「在线服务」这项配置能力，但没勾它所属的 services 模块 —— 步骤不出现。
+    // 这是模块门控引入的**新**不变式：模块都关了，向导不该再把它的配置页推到
+    // 用户脸上（与 anki / backup / interconnect 同一范式）。
+    expect(
+      _steps(<OnboardingFeature>{OnboardingFeature.onlineServices}),
+      isNot(contains(OnboardingStepId.onlineServices)),
+      reason: '模块闸关着时，单勾配置能力不该拉出配置步骤',
+    );
     final Set<OnboardingFeature> selected = <OnboardingFeature>{
+      OnboardingFeature.services,
       OnboardingFeature.onlineServices
     };
     expect(_steps(selected), <OnboardingStepId>[
@@ -50,6 +59,12 @@ void main() {
       OnboardingStepId.onlineServices,
       OnboardingStepId.finish,
     ]);
+    // 本条用例的立意是「与**视频**模块无关」，这一点不因模块门控而改变：
+    // 加不加 video 都不影响在线服务步骤在不在。
+    expect(
+      _steps(<OnboardingFeature>{...selected, OnboardingFeature.video}),
+      contains(OnboardingStepId.onlineServices),
+    );
     selected.clear();
     expect(_steps(selected), isNot(contains(OnboardingStepId.onlineServices)));
   });

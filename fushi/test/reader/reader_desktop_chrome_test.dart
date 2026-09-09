@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 
+import '../helpers/source_guard.dart';
+
 void main() {
   test('compact playback leaves footer and system inset outside its surface',
       () {
@@ -69,39 +71,56 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  group('readerDesktopChromeEnabled', () {
-    test('各平台非歌词模式均启用', () {
-      expect(
-        readerDesktopChromeEnabled(desktop: true, lyricsMode: false),
-        isTrue,
-      );
-      expect(
-        readerDesktopChromeEnabled(desktop: true, lyricsMode: true),
-        isFalse,
-      );
-      expect(
-        readerDesktopChromeEnabled(desktop: false, lyricsMode: false),
-        isTrue,
-      );
-    });
+  testWidgets('pinned 动作在紧凑形态下仍是可见按钮（歌词模式回正文的入口靠它）',
+      (WidgetTester tester) async {
+    // 歌词模式里「切回阅读模式」是顶栏上唯一可见的回正文入口，页面为此把那颗键
+    // 标成 pinned。这里钉的是 pinned 的**行为**：窄到进紧凑形态时它不进溢出菜单，
+    // 仍是一颗按得着的图标按钮。
+    await tester.binding.setSurfaceSize(const Size(320, 640));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    int toggled = 0;
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: ReaderDesktopHeader(
+      title: 'lyrics mode',
+      textColor: Colors.black,
+      backgroundColor: Colors.white,
+      leading: <ReaderHeaderAction>[
+        ReaderHeaderAction(
+            icon: Icons.arrow_back,
+            label: 'Back',
+            pinned: true,
+            onPressed: () {}),
+        ReaderHeaderAction(
+            icon: Icons.auto_stories_outlined,
+            label: 'Book mode',
+            pinned: true,
+            onPressed: () => toggled++),
+      ],
+      trailing: <ReaderHeaderAction>[
+        ReaderHeaderAction(
+            icon: Icons.tune,
+            label: 'Settings',
+            pinned: true,
+            onPressed: () {}),
+      ],
+    ))));
+    expect(find.byIcon(Icons.auto_stories_outlined), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.auto_stories_outlined));
+    await tester.pumpAndSettle();
+    expect(toggled, 1);
+    expect(tester.takeException(), isNull);
   });
 
   group('readerDesktopHeaderReserve', () {
-    test('悬浮态恒 0；挤压态且底栏占位时占工具栏高', () {
+    // BUG-2387：悬浮态曾恒返回 0（照抄底栏/顶部进度的悬浮模型），导致 48px 不透明
+    // 顶栏整条压在正文首行上——Android API34 全屏与 Windows 桌面实测重叠均为 48.0
+    // 逻辑 px。顶栏不适用那个模型，故特例（连同 `floating` 参数）已删除：占位即预留。
+    test('占位即预留工具栏高（不分悬浮/挤压）；未占位 / 未启用为 0', () {
       expect(
         readerDesktopHeaderReserve(
           enabled: true,
           barOccupiesLayout: true,
-          floating: true,
-          headerHeight: kReaderDesktopHeaderHeight,
-        ),
-        0,
-      );
-      expect(
-        readerDesktopHeaderReserve(
-          enabled: true,
-          barOccupiesLayout: true,
-          floating: false,
           headerHeight: kReaderDesktopHeaderHeight,
         ),
         kReaderDesktopHeaderHeight,
@@ -110,7 +129,6 @@ void main() {
         readerDesktopHeaderReserve(
           enabled: true,
           barOccupiesLayout: false,
-          floating: false,
           headerHeight: kReaderDesktopHeaderHeight,
         ),
         0,
@@ -119,11 +137,27 @@ void main() {
         readerDesktopHeaderReserve(
           enabled: false,
           barOccupiesLayout: true,
-          floating: false,
           headerHeight: kReaderDesktopHeaderHeight,
         ),
         0,
       );
+    });
+
+    // 「悬浮显隐不重锚」（reader_chrome_floating.dart 文件头设计律）仍然成立的理由：
+    // 悬浮态的显隐走 _handleFloatingChromeReveal，从不翻转 _showChrome，故
+    // barOccupiesLayout 恒定 ⇒ 本函数返回值恒定 ⇒ 唤出/收起不改预留高。
+    test('同一 barOccupiesLayout 下返回值恒定——显隐不改预留高', () {
+      final double revealed = readerDesktopHeaderReserve(
+        enabled: true,
+        barOccupiesLayout: true,
+        headerHeight: kReaderDesktopHeaderHeight,
+      );
+      final double hidden = readerDesktopHeaderReserve(
+        enabled: true,
+        barOccupiesLayout: true,
+        headerHeight: kReaderDesktopHeaderHeight,
+      );
+      expect(revealed, hidden);
     });
   });
 
@@ -177,10 +211,14 @@ void main() {
     final String page = File(
       'lib/src/pages/implementations/reader_fushi_page.dart',
     ).readAsStringSync();
-    final int at = chrome.indexOf('Widget _buildDesktopHeader() {');
-    expect(at, greaterThan(-1));
+    // 取整个方法体，而不是「方法签名后 900 个字符」：那种定长窗口是 B 类要求型
+    // 锚点——往方法开头加几行（比如歌词模式那颗模式键）就会把 RepaintBoundary 挤出
+    // 窗口，行为分毫未变而守卫变红。
     expect(
-      chrome.substring(at, at + 900).contains('RepaintBoundary('),
+      containsIdentifierCall(
+        methodBody(chrome, '  Widget _buildDesktopHeader()'),
+        'RepaintBoundary',
+      ),
       isTrue,
       reason: 'BUG-1692：排在 WebView 之后的 chrome 必须自带 RepaintBoundary',
     );

@@ -917,6 +917,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       return;
     }
     // TODO-2936：应用「游戏」媒体类型的 Profile 绑定（非致命、与附着并行）。
+    // 这条入口附着的是用户挑的任意外部窗口，不对应任何游戏库条目，拿不到内容语言
+    // ——**故意不传** languageTag（而不是拿全局默认凑一个值），语言级整级跳过。
     unawaited(
       ref
           .read(profileViewModelProvider.notifier)
@@ -968,11 +970,14 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         _appModel.galgameRepo.games,
         executable,
       );
-      // TODO-2936：应用「游戏」媒体类型的 Profile 绑定（非致命、与启动并行）。
+      // TODO-2936：应用语言级 / 「游戏」媒体类型的 Profile 绑定（非致命、与启动并行）。
+      // 语言跟着上面按 exe 路径回查到的库条目走；库里没有这个 exe（临时选的文件）
+      // → null → 语言级整级跳过，与回查不到启动参数时同一条退路。
       unawaited(
-        ref
-            .read(profileViewModelProvider.notifier)
-            .autoApplyBinding(mediaType: ProfileMediaKind.game),
+        ref.read(profileViewModelProvider.notifier).autoApplyBinding(
+              languageTag: known?.language,
+              mediaType: ProfileMediaKind.game,
+            ),
       );
       final GalHookLaunchResult result = await _session.launchGame(
         executable,

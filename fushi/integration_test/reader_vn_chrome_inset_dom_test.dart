@@ -46,7 +46,7 @@ import 'test_helpers.dart';
 ///
 /// 本测试在 live WebView 上锁三条不变式（读 DOM 几何，不依赖截图）：
 ///   0. `window.innerWidth` 必须等于 Dart 下发的 `--page-width`（两个坐标系重合）；
-///   1. VN 首载稳定后 `--chrome-top-inset` 必须 >= 顶部进度条预留（18px），
+///   1. VN 首载稳定后 `--chrome-top-inset` 必须包含非悬浮顶部 chrome 预留，
 ///      即 inset 真的被推进了 VN 文档；
 ///   2. VN 当前屏 `.fushi-vn-screen` 的可视区间必须完整落在
 ///      `[chromeTopInset, innerHeight - chromeBottomInset]` 这条安全带内，
@@ -77,8 +77,9 @@ void main() {
       expect(await waitForHome(tester), isTrue, reason: 'Home within 90s');
       await tester.pump(const Duration(seconds: 2));
 
-      // 与 BUG-470 的顶部 inset 测试同理：挤压（非悬浮）模式才真占 18px 预留，
-      // 那正是"正文被顶栏压住"能被几何断言捕获的场景。
+      // 挤压（非悬浮）模式才真占顶部预留。顶部进度在当前桌面布局已并入
+      // 底部状态行，所以除 topProgressFloating 外，还必须关闭承载桌面顶栏的
+      // bottomBarFloating；否则 Windows 上合法得到 chromeTopInset=0，测试前提不成立。
       expect(ReaderFushiSource.instance.showTopProgressBar, isTrue,
           reason: '顶部阅读进度必须默认开启（本测试的触发条件）。');
       if (ReaderFushiSource.instance.topProgressFloating) {
@@ -87,6 +88,12 @@ void main() {
       }
       expect(ReaderFushiSource.instance.topProgressFloating, isFalse,
           reason: '本测试需挤压（非悬浮）模式——挤压模式才会占预留带。');
+      if (ReaderFushiSource.instance.tapEmptyToHideChrome) {
+        ReaderFushiSource.instance.toggleTapEmptyToHideChrome();
+        await tester.pump(const Duration(milliseconds: 500));
+      }
+      expect(ReaderFushiSource.instance.tapEmptyToHideChrome, isFalse,
+          reason: '桌面顶栏与底栏共用挤压/悬浮状态，测试必须显式选择挤压。');
 
       // 开书**之前**切到 VN view-mode：view_mode 是单一 app 级偏好，per-book
       // ReaderSettings 首载时读它来选 shell（webview.part.dart 的 s.isVnMode）。
@@ -195,7 +202,7 @@ void main() {
 
       // 不变式 1：VN 文档必须真的收到了 chrome inset。
       expect(chromeTopInset, greaterThanOrEqualTo(kExpectedReservePx - 1.0),
-          reason: 'BUG-1688：VN 首载稳定后 --chrome-top-inset 必须 >= 顶部进度条'
+          reason: 'BUG-1688：VN 首载稳定后 --chrome-top-inset 必须 >= 顶部 chrome '
               '预留（${kExpectedReservePx}px）。实读=$chromeTopInset。若≈0 说明 VN '
               'shell 的 setChromeInsets 仍是空壳、initialize 也没写这两个变量。');
 

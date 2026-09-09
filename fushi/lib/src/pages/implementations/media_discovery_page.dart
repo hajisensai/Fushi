@@ -1,8 +1,7 @@
 import 'dart:async' show unawaited;
-
+import 'package:collection/collection.dart' show mergeSort;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/discovery/discovery_labels.dart';
@@ -10,11 +9,14 @@ import 'package:fushi/src/media/discovery/media_discovery_service.dart';
 import 'package:fushi/src/media/discovery/media_discovery_source.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
+import 'package:fushi_engine/media/torrent/nyaa_client.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/discovery_header.dart';
 import 'package:fushi/src/pages/implementations/download_actions.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/misc/engine_listenable.dart';
+import 'package:fushi/src/media/discovery/sources/nyaa_discovery_source.dart';
 
 /// 统一发现页：书（小说/有声书）与 galgame 共用的多源在线资源发现视图。
 ///
@@ -162,9 +164,9 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
       _entries.any((DiscoveryEntry e) =>
           e is DiscoveryResourceItem && e.gameLocalization != null);
 
-  /// 应用筛选后的条目。目录条目（[DiscoveryFolder]）永远保留——它们是导航结构，
-  /// 不是资源，把它们筛掉会让用户下不去。
-  List<DiscoveryEntry> get _visibleEntries {
+  /// 应用游戏汉化筛选后的条目。目录条目（[DiscoveryFolder]）永远保留——它们是
+  /// 导航结构，不是资源，把它们筛掉会让用户下不去。
+  List<DiscoveryEntry> get _gameFilteredEntries {
     if (_gameTypeFilter == _GameTypeFilter.all || !_gameTypeFilterAvailable) {
       return _entries;
     }
@@ -174,6 +176,140 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
             _gameTypeFilter.matches(e.gameLocalization))
           e,
     ];
+  }
+
+  /// 「已隐藏 N 条…」被用户点开后的临时显示态；每轮新加载重置。
+  ///
+  /// 点开**不改偏好**：用户是想看一眼这次被藏了什么，不是想永久关掉过滤。
+  bool _revealHidden = false;
+
+  /// 偏好未就绪（无 ProviderScope 的纯布局测试 / 早一帧打开）时用默认值，
+  /// 且不写盘。三个偏好的默认值只在 [PreferencesRepository] 一处定义。
+  PreferencesRepository? get _prefs {
+    final AppModel? appModel = _appModel;
+    if (appModel == null || !appModel.isPreferencesReady) return null;
+    return appModel.prefsRepo;
+  }
+
+  bool get _hideZeroSeeders => _prefs?.discoveryHideZeroSeeders ?? true;
+
+  bool get _hideSuspectedManga => _prefs?.discoveryHideSuspectedManga ?? true;
+
+  NyaaQualityFilter get _nyaaQualityFilter =>
+      NyaaQualityFilter.fromIndex(_prefs?.discoveryNyaaQualityFilter ?? 0);
+
+  /// 当前结果里有没有种子类条目（带做种数）。做种相关的 chip / 灰显只对它们
+  /// 有意义，OPDS / 直链源不该凭空多一排控件。
+  bool get _hasSeederEntries => _entries.any(
+        (DiscoveryEntry e) => e is DiscoveryResourceItem && e.seeders != null,
+      );
+
+  /// 当前结果里有没有跑过内容分类器的条目（只有 nyaa 小说域会打）。
+  bool get _hasContentHints => _entries.any(
+        (DiscoveryEntry e) =>
+            e is DiscoveryResourceItem &&
+            e.contentHint != DiscoveryContentHint.none,
+      );
+
+  /// 当前会打到 Nyaa 的来源集合里有没有 Nyaa 源：过滤三态是 nyaa 的服务端参数
+  /// （`f`），只在它真会生效时露出。
+  bool get _nyaaFilterAvailable {
+    final MediaDiscoveryService? service = _appModel?.mediaDiscoveryService;
+    if (service == null) return false;
+    if (_sourceId != kDiscoveryAllSourcesId) {
+      return service.sourceById(_sourceId) is NyaaDiscoverySource;
+    }
+    return service
+        .sourcesFor(_kind)
+        .any((MediaDiscoverySource s) => s is NyaaDiscoverySource);
+  }
+
+  static int _seedersOf(DiscoveryEntry e) =>
+      e is DiscoveryResourceItem ? (e.seeders ?? -1) : -1;
+
+  /// 源内按做种降序**稳定**排序；跨源仍按 service 给出的 priority 顺序串接。
+  ///
+  /// 服务端已经按做种排过（`s=seeders&o=desc`），这里是本地兜底：翻页追加的
+  /// 条目要能插回正确位置，多个源混排时各自内部也要有序。只对含做种数的源
+  /// 分组动手，OPDS / 直链源原序不动。`List.sort` 不稳定，用 [mergeSort]。
+  static List<DiscoveryEntry> _sortBySeedersWithinSource(
+    List<DiscoveryEntry> entries,
+  ) {
+    final Map<String, List<DiscoveryEntry>> groups =
+        <String, List<DiscoveryEntry>>{};
+    for (final DiscoveryEntry e in entries) {
+      (groups[e.sourceId] ??= <DiscoveryEntry>[]).add(e);
+    }
+    final List<DiscoveryEntry> out = <DiscoveryEntry>[];
+    for (final List<DiscoveryEntry> group in groups.values) {
+      if (group.any((DiscoveryEntry e) => _seedersOf(e) >= 0)) {
+        mergeSort<DiscoveryEntry>(
+          group,
+          compare: (DiscoveryEntry a, DiscoveryEntry b) =>
+              _seedersOf(b).compareTo(_seedersOf(a)),
+        );
+      }
+      out.addAll(group);
+    }
+    return out;
+  }
+
+  bool _isHiddenZeroSeeders(DiscoveryEntry e) =>
+      _hideZeroSeeders && e is DiscoveryResourceItem && e.seeders == 0;
+
+  bool _isHiddenSuspectedManga(DiscoveryEntry e) =>
+      _hideSuspectedManga &&
+      e is DiscoveryResourceItem &&
+      e.contentHint == DiscoveryContentHint.manga;
+
+  /// 最终渲染集合 + 两类被隐藏的计数（一条只计一次：先算无人做种，再算疑似漫画）。
+  ({List<DiscoveryEntry> entries, int hiddenZeroSeeders, int hiddenManga})
+      get _visible {
+    final List<DiscoveryEntry> sorted =
+        _sortBySeedersWithinSource(_gameFilteredEntries);
+    if (_revealHidden) {
+      return (entries: sorted, hiddenZeroSeeders: 0, hiddenManga: 0);
+    }
+    int hiddenZeroSeeders = 0;
+    int hiddenManga = 0;
+    final List<DiscoveryEntry> shown = <DiscoveryEntry>[];
+    for (final DiscoveryEntry e in sorted) {
+      if (_isHiddenZeroSeeders(e)) {
+        hiddenZeroSeeders++;
+      } else if (_isHiddenSuspectedManga(e)) {
+        hiddenManga++;
+      } else {
+        shown.add(e);
+      }
+    }
+    return (
+      entries: shown,
+      hiddenZeroSeeders: hiddenZeroSeeders,
+      hiddenManga: hiddenManga,
+    );
+  }
+
+  void _setHideZeroSeeders(bool value) {
+    final PreferencesRepository? prefs = _prefs;
+    if (prefs == null) return;
+    unawaited(prefs.setDiscoveryHideZeroSeeders(value));
+    setState(() => _revealHidden = false);
+  }
+
+  void _setHideSuspectedManga(bool value) {
+    final PreferencesRepository? prefs = _prefs;
+    if (prefs == null) return;
+    unawaited(prefs.setDiscoveryHideSuspectedManga(value));
+    setState(() => _revealHidden = false);
+  }
+
+  /// 过滤三态是服务端参数：写穿偏好后必须重新请求（源在每次请求时读偏好）。
+  void _setNyaaQualityFilter(NyaaQualityFilter value) {
+    final PreferencesRepository? prefs = _prefs;
+    if (prefs == null || value == _nyaaQualityFilter) return;
+    unawaited(prefs.setDiscoveryNyaaQualityFilter(value.index));
+    setState(() {});
+    unawaited(_load());
   }
 
   DiscoveryAggregateResult? _result;
@@ -249,6 +385,7 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
         _page = 1;
         _entries.clear();
         _result = null;
+        _revealHidden = false;
       }
     });
     try {
@@ -350,12 +487,14 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
         final String resolvingKey = '${item.sourceId}\u0000${item.id}';
         if (!_resolvingTorrentIds.add(resolvingKey)) return;
         if (mounted) setState(() {});
+        bool resolving = true;
         try {
           final MediaDiscoverySource? source =
               appModel.mediaDiscoveryService.sourceById(item.sourceId);
           if (source == null) return;
           final DiscoveryPayload payload =
               item.payload ?? await source.resolvePayload(item);
+          resolving = false;
           if (!mounted) return;
           final GenericPushOutcome outcome;
           if (payload is DiscoveryTorrentPayload) {
@@ -394,10 +533,17 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
                 ? ToastSeverity.success
                 : ToastSeverity.error,
           );
-        } on Object {
+        } on Object catch (error, stack) {
+          ErrorLogService.instance.log(
+            'DiscoveryTorrent.${resolving ? 'resolve' : 'enqueue'}.${item.sourceId}',
+            error,
+            stack,
+          );
           if (mounted) {
             FushiToast.show(
-              msg: genericPushMessage(GenericPushOutcome.pushFailed),
+              msg: resolving
+                  ? discoveryTorrentResolveFailureMessage(error)
+                  : genericPushMessage(GenericPushOutcome.pushFailed),
               severity: ToastSeverity.error,
             );
           }
@@ -431,6 +577,8 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
       if (item.dateText != null) item.dateText!,
       if (item.seeders != null) '↑${item.seeders}',
       if (item.note != null) item.note!,
+      if (item.contentHint == DiscoveryContentHint.manga)
+        t.discovery_content_hint_manga,
       // BUG-1910：游戏的汉化状态走带类型的字段 + i18n 标签，不再是源里那句硬编码
       // 中文（英文用户此前看到的就是「熟肉」两个方块）。
       if (item.gameLocalization != null)
@@ -464,9 +612,55 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
     );
   }
 
-  /// header 上方插槽：媒体类型分段（多域时）+ BUG-1910 的游戏汉化状态筛选。
+  /// 种子结果的筛选条：隐藏无人做种 / 隐藏疑似漫画（客户端过滤）+ Nyaa 过滤
+  /// 三态（服务端 `f`）。三组各自只在对当前结果有意义时出现。
+  Widget? _buildTorrentFilters() {
+    final bool seederChip = _hasSeederEntries;
+    final bool mangaChip =
+        _kind == DiscoveryMediaKind.novel && _hasContentHints;
+    final bool nyaaFilter = _nyaaFilterAvailable;
+    if (!seederChip && !mangaChip && !nyaaFilter) return null;
+    return Wrap(
+      spacing: 8,
+      runSpacing: 4,
+      children: <Widget>[
+        if (seederChip)
+          FilterChip(
+            key: const ValueKey<String>('discovery_filter_hide_zero_seeders'),
+            label: Text(t.discovery_filter_hide_zero_seeders),
+            selected: _hideZeroSeeders,
+            onSelected: _setHideZeroSeeders,
+          ),
+        if (mangaChip)
+          FilterChip(
+            key:
+                const ValueKey<String>('discovery_filter_hide_suspected_manga'),
+            label: Text(t.discovery_filter_hide_suspected_manga),
+            selected: _hideSuspectedManga,
+            onSelected: _setHideSuspectedManga,
+          ),
+        if (nyaaFilter)
+          for (final NyaaQualityFilter f in NyaaQualityFilter.values)
+            ChoiceChip(
+              key: ValueKey<String>('discovery_nyaa_filter_${f.index}'),
+              label: Text(switch (f) {
+                NyaaQualityFilter.all => t.discovery_nyaa_filter_all,
+                NyaaQualityFilter.noRemakes =>
+                  t.discovery_nyaa_filter_no_remakes,
+                NyaaQualityFilter.trustedOnly =>
+                  t.discovery_nyaa_filter_trusted_only,
+              }),
+              selected: _nyaaQualityFilter == f,
+              onSelected: (_) => _setNyaaQualityFilter(f),
+            ),
+      ],
+    );
+  }
+
+  /// header 上方插槽：媒体类型分段（多域时）+ BUG-1910 的游戏汉化状态筛选 +
+  /// 种子筛选条。
   ///
-  /// 两者可能同时存在（书+游戏合用一页时），所以纵向叠放而不是二选一。
+  /// 三者可能同时存在（书+游戏合用一页时），所以纵向叠放而不是二选一。
   Widget? _buildHeaderLeading() {
     final Widget? kindSelector = widget.kinds.length > 1
         ? SegmentedButton<DiscoveryMediaKind>(
@@ -502,15 +696,70 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
             ],
           )
         : null;
-    if (kindSelector == null) return typeFilter;
-    if (typeFilter == null) return kindSelector;
+    final Widget? torrentFilters = _buildTorrentFilters();
+    final List<Widget> rows = <Widget>[
+      if (kindSelector != null) kindSelector,
+      if (typeFilter != null) typeFilter,
+      if (torrentFilters != null) torrentFilters,
+    ];
+    if (rows.isEmpty) return null;
+    if (rows.length == 1) return rows.single;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        kindSelector,
-        const SizedBox(height: 8),
-        typeFilter,
+        for (int i = 0; i < rows.length; i++) ...<Widget>[
+          if (i > 0) const SizedBox(height: 8),
+          rows[i],
+        ],
+      ],
+    );
+  }
+
+  /// 「已隐藏 N 条无人做种 / M 条疑似漫画」提示行，点一下临时显示全部。
+  Widget _buildHiddenNotice(
+    BuildContext context,
+    int hiddenZeroSeeders,
+    int hiddenManga,
+  ) {
+    final String text = <String>[
+      if (hiddenZeroSeeders > 0)
+        t.discovery_hidden_zero_seeders_count(n: hiddenZeroSeeders),
+      if (hiddenManga > 0)
+        t.discovery_hidden_suspected_manga_count(n: hiddenManga),
+    ].join(' · ');
+    return FushiListItem(
+      key: const ValueKey<String>('discovery_hidden_reveal'),
+      leading: const Icon(Icons.visibility_off_outlined),
+      title: Text(text),
+      trailing: Text(t.discovery_hidden_show),
+      onTap: () => setState(() => _revealHidden = true),
+    );
+  }
+
+  /// 资源标题 + trusted 绿 / remake 红徽标（来自 nyaa HTML 行 class）。
+  Widget _buildResourceTitle(BuildContext context, DiscoveryResourceItem item) {
+    final Widget title = Text(item.title);
+    if (!item.trusted && !item.remake) return title;
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Expanded(child: title),
+        if (item.remake)
+          FushiTag(
+            key: const ValueKey<String>('discovery_badge_remake'),
+            text: t.discovery_badge_remake,
+            backgroundColor: colors.error,
+            foregroundColor: colors.onError,
+          )
+        else
+          FushiTag(
+            key: const ValueKey<String>('discovery_badge_trusted'),
+            text: t.discovery_badge_trusted,
+            backgroundColor: Colors.green.shade700,
+            foregroundColor: Colors.white,
+          ),
       ],
     );
   }
@@ -647,11 +896,22 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
       );
     }
 
+    final ({
+      List<DiscoveryEntry> entries,
+      int hiddenZeroSeeders,
+      int hiddenManga
+    }) visible = _visible;
     return AnimatedBuilder(
       animation: EngineListenable(queue),
       builder: (BuildContext context, Widget? _) => ListView(
         padding: const EdgeInsets.all(16),
         children: <Widget>[
+          if (visible.hiddenZeroSeeders + visible.hiddenManga > 0)
+            _buildHiddenNotice(
+              context,
+              visible.hiddenZeroSeeders,
+              visible.hiddenManga,
+            ),
           if (result != null && result.hasFailures)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
@@ -662,7 +922,7 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
                     ?.copyWith(color: theme.colorScheme.error),
               ),
             ),
-          for (final DiscoveryEntry entry in _visibleEntries)
+          for (final DiscoveryEntry entry in visible.entries)
             switch (entry) {
               DiscoveryFolder() => FushiListItem(
                   leading: const Icon(Icons.folder_outlined),
@@ -680,35 +940,42 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => _openFolder(entry),
                 ),
-              DiscoveryResourceItem() => FushiListItem(
-                  leading: Icon(
-                    entry.payloadKind == DiscoveryPayloadKind.torrent
-                        ? Icons.link
-                        : Icons.insert_drive_file_outlined,
+              // 未隐藏时 0 做种条目灰显：死种能看到，但一眼分得出。
+              DiscoveryResourceItem() => Opacity(
+                  key: ValueKey<String>(
+                    'discovery_item_${entry.sourceId}_${entry.id}',
                   ),
-                  title: Text(entry.title),
-                  titleMaxLines: 2,
-                  subtitle: Text(_subtitleFor(entry, service)),
-                  trailing: _resolvingTorrentIds.contains(
-                            '${entry.sourceId}\u0000${entry.id}',
-                          ) ||
-                          queue.isPending(entry)
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : entry.isDownloadable
-                          ? FushiIconButton(
-                              icon: Icons.download_outlined,
-                              tooltip: t.anime_download_generic_download,
-                              label: t.anime_download_generic_download,
-                              onTap: () => unawaited(_download(entry)),
-                            )
-                          : null,
-                  onTap: entry.isDownloadable
-                      ? () => unawaited(_download(entry))
-                      : null,
+                  opacity: entry.seeders == 0 ? 0.5 : 1,
+                  child: FushiListItem(
+                    leading: Icon(
+                      entry.payloadKind == DiscoveryPayloadKind.torrent
+                          ? Icons.link
+                          : Icons.insert_drive_file_outlined,
+                    ),
+                    title: _buildResourceTitle(context, entry),
+                    titleMaxLines: 2,
+                    subtitle: Text(_subtitleFor(entry, service)),
+                    trailing: _resolvingTorrentIds.contains(
+                              '${entry.sourceId}\u0000${entry.id}',
+                            ) ||
+                            queue.isPending(entry)
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : entry.isDownloadable
+                            ? FushiIconButton(
+                                icon: Icons.download_outlined,
+                                tooltip: t.anime_download_generic_download,
+                                label: t.anime_download_generic_download,
+                                onTap: () => unawaited(_download(entry)),
+                              )
+                            : null,
+                    onTap: entry.isDownloadable
+                        ? () => unawaited(_download(entry))
+                        : null,
+                  ),
                 ),
             },
           if (result != null && result.hasMore)

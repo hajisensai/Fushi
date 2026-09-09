@@ -1,0 +1,49 @@
+diff --git a/LocaleEmulator/ml.h b/LocaleEmulator/ml.h
+index 57abe54..d6b2f61 100644
+--- a/LocaleEmulator/ml.h
++++ b/LocaleEmulator/ml.h
+@@ -1,6 +1,9 @@
+ ﻿#ifndef _MYLIBRARY_H_9fb91137_38ac_4d5e_8572_b6e12d23cb15_
+ #define _MYLIBRARY_H_9fb91137_38ac_4d5e_8572_b6e12d23cb15_
+ 
++// Hibiki modification, 2026-09-07: exclude the loader list sentinel.
++#include "kernel32_module_list.h"
++
+ #if !defined(USE_NT_VER)
+     #define USE_NT_VER 1
+ #endif
+@@ -22172,29 +22175,12 @@ ForceInline PUSHORT Nt_GetDefaultCodePageBase()
+ 
+ inline PLDR_MODULE GetKernel32Ldr()
+ {
+-    LDR_MODULE *Ldr, *FirstLdr;
+-
+-    Ldr = FIELD_BASE(Nt_CurrentPeb()->Ldr->InInitializationOrderModuleList.Flink, LDR_MODULE, InInitializationOrderLinks);
+-    FirstLdr = Ldr;
+-
+-    do
+-    {
+-        Ldr = FIELD_BASE(Ldr->InInitializationOrderLinks.Flink, LDR_MODULE, InInitializationOrderLinks);
+-        if (Ldr->BaseDllName.Buffer == NULL)
+-            continue;
+-
+-        if (CHAR_UPPER4W(*(PULONG64)(Ldr->BaseDllName.Buffer + 0)) != TAG4W('KERN') ||
+-            CHAR_UPPER4W(*(PULONG64)(Ldr->BaseDllName.Buffer + 4)) != CHAR_UPPER4W(TAG4W('EL32')) ||
+-            Ldr->BaseDllName.Buffer[8] != '.')
++    return fushi_locale_emulator::FindKernel32Module<LDR_MODULE>(
++        &Nt_CurrentPeb()->Ldr->InInitializationOrderModuleList,
++        [](PLIST_ENTRY entry) -> PLDR_MODULE
+         {
+-            continue;
+-        }
+-
+-        return Ldr;
+-
+-    } while (FirstLdr != Ldr);
+-
+-    return NULL;
++            return FIELD_BASE(entry, LDR_MODULE, InInitializationOrderLinks);
++        });
+ }
+ 
+ inline PVOID GetKernel32Handle()

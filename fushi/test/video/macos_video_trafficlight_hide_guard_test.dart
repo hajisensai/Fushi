@@ -2,31 +2,27 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// Guards the BUG-973 fix: on macOS the app enables a transparent titlebar +
-/// full-size content view (`main.dart`), so the red/yellow/green traffic light
-/// buttons float over the top-left of the Flutter content. The video page draws
-/// its exit/back button (top bar `topLeft` slot) and left-corner OSD toasts in
-/// that same region, and macOS does NOT report the traffic lights as
-/// `MediaQuery.padding`, so they overlap. Unlike the home shell (BUG-869, which
-/// reserves `kMacTitleBarHeight` via `SafeArea.minimum`), the video page is a
-/// full-page route that owns its own chrome, so the fix hides the traffic
-/// lights for the whole video session and restores them on exit.
+import '../helpers/source_guard.dart';
+
+/// BUG-973 的**当前形态**守卫：macOS 上交通灯（红黄绿三个圆点）压住视频页返回按钮 /
+/// 左上角 OSD 的根因，已经不是「视频页忘了隐藏」，而是「窗口上还有交通灯」。
 ///
-/// A source guard is the strongest feasible landing layer: the behaviour is
-/// gated on `dart:io`'s `Platform.isMacOS` (which, unlike
-/// `debugDefaultTargetPlatformOverride`, can't be faked in a widget test on the
-/// Linux/Windows CI host) and drives native `NSWindow.standardWindowButton`
-/// visibility through a method channel, neither of which exists under
-/// `flutter test`. So we pin the wiring instead: the helper must gate on macOS
-/// and toggle all three buttons, and the video lifecycle must hide on enter /
-/// restore on exit / re-assert after leaving native fullscreen.
+/// macOS 改用自绘 MD3 顶栏（[FushiDesktopTitleBar]）后，`main()` 用
+/// `setTitleBarStyle(hidden, windowButtonVisibility: false)` 在启动时就把三个按钮
+/// 永久关掉，窗口控制全部由顶栏的 MD3 按钮提供。于是：
+///  * 视频页不该再「进页隐藏 / 退页恢复」——恢复恰恰把 BUG-973 的症状放回来；
+///  * 唯一仍需重申隐藏的时机是**退出原生全屏**（AppKit 的 `toggleFullScreen` 重建
+///    标题栏视图时会复位 `standardWindowButton.isHidden`）。
+///
+/// 源码守卫是最强可落地层：行为门在 `dart:io` 的 `Platform.isMacOS` 与
+/// `NSWindow.standardWindowButton` 平台通道上，`flutter test` 下两者都不存在。
 void main() {
   test(
       'setMacOSTrafficLightsHidden gates on macOS and toggles all three '
       'traffic-light buttons (BUG-973)', () {
-    final String source =
-        File('lib/src/platform/desktop/macos_traffic_lights.dart')
-            .readAsStringSync();
+    final String source = File(
+      'lib/src/platform/desktop/macos_traffic_lights.dart',
+    ).readAsStringSync();
 
     expect(
       RegExp(r'if\s*\(\s*!\s*Platform\.isMacOS\s*\)').hasMatch(source),
@@ -52,69 +48,67 @@ void main() {
     }
   });
 
-  test(
-      'video page hides traffic lights on enter and restores on exit '
-      '(BUG-973)', () {
-    final String source =
-        File('lib/src/pages/implementations/video_fushi_page.dart')
-            .readAsStringSync();
-
-    final int initState = source.indexOf('void initState()');
-    final int dispose = source.indexOf('void dispose()');
-    expect(initState, greaterThanOrEqualTo(0));
-    expect(dispose, greaterThan(initState),
-        reason:
-            'dispose() is expected to follow initState() in the state class.');
-
-    final String initBody = source.substring(initState, dispose);
+  test('交通灯由启动时一次性隐藏，视频页不再进出页开关它（BUG-973）', () {
+    final String main = File('lib/main.dart').readAsStringSync();
     expect(
-      initBody.contains('setMacOSTrafficLightsHidden(true)'),
+      main.contains('windowButtonVisibility: false'),
       isTrue,
-      reason:
-          'initState must hide the macOS traffic lights when the video page '
-          'mounts, or the exit button / OSD stay under them (BUG-973).',
+      reason: 'main() 必须在装自绘顶栏的同一次 setTitleBarStyle 里关掉交通灯，'
+          '否则三个系统圆点会浮在自绘顶栏的标题上。',
     );
 
-    // Bound dispose to the next member so we do not accidentally read a later
-    // method. dispose() is large; scan a generous window from its start.
-    final String disposeBody = source.substring(dispose);
+    // 掩掉注释：删除说明里会写到这个调用名，不掩就等于自己命中自己。
+    final String video = maskComments(
+      File(
+        'lib/src/pages/implementations/video_fushi_page.dart',
+      ).readAsStringSync(),
+    );
     expect(
-      disposeBody.contains('setMacOSTrafficLightsHidden(false)'),
-      isTrue,
-      reason: 'dispose must restore the traffic lights on exit (symmetry with '
-          'the initState hide), so the home shell gets them back (BUG-973).',
+      video.contains('setMacOSTrafficLightsHidden(false)'),
+      isFalse,
+      reason: '退出视频页恢复交通灯 = 把 BUG-973 的遮挡放回来（窗口已无系统标题栏，'
+          '三个圆点会直接压在自绘顶栏上）。',
     );
   });
 
-  test('exiting native fullscreen re-asserts the traffic-light hide (BUG-973)',
-      () {
-    final String source = File(
-      'lib/src/pages/implementations/video_fushi/fullscreen.part.dart',
-    ).readAsStringSync();
+  test(
+    'exiting native fullscreen re-asserts the traffic-light hide (BUG-973)',
+    () {
+      final String source = File(
+        'lib/src/pages/implementations/video_fushi/fullscreen.part.dart',
+      ).readAsStringSync();
 
-    // 锚定**定义**而非裸符号：BUG-2043 后同文件里更早处有一个调用点
-    // （_releaseHandedOverNativeFullscreen），裸 indexOf 会先命中它、扫错方法体。
-    final int exitFs =
-        source.indexOf('Future<void> _exitVideoNativeFullscreen()');
-    expect(exitFs, greaterThanOrEqualTo(0));
-    // Scan the method body: from its declaration to the next method.
-    final int nextMethod = source.indexOf('\n  Future<', exitFs + 1);
-    final int nextAny = source.indexOf('\n  Widget ', exitFs + 1);
-    int end = source.length;
-    if (nextMethod > exitFs) end = nextMethod;
-    if (nextAny > exitFs && nextAny < end) end = nextAny;
-    final String body = source.substring(exitFs, end);
+      // 锚定**定义**而非裸符号：BUG-2043 后同文件里更早处有一个调用点
+      // （_releaseHandedOverNativeFullscreen），裸 indexOf 会先命中它、扫错方法体。
+      final int exitFs = source.indexOf(
+        'Future<void> _exitVideoNativeFullscreen()',
+      );
+      expect(exitFs, greaterThanOrEqualTo(0));
+      // Scan the method body: from its declaration to the next method.
+      final int nextMethod = source.indexOf('\n  Future<', exitFs + 1);
+      final int nextAny = source.indexOf('\n  Widget ', exitFs + 1);
+      int end = source.length;
+      if (nextMethod > exitFs) end = nextMethod;
+      if (nextAny > exitFs && nextAny < end) end = nextAny;
+      final String body = source.substring(exitFs, end);
 
-    // AppKit's toggleFullScreen can reset standardWindowButton.isHidden when it
-    // rebuilds the titlebar; the desktop branch must re-hide AFTER exiting.
-    final int defaultExit = body.indexOf('defaultExitNativeFullscreen()');
-    final int reHide = body.indexOf('setMacOSTrafficLightsHidden(true)');
-    expect(defaultExit, greaterThanOrEqualTo(0),
-        reason: 'desktop branch still exits native fullscreen via media_kit.');
-    expect(reHide, greaterThan(defaultExit),
+      // AppKit's toggleFullScreen can reset standardWindowButton.isHidden when it
+      // rebuilds the titlebar; the desktop branch must re-hide AFTER exiting.
+      final int defaultExit = body.indexOf('defaultExitNativeFullscreen()');
+      final int reHide = body.indexOf('setMacOSTrafficLightsHidden(true)');
+      expect(
+        defaultExit,
+        greaterThanOrEqualTo(0),
+        reason: 'desktop branch still exits native fullscreen via media_kit.',
+      );
+      expect(
+        reHide,
+        greaterThan(defaultExit),
         reason:
             'The desktop branch must re-assert the traffic-light hide after '
             'defaultExitNativeFullscreen(), because AppKit can reset the '
-            'button visibility when leaving fullscreen (BUG-973).');
-  });
+            'button visibility when leaving fullscreen (BUG-973).',
+      );
+    },
+  );
 }

@@ -1,0 +1,18 @@
+## BUG-2374 · 合集丢失设置封面与重新刮削入口
+- **报告**：2026-09-09（用户：截图指着视频合集右键菜单问「选封面功能去哪了」，随后追加「现在缺少重新刮削某个合集，还有这些能设置的少了一些东西吧」）
+- **真实性**：✅ 真 bug（两条，一条是回归，一条是从未接线）
+  - **重新刮削合集 = 回归**。`1637876c64`（refactor(video): make AniDB the canonical scraper，2026-08-23）把合集右键的「刮削资料与封面」连同 `_openCollectionCoverMatch`、`showCollectionScrapeDialog`、详情页注入的 `onScrapeCollection` / `onEpisodeScrapeInfo` 一起删光，注释理由是「在线元数据刮削统一从来源页进入」。但来源页的作用域是**扫描根**（`VideoSourceWorkPlanner.plan(source)`），用户手上是**一个刮错的合集**，两者不可互相替代——BUG-1662 当初补这个入口正是因为库页「想重刮某个合集」是断头路。删除后 `video_collection_scrape` 这个 i18n key 在 17 份 json 里成了全仓零引用的孤儿，是回归的物证。
+  - **合集封面 = 从未接线**。`MediaCollections` 有两列封面事实：`coverPath`（合集自有图，schema v61 / BUG-1211）与 `coverSource`（借哪个成员的图）。`coverPath` 只有在线刮削（`video_source_scrape_coordinator.dart:2259`）和番剧下载导入器（`anime_download_importer.dart:140`）会写，`coverSource` 更是只有导入器写，**UI 层零入口**。而视频合集卡渲染把 `coverPath` 排在第一优先（`home_video_page.dart` `_buildCollectionCover`），所以用户既改不了也退不回，只能等刮削刮对。
+  - 根因位置：`fushi/lib/src/pages/implementations/home_video_page.dart` 的 `_showCollectionContextMenu`（`extraListActions` 只剩批量字幕）与 `fushi/lib/src/pages/implementations/media_collection_detail_page.dart` 的 `_buildAppBar` 管理菜单。
+- **[x] ① 已修复** — 两处入口按 canonical 管线补齐，不复活 legacy 刮削路径：
+  - 新增 `MediaCoverService.applyCollectionCover`：落 `video_covers/collections/<id>.jpg`（与导入器写合集海报同目录同命名）→ 写 `coverPath`。走既有的 `applyCoverFile` 收口（原子 .tmp+rename、双键驱逐），并沿用视频侧 `VideoScrapeOperationGate` + `VideoCoverMutationGate` 两把门，与刮削写同一路径时不打架。**不需要**额外的 manual 保护标记：刮削覆盖判据是 `coverPath == null || isUnmodifiedGeneratedArtifact(coverPath)`，后者按 `video_sidecar_artifacts` 的 sha256 登记比对，手选图从不进那张表 → 结构性免疫覆盖。
+  - 新增 `clearCollectionOwnCover`（`collection_asset_reclaim.dart`）：先落库置 null，再把置 null 前的快照交给既有的 `reclaimDeletedCollectionAssets`，**复用同一套三条误删护栏**（路径来自 DB 行、必须 `p.isWithin` 合集封面目录、删行后仍被别的合集引用则保留），最后 `applyCoverRemoval` 驱逐解码缓存。没有第二套删除条件。
+  - 新增 `planScrapeWorkForCollection`（`video_library_scrape_sweep.dart`）：问计划器要同一份计划，按 `stableKey == 'collection:<id>'` 定位作品单元，拿回「来源行 + 作品标题 + 稳定键」。按稳定键而非标题匹配，同名/改名合集都不会认错，也不会撞 `VideoSourceScrapeWorkAmbiguous`。
+  - 库页右键菜单接三项（设置封面 / 恢复默认封面（仅在有自有封面时出现）/ 重新刮削资料与封面）；详情页 AppBar 管理菜单接同样三项。重刮走既有共享入口 `showVideoSourceScrapeManualBindingDialog` 选身份 → `VideoSourceScrapeTaskController.rescrapeWorkWithLookup`，与批次内确认、下载导入后的精确刮削共用同一条 `_store.apply`，不新开绑定保存路径。controller 归 HomePage 持有，详情页经 `VideoWorkDetailPage.onRescrapeCollection` 注入（恢复被删的 `onScrapeCollection` 同型接线），拿不到 controller 时整条菜单项不渲染。
+  - 封面两项只给视频合集：书架与游戏库的合集入口是横排行头、没有封面槽，挂上去点了看不出任何变化。
+- **[x] ② 已加自动化测试** —
+  - `fushi/test/media/media_cover_service_test.dart`：`applyCollectionCover` 落盘路径与写库、**只写 `media_collections` 一行不动任何成员封面**（BUG-1211 语义）、同路径覆盖写后双键驱逐、源文件不可读时抛出且不写库不留 `.tmp`。
+  - `fushi/test/media/collections/collection_asset_reclaim_test.dart`：`clearCollectionOwnCover` 清列+回收文件且合集本身还在、别的合集仍引用同一张图时保留文件、合集封面目录之外的用户图片只解引用绝不删除、无自有封面时空操作。
+  - `fushi/test/media/video/metadata/video_library_scrape_sweep_test.dart`：`planScrapeWorkForCollection` 按 stableKey 命中并带回来源行、同名合集不认错、不在任何本地来源计划里时返回 null。
+  - `fushi/test/pages/collection_detail_scrape_entry_test.dart`：把原来的单向否定守卫升级成**双向**——既钉死 legacy 入口不复活，也钉死没注入 controller 时不渲染重刮项、注入后必须渲染且点击真把当前合集交给注入实现，以及封面项在场 / 未设封面时不显示「恢复默认」。
+- **备注**：原守卫只断言「不得有 legacy 刮削入口」，删入口的那次 refactor 因此畅通无阻——**否定守卫单独存在时，把功能删光也是绿的**。这次一并补上了正向断言。孤儿 key `video_collection_scrape` 已随本次一并删除（`i18n_sync.dart --remove`）。

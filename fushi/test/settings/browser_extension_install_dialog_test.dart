@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/lookup/browser_extension_installer.dart';
 import 'package:fushi/src/pages/implementations/browser_extension_page.dart';
 import 'package:fushi/utils.dart';
@@ -156,12 +157,31 @@ void main() {
     });
 
     test('browser extension tab is desktop-only (电脑才有)', () {
-      final String src = File('lib/src/pages/implementations/home_page.dart')
-          .readAsStringSync();
-      // 顶层 tab 由平台门控：仅桌面（DesktopLookupService.isDesktop）插入。
-      expect(src,
-          contains('browserExtensionEnabled: DesktopLookupService.isDesktop'),
-          reason: '浏览器扩展 tab 必须按桌面平台门控（电脑才有）');
+      // 原本扫的是 home_page.dart 里的字面量
+      // `browserExtensionEnabled: DesktopLookupService.isDesktop`。那个参数已经
+      // 不存在了：模块门控收口后，平台判据只在 ModuleId.availableOn 写一次
+      // （旧实现散在 home_page / main / settings_schema_appearance 四处，正是漂移
+      // 的来源）。所以这里改成**断言新真相源的行为**——比扫字面量强，也不会因为
+      // 下一次接线换写法而无辜变红。
+      expect(
+        ModuleId.browserExtension
+            .availableOn(isWindows: false, isDesktop: false),
+        isFalse,
+        reason: '手机浏览器装不了未解压扩展，非桌面必须没有这个模块',
+      );
+      expect(
+        ModuleId.browserExtension.availableOn(isWindows: true, isDesktop: true),
+        isTrue,
+      );
+      // 合成后的可见集合也必须一致（平台不可用时，pref 开着也不该出现）。
+      expect(
+        ModuleVisibility.all(isWindows: false, isDesktop: false).enabled,
+        isNot(contains(ModuleId.browserExtension)),
+      );
+      expect(
+        ModuleVisibility.all(isWindows: false, isDesktop: true).enabled,
+        contains(ModuleId.browserExtension),
+      );
     });
 
     test('contradictory dead i18n keys stay removed across all locales', () {

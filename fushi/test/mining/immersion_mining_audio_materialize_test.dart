@@ -30,7 +30,8 @@ Future<String?> _okFrame(
         required String outputPath,
         double atSeconds = 10.0,
         FfmpegFailureReporter? onFailure,
-        String? tlsPinSha256}) async =>
+        String? tlsPinSha256,
+        bool diagnosticOnly = false}) async =>
     outputPath;
 Future<String?> _okGif(
         {required String inputPath,

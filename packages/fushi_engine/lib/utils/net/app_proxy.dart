@@ -17,11 +17,11 @@
 ///   * 需要异步现场解析的老调用点（云同步 / 更新检查 / 下载发现）继续用 [applyAppProxy]；
 ///   * 词典链路经 `utils/net/dictionary_dio.dart` 的工厂钩子（BUG-1493）；
 ///   * **本机 / 局域网 / 自建服务**（AnkiConnect、Yomitan 端口、Mihon sidecar、互联 peer、
-///     qBittorrent WebUI、WebDAV/FTP/SFTP、texthooker WS）**故意不经本层**，并且**即便经了
+///     qBittorrent WebUI、FTP/SFTP、texthooker WS）**故意不经本层**，并且**即便经了
 ///     也不会被代理**——见 [isDirectProxyTarget]。
-///   * 结构上注入不了代理的：`NetworkImage` / `CachedNetworkImageProvider`（Flutter 内部
-///     HttpClient）、media_kit/libmpv 拉流、内置 torrent 引擎（BT peer 不是 HTTP，代理只能
-///     设在 libtorrent session 上）。
+///   * 图片经 `AppHttpImage` / `AppCachedHttpImage`；普通公网 WebDAV 同样经工厂。
+///   * 原生播放器与 Aidoku 经鉴权回环转发，Mihon 经逐 URL 策略回调。
+///   * 内置 torrent 引擎保留单独的 P2P 开关，代理下发到 libtorrent session。
 ///
 /// 守卫 `test/tools/outbound_http_discipline_guard_test.dart` 钉死这条纪律：新增裸
 /// `HttpClient()` / `http.Client()` / `IOClient()` / `Dio()` 必须登记在案并写明理由。
@@ -103,37 +103,41 @@ String _effectiveProxyMode(String proxy) {
   return (mode: _effectiveProxyMode(proxy), proxy: proxy);
 }
 
-void _installManualProxyCredentials(HttpClient client,
-    {String? legacyUserProxy}) {
-  // 没配用户名 = 没有可交付的凭据。装一个恒返 false 的回调只有副作用：全应用每个
-  // HttpClient 都白挂一个捕获 client 的闭包。代价是凭据变成早绑定——用户中途填了
-  // 用户名，已建好的 client 拿不到钩子；设置页三个 onChanged 都调了
-  // resetSyncHttpClient()、更新检查每次新建 client，只有 dictionary_dio 那个进程级
-  // Dio 要等重启，可接受。
-  if (appUserProxyUsernameReader().isEmpty) return;
+void _installManualProxyCredentials(
+  HttpClient client, {
+  String? legacyUserProxy,
+}) {
+  // 与 findProxy 一样在请求时读取，已有 client 也能响应后来填写的认证配置。
   // 同一 (host, port, scheme, realm) 只交付一次凭据。dart:io 的 retry() 没有深度
   // 计数器：密码错时它会「407 → 移除已用凭据 → 再问回调 → 又加同一份 → retry」
   // 无限打转，请求永不返回、用户只看到转圈。被问第二次就说明上一份被代理拒了。
   final Set<String> attempted = <String>{};
   client.authenticateProxy =
       (String host, int port, String scheme, String? realm) async {
-    if (_resolveProxyDecision(legacyUserProxy).mode != kProxyModeManual) {
-      return false;
-    }
-    // 只支持 Basic。塞 Basic 凭据去应付 Digest challenge，findCredentials 永远
-    // 匹配不到，同样进无限环。
-    if (scheme.toLowerCase() != 'basic') return false;
-    final String username = appUserProxyUsernameReader();
-    if (username.isEmpty) return false;
-    if (!attempted.add('$host:$port|$scheme|${realm ?? ''}')) return false;
-    client.addProxyCredentials(
-      host,
-      port,
-      realm ?? '',
-      HttpClientBasicCredentials(username, appUserProxyPasswordReader()),
-    );
-    return true;
-  };
+        if (_resolveProxyDecision(legacyUserProxy).mode != kProxyModeManual) {
+          return false;
+        }
+        // 只支持 Basic。塞 Basic 凭据去应付 Digest challenge，findCredentials 永远
+        // 匹配不到，同样进无限环。
+        if (scheme.toLowerCase() != 'basic') return false;
+        final String username = appUserProxyUsernameReader();
+        if (username.isEmpty) return false;
+        final String? endpoint = normalizeUserProxyHostPort(
+          _resolveProxyDecision(legacyUserProxy).proxy,
+        );
+        if (endpoint == null ||
+            endpoint.toLowerCase() != '$host:$port'.toLowerCase()) {
+          return false;
+        }
+        if (!attempted.add('$host:$port|$scheme|${realm ?? ''}')) return false;
+        client.addProxyCredentials(
+          host,
+          port,
+          realm ?? '',
+          HttpClientBasicCredentials(username, appUserProxyPasswordReader()),
+        );
+        return true;
+      };
 }
 
 /// **纯函数（TODO-871/862）**：把用户手填的「自定义更新代理」原始串归一成
@@ -183,8 +187,9 @@ String? normalizeUserProxyHostPort(String raw) {
 /// 校验 [host] 是否为合法 IPv4 或主机名（normalizeUserProxyHostPort 内部用）。
 bool _isValidProxyHost(String host) {
   // IPv4：四段、每段 0-255。
-  final RegExpMatch? ipv4 =
-      RegExp(r'^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$').firstMatch(host);
+  final RegExpMatch? ipv4 = RegExp(
+    r'^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$',
+  ).firstMatch(host);
   if (ipv4 != null) {
     for (int i = 1; i <= 4; i++) {
       final int seg = int.parse(ipv4.group(i)!);
@@ -247,17 +252,20 @@ Future<void> applyAppProxy(HttpClient client, {String? userProxy}) async {
   final String? trimmed = userProxy?.trim();
   final String? legacyUserProxy =
       !hasResolvedProxyMode() && trimmed != null && trimmed.isNotEmpty
-          ? trimmed
-          : null;
+      ? trimmed
+      : null;
   // 自动模式那一格要的是**此刻**的平台 GUI 系统代理（fake-ip/TUN 下注册表刚被改过也能
   // 跟上），故仍现场解析一次；同步入口取 [primeAppProxy] 的缓存。非自动模式不解析：
   // 省掉 `reg query` / `scutil` 子进程，而且这一格反正不会被查到。
   final Map<String, String>? systemEnv =
       _resolveProxyDecision(legacyUserProxy).mode == kProxyModeAuto
-          ? await resolveSystemProxyEnvironment()
-          : null;
-  _installAppProxy(client,
-      legacyUserProxy: legacyUserProxy, systemEnvOverride: systemEnv);
+      ? await resolveSystemProxyEnvironment()
+      : null;
+  _installAppProxy(
+    client,
+    legacyUserProxy: legacyUserProxy,
+    systemEnvOverride: systemEnv,
+  );
 }
 
 /// **唯一装配路**（两个入口共用）：装一个**请求时求值**的 `findProxy` 闭包 + 凭据钩子。
@@ -271,10 +279,10 @@ void _installAppProxy(
   Map<String, String>? systemEnvOverride,
 }) {
   client.findProxy = (Uri uri) => resolveAppProxyDirective(
-        uri,
-        legacyUserProxy: legacyUserProxy,
-        systemEnvOverride: systemEnvOverride,
-      );
+    uri,
+    legacyUserProxy: legacyUserProxy,
+    systemEnvOverride: systemEnvOverride,
+  );
   _installManualProxyCredentials(client, legacyUserProxy: legacyUserProxy);
 }
 
@@ -351,14 +359,16 @@ String resolveAppProxyDirective(
   Map<String, String>? systemEnvOverride,
 }) {
   if (isDirectProxyTarget(uri.host)) return 'DIRECT';
-  final ({String mode, String proxy}) decision =
-      _resolveProxyDecision(legacyUserProxy);
+  final ({String mode, String proxy}) decision = _resolveProxyDecision(
+    legacyUserProxy,
+  );
   if (decision.mode == kProxyModeDirect) return 'DIRECT';
   // 手动模式不参与 env>GUI>DIRECT 排序，消除「手填 vs 系统代理」覆盖顺序不确定
   // （TODO-871/862）；normalize 失败时明确直连，不偷用 env/系统代理。
   if (decision.mode == kProxyModeManual) {
-    final String? normalizedUserProxy =
-        normalizeUserProxyHostPort(decision.proxy);
+    final String? normalizedUserProxy = normalizeUserProxyHostPort(
+      decision.proxy,
+    );
     return normalizedUserProxy == null
         ? 'DIRECT'
         : 'PROXY $normalizedUserProxy';
@@ -399,6 +409,20 @@ String? proxyHostPortFromDirective(String directive) {
 /// 落进 [isDirectProxyTarget] 的本机/局域网闸门，任何公网 host 得到的答案都一样。
 String? resolveAppProxyHostPort() =>
     proxyHostPortFromDirective(resolveAppProxyDirective(_kPublicProbeUri));
+
+/// Credentials for the currently selected manual proxy, never for a direct
+/// target or an environment/system proxy. Native clients ask at request time.
+({String username, String password})? resolveAppProxyCredentials(Uri uri) {
+  final ({String mode, String proxy}) decision = _resolveProxyDecision(null);
+  if (decision.mode != kProxyModeManual) return null;
+  final String? endpoint = normalizeUserProxyHostPort(decision.proxy);
+  if (endpoint == null || resolveAppProxyDirective(uri) != 'PROXY $endpoint') {
+    return null;
+  }
+  final String username = appUserProxyUsernameReader();
+  if (username.isEmpty) return null;
+  return (username: username, password: appUserProxyPasswordReader());
+}
 
 final Uri _kPublicProbeUri = Uri.parse('https://example.com/');
 
@@ -578,12 +602,15 @@ String? _globalProxy(String proxyServer) =>
 Future<Map<String, String>> resolveMacSystemProxyEnvironment() async {
   if (!Platform.isMacOS) return const <String, String>{};
   try {
-    final ProcessResult result =
-        await Process.run('scutil', <String>['--proxy']);
-    final String stdout =
-        result.stdout is String ? result.stdout as String : '';
-    final (Map<String, String> proxy, bool pacDowngraded) =
-        parseScutilProxy(stdout);
+    final ProcessResult result = await Process.run('scutil', <String>[
+      '--proxy',
+    ]);
+    final String stdout = result.stdout is String
+        ? result.stdout as String
+        : '';
+    final (Map<String, String> proxy, bool pacDowngraded) = parseScutilProxy(
+      stdout,
+    );
     if (pacDowngraded) {
       fushiDebugPrint(
         '[AppProxy] 检测到 macOS PAC 自动代理，降级直连（不解析 PAC）',
@@ -667,12 +694,14 @@ String? _scutilSchemeProxy(Map<String, String> fields, String scheme) {
 Future<Map<String, String>> resolveLinuxSystemProxyEnvironment() async {
   if (!Platform.isLinux) return const <String, String>{};
   try {
-    final ProcessResult modeResult = await Process.run(
-      'gsettings',
-      <String>['get', 'org.gnome.system.proxy', 'mode'],
-    );
-    final String mode =
-        modeResult.stdout is String ? modeResult.stdout as String : '';
+    final ProcessResult modeResult = await Process.run('gsettings', <String>[
+      'get',
+      'org.gnome.system.proxy',
+      'mode',
+    ]);
+    final String mode = modeResult.stdout is String
+        ? modeResult.stdout as String
+        : '';
 
     // 只有 manual 才需要再查具体 host/port，省两次 Process.run。
     String httpsHost = '';
@@ -708,8 +737,11 @@ Future<Map<String, String>> resolveLinuxSystemProxyEnvironment() async {
 
 /// 跑一条 `gsettings get <schema> <key>` 取裸值（已剥单引号），异常/非 String 返回空串。
 Future<String> _gsettingsGet(String schema, String key) async {
-  final ProcessResult result =
-      await Process.run('gsettings', <String>['get', schema, key]);
+  final ProcessResult result = await Process.run('gsettings', <String>[
+    'get',
+    schema,
+    key,
+  ]);
   final String raw = result.stdout is String ? result.stdout as String : '';
   return _stripGsettingsQuotes(raw);
 }

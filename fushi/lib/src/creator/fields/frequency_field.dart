@@ -83,30 +83,18 @@ class FrequencyField extends Field {
       if (group.values.isEmpty) {
         continue;
       }
-
+      // 每本词典只取第一条（Yomitan `frequency-harmonic-rank` 同款，
+      // 与已制卡片里的 FreqSort 数值保持一致）。
       final first = group.values.first;
-      final displayMatch = RegExp(r'^\d+').firstMatch(first.display);
-      if (displayMatch != null) {
-        final parsed = int.tryParse(displayMatch.group(0)!);
-        if (parsed != null && parsed > 0) {
-          values.add(parsed);
-          continue;
-        }
-      }
-      if (first.value > 0) {
-        values.add(first.value);
+      final int? rank = frequencyRankOf(first.value, first.display);
+      if (rank != null) {
+        values.add(rank);
       }
     }
 
-    if (values.isEmpty) {
-      return '';
-    }
-
-    final reciprocalSum = values.fold<double>(
-      0,
-      (sum, value) => sum + (1 / value),
-    );
-    return (values.length / reciprocalSum).floor().toString();
+    final int? rank =
+        aggregateFrequencyRanks(values, FrequencyAggregate.harmonic);
+    return rank?.toString() ?? '';
   }
 
   static List<_FrequencyGroup> _readFrequencyGroups(DictionaryEntry entry) {
@@ -159,18 +147,6 @@ class FrequencyField extends Field {
     }
     return groups;
   }
-}
-
-/// The method by which the frequency value is calculated.
-enum SortingMethod {
-  /// DEFAULT: The harmonic mean of frequencies.
-  harmonic,
-
-  /// The smallest frequency value
-  min,
-
-  /// The average frequency value
-  avg
 }
 
 class _FrequencyGroup {

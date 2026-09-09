@@ -3,8 +3,8 @@ library;
 
 import 'dart:io';
 
-import 'package:asr_core/asr_core.dart' as asr;
-import 'package:asr_onnx_ffi/asr_onnx_ffi.dart';
+import 'package:fushi_asr_core/asr_core.dart' as asr;
+import 'package:fushi_asr_onnx_ffi/asr_onnx_ffi.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/asr/fushi_asr_ffmpeg_backend.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';

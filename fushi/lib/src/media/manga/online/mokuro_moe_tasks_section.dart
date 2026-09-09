@@ -125,8 +125,15 @@ class MokuroMoeTasksSection extends ConsumerWidget {
       id: id,
       title: task.title,
       createdAt: task.createdAt,
-      onRetry: _canRetry(task) ? () => queue.retry(task) : null,
-      onClear: task.isFinished ? () => queue.removeFinished(task) : null,
+      // mokuro 队列是单跑道内存队列：没有调度优先级、没有暂停态（cancel 后
+      // retry 走 Range 续传，语义是重跑不是恢复），任务上也没有落盘路径可 reveal。
+      actions: DownloadTaskActions(
+        retry: _canRetry(task) ? () async => queue.retry(task) : null,
+        clear: task.isFinished
+            ? () async => queue.removeFinished(task)
+            : null,
+        cancel: task.isFinished ? null : () async => queue.cancel(task),
+      ),
       kind: DownloadTaskKind.manga,
       status: switch (task.status) {
         MokuroMoeTaskStatus.queued => DownloadTaskStatus.queued,

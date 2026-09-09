@@ -215,7 +215,7 @@ void main() {
     tester.view.physicalSize = physical;
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
-    // main.dart：Windows 上 FushiWindowsTitleBar 把 FushiAppUiScale(导航器) 放在一条
+    // main.dart：Windows 上 FushiDesktopTitleBar 把 FushiAppUiScale(导航器) 放在一条
     // 32px、不随界面缩放的标题栏之下——根 Overlay 原点比屏幕原点低 32px。
     const double titleBar = 32;
 

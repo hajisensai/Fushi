@@ -139,15 +139,34 @@ jobs:
 
     - name: Run package tests
       run: |
-        for pkg in packages/fushi_core packages/fushi_dictionary packages/fushi_anki packages/fushi_audio packages/fushi_platform; do
+        # 扫描面按磁盘枚举，不写死包清单：这里是 packages/*/test 的**唯一** runner，
+        # 上一版把五个包名写成字面量，于是任何新加的自有包连同它的测试在 CI 里
+        # 一次都不会跑，而且表现为绿。排除项只有两类，都有明确归属：
+        #   * vendored / fork / stub —— 上游产物，不归本仓测；
+        #   * fushi_torrent —— 测试要 dlopen 真 DLL，Linux 上整组 skip，由
+        #     build-multiplatform.yml 里那个带 FUSHI_TORRENT_LIB 的 job 专门跑。
+        skip="flutter_inappwebview_windows gamepads_windows gamepads_android_stub fushi_torrent"
+        ran=0
+        for pkg in packages/*/; do
+          name=$(basename "$pkg")
+          case " $skip " in
+            *" $name "*) echo "::notice title=Skipped package::$name（vendored 或有专用 job）"; continue;;
+          esac
           if [ -d "$pkg/test" ]; then
-            echo "::group::Testing $pkg"
-            (cd "$pkg" && dart ../../fushi/tool/flutter_test_failures.dart --output-dir=../../.codex-test/flutter-test/$(basename "$pkg"))
+            echo "::group::Testing $name"
+            (cd "$pkg" && dart ../../fushi/tool/flutter_test_failures.dart --output-dir=../../.codex-test/flutter-test/$name)
             echo "::endgroup::"
+            ran=$((ran + 1))
           else
-            echo "::warning title=No package tests::$pkg has no test/ dir — its code is only covered transitively by the main-app suite"
+            echo "::warning title=No package tests::$name has no test/ dir — its code is only covered transitively by the main-app suite"
           fi
         done
+        # 规模哨兵：枚举写错或 packages/ 布局变动会让循环一个包都不跑，而「零个包跑过」
+        # 与「所有包都绿」在退出码上完全一样。实测 4 个（core/anki/audio/platform）。
+        if [ "$ran" -lt 3 ]; then
+          echo "::error title=Package test enumeration collapsed::只跑了 $ran 个包的测试，实测应有 4 个。去修枚举逻辑，不要调低这个下界。"
+          exit 1
+        fi
 
     # JS behavior tests (jsdom) for the reader/audiobook WebView bridge. The Dart
     # source-scan guards can't execute compareDocumentPosition semantics; this runs

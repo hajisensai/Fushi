@@ -53,6 +53,10 @@ void main() {
     final List<OnboardingStepId> steps = onboardingStepSequence(
       selected: <OnboardingFeature>{
         OnboardingFeature.recommendedPack,
+        // anki 配置步骤的总闸是 cardCreation 模块（模块关了就不该再引导配 Anki）；
+        // 不勾它，firstAnkiCard 教程页根本不会进序列，这条用例就测不到它要测的
+        // 「Anki 页没走完不算完成」。
+        OnboardingFeature.cardCreation,
         OnboardingFeature.anki
       },
       browserExtensionAvailable: false,

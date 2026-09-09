@@ -16,6 +16,7 @@ import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/content_font_chain.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
@@ -597,15 +598,18 @@ class _PopupStaticSettingsMemo {
     required this.appUiScale,
     required this.dictionaryFontSize,
     required this.popupWheelSpeed,
+    required this.popupInstantScroll,
     required this.wheelBindingsJson,
     required this.popupKeyBindings,
     required this.audioSourcesJson,
     required this.lookupAudioVolume,
     required this.localeTag,
+    required this.miningEnabled,
     required this.deduplicatePitchAccents,
     required this.harmonicFrequency,
     required this.showExpressionTags,
     required this.collapseDictionaries,
+    required this.compactGlossaries,
     required this.autoExpandRows,
     required this.collapsedNames,
     required this.expandedNames,
@@ -622,15 +626,18 @@ class _PopupStaticSettingsMemo {
   final double appUiScale;
   final double dictionaryFontSize;
   final double popupWheelSpeed;
+  final bool popupInstantScroll;
   final String wheelBindingsJson;
   final String popupKeyBindings;
   final String audioSourcesJson;
   final String lookupAudioVolume;
   final String localeTag;
+  final bool miningEnabled;
   final bool deduplicatePitchAccents;
   final bool harmonicFrequency;
   final bool showExpressionTags;
   final bool collapseDictionaries;
+  final bool compactGlossaries;
   final int autoExpandRows;
   final String collapsedNames;
   final String expandedNames;
@@ -726,7 +733,20 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
   final String globalDictCSS = appModel.effectiveGlobalDictCSS;
   final String customDictCSSJson = jsonEncode(appModel.effectiveCustomDictCSS);
 
-  final String slotKey = '${options.globalLookup}|${options.mobileExternal}'
+  // 「制卡」功能模块（[ModuleId.cardCreation]）总开关。关掉时 popup.js 不渲染词条头
+  // 上的「+」制卡按钮与「在 Anki 中打开」↗ 按钮，也不再每次查词去问 Anki 查重——
+  // 模块关掉的语义是「该模块的全部入口消失」，不是「按钮还在、点了没反应」。
+  //
+  // 判据放在这里（而不是各宿主的回调有无）是有意的：本 builder 是 in-app 弹窗与
+  // app 外全局查词窗**共用**的唯一注入点，一处判据就同时覆盖两类表面（含 galgame
+  // 浮窗），不会像散在宿主里那样漏掉一处。宿主侧「回调为 null 就不渲染」的既有契约
+  // 与它正交、互不覆盖。
+  final bool miningEnabled = appModel.moduleVisibility.isEnabled(
+    ModuleId.cardCreation,
+  );
+
+  final String slotKey =
+      '${options.globalLookup}|${options.mobileExternal}'
       '|${options.sentenceDraftEnabled}';
   final _PopupStaticSettingsMemo? cached = _staticSettingsMemo[slotKey];
   if (cached != null &&
@@ -736,15 +756,18 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
       cached.appUiScale == appModel.appUiScale &&
       cached.dictionaryFontSize == appModel.dictionaryFontSize &&
       cached.popupWheelSpeed == appModel.popupWheelSpeed &&
+      cached.popupInstantScroll == appModel.popupInstantScroll &&
       cached.wheelBindingsJson == wheelBindingsJson &&
       cached.popupKeyBindings == popupKeyBindings &&
       cached.audioSourcesJson == audioSourcesJson &&
       cached.lookupAudioVolume == lookupAudioVolume &&
       cached.localeTag == localeTag &&
+      cached.miningEnabled == miningEnabled &&
       cached.deduplicatePitchAccents == appModel.deduplicatePitchAccents &&
       cached.harmonicFrequency == appModel.harmonicFrequency &&
       cached.showExpressionTags == appModel.showExpressionTags &&
       cached.collapseDictionaries == appModel.collapseDictionaries &&
+      cached.compactGlossaries == appModel.compactGlossaries &&
       cached.autoExpandRows == appModel.popupAutoExpandDictionaries &&
       cached.collapsedNames == collapsedNames &&
       // BUG-2158 补修：命中判据必须是产物**全部输入**的廉价投影（本类文档写死的
@@ -793,6 +816,12 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     // BUG-1026: 查词弹窗滚轮速度倍率。popup.js 的 wheel 监听器把 factor 乘以它
     // （缺省 1.0）。三种 in-app 弹窗都经此 head 注入；浏览器扩展走 theme 通道另发。
     window.__fushiPopupWheelSpeed = ${appModel.popupWheelSpeed};
+    // BUG-2284：墨水屏「瞬时滚动」。popup.js 的 wheel 监听读它决定滚轮是按 delta 比例
+    // 连续滚（false，默认）还是每次手势跳固定距离（true）。此前该偏好只经
+    // ReaderCaretScripts.setInstantScroll 走 fushiCaret 的 behavior 参数，而 caret 路径
+    // 的两个分支（'instant' / 'auto'）在无 scroll-behavior:smooth 的弹窗里完全等价，
+    // 滚轮路径又根本不读它——开关两端行为一致 = 用户看到的「不生效」。
+    window.__fushiPopupInstantScroll = ${appModel.popupInstantScroll};
     // 查词弹窗「上/下一个词条」的滚轮绑定（ShortcutAction.popupNextEntry /
     // popupPrevEntry，默认 Alt+滚轮下/上）。popup.js 的 wheel 监听读它，命中即调
     // fushiFocusDictionaryEntryMove 并吃掉该事件（不滚动内容）。三种 in-app 弹窗
@@ -835,6 +864,10 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     window.i18nMinedOpenFailed = ${jsonEncode(t.anki_note_open_failed)};
     window.i18nMinedOpenNoCard = ${jsonEncode(t.anki_open_no_card)};
     window.i18nMinedActionFailed = ${jsonEncode(t.anki_card_action_failed)};
+    // 制卡模块开关（见上方 miningEnabled 的注释）。false ⇒ popup.js 的
+    // createEntryHeader 不 append「+」制卡按钮 / ↗ 在 Anki 中打开按钮，也不发查重探测。
+    // 浏览器扩展没有本注入通道 → undefined ⇒ popup.js 按 `!== false` 照旧渲染。
+    window.__fushiMiningEnabled = $miningEnabled;
     window.sentenceDraftEnabled = ${options.sentenceDraftEnabled};
     window._noResultsMessage = ${jsonEncode(t.no_search_results)};
     window.embedMedia = true;
@@ -842,6 +875,11 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     window.harmonicFrequency = ${appModel.harmonicFrequency};
     window.showExpressionTags = ${appModel.showExpressionTags};
     window.collapseDictionaries = ${appModel.collapseDictionaries};
+    // 对齐 Hoshi Reader Android 的 "Compact Glossaries"：popup.js 的
+    // createDictionaryBlock 早就按这个全局产出「释义列表 inline + ` | ` 分隔」的
+    // 紧凑 CSS（assets/popup/popup.js 的 compactCss），但此前全 app 无人给它赋值，
+    // 恒 undefined = 恒关。这里补上唯一的写入点。
+    window.compactGlossaries = ${appModel.compactGlossaries};
     window.autoExpandRows = ${appModel.popupAutoExpandDictionaries};
     window.collapsedDictionaryNames = $collapsedNames;
     window.expandedDictionaryNames = $expandedNames;
@@ -864,15 +902,18 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     appUiScale: appModel.appUiScale,
     dictionaryFontSize: appModel.dictionaryFontSize,
     popupWheelSpeed: appModel.popupWheelSpeed,
+    popupInstantScroll: appModel.popupInstantScroll,
     wheelBindingsJson: wheelBindingsJson,
     popupKeyBindings: popupKeyBindings,
     audioSourcesJson: audioSourcesJson,
     lookupAudioVolume: lookupAudioVolume,
     localeTag: localeTag,
+    miningEnabled: miningEnabled,
     deduplicatePitchAccents: appModel.deduplicatePitchAccents,
     harmonicFrequency: appModel.harmonicFrequency,
     showExpressionTags: appModel.showExpressionTags,
     collapseDictionaries: appModel.collapseDictionaries,
+    compactGlossaries: appModel.compactGlossaries,
     autoExpandRows: appModel.popupAutoExpandDictionaries,
     collapsedNames: collapsedNames,
     expandedNames: expandedNames,

@@ -42,15 +42,6 @@ dev_dependencies:
 # pub.dev 版本；再写一条 override 会让 pub 直接报
 # "Cannot override workspace packages."。vendor 的理由见各自 pubspec 顶部。
 dependency_overrides:
-  # 上游 fushi-asr 是 pub workspace：asr_onnx_ffi 的 pubspec 把 asr_core 写成 hosted
-  # ^0.1.0，而本仓把 asr_core 钉在 git sha 上（转录产物字节级可复现），两者在解析器
-  # 眼里是不同来源。这里把 asr_core 统一成同一个 git sha，fushi_server 才能同时依赖
-  # asr_core + asr_onnx_ffi。
-  asr_core:
-    git:
-      url: https://github.com/hajisensai/fushi-asr.git
-      path: packages/asr_core
-      ref: 7eb70dc01bebc9f2c180af5f5eee012485fe7147
   # TODO-1306 / TODO-1275 / BUG-361: vendored desktop_drop 0.5.0. Adds (a) URL
   # drag import — browsers drop a URL as CFSTR_INETURLW (Windows) / public.url
   # (macOS) / an http(s) line in text/uri-list (Linux), all of which upstream
@@ -147,6 +138,33 @@ dependency_overrides:
   # See third_party/flutter_onnxruntime/PATCHES.md.
   flutter_onnxruntime:
     path: third_party/flutter_onnxruntime
+  # fushi_asr_subtitles 的 pubspec 把 fushi_asr_core 写成 `^0.1.0`（上游 workspace 里
+  # 靠 workspace 解析），我们从 git 单包引进来时 pub 会把它当 hosted 去 pub.dev 找 ——
+  # 那儿没有这个包（publish_to: none），于是 "fushi_asr_subtitles from git is forbidden"。
+  # 这条 override 把它钉回同仓同 sha 的 git 源；ref 必须与 fushi/pubspec.yaml 里那两条
+  # 逐字一致，否则同一份算法会被解析成两个副本。
+  fushi_asr_core:
+    git:
+      url: https://github.com/hajisensai/fushi-subtitles.git
+      path: packages/asr_core
+      ref: e4dd0f882eb92230ad63a2a540fde273a67ca489
+  # fushi_asr_onnx_ffi（仅无头 fushi_server 依赖）把 archive 钉成 ^4.0.0，本仓其余
+  # 全部钉 ^3.6.1；pub workspace 只解析一次，两者无法共存。
+  #
+  # 往上升不是选项：archive 4 移除了 `package:archive/archive_io.dart`（本仓 12+ 个
+  # 文件在用）并改掉了 `ArchiveFile.content`，实测迁移面 76 个文件——为一个包把全仓
+  # 拖去做这次迁移不成比例。
+  #
+  # 往下钉需要一行兼容补丁：上游整个包只有三处 archive API，其中
+  # `ort_provisioning.dart` 的 `entry.readBytes()` 是 4.x 专有（实测编译失败：
+  # "The method 'readBytes' isn't defined for the type 'ArchiveFile'"），3.x 的等价
+  # 物是 `entry.content`。补丁在
+  # `ci/patches/git/fushi-subtitles-<sha>/`，由 `ci/apply-patches.sh` 打进 pub-cache。
+  #
+  # 这是上游约束过紧的兼容层，不是本仓缺陷。清理条件：上游把那行换成 3/4 通吃的
+  # 写法、或把约束放宽成 `>=3.6.1 <5.0.0`——届时删掉这条 override 与补丁目录。
+  # sha 一变补丁自动跳过并告警，不会静默失效。
+  archive: ^3.6.1
 
 # Melos 7 的配置位置就是这里（7.0 起 melos.yaml 被废弃）。包列表不再重复声明：
 # 成员由上面的 workspace: 决定，melos 直接读它。

@@ -65,11 +65,40 @@ class SiglusAdapter final : public fushi_voice_hook::EngineAdapter {
     return audio_ready_;
   }
   void InstallText() {
-    TryHookSiglusExactText();
+    if (fushi_voice_hook::ReadSiglusTextOwner(g_header) !=
+        fushi_voice_hook::SiglusTextOwner::kPending) {
+      text_pending_ = false;
+      return;
+    }
+    const bool complete = TryHookSiglusExactText();
+    if (IsSiglusMessageTextInstalled()) TryHookSiglusVoiceSource();
+    if (IsSiglusMessageTextOwnershipBlocked())
+      fushi_voice_hook::PublishSiglusTextOwner(
+          g_header, fushi_voice_hook::SiglusTextOwner::kUnavailable);
+    fushi_voice_hook::CompleteSiglusTextOwner(
+        g_header, IsSiglusExactTextInstalled(),
+        !complete && IsSiglusLookupIdentityUndecided());
+    text_pending_ = fushi_voice_hook::ReadSiglusTextOwner(g_header) ==
+        fushi_voice_hook::SiglusTextOwner::kPending;
     installed_ = installed_ || probe();
   }
+  void FailTextStartup() {
+    text_pending_ = false;
+    if (IsSiglusMessageTextOwnershipBlocked())
+      fushi_voice_hook::PublishSiglusTextOwner(
+          g_header, fushi_voice_hook::SiglusTextOwner::kUnavailable);
+    fushi_voice_hook::CompleteSiglusTextOwner(
+        g_header, IsSiglusExactTextInstalled(), false);
+  }
   void ProcessPendingEvents() {
+    // Hydration can finish after startup. Advance the pending admission on
+    // the worker even when lookup is disabled; its resolver owns the bounded
+    // scan interval. Success or final rejection gets one text-install attempt.
+    if (text_pending_) InstallText();
+    ProcessSiglusVoiceSourceTasks();
     ProcessSiglusVoiceTasks();
+    ProcessSiglusMessageTextTasks();
+    ProcessSiglusMessageVoiceBindings();
     ProcessSiglusLookupTick();
   }
   bool audio_ready() const { return audio_ready_; }
@@ -86,9 +115,14 @@ class SiglusAdapter final : public fushi_voice_hook::EngineAdapter {
     // MinHook retry handles its protected launch window, not delayed engine modules.
   }
   void shutdown() override {
+    FailTextStartup();
+    ShutdownSiglusVoiceSource();
+    ShutdownSiglusMessageText();
+    ShutdownSiglusMessageVoice();
     ShutdownSiglusLookup();
     installed_ = false;
     audio_ready_ = false;
+    text_pending_ = false;
   }
   fushi_voice_hook::AdapterDiagnostics diagnostics() const override {
     return {id(), probe(), installed_,
@@ -98,6 +132,7 @@ class SiglusAdapter final : public fushi_voice_hook::EngineAdapter {
  private:
   bool installed_ = false;
   bool audio_ready_ = false;
+  bool text_pending_ = false;
 };
 
 class UnityIl2CppAdapter final : public fushi_voice_hook::EngineAdapter {
@@ -513,6 +548,7 @@ class LoopbackAdapter final : public fushi_voice_hook::EngineAdapter {
 
 class AdapterRegistry {
  public:
+  void FailSiglusTextStartup() { siglus_.FailTextStartup(); }
   bool siglus_applicable() const { return siglus_.probe(); }
 
   void InstallStartupAdapters() {

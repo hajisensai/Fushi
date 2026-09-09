@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/source_guard.dart';
 
-/// 解析 `asr_core` 包里的一个文件。
+/// 解析 `fushi_asr_core` 包里的一个文件。
 ///
 /// 走 `.dart_tool/package_config.json` 而不是拼相对路径：这个包既可能是 git 依赖
 /// （落在 pub cache 里，目录名带 sha）也可能被 `dependency_overrides` 换成本地
@@ -31,11 +31,11 @@ File _asrCoreFile(String relative) {
       jsonDecode(config.readAsStringSync()) as Map<String, Object?>;
   for (final Object? entry in json['packages']! as List<Object?>) {
     final Map<String, Object?> pkg = entry! as Map<String, Object?>;
-    if (pkg['name'] != 'asr_core') continue;
+    if (pkg['name'] != 'fushi_asr_core') continue;
     final Uri root = config.parent.uri.resolve('${pkg["rootUri"]}/');
     return File.fromUri(root.resolve(relative));
   }
-  throw StateError('package_config.json 里没有 asr_core');
+  throw StateError('package_config.json 里没有 fushi_asr_core');
 }
 
 /// vendored `flutter_onnxruntime` 的 delta #10（`getDeviceMemoryInfo`：DXGI 显存
@@ -120,7 +120,7 @@ void main() {
           .readAsStringSync(),
     );
     expect(ort, contains('getDeviceMemoryInfo('));
-    // 消费方（按显存预算选静态桶）已经随 ASR 算法层搬进了 `asr_core` 包。
+    // 消费方（按显存预算选静态桶）已经随 ASR 算法层搬进了 `fushi_asr_core` 包。
     //
     // **不能因为文件不在本仓就把这条断言删掉**：显存不够时 ORT 不报错，是把桶
     // 溢出到主机内存后吞吐崩塌——「变慢了但没坏」，没有守卫就没人会发现这条链路
@@ -128,7 +128,7 @@ void main() {
     // 与本地 path override 两种装法都能找到。
     final File engineFile = _asrCoreFile('lib/src/asr/asr_engine.dart');
     expect(engineFile.existsSync(), isTrue,
-        reason: '找不到 asr_core 的 asr_engine.dart：${engineFile.path}');
+        reason: '找不到 fushi_asr_core 的 asr_engine.dart：${engineFile.path}');
     final String engine = maskComments(engineFile.readAsStringSync());
     expect(engine, contains('deviceMemoryBudgetBytes('));
     expect(engine, contains('asrEncoderBucketsForBudget('));

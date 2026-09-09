@@ -85,6 +85,8 @@ Future<bool> _pinnedReachabilityProbe(
       password: token,
       connectionTimeout: InterconnectSyncBackend.probeTimeout,
       pinnedFingerprint: fingerprint,
+      // BUG-2377：互联的凭据是配对 token，不是登录会话。
+      unauthorizedKind: SyncAuthFailureKind.pairingRejected,
     );
     await ops.testConnection().timeout(InterconnectSyncBackend.probeTimeout);
     return true;
@@ -113,6 +115,8 @@ Future<bool> _defaultFushiProbe(String url, String token) async {
       // Bound the socket connect itself (WebDavOps defaults to 60s); the outer
       // .timeout only bounds the awaited future, not the underlying connect.
       connectionTimeout: InterconnectSyncBackend.probeTimeout,
+      // BUG-2377：互联的凭据是配对 token，不是登录会话。
+      unauthorizedKind: SyncAuthFailureKind.pairingRejected,
     );
     await ops.testConnection().timeout(InterconnectSyncBackend.probeTimeout);
     return true;
@@ -335,6 +339,8 @@ class InterconnectSyncBackend extends SyncBackend
           username: 'hibiki',
           password: token,
           pinnedFingerprint: candidate.fingerprintSha256,
+          // BUG-2377：互联的凭据是配对 token，不是登录会话。
+          unauthorizedKind: SyncAuthFailureKind.pairingRejected,
         );
         _activeFingerprint = candidate.fingerprintSha256;
         // 与 [_ensureResolved] 的判据保持同一真相：暂定句柄用的是哪份凭据必须记下，
@@ -353,7 +359,8 @@ class InterconnectSyncBackend extends SyncBackend
   Future<void> _ensureResolved() async {
     if (_sessionResolved) return;
     if (!_hasAnyCredential) {
-      throw SyncAuthError('Fushi server credentials not configured');
+      throw SyncAuthError('Fushi server credentials not configured',
+          kind: SyncAuthFailureKind.pairingNotConfigured);
     }
     final FushiClientUrl chosen =
         await resolveReachableFushiCandidate(_candidates, _token ?? '', _probe);
@@ -376,6 +383,8 @@ class InterconnectSyncBackend extends SyncBackend
         // clearCache 才复位，页面级读取失败后永远钉死在死地址上，WAN 备用
         // 地址到重启前都不会被尝试。
         onConnectivityError: () => _sessionResolved = false,
+        // BUG-2377：互联的凭据是配对 token，不是登录会话。
+        unauthorizedKind: SyncAuthFailureKind.pairingRejected,
       );
       _activeFingerprint = chosen.fingerprintSha256;
       _activeToken = token;
@@ -394,7 +403,8 @@ class InterconnectSyncBackend extends SyncBackend
   Future<void> authenticate({required SyncRepository repo}) async {
     await _loadConfig(repo);
     if (_candidates.isEmpty || !_hasAnyCredential) {
-      throw SyncAuthError('Fushi server credentials not configured');
+      throw SyncAuthError('Fushi server credentials not configured',
+          kind: SyncAuthFailureKind.pairingNotConfigured);
     }
     // Probes + selects a reachable address (or throws), confirming the token
     // is accepted by the server.
@@ -1828,6 +1838,8 @@ class InterconnectSyncBackend extends SyncBackend
       // 「测试连接」就泄漏一个最长 60s 的挂起 socket。
       connectionTimeout: InterconnectSyncBackend.probeTimeout,
       pinnedFingerprint: fingerprint,
+      // BUG-2377：互联的凭据是配对 token，不是登录会话。
+      unauthorizedKind: SyncAuthFailureKind.pairingRejected,
     );
     try {
       await ops.testConnection().timeout(InterconnectSyncBackend.probeTimeout);

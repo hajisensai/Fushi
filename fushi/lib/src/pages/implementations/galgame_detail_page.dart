@@ -22,7 +22,7 @@ import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart'
 import 'package:fushi/src/pages/implementations/tag_picker_page.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart'
-    show formatStatTime;
+    show formatStatSessionRange, formatStatTime;
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
 import 'package:fushi/utils.dart';
 
@@ -792,14 +792,10 @@ List<StatDayData> buildGalgameRangeChartData(
 String formatGalgameDurationAxis(double ms) =>
     formatStatDurationAxis(ms.round());
 
-/// 一条会话的时间范围文案：`2026-07-24 21:03 → 22:41`。
-/// 委托 [FushiTimeFormat]（G5 收敛：起点 = dateHourMinute，终点 = hourMinute）。
-String formatGalgameSessionRange(GalgameSessionRow row) {
-  final DateTime start = DateTime.fromMillisecondsSinceEpoch(row.startMs);
-  final DateTime end = DateTime.fromMillisecondsSinceEpoch(row.endMs);
-  return '${FushiTimeFormat.dateHourMinute(start)} → '
-      '${FushiTimeFormat.hourMinute(end)}';
-}
+/// 一条会话的时间范围文案：`2026-07-24 21:03 → 22:41`（与统计页会话流同一口径，
+/// [formatStatSessionRange]）。
+String formatGalgameSessionRange(GalgameSessionRow row) =>
+    formatStatSessionRange(row.startMs, row.endMs);
 
 /// 编辑 tab：改显示名 / 简介 / 标签 / 开发商 / 日期 / NSFW / 我的评分 / 我的评价，
 /// 改 exe 路径与工作目录，以及「刮削元数据」入口。

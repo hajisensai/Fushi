@@ -1,6 +1,6 @@
-/// 把 `asr_core` 装配到 Hibiki 上的**唯一入口**。
+/// 把 `fushi_asr_core` 装配到 Hibiki 上的**唯一入口**。
 ///
-/// ASR 的算法层抽成了独立仓库（`asr_core`，纯 Dart、零 Flutter），它不自带 ONNX
+/// ASR 的算法层抽成了独立仓库（`fushi_asr_core`，纯 Dart、零 Flutter），它不自带 ONNX
 /// 后端、不知道数据根在哪、不知道出站要不要走代理。这些都做成了可替换的装配点，
 /// 由宿主装上——本文件就是本仓的那份装配。
 ///
@@ -9,7 +9,7 @@
 /// 非对称 bug。所以两处都调 [createAsrTranscriptionService]，装配参数只有这一份。
 library;
 
-import 'package:asr_core/asr_core.dart' as asr;
+import 'package:fushi_asr_core/asr_core.dart' as asr;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart'
     show BackgroundIsolateBinaryMessenger, RootIsolateToken;
@@ -45,7 +45,7 @@ asr.AsrIsolateBackend fushiAsrBackend() => asr.AsrIsolateBackend(
       bootstrapArg: RootIsolateToken.instance,
     );
 
-/// 把 `asr_core` 的三个装配点接到本仓的实现上。
+/// 把 `fushi_asr_core` 的三个装配点接到本仓的实现上。
 ///
 /// 在 `main()` 里、`runApp` 之前调用一次。**不要**放进 `AppModel.initialise()`：
 /// 弹窗词典与悬浮词典是另外两个 Flutter entry point，走的是
@@ -70,8 +70,11 @@ void installAsrHostBindings() {
 }
 
 /// 建一个装配好的转录服务。两个生产实例化点都调这里。
-asr.AsrTranscriptionService createAsrTranscriptionService() =>
+asr.AsrTranscriptionService createAsrTranscriptionService({
+  bool alignGeneratedSubtitles = true,
+}) =>
     asr.AsrTranscriptionService(
+      alignGeneratedSubtitles: alignGeneratedSubtitles,
       backend: fushiAsrBackend(),
       pcm: asr.FfmpegAsrPcmSource(backend: const FushiAsrFfmpegBackend()),
     );

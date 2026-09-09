@@ -131,7 +131,7 @@ Get-CimInstance Win32_Process |
 |---|---|---|
 | `test/tools/source_guard_adoption_test.dart` | `test/` 全树 | 禁手写注释剥离，一律走 `helpers/source_guard.dart` |
 | `test/settings/md3_design_system_static_test.dart` | `lib/src` 全树（仅其中 1 个 test） | 页面 chrome 不得重开本地 MD3 决策（裸 `Card(`/`ListTile(`/`fontSize:`/`BorderRadius.circular(`…） |
-| `test/tools/dart_source_no_raw_nul_guard_test.dart` | `fushi/{lib,test}` + 5 个 `packages/*/lib` | `.dart` 不得含裸 NUL（git 判 binary 会静默丢改动） |
+| `test/tools/dart_source_no_raw_nul_guard_test.dart` | `fushi/{lib,test}` + `packages/<非 vendored>/{lib,test}`（**磁盘枚举**，BUG-2378） | `.dart` 不得含裸 NUL（git 判 binary 会静默丢改动） |
 | `test/tools/duplicate_policy_naming_guard_test.dart` | `lib` + `test` 全树 | 7 个淘汰命名不得复活 |
 | `test/tools/media_kind_persistence_guard_test.dart` | 6 个生产 `lib` 根 | MediaKind 持久化只经 `dbValue`/`compositeKey` |
 | `test/tools/book_format_discipline_guard_test.dart` | `lib`+`test`+`fushi_core/lib` | `BookFormat` 只经枚举落库/比较 |
@@ -180,6 +180,7 @@ Get-CimInstance Win32_Process |
 | `test/tools/statistics_write_convergence_guard_test.dart` | `lib` 全树 | 统计写入口收敛，legacy 四表禁直写 |
 | `test/tools/tests_for_changes_guard_test.dart` | `test/` 全树 + 全仓路径索引 | 「按触发条件加跑」的推导规则本身：索引规模 + 逐树下界 + 声明 glob 有效 |
 | `test/torrent/download_http_client_proxy_test.dart` | `lib` + 4 个 `packages/*/lib` | 下载链路的 HttpClient 必须走统一代理装配 |
+| `test/utils/net/network_image_proxy_guard_test.dart` | `lib` 全树 | 远端图片必须走 `AppHttpImage`/`AppCachedHttpImage`，裸 provider 会绕过全应用代理装配（自带 `expectScanScale` 哨兵） |
 
 一条命令跑完，**当前基线 362 tests**（2026-09-03 反向枚举复核后实测，51 条 ~62 秒；上一基线 256 / 37 条）——比争论「这条该不该跑」便宜得多，所以**不要挑，整批跑**：
 
@@ -196,7 +197,8 @@ Get-CimInstance Win32_Process |
 | **252** | **36** | 又一次**事后补记**：2026-09-02 实测 252，守卫条数没变。多出的 2 例是 08-11 之后合入的 PR 往 `md3_design_system_static_test` / `path_rebase_coverage_guard_test` 这类**点名清单型**用例里补的登记（`git log --since` 可查到一串）。**定性方法值得记住**：先按 suite 数一遍每条守卫的用例数——这批没有一条是「每个被扫文件生成一个 test」的，全是固定条数，所以**新增源码文件结构上改不了 N**；N 变了只可能是守卫文件自己被改过，`git log -- <那几个守卫>` 一查即知。（此后被 BUG-2064 与 09-03 的清单复核取代） |
 | 256 | 37 | BUG-2064 新增 `share_entry_point_guard`（2 例：入口唯一性 + 锚点双路径）。**+6 里只有 +2 是本条**——同一棵树上先跑旧的 36 条实测 254，250→254 的 +4 来自这期间合入的其它改动。这一格就是「N 变了要能说出是哪一行变的」的样例：不实测旧清单就会把 +6 整个记到新守卫头上 |
 | **360** | **51** | 2026-09-03 反向枚举复核（`develop@6441344d66`）：清单已过期，14 条符合判据的守卫从未被登记。**+104 的拆解**：先在同一棵树上跑旧的 37 条实测 **257**，256→257 的 **+1** 是期间漂移——PR#1152（`599bb36e86`）给 `test/pages/lookup_overlay_dialog_gate_guard_test.dart` 加了一条「恒不可见不动点真的解析出了停驻层」，4→5；剩下的 **+103** 全部来自新登记的 14 条，其中 **102 是它们本来就有的用例**、**1 是本次给 `legacy_video_scrape_surface_guard` 补的扫描规模哨兵**（`outbound_user_agent_guard` 的哨兵是并进既有用例的内联断言，不产生新用例） |
-| **362** | **51** | BUG-2099 给 `file_picker_discipline_guard` 新增 2 条（`FileType.custom` 禁止型 + 该豁免清单不得虚挂）。**守卫条数没变，+2 全部来自本条**：同一棵树上跑完 51 条实测 362，与 360 的差恰好等于新增用例数，无期间漂移（**当前基线**） |
+| **362** | **51** | BUG-2099 给 `file_picker_discipline_guard` 新增 2 条（`FileType.custom` 禁止型 + 该豁免清单不得虚挂）。**守卫条数没变，+2 全部来自本条**：同一棵树上跑完 51 条实测 362，与 360 的差恰好等于新增用例数，无期间漂移 |
+| **368** | **51** | 2026-09-09（`develop@74ea365c63`，BUG-2378/2379 合入后实测）。**+6 全部是期间漂移，本次改动贡献 0**——这一格的价值在于**怎么证明的**：BUG-2378 只是把 `dart_source_no_raw_nul_guard` 的扫描根从写死清单改成磁盘枚举，并在**既有那一个 `test()` 内部**加了条包数哨兵，没有新增 `test()`。为了不靠「我觉得没加」下结论，把基底 `cdbca51416` 上的旧版守卫 `git show` 出来当临时探针跑了一遍：**旧 1 例、新 1 例**，差 0。所以 +6 只能来自 09-03 基线之后合入的其它 PR（未逐条归因）。**这个探针手法值得复用**：改了某条守卫又要解释 N 时，不必重建整棵旧树，把那一个文件的旧版本取出来单跑即可（**当前基线**） |
 
 ⚠️ **N 变了不一定是坏事，但必须能说出是哪一行变的**；反过来，**N 没变也不一定是漏跑**——见下面「判 N 之前先问：新增用例落在哪一批里」。
 
@@ -240,7 +242,8 @@ cd fushi && dart run tool/flutter_test_failures.dart --no-pub \
   test/tools/outbound_user_agent_guard_test.dart \
   test/tools/statistics_write_convergence_guard_test.dart \
   test/tools/tests_for_changes_guard_test.dart \
-  test/torrent/download_http_client_proxy_test.dart
+  test/torrent/download_http_client_proxy_test.dart \
+  test/utils/net/network_image_proxy_guard_test.dart
 ```
 
 ### 清单会过期——怎么重新推导

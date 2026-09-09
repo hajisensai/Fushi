@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -667,7 +667,7 @@ class _VideoDownloadSubscriptionCard extends StatelessWidget {
         child: url.isEmpty
             ? placeholder
             : PortraitCoverImage(
-                image: CachedNetworkImageProvider(url),
+                image: AppCachedHttpImage(url),
                 errorBuilder: (_) => placeholder,
               ),
       ),

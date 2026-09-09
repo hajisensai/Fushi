@@ -50,7 +50,7 @@ packages:
     source: hosted
     version: "1.0.1"
   archive:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
       name: archive
       sha256: cb6a278ef2dbb298455e1a713bda08524a175630ec643a242c399c932a0a1f7d
@@ -73,24 +73,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.6.5"
-  asr_core:
-    dependency: "direct overridden"
-    description:
-      path: "packages/asr_core"
-      ref: "7eb70dc01bebc9f2c180af5f5eee012485fe7147"
-      resolved-ref: "7eb70dc01bebc9f2c180af5f5eee012485fe7147"
-      url: "https://github.com/hajisensai/fushi-asr.git"
-    source: git
-    version: "0.1.0"
-  asr_onnx_ffi:
-    dependency: transitive
-    description:
-      path: "packages/asr_onnx_ffi"
-      ref: "7eb70dc01bebc9f2c180af5f5eee012485fe7147"
-      resolved-ref: "7eb70dc01bebc9f2c180af5f5eee012485fe7147"
-      url: "https://github.com/hajisensai/fushi-asr.git"
-    source: git
-    version: "0.1.0"
   async:
     dependency: transitive
     description:
@@ -899,6 +881,33 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  fushi_asr_core:
+    dependency: "direct overridden"
+    description:
+      path: "packages/asr_core"
+      ref: e4dd0f882eb92230ad63a2a540fde273a67ca489
+      resolved-ref: e4dd0f882eb92230ad63a2a540fde273a67ca489
+      url: "https://github.com/hajisensai/fushi-subtitles.git"
+    source: git
+    version: "0.1.0"
+  fushi_asr_onnx_ffi:
+    dependency: transitive
+    description:
+      path: "packages/asr_onnx_ffi"
+      ref: e4dd0f882eb92230ad63a2a540fde273a67ca489
+      resolved-ref: e4dd0f882eb92230ad63a2a540fde273a67ca489
+      url: "https://github.com/hajisensai/fushi-subtitles.git"
+    source: git
+    version: "0.1.0"
+  fushi_asr_subtitles:
+    dependency: transitive
+    description:
+      path: "packages/asr_subtitles"
+      ref: e4dd0f882eb92230ad63a2a540fde273a67ca489
+      resolved-ref: e4dd0f882eb92230ad63a2a540fde273a67ca489
+      url: "https://github.com/hajisensai/fushi-subtitles.git"
+    source: git
+    version: "0.1.0"
   gamepads:
     dependency: transitive
     description:

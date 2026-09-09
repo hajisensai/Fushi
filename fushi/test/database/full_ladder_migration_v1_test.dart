@@ -206,6 +206,7 @@ void main() {
           'video_hourly_logs',
           'favorite_words',
           'mining_statistics',
+          'language_profiles',
         ]),
       );
     });

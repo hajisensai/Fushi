@@ -55,13 +55,33 @@ add_library(fushi_voice_hook SHARED
   "hook/malie_lib.h"
   "hook/qlie_pack.h"
   "hook/visual_arts_ovk.h"
+  "hook/voice_resource_writer.inc"
   "hook/adapter_registry.inc"
   "hook/adapters/unity_adapter.inc"
   "hook/adapters/windows_audio_adapter.inc"
   "hook/adapters/siglus_adapter.inc"
   "hook/adapters/exact_lookup_signature.h"
   "hook/adapters/siglus_lookup.h"
+  "hook/adapters/siglus_image.h"
+  "hook/adapters/siglus_autoprofile.h"
+  "hook/adapters/siglus_viewport.h"
+  "hook/adapters/siglus_native_autoprofile.h"
+  "hook/adapters/siglus_native_viewport.h"
   "hook/adapters/siglus_lookup.inc"
+  "hook/siglus_voice_binding.h"
+  "hook/adapters/siglus_message_profile.h"
+  "hook/adapters/siglus_resource_mapping.h"
+  "hook/adapters/siglus_native_resource.h"
+  "hook/adapters/siglus_legacy_message_profile.h"
+  "hook/adapters/siglus_legacy_message_capture.h"
+  "hook/adapters/siglus_legacy_resource.h"
+  "hook/adapters/siglus_legacy_live_admission.h"
+  "hook/adapters/siglus_voice_source.h"
+  "hook/adapters/siglus_voice_source.inc"
+  "hook/adapters/siglus_message_capture.h"
+  "hook/adapters/siglus_message_capture.inc"
+  "hook/adapters/siglus_message_voice.inc"
+  "hook/adapters/siglus_voice_export.inc"
   "hook/adapters/bgi_ethornell_adapter.inc"
   "hook/adapters/bgi_ethornell_profile.h"
   "hook/adapters/artemis_adapter.inc"
@@ -132,6 +152,45 @@ add_executable(fushi_siglus_ovk_test
 target_include_directories(fushi_siglus_ovk_test PRIVATE "hook")
 add_test(NAME fushi_siglus_ovk_test COMMAND fushi_siglus_ovk_test)
 
+add_executable(fushi_siglus_voice_binding_test "tests/siglus_voice_binding_test.cpp")
+target_include_directories(fushi_siglus_voice_binding_test PRIVATE "hook")
+add_test(NAME fushi_siglus_voice_binding_test COMMAND fushi_siglus_voice_binding_test)
+
+add_executable(fushi_siglus_message_voice_test "tests/siglus_message_voice_test.cpp")
+target_include_directories(fushi_siglus_message_voice_test PRIVATE "hook")
+target_link_libraries(fushi_siglus_message_voice_test PRIVATE bcrypt)
+add_test(NAME fushi_siglus_message_voice_test COMMAND fushi_siglus_message_voice_test)
+add_executable(fushi_siglus_voice_export_test "tests/siglus_voice_export_test.cpp")
+target_include_directories(fushi_siglus_voice_export_test PRIVATE "hook" "include")
+target_link_libraries(fushi_siglus_voice_export_test PRIVATE bcrypt)
+if(MSVC)
+  target_compile_options(fushi_siglus_voice_export_test PRIVATE /O2 /W4 /WX)
+endif()
+add_test(NAME fushi_siglus_voice_export_test COMMAND fushi_siglus_voice_export_test)
+add_executable(fushi_siglus_voice_source_test "tests/siglus_voice_source_test.cpp")
+target_include_directories(fushi_siglus_voice_source_test PRIVATE "hook/adapters")
+if(MSVC)
+  target_compile_options(fushi_siglus_voice_source_test PRIVATE /O2 /W4 /WX)
+endif()
+add_test(NAME fushi_siglus_voice_source_test COMMAND fushi_siglus_voice_source_test)
+
+add_executable(fushi_siglus_legacy_live_admission_test
+  "tests/siglus_legacy_live_admission_test.cpp")
+target_include_directories(fushi_siglus_legacy_live_admission_test PRIVATE
+  "hook/adapters" "include")
+if(MSVC)
+  target_compile_options(fushi_siglus_legacy_live_admission_test PRIVATE /O2 /W4 /WX /utf-8)
+endif()
+add_test(NAME fushi_siglus_legacy_live_admission_test
+  COMMAND fushi_siglus_legacy_live_admission_test)
+
+add_executable(fushi_siglus_message_capture_test "tests/siglus_message_capture_test.cpp")
+target_include_directories(fushi_siglus_message_capture_test PRIVATE "hook/adapters" "include")
+if(MSVC)
+  target_compile_options(fushi_siglus_message_capture_test PRIVATE /O2 /W4 /WX)
+endif()
+add_test(NAME fushi_siglus_message_capture_test COMMAND fushi_siglus_message_capture_test)
+
 # HUNEX story renderer callback-to-worker hand-off. The focused test exercises
 # only synthetic glyph/index/rectangle values and contains no game payload.
 add_executable(fushi_hunex_gge_capture_bridge_test
@@ -170,6 +229,143 @@ add_executable(fushi_siglus_lookup_test
 )
 target_include_directories(fushi_siglus_lookup_test PRIVATE "hook")
 add_test(NAME fushi_siglus_lookup_test COMMAND fushi_siglus_lookup_test)
+
+add_executable(fushi_siglus_glyph_record_test "tests/siglus_glyph_record_test.cpp")
+target_include_directories(fushi_siglus_glyph_record_test PRIVATE "hook")
+if(MSVC)
+  target_compile_options(fushi_siglus_glyph_record_test PRIVATE /W4 /WX)
+endif()
+add_test(NAME fushi_siglus_glyph_record_test COMMAND fushi_siglus_glyph_record_test)
+
+add_executable(fushi_siglus_eightarg_runtime_test "tests/siglus_eightarg_runtime_test.cpp")
+target_include_directories(fushi_siglus_eightarg_runtime_test PRIVATE "hook/adapters")
+target_compile_features(fushi_siglus_eightarg_runtime_test PRIVATE cxx_std_17)
+if(MSVC)
+  target_compile_options(fushi_siglus_eightarg_runtime_test PRIVATE /O2 /W4 /WX /utf-8)
+endif()
+add_test(NAME fushi_siglus_eightarg_runtime_test COMMAND fushi_siglus_eightarg_runtime_test)
+
+foreach(siglus_component IN ITEMS eight_arg_glyph eightarg_input_viewport eightarg_owner eightarg_message_capture eightarg_owner_profile eightarg_lookup_family lookup_eightarg eightarg_glyph_batch)
+  add_executable(fushi_siglus_${siglus_component}_test "tests/siglus_${siglus_component}_test.cpp")
+  target_include_directories(fushi_siglus_${siglus_component}_test PRIVATE "hook/adapters" "include")
+  target_compile_features(fushi_siglus_${siglus_component}_test PRIVATE cxx_std_17)
+  if(MSVC)
+    target_compile_options(fushi_siglus_${siglus_component}_test PRIVATE /O2 /W4 /WX /utf-8)
+  endif()
+  add_test(NAME fushi_siglus_${siglus_component}_test COMMAND fushi_siglus_${siglus_component}_test)
+endforeach()
+add_executable(fushi_siglus_legacy_glyph_sites_test "tests/siglus_legacy_glyph_sites_test.cpp")
+target_include_directories(fushi_siglus_legacy_glyph_sites_test PRIVATE "hook/adapters")
+if(MSVC)
+  target_compile_options(fushi_siglus_legacy_glyph_sites_test PRIVATE /W4 /WX)
+endif()
+add_test(NAME fushi_siglus_legacy_glyph_sites_test COMMAND fushi_siglus_legacy_glyph_sites_test)
+add_executable(fushi_siglus_legacy_input_viewport_test "tests/siglus_legacy_input_viewport_test.cpp")
+target_include_directories(fushi_siglus_legacy_input_viewport_test PRIVATE "hook/adapters")
+if(MSVC)
+  target_compile_options(fushi_siglus_legacy_input_viewport_test PRIVATE /W4 /WX /utf-8)
+endif()
+add_test(NAME fushi_siglus_legacy_input_viewport_test COMMAND fushi_siglus_legacy_input_viewport_test)
+add_executable(fushi_siglus_legacy_runtime_test "tests/siglus_legacy_runtime_test.cpp")
+target_include_directories(fushi_siglus_legacy_runtime_test PRIVATE "hook/adapters")
+if(MSVC)
+  target_compile_options(fushi_siglus_legacy_runtime_test PRIVATE /W4 /WX)
+endif()
+add_test(NAME fushi_siglus_legacy_runtime_test COMMAND fushi_siglus_legacy_runtime_test)
+add_executable(fushi_siglus_legacy_owner_test "tests/siglus_legacy_owner_test.cpp")
+target_include_directories(fushi_siglus_legacy_owner_test PRIVATE "hook/adapters")
+if(MSVC)
+  target_compile_options(fushi_siglus_legacy_owner_test PRIVATE /W4 /WX)
+endif()
+add_test(NAME fushi_siglus_legacy_owner_test COMMAND fushi_siglus_legacy_owner_test)
+if(MSVC AND CMAKE_SIZEOF_VOID_P EQUAL 4)
+  add_executable(fushi_siglus_glyph_abi_test "tests/siglus_glyph_abi_test.cpp")
+  target_compile_options(fushi_siglus_glyph_abi_test PRIVATE /O2 /W4 /WX)
+  add_test(NAME fushi_siglus_glyph_abi_test COMMAND fushi_siglus_glyph_abi_test)
+  add_executable(fushi_siglus_input_abi_test "tests/siglus_input_abi_test.cpp")
+  target_compile_options(fushi_siglus_input_abi_test PRIVATE /O2 /W4 /WX)
+  add_test(NAME fushi_siglus_input_abi_test COMMAND fushi_siglus_input_abi_test)
+endif()
+
+add_executable(fushi_siglus_lookup_snapshot_test "tests/siglus_lookup_snapshot_test.cpp")
+if(MSVC)
+  target_compile_options(fushi_siglus_lookup_snapshot_test PRIVATE /W4 /WX)
+endif()
+add_test(NAME fushi_siglus_lookup_snapshot_test COMMAND fushi_siglus_lookup_snapshot_test)
+
+add_executable(fushi_siglus_lookup_worker_test "tests/siglus_lookup_worker_test.cpp")
+target_include_directories(fushi_siglus_lookup_worker_test PRIVATE "include")
+target_link_libraries(fushi_siglus_lookup_worker_test PRIVATE user32)
+if(MSVC)
+  target_compile_options(fushi_siglus_lookup_worker_test PRIVATE /W4 /WX)
+endif()
+add_test(NAME fushi_siglus_lookup_worker_test COMMAND fushi_siglus_lookup_worker_test)
+
+add_executable(fushi_siglus_lookup_input_diagnostics_test "tests/siglus_lookup_input_diagnostics_test.cpp")
+target_include_directories(fushi_siglus_lookup_input_diagnostics_test PRIVATE "include")
+target_link_libraries(fushi_siglus_lookup_input_diagnostics_test PRIVATE user32)
+if(MSVC)
+  target_compile_options(fushi_siglus_lookup_input_diagnostics_test PRIVATE /W4 /WX)
+endif()
+add_test(NAME fushi_siglus_lookup_input_diagnostics_test COMMAND fushi_siglus_lookup_input_diagnostics_test)
+add_executable(fushi_siglus_lookup_message_transaction_test "tests/siglus_lookup_message_transaction_test.cpp")
+target_include_directories(fushi_siglus_lookup_message_transaction_test PRIVATE "include")
+target_link_libraries(fushi_siglus_lookup_message_transaction_test PRIVATE user32)
+target_compile_features(fushi_siglus_lookup_message_transaction_test PRIVATE cxx_std_17)
+if(MSVC)
+  target_compile_options(fushi_siglus_lookup_message_transaction_test PRIVATE /W4 /WX /utf-8)
+endif()
+add_test(NAME fushi_siglus_lookup_message_transaction_test COMMAND fushi_siglus_lookup_message_transaction_test)
+
+add_executable(fushi_siglus_autoprofile_test "tests/siglus_autoprofile_test.cpp")
+target_include_directories(fushi_siglus_autoprofile_test PRIVATE "hook/adapters")
+add_test(NAME fushi_siglus_autoprofile_test COMMAND fushi_siglus_autoprofile_test)
+
+add_executable(fushi_siglus_message_profile_test "tests/siglus_message_profile_test.cpp")
+target_include_directories(fushi_siglus_message_profile_test PRIVATE "hook/adapters")
+if(MSVC)
+  target_compile_options(fushi_siglus_message_profile_test PRIVATE /W4 /WX)
+endif()
+add_test(NAME fushi_siglus_message_profile_test COMMAND fushi_siglus_message_profile_test)
+add_executable(fushi_siglus_native_message_profile_test "tests/siglus_native_message_profile_test.cpp")
+target_include_directories(fushi_siglus_native_message_profile_test PRIVATE "hook/adapters")
+add_test(NAME fushi_siglus_native_message_profile_test COMMAND fushi_siglus_native_message_profile_test)
+add_executable(fushi_siglus_native_message_capture_test "tests/siglus_native_message_capture_test.cpp")
+target_include_directories(fushi_siglus_native_message_capture_test PRIVATE "hook/adapters")
+add_test(NAME fushi_siglus_native_message_capture_test COMMAND fushi_siglus_native_message_capture_test)
+add_executable(fushi_siglus_resource_mapping_test "tests/siglus_resource_mapping_test.cpp")
+target_include_directories(fushi_siglus_resource_mapping_test PRIVATE "hook/adapters")
+if(MSVC)
+  target_compile_options(fushi_siglus_resource_mapping_test PRIVATE /W4 /WX)
+endif()
+add_test(NAME fushi_siglus_resource_mapping_test COMMAND fushi_siglus_resource_mapping_test)
+add_executable(fushi_siglus_native_resource_test "tests/siglus_native_resource_test.cpp")
+target_include_directories(fushi_siglus_native_resource_test PRIVATE "hook/adapters")
+if(MSVC)
+  target_compile_options(fushi_siglus_native_resource_test PRIVATE /W4 /WX)
+endif()
+add_test(NAME fushi_siglus_native_resource_test COMMAND fushi_siglus_native_resource_test)
+
+foreach(contract legacy_message_profile legacy_message_capture legacy_resource)
+  add_executable(fushi_siglus_${contract}_test "tests/siglus_${contract}_test.cpp")
+  target_include_directories(fushi_siglus_${contract}_test PRIVATE "hook/adapters")
+  if(MSVC)
+    target_compile_options(fushi_siglus_${contract}_test PRIVATE /W4 /WX /utf-8)
+  endif()
+  add_test(NAME fushi_siglus_${contract}_test COMMAND fushi_siglus_${contract}_test)
+endforeach()
+add_executable(fushi_siglus_viewport_test "tests/siglus_viewport_test.cpp")
+target_include_directories(fushi_siglus_viewport_test PRIVATE "hook/adapters")
+add_test(NAME fushi_siglus_viewport_test COMMAND fushi_siglus_viewport_test)
+add_executable(fushi_siglus_native_autoprofile_test "tests/siglus_native_autoprofile_test.cpp")
+target_include_directories(fushi_siglus_native_autoprofile_test PRIVATE "hook/adapters")
+add_test(NAME fushi_siglus_native_autoprofile_test COMMAND fushi_siglus_native_autoprofile_test)
+add_executable(fushi_siglus_native_viewport_test "tests/siglus_native_viewport_test.cpp")
+target_include_directories(fushi_siglus_native_viewport_test PRIVATE "hook/adapters")
+add_test(NAME fushi_siglus_native_viewport_test COMMAND fushi_siglus_native_viewport_test)
+add_executable(fushi_siglus_loaded_image_test "tests/siglus_loaded_image_test.cpp")
+target_include_directories(fushi_siglus_loaded_image_test PRIVATE "hook/adapters")
+add_test(NAME fushi_siglus_loaded_image_test COMMAND fushi_siglus_loaded_image_test)
 
 add_executable(fushi_leaf_aquaplus_adapter_test
   "tests/leaf_aquaplus_adapter_test.cpp"
@@ -289,6 +485,13 @@ add_executable(fushi_child_process_policy_test
 )
 target_include_directories(fushi_child_process_policy_test PRIVATE "injector")
 add_test(NAME fushi_child_process_policy_test COMMAND fushi_child_process_policy_test)
+
+add_executable(fushi_launcher_wait_test "tests/launcher_wait_test.cpp")
+target_include_directories(fushi_launcher_wait_test PRIVATE "injector")
+if(MSVC)
+  target_compile_options(fushi_launcher_wait_test PRIVATE /W4 /WX)
+endif()
+add_test(NAME fushi_launcher_wait_test COMMAND fushi_launcher_wait_test)
 
 # injector 重连同一游戏进程时必须复用 DLL 持有的映射，不能把 hooked/text/audio 环清零。
 add_executable(fushi_voice_session_reuse_test
@@ -541,12 +744,23 @@ add_test(NAME fushi_directsound_format_registry_test
 # CREATE_SUSPENDED 早注入，Siglus/Enigma 自动延迟附着）两种模式，各 arch 一份。
 add_executable(fushi_voice_injector
   "injector/injector_main.cpp"
+  "injector/followed_siglus_readiness.inc"
+  "injector/attached_siglus_readiness.inc"
   "injector/child_process_policy.h"
   "injector/locale_emulator_launch.h"
 )
 target_include_directories(fushi_voice_injector PRIVATE "include" "hook" "injector")
 target_compile_definitions(fushi_voice_injector PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_link_libraries(fushi_voice_injector PRIVATE shell32 bcrypt)
+
+add_executable(fushi_siglus_child_readiness_test
+  "tests/siglus_child_readiness_test.cpp")
+target_include_directories(fushi_siglus_child_readiness_test PRIVATE "injector" "include")
+target_compile_features(fushi_siglus_child_readiness_test PRIVATE cxx_std_17)
+if(MSVC)
+  target_compile_options(fushi_siglus_child_readiness_test PRIVATE /O2 /W4 /WX /utf-8)
+endif()
+add_test(NAME fushi_siglus_child_readiness_test COMMAND fushi_siglus_child_readiness_test)
 
 # CLI-only preflight contract. The script launches only the injector itself
 # with --capabilities/invalid policy and never opens or creates a game process.
@@ -687,3 +901,40 @@ target_include_directories(fushi_smash_fzmedia_lookup_test PRIVATE
   "hook/adapters")
 add_test(NAME fushi_smash_fzmedia_lookup_test
   COMMAND fushi_smash_fzmedia_lookup_test)
+
+add_executable(fushi_siglus_text_owner_test "tests/siglus_text_owner_test.cpp")
+target_include_directories(fushi_siglus_text_owner_test PRIVATE "include")
+target_compile_definitions(fushi_siglus_text_owner_test PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_siglus_text_owner_test COMMAND fushi_siglus_text_owner_test)
+
+# Locale Emulator is an x86-only runtime. Keep its actual loader-list ABI
+# regression in the standard Windows test gate, without implying x64 support.
+if(CMAKE_SIZEOF_VOID_P EQUAL 4)
+  add_executable(fushi_locale_emulator_module_list_test
+    "tests/locale_emulator_module_list_test.cpp")
+  if(MSVC)
+    target_compile_options(fushi_locale_emulator_module_list_test PRIVATE /W4 /WX)
+  endif()
+  add_test(NAME fushi_locale_emulator_module_list_test
+    COMMAND fushi_locale_emulator_module_list_test)
+endif()
+
+add_executable(fushi_locale_emulator_version_resource_test
+  "tests/locale_emulator_version_resource_test.cpp")
+if(MSVC)
+  target_compile_options(fushi_locale_emulator_version_resource_test PRIVATE /W4 /WX)
+endif()
+add_test(NAME fushi_locale_emulator_version_resource_test
+  COMMAND fushi_locale_emulator_version_resource_test)
+
+add_executable(fushi_locale_emulator_version_hooks_test
+  "tests/locale_emulator_version_hooks_test.cpp")
+if(MSVC)
+  target_compile_options(fushi_locale_emulator_version_hooks_test PRIVATE /W4 /WX)
+endif()
+add_test(NAME fushi_locale_emulator_version_hooks_test
+  COMMAND fushi_locale_emulator_version_hooks_test)
+
+include(tests/generic_input_shield_install_test.cmake)
+include(tests/siglus_legacy_owner_publication_test.cmake)

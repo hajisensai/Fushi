@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
@@ -11,12 +10,14 @@ import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart'
 import 'package:fushi/src/pages/implementations/stat_kpi_strip.dart';
 import 'package:fushi/src/pages/implementations/stat_period_detail_sheet.dart';
 import 'package:fushi/src/pages/implementations/stat_ring.dart';
+import 'package:fushi/src/pages/implementations/stat_session_list.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi/src/pages/implementations/stat_source_totals.dart';
 import 'package:fushi/src/pages/implementations/stat_summary.dart';
 import 'package:fushi/src/pages/implementations/stat_trends.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/src/stats/stat_window.dart';
+import 'package:fushi_engine/stats/study_sessions.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -50,6 +51,9 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   /// 阅读域（普通书 + 漫画）的日面事实：v92 起只从统一事实面 [loadStatFacts] 取
   /// （legacy `reading_statistics` 日行 + `study_segments` 段），不再直接读表。
   List<StatFact> _bookFacts = <StatFact>[];
+
+  /// 阅读域会话流（`StatFacts.sessions` 的书切片，按结束时刻倒序）。
+  List<StudySession> _sessions = <StudySession>[];
 
   /// 阅读域逐日合计：普通书与漫画同属阅读统计，视频和游戏由各自统计页负责。
   Map<StatBreakdownSource, Map<String, StatSourceTotals>> _sourceDaily =
@@ -191,6 +195,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       final StatFacts facts = await loadStatFacts(db, activityLimit: 0);
       _bookFacts = facts.dailyBooks.toList();
       _dailyFacts = facts.daily;
+      _sessions = facts.sessions.where((StudySession s) => s.isBook).toList();
       _sourceDaily = aggregateStatSourceDaily(_bookFacts);
       // 加载事实时顺带取的书表：下面的 title→bookKey（合集归属 / legacy 行回退）
       // 与 bookKey→uid 换算复用同一批行，不再单独查。
@@ -436,26 +441,6 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     }
   }
 
-  /// 当前排序维度下该书的度量值（字数 / 时长ms / 速度cph）。
-  /// 进度条填充用它，使填充维度始终与 [_bookSort] 一致（W1）。
-  double _sortMetric(_BookData b) {
-    switch (_bookSort) {
-      case _BookSort.chars:
-        return b.chars.toDouble();
-      case _BookSort.time:
-        return b.ms.toDouble();
-      case _BookSort.speed:
-        return b.cph;
-    }
-  }
-
-  static String _formatChars(int chars) {
-    if (chars >= 10000) {
-      return t.stat_format_chars_wan(n: (chars / 10000).toStringAsFixed(1));
-    }
-    return t.stat_format_chars(n: chars);
-  }
-
   /// 阅读速度展示：四舍五入到整数字/小时，套 i18n 单位。
   static String _formatCph(double cph) =>
       t.stat_speed_cph(n: cph.round().toString());
@@ -524,10 +509,13 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     );
   }
 
+  /// 页面骨架与视频 / 游戏 tab 同形（用户 2026-09-08「统计全改成游戏那种」）：
+  /// 时段卡 → 每日时长图 → 最近会话 → 目标卡 → 「分析」折叠 → 按书列表。
+  /// KPI 条 / 趋势 / 今日环 + 速度摘要 / 来源分布 / 小时×格式全部下沉进折叠区，
+  /// 一个都没删。
   Widget _buildContent() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double card = tokens.spacing.card;
-    final EdgeInsets hPad = EdgeInsets.symmetric(horizontal: card);
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final bool wide = constraints.maxWidth >= _kWideBreakpoint;
@@ -536,38 +524,23 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
             constraints: const BoxConstraints(maxWidth: _kMaxContentWidth),
             child: CustomScrollView(
               slivers: <Widget>[
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.fromLTRB(card, card, card, card),
-                    child: _buildKpiStrip(),
-                  ),
-                ),
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.only(
-                      left: card,
-                      right: card,
-                      bottom: card,
-                    ),
-                    child: _buildTrendPanel(),
-                  ),
-                ),
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.only(
-                      left: card,
-                      right: card,
-                      bottom: card,
-                    ),
-                    child: _buildMidSection(wide),
-                  ),
-                ),
                 SliverToBoxAdapter(child: _buildSummaryCards()),
-                SliverToBoxAdapter(child: _buildSourceBreakdown()),
-                SliverToBoxAdapter(child: _buildGoalPanel()),
                 SliverToBoxAdapter(
-                  child: buildStatHourlyFormatChartSection(context, _hourly),
+                  child: buildStatDailyDurationChartSection(
+                    context,
+                    _dailyData,
+                  ),
                 ),
+                SliverToBoxAdapter(
+                  child: buildStatSessionSection(
+                    context,
+                    sessions: _sessions,
+                    titleOf: _sessionTitle,
+                    onDelete: _deleteSession,
+                  ),
+                ),
+                SliverToBoxAdapter(child: _buildGoalPanel()),
+                SliverToBoxAdapter(child: _buildAnalysisFold(wide)),
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: EdgeInsets.fromLTRB(
@@ -581,10 +554,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
                 ),
                 SliverList(
                   delegate: SliverChildBuilderDelegate(
-                    (context, index) => Padding(
-                      padding: hPad,
-                      child: _buildBookTile(_bookData[index]),
-                    ),
+                    (context, index) => _buildBookTile(_bookData[index]),
                     childCount: _bookData.length,
                   ),
                 ),
@@ -594,6 +564,29 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
           ),
         );
       },
+    );
+  }
+
+  /// 「分析」折叠区：KPI 条 → 趋势 → 今日环 + 速度摘要 → 来源分布 → 小时×格式。
+  Widget _buildAnalysisFold(bool wide) {
+    final double card = FushiDesignTokens.of(context).spacing.card;
+    return StatAnalysisFold(
+      children: <Widget>[
+        Padding(
+          padding: EdgeInsets.fromLTRB(card, card, card, card),
+          child: _buildKpiStrip(),
+        ),
+        Padding(
+          padding: EdgeInsets.only(left: card, right: card, bottom: card),
+          child: _buildTrendPanel(),
+        ),
+        Padding(
+          padding: EdgeInsets.only(left: card, right: card, bottom: card),
+          child: _buildMidSection(wide),
+        ),
+        _buildSourceBreakdown(),
+        buildStatHourlyFormatChartSection(context, _hourly),
+      ],
     );
   }
 
@@ -653,19 +646,19 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
         ),
         StatKpiItem(
           icon: Icons.today_outlined,
-          value: _formatChars(_todayChars),
+          value: formatStatChars(_todayChars),
           label: t.stat_today,
         ),
         StatKpiItem(
           icon: Icons.trending_up,
-          value: _formatChars(_weekChars),
+          value: formatStatChars(_weekChars),
           label: t.stat_this_week,
           delta: weekDelta,
           deltaUp: weekPct == null ? true : weekPct >= 0,
         ),
         StatKpiItem(
           icon: Icons.show_chart,
-          value: _formatChars(dailyAvgChars),
+          value: formatStatChars(dailyAvgChars),
           label: t.stat_daily_average,
         ),
       ],
@@ -766,7 +759,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       StatBreakdownSource.game => (Icons.videogame_asset, t.home_filter_game),
     };
     final List<String> metrics = <String>[
-      _formatChars(totals.chars),
+      formatStatChars(totals.chars),
       formatStatTime(totals.timeMs),
       // 页数只有漫画有；0 页不显示（未翻页的会话只贡献时长）。
       if (totals.pages > 0) t.stat_format_pages(n: totals.pages),
@@ -860,10 +853,13 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   }) {
     return StatPeriodSummary(
       label: label,
-      primaryValue: _formatChars(chars),
+      // 主值 = 学习时长，与观看 / 游戏 / 总览三个 tab 同口径（用户 2026-09-08
+      // 「统计全改成游戏那种」时骨架已统一，主值口径漏了这一处：四张同形卡里只有
+      // 阅读卡以字数打头，横着看四个 tab 时首行数字不可比）。字数降为首条副行。
+      primaryValue: formatStatTime(ms),
       onTap: () => unawaited(_showPeriodDetail(label, contains)),
       lines: <StatSummaryLine>[
-        StatSummaryLine(value: formatStatTime(ms)),
+        StatSummaryLine(value: formatStatChars(chars)),
         StatSummaryLine(label: t.stat_lookup, value: '$lookup'),
         StatSummaryLine(label: t.stat_mined, value: '$mined'),
         StatSummaryLine(label: t.stat_favorited, value: '$favorited'),
@@ -1041,82 +1037,12 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     );
   }
 
-  /// Number-input dialog to set/clear the daily & weekly character goals.
-  /// Writing 0 clears (hides) that goal. setState reruns the sliver build so the
-  /// card appears/updates/disappears immediately.
+  /// 目标编辑：表单本体是统计页共享件 [showStatGoalEditDialog]（统计中心总览 tab
+  /// 编辑的是同一个持久化目标）。保存后 setState 重跑 sliver build，目标卡立刻
+  /// 出现/更新/消失。
   Future<void> _editGoals() async {
-    final TextEditingController dailyController = TextEditingController(
-      text: appModelNoUpdate.readingGoalDailyChars == 0
-          ? ''
-          : appModelNoUpdate.readingGoalDailyChars.toString(),
-    );
-    final TextEditingController weeklyController = TextEditingController(
-      text: appModelNoUpdate.readingGoalWeeklyChars == 0
-          ? ''
-          : appModelNoUpdate.readingGoalWeeklyChars.toString(),
-    );
-
-    final bool? saved = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        final FushiDesignTokens tokens = FushiDesignTokens.of(dialogContext);
-        return AlertDialog(
-          title: Text(t.stat_goal_set),
-          // helperText 让内容变高：横屏/小窗下用滚动兜底，不再顶到溢出。
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                // BUG-1075：单位（与首页仪表盘目标对话框同一批 i18n key，两处编辑的是
-                // 同一个持久化目标）。口径说明行已按用户要求删除——统计口径由实际计入的
-                // 来源（阅读/漫画/视频字幕/游戏文本）自解释，不再在文案里逐项列举。
-                TextField(
-                  controller: dailyController,
-                  keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
-                    labelText: t.stat_goal_daily,
-                    suffixText: t.stat_goal_unit_chars,
-                  ),
-                ),
-                SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
-                TextField(
-                  controller: weeklyController,
-                  keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
-                    labelText: t.stat_goal_weekly,
-                    suffixText: t.stat_goal_unit_chars,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: Text(t.cancel),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: Text(t.dialog_save),
-            ),
-          ],
-        );
-      },
-    );
-
-    final String dailyText = dailyController.text.trim();
-    final String weeklyText = weeklyController.text.trim();
-    dailyController.dispose();
-    weeklyController.dispose();
-
-    if (saved != true) return;
-
-    final int daily = int.tryParse(dailyText) ?? 0;
-    final int weekly = int.tryParse(weeklyText) ?? 0;
-    await appModelNoUpdate.setReadingGoalDailyChars(daily < 0 ? 0 : daily);
-    await appModelNoUpdate.setReadingGoalWeeklyChars(weekly < 0 ? 0 : weekly);
-    if (!mounted) return;
-    setState(() {});
+    final bool saved = await showStatGoalEditDialog(context, appModelNoUpdate);
+    if (saved && mounted) setState(() {});
   }
 
   /// 「今天」环形进度卡：字数目标环（复用持久化每日目标，未设则回退默认仅作可视化）
@@ -1507,80 +1433,58 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
         book.title;
   }
 
+  /// 会话行展示名：段 title 快照 → override 书名（与 [_bookDisplayTitle] 同判据）。
+  String _sessionTitle(StudySession s) =>
+      ReaderFushiSource.instance.overrideTitleForBookKey(s.mediaKey) ?? s.title;
+
+  /// 删一次会话：段写零（同步安全），再从 DB 重新聚合。
+  Future<void> _deleteSession(StudySession s) async {
+    await deleteStudySession(appModelNoUpdate.database, s);
+    if (mounted) await _loadFromDatabase();
+  }
+
+  /// 点按书 tile → 这本书的会话列表 sheet（legacy 无身份 tile 按 title 反查；
+  /// 反查不到就没有会话——legacy 日行本来也没有会话）。
+  Future<void> _showBookSessions(_BookData book) async {
+    final String? bookKey = book.bookKey ?? _bookKeyByTitle[book.title];
+    final List<StudySession> sessions = bookKey == null
+        ? const <StudySession>[]
+        : _sessions.where((StudySession s) => s.mediaKey == bookKey).toList();
+    final bool deleted = await showStatSessionsSheet(
+      context,
+      title: _bookDisplayTitle(book),
+      sessions: sessions,
+      titleOf: _sessionTitle,
+      onDelete: (StudySession s) =>
+          deleteStudySession(appModelNoUpdate.database, s),
+    );
+    if (deleted && mounted) await _loadFromDatabase();
+  }
+
+  /// 「按书」一行（游戏页同款 [buildStatMediaRow]）：字数 · 会话数 · 速度 / 查词 ·
+  /// 制卡 · 收藏，右侧时长；点按进该书的会话 sheet，长按 / 右键删该书统计。
   Widget _buildBookTile(_BookData book) {
     // TODO-1204：查词/制卡计数按 title 聚合（无记录则 0）。
     final ({int lookups, int mines}) counter =
         _bookCounters[book.title] ?? (lookups: 0, mines: 0);
     final int favorites = _bookFavorites[book.title] ?? 0;
-    final String? collectionName = _collectionNameForBook(book);
-    // 进度条填充维度 = 当前排序维度（W1）：first 是当前排序下第一名（最大值）。
-    final double topMetric = _bookData.isEmpty
+    final String? bookKey = book.bookKey ?? _bookKeyByTitle[book.title];
+    final int sessionCount = bookKey == null
         ? 0
-        : _sortMetric(_bookData.first);
-    final double fraction = bookProgressFraction(_sortMetric(book), topMetric);
-    final colorScheme = Theme.of(context).colorScheme;
-    final tokens = FushiDesignTokens.of(context);
-
-    return ContextMenuTrigger(
-      // 移动端长按、桌面端右键都弹删除确认（书架同款交互）；右键那一半现在走绑定表。
-      onInvoke: (Offset _) => _confirmAndDeleteBook(book),
-      child: Material(
-        type: MaterialType.transparency,
-        child: InkWell(
-          onLongPress: () => _confirmAndDeleteBook(book),
-          child: Padding(
-            padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _bookDisplayTitle(book),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-                if (collectionName != null) ...[
-                  SizedBox(height: tokens.spacing.gap / 4),
-                  buildStatCollectionLabel(context, collectionName),
-                ],
-                SizedBox(height: tokens.spacing.gap / 2),
-                Row(
-                  children: [
-                    Expanded(
-                      child: ClipRRect(
-                        borderRadius: tokens.radii.chipRadius,
-                        child: LinearProgressIndicator(
-                          value: fraction,
-                          minHeight: 8,
-                          backgroundColor: colorScheme.surfaceContainerHighest,
-                          color: colorScheme.primary,
-                        ),
-                      ),
-                    ),
-                    SizedBox(
-                      width: tokens.spacing.gap + tokens.spacing.gap / 2,
-                    ),
-                    Text(
-                      '${_formatChars(book.chars)} · ${formatStatTime(book.ms)}',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-                SizedBox(height: tokens.spacing.gap / 2),
-                Text(
-                  '${t.stat_lookup}: ${counter.lookups} · ${t.stat_mined}: ${counter.mines} · ${t.stat_favorited}: $favorites',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                SizedBox(height: tokens.spacing.gap / 2),
-              ],
-            ),
-          ),
-        ),
-      ),
+        : _sessions.where((StudySession s) => s.mediaKey == bookKey).length;
+    final String speed = book.cph > 0 ? ' · ${_formatCph(book.cph)}' : '';
+    return buildStatMediaRow(
+      context,
+      icon: Icons.menu_book,
+      title: _bookDisplayTitle(book),
+      collectionName: _collectionNameForBook(book),
+      meta: '${formatStatChars(book.chars)} · '
+          '${t.stat_sessions_count(n: sessionCount)}$speed',
+      meta2:
+          '${t.stat_lookup}: ${counter.lookups} · ${t.stat_mined}: ${counter.mines} · ${t.stat_favorited}: $favorites',
+      trailing: formatStatTime(book.ms),
+      onTap: () => unawaited(_showBookSessions(book)),
+      onDelete: () => unawaited(_confirmAndDeleteBook(book)),
     );
   }
 }

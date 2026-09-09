@@ -21,6 +21,7 @@ import 'package:fushi/src/pdf/pdf_engine.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/stats/read_unit_ledger.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/media/video/video_exit_flush.dart';
 
 /// PDF 阅读器页面（Phase 1 渲染 / Phase 2 点选查词 / Phase 3 页码进度 / Phase 4 制卡）。
 ///
@@ -125,19 +126,17 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     _saveDebounce?.cancel();
     // 崩溃 / 异常拆栈的兜底（正常退出走 onSourcePagePop 的 await 路径）：dispose
     // 是同步的，这里**一笔 DB 写都不许发起**——无人 await 的事务与随后的
-    // `db.close()` 互等。账本结算（leave → 页数入账）由 detach 在停表前跑完，攒下
-    // 的写和最后的位置一起交给退出汇合点统一 await。
-    // 时钟为空 = 本页从没开始计时，账本结算没有消费者，整段跳过。
-    _studyClock?.detach(_readLedger.leave);
+    // `db.close()` 互等。关书不是翻走：站着的那页不结算（`ReadUnitLedger` 类文档），
+    // detach 只停表，攒下的写和最后的位置一起交给退出汇合点统一 await。
+    // 时钟为空 = 本页从没开始计时，整段跳过。
+    _studyClock?.detach();
     ExitFlushRegistry.instance.defer(_flushPosition);
     super.dispose();
   }
 
-  /// 进程退出 / 退后台的统一 flush（[ExitFlushRegistry]）：先把当前页结算进账本
-  /// （退出也是「翻走」），再落位置 + 学习段。用 [ReadUnitLedger.settle] 而非
-  /// `leave()`，理由见其文档。
+  /// 进程退出 / 退后台的统一 flush（[ExitFlushRegistry]）：只落位置。退出不是翻走，
+  /// 站着的那页不结算（`ReadUnitLedger` 类文档）；学习段由时钟 stop / detach 写穿。
   Future<void> _flushForExit() async {
-    _readLedger.settle();
     await _flushPosition();
   }
 
@@ -158,8 +157,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
 
   @override
   Future<void> onSourcePagePop() async {
-    // 离开当前页：账本结算最后一个单元（翻走即计），再落盘。
-    _readLedger.leave();
+    // 关书不是翻走：站着的那页不结算（`ReadUnitLedger` 类文档），只落盘 + 停表。
     // 返回书架的正常路径：await 落盘，保证书架 recency/进度立刻正确。
     await _flushPosition();
     await _studyClock?.stop();
@@ -704,14 +702,20 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     final String title = widget.item?.title ?? _bookRow?.title ?? '';
     return PopScope(
       canPop: false,
-      onPopInvokedWithResult: (bool didPop, dynamic result) async {
+      onPopInvokedWithResult: (bool didPop, dynamic result) {
         if (didPop) return;
-        // 在 await 之前拿住 navigator：onWillPop 是异步长操作（落位置 + closeMedia），
-        // 之后再用 context 会跨 async gap。
         final NavigatorState navigator = Navigator.of(context);
-        final bool shouldPop = await onWillPop();
-        if (!mounted || !shouldPop) return;
-        navigator.pop();
+        // BUG-2119 口径（视频页 / 阅读器同此）：**退出不等落库**。onWillPop 是位置
+        // flush + closeMedia 两笔 drift 写，一条 SQLITE_BUSY 后未 reset 的写语句能让
+        // 整条连接上每次 COMMIT 都抛错（2026-09-04 真机），旧写法 `await onWillPop()`
+        // 一挂住，navigator.pop() 就永远到不了——AppBar 的返回键与被 `canPop: false`
+        // 掐掉的侧滑走的是同一条链，iOS 上按了没反应就等于出不去。
+        exitAfterPersist(
+          persist: onWillPop,
+          exit: () => navigator.pop(),
+          onPersistError: (Object error, StackTrace stack) =>
+              ErrorLogService.instance.log('ReaderPdf.exitFlush', error, stack),
+        );
       },
       child: Scaffold(
         appBar: AppBar(

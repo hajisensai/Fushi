@@ -1,4 +1,4 @@
-/// 标题模糊匹配打分：把「AniList 元数据条目」对上「在线来源搜索结果」。
+/// 标题模糊匹配打分：把「MAL 元数据条目」对上「在线来源搜索结果」。
 ///
 /// 打分模型对齐 AnymeX 的 SourceMapper：token-set 0.4 + partial 0.3 + 全串
 /// ratio 0.3 加权（漫画没有 season，去掉季号加成项）。两处为 CJK 做的适配：
@@ -11,7 +11,7 @@ library;
 
 import 'dart:math' as math;
 
-/// [candidate]（来源搜索结果标题）对 [targets]（AniList 各语言标题+别名）的
+/// [candidate]（来源搜索结果标题）对 [targets]（MAL 各语言标题+别名）的
 /// 匹配分，取所有 target 中的最高分。返回 0.0–1.0。
 double mangaTitleMatchScore(String candidate, List<String> targets) {
   final String source = normalizeMangaTitle(candidate);

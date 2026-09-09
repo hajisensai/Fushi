@@ -12,6 +12,7 @@ import 'package:fushi_engine/media/video/download/video_download_path_mapping.da
 import 'package:fushi_engine/media/video/subtitle/open_subtitles_client.dart';
 import 'package:fushi/src/pages/implementations/video_external_provider_settings_section.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/settings/settings_search.dart';
 
 class _FakeStore implements VideoExternalSettingsStore {
   _FakeStore(this.snapshot);
@@ -85,50 +86,51 @@ class _FakeStore implements VideoExternalSettingsStore {
 /// 挂载点。每段一个独立 State、共用同一个 fake store。
 Widget _harness(
   _FakeStore store, {
-  List<VideoExternalProviderScope> scopes = VideoExternalProviderScope.values,
+  List<VideoExternalProviderScope> scopes = const <VideoExternalProviderScope>[
+    VideoExternalProviderScope.subtitleSources,
+    VideoExternalProviderScope.resourceSources,
+    VideoExternalProviderScope.downloadRouting,
+  ],
   double width = 560,
-}) =>
-    ProviderScope(
-      child: MaterialApp(
-        theme: ThemeData(useMaterial3: true),
-        home: Scaffold(
-          body: SizedBox(
-            width: width,
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  for (final VideoExternalProviderScope scope in scopes)
-                    VideoExternalProviderSettingsSection(
-                      // 同类型无 key 的重挂载会走 didUpdateWidget（不重跑
-                      // initState / _load），换 store 的用例会读到上一次的 store。
-                      key: ValueKey<String>('$scope@$width#${scopes.length}'),
-                      store: store,
-                      scope: scope,
-                    ),
-                ],
-              ),
-            ),
+}) => ProviderScope(
+  child: MaterialApp(
+    theme: ThemeData(useMaterial3: true),
+    home: Scaffold(
+      body: SizedBox(
+        width: width,
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              for (final VideoExternalProviderScope scope in scopes)
+                VideoExternalProviderSettingsSection(
+                  // 同类型无 key 的重挂载会走 didUpdateWidget（不重跑
+                  // initState / _load），换 store 的用例会读到上一次的 store。
+                  key: ValueKey<String>('$scope@$width#${scopes.length}'),
+                  store: store,
+                  scope: scope,
+                ),
+            ],
           ),
         ),
       ),
-    );
+    ),
+  ),
+);
 
 /// 宽窗 harness：原 bug 只在 pane 明显宽于内容宽度时才看得出来——560 的窄
 /// harness 下输入框（旧上限 480）与开关（占满 560）只差 80px，肉眼和断言都容易
 /// 放过；1400 下差距是好几百像素，正是用户截图里的样子。
 Widget _wideHarness(_FakeStore store) => _harness(
-      store,
-      scopes: const <VideoExternalProviderScope>[
-        VideoExternalProviderScope.subtitleSources,
-      ],
-      width: 1400,
-    );
+  store,
+  scopes: const <VideoExternalProviderScope>[
+    VideoExternalProviderScope.subtitleSources,
+  ],
+  width: 1400,
+);
 
-Finder _textField(Key key) => find.descendant(
-      of: find.byKey(key),
-      matching: find.byType(TextField),
-    );
+Finder _textField(Key key) =>
+    find.descendant(of: find.byKey(key), matching: find.byType(TextField));
 
 Future<void> _show(WidgetTester tester, Finder finder) async {
   await tester.ensureVisible(finder);
@@ -141,6 +143,78 @@ Future<void> _settleAutosave(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets(
+    'service subpages isolate credentials and keep real write targets',
+    (WidgetTester tester) async {
+      final _FakeStore store = _FakeStore(
+        const VideoExternalSettingsSnapshot(),
+      );
+      await tester.pumpWidget(
+        _harness(
+          store,
+          scopes: const <VideoExternalProviderScope>[
+            VideoExternalProviderScope.jimaku,
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey<String>('video-opensubtitles-endpoint')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('video-torznab-add')),
+        findsNothing,
+      );
+      expect(
+        find.byWidgetPredicate(
+          (Widget w) =>
+              w is SettingsSearchTarget && w.id == 'services.jimaku.api_key',
+        ),
+        findsOneWidget,
+      );
+      await tester.enterText(
+        _textField(const ValueKey<String>('video-jimaku-api-key')),
+        'saved-key',
+      );
+      await _settleAutosave(tester);
+      expect(store.jimakuKeyWrites.last, 'saved-key');
+      expect(store.openSubtitlesWrites, isEmpty);
+      expect(store.torznabWrites, isEmpty);
+    },
+  );
+
+  testWidgets('OpenSubtitles subpage search resolves the actual secret field', (
+    WidgetTester tester,
+  ) async {
+    final _FakeStore store = _FakeStore(const VideoExternalSettingsSnapshot());
+    SettingsSearchReveal.pendingItemId = 'services.opensubtitles.api_key';
+    addTearDown(() => SettingsSearchReveal.pendingItemId = null);
+    await tester.pumpWidget(
+      _harness(
+        store,
+        scopes: const <VideoExternalProviderScope>[
+          VideoExternalProviderScope.openSubtitles,
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(SettingsSearchReveal.pendingItemId, isNull);
+    expect(
+      find.descendant(
+        of: find.byType(SettingsRevealTarget),
+        matching: find.byKey(
+          const ValueKey<String>('video-opensubtitles-api-key'),
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('video-jimaku-api-key')),
+      findsNothing,
+    );
+  });
+
   /// BUG-1747：宽窗下这一段三种行各有一套左右边界——输入框自己缩到 480、
   /// `SwitchListTile` 吃 `CrossAxisAlignment.stretch` 的紧约束占满整个 pane、
   /// 用户名/密码 `Row` 又是全宽再各占一半。用户看到的是「输入框只占左半边、
@@ -168,13 +242,15 @@ void main() {
     await tester.pumpWidget(_wideHarness(store));
     await tester.pumpAndSettle();
 
-    final Finder endpoint =
-        _textField(const ValueKey<String>('video-opensubtitles-endpoint'));
+    final Finder endpoint = _textField(
+      const ValueKey<String>('video-opensubtitles-endpoint'),
+    );
     await _show(tester, endpoint);
     final Rect endpointRect = tester.getRect(endpoint);
 
-    final Finder insecure =
-        find.byKey(const ValueKey<String>('video-opensubtitles-insecure-http'));
+    final Finder insecure = find.byKey(
+      const ValueKey<String>('video-opensubtitles-insecure-http'),
+    );
     await _show(tester, insecure);
     final Rect switchRect = tester.getRect(insecure);
 
@@ -186,30 +262,46 @@ void main() {
     expect(
       endpointRect.right,
       moreOrLessEquals(switchRect.right, epsilon: 1.0),
-      reason: '输入框此前被局部限宽到 480、开关占满整个 pane，右边缘差几百像素；'
+      reason:
+          '输入框此前被局部限宽到 480、开关占满整个 pane，右边缘差几百像素；'
           '收进同一个内容宽度容器后必须重合',
     );
 
     // 双列行（用户名/密码）是第三套宽度：Row 全宽 → Expanded 各半 → 再被局部
     // 480 二次裁。它的整体左右边界同样要落在同一对基线上。
     final Rect username = tester.getRect(
-        _textField(const ValueKey<String>('video-opensubtitles-username')));
+      _textField(const ValueKey<String>('video-opensubtitles-username')),
+    );
     final Rect password = tester.getRect(
-        _textField(const ValueKey<String>('video-opensubtitles-password')));
-    expect(username.left, moreOrLessEquals(endpointRect.left, epsilon: 1.0),
-        reason: '双列行左边界要与单列框一致');
-    expect(password.right, moreOrLessEquals(endpointRect.right, epsilon: 1.0),
-        reason: '双列行右边界要与单列框一致（此前密码框一路铺到 pane 最右）');
+      _textField(const ValueKey<String>('video-opensubtitles-password')),
+    );
+    expect(
+      username.left,
+      moreOrLessEquals(endpointRect.left, epsilon: 1.0),
+      reason: '双列行左边界要与单列框一致',
+    );
+    expect(
+      password.right,
+      moreOrLessEquals(endpointRect.right, epsilon: 1.0),
+      reason: '双列行右边界要与单列框一致（此前密码框一路铺到 pane 最右）',
+    );
 
     // BUG-1858：唯一的宽度规则是「吃满 pane 宽减两边各 16px」，不再另设上限。
-    expect(endpointRect.width, moreOrLessEquals(1400 - 2 * 16, epsilon: 1.0),
-        reason: '输入框吃满内容区（BUG-1858：与其余设置行同一条规则）');
-    expect(endpointRect.left, moreOrLessEquals(16, epsilon: 1.0),
-        reason: '左边缘落在普通设置行的 16px 基线上');
+    expect(
+      endpointRect.width,
+      moreOrLessEquals(1400 - 2 * 16, epsilon: 1.0),
+      reason: '输入框吃满内容区（BUG-1858：与其余设置行同一条规则）',
+    );
+    expect(
+      endpointRect.left,
+      moreOrLessEquals(16, epsilon: 1.0),
+      reason: '左边缘落在普通设置行的 16px 基线上',
+    );
   });
 
-  testWidgets('secret fields are masked and unsafe remote HTTP is not saved',
-      (WidgetTester tester) async {
+  testWidgets('secret fields are masked and unsafe remote HTTP is not saved', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(800, 3200);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -247,20 +339,27 @@ void main() {
     expect(subtitleSecret.obscureText, isTrue);
     expect(password.obscureText, isTrue);
 
-    final Finder endpoint =
-        find.byKey(const ValueKey<String>('video-torznab-0-endpoint'));
+    final Finder endpoint = find.byKey(
+      const ValueKey<String>('video-torznab-0-endpoint'),
+    );
     await tester.enterText(endpoint, 'http://indexer.example/api/v1');
     await _settleAutosave(tester);
-    expect(store.torznabWrites, isEmpty,
-        reason: 'remote plain HTTP must fail closed unless explicitly enabled');
+    expect(
+      store.torznabWrites,
+      isEmpty,
+      reason: 'remote plain HTTP must fail closed unless explicitly enabled',
+    );
 
     await tester.enterText(
       endpoint,
       'https://indexer.example/api/v1?apikey=must-not-persist',
     );
     await _settleAutosave(tester);
-    expect(store.torznabWrites, isEmpty,
-        reason: 'credential-bearing endpoint URLs must not be persisted');
+    expect(
+      store.torznabWrites,
+      isEmpty,
+      reason: 'credential-bearing endpoint URLs must not be persisted',
+    );
 
     await tester.enterText(endpoint, 'https://new-indexer.example/api/v1');
     await _settleAutosave(tester);
@@ -268,125 +367,136 @@ void main() {
     expect(store.torznabWrites.last.single.endpoint.scheme, 'https');
     expect(store.torznabWrites.last.single.apiKey, 'tor-secret');
 
-    final Finder subtitleEndpoint =
-        find.byKey(const ValueKey<String>('video-opensubtitles-endpoint'));
+    final Finder subtitleEndpoint = find.byKey(
+      const ValueKey<String>('video-opensubtitles-endpoint'),
+    );
     await _show(tester, subtitleEndpoint);
     await tester.enterText(subtitleEndpoint, 'https://user:secret@example.com');
     await _settleAutosave(tester);
-    expect(store.openSubtitlesWrites, isEmpty,
-        reason: 'credentials embedded in an endpoint must never be persisted');
+    expect(
+      store.openSubtitlesWrites,
+      isEmpty,
+      reason: 'credentials embedded in an endpoint must never be persisted',
+    );
   });
 
-  testWidgets('adds Torznab and path mapping and selects managed target source',
-      (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(800, 3600);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-    final String localRoot = Directory.systemTemp.absolute.path;
-    final _FakeStore store = _FakeStore(
-      VideoExternalSettingsSnapshot(
-        managedVideoSources: <ManagedVideoSourceOption>[
-          ManagedVideoSourceOption(
-            id: 7,
-            label: 'Anime',
-            rootPath: localRoot,
-          ),
-          ManagedVideoSourceOption(
-            id: 9,
-            label: 'Movies',
-            rootPath: '$localRoot${Platform.pathSeparator}movies',
-          ),
-        ],
-      ),
-    );
+  testWidgets(
+    'adds Torznab and path mapping and selects managed target source',
+    (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(800, 3600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final String localRoot = Directory.systemTemp.absolute.path;
+      final _FakeStore store = _FakeStore(
+        VideoExternalSettingsSnapshot(
+          managedVideoSources: <ManagedVideoSourceOption>[
+            ManagedVideoSourceOption(
+              id: 7,
+              label: 'Anime',
+              rootPath: localRoot,
+            ),
+            ManagedVideoSourceOption(
+              id: 9,
+              label: 'Movies',
+              rootPath: '$localRoot${Platform.pathSeparator}movies',
+            ),
+          ],
+        ),
+      );
 
-    await tester.pumpWidget(_harness(store));
-    await _settleAutosave(tester);
+      await tester.pumpWidget(_harness(store));
+      await _settleAutosave(tester);
 
-    await tester.tap(find.byKey(const ValueKey<String>('video-torznab-add')));
-    await _settleAutosave(tester);
-    await tester.enterText(
-      find.byKey(const ValueKey<String>('video-torznab-0-name')),
-      'Jackett',
-    );
-    await tester.enterText(
-      find.byKey(const ValueKey<String>('video-torznab-0-endpoint')),
-      'https://jackett.example/api/v2.0/indexers/all/results/torznab',
-    );
-    await tester.enterText(
-      find.byKey(const ValueKey<String>('video-torznab-0-api-key')),
-      'new-key',
-    );
-    await tester.enterText(
-      find.byKey(const ValueKey<String>('video-torznab-0-categories')),
-      '5000,5040',
-    );
-    await _settleAutosave(tester);
-    expect(store.torznabWrites.last.single.name, 'Jackett');
-    expect(store.torznabWrites.last.single.apiKey, 'new-key');
-    expect(store.torznabWrites.last.single.categories, <int>[5000, 5040]);
+      await tester.tap(find.byKey(const ValueKey<String>('video-torznab-add')));
+      await _settleAutosave(tester);
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('video-torznab-0-name')),
+        'Jackett',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('video-torznab-0-endpoint')),
+        'https://jackett.example/api/v2.0/indexers/all/results/torznab',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('video-torznab-0-api-key')),
+        'new-key',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('video-torznab-0-categories')),
+        '5000,5040',
+      );
+      await _settleAutosave(tester);
+      expect(store.torznabWrites.last.single.name, 'Jackett');
+      expect(store.torznabWrites.last.single.apiKey, 'new-key');
+      expect(store.torznabWrites.last.single.categories, <int>[5000, 5040]);
 
-    final Finder mappingAdd =
-        find.byKey(const ValueKey<String>('video-path-mapping-add'));
-    await _show(tester, mappingAdd);
-    await tester.tap(mappingAdd);
-    await tester.pumpAndSettle();
-    await tester.enterText(
-      find.byKey(const ValueKey<String>('video-path-mapping-0-profile')),
-      'qb-home',
-    );
-    await tester.enterText(
-      find.byKey(const ValueKey<String>('video-path-mapping-0-remote')),
-      '/downloads',
-    );
-    await tester.enterText(
-      find.byKey(const ValueKey<String>('video-path-mapping-0-local')),
-      localRoot,
-    );
-    await _settleAutosave(tester);
-    expect(store.mappingWrites.last.single.backendProfileId, 'qb-home');
-    expect(store.mappingWrites.last.single.remoteRoot, '/downloads');
-    expect(store.mappingWrites.last.single.localRoot, localRoot);
+      final Finder mappingAdd = find.byKey(
+        const ValueKey<String>('video-path-mapping-add'),
+      );
+      await _show(tester, mappingAdd);
+      await tester.tap(mappingAdd);
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('video-path-mapping-0-profile')),
+        'qb-home',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('video-path-mapping-0-remote')),
+        '/downloads',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('video-path-mapping-0-local')),
+        localRoot,
+      );
+      await _settleAutosave(tester);
+      expect(store.mappingWrites.last.single.backendProfileId, 'qb-home');
+      expect(store.mappingWrites.last.single.remoteRoot, '/downloads');
+      expect(store.mappingWrites.last.single.localRoot, localRoot);
 
-    final Finder target = find.byKey(
-      const ValueKey<String>('video-target-source-none'),
-    );
-    await _show(tester, target);
-    await tester.tap(target);
-    await tester.pumpAndSettle();
-    await tester.tap(
-        find.text('Movies — $localRoot${Platform.pathSeparator}movies').last);
-    await tester.pumpAndSettle();
-    expect(store.targetSourceWrites.last, 9);
-  });
+      final Finder target = find.byKey(
+        const ValueKey<String>('video-target-source-none'),
+      );
+      await _show(tester, target);
+      await tester.tap(target);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.text('Movies — $localRoot${Platform.pathSeparator}movies').last,
+      );
+      await tester.pumpAndSettle();
+      expect(store.targetSourceWrites.last, 9);
+    },
+  );
 
-  testWidgets('preferred subtitle language is persisted through shared default',
-      (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(800, 3200);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-    final _FakeStore store = _FakeStore(
-      const VideoExternalSettingsSnapshot(preferredSubtitleLanguage: 'ja'),
-    );
+  testWidgets(
+    'preferred subtitle language is persisted through shared default',
+    (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(800, 3200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final _FakeStore store = _FakeStore(
+        const VideoExternalSettingsSnapshot(preferredSubtitleLanguage: 'ja'),
+      );
 
-    await tester.pumpWidget(_harness(store));
-    await tester.pumpAndSettle();
-    final Finder language = find.byKey(
-      const ValueKey<String>('video-subtitle-default-language'),
-    );
-    await _show(tester, language);
-    await tester.tap(language);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('中文').last);
-    await tester.pumpAndSettle();
-    expect(store.languageWrites.last, 'zh');
-  });
+      await tester.pumpWidget(_harness(store));
+      await tester.pumpAndSettle();
+      final Finder language = find.byKey(
+        const ValueKey<String>('video-subtitle-default-language'),
+      );
+      await _show(tester, language);
+      await tester.tap(language);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('中文').last);
+      await tester.pumpAndSettle();
+      expect(store.languageWrites.last, 'zh');
+    },
+  );
 
   // BUG-1712：字幕来源清单必须两家都在。Jimaku 曾只在设置 → 视频 → 字幕露过脸，
   // 下载页那一区只有 OpenSubtitles，用户据此以为 app 不支持 Jimaku。现在两家只有
   // 一个家（在线服务·字幕来源 = subtitleSources 段），且必须并列出现在这一段里。
-  testWidgets('subtitle sources scope lists both providers side by side',
-      (WidgetTester tester) async {
+  testWidgets('subtitle sources scope lists both providers side by side', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(800, 3200);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -394,19 +504,25 @@ void main() {
     final _FakeStore store = _FakeStore(
       const VideoExternalSettingsSnapshot(jimakuApiKey: 'jimaku-secret'),
     );
-    await tester.pumpWidget(_harness(
-      store,
-      scopes: const <VideoExternalProviderScope>[
-        VideoExternalProviderScope.subtitleSources,
-      ],
-    ));
+    await tester.pumpWidget(
+      _harness(
+        store,
+        scopes: const <VideoExternalProviderScope>[
+          VideoExternalProviderScope.subtitleSources,
+        ],
+      ),
+    );
     await tester.pumpAndSettle();
 
-    const ValueKey<String> jimakuKeyId =
-        ValueKey<String>('video-jimaku-api-key');
+    const ValueKey<String> jimakuKeyId = ValueKey<String>(
+      'video-jimaku-api-key',
+    );
     final Finder jimakuKey = find.byKey(jimakuKeyId);
-    expect(jimakuKey, findsOneWidget,
-        reason: 'Jimaku must be listed next to OpenSubtitles');
+    expect(
+      jimakuKey,
+      findsOneWidget,
+      reason: 'Jimaku must be listed next to OpenSubtitles',
+    );
     expect(
       find.byKey(const ValueKey<String>('video-opensubtitles-api-key')),
       findsOneWidget,
@@ -436,52 +552,71 @@ void main() {
       const VideoExternalSettingsSnapshot(jimakuApiKey: 'jimaku-secret'),
     );
 
-    await tester.pumpWidget(_harness(
-      store,
-      scopes: const <VideoExternalProviderScope>[
-        VideoExternalProviderScope.resourceSources,
-      ],
-    ));
+    await tester.pumpWidget(
+      _harness(
+        store,
+        scopes: const <VideoExternalProviderScope>[
+          VideoExternalProviderScope.resourceSources,
+        ],
+      ),
+    );
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey<String>('video-torznab-add')),
-        findsOneWidget);
-    expect(find.byKey(const ValueKey<String>('video-jimaku-api-key')),
-        findsNothing);
-    expect(find.byKey(const ValueKey<String>('video-path-mapping-add')),
-        findsNothing);
-
-    await tester.pumpWidget(_harness(
-      store,
-      scopes: const <VideoExternalProviderScope>[
-        VideoExternalProviderScope.downloadRouting,
-      ],
-    ));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey<String>('video-path-mapping-add')),
-        findsOneWidget);
     expect(
-        find.byKey(const ValueKey<String>('video-torznab-add')), findsNothing);
-    expect(find.byKey(const ValueKey<String>('video-opensubtitles-api-key')),
-        findsNothing);
+      find.byKey(const ValueKey<String>('video-torznab-add')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('video-jimaku-api-key')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('video-path-mapping-add')),
+      findsNothing,
+    );
+
+    await tester.pumpWidget(
+      _harness(
+        store,
+        scopes: const <VideoExternalProviderScope>[
+          VideoExternalProviderScope.downloadRouting,
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('video-path-mapping-add')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('video-torznab-add')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('video-opensubtitles-api-key')),
+      findsNothing,
+    );
   });
 
   // 用户截图：视频设置页里 Jimaku / OpenSubtitles 整块比上一行「刮削后自动补
   // 字幕」（标准设置行）更靠左——schema 的 SettingsCustomItem 裸渲染不给内边距，
   // 本组件此前靠宿主 TorrentSettingsSection 补边距，单独挂进分区就贴边了。
   // 不变式：本段内容左沿 == 设计 token 的 rowHorizontal（与标准设置行同一条基线）。
-  testWidgets('section content sits on the shared row baseline',
-      (WidgetTester tester) async {
+  testWidgets('section content sits on the shared row baseline', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(800, 3200);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     final _FakeStore store = _FakeStore(const VideoExternalSettingsSnapshot());
 
-    await tester.pumpWidget(_harness(
-      store,
-      scopes: const <VideoExternalProviderScope>[
-        VideoExternalProviderScope.subtitleSources,
-      ],
-    ));
+    await tester.pumpWidget(
+      _harness(
+        store,
+        scopes: const <VideoExternalProviderScope>[
+          VideoExternalProviderScope.subtitleSources,
+        ],
+      ),
+    );
     await tester.pumpAndSettle();
 
     final Finder content = find.byKey(
@@ -524,47 +659,51 @@ void main() {
   });
 
   testWidgets(
-      'every built-in source has a switch that writes through the store',
-      (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(800, 3200);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-    final _FakeStore store = _FakeStore(const VideoExternalSettingsSnapshot());
-
-    await tester.pumpWidget(_harness(store));
-    await tester.pumpAndSettle();
-
-    // 表驱动：内置源全表都必须有一行开关，而不是只有当年手写的那一行 Nyaa。
-    for (final BuiltinVideoResourceSource source
-        in kBuiltinVideoResourceSources) {
-      final Finder row =
-          find.byKey(ValueKey<String>('video-builtin-source-${source.id}'));
-      expect(row, findsOneWidget, reason: 'missing row for ${source.id}');
-      await _show(tester, row);
-      expect(
-        tester.widget<SwitchListTile>(row).value,
-        isTrue,
-        reason: '${source.id} defaults to enabled',
+    'every built-in source has a switch that writes through the store',
+    (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(800, 3200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final _FakeStore store = _FakeStore(
+        const VideoExternalSettingsSnapshot(),
       );
-    }
 
-    final Finder apibayRow = find.byKey(
-      ValueKey<String>('video-builtin-source-$kApibayResourceProviderId'),
-    );
-    await _show(tester, apibayRow);
-    await tester.tap(apibayRow);
-    await tester.pumpAndSettle();
+      await tester.pumpWidget(_harness(store));
+      await tester.pumpAndSettle();
 
-    expect(
-      store.builtinSourceWrites,
-      <(String, bool)>[(kApibayResourceProviderId, false)],
-    );
-    // 本地状态立刻翻转，不等下一次 load —— 否则开关会弹回去。
-    expect(tester.widget<SwitchListTile>(apibayRow).value, isFalse);
-  });
+      // 表驱动：内置源全表都必须有一行开关，而不是只有当年手写的那一行 Nyaa。
+      for (final BuiltinVideoResourceSource source
+          in kBuiltinVideoResourceSources) {
+        final Finder row = find.byKey(
+          ValueKey<String>('video-builtin-source-${source.id}'),
+        );
+        expect(row, findsOneWidget, reason: 'missing row for ${source.id}');
+        await _show(tester, row);
+        expect(
+          tester.widget<SwitchListTile>(row).value,
+          isTrue,
+          reason: '${source.id} defaults to enabled',
+        );
+      }
 
-  testWidgets('a disabled built-in source renders as off',
-      (WidgetTester tester) async {
+      final Finder apibayRow = find.byKey(
+        ValueKey<String>('video-builtin-source-$kApibayResourceProviderId'),
+      );
+      await _show(tester, apibayRow);
+      await tester.tap(apibayRow);
+      await tester.pumpAndSettle();
+
+      expect(store.builtinSourceWrites, <(String, bool)>[
+        (kApibayResourceProviderId, false),
+      ]);
+      // 本地状态立刻翻转，不等下一次 load —— 否则开关会弹回去。
+      expect(tester.widget<SwitchListTile>(apibayRow).value, isFalse);
+    },
+  );
+
+  testWidgets('a disabled built-in source renders as off', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(800, 3200);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -589,44 +728,50 @@ void main() {
     expect(tester.widget<SwitchListTile>(nyaa).value, isTrue);
   });
 
-  testWidgets('Jimaku has an enabled switch beside its API key, defaulting on',
-      (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(800, 3200);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-    // 存量用户：填了 key、从没见过这个开关。默认必须是「开」。
-    final _FakeStore store = _FakeStore(
-      const VideoExternalSettingsSnapshot(jimakuApiKey: 'legacy-key'),
-    );
+  testWidgets(
+    'Jimaku has an enabled switch beside its API key, defaulting on',
+    (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(800, 3200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      // 存量用户：填了 key、从没见过这个开关。默认必须是「开」。
+      final _FakeStore store = _FakeStore(
+        const VideoExternalSettingsSnapshot(jimakuApiKey: 'legacy-key'),
+      );
 
-    await tester.pumpWidget(_harness(
-      store,
-      scopes: const <VideoExternalProviderScope>[
-        VideoExternalProviderScope.subtitleSources,
-      ],
-    ));
-    await tester.pumpAndSettle();
+      await tester.pumpWidget(
+        _harness(
+          store,
+          scopes: const <VideoExternalProviderScope>[
+            VideoExternalProviderScope.subtitleSources,
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
 
-    final Finder jimaku =
-        find.byKey(const ValueKey<String>('video-jimaku-enabled'));
-    await _show(tester, jimaku);
-    expect(tester.widget<SwitchListTile>(jimaku).value, isTrue);
-    // 与 OpenSubtitles 并列同形：两家都在同一节里各有一个启用开关。
-    expect(
-      find.byKey(const ValueKey<String>('video-opensubtitles-enabled')),
-      findsOneWidget,
-    );
+      final Finder jimaku = find.byKey(
+        const ValueKey<String>('video-jimaku-enabled'),
+      );
+      await _show(tester, jimaku);
+      expect(tester.widget<SwitchListTile>(jimaku).value, isTrue);
+      // 与 OpenSubtitles 并列同形：两家都在同一节里各有一个启用开关。
+      expect(
+        find.byKey(const ValueKey<String>('video-opensubtitles-enabled')),
+        findsOneWidget,
+      );
 
-    await tester.tap(jimaku);
-    await tester.pumpAndSettle();
+      await tester.tap(jimaku);
+      await tester.pumpAndSettle();
 
-    expect(store.jimakuEnabledWrites, <bool>[false]);
-    // 关掉开关不得清空 key —— 双门控的意义就是留着 key 也能停用。
-    expect(store.jimakuKeyWrites, isEmpty);
-  });
+      expect(store.jimakuEnabledWrites, <bool>[false]);
+      // 关掉开关不得清空 key —— 双门控的意义就是留着 key 也能停用。
+      expect(store.jimakuKeyWrites, isEmpty);
+    },
+  );
 
-  testWidgets('compact layout has no horizontal overflow',
-      (WidgetTester tester) async {
+  testWidgets('compact layout has no horizontal overflow', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(360, 5000);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);

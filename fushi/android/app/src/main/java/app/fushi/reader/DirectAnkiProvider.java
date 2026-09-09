@@ -22,7 +22,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 并行版 AnkiDroid（{@code com.ichi2.anki.A} 等）用的 {@link AnkiProvider}：自己驱动
+ * 并行版 AnkiDroid（{@code com.ichi2.anki.e} 等）用的 {@link AnkiProvider}：自己驱动
  * ContentResolver，authority 来自 {@link AnkiDroidTarget}（BUG-2195）。
  *
  * <p>为什么必须自己写：上游 AAR 把 {@code content://com.ichi2.anki.flashcards} 编译

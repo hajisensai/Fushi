@@ -11,12 +11,14 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
 
-import 'package:asr_core/asr_core.dart';
+import 'package:fushi_asr_core/asr_core.dart';
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/interconnect_job_client.dart';
@@ -291,6 +293,10 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
   String? _finishedSrt;
   String? _error;
 
+  /// 本轮里引擎丢弃过一个读不出图的模型文件（见 [_failWith]）。只用来在「需要
+  /// 下载」那一阶段多说一句为什么又要下载，不参与阶段判定。
+  bool _modelDiscarded = false;
+
   // 下载进度。
   int _downloadReceived = 0;
   int _downloadTotal = 0;
@@ -378,11 +384,37 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        _phase = _Phase.error;
-        _error = '$e';
-      });
+      _failWith(e);
     }
+  }
+
+  /// 失败的统一落点：先分辨「模型文件本身读不出图」这一类。
+  ///
+  /// 引擎判定某个清单文件装不起来时会把它删掉再抛
+  /// `AsrModelFileUnusableException`（上游 fushi_asr_core）。但整本转录跑在后台
+  /// isolate，错误跨边界只剩字符串——`asr_transcribe_isolate.dart` 统一压成
+  /// `StateError(文本)`，用户从前看到的 `Bad state: PlatformException(ORT_ERROR,
+  /// ... Protobuf parsing failed)` 就是这么来的——所以这里只能按文本判据识别，
+  /// 用的是上游那个纯函数。
+  ///
+  /// 识别到就**直接重新规划**，不为这条路径新造阶段：坏档已经不在磁盘上，
+  /// `plan.modelReady` 自然是 false，界面落回既有的「需要下载」阶段，那儿本来
+  /// 就有下载按钮和进度条，用户点一下就把模型重新取回来了。
+  ///
+  /// 一轮里只自愈一次（[_modelDiscarded] 兼作闸门）：`_refreshPlan` 失败时也走
+  /// 这里，两边互相调用，不设闸门的话「规划本身报同类错误」会转成死循环。第二
+  /// 次就老老实实落错误态，把原文给出去。
+  void _failWith(Object error) {
+    final String text = '$error';
+    if (!_modelDiscarded && isOnnxUnreadableModelFailure(text)) {
+      _modelDiscarded = true;
+      _refreshPlan();
+      return;
+    }
+    setState(() {
+      _phase = _Phase.error;
+      _error = text;
+    });
   }
 
   void _startDownload() {
@@ -390,8 +422,8 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     if (plan == null) return;
     setState(() {
       _phase = _Phase.downloading;
-      _downloadTotal = plan.modelStatus.totalBytes;
-      _downloadReceived = plan.modelStatus.obtainedBytes;
+      _downloadTotal = plan.totalModelBytes;
+      _downloadReceived = plan.obtainedModelBytes;
       _downloadFile = '';
     });
     // 逐文件事件：把「之前文件」的字节累计起来展示总进度。
@@ -415,10 +447,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
       },
       onError: (Object e, StackTrace _) {
         if (!mounted) return;
-        setState(() {
-          _phase = _Phase.error;
-          _error = '$e';
-        });
+        _failWith(e);
       },
       onDone: () {
         if (!mounted) return;
@@ -480,10 +509,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
         onError: (Object e, StackTrace _) async {
           await _releaseRunning();
           if (!mounted) return;
-          setState(() {
-            _phase = _Phase.error;
-            _error = '$e';
-          });
+          _failWith(e);
         },
         onDone: () async {
           await _releaseRunning();
@@ -491,10 +517,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
       );
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        _phase = _Phase.error;
-        _error = '$e';
-      });
+      _failWith(e);
     }
   }
 
@@ -691,6 +714,13 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
             size: FushiByteFormat.bytes(plan?.bytesToDownload),
           ),
         );
+        // 是「装不起来被清掉」才退回下载的，得说清楚——否则用户刚下完的模型又
+        // 要求下载一遍，看起来像下载没生效。
+        if (_modelDiscarded) {
+          sb
+            ..writeln()
+            ..write(t.audiobook_transcribe_model_discarded);
+        }
         _appendProbeHint(sb, plan);
         return sb.toString();
       case _Phase.downloading:
@@ -844,6 +874,8 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Text(t.audiobook_transcribe_intro, style: tokens.type.metadata),
+          Text(t.audiobook_transcribe_alignment_hint,
+              style: tokens.type.metadata),
           SizedBox(height: tokens.spacing.rowVertical),
           Text(
             t.audiobook_transcribe_language_label,
@@ -880,6 +912,14 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
                 value: AsrAccelerationPreference.cpuOnly,
                 label: Text(t.audiobook_transcribe_accel_cpu),
               ),
+              // 上游只在 macOS 接受 coreml（别的平台 plan() 直接抛
+              // UnsupportedError），auto 在 macOS 仍走 INT8 CPU，CoreML 是显式
+              // 选项——按 defaultTargetPlatform 露出，widget 测试可覆盖。
+              if (defaultTargetPlatform == TargetPlatform.macOS)
+                ButtonSegment<AsrAccelerationPreference>(
+                  value: AsrAccelerationPreference.coreml,
+                  label: Text(t.audiobook_transcribe_accel_coreml),
+                ),
             ],
             selected: <AsrAccelerationPreference>{_preference},
             onSelectionChanged: !_canChangePreference

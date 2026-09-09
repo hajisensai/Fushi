@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/utils.dart' show t, FushiToast, ToastSeverity;
 
 /// BUG-1040：把「一段期间内让查词弹窗让位」的执行权交回宿主页面的钩子。
@@ -224,8 +225,12 @@ class _MinedCardActionDialogState extends State<_MinedCardActionDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: _busy ? null : () => Navigator.of(context).pop(),
-          child: Text(t.dialog_cancel),
+          // 制卡请求期间也保持可点：本框是 `barrierDismissible: false`，iOS 上既没有
+          // 系统返回键、对话框路由也没有侧滑返回，而远端制卡 POST 的超时是 60 秒
+          // ——禁用这颗按钮就是「点了制卡，整屏冻住一分钟」。关闭只解绑 UI，请求
+          // 继续跑完（下面每处 setState 都有 mounted 守卫）。
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(_busy ? t.dialog_background_close : t.dialog_cancel),
         ),
         FilledButton.tonalIcon(
           onPressed: _busy ? null : _runMineNew,
@@ -282,7 +287,15 @@ class _AnkiNoteViewerDialogState extends State<_AnkiNoteViewerDialog> {
   }
 
   Future<void> _load() async {
-    final fields = await widget.repo.noteFields(widget.noteId);
+    Map<String, String>? fields;
+    try {
+      fields = await widget.repo.noteFields(widget.noteId);
+    } catch (e, stack) {
+      // 拉字段失败（主机掉线 / Anki 没开 / 请求超时）不能就停在转圈上：一个永远
+      // 转圈、又没有关闭按钮的框，在 iOS 上和卡死没有区别（见下面 actions 里补的
+      // 关闭键）。失败落错误日志，UI 退出加载态。
+      ErrorLogService.instance.log('AnkiNoteViewer.load', e, stack);
+    }
     if (!mounted) return;
     setState(() {
       _fields = fields;
@@ -374,6 +387,13 @@ class _AnkiNoteViewerDialogState extends State<_AnkiNoteViewerDialog> {
                   ),
       ),
       actions: [
+        // 本框先前只有「在 Anki 中打开」「覆写」两颗按钮，没有任何关闭入口，全靠
+        // barrier 可点兜底；iOS 上没有系统返回键、对话框路由也没有侧滑返回，用户
+        // 看不到出口就会当成卡死（尤其字段还在转圈时）。
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(t.dialog_close),
+        ),
         TextButton(
           onPressed: _busy ? null : _openInAnki,
           child: Text(t.anki_note_viewer_open_in_anki),

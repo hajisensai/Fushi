@@ -91,6 +91,7 @@ Future<String?> _okFrame({
   double atSeconds = 10.0,
   FfmpegFailureReporter? onFailure,
   String? tlsPinSha256,
+  bool diagnosticOnly = false,
 }) async =>
     outputPath;
 

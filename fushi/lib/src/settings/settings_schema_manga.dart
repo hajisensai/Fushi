@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
+import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_manga_ocr.dart';
@@ -21,11 +22,19 @@ import 'package:fushi/utils.dart';
 SettingsDestination buildMangaDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.manga,
+    // 「功能模块」门控：关掉本模块 = 整条分类不渲染 / 不进搜索索引 / 主从详情不可选
+    // （三条渲染路径共用 isVisible）。归属表见 module_registry.dart，别在此另写判据。
+    visible: (SettingsContext c) => isSettingsDestinationVisible(
+      SettingsDestinationId.manga,
+      c.appModel.moduleVisibility,
+    ),
     title: t.manga_library,
     summary: t.settings_destination_manga_summary,
     icon: Icons.auto_stories_outlined,
     sections: <SettingsSection>[
       SettingsSection(
+        id: 'manga.section.viewing',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.manga_section_viewing,
         items: <SettingsItem>[
           // 阅读方向：偏好是新书的默认值，已打开的书仍按自身状态走。
@@ -103,9 +112,9 @@ SettingsDestination buildMangaDestination() {
                 label: t.manga_page_animation_fade,
               ),
             ],
-            selected: (SettingsContext c) =>
-                MangaPageAnimationKey.fromKey(c.appModel.mangaPageAnimation)
-                    .key,
+            selected: (SettingsContext c) => MangaPageAnimationKey.fromKey(
+              c.appModel.mangaPageAnimation,
+            ).key,
             onChanged: (SettingsContext c, String value) =>
                 c.appModel.setMangaPageAnimation(value),
           ),
@@ -133,6 +142,7 @@ SettingsDestination buildMangaDestination() {
         ],
       ),
       buildMangaOcrSection(),
+      buildMangaCatalogSection(),
     ],
   );
 }

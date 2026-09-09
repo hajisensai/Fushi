@@ -5,6 +5,7 @@ import 'package:fushi_audio/fushi_audio.dart'
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
@@ -184,6 +185,30 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     };
     _prefCache.addAll(encoded);
     await _db.setPrefs(encoded);
+  }
+
+  /// 只在持久化原值仍匹配快照时提交更新。耗时迁移在事务外准备文件，
+  /// 此处仅短事务比较/写入，避免覆盖其它进程或用户期间的新配置。
+  /// [expectedRaw] 使用 [prefsSnapshot] 的原始编码值；null 表示 key 不存在。
+  Future<bool> compareAndSetPrefs({
+    required Map<String, String?> expectedRaw,
+    required Map<String, dynamic> updates,
+  }) async {
+    final Map<String, String> encoded = <String, String>{
+      for (final MapEntry<String, dynamic> entry in updates.entries)
+        entry.key: PrefCodec.encode(entry.value),
+    };
+    final bool applied = await _db.transaction(() async {
+      final Map<String, String> persisted = await _db.getAllPrefs();
+      for (final MapEntry<String, String?> entry in expectedRaw.entries) {
+        if (persisted[entry.key] != entry.value) return false;
+      }
+      await _db.setPrefs(encoded);
+      return true;
+    });
+    // 冲突时也刷新本进程，后续绑定必须使用赢家配置；提交前不改缓存。
+    await loadFromDb();
+    return applied;
   }
 
   /// The prefs-version value currently held in this process's in-memory cache,
@@ -744,64 +769,22 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     await setPref('first_time_setup', false);
   }
 
-  /// 「功能模块」显隐：小说/漫画/视频/游戏/浏览器扩展五个库页 tab 加 下载/查词
-  /// 两个工具 tab 是否出现在底栏/侧栏。默认全开（与旧版行为一致）；新手引导的功能
-  /// 选择与 设置 → 外观 → 功能模块 写同一真值（引导只勾库页，不勾下载/查词）。
-  /// games（Windows）与浏览器扩展（桌面）在读取端还叠加平台门控，这里只存用户意愿。
-  /// 首页/设置恒在，是全部隐藏后的安全回退面，不提供开关。
-  bool get moduleBooksEnabled =>
-      getPref('module_books_enabled', defaultValue: true) as bool;
+  /// 「功能模块」显隐：用户意愿的**唯一存储**，一个 [ModuleId] 一个键。
+  ///
+  /// 默认全开（与旧版行为一致）；新手引导的功能选择与 设置 → 外观 → 功能模块
+  /// 写同一真值。games（Windows）与浏览器扩展（桌面）的平台门控**不在这里**——
+  /// 这里只存用户意愿，平台判据统一在 [ModuleId.availableOn] 判一次，合成见
+  /// [ModuleVisibility.resolve]。首页/设置恒在，是全部关闭后的安全回退面，
+  /// 没有对应 [ModuleId]。
+  ///
+  /// 此前这里是七对手写 getter/setter（22 行/模块），加一个模块要在 prefs /
+  /// AppModel / 设置 schema / 引导 / 底栏 / macOS 侧栏各抄一遍，少抄一处就静默
+  /// 漏一处门控。现在读写都走枚举，加模块只加一个 enum 值。
+  bool moduleEnabled(ModuleId module) =>
+      getPref(module.prefKey, defaultValue: true) as bool;
 
-  Future<void> setModuleBooksEnabled(bool value) async {
-    await setPref('module_books_enabled', value);
-    notifyListeners();
-  }
-
-  bool get moduleBrowserExtensionEnabled =>
-      getPref('module_browser_extension_enabled', defaultValue: true) as bool;
-
-  Future<void> setModuleBrowserExtensionEnabled(bool value) async {
-    await setPref('module_browser_extension_enabled', value);
-    notifyListeners();
-  }
-
-  bool get moduleMangaEnabled =>
-      getPref('module_manga_enabled', defaultValue: true) as bool;
-
-  Future<void> setModuleMangaEnabled(bool value) async {
-    await setPref('module_manga_enabled', value);
-    notifyListeners();
-  }
-
-  bool get moduleVideoEnabled =>
-      getPref('module_video_enabled', defaultValue: true) as bool;
-
-  Future<void> setModuleVideoEnabled(bool value) async {
-    await setPref('module_video_enabled', value);
-    notifyListeners();
-  }
-
-  bool get moduleGamesEnabled =>
-      getPref('module_games_enabled', defaultValue: true) as bool;
-
-  Future<void> setModuleGamesEnabled(bool value) async {
-    await setPref('module_games_enabled', value);
-    notifyListeners();
-  }
-
-  bool get moduleDownloadsEnabled =>
-      getPref('module_downloads_enabled', defaultValue: true) as bool;
-
-  Future<void> setModuleDownloadsEnabled(bool value) async {
-    await setPref('module_downloads_enabled', value);
-    notifyListeners();
-  }
-
-  bool get moduleDictionariesEnabled =>
-      getPref('module_dictionaries_enabled', defaultValue: true) as bool;
-
-  Future<void> setModuleDictionariesEnabled(bool value) async {
-    await setPref('module_dictionaries_enabled', value);
+  Future<void> setModuleEnabled(ModuleId module, bool value) async {
+    await setPref(module.prefKey, value);
     notifyListeners();
   }
 
@@ -1619,6 +1602,17 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     notifyListeners();
   }
 
+  /// 小说阅读器制卡时是否给卡片追加「制卡所在字符数」标签（`chars_12345`，全书绝对
+  /// 学习字数位置，countStudyChars 口径）。默认开：这是用户点名要的标注，且只多一个
+  /// tag、不动任何既有字段。
+  bool get autoAddCharPositionToTags =>
+      getPref('auto_add_char_position_to_tags', defaultValue: true) as bool;
+
+  void toggleAutoAddCharPositionToTags() async {
+    await setPref('auto_add_char_position_to_tags', !autoAddCharPositionToTags);
+    notifyListeners();
+  }
+
   // TODO-1650 制卡图片/GIF 清晰度档（0..3，见 [MiningMediaCompression.imageTiers]）。
   // 替代旧的单一「压缩」开关。未显式设过时从旧 `compress_mining_media` 布尔迁移：
   // 开(默认)→标准档 1（= TODO-646 现状，零行为破坏）；关→高清档 2。读写都夹到 0..3，
@@ -1780,6 +1774,18 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
 
   void toggleCollapseDictionaries() async {
     await setPref('collapse_dictionaries', !collapseDictionaries);
+    notifyListeners();
+  }
+
+  // 对齐 Hoshi Reader Android 的 "Compact Glossaries"：释义列表由每条一行改成
+  // inline + ` | ` 分隔的紧凑排版（popup.js createDictionaryBlock 的 compactCss）。
+  // 渲染器早就支持 window.compactGlossaries，只是从来没有偏好写入它。默认 false =
+  // 保持现状（Android 那边默认 true，但改默认会让所有存量用户的弹窗观感突变）。
+  bool get compactGlossaries =>
+      getPref('popup_compact_glossaries', defaultValue: false) as bool;
+
+  void toggleCompactGlossaries() async {
+    await setPref('popup_compact_glossaries', !compactGlossaries);
     notifyListeners();
   }
 
@@ -2762,6 +2768,36 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
 
   Future<void> setDiscoveryDisabledSources(String value) async {
     await setPref('discovery_disabled_sources', value);
+    notifyListeners();
+  }
+
+  /// 发现页隐藏 0 做种的种子条目。**默认开**（用户 2026-09-08 拍板；调研里
+  /// 交互式 UI 的通行做法是只沉底不隐藏，记录为反对意见）。
+  bool get discoveryHideZeroSeeders =>
+      getPref('discovery_hide_zero_seeders', defaultValue: true) as bool;
+
+  Future<void> setDiscoveryHideZeroSeeders(bool value) async {
+    await setPref('discovery_hide_zero_seeders', value);
+    notifyListeners();
+  }
+
+  /// 发现页隐藏疑似漫画（只隐藏 `DiscoveryContentHint.manga` 档，undecided
+  /// 保留）。默认开。
+  bool get discoveryHideSuspectedManga =>
+      getPref('discovery_hide_suspected_manga', defaultValue: true) as bool;
+
+  Future<void> setDiscoveryHideSuspectedManga(bool value) async {
+    await setPref('discovery_hide_suspected_manga', value);
+    notifyListeners();
+  }
+
+  /// 发现页 Nyaa 过滤三态（0 全部 / 1 排除 remake / 2 仅 trusted），透传为
+  /// nyaa `f`。默认 0，与 Nyaa UI / Prowlarr / Flexget 一致。
+  int get discoveryNyaaQualityFilter =>
+      getPref('discovery_nyaa_quality_filter', defaultValue: 0) as int;
+
+  Future<void> setDiscoveryNyaaQualityFilter(int value) async {
+    await setPref('discovery_nyaa_quality_filter', value);
     notifyListeners();
   }
 

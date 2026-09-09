@@ -53,6 +53,7 @@ class _FakeSurfacePort implements GalAttachedTextSurfacePort {
     exeSha256: _sha,
     referenceClient: _client,
   );
+  Completer<GalAttachedCallResult>? inspectionCompleter;
   GalAttachedCallResult configureResult = const GalAttachedCallResult(
     status: 'ready',
     providerKind: 4,
@@ -76,6 +77,7 @@ class _FakeSurfacePort implements GalAttachedTextSurfacePort {
   GalAttachedCallResult detachResult = const GalAttachedCallResult(
     status: 'detached',
   );
+  Completer<GalAttachedCallResult>? detachCompleter;
 
   @override
   Future<GalAttachedCallResult> inspectTarget(
@@ -84,6 +86,8 @@ class _FakeSurfacePort implements GalAttachedTextSurfacePort {
   }) async {
     lastInspectLaunchExePath = launchExePath;
     calls.add('inspect');
+    final Completer<GalAttachedCallResult>? completer = inspectionCompleter;
+    if (completer != null) return completer.future;
     return inspection;
   }
 
@@ -201,6 +205,8 @@ class _FakeSurfacePort implements GalAttachedTextSurfacePort {
   @override
   Future<GalAttachedCallResult> detach(GalAttachedSurfaceTarget target) async {
     calls.add('detach');
+    final Completer<GalAttachedCallResult>? completer = detachCompleter;
+    if (completer != null) return completer.future;
     return detachResult;
   }
 }
@@ -728,6 +734,163 @@ void main() {
       expect(port.texts, isEmpty);
     },
   );
+
+  for (final String pendingStatus in <String>[
+    'shieldHandshakePending',
+    'nativeProviderPendingNeutral',
+    'detached',
+  ]) {
+    test('BUG-2154 native discovery waits for $pendingStatus', () async {
+      port.inspection = GalAttachedCallResult(
+        status: pendingStatus,
+        exePath: _exePath,
+        exeSha256: _sha,
+        referenceClient: _client,
+        providerKind: 2,
+        providerId: 3,
+        providerStatus: 1,
+        shield: const GalAttachedShieldStatus(
+          available: true,
+          statusFlags: 0x02,
+        ),
+      );
+      await sync();
+      expect(controller.status, GalAttachedTextStatus.suspended);
+      expect(controller.statusReason, pendingStatus);
+      expect(controller.needsUnsafeRiskAcceptance, isFalse);
+      expect(controller.profile, isNull);
+      expect(port.calls, <String>['inspect']);
+      expect(port.texts, isEmpty);
+    });
+  }
+
+  test(
+    'BUG-2154 Partial native activates without profile and suspends on rehandshake',
+    () async {
+      port.inspection = const GalAttachedCallResult(
+        status: 'ready',
+        exePath: _exePath,
+        exeSha256: _sha,
+        referenceClient: _client,
+        providerKind: 2,
+        providerId: 3,
+        providerStatus: 1,
+        shield: GalAttachedShieldStatus(available: true, statusFlags: 0x02),
+      );
+      await sync();
+      expect(controller.status, GalAttachedTextStatus.activeNative);
+      expect(controller.profile, isNull);
+      expect(controller.needsUnsafeRiskAcceptance, isFalse);
+      expect(port.calls, <String>['inspect']);
+
+      for (final String status in <String>['shieldHandshakePending', 'ready']) {
+        controller.handleSurfaceStateChanged(
+          GalAttachedSurfaceStateEvent(
+            target: controller.target!,
+            state: status == 'ready' ? 'targetReady' : 'suspended',
+            status: status,
+            providerKind: 2,
+            providerId: 3,
+            providerStatus: 1,
+            shield: const GalAttachedShieldStatus(
+              available: true,
+              statusFlags: 0x02,
+            ),
+          ),
+        );
+        expect(
+          controller.status,
+          status == 'ready'
+              ? GalAttachedTextStatus.activeNative
+              : GalAttachedTextStatus.suspended,
+        );
+      }
+      expect(port.texts, isEmpty);
+    },
+  );
+
+  test(
+    'BUG-2154 configure cannot activate a ready native provider before handshake',
+    () async {
+      preferences[key()] = jsonEncode(
+        _profile(mode: GalLookupSurfaceMode.auto).toJson(),
+      );
+      port.configureResult = const GalAttachedCallResult(
+        status: 'shieldHandshakePending',
+        providerKind: 2,
+        providerId: 3,
+        providerStatus: 1,
+        shield: GalAttachedShieldStatus(available: true, statusFlags: 0x02),
+      );
+      await sync();
+      expect(controller.status, GalAttachedTextStatus.suspended);
+      expect(controller.statusReason, 'shieldHandshakePending');
+      expect(port.texts, isEmpty);
+    },
+  );
+
+  test(
+    'BUG-2154 nativeOnly re-inspects after detach without attached configure',
+    () async {
+      port.inspection = const GalAttachedCallResult(
+        status: 'ready',
+        exePath: _exePath,
+        exeSha256: _sha,
+        referenceClient: _client,
+        providerKind: 2,
+        providerId: 3,
+        providerStatus: 1,
+        shield: GalAttachedShieldStatus(available: true, statusFlags: 0x02),
+      );
+      await sync();
+      expect(controller.status, GalAttachedTextStatus.activeNative);
+      port.calls.clear();
+      port.inspectionCompleter = Completer<GalAttachedCallResult>();
+      final Future<void> changing = controller.setMode(
+        GalLookupSurfaceMode.nativeOnly,
+      );
+      expect(controller.status, GalAttachedTextStatus.suspended);
+      await pumpEventQueue();
+      expect(port.calls, <String>['detach', 'inspect']);
+      expect(controller.status, GalAttachedTextStatus.suspended);
+      port.inspectionCompleter!.complete(port.inspection);
+      await changing;
+      expect(controller.status, GalAttachedTextStatus.activeNative);
+      expect(port.texts, isEmpty);
+    },
+  );
+
+  for (final GalLookupSurfaceMode firstMode in <GalLookupSurfaceMode>[
+    GalLookupSurfaceMode.nativeOnly,
+    GalLookupSurfaceMode.off,
+  ]) {
+    test('BUG-2154 auto joins pending ${firstMode.name} detach before inspect', () async {
+      port.inspection = const GalAttachedCallResult(
+        status: 'ready',
+        exePath: _exePath,
+        exeSha256: _sha,
+        referenceClient: _client,
+        providerKind: 2,
+        providerId: 3,
+        providerStatus: 1,
+        shield: GalAttachedShieldStatus(available: true, statusFlags: 0x02),
+      );
+      await sync();
+      port.calls.clear();
+      port.detachCompleter = Completer<GalAttachedCallResult>();
+      final Future<void> first = controller.setMode(firstMode);
+      final Future<void> latest = controller.setMode(GalLookupSurfaceMode.auto);
+      await pumpEventQueue();
+      expect(controller.status, GalAttachedTextStatus.suspended);
+      expect(port.calls, <String>['detach']);
+      port.detachCompleter!.complete(port.detachResult);
+      await Future.wait<void>(<Future<void>>[first, latest]);
+      expect(port.calls, <String>['detach', 'inspect']);
+      expect(controller.profile?.mode, GalLookupSurfaceMode.auto);
+      expect(controller.status, GalAttachedTextStatus.activeNative);
+      expect(port.texts, isEmpty);
+    });
+  }
 
   test('mismatched native provider kind/id pair cannot win auto', () async {
     port.inspection = const GalAttachedCallResult(

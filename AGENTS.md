@@ -6,7 +6,7 @@
 
 ## 动画刮削长期参考
 
-用户于 2026-09-07 调整为 **MAL 主资料源、TMDB 兜底，AniDB 做真实 ED2K 文件哈希识别**。MAL 通过 Jikan 只读接口获取，明确映射后才跨站绑定；不把 AniDB 原生集号未经验证套到其它站点。[`references/ShokoServer`](./references/ShokoServer) 保留为哈希、协议与缓存分层的只读参考，不参与构建。发现、字幕、资源搜索独立于刮削，发现页仍禁止 Bangumi。完整约束以 [`CLAUDE.md`](./CLAUDE.md#动画刮削参考与-provider-边界) 为准。
+用户于 2026-09-07 调整为 **MAL 主资料源、TMDB 兜底，AniDB 做真实 ED2K 文件哈希识别**；2026-09-08 起**主源用户可选**（默认仍 MAL，MAL ↔ TMDB 互为兜底，主源歧义继续问兜底源）。MAL 通过 Jikan 只读接口获取，明确映射后才跨站绑定；不把 AniDB 原生集号未经验证套到其它站点。[`references/ShokoServer`](./references/ShokoServer) 保留为哈希、协议与缓存分层的只读参考，不参与构建。发现、字幕、资源搜索独立于刮削，发现页仍禁止 Bangumi。完整约束以 [`CLAUDE.md`](./CLAUDE.md#动画刮削参考与-provider-边界) 为准。
 
 ## Galgame Windows-only 执行边界
 

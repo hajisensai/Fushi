@@ -1,6 +1,5 @@
 import 'dart:developer' as developer;
 import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
@@ -24,6 +23,8 @@ import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
+import 'package:fushi_engine/sync/manga_sync_package.dart'
+    show importMangaPackageFile, isMangaPackage;
 
 enum SyncChoice { skip, useLocal, useRemote }
 
@@ -268,7 +269,12 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
     final bool remoteHasContent = local == null
         ? (remote != null
             ? await _remoteFolderHasContent(backend, remote.id)
-            : (live?.hasContent ?? true))
+            // 互联 live 条目：host 对漫画恒 hasContent=false（那是 EPUB 内容树
+            // 判据），漫画内容走 hasMangaContent —— 只看 hasContent 会让互联漫画
+            // 在对比弹窗里连下载入口都不出现。与 _syncBooksContentLive 同判据取并。
+            : (live == null
+                ? true
+                : (live.hasContent || live.hasMangaContent)))
         : true;
 
     // 跨设备资产身份与 SyncManager 一致：sanitizeTtuFilename(title)。读共同祖先
@@ -842,11 +848,21 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
       );
       try {
         await backend.getRemoteBook(entry.remoteLiveTitle!, tmp);
-        final String localBookKey = await EpubImporter.importFromPath(
-          db: widget.db,
-          filePath: tmp.path,
-          fileName: '${entry.title}.epub',
-        );
+        // 互联 host 的书内容端点对 EPUB 与漫画共用 `.epub` 名（内容即真相），故按
+        // 内容嗅探分流——此前这里恒走 EpubImporter，从「同步对比」弹窗下载互联
+        // 漫画必然失败（书架页的下载路径早有同款嗅探，唯独这条漏了）。标题用远端
+        // raw title（bookKey 由它派生），不用本地临时文件名。
+        final String localBookKey = (await isMangaPackage(tmp))
+            ? await importMangaPackageFile(
+                db: widget.db,
+                file: tmp,
+                title: entry.remoteLiveTitle,
+              )
+            : await EpubImporter.importFromPath(
+                db: widget.db,
+                filePath: tmp.path,
+                fileName: '${entry.title}.epub',
+              );
         // 750a：EPUB 导入成功后，若该远端书带有声书则一并补下音频包（与书架
         // 互联下载同接线）。bookKeyOverride 绑定到本地刚导入 EPUB 的 bookKey。
         await _downloadLiveAudiobookFor(backend, entry, localBookKey);
@@ -1141,8 +1157,17 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
             overflowSpacing: tokens.spacing.gap,
             children: [
               TextButton(
-                onPressed: _applying ? null : () => Navigator.pop(context),
-                child: Text(t.sync_compare_close),
+                // 应用期间也保持可点：本框是 `barrierDismissible: false`，iOS 上既
+                // 没有系统返回键、对话框路由也没有侧滑返回，而 `_applyChoices` 先
+                // 抢全局同步互斥锁（后台自动云同步在跑就一直等）、拿到锁后逐本做
+                // 网络传输，全程没有取消令牌——禁用这颗按钮等于把用户锁死在框里。
+                // 由 [SyncConflictPrompter] 自动弹出的那条更严重：用户根本没主动
+                // 进来。关闭只解绑 UI，传输继续在后台跑完（下面每处 setState /
+                // Navigator.pop 都有 mounted 守卫）。
+                onPressed: () => Navigator.pop(context),
+                child: Text(
+                  _applying ? t.dialog_background_close : t.sync_compare_close,
+                ),
               ),
               if (_entries != null && _entries!.isNotEmpty)
                 FilledButton(

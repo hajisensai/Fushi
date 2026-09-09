@@ -577,6 +577,24 @@ class BookProfiles extends Table {
   Set<Column> get primaryKey => {bookKey};
 }
 
+// ── language_profiles ───────────────────────────────────────────────
+// 「这种内容语言用哪个 Profile」。与 [MediaTypeProfiles] 同构、同性质：都是
+// Profile 的自动解析绑定，只是路由键不同（语言 vs 媒体类型）。
+//
+// [languageTag] 是**归一化后**的键（`normalizeLanguageBinding`：保留 language +
+// script、丢 region，如 `ja` / `zh-Hant`），不是内容语言列里的原始 BCP-47 串。
+// 写入与查询两侧都必须过那个函数，否则用户绑了 `ja` 而书里写 `ja-JP` 会静默
+// 不生效。
+@DataClassName('LanguageProfileRow')
+class LanguageProfiles extends Table {
+  TextColumn get languageTag => text()();
+  IntColumn get profileId =>
+      integer().references(Profiles, #id, onDelete: KeyAction.cascade)();
+
+  @override
+  Set<Column> get primaryKey => {languageTag};
+}
+
 // ── sync_baselines ──────────────────────────────────────────────────
 // 每本书每个同步维度「上次同步成功时双方一致的版本」（共同祖先），
 // 用于三方分叉检测。assetKey = sanitizeTtuFilename(book.title)（跨设备稳定）。
@@ -1571,6 +1589,12 @@ class VideoMetadataWorks extends Table {
 
   /// TMDB 电视剧分组规则；NULL = 使用源默认季集编排。
   TextColumn get episodeGroupId => text().nullable()();
+
+  /// v99 字段锁（对标 Jellyfin `LockedFields`）：逗号分隔的可锁字段名集合，
+  /// 例如 `title,overview,cover`。NULL / 空 = 无锁。用户手改过的字段进这里，
+  /// 下一次刮削一律保留旧值。值域由 `VideoMetadataLockableField` 维护，未知值
+  /// 静默忽略以保持前向兼容（新版本加的锁在旧版本里只是不生效，不会炸库）。
+  TextColumn get lockedFields => text().nullable()();
   IntColumn get updatedAt => integer()();
 
   @override
@@ -1913,6 +1937,11 @@ class VideoSourceScrapeSettings extends Table {
 
   /// NULL = 继承全局默认；非空 = tmdb / douban / bangumi / anilist。
   TextColumn get providerOverride => text().nullable()();
+
+  /// v99 来源级资料语言覆盖（对标 Jellyfin `LibraryOptions
+  /// .PreferredMetadataLanguage` / Kodi 的 per-path 设置）：BCP-47 语言标签，
+  /// NULL / 空白 = 跟随全局 `video_metadata_locale`。
+  TextColumn get metadataLocale => text().nullable()();
   BoolColumn get autoAfterScan =>
       boolean().withDefault(const Constant(false))();
   BoolColumn get writeNfo => boolean().withDefault(const Constant(true))();

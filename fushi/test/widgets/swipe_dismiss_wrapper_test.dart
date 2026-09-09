@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
 
 void main() {
@@ -401,6 +402,73 @@ void main() {
       expect(highFired, isTrue);
       expect(lowFired, isFalse);
       expect(highFired, isNot(equals(lowFired)));
+    });
+  });
+  // 墨水屏模式：松手后的滑出/弹回补间必须归零（慢刷新屏上 200ms 位移+淡出 = 灰阶残影，
+  // 与弹窗正文 _BodySwipeDismissDetector 的既有 eink 处理同款）。判别力靠「只 pump 一帧」：
+  // 补间还在时该帧不可能 dismiss，归零后当帧就 dismiss。
+  group('SwipeDismissWrapper eink 取消滑关补间', () {
+    Widget buildEinkApp({required bool eink, required VoidCallback onDismiss}) {
+      return MaterialApp(
+        theme: ThemeData(
+          extensions: <ThemeExtension<dynamic>>[FushiEinkTheme(eink)],
+        ),
+        home: Scaffold(
+          body: SwipeDismissWrapper(
+            onDismiss: onDismiss,
+            child: const SizedBox(
+              width: 300,
+              height: 100,
+              child: ColoredBox(color: Colors.blue),
+            ),
+          ),
+        ),
+      );
+    }
+
+    /// 过阈值横拖后松手，只 pump **一帧**，回报此刻是否已 dismiss。
+    Future<bool> dragAndPumpOneFrame(
+      WidgetTester tester, {
+      required bool eink,
+    }) async {
+      bool dismissed = false;
+      await tester.pumpWidget(
+        buildEinkApp(eink: eink, onDismiss: () => dismissed = true),
+      );
+      final Offset center = tester.getCenter(find.byType(SizedBox).first);
+      final TestGesture gesture = await tester.startGesture(center);
+      await gesture.moveBy(const Offset(200, 0));
+      await gesture.up();
+      await tester.pump();
+      return dismissed;
+    }
+
+    testWidgets('非 eink：松手当帧仍在补间，尚未 onDismiss', (WidgetTester tester) async {
+      expect(await dragAndPumpOneFrame(tester, eink: false), isFalse);
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('eink：补间归零，松手当帧即 onDismiss', (WidgetTester tester) async {
+      expect(await dragAndPumpOneFrame(tester, eink: true), isTrue);
+    });
+
+    testWidgets('eink 未过阈值：弹回同样不留补间，且不误关', (WidgetTester tester) async {
+      bool dismissed = false;
+      await tester.pumpWidget(
+        buildEinkApp(eink: true, onDismiss: () => dismissed = true),
+      );
+      final Offset center = tester.getCenter(find.byType(SizedBox).first);
+      final TestGesture gesture = await tester.startGesture(center);
+      await gesture.moveBy(const Offset(60, 0));
+      await gesture.up();
+      await tester.pump();
+
+      expect(dismissed, isFalse);
+      // 补间归零 ⇒ 已回到原位，没有任何待跑的帧（pumpAndSettle 不会再推进动画）。
+      final Transform transform = tester.widget<Transform>(
+        find.byType(Transform).first,
+      );
+      expect(transform.transform.getTranslation().x, 0);
     });
   });
 }

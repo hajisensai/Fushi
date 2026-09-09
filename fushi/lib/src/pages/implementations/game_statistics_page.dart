@@ -10,9 +10,11 @@ import 'package:fushi/src/pages/implementations/game_stat_aggregates.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_period_detail_sheet.dart';
+import 'package:fushi/src/pages/implementations/stat_session_list.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/src/stats/stat_window.dart';
+import 'package:fushi_engine/stats/study_sessions.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -44,6 +46,10 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
   /// 段 + legacy hook 字数行）：时段明细 sheet 的数据源（阶段 1——本页此前只按
   /// 天总量聚合，出不了 per-game 明细）。
   List<StatFact> _gameFacts = <StatFact>[];
+
+  /// 游戏域会话流（`StatFacts.sessions` 的游戏切片：galgame_sessions 骨架 + 吸收的
+  /// hook 字数段，按结束时刻倒序）。
+  List<StudySession> _sessions = <StudySession>[];
 
   /// 库内游戏（明细行显示名 + 点击进详情用）。
   List<GalgameEntry> _games = <GalgameEntry>[];
@@ -101,6 +107,7 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
       // （legacy hook 字数行 + galgame_sessions 段都在里面归一）。
       final StatFacts facts = await loadStatFacts(db, activityLimit: 0);
       _gameFacts = facts.dailyGames.toList();
+      _sessions = facts.sessions.where((StudySession s) => s.isGame).toList();
       _games = games;
       _collectionNamesById = <int, String>{
         for (final MediaCollectionRow c in await db.getAllMediaCollections())
@@ -155,6 +162,14 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
         SliverToBoxAdapter(child: _buildSummaryCards()),
         SliverToBoxAdapter(
           child: buildStatDailyDurationChartSection(context, _aggregate.daily),
+        ),
+        SliverToBoxAdapter(
+          child: buildStatSessionSection(
+            context,
+            sessions: _sessions,
+            titleOf: _sessionTitle,
+            onDelete: _deleteSession,
+          ),
         ),
         SliverToBoxAdapter(
           child: Padding(
@@ -279,61 +294,19 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
     if (deleted && mounted) await _load();
   }
 
+  /// 「按游戏」一行：三域共用的 [buildStatMediaRow]（本行就是它的原型）。
   Widget _buildGameRow(GalgameEntry game) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ColorScheme colors = Theme.of(context).colorScheme;
     final String lastPlayed = game.lastPlayedMs <= 0
         ? '-'
         : statDateKey(DateTime.fromMillisecondsSinceEpoch(game.lastPlayedMs));
-    return Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: tokens.spacing.card,
-        vertical: tokens.spacing.gap / 2,
-      ),
-      child: FushiCard(
-        onTap: () => _openGame(game),
-        child: Row(
-          children: <Widget>[
-            Icon(Icons.sports_esports_outlined, color: colors.primary),
-            SizedBox(width: tokens.spacing.gap),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    game.displayName,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodyLarge,
-                  ),
-                  SizedBox(height: tokens.spacing.gap / 2),
-                  Text(
-                    '${t.game_stat_sessions}: ${game.sessionCount} · '
-                    '${t.game_stat_last_played}: $lastPlayed',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: tokens.type.metadata.copyWith(
-                      color: colors.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            SizedBox(width: tokens.spacing.gap),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 120),
-              child: Text(
-                formatStatTime(game.totalPlaySeconds * 1000),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-            ),
-            SizedBox(width: tokens.spacing.gap / 2),
-            Icon(Icons.chevron_right, color: colors.onSurfaceVariant),
-          ],
-        ),
-      ),
+    return buildStatMediaRow(
+      context,
+      icon: Icons.sports_esports_outlined,
+      title: game.displayName,
+      meta: '${t.game_stat_sessions}: ${game.sessionCount} · '
+          '${t.game_stat_last_played}: $lastPlayed',
+      trailing: formatStatTime(game.totalPlaySeconds * 1000),
+      onTap: () => unawaited(_openGame(game)),
     );
   }
 
@@ -344,6 +317,22 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
             GalgameDetailPage(gameId: game.id, initialTab: 0),
       ),
     );
+    if (mounted) await _load();
+  }
+
+  /// 会话行展示名：库内显示名优先（与时段明细同判据），游戏已删则退回段 title 快照。
+  String _sessionTitle(StudySession s) {
+    final GalgameEntry? entry = findGalgameForActivity(
+      _games,
+      mediaKey: s.mediaKey,
+      title: s.title,
+    );
+    return displayTitleForGame(entry: entry, rawTitle: s.title);
+  }
+
+  /// 删一次会话：galgame_sessions 骨架行硬删 + 吸收的字数段写零（同一事务），再重聚合。
+  Future<void> _deleteSession(StudySession s) async {
+    await deleteStudySession(appModelNoUpdate.database, s);
     if (mounted) await _load();
   }
 

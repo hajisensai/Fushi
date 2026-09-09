@@ -3,7 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:dynamic_color/dynamic_color.dart';
-import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
+import 'package:flutter/cupertino.dart'
+    show CupertinoPageTransitionsBuilder, CupertinoRouteTransitionMixin;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -312,6 +313,42 @@ class EinkNoPageTransitionsBuilder extends PageTransitionsBuilder {
     Widget child,
   ) {
     return child;
+  }
+}
+
+/// E-ink route transition for the platforms whose *only* way back out of a
+/// pushed page is the Cupertino edge-swipe gesture (iOS has no system back
+/// button, and `isCupertinoPlatform` is false under the default `auto` design
+/// system, so every page there is a plain [MaterialPageRoute] whose gesture
+/// comes solely from this [PageTransitionsTheme] entry).
+///
+/// [EinkNoPageTransitionsBuilder] returns `child` verbatim, which never
+/// installs Flutter's back-gesture detector — turning on e-ink mode therefore
+/// used to strip swipe-back from the whole app on iOS/macOS, stranding users on
+/// any page whose chrome is hidden. This builder keeps the detector by
+/// delegating to [CupertinoRouteTransitionMixin.buildPageTransitions], and
+/// still refreshes the panel exactly once by feeding it settled animations
+/// whenever no drag is in flight: pages swap in a single frame as before, and
+/// only a real finger drag gets the live, finger-following animation.
+class EinkCupertinoPageTransitionsBuilder extends PageTransitionsBuilder {
+  const EinkCupertinoPageTransitionsBuilder();
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    final bool dragging = route.popGestureInProgress;
+    return CupertinoRouteTransitionMixin.buildPageTransitions<T>(
+      route,
+      context,
+      dragging ? animation : kAlwaysCompleteAnimation,
+      dragging ? secondaryAnimation : kAlwaysDismissedAnimation,
+      child,
+    );
   }
 }
 
@@ -1191,8 +1228,11 @@ class ThemeNotifier extends ChangeNotifier {
           ? const PageTransitionsTheme(
               builders: <TargetPlatform, PageTransitionsBuilder>{
                 TargetPlatform.android: EinkNoPageTransitionsBuilder(),
-                TargetPlatform.iOS: EinkNoPageTransitionsBuilder(),
-                TargetPlatform.macOS: EinkNoPageTransitionsBuilder(),
+                // iOS/macOS 不能用零转场：它们的返回手势由这份 builder 装载，
+                // 直接 `return child` 等于把侧滑返回从整个 app 拆掉（iOS 又没有
+                // 系统返回键），隐藏顶栏的页面就此退不出去。
+                TargetPlatform.iOS: EinkCupertinoPageTransitionsBuilder(),
+                TargetPlatform.macOS: EinkCupertinoPageTransitionsBuilder(),
                 TargetPlatform.windows: EinkNoPageTransitionsBuilder(),
                 TargetPlatform.linux: EinkNoPageTransitionsBuilder(),
                 TargetPlatform.fuchsia: EinkNoPageTransitionsBuilder(),
@@ -1328,12 +1368,65 @@ class ThemeNotifier extends ChangeNotifier {
           borderRadius: FushiBorderRadius.control,
         ),
       ),
+      // E-ink：M3 只用 `secondaryContainer` 填充表达选中段，而墨水屏方案把它
+      // 塌缩成了页面底色——选中段与相邻段逐像素相同，全仓调用点又一律
+      // `showSelectedIcon: false`，连勾选形状这条兜底都没有。`side` 由整条按钮
+      // 的 states 解析（Flutter 的 `segmentStyleFor` 不把 side 下发到分段），
+      // 做不出按段差异；反色填充是剩下唯一的通道，也是上游 HSA 的做法——它的
+      // eink scheme 直接把 `secondaryContainer` 定义成前景色。失效态返回 null
+      // 交回 M3 默认，不动既有的失效观感。填充/前景都不改几何，不影响分段条
+      // 的宽度估算与 overflow 守卫。
+      segmentedButtonTheme: eink
+          ? SegmentedButtonThemeData(
+              style: ButtonStyle(
+                backgroundColor: WidgetStateProperty.resolveWith<Color?>((
+                  Set<WidgetState> states,
+                ) {
+                  if (states.contains(WidgetState.disabled)) return null;
+                  return states.contains(WidgetState.selected)
+                      ? cs.onSurface
+                      : cs.surface;
+                }),
+                foregroundColor: WidgetStateProperty.resolveWith<Color?>((
+                  Set<WidgetState> states,
+                ) {
+                  if (states.contains(WidgetState.disabled)) return null;
+                  return states.contains(WidgetState.selected)
+                      ? cs.surface
+                      : cs.onSurface;
+                }),
+                iconColor: WidgetStateProperty.resolveWith<Color?>((
+                  Set<WidgetState> states,
+                ) {
+                  if (states.contains(WidgetState.disabled)) return null;
+                  return states.contains(WidgetState.selected)
+                      ? cs.surface
+                      : cs.onSurface;
+                }),
+              ),
+            )
+          : const SegmentedButtonThemeData(),
       chipTheme: ChipThemeData(
         shape: RoundedRectangleBorder(
           borderRadius: FushiBorderRadius.chip,
         ),
         side: BorderSide(color: cs.outlineVariant),
-        selectedColor: cs.secondaryContainer,
+        // E-ink：同一个塌缩——`secondaryContainer` 等于页面底色，`showCheckmark`
+        // 又关掉了 M3 唯一的形状信号，选中与未选中的 chip 逐像素相同（字体库那
+        // 排「用途」FilterChip 就栽在这）。反色填充 + 配对 label 色补回信号；
+        // labelStyle 必须从 `labelLarge` 派生，直接给裸 TextStyle 会把 chip 的
+        // 字号字族一起替换掉。
+        selectedColor: eink ? cs.onSurface : cs.secondaryContainer,
+        labelStyle: eink
+            ? (tt.labelLarge ?? const TextStyle()).copyWith(
+                color: WidgetStateColor.resolveWith(
+                  (Set<WidgetState> states) =>
+                      states.contains(WidgetState.selected)
+                          ? cs.surface
+                          : cs.onSurface,
+                ),
+              )
+            : null,
         showCheckmark: false,
       ),
       filledButtonTheme: FilledButtonThemeData(

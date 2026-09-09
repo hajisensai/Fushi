@@ -9,7 +9,7 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as path;
@@ -36,6 +36,7 @@ import 'package:fushi/src/storage/sandbox_relocation.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/error_details_dialog.dart';
 import 'package:fushi/src/utils/misc/lookup_input_limits.dart';
+import 'package:fushi/src/utils/net/app_network_bindings.dart';
 import 'package:fushi/src/media/drag_drop/desktop_drop_reinitializer.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
@@ -179,6 +180,9 @@ import 'package:fushi/src/mining/youtube_clip_miner.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/manga_sync_package.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
+import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/settings/settings_schema.dart'
+    show resetSettingsSchemaCache;
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/sync/texthooker_ws_client_manager.dart';
 import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart'
@@ -1192,9 +1196,9 @@ class AppModel with ChangeNotifier {
   }
 
   /// Used for caching images and audio produced from media seeds.
-  DefaultCacheManager get cacheManager =>
-      _cacheManager ??= DefaultCacheManager();
-  DefaultCacheManager? _cacheManager;
+  AppImageCacheManager get cacheManager =>
+      _cacheManager ??= AppImageCacheManager();
+  AppImageCacheManager? _cacheManager;
 
   /// Used to notify dictionary widgets to dictionary history additions.
   final ChangeNotifier dictionaryEntriesNotifier = ChangeNotifier();
@@ -2581,31 +2585,9 @@ class AppModel with ChangeNotifier {
       // 那一刻），这样弹窗词典等**其它**入口不必各自记得补一行——漏一处就是一整个进程
       // 拿不到用户选的模式/凭据。这里只留更新专用的那个。
       appUpdateDownloadSourceReader = () => prefsRepo.updateDownloadSource;
-      // BUG-1493：词典包与 index.json 全托管在 github / raw.githubusercontent /
-      // huggingface 上，而 fushi_dictionary 用的是裸 Dio——`findProxy` 为 null，既不读
-      // HTTP_PROXY 也不读系统代理，于是「浏览器秒开 GitHub、app 里下 30MB 词典却像卡
-      // 死」。fushi_dictionary 是下游包，反向 import 不了 applyAppProxy，故在这里把它
-      // 接进包内的进程级钩子。未接线时钩子是 no-op，行为与接线前逐字等价。
-      installDictionaryDioFactory();
-      // BUG-2188：同一个装配方向，把「一个地址 → 原址 + GitHub 公共镜像」的候选展开
-      // 也接进包内钩子。镜像清单的唯一真相源在 utils/net/github_mirrors.dart，
-      // fushi_dictionary 反向 import 不了它。
-      installDictionaryUrlCandidatesResolver();
-      // BUG-1498：把「平台 GUI 系统代理探测」这一步异步工作提前做掉并缓存，之后
-      // `createAppHttpIoClient()` / `createAppDio()` 就能在构造函数初始化列表里**同步**
-      // 装配出口——那正是全仓 40+ 条裸出站接不上代理层的结构性原因（初始化列表不能
-      // await）。不 await 它：prime 只影响「GUI 系统代理」那一格，没 prime 前解析退化成
-      // `env > DIRECT`，仍不比接线前差，没必要为它拖慢启动。
-      // 系统代理解析完后再下发一次 P2P 代理：宿主可能已经建好、而当时缓存
-      // 还是空的（只有 env/手填能命中）。
-      unawaited(primeAppProxy().then((_) => _applyEmbeddedTorrentProxy()));
-      // BUG-1498：远程发音（Forvo / 词典音频源等公网 URL）的抓取住在 fushi_anki 包里，
-      // 同样反向 import 不了 applyAppProxy。只接**远程媒体**这一条，AnkiConnect 自身
-      // （localhost:8765，也可能是局域网另一台机）绝不经过它。
-      installAnkiRemoteMediaHttpClientFactory();
-      // 「代装 AnkiConnect」从 ankiweb.net 下插件包，同样是公网出站、同样住在
-      // fushi_anki 包里。与上面一条彼此独立：一个抓发音，一个下插件。
-      installAnkiAddonDownloadHttpClientFactory();
+      // 主入口与精简词典入口共用装配，并等系统代理就绪后再启动网络服务。
+      await installAppNetworkBindings();
+      _applyEmbeddedTorrentProxy();
       _applyMemoryPolicy();
       // BUG-1647：lazy getter 可能已提前建过实例；替换前先取消其重试定时器，
       // 否则旧定时器会拿着旧 repository 继续同步。
@@ -2709,7 +2691,7 @@ class AppModel with ChangeNotifier {
         JapaneseLanguage.instance.initialise(),
         injectAssetLicenses(),
         _seedBuiltInTags(),
-        _localAudioManager.bindForNativeHandler(clearMissingPath: true),
+        _prepareLocalAudioForPlayback(),
       ]);
 
       debugPrint(
@@ -2802,6 +2784,9 @@ class AppModel with ChangeNotifier {
       // TODO-855: prime the prefs-version watermark from the freshly loaded
       // cache (keeps refreshPrefCacheIfChanged consistent if ever reused here).
       _lastSeenPrefsVersion = prefsRepo.prefsVersion;
+      // 刻意**不加模块门**：这只是给 native 悬浮词典窗注册「查词 / 制卡」回调，
+      // 是 app 外取词**能力**而不是查词页入口。用户拍板「关 lookup 只关页面入口，
+      // 查词能力全留」，注销回调会让已开着的悬浮窗查不出词、按钮静默失败。
       _setupFloatingDictHandlers();
       // 已迁移只读态（Fushi 迁移 P1-4）：不再自启互联服务——两版并存时端口
       // 固定必冲突（SyncServerPortInUseException 会打到用户脸上）；老版只保
@@ -2810,33 +2795,50 @@ class AppModel with ChangeNotifier {
         notifyListeners();
         return;
       }
+      // 「功能模块」后台自启门（模块被关 = 它专属的后台**下次启动不再拉起**）。
+      //
+      // 快照只取一次：[moduleVisibility] 每次读都重新合成一个 Set，而下面这一串
+      // 是同一帧里的连续判定，取一次既省分配也保证这一批门读的是同一份真值。
+      //
+      // 刻意**只判启动、不 stop**：用户在会话中途关模块时不切断进行中的任务
+      // （正在跑的同步/下载/做种照常跑完），下次启动才不再拉起。
+      final ModuleVisibility modules = moduleVisibility;
       // Start the LAN sync server now if hosting is enabled, so it runs app-wide
       // for the whole session instead of only while the sync settings page is on
       // screen (BUG-085). Fire-and-forget: a bind failure self-disables + is
       // logged and must never break app init.
-      unawaited(syncServerController.startIfEnabled().then((
-        FushiServerStartOutcome outcome,
-      ) {
-        if (outcome is FushiServerPortInUse) {
-          ErrorLogService.instance.log(
-            'AppModel.startSyncServer',
-            'port ${outcome.port} in use',
-            StackTrace.current,
-          );
-        } else if (outcome is FushiServerStartError) {
-          ErrorLogService.instance.log(
-            'AppModel.startSyncServer',
-            outcome.message,
-            StackTrace.current,
-          );
-        }
-      }).catchError((Object e, StackTrace s) {
-        ErrorLogService.instance.log('AppModel.startSyncServer', e, s);
-      }));
-      // 合集变更 → 防抖轻量同步（根修「合集经常没同步」：合集维度原本只搭载在
-      // 低频全量 sweep 上，增删合集后长时间不推送）。任何合集表写入都会在防抖
-      // 后跑一轮只含合集维度的双通道同步，见 installCollectionsSyncWatcher 文档。
-      installCollectionsSyncWatcher(db: database);
+      // 模块门（sync）：这两条都是「同步与备份 + 互联」专属后台——服务器要绑端口
+      // 起发现广播，监听器要挂 DB 订阅并按写入推同步。关掉 sync 模块后不再自启，
+      // 代价是本机不再作为互联 host 被别的设备发现/连接，合集增删也不再自动推送。
+      if (modules.isEnabled(ModuleId.sync)) {
+        unawaited(syncServerController.startIfEnabled().then((
+          FushiServerStartOutcome outcome,
+        ) {
+          if (outcome is FushiServerPortInUse) {
+            ErrorLogService.instance.log(
+              'AppModel.startSyncServer',
+              'port ${outcome.port} in use',
+              StackTrace.current,
+            );
+          } else if (outcome is FushiServerStartError) {
+            ErrorLogService.instance.log(
+              'AppModel.startSyncServer',
+              outcome.message,
+              StackTrace.current,
+            );
+          }
+        }).catchError((Object e, StackTrace s) {
+          ErrorLogService.instance.log('AppModel.startSyncServer', e, s);
+        }));
+        // 合集变更 → 防抖轻量同步（根修「合集经常没同步」：合集维度原本只搭载在
+        // 低频全量 sweep 上，增删合集后长时间不推送）。任何合集表写入都会在防抖
+        // 后跑一轮只含合集维度的双通道同步，见 installCollectionsSyncWatcher 文档。
+        installCollectionsSyncWatcher(db: database);
+      }
+      // 刻意**不加模块门**：它是「让任意 yomitan-api 客户端查 Fushi 词典」的查词
+      // 能力（端口 19633），开关落在恒在的「设置 → 查词」分类里，且移动端同样可用
+      // （browserExtension 模块仅桌面存在）。挂 browserExtension 门会一次犯两个错：
+      // 移动端直接失去该服务，桌面端则开关显示「开」而服务不跑。
       if (yomitanApiServerEnabled) {
         // fail-open：自启动失败绝不阻塞 init、不改开关语义，但必须留痕（BUG-911），
         // 与邻居 startSyncServer / refreshBrowserExtensionCopy 一致记日志，避免静默吞异常。
@@ -2849,11 +2851,21 @@ class AppModel with ChangeNotifier {
       // （只在用户装过扩展、指纹不一致时重解压；没装过不落盘）。此前该副本只在手动跑
       // 「安装扩展」助手时写入 → app 升级后磁盘副本永远停在安装当天的旧版，扩展弹窗与
       // app 内弹窗漂移（BUG-621/688 修了也到不了用户浏览器）。fire-and-forget 不阻塞 init。
-      unawaited(
-          refreshBrowserExtensionCopy().catchError((Object e, StackTrace s) {
-        ErrorLogService.instance
-            .log('AppModel.refreshBrowserExtensionCopy', e, s);
-      }));
+      // 模块门（browserExtension）：这份磁盘副本只服务「浏览器扩展」管理页的安装
+      // 助手，模块关掉后那个页面本身也不存在。关掉后不再刷新副本，也不再算内置指纹
+      // （查词响应里的 `extensionBuild` 字段随之省略——扩展模块已关，没有消费者）。
+      // 平台判据走 modules（browserExtension 仅桌面），与函数内既有的桌面早退同向。
+      if (modules.isEnabled(ModuleId.browserExtension)) {
+        unawaited(
+            refreshBrowserExtensionCopy().catchError((Object e, StackTrace s) {
+          ErrorLogService.instance
+              .log('AppModel.refreshBrowserExtensionCopy', e, s);
+        }));
+      }
+      // 刻意**不加模块门**：texthooker 是「连 Textractor / mpv / agent，把收到的
+      // 文本拿去查词」的查词能力（不只 galgame），开关同样落在恒在的「设置 → 查词」
+      // 分类里，且那个开关自己就直接 start/stop 本管理器——只在启动侧加门会让
+      // 「开关是开的但重启后不连」，两处判据当场漂开。
       if (texthookerEnabled) {
         TexthookerWsClientManager.instance.start(texthookerUrls);
       }
@@ -2866,11 +2878,19 @@ class AppModel with ChangeNotifier {
       }));
       // 番剧下载：启动 qb 完成监听 + 自动入库（fire-and-forget；未配置 qb 时每
       // tick 直接返回，无网络开销，绝不阻塞/中断 init）。
-      unawaited(
-          startAnimeDownloadService().catchError((Object e, StackTrace s) {
-        ErrorLogService.instance
-            .log('AppModel.startAnimeDownloadService', e, s);
-      }));
+      // 模块门（downloads）：番剧下载完成监听是「下载中心」专属后台（计划仓储 +
+      // 完成轮询 + 自动入库）。关掉 downloads 后不再自启，代价是已推给 qb / 内置引擎
+      // 的种子下完后不会被自动识别入库（种子本身照常下完，重开模块后下一 tick 补上）。
+      //
+      // 门只加在调用点：[startAnimeDownloadService] 函数体内部顺序敏感（懒建 session、
+      // resume 剪枝哨兵），守卫测试按源码顺序扫它，绝不能把判断插进函数中段。
+      if (modules.isEnabled(ModuleId.downloads)) {
+        unawaited(
+            startAnimeDownloadService().catchError((Object e, StackTrace s) {
+          ErrorLogService.instance
+              .log('AppModel.startAnimeDownloadService', e, s);
+        }));
+      }
       // 推荐包（9.5 GB zip）的包目录进场收尾：删掉「已导入」的残包、搬改名前的旧
       // 半截文件，再把下载阶段对齐磁盘。
       //
@@ -2944,7 +2964,7 @@ class AppModel with ChangeNotifier {
       // mutated a preference / switched profile since the last lookup; a cheap
       // single-row DB version read gates it.
       await refreshPrefCacheIfChanged();
-      await _localAudioManager.bindForNativeHandler();
+      await _prepareLocalAudioForPlayback();
       return;
     }
     try {
@@ -2964,6 +2984,7 @@ class AppModel with ChangeNotifier {
 
       _prefsRepo = PreferencesRepository(_database);
       await prefsRepo.loadFromDb();
+      await installAppNetworkBindings();
       _applyStatDayResetHour();
       prefsRepo.addListener(notifyListeners);
       // BUG-1647：同主进程路径，替换前取消旧实例可能挂起的重试定时器。
@@ -3021,7 +3042,7 @@ class AppModel with ChangeNotifier {
         exportDirectory: _exportDirectory,
         alternateExportDirectory: _alternateExportDirectory,
       );
-      await _localAudioManager.bindForNativeHandler();
+      await _prepareLocalAudioForPlayback();
 
       populateLanguages();
       populateLocales();
@@ -3287,6 +3308,15 @@ class AppModel with ChangeNotifier {
       // content.js fushiRender 读它设 window.__fushiPopupWheelSpeed（与 in-app 注入同名
       // 全局），popup.js 的 wheel factor 乘它。走 theme 通道与 --fushi-swipe-close 同法。
       '--fushi-wheel-speed': popupWheelSpeed.toStringAsFixed(3),
+      // BUG-2284：墨水屏「瞬时滚动」下发给扩展 content.js（非 CSS 变量、仅 JS 消费）。
+      // content.js fushiRender 读它设 window.__fushiPopupInstantScroll（与 in-app 注入
+      // 同名全局），popup.js 的 wheel 监听据此改走固定步长瞬跳。值 '1'/'0'。
+      '--fushi-instant-scroll': popupInstantScroll ? '1' : '0',
+      // BUG-2397：「音调去重」下发给扩展 content.js（非 CSS 变量、仅 JS 消费）。扩展弹窗
+      // 与 in-app 弹窗跑同一份 popup.js，而它的去重分支读 `window.deduplicatePitchAccents`：
+      // in-app 由 popup_settings_injection 注入，扩展侧此前没有任何赋值路径，恒 undefined
+      // → 浏览器里的音调去重永远是关的。走 theme 通道与 --fushi-instant-scroll 同法。
+      '--fushi-dedup-pitch': deduplicatePitchAccents ? '1' : '0',
     };
   }
 
@@ -3784,7 +3814,16 @@ class AppModel with ChangeNotifier {
   }
 
   /// qBittorrent WebUI 连接配置（番剧下载）；null = 未配置未启用。
-  QbConnectionConfig? get qbConnectionConfig => prefsRepo.qbConnectionConfig;
+  ///
+  /// prefs 还没接上时返回 null 而不是让 [prefsRepo] 的 `!` 抛：本 getter 的契约本来
+  /// 就是「null = 未配置」，而「还没读到偏好」正是未配置的一种。判据必须放在这一层
+  /// 而不是调用方（如 `torrentBackendReady`）——**覆盖了本 getter 的子类根本不经
+  /// prefs**，在调用方判会把它们一起误判成未就绪（实测打翻 6 条下载弹窗用例）。
+  ///
+  /// 起因：下载弹窗的批量多选把 `torrentBackendReady` 拉上了 **build 路径**（每个
+  /// 任务条目算一次 pauseCapable），build 里抛异常等于整块界面炸掉。
+  QbConnectionConfig? get qbConnectionConfig =>
+      isPreferencesReady ? prefsRepo.qbConnectionConfig : null;
 
   Future<void> setQbConnectionConfig(QbConnectionConfig? config) async {
     await prefsRepo.setQbConnectionConfig(config);
@@ -4473,6 +4512,8 @@ class AppModel with ChangeNotifier {
         prefsRepo,
         resolvedTmdbApiKey: resolveTmdbApiKey(configuredTmdbKey),
       ),
+      // 下载导入后的刮削同样走离线标题索引 + Fribb id 接力（默认关是为了单测不联网）。
+      enableOfflineTitleIndex: true,
       // 刮削完成 → 给仍缺字幕的视频补字幕。刮削是全仓唯一解析出规范身份
       // （AniDB 主身份 + TMDB/AniList crossref + 原名）的地方，而字幕准确率几乎完全取决于身份准不准
       // ——不接这一刀，播放页只能拿文件名里的中文译名去 AniList 现猜。
@@ -4730,6 +4771,11 @@ class AppModel with ChangeNotifier {
           DiscoveryMediaKind.audiobook: '2_0',
         },
         client: NyaaClient(),
+        // 每次请求按当前偏好取：源实例常驻，偏好可随时改。偏好未就绪
+        // （早一帧打开发现页）时用默认「全部」。
+        qualityFilter: () => NyaaQualityFilter.fromIndex(
+          isPreferencesReady ? prefsRepo.discoveryNyaaQualityFilter : 0,
+        ),
       ),
       NyaaDiscoverySource(
         id: 'sukebei',
@@ -6441,28 +6487,38 @@ class AppModel with ChangeNotifier {
   Future<void> setOnboardingCompleted({required bool value}) =>
       prefsRepo.setOnboardingCompleted(value: value);
 
-  bool get moduleBooksEnabled => prefsRepo.moduleBooksEnabled;
-  Future<void> setModuleBooksEnabled(bool value) =>
-      prefsRepo.setModuleBooksEnabled(value);
-  bool get moduleBrowserExtensionEnabled =>
-      prefsRepo.moduleBrowserExtensionEnabled;
-  Future<void> setModuleBrowserExtensionEnabled(bool value) =>
-      prefsRepo.setModuleBrowserExtensionEnabled(value);
-  bool get moduleMangaEnabled => prefsRepo.moduleMangaEnabled;
-  Future<void> setModuleMangaEnabled(bool value) =>
-      prefsRepo.setModuleMangaEnabled(value);
-  bool get moduleVideoEnabled => prefsRepo.moduleVideoEnabled;
-  Future<void> setModuleVideoEnabled(bool value) =>
-      prefsRepo.setModuleVideoEnabled(value);
-  bool get moduleGamesEnabled => prefsRepo.moduleGamesEnabled;
-  Future<void> setModuleGamesEnabled(bool value) =>
-      prefsRepo.setModuleGamesEnabled(value);
-  bool get moduleDownloadsEnabled => prefsRepo.moduleDownloadsEnabled;
-  Future<void> setModuleDownloadsEnabled(bool value) =>
-      prefsRepo.setModuleDownloadsEnabled(value);
-  bool get moduleDictionariesEnabled => prefsRepo.moduleDictionariesEnabled;
-  Future<void> setModuleDictionariesEnabled(bool value) =>
-      prefsRepo.setModuleDictionariesEnabled(value);
+  /// 「功能模块」用户意愿的读写。**平台判据不在这里**——见 [moduleVisibility]。
+  ///
+  /// 偏好仓库还没装配好时**一律判开**（fail-open）。模块门控读得比 `initialise()`
+  /// 早：设置 schema 的 `visible` 谓词同时喂渲染与搜索索引，展平索引这条路径在弹窗
+  /// 词典入口与纯 widget 测试里都会撞上一个未初始化的 AppModel。裸 `prefsRepo!` 会
+  /// 在那里抛 null check——而「读不到用户意愿」的安全方向是全都显示，不是把整个设置
+  /// 页藏掉（与 module_registry 里「漏写映射默认恒在」同一个方向）。
+  bool moduleEnabled(ModuleId module) =>
+      isPreferencesReady ? prefsRepo.moduleEnabled(module) : true;
+
+  Future<void> setModuleEnabled(ModuleId module, bool value) async {
+    await prefsRepo.setModuleEnabled(module, value);
+    // 设置 schema 树按 locale 记忆化，两张投影表（阅读器/视频快捷面板）也惰性缓存。
+    // 模块可见性会改变这些树的过滤结果，故翻转开关必须丢弃快照，否则快捷面板会
+    // 继续发已被关掉模块的设置项（settings_schema.dart 的 `_SettingsSchemaCache`）。
+    resetSettingsSchemaCache();
+    notifyListeners();
+  }
+
+  /// 「此刻哪些模块可见」——pref 真值与平台判据的**唯一合成**。
+  ///
+  /// 全 app 的门控一律读它。此前底栏与 macOS 侧栏各手抄一份七参表，`games` 的
+  /// `Platform.isWindows` 判据抄了两遍、漏了一遍（macOS 那份靠缺省值蒙对）。
+  ///
+  /// 平台判据取自 [PlatformServices]（那是本类「不必知道自己跑在哪个平台」的出口），
+  /// 不再直读 `dart:io` —— 直读会让 widget 测试无缝可注，Windows 独有的模块
+  /// （galgame）在 Linux CI 上被静默滤掉而本机全绿。
+  ModuleVisibility get moduleVisibility => ModuleVisibility.resolve(
+        prefOf: moduleEnabled,
+        isWindows: platformServices.isWindows,
+        isDesktop: platformServices.isDesktop,
+      );
 
   /// 是否已展示过「上传/做种」首用提示（下载对话框首次推送时弹一次性提醒）。
   bool get torrentUploadIntroShown => prefsRepo.torrentUploadIntroShown;
@@ -6657,6 +6713,10 @@ class AppModel with ChangeNotifier {
   bool get autoAddBookNameToTags => prefsRepo.autoAddBookNameToTags;
   void toggleAutoAddBookNameToTags() => prefsRepo.toggleAutoAddBookNameToTags();
 
+  bool get autoAddCharPositionToTags => prefsRepo.autoAddCharPositionToTags;
+  void toggleAutoAddCharPositionToTags() =>
+      prefsRepo.toggleAutoAddCharPositionToTags();
+
   // TODO-1650 制卡图片/GIF 清晰度档 + 音频质量档（透传 prefsRepo）。默认档 = 旧压缩档
   // （现状零破坏）。制卡消费点用 [MiningMediaCompression.resolve] 据这两个档组装媒体档。
   int get miningImageQuality => prefsRepo.miningImageQuality;
@@ -6719,6 +6779,8 @@ class AppModel with ChangeNotifier {
 
   bool get collapseDictionaries => prefsRepo.collapseDictionaries;
   void toggleCollapseDictionaries() => prefsRepo.toggleCollapseDictionaries();
+  bool get compactGlossaries => prefsRepo.compactGlossaries;
+  void toggleCompactGlossaries() => prefsRepo.toggleCompactGlossaries();
 
   /// TODO-1357: 查词弹窗「列数 / 自动展开词典数」的平台三态默认解析（纯函数，供守卫）。
   /// - 用户显式设过（[hasExplicit]）→ 一律遵从其存储值 [stored]（尊重用户）。
@@ -7326,7 +7388,7 @@ class AppModel with ChangeNotifier {
   /// 持久化交给后续 [setAudioSourceConfigs]。
   ///
   /// [reference]=true（仅桌面）时跳过复制、直接引用用户原路径（BUG-483），不在
-  /// AppData 留副本；移动端缓存临时副本不可引用，故 UI 只在桌面暴露此开关，默认 false。
+  /// AppData 留副本；临时副本不可引用，调用方按选择结果的实际出处决定。
   Future<LocalAudioDbEntry> importLocalAudioDbFile(
     String sourcePath, {
     required String displayName,
@@ -7337,6 +7399,23 @@ class AppModel with ChangeNotifier {
 
   Future<void> setLocalAudioDbs(List<LocalAudioDbEntry> dbs) =>
       _localAudioManager.setEntries(dbs);
+
+  /// 修复旧版本保存的临时缓存引用后再绑定，主入口与弹窗入口共用。
+  Future<void> _prepareLocalAudioForPlayback() async {
+    try {
+      await _localAudioManager.migrateTemporaryReferences(temporaryDirectory);
+    } catch (error, stack) {
+      // 迁移事务失败已恢复旧配置；发音库故障不能阻止用户打开书籍和诊断页。
+      ErrorLogService.instance.log('AppModel.migrateLocalAudio', error, stack);
+    }
+    await _localAudioManager.bindForNativeHandler();
+  }
+
+  Future<bool> isLocalAudioDbAvailable(String storedPath) async {
+    final String resolved = LocalAudioManager.resolveInternalPath(
+        storedPath, databaseDirectory.path);
+    return File(resolved).exists();
+  }
 
   /// 枚举一个本地音频库内的全部子来源名（用于「编辑来源」对话框）。
   Future<List<String>> listLocalAudioSources(String path) =>
@@ -7882,6 +7961,7 @@ class _AppModelRemoteLookupService
         sentenceOffset: payload.sentenceOffset,
         source: _forwardedSourceFromName(payload.source),
         bookTitleTag: payload.bookTitleTag,
+        charPositionTag: payload.charPositionTag,
         // 转发 payload 本来就带片段时间窗（Netflix / YouTube 扩展制卡按视频
         // 时间轴填）。原样透传，有效性由 formatClipTimestamp 单点判定——非视频
         // 转发两端为 null，渲染成空串。

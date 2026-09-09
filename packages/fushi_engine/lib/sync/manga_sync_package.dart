@@ -1,9 +1,9 @@
 import 'dart:io';
-
 import 'package:archive/archive_io.dart';
 import 'package:fushi_engine/media/manga/manga_importer.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 
 /// 漫画互联包（互联完整支持批次：漫画此前在互联里完全不可下载/不可推送）。
 ///
@@ -18,14 +18,32 @@ import 'package:path/path.dart' as p;
 /// client 消费）；旧 host 收到漫画包推送会走 EPUB 导入失败、如实报错（不静默）。
 const String kMangaPackageMarker = 'manga.json';
 
-/// [extractDir] 是漫画书目录（根含 manga.json）时打整树 zip 到 [outputPath]，
-/// 返回 true；目录缺失 / 无标记（不是漫画目录）不写文件返回 false——与
+/// 清单和导出共用的内容判据：元数据占位不等于已下载的漫画。
+/// 复用导入器的页图规划校验，确保非空且每页都能随包导入。
+bool hasExportableMangaContent(String extractDir) {
+  if (extractDir.isEmpty) return false;
+  try {
+    final Directory dir = Directory(extractDir);
+    final File marker = File(p.join(extractDir, kMangaPackageMarker));
+    if (!marker.existsSync()) return false;
+    final MokuroPayload payload = parseMangaJson(marker.readAsStringSync());
+    if (payload.images.isEmpty) return false;
+    MangaImporter.planMangaDestRels(srcDir: dir, payload: payload);
+    return true;
+  } on Exception {
+    return false;
+  } on TypeError {
+    // JSON 字段类型不符合漫画格式，同样不能宣称可导出。
+    return false;
+  }
+}
+
+/// [extractDir] 含完整漫画内容时打整树 zip 到 [outputPath]，
+/// 返回 true；空合集 / 缺页 / 无效元数据不写文件返回 false——与
 /// `repackageExtractedEpub` 的「false = 无可打包内容」语义对称。
 Future<bool> repackageMangaBook(String extractDir, String outputPath) async {
-  if (extractDir.isEmpty) return false;
+  if (!hasExportableMangaContent(extractDir)) return false;
   final Directory dir = Directory(extractDir);
-  if (!dir.existsSync()) return false;
-  if (!File(p.join(dir.path, kMangaPackageMarker)).existsSync()) return false;
   final ZipFileEncoder encoder = ZipFileEncoder();
   encoder.create(outputPath);
   try {

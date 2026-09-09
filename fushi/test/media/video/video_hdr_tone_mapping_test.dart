@@ -51,8 +51,11 @@ void main() {
           isMobile: android,
           isWindows: !android,
         );
-        expect(props['tone-mapping'], 'spline',
-            reason: 'SDR 片源不受这条属性影响，没必要按平台或按片源加门控。');
+        expect(
+          props['tone-mapping'],
+          'spline',
+          reason: 'SDR 片源不受这条属性影响，没必要按平台或按片源加门控。',
+        );
       }
     });
 
@@ -77,8 +80,9 @@ void main() {
         hdrToneMapping: 'mobius',
         hdrComputePeak: 'no',
       );
-      final VideoMpvConfig back =
-          VideoMpvConfig.decode(VideoMpvConfig.encode(config));
+      final VideoMpvConfig back = VideoMpvConfig.decode(
+        VideoMpvConfig.encode(config),
+      );
 
       expect(back.hdrToneMapping, 'mobius');
       expect(back.hdrComputePeak, 'no');
@@ -97,8 +101,9 @@ void main() {
     });
 
     test('旧配置（没有这两个键）读回默认值，不炸', () {
-      final VideoMpvConfig back =
-          VideoMpvConfig.decode('{"_v":2,"deband":true}');
+      final VideoMpvConfig back = VideoMpvConfig.decode(
+        '{"_v":2,"deband":true}',
+      );
 
       expect(back.hdrToneMapping, 'auto');
       expect(back.hdrComputePeak, 'auto');
@@ -114,10 +119,20 @@ void main() {
       final String schema = maskComments(
         File('lib/src/settings/settings_schema_video.dart').readAsStringSync(),
       );
+      final int itemStart = schema.indexOf("id: 'video.hdr.tone_mapping'");
+      expect(itemStart, greaterThanOrEqualTo(0));
+      final int nextItem = schema.indexOf("id: '", itemStart + 5);
+      final String toneMappingItem = schema.substring(itemStart, nextItem);
       expect(
-        schema,
-        contains("kHdrToneMappingValues.where((String c) => c != 'auto')"),
-        reason: '曲线选项必须从白名单派生；写死第二份清单必然与 decode 分叉',
+        RegExp(
+          r'for\s*\(final\s+String\s+curve\s+in\s+'
+          r'kHdrToneMappingValues\.where\(\s*'
+          r"\(String\s+c\)\s*=>\s*c\s*!=\s*'auto'\s*,?\s*\)\s*\)\s*"
+          r'SettingsSegmentOption<String>\(\s*'
+          r'value:\s*curve\s*,\s*label:\s*curve\s*,?\s*\)',
+        ).hasMatch(toneMappingItem),
+        isTrue,
+        reason: '曲线选项必须直接将白名单各值投影成选项；不能另写清单或丢失值映射',
       );
       // 负向：schema 里不得再出现硬写的曲线字面量。
       for (final String curve in <String>['bt.2390', 'bt.2446a', 'spline']) {

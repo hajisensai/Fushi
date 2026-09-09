@@ -49,7 +49,7 @@ const String kVideoHdrOutputPref = 'video_hdr_output';
 ///
 /// 视频洞要一路透到 DWM，**每一层**盖在视频矩形上的祖先都得不画底色——视频页自己的
 /// Scaffold 由 `VideoPlayerController.hdrHostActive` 管，但 Windows 自绘标题栏外壳
-/// （`FushiWindowsTitleBar` 的 `ColoredBox(surface)`）包着整个 Navigator、拿不到页面级
+/// （`FushiDesktopTitleBar` 的 `ColoredBox(surface)`）包着整个 Navigator、拿不到页面级
 /// 控制器，只能听这个全局位。同一时刻只有一个播放器，所以单个进程级 notifier 够用；
 /// 由 `VideoPlayerController` 在进入 / 退出 / dispose 时写，其它地方只读。
 final ValueNotifier<bool> hdrHostActiveGlobal = ValueNotifier<bool>(false);

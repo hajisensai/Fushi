@@ -68,9 +68,19 @@ void main() {
     final String src = readSource('lib/src/pages/base_source_page.dart');
     expect(src, contains('supportsSentenceDraft'));
     expect(src, contains('onSetSentenceContextToDraft'));
+    // 本条守卫的立意是「只在支持草稿的表面接线」。门控变量改名成
+    // sentenceDraftEnabled 后，立意靠两条一起钉：接线读它，且它必须 AND 上
+    // supportsSentenceDraft —— 只钉接线的话，表面判据被丢了也照样绿。
     expect(
-      src,
-      contains('supportsSentenceDraft ? onSetSentenceContextToDraft : null'),
+      RegExp(r'sentenceDraftEnabled\s*\?\s*onSetSentenceContextToDraft\s*:\s*null')
+          .hasMatch(src),
+      isTrue,
+    );
+    expect(
+      RegExp(r'sentenceDraftEnabled\s*=[\s\S]{0,80}?supportsSentenceDraft')
+          .hasMatch(src),
+      isTrue,
+      reason: '草稿门控必须仍然 AND 上「该表面支持草稿」，不能退化成只看模块闸',
     );
     // Default: no draft support (pure dictionary / home lookup).
     expect(src, contains('bool get supportsSentenceDraft => false;'));
@@ -98,6 +108,46 @@ void main() {
     // Mine composes draft + current for both text and audio range.
     expect(src, contains('_miningDraft.composeText(currentSentence)'));
     expect(src, contains('_miningDraft.composeAudioRange(currentRange)'));
+  });
+
+  test('reader snapshots merged cue text before awaiting media export', () {
+    final String mining = readSource(
+      'lib/src/pages/implementations/reader_fushi/mining.part.dart',
+    );
+    final String body = maskComments(
+      methodBody(mining, '_prepareMiningContext() async {'),
+    );
+    final RegExpMatch? firstAwait = RegExp(
+      r'\bawait\b',
+    ).firstMatch(maskCommentsAndStrings(body));
+    expect(firstAwait, isNotNull);
+    final int firstAwaitAt = firstAwait!.start;
+    final String snapshotBody = body.substring(0, firstAwaitAt);
+    expect(
+      snapshotBody,
+      contains(
+        'final String sentence = _miningDraft.composeText(currentSentence);',
+      ),
+    );
+    expect(
+      RegExp(
+        r'final\s+String\s+snapshotCueSentence\s*=\s*'
+        r'_miningDraft\.isEmpty\s*\?\s*'
+        r"appModel\.currentMediaSource\?\.currentCueSentence\.text\s*\?\?\s*''"
+        r'\s*:\s*sentence\s*;',
+      ).hasMatch(snapshotBody),
+      isTrue,
+      reason:
+          '选取上下文后 cue-sentence 必须与合并文本一致；单句仍保留原 cue 文本，'
+          '并在音频导出的首次 await 前快照，避免换词或清草稿改变本次制卡内容。',
+    );
+    expect(
+      body.substring(firstAwaitAt),
+      contains(
+        'cueSentence: snapshotCueSentence.isNotEmpty ? snapshotCueSentence : null',
+      ),
+      reason: '最终 Anki 上下文必须消费先前快照，不能重新读取当前 cue 或草稿。',
+    );
   });
 
   test('reader clears the draft on a new lookup, after mine, and on dismiss',

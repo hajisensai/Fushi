@@ -36,17 +36,48 @@ Directory _repoRoot() {
   fail('找不到含 docs/BUGS.md 的仓库根（从 ${Directory.current.path} 向上）');
 }
 
-/// 扫描范围：本仓自有的 Dart 源码根。**不含** third_party / vendored 包
-/// （上游产物不归我们管，且不参与本仓的并发合并热点）。
-const List<String> _scanRoots = <String>[
-  'fushi/lib',
-  'fushi/test',
-  'packages/fushi_core/lib',
-  'packages/fushi_dictionary/lib',
-  'packages/fushi_anki/lib',
-  'packages/fushi_audio/lib',
-  'packages/fushi_platform/lib',
-];
+/// `packages/` 下**不归我们管**的包：上游 fork / vendored / stub。
+/// 它们的源码由上游决定，不参与本仓的并发合并热点。
+///
+/// 这是一份**排除**清单，不是准入清单——方向是刻意的：新加的自有包必须
+/// **默认落进**扫描面。反过来写（枚举「自有包」）就是这条守卫上一版的 bug：
+/// 清单是字面量，新包 `packages/fushi_server` 加进仓库时没人会想到回来改它，
+/// 于是守卫对着一个不存在的世界照常绿。
+const Set<String> _vendoredPackages = <String>{
+  'flutter_inappwebview_windows',
+  'gamepads_windows',
+  'gamepads_android_stub',
+};
+
+/// 扫描范围：本仓自有的 Dart 源码根，**从磁盘枚举**而不是写死清单。
+///
+/// = `fushi/{lib,test}` + `packages/<非 vendored 包>/{lib,test}`。
+///
+/// 含 `test/` 是因为 NUL 的危害是**文件层面**的（git 判 binary → 拒绝三方合并 →
+/// 静默丢改动），跟这个文件是产品代码还是测试代码毫无关系。
+List<String> _scanRoots(Directory root) {
+  final List<String> roots = <String>['fushi/lib', 'fushi/test'];
+
+  final Directory packages = Directory('${root.path}/packages');
+  final List<String> names = packages
+      .listSync(followLinks: false)
+      .whereType<Directory>()
+      .map((Directory d) => d.path.split(RegExp(r'[/\\]')).last)
+      .where((String n) => !_vendoredPackages.contains(n))
+      .toList()
+    ..sort();
+
+  for (final String name in names) {
+    for (final String sub in const <String>['lib', 'test']) {
+      // 只登记真实存在的目录：这样扫描根数就是**实测的覆盖面**，不会被
+      // 「有目录名但没源码」的空壳撑出一个虚高的数去骗过下面的哨兵。
+      if (Directory('${root.path}/packages/$name/$sub').existsSync()) {
+        roots.add('packages/$name/$sub');
+      }
+    }
+  }
+  return roots;
+}
 
 void main() {
   final Directory root = _repoRoot();
@@ -55,7 +86,9 @@ void main() {
     final List<String> offenders = <String>[];
     int scanned = 0;
 
-    for (final String rel in _scanRoots) {
+    final List<String> scanRoots = _scanRoots(root);
+
+    for (final String rel in scanRoots) {
       final Directory dir = Directory('${root.path}/$rel');
       if (!dir.existsSync()) continue;
 
@@ -73,8 +106,18 @@ void main() {
       }
     }
 
+    // 两条哨兵缺一不可：文件总数挡不住「packages 整片没扫到」——`fushi/{lib,test}`
+    // 一家就有 4300+ 个 .dart，足够单独顶穿任何总数下界，而那时 packages 的覆盖
+    // 已经归零、守卫已经瞎了。所以包数要单独钉。
+    final Set<String> scannedPackages = scanRoots
+        .where((String r) => r.startsWith('packages/'))
+        .map((String r) => r.split('/')[1])
+        .toSet();
+    expectScanScale(scannedPackages.length,
+        what: 'packages/ 下枚举到的非 vendored 包', atLeast: 5, measured: 6);
+
     expectScanScale(scanned,
-        what: '7 个扫描根下的 .dart', atLeast: 2600, measured: 3235);
+        what: '${scanRoots.length} 个扫描根下的 .dart', atLeast: 3600, measured: 4589);
 
     expect(
       offenders,

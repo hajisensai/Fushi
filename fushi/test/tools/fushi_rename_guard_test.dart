@@ -576,6 +576,7 @@ Iterable<File> _pathFormScanFiles() sync* {
 const List<String> _scanRoots = <String>[
   'lib',
   '../packages/fushi_engine/lib',
+  '../packages/fushi_server/lib',
   '../packages/fushi_core/lib',
   '../packages/fushi_dictionary/lib',
   '../packages/fushi_anki/lib',

@@ -14,6 +14,7 @@ import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/book_css_editor_page.dart';
 import 'package:fushi/src/reader/reader_audiobook_panel.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart'
@@ -104,7 +105,10 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
   /// 0-indexed section index and total chapter count.
   final (int section, int total)? readerProgress;
   final (int current, int total)? pageProgress;
-  final Future<void> Function(int sectionIndex) onJumpSection;
+
+  /// 跳到目录条目。[fragment] 是该条目的章内锚（[TtuTocEntry.fragment]），
+  /// 同一 spine 章下的多个目录项只有它能区分，为 null 时就是跳到章首。
+  final Future<void> Function(int sectionIndex, String? fragment) onJumpSection;
   final VoidCallback onExitReader;
   final InAppWebViewController webViewController;
   final AppModel appModel;
@@ -210,6 +214,11 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
   bool _exitScheduled = false;
 
   late String? _subPage = widget.initialSubPage;
+
+  /// 「听书」模块是否可见。关掉时本面板不再渲染「有声书」分类（宽窗分段条 +
+  /// 窄窗导航行两处），即便宿主还持有一个控制器也一样——模块关掉 = 入口消失。
+  bool get _listeningEnabled =>
+      widget.appModel.moduleVisibility.isEnabled(ModuleId.listening);
 
   /// 桌面端右侧「设置」抽屉当前展开的分组 id（初值来自页面记忆）。
   late String _sideSheetTab = widget.initialSideSheetTab;
@@ -530,7 +539,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
         icon: Icons.manage_search_outlined,
         label: t.settings_destination_lookup,
       ),
-      if (widget.controller != null)
+      if (widget.controller != null && _listeningEnabled)
         (
           id: 'audiobook',
           icon: Icons.headphones_outlined,
@@ -567,7 +576,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
         label: t.settings_destination_lookup,
         page: 'lookup',
       ),
-      if (widget.controller != null)
+      if (widget.controller != null && _listeningEnabled)
         _categoryTile(
           icon: Icons.headphones_outlined,
           label: t.section_audiobook,
@@ -1148,6 +1157,15 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     bool isExpanded(TtuTocEntry parent) =>
         _expandedTocParents.contains(parent.label) ||
         autoExpanded.contains(parent.label);
+    // 「当前章那一行」只能有**一行**：`_currentTocRowKey` 是 GlobalKey，同一个
+    // key 挂到两个在场 widget 上，debug 直接抛 `Multiple widgets used the same
+    // GlobalKey`，release 则由 `Element._retakeInactiveElement` 把 element 从前
+    // 一行手里抢走——那一行被摘出渲染树，**目录里真的少一行**。而同章多行是常态
+    // 而非例外：一个 xhtml 装整卷、目录靠 `#anchor` 分节的书，那一章下的每条目录
+    // 项 index 全相同。取第一条（阅读顺序最靠前的那条）作为滚动锚点。
+    final int currentRow = toc.indexWhere(
+      (TtuTocEntry e) => !e.isHeader && e.index == currentIdx,
+    );
     return AdaptiveSettingsSection(
       title: t.toc_section(n: toc.length),
       children: [
@@ -1157,9 +1175,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
                   (_expandedTocParents.contains(toc[i].parent!) ||
                       autoExpanded.contains(toc[i].parent!))))
             _InBookTocRow(
-              key: !toc[i].isHeader && currentIdx == toc[i].index
-                  ? _currentTocRowKey
-                  : null,
+              key: i == currentRow ? _currentTocRowKey : null,
               entry: toc[i],
               selected: !toc[i].isHeader && currentIdx == toc[i].index,
               foldable: hasFoldableChildren(i),
@@ -1176,7 +1192,10 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
                   ? null
                   : () async {
                       Navigator.of(context).pop();
-                      await widget.onJumpSection(toc[i].index);
+                      await widget.onJumpSection(
+                        toc[i].index,
+                        toc[i].fragment,
+                      );
                     },
             ),
       ],
